@@ -735,7 +735,7 @@ def gerencial(ano: int, mes: int) -> dict:
 # passos juntos, para o arquivo nunca sair de um fechamento antigo.
 # ---------------------------------------------------------------------------
 ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc", "avulso",
-           "gratificacao", "viasp")
+           "gratificacao", "viasp", "complementar", "diaria_complementar")
 
 
 def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
@@ -749,7 +749,7 @@ def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
 
 def _pedido_direto(origem: str, dados: dict) -> dict:
     """Competência, pagamento, verba e as linhas de AGORA — sem gravar nada."""
-    from . import folha_auxilio, folha_diaristas
+    from . import empresa_da_folha, folha_auxilio, folha_diaristas
     if origem not in ORIGENS:
         raise ErroDoPagamento(f'origem "{origem}" não reconhecida.')
     if origem == "dc":
@@ -759,7 +759,8 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
         from .horario import agora
         hoje = agora().date()
         return {"ano": hoje.year, "mes": hoje.month, "tipo": dc.TIPO, "verba": dc.VERBA,
-                "linhas": dc.linhas_a_pagar(),
+                "empresa": str(dados.get("empresa") or ""),
+                "linhas": dc.linhas_a_pagar(empresa=str(dados.get("empresa") or "")),
                 "rotulo": f"Despesas com colaboradores {hoje.strftime('%d/%m/%Y')}"}
     if origem == "avulso":
         # O PAGAMENTO AVULSO (15/10/2026): a lista colada na tela, sem
@@ -792,29 +793,63 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
                 "linhas": gm.linhas_a_pagar(calculado),
                 "rotulo": f"{calculado['rotulo']} {calculado['competencia']} — "
                           f"{calculado['rotulo_periodo']}"}
+    if origem == "complementar":
+        # A FOLHA COMPLEMENTAR (10/11/2026): só a diferença entre a folha importada de
+        # novo e o que já foi pago — ver `folha_complementar`.
+        from . import folha_complementar as fcomp
+        try:
+            montado = fcomp.montar(int(dados.get("folha_id") or 0))
+        except fcomp.ErroDaComplementar as e:
+            raise ErroDoPagamento(str(e)) from e
+        if not montado["ja_paga"]:
+            raise ErroDoPagamento("esta folha ainda não foi paga — gere o arquivo da folha normal.")
+        n = fcomp.numero(montado["verba"])
+        return {"ano": montado["ano"], "mes": montado["mes"], "tipo": montado["tipo"],
+                "verba": montado["verba"], "montado": montado,
+                "linhas": fcomp.linhas_a_pagar(montado),
+                "rotulo": f"Folha complementar {n} {montado['mes']:02d}/{montado['ano']}"}
     if origem == "folha":
         folha, _apropriado, linhas = linhas_da_previa(int(dados.get("folha_id") or 0))
         return {"ano": folha["ano"], "mes": folha["mes"], "tipo": folha["tipo"],
                 "verba": guardada.VERBA_FOLHA, "linhas": linhas,
                 "rotulo": f"Folha da contabilidade {folha.get('competencia') or ''}"}
     ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    if origem == "diaria_complementar":
+        # A COMPLEMENTAR DAS DIÁRIAS (11/11/2026; `diaristas_complementar`): só a
+        # diferença de uma quinzena já paga, depois do ponto corrigido.
+        from . import diaristas_complementar as dcomp, folha_complementar as fcomp
+        montado = dcomp.montar(ano, mes, str(dados.get("periodo") or "quinzena"),
+                               str(dados.get("empresa") or ""))
+        if not montado["ja_paga"]:
+            raise ErroDoPagamento("estas diárias ainda não foram pagas: gere o arquivo "
+                                  "na própria tela dos Diaristas.")
+        return {"ano": ano, "mes": mes, "tipo": montado["tipo"], "verba": montado["verba"],
+                "periodo": montado["qual"], "empresa": montado["empresa"],
+                "montado": montado, "linhas": fcomp.linhas_a_pagar(montado),
+                "rotulo": f"{geracao.rotulo_da_verba(montado['verba'])} {mes:02d}/{ano} — "
+                          f"{montado['rotulo_periodo']}"}
     if origem == "diaria":
         periodo = str(dados.get("periodo") or "quinzena")
-        calculado = folha_diaristas.calcular(ano, mes, periodo)
+        empresa = str(dados.get("empresa") or "")
+        calculado = folha_diaristas.calcular(ano, mes, periodo, empresa)
         tipo = folha_diaristas.TIPO_DO_FECHAMENTO[calculado["qual"]]
-        return {"ano": ano, "mes": mes, "tipo": tipo, "verba": "diaria",
+        verba = empresa_da_folha.verba_da_empresa("diaria", calculado.get("empresa"))
+        return {"ano": ano, "mes": mes, "tipo": tipo, "verba": verba,
+                "empresa": calculado.get("empresa") or "",
                 "periodo": calculado["qual"],
                 "linhas": _linhas_do_apropriado(
-                    folha_diaristas.apropriado(calculado), "diaria"),
-                "rotulo": f"Diárias {mes:02d}/{ano} — {calculado['rotulo_periodo']}"}
+                    folha_diaristas.apropriado(calculado), verba),
+                "rotulo": f"{geracao.rotulo_da_verba(verba)} {mes:02d}/{ano} — "
+                          f"{calculado['rotulo_periodo']}"}
     pagamento = str(dados.get("pagamento") or "fim_de_mes")
     if pagamento not in folha_auxilio.TIPOS_DO_FECHAMENTO:
         raise ErroDoPagamento("selecione se o auxílio sai na quinzena ou no fim de mês.")
-    calculado = folha_auxilio.calcular(origem, ano, mes)
-    return {"ano": ano, "mes": mes, "tipo": pagamento, "verba": origem,
-            "pagamento": pagamento,
-            "linhas": _linhas_do_apropriado(folha_auxilio.apropriado(calculado), origem),
-            "rotulo": f"{folha_auxilio.ROTULO_DO_TIPO[origem]} {mes:02d}/{ano}"}
+    calculado = folha_auxilio.calcular(origem, ano, mes, str(dados.get("empresa") or ""))
+    verba = empresa_da_folha.verba_da_empresa(origem, calculado.get("empresa"))
+    return {"ano": ano, "mes": mes, "tipo": pagamento, "verba": verba,
+            "pagamento": pagamento, "empresa": calculado.get("empresa") or "",
+            "linhas": _linhas_do_apropriado(folha_auxilio.apropriado(calculado), verba),
+            "rotulo": f"{geracao.rotulo_da_verba(verba)} {mes:02d}/{ano}"}
 
 
 def resumo_direto(origem: str, dados: dict, destino: str,
@@ -867,15 +902,23 @@ def ja_gerado(origem: str, pedido: dict) -> list:
     O auxílio é UM por mês, saia na quinzena ou no fim do mês — qualquer dos
     dois conta. Diárias e folha têm um pagamento por período, e só o mesmo
     período conta."""
-    from . import folha_auxilio
+    from . import empresa_da_folha, folha_auxilio
     verba = pedido["verba"]
     um_por_mes = origem in folha_auxilio.TIPOS
-    return [{"id": a["id"], "criado_em": a["criado_em"], "criado_por": a["criado_por"],
-             "total": a["total"], "tipo": a["tipo"]}
-            for a in log(teto=400, ano=pedido["ano"], mes=pedido["mes"])
-            if a["destino"] == ANALISE
-            and verba in (a["verbas"] or "").split("+")
-            and (um_por_mes or a["tipo"] == pedido["tipo"])]
+    saida = []
+    for a in log(teto=400, ano=pedido["ano"], mes=pedido["mes"]):
+        if a["destino"] != ANALISE or not (um_por_mes or a["tipo"] == pedido["tipo"]):
+            continue
+        # Junto × por empresa (10/11/2026; `empresa_da_folha.conflita`): a mesma
+        # geração, ou uma que MISTURA as duas formas no mesmo período.
+        como = next((c for c in (empresa_da_folha.conflita(verba, v)
+                                 for v in (a["verbas"] or "").split("+") if v) if c), "")
+        if como:
+            saida.append({"id": a["id"], "criado_em": a["criado_em"],
+                          "criado_por": a["criado_por"], "total": a["total"],
+                          "tipo": a["tipo"], "mistura": como == "mistura",
+                          "verbas": a["verbas"]})
+    return saida
 
 
 def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
@@ -887,6 +930,19 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
     saem do mesmo cálculo."""
     from . import folha_auxilio, folha_diaristas, folha_gestao
     pedido = resumo_direto(origem, dados, destino, destinos)
+    misturada = next((a for a in pedido["resumo"]["ja_gerado"] if a.get("mistura")), None)
+    if misturada:
+        # ⚠️ JUNTO × POR EMPRESA NO MESMO PERÍODO (10/11/2026): nem o "gerar mesmo
+        # assim" passa — pagaria duas vezes quem já está na outra geração.
+        raise ErroDoPagamento(
+            "neste período já houve geração "
+            + ("de todas as empresas juntas" if "." not in (misturada.get("verbas") or "")
+               else "por empresa (" + ", ".join(
+                   geracao.rotulo_da_verba(v) for v in (misturada.get("verbas") or "").split("+")
+                   if v) + ")")
+            + f", em {formatos.momento_br(misturada['criado_em'])}. Juntas e por empresa "
+            "não se misturam no mesmo período: quem já está numa geração receberia de "
+            "novo. Exclua a geração anterior em Arquivos gerados para trocar a forma.")
     if pedido["resumo"]["ja_gerado"] and not forcar:
         anterior = pedido["resumo"]["ja_gerado"][0]
         raise ErroDoPagamento(
@@ -938,14 +994,31 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
                        None)
         gm.registrar_lote(analise, pedido["calculado"], quem=quem)
         return saida
+    if origem in ("complementar", "diaria_complementar"):
+        # As duas complementares (folha e diárias): o fechamento da diferença, com
+        # verba própria, e depois o arquivo dele.
+        from . import folha_complementar as fcomp
+        try:
+            fcomp.fechar(pedido["montado"], quem=quem)
+        except fcomp.ErroDaComplementar as e:
+            raise ErroDoPagamento(str(e)) from e
+        saida = gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
+                      destino, quem=quem, forcar=forcar, destinos=destinos,
+                      relatorio=_relatorio_por_conta(origem, dados, pedido), cadastro=True)
+        fcomp.depois_de_gerar(pedido["montado"], quem=quem)
+        return saida
     if origem == "folha":
-        folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
+        try:
+            folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
+        except folha_gestao.ErroDaGestao as e:
+            raise ErroDoPagamento(str(e)) from e
     elif origem == "diaria":
         folha_diaristas.fechar(pedido["ano"], pedido["mes"], pedido["periodo"],
-                               quem=quem)
+                               quem=quem, empresa=pedido.get("empresa") or "")
     else:
         folha_auxilio.fechar(origem, pedido["ano"], pedido["mes"],
-                             pedido["pagamento"], quem=quem)
+                             pedido["pagamento"], quem=quem,
+                             empresa=pedido.get("empresa") or "")
     return gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
                  destino, quem=quem, forcar=forcar, destinos=destinos,
                  relatorio=_relatorio_por_conta(origem, dados, pedido), cadastro=True)
@@ -962,7 +1035,8 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
         if origem == "dc":
             from . import dc
             contas = conta_por_obra()
-            montado = dc.montado_do_relatorio(dc.calcular(), so_a_pagar=True)
+            montado = dc.montado_do_relatorio(
+                dc.calcular(empresa=pedido.get("empresa") or ""), so_a_pagar=True)
         elif origem == "avulso":
             from . import pagamento_avulso as pa
             contas = conta_por_obra()
@@ -971,6 +1045,10 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             from . import gratificados as gm
             contas = conta_por_obra()
             montado = gm.montado_do_relatorio(pedido["calculado"], so_a_pagar=True)
+        elif origem in ("complementar", "diaria_complementar"):
+            from . import folha_complementar as fcomp
+            contas = conta_por_obra()
+            montado = fcomp.montado_do_relatorio(pedido["montado"], so_a_pagar=True)
         elif origem == "folha":
             from . import folha_gestao
             montado = fr.com_contracheques(
@@ -978,7 +1056,7 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             contas = folha_gestao._contas_das_obras()
         elif origem == "diaria":
             calculado = folha_diaristas.calcular(pedido["ano"], pedido["mes"],
-                                                 pedido["periodo"])
+                                                 pedido["periodo"], pedido.get("empresa") or "")
             lista = folha_lista.filtrar(
                 calculado.get("pessoas") or [], MultiDict(),
                 escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
@@ -986,7 +1064,8 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             montado = fr.montado_das_diarias(calculado, lista["pessoas"],
                                              lista["filtros"], contas)
         else:
-            resultado = folha_auxilio.calcular(origem, pedido["ano"], pedido["mes"])
+            resultado = folha_auxilio.calcular(origem, pedido["ano"], pedido["mes"],
+                                               pedido.get("empresa") or "")
             lista = folha_lista.filtrar(
                 list(resultado.get("pessoas") or []), MultiDict(),
                 campo_da_obra="obra", escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)

@@ -12244,6 +12244,260 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 262 — Centros de custo da contabilidade × o ponto (11/11/2026)
+
+- *"A folha da contabilidade tem determinado centro de custo, só que na nomenclatura
+  diferente da nossa (…) na aba C. Diários eu adicionei a última coluna, a coluna AN,
+  o centro de custo da contabilidade (…) gerar um relatório onde o funcionário está
+  trabalhando no ponto (…) comparar a folha da contabilidade e entender se aqueles
+  cadastros estão ok ou se precisa haver remanejo (…) esse relatório eu vou passar
+  para a contabilidade."* Particularidade: AFASTADO INSS e DESATIVAR sem ponto estão
+  coerentes; com ponto, crítica.
+- **Onde:** dentro da folha da contabilidade, faixa "Folha | Complementar | Centros de
+  custo" (`/folha/<id>/centros-de-custo`; a faixa agora aparece SEMPRE na folha
+  aberta). Planilha para a contabilidade em `.xlsx` (abas "Remanejos" e
+  "Conferência").
+- **Como** (`centros_de_custo.py`): o centro na folha é o setor da Folha Sintética
+  (`folha_linha.setor_codigo/nome`, "001.07 - …"); a obra é a de MAIS DIAS no ponto do
+  MÊS INTEIRO da competência (`obra_do_dia`); o esperado é a coluna AN da C. Diários
+  da planilha "Bases de Dados Pipefy", lida pelo leitor do ponto
+  (`base_obras.ler_planilha`, guardada 5 min; pelo nome — "Centro de Custo
+  Contabilidade" e variações — ou, sem o nome, a posição AN, com aviso). Compara pelo
+  CÓDIGO ("140.01"; o nível de cima "140" também casa). Situações: ok, coerente,
+  remanejar (de X para Y), conferir (mais de uma obra e a folha numa que não é a
+  principal; afastado/desativar com ponto; sem ponto; obra sem AN; ID Fortes sem CPF).
+- **A pergunta do dono (folha ou complementar?):** a importação da complementar
+  SUBSTITUI a folha da mesma competência e tipo — a guardada já é a mais nova. Entre
+  quinzena e fim de mês, vale qualquer uma; a tela aponta a outra do mesmo mês e diz
+  que a de fim de mês é a completa.
+- **Não verificado com dado real:** o nome exato da coluna AN e o formato do texto dela
+  (o exemplo do dono: "001.07 - CONSTRUTORA/ESCRITORIO NORDESTE"); o código da obra que
+  o ponto escreve casar com a C. Diários (código primário, coluna A ou nome).
+- Testes: `test_analisesps_centros_de_custo.py`.
+
+#### Leva 261 — Bradesco: agendamento, seleção, KPIs e totais por conta (11/11/2026)
+
+- *"Na parte do Bradesco, não aparece o status do agendamento de cada registro.
+  Deveria (…) os registros serem selecionados e poder alterar esses status, ter mais
+  gestão sobre eles."* E logo depois: *"não tem KPIs, totalizados, somatórios, por
+  conta também. Tudo isso facilita a aprovação."*
+- **Coluna "Agendamento"** nas duas tabelas (boletos e Pix), logo depois da SP, com o
+  selo de cor das outras telas. O dado já vinha na linha (`Status Agend`); faltava
+  na lista de colunas.
+- **Seleção + a barra de ações das Solicitações** (`analisesps_barra_acoes.html`,
+  `origem='bradesco'`, com Marcar Pago/Pagar): cada operação que achou a SP tem
+  caixinha; Agendar/Agendado/Falha Agendar/Desagendar com as MESMAS travas do
+  servidor (não validada, Pix "Atualizar Chave", sem obra), total marcado e por conta.
+  Depois de agir, a conferência é REFEITA com o mesmo texto colado
+  (`window.recarregarTela` — recarregar pediria para reenviar o formulário; a barra em
+  `analisesps.js` agora chama `recarregar()`, que usa o gancho quando a tela o define).
+- **Os números** (`bradesco.resumo`, do valor do banco): operações (boletos/Pix) e
+  total, com SP, sem SP, "pedem conferência" (`pede_conferencia`: sem SP, validação
+  fora de OK ou alerta ⚠️ — a frase que só explica o acerto não conta), por status de
+  agendamento (a já paga conta como "Pago") e a tabela por conta de débito.
+- **O aviso do Firefox** (*"por que aparece isso toda hora na tela Bradesco? (…) o
+  Firefox precisa enviar informações que repetirão qualquer ação"*): a conferência
+  era a RESPOSTA do formulário — qualquer recarga (a tela se atualiza quando uma
+  sincronização termina; a barra depois de agir; o F5) pedia para reenviar. Agora o
+  "Conferir" guarda o texto (`analisesps.meta`, `bradesco.colado.<código>`, por 3
+  dias) e redireciona para `/bradesco?c=<código>`; recarregar refaz a conferência com
+  os status de agora. O gancho `window.recarregarTela` saiu da tela (fica no
+  `analisesps.js`, sem uso). Sem banco para guardar, confere na hora, como antes.
+- **Códigos de pagamento (QR / boleto)**, no mesmo dia: *"não é exibido o status do
+  agendamento do registro. Coloca."* Cada SP mostra o selo do agendamento (ou "sem
+  agendamento") e o do status de pagamento, ao lado do valor e do vencimento.
+- Testes: `test_analisesps_telas.py` (`-k "bradesco or codigos"`).
+
+#### Leva 260 — A baixa dos comprovantes em pista própria (migração 056, 11/11/2026)
+
+- *"Já existe uma atualização em andamento (dando baixa nos comprovantes —
+  Bradesco_11112026_081401.PDF: leva 2 de 2, desde 08:31). Espere ela terminar. (…)
+  esse comprovante tão sempre demorando muito."*
+- A baixa (o robô do BaixaBradesco, leva de 10 páginas por vez: leitura, Omie,
+  planilha, Pipefy) corria na pista GERAL, a mesma da sincronização e da fila de envio
+  para a planilha — um segurava o outro. Ela não escreve em `analisesps.sps`, só na
+  planilha (pelo robô, que já roda pelo Make junto com a sincronização). Agora tem a
+  pista `comprovantes` (`tarefas.MODOS_DOS_COMPROVANTES`, índice
+  `ux_execucao_viva_por_pista6`): roda junto da sincronização, uma baixa por vez.
+- A tela de Comprovantes acompanha a pista dela; ao fim de uma baixa, o que chegou de
+  comprovante enquanto ela rodava começa sozinho (`encadear_comprovantes`).
+- **A demora do robô em si NÃO mudou** — ela é do BaixaBradesco (outra área). O que
+  mudou é que ela não trava mais o resto.
+- ⚠️ **Migração 056: apertar "Aplicar atualizações do banco" no MESMO momento da
+  publicação.** Sem ela, a baixa continua na geral como antes (o pedido recusado
+  pede o botão; o lote fica esperando e entra depois).
+
+#### Leva 259 — Sincronização: linhas mudadas em faixas contínuas (11/11/2026)
+
+- *"Alterado aqui, mas o envio para a planilha ficou na fila: Já existe uma
+  atualização em andamento (trazendo as SPs alteradas — 28200 de 52350, desde 08:04)
+  (…) ela trava toda a operação. Já tem 24 minutos. Não tem sentido."*
+- **Causa da demora:** quando quase a planilha inteira aparece como alterada (52.350
+  linhas — carimbo novo em tudo, provavelmente um script que reescreveu a SPsBD), o
+  delta pedia UMA FAIXA POR LINHA, 200 por ida: ~20 linhas/s, quase uma hora com a
+  pista das SPs ocupada — e a fila de envio para a planilha esperando atrás.
+- **Agora:** linhas vizinhas viram uma faixa só (`faixas_continuas`, `lotes_de_faixas`),
+  até 5.000 linhas por ida, como a carga inicial. O caso "tudo mudou" passa a custar o
+  mesmo que uma carga (minutos). O log diz POR QUE as linhas vieram (novas na base,
+  carimbo novo desde X, conteúdo sem carimbo) — para achar o script que carimba tudo.
+- **E a LÓGICA estava errada** (o dono, logo depois: *"1000 de 52363, desde 08:42 (…)
+  tem algo bem errado na lógica dessa atualização"* — a rodada recomeçou trazendo a
+  planilha inteira de novo). A linha vinha quando o carimbo era "maior que a marca
+  d'água" — comparação de TEXTO, com a marca gravada só no FIM da rodada. Com carimbo
+  num formato que não ordena como texto (dd/mm/aaaa), ou com uma rodada que morre
+  antes do fim, a planilha inteira voltava como alterada, rodada após rodada. **Agora
+  a linha vem quando o carimbo da planilha é DIFERENTE do guardado na base** (cada SP
+  guarda o seu). Rodada interrompida não refaz o que já trouxe; o formato deixa de
+  importar. O segundo da borda da marca d'água continua relido (`_na_borda`, só com
+  datas aaaa-mm-dd). A conferência do `status_pgt` (linha sem carimbo) não mudou.
+- A alteração feita pela tela fica na fila e desce na próxima sincronização — não se
+  perde.
+- Testes: `test_analisesps_banco.py` (faixas contínuas; 1.200 linhas = 1 ida).
+
+#### Leva 258 — Complementar das diárias (11/11/2026)
+
+- *"Fizemos o pagamento (…) da última quinzena. Só que aí o pessoal precisou corrigir
+  ponto (…) a gente precisaria pagar a diferença (…) peguei o relatório anterior, gerei
+  um novo (…) joguei na IA para fazer o confronto (…) queria que a gente pudesse fazer
+  isso dentro do sistema (…) como na folha da contabilidade a gente tem aquele
+  complemento."*
+- **Onde:** Diaristas › faixa "Diaristas | Complementar" (rota
+  `/folha/diaristas/complementar`, mesma competência/período/empresa da tela). A tela
+  dos Diaristas avisa quando o período já foi pago, e a janela "Gerar arquivos" (já
+  gerado) aponta para a Complementar.
+- **Como** (`diaristas_complementar.py`, sobre a parte comum de `folha_complementar`:
+  `comparar`, `finalizar`, `fechar`, `linhas_a_pagar`, "a descontar", relatório):
+  - PAGO = soma por CPF do fechamento de cada geração de diárias do período: `diaria`,
+    `diaria.<cnpj>` e as complementares (`diaria_c1`, `diaria_c2`… com ou sem empresa).
+  - NOVO = a conta de hoje da tela dos Diaristas (ponto corrigido), de quem tem diária
+    a receber; quem está desmarcado na tela vem em "não pago antes", desmarcado.
+  - Os grupos, a seleção e o arquivo são os da folha; verba própria `diaria_cN`
+    (rótulo "Diárias complementar N", natureza/carteira/grupo do Pipefy da diária,
+    título da SP " - Complementar N"; `folha_geracao.verba_base`).
+  - Com empresa escolhida, só as pessoas dela (o pago é recortado pelo CNPJ).
+  - Pago a mais vai para a mesma lista "a descontar", com a competência "Diárias
+    MM/AAAA período" (chave `diaria-AAAA-MM-tipo`, separada da folha).
+- A tela da Complementar da folha virou um corpo compartilhado
+  (`_complementar_corpo.html` + `_complementar_fim.html`), usado pelas duas.
+- Testes: `test_analisesps_diaristas_complementar.py` (paga → corrige o ponto →
+  complementar só da diferença → a seguinte já soma; não pago; pago a mais).
+
+#### Leva 257 — Empresa (CNPJ de admissão) recorta Alimentação/Transporte, Diaristas e DC (10/11/2026)
+
+- *"Na C. Diários (…) Dados Documentos (…) a coluna BT, CNPJ admissão. Eu preciso
+  diferenciar as empresas. (…) gerar a folha de diaristas, mas exibir somente os que
+  estão cadastrados para uma empresa (…) antes de gerar qualquer informação. (…)
+  alimentação e transporte, diaristas, despesa com colaboradores."*
+- **Leitura:** a coluna BT entra na carga do cadastro (`COLUNAS_DO_PAGAMENTO
+  ["cnpj_admissao"]`, nome "CNPJ Admissão" ou, sem o nome, a posição 72 conferindo a
+  palavra "cnpj"), no JSON `documentos` — sem migração. **Só aparece depois de um
+  "Atualizar cadastro"**; até lá todo mundo está "sem CNPJ de admissão".
+- **Na tela** (`empresa_da_folha.py`, include `_empresa_da_folha.html`): um seletor
+  "Empresa (CNPJ de admissão)" na barra do mês das três telas. O recorte é feito DENTRO
+  do cálculo (`calcular(..., empresa)`), antes dos totais: KPIs, obras, lista,
+  relatório, divisão e GERAÇÃO saem só com aquela empresa. "Sem CNPJ de admissão" é
+  uma opção, para ninguém sumir sem ser visto. O nome vem do cadastro de Empresas do
+  ERP pelo CNPJ; sem ele, o CNPJ formatado.
+- **Geração: junto OU por empresa** (o dono, no mesmo dia: *"acho que devemos fechar
+  por empresa"* e *"quero poder fazer junto ou por empresa"*). A empresa entra no NOME
+  DA VERBA do fechamento e da geração: `diaria` = todas juntas (como sempre);
+  `diaria.00079526000109` = só aquela empresa (`empresa_da_folha.verba_da_empresa`).
+  Cada empresa tem fechamento, arquivo e SP próprios; rótulo ("Diárias — BWS"),
+  natureza, carteira e grupo do Pipefy olham a verba base (título da SP ganha
+  " - BWS"). Na DC funciona naturalmente (o gerado sai da tela).
+  - ⚠️ **Junto × por empresa não se misturam no mesmo período**
+    (`empresa_da_folha.conflita`): depois de gerar todas juntas, gerar uma empresa
+    (ou o contrário) é recusado SEMPRE, mesmo com "gerar mesmo assim" — pagaria duas
+    vezes. Empresas diferentes entre si não conflitam. Repetir a mesma geração segue a
+    regra antiga (recusa; "gerar mesmo assim" passa).
+- **O rótulo da empresa** (correção do dono no mesmo dia): a BT vem escrita
+  "00.079.526/0001-09 - BWS". O filtro mostrava o nome do cadastro de Empresas do ERP;
+  agora mostra o texto da coluna (`ler_coluna`: o CNPJ separa, o nome depois do traço
+  é o que se lê; o ERP só completa CNPJ sem nome na planilha).
+- Testes: `test_analisesps_empresa_da_folha.py`.
+
+#### Leva 256 — Diaristas: filtro de obra lento (10/11/2026)
+
+- *"Clico nas obras pra filtrar mas leva uma eternidade."* Cada pessoa lia os
+  acréscimos de diária do ERP DUAS vezes (4 consultas cada) — ~3.200 idas ao banco
+  numa quinzena de 400 diaristas, a cada clique. Agora uma leitura por cálculo
+  (`calcular_pessoa(..., acrescimos=)`), e a TELA guarda a conta por 90 s
+  (`folha_diaristas.calcular_guardado`), jogada fora em qualquer gravação do módulo e
+  no fim de toda leitura do ponto. Medido no banco de teste com 400 pessoas: 1,8 s →
+  0,5 s para calcular; o clique de filtro, 0,2 s. Quem grava (seleção, fechar, gerar)
+  continua calculando na hora.
+
+#### Leva 255 — Agenda: os feriados vêm do cadastro do ponto (10/11/2026)
+
+- A pergunta que estava aberta desde 04/11: a aba "Feriados" da planilha de credenciais
+  (a que move o vencimento das contas da Agenda para dia útil) vinha à mão. O dono: *"os
+  feriados devem vir do cadastro do app ponto"*.
+- **Agora:** `agenda.feriados_do_ponto()` lê `ponto.feriados`. Valem os NACIONAIS e os
+  ESTADUAIS/MUNICIPAIS da **cidade da sede** (escolhida na própria tela da Agenda, guardada
+  em `analisesps.meta` › `agenda.sede`); os de OBRA nunca. Motivo: a agenda é de contas e
+  impostos da empresa — o feriado municipal da cidade de uma obra não muda o vencimento do
+  FGTS, e postergar por causa dele faria pagar atrasado. Os nacionais calculados (Páscoa
+  etc.) continuam somados, como rede de segurança.
+- A aba "Feriados" deixou de ser lida na sincronização (`sincronizar_agenda`) e
+  `agenda.gravar_feriados` saiu; a tabela `analisesps.feriados` ficou sem uso (sem
+  migração para apagá-la).
+- **Pendente com o dono:** a cidade da sede. Enquanto ninguém escolher, só os nacionais
+  movem as datas (antes, o que estivesse na aba também movia).
+- Testes: `test_analisesps_agenda_feriados_ponto.py` (regra pura + no banco, com o ponto).
+
+#### Leva 254 — A folha complementar: pagar só a diferença de uma folha já paga (10/11/2026)
+
+> **Publicado em 10/11/2026.** Pendente AGORA: a primeira complementar real — conferir
+> com calma quem aparece "sem CPF" antes de gerar.
+
+- **Depois (10/11/2026, publicado no mesmo dia):** *"basta eu colar os novos arquivos estando em folha e o sistema
+  já entende que é complementar?"* — importar a folha de um mês JÁ PAGO leva direto à
+  Complementar (a resposta da importação traz `ir`); mês não pago vai para a folha. E a
+  Complementar não tem a barra lateral de propósito: não há filtros nela, e as ações
+  (PDF, Excel, Gerar) ficam no cabeçalho da lista.
+
+- *"Encerrada a folha, feitos os pagamentos, foram detectados ajustes de ponto (…) eu
+  preciso importar a nova folha e, a partir dela, gerar um arquivo de pagamento com a
+  diferença (…) quem foi a mais, quem foi a menos (o a menos só ilustrativo) (…) quem
+  não foi pago, exibir desmarcado."* Discutido antes; exemplo em tela aprovado
+  (*"pode construir"*), com as sugestões aceitas: pago a mais vai para "a descontar";
+  obra da diferença = a da folha nova; mesmo caminho de arquivo/SP; tela dentro da
+  Folha da contabilidade.
+- **O risco que existia:** refechar uma folha já paga APAGAVA o registro do que foi
+  pago (o fechamento é um só por competência/verba) e o "gerar mesmo assim" pagaria a
+  folha inteira de novo. **Agora:** `folha_gestao.fechar` recusa folha com geração no
+  log (o "Gerar arquivos" da folha diz "já foi paga — use a Complementar"); o caminho
+  limpo para uma geração que não valeu continua sendo excluí-la em Arquivos gerados.
+- **Como funciona** (`folha_complementar.py`, tela `/folha/<id>/complementar`):
+  - O PAGO é o fechamento de cada verba GERADA da competência — a `folha` e as
+    complementares já feitas (`complementar1`, `complementar2`…), somadas por CPF.
+  - A FOLHA NOVA é a folha importada agora, apropriada com a mesma conta da tela, mas
+    sem o "fora" (quem ficou fora precisa de obra se for pago agora).
+  - Grupos: a receber (marcado, paga a diferença), não pago antes (desmarcado, diz por
+    que ficou fora), pago a mais (informativo; inclui quem saiu da folha) e sem mudança.
+  - A diferença é dividida nas obras na proporção da folha nova (centavo na última).
+  - Gerar = `gerar_direto` com origem "complementar": grava um FECHAMENTO com verba
+    própria (`complementarN`, rótulo "Folha complementar N", natureza da folha) e gera
+    o arquivo dele; depois guarda o pago a mais em "a descontar" e zera a seleção.
+  - "A descontar" (`analisesps.meta` › `folha.a_descontar`): lista com "já descontado";
+    aparece na Complementar e um aviso na folha. O sistema não desconta sozinho.
+  - Relatório PDF (paisagem) e Excel com todos os grupos (`detalhe_todos` no relatório
+    compartilhado).
+- Sem migração (usa as tabelas de fechamento e `meta`).
+- Conferido: ciclo completo no banco de teste (pagou a folha → complementar com
+  512,80 → a seguinte já vê esse pagamento); tela no navegador (marcar, salvar, janela
+  de gerar com só a diferença). Testes: `test_analisesps_folha_complementar.py`.
+- **Não verificado com folha de verdade:** o casamento de CPF depende do cadastro (quem
+  não casa aparece "sem CPF — não dá para pagar").
+- **Depois (10/11/2026) — "Lançar no Pipefy" recusava a complementar** ("o cenário do
+  Make não possui grupo para ela"). Não dependia do Make: era a tabela de grupos copiada
+  dele (`folha_cards.GRUPOS`), que só conhecia "folha". O dono: *"isso é igual ao Folha da
+  Contabilidade, mas na descrição pode pôr Complementar"*. Agora `complementarN` lança
+  com o grupo, o tipo de despesa (Salários e Ordenados) e a categoria da folha
+  (`verba_do_grupo`); o TÍTULO da SP ganha " - Complementar N" (para não se confundir
+  com a SP da folha do mesmo mês) e a descrição já dizia "Folha complementar N —
+  competência…". Teste ponta a ponta no banco (gerar → prévia → lançar).
+
 #### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
 
 > **Publicado em 06/11/2026.**

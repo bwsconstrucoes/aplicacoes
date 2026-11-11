@@ -448,13 +448,26 @@ def test_a_ficha_diz_quais_papeis_faltam_no_arquivo(sessao_real, dono):
     do formulário. No ERP o cadastro salva sem os papéis — senão ninguém
     consegue começar — e a ficha diz, em letras, o que falta. Pedido do dono em
     05/11/2026: *"todo documento, anexo, pdf, imagem (…) salvar no Google
-    Drive"* — é o Arquivo quem guarda, e é dele que esta lista lê."""
+    Drive"* — é o Arquivo quem guarda, e é dele que esta lista lê.
+
+    ⚑ A LISTA ENCOLHEU EM 10/11/2026, por decisão dele, e o teste guarda as
+    três saídas para ninguém recolocá-las achando que foi descuido:
+
+      · **ASO** — *"esse seria o correto, mas não. Não vamos colocar ele como
+        obrigatório ainda."*
+      · **carteira de trabalho** — *"para quem não é prestador não fica mais
+        obrigatório."*
+      · **foto do colaborador** — ela vem do PONTO, sozinha. Cobrar um papel
+        que o sistema busca é cobrar trabalho que não existe.
+    """
     from app.apps.erp.core.cadastros import pessoas as svc
     c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Quem Falta Papel"}, dono)
     falta = svc.documentos_que_faltam(sessao_real, c.id, "CTPS")
     assert "comprovante de endereço" in falta
-    assert "foto do colaborador" in falta
-    assert "carteira de trabalho" in falta
+    assert "documento de identificação (RG, CNH ou CPF)" in falta
+    assert "foto do colaborador" not in falta
+    assert "carteira de trabalho" not in falta
+    assert not [x for x in falta if "ASO" in x]
 
 
 @banco_
@@ -467,6 +480,9 @@ def test_prestador_nao_e_cobrado_de_ctps_nem_no_papel(sessao_real, dono):
     falta = svc.documentos_que_faltam(sessao_real, c.id, "PRESTADOR")
     assert "carteira de trabalho" not in falta
     assert "comprovante de endereço" in falta
+    # E continua não sendo cobrada de ninguém, desde 10/11/2026.
+    assert "carteira de trabalho" not in svc.documentos_que_faltam(
+        sessao_real, c.id, "CTPS")
 
 
 @banco_
@@ -485,14 +501,14 @@ def test_papel_arquivado_sai_da_lista_e_papel_excluido_volta_para_ela(
               mime_type="image/jpeg", hash_sha256="a" * 64, tamanho_bytes=10)
     sessao_real.add(a)
     sessao_real.flush()
-    d = Documento(tipo_codigo="FOTO-COLABORADOR", anexo_id=a.id,
-                  nome_padronizado="foto do colaborador", colaborador_id=c.id)
+    d = Documento(tipo_codigo="COMPROVANTE-ENDERECO-PESSOA", anexo_id=a.id,
+                  nome_padronizado="comprovante de endereço", colaborador_id=c.id)
     sessao_real.add(d)
     sessao_real.flush()
-    assert "foto do colaborador" not in svc.documentos_que_faltam(sessao_real, c.id)
+    assert "comprovante de endereço" not in svc.documentos_que_faltam(sessao_real, c.id)
     sessao_real.delete(d)
     sessao_real.flush()
-    assert "foto do colaborador" in svc.documentos_que_faltam(sessao_real, c.id)
+    assert "comprovante de endereço" in svc.documentos_que_faltam(sessao_real, c.id)
 
 
 # ---------------------------------------------------------------------------

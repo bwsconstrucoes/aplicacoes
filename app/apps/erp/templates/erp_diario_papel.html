@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Diário de obra — {{ r.obra.codigo }} — {{ r.de }}</title>
+{#
+  O DIÁRIO DE OBRA — o papel, não a tela.
+
+  PÁGINA PRÓPRIA, sem o `erp_base.html`, e isto não é descuido: o menu de 18
+  telas, a barra azul e o botão de filtros não existem num documento que vai
+  ser impresso e assinado. O que manda aqui é a folha A4.
+
+  ───────────────────────────────────────────────────────────────────────────
+  TRÊS MODELOS, UMA FOLHA DE DADOS (09/11/2026)
+
+  Ele mandou dois modelos e pediu: *"você ajusta aí, coloca já esses dois como
+  opção. Na nossa opção, o que tiver a mais pode colocar também (…) se os
+  dados que a gente estiver coletando estiverem mais amplos, vamos incorporar
+  também. Acho que quanto mais amplo, melhor."*
+
+    · `completo` — o nosso, com tudo o que os dois pedem;
+    · `bws`      — o que a empresa usa hoje (o PDF que ele mandou);
+    · `orgao`    — o que a Prefeitura de Abreu e Lima exige em contrato.
+
+  ⚑ OS TRÊS LEEM O MESMO DADO. Nenhum modelo pergunta nada que os outros não
+  perguntem: o que varia é o que o papel mostra e como. Foi por isso que valeu
+  "adaptar o nosso para o mais amplo" — um diário por contrato seriam três
+  telas de preenchimento, e a obra preencheria mal as três.
+
+  QUEM ESCOLHE É O CONTRATO, no cadastro da obra. A barra de cima desta página
+  troca o modelo só para VER, e não grava nada: *"tem um determinado contrato
+  que a gente vai precisar utilizar esse modelo específico."* Se a escolha
+  fosse de quem imprime, um dia sairia o papel errado para a fiscalização.
+
+  ───────────────────────────────────────────────────────────────────────────
+  ⚑ UMA FOLHA SÓ, e o que isso custa. Ele: *"o ideal é que o diário esteja
+  sempre em uma única página (…) se precisar reduzir margens, cabeçalho,
+  rodapé e nas laterais para caber mais coisa dentro. Considerar isso."*
+  Margens de 9 mm, corpo de 8,6 pt e os quadros dividindo a altura que sobra.
+  Um dia normal cabe. O que NÃO fazemos é cortar texto para caber: relato
+  muito longo transborda para uma segunda folha, porque sumir com três linhas
+  do que a obra escreveu — num documento que sustenta pedido de prazo — é pior
+  que uma folha a mais.
+
+  ⚑ POR QUE IMPRESSÃO DO NAVEGADOR e não PDF gerado no servidor: este
+  documento tem tabela, caixa, quebra de página controlada e bloco de
+  assinatura. Montar isso na biblioteca de PDF que o ERP usa (fpdf) seria
+  posicionar cada linha em milímetro, e cada modelo novo viraria trabalho de
+  milímetro de novo. Em HTML, modelo é folha de estilo.
+
+  O CUSTO DISSO, dito sem rodeio: quem gera o arquivo é a pessoa, com Ctrl+P ›
+  Salvar como PDF. O sistema NÃO produz o PDF sozinho — então ele ainda não dá
+  para anexar em e-mail automático. Se isso for preciso, é outro passo.
+#}
+<style>
+  /* ======================= A FOLHA =======================
+     Margens apertadas de propósito (ver o comentário acima). O rodapé fica
+     dentro da folha, e não na margem, porque margem de impressora varia e um
+     rodapé que some em metade das impressoras não serve de identificação. */
+  @page { size: A4 portrait; margin: 9mm 10mm 10mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+         font-size: 8.6pt; color: #1f2a37; line-height: 1.3;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* A PALETA, refeita em 09/11/2026. A primeira versão usava faixa preta com
+     letra branca em cada seção, e ele disse, com razão: *"achei ele meio
+     grosseiro, as cores. Dá uma melhorada no visual, na formatação."* Agora é
+     tinta escura sobre cinza-claro, com fio fino — leitura de documento, não
+     de cartaz. */
+  :root {
+    --tinta: #1f2a37;      /* o texto */
+    --forte: #1b3a5c;      /* o azul do título e dos rótulos de seção */
+    --fio: #aab4c0;        /* o fio fino de todas as caixas */
+    --fio-forte: #6b7785;  /* a borda externa */
+    --faixa: #eef2f7;      /* o fundo da faixa de seção */
+    --rotulo: #64748b;     /* o rótulo pequeno dentro das células */
+    --suave: #f7f9fb;      /* fundo dos quadros da fiscalização */
+  }
+
+  /* A FOLHA É UMA COLUNA QUE OCUPA A PÁGINA INTEIRA, e as assinaturas são
+     empurradas para o pé dela (`margin-top:auto` lá embaixo). Sem isso, num
+     dia de relato curto a linha de assinatura flutuava no meio da folha e o
+     documento parecia cortado — e documento que parece cortado é documento
+     que a fiscalização devolve. */
+  .folha { page-break-after: always; display: flex; flex-direction: column;
+           min-height: 274mm; }
+  .folha:last-child { page-break-after: auto; }
+
+  /* ======================= CABEÇALHO ======================= */
+  .marca { display: flex; align-items: center; gap: 10pt;
+           border: .8pt solid var(--fio-forte); border-bottom: 0;
+           padding: 5pt 8pt; }
+  .marca .meio { flex: 1; text-align: center; min-width: 0; }
+  .marca h1 { margin: 0; font-size: 13.5pt; letter-spacing: 1.4pt;
+              color: var(--forte); font-weight: 700; }
+  .marca .orgao { font-size: 8.6pt; font-weight: 700; letter-spacing: .3pt;
+                  text-transform: uppercase; }
+  .marca .unidade { font-size: 7.6pt; color: var(--rotulo);
+                    text-transform: uppercase; letter-spacing: .4pt; }
+  .marca .sub { font-size: 7.4pt; color: var(--rotulo); letter-spacing: .3pt; }
+
+  /* AS LOGOS vêm EMBUTIDAS na folha (ver core/diario.py): a imagem entra uma
+     vez aqui, numa regra de estilo, e cada folha só a aponta. Relatório de
+     três meses tem 90 folhas — repetir a imagem em cada uma faria um arquivo
+     de dezenas de megabytes para mandar por e-mail. */
+  .logo { display: block; width: 86pt; height: 38pt; flex: 0 0 86pt;
+          background-repeat: no-repeat; background-position: center;
+          background-size: contain; }
+  .logo.vazia { background: none; }
+  {% if r.logos.contratante %}
+  .logo-contratante { background-image: url("{{ r.logos.contratante }}"); }
+  {% endif %}
+  {% if r.logos.empresa %}
+  .logo-empresa { background-image: url("{{ r.logos.empresa }}"); }
+  {% endif %}
+
+  .topo { border: .8pt solid var(--fio-forte); }
+  .topo-linha { display: flex; border-bottom: .5pt solid var(--fio); }
+  .topo-linha:last-child { border-bottom: 0; }
+  .cel { padding: 2.6pt 6pt; border-right: .5pt solid var(--fio);
+         flex: 1; min-width: 0; }
+  .cel:last-child { border-right: 0; }
+  .cel span { display: block; font-size: 6.2pt; text-transform: uppercase;
+              letter-spacing: .5pt; color: var(--rotulo); }
+  .cel b { font-size: 8.8pt; font-weight: 700; }
+  .cel.leve b { font-weight: 400; }
+  .numero { text-align: center; flex: 0 0 76pt; background: var(--faixa); }
+  .numero b { font-size: 15pt; line-height: 1.05; color: var(--forte); }
+
+  /* ======================= SEÇÕES ======================= */
+  h2 { font-size: 7.2pt; text-transform: uppercase; letter-spacing: .9pt;
+       color: var(--forte); background: var(--faixa); font-weight: 700;
+       border: .5pt solid var(--fio); border-bottom: 0;
+       margin: 5pt 0 0; padding: 2.4pt 6pt; }
+  h2 small { float: right; font-weight: 400; text-transform: none;
+             letter-spacing: 0; color: var(--rotulo); font-size: 6.8pt; }
+  .quadro { border: .5pt solid var(--fio); padding: 5pt 6pt; }
+  .quadro.alto { min-height: 92pt; }
+  .quadro.medio { min-height: 46pt; }
+  .quadro.baixo { min-height: 26pt; }
+  .texto { white-space: pre-wrap; }
+  .vazio { color: #94a3b8; font-style: italic; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  th, td { border: .4pt solid var(--fio); padding: 2pt 4.5pt; text-align: left; }
+  th { background: var(--faixa); font-size: 6.6pt; text-transform: uppercase;
+       letter-spacing: .4pt; color: var(--forte); font-weight: 700; }
+  td.n, th.n { text-align: right; width: 46pt; }
+  td.c, th.c { text-align: center; }
+  tfoot td { font-weight: 700; background: #f3f6f9; }
+
+  /* As duas colunas têm de terminar na MESMA linha. Sem o `stretch`, o quadro
+     mais curto fecha antes e o documento fica com uma caixa aberta no meio —
+     num papel que vai assinado, isso parece erro de impressão. */
+  .duas { display: flex; gap: 6pt; align-items: stretch; }
+  .duas > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .duas > div > .quadro { flex: 1; }
+
+  /* O BLOCO DA FISCALIZAÇÃO é VISIVELMENTE de outro dono. Num documento que a
+     fiscalização assina, a parte dela não pode parecer escrita pela obra. */
+  .quadro.fiscal { border-left: 2.4pt solid var(--forte); background: var(--suave); }
+  .assinou { font-size: 7pt; color: var(--rotulo); margin-top: 3pt; }
+
+  /* ======================= ASSINATURAS ======================= */
+  .assinaturas { display: flex; gap: 20pt; margin-top: auto; padding-top: 20pt; }
+  .assinaturas > div { flex: 1; text-align: center; }
+  .linha-assin { border-top: .7pt solid var(--tinta); margin-top: 28pt;
+                 padding-top: 2.6pt; font-size: 8pt; }
+  .linha-assin b { display: block; }
+  .linha-assin small { display: block; color: var(--rotulo); font-size: 7pt; }
+  .papel { font-size: 6.8pt; text-transform: uppercase; letter-spacing: .6pt;
+           color: var(--forte); font-weight: 700; }
+
+  /* ⚑ `margin-top: auto` empurra o rodapé para o PÉ da folha (a folha é uma
+     coluna flex), em vez de deixá-lo colado no último quadro. E o respiro
+     caiu de 7pt para 3pt porque o modelo da Prefeitura estourava por poucos
+     milímetros e saía com uma SEGUNDA PÁGINA contendo só o rodapé — papel com
+     página em branco atrás é papel que a fiscalização devolve. */
+  .rodape { margin-top: auto; padding-top: 3pt;
+            border-top: .4pt solid var(--fio); font-size: 6.8pt;
+            color: var(--rotulo); display: flex; justify-content: space-between; }
+  .rascunho { color: #9a3412; font-weight: 700; }
+  .corrigido { margin-top: 4pt; font-size: 7pt; color: #7a4a00;
+               border: .5pt dashed #c08b14; background: #fffbf0;
+               padding: 3pt 5pt; }
+  .sem-exp { text-align: center; padding: 16pt 0; font-size: 10.5pt;
+             letter-spacing: 1.2pt; color: #475569; }
+
+  /* ======================= A BARRA QUE NÃO IMPRIME =======================
+     Ela existe para ele VER os três modelos sem mexer no cadastro. Some na
+     impressão — barra de ferramentas dentro de documento assinado seria
+     exatamente o tipo de coisa que a fiscalização devolve. */
+  .barra { max-width: 210mm; margin: 0 auto 10px; background: #fff;
+           border: 1px solid #d7dde5; border-radius: 10px; padding: 10px 14px;
+           font-size: 12px; display: flex; gap: 10px; align-items: center;
+           flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .barra b { color: #1b3a5c; }
+  .barra a { color: #1b3a5c; text-decoration: none; border: 1px solid #c7d2e0;
+             border-radius: 999px; padding: 4px 11px; }
+  .barra a.aqui { background: #1b3a5c; color: #fff; border-color: #1b3a5c; }
+  .barra .dica { color: #64748b; flex-basis: 100%; font-size: 11px; }
+  @media print { .barra { display: none; } }
+
+  @media screen {
+    body { background: #e8eaef; padding: 14px; }
+    .folha { background: #fff; width: 210mm; min-height: 297mm;
+             margin: 0 auto 14px; padding: 9mm 10mm 10mm;
+             box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+  }
+</style>
+</head>
+<body>
+
+<div class="barra">
+  <b>Modelo da folha:</b>
+  {% for m in r.modelos %}
+    <a class="{{ 'aqui' if m.valor == r.modelo else '' }}"
+       href="?de={{ r.de }}&ate={{ r.ate }}&modelo={{ m.valor }}"
+       title="{{ m.descricao }}">{{ m.rotulo }}</a>
+  {% endfor %}
+  <a href="#" onclick="window.print(); return false;"
+     style="margin-left:auto; background:#0f766e; color:#fff; border-color:#0f766e"
+     >Imprimir / salvar em PDF</a>
+  <div class="dica">
+    Esta obra está cadastrada no modelo
+    <b>{% for m in r.modelos %}{% if m.valor == r.modelo_da_obra %}{{ m.rotulo }}{% endif %}{% endfor %}</b>.
+    Trocar aqui é só para ver — o modelo que vale sai do cadastro da obra, aba
+    Contrato, porque é cláusula do contrato.
+  </div>
+</div>
+
+{% for p in r.paginas %}
+<div class="folha">
+  {% if r.modelo == "bws" %}{% include "erp_diario_papel_bws.html" %}
+  {% elif r.modelo == "orgao" %}{% include "erp_diario_papel_orgao.html" %}
+  {% else %}{% include "erp_diario_papel_completo.html" %}{% endif %}
+</div>
+{% endfor %}
+
+{% if not r.paginas %}
+<div class="folha"><div class="sem-exp">Nenhum diário escrito neste período.</div></div>
+{% endif %}
+</body>
+</html>

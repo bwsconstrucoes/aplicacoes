@@ -651,6 +651,382 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A prestação de contas ANTIGA saiu — 11/11/2026 (noite)
+
+O dono: *"eu não sei o que é essa prestação de conta antiga. Se não tá
+servindo (…) se não interessa mais, pode tirar."*
+
+**O que era:** a aba "Prestação de Contas" do menu abria uma conta PARALELA à
+do cenário — com as suas regras (Parâmetros › Regras de rateio) e as suas
+participações por projeto (Parâmetros › Participações), mais um simulador
+("cenários de rateio", `/prestacao/cenarios`). Dois caminhos para a mesma
+pergunta, com números que podiam divergir; e tudo o que ele pediu desde 09/11
+(BWS CE × demais, por período, juros por lado, batimento) só existe no cenário.
+
+**O que mudou:**
+- A aba **"Prestação de Contas" abre o resultado do cenário** (sem cenário,
+  a montagem). Os endereços antigos (`/prestacao/cenarios`, e as abas
+  `participacoes` e `regras` de Parâmetros) redirecionam para a montagem.
+- Saíram: as telas `painel_prestacao.html` e `painel_prestacao_cenarios.html`,
+  as abas Participações e Regras de rateio de Parâmetros (inclusive a árvore
+  de regras feita na manhã do mesmo dia — nunca foi publicada), as planilhas
+  "posicao"/"quotas" e as funções da conta antiga no `web.py`
+  (`_calcular_prestacao`, `_apurar_com`, `_base_da_prestacao`,
+  `_cenario_do_pedido`).
+- Parâmetros ficou com os cadastros de apoio: Sócios, Ajustes, Fora da
+  análise, Projeto das obras, Parâmetros gerais. A montagem ganhou o botão
+  "⚙ Cadastros".
+- **NADA FOI APAGADO DO BANCO:** as tabelas `regras` e `participacoes`
+  continuam com o que tinham. As funções de cálculo em `prestacao.py`
+  (`calcular_rateio`, `quotas_por_socio`…) e as de dados em
+  `prestacao_dados.py` ficaram, com os testes delas — voltar é religar a tela.
+
+**⚠️ MUDANÇA DE ACESSO, dita ao dono antes de publicar:** a tela antiga era
+liberável a quem tem login próprio (a caixinha "Prestação de Contas" no
+cadastro de acesso) — e mostrava a empresa inteira, sem filtro de obra. O
+cenário é só do administrador. Então quem tinha essa tela marcada **deixa de
+ver a aba**; a caixinha saiu do cadastro (`usuarios.TELAS`) e a aba não
+aparece mais no menu de quem não é o administrador
+(`web.ABAS_SO_DO_ADMINISTRADOR`). Se um parceiro precisar ver a parte dele, é
+uma tela nova, com filtro — não a volta da antiga.
+
+## "Como é feita", a montagem em passos e a obra fora que ainda aparecia — 11/11/2026 (noite)
+
+O dono: *"vá além do que eu comentei na parte da facilitação (…) eu quero
+mostrar essa tela para os outros sócios, para eles entenderem como é que a
+coisa está sendo feita. Eles precisam bater o olho e entender."* E: *"queria
+parâmetro para não exibir uma determinada obra na tela da prestação (…) acho
+que desconsidera para efeito de rateio, mas ainda aparece na tela. Não quero
+que apareça."* E perguntou se já existe projeto que entra no rateio do custo
+da matriz só até uma data.
+
+- **Página nova, só de leitura: "Como esta prestação é feita"**
+  (`/painel/prestacao/como`, `_explicacao_do_cenario`). O cenário dito em
+  português, na ordem em que a conta acontece, com os valores: (1) quanto a
+  estrutura custou e quanto entra; (2) quanto de cada despesa vai para o
+  projeto principal e quanto para os demais, por período, com as categorias
+  que fogem do grupo; (3) a régua dentro de cada lado e quem não recebe ou só
+  recebe até um mês; (4) os juros; (5) quem divide, por projeto e por obra;
+  (6) o que fica de fora (só a contagem; os nomes recolhidos). Tem "Imprimir".
+  Não calcula nada novo: lê a mesma árvore da montagem.
+- **A obra fora aparecia, sim** — ele tinha razão: o nome ficava num aviso no
+  topo do resultado ("Fora da análise neste cenário: …"), e a obra de projeto
+  que "não recebe" saía pelo nome na lista de juros por obra (o caixa dela
+  conta nos juros). Agora os nomes ficam recolhidos ("N obra(s) fora desta
+  prestação — ver quais"), a lista de juros junta as de fora numa linha sem
+  nome, e o gráfico nunca abre numa obra de fora. NÃO foi criado um parâmetro
+  novo: "Fora totalmente" já é "não considerar E não mostrar".
+- **A montagem em passos numerados**, na ordem em que se configura, com um
+  índice fixo no topo: 1 O que se divide · 2 Quem recebe · 3 Quem divide o
+  resultado · 4 Fora da análise · 5 Régua e juros (foi para o fim: escolhe-se
+  uma vez). Os cartões são os mesmos, reordenados.
+- **Parâmetros:** as abas "Participações" e "Regras de rateio" foram para o
+  fim do menu com "(prestação antiga)" no nome. Não foram apagadas — o dono
+  não respondeu se aposenta a Prestação de Contas antiga.
+- **Projeto que recebe só até uma data:** já existia (passo 2, "recebe só no
+  período", com De/Até) e foi confirmado ao dono. Diferença para "Fora da
+  análise › considerar só até": lá a obra sai da prestação inteira depois do
+  mês; aqui ela só deixa de receber custo da matriz e continua no resultado.
+
+## A parte do BWS CE à vista, quem divide por projeto, sócios em lote — 11/11/2026 (noite)
+
+O dono, depois de usar: *"eu vou incluir um sócio, clica, demora um tempo para
+cadastrar, e vai isso de um por um (…) tem uns 10 projetos, um projeto às
+vezes tem 4 sócios, eu tenho que adicionar de um por um (…) eu boto 100 pro
+grupo, mas se eu botar uma categoria específica, meio a meio, vai funcionar?
+(…) o grupo de pessoal eu vou variar o percentual por ano (…) vou definir o
+período e o percentual do BWS CE naquele período — **e eu nem enxerguei isso
+aí**. Eu tenho que completar todos os períodos, né?"*
+
+**O que já existia e ele não achou:** na montagem do cenário, o grupo tem o
+percentual, a categoria em branco segue o grupo, a categoria preenchida ganha
+dele, e cada conta pode ter períodos "a partir de MM/AAAA" com a parte do
+projeto principal. Estava atrás de um link pequeno, "📅 por período".
+
+**O que mudou:**
+- **Coluna "Para o BWS CE"** em "O que se divide": mostra por extenso o que a
+  linha tem ("50% desde 01/2021 · 40% desde 01/2022") e é o botão que abre os
+  períodos; sem nada, "＋ definir"; na categoria, "segue o grupo ✎".
+- A linha de período pede primeiro a parte do principal; o "entra no rateio"
+  já vem com o percentual que a linha divide hoje. **Mês em branco = desde o
+  início** (`cenarios.DESDE_O_INICIO` = "1900-01") — o caso de um percentual
+  só não pede mês. A dica diz desde quando a matriz tem custo e que NÃO é
+  preciso completar todos os períodos: cada linha vale até a próxima começar.
+- **Quem divide por PROJETO** (cálculo novo): a grade do cenário ganhou uma
+  linha por projeto, sempre à vista. Precedência: obra nomeada > projeto >
+  "Todas as obras". Sem migração: a participação do projeto é gravada com a
+  obra `projeto:NOME` (`prestacao.PROJETO_NA_PARTICIPACAO`).
+- **Sócios em lote:** a aba virou uma lista com um "Salvar tudo" — os
+  existentes editam na linha, e cinco linhas em branco cadastram vários de uma
+  vez. Nome repetido não grava nada.
+- **Mais rápido de salvar:** a aba de Parâmetros lia, a cada salvada de
+  QUALQUER aba, duas listas que varrem a base inteira (grupos e categorias);
+  agora só na aba que usa, e lembradas até a próxima carga. A despesa da
+  matriz (que a montagem relê a cada Salvar) também fica lembrada. NÃO MEDIDO
+  em produção quanto isso tira da espera.
+
+**Duas telas, e qual usar (dito ao dono):** a montagem do cenário é onde vale
+"grupo 100, categoria diferente, parte do BWS CE por período". Parâmetros ›
+Regras de rateio e Parâmetros › Participações alimentam só a Prestação de
+Contas antiga. Decisão que fica com ele: aposentar a antiga.
+
+## Regras de rateio em árvore, e regra e ajuste editáveis — 11/11/2026
+
+O dono: *"na hora de criar regras de rateio não tá tendo correlação entre o
+grupo e a categoria. Tá terrível. Na verdade toda a parte de parâmetros ficou
+super complicada de configurar, considerando que são várias regras, vários
+projetos, vários sócios, várias participações. Tá muito complicado de lançar
+cada ajuste."*
+
+- **Regras:** as duas listas soltas (todos os grupos numa, todas as categorias
+  na outra) viraram uma ÁRVORE — cada grupo abre nas categorias dele, com o
+  valor ao lado (matriz + filial). Marcar o grupo pega todas as categorias
+  (elas aparecem marcadas e travadas; só o grupo é gravado). Busca por grupo
+  ou categoria. Só aparecem as despesas dos departamentos administrativos, que
+  é o que a regra alcança. O período virou campo de mês (MM/AAAA).
+- **Regra editável:** botão "Editar" na lista abre a regra no formulário, com a
+  árvore já marcada. O que ela marca e não existe mais na base aparece num
+  grupo à parte, para não sumir ao salvar. Antes: apagar e refazer.
+- **Ajuste editável na linha** (data, sócio, tipo, valor, descrição).
+- Com isto, e com o que entrou hoje (participações em grade, sócio na linha,
+  fora da análise numa lista), toda aba de Parâmetros edita no lugar. O que NÃO
+  foi feito: juntar tudo num assistente só / importar de planilha. Se ainda
+  estiver pesado, a pergunta para o dono é em qual aba ele gasta mais tempo.
+
+## Fora da análise: totalmente, ou só até um mês — 11/11/2026
+
+O dono: *"o fora da análise não tá direito (…) colocar totalmente fora da
+análise ou colocar até determinado período. É isso que eu preciso em relação a
+considerar a obra ou projeto, ou não."*
+
+- Cada projeto e cada obra escolhe, numa lista só com um Salvar: **Considerar**,
+  **Fora totalmente** ou **Considerar só até MM/AAAA**. Vale em Parâmetros ›
+  Fora da análise (para tudo) e na montagem de cada cenário (só para ele).
+- "Só até 06/2024" = entra com o que aconteceu até 06/2024, inclusive; dali em
+  diante sai da apuração (receita e despesa), da régua (pessoal ou
+  faturamento) e do caixa dos juros. Lançamento SEM DATA de obra com corte
+  também sai. Obra nomeada por ela e pelo projeto: vale o mês mais cedo.
+- Sem migração: o mês vai no próprio item — `obra:CASA@2024-06`
+  (`prestacao.ler_item_fora`). O item sem mês continua sendo "fora totalmente",
+  então o que já estava gravado segue valendo igual.
+- As telas de resultado (prestação e cenário) avisam quais obras estão
+  "consideradas só até".
+- NÃO PERGUNTADO ao dono, assumido: "até determinado período" = considerar ATÉ
+  o mês e tirar depois (obra que saiu da sociedade/encerrou). Se for o
+  contrário (fora até o mês, e entra depois), é trocar o sinal em
+  `depois_do_corte` — e o texto da tela.
+
+## "Painel muito lento hoje" — 11/11/2026
+
+**Achado e confirmado em teste:** o recálculo ("Recalculando os números do
+painel", que fecha toda atualização) esvaziava o fato com `TRUNCATE` dentro da
+transação. TRUNCATE trava a tabela INTEIRA até o commit: durante os minutos do
+recálculo, toda tela que lê o fato ESPERA — o dono: *"cliquei Receitas na DRE
+e já tá há muito tempo rodando e não mostra a tela"*. Com 4 vias de
+atendimento, quatro telas presas param o serviço inteiro (ERP junto). O
+comentário da função prometia que as telas continuavam vendo o fato antigo;
+com TRUNCATE não viam. Agora é `DELETE` (fato e recebimentos): a leitura
+concorrente volta na hora, com os números de antes. Teste:
+`test_as_telas_leem_o_fato_antigo_durante_o_recalculo` (falha com TRUNCATE,
+passa com DELETE). Preço: linhas mortas até o autovacuum passar. Não confirmado
+que era ESTA a lentidão dele hoje — mas casa com atualizações tentando rodar
+o dia todo.
+
+Com a releitura de todos os pagamentos tentando terminar a cada atualização.
+Não medido em produção (a causa não está confirmada). Feito o que é seguro: o
+processo da atualização entra com prioridade baixa (`os.nice(10)`, em
+`executar_sync`) — divide o servidor com as telas e com o ERP. Não alivia o
+BANCO; se a lentidão vier dele, o rodapé de cada tela ("Tela montada em X ms
+— N consultas, Y ms delas") mostra.
+
+## O juro de empréstimo contado duas vezes — 11/11/2026
+
+O dono: *"não sei se tô certo, mas tô achando que o juro de empréstimo tá
+sendo contado duas vezes, dentro de rateio recebido e em juros de
+empréstimo"*. **Estava certo, num caso, reproduzido em teste:** o lançamento
+de juro com percentual PRÓPRIO na árvore do cenário (marcado um a um ou em
+lote). `separar_juros` tirava o juro do agregado e o mandava para a régua do
+déficit, mas a exceção (o lançamento marcado) entrava no bolo do rateio do
+mesmo jeito. No teste: matriz com 900 + 300 + 600 de juro, o juro marcado a
+100% — o rateio distribuía 1.800 em vez de 1.200, e os juros mais 600.
+
+A árvore da tela já mostrava certo (juro na coluna dos juros, fora do
+"entra"); só a conta errava — o resultado não batia com a árvore.
+
+**Conserto:** `prestacao.tirar_juros_das_excecoes` — com o juro pelo déficit
+ligado, lançamento de categoria de juro não entra como exceção no rateio.
+Teste: `test_juro_marcado_um_a_um_nao_e_contado_duas_vezes`.
+NÃO VERIFICADO com o cenário real dele: se o caso dele é esse (juro marcado na
+árvore) ou outro. Outra causa possível, que não é contagem dupla: categoria de
+juro que NÃO está marcada na lista de juros (Parâmetros gerais) vai para o
+rateio pela régua da estrutura, e não para o déficit.
+
+## Sócios e participações: editar na linha, e a grade — 11/11/2026
+
+O dono: *"as participações e os sócios não podem ser editadas"* e, em
+seguida, *"tá muito difícil e lento de configurar as participações"*. Era uma
+participação por envio (escolher projeto/obra, sócio, percentual, salvar,
+esperar a página) e nada se editava: para mudar um percentual, remover e
+cadastrar de novo; sócio não se renomeava.
+
+**O que mudou:**
+- **Participações viraram uma GRADE**, nas duas telas: linhas = projetos
+  (Parâmetros › Participações) ou obras ("Quem divide" do cenário, com
+  "Todas as obras" na primeira linha), colunas = sócios ativos, **um "Salvar
+  tudo"**. Célula vazia = não participa (apaga a que havia). A soma de cada
+  linha aparece ao lado, verde em 100%, vermelha fora disso. Busca por nome;
+  "só os que já têm percentual" (no cenário vem marcado — são ~150 obras, e
+  procurar uma mostra a linha dela mesmo vazia). Em Parâmetros, "Copiar a 1ª
+  linha nas vazias". No cenário NÃO há copiar: preencher uma obra a tira da
+  regra geral, e copiar em massa criaria 150 exceções.
+- A grade confere TUDO antes de gravar: um percentual inválido (texto, fora de
+  0–100) volta para a tela com o aviso e nada é gravado.
+- **Sócio edita na linha**: nome e tipo, com Salvar por linha; nome repetido é
+  recusado. Desativado ganha **Reativar** (antes não tinha volta).
+- Os campos da grade são `linha` (o nome, na ordem) e `pct_<i>_<sócio>` — o
+  nome da obra não vai no nome do campo (tem espaço, barra, acento).
+
+## "Tento, tento e nunca fecha": a releitura de pagamentos passa a ser mês a mês — 11/11/2026
+
+O dono rodou "Reler os pagamentos" e a tela mostrou "2021: página 324 de 378 —
+depois dele, mais 5 ano(s)", e o passo das obras dos lançamentos de conta com
+✖. *"Fica impossível assim. Tento, tento e nunca fecha."*
+
+**O que o código mostra (a mensagem de erro da execução não chegou a ser
+vista — pedida ao dono):**
+- a releitura gravava ANO A ANO, cada ano numa transação: 2021 tem 378
+  páginas. Se a execução morre no meio (reinício do serviço, espera do OMIE
+  maior que 10 min, publicação), o ano inteiro volta para a página 1;
+- a releitura aberta e não terminada TRAVA o recálculo de todas as
+  atualizações (regra de 06/10/2026: recalcular com pagamentos faltando
+  mostraria o painel errado). Então toda atualização — inclusive a da
+  madrugada — tentava terminar 2021 e os 5 anos seguintes;
+- escolher anos na tela não troca uma releitura aberta: ela é terminada
+  primeiro. Por isso "mais 5 anos" mesmo que o dono tenha marcado só dois;
+- a tela pôs o texto da releitura ("2021: página 324") no passo das obras:
+  o sinal de vida das chamadas ao OMIE repetia o texto da última etapa
+  anunciada pela leitura.
+
+**O que mudou:**
+1. A releitura grava **mês a mês** (`CHAVE_MESES_RELIDOS`): cada mês é apagado
+   e regravado numa transação, com a marca junto. Um corte custa no máximo o
+   mês em que estava; a tentativa seguinte (inclusive a retomada automática e
+   a atualização da madrugada) segue do mês seguinte. A releitura aberta hoje
+   em produção (anos sem marca de mês) recomeça 2021 de janeiro — mas agora
+   cada mês fica.
+2. Mudar de etapa troca também o texto que o sinal de vida repete.
+
+## "(não apropriado)" no painel, apropriado no OMIE — 10/11/2026
+
+O dono achou o lançamento 709.793.529 (28/12/2020, tarifa do Cartão Brasil,
+R$ 1.280,31) como "(não apropriado)" no painel e apropriado no OMIE —
+*"situação gravíssima"*. Lembrou também que "em algum momento não tínhamos
+tantos não apropriados, depois surgiu muitos".
+
+**O que se sabe, e o que não.** A base de produção não abre daqui, então a
+causa DESTE lançamento não está confirmada. O que o código mostra:
+- desde 07/10/2026 os lançamentos feitos direto na conta entram no painel —
+  antes nem apareciam. É isso que bate com "depois surgiu muitos";
+- a obra deles vem de uma consulta ao OMIE, uma por lançamento. As
+  atualizações comuns perguntam até 600 por vez, do mais recente para trás, e
+  só "Reler os pagamentos" de 1 ou 2 anos pergunta todos daquele ano. Um
+  lançamento de 2020 pode simplesmente nunca ter sido perguntado;
+- quem o OMIE recusou 3 vezes deixava de ser perguntado para sempre;
+- e o painel mostrava TUDO isso como "(não apropriado)" — o mesmo nome de
+  "o OMIE disse que não tem obra". Era o painel afirmando o que não sabia.
+
+**O que mudou:**
+1. Rótulo próprio: **"(obra ainda não lida do OMIE)"** para o lançamento que
+   não foi perguntado (ou foi recusado). "(não apropriado)" passa a ser só o
+   que o OMIE respondeu sem obra. Na prestação os dois valem igual (sem lado).
+2. Botão novo, **"Ler as obras dos lançamentos de conta"**: pergunta TODOS os
+   que faltam, de todos os anos, inclusive os recusados 3 vezes, e refaz os
+   números. Só lê do OMIE. Pode parar e continuar (o respondido fica guardado).
+   NÃO MEDIDO: quantos são em produção, nem quanto tempo leva — o quadro novo
+   (abaixo) diz quantos faltam antes de apertar.
+3. Em Configurações › Conferências, o quadro dos lançamentos de conta diz
+   quantos estão com obra lida, sem obra pelo OMIE, não perguntados (por
+   ano), recusados e sem número.
+4. No cartão "Baixar um lançamento de conta corrente", o botão **"O que o
+   painel tem dele"**: o movimento, a resposta guardada (ou o erro) e as
+   linhas do painel, com uma frase dizendo por que está assim. Não chama o
+   OMIE. É como se confirma a causa do 709.793.529.
+5. A resposta é guardada pelo número PERGUNTADO (nCodMovCC) e a linha leva o
+   nCodLanc. Hoje são iguais (confirmado em produção em 07/10), mas o fato
+   agora procura pelos dois — uma diferença futura não some em silêncio.
+
+**Reler os pagamentos também resolve, se for de 1 ou 2 anos por vez**: essa
+releitura pergunta a obra de TODOS os lançamentos de conta daqueles anos, sem
+o teto de 600 (é por isso que 2026, relido sozinho, ficou certo). Relendo
+"todos os anos" de uma vez, vale o teto. O botão novo faz só a parte da obra,
+de todos os anos, sem reler os pagamentos. As linhas SEM número ("—" no
+Explorador) só se resolvem relendo os pagamentos do período.
+
+O dono, na mesma conversa: *"foram feitas mudanças na interpretação dos
+títulos. Esses títulos estão apropriados e antes não tinha esse problema."*
+O que o código diz sobre "antes": até 07/10/2026 o pagamento que o OMIE manda
+SEM título ligado (é o único que ganha a marca "[lançamento de conta
+corrente]") não entrava no painel — nem como "(não apropriado)", nem em
+número nenhum. Teste combinado para confirmar com dado: "Baixar um lançamento
+de conta corrente do OMIE" com 709793529 — se vier com a obra, é lançamento de
+conta apropriado que o painel ainda não perguntou; se o OMIE disser "não
+cadastrado", a leitura acima está errada e é preciso olhar o dia cru
+(28/12/2020).
+
+**CONFIRMADO no mesmo dia.** O dono baixou o 709793529 e o OMIE devolveu o
+lançamento com `departamentos: [{cCodDep: 583753491, nPerDep: 100, nValDep:
+1280.31}]` (origem EXTP, conciliado em 08/03/2021). É lançamento de conta,
+apropriado no OMIE, que o painel nunca tinha perguntado. A resposta real virou
+teste (`test_painel_explorador_lancamento_cc.py`, `RESPOSTA_REAL`), e é a
+primeira vez que se vê o formato inteiro da consulta: `nCodAgrup`,
+`detalhes.aCodCateg` (categoria múltipla — tirada ao trocar a categoria),
+`transferencia`, `diversos` (dados da conciliação) e `info`.
+
+## O Explorador e as tarifas: trocar a obra de lançamento de conta — 10/11/2026
+
+O dono filtrou "Taxas, Tarifas Bancárias e IOF" (~600 linhas, quase todas
+"(não apropriado)") para pôr tudo numa obra só, e trouxe três coisas:
+
+1. **"Tem horas que você marca um e ele marca vários."** Duas causas. Uma é de
+   propósito: o título (ou lançamento) dividido entre obras aparece em várias
+   linhas, e no OMIE é um registro só. A outra era defeito: o lançamento de
+   conta lido antes da migração 021 está guardado **sem número**, e a linha saía
+   com o número "None" — todas as sem número viravam "o mesmo título". Agora a
+   linha sem número não tem caixa de marcar nem é editável (a dica diz: releia
+   os pagamentos do período e o número aparece).
+2. **Trocou a obra de uma tarifa e o OMIE respondeu "Lançamento não cadastrado
+   para o Código [11266605823]".** Nada foi alterado. A tarifa é lançamento
+   feito direto na conta corrente, não título, e o painel perguntava por ela no
+   endereço dos títulos. Agora o lançamento de conta (reconhecido pela marca
+   na observação do fato) vai pelo endereço dele: consulta `ConsultaLancCC`
+   (a mesma da apropriação, conferida em produção) e grava com
+   **`AlterarLancCC`** — partindo do lançamento consultado, com a obra inteira
+   em VALOR (`cCodDep` + `nValDep`, o formato do `IncluirLancCC` que o Make do
+   dono usa). **NÃO CONFERIDO contra o OMIE real:** o nome do método e se o
+   OMIE aceita o lançamento inteiro de volta. Protocolo: ensaio → UMA tarifa
+   → conferir no OMIE → lote. Também não se sabe se o OMIE deixa alterar
+   lançamento já conciliado; se recusar, o motivo aparece na coluna Resultado.
+   - A trava do rateio vale para ele (dividido entre obras é recusado, salvo
+     "aceito desfazer"); "(não apropriado)" não conta como obra.
+   - **Excluir recusa lançamento de conta**: o número dele, mandado ao
+     endereço dos títulos, poderia apagar o título que tivesse o mesmo número.
+3. **"Qual atualização eu faço para aparecer no painel?"** Para o lançamento de
+   conta a resposta antiga era pior que "uma atualização": nenhuma trazia — a
+   apropriação guardada nunca é perguntada de novo. Agora o que o OMIE aceita
+   **vai para o painel na hora** (`saneamento.refletir_no_painel`): obra,
+   projeto e categoria nas linhas do fato; no lançamento de conta também a
+   apropriação guardada (o lançamento COMO FOI ENVIADO — consultar de novo em
+   segundos é "consumo redundante" para o OMIE) e a categoria do movimento,
+   para "Só refazer os números" não desfazer nada. Título continua com o
+   espelho antigo até a "Atualização do dia", que relê os alterados.
+
+**Lote acima de 200:** o teto continua 200 por envio (decisão antiga: engano de
+seleção não vira estrago de mil). Mas agora o envio manda os 200 primeiros (com
+aviso) em vez de recusar tudo, e "mudar a obra dos marcados" pula quem já está
+na obra escolhida. Para 600 tarifas: marcar todos → mudar a obra → alterar;
+repetir três vezes — as já enviadas saem sozinhas, porque a lista volta com a
+obra nova.
+
 ## O Explorador foi reprovado e refeito — 13/09/2026
 
 O dono abriu a primeira versão e reprovou, com razão. Três defeitos, e nenhum
@@ -2557,6 +2933,165 @@ empréstimo, financeira, banco, tarifa) vêm primeiro, e as marcadas no topo.
 Grava no mesmo formato ("a; b; c") que o cálculo já lia — nada mudou na conta.
 Sobre "mês em que ninguém estava no vermelho": o dono observou que, se há
 empréstimo, alguma obra estava no vermelho; a opção ficou como está.
+
+## Revisão da conta do cenário contra o que o dono pediu — 10/11/2026
+
+Pedido do dono: revisar o desenho e a conta (05 a 09/11), **sem mexer em
+código**. Nada foi alterado; o que segue é o que a revisão achou, conferido
+rodando `prestacao.py` com números pequenos. O que foi feito com cada um
+está logo abaixo, em "O que o dono decidiu".
+
+Dá número errado (confirmado na conta):
+
+1. **Lançamento marcado um a um é descontado duas vezes** quando a mesma
+   categoria, no mesmo mês, existe nos dois departamentos administrativos
+   (matriz e filial). `calcular_rateio_do_cenario` guarda o desconto por
+   (mês, grupo, categoria), mas `despesa_administrativa` devolve uma linha por
+   departamento — e o desconto sai de cada uma. Ex.: 1.000 + 300, lançamento de
+   400 marcado com 100% → rateia 900 em vez de 1.300. A árvore da montagem
+   soma certo, então tela e conta divergem.
+2. **Afinar a categoria faz ela perder os dois lados.** A parte do principal
+   só vem do período que deu o percentual (`peso_e_divisao`). Categoria com
+   percentual fixo, ou com período próprio sem a parte do principal, ou
+   lançamento marcado, dentro de um grupo "40% BWS CE", vira "sem separar" —
+   em branco ali não quer dizer "segue o grupo", ao contrário do percentual.
+3. **O que "fica de fora" não vai para ninguém** — nem para sobra. Com
+   "entra" abaixo de 100% (ou percentual padrão do cenário abaixo de 100), o
+   resto some do resultado. O dono disse "nada fica sem dono".
+4. **Lado sem obra na régua no mês entrega a parte ao outro lado**, sem
+   aviso (ex.: nenhuma obra do BWS CE com mão de obra naquele mês → 100% para
+   os demais). Foi lido de "nada fica sem dono"; ele não pediu isso com essas
+   palavras. Com régua de faturamento e janela de 1 mês acontece mais.
+
+Decisão dele, não defeito:
+
+5. Projeto "não recebe" sai também da régua dos **juros** — o buraco dele não
+   conta e as outras obras pagam.
+6. Obra encerrada no prejuízo fica no vermelho para sempre e segue levando
+   juro todo mês. "(não apropriado)" entra como obra: recebe estrutura e juro.
+7. Aporte não abate o buraco da obra (pendência de 21/09, ainda sem resposta).
+
+Menores: participações que não somam 100% não têm aviso; "(nenhum)" no
+projeto principal volta para o `projeto_matriz`; sem principal nenhum, a parte
+separada some sem virar sobra; a memória mês a mês não mostra quanto foi para
+cada lado; sem a migração 024 aplicada, os períodos digitados não são gravados
+e a tela não avisa.
+
+### O que o dono decidiu, e o que foi feito — 10/11/2026 (mesmo dia)
+
+> *"O que fica de fora some. Tem que somar 100%, né? Se não somou, tem que ser
+> criticado para ajustar. Todo mês vai ter mão de obra, então não se preocupe
+> em relação ao 4. O projeto que terminou com prejuízo, acho que ele tem que
+> encerrar. A gente tem que fazer um ponto de corte. Terminou de gastar com
+> mão de obra, terminou de receber juros. E é muito importante esse batimento
+> (…) o próprio sistema fazer esse somatório e identificar que bate com o valor
+> global (…) e a gente, com o relatório, poder fazer a checagem manual também."*
+
+- **Itens 1 e 2 consertados** (`calcular_rateio_do_cenario` soma a conta
+  antes de tirar o lançamento marcado; em `peso_e_divisao` a parte do
+  principal em branco segue o nível de cima). Sem projeto principal, a parte
+  separada volta para a régua comum em vez de sumir.
+- **Item 3 — critica, não bloqueia.** A conta passa a guardar o que ficou de
+  fora (por mês e por conta). A montagem avisa em vermelho quando há valor de
+  fora; o batimento do resultado diz "não fecha" enquanto houver. Não foi
+  proibido salvar abaixo de 100%: *interpretação minha* de "criticado para
+  ajustar" — se ele quiser impedir, é trocar o aviso por recusa.
+- **Item 4 — fica como está**, por decisão dele.
+- **Item 6 — ponto de corte dos juros** (`corte_dos_juros`): a obra deixa de
+  receber juro depois do último mês com custo de pessoal. Obra que nunca teve
+  pessoal usa o último mês com movimento de caixa (*escolha minha*, para ela
+  não ficar isenta para sempre). Vale no cenário **e na Prestação antiga** —
+  os números de juros por obra das duas telas mudam. Juro de mês em que
+  ninguém mais conta vira "sem dono", visível.
+- **Batimento** (`prestacao.batimento`): custo global da matriz = estrutura
+  para o principal + para os demais + juros nas obras + sem dono + ficou de
+  fora, mês a mês, com tolerância de R$ 1,00 por mês (centavos da divisão).
+  Quadro novo na tela de resultado do cenário, e duas abas na planilha
+  ("Batimento" e "Ficou de fora"). Critica também participações que não somam
+  100%. O "custo global" sai da mesma leitura da conta (departamentos
+  administrativos, análise DRE) — a conferência de fora é comparar esse número
+  com o DRE filtrado pelos dois departamentos.
+- Itens 5 e 7: respondidos logo depois — ver a seção seguinte.
+- Sem migração. **Não verificado:** a tela com a base real — só testes.
+
+### O caixa é de cada lado, e aporte abate o buraco — 10/11/2026 (mesmo dia)
+
+A resposta do dono aos itens 5 e 7:
+
+> *"O caixa gerado em BWSCE dá suporte a obras que ainda não receberam de um
+> lado. E do outro lado, todos os demais projetos se ajudam, ou seja, o caixa
+> gerado pelas obras serve para cobrir o buraco de obra que ainda não recebeu,
+> e aporte abate buraco sim."*
+
+Como foi lido, e feito (`alocar_juros_por_deficit`, parâmetro `lado_de`):
+
+- **O que demanda dinheiro emprestado é o buraco LÍQUIDO de cada lado** — a
+  soma do caixa acumulado de todas as obras do lado, as que sobram cobrindo as
+  que faltam. O juro do mês se reparte entre os dois lados pela falta líquida
+  de cada um; dentro do lado, entre as obras no vermelho, pelo buraco de cada
+  uma. **Lado que se cobre sozinho não paga juro**, mesmo com obra no
+  vermelho dentro dele. Se os dois se cobrem, o juro do mês fica "sem dono".
+- **Aporte abate:** o aporte líquido da obra (entrou menos devolveu, pela
+  MESMA regra do bloco de aportes do DRE — `consultas.aporte_mensal_por_obra`)
+  soma no caixa dela. O gráfico da vida da obra passa a mostrar o caixa já
+  com o aporte.
+- **Projeto que "não recebe" volta a contar nos juros:** continua fora do
+  resultado e das quotas, mas o caixa das obras dele entra na conta do lado
+  (ajuda quando sobra, pesa quando falta). Se uma obra dele estiver no
+  vermelho, o juro que cabe a ela aparece na lista de juros por obra e numa
+  nota do batimento — não some. "Fora da análise" continua fora de tudo.
+- A memória mês a mês dos juros (planilha) ganhou a falta de caixa de cada
+  lado. Vale também na Prestação antiga (matriz × filial são os dois lados).
+
+*Escolhas minhas, a confirmar:* (a) **dividendo pago não reduz o caixa da
+obra** — só aporte e devolução de aporte entram; obra que lucrou e distribuiu
+continua aparecendo como "sobrando" e cobrindo as outras; (b) a sobra de obra
+já encerrada continua ajudando o lado, o buraco dela não conta (ponto de
+corte); (c) obra sem projeto e "(não apropriado)" ficam no lado dos demais.
+
+**Não coberto por teste:** o caminho do projeto "não recebe" dentro dos juros
+(a base de teste tem um projeto só). **Não verificado:** nada disto com a base
+real — é provável que o total de juros "sem dono" suba, e é o primeiro número
+a olhar no batimento.
+
+### As três escolhas, respondidas pelo dono — 10/11/2026 (noite)
+
+> *"O dividendo pago diminui caixa. E a obra encerrada, a sobra continua
+> ajudando. (…) Não apropriado não fica em canto nenhum. Não apropriado eu
+> tenho que analisar e apropriar. E obra sem projeto não é para ter (…) todos
+> é para ter projeto."*
+
+- **Dividendo pago diminui o caixa da obra** na régua dos juros (só o que
+  SAI, critério do quadro de dividendos) — em `aporte_mensal_por_obra`.
+- **Sobra de obra encerrada continua ajudando o lado** — já era assim.
+- **"(não apropriado)" e obra sem projeto não ficam em lado nenhum** (só no
+  cenário): aparecem no resultado para serem vistas e corrigidas, mas não
+  recebem estrutura nem juros, não pesam na régua e o caixa delas não entra em
+  lado nenhum. O aviso da tela de resultado diz isso. O dono vai conferir se
+  existe obra sem projeto — "não é para ter".
+
+**Estado:** tudo no ramo `claude/exciting-wright-0zlwmj`, **não publicado**;
+sem migração. Falta o dono conferir o batimento com a base real e dizer "pode".
+
+## Transferência entre contas saiu do "(não apropriado)"; o ramo do outro chat — 10/11/2026
+
+**O ramo do outro chat.** A revisão da prestação (seção "Revisão da conta do
+cenário…", 10/11) foi feita num chat paralelo, no ramo
+`claude/exciting-wright-0zlwmj`, e NÃO tinha sido publicada nem trazida para
+este. O dono pediu para resgatar: o ramo foi juntado aqui, sem conflito, com
+todos os testes do painel passando. Ao começar uma sessão nesta área, conferir
+se há ramo de outro chat com trabalho do painel por publicar.
+
+**As transferências no "(não apropriado)".** O dono, no Explorador: *"muita
+coisa que é saída de transferência e entrada de transferência (…) não é uma
+simples transferência? Como é que isso vai estar apropriado? Antes isso nunca
+tinha acontecido."* Causa: desde 07/10/2026 os lançamentos de conta corrente
+entram no fato, e as transferências entre contas da empresa (TRAP/TRAR, tipo
+TRA, categoria 0.01.x) entravam sem obra — logo como "(não apropriado)", a
+lista do que alguém precisa apropriar. Agora levam o rótulo
+`(transferência entre contas)`, sem projeto, e esse rótulo não aparece na
+lista de obras da barra lateral. Continuam TRF (fora das telas no filtro
+padrão). Vale depois do próximo recálculo ("Só refazer os números" basta).
 
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 

@@ -154,10 +154,41 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     login, saída, saúde, o agente, a porta dos comprovantes (que se defende por
     segredo) e as duas do PWA. Rota pública é superfície de ataque, e esta lista
     só deve encolher.
+
+    **A DÉCIMA E A DÉCIMA PRIMEIRA ENTRARAM EM 10/11/2026: as duas do
+    PORTAL** — procurar o colaborador e ler o documento anexado.
+
+    ⚑ ELAS NÃO SÃO ABERTAS, e a palavra "pública" aqui engana: o portal tem
+    autenticação PRÓPRIA, a do ponto, e as duas chamam `quem_esta()` na
+    primeira linha — quem não entrou leva 401. Elas estão nesta lista porque
+    o guard do ERP olha a sessão do ERP, que o portal não usa; a mesma razão
+    pela qual a tela do portal já estava aqui.
+
+    O que elas expõem a quem ENTROU: a busca devolve no máximo 20 pessoas,
+    só das obras que a pessoa alcança, e o CPF volta com os três últimos
+    dígitos — nunca inteiro. Foi de propósito: a caixinha antiga descia com
+    até 500 nomes, e pôr o CPF de todos no navegador para poder filtrar ali
+    seria entregar o cadastro a quem abrisse o código da página.
+
+    **A NONA ENTROU EM 10/11/2026: "esqueci minha senha".** Pelo mesmo motivo
+    da oitava — quem esqueceu a senha não tem como entrar para pedir. Ela não
+    diz se a conta existe (a resposta é idêntica nos dois casos), não lista
+    nada, e só aceita um pedido a cada dez minutos por pessoa, para não virar
+    máquina de encher caixa de e-mail nem de invalidar o link de alguém.
+
+    **A OITAVA ENTROU EM 09/11/2026: o primeiro acesso.** Ela é pública pelo
+    único motivo que justifica: *quem abre o link ainda não tem senha*, então
+    não existe login a exigir. O que a protege não é a sessão, é o TOKEN — 32
+    bytes sorteados, guardado no banco só como resumo (SHA-256), de uso único
+    e com prazo de sete dias. Ela não lista nada, não aceita e-mail como
+    entrada e não diz se um token existe: o erro é o mesmo para inexistente,
+    usado e vencido.
     """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
-        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
+        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
+        "erp.pagina_primeiro_acesso", "erp.pagina_esqueci_a_senha",
+        "erp.api_portal_pessoas", "erp.api_portal_ler_documento"}
 
 
 def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):

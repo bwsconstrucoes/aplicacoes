@@ -84,7 +84,7 @@
     + Função</button>
   {% if pode.configurar %}
   <button class="btn secundario" id="btn-importar" style="width:100%; margin-top:6px">
-    Importar do Pipefy</button>
+    Importar pessoas de planilha</button>
   {% endif %}
 {% endblock %}
 
@@ -946,12 +946,96 @@ function pintarOQueFalta(){
     : "");
 }
 
+// ---------------------------------------------------------------------------
+// O ACESSO DESTA PESSOA AO SISTEMA (09/11/2026)
+//
+// Ele: *"nosso cadastro tem o cadastro de colaboradores, tem o cadastro de
+// usuários do sistema. É para haver uma correlação entre isso aí (…) quando
+// uma pessoa for desativada do cadastro, for demitido, sair da empresa, a
+// gente precisaria automaticamente bloquear o acesso dela. Ao mesmo tempo,
+// facilitar o acesso da pessoa. E facilitar o primeiro acesso."*
+//
+// Fica na aba do ENDEREÇO porque é onde está o e-mail — e é o e-mail que vira
+// o login. Separar as duas coisas faria digitar o mesmo endereço duas vezes.
+// ---------------------------------------------------------------------------
+function blocoDoAcessoAoSistema(c){
+  const tem = !!c.usuario_id;
+  return `
+    <div class="cartao" style="margin-top:12px">
+      <h4 style="margin-top:0">Acesso ao ERP</h4>
+      <div id="ac-situacao" class="desc">${tem
+        ? `Esta pessoa <b>entra no sistema</b> com ${escapar(c.usuario_email || c.email || "—")}.`
+          + (c.usuario_ativo ? "" : ` <span class="etiqueta ambar">acesso bloqueado</span>`)
+        : `Esta pessoa <b>não entra no sistema</b> — é só cadastro de quem trabalha.`}</div>
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+        ${tem
+          ? `<button class="btn secundario" type="button" id="ac-tirar">Desligar o acesso</button>`
+          : `<button class="btn secundario" type="button" id="ac-liberar">Liberar acesso e convidar</button>`}
+      </div>
+      <div class="dica">Ao liberar, a pessoa recebe um e-mail para <b>escolher a
+        própria senha</b> — ninguém mais vai saber qual é. E quando ela for
+        <b>desligada</b>, o acesso cai sozinho, sem ninguém precisar lembrar.</div>
+      <div id="ac-msg"></div>
+    </div>`;
+}
+
+function ligarAcessoAoSistema(c){
+  const liberar = els("ac-liberar");
+  if (liberar) liberar.addEventListener("click", async () => {
+    const email = (els("c-email") ? els("c-email").value : "") || c.email || "";
+    if (!email.includes("@")) {
+      aviso("ac-msg", "Preencha o e-mail da pessoa antes — é por ele que ela "
+            + "entra e recebe o convite.", "erro");
+      return;
+    }
+    liberar.disabled = true;
+    try {
+      const r = await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({email})});
+      const cv = r.convite || {};
+      aviso("ac-msg", cv.enviado
+        ? `Acesso liberado. Convite enviado para ${escapar(email)}.`
+        : `Acesso liberado, mas o e-mail NÃO saiu: ${escapar(cv.erro || "motivo não informado")}.`
+          + (cv.link ? `<br>Enquanto isso, o link é: <code>${escapar(cv.link)}</code>` : ""),
+        cv.enviado ? "ok" : "erro");
+      ficha(c.id);
+    } catch(e){ aviso("ac-msg", e.message, "erro"); liberar.disabled = false; }
+  });
+  const tirar = els("ac-tirar");
+  if (tirar) tirar.addEventListener("click", async () => {
+    if (!await perguntar({titulo: "Desligar o acesso",
+      aviso: "O login da pessoa continua existindo, com tudo o que ela lançou. "
+           + "O que se desfaz é a ligação com este cadastro — e, com ela, o "
+           + "bloqueio automático no desligamento.",
+      campos: [], textoOk: "Desligar o acesso"})) return;
+    try {
+      await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"DELETE"});
+      aviso("ac-msg", "Ligação desfeita.", "ok");
+      ficha(c.id);
+    } catch(e){ aviso("ac-msg", e.message, "erro"); }
+  });
+}
+
 function painelDaFicha(){
   const c = FICHA || {}, o = OPCOES || {};
   const alvo = els("c-painel");
   if (ABA_FICHA === 0) {
     alvo.innerHTML = `
       ${!c.id && PODE_ARQUIVAR ? blocoDeDocumentoDaPessoaNova() : ""}
+      {# A FOTO VEM DO PONTO, e ninguém a anexa (10/11/2026). Ele: *"a foto vai
+         ser alimentada pelo ponto (…) a primeira foto do ponto que ele começar
+         a usar, ele coloca como cadastro."* Quando não há batida com foto, o
+         quadro simplesmente não aparece — moldura vazia com "sem foto" é ruído
+         numa ficha que já tem muita coisa. #}
+      ${c.tem_foto ? `<div style="display:flex; gap:12px; align-items:flex-start;
+           margin-bottom:12px">
+        <img src="/erp/api/colaboradores/${c.id}/foto" alt="foto de ${escapar(c.nome || "")}"
+             style="width:92px; height:92px; object-fit:cover; border-radius:10px;
+                    border:1px solid var(--borda)">
+        <div class="cartao-dica" style="margin:0">Esta foto <b>vem do ponto</b> —
+          ninguém precisa anexar. Para trocar, é no ponto, em
+          <b>“Fotos de cadastro”</b>.</div></div>` : ""}
       <div class="form-grade">
         <div class="campo" style="grid-column:span 3"><label>Nome completo *</label>
           <input id="c-nome" value="${escapar(c.nome || "")}"></div>
@@ -997,15 +1081,47 @@ function painelDaFicha(){
       ${campoTexto("Município", "c-municipio", c.municipio, 'style="grid-column:span 2"')}
       <div class="campo"><label>UF</label>${lista("c-uf", o.ufs, c.uf)}</div>
       ${campoTexto("Telefone", "c-telefone", c.telefone)}
-      ${campoTexto("E-mail", "c-email", c.email, 'style="grid-column:span 2"')}
-    </div>`;
+      {# O id vai ESCRITO aqui, e não montado dentro do ajudante: o bloco do
+         acesso logo abaixo lê este campo com `els("c-email")`, e a trava das
+         telas confere que todo `els` tem um `id=` em algum lugar da página —
+         id montado dentro de função some da conferência. #}
+      <div class="campo" style="grid-column:span 2"><label for="c-email">E-mail</label>
+        <input id="c-email" value="${escapar(c.email || "")}"></div>
+    </div>
+    ${c.id ? blocoDoAcessoAoSistema(c) : ""}`;
+    if (c.id) ligarAcessoAoSistema(c);
   } else if (ABA_FICHA === 2) {
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Vínculo *</label>${lista("c-vinculo", o.vinculos, c.vinculo, "")}</div>
       <div class="campo"><label>Tipo de contrato</label>${lista("c-contrato", o.tipos_contrato, c.tipo_contrato)}</div>
-      <div class="campo"><label>Empresa do grupo</label>${lista("c-empresa",
-        (o.empresas || []).map(e => ({valor: e.id, rotulo: e.razao_social})), c.empresa_id)}</div>
-      ${campoTexto("CNPJ de admissão", "c-cnpjadm", c.cnpj_admissao, 'name="cnpj"')}
+      {# ⚑ UM CAMPO SÓ. Ele, em 11/11/2026: *"empresa para registro e CNPJ
+         para admissão é campo duplicado. É a mesma informação."* Tinha razão,
+         e era pior: um era caixinha do cadastro de Empresas e o outro era
+         TEXTO LIVRE — dava para escolher a MATRIZ na caixinha e digitar o
+         CNPJ da INFRADENDE ao lado, e o sistema guardava os dois. O próprio
+         código já tratava os dois como a mesma coisa (`empresa_id or
+         cnpj_admissao`, em `core/contabilidade.py`).
+
+         Agora se escolhe a EMPRESA, e o CNPJ aparece ao lado só para
+         conferir. Quem já tem só o CNPJ gravado (importação antiga, pedido
+         vindo da obra) continua vendo o que está lá — escolher a empresa é
+         que o substitui. #}
+      <div class="campo"><label>Empresa de registro</label>${lista("c-empresa",
+        (o.empresas || []).map(e => ({valor: e.id,
+          // ⚑ `documento()`, e não o CNPJ cru: a varredura de formato pegou
+          // isto no mesmo dia em que foi escrito. O cadastro guarda com ou
+          // sem pontuação (os dois existem na base), e o ajudante do
+          // `erp_base.html` é quem sabe pintar os dois igual.
+          rotulo: e.cnpj ? `${e.razao_social} — ${documento(e.cnpj)}`
+                         : e.razao_social})),
+        c.empresa_id)}
+        <small class="ajuda" id="c-cnpjadm-recado">${
+          c.empresa_id ? "o CNPJ vem do cadastro da empresa"
+          : c.cnpj_admissao
+            ? `hoje está gravado só o CNPJ <b>${escapar(c.cnpj_admissao)}</b> —
+               escolha a empresa para ligar ao cadastro`
+            : "é por esta empresa que a pessoa é registrada na folha"}</small>
+      </div>
       <div class="campo"><label>Cargo</label>${lista("c-cargo",
         (o.cargos || []).map(x => ({valor: x.id, rotulo: x.cbo ? `${x.nome} (${x.cbo})` : x.nome})),
         c.cargo_id)}</div>
@@ -1020,7 +1136,17 @@ function painelDaFicha(){
       ${campoData("Data de admissão", "c-admissao", c.admissao)}
       ${campoTexto("Salário", "c-salario", c.salario ? numero(c.salario) : "")}
       ${sim_nao("Mensalista?", "c-mensalista", c.mensalista)}
-      ${campoTexto("Valor da diária", "c-diaria", c.valor_diaria ? numero(c.valor_diaria) : "")}
+      {# O VALOR DA DIÁRIA FICA À VISTA PARA TODO MUNDO, e não só para quem é
+         diarista — decisão dele em 10/11/2026: *"o valor de diária do CTPS
+         pode deixar à vista."* Quem é CTPS às vezes trabalha no fim de semana
+         e recebe diária por esse dia (hoje a empresa prefere hora extra, mas
+         o caso existe). Esconder o campo obrigaria a trocar o tipo da pessoa
+         para preenchê-lo. #}
+      <div class="campo"><label for="c-diaria">Valor da diária</label>
+        <input id="c-diaria" value="${c.valor_diaria ? numero(c.valor_diaria) : ""}">
+        <div class="dica">Do diarista, e também de quem é CTPS e trabalha em
+          dia de fim de semana. Os acréscimos de feriado e fim de semana estão
+          em Configurações › Diárias.</div></div>
       <div class="campo"><label>Situação</label><select id="c-sit">
         ${["ATIVO", "AFASTADO", "DESLIGADO"].map(x =>
           `<option ${c.situacao === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
@@ -1172,7 +1298,10 @@ function corpoDoCadastro(){
     "c-compl": "complemento", "c-bairro": "bairro", "c-municipio": "municipio",
     "c-uf": "uf", "c-telefone": "telefone", "c-email": "email",
     "c-vinculo": "vinculo", "c-contrato": "tipo_contrato", "c-empresa": "empresa_id",
-    "c-cnpjadm": "cnpj_admissao", "c-cargo": "cargo_id", "c-convencao": "convencao_id",
+    // "c-cnpjadm" SAIU: o CNPJ não é mais digitado, ele vem da empresa
+    // escolhida (ver `pessoas.salvar`). Mandá-lo daqui faria os dois voltarem
+    // a poder divergir, que é o defeito que acabou de ser consertado.
+    "c-cargo": "cargo_id", "c-convencao": "convencao_id",
     "c-obra": "obra_id", "c-mat": "matricula", "c-exper": "contrato_experiencia",
     "c-admissao": "admissao", "c-salario": "salario", "c-mensalista": "mensalista",
     "c-diaria": "valor_diaria", "c-sit": "situacao", "c-pixtipo": "pix_tipo",
@@ -1346,13 +1475,19 @@ async function abrirAlteracao(){
 // planilha mostra o que divergiu e a decisão fica com quem olha.
 // ---------------------------------------------------------------------------
 function abrirImportacaoDePessoas(){
-  els("dlg-titulo").textContent = "Importar as pessoas do Pipefy";
+  els("dlg-titulo").textContent = "Importar pessoas de uma planilha";
   els("dlg-corpo").innerHTML = `
-    <div class="cartao-dica">Serve o relatório exportado do pipe <b>CADASTRO
-      COLABORADORES</b> ou a planilha do DP — o sistema reconhece as colunas pelo
-      nome, dos dois jeitos, e diz quais não reconheceu. <b>Só entram os ativos.</b>
-      Quem já está no ERP não é sobrescrito: a conferência lista o que está
-      diferente e você decide.</div>
+    <div class="cartao-dica"><b>Serve a planilha do DP que você já usa.</b> No
+      Google Planilhas: <i>Arquivo › Fazer download › Microsoft Excel (.xlsx)</i>
+      — e jogue o arquivo aqui. Também serve o relatório exportado do pipe
+      CADASTRO COLABORADORES, ou um CSV.
+      <br><br>O sistema reconhece as colunas <b>pelo nome do cabeçalho</b>, nos
+      três formatos, e <b>diz quais não reconheceu</b> — por isso vale sempre
+      apertar "Conferir sem gravar" primeiro: ele mostra o relatório inteiro
+      sem tocar no banco.
+      <br><br><b>Só entram os ativos.</b> Quem já está no ERP <b>não é
+      sobrescrito</b>: a conferência lista o que está diferente e você
+      decide.</div>
     <div class="form-grade">
       <div class="campo" style="grid-column:span 3"><label>Planilha (.xlsx ou .csv)</label>
         <input type="file" id="imp-arq" accept=".xlsx,.csv"></div>

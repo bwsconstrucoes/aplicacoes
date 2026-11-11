@@ -231,9 +231,23 @@ def _meses_ordenados(*conjuntos) -> list[str]:
     return sorted(meses)
 
 
+def tirar_juros_das_excecoes(excecoes, categoria_juros) -> list:
+    """Os lançamentos marcados um a um, sem os de juro de empréstimo.
+
+    11/11/2026, o dono: *"acho que o juro de empréstimo está sendo contado duas
+    vezes, dentro de rateio recebido e em juros de empréstimo"*. Estava, quando
+    o lançamento de juro tinha percentual próprio na árvore: `separar_juros`
+    o tirava do agregado e o levava para o déficit, mas a exceção entrava no
+    bolo do rateio do mesmo jeito. O juro segue SÓ a régua do déficit."""
+    alvos = categorias_de_juros(categoria_juros)
+    return [e for e in (excecoes or [])
+            if (e.get("categoria") or "").strip().lower() not in alvos]
+
+
 def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
                              rateio_recebido=None,
-                             sem_deficit: str = "sobra") -> dict:
+                             sem_deficit: str = "sobra",
+                             corte=None, lado_de=None) -> dict:
     """Divide o juro de cada mês entre as obras que estavam no vermelho nele.
 
     Proporcional ao tamanho do buraco: quem devia o dobro paga o dobro.
@@ -241,7 +255,22 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
     Devolve as alocações — (obra, mês) -> valor, negativo como toda despesa —,
     as **sobras** (juro que não coube em obra nenhuma, com o motivo) e a
     **memória** mês a mês, para a conta poder ser conferida linha por linha em
-    vez de acreditada."""
+    vez de acreditada.
+
+    `corte` é {obra: último mês em que ela ainda paga juro} — ver
+    `corte_dos_juros`. Depois dele o buraco da obra deixa de contar: obra
+    encerrada no prejuízo não fica pagando juro para sempre.
+
+    `lado_de` é {obra: "principal" | "demais"}. Com ele, O CAIXA É DE CADA
+    LADO (dono, 10/11/2026): "o caixa gerado em BWSCE dá suporte a obras que
+    ainda não receberam de um lado. E do outro lado, todos os demais projetos
+    se ajudam — o caixa gerado pelas obras serve para cobrir o buraco de obra
+    que ainda não recebeu". Então o que demanda dinheiro emprestado é o buraco
+    LÍQUIDO do lado: soma-se o acumulado de todas as obras dele, as que sobram
+    cobrindo as que faltam. O juro do mês se reparte entre os lados pelo buraco
+    líquido de cada um e, dentro do lado, entre as obras no vermelho, pelo
+    tamanho do buraco de cada uma. Lado que se cobre sozinho não paga juro."""
+    corte = corte or {}
     if sem_deficit not in SEM_DEFICIT:
         sem_deficit = "sobra"
 
@@ -273,11 +302,33 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
     for mes in meses:
         for obra, serie in saldo.items():
             acumulado[obra] += serie.get(mes, 0.0)
-        deficits = {o: -v for o, v in acumulado.items() if v < -0.005}
-        total = sum(deficits.values())
+        def _ativa(o, _mes=mes):
+            return not (corte.get(o) and _mes > corte[o])
+
+        deficits = {o: -v for o, v in acumulado.items()
+                    if v < -0.005 and _ativa(o)}
         juro = juros_por_mes.get(mes, 0.0)
 
         pesos, criterio = deficits, "déficit de caixa"
+        necessidade: dict[str, float] = {}
+        if lado_de is not None:
+            # o buraco LÍQUIDO de cada lado: as obras que sobram cobrem as que
+            # faltam. O buraco de obra já encerrada (depois do corte) não
+            # conta; o que ela deixou de sobra continua ajudando.
+            pesos, criterio = {}, "déficit de caixa, por lado"
+            for lado in ("principal", "demais"):
+                # obra sem lado (sem projeto, ou "(não apropriado)") não
+                # entra em canto nenhum
+                do_lado = [o for o in acumulado if lado_de.get(o) == lado]
+                liquido = sum(acumulado[o] for o in do_lado
+                              if acumulado[o] > 0 or _ativa(o))
+                necessidade[lado] = max(0.0, -liquido)
+                buracos = {o: deficits[o] for o in do_lado if o in deficits}
+                soma = sum(buracos.values())
+                if necessidade[lado] > 0.005 and soma > 0:
+                    for o, buraco in buracos.items():
+                        pesos[o] = necessidade[lado] * buraco / soma
+        total = sum(pesos.values())
         if total <= 0.005:
             pesos, criterio = {}, "ninguém no vermelho"
             if sem_deficit == "estrutura" and rateio_do_mes.get(mes):
@@ -300,6 +351,8 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
             "juros": round(juro, 2),
             "criterio": criterio,
             "deficit_total": round(sum(deficits.values()), 2),
+            "falta_principal": round(necessidade.get("principal", 0.0), 2),
+            "falta_demais": round(necessidade.get("demais", 0.0), 2),
             "obras_no_vermelho": len(deficits),
             "maior": (max(deficits.items(), key=lambda kv: kv[1])[0]
                       if deficits else ""),
@@ -316,6 +369,29 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
     return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria}
 
 
+def corte_dos_juros(pessoal, caixa, obras) -> dict:
+    """{obra: último mês em que ela ainda recebe juro}.
+
+    Decisão do dono em 10/11/2026: "o projeto que terminou com prejuízo tem
+    que encerrar. A gente tem que fazer um ponto de corte. Terminou de gastar
+    com mão de obra, terminou de receber juros." O corte é o último mês com
+    custo de pessoal da obra. Obra que nunca teve pessoal usa o último mês
+    em que mexeu no caixa — senão ela nunca pagaria juro nenhum, mesmo tendo
+    vivido de dinheiro emprestado."""
+    ultimo: dict[str, str] = {}
+    for mes, obra, valor in pessoal or ():
+        if obra in obras and mes != SEM_DATA and abs(float(valor or 0)) > 0.005:
+            if mes > ultimo.get(obra, ""):
+                ultimo[obra] = mes
+    reserva: dict[str, str] = {}
+    for mes, obra, valor in caixa or ():
+        if obra in obras and obra not in ultimo and mes != SEM_DATA:
+            if mes > reserva.get(obra, ""):
+                reserva[obra] = mes
+    reserva.update(ultimo)
+    return reserva
+
+
 def total_por_obra(alocacoes) -> list[dict]:
     """Soma uma alocação por obra, da maior para a menor — o formato da tela."""
     total: dict[str, float] = {}
@@ -325,19 +401,70 @@ def total_por_obra(alocacoes) -> list[dict]:
                   key=lambda l: l["valor"])
 
 
+# FORA TOTALMENTE, OU SÓ DEPOIS DE UM MÊS (11/11/2026, o dono: "colocar
+# totalmente fora da análise ou colocar até determinado período. É isso que eu
+# preciso em relação a considerar a obra ou projeto, ou não"). O item guarda o
+# mês no fim: "obra:CASA" está fora inteira; "obra:CASA@2024-06" é considerada
+# até 06/2024 e sai dali em diante. Texto, e não coluna nova: vale igual na
+# lista de Parâmetros (um texto na configuração) e na de cada cenário, sem
+# migração.
+_ITEM_FORA = re.compile(r"^(obra|projeto):(.+?)(?:@(\d{4}-\d{2}))?$")
+
+
+def ler_item_fora(item) -> tuple:
+    """("obra"|"projeto", nome, "AAAA-MM" ou None). Item ilegível: (None, "", None)."""
+    m = _ITEM_FORA.match((item or "").strip())
+    if not m:
+        return None, "", None
+    return m.group(1), m.group(2).strip(), m.group(3)
+
+
+def montar_item_fora(tipo: str, nome: str, ate: str | None = None) -> str:
+    return f"{tipo}:{nome.strip()}" + (f"@{ate}" if ate else "")
+
+
+def _obras_do_item(tipo, nome, mapa_projeto, obras) -> set:
+    if tipo == "obra":
+        return {nome}
+    if tipo == "projeto":
+        return {o for o in obras if (mapa_projeto.get(o) or "") == nome}
+    return set()
+
+
 def obras_fora_da_analise(itens, mapa_projeto: dict, obras) -> set:
-    """As obras que o cenário deixa de fora: as nomeadas uma a uma, e todas as
+    """As obras que ficam fora TOTALMENTE: as nomeadas uma a uma, e todas as
     obras dos projetos nomeados. O que sai daqui não recebe estrutura, não
-    recebe juros e não entra na quota de ninguém."""
+    recebe juros e não entra na quota de ninguém. O item com mês ("até")
+    não entra aqui — ver `cortes_da_analise`."""
     fora = set()
     for item in itens or ():
-        item = (item or "").strip()
-        if item.startswith("obra:"):
-            fora.add(item[len("obra:"):])
-        elif item.startswith("projeto:"):
-            alvo = item[len("projeto:"):]
-            fora |= {o for o in obras if (mapa_projeto.get(o) or "") == alvo}
+        tipo, nome, ate = ler_item_fora(item)
+        if tipo and not ate:
+            fora |= _obras_do_item(tipo, nome, mapa_projeto, obras)
     return fora
+
+
+def cortes_da_analise(itens, mapa_projeto: dict, obras) -> dict:
+    """{obra: último mês considerado} — as obras que só contam ATÉ um mês.
+    Obra nomeada duas vezes (por ela e pelo projeto) fica com o mês mais cedo."""
+    cortes: dict[str, str] = {}
+    for item in itens or ():
+        tipo, nome, ate = ler_item_fora(item)
+        if not (tipo and ate):
+            continue
+        for obra in _obras_do_item(tipo, nome, mapa_projeto, obras):
+            cortes[obra] = min(cortes.get(obra, ate), ate)
+    return cortes
+
+
+def depois_do_corte(mes, obra, cortes) -> bool:
+    """A linha (mês, obra) fica de fora pelo corte? Linha SEM DATA de obra com
+    corte também fica: não dá para dizer que ela é de antes do mês."""
+    ate = cortes.get((obra or "").strip()) if cortes else None
+    if not ate:
+        return False
+    mes = str(mes or "")
+    return mes == SEM_DATA or not mes or mes[:7] > ate
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +497,21 @@ def itens_fora_da_analise(texto) -> list[str]:
         parte = parte.strip()
         if parte and parte not in saida:
             saida.append(parte)
+    return saida
+
+
+def sem_depois_do_corte(base: dict, cortes) -> dict:
+    """A base sem o que cada obra com corte fez DEPOIS do mês dela — nas três
+    leituras que dependem de obra e mês (apuração, pessoal e caixa)."""
+    if not cortes:
+        return base
+    saida = dict(base)
+    saida["apuracao"] = [l for l in base.get("apuracao", [])
+                         if not depois_do_corte(l.get("mes"), l.get("obra"), cortes)]
+    saida["pessoal"] = [t for t in base.get("pessoal", [])
+                        if not depois_do_corte(t[0], t[1], cortes)]
+    saida["caixa"] = [t for t in base.get("caixa", [])
+                      if not depois_do_corte(t[0], t[1], cortes)]
     return saida
 
 
@@ -409,19 +551,29 @@ def peso_e_divisao(pesos: dict, grupo: str, categoria: str, codigo: str,
     percentual; None quer dizer "sem separar" — a conta se divide entre todas
     as obras que recebem, pela régua."""
     periodos = pesos.get("periodos") or {}
+    # O percentual vem do nível mais específico que disser algum. A parte do
+    # principal TAMBÉM — mas em branco quer dizer "segue o nível de cima", como
+    # no percentual (10/11/2026): afinar uma categoria dentro de um grupo
+    # "40% para o BWS CE" não pode fazê-la perder os dois lados.
+    pct, principal = None, None
     for nivel, chave in (("lancamento", codigo), ("categoria", categoria),
                          ("grupo", grupo)):
         if not chave:
             continue
         lista = (periodos.get(nivel) or {}).get(chave) or []
-        if lista and mes and mes != SEM_DATA:
-            valendo = [p for p in lista if p[0] <= mes]
-            if valendo:
-                ultimo = valendo[-1]
-                return float(ultimo[1]), (ultimo[2] if len(ultimo) > 2 else None)
-        if chave in (pesos.get(nivel) or {}):
-            return float(pesos[nivel][chave]), None
-    return float(pct_padrao), None
+        valendo = ([p for p in lista if p[0] <= mes]
+                   if lista and mes and mes != SEM_DATA else [])
+        if valendo:
+            ultimo = valendo[-1]
+            if pct is None:
+                pct = float(ultimo[1])
+            if principal is None and len(ultimo) > 2 and ultimo[2] is not None:
+                principal = ultimo[2]
+        elif pct is None and chave in (pesos.get(nivel) or {}):
+            pct = float(pesos[nivel][chave])
+        if pct is not None and principal is not None:
+            break
+    return (float(pct_padrao) if pct is None else pct), principal
 
 
 def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
@@ -483,6 +635,19 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
     # dela recebe custo da matriz naquele mês. Sem eles, tudo como antes.
     lado_de = lado_de or {}
     recebe = recebe or (lambda _obra, _mes: True)
+    # sem projeto principal não há dois lados: tudo pela régua, entre todas
+    separa = any(lado == "principal" for lado in lado_de.values())
+    # O QUE FICOU DE FORA (10/11/2026): a parte de cada conta que não entrou
+    # no bolo. Antes sumia sem rastro; agora é contada, por mês e por conta,
+    # para o batimento acusar e a tela criticar.
+    fora_por_mes: dict[str, float] = {}
+    fora_por_conta: dict[tuple, float] = {}
+
+    def _ficou_fora(mes, grupo, categoria, valor):
+        if abs(valor) > 0.005:
+            fora_por_mes[mes] = fora_por_mes.get(mes, 0.0) + valor
+            chave = (grupo or "(sem grupo)", categoria or "(sem categoria)")
+            fora_por_conta[chave] = fora_por_conta.get(chave, 0.0) + valor
 
     # 1. As exceções saem do balde a que pertencem.
     fora: dict[tuple, float] = {}
@@ -495,7 +660,7 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         """Soma ao bolo do mês; se o período separa os lados, guarda quanto
         vai para cada um."""
         pool[mes] = pool.get(mes, 0.0) + parte
-        if principal is not None:
+        if principal is not None and separa:
             p = max(min(float(principal), 100.0), 0.0) / 100.0
             para_lado[(mes, "principal")] = para_lado.get((mes, "principal"), 0.0) + parte * p
             para_lado[(mes, "demais")] = para_lado.get((mes, "demais"), 0.0) + parte * (1 - p)
@@ -504,6 +669,8 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         fora[chave] = fora.get(chave, 0.0) + float(e["valor"] or 0)
         pct, principal = peso_e_divisao(pesos, e.get("grupo"), e.get("categoria"),
                                         str(e.get("codigo") or ""), pct_padrao, mes=e["mes"])
+        _ficou_fora(e["mes"], e.get("grupo"), e.get("categoria"),
+                    float(e["valor"] or 0) * (1 - pct / 100.0))
         if e["mes"] == SEM_DATA:
             if abs(float(e["valor"] or 0) * pct / 100.0) > 0.005:
                 sobras.append({"origem": f"Lançamento {e.get('codigo')}",
@@ -513,23 +680,32 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         _destinar(e["mes"], float(e["valor"]) * pct / 100.0, principal)
 
     # 2. O que sobrou de cada balde entra pelo percentual do seu nível.
+    # A mesma conta pode vir em mais de uma linha (matriz e filial têm a mesma
+    # categoria no mesmo mês). Soma-se ANTES de tirar as exceções: tirando
+    # linha a linha, o lançamento marcado era descontado uma vez por
+    # departamento (achado em 10/11/2026).
+    baldes: dict[tuple, float] = {}
     for linha in despesa_admin:
         chave = (linha["mes"], linha.get("grupo") or "", linha.get("categoria") or "")
-        valor = float(linha["valor"] or 0) - fora.get(chave, 0.0)
+        baldes[chave] = baldes.get(chave, 0.0) + float(linha["valor"] or 0)
+    for chave, bruto in baldes.items():
+        mes_l, grupo_l, categoria_l = chave
+        valor = bruto - fora.get(chave, 0.0)
         if abs(valor) <= 0.005:
             continue
-        pct, principal = peso_e_divisao(pesos, linha.get("grupo"), linha.get("categoria"),
-                                        "", pct_padrao, mes=linha["mes"])
+        pct, principal = peso_e_divisao(pesos, grupo_l, categoria_l,
+                                        "", pct_padrao, mes=mes_l)
         parte = valor * pct / 100.0
+        _ficou_fora(mes_l, grupo_l, categoria_l, valor - parte)
         if abs(parte) <= 0.005:
             continue
-        if linha["mes"] == SEM_DATA:
-            sobras.append({"origem": f"{linha.get('grupo') or '(sem grupo)'} › "
-                                     f"{linha.get('categoria') or '(sem categoria)'}",
+        if mes_l == SEM_DATA:
+            sobras.append({"origem": f"{grupo_l or '(sem grupo)'} › "
+                                     f"{categoria_l or '(sem categoria)'}",
                            "mes": SEM_DATA, "valor": parte,
                            "motivo": "lançamento sem data: não dá para ratear por mês"})
             continue
-        _destinar(linha["mes"], parte, principal)
+        _destinar(mes_l, parte, principal)
 
     # 3. O bolo de cada mês se divide pela régua escolhida.
     meses = _meses_ordenados(set(pool), {m for m, _o, _v in driver})
@@ -578,7 +754,94 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
             "maior_pct": (round(max(fatias.values()) * 100, 1) if fatias else 0.0),
         })
 
-    return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria}
+    return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria,
+            "fora_por_mes": fora_por_mes,
+            "fora_por_conta": sorted(
+                ({"grupo": g, "categoria": c, "valor": round(v, 2)}
+                 for (g, c), v in fora_por_conta.items()),
+                key=lambda l: l["valor"])}
+
+
+# ---------------------------------------------------------------------------
+# 2d. O batimento: tudo o que a matriz gastou tem de aparecer em algum lugar
+# ---------------------------------------------------------------------------
+# Pedido do dono em 10/11/2026: "é muito importante esse batimento (…) o que é
+# custo, o que está apropriado, rateado do BWS CE, o que está apropriado de
+# juros, e o próprio sistema fazer esse somatório e identificar que bate com o
+# valor global. É importante o próprio sistema fazer essa checagem e a gente,
+# com o relatório, poder fazer a checagem manual também."
+
+# Centavos se perdem ao dividir um valor entre dezenas de obras; acima disto,
+# num mês, é diferença de verdade.
+TOLERANCIA_DO_BATIMENTO = 1.00
+
+
+def batimento(despesa_admin, rateio, juros, lado_de=None) -> dict:
+    """Confere, mês a mês, que o custo da matriz foi inteiro para algum lugar.
+
+    custo da matriz = estrutura para o principal + estrutura para os demais
+                    + juros nas obras + sem dono + ficou de fora
+
+    `despesa_admin` é o gasto BRUTO dos departamentos administrativos (com os
+    juros dentro) — o número global, antes de qualquer escolha do cenário.
+    "Fecha" quer dizer: nada sumiu na conta E nada ficou de fora."""
+    lado_de = lado_de or {}
+    colunas = ("matriz", "principal", "demais", "juros", "sem_dono", "fora")
+    meses: dict[str, dict] = {}
+
+    def _somar(mes, coluna, valor):
+        linha = meses.setdefault(mes, {c: 0.0 for c in colunas})
+        linha[coluna] += float(valor or 0)
+
+    for linha in despesa_admin:
+        _somar(linha["mes"], "matriz", linha["valor"])
+    for (obra, mes), valor in (rateio.get("alocacoes") or {}).items():
+        _somar(mes, "principal" if lado_de.get(obra) == "principal" else "demais", valor)
+    for (_obra, mes), valor in (juros.get("alocacoes") or {}).items():
+        _somar(mes, "juros", valor)
+    for sobra in list(rateio.get("sobras") or []) + list(juros.get("sobras") or []):
+        _somar(sobra["mes"], "sem_dono", sobra["valor"])
+    for mes, valor in (rateio.get("fora_por_mes") or {}).items():
+        _somar(mes, "fora", valor)
+
+    linhas = []
+    total = {c: 0.0 for c in colunas}
+    for mes in sorted(meses):
+        linha = meses[mes]
+        linha["diferenca"] = linha["matriz"] - sum(linha[c] for c in colunas[1:])
+        for c in colunas:
+            total[c] += linha[c]
+        linhas.append({"mes": mes, **{c: round(v, 2) for c, v in linha.items()},
+                       "bate": abs(linha["diferenca"]) <= TOLERANCIA_DO_BATIMENTO})
+    total["diferenca"] = total["matriz"] - sum(total[c] for c in colunas[1:])
+    meses_ruins = [l["mes"] for l in linhas if not l["bate"]]
+    soma_fecha = not meses_ruins
+    return {
+        "linhas": linhas,
+        "total": {c: round(v, 2) for c, v in total.items()},
+        "meses_que_nao_batem": meses_ruins,
+        # a soma confere (nada sumiu na conta)
+        "soma_fecha": soma_fecha,
+        # e tudo teve destino (nada de fora) — é o "tem que somar 100%"
+        "tudo_distribuido": abs(total["fora"]) <= TOLERANCIA_DO_BATIMENTO,
+        "fecha": soma_fecha and abs(total["fora"]) <= TOLERANCIA_DO_BATIMENTO,
+    }
+
+
+def criticas_das_participacoes(participacoes) -> list[dict]:
+    """Onde os percentuais de quem divide não somam 100% — obra a obra, e na
+    lista geral. Com a soma errada, as quotas não fecham com o resultado."""
+    somas: dict[str, float] = {}
+    for p in participacoes or ():
+        obra = p.get("obra") or ""
+        somas[obra] = somas.get(obra, 0.0) + float(p.get("pct") or 0)
+    def _nome(obra):
+        if not obra:
+            return "todas as obras"
+        return ("projeto " + obra[len(PROJETO_NA_PARTICIPACAO):]
+                if obra.startswith(PROJETO_NA_PARTICIPACAO) else obra)
+    return [{"obra": _nome(obra), "soma": round(soma, 2)}
+            for obra, soma in sorted(somas.items()) if abs(soma - 100.0) > 0.01]
 
 
 # ---------------------------------------------------------------------------
@@ -734,15 +997,28 @@ def quotas_por_socio(por_projeto, participacoes, config) -> list[dict]:
 # branco — senão seriam 174 linhas iguais.
 
 
-def participantes_da_obra(participacoes, obra: str) -> list[dict]:
-    """Quem divide ESTA obra: quem foi nomeado nela; se ninguém foi, quem
-    participa de todas. O específico ganha do geral — é o que permite dizer
-    "nesta obra entrou um parceiro" sem refazer o resto."""
+# QUEM DIVIDE POR PROJETO (11/11/2026, o dono: "tem uns 10 projetos, um projeto
+# às vezes tem 4 sócios — eu tenho que adicionar de um por um"). A participação
+# do cenário era só "todas as obras" ou obra a obra; um projeto de dez obras
+# pedia dez linhas iguais. Agora há o nível do meio: a participação gravada
+# com a obra "projeto:NOME" vale para todas as obras daquele projeto.
+PROJETO_NA_PARTICIPACAO = "projeto:"
+
+
+def participantes_da_obra(participacoes, obra: str, projeto: str = "") -> list[dict]:
+    """Quem divide ESTA obra: quem foi nomeado nela; se ninguém foi, quem foi
+    nomeado no PROJETO dela; se ninguém, quem participa de todas. O específico
+    ganha do geral — é o que permite dizer "nesta obra entrou um parceiro" sem
+    refazer o resto."""
     nomeados = [p for p in participacoes if (p.get("obra") or "") == obra]
+    if not nomeados and projeto:
+        chave = PROJETO_NA_PARTICIPACAO + projeto
+        nomeados = [p for p in participacoes if (p.get("obra") or "") == chave]
     return nomeados or [p for p in participacoes if not (p.get("obra") or "")]
 
 
-def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0) -> list[dict]:
+def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0,
+                    projeto_de: dict | None = None) -> list[dict]:
     """Quanto cabe a cada um, obra a obra. Mesma conta da divisão por projeto.
 
     **Obra só da BWS:** cada um leva seu percentual do resultado com rateio.
@@ -760,7 +1036,8 @@ def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0) ->
     taxa = float(taxa_adm_pct or 0) / 100.0
     saida = []
     for obra, n in por_obra.items():
-        gente = participantes_da_obra(participacoes, obra)
+        gente = participantes_da_obra(participacoes, obra,
+                                      ((projeto_de or {}).get(obra) or "").strip())
         if not gente:
             continue
         tem_externo = any((p.get("tipo") or "").lower() == "externo" for p in gente)

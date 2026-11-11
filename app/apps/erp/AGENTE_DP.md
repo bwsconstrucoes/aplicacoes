@@ -405,6 +405,123 @@ O que falta saber, e só ele tem: **quais são os tipos de pedido do portal do
 Pipefy e quais a obra mais usa.** Os exports que chegaram até aqui são só os
 pipes do DP.
 
+## 6-quater. A ESCALA DE AUTONOMIA — o que ele decide sozinho (10/11/2026)
+
+Ele ampliou o desenho, e esta seção é a tradução das palavras dele:
+
+> *"Eu quero que ele fique cada vez mais autônomo, para minimizar cada vez
+> mais as tarefas de DP, que eu julgo que sejam muito previsíveis (…) mais à
+> frente eu quero inclusive que ela faça tomadas de decisões, coisas mais
+> simples: tipo assim, adicionar um dependente, já ia fazer por si; uma
+> alteração cadastral, fazer por si; uma atualização de algum dado, fazer por
+> si. Aí algumas mais delicadas — cadastrar um funcionário — aí não, exigir
+> uma validação humana. (…) Antes de encaminhar a documentação rescisória
+> para quem solicitou, uma validação humana. Aí, por exemplo, a cobrança do
+> retorno dessa documentação assinada, aí já não precisa de humano, a IA tem
+> que fazer só."*
+
+**A régua que sai disso, e ela é simples:** o agente decide sozinho o que é
+**reversível e sem efeito em dinheiro ou em direito**; pede uma pessoa para o
+que **cria vínculo, encerra vínculo ou sai da empresa**.
+
+| O pedido | Quem decide | Por quê |
+|---|---|---|
+| **Cadastrar dependente** | 🤖 o agente | reversível, e o efeito (salário-família, IR) é da contabilidade conferir |
+| **Atualizar dado cadastral** (telefone, endereço, Pix) | 🤖 o agente | reversível, e o histórico guarda o que estava |
+| **Alteração cadastral simples** | 🤖 o agente | idem |
+| **Cobrar o retorno da contabilidade** | 🤖 o agente | *"aí já não precisa de humano"* |
+| **Arquivar o documento que voltou** | 🤖 o agente | guardar papel não muda nada; conferi-lo é a próxima linha |
+| **Alteração de CARGO ou SALÁRIO** | 👤 pessoa | dinheiro, e mexe no contrato |
+| **Cadastrar colaborador** | 👤 pessoa | *"aí não, exigir uma validação humana"* |
+| **Desligar** | 👤 pessoa | é o ato mais caro e menos reversível do DP |
+| **Encaminhar a documentação rescisória a quem pediu** | 👤 pessoa | *"antes de encaminhar (…) uma validação humana"* |
+| **Concluir pedido com DIVERGÊNCIA** | 👤 pessoa | sempre, e isto não muda com a maturidade |
+
+⚑ **A VALIDAÇÃO HUMANA NÃO É O AGENTE PARADO.** Ele faz o trabalho inteiro —
+confere, monta, escreve o que faria — e **para na última tecla**, com um
+botão "pode". Isso é diferente de "o agente não faz": a pessoa lê um resumo e
+clica, em vez de refazer a conferência.
+
+⚑ **E A AUTONOMIA SOBE SOZINHA? NÃO.** Cada linha desta tabela é um parâmetro
+na tela, e sobe quando ELE mandar. Um agente que se promove sozinho é um
+agente que, no dia em que errar, já estava decidindo mais do que alguém
+achava. *"A cada maturação de cada processo a gente vai liberando"* — a
+palavra é dele, e vale aqui também.
+
+---
+
+## 6-quinquies. A CONFERÊNCIA DA DOCUMENTAÇÃO DA CONTABILIDADE
+
+Pergunta dele, em 10/11/2026:
+
+> *"Eu não sei como é que você vai trabalhar em relação a essa documentação
+> da contabilidade. Se o sistema vai aprender sozinho o tipo de documento, se
+> vai ser questionado o que é aquele documento. Porque tem documentos
+> cadastrais, tem documentos rescisórios, e em todos eles acho que tem que
+> haver um cruzamento de informações para saber se a contabilidade cadastrou
+> correto; se tiver errado alguma coisa, pedir a correção."*
+
+**Respondendo direto: o sistema NÃO precisa adivinhar o tipo do documento, e
+é melhor que não adivinhe.** O tipo vem do PEDIDO que originou a resposta.
+Quando o ERP manda "Assinatura de CTPS", ele já registrou que espera uma
+**ficha de registro** de volta; o anexo da resposta é arquivado com esse
+tipo. É por isso que a caixa de entrada casa a resposta com o pedido antes de
+olhar o anexo — `doc1.pdf` não diz nada, mas o pedido diz tudo.
+
+**Quando não dá para casar** (mais de um pedido aberto para a mesma pessoa, ou
+documento que chegou sem pedido nenhum), aí sim o sistema **pergunta** em vez
+de chutar. Uma linha na tela, com o motivo escrito.
+
+### O que é conferido, por tipo de retorno
+
+Isto é o que ele descreveu como o trabalho que o DP faz hoje à mão —
+*"toda vida nas demissões a gente confere como é que estão as informações"*:
+
+**Documento cadastral** (ficha de registro, alteração de contrato):
+
+| Confere | Contra |
+|---|---|
+| nome, CPF, data de nascimento | o cadastro |
+| cargo e salário | o que foi pedido |
+| data de admissão | o cadastro |
+| CNPJ da empresa de registro | a empresa da obra |
+| endereço | o cadastro — *"de repente escreveu o nome errado, o endereço errado"* |
+
+**Documentação rescisória** (a lista é dele, e cada item é uma conta):
+
+| Confere | Contra |
+|---|---|
+| houve pedido de desligamento? | a fila do DP |
+| data de saída | o que foi comunicado |
+| data do aviso prévio | o cadastro |
+| dias trabalhados | o ponto do mês |
+| saldo de salário | dias trabalhados × salário/30 |
+| faltas descontadas | as faltas do ponto |
+
+⚑ **A DIFERENÇA ENTRE "CONFERIR" E "RECALCULAR", e ela importa:** o ERP não
+refaz a rescisão — refazer exigiria reimplementar a regra trabalhista inteira,
+e um número meu divergindo do da contabilidade por centavos criaria uma
+discussão por mês. Ele **compara o que o documento afirma com o que o sistema
+sabe**, e aponta a diferença. Quando o documento diz 18 dias trabalhados e o
+ponto registrou 20, isso é uma linha de divergência — não um cálculo meu.
+
+**O que acontece com a divergência:** o pedido **não conclui**, abre uma
+divergência com o de/para campo por campo, e o DP decide entre corrigir o
+cadastro ou **pedir a correção à contabilidade** (que é o que ele descreveu).
+O pedido de correção sai pelo mesmo caminho do pedido original, citando o
+número — e volta a ter prazo e cobrança.
+
+### O que ainda não existe, e é honesto dizer
+
+- **Ler um documento livre e entender o que está escrito** é a única parte que
+  precisa de IA de verdade, e ela **nasce em modo sugere** — o agente diz "li
+  isto, bate com aquilo" e uma pessoa confirma, até ele ganhar confiança.
+- **O cruzamento com o PONTO** (dias trabalhados, faltas) depende de o ponto
+  estar fechado no mês da rescisão. Quando não estiver, o agente diz isso em
+  vez de comparar com um número incompleto.
+
+---
+
 ## 7. A ORDEM DE CONSTRUÇÃO, e por que esta
 
 1. **Os pedidos à contabilidade com prazo e cobrança** (R3 e R4), que são

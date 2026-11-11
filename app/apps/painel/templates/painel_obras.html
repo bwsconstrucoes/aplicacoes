@@ -62,6 +62,7 @@
       <thead>
         <tr>
           <th class="sem-ordem">{{ 'Obra' if nivel == 'obra' else 'Projeto' }}</th>
+          <th class="sem-ordem direita">Receita bruta</th>
           <th class="sem-ordem direita">Receita líquida</th>
           <th class="sem-ordem direita">Despesas</th>
           <th class="sem-ordem direita">Resultado</th>
@@ -72,6 +73,7 @@
         {% for i in itens %}
         <tr>
           <td class="desc">{{ i.nome }}</td>
+          <td class="dados direita">{{ brl(i.receita_bruta) }}</td>
           <td class="dados direita">{{ brl(i.receita) }}</td>
           <td class="dados direita">{{ brl(i.despesa) }}</td>
           <td class="dados direita {{ classe_valor(i.resultado) }}"><b>{{ brl(i.resultado) }}</b></td>
@@ -91,8 +93,8 @@
 </div>
 
 <p class="cartao-dica">
-  A receita aqui é a <b>líquida</b> — sem os impostos que o cliente reteve na
-  fonte. Obra com resultado negativo não quer dizer necessariamente prejuízo
+  A <b>receita bruta</b> é a medição inteira; a <b>líquida</b> é sem os impostos
+  que o cliente reteve na fonte — é ela que entra no resultado. Obra com resultado negativo não quer dizer necessariamente prejuízo
   final: pode ser obra em andamento, com custo já lançado e medição ainda por
   faturar. Compare com a tela <b>Comprometido vs Executado</b>.
 </p>

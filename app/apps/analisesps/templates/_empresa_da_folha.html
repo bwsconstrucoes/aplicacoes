@@ -1,0 +1,16 @@
+{# A EMPRESA DE ADMISSÃO (10/11/2026; `empresa_da_folha.py`). Recorta a tela inteira
+   — totais, seleção, relatório e geração — pelo CNPJ da coluna BT do cadastro.
+   Espera `emp_opcoes` ([(valor, rótulo)]) e `emp_atual` (valor ou ""). Vai DENTRO
+   de um <form method="get"> e o envia ao trocar. #}
+<label class="campo-mes campo-empresa"><span>Empresa (CNPJ de admissão)</span>
+  <select name="empresa" aria-label="Empresa" onchange="this.form.submit()"
+          {% if emp_atual %}style="border-color:var(--azul, #1f4e79); font-weight:600"{% endif %}>
+    <option value="" {% if not emp_atual %}selected{% endif %}>Todas as empresas</option>
+    {% for valor, rotulo in emp_opcoes or [] %}
+      <option value="{{ valor }}" {% if emp_atual == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+    {% if emp_atual and emp_atual not in (emp_opcoes or [])|map('first')|list %}
+      <option value="{{ emp_atual }}" selected>{{ emp_atual }} — ninguém neste período</option>
+    {% endif %}
+  </select>
+</label>

@@ -260,7 +260,7 @@ def test_o_portal_so_abre_os_tipos_que_a_obra_pode(sessao_real):
     from app.apps.erp.core import portal as svc_portal
     chaves = {t["chave"] for t in svc_portal.tipos(sessao_real)}
     assert "DESCONTO_EM_FOLHA" not in chaves
-    assert "PRE_CADASTRO" in chaves and "DESLIGAMENTO" in chaves
+    assert "CADASTRO" in chaves and "DESLIGAMENTO" in chaves
 
 
 @banco_
@@ -580,3 +580,328 @@ def test_nenhum_campo_do_portal_sai_com_nome_tecnico():
                 faltando.append(campo)
     assert not faltando, (
         "campo do portal sem rótulo em português: " + ", ".join(faltando))
+
+
+# ---------------------------------------------------------------------------
+# AS ÁREAS DO PORTAL (08/11/2026)
+#
+# O dono, depois de entrar e ver só pedidos de DP: *"Não liberamos ainda os
+# demais, mas precisa estar dividido em áreas não?"* — sim, e a área que ainda
+# não abriu TAMBÉM aparece. Esconder o que falta faz achar que o sistema só
+# serve para DP, e aí o material continua sendo pedido por WhatsApp.
+# ---------------------------------------------------------------------------
+def test_toda_area_do_portal_diz_o_que_e_e_o_que_fazer_enquanto_nao_abre():
+    from app.apps.erp.core import portal as svc
+
+    assert svc.AREAS, "o portal ficou sem área nenhuma"
+    for a in svc.AREAS:
+        assert a.get("nome"), f"área {a.get('chave')} sem nome de gente"
+        assert a.get("explicacao"), (
+            f"área {a['chave']} não diz o que se pede nela — e quem está na "
+            f"obra decide pelo que lê, não pelo nome da área")
+        if not a.get("pronta"):
+            assert a.get("enquanto_isso"), (
+                f"a área {a['chave']} está fechada e não diz onde pedir "
+                f"enquanto isso. Porta fechada sem recado vira ligação para o "
+                f"escritório.")
+
+
+def test_nenhum_tipo_do_portal_fica_orfao_de_area():
+    """Tipo numa área que não existe some da tela sem ninguém perceber."""
+    from app.apps.erp.core import portal as svc
+
+    chaves_de_area = {a["chave"] for a in svc.AREAS}
+    orfas = set(svc.TIPOS_POR_AREA) - chaves_de_area
+    assert not orfas, f"tipos em área inexistente: {sorted(orfas)}"
+
+
+def test_area_marcada_pronta_sem_tipo_nenhum_se_corrige_sozinha(sessao_real):
+    """Porta que abre para o vazio é pior que porta fechada: a pessoa entra,
+    não acha nada, e conclui que o sistema está quebrado."""
+    from app.apps.erp.core import portal as svc
+
+    eu = {"usuario": None}
+    for a in svc.areas(sessao_real, eu):
+        if not a["pronta"]:
+            continue
+        # ⚑ A EXCEÇÃO É A ÁREA QUE É SÓ TELA — o diário de obra, ligado em
+        # 10/11/2026. Ela não oferece pedido nenhum de propósito: clicar leva
+        # à tela do diário. O que ela NÃO pode é estar pronta sem tipo E sem
+        # tela, que seria a porta para o vazio que este teste pega.
+        if a.get("so_tela"):
+            assert a.get("tela"), (
+                f"a área {a['chave']} é só tela e não diz qual")
+            continue
+        assert a["tipos"] > 0, (
+            f"a área {a['chave']} diz estar pronta e não oferece tipo "
+            f"nenhum")
+
+
+def test_cada_tipo_do_portal_sabe_de_que_area_e(sessao_real):
+    """A área vem NO TIPO, não numa segunda lista na tela — senão um tipo novo
+    nasce fora de qualquer área e ninguém nota."""
+    from app.apps.erp.core import portal as svc
+
+    chaves_de_area = {a["chave"] for a in svc.AREAS}
+    tipos = svc.tipos(sessao_real)
+    assert tipos, "o portal ficou sem tipo nenhum"
+    for t in tipos:
+        assert t.get("area") in chaves_de_area, (
+            f"o tipo {t['chave']} não pertence a área nenhuma")
+
+
+def test_a_tela_do_portal_nao_se_chama_mais_so_do_dp():
+    """O portal é de TODAS as áreas, mesmo com só uma aberta. Um título que diz
+    "Pedidos ao DP" ensina a pessoa que o resto não existe aqui."""
+    from pathlib import Path
+
+    tela = Path("app/apps/erp/templates/erp_portal.html").read_text(
+        encoding="utf-8")
+    assert "<title>Solicitações" in tela
+    assert "Pedidos ao DP" not in tela
+
+
+# ---------------------------------------------------------------------------
+# A PORTA NÃO PODE PROMETER O QUE NÃO TEM (10/11/2026)
+#
+# Ele, olhando o portal: *"lá no resumo do portal tinha lá férias, e quando
+# você entrava, não tinha solicitação de férias. Estava tudo errado."*
+#
+# Estava mesmo: a área "Pessoal e DP" se descrevia como "admissão,
+# desligamento, FÉRIAS, vale, dados da pessoa" — e férias não é pedido de DP
+# aqui, é do ponto. Porta que anuncia o que não tem é pior que porta fechada:
+# a pessoa entra, não acha, e deixa de confiar no resto da tela.
+# ---------------------------------------------------------------------------
+def test_a_explicacao_da_area_nao_promete_o_que_a_area_nao_tem():
+    """⚑ A TRAVA. Cada palavra-chave da explicação tem de achar eco num tipo
+    da área — senão é promessa. A lista de palavras é curta e explícita de
+    propósito: ela existe para pegar o caso "férias", que foi o real."""
+    import unicodedata
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    def seco(texto):
+        cru = unicodedata.normalize("NFD", str(texto or "").lower())
+        return "".join(c for c in cru if unicodedata.category(c) != "Mn")
+
+    # O que a área oferece, em texto: nome e explicação de cada tipo dela.
+    for area in svc_portal.AREAS:
+        if not area.get("pronta") or area.get("so_tela"):
+            continue
+        chaves = svc_portal.TIPOS_POR_AREA.get(area["chave"], ())
+        oferta = seco(" ".join(
+            svc_sp.TIPOS[k]["nome"] + " " + svc_sp.TIPOS[k]["explicacao"]
+            for k in chaves if k in svc_sp.TIPOS))
+        # As palavras que já causaram engano. Entrar aqui é de propósito.
+        for palavra in ("ferias", "atestado", "afastamento", "ponto",
+                        "crachá", "cracha", "desconto"):
+            if palavra in seco(area["explicacao"]):
+                assert palavra in oferta, (
+                    f"a área {area['chave']!r} promete {palavra!r} na "
+                    f"explicação e não tem tipo nenhum que faça isso — foi "
+                    f"exatamente o caso de 'férias', que ele viu na tela")
+
+
+def test_toda_area_pronta_leva_a_algum_lugar():
+    """Área pronta ou oferece pedido, ou é uma tela. Pronta e vazia seria uma
+    porta que abre para o nada."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    for area in svc_portal.AREAS:
+        if not area.get("pronta"):
+            continue
+        tipos = [k for k in svc_portal.TIPOS_POR_AREA.get(area["chave"], ())
+                 if k in svc_sp.TIPOS]
+        assert tipos or (area.get("so_tela") and area.get("tela")), (
+            f"a área {area['chave']!r} está pronta e não leva a lugar nenhum")
+
+
+def test_o_diario_de_obra_esta_ligado_no_portal():
+    """Pedido dele em 10/11/2026: *"eu quero deixar ativo no portal o diário
+    de obras também."* É área de TELA, não de pedido: clicar leva ao diário."""
+    from app.apps.erp.core import portal as svc_portal
+    diario = next(a for a in svc_portal.AREAS if a["chave"] == "obra")
+    assert diario["pronta"] is True
+    assert diario["so_tela"] is True
+    assert diario["tela"] == "/erp/obras/diario"
+
+
+def test_todo_tipo_que_o_portal_oferece_existe_de_verdade():
+    """O contrário do caso férias: a área não pode listar um tipo que a regra
+    não tem. Isso daria um botão que abre um formulário vazio."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    for area, chaves in svc_portal.TIPOS_POR_AREA.items():
+        for k in chaves:
+            assert k in svc_sp.TIPOS, (
+                f"o portal oferece {k!r} na área {area!r} e esse tipo não "
+                f"existe em pessoal_solicitacoes.TIPOS")
+
+
+# ---------------------------------------------------------------------------
+# O QUE O CADASTRO JÁ TEM NÃO SE PERGUNTA DE NOVO
+#
+# Ele, em 10/11/2026, sobre a admissão de prestador: *"vamos requerer os dados.
+# Se não tivermos, né? Acho que é interessante uma consulta, ver se tem CTPS,
+# se tem PIS."*
+#
+# O defeito que estes testes defendem é de DADO, não de tela: pedir de novo o
+# número que o sistema tem abre a porta para alguém digitar um diferente — e
+# aí o cadastro e o pedido discordam na hora de registrar a carteira.
+# ---------------------------------------------------------------------------
+def test_o_tipo_leva_para_a_tela_de_onde_cada_campo_vem():
+    """O mapa é do servidor. Se a tela decidisse, divergiriam — e a pessoa
+    descobriria a diferença só na recusa do envio."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    lista = svc_portal.tipos(None)
+    for t in lista:
+        regra = svc_sp.TIPOS[t["chave"]]
+        assert t["ja_no_cadastro"] == dict(regra.get("ja_no_cadastro") or {})
+    prestador = next(t for t in lista if t["chave"] == "ADMISSAO_PRESTADOR")
+    assert prestador["ja_no_cadastro"] == {"num_ctps": "ctps_numero",
+                                           "num_pis": "pis"}
+
+
+def test_todo_campo_consultado_no_cadastro_e_campo_do_proprio_tipo():
+    """Consultar uma coluna para um campo que o formulário não tem é consulta
+    que nunca aparece — e ninguém descobre, porque nada reclama."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    for chave, regra in svc_sp.TIPOS.items():
+        for campo in (regra.get("ja_no_cadastro") or {}):
+            assert campo in regra["campos"], (
+                f"{chave}: consulta o cadastro para {campo!r}, que não é "
+                f"campo deste tipo")
+
+
+@banco_
+def test_toda_coluna_consultada_existe_na_tabela_de_colaboradores(sessao_real,
+                                                                  banco):
+    """Coluna errada derrubaria a BUSCA DE PESSOA do portal inteira — não só o
+    tipo que a consulta. Vale um teste com banco de verdade."""
+    from sqlalchemy import text
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    existem = {l[0] for l in sessao_real.execute(text(
+        "SELECT column_name FROM information_schema.columns "
+        " WHERE table_name = 'colaboradores'")).all()}
+    for coluna in svc_sp.COLUNAS_JA_NO_CADASTRO:
+        assert coluna in existem, (
+            f"ja_no_cadastro aponta para colaboradores.{coluna}, que não "
+            f"existe")
+
+
+@banco_
+def test_a_busca_de_pessoa_devolve_o_que_o_cadastro_tem(sessao_real, dono,
+                                                        pessoa, banco):
+    """E só o que ESTÁ preenchido: campo vazio virando 'já no cadastro' faria
+    a pessoa deixar de preencher o que falta."""
+    from app.apps.erp.core import portal as svc_portal
+    achados = svc_portal.procurar_pessoas(sessao_real, dono, "Pessoa Da Caixa")
+    eu = next(x for x in achados if x["id"] == pessoa.id)
+    # Esta pessoa tem PIS no cadastro e NÃO tem número de CTPS.
+    assert eu["cadastro"]["pis"] == PIS_A
+    assert "ctps_numero" not in eu["cadastro"]
+
+
+@banco_
+def test_o_pedido_nasce_com_o_que_o_cadastro_tem_e_nao_exige_de_novo(
+        sessao_real, dono, pessoa, banco):
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    ja = svc_sp.o_que_o_cadastro_ja_tem(sessao_real, "ADMISSAO_PRESTADOR",
+                                        pessoa.id)
+    assert ja == {"num_pis": PIS_A}
+    exige = svc_sp.exigencias("ADMISSAO_PRESTADOR", {}, ja)
+    assert "num_pis" not in exige["campos"]
+    # O que o cadastro NÃO tem continua sendo perguntado.
+    assert "num_ctps" in exige["campos"]
+
+
+# ---------------------------------------------------------------------------
+# UMA INFORMAÇÃO, UMA FONTE: a empresa de registro
+#
+# Ele, em 11/11/2026: *"empresa para registro e CNPJ para admissão é campo
+# duplicado. É a mesma informação."*
+#
+# Tinha razão, e era pior do que parecia:
+#   1. a ficha do colaborador tinha os DOIS — caixinha de empresa e texto
+#      livre de CNPJ —, então dava para escolher uma e digitar outra;
+#   2. a caixinha NUNCA funcionou: a lista de empresas não era mandada para a
+#      tela, então ela estava sempre vazia e só o texto livre servia;
+#   3. a lista de CNPJs do pedido estava DIGITADA no código, enquanto o
+#      cadastro de Empresas tinha as mesmas empresas.
+# ---------------------------------------------------------------------------
+@banco_
+def test_a_ficha_recebe_as_empresas_para_a_caixinha(sessao_real, banco):
+    """Sem isto a caixinha "Empresa de registro" nasce vazia — que foi
+    exatamente o que aconteceu, e obrigou o CNPJ a virar texto livre."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Empresa
+    sessao_real.add(Empresa(razao_social="BWS MATRIZ LTDA",
+                            cnpj="00079526000109", nome_fantasia="MATRIZ/CE"))
+    sessao_real.flush()
+    o = svc.opcoes(sessao_real)
+    assert o["empresas"], "a ficha ficaria com a caixinha de empresa vazia"
+    uma = o["empresas"][0]
+    assert uma["cnpj"] and uma["razao_social"]
+
+
+@banco_
+def test_escolher_a_empresa_preenche_o_CNPJ_sozinho(sessao_real, dono, banco):
+    """O CNPJ deixa de ser digitado: ele SEGUE a empresa. Sem isto os dois
+    podiam divergir — a MATRIZ na caixinha e o CNPJ da INFRADENDE ao lado."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Empresa, Obra
+    emp = Empresa(razao_social="INFRADENDE LTDA", cnpj="50422792000109",
+                  nome_fantasia="INFRADENDE")
+    obra = Obra(codigo="EMP-01", nome="Obra da empresa", status="ATIVA")
+    sessao_real.add_all([emp, obra])
+    sessao_real.flush()
+    c = svc.salvar(sessao_real, {
+        "cpf": CPF_B, "nome": "Pessoa Da Empresa", "obra_id": obra.id,
+        "empresa_id": emp.id, "vinculo": "CTPS", "admissao": "2026-01-05"}, dono)
+    sessao_real.flush()
+    assert c.cnpj_admissao == "50422792000109"
+
+
+@banco_
+def test_quem_manda_so_o_CNPJ_continua_funcionando(sessao_real, dono, banco):
+    """A importação de planilha, a do Pipefy e o pedido vindo da obra mandam o
+    CNPJ sem empresa. Quebrar isso seria trocar um defeito por três."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Obra
+    obra = Obra(codigo="EMP-02", nome="Obra sem empresa", status="ATIVA")
+    sessao_real.add(obra)
+    sessao_real.flush()
+    c = svc.salvar(sessao_real, {
+        "cpf": CPF_A, "nome": "Pessoa Sem Empresa", "obra_id": obra.id,
+        "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+        "vinculo": "CTPS", "admissao": "2026-01-05"}, dono)
+    sessao_real.flush()
+    assert c.cnpj_admissao == "00.079.526/0001-09 - MATRIZ/CE"
+
+
+@banco_
+def test_a_lista_de_empresas_do_pedido_sai_do_CADASTRO(sessao_real, banco):
+    """Empresa nova do grupo tem de aparecer sozinha na caixinha do pedido —
+    sem ninguém lembrar de digitar o CNPJ dentro do código."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    from app.apps.erp.db.models.cadastros import Empresa
+    sessao_real.add(Empresa(razao_social="EMPRESA NOVA DO GRUPO LTDA",
+                            cnpj="11222333000181", nome_fantasia="NOVA"))
+    sessao_real.flush()
+    achadas = svc_sp.opcoes_de_empresa(sessao_real)
+    assert any("11222333000181" in x and "NOVA" in x for x in achadas), achadas
+
+
+def test_nenhuma_tela_pergunta_a_empresa_duas_vezes():
+    """A ficha tinha "Empresa do grupo" E "CNPJ de admissão", lado a lado.
+    Esta trava é de TEXTO porque o defeito era de tela: o campo de CNPJ não
+    pode voltar a ser digitável na ficha."""
+    from pathlib import Path
+    ficha = Path("app/apps/erp/templates/erp_colaboradores.html").read_text(
+        encoding="utf-8")
+    assert 'campoTexto("CNPJ de admissão"' not in ficha, (
+        "o CNPJ voltou a ser digitado na ficha — ele vem da empresa escolhida")
+    assert '"c-cnpjadm": "cnpj_admissao"' not in ficha, (
+        "a ficha voltou a mandar o CNPJ junto com a empresa, e os dois podem "
+        "divergir de novo")

@@ -1763,6 +1763,224 @@ torna possíveis. Escritas como o dono perguntaria.
   `colaborador_etapas` guarda as passagens, mas não há função que calcule a
   permanência. É a pergunta que diria onde o cadastro emperra.
 
+## 3y. O DIÁRIO DE OBRA (08/11/2026)
+
+Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
+
+**Respondidas por código escrito:**
+
+- "Quais obras estão com diário atrasado?" — e quantos dias cada uma deve.
+- "Faltou diário em que dias da obra 081 este mês?"
+- "Quantas pessoas trabalharam na obra tal dia?" — vem do ponto, não digitado.
+- "Quem trabalhou na obra naquele dia, e fazendo o quê?" — **passou a trazer a
+  FUNÇÃO em 10/11/2026**, e ela vem de três lugares, nesta ordem: o cargo do
+  cadastro do ERP, a função antiga, e o cargo do Registro de Colaboradores (o
+  mesmo que o ponto usa). ⚠️ **pessoa sem nenhum dos três aparece sem função**
+  — a resposta deve dizer "sem função no cadastro", nunca inventar uma.
+- "Em que diário eu falei de concretagem da laje?" — **passou a ser respondida
+  em 10/11/2026**: a busca varre relato, ocorrências, histórico, equipamentos
+  e o que a fiscalização escreveu, ignorando acento e maiúscula, e diz em qual
+  campo achou. ⚠️ **ela acha PEDAÇO de palavra** ("P12", "bloco B"), e por
+  isso termo com menos de 3 letras é recusado em vez de devolver tudo.
+- "O que foi feito na obra na semana passada?"
+- "Em que dias choveu na obra?" — ⚑ hoje só o que a pessoa marcou; a medição
+  da estação ainda não está ligada.
+- "Quantos dias a obra parou por chuva?" — ⚠️ **palavra ambígua**: "parou"
+  pode ser o dia inteiro ou parte dele. Hoje o diário guarda o TEMPO por
+  período, não a parada: o campo que eu tinha proposto para isso foi cortado
+  por ele. **O assistente tem de dizer que não sabe responder.**
+- "A fiscalização esteve na obra quantas vezes?"
+- "O que a fiscalização observou?"
+- "Que material chegou na obra naquele dia?" — vem de Suprimentos.
+- "Quem corrigiu o diário depois de fechado, e por quê?"
+- "Que equipamento estava na obra naquele dia?" — **passou a ser uma LISTA em
+  10/11/2026** (migrações 097 e 098): descrição, quantidade, observação e o
+  **laço com o cadastro de insumos** (os marcados como locáveis). O campo de
+  texto livre saiu da tela no mesmo dia, mas **os diários antigos ainda o
+  usam**, então a resposta tem de olhar os DOIS.
+  ⚠️ **não é consulta de frota**: se ninguém lançar, a resposta é "não
+  informado", e não "nenhum equipamento esteve na obra".
+- "Quantos dias a retroescavadeira ficou na obra 081?" — **agora dá para
+  contar**, nos dias lançados pela lista. ⚠️ **a conta só vale a partir do dia
+  em que a obra passou a usar a lista**: dia com equipamento escrito no texto
+  livre não entra na soma, e a resposta tem de dizer isso em vez de devolver um
+  número menor com cara de certo.
+- "Em que diário aparece a betoneira?" — **passou a ser respondida em
+  10/11/2026**: a busca por texto do diário varre também a lista de
+  equipamento e a observação dela ("parada por manutenção").
+- "Que equipamento ficou parado, e em que dias?" — ⚠️ **depende de alguém ter
+  escrito o motivo na observação**. O sistema não sabe sozinho que uma máquina
+  parou; ele guarda o que a obra escreveu.
+- "Em quais obras a retroescavadeira esteve este mês?" — **passou a dar para
+  responder sem erro de nome** (098): o equipamento escolhido na lista carrega
+  o número do insumo, então contar não depende de alguém ter digitado igual.
+  ⚠️ **mas só conta o que veio da lista**: equipamento lançado como "não está
+  na lista" entra marcado e fica de fora da soma por insumo. A resposta tem de
+  dizer quantos ficaram de fora, nunca devolver só o número.
+- "Que equipamento foi lançado sem estar no cadastro?" — dá para listar, e é a
+  pergunta que mantém a nomenclatura limpa: cada um desses é um insumo que
+  Suprimentos precisa cadastrar como locável. Ainda não há função pronta.
+- "Em que horário a obra trabalhou naquele dia?" — ⚠️ **palavra ambígua**: o
+  campo vem **pré-preenchido** com o padrão do dia da semana (7 às 17, e 7 às
+  16 na sexta) e a pessoa pode trocar. Um dia gravado SEM horário não tem
+  jornada afirmada, e o assistente não deve completar com o padrão.
+
+- "Gere o diário no modelo que a Prefeitura de X exige" — **passou a ser
+  respondida em 09/11/2026**: há três modelos de folha (o nosso ampliado, o
+  da BWS e o do órgão), e a escolha sai do cadastro da obra, aba Contrato.
+- "Qual modelo de diário este contrato exige?" — está no cadastro da obra.
+- "Que obras ainda estão sem a logo do órgão no diário?" — ⚠️ dá para
+  consultar, mas não há função pronta; hoje se vê abrindo o cadastro.
+
+- "O que foi feito na obra em março do ano passado?" — **passou a ter resposta
+  em 10/11/2026**, com a importação dos 1.427 diários da planilha antiga
+  (fevereiro de 2025 em diante). ⚠️ **a cobertura é desigual**: são 14 obras, e
+  o que não estava na planilha continua sem diário. Antes de responder "não
+  houve obra nesse dia", o assistente tem de saber distinguir **não houve** de
+  **não foi importado**.
+- "Este diário foi escrito aqui ou veio da planilha antiga?" — fica gravado
+  (`importado_de`), e importa para ler o resto: num dia importado **não há
+  batida de ponto nenhuma**, e o efetivo é o que a obra declarou por função.
+- "Quem informou este diário?" — nos importados, o nome de quem preencheu no
+  sistema antigo, que **não é** um usuário do ERP.
+- "A IA pode melhorar este relato?" — pode, no relato, nas ocorrências, no
+  histórico e nos equipamentos. ⚠️ **Nunca na observação da fiscalização**, e
+  isso não é configuração: a recusa é por lista fechada na regra. A sugestão
+  **não grava** — vai para o campo e a pessoa decide.
+
+**Dependem de quem pergunta (escopo por obra):**
+
+- "Como está o diário das minhas obras?" — o administrativo de obra vê as
+  dele; o gestor vê as designadas.
+- "Em que diário eu falei de concretagem?" — a busca por texto só varre as
+  obras que quem procura alcança. Quem é preso a obra não acha diário da obra
+  de outro, e a resposta **não diz que existe** — diz que não achou.
+
+**O sistema AINDA NÃO responde, e o que falta:**
+
+- "Quantos dias de prazo eu posso pedir por chuva?" — falta a medição da
+  estação (`clima_medido` existe e está vazia) e falta o conceito de PARADA,
+  que foi cortado. Sem os dois, qualquer número seria chute.
+- "Qual o resumo do andamento da obra?" — o campo HISTÓRICO existe desde
+  09/11/2026 e é escrito dia a dia, mas não há função que junte os históricos
+  de um período numa resposta só.
+- "Qual o efetivo médio da obra no mês?" — dá para contar, mas não há função
+  que some; e a resposta mudaria conforme contar ou não o terceirizado.
+- "Este relato é parecido com o de ontem?" — o sistema OFERECE o relato
+  anterior, mas não compara nem avisa quando dez dias seguidos são idênticos.
+  Seria o sinal de diário preenchido no automático.
+- "Quantos dias-máquina a obra consumiu no mês?" — a lista de equipamento tem
+  a quantidade por dia, mas não há função que multiplique e some o período.
+  ⚠️ **e a conta tem uma armadilha**: o equipamento é repetido do dia anterior
+  com um botão, então um dia em que ninguém lançou nada **não quer dizer** que
+  a máquina saiu da obra — quer dizer que ninguém lançou. Somar sem dizer isso
+  daria um número menor com cara de certo.
+- "A obra parou quantos dias esperando licença?" — os 106 dias de "AGUARDANDO
+  LICENÇA" da planilha antiga estão lá, e **de propósito não foram marcados
+  como "sem expediente"**: obra parada esperando terceiro é pleito de prazo,
+  não folga. Mas não há função que some esses dias por obra.
+- "Quantos dias esta obra ficou sem expediente?" — dá para contar o campo,
+  mas ⚠️ **nos diários importados a marca veio de uma leitura do texto**
+  ("FOLGA", "FERIADO - NÃO HOUVE EXPEDIENTE"), não de alguém ter clicado. A
+  resposta tem de dizer isso.
+- "Alguma máquina está lançada há semanas sem aparecer no relato?" — seria o
+  sinal de equipamento esquecido na lista, repetido todo dia pelo botão depois
+  de já ter ido embora. Não há função que cruze as duas coisas.
+
+## 3z. O PEDIDO QUE JÁ VEM PREENCHIDO (10/11/2026)
+
+Três mudanças pequenas nas solicitações do DP, e todas mexem no mesmo lugar:
+**o que o sistema já sabe deixa de ser perguntado.**
+
+1. **Desligamento não pede mais a chave Pix.** Ela já está no cadastro da
+   pessoa. Pedir de novo abria a porta para digitarem uma chave diferente da
+   cadastrada bem na hora de pagar a rescisão.
+2. **Admissão de prestador consulta o cadastro** antes de exigir CTPS e PIS:
+   quem já tem o número vê o campo preenchido, com o recado "já está no
+   cadastro — confira se bate com o documento"; quem não tem continua sendo
+   perguntado.
+3. **Atualização de dados cadastrais ganhou o endereço** (CEP, rua, número,
+   bairro, cidade, estado) e o **nome** — que a própria explicação do tipo já
+   prometia e o formulário não tinha.
+
+### O que dá para perguntar agora
+
+- "Quantas pessoas estão sem PIS no cadastro?" — e a mesma para o número de
+  CTPS. É a conta que diz quanto a consulta ao cadastro está economizando de
+  digitação, e quanto ainda falta preencher.
+- "Quem mudou de endereço este mês?" — pelos pedidos de atualização de dados
+  atendidos que traziam CEP.
+- "Quantos desligamentos foram atendidos sem a chave Pix no cadastro da
+  pessoa?" — ⚠️ **esta é a pergunta que vigia a mudança 1**: se houver gente
+  desligada sem chave no cadastro, tirar o campo do formulário transferiu o
+  problema para o DP em vez de resolvê-lo.
+- "Esta pessoa tem o cadastro completo para entrar na folha?" — CPF,
+  documento de identidade, comprovante de endereço, PIS e, para CTPS, os
+  dados da carteira. É a lista que ele definiu em 10/11/2026.
+
+### ⚠️ Palavras que mudam a resposta aqui
+
+- **"sem PIS"** pode ser *nunca preenchido* ou *preenchido com número
+  inválido*. O cadastro recusa PIS inválido desde o começo, mas os registros
+  importados da base antiga entraram antes dessa conferência.
+- **"mudou de endereço"** é o pedido ATENDIDO, não o aberto. Pedido aberto é
+  intenção; o cadastro só mudou quando o DP atendeu.
+
+### O que o sistema ainda NÃO responde
+
+- "O endereço desta pessoa confere com o comprovante que ela anexou?" — o
+  comprovante é exigido e fica arquivado, mas ninguém compara o que está
+  escrito nele com o que está no cadastro.
+- "Quantas vezes o número de CTPS do pedido veio diferente do que estava no
+  cadastro?" — seria o sinal de cadastro errado (ou de pessoa errada
+  escolhida na busca). O campo é editável de propósito, mas a divergência não
+  é registrada em lugar nenhum.
+
+## 3z-bis. O QUE VEIO DO PIPEFY (10/11/2026)
+
+O número do card já estava no cadastro (`colaboradores.ref_pipefy`). Agora o
+ERP sabe ler esse card, baixar os documentos da pessoa e preencher o que está
+em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
+
+### O que dá para perguntar agora
+
+- "Quantas pessoas já tiveram os documentos trazidos do Pipefy?" — e quantas
+  ainda faltam.
+- "De onde veio a CTPS desta pessoa: alguém fotografou ou foi a importação?"
+  — está em `pipefy_importado` e em `documentos.origem`.
+- "Quais arquivos não desceram, e por quê?" — é a lista que precisa de mão
+  humana, e é a pergunta que impede "importação concluída" de esconder trinta
+  falhas.
+- "Quantas pessoas ativas ainda estão sem número de card?" — essas nunca vão
+  ser alcançadas pela importação, e é por aí que se descobre quem entrou no
+  ERP por fora do Pipefy.
+- "Esta pessoa está com o cadastro documental completo?" — CPF, documento de
+  identificação, comprovante de endereço e, no caso CTPS, as duas páginas.
+
+### ⚠️ Palavras que mudam a resposta aqui
+
+- **"importado"** pode ser *o card foi lido* ou *o documento foi guardado*. Um
+  card lido cujos oito anexos falharam conta como lido e não trouxe nada.
+- **"já veio"** é por (card, campo, arquivo) — não por pessoa. Pessoa com seis
+  documentos pode ter cinco guardados e um pendente.
+- **"todas as pessoas"**: o padrão da importação é **quem está trabalhando**.
+  O pipe tem 3.664 cards e o ERP não precisa do histórico de quem saiu há
+  cinco anos.
+
+### O que o sistema ainda NÃO responde
+
+- "O documento que veio do Pipefy está legível?" — ele é guardado como veio.
+  Foto torta ou ilegível entra do mesmo jeito, e ninguém confere.
+- "O que está no card diverge do que está no cadastro?" — a importação só
+  preenche o que está VAZIO, de propósito. Ela não compara nem avisa quando o
+  card diz uma coisa e o cadastro diz outra — e essa divergência é justamente
+  o sinal de cadastro desatualizado de um dos dois lados.
+- "Quantas pessoas do pipe não existem no ERP?" — a importação não cria
+  pessoa, então quem está só no Pipefy é invisível aqui. Responder isso
+  exigiria ler os 3.664 cards, que é outra operação.
+- "O ASO desta pessoa está válido?" — o ASO **não é importado**: ele vence, e
+  o card não diz até quando vale. Continua sendo anexado à mão, com a data.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

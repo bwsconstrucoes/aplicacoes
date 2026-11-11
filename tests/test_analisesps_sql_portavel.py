@@ -505,7 +505,10 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     # E a nona, de 14/10/2026: a EXPORTAÇÃO do extrato da conciliação
     # (`conciliacao_exportar.py`) — as linhas do filtro da tela, escritas (não
     # lidas), com teto de 20 mil. Não lê a base de SPs.
+    # E a décima, de 11/11/2026: a planilha de CENTROS DE CUSTO para a contabilidade
+    # (`centros_de_custo.py`) — as pessoas de UMA folha, ~500, escritas (não lidas).
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
+                   "centros_de_custo.py": {"openpyxl"},
                    "conciliacao_exportar.py": {"openpyxl"},
                    "folha_auxilio.py": {"openpyxl"},
                    "gratificados.py": {"openpyxl"},

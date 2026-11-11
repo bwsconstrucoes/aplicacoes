@@ -32,6 +32,8 @@
      href="{{ url_for('painel.baixar', assunto='cenario', formato='pdf',
                       cenario=cenario.id, obra_grafico=obra_grafico) }}">⬇ PDF</a>
   <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
      href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">← Montar</a>
 </form>
 
@@ -43,11 +45,24 @@
   meses depois.
 </p>
 
-{% if excluidas %}
-<div class="aviso info">
-  <b>Fora da análise neste cenário:</b> {{ excluidas|join(' · ') }}.
-  Não recebem estrutura nem juros e não entram na quota de ninguém.
-</div>
+{# OS NOMES FICAM RECOLHIDOS (11/11/2026, o dono: "não quero que apareça na
+   tela" — ele mostra esta tela aos outros sócios). Quem precisa conferir
+   abre; quem só olha não vê obra que não é da prestação. #}
+{% if cortes or excluidas %}
+<details class="cartao-dica" style="margin:0 0 12px">
+  <summary style="cursor:pointer">
+    {% if excluidas %}{{ excluidas|length }} obra(s) fora desta prestação{% endif %}{% if cortes and excluidas %} · {% endif %}{% if cortes %}{{ cortes|length }} considerada(s) só até um mês{% endif %}
+    — ver quais
+  </summary>
+  {% if excluidas %}
+  <p style="margin:6px 0 0"><b>Fora:</b> {{ excluidas|join(' · ') }}.
+    Não recebem estrutura nem juros e não entram na quota de ninguém.</p>
+  {% endif %}
+  {% if cortes %}
+  <p style="margin:6px 0 0"><b>Só até um mês</b> (depois dele não entram em conta nenhuma):
+    {% for obra, ate in cortes|dictsort %}{% if not loop.first %} · {% endif %}{{ obra }} — até {{ ate[5:] }}/{{ ate[:4] }}{% endfor %}.</p>
+  {% endif %}
+</details>
 {% endif %}
 
 {% if sem_projeto or tem_nao_apropriado %}
@@ -63,6 +78,9 @@
   <b>"{{ nao_apropriado }}"</b> é outra coisa: lançamento <b>sem obra
   nenhuma</b>. O conserto é apropriar o lançamento (no OMIE, ou pelo Explorador).
   {% endif %}
+  <br><b>Enquanto isso, essas linhas não ficam em lado nenhum:</b> aparecem no
+  resultado, mas não recebem custo da matriz nem juros, e o caixa delas não
+  entra na conta de nenhum dos dois lados.
 </div>
 {% endif %}
 
@@ -125,6 +143,7 @@
       <thead>
         <tr>
           <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Receita bruta</th>
           <th class="sem-ordem direita">Receita líquida</th>
           <th class="sem-ordem direita">Despesas</th>
           <th class="sem-ordem direita">Resultado direto</th>
@@ -137,6 +156,7 @@
         {% for nome, n in por_obra %}
         <tr>
           <td class="desc"><b>{{ nome }}</b></td>
+          <td class="dados direita">{{ brl(n.receita_bruta) }}</td>
           <td class="dados direita">{{ brl(n.receita_liquida) }}</td>
           <td class="dados direita">{{ brl(n.despesas) }}</td>
           <td class="dados direita {{ classe_valor(n.resultado_direto) }}">{{ brl(n.resultado_direto) }}</td>
@@ -149,6 +169,8 @@
     </table>
   </div>
   <p class="cartao-dica">
+    <b>Receita bruta</b> é a medição inteira; a <b>líquida</b> é sem os impostos
+    que o cliente reteve na fonte — é ela que entra no resultado.
     <b>Resultado direto</b> é só o que aconteceu na obra. <b>Estrutura</b> é o
     pedaço do custo da matriz que coube a ela, pela régua do cenário.
     <b>Juros</b> é o preço do dinheiro que ela fez faltar — obra que se paga
@@ -211,6 +233,123 @@
   </details>
 </div>
 {% endif %}
+
+<!-- ===================== BATIMENTO ===================== -->
+{# 10/11/2026, o dono: "é muito importante esse batimento (…) o próprio sistema
+   fazer esse somatório e identificar que bate com o valor global". #}
+{% set bt = batimento.total %}
+<div class="cartao" id="batimento">
+  <div class="cartao-cab">
+    <h3>Batimento — o custo da matriz foi inteiro para algum lugar?</h3>
+    <small>o sistema confere a soma; a planilha traz o mesmo quadro, mês a mês</small>
+  </div>
+
+  {% if batimento.fecha %}
+  <div class="aviso ok"><b>Bate.</b> Tudo o que a matriz gastou
+    ({{ brl(bt.matriz) }}) está distribuído: a soma das partes abaixo dá o
+    valor global, e nada ficou de fora.</div>
+  {% else %}
+  <div class="aviso erro">
+    <b>Não fecha.</b>
+    {% if not batimento.soma_fecha %}
+    A soma das partes difere do custo da matriz em <b>{{ brl(bt.diferenca) }}</b>
+    ({{ batimento.meses_que_nao_batem|length }} mês(es):
+    {{ batimento.meses_que_nao_batem[:12]|join(', ') }}{{ '…' if batimento.meses_que_nao_batem|length > 12 }}).
+    Isso é erro de conta — avise.
+    {% endif %}
+    {% if not batimento.tudo_distribuido %}
+    <b>{{ brl(bt.fora) }}</b> ficaram de fora do rateio: há conta da matriz
+    entrando com menos de 100%. Esse valor não foi para nenhum dos dois lados.
+    <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">Ajuste em Montar</a>
+    — as contas estão listadas abaixo.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if criticas_participacoes %}
+  <div class="aviso erro">
+    <b>Percentuais de quem divide não somam 100%:</b>
+    {% for c in criticas_participacoes %}{{ c.obra }} soma {{ '%.2f'|format(c.soma) }}%{{ ' · ' if not loop.last }}{% endfor %}.
+    Com a soma errada, as quotas não fecham com o resultado da obra.
+  </div>
+  {% endif %}
+
+  <div class="tabela-rolagem">
+    <table>
+      <thead><tr><th class="sem-ordem">Parte</th>
+        <th class="sem-ordem direita">Valor</th></tr></thead>
+      <tbody>
+        <tr><td class="desc"><b>Custo global da matriz</b> (matriz e filial, com os juros)</td>
+          <td class="dados direita"><b>{{ brl(bt.matriz) }}</b></td></tr>
+        <tr><td class="desc">Estrutura rateada para o {{ principal or 'projeto principal' }}</td>
+          <td class="dados direita">{{ brl(bt.principal) }}</td></tr>
+        <tr><td class="desc">Estrutura rateada para os demais projetos</td>
+          <td class="dados direita">{{ brl(bt.demais) }}</td></tr>
+        <tr><td class="desc">Juros apropriados nas obras
+          {% if juros_fora_do_resultado|abs > 0.005 %}<br><small>dos quais {{ brl(juros_fora_do_resultado) }}
+          em obras de projeto que não recebe estrutura — não aparecem no
+          resultado, mas estão na lista de juros por obra</small>{% endif %}</td>
+          <td class="dados direita">{{ brl(bt.juros) }}</td></tr>
+        <tr><td class="desc">Sem dono (não coube em obra nenhuma)</td>
+          <td class="dados direita">{{ brl(bt.sem_dono) }}</td></tr>
+        <tr><td class="desc">Ficou de fora (conta com menos de 100%)</td>
+          <td class="dados direita {{ 'v-neg' if not batimento.tudo_distribuido }}">{{ brl(bt.fora) }}</td></tr>
+        <tr><td class="desc"><b>Diferença</b> (tem de ser zero)</td>
+          <td class="dados direita {{ 'v-neg' if not batimento.soma_fecha }}"><b>{{ brl(bt.diferenca) }}</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if fora_por_conta %}
+  <details {{ 'open' if not batimento.tudo_distribuido }}>
+    <summary style="cursor:pointer; padding:6px 0"><b>Contas que ficaram de fora</b></summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+      <table>
+        <thead><tr><th class="sem-ordem">Grupo</th><th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem direita">Ficou de fora</th></tr></thead>
+        <tbody>
+          {% for l in fora_por_conta %}
+          <tr><td class="desc">{{ l.grupo }}</td><td class="desc">{{ l.categoria }}</td>
+            <td class="dados direita">{{ brl(l.valor) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  <details>
+    <summary style="cursor:pointer; padding:6px 0"><b>Mês a mês</b></summary>
+    <div class="tabela-rolagem" style="max-height:360px; margin-top:10px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Custo da matriz</th>
+          <th class="sem-ordem direita">{{ principal or 'Principal' }}</th>
+          <th class="sem-ordem direita">Demais</th>
+          <th class="sem-ordem direita">Juros</th>
+          <th class="sem-ordem direita">Sem dono</th>
+          <th class="sem-ordem direita">De fora</th>
+          <th class="sem-ordem direita">Diferença</th>
+        </tr></thead>
+        <tbody>
+          {% for l in batimento.linhas|reverse %}
+          <tr>
+            <td class="desc">{{ l.mes }}</td>
+            <td class="dados direita">{{ brl(l.matriz) }}</td>
+            <td class="dados direita">{{ brl(l.principal) }}</td>
+            <td class="dados direita">{{ brl(l.demais) }}</td>
+            <td class="dados direita">{{ brl(l.juros) }}</td>
+            <td class="dados direita">{{ brl(l.sem_dono) }}</td>
+            <td class="dados direita">{{ brl(l.fora) }}</td>
+            <td class="dados direita {{ 'v-neg' if not l.bate }}">{{ brl(l.diferenca) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
 
 <!-- ===================== AUDITORIA ===================== -->
 <div class="cartao">

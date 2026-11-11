@@ -2,6 +2,17 @@
 {% block titulo %}Explorador de lançamentos — Painel Financeiro BWS{% endblock %}
 {% block filtros %}{% include "painel_explorador_filtros.html" %}{% endblock %}
 
+{# Cabeçalho que ordena a lista (10/11/2026): clicar no valor traz do maior
+   para o menor; clicar de novo, do menor para o maior. #}
+{% macro ordena(rotulo, chaves, classe='') %}
+  {% set atual = pedido.ordem or 'data' %}
+  {% set proxima = chaves[1] if atual == chaves[0] else chaves[0] %}
+  {% set args = request.args.to_dict(flat=False) %}
+  {% set _ = args.update({'ordem': [proxima]}) %}
+  <th class="sem-ordem {{ classe }}"><a href="{{ url_for('painel.explorador', **args) }}"
+     title="ordenar por {{ rotulo|lower }}" style="color:inherit">{{ rotulo }}{% if atual in chaves %} {{ '▼' if atual == chaves[0] else '▲' }}{% endif %}</a></th>
+{% endmacro %}
+
 {% block conteudo %}
 <h2>Explorador de lançamentos
   <small>procura em toda a base e corrige a classificação</small>
@@ -99,8 +110,12 @@
         <b>Ensaio: nada foi enviado ao OMIE.</b>
         {{ alteracao.quantos }} título(s) conferido(s).
       {% else %}
-        <b>{{ alteracao.alterados }} título(s) alterado(s) no OMIE.</b>
-        Rode a atualização da base para o painel refletir a mudança.
+        <b>{{ alteracao.alterados }} lançamento(s) alterado(s) no OMIE</b>
+        — e já no painel: a lista abaixo mostra a obra e a categoria novas.
+        {% if alteracao.titulos_alterados %}
+          Para conferir com o OMIE, rode a <b>Atualização do dia</b> quando
+          terminar todos os lotes: ela relê os títulos alterados.
+        {% endif %}
       {% endif %}
       {% if alteracao.recusados %}
         <br><b>{{ alteracao.recusados }} recusado(s)</b> por terem rateio entre
@@ -242,9 +257,9 @@
       todas de uma vez. Nada é enviado enquanto você edita — o que se monta aqui é
       um rascunho.
       {% if dados.cortou %}
-        <br>Mostrando as <b>{{ '{:,}'.format(teto).replace(',', '.') }}</b> mais
-        recentes de {{ '{:,}'.format(dados.quantos).replace(',', '.') }}; o Excel
-        leva todas.
+        <br>Mostrando as <b>{{ '{:,}'.format(teto).replace(',', '.') }}</b> primeiras
+        ({{ (ordens or {}).get(pedido.ordem or 'data', ('',))[0]|lower }}) de
+        {{ '{:,}'.format(dados.quantos).replace(',', '.') }}; o Excel leva todas.
       {% endif %}
     </p>
 
@@ -254,7 +269,7 @@
           <tr>
             <th class="sem-ordem"></th>
             <th class="sem-ordem">Cód. OMIE</th>
-            <th class="sem-ordem">Data</th>
+            {{ ordena('Data', ['data', 'data_antiga']) }}
             <th class="sem-ordem">Tipo</th>
             <th class="sem-ordem">Análise</th>
             <th class="sem-ordem">Categoria</th>
@@ -265,35 +280,47 @@
             <th class="sem-ordem">Vencimento</th>
             <th class="sem-ordem">Pagamento</th>
             <th class="sem-ordem">Situação</th>
-            <th class="sem-ordem direita">Pago/Receb.</th>
-            <th class="sem-ordem direita">A pagar/receb.</th>
+            {{ ordena('Pago/Receb.', ['valor_maior', 'valor_menor'], 'direita') }}
+            {{ ordena('A pagar/receb.', ['valor_maior', 'valor_menor'], 'direita') }}
           </tr>
         </thead>
         <tbody>
         {% for l in dados.linhas %}
-          <tr data-codigo="{{ l.codigo_lancamento }}">
+          {# LINHA SEM NÚMERO DO OMIE não é editável. Até 10/11/2026 ela saía com
+             data-codigo="None" — e TODAS as sem número viravam "o mesmo
+             título": marcar uma marcava todas. É o lançamento de conta lido
+             antes da migração 021, guardado sem o número; reler os pagamentos
+             daquele período traz o número. #}
+          {% set tem_codigo = l.codigo_lancamento is not none %}
+          <tr {% if tem_codigo %}data-codigo="{{ l.codigo_lancamento }}"{% endif %}
+              data-obra-atual="{{ l.departamento or '' }}"
+              data-categoria-atual="{{ l.codigo_categoria or '' }}">
             <td class="cel-marca">
               {# O `name` faz a marcação VIAJAR no formulário. Sem ele, marcar
                  linha só existia na memória do navegador, e o servidor nunca
                  ficava sabendo — que é o que a exclusão precisa saber. #}
+              {% if tem_codigo %}
               <input type="checkbox" data-marca
                      name="codigo" value="{{ l.codigo_lancamento }}"
                      aria-label="Marcar o título {{ l.codigo_lancamento }}">
               <button type="button" class="link-btn oculto" data-desfazer
                       title="Descartar a alteração deste título">↺</button>
+              {% else %}
+              <span title="Sem o número do OMIE: não dá para alterar daqui. Releia os pagamentos deste período (Configurações) e ele aparece.">—</span>
+              {% endif %}
             </td>
             <td class="dados">{{ l.codigo_lancamento }}</td>
             <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
             <td><small>{{ 'A pagar' if '2.' in (l.tipo or '') else 'A receber' }}</small></td>
             <td><small>{{ l.analise or '—' }}</small></td>
-            <td class="desc editavel" data-campo="categoria" tabindex="0"
-                title="Clique para trocar a categoria deste título">
+            <td class="desc{% if tem_codigo %} editavel" data-campo="categoria" tabindex="0"
+                title="Clique para trocar a categoria deste título{% endif %}">
               <span class="atual">{{ l.categoria or '—' }}</span>
               <small>{{ l.grupo or '' }}</small>
               <span class="novo oculto" data-novo></span>
             </td>
-            <td class="desc editavel" data-campo="obra" tabindex="0"
-                title="Clique para trocar a obra deste título">
+            <td class="desc{% if tem_codigo %} editavel" data-campo="obra" tabindex="0"
+                title="Clique para trocar a obra deste título{% endif %}">
               <span class="atual">{{ l.departamento or '—' }}</span>
               <small>{{ l.projeto or '' }}</small>
               <span class="novo oculto" data-novo></span>

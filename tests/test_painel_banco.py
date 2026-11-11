@@ -424,6 +424,14 @@ def test_resultado_por_obra_usa_o_departamento(consultas):
     assert reais(itens["CASA"]["despesa"]) == -775.00
 
 
+def test_resultado_por_obra_traz_a_receita_bruta(consultas):
+    """11/11/2026, o dono: "no resultado por obra deveria ter a receita bruta".
+    A bruta leva o retido de 100; a líquida (a do resultado) não."""
+    casa = {i["nome"]: i for i in
+            consultas.resultado_por(consultas.Filtros(), nivel="obra")}["CASA"]
+    assert reais(casa["receita_bruta"]) == reais(casa["receita"]) + 100.00
+
+
 def test_comprometido_vs_executado_calcula_a_fracao(consultas):
     """CASA deve 775 no total (750 de principal + 25 de encargo pago) e já pagou
     525 -> 67,7% andado. O encargo entra dos dois lados: ele já foi pago, então

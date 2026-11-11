@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — definir a sua senha</title>
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+<link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
+{# A TELA DO PRIMEIRO ACESSO (09/11/2026).
+
+   Desenho dele: *"eu vou cadastrar o e-mail da pessoa, configurar o perfil, e
+   disparar um e-mail para ela gravar a senha dela."*
+
+   Ela é irmã da tela de entrada de propósito — mesma marca, mesma caixa, mesmo
+   CSS. Quem abre um link de e-mail e cai numa tela que não parece do sistema
+   acha que é golpe, e com razão.
+
+   NÃO TEM MENU, nem `erp_base.html`: quem está aqui ainda não entrou. #}
+</head>
+<body>
+<main class="entrada">
+  <form method="post" action="{{ url_for('erp.pagina_primeiro_acesso', token=token) }}">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>ERP BWS</h1>
+        <p class="sub">BWS Construções</p>
+      </div>
+    </div>
+
+    {% if pronto %}
+      <div class="aviso ok"><b>Senha gravada.</b> Já dá para entrar com o seu
+        e-mail e a senha que você escolheu.</div>
+      <p class="sub">Seu usuário é <b>{{ pessoa.email }}</b>.</p>
+      <a class="btn" href="{{ url_for('erp.pagina_login') }}">Entrar no ERP</a>
+
+    {% elif pessoa %}
+      <p class="sub">Olá, <b>{{ pessoa.nome }}</b>. Escolha a senha do seu
+        acesso. <b>Ninguém mais vai saber qual é</b> — nem quem cadastrou
+        você.</p>
+      {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+      <label for="senha">Sua senha</label>
+      <input id="senha" name="senha" type="password" autocomplete="new-password"
+             minlength="8" required autofocus>
+      <label for="repetida">Digite de novo</label>
+      <input id="repetida" name="repetida" type="password"
+             autocomplete="new-password" minlength="8" required>
+      <div class="dica">Pelo menos 8 caracteres. Use algo que só você saiba —
+        esta senha dá acesso aos dados da empresa.</div>
+      <button class="btn" type="submit">Gravar a minha senha</button>
+
+    {% else %}
+      {# O LINK NÃO VALE. A mensagem é a mesma para inexistente, usado e
+         vencido: dizer qual dos três ajudaria quem tenta links no escuro. #}
+      <div class="aviso erro">{{ erro or "Este link não vale mais." }}</div>
+      <p class="sub">Peça ao administrativo para enviar um convite novo.</p>
+      <a class="btn secundario" href="{{ url_for('erp.pagina_login') }}">Ir para a entrada</a>
+    {% endif %}
+  </form>
+</main>
+</body>
+</html>

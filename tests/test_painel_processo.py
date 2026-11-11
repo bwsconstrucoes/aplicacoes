@@ -302,3 +302,24 @@ def test_o_vigia_nao_liga_fora_do_gunicorn():
     from app.main import create_app
     create_app()
     assert not any(t.name == "painel-vigia" for t in threading.enumerate())
+
+
+def test_a_atualizacao_cede_a_vez_as_telas(monkeypatch):
+    """11/11/2026, o dono: "tô achando o painel muito lento hoje". A
+    atualização roda no mesmo servidor das telas: entra com prioridade menor."""
+    from app.apps.painel import executar_sync, tarefas
+    pedidos = []
+    monkeypatch.setattr(executar_sync.os, "nice", lambda n: pedidos.append(n) or n)
+    monkeypatch.setattr(tarefas, "executar_trabalho", lambda modo, eid: True)
+    assert executar_sync.main(["rapida", "1"]) == 0
+    assert pedidos == [executar_sync.PRIORIDADE_DA_ATUALIZACAO]
+
+
+def test_sem_poder_baixar_a_prioridade_a_atualizacao_segue(monkeypatch):
+    from app.apps.painel import executar_sync, tarefas
+
+    def recusa(_n):
+        raise OSError("sem permissão")
+    monkeypatch.setattr(executar_sync.os, "nice", recusa)
+    monkeypatch.setattr(tarefas, "executar_trabalho", lambda modo, eid: True)
+    assert executar_sync.main(["rapida", "1"]) == 0

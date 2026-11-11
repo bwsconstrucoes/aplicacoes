@@ -1,0 +1,122 @@
+{# ---------------------------------------------------------------------------
+   O CORPO DAS COMPLEMENTARES (folha da contabilidade e diárias) — 11/11/2026.
+   Quem inclui define:
+     comp_titulo_pago   — "Este mês já foi pago" / "Esta quinzena já foi paga"
+     comp_rotulo_novo   — "Folha nova" / "Conta de hoje"
+     comp_rotulo_arquivo— como o arquivo sai ("Folha complementar 2")
+     comp_url_pdf, comp_url_xlsx, comp_url_selecao, comp_url_a_descontar
+     comp_corpo         — o que vai junto no POST da seleção ({folha_id} ou ano/mes…)
+     gd_origem, gd_dados— a janela "Gerar arquivos"
+   --------------------------------------------------------------------------- #}
+{% set t = montado.totais %}
+
+<div class="aviso atencao">
+  <b>{{ comp_titulo_pago }}</b> —
+  {% for p in montado.pagamentos %}{{ p.rotulo or ('Folha' if p.verba == 'folha' else 'Complementar ' ~ p.verba[12:]) }}
+    em {{ p.criado_em|momento_br }}{% if p.criado_por %} por {{ p.criado_por }}{% endif %}
+    ({{ p.total|moeda }}){{ '; ' if not loop.last }}{% endfor %}.
+  Abaixo, cada pessoa: o que foi pago × a {{ comp_rotulo_novo|lower }}.
+  <b>O arquivo desta tela paga só a diferença</b> (sai como
+  "{{ comp_rotulo_arquivo }}").
+</div>
+
+<div class="kpis">
+  <div class="kpi estatico"><div class="kpi-rotulo">Já pago</div><div class="kpi-valor">{{ t.pago_antes|moeda }}</div></div>
+  <div class="kpi estatico"><div class="kpi-rotulo">{{ comp_rotulo_novo }}</div><div class="kpi-valor">{{ t.folha_nova|moeda }}</div></div>
+  <div class="kpi estatico"><div class="kpi-rotulo">A receber · {{ t.quantos_a_receber }} pessoa(s)</div><div class="kpi-valor">{{ t.a_receber|moeda }}</div></div>
+  <div class="kpi estatico {{ 'ambar' if t.quantos_nao_pago }}"><div class="kpi-rotulo">Não pago antes · {{ t.quantos_nao_pago }} pessoa(s)</div><div class="kpi-valor">{{ t.nao_pago|moeda }}</div></div>
+  <div class="kpi estatico {{ 'vermelho' if t.quantos_pago_a_mais }}"><div class="kpi-rotulo">Pago a mais · {{ t.quantos_pago_a_mais }} pessoa(s)</div><div class="kpi-valor">{{ t.pago_a_mais|moeda }}</div></div>
+</div>
+
+<div class="cab-com-acoes" style="margin-top:18px">
+  <h3>Pessoa por pessoa</h3>
+  <span class="sobra">
+    <a class="btn secundario" href="{{ comp_url_pdf }}">PDF</a>
+    <a class="btn secundario" href="{{ comp_url_xlsx }}">Excel</a>
+    {% if pode_gerar and montado.a_pagar %}
+      {% set gd_destino = '' %}
+      {% set gd_pagamento = '' %}
+      {% include "_gerar_direto.html" %}
+    {% endif %}
+  </span>
+</div>
+{% if pode_gerar %}<p class="cartao-dica" style="margin:0 0 8px">Salve a seleção antes de gerar: o arquivo sai do que está salvo.</p>{% endif %}
+
+<div class="tabela-wrap"><div class="tabela-rolagem livre">
+<table class="sps" id="tabela-complementar">
+  <thead><tr>
+    <th class="marca"></th>
+    <th>Colaborador</th><th>Situação</th><th>Obra(s) da diferença</th>
+    <th class="num">Pago antes</th><th class="num">{{ comp_rotulo_novo }}</th>
+    <th class="num">Diferença</th><th class="num">Paga agora</th>
+  </tr></thead>
+  {% for g in ['a_receber', 'nao_pago', 'pago_a_mais'] %}
+    {% set lista = montado.grupos[g] %}
+    {% if lista %}
+    <tbody class="grupo-{{ g }}">
+      <tr class="grupo-cab"><td class="marca"></td><td colspan="7"><b>{{ rotulos[g] }}</b>
+        — {{ lista|length }} pessoa(s) · {{ t[g]|moeda }}
+        <span class="cartao-dica">
+        {% if g == 'a_receber' %}vêm marcadas; o arquivo paga só a diferença.
+        {% elif g == 'nao_pago' %}vêm desmarcadas; marque quem é para pagar agora.
+        {% else %}só informativo: não há como receber de volta no pagamento — fica na lista "a descontar na próxima folha".{% endif %}
+        </span></td></tr>
+      {% for l in lista %}
+      <tr class="{{ 'pago-a-mais' if g == 'pago_a_mais' }} {{ 'nao-vai' if g != 'pago_a_mais' and not l.pagar }}"
+          data-cpf="{{ l.cpf }}" data-nome="{{ l.nome }}" data-diferenca="{{ l.diferenca }}">
+        <td class="marca">
+          {% if g != 'pago_a_mais' and pode_operar %}
+            <input type="checkbox" class="marca-pessoa" {% if l.pagar %}checked{% endif %}
+                   {% if not l.pode_pagar %}disabled{% endif %}
+                   aria-label="Pagar a diferença de {{ l.nome }}">
+          {% endif %}
+        </td>
+        <td><b>{{ l.nome or '(sem nome)' }}</b>
+          <br><span class="cartao-dica">{{ l.cpf_bonito or 'sem CPF' }}{% if l.id_fortes %} · cód. {{ l.id_fortes }}{% endif %}</span>
+          {% for m in l.motivos %}<br><span class="cartao-dica">⚠ {{ m }}</span>{% endfor %}</td>
+        <td>
+          {% if g == 'a_receber' %}<span class="selo aprovado">a receber</span>
+          {% elif g == 'nao_pago' %}<span class="selo saindo">não pago antes</span>
+          {% else %}<span class="selo risco">pago a mais</span>{% endif %}
+        </td>
+        <td>{% for p in l.obras_da_diferenca %}{{ p.obra }} {{ p.valor|moeda }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
+        <td class="num">{{ l.antes|moeda if l.antes else '—' }}</td>
+        <td class="num">{{ l.novo|moeda if l.novo else '—' }}</td>
+        <td class="num {{ 'dif-mais' if l.diferenca > 0 else 'dif-menos' }}">{{ '+' if l.diferenca > 0 }}{{ l.diferenca|moeda }}</td>
+        <td class="num paga-agora">{% if l.pagar %}<b>{{ l.diferenca|moeda }}</b>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% endif %}
+  {% endfor %}
+  {% if montado.grupos.igual %}
+  <tbody><tr class="sem-mudanca"><td class="marca"></td><td colspan="7">
+    <details><summary>{{ montado.grupos.igual|length }} pessoa(s) sem mudança — pagas e iguais {{ 'na folha nova' if comp_rotulo_novo == 'Folha nova' else 'na conta de hoje' }} · mostrar</summary>
+      <div style="margin-top:6px">{% for l in montado.grupos.igual %}{{ l.nome }} ({{ l.novo|moeda }}){{ ', ' if not loop.last }}{% endfor %}</div>
+    </details></td></tr></tbody>
+  {% endif %}
+  {% if not montado.pessoas %}
+  <tbody><tr><td colspan="8" class="cartao-dica">Ninguém {{ 'na folha importada' if comp_rotulo_novo == 'Folha nova' else 'com diária neste período' }}.</td></tr></tbody>
+  {% endif %}
+</table>
+</div></div>
+
+{% if montado.grupos.pago_a_mais and pode_operar %}
+  <p class="cartao-dica" style="margin-top:8px">
+    <button type="button" class="btn secundario" id="btn-a-descontar">Guardar o pago a mais na lista "a descontar"</button>
+    <span id="recado-a-descontar"></span>
+    A geração do arquivo também guarda sozinha.
+  </p>
+{% endif %}
+
+{% if pode_operar and (montado.grupos.a_receber or montado.grupos.nao_pago) %}
+<div class="barra-salvar" id="barra-salvar">
+  <span class="conta-selecao">Selecionados para pagamento: <span id="quantos-marcados">{{ montado.a_pagar|length }}</span>
+    <span class="total-selecao" id="total-marcado">{{ montado.total_a_pagar|moeda }}</span></span>
+  <span class="cartao-dica">só as diferenças · a obra de cada diferença segue a {{ comp_rotulo_novo|lower }}</span>
+  <span class="cartao-dica" id="recado-selecao"></span>
+  {# Desabilitado sem mudança pendente: é o que a janela "Gerar arquivos" confere
+     antes de abrir (o arquivo sai da seleção SALVA). #}
+  <span class="sobra"><button class="btn" type="button" id="btn-salvar-selecao" disabled>Salvar seleção</button></span>
+</div>
+{% endif %}

@@ -176,6 +176,43 @@ LINHAS_POR_BLOCO = 5000
 FAIXAS_POR_LOTE = 200
 
 
+# ⚠️ AS LINHAS MUDADAS SÃO PEDIDAS EM FAIXAS CONTÍNUAS (11/11/2026). O dono, preso
+# atrás da sincronização: *"trazendo as SPs alteradas — 28200 de 52350, desde
+# 08:04 (…) ela trava toda a operação. Já tem 24 minutos. Não tem sentido."* Quando
+# quase a planilha inteira muda de carimbo (um script que reescreve tudo), o delta
+# pedia UMA FAIXA POR LINHA, 200 por vez: ~20 linhas por segundo, quase uma hora
+# segurando a pista das SPs (e a fila de envio para a planilha atrás dela). Agora
+# linhas vizinhas viram uma faixa só ("A2:AK5001"), com o mesmo teto de linhas por
+# ida da carga inicial — o caso de tudo mudado custa o mesmo que uma carga.
+def faixas_continuas(numeros, teto: int = LINHAS_POR_BLOCO) -> list:
+    """PURA. `[(primeira, última)]` das linhas, juntando as vizinhas; nenhuma faixa
+    passa de `teto` linhas."""
+    faixas: list = []
+    for n in sorted(set(int(x) for x in numeros or [])):
+        if faixas and n == faixas[-1][1] + 1 and n - faixas[-1][0] < teto:
+            faixas[-1][1] = n
+        else:
+            faixas.append([n, n])
+    return [tuple(f) for f in faixas]
+
+
+def lotes_de_faixas(faixas: list, max_faixas: int = FAIXAS_POR_LOTE,
+                    max_linhas: int = LINHAS_POR_BLOCO) -> list:
+    """PURA. As faixas agrupadas por ida ao Google: até `max_faixas` faixas e
+    `max_linhas` linhas por pedido."""
+    lotes, atual, linhas = [], [], 0
+    for a, b in faixas:
+        tamanho = b - a + 1
+        if atual and (len(atual) >= max_faixas or linhas + tamanho > max_linhas):
+            lotes.append(atual)
+            atual, linhas = [], 0
+        atual.append((a, b))
+        linhas += tamanho
+    if atual:
+        lotes.append(atual)
+    return lotes
+
+
 def _aba(planilha_id: str, nome: str):
     return com_retry(lambda: cliente().open_by_key(planilha_id).worksheet(nome))
 
@@ -399,6 +436,18 @@ def _marca_dagua(maior_carimbo: str) -> str:
     return (quando - dt.timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _na_borda(marca: str, ultimo: str) -> bool:
+    """O carimbo está no segundo da borda da marca d'água (a marca é guardada UM
+    segundo atrás do maior visto — `_marca_dagua`)? Só vale quando os dois são datas
+    no formato da planilha; senão, False."""
+    try:
+        m = dt.datetime.strptime(str(marca)[:19], "%Y-%m-%d %H:%M:%S")
+        u = dt.datetime.strptime(str(ultimo)[:19], "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return False
+    return dt.timedelta(0) < m - u <= dt.timedelta(seconds=1)
+
+
 def sincronizar_delta(anotar=None) -> dict:
     """Lê ID e carimbo, busca só as linhas que mudaram, remove as excluídas.
 
@@ -421,8 +470,13 @@ def sincronizar_delta(anotar=None) -> dict:
         ultimo = _meta_ler(conn, "ultimo_carimbo", "")
         campos = ", ".join(f'"{c}"' for c in conferidas)
         cur = conn.execute(
-            f"SELECT id{', ' + campos if campos else ''} FROM analisesps.sps")
-        no_banco = {str(r[0]): r[1:] for r in cur.fetchall()}
+            f'SELECT id, "{colunas.CHAVE_CARIMBO}"{", " + campos if campos else ""} '
+            "  FROM analisesps.sps")
+        carimbo_no_banco = {}
+        no_banco = {}
+        for r in cur.fetchall():
+            carimbo_no_banco[str(r[0])] = str(r[1] or "").strip()
+            no_banco[str(r[0])] = r[2:]
         cur.close()
     ids_no_banco = set(no_banco)
 
@@ -433,14 +487,30 @@ def sincronizar_delta(anotar=None) -> dict:
     linhas_mudadas: list[int] = []
     ids_na_planilha: set[str] = set()
     pelo_conteudo = 0
+    novas_no_banco = pelo_carimbo = 0
     for numero in range(colunas.PRIMEIRA_LINHA_DADOS, len(coluna_ids) + 1):
         sp_id = str(coluna_ids[numero - 1] or "").strip()
         if not sp_id:
             continue
         ids_na_planilha.add(sp_id)
         marca = _celula(coluna_marcas, numero)
-        if sp_id not in ids_no_banco or (marca and marca > ultimo):
+        # ⚠️ CARIMBO DIFERENTE DO GUARDADO, não "maior que a marca d'água" (11/11/2026).
+        # O dono: *"trazendo as SPs alteradas — 1000 de 52363 (…) tem algo bem errado
+        # na lógica dessa atualização"*. A comparação "maior que" era de TEXTO: com o
+        # carimbo num formato que não ordena como texto (dd/mm/aaaa), ou com uma
+        # rodada que morreu antes de gravar a marca no fim, a planilha INTEIRA voltava
+        # como alterada, rodada após rodada. A base guarda o carimbo de cada SP: a
+        # linha vem quando o da planilha é outro. Uma rodada interrompida não refaz o
+        # que já trouxe, e o formato do carimbo deixa de importar. A borda da marca
+        # d'água continua relida (`_na_borda`): duas edições no mesmo segundo.
+        if sp_id not in ids_no_banco or (
+                marca and (marca != carimbo_no_banco.get(sp_id, "")
+                           or _na_borda(marca, ultimo))):
             linhas_mudadas.append(numero)
+            if sp_id not in ids_no_banco:
+                novas_no_banco += 1
+            else:
+                pelo_carimbo += 1
             continue
         # O carimbo não acusou. Confere o conteúdo das colunas que decidem
         # dinheiro: é aqui que entra a linha que um script mudou sem carimbar.
@@ -464,16 +534,24 @@ def sincronizar_delta(anotar=None) -> dict:
         anotar("conferindo o que mudou na planilha",
                f"{pelo_conteudo} sem carimbo novo")
 
-    # Busca em lote apenas as linhas mudadas, fatiado para não estourar o
-    # tamanho do pedido quando muitas mudam de uma vez.
+    # O PORQUÊ do número, no log e na tela: quando ele é a planilha quase inteira,
+    # é aqui que se vê se foi carimbo novo em tudo (um script reescreveu a
+    # planilha), SP que a base não tinha, ou conteúdo diferente sem carimbo.
+    if linhas_mudadas:
+        logger.info("Análise de SPs: %d linha(s) a trazer — %d novas na base, %d com "
+                    "carimbo diferente do guardado (marca %s), %d por conteúdo sem carimbo.",
+                    len(linhas_mudadas), novas_no_banco, pelo_carimbo, ultimo or "—",
+                    pelo_conteudo)
+
+    # Busca em lote apenas as linhas mudadas, em faixas contínuas (ver
+    # `faixas_continuas`), fatiado para não estourar o tamanho do pedido.
     novas = 0
     maior = ultimo
-    for inicio in range(0, len(linhas_mudadas), FAIXAS_POR_LOTE):
-        fatia = linhas_mudadas[inicio:inicio + FAIXAS_POR_LOTE]
-        faixas = [f"A{n}:{colunas.ULTIMA_LETRA}{n}" for n in fatia]
+    for lote in lotes_de_faixas(faixas_continuas(linhas_mudadas)):
+        faixas = [f"A{a}:{colunas.ULTIMA_LETRA}{b}" for a, b in lote]
         blocos = com_retry(lambda f=faixas: aba.batch_get(f))
-        registros = [colunas.linha_para_dicionario(b[0])
-                     for b in blocos if b and b[0]]
+        registros = [colunas.linha_para_dicionario(v)
+                     for b in blocos if b for v in b if v and str(v[0]).strip()]
         if registros:
             with conexao() as conn:
                 novas += gravar_registros(conn, registros)
@@ -1278,11 +1356,10 @@ def semear_analise_do_pipefy(anotar=None, forcar: bool = False) -> dict:
 # a aba de 59 mil linhas, não para uma de trinta.
 # ---------------------------------------------------------------------------
 def sincronizar_agenda(anotar=None) -> dict:
-    """Traz a aba Agenda e a aba Feriados."""
+    """Traz a aba Agenda. (Os feriados vêm do ponto — ver `agenda.feriados_do_ponto`.)"""
     from . import agenda
     from .credenciais import SHEET_CREDENCIAIS
     from .db import conexao
-    from .formatos import para_data
 
     anotar = anotar or (lambda *a, **k: None)
     anotar("trazendo a agenda")
@@ -1310,22 +1387,10 @@ def sincronizar_agenda(anotar=None) -> dict:
     except Exception:  # noqa: BLE001 — agenda que falta não derruba a carga
         logger.exception("Análise de SPs: falhou ler a aba Agenda")
 
-    feriados = 0
-    try:
-        valores = com_retry(
-            _aba(SHEET_CREDENCIAIS, agenda.ABA_FERIADOS).get_all_values)
-        dias = []
-        for linha in (valores[1:] if valores else []):
-            dia = para_data(linha[0]) if linha else None
-            if dia:
-                nome = str(linha[1]).strip() if len(linha) > 1 else ""
-                dias.append((dia, nome))
-        with conexao() as conn:
-            feriados = agenda.gravar_feriados(conn, dias)
-    except Exception:  # noqa: BLE001 — a aba de feriados é opcional
-        logger.info("Análise de SPs: sem aba de feriados locais (é opcional).")
-
-    return {"compromissos": compromissos, "feriados": feriados}
+    # A aba "Feriados" NÃO é mais lida (10/11/2026): os feriados da agenda vêm do
+    # cadastro do ponto (`agenda.feriados_do_ponto`). O dono: *"os feriados devem
+    # vir do cadastro do app ponto"*.
+    return {"compromissos": compromissos}
 
 
 def escrever_compromisso(registro: dict) -> None:

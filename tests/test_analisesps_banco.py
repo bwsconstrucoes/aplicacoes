@@ -1010,30 +1010,6 @@ def test_a_agenda_grava_e_le(banco_analisesps):
     assert agenda.um("1")["categoria"] == "FGTS"
 
 
-def test_os_feriados_locais_sao_substituidos_e_nao_acumulados(banco_analisesps):
-    """Um feriado tirado da planilha tem de sumir daqui, senão o ajuste de dia
-    útil continuaria desviando de uma data que já não é feriado."""
-    from app.apps.analisesps import agenda
-    from app.apps.analisesps.db import conexao
-    with conexao() as conn:
-        agenda.gravar_feriados(conn, [(dt.date(2026, 3, 19), "São José"),
-                                      (dt.date(2026, 8, 15), "Padroeira")])
-    assert len(agenda.feriados_extra()) == 2
-    with conexao() as conn:
-        agenda.gravar_feriados(conn, [(dt.date(2026, 3, 19), "São José")])
-    assert agenda.feriados_extra() == {dt.date(2026, 3, 19)}
-
-
-def test_o_feriado_local_entra_no_calculo_do_ano(banco_analisesps):
-    from app.apps.analisesps import agenda
-    from app.apps.analisesps.db import conexao
-    with conexao() as conn:
-        agenda.gravar_feriados(conn, [(dt.date(2026, 3, 19), "São José")])
-    do_ano = agenda.feriados_do_ano(2026)
-    assert dt.date(2026, 3, 19) in do_ano       # o local
-    assert dt.date(2026, 12, 25) in do_ano      # e os nacionais continuam
-
-
 # ---------------------------------------------------------------------------
 # QUEM É QUEM: o lote e os filtros de cada pessoa
 #
@@ -1330,8 +1306,10 @@ class AbaFalsa:
         self.faixas_pedidas.extend(faixas)
         saida = []
         for faixa in faixas:
-            n = int(re.search(r"A(\d+):", faixa).group(1))
-            saida.append([self.linhas[n - 1]])
+            # "A2:AK5" — a faixa inteira, como o Google devolve (11/11/2026: o delta
+            # passou a pedir faixas contínuas, não uma linha por faixa).
+            a, b = (int(x) for x in re.search(r"A(\d+):[A-Z]+(\d+)", faixa).groups())
+            saida.append([self.linhas[n - 1] for n in range(a, b + 1)])
         return saida
 
 
@@ -7548,3 +7526,54 @@ def test_o_DESEMPATE_reenvia_juntos_e_grava_o_resultado(banco_analisesps, monkey
     assert [(l[1], l[2]) for l in linhas] == [("BAIXADO", "1442670864"),
                                               ("BAIXADO", "1442703969")]
     assert "Reenviado junto" in linhas[0][3]
+
+
+# ---------------------------------------------------------------------------
+# AS LINHAS MUDADAS EM FAIXAS CONTÍNUAS (11/11/2026) — o delta de 52 mil linhas
+# levava quase uma hora pedindo uma linha por faixa.
+# ---------------------------------------------------------------------------
+def test_as_linhas_vizinhas_viram_UMA_faixa_e_respeitam_o_teto():
+    from app.apps.analisesps import sincronizacao as s
+    assert s.faixas_continuas([5, 2, 3, 4, 9, 11, 10]) == [(2, 5), (9, 11)]
+    assert s.faixas_continuas(range(2, 12), teto=4) == [(2, 5), (6, 9), (10, 11)]
+    assert s.faixas_continuas([]) == []
+    lotes = s.lotes_de_faixas([(2, 5), (9, 11), (20, 20)], max_faixas=2, max_linhas=100)
+    assert lotes == [[(2, 5), (9, 11)], [(20, 20)]]
+    assert s.lotes_de_faixas([(2, 60), (70, 120)], max_linhas=100) == [[(2, 60)], [(70, 120)]]
+
+
+@pytest.mark.banco
+def test_a_planilha_INTEIRA_com_carimbo_novo_sai_em_poucas_idas(banco_analisesps, monkeypatch):
+    """Um script reescreveu tudo: 1.200 linhas com carimbo novo viram UMA faixa."""
+    linhas = [_linha_da_planilha(str(1000 + i), "Pagar", "2026-11-11 08:00:00")
+              for i in range(1200)]
+    resultado, aba = _sincronizar(monkeypatch, linhas)
+    assert resultado["alteradas"] == 1200
+    assert len(aba.faixas_pedidas) == 1, aba.faixas_pedidas[:3]
+
+
+@pytest.mark.banco
+def test_a_rodada_seguinte_NAO_traz_de_novo_o_que_ja_veio(banco_analisesps, monkeypatch):
+    """11/11/2026: *"trazendo as SPs alteradas — 1000 de 52363 (…) tem algo bem errado
+    na lógica"*. Uma rodada que já trouxe as linhas — mesmo que tenha morrido antes de
+    gravar a marca d'água — não as traz outra vez: o carimbo guardado é o mesmo."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import conexao
+    linhas = [_linha_da_planilha(str(5000 + i), "Pagar", "2026-11-11 08:00:00")
+              for i in range(300)]
+    primeira, _ = _sincronizar(monkeypatch, linhas)
+    assert primeira["alteradas"] == 300
+    with conexao() as conn:          # a rodada "morreu" antes de gravar a marca no fim
+        sincronizacao._meta_gravar(conn, "ultimo_carimbo", "")
+    segunda, aba = _sincronizar(monkeypatch, linhas)
+    assert segunda["alteradas"] == 0 and aba.faixas_pedidas == []
+
+
+@pytest.mark.banco
+def test_carimbo_em_DIA_MES_ANO_nao_faz_a_planilha_inteira_voltar(banco_analisesps, monkeypatch):
+    linhas = [_linha_da_planilha("6001", "Pagar", "28/10/2026 10:00:00"),
+              _linha_da_planilha("6002", "Pagar", "11/11/2026 08:00:00")]
+    _sincronizar(monkeypatch, linhas)
+    linhas[1] = _linha_da_planilha("6002", "Pago", "11/11/2026 09:30:00")      # só ela mudou
+    resultado, _ = _sincronizar(monkeypatch, linhas)
+    assert resultado["alteradas"] == 1

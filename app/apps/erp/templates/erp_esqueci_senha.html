@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — esqueci minha senha</title>
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+<link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
+{# ESQUECI MINHA SENHA (10/11/2026). Pedido dele: *"é necessário. Não deixar a
+   autonomia."* Sem isto, toda senha esquecida é um telefonema, e quem está em
+   obra espera a boa vontade de alguém.
+
+   ⚑ A RESPOSTA É A MESMA exista a conta ou não — ver a rota. #}
+</head>
+<body>
+<main class="entrada">
+  <form method="post" action="{{ url_for('erp.pagina_esqueci_a_senha') }}">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>ERP BWS</h1>
+        <p class="sub">BWS Construções</p>
+      </div>
+    </div>
+
+    {% if pronto %}
+      <div class="aviso ok"><b>Pedido recebido.</b> Se existe uma conta com
+        esse e-mail, o link para escolher uma senha nova acabou de ser
+        enviado para ela.</div>
+      <p class="sub">O link vale 7 dias e serve uma vez. Se não chegar em
+        alguns minutos, confira a caixa de spam ou fale com o
+        administrativo.</p>
+      <a class="btn" href="{{ url_for('erp.pagina_login') }}">Voltar para a entrada</a>
+    {% else %}
+      <p class="sub">Digite o seu e-mail de entrada. Você vai receber um link
+        para escolher uma senha nova.</p>
+      <label for="email">E-mail</label>
+      <input id="email" name="email" type="email" autocomplete="username"
+             required autofocus>
+      <button class="btn" type="submit">Mandar o link</button>
+      <a class="btn secundario" href="{{ url_for('erp.pagina_login') }}"
+         style="margin-top:8px">Voltar</a>
+    {% endif %}
+  </form>
+</main>
+</body>
+</html>

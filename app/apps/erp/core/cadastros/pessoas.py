@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -141,11 +141,28 @@ MOTIVO_ALTERACAO_ROTULOS = {
 }
 
 
-def opcoes() -> dict[str, Any]:
+def opcoes(s: Optional[Session] = None) -> dict[str, Any]:
     """Tudo que a tela precisa para montar as caixinhas, de uma vez."""
     def par(chaves, rotulos):
         return [{"valor": c, "rotulo": rotulos.get(c, c)} for c in chaves]
+    # ⚑ AS EMPRESAS FALTAVAM AQUI — e a ficha tem uma caixinha "Empresa" que
+    # lê justamente desta lista. Ou seja: a caixinha estava SEMPRE VAZIA, e o
+    # único jeito de dizer a empresa era digitar o CNPJ no campo de texto ao
+    # lado. Era por isso que os dois campos conviviam.
+    #
+    # Achado em 11/11/2026, quando ele disse: *"empresa para registro e CNPJ
+    # para admissão é campo duplicado. É a mesma informação."*
+    empresas = []
+    if s is not None:
+        empresas = [
+            {"id": l["id"], "razao_social": l["razao_social"],
+             "nome": l["nome_fantasia"] or l["razao_social"], "cnpj": l["cnpj"]}
+            for l in s.execute(text(
+                "SELECT id, razao_social, nome_fantasia, cnpj FROM empresas"
+                " WHERE ativo IS NOT FALSE ORDER BY razao_social"
+            )).mappings().all()]
     return {
+        "empresas": empresas,
         "vinculos": par(VINCULOS, VINCULO_ROTULOS),
         "tipos_contrato": par(TIPOS_CONTRATO, TIPO_CONTRATO_ROTULOS),
         "sexos": par(SEXOS, SEXO_ROTULOS),
@@ -298,7 +315,12 @@ TEXTOS = (
     "ctps_numero", "ctps_serie", "cep", "logradouro", "numero_endereco",
     "complemento", "bairro", "municipio", "email", "cnpj_admissao",
     "razao_social_pj", "cnpj_pj", "contrato_experiencia", "observacao_auxilio",
-    "requerente", "id_fortes", "convencao_categoria", "observacoes",
+    # ⚑ "REQUERENTE" SAIU EM 10/11/2026. Ele: *"requerente era assim: eu
+    # solicito por alguém; aí esse alguém é o requerente. Mas vamos deixar de
+    # fora por enquanto."* A COLUNA FICA — há cadastros importados com ela
+    # preenchida, e apagá-los tiraria informação que já existe. O que saiu foi
+    # o campo ser GRAVÁVEL pelo cadastro.
+    "id_fortes", "convencao_categoria", "observacoes",
     "pix_chave", "pix_tipo", "banco", "agencia", "conta", "telefone",
 )
 DATAS = ("data_nascimento", "rg_emissao", "ctps_emissao", "data_inicio",
@@ -363,6 +385,24 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
         if campo in dados:
             bruto = dados[campo]
             setattr(c, campo, int(bruto) if bruto not in (None, "", 0, "0") else None)
+    # ⚑ O CNPJ DE ADMISSÃO SEGUE A EMPRESA, e não o contrário.
+    #
+    # Ele, em 11/11/2026: *"empresa para registro e CNPJ para admissão é campo
+    # duplicado. É a mesma informação."* Eram duas colunas para um fato só, e
+    # o código já tratava assim — `core/contabilidade.py` faz `c.empresa_id or
+    # c.cnpj_admissao`, ou seja, tenta uma e cai na outra.
+    #
+    # Escolhida a empresa, o CNPJ vem do cadastro dela. Quem NÃO manda empresa
+    # (a importação de planilha, a importação do Pipefy, o pedido que vem da
+    # obra com o CNPJ numa caixinha) continua podendo mandar o texto — senão a
+    # correção aqui quebraria três caminhos que funcionam.
+    if dados.get("empresa_id"):
+        da_empresa = s.execute(
+            text("SELECT cnpj FROM empresas WHERE id = :i"),
+            {"i": int(dados["empresa_id"])}).scalar()
+        if da_empresa and str(da_empresa).strip():
+            c.cnpj_admissao = str(da_empresa).strip()
+
     if "situacao" in dados:
         c.situacao = (str(dados["situacao"]).strip().upper() or "ATIVO")
     if "regime" in dados:
@@ -405,7 +445,7 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
         # O FLUSH AQUI NÃO É ENFEITE: a sessão do ERP é `autoflush=False`, então
         # objeto pendente não aparece em consulta. Sem isto, quem chama `salvar`
         # e em seguida `vinculo_aberto` na MESMA transação — o atendimento de um
-        # pré-cadastro na fila do DP faz exatamente isso — não acharia o vínculo
+        # pedido de cadastro na fila do DP faz exatamente isso — não acharia o vínculo
         # que acabou de nascer, e abriria um segundo.
         s.flush()
 
@@ -515,6 +555,83 @@ def desligar(s: Session, colaborador_id: int, dados: dict[str, Any],
     registrar_evento(s, "colaborador", c.id, "DESLIGADO",
                      {"data_saida": str(saida), "forma": forma,
                       "motivo": dados.get("motivo")}, usuario.id if usuario else None)
+    bloquear_acesso(s, c, usuario, motivo="desligamento")
+    return c
+
+
+# ---------------------------------------------------------------------------
+# O ACESSO AO SISTEMA DA PESSOA — migração 096
+#
+# Ele, em 09/11/2026: *"nosso cadastro tem o cadastro de colaboradores, tem o
+# cadastro de usuários do sistema. É para haver uma correlação entre isso aí
+# (…) quando uma pessoa for desativada do cadastro, for demitido, sair da
+# empresa, a gente precisaria automaticamente bloquear o acesso dela."*
+#
+# ⚑ ESTE É O TIPO DE COISA QUE NINGUÉM LEMBRA DE FAZER À MÃO, e cujo
+# esquecimento não aparece: o ex-colaborador continua entrando, vendo obra,
+# vendo pagamento, e ninguém descobre porque nada quebra. Automático é a única
+# forma que funciona.
+#
+# O QUE O BLOQUEIO FAZ: desliga o operador (`ativo = False`). **Não apaga.**
+# Apagar levaria junto a autoria de tudo o que a pessoa lançou — e "quem
+# aprovou este pagamento?" viraria uma pergunta sem resposta.
+# ---------------------------------------------------------------------------
+def bloquear_acesso(s: Session, c: Colaborador, usuario: Optional[Usuario],
+                    *, motivo: str) -> bool:
+    """Desliga o acesso ao ERP de quem saiu. Devolve se havia o que desligar."""
+    uid = getattr(c, "usuario_id", None)
+    if not uid:
+        return False
+    operador = s.get(Usuario, uid)
+    if operador is None or not operador.ativo:
+        return False
+    operador.ativo = False
+    s.flush()
+    registrar_evento(s, "usuario", operador.id, "ACESSO_BLOQUEADO",
+                     {"motivo": motivo, "colaborador_id": c.id},
+                     usuario.id if usuario else None)
+    registrar_evento(s, "colaborador", c.id, "ACESSO_BLOQUEADO",
+                     {"motivo": motivo, "usuario_id": operador.id},
+                     usuario.id if usuario else None)
+    logger.info("ERP/pessoas: acesso do operador %s bloqueado por %s",
+                operador.id, motivo)
+    return True
+
+
+def ligar_ao_operador(s: Session, colaborador_id: int, usuario_id: Optional[int],
+                      usuario: Optional[Usuario]) -> Colaborador:
+    """Diz que este colaborador É este operador do ERP (ou desfaz a ligação).
+
+    ⚑ RECUSA LIGAR UM OPERADOR QUE JÁ É DE OUTRA PESSOA. Dois colaboradores
+    apontando para o mesmo login fariam o desligamento de um derrubar o acesso
+    do outro — e o banco tem índice único justamente por isso; aqui a recusa
+    vem com recado de gente em vez de erro de banco.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    if usuario_id in (None, "", 0):
+        c.usuario_id = None
+        s.flush()
+        registrar_evento(s, "colaborador", c.id, "ACESSO_DESVINCULADO", {},
+                         usuario.id if usuario else None)
+        return c
+    uid = int(usuario_id)
+    operador = s.get(Usuario, uid)
+    if operador is None:
+        raise ErroValidacao("Operador não encontrado.")
+    dono = s.execute(text("""
+        SELECT id, nome FROM colaboradores
+         WHERE usuario_id = :u AND id <> :c"""),
+        {"u": uid, "c": c.id}).mappings().first()
+    if dono is not None:
+        raise ErroValidacao(
+            f"Este acesso já é de {dono['nome']}. Um login é de uma pessoa só.")
+    c.usuario_id = uid
+    s.flush()
+    registrar_evento(s, "colaborador", c.id, "ACESSO_VINCULADO",
+                     {"usuario_id": uid, "email": operador.email},
+                     usuario.id if usuario else None)
     return c
 
 
@@ -775,6 +892,21 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     # diferentes, e misturá-las faria a ficha dizer "falta CTPS" tanto para o
     # número quanto para a imagem dela.
     dados["falta_documento"] = documentos_que_faltam(s, c.id, c.vinculo)
+    # O ACESSO AO ERP desta pessoa (migração 096). `usuario_id` já veio junto
+    # com as colunas; o que a tela precisa a mais é o ENDEREÇO com que ela
+    # entra e se o acesso está de pé — "tem login" e "o login funciona" são
+    # perguntas diferentes, e a segunda é a que importa depois de um
+    # desligamento.
+    # A FOTO vem do ponto (10/11/2026). Aqui só o "tem ou não tem": a imagem
+    # vai pela rota dela, para a ficha não carregar meio megabyte toda vez.
+    dados["tem_foto"] = tem_foto_do_ponto(s, c.id)
+    if getattr(c, "usuario_id", None):
+        operador = s.get(Usuario, c.usuario_id)
+        dados["usuario_email"] = operador.email if operador else ""
+        dados["usuario_ativo"] = bool(operador.ativo) if operador else False
+    else:
+        dados["usuario_email"] = ""
+        dados["usuario_ativo"] = False
     return dados
 
 
@@ -796,12 +928,26 @@ CAMPOS_OBRIGATORIOS_CTPS = (
 # Google Drive, pelo Arquivo, e a obrigatoriedade virou ESTA LISTA: o cadastro
 # salva sem os papéis (senão ninguém consegue começar), mas a ficha diz, em
 # letras, o que falta para a pessoa ser admitida de verdade.
+# ⚑ TRÊS SAÍRAM DA LISTA EM 10/11/2026, e cada uma por um motivo dele:
+#
+#   · **ASO** — *"esse seria o correto, mas não. Não vamos colocar ele como
+#     obrigatório ainda."* Fica no catálogo e continua sendo arquivado; o que
+#     ele não faz mais é travar a admissão.
+#   · **Carteira de trabalho** — *"carteira de trabalho para quem não é
+#     prestador não fica mais obrigatório."*
+#   · **Foto do colaborador** — ela não é mais PEDIDA a ninguém: *"a foto vai
+#     ser alimentada pelo ponto (…) a primeira foto do ponto que ele começar a
+#     usar, ele coloca como cadastro, que isso aí facilita."* Cobrar um papel
+#     que o sistema busca sozinho é cobrar trabalho que não existe.
+#
+# ⚑ O QUE ISSO NÃO QUER DIZER: que o papel não serve. Os três continuam no
+# catálogo do Arquivo e aparecem na ficha; o que mudou é que a ficha não diz
+# mais "falta isto para admitir" por causa deles. Obrigatoriedade que a empresa
+# não pratica vira aviso que todo mundo aprende a ignorar — e aí o aviso de
+# verdade some junto.
 DOCUMENTOS_DA_ADMISSAO = (
     ("DOC-IDENTIDADE", "documento de identificação (RG, CNH ou CPF)", False),
     ("COMPROVANTE-ENDERECO-PESSOA", "comprovante de endereço", False),
-    ("FOTO-COLABORADOR", "foto do colaborador", False),
-    ("ASO", "ASO (atestado de saúde ocupacional)", False),
-    ("CTPS", "carteira de trabalho", True),
 )
 
 
@@ -819,6 +965,69 @@ def documentos_que_faltam(s: Session, colaborador_id: int,
     so_ctps = (vinculo or "CTPS").upper() != "PRESTADOR"
     return [rotulo for codigo, rotulo, exige_ctps in DOCUMENTOS_DA_ADMISSAO
             if codigo not in tem and (so_ctps or not exige_ctps)]
+
+
+# ---------------------------------------------------------------------------
+# A FOTO VEM DO PONTO — e ninguém anexa nada (10/11/2026)
+#
+# Ele: *"foto do colaborador, eu gostaria de deixar, como eu disse, a partir do
+# ponto mesmo. (…) a primeira foto do ponto que ele começar a usar, ele coloca
+# como cadastro, que isso aí facilita. A gente já vai ter uma imagem no
+# documento que foi encaminhado."*
+#
+# ⚑ DUAS FONTES, NESTA ORDEM, e a ordem é a regra:
+#
+#   1. a foto que alguém ESCOLHEU como cadastral no ponto
+#      (`ponto.colaborador_config.foto_cadastral_id`);
+#   2. não havendo escolha, **a PRIMEIRA foto que a pessoa bateu** — que é
+#      exatamente o que ele descreveu.
+#
+# Escolha de gente vence o automático: quem foi até a tela do ponto e marcou
+# uma foto melhor fez isso por um motivo, e o automático não pode desfazer.
+#
+# ⚑ SÓ LEITURA, E PROTEGIDA. O schema do ponto nasce das migrações DELE, que
+# são de outra área: num banco onde o ponto nunca rodou, estas consultas
+# falham — e em Postgres uma consulta que falha ABORTA A TRANSAÇÃO INTEIRA,
+# mesmo pega por `except`. Por isso o savepoint, igual ao do diário de obra.
+# E por isso o ERP não GRAVA nada no ponto: fixar a escolha lá é mudança na
+# área do ponto, não daqui.
+# ---------------------------------------------------------------------------
+def foto_do_ponto(s: Session, colaborador_id: int) -> Optional[dict[str, Any]]:
+    """A foto desta pessoa, vinda do ponto. `None` quando não há nenhuma."""
+    try:
+        with s.begin_nested():
+            linha = s.execute(text("""
+                SELECT f.conteudo, f.mime, f.criado_em, TRUE AS escolhida
+                  FROM ponto.colaborador_config c
+                  JOIN ponto.fotos f ON f.id = c.foto_cadastral_id
+                 WHERE c.colaborador_id = :i AND f.conteudo IS NOT NULL
+                 UNION ALL
+                SELECT f.conteudo, f.mime, f.criado_em, FALSE
+                  FROM ponto.marcacoes m
+                  JOIN ponto.fotos f ON f.id = m.foto_id
+                 WHERE m.colaborador_id = :i AND f.conteudo IS NOT NULL
+                 ORDER BY escolhida DESC, criado_em ASC
+                 LIMIT 1"""), {"i": colaborador_id}).first()
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("ERP/pessoas: foto do ponto indisponível — %s", e)
+        return None
+    if linha is None or not linha[0]:
+        return None
+    return {"conteudo": bytes(linha[0]), "mime": linha[1] or "image/jpeg",
+            "escolhida": bool(linha[3]), "quando": str(linha[2])[:16]}
+
+
+def tem_foto_do_ponto(s: Session, colaborador_id: int) -> bool:
+    """Só o "tem ou não tem", para a ficha não carregar a imagem à toa."""
+    try:
+        with s.begin_nested():
+            return bool(s.execute(text("""
+                SELECT 1 FROM ponto.marcacoes m
+                  JOIN ponto.fotos f ON f.id = m.foto_id
+                 WHERE m.colaborador_id = :i AND f.conteudo IS NOT NULL
+                 LIMIT 1"""), {"i": colaborador_id}).first())
+    except Exception:                                   # noqa: BLE001
+        return False
 
 
 def o_que_falta(c: Colaborador) -> list[str]:
@@ -906,6 +1115,12 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "matricula": c.matricula or "", "celular": c.telefone or "",
             # O número do card do Pipefy, enquanto ele existir: é o que liga
             # esta pessoa ao histórico que ficou lá.
+            # ⚑ O NÚMERO DO CARD CONTINUA SAINDO ENQUANTO O PIPEFY VIVER.
+            # Ele disse que não precisa mais (10/11/2026) — e não precisa, no
+            # CADASTRO: ninguém digita nem vê. Mas o Análise de SPs monta com
+            # ele o link para o card, e tirar o valor hoje quebraria esse link
+            # para as pessoas que vieram da importação. Ele morre junto com o
+            # Pipefy, que é o que já está decidido.
             "card_pipefy": c.ref_pipefy or "",
             "id_fortes": c.id_fortes or "",
             "cargo": cargos.get(c.cargo_id or 0) or funcoes.get(c.funcao_id or 0, ""),

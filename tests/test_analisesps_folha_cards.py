@@ -32,6 +32,19 @@ def test_o_grupo_da_verba_da_o_titulo_da_sp():
         fcd.grupo_da_verba("cesta", "quinzena")
 
 
+def test_a_COMPLEMENTAR_lanca_como_a_folha_com_o_titulo_dizendo_qual():
+    """10/11/2026: "Folha complementar 1" era recusada ("o cenário do Make não
+    possui grupo"). O dono: *"isso é igual ao Folha da Contabilidade, mas você
+    na descrição pode pôr Complementar"*."""
+    folha = fcd.grupo_da_verba("folha", "fim_de_mes")
+    comp = fcd.grupo_da_verba("complementar1", "fim_de_mes")
+    assert comp[0] == "Folha de Pagamento - Fim de Mês - Complementar 1"
+    assert comp[1:] == folha[1:], "mesmos tipos de despesa da folha"
+    assert fcd.grupo_da_verba("complementar2", "quinzena")[0] == (
+        "Folha de Pagamento - Quinzena - Complementar 2")
+    assert fcd.verba_do_grupo("complementar3") == "folha"
+
+
 def test_o_tipo_de_despesa_da_folha_e_SALARIOS_E_ORDENADOS():
     """O dono: *"o tipo de despesa seria salários e ordenados"*."""
     assert fcd.DESCRICAO_DA_VERBA["folha"] == "Salários e Ordenados"
@@ -296,7 +309,7 @@ def _fechar(partes=(("CREPEOLINDA", "1000.00"), ("CREPEAREIAS", "500.00")),
               verba=verba, quem="MARCELO")
 
 
-def _gerar(monkeypatch):
+def _gerar(monkeypatch, verbas=("folha",)):
     from app.apps.analisesps import (beevale, drive, folha_geracao as g,
                                      folha_pagamento as fp)
     subidos = []
@@ -305,7 +318,7 @@ def _gerar(monkeypatch):
                         **k: subidos.append(nome) or
                         {"id": f"id{len(subidos)}",
                          "link": f"https://drive/{len(subidos)}"})
-    fp.gerar(2026, 9, "quinzena", ["folha"], g.SOMAPAY, quem="MARCELO")
+    fp.gerar(2026, 9, "quinzena", list(verbas), g.SOMAPAY, quem="MARCELO")
     return next(a["id"] for a in fp.log() if a["destino"] == "analise")
 
 
@@ -349,6 +362,28 @@ def test_lancar_cria_SO_SPS_uma_por_conta_com_RATEIO_MULTIPLO(banco_cards, monke
         fcd.lancar(analise)
     assert "já foi lançado" in str(erro.value)
     assert len(pipe.criados) == 2
+
+
+@pytest.mark.banco
+def test_a_COMPLEMENTAR_vai_ao_Pipefy_como_SALARIOS_com_Complementar_no_titulo_e_descricao(
+        banco_cards, monkeypatch):
+    pipe = PipefyFalso(monkeypatch)
+    _fechar()
+    _fechar(partes=(("CREPEOLINDA", "120.00"),), verba="complementar1")
+    analise = _gerar(monkeypatch, verbas=("complementar1",))
+
+    vista = fcd.previa(analise)
+    assert vista["bloqueios"] == []
+    (grupo,) = vista["grupos"]
+    assert grupo["tipo_despesa"] == "Salários e Ordenados" and grupo["tipo_sp"] == "777"
+    assert grupo["categoria"] == "2.01.01"
+    assert grupo["total"] == D("120.00"), "só a diferença, não a folha inteira"
+
+    fcd.lancar(analise, quem="MARCELO")
+    (sp,) = pipe.do_pipe(fcd.PIPE_SP)
+    assert sp["titulo"] == "Folha de Pagamento - Quinzena - Complementar 1"
+    assert "Folha complementar 1 — competência" in sp["valores"]["descri_o"]
+    assert sp["valores"]["descri_o"].startswith("Conta Origem: ")
 
 
 @pytest.mark.banco

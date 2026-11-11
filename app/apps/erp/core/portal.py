@@ -72,14 +72,110 @@ from app.apps.erp.db.models.cadastros import Colaborador, Usuario
 
 logger = logging.getLogger(__name__)
 
-# OS TIPOS QUE A TELA ENXUTA OFERECE. É um subconjunto de propósito: desconto
-# em folha, por exemplo, é do DP — a obra não lança desconto no salário de
-# ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
-TIPOS_DO_PORTAL = (
-    "PRE_CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
-    "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
-    "VALE_TRANSPORTE", "DIVERSOS",
+# ---------------------------------------------------------------------------
+# AS ÁREAS DO PORTAL
+#
+# O dono, em 08/11/2026, depois de entrar e ver só pedidos de DP: *"Não
+# liberamos ainda os demais, mas precisa estar dividido em áreas não?"*
+#
+# **SIM, E A ÁREA QUE AINDA NÃO ABRIU TAMBÉM APARECE.** Esconder o que falta faz
+# a pessoa achar que o sistema só serve para DP e continuar pedindo material
+# pelo WhatsApp — que é exatamente o que se quer acabar. Mostrada e marcada,
+# ela diz duas coisas de uma vez: "vai vir" e "por enquanto, peça onde você já
+# pede". Promessa escrita é melhor que ausência silenciosa.
+#
+# `pronta=False` é o estado honesto de hoje: o ERP JÁ TEM a máquina de
+# suprimentos e a de financeiro — o que falta é ligar a porta do portal nelas,
+# e isso depende de decisão do dono sobre o que a obra pode abrir. O diário de
+# obra não existe em lugar nenhum ainda.
+# ---------------------------------------------------------------------------
+AREAS: tuple[dict[str, Any], ...] = (
+    {
+        "chave": "pessoal",
+        "nome": "Pessoal e DP",
+        # ⚑ A EXPLICAÇÃO SÓ PODE PROMETER O QUE A ÁREA TEM. Ela dizia
+        # "férias", e férias NÃO É pedido de DP aqui — é do ponto. Ele viu, em
+        # 10/11/2026: *"lá no resumo do portal tinha lá férias, e quando você
+        # entrava, não tinha solicitação de férias. Estava tudo errado."*
+        # Porta que anuncia o que não tem é pior que porta fechada: a pessoa
+        # entra, não acha, e deixa de confiar no resto da tela. Há teste
+        # conferindo cada palavra daqui contra os tipos da área.
+        "explicacao": "cadastro, desligamento, readmissão, dados da pessoa, "
+                      "dependente, ajuda de custo e vale-transporte",
+        "pronta": True,
+    },
+    {
+        "chave": "suprimentos",
+        "nome": "Material e compras",
+        "explicacao": "pedir material, ferramenta, locação",
+        "pronta": False,
+        "enquanto_isso": "Continue pedindo material como você pede hoje.",
+    },
+    {
+        "chave": "financeiro",
+        "nome": "Pagamentos",
+        "explicacao": "pedir pagamento de nota, boleto, reembolso",
+        "pronta": False,
+        "enquanto_isso": "Continue pedindo pagamento como você pede hoje.",
+    },
+    {
+        "chave": "obra",
+        "nome": "Diário de obra",
+        "explicacao": "o que aconteceu na obra no dia",
+        # ⚑ LIGADO EM 10/11/2026, a pedido dele: *"eu quero deixar ativo no
+        # portal o diário de obras também."* Até então estava construído e
+        # fechado de propósito (*"eu nem quero que esteja liberado nada além
+        # do DP, a gente vai começar pelo DP"*) — e agora o DP andou.
+        #
+        # ⚑ ESTA ÁREA NÃO TEM TIPO DE SOLICITAÇÃO, e por isso ela não passa
+        # pela conta de `TIPOS_POR_AREA`: o diário não é um pedido, é uma
+        # TELA. Quem clica vai direto para ela. Ver `so_tela` abaixo.
+        "pronta": True,
+        "so_tela": True,
+        "tela": "/erp/obras/diario",
+    },
 )
+
+# OS TIPOS QUE A TELA ENXUTA OFERECE, POR ÁREA. É um subconjunto de propósito:
+# desconto em folha, por exemplo, é do DP — a obra não lança desconto no
+# salário de ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
+TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
+    "pessoal": (
+        "CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
+        "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
+        "VALE_TRANSPORTE", "DIVERSOS",
+    ),
+}
+
+# Mantido para quem já usava o nome antigo. É a soma das áreas, não uma
+# segunda lista — duas listas para a mesma coisa divergem no primeiro mês.
+TIPOS_DO_PORTAL = tuple(
+    chave for area in TIPOS_POR_AREA.values() for chave in area)
+
+
+def areas(s: Session, eu: dict[str, Any]) -> list[dict[str, Any]]:
+    """As áreas, com quantos tipos cada uma oferece A ESTA PESSOA.
+
+    A área que ainda não abriu vem com `pronta: False` e a frase do que fazer
+    enquanto isso. A tela não decide nada disso: ela desenha o que vem daqui.
+    """
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    saida = []
+    for a in AREAS:
+        chaves = TIPOS_POR_AREA.get(a["chave"], ())
+        quantos = len([k for k in chaves if k in svc_sp.TIPOS])
+        saida.append({**a, "tipos": quantos,
+                      # Área marcada como pronta mas sem tipo nenhum seria uma
+                      # porta que abre para o vazio. Melhor ela se corrigir
+                      # sozinha do que mentir.
+                      #
+                      # ⚑ A exceção é a área que é SÓ TELA (o diário): ela não
+                      # oferece pedido nenhum e mesmo assim está pronta —
+                      # clicar leva à tela.
+                      "pronta": bool(a.get("pronta"))
+                                and (quantos > 0 or bool(a.get("so_tela")))})
+    return saida
 
 
 class SemAcesso(Exception):
@@ -208,13 +304,48 @@ def _pode_pela_pessoa(s: Session, eu: dict[str, Any],
 # 1. ABRIR REQUISIÇÃO
 # ---------------------------------------------------------------------------
 def tipos(s: Session) -> list[dict[str, Any]]:
+    """Os tipos que a tela oferece, CADA UM SABENDO DE QUE ÁREA É.
+
+    A área vem no tipo e não numa segunda lista na tela: assim um tipo novo
+    nasce na área certa sem ninguém lembrar de mexer no JavaScript.
+    """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
-    return [{
-        "chave": k, "nome": svc_sp.TIPOS[k]["nome"],
-        "explicacao": svc_sp.TIPOS[k]["explicacao"],
-        "exige_pessoa": svc_sp.TIPOS[k]["exige_pessoa"],
-        "campos": list(svc_sp.TIPOS[k]["campos"]),
-    } for k in TIPOS_DO_PORTAL if k in svc_sp.TIPOS]
+
+    saida = []
+    for area, chaves in TIPOS_POR_AREA.items():
+        for k in chaves:
+            if k not in svc_sp.TIPOS:
+                continue
+            d = svc_sp.TIPOS[k]
+            campos = list(d["campos"])
+            if "obra_id" not in campos:
+                campos.insert(0, "obra_id")
+            saida.append({
+                "chave": k, "area": area, "nome": d["nome"],
+                "explicacao": d["explicacao"],
+                "exige_pessoa": d["exige_pessoa"],
+                "campos": campos,
+                # ⚑ O ASTERISCO E OS PAPÉIS VÊM DA REGRA, que os tirou do
+                # Pipe. A tela não decide nem um nem outro — se decidisse,
+                # divergiriam do que o servidor exige, e a pessoa descobriria
+                # isso só na recusa do envio.
+                "obrigatorios": ["obra_id"] + [x for x in d.get("obrigatorios", ())
+                                               if x != "obra_id"],
+                "documentos": list(d.get("documentos", ())),
+                "documentos_se": {c: {v: list(p) for v, p in mapa.items()}
+                                  for c, mapa in (d.get("documentos_se") or {}).items()},
+                "obrigatorios_se": {c: {v: list(p) for v, p in mapa.items()}
+                                    for c, mapa in (d.get("obrigatorios_se") or {}).items()},
+                "repete": bool(d.get("repete")),
+                "vem_do_documento": dict(d.get("vem_do_documento") or {}),
+                # ⚑ O QUE O CADASTRO JÁ TEM não se pergunta de novo. Ele, em
+                # 10/11/2026: *"vamos requerer os dados. Se não tivermos, né?
+                # Acho que é interessante uma consulta, ver se tem CTPS, se
+                # tem PIS."* O mapa diz de qual coluna cada campo vem; a tela
+                # preenche ao escolher a pessoa e marca como conferência.
+                "ja_no_cadastro": dict(d.get("ja_no_cadastro") or {}),
+            })
+    return saida
 
 
 def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]:
@@ -273,6 +404,44 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
             for l in s.execute(text(
                 "SELECT id, nome FROM convencoes WHERE ativo IS NOT FALSE"
                 " ORDER BY nome")).mappings().all()]
+        # ⚑ AS EMPRESAS DO GRUPO vêm do CADASTRO, não de uma lista digitada
+        # no código. Ele, em 11/11/2026: *"empresa para registro e CNPJ para
+        # admissão é campo duplicado. É a mesma informação."* Empresa nova do
+        # grupo entra sozinha aqui, sem ninguém lembrar de mexer em código.
+        from app.apps.erp.core import pessoal_solicitacoes as svc_sp_emp
+        listas["cnpj_admissao"] = [
+            {"valor": x, "rotulo": x}
+            for x in svc_sp_emp.opcoes_de_empresa(s)]
+        # ⚑ "Cargo Pleiteado" e "Cargo Deferido" são o nome do Pipe para a
+        # MESMA lista de cargos. Sem estas duas linhas eles saíam como texto
+        # livre — e ele viu: *"o cargo. Se o cara já tem cargo, já era para
+        # estar pré-selecionado aqui."*
+        listas["cargo_pleiteado_id"] = listas["cargo_id"]
+        listas["cargo_deferido_id"] = listas["cargo_id"]
+
+    # ⚑ AS CAIXINHAS DO PIPE, com as opções exatas. A fonte é o `CATEGORIAS`
+    # de `pessoal_solicitacoes`, que as tirou do arquivo exportado — não uma
+    # segunda cópia aqui. Campo do Pipe que vira texto livre é a obra
+    # digitando a mesma coisa de dez jeitos, que é o que esta tela existe
+    # para acabar.
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    # ⚑ QUEM VENCE QUANDO OS DOIS TÊM LISTA, e a divisão tem motivo:
+    #
+    # · O PIPE vence no que é escolha DO PEDIDO. "Parentesco", no pedido, é
+    #   Filho ou Cônjuge — é quem dá direito a salário-família, e é o que a
+    #   equipe escolhe há anos. O cadastro tem oito parentescos porque o DP
+    #   registra enteado e avó depois; isso é do cadastro, não do pedido.
+    #
+    # · O CADASTRO vence nos BENEFÍCIOS, e por uma razão prática: ele aposenta
+    #   opção que não se oferece mais ("Cartão", no transporte). Deixar o Pipe
+    #   vencer aqui reabriria a opção aposentada, e alguém escolheria.
+    MANDA_O_CADASTRO = {"categoria_alimentacao", "categoria_transporte",
+                        "meio_transporte"}
+    for campo, opcoes in svc_sp.CATEGORIAS.items():
+        if campo in MANDA_O_CADASTRO and campo in listas:
+            continue
+        listas[campo] = [{"valor": o, "rotulo": o} for o in opcoes]
     return listas
 
 
@@ -612,6 +781,100 @@ def pessoas_ao_alcance(s: Session, usuario: Optional[Usuario]) -> list[dict[str,
     return [{"id": l["id"], "nome": l["nome"]} for l in linhas]
 
 
+# ---------------------------------------------------------------------------
+# PROCURAR A PESSOA — por nome OU por CPF (10/11/2026)
+#
+# Ele: *"não está pesquisável o nome da pessoa. Eu até comentei pesquisar
+# nome, pesquisar CPF, trazer alguém. Não está pesquisável."*
+#
+# ⚑ A BUSCA É NO SERVIDOR, e não um filtro na lista que já desceu. A caixinha
+# descia com até 500 pessoas, e pôr o CPF de todas no navegador para poder
+# filtrar ali seria expor o cadastro inteiro a quem abrir o código da página.
+# Aqui só aparece quem já se sabia procurar.
+#
+# ⚑ E A RESPOSTA TRAZ CARGO E VÍNCULO. Ele, no mesmo dia: *"o cargo. Se o cara
+# já tem cargo, já era para estar pré-selecionado aqui, já era para estar
+# aparecendo. Eu cliquei na pessoa, cadê o cargo? Quem é? Ela é o que agora?
+# (…) Cadê a correlação com a base que já existe?"*
+# ---------------------------------------------------------------------------
+MINIMO_DA_BUSCA_DE_PESSOA = 3
+TETO_DA_BUSCA_DE_PESSOA = 20
+
+
+def _sem_acento(texto: Any) -> str:
+    import unicodedata as _u
+    cru = _u.normalize("NFD", str(texto or "").lower())
+    return "".join(c for c in cru if _u.category(c) != "Mn")
+
+
+def _cpf_do_fim(cpf: Any) -> str:
+    """"…901" — o bastante para conferir que é a pessoa certa, e só isso.
+
+    Mostrar o CPF inteiro numa lista de resultado é espalhar documento de
+    gente por tela de celular. Os três últimos dígitos resolvem a dúvida de
+    quem já sabe quem está procurando.
+    """
+    so_digito = "".join(c for c in str(cpf or "") if c.isdigit())
+    return ("…" + so_digito[-3:]) if len(so_digito) >= 3 else ""
+
+
+def procurar_pessoas(s: Session, usuario: Optional[Usuario],
+                     termo: str) -> list[dict[str, Any]]:
+    """Quem bate com o que foi digitado, dentro do alcance de quem procura."""
+    procurado = str(termo or "").strip()
+    so_digito = "".join(c for c in procurado if c.isdigit())
+    if len(procurado) < MINIMO_DA_BUSCA_DE_PESSOA and len(so_digito) < 3:
+        return []
+    eu = quem_esta(s, usuario)
+    if not pode_pedir_por_outros(s, eu):
+        # Quem só pede por si não procura ninguém: devolve a si mesmo.
+        return [x for x in pessoas_ao_alcance(s, usuario)
+                if procurado.lower() in str(x["nome"]).lower()]
+    obras = obras_que_alcanca(s, eu)
+    if obras is not None and not obras:
+        return []
+    # ⚑ AS COLUNAS QUE OS TIPOS CONSULTAM vêm JUNTO com a pessoa, e não numa
+    # segunda chamada depois do clique: no celular, na obra, cada ida ao
+    # servidor é um tempo em que a tela parece travada. A lista é da regra
+    # (`COLUNAS_JA_NO_CADASTRO`), não escrita aqui — tipo novo que consulte
+    # outra coluna passa a trazê-la sozinho.
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    extras = svc_sp.COLUNAS_JA_NO_CADASTRO
+    colunas_extras = "".join(f", c.{c} AS ja_{c}" for c in extras)
+    linhas = s.execute(text(f"""
+        SELECT c.id, c.nome, c.cpf, c.vinculo{colunas_extras},
+               COALESCE(NULLIF(btrim(g.nome), ''), NULLIF(btrim(f.nome), ''), '')
+                 AS cargo,
+               g.id AS cargo_id, c.obra_id
+          FROM colaboradores c
+          LEFT JOIN cargos  g ON g.id = c.cargo_id
+          LEFT JOIN funcoes f ON f.id = c.funcao_id
+         WHERE (:todas OR c.obra_id = ANY(:obras))
+           AND c.situacao = 'ATIVO'
+           AND (translate(lower(c.nome),
+                          'áàâãäéèêëíìîïóòôõöúùûüç',
+                          'aaaaaeeeeiiiiooooouuuuc') LIKE :nome
+                OR (:digitos <> '' AND regexp_replace(c.cpf, '\D', '', 'g')
+                    LIKE :digitos || '%'))
+         ORDER BY c.nome
+         LIMIT :teto"""),
+        {"obras": obras or [], "todas": obras is None,
+         # ⚑ Sem acento dos dois lados, e sem depender da extensão
+         # `unaccent` (que não está instalada): quem digita "jose" acha
+         # "José", que é como se digita no celular, com pressa.
+         "nome": "%" + _sem_acento(procurado) + "%", "digitos": so_digito,
+         "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
+    return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
+             "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
+             "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"]),
+             # Só o que ESTÁ preenchido: campo vazio aqui viraria "já no
+             # cadastro" na tela, e a pessoa não preencheria o que falta.
+             "cadastro": {c: str(l[f"ja_{c}"]).strip() for c in extras
+                          if l[f"ja_{c}"] is not None
+                          and str(l[f"ja_{c}"]).strip()}}
+            for l in linhas]
+
+
 def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """As obras que aparecem na caixinha do pedido — só as que ela alcança."""
     eu = quem_esta(s, usuario)
@@ -623,7 +886,13 @@ def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str
          WHERE (:todas OR id = ANY(:obras)) AND status <> 'ENCERRADA'
          ORDER BY codigo"""),
         {"obras": obras or [], "todas": obras is None}).mappings().all()
-    return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"]} for l in linhas]
+    # ⚑ O RÓTULO VAI PRONTO. Montar "código — nome" na tela é o defeito que o
+    # dono já reclamou duas vezes ("está aparecendo duplicado o nome da obra"):
+    # muita obra tem código dentro do nome, e os dois lado a lado parecem erro
+    # de digitação. A regra mora em `core/comum/rotulos.py`, num lugar só.
+    from app.apps.erp.core.comum.rotulos import rotulo_da_obra
+    return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"],
+             "rotulo": rotulo_da_obra(l["codigo"], l["nome"])} for l in linhas]
 
 
 # ---------------------------------------------------------------------------

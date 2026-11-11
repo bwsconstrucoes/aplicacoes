@@ -802,6 +802,65 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 11/11/2026 — a pergunta da publicação é UMA POR CHAT
+
+Ele: *"Agora não pode mais. Pq tá perguntando duas vezes? Já havia afirmado."*
+
+A regra de perguntar se há carga do painel ou sincronização do Análise de SPs
+em andamento antes de juntar na `main` estava escrita sem dizer **quantas
+vezes** — e eu a repeti na segunda publicação do mesmo chat, horas depois de
+ele já ter respondido "não tem nada rodando".
+
+**Respondida, vale para o chat inteiro.** Um "pode publicar" seguinte já
+carrega a resposta; repetir é pedir de novo o que ele já deu, que é a mesma
+irritação da pausa no meio da fila. Corrigido em `CLAUDE.md` › "Juntar na
+`main`", item 2.
+
+⚠️ **E tem um custo concreto nesta vez:** a publicação foi cancelada por causa
+da pergunta repetida. O trabalho ficou pronto e verde no ramo, esperando.
+
+### 10/11/2026 — Duas mudanças que ATRAVESSAM ÁREAS (ERP ⇄ ponto ⇄ Análise de SPs)
+
+**Em ramo, não publicado.** Registradas aqui porque tocam arquivo de outra
+área — o que é exceção neste repositório.
+
+**1. `app/apps/ponto/core/cadastros.py`: o início do contrato é a MENOR das
+duas datas.** Uma linha: `"admissao": "LEAST(c.data_inicio, c.admissao)"` no
+mapa `_DO_ERP`.
+
+*Por quê:* o dono decidiu que **a conferência do DP não trava o ponto** —
+*"a pessoa cadastre e, a partir daquele dia, já consiga bater ponto (…) a obra
+pediu, libera"*. O DP, ao conferir, pondera *"se o dia da assinatura vai ser
+aquele mesmo ou um pouquinho mais na frente"*; com a regra antiga, empurrar
+essa data fazia **quem já vinha batendo ponto parar de bater**.
+
+⚑ **NÃO É REGRA NOVA: é alinhamento.** O caminho que lê o Registro de
+Colaboradores (a planilha) **já fazia o `LEAST`** desde sempre
+(`ponto/core/registro.py`). Quem divergia era o caminho que lê o ERP — e ele é
+justamente o que fica quando a planilha morrer. O defeito só apareceria depois
+do desligamento da planilha, quando ninguém mais lembrasse de procurar aqui.
+
+Trava: `tests/test_diarias_e_ponto_liberado.py`, que também quebra se alguém
+escrever "etapa" na regra de quem bate ponto.
+
+**2. `app/apps/analisesps/folha_diaristas.py`: os acréscimos da diária passam
+a ser lidos do ERP.** Eram constantes no código (20 feriado, 10 sábado, 20
+domingo, vigia fora); o dono pediu que virassem configuração. A configuração
+mora em `app/apps/erp/core/diarias.py` (tela: Configurações › Diárias) e a
+folha a lê por `acrescimos_configurados()`.
+
+⚑ **A LEITURA NUNCA LEVANTA, e os padrões são os números de antes.** Sem
+resposta do ERP, valem os padrões e fica o aviso no log — folha de ~500
+pessoas não pode parar por causa de um parâmetro. E, como os padrões são
+exatamente o que já valia, ligar isto **não muda nenhum centavo** até alguém
+abrir a tela.
+
+*Por que a configuração mora no ERP e não no Análise de SPs, que é quem
+calcula:* porque o cadastro mora no ERP, a folha está migrando para lá, e
+parâmetro guardado no sistema que vai ser desligado mudaria de casa duas
+vezes. Os dois módulos rodam no mesmo processo e no mesmo banco.
+
+
 ### 06/11/2026 — O Ponto passa a morar dentro de Pessoal (menu e cadastro)
 
 **Em ramo, não publicado.** Decisão do dono: *"a gente tem lá pessoal e tem
