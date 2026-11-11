@@ -835,7 +835,12 @@ def criticas_das_participacoes(participacoes) -> list[dict]:
     for p in participacoes or ():
         obra = p.get("obra") or ""
         somas[obra] = somas.get(obra, 0.0) + float(p.get("pct") or 0)
-    return [{"obra": obra or "todas as obras", "soma": round(soma, 2)}
+    def _nome(obra):
+        if not obra:
+            return "todas as obras"
+        return ("projeto " + obra[len(PROJETO_NA_PARTICIPACAO):]
+                if obra.startswith(PROJETO_NA_PARTICIPACAO) else obra)
+    return [{"obra": _nome(obra), "soma": round(soma, 2)}
             for obra, soma in sorted(somas.items()) if abs(soma - 100.0) > 0.01]
 
 
@@ -992,15 +997,28 @@ def quotas_por_socio(por_projeto, participacoes, config) -> list[dict]:
 # branco — senão seriam 174 linhas iguais.
 
 
-def participantes_da_obra(participacoes, obra: str) -> list[dict]:
-    """Quem divide ESTA obra: quem foi nomeado nela; se ninguém foi, quem
-    participa de todas. O específico ganha do geral — é o que permite dizer
-    "nesta obra entrou um parceiro" sem refazer o resto."""
+# QUEM DIVIDE POR PROJETO (11/11/2026, o dono: "tem uns 10 projetos, um projeto
+# às vezes tem 4 sócios — eu tenho que adicionar de um por um"). A participação
+# do cenário era só "todas as obras" ou obra a obra; um projeto de dez obras
+# pedia dez linhas iguais. Agora há o nível do meio: a participação gravada
+# com a obra "projeto:NOME" vale para todas as obras daquele projeto.
+PROJETO_NA_PARTICIPACAO = "projeto:"
+
+
+def participantes_da_obra(participacoes, obra: str, projeto: str = "") -> list[dict]:
+    """Quem divide ESTA obra: quem foi nomeado nela; se ninguém foi, quem foi
+    nomeado no PROJETO dela; se ninguém, quem participa de todas. O específico
+    ganha do geral — é o que permite dizer "nesta obra entrou um parceiro" sem
+    refazer o resto."""
     nomeados = [p for p in participacoes if (p.get("obra") or "") == obra]
+    if not nomeados and projeto:
+        chave = PROJETO_NA_PARTICIPACAO + projeto
+        nomeados = [p for p in participacoes if (p.get("obra") or "") == chave]
     return nomeados or [p for p in participacoes if not (p.get("obra") or "")]
 
 
-def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0) -> list[dict]:
+def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0,
+                    projeto_de: dict | None = None) -> list[dict]:
     """Quanto cabe a cada um, obra a obra. Mesma conta da divisão por projeto.
 
     **Obra só da BWS:** cada um leva seu percentual do resultado com rateio.
@@ -1018,7 +1036,8 @@ def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0) ->
     taxa = float(taxa_adm_pct or 0) / 100.0
     saida = []
     for obra, n in por_obra.items():
-        gente = participantes_da_obra(participacoes, obra)
+        gente = participantes_da_obra(participacoes, obra,
+                                      ((projeto_de or {}).get(obra) or "").strip())
         if not gente:
             continue
         tem_externo = any((p.get("tipo") or "").lower() == "externo" for p in gente)

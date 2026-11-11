@@ -1682,8 +1682,9 @@ def _calcular_cenario(cenario: dict) -> dict:
                                juros["alocacoes"])
     por_obra = prestacao.totalizar_por_obra(apurado)
     participacoes = cenario.get("participacoes") or cenarios.participacoes(cenario["id"])
-    quotas = prestacao.quotas_por_obra(por_obra, participacoes,
-                                       float(cenario.get("taxa_adm_pct", 0) or 0))
+    quotas = prestacao.quotas_por_obra(
+        por_obra, participacoes, float(cenario.get("taxa_adm_pct", 0) or 0),
+        projeto_de={o: info.get("projeto") or "" for o, info in obras.items()})
     ajustes = prestacao_dados.ajustes()
     return {
         "cenario": cenario, "obras": obras, "rateio": rateio, "juros": juros,
@@ -1747,7 +1748,10 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         por_categoria.setdefault(chave, []).append(e)
 
     grupos: dict[str, dict] = {}
+    primeiro_mes = ""
     for linha in consultas.despesa_administrativa(deptos, medida):
+        if linha["mes"] != consultas.SEM_DATA and (not primeiro_mes or linha["mes"] < primeiro_mes):
+            primeiro_mes = linha["mes"]
         nome = linha.get("grupo") or "(sem grupo)"
         cat = linha.get("categoria") or "(sem categoria)"
         g = grupos.setdefault(nome, {"grupo": nome, "valor": 0.0, "categorias": {}})
@@ -1827,7 +1831,8 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     }
     ordem = {"grupo": 0, "categoria": 1, "lancamento": 2}
     marcacoes.sort(key=lambda m: (ordem[m["nivel"]], m["grupo"], m["categoria"], m["rotulo"]))
-    return {"contas": contas, "resumo": resumo, "marcacoes": marcacoes}
+    return {"contas": contas, "resumo": resumo, "marcacoes": marcacoes,
+            "primeiro_mes": primeiro_mes}
 
 
 @bp.route("/prestacao/montagem")
@@ -1862,10 +1867,12 @@ def cenario_montagem():
         criterios=cenarios.CRITERIOS, janelas=cenarios.JANELAS,
         contas=arvore["contas"], resumo_matriz=arvore["resumo"],
         marcacoes=arvore["marcacoes"], categoria_aberta=categoria_aberta,
+        primeiro_mes=arvore.get("primeiro_mes", ""),
         socios=prestacao_dados.socios(apenas_ativos=True),
         obras_do_painel=_opcoes_no_escopo().get("obras", []),
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []),
-        **_grade_quem_divide(atual, _opcoes_no_escopo().get("obras", [])),
+        **_grade_quem_divide(atual, _opcoes_no_escopo().get("obras", []),
+                             _opcoes_no_escopo().get("projetos", [])),
         linhas_fora=_linhas_fora((atual or {}).get("excluidas") or [],
                                  _opcoes_no_escopo().get("projetos", []),
                                  _opcoes_no_escopo().get("obras", [])),
@@ -2174,8 +2181,13 @@ def prestacao_parametros():
         return redirect(url_for("painel.prestacao_parametros",
                                 aba=request.form.get("aba", "socios")))
 
-    listas = consultas.grupos_e_categorias() if not consultas.base_vazia() else         {"grupos": [], "categorias": []}
     aba = request.args.get("aba", "socios")
+    # SÓ NA ABA QUE USA (11/11/2026, o dono: "clica, demora um tempo para
+    # cadastrar"). Estas duas listas varrem a base inteira, e eram lidas a
+    # cada salvada de QUALQUER aba — cadastrar um sócio esperava por elas.
+    listas = (consultas.grupos_e_categorias()
+              if aba == "geral" and not consultas.base_vazia()
+              else {"grupos": [], "categorias": []})
     # Só na aba dela: a lista de obras agrupa o rateio inteiro, e as outras
     # abas não precisam disso.
     obras_projetos = prestacao_dados.obras_e_projetos() if aba == "projetos" else []
@@ -2223,17 +2235,22 @@ def _grade_dos_projetos(participacoes, projetos) -> dict:
             "linhas_da_grade": [{"chave": n, "rotulo": n} for n in nomes]}
 
 
-def _grade_quem_divide(cenario, obras) -> dict:
+def _grade_quem_divide(cenario, obras, projetos=()) -> dict:
     """A grade do "Quem divide" do cenário: "Todas as obras" primeiro, depois
-    as obras com percentual próprio, depois as outras (que aparecem ao
-    procurar)."""
+    cada PROJETO (sempre à vista — é por onde se configura), depois as obras
+    com percentual próprio; as outras obras aparecem ao procurar."""
+    from .prestacao import PROJETO_NA_PARTICIPACAO as P
     grade: dict = {}
     for p in (cenario or {}).get("participacoes") or []:
         grade.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
-    outras = sorted((set(obras) | set(grade)) - {""},
+    dos_projetos = sorted({P + n for n in projetos if n}
+                          | {k for k in grade if k.startswith(P)}, key=str.lower)
+    outras = sorted((set(obras) | {k for k in grade if not k.startswith(P)}) - {""},
                     key=lambda n: (n not in grade, n.lower()))
-    linhas = [{"chave": "", "rotulo": "Todas as obras", "fixa": True}] + [
-        {"chave": o, "rotulo": o} for o in outras]
+    linhas = ([{"chave": "", "rotulo": "Todas as obras", "fixa": True}]
+              + [{"chave": k, "rotulo": "Projeto — " + k[len(P):], "fixa": True}
+                 for k in dos_projetos]
+              + [{"chave": o, "rotulo": o} for o in outras])
     return {"grade_quem_divide": grade, "linhas_quem_divide": linhas}
 
 
@@ -2360,6 +2377,9 @@ def _aplicar_mudanca_da_prestacao(dados, form):
     if acao == "socio":
         dados.salvar_socio(form["nome"], form.get("tipo", "Interno"),
                            form.get("socio_id") or None)
+    elif acao == "socios_em_lista":
+        dados.salvar_socios_em_lista(zip(form.getlist("socio_id"), form.getlist("nome"),
+                                         form.getlist("tipo")))
     elif acao == "desativar_socio":
         dados.desativar_socio(form["socio_id"])
     elif acao == "reativar_socio":

@@ -112,6 +112,10 @@ def periodos(cenario_id) -> dict:
 _MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
+# o "mês" do período que vale desde sempre — antes de qualquer lançamento
+DESDE_O_INICIO = "1900-01"
+
+
 def _periodos_limpos(lista) -> list[tuple]:
     """[(desde, percentual, parte do principal | None)] válidos e em ordem.
     Linha sem mês válido ou sem percentual é ignorada; mês repetido, vale o
@@ -121,6 +125,11 @@ def _periodos_limpos(lista) -> list[tuple]:
         desde, pct = item[0], item[1]
         principal = item[2] if len(item) > 2 else None
         desde = (desde or "").strip()
+        # MÊS EM BRANCO COM A PARTE DO PRINCIPAL = "desde o início"
+        # (11/11/2026): o caso mais comum é um percentual só, que vale sempre,
+        # e pedir um mês para isso era um passo a mais sem sentido
+        if not desde and str(principal if principal is not None else "").strip():
+            desde = DESDE_O_INICIO
         if _MES.match(desde) and str(pct if pct is not None else "").strip():
             p = None if principal is None or str(principal).strip() == "" else _limpar(principal)
             limpos[desde] = (_limpar(pct), p)

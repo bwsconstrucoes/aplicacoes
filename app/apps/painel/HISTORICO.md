@@ -651,6 +651,48 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A parte do BWS CE à vista, quem divide por projeto, sócios em lote — 11/11/2026 (noite)
+
+O dono, depois de usar: *"eu vou incluir um sócio, clica, demora um tempo para
+cadastrar, e vai isso de um por um (…) tem uns 10 projetos, um projeto às
+vezes tem 4 sócios, eu tenho que adicionar de um por um (…) eu boto 100 pro
+grupo, mas se eu botar uma categoria específica, meio a meio, vai funcionar?
+(…) o grupo de pessoal eu vou variar o percentual por ano (…) vou definir o
+período e o percentual do BWS CE naquele período — **e eu nem enxerguei isso
+aí**. Eu tenho que completar todos os períodos, né?"*
+
+**O que já existia e ele não achou:** na montagem do cenário, o grupo tem o
+percentual, a categoria em branco segue o grupo, a categoria preenchida ganha
+dele, e cada conta pode ter períodos "a partir de MM/AAAA" com a parte do
+projeto principal. Estava atrás de um link pequeno, "📅 por período".
+
+**O que mudou:**
+- **Coluna "Para o BWS CE"** em "O que se divide": mostra por extenso o que a
+  linha tem ("50% desde 01/2021 · 40% desde 01/2022") e é o botão que abre os
+  períodos; sem nada, "＋ definir"; na categoria, "segue o grupo ✎".
+- A linha de período pede primeiro a parte do principal; o "entra no rateio"
+  já vem com o percentual que a linha divide hoje. **Mês em branco = desde o
+  início** (`cenarios.DESDE_O_INICIO` = "1900-01") — o caso de um percentual
+  só não pede mês. A dica diz desde quando a matriz tem custo e que NÃO é
+  preciso completar todos os períodos: cada linha vale até a próxima começar.
+- **Quem divide por PROJETO** (cálculo novo): a grade do cenário ganhou uma
+  linha por projeto, sempre à vista. Precedência: obra nomeada > projeto >
+  "Todas as obras". Sem migração: a participação do projeto é gravada com a
+  obra `projeto:NOME` (`prestacao.PROJETO_NA_PARTICIPACAO`).
+- **Sócios em lote:** a aba virou uma lista com um "Salvar tudo" — os
+  existentes editam na linha, e cinco linhas em branco cadastram vários de uma
+  vez. Nome repetido não grava nada.
+- **Mais rápido de salvar:** a aba de Parâmetros lia, a cada salvada de
+  QUALQUER aba, duas listas que varrem a base inteira (grupos e categorias);
+  agora só na aba que usa, e lembradas até a próxima carga. A despesa da
+  matriz (que a montagem relê a cada Salvar) também fica lembrada. NÃO MEDIDO
+  em produção quanto isso tira da espera.
+
+**Duas telas, e qual usar (dito ao dono):** a montagem do cenário é onde vale
+"grupo 100, categoria diferente, parte do BWS CE por período". Parâmetros ›
+Regras de rateio e Parâmetros › Participações alimentam só a Prestação de
+Contas antiga. Decisão que fica com ele: aposentar a antiga.
+
 ## Regras de rateio em árvore, e regra e ajuste editáveis — 11/11/2026
 
 O dono: *"na hora de criar regras de rateio não tá tendo correlação entre o

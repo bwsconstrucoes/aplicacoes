@@ -882,7 +882,7 @@ def test_prestacao_avisa_quando_nao_ha_participacao(painel):
 
 def test_parametros_da_prestacao_abrem_em_todas_as_abas(painel):
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
-    for aba, marca in [("socios", "Adicionar sócio"),
+    for aba, marca in [("socios", "socios-lista"),
                        ("participacoes", "Quem participa de qual projeto"),
                        ("regras", "Nova regra"),
                        ("ajustes", "Novo ajuste"),

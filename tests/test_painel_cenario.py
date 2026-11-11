@@ -1119,7 +1119,7 @@ def test_as_grades_aparecem_e_gravam_pela_tela(cenario, monkeypatch):
     html = cliente.get("/painel/prestacao/parametros?aba=participacoes").get_data(as_text=True)
     assert "grade-participacoes" in html and "Salvar tudo" in html
     html = cliente.get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
-    assert f'id="socio-{s["Sócio A"]}"' in html
+    assert 'id="socios-lista"' in html and 'placeholder="novo sócio — nome"' in html
 
 
 def test_juro_marcado_um_a_um_nao_e_contado_duas_vezes(cenario):
@@ -1259,3 +1259,71 @@ def test_o_ajuste_e_corrigido_na_linha(base, monkeypatch):
     with __import__("app.apps.painel.db", fromlist=["conexao"]).conexao() as conn:
         conn.execute("DELETE FROM ajustes")
         conn.commit()
+
+
+# ===========================================================================
+# 11/11/2026 (noite) — "eu vou incluir um sócio, clica, demora (…) um projeto
+# às vezes tem 4 sócios, eu tenho que adicionar de um por um"
+# ===========================================================================
+def test_varios_socios_de_uma_vez(base, monkeypatch):
+    from app.apps.painel import prestacao_dados
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "socios_em_lista", "aba": "socios",
+        "socio_id": ["", "", "", ""], "nome": ["Ana", "Beto", "", "Caio"],
+        "tipo": ["Interno", "Externo", "Interno", "Interno"]})
+    socios = {s["nome"]: s for s in prestacao_dados.socios()}
+    assert set(socios) == {"Ana", "Beto", "Caio"} and socios["Beto"]["tipo"] == "Externo"
+    # editar um e cadastrar outro, no mesmo Salvar
+    r = prestacao_dados.salvar_socios_em_lista([
+        (socios["Ana"]["id"], "Ana Maria", "Interno"), (socios["Beto"]["id"], "Beto", "Externo"),
+        ("", "Davi", "Interno")])
+    assert r == {"novos": 1, "alterados": 1}
+    # nome repetido não grava nada
+    with pytest.raises(ValueError, match="Já existe"):
+        prestacao_dados.salvar_socios_em_lista([("", "Caio", "Interno"), ("", "Eva", "Interno")])
+    assert "Eva" not in {s["nome"] for s in prestacao_dados.socios()}
+
+
+def test_quem_divide_por_projeto_vale_para_as_obras_dele(cenario):
+    """Obra nomeada > projeto > todas as obras. As duas obras do teste são do
+    projeto ALFA."""
+    from app.apps.painel import cenarios, prestacao
+    s = _dois_socios()
+    cenarios.gravar_participacoes_em_grade(cenario, {
+        ("", s["Sócio A"]): "100",
+        ("projeto:ALFA", s["Sócio A"]): "60", ("projeto:ALFA", s["Parceiro"]): "40",
+        ("POUCA GENTE", s["Sócio A"]): "50", ("POUCA GENTE", s["Parceiro"]): "50"})
+    conta = _calcular(cenario)
+    pct = {(q["obra"], q["socio"]): q["pct"] for q in conta["quotas"]}
+    assert pct[("MUITA GENTE", "Sócio A")] == 60 and pct[("MUITA GENTE", "Parceiro")] == 40
+    assert pct[("POUCA GENTE", "Sócio A")] == 50
+    # sem projeto conhecido, vale a linha geral
+    geral = prestacao.participantes_da_obra(cenarios.participacoes(cenario), "OUTRA", "BETA")
+    assert [(p["socio"], p["pct"]) for p in geral] == [("Sócio A", 100)]
+
+
+def test_a_parte_do_principal_sem_mes_vale_desde_o_inicio(cenario):
+    from app.apps.painel import cenarios, prestacao
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [("", 100, 40)])
+    pesos = cenarios.pesos(cenario)
+    assert pesos["periodos"]["grupo"]["Administrativas"] == [
+        (cenarios.DESDE_O_INICIO, 100.0, 40.0)]
+    assert prestacao.peso_e_divisao(pesos, "Administrativas", "Aluguel", "", 100,
+                                    mes="2015-01") == (100.0, 40.0)
+    # linha nova sem mês e sem a parte do principal não é período nenhum
+    cenarios.gravar_periodos(cenario, "grupo", "Patrimônio", [("", 100, "")])
+    assert "Patrimônio" not in cenarios.pesos(cenario)["periodos"]["grupo"]
+    # a tela mostra a coluna, não mais o link pequeno
+    from app.apps.painel.web import _calcular_cenario  # noqa: F401 — a conta roda
+    assert _calcular(cenario)["rateio"]["alocacoes"]
+
+
+def test_a_montagem_mostra_a_parte_do_principal_numa_coluna(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cenarios.gravar_projetos(cenario, "ALFA", {})
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [("2025-01", 100, 40)])
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "Para o ALFA" in html and "desde 01/2025" in html
+    assert "＋ definir" in html and "Projeto — ALFA" in html

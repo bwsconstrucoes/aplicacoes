@@ -211,6 +211,48 @@ def salvar_socio(nome: str, tipo: str = "Interno", socio_id=None) -> None:
         conn.commit()
 
 
+def salvar_socios_em_lista(linhas) -> dict:
+    """A lista de sócios inteira de uma vez: `[(id ou "", nome, tipo), ...]`.
+
+    Com id, renomeia/troca o tipo; sem id e com nome, cadastra. Linha sem nome
+    é ignorada (as linhas em branco da tela). Confere TUDO antes de gravar —
+    nome repetido, na lista ou contra quem já existe, não grava nada."""
+    limpas, vistos = [], set()
+    for socio_id, nome, tipo in linhas or ():
+        nome = (nome or "").strip()
+        if not nome:
+            if str(socio_id or "").strip():
+                raise ValueError("O nome de um sócio que já existe não pode ficar vazio.")
+            continue
+        if nome.lower() in vistos:
+            raise ValueError(f"O nome {nome} aparece duas vezes na lista.")
+        vistos.add(nome.lower())
+        limpas.append((int(socio_id) if str(socio_id or "").strip() else None, nome,
+                       "Externo" if tipo == "Externo" else "Interno"))
+    novos = alterados = 0
+    with conexao() as conn:
+        atuais = {i: (n, t) for i, n, t in conn.execute(
+            "SELECT id, nome, tipo FROM socios").fetchall()}
+        ids_da_lista = {i for i, _n, _t in limpas if i}
+        for socio_id, nome, _tipo in limpas:
+            # nome já usado por um sócio que NÃO está nesta lista (ou por
+            # outro id): seria dois cadastros com o mesmo nome
+            for outro, (n, _t) in atuais.items():
+                if n.strip().lower() == nome.lower() and outro != socio_id and (
+                        outro not in ids_da_lista or socio_id is None):
+                    raise ValueError(f"Já existe um sócio chamado {nome}.")
+        for socio_id, nome, tipo in limpas:
+            if socio_id is None:
+                conn.execute("INSERT INTO socios (nome, tipo) VALUES (?,?)", (nome, tipo))
+                novos += 1
+            elif atuais.get(socio_id) != (nome, tipo):
+                conn.execute("UPDATE socios SET nome=?, tipo=? WHERE id=?",
+                             (nome, tipo, socio_id))
+                alterados += 1
+        conn.commit()
+    return {"novos": novos, "alterados": alterados}
+
+
 def desativar_socio(socio_id: int) -> None:
     """Sócio sai de cena sem apagar histórico: as quotas já calculadas e os
     ajustes lançados continuam existindo."""
