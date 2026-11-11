@@ -543,6 +543,35 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 11/11/2026 (quarta) — O Painel do ponto: gráficos e a comparação de dois períodos
+
+O dono (pedido feito primeiro no chat de outra área, que mandou para cá): *"não tem um dashboard para eu visualizar
+dentro do mês: a quantidade de batidas, quantos funcionários estão batendo ponto, as batidas corretas, as corrigidas,
+os atestados, as batidas faltando, dentro de um gráfico (…) poder comparar um período com outro: esta quinzena com a
+anterior, um mês com o outro (…) se uma obra estava num patamar e piorou, se manteve."*
+- **Tela nova "Painel"** no menu do Ponto (antes de Qualidade), `/erp/ponto/painel`. Na barra: os atalhos "Este mês
+  × o anterior", "Esta quinzena × a anterior", "Mês passado × o de antes", "Quinzena passada × a de antes"; as datas do
+  período e as do período de comparação (pode desligar a comparação); a obra.
+- **Os cartões**: funcionários batendo, batidas, corretas, corrigidas por ajuste (e o %), dias com batida faltando,
+  faltas, atestados (e os dias de atestado e as declarações à parte), ajustes pedidos, ponto em dia (%) e a nota.
+  Cada um com a diferença para o período de comparação e "melhor"/"pior" (bolinha verde/vermelha + a palavra).
+  **Quando os períodos têm tamanhos diferentes**, as quantidades comparam a MÉDIA POR DIA (e dizem "por dia"); %,
+  nota e funcionários batendo comparam direto.
+- **Os gráficos**: batidas por dia (corretas em azul, corrigidas em laranja, o período de comparação numa linha
+  tracejada, dia a dia; passando o mouse, o dia; "ver em tabela" embaixo); os dias de trabalho em barras de 100% (em
+  dia, com batida corrigida, batida faltando, falta — com ícone e palavra, não só cor); e as obras numa tabela com a
+  régua da nota (cinza = antes, azul = agora), a diferença e **melhorou / manteve / piorou**, as que pioraram primeiro.
+- **De onde vêm os números** (`core/indicadores.py`): as contas são as da Qualidade (`qualidade.avaliar`) — nada
+  novo inventado; batidas por dia e funcionários batendo, contados das batidas; atestados, dos aprovados que tocam o
+  período. O período vai até ONTEM. Até 62 dias por período. **"Manteve" = a nota mexeu até 3 pontos** (`PATAMAR`) —
+  1 ou 2 pontos de um mês para o outro é ruído. Quem conta: quem bate ponto hoje no alcance E quem bateu no período (o
+  desligado depois continua no mês em que trabalhou); com obra, quem bateu nela.
+- A conta é a pesada da Qualidade (o espelho de cada pessoa), guardada 10 minutos e uma de cada vez: se outra estiver
+  rodando, a tela tenta de novo sozinha a cada 6 s (até 10 vezes).
+- Testes: `test_ponto_painel_banco.py` (tendência, período desvirado e cortado em ontem, período longo, comparação das
+  obras; o painel com batidas de verdade, a comparação, a obra, o alcance do supervisor). E a tela no navegador com
+  dois meses de batidas.
+
 ## 10/11/2026 (terça) — Alertas com período, obra, pessoa e páginas
 
 O dono: *"está exibindo 500 por página, só que não tem paginação, não posso mudar de página, não posso filtrar por
