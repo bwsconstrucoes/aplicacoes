@@ -651,6 +651,29 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Fora da análise: totalmente, ou só até um mês — 11/11/2026
+
+O dono: *"o fora da análise não tá direito (…) colocar totalmente fora da
+análise ou colocar até determinado período. É isso que eu preciso em relação a
+considerar a obra ou projeto, ou não."*
+
+- Cada projeto e cada obra escolhe, numa lista só com um Salvar: **Considerar**,
+  **Fora totalmente** ou **Considerar só até MM/AAAA**. Vale em Parâmetros ›
+  Fora da análise (para tudo) e na montagem de cada cenário (só para ele).
+- "Só até 06/2024" = entra com o que aconteceu até 06/2024, inclusive; dali em
+  diante sai da apuração (receita e despesa), da régua (pessoal ou
+  faturamento) e do caixa dos juros. Lançamento SEM DATA de obra com corte
+  também sai. Obra nomeada por ela e pelo projeto: vale o mês mais cedo.
+- Sem migração: o mês vai no próprio item — `obra:CASA@2024-06`
+  (`prestacao.ler_item_fora`). O item sem mês continua sendo "fora totalmente",
+  então o que já estava gravado segue valendo igual.
+- As telas de resultado (prestação e cenário) avisam quais obras estão
+  "consideradas só até".
+- NÃO PERGUNTADO ao dono, assumido: "até determinado período" = considerar ATÉ
+  o mês e tirar depois (obra que saiu da sociedade/encerrou). Se for o
+  contrário (fora até o mês, e entra depois), é trocar o sinal em
+  `depois_do_corte` — e o texto da tela.
+
 ## "Painel muito lento hoje" — 11/11/2026
 
 **Achado e confirmado em teste:** o recálculo ("Recalculando os números do

@@ -1360,8 +1360,11 @@ def _base_da_prestacao(config, medida: str) -> dict:
     # e/ou obras dessa analise".
     fora = _obras_fora(config, prestacao_dados.fora_da_analise(config),
                        base["apuracao"])
+    cortes = _cortes(config, prestacao_dados.fora_da_analise(config), base["apuracao"])
     base = prestacao.sem_as_obras(base, fora)
+    base = prestacao.sem_depois_do_corte(base, cortes)
     base["excluidas"] = sorted(fora)
+    base["cortes"] = cortes
     return base
 
 
@@ -1375,6 +1378,17 @@ def _obras_fora(config, itens, apuracao) -> set:
         return set()
     deptos = _deptos_administrativos(config)
     return prestacao.obras_fora_da_analise(
+        itens, consultas.obra_para_projeto(),
+        {(l.get("obra") or "").strip() for l in apuracao} - set(deptos))
+
+
+def _cortes(config, itens, apuracao) -> dict:
+    """{obra: último mês considerado}, dos itens "até MM/AAAA" (11/11/2026)."""
+    from . import consultas, prestacao
+    if not itens:
+        return {}
+    deptos = _deptos_administrativos(config)
+    return prestacao.cortes_da_analise(
         itens, consultas.obra_para_projeto(),
         {(l.get("obra") or "").strip() for l in apuracao} - set(deptos))
 
@@ -1452,6 +1466,7 @@ def _calcular_prestacao(medida: str, regras=None, config=None, base=None):
         "quotas": quotas, "ajustes": ajustes,
         "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
         "excluidas": list(base.get("excluidas") or []),
+        "cortes": dict(base.get("cortes") or {}),
         "por_obra": prestacao.totalizar_por_obra(apurado),
     }
 
@@ -1491,6 +1506,7 @@ def prestacao_contas():
         projetos=projetos,
         por_obra=por_obra,
         excluidas=calculo["excluidas"],
+        cortes=calculo.get("cortes") or {},
         obras=calculo["obras"],
         sobras=sorted(sobras, key=lambda s: abs(s["valor"]), reverse=True)[:40],
         total_sobras=sum(s["valor"] for s in sobras),
@@ -1563,6 +1579,15 @@ def _calcular_cenario(cenario: dict) -> dict:
         config)
     fora = _obras_fora(config, list(itens_gerais) + list(itens_fora or []) + nao_recebem,
                        apuracao)
+    # SÓ ATÉ UM MÊS (11/11/2026): a obra conta até ele e sai dali em diante —
+    # da apuração, da régua e do caixa
+    cortes = _cortes(config, list(itens_gerais) + list(itens_fora or []), apuracao)
+    if cortes:
+        apuracao = [l for l in apuracao
+                    if not prestacao.depois_do_corte(l.get("mes"), l.get("obra"), cortes)]
+        obras_do_caixa = prestacao.classificar_obras(
+            [l for l in apuracao if (l.get("obra") or "").strip() not in fora_de_tudo],
+            config)
     if fora:
         apuracao = [l for l in apuracao if (l.get("obra") or "").strip() not in fora]
     obras = prestacao.classificar_obras(apuracao, config)
@@ -1590,8 +1615,10 @@ def _calcular_cenario(cenario: dict) -> dict:
         excecoes = prestacao.tirar_juros_das_excecoes(excecoes, categoria_juros)
 
     # A regua de quem recebe: mao de obra ou faturamento, como o dono escolheu.
-    pessoal = consultas.custo_de_pessoal_por_obra_mes(config["grupo_pessoal"], medida)
-    driver = (consultas.receita_por_obra_mes(medida)
+    pessoal = [t for t in consultas.custo_de_pessoal_por_obra_mes(config["grupo_pessoal"], medida)
+               if not prestacao.depois_do_corte(t[0], t[1], cortes)]
+    driver = ([t for t in consultas.receita_por_obra_mes(medida)
+               if not prestacao.depois_do_corte(t[0], t[1], cortes)]
               if cenario.get("criterio") == "faturamento" else pessoal)
     if fora:
         driver = [d for d in driver if d[1] not in fora]
@@ -1633,7 +1660,8 @@ def _calcular_cenario(cenario: dict) -> dict:
              [(m.strftime("%Y-%m"), o, v)
               for m, o, v in consultas.caixa_mensal_por_obra()]
              + consultas.aporte_mensal_por_obra()
-             if obra not in fora_de_tudo]
+             if obra not in fora_de_tudo
+             and not prestacao.depois_do_corte(mes, obra, cortes)]
     lado_do_caixa = {o: ("principal" if principal and
                          (info.get("projeto") or "").strip() == principal
                          else "demais") for o, info in obras_do_caixa.items()
@@ -1661,6 +1689,7 @@ def _calcular_cenario(cenario: dict) -> dict:
         "cenario": cenario, "obras": obras, "rateio": rateio, "juros": juros,
         "apurado": apurado, "por_obra": por_obra, "quotas": quotas,
         "driver": driver, "caixa": caixa, "excluidas": sorted(fora),
+        "cortes": cortes,
         "excluidas_gerais": list(itens_gerais),
         "sem_projeto": sem_projeto,
         "tem_nao_apropriado": any(o in obras for o in consultas.SEM_OBRA_OU_NAO_LIDA),
@@ -1837,6 +1866,9 @@ def cenario_montagem():
         obras_do_painel=_opcoes_no_escopo().get("obras", []),
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []),
         **_grade_quem_divide(atual, _opcoes_no_escopo().get("obras", [])),
+        linhas_fora=_linhas_fora((atual or {}).get("excluidas") or [],
+                                 _opcoes_no_escopo().get("projetos", []),
+                                 _opcoes_no_escopo().get("obras", [])),
         excluidas_gerais=prestacao_dados.fora_da_analise(config),
         # onde estao os juros na base, categoria por categoria — e quais a
         # prestacao esta contando. E a resposta para "na controladoria tem
@@ -1938,6 +1970,12 @@ def cenario_gravar():
     elif acao == "excluir" and cenario_id:
         for item in request.form.getlist("item"):
             cenarios.excluir(cenario_id, item)
+    elif acao == "fora_em_lista" and cenario_id:
+        try:
+            cenarios.gravar_fora(cenario_id, _itens_fora_do_formulario(request.form))
+        except ValueError as e:
+            return redirect(url_for("painel.cenario_montagem", cenario=cenario_id,
+                                    erro=str(e)))
     elif acao == "reincluir" and cenario_id:
         cenarios.reincluir(cenario_id, request.form.get("item", ""))
 
@@ -2016,6 +2054,7 @@ def cenario_resultado():
         obras_para_grafico=[nome for nome, _n in por_obra],
         criterios=cenarios.CRITERIOS,
         excluidas=calculo["excluidas"],
+        cortes=calculo.get("cortes") or {},
         sem_projeto=calculo["sem_projeto"],
         tem_nao_apropriado=calculo["tem_nao_apropriado"],
         nao_apropriado=consultas.SEM_OBRA,
@@ -2158,6 +2197,10 @@ def prestacao_parametros():
         escopos=prestacao_dados.ESCOPOS,
         projetos=consultas.opcoes_de_filtro()["projetos"] if not consultas.base_vazia() else [],
         fora=prestacao_dados.fora_da_analise(),
+        linhas_fora=(_linhas_fora(prestacao_dados.fora_da_analise(),
+                                  _opcoes_no_escopo().get("projetos", []),
+                                  _opcoes_no_escopo().get("obras", []))
+                     if aba == "fora" and not consultas.base_vazia() else []),
         obras_do_painel=_opcoes_no_escopo().get("obras", []) if not consultas.base_vazia() else [],
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []) if not consultas.base_vazia() else [],
         # as categorias com cara de juro vêm primeiro na lista dos juros
@@ -2191,6 +2234,57 @@ def _grade_quem_divide(cenario, obras) -> dict:
     linhas = [{"chave": "", "rotulo": "Todas as obras", "fixa": True}] + [
         {"chave": o, "rotulo": o} for o in outras]
     return {"grade_quem_divide": grade, "linhas_quem_divide": linhas}
+
+
+def _itens_fora_do_formulario(form) -> list[str]:
+    """A lista "fora da análise" como a tela manda: para cada linha, a chave
+    ("obra:X" / "projeto:Y"), o modo ("" considera, "total", "ate") e o mês."""
+    from . import prestacao
+    itens = []
+    for chave, modo, ate in zip(form.getlist("fora_chave"), form.getlist("fora_modo"),
+                                form.getlist("fora_ate")):
+        tipo, nome, _ = prestacao.ler_item_fora(chave)
+        if not tipo or modo not in ("total", "ate"):
+            continue
+        if modo == "ate":
+            ate = (ate or "").strip()[:7]
+            if not re.match(r"^\d{4}-\d{2}$", ate):
+                raise ValueError(f"Falta o mês em {nome} (\"só até\" pede o mês).")
+            itens.append(prestacao.montar_item_fora(tipo, nome, ate))
+        else:
+            itens.append(prestacao.montar_item_fora(tipo, nome))
+    return itens
+
+
+def _linhas_fora(itens, projetos, obras) -> list[dict]:
+    """As linhas da lista "fora da análise": projetos primeiro, depois obras;
+    as que já estão fora (ou com mês) em cima."""
+    from . import prestacao
+    estado = {}
+    for item in itens or ():
+        tipo, nome, ate = prestacao.ler_item_fora(item)
+        if tipo:
+            estado[f"{tipo}:{nome}"] = ("ate" if ate else "total", ate or "")
+    linhas = []
+    for tipo, nomes, rotulo in (("projeto", projetos, "Projeto — "), ("obra", obras, "")):
+        todos = set(nomes or []) | {k.split(":", 1)[1] for k in estado
+                                    if k.startswith(tipo + ":")}
+        for nome in sorted(todos, key=lambda n: (f"{tipo}:{n}" not in estado, n.lower())):
+            modo, ate = estado.get(f"{tipo}:{nome}", ("", ""))
+            linhas.append({"chave": f"{tipo}:{nome}", "rotulo": rotulo + nome,
+                           "modo": modo, "ate": ate})
+    return linhas
+
+
+@bp.app_template_filter("item_fora")
+def _filtro_item_fora(item) -> str:
+    """ "projeto:ALFA@2024-06" -> "Projeto — ALFA (até 06/2024)" """
+    from . import prestacao
+    tipo, nome, ate = prestacao.ler_item_fora(item)
+    if not tipo:
+        return str(item or "")
+    texto = ("Projeto — " if tipo == "projeto" else "") + nome
+    return texto + (f" (até {ate[5:]}/{ate[:4]})" if ate else "")
 
 
 def _celulas_da_grade(form) -> dict:
@@ -2241,6 +2335,8 @@ def _aplicar_mudanca_da_prestacao(dados, form):
                             form.get("descricao", ""))
     elif acao == "apagar_ajuste":
         dados.apagar_ajuste(form["ajuste_id"])
+    elif acao == "fora_em_lista":
+        dados.gravar_fora(_itens_fora_do_formulario(form))
     elif acao == "tirar_da_analise":
         dados.tirar_da_analise(form.getlist("item"))
     elif acao == "voltar_para_analise":

@@ -43,6 +43,12 @@
   meses depois.
 </p>
 
+{% if cortes %}
+<div class="aviso info">
+  <b>Consideradas só até um mês</b> (depois dele não entram em conta nenhuma):
+  {% for obra, ate in cortes|dictsort %}{% if not loop.first %} · {% endif %}{{ obra }} — até {{ ate[5:] }}/{{ ate[:4] }}{% endfor %}.
+</div>
+{% endif %}
 {% if excluidas %}
 <div class="aviso info">
   <b>Fora da análise neste cenário:</b> {{ excluidas|join(' · ') }}.

@@ -734,7 +734,8 @@ def test_tirar_e_voltar_pela_aba_de_parametros(cenario, monkeypatch):
     from app.apps.painel import prestacao_dados
     cliente = _cliente(monkeypatch)
     html = cliente.get("/painel/prestacao/parametros?aba=fora").get_data(as_text=True)
-    assert "Fora da análise" in html and "Nada fora" in html
+    # desde 11/11/2026 a aba é uma lista só (considerar / fora / só até)
+    assert "Fora da análise" in html and "lista-fora" in html
     resposta = cliente.post("/painel/prestacao/parametros", data={
         "acao": "tirar_da_analise", "aba": "fora",
         "item": ["obra:MUITA GENTE", "projeto:ALFA"]})
@@ -745,6 +746,18 @@ def test_tirar_e_voltar_pela_aba_de_parametros(cenario, monkeypatch):
     cliente.post("/painel/prestacao/parametros", data={
         "acao": "voltar_para_analise", "aba": "fora", "item": "projeto:ALFA"})
     assert prestacao_dados.fora_da_analise() == ["obra:MUITA GENTE"]
+    # a lista nova grava tudo de uma vez, com o mês de quem é "só até"
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "fora_em_lista", "aba": "fora",
+        "fora_chave": ["obra:MUITA GENTE", "projeto:ALFA"],
+        "fora_modo": ["total", "ate"], "fora_ate": ["", "2025-06"]})
+    assert prestacao_dados.fora_da_analise() == ["obra:MUITA GENTE",
+                                                 "projeto:ALFA@2025-06"]
+    html = cliente.get("/painel/prestacao/montagem").get_data(as_text=True)
+    assert "Projeto — ALFA (até 06/2025)" in html
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "fora_em_lista", "aba": "fora",
+        "fora_chave": ["obra:MUITA GENTE"], "fora_modo": ["total"], "fora_ate": [""]})
     # a montagem do cenário avisa o que já está fora por Parâmetros
     html = cliente.get("/painel/prestacao/montagem").get_data(as_text=True)
     assert "Fora por Parâmetros" in html and "MUITA GENTE" in html
@@ -1124,3 +1137,60 @@ def test_juro_marcado_um_a_um_nao_e_contado_duas_vezes(cenario):
     # aluguel 900 + patrimônio 300 no rateio; os 600 de juro só nos juros
     assert rateado == pytest.approx(-1200, abs=0.05)
     assert juros == pytest.approx(-600, abs=0.05)
+
+
+# ===========================================================================
+# 11/11/2026 — "colocar totalmente fora da análise ou colocar até determinado
+# período"
+# ===========================================================================
+def test_o_item_fora_guarda_o_mes():
+    from app.apps.painel import prestacao
+    assert prestacao.ler_item_fora("obra:CASA") == ("obra", "CASA", None)
+    assert prestacao.ler_item_fora("projeto:A / B@2024-06") == ("projeto", "A / B", "2024-06")
+    assert prestacao.montar_item_fora("obra", "CASA", "2024-06") == "obra:CASA@2024-06"
+    mapa = {"C1": "ALFA", "C2": "ALFA", "C3": "BETA"}
+    itens = ["obra:C3", "projeto:ALFA@2024-06", "obra:C1@2024-01"]
+    assert prestacao.obras_fora_da_analise(itens, mapa, mapa) == {"C3"}
+    assert prestacao.cortes_da_analise(itens, mapa, mapa) == {"C1": "2024-01", "C2": "2024-06"}
+    assert not prestacao.depois_do_corte("2024-06", "C2", {"C2": "2024-06"})
+    assert prestacao.depois_do_corte("2024-07", "C2", {"C2": "2024-06"})
+    assert prestacao.depois_do_corte(prestacao.SEM_DATA, "C2", {"C2": "2024-06"})
+    assert not prestacao.depois_do_corte("2030-01", "C9", {"C2": "2024-06"})
+
+
+def test_obra_so_ate_um_mes_sai_dali_em_diante(cenario):
+    """MUITA GENTE só até 02/2025: o movimento dela é de 03/2025, então sai da
+    conta inteira — e o custo da matriz vai todo para POUCA GENTE."""
+    from app.apps.painel import cenarios
+    cenarios.atualizar(cenario, juros_por_deficit=0)
+    cenarios.gravar_fora(cenario, ["obra:MUITA GENTE@2025-02"])
+    conta = _calcular(cenario)
+    assert conta["cortes"] == {"MUITA GENTE": "2025-02"}
+    assert "MUITA GENTE" not in conta["por_obra"]
+    obras_rateadas = {o for (o, _m) in conta["rateio"]["alocacoes"]}
+    assert obras_rateadas == {"POUCA GENTE"}
+    # até 03/2025, inclusive: entra de novo
+    cenarios.gravar_fora(cenario, ["obra:MUITA GENTE@2025-03"])
+    assert "MUITA GENTE" in _calcular(cenario)["por_obra"]
+
+
+def test_a_lista_fora_grava_pela_tela(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cliente = _cliente(monkeypatch)
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "lista-fora" in html and "Considerar só até" in html
+    r = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "fora_em_lista", "cenario_id": cenario,
+        "fora_chave": ["obra:MUITA GENTE", "obra:POUCA GENTE", "projeto:ALFA"],
+        "fora_modo": ["ate", "total", ""],
+        "fora_ate": ["2025-02", "", ""]})
+    assert r.status_code == 302
+    assert sorted(cenarios.excluidas(cenario)) == ["obra:MUITA GENTE@2025-02",
+                                                   "obra:POUCA GENTE"]
+    sem_mes = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "fora_em_lista", "cenario_id": cenario,
+        "fora_chave": ["obra:MUITA GENTE"], "fora_modo": ["ate"], "fora_ate": [""]})
+    assert "erro=" in sem_mes.headers["Location"]
+    assert len(cenarios.excluidas(cenario)) == 2      # nada mudou
+    html = cliente.get("/painel/prestacao/parametros?aba=fora").get_data(as_text=True)
+    assert "lista-fora" in html

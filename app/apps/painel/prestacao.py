@@ -401,19 +401,70 @@ def total_por_obra(alocacoes) -> list[dict]:
                   key=lambda l: l["valor"])
 
 
+# FORA TOTALMENTE, OU SÓ DEPOIS DE UM MÊS (11/11/2026, o dono: "colocar
+# totalmente fora da análise ou colocar até determinado período. É isso que eu
+# preciso em relação a considerar a obra ou projeto, ou não"). O item guarda o
+# mês no fim: "obra:CASA" está fora inteira; "obra:CASA@2024-06" é considerada
+# até 06/2024 e sai dali em diante. Texto, e não coluna nova: vale igual na
+# lista de Parâmetros (um texto na configuração) e na de cada cenário, sem
+# migração.
+_ITEM_FORA = re.compile(r"^(obra|projeto):(.+?)(?:@(\d{4}-\d{2}))?$")
+
+
+def ler_item_fora(item) -> tuple:
+    """("obra"|"projeto", nome, "AAAA-MM" ou None). Item ilegível: (None, "", None)."""
+    m = _ITEM_FORA.match((item or "").strip())
+    if not m:
+        return None, "", None
+    return m.group(1), m.group(2).strip(), m.group(3)
+
+
+def montar_item_fora(tipo: str, nome: str, ate: str | None = None) -> str:
+    return f"{tipo}:{nome.strip()}" + (f"@{ate}" if ate else "")
+
+
+def _obras_do_item(tipo, nome, mapa_projeto, obras) -> set:
+    if tipo == "obra":
+        return {nome}
+    if tipo == "projeto":
+        return {o for o in obras if (mapa_projeto.get(o) or "") == nome}
+    return set()
+
+
 def obras_fora_da_analise(itens, mapa_projeto: dict, obras) -> set:
-    """As obras que o cenário deixa de fora: as nomeadas uma a uma, e todas as
+    """As obras que ficam fora TOTALMENTE: as nomeadas uma a uma, e todas as
     obras dos projetos nomeados. O que sai daqui não recebe estrutura, não
-    recebe juros e não entra na quota de ninguém."""
+    recebe juros e não entra na quota de ninguém. O item com mês ("até")
+    não entra aqui — ver `cortes_da_analise`."""
     fora = set()
     for item in itens or ():
-        item = (item or "").strip()
-        if item.startswith("obra:"):
-            fora.add(item[len("obra:"):])
-        elif item.startswith("projeto:"):
-            alvo = item[len("projeto:"):]
-            fora |= {o for o in obras if (mapa_projeto.get(o) or "") == alvo}
+        tipo, nome, ate = ler_item_fora(item)
+        if tipo and not ate:
+            fora |= _obras_do_item(tipo, nome, mapa_projeto, obras)
     return fora
+
+
+def cortes_da_analise(itens, mapa_projeto: dict, obras) -> dict:
+    """{obra: último mês considerado} — as obras que só contam ATÉ um mês.
+    Obra nomeada duas vezes (por ela e pelo projeto) fica com o mês mais cedo."""
+    cortes: dict[str, str] = {}
+    for item in itens or ():
+        tipo, nome, ate = ler_item_fora(item)
+        if not (tipo and ate):
+            continue
+        for obra in _obras_do_item(tipo, nome, mapa_projeto, obras):
+            cortes[obra] = min(cortes.get(obra, ate), ate)
+    return cortes
+
+
+def depois_do_corte(mes, obra, cortes) -> bool:
+    """A linha (mês, obra) fica de fora pelo corte? Linha SEM DATA de obra com
+    corte também fica: não dá para dizer que ela é de antes do mês."""
+    ate = cortes.get((obra or "").strip()) if cortes else None
+    if not ate:
+        return False
+    mes = str(mes or "")
+    return mes == SEM_DATA or not mes or mes[:7] > ate
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +497,21 @@ def itens_fora_da_analise(texto) -> list[str]:
         parte = parte.strip()
         if parte and parte not in saida:
             saida.append(parte)
+    return saida
+
+
+def sem_depois_do_corte(base: dict, cortes) -> dict:
+    """A base sem o que cada obra com corte fez DEPOIS do mês dela — nas três
+    leituras que dependem de obra e mês (apuração, pessoal e caixa)."""
+    if not cortes:
+        return base
+    saida = dict(base)
+    saida["apuracao"] = [l for l in base.get("apuracao", [])
+                         if not depois_do_corte(l.get("mes"), l.get("obra"), cortes)]
+    saida["pessoal"] = [t for t in base.get("pessoal", [])
+                        if not depois_do_corte(t[0], t[1], cortes)]
+    saida["caixa"] = [t for t in base.get("caixa", [])
+                      if not depois_do_corte(t[0], t[1], cortes)]
     return saida
 
 

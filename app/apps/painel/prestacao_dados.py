@@ -173,6 +173,18 @@ def tirar_da_analise(itens) -> list[str]:
     return atual
 
 
+def gravar_fora(itens) -> list[str]:
+    """A lista inteira de uma vez — é como a tela grava desde 11/11/2026
+    (fora totalmente, ou só até um mês; ver `prestacao.ler_item_fora`)."""
+    limpos = []
+    for item in itens or ():
+        item = (item or "").strip()
+        if item and item not in limpos:
+            limpos.append(item)
+    salvar_config(CHAVE_FORA_DA_ANALISE, ";".join(limpos))
+    return limpos
+
+
 def voltar_para_analise(item: str) -> list[str]:
     """Traz de volta o que tinha sido tirado."""
     atual = [i for i in fora_da_analise() if i != (item or "").strip()]

@@ -460,6 +460,23 @@ def excluir(cenario_id, item: str) -> None:
         conn.commit()
 
 
+def gravar_fora(cenario_id, itens) -> None:
+    """A lista "fora da análise" deste cenário inteira, de uma vez (11/11/2026):
+    fora totalmente ("obra:X") ou só depois de um mês ("obra:X@2024-06")."""
+    limpos = []
+    for item in itens or ():
+        item = (item or "").strip()
+        if (item.startswith(("obra:", "projeto:")) and len(item) >= 6
+                and item not in limpos):
+            limpos.append(item)
+    with conexao() as conn:
+        conn.execute("DELETE FROM cenario_excluida WHERE cenario_id = ?", (int(cenario_id),))
+        for item in limpos:
+            conn.execute("INSERT INTO cenario_excluida (cenario_id, item) VALUES (?,?)",
+                         (int(cenario_id), item))
+        conn.commit()
+
+
 def reincluir(cenario_id, item: str) -> None:
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_excluida WHERE cenario_id = ? AND item = ?",
