@@ -1108,7 +1108,12 @@ function painelDaFicha(){
          que o substitui. #}
       <div class="campo"><label>Empresa de registro</label>${lista("c-empresa",
         (o.empresas || []).map(e => ({valor: e.id,
-          rotulo: e.cnpj ? `${e.razao_social} — ${e.cnpj}` : e.razao_social})),
+          // ⚑ `documento()`, e não o CNPJ cru: a varredura de formato pegou
+          // isto no mesmo dia em que foi escrito. O cadastro guarda com ou
+          // sem pontuação (os dois existem na base), e o ajudante do
+          // `erp_base.html` é quem sabe pintar os dois igual.
+          rotulo: e.cnpj ? `${e.razao_social} — ${documento(e.cnpj)}`
+                         : e.razao_social})),
         c.empresa_id)}
         <small class="ajuda" id="c-cnpjadm-recado">${
           c.empresa_id ? "o CNPJ vem do cadastro da empresa"
