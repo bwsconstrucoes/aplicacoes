@@ -68,6 +68,11 @@
     <b>{{ v(e.resumo.total) }}</b>{% if e.primeiro_mes %} desde {{ e.primeiro_mes[5:] }}/{{ e.primeiro_mes[:4] }}{% endif %}.
     Esse custo não é de nenhuma obra em particular — por isso ele é
     <b>dividido entre as obras</b>, para cada uma mostrar o resultado de verdade.
+    {% if e.no_dre and e.no_dre.receita|abs > 0.005 %}
+    <small>(No DRE é a linha “= Total Custos/Despesas” desses centros de custo. A última
+    linha do DRE, o resultado, dá {{ v(e.no_dre.resultado) }} porque desconta
+    {{ v(e.no_dre.receita) }} de receita lançada na própria matriz.)</small>
+    {% endif %}
     {% if e.resumo.filial and e.resumo.filial.centros and e.resumo.filial.rateia|abs > 0.005 %}
     A filial ({{ e.resumo.filial.centros|join(' e ') }}) custou mais
     <b>{{ v(e.resumo.filial.rateia) }}</b>, que vão <b>inteiros só para as demais obras</b>{% if e.principal %}

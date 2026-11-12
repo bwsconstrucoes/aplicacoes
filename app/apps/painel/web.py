@@ -1257,6 +1257,11 @@ def obras():
         **_contexto_comum("obras"),
         chips=f.resumo(), nivel=nivel, medida=medida,
         itens=graficos.proporcoes(itens, campo="resultado"),
+        # A LINHA DE TOTAIS (12/11/2026, o dono: "lá embaixo tem o somatório
+        # (…) eu olho na DRE geral e olho aqui, os valores têm que estar
+        # batendo — isso facilita a compreensão")
+        totais={c: sum(float(i.get(c) or 0) for i in itens)
+                for c in ("receita_bruta", "receita", "despesa", "resultado")},
     )
 
 
@@ -1843,6 +1848,8 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         if (linha.get("categoria") or "").strip().lower() in juros:
             filial["juros"] += linha["valor"]
     filial["rateia"] = filial["total"] - filial["juros"]
+    filial["receita"] = sum(l["receita"] for l in consultas.despesa_e_receita_por_centro(
+        centros_da_filial, (), medida))
     resumo = {
         "total": sum(g["valor"] for g in contas),
         # as três partes do custo da matriz (sem os juros)
@@ -1891,38 +1898,67 @@ def _estrutura_contra_o_projeto(por_depto: dict, medida: str) -> dict:
     mapa = consultas.obra_para_projeto()
     especiais = set(consultas.SEM_OBRA_OU_NAO_LIDA) | {consultas.TRANSFERENCIA_ENTRE_CONTAS, ""}
     projetos = sorted({mapa.get(d) or "" for d in por_depto} - especiais, key=str.lower)
-    vizinhos = sorted((o for o, p in mapa.items()
-                       if p in projetos and o not in por_depto and o not in especiais),
-                      key=str.lower)
-    dos_vizinhos = {o: 0.0 for o in vizinhos}
-    for linha in consultas.despesa_administrativa(vizinhos, medida):
-        dos_vizinhos[linha["depto"]] += linha["valor"]
-    centros = ([{"depto": d, "projeto": mapa.get(d) or "", "valor": v, "estrutura": True}
-                for d, v in por_depto.items()]
-               + [{"depto": o, "projeto": mapa.get(o) or "", "valor": v, "estrutura": False}
-                  for o, v in dos_vizinhos.items() if abs(v) > 0.005])
+    # A conta do DRE aberta, pela mesma coluna que a tela do DRE filtra (o
+    # projeto DA LINHA): despesa e receita de cada centro de custo da matriz,
+    # e de todo centro de custo que tenha linha num dos projetos dela.
+    do_centro: dict[str, dict] = {}
+    do_projeto = {p: {"projeto": p, "despesa": 0.0, "receita": 0.0} for p in projetos}
+    for linha in consultas.despesa_e_receita_por_centro(list(por_depto), projetos, medida):
+        na_matriz = linha["depto"] in por_depto
+        if linha["projeto"] in do_projeto:
+            do_projeto[linha["projeto"]]["despesa"] += linha["despesa"]
+            do_projeto[linha["projeto"]]["receita"] += linha["receita"]
+        elif not na_matriz:
+            continue
+        if na_matriz or linha["depto"] not in especiais:
+            c = do_centro.setdefault(linha["depto"], {
+                "depto": linha["depto"], "projeto": mapa.get(linha["depto"]) or linha["projeto"],
+                "valor": 0.0, "receita": 0.0, "estrutura": na_matriz})
+            c["valor"] += linha["despesa"]
+            c["receita"] += linha["receita"]
+    for d in por_depto:                      # o marcado que não tem linha nenhuma
+        do_centro.setdefault(d, {"depto": d, "projeto": mapa.get(d) or "", "valor": 0.0,
+                                 "receita": 0.0, "estrutura": True})
+    centros = [c for c in do_centro.values()
+               if c["estrutura"] or abs(c["valor"]) > 0.005 or abs(c["receita"]) > 0.005]
     centros.sort(key=lambda c: (c["projeto"].lower(), not c["estrutura"], c["valor"]))
     # projeto que mistura estrutura e obra de verdade teria dezenas de linhas:
     # ficam os maiores, e o resto vira uma linha só (a soma não muda)
     de_fora = [c for c in centros if not c["estrutura"]]
     if len(de_fora) > MAXIMO_DE_VIZINHOS:
-        resto = sorted(de_fora, key=lambda c: abs(c["valor"]))[:-MAXIMO_DE_VIZINHOS]
+        resto = sorted(de_fora, key=lambda c: abs(c["valor"]) + abs(c["receita"]))[
+            :-MAXIMO_DE_VIZINHOS]
         centros = [c for c in centros if c not in resto]
         por_proj: dict[str, list] = {}
         for c in resto:
             por_proj.setdefault(c["projeto"], []).append(c)
         centros += [{"depto": f"outros {len(lista)} centros de custo", "projeto": p,
-                     "valor": sum(c["valor"] for c in lista), "estrutura": False}
+                     "valor": sum(c["valor"] for c in lista),
+                     "receita": sum(c["receita"] for c in lista), "estrutura": False}
                     for p, lista in por_proj.items()]
-    por_projeto = {p: sum(c["valor"] for c in centros if c["projeto"] == p) for p in projetos}
+    for c in centros:
+        c["resultado"] = c["valor"] + c["receita"]
+    for p in do_projeto.values():
+        p["resultado"] = p["despesa"] + p["receita"]
     estrutura = sum(por_depto.values())
-    do_dre = sum(por_projeto.values())
-    return {"centros": centros, "projetos": sorted(por_projeto.items()),
+    receita = sum(c["receita"] for c in centros if c["estrutura"])
+    do_dre = sum(p["despesa"] for p in do_projeto.values())
+    de_fora = [c for c in centros if not c["estrutura"]]
+    return {"centros": centros,
+            "projetos": sorted((p, d["despesa"]) for p, d in do_projeto.items()),
+            "projetos_abertos": sorted(do_projeto.values(), key=lambda d: d["projeto"]),
             "estrutura": estrutura, "dre": do_dre, "diferenca": estrutura - do_dre,
+            # a receita lançada nos centros de custo da matriz: o DRE a abate
+            # no "= RESULTADO"; a prestação divide só o custo
+            "receita": receita, "resultado": estrutura + receita,
             # sem projeto nenhum não há com o que comparar — não acusa
-            "bate": (not projetos) or (abs(estrutura - do_dre) < 0.01
-                                       and all(c["estrutura"] for c in centros)
-                                       and all(c["projeto"] for c in centros))}
+            "bate": (not projetos) or (
+                abs(estrutura - do_dre) < 0.01
+                and not any(abs(c["valor"]) > 0.005 for c in de_fora)
+                and all(c["projeto"] for c in centros if c["estrutura"])),
+            # centro de custo do projeto, fora da matriz, só com RECEITA: não
+            # muda o custo, mas muda o resultado do DRE do projeto
+            "receita_de_fora": sum(c["receita"] for c in de_fora)}
 
 
 @bp.route("/prestacao/montagem")
@@ -2217,6 +2253,8 @@ def _explicacao_do_cenario(cenario, config) -> dict:
     return {
         "resumo": arvore["resumo"], "grupos": grupos, "principal": principal,
         "filial_nome": prestacao.NOME_DOS_DEMAIS,
+        # a matriz como o DRE a mostra: custo, receita e resultado
+        "no_dre": (arvore.get("origem") or {}).get("contra_o_projeto") or {},
         "primeiro_mes": arvore.get("primeiro_mes", ""),
         "regua": cenarios.CRITERIOS.get(cenario.get("criterio"), "").split(" — ")[0],
         "regua_e_pessoal": cenario.get("criterio") != "faturamento",
@@ -2314,6 +2352,10 @@ def cenario_resultado():
         **_contexto_comum("prestacao"),
         cenarios=lista, cenario=atual,
         por_obra=por_obra,
+        # a linha de totais do quadro por obra (12/11/2026) — para bater com o DRE
+        totais_por_obra={c: sum(float(n.get(c) or 0) for _nome, n in por_obra)
+                         for c in ("receita_bruta", "receita_liquida", "despesas",
+                                   "resultado_direto", "rateio", "juros", "resultado")},
         quotas=calculo["quotas"],
         posicao=calculo["posicao"],
         rateio_memoria=[l for l in calculo["rateio"]["memoria"]

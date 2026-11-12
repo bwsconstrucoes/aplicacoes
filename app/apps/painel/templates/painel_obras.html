@@ -88,6 +88,18 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if itens and totais %}
+      <tfoot>
+        <tr class="linha-total">
+          <td class="desc">Total ({{ itens|length }} {{ 'obras' if nivel == 'obra' else 'projetos' }})</td>
+          <td class="dados direita">{{ brl(totais.receita_bruta) }}</td>
+          <td class="dados direita">{{ brl(totais.receita) }}</td>
+          <td class="dados direita">{{ brl(totais.despesa) }}</td>
+          <td class="dados direita {{ classe_valor(totais.resultado) }}"><b>{{ brl(totais.resultado) }}</b></td>
+          <td><small>bate com o DRE, com os mesmos filtros</small></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

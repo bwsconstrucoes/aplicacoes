@@ -1053,6 +1053,32 @@ def despesa_administrativa(deptos_admin, medida: str = "comprometido") -> list[d
     return [dict(l) for l in guardado]
 
 
+def despesa_e_receita_por_centro(deptos, projetos=(), medida: str = "comprometido") -> list[dict]:
+    """[{depto, projeto, despesa, receita}] das linhas de DRE dos centros de
+    custo dados — e das linhas dos projetos dados, em qualquer centro de custo.
+
+    É a conta do DRE aberta: `despesa` é o "= Total Custos/Despesas" (com os
+    juros e multas pagos) e `receita` é a "= Receita Líquida" (sem o retido).
+    Existe para a prestação explicar a diferença para o DRE (12/11/2026): o
+    dono comparou "a matriz custou 13.796.222,19" com os 13.337.568,09 do DRE
+    do projeto — que é o RESULTADO, já descontada a receita lançada ali."""
+    deptos, projetos = list(deptos or ()), [p for p in (projetos or ()) if p]
+    if not deptos and not projetos:
+        return []
+    valor, desp = _medida(medida), _medida_de_despesa(medida)
+    sql = f"""
+        SELECT departamento, TRIM(COALESCE(projeto,'')),
+               SUM(CASE WHEN tipo = ? THEN {desp} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? AND NOT COALESCE(({RETIDO}), FALSE)
+                        THEN {valor} ELSE 0 END)
+          FROM fato
+         WHERE analise = 'DRE' AND (departamento = ANY(?) OR projeto = ANY(?))
+         GROUP BY 1, 2"""
+    return [{"depto": d or "", "projeto": p or "", "despesa": float(de or 0),
+             "receita": float(re_ or 0)}
+            for d, p, de, re_ in consultar(sql, [PAG, REC, deptos, projetos])]
+
+
 def grupos_e_categorias() -> dict:
     """O que existe na base, para montar as regras sem digitar nome à mão.
     Lembrado até a próxima carga: são duas varreduras da base inteira."""

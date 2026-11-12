@@ -2154,3 +2154,74 @@ def test_a_tela_mostra_o_dinheiro_de_cada_periodo_e_acusa_a_lacuna(cenario, monk
         (cenarios.SEM_COMECO, 100.0, 0.0, "2025-03")]
     html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
     assert "0001-01" not in html                    # o começo vazio não aparece como data
+
+
+# ===========================================================================
+# 12/11/2026 — "veja essas divergências de valores": custo × resultado do DRE
+# ===========================================================================
+def test_a_conferencia_separa_o_custo_da_receita_da_matriz(cenario, monkeypatch):
+    """O dono comparou "a matriz custou 13.796.222,19" com os 13.337.568,09 do
+    DRE do projeto BWS — que é o RESULTADO, já descontada a receita lançada
+    nos centros de custo da matriz (a diferença dá, ao centavo, a receita
+    líquida do projeto). O quadro abre custo, receita e resultado de cada
+    centro de custo, e acha o que é do projeto e só tem receita."""
+    from app.apps.painel import cenarios, consultas, prestacao_dados
+    from app.apps.painel.db import conexao
+    from app.apps.painel.web import _contas_da_matriz
+    with conexao() as conn:
+        _por_receber(conn, 980, MATRIZ, 100)                 # receita na própria matriz
+        _por_receber(conn, 981, "SO RECEITA", 50)            # do projeto, sem custo
+        conn.execute("UPDATE fato SET projeto = 'BWS' WHERE departamento IN (?, 'SO RECEITA')",
+                     (MATRIZ,))
+        conn.commit()
+    consultas.esquecer_listas()
+    config = dict(prestacao_dados.config(), depto_admin_matriz=MATRIZ, depto_admin_filial="")
+    cp = _contas_da_matriz(config, cenarios.completo(cenario), "comprometido")[
+        "origem"]["contra_o_projeto"]
+    assert cp["bate"]                                        # o CUSTO bate
+    assert cp["estrutura"] == pytest.approx(-1800.0)
+    assert cp["receita"] == pytest.approx(100.0)
+    assert cp["resultado"] == pytest.approx(-1700.0)         # é o que o DRE da matriz mostra
+    assert cp["projetos_abertos"] == [{"projeto": "BWS", "despesa": pytest.approx(-1800.0),
+                                       "receita": pytest.approx(150.0),
+                                       "resultado": pytest.approx(-1650.0)}]
+    por_centro = {c["depto"]: c for c in cp["centros"]}
+    assert por_centro["SO RECEITA"]["estrutura"] is False
+    assert por_centro["SO RECEITA"]["receita"] == pytest.approx(50.0)
+    assert cp["receita_de_fora"] == pytest.approx(50.0)
+
+    antes = prestacao_dados.config()
+    prestacao_dados.salvar_config("depto_admin_matriz", MATRIZ)
+    prestacao_dados.salvar_config("depto_admin_filial", "")
+    try:
+        cliente = _cliente(monkeypatch)
+        html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+        assert "O custo bate com o DRE do projeto BWS" in html
+        assert "Atenção ao comparar" in html and "só tem receita do projeto" in html
+        como = cliente.get(f"/painel/prestacao/como?cenario={cenario}").get_data(as_text=True)
+        assert "Total Custos/Despesas" in como and "desconta" in como
+    finally:
+        for chave in ("depto_admin_matriz", "depto_admin_filial"):
+            prestacao_dados.salvar_config(chave, antes.get(chave, ""))
+
+
+def test_os_quadros_por_obra_tem_a_linha_de_totais(cenario, monkeypatch):
+    """"Lá embaixo tem o somatório das receitas, da bruta, da líquida, das
+    despesas, resultado direto (…) eu olho na DRE geral e olho aqui, os
+    valores têm que estar batendo." """
+    from app.apps.painel import consultas
+    cliente = _cliente(monkeypatch)
+    html = cliente.get("/painel/obras?nivel=obra").get_data(as_text=True)
+    assert "Total (3 obras)" in html                 # as duas obras e a matriz
+    geral = consultas.dre_linhas(consultas.Filtros())
+    assert brl_do_teste(geral["receita_liquida"]) in html
+    assert brl_do_teste(geral["despesas"]) in html and brl_do_teste(geral["resultado"]) in html
+    html = cliente.get(f"/painel/prestacao/resultado?cenario={cenario}").get_data(as_text=True)
+    assert "Total (2 obras)" in html
+    assert brl_do_teste(6000.0) in html              # 1.000 + 5.000 de receita
+
+
+def brl_do_teste(valor: float) -> str:
+    """O mesmo formato da tela: −R$ 1.234,56 (com o sinal de menos tipográfico)."""
+    texto = f"{abs(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return ("−" if valor < 0 else "") + "R$ " + texto

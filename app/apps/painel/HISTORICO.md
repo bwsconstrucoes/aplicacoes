@@ -651,6 +651,48 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Custo × resultado do DRE, e a linha de totais por obra — 12/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
+migração.
+
+O dono, já pelo executado, colou os números que não batiam:
+
+| O que ele olhou | Valor |
+|---|---|
+| "Como é feita": a matriz custou | 13.796.222,19 |
+| DRE — BWS Construções + CONS - Escritório Central | 13.349.966,79 |
+| DRE — projeto BWS | 13.337.568,09 |
+| "Como é feita": a filial (BWSNE) custou | 700.857,01 |
+| DRE — obra BWSNE | 700.827,53 |
+
+**O que os números dele mostram, sem eu ver a base:** 13.796.222,19 −
+13.337.568,09 = **458.654,10**, que é, ao centavo, a "= Receita Líquida" do
+projeto BWS no DRE que ele tinha colado na véspera. Ou seja: ele comparou o
+**custo** (o que a prestação divide — a linha "= Total Custos/Despesas") com o
+**resultado** (a última linha do DRE, que desconta a receita lançada ali). As
+outras duas diferenças (12.398,70 entre o filtro por obra e o por projeto;
+29,48 no BWSNE) têm a mesma cara — receita — mas **eu não conferi**: a tela
+nova é que mostra, com o dado dele.
+
+**O que foi feito:**
+
+- O quadro da montagem virou **"Conferir com o DRE, centro de custo por centro
+  de custo"**: custo, receita líquida e resultado de cada centro de custo da
+  matriz e de todo centro que tenha lançamento do projeto dela — pela coluna
+  `projeto` da linha, a mesma que a tela do DRE filtra
+  (`consultas.despesa_e_receita_por_centro`). Diz, em palavras, quando o DRE
+  desconta receita. A filial e a "Como é feita" ganharam a mesma frase.
+- **Linha de totais** no "Resultado por Obra" do menu e no quadro por obra da
+  prestação (*"eu olho na DRE geral e olho aqui, os valores têm que estar
+  batendo"*).
+
+**DECISÃO PENDENTE DO DONO — a receita lançada na matriz.** Há receita nos
+centros de custo da matriz (458 mil, pelo DRE dele). **Hoje ela não entra na
+prestação**: não vai para obra nenhuma e não abate o custo que se divide (a
+estrutura não é obra). Perguntei a ele se deve abater o custo, ir para o
+BWSCE, ou ficar como está. Não mexi.
+
 ## Período com começo e FIM, o dinheiro de cada período e a lacuna — 12/11/2026
 
 **PUBLICADO em 12/11/2026, 01:04 (UTC)** — `82ee622f`, com o "pode" do dono e

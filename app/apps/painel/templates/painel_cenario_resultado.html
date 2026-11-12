@@ -165,6 +165,20 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if por_obra and totais_por_obra %}
+      <tfoot>
+        <tr class="linha-total">
+          <td class="desc">Total ({{ por_obra|length }} obras)</td>
+          <td class="dados direita">{{ brl(totais_por_obra.receita_bruta) }}</td>
+          <td class="dados direita">{{ brl(totais_por_obra.receita_liquida) }}</td>
+          <td class="dados direita">{{ brl(totais_por_obra.despesas) }}</td>
+          <td class="dados direita {{ classe_valor(totais_por_obra.resultado_direto) }}">{{ brl(totais_por_obra.resultado_direto) }}</td>
+          <td class="dados direita">{{ brl(totais_por_obra.rateio) }}</td>
+          <td class="dados direita">{{ brl(totais_por_obra.juros) }}</td>
+          <td class="dados direita {{ classe_valor(totais_por_obra.resultado) }}"><b>{{ brl(totais_por_obra.resultado) }}</b></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
   <p class="cartao-dica">

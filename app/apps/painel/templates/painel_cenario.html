@@ -258,6 +258,9 @@
     pela mesma régua. Não entra na lista abaixo, que é só da matriz.
     {% if resumo_matriz.filial.juros|abs > 0.005 %}Os juros de empréstimo lançados nela
     ({{ brl(resumo_matriz.filial.juros) }}) seguem a régua dos juros.{% endif %}
+    {% if resumo_matriz.filial.receita|abs > 0.005 %}No DRE dela a última linha (resultado) dá
+    {{ brl(resumo_matriz.filial.total + resumo_matriz.filial.receita) }}, porque desconta
+    {{ brl(resumo_matriz.filial.receita) }} de receita lançada nela; aqui vale o custo.{% endif %}
     <small>Os centros de custo se trocam em
     <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.</small>
   </p>
@@ -284,55 +287,81 @@
      pra ser distribuído"). Os dois somam pela mesma regra; o que muda é a
      lista de centros de custo. Aparece só quando as listas diferem. #}
   {% set cp = origem_da_matriz.contra_o_projeto %}
-  {% if cp and not cp.bate %}
-  <div class="aviso info" style="margin:0 0 10px; border-left:4px solid var(--ambar)">
+  {% if cp and cp.projetos %}
+  {# A CONFERÊNCIA COM O DRE (12/11/2026). O dono comparou "a matriz custou
+     13.796.222,19" com o DRE do projeto BWS (13.337.568,09) e o DRE dos dois
+     centros de custo (13.349.966,79). A prestação divide o CUSTO — a linha
+     "= Total Custos/Despesas" do DRE; a última linha do DRE é o RESULTADO,
+     que desconta a receita lançada ali. O quadro abre as três contas, centro
+     de custo por centro de custo. #}
+  <div class="aviso info" style="margin:0 0 10px; border-left:4px solid {{ 'var(--verde)' if cp.bate else 'var(--ambar)' }}">
+    {% if cp.bate %}
+    <b>✔ O custo bate com o DRE do projeto {{ cp.projetos|map(attribute=0)|join(' e ') }}</b>
+    — a linha “= Total Custos/Despesas” dele.
+    {% else %}
     <b>“A matriz gastou” não bate com o DRE
       {% if cp.projetos|length == 1 %}do projeto {{ cp.projetos[0][0] }}{% else %}dos projetos {{ cp.projetos|map(attribute=0)|join(' e ') }}{% endif %}:
-      diferença de {{ brl(cp.diferenca|abs) }}.</b>
-    Os dois somam a despesa do mesmo jeito. A diferença está em <b>quais centros de
-    custo entram</b>: aqui entram os marcados como matriz em Cadastros;
-    no DRE do projeto entram todos os centros de custo que pertencem ao projeto.
-    <div class="tabela-rolagem" style="margin-top:8px; background:var(--branco)">
-      <table>
-        <thead><tr>
-          <th class="sem-ordem">Centro de custo</th>
-          <th class="sem-ordem">Projeto dele</th>
-          <th class="sem-ordem direita">Despesa</th>
-          <th class="sem-ordem">Entra em “a matriz gastou”?</th>
-        </tr></thead>
-        <tbody>
-          {% for c in cp.centros %}
-          <tr>
-            <td class="desc"><b>{{ c.depto }}</b></td>
-            <td class="desc">{{ c.projeto or '(sem projeto)' }}</td>
-            <td class="dados direita">{{ brl(c.valor) }}</td>
-            <td class="desc">{% if c.estrutura %}sim — marcado como matriz
-              {% else %}<b style="color:var(--vermelho)">não</b> — é do projeto, mas não está marcado como matriz{% endif %}</td>
-          </tr>
-          {% endfor %}
-          <tr class="total">
-            <td class="desc" colspan="2"><b>A matriz gastou</b> (os marcados como matriz)</td>
-            <td class="dados direita"><b>{{ brl(cp.estrutura) }}</b></td><td></td>
-          </tr>
-          {% for projeto, valor in cp.projetos %}
-          <tr class="total">
-            <td class="desc" colspan="2"><b>DRE do projeto {{ projeto }}</b> (todos os centros de custo dele)</td>
-            <td class="dados direita"><b>{{ brl(valor) }}</b></td><td></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <small>Para os dois baterem, os centros de custo marcados como matriz têm de ser os
-      mesmos do projeto. Troque-os em
-      <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>
-      — ou acerte o projeto da obra em
-      <a href="{{ url_for('painel.prestacao_parametros', aba='projetos') }}">Cadastros › Projeto das obras</a>.
-      Os valores são de todos os anos; no DRE, tire o filtro de ano para comparar.</small>
+      diferença de {{ brl(cp.diferenca|abs) }} no custo.</b>
+    A diferença está em <b>quais centros de custo entram</b>: aqui, os marcados como
+    matriz em Cadastros; no DRE do projeto, todos os que têm lançamento do projeto.
+    {% endif %}
+    {% if cp.receita|abs > 0.005 %}
+    <br><b>Atenção ao comparar:</b> a última linha do DRE é o <b>RESULTADO</b>, que desconta
+    a receita. Nos centros de custo da matriz há <b>{{ brl(cp.receita) }} de receita</b>:
+    custo {{ brl(cp.estrutura) }} + receita {{ brl(cp.receita) }} = resultado
+    <b>{{ brl(cp.resultado) }}</b>. A prestação divide o <b>custo</b>; essa receita
+    <b>hoje não vai para nenhuma obra nem abate o custo dividido</b>.
+    {% endif %}
+    <details style="margin-top:6px" {{ 'open' if not cp.bate }}>
+      <summary style="cursor:pointer"><b>Conferir com o DRE, centro de custo por centro de custo</b></summary>
+      <div class="tabela-rolagem" style="margin-top:8px; background:var(--branco)">
+        <table>
+          <thead><tr>
+            <th class="sem-ordem">Centro de custo</th>
+            <th class="sem-ordem">Projeto dele</th>
+            <th class="sem-ordem direita">Custo<br><small>= Total Custos/Despesas</small></th>
+            <th class="sem-ordem direita">Receita líquida</th>
+            <th class="sem-ordem direita">Resultado<br><small>última linha do DRE</small></th>
+            <th class="sem-ordem">É da matriz?</th>
+          </tr></thead>
+          <tbody>
+            {% for c in cp.centros %}
+            <tr>
+              <td class="desc"><b>{{ c.depto }}</b></td>
+              <td class="desc">{{ c.projeto or '(sem projeto)' }}</td>
+              <td class="dados direita">{{ brl(c.valor) }}</td>
+              <td class="dados direita">{{ brl(c.receita) }}</td>
+              <td class="dados direita">{{ brl(c.resultado) }}</td>
+              <td class="desc">{% if c.estrutura %}sim
+                {% elif c.valor|abs > 0.005 %}<b style="color:var(--vermelho)">não</b> — tem custo do projeto, mas não está marcado como matriz
+                {% else %}não — só tem receita do projeto{% endif %}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total">
+              <td class="desc" colspan="2"><b>A matriz</b> (os marcados como matriz)</td>
+              <td class="dados direita"><b>{{ brl(cp.estrutura) }}</b></td>
+              <td class="dados direita">{{ brl(cp.receita) }}</td>
+              <td class="dados direita">{{ brl(cp.resultado) }}</td><td><small>o custo é o que se divide</small></td>
+            </tr>
+            {% for d in cp.projetos_abertos %}
+            <tr class="total">
+              <td class="desc" colspan="2"><b>DRE do projeto {{ d.projeto }}</b> (tudo o que é dele)</td>
+              <td class="dados direita"><b>{{ brl(d.despesa) }}</b></td>
+              <td class="dados direita">{{ brl(d.receita) }}</td>
+              <td class="dados direita">{{ brl(d.resultado) }}</td><td></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <small>Os valores são de todos os anos e pelo
+        {{ 'executado' if origem_da_matriz.medida == 'executado' else 'comprometido' }}; no DRE, tire o
+        filtro de ano e olhe a coluna correspondente. Os centros de custo da matriz se trocam em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>;
+        o projeto de cada um, em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='projetos') }}">Cadastros › Projeto das obras</a>.</small>
+    </details>
   </div>
-  {% elif cp and cp.projetos %}
-  <p class="cartao-dica" style="margin:0 0 10px">✔ Bate com o DRE do projeto
-    {{ cp.projetos|map(attribute=0)|join(' e ') }}: os centros de custo da matriz são os mesmos do projeto.</p>
   {% endif %}
   {% endif %}
   {% endif %}
