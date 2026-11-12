@@ -434,6 +434,28 @@ propósito (o comprovante pode ser reenviado pelo Make), mas "pode ser reenviado
 publicações em poucas horas; se havia comprovante adiado em alguma delas, foi
 embora sem deixar rastro na planilha.
 
+### ⚠️ Três limites que não podem sair
+
+A fila tardia chegou a **travar o serviço**, e o dono descreveu o sintoma antes
+de eu achar a causa (12/11/2026): *"manda um comprovante, aí manda de novo, fica
+na fila tardia, aí aquilo vai comendo processamento. A gente tem quatro threads
+e essa baixa leva muito tempo: tá ocupando as linhas todas (…) e tá tentando
+fazer baixa de coisa que nem precisaria mais."*
+
+Eram três defeitos somados, e cada um multiplicava o outro:
+
+| Defeito | Por que derrubava | O limite que ficou |
+|---|---|---|
+| o laço não tinha limite | um disparo reprocessava **todos** os adiados numa requisição, e cada um custa a carga inteira da SPsBD (A:AK, ~52 mil linhas) | **2 por disparo** (`LIMITE_POR_DISPARO`) |
+| nada impedia disparos sobrepostos | o cron dispara de 5 em 5 minutos; passada mais lenta que isso fazia a seguinte começar junto, lendo os mesmos arquivos e refazendo o mesmo trabalho — com 4 linhas de atendimento, duas ou três sobrepostas tomam o serviço | **uma passada por vez**, com marca que expira em 15 min se o serviço reiniciar no meio |
+| o mesmo comprovante reenviado entrava várias vezes | reenviar durante a crise de cota criava um arquivo novo a cada envio, e todos eram processados | **impressão digital do pedido na entrada** |
+| — | adiado de dias atrás já foi reenviado ou resolvido na mão | **descarte acima de 2 dias** (`IDADE_MAXIMA_DIAS`) |
+
+**Por que a trava de duplicidade que já existia não resolvia:** ela funciona,
+mas decide **depois** da carga pesada. O trabalho inútil era pago antes de ser
+reconhecido como inútil. A impressão digital do pedido é calculada só com o que
+já está na mão — nenhuma leitura de planilha.
+
 | O que você quer | Como |
 |---|---|
 | ver o que está adiado | `GET /api/baixabradesco/fila-tardia` |

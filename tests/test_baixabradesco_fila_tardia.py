@@ -167,3 +167,118 @@ def test_o_que_nao_deu_para_apagar_aparece_no_relatorio(pasta, monkeypatch):
 
     assert r['apagou'] == 0
     assert 'em uso' in r['falhas'][0]['erro']
+
+
+# =====================================================================
+# 3. a fila tardia parava o serviço — três causas somadas
+# =====================================================================
+# Diagnóstico do dono em 12/11/2026: *"manda um comprovante, aí manda de novo,
+# fica na fila tardia, aí aquilo vai comendo processamento. A gente tem quatro
+# threads e essa baixa leva muito tempo: tá ocupando as linhas todas (…) e tá
+# tentando fazer baixa de coisa que nem precisaria mais."*
+#
+# Ele estava certo, e eram três defeitos que se multiplicavam:
+#   1. o laço não tinha limite — um disparo reprocessava TODOS numa requisição;
+#   2. nada impedia dois disparos ao mesmo tempo;
+#   3. o mesmo comprovante reenviado entrava na fila várias vezes.
+
+def test_o_mesmo_comprovante_reenviado_nao_entra_duas_vezes(pasta):
+    pedido = {'attachments': [{'filename': 'pix.pdf', 'base64': 'JVBERi0xLjQK'}]}
+
+    primeiro = mod.adiar_payload(pedido, 'quota 429')
+    segundo = mod.adiar_payload(pedido, 'quota 429')
+
+    assert segundo['ja_estava_na_fila'] is True
+    assert segundo['arquivo'] == primeiro['arquivo']
+    assert len([n for n in os.listdir(pasta) if n.endswith('.json')]) == 1
+
+
+def test_comprovante_diferente_entra_normalmente(pasta):
+    mod.adiar_payload({'attachments': [{'filename': 'a.pdf', 'base64': 'AAA'}]}, 'x')
+    r = mod.adiar_payload({'attachments': [{'filename': 'b.pdf', 'base64': 'BBB'}]}, 'x')
+
+    assert not r.get('ja_estava_na_fila')
+    assert len([n for n in os.listdir(pasta) if n.endswith('.json')]) == 2
+
+
+def test_mesmo_nome_com_conteudo_diferente_nao_e_o_mesmo_comprovante(pasta):
+    """Duas rescisões podem chegar com o mesmo nome de arquivo."""
+    mod.adiar_payload({'attachments': [{'filename': 'comprovante.pdf', 'base64': 'AAA'}]}, 'x')
+    r = mod.adiar_payload({'attachments': [{'filename': 'comprovante.pdf', 'base64': 'ZZZ'}]}, 'x')
+
+    assert not r.get('ja_estava_na_fila')
+
+
+def test_uma_passada_por_vez(pasta, monkeypatch):
+    """Dois disparos ao mesmo tempo refaziam o mesmo trabalho e tomavam as
+    quatro linhas de atendimento do serviço."""
+    _adiar(pasta)
+    import app.apps.baixabradesco.core as core
+    monkeypatch.setattr(core, 'processar_baixabradesco', lambda p: {'resumo': {}})
+
+    assert mod._tomar_lock() is True          # alguém já está rodando
+    r = mod.processar_fila_tardia({})
+
+    assert r['pulado'] == 'ja_ha_uma_passada_rodando'
+    assert 'ao mesmo tempo' in r['em_portugues']
+    assert len([n for n in os.listdir(pasta) if n.endswith('.json')]) == 1
+
+
+def test_a_trava_abandonada_nao_prende_a_fila_para_sempre(pasta):
+    """Se o serviço reiniciar no meio, a marca fica. Ela expira."""
+    mod._tomar_lock()
+    antiga = os.path.getmtime(mod._caminho_lock()) - (mod.LOCK_VALIDADE_MIN + 5) * 60
+    os.utime(mod._caminho_lock(), (antiga, antiga))
+
+    assert mod._tomar_lock() is True
+
+
+def test_a_trava_e_solta_mesmo_quando_da_erro(pasta, monkeypatch):
+    _adiar(pasta)
+    import app.apps.baixabradesco.core as core
+    monkeypatch.setattr(core, 'processar_baixabradesco',
+                        lambda p: (_ for _ in ()).throw(RuntimeError('boom')))
+
+    mod.processar_fila_tardia({})
+
+    assert mod._tomar_lock() is True          # a marca não ficou presa
+
+
+def test_cada_passada_processa_poucos_adiados(pasta, monkeypatch):
+    """Cada adiado custa a carga inteira da SPsBD. Dez numa requisição só é o
+    que ocupava as quatro linhas do serviço."""
+    for i in range(10):
+        _adiar(pasta, nome=f'17000000{i:02d}_x.json', arquivos=(f'c{i}.pdf',))
+    chamadas = []
+    import app.apps.baixabradesco.core as core
+    monkeypatch.setattr(core, 'processar_baixabradesco',
+                        lambda p: chamadas.append(p) or {'resumo': {}})
+
+    r = mod.processar_fila_tardia({})
+
+    assert len(chamadas) == mod.LIMITE_POR_DISPARO
+    assert mod.LIMITE_POR_DISPARO <= 3
+    assert r['pendentes'] == 10 - mod.LIMITE_POR_DISPARO
+
+
+def test_adiado_antigo_e_descartado_sem_gastar_processamento(pasta, monkeypatch):
+    """"Tentando fazer baixa de coisa que nem precisaria mais" — exatamente."""
+    _adiar(pasta, nome='1600000000_velho.json', criado_em='01/01/2026 08:00:00')
+    _adiar(pasta, nome='1700000000_novo.json',
+           criado_em=__import__('time').strftime('%d/%m/%Y %H:%M:%S'))
+    chamadas = []
+    import app.apps.baixabradesco.core as core
+    monkeypatch.setattr(core, 'processar_baixabradesco',
+                        lambda p: chamadas.append(p) or {'resumo': {}})
+
+    r = mod.processar_fila_tardia({})
+
+    assert len(chamadas) == 1                 # só o novo foi processado
+    assert len(r['descartados_por_idade']) == 1
+    assert r['descartados_por_idade'][0]['criado_em'] == '01/01/2026 08:00:00'
+
+
+def test_a_marca_de_execucao_nao_e_confundida_com_comprovante(pasta):
+    mod._tomar_lock()
+
+    assert mod.resumo_fila_tardia()['pendentes'] == 0
