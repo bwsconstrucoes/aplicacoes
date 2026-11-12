@@ -653,10 +653,15 @@ sai.
 
 ## A baixa com desconto puxava o recebimento inteiro para a data dela — 12/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
-migração. **Depois de publicar é preciso refazer os números** (Configurações ›
-"Só refazer os números", que não baixa nada do OMIE — ou esperar a carga da
-madrugada): o conserto é em como o `fato` é montado.
+**PUBLICADO em 12/11/2026, 15:49 (UTC)** — `fe87630b`, com o "pode" do dono e
+a bateria completa verde aqui (10.996) e no GitHub. Sem migração.
+**O conserto só aparece depois de refazer os números** (Configurações › "Só
+refazer os números", que não baixa nada do OMIE — ou a carga da madrugada): é
+em como o `fato` é montado. Avisado ao dono.
+
+**Perguntar ao dono no próximo chat:** se, depois de refazer os números, a
+medição dele voltou para 2020/2021 na Receita de Obra e no fluxo. Se não
+voltou, pedir a obra e a medição e ler as pernas do título.
 
 O dono: uma medição recebida em parcelas em 2020 e 2021, com R$ 5.000 que
 ficaram faltando; em 06/06/2026 ele deu um desconto e baixou o resto — e o
