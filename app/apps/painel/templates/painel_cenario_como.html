@@ -71,7 +71,8 @@
     {% if e.no_dre and e.no_dre.receita|abs > 0.005 %}
     <small>(No DRE é a linha “= Total Custos/Despesas” desses centros de custo. A última
     linha do DRE, o resultado, dá {{ v(e.no_dre.resultado) }} porque desconta
-    {{ v(e.no_dre.receita) }} de receita lançada na própria matriz.)</small>
+    {{ v(e.no_dre.receita) }} de receita lançada na própria matriz — receita que esta
+    prestação desconsidera.)</small>
     {% endif %}
     {% if e.resumo.filial and e.resumo.filial.centros and e.resumo.filial.rateia|abs > 0.005 %}
     A filial ({{ e.resumo.filial.centros|join(' e ') }}) custou mais

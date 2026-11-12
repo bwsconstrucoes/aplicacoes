@@ -1949,7 +1949,10 @@ def _estrutura_contra_o_projeto(por_depto: dict, medida: str) -> dict:
             "projetos_abertos": sorted(do_projeto.values(), key=lambda d: d["projeto"]),
             "estrutura": estrutura, "dre": do_dre, "diferenca": estrutura - do_dre,
             # a receita lançada nos centros de custo da matriz: o DRE a abate
-            # no "= RESULTADO"; a prestação divide só o custo
+            # no "= RESULTADO"; a prestação divide só o custo. DECISÃO DO DONO
+            # (12/11/2026): "essa receita gostaria que fosse desconsiderada" —
+            # ela não vai para obra nenhuma e não abate o custo. Não é
+            # esquecimento; não "consertar" sem falar com ele.
             "receita": receita, "resultado": estrutura + receita,
             # sem projeto nenhum não há com o que comparar — não acusa
             "bate": (not projetos) or (

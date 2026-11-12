@@ -310,7 +310,7 @@
     a receita. Nos centros de custo da matriz há <b>{{ brl(cp.receita) }} de receita</b>:
     custo {{ brl(cp.estrutura) }} + receita {{ brl(cp.receita) }} = resultado
     <b>{{ brl(cp.resultado) }}</b>. A prestação divide o <b>custo</b>; essa receita
-    <b>hoje não vai para nenhuma obra nem abate o custo dividido</b>.
+    <b>é desconsiderada</b> — não vai para nenhuma obra e não abate o custo dividido.
     {% endif %}
     <details style="margin-top:6px" {{ 'open' if not cp.bate }}>
       <summary style="cursor:pointer"><b>Conferir com o DRE, centro de custo por centro de custo</b></summary>

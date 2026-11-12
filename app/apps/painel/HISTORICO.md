@@ -687,11 +687,14 @@ nova é que mostra, com o dado dele.
   prestação (*"eu olho na DRE geral e olho aqui, os valores têm que estar
   batendo"*).
 
-**DECISÃO PENDENTE DO DONO — a receita lançada na matriz.** Há receita nos
-centros de custo da matriz (458 mil, pelo DRE dele). **Hoje ela não entra na
-prestação**: não vai para obra nenhuma e não abate o custo que se divide (a
-estrutura não é obra). Perguntei a ele se deve abater o custo, ir para o
-BWSCE, ou ficar como está. Não mexi.
+**DECISÃO DO DONO — a receita lançada na matriz é DESCONSIDERADA.** Há
+receita nos centros de custo da matriz (458 mil, pelo DRE dele). Expliquei os
+três destinos possíveis (corrigir a obra no OMIE, abater o custo, linha à
+parte para os sócios) e ele respondeu, em 12/11/2026: *"essa receita gostaria
+que fosse desconsiderada."* Fica como estava: **não vai para obra nenhuma e
+não abate o custo que se divide**. As telas dizem isso com essas palavras.
+Consequência que ele aceitou ao decidir: o resultado somado da prestação fica
+menor que o do DRE geral nesse valor. Não reabrir sem motivo novo.
 
 ## Período com começo e FIM, o dinheiro de cada período e a lacuna — 12/11/2026
 
