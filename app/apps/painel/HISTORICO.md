@@ -651,6 +651,44 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A baixa com desconto puxava o recebimento inteiro para a data dela — 12/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
+migração. **Depois de publicar é preciso refazer os números** (Configurações ›
+"Só refazer os números", que não baixa nada do OMIE — ou esperar a carga da
+madrugada): o conserto é em como o `fato` é montado.
+
+O dono: uma medição recebida em parcelas em 2020 e 2021, com R$ 5.000 que
+ficaram faltando; em 06/06/2026 ele deu um desconto e baixou o resto — e o
+painel passou a mostrar **o recebimento inteiro em junho de 2026** (no fluxo
+financeiro também). Efeito direto nos juros: a obra ficou "no vermelho" por
+seis anos na régua do déficit.
+
+**O que o código fazia** (`sync/fato._escolher_recebimentos`): o OMIE guarda a
+baixa em duas pernas — a consolidada, com o **desconto dentro** do valor
+quitado (é por isso que o realizado do título é "quitado − desconto"), e os
+créditos bancários, só com o dinheiro que entrou. As duas somas eram
+comparadas cruas; com desconto, deixavam de fechar pelo valor dele, e a regra
+caía na consolidada: **uma linha só, na data da última baixa**.
+
+**O conserto:** compara-se DINHEIRO (valor − desconto). Os créditos valem
+quando fecham com a consolidada em dinheiro, ou com o realizado do título; e,
+quando ficam as consolidadas, cada uma vale pelo dinheiro dela — a perna que é
+só desconto não vira recebimento. A soma do título não muda.
+
+**O que NÃO foi verificado:** eu não vi as pernas reais desse título no
+espelho. O teste reproduz o sintoma com as duas formas em que o OMIE costuma
+guardar (uma consolidada com o total; ou uma perna liquidada por baixa) e
+falha sem o conserto — mas se esse título tiver uma terceira forma, o
+problema continua. Para conferir: depois de refazer os números, olhar a
+medição na Receita de Obra e o fluxo da obra; se ainda estiver tudo em 2026,
+pedir ao dono o número do título e ler as pernas pela conferência
+"de onde veio a conta de um título" (`painel.conta_do_titulo`).
+
+**Alcance:** vale para todo título, a receber ou a pagar, baixado com
+desconto. Outras obras podem mudar de mês em receita/despesa depois de refazer
+os números — é o conserto, mas muda número que já foi visto.
+
 ## Um VALOR FIXO que fica no BWSCE antes dos percentuais — 12/11/2026
 
 **PUBLICADO em 12/11/2026, 15:19 (UTC)** — `bd3a3d75`, com o "pode" do dono e
