@@ -651,10 +651,118 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
-## Custo × resultado do DRE, e a linha de totais por obra — 12/11/2026
+## A baixa com desconto puxava o recebimento inteiro para a data dela — 12/11/2026
 
 **NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
-migração.
+migração. **Depois de publicar é preciso refazer os números** (Configurações ›
+"Só refazer os números", que não baixa nada do OMIE — ou esperar a carga da
+madrugada): o conserto é em como o `fato` é montado.
+
+O dono: uma medição recebida em parcelas em 2020 e 2021, com R$ 5.000 que
+ficaram faltando; em 06/06/2026 ele deu um desconto e baixou o resto — e o
+painel passou a mostrar **o recebimento inteiro em junho de 2026** (no fluxo
+financeiro também). Efeito direto nos juros: a obra ficou "no vermelho" por
+seis anos na régua do déficit.
+
+**O que o código fazia** (`sync/fato._escolher_recebimentos`): o OMIE guarda a
+baixa em duas pernas — a consolidada, com o **desconto dentro** do valor
+quitado (é por isso que o realizado do título é "quitado − desconto"), e os
+créditos bancários, só com o dinheiro que entrou. As duas somas eram
+comparadas cruas; com desconto, deixavam de fechar pelo valor dele, e a regra
+caía na consolidada: **uma linha só, na data da última baixa**.
+
+**O conserto:** compara-se DINHEIRO (valor − desconto). Os créditos valem
+quando fecham com a consolidada em dinheiro, ou com o realizado do título; e,
+quando ficam as consolidadas, cada uma vale pelo dinheiro dela — a perna que é
+só desconto não vira recebimento. A soma do título não muda.
+
+**O que NÃO foi verificado:** eu não vi as pernas reais desse título no
+espelho. O teste reproduz o sintoma com as duas formas em que o OMIE costuma
+guardar (uma consolidada com o total; ou uma perna liquidada por baixa) e
+falha sem o conserto — mas se esse título tiver uma terceira forma, o
+problema continua. Para conferir: depois de refazer os números, olhar a
+medição na Receita de Obra e o fluxo da obra; se ainda estiver tudo em 2026,
+pedir ao dono o número do título e ler as pernas pela conferência
+"de onde veio a conta de um título" (`painel.conta_do_titulo`).
+
+**Alcance:** vale para todo título, a receber ou a pagar, baixado com
+desconto. Outras obras podem mudar de mês em receita/despesa depois de refazer
+os números — é o conserto, mas muda número que já foi visto.
+
+## Um VALOR FIXO que fica no BWSCE antes dos percentuais — 12/11/2026
+
+**PUBLICADO em 12/11/2026, 15:19 (UTC)** — `bd3a3d75`, com o "pode" do dono e
+a bateria completa verde aqui (10.991) e no GitHub, já com a `main` dos outros
+chats. Foi junto a janela de receitas do DRE (seção abaixo).
+
+**Fica com o dono:** apertar **"Aplicar atualizações do banco"** (migração
+027) — sem ela o painel funciona, mas recusa gravar o valor fixo.
+
+**Perguntar ao dono no próximo chat:** se o valor fixo deu o número que ele
+esperava com os dados reais; o que as "outras receitas" da matriz são; e a
+resposta sobre os 13.796.222,19 (ver "Ainda em aberto com o dono", abaixo).
+
+O dono: *"num determinado período, eu quero desconsiderar do rateio um
+determinado valor. (…) tenho 2 milhões de custo, deixarei 500 mil
+exclusivamente na matriz e farei rateio de 50/50 no resto. Dessa forma a
+matriz absorve 1.250 mil e a filial 750 mil."* É o pró-labore dos sócios, que
+ele não quer ratear.
+
+- Cada **linha de período** ganhou o campo **"antes, ficam R$"** (coluna
+  `valor_fica`, migração 027). O valor sai do total que segue a linha no
+  período e fica inteiro no BWSCE; os percentuais valem para o que sobra.
+- **Como entra na conta** (`prestacao.partes_com_valor_fixo`): o total do
+  período é um só, então o valor vira um percentual efetivo aplicado igual a
+  todos os meses dele — o valor fixo se espalha na proporção do custo de cada
+  mês. Por isso `calcular_rateio_do_cenario` e `_contas_da_matriz` passaram a
+  rodar em **duas passadas** (primeiro o total de cada linha de regra).
+- O exemplo dele é teste: 2 mi, 500 mil destacados, 50 fica / 50 filial →
+  1.250 mil e 750 mil. **Atenção ao "50/50":** no exemplo ele quis 50% no
+  BWSCE e 50% na BWSFILIAL (os dois campos preenchidos). Se ele deixar o
+  segundo em branco, os outros 50% **rateiam entre todas** — que é outra
+  conta. Avisei.
+- Valor maior que o total do período: fica tudo, e a linha avisa em vermelho.
+- Só o valor, sem percentual, também é regra (o resto rateia inteiro).
+- O valor é do total **que segue a linha**: na linha do grupo, não conta a
+  categoria com regra própria nem o lançamento marcado um a um, nem os juros.
+- Só existe nas linhas de período (com data) — não na linha principal da conta.
+
+## A janela de receitas do DRE não fechava com a linha do DRE — 12/11/2026
+
+Publicado em 12/11/2026 junto com a seção de cima. Sem migração própria.
+
+O dono abriu as receitas da matriz no DRE: a linha dizia R$ 459.464,10 de
+receita bruta e a janela somava R$ 68.343,21 (6 títulos). **Causa, lida no
+código:** a janela lista as MEDIÇÕES (`RECEITA_DE_OBRA` — categoria "Receita
+de Obras" e o retido dela); a linha do DRE soma **toda** receita de análise
+DRE — também rendimento, estorno, devolução. Os R$ 391.120,89 que faltam são
+"outras receitas". **O que elas são eu não vi**: a janela nova é que mostra.
+
+- A janela ganhou o quadro **"Outras receitas — não são medição"**, um título
+  por linha (`consultas.outras_receitas_titulos`), e a conta **"Para bater com
+  o DRE: medições + outras receitas = Receita Bruta"**.
+- Limite conhecido: a janela do "executado" lista os títulos QUITADOS; o DRE
+  soma também o recebido em parte de título ainda aberto. Se um dia a conta
+  de baixo não fechar por isso, é esse o motivo — não mexi.
+
+**Ainda em aberto com o dono (12/11):** ele disse que "ainda aparece valor
+diferente nos custos da matriz" (13.796.222,19). Duas leituras, e eu perguntei:
+(a) ele compara com a última linha do DRE, que é resultado — a decisão dele
+foi DESCONSIDERAR a receita, e aí o custo é mesmo 13.796.222,19; para dar
+13.337.568,09 a receita teria de ABATER o custo; (b) falta o "CONS -
+Escritório Central" na lista da MATRIZ: os números dele dão 13.349.966,79 −
+13.337.568,09 = 12.398,70 entre o DRE dos dois centros e o do projeto BWS, o
+que é compatível com esse centro não estar no projeto BWS nem na matriz. Não
+conferido.
+
+## Custo × resultado do DRE, e a linha de totais por obra — 12/11/2026
+
+**PUBLICADO em 12/11/2026, 12:49 (UTC)** — `e7ce80f7`, com o "pode" do dono e
+a bateria completa verde aqui (10.967) e no GitHub. Sem migração.
+
+**Perguntar ao dono no próximo chat:** o que o quadro "Conferir com o DRE"
+mostrou para as outras duas diferenças (12.398,70 entre o filtro por obra e o
+por projeto; 29,48 no BWSNE) — eu supus que fosse receita, e não conferi.
 
 O dono, já pelo executado, colou os números que não batiam:
 

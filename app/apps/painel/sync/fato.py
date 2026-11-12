@@ -1048,22 +1048,43 @@ def _escolher_recebimentos(movs, realizado):
     creditos = [m for m in pagos
                 if not (m.get("liquidado") == "S" or m.get("liquido", 0.0) > TOL)]
 
-    soma_cons = sum(m["valor"] for m in consolidadas)
+    # A BAIXA COM DESCONTO (12/11/2026). O dono: uma medição recebida em
+    # parcelas em 2020 e 2021, com R$ 5.000 que ficaram faltando; em 06/2026
+    # ele deu um desconto e baixou o resto — e o painel passou a mostrar o
+    # recebimento INTEIRO em junho de 2026, o que deixou a obra "no vermelho"
+    # por seis anos na régua dos juros.
+    #
+    # A perna consolidada traz o desconto DENTRO do valor quitado (é por isso
+    # que o realizado do título é "quitado menos desconto"); os créditos
+    # bancários trazem só o dinheiro que entrou. Comparadas cruas, as duas
+    # somas deixam de fechar pelo valor do desconto, e a regra antiga caía na
+    # consolidada: uma linha só, na data da ÚLTIMA baixa — a do desconto.
+    #
+    # Dinheiro é o valor menos o desconto. É ele que se compara, e é ele que
+    # vale em cada perna consolidada (a que é só desconto não é recebimento).
+    def _dinheiro(m):
+        return m["valor"] - (m.get("desconto") or 0.0)
+
+    soma_cons = sum(_dinheiro(m) for m in consolidadas)
     soma_cred = sum(m["valor"] for m in creditos)
 
     def _fecha(a, b):
         return abs(a - b) <= max(TOL, abs(b) * 0.001)
 
     if creditos:
-        # bate com a consolidada, ou (quando nao ha consolidada) com o realizado
+        # bate com a consolidada (em dinheiro), ou com o realizado do título
         if consolidadas and _fecha(soma_cred, soma_cons):
             return creditos, ORIGEM_CREDITO
-        if not consolidadas and _fecha(soma_cred, realizado):
+        if realizado > TOL and _fecha(soma_cred, realizado):
             return creditos, ORIGEM_CREDITO
         if not consolidadas:
             return creditos, ORIGEM_CREDITO
     if consolidadas:
-        return consolidadas, ORIGEM_MOV
+        em_dinheiro = [dict(m, valor=_dinheiro(m)) if (m.get("desconto") or 0.0) > TOL else m
+                       for m in consolidadas]
+        em_dinheiro = [m for m in em_dinheiro if m["valor"] > TOL]
+        # tudo virou desconto (título 100% descontado): fica como era
+        return (em_dinheiro or consolidadas), ORIGEM_MOV
     return creditos, ORIGEM_CREDITO
 
 

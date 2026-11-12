@@ -681,10 +681,20 @@ def dre_medicoes():
     # a aba Receita de Obra pode nao estar liberada para quem esta olhando:
     # o link so aparece quando abre
     pode_abrir = any(chave == "receita" for chave, _r, _e in _abas_visiveis())
+    # AS OUTRAS RECEITAS (12/11/2026): a linha de receita do DRE soma também o
+    # que não é medição. Sem elas a janela não fechava com o número clicado —
+    # o dono viu R$ 459.464,10 no DRE e R$ 68.343,21 na janela.
+    outras = consultas.outras_receitas_titulos(f)
+    campo = {"quitadas": "recebido", "a_receber": "a_receber"}.get(visao)
+    if campo:      # a janela do executado mostra o recebido; a do em aberto, o que falta
+        outras["linhas"] = [l for l in outras["linhas"] if abs(l[campo]) > 0.005]
+    for l in outras["linhas"]:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
     return jsonify({"ok": True, "visao": visao, "linhas": linhas,
                     "pode_abrir": pode_abrir,
                     "ver_tudo": com_filtros_para_json("painel.receita", visao=visao),
-                    "total": consultas.total_das_medicoes(f, visao=visao)})
+                    "total": consultas.total_das_medicoes(f, visao=visao),
+                    "outras": outras["linhas"], "outras_total": outras["total"]})
 
 
 @bp.route("/dre/despesas")
@@ -1623,6 +1633,11 @@ def _num(v) -> str:
     return (f"{float(v):.2f}".rstrip("0").rstrip(".")).replace(".", ",")
 
 
+def _reais(v) -> str:
+    """500000 -> "500.000,00"."""
+    return f"{float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _partes_por_extenso(fica, filial, principal: str = "") -> str:
     """As três partes de uma regra, em palavras: "20% fica no BWSCE · 80%
     rateia entre todas". Parte zerada não é dita."""
@@ -1657,7 +1672,9 @@ def _regras_por_extenso(regra, datadas, principal: str = "") -> str:
         trechos.append((("fora dos períodos: " if datadas else "")
                         + _partes_por_extenso(regra[0], regra[1], principal)))
     for p in datadas or []:
-        trechos.append(_periodo_por_extenso(p["desde"], p["ate"]) + ": "
+        fixo = (f"R$ {_reais(p['valor'])} ficam no {principal or 'projeto principal'} e, do resto, "
+                if p.get("valor") else "")
+        trechos.append(_periodo_por_extenso(p["desde"], p["ate"]) + ": " + fixo
                        + _partes_por_extenso(p["fica"], p["filial"], principal))
     return "; ".join(trechos)
 
@@ -1712,7 +1729,42 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     # aberto por centro de custo, com o período.
     por_depto = {d: 0.0 for d in deptos}
     sem_data = 0.0
-    for linha in consultas.despesa_administrativa(deptos, medida):
+    # EM DUAS PASSADAS, por causa do VALOR FIXO de um período (12/11/2026, o
+    # dono: "deixarei 500 mil exclusivamente na matriz e farei rateio de 50/50
+    # no resto"): ele sai do total que segue a linha de regra, e esse total só
+    # se conhece depois de olhar tudo. É a mesma conta de
+    # `prestacao.calcular_rateio_do_cenario`.
+    linhas_da_matriz = consultas.despesa_administrativa(deptos, medida)
+    total_da_regra: dict[tuple, float] = {}
+    for linha in linhas_da_matriz:
+        cat = linha.get("categoria") or "(sem categoria)"
+        if linha["mes"] == consultas.SEM_DATA or cat.strip().lower() in juros:
+            continue
+        origem = prestacao.regra_da_conta(
+            pesos, linha.get("grupo") or "(sem grupo)", cat, "", padrao,
+            mes=linha["mes"])[2]
+        total_da_regra[origem] = total_da_regra.get(origem, 0.0) + linha["valor"]
+    for e in excecoes:      # o lançamento marcado um a um não segue a regra da categoria
+        if e.get("mes") == consultas.SEM_DATA:
+            continue
+        origem = prestacao.regra_da_conta(
+            pesos, (e.get("grupo") or "").strip() or "(sem grupo)",
+            (e.get("categoria") or "").strip() or "(sem categoria)", "", padrao,
+            mes=e.get("mes"))[2]
+        if origem in total_da_regra:
+            total_da_regra[origem] -= e["valor"]
+    fixo_da_regra = {o: prestacao.valor_fixo_da_regra(pesos, o) for o in total_da_regra}
+
+    def _partes(grupo, categoria, codigo, mes):
+        """(fica, filial, de onde veio) — já com o valor fixo da linha dentro."""
+        fica, filial, origem = prestacao.regra_da_conta(
+            pesos, grupo, categoria, codigo, padrao, mes=mes)
+        if origem in total_da_regra:
+            fica, filial = prestacao.partes_com_valor_fixo(
+                fica, filial, fixo_da_regra[origem], total_da_regra[origem])
+        return fica, filial, origem
+
+    for linha in linhas_da_matriz:
         por_depto[linha["depto"]] = por_depto.get(linha["depto"], 0.0) + linha["valor"]
         if linha["mes"] == consultas.SEM_DATA:
             sem_data += linha["valor"]
@@ -1729,8 +1781,7 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
                                              "fica": 0.0, "filial": 0.0})
         c["valor"] += linha["valor"]
         # mês a mês: a regra pode mudar com o tempo
-        fica, filial, origem = prestacao.regra_da_conta(
-            pesos, nome, cat, "", padrao, mes=linha["mes"])
+        fica, filial, origem = _partes(nome, cat, "", linha["mes"])
         c["fica"] += linha["valor"] * fica / 100.0
         c["filial"] += linha["valor"] * filial / 100.0
         # QUANTO DINHEIRO SEGUE CADA LINHA DE REGRA (12/11/2026, o dono: "eu
@@ -1744,10 +1795,9 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
             balde[2] += linha["valor"] * filial / 100.0
     # o lançamento marcado um a um não segue a regra da categoria: sai do balde
     for e in excecoes:
-        f0, n0, origem = prestacao.regra_da_conta(
-            pesos, (e.get("grupo") or "").strip() or "(sem grupo)",
-            (e.get("categoria") or "").strip() or "(sem categoria)", "", padrao,
-            mes=e.get("mes"))
+        f0, n0, origem = _partes(
+            (e.get("grupo") or "").strip() or "(sem grupo)",
+            (e.get("categoria") or "").strip() or "(sem categoria)", "", e.get("mes"))
         if origem in da_regra:
             da_regra[origem][0] -= e["valor"]
             da_regra[origem][1] -= e["valor"] * f0 / 100.0
@@ -1768,10 +1818,15 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
             if p[0] == INICIO:
                 continue
             total, v_fica, v_filial = da_regra.get((nivel, chave, p[0]), (0.0, 0.0, 0.0))
+            valor = float(p[4]) if len(p) > 4 and p[4] else 0.0
             datadas.append({
                 "desde": "" if p[0] == cenarios.SEM_COMECO else p[0],
                 "ate": p[3] if len(p) > 3 else "",
                 "fica": p[1], "filial": p[2],
+                # o valor fixo que fica no principal antes dos percentuais —
+                # e se ele é maior que o total do período (aí fica tudo)
+                "valor": valor, "valor_passa": valor > abs(total) + 0.005,
+                "valor_txt": _reais(valor) if valor else "",
                 "total": total, "v_fica": v_fica, "v_filial": v_filial,
                 "v_rateia": total - v_fica - v_filial})
         return desde_sempre, datadas, cenarios.lacunas_dos_periodos(lista)
@@ -1814,10 +1869,8 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
                 # dele) e entra com a própria
                 for e in proprias:
                     mes_e = e.get("mes")
-                    f0, n0 = prestacao.partes_da_conta(
-                        pesos, g["grupo"], c["categoria"], "", padrao, mes=mes_e)
-                    f1, n1 = prestacao.partes_da_conta(
-                        pesos, g["grupo"], c["categoria"], e["codigo"], padrao, mes=mes_e)
+                    f0, n0, _o = _partes(g["grupo"], c["categoria"], "", mes_e)
+                    f1, n1, _o = _partes(g["grupo"], c["categoria"], e["codigo"], mes_e)
                     c["fica"] += e["valor"] * (f1 - f0) / 100.0
                     c["filial"] += e["valor"] * (n1 - n0) / 100.0
                     marcacoes.append({
@@ -2045,7 +2098,7 @@ def _periodos_do_formulario(form) -> list[tuple]:
     niveis = form.getlist("periodo_nivel")
     colunas = [form.getlist(c) for c in ("periodo_chave", "periodo_desde",
                                          "periodo_fica", "periodo_filial",
-                                         "periodo_ate")]
+                                         "periodo_ate", "periodo_valor")]
     linhas = []
     for i, nivel in enumerate(niveis):
         linhas.append((nivel,) + tuple(c[i] if i < len(c) else "" for c in colunas))

@@ -123,20 +123,23 @@ def partes_do_formato_antigo(pct, principal=None) -> tuple:
 
 
 def periodos(cenario_id) -> dict:
-    """{nível: {chave: [(desde, fica no principal, é da filial, até), ...]}},
-    em ordem de começo. As duas partes em por cento do valor da conta; o que
+    """{nível: {chave: [(desde, fica no principal, é da filial, até, valor
+    fixo), ...]}}, em ordem de começo. As duas partes em por cento; o que
     falta para 100 se rateia entre todas as obras.
 
     `desde` "1900-01" é a regra que vale sempre (a linha da conta); "0001-01"
-    é o período que só tem fim ("até 12/2020"). `até` vazio = sem fim."""
+    é o período que só tem fim ("até 12/2020"). `até` vazio = sem fim. `valor
+    fixo` (R$) sai do total do período ANTES dos percentuais e fica inteiro no
+    projeto principal."""
     saida: dict = {nivel: {} for nivel in NIVEIS}
     colunas = _colunas_dos_periodos()
     if not colunas:
         return saida
     novas = "pct_fica, pct_filial" if "pct_fica" in colunas else "NULL, NULL"
     fim = "ate" if "ate" in colunas else "''"
-    for nivel, chave, desde, pct, principal, fica, filial, ate in consultar(
-            f"SELECT nivel, chave, desde, pct, pct_principal, {novas}, {fim}"
+    fixo = "valor_fica" if "valor_fica" in colunas else "0"
+    for nivel, chave, desde, pct, principal, fica, filial, ate, valor in consultar(
+            f"SELECT nivel, chave, desde, pct, pct_principal, {novas}, {fim}, {fixo}"
             "  FROM cenario_peso_periodo"
             " WHERE cenario_id = ? ORDER BY nivel, chave, desde", [int(cenario_id)]):
         if nivel not in saida:
@@ -144,7 +147,7 @@ def periodos(cenario_id) -> dict:
         if fica is None:
             fica, filial = partes_do_formato_antigo(pct, principal)
         saida[nivel].setdefault(chave, []).append(
-            (desde, float(fica), float(filial or 0), ate or ""))
+            (desde, float(fica), float(filial or 0), ate or "", float(valor or 0)))
     return saida
 
 
@@ -181,18 +184,38 @@ def _mes_br(mes: str) -> str:
     return f"{mes[5:7]}/{mes[:4]}"
 
 
-def _periodos_limpos(lista) -> list[tuple]:
-    """[(desde, fica no principal, é da filial, até)] válidos e em ordem.
+def dinheiro(valor) -> float:
+    """Valor em reais digitado por gente: "500.000,00", "500000", "1.250,5".
+    Em branco é zero; negativo vira positivo (é um valor a destacar)."""
+    if isinstance(valor, (int, float)):
+        return abs(float(valor))
+    texto = str(valor or "").replace("R$", "").strip().replace(" ", "")
+    if not texto:
+        return 0.0
+    if "," in texto:                       # padrão brasileiro: ponto é milhar
+        texto = texto.replace(".", "").replace(",", ".")
+    elif texto.count(".") > 1 or (texto.count(".") == 1 and len(texto.split(".")[1]) == 3):
+        texto = texto.replace(".", "")     # "500.000" é quinhentos mil
+    try:
+        return abs(float(texto))
+    except ValueError:
+        raise ValueError(f"“{valor}” não é um valor em reais") from None
 
-    Linha com as duas partes em branco é ignorada (é assim que se apaga);
+
+def _periodos_limpos(lista) -> list[tuple]:
+    """[(desde, fica no principal, é da filial, até, valor fixo)] válidos e
+    em ordem.
+
+    Linha com as duas partes em branco e sem valor fixo é ignorada (é assim que se apaga);
     começo em branco quer dizer "sempre" — ou, se a linha tem fim, "até ele";
     começo repetido, vale o último. As duas partes não podem passar de 100 (o
     que falta é o que se rateia), o fim não pode vir antes do começo, e dois
     períodos com fim não podem se sobrepor."""
     limpos = {}
     for item in lista or []:
-        desde, fica, filial, ate = (list(item) + [None] * 4)[:4]
-        if not _preenchido(fica) and not _preenchido(filial):
+        desde, fica, filial, ate, valor = (list(item) + [None] * 5)[:5]
+        valor = dinheiro(valor)
+        if not _preenchido(fica) and not _preenchido(filial) and valor <= 0.005:
             continue
         desde, ate = (desde or "").strip(), (ate or "").strip()
         if ate and not _MES.match(ate):
@@ -209,8 +232,8 @@ def _periodos_limpos(lista) -> list[tuple]:
             raise ValueError(
                 f"as partes somam {f + n:.0f}% — o que fica no projeto principal "
                 "mais o que é da filial não pode passar de 100%")
-        limpos[desde] = (f, n, ate)
-    saida = [(d, f, n, ate) for d, (f, n, ate) in sorted(limpos.items())]
+        limpos[desde] = (f, n, ate, round(valor, 2))
+    saida = [(d, f, n, ate, v) for d, (f, n, ate, v) in sorted(limpos.items())]
     # dois períodos fechados que se cruzam: não dá para saber qual vale
     com_data = [p for p in saida if p[0] != DESDE_O_INICIO]
     for atual, proximo in zip(com_data, com_data[1:]):
@@ -243,23 +266,26 @@ def lacunas_dos_periodos(lista) -> list[tuple]:
 
 def gravar_periodos(cenario_id, nivel: str, chave: str, lista) -> None:
     """Troca as regras de UMA conta pelas da lista
-    [(desde, fica no principal, é da filial[, até])]."""
+    [(desde, fica no principal, é da filial[, até[, valor fixo]])]."""
     if nivel not in NIVEIS or not (chave or "").strip() or not _tem_periodos():
         return
     limpos = _periodos_limpos(lista)
     colunas = _colunas_dos_periodos()
-    tres, com_fim = "pct_fica" in colunas, "ate" in colunas
+    tres, com_fim, com_valor = ("pct_fica" in colunas, "ate" in colunas,
+                                "valor_fica" in colunas)
     aplique = ("aplique antes as atualizações do banco (Configurações › Aplicar "
                "atualizações do banco).")
-    if not tres and any(n > 0.005 for _d, _f, n, _a in limpos):
+    if not tres and any(p[2] > 0.005 for p in limpos):
         raise ValueError("Para dizer que parte de uma conta é da filial, " + aplique)
-    if not com_fim and any(a for _d, _f, _n, a in limpos):
+    if not com_fim and any(p[3] for p in limpos):
         raise ValueError("Para dar fim (\"até\") a um período, " + aplique)
+    if not com_valor and any(p[4] > 0.005 for p in limpos):
+        raise ValueError("Para destacar um valor fixo num período, " + aplique)
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_peso_periodo"
                      " WHERE cenario_id = ? AND nivel = ? AND chave = ?",
                      (int(cenario_id), nivel, chave.strip()))
-        for desde, fica, filial, ate in limpos:
+        for desde, fica, filial, ate, valor in limpos:
             campos = {"cenario_id": int(cenario_id), "nivel": nivel,
                       "chave": chave.strip(), "desde": desde,
                       # sem a 025, a parte que fica cabe no formato antigo
@@ -268,6 +294,8 @@ def gravar_periodos(cenario_id, nivel: str, chave: str, lista) -> None:
                 campos.update(pct_fica=fica, pct_filial=filial)
             if com_fim:
                 campos["ate"] = ate
+            if com_valor:
+                campos["valor_fica"] = valor
             conn.execute(
                 f"INSERT INTO cenario_peso_periodo ({', '.join(campos)})"
                 f" VALUES ({', '.join('?' for _ in campos)})", tuple(campos.values()))
@@ -484,15 +512,19 @@ def conferir_periodos(entradas) -> dict:
     "inicio" na linha principal da conta."""
     brutos: dict = {}
     for entrada in entradas or ():
-        nivel, chave, desde, fica, filial, ate = (list(entrada) + [None] * 6)[:6]
+        nivel, chave, desde, fica, filial, ate, valor = (list(entrada) + [None] * 7)[:7]
         chave = (chave or "").strip()
         desde, ate = (desde or "").strip(), (ate or "").strip()
+        try:
+            tem_valor = dinheiro(valor) > 0.005
+        except ValueError as e:
+            raise ValueError(f"{chave}: {e}.") from None
         if desde == "inicio":                       # a linha principal da conta
-            desde, ate = DESDE_O_INICIO, ""
-        elif (_preenchido(fica) or _preenchido(filial)) and not desde and not ate:
+            desde, ate, valor = DESDE_O_INICIO, "", None
+        elif (_preenchido(fica) or _preenchido(filial) or tem_valor) and not desde and not ate:
             raise ValueError(f"Falta o mês em {chave}: a linha de período tem "
-                             "percentual, mas não diz de quando até quando.")
-        brutos.setdefault((nivel, chave), []).append((desde, fica, filial, ate))
+                             "percentual ou valor, mas não diz de quando até quando.")
+        brutos.setdefault((nivel, chave), []).append((desde, fica, filial, ate, valor))
     limpos = {}
     for (nivel, chave), lista in brutos.items():
         try:
@@ -687,7 +719,8 @@ def duplicar(cenario_id, nome: str) -> int:
         if _tem_periodos():
             colunas = "nivel, chave, desde, pct, pct_principal" + (
                 ", pct_fica, pct_filial" if _tem_tres_partes() else "") + (
-                ", ate" if _tem_fim_de_periodo() else "")
+                ", ate" if _tem_fim_de_periodo() else "") + (
+                ", valor_fica" if "valor_fica" in _colunas_dos_periodos() else "")
             conn.execute(
                 f"INSERT INTO cenario_peso_periodo (cenario_id, {colunas})"
                 f" SELECT ?, {colunas}"
