@@ -651,6 +651,36 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Um VALOR FIXO que fica no BWSCE antes dos percentuais — 12/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
+migração (027):** ao publicar, ele aperta "Aplicar atualizações do banco".
+
+O dono: *"num determinado período, eu quero desconsiderar do rateio um
+determinado valor. (…) tenho 2 milhões de custo, deixarei 500 mil
+exclusivamente na matriz e farei rateio de 50/50 no resto. Dessa forma a
+matriz absorve 1.250 mil e a filial 750 mil."* É o pró-labore dos sócios, que
+ele não quer ratear.
+
+- Cada **linha de período** ganhou o campo **"antes, ficam R$"** (coluna
+  `valor_fica`, migração 027). O valor sai do total que segue a linha no
+  período e fica inteiro no BWSCE; os percentuais valem para o que sobra.
+- **Como entra na conta** (`prestacao.partes_com_valor_fixo`): o total do
+  período é um só, então o valor vira um percentual efetivo aplicado igual a
+  todos os meses dele — o valor fixo se espalha na proporção do custo de cada
+  mês. Por isso `calcular_rateio_do_cenario` e `_contas_da_matriz` passaram a
+  rodar em **duas passadas** (primeiro o total de cada linha de regra).
+- O exemplo dele é teste: 2 mi, 500 mil destacados, 50 fica / 50 filial →
+  1.250 mil e 750 mil. **Atenção ao "50/50":** no exemplo ele quis 50% no
+  BWSCE e 50% na BWSFILIAL (os dois campos preenchidos). Se ele deixar o
+  segundo em branco, os outros 50% **rateiam entre todas** — que é outra
+  conta. Avisei.
+- Valor maior que o total do período: fica tudo, e a linha avisa em vermelho.
+- Só o valor, sem percentual, também é regra (o resto rateia inteiro).
+- O valor é do total **que segue a linha**: na linha do grupo, não conta a
+  categoria com regra própria nem o lançamento marcado um a um, nem os juros.
+- Só existe nas linhas de período (com data) — não na linha principal da conta.
+
 ## A janela de receitas do DRE não fechava com a linha do DRE — 12/11/2026
 
 **NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
