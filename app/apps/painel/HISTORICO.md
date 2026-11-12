@@ -653,8 +653,22 @@ sai.
 
 ## Período com começo e FIM, o dinheiro de cada período e a lacuna — 12/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
-migração (026):** ao publicar, ele aperta "Aplicar atualizações do banco".
+**PUBLICADO em 12/11/2026, 01:04 (UTC)** — `82ee622f`, com o "pode" do dono e
+a bateria completa verde aqui (10.965) e no GitHub, já com a `main` do outro
+chat (Análise de SPs) trazida para o ramo. Foi junto a prestação só para
+leitura (seção abaixo).
+
+**Fica com o dono, e eu não tenho como conferir daqui:**
+1. apertar **"Aplicar atualizações do banco"** (migração 026) — sem ela o
+   painel funciona, mas recusa gravar o "até";
+2. trocar a **Base do cálculo** do cenário dele para Executado (passo 5), se
+   é pelo executado que ele quer trabalhar — o cenário que já existe não muda
+   sozinho;
+3. marcar a caixinha "Prestação de Contas — só ver" para quem ele quiser.
+
+**Perguntar ao dono no próximo chat:** se "a matriz gastou" bateu com o
+executado do DRE do BWS (13.795.975,61 na conta dele), se os valores por
+período fazem sentido, e se o acesso só de leitura ficou como ele queria.
 
 O dono, usando a tela já publicada: *"nas regras de período não tem ATÉ (…)
 era melhor a gente definir o período de tanto a tanto, não só a partir de. Ou
@@ -689,8 +703,8 @@ novo nasce pelo executado**. O cenário que ele já tem só muda se ele trocar.
 
 ## A prestação compartilhada, só para leitura — 11/11/2026 (noite)
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
-migração.
+Publicado em 12/11/2026, 01:04 (UTC), junto com a seção de cima. Sem migração
+própria.
 
 O dono: *"compartilhar prestação de conta com um determinado usuário: ele vai
 poder visualizar parâmetros etc., mas não pode mexer em nada."*
