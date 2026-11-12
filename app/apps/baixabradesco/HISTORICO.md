@@ -1664,3 +1664,61 @@ neste ambiente, aplicação subindo com os 18 blueprints.
 **Não verificado:** nenhum comprovante real passou pelo caminho novo. O primeiro
 comprovante Bradesco → Somapay que chegar vai baixar na conta do Bradesco — é o
 que foi pedido, e vale conferir na primeira vez.
+
+---
+
+### 12/11/2026 — a fila tardia ganha como ver e como limpar
+
+Duas perguntas do dono: *"onde fica gravado a fila tardia?"* e, em seguida,
+*"consigo limpar ela?"*. A resposta era **não** nas duas pontas, e isso era uma
+lacuna de verdade:
+
+- ela fica em **arquivo dentro do servidor** (`/tmp/baixabradesco_fila_tardia`),
+  não na planilha;
+- **não havia como ver** o que estava nela sem mandar processar;
+- **não havia como limpá-la**, a não ser reiniciando o serviço — que é o que uma
+  publicação faz, de raspão, sem ninguém escolher.
+
+Entraram `GET /api/baixabradesco/fila-tardia` (só mostra) e
+`POST /api/baixabradesco/limpar-fila-tardia` (descarta, com `confirmar: true`).
+
+**A decisão que mais importa aqui é de segurança, e vale escrita:** o arquivo
+guarda o **pedido inteiro do Make**, e dentro dele vêm a **chave e o segredo da
+API do Omie** e os tokens do Z-API — é assim que essas credenciais chegam hoje.
+Uma rota de diagnóstico que devolvesse o payload cru estaria publicando as
+credenciais da empresa para quem soubesse o endereço. Então a listagem devolve
+**só** nome de arquivo, data, tentativas, tamanho e o erro original; há teste
+afirmando que o segredo não aparece em lugar nenhum da resposta, nem na da
+limpeza.
+
+**Por que limpar exige confirmação:** descartar ali joga fora comprovante que
+ainda **não foi baixado**. Sem `confirmar: true` a rota só mostra o que sairia, e
+o relatório lista item por item — é essa lista que diz quais comprovantes
+precisam ser reenviados pelo Make. Um "limpar" que roda sem confirmar é uma
+forma elaborada de perder trabalho. Só POST, pelo mesmo motivo do
+`zerar-fila-antiga`.
+
+**O risco que ficou de pé, e é decisão do dono:** a fila tardia continua morrendo
+a cada publicação. Eu ofereci guardá-la também na planilha, para sobreviver — e
+apontei o custo: ela nasce justamente quando o Google já está recusando pedidos
+por excesso, então escrever na planilha naquele instante é o pior momento
+possível. Dá para contornar (arquivo primeiro, registro no disparo seguinte), mas
+é trabalho de verdade. Ofereci também só **medir** antes: contar quantos
+comprovantes passam por ali e quantos se perdem em reinício, para a decisão ficar
+fácil. Ele não respondeu nenhuma das duas ainda.
+
+**⚠️ Nota de ambiente, para a próxima sessão não perder tempo:** o contêiner
+desta sessão foi reconstruído e veio sem as bibliotecas do projeto. O `pip` do
+sistema é do Python 3.13 e o `python` é o 3.11 — instalar com `pip install`
+instala no lugar errado e nada aparece. O que funcionou foi
+`python -m pip install --ignore-installed <pacote>`; o `--ignore-installed` é
+necessário porque vários pacotes do Debian não deixam desinstalar.
+
+**Verificado:** 11 testes novos, área inteira passando (284 testes), aplicação
+subindo com os 18 blueprints e as duas rotas novas registradas. Suíte completa
+rodada: 2 falhas, as duas por biblioteca ausente **neste ambiente**
+(`erpbrasil.transmissao` e `s3transfer`), nenhuma na área e nenhuma relacionada
+a esta mudança — o GitHub Actions roda a suíte inteira em ambiente limpo a cada
+envio, e é ele que vale como prova.
+**Não verificado:** as duas rotas nunca rodaram em produção. A de ver é inócua;
+a de limpar só age com confirmação.

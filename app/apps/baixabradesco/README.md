@@ -414,6 +414,45 @@ para nascer lixo. E leitura que falha **não** autoriza escrita nenhuma: escreve
 por cima do que não se conseguiu ler é como o lixo nasceu. A seleção também
 ignora linha cujo Status seja "STATUS", para o estrago não voltar a contar.
 
+## A fila tardia: onde fica, como ver, como limpar
+
+São **duas** filas, e confundi-las dá diagnóstico errado:
+
+| Fila | Onde fica | O que guarda | Sobrevive a publicação? |
+|---|---|---|---|
+| **Fila tardia** | arquivo no servidor, em `/tmp/baixabradesco_fila_tardia` | o pedido inteiro do Make, quando a **cota do Google** estourou e nem deu para ler as bases | **não** |
+| **BaixaBradescoFila** | aba na planilha *Registro de SPs* | a falha de uma etapa **depois** de o comprovante já ter sido casado com a SP | **sim** |
+
+A tardia existe para o caso em que o robô não conseguiu nem começar: o Google
+recusou a leitura por excesso de pedidos no minuto. Em vez de devolver erro ao
+Make e perder o comprovante, ele guarda o pedido em arquivo, responde "adiado" e
+o cenário do Make segue. O disparo de 5 em 5 minutos retoma.
+
+⚠️ **Publicar ou reiniciar o serviço APAGA essa fila.** É perda aceita de
+propósito (o comprovante pode ser reenviado pelo Make), mas "pode ser reenviado"
+é trabalho de alguém, e só se alguém perceber. Em 08/10/2026 houve sete
+publicações em poucas horas; se havia comprovante adiado em alguma delas, foi
+embora sem deixar rastro na planilha.
+
+| O que você quer | Como |
+|---|---|
+| ver o que está adiado | `GET /api/baixabradesco/fila-tardia` |
+| tentar processar os adiados | `POST /api/baixabradesco/processar-fila-tardia` (é o que o cron faz) |
+| descartar os adiados | `POST /api/baixabradesco/limpar-fila-tardia` com `confirmar: true` |
+
+⚠️ **A listagem NUNCA devolve o pedido guardado.** Ele vem do Make e carrega
+dentro dele a **chave e o segredo da API do Omie** e os tokens do Z-API — é
+assim que essas credenciais chegam hoje. Uma rota de diagnóstico que devolvesse
+aquilo cru estaria publicando as credenciais da empresa para quem tivesse o
+endereço. O resumo traz só nome de arquivo, data, tentativas e o erro.
+
+⚠️ **Limpar exige `confirmar: true`.** Sem ele a rota só mostra o que sairia, e o
+relatório lista item por item — isso joga fora comprovante que ainda **não foi
+baixado**, e a lista é o que diz quais precisam ser reenviados pelo Make. A rota
+é só POST pelo mesmo motivo das outras que escrevem: um endereço que o navegador
+ou a prévia de um aplicativo de mensagem busque sozinho dispararia isso por
+acidente.
+
 ## O conferidor SPsBD × Omie
 
 São **duas** direções, e elas não valem o mesmo. O dono explicou por quê em

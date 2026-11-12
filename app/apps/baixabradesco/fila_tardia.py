@@ -130,6 +130,131 @@ def _drenar_a_fila(payload: dict | None = None) -> dict:
     return drenar_por_etapa(LIMITES_CRON, payload)
 
 
+def _descrever_item(nome: str) -> dict:
+    """Resumo SEGURO de um item da fila tardia.
+
+    ⚠️ Nunca devolve o `payload`. Ele vem do Make e carrega, dentro dele, a
+    chave e o segredo da API do Omie e os tokens do Z-API — é assim que essas
+    credenciais chegam hoje. Uma rota de diagnóstico que devolvesse o payload
+    cru estaria publicando as credenciais da empresa para quem tivesse o
+    endereço.
+    """
+    caminho = os.path.join(FILA_DIR, nome)
+    try:
+        with open(caminho, encoding='utf-8') as f:
+            item = json.load(f)
+    except Exception as e:
+        return {'arquivo': nome, 'ilegivel': True, 'erro': str(e)[:200]}
+
+    payload = item.get('payload') or {}
+    anexos = payload.get('attachments') or payload.get('comprovantes') or []
+    if isinstance(anexos, dict):
+        anexos = [anexos]
+    nomes = []
+    for a in anexos:
+        if isinstance(a, dict):
+            nome_arq = as_string(a.get('filename') or a.get('nome') or '')
+            if nome_arq:
+                nomes.append(nome_arq[:80])
+
+    try:
+        tamanho = os.path.getsize(caminho)
+    except Exception:
+        tamanho = 0
+
+    return {
+        'arquivo': nome,
+        'criado_em': as_string(item.get('criado_em')),
+        'tentativas': item.get('tentativas') or 0,
+        'erro_original': as_string(item.get('erro_original'))[:300],
+        'comprovantes': nomes or ['(sem nome de arquivo no pedido)'],
+        'quantidade_comprovantes': len(anexos),
+        'tamanho_bytes': tamanho,
+    }
+
+
+def resumo_fila_tardia() -> dict:
+    """Mostra o que está na fila tardia. Não processa e não apaga nada."""
+    nomes = _listar()
+    itens = [_descrever_item(n) for n in nomes]
+    frase = (f'{len(itens)} comprovante(s) adiado(s) esperando na fila tardia.'
+             ' Ela fica em arquivo dentro do servidor, e uma publicação ou'
+             ' reinício do serviço APAGA tudo que estiver aqui.'
+             if itens else
+             'A fila tardia está vazia — nenhum comprovante adiado esperando.')
+    if itens:
+        frase += (' O mais antigo é de ' + as_string(itens[0].get('criado_em'))
+                  + '.')
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'acao': 'resumo_fila_tardia',
+        'pasta': FILA_DIR,
+        'pendentes': len(itens),
+        'itens': itens,
+        'em_portugues': frase,
+    }
+
+
+def limpar_fila_tardia(payload: dict | None = None) -> dict:
+    """Descarta os comprovantes adiados. Exige confirmação explícita.
+
+    ⚠️ Isto JOGA FORA comprovante que ainda não foi processado — ou seja,
+    pagamento que ainda não foi baixado. Por isso duas coisas:
+
+    1. **`confirmar: true` é obrigatório.** Sem ele a rota só mostra o que
+       seria descartado. Um "limpar" que roda sem confirmação é só uma forma
+       elaborada de perder trabalho.
+    2. **O que sai vai no relatório**, item por item, para ficar registro de
+       quais comprovantes precisam ser reenviados pelo Make.
+    """
+    payload = payload or {}
+    itens = [_descrever_item(n) for n in _listar()]
+
+    if not payload.get('confirmar'):
+        return {
+            'ok': True,
+            'app': 'baixabradesco',
+            'acao': 'limpar_fila_tardia',
+            'apagou': 0,
+            'seria_apagado': len(itens),
+            'itens': itens,
+            'em_portugues': (
+                f'{len(itens)} comprovante(s) SERIAM descartados — nada foi'
+                ' apagado ainda. Para apagar de verdade, repita o pedido com'
+                ' confirmar: true. Cada um desses comprovantes volta a ser'
+                ' baixado só se for reenviado pelo Make.'
+                if itens else
+                'A fila tardia está vazia — não há nada a limpar.'),
+        }
+
+    apagados, falhas = [], []
+    for item in itens:
+        nome = item['arquivo']
+        try:
+            os.remove(os.path.join(FILA_DIR, nome))
+            apagados.append(item)
+        except Exception as e:
+            falhas.append({'arquivo': nome, 'erro': str(e)[:200]})
+
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'acao': 'limpar_fila_tardia',
+        'apagou': len(apagados),
+        'itens_descartados': apagados,
+        'falhas': falhas,
+        'pendentes_agora': len(_listar()),
+        'em_portugues': (
+            f'{len(apagados)} comprovante(s) descartados da fila tardia.'
+            ' Eles NÃO foram baixados: cada um volta a ser processado só se for'
+            ' reenviado pelo Make. A lista deles está no campo'
+            ' itens_descartados — guarde se precisar reenviar.'
+            if apagados else
+            'Nada foi apagado: a fila tardia já estava vazia.'),
+    }
+
+
 def processar_fila_tardia(payload: dict | None = None) -> dict:
     """Reprocessa os payloads adiados, um a um, em ordem de chegada.
 
