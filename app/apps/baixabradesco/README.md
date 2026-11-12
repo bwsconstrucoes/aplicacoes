@@ -21,7 +21,7 @@ substituiu esse cenário.
 | Quem | O que chama | Quando |
 |---|---|---|
 | Cenário do **Make.com** | `POST /api/baixabradesco/executar` | a cada lote de comprovantes que chega |
-| **cron-job.org** | `POST /api/baixabradesco/processar-fila-tardia` | de 5 em 5 minutos, para retomar o que ficou parado |
+| **cron-job.org** | `POST /api/baixabradesco/processar-fila-tardia` | de 5 em 5 minutos, para retomar o que ficou parado — responde na hora e trabalha em segundo plano (ver "O disparo do cron tem teto") |
 | Quem estiver investigando | `POST /api/baixabradesco/diagnostico` | quando um comprovante não casou e ninguém sabe por quê |
 | Quem estiver investigando | `POST /api/baixabradesco/reprocessar-fila` | para tentar de novo o que falhou depois do casamento |
 | Quem estiver investigando | `GET /api/baixabradesco/fila-resumo` | para contar a fila de falhas por situação |
@@ -274,12 +274,41 @@ O **resumo** não grava nada e não reprocessa nada: conta por situação
 por etapa, por tipo de falha, diz a data do registro mais antigo e quantos lotes
 de cinco seriam necessários no ritmo automático.
 
+## O disparo do cron tem teto (desde 12/11/2026)
+
+O disparo **não segura uma linha de atendimento**. A produção atende com quatro
+linhas (`--workers 1 --threads 4`); antes, este disparo reprocessava a fila
+adiada inteira e drenava a fila de falhas dentro da própria requisição, e o log
+do Render mostrou a linha presa por 93 e 124 segundos — com qualquer tela de
+qualquer área esperando atrás.
+
+Como é agora:
+
+- **A rota responde na hora** e o trabalho roda numa linha própria, fora das
+  quatro. A resposta traz `pendentes` (adiados no disco agora) e
+  `ultima_execucao` — o resultado completo do disparo **anterior**, com
+  `fila_de_falhas`, `atraso_zerado` e uma frase em `em_portugues`. É ali que se
+  olha o que antes vinha direto na resposta.
+- **Um disparo por vez.** Se o cron chega com o anterior ainda rodando, a
+  resposta diz `ja_em_andamento` e nada novo começa.
+- **Teto por disparo:** 25 segundos de trabalho (`PRAZO_POR_DISPARO_S`, ajustável
+  sem publicar por `BAIXABRADESCO_PRAZO_CRON_S`, entre 5 e 120) e no máximo 10
+  comprovantes adiados (`MAX_ADIADOS_POR_DISPARO`). O prazo é conferido **entre**
+  um item e outro — o item em curso sempre termina — e vale para o disparo
+  inteiro: mutirão, avisos vencidos e fila de falhas só começam se ainda houver
+  tempo. O que sobra fica intacto (no disco ou na planilha) para o disparo
+  seguinte, e a resposta diz `adiado_para_o_proximo_disparo`.
+- **A parada por cota do Google continua igual:** no primeiro 429, para.
+- **Para diagnóstico à mão**, `{"esperar": true}` no corpo roda nesta requisição
+  e devolve o resultado na hora — com a mesma trava e o mesmo teto.
+
 **Quem anda com a fila, hoje:**
 
 1. **O cron de 5 em 5 minutos** (`/processar-fila-tardia`, que já existia e já
    era autenticado). Ele drena **por etapa, na ordem da importância** — `omie`
-   (dinheiro), `sheets` (planilha), `pipefy` (cartão), `zapi` (recado) —, 15, 15,
-   15 e 10 por disparo. Dá ~180 itens por hora sem encostar na cota.
+   (dinheiro), `sheets` (planilha), `pipefy` (cartão), `zapi` (recado) —, até 15,
+   15, 15 e 10 por disparo, dentro do prazo de 25 s do disparo (o que vier
+   primeiro).
 2. **Cada lote de comprovantes**, cinco itens, para pendência nova não
    envelhecer.
 3. **Uma chamada à mão** com `limite` alto, para zerar acumulado.

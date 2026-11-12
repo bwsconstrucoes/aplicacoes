@@ -11,7 +11,7 @@ from .core import processar_baixabradesco
 from .conferencia import conferir
 from .diagnostico import executar_diagnostico
 from .fila import reprocessar_fila, resumo_fila, zerar_fila_antiga
-from .fila_tardia import adiar_payload, processar_fila_tardia
+from .fila_tardia import adiar_payload, disparar_em_segundo_plano, processar_agora
 
 
 def _authorized(payload: dict) -> bool:
@@ -175,12 +175,20 @@ def zerar_fila_antiga_route():
 
 @bp.route('/processar-fila-tardia', methods=['POST'])
 def processar_fila_tardia_route():
-    """Reprocessa payloads adiados por quota. Disparado pelo cron-job.org."""
+    """Reprocessa payloads adiados por quota. Disparado pelo cron-job.org.
+
+    Responde na hora e trabalha em segundo plano, com teto de tempo por disparo
+    (12/11/2026: segurava uma das 4 linhas de atendimento por minutos — ver
+    `fila_tardia.py`). `{"esperar": true}` roda nesta requisição e devolve o
+    resultado, para diagnóstico à mão — com o mesmo teto.
+    """
     try:
         payload = request.get_json(force=True, silent=True) or {}
         if not _authorized(payload):
             return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
-        return jsonify(processar_fila_tardia(payload))
+        if payload.get('esperar') is True:
+            return jsonify(processar_agora(payload))
+        return jsonify(disparar_em_segundo_plano(payload))
     except Exception as e:
         return jsonify({
             'ok': False,

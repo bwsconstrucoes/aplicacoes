@@ -603,9 +603,16 @@ def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None) ->
     """
     base = dict(payload or {})
     saida: Dict[str, Any] = {}
+    prazo = base.get('_prazo')
     for etapa in ORDEM_ETAPAS:
         limite = int(limites.get(etapa) or 0)
         if limite <= 0:
+            continue
+        if prazo is not None and time.monotonic() >= prazo:
+            # O tempo do disparo acabou (ver `fila_tardia.PRAZO_POR_DISPARO_S`):
+            # a etapa fica intacta para o próximo, cinco minutos depois.
+            saida[etapa] = {'adiado_para_o_proximo_disparo': True}
+            saida.setdefault('parou_por_prazo_na_etapa', etapa)
             continue
         pedido = dict(base)
         pedido.update({'etapas': [etapa], 'limite': limite,
@@ -973,7 +980,15 @@ def reprocessar_fila(payload: dict) -> dict:
     bloqueados: List[Dict[str, Any]] = []
     pulados: List[Dict[str, Any]] = []
 
+    # Prazo do disparo (relógio `time.monotonic`), passado pelo cron em
+    # `_prazo`. Conferido ENTRE um item e outro: o item em curso termina, o
+    # resto fica PENDENTE, intacto, para a próxima passada.
+    prazo = payload.get('_prazo')
+
     for posicao, item in enumerate(pendentes):
+        if prazo is not None and time.monotonic() >= prazo:
+            interrompido = 'prazo_do_disparo'
+            break
         if pausa and posicao:
             time.sleep(pausa)
         row_number = int(item.get('_row_number'))

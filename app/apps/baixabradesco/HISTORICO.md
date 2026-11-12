@@ -1664,3 +1664,85 @@ neste ambiente, aplicação subindo com os 18 blueprints.
 **Não verificado:** nenhum comprovante real passou pelo caminho novo. O primeiro
 comprovante Bradesco → Somapay que chegar vai baixar na conta do Bradesco — é o
 que foi pedido, e vale conferir na primeira vez.
+
+---
+
+### 12/11/2026 — o cron segurava uma linha de atendimento por minutos
+
+O dono colou o log do Render junto com *"tá super lento"*:
+
+```
+AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 93 s; POST /api/processarnovasp/executar há 19 s; ...
+AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 124 s; ...
+```
+
+A produção atende com **quatro linhas** (`--workers 1 --threads 4`; ver a
+seção Gunicorn do `CLAUDE.md` e `app/lentidao.py`). O disparo de 5 em 5 minutos
+fazia tudo dentro da própria requisição: reprocessava a fila adiada **inteira**
+(cada item é um comprovante completo — planilha, Omie, Pipefy, Dropbox) e depois
+drenava até 55 itens da fila de falhas. Quanto mais a fila acumulava, mais
+tempo uma das quatro linhas ficava presa, e qualquer tela de qualquer área
+esperava atrás.
+
+**O que mudou (`fila_tardia.py`, `fila.py`, `routes.py`):**
+
+1. **A rota responde na hora e o trabalho roda numa linha própria**, fora das
+   quatro que atendem as telas. A resposta traz `pendentes` e `ultima_execucao`
+   (o resultado completo do disparo **anterior**).
+2. **Teto por disparo:** 25 s de trabalho e no máximo 10 comprovantes adiados.
+   O prazo vale para o disparo inteiro — mutirão, avisos vencidos e fila de
+   falhas só começam se sobrar tempo, e a drenagem confere o prazo entre um item
+   e outro (`_prazo` no pedido de `reprocessar_fila`; sem ele, nada muda para
+   as rotas à mão). O que sobra fica intacto para o disparo seguinte.
+3. **Um disparo por vez:** uma trava impede dois disparos de pegarem o mesmo
+   arquivo ou a mesma linha da planilha. Se o cron chega com o anterior
+   rodando, responde `ja_em_andamento`.
+4. **A parada por cota (429) continua igual.**
+5. `{"esperar": true}` roda na própria requisição, para diagnóstico à mão —
+   com a mesma trava e o mesmo teto.
+
+**Decisões, com o motivo — o dono pode desfazer qualquer uma:**
+
+- **Fiz as duas coisas (teto E segundo plano), não uma só.** Só o teto não
+  bastava: o prazo é conferido entre itens, e um único comprovante pode passar
+  de 30 s sozinho — a linha ainda ficaria presa meio minuto a cada cinco. Só o
+  segundo plano também não: sem teto, o disparo poderia passar dos cinco
+  minutos e encostar no seguinte, e um corte na renovação do serviço pegaria
+  mais trabalho pela metade.
+- **O prazo é conferido entre itens, nunca no meio de um.** Um comprovante pela
+  metade (Omie baixado, planilha não gravada) é pior que um disparo que passou
+  do tempo.
+- **25 s.** Curto o bastante para quase sempre terminar dentro dos 30 s que o
+  `gunicorn.conf.py` dá na renovação do serviço. Ajustável sem publicar por
+  `BAIXABRADESCO_PRAZO_CRON_S` (entre 5 e 120; fora disso volta a 25).
+- **A linha de segundo plano NÃO é daemon**, de propósito: na renovação, o
+  Python espera ela terminar o item em curso (até os 30 s do
+  `gunicorn.conf.py`, que depois força a saída e registra no log qual linha
+  prendeu). O preço: se a renovação cair durante um disparo, o serviço demora
+  até 30 s a mais para voltar — raro (renovação a cada ~5000 acessos, disparo
+  de ~25 s a cada 5 min). A alternativa (daemon) cortaria o item no meio sem
+  aviso nenhum. Se der errado, aparece no log como "Threads presas:
+  baixabradesco-fila-tardia".
+- **O ritmo da drenagem caiu.** Antes eram até 55 itens da fila de falhas por
+  disparo, sem limite de tempo; agora é o que couber em 25 s. Com a fila de
+  hoje (pequena desde o mutirão de outubro) não deve fazer diferença. Se ela
+  voltar a acumular, o sinal é `fila_de_falhas.parou_por_prazo_na_etapa`
+  aparecendo em todo disparo — aí sobe o prazo pelo ambiente.
+- **A trava é por processo.** Vale porque a produção tem um processo só
+  (`--workers 1`, obrigatório). Com mais de um, cada processo teria a sua.
+
+**O que muda para quem olha o cron-job.org:** o resultado (`fila_de_falhas`,
+`atraso_zerado`) não vem mais na resposta do mesmo disparo, e sim em
+`ultima_execucao`, no disparo seguinte. Há uma frase em `em_portugues` nos dois.
+
+**Verificado:** 19 testes novos (`tests/test_baixabradesco_fila_tardia_teto.py`:
+limite de itens, prazo entre itens, o resto andando nos disparos seguintes,
+cota, prazo na drenagem, trava contra dois disparos, trava solta quando o
+disparo explode, a rota); os 18 de cron antigos passando sem alteração; área
+inteira (290) e suíte completa passando (6.367; os pulados são os de banco
+local); aplicação subindo e a rota respondendo na hora.
+**Não verificado:** nada disso rodou em produção. O sinal de que funcionou é
+`processar-fila-tardia` sumir das linhas "AS 4 LINHAS OCUPADAS" e "LENTA" no
+log do Render. Disparo que bater no teto (sobrou fila, faltou tempo, ou passou
+de 10 s além do prazo) deixa no log uma linha "Fila tardia: …" com a frase em
+português; disparo comum não deixa nada, para não encher o log de 5 em 5 min.
