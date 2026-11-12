@@ -651,6 +651,135 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Custo × resultado do DRE, e a linha de totais por obra — 12/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
+migração.
+
+O dono, já pelo executado, colou os números que não batiam:
+
+| O que ele olhou | Valor |
+|---|---|
+| "Como é feita": a matriz custou | 13.796.222,19 |
+| DRE — BWS Construções + CONS - Escritório Central | 13.349.966,79 |
+| DRE — projeto BWS | 13.337.568,09 |
+| "Como é feita": a filial (BWSNE) custou | 700.857,01 |
+| DRE — obra BWSNE | 700.827,53 |
+
+**O que os números dele mostram, sem eu ver a base:** 13.796.222,19 −
+13.337.568,09 = **458.654,10**, que é, ao centavo, a "= Receita Líquida" do
+projeto BWS no DRE que ele tinha colado na véspera. Ou seja: ele comparou o
+**custo** (o que a prestação divide — a linha "= Total Custos/Despesas") com o
+**resultado** (a última linha do DRE, que desconta a receita lançada ali). As
+outras duas diferenças (12.398,70 entre o filtro por obra e o por projeto;
+29,48 no BWSNE) têm a mesma cara — receita — mas **eu não conferi**: a tela
+nova é que mostra, com o dado dele.
+
+**O que foi feito:**
+
+- O quadro da montagem virou **"Conferir com o DRE, centro de custo por centro
+  de custo"**: custo, receita líquida e resultado de cada centro de custo da
+  matriz e de todo centro que tenha lançamento do projeto dela — pela coluna
+  `projeto` da linha, a mesma que a tela do DRE filtra
+  (`consultas.despesa_e_receita_por_centro`). Diz, em palavras, quando o DRE
+  desconta receita. A filial e a "Como é feita" ganharam a mesma frase.
+- **Linha de totais** no "Resultado por Obra" do menu e no quadro por obra da
+  prestação (*"eu olho na DRE geral e olho aqui, os valores têm que estar
+  batendo"*).
+
+**DECISÃO DO DONO — a receita lançada na matriz é DESCONSIDERADA.** Há
+receita nos centros de custo da matriz (458 mil, pelo DRE dele). Expliquei os
+três destinos possíveis (corrigir a obra no OMIE, abater o custo, linha à
+parte para os sócios) e ele respondeu, em 12/11/2026: *"essa receita gostaria
+que fosse desconsiderada."* Fica como estava: **não vai para obra nenhuma e
+não abate o custo que se divide**. As telas dizem isso com essas palavras.
+Consequência que ele aceitou ao decidir: o resultado somado da prestação fica
+menor que o do DRE geral nesse valor. Não reabrir sem motivo novo.
+
+## Período com começo e FIM, o dinheiro de cada período e a lacuna — 12/11/2026
+
+**PUBLICADO em 12/11/2026, 01:04 (UTC)** — `82ee622f`, com o "pode" do dono e
+a bateria completa verde aqui (10.965) e no GitHub, já com a `main` do outro
+chat (Análise de SPs) trazida para o ramo. Foi junto a prestação só para
+leitura (seção abaixo).
+
+**Fica com o dono, e eu não tenho como conferir daqui:**
+1. apertar **"Aplicar atualizações do banco"** (migração 026) — sem ela o
+   painel funciona, mas recusa gravar o "até";
+2. trocar a **Base do cálculo** do cenário dele para Executado (passo 5), se
+   é pelo executado que ele quer trabalhar — o cenário que já existe não muda
+   sozinho;
+3. marcar a caixinha "Prestação de Contas — só ver" para quem ele quiser.
+
+**Perguntar ao dono no próximo chat:** se "a matriz gastou" bateu com o
+executado do DRE do BWS (13.795.975,61 na conta dele), se os valores por
+período fazem sentido, e se o acesso só de leitura ficou como ele queria.
+
+O dono, usando a tela já publicada: *"nas regras de período não tem ATÉ (…)
+era melhor a gente definir o período de tanto a tanto, não só a partir de. Ou
+você botava o período exato, ou então até determinada data"*; *"queria saber
+quanto ficou para cada uma, já na mesma linha, por cada período"*; *"e se
+ficar uma lacuna? O sistema acusa?"*
+
+- **Cada linha de período tem "de" e "até"** (coluna `ate`, migração 026).
+  Só o "de" = dali em diante; só o "até" = do início até ali (gravado com
+  começo `0001-01`, para não brigar na chave com a linha da conta, `1900-01`).
+- **Qual vale num mês** (`prestacao.regra_da_conta`): o período que cobre o
+  mês; se mais de um cobre, o que começou por último; se nenhum cobre, a
+  linha da conta; sem ela, o nível de cima.
+- **Sobreposição de dois períodos com fim é recusada** ao salvar, com o nome
+  da conta. Fim antes do começo, também.
+- **Lacuna não é erro, é aviso**: os meses entre dois períodos que nenhum
+  outro cobre aparecem em vermelho na conta ("⚠ lacuna") e num aviso no topo
+  do passo 2, dizendo que neles vale a linha da conta.
+- **Cada linha de período mostra o dinheiro que a segue**: o total do período
+  e quanto fica, quanto é da BWSFILIAL e quanto rateia. Na linha do GRUPO
+  entra só o que segue a regra do grupo — categoria com regra própria fica
+  na linha dela. Juro de empréstimo não entra (régua do déficit).
+- Sem a migração, o painel lê e grava como antes; só o "até" é recusado, com
+  o aviso de aplicar a atualização.
+
+**Executado × comprometido.** Ele viu "a matriz gastou −14.699.912,50" e
+disse que o valor "não existe": é o COMPROMETIDO (pago + a pagar) — bate com a
+terceira coluna do DRE do BWS que ele mesmo colou. *"Gostaria de trabalhar com
+o executado."* A escolha já existia (passo 5 › Base do cálculo); agora o
+quadro diz qual das duas está valendo, com o atalho para trocar, e **cenário
+novo nasce pelo executado**. O cenário que ele já tem só muda se ele trocar.
+
+## A prestação compartilhada, só para leitura — 11/11/2026 (noite)
+
+Publicado em 12/11/2026, 01:04 (UTC), junto com a seção de cima. Sem migração
+própria.
+
+O dono: *"compartilhar prestação de conta com um determinado usuário: ele vai
+poder visualizar parâmetros etc., mas não pode mexer em nada."*
+
+De manhã a prestação tinha virado só do administrador (ela mostra a empresa
+inteira e a parte de cada sócio). Volta como **decisão dele, pessoa por
+pessoa, e só como leitura**:
+
+- No cadastro de acesso (Configurações) há a caixinha **"Prestação de Contas —
+  só ver (mostra a empresa inteira e a parte de cada sócio)"**. O rótulo diz o
+  que ela entrega porque **ela não respeita as obras marcadas** da pessoa.
+- Quem a tem abre, **só com GET**: o resultado, "Como é feita", a montagem e
+  os cadastros (`auth.LEITURA_DA_PRESTACAO` — lista fechada, por nome; rota
+  nova da prestação nasce fechada). Baixa o relatório do cenário. **Qualquer
+  gravação responde "não encontrado"** — é o servidor que garante.
+- Nas telas, um aviso "modo de leitura", os campos travados e os botões de
+  gravar escondidos (`painel_so_leitura.html`). Isso é só para a pessoa não
+  ver botão que não funciona; a proteção não depende disso.
+- **Entra sem obra marcada**: um sócio que só vê a prestação não precisa de
+  obra. Nesse caso o menu dele tem só a Prestação de Contas.
+
+**A chave é nova de propósito** (`prestacao_leitura`, não `prestacao`). Quem
+tinha a prestação ANTIGA marcada continua com `prestacao` gravado no banco;
+reaproveitar a chave daria a essas pessoas a empresa inteira sem ninguém
+decidir. A chave antiga não abre nada.
+
+**Fica com o dono:** marcar a caixinha para quem ele quiser, em Configurações
+› acessos. **Não decidido:** se algum dia alguém além dele vai poder ALTERAR
+a prestação — hoje, ninguém.
+
 ## Cada conta da matriz em TRÊS PARTES — 11/11/2026 (noite)
 
 **PUBLICADO em 11/11/2026, 21:15 (UTC)** — `5afe2908`, com o "pode" do dono,
@@ -668,6 +797,19 @@ divide" abrindo nas obras, juros numa linha).
 
 **Perguntar ao dono no próximo chat:** se os três itens acima aconteceram, e
 se o Salvar tudo voltou a gravar.
+
+**Incidente da própria publicação (21:15 → 21:37 UTC):** com a migração 025
+pendente, **Configurações não abria** — "cannot access local variable
+'obras_cc'" — e é lá que fica o botão de aplicar a migração. O defeito era de
+horas antes (a variável `obras_cc` só ganhava valor no ramo "sem migração
+pendente") e nunca tinha aparecido porque não havia migração a aplicar. O
+dono avisou, o conserto (`7e3ef08d`) foi publicado com o "pode" dele às 21:37
+(UTC), com a bateria verde aqui e no GitHub.
+**A lição:** publicação com migração tem de abrir Configurações COM a
+migração pendente antes de ir ao ar — a suíte só abria a tela com o banco em
+dia. Agora há um teste que a abre com uma pendente
+(`test_configuracoes_abre_com_migracao_pendente`); variável nova nessa rota
+entra nos DOIS ramos.
 
 O dono explicou a regra três vezes, a última com exemplos, e fechou os nomes:
 

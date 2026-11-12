@@ -10,6 +10,7 @@
 </h2>
 {% from "painel_prestacao_nav.html" import nav_da_prestacao %}
 {{ nav_da_prestacao('montagem', cenario.id if cenario else None) }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 
 <!-- ===================== QUAL CENÁRIO ===================== -->
 <div class="cartao">
@@ -103,11 +104,13 @@
    ("inicio" na linha da conta), `periodo_fica`, `periodo_filial`. #}
 {% macro n(v) %}{{ ('%.2f'|format(v)).rstrip('0').rstrip('.')|replace('.', ',') }}{% endmacro %}
 
-{# os dois campos de uma linha de regra; `regra` é (fica, filial) ou none #}
+{# os dois campos de uma linha de regra; `regra` é (fica, filial) ou none.
+   `desde` "inicio" marca a linha da conta (a regra de sempre). #}
 {% macro campos_da_regra(nivel, chave, desde, regra, herda=none, alvo='') %}
   <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
   <input type="hidden" name="periodo_chave" value="{{ chave }}">
-  {% if desde == 'inicio' %}<input type="hidden" name="periodo_desde" value="inicio">{% endif %}
+  {% if desde == 'inicio' %}<input type="hidden" name="periodo_desde" value="inicio">
+  <input type="hidden" name="periodo_ate" value="">{% endif %}
   {% set fica = n(regra[0]) if regra else '' %}
   {% set filial = n(regra[1]) if regra else '' %}
   <span style="display:inline-flex; gap:4px; align-items:center; white-space:nowrap">
@@ -123,43 +126,72 @@
   </span>
 {% endmacro %}
 
-{% macro periodos_da_conta(nivel, chave, lista, alvo, colunas) %}
+{# PERÍODO COM COMEÇO E FIM (12/11/2026, o dono: "nas regras de período não
+   tem ATÉ (…) era melhor a gente definir o período de tanto a tanto, não só a
+   partir de" e "queria saber quanto ficou para cada uma, já na mesma linha,
+   por cada período"). Cada linha: de [mês] até [mês], os dois percentuais, e
+   o dinheiro que a segue. Só o "de" = dali em diante; só o "até" = do início
+   até ali. Mês sem período nenhum cai na linha da conta — e a lacuna entre
+   dois períodos é avisada. #}
+{% macro periodos_da_conta(nivel, chave, lista, alvo, colunas, lacunas=[], regra=none, herda=none) %}
 <tr class="linha-periodos" data-periodos-de="{{ alvo }}" {{ 'hidden' if not lista }}>
   <td colspan="{{ colunas }}" style="padding:8px 10px 12px 40px; background:var(--papel)">
     <div style="display:flex; flex-direction:column; gap:6px">
-      <small><b>Quando a regra muda com o tempo.</b> Cada linha vale <b>a partir do mês
-        dela até a próxima começar</b>; antes da primeira, vale a linha da conta, acima.
-        Os campos são os mesmos: % que fica no {{ principal or 'principal' }}, % que é da
-        {{ filial_nome }}, e o resto rateia.</small>
-      {% for desde, fica, filial in lista %}
+      <small><b>Quando a regra vale só num período.</b> Diga <b>de</b> que mês <b>até</b> que mês
+        (inclusive). Só o “de” = dali em diante; só o “até” = do início até ali. Os campos são os
+        mesmos: % que fica no {{ principal or 'principal' }}, % que é da {{ filial_nome }}, e o resto rateia.
+        <b>Mês fora de todos os períodos</b> segue a linha da conta, acima
+        ({% if regra %}{{ n(regra[0]) }} · {{ n(regra[1]) }}{% elif herda %}em branco: herda {{ n(herda[0]) }} · {{ n(herda[1]) }}{% else %}em branco{% endif %}).</small>
+      {% for p in lista %}
       <span data-linha-regra style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap">
-        <small>a partir de</small>
-        <input type="month" name="periodo_desde" value="{{ desde }}" data-original="{{ desde }}">
-        {{ campos_da_regra(nivel, chave, desde, (fica, filial)) }}
+        <small>de</small>
+        <input type="month" name="periodo_desde" value="{{ p.desde }}" data-original="{{ p.desde }}"
+               aria-label="de que mês">
+        <small>até</small>
+        <input type="month" name="periodo_ate" value="{{ p.ate }}" data-original="{{ p.ate }}"
+               aria-label="até que mês">
+        {{ campos_da_regra(nivel, chave, p.desde, (p.fica, p.filial)) }}
+        {# o dinheiro que segue esta linha #}
+        <small style="color:var(--tinta-suave)">
+          {% if p.total|abs > 0.005 %}
+          neste período: <b>{{ brl(p.total) }}</b> —
+          fica {{ brl(p.v_fica) }} · {{ filial_nome }} {{ brl(p.v_filial) }} · rateia {{ brl(p.v_rateia) }}
+          {% else %}sem custo neste período{% endif %}
+        </small>
+      </span>
+      {% endfor %}
+      {% for de, ate in lacunas %}
+      <span class="aviso erro" style="margin:0; padding:4px 8px">
+        <b>Lacuna:</b> de {{ de[5:] }}/{{ de[:4] }} a {{ ate[5:] }}/{{ ate[:4] }} não há período.
+        Nesses meses vale a linha da conta, acima. Se não for isso, emende os períodos.
       </span>
       {% endfor %}
       {# várias linhas novas antes de salvar: já estão na página, escondidas #}
       {% for k in range(6) %}
       <span data-linha-regra data-periodo-novo {{ 'hidden' if k }} style="display:{{ 'none' if k else 'inline-flex' }}; gap:6px; align-items:center; flex-wrap:wrap">
-        <small>{{ 'e a partir de' if (lista or k) else 'a partir de' }}</small>
-        <input type="month" name="periodo_desde" data-original="">
+        <small>de</small>
+        <input type="month" name="periodo_desde" data-original="" aria-label="de que mês">
+        <small>até</small>
+        <input type="month" name="periodo_ate" data-original="" aria-label="até que mês">
         {{ campos_da_regra(nivel, chave, '', none) }}
       </span>
       {% endfor %}
       <span><button type="button" class="link-btn" data-mais-periodo><small>＋ outro período</small></button></span>
     </div>
-    <small class="dica">Exemplo: “a partir de 01/2022 — 50 fica no {{ principal or 'principal' }}, 0 é da {{ filial_nome }}”:
-      de 2022 em diante, metade fica e metade rateia. Para apagar uma linha, apague os dois percentuais e salve.</small>
+    <small class="dica">Exemplo: “de 01/2020 até 12/2021 — 50 fica no {{ principal or 'principal' }}, 0 é da {{ filial_nome }}”:
+      nesses dois anos metade fica e metade rateia; fora deles, vale a linha da conta.
+      O valor de cada período aparece depois de salvar. Para apagar uma linha, apague os dois percentuais e salve.</small>
   </td>
 </tr>
 {% endmacro %}
 
 {# o botão que abre os períodos — diz quantos há #}
-{% macro botao_dos_periodos(lista, alvo) %}
+{% macro botao_dos_periodos(lista, alvo, lacunas=[]) %}
 <button type="button" class="link-btn" data-abre-periodos="{{ alvo }}"
         title="a regra desta conta muda a partir de algum mês?">
   <small>{% if lista %}<b>{{ lista|length }} período{{ '' if lista|length == 1 else 's' }}</b> ✎{% else %}＋ por período{% endif %}</small>
 </button>
+{% if lacunas %}<br><small style="color:var(--vermelho)"><b>⚠ lacuna</b></small>{% endif %}
 {% endmacro %}
 
 <!-- ===================== O QUE ENTRA NA ANÁLISE ===================== -->
@@ -197,7 +229,7 @@
   {% if resumo_matriz %}
   {% set tot = resumo_matriz.total - resumo_matriz.juros_da_matriz %}
   <div class="kpis" style="margin-bottom:10px">
-    <div class="kpi estatico"><div class="kpi-rotulo">A matriz gastou</div>
+    <div class="kpi estatico"><div class="kpi-rotulo">A matriz gastou <small style="text-transform:none">— {{ 'executado' if cenario.medida == 'executado' else 'comprometido' }}</small></div>
       <div class="kpi-valor">{{ brl(resumo_matriz.total) }}</div>
       {% if resumo_matriz.juros_da_matriz %}<div class="kpi-sub">sendo {{ brl(resumo_matriz.juros_da_matriz) }} de juros de empréstimo</div>{% endif %}</div>
     <div class="kpi verde estatico"><div class="kpi-rotulo">Rateia entre todas as obras</div>
@@ -226,6 +258,9 @@
     pela mesma régua. Não entra na lista abaixo, que é só da matriz.
     {% if resumo_matriz.filial.juros|abs > 0.005 %}Os juros de empréstimo lançados nela
     ({{ brl(resumo_matriz.filial.juros) }}) seguem a régua dos juros.{% endif %}
+    {% if resumo_matriz.filial.receita|abs > 0.005 %}No DRE dela a última linha (resultado) dá
+    {{ brl(resumo_matriz.filial.total + resumo_matriz.filial.receita) }}, porque desconta
+    {{ brl(resumo_matriz.filial.receita) }} de receita lançada nela; aqui vale o custo.{% endif %}
     <small>Os centros de custo se trocam em
     <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.</small>
   </p>
@@ -237,13 +272,14 @@
     <b>De onde vem “a matriz gastou”:</b> é a soma das despesas (DRE) dos centros de custo
     da matriz —
     {% for depto, valor in origem_da_matriz.por_depto %}<b>{{ depto }}</b> {{ brl(valor) }}{{ ' + ' if not loop.last }}{% endfor %}
-    — pelo <b>{{ 'pago (executado)' if origem_da_matriz.medida == 'executado' else 'comprometido (pago mais a pagar)' }}</b>,
+    — pelo <b>{{ 'executado (só o que já foi pago)' if origem_da_matriz.medida == 'executado' else 'comprometido (pago mais o que está a pagar)' }}</b>
+    <small>(troca-se em <a href="#passo-regua">5 · Régua e juros › Base do cálculo</a>)</small>,
     com os juros e multas pagos,
     {% if origem_da_matriz.primeiro_mes %}de {{ origem_da_matriz.primeiro_mes[5:] }}/{{ origem_da_matriz.primeiro_mes[:4] }}
     a {{ origem_da_matriz.ultimo_mes[5:] }}/{{ origem_da_matriz.ultimo_mes[:4] }} (todos os anos){% endif %}{% if origem_da_matriz.sem_data|abs > 0.005 %},
     mais {{ brl(origem_da_matriz.sem_data) }} sem data{% endif %}.
-    <a href="{{ url_for('painel.dre', obra=origem_da_matriz.por_depto|map(attribute=0)|list) }}" target="_blank" rel="noopener">Abrir o DRE só desses centros de custo ↗</a>
-    · Os centros de custo se trocam em
+    {% if administrador %}<a href="{{ url_for('painel.dre', obra=origem_da_matriz.por_depto|map(attribute=0)|list) }}" target="_blank" rel="noopener">Abrir o DRE só desses centros de custo ↗</a>
+    · {% endif %}Os centros de custo se trocam em
     <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.
   </p>
   {# A ESTRUTURA CONTRA O DRE DO PROJETO (11/11/2026, o dono: "veja que não
@@ -251,59 +287,92 @@
      pra ser distribuído"). Os dois somam pela mesma regra; o que muda é a
      lista de centros de custo. Aparece só quando as listas diferem. #}
   {% set cp = origem_da_matriz.contra_o_projeto %}
-  {% if cp and not cp.bate %}
-  <div class="aviso info" style="margin:0 0 10px; border-left:4px solid var(--ambar)">
+  {% if cp and cp.projetos %}
+  {# A CONFERÊNCIA COM O DRE (12/11/2026). O dono comparou "a matriz custou
+     13.796.222,19" com o DRE do projeto BWS (13.337.568,09) e o DRE dos dois
+     centros de custo (13.349.966,79). A prestação divide o CUSTO — a linha
+     "= Total Custos/Despesas" do DRE; a última linha do DRE é o RESULTADO,
+     que desconta a receita lançada ali. O quadro abre as três contas, centro
+     de custo por centro de custo. #}
+  <div class="aviso info" style="margin:0 0 10px; border-left:4px solid {{ 'var(--verde)' if cp.bate else 'var(--ambar)' }}">
+    {% if cp.bate %}
+    <b>✔ O custo bate com o DRE do projeto {{ cp.projetos|map(attribute=0)|join(' e ') }}</b>
+    — a linha “= Total Custos/Despesas” dele.
+    {% else %}
     <b>“A matriz gastou” não bate com o DRE
       {% if cp.projetos|length == 1 %}do projeto {{ cp.projetos[0][0] }}{% else %}dos projetos {{ cp.projetos|map(attribute=0)|join(' e ') }}{% endif %}:
-      diferença de {{ brl(cp.diferenca|abs) }}.</b>
-    Os dois somam a despesa do mesmo jeito. A diferença está em <b>quais centros de
-    custo entram</b>: aqui entram os marcados como matriz em Cadastros;
-    no DRE do projeto entram todos os centros de custo que pertencem ao projeto.
-    <div class="tabela-rolagem" style="margin-top:8px; background:var(--branco)">
-      <table>
-        <thead><tr>
-          <th class="sem-ordem">Centro de custo</th>
-          <th class="sem-ordem">Projeto dele</th>
-          <th class="sem-ordem direita">Despesa</th>
-          <th class="sem-ordem">Entra em “a matriz gastou”?</th>
-        </tr></thead>
-        <tbody>
-          {% for c in cp.centros %}
-          <tr>
-            <td class="desc"><b>{{ c.depto }}</b></td>
-            <td class="desc">{{ c.projeto or '(sem projeto)' }}</td>
-            <td class="dados direita">{{ brl(c.valor) }}</td>
-            <td class="desc">{% if c.estrutura %}sim — marcado como matriz
-              {% else %}<b style="color:var(--vermelho)">não</b> — é do projeto, mas não está marcado como matriz{% endif %}</td>
-          </tr>
-          {% endfor %}
-          <tr class="total">
-            <td class="desc" colspan="2"><b>A matriz gastou</b> (os marcados como matriz)</td>
-            <td class="dados direita"><b>{{ brl(cp.estrutura) }}</b></td><td></td>
-          </tr>
-          {% for projeto, valor in cp.projetos %}
-          <tr class="total">
-            <td class="desc" colspan="2"><b>DRE do projeto {{ projeto }}</b> (todos os centros de custo dele)</td>
-            <td class="dados direita"><b>{{ brl(valor) }}</b></td><td></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <small>Para os dois baterem, os centros de custo marcados como matriz têm de ser os
-      mesmos do projeto. Troque-os em
-      <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>
-      — ou acerte o projeto da obra em
-      <a href="{{ url_for('painel.prestacao_parametros', aba='projetos') }}">Cadastros › Projeto das obras</a>.
-      Os valores são de todos os anos; no DRE, tire o filtro de ano para comparar.</small>
+      diferença de {{ brl(cp.diferenca|abs) }} no custo.</b>
+    A diferença está em <b>quais centros de custo entram</b>: aqui, os marcados como
+    matriz em Cadastros; no DRE do projeto, todos os que têm lançamento do projeto.
+    {% endif %}
+    {% if cp.receita|abs > 0.005 %}
+    <br><b>Atenção ao comparar:</b> a última linha do DRE é o <b>RESULTADO</b>, que desconta
+    a receita. Nos centros de custo da matriz há <b>{{ brl(cp.receita) }} de receita</b>:
+    custo {{ brl(cp.estrutura) }} + receita {{ brl(cp.receita) }} = resultado
+    <b>{{ brl(cp.resultado) }}</b>. A prestação divide o <b>custo</b>; essa receita
+    <b>é desconsiderada</b> — não vai para nenhuma obra e não abate o custo dividido.
+    {% endif %}
+    <details style="margin-top:6px" {{ 'open' if not cp.bate }}>
+      <summary style="cursor:pointer"><b>Conferir com o DRE, centro de custo por centro de custo</b></summary>
+      <div class="tabela-rolagem" style="margin-top:8px; background:var(--branco)">
+        <table>
+          <thead><tr>
+            <th class="sem-ordem">Centro de custo</th>
+            <th class="sem-ordem">Projeto dele</th>
+            <th class="sem-ordem direita">Custo<br><small>= Total Custos/Despesas</small></th>
+            <th class="sem-ordem direita">Receita líquida</th>
+            <th class="sem-ordem direita">Resultado<br><small>última linha do DRE</small></th>
+            <th class="sem-ordem">É da matriz?</th>
+          </tr></thead>
+          <tbody>
+            {% for c in cp.centros %}
+            <tr>
+              <td class="desc"><b>{{ c.depto }}</b></td>
+              <td class="desc">{{ c.projeto or '(sem projeto)' }}</td>
+              <td class="dados direita">{{ brl(c.valor) }}</td>
+              <td class="dados direita">{{ brl(c.receita) }}</td>
+              <td class="dados direita">{{ brl(c.resultado) }}</td>
+              <td class="desc">{% if c.estrutura %}sim
+                {% elif c.valor|abs > 0.005 %}<b style="color:var(--vermelho)">não</b> — tem custo do projeto, mas não está marcado como matriz
+                {% else %}não — só tem receita do projeto{% endif %}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total">
+              <td class="desc" colspan="2"><b>A matriz</b> (os marcados como matriz)</td>
+              <td class="dados direita"><b>{{ brl(cp.estrutura) }}</b></td>
+              <td class="dados direita">{{ brl(cp.receita) }}</td>
+              <td class="dados direita">{{ brl(cp.resultado) }}</td><td><small>o custo é o que se divide</small></td>
+            </tr>
+            {% for d in cp.projetos_abertos %}
+            <tr class="total">
+              <td class="desc" colspan="2"><b>DRE do projeto {{ d.projeto }}</b> (tudo o que é dele)</td>
+              <td class="dados direita"><b>{{ brl(d.despesa) }}</b></td>
+              <td class="dados direita">{{ brl(d.receita) }}</td>
+              <td class="dados direita">{{ brl(d.resultado) }}</td><td></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <small>Os valores são de todos os anos e pelo
+        {{ 'executado' if origem_da_matriz.medida == 'executado' else 'comprometido' }}; no DRE, tire o
+        filtro de ano e olhe a coluna correspondente. Os centros de custo da matriz se trocam em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>;
+        o projeto de cada um, em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='projetos') }}">Cadastros › Projeto das obras</a>.</small>
+    </details>
   </div>
-  {% elif cp and cp.projetos %}
-  <p class="cartao-dica" style="margin:0 0 10px">✔ Bate com o DRE do projeto
-    {{ cp.projetos|map(attribute=0)|join(' e ') }}: os centros de custo da matriz são os mesmos do projeto.</p>
   {% endif %}
   {% endif %}
   {% endif %}
 
+  {% if resumo_matriz and resumo_matriz.lacunas %}
+  <div class="aviso erro" style="margin:0 0 10px">
+    <b>{{ resumo_matriz.lacunas }} conta(s) com lacuna entre períodos.</b>
+    Há meses entre um período e o seguinte sem regra de período: neles vale a linha da conta.
+    Elas estão marcadas com “⚠ lacuna” na última coluna — abra e confira.
+  </div>
+  {% endif %}
   {# A ÁRVORE INTEIRA NUM FORMULÁRIO SÓ (05/11/2026). O dono: "da forma que
      tá, um pouquinho complicado de lançar um a um". Digita-se o grupo, abre-se
      ele ALI MESMO (sem recarregar, para não perder o que já foi digitado),
@@ -362,9 +431,9 @@
           <td class="dados direita">{{ brl(g.filial) }}</td>
           <td class="dados direita v-pos">{{ brl(g.rateia) }}{% if g.juros %}<br><small>+ {{ brl(g.juros) }} de juros</small>{% endif %}</td>
           <td class="direita">{{ campos_da_regra('grupo', g.grupo, 'inicio', g.regra, g.herda) }}</td>
-          <td class="direita">{{ botao_dos_periodos(g.periodos, 'g' ~ i) }}</td>
+          <td class="direita">{{ botao_dos_periodos(g.periodos, 'g' ~ i, g.lacunas) }}</td>
         </tr>
-        {{ periodos_da_conta('grupo', g.grupo, g.periodos, 'g' ~ i, 7) }}
+        {{ periodos_da_conta('grupo', g.grupo, g.periodos, 'g' ~ i, 7, g.lacunas, g.regra, g.herda) }}
           {% for c in g.categorias %}
           {% set m = loop.index %}
           <tr class="mov-parte" data-linha-regra data-categoria-do-grupo="{{ i }}" {% if aberto_grupo != g.grupo %}hidden{% endif %}>
@@ -385,10 +454,10 @@
             <td class="dados direita">{{ brl(c.filial) }}</td>
             <td class="dados direita v-pos">{{ brl(c.rateia) }}{% if c.varia and not c.periodos %}<br><small>varia com o grupo</small>{% endif %}</td>
             <td class="direita">{{ campos_da_regra('categoria', c.categoria, 'inicio', c.regra, c.herda) }}</td>
-            <td class="direita">{{ botao_dos_periodos(c.periodos, 'c' ~ i ~ '-' ~ m) }}</td>
+            <td class="direita">{{ botao_dos_periodos(c.periodos, 'c' ~ i ~ '-' ~ m, c.lacunas) }}</td>
             {% endif %}
           </tr>
-          {% if not c.e_juros %}{{ periodos_da_conta('categoria', c.categoria, c.periodos, 'c' ~ i ~ '-' ~ m, 7) }}{% endif %}
+          {% if not c.e_juros %}{{ periodos_da_conta('categoria', c.categoria, c.periodos, 'c' ~ i ~ '-' ~ m, 7, c.lacunas, c.regra, c.herda) }}{% endif %}
           {% endfor %}
         {% endfor %}
       </tbody>
@@ -983,7 +1052,7 @@
   });
 
   // o que mudou e ainda não foi salvo fica marcado
-  const campos = [...form.querySelectorAll('input[name="periodo_fica"], input[name="periodo_filial"], input[type="month"][name="periodo_desde"]')];
+  const campos = [...form.querySelectorAll('input[name="periodo_fica"], input[name="periodo_filial"], input[type="month"][name="periodo_desde"], input[type="month"][name="periodo_ate"]')];
   function pendentes() {
     let n = 0;
     campos.forEach(c => {
