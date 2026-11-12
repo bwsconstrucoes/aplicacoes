@@ -592,10 +592,10 @@ def sem_as_obras(base: dict, fora) -> dict:
 _DESDE_O_INICIO = "1900-01"
 
 
-def partes_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
-                    pct_padrao: float, mes: str | None = None) -> tuple:
-    """(% que fica no projeto principal, % que é da filial) de uma conta da
-    matriz. O que falta para 100 se RATEIA entre todas as obras, pela régua.
+def regra_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
+                   pct_padrao: float, mes: str | None = None) -> tuple:
+    """(% que fica no projeto principal, % que é da filial, de onde veio) de
+    uma conta da matriz. O que falta para 100 se RATEIA entre todas as obras.
 
     A REGRA DAS TRÊS PARTES (11/11/2026). O dono, com exemplos: "Categoria X:
     ratear 100% entre todas. Categoria Y: jogar 20% para BWSNE e ratear 80%.
@@ -605,28 +605,49 @@ def partes_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
     vai para o principal" (o resto ia SÓ para os demais).
 
     Vale a regra do nível MAIS ESPECÍFICO que disser alguma coisa: lançamento,
-    depois categoria, depois grupo, depois o padrão do cenário. Em cada nível,
-    a regra pode mudar com o tempo: com o `mes` (AAAA-MM), vale a última que
-    começou até ele; "1900-01" é a que vale desde o início. Uma regra de
+    depois categoria, depois grupo, depois o padrão do cenário. Uma regra de
     categoria NÃO se combina com a do grupo — substitui.
+
+    Em cada nível a regra pode mudar com o tempo, e O PERÍODO PODE TER FIM
+    (12/11/2026, o dono: "era melhor a gente definir o período de tanto a
+    tanto, não só a partir de"). Com o `mes` (AAAA-MM), vale o período que o
+    cobre — entre os que cobrem, o que começou por último. Mês que nenhum
+    período cobre (antes do primeiro, depois de um que terminou, ou numa
+    lacuna) cai na linha da conta ("1900-01", a regra de sempre); sem ela, no
+    nível de cima.
 
     O percentual fixo (`pesos[nível][chave]`, formato antigo, hoje só do
     lançamento marcado um a um) é "quanto se rateia": o resto fica no
-    principal."""
+    principal.
+
+    `de onde veio` é (nível, chave, desde) — ou (nível, chave, "fixo"), ou
+    ("padrao", "", "") — para a tela somar o dinheiro de cada linha."""
     periodos = pesos.get("periodos") or {}
     quando = mes if mes and mes != SEM_DATA else _DESDE_O_INICIO
     for nivel, chave in (("lancamento", codigo), ("categoria", categoria),
                          ("grupo", grupo)):
         if not chave:
             continue
-        valendo = [p for p in (periodos.get(nivel) or {}).get(chave) or []
-                   if p[0] <= quando]
-        if valendo:
-            ultimo = valendo[-1]
-            return float(ultimo[1] or 0), float((ultimo[2] if len(ultimo) > 2 else 0) or 0)
+        lista = (periodos.get(nivel) or {}).get(chave) or []
+        cobrem = [p for p in lista if p[0] <= quando
+                  and not (len(p) > 3 and p[3] and quando > p[3])]
+        # o período com data ganha da regra de sempre, que é o que sobra
+        com_data = [p for p in cobrem if p[0] != _DESDE_O_INICIO]
+        vale = (com_data or cobrem)[-1:]            # a lista vem em ordem de começo
+        if vale:
+            p = vale[0]
+            return (float(p[1] or 0), float((p[2] if len(p) > 2 else 0) or 0),
+                    (nivel, chave, p[0]))
         if chave in (pesos.get(nivel) or {}):
-            return 100.0 - float(pesos[nivel][chave]), 0.0
-    return 100.0 - float(pct_padrao), 0.0
+            return 100.0 - float(pesos[nivel][chave]), 0.0, (nivel, chave, "fixo")
+    return 100.0 - float(pct_padrao), 0.0, ("padrao", "", "")
+
+
+def partes_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
+                    pct_padrao: float, mes: str | None = None) -> tuple:
+    """(% que fica no projeto principal, % que é da filial) — ver
+    `regra_da_conta`, que é quem decide."""
+    return regra_da_conta(pesos, grupo, categoria, codigo, pct_padrao, mes)[:2]
 
 
 def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,

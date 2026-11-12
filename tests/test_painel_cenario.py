@@ -460,9 +460,9 @@ def test_a_arvore_inteira_se_salva_num_clique(cenario, monkeypatch):
         "periodo_fica": ["50", ""], "periodo_filial": ["", "20"]})
     pesos = cenarios.pesos(cenario)
     assert pesos["periodos"]["grupo"] == {
-        "Administrativas": [(cenarios.DESDE_O_INICIO, 50.0, 0.0)]}
+        "Administrativas": [(cenarios.DESDE_O_INICIO, 50.0, 0.0, "")]}
     assert pesos["periodos"]["categoria"] == {
-        "Aluguel": [(cenarios.DESDE_O_INICIO, 0.0, 20.0)]}
+        "Aluguel": [(cenarios.DESDE_O_INICIO, 0.0, 20.0, "")]}
     assert pesos["categoria"] == {}                # a regra antiga do Equipamento saiu
     html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
     assert 'id="pesos-da-arvore"' in html and "Salvar percentuais" in html
@@ -520,11 +520,11 @@ def test_os_periodos_se_salvam_pela_arvore(cenario, monkeypatch):
         "periodo_desde": ["2021-01", "2022-01", "", "2024-03"],
         "periodo_fica": ["50", "40", "", ""], "periodo_filial": ["", "10", "", ""]})
     per = cenarios.periodos(cenario)
-    assert per["grupo"] == {"Administrativas": [("2021-01", 50.0, 0.0), ("2022-01", 40.0, 10.0)]}
+    assert per["grupo"] == {"Administrativas": [("2021-01", 50.0, 0.0, ""), ("2022-01", 40.0, 10.0, "")]}
     assert per["categoria"] == {}                    # sem percentual: não grava
     # duplicar leva os períodos junto
     copia = cenarios.duplicar(cenario, "cópia")
-    assert cenarios.periodos(copia)["grupo"]["Administrativas"][1] == ("2022-01", 40.0, 10.0)
+    assert cenarios.periodos(copia)["grupo"]["Administrativas"][1] == ("2022-01", 40.0, 10.0, "")
     html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
     assert "2 períodos" in html and 'value="2022-01"' in html
     # apagar os dois percentuais apaga o período
@@ -534,7 +534,7 @@ def test_os_periodos_se_salvam_pela_arvore(cenario, monkeypatch):
         "periodo_nivel": ["grupo", "grupo"], "periodo_chave": ["Administrativas"] * 2,
         "periodo_desde": ["2021-01", "2022-01"],
         "periodo_fica": ["50", ""], "periodo_filial": ["", ""]})
-    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0, 0.0)]}
+    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0, 0.0, "")]}
     # percentual sem o mês, ou partes acima de 100: recusa e diz por quê
     for fica, filial, desde, trecho in (("50", "", "", "Falta"), ("70", "40", "2023-01", "100")):
         r = cliente.post("/painel/prestacao/montagem", data={
@@ -543,7 +543,7 @@ def test_os_periodos_se_salvam_pela_arvore(cenario, monkeypatch):
             "periodo_nivel": ["grupo"], "periodo_chave": ["Administrativas"],
             "periodo_desde": [desde], "periodo_fica": [fica], "periodo_filial": [filial]})
         assert "erro=" in r.headers["Location"] and trecho in r.headers["Location"]
-    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0, 0.0)]}
+    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0, 0.0, "")]}
     cenarios.apagar(copia)
 
 
@@ -1312,7 +1312,7 @@ def test_a_regra_sem_mes_vale_desde_o_inicio(cenario):
     cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [("", 40, 10)])
     pesos = cenarios.pesos(cenario)
     assert pesos["periodos"]["grupo"]["Administrativas"] == [
-        (cenarios.DESDE_O_INICIO, 40.0, 10.0)]
+        (cenarios.DESDE_O_INICIO, 40.0, 10.0, "")]
     assert prestacao.partes_da_conta(pesos, "Administrativas", "Aluguel", "", 100,
                                      mes="2015-01") == (40.0, 10.0)
     # linha com as duas partes em branco não é regra nenhuma
@@ -1321,7 +1321,7 @@ def test_a_regra_sem_mes_vale_desde_o_inicio(cenario):
     # zero e zero É regra: rateia tudo, mesmo com o padrão do cenário em outro valor
     cenarios.gravar_periodos(cenario, "grupo", "Patrimônio", [("", "0", "0")])
     assert cenarios.pesos(cenario)["periodos"]["grupo"]["Patrimônio"] == [
-        (cenarios.DESDE_O_INICIO, 0.0, 0.0)]
+        (cenarios.DESDE_O_INICIO, 0.0, 0.0, "")]
     # as duas partes não passam de 100
     with pytest.raises(ValueError, match="100"):
         cenarios.gravar_periodos(cenario, "grupo", "Patrimônio", [("", 70, 40)])
@@ -1506,7 +1506,7 @@ def test_salvar_tudo_grava_todas_as_secoes_de_uma_vez(cenario, monkeypatch):
     c = cenarios.completo(cenario)
     assert c["excluidas"] == ["obra:POUCA GENTE@2025-02"]
     assert c["pesos"]["periodos"]["grupo"]["Administrativas"] == [
-        (cenarios.DESDE_O_INICIO, 20.0, 0.0), ("2025-01", 50.0, 0.0), ("2026-01", 40.0, 10.0)]
+        (cenarios.DESDE_O_INICIO, 20.0, 0.0, ""), ("2025-01", 50.0, 0.0, ""), ("2026-01", 40.0, 10.0, "")]
     assert c["projetos"]["regras"]["ALFA"] == ("periodo", "", "2025-12")
     assert len(c["participacoes"]) == 3
     assert (c["nome"], c["criterio"]) == ("Tudo junto", "faturamento")
@@ -2055,3 +2055,102 @@ def test_sem_a_prestacao_marcada_ela_continua_fechada(base, monkeypatch):
     for url in ("/painel/prestacao", "/painel/prestacao/montagem",
                 "/painel/prestacao/parametros", "/painel/baixar/cenario"):
         assert cliente.get(url).status_code == 404, url
+
+
+
+# ===========================================================================
+# 12/11/2026 — o período com começo e FIM, o dinheiro de cada período e a lacuna
+# ===========================================================================
+def test_o_periodo_tem_comeco_e_fim():
+    """O dono: "nas regras de período não tem ATÉ (…) era melhor a gente
+    definir o período de tanto a tanto, não só a partir de. Ou você botava o
+    período exato, ou então até determinada data"."""
+    from app.apps.painel import prestacao
+    pesos = {"periodos": {"grupo": {"Pessoal": [
+        ("0001-01", 100, 0, "2019-12"),     # só o "até": do início até 12/2019
+        ("1900-01", 10, 0, ""),             # a linha da conta: fora dos períodos
+        ("2020-01", 50, 0, "2020-12"),      # período exato
+        ("2022-01", 0, 30, ""),             # só o "de": dali em diante
+    ]}}}
+    pc = lambda mes: prestacao.partes_da_conta(pesos, "Pessoal", "Salários", "", 100, mes=mes)  # noqa: E731
+    assert pc("2015-06") == (100, 0) and pc("2019-12") == (100, 0)
+    assert pc("2020-01") == (50, 0) and pc("2020-12") == (50, 0)
+    assert pc("2021-06") == (10, 0)          # a lacuna de 2021 cai na linha da conta
+    assert pc("2022-01") == (0, 30) and pc("2030-01") == (0, 30)
+    # de onde veio: é o que deixa a tela somar o dinheiro de cada linha
+    assert prestacao.regra_da_conta(pesos, "Pessoal", "Salários", "", 100,
+                                    mes="2020-07")[2] == ("grupo", "Pessoal", "2020-01")
+    # sem a linha da conta, a lacuna cai no nível de cima (o padrão)
+    del pesos["periodos"]["grupo"]["Pessoal"][1]
+    assert pc("2021-06") == (0, 0)
+
+
+def test_periodo_que_se_sobrepoe_ou_termina_antes_de_comecar_e_recusado(cenario):
+    from app.apps.painel import cenarios
+    with pytest.raises(ValueError, match="sobrep"):
+        cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [
+            ("2020-01", 50, 0, "2020-12"), ("2020-06", 40, 0, "2021-06")])
+    with pytest.raises(ValueError, match="antes de começar"):
+        cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [
+            ("2021-01", 50, 0, "2020-12")])
+    # "a partir de" seguido de outro "a partir de" continua valendo: o de baixo assume
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [
+        ("2020-01", 50, 0, ""), ("2021-01", 40, 0, "")])
+    # e a lacuna entre dois períodos fechados é achada
+    lista = [("2020-01", 50, 0, "2020-12"), ("2022-01", 40, 0, "2022-12"),
+             ("2023-01", 30, 0, "")]
+    assert cenarios.lacunas_dos_periodos(lista) == [("2021-01", "2021-12")]
+    assert cenarios.lacunas_dos_periodos(lista[1:]) == []
+    # um "a partir de" mais antigo, sem fim, cobre o vão: não é lacuna
+    assert cenarios.lacunas_dos_periodos([("2019-01", 10, 0, "")] + lista) == []
+
+
+def test_a_tela_mostra_o_dinheiro_de_cada_periodo_e_acusa_a_lacuna(cenario, monkeypatch):
+    """"Eu botei a partir de 1/2020, 50/50 — queria saber quanto ficou para
+    cada uma, já na mesma linha, por cada período." O aluguel tem 900 em
+    03/2025 e ganha mais 400 em 07/2025: o primeiro período pega os 900 (450
+    ficam), o segundo os 400 (inteiros para a filial) — e entre os dois há
+    uma lacuna, que a tela acusa."""
+    from app.apps.painel import cenarios, consultas, prestacao_dados
+    from app.apps.painel.db import conexao
+    from app.apps.painel.web import _contas_da_matriz
+    with conexao() as conn:
+        _por_pagar(conn, 970, MATRIZ, -400, grupo="Administrativas", categoria="Aluguel",
+                   data="2025-07-10")
+        conn.commit()
+    consultas.esquecer_listas()
+    cliente = _cliente(monkeypatch)
+    r = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "pesos_da_arvore", "cenario_id": str(cenario),
+        "periodo_presente": ["categoria|Aluguel"],
+        "periodo_nivel": ["categoria"] * 3, "periodo_chave": ["Aluguel"] * 3,
+        "periodo_desde": ["inicio", "2025-01", "2025-06"],
+        "periodo_ate": ["", "2025-03", ""],
+        "periodo_fica": ["", "50", "0"], "periodo_filial": ["", "", "100"]})
+    assert "erro=" not in r.headers["Location"]
+    assert cenarios.periodos(cenario)["categoria"]["Aluguel"] == [
+        ("2025-01", 50.0, 0.0, "2025-03"), ("2025-06", 0.0, 100.0, "")]
+    arvore = _contas_da_matriz(prestacao_dados.config(), cenarios.completo(cenario), "comprometido")
+    aluguel = next(c for g in arvore["contas"] for c in g["categorias"] if c["categoria"] == "Aluguel")
+    primeiro, segundo = aluguel["periodos"]
+    assert (primeiro["desde"], primeiro["ate"]) == ("2025-01", "2025-03")
+    assert primeiro["total"] == pytest.approx(-900.0) and primeiro["v_fica"] == pytest.approx(-450.0)
+    assert primeiro["v_rateia"] == pytest.approx(-450.0)
+    assert segundo["total"] == pytest.approx(-400.0) and segundo["v_filial"] == pytest.approx(-400.0)
+    assert aluguel["lacunas"] == [("2025-04", "2025-05")]
+    assert arvore["resumo"]["lacunas"] == 1
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert 'name="periodo_ate"' in html and 'value="2025-03"' in html
+    assert "neste período" in html and "Lacuna:" in html and "de 04/2025 a 05/2025" in html
+    assert "1 conta(s) com lacuna entre períodos" in html
+    # só o "até", sem começo: do início até ali
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "pesos_da_arvore", "cenario_id": str(cenario),
+        "periodo_presente": ["categoria|Aluguel"],
+        "periodo_nivel": ["categoria"], "periodo_chave": ["Aluguel"],
+        "periodo_desde": [""], "periodo_ate": ["2025-03"],
+        "periodo_fica": ["100"], "periodo_filial": [""]})
+    assert cenarios.periodos(cenario)["categoria"]["Aluguel"] == [
+        (cenarios.SEM_COMECO, 100.0, 0.0, "2025-03")]
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "0001-01" not in html                    # o começo vazio não aparece como data

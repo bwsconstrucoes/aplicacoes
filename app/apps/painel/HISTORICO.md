@@ -651,6 +651,42 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Período com começo e FIM, o dinheiro de cada período e a lacuna — 12/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
+migração (026):** ao publicar, ele aperta "Aplicar atualizações do banco".
+
+O dono, usando a tela já publicada: *"nas regras de período não tem ATÉ (…)
+era melhor a gente definir o período de tanto a tanto, não só a partir de. Ou
+você botava o período exato, ou então até determinada data"*; *"queria saber
+quanto ficou para cada uma, já na mesma linha, por cada período"*; *"e se
+ficar uma lacuna? O sistema acusa?"*
+
+- **Cada linha de período tem "de" e "até"** (coluna `ate`, migração 026).
+  Só o "de" = dali em diante; só o "até" = do início até ali (gravado com
+  começo `0001-01`, para não brigar na chave com a linha da conta, `1900-01`).
+- **Qual vale num mês** (`prestacao.regra_da_conta`): o período que cobre o
+  mês; se mais de um cobre, o que começou por último; se nenhum cobre, a
+  linha da conta; sem ela, o nível de cima.
+- **Sobreposição de dois períodos com fim é recusada** ao salvar, com o nome
+  da conta. Fim antes do começo, também.
+- **Lacuna não é erro, é aviso**: os meses entre dois períodos que nenhum
+  outro cobre aparecem em vermelho na conta ("⚠ lacuna") e num aviso no topo
+  do passo 2, dizendo que neles vale a linha da conta.
+- **Cada linha de período mostra o dinheiro que a segue**: o total do período
+  e quanto fica, quanto é da BWSFILIAL e quanto rateia. Na linha do GRUPO
+  entra só o que segue a regra do grupo — categoria com regra própria fica
+  na linha dela. Juro de empréstimo não entra (régua do déficit).
+- Sem a migração, o painel lê e grava como antes; só o "até" é recusado, com
+  o aviso de aplicar a atualização.
+
+**Executado × comprometido.** Ele viu "a matriz gastou −14.699.912,50" e
+disse que o valor "não existe": é o COMPROMETIDO (pago + a pagar) — bate com a
+terceira coluna do DRE do BWS que ele mesmo colou. *"Gostaria de trabalhar com
+o executado."* A escolha já existia (passo 5 › Base do cálculo); agora o
+quadro diz qual das duas está valendo, com o atalho para trocar, e **cenário
+novo nasce pelo executado**. O cenário que ele já tem só muda se ele trocar.
+
 ## A prestação compartilhada, só para leitura — 11/11/2026 (noite)
 
 **NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem

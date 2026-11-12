@@ -28,6 +28,10 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll("input[name], select[name], textarea[name]").forEach(function (c) {
     if (grava(c.form)) c.disabled = true;
   });
+  // o campo de mês "MM/AAAA" é um campo sem nome ao lado do verdadeiro
+  document.querySelectorAll('input:not([name]):not([type="search"]):not([type="checkbox"])').forEach(function (c) {
+    if (grava(c.form)) c.disabled = true;
+  });
   // dentro de formulário de gravar, só ficam os botões que servem para LER
   var paraLer = "[data-abre-grupo], [data-abre-periodos], [data-fora-abre], [data-grade-abre]";
   document.querySelectorAll("button").forEach(function (b) {

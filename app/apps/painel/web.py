@@ -1633,15 +1633,27 @@ def _partes_por_extenso(fica, filial, principal: str = "") -> str:
     return " · ".join(partes)
 
 
+def _periodo_por_extenso(desde: str, ate: str) -> str:
+    """ "de 01/2020 a 12/2020", "a partir de 01/2021", "até 12/2020"."""
+    br = lambda m: f"{m[5:7]}/{m[:4]}"  # noqa: E731
+    if desde and desde != "0001-01" and ate:
+        return f"de {br(desde)} a {br(ate)}"
+    if ate:
+        return f"até {br(ate)}"
+    return f"a partir de {br(desde)}"
+
+
 def _regras_por_extenso(regra, datadas, principal: str = "") -> str:
-    """A regra de uma conta com os períodos: "sempre: …; a partir de 01/2022: …"."""
+    """A regra de uma conta com os períodos: "fora dos períodos: …; de
+    01/2020 a 12/2020: …". `datadas` são os períodos com data, como a árvore
+    os monta (dicionários com desde, ate, fica, filial)."""
     trechos = []
     if regra is not None:
-        trechos.append((("desde o início: " if datadas else "")
+        trechos.append((("fora dos períodos: " if datadas else "")
                         + _partes_por_extenso(regra[0], regra[1], principal)))
-    for desde, fica, filial in datadas or []:
-        trechos.append(f"a partir de {desde[5:]}/{desde[:4]}: "
-                       + _partes_por_extenso(fica, filial, principal))
+    for p in datadas or []:
+        trechos.append(_periodo_por_extenso(p["desde"], p["ate"]) + ": "
+                       + _partes_por_extenso(p["fica"], p["filial"], principal))
     return "; ".join(trechos)
 
 
@@ -1661,7 +1673,7 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     marcadas la embaixo, e a tela lista tudo que foi marcado num lugar so.
 
     Devolve {"contas": [...], "resumo": {...}, "marcacoes": [...]}."""
-    from . import consultas, prestacao
+    from . import cenarios, consultas, prestacao
     pesos = cenario.get("pesos") or {}
     padrao = float(cenario.get("pct_padrao", 100) or 0)
     # SÓ A MATRIZ (11/11/2026): é ela que se divide entre o projeto principal
@@ -1687,6 +1699,7 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         por_categoria.setdefault(chave, []).append(e)
 
     grupos: dict[str, dict] = {}
+    da_regra: dict[tuple, list] = {}      # (nível, chave, desde) -> [total, fica, filial]
     primeiro_mes = ultimo_mes = ""
     # DE ONDE VEM O "A MATRIZ GASTOU" (11/11/2026, o dono: "está aparecendo
     # 15,4 milhões (…) de onde é que está sendo puxado esse valor?"). É a soma
@@ -1711,21 +1724,52 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
                                              "fica": 0.0, "filial": 0.0})
         c["valor"] += linha["valor"]
         # mês a mês: a regra pode mudar com o tempo
-        fica, filial = prestacao.partes_da_conta(pesos, nome, cat, "", padrao,
-                                                 mes=linha["mes"])
+        fica, filial, origem = prestacao.regra_da_conta(
+            pesos, nome, cat, "", padrao, mes=linha["mes"])
         c["fica"] += linha["valor"] * fica / 100.0
         c["filial"] += linha["valor"] * filial / 100.0
+        # QUANTO DINHEIRO SEGUE CADA LINHA DE REGRA (12/11/2026, o dono: "eu
+        # botei a partir de 1/2020, 50/50 — queria saber quanto ficou para
+        # cada uma, já na mesma linha, por cada período"). Juro de empréstimo
+        # não entra: segue a régua do déficit.
+        if cat.strip().lower() not in juros:
+            balde = da_regra.setdefault(origem, [0.0, 0.0, 0.0])
+            balde[0] += linha["valor"]
+            balde[1] += linha["valor"] * fica / 100.0
+            balde[2] += linha["valor"] * filial / 100.0
+    # o lançamento marcado um a um não segue a regra da categoria: sai do balde
+    for e in excecoes:
+        f0, n0, origem = prestacao.regra_da_conta(
+            pesos, (e.get("grupo") or "").strip() or "(sem grupo)",
+            (e.get("categoria") or "").strip() or "(sem categoria)", "", padrao,
+            mes=e.get("mes"))
+        if origem in da_regra:
+            da_regra[origem][0] -= e["valor"]
+            da_regra[origem][1] -= e["valor"] * f0 / 100.0
+            da_regra[origem][2] -= e["valor"] * n0 / 100.0
     per = pesos.get("periodos") or {}
     INICIO = "1900-01"
 
     def _regra_propria(nivel, chave):
-        """((fica, filial) que vale desde o início | None, [regras com data]).
-        O percentual fixo antigo conta como regra desde o início."""
+        """((fica, filial) da linha da conta | None, [períodos com data],
+        [lacunas entre eles]). O percentual fixo antigo conta como a linha da
+        conta. Cada período vem com o dinheiro que o segue."""
         lista = (per.get(nivel) or {}).get(chave, [])
-        desde_sempre = next(((f, n) for d, f, n in lista if d == INICIO), None)
+        desde_sempre = next(((p[1], p[2]) for p in lista if p[0] == INICIO), None)
         if desde_sempre is None and chave in (pesos.get(nivel) or {}):
             desde_sempre = (100.0 - float(pesos[nivel][chave]), 0.0)
-        return desde_sempre, [p for p in lista if p[0] != INICIO]
+        datadas = []
+        for p in lista:
+            if p[0] == INICIO:
+                continue
+            total, v_fica, v_filial = da_regra.get((nivel, chave, p[0]), (0.0, 0.0, 0.0))
+            datadas.append({
+                "desde": "" if p[0] == cenarios.SEM_COMECO else p[0],
+                "ate": p[3] if len(p) > 3 else "",
+                "fica": p[1], "filial": p[2],
+                "total": total, "v_fica": v_fica, "v_filial": v_filial,
+                "v_rateia": total - v_fica - v_filial})
+        return desde_sempre, datadas, cenarios.lacunas_dos_periodos(lista)
 
     def _texto(regra, datadas):
         return _regras_por_extenso(regra, datadas)
@@ -1733,7 +1777,7 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     marcacoes: list[dict] = []
     saida = []
     for g in grupos.values():
-        g["regra"], g["periodos"] = _regra_propria("grupo", g["grupo"])
+        g["regra"], g["periodos"], g["lacunas"] = _regra_propria("grupo", g["grupo"])
         g["herda"] = (100.0 - padrao, 0.0)       # sem regra própria: o padrão
         g["fica"] = g["filial"] = g["rateia"] = g["juros"] = 0.0
         g["excecoes"] = 0
@@ -1744,7 +1788,8 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
                               "texto": _texto(g["regra"], g["periodos"])})
         cats = []
         for c in g["categorias"].values():
-            c["regra"], c["periodos"] = _regra_propria("categoria", c["categoria"])
+            c["regra"], c["periodos"], c["lacunas"] = _regra_propria(
+                "categoria", c["categoria"])
             # sem regra própria, vale a do grupo (ou o padrão)
             c["herda"] = g["regra"] if g["regra"] is not None else g["herda"]
             c["grupo"] = g["grupo"]
@@ -1808,6 +1853,9 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         "juros": sum(g["juros"] for g in contas) + filial["juros"],
         "juros_da_matriz": sum(g["juros"] for g in contas),
         "filial": filial,
+        # contas com meses entre dois períodos sem regra de período
+        "lacunas": sum(1 for g in contas if g["lacunas"]) + sum(
+            1 for g in contas for c in g["categorias"] if c["lacunas"]),
         "marcacoes": len(marcacoes),
     }
     ordem = {"grupo": 0, "categoria": 1, "lancamento": 2}
@@ -1951,12 +1999,14 @@ def cenario_montagem():
 
 
 def _periodos_do_formulario(form) -> list[tuple]:
-    """(nível, chave, desde, fica no principal, é da filial) de cada linha de
-    regra do formulário. `desde` vem "inicio" na linha principal da conta e
-    AAAA-MM nas linhas de período."""
+    """(nível, chave, desde, fica no principal, é da filial, até) de cada
+    linha de regra do formulário. `desde` vem "inicio" na linha principal da
+    conta e AAAA-MM (ou vazio, com o "até" preenchido) nas linhas de período.
+    Página aberta antes do "até" não manda o campo: vem vazio."""
     niveis = form.getlist("periodo_nivel")
     colunas = [form.getlist(c) for c in ("periodo_chave", "periodo_desde",
-                                         "periodo_fica", "periodo_filial")]
+                                         "periodo_fica", "periodo_filial",
+                                         "periodo_ate")]
     linhas = []
     for i, nivel in enumerate(niveis):
         linhas.append((nivel,) + tuple(c[i] if i < len(c) else "" for c in colunas))
