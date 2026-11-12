@@ -653,8 +653,16 @@ sai.
 
 ## Um VALOR FIXO que fica no BWSCE antes dos percentuais — 12/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
-migração (027):** ao publicar, ele aperta "Aplicar atualizações do banco".
+**PUBLICADO em 12/11/2026, 15:19 (UTC)** — `bd3a3d75`, com o "pode" do dono e
+a bateria completa verde aqui (10.991) e no GitHub, já com a `main` dos outros
+chats. Foi junto a janela de receitas do DRE (seção abaixo).
+
+**Fica com o dono:** apertar **"Aplicar atualizações do banco"** (migração
+027) — sem ela o painel funciona, mas recusa gravar o valor fixo.
+
+**Perguntar ao dono no próximo chat:** se o valor fixo deu o número que ele
+esperava com os dados reais; o que as "outras receitas" da matriz são; e a
+resposta sobre os 13.796.222,19 (ver "Ainda em aberto com o dono", abaixo).
 
 O dono: *"num determinado período, eu quero desconsiderar do rateio um
 determinado valor. (…) tenho 2 milhões de custo, deixarei 500 mil
@@ -683,8 +691,7 @@ ele não quer ratear.
 
 ## A janela de receitas do DRE não fechava com a linha do DRE — 12/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
-migração.
+Publicado em 12/11/2026 junto com a seção de cima. Sem migração própria.
 
 O dono abriu as receitas da matriz no DRE: a linha dizia R$ 459.464,10 de
 receita bruta e a janela somava R$ 68.343,21 (6 títulos). **Causa, lida no
