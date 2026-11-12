@@ -651,6 +651,35 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A janela de receitas do DRE não fechava com a linha do DRE — 12/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
+migração.
+
+O dono abriu as receitas da matriz no DRE: a linha dizia R$ 459.464,10 de
+receita bruta e a janela somava R$ 68.343,21 (6 títulos). **Causa, lida no
+código:** a janela lista as MEDIÇÕES (`RECEITA_DE_OBRA` — categoria "Receita
+de Obras" e o retido dela); a linha do DRE soma **toda** receita de análise
+DRE — também rendimento, estorno, devolução. Os R$ 391.120,89 que faltam são
+"outras receitas". **O que elas são eu não vi**: a janela nova é que mostra.
+
+- A janela ganhou o quadro **"Outras receitas — não são medição"**, um título
+  por linha (`consultas.outras_receitas_titulos`), e a conta **"Para bater com
+  o DRE: medições + outras receitas = Receita Bruta"**.
+- Limite conhecido: a janela do "executado" lista os títulos QUITADOS; o DRE
+  soma também o recebido em parte de título ainda aberto. Se um dia a conta
+  de baixo não fechar por isso, é esse o motivo — não mexi.
+
+**Ainda em aberto com o dono (12/11):** ele disse que "ainda aparece valor
+diferente nos custos da matriz" (13.796.222,19). Duas leituras, e eu perguntei:
+(a) ele compara com a última linha do DRE, que é resultado — a decisão dele
+foi DESCONSIDERAR a receita, e aí o custo é mesmo 13.796.222,19; para dar
+13.337.568,09 a receita teria de ABATER o custo; (b) falta o "CONS -
+Escritório Central" na lista da MATRIZ: os números dele dão 13.349.966,79 −
+13.337.568,09 = 12.398,70 entre o DRE dos dois centros e o do projeto BWS, o
+que é compatível com esse centro não estar no projeto BWS nem na matriz. Não
+conferido.
+
 ## Custo × resultado do DRE, e a linha de totais por obra — 12/11/2026
 
 **PUBLICADO em 12/11/2026, 12:49 (UTC)** — `e7ce80f7`, com o "pode" do dono e

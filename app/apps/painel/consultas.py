@@ -958,6 +958,39 @@ def outras_receitas(f: Filtros, limite: int = 60) -> list[dict]:
              "titulos": n} for c, r, a, n in consultar(sql, params)]
 
 
+def outras_receitas_titulos(f: Filtros, limite: int = 300) -> dict:
+    """A receita que NÃO é medição, um título por linha — e o total de todos.
+
+    12/11/2026, o dono abriu a janela de receitas do DRE da matriz: o DRE
+    dizia R$ 459.464,10 de receita bruta e a janela somava R$ 68.343,21. A
+    janela lista as MEDIÇÕES ("Receita de Obras" e o retido delas); a linha do
+    DRE soma toda receita de análise DRE — também rendimento, estorno,
+    devolução e o que mais houver. Esta é a parte que faltava na janela, para
+    as duas somarem o número do DRE."""
+    where, params = f.where(
+        "analise = 'DRE' AND tipo = ? AND COALESCE(categoria,'') <> 'Receita de Obras' "
+        f"AND NOT COALESCE(({RETIDO}), FALSE)", [REC])
+    sql = f"""
+        SELECT codigo_lancamento, MAX(categoria), MAX(razao_social), MAX(departamento),
+               MAX(numero_documento), MAX(link), MAX(data),
+               SUM({EXECUTADO}), SUM({EM_ABERTO})
+          FROM fato{where}
+         GROUP BY codigo_lancamento
+        HAVING ABS(SUM({COMPROMETIDO})) > 0.005
+         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+    linhas = [{"codigo": c, "categoria": cat or "(sem categoria)", "cliente": cli or "",
+               "obra": obra or "", "documento": doc or "", "link": link or "",
+               "data": data, "recebido": float(r or 0), "a_receber": float(a or 0)}
+              for c, cat, cli, obra, doc, link, data, r, a in consultar(sql, params)]
+    quantas, recebido, a_receber = consultar(f"""
+        SELECT COUNT(DISTINCT codigo_lancamento), COALESCE(SUM({EXECUTADO}), 0),
+               COALESCE(SUM({EM_ABERTO}), 0)
+          FROM fato{where}""", params)[0]
+    return {"linhas": linhas,
+            "total": {"quantas": quantas or 0, "recebido": float(recebido or 0),
+                      "a_receber": float(a_receber or 0)}}
+
+
 # ---------------------------------------------------------------------------
 # Prestação de Contas — a base
 # ---------------------------------------------------------------------------

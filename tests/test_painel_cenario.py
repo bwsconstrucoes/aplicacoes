@@ -2225,3 +2225,39 @@ def brl_do_teste(valor: float) -> str:
     """O mesmo formato da tela: −R$ 1.234,56 (com o sinal de menos tipográfico)."""
     texto = f"{abs(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return ("−" if valor < 0 else "") + "R$ " + texto
+
+
+# ===========================================================================
+# 12/11/2026 — a janela de receitas do DRE não batia com a linha do DRE
+# ===========================================================================
+def test_a_janela_de_receitas_do_dre_fecha_com_a_linha_do_dre(base, monkeypatch):
+    """O dono abriu as receitas da matriz: o DRE dizia R$ 459.464,10 de
+    receita bruta e a janela somava R$ 68.343,21. A janela só listava as
+    medições; a linha do DRE soma toda receita. Agora a janela traz as outras
+    receitas, um título por linha, e as duas partes somam o número do DRE."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET categoria = 'Receita de Obras' WHERE tipo = '1. Contas a Receber'")
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (990,'1. Contas a Receber','DRE','RECEBIDO','Quitado',"
+            "         'Rendimentos de Aplicação','Receita',?,'ALFA','BANCO',"
+            "         '2025-04-10',2025,391.12,0,0,0)", (MATRIZ,))
+        conn.commit()
+    consultas.esquecer_listas()
+    dados = _cliente(monkeypatch).get("/painel/dre/medicoes?visao=quitadas").get_json()
+    assert dados["ok"]
+    assert [(l["categoria"], l["cliente"], l["recebido"]) for l in dados["outras"]] == [
+        ("Rendimentos de Aplicação", "BANCO", 391.12)]
+    assert dados["outras_total"] == {"quantas": 1, "recebido": 391.12, "a_receber": 0.0}
+    t = dados["total"]
+    dre = consultas.dre_linhas(consultas.Filtros())
+    assert t["recebido"] + t["retido"] + dados["outras_total"]["recebido"] == pytest.approx(
+        dre["receita_bruta"])
+    # na janela do "em aberto" a outra receita, já recebida, não aparece
+    assert _cliente(monkeypatch).get("/painel/dre/medicoes?visao=a_receber").get_json()["outras"] == []
+    html = _cliente(monkeypatch).get("/painel/dre").get_data(as_text=True)
+    assert "Para bater com o DRE" in html and "Outras receitas — não são medição" in html

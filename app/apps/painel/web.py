@@ -681,10 +681,20 @@ def dre_medicoes():
     # a aba Receita de Obra pode nao estar liberada para quem esta olhando:
     # o link so aparece quando abre
     pode_abrir = any(chave == "receita" for chave, _r, _e in _abas_visiveis())
+    # AS OUTRAS RECEITAS (12/11/2026): a linha de receita do DRE soma também o
+    # que não é medição. Sem elas a janela não fechava com o número clicado —
+    # o dono viu R$ 459.464,10 no DRE e R$ 68.343,21 na janela.
+    outras = consultas.outras_receitas_titulos(f)
+    campo = {"quitadas": "recebido", "a_receber": "a_receber"}.get(visao)
+    if campo:      # a janela do executado mostra o recebido; a do em aberto, o que falta
+        outras["linhas"] = [l for l in outras["linhas"] if abs(l[campo]) > 0.005]
+    for l in outras["linhas"]:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
     return jsonify({"ok": True, "visao": visao, "linhas": linhas,
                     "pode_abrir": pode_abrir,
                     "ver_tudo": com_filtros_para_json("painel.receita", visao=visao),
-                    "total": consultas.total_das_medicoes(f, visao=visao)})
+                    "total": consultas.total_das_medicoes(f, visao=visao),
+                    "outras": outras["linhas"], "outras_total": outras["total"]})
 
 
 @bp.route("/dre/despesas")
