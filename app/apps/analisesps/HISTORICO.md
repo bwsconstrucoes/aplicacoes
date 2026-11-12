@@ -12244,6 +12244,21 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 263 — Gerar e lançar no Pipefy numa tacada só (11/11/2026)
+
+- *"Primeiro a gente gera o arquivo e depois lança no Pipefy. Eu queria poder ter a
+  opção de gerar e lançar ao mesmo tempo, numa tacada só. Poder somente gerar e ficar
+  lá guardado, ou então gerar tudo uma vez."*
+- A janela "Gerar arquivos" (`_gerar_direto.html`, todas as telas da folha) ganhou o
+  botão **"Gerar e lançar no Pipefy"**, ao lado de "Gerar definitivo" (que continua
+  só gerando). Ele faz o mesmo "Gerar definitivo" e, em seguida, o mesmo "Lançar no
+  Pipefy" de Arquivos gerados (`folha_cards.lancar`, todas as contas), com as mesmas
+  travas da prévia. Pede confirmação (card no Pipefy não se apaga por aqui).
+- **Se o lançamento travar** (obra sem Código Omie, tipo de despesa sem Record ID…), a
+  GERAÇÃO VALE: os arquivos ficam, a tela diz por que não lançou e abre Arquivos
+  gerados para lançar depois (`web._lancar_depois_de_gerar`, nunca levanta).
+- Testes: `test_analisesps_gerar_e_lancar.py`.
+
 #### Leva 262 — Centros de custo da contabilidade × o ponto (11/11/2026)
 
 - *"A folha da contabilidade tem determinado centro de custo, só que na nomenclatura

@@ -37,6 +37,11 @@
     <button type="button" class="btn" id="gd-confirmar"
             title="Refaz o fechamento, gera os arquivos e grava no Drive"
             >Gerar definitivo</button>
+    {# GERAR E LANÇAR NUMA TACADA SÓ (11/11/2026): o mesmo "Gerar definitivo" e, em
+       seguida, o "Lançar no Pipefy" de Arquivos gerados (todas as contas). #}
+    <button type="button" class="btn" id="gd-confirmar-lancar"
+            title="Gera os arquivos e, em seguida, cria as SPs no Pipefy"
+            >Gerar e lançar no Pipefy</button>
   </div>
 </dialog>
 
@@ -51,6 +56,7 @@
   const corpo = document.getElementById("gd-corpo");
   const botoes = document.getElementById("gd-botoes");
   const confirmar = document.getElementById("gd-confirmar");
+  const confirmarLancar = document.getElementById("gd-confirmar-lancar");
   const previa = document.getElementById("gd-previa");
   const forcar = document.getElementById("gd-forcar");
   const forcarRotulo = document.getElementById("gd-forcar-rotulo");
@@ -145,12 +151,13 @@
         ? '<p class="cartao-dica"><b>Baixar prévia</b>: a relação de cada conta e a análise, num .zip, ' +
           "sem gravar nada. <b>Gerar definitivo</b>: grava no Drive a relação de cada conta (pessoa, " +
           "credor, Pix, valor e rateio), o relatório e a análise. As SPs — uma por pessoa — são " +
-          "lançadas depois, em Arquivos gerados.</p>" :
+          "lançadas depois, em Arquivos gerados — ou já, com <b>Gerar e lançar no Pipefy</b>.</p>" :
       '<p class="cartao-dica"><b>Baixar prévia</b>: os arquivos como sairiam agora, num .zip, ' +
       "sem fechar e sem gravar no Drive. <b>Gerar definitivo</b>: " +
       (ORIGEM === "dc" || ORIGEM === "avulso" || ORIGEM === "gratificacao" ? "com as linhas selecionadas agora (elas saem da lista), gera "
                        : "refaz o fechamento com a situação atual da tela, gera ") + d.resumo.arquivos + " arquivo(s) de pagamento e o de " +
-      "análise e grava no Drive. Os cards do Pipefy são lançados depois, em Arquivos gerados.</p>");
+      "análise e grava no Drive. Os cards do Pipefy são lançados depois, em Arquivos gerados. " +
+      "<b>Gerar e lançar no Pipefy</b> faz os dois de uma vez.</p>");
     corpo.querySelectorAll(".gd-destino-conta").forEach(sel => sel.addEventListener("change", () => {
       escolha[sel.dataset.conta] = sel.value;
       lembrar({[sel.dataset.conta]: sel.value});
@@ -190,6 +197,7 @@
     corpo.innerHTML = '<p class="cartao-dica">Montando o resumo…</p>';
     botoes.hidden = true; forcarRotulo.hidden = true; forcar.checked = false;
     confirmar.disabled = false; confirmar.textContent = "Gerar definitivo";
+    if (confirmarLancar) { confirmarLancar.disabled = false; confirmarLancar.textContent = "Gerar e lançar no Pipefy"; }
     escolha = lembrados();
     dialogo.showModal();
     montar();
@@ -204,25 +212,44 @@
     location.href = "{{ url_for('analisesps.folha_previa_direta') }}?" + q.toString();
   });
 
-  confirmar.addEventListener("click", async () => {
-    confirmar.disabled = true;
-    confirmar.textContent = "Gerando…";
+  async function gerar(lancar) {
+    const botao = lancar ? confirmarLancar : confirmar;
+    const rotulo = botao.textContent;
+    if (lancar && !confirm("Gerar os arquivos e, em seguida, criar as SPs no Pipefy (uma por conta)?\n\n" +
+                           "Card criado no Pipefy não se apaga por aqui. Se algo bloquear o " +
+                           "lançamento, os arquivos ficam gerados e você lança depois em Arquivos gerados.")) return;
+    [confirmar, confirmarLancar].forEach(b => { if (b) b.disabled = true; });
+    botao.textContent = lancar ? "Gerando e lançando…" : "Gerando…";
+    const voltar = () => {
+      [confirmar, confirmarLancar].forEach(b => { if (b) b.disabled = false; });
+      botao.textContent = rotulo;
+    };
     try {
       const r = await fetch("{{ url_for('analisesps.folha_gerar_direto') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(Object.assign(pedido(), {forcar: forcar.checked}))});
+        body: JSON.stringify(Object.assign(pedido(), {forcar: forcar.checked, lancar: !!lancar}))});
       const d = await r.json();
       if (!d.ok) {
         corpo.insertAdjacentHTML("afterbegin", '<div class="aviso erro">' + esc(d.erro) + "</div>");
-        confirmar.disabled = false; confirmar.textContent = "Gerar definitivo";
+        voltar();
         return;
+      }
+      const l = d.lancamento;
+      if (lancar && l && l.ok) {
+        alert("Arquivos gerados e " + l.sps + " SP(s) lançada(s) no Pipefy." +
+              (l.avisos && l.avisos.length ? "\n\n" + l.avisos.join("\n") : ""));
+      } else if (lancar && l && !l.ok) {
+        alert("Os arquivos foram gerados, mas o lançamento no Pipefy NÃO foi feito:\n\n" + l.erro +
+              "\n\nCorrija e lance em Arquivos gerados (a tela que abre agora).");
       }
       location.href = d.destino_da_tela;
     } catch (e) {
       corpo.insertAdjacentHTML("afterbegin",
         '<div class="aviso erro">Não foi possível gerar: ' + esc(e) + "</div>");
-      confirmar.disabled = false; confirmar.textContent = "Gerar definitivo";
+      voltar();
     }
-  });
+  }
+  confirmar.addEventListener("click", () => gerar(false));
+  if (confirmarLancar) confirmarLancar.addEventListener("click", () => gerar(true));
 })();
 </script>
