@@ -653,8 +653,12 @@ sai.
 
 ## Custo × resultado do DRE, e a linha de totais por obra — 12/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
-migração.
+**PUBLICADO em 12/11/2026, 12:49 (UTC)** — `e7ce80f7`, com o "pode" do dono e
+a bateria completa verde aqui (10.967) e no GitHub. Sem migração.
+
+**Perguntar ao dono no próximo chat:** o que o quadro "Conferir com o DRE"
+mostrou para as outras duas diferenças (12.398,70 entre o filtro por obra e o
+por projeto; 29,48 no BWSNE) — eu supus que fosse receita, e não conferi.
 
 O dono, já pelo executado, colou os números que não batiam:
 
