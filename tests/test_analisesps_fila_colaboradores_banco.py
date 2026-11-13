@@ -125,3 +125,26 @@ def test_os_APOIOS_saem_sozinhos_de_hora_em_hora_na_pista_deles(app, monkeypatch
     assert disparos == [("apoios", "tela aberta")]
     monkeypatch.setattr(tarefas, "_apoios_recentes", lambda: True)
     assert not tarefas.apoios_se_preciso("tela aberta")["disparou"]
+
+
+def test_o_RELOGIO_bate_o_ponto_mesmo_com_o_trabalho_parado(app):
+    """13/11/2026: a baixa dos comprovantes ficava minutos dentro do robô sem anotar
+    etapa; com 3 minutos sem batimento era dada por morta e outra começava por cima."""
+    import time
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao, consultar_um
+    with conexao() as conn:
+        cur = conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                           " VALUES ('comprovantes', 'manual', 'dando baixa', "
+                           "         now() - interval '10 minutes') RETURNING id")
+        execucao = cur.fetchone()[0]
+        conn.commit()
+    assert not tarefas.estado("comprovantes")["rodando"], "sem batimento há 10 min: morta"
+    parar = tarefas.manter_viva(execucao, a_cada=0.05)
+    try:
+        time.sleep(0.4)
+        assert tarefas.estado("comprovantes")["rodando"], "o relógio a mantém viva"
+        assert consultar_um("SELECT etapa FROM analisesps.execucoes WHERE id = ?",
+                            (execucao,))[0] == "dando baixa", "não mexe na etapa"
+    finally:
+        parar()

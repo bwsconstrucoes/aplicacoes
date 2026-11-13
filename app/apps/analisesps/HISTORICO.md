@@ -12244,6 +12244,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 265 — As tarefas em processo separado batem o ponto por relógio (13/11/2026)
+
+- O dono, com a baixa dos comprovantes "leva 3 de 5, desde 09:30" (mais de 40 min) e
+  o "Retomar a fila" recusado. A causa da lentidão é o robô do BaixaBradesco (cada
+  baixa baixa a SPsBD inteira; disputa com o Make — tarefa sugerida para o chat dele).
+  Mas havia uma falha NOSSA que piorava: a execução só batia ponto (`visto_em`) quando
+  o trabalho anotava uma etapa. Uma leva parada minutos no robô = 3 min sem batimento
+  = execução dada por morta → outra baixa podia começar por cima, e o
+  `destravar_parados` devolvia à fila o lote que a primeira ainda processava.
+- **Agora** `executar_sync.main` liga um relógio (`tarefas.manter_viva`, de 60 em 60 s,
+  numa linha à parte, só `visto_em`, só enquanto `fim IS NULL`) durante a execução
+  inteira. Processo morto (publicação, reinício) = relógio morto junto = execução dada
+  por morta como antes.
+- **Limite que fica:** uma execução VIVA mas presa (o robô sem responder) agora segura a
+  pista dela indefinidamente — antes ela "morria" sozinha em 3 min. Não há botão para
+  encerrar; se acontecer, o reinício do serviço resolve.
+- Teste: `test_analisesps_fila_colaboradores_banco.py` (o relógio mantém viva sem mexer
+  na etapa).
+
 #### Leva 264 — Telegram: um grupo novo a cada envio (WhatsApp1, WhatsApp2…), com repetidas (12/11/2026)
 
 - *"Mesmo que elas já estejam no lote, elas integrem o lote que está sendo criado. Elas

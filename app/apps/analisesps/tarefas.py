@@ -321,6 +321,34 @@ def _fechar_execucao(conn, execucao_id: int, ok: bool, mensagem: str,
     conn.commit()
 
 
+SEGUNDOS_DO_RELOGIO = 60
+
+
+def manter_viva(execucao_id: int, a_cada: float = SEGUNDOS_DO_RELOGIO):
+    """Bate o ponto da execução (`visto_em`) de `a_cada` em `a_cada` segundos, numa
+    linha à parte, enquanto o processo vive — sem mexer na etapa nem no andamento.
+    Devolve a função que para o relógio. Nunca levanta. Ver `executar_sync.main`."""
+    import threading
+    from .db import conexao
+    parar = threading.Event()
+
+    def bater():
+        while not parar.wait(a_cada):
+            try:
+                with conexao() as conn:
+                    conn.execute("UPDATE analisesps.execucoes SET visto_em = now() "
+                                 " WHERE id = ? AND fim IS NULL", (execucao_id,))
+                    conn.commit()
+            except Exception:  # noqa: BLE001 — perder um batimento não derruba nada
+                logger.warning("Análise de SPs: falhou bater o ponto da execução %s",
+                               execucao_id, exc_info=True)
+
+    linha = threading.Thread(target=bater, name=f"relogio-execucao-{execucao_id}",
+                             daemon=True)
+    linha.start()
+    return parar.set
+
+
 def _carimbar(execucao_id: int, etapa: str, progresso: str) -> None:
     """Grava onde a atualização está, e que ela continua viva.
 
