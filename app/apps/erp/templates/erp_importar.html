@@ -89,6 +89,42 @@
   <div id="resultado-diario"></div>
 </div>
 
+{# ⚑ COMPLETAR O CADASTRO DAS OBRAS PELA C. DIÁRIOS (13/11/2026).
+
+   Ele, olhando o cabeçalho do diário: *"a gente cadastrou as obras, importou
+   lá na planilha C. Diários, tem todas as informações das obras, mas não está
+   trazendo aqui para o cabeçalho do diário."*
+
+   O cabeçalho não estava errado: ele lê o CADASTRO da obra, e o cadastro é
+   que estava vazio. A planilha de DIÁRIOS tem as colunas Contrato, Objeto,
+   Endereço e companhia, mas vieram vazias nas 1.427 linhas (conferido). Quem
+   tem esses dados é a C. Diários — a mesma que a emissão de NFS-e já lê. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cadastro das obras (C. Diários)</h3>
+    <small>completa o que falta no cadastro — é daqui que o cabeçalho do diário se enche</small></div>
+  <div class="form-grade">
+    <div class="campo"><label for="arq-obras">Arquivo .xlsx da C. Diários</label>
+      <input type="file" id="arq-obras" accept=".xlsx"></div>
+  </div>
+  <div class="dica" style="margin-top:8px">No Google Planilhas:
+    <b>Arquivo › Fazer download › Microsoft Excel</b>. A aba lida é a
+    <b>Centro de Custo</b>. Vem de lá: contrato, objeto, município, UF, CNO,
+    cliente, CNPJ do cliente, valor, alíquota de ISS e tributação.
+    <b>Não vem de lá</b>, e continua sendo digitado no cadastro da obra:
+    responsável técnico, CREA, ART, ordem de serviço e as datas de início e
+    término — são elas que fazem o quadro de prazo do diário aparecer.</div>
+  <label class="opcao" style="margin-top:10px">
+    <input type="checkbox" id="ob-regravar">
+    <span class="rotulo">Trocar também o que já está preenchido aqui</span></label>
+  <div class="dica">Desmarcado — o normal — só preenche campo vazio, e mostra
+    abaixo onde a planilha diverge do que já está no cadastro.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-conferir-obras">Conferir sem gravar</button>
+    <button class="btn" id="btn-gravar-obras" disabled>Completar o cadastro</button>
+  </div>
+  <div id="resultado-obras"></div>
+</div>
+
 {# ⚑ TRAZER DO PIPEFY O CADASTRO DAS PESSOAS (10/11/2026).
    Ele: *"tem o número do card do pipe, certo? Então, tu não consegue fazer
    logo essa importação, não? Faz a leitura do card, baixa os documentos,
@@ -446,6 +482,142 @@ if (els("btn-conferir-diario"))
   els("btn-conferir-diario").addEventListener("click", () => mandarDiario(false));
 if (els("btn-gravar-diario"))
   els("btn-gravar-diario").addEventListener("click", () => mandarDiario(true));
+
+// ---------------------------------------------------------------------------
+// COMPLETAR O CADASTRO DAS OBRAS PELA C. DIÁRIOS (13/11/2026)
+//
+// Mesma trava dos diários: gravar só abre depois de uma conferência do MESMO
+// arquivo. Aqui ela pesa ainda mais, porque o que se mexe é o cadastro que
+// alimenta o papel que a fiscalização assina.
+// ---------------------------------------------------------------------------
+let OBRAS_CONFERIDO = null;
+
+function travarGravarObras(){
+  OBRAS_CONFERIDO = null;
+  if (els("btn-gravar-obras")) els("btn-gravar-obras").disabled = true;
+}
+
+function pintarResultadoDasObras(rel){
+  const linhas = [];
+  linhas.push(`<div class="cartao-resumo">${
+    [[rel.linhas_no_arquivo, "linha(s) na planilha"],
+     [rel.obras_no_erp, "obra(s) no cadastro"],
+     [rel.simulado ? rel.completaria : rel.completadas,
+      rel.simulado ? "obra(s) seriam completadas" : "obra(s) completadas"],
+     [rel.ja_estavam_completas, "já estavam completas"]]
+      .map(([n, r]) => `<div><b>${n}</b><span>${r}</span></div>`).join("")}</div>`);
+
+  if ((rel.preenchidas || []).length) {
+    linhas.push(`<div class="tabela-wrap"><table>
+      <thead><tr><th>Obra</th><th>O que entra</th></tr></thead>
+      <tbody>${rel.preenchidas.map(o => `<tr>
+        <td><b>${escapar(o.obra)}</b><br><small class="desc">${escapar(o.nome)}</small></td>
+        <td>${Object.entries(o.campos).map(([k, v]) =>
+          `<div><b>${escapar(k)}:</b> ${escapar(String(v).slice(0, 120))}</div>`).join("")}</td>
+      </tr>`).join("")}</tbody></table></div>`);
+  }
+
+  if ((rel.conflitos || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">O que não bate</h4>
+      <div class="cartao-dica">${rel.conflitos[0].regravado
+        ? "Como você marcou trocar, o valor da planilha entra no lugar."
+        : "<b>Nada disto foi trocado.</b> O cadastro venceu. Para trocar, "
+          + "marque “trocar também o que já está preenchido”."}</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Obra</th><th>Campo</th><th>No cadastro</th>
+          <th>Na planilha</th></tr></thead>
+        <tbody>${rel.conflitos.map(c => `<tr>
+          <td>${escapar(c.obra)}</td><td>${escapar(c.rotulo)}</td>
+          <td>${escapar(String(c.no_erp).slice(0, 80))}</td>
+          <td>${escapar(String(c.na_planilha).slice(0, 80))}</td></tr>`).join("")}
+        </tbody></table></div>`);
+    if (rel.conflitos_total > rel.conflitos.length)
+      linhas.push(`<div class="cartao-dica">… e mais ${
+        rel.conflitos_total - rel.conflitos.length}.</div>`);
+  }
+
+  if ((rel.nao_encontradas || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">Na planilha, mas não no cadastro</h4>
+      <div class="cartao-dica">A importação <b>não cria obra</b>. Se alguma destas
+        tem de existir aqui, cadastre em Obras e confira de novo.</div>
+      <div class="cartao-dica">${rel.nao_encontradas.slice(0, 60)
+        .map(escapar).join(" · ")}</div>`);
+  }
+
+  // O QUE CONTINUA FALTANDO, e de onde vem. É metade do valor do relatório:
+  // sem isto, dá para importar e achar que o cabeçalho ficou completo.
+  const falta = (rel.so_no_cadastro || []).filter(f => f.obras_sem > 0);
+  if (falta.length) {
+    linhas.push(`<h4 style="margin-top:14px">O que a C. Diários não tem</h4>
+      <div class="cartao-dica">Estes cinco se digitam no cadastro da obra. Sem
+        <b>Início</b> e <b>Término previsto</b>, o diário não mostra o quadro de
+        prazo (“dia 37 de 180”).</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Campo</th><th class="direita">Obras sem ele</th>
+          <th>Por exemplo</th></tr></thead>
+        <tbody>${falta.map(f => `<tr><td>${escapar(f.rotulo)}</td>
+          <td class="direita"><span class="etiqueta ${
+            f.obras_sem ? "vermelha" : "verde"}">${f.obras_sem}</span></td>
+          <td><small class="desc">${(f.exemplos || []).map(escapar).join(", ")}</small></td>
+        </tr>`).join("")}</tbody></table></div>`);
+  }
+
+  if ((rel.colunas_ignoradas || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">Colunas que não aproveitei</h4>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Coluna</th><th>Por quê</th></tr></thead>
+        <tbody>${rel.colunas_ignoradas.map(c => `<tr>
+          <td>${escapar(c.coluna)}</td><td>${escapar(c.motivo)}</td></tr>`).join("")}
+        </tbody></table></div>`);
+  }
+
+  els("resultado-obras").innerHTML = linhas.join("");
+}
+
+async function mandarObras(gravar){
+  const arq = els("arq-obras").files[0];
+  if (!arq) { aviso("mensagem", "Escolha o arquivo .xlsx da C. Diários.", "erro"); return; }
+  if (gravar && OBRAS_CONFERIDO !== assinaturaDoArquivo(arq)) {
+    aviso("mensagem", "Confira sem gravar antes — o arquivo mudou desde a "
+        + "última conferência.", "erro");
+    travarGravarObras();
+    return;
+  }
+  const fd = new FormData();
+  fd.append("arquivo", arq);
+  if (gravar) fd.append("gravar", "1");
+  if (els("ob-regravar").checked) fd.append("regravar", "1");
+  ["btn-conferir-obras", "btn-gravar-obras"].forEach(
+    b => { if (els(b)) els(b).disabled = true; });
+  try {
+    const d = await api("/erp/api/obras/cdiarios", {method: "POST", body: fd});
+    pintarResultadoDasObras(d.resultado);
+    if (gravar) {
+      OBRAS_CONFERIDO = null;
+      aviso("mensagem", `${d.resultado.completadas} obra(s) completada(s).`, "ok");
+    } else {
+      OBRAS_CONFERIDO = assinaturaDoArquivo(arq);
+      aviso("mensagem", "Conferido. Nada foi gravado — leia o resumo e, se "
+          + "estiver certo, aperte Completar o cadastro.", "info");
+    }
+  } catch(e){
+    travarGravarObras();
+    aviso("mensagem", e.message, "erro");
+  }
+  // ⚠ O `finally` do destravamento mora aqui, fora do `try`: na primeira
+  // versão do cartão do Pipefy um erro deixava os dois botões travados para
+  // sempre, e a tela só voltava a funcionar recarregando.
+  if (els("btn-conferir-obras")) els("btn-conferir-obras").disabled = false;
+  if (els("btn-gravar-obras"))
+    els("btn-gravar-obras").disabled = OBRAS_CONFERIDO === null;
+}
+
+if (els("btn-conferir-obras"))
+  els("btn-conferir-obras").addEventListener("click", () => mandarObras(false));
+if (els("btn-gravar-obras"))
+  els("btn-gravar-obras").addEventListener("click", () => mandarObras(true));
+if (els("arq-obras")) els("arq-obras").addEventListener("change", travarGravarObras);
+if (els("ob-regravar")) els("ob-regravar").addEventListener("change", travarGravarObras);
 
 // ---------------------------------------------------------------------------
 // TRAZER DO PIPEFY O CADASTRO DAS PESSOAS

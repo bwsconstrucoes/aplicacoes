@@ -12048,6 +12048,43 @@ def api_diario_importar():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/obras/cdiarios", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_obras_cdiarios():
+    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
+    propósito, nada é escrito. E o que já está preenchido no cadastro só é
+    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
+    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    """
+    from app.apps.erp.core.importadores import obras_cdiarios as imp
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+    if not (arquivo.filename or "").lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "erro":
+                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                        "Arquivo › Fazer download › Microsoft Excel."}), 400
+    gravar = request.form.get("gravar") in ("1", "true", "sim")
+    regravar = request.form.get("regravar") in ("1", "true", "sim")
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = imp.importar(s, conteudo, usuario.id if usuario else None,
+                               simular=not gravar, regravar=regravar)
+            if gravar:
+                s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao completar obras pela C. Di\u00e1rios")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/calendario")
 @login_obrigatorio
 @permissao("ver_diario")

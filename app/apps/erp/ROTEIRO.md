@@ -56,11 +56,20 @@
       repetindo do dia anterior por botão, a **busca pelo que foi
       relatado**, a **importação dos 1.427 diários já escritos** (em Importar,
       com conferência antes de gravar) e a **revisão do texto por IA** —
-      nunca a observação da fiscalização. **Falta:** a medição de chuva da estação
+      nunca a observação da fiscalização. Em 13/11/2026 entraram ainda: o
+      **mês com setas ◀ ▶** no lugar do filtro de dia, as **cores do
+      calendário** com legenda (verde = escrito, vermelho = falta — o âmbar
+      saiu porque era lido como "falta dado" sem faltar nada), a **impressão
+      por período** e a **importação do cadastro das obras pela C. Diários**,
+      que é o que enche o cabeçalho do diário. **Falta:** a medição de chuva da estação
       (`clima_medido` existe e está vazia), e o conceito de PARADA — sem os
       dois não dá para responder "quantos dias de prazo posso pedir por
       chuva". Ele também vai mandar os modelos de diário que as prefeituras
-      exigem, para conferir contra o que foi desenhado.
+      exigem, para conferir contra o que foi desenhado. **E o cabeçalho ainda
+      fica incompleto:** responsável técnico, CREA, ART, ordem de serviço e as
+      datas de início e término não existem em NENHUMA planilha — são digitados
+      no cadastro da obra, e sem a data de início o diário não mostra o prazo.
+      O **endereço da obra** continua sem fonte nenhuma.
 - [ ] **O CADASTRO DE PESSOAS DENTRO DO ERP** — migrações 085 a 090, não
       publicadas. Desenho em `CADASTRO_DE_PESSOAS.md`; o agente de DP em
       `AGENTE_DP.md`. **Pronto:** cargo e convenção com piso em histórico, o

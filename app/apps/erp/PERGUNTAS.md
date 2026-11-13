@@ -1982,15 +1982,89 @@ em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
 
 - "O documento que veio do Pipefy está legível?" — ele é guardado como veio.
   Foto torta ou ilegível entra do mesmo jeito, e ninguém confere.
-- "O que está no card diverge do que está no cadastro?" — a importação só
-  preenche o que está VAZIO, de propósito. Ela não compara nem avisa quando o
-  card diz uma coisa e o cadastro diz outra — e essa divergência é justamente
-  o sinal de cadastro desatualizado de um dos dois lados.
+✔️ **"O que está no card diverge do que está no cadastro?" — isto JÁ É
+  respondido** (13/11/2026). A importação confronta as três fontes (cadastro ×
+  card × documento lido), guarda o que não bate em `cadastro_divergencias` e
+  mostra na tela de Importar, para uma pessoa decidir. Pedido dele: *"quando
+  houver divergência entre o que a IA lê e o que está cadastrado, aí você
+  questiona. E o humano decide."* O que continua valendo é que a importação
+  **não troca nada sozinha** quando há divergência.
 - "Quantas pessoas do pipe não existem no ERP?" — a importação não cria
   pessoa, então quem está só no Pipefy é invisível aqui. Responder isso
   exigiria ler os 3.664 cards, que é outra operação.
 - "O ASO desta pessoa está válido?" — o ASO **não é importado**: ele vence, e
   o card não diz até quando vale. Continua sendo anexado à mão, com a data.
+
+## 3z-ter. O CABEÇALHO DO DIÁRIO E A C. DIÁRIOS (13/11/2026)
+
+Ele, olhando o diário: *"a gente cadastrou as obras, importou lá na planilha
+C. Diários, tem todas as informações das obras, mas não está trazendo aqui para
+o cabeçalho do diário."*
+
+⚠️ **O cabeçalho não estava errado — o cadastro é que estava vazio.** O
+cabeçalho lê o CADASTRO DA OBRA e mostra o que achar; achando vazio, mostra
+travessão. E a planilha de DIÁRIOS, apesar de ter as colunas Contrato, Objeto,
+Endereço, Município, Ordem de Serviço e Responsável Técnico, veio com **todas
+elas vazias nas 1.427 linhas** (conferido coluna a coluna). Quem tem esses
+dados é a **C. Diários** — a mesma planilha que a emissão de NFS-e já lê há
+meses. Agora o ERP também lê, pela tela de Importar.
+
+### O que dá para perguntar agora
+
+- "Quantas obras estão com o cabeçalho do diário incompleto?" — e quais campos
+  faltam em cada uma.
+- "Quais obras ainda não têm responsável técnico / CREA / ART?" — a importação
+  **não traz esses**, e a conferência diz quantas obras seguem sem eles.
+- "Quais obras não têm data de início?" — é a pergunta que mais importa, porque
+  **sem ela o diário não mostra o prazo** ("dia 37 de 180"), e é o prazo que
+  sustenta pleito de aditivo.
+- "Onde a C. Diários diverge do nosso cadastro?" — contrato, objeto, município,
+  cliente. A importação não troca o que já está preenchido; mostra os dois
+  lados para alguém decidir.
+- "Quais obras da C. Diários não existem no ERP?" — a importação **não cria
+  obra**, então a lista é devolvida para ele cadastrar.
+
+### ⚠️ Palavras que mudam a resposta aqui
+
+- **"a planilha tem os dados da obra"**: depende de QUAL planilha. A de
+  diários, não tem (colunas vazias). A C. Diários, tem — mas só uma parte.
+- **"cadastro completo"** da obra: completo para o DIÁRIO são onze campos, dos
+  quais a C. Diários preenche seis. Dizer "importei, está completo" é o engano
+  que a conferência existe para evitar.
+- **"município"**: a C. Diários escreve "Aracati-CE" numa coluna só; o cadastro
+  guarda município e UF separados, que é como o papel imprime.
+- **"endereço"**: no diário é **onde o serviço acontece**. A coluna "Endereço
+  Cliente" da C. Diários é a sede do contratante — por isso ela NÃO é
+  aproveitada. O endereço da obra continua sendo digitado.
+
+### O que o sistema ainda NÃO responde
+
+- "De onde vem o endereço da obra?" — não vem de lugar nenhum ainda. Nem a
+  planilha de diários nem a C. Diários o têm; é digitado no cadastro.
+- "Qual empresa executa esta obra?" — a C. Diários tem a coluna Empresa, mas
+  por nome escrito à mão. Casar nome com o cadastro de empresas trocaria obra
+  de CNPJ, então ficou de fora: a empresa se escolhe no cadastro da obra.
+- "A obra tem aditivo de prazo?" — o cadastro tem uma data de término só. Obra
+  que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
+  não existe.
+
+### O calendário do diário, e o que cada cor diz
+
+Pergunta dele no mesmo dia: *"esse laranja é porque falta algum dado?"*
+**Não faltava.** O âmbar queria dizer "escrito, mas ainda não FECHADO" — e
+diário não nasce sem relato. Agora:
+
+| Cor | Quer dizer |
+|---|---|
+| verde cheio | fechado — é documento, corrigir pede motivo |
+| verde vazado | escrito, falta fechar |
+| **vermelho** | **falta o diário** — o único "tem trabalho aqui" |
+| cinza | fim de semana, feriado ou dia sem expediente |
+
+- "Quantos dias desta obra estão escritos mas não fechados?" — é o verde
+  vazado, e é trabalho de conferência, não de redação.
+- "Em quais obras falta diário este mês?" — já respondido pelo "Onde está
+  faltando".
 
 ## 4. Como esta lista vira código
 
