@@ -1821,7 +1821,7 @@ def ponto_api_pessoa_completar(colaborador_id: int):
     d = _corpo()
     with db.conexao() as conn:                       # a pessoa fora do alcance é 404 antes de qualquer coisa
         ocorrencias.exigir_pessoa_no_alcance(conn, quem, colaborador_id)
-    r = quadro.completar_periodo(quem, colaborador_id, d.get("datas") or [], motivo=d.get("motivo"))
+    r = quadro.completar_periodo(quem, colaborador_id, d.get("datas") or [], motivo=d.get("motivo"), obra=d.get("obra"))
     logger.info("Ponto: período completado pela escala para %s por %s — %d dia(s), %d feito(s)",
                 colaborador_id, quem.nome, len(r), sum(1 for x in r if x.get("ok")))
     return _ok(resultados=r, feitos=sum(1 for x in r if x.get("ok")),

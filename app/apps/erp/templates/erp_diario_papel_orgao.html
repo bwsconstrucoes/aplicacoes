@@ -1,163 +1,241 @@
 {# ===========================================================================
    MODELO "ÓRGÃO" — O RDO QUE A PREFEITURA EXIGE EM CONTRATO
 
-   Copiado da planilha que ele mandou em 09/11/2026 (RDO.xlsx): *"tem nessa
-   planilha aí um modelo que um determinado órgão pediu para que fosse
-   utilizado."* A ordem dos quadros é a do papel dele, e isso não é
-   preferência estética — RDO fora do modelo exigido é motivo de glosa.
+   ⚑ REFEITO EM 13/11/2026, E A RAZÃO IMPORTA MAIS QUE O CÓDIGO.
 
-   O cabeçalho é do ÓRGÃO, não da empresa: "PREFEITURA MUNICIPAL DE ABREU E
-   LIMA / SECRETARIA DE OBRAS E DEFESA CIVIL", com a logo dele à direita. Os
-   dois textos saem do cadastro da obra (contratante e unidade), porque *"isso
-   aí vai estar relacionado ao contratante"* — a mesma empresa atende
-   prefeituras diferentes.
+   A primeira versão (09/11) copiou a ORDEM dos quadros do papel dele, mas
+   vestiu tudo com a paleta da casa: azul #1b3a5c sobre faixa cinza, em
+   Helvetica. Ele viu e disse: *"o modelo que você digitou aí não está igual
+   não. As cores. Porque o modelo do órgão, ele tem que ser tal qual, não pode
+   ser parecido não. Inclusive as cores."*
 
-   ⚑ O TEMPO EM GRADE, com três colunas e "x". O modelo do órgão tem Bom,
-   Nublado e Chuva; o sistema guarda quatro situações, porque dia IMPRATICÁVEL
-   é o que sustenta pedido de prazo. Dia impraticável marca "Chuva" — que é a
-   coluna que o órgão tem — e sai escrito "(impraticável)" ao lado. Nem
-   invento coluna no papel do órgão, nem perco a informação que vale dinheiro.
+   Está certo, e o custo de errar aqui não é estético: **RDO fora do modelo
+   exigido é motivo de glosa em medição.** "Parecido" não defende ninguém.
+
+   AGORA CADA TRAÇO VEM DO ARQUIVO DELE, não do meu gosto. Fonte: RDO.xlsx,
+   mandado em 09/11/2026, aba "23.11.2023", lido célula a célula:
+
+     · **As faixas divisórias são #1F4E79** — não é um azul escolhido: é o
+       `accent1` do tema "Escritório" daquele arquivo (#5B9BD5) com tinta
+       −0,5, que é o "Azul, Ênfase 1, Mais Escuro 50%" do Excel. São oito
+       faixas de 4,5pt entre as seções (linhas 3, 8, 10, 14, 17, 20, 23, 26).
+     · **Todo o resto é preto sobre branco.** Os títulos de seção são Arial 11
+       negrito, pretos e CENTRADOS — não há fundo cinza nenhum no papel dele.
+     · **Arial**, em tudo. Moldura externa em traço médio, divisões internas
+       em traço fino, pretas.
+     · A ordem dos blocos é a dele: cabeçalho → contrato/objeto → dados e
+       tempo → histórico → quadro técnico (contratada | outros) →
+       equipamentos → serviços executados → observação da fiscalização →
+       ocorrências → assinaturas.
+
+   ⚑ O QUE NÃO VEIO DO PAPEL DELE, e por quê:
+
+   1. **O rodapé de emissão** (RDO nº, obra, "RASCUNHO — diário ainda não
+      fechado"). Fica FORA da moldura, em letra miúda. Não é parte do
+      formulário: é a marca de que o documento saiu do ERP e se já foi
+      fechado. Imprimir um rascunho como se fosse definitivo é pior que um
+      rodapé a mais.
+   2. **Os textos em vermelho** do arquivo ("Deverá constar todos os serviços
+      executados de maneira detalhada…") são INSTRUÇÕES para quem preenche o
+      papel à mão. Aqui o campo já vem preenchido, então eles não entram.
+   3. **A coluna "Impraticável".** O papel dele tem Bom, Nublado e Chuva; o
+      sistema guarda quatro situações, porque dia IMPRATICÁVEL é o que
+      sustenta pedido de prazo. Dia impraticável marca "Chuva" — a coluna que
+      o órgão tem — e sai "(impraticável)" ao lado. Nem invento coluna no
+      papel do órgão, nem perco a informação que vale dinheiro.
    =========================================================================== #}
 {% import "erp_diario_papel_macros.html" as m %}
 
-<div class="marca">
-  <div class="meio" style="text-align:left">
-    <div class="orgao" style="font-size:9.6pt">
-      {{ r.obra.contratante or "—" }}</div>
+<div class="org">
+
+  {# ---- CABEÇALHO (linha 1 do papel: Arial 14 negrito, centrado) ---- #}
+  <div class="cab linha">
+    <div class="nome">{{ (r.obra.contratante or "—") | upper }}</div>
     {% if r.obra.contratante_unidade %}
-      <div class="unidade" style="font-size:8.2pt">{{ r.obra.contratante_unidade }}</div>
+      <div class="unid">{{ r.obra.contratante_unidade | upper }}</div>
     {% endif %}
-    <h1 style="font-size:11.5pt; letter-spacing:.8pt; margin-top:2pt">
-      Relatório Diário de Obra (RDO)</h1>
+    <div class="rdo">Relatório Diário de Obra&nbsp; (RDO)</div>
+    <i class="logo {{ 'logo-contratante' if r.logos.contratante else 'vazia' }}"></i>
   </div>
-  <i class="logo {{ 'logo-contratante' if r.logos.contratante else 'vazia' }}"></i>
-</div>
 
-<div class="topo">
-  <div class="topo-linha">
-    {{ m.cel("Contrato nº", r.obra.contrato, 2) }}
-    <div class="cel leve" style="flex:6"><span>Objeto</span>
-      <b>{{ r.obra.objeto or r.obra.nome }}</b></div>
-  </div>
-  <div class="topo-linha">
-    {{ m.cel("Contratante", r.obra.contratante, 3) }}
-    {{ m.cel("Construtora", r.obra.empresa, 3) }}
-    {{ m.cel("Data", m.br(p.data) ~ " · " ~ p.dia_da_semana, 2) }}
-    {{ m.cel("Folha", p.folha ~ "/" ~ p.folhas, 1) }}
-  </div>
-  <div class="topo-linha">
-    <div class="cel" style="flex:5; padding:0">
-      <table style="border:0">
-        <thead><tr>
-          <th style="border-left:0; border-top:0">Tempo</th>
-          <th class="c">Bom</th><th class="c">Nublado</th><th class="c">Chuva</th>
-        </tr></thead>
-        <tbody>
-          {% for periodo, valor in [("Manhã", p.tempo_manha), ("Tarde", p.tempo_tarde)] %}
-          <tr>
-            <td style="border-left:0">{{ periodo }}</td>
-            <td class="c">{{ "x" if valor == "Bom" else "" }}</td>
-            <td class="c">{{ "x" if valor == "Nublado" else "" }}</td>
-            <td class="c">{% if valor in ("Chuvoso", "Impraticável") %}x
-              {%- if valor == "Impraticável" %} <small>(impraticável)</small>{% endif %}
-            {%- endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {{ m.cel("Horário de trabalho", p.horario_trabalho, 3) }}
-  </div>
-</div>
+  {# ---- CONTRATO Nº | OBJETO (linha 2) ---- #}
+  <table class="grade linha">
+    <tr>
+      <td class="rot" style="width:22%">CONTRATO<br>Nº {{ r.obra.contrato or "" }}</td>
+      <td>{{ r.obra.objeto or r.obra.nome }}</td>
+    </tr>
+  </table>
 
-{% if p.sem_expediente %}
-  <h2>Expediente</h2>
-  <div class="quadro"><div class="sem-exp">NÃO HOUVE EXPEDIENTE NESTE DIA</div></div>
-{% else %}
+  <div class="faixa-org"></div>
 
-<h2>Histórico dos serviços / ocorrências</h2>
-<div class="quadro baixo">{{ m.texto(p.historico, "Sem histórico registrado.") }}</div>
+  {# ---- CONTRATANTE / CONSTRUTORA / DATA / FOLHA + O TEMPO EM GRADE ----
+     As três colunas de tempo (Bom, Nublado, Chuva) e o "x" em cada período
+     são do papel dele, inclusive a posição: rótulos na linha de cima,
+     Manhã e Tarde nas duas de baixo. #}
+  <table class="grade linha">
+    <tr>
+      <td class="rot" style="width:16%">Contratante:</td>
+      <td colspan="3">{{ r.obra.contratante or "" }}</td>
+      <td class="rot c" style="width:11%">Bom</td>
+      <td class="rot c" style="width:11%">Nublado</td>
+      <td class="rot c" style="width:11%">Chuva</td>
+    </tr>
+    {% for periodo, valor in [("Manhã", p.tempo_manha), ("Tarde", p.tempo_tarde)] %}
+    <tr>
+      {% if loop.first %}
+        <td class="rot">Construtora:</td>
+        <td colspan="2">{{ r.obra.empresa_razao or r.obra.empresa or "" }}</td>
+      {% else %}
+        <td class="rot">Data:</td>
+        <td colspan="2">{{ m.br(p.data) }} · {{ p.dia_da_semana }}</td>
+      {% endif %}
+      <td class="rot">{{ periodo }}:</td>
+      <td class="c">{{ "x" if valor == "Bom" else "" }}</td>
+      <td class="c">{{ "x" if valor == "Nublado" else "" }}</td>
+      <td class="c">{% if valor in ("Chuvoso", "Impraticável") %}x
+        {%- if valor == "Impraticável" %} <small>(impraticável)</small>{% endif %}
+      {%- endif %}</td>
+    </tr>
+    {% endfor %}
+    <tr>
+      <td class="rot">Folha:</td>
+      <td colspan="2">{{ p.folha }}/{{ p.folhas }}</td>
+      <td class="rot">Horário de Trabalho</td>
+      <td colspan="3">{{ p.horario_trabalho or "" }}</td>
+    </tr>
+  </table>
 
-<div class="duas">
-  <div>
-    <h2>Quadro técnico — contratada <small>vem do ponto</small></h2>
-    <div class="quadro">{{ m.efetivo(p.efetivo, so_proprio=true) }}</div>
-  </div>
-  <div>
-    <h2>Outros</h2>
-    <div class="quadro">
-      {% set fora = p.efetivo.linhas | rejectattr("tipo", "equalto", "próprio") | list %}
-      {% if fora %}
-      <table>
-        <thead><tr><th>Função</th><th>Empresa</th><th class="n">Qtde.</th></tr></thead>
-        <tbody>
-          {% for l in fora %}
-          <tr><td>{{ l.funcao }}</td><td>{{ l.empresa or "—" }}</td>
-            <td class="n">{{ l.quantidade }}</td></tr>
-          {% endfor %}
-        </tbody>
-        <tfoot><tr><td colspan="2">Total</td>
-          <td class="n">{{ p.efetivo.total_terceirizado }}</td></tr></tfoot>
-      </table>
-      {% else %}<div class="vazio">Sem mão de obra de terceiros neste dia.</div>{% endif %}
-    </div>
-  </div>
-</div>
+  <div class="faixa-org"></div>
 
-<h2>Equipamentos</h2>
-<div class="quadro baixo">{{ m.equipamentos(p, "Sem equipamentos registrados.") }}</div>
-
-<h2>Serviços executados</h2>
-<div class="quadro alto">
-  {{ m.texto(p.relato) }}
-  {% if p.material %}
-  <div style="margin-top:6pt"><span class="papel">Material recebido</span>
-    {{ m.material(p.material) }}</div>
-  {% endif %}
-</div>
-{% endif %}
-
-<h2>Observação da fiscalização</h2>
-<div class="quadro medio fiscal">
-  {% if p.obs_fiscalizacao %}
-    <div class="texto">{{ p.obs_fiscalizacao }}</div>
-    <div class="assinou">registrado por {{ p.obs_fiscalizacao_por }}</div>
+  {% if p.sem_expediente %}
+    <div class="sec linha">EXPEDIENTE</div>
+    <div class="area media"><b>NÃO HOUVE EXPEDIENTE NESTE DIA</b></div>
+    <div class="faixa-org"></div>
   {% else %}
-    <div class="vazio">Campo reservado à fiscalização.</div>
+
+  {# ---- HISTÓRICO DOS SERVIÇOS / OCORRÊNCIAS ---- #}
+  <div class="sec">HISTÓRICO DOS SERVIÇOS/ OCORRÊNCIAS</div>
+  <div class="area media">{{ m.texto(p.historico, "Sem histórico registrado.") }}</div>
+
+  <div class="faixa-org"></div>
+
+  {# ---- QUADRO TÉCNICO: CONTRATADA | OUTROS ----
+     No papel dele o quadro é texto corrido ("Engenheiro Civil: 01 / Técnico
+     Fiscal: 01 / Pedreiro: …"), e é assim que sai aqui — a tabela com borda
+     da versão anterior era invenção minha. Os números vêm do PONTO. #}
+  <div class="sec">QUADRO TÉCNICO</div>
+  <div class="duas-org linha">
+    <div>
+      <div class="sec" style="font-size:8.4pt; padding-top:0">CONTRATADA</div>
+      <div class="area media">
+        {% set proprios = p.efetivo.linhas | selectattr("tipo", "equalto", "próprio") | list %}
+        {% if proprios %}
+          {% for l in proprios %}
+            <div>{{ l.funcao }}: {{ "%02d" | format(l.quantidade) }}</div>
+          {% endfor %}
+          <div style="margin-top:3pt"><b>Total: {{ "%02d" | format(p.efetivo.total_proprio) }}</b></div>
+        {% else %}<div class="vazio">Sem efetivo próprio registrado.</div>{% endif %}
+        {# A lista da planilha antiga que ficou FORA da soma, quando o dia
+           também tem batida de ponto: são dois registros da mesma gente, e
+           somá-los inflava o efetivo (13/11/2026). Fica dita, nunca apagada —
+           é o que a obra informou na época. #}
+        {% if p.efetivo.da_planilha_fora_da_soma %}
+        <div class="vazio" style="margin-top:3pt">Informado na planilha antiga,
+          fora da contagem (este dia tem ponto):
+          {{ p.efetivo.da_planilha_fora_da_soma | sum(attribute="quantidade") }}
+          pessoa(s).</div>
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="sec" style="font-size:8.4pt; padding-top:0">OUTROS</div>
+      <div class="area media">
+        {% set fora = p.efetivo.linhas | rejectattr("tipo", "equalto", "próprio") | list %}
+        {% if fora %}
+          {% for l in fora %}
+            <div>{{ l.funcao }}{% if l.empresa %} ({{ l.empresa }}){% endif %}:
+              {{ "%02d" | format(l.quantidade) }}</div>
+          {% endfor %}
+          <div style="margin-top:3pt"><b>Total: {{ "%02d" | format(p.efetivo.total_terceirizado) }}</b></div>
+        {% else %}<div class="vazio">Sem mão de obra de terceiros neste dia.</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="faixa-org"></div>
+
+  {# ---- EQUIPAMENTOS ---- #}
+  <div class="sec">EQUIPAMENTOS</div>
+  <div class="area">{{ m.equipamentos(p, "Sem equipamentos registrados.") }}</div>
+
+  <div class="faixa-org"></div>
+
+  {# ---- SERVIÇOS EXECUTADOS (o quadro mais alto do papel dele) ---- #}
+  <div class="sec">SERVIÇOS EXECUTADOS</div>
+  <div class="area alta">
+    {{ m.texto(p.relato) }}
+    {% if p.material %}
+    <div style="margin-top:6pt"><b>Material recebido</b>
+      {{ m.material(p.material) }}</div>
+    {% endif %}
+  </div>
+
+  <div class="faixa-org"></div>
   {% endif %}
+
+  {# ---- OBSERVAÇÃO DA FISCALIZAÇÃO ---- #}
+  <div class="sec">OBSERVAÇÃO DA FISCALIZAÇÃO</div>
+  <div class="area alta">
+    {% if p.obs_fiscalizacao %}
+      <div class="texto">{{ p.obs_fiscalizacao }}</div>
+      <div style="margin-top:4pt; font-size:7.6pt">registrado por
+        {{ p.obs_fiscalizacao_por }}</div>
+    {% else %}
+      <div class="vazio">Espaço reservado para a fiscalização colocar suas
+        observações e registros.</div>
+    {% endif %}
+  </div>
+
+  <div class="faixa-org"></div>
+
+  {# ---- OCORRÊNCIAS ---- #}
+  <div class="sec">OCORRÊNCIAS</div>
+  <div class="area media">
+    {% if p.fiscalizacao_esteve %}
+      <div><b>A fiscalização esteve na obra.</b>
+        {% if p.fiscalizacao_quem %}{{ p.fiscalizacao_quem }}{% endif %}</div>
+    {% endif %}
+    {% if p.ocorrencias %}<div class="texto">{{ p.ocorrencias }}</div>
+    {% elif not p.fiscalizacao_esteve %}<div class="vazio">Sem ocorrências.</div>{% endif %}
+  </div>
+
+  {{ m.correcoes(p.correcoes) }}
+
+  <div class="faixa-org"></div>
+
+  {# ---- ASSINATURAS: CONTRATADA | FISCALIZAÇÃO, como no papel dele ---- #}
+  <div class="assin-org">
+    <div>
+      <div class="quem">CONTRATADA</div>
+      <div class="campo-assin">Empresa: {{ r.obra.empresa_razao or r.obra.empresa or "" }}</div>
+      <div class="campo-assin" style="margin-top:12pt">Responsável técnico:
+        {{ r.obra.responsavel_tecnico or "" }}</div>
+      <div class="campo-assin" style="margin-top:12pt">Nº de Registro profissional:
+        {%- if r.obra.crea %} CREA {{ r.obra.crea }}
+        {%- elif r.obra.art_rrt %} ART {{ r.obra.art_rrt }}{% endif %}</div>
+    </div>
+    <div>
+      <div class="quem">FISCALIZAÇÃO</div>
+      <div class="campo-assin">Empresa:</div>
+      <div class="campo-assin" style="margin-top:12pt">Responsável técnico:</div>
+      <div class="campo-assin" style="margin-top:12pt">Nº de Registro profissional:</div>
+    </div>
+  </div>
 </div>
 
-{% if not p.sem_expediente %}
-<h2>Ocorrências</h2>
-<div class="quadro baixo">
-  {% if p.fiscalizacao_esteve %}
-    <div><b>A fiscalização esteve na obra.</b>
-      {% if p.fiscalizacao_quem %}{{ p.fiscalizacao_quem }}{% endif %}</div>
-  {% endif %}
-  {% if p.ocorrencias %}<div class="texto">{{ p.ocorrencias }}</div>
-  {% elif not p.fiscalizacao_esteve %}<div class="vazio">Sem ocorrências.</div>{% endif %}
-</div>
-{% endif %}
-
-{{ m.correcoes(p.correcoes) }}
-
-<div class="assinaturas">
-  <div><div class="linha-assin">
-    <b>{{ r.obra.responsavel_tecnico or "&nbsp;" | safe }}</b>
-    <small>{{ r.obra.empresa_razao or r.obra.empresa or "Empresa" }}</small>
-    <small>Responsável técnico · nº de registro
-      {%- if r.obra.crea %} CREA {{ r.obra.crea }}
-      {%- elif r.obra.art_rrt %} ART {{ r.obra.art_rrt }}{% endif %}</small>
-    <span class="papel">Contratada</span>
-  </div></div>
-  <div><div class="linha-assin">
-    <b>&nbsp;</b>
-    <small>{{ r.obra.contratante or "Contratante" }}</small>
-    <small>Responsável técnico · nº de registro profissional</small>
-    <span class="papel">Fiscalização</span>
-  </div></div>
-</div>
-
+{# O rodapé fica FORA da moldura: não é parte do formulário do órgão, é a
+   marca de que o papel saiu do ERP — e, principalmente, de que ainda é
+   rascunho. Imprimir rascunho com cara de definitivo é pior que um rodapé. #}
 <div class="rodape">
   <span>RDO {{ p.prazo.decorridos or "—" }} · {{ r.obra.codigo }} ·
     {{ m.br(p.data) }}</span>

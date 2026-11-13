@@ -21,10 +21,321 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 — O EFETIVO DO PONTO NO DIÁRIO ESTAVA ERRADO: TRÊS DEFEITOS
+
+Ele, olhando o diário: *"eu acho que ele está dobrando o efetivo. Eu acho que
+ele está contabilizando de forma errada. Talvez pela quantidade de pontos. Aí
+está dando um valor acima do que é o normal, do que é o real. E não é nem
+dobrando, não. E outra coisa, aí tá aparecendo uns horários esquisitos também.
+Tem erro aí nessa importação do ponto."*
+
+**Eram três, e todos no código — nenhum era a "quantidade de pontos".** Uma
+pessoa com quatro batidas sempre contou como uma. Mas:
+
+**1. A HORA SAÍA EM UTC.** `ponto.marcacoes.timestamp_servidor` é gravado em
+UTC (Render e Postgres rodam em UTC) e a área do ponto converte para Fortaleza
+em toda saída (`ponto/horario.py:para_local`). O diário imprimia o valor cru:
+**quem bateu 7:00 aparecia às 10:00.** Agora a conversão é feita no banco, com
+`AT TIME ZONE`, dentro do próprio MIN/MAX.
+
+**2. O FILTRO DE BATIDA VÁLIDA ERA UMA PALAVRA QUE NÃO EXISTE.** O diário
+pedia as batidas "não CANCELADA". Os status de `ponto.marcacoes` são VALIDA,
+EM_ANALISE, AJUSTADA e REJEITADA — **cancelada não é um deles**. O filtro não
+tirava nada, e **batida REJEITADA contava como gente em obra**. O ponto
+inteiro usa "não REJEITADA" (qualidade, folha, espelho, arquivos fiscais); o
+diário era o único fora do passo, em três consultas. AJUSTADA fica dentro de
+propósito: é a batida que a pessoa esqueceu e o supervisor incluiu.
+
+**3. O EFETIVO DA PLANILHA SOMAVA COM O DO PONTO — e este é o "valor acima do
+real".** Os 1.427 diários importados trazem o efetivo do dia em
+`diario_efetivo_extra` (origem IMPORTADO). Quando o MESMO dia também tem
+batida — e tem, porque a planilha vai até datas em que o ponto já rodava — o
+diário somava **os dois registros da mesma gente**: 17 da planilha + 9 do
+ponto = 26 numa obra que teve 9. Não dava o dobro exato justamente por serem
+contagens diferentes do mesmo dia.
+
+⚑ **A REGRA NOVA, e ela é de documento:** havendo batida, **o ponto manda** —
+é a fonte com nome, hora e foto. A lista da planilha continua aparecendo, na
+tela e no papel, dita como o que foi informado na época, mas **fora da soma**.
+Sem batida (os anos anteriores), a planilha é o único registro que existe e
+conta inteira, como sempre contou. Mora em `diario.importado_conta`, num lugar
+só, porque a tela e as três folhas usam a mesma resposta.
+
+**Um quarto, defensivo:** a função vinha do Registro de Colaboradores por
+`LEFT JOIN analisesps.colaborador` + `GROUP BY …, r.cargo`. Lá o CPF é a chave
+**como texto** e o casamento aqui é por dígitos — bastava o mesmo CPF existir
+em duas grafias para a mesma pessoa virar duas linhas, e duas pessoas na
+conta. Agora vem por subconsulta com LIMIT 1: a contagem de gente em obra não
+depende de a tabela vizinha estar limpa.
+
+⚠️ **Por que nada disso aparecia nos testes:** os três defeitos moram no
+WHERE, no GROUP BY e no fuso — exatamente o que o dublê de sessão do
+`conftest.py` não alcança, e as 108 provas do diário nunca encostaram no
+schema `ponto`. O arquivo novo `tests/test_diario_efetivo_do_ponto_banco.py`
+sobe o schema do ponto de verdade e bate batidas de verdade: **10 provas, e 8
+delas falham se o código antigo voltar** (conferido devolvendo os defeitos de
+propósito e rodando).
+
+### ⚑ 13/11/2026 — O MODELO DO ÓRGÃO: "tal qual", não "parecido"
+
+Ele, vendo o RDO impresso: *"o modelo que você digitou aí não está igual não.
+As cores. Porque o modelo do órgão, ele tem que ser tal qual, não pode ser
+parecido não. Inclusive as cores."* E logo depois: *"estou me referindo só ao
+modelo do órgão."*
+
+**Tinha razão, e o custo não é estético: RDO fora do modelo exigido é motivo
+de GLOSA em medição.** A versão de 09/11 copiou a ORDEM dos quadros do papel
+dele, mas vestiu tudo com a paleta da casa — azul #1b3a5c sobre faixa cinza,
+em Helvetica. Ficou bonito e ficou NOSSO, que é exatamente o erro.
+
+**Agora cada traço vem do arquivo dele**, o `RDO.xlsx` de 09/11/2026 (aba
+"23.11.2023"), lido célula a célula:
+
+- as oito faixas divisórias são **#1F4E79** — não é um azul escolhido: é o
+  `accent1` do tema "Escritório" daquele arquivo (#5B9BD5) com tinta −0,5, o
+  "Azul, Ênfase 1, Mais Escuro 50%" do Excel. Ficam nas linhas 3, 8, 10, 14,
+  17, 20, 23 e 26, com 4,5pt de altura;
+- **todo o resto é preto sobre branco**, em **Arial**, com os títulos de seção
+  em negrito e CENTRADOS. Não há fundo cinza nenhum no papel dele;
+- moldura externa em traço médio, divisões internas em traço fino, pretas.
+
+⚠️ **Três coisas NÃO vieram do papel dele, e está escrito no arquivo por quê:**
+o rodapé de emissão (fica fora da moldura — é a marca de que o papel saiu do
+ERP e se ainda é rascunho), os textos em vermelho (são instruções para quem
+preenche à mão) e a coluna "Impraticável" (o papel tem três colunas de tempo;
+dia impraticável marca "Chuva" e sai "(impraticável)" ao lado, porque é o que
+sustenta pedido de prazo).
+
+**Duas armadilhas que custaram tempo e viraram comentário no código:**
+
+1. A faixa azul se chamava `.barra` — e a página JÁ tinha uma `.barra`, a de
+   ferramentas do alto, com `@media print { display:none }`. **As oito faixas
+   sumiam só na impressão**, e na tela apareciam. Hoje é `.faixa-org`.
+2. Com as faixas, a folha passou de 278 mm e o dia saía em DUAS páginas. Os
+   quadros encolheram (média 44pt, alta 86pt). **Mexeu nas alturas, gere o PDF
+   de um dia comum antes de commitar.**
+
+**Quatro testes de trava** guardam isto em `tests/test_diario_de_obra.py`: o
+azul exato, a ausência da paleta da casa, a ordem dos quadros e o fato de que
+só o modelo do órgão ganha esse estilo. A tentação de "dar uma melhorada no
+visual" volta toda vez que alguém abre o arquivo.
+
+### ⚑ 13/11/2026 — O CABEÇALHO DO DIÁRIO VINHA VAZIO, E NÃO ERA BUG DO DIÁRIO
+
+Ele: *"eu não sei porque a obra — a gente cadastrou as obras, cadastrou assim,
+importou lá na planilha C. Diários, tem todas as informações das obras, mas não
+está trazendo aqui para o cabeçalho do diário."*
+
+**O cabeçalho estava certo. O cadastro da obra é que estava vazio.** Três
+verificações, nesta ordem, e a terceira é a que resolveu:
+
+1. `diario.cabecalho()` lê o CADASTRO da obra e mostra o que achar; achando
+   vazio, mostra travessão. Nunca houve nada a consertar aí.
+2. A **planilha de diários** que ele mandou (1.427 linhas) tem as colunas
+   Contrato, Objeto, Endereço, Município, Ordem de Serviço, Unidade PMF,
+   Responsável Técnico, Resp. Fiscalização, Empresa, Data de Início e Data de
+   Término — e **todas as onze vêm vazias nas 1.427 linhas**. Conferido coluna
+   a coluna. Não era de lá que o dado viria.
+3. A **C. Diários** (aba "Centro de Custo") é que tem os dados — e o monorepo
+   **já a lê há meses**, na emissão de NFS-e (`app/apps/emissaonf/cdiarios.py`).
+   O ERP é que nunca tinha olhado para ela.
+
+**O que foi feito:** `core/importadores/obras_cdiarios.py` + a rota
+`/erp/api/obras/cdiarios` + um cartão na tela de **Importar**. Ele baixa a
+C. Diários como .xlsx e completa o cadastro das obras.
+
+⚠️ **O QUE A C. DIÁRIOS NÃO TEM, e é metade do valor do relatório:**
+responsável técnico, CREA, ART, ordem de serviço e sua data, início e término.
+**Sem data de início o diário não mostra o quadro de prazo** ("dia 37 de 180"),
+que é o que sustenta pleito de aditivo. A conferência diz quantas obras seguem
+sem cada um desses — para ninguém importar e achar que acabou.
+
+**Decisões, com o motivo:**
+
+- **Não cria obra.** A C. Diários tem obras de anos; criar cadastro a partir
+  dela seria encher o sistema de duplicata para limpar à mão depois.
+- **Não sobrescreve o que já está preenchido** (sem `regravar`). O que alguém
+  digitou aqui vale mais que a planilha — mas a divergência é MOSTRADA, com os
+  dois lados, porque calá-la seria pior.
+- **A coluna "Endereço Cliente" NÃO é aproveitada.** É a sede do contratante;
+  no diário o Endereço é onde o serviço acontece. Pôr um no lugar do outro é
+  escrever mentira num documento que a fiscalização assina. **O endereço da
+  obra continua sem fonte** — é digitado.
+- **A coluna "Empresa" também não.** Vem por nome escrito à mão, e casar nome
+  com o cadastro de empresas trocaria obra de CNPJ.
+- **Casa pelos DOIS códigos da obra** (o primário e o da coluna A), como a
+  emissão de NFS-e aprendeu a fazer: o mesmo contrato aparece com um ou outro.
+
+### ⚑ 13/11/2026 — O CALENDÁRIO DO DIÁRIO: mês com setas, e o laranja que mentia
+
+Quatro queixas dele sobre a tela do diário, todas atendidas:
+
+1. *"tem um filtro de dia, sendo que embaixo a gente tem um mês inteiro. Esse
+   filtro de dia acaba se tornando meio que sem sentido (…) o que seria mais
+   importante é poder colocar aqui o mês e ano, e ter uma setinha, dois botões,
+   para poder avançar no tempo. Por mês."* → o campo de data **saiu da coluna**
+   (continua existindo escondido, porque é ele que o resto da tela lê) e no
+   lugar entrou **◀ mês/ano ▶**. O dia se escolhe clicando no calendário, que é
+   onde se enxerga o que falta. A data escolhida passou a aparecer **no título
+   do cartão "O dia"** — sem isso, quem folheia o calendário perde de vista que
+   dia está editando, e diário escrito no dia errado é estrago calado.
+2. *"tem vermelho quando não está preenchido. Aí tem os que estão preenchidos,
+   mas está laranja. Esse laranja é porque falta algum dado?"* → **não faltava
+   dado nenhum.** O âmbar era "escrito, mas ainda não FECHADO", e diário não
+   nasce sem relato (`salvar` recusa). A cor dizia a verdade para quem conhece
+   o sistema por dentro e mentia para quem olha. Agora: **verde cheio** =
+   fechado, **verde vazado** = escrito e falta fechar, **vermelho** = falta o
+   diário — e só o vermelho é alarme. Entrou **legenda na tela**, porque a
+   pergunta dele só existiu por a cor não ter onde se explicar.
+3. *"a gente normalmente imprime um período e não apenas um dia."* → a folha
+   **já sabia imprimir período** desde 08/11 (a rota recebe `de` e `ate`); era
+   o botão que mandava o mesmo dia nos dois. Agora ele pergunta o período, já
+   sugerindo o mês que está na tela, e oferece imprimir também os dias **em
+   branco**, para levar as folhas para a obra.
+
+---
+
+### ⚑ 13/11/2026 — O DADO QUE NÃO BATE VIRA PERGUNTA (migração 102)
+
+Ele: *"em relação a IA errar a leitura, eu acho que pode fazer o seguinte:
+quando houver divergência entre o que a IA lê e o que está cadastrado, aí você
+questiona. E o humano decide."*
+
+A importação já comparava as três fontes — o cadastro do ERP, o card do Pipefy
+e o documento lido pela IA — e mostrava a divergência no relatório. **Só que o
+relatório é de uma rodada: fechou a tela, perdeu-se.** Com 575 pessoas, "anote
+num papel o que não bateu" não é plano.
+
+Agora a divergência é **guardada** (`cadastro_divergencias`) e aparece numa
+fila na tela Importar, com as três versões lado a lado e quatro botões: *o do
+documento*, *o do card*, *manter o do ERP*, *ignorar*. A de maior força vem em
+negrito — documento > card > cadastro.
+
+**Uma pergunta ABERTA por pessoa e campo.** Ele vai reimportar na carga
+inicial; sem essa trava a lista cresceria sem ninguém ter decidido nada.
+
+#### Dois defeitos que os testes e a tela pegaram
+
+1. ⚑ **Decidir o nome não mudava o nome.** `_gravar_campos` força
+   `nome = o atual` de propósito — a importação em massa preenche buraco, não
+   renomeia gente em lote por uma leitura torta. Mas a DECISÃO é exatamente o
+   caso em que o nome deve mudar. Agora há uma porta só para ela
+   (`permitir_nome`), e um teste guarda **cada metade**: a decisão muda, a
+   importação em massa não. O CPF fica fora das duas.
+2. **"CPF inválido" ao decidir o NOME.** A gravação passa pelas conferências
+   do cadastro inteiro, então uma pessoa com CPF inválido gravado dava esse
+   recado — e quem o lesse procuraria o erro no lugar errado. Agora o recado
+   diz o que é e o que fazer.
+
+#### O que continua sendo decisão dele
+
+A IA **não grava sozinha**, e isso é deliberado: ela erra em silêncio, e
+trocar o nome de alguém na folha por uma leitura torta só aparece quando o
+pagamento volta.
+
+### ⚑ 13/11/2026 (2ª correção) — QUEM LISTA OS CARDS É ELE
+
+Logo depois de publicar a correção da manhã (achar as pessoas varrendo o pipe
+e casando pelo CPF), ele usou e derrubou:
+
+> *"Eu prefiro listar os cards, porque você está trazendo card duplicado, só
+> que aí tem card que está cancelado, isso aqui não me interessa. Eu vou
+> listar os cards que eu quero que você busque. E você faz a pesquisa card a
+> card e puxa as informações e grava."*
+
+**Tem razão, e o argumento é forte:** o pipe tem 3.664 cards, com **cancelados
+e repetidos** no meio. Separar o que presta exige conhecer o pipe — e quem
+conhece é ele, que tem a planilha com os números certos. Varrer tudo e casar
+por CPF era eu decidindo no lugar dele, e decidindo pior.
+
+**Como ficou:** uma caixa de texto onde ele cola os números. Um por linha,
+separados por vírgula, colados direto de uma coluna da planilha, ou o endereço
+inteiro do card — a mesma leitura do importador de SPs, que roda há meses.
+Repetido entra uma vez só. O sistema busca **só esses**, card a card, acha a
+pessoa pelo **CPF do próprio card**, e grava o número do card no cadastro como
+procedência.
+
+⚑ **A VARREDURA DO PIPE FOI REMOVIDA, não desligada.** Deixá-la como "segunda
+opção" criaria duas portas para a mesma coisa — o que ele já derrubou no
+cadastro de empresa (*"uma porta só"*) e no diário (*"ou é um ou é o outro"*).
+Código morto com teste verde é pior que código morto.
+
+**A lição desta — e é a segunda do mesmo dia, sobre o mesmo recurso:** eu
+escolhi sozinho DE ONDE vinham os dados (primeiro supondo um campo preenchido,
+depois varrendo o pipe inteiro), quando a pergunta "de onde sai essa lista?"
+era dele desde o começo. Funcionalidade que depende de um dado de fora começa
+perguntando quem é o dono daquele dado.
+
+### ⚑ 13/11/2026 — A IMPORTAÇÃO DO PIPEFY PEDIA UM NÚMERO QUE NÃO EXISTIA
+
+Ele, na primeira vez que usou a tela:
+
+> *"Eu clico em conferir sem gravar e dá uma mensagem lá em cima: nenhuma
+> pessoa com número de card do Pipefy nesse filtro. E onde é que eu coloco os
+> números do card se não tem campo?"*
+
+**Tinha razão, e o defeito era meu, de desenho.** Eu construí a importação
+assumindo que `colaboradores.ref_pipefy` já estava preenchido em produção.
+**Não estava** — e, como a tela não tinha onde digitar o número, o botão
+**não tinha como funcionar nunca**. A recusa dava a entender que faltava um
+filtro; o que faltava era o dado inteiro.
+
+⚑ **E a resposta certa não era criar o campo.** O card tem o CPF, o cadastro
+tem o CPF: quem casa os dois é o sistema. Ninguém digita 3.664 números — e um
+número digitado errado colaria os documentos de uma pessoa na ficha de outra.
+
+**Como ficou:** quando ninguém tem card, a primeira rodada **varre o pipe**
+(50 por página, a mesma paginação do `scripts/exportar_pipefy.py`, trazendo só
+o CPF de cada card), casa pelo CPF e **grava o número do card** em quem
+casou — então a segunda rodada não varre nada. O número do card virou
+**resultado** da importação, não requisito dela.
+
+**Três casos que NÃO entram, e aparecem no relatório em vez de sumir:**
+
+- **card sem CPF** — não há por onde casar;
+- **card de quem não está no ERP** — a importação não cria pessoa (decisão de
+  antes, mantida); fica a lista para alguém cadastrar;
+- ⚑ **dois cards para o mesmo CPF** — e aqui a recusa é deliberada: escolher um
+  dos dois seria adivinhar qual é o cadastro bom, e o errado colaria os
+  documentos de um período na ficha do outro.
+
+**A tela também mentia por omissão:** dizia "0 pessoa(s) com número de card" e
+oferecia o botão assim mesmo. Agora, quando ninguém tem card, ela explica que
+**não é preciso digitar nenhum** e que a primeira rodada serve justamente para
+achar as pessoas.
+
+⚑ **A LIÇÃO, porque ela não é só desta tela:** eu construí uma tela inteira,
+com 17 testes verdes, em cima de uma suposição sobre o estado da PRODUÇÃO que
+eu nunca pude conferir daqui — e os testes não pegam isso, porque o mundo de
+teste eu mesmo preencho. Funcionalidade que depende de dado já existente
+precisa perguntar antes: *esse dado existe mesmo, hoje, lá?*
+
+### ✔️ 13/11/2026 — a junção do Ponto NÃO desfez o campo único de empresa (conferido)
+
+Os dois chats mexeram na MESMA tela (`erp_colaboradores.html`) na mesma
+semana: o do ERP em 11/11 (empresa de registro num campo só) e o do Ponto em
+13/11 (ficha única). **Conferido depois da publicação deles: o conserto
+sobreviveu** — a tela tem um campo só, o texto livre do CNPJ não voltou, e as
+cinco travas passam.
+
+⚑ **Fica registrado porque o próximo encontro desses dois pode não ter a mesma
+sorte.** O que protege é
+`tests/test_caixa_e_portal.py::test_nenhuma_tela_pergunta_a_empresa_duas_vezes`:
+se ela ficar vermelha depois de uma junção, **não é teste chato — é o campo
+duplicado voltando**, e o conserto é refazer a junção, nunca apagar o teste.
+
+O defeito que ela guarda: *"Empresa do grupo"* e *"CNPJ de admissão"* eram dois
+campos para o mesmo fato, e a caixinha de empresa nunca funcionou porque
+`pessoas.opcoes()` não devolvia `empresas` — o único jeito de dizer a empresa
+era digitar o CNPJ no texto ao lado, e os dois podiam divergir.
+
 ### 🔀 13/11/2026 — o Ponto saiu de dentro de Pessoal, e a ficha da pessoa virou UMA (feito pelo chat do Ponto)
 
-**Feito no ramo `feature/modulo-ponto`, pelo chat do Ponto, com o "pode" do dono para mexer aqui.** Não publicado
-ainda: o dono quer publicar quando tudo estiver pronto. Se este chat for mexer na tela de **Colaboradores** ou no
+**Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui, e PUBLICADO em 13/11/2026** (a nota original
+dizia "não publicado ainda"; corrigido pelo chat do ERP depois da publicação). Quem for mexer na tela de
+**Colaboradores** ou no **menu**: traga a `main` antes, senão os dois lados se pisam.
+**Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui. PUBLICADO em 13/11/2026** (suíte inteira: 11.000
+passaram). Se este chat for mexer na tela de **Colaboradores** ou no
 **menu**, traga a `main` antes — senão os dois lados vão se pisar.
 
 O dono, 13/11/2026: *"quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande (…) era

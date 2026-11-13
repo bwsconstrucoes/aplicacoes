@@ -141,7 +141,11 @@ def test_a_compensacao_conferida(app, mundo):
         bater_via_chave(app, CPF_JOAO, local(sabado, h, 0))
     d = _dia(dp, mundo["joao"], ter)
     assert d["situacao"] == "FALTA_PARCIAL" and d["debito"] == 300
-    assert any("não cumprida" in x["rotulo"] for x in d["declaracoes"])
+    # 13/11/2026: cobriu parte = "incompleta", com quanto faltou (antes dizia "a folga virou falta")
+    assert "COMPENSACAO_INCOMPLETA" in d["alertas"] and "COMPENSACAO_NAO_CUMPRIDA" not in d["alertas"]
+    assert "FALTA" not in d["alertas"]                    # não é falta inteira: nem etiqueta, nem alerta de falta
+    assert any(x["rotulo"] == f"Compensação incompleta — {sabado:%d/%m} cobriu 4h00 das 9h00; faltam 5h00"
+               for x in d["declaracoes"]), d["declaracoes"]
     # o dia trabalhado ainda não chegou: a folga vale, e fica "a cumprir"
     compensar(qua, futuro)
     d = _dia(dp, mundo["joao"], qua)

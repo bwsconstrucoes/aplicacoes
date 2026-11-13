@@ -165,8 +165,15 @@ def _apoio_da_lista(s: Session, ids: list[int], pessoas: list) -> tuple:
 
     cargos = {c.id: c.nome for c in s.scalars(select(Cargo)).all()}
     convencoes = {c.id: c.nome for c in s.scalars(select(Convencao)).all()}
+    # ⚑ A EMPRESA ENTRA NA LISTA (13/11/2026). Ele: *"aqui em colaboradores,
+    # essa questão sempre vai ser um dado importante. Para a gente visualizar
+    # fácil, a empresa."* Uma consulta para a lista inteira, pelo mesmo motivo
+    # de cargo e convenção: por pessoa seriam 575 idas ao banco.
+    from app.apps.erp.db.models.cadastros import Empresa
+    empresas = {e.id: (e.nome_fantasia or e.razao_social)
+                for e in s.scalars(select(Empresa)).all()}
     if not ids:
-        return cargos, convencoes, {}, {}, {}
+        return cargos, convencoes, {}, {}, {}, empresas
 
     # OS PAPÉIS QUE FALTAM, de uma vez: o que cada pessoa TEM, e a conta do que
     # falta é feita em memória contra a lista da admissão.
@@ -202,7 +209,7 @@ def _apoio_da_lista(s: Session, ids: list[int], pessoas: list) -> tuple:
         SELECT colaborador_id, count(*) FROM dp_devolucoes
          WHERE colaborador_id = ANY(:ids) AND situacao IN ('ABERTA','COBRADA')
          GROUP BY colaborador_id""")
-    return cargos, convencoes, faltando_papel, pedidos, devolucoes
+    return cargos, convencoes, faltando_papel, pedidos, devolucoes, empresas
 
 
 def _contar_pendencia(s: Session, ids: list[int], sql: str) -> dict[int, int]:
@@ -263,8 +270,8 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
     # AS CONSULTAS DE APOIO, UMA VEZ PARA A LISTA INTEIRA. Fazer isto por
     # pessoa seriam 575 idas ao banco para abrir uma tela — é a diferença entre
     # a tela abrir e a tela travar.
-    cargos, convencoes, faltando_papel, pedidos, devolucoes = _apoio_da_lista(
-        s, [c.id for c in pessoas], pessoas)
+    (cargos, convencoes, faltando_papel, pedidos, devolucoes,
+     empresas) = _apoio_da_lista(s, [c.id for c in pessoas], pessoas)
 
     return [{
         "id": c.id, "nome": c.nome, "cpf": c.cpf, "matricula": c.matricula,
@@ -298,6 +305,9 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
         "vinculo": c.vinculo or "CTPS",
         "cargo": cargos.get(c.cargo_id or 0, ""),
         "cargo_id": c.cargo_id,
+        # A empresa de registro, para a lista poder mostrar e filtrar por ela.
+        "empresa": empresas.get(c.empresa_id or 0, ""),
+        "empresa_id": c.empresa_id,
         "convencao": convencoes.get(c.convencao_id or 0, ""),
         "convencao_id": c.convencao_id,
         "empresa_id": c.empresa_id,

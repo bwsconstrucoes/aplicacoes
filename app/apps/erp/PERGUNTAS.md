@@ -406,6 +406,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantos atestados houve no mês, e quantos dias? (Ponto › Painel, cartão "Atestados": os aprovados que tocam o período, os dias contados só dentro dele; as declarações de comparecimento à parte)
 - Que batidas faltam ao Fulano entre tal e tal dia, pela escala? 🔒 (janela da pessoa › "📅 Completar o período pela escala" › "Ver o que vai entrar": a prévia dia a dia, sem gravar nada; até 31 dias; só quem trata o ponto; desde 13/11/2026)
 - Quantas batidas a gestão incluiu em lote para o Fulano? (ajustes com o motivo "incluída em lote pela gestão" — no espelho e nos pedidos da pessoa; ❌ ainda não há um relatório só dessas)
+- O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
 - Quais alertas do mês passado ainda estão abertos? (Alertas › Período "Mês anterior", Situação "Abertos"; "mês passado" = o DIA do alerta no mês anterior, não o dia em que o alerta foi criado; desde 10/11/2026)
 - Quantos alertas a obra X tem abertos? (Alertas › filtro "Obra", com a contagem de cada; muda com o período, o tipo e a gravidade escolhidos, e com as obras de quem pergunta)
 - Quantos alertas de cada tipo estão abertos? (Alertas › filtro "Tipo de alerta", com a contagem de cada; muda com a situação e a gravidade escolhidas, e com as obras de quem pergunta)
@@ -1944,8 +1945,10 @@ Três mudanças pequenas nas solicitações do DP, e todas mexem no mesmo lugar:
 
 ## 3z-bis. O QUE VEIO DO PIPEFY (10/11/2026)
 
-O número do card já estava no cadastro (`colaboradores.ref_pipefy`). Agora o
-ERP sabe ler esse card, baixar os documentos da pessoa e preencher o que está
+⚠️ **Corrigido em 13/11/2026:** eu tinha escrito que *"o número do card já
+estava no cadastro"*. **Não estava** — e por isso a importação não funcionava.
+Agora **ele cola a lista** dos cards que quer; o sistema lê card a card, acha a
+pessoa pelo **CPF do próprio card**, baixa os documentos e preenche o que está
 em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
 
 ### O que dá para perguntar agora
@@ -1957,9 +1960,10 @@ em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
 - "Quais arquivos não desceram, e por quê?" — é a lista que precisa de mão
   humana, e é a pergunta que impede "importação concluída" de esconder trinta
   falhas.
-- "Quantas pessoas ativas ainda estão sem número de card?" — essas nunca vão
-  ser alcançadas pela importação, e é por aí que se descobre quem entrou no
-  ERP por fora do Pipefy.
+- "Quantas pessoas ativas ainda estão sem número de card?" — depois da
+  importação, é por aí que se descobre quem entrou no ERP por fora do Pipefy.
+  ⚠️ **Antes da importação a resposta é "todas"**, e isso não quer dizer nada:
+  o número do card só existe no cadastro DEPOIS de a pessoa ter sido trazida.
 - "Esta pessoa está com o cadastro documental completo?" — CPF, documento de
   identificação, comprovante de endereço e, no caso CTPS, as duas páginas.
 
@@ -1969,23 +1973,139 @@ em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
   card lido cujos oito anexos falharam conta como lido e não trouxe nada.
 - **"já veio"** é por (card, campo, arquivo) — não por pessoa. Pessoa com seis
   documentos pode ter cinco guardados e um pendente.
-- **"todas as pessoas"**: o padrão da importação é **quem está trabalhando**.
-  O pipe tem 3.664 cards e o ERP não precisa do histórico de quem saiu há
-  cinco anos.
+- **"todas as pessoas"**: a importação traz **o que ele listar**, e só. O pipe
+  tem 3.664 cards, com cancelados e repetidos no meio — separar isso é dele,
+  que conhece o pipe, e não do sistema. Ele, em 13/11/2026: *"eu vou listar os
+  cards que eu quero que você busque."*
 
 ### O que o sistema ainda NÃO responde
 
 - "O documento que veio do Pipefy está legível?" — ele é guardado como veio.
   Foto torta ou ilegível entra do mesmo jeito, e ninguém confere.
-- "O que está no card diverge do que está no cadastro?" — a importação só
-  preenche o que está VAZIO, de propósito. Ela não compara nem avisa quando o
-  card diz uma coisa e o cadastro diz outra — e essa divergência é justamente
-  o sinal de cadastro desatualizado de um dos dois lados.
+✔️ **"O que está no card diverge do que está no cadastro?" — isto JÁ É
+  respondido** (13/11/2026). A importação confronta as três fontes (cadastro ×
+  card × documento lido), guarda o que não bate em `cadastro_divergencias` e
+  mostra na tela de Importar, para uma pessoa decidir. Pedido dele: *"quando
+  houver divergência entre o que a IA lê e o que está cadastrado, aí você
+  questiona. E o humano decide."* O que continua valendo é que a importação
+  **não troca nada sozinha** quando há divergência.
 - "Quantas pessoas do pipe não existem no ERP?" — a importação não cria
   pessoa, então quem está só no Pipefy é invisível aqui. Responder isso
   exigiria ler os 3.664 cards, que é outra operação.
 - "O ASO desta pessoa está válido?" — o ASO **não é importado**: ele vence, e
   o card não diz até quando vale. Continua sendo anexado à mão, com a data.
+
+## 3z-ter. O CABEÇALHO DO DIÁRIO E A C. DIÁRIOS (13/11/2026)
+
+Ele, olhando o diário: *"a gente cadastrou as obras, importou lá na planilha
+C. Diários, tem todas as informações das obras, mas não está trazendo aqui para
+o cabeçalho do diário."*
+
+⚠️ **O cabeçalho não estava errado — o cadastro é que estava vazio.** O
+cabeçalho lê o CADASTRO DA OBRA e mostra o que achar; achando vazio, mostra
+travessão. E a planilha de DIÁRIOS, apesar de ter as colunas Contrato, Objeto,
+Endereço, Município, Ordem de Serviço e Responsável Técnico, veio com **todas
+elas vazias nas 1.427 linhas** (conferido coluna a coluna). Quem tem esses
+dados é a **C. Diários** — a mesma planilha que a emissão de NFS-e já lê há
+meses. Agora o ERP também lê, pela tela de Importar.
+
+### O que dá para perguntar agora
+
+- "Quantas obras estão com o cabeçalho do diário incompleto?" — e quais campos
+  faltam em cada uma.
+- "Quais obras ainda não têm responsável técnico / CREA / ART?" — a importação
+  **não traz esses**, e a conferência diz quantas obras seguem sem eles.
+- "Quais obras não têm data de início?" — é a pergunta que mais importa, porque
+  **sem ela o diário não mostra o prazo** ("dia 37 de 180"), e é o prazo que
+  sustenta pleito de aditivo.
+- "Onde a C. Diários diverge do nosso cadastro?" — contrato, objeto, município,
+  cliente. A importação não troca o que já está preenchido; mostra os dois
+  lados para alguém decidir.
+- "Quais obras da C. Diários não existem no ERP?" — a importação **não cria
+  obra**, então a lista é devolvida para ele cadastrar.
+
+### ⚠️ Palavras que mudam a resposta aqui
+
+- **"a planilha tem os dados da obra"**: depende de QUAL planilha. A de
+  diários, não tem (colunas vazias). A C. Diários, tem — mas só uma parte.
+- **"cadastro completo"** da obra: completo para o DIÁRIO são onze campos, dos
+  quais a C. Diários preenche seis. Dizer "importei, está completo" é o engano
+  que a conferência existe para evitar.
+- **"município"**: a C. Diários escreve "Aracati-CE" numa coluna só; o cadastro
+  guarda município e UF separados, que é como o papel imprime.
+- **"endereço"**: no diário é **onde o serviço acontece**. A coluna "Endereço
+  Cliente" da C. Diários é a sede do contratante — por isso ela NÃO é
+  aproveitada. O endereço da obra continua sendo digitado.
+
+### O que o sistema ainda NÃO responde
+
+- "De onde vem o endereço da obra?" — não vem de lugar nenhum ainda. Nem a
+  planilha de diários nem a C. Diários o têm; é digitado no cadastro.
+- "Qual empresa executa esta obra?" — a C. Diários tem a coluna Empresa, mas
+  por nome escrito à mão. Casar nome com o cadastro de empresas trocaria obra
+  de CNPJ, então ficou de fora: a empresa se escolhe no cadastro da obra.
+- "A obra tem aditivo de prazo?" — o cadastro tem uma data de término só. Obra
+  que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
+  não existe.
+
+### ⚠️ O efetivo do dia: três palavras que mudam a resposta (13/11/2026)
+
+Ele achou o defeito olhando o número: *"eu acho que ele está dobrando o
+efetivo (…) está dando um valor acima do que é o real."* Estava — e as três
+palavras abaixo são a razão. Quem for responder pergunta sobre efetivo
+**precisa** saber qual delas está em jogo.
+
+- **"quantas pessoas trabalharam no dia"**: é gente DISTINTA, nunca batida.
+  Jornada normal tem quatro batidas por pessoa; contar batida daria quatro
+  vezes mais. Hoje há teste fechando isso.
+- **"o efetivo do dia"** num diário antigo: pode ser DUAS listas. A da
+  planilha importada (por função, sem nome) e a do ponto (com nome e hora).
+  Quando as duas existem, **são a mesma gente** — e só o ponto conta. Somar
+  era o defeito. Pergunta como "qual o efetivo médio da obra" tem de dizer de
+  qual fonte está falando quando o período atravessa a virada da planilha para
+  o ponto.
+- **"bateu ponto"**: batida REJEITADA não é presença. AJUSTADA é (é a batida
+  que a pessoa esqueceu e o supervisor incluiu) e EM_ANALISE também.
+
+E **toda hora de batida é de Fortaleza**, nunca a do banco: o banco guarda UTC.
+Resposta que mostre hora tem de converter — foi o que faltava no diário, e
+aparecia como "horário esquisito" três horas adiantado.
+
+#### O que dá para perguntar agora
+
+- "Quantas pessoas trabalharam nesta obra neste dia?" — e quem são, com função
+  e horário de entrada e saída.
+- "Em que dias o efetivo do diário não bate com o do ponto?" — é a pergunta que
+  acha diário mal preenchido e transferência não avisada.
+- "Quem é lotado nesta obra e bateu ponto em outra?" — já respondido, e aparece
+  como aviso na própria tela do diário.
+
+#### O que o sistema ainda NÃO responde
+
+- "Quantas HORAS a obra teve no dia?" — o diário mostra entrada e saída, mas
+  não soma jornada nem desconta intervalo. Isso é conta do ponto, e o diário
+  não a busca.
+- "O efetivo da planilha antiga bate com o do ponto no mesmo dia?" — as duas
+  listas aparecem, mas ninguém compara função a função; a planilha não tem
+  nome, então a comparação possível é só pela soma.
+
+### O calendário do diário, e o que cada cor diz
+
+Pergunta dele no mesmo dia: *"esse laranja é porque falta algum dado?"*
+**Não faltava.** O âmbar queria dizer "escrito, mas ainda não FECHADO" — e
+diário não nasce sem relato. Agora:
+
+| Cor | Quer dizer |
+|---|---|
+| verde cheio | fechado — é documento, corrigir pede motivo |
+| verde vazado | escrito, falta fechar |
+| **vermelho** | **falta o diário** — o único "tem trabalho aqui" |
+| cinza | fim de semana, feriado ou dia sem expediente |
+
+- "Quantos dias desta obra estão escritos mas não fechados?" — é o verde
+  vazado, e é trabalho de conferência, não de redação.
+- "Em quais obras falta diário este mês?" — já respondido pelo "Onde está
+  faltando".
 
 ## 4. Como esta lista vira código
 

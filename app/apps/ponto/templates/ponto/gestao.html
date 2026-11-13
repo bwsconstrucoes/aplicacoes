@@ -1568,6 +1568,7 @@ const ROTULO_ALERTA_DIA = {
   FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
   HORA_EXTRA_NEGADA: "hora extra negada na conferência",
   COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — a folga virou falta",
+  COMPENSACAO_INCOMPLETA: "compensação incompleta — faltou parte das horas",
   TRABALHOU_NA_FOLGA: "trabalhou no dia da folga compensatória (as horas contam)",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
@@ -3229,7 +3230,8 @@ async function completarPeriodo(p, depois) {
     const linhas = d.dias.map(x => `<tr${x.tipo === "COMPLETAR" ? ' style="background:#FDF6E7"' : ""}>
         <td>${x.tipo !== "NADA" ? `<input type="checkbox" data-cp-dia="${x.data}" data-cp-tipo="${x.tipo}" checked aria-label="incluir ${dataBR(x.data)}">` : ""}</td>
         <td class="dados"><b>${dataBR(x.data).slice(0, 5)}</b> <small style="display:inline">${escapar((x.dia_semana || "").slice(0, 3))}</small></td>
-        <td class="dados">${x.batidas.map(escapar).join(" ") || `<span class="suave">nenhuma</span>`}</td>
+        <td class="dados">${x.batidas.map(escapar).join(" ") || `<span class="suave">nenhuma</span>`}${x.obras.length
+          ? `<small style="display:block">obra ${x.obras.map(escapar).join(", ")}</small>` : ""}</td>
         <td class="dados">${x.incluir.map(i => `<b>${escapar(i.hora)}</b> <small style="display:inline">${escapar(i.rotulo.toLowerCase())}</small>`).join("<br>") || "—"}</td>
         <td><small>${x.tipo === "COMPLETAR" ? "⚠️ " : ""}${escapar(x.nota)}</small></td></tr>`).join("");
     alvo.innerHTML = `<p style="margin:0 0 6px">Escala: <b>${escapar(d.escala || "a padrão da empresa")}</b> ·
@@ -3237,13 +3239,22 @@ async function completarPeriodo(p, depois) {
       ${d.batidas ? "" : `<div class="aviso">Nada a incluir neste período: os dias estão completos, ou a escala não prevê batida neles.</div>`}
       <div class="tabela-rolagem" style="max-height:46vh"><table><thead><tr><th class="sem-ordem"></th><th class="sem-ordem">Dia</th>
         <th class="sem-ordem">Já tem</th><th class="sem-ordem">Vai entrar</th><th class="sem-ordem"></th></tr></thead><tbody>${linhas}</tbody></table></div>
-      ${d.batidas ? `<div class="campo" style="margin-top:10px"><label for="cp-motivo">Motivo (vai no registro de cada batida)</label>
+      ${d.batidas ? `<div class="campo" style="margin-top:10px"><label for="cp-obra">Obra em que as batidas entram</label>
+          <select id="cp-obra"><option value="">escolha a obra…</option></select></div>
+        <div class="campo" style="margin-top:10px"><label for="cp-motivo">Motivo (vai no registro de cada batida)</label>
           <textarea id="cp-motivo" rows="2" placeholder="ex.: trabalhou na obra PG-A nesta semana; o aparelho da obra estava sem sinal"></textarea></div>
         <label class="opcao" id="cp-conf-linha" style="margin-top:8px"><input type="checkbox" id="cp-conf">
           <span class="rotulo">Conferi os dias que <b>já têm batida</b> (em amarelo): neles entram só as que faltam.</span></label>
         <div id="cp-msg"></div>
         <div class="barra-acoes" style="margin-top:10px"><button class="btn" type="button" id="cp-ok">Incluir</button></div>` : ""}`;
     if (!d.batidas) return;
+    // a obra (13/11/2026, o dono: "precisa definir a obra antes de incluir"): a lista das obras de quem lança, já
+    // com a sugerida marcada — a em que a pessoa mais bateu nos últimos dias, ou a do cadastro
+    try {
+      const obras = (await api("/erp/api/ponto/obras")).obras || [];
+      els("cp-obra").innerHTML = `<option value="">escolha a obra…</option>` + obras.map(o =>
+        `<option value="${o.id}" ${d.obra_sugerida && o.id === d.obra_sugerida.id ? "selected" : ""}>${escapar(rotuloObra(o))}</option>`).join("");
+    } catch (e) { /* sem a lista, a escolha fica vazia e o incluir pede a obra */ }
     const marcados = () => [...alvo.querySelectorAll("[data-cp-dia]:checked")];
     const atualizar = () => {
       const m = marcados(), parciais = m.filter(c => c.dataset.cpTipo === "COMPLETAR").length;
@@ -3257,14 +3268,17 @@ async function completarPeriodo(p, depois) {
     els("cp-ok").addEventListener("click", async () => {
       const m = marcados(), motivo = els("cp-motivo").value.trim();
       const msg = t => { els("cp-msg").innerHTML = `<div class="aviso alerta" style="margin-top:8px">${escapar(t)}</div>`; };
+      if (!els("cp-obra").value) return msg("Escolha a obra em que as batidas entram.");
       if (motivo.length < 10) return msg("Diga o motivo (pelo menos 10 letras) — ele vai no registro de cada batida.");
       if (m.some(c => c.dataset.cpTipo === "COMPLETAR") && !els("cp-conf").checked)
         return msg("Confirme que conferiu os dias que já têm batida (os em amarelo).");
       els("cp-ok").disabled = true; els("cp-ok").textContent = "Incluindo…";
       try {
-        const r = await postar(`/erp/api/ponto/pessoas/${p.id}/completar`, {datas: m.map(c => c.dataset.cpDia), motivo});
+        const r = await postar(`/erp/api/ponto/pessoas/${p.id}/completar`, {datas: m.map(c => c.dataset.cpDia), motivo,
+                                                                             obra: els("cp-obra").value});
         const ruins = r.resultados.filter(x => !x.ok);
-        alvo.innerHTML = `<div class="aviso ok"><b>${r.batidas} batida(s) incluída(s) em ${r.feitos} dia(s).</b>
+        alvo.innerHTML = `<div class="aviso ok"><b>${r.batidas} batida(s) incluída(s) em ${r.feitos} dia(s), na obra
+            ${escapar(els("cp-obra").selectedOptions[0] ? els("cp-obra").selectedOptions[0].textContent : "")}.</b>
             Entram como ajuste da gestão, já aprovadas, e não contam contra a pessoa na qualidade.</div>
           ${ruins.length ? `<div class="aviso alerta" style="margin-top:8px"><b>${ruins.length} dia(s) ficaram de fora:</b>
             <ul style="margin:6px 0 0 18px">${ruins.map(x => `<li>${dataBR(x.data)} — ${escapar(x.erro || "")}</li>`).join("")}</ul></div>` : ""}`;
@@ -6580,9 +6594,11 @@ function desenharAlertas() {
         return `<tr>
           ${PODE_TRATAR ? `<td><input type="checkbox" data-a-marcar="${a.id}" ${A_MARCADOS.has(a.id) ? "checked" : ""} aria-label="marcar este alerta"></td>` : ""}
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico, termo].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${a.funcao ? `<small style="display:block">função: <b>${escapar(a.funcao)}</b></small>` : ""}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico, termo].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
-          <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
+          <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}${a.dia_semana
+            ? `<small style="display:block">${escapar(a.dia_semana)}</small>` : ""}${a.feriado
+            ? `<small style="display:block; color:#8A5A00; font-weight:700" title="feriado na obra do alerta">🎉 feriado: ${escapar(a.feriado)}</small>` : ""}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
             ${a.tratado_por ? `<small>${escapar(a.tratado_por)}, ${escapar(quando(a.tratado_em))}</small>` : ""}
             ${a.nota ? `<small>“${escapar(a.nota)}”</small>` : ""}</td>
@@ -6721,7 +6737,7 @@ marcarAtalhoDoPeriodo();
 // "⭐ usar como foto de cadastro" direto no alerta do rosto: a foto da batida vira a de cadastro, e o alerta, resolvido
 let FOTO_CAD_ALERTA = Date.now();
 // os alertas de UM dia da pessoa: o atalho "abrir o dia" leva à janela dela naquele dia
-const ALERTA_DE_DIA = new Set(["FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA",
+const ALERTA_DE_DIA = new Set(["FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "COMPENSACAO_INCOMPLETA", "TRABALHOU_NA_FOLGA",
   "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H", "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO",
   "TRABALHO_EM_FERIADO", "FORA_DO_CICLO", "BATIDA_NO_MEIO_DO_TURNO", "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA",
   "SEM_FOTO", "FOTO_ESCURA", "FOTO_REPETIDA", "CAMERA_TRAVADA", "ROSTO_NAO_CONFERE", "QR_ANTIGO_USADO",

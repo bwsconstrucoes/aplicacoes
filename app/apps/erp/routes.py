@@ -4463,6 +4463,12 @@ def api_pipefy_cadastro_situacao():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# Quantos cards por rodada. O mesmo espírito do limite da importação de SPs:
+# uma rodada que não termina antes da renovação do serviço no Render é uma
+# rodada perdida no meio.
+TETO_DE_CARDS_POR_RODADA = 300
+
+
 @bp.route("/erp/api/importar/pipefy-cadastro", methods=["POST"])
 @login_obrigatorio
 @permissao("importar")
@@ -4482,32 +4488,30 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": (
             "Este servidor não tem o token do Pipefy configurado "
             "(PIPEFY_API_TOKEN). Sem ele não dá para ler os cards.")}), 400
-    try:
-        teto = int(d.get("teto_de_pessoas") or imp.POR_RODADA)
-    except (TypeError, ValueError):
-        teto = imp.POR_RODADA
-    teto = max(1, min(teto, 300))
+    # ⚑ A FILA É A LISTA QUE ELE COLA (13/11/2026). Antes eu varria o pipe
+    # inteiro e casava pelo CPF — e trazia card cancelado e card repetido, que
+    # não interessam. Ele: *"eu vou listar os cards que eu quero que você
+    # busque. E você faz a pesquisa card a card e puxa as informações."*
+    pedidos = imp.ids_dos_cards(d.get("cards"))
+    if not pedidos:
+        return jsonify({"ok": False, "erro": (
+            "Cole os números dos cards que devem ser buscados.")}), 400
+    if len(pedidos) > TETO_DE_CARDS_POR_RODADA:
+        return jsonify({"ok": False, "erro": (
+            f"{len(pedidos)} cards de uma vez — faça em blocos de até "
+            f"{TETO_DE_CARDS_POR_RODADA}.")}), 400
     try:
         trabalhos.registrar_todos()
         with get_session() as s:
             usuario = _usuario_logado(s)
-            quantos = len(imp.quem_tem_card(
-                s, so_ativos=bool(d.get("so_ativos", True)),
-                obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
-                teto=teto))
-            if not quantos:
-                return jsonify({"ok": False, "erro": (
-                    "Nenhuma pessoa com número de card do Pipefy nesse "
-                    "filtro.")}), 400
             t = tarefas.enfileirar(
                 s, "importar_cadastro_pipefy",
-                {"simular": not gravar,
-                 "so_ativos": bool(d.get("so_ativos", True)),
-                 "obra_id": (int(d["obra_id"]) if d.get("obra_id") else None),
-                 "teto_de_pessoas": teto,
+                {"simular": not gravar, "cards": pedidos,
+                 "regravar": bool(d.get("regravar")),
                  "usuario_id": usuario.id if usuario else None},
-                rotulo=("Conferir sem gravar: " if not gravar
-                        else "Trazer do Pipefy: ") + f"{quantos} pessoa(s)",
+                rotulo=(("Conferir sem gravar: " if not gravar
+                         else "Trazer do Pipefy: ")
+                        + f"{len(pedidos)} card(s)"),
                 usuario=usuario)
             linha = tarefas.ler(s, t.id)
             s.commit()
@@ -4516,6 +4520,50 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao enfileirar a importação do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# AS PERGUNTAS QUE A IMPORTAÇÃO DEIXOU — e quem responde é gente
+#
+# Ele, em 13/11/2026: *"quando houver divergência entre o que a IA lê e o que
+# está cadastrado, aí você questiona. E o humano decide."*
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/cadastro/divergencias")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_cadastro_divergencias():
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "perguntas": imp.perguntas_abertas(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar as divergências do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/cadastro/divergencias/<int:divergencia_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_cadastro_divergencia_decidir(divergencia_id: int):
+    """Alguém escolheu qual versão vale — e o cadastro passa a dizer isso."""
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = imp.decidir(s, divergencia_id,
+                            str(d.get("fonte") or ""), usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao decidir a divergência")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -11997,6 +12045,43 @@ def api_diario_importar():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha na importação de diários")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/obras/cdiarios", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_obras_cdiarios():
+    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
+    propósito, nada é escrito. E o que já está preenchido no cadastro só é
+    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
+    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    """
+    from app.apps.erp.core.importadores import obras_cdiarios as imp
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+    if not (arquivo.filename or "").lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "erro":
+                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                        "Arquivo › Fazer download › Microsoft Excel."}), 400
+    gravar = request.form.get("gravar") in ("1", "true", "sim")
+    regravar = request.form.get("regravar") in ("1", "true", "sim")
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = imp.importar(s, conteudo, usuario.id if usuario else None,
+                               simular=not gravar, regravar=regravar)
+            if gravar:
+                s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao completar obras pela C. Di\u00e1rios")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
