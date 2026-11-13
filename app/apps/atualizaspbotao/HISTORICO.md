@@ -5,8 +5,12 @@ encerrar. O que o módulo faz está no `README.md`.
 
 ## Pendente AGORA
 
-1. **Publicar o desligamento do Log** (13/11/2026) — espera o "pode".
-2. **Saber o que o dono quer mudar no botão.** Já se sabe que o "do Render" é
+1. **Publicar o desligamento do Log** (13/11/2026, botão e SP nova) — espera o
+   "pode".
+2. **As planilhas "Análises de Pagamentos" ainda são usadas?** E os agendamentos
+   do `sync_logs` (cron-job.org) ainda estão ligados? Com o Log congelado, a
+   cópia não traz mais nada novo — se ninguém usa, desligar os agendamentos.
+3. **Saber o que o dono quer mudar no botão.** Já se sabe que o "do Render" é
    este mesmo módulo (ver "Como o botão é disparado"); falta o objetivo do
    trabalho. Nada foi alterado no código.
 
@@ -100,12 +104,21 @@ fixa de 2 s da planilha de cálculo e as chamadas ao Omie.
 
 **Efeito colateral avisado ao dono:**
 
-- SP **nova** continua entrando no Log — quem escreve é o `processarnovasp`,
-  não este botão.
-- O que deixa de chegar ao Log é a **atualização** de SP já existente (valor,
-  centro de custo, rateio). As linhas do Log ficam como a SP nasceu.
+- Primeiro desligamento: só o botão. SP nova ainda entrava pelo
+  `processarnovasp`.
+- **No mesmo dia o dono pediu para desligar também a SP nova** ("não precisa
+  mais"): `processarnovasp/sheets.py` ganhou `LOG_ATIVO = False`. `inserir_log`
+  volta "pulado" sem abrir a planilha; na rota de transferência, o cálculo de
+  rateio — que só servia ao Log — também deixou de rodar (uma passagem a menos
+  na planilha de cálculo). Nas rotas padrão e pagamento futuro o rateio
+  continua, porque alimenta o Omie e a checagem de duplicidade do boleto.
+- **Resultado: nenhuma automação do Render escreve mais na aba Log.** Ela fica
+  congelada no estado de 13/11/2026, a menos que outro escritor fora deste
+  repositório (scripts do Google dentro das Análises, cenário do Make) siga
+  gravando — não verificado.
 - O `sync_logs` copia a aba Log para as planilhas "Análises de Pagamentos"
-  (`docs/sync_logs.md`); essas cópias também deixam de ver a atualização.
+  (`docs/sync_logs.md`). Se ele estiver ligado, essas cópias também congelam.
+  Se elas ainda são usadas, ficou como pergunta ao dono.
 
 ## O que precisa ser confirmado com o dono
 

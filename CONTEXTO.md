@@ -806,9 +806,11 @@ Quando eu pedir nova feature ou adaptação:
 
 `app/apps/atualizaspbotao/` entrou na tabela de áreas do `CLAUDE.md`, com
 `README.md` e `HISTORICO.md`. No mesmo ramo, a pedido do dono, o botão deixou de
-escrever na aba `Log` da Registros de SP (`CONFIG['LOG_ATIVO']`). SP nova
-continua no Log pelo `processarnovasp`; o que some é a atualização de SP já
-existente — e, por tabela, nas cópias que o `sync_logs` faz da aba.
+escrever na aba `Log` da Registros de SP (`CONFIG['LOG_ATIVO']`), e o
+`processarnovasp` deixou de gravar SP nova lá (`LOG_ATIVO` em `sheets.py`) —
+"não precisa mais", nas palavras dele. Nenhuma automação do Render escreve mais
+na aba Log; as cópias que o `sync_logs` faz dela para as "Análises de
+Pagamentos" congelam junto.
 
 ### 12/11/2026 — o "processar nova SP" do Make passa a rodar UM POR VEZ
 
