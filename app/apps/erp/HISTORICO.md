@@ -23,8 +23,8 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ### 🔀 13/11/2026 — o Ponto saiu de dentro de Pessoal, e a ficha da pessoa virou UMA (feito pelo chat do Ponto)
 
-**Feito no ramo `feature/modulo-ponto`, pelo chat do Ponto, com o "pode" do dono para mexer aqui.** Não publicado
-ainda: o dono quer publicar quando tudo estiver pronto. Se este chat for mexer na tela de **Colaboradores** ou no
+**Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui. PUBLICADO em 13/11/2026** (suíte inteira: 11.000
+passaram). Se este chat for mexer na tela de **Colaboradores** ou no
 **menu**, traga a `main` antes — senão os dois lados vão se pisar.
 
 O dono, 13/11/2026: *"quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande (…) era

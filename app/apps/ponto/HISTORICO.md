@@ -22,8 +22,8 @@ arquivo.
 
 ## Pendente AGORA
 
-0v. **FEITO NO RAMO, NÃO PUBLICADO (13/11/2026): o Ponto separado de Pessoal no menu, a ordem nova das telas e a
-   FICHA ÚNICA da pessoa.** O dono aprovou a ordem e mandou fazer a ficha única por aqui, e **publicar só quando
+0v. **PUBLICADO em 13/11/2026: o Ponto separado de Pessoal no menu, a ordem nova das telas, a FICHA ÚNICA da pessoa
+   e o "Completar o período pela escala".** Sem migração. O dono aprovou a ordem e mandou fazer a ficha única por aqui, e **publicar só quando
    tudo estiver pronto** (junto com o "Completar o período pela escala"). Ver a seção de 13/11/2026 abaixo. Mexe na
    área do ERP (`erp/routes.py`, `erp_colaboradores.html`) — registrado no `erp/HISTORICO.md` e avisado ao chat do ERP.
 
