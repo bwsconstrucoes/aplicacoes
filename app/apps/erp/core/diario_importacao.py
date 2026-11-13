@@ -442,6 +442,17 @@ def importar(s: Session, conteudo: bytes, usuario_id: Optional[int] = None, *,
             "relato": l["relato"], "sem_expediente": folga,
             "pessoas": soma, "efetivo_total_na_planilha": l["efetivo_total"],
             "funcoes": len(l["efetivo"]),
+            # ⚑ A LISTA VAI JUNTO, e não só a soma. Ele, em 13/11/2026:
+            # *"tem 4 colunas: obra, dia, relato e pessoas, a quantidade. Mas
+            # não está importado aqui a listagem das pessoas. É apenas não
+            # está aparecendo nesse quadro de leitura, ou é porque não
+            # importa? Porque tem que importar."*
+            #
+            # Importa, sim — função por função. Era a CONFERÊNCIA que resumia
+            # tudo num número, e aí ela não servia para o que existe:
+            # conferir. Quem olha "23 pessoas" não tem como saber se a leitura
+            # entendeu "17 - SERVENTE" ou engoliu uma linha.
+            "efetivo": l["efetivo"],
             "sobras": l["efetivo_sobras"],
             "repetida": l.get("repetida", 1),
         })

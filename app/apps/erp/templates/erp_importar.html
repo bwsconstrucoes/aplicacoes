@@ -364,6 +364,7 @@ function pintarResultadoDoDiario(r){
   if ((r.amostra || []).length)
     linhas.push(`<div class="tabela-wrap" style="margin-top:10px">
       <table><thead><tr><th>Obra</th><th>Dia</th><th>Relato</th>
+        <th>Efetivo do dia</th>
         <th class="direita">Pessoas</th></tr></thead>
       <tbody>${r.amostra.map(a=>`<tr>
         <td class="dados">${escapar(a.obra)}</td>
@@ -371,9 +372,26 @@ function pintarResultadoDoDiario(r){
         <td><small>${escapar((a.relato||"").replace(/\s+/g," ").slice(0,110))}${
           (a.relato||"").length > 110 ? "…" : ""}</small>${
           a.sem_expediente ? ` <span class="etiqueta">sem expediente</span>` : ""}</td>
-        <td class="direita dados">${a.pessoas || "—"}</td></tr>`).join("")}
+        {# ⚑ A LISTA, e não só a soma. Ele, em 13/11/2026, olhando a
+           conferência: *"não está importado aqui a listagem das pessoas. É
+           apenas não está aparecendo nesse quadro de leitura, ou é porque não
+           importa?"* Importa — mas quem lia "23 pessoas" não tinha como saber
+           se a leitura entendeu as funções ou engoliu uma linha, e conferir é
+           justamente para isso. #}
+        <td><small>${((a.efetivo||[]).map(e =>
+            `${e.quantidade} ${escapar(e.funcao)}`).join(" · ")) || "—"}</small>${
+          (a.sobras||[]).length ? `<br><small style="color:var(--vermelho)"
+            >não entendi: ${escapar(a.sobras.join(" | "))}</small>` : ""}</td>
+        <td class="direita dados">${a.pessoas || "—"}${
+          a.efetivo_total_na_planilha !== null &&
+          a.efetivo_total_na_planilha !== undefined &&
+          a.efetivo_total_na_planilha !== a.pessoas
+            ? `<br><small style="color:var(--vermelho)">planilha diz ${
+               a.efetivo_total_na_planilha}</small>` : ""}</td></tr>`).join("")}
       </tbody></table>
-      <div class="dica">Mostrando as ${r.amostra.length} primeiras.</div></div>`);
+      <div class="dica">Mostrando as ${r.amostra.length} primeiras. O efetivo
+        antigo vem <b>por função</b>, sem nomes — é assim que a planilha o
+        guarda, e é assim que ele entra aqui.</div></div>`);
 
   els("resultado-diario").innerHTML = linhas.join("");
   document.querySelectorAll(".mapa-obra").forEach(sel => {
