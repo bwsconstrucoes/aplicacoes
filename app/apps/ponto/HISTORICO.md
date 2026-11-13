@@ -22,6 +22,20 @@ arquivo.
 
 ## Pendente AGORA
 
+0v. **ESPERANDO O DONO (13/11/2026): dividir Ponto e Pessoal no menu, a ordem das telas e a FICHA ÚNICA da pessoa.**
+   Ele pediu para ver como ficaria antes de fazer. A proposta foi mandada no chat:
+   · Menu: **Pessoal** (Colaboradores, Solicitações ao DP, Contabilidade e agente, Despesas com colaborador) e **Ponto**
+     de volta no topo, com as telas agrupadas pelo uso — acompanhar (Quadro, Hoje, Painel, Qualidade), tratar
+     (Validações, Alertas, Espelho, Banco de horas), conferir (Mosaico, Fotos de cadastro, Rondas), cadastro e fechamento
+     (Pessoas no ponto, Relatórios, Configuração). A junção vive em `erp/routes.py` (`_juntar_ponto_com_pessoal`) — área
+     do ERP; a ordem das telas do ponto, em `gestao.ABAS` (o teste `test_todas_as_telas_estao_no_menu` guarda a ordem de
+     28/10 e muda junto).
+   · Ficha única: clicar na pessoa em QUALQUER tela abre a mesma janela — o cadastro do ERP (resumo, dados, pagamentos,
+     documentos) e o ponto (dia, espelho, pedidos, aparelhos, configuração do ponto, rosto). Hoje são duas: a do ERP
+     (`erp_colaboradores.html`, aba "Ponto e espelho" mais pobre) e a do ponto (`dlg-pessoa`). Toca a área do ERP: o chat
+     do ERP precisa saber, para não mexer na tela de Colaboradores ao mesmo tempo.
+   Decisões pendentes: a ordem proposta; quem faz a ficha única (este chat, avisando o do ERP, ou o do ERP).
+
 0w. **O TERMO DO PONTO NO CELULAR — PUBLICADO em 07/11/2026 (migração 028).** Ver a seção de 07/11/2026 abaixo.
    Conferir com o dono se apertou "Aplicar atualizações do ponto". O INPI ficou para depois, por decisão do dono —
    quando ele pedir, passar os dados preenchidos (titular, autores, SHA-512 do código).
@@ -542,6 +556,29 @@ arquivo.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 13/11/2026 (sexta) — Completar o período de uma pessoa pela escala; a proposta de divisão do menu e da ficha única
+
+O dono: *"quando o DP vai incluir uma batida, só dá para pedir um a um (…) quero botar o dia de início, o dia de fim e
+bater a batida padrão da escala, com uma tacada só (…) e corrigir todos os pontos da pessoa numa semana: um dia não
+bateu, outro esqueceu uma batida (…) o sistema tem que ter o cuidado de confirmar, e não bater por cima das batidas que
+já existem."*
+- **Na janela da pessoa, o botão "📅 Completar o período pela escala"** (para quem trata o ponto). Escolhe De e Até
+  (até 31 dias; padrão: os 7 dias até ontem) e vê a PRÉVIA, dia a dia: o que já tem, o que vai entrar e por quê.
+  · dia sem nenhuma batida → o dia inteiro da escala;
+  · dia com batida → só as da escala que faltam (em amarelo, com ⚠️); **as que existem nunca são tocadas**, e o
+    horário que já tem pedido esperando também não entra de novo;
+  · o resto não entra, com o porquê: completo, descanso, abonado, compensado, sem escala, **mês fechado**.
+  Cada dia tem a caixinha (todos marcados); o motivo é obrigatório (vai em cada batida); **com algum dia amarelo
+  marcado, pede "Conferi os dias que já têm batida"** — é a confirmação que ele pediu para o ponto intercalado.
+- **O caminho é o do lote do Quadro** (`quadro._ajuste_em_lote`): um ajuste da gestão por batida, aprovado na hora,
+  marcado "em lote" — não conta contra a pessoa na qualidade — e com as travas de sempre. Cada DIA na sua transação: ou
+  entram todas as batidas daquele dia, ou nenhuma; um dia recusado não desfaz os outros, e a tela diz qual e por quê.
+- `core/quadro.py` (`previa_do_periodo`, `completar_periodo`); rota `/erp/api/ponto/pessoas/<id>/completar` (GET a
+  prévia, POST a inclusão; `tratar_ponto`; fora do alcance, 404). Teste: `test_ponto_completar_periodo_banco.py`.
+  E a janela no navegador.
+
+**A proposta de divisão do menu e da ficha única** ficou com o dono para decidir (ver "Pendente AGORA", item 0v).
 
 ## 11/11/2026 (quarta) — O Painel do ponto: gráficos e a comparação de dois períodos
 

@@ -1788,6 +1788,29 @@ def ponto_api_quadro_incluir():
                aprovadas=sum(1 for x in r if x.get("aprovado")))
 
 
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/completar", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoa_completar(colaborador_id: int):
+    """COMPLETAR O PERÍODO PELA ESCALA (13/11/2026): GET `?de=&ate=` é a prévia, dia a dia; POST `{datas, motivo}`
+    inclui, nos dias confirmados, só as batidas da escala que faltam — as que existem ficam como estão."""
+    from .core import quadro
+    quem = _quem()
+    if request.method == "GET":
+        with db.conexao() as conn:
+            return _ok(**quadro.previa_do_periodo(conn, quem, colaborador_id, request.args.get("de"),
+                                                  request.args.get("ate")))
+    d = _corpo()
+    with db.conexao() as conn:                       # a pessoa fora do alcance é 404 antes de qualquer coisa
+        ocorrencias.exigir_pessoa_no_alcance(conn, quem, colaborador_id)
+    r = quadro.completar_periodo(quem, colaborador_id, d.get("datas") or [], motivo=d.get("motivo"))
+    logger.info("Ponto: período completado pela escala para %s por %s — %d dia(s), %d feito(s)",
+                colaborador_id, quem.nome, len(r), sum(1 for x in r if x.get("ok")))
+    return _ok(resultados=r, feitos=sum(1 for x in r if x.get("ok")),
+               batidas=sum(int(x.get("batidas") or 0) for x in r if x.get("ok")))
+
+
 @bp.route("/erp/api/ponto/quadro/abonar", methods=["POST"])
 @login_obrigatorio
 @permissao("aprovar_afastamento")

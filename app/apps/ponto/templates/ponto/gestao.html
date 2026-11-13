@@ -638,6 +638,10 @@
   <a class="topo-btn" id="doc-aba" target="_blank" rel="noopener" style="margin-left:auto; text-decoration:none">abrir em outra aba</a>
   <button class="topo-btn" type="button" onclick="els('dlg-doc').close()">Fechar</button></div>
   <div class="dlg-corpo" id="doc-corpo">carregando…</div></dialog>
+{# COMPLETAR O PERÍODO PELA ESCALA (13/11/2026): de um dia a outro, as batidas da escala que faltam — com a prévia. #}
+<dialog id="dlg-completar" class="dlg-pessoa"><div class="dlg-topo"><h3 id="cp-titulo">Completar o período pela escala</h3>
+  <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-completar').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="cp-corpo">carregando…</div></dialog>
 <dialog id="dlg-mapa" class="dlg-pessoa"><div class="dlg-topo"><h3 id="mp-titulo">Onde a batida foi feita</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-mapa').close()">Fechar</button></div>
   <div class="dlg-corpo" id="mp-corpo">carregando…</div></dialog>
@@ -1680,6 +1684,7 @@ function desenharPainel() {
       title="ver se o código chegou pelo WhatsApp, ou gerar um para entregar em mãos">🔑 código de acesso do aplicativo</button>` : ""}</div>
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
+      <button class="btn secundario" type="button" id="dp-completar" title="de um dia a outro: as batidas da escala que faltam, sem mexer nas que existem">📅 Completar o período pela escala</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
       <button class="btn secundario" type="button" id="dp-compensacao-horas" title="as horas a mais de um dia pagam a saída mais cedo de outro">⏱️ Compensação de horas</button>
       <button class="btn secundario" type="button" id="dp-permuta" title="troca de plantão entre dois vigias do 12x36">🔁 Permuta (vigia)</button>
@@ -1697,6 +1702,7 @@ function desenharPainel() {
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
+  ligar("dp-completar", () => completarPeriodo(quem, recarregarPainel));
   ligar("dp-compensacao-horas", () => registrarCompensacaoDeHoras(quem, recarregarPainel));
   ligar("dp-permuta", () => registrarPermuta(quem, recarregarPainel));
   ligar("dp-documento", () => entregarDocumento(quem, recarregarPainel));
@@ -3085,6 +3091,81 @@ async function registrarCompensacaoDeHoras(p, depois) {
     aviso("mensagem", "Compensação de horas registrada. Ela aparece em Validações até ser decidida.", "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
+}
+
+// COMPLETAR O PERÍODO PELA ESCALA (13/11/2026, o dono: "botar o dia de início, o dia de fim e bater a batida padrão
+// da escala (…) com uma tacada só (…) quando tiver ponto intercalado, o sistema tem que confirmar, e não bater por cima
+// das batidas que já existem"). A prévia dia a dia; o dia que já tem batida pede a confirmação; cada dia entra inteiro
+// ou não entra.
+async function completarPeriodo(p, depois) {
+  if (!p) return;
+  const dlg = els("dlg-completar"), corpo = els("cp-corpo");
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const h = new Date(), ontem = new Date(h.getFullYear(), h.getMonth(), h.getDate() - 1);
+  const semana = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate() - 6);
+  els("cp-titulo").textContent = `Completar o período pela escala — ${p.nome}`;
+  corpo.innerHTML = `<p style="margin:0 0 10px">Escolha o período. Em cada dia entram <b>só as batidas da escala que faltam</b>:
+      o dia sem nenhuma batida ganha o dia inteiro; o dia que já tem batida ganha só as que faltam — <b>as que existem
+      ficam como estão</b>. Antes de incluir, você confere dia a dia.</p>
+    <div class="qd-par" style="grid-template-columns:1fr 1fr auto; align-items:end">
+      <div class="campo"><label for="cp-de">De</label><input type="date" id="cp-de" value="${iso(semana)}"></div>
+      <div class="campo"><label for="cp-ate">Até</label><input type="date" id="cp-ate" value="${iso(ontem)}"></div>
+      <button class="btn" type="button" id="cp-ver">Ver o que vai entrar</button></div>
+    <div id="cp-previa" style="margin-top:12px"></div>`;
+  if (!dlg.open) dlg.showModal();
+  const ver = async () => {
+    const alvo = els("cp-previa");
+    alvo.innerHTML = `<p class="suave">montando a prévia…</p>`;
+    let d;
+    try { d = await api(`/erp/api/ponto/pessoas/${p.id}/completar?de=${els("cp-de").value}&ate=${els("cp-ate").value}`); }
+    catch (e) { alvo.innerHTML = `<div class="aviso alerta">${escapar(e.message)}</div>`; return; }
+    const linhas = d.dias.map(x => `<tr${x.tipo === "COMPLETAR" ? ' style="background:#FDF6E7"' : ""}>
+        <td>${x.tipo !== "NADA" ? `<input type="checkbox" data-cp-dia="${x.data}" data-cp-tipo="${x.tipo}" checked aria-label="incluir ${dataBR(x.data)}">` : ""}</td>
+        <td class="dados"><b>${dataBR(x.data).slice(0, 5)}</b> <small style="display:inline">${escapar((x.dia_semana || "").slice(0, 3))}</small></td>
+        <td class="dados">${x.batidas.map(escapar).join(" ") || `<span class="suave">nenhuma</span>`}</td>
+        <td class="dados">${x.incluir.map(i => `<b>${escapar(i.hora)}</b> <small style="display:inline">${escapar(i.rotulo.toLowerCase())}</small>`).join("<br>") || "—"}</td>
+        <td><small>${x.tipo === "COMPLETAR" ? "⚠️ " : ""}${escapar(x.nota)}</small></td></tr>`).join("");
+    alvo.innerHTML = `<p style="margin:0 0 6px">Escala: <b>${escapar(d.escala || "a padrão da empresa")}</b> ·
+        ${d.dias_inteiros} dia(s) sem batida · ${d.dias_completar} dia(s) com batida faltando · <b>${d.batidas}</b> batida(s) a incluir</p>
+      ${d.batidas ? "" : `<div class="aviso">Nada a incluir neste período: os dias estão completos, ou a escala não prevê batida neles.</div>`}
+      <div class="tabela-rolagem" style="max-height:46vh"><table><thead><tr><th class="sem-ordem"></th><th class="sem-ordem">Dia</th>
+        <th class="sem-ordem">Já tem</th><th class="sem-ordem">Vai entrar</th><th class="sem-ordem"></th></tr></thead><tbody>${linhas}</tbody></table></div>
+      ${d.batidas ? `<div class="campo" style="margin-top:10px"><label for="cp-motivo">Motivo (vai no registro de cada batida)</label>
+          <textarea id="cp-motivo" rows="2" placeholder="ex.: trabalhou na obra PG-A nesta semana; o aparelho da obra estava sem sinal"></textarea></div>
+        <label class="opcao" id="cp-conf-linha" style="margin-top:8px"><input type="checkbox" id="cp-conf">
+          <span class="rotulo">Conferi os dias que <b>já têm batida</b> (em amarelo): neles entram só as que faltam.</span></label>
+        <div id="cp-msg"></div>
+        <div class="barra-acoes" style="margin-top:10px"><button class="btn" type="button" id="cp-ok">Incluir</button></div>` : ""}`;
+    if (!d.batidas) return;
+    const marcados = () => [...alvo.querySelectorAll("[data-cp-dia]:checked")];
+    const atualizar = () => {
+      const m = marcados(), parciais = m.filter(c => c.dataset.cpTipo === "COMPLETAR").length;
+      const n = m.reduce((s, c) => s + (d.dias.find(x => x.data === c.dataset.cpDia) || {incluir: []}).incluir.length, 0);
+      els("cp-ok").textContent = `Incluir ${n} batida(s) em ${m.length} dia(s)`;
+      els("cp-ok").disabled = !m.length;
+      els("cp-conf-linha").style.display = parciais ? "" : "none";
+    };
+    alvo.querySelectorAll("[data-cp-dia]").forEach(c => c.addEventListener("change", atualizar));
+    atualizar();
+    els("cp-ok").addEventListener("click", async () => {
+      const m = marcados(), motivo = els("cp-motivo").value.trim();
+      const msg = t => { els("cp-msg").innerHTML = `<div class="aviso alerta" style="margin-top:8px">${escapar(t)}</div>`; };
+      if (motivo.length < 10) return msg("Diga o motivo (pelo menos 10 letras) — ele vai no registro de cada batida.");
+      if (m.some(c => c.dataset.cpTipo === "COMPLETAR") && !els("cp-conf").checked)
+        return msg("Confirme que conferiu os dias que já têm batida (os em amarelo).");
+      els("cp-ok").disabled = true; els("cp-ok").textContent = "Incluindo…";
+      try {
+        const r = await postar(`/erp/api/ponto/pessoas/${p.id}/completar`, {datas: m.map(c => c.dataset.cpDia), motivo});
+        const ruins = r.resultados.filter(x => !x.ok);
+        alvo.innerHTML = `<div class="aviso ok"><b>${r.batidas} batida(s) incluída(s) em ${r.feitos} dia(s).</b>
+            Entram como ajuste da gestão, já aprovadas, e não contam contra a pessoa na qualidade.</div>
+          ${ruins.length ? `<div class="aviso alerta" style="margin-top:8px"><b>${ruins.length} dia(s) ficaram de fora:</b>
+            <ul style="margin:6px 0 0 18px">${ruins.map(x => `<li>${dataBR(x.data)} — ${escapar(x.erro || "")}</li>`).join("")}</ul></div>` : ""}`;
+        if (depois) await depois();
+      } catch (e) { els("cp-ok").disabled = false; atualizar(); msg(e.message); }
+    });
+  };
+  els("cp-ver").addEventListener("click", ver);
 }
 
 // A PERMUTA DE PLANTÃO (31/10/2026, migração 024): só entre vigias do 12x36. Um pedido; aprovado, o lado do
