@@ -17,6 +17,9 @@ CONFIG = {
     'SHEET_LOG':      'Log',
     'LOG_BLUR_VALUE': '######',
     'LOG_BLUR_COLUMNS': list('ABCDEFGHILMNS') + ['U'],
+    # Desligado em 13/11/2026 a pedido do dono: o botão deixa de escrever na
+    # aba Log (só SPsBD). Para religar, voltar para True.
+    'LOG_ATIVO': False,
 }
 
 COLUNAS_SPSBD = (
@@ -27,13 +30,40 @@ COLUNAS_SPSBD = (
 
 def secao_atualiza_log_e_spsbd(ss, payload: dict) -> dict:
     sh_sp  = ss.worksheet(payload.get('spsbdSheetName') or CONFIG['SHEET_SPSBD'])
-    sh_log = ss.worksheet(payload.get('logSheetName')   or CONFIG['SHEET_LOG'])
 
     id_val = as_string(payload.get('id'))
     if not id_val:
         raise ValueError('ID não informado.')
 
     # --- LOG ---
+    if CONFIG['LOG_ATIVO']:
+        log_resumo = _atualizar_log(ss, payload, id_val)
+    else:
+        log_resumo = {'linhasEncontradas': 0, 'linhasGeradas': 0, 'modo': 'desativado'}
+
+    # --- SPsBD ---
+    sp_row = _find_last_row_by_id(sh_sp, id_val)
+    if sp_row:
+        spsbd_map = _build_spsbd_map(payload, ignore_blanks=True)
+        _update_row_by_map(sh_sp, sp_row, spsbd_map)
+        spsbd_modo = 'update'
+    else:
+        spsbd_map = _build_spsbd_map(payload, ignore_blanks=False)
+        _append_map_rows(sh_sp, [spsbd_map])
+        sp_row = None
+        spsbd_modo = 'insert'
+
+    return {
+        'ok': True,
+        'id': id_val,
+        'log':   log_resumo,
+        'spsbd': {'modo': spsbd_modo, 'row': sp_row},
+    }
+
+
+def _atualizar_log(ss, payload: dict, id_val: str) -> dict:
+    """Uma linha por centro de custo na aba Log (desligado por CONFIG['LOG_ATIVO'])."""
+    sh_log = ss.worksheet(payload.get('logSheetName') or CONFIG['SHEET_LOG'])
     log_rows = _find_all_rows_by_id(sh_log, id_val)
     log_maps = _build_log_maps(payload)
 
@@ -52,25 +82,7 @@ def secao_atualiza_log_e_spsbd(ss, payload: dict) -> dict:
         if log_maps:
             _append_map_rows(sh_log, log_maps)
         log_modo = 'blur_add'
-
-    # --- SPsBD ---
-    sp_row = _find_last_row_by_id(sh_sp, id_val)
-    if sp_row:
-        spsbd_map = _build_spsbd_map(payload, ignore_blanks=True)
-        _update_row_by_map(sh_sp, sp_row, spsbd_map)
-        spsbd_modo = 'update'
-    else:
-        spsbd_map = _build_spsbd_map(payload, ignore_blanks=False)
-        _append_map_rows(sh_sp, [spsbd_map])
-        sp_row = None
-        spsbd_modo = 'insert'
-
-    return {
-        'ok': True,
-        'id': id_val,
-        'log':   {'linhasEncontradas': len(log_rows), 'linhasGeradas': len(log_maps), 'modo': log_modo},
-        'spsbd': {'modo': spsbd_modo, 'row': sp_row},
-    }
+    return {'linhasEncontradas': len(log_rows), 'linhasGeradas': len(log_maps), 'modo': log_modo}
 
 
 def atualizar_spsbd_codigo_integracao_omie(ss, payload: dict, codigo_integracao: str) -> dict:

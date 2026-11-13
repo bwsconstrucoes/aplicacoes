@@ -7,12 +7,20 @@ Header ou body: campo "secret" para autenticação
 """
 
 import logging
+import threading
 from flask import Blueprint, request, jsonify
 from .core import validar_payload, executar
 from .utils import as_string
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('atualizaspbotao', __name__)
+
+# SPs sendo atualizadas agora. Um segundo clique na MESMA SP enquanto a primeira
+# chamada não terminou é recusado na hora, sem tocar em planilha nem no Omie
+# (13/11/2026: três chamadas presas ao mesmo tempo, uma de 155 s, ocupando 3 das
+# 4 linhas do serviço). Vale por processo — o Render roda 1 worker.
+_sps_em_andamento: set = set()
+_trava_sps = threading.Lock()
 
 
 @bp.route('/executar', methods=['POST'])
@@ -28,6 +36,18 @@ def rota_executar():
             'response': _html_erro(str(e)),
         }), 400
 
+    sp_id = as_string(payload.get('id'))
+    with _trava_sps:
+        repetido = sp_id in _sps_em_andamento
+        if not repetido:
+            _sps_em_andamento.add(sp_id)
+    if repetido:
+        logger.warning(f"[atualizaspbotao] SP {sp_id}: clique repetido recusado — a anterior ainda está rodando")
+        msg = (f"A SP {sp_id} já está sendo atualizada. Aguarde a primeira atualização "
+               f"terminar (pode levar alguns minutos) antes de clicar de novo.")
+        return jsonify({'ok': False, 'erro': msg, 'em_andamento': True,
+                        'response': _html_erro(msg)}), 409
+
     try:
         resultado = executar(payload)
         resultado['ok']       = True
@@ -42,6 +62,10 @@ def rota_executar():
             'erro':     msg,
             'response': _html_erro(msg),
         }), 500
+
+    finally:
+        with _trava_sps:
+            _sps_em_andamento.discard(sp_id)
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +109,11 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
 
     if ok_spsbd:
         acao_spsbd = "atualizado" if modo_spsbd == 'update' else "registrado"
-        acao_log   = "atualizado" if modo_log == 'update' else "registrado"
-        linha_bd   = f"✅ Banco de dados {acao_spsbd} e log {acao_log} com sucesso."
+        if modo_log == 'desativado':
+            linha_bd = f"✅ Banco de dados {acao_spsbd} com sucesso."
+        else:
+            acao_log = "atualizado" if modo_log == 'update' else "registrado"
+            linha_bd = f"✅ Banco de dados {acao_spsbd} e log {acao_log} com sucesso."
     else:
         linha_bd   = "⚠️ Houve um problema ao atualizar o banco de dados interno."
 

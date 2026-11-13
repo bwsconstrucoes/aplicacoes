@@ -22,7 +22,7 @@ app/apps/processarnovasp/
 ├── omie.py                # IncluirCliente + IncluirContaPagar
 ├── pipefy.py              # 5 mutations GraphQL
 ├── pedidos.py             # vinculação a pedido de compra
-├── sheets.py              # 4 variantes de SPsBD + Log + FalhaProcessar
+├── sheets.py              # 4 variantes de SPsBD + Log (desligado em 13/11/2026, LOG_ATIVO) + FalhaProcessar
 ├── notify.py              # alertas Z-API
 └── utils.py               # helpers genéricos
 ```
@@ -117,7 +117,7 @@ app.register_blueprint(processarnovasp_bp, url_prefix='/api/processarnovasp')
     "omie":       { "ok": true, "cliente": {}, "titulo": {} },
     "pipefy":     { "ok": true, "status": 200 },
     "spsbd":      { "ok": true, "rota": "padrao" },
-    "log":        { "ok": true, "linhas_inseridas": 2 }
+    "log":        { "ok": true, "pulado": true, "motivo": "Aba Log desativada" }
   },
   "response": "<HTML para Webhook Respond do Make>"
 }

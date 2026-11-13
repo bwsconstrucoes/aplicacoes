@@ -150,6 +150,10 @@ def _executar_transferencia(gc, payload: dict, result: dict) -> dict:
         notify_mod.alertar_falha_log(payload.get('id'))
 
     # 3. Rateio (sem Omie — mas usamos a saída pra montar log com CONS)
+    # Com o Log desligado, o rateio não serve a mais nada nesta rota.
+    if not sheets_mod.LOG_ATIVO:
+        result['secoes']['log'] = {'ok': True, 'pulado': True, 'motivo': 'Aba Log desativada'}
+        return result
     try:
         rat = rateio_mod.calcular(payload, gc)
         result['secoes']['rateio'] = rat
