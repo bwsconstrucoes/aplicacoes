@@ -21,6 +21,44 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 — O DADO QUE NÃO BATE VIRA PERGUNTA (migração 102)
+
+Ele: *"em relação a IA errar a leitura, eu acho que pode fazer o seguinte:
+quando houver divergência entre o que a IA lê e o que está cadastrado, aí você
+questiona. E o humano decide."*
+
+A importação já comparava as três fontes — o cadastro do ERP, o card do Pipefy
+e o documento lido pela IA — e mostrava a divergência no relatório. **Só que o
+relatório é de uma rodada: fechou a tela, perdeu-se.** Com 575 pessoas, "anote
+num papel o que não bateu" não é plano.
+
+Agora a divergência é **guardada** (`cadastro_divergencias`) e aparece numa
+fila na tela Importar, com as três versões lado a lado e quatro botões: *o do
+documento*, *o do card*, *manter o do ERP*, *ignorar*. A de maior força vem em
+negrito — documento > card > cadastro.
+
+**Uma pergunta ABERTA por pessoa e campo.** Ele vai reimportar na carga
+inicial; sem essa trava a lista cresceria sem ninguém ter decidido nada.
+
+#### Dois defeitos que os testes e a tela pegaram
+
+1. ⚑ **Decidir o nome não mudava o nome.** `_gravar_campos` força
+   `nome = o atual` de propósito — a importação em massa preenche buraco, não
+   renomeia gente em lote por uma leitura torta. Mas a DECISÃO é exatamente o
+   caso em que o nome deve mudar. Agora há uma porta só para ela
+   (`permitir_nome`), e um teste guarda **cada metade**: a decisão muda, a
+   importação em massa não. O CPF fica fora das duas.
+2. **"CPF inválido" ao decidir o NOME.** A gravação passa pelas conferências
+   do cadastro inteiro, então uma pessoa com CPF inválido gravado dava esse
+   recado — e quem o lesse procuraria o erro no lugar errado. Agora o recado
+   diz o que é e o que fazer.
+
+#### O que continua sendo decisão dele
+
+A IA **não grava sozinha**, e isso é deliberado: ela erra em silêncio, e
+trocar o nome de alguém na folha por uma leitura torta só aparece quando o
+pagamento volta.
+
 ### ⚑ 13/11/2026 (2ª correção) — QUEM LISTA OS CARDS É ELE
 
 Logo depois de publicar a correção da manhã (achar as pessoas varrendo o pipe

@@ -139,6 +139,19 @@
   </div>
   <div id="resultado-pc"></div>
 </div>
+
+{# ⚑ A FILA DO QUE NÃO BATE. Ele, em 13/11/2026: *"quando houver divergência
+   entre o que a IA lê e o que está cadastrado, aí você questiona. E o humano
+   decide."* O relatório é de uma rodada; isto fica. #}
+<div class="cartao" id="cartao-divergencias" style="display:none">
+  <div class="cartao-cab"><h3>Dados que não batem — decida</h3>
+    <small>o que a importação achou diferente entre o ERP, o card e o documento</small></div>
+  <div class="dica">O <b>documento da pessoa</b> é o que tem mais força, e por
+    isso vem em negrito. Mas quem lê o documento é a IA, e ela erra calada —
+    trocar o nome de alguém na folha por uma leitura torta só aparece quando o
+    pagamento volta. Por isso a escolha é sua.</div>
+  <div id="lista-divergencias" style="margin-top:10px"></div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -598,6 +611,7 @@ async function mandarCadastroPipefy(gravar){
           + "estiver certo, aperte Trazer do Pipefy.", "info");
     }
     situacaoDoCadastroPipefy();
+    pintarDivergencias();
   } catch(e){
     PC_CONFERIDO = false;
     onde.innerHTML = "";
@@ -627,7 +641,62 @@ if (els("btn-conferir-pc"))
 if (els("btn-gravar-pc"))
   els("btn-gravar-pc").addEventListener("click", () => mandarCadastroPipefy(true));
 
+// ---------------------------------------------------------------------------
+// AS PERGUNTAS QUE A IMPORTAÇÃO DEIXOU
+// ---------------------------------------------------------------------------
+const FONTES = [["documento", "o do documento"], ["card", "o do card"],
+                ["cadastro", "manter o do ERP"], ["ignorar", "ignorar"]];
+
+async function pintarDivergencias(){
+  const cartao = els("cartao-divergencias"), onde = els("lista-divergencias");
+  if (!onde) return;
+  let d;
+  try { d = await api("/erp/api/cadastro/divergencias"); }
+  catch(e) { cartao.style.display = "none"; return; }
+  const p = d.perguntas || [];
+  cartao.style.display = p.length ? "" : "none";
+  if (!p.length) return;
+  onde.innerHTML = `<table><thead><tr><th>Pessoa</th><th>Campo</th>
+    <th>No ERP</th><th>No card</th><th>No documento</th><th>Decidir</th>
+    </tr></thead><tbody>${p.map(x => `<tr data-d="${x.id}">
+      <td>${escapar(x.nome)}<small>${escapar(documento(x.cpf||""))}</small></td>
+      <td>${escapar(x.rotulo)}</td>
+      <td${x.mais_forte === "cadastro" ? ' style="font-weight:600"' : ""}>${
+        escapar(x.no_cadastro || "—")}</td>
+      <td${x.mais_forte === "card" ? ' style="font-weight:600"' : ""}>${
+        escapar(x.no_card || "—")}</td>
+      <td${x.mais_forte === "documento" ? ' style="font-weight:600"' : ""}>${
+        escapar(x.no_documento || "—")}</td>
+      <td><div style="display:flex; gap:4px; flex-wrap:wrap">${
+        FONTES.filter(([f]) => f === "ignorar" || f === "cadastro" ||
+                      (f === "card" ? x.no_card : x.no_documento))
+          .map(([f, rot]) => `<button class="btn secundario" style="padding:4px 8px"
+            data-decidir="${f}">${escapar(rot)}</button>`).join("")}
+      </div></td></tr>`).join("")}</tbody></table>`;
+  onde.querySelectorAll("[data-decidir]").forEach(b =>
+    b.addEventListener("click", () => decidirDivergencia(
+      b.closest("tr").dataset.d, b.dataset.decidir, b)));
+}
+
+async function decidirDivergencia(id, fonte, botao){
+  // Trava os botões da linha: dois cliques seguidos gravariam duas vezes.
+  const linha = botao.closest("tr");
+  linha.querySelectorAll("button").forEach(x => x.disabled = true);
+  try {
+    await api(`/erp/api/cadastro/divergencias/${id}`,
+              {method: "POST", body: JSON.stringify({fonte}),
+               headers: {"Content-Type": "application/json"}});
+    aviso("mensagem", fonte === "ignorar" ? "Ignorada."
+          : "Cadastro atualizado.", "ok");
+    pintarDivergencias();
+  } catch(e) {
+    linha.querySelectorAll("button").forEach(x => x.disabled = false);
+    aviso("mensagem", e.message, "erro");
+  }
+}
+
 situacaoDoCadastroPipefy();
+pintarDivergencias();
 preencher();
 </script>
 {% endblock %}

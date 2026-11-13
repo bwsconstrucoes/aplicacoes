@@ -26,6 +26,7 @@ from sqlalchemy import text
 
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 from app.apps.erp.core.pipefy import cadastro_importacao as imp
+from app.apps.erp.core.comum.auditoria import ErroValidacao
 from app.apps.erp.core.pipefy import cliente
 
 pytestmark = pytest.mark.banco
@@ -653,3 +654,137 @@ def test_a_divergencia_NAO_grava_sozinha(mundo, monkeypatch):
     assert mundo["com_card"].nome == antes          # nada foi trocado
     assert r["divergencias"] >= 1
     assert r["por_pessoa"][0]["divergencias"][0]["mais_forte"] == "documento"
+
+
+# ---------------------------------------------------------------------------
+# A DIVERGÊNCIA VIRA PERGUNTA, E O HUMANO DECIDE (migração 102, 13/11/2026)
+#
+# Ele: *"em relação a IA errar a leitura, eu acho que pode fazer o seguinte:
+# quando houver divergência entre o que a IA lê e o que está cadastrado, aí
+# você questiona. E o humano decide."*
+# ---------------------------------------------------------------------------
+def _abrir_uma_divergencia(mundo, **papel):
+    from unittest.mock import patch
+    with patch.object(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo"):
+        return imp.importar(
+            mundo["s"], mundo["dp"], simular=False, cards=CARD,
+            ler_cards=_leitor(_card(
+                nome_completo="Nome Do Card",
+                ctps_p_gina_com_as_informa_es_do_colaborador='["https://x/c.jpg"]')),
+            ler_papel=_leitor_de_papel(**papel))
+
+
+def test_a_divergencia_fica_guardada_para_alguem_decidir(mundo):
+    """O relatório é de uma rodada: fechou a tela, perdeu-se. Com 575 pessoas,
+    "anote num papel o que não bateu" não é plano."""
+    _abrir_uma_divergencia(mundo, nome="Nome Do Documento")
+    mundo["s"].flush()
+    abertas = imp.perguntas_abertas(mundo["s"])
+    assert len(abertas) == 1
+    p = abertas[0]
+    assert p["campo"] == "nome" and p["rotulo"] == "Nome"
+    assert p["no_cadastro"] == "Pessoa Com Card"
+    assert p["no_card"] == "Nome Do Card"
+    assert p["no_documento"] == "Nome Do Documento"
+
+
+def test_reimportar_NAO_duplica_a_mesma_pergunta(mundo):
+    """Na carga inicial ele vai reimportar; sem esta trava, a lista do que
+    falta decidir cresceria sem ninguém ter decidido nada."""
+    _abrir_uma_divergencia(mundo, nome="Nome Do Documento")
+    mundo["s"].flush()
+    _abrir_uma_divergencia(mundo, nome="Nome Do Documento")
+    mundo["s"].flush()
+    assert len(imp.perguntas_abertas(mundo["s"])) == 1
+
+
+def test_a_simulacao_mostra_mas_NAO_enfileira(mundo):
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=CARD,
+                     ler_cards=_leitor(_card(nome_completo="Outro Nome")))
+    assert r["divergencias"] == 1
+    assert imp.perguntas_abertas(mundo["s"]) == []
+
+
+def test_escolher_o_documento_grava_no_cadastro(mundo):
+    _abrir_uma_divergencia(mundo, nome="Nome Do Documento")
+    mundo["s"].flush()
+    um = imp.perguntas_abertas(mundo["s"])[0]
+    r = imp.decidir(mundo["s"], um["id"], "documento", mundo["dp"])
+    mundo["s"].flush()
+    assert r["situacao"] == "RESOLVIDA"
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].nome == "Nome Do Documento"
+    assert imp.perguntas_abertas(mundo["s"]) == []
+
+
+def test_manter_o_do_ERP_fecha_a_pergunta_sem_mexer_no_cadastro(mundo):
+    _abrir_uma_divergencia(mundo, nome="Nome Do Documento")
+    mundo["s"].flush()
+    um = imp.perguntas_abertas(mundo["s"])[0]
+    imp.decidir(mundo["s"], um["id"], "cadastro", mundo["dp"])
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].nome == "Pessoa Com Card"
+    assert imp.perguntas_abertas(mundo["s"]) == []
+
+
+def test_decidir_duas_vezes_e_recusado(mundo):
+    """Dois cliques seguidos não gravam duas vezes."""
+    _abrir_uma_divergencia(mundo, nome="Nome Do Documento")
+    mundo["s"].flush()
+    um = imp.perguntas_abertas(mundo["s"])[0]
+    imp.decidir(mundo["s"], um["id"], "card", mundo["dp"])
+    mundo["s"].flush()
+    with pytest.raises(ErroValidacao):
+        imp.decidir(mundo["s"], um["id"], "card", mundo["dp"])
+
+
+def test_a_decisao_passa_pelas_conferencias_do_cadastro(mundo):
+    """Importação não pode ser a porta dos fundos: PIS inválido é recusado
+    aqui como seria na tela."""
+    mundo["s"].execute(text("UPDATE colaboradores SET pis = NULL WHERE id = :i"),
+                       {"i": mundo["com_card"].id})
+    mundo["s"].execute(text("""
+        INSERT INTO cadastro_divergencias
+               (colaborador_id, campo, no_cadastro, no_card, mais_forte)
+        VALUES (:i, 'pis', '', '11111111111', 'card')"""),
+        {"i": mundo["com_card"].id})
+    mundo["s"].flush()
+    um = imp.perguntas_abertas(mundo["s"])[0]
+    with pytest.raises(ErroValidacao):
+        imp.decidir(mundo["s"], um["id"], "card", mundo["dp"])
+
+
+def test_fonte_sem_valor_nao_grava_vazio(mundo):
+    _abrir_uma_divergencia(mundo, nome="Nome Do Documento")
+    mundo["s"].flush()
+    um = imp.perguntas_abertas(mundo["s"])[0]
+    mundo["s"].execute(
+        text("UPDATE cadastro_divergencias SET no_card = '' WHERE id = :i"),
+        {"i": um["id"]})
+    mundo["s"].flush()
+    with pytest.raises(ErroValidacao):
+        imp.decidir(mundo["s"], um["id"], "card", mundo["dp"])
+
+
+def test_a_importacao_em_massa_NAO_renomeia_ninguem(mundo, monkeypatch):
+    """⚑ A outra metade da mesma regra, e ela é a que protege.
+
+    Decidir uma divergência PODE mudar o nome — é para isso que serve. A
+    importação em massa, NÃO: ela preenche buraco. Sem esta separação, uma
+    leitura torta de documento renomearia gente em lote, calada."""
+    monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
+    antes = mundo["com_card"].nome
+    imp.importar(
+        mundo["s"], mundo["dp"], simular=False, cards=CARD, regravar=True,
+        ler_cards=_leitor(_card(nome_completo="Nome Que Nao Deve Entrar")),
+        ler_papel=False)
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].nome == antes
+
+
+def test_o_CPF_nunca_muda_por_decisao(mundo):
+    """Trocar o CPF criaria um segundo cadastro em vez de corrigir o
+    primeiro — e é por ele que o pagamento acha a pessoa."""
+    assert "cpf" not in imp.A_CONFRONTAR

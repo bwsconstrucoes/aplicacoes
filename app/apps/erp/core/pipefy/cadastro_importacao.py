@@ -50,6 +50,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroValidacao
 from app.apps.erp.core.pipefy import cliente
 from app.apps.erp.db.models.cadastros import Usuario
 
@@ -625,6 +626,113 @@ def confrontar(s: Session, colaborador_id: int, campos_do_card: dict[str, str],
     return saida
 
 
+def guardar_divergencias(s: Session, colaborador_id: int,
+                        linhas: list[dict[str, Any]], card: str) -> int:
+    """Põe cada divergência na fila de quem decide.
+
+    ⚑ GUARDAR É O QUE TRANSFORMA UM AVISO EM TRABALHO. O relatório é de uma
+    rodada: fechou a tela, perdeu-se. Com 575 pessoas, "anote num papel o que
+    não bateu" não é plano. Ele, em 13/11/2026: *"quando houver divergência
+    entre o que a IA lê e o que está cadastrado, aí você questiona. E o humano
+    decide."*
+
+    Reimportar a mesma gente é normal na carga inicial, então a pergunta
+    ABERTA é uma por pessoa e campo — senão a lista cresceria sem ninguém ter
+    decidido nada. Se o card mudou, a pergunta aberta é atualizada.
+    """
+    postas = 0
+    for d in linhas:
+        s.execute(text("""
+            INSERT INTO cadastro_divergencias
+                   (colaborador_id, campo, no_cadastro, no_card, no_documento,
+                    mais_forte, origem, referencia)
+            VALUES (:i, :campo, :aqui, :card_v, :papel, :forte, 'PIPEFY', :card)
+            ON CONFLICT (colaborador_id, campo) WHERE situacao = 'ABERTA'
+            DO UPDATE SET no_cadastro = EXCLUDED.no_cadastro,
+                          no_card = EXCLUDED.no_card,
+                          no_documento = EXCLUDED.no_documento,
+                          mais_forte = EXCLUDED.mais_forte,
+                          referencia = EXCLUDED.referencia"""),
+            {"i": colaborador_id, "campo": d["campo"], "aqui": d["no_cadastro"],
+             "card_v": d["no_card"], "papel": d["no_documento"],
+             "forte": d["mais_forte"], "card": str(card)})
+        postas += 1
+    return postas
+
+
+def perguntas_abertas(s: Session, teto: int = 300) -> list[dict[str, Any]]:
+    """O que está esperando alguém decidir."""
+    linhas = s.execute(text("""
+        SELECT d.id, d.colaborador_id, c.nome, c.cpf, d.campo, d.no_cadastro,
+               d.no_card, d.no_documento, d.mais_forte, d.referencia
+          FROM cadastro_divergencias d
+          JOIN colaboradores c ON c.id = d.colaborador_id
+         WHERE d.situacao = 'ABERTA'
+         ORDER BY c.nome, d.campo
+         LIMIT :t"""), {"t": teto}).mappings().all()
+    return [{**dict(l), "rotulo": A_CONFRONTAR.get(l["campo"], l["campo"])}
+            for l in linhas]
+
+
+def decidir(s: Session, divergencia_id: int, fonte: str,
+            usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    """Alguém escolheu qual versão vale — e o cadastro passa a dizer isso.
+
+    `fonte` é "cadastro" (fica como está), "card", "documento" ou "ignorar".
+    A gravação passa pelas MESMAS funções da tela: se o cadastro recusa um PIS
+    inválido, esta porta recusa também.
+    """
+    d = s.execute(text("""
+        SELECT * FROM cadastro_divergencias WHERE id = :i"""),
+        {"i": divergencia_id}).mappings().first()
+    if d is None:
+        raise ErroNaoEncontrado("Divergência não encontrada.")
+    if d["situacao"] != "ABERTA":
+        raise ErroValidacao("Esta divergência já foi decidida.")
+    escolhas = {"cadastro": d["no_cadastro"], "card": d["no_card"],
+                "documento": d["no_documento"]}
+    if fonte == "ignorar":
+        s.execute(text("""
+            UPDATE cadastro_divergencias
+               SET situacao = 'IGNORADA', decidido_por = :u, decidido_em = now()
+             WHERE id = :i"""),
+            {"i": divergencia_id, "u": usuario.id if usuario else None})
+        return {"id": divergencia_id, "situacao": "IGNORADA"}
+    if fonte not in escolhas:
+        raise ErroValidacao(
+            "Escolha de onde vem o valor: do cadastro, do card ou do documento.")
+    valor = str(escolhas[fonte] or "").strip()
+    if not valor:
+        raise ErroValidacao("Essa fonte não tem valor para gravar.")
+    if fonte != "cadastro":
+        try:
+            _gravar_campos(s, int(d["colaborador_id"]), {d["campo"]: valor},
+                           usuario, permitir_nome=(d["campo"] == "nome"))
+        except ErroValidacao as e:
+            # ⚑ O RECADO PRECISA DIZER O QUE É. A gravação passa pelas
+            # conferências do cadastro inteiro, então uma pessoa com CPF
+            # inválido gravado dava "CPF inválido" ao decidir o NOME dela — e
+            # quem leu isso ia procurar o erro no lugar errado. Visto na tela
+            # em 13/11/2026.
+            recado = str(e)
+            if "CPF" in recado.upper() and d["campo"] != "cpf":
+                raise ErroValidacao(
+                    f"Não deu para gravar: o CPF desta pessoa está inválido no "
+                    f"cadastro. Corrija a ficha dela primeiro, e depois decida "
+                    f"isto aqui. (O cadastro recusou: {recado})") from e
+            raise
+    s.execute(text("""
+        UPDATE cadastro_divergencias
+           SET situacao = 'RESOLVIDA', escolhido = :v, decidido_por = :u,
+               decidido_em = now()
+         WHERE id = :i"""),
+        {"i": divergencia_id, "v": valor,
+         "u": usuario.id if usuario else None})
+    logger.info("ERP/cadastro: divergência %s resolvida com o valor do %s",
+                divergencia_id, fonte)
+    return {"id": divergencia_id, "situacao": "RESOLVIDA", "valor": valor}
+
+
 # ---------------------------------------------------------------------------
 # A importação
 # ---------------------------------------------------------------------------
@@ -794,6 +902,10 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         if briga:
             linha["divergencias"] = briga
             relatorio["divergencias"] += len(briga)
+            # Na simulação a dúvida só aparece; gravando, ela entra na fila
+            # de quem decide — senão some junto com a tela.
+            if not simular:
+                guardar_divergencias(s, pessoa["id"], briga, card)
         relatorio["por_pessoa"].append(linha)
 
     logger.info(
@@ -809,7 +921,8 @@ def _resumo(anexo: dict[str, Any]) -> dict[str, Any]:
 
 
 def _gravar_campos(s: Session, colaborador_id: int, campos: dict[str, str],
-                   usuario: Optional[Usuario]) -> None:
+                   usuario: Optional[Usuario],
+                   permitir_nome: bool = False) -> None:
     """Grava pelas MESMAS funções da tela, nunca com UPDATE solto.
 
     É a regra que a fila do DP já segue: se a conferência do cadastro recusa um
@@ -821,7 +934,20 @@ def _gravar_campos(s: Session, colaborador_id: int, campos: dict[str, str],
     c = s.get(Colaborador, colaborador_id)
     if c is None:
         return
-    svc.salvar(s, {**campos, "cpf": c.cpf, "nome": c.nome}, usuario)
+    # ⚑ O NOME SÓ MUDA QUANDO ALGUÉM DECIDIU QUE MUDA — e o CPF, nunca.
+    #
+    # A importação em massa força `nome=c.nome` de propósito: ela preenche
+    # buraco, não renomeia gente. Mas a DECISÃO de uma divergência é
+    # exatamente o caso em que o nome deve mudar — e o teste pegou que, sem
+    # esta porta, escolher "o do documento" no campo nome não fazia nada.
+    #
+    # O CPF fica de fora dos dois caminhos: ele é a identidade da pessoa no
+    # sistema, e trocá-lo criaria um segundo cadastro em vez de corrigir o
+    # primeiro.
+    novo_nome = " ".join(str(campos.get("nome") or "").split())
+    svc.salvar(s, {**campos, "cpf": c.cpf,
+                   "nome": (novo_nome if (permitir_nome and novo_nome)
+                            else c.nome)}, usuario)
 
 
 def _trazer_um(s: Session, pessoa: dict[str, Any], anexo: dict[str, Any],
