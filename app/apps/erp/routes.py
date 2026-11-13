@@ -4507,6 +4507,7 @@ def api_importar_pipefy_cadastro():
             t = tarefas.enfileirar(
                 s, "importar_cadastro_pipefy",
                 {"simular": not gravar, "cards": pedidos,
+                 "regravar": bool(d.get("regravar")),
                  "usuario_id": usuario.id if usuario else None},
                 rotulo=(("Conferir sem gravar: " if not gravar
                          else "Trazer do Pipefy: ")

@@ -288,22 +288,57 @@ def test_o_relatorio_diz_o_que_ficou_de_fora(mundo):
     assert "aso" in relatorio["de_fora"]
 
 
-def test_anexo_sem_endereco_completo_NAO_vira_endereco_chutado(mundo):
-    """⚑ Eu ia montar a raiz do armazenamento do Pipefy a partir de um caminho
-    solto. O importador que este monorepo já roda em produção mostra que, nesta
-    conta, o anexo vem com o endereço completo — e chutar a raiz daria um
-    endereço que ou não responde, ou responde OUTRA COISA, e aí o arquivo de
-    alguém entraria no cadastro de outra pessoa."""
-    assert cliente.endereco_do_anexo("orgs/1/uploads/2/b.pdf") == ""
+def test_o_anexo_entra_vindo_COMO_ENDERECO_OU_COMO_CAMINHO(mundo):
+    """⚑ ESTE TESTE JÁ DEFENDEU O CONTRÁRIO, e a história importa.
+
+    Ele exigia que SÓ o endereço completo valesse — porque o importador de SPs
+    deste monorepo faz assim e funciona há meses. Em 13/11/2026 ele usou a
+    importação do cadastro e: *"a documentação que está anexada no pipe não
+    veio para cá (…) não veio nenhum documento"*.
+
+    São pipes diferentes, e o Pipefy devolve o campo de anexo ora como
+    endereço completo, ora como o caminho do arquivo no armazenamento.
+    Recusar o caminho era jogar fora TODOS os documentos — que é exatamente o
+    que aconteceu.
+
+    O que continua valendo: texto que não se parece com nenhuma das duas
+    formas NÃO vira endereço inventado.
+    """
     assert cliente.endereco_do_anexo("https://x/a.pdf") == "https://x/a.pdf"
     assert cliente.endereco_do_anexo({"url": "https://x/d.pdf"}) == "https://x/d.pdf"
+    caminho = cliente.endereco_do_anexo("orgs/1/uploads/2/b.pdf")
+    assert caminho.startswith(cliente.RAIZ_DO_ARQUIVO)
+    assert caminho.endswith("orgs/1/uploads/2/b.pdf")
+    # Lixo continua sendo lixo.
+    assert cliente.endereco_do_anexo("sei la o que") == ""
+    assert cliente.endereco_do_anexo("") == ""
 
     relatorio = imp.importar(
-        mundo["s"], mundo["dp"], simular=True,
-        cards="853990032", ler_cards=_leitor(_card(foto='["orgs/1/uploads/2/f.jpg"]')))
-    assert relatorio["documentos_que_falharam"] == 1
-    assert relatorio["documentos_guardados"] == 0
-    assert "endereço" in relatorio["falhas"][0]["motivo"]
+        mundo["s"], mundo["dp"], simular=True, cards=CARD,
+        ler_cards=_leitor(_card(foto='["orgs/1/uploads/2/f.jpg"]')))
+    assert relatorio["documentos_guardados"] == 1      # VAI ENTRAR
+    assert relatorio["documentos_que_falharam"] == 0
+
+
+def test_a_conferencia_mostra_o_que_o_pipe_devolveu_em_cada_anexo(mundo):
+    """⚑ A trava contra o mistério. Quando nenhum documento veio, o relatório
+    não dizia NADA — campo vazio e campo que eu não soube ler davam o mesmo
+    silêncio, e descobrir o porquê custou uma ida e volta com ele.
+
+    Agora a conferência mostra, campo por campo, quantos itens vieram, de que
+    forma, e uma amostra do que o Pipefy devolveu."""
+    relatorio = imp.importar(
+        mundo["s"], mundo["dp"], simular=True, cards=CARD,
+        ler_cards=_leitor(_card(ctps_1='["orgs/9/uploads/8/conta.pdf"]',
+                                foto='["https://x/f.jpg"]')))
+    raio = {x["campo"]: x for x in relatorio["por_pessoa"][0]["anexos_do_card"]}
+    assert raio["ctps_1"]["quantos"] == 1
+    assert raio["ctps_1"]["formas"] == ["caminho no armazenamento"]
+    assert "orgs/9" in raio["ctps_1"]["amostra"]
+    assert raio["foto"]["formas"] == ["endereço completo"]
+    # Campo que o card não tem aparece com zero — e não some do relatório.
+    assert raio["documentos_diversos"]["quantos"] == 0
+    assert relatorio["anexos_no_pipe"] == 2
 
 
 def test_numero_de_card_que_nao_e_numero_nao_vira_consulta(mundo):
@@ -403,3 +438,143 @@ def test_gravar_de_verdade_guarda_o_numero_do_card_na_pessoa(mundo, monkeypatch)
     assert mundo["s"].execute(
         text("SELECT ref_pipefy FROM colaboradores WHERE id = :i"),
         {"i": mundo["com_card"].id}).scalar() == outro
+
+
+# ---------------------------------------------------------------------------
+# O QUE O CARD NÃO DISSE, O PAPEL PODE DIZER (13/11/2026)
+#
+# Ele: *"teve um determinado cadastro aí que a gente tem o PIS gravado no
+# pipe, mas ele não identificou o PIS, deve ter dado alguma divergência (…) eu
+# quero assim: vai importar, se tem alguma coisa faltando, pô, lê os
+# documentos, lê os anexos do pipe."*
+# ---------------------------------------------------------------------------
+def _leitor_de_papel(**campos):
+    """Um leitor de documento de mentira — nada vai à IA nestes testes."""
+    def ler(conteudo, nome, tipo):
+        return {"campos": dict(campos), "resumo": "", "aviso": ""}
+    return ler
+
+
+def test_o_papel_preenche_o_que_o_card_deixou_em_branco(mundo, monkeypatch):
+    monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
+    mundo["s"].execute(text("UPDATE colaboradores SET pis = NULL WHERE id = :i"),
+                       {"i": mundo["com_card"].id})
+    mundo["s"].flush()
+    # ⚑ `expire_all` depois de um UPDATE cru: senão o objeto do ORM continua
+    # com o valor antigo na memória, e gravar o MESMO valor não gera UPDATE
+    # nenhum — o teste falharia por um motivo que não existe em produção (lá o
+    # objeto é lido fresco do banco).
+    mundo["s"].expire_all()
+    r = imp.importar(
+        mundo["s"], mundo["dp"], simular=False, cards=CARD,
+        ler_cards=_leitor(_card(
+            ctps_p_gina_com_as_informa_es_do_colaborador='["https://x/ctps.jpg"]')),
+        ler_papel=_leitor_de_papel(num_pis=PIS_A))
+    mundo["s"].flush()
+    assert r["campos_do_documento"] == 1
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].pis == PIS_A
+
+
+def test_o_papel_NAO_troca_o_que_ja_estava_preenchido(mundo, monkeypatch):
+    """A leitura entra pela mesma porta dos outros campos: só buraco."""
+    monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
+    r = imp.importar(
+        mundo["s"], mundo["dp"], simular=False, cards=CARD,
+        ler_cards=_leitor(_card(
+            ctps_p_gina_com_as_informa_es_do_colaborador='["https://x/ctps.jpg"]')),
+        ler_papel=_leitor_de_papel(num_pis="99999999999"))
+    mundo["s"].flush()
+    assert r["campos_do_documento"] == 0
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].pis == PIS_A
+
+
+def test_a_simulacao_NAO_le_documento(mundo):
+    """Leitura por IA custa dinheiro, e a conferência não baixa arquivo."""
+    def nao_pode(*a, **k):                               # pragma: no cover
+        raise AssertionError("a simulação não pode ler documento")
+    r = imp.importar(
+        mundo["s"], mundo["dp"], simular=True, cards=CARD,
+        ler_cards=_leitor(_card(
+            ctps_p_gina_com_as_informa_es_do_colaborador='["https://x/c.jpg"]')),
+        ler_papel=nao_pode)
+    assert r["campos_do_documento"] == 0
+
+
+def test_quem_esta_completo_nao_gasta_leitura(mundo, monkeypatch):
+    """Só lê quem tem buraco — senão a carga inicial viraria uma fatura."""
+    monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
+    mundo["s"].execute(text("""
+        UPDATE colaboradores SET pis = :p, ctps_numero = '123',
+               data_nascimento = '1990-01-01', telefone = '5585999990000'
+         WHERE id = :i"""), {"p": PIS_A, "i": mundo["com_card"].id})
+    mundo["s"].flush()
+
+    def nao_pode(*a, **k):                               # pragma: no cover
+        raise AssertionError("não devia ler: a pessoa está completa")
+    imp.importar(
+        mundo["s"], mundo["dp"], simular=False, cards=CARD,
+        ler_cards=_leitor(_card(
+            ctps_p_gina_com_as_informa_es_do_colaborador='["https://x/c.jpg"]')),
+        ler_papel=nao_pode)
+
+
+# ---------------------------------------------------------------------------
+# REGRAVAR — só para a carga inicial
+# ---------------------------------------------------------------------------
+def test_regravar_traz_de_novo_e_por_cima(mundo, monkeypatch):
+    """Ele: *"isso aí vai acontecer só nesse começo. Então, se eu precisar
+    reimportar, eu quero reimportar e regravar as coisas."*"""
+    monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
+    cards = _card(ctps_1='["https://x/conta.pdf"]', nome_da_m_e="Mãe Antiga")
+    imp.importar(mundo["s"], mundo["dp"], simular=False, cards=CARD,
+                 ler_cards=_leitor(cards), ler_papel=False)
+    mundo["s"].flush()
+
+    # Sem regravar, a segunda passada não mexe em nada.
+    de_novo = imp.importar(mundo["s"], mundo["dp"], simular=False, cards=CARD,
+                           ler_cards=_leitor(_card(nome_da_m_e="Mãe Nova")),
+                           ler_papel=False)
+    assert de_novo["campos_preenchidos"] == 0
+
+    # Regravando, o card manda.
+    forcado = imp.importar(mundo["s"], mundo["dp"], simular=False, cards=CARD,
+                           ler_cards=_leitor(_card(nome_da_m_e="Mãe Nova")),
+                           regravar=True, ler_papel=False)
+    mundo["s"].flush()
+    assert forcado["regravando"] is True
+    assert forcado["campos_preenchidos"] >= 1
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].nome_mae == "Mãe Nova"
+
+
+# ---------------------------------------------------------------------------
+# A EMPRESA PELO CNPJ, e a matrícula que saiu
+# ---------------------------------------------------------------------------
+def test_a_empresa_vem_pelo_CNPJ_do_card(mundo):
+    """Ele: *"o que o ERP grava é um pouquinho diferente do que está na
+    planilha, mas na planilha dá para localizar o CNPJ."* O texto difere dos
+    dois lados; os 14 dígitos, não."""
+    from app.apps.erp.db.models.cadastros import Empresa
+    emp = Empresa(razao_social="BWS CONSTRUCOES LTDA", cnpj="00.079.526/0001-09",
+                  nome_fantasia="BWS")
+    mundo["s"].add(emp)
+    mundo["s"].flush()
+    achada = imp.empresa_do_card(
+        mundo["s"], {"cnpj_para_admiss_o": "00.079.526/0001-09 - MATRIZ/CE"})
+    assert achada == emp.id
+    # O outro campo do pipe também serve, e com pontuação diferente.
+    assert imp.empresa_do_card(
+        mundo["s"], {"empresa_para_registro": "00079526000109 - BWS"}) == emp.id
+    # CNPJ que não está no cadastro não inventa empresa.
+    assert imp.empresa_do_card(
+        mundo["s"], {"cnpj_para_admiss_o": "11.222.333/0001-81 - X"}) is None
+
+
+def test_a_matricula_nao_e_mais_importada(mundo):
+    """Ele: *"essa informação de matrícula, cara, isso aqui não precisa não.
+    A gente vai usar o ID Fortes, o CPF aqui dentro do nosso sistema."*"""
+    achados = imp.dados_do_card({"matr_cula": "12345", "n_identidade": "99"})
+    assert "matricula" not in achados
+    assert achados["rg"] == "99"

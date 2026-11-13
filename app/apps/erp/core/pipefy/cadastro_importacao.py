@@ -108,7 +108,10 @@ TEXTOS: dict[str, str] = {
     "n_identidade": "rg",
     "nome_da_m_e": "nome_mae",
     "nome_do_pai": "nome_pai",
-    "matr_cula": "matricula",
+    # ⚑ MATRÍCULA SAIU em 13/11/2026. Ele: *"essa informação de matrícula,
+    # cara, isso aqui não precisa não. Esse campo é desnecessário, que a gente
+    # não usa mais negócio de matrícula não. A gente vai usar o ID Fortes, o
+    # CPF aqui dentro do nosso sistema e pronto."*
     "endere_o_rua": "logradouro",
     "n_mero2": "numero_endereco",
     "bairro": "bairro",
@@ -310,9 +313,68 @@ def anexos_do_card(campos: dict[str, str]) -> list[dict[str, Any]]:
             endereco = cliente.endereco_do_anexo(item)
             saida.append({"campo": campo, "item": posicao, "tipo": tipo,
                           "endereco": endereco,
+                          "forma": cliente.forma_do_anexo(item),
                           "nome": cliente.nome_do_anexo(item),
                           "bruto": item})
     return saida
+
+
+def raio_x_dos_anexos(campos: dict[str, str]) -> list[dict[str, Any]]:
+    """O que o Pipefy devolveu em CADA campo de anexo deste card.
+
+    ⚑ ISTO EXISTE POR CAUSA DE 13/11/2026, quando ele importou e: *"a
+    documentação que está anexada no pipe não veio para cá (…) não veio nenhum
+    documento"*. Eu não tinha como saber por quê — aqui não há acesso ao
+    Pipefy —, e o relatório não dizia nada: campo vazio e campo que eu não
+    soube ler davam o mesmo silêncio.
+
+    Agora a conferência MOSTRA, campo por campo, quantos itens vieram e de que
+    forma. A próxima rodada dele responde a pergunta sozinha, em vez de
+    virar mais uma ida e volta.
+    """
+    linhas = []
+    for campo, tipo in PAPEIS.items():
+        itens = cliente.lista_do_campo(campos.get(campo))
+        formas = sorted({cliente.forma_do_anexo(x) for x in itens})
+        linhas.append({
+            "campo": campo, "tipo": tipo, "quantos": len(itens),
+            "formas": formas,
+            # Uma AMOSTRA curta do que veio, para eu poder consertar o que
+            # ainda não entendi sem precisar de acesso ao Pipefy.
+            "amostra": (str(itens[0])[:120] if itens else "")})
+    return linhas
+
+
+# ---------------------------------------------------------------------------
+# A EMPRESA DE REGISTRO, pelo CNPJ que vem no próprio card
+#
+# Ele, em 13/11/2026: *"numa empresa para registro, o que o ERP grava é um
+# pouquinho diferente do que está na planilha, mas na planilha dá para
+# localizar o CNPJ. E assim, ele não importou, eu tenho que reimportar, não
+# importou."*
+#
+# ⚑ O TEXTO DIFERE DOS DOIS LADOS, O CNPJ NÃO. No pipe a opção é
+# "00.079.526/0001-09 - BWS"; no cadastro de Empresas a razão social é outra.
+# Comparar texto nunca ia casar. Comparar os 14 dígitos casa sempre — e é o
+# que ele apontou.
+# ---------------------------------------------------------------------------
+CAMPOS_DE_EMPRESA = ("cnpj_para_admiss_o", "empresa_para_registro")
+
+
+def empresa_do_card(s: Session, campos: dict[str, str]) -> Optional[int]:
+    """O id da empresa do ERP cujo CNPJ aparece no card — ou nada."""
+    for campo in CAMPOS_DE_EMPRESA:
+        digitos = _so_digitos(_limpo(campos.get(campo)))
+        if len(digitos) != 14:
+            continue
+        achada = s.execute(text("""
+            SELECT id FROM empresas
+             WHERE regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') = :c
+               AND ativo IS NOT FALSE
+             LIMIT 1"""), {"c": digitos}).scalar()
+        if achada:
+            return int(achada)
+    return None
 
 
 def _vazios(s: Session, colaborador_id: int,
@@ -400,13 +462,83 @@ def _pessoas_dos_cards(s: Session, lidos: dict[str, Any]) -> tuple[list, list]:
 
 
 # ---------------------------------------------------------------------------
+# O QUE O CARD NÃO DISSE, O DOCUMENTO PODE DIZER
+#
+# Ele, em 13/11/2026: *"teve um determinado cadastro aí que a gente tem o PIS
+# gravado no pipe, mas ele não identificou o PIS, deve ter dado alguma
+# divergência (…) eu quero assim: vai importar, se tem alguma coisa faltando,
+# pô, lê os documentos, lê os anexos do pipe."*
+#
+# ⚑ SÓ O QUE FALTA, E SÓ COM O PAPEL QUE JÁ VEIO. A leitura custa IA, então
+# ela não roda para quem está completo, e nunca baixa nada a mais: lê o
+# arquivo que a importação ACABOU de trazer. O que ela achar entra pela mesma
+# porta dos outros campos — nunca por cima do que já estava preenchido, a não
+# ser que ele tenha pedido para regravar.
+# ---------------------------------------------------------------------------
+# Campo do pedido → coluna do cadastro. A leitura devolve os nomes do
+# formulário do DP (`num_pis`), e aqui eles viram coluna.
+DO_PAPEL_PARA_O_CADASTRO = {
+    "num_pis": "pis", "num_ctps": "ctps_numero",
+    "data_nascimento": "data_nascimento", "telefone": "telefone",
+}
+# Em que ordem tentar: a página de informações da CTPS é a que traz PIS e
+# número; o documento de identificação vem depois.
+PAPEIS_QUE_VALE_LER = ("CTPS-INFORMACOES", "DOC-IDENTIDADE", "CPF-DOC")
+
+
+def _o_que_ainda_falta(s: Session, colaborador_id: int) -> set[str]:
+    """As colunas que a leitura poderia preencher e que seguem vazias."""
+    colunas = sorted(set(DO_PAPEL_PARA_O_CADASTRO.values()))
+    linha = s.execute(
+        text(f"SELECT {', '.join(colunas)} FROM colaboradores WHERE id = :i"),
+        {"i": colaborador_id}).mappings().first()
+    if linha is None:
+        return set()
+    return {c for c in colunas if not str(linha.get(c) or "").strip()}
+
+
+def ler_o_que_veio(s: Session, colaborador_id: int,
+                   trazidos: list[dict[str, Any]],
+                   ler=None) -> dict[str, str]:
+    """Lê os papéis recém-trazidos e devolve só o que preenche buraco."""
+    faltando = _o_que_ainda_falta(s, colaborador_id)
+    if not faltando or not trazidos:
+        return {}
+    funcao = ler
+    if funcao is None:
+        from app.apps.erp.core import documentos_de_pessoa
+        funcao = documentos_de_pessoa.ler
+    achados: dict[str, str] = {}
+    for papel in PAPEIS_QUE_VALE_LER:
+        if not faltando:
+            break
+        for doc in trazidos:
+            if doc.get("tipo") != papel or not doc.get("conteudo"):
+                continue
+            try:
+                lido = funcao(doc["conteudo"], doc.get("nome") or "", papel)
+            except Exception as e:                       # noqa: BLE001
+                logger.warning("ERP/pipefy: leitura de %s falhou (%s)",
+                               papel, e)
+                continue
+            for campo, valor in (lido.get("campos") or {}).items():
+                coluna = DO_PAPEL_PARA_O_CADASTRO.get(campo)
+                if coluna and coluna in faltando and str(valor or "").strip():
+                    achados[coluna] = str(valor).strip()
+                    faltando.discard(coluna)
+            break           # um papel de cada tipo basta
+    return achados
+
+
+# ---------------------------------------------------------------------------
 # A importação
 # ---------------------------------------------------------------------------
 def importar(s: Session, usuario: Optional[Usuario] = None, *,
              simular: bool = True, so_ativos: bool = True,
              obra_id: Optional[int] = None,
              teto_de_pessoas: Optional[int] = POR_RODADA,
-             ler_cards=None, cards: Any = None) -> dict[str, Any]:
+             ler_cards=None, cards: Any = None,
+             regravar: bool = False, ler_papel: Any = None) -> dict[str, Any]:
     """Lê os cards das pessoas e traz documentos e campos vazios.
 
     Com `simular=True` (o padrão) NADA é gravado e nenhum arquivo é baixado:
@@ -446,6 +578,10 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "por_pessoa": [],
         "de_fora": dict(PAPEIS_DE_FORA),
         "cards_sem_pessoa": [],
+        "regravando": bool(regravar),
+        "anexos_no_pipe": 0,
+        "anexos_que_nao_entendi": 0,
+        "campos_do_documento": 0,
     }
     # CARD A CARD, como ele pediu — em levas de 20 por ida à API.
     lidos, falhas_de_card = ler(pedidos)
@@ -465,7 +601,15 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
             s.execute(text("UPDATE colaboradores SET ref_pipefy = :c"
                            " WHERE id = :i AND COALESCE(btrim(ref_pipefy),'') = ''"),
                       {"c": p["card"], "i": p["id"]})
-    ja_veio = o_que_ja_veio(s, [p["card"] for p in pessoas])
+    # ⚑ REGRAVAR É PARA A CARGA INICIAL, e ele pediu com todas as letras em
+    # 13/11/2026: *"isso aí vai acontecer só nesse começo. Então, se eu
+    # precisar reimportar, eu quero reimportar e regravar as coisas."*
+    #
+    # Desligado por padrão: no dia a dia, sobrescrever o que alguém conferiu à
+    # mão é o pior desfecho possível de uma importação. Na carga inicial é o
+    # contrário — o que está aqui veio pela metade, e o card é a fonte.
+    ja_veio = set() if regravar else o_que_ja_veio(
+        s, [p["card"] for p in pessoas])
 
     for pessoa in pessoas:
         card = str(pessoa["card"])
@@ -475,10 +619,17 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         relatorio["pessoas_lidas"] += 1
         campos = bruto.get("campos") or {}
         linha = {"colaborador_id": pessoa["id"], "nome": pessoa["nome"],
-                 "card": card, "documentos": [], "campos": {}}
+                 "card": card, "documentos": [], "campos": {},
+                 "anexos_do_card": raio_x_dos_anexos(campos)}
 
         # 1. Os campos que estão vazios aqui.
-        preencher = _vazios(s, pessoa["id"], dados_do_card(campos))
+        achados = dados_do_card(campos)
+        empresa_id = empresa_do_card(s, campos)
+        if empresa_id:
+            # `empresa_id` não é texto: entra como ligação, e o servidor
+            # deriva o CNPJ de admissão dela (ver `pessoas.salvar`).
+            achados["empresa_id"] = empresa_id
+        preencher = achados if regravar else _vazios(s, pessoa["id"], achados)
         if preencher:
             linha["campos"] = preencher
             relatorio["campos_preenchidos"] += len(preencher)
@@ -486,6 +637,11 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                 _gravar_campos(s, pessoa["id"], preencher, usuario)
 
         # 2. Os documentos.
+        trazidos: list[dict[str, Any]] = []
+        for item in linha["anexos_do_card"]:
+            relatorio["anexos_no_pipe"] += item["quantos"]
+            if "não reconhecido" in (item["formas"] or []):
+                relatorio["anexos_que_nao_entendi"] += 1
         for anexo in anexos_do_card(campos):
             chave = (card, anexo["campo"], anexo["item"])
             if chave in ja_veio:
@@ -507,11 +663,13 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                 linha["documentos"].append({**_resumo(anexo),
                                             "situacao": "VAI ENTRAR"})
                 continue
-            ok, motivo = _trazer_um(s, pessoa, anexo, usuario)
+            ok, motivo, conteudo = _trazer_um(s, pessoa, anexo, usuario)
             if ok:
                 relatorio["documentos_guardados"] += 1
                 linha["documentos"].append({**_resumo(anexo),
                                             "situacao": "GUARDADO"})
+                trazidos.append({"tipo": anexo["tipo"], "nome": anexo["nome"],
+                                 "conteudo": conteudo})
             else:
                 relatorio["documentos_que_falharam"] += 1
                 relatorio["falhas"].append(
@@ -519,6 +677,16 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                      "arquivo": anexo["nome"], "motivo": motivo})
                 linha["documentos"].append({**_resumo(anexo),
                                             "situacao": "FALHOU"})
+        # 3. O QUE O CARD NÃO DISSE, O PAPEL PODE DIZER — e só agora, com os
+        # arquivos na mão. Na simulação não roda: ela não baixa nada, e
+        # leitura por IA custa dinheiro.
+        if not simular and trazidos and ler_papel is not False:
+            do_papel = ler_o_que_veio(s, pessoa["id"], trazidos,
+                                      ler=(ler_papel or None))
+            if do_papel:
+                linha["do_documento"] = do_papel
+                relatorio["campos_do_documento"] += len(do_papel)
+                _gravar_campos(s, pessoa["id"], do_papel, usuario)
         relatorio["por_pessoa"].append(linha)
 
     logger.info(
@@ -550,7 +718,7 @@ def _gravar_campos(s: Session, colaborador_id: int, campos: dict[str, str],
 
 
 def _trazer_um(s: Session, pessoa: dict[str, Any], anexo: dict[str, Any],
-               usuario: Optional[Usuario]) -> tuple[bool, str]:
+               usuario: Optional[Usuario]) -> tuple[bool, str, bytes]:
     """Baixa UM arquivo e o arquiva no cadastro da pessoa.
 
     ⚑ CADA ARQUIVO NO SEU SAVEPOINT. Em Postgres, uma consulta que falha aborta
@@ -581,7 +749,7 @@ def _trazer_um(s: Session, pessoa: dict[str, Any], anexo: dict[str, Any],
              "item": anexo["item"], "pessoa": pessoa["id"], "doc": doc.id,
              "u": usuario.id if usuario else None})
         marca.commit()
-        return True, ""
+        return True, "", conteudo
     except Exception as e:                  # noqa: BLE001 — um arquivo só cai
         marca.rollback()
         motivo = str(e)[:300]
@@ -601,7 +769,7 @@ def _trazer_um(s: Session, pessoa: dict[str, Any], anexo: dict[str, Any],
                  "d": motivo, "u": usuario.id if usuario else None})
         except Exception:                        # pragma: no cover - defensivo
             pass
-        return False, motivo
+        return False, motivo, b""
 
 
 # ---------------------------------------------------------------------------

@@ -122,7 +122,17 @@
     ERP <b>não é trocado</b>. Rodar de novo <b>não traz nada duas vezes</b>.
     O <b>ASO não vem</b>: ele vence, e o card não diz até quando vale.
     <b>Card cancelado ou repetido não é problema do sistema</b>: entra o que
-    você listar, e só.</div>
+    você listar, e só. Faltando um dado que o card não traz (PIS, nº da CTPS),
+    o sistema <b>lê o documento que acabou de baixar</b> e completa.</div>
+  {# ⚑ REGRAVAR É PARA A CARGA INICIAL. Ele, em 13/11/2026: *"isso aí vai
+     acontecer só nesse começo. Então, se eu precisar reimportar, eu quero
+     reimportar e regravar as coisas."* Desligado por padrão: no dia a dia,
+     passar por cima do que alguém conferiu à mão é o pior desfecho de uma
+     importação. #}
+  <label class="opcao" style="margin:10px 0 0">
+    <input type="checkbox" id="pc-regravar">
+    <span class="rotulo">Trazer de novo e <b>regravar por cima</b> — para a
+      carga inicial, quando o que vale é o que está no card</span></label>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-pc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-pc" disabled>Trazer do Pipefy</button>
@@ -480,6 +490,31 @@ function pintarRelatorioPC(rel){
       <tbody>${rel.falhas.map(f=>`<tr><td>${escapar(f.nome)}</td>
         <td class="dados">${escapar(f.arquivo)}</td>
         <td>${escapar(f.motivo)}</td></tr>`).join("")}</tbody></table>`);
+  // ⚑ O RAIO-X DOS ANEXOS. Quando nenhum documento veio, o relatório não
+  // dizia nada — e descobrir o porquê custou uma ida e volta com ele.
+  if (rel.anexos_no_pipe !== undefined)
+    linhas.push(`<div class="cartao-dica"><b>${rel.anexos_no_pipe}</b>
+      anexo(s) encontrado(s) nos cards` +
+      (rel.anexos_que_nao_entendi ? ` · <b>${rel.anexos_que_nao_entendi}</b>
+        em formato que eu não reconheci — me mostre a amostra abaixo` : "") +
+      (rel.campos_do_documento ? ` · <b>${rel.campos_do_documento}</b>
+        campo(s) preenchido(s) lendo o próprio documento` : "") +
+      (rel.regravando ? ` · <b>regravando por cima</b>` : "") + `</div>`);
+  const comAnexo = (rel.por_pessoa || []).filter(
+    p => (p.anexos_do_card || []).some(a => a.quantos));
+  if (comAnexo.length)
+    linhas.push(`<h4>O que o Pipefy devolveu em cada campo de anexo</h4>
+      <table><thead><tr><th>Pessoa</th><th>Campo do pipe</th><th>Vira</th>
+      <th class="direita">Quantos</th><th>Forma</th><th>Amostra</th></tr></thead>
+      <tbody>${comAnexo.map(p => (p.anexos_do_card||[])
+        .filter(a => a.quantos)
+        .map(a => `<tr><td>${escapar(p.nome)}</td>
+          <td class="dados">${escapar(a.campo)}</td>
+          <td>${escapar(a.tipo)}</td>
+          <td class="direita">${a.quantos}</td>
+          <td>${escapar((a.formas||[]).join(", "))}</td>
+          <td class="dados" style="font-size:11px">${escapar(a.amostra||"")}</td>
+        </tr>`).join("")).join("")}</tbody></table>`);
   const comCoisa = (rel.por_pessoa || []).filter(
     p => (p.documentos || []).length || Object.keys(p.campos || {}).length);
   if (comCoisa.length)
@@ -499,7 +534,8 @@ async function mandarCadastroPipefy(gravar){
     aviso("mensagem", "Cole os números dos cards que devem ser buscados.", "erro");
     return;
   }
-  const corpo = {gravar: !!gravar, cards: texto};
+  const corpo = {gravar: !!gravar, cards: texto,
+                 regravar: !!(els("pc-regravar") && els("pc-regravar").checked)};
   ["btn-conferir-pc", "btn-gravar-pc"].forEach(b => {
     if (els(b)) els(b).disabled = true; });
   onde.innerHTML = `<div class="cartao-dica">Na fila. Isso leva alguns
@@ -550,7 +586,7 @@ async function mandarCadastroPipefy(gravar){
 // todo mundo seria exatamente o engano que a trava existe para evitar.
 // Mexer na lista invalida a conferência: conferir dez cards e gravar
 // trezentos seria o engano que a trava existe para evitar.
-["pc-cards"].forEach(c => {
+["pc-cards", "pc-regravar"].forEach(c => {
   if (els(c)) els(c).addEventListener("input", () => {
     PC_CONFERIDO = false;
     if (els("btn-gravar-pc")) els("btn-gravar-pc").disabled = true;
