@@ -89,6 +89,9 @@ era digitar o CNPJ no texto ao lado, e os dois podiam divergir.
 **Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui, e PUBLICADO em 13/11/2026** (a nota original
 dizia "não publicado ainda"; corrigido pelo chat do ERP depois da publicação). Quem for mexer na tela de
 **Colaboradores** ou no **menu**: traga a `main` antes, senão os dois lados se pisam.
+**Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui. PUBLICADO em 13/11/2026** (suíte inteira: 11.000
+passaram). Se este chat for mexer na tela de **Colaboradores** ou no
+**menu**, traga a `main` antes — senão os dois lados vão se pisar.
 
 O dono, 13/11/2026: *"quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande (…) era
 melhor dividir (…) e tem duas informações que não estão integradas: em Colaboradores eu clico na pessoa e não vejo o

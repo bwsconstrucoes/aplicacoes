@@ -22,8 +22,8 @@ arquivo.
 
 ## Pendente AGORA
 
-0v. **FEITO NO RAMO, NÃO PUBLICADO (13/11/2026): o Ponto separado de Pessoal no menu, a ordem nova das telas e a
-   FICHA ÚNICA da pessoa.** O dono aprovou a ordem e mandou fazer a ficha única por aqui, e **publicar só quando
+0v. **PUBLICADO em 13/11/2026: o Ponto separado de Pessoal no menu, a ordem nova das telas, a FICHA ÚNICA da pessoa
+   e o "Completar o período pela escala".** Sem migração. O dono aprovou a ordem e mandou fazer a ficha única por aqui, e **publicar só quando
    tudo estiver pronto** (junto com o "Completar o período pela escala"). Ver a seção de 13/11/2026 abaixo. Mexe na
    área do ERP (`erp/routes.py`, `erp_colaboradores.html`) — registrado no `erp/HISTORICO.md` e avisado ao chat do ERP.
 
@@ -548,6 +548,20 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
+
+O dono: *"o ideal seria rodar apenas na madrugada"*. A busca (`core/feriados_busca.py`) era acordada pelas planilhas
+de apoio do Análise de SPs (de hora em hora, com a tela deles aberta) e pela leitura da C. Diários. Agora:
+- **Roda das 2h às 5h** (Fortaleza), pelo **relógio das rondas** (`rondas._volta_do_relogio`), que roda sozinho no
+  serviço o tempo todo. Dentro da janela, confere no máximo uma vez por hora e só vai à internet quando há ano ou
+  lugar novo — como antes.
+- **A trava mora em `buscar_se_preciso`** (`na_madrugada`): as chamadas antigas (Análise de SPs, C. Diários)
+  continuam no código e, fora da janela, não fazem nada — sem mexer na regra da área do Análise de SPs. O botão
+  **"Buscar agora"** (Análise de SPs › Folha › Calendário) chama `buscar` direto e vale a qualquer hora; o texto
+  daquela tela passou a dizer "só de madrugada".
+- **Preço**: obra nova em cidade nova ganha os feriados na madrugada seguinte (antes, em até uma hora).
+- Teste: `test_ponto_feriados_busca_banco.py::test_a_busca_automatica_so_roda_de_madrugada`.
+
 ## 13/11/2026 (sexta) — Completar o período de uma pessoa pela escala; a proposta de divisão do menu e da ficha única
 
 O dono: *"quando o DP vai incluir uma batida, só dá para pedir um a um (…) quero botar o dia de início, o dia de fim e
@@ -562,6 +576,10 @@ já existem."*
   · o resto não entra, com o porquê: completo, descanso, abonado, compensado, sem escala, **mês fechado**.
   Cada dia tem a caixinha (todos marcados); o motivo é obrigatório (vai em cada batida); **com algum dia amarelo
   marcado, pede "Conferi os dias que já têm batida"** — é a confirmação que ele pediu para o ponto intercalado.
+- **A OBRA é escolhida antes de incluir** (13/11/2026, depois de publicado — o dono: *"precisa definir a obra antes de
+  incluir também"*): campo obrigatório na janela, já marcado com a obra em que a pessoa mais bateu nos últimos dias
+  (ou a do cadastro); só as obras de quem lança. A prévia mostra a obra das batidas que já existem. Antes, a batida
+  ia para a obra da batida do dia ou a do cadastro, sem perguntar.
 - **O caminho é o do lote do Quadro** (`quadro._ajuste_em_lote`): um ajuste da gestão por batida, aprovado na hora,
   marcado "em lote" — não conta contra a pessoa na qualidade — e com as travas de sempre. Cada DIA na sua transação: ou
   entram todas as batidas daquele dia, ou nenhuma; um dia recusado não desfaz os outros, e a tela diz qual e por quê.

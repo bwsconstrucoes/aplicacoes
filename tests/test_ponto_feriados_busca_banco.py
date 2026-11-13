@@ -162,6 +162,7 @@ def test_a_rodada_automatica_nunca_levanta(feriados_ponto, monkeypatch):
     def sem_internet(url):
         raise ConnectionError("sem internet")
     monkeypatch.setattr(fb, "baixar_json", sem_internet)
+    monkeypatch.setattr(fb, "na_madrugada", lambda momento=None: True)     # dentro da janela, para valer o teste
     assert fb.buscar_se_preciso("teste", sempre=True) is None
 
 
@@ -181,3 +182,18 @@ def test_lugares_ignora_obra_sem_UF_e_normaliza_acento():
                     {"uf": "PE", "municipio": "SAO LOURENCO DA MATA"}])
     assert r["ufs"] == {"PE"}
     assert list(r["municipios"]) == [("PE", "SAO LOURENCO DA MATA")]
+
+
+def test_a_busca_automatica_so_roda_de_madrugada(monkeypatch):
+    """13/11/2026, o dono: "o ideal seria rodar apenas na madrugada". Das 2h às 5h (Fortaleza); fora disso a
+    conferência automática não faz nada — nem consulta o banco. O botão "Buscar agora" chama `buscar` direto."""
+    import datetime as dt
+    from app.apps.ponto.core import feriados_busca as fb
+    fortaleza = dt.timezone(dt.timedelta(hours=-3))
+    assert fb.na_madrugada(dt.datetime(2026, 11, 14, 2, 0, tzinfo=fortaleza))
+    assert fb.na_madrugada(dt.datetime(2026, 11, 14, 4, 59, tzinfo=fortaleza))
+    assert not fb.na_madrugada(dt.datetime(2026, 11, 14, 5, 0, tzinfo=fortaleza))
+    assert not fb.na_madrugada(dt.datetime(2026, 11, 14, 14, 0, tzinfo=fortaleza))
+    monkeypatch.setattr(fb, "na_madrugada", lambda momento=None: False)
+    monkeypatch.setattr(fb.db, "conexao", lambda: (_ for _ in ()).throw(AssertionError("não devia ir ao banco")))
+    assert fb.buscar_se_preciso("teste", sempre=True) is None
