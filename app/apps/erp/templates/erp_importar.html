@@ -499,6 +499,8 @@ function pintarRelatorioPC(rel){
         em formato que eu não reconheci — me mostre a amostra abaixo` : "") +
       (rel.campos_do_documento ? ` · <b>${rel.campos_do_documento}</b>
         campo(s) preenchido(s) lendo o próprio documento` : "") +
+      (rel.divergencias ? ` · <b>${rel.divergencias}</b> dado(s) que não
+        batem entre ERP, card e documento` : "") +
       (rel.regravando ? ` · <b>regravando por cima</b>` : "") + `</div>`);
   const comAnexo = (rel.por_pessoa || []).filter(
     p => (p.anexos_do_card || []).some(a => a.quantos));
@@ -515,6 +517,33 @@ function pintarRelatorioPC(rel){
           <td>${escapar((a.formas||[]).join(", "))}</td>
           <td class="dados" style="font-size:11px">${escapar(a.amostra||"")}</td>
         </tr>`).join("")).join("")}</tbody></table>`);
+  // ⚑ AS DIVERGÊNCIAS, em primeiro lugar na tela: é o que precisa de gente.
+  // Ele, em 13/11/2026: *"verificar se o nome cadastrado está batendo com o
+  // que está no pipe, com o que está no documento da pessoa (…) o que tem
+  // mais força é o documento da pessoa (…) eu preciso corrigir isso aí."*
+  const brigas = [];
+  (rel.por_pessoa || []).forEach(p => (p.divergencias || []).forEach(
+    d => brigas.push({...d, nome: p.nome, colaborador_id: p.colaborador_id})));
+  if (brigas.length)
+    linhas.push(`<h4>Dados que não batem (${brigas.length})</h4>
+      <div class="cartao-dica"><b>Nada disto foi trocado.</b> O documento da
+        pessoa é o que tem mais força, e por isso vem marcado — mas quem lê o
+        documento é a IA, que erra calada. Trocar o nome de alguém na folha
+        por uma leitura torta só aparece quando o pagamento volta. Confira e
+        corrija na ficha da pessoa.</div>
+      <table><thead><tr><th>Pessoa</th><th>Campo</th><th>No ERP</th>
+        <th>No card</th><th>No documento</th><th>Vale</th></tr></thead>
+      <tbody>${brigas.map(d => `<tr>
+        <td>${escapar(d.nome)}</td>
+        <td>${escapar(d.rotulo)}</td>
+        <td${d.mais_forte === "cadastro" ? ' style="font-weight:600"' : ""}>${
+          escapar(d.no_cadastro || "—")}</td>
+        <td${d.mais_forte === "card" ? ' style="font-weight:600"' : ""}>${
+          escapar(d.no_card || "—")}</td>
+        <td${d.mais_forte === "documento" ? ' style="font-weight:600"' : ""}>${
+          escapar(d.no_documento || "—")}</td>
+        <td>${escapar(d.mais_forte)}</td></tr>`).join("")}</tbody></table>`);
+
   const comCoisa = (rel.por_pessoa || []).filter(
     p => (p.documentos || []).length || Object.keys(p.campos || {}).length);
   if (comCoisa.length)

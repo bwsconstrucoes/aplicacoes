@@ -499,19 +499,29 @@ def _o_que_ainda_falta(s: Session, colaborador_id: int) -> set[str]:
 
 def ler_o_que_veio(s: Session, colaborador_id: int,
                    trazidos: list[dict[str, Any]],
-                   ler=None) -> dict[str, str]:
-    """Lê os papéis recém-trazidos e devolve só o que preenche buraco."""
+                   ler=None) -> tuple[dict[str, str], dict[str, str]]:
+    """Lê os papéis recém-trazidos.
+
+    Devolve DUAS coisas: o que preenche buraco (para gravar) e **tudo o que o
+    papel disse** (para o confronto).
+
+    ⚑ A SEGUNDA EXISTE POR UM DEFEITO QUE O TESTE PEGOU: eu devolvia só o que
+    ia ser gravado, e o NOME não está entre os campos que a importação
+    preenche sozinha. Resultado: o nome lido do documento nunca chegava ao
+    confronto — justamente o campo que ele mais quer conferir (*"verificar se
+    o nome cadastrado está batendo com o que está no pipe, com o que está no
+    documento da pessoa"*).
+    """
     faltando = _o_que_ainda_falta(s, colaborador_id)
-    if not faltando or not trazidos:
-        return {}
+    if not trazidos:
+        return {}, {}
     funcao = ler
     if funcao is None:
         from app.apps.erp.core import documentos_de_pessoa
         funcao = documentos_de_pessoa.ler
     achados: dict[str, str] = {}
+    tudo: dict[str, str] = {}
     for papel in PAPEIS_QUE_VALE_LER:
-        if not faltando:
-            break
         for doc in trazidos:
             if doc.get("tipo") != papel or not doc.get("conteudo"):
                 continue
@@ -522,12 +532,97 @@ def ler_o_que_veio(s: Session, colaborador_id: int,
                                papel, e)
                 continue
             for campo, valor in (lido.get("campos") or {}).items():
+                if not str(valor or "").strip():
+                    continue
+                # TUDO fica, com o nome que a leitura usa — é o que o
+                # confronto compara.
+                tudo.setdefault(campo, str(valor).strip())
                 coluna = DO_PAPEL_PARA_O_CADASTRO.get(campo)
-                if coluna and coluna in faltando and str(valor or "").strip():
+                if coluna and coluna in faltando:
                     achados[coluna] = str(valor).strip()
                     faltando.discard(coluna)
             break           # um papel de cada tipo basta
-    return achados
+    return achados, tudo
+
+
+# ---------------------------------------------------------------------------
+# O CONFRONTO: o cadastro, o card e o documento dizendo coisas diferentes
+#
+# Ele, em 13/11/2026: *"a gente tem a IA aqui para trabalhar com a gente.
+# Seria a hora, na importação, da gente confrontar dados dos documentos.
+# Verificar se o nome cadastrado está batendo com o que está no pipe, com o
+# que está no documento da pessoa (…) porque o que tem mais força é o
+# documento da pessoa (…) de repente a contabilidade está errada também.
+# Errou a nomenclatura, o nome, a coisa. Eu preciso corrigir isso aí."*
+#
+# ⚑ O DOCUMENTO TEM MAIS FORÇA — MAS NÃO GRAVA SOZINHO. A ordem de confiança
+# é documento > card > cadastro, e é por isso que o documento aparece como a
+# sugestão. Só que quem lê o documento é uma IA, que erra em silêncio: trocar
+# o nome de uma pessoa na folha por causa de uma leitura torta é estrago que
+# ninguém percebe até o pagamento voltar.
+#
+# Então a divergência é MOSTRADA, com as três versões lado a lado e a de maior
+# força já marcada — e alguém confirma. É a mesma regra do documento que
+# preenche o cadastro: *"o que a leitura preenche fica editável e vai para
+# conferência"* (CLAUDE.md, 17/09/2026).
+# ---------------------------------------------------------------------------
+# O que vale a pena confrontar: o que identifica a pessoa e o que vai para a
+# folha. Não entra o que muda legitimamente (telefone, endereço): ali
+# divergência é atualização, não erro.
+A_CONFRONTAR = {
+    "nome": "Nome",
+    "data_nascimento": "Data de nascimento",
+    "pis": "Nº PIS",
+    "ctps_numero": "Nº CTPS",
+}
+# De onde o card traz cada um deles.
+DO_CARD = {"nome": "nome_completo", "data_nascimento": "data_de_nascimento",
+           "pis": "pis", "ctps_numero": "ctps"}
+# E de onde a leitura do documento traz.
+DO_DOCUMENTO = {"nome": "nome", "data_nascimento": "data_nascimento",
+                "pis": "num_pis", "ctps_numero": "num_ctps"}
+
+
+def _igual(a: Any, b: Any) -> bool:
+    """Compara sem acento, sem caixa e sem pontuação.
+
+    "José da Silva" e "JOSE DA SILVA" são a mesma pessoa; "123.45678.90-0" e
+    "12345678900" são o mesmo PIS. Acusar isso como divergência encheria a
+    tela de ruído e faria ninguém olhar o que importa."""
+    return _cru(a) == _cru(b)
+
+
+def confrontar(s: Session, colaborador_id: int, campos_do_card: dict[str, str],
+               do_documento: dict[str, str]) -> list[dict[str, Any]]:
+    """As três versões de cada dado, quando elas não batem.
+
+    Devolve uma linha por campo divergente, com o que cada fonte diz e qual
+    delas tem mais força. Campo que ninguém contradiz não vira linha.
+    """
+    colunas = sorted(A_CONFRONTAR)
+    linha = s.execute(
+        text(f"SELECT {', '.join(colunas)} FROM colaboradores WHERE id = :i"),
+        {"i": colaborador_id}).mappings().first()
+    if linha is None:
+        return []
+    saida = []
+    for campo, rotulo in A_CONFRONTAR.items():
+        aqui = str(linha.get(campo) or "").strip()
+        no_card = _limpo(campos_do_card.get(DO_CARD.get(campo, ""), ""))
+        no_papel = str(do_documento.get(DO_DOCUMENTO.get(campo, ""), "") or "").strip()
+        tem = [x for x in (aqui, no_card, no_papel) if x]
+        if len(tem) < 2:
+            continue                     # uma fonte só não contradiz ninguém
+        if all(_igual(tem[0], x) for x in tem[1:]):
+            continue                     # todos de acordo
+        # A de maior força entre as que existem: documento, depois card.
+        vence = "documento" if no_papel else ("card" if no_card else "cadastro")
+        saida.append({
+            "campo": campo, "rotulo": rotulo,
+            "no_cadastro": aqui, "no_card": no_card, "no_documento": no_papel,
+            "mais_forte": vence,
+            "sugerido": no_papel or no_card or aqui})
+    return saida
 
 
 # ---------------------------------------------------------------------------
@@ -582,6 +677,7 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "anexos_no_pipe": 0,
         "anexos_que_nao_entendi": 0,
         "campos_do_documento": 0,
+        "divergencias": 0,
     }
     # CARD A CARD, como ele pediu — em levas de 20 por ida à API.
     lidos, falhas_de_card = ler(pedidos)
@@ -680,13 +776,24 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         # 3. O QUE O CARD NÃO DISSE, O PAPEL PODE DIZER — e só agora, com os
         # arquivos na mão. Na simulação não roda: ela não baixa nada, e
         # leitura por IA custa dinheiro.
+        disse_o_papel: dict[str, str] = {}
         if not simular and trazidos and ler_papel is not False:
-            do_papel = ler_o_que_veio(s, pessoa["id"], trazidos,
-                                      ler=(ler_papel or None))
+            do_papel, disse_o_papel = ler_o_que_veio(
+                s, pessoa["id"], trazidos, ler=(ler_papel or None))
             if do_papel:
                 linha["do_documento"] = do_papel
                 relatorio["campos_do_documento"] += len(do_papel)
                 _gravar_campos(s, pessoa["id"], do_papel, usuario)
+            # ⚑ O CONFRONTO roda DEPOIS de preencher: o que entrou agora já
+            # não é divergência, é buraco tapado. O que sobrar é desacordo de
+            # verdade entre o que está aqui, o que o card diz e o que o papel
+            # mostra.
+        # O confronto roda SEMPRE: card contra cadastro já vale, mesmo sem
+        # papel lido — e vale na simulação também, que é onde ele quer ver.
+        briga = confrontar(s, pessoa["id"], campos, disse_o_papel)
+        if briga:
+            linha["divergencias"] = briga
+            relatorio["divergencias"] += len(briga)
         relatorio["por_pessoa"].append(linha)
 
     logger.info(

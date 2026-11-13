@@ -578,3 +578,78 @@ def test_a_matricula_nao_e_mais_importada(mundo):
     achados = imp.dados_do_card({"matr_cula": "12345", "n_identidade": "99"})
     assert "matricula" not in achados
     assert achados["rg"] == "99"
+
+
+# ---------------------------------------------------------------------------
+# O CONFRONTO: cadastro × card × documento (13/11/2026)
+#
+# Ele: *"a gente tem a IA aqui para trabalhar com a gente. Seria a hora, na
+# importação, da gente confrontar dados dos documentos. Verificar se o nome
+# cadastrado está batendo com o que está no pipe, com o que está no documento
+# da pessoa (…) porque o que tem mais força é o documento da pessoa."*
+# ---------------------------------------------------------------------------
+def test_quando_os_tres_concordam_nao_ha_divergencia(mundo):
+    r = imp.confrontar(mundo["s"], mundo["com_card"].id,
+                       {"nome_completo": "Pessoa Com Card"},
+                       {"nome": "Pessoa Com Card"})
+    assert r == []
+
+
+def test_diferenca_so_de_acento_e_de_caixa_NAO_e_divergencia(mundo):
+    """Senão a tela encheria de ruído e ninguém olharia o que importa."""
+    mundo["s"].execute(
+        text("UPDATE colaboradores SET nome = 'José Da Silva' WHERE id = :i"),
+        {"i": mundo["com_card"].id})
+    mundo["s"].flush()
+    r = imp.confrontar(mundo["s"], mundo["com_card"].id,
+                       {"nome_completo": "JOSE DA SILVA"},
+                       {"nome": "jose da silva"})
+    assert r == []
+    # E o mesmo para número com e sem pontuação.
+    r2 = imp.confrontar(mundo["s"], mundo["com_card"].id,
+                        {"pis": "12345678900"}, {"num_pis": "123.45678.90-0"})
+    assert [x["campo"] for x in r2] == []
+
+
+def test_o_documento_tem_mais_forca_que_o_card_e_que_o_cadastro(mundo):
+    r = imp.confrontar(mundo["s"], mundo["com_card"].id,
+                       {"nome_completo": "Nome Do Card"},
+                       {"nome": "Nome Do Documento"})
+    assert len(r) == 1
+    linha = r[0]
+    assert linha["campo"] == "nome"
+    assert linha["no_cadastro"] == "Pessoa Com Card"
+    assert linha["no_card"] == "Nome Do Card"
+    assert linha["no_documento"] == "Nome Do Documento"
+    assert linha["mais_forte"] == "documento"
+    assert linha["sugerido"] == "Nome Do Documento"
+
+
+def test_sem_documento_quem_manda_e_o_card(mundo):
+    r = imp.confrontar(mundo["s"], mundo["com_card"].id,
+                       {"nome_completo": "Nome Do Card"}, {})
+    assert r[0]["mais_forte"] == "card" and r[0]["sugerido"] == "Nome Do Card"
+
+
+def test_uma_fonte_so_nao_contradiz_ninguem(mundo):
+    """Card vazio e documento vazio não são "divergência com o cadastro"."""
+    assert imp.confrontar(mundo["s"], mundo["com_card"].id, {}, {}) == []
+
+
+def test_a_divergencia_NAO_grava_sozinha(mundo, monkeypatch):
+    """⚑ Quem lê o documento é uma IA, que erra em silêncio. Trocar o nome de
+    alguém na folha por causa de uma leitura torta é estrago que só aparece
+    quando o pagamento volta. A divergência é mostrada; alguém confirma."""
+    monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
+    antes = mundo["com_card"].nome
+    r = imp.importar(
+        mundo["s"], mundo["dp"], simular=False, cards=CARD,
+        ler_cards=_leitor(_card(
+            nome_completo="Nome Diferente Do Card",
+            ctps_p_gina_com_as_informa_es_do_colaborador='["https://x/c.jpg"]')),
+        ler_papel=_leitor_de_papel(nome="Nome Do Documento"))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].nome == antes          # nada foi trocado
+    assert r["divergencias"] >= 1
+    assert r["por_pessoa"][0]["divergencias"][0]["mais_forte"] == "documento"
