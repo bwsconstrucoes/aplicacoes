@@ -43,11 +43,15 @@ def test_completar_o_periodo_pela_escala(app, mundo):
     assert dias[metade.isoformat()]["tipo"] == "COMPLETAR"
     assert [i["hora"] for i in dias[metade.isoformat()]["incluir"]] == ["11:00", "12:00"]
     assert dias[cheio.isoformat()]["tipo"] == "NADA" and dias[cheio.isoformat()]["nota"] == "completo"
-    # o motivo é obrigatório
-    assert dp.post(url, json={"datas": [vazio.isoformat()], "motivo": "x"}).status_code == 400
+    assert p["obra_sugerida"]["codigo"] == "PG-A"                       # a em que ele mais bateu
+    assert dias[metade.isoformat()]["obras"] == ["PG-A"]
+    # o motivo e a obra são obrigatórios
+    assert dp.post(url, json={"datas": [vazio.isoformat()], "motivo": "x", "obra": mundo["obra_a"]}).status_code == 400
+    assert dp.post(url, json={"datas": [vazio.isoformat()], "motivo": "trabalhou na obra a semana toda"}).status_code == 400
     # só os dias confirmados; o dia completo é recusado, os outros entram
     r = dp.post(url, json={"datas": [vazio.isoformat(), metade.isoformat(), cheio.isoformat()],
-                           "motivo": "trabalhou na obra a semana toda; aparelho sem sinal"}).get_json()
+                           "motivo": "trabalhou na obra a semana toda; aparelho sem sinal",
+                           "obra": mundo["obra_b"]}).get_json()
     assert r["ok"] and r["feitos"] == 2 and r["batidas"] == 6
     assert [x["ok"] for x in r["resultados"]] == [True, True, False]
     with db.conexao() as conn:
@@ -58,6 +62,9 @@ def test_completar_o_periodo_pela_escala(app, mundo):
         assert horas(vazio) == ["07:00", "11:00", "12:00", "17:00"]
         assert horas(metade) == ["07:00", "11:00", "12:00", "17:00"]          # as que existiam ficaram, uma vez só
         assert horas(cheio) == ["07:00", "11:00", "12:00", "17:00"]
+        obras = {l["obra_id"] for l in db.todos(conn, """SELECT obra_id FROM ponto.marcacoes WHERE colaborador_id = :c
+                                                            AND data_referencia = :d""", c=mundo["joao"], d=vazio)}
+        assert obras == {mundo["obra_b"]}                                  # na obra escolhida
         lote = db.todos(conn, """SELECT subtipo FROM ponto.ocorrencias WHERE colaborador_id = :c AND tipo = 'AJUSTE_BATIDA'""",
                         c=mundo["joao"])
     assert lote and all(l["subtipo"] == "LOTE_GESTAO" for l in lote)     # não conta contra a pessoa na qualidade
@@ -69,4 +76,5 @@ def test_completar_o_periodo_pela_escala(app, mundo):
     sup = como(app, mundo["sup"])
     assert sup.get(f"/erp/api/ponto/pessoas/{mundo['maria']}/completar?de={vazio}&ate={cheio}").status_code == 404
     assert sup.post(f"/erp/api/ponto/pessoas/{mundo['maria']}/completar",
-                    json={"datas": [vazio.isoformat()], "motivo": "teste do alcance da obra"}).status_code == 404
+                    json={"datas": [vazio.isoformat()], "motivo": "teste do alcance da obra",
+                          "obra": mundo["obra_a"]}).status_code == 404

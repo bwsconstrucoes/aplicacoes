@@ -562,6 +562,10 @@ já existem."*
   · o resto não entra, com o porquê: completo, descanso, abonado, compensado, sem escala, **mês fechado**.
   Cada dia tem a caixinha (todos marcados); o motivo é obrigatório (vai em cada batida); **com algum dia amarelo
   marcado, pede "Conferi os dias que já têm batida"** — é a confirmação que ele pediu para o ponto intercalado.
+- **A OBRA é escolhida antes de incluir** (13/11/2026, depois de publicado — o dono: *"precisa definir a obra antes de
+  incluir também"*): campo obrigatório na janela, já marcado com a obra em que a pessoa mais bateu nos últimos dias
+  (ou a do cadastro); só as obras de quem lança. A prévia mostra a obra das batidas que já existem. Antes, a batida
+  ia para a obra da batida do dia ou a do cadastro, sem perguntar.
 - **O caminho é o do lote do Quadro** (`quadro._ajuste_em_lote`): um ajuste da gestão por batida, aprovado na hora,
   marcado "em lote" — não conta contra a pessoa na qualidade — e com as travas de sempre. Cada DIA na sua transação: ou
   entram todas as batidas daquele dia, ou nenhuma; um dia recusado não desfaz os outros, e a tela diz qual e por quê.
