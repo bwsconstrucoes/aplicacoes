@@ -571,6 +571,7 @@ to achando que não ta gravando direito"* (a folga de 03/11, terça, paga pelo s
 - Testes: `test_ponto_tipos_ausencia_banco.py` (a incompleta com o texto), `test_ponto_apuracao.py` (58 min não
   acende, 49 acende), `test_ponto_alertas_pagina_banco.py` (dia da semana, feriado e função na linha). E a tela de
   Alertas no navegador (o feriado de Finados aparecendo).
+**Publicado em 13/11/2026** (com o "pode" do dono; suíte inteira: 11.009 passaram). Sem migração.
 
 ## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
 
