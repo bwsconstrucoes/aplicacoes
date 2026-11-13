@@ -106,6 +106,11 @@ def test_intervalo_curto():
     assert r.intervalo == 30 and "INTERVALO_CURTO" in r.alertas
     r = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "16:00"))   # sem intervalo
     assert "INTERVALO_CURTO" in r.alertas
+    # 13/11/2026, o dono: "exibir somente se inferior a 50 min" — 58 min não acende, 49 acende
+    r = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "06:53", "11:51", "12:49", "16:57"))
+    assert r.intervalo == 58 and "INTERVALO_CURTO" not in r.alertas
+    r = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "11:00", "11:49", "17:00"))
+    assert r.intervalo == 49 and "INTERVALO_CURTO" in r.alertas
 
 
 def test_vigia_noturno_12x36_atravessa_a_meia_noite():

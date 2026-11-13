@@ -350,9 +350,18 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             previsto_folga = _minutos_previstos(vigencias.no_dia(dia)[0], dia)
             if previsto_folga and coberto_min < previsto_folga:
                 aprovadas = [x for x in aprovadas if x is not o]          # a folga não está paga: o dia é julgado
-                compensacao_falhou = {"id": o["id"], "rotulo": f"Compensação não cumprida (trabalhar em "
-                                      f"{o['dia_trabalhado']:%d/%m}) — {coberto_min // 60}h{coberto_min % 60:02d} cobertas",
-                                      "subtipo": "COMPENSACAO_NAO_CUMPRIDA", "minutos": coberto_min}
+                # INCOMPLETA × NÃO CUMPRIDA (13/11/2026, o dono, com a folga de 03/11 paga pelo sábado 07/11: "to
+                # achando que não ta gravando direito"). Gravava certo: o sábado rendeu 8h01 e a terça pedia 9h00 —
+                # faltam 0h59, que ficam como falta parcial. O que enganava era o texto "a folga virou falta". Agora:
+                # cobriu parte = "incompleta", com quanto faltou; não cobriu nada = "não cumprida".
+                dt_ = o["dia_trabalhado"]
+                if coberto_min:
+                    rot = (f"Compensação incompleta — {dt_:%d/%m} cobriu {_hm(coberto_min)} das {_hm(previsto_folga)}; "
+                           f"faltam {_hm(previsto_folga - coberto_min)}")
+                else:
+                    rot = f"Compensação não cumprida (trabalhar em {dt_:%d/%m}) — nada coberto"
+                compensacao_falhou = {"id": o["id"], "rotulo": rot, "minutos": coberto_min,
+                                      "subtipo": "COMPENSACAO_INCOMPLETA" if coberto_min else "COMPENSACAO_NAO_CUMPRIDA"}
         declaracoes = [o for o in aprovadas if (o["tipo"] == "ATESTADO"
                        and o.get("subtipo") in ("DECL_PERIODO", "DECL_HORAS", "DECL_NADA"))
                        # a licença ou o abono que a Configuração diz que NÃO abona (29/10/2026): o dia
@@ -411,7 +420,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                     r.situacao, coberto = "OK", True
                     r.alertas = [a for a in r.alertas if a not in ("FALTA_PARCIAL", "BATIDA_FALTANDO")]
         if compensacao_falhou:
-            r.alertas.append("COMPENSACAO_NAO_CUMPRIDA")
+            r.alertas.append(compensacao_falhou["subtipo"])
             if r.situacao == "FALTA" and compensacao_falhou["minutos"]:
                 r.situacao, r.falta = "FALTA_PARCIAL", False
         if r.situacao == "FALTA" and any(h["minutos"] for h in horas_aqui) and not r.abonado:
