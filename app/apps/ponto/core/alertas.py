@@ -35,7 +35,7 @@ logger = logging.getLogger("ponto.alertas")
 
 GRAVIDADE = {
     "FALTA": "ATENCAO", "FALTA_PARCIAL": "ATENCAO", "BATIDA_FALTANDO": "ATENCAO",
-    "COMPENSACAO_NAO_CUMPRIDA": "ATENCAO", "TRABALHOU_NA_FOLGA": "ATENCAO", "ATRASO": "INFO",
+    "COMPENSACAO_NAO_CUMPRIDA": "ATENCAO", "COMPENSACAO_INCOMPLETA": "ATENCAO", "TRABALHOU_NA_FOLGA": "ATENCAO", "ATRASO": "INFO",
     "SAIDA_ANTECIPADA": "INFO", "EXTRA_ACIMA_DE_2H": "ATENCAO", "INTERVALO_CURTO": "ATENCAO",
     "INTERJORNADA_CURTA": "ATENCAO", "TRABALHO_EM_DESCANSO": "INFO", "FORA_DO_CICLO": "ATENCAO", "BATIDA_NO_MEIO_DO_TURNO": "ATENCAO", "TRABALHO_EM_FERIADO": "INFO",
     "BATIDA_EM_DIA_ABONADO": "ATENCAO", "SEM_ESCALA": "INFO", "BATIDA_REPETIDA": "INFO",
@@ -52,6 +52,7 @@ GRAVIDADE = {
 ROTULO = {
     "FALTA": "Falta sem justificativa", "FALTA_PARCIAL": "Falta parcial", "BATIDA_FALTANDO": "Batida faltando",
     "COMPENSACAO_NAO_CUMPRIDA": "Compensação não cumprida — a folga virou falta",
+    "COMPENSACAO_INCOMPLETA": "Compensação incompleta — faltou parte das horas da folga",
     "TRABALHOU_NA_FOLGA": "Trabalhou no dia da folga compensatória",
     "ATRASO": "Atraso", "SAIDA_ANTECIPADA": "Saída antecipada",
     "EXTRA_ACIMA_DE_2H": "Extra acima de 2 h", "INTERVALO_CURTO": "Intervalo curto",
@@ -78,7 +79,7 @@ ROTULO = {
     "TERMO_PENDENTE": "Termo do ponto sem assinatura",
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
-DO_DIA = {"FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
+DO_DIA = {"FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "COMPENSACAO_INCOMPLETA", "TRABALHOU_NA_FOLGA", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
           "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO", "TRABALHO_EM_FERIADO", "FORA_DO_CICLO", "BATIDA_NO_MEIO_DO_TURNO",
           "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA"}
 
@@ -864,6 +865,7 @@ def _preparar(conn: Connection, linhas: list[dict]) -> list[dict]:
         a["fotos"] = fotos_do_alerta(a["codigo"], a["chave"])
         saida.append(a)
     _fotos_escuras(conn, [a for a in saida if a["codigo"] == "FOTO_ESCURA"])
+    _funcao_dia_e_feriado(conn, saida)
     for a in saida:
         a["data_referencia"] = a["data_referencia"].isoformat() if a["data_referencia"] else None
         a["criado_em"] = horario.texto(a["criado_em"])
@@ -892,6 +894,24 @@ def pagina(conn: Connection, *, pagina: int = 1, por_pagina: int = 100, ordem: s
     return {"alertas": lista, "total": total, "pagina": pagina, "paginas": paginas, "por_pagina": por_pagina,
             "tipos": contar_por_tipo(conn, **filtros),
             "obras": contar_por_obra(conn, **filtros)}
+
+
+def _funcao_dia_e_feriado(conn: Connection, lista: list[dict]) -> None:
+    """A FUNÇÃO DA PESSOA, O DIA DA SEMANA E O FERIADO na linha do alerta (13/11/2026, o dono: "em alerta mostrar a
+    função do colaborador (…) exibir o dia da semana e informar se for feriado"). O feriado é o da obra do alerta,
+    pelo mesmo calendário do espelho (nacional, estadual e municipal)."""
+    from . import feriados
+    funcoes = cadastros.funcoes_de(conn, sorted({int(a["colaborador_id"]) for a in lista if a.get("colaborador_id")}))
+    datas = [a["data_referencia"] for a in lista if a.get("data_referencia")]
+    cal = feriados.Calendario(conn, min(datas), max(datas)) if datas else None
+    for a in lista:
+        d = a.get("data_referencia")
+        a["funcao"] = funcoes.get(int(a["colaborador_id"])) if a.get("colaborador_id") else None
+        a["dia_semana"] = escalas.DIAS[d.weekday()] if d else None
+        try:
+            a["feriado"] = cal.feriado(d, a.get("obra_id")) if (cal and d) else None
+        except Exception:  # noqa: BLE001 — feriado ilegível não derruba a lista
+            a["feriado"] = None
 
 
 def _fotos_escuras(conn: Connection, lista: list[dict]) -> None:

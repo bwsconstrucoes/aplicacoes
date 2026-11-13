@@ -51,5 +51,9 @@ def test_alertas_por_periodo_obra_pessoa_e_pagina(app, mundo):
     assert {o["codigo"]: o["n"] for o in d["obras"]} == {"PG-A": 130, "PG-B": 5, "sem obra": 1}
     assert api("busca=maria")["total"] == 5
     # a ordem: os mais antigos primeiro (dentro da gravidade)
+    # a função, o dia da semana e o feriado na linha (13/11/2026)
+    linha = api(f"de={recente}&ate={recente}")["alertas"][0]
+    from app.apps.ponto.core import escalas
+    assert linha["dia_semana"] == escalas.DIAS[recente.weekday()] and "feriado" in linha and "funcao" in linha
     d = api("ordem=ANTIGOS&gravidade=INFO&por_pagina=200")
     assert d["alertas"][0]["data_referencia"] == antigo.isoformat() and d["alertas"][-1]["codigo"] == "APARELHO_PENDENTE"
