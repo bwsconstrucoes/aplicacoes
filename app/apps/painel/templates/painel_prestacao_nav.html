@@ -19,3 +19,11 @@
   {% endfor %}
 </div>
 {% endmacro %}
+
+
+{# O NOME DO CENÁRIO COM O DONO (13/11/2026 — cada cenário tem dono). O
+   administrador vê de quem é o cenário de cada pessoa; a pessoa vê quais são
+   os dela e quais são do administrador (que ela abre e copia, mas não altera). #}
+{% macro rotulo_do_cenario(c, meu_numero=None) -%}
+{{ c.nome }}{% if meu_numero %}{{ ' — meu' if c.dono_id == meu_numero else ' — do administrador (só leitura)' }}{% elif c.dono_id %} — de {{ c.dono or 'outra pessoa' }}{% endif %}
+{%- endmacro %}

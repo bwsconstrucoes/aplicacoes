@@ -213,6 +213,14 @@ def exigir_login():
     if (endpoint in LEITURA_DA_PRESTACAO and request.method == "GET"
             and le_a_prestacao(pessoa)):
         return None
+    #    ... e GRAVA NO PRÓPRIO CENÁRIO (13/11/2026, o dono: "cada usuário
+    #    que tem acesso à prestação possa fazer suas edições (…) aproveitando o
+    #    que já está editado"). Aqui só passa a porta: SE o cenário é dela quem
+    #    confere é a rota (`web.cenario_gravar`), que recusa com "não
+    #    encontrado" qualquer gravação no cenário de outro. Os Cadastros
+    #    (`prestacao_parametros`) continuam só de leitura para ela.
+    if endpoint == "painel.cenario_gravar" and le_a_prestacao(pessoa):
+        return None
     #    ... e baixa o relatório dela, mesmo sem obra marcada (a regra 3 é
     #    das telas de obra). O que ele pode baixar quem decide é `pode_baixar`.
     if (endpoint == "painel.baixar" and le_a_prestacao(pessoa)

@@ -1998,7 +1998,7 @@ def test_quem_tem_a_prestacao_liberada_ve_tudo_dela(cenario, socio_que_so_le, mo
         r = cliente.get(url)
         html = r.get_data(as_text=True)
         assert r.status_code == 200, url
-        assert "modo de leitura" in html, url
+        assert "Modo de leitura" in html, url
     # o menu dele só tem a prestação
     assert "Prestação de Contas" in html and "Configurações" not in html
     assert ">DRE<" not in html
@@ -2006,7 +2006,7 @@ def test_quem_tem_a_prestacao_liberada_ve_tudo_dela(cenario, socio_que_so_le, mo
     assert cliente.get(f"/painel/baixar/cenario?cenario={cenario}").status_code == 200
 
 
-def test_quem_so_le_a_prestacao_nao_grava_nada(cenario, socio_que_so_le, monkeypatch):
+def test_quem_le_a_prestacao_nao_grava_no_cenario_do_administrador(cenario, socio_que_so_le, monkeypatch):
     from app.apps.painel import cenarios, prestacao_dados
     s = _dois_socios()
     antes = cenarios.completo(cenario)
@@ -2019,7 +2019,6 @@ def test_quem_so_le_a_prestacao_nao_grava_nada(cenario, socio_que_so_le, monkeyp
             "periodo_chave": ["Administrativas"], "periodo_desde": ["inicio"],
             "periodo_fica": ["50"], "periodo_filial": [""]}),
         ("/painel/prestacao/montagem", {"acao": "apagar", "cenario_id": cenario}),
-        ("/painel/prestacao/montagem", {"acao": "novo", "nome": "Outro"}),
         ("/painel/prestacao/parametros", {"acao": "excluir_socio", "aba": "socios",
                                           "socio_id": s["Parceiro"]}),
         ("/painel/prestacao/parametros", {"acao": "config", "aba": "geral",
@@ -2040,7 +2039,7 @@ def test_quem_so_le_a_prestacao_nao_grava_nada(cenario, socio_que_so_le, monkeyp
 def test_o_administrador_nao_ve_o_aviso_de_leitura(cenario, monkeypatch):
     html = _cliente(monkeypatch).get(
         f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
-    assert "modo de leitura" not in html and 'id="salvar-tudo"' in html
+    assert "Modo de leitura" not in html and 'id="salvar-tudo"' in html
 
 
 def test_sem_a_prestacao_marcada_ela_continua_fechada(base, monkeypatch):
@@ -2346,3 +2345,168 @@ def test_valor_em_reais_digitado_por_gente():
     assert cenarios.dinheiro("") == 0.0 and cenarios.dinheiro(None) == 0.0
     with pytest.raises(ValueError):
         cenarios.dinheiro("quinhentos")
+
+
+
+# ===========================================================================
+# 13/11/2026 — cada pessoa com os próprios cenários, a partir do que já existe
+# ===========================================================================
+def _entrar_como(monkeypatch, usuario, senha):
+    monkeypatch.setenv("PAINEL_SENHA", SENHA_MESTRE)
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"usuario": usuario, "senha": senha})
+    return cliente
+
+
+def test_a_pessoa_copia_o_cenario_do_administrador_e_edita_a_copia(cenario, socio_que_so_le,
+                                                                  monkeypatch):
+    """O dono: "cada usuário que tem acesso à prestação possa fazer suas
+    edições, do jeito que ele quiser. Todavia (…) aproveitar o que já está
+    editado — eu já criei um cenário e tudo, aí eu queria que o próximo
+    usuário fizesse a partir dali"."""
+    from app.apps.painel import cenarios
+    s = _dois_socios()
+    # o que o administrador já montou
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas",
+                             [("", 20, 0), ("2025-01", 50, 10, "2025-12", 100)])
+    cenarios.gravar_participacoes_em_grade(cenario, {("", s["Sócio A"]): "100"})
+    cenarios.gravar_fora(cenario, ["obra:POUCA GENTE"])
+    original = cenarios.completo(cenario)
+
+    cliente, _ = _cliente_do_socio(monkeypatch)
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "Este cenário não é seu" in html and "Criar a minha cópia para editar" in html
+    assert "do administrador (só leitura)" in html
+
+    r = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "duplicar", "cenario_id": cenario, "nome": "Minha versão"})
+    assert r.status_code == 302
+    copia_id = int(r.headers["Location"].split("cenario=")[1].split("&")[0])
+    copia = cenarios.completo(copia_id)
+    assert copia["dono_id"] == socio_que_so_le and copia["nome"] == "Minha versão"
+    # veio tudo: a régua, as regras com período e valor fixo, quem divide, o que está fora
+    assert copia["pesos"] == original["pesos"]
+    assert [(p["obra"], p["socio_id"], p["pct"]) for p in copia["participacoes"]] == [
+        (p["obra"], p["socio_id"], p["pct"]) for p in original["participacoes"]]
+    assert copia["excluidas"] == original["excluidas"]
+    assert copia["criterio"] == original["criterio"]
+
+    # a cópia é dela: abre sem modo de leitura, e grava
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={copia_id}").get_data(as_text=True)
+    assert "Modo de leitura" not in html and 'id="salvar-tudo"' in html
+    assert "Minha versão — meu" in html
+    r = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "tudo", "cenario_id": copia_id, "nome": "Minha versão", "criterio": "faturamento",
+        "juros_por_deficit": "1",
+        "periodo_presente": ["grupo|Administrativas"], "periodo_nivel": ["grupo"],
+        "periodo_chave": ["Administrativas"], "periodo_desde": ["inicio"],
+        "periodo_ate": [""], "periodo_valor": [""],
+        "periodo_fica": ["70"], "periodo_filial": [""]})
+    assert r.status_code == 302 and "erro=" not in r.headers["Location"]
+    depois = cenarios.completo(copia_id)
+    assert depois["criterio"] == "faturamento"
+    assert depois["pesos"]["periodos"]["grupo"]["Administrativas"] == [
+        (cenarios.DESDE_O_INICIO, 70.0, 0.0, "", 0.0)]
+    # e o do administrador ficou exatamente como estava
+    assert cenarios.completo(cenario) == original
+    # as outras telas abrem a cópia, e o relatório dela baixa
+    for url in (f"/painel/prestacao/resultado?cenario={copia_id}",
+                f"/painel/prestacao/como?cenario={copia_id}",
+                f"/painel/baixar/cenario?cenario={copia_id}"):
+        assert cliente.get(url).status_code == 200, url
+    # os cadastros continuam só de leitura para ela
+    assert cliente.post("/painel/prestacao/parametros", data={
+        "acao": "config", "aba": "geral", "depto_admin_matriz": "MUITA GENTE"}).status_code == 404
+    # apaga a própria cópia; a do administrador, não
+    assert cliente.post("/painel/prestacao/montagem",
+                        data={"acao": "apagar", "cenario_id": cenario}).status_code == 404
+    assert cliente.post("/painel/prestacao/montagem",
+                        data={"acao": "apagar", "cenario_id": copia_id}).status_code == 302
+    assert cenarios.buscar(copia_id) is None and cenarios.buscar(cenario) is not None
+
+
+def test_o_cenario_de_uma_pessoa_nao_e_de_outra(cenario, socio_que_so_le, monkeypatch):
+    from app.apps.painel import cenarios, usuarios
+    s = _dois_socios()
+    outro = usuarios.criar("outro", "senha-do-outro", telas=["prestacao_leitura"])
+    assert outro["ok"]
+    do_socio = cenarios.duplicar(cenario, "Do sócio", dono_id=socio_que_so_le)
+    cenarios.gravar_participacoes_em_grade(do_socio, {("", s["Sócio A"]): "100"})
+    participacao = cenarios.completo(do_socio)["participacoes"][0]["id"]
+
+    # quem enxerga o quê
+    assert [c["nome"] for c in cenarios.listar(socio_que_so_le)] == ["Do sócio", "Mão de obra"]
+    assert [c["nome"] for c in cenarios.listar(outro["id"])] == ["Mão de obra"]
+    assert [(c["nome"], c["dono"]) for c in cenarios.listar()] == [
+        ("Mão de obra", ""), ("Do sócio", "socio")]
+
+    cliente = _entrar_como(monkeypatch, "outro", "senha-do-outro")
+    # o número do cenário do outro não abre: cai no que ele enxerga
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={do_socio}").get_data(as_text=True)
+    assert "Do sócio" not in html and "Mão de obra" in html
+    # nem grava, nem copia, nem apaga — e a participação pelo número não sai
+    for dados in ({"acao": "tudo", "cenario_id": do_socio, "nome": "Invadido", "criterio": "faturamento"},
+                  {"acao": "duplicar", "cenario_id": do_socio, "nome": "Cópia do alheio"},
+                  {"acao": "apagar", "cenario_id": do_socio},
+                  {"acao": "apagar_participacao", "cenario_id": do_socio,
+                   "participacao_id": participacao}):
+        assert cliente.post("/painel/prestacao/montagem", data=dados).status_code == 404, dados["acao"]
+    # com um cenário DELE, tenta apagar pelo número a participação do outro
+    dele = cenarios.duplicar(cenario, "Do outro", dono_id=outro["id"])
+    assert cliente.post("/painel/prestacao/montagem", data={
+        "acao": "apagar_participacao", "cenario_id": dele,
+        "participacao_id": participacao}).status_code == 302
+    assert len(cenarios.completo(do_socio)["participacoes"]) == 1
+    assert cenarios.completo(do_socio)["nome"] == "Do sócio"
+
+    # o administrador vê os de todos, com o nome de quem é
+    html = _cliente(monkeypatch).get("/painel/prestacao/montagem").get_data(as_text=True)
+    assert "Do sócio — de socio" in html and "Do outro — de outro" in html
+
+    # dois donos podem usar o mesmo nome; o mesmo dono, não — a cópia ganha número
+    assert cenarios.duplicar(cenario, "Do sócio", dono_id=outro["id"])
+    repetido = cenarios.duplicar(cenario, "Do sócio", dono_id=socio_que_so_le)
+    assert cenarios.buscar(repetido)["nome"] == "Do sócio (2)"
+    # tirar o acesso da pessoa leva os cenários dela
+    usuarios.apagar(outro["id"])
+    assert [c["nome"] for c in cenarios.listar()] == ["Mão de obra", "Do sócio", "Do sócio (2)"]
+
+
+def test_sem_a_prestacao_marcada_ninguem_cria_cenario(base, monkeypatch):
+    from app.apps.painel import cenarios, usuarios
+    assert usuarios.criar("so-dre2", "senha-dele", obras=["MUITA GENTE"], telas=["dre"])["ok"]
+    cliente = _entrar_como(monkeypatch, "so-dre2", "senha-dele")
+    assert cliente.post("/painel/prestacao/montagem",
+                        data={"acao": "novo", "nome": "Clandestino"}).status_code == 404
+    assert cenarios.listar() == []
+
+
+def test_o_arquivo_do_cenario_baixa_com_regra_por_periodo(cenario, monkeypatch):
+    """Achado em 13/11/2026 pelo teste da cópia: desde o período com fim
+    (12/11), baixar a planilha de um cenário COM regra por período dava erro —
+    o trecho que escreve os parâmetros ainda lia a regra no formato antigo. O
+    teste de download que existia usava um cenário sem regra nenhuma."""
+    from app.apps.painel import cenarios
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [
+        ("", 20, 0), ("", 100, 0, "2019-12"), ("2025-01", 50, 10, "2025-12", 300),
+        ("2026-01", 0, 30)])
+    cenarios.marcar_peso(cenario, "lancamento", "805", 50)
+    cliente = _cliente(monkeypatch)
+    for formato in ("", "&formato=pdf"):
+        r = cliente.get(f"/painel/baixar/cenario?cenario={cenario}{formato}")
+        assert r.status_code == 200, formato
+        assert len(r.data) > 2000, formato
+    # e os parâmetros dizem a regra por extenso
+    from io import BytesIO
+
+    import openpyxl
+    livro = openpyxl.load_workbook(BytesIO(cliente.get(
+        f"/painel/baixar/cenario?cenario={cenario}").data), read_only=True)
+    texto = " | ".join(str(c) for aba in livro.worksheets[:1]
+                       for linha in aba.iter_rows(values_only=True) for c in linha if c)
+    assert "Regra (grupo) Administrativas, sempre" in texto
+    assert "de 01/2025 a 12/2025" in texto and "R$ 300,00 ficam no" in texto
+    assert "até 12/2019" in texto and "a partir de 01/2026" in texto

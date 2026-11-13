@@ -8,7 +8,7 @@
 <h2>Montar o cenário
   <small>a régua, o que se divide e quem divide — num lugar só</small>
 </h2>
-{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{% from "painel_prestacao_nav.html" import nav_da_prestacao, rotulo_do_cenario %}
 {{ nav_da_prestacao('montagem', cenario.id if cenario else None) }}
 {% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 
@@ -25,8 +25,7 @@
       <label for="cenario">Em qual você está trabalhando</label>
       <select id="cenario" name="cenario" onchange="this.form.submit()">
         {% for c in cenarios %}
-        <option value="{{ c.id }}" {% if cenario and c.id == cenario.id %}selected{% endif %}>
-          {{ c.nome }}</option>
+        <option value="{{ c.id }}" {% if cenario and c.id == cenario.id %}selected{% endif %}>{{ rotulo_do_cenario(c, meu_numero) }}</option>
         {% endfor %}
       </select>
     </div>
@@ -44,11 +43,41 @@
   </p>
   {% endif %}
 
+  {# CADA CENÁRIO TEM DONO (13/11/2026, o dono do painel: "cada usuário que tem
+     acesso à prestação possa fazer suas edições (…) aproveitando o que já está
+     editado — eu já criei um cenário e tudo, aí eu queria que o próximo
+     usuário fizesse a partir dali"). Quem não é o dono do cenário o vê sem
+     alterar, e cria a PRÓPRIA cópia, com todas as regras, para mexer à vontade.
+     `data-quem-le-pode`: o modo de leitura não trava estes formulários. #}
+  {% if cenario and so_leitura and pode_ter_os_proprios %}
+  <div class="aviso info" style="border-left:4px solid var(--amarelo); margin:0 0 12px">
+    <b>Este cenário não é seu: você vê tudo, mas não altera.</b>
+    Para mexer, crie a <b>sua cópia</b> — ela leva a régua, todas as regras das contas, os
+    períodos, quem recebe e quem divide, e passa a ser sua. O original continua como está.
+    <form method="post" data-quem-le-pode style="display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-top:8px">
+      <input type="hidden" name="acao" value="duplicar">
+      <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+      <div class="campo" style="margin:0; min-width:260px">
+        <label for="nome_minha_copia">Nome da minha cópia</label>
+        <input id="nome_minha_copia" name="nome" value="{{ cenario.nome }} — minha versão">
+      </div>
+      <button class="btn" type="submit">Criar a minha cópia para editar</button>
+    </form>
+  </div>
+  {% elif cenario and so_leitura %}
+  <div class="aviso info" style="margin:0 0 12px">
+    <b>Este cenário não é seu: você vê tudo, mas não altera.</b>
+    Para cada pessoa ter a própria cópia, o administrador precisa aplicar a atualização do
+    banco, em Configurações.
+  </div>
+  {% endif %}
+
+  {% if pode_ter_os_proprios %}
   <div class="form-grade">
-    <form method="post" style="display:contents">
+    <form method="post" data-quem-le-pode style="display:contents">
       <input type="hidden" name="acao" value="novo">
       <div class="campo">
-        <label for="nome_novo">Criar um cenário</label>
+        <label for="nome_novo">Criar um cenário{{ '' if sou_o_administrador else ' meu, do zero' }}</label>
         <input id="nome_novo" name="nome" placeholder="Ex.: Mão de obra, 100%" required>
       </div>
       <div class="campo" style="align-self:end">
@@ -56,8 +85,9 @@
       </div>
     </form>
 
-    {% if cenario %}
-    <form method="post" style="display:contents">
+    {# em modo de leitura a cópia já está no quadro de cima #}
+    {% if cenario and not so_leitura %}
+    <form method="post" data-quem-le-pode style="display:contents">
       <input type="hidden" name="acao" value="duplicar">
       <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
       <div class="campo">
@@ -70,6 +100,7 @@
     </form>
     {% endif %}
   </div>
+  {% endif %}
 </div>
 
 {% if cenario %}

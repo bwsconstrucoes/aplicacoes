@@ -7,9 +7,9 @@
    travados e os botões de gravar somem. Abrir grupo, projeto, período e
    procurar continuam funcionando — é assim que se lê. #}
 <div class="aviso info nao-imprime" style="border-left:4px solid var(--azul)">
-  <b>Você está vendo a prestação de contas em modo de leitura.</b>
-  Dá para abrir tudo — o resultado, como a conta é feita, a montagem e os
-  cadastros — mas só o administrador do painel altera.
+  <b>Modo de leitura.</b> Dá para abrir tudo, mas não alterar: os cadastros são do
+  administrador do painel, e um cenário só é alterado pelo dono dele. Para mexer num
+  cenário, crie a <b>sua cópia</b> em “Montar o cenário”.
 </div>
 <style>
   body.so-leitura #barra-salvar-tudo,
@@ -23,7 +23,11 @@
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   document.body.classList.add("so-leitura");
-  var grava = function (f) { return f && (f.getAttribute("method") || "").toLowerCase() === "post"; };
+  // `data-quem-le-pode`: criar ou copiar um cenário PARA SI não é alterar o de ninguém
+  var grava = function (f) {
+    return f && (f.getAttribute("method") || "").toLowerCase() === "post"
+             && !f.hasAttribute("data-quem-le-pode");
+  };
   // os campos que seriam gravados ficam travados (busca e filtro não têm nome)
   document.querySelectorAll("input[name], select[name], textarea[name]").forEach(function (c) {
     if (grava(c.form)) c.disabled = true;

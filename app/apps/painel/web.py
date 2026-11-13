@@ -459,6 +459,26 @@ def _nivel_do_pedido() -> str:
     return "obra" if request.args.get("nivel") == "obra" else "projeto"
 
 
+def _de_quem():
+    """De quem são os cenários deste pedido: `cenarios.TODOS` para o
+    administrador, ou o número da pessoa que entrou por usuário próprio."""
+    from . import cenarios
+    pessoa = auth.usuario_da_sessao()
+    return cenarios.TODOS if pessoa is None else pessoa["id"]
+
+
+def _cenario_do_pedido(lista, pedido=None):
+    """O cenário pedido na URL — se a pessoa o enxerga. Senão, o primeiro da
+    lista dela (os dela vêm na frente). O número do cenário de outra pessoa
+    não abre nada nem diz que existe."""
+    from . import cenarios
+    pedido = pedido if pedido is not None else request.args.get("cenario")
+    visiveis = {str(c["id"]) for c in lista}
+    if pedido and str(pedido) in visiveis:
+        return cenarios.completo(pedido)
+    return cenarios.completo(lista[0]["id"]) if lista else None
+
+
 def _abas_da_pessoa(pessoa) -> list:
     """As abas que uma pessoa (não o administrador) pode abrir: as telas
     marcadas no cadastro dela. Sem obra marcada, as telas de obra não têm o
@@ -543,8 +563,11 @@ def _contexto_comum(aba: str):
         # so o DRE. Sem isto o botao levava a "pagina nao encontrada" —
         # 22/09/2026, visto pelo dono no acesso de um usuario.
         "administrador": auth.e_administrador(),
-        # a prestação compartilhada: quem não é o administrador só lê
+        # a prestação compartilhada: quem não é o administrador só lê — menos
+        # no cenário que é dele (as telas do cenário trocam este valor)
         "so_leitura": auth.so_leitura(),
+        # o número de quem entrou por usuário próprio (vazio para o administrador)
+        "meu_numero": (auth.usuario_da_sessao() or {}).get("id"),
         # o relatório completo: o dono, e quem tem todas as telas que ele junta
         "pode_baixar_completo": auth.pode_baixar("completo"),
         "opcoes": _opcoes_no_escopo(),
@@ -1418,7 +1441,7 @@ def prestacao_contas():
     from . import cenarios, consultas
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
-    if cenarios.listar():
+    if cenarios.listar(_de_quem()):
         return redirect(url_for("painel.cenario_resultado"))
     return redirect(url_for("painel.cenario_montagem"))
 
@@ -2024,13 +2047,12 @@ def cenario_montagem():
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
 
-    lista = cenarios.listar()
-    escolhido = request.args.get("cenario")
-    atual = None
-    if escolhido:
-        atual = cenarios.completo(escolhido)
-    if atual is None and lista:
-        atual = cenarios.completo(lista[0]["id"])
+    de_quem = _de_quem()
+    lista = cenarios.listar(de_quem)
+    atual = _cenario_do_pedido(lista)
+    # CADA CENÁRIO TEM DONO (13/11/2026): a pessoa altera os dela; os do
+    # administrador ela vê e copia. O administrador altera todos.
+    pode_alterar = cenarios.altera(atual, de_quem) if atual else de_quem is cenarios.TODOS
 
     config = prestacao_dados.config()
     contexto = dict(_contexto_comum("prestacao"))
@@ -2044,9 +2066,14 @@ def cenario_montagem():
         (c for g in arvore["contas"] if g["grupo"] == aberto_grupo
          for c in g["categorias"] if c["categoria"] == aberto_categoria), None)
     nomes = _projetos_e_obras_da_montagem(config, atual)
+    contexto["so_leitura"] = bool(atual) and not pode_alterar
     return render_template(
         "painel_cenario.html", **contexto,
         cenarios=lista, cenario=atual,
+        # quem não é o administrador cria e copia cenário para si — desde que
+        # o banco já saiba guardar o dono (migração 028)
+        pode_ter_os_proprios=(de_quem is cenarios.TODOS or cenarios.tem_dono()),
+        sou_o_administrador=de_quem is cenarios.TODOS,
         criterios=cenarios.CRITERIOS, janelas=cenarios.JANELAS,
         contas=arvore["contas"], resumo_matriz=arvore["resumo"],
         marcacoes=arvore["marcacoes"], categoria_aberta=categoria_aberta,
@@ -2155,10 +2182,32 @@ def cenario_gravar():
     acao = request.form.get("acao", "")
     cenario_id = request.form.get("cenario_id") or ""
 
+    # QUEM PODE GRAVAR O QUÊ (13/11/2026 — cada cenário tem dono). O
+    # administrador, tudo. A pessoa do cadastro de acesso cria e copia cenário
+    # PARA SI, e altera só os dela; qualquer outra coisa responde "não
+    # encontrado", que é a mesma resposta de um número que não existe.
+    de_quem = _de_quem()
+    dono_novo = None if de_quem is cenarios.TODOS else de_quem
+    if dono_novo is not None:
+        if not cenarios.tem_dono():
+            return auth.nao_encontrado()     # sem a migração 028, só o administrador grava
+        alvo = cenarios.buscar(cenario_id) if cenario_id else None
+        if acao == "novo":
+            pass
+        elif acao == "duplicar":
+            if not cenarios.enxerga(alvo, de_quem):
+                return auth.nao_encontrado()
+        elif not cenarios.altera(alvo, de_quem):
+            logger.warning("Painel: tentativa de gravar (%s) no cenário %s, que não é de quem pediu.",
+                           acao, cenario_id)
+            return auth.nao_encontrado()
+
     if acao == "novo":
-        cenario_id = cenarios.criar(request.form.get("nome", ""))
+        cenario_id = cenarios.criar(
+            cenarios.nome_livre(request.form.get("nome", ""), dono_novo), dono_id=dono_novo)
     elif acao == "duplicar" and cenario_id:
-        cenario_id = cenarios.duplicar(cenario_id, request.form.get("nome", ""))
+        cenario_id = cenarios.duplicar(cenario_id, request.form.get("nome", ""),
+                                       dono_id=dono_novo)
     elif acao == "apagar" and cenario_id:
         cenarios.apagar(cenario_id)
         cenario_id = ""
@@ -2215,7 +2264,8 @@ def cenario_gravar():
                                      request.form.get("pct", 0),
                                      request.form.get("obra", ""))
     elif acao == "apagar_participacao" and cenario_id:
-        cenarios.apagar_participacao(request.form["participacao_id"])
+        # só a participação DESTE cenário — o número de outra não apaga nada
+        cenarios.apagar_participacao(request.form["participacao_id"], cenario_id)
     elif acao == "participacoes_em_grade" and cenario_id:
         try:
             cenarios.gravar_participacoes_em_grade(cenario_id,
@@ -2336,13 +2386,14 @@ def cenario_como():
     from . import cenarios, consultas, prestacao_dados
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
-    lista = cenarios.listar()
-    atual = cenarios.completo(request.args.get("cenario") or
-                              (lista[0]["id"] if lista else 0))
+    lista = cenarios.listar(_de_quem())
+    atual = _cenario_do_pedido(lista)
     if atual is None:
         return redirect(url_for("painel.cenario_montagem"))
+    contexto = dict(_contexto_comum("prestacao"))
+    contexto["so_leitura"] = not cenarios.altera(atual, _de_quem())
     return render_template(
-        "painel_cenario_como.html", **_contexto_comum("prestacao"),
+        "painel_cenario_como.html", **contexto,
         cenarios=lista, cenario=atual,
         e=_explicacao_do_cenario(atual, prestacao_dados.config()))
 
@@ -2358,9 +2409,8 @@ def cenario_resultado():
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
 
-    lista = cenarios.listar()
-    atual = cenarios.completo(request.args.get("cenario") or
-                              (lista[0]["id"] if lista else 0))
+    lista = cenarios.listar(_de_quem())
+    atual = _cenario_do_pedido(lista)
     if atual is None:
         return redirect(url_for("painel.cenario_montagem"))
 
@@ -2405,7 +2455,8 @@ def cenario_resultado():
     sobras = calculo["sobras"]
     return render_template(
         "painel_cenario_resultado.html",
-        **_contexto_comum("prestacao"),
+        **dict(_contexto_comum("prestacao"),
+               so_leitura=not cenarios.altera(atual, _de_quem())),
         cenarios=lista, cenario=atual,
         por_obra=por_obra,
         # a linha de totais do quadro por obra (12/11/2026) — para bater com o DRE
@@ -3662,6 +3713,9 @@ def baixar(assunto):
         as escolhas que a geraram nao da para conferir seis meses depois."""
         from . import cenarios, prestacao
         atual = cenarios.completo(request.args.get("cenario") or 0)
+        # o arquivo segue a tela: só o cenário que a pessoa enxerga
+        if atual is not None and not cenarios.enxerga(atual, _de_quem()):
+            atual = None
         if atual is None:
             return [("Cenario", [("o_que", "O que"), ("valor", "Valor")],
                      [{"o_que": "Cenario", "valor": "nenhum escolhido"}])]
@@ -3674,8 +3728,8 @@ def baixar(assunto):
              "valor": cenarios.CRITERIOS.get(atual["criterio"], atual["criterio"])},
             {"o_que": "Janela",
              "valor": cenarios.JANELAS.get(atual["janela"], atual["janela"])},
-            {"o_que": "Conta nao marcada divide",
-             "valor": f"{atual['pct_padrao']:.0f}%"},
+            {"o_que": "Conta sem regra propria",
+             "valor": f"rateia {atual['pct_padrao']:.0f}% entre todas; o resto fica no projeto principal"},
             {"o_que": "Base do calculo", "valor": atual["medida"]},
             {"o_que": "Juros de emprestimo",
              "valor": ("por quem demandou caixa" if atual["juros_por_deficit"]
@@ -3685,25 +3739,38 @@ def baixar(assunto):
             {"o_que": "Taxa de administracao",
              "valor": f"{atual['taxa_adm_pct']:.2f}%"},
         ]
-        for nivel in ("grupo", "categoria", "lancamento"):
-            for chave, pct in sorted((atual["pesos"].get(nivel) or {}).items()):
-                parametros.append({"o_que": f"Marcado ({nivel}) {chave}",
-                                   "valor": f"{pct:.0f}%"})
-            # o percentual que muda com o tempo (09/11/2026) — memória de
-            # cálculo sem ele não se confere depois
-            for chave, lista in sorted(((atual["pesos"].get("periodos") or {})
-                                        .get(nivel) or {}).items()):
-                for desde, pct, principal in lista:
-                    lado = (f", {principal:.0f}% para o projeto principal"
-                            if principal is not None else "")
-                    parametros.append({
-                        "o_que": f"Marcado ({nivel}) {chave}, a partir de {desde[5:]}/{desde[:4]}",
-                        "valor": f"{pct:.0f}%{lado}"})
         quem = atual.get("projetos") or {}
         from . import prestacao_dados as _pd
+        nome_do_principal = (quem.get("principal")
+                             or _pd.config().get("projeto_matriz") or "")
+        for nivel in ("grupo", "categoria", "lancamento"):
+            # o percentual fixo (formato antigo; hoje, o lançamento marcado um
+            # a um): quanto se rateia — o resto fica no projeto principal
+            for chave, pct in sorted((atual["pesos"].get(nivel) or {}).items()):
+                parametros.append({
+                    "o_que": f"Regra ({nivel}) {chave}",
+                    "valor": _partes_por_extenso(100.0 - pct, 0.0, nome_do_principal)})
+            # AS TRÊS PARTES, COM O PERÍODO E O VALOR FIXO (13/11/2026). Este
+            # trecho ainda lia a regra no formato de antes das três partes — e
+            # desde o período com fim (12/11) a planilha de todo cenário com
+            # regra por período dava erro ao baixar. Memória de cálculo sem as
+            # regras não se confere depois; com elas erradas, pior.
+            for chave, lista in sorted(((atual["pesos"].get("periodos") or {})
+                                        .get(nivel) or {}).items()):
+                for regra in lista:
+                    desde, fica, filial = regra[0], regra[1], regra[2]
+                    ate = regra[3] if len(regra) > 3 else ""
+                    valor = regra[4] if len(regra) > 4 else 0.0
+                    quando = ("sempre" if desde == cenarios.DESDE_O_INICIO else
+                              _periodo_por_extenso(
+                                  "" if desde == cenarios.SEM_COMECO else desde, ate))
+                    fixo = (f"R$ {_reais(valor)} ficam no {nome_do_principal or 'projeto principal'}"
+                            " e, do resto, " if valor else "")
+                    parametros.append({
+                        "o_que": f"Regra ({nivel}) {chave}, {quando}",
+                        "valor": fixo + _partes_por_extenso(fica, filial, nome_do_principal)})
         parametros.append({"o_que": "Projeto principal",
-                           "valor": quem.get("principal")
-                           or _pd.config().get("projeto_matriz") or "—"})
+                           "valor": nome_do_principal or "—"})
         for projeto, (papel, desde, ate) in sorted((quem.get("regras") or {}).items()):
             parametros.append({
                 "o_que": f"Projeto {projeto}",

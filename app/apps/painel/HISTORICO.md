@@ -651,6 +651,56 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
+migração (028):** ao publicar, ele aperta "Aplicar atualizações do banco".
+
+O dono: *"a prestação de contas está meio como se estivesse vinculada a apenas
+um usuário (…) eu queria que cada usuário que tem acesso à prestação possa
+fazer suas edições, do jeito que ele quiser. Todavia, que ele pudesse
+aproveitar o que já está editado — eu já criei um cenário e tudo, aí eu queria
+que o próximo usuário fizesse a partir dali."*
+
+**O desenho: cada cenário tem DONO** (`cenario.dono_id`, migração 028; vazio =
+do administrador).
+
+- Quem tem a caixinha da prestação no cadastro de acesso **vê** os cenários do
+  administrador (sem alterar) e os **dele**. No cenário do administrador
+  aparece "Criar a minha cópia para editar": a cópia leva a régua, todas as
+  regras das contas (com período e valor fixo), quem recebe, quem divide e o
+  que está fora — e passa a ser dele. Também pode criar um do zero e apagar
+  os dele.
+- **O cenário de uma pessoa não aparece para outra.** O administrador vê os de
+  todos, com o nome de quem é, e pode alterar qualquer um.
+- **Os Cadastros continuam só do administrador** (sócios, ajustes, fora da
+  análise geral, projeto das obras, centros de custo da matriz e da filial,
+  categorias de juros): valem para todo cenário, e "projeto das obras" muda
+  quem enxerga cada obra. A pessoa os vê, não altera.
+- O nome do cenário passou a ser único **por dono** (era na tabela inteira).
+- Apagar o acesso da pessoa apaga os cenários dela (ON DELETE CASCADE).
+
+**Quem garante:** `auth.exigir_login` deixa a pessoa chegar a
+`painel.cenario_gravar`; **a rota** confere o dono antes de qualquer ação
+(`cenarios.altera / enxerga`) e responde "não encontrado" para cenário de
+outro. `apagar_participacao` passou a exigir que a participação seja do
+cenário do pedido (antes apagava pelo número, de qualquer cenário). Sem a
+migração 028, só o administrador grava — como era.
+
+**Decisão minha, dita a ele:** não criei uma segunda caixinha. A que existia
+("só ver") passa a dar também os cenários próprios — a cópia de uma pessoa não
+altera nada de ninguém e mostra o mesmo dado que ela já via. O rótulo mudou.
+A chave continua `prestacao_leitura`.
+
+### Achado e consertado junto: baixar o cenário dava erro
+
+O teste da cópia achou: **desde 12/11 (período com fim), baixar a planilha ou
+o PDF de um cenário COM regra por período respondia erro 500** — o trecho que
+escreve os parâmetros (`_abas_do_cenario`) ainda lia a regra no formato de
+antes das três partes. Estava no ar; o dono não tinha reclamado. O teste de
+download que existia usava um cenário sem regra nenhuma, e por isso passou.
+Agora há um com período fechado, só "até", "a partir de" e valor fixo.
+
 ## A baixa com desconto puxava o recebimento inteiro para a data dela — 12/11/2026
 
 **PUBLICADO em 12/11/2026, 15:49 (UTC)** — `fe87630b`, com o "pode" do dono e
