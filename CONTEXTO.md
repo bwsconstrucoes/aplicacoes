@@ -563,6 +563,43 @@ Suporta 2 modos de cópia: `continuo` (sequencial) e `gap` (blocos com colunas v
 
 Retorna `response` com HTML pronto pra exibir.
 
+**Quem chama:** o Make, quando alguém aperta o botão no Pipefy; a pessoa espera
+a página de resposta. Módulo sem chat de área e sem `HISTORICO.md` — esta seção
+é a memória dele.
+
+**O que uma chamada faz, em ordem** (contado em 13/11/2026 com o Google e o
+Omie dublados, `core.executar`):
+
+| Etapa | Idas ao Google | Observação |
+|---|---|---|
+| abrir "Registros de SP" | 1 leitura | `open_by_key` |
+| boleto válido → aba SPsDDA | 2 leituras + 2 escritas | cada `ss.worksheet()` relê a lista de abas; acrescenta a linha e **ordena a aba inteira** |
+| parâmetros Omie (planilha `1Fysws…`) | 3 a 7 leituras + 2 escritas + 2 s parado | grava numa linha livre, espera 2 s as fórmulas, lê, limpa. **Trava global** (`_SLOT_LOCK`): uma chamada por vez, do começo ao fim |
+| Log e SPsBD | 4 leituras + 2 escritas | lê a **coluna A inteira** do Log e da SPsBD (~52 mil linhas) |
+| Omie | 1 a 3 chamadas | cliente (se não cadastrado) + título (+ nova tentativa se incluir/alterar falhar) — sem nova tentativa por demora, 30 s de teto cada |
+| código Omie na SPsBD | 2 leituras + 1 escrita | **relê a coluna A inteira da SPsBD** só para achar a mesma linha de novo |
+
+Total: **13 leituras e 6–7 escritas no Google por chamada**, das quais 8
+leituras são a mesma lista de abas. O Pipefy **não é chamado** (só monta a
+lista de etiquetas para o Make). A cópia da SPsBD no Postgres
+(`analisesps.sps`) **não serve para achar a linha**: guarda uma linha por SP
+(chave única), não guarda o número da linha na planilha e pode estar atrasada
+em relação a uma SP recém-criada.
+
+⚠️ **A espera de 30 s + 65 s.** `app/apps/emissaonf/gspread_retry.py`, importado
+quando a emissão de NFS-e sobe, troca o cliente do gspread **do processo
+inteiro**: quando o Google responde 429 (cota de leituras por minuto da conta
+de serviço, que é UMA para todo o monorepo), a chamada dorme 30 s, tenta de
+novo, dorme 65 s, tenta de novo e só então desiste — e não escreve nada no log.
+Vale para esta rota (conferido: `HTTPClient._bws_retry` é `True` com o
+`app.main` carregado). Ver §9, 13/11/2026.
+
+**Medição no log (13/11/2026, em ramo):** cada chamada escreve
+`atualizaspbotao SP <id>: total N s — abrir planilha …; boleto/DDA …;
+parâmetros Omie …; Log e SPsBD …; Omie …; código Omie na SPsBD …`, e
+`esperou N s pela vez na planilha de parâmetros` quando ficou na fila da
+trava. Etapa de 30 s ou mais é, quase sempre, a espera por cota.
+
 ### 5.7 ValidaSP (`/api/validasp`)
 
 Validação de SP chamada pelo Make: guarda a validação numa fila no banco
@@ -801,6 +838,54 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 13/11/2026 — o botão "atualizar SP" (`atualizaspbotao`) segura uma linha por ~2 min
+
+**Investigação, nada de comportamento mudou.** Log do Render colado pelo dono:
+três `POST /api/atualizaspbotao/executar` de 110 a 138 s, e as 4 linhas tomadas
+por duas delas mais o BaixaBradesco (fila tardia há 416 s, `executar` há 409 s).
+
+**O que foi achado** (detalhe e contagem em §5.6):
+
+1. **Cada chamada faz 13 leituras e 6–7 escritas no Google.** 8 das 13 leituras
+   são a mesma lista de abas (o gspread relê a cada `ss.worksheet()`), e a
+   coluna A inteira da SPsBD é lida **duas vezes**. A cota do Google é de
+   leituras por minuto **por conta de serviço**, e a conta é a mesma para todo
+   o monorepo: com o BaixaBradesco rodando ao lado, ela estoura.
+2. **Estourada a cota, a chamada dorme 30 s + 65 s** — por causa de um
+   repetidor instalado pela emissão de NFS-e (`emissaonf/gspread_retry.py`)
+   que vale para o processo inteiro, sem escrever no log. 95 s de espera +
+   15–40 s de trabalho normal batem com os 110–138 s do log. **Não está
+   provado** (o repetidor não deixa rastro); a medição por etapa abaixo prova
+   ou derruba na primeira manhã.
+3. **A trava da planilha de parâmetros** (`_SLOT_LOCK`) deixa uma chamada por
+   vez nessa etapa, do começo ao fim, mesmo havendo 5 linhas livres na
+   planilha. Se a que está dentro pega a espera de 95 s, as outras esperam
+   junto, cada uma segurando a sua linha de atendimento.
+4. O Omie e o Pipefy **não** explicam: Omie são 1 a 3 chamadas com teto de 30 s
+   cada; Pipefy não é chamado.
+
+**Em ramo (`claude/epic-feynman-w5kkfm`), não publicado:** só a medição por
+etapa no log (`core.py`) e o aviso de espera pela trava (`parametros_omie.py`).
+
+**Propostas ao dono, aguardando decisão** (nenhuma feita):
+- *Make com Sequential processing* no cenário do botão (como no
+  `processarnovasp`, 12/11) — sem código; risco: com fila, quem aperta o botão
+  pode esperar mais pela página de resposta.
+- *Ler a lista de abas uma vez só e as duas colunas A num pedido só* — 13 →
+  ~6 leituras por chamada, mesmo resultado na planilha.
+- *Reaproveitar a linha da SPsBD* achada antes do Omie, conferindo só aquela
+  célula — tira a segunda leitura da coluna inteira.
+- *Trava só para escolher a linha livre*, não durante a escrita/espera/leitura.
+- *Cópia do Postgres e cache da coluna A*: avaliados e **não recomendados**
+  (motivos em §5.6 — a cópia não sabe a linha; o cache pouparia tempo mas não
+  cota, porque a conferência da célula continua sendo uma leitura).
+- *Log no repetidor da emissão de NFS-e* quando ele espera — é arquivo de
+  outra área (emissaonf), fica para o dono decidir.
+
+**Achado à parte, sem mexer:** a data gravada na aba SPsDDA usa o relógio do
+servidor (UTC, 3 h à frente de Fortaleza) e entra como texto `dd/mm/aaaa`, e a
+aba é ordenada por essa coluna — a ordenação fica pelo dia do mês, não pela data.
 
 ### 12/11/2026 — o "processar nova SP" do Make passa a rodar UM POR VEZ
 

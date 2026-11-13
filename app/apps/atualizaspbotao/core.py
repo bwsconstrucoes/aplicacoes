@@ -5,8 +5,10 @@ core.py — Orquestração principal (portado do executeBusinessLogic_ do Princi
 
 import os
 import json
+import time
 import logging
 from base64 import b64decode
+from contextlib import contextmanager
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -49,16 +51,42 @@ def validar_payload(payload: dict):
         raise ValueError('Campo id é obrigatório.')
 
 
+@contextmanager
+def _etapa(tempos: list, nome: str):
+    """Mede uma etapa e guarda (nome, segundos). Só medição: não muda o fluxo."""
+    inicio = time.monotonic()
+    try:
+        yield
+    finally:
+        tempos.append((nome, time.monotonic() - inicio))
+
+
 def executar(payload: dict) -> dict:
-    gc = _get_gc()
-    spreadsheet_id = payload.get('spreadsheetId') or CONFIG['SPREADSHEET_ID']
-    ss = gc.open_by_key(spreadsheet_id)
+    # Medição por etapa (13/11/2026): cada chamada levava ~2 min no Render e o
+    # log só mostrava o total. Uma etapa acima de ~30 s é, quase sempre, a espera
+    # automática por cota do Google (ver CONTEXTO.md §5.6).
+    tempos: list = []
+    inicio = time.monotonic()
+    try:
+        return _executar(payload, tempos)
+    finally:
+        partes = '; '.join(f'{n} {s:.1f} s' for n, s in tempos)
+        logger.info('atualizaspbotao SP %s: total %.1f s — %s',
+                    as_string(payload.get('id')), time.monotonic() - inicio, partes)
+
+
+def _executar(payload: dict, tempos: list) -> dict:
+    with _etapa(tempos, 'abrir planilha'):
+        gc = _get_gc()
+        spreadsheet_id = payload.get('spreadsheetId') or CONFIG['SPREADSHEET_ID']
+        ss = gc.open_by_key(spreadsheet_id)
 
     result = {'secoes': {}}
     p = dict(payload)
 
     # 1. Validação de boleto/DDA
-    result['secoes']['validacaoBoletoDDA'] = secao_validacao_boleto_dda(p, ss)
+    with _etapa(tempos, 'boleto/DDA'):
+        result['secoes']['validacaoBoletoDDA'] = secao_validacao_boleto_dda(p, ss)
     p = _incorporar_validacao_boleto(p, result['secoes']['validacaoBoletoDDA'])
 
     # 2. Pipefy
@@ -66,7 +94,8 @@ def executar(payload: dict) -> dict:
 
     # 3. Parâmetros Omie (via planilha intermediária)
     if 'OmieApiA' in p:
-        parametros_omie = secao_parametros_omie(p, gc)
+        with _etapa(tempos, 'parâmetros Omie'):
+            parametros_omie = secao_parametros_omie(p, gc)
         result['secoes']['parametrosOmie'] = parametros_omie
         p = _incorporar_parametros_omie(p, parametros_omie)
     else:
@@ -81,19 +110,22 @@ def executar(payload: dict) -> dict:
     if centros_rateio:
         logger.info(f"[core] Centros extraídos do OmieRateioMultiplo: {list(centros_rateio.keys())}")
         p.update(centros_rateio)
-    result['secoes']['atualizaLogeSPsBD'] = secao_atualiza_log_e_spsbd(ss, p)
+    with _etapa(tempos, 'Log e SPsBD'):
+        result['secoes']['atualizaLogeSPsBD'] = secao_atualiza_log_e_spsbd(ss, p)
 
     # 5. Omie (API externa)
     if as_string(p.get('omieAppKey')) and as_string(p.get('omieAppSecret')):
-        result['secoes']['omie'] = secao_omie(p, result['secoes']['parametrosOmie'])
+        with _etapa(tempos, 'Omie'):
+            result['secoes']['omie'] = secao_omie(p, result['secoes']['parametrosOmie'])
 
         codigo_integracao = as_string(
             result['secoes']['omie'].get('titulo', {}).get('codigo_lancamento_integracao')
         )
         if codigo_integracao:
-            result['secoes']['atualizaSpsbdOmie'] = atualizar_spsbd_codigo_integracao_omie(
-                ss, p, codigo_integracao
-            )
+            with _etapa(tempos, 'código Omie na SPsBD'):
+                result['secoes']['atualizaSpsbdOmie'] = atualizar_spsbd_codigo_integracao_omie(
+                    ss, p, codigo_integracao
+                )
         else:
             result['secoes']['atualizaSpsbdOmie'] = {
                 'ok': False, 'ignorado': True,

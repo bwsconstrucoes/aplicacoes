@@ -60,7 +60,13 @@ def secao_parametros_omie(payload: dict, gc) -> dict:
     sheet_name = _selecionar_aba(payload)
     sh = ss.worksheet(sheet_name)
 
+    espera_inicio = time.monotonic()
     with _SLOT_LOCK:
+        espera = time.monotonic() - espera_inicio
+        if espera >= 1:
+            # Só medição (13/11/2026): mostra quanto uma chamada ficou parada
+            # esperando outra terminar de usar a planilha de parâmetros.
+            logger.info('atualizaspbotao: esperou %.1f s pela vez na planilha de parâmetros', espera)
         slot = _reservar_slot(sh)
         if slot is None:
             raise RuntimeError('Nenhum slot OmieApi disponível no momento.')
