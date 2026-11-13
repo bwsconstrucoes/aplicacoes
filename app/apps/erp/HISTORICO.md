@@ -21,6 +21,50 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 — O MODELO DO ÓRGÃO: "tal qual", não "parecido"
+
+Ele, vendo o RDO impresso: *"o modelo que você digitou aí não está igual não.
+As cores. Porque o modelo do órgão, ele tem que ser tal qual, não pode ser
+parecido não. Inclusive as cores."* E logo depois: *"estou me referindo só ao
+modelo do órgão."*
+
+**Tinha razão, e o custo não é estético: RDO fora do modelo exigido é motivo
+de GLOSA em medição.** A versão de 09/11 copiou a ORDEM dos quadros do papel
+dele, mas vestiu tudo com a paleta da casa — azul #1b3a5c sobre faixa cinza,
+em Helvetica. Ficou bonito e ficou NOSSO, que é exatamente o erro.
+
+**Agora cada traço vem do arquivo dele**, o `RDO.xlsx` de 09/11/2026 (aba
+"23.11.2023"), lido célula a célula:
+
+- as oito faixas divisórias são **#1F4E79** — não é um azul escolhido: é o
+  `accent1` do tema "Escritório" daquele arquivo (#5B9BD5) com tinta −0,5, o
+  "Azul, Ênfase 1, Mais Escuro 50%" do Excel. Ficam nas linhas 3, 8, 10, 14,
+  17, 20, 23 e 26, com 4,5pt de altura;
+- **todo o resto é preto sobre branco**, em **Arial**, com os títulos de seção
+  em negrito e CENTRADOS. Não há fundo cinza nenhum no papel dele;
+- moldura externa em traço médio, divisões internas em traço fino, pretas.
+
+⚠️ **Três coisas NÃO vieram do papel dele, e está escrito no arquivo por quê:**
+o rodapé de emissão (fica fora da moldura — é a marca de que o papel saiu do
+ERP e se ainda é rascunho), os textos em vermelho (são instruções para quem
+preenche à mão) e a coluna "Impraticável" (o papel tem três colunas de tempo;
+dia impraticável marca "Chuva" e sai "(impraticável)" ao lado, porque é o que
+sustenta pedido de prazo).
+
+**Duas armadilhas que custaram tempo e viraram comentário no código:**
+
+1. A faixa azul se chamava `.barra` — e a página JÁ tinha uma `.barra`, a de
+   ferramentas do alto, com `@media print { display:none }`. **As oito faixas
+   sumiam só na impressão**, e na tela apareciam. Hoje é `.faixa-org`.
+2. Com as faixas, a folha passou de 278 mm e o dia saía em DUAS páginas. Os
+   quadros encolheram (média 44pt, alta 86pt). **Mexeu nas alturas, gere o PDF
+   de um dia comum antes de commitar.**
+
+**Quatro testes de trava** guardam isto em `tests/test_diario_de_obra.py`: o
+azul exato, a ausência da paleta da casa, a ordem dos quadros e o fato de que
+só o modelo do órgão ganha esse estilo. A tentação de "dar uma melhorada no
+visual" volta toda vez que alguém abre o arquivo.
+
 ### ⚑ 13/11/2026 — O CABEÇALHO DO DIÁRIO VINHA VAZIO, E NÃO ERA BUG DO DIÁRIO
 
 Ele: *"eu não sei porque a obra — a gente cadastrou as obras, cadastrou assim,
