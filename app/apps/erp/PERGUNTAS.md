@@ -1944,8 +1944,10 @@ Três mudanças pequenas nas solicitações do DP, e todas mexem no mesmo lugar:
 
 ## 3z-bis. O QUE VEIO DO PIPEFY (10/11/2026)
 
-O número do card já estava no cadastro (`colaboradores.ref_pipefy`). Agora o
-ERP sabe ler esse card, baixar os documentos da pessoa e preencher o que está
+⚠️ **Corrigido em 13/11/2026:** eu tinha escrito que *"o número do card já
+estava no cadastro"*. **Não estava** — e por isso a importação não funcionava.
+Agora **ele cola a lista** dos cards que quer; o sistema lê card a card, acha a
+pessoa pelo **CPF do próprio card**, baixa os documentos e preenche o que está
 em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
 
 ### O que dá para perguntar agora
@@ -1957,9 +1959,10 @@ em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
 - "Quais arquivos não desceram, e por quê?" — é a lista que precisa de mão
   humana, e é a pergunta que impede "importação concluída" de esconder trinta
   falhas.
-- "Quantas pessoas ativas ainda estão sem número de card?" — essas nunca vão
-  ser alcançadas pela importação, e é por aí que se descobre quem entrou no
-  ERP por fora do Pipefy.
+- "Quantas pessoas ativas ainda estão sem número de card?" — depois da
+  importação, é por aí que se descobre quem entrou no ERP por fora do Pipefy.
+  ⚠️ **Antes da importação a resposta é "todas"**, e isso não quer dizer nada:
+  o número do card só existe no cadastro DEPOIS de a pessoa ter sido trazida.
 - "Esta pessoa está com o cadastro documental completo?" — CPF, documento de
   identificação, comprovante de endereço e, no caso CTPS, as duas páginas.
 
@@ -1969,9 +1972,10 @@ em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
   card lido cujos oito anexos falharam conta como lido e não trouxe nada.
 - **"já veio"** é por (card, campo, arquivo) — não por pessoa. Pessoa com seis
   documentos pode ter cinco guardados e um pendente.
-- **"todas as pessoas"**: o padrão da importação é **quem está trabalhando**.
-  O pipe tem 3.664 cards e o ERP não precisa do histórico de quem saiu há
-  cinco anos.
+- **"todas as pessoas"**: a importação traz **o que ele listar**, e só. O pipe
+  tem 3.664 cards, com cancelados e repetidos no meio — separar isso é dele,
+  que conhece o pipe, e não do sistema. Ele, em 13/11/2026: *"eu vou listar os
+  cards que eu quero que você busque."*
 
 ### O que o sistema ainda NÃO responde
 

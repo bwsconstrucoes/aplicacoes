@@ -21,6 +21,39 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 (2ª correção) — QUEM LISTA OS CARDS É ELE
+
+Logo depois de publicar a correção da manhã (achar as pessoas varrendo o pipe
+e casando pelo CPF), ele usou e derrubou:
+
+> *"Eu prefiro listar os cards, porque você está trazendo card duplicado, só
+> que aí tem card que está cancelado, isso aqui não me interessa. Eu vou
+> listar os cards que eu quero que você busque. E você faz a pesquisa card a
+> card e puxa as informações e grava."*
+
+**Tem razão, e o argumento é forte:** o pipe tem 3.664 cards, com **cancelados
+e repetidos** no meio. Separar o que presta exige conhecer o pipe — e quem
+conhece é ele, que tem a planilha com os números certos. Varrer tudo e casar
+por CPF era eu decidindo no lugar dele, e decidindo pior.
+
+**Como ficou:** uma caixa de texto onde ele cola os números. Um por linha,
+separados por vírgula, colados direto de uma coluna da planilha, ou o endereço
+inteiro do card — a mesma leitura do importador de SPs, que roda há meses.
+Repetido entra uma vez só. O sistema busca **só esses**, card a card, acha a
+pessoa pelo **CPF do próprio card**, e grava o número do card no cadastro como
+procedência.
+
+⚑ **A VARREDURA DO PIPE FOI REMOVIDA, não desligada.** Deixá-la como "segunda
+opção" criaria duas portas para a mesma coisa — o que ele já derrubou no
+cadastro de empresa (*"uma porta só"*) e no diário (*"ou é um ou é o outro"*).
+Código morto com teste verde é pior que código morto.
+
+**A lição desta — e é a segunda do mesmo dia, sobre o mesmo recurso:** eu
+escolhi sozinho DE ONDE vinham os dados (primeiro supondo um campo preenchido,
+depois varrendo o pipe inteiro), quando a pergunta "de onde sai essa lista?"
+era dele desde o começo. Funcionalidade que depende de um dado de fora começa
+perguntando quem é o dono daquele dado.
+
 ### ⚑ 13/11/2026 — A IMPORTAÇÃO DO PIPEFY PEDIA UM NÚMERO QUE NÃO EXISTIA
 
 Ele, na primeira vez que usou a tela:

@@ -4463,6 +4463,12 @@ def api_pipefy_cadastro_situacao():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# Quantos cards por rodada. O mesmo espírito do limite da importação de SPs:
+# uma rodada que não termina antes da renovação do serviço no Render é uma
+# rodada perdida no meio.
+TETO_DE_CARDS_POR_RODADA = 300
+
+
 @bp.route("/erp/api/importar/pipefy-cadastro", methods=["POST"])
 @login_obrigatorio
 @permissao("importar")
@@ -4482,35 +4488,29 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": (
             "Este servidor não tem o token do Pipefy configurado "
             "(PIPEFY_API_TOKEN). Sem ele não dá para ler os cards.")}), 400
-    try:
-        teto = int(d.get("teto_de_pessoas") or imp.POR_RODADA)
-    except (TypeError, ValueError):
-        teto = imp.POR_RODADA
-    teto = max(1, min(teto, 300))
+    # ⚑ A FILA É A LISTA QUE ELE COLA (13/11/2026). Antes eu varria o pipe
+    # inteiro e casava pelo CPF — e trazia card cancelado e card repetido, que
+    # não interessam. Ele: *"eu vou listar os cards que eu quero que você
+    # busque. E você faz a pesquisa card a card e puxa as informações."*
+    pedidos = imp.ids_dos_cards(d.get("cards"))
+    if not pedidos:
+        return jsonify({"ok": False, "erro": (
+            "Cole os números dos cards que devem ser buscados.")}), 400
+    if len(pedidos) > TETO_DE_CARDS_POR_RODADA:
+        return jsonify({"ok": False, "erro": (
+            f"{len(pedidos)} cards de uma vez — faça em blocos de até "
+            f"{TETO_DE_CARDS_POR_RODADA}.")}), 400
     try:
         trabalhos.registrar_todos()
         with get_session() as s:
             usuario = _usuario_logado(s)
-            quantos = len(imp.quem_tem_card(
-                s, so_ativos=bool(d.get("so_ativos", True)),
-                obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
-                teto=teto))
-            # ⚑ ZERO NÃO É MAIS RECUSA. Até 13/11/2026 isto respondia "nenhuma
-            # pessoa com número de card nesse filtro" — e não havia onde
-            # digitar o número, então o botão não tinha como funcionar nunca.
-            # Agora o trabalho começa justamente por achar os cards: varre o
-            # pipe e casa pelo CPF.
             t = tarefas.enfileirar(
                 s, "importar_cadastro_pipefy",
-                {"simular": not gravar,
-                 "so_ativos": bool(d.get("so_ativos", True)),
-                 "obra_id": (int(d["obra_id"]) if d.get("obra_id") else None),
-                 "teto_de_pessoas": teto,
+                {"simular": not gravar, "cards": pedidos,
                  "usuario_id": usuario.id if usuario else None},
                 rotulo=(("Conferir sem gravar: " if not gravar
                          else "Trazer do Pipefy: ")
-                        + (f"{quantos} pessoa(s)" if quantos
-                           else "achar as pessoas pelo CPF")),
+                        + f"{len(pedidos)} card(s)"),
                 usuario=usuario)
             linha = tarefas.ler(s, t.id)
             s.commit()
