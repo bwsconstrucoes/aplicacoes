@@ -125,26 +125,16 @@ class TestEncaixeNoErp:
         assert acoes <= cobertas
 
     def test_as_telas_do_ponto_estao_no_menu_e_toda_aba_exige_ver_ponto(self):
-        """O PONTO DEIXOU DE SER MÓDULO PRÓPRIO em 06/11/2026, por decisão do
-        dono: *"a gente tem lá pessoal e tem ponto (…) já seria o momento de
-        integrar isso aí (…) a gente tem que falar a mesma linguagem nos dois
-        lados, afinal é a mesma empresa, é o mesmo ERP."*
-
-        As telas são as mesmas, no mesmo endereço e com a mesma permissão — o
-        que mudou é onde elas aparecem no menu: dentro de **Pessoal**. O ponto
-        continua se registrando do mesmo jeito (`_registrar_no_menu`); quem
-        reorganiza a lista é o `erp/routes.py`, porque o menu é do ERP.
-
-        O que este teste garante continua sendo o que importa: **toda aba do
-        ponto está no menu e toda uma delas exige `ver_ponto`.**
-        """
+        """O Ponto é um módulo do menu (de volta em 13/11/2026, depois de uma semana dentro de Pessoal — o dono:
+        "ficou muito longo, era melhor dividir"). Toda aba do ponto está no menu, aponta para o Ponto e exige
+        `ver_ponto`."""
         from app.apps.erp import routes as R
         from app.apps.ponto import gestao
         no_menu = {aba[0] for m in R.MODULOS for aba in m["abas"]}
         for chave, _, endpoint in gestao.ABAS:
             assert chave in no_menu, f"a aba {chave} saiu do menu"
-            assert R._MODULO_DA_ABA.get(chave) == "pessoal", (
-                f"a aba {chave} tem de apontar para Pessoal — senão a tela dela "
+            assert R._MODULO_DA_ABA.get(chave) == "ponto", (
+                f"a aba {chave} tem de apontar para o Ponto — senão a tela dela "
                 f"abre com o menu de outra área aceso")
             assert R._REGISTRO_PERMISSOES[endpoint]["GET"] == "ver_ponto"
 

@@ -431,31 +431,26 @@ def test_as_marcacoes_do_ponto_nunca_derrubam_a_ficha(sessao_real, dono, pessoa)
 
 
 @banco_
-def test_o_ponto_dentro_de_pessoal_e_um_modulo_so(sessao_real):
-    """O menu junta as duas áreas, e as abas do ponto reapontam para Pessoal —
-    senão a tela do ponto abriria com o menu do Financeiro aceso."""
+def test_o_ponto_tem_lugar_proprio_logo_depois_de_pessoal(sessao_real):
+    """13/11/2026, o dono: "quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande
+    (…) era melhor dividir". O Ponto volta a ser um módulo no topo, logo depois de Pessoal; a integração ficou na
+    ficha da pessoa (uma janela só, aberta também pela tela de Colaboradores)."""
     from app.apps.erp import routes as R
     chaves = [m["chave"] for m in R.MODULOS]
-    assert "ponto" not in chaves, "o módulo Ponto tinha de ter sido absorvido"
+    assert "ponto" in chaves and chaves.index("ponto") == chaves.index("pessoal") + 1
     pessoal = next(m for m in R.MODULOS if m["chave"] == "pessoal")
     abas = [a[0] for a in pessoal["abas"]]
-    assert "colaboradores" in abas and "ponto_quadro" in abas
-    # A ORDEM é pelo dia a dia: o cadastro primeiro, o quadro do ponto em
-    # seguida — não a despesa, que era o que ficava na frente ao juntar na
-    # ordem de origem.
-    assert abas[0] == "colaboradores" and abas[1] == "ponto_quadro"
-    assert R._MODULO_DA_ABA.get("ponto_espelho") == "pessoal"
-    # E nenhuma aba ficou apontando para um módulo que não existe mais.
-    assert "ponto" not in set(R._MODULO_DA_ABA.values())
+    assert abas[:4] == ["colaboradores", "dp_solicitacoes", "dp_contabilidade", "dc"]
+    assert not any(a.startswith("ponto_") for a in abas)
+    assert R._MODULO_DA_ABA.get("ponto_espelho") == "ponto"
 
 
 @banco_
 def test_as_duas_telas_de_pessoas_ficam_com_nomes_diferentes(sessao_real):
-    """A tela de pessoas do ponto continua existindo (é de outra área e tem uso
-    próprio, a foto de cadastro), mas o nome passa a dizer QUAL das duas é."""
+    """A tela de pessoas do ponto continua existindo (tem uso próprio: quem bate, a foto, o termo), com o nome que
+    diz QUAL das duas é."""
     from app.apps.erp import routes as R
-    pessoal = next(m for m in R.MODULOS if m["chave"] == "pessoal")
-    nomes = {a[0]: a[1] for a in pessoal["abas"]}
+    nomes = {a[0]: a[1] for m in R.MODULOS for a in m["abas"]}
     assert nomes["ponto_pessoas"] == "Pessoas no ponto"
     assert nomes["colaboradores"] == "Colaboradores"
 
