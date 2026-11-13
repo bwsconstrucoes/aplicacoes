@@ -70,8 +70,8 @@ def test_cada_etapa_tem_limite_proprio_e_modesto(sem_payload_adiado, monkeypatch
     mod.processar_fila_tardia({})
 
     limites = {c['etapas'][0]: c['limite'] for c in chamadas}
-    assert limites == {'omie': 15, 'sheets': 15, 'pipefy': 15, 'zapi': 10}
-    assert sum(limites.values()) <= 60   # a cota de escrita do Google é por minuto
+    assert limites == dict(mod.LIMITES_CRON)
+    assert sum(limites.values()) <= 30   # a cota de escrita do Google é por minuto
 
 
 def test_cota_estourada_para_a_drenagem_e_deixa_o_resto_para_o_proximo_disparo(
@@ -307,3 +307,149 @@ def test_falha_ao_dispensar_aviso_nao_impede_a_drenagem(sem_payload_adiado,
 
     assert 'planilha fora' in r['avisos_vencidos']['erro']
     assert [c['etapas'][0] for c in chamadas] == ['omie', 'sheets', 'pipefy', 'zapi']
+
+
+# =====================================================================
+# o teto de TEMPO — limitar a quantidade não bastou
+# =====================================================================
+# Registros de produção que o dono mandou em 13/11/2026:
+#
+#   AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 283 s
+#
+# Limitar a QUANTIDADE de adiados não resolveu, e o motivo é que a passada faz
+# muito mais que processar adiados: ela também zera o atraso, dispensa aviso
+# vencido e drena a fila em quatro etapas — cerca de SEIS leituras da aba de
+# controle e até dezenas de chamadas de rede. Cada pedaço é pequeno; a soma
+# segurava uma das quatro linhas de atendimento por minutos.
+
+def _relogio(monkeypatch, instantes):
+    """Dubla o relógio: cada consulta devolve o próximo instante da lista."""
+    seq = list(instantes)
+
+    def _agora():
+        return seq.pop(0) if len(seq) > 1 else seq[0]
+
+    monkeypatch.setattr(mod.time, 'time', _agora)
+
+
+def test_a_passada_pula_as_etapas_quando_o_tempo_acaba(sem_payload_adiado,
+                                                       monkeypatch):
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+    # começa em 1000; na hora de decidir as etapas já passou do orçamento
+    _relogio(monkeypatch, [1000.0, 1000.0, 9999.0])
+
+    r = mod.processar_fila_tardia({})
+
+    assert r['etapas_puladas_por_tempo'] == ['atraso_zerado', 'avisos_vencidos',
+                                             'fila_de_falhas']
+    assert chamadas == []            # nada de drenagem nesta passada
+    assert 'próximo disparo' in r['em_portugues']
+
+
+def test_dentro_do_orcamento_a_passada_faz_tudo(sem_payload_adiado, monkeypatch):
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+
+    r = mod.processar_fila_tardia({})
+
+    assert r['etapas_puladas_por_tempo'] == []
+    assert [c['etapas'][0] for c in chamadas] == ['omie', 'sheets', 'pipefy', 'zapi']
+    assert 'dentro do orçamento' in r['em_portugues']
+
+
+def test_o_prazo_e_passado_adiante_para_a_drenagem(sem_payload_adiado,
+                                                   monkeypatch):
+    """Não basta a passada parar entre etapas: a drenagem de uma etapa sozinha
+    pode levar minutos, então ela também tem de olhar o relógio."""
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+
+    mod.processar_fila_tardia({})
+
+    assert all(c.get('prazo_ate') for c in chamadas)
+
+
+def test_a_passada_relata_quanto_tempo_levou(sem_payload_adiado, monkeypatch):
+    _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+
+    r = mod.processar_fila_tardia({})
+
+    assert 'segundos' in r
+    assert r['orcamento_seg'] == mod.ORCAMENTO_SEG
+
+
+def test_quem_chama_a_mao_pode_desligar_o_teto(sem_payload_adiado, monkeypatch):
+    """A rota chamada por uma pessoa pode querer drenar tudo de uma vez."""
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+
+    mod.processar_fila_tardia({'orcamento_seg': 0})
+
+    assert all(c.get('prazo_ate') == 0 for c in chamadas)
+
+
+def test_o_orcamento_cabe_no_intervalo_do_cron():
+    """O cron dispara de 5 em 5 minutos: a passada tem de acabar MUITO antes,
+    senão a seguinte chega com esta ainda rodando."""
+    assert 0 < mod.ORCAMENTO_SEG <= 60
+    assert mod.LIMITE_POR_DISPARO == 1
+    assert sum(mod.LIMITES_CRON.values()) <= 30
+
+
+def test_a_chave_geral_desliga_a_carona_sem_publicar_nada(sem_payload_adiado,
+                                                          monkeypatch):
+    """Precisava existir um jeito de desligar NA HORA, não depois de publicar.
+
+    Em 13/11/2026 a soma das etapas de carona estava segurando uma das quatro
+    linhas de atendimento por minutos, e o dono precisava de um interruptor.
+    """
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+    monkeypatch.setenv('BAIXABRADESCO_CARONA', '0')
+
+    r = mod.processar_fila_tardia({})
+
+    assert r['carona_desligada'] is True
+    assert chamadas == []
+    assert r['etapas_puladas_por_tempo'] == ['atraso_zerado', 'avisos_vencidos',
+                                             'fila_de_falhas']
+
+
+def test_sem_a_chave_a_carona_continua_ligada(sem_payload_adiado, monkeypatch):
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+    monkeypatch.delenv('BAIXABRADESCO_CARONA', raising=False)
+
+    r = mod.processar_fila_tardia({})
+
+    assert 'carona_desligada' not in r
+    assert len(chamadas) == 4
+
+
+def test_o_ambiente_pode_apertar_o_orcamento_sem_publicar(sem_payload_adiado,
+                                                          monkeypatch):
+    _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos', lambda p: {'dispensadas': 0})
+    monkeypatch.setenv('BAIXABRADESCO_ORCAMENTO_SEG', '12')
+
+    r = mod.processar_fila_tardia({})
+
+    assert r['orcamento_seg'] == 12.0

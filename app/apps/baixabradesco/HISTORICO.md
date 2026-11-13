@@ -1788,3 +1788,61 @@ biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
 **Não verificado:** nada disso rodou em produção. O sinal de que funcionou é o
 serviço parar de engasgar quando há comprovante na fila — e `pendentes` caindo
 de 2 em 2 por disparo, em vez de tudo de uma vez.
+
+---
+
+### 13/11/2026 — limitar a quantidade não bastou: o teto que faltava era de TEMPO
+
+O dono mandou os registros do servidor, e eles mostram o problema sem margem:
+
+```
+AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 283 s;
+                      POST /api/baixabradesco/executar há 162 s;
+                      POST /api/atualizaspbotao/executar há 61 s;
+                      POST /telegram/enviar há 0 s
+LENTA: POST /api/atualizaspbotao/executar — 138,3 s
+LENTA: POST /api/processarnovasp/executar — 167,3 s
+```
+
+E, em seguida: *"essa fila tardia tá fudendo tudo."*
+
+**Por que o limite de quantidade (entregue em 12/11) não resolveu:** ele limitou
+os *adiados*, mas a passada faz muito mais que isso. Ela também zera o atraso,
+dispensa aviso vencido e drena a fila de falhas em quatro etapas — cerca de
+**seis leituras da aba de controle** e **dezenas de chamadas de rede**, tudo
+dentro de **uma** requisição. Cada pedaço é pequeno; a soma é que segurava a
+linha. Eu tinha contado os itens e não o relógio.
+
+**O que ficou:**
+
+- **Teto de tempo de 40 s para a requisição inteira** (`ORCAMENTO_SEG`). Cada
+  etapa e cada item olham o relógio; o que não couber fica para o disparo
+  seguinte, cinco minutos depois. A fila existe exatamente para isso.
+- **O prazo é passado adiante** para a drenagem: parar *entre* etapas não basta,
+  porque uma etapa sozinha pode levar minutos.
+- **1 adiado por disparo** (era 2): cada um carrega a SPsBD inteira, e dois já
+  estouram o orçamento.
+- **Limites da drenagem de 15/15/15/10 para 8/8/8/5.**
+- **Chave geral `BAIXABRADESCO_CARONA=0`**, no Render: desliga a carona sem
+  publicar nada e sem mexer no cron. Existe porque ele precisava de um
+  interruptor NA HORA, e publicar é uma ida e volta.
+- **`BAIXABRADESCO_ORCAMENTO_SEG`** aperta o teto pelo ambiente; `0` numa chamada
+  à mão desliga (para drenar tudo de uma vez quando alguém está olhando).
+
+**⚠️ O que esta entrega NÃO resolve, e é importante não vender como resolvido:**
+
+1. **`/api/baixabradesco/executar` levou 162 s** — é o processamento do
+   comprovante em si, não a fila tardia. O custo é a carga da SPsBD (`A:AK`,
+   ~52 mil linhas) a cada chamada. É a causa de fundo, já anotada em 12/11, e
+   continua de pé.
+2. **`atualizaspbotao` (138 s) e `processarnovasp` (167 s) NÃO são desta área.**
+   Nos registros dele, metade das linhas ocupadas é desses dois. Mesmo com a
+   fila tardia comportada, eles seguem tomando o serviço. O `[omie]
+   AlterarContaPagar falhou com Client-103` dos registros também é do
+   `atualizaspbotao`. Isso precisa de outro chat.
+
+**Verificado:** 24 testes de cron (9 novos sobre o teto de tempo e a chave
+geral), área inteira passando, aplicação subindo. Suíte completa: 2 falhas, as
+duas por biblioteca ausente neste ambiente.
+**Não verificado:** o efeito em produção. O sinal é a linha
+`processar-fila-tardia` sumir dos registros de requisições lentas.

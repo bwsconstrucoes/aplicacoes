@@ -446,7 +446,9 @@ Eram três defeitos somados, e cada um multiplicava o outro:
 
 | Defeito | Por que derrubava | O limite que ficou |
 |---|---|---|
-| o laço não tinha limite | um disparo reprocessava **todos** os adiados numa requisição, e cada um custa a carga inteira da SPsBD (A:AK, ~52 mil linhas) | **2 por disparo** (`LIMITE_POR_DISPARO`) |
+| a soma das etapas de carona segurava uma linha por minutos | a passada também **zera o atraso, dispensa aviso vencido e drena a fila em 4 etapas**: ~6 leituras da aba de controle e dezenas de chamadas de rede. Em 13/11/2026 um disparo ficou **283 s** no ar | **teto de TEMPO de 40 s** para a requisição inteira (`ORCAMENTO_SEG`); o que não couber fica para o disparo seguinte |
+| não havia como desligar sem publicar | — | **`BAIXABRADESCO_CARONA=0`** no Render desliga a carona na hora; `BAIXABRADESCO_ORCAMENTO_SEG` aperta o teto |
+| o laço não tinha limite | um disparo reprocessava **todos** os adiados numa requisição, e cada um custa a carga inteira da SPsBD (A:AK, ~52 mil linhas) | **1 por disparo** (`LIMITE_POR_DISPARO`) |
 | nada impedia disparos sobrepostos | o cron dispara de 5 em 5 minutos; passada mais lenta que isso fazia a seguinte começar junto, lendo os mesmos arquivos e refazendo o mesmo trabalho — com 4 linhas de atendimento, duas ou três sobrepostas tomam o serviço | **uma passada por vez**, com marca que expira em 15 min se o serviço reiniciar no meio |
 | o mesmo comprovante reenviado entrava várias vezes | reenviar durante a crise de cota criava um arquivo novo a cada envio, e todos eram processados | **impressão digital do pedido na entrada** |
 | — | adiado de dias atrás já foi reenviado ou resolvido na mão | **descarte acima de 2 dias** (`IDADE_MAXIMA_DIAS`) |

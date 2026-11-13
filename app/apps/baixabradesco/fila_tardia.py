@@ -54,7 +54,7 @@ MAX_TENTATIVAS = 10
 # Quantos adiados uma passada processa. Baixo de propósito: o cron dispara de 5
 # em 5 minutos, então 2 por passada são ~24 por hora, e a requisição termina
 # rápido em vez de segurar uma das quatro linhas do serviço.
-LIMITE_POR_DISPARO = 2
+LIMITE_POR_DISPARO = 1
 
 # Marca de "tem passada rodando". Sem isso, disparos se sobrepõem.
 LOCK_NOME = '_em_execucao.lock'
@@ -67,6 +67,22 @@ LOCK_VALIDADE_MIN = 15
 # Adiado mais velho que isto quase certamente já foi reenviado ou resolvido na
 # mão. Insistir nele é o "fazer de novo uma coisa que já foi feita".
 IDADE_MAXIMA_DIAS = 2
+
+# ⚠️ TETO DE TEMPO para a requisição inteira do cron. Registros de produção em
+# 13/11/2026, mandados pelo dono:
+#
+#   AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 223 s
+#
+# Limitar a QUANTIDADE não bastou, e o motivo é que uma passada faz muito mais
+# que processar adiados: ela também zera o atraso, dispensa aviso vencido e
+# drena a fila de falhas em quatro etapas — ou seja, cerca de SEIS leituras da
+# aba de controle e até 55 chamadas de rede, mais a carga da SPsBD por adiado.
+# Cada pedaço é pequeno; a soma é que segurava uma das quatro linhas por
+# minutos, e com isso derrubava quem estava usando a tela.
+#
+# O que não couber no orçamento fica para o disparo seguinte, cinco minutos
+# depois. A fila existe exatamente para isso.
+ORCAMENTO_SEG = 40
 
 
 def _garantir_dir():
@@ -213,7 +229,7 @@ def adiar_payload(payload: dict, erro: str) -> dict:
 # ~180 itens por hora sem encostar na cota do Google, que é compartilhada com o
 # ERP e o painel. A ORDEM mora em `fila.ORDEM_ETAPAS`, num lugar só, porque os
 # dois caminhos automáticos já divergiram uma vez.
-LIMITES_CRON = {'omie': 15, 'sheets': 15, 'pipefy': 15, 'zapi': 10}
+LIMITES_CRON = {'omie': 8, 'sheets': 8, 'pipefy': 8, 'zapi': 5}
 
 # ── Mutirão único: zerar o que ficou para trás ────────────────────────────────
 #
@@ -447,14 +463,27 @@ def processar_fila_tardia(payload: dict | None = None) -> dict:
         _soltar_lock()
 
 
+def _acabou_o_tempo(prazo_ate: float) -> bool:
+    return bool(prazo_ate) and time.time() > prazo_ate
+
+
 def _processar_adiados(payload, resultados, descartados_por_idade) -> dict:
     from .core import processar_baixabradesco
 
     limite = int(payload.get('limite_adiados') or LIMITE_POR_DISPARO)
+    bruto = payload.get('orcamento_seg')
+    if bruto is None or bruto == '':
+        bruto = os.getenv('BAIXABRADESCO_ORCAMENTO_SEG', '') or ORCAMENTO_SEG
+    try:
+        orcamento = float(bruto)   # 0 desliga o teto (chamada à mão)
+    except Exception:
+        orcamento = ORCAMENTO_SEG
+    comecou = time.time()
+    prazo_ate = comecou + orcamento if orcamento > 0 else 0
     feitos = 0
 
     for nome in _listar():
-        if feitos >= limite:
+        if feitos >= limite or _acabou_o_tempo(prazo_ate):
             break
         caminho = os.path.join(FILA_DIR, nome)
         try:
@@ -498,29 +527,54 @@ def _processar_adiados(payload, resultados, descartados_por_idade) -> dict:
                 break  # quota estourada de novo — tenta no próximo cron
 
     pendentes = len(_listar())
-    return {
+    saida = {
         'ok': True,
         'app': 'baixabradesco',
         'processados': resultados,
         'descartados_por_idade': descartados_por_idade,
         'limite_por_disparo': limite,
         'pendentes': pendentes,
-        'em_portugues': (
-            f'{len(resultados)} adiado(s) processados nesta passada'
-            + (f', {len(descartados_por_idade)} descartados por serem antigos'
-               if descartados_por_idade else '')
-            + f'. Ainda esperando: {pendentes}.'),
-        # O cron já roda de 5 em 5 minutos e já está autenticado: a fila de
-        # falhas pega carona nele. Antes ela só andava se alguém chamasse a rota
-        # à mão — e, pelos números de 08/10/2026 (2.269 linhas, nenhuma
-        # concluída, a mais antiga de 18/06/2026), nunca ninguém chamou.
-        # A ORDEM importa: zerar primeiro, drenar depois. Senão a drenagem
-        # gastaria a passada inteira nas linhas antigas que vão ser dispensadas
-        # dois segundos mais tarde.
-        'atraso_zerado': _zerar_atraso_uma_vez(payload),
-        # Aviso que passou do prazo nunca mais vai ser enviado: deixá-lo
-        # PENDENTE era um limbo que travava a contagem em 121 pendências que
-        # jamais andariam (números do dono em 08/10/2026).
-        'avisos_vencidos': _dispensar_avisos_vencidos(payload),
-        'fila_de_falhas': _drenar_a_fila(payload),
     }
+
+    # ⚠️ Daqui para baixo, TUDO é opcional e respeita o orçamento de tempo.
+    # O cron já roda de 5 em 5 minutos e já está autenticado, então a fila de
+    # falhas pega carona nele — mas carona não pode virar o passageiro
+    # principal. O que não couber fica para o disparo seguinte.
+    #
+    # A ORDEM importa: zerar primeiro, drenar depois. Senão a drenagem gastaria
+    # a passada nas linhas antigas que vão ser dispensadas dois segundos depois.
+    etapas = (
+        ('atraso_zerado', _zerar_atraso_uma_vez),
+        ('avisos_vencidos', _dispensar_avisos_vencidos),
+        ('fila_de_falhas', _drenar_a_fila),
+    )
+    pulou = []
+
+    # ⚠️ CHAVE GERAL. Com `BAIXABRADESCO_CARONA=0` no Render, a passada só
+    # processa os adiados e não encosta na fila de falhas — sem publicar nada,
+    # sem mexer no cron. Existe porque em 13/11/2026 a soma dessas etapas estava
+    # segurando uma das quatro linhas de atendimento por minutos, e o dono
+    # precisava de um jeito de desligar NA HORA, não depois de uma publicação.
+    if os.getenv('BAIXABRADESCO_CARONA', '1').strip().lower() in ('0', 'nao', 'não', 'false', 'off'):
+        saida['carona_desligada'] = True
+        pulou = [chave for chave, _ in etapas]
+        etapas = ()
+    for chave, funcao in etapas:
+        if _acabou_o_tempo(prazo_ate):
+            pulou.append(chave)
+            continue
+        saida[chave] = funcao(dict(payload, prazo_ate=prazo_ate))
+
+    gastou = round(time.time() - comecou, 1)
+    saida['segundos'] = gastou
+    saida['orcamento_seg'] = orcamento
+    saida['etapas_puladas_por_tempo'] = pulou
+    saida['em_portugues'] = (
+        f'{len(resultados)} adiado(s) processados nesta passada'
+        + (f', {len(descartados_por_idade)} descartados por serem antigos'
+           if descartados_por_idade else '')
+        + f'. Ainda esperando: {pendentes}. Levou {gastou}s'
+        + (f' e deixou {len(pulou)} etapa(s) para o próximo disparo, para não'
+           ' segurar uma das linhas de atendimento do serviço.'
+           if pulou else ' — dentro do orçamento de tempo.'))
+    return saida
