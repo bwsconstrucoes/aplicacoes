@@ -140,6 +140,7 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 | Emissão de NFS-e | `app/apps/emissaonf/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §9 — e o aviso de risco logo abaixo desta tabela | `HISTORICO.md` |
 | Ponto eletrônico (REP-P) | `app/apps/ponto/` | `README.md`, `HISTORICO.md`, `PLANO.md`, `CONTEXTO.md` §5.13 e §9 | `HISTORICO.md` |
 | ValidaSP (validação de SP, chamada pelo Make) | `app/apps/validasp/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.7 | `HISTORICO.md` |
+| AtualizaSPBotão (botão do Pipefy → Make → planilhas + Omie) | `app/apps/atualizaspbotao/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Mensageria (tela ERP › Mensagens, `notificador.py`, bot Telegram, chatbot WhatsApp) | `app/apps/mensageria/` (código e memória); mais `notificador.py`, `telegram/`, `chatbot/` | `README.md`, `HISTORICO.md` (na pasta `mensageria/`), `CONTEXTO.md` §4.4, §5.8 e §9 | `mensageria/HISTORICO.md` |
 
 **Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a
@@ -209,7 +210,7 @@ histórico **perdeu** o que aprendeu — o chat não é memória, o repositório
 **Mensagem de abertura** que o dono usa num chat novo (basta trocar a área):
 
 > Trabalhe na área **[ERP / Painel OMIE / Análise de SPs / BaixaBradesco /
-> Emissão de NFS-e / Ponto eletrônico / Mensageria]** deste repositório.
+> Emissão de NFS-e / Ponto eletrônico / Mensageria / AtualizaSPBotão]** deste repositório.
 > Leia o `CLAUDE.md` e os arquivos da área indicados nele, me diga em que pé o
 > trabalho está e o que consta como pendente, e confirme comigo antes de
 > começar. Não mexa nas outras áreas. Trabalhe no seu ramo e me pergunte antes

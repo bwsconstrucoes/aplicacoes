@@ -85,8 +85,11 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
 
     if ok_spsbd:
         acao_spsbd = "atualizado" if modo_spsbd == 'update' else "registrado"
-        acao_log   = "atualizado" if modo_log == 'update' else "registrado"
-        linha_bd   = f"✅ Banco de dados {acao_spsbd} e log {acao_log} com sucesso."
+        if modo_log == 'desativado':
+            linha_bd = f"✅ Banco de dados {acao_spsbd} com sucesso."
+        else:
+            acao_log = "atualizado" if modo_log == 'update' else "registrado"
+            linha_bd = f"✅ Banco de dados {acao_spsbd} e log {acao_log} com sucesso."
     else:
         linha_bd   = "⚠️ Houve um problema ao atualizar o banco de dados interno."
 

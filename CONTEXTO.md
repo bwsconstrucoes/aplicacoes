@@ -802,6 +802,14 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 13/11/2026 — AtualizaSPBotão: memória própria e aba Log desligada (atravessa áreas)
+
+`app/apps/atualizaspbotao/` entrou na tabela de áreas do `CLAUDE.md`, com
+`README.md` e `HISTORICO.md`. No mesmo ramo, a pedido do dono, o botão deixou de
+escrever na aba `Log` da Registros de SP (`CONFIG['LOG_ATIVO']`). SP nova
+continua no Log pelo `processarnovasp`; o que some é a atualização de SP já
+existente — e, por tabela, nas cópias que o `sync_logs` faz da aba.
+
 ### 12/11/2026 — o "processar nova SP" do Make passa a rodar UM POR VEZ
 
 O dono: *"tá super lento"*, com o log do Render mostrando as 4 linhas de
