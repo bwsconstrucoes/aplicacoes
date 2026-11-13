@@ -4495,10 +4495,11 @@ def api_importar_pipefy_cadastro():
                 s, so_ativos=bool(d.get("so_ativos", True)),
                 obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
                 teto=teto))
-            if not quantos:
-                return jsonify({"ok": False, "erro": (
-                    "Nenhuma pessoa com número de card do Pipefy nesse "
-                    "filtro.")}), 400
+            # ⚑ ZERO NÃO É MAIS RECUSA. Até 13/11/2026 isto respondia "nenhuma
+            # pessoa com número de card nesse filtro" — e não havia onde
+            # digitar o número, então o botão não tinha como funcionar nunca.
+            # Agora o trabalho começa justamente por achar os cards: varre o
+            # pipe e casa pelo CPF.
             t = tarefas.enfileirar(
                 s, "importar_cadastro_pipefy",
                 {"simular": not gravar,
@@ -4506,8 +4507,10 @@ def api_importar_pipefy_cadastro():
                  "obra_id": (int(d["obra_id"]) if d.get("obra_id") else None),
                  "teto_de_pessoas": teto,
                  "usuario_id": usuario.id if usuario else None},
-                rotulo=("Conferir sem gravar: " if not gravar
-                        else "Trazer do Pipefy: ") + f"{quantos} pessoa(s)",
+                rotulo=(("Conferir sem gravar: " if not gravar
+                         else "Trazer do Pipefy: ")
+                        + (f"{quantos} pessoa(s)" if quantos
+                           else "achar as pessoas pelo CPF")),
                 usuario=usuario)
             linha = tarefas.ler(s, t.id)
             s.commit()
