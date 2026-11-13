@@ -520,6 +520,8 @@ Flags do `/compilar` (payload): `attachments`/`links`, `nome_arquivo`, `destino`
 `texto` — economiza memória/banda; adicionado 2026-07-14).
 Downloads por URL têm teto de 50 MB (`MAX_DOWNLOAD_BYTES` no módulo) — arquivo
 maior é ignorado com log `❌ Ignorado (excede ...)`.
+A resposta traz, desde 13/11/2026, o campo `ignorados` (o que ficou de fora e por quê).
+Detalhe do que entra e do que sai: `app/apps/pdf_processor/README.md`.
 
 ### 5.3 Encurtador (sem prefixo)
 
@@ -801,6 +803,21 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 13/11/2026 — PDF Processor: memória própria e o `/compilar` mais leve (atravessa áreas)
+
+`app/apps/pdf_processor/` entrou na tabela de áreas do `CLAUDE.md`, com
+`README.md` e `HISTORICO.md` (medições e lista de melhorias lá). No mesmo ramo,
+com o "pode" do dono e a condição dele — **nada que exija mexer em cenário do
+Make**: foto entra no PDF sem ser redesenhada (medido: 1,9 s → 0,09 s por foto,
+memória a menos da metade, arquivo 1/3 do tamanho); PDF protegido que abre sem
+senha (comprovante de banco) mantém as páginas originais em vez de virar imagem
+ruim; download ganhou prazo total de 120 s e a renovação do acesso ao Dropbox,
+30 s; a resposta ganhou o campo `ignorados` (acrescentado — `status`, `file`,
+`link` e `results` não mudaram). Testes em `tests/test_pdf_processor.py`, os
+primeiros do módulo. Fecha, pelo lado do `pdf_processor`, o "ainda em aberto"
+de 15/10/2026 no que dá sem o Make; ficou de fora o limite de compilações
+simultâneas (ver o `HISTORICO.md` da área).
 
 ### 13/11/2026 — AtualizaSPBotão: memória própria e aba Log desligada (atravessa áreas)
 

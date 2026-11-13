@@ -23,14 +23,21 @@ DROPBOX_TOKEN_EXPIRATION = 0
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
-def _baixar_para_bio(url, limite=MAX_DOWNLOAD_BYTES):
-    """Baixa uma URL em streaming, com timeout e teto de tamanho.
-    Evita puxar o arquivo inteiro pra RAM de uma vez e barra downloads gigantes.
-    Retorna (bio, content_type) ou (None, None) em caso de falha/estouro."""
+# Prazo TOTAL de um download. O timeout do requests vale por trecho recebido, não
+# pela soma: um servidor que manda devagar segurava a linha de atendimento sem
+# limite (o serviço tem 1 processo e 4 linhas — ver app/lentidao.py).
+PRAZO_DOWNLOAD_S = 120
+
+
+def _baixar(url, limite=MAX_DOWNLOAD_BYTES, prazo=PRAZO_DOWNLOAD_S):
+    """Baixa uma URL em streaming, com teto de tamanho e prazo total.
+    Retorna (bio, content_type, motivo): em caso de falha, bio é None e motivo
+    diz, em português, por que o arquivo ficou de fora."""
+    inicio = time.monotonic()
     try:
-        with requests.get(url, stream=True, timeout=60) as r:
+        with requests.get(url, stream=True, timeout=(10, 60)) as r:
             if r.status_code != 200:
-                return None, None
+                return None, None, f"o endereço respondeu {r.status_code} ao baixar"
             content_type = r.headers.get("Content-Type", "")
             buf = BytesIO()
             total = 0
@@ -40,13 +47,77 @@ def _baixar_para_bio(url, limite=MAX_DOWNLOAD_BYTES):
                 total += len(chunk)
                 if total > limite:
                     print(f"❌ Ignorado (excede {limite} bytes): {url}")
-                    return None, None
+                    return None, None, f"arquivo maior que {limite // (1024 * 1024)} MB"
+                if time.monotonic() - inicio > prazo:
+                    print(f"❌ Ignorado (download passou de {prazo} s): {url}")
+                    return None, None, f"o download passou de {prazo} segundos"
                 buf.write(chunk)
             buf.seek(0)
-            return buf, content_type
+            return buf, content_type, None
     except Exception as e:
         print(f"❌ Erro ao baixar {url}: {e}")
-        return None, None
+        return None, None, "não foi possível baixar o arquivo"
+
+
+def _baixar_para_bio(url, limite=MAX_DOWNLOAD_BYTES):
+    """Como _baixar, sem o motivo. Retorna (bio, content_type) ou (None, None)."""
+    bio, content_type, _motivo = _baixar(url, limite)
+    return bio, content_type
+
+
+def _e_foto(bio):
+    """True se o conteúdo começa como JPEG ou PNG (olha os primeiros bytes)."""
+    bio.seek(0)
+    inicio = bio.read(8)
+    bio.seek(0)
+    return inicio[:3] == b"\xff\xd8\xff" or inicio == b"\x89PNG\r\n\x1a\n"
+
+
+def _foto_para_pdf(dados):
+    """Põe a foto numa página de PDF SEM redesenhá-la: a imagem entra como veio
+    (mesma qualidade, mesmo tamanho em bytes), numa página que cabe em A4.
+    Antes a foto era desenhada de novo e regravada em PNG: ~2 s e ~100 MB por
+    foto, arquivo 3x maior e página do tamanho de um cartaz.
+    A rotação marcada pelo celular é respeitada (conferido contra o caminho antigo)."""
+    foto = origem = saida = None
+    try:
+        foto = fitz.open(stream=dados, filetype="png" if dados[:4] == b"\x89PNG" else "jpeg")
+        origem = fitz.open("pdf", foto.convert_to_pdf())
+        r = origem[0].rect
+        lado_a, lado_b = (595, 842) if r.height >= r.width else (842, 595)  # A4 em pé ou deitado
+        escala = min(lado_a / r.width, lado_b / r.height)
+        saida = fitz.open()
+        pagina = saida.new_page(width=r.width * escala, height=r.height * escala)
+        pagina.show_pdf_page(pagina.rect, origem, 0)
+        return saida.tobytes()
+    finally:
+        for doc in (foto, origem, saida):
+            if doc is not None:
+                doc.close()
+
+
+class _PedeSenha(Exception):
+    """O PDF só abre com senha: não há o que fazer com ele."""
+
+
+def _reabrir_pelo_fitz(dados):
+    """Segunda tentativa para o PDF que o PyPDF2 não abre ou que vem protegido.
+    O caso comum é o comprovante de banco: abre sem senha, mas tem trava de
+    edição. Devolve o mesmo PDF regravado sem a trava, com as páginas ORIGINAIS
+    (texto e nitidez preservados). Antes, esse arquivo era desenhado em baixa
+    resolução: ficava ~90x maior, sem texto e pior de ler.
+    Levanta _PedeSenha se ele pede senha para abrir, e ValueError se não é PDF."""
+    doc = None
+    try:
+        doc = fitz.open(stream=dados, filetype="pdf")
+        if not doc.is_pdf:
+            raise ValueError("não é PDF")
+        if doc.needs_pass:
+            raise _PedeSenha()
+        return doc.tobytes(encryption=fitz.PDF_ENCRYPT_NONE)
+    finally:
+        if doc is not None:
+            doc.close()
 
 
 def get_dropbox_client():
@@ -62,7 +133,7 @@ def refresh_dropbox_token():
         "refresh_token": DROPBOX_REFRESH_TOKEN,
         "client_id": DROPBOX_APP_KEY,
         "client_secret": DROPBOX_APP_SECRET,
-    })
+    }, timeout=30)  # sem prazo, um Dropbox travado prendia a linha de atendimento para sempre
     resp.raise_for_status()
     data = resp.json()
     DROPBOX_TOKEN = data["access_token"]
@@ -140,16 +211,19 @@ def compilar():
             items.append({"filename": fn, "hex": att["data"]})
 
     results = []
+    ignorados = []  # o que ficou de fora e por quê — campo NOVO na resposta; os antigos não mudam
     full_writer = PdfWriter()
     for item in items:
         bio = None
         filename = item.get("filename", "arquivo")
         if item.get("url"):
-            bio, content_type = _baixar_para_bio(item["url"])
+            bio, content_type, motivo = _baixar(item["url"])
             if not bio:
+                ignorados.append({"filename": filename, "motivo": motivo})
                 continue
             if not ('pdf' in content_type or 'image' in content_type or 'octet-stream' in content_type):
                 bio = None
+                ignorados.append({"filename": filename, "motivo": "o endereço não devolveu PDF nem imagem"})
                 continue
         elif item.get("base64"):
             try:
@@ -157,6 +231,7 @@ def compilar():
                 item["base64"] = None  # solta a string base64 original (dobrava a memória)
             except Exception:
                 print(f"❌ Ignorado (base64 inválido): {filename}")
+                ignorados.append({"filename": filename, "motivo": "conteúdo base64 inválido"})
                 continue
         elif item.get("hex"):
             try:
@@ -164,18 +239,57 @@ def compilar():
                 item["hex"] = None
             except Exception:
                 print(f"❌ Ignorado (hex inválido): {filename}")
+                ignorados.append({"filename": filename, "motivo": "conteúdo hexadecimal inválido"})
                 continue
 
         if not bio:
             print(f"❌ Ignorado (conteúdo vazio): {filename}")
+            ignorados.append({"filename": filename, "motivo": "conteúdo vazio"})
             continue
 
+        adicionadas = 0  # páginas deste arquivo que já entraram no PDF final
         try:
-            reader = PdfReader(bio)
-            for p in reader.pages:
+            if _e_foto(bio):
+                reader = PdfReader(BytesIO(_foto_para_pdf(bio.getvalue())))
+                ler_texto = False  # foto não tem texto para ler
+            else:
+                ler_texto = incluir_texto
+                try:
+                    reader = PdfReader(bio)
+                    protegido = reader.is_encrypted
+                except Exception:
+                    reader, protegido = None, True  # o PyPDF2 nem abriu (ex.: proteção AES)
+                if protegido:
+                    reader = PdfReader(BytesIO(_reabrir_pelo_fitz(bio.getvalue())))
+            paginas = list(reader.pages)  # lê a lista inteira ANTES de copiar a primeira
+            for p in paginas:
                 full_writer.add_page(p)
-            texto = [pg.extract_text() or "" for pg in reader.pages] if incluir_texto else []
-        except Exception:
+                adicionadas += 1
+            texto = []
+            if ler_texto:
+                for pg in paginas:
+                    # Falha ao ler o texto de uma página não derruba o arquivo: as páginas já
+                    # entraram. Antes, essa falha mandava o arquivo para o caminho de baixo e
+                    # as mesmas páginas entravam de novo, como imagem.
+                    try:
+                        texto.append(pg.extract_text() or "")
+                    except Exception:
+                        texto.append("")
+            elif incluir_texto:
+                texto = [""] * len(paginas)
+        except Exception as erro:
+            if isinstance(erro, _PedeSenha):
+                print(f"❌ Ignorado (PDF pede senha): {filename}")
+                ignorados.append({"filename": filename, "motivo": "o PDF pede senha para abrir"})
+                continue
+            if adicionadas:
+                # parte das páginas já entrou; redesenhar o arquivo aqui as duplicaria
+                print(f"⚠️ Arquivo entrou pela metade ({adicionadas} página(s)): {filename}")
+                results.append({"filename": filename, "texto": [""] * adicionadas if incluir_texto else []})
+                ignorados.append({"filename": filename, "motivo": f"só {adicionadas} página(s) puderam ser lidas"})
+                continue
+            # Último recurso, igual ao que sempre existiu: desenha cada página como imagem.
+            # Serve para o PDF com defeito que o PyPDF2 não abre e para imagem que não é JPEG/PNG.
             doc = None
             try:
                 bio.seek(0)
@@ -199,6 +313,7 @@ def compilar():
                     texto.append("")
             except Exception:
                 print(f"❌ Ignorado (não é PDF nem imagem): {filename}")
+                ignorados.append({"filename": filename, "motivo": "não é PDF nem imagem (ou está corrompido)"})
                 continue
             finally:
                 if doc is not None:
@@ -224,7 +339,8 @@ def compilar():
     del full_writer, out
     gc.collect()
 
-    return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results})
+    # "ignorados" é campo acrescentado em 13/11/2026; status, file, link e results seguem como sempre foram.
+    return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results, "ignorados": ignorados})
 
 @bp.route('/pdf2texto', methods=['POST'])
 def pdf2texto():

@@ -52,6 +52,9 @@ passou disso, é pulado. Arquivo embutido (`attachments`) **não tem teto**.
   "link": "https://www.dropbox.com/...",
   "results": [
     {"filename": "nota.pdf", "texto": ["texto da página 1", "texto da página 2"]}
+  ],
+  "ignorados": [
+    {"filename": "planilha.xlsx", "motivo": "não é PDF nem imagem (ou está corrompido)"}
   ]
 }
 ```
@@ -63,9 +66,12 @@ cenário lá**:
   resultado `filename` e `texto`.
 - **`texto` é uma lista, uma posição por página.** Vem vazia (`[]`) com
   `incluir_texto: false`, e com textos vazios (`""`) para foto e PDF escaneado.
-- **`results` só traz o que deu certo.** Arquivo pulado some da lista sem aviso
-  — a posição dos seguintes anda. Se o Make pega "o 2º resultado", pega o
-  arquivo errado quando o 1º falha.
+- **`results` só traz o que deu certo.** Arquivo pulado não entra nela — a
+  posição dos seguintes anda. Se o Make pega "o 2º resultado", pega o arquivo
+  errado quando o 1º falha.
+- **`ignorados`** (acrescentado em 13/11/2026) lista o que ficou de fora e o
+  motivo. O Make ainda não usa; está ali para quando alguém quiser avisar
+  "faltou o anexo X".
 - **`link`** é `null` quando `salvar` é `false`.
 - **O código de resposta é sempre 200**, mesmo quando nenhum arquivo foi
   aproveitado (aí o PDF enviado sai vazio). Só vira erro 500 — com página de
@@ -77,19 +83,24 @@ cenário lá**:
 Mudança segura é **acrescentar** campo. Tirar, renomear ou mudar o tipo de um
 campo existente só com o cenário do Make aberto ao lado.
 
-## O que acontece com cada tipo de arquivo (medido em 13/11/2026)
+## O que acontece com cada tipo de arquivo (desde 13/11/2026)
 
 | Entra | Sai |
 |---|---|
-| PDF comum | As mesmas páginas, intactas. Rápido. |
+| PDF comum | As mesmas páginas, intactas. |
 | PDF escaneado | As mesmas páginas, intactas; `texto` vazio. |
-| Foto solta (JPG/PNG) | Vira página — mas é redesenhada: demora ~2 s por foto, o arquivo sai ~3× maior e a página fica com tamanho de cartaz. |
-| PDF protegido (abre sem senha, mas tem trava de edição — comum em comprovante de banco) | As páginas viram **imagem de baixa resolução**: perde o texto, fica ~90× maior e pior de ler. |
+| Foto solta (JPG/PNG) | Uma página do tamanho de uma folha A4 (em pé ou deitada, conforme a foto), com a foto como veio — mesma qualidade, mesmo peso. |
+| PDF protegido (abre sem senha, mas tem trava de edição — comum em comprovante de banco) | As páginas originais, com texto. O PDF final sai sem a trava. |
 | PDF que pede senha para abrir | Pulado. |
+| PDF com defeito, ou imagem que não é JPG/PNG | Último recurso: cada página é redesenhada como imagem (mais lento, mais pesado, sem texto). |
 | Qualquer outra coisa (Word, Excel, arquivo corrompido) | Pulado. |
 
-"Pulado" quer dizer: uma linha `❌ Ignorado (...)` no log do Render e nada na
-resposta.
+"Pulado" quer dizer: uma linha `❌ Ignorado (...)` no log do Render, uma entrada
+em `ignorados` na resposta e nada em `results`.
+
+**Prazos:** cada download tem 120 s no total (`PRAZO_DOWNLOAD_S`); a renovação do
+acesso ao Dropbox, 30 s. Passou, o arquivo é pulado (download) ou o pedido dá
+erro (Dropbox) — em vez de segurar a linha de atendimento sem limite.
 
 ## `/pdf2texto`
 
@@ -127,5 +138,7 @@ outro). Sem arquivo nenhum no pedido, responde 400 com `{"erro": ...}`.
 - O servidor tem 1 processo e 4 linhas de atendimento. Uma compilação segura uma
   linha do começo ao fim, incluindo a espera pelo Dropbox. Quatro juntas param
   o ERP, o ponto e todo o resto (`app/lentidao.py`).
-- **Não há teste automatizado do módulo** (em 13/11/2026). Antes de mudar o
-  comportamento, escrever o teste que trava o formato da resposta.
+- Os testes estão em `tests/test_pdf_processor.py` e travam o formato da
+  resposta e o tratamento de cada tipo de arquivo. Rodar só eles basta para
+  mudança dentro do módulo. Não cobrem o `/pdf2texto` nem o envio de verdade ao
+  Dropbox/Drive.
