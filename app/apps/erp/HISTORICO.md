@@ -21,6 +21,50 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 — A IMPORTAÇÃO DO PIPEFY PEDIA UM NÚMERO QUE NÃO EXISTIA
+
+Ele, na primeira vez que usou a tela:
+
+> *"Eu clico em conferir sem gravar e dá uma mensagem lá em cima: nenhuma
+> pessoa com número de card do Pipefy nesse filtro. E onde é que eu coloco os
+> números do card se não tem campo?"*
+
+**Tinha razão, e o defeito era meu, de desenho.** Eu construí a importação
+assumindo que `colaboradores.ref_pipefy` já estava preenchido em produção.
+**Não estava** — e, como a tela não tinha onde digitar o número, o botão
+**não tinha como funcionar nunca**. A recusa dava a entender que faltava um
+filtro; o que faltava era o dado inteiro.
+
+⚑ **E a resposta certa não era criar o campo.** O card tem o CPF, o cadastro
+tem o CPF: quem casa os dois é o sistema. Ninguém digita 3.664 números — e um
+número digitado errado colaria os documentos de uma pessoa na ficha de outra.
+
+**Como ficou:** quando ninguém tem card, a primeira rodada **varre o pipe**
+(50 por página, a mesma paginação do `scripts/exportar_pipefy.py`, trazendo só
+o CPF de cada card), casa pelo CPF e **grava o número do card** em quem
+casou — então a segunda rodada não varre nada. O número do card virou
+**resultado** da importação, não requisito dela.
+
+**Três casos que NÃO entram, e aparecem no relatório em vez de sumir:**
+
+- **card sem CPF** — não há por onde casar;
+- **card de quem não está no ERP** — a importação não cria pessoa (decisão de
+  antes, mantida); fica a lista para alguém cadastrar;
+- ⚑ **dois cards para o mesmo CPF** — e aqui a recusa é deliberada: escolher um
+  dos dois seria adivinhar qual é o cadastro bom, e o errado colaria os
+  documentos de um período na ficha do outro.
+
+**A tela também mentia por omissão:** dizia "0 pessoa(s) com número de card" e
+oferecia o botão assim mesmo. Agora, quando ninguém tem card, ela explica que
+**não é preciso digitar nenhum** e que a primeira rodada serve justamente para
+achar as pessoas.
+
+⚑ **A LIÇÃO, porque ela não é só desta tela:** eu construí uma tela inteira,
+com 17 testes verdes, em cima de uma suposição sobre o estado da PRODUÇÃO que
+eu nunca pude conferir daqui — e os testes não pegam isso, porque o mundo de
+teste eu mesmo preencho. Funcionalidade que depende de dado já existente
+precisa perguntar antes: *esse dado existe mesmo, hoje, lá?*
+
 ### ✔️ 13/11/2026 — a junção do Ponto NÃO desfez o campo único de empresa (conferido)
 
 Os dois chats mexeram na MESMA tela (`erp_colaboradores.html`) na mesma
