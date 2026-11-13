@@ -7,7 +7,10 @@ encerrar. O que o módulo faz está no `README.md`.
 
 1. **Publicar o desligamento do Log** (13/11/2026, botão e SP nova) — espera o
    "pode".
-2. **As planilhas "Análises de Pagamentos" ainda são usadas?** E os agendamentos
+2. **Agendamento do `sync_logs` confirmado ativo** (13/11/2026: o dono mostrou
+   o cron-job.org chamando `aplicacoes.bwsconstrucoes.com.br/api/sync_logs/incremental`).
+   Cada chamada lê a aba Log INTEIRA (A:AG) — com o Log congelado, é leitura
+   pesada à toa a cada 30 s. **As planilhas "Análises de Pagamentos" ainda são usadas?** E os agendamentos
    do `sync_logs` (cron-job.org) ainda estão ligados? Com o Log congelado, a
    cópia não traz mais nada novo — se ninguém usa, desligar os agendamentos.
 3. **Saber o que o dono quer mudar no botão.** Já se sabe que o "do Render" é
