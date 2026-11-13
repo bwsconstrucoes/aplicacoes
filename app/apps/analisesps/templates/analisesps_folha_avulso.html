@@ -170,26 +170,36 @@
    duplicado e não tinha nenhum alerta (…) precisa ser um alerta bem vistoso"*.
    A 1ª vez vem marcada; as seguintes, desmarcadas. #}
 {% if resultado and resultado.repetidos %}
-  <div class="aviso erro aviso-repetidos" role="alert">
-    <b>⚠ {{ resultado.repetidos|length }} pessoa(s) aparece(m) MAIS DE UMA VEZ nesta lista.</b>
-    Confira se é erro ou se é para pagar assim. A 1ª vez vem marcada; as
-    repetidas vêm <b>desmarcadas</b> — marque só se for para pagar de novo.
-    Marcadas juntas, no arquivo viram um pagamento só, somando.
+  {# 13/11/2026: a mesma pessoa em OBRAS DIFERENTES é rateio (todas marcadas, aviso
+     amarelo); na MESMA obra, provável duplicidade (só a 1ª marcada, aviso vermelho). #}
+  {% set rateios = resultado.repetidos|selectattr('rateio')|list %}
+  {% set duplicados = resultado.repetidos|rejectattr('rateio')|list %}
+  {% for grupo, classe, titulo, explica in [
+       (duplicados, 'erro', 'aparece(m) MAIS DE UMA VEZ nesta lista',
+        'Confira se é erro ou se é para pagar assim. A 1ª vez vem marcada; as repetidas vêm <b>desmarcadas</b> — marque só se for para pagar de novo. Marcadas juntas, no arquivo viram um pagamento só, somando.'),
+       (rateios, 'atencao', 'em MAIS DE UMA OBRA (rateio)',
+        'Todas as linhas vêm <b>marcadas</b>. No arquivo, as linhas da mesma conta viram <b>UM pagamento</b>, somando os valores; na SP do Pipefy, o valor fica rateado por obra. Confira se é para pagar assim antes de gerar.')] %}
+  {% if grupo %}
+  <div class="aviso {{ classe }} aviso-repetidos" role="alert">
+    <b>⚠ {{ grupo|length }} pessoa(s) {{ titulo }}.</b>
+    {{ explica|safe }}
     <div class="tabela-wrap" style="margin:8px 0 0"><div class="tabela-rolagem livre">
     <table class="sps" style="background:#fff">
       <thead><tr><th>Colaborador</th><th>CPF</th><th class="num">Vezes</th>
-        <th>Linhas da lista (valor)</th><th class="num">Vai ser pago</th></tr></thead>
+        <th>Linhas da lista (obra · valor)</th><th class="num">Vai ser pago</th></tr></thead>
       <tbody>
-      {% for r in resultado.repetidos %}
+      {% for r in grupo %}
         <tr><td><b>{{ r.nome }}</b></td><td class="cpf">{{ r.cpf_bonito }}</td>
           <td class="num"><b>{{ r.vezes }}×</b></td>
-          <td>{% for l in r.linhas %}linha {{ l.ordem }}: {{ l.valor|moeda }}{% if l.pagar %} ✔{% else %} <span class="cartao-dica">(desmarcada)</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</td>
-          <td class="num"><b>{{ r.total_marcado|moeda }}</b>{% if r.marcadas > 1 %}<br><span class="selo risco">{{ r.marcadas }} vezes</span>{% endif %}</td></tr>
+          <td>{% for l in r.linhas %}linha {{ l.ordem }}: {% if l.obra %}{{ l.obra }} · {% endif %}{{ l.valor|moeda }}{% if l.pagar %} ✔{% else %} <span class="cartao-dica">(desmarcada)</span>{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+          <td class="num"><b>{{ r.total_marcado|moeda }}</b>{% if r.marcadas > 1 %}<br><span class="selo {{ 'saindo' if r.rateio else 'risco' }}">{{ r.marcadas }} {{ 'obras' if r.rateio else 'vezes' }}</span>{% endif %}</td></tr>
       {% endfor %}
       </tbody>
     </table>
     </div></div>
   </div>
+  {% endif %}
+  {% endfor %}
   <style>.aviso-repetidos { border-left-width:6px; font-size:14px; }</style>
 {% endif %}
 
@@ -294,7 +304,8 @@
           {% endif %}
           <td>
             <b>{{ p.nome or 'fora do cadastro' }}</b>
-            {% if p.repetido %} <span class="selo risco" title="Esta pessoa aparece {{ p.vezes }} vezes na lista">REPETIDO {{ p.vez }}/{{ p.vezes }}</span>{% endif %}
+            {% if p.repetido and p.rateio %} <span class="selo saindo" title="Esta pessoa aparece em {{ p.vezes }} obras: no arquivo, um pagamento só por conta">RATEIO {{ p.vez }}/{{ p.vezes }}</span>
+            {% elif p.repetido %} <span class="selo risco" title="Esta pessoa aparece {{ p.vezes }} vezes na lista">REPETIDO {{ p.vez }}/{{ p.vezes }}</span>{% endif %}
             {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}{% if p.tipo_contrato %} · {{ p.tipo_contrato }}{% endif %}</span>{% endif %}
             {% for motivo in p.motivos %}
               <br><span class="cartao-dica">⚠ {{ motivo }}</span>

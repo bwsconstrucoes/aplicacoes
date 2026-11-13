@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 266 — Pagamento avulso: a mesma pessoa em obras diferentes é RATEIO (13/11/2026)
+
+- *"Eu quero lançar um CPF, valores diferentes para obras diferentes. E isso seria para
+  efeito de rateio. Mas na hora de consolidar o arquivo, ele vai somar os valores. E
+  agora isso tem que ser alertado (…) para a gente não, sem querer, lançar errado."*
+- Desde 17/10 toda repetição era tratada como provável erro (só a 1ª marcada, aviso
+  vermelho). Agora (`pagamento_avulso._repetidos_em_obras_diferentes`): quando TODAS
+  as linhas da pessoa têm obra DITA por quem colou (colada ou trocada na linha — obra
+  do ponto/cadastro é palpite e não conta) e as obras são todas diferentes, é
+  **rateio**: todas vêm MARCADAS, selo "RATEIO n/N", aviso amarelo próprio no alto
+  ("no arquivo, as linhas da mesma conta viram UM pagamento, somando; na SP, rateado
+  por obra"). Mesma obra repetida, ou obra vinda do ponto/cadastro: como antes.
+- A janela de gerar avisa por CONTA (`criticas_de_repetidos`): "RATEIO — fulano em 2
+  obras: nesta conta, A R$ x + B R$ y = R$ z num pagamento só", e continua pedindo
+  "gerar com aviso" — o alerta que ele pediu antes de o arquivo sair.
+- Testes: `test_analisesps_pagamento_avulso.py`.
+
 #### Leva 265 — As tarefas em processo separado batem o ponto por relógio (13/11/2026)
 
 - O dono, com a baixa dos comprovantes "leva 3 de 5, desde 09:30" (mais de 40 min) e

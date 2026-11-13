@@ -383,6 +383,7 @@ def calcular() -> dict:
         p["ajuste_pagar"] = aj.get("pagar")
         pessoas.append(p)
 
+    _repetidos_em_obras_diferentes(pessoas)
     pessoas.sort(key=lambda p: (p["pagar"], not p["motivos"], (p["nome"] or "").lower(),
                                 p["ordem"] or 0))
     a_pagar = calcular_pessoas_a_pagar({"pessoas": pessoas})
@@ -398,6 +399,49 @@ def calcular() -> dict:
     return base
 
 
+def _repetidos_em_obras_diferentes(pessoas) -> None:
+    """⚠️ A MESMA PESSOA EM OBRAS DIFERENTES É RATEIO, NÃO ERRO (13/11/2026). O dono:
+    *"eu quero lançar um CPF, valores diferentes para obras diferentes. E isso seria
+    para efeito de rateio. Mas na hora de consolidar o arquivo, ele vai somar os
+    valores. E agora isso tem que ser alertado (…) para a gente não, sem querer,
+    lançar errado."*
+
+    Quando TODAS as linhas da pessoa têm obra e as obras são todas diferentes, as
+    linhas vêm MARCADAS (não só a 1ª) e o recado diz o que acontece: no arquivo, um
+    pagamento só por conta, somando; na SP, o rateio por obra. A mesma pessoa duas
+    vezes na MESMA obra continua sendo tratada como provável erro (só a 1ª marcada).
+    Rateio só quando a obra de TODAS as linhas foi dita por quem colou (colada ou
+    trocada na linha) — obra tirada do ponto ou do cadastro não conta."""
+    por_cpf: dict = {}
+    for p in pessoas:
+        if p.get("repetido"):
+            por_cpf.setdefault(p["cpf"], []).append(p)
+    for ps in por_cpf.values():
+        obras = [p.get("obra") or "" for p in ps]
+        if not all(obras) or len(set(obras)) != len(obras):
+            continue
+        # SÓ COM A OBRA DITA POR VOCÊ em todas as linhas (colada na lista ou trocada
+        # na linha). Obra que veio do ponto ou do cadastro é palpite do sistema: uma
+        # linha colada sem obra, repetida, é muito mais provável erro do que rateio.
+        if any(p.get("obra_de_onde") not in ("colada", "voce") for p in ps):
+            continue
+        total = sum((p["valor"] for p in ps), Decimal("0.00"))
+        partes = " + ".join(f"{p['obra']} R$ {formatos.moeda(p['valor'])}"
+                            for p in sorted(ps, key=lambda x: x.get("ordem") or 0))
+        for p in ps:
+            p["rateio"] = True
+            p["motivos"] = [m for m in p["motivos"] if not m.startswith("REPETIDO")]
+            p["motivos"].insert(0, (
+                f"RATEIO: esta pessoa aparece em {len(ps)} obras ({partes} = R$ "
+                f"{formatos.moeda(total)}). No arquivo, as linhas da mesma conta viram UM "
+                "pagamento, somando; na SP, o valor fica rateado por obra. Confira se é "
+                "isso mesmo."))
+            if not p["impossivel"] and p["conta"] and p.get("situacao") != colaboradores.SITUACAO_SAIU:
+                p["pagar_calculado"] = True
+                if p.get("ajuste_pagar") is None:
+                    p["pagar"] = True
+
+
 def repetidos(pessoas) -> list:
     """`[{cpf, nome, vezes, linhas: [{ordem, valor, pagar}], marcadas, total_marcado}]`
     — quem aparece mais de uma vez na lista, para o aviso do alto da tela."""
@@ -411,8 +455,9 @@ def repetidos(pessoas) -> list:
         marcadas = [x for x in ps if x["pagar"]]
         saida.append({"cpf": cpf, "cpf_bonito": ps[0]["cpf_bonito"],
                       "nome": ps[0]["nome"] or ps[0]["cpf_bonito"], "vezes": len(ps),
+                      "rateio": all(x.get("rateio") for x in ps),
                       "linhas": [{"ordem": x.get("ordem"), "valor": x["valor"],
-                                  "pagar": x["pagar"]} for x in ps],
+                                  "obra": x.get("obra") or "", "pagar": x["pagar"]} for x in ps],
                       "marcadas": len(marcadas),
                       "total_marcado": sum((x["valor"] for x in marcadas), Decimal("0.00"))})
     return sorted(saida, key=lambda r: r["nome"])
@@ -428,9 +473,23 @@ def criticas_de_repetidos(linhas_a_pagar) -> dict:
     for cpf, ls in por_cpf.items():
         if len(ls) < 2:
             continue
+        nome = ls[0]["nome"] or cpf_bonito(cpf)
+        if all(l.get("rateio") for l in ls):     # a mesma regra da tela (`_repetidos_em_obras_diferentes`)
+            # O RATEIO (13/11/2026): obras diferentes. Por conta, porque é por conta
+            # que o arquivo consolida — e cada conta diz quanto vai num pagamento só.
+            for conta in sorted({l["conta"] for l in ls}):
+                da_conta = [l for l in ls if l["conta"] == conta]
+                partes = " + ".join(f"{l['obra']} R$ {formatos.moeda(l['valor'])}" for l in da_conta)
+                total = sum((Decimal(str(l["valor"])) for l in da_conta), Decimal("0.00"))
+                frase = (f"RATEIO — {nome} em {len(ls)} obras: nesta conta, {partes}"
+                         + (f" = R$ {formatos.moeda(total)} num pagamento só" if len(da_conta) > 1
+                            else " (as outras obras saem por outra conta)")
+                         + ". Confirme que é para pagar assim.")
+                saida.setdefault(conta, []).append(frase)
+            continue
         valores = " + ".join(f"R$ {formatos.moeda(l['valor'])}" for l in ls)
         total = sum((Decimal(str(l["valor"])) for l in ls), Decimal("0.00"))
-        frase = (f"{ls[0]['nome'] or cpf_bonito(cpf)} está marcado(a) {len(ls)} vezes "
+        frase = (f"{nome} está marcado(a) {len(ls)} vezes "
                  f"({valores} = R$ {formatos.moeda(total)}) — confirme que é para pagar "
                  "assim, ou desmarque a repetida.")
         for conta in {l["conta"] for l in ls}:
@@ -477,7 +536,8 @@ def linhas_a_pagar(calculado: dict | None = None) -> list:
     return [{"cpf": p["cpf"], "nome": p["nome"], "obra": p["obra"], "conta": p["conta"],
              "verba": VERBA, "valor": p["valor"], "dias": 0, "origem": VERBA,
              "natureza": p["tipo_despesa"], "carteira": p["carteira"],
-             "chave": p["chave"], "tipo_despesa": p["tipo_despesa"]}
+             "chave": p["chave"], "tipo_despesa": p["tipo_despesa"],
+             "rateio": bool(p.get("rateio"))}
             for p in calcular_pessoas_a_pagar(calculado)]
 
 
