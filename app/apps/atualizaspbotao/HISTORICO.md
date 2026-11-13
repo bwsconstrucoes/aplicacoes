@@ -5,8 +5,7 @@ encerrar. O que o módulo faz está no `README.md`.
 
 ## Pendente AGORA
 
-1. **Publicar o desligamento do Log** (13/11/2026, botão e SP nova) — espera o
-   "pode".
+1. **Publicado em 13/11/2026** (desligamento do Log, botão e SP nova; medição por etapa; recusa de clique repetido).
 2. **Depois de publicar, ler no Render as linhas `[atualizaspbotao]`** do
    próximo botão lento: elas dizem a etapa que segura e se o clique se repetiu.
 3. **Saber o que o dono quer mudar no botão.** Já se sabe que o "do Render" é
