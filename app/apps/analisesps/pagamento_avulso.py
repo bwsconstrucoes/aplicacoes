@@ -594,21 +594,57 @@ def apagar_lotes(analise_ids) -> int:
 # ---------------------------------------------------------------------------
 def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
                          so_a_pagar: bool = False) -> dict:
+    """O montado do relatório compartilhado das folhas (`folha_relatorio`): UMA linha
+    por PESSOA, com as obras dela dentro.
+
+    ⚠️ ERA UMA LINHA POR LINHA COLADA (13/11/2026). O dono: *"quando tem rateio, o
+    relatório não tá saindo direito. Diverge na quantidade de pessoas no próprio
+    relatório, tem quantidades diferentes e não relata nada sobre o rateio."* O
+    relatório conta pessoas pela lista e, nos quadros por obra e por conta, por CPF
+    distinto — a mesma pessoa em duas linhas dava dois números. Agora as linhas do
+    mesmo CPF viram uma pessoa: as que entram no pagamento formam o `por_obra` (é
+    assim que o arquivo consolida), o valor é a soma delas, e a situação diz
+    "Rateio em N obras"."""
     from .horario import agora
     pessoas = calculado["pessoas"] if pessoas is None else pessoas
-    linhas = []
+    por_cpf: dict = {}
     for p in pessoas:
-        entra = bool(p["pagar"] and p["valor"] > 0)
-        if so_a_pagar and not entra:
+        por_cpf.setdefault(p["cpf"], []).append(p)
+    linhas = []
+    for cpf, ps in por_cpf.items():
+        ps = sorted(ps, key=lambda x: x.get("ordem") or 0)
+        entram = [p for p in ps if p["pagar"] and p["valor"] > 0]
+        if so_a_pagar and not entram:
             continue
+        base_ = entram or ps
+        obras: dict = {}
+        for p in base_:
+            obras[p["obra"] or ""] = obras.get(p["obra"] or "", Decimal("0.00")) + p["valor"]
+        valor = sum(obras.values(), Decimal("0.00"))
+        primeira = ps[0]
+        varias = len(obras) > 1
+        rateio = varias and all(p.get("rateio") for p in base_)
+        if rateio:
+            situacao = f"Rateio em {len(obras)} obras"
+        elif len(base_) > 1:
+            situacao = (f"Mesma pessoa {len(base_)} vezes (soma num pagamento) · "
+                        f"{primeira['tipo_despesa']}")
+        else:
+            situacao = f"{primeira['tipo_despesa']} · obra {primeira['rotulo_obra'] or '—'}"
         linhas.append({
-            "entra": entra, "cpf": p["cpf"], "nome_na_tela": p["nome"] or p["cpf_bonito"],
-            "cargo": p["cargo"], "fase": p["fase"],
-            "por_obra": [{"obra": p["obra"], "dias": 0, "valor": p["valor"]}],
-            "por_dia": [], "dias_no_ponto": 0, "valor": p["valor"], "valor_por_dia": None,
-            "obras_resumo": p["obra"] or "-", "obra_do_cadastro": p["obra_cadastro"],
-            "contas": [p["conta"]] if p["conta"] else [],
-            "situacao_rotulo": f"{p['tipo_despesa']} · obra {p['rotulo_obra'] or '—'}"})
+            "entra": bool(entram), "cpf": cpf,
+            "nome_na_tela": primeira["nome"] or primeira["cpf_bonito"],
+            "cargo": primeira["cargo"], "fase": primeira["fase"],
+            "por_obra": [{"obra": o, "dias": 0, "valor": v} for o, v in obras.items()],
+            "por_dia": [], "dias_no_ponto": 0, "valor": valor, "valor_por_dia": None,
+            "obras_resumo": (" + ".join(f"{o or '-'} R$ {formatos.moeda(v)}" for o, v in obras.items())
+                             if varias else (next(iter(obras)) or "-")),
+            "obra_do_cadastro": primeira["obra_cadastro"],
+            "contas": sorted({p["conta"] for p in base_ if p["conta"]}),
+            "situacao_rotulo": situacao,
+            # O bloco "Rateio entre obras" do relatório (`folha_relatorio`).
+            "rateio_entre_obras": ([{"obra": o or "-", "valor": v} for o, v in obras.items()]
+                                   if rateio else [])})
     hoje = agora().strftime("%d/%m/%Y")
     descricao = calculado.get("descricao") or ""
     return {"titulo": f"Pagamento avulso {hoje}" + (f" — {descricao}" if descricao else ""),
@@ -616,4 +652,4 @@ def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
             "folha": {"competencia": hoje,
                       "rotulo_do_tipo": descricao or calculado.get("tipo_despesa") or ""},
             "pessoas": linhas, "filtros_texto": [], "filtros": filtros or {},
-            "totais": {"pessoas": len(pessoas)}, "fechamento": None}
+            "totais": {"pessoas": len(por_cpf)}, "fechamento": None}

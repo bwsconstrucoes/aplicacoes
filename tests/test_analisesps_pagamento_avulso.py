@@ -155,6 +155,41 @@ def test_RATEIO_na_MESMA_conta_vira_UM_pagamento_somado(banco_avulso, monkeypatc
     assert arquivo["total"] == D("1300.00")
 
 
+def test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio(banco_avulso):
+    """13/11/2026: *"quando tem rateio, o relatório não tá saindo direito. Diverge na
+    quantidade de pessoas (…) e não relata nada sobre o rateio."*"""
+    from app.apps.analisesps import folha_pagamento as fp, folha_relatorio as fr
+    from app.apps.analisesps import pagamento_avulso as pa
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.contas_diarios SET conta_pagamento = '50024'")
+        conn.commit()
+    pa.gravar_lista("997.133.493-34\t1.000,00\tCREPEOLINDA\n"
+                    "997.133.493-34\t300,00\tIFSPSAOJOSE\n"
+                    "035.134.413-63\t200,00\tCREPEOLINDA", quem="MARCELO")
+    montado = pa.montado_do_relatorio(pa.calcular())
+    assert len(montado["pessoas"]) == 2 and montado["totais"]["pessoas"] == 2
+    ativo = next(p for p in montado["pessoas"] if p["cpf"] == ATIVO)
+    assert ativo["valor"] == D("1300.00") and len(ativo["por_obra"]) == 2
+    assert ativo["situacao_rotulo"].startswith("Rateio em 2 obras")
+    assert "CREPEOLINDA R$ 1.000,00 + IFSPSAOJOSE R$ 300,00" == ativo["obras_resumo"]
+    r = fr.montar(montado, fp.conta_por_obra())
+    assert r["quantas"] == 1, "só o ATIVO entra (o desligado vem desmarcado)"
+    [conta] = r["grupos"]["por_conta"]
+    assert (conta["pessoas"], conta["valor"]) == (1, D("1300.00"))
+    assert {o["obra"]: o["pessoas"] for o in r["grupos"]["por_obra"]} == {
+        "CREPEOLINDA": 1, "IFSPSAOJOSE": 1}
+    assert any(s_["nome"].startswith("Rateio em 2 obras") for s_ in r["grupos"]["por_situacao"])
+    assert ativo["rateio_entre_obras"] == [{"obra": "CREPEOLINDA", "valor": D("1000.00")},
+                                           {"obra": "IFSPSAOJOSE", "valor": D("300.00")}]
+    assert "1 pessoa com rateio entre obras" in fr._rateio_texto(r)
+    from openpyxl import load_workbook
+    import io
+    livro = load_workbook(io.BytesIO(fr.excel(r)))
+    assert [c.value for c in livro["Rateio entre obras"]["C"]][1:] == ["CREPEOLINDA", "IFSPSAOJOSE"]
+    assert fr.pdf(r).startswith(b"%PDF")
+
+
 def _marcar_a_repetida():
     """As duas linhas do mesmo CPF marcadas — pagar duas vezes é decisão."""
     from app.apps.analisesps import pagamento_avulso as pa
