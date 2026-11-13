@@ -2048,6 +2048,47 @@ meses. Agora o ERP também lê, pela tela de Importar.
   que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
   não existe.
 
+### ⚠️ O efetivo do dia: três palavras que mudam a resposta (13/11/2026)
+
+Ele achou o defeito olhando o número: *"eu acho que ele está dobrando o
+efetivo (…) está dando um valor acima do que é o real."* Estava — e as três
+palavras abaixo são a razão. Quem for responder pergunta sobre efetivo
+**precisa** saber qual delas está em jogo.
+
+- **"quantas pessoas trabalharam no dia"**: é gente DISTINTA, nunca batida.
+  Jornada normal tem quatro batidas por pessoa; contar batida daria quatro
+  vezes mais. Hoje há teste fechando isso.
+- **"o efetivo do dia"** num diário antigo: pode ser DUAS listas. A da
+  planilha importada (por função, sem nome) e a do ponto (com nome e hora).
+  Quando as duas existem, **são a mesma gente** — e só o ponto conta. Somar
+  era o defeito. Pergunta como "qual o efetivo médio da obra" tem de dizer de
+  qual fonte está falando quando o período atravessa a virada da planilha para
+  o ponto.
+- **"bateu ponto"**: batida REJEITADA não é presença. AJUSTADA é (é a batida
+  que a pessoa esqueceu e o supervisor incluiu) e EM_ANALISE também.
+
+E **toda hora de batida é de Fortaleza**, nunca a do banco: o banco guarda UTC.
+Resposta que mostre hora tem de converter — foi o que faltava no diário, e
+aparecia como "horário esquisito" três horas adiantado.
+
+#### O que dá para perguntar agora
+
+- "Quantas pessoas trabalharam nesta obra neste dia?" — e quem são, com função
+  e horário de entrada e saída.
+- "Em que dias o efetivo do diário não bate com o do ponto?" — é a pergunta que
+  acha diário mal preenchido e transferência não avisada.
+- "Quem é lotado nesta obra e bateu ponto em outra?" — já respondido, e aparece
+  como aviso na própria tela do diário.
+
+#### O que o sistema ainda NÃO responde
+
+- "Quantas HORAS a obra teve no dia?" — o diário mostra entrada e saída, mas
+  não soma jornada nem desconta intervalo. Isso é conta do ponto, e o diário
+  não a busca.
+- "O efetivo da planilha antiga bate com o do ponto no mesmo dia?" — as duas
+  listas aparecem, mas ninguém compara função a função; a planilha não tem
+  nome, então a comparação possível é só pela soma.
+
 ### O calendário do diário, e o que cada cor diz
 
 Pergunta dele no mesmo dia: *"esse laranja é porque falta algum dado?"*

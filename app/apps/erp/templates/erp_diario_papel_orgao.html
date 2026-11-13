@@ -135,6 +135,16 @@
           {% endfor %}
           <div style="margin-top:3pt"><b>Total: {{ "%02d" | format(p.efetivo.total_proprio) }}</b></div>
         {% else %}<div class="vazio">Sem efetivo próprio registrado.</div>{% endif %}
+        {# A lista da planilha antiga que ficou FORA da soma, quando o dia
+           também tem batida de ponto: são dois registros da mesma gente, e
+           somá-los inflava o efetivo (13/11/2026). Fica dita, nunca apagada —
+           é o que a obra informou na época. #}
+        {% if p.efetivo.da_planilha_fora_da_soma %}
+        <div class="vazio" style="margin-top:3pt">Informado na planilha antiga,
+          fora da contagem (este dia tem ponto):
+          {{ p.efetivo.da_planilha_fora_da_soma | sum(attribute="quantidade") }}
+          pessoa(s).</div>
+        {% endif %}
       </div>
     </div>
     <div>

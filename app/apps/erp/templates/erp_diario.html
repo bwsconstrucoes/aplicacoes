@@ -273,10 +273,17 @@ function blocoDoEfetivo(){
   // O efetivo de um dia IMPORTADO da planilha antiga: vem por função, sem
   // nome, porque o ponto eletrônico não existia naquela obra. Conta como
   // efetivo próprio — chamar de terceirizado seria mentir no documento.
+  //
+  // ⚑ MAS SÓ CONTA QUANDO O PONTO NÃO TEM NINGUÉM (13/11/2026). Ele: *"eu
+  // acho que ele está dobrando o efetivo (…) está dando um valor acima do que
+  // é o real."* Era isto: dia que tem a lista da planilha E batida de ponto
+  // tinha as duas somadas — dois registros da MESMA gente. Quem decide é a
+  // regra (`importado_conta`), não esta tela: o papel usa a mesma.
   const vindos = DIA.diario.efetivo_importado || [];
+  const somaVindos = DIA.efetivo_importado_conta !== false && vindos.length > 0;
   const total = (e.total || 0)
     + extras.reduce((s, x) => s + (x.quantidade || 0), 0)
-    + vindos.reduce((s, x) => s + (x.quantidade || 0), 0);
+    + (somaVindos ? vindos.reduce((s, x) => s + (x.quantidade || 0), 0) : 0);
   const soImportado = vindos.length > 0 && !(e.pessoas || []).length;
   return `
     <div class="cartao auto">
@@ -304,11 +311,17 @@ function blocoDoEfetivo(){
          função da pessoa, está só o nome."* Estava lá — pequena demais para
          contar como estar. #}
       ${vindos.length ? `<div class="tabela-wrap" style="margin-top:8px">
-        <div class="cartao-dica"><b>Efetivo do diário antigo</b>, importado da
-          planilha${DIA.diario.informado_por
+        <div class="cartao-dica ${somaVindos ? "" : "alerta"}"><b>Efetivo do
+          diário antigo</b>, importado da planilha${DIA.diario.informado_por
             ? ` — informado por ${escapar(DIA.diario.informado_por)}` : ""}.
-          Vem por função, sem nome: naquele dia o ponto eletrônico ainda não
-          estava nesta obra.</div>
+          ${somaVindos
+            ? `Vem por função, sem nome: naquele dia o ponto eletrônico ainda
+               não estava nesta obra.`
+            : `<b>Não entra na conta acima.</b> Este dia tem batida de ponto, e
+               as duas listas são registros das mesmas pessoas — somar
+               inflaria o efetivo. Vale o ponto, que tem nome e hora; a lista
+               da planilha fica aqui só como registro do que foi informado na
+               época.`}</div>
         <table><thead><tr><th>Função</th>
           <th class="direita">Quantidade</th></tr></thead>
         <tbody>${vindos.map(f => `<tr><td>${escapar(f.funcao)}</td>

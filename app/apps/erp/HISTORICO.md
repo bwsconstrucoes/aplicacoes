@@ -21,6 +21,61 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 — O EFETIVO DO PONTO NO DIÁRIO ESTAVA ERRADO: TRÊS DEFEITOS
+
+Ele, olhando o diário: *"eu acho que ele está dobrando o efetivo. Eu acho que
+ele está contabilizando de forma errada. Talvez pela quantidade de pontos. Aí
+está dando um valor acima do que é o normal, do que é o real. E não é nem
+dobrando, não. E outra coisa, aí tá aparecendo uns horários esquisitos também.
+Tem erro aí nessa importação do ponto."*
+
+**Eram três, e todos no código — nenhum era a "quantidade de pontos".** Uma
+pessoa com quatro batidas sempre contou como uma. Mas:
+
+**1. A HORA SAÍA EM UTC.** `ponto.marcacoes.timestamp_servidor` é gravado em
+UTC (Render e Postgres rodam em UTC) e a área do ponto converte para Fortaleza
+em toda saída (`ponto/horario.py:para_local`). O diário imprimia o valor cru:
+**quem bateu 7:00 aparecia às 10:00.** Agora a conversão é feita no banco, com
+`AT TIME ZONE`, dentro do próprio MIN/MAX.
+
+**2. O FILTRO DE BATIDA VÁLIDA ERA UMA PALAVRA QUE NÃO EXISTE.** O diário
+pedia as batidas "não CANCELADA". Os status de `ponto.marcacoes` são VALIDA,
+EM_ANALISE, AJUSTADA e REJEITADA — **cancelada não é um deles**. O filtro não
+tirava nada, e **batida REJEITADA contava como gente em obra**. O ponto
+inteiro usa "não REJEITADA" (qualidade, folha, espelho, arquivos fiscais); o
+diário era o único fora do passo, em três consultas. AJUSTADA fica dentro de
+propósito: é a batida que a pessoa esqueceu e o supervisor incluiu.
+
+**3. O EFETIVO DA PLANILHA SOMAVA COM O DO PONTO — e este é o "valor acima do
+real".** Os 1.427 diários importados trazem o efetivo do dia em
+`diario_efetivo_extra` (origem IMPORTADO). Quando o MESMO dia também tem
+batida — e tem, porque a planilha vai até datas em que o ponto já rodava — o
+diário somava **os dois registros da mesma gente**: 17 da planilha + 9 do
+ponto = 26 numa obra que teve 9. Não dava o dobro exato justamente por serem
+contagens diferentes do mesmo dia.
+
+⚑ **A REGRA NOVA, e ela é de documento:** havendo batida, **o ponto manda** —
+é a fonte com nome, hora e foto. A lista da planilha continua aparecendo, na
+tela e no papel, dita como o que foi informado na época, mas **fora da soma**.
+Sem batida (os anos anteriores), a planilha é o único registro que existe e
+conta inteira, como sempre contou. Mora em `diario.importado_conta`, num lugar
+só, porque a tela e as três folhas usam a mesma resposta.
+
+**Um quarto, defensivo:** a função vinha do Registro de Colaboradores por
+`LEFT JOIN analisesps.colaborador` + `GROUP BY …, r.cargo`. Lá o CPF é a chave
+**como texto** e o casamento aqui é por dígitos — bastava o mesmo CPF existir
+em duas grafias para a mesma pessoa virar duas linhas, e duas pessoas na
+conta. Agora vem por subconsulta com LIMIT 1: a contagem de gente em obra não
+depende de a tabela vizinha estar limpa.
+
+⚠️ **Por que nada disso aparecia nos testes:** os três defeitos moram no
+WHERE, no GROUP BY e no fuso — exatamente o que o dublê de sessão do
+`conftest.py` não alcança, e as 108 provas do diário nunca encostaram no
+schema `ponto`. O arquivo novo `tests/test_diario_efetivo_do_ponto_banco.py`
+sobe o schema do ponto de verdade e bate batidas de verdade: **10 provas, e 8
+delas falham se o código antigo voltar** (conferido devolvendo os defeitos de
+propósito e rodando).
+
 ### ⚑ 13/11/2026 — O MODELO DO ÓRGÃO: "tal qual", não "parecido"
 
 Ele, vendo o RDO impresso: *"o modelo que você digitou aí não está igual não.
