@@ -561,6 +561,8 @@ de apoio do Análise de SPs (de hora em hora, com a tela deles aberta) e pela le
   daquela tela passou a dizer "só de madrugada".
 - **Preço**: obra nova em cidade nova ganha os feriados na madrugada seguinte (antes, em até uma hora).
 - Teste: `test_ponto_feriados_busca_banco.py::test_a_busca_automatica_so_roda_de_madrugada`.
+**Publicado em 13/11/2026** (com o "pode" do dono, junto com a obra no "Completar o período"; suíte inteira: 11.001
+passaram). Sem migração.
 
 ## 13/11/2026 (sexta) — Completar o período de uma pessoa pela escala; a proposta de divisão do menu e da ficha única
 
