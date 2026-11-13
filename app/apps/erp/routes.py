@@ -4507,6 +4507,7 @@ def api_importar_pipefy_cadastro():
             t = tarefas.enfileirar(
                 s, "importar_cadastro_pipefy",
                 {"simular": not gravar, "cards": pedidos,
+                 "regravar": bool(d.get("regravar")),
                  "usuario_id": usuario.id if usuario else None},
                 rotulo=(("Conferir sem gravar: " if not gravar
                          else "Trazer do Pipefy: ")
@@ -4519,6 +4520,50 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao enfileirar a importação do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# AS PERGUNTAS QUE A IMPORTAÇÃO DEIXOU — e quem responde é gente
+#
+# Ele, em 13/11/2026: *"quando houver divergência entre o que a IA lê e o que
+# está cadastrado, aí você questiona. E o humano decide."*
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/cadastro/divergencias")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_cadastro_divergencias():
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "perguntas": imp.perguntas_abertas(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar as divergências do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/cadastro/divergencias/<int:divergencia_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_cadastro_divergencia_decidir(divergencia_id: int):
+    """Alguém escolheu qual versão vale — e o cadastro passa a dizer isso."""
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = imp.decidir(s, divergencia_id,
+                            str(d.get("fonte") or ""), usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao decidir a divergência")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -12000,6 +12045,43 @@ def api_diario_importar():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha na importação de diários")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/obras/cdiarios", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_obras_cdiarios():
+    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
+    propósito, nada é escrito. E o que já está preenchido no cadastro só é
+    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
+    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    """
+    from app.apps.erp.core.importadores import obras_cdiarios as imp
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+    if not (arquivo.filename or "").lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "erro":
+                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                        "Arquivo › Fazer download › Microsoft Excel."}), 400
+    gravar = request.form.get("gravar") in ("1", "true", "sim")
+    regravar = request.form.get("regravar") in ("1", "true", "sim")
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = imp.importar(s, conteudo, usuario.id if usuario else None,
+                               simular=not gravar, regravar=regravar)
+            if gravar:
+                s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao completar obras pela C. Di\u00e1rios")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

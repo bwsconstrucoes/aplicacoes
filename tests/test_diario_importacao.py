@@ -386,3 +386,42 @@ def test_a_busca_acha_o_que_foi_importado(sessao_real):
         None, simular=False)
     sessao_real.flush()
     assert svc.procurar(sessao_real, "intertravado")["achados"]
+
+
+@banco_
+def test_a_conferencia_mostra_a_LISTA_do_efetivo_e_nao_so_a_soma(sessao_real):
+    """Ele, em 13/11/2026, olhando a conferência: *"tem 4 colunas: obra, dia,
+    relato e pessoas, a quantidade. Mas não está importado aqui a listagem das
+    pessoas. É apenas não está aparecendo nesse quadro de leitura, ou é porque
+    não importa? Porque tem que importar."*
+
+    Importa — função por função. Era a CONFERÊNCIA que resumia tudo num
+    número, e aí ela não servia para o que existe: conferir. Quem lê "23
+    pessoas" não tem como saber se a leitura entendeu "17 - SERVENTE" ou
+    engoliu uma linha.
+    """
+    _obra(sessao_real, "ESCLISTA1")
+    sessao_real.flush()
+    r = imp.importar(sessao_real, _planilha([_linha(
+        obra="ESCLISTA1", ident="L-1",
+        e1="1 - ENGENHEIRO CIVIL\n2 - PEDREIRO\n17 - SERVENTE")]), None)
+    linha = r["amostra"][0]
+    assert linha["pessoas"] == 20
+    por_funcao = {e["funcao"]: e["quantidade"] for e in linha["efetivo"]}
+    # A função deixa de ser grito ("SERVENTE" vira "Servente") — regra que
+    # este arquivo já guardava em outro teste.
+    assert por_funcao == {"Engenheiro civil": 1, "Pedreiro": 2, "Servente": 17}
+
+
+@banco_
+def test_a_conferencia_mostra_a_linha_que_NAO_entendeu(sessao_real):
+    """Linha fora do padrão era descartada em silêncio — e silêncio numa
+    conferência é o pior resultado possível."""
+    _obra(sessao_real, "ESCLISTA2")
+    sessao_real.flush()
+    r = imp.importar(sessao_real, _planilha([_linha(
+        obra="ESCLISTA2", ident="L-2",
+        e1="2 - PEDREIRO\ndois serventes\n17 - SERVENTE")]), None)
+    linha = r["amostra"][0]
+    assert "dois serventes" in linha["sobras"]
+    assert linha["pessoas"] == 19          # só o que deu para contar

@@ -116,6 +116,86 @@
   .logo-empresa { background-image: url("{{ r.logos.empresa }}"); }
   {% endif %}
 
+{% if r.modelo == "orgao" %}
+  /* =====================================================================
+     O MODELO DO ÓRGÃO, TAL QUAL O PAPEL DELE (13/11/2026)
+
+     Ele: *"o modelo que você digitou aí não está igual não. As cores. Porque
+     o modelo do órgão, ele tem que ser tal qual, não pode ser parecido não.
+     Inclusive as cores."* — e estava certo. O desenho de 09/11 reusava a
+     paleta da casa (azul #1b3a5c sobre cinza, Helvetica), que é bonita e é
+     NOSSA. RDO fora do modelo exigido é motivo de glosa, e "parecido" não
+     protege ninguém numa medição.
+
+     ⚑ ESTAS CORES NÃO FORAM ESCOLHIDAS — FORAM EXTRAÍDAS do arquivo que ele
+     mandou em 09/11/2026 (RDO.xlsx, aba "23.11.2023"), célula a célula:
+
+       · as faixas divisórias são `accent1 escuro 50%` do tema "Escritório"
+         daquele arquivo: accent1 = #5B9BD5, com tinta −0,5 → **#1F4E79**.
+         São 8 faixas, de 4,5pt de altura, entre as seções.
+       · o resto é PRETO sobre BRANCO. Nenhum título colorido, nenhum fundo
+         cinza: os títulos de seção são Arial 11 negrito, pretos, CENTRADOS.
+       · a fonte é **Arial** (o arquivo usa Arial em tudo que tem texto).
+       · a moldura externa é traço médio preto; as divisões internas, finas.
+
+     Por isso este bloco não usa NENHUMA variável da paleta da casa. Mexer
+     aqui para "melhorar o visual" é desfazer o pedido dele.
+     ===================================================================== */
+  .org { font-family: Arial, Helvetica, sans-serif; color: #000;
+         border: 1.4pt solid #000; display: flex; flex-direction: column; }
+  /* ⚑ `faixa-org`, e NÃO `barra`: esta página já tinha uma `.barra` — a de
+     ferramentas do alto — com `@media print { display:none }`. As oito faixas
+     azuis sumiam na impressão e eu levei uma rodada para ver, porque na tela
+     elas apareciam. Nome genérico em folha de estilo compartilhada cobra caro. */
+  .org .faixa-org { background: #1F4E79; height: 4.5pt; flex: 0 0 4.5pt;
+                    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .org .linha { border-bottom: .6pt solid #000; }
+
+  /* O cabeçalho: três linhas centradas, Arial 14 negrito, com a logo do
+     órgão à direita sem empurrar o texto do centro. */
+  .org .cab { position: relative; text-align: center; padding: 7pt 76pt 6pt; }
+  .org .cab .nome { font-size: 11.5pt; font-weight: 700; }
+  .org .cab .unid { font-size: 10pt; font-weight: 700; }
+  .org .cab .rdo { font-size: 11.5pt; font-weight: 700; margin-top: 7pt; }
+  .org .cab .logo { position: absolute; right: 6pt; top: 50%;
+                    transform: translateY(-50%); }
+
+  /* As tabelas do topo: traço fino preto, como no papel. */
+  .org table.grade { width: 100%; border-collapse: collapse; }
+  .org table.grade td { border: .6pt solid #000; padding: 2.4pt 5pt;
+                        font-size: 8.4pt; vertical-align: top; }
+  .org table.grade td.rot { font-weight: 700; white-space: nowrap; }
+  .org table.grade td.c { text-align: center; }
+  .org table.grade tr:first-child td { border-top: 0; }
+  .org table.grade td:first-child { border-left: 0; }
+  .org table.grade td:last-child { border-right: 0; }
+  .org table.grade tr:last-child td { border-bottom: 0; }
+
+  /* O título de seção: preto, negrito, CENTRADO, sobre branco. */
+  .org .sec { text-align: center; font-weight: 700; font-size: 9pt;
+              padding: 3pt 4pt; }
+  .org .area { padding: 4pt 6pt; font-size: 8.6pt; }
+  /* ⚑ AS ALTURAS SÃO O QUE FAZ O DIA CABER EM UMA FOLHA, e isso não é
+     capricho: RDO de um dia que sai em duas páginas é duas folhas para a
+     fiscalização assinar. Com as oito faixas de 4,5pt a folha passou de 278mm
+     e quebrou — por isso os quadros encolheram. Relato longo continua
+     transbordando para a segunda folha de propósito: cortar o que a obra
+     escreveu seria pior. Mexeu aqui, confira o PDF de um dia comum. */
+  .org .area.media { min-height: 44pt; }
+  .org .area.alta { min-height: 86pt; }
+  .org .area .vazio { color: #555; font-style: italic; }
+  .org .area .texto { white-space: pre-wrap; }
+  /* As duas colunas do quadro técnico — CONTRATADA | OUTROS. */
+  .org .duas-org { display: flex; }
+  .org .duas-org > div { flex: 1; }
+  .org .duas-org > div:first-child { border-right: .6pt solid #000; }
+  .org .assin-org { display: flex; padding: 10pt 6pt 6pt; font-size: 8.4pt; }
+  .org .assin-org > div { flex: 1; padding: 0 10pt; }
+  .org .assin-org .quem { text-align: center; font-weight: 700;
+                          margin-bottom: 20pt; }
+  .org .assin-org .campo-assin { border-top: .6pt solid #000; padding-top: 2pt; }
+{% endif %}
+
   .topo { border: .8pt solid var(--fio-forte); }
   .topo-linha { display: flex; border-bottom: .5pt solid var(--fio); }
   .topo-linha:last-child { border-bottom: 0; }

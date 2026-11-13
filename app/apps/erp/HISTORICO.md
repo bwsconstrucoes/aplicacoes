@@ -21,6 +21,163 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 — O MODELO DO ÓRGÃO: "tal qual", não "parecido"
+
+Ele, vendo o RDO impresso: *"o modelo que você digitou aí não está igual não.
+As cores. Porque o modelo do órgão, ele tem que ser tal qual, não pode ser
+parecido não. Inclusive as cores."* E logo depois: *"estou me referindo só ao
+modelo do órgão."*
+
+**Tinha razão, e o custo não é estético: RDO fora do modelo exigido é motivo
+de GLOSA em medição.** A versão de 09/11 copiou a ORDEM dos quadros do papel
+dele, mas vestiu tudo com a paleta da casa — azul #1b3a5c sobre faixa cinza,
+em Helvetica. Ficou bonito e ficou NOSSO, que é exatamente o erro.
+
+**Agora cada traço vem do arquivo dele**, o `RDO.xlsx` de 09/11/2026 (aba
+"23.11.2023"), lido célula a célula:
+
+- as oito faixas divisórias são **#1F4E79** — não é um azul escolhido: é o
+  `accent1` do tema "Escritório" daquele arquivo (#5B9BD5) com tinta −0,5, o
+  "Azul, Ênfase 1, Mais Escuro 50%" do Excel. Ficam nas linhas 3, 8, 10, 14,
+  17, 20, 23 e 26, com 4,5pt de altura;
+- **todo o resto é preto sobre branco**, em **Arial**, com os títulos de seção
+  em negrito e CENTRADOS. Não há fundo cinza nenhum no papel dele;
+- moldura externa em traço médio, divisões internas em traço fino, pretas.
+
+⚠️ **Três coisas NÃO vieram do papel dele, e está escrito no arquivo por quê:**
+o rodapé de emissão (fica fora da moldura — é a marca de que o papel saiu do
+ERP e se ainda é rascunho), os textos em vermelho (são instruções para quem
+preenche à mão) e a coluna "Impraticável" (o papel tem três colunas de tempo;
+dia impraticável marca "Chuva" e sai "(impraticável)" ao lado, porque é o que
+sustenta pedido de prazo).
+
+**Duas armadilhas que custaram tempo e viraram comentário no código:**
+
+1. A faixa azul se chamava `.barra` — e a página JÁ tinha uma `.barra`, a de
+   ferramentas do alto, com `@media print { display:none }`. **As oito faixas
+   sumiam só na impressão**, e na tela apareciam. Hoje é `.faixa-org`.
+2. Com as faixas, a folha passou de 278 mm e o dia saía em DUAS páginas. Os
+   quadros encolheram (média 44pt, alta 86pt). **Mexeu nas alturas, gere o PDF
+   de um dia comum antes de commitar.**
+
+**Quatro testes de trava** guardam isto em `tests/test_diario_de_obra.py`: o
+azul exato, a ausência da paleta da casa, a ordem dos quadros e o fato de que
+só o modelo do órgão ganha esse estilo. A tentação de "dar uma melhorada no
+visual" volta toda vez que alguém abre o arquivo.
+
+### ⚑ 13/11/2026 — O CABEÇALHO DO DIÁRIO VINHA VAZIO, E NÃO ERA BUG DO DIÁRIO
+
+Ele: *"eu não sei porque a obra — a gente cadastrou as obras, cadastrou assim,
+importou lá na planilha C. Diários, tem todas as informações das obras, mas não
+está trazendo aqui para o cabeçalho do diário."*
+
+**O cabeçalho estava certo. O cadastro da obra é que estava vazio.** Três
+verificações, nesta ordem, e a terceira é a que resolveu:
+
+1. `diario.cabecalho()` lê o CADASTRO da obra e mostra o que achar; achando
+   vazio, mostra travessão. Nunca houve nada a consertar aí.
+2. A **planilha de diários** que ele mandou (1.427 linhas) tem as colunas
+   Contrato, Objeto, Endereço, Município, Ordem de Serviço, Unidade PMF,
+   Responsável Técnico, Resp. Fiscalização, Empresa, Data de Início e Data de
+   Término — e **todas as onze vêm vazias nas 1.427 linhas**. Conferido coluna
+   a coluna. Não era de lá que o dado viria.
+3. A **C. Diários** (aba "Centro de Custo") é que tem os dados — e o monorepo
+   **já a lê há meses**, na emissão de NFS-e (`app/apps/emissaonf/cdiarios.py`).
+   O ERP é que nunca tinha olhado para ela.
+
+**O que foi feito:** `core/importadores/obras_cdiarios.py` + a rota
+`/erp/api/obras/cdiarios` + um cartão na tela de **Importar**. Ele baixa a
+C. Diários como .xlsx e completa o cadastro das obras.
+
+⚠️ **O QUE A C. DIÁRIOS NÃO TEM, e é metade do valor do relatório:**
+responsável técnico, CREA, ART, ordem de serviço e sua data, início e término.
+**Sem data de início o diário não mostra o quadro de prazo** ("dia 37 de 180"),
+que é o que sustenta pleito de aditivo. A conferência diz quantas obras seguem
+sem cada um desses — para ninguém importar e achar que acabou.
+
+**Decisões, com o motivo:**
+
+- **Não cria obra.** A C. Diários tem obras de anos; criar cadastro a partir
+  dela seria encher o sistema de duplicata para limpar à mão depois.
+- **Não sobrescreve o que já está preenchido** (sem `regravar`). O que alguém
+  digitou aqui vale mais que a planilha — mas a divergência é MOSTRADA, com os
+  dois lados, porque calá-la seria pior.
+- **A coluna "Endereço Cliente" NÃO é aproveitada.** É a sede do contratante;
+  no diário o Endereço é onde o serviço acontece. Pôr um no lugar do outro é
+  escrever mentira num documento que a fiscalização assina. **O endereço da
+  obra continua sem fonte** — é digitado.
+- **A coluna "Empresa" também não.** Vem por nome escrito à mão, e casar nome
+  com o cadastro de empresas trocaria obra de CNPJ.
+- **Casa pelos DOIS códigos da obra** (o primário e o da coluna A), como a
+  emissão de NFS-e aprendeu a fazer: o mesmo contrato aparece com um ou outro.
+
+### ⚑ 13/11/2026 — O CALENDÁRIO DO DIÁRIO: mês com setas, e o laranja que mentia
+
+Quatro queixas dele sobre a tela do diário, todas atendidas:
+
+1. *"tem um filtro de dia, sendo que embaixo a gente tem um mês inteiro. Esse
+   filtro de dia acaba se tornando meio que sem sentido (…) o que seria mais
+   importante é poder colocar aqui o mês e ano, e ter uma setinha, dois botões,
+   para poder avançar no tempo. Por mês."* → o campo de data **saiu da coluna**
+   (continua existindo escondido, porque é ele que o resto da tela lê) e no
+   lugar entrou **◀ mês/ano ▶**. O dia se escolhe clicando no calendário, que é
+   onde se enxerga o que falta. A data escolhida passou a aparecer **no título
+   do cartão "O dia"** — sem isso, quem folheia o calendário perde de vista que
+   dia está editando, e diário escrito no dia errado é estrago calado.
+2. *"tem vermelho quando não está preenchido. Aí tem os que estão preenchidos,
+   mas está laranja. Esse laranja é porque falta algum dado?"* → **não faltava
+   dado nenhum.** O âmbar era "escrito, mas ainda não FECHADO", e diário não
+   nasce sem relato (`salvar` recusa). A cor dizia a verdade para quem conhece
+   o sistema por dentro e mentia para quem olha. Agora: **verde cheio** =
+   fechado, **verde vazado** = escrito e falta fechar, **vermelho** = falta o
+   diário — e só o vermelho é alarme. Entrou **legenda na tela**, porque a
+   pergunta dele só existiu por a cor não ter onde se explicar.
+3. *"a gente normalmente imprime um período e não apenas um dia."* → a folha
+   **já sabia imprimir período** desde 08/11 (a rota recebe `de` e `ate`); era
+   o botão que mandava o mesmo dia nos dois. Agora ele pergunta o período, já
+   sugerindo o mês que está na tela, e oferece imprimir também os dias **em
+   branco**, para levar as folhas para a obra.
+
+---
+
+### ⚑ 13/11/2026 — O DADO QUE NÃO BATE VIRA PERGUNTA (migração 102)
+
+Ele: *"em relação a IA errar a leitura, eu acho que pode fazer o seguinte:
+quando houver divergência entre o que a IA lê e o que está cadastrado, aí você
+questiona. E o humano decide."*
+
+A importação já comparava as três fontes — o cadastro do ERP, o card do Pipefy
+e o documento lido pela IA — e mostrava a divergência no relatório. **Só que o
+relatório é de uma rodada: fechou a tela, perdeu-se.** Com 575 pessoas, "anote
+num papel o que não bateu" não é plano.
+
+Agora a divergência é **guardada** (`cadastro_divergencias`) e aparece numa
+fila na tela Importar, com as três versões lado a lado e quatro botões: *o do
+documento*, *o do card*, *manter o do ERP*, *ignorar*. A de maior força vem em
+negrito — documento > card > cadastro.
+
+**Uma pergunta ABERTA por pessoa e campo.** Ele vai reimportar na carga
+inicial; sem essa trava a lista cresceria sem ninguém ter decidido nada.
+
+#### Dois defeitos que os testes e a tela pegaram
+
+1. ⚑ **Decidir o nome não mudava o nome.** `_gravar_campos` força
+   `nome = o atual` de propósito — a importação em massa preenche buraco, não
+   renomeia gente em lote por uma leitura torta. Mas a DECISÃO é exatamente o
+   caso em que o nome deve mudar. Agora há uma porta só para ela
+   (`permitir_nome`), e um teste guarda **cada metade**: a decisão muda, a
+   importação em massa não. O CPF fica fora das duas.
+2. **"CPF inválido" ao decidir o NOME.** A gravação passa pelas conferências
+   do cadastro inteiro, então uma pessoa com CPF inválido gravado dava esse
+   recado — e quem o lesse procuraria o erro no lugar errado. Agora o recado
+   diz o que é e o que fazer.
+
+#### O que continua sendo decisão dele
+
+A IA **não grava sozinha**, e isso é deliberado: ela erra em silêncio, e
+trocar o nome de alguém na folha por uma leitura torta só aparece quando o
+pagamento volta.
+
 ### ⚑ 13/11/2026 (2ª correção) — QUEM LISTA OS CARDS É ELE
 
 Logo depois de publicar a correção da manhã (achar as pessoas varrendo o pipe

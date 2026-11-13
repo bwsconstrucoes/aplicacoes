@@ -1365,3 +1365,81 @@ def test_reabrir_e_gravar_o_dia_nao_apaga_o_texto_antigo(sessao_real, obra,
     sessao_real.flush()
     assert svc.abrir_dia(sessao_real, obra,
                          dia)["diario"]["equipamentos"] == "01 caçamba"
+
+
+# ---------------------------------------------------------------------------
+# O MODELO DO ÓRGÃO TEM DE SER TAL QUAL O PAPEL DELE (13/11/2026)
+#
+# Ele: *"o modelo que você digitou aí não está igual não. As cores. Porque o
+# modelo do órgão, ele tem que ser tal qual, não pode ser parecido não.
+# Inclusive as cores."*
+#
+# ⚑ POR QUE ISTO VIRA TESTE E NÃO SÓ COMENTÁRIO: a primeira versão deste
+# modelo usou a paleta da casa porque ela é bonita, e a tentação de "dar uma
+# melhorada no visual" volta toda vez que alguém abre o arquivo. RDO fora do
+# modelo exigido é motivo de GLOSA em medição — o custo não é estético.
+# ---------------------------------------------------------------------------
+def _ler(nome):
+    import pathlib
+    return pathlib.Path("app/apps/erp/templates", nome).read_text(encoding="utf-8")
+
+
+def _sem_comentario(texto):
+    """O que o navegador recebe — sem os comentários `{# … #}` do Jinja.
+
+    Importa aqui porque os comentários deste modelo CITAM a paleta antiga
+    (para explicar por que ela saiu). Procurar "#1b3a5c" no arquivo inteiro
+    acusaria justamente a explicação de por que ele não está mais lá."""
+    import re
+    return re.sub(r"\{#.*?#\}", " ", texto, flags=re.S)
+
+
+def test_o_azul_do_modelo_do_orgao_e_o_do_arquivo_dele():
+    """#1F4E79 não foi escolhido: é o accent1 (#5B9BD5) do tema do RDO.xlsx
+    dele com tinta −0,5, que é o "Azul, Ênfase 1, Mais Escuro 50%" do Excel."""
+    css = _ler("erp_diario_papel.html")
+    assert "#1F4E79" in css
+    # e a faixa não pode se chamar `.barra`: esse nome já é o da barra de
+    # ferramentas da página, que tem `@media print { display:none }` — as oito
+    # faixas sumiam justamente na impressão.
+    assert ".org .faixa-org" in css
+    assert "<div class=\"faixa-org\"></div>" in _ler("erp_diario_papel_orgao.html")
+
+
+def test_o_modelo_do_orgao_nao_usa_a_paleta_da_casa():
+    """Nem o azul da BWS, nem a faixa cinza de seção, nem Helvetica: o papel
+    dele é preto sobre branco, em Arial, com título de seção CENTRADO."""
+    papel = _sem_comentario(_ler("erp_diario_papel_orgao.html"))
+    for proibido in ("var(--forte)", "var(--faixa)", "var(--tinta)", "#1b3a5c"):
+        assert proibido not in papel, f"{proibido} voltou ao modelo do órgão"
+    css = _ler("erp_diario_papel.html")
+    bloco = css.split('{% if r.modelo == "orgao" %}')[1].split("{% endif %}")[0]
+    assert "Arial" in bloco
+    assert "color: #000" in bloco
+    assert "text-align: center" in bloco
+
+
+def test_o_modelo_do_orgao_tem_os_quadros_na_ordem_do_papel_dele():
+    """A ordem é a do arquivo dele, linha por linha. Quadro fora de ordem é
+    outro formulário."""
+    import re
+    papel = _sem_comentario(_ler("erp_diario_papel_orgao.html"))
+    # Os títulos como a folha os imprime, na ordem em que aparecem. Procurar
+    # a palavra solta não serve: "OCORRÊNCIAS" vive dentro de "HISTÓRICO DOS
+    # SERVIÇOS/ OCORRÊNCIAS", e o teste acusaria desordem onde não há.
+    achados = [m.strip() for m in
+               re.findall(r'<div class="sec"[^>]*>(.*?)</div>', papel, re.S)]
+    assert achados == [
+        "HISTÓRICO DOS SERVIÇOS/ OCORRÊNCIAS", "QUADRO TÉCNICO",
+        "CONTRATADA", "OUTROS", "EQUIPAMENTOS", "SERVIÇOS EXECUTADOS",
+        "OBSERVAÇÃO DA FISCALIZAÇÃO", "OCORRÊNCIAS",
+    ], "a ordem (ou o nome) dos quadros do órgão mudou"
+
+
+def test_so_o_modelo_do_orgao_ganha_esse_estilo():
+    """Os outros dois modelos continuam com a cara da casa — o pedido dele era
+    sobre o do órgão, e só."""
+    css = _ler("erp_diario_papel.html")
+    assert '{% if r.modelo == "orgao" %}' in css
+    for outro in ("erp_diario_papel_bws.html", "erp_diario_papel_completo.html"):
+        assert "faixa-org" not in _ler(outro)

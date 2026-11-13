@@ -109,7 +109,10 @@
     <span id="exportar" style="display:flex; gap:6px"></span>
   </div>
   <div class="tabela-rolagem">
-  <table><thead><tr><th>Nome</th><th>CPF</th><th>Cargo</th><th>Obra</th>
+  {# ⚑ A EMPRESA NA LISTA (13/11/2026). Ele: *"aqui em colaboradores, essa
+     questão sempre vai ser um dado importante. Para a gente visualizar fácil,
+     a empresa."* #}
+  <table><thead><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Cargo</th><th>Obra</th>
     <th>Vínculo</th><th>Etapa</th><th>Pendências</th>
     <th class="direita">Salário/diária</th><th>Situação</th></tr></thead>
     <tbody id="corpo"></tbody></table>
@@ -234,7 +237,7 @@ function desenhar(){
   // situação), mas ANTES do painel escolhido — senão clicar num painel zeraria
   // a conta dos outros, e o DP perderia a visão do todo.
   const base = COL.filter(c => {
-    if (b && !`${c.nome} ${c.cpf} ${documento(c.cpf)} ${c.matricula||""}`
+    if (b && !`${c.nome} ${c.cpf} ${documento(c.cpf)} ${c.empresa||""}`
               .toLowerCase().includes(b)) return false;
     if (sit === "DESLIGADO" && (c.situacao||"") === "ATIVO") return false;
     if (sit === "ATIVO" && (c.situacao||"") !== "ATIVO") return false;
@@ -278,8 +281,12 @@ function desenhar(){
   if (!l.length) els("vazio").innerHTML =
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(c=>`<tr style="cursor:pointer" data-c="${c.id}">
-    <td><b>${escapar(c.nome)}</b>${c.matricula?`<small>mat. ${escapar(c.matricula)}</small>`:""}</td>
+    {# A matrícula saiu do nome em 13/11/2026: ele não usa mais ("a gente vai
+       usar o ID Fortes, o CPF"). O lugar dela virou a EMPRESA, que ele pediu
+       para enxergar fácil. #}
+    <td><b>${escapar(c.nome)}</b></td>
     <td class="dados">${documento(c.cpf)}</td>
+    <td>${escapar(c.empresa || "—")}</td>
     <td>${escapar(c.cargo || c.funcao || "—")}</td>
     <td class="dados">${escapar(c.obra||"—")}</td>
     <td>${c.vinculo === "PRESTADOR" ? "Prestador" : "CTPS"}

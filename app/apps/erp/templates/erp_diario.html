@@ -17,9 +17,34 @@
     <h2>Obra</h2>
   </div>
   <div class="campo"><label>Qual obra</label><select id="f-obra"></select></div>
-  <div class="campo"><label>Dia</label><input type="date" id="f-data" name="data"></div>
+  {# O MÊS, COM SETAS — e o dia se escolhe no calendário (13/11/2026).
+
+     Ele: *"tem aqui um filtro de dia, sendo que embaixo a gente tem um mês
+     inteiro. Então esse filtro de dia acaba se tornando meio que sem sentido.
+     (…) o que seria mais importante a gente poder colocar aqui o mês e ano, e
+     a gente ter uma setinha, dois botões aí, setinha para um lado para o
+     outro, para poder se avançar no tempo. Por mês."*
+
+     Tinha razão: havia DUAS maneiras de escolher o dia na mesma coluna — o
+     campo de data e o calendário — e a de cima era a pior das duas, porque
+     não mostra o que falta. O campo de data continua existindo, escondido,
+     porque é ele que o resto da tela lê; quem o preenche agora é o
+     calendário. #}
+  <input type="hidden" id="f-data" name="data">
+  <div class="campo">
+    <label for="f-mes">Mês</label>
+    <div class="mes-nav">
+      <button class="btn secundario" type="button" id="btn-mes-antes"
+              title="Mês anterior" aria-label="Mês anterior">◀</button>
+      <input type="month" id="f-mes" name="mes">
+      <button class="btn secundario" type="button" id="btn-mes-depois"
+              title="Próximo mês" aria-label="Próximo mês">▶</button>
+    </div>
+  </div>
   <div class="filtro aberto">
-    <button class="filtro-cab" type="button"><span>O mês</span><span class="seta">▾</span></button>
+    {# "Calendário" e não "O mês": o campo de mês agora fica logo acima, e dois
+       títulos iguais na mesma coluna confundem em vez de orientar. #}
+    <button class="filtro-cab" type="button"><span>Calendário</span><span class="seta">▾</span></button>
     <div class="filtro-cont"><div id="cal"></div></div>
   </div>
   {# PROCURAR PELO QUE FOI ESCRITO (10/11/2026). Ele: *"eu quero localizar um
@@ -58,13 +83,75 @@
 const PODE_LANCAR = {{ 'true' if pode.lancar_diario else 'false' }};
 let OBRAS = [], DIA = null, HOJE = new Date().toISOString().slice(0, 10);
 
+// ⚑ O QUE CADA COR DO CALENDÁRIO QUER DIZER (13/11/2026).
+//
+// Ele, olhando o calendário: *"tem vermelho, quando não está preenchido. Aí
+// tem os que estão preenchidos aqui, mas está laranja. Esse laranja é porque
+// falta algum dado? Porque se estiver preenchido, acho que era para estar
+// verde."*
+//
+// NÃO FALTAVA DADO NENHUM. O âmbar era "escrito, mas ainda não FECHADO" — e
+// diário não nasce sem relato (`salvar` recusa), então âmbar sempre significou
+// um dia feito. A cor dizia a verdade para quem conhece o sistema por dentro e
+// mentia para quem olha: amarelo, numa tela de pendência, lê-se "falta algo".
+//
+// Agora as duas são VERDES, e a diferença entre elas continua visível: verde
+// cheio é fechado (documento, só se corrige com motivo), verde vazado é
+// escrito e ainda aberto. Vermelho segue sendo o único "falta trabalho" — que
+// é o que uma cor de alarme tem de querer dizer.
 const ESTADO_ROTULO = {
-  aberto: "aberto", fechado: "fechado", sem_expediente: "sem expediente",
-  falta: "falta o diário", descanso: "descanso", fora: "fora do prazo",
+  aberto: "escrito — falta fechar", fechado: "fechado",
+  sem_expediente: "sem expediente", falta: "falta o diário",
+  descanso: "descanso", fora: "fora do prazo",
 };
+
+// A legenda vai NA TELA, e não só nesta explicação: a pergunta dele só
+// existiu porque a cor não tinha onde se explicar.
+const LEGENDA = [
+  ["fechado", "fechado"],
+  ["aberto", "escrito, falta fechar"],
+  ["falta", "falta o diário"],
+  ["sem_expediente", "sem expediente"],
+  ["descanso", "fim de semana / feriado"],
+];
+
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+// "2026-11" → o mês do dia escolhido.
+function mesDoDia(){ return (els("f-data").value || HOJE).slice(0, 7); }
+
+// "quinta-feira, 13 de novembro de 2026" — o cabeçalho do cartão do dia.
+function diaPorExtenso(iso){
+  if (!iso) return "";
+  const d = new Date(iso + "T12:00:00");
+  const semana = ["domingo", "segunda-feira", "terça-feira", "quarta-feira",
+                  "quinta-feira", "sexta-feira", "sábado"][d.getDay()];
+  return `${semana}, ${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`;
+}
+
+// Anda `passo` meses, mantendo o dia do mês quando ele existe no mês de
+// destino (31 de janeiro + 1 mês = 28/29 de fevereiro, e não 3 de março).
+function andarMes(passo){
+  const [a, m] = (els("f-mes").value || mesDoDia()).split("-").map(Number);
+  const dia = +(els("f-data").value || HOJE).slice(8, 10);
+  const alvo = new Date(a, m - 1 + passo, 1);
+  const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  irPara(new Date(alvo.getFullYear(), alvo.getMonth(),
+                  Math.min(dia, ultimo)));
+}
+
+function irPara(d){
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+            + `-${String(d.getDate()).padStart(2, "0")}`;
+  els("f-data").value = iso;
+  els("f-mes").value = iso.slice(0, 7);
+  carregar();
+}
 
 async function iniciar(){
   els("f-data").value = HOJE;
+  els("f-mes").value = HOJE.slice(0, 7);
   try {
     OBRAS = (await api("/erp/api/obras")).obras || [];
   } catch(e){ aviso("mensagem", e.message, "erro"); return; }
@@ -72,13 +159,16 @@ async function iniciar(){
     `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
   els("f-obra").addEventListener("change", carregar);
   els("f-data").addEventListener("change", carregar);
+  els("btn-mes-antes").addEventListener("click", () => andarMes(-1));
+  els("btn-mes-depois").addEventListener("click", () => andarMes(1));
+  // Escolher o mês direto no campo cai no dia 1º — é de lá que se folheia.
+  els("f-mes").addEventListener("change", () => {
+    const [a, m] = (els("f-mes").value || mesDoDia()).split("-").map(Number);
+    if (a && m) irPara(new Date(a, m - 1, 1));
+  });
   els("btn-pendencias").addEventListener("click", abrirPendencias);
   ligarBusca();
-  els("btn-papel").addEventListener("click", () => {
-    const obra = els("f-obra").value, data = els("f-data").value || HOJE;
-    if (!obra) return;
-    window.open(`/erp/obras/diario/papel/${obra}?de=${data}`, "_blank");
-  });
+  els("btn-papel").addEventListener("click", imprimir);
   if (OBRAS.length) carregar();
   else els("painel").innerHTML = `<div class="vazio">Nenhuma obra ao seu alcance.</div>`;
 }
@@ -131,6 +221,10 @@ function ligarBusca(){
 async function carregar(){
   const obra = els("f-obra").value, data = els("f-data").value || HOJE;
   if (!obra) return;
+  // O campo de mês acompanha o dia — inclusive quando quem mudou o dia foi a
+  // busca por relato, que pula para outro mês sem passar pelas setas.
+  els("f-data").value = data;
+  els("f-mes").value = data.slice(0, 7);
   try {
     DIA = await api(`/erp/api/diario/${obra}?data=${data}`);
     pintar();
@@ -336,8 +430,11 @@ function blocoDoRelato(){
   const d = DIA.diario, so_leitura = !PODE_LANCAR;
   const anterior = DIA.relato_anterior || {};
   return `
+    {# A DATA VAI NO TÍTULO porque o campo de data saiu da coluna da esquerda
+       (13/11/2026). Sem isto, quem folheia o calendário perde de vista que
+       dia está editando — e diário escrito no dia errado é estrago calado. #}
     <div class="cartao">
-      <h3>O dia</h3>
+      <h3>O dia <small>${escapar(diaPorExtenso(DIA.data))}</small></h3>
       ${DIA.sugere_sem_expediente && !DIA.existe ? `<div class="aviso">
         <b>${escapar(DIA.motivo_sem_expediente)}.</b> Já vem marcado como
         “não houve expediente”. Se houve, desmarque e escreva o relato.</div>` : ""}
@@ -751,31 +848,78 @@ async function removerExtra(id){
 // O CALENDÁRIO — "o que está faltando", como no ponto
 // ---------------------------------------------------------------------------
 async function pintarCalendario(){
-  const data = new Date((els("f-data").value || HOJE) + "T12:00:00");
+  // O MÊS VEM DO CAMPO DE MÊS, não do dia: são as setas que mandam no
+  // calendário agora, e o dia escolhido é só o que fica marcado dentro dele.
+  const mes = els("f-mes").value || mesDoDia();
+  const [ano, numero] = mes.split("-").map(Number);
   let c;
   try {
     c = await api(`/erp/api/diario/${els("f-obra").value}/calendario`
-                  + `?ano=${data.getFullYear()}&mes=${data.getMonth() + 1}`);
+                  + `?ano=${ano}&mes=${numero}`);
   } catch(e){ return; }
   const nomes = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+  const escolhido = els("f-data").value;
   els("cal").innerHTML = `
-    <div class="cal-mes">${["janeiro","fevereiro","março","abril","maio","junho",
-      "julho","agosto","setembro","outubro","novembro","dezembro"][c.mes - 1]}
+    <div class="cal-mes">${MESES[c.mes - 1]}
       de ${c.ano}${c.faltam ? ` · <b style="color:var(--vermelho)">${c.faltam} dia(s)
       sem diário</b>` : " · em dia"}</div>
     <div class="cal-grade">
       ${nomes.map(n => `<div class="cal-cab">${n}</div>`).join("")}
       ${Array.from({length: c.primeiro_dia_da_semana}, () => `<div></div>`).join("")}
-      ${c.dias.map(d => `<button class="cal-dia ${d.estado}" type="button"
+      ${c.dias.map(d => `<button class="cal-dia ${d.estado}${
+            d.data === escolhido ? " escolhido" : ""}" type="button"
           data-dia="${d.data}"
           title="${escapar(dataBR(d.data) + " · " + (ESTADO_ROTULO[d.estado] || d.estado)
                    + (d.feriado ? " · " + d.feriado : ""))}">${d.dia}</button>`).join("")}
-    </div>`;
+    </div>
+    <div class="cal-legenda">${LEGENDA.map(([e, texto]) =>
+      `<span><i class="cal-amostra ${e}"></i>${escapar(texto)}</span>`).join("")}</div>`;
   els("cal").querySelectorAll("[data-dia]").forEach(b =>
     b.addEventListener("click", () => {
       els("f-data").value = b.dataset.dia;
       carregar();
     }));
+}
+
+// ---------------------------------------------------------------------------
+// IMPRIMIR UM PERÍODO, e não um dia (13/11/2026)
+//
+// Ele: *"em relação à impressão, a gente normalmente imprime um período e não
+// apenas um dia."*
+//
+// A folha JÁ sabia imprimir período desde 08/11 — a rota recebe `de` e `ate`,
+// e sai um dia por página. Era o botão que mandava o mesmo dia nos dois.
+//
+// O padrão oferecido é O MÊS QUE ESTÁ NA TELA, porque é o período que ele
+// disse imprimir; dá para mudar as duas datas antes de confirmar. O limite de
+// três meses é do relatório e continua valendo — a mensagem vem de lá.
+// ---------------------------------------------------------------------------
+async function imprimir(){
+  const obra = els("f-obra").value;
+  if (!obra) return;
+  const [ano, numero] = (els("f-mes").value || mesDoDia()).split("-").map(Number);
+  const dois = n => String(n).padStart(2, "0");
+  const ultimo = new Date(ano, numero, 0).getDate();
+  const r = await perguntar({
+    titulo: "Imprimir o diário",
+    textoOk: "Abrir para imprimir",
+    aviso: "Sai um dia por página, no modelo que o contrato da obra exige. "
+         + "Até três meses de cada vez.",
+    campos: [
+      {nome: "de", rotulo: "De", tipo: "date", largura: 3, obrigatorio: true,
+       valor: `${ano}-${dois(numero)}-01`},
+      {nome: "ate", rotulo: "Até", tipo: "date", largura: 3, obrigatorio: true,
+       valor: `${ano}-${dois(numero)}-${dois(ultimo)}`},
+      {nome: "todos", rotulo: "Dias sem diário escrito", tipo: "select",
+       largura: 6, valor: "0",
+       opcoes: [{valor: "0", rotulo: "Não imprimir (só o que foi escrito)"},
+                {valor: "1", rotulo: "Imprimir em branco, para preencher à mão"}],
+       dica: "O segundo serve para levar as folhas para a obra."},
+    ]});
+  if (!r) return;
+  if (r.ate < r.de) { aviso("mensagem", "A data final é anterior à inicial.", "erro"); return; }
+  window.open(`/erp/obras/diario/papel/${obra}?de=${r.de}&ate=${r.ate}`
+              + (r.todos === "1" ? "&todos=1" : ""), "_blank");
 }
 
 async function abrirPendencias(){
