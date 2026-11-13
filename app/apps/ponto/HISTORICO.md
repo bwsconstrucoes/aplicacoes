@@ -548,6 +548,20 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
+
+O dono: *"o ideal seria rodar apenas na madrugada"*. A busca (`core/feriados_busca.py`) era acordada pelas planilhas
+de apoio do Análise de SPs (de hora em hora, com a tela deles aberta) e pela leitura da C. Diários. Agora:
+- **Roda das 2h às 5h** (Fortaleza), pelo **relógio das rondas** (`rondas._volta_do_relogio`), que roda sozinho no
+  serviço o tempo todo. Dentro da janela, confere no máximo uma vez por hora e só vai à internet quando há ano ou
+  lugar novo — como antes.
+- **A trava mora em `buscar_se_preciso`** (`na_madrugada`): as chamadas antigas (Análise de SPs, C. Diários)
+  continuam no código e, fora da janela, não fazem nada — sem mexer na regra da área do Análise de SPs. O botão
+  **"Buscar agora"** (Análise de SPs › Folha › Calendário) chama `buscar` direto e vale a qualquer hora; o texto
+  daquela tela passou a dizer "só de madrugada".
+- **Preço**: obra nova em cidade nova ganha os feriados na madrugada seguinte (antes, em até uma hora).
+- Teste: `test_ponto_feriados_busca_banco.py::test_a_busca_automatica_so_roda_de_madrugada`.
+
 ## 13/11/2026 (sexta) — Completar o período de uma pessoa pela escala; a proposta de divisão do menu e da ficha única
 
 O dono: *"quando o DP vai incluir uma batida, só dá para pedir um a um (…) quero botar o dia de início, o dia de fim e

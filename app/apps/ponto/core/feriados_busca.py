@@ -18,12 +18,16 @@ O QUE ELA FAZ, por ano (o corrente e, a partir de 1º de dezembro, o seguinte):
   Estadual e municipal vêm da base pública "feriados-brasil" (GitHub joaopbini,
   licença MIT, arquivos JSON por ano, municípios pelo código do IBGE).
 
-QUANDO BUSCA (`buscar_se_preciso`): a conferência é barata (uma consulta e um
-parâmetro) e roda junto das planilhas de apoio do Análise de SPs, de hora em hora. Só
-vai à internet quando há o que buscar: ANO NOVO ainda não buscado, ou UF/município de
-obra ativa que ainda não foi buscado naquele ano — é a obra nova em lugar novo. Obra
-concluída sai da lista de obras ativas e o lugar dela deixa de ser buscado; o que já
-foi gravado fica (só vale para obra daquele lugar, e não atrapalha).
+QUANDO BUSCA (`buscar_se_preciso`): SÓ DE MADRUGADA, das 2h às 5h (13/11/2026, o dono: *"o ideal seria rodar
+apenas na madrugada"*). Quem chama é o relógio das rondas (`rondas._volta_do_relogio`), que roda sozinho no
+serviço o tempo todo — de madrugada ninguém abre tela para acordar rotina nenhuma. As outras chamadas automáticas
+(as planilhas de apoio do Análise de SPs e a leitura da C. Diários) continuam no código e, fora da janela, não
+fazem nada: assim a regra mora num lugar só, sem mexer na área do Análise de SPs. O botão "Buscar agora" (Análise
+de SPs › Folha › Calendário) chama `buscar` direto e vale a qualquer hora. A conferência é barata (uma consulta e
+um parâmetro), no máximo uma por hora. Só vai à internet quando há o que buscar: ANO NOVO ainda não buscado, ou
+UF/município de obra ativa que ainda não foi buscado naquele ano — é a obra nova em lugar novo, que agora ganha
+os feriados na madrugada seguinte (antes, em até uma hora). Obra concluída sai da lista de obras ativas e o lugar
+dela deixa de ser buscado; o que já foi gravado fica (só vale para obra daquele lugar, e não atrapalha).
 
 ⚠️ O QUE FOI EXCLUÍDO À MÃO NÃO VOLTA. Um lugar buscado num ano fica anotado como
 buscado (parâmetro `feriados.busca`), e não é buscado de novo naquele ano. Se o DP
@@ -73,6 +77,14 @@ ESPERA_S = 60
 RETENTAR_ANO_S = 7 * 24 * 3600
 # Conferência sem nada novo: no máximo uma vez a cada hora.
 CONFERIR_A_CADA_S = 3600
+JANELA_DA_MADRUGADA = (2, 5)     # das 2h às 5h, hora de Fortaleza (13/11/2026)
+
+
+def na_madrugada(momento: Optional[dt.datetime] = None) -> bool:
+    """PURA (com o relógio). O instante cai na janela da busca automática?"""
+    from .. import horario
+    local = horario.para_local(momento or horario.agora())
+    return JANELA_DA_MADRUGADA[0] <= local.hour < JANELA_DA_MADRUGADA[1]
 
 NACIONAIS = (
     (1, 1, "Confraternização Universal"), (4, 21, "Tiradentes"), (5, 1, "Dia do Trabalho"),
@@ -290,6 +302,8 @@ def buscar_se_preciso(por: str = "automático", sempre: bool = False) -> Optiona
     `sempre`: confere mesmo dentro da hora — é o caso da base de obras acabada de ler,
     quando pode ter entrado obra em lugar novo."""
     from .. import horario
+    if not na_madrugada():
+        return None                      # só de madrugada (13/11/2026); o botão vale a qualquer hora
     try:
         with db.conexao() as conn:
             if not db.schema_existe(conn):
