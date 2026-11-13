@@ -6171,12 +6171,36 @@ def folha_gerar_direto():
         logger.exception("Folha: falhou gerar de dentro da folha")
         return {"ok": False, "erro": f"Não foi possível gerar: {e}"}, 500
     analise = next((a["id"] for a in saida["arquivos"] if a["destino"] == fpg.ANALISE), None)
+    # GERAR E LANÇAR NUMA TACADA SÓ (11/11/2026). O dono: *"primeiro a gente gera o
+    # arquivo e depois lança no Pipefy. Eu queria poder ter a opção de gerar e lançar
+    # ao mesmo tempo (…) ou somente gerar e ficar lá guardado."* O lançamento é o
+    # MESMO de Arquivos gerados (`folha_cards.lancar`, todas as contas), com as
+    # mesmas travas da prévia: se algo bloquear, os arquivos ficam gerados e a
+    # resposta diz por que não lançou — lança-se depois, em Arquivos gerados.
+    lancamento = None
+    if dados.get("lancar") and analise:
+        lancamento = _lancar_depois_de_gerar(analise, quem)
     return {"ok": True, "competencia": saida["competencia"],
-            "arquivos": len(saida["arquivos"]),
+            "arquivos": len(saida["arquivos"]), "lancamento": lancamento,
             "destino_da_tela": url_for("analisesps.tela_folha_pagamento",
                                        ano=int(saida["competencia"][3:]),
                                        mes=int(saida["competencia"][:2]),
                                        rodada=analise or "")}
+
+
+def _lancar_depois_de_gerar(analise: int, quem: str) -> dict:
+    """O lançamento no Pipefy logo depois da geração. Nunca levanta: os arquivos já
+    estão gerados, e o que falhar aqui volta escrito."""
+    from . import folha_cards as fcd
+    try:
+        feito = fcd.lancar(int(analise), quem=quem)
+        return {"ok": True, "sps": len(feito.get("sps") or []),
+                "avisos": list(feito.get("avisos") or [])}
+    except fcd.ErroDosCards as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: gerou, mas falhou lançar no Pipefy")
+        return {"ok": False, "erro": f"não foi possível lançar: {e}"}
 
 
 @bp.route("/api/folha/arquivos/excluir", methods=["POST"])
@@ -6950,7 +6974,7 @@ def tela_lote():
             if voltaram:
                 aviso = ((aviso + " ") if aviso else "") + (
                     f"{len(voltaram)} SP(s) que chegaram pelo Telegram com a "
-                    "tela aberta foram mantidas no grupo WhatsApp.")
+                    "tela aberta foram mantidas no lote (grupo do último envio).")
 
         lote.salvar(conteudo, quem, pessoa)
         return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))

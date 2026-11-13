@@ -958,6 +958,39 @@ def outras_receitas(f: Filtros, limite: int = 60) -> list[dict]:
              "titulos": n} for c, r, a, n in consultar(sql, params)]
 
 
+def outras_receitas_titulos(f: Filtros, limite: int = 300) -> dict:
+    """A receita que NÃO é medição, um título por linha — e o total de todos.
+
+    12/11/2026, o dono abriu a janela de receitas do DRE da matriz: o DRE
+    dizia R$ 459.464,10 de receita bruta e a janela somava R$ 68.343,21. A
+    janela lista as MEDIÇÕES ("Receita de Obras" e o retido delas); a linha do
+    DRE soma toda receita de análise DRE — também rendimento, estorno,
+    devolução e o que mais houver. Esta é a parte que faltava na janela, para
+    as duas somarem o número do DRE."""
+    where, params = f.where(
+        "analise = 'DRE' AND tipo = ? AND COALESCE(categoria,'') <> 'Receita de Obras' "
+        f"AND NOT COALESCE(({RETIDO}), FALSE)", [REC])
+    sql = f"""
+        SELECT codigo_lancamento, MAX(categoria), MAX(razao_social), MAX(departamento),
+               MAX(numero_documento), MAX(link), MAX(data),
+               SUM({EXECUTADO}), SUM({EM_ABERTO})
+          FROM fato{where}
+         GROUP BY codigo_lancamento
+        HAVING ABS(SUM({COMPROMETIDO})) > 0.005
+         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+    linhas = [{"codigo": c, "categoria": cat or "(sem categoria)", "cliente": cli or "",
+               "obra": obra or "", "documento": doc or "", "link": link or "",
+               "data": data, "recebido": float(r or 0), "a_receber": float(a or 0)}
+              for c, cat, cli, obra, doc, link, data, r, a in consultar(sql, params)]
+    quantas, recebido, a_receber = consultar(f"""
+        SELECT COUNT(DISTINCT codigo_lancamento), COALESCE(SUM({EXECUTADO}), 0),
+               COALESCE(SUM({EM_ABERTO}), 0)
+          FROM fato{where}""", params)[0]
+    return {"linhas": linhas,
+            "total": {"quantas": quantas or 0, "recebido": float(recebido or 0),
+                      "a_receber": float(a_receber or 0)}}
+
+
 # ---------------------------------------------------------------------------
 # Prestação de Contas — a base
 # ---------------------------------------------------------------------------
@@ -1051,6 +1084,32 @@ def despesa_administrativa(deptos_admin, medida: str = "comprometido") -> list[d
         lambda: [dict(zip(campos, (l[0], l[1], l[2], l[3], float(l[4] or 0))))
                  for l in consultar(sql, [PAG, list(deptos_admin)])])
     return [dict(l) for l in guardado]
+
+
+def despesa_e_receita_por_centro(deptos, projetos=(), medida: str = "comprometido") -> list[dict]:
+    """[{depto, projeto, despesa, receita}] das linhas de DRE dos centros de
+    custo dados — e das linhas dos projetos dados, em qualquer centro de custo.
+
+    É a conta do DRE aberta: `despesa` é o "= Total Custos/Despesas" (com os
+    juros e multas pagos) e `receita` é a "= Receita Líquida" (sem o retido).
+    Existe para a prestação explicar a diferença para o DRE (12/11/2026): o
+    dono comparou "a matriz custou 13.796.222,19" com os 13.337.568,09 do DRE
+    do projeto — que é o RESULTADO, já descontada a receita lançada ali."""
+    deptos, projetos = list(deptos or ()), [p for p in (projetos or ()) if p]
+    if not deptos and not projetos:
+        return []
+    valor, desp = _medida(medida), _medida_de_despesa(medida)
+    sql = f"""
+        SELECT departamento, TRIM(COALESCE(projeto,'')),
+               SUM(CASE WHEN tipo = ? THEN {desp} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? AND NOT COALESCE(({RETIDO}), FALSE)
+                        THEN {valor} ELSE 0 END)
+          FROM fato
+         WHERE analise = 'DRE' AND (departamento = ANY(?) OR projeto = ANY(?))
+         GROUP BY 1, 2"""
+    return [{"depto": d or "", "projeto": p or "", "despesa": float(de or 0),
+             "receita": float(re_ or 0)}
+            for d, p, de, re_ in consultar(sql, [PAG, REC, deptos, projetos])]
 
 
 def grupos_e_categorias() -> dict:
@@ -3306,7 +3365,7 @@ def conferencia_das_contas() -> dict:
             "tem_perna_bancaria": bancaria["pernas"] > 0}
 
 
-def conferencia_dos_juros(configuradas) -> dict:
+def conferencia_dos_juros(configuradas, deptos_admin=()) -> dict:
     """Onde estão os juros de empréstimo na base — categoria por categoria.
 
     22/09/2026, o dono: "na controladoria tem 1,6 milhão, no painel só vejo
@@ -3332,13 +3391,52 @@ def conferencia_dos_juros(configuradas) -> dict:
                        "titulos": titulos, "pago": float(pago or 0),
                        "aberto": float(aberto or 0),
                        "configurada": (cat or "").strip().lower() in alvos})
+    # QUANTO DISSO ESTÁ NA ESTRUTURA (matriz e filial) — 11/11/2026, o dono leu
+    # "o que a prestação conta hoje: R$ 2.358.331" e respondeu "não entendi".
+    # O número somava a categoria na empresa INTEIRA; a prestação só distribui
+    # pelo caixa o juro lançado na matriz/filial. O juro lançado direto numa
+    # obra já é despesa dela e não passa pela divisão. A tela agora separa.
+    # COM OS JUROS E MULTAS PAGOS (11/11/2026): a conta distribui a despesa
+    # com o encargo dentro, e este quadro somava sem — o dono viu
+    # R$ 3.039.343,02 num lugar e R$ 3.030.809,67 no outro, na mesma tela.
+    encargo_pago = f"CASE WHEN tipo = '{PAG}' THEN {ENCARGO} ELSE 0 END"
+    encargos = {(cat, analise or "", "Receber" if tipo == REC else "Pagar"): float(v or 0)
+                for cat, analise, tipo, v in consultar(f"""
+        SELECT TRIM(categoria), analise, tipo, COALESCE(SUM({encargo_pago}), 0)
+          FROM fato
+         WHERE translate(lower(COALESCE(categoria,'')), 'áàâãéêíóôõúç', 'aaaaeeiooouc')
+               ~ '(jur|emprest|financ|\\miof\\M|encarg|amortiz)'
+         GROUP BY 1, 2, 3""")}
+    na_estrutura: dict[tuple, float] = {}
+    if deptos_admin:
+        for cat, analise, tipo, valor in consultar(f"""
+            SELECT TRIM(categoria), analise, tipo,
+                   COALESCE(SUM({EXECUTADO}), 0) + COALESCE(SUM(a_pagar_receber), 0)
+                   + COALESCE(SUM({encargo_pago}), 0)
+              FROM fato
+             WHERE translate(lower(COALESCE(categoria,'')), 'áàâãéêíóôõúç', 'aaaaeeiooouc')
+                   ~ '(jur|emprest|financ|\\miof\\M|encarg|amortiz)'
+               AND departamento = ANY(?)
+             GROUP BY 1, 2, 3""", [list(deptos_admin)]):
+            na_estrutura[(cat, analise or "", "Receber" if tipo == REC else "Pagar")] = float(valor or 0)
+    for l in linhas:
+        l["total"] = (l["pago"] + l["aberto"]
+                      + encargos.get((l["categoria"], l["analise"], l["tipo"]), 0.0))
+        l["na_estrutura"] = na_estrutura.get((l["categoria"], l["analise"], l["tipo"]), 0.0)
+        l["nas_obras"] = l["total"] - l["na_estrutura"]
+        l["contada"] = bool(l["configurada"] and l["analise"] == "DRE")
+    contadas = [l for l in linhas if l["contada"]]
     (encargos,) = consultar(f"""
         SELECT COALESCE(SUM({ENCARGO}), 0) AS encargos_de_atraso FROM fato
          WHERE tipo = ?""", [PAG])[0]
     return {"linhas": linhas, "encargos_de_atraso": float(encargos or 0),
             "configuradas": sorted(alvos),
-            "total_configurado_dre": sum(abs(l["pago"]) for l in linhas
-                                         if l["configurada"] and l["analise"] == "DRE")}
+            "tem_estrutura": bool(deptos_admin),
+            # o que vai para as obras com caixa negativo / o que já é da obra
+            "distribui": sum(abs(l["na_estrutura"]) for l in contadas),
+            "ja_nas_obras": sum(abs(l["nas_obras"]) for l in contadas),
+            "total_contado": sum(abs(l["total"]) for l in contadas),
+            "total_configurado_dre": sum(abs(l["pago"]) for l in contadas)}
 
 
 def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:

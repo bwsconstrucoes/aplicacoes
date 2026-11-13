@@ -802,6 +802,26 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 12/11/2026 — o "processar nova SP" do Make passa a rodar UM POR VEZ
+
+O dono: *"tá super lento"*, com o log do Render mostrando as 4 linhas de
+atendimento (`--workers 1 --threads 4`) tomadas por automações:
+`POST /api/baixabradesco/processar-fila-tardia` há 124 s e três
+`POST /api/processarnovasp/executar` juntos (6 a 30 s cada). Com as quatro
+ocupadas, toda tela de toda área espera (ver `app/lentidao.py`).
+
+**Feito pelo dono, no Make, no mesmo dia:** o cenário que chama
+`/api/processarnovasp/executar` ficou com *Sequential processing* — uma
+chamada por vez, uma linha só. As SPs novas podem demorar um pouco mais para
+serem processadas; o resto do sistema deixa de travar por causa delas.
+
+**Ficou para o chat do BaixaBradesco:** a fila tardia processa a fila INTEIRA
+numa requisição só (`fila_tardia.processar_fila_tardia`) — limitar o trabalho
+por chamada. **E em aberto, decisão do dono:** subir de 4 para 8 threads
+(Procfile E Start Command do Render, os dois — ver `CLAUDE.md` › Gunicorn); e
+investigar por que o `processarnovasp` leva até 30 s (módulo sem área nem
+documentação).
+
 ### 11/11/2026 — a pergunta da publicação é UMA POR CHAT
 
 Ele: *"Agora não pode mais. Pq tá perguntando duas vezes? Já havia afirmado."*

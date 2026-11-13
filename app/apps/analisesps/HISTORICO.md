@@ -12244,6 +12244,41 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 264 — Telegram: um grupo novo a cada envio (WhatsApp1, WhatsApp2…), com repetidas (12/11/2026)
+
+- *"Mesmo que elas já estejam no lote, elas integrem o lote que está sendo criado. Elas
+  podem ficar repetidas. (…) se enviar uma lista de SPs agora, e enviar outra lista
+  mais tarde, quero que seja criado um novo lote. Daí fica WhatsApp1, WhatsApp2."*
+- Era UM grupo "WhatsApp" que somava tudo, e a SP que já estava em qualquer grupo era
+  pulada. Agora (`lote.proximo_grupo_whatsapp`, `lote.juntar_num_grupo`,
+  `telegram_lote.grupo_do_envio`): cada envio cria "WhatsApp" + (maior número + 1) no
+  TOPO do lote (o "WhatsApp" antigo, sem número, conta zero); a SP que está em outro
+  grupo entra assim mesmo (repetida); dentro do mesmo grupo não repete.
+- ⚠️ **O mesmo envio cortado em várias mensagens:** o Telegram corta colagem longa;
+  o que chega até 2 minutos depois da mensagem anterior (`JANELA_DO_MESMO_ENVIO_S`)
+  vai para o MESMO grupo — a memória é `analisesps.meta` ›
+  `telegram_lote.ultimo_grupo.<pessoa>`.
+- A proteção da tela aberta (`manter_chegadas`) devolve o que sumiu ao grupo do
+  último envio. Limite: uma SP que chegou pelo robô e TAMBÉM está em outro grupo não
+  é devolvida se o salvar apagar só o grupo dela (a base não guarda o grupo de cada
+  chegada).
+- Testes: `test_analisesps_lote_whatsapp.py`, `test_analisesps_telegram_lote_banco.py`.
+
+#### Leva 263 — Gerar e lançar no Pipefy numa tacada só (11/11/2026)
+
+- *"Primeiro a gente gera o arquivo e depois lança no Pipefy. Eu queria poder ter a
+  opção de gerar e lançar ao mesmo tempo, numa tacada só. Poder somente gerar e ficar
+  lá guardado, ou então gerar tudo uma vez."*
+- A janela "Gerar arquivos" (`_gerar_direto.html`, todas as telas da folha) ganhou o
+  botão **"Gerar e lançar no Pipefy"**, ao lado de "Gerar definitivo" (que continua
+  só gerando). Ele faz o mesmo "Gerar definitivo" e, em seguida, o mesmo "Lançar no
+  Pipefy" de Arquivos gerados (`folha_cards.lancar`, todas as contas), com as mesmas
+  travas da prévia. Pede confirmação (card no Pipefy não se apaga por aqui).
+- **Se o lançamento travar** (obra sem Código Omie, tipo de despesa sem Record ID…), a
+  GERAÇÃO VALE: os arquivos ficam, a tela diz por que não lançou e abre Arquivos
+  gerados para lançar depois (`web._lancar_depois_de_gerar`, nunca levanta).
+- Testes: `test_analisesps_gerar_e_lancar.py`.
+
 #### Leva 262 — Centros de custo da contabilidade × o ponto (11/11/2026)
 
 - *"A folha da contabilidade tem determinado centro de custo, só que na nomenclatura

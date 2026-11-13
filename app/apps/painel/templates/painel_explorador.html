@@ -110,8 +110,13 @@
         <b>Ensaio: nada foi enviado ao OMIE.</b>
         {{ alteracao.quantos }} título(s) conferido(s).
       {% else %}
+        {% if alteracao.alterados %}
         <b>{{ alteracao.alterados }} lançamento(s) alterado(s) no OMIE</b>
         — e já no painel: a lista abaixo mostra a obra e a categoria novas.
+        {% else %}
+        <b>Nada foi alterado no OMIE.</b> O motivo de cada um está na coluna
+        Resultado, abaixo.
+        {% endif %}
         {% if alteracao.titulos_alterados %}
           Para conferir com o OMIE, rode a <b>Atualização do dia</b> quando
           terminar todos os lotes: ela relê os títulos alterados.

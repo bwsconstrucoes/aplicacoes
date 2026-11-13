@@ -40,6 +40,9 @@
 <h2>Como esta prestação é feita
   <small>o cenário “{{ cenario.nome }}”, passo a passo</small>
 </h2>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{{ nav_da_prestacao('como', cenario.id) }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 
 <form method="get" class="tabela-barra nao-imprime" style="border:0; padding:0 0 12px">
   <div class="campo" style="max-width:360px">
@@ -53,10 +56,6 @@
   <span class="espaco"></span>
   <button type="button" class="btn secundario" style="align-self:flex-end"
           onclick="window.print()">🖨 Imprimir</button>
-  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
-     href="{{ url_for('painel.cenario_resultado', cenario=cenario.id) }}">Ver o resultado →</a>
-  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
-     href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">← Montar</a>
 </form>
 
 {% if cenario.observacao %}<p class="cartao-dica">{{ cenario.observacao }}</p>{% endif %}
@@ -65,17 +64,31 @@
 <div class="cartao"><div class="passo"><span class="numero">1</span><div>
   <h3>De quanto estamos falando</h3>
   <p class="frase">
-    A estrutura da empresa (matriz e filial) custou
+    A matriz da empresa custou
     <b>{{ v(e.resumo.total) }}</b>{% if e.primeiro_mes %} desde {{ e.primeiro_mes[5:] }}/{{ e.primeiro_mes[:4] }}{% endif %}.
     Esse custo não é de nenhuma obra em particular — por isso ele é
     <b>dividido entre as obras</b>, para cada uma mostrar o resultado de verdade.
+    {% if e.no_dre and e.no_dre.receita|abs > 0.005 %}
+    <small>(No DRE é a linha “= Total Custos/Despesas” desses centros de custo. A última
+    linha do DRE, o resultado, dá {{ v(e.no_dre.resultado) }} porque desconta
+    {{ v(e.no_dre.receita) }} de receita lançada na própria matriz — receita que esta
+    prestação desconsidera.)</small>
+    {% endif %}
+    {% if e.resumo.filial and e.resumo.filial.centros and e.resumo.filial.rateia|abs > 0.005 %}
+    A filial ({{ e.resumo.filial.centros|join(' e ') }}) custou mais
+    <b>{{ v(e.resumo.filial.rateia) }}</b>, que vão <b>inteiros só para as demais obras</b>{% if e.principal %}
+    — o {{ e.principal }} não recebe nada dela{% endif %}.
+    {% endif %}
   </p>
   <div class="seta-lados">
-    <div class="caixa"><small>Custo da estrutura</small><b>{{ v(e.resumo.total) }}</b></div>
-    <div class="caixa"><small>Entra na divisão</small><b>{{ v(e.resumo.entra) }}</b></div>
-    {% if e.resumo.fora|abs > 0.005 %}
-    <div class="caixa"><small>Fica de fora (não se divide)</small><b>{{ v(e.resumo.fora) }}</b></div>
+    <div class="caixa"><small>Custo da matriz</small><b>{{ v(e.resumo.total) }}</b></div>
+    {% if e.principal and e.resumo.fica|abs > 0.005 %}
+    <div class="caixa"><small>Fica no {{ e.principal }}</small><b>{{ v(e.resumo.fica) }}</b></div>
     {% endif %}
+    {% if e.principal and e.resumo.para_a_filial|abs > 0.005 %}
+    <div class="caixa"><small>É da {{ e.filial_nome }}</small><b>{{ v(e.resumo.para_a_filial) }}</b></div>
+    {% endif %}
+    <div class="caixa"><small>Rateia entre todas as obras</small><b>{{ v(e.resumo.rateia) }}</b></div>
     {% if e.resumo.juros|abs > 0.005 %}
     <div class="caixa"><small>Juros de empréstimo (passo 4)</small><b>{{ v(e.resumo.juros) }}</b></div>
     {% endif %}
@@ -84,13 +97,19 @@
 </div></div></div>
 
 {# ---------------------------------------------------------------- 2 #}
+{# AS TRÊS PARTES DE CADA DESPESA (11/11/2026, o dono: "Categoria X: ratear
+   100% entre todas. Categoria Y: jogar 20% para BWSNE e ratear 80%" e "10.000
+   não entram na conta de rateio e ficam em BWSCE"). #}
 <div class="cartao"><div class="passo"><span class="numero">2</span><div>
-  <h3>Quanto vai para {{ ('o ' ~ e.principal) if e.principal else 'cada lado' }} e quanto para os demais projetos</h3>
+  <h3>Para onde vai cada despesa da matriz</h3>
   {% if e.principal %}
   <p class="frase">
-    Cada tipo de despesa da estrutura tem a sua divisão: uma parte vai para as obras do
-    <b>{{ e.principal }}</b> e <b>o resto vai para os demais projetos</b>. Quando o
-    percentual muda com o tempo, vale o do período.
+    Cada tipo de despesa da matriz pode ter até <b>três destinos</b>:
+    uma parte <b>fica no {{ e.principal }}</b> (não é rateável: é custo só dele);
+    uma parte <b>é da {{ e.filial_nome }}</b> — as obras que não são do {{ e.principal }} —
+    porque foi lançada na matriz, mas é custo delas;
+    e o resto <b>se rateia entre todas as obras</b>, dos dois lados.
+    Quando a regra muda com o tempo, vale a do período.
   </p>
   {% else %}
   <p class="frase">Este cenário não separa um projeto principal: todo o custo se divide
@@ -99,38 +118,38 @@
   <div class="tabela-rolagem">
     <table>
       <thead><tr>
-        <th class="sem-ordem">Despesa da estrutura</th>
+        <th class="sem-ordem">Despesa da matriz</th>
         <th class="sem-ordem direita">Custo</th>
-        <th class="sem-ordem direita">Entra na divisão</th>
         {% if e.principal %}
-        <th class="sem-ordem">Para o {{ e.principal }}</th>
-        <th class="sem-ordem">Para os demais</th>
+        <th class="sem-ordem direita">Fica no {{ e.principal }}</th>
+        <th class="sem-ordem direita">É da {{ e.filial_nome }}</th>
         {% endif %}
+        <th class="sem-ordem direita">Rateia entre todas</th>
+        <th class="sem-ordem">A regra</th>
       </tr></thead>
       <tbody>
         {% for g in e.grupos %}
         <tr>
           <td class="desc"><b>{{ g.grupo }}</b></td>
           <td class="dados direita">{{ v(g.valor) }}</td>
-          <td class="dados direita">{{ v(g.entra) }} <small>({{ g.entra_pct }})</small>
-            {% if g.juros|abs > 0.005 %}<br><small>+ {{ v(g.juros) }} de juros (passo 4)</small>{% endif %}</td>
           {% if e.principal %}
-          {% if g.parte %}
-          <td>{{ g.parte }}</td><td>o restante</td>
-          {% else %}
-          <td colspan="2"><small>sem separar — divide entre todas as obras que recebem</small></td>
+          <td class="dados direita">{{ v(g.fica) }}</td>
+          <td class="dados direita">{{ v(g.filial) }}</td>
           {% endif %}
-          {% endif %}
+          <td class="dados direita">{{ v(g.rateia) }}
+            {% if g.juros|abs > 0.005 %}<br><small>+ {{ v(g.juros) }} de juros (passo 4)</small>{% endif %}</td>
+          <td><small>{{ g.regra or '100% rateia entre todas' }}</small></td>
         </tr>
           {% for c in g.excecoes %}
           <tr>
-            <td class="desc sub">↳ {{ c.categoria }} <small>(diferente do grupo)</small></td>
+            <td class="desc sub">↳ {{ c.categoria }} <small>(regra própria)</small></td>
             <td class="dados direita">{{ v(c.valor) }}</td>
-            <td class="dados direita"><small>{{ c.entra_pct }}</small></td>
             {% if e.principal %}
-            {% if c.parte %}<td>{{ c.parte }}</td><td>o restante</td>
-            {% else %}<td colspan="2"><small>como o grupo</small></td>{% endif %}
+            <td class="dados direita">{{ v(c.fica) }}</td>
+            <td class="dados direita">{{ v(c.filial) }}</td>
             {% endif %}
+            <td class="dados direita">{{ v(c.rateia) }}</td>
+            <td><small>{{ c.regra }}</small></td>
           </tr>
           {% endfor %}
         {% endfor %}
@@ -141,9 +160,11 @@
 
 {# ---------------------------------------------------------------- 3 #}
 <div class="cartao"><div class="passo"><span class="numero">3</span><div>
-  <h3>Dentro de cada lado, quanto cabe a cada obra</h3>
+  <h3>Quanto cabe a cada obra</h3>
   <p class="frase">
-    A parte de cada lado é repartida entre as obras dele <b>na proporção
+    Cada parte é repartida entre as obras a que se destina — a que fica no
+    {{ e.principal or 'projeto principal' }}, só entre as obras dele; a da {{ e.filial_nome }}, só
+    entre as dela; a que se rateia, entre todas — sempre <b>na proporção
     {{ 'do custo de mão de obra' if e.regua_e_pessoal else 'do faturamento' }}</b>
     de cada uma{% if e.janela %} ({{ e.janela }}){% endif %}, mês a mês.
     {% if e.regua_e_pessoal %}Obra com mais gente usa mais a estrutura — DP,

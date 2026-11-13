@@ -8,6 +8,9 @@
 <h2>Montar o cenário
   <small>a régua, o que se divide e quem divide — num lugar só</small>
 </h2>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{{ nav_da_prestacao('montagem', cenario.id if cenario else None) }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 
 <!-- ===================== QUAL CENÁRIO ===================== -->
 <div class="cartao">
@@ -75,194 +78,382 @@
    primeiro; a régua e os juros, que se escolhem uma vez, vão para o fim. #}
 <nav class="chips nao-imprime" style="margin:0 0 14px; position:sticky; top:0; z-index:5;
      background:var(--fundo, #f2f4f8); padding:8px 0">
-  {% for alvo, rotulo in [('passo-divide','1 · O que se divide'), ('passo-recebe','2 · Quem recebe'),
-                          ('passo-socios','3 · Quem divide o resultado'), ('passo-fora','4 · Fora da análise'),
+  {% for alvo, rotulo in [('passo-fora','1 · O que entra'), ('passo-divide','2 · O que se divide'),
+                          ('passo-recebe','3 · Quem recebe'), ('passo-socios','4 · Quem divide o resultado'),
                           ('passo-regua','5 · Régua e juros')] %}
   <a class="modulo-btn" href="#{{ alvo }}"
      style="background:var(--branco); color:var(--tinta-suave); border:1px solid var(--borda); text-decoration:none">{{ rotulo }}</a>
   {% endfor %}
   <span style="flex:1"></span>
-  <a class="btn secundario" style="text-decoration:none"
-     href="{{ url_for('painel.prestacao_parametros') }}"
-     title="sócios, ajustes, projeto das obras e parâmetros gerais">⚙ Cadastros</a>
-  <a class="btn" style="text-decoration:none"
-     href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita (para mostrar)</a>
 </nav>
+{% if request.args.get('erro') %}
+<div class="aviso erro"><b>Não salvou:</b> {{ request.args.get('erro') }} Nada foi gravado — corrija e salve de novo.</div>
+{% endif %}
 
 {# O PERCENTUAL POR PERÍODO (09/11/2026): "a partir de MM/AAAA, X%". Cada um
    vale até começar o seguinte. Linha com o mês ou o percentual em branco não
    é gravada — é assim que se apaga um período. #}
-{% macro periodos_da_conta(nivel, chave, lista, alvo, colunas, efetivo=100) %}
-<tr class="linha-periodos" data-periodos-de="{{ alvo }}" hidden>
+{# AS TRÊS PARTES DE CADA CONTA (11/11/2026). O dono, com exemplos: "Categoria
+   X: ratear 100% entre todas. Categoria Y: jogar 20% para BWSNE e ratear 80%.
+   Categoria Z: jogar 100% para BWSNE" e "10.000 não entram na conta de rateio
+   e ficam em BWSCE". Cada conta tem dois campos — quanto FICA no principal e
+   quanto É DA FILIAL — e o que falta para 100 se rateia entre todas. A linha
+   da conta é a regra de sempre; as de baixo valem a partir de um mês.
+
+   Campos de cada linha: `periodo_nivel`, `periodo_chave`, `periodo_desde`
+   ("inicio" na linha da conta), `periodo_fica`, `periodo_filial`. #}
+{% macro n(v) %}{{ ('%.2f'|format(v)).rstrip('0').rstrip('.')|replace('.', ',') }}{% endmacro %}
+
+{# os dois campos de uma linha de regra; `regra` é (fica, filial) ou none.
+   `desde` "inicio" marca a linha da conta (a regra de sempre). #}
+{% macro campos_da_regra(nivel, chave, desde, regra, herda=none, alvo='') %}
+  <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
+  <input type="hidden" name="periodo_chave" value="{{ chave }}">
+  {% if desde == 'inicio' %}<input type="hidden" name="periodo_desde" value="inicio">
+  <input type="hidden" name="periodo_ate" value=""><input type="hidden" name="periodo_valor" value="">{% endif %}
+  {% set fica = n(regra[0]) if regra else '' %}
+  {% set filial = n(regra[1]) if regra else '' %}
+  <span style="display:inline-flex; gap:4px; align-items:center; white-space:nowrap">
+    <input name="periodo_fica" value="{{ fica }}" data-original="{{ fica }}" data-parte="fica"
+           {% if herda %}data-herda="{{ n(herda[0]) }}" placeholder="{{ n(herda[0]) }}"{% endif %}
+           inputmode="decimal" data-sem-mascara style="width:62px; text-align:right"
+           aria-label="% de {{ chave }} que fica no {{ principal or 'projeto principal' }}">
+    <input name="periodo_filial" value="{{ filial }}" data-original="{{ filial }}" data-parte="filial"
+           {% if herda %}data-herda="{{ n(herda[1]) }}" placeholder="{{ n(herda[1]) }}"{% endif %}
+           inputmode="decimal" data-sem-mascara style="width:62px; text-align:right"
+           aria-label="% de {{ chave }} que é da {{ filial_nome }}">
+    <b data-rateia style="min-width:52px; text-align:right"></b>
+  </span>
+{% endmacro %}
+
+{# PERÍODO COM COMEÇO E FIM (12/11/2026, o dono: "nas regras de período não
+   tem ATÉ (…) era melhor a gente definir o período de tanto a tanto, não só a
+   partir de" e "queria saber quanto ficou para cada uma, já na mesma linha,
+   por cada período"). Cada linha: de [mês] até [mês], os dois percentuais, e
+   o dinheiro que a segue. Só o "de" = dali em diante; só o "até" = do início
+   até ali. Mês sem período nenhum cai na linha da conta — e a lacuna entre
+   dois períodos é avisada. #}
+{% macro periodos_da_conta(nivel, chave, lista, alvo, colunas, lacunas=[], regra=none, herda=none) %}
+<tr class="linha-periodos" data-periodos-de="{{ alvo }}" {{ 'hidden' if not lista }}>
   <td colspan="{{ colunas }}" style="padding:8px 10px 12px 40px; background:var(--papel)">
-    <input type="hidden" name="periodo_presente" value="{{ nivel }}|{{ chave }}">
     <div style="display:flex; flex-direction:column; gap:6px">
-      <small><b>Quanto vai para o {{ principal or 'projeto principal' }}</b> — o resto vai
-        sozinho para os demais projetos. Cada linha vale <b>a partir do mês dela até a
-        próxima começar</b>: só é preciso uma linha nova quando o percentual muda.
-        Mês em branco = desde o início.</small>
-      {% for desde, pct, parte in lista %}
-      <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap">
-        <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
-        <input type="hidden" name="periodo_chave" value="{{ chave }}">
-        <small>a partir de</small>
-        {% set mes = '' if desde == '1900-01' else desde %}
-        <input type="month" name="periodo_desde" value="{{ mes }}" data-original="{{ mes }}">
-        {% if not mes %}<small>(desde o início)</small>{% endif %}
-        <small>· para o {{ principal or 'principal' }}</small>
-        <input name="periodo_principal" value="{{ '' if parte is none else '%.0f'|format(parte) }}"
-               data-original="{{ '' if parte is none else '%.0f'|format(parte) }}"
-               inputmode="decimal" data-sem-mascara style="width:60px" placeholder="—"
-               aria-label="parte do projeto principal"> %
-        <small>· do custo, entra no rateio</small>
-        <input name="periodo_pct" value="{{ '%.0f'|format(pct) }}" data-original="{{ '%.0f'|format(pct) }}"
-               inputmode="decimal" data-sem-mascara style="width:60px" aria-label="percentual que entra"> %
+      <small><b>Quando a regra vale só num período.</b> Diga <b>de</b> que mês <b>até</b> que mês
+        (inclusive). Só o “de” = dali em diante; só o “até” = do início até ali. Os campos são os
+        mesmos: % que fica no {{ principal or 'principal' }}, % que é da {{ filial_nome }}, e o resto rateia.
+        <b>“Antes, ficam R$”</b> é opcional: um valor em reais do total do período que fica inteiro no
+        {{ principal or 'principal' }} — pró-labore, por exemplo — e os percentuais valem para o que sobra.
+        <b>Mês fora de todos os períodos</b> segue a linha da conta, acima
+        ({% if regra %}{{ n(regra[0]) }} · {{ n(regra[1]) }}{% elif herda %}em branco: herda {{ n(herda[0]) }} · {{ n(herda[1]) }}{% else %}em branco{% endif %}).</small>
+      {% for p in lista %}
+      <span data-linha-regra style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap">
+        <small>de</small>
+        <input type="month" name="periodo_desde" value="{{ p.desde }}" data-original="{{ p.desde }}"
+               aria-label="de que mês">
+        <small>até</small>
+        <input type="month" name="periodo_ate" value="{{ p.ate }}" data-original="{{ p.ate }}"
+               aria-label="até que mês">
+        {% set fixo = p.valor_txt %}
+        <small title="um valor em reais que fica inteiro no {{ principal or 'principal' }}, antes dos percentuais">antes, ficam R$</small>
+        <input name="periodo_valor" value="{{ fixo }}" data-original="{{ fixo }}" data-sem-mascara
+               inputmode="decimal" placeholder="0,00" style="width:120px; text-align:right"
+               aria-label="valor em reais que fica no {{ principal or 'principal' }} antes dos percentuais">
+        <small>e do resto:</small>
+        {{ campos_da_regra(nivel, chave, p.desde, (p.fica, p.filial)) }}
+        {# o dinheiro que segue esta linha #}
+        <small style="color:var(--tinta-suave)">
+          {% if p.total|abs > 0.005 %}
+          neste período: <b>{{ brl(p.total) }}</b> —
+          fica {{ brl(p.v_fica) }}{% if p.valor %} (com os R$ {{ p.valor_txt }} destacados){% endif %}
+          · {{ filial_nome }} {{ brl(p.v_filial) }} · rateia {{ brl(p.v_rateia) }}
+          {% if p.valor_passa %}<b style="color:var(--vermelho)">· o valor destacado é maior que o total do período: fica tudo</b>{% endif %}
+          {% else %}sem custo neste período{% endif %}
+        </small>
       </span>
       {% endfor %}
-      <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap">
-        <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
-        <input type="hidden" name="periodo_chave" value="{{ chave }}">
-        <small>{{ 'e a partir de' if lista else 'a partir de' }}</small>
-        <input type="month" name="periodo_desde" data-original="">
-        <small>· para o {{ principal or 'principal' }}</small>
-        <input name="periodo_principal" data-original="" inputmode="decimal" data-sem-mascara
-               style="width:60px" placeholder="—" aria-label="parte do projeto principal"> %
-        <small>· do custo, entra no rateio</small>
-        {# já vem com o percentual que a linha divide hoje: quase sempre é ele #}
-        <input name="periodo_pct" value="{{ '%.0f'|format(efetivo) }}" data-original="{{ '%.0f'|format(efetivo) }}"
-               inputmode="decimal" data-sem-mascara
-               style="width:60px" aria-label="percentual que entra"> %
+      {% for de, ate in lacunas %}
+      <span class="aviso erro" style="margin:0; padding:4px 8px">
+        <b>Lacuna:</b> de {{ de[5:] }}/{{ de[:4] }} a {{ ate[5:] }}/{{ ate[:4] }} não há período.
+        Nesses meses vale a linha da conta, acima. Se não for isso, emende os períodos.
       </span>
+      {% endfor %}
+      {# várias linhas novas antes de salvar: já estão na página, escondidas #}
+      {% for k in range(6) %}
+      <span data-linha-regra data-periodo-novo {{ 'hidden' if k }} style="display:{{ 'none' if k else 'inline-flex' }}; gap:6px; align-items:center; flex-wrap:wrap">
+        <small>de</small>
+        <input type="month" name="periodo_desde" data-original="" aria-label="de que mês">
+        <small>até</small>
+        <input type="month" name="periodo_ate" data-original="" aria-label="até que mês">
+        <small title="um valor em reais que fica inteiro no {{ principal or 'principal' }}, antes dos percentuais">antes, ficam R$</small>
+        <input name="periodo_valor" data-original="" data-sem-mascara inputmode="decimal"
+               placeholder="0,00" style="width:120px; text-align:right"
+               aria-label="valor em reais que fica no {{ principal or 'principal' }} antes dos percentuais">
+        <small>e do resto:</small>
+        {{ campos_da_regra(nivel, chave, '', none) }}
+      </span>
+      {% endfor %}
+      <span><button type="button" class="link-btn" data-mais-periodo><small>＋ outro período</small></button></span>
     </div>
-    <small class="dica">Exemplo: “a partir de 01/2021, 50% para o {{ principal or 'principal' }}” e
-      “a partir de 01/2022, 40%” — 2021 inteiro fica em 50, e de 2022 em diante em 40.
-      {% if primeiro_mes %}A matriz tem custo desde <b>{{ primeiro_mes[5:] }}/{{ primeiro_mes[:4] }}</b>:
-      antes da primeira linha, a conta não separa os lados (divide entre todas as obras, pela régua).{% endif %}
-      Para apagar uma linha, apague a parte do {{ principal or 'principal' }} (ou o “entra”) e salve.
-      Depois de salvar, aparece uma linha nova em branco para o próximo período.</small>
+    <small class="dica">Exemplo: “de 01/2020 até 12/2021 — 50 fica no {{ principal or 'principal' }}, 0 é da {{ filial_nome }}”:
+      nesses dois anos metade fica e metade rateia; fora deles, vale a linha da conta.
+      O valor de cada período aparece depois de salvar. Para apagar uma linha, apague os dois percentuais e salve.</small>
   </td>
 </tr>
 {% endmacro %}
 
-{# o que a linha tem hoje, dito por extenso — é o botão que abre os períodos #}
-{% macro parte_do_principal(lista, alvo) %}
+{# o botão que abre os períodos — diz quantos há #}
+{% macro botao_dos_periodos(lista, alvo, lacunas=[]) %}
 <button type="button" class="link-btn" data-abre-periodos="{{ alvo }}"
-        title="quanto desta conta vai para o {{ principal or 'projeto principal' }}, e a partir de quando">
-  {% set com_parte = lista|selectattr(2, 'ne', none)|list %}
-  {% if com_parte %}
-    {% for desde, pct, parte in lista %}{% if parte is not none %}<b>{{ '%.0f'|format(parte) }}%</b>
-      <small>{{ 'sempre' if desde == '1900-01' else 'desde ' ~ desde[5:] ~ '/' ~ desde[:4] }}</small>{{ ' · ' if not loop.last }}{% endif %}{% endfor %}
-    <small>✎</small>
-  {% elif lista %}
-    {# só muda quanto ENTRA, sem separar os lados #}
-    <small>entra {% for desde, pct, parte in lista %}{{ '%.0f'|format(pct) }}% desde {{ desde[5:] }}/{{ desde[:4] }}{{ ' · ' if not loop.last }}{% endfor %} ✎</small>
-  {% else %}
-    ＋ definir
-  {% endif %}
+        title="a regra desta conta muda a partir de algum mês?">
+  <small>{% if lista %}<b>{{ lista|length }} período{{ '' if lista|length == 1 else 's' }}</b> ✎{% else %}＋ por período{% endif %}</small>
 </button>
+{% if lacunas %}<br><small style="color:var(--vermelho)"><b>⚠ lacuna</b></small>{% endif %}
 {% endmacro %}
+
+<!-- ===================== O QUE ENTRA NA ANÁLISE ===================== -->
+{# PRIMEIRO PASSO (11/11/2026, o dono: "isso aqui era para ser uma das
+   primeiras perguntas (…) na hora que eu colocar aqui fora da análise, não era
+   mais nem para aparecer em quem divide o resultado, quem recebe o custo da
+   matriz"). O que for tirado aqui some dos quadros de baixo. #}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3 id="passo-fora" style="scroll-margin-top:64px">1 · Quais projetos e obras entram</h3>
+    <small>o que sair daqui não aparece nos passos seguintes nem no resultado</small>
+  </div>
+  {% from "painel_lista_fora.html" import lista_fora %}
+  <form method="post" data-secao="fora">
+    <input type="hidden" name="acao" value="fora_em_lista">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    {{ lista_fora(linhas_fora, botao=False) }}
+  </form>
+</div>
 
 <!-- ===================== O QUE SE DIVIDE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3 id="passo-divide" style="scroll-margin-top:64px">1 · O que se divide</h3>
+    <h3 id="passo-divide" style="scroll-margin-top:64px">2 · O que se divide</h3>
     <small>o que a matriz gastou, do maior para o menor</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
-    Escreva o percentual só onde quiser mudar. O que ficar em branco herda o
-    nível de cima — e o que ninguém tocar divide
-    <b>{{ '%.0f'|format(cenario.pct_padrao) }}%</b>. Clique no grupo para abrir
-    as categorias, e na categoria para abrir os lançamentos — lá dá para
-    marcar um a um. <b>Entra</b> é o dinheiro que vai para o bolo com o que
-    está marcado hoje, já descontando as exceções lá de dentro; <b>fica de
-    fora</b> é o resto.
+    Cada conta da matriz pode ir para <b>três lugares</b>, e você diz dois deles:
+    quanto <b>fica no {{ principal or 'projeto principal' }}</b> (não é rateável — só as obras dele dividem)
+    e quanto <b>é da {{ filial_nome }}</b> (todas as obras que não são do {{ principal or 'principal' }}: foi lançado na
+    matriz, mas é custo delas). <b>O que falta para 100% se rateia entre todas as obras</b>,
+    dos dois lados, pelo pessoal de cada uma. Em branco, a categoria segue o grupo, e o grupo
+    rateia {{ '%.0f'|format(cenario.pct_padrao) }}% (o padrão do cenário). Clique no grupo para abrir as categorias.
   </p>
   {% if resumo_matriz %}
+  {% set tot = resumo_matriz.total - resumo_matriz.juros_da_matriz %}
   <div class="kpis" style="margin-bottom:10px">
-    <div class="kpi estatico"><div class="kpi-rotulo">A matriz gastou</div>
-      <div class="kpi-valor">{{ brl(resumo_matriz.total) }}</div></div>
-    <div class="kpi verde estatico"><div class="kpi-rotulo">Entra no rateio</div>
-      <div class="kpi-valor">{{ brl(resumo_matriz.entra) }}</div>
-      <div class="kpi-sub">{{ '%.0f'|format(100 * resumo_matriz.entra / resumo_matriz.total if resumo_matriz.total else 0) }}% do gasto</div></div>
-    <div class="kpi vermelho estatico"><div class="kpi-rotulo">Fica de fora</div>
-      <div class="kpi-valor">{{ brl(resumo_matriz.fora) }}</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">A matriz gastou <small style="text-transform:none">— {{ 'executado' if cenario.medida == 'executado' else 'comprometido' }}</small></div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.total) }}</div>
+      {% if resumo_matriz.juros_da_matriz %}<div class="kpi-sub">sendo {{ brl(resumo_matriz.juros_da_matriz) }} de juros de empréstimo</div>{% endif %}</div>
+    <div class="kpi verde estatico"><div class="kpi-rotulo">Rateia entre todas as obras</div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.rateia) }}</div>
+      <div class="kpi-sub">{{ '%.0f'|format(100 * resumo_matriz.rateia / tot if tot else 0) }}% — {{ principal or 'principal' }} e {{ filial_nome }}, pelo pessoal de cada obra</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Fica no {{ principal or 'projeto principal' }}</div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.fica) }}</div>
+      <div class="kpi-sub">não rateável: só as obras dele dividem</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">É da {{ filial_nome }}</div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.para_a_filial) }}</div>
+      <div class="kpi-sub">lançado na matriz, mas é das demais obras</div></div>
     {% if resumo_matriz.juros %}
-    <div class="kpi ambar estatico"><div class="kpi-rotulo">Juros — régua própria</div>
+    <div class="kpi ambar estatico"><div class="kpi-rotulo">Juros de empréstimo</div>
       <div class="kpi-valor">{{ brl(resumo_matriz.juros) }}</div>
-      <div class="kpi-sub">caem em quem demandou caixa</div></div>
+      <div class="kpi-sub">categoria: {{ categorias_de_juros|join(' · ') }} — caem em quem demandou caixa{% if resumo_matriz.filial.juros|abs > 0.005 %}
+        · {{ brl(resumo_matriz.juros_da_matriz) }} da matriz e {{ brl(resumo_matriz.filial.juros) }} da filial{% endif %}</div></div>
     {% endif %}
   </div>
-  {# 10/11/2026, o dono: "tem que somar 100%. Se não somou, tem que ser
-     criticado para ajustar." #}
-  {% if resumo_matriz.fora|abs > 1 %}
-  <div class="aviso erro">
-    <b>{{ brl(resumo_matriz.fora) }} estão ficando de fora.</b> Há conta
-    entrando com menos de 100%, e essa parte não vai para nenhum dos dois
-    lados. Ajuste as linhas com valor na coluna "Fica de fora" — ou confirme
-    que é isso mesmo que você quer. O batimento do resultado acusa enquanto
-    houver valor aqui.
+  {# A FILIAL (11/11/2026, o dono: "é totalmente rateável apenas entre demais
+     obras, fora BWSCE"). Não entra na árvore abaixo: não tem percentual a
+     escolher. #}
+  {% if resumo_matriz.filial.centros %}
+  <p class="cartao-dica" style="margin:0 0 10px; border-left:4px solid var(--azul); padding-left:10px">
+    <b>Filial — {{ resumo_matriz.filial.centros|join(' e ') }}: {{ brl(resumo_matriz.filial.rateia) }}.</b>
+    Vai <b>inteiro só para as demais obras</b>{% if principal %} (o {{ principal }} não recebe nada dele){% endif %},
+    pela mesma régua. Não entra na lista abaixo, que é só da matriz.
+    {% if resumo_matriz.filial.juros|abs > 0.005 %}Os juros de empréstimo lançados nela
+    ({{ brl(resumo_matriz.filial.juros) }}) seguem a régua dos juros.{% endif %}
+    {% if resumo_matriz.filial.receita|abs > 0.005 %}No DRE dela a última linha (resultado) dá
+    {{ brl(resumo_matriz.filial.total + resumo_matriz.filial.receita) }}, porque desconta
+    {{ brl(resumo_matriz.filial.receita) }} de receita lançada nela; aqui vale o custo.{% endif %}
+    <small>Os centros de custo se trocam em
+    <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.</small>
+  </p>
+  {% endif %}
+  {# DE ONDE VEM ESSE NÚMERO (11/11/2026, o dono: "15,4 milhões (…) de onde é
+     que está sendo puxado esse valor?"). #}
+  {% if origem_da_matriz %}
+  <p class="cartao-dica" style="margin:0 0 10px">
+    <b>De onde vem “a matriz gastou”:</b> é a soma das despesas (DRE) dos centros de custo
+    da matriz —
+    {% for depto, valor in origem_da_matriz.por_depto %}<b>{{ depto }}</b> {{ brl(valor) }}{{ ' + ' if not loop.last }}{% endfor %}
+    — pelo <b>{{ 'executado (só o que já foi pago)' if origem_da_matriz.medida == 'executado' else 'comprometido (pago mais o que está a pagar)' }}</b>
+    <small>(troca-se em <a href="#passo-regua">5 · Régua e juros › Base do cálculo</a>)</small>,
+    com os juros e multas pagos,
+    {% if origem_da_matriz.primeiro_mes %}de {{ origem_da_matriz.primeiro_mes[5:] }}/{{ origem_da_matriz.primeiro_mes[:4] }}
+    a {{ origem_da_matriz.ultimo_mes[5:] }}/{{ origem_da_matriz.ultimo_mes[:4] }} (todos os anos){% endif %}{% if origem_da_matriz.sem_data|abs > 0.005 %},
+    mais {{ brl(origem_da_matriz.sem_data) }} sem data{% endif %}.
+    {% if administrador %}<a href="{{ url_for('painel.dre', obra=origem_da_matriz.por_depto|map(attribute=0)|list) }}" target="_blank" rel="noopener">Abrir o DRE só desses centros de custo ↗</a>
+    · {% endif %}Os centros de custo se trocam em
+    <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.
+  </p>
+  {# A ESTRUTURA CONTRA O DRE DO PROJETO (11/11/2026, o dono: "veja que não
+     bate (…) o que a matriz gastou" com o "DRE do projeto BWS, que é o que é
+     pra ser distribuído"). Os dois somam pela mesma regra; o que muda é a
+     lista de centros de custo. Aparece só quando as listas diferem. #}
+  {% set cp = origem_da_matriz.contra_o_projeto %}
+  {% if cp and cp.projetos %}
+  {# A CONFERÊNCIA COM O DRE (12/11/2026). O dono comparou "a matriz custou
+     13.796.222,19" com o DRE do projeto BWS (13.337.568,09) e o DRE dos dois
+     centros de custo (13.349.966,79). A prestação divide o CUSTO — a linha
+     "= Total Custos/Despesas" do DRE; a última linha do DRE é o RESULTADO,
+     que desconta a receita lançada ali. O quadro abre as três contas, centro
+     de custo por centro de custo. #}
+  <div class="aviso info" style="margin:0 0 10px; border-left:4px solid {{ 'var(--verde)' if cp.bate else 'var(--ambar)' }}">
+    {% if cp.bate %}
+    <b>✔ O custo bate com o DRE do projeto {{ cp.projetos|map(attribute=0)|join(' e ') }}</b>
+    — a linha “= Total Custos/Despesas” dele.
+    {% else %}
+    <b>“A matriz gastou” não bate com o DRE
+      {% if cp.projetos|length == 1 %}do projeto {{ cp.projetos[0][0] }}{% else %}dos projetos {{ cp.projetos|map(attribute=0)|join(' e ') }}{% endif %}:
+      diferença de {{ brl(cp.diferenca|abs) }} no custo.</b>
+    A diferença está em <b>quais centros de custo entram</b>: aqui, os marcados como
+    matriz em Cadastros; no DRE do projeto, todos os que têm lançamento do projeto.
+    {% endif %}
+    {% if cp.receita|abs > 0.005 %}
+    <br><b>Atenção ao comparar:</b> a última linha do DRE é o <b>RESULTADO</b>, que desconta
+    a receita. Nos centros de custo da matriz há <b>{{ brl(cp.receita) }} de receita</b>:
+    custo {{ brl(cp.estrutura) }} + receita {{ brl(cp.receita) }} = resultado
+    <b>{{ brl(cp.resultado) }}</b>. A prestação divide o <b>custo</b>; essa receita
+    <b>é desconsiderada</b> — não vai para nenhuma obra e não abate o custo dividido.
+    {% endif %}
+    <details style="margin-top:6px" {{ 'open' if not cp.bate }}>
+      <summary style="cursor:pointer"><b>Conferir com o DRE, centro de custo por centro de custo</b></summary>
+      <div class="tabela-rolagem" style="margin-top:8px; background:var(--branco)">
+        <table>
+          <thead><tr>
+            <th class="sem-ordem">Centro de custo</th>
+            <th class="sem-ordem">Projeto dele</th>
+            <th class="sem-ordem direita">Custo<br><small>= Total Custos/Despesas</small></th>
+            <th class="sem-ordem direita">Receita líquida</th>
+            <th class="sem-ordem direita">Resultado<br><small>última linha do DRE</small></th>
+            <th class="sem-ordem">É da matriz?</th>
+          </tr></thead>
+          <tbody>
+            {% for c in cp.centros %}
+            <tr>
+              <td class="desc"><b>{{ c.depto }}</b></td>
+              <td class="desc">{{ c.projeto or '(sem projeto)' }}</td>
+              <td class="dados direita">{{ brl(c.valor) }}</td>
+              <td class="dados direita">{{ brl(c.receita) }}</td>
+              <td class="dados direita">{{ brl(c.resultado) }}</td>
+              <td class="desc">{% if c.estrutura %}sim
+                {% elif c.valor|abs > 0.005 %}<b style="color:var(--vermelho)">não</b> — tem custo do projeto, mas não está marcado como matriz
+                {% else %}não — só tem receita do projeto{% endif %}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total">
+              <td class="desc" colspan="2"><b>A matriz</b> (os marcados como matriz)</td>
+              <td class="dados direita"><b>{{ brl(cp.estrutura) }}</b></td>
+              <td class="dados direita">{{ brl(cp.receita) }}</td>
+              <td class="dados direita">{{ brl(cp.resultado) }}</td><td><small>o custo é o que se divide</small></td>
+            </tr>
+            {% for d in cp.projetos_abertos %}
+            <tr class="total">
+              <td class="desc" colspan="2"><b>DRE do projeto {{ d.projeto }}</b> (tudo o que é dele)</td>
+              <td class="dados direita"><b>{{ brl(d.despesa) }}</b></td>
+              <td class="dados direita">{{ brl(d.receita) }}</td>
+              <td class="dados direita">{{ brl(d.resultado) }}</td><td></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <small>Os valores são de todos os anos e pelo
+        {{ 'executado' if origem_da_matriz.medida == 'executado' else 'comprometido' }}; no DRE, tire o
+        filtro de ano e olhe a coluna correspondente. Os centros de custo da matriz se trocam em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>;
+        o projeto de cada um, em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='projetos') }}">Cadastros › Projeto das obras</a>.</small>
+    </details>
   </div>
+  {% endif %}
   {% endif %}
   {% endif %}
 
+  {% if resumo_matriz and resumo_matriz.lacunas %}
+  <div class="aviso erro" style="margin:0 0 10px">
+    <b>{{ resumo_matriz.lacunas }} conta(s) com lacuna entre períodos.</b>
+    Há meses entre um período e o seguinte sem regra de período: neles vale a linha da conta.
+    Elas estão marcadas com “⚠ lacuna” na última coluna — abra e confira.
+  </div>
+  {% endif %}
   {# A ÁRVORE INTEIRA NUM FORMULÁRIO SÓ (05/11/2026). O dono: "da forma que
      tá, um pouquinho complicado de lançar um a um". Digita-se o grupo, abre-se
      ele ALI MESMO (sem recarregar, para não perder o que já foi digitado),
      ajustam-se as categorias que fogem do grupo e salva-se tudo num clique. #}
-  <form method="post" id="pesos-da-arvore">
+  <form method="post" id="pesos-da-arvore" data-secao="arvore">
   <input type="hidden" name="acao" value="pesos_da_arvore">
   <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
   <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
   <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
   <div class="tabela-barra">
     <span class="resumo" id="arvore-pendente">Digite os percentuais e salve tudo de uma vez.</span>
+    {# 11/11/2026, o dono: "que eles sejam expansíveis também, para exibir
+       grupo e categoria de despesa" — cada grupo abre no ▸; isto abre todos #}
+    <label class="cartao-dica" style="margin:0 0 0 14px">
+      <input type="checkbox" id="arvore-abrir-todos"> abrir todos os grupos
+    </label>
     <span class="espaco"></span>
     <button class="btn" type="submit">Salvar percentuais</button>
   </div>
   <div class="tabela-rolagem" style="max-height:620px">
-    <table>
+    <table id="arvore-das-partes">
       <thead>
         <tr>
           <th class="sem-ordem">Conta da matriz</th>
           <th class="sem-ordem direita">Total</th>
-          <th class="sem-ordem direita">Entra</th>
-          <th class="sem-ordem direita">Fica de fora</th>
-          <th class="sem-ordem direita">Divide hoje</th>
-          <th class="sem-ordem direita">% que entra</th>
-          <th class="sem-ordem direita">Para o {{ principal or 'projeto principal' }}</th>
+          <th class="sem-ordem direita">Fica no {{ principal or 'principal' }}</th>
+          <th class="sem-ordem direita">É da {{ filial_nome }}</th>
+          <th class="sem-ordem direita">Rateia entre todas</th>
+          <th class="sem-ordem direita" style="white-space:nowrap">% fica · % {{ filial_nome }} · % rateia</th>
+          <th class="sem-ordem direita">Muda com o tempo?</th>
         </tr>
       </thead>
       <tbody>
+        {% if not contas %}
+        <tr><td colspan="7" class="vazio">
+          <b>Nenhuma despesa nos centros de custo da matriz.</b>
+          {% if origem_da_matriz %}Hoje a matriz é:
+            {{ origem_da_matriz.por_depto|map(attribute=0)|join(' e ') or 'nenhum centro de custo' }}.{% endif %}
+          Confira em <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>
+          se os centros de custo da matriz são os certos.
+        </td></tr>
+        {% endif %}
         {% for g in contas %}
-        {% set n = loop.index %}
-        <tr class="mov-grupo">
+        {% set i = loop.index %}
+        <tr class="mov-grupo" data-linha-regra data-grupo="{{ i }}">
           <td class="desc">
-            <button type="button" class="link-btn" data-abre-grupo="{{ n }}"
+            <input type="hidden" name="periodo_presente" value="grupo|{{ g.grupo }}">
+            <button type="button" class="link-btn" data-abre-grupo="{{ i }}"
                     aria-expanded="{{ 'true' if aberto_grupo == g.grupo else 'false' }}">
               <span class="seta">{{ '▾' if aberto_grupo == g.grupo else '▸' }}</span> <b>{{ g.grupo }}</b></button>
             <small>{{ g.categorias|length }} categoria{{ '' if g.categorias|length == 1 else 's' }}</small>
             {% if g.excecoes %}<span class="selo neutro" title="lançamentos marcados um a um dentro deste grupo">{{ g.excecoes }} exceção(ões)</span>{% endif %}
           </td>
           <td class="dados direita">{{ brl(g.valor) }}</td>
-          <td class="dados direita v-pos">{{ brl(g.entra) }}</td>
-          <td class="dados direita">{{ brl(g.fora) }}{% if g.juros %}<br><small>+ {{ brl(g.juros) }} de juros</small>{% endif %}</td>
-          <td class="dados direita"><b>{% if g.periodos %}varia{% else %}{{ '%.0f'|format(g.pct_efetivo) }}%{% endif %}</b></td>
-          <td class="direita">
-            <input type="hidden" name="item_nivel" value="grupo">
-            <input type="hidden" name="item_chave" value="{{ g.grupo }}">
-            <input name="item_pct" value="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
-                   data-original="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
-                   data-grupo-pct="{{ n }}" {% if g.periodos %}data-grupo-varia{% endif %} inputmode="decimal" data-sem-mascara
-                   style="width:130px" placeholder="{{ '%.0f'|format(cenario.pct_padrao) }} (padrão)"
-                   aria-label="Percentual do grupo {{ g.grupo }}">
-          </td>
-          <td class="direita">{{ parte_do_principal(g.periodos, 'g' ~ n) }}</td>
+          <td class="dados direita">{{ brl(g.fica) }}</td>
+          <td class="dados direita">{{ brl(g.filial) }}</td>
+          <td class="dados direita v-pos">{{ brl(g.rateia) }}{% if g.juros %}<br><small>+ {{ brl(g.juros) }} de juros</small>{% endif %}</td>
+          <td class="direita">{{ campos_da_regra('grupo', g.grupo, 'inicio', g.regra, g.herda) }}</td>
+          <td class="direita">{{ botao_dos_periodos(g.periodos, 'g' ~ i, g.lacunas) }}</td>
         </tr>
-        {{ periodos_da_conta('grupo', g.grupo, g.periodos, 'g' ~ n, 7, g.pct_efetivo) }}
+        {{ periodos_da_conta('grupo', g.grupo, g.periodos, 'g' ~ i, 7, g.lacunas, g.regra, g.herda) }}
           {% for c in g.categorias %}
           {% set m = loop.index %}
-          <tr class="mov-parte" data-categoria-do-grupo="{{ n }}" {% if aberto_grupo != g.grupo %}hidden{% endif %}>
+          <tr class="mov-parte" data-linha-regra data-categoria-do-grupo="{{ i }}" {% if aberto_grupo != g.grupo %}hidden{% endif %}>
             <td class="desc" style="padding-left:28px">
+              {% if not c.e_juros %}<input type="hidden" name="periodo_presente" value="categoria|{{ c.categoria }}">{% endif %}
               {{ c.categoria }}
               <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id,
                                   grupo=g.grupo,
@@ -274,26 +465,14 @@
             {% if c.e_juros %}
             <td class="dados direita" colspan="5"><small>juros de empréstimo — não entram aqui: seguem a régua do déficit</small></td>
             {% else %}
-            <td class="dados direita v-pos">{{ brl(c.entra) }}</td>
-            <td class="dados direita">{{ brl(c.fora) }}</td>
-            <td class="dados direita">{% if c.varia %}varia{% else %}{{ '%.0f'|format(c.pct_efetivo) }}%{% endif %}</td>
-            <td class="direita">
-              <input type="hidden" name="item_nivel" value="categoria">
-              <input type="hidden" name="item_chave" value="{{ c.categoria }}">
-              <input name="item_pct" value="{{ '' if c.pct is none else '%.0f'|format(c.pct) }}"
-                     data-original="{{ '' if c.pct is none else '%.0f'|format(c.pct) }}"
-                     data-herda-do-grupo="{{ n }}" inputmode="decimal" data-sem-mascara
-                     style="width:130px" placeholder="segue o grupo"
-                     aria-label="Percentual da categoria {{ c.categoria }}">
-            </td>
-            <td class="direita">
-              {% if c.periodos %}{{ parte_do_principal(c.periodos, 'c' ~ n ~ '-' ~ m) }}
-              {% else %}<button type="button" class="link-btn" data-abre-periodos="c{{ n }}-{{ m }}"
-                title="dar a esta categoria uma parte diferente da do grupo"><small>segue o grupo ✎</small></button>{% endif %}
-            </td>
+            <td class="dados direita">{{ brl(c.fica) }}</td>
+            <td class="dados direita">{{ brl(c.filial) }}</td>
+            <td class="dados direita v-pos">{{ brl(c.rateia) }}{% if c.varia and not c.periodos %}<br><small>varia com o grupo</small>{% endif %}</td>
+            <td class="direita">{{ campos_da_regra('categoria', c.categoria, 'inicio', c.regra, c.herda) }}</td>
+            <td class="direita">{{ botao_dos_periodos(c.periodos, 'c' ~ i ~ '-' ~ m, c.lacunas) }}</td>
             {% endif %}
           </tr>
-          {% if not c.e_juros %}{{ periodos_da_conta('categoria', c.categoria, c.periodos, 'c' ~ n ~ '-' ~ m, 7, c.pct_efetivo) }}{% endif %}
+          {% if not c.e_juros %}{{ periodos_da_conta('categoria', c.categoria, c.periodos, 'c' ~ i ~ '-' ~ m, 7, c.lacunas, c.regra, c.herda) }}{% endif %}
           {% endfor %}
         {% endfor %}
       </tbody>
@@ -302,17 +481,18 @@
         <tr class="linha-total">
           <td class="desc">Total da matriz</td>
           <td class="dados direita">{{ brl(resumo_matriz.total) }}</td>
-          <td class="dados direita v-pos">{{ brl(resumo_matriz.entra) }}</td>
-          <td class="dados direita">{{ brl(resumo_matriz.fora) }}{% if resumo_matriz.juros %}<br><small>+ {{ brl(resumo_matriz.juros) }} de juros</small>{% endif %}</td>
-          <td colspan="3"></td>
+          <td class="dados direita">{{ brl(resumo_matriz.fica) }}</td>
+          <td class="dados direita">{{ brl(resumo_matriz.para_a_filial) }}</td>
+          <td class="dados direita v-pos">{{ brl(resumo_matriz.rateia) }}{% if resumo_matriz.juros_da_matriz %}<br><small>+ {{ brl(resumo_matriz.juros_da_matriz) }} de juros</small>{% endif %}</td>
+          <td colspan="2"></td>
         </tr>
       </tfoot>
       {% endif %}
     </table>
   </div>
   <div class="tabela-barra" style="border-top:1px solid var(--borda); border-bottom:0">
-    <span class="resumo">Em branco: o grupo segue o padrão do cenário, e a categoria segue o grupo.
-      Zero quer dizer "não divide".</span>
+    <span class="resumo">Em branco: o grupo segue o padrão do cenário, e a categoria segue o grupo
+      (os números em cinza). A regra da categoria <b>substitui</b> a do grupo — não se somam.</span>
     <span class="espaco"></span>
     <button class="btn" type="submit">Salvar percentuais</button>
   </div>
@@ -327,8 +507,9 @@
     <small>{{ lancamentos|length }} lançamento(s), do maior para o menor</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
-    Marque os que quiser tratar diferente do resto da categoria e aplique o
-    percentual de uma vez. Marcação de lançamento ganha da categoria e do grupo.
+    Marque os que quiser tratar diferente do resto da categoria e diga <b>quanto
+    deles se rateia entre todas as obras</b> — o resto fica no {{ principal or 'projeto principal' }}.
+    Marcação de lançamento ganha da categoria e do grupo.
   </p>
   <form method="post">
     <input type="hidden" name="acao" value="peso_em_lote">
@@ -343,10 +524,10 @@
       <span class="espaco"></span>
       <label for="pct_lote" style="margin:0">Aos marcados:</label>
       <button class="btn secundario" type="button"
-              onclick="els('pct_lote').value='0'; this.form.submit()">Não entra (0%)</button>
+              onclick="els('pct_lote').value='0'; this.form.submit()">Fica todo no {{ principal or 'principal' }} (0%)</button>
       <button class="btn secundario" type="button"
-              onclick="els('pct_lote').value='100'; this.form.submit()">Entra inteiro (100%)</button>
-      <input id="pct_lote" name="pct" style="width:80px" placeholder="outro %">
+              onclick="els('pct_lote').value='100'; this.form.submit()">Rateia inteiro (100%)</button>
+      <input id="pct_lote" name="pct" style="width:110px" placeholder="% que rateia">
       <button class="btn" type="submit">Aplicar</button>
       <button class="btn secundario" type="button"
               onclick="els('pct_lote').value=''; this.form.submit()"
@@ -354,7 +535,7 @@
     </div>
     <p class="cartao-dica" style="margin:4px 0 8px">
       {% set pct_herdado = categoria_aberta.pct_efetivo if categoria_aberta else cenario.pct_padrao %}
-      Quem não tem marcação própria herda a categoria: <b>{{ '%.0f'|format(pct_herdado) }}%</b>.
+      Quem não tem marcação própria herda a categoria: hoje ela rateia <b>{{ '%.0f'|format(pct_herdado) }}%</b>.
       <span id="contagem_marcados"></span>
     </p>
 
@@ -367,8 +548,8 @@
             <th class="sem-ordem">Fornecedor</th>
             <th class="sem-ordem">Documento</th>
             <th class="sem-ordem direita">Valor</th>
-            <th class="sem-ordem direita">Divide</th>
-            <th class="sem-ordem direita">Entra</th>
+            <th class="sem-ordem direita">Rateia</th>
+            <th class="sem-ordem direita">Em reais</th>
           </tr>
         </thead>
         <tbody>
@@ -422,7 +603,7 @@
 <div class="cartao">
   <div class="cartao-cab">
     <h3>O que você marcou</h3>
-    <small>{{ marcacoes|length }} marcação(ões) neste cenário — tudo que foge do padrão de {{ '%.0f'|format(cenario.pct_padrao) }}%</small>
+    <small>{{ marcacoes|length }} regra(s) neste cenário — tudo que tem destino próprio</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
     É a lista para quem for conferir depois: cada exceção, onde ela está e o
@@ -435,7 +616,7 @@
           <th class="sem-ordem">Nível</th>
           <th class="sem-ordem">O que</th>
           <th class="sem-ordem direita">Valor</th>
-          <th class="sem-ordem direita">Divide</th>
+          <th class="sem-ordem">A regra</th>
         </tr>
       </thead>
       <tbody>
@@ -447,7 +628,7 @@
             {% if m.nivel == 'lancamento' %}<small>· {{ m.grupo }} › {{ m.categoria }}</small>{% endif %}
           </td>
           <td class="dados direita">{{ brl(m.valor) }}</td>
-          <td class="dados direita"><b>{{ '%.0f'|format(m.pct) }}%</b>{% if m.pct == 0 %} <small>não entra</small>{% endif %}</td>
+          <td class="desc"><small>{{ m.texto }}</small></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -460,20 +641,20 @@
 {% if cenario %}
 <div class="cartao">
   <div class="cartao-cab">
-    <h3 id="passo-recebe" style="scroll-margin-top:64px">2 · Quem recebe o custo da matriz</h3>
+    <h3 id="passo-recebe" style="scroll-margin-top:64px">3 · Quem recebe o custo da matriz</h3>
     <small>o projeto principal, e os projetos que não recebem ou só recebem num período</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
-    O custo da matriz vai para dois lados: o <b>projeto principal</b> e os
-    <b>demais projetos</b>. Quanto vai para cada lado se diz em cada conta, em
-    na coluna "Para o {{ principal or 'projeto principal' }}" do passo 1, "O que se divide" (ex.: Pessoal, a partir de 01/2021, 40% para ele).
+    O custo da matriz vai para dois lados: o <b>projeto principal</b> e a
+    <b>{{ filial_nome }}</b> (todas as obras que não são dele). Quanto fica em cada lado e
+    quanto se rateia entre todas se diz em cada conta, no passo 2, "O que se divide".
     Aqui se diz quem recebe: um projeto que <b>não recebe</b> sai da prestação
     deste cenário (não aparece, não recebe estrutura nem juros, não entra nas
     quotas); um que <b>recebe só no período</b> sai da divisão no mês seguinte
     ao "até", mas continua no resultado. Nada fica sem dono: se num mês nenhum
     projeto de um lado recebe, a parte dele vai para o outro.
   </p>
-  <form method="post">
+  <form method="post" data-secao="recebe">
     <input type="hidden" name="acao" value="projetos">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
     <div class="form-grade" style="max-width:520px">
@@ -481,8 +662,8 @@
         <label for="principal">Projeto principal</label>
         <select id="principal" name="principal">
           <option value="" {% if not principal %}selected{% endif %}>(nenhum — sem separar os lados)</option>
-          {% if principal and principal not in projetos_do_painel %}<option value="{{ principal }}" selected>{{ principal }}</option>{% endif %}
-          {% for p in projetos_do_painel %}
+          {% if principal and principal not in projetos_para_principal %}<option value="{{ principal }}" selected>{{ principal }}</option>{% endif %}
+          {% for p in projetos_para_principal %}
             <option value="{{ p }}" {% if p == principal %}selected{% endif %}>{{ p }}</option>
           {% endfor %}
         </select>
@@ -521,31 +702,33 @@
 <!-- ===================== QUEM DIVIDE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3 id="passo-socios" style="scroll-margin-top:64px">3 · Quem divide o resultado</h3>
+    <h3 id="passo-socios" style="scroll-margin-top:64px">4 · Quem divide o resultado</h3>
     <small>sócios da BWS e parceiros de obra</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
     Preencha a linha <b>Todas as obras</b> com quem divide tudo. Se um
     <b>projeto</b> tem outros sócios, preencha a linha dele: ela <b>substitui</b>
     a geral em todas as obras daquele projeto. E uma <b>obra</b> preenchida
-    (procure pelo nome) substitui a do projeto só nela — é assim que entra o
-    parceiro de uma obra só.
+    (abra o projeto no ▸, ou procure pelo nome) substitui a do projeto só nela
+    — é assim que entra o parceiro de uma obra só.
+  </p>
+  <p style="margin:0 0 10px">
+    <a class="btn secundario" style="text-decoration:none; display:inline-block"
+       href="{{ url_for('painel.prestacao_parametros', aba='socios') }}">✎ Cadastrar, renomear ou excluir sócio</a>
+    <small>— as colunas abaixo são os sócios ativos; o cadastro deles fica em Cadastros › Sócios.
+      Salve esta tela antes de sair.</small>
   </p>
 
-  {% if request.args.get('erro') %}
-  <div class="aviso erro">{{ request.args.get('erro') }} Nada foi gravado.</div>
-  {% endif %}
   {# UMA GRADE, UM SALVAR (11/11/2026, o dono: "tá muito difícil e lento de
      configurar as participações"). A primeira linha é "Todas as obras"; uma
      obra preenchida substitui essa linha nela. Abre mostrando só o que já
      tem percentual — procurar uma obra mostra a linha dela para preencher. #}
   {% if socios %}
   {% from "painel_grade_participacoes.html" import grade_participacoes %}
-  <form method="post">
+  <form method="post" data-secao="socios">
     <input type="hidden" name="acao" value="participacoes_em_grade">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-    {{ grade_participacoes(linhas_quem_divide, socios, grade_quem_divide, 'Projeto ou obra',
-                           copiar=False, so_preenchidas=True) }}
+    {{ grade_participacoes(linhas_quem_divide, socios, grade_quem_divide, 'Projeto ou obra') }}
   </form>
   {% else %}
   <div class="aviso erro">
@@ -556,41 +739,13 @@
   {% endif %}
 </div>
 
-<!-- ===================== FORA DA ANÁLISE ===================== -->
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3 id="passo-fora" style="scroll-margin-top:64px">4 · Fora da análise</h3>
-    <small>obras e projetos que este cenário não considera</small>
-  </div>
-  <p class="cartao-dica" style="margin-top:0">
-    O que sair daqui <b>não recebe estrutura, não recebe juros, não entra na
-    quota de ninguém e não pesa na régua</b>. Cada cenário tem a sua lista:
-    comparar "com o Ceará" e "sem o Ceará" é duplicar o cenário e tirar num só.
-    O que foi tirado em
-    <a href="{{ url_for('painel.prestacao_parametros', aba='fora') }}">Parâmetros › Fora da análise</a>
-    já está fora de <b>todos</b> os cenários e só volta por lá.
-  </p>
-  {% if excluidas_gerais %}
-  <p class="cartao-dica" style="margin-top:0">
-    <b>Fora por Parâmetros:</b>
-    {% for item in excluidas_gerais %}{% if not loop.first %} · {% endif %}{{ item|item_fora }}{% endfor %}.
-  </p>
-  {% endif %}
-  {% from "painel_lista_fora.html" import lista_fora %}
-  <form method="post">
-    <input type="hidden" name="acao" value="fora_em_lista">
-    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-    {{ lista_fora(linhas_fora) }}
-  </form>
-</div>
-
 <!-- ===================== A RÉGUA ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
     <h3 id="passo-regua" style="scroll-margin-top:64px">5 · Régua e juros</h3>
     <small>por qual medida o custo da estrutura se divide entre as obras</small>
   </div>
-  <form method="post" class="form-grade">
+  <form method="post" class="form-grade" data-secao="regua">
     <input type="hidden" name="acao" value="regua">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
 
@@ -627,8 +782,9 @@
     <div class="campo">
       <label for="pct_padrao">Conta que você não marcar divide</label>
       <input id="pct_padrao" name="pct_padrao" value="{{ '%.0f'|format(cenario.pct_padrao) }}">
-      <p class="dica">Em por cento. Com 100, tudo da matriz se divide, menos o
-        que você abaixar. Com 0, só divide o que você marcar.</p>
+      <p class="dica">Em por cento: quanto de cada conta se rateia entre todas as obras
+        quando ela não tem regra própria no passo 2. <b>O que não se rateia fica no
+        {{ principal or 'projeto principal' }}.</b> O normal é 100.</p>
     </div>
 
     <div class="campo">
@@ -651,7 +807,11 @@
       </select>
       <p class="dica">Juro não é estrutura: é o preço de faltar dinheiro. Pela
         primeira opção ele cai mês a mês nas obras que estavam com o caixa
-        negativo, na proporção do buraco.</p>
+        negativo, na proporção do buraco.
+        {% if resumo_matriz and resumo_matriz.juros %}<b>Neste cenário: {{ brl(resumo_matriz.juros|abs) }}</b>,
+        da categoria {{ categorias_de_juros|join(' · ') }}.{% endif %}
+        <small>A categoria se escolhe em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.</small></p>
     </div>
 
     <div class="campo">
@@ -683,7 +843,122 @@
   </form>
 </div>
 
-{% if juros_conf %}{% include "painel_juros_conferencia.html" %}{% endif %}
+{# O quadro "Onde estão os juros de empréstimo" saiu daqui em 11/11/2026 (o
+   dono: "essas informações geram confusão (…) bastaria demonstrar o valor dos
+   juros e a categoria"). O valor e a categoria estão no quadro do passo 2 e na
+   linha acima; a conferência categoria por categoria ficou só em
+   Configurações › Conferências. #}
+
+{# UM SALVAR PARA A PÁGINA INTEIRA (11/11/2026, o dono: "por que eu não posso
+   abrir várias caixinhas, colocar uma coisa, colocar outra, e depois gravar
+   tudo de uma vez? Isso vale para tudo que houver aí"). A barra fica presa no
+   pé da tela; qualquer botão "Salvar" dos passos grava a página inteira
+   também — nada do que foi digitado em outro passo se perde. #}
+<div id="barra-salvar-tudo" class="nao-imprime"
+     style="position:fixed; left:0; right:0; bottom:0; z-index:20; background:var(--azul);
+            color:#fff; padding:10px 22px; display:flex; gap:14px; align-items:center;
+            box-shadow:0 -2px 10px rgba(0,0,0,.18)">
+  <span id="salvar-tudo-estado">Nada para salvar.</span>
+  <span style="flex:1"></span>
+  <button type="button" class="btn amarelo" id="salvar-tudo">Salvar tudo</button>
+</div>
+<div style="height:64px"></div>
+<script>
+(function () {
+  const secoes = [...document.querySelectorAll("form[data-secao]")];
+  const botao = document.getElementById("salvar-tudo");
+  const estado = document.getElementById("salvar-tudo-estado");
+  if (!secoes.length || !botao) return;
+  let mexidas = new Set();
+  const NOMES = {fora: "o que entra", arvore: "o que se divide", recebe: "quem recebe",
+                 socios: "quem divide", regua: "régua e juros"};
+  function pintar() {
+    estado.innerHTML = mexidas.size
+      ? "<b>Alterações ainda não salvas</b> em: " + [...mexidas].map(s => NOMES[s] || s).join(" · ")
+      : "Nada para salvar.";
+  }
+  secoes.forEach(f => {
+    const marcar = e => {
+      if (!e.target.name) return;          // busca e filtros não são dado
+      mexidas.add(f.dataset.secao); pintar();
+    };
+    f.addEventListener("input", marcar);
+    f.addEventListener("change", marcar);
+    // o botão de qualquer passo grava a página inteira
+    f.addEventListener("submit", e => { e.preventDefault(); salvar(); });
+  });
+  // A linha de regra em branco (sem nenhum dos dois percentuais) não é dado:
+  // o servidor a ignora. Cada conta traz seis delas escondidas, e
+  // mandá-las era o grosso do envio — foi o que estourou o teto do servidor
+  // em 11/11/2026 ("o servidor respondeu 500").
+  function linhasEmBranco() {
+    const campos = [];
+    document.querySelectorAll("form[data-secao] [data-linha-regra]").forEach(l => {
+      const fica = l.querySelector('[name="periodo_fica"]');
+      const filial = l.querySelector('[name="periodo_filial"]');
+      const fixo = l.querySelector('[name="periodo_valor"]');
+      if (fica && filial && !fica.value.trim() && !filial.value.trim()
+          && !(fixo && fixo.value.trim())) {
+        // a conta continua "presente" (é assim que se apaga a regra dela)
+        l.querySelectorAll('input[name^="periodo_"]:not([name="periodo_presente"])')
+         .forEach(c => { if (!c.disabled) campos.push(c); });
+      }
+    });
+    return campos;
+  }
+  async function motivo(r) {
+    // a página de erro do painel traz o motivo; mostra-o em vez de só o número
+    try {
+      const pagina = new DOMParser().parseFromString(await r.text(), "text/html");
+      const texto = (pagina.querySelector("[data-erro-do-servidor]") || {}).textContent;
+      if (texto && texto.trim()) return texto.trim().slice(0, 400);
+    } catch (_e) {}
+    return "o servidor respondeu " + r.status;
+  }
+  async function salvar() {
+    // campo desligado não entra no envio: desliga as linhas em branco só
+    // enquanto junta os dados
+    const fora = linhasEmBranco();
+    fora.forEach(c => { c.disabled = true; });
+    // texto simples (e não "multipart"): é o formato que o servidor lê sem
+    // contar campo por campo
+    const dados = new URLSearchParams();
+    dados.append("acao", "tudo");
+    dados.append("cenario_id", "{{ cenario.id }}");
+    secoes.forEach(f => {
+      for (const [chave, valor] of new FormData(f)) {
+        if (chave !== "acao" && chave !== "cenario_id" && typeof valor === "string") {
+          dados.append(chave, valor);
+        }
+      }
+    });
+    fora.forEach(c => { c.disabled = false; });
+    botao.disabled = true;
+    estado.textContent = "Salvando…";
+    try {
+      const r = await fetch(window.location.pathname, {method: "POST", body: dados,
+                                                       credentials: "same-origin"});
+      if (!r.ok) throw new Error(await motivo(r));
+      window.__salvandoTudo = true;
+      try { sessionStorage.setItem("montagem-rolagem", String(window.scrollY)); } catch (_e) {}
+      window.location.href = r.url;       // a montagem de volta, já com o salvo
+    } catch (erro) {
+      botao.disabled = false;
+      estado.innerHTML = "<b>Não salvou:</b> <span></span> Nada foi perdido — tente de novo.";
+      estado.querySelector("span").textContent = erro.message + ".";
+    }
+  }
+  botao.addEventListener("click", salvar);
+  window.addEventListener("beforeunload", e => {
+    if (!window.__salvandoTudo && mexidas.size) { e.preventDefault(); e.returnValue = ""; }
+  });
+  // volta para onde estava depois de salvar
+  try {
+    const y = sessionStorage.getItem("montagem-rolagem");
+    if (y !== null) { sessionStorage.removeItem("montagem-rolagem"); window.scrollTo(0, Number(y)); }
+  } catch (_e) {}
+})();
+</script>
 
 <!-- ===================== APAGAR ===================== -->
 <div class="cartao">
@@ -723,29 +998,78 @@
             .forEach(tr => { tr.hidden = true; });
     }));
 
+  const abrirTodos = els("arvore-abrir-todos");
+  if (abrirTodos) abrirTodos.addEventListener("change", () => {
+    form.querySelectorAll("[data-abre-grupo]").forEach(b => {
+      if ((b.getAttribute("aria-expanded") === "true") !== abrirTodos.checked) b.click();
+    });
+  });
+
+  form.querySelectorAll("[data-mais-periodo]").forEach(b =>
+    b.addEventListener("click", () => {
+      const proxima = b.closest("td").querySelector("[data-periodo-novo][hidden]");
+      if (proxima) { proxima.hidden = false; proxima.style.display = "inline-flex"; }
+      if (!b.closest("td").querySelector("[data-periodo-novo][hidden]")) {
+        b.disabled = true;
+        b.innerHTML = "<small>salve para abrir mais linhas</small>";
+      }
+    }));
+
   form.querySelectorAll("[data-abre-periodos]").forEach(b =>
     b.addEventListener("click", () => {
       const tr = form.querySelector(`[data-periodos-de="${b.dataset.abrePeriodos}"]`);
       if (tr) tr.hidden = !tr.hidden;
     }));
 
-  // a categoria em branco mostra o que vai herdar do grupo, já com o digitado
-  const padrao = "{{ '%.0f'|format(cenario.pct_padrao) if cenario else 100 }}";
-  function herancas(n) {
-    const g = form.querySelector(`[data-grupo-pct="${n}"]`);
-    const vale = (g && g.value.trim()) || padrao;
-    const varia = g && g.hasAttribute("data-grupo-varia");
-    form.querySelectorAll(`[data-herda-do-grupo="${n}"]`).forEach(c => {
-      c.placeholder = varia ? "segue o grupo (varia)" : `segue o grupo (${vale}%)`;
+  // AS TRÊS PARTES: a terceira (o que rateia) é conta — 100 menos as duas —
+  // e a linha em branco mostra em cinza o que herda: a categoria, do grupo;
+  // o grupo, do padrão do cenário.
+  const num = t => { const v = parseFloat(String(t || "").replace(",", ".")); return isNaN(v) ? null : v; };
+  const br = v => String(Math.round(v * 100) / 100).replace(".", ",");
+  function partes(linha) {
+    const f = linha.querySelector('[name="periodo_fica"]');
+    const n = linha.querySelector('[name="periodo_filial"]');
+    return f && n ? [f, n] : null;
+  }
+  function pintar(linha) {
+    const campos = partes(linha);
+    const alvo = linha.querySelector("[data-rateia]");
+    if (!campos || !alvo) return;
+    const [f, n] = campos;
+    const tem = f.value.trim() || n.value.trim();
+    const fica = tem ? (num(f.value) || 0) : num(f.placeholder);
+    const filial = tem ? (num(n.value) || 0) : num(n.placeholder);
+    if (fica === null || filial === null) { alvo.textContent = ""; return; }
+    const rateia = 100 - fica - filial;
+    alvo.textContent = br(rateia) + "%";
+    alvo.title = tem ? "rateia entre todas as obras" : "herdado — rateia entre todas as obras";
+    alvo.style.color = rateia < -0.005 ? "var(--vermelho)" : (tem ? "" : "var(--tinta-suave)");
+    alvo.style.fontWeight = tem ? "700" : "400";
+  }
+  function herdar(i) {
+    const grupo = form.querySelector(`tr[data-grupo="${i}"]`);
+    const [f, n] = partes(grupo);
+    const tem = f.value.trim() || n.value.trim();
+    const vale = tem ? [br(num(f.value) || 0), br(num(n.value) || 0)] : [f.dataset.herda, n.dataset.herda];
+    form.querySelectorAll(`tr[data-categoria-do-grupo="${i}"]`).forEach(tr => {
+      const c = partes(tr);
+      if (!c) return;
+      c[0].placeholder = vale[0]; c[1].placeholder = vale[1];
+      pintar(tr);
     });
   }
-  form.querySelectorAll("[data-grupo-pct]").forEach(g => {
-    herancas(g.dataset.grupoPct);
-    g.addEventListener("input", () => herancas(g.dataset.grupoPct));
+  const linhasDeRegra = [...form.querySelectorAll("[data-linha-regra]")];
+  form.querySelectorAll("tr[data-grupo]").forEach(g => herdar(g.dataset.grupo));
+  linhasDeRegra.forEach(pintar);
+  form.addEventListener("input", e => {
+    const linha = e.target.closest("[data-linha-regra]");
+    if (!linha) return;
+    pintar(linha);
+    if (linha.dataset.grupo) herdar(linha.dataset.grupo);
   });
 
   // o que mudou e ainda não foi salvo fica marcado
-  const campos = [...form.querySelectorAll('input[name="item_pct"], input[name="periodo_pct"], input[name="periodo_desde"], input[name="periodo_principal"]')];
+  const campos = [...form.querySelectorAll('input[name="periodo_fica"], input[name="periodo_filial"], input[name="periodo_valor"]:not([type="hidden"]), input[type="month"][name="periodo_desde"], input[type="month"][name="periodo_ate"]')];
   function pendentes() {
     let n = 0;
     campos.forEach(c => {
@@ -754,14 +1078,14 @@
       if (mudou) n++;
     });
     aviso.innerHTML = n
-      ? `<b>${n} percentual(is) alterado(s)</b>, ainda não salvo(s).`
+      ? `<b>${n} campo(s) alterado(s)</b>, ainda não salvo(s).`
       : "Digite os percentuais e salve tudo de uma vez.";
     return n;
   }
   campos.forEach(c => { c.addEventListener("input", pendentes); c.addEventListener("change", pendentes); });
   form.addEventListener("submit", () => { salvando = true; });
   window.addEventListener("beforeunload", e => {
-    if (!salvando && pendentes()) { e.preventDefault(); e.returnValue = ""; }
+    if (!salvando && !window.__salvandoTudo && pendentes()) { e.preventDefault(); e.returnValue = ""; }
   });
 })();
 </script>

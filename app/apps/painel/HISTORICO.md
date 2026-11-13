@@ -651,6 +651,574 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A baixa com desconto puxava o recebimento inteiro para a data dela — 12/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
+migração. **Depois de publicar é preciso refazer os números** (Configurações ›
+"Só refazer os números", que não baixa nada do OMIE — ou esperar a carga da
+madrugada): o conserto é em como o `fato` é montado.
+
+O dono: uma medição recebida em parcelas em 2020 e 2021, com R$ 5.000 que
+ficaram faltando; em 06/06/2026 ele deu um desconto e baixou o resto — e o
+painel passou a mostrar **o recebimento inteiro em junho de 2026** (no fluxo
+financeiro também). Efeito direto nos juros: a obra ficou "no vermelho" por
+seis anos na régua do déficit.
+
+**O que o código fazia** (`sync/fato._escolher_recebimentos`): o OMIE guarda a
+baixa em duas pernas — a consolidada, com o **desconto dentro** do valor
+quitado (é por isso que o realizado do título é "quitado − desconto"), e os
+créditos bancários, só com o dinheiro que entrou. As duas somas eram
+comparadas cruas; com desconto, deixavam de fechar pelo valor dele, e a regra
+caía na consolidada: **uma linha só, na data da última baixa**.
+
+**O conserto:** compara-se DINHEIRO (valor − desconto). Os créditos valem
+quando fecham com a consolidada em dinheiro, ou com o realizado do título; e,
+quando ficam as consolidadas, cada uma vale pelo dinheiro dela — a perna que é
+só desconto não vira recebimento. A soma do título não muda.
+
+**O que NÃO foi verificado:** eu não vi as pernas reais desse título no
+espelho. O teste reproduz o sintoma com as duas formas em que o OMIE costuma
+guardar (uma consolidada com o total; ou uma perna liquidada por baixa) e
+falha sem o conserto — mas se esse título tiver uma terceira forma, o
+problema continua. Para conferir: depois de refazer os números, olhar a
+medição na Receita de Obra e o fluxo da obra; se ainda estiver tudo em 2026,
+pedir ao dono o número do título e ler as pernas pela conferência
+"de onde veio a conta de um título" (`painel.conta_do_titulo`).
+
+**Alcance:** vale para todo título, a receber ou a pagar, baixado com
+desconto. Outras obras podem mudar de mês em receita/despesa depois de refazer
+os números — é o conserto, mas muda número que já foi visto.
+
+## Um VALOR FIXO que fica no BWSCE antes dos percentuais — 12/11/2026
+
+**PUBLICADO em 12/11/2026, 15:19 (UTC)** — `bd3a3d75`, com o "pode" do dono e
+a bateria completa verde aqui (10.991) e no GitHub, já com a `main` dos outros
+chats. Foi junto a janela de receitas do DRE (seção abaixo).
+
+**Fica com o dono:** apertar **"Aplicar atualizações do banco"** (migração
+027) — sem ela o painel funciona, mas recusa gravar o valor fixo.
+
+**Perguntar ao dono no próximo chat:** se o valor fixo deu o número que ele
+esperava com os dados reais; o que as "outras receitas" da matriz são; e a
+resposta sobre os 13.796.222,19 (ver "Ainda em aberto com o dono", abaixo).
+
+O dono: *"num determinado período, eu quero desconsiderar do rateio um
+determinado valor. (…) tenho 2 milhões de custo, deixarei 500 mil
+exclusivamente na matriz e farei rateio de 50/50 no resto. Dessa forma a
+matriz absorve 1.250 mil e a filial 750 mil."* É o pró-labore dos sócios, que
+ele não quer ratear.
+
+- Cada **linha de período** ganhou o campo **"antes, ficam R$"** (coluna
+  `valor_fica`, migração 027). O valor sai do total que segue a linha no
+  período e fica inteiro no BWSCE; os percentuais valem para o que sobra.
+- **Como entra na conta** (`prestacao.partes_com_valor_fixo`): o total do
+  período é um só, então o valor vira um percentual efetivo aplicado igual a
+  todos os meses dele — o valor fixo se espalha na proporção do custo de cada
+  mês. Por isso `calcular_rateio_do_cenario` e `_contas_da_matriz` passaram a
+  rodar em **duas passadas** (primeiro o total de cada linha de regra).
+- O exemplo dele é teste: 2 mi, 500 mil destacados, 50 fica / 50 filial →
+  1.250 mil e 750 mil. **Atenção ao "50/50":** no exemplo ele quis 50% no
+  BWSCE e 50% na BWSFILIAL (os dois campos preenchidos). Se ele deixar o
+  segundo em branco, os outros 50% **rateiam entre todas** — que é outra
+  conta. Avisei.
+- Valor maior que o total do período: fica tudo, e a linha avisa em vermelho.
+- Só o valor, sem percentual, também é regra (o resto rateia inteiro).
+- O valor é do total **que segue a linha**: na linha do grupo, não conta a
+  categoria com regra própria nem o lançamento marcado um a um, nem os juros.
+- Só existe nas linhas de período (com data) — não na linha principal da conta.
+
+## A janela de receitas do DRE não fechava com a linha do DRE — 12/11/2026
+
+Publicado em 12/11/2026 junto com a seção de cima. Sem migração própria.
+
+O dono abriu as receitas da matriz no DRE: a linha dizia R$ 459.464,10 de
+receita bruta e a janela somava R$ 68.343,21 (6 títulos). **Causa, lida no
+código:** a janela lista as MEDIÇÕES (`RECEITA_DE_OBRA` — categoria "Receita
+de Obras" e o retido dela); a linha do DRE soma **toda** receita de análise
+DRE — também rendimento, estorno, devolução. Os R$ 391.120,89 que faltam são
+"outras receitas". **O que elas são eu não vi**: a janela nova é que mostra.
+
+- A janela ganhou o quadro **"Outras receitas — não são medição"**, um título
+  por linha (`consultas.outras_receitas_titulos`), e a conta **"Para bater com
+  o DRE: medições + outras receitas = Receita Bruta"**.
+- Limite conhecido: a janela do "executado" lista os títulos QUITADOS; o DRE
+  soma também o recebido em parte de título ainda aberto. Se um dia a conta
+  de baixo não fechar por isso, é esse o motivo — não mexi.
+
+**Ainda em aberto com o dono (12/11):** ele disse que "ainda aparece valor
+diferente nos custos da matriz" (13.796.222,19). Duas leituras, e eu perguntei:
+(a) ele compara com a última linha do DRE, que é resultado — a decisão dele
+foi DESCONSIDERAR a receita, e aí o custo é mesmo 13.796.222,19; para dar
+13.337.568,09 a receita teria de ABATER o custo; (b) falta o "CONS -
+Escritório Central" na lista da MATRIZ: os números dele dão 13.349.966,79 −
+13.337.568,09 = 12.398,70 entre o DRE dos dois centros e o do projeto BWS, o
+que é compatível com esse centro não estar no projeto BWS nem na matriz. Não
+conferido.
+
+## Custo × resultado do DRE, e a linha de totais por obra — 12/11/2026
+
+**PUBLICADO em 12/11/2026, 12:49 (UTC)** — `e7ce80f7`, com o "pode" do dono e
+a bateria completa verde aqui (10.967) e no GitHub. Sem migração.
+
+**Perguntar ao dono no próximo chat:** o que o quadro "Conferir com o DRE"
+mostrou para as outras duas diferenças (12.398,70 entre o filtro por obra e o
+por projeto; 29,48 no BWSNE) — eu supus que fosse receita, e não conferi.
+
+O dono, já pelo executado, colou os números que não batiam:
+
+| O que ele olhou | Valor |
+|---|---|
+| "Como é feita": a matriz custou | 13.796.222,19 |
+| DRE — BWS Construções + CONS - Escritório Central | 13.349.966,79 |
+| DRE — projeto BWS | 13.337.568,09 |
+| "Como é feita": a filial (BWSNE) custou | 700.857,01 |
+| DRE — obra BWSNE | 700.827,53 |
+
+**O que os números dele mostram, sem eu ver a base:** 13.796.222,19 −
+13.337.568,09 = **458.654,10**, que é, ao centavo, a "= Receita Líquida" do
+projeto BWS no DRE que ele tinha colado na véspera. Ou seja: ele comparou o
+**custo** (o que a prestação divide — a linha "= Total Custos/Despesas") com o
+**resultado** (a última linha do DRE, que desconta a receita lançada ali). As
+outras duas diferenças (12.398,70 entre o filtro por obra e o por projeto;
+29,48 no BWSNE) têm a mesma cara — receita — mas **eu não conferi**: a tela
+nova é que mostra, com o dado dele.
+
+**O que foi feito:**
+
+- O quadro da montagem virou **"Conferir com o DRE, centro de custo por centro
+  de custo"**: custo, receita líquida e resultado de cada centro de custo da
+  matriz e de todo centro que tenha lançamento do projeto dela — pela coluna
+  `projeto` da linha, a mesma que a tela do DRE filtra
+  (`consultas.despesa_e_receita_por_centro`). Diz, em palavras, quando o DRE
+  desconta receita. A filial e a "Como é feita" ganharam a mesma frase.
+- **Linha de totais** no "Resultado por Obra" do menu e no quadro por obra da
+  prestação (*"eu olho na DRE geral e olho aqui, os valores têm que estar
+  batendo"*).
+
+**DECISÃO DO DONO — a receita lançada na matriz é DESCONSIDERADA.** Há
+receita nos centros de custo da matriz (458 mil, pelo DRE dele). Expliquei os
+três destinos possíveis (corrigir a obra no OMIE, abater o custo, linha à
+parte para os sócios) e ele respondeu, em 12/11/2026: *"essa receita gostaria
+que fosse desconsiderada."* Fica como estava: **não vai para obra nenhuma e
+não abate o custo que se divide**. As telas dizem isso com essas palavras.
+Consequência que ele aceitou ao decidir: o resultado somado da prestação fica
+menor que o do DRE geral nesse valor. Não reabrir sem motivo novo.
+
+## Período com começo e FIM, o dinheiro de cada período e a lacuna — 12/11/2026
+
+**PUBLICADO em 12/11/2026, 01:04 (UTC)** — `82ee622f`, com o "pode" do dono e
+a bateria completa verde aqui (10.965) e no GitHub, já com a `main` do outro
+chat (Análise de SPs) trazida para o ramo. Foi junto a prestação só para
+leitura (seção abaixo).
+
+**Fica com o dono, e eu não tenho como conferir daqui:**
+1. apertar **"Aplicar atualizações do banco"** (migração 026) — sem ela o
+   painel funciona, mas recusa gravar o "até";
+2. trocar a **Base do cálculo** do cenário dele para Executado (passo 5), se
+   é pelo executado que ele quer trabalhar — o cenário que já existe não muda
+   sozinho;
+3. marcar a caixinha "Prestação de Contas — só ver" para quem ele quiser.
+
+**Perguntar ao dono no próximo chat:** se "a matriz gastou" bateu com o
+executado do DRE do BWS (13.795.975,61 na conta dele), se os valores por
+período fazem sentido, e se o acesso só de leitura ficou como ele queria.
+
+O dono, usando a tela já publicada: *"nas regras de período não tem ATÉ (…)
+era melhor a gente definir o período de tanto a tanto, não só a partir de. Ou
+você botava o período exato, ou então até determinada data"*; *"queria saber
+quanto ficou para cada uma, já na mesma linha, por cada período"*; *"e se
+ficar uma lacuna? O sistema acusa?"*
+
+- **Cada linha de período tem "de" e "até"** (coluna `ate`, migração 026).
+  Só o "de" = dali em diante; só o "até" = do início até ali (gravado com
+  começo `0001-01`, para não brigar na chave com a linha da conta, `1900-01`).
+- **Qual vale num mês** (`prestacao.regra_da_conta`): o período que cobre o
+  mês; se mais de um cobre, o que começou por último; se nenhum cobre, a
+  linha da conta; sem ela, o nível de cima.
+- **Sobreposição de dois períodos com fim é recusada** ao salvar, com o nome
+  da conta. Fim antes do começo, também.
+- **Lacuna não é erro, é aviso**: os meses entre dois períodos que nenhum
+  outro cobre aparecem em vermelho na conta ("⚠ lacuna") e num aviso no topo
+  do passo 2, dizendo que neles vale a linha da conta.
+- **Cada linha de período mostra o dinheiro que a segue**: o total do período
+  e quanto fica, quanto é da BWSFILIAL e quanto rateia. Na linha do GRUPO
+  entra só o que segue a regra do grupo — categoria com regra própria fica
+  na linha dela. Juro de empréstimo não entra (régua do déficit).
+- Sem a migração, o painel lê e grava como antes; só o "até" é recusado, com
+  o aviso de aplicar a atualização.
+
+**Executado × comprometido.** Ele viu "a matriz gastou −14.699.912,50" e
+disse que o valor "não existe": é o COMPROMETIDO (pago + a pagar) — bate com a
+terceira coluna do DRE do BWS que ele mesmo colou. *"Gostaria de trabalhar com
+o executado."* A escolha já existia (passo 5 › Base do cálculo); agora o
+quadro diz qual das duas está valendo, com o atalho para trocar, e **cenário
+novo nasce pelo executado**. O cenário que ele já tem só muda se ele trocar.
+
+## A prestação compartilhada, só para leitura — 11/11/2026 (noite)
+
+Publicado em 12/11/2026, 01:04 (UTC), junto com a seção de cima. Sem migração
+própria.
+
+O dono: *"compartilhar prestação de conta com um determinado usuário: ele vai
+poder visualizar parâmetros etc., mas não pode mexer em nada."*
+
+De manhã a prestação tinha virado só do administrador (ela mostra a empresa
+inteira e a parte de cada sócio). Volta como **decisão dele, pessoa por
+pessoa, e só como leitura**:
+
+- No cadastro de acesso (Configurações) há a caixinha **"Prestação de Contas —
+  só ver (mostra a empresa inteira e a parte de cada sócio)"**. O rótulo diz o
+  que ela entrega porque **ela não respeita as obras marcadas** da pessoa.
+- Quem a tem abre, **só com GET**: o resultado, "Como é feita", a montagem e
+  os cadastros (`auth.LEITURA_DA_PRESTACAO` — lista fechada, por nome; rota
+  nova da prestação nasce fechada). Baixa o relatório do cenário. **Qualquer
+  gravação responde "não encontrado"** — é o servidor que garante.
+- Nas telas, um aviso "modo de leitura", os campos travados e os botões de
+  gravar escondidos (`painel_so_leitura.html`). Isso é só para a pessoa não
+  ver botão que não funciona; a proteção não depende disso.
+- **Entra sem obra marcada**: um sócio que só vê a prestação não precisa de
+  obra. Nesse caso o menu dele tem só a Prestação de Contas.
+
+**A chave é nova de propósito** (`prestacao_leitura`, não `prestacao`). Quem
+tinha a prestação ANTIGA marcada continua com `prestacao` gravado no banco;
+reaproveitar a chave daria a essas pessoas a empresa inteira sem ninguém
+decidir. A chave antiga não abre nada.
+
+**Fica com o dono:** marcar a caixinha para quem ele quiser, em Configurações
+› acessos. **Não decidido:** se algum dia alguém além dele vai poder ALTERAR
+a prestação — hoje, ninguém.
+
+## Cada conta da matriz em TRÊS PARTES — 11/11/2026 (noite)
+
+**PUBLICADO em 11/11/2026, 21:15 (UTC)** — `5afe2908`, com o "pode" do dono,
+a bateria completa verde aqui (10.953) e no GitHub. Foi junto tudo o que está
+nas duas seções abaixo (matriz × filial, o 500 do Salvar tudo, sócios, "Quem
+divide" abrindo nas obras, juros numa linha).
+
+**Fica com o dono, e eu não tenho como conferir daqui:**
+1. apertar **"Aplicar atualizações do banco"** (migração 025) — sem ela o
+   painel funciona, mas recusa gravar a parte "é da BWSFILIAL";
+2. em Cadastros › Parâmetros gerais, pôr na MATRIZ o BWS Construções e o
+   CON - Escritório Central, e na FILIAL o BWSNE;
+3. conferir, no passo 2 da montagem, as linhas que ele já tinha gravado (foram
+   convertidas) e se "a matriz gastou" agora bate com o DRE do projeto BWS.
+
+**Perguntar ao dono no próximo chat:** se os três itens acima aconteceram, e
+se o Salvar tudo voltou a gravar.
+
+**Incidente da própria publicação (21:15 → 21:37 UTC):** com a migração 025
+pendente, **Configurações não abria** — "cannot access local variable
+'obras_cc'" — e é lá que fica o botão de aplicar a migração. O defeito era de
+horas antes (a variável `obras_cc` só ganhava valor no ramo "sem migração
+pendente") e nunca tinha aparecido porque não havia migração a aplicar. O
+dono avisou, o conserto (`7e3ef08d`) foi publicado com o "pode" dele às 21:37
+(UTC), com a bateria verde aqui e no GitHub.
+**A lição:** publicação com migração tem de abrir Configurações COM a
+migração pendente antes de ir ao ar — a suíte só abria a tela com o banco em
+dia. Agora há um teste que a abre com uma pendente
+(`test_configuracoes_abre_com_migracao_pendente`); variável nova nessa rota
+entra nos DOIS ramos.
+
+O dono explicou a regra três vezes, a última com exemplos, e fechou os nomes:
+
+- **BWS** — custos da matriz (rateável entre tudo);
+- **BWSCE** — as obras da matriz (o projeto principal);
+- **BWSNE** — custos da filial (rateável só entre as obras da filial);
+- **BWSFILIAL** — *"todas as obras que não são obras da BWSCE"*. É o nome do
+  lado; está em `prestacao.NOME_DOS_DEMAIS`.
+
+Cada grupo, categoria ou lançamento do BWS tem **três destinos que somam 100%**:
+
+| Parte | Para onde vai |
+|---|---|
+| **fica no BWSCE** | só entre as obras do BWSCE, pela régua |
+| **é da BWSFILIAL** | só entre as demais obras, pela régua |
+| **rateia** (o que falta para 100) | entre TODAS as obras, dos dois lados |
+
+Os exemplos dele, que viraram teste: "X: ratear 100%"; "Y: jogar 20% para
+BWSNE e ratear 80%"; "Z: jogar 100% para BWSNE"; "de 20.000, 10.000 ficam em
+BWSCE e os outros 10.000 se rateiam — BWSCE recebe 10.000 mais a cota dele".
+
+**O que a conta fazia, e por que estava errado:** "% que entra" (o que não
+entrava **sumia**) e "para o BWSCE" (do que entrava, o resto ia **só para os
+demais**). Nenhum dos dois é o que ele descreveu.
+
+**Decisões:**
+
+- **Vale a regra do nível mais específico** (lançamento › categoria › grupo ›
+  padrão do cenário), e ela **substitui** a de cima — não se combinam. Ele
+  confirmou o caso que importava: "metade de 2022 fica em BWSCE" vale para o
+  grupo Despesas com Pessoal, porque no começo a filial não tinha estrutura.
+- **A regra pode mudar com o tempo** em cada nível; a linha da conta é a regra
+  "desde o início" (`1900-01`) e as outras valem a partir de um mês.
+- **"Fica de fora" deixou de existir.** O padrão do cenário abaixo de 100 e o
+  lançamento marcado com menos de 100 (formato antigo, "quanto rateia")
+  deixam o resto **no BWSCE**. O batimento continua com a coluna, sempre zero.
+- **O que já estava gravado é convertido pelo que ele disse que queria** — não
+  pelo que a conta antiga fazia: o que não entrava fica no BWSCE; "para o
+  BWSCE p%" fica nele; o resto **rateia entre todas** (antes ia só para os
+  demais). Mesma fórmula na migração 025 e em
+  `cenarios.partes_do_formato_antigo`, que lê a linha enquanto a migração não
+  foi aplicada. **Os números de cenário já montado mudam** — avisado a ele.
+- **Sem a migração, o painel continua de pé**: lê tudo no formato antigo e
+  grava o que couber nele; só a parte "é da BWSFILIAL" é recusada, com o
+  aviso de aplicar a atualização.
+- A linha de regra em branco **não é enviada** pela tela (era o grosso do
+  envio que estourava o servidor).
+
+**Onde está:** `prestacao.partes_da_conta` (a regra), `calcular_rateio_do_cenario`
+(a conta), `cenarios.periodos / gravar_periodos / conferir_periodos` (o banco),
+`web._contas_da_matriz` (a árvore, com fica / filial / rateia em reais),
+`painel_cenario.html` passo 2 (dois campos por conta e o "rateia" calculado na
+hora), `painel_cenario_como.html` passo 2 (para os sócios).
+
+**Não verificado com dado real:** nenhum número da base dele. A regra está
+conferida à mão nos testes, com valores pequenos.
+
+**Achado de passagem:** o leitor de `multipart` do Werkzeug 3.1.9 se perde com
+vários campos **vazios** seguidos (lê o cabeçalho do campo seguinte como
+valor). A montagem não manda mais nesse formato; se algum dia uma tela do
+painel voltar a mandar formulário grande em `multipart`, é por aí que quebra.
+
+## MATRIZ × FILIAL: a regra que a conta do cenário tinha perdido — 11/11/2026 (fim da tarde)
+
+Publicado em 11/11/2026, 21:15 (UTC), junto com a seção de cima.
+
+O dono colou dois números que não batiam — "a matriz gastou" 15.514.876,82 na
+montagem contra 14.699.912,50 no DRE do projeto BWS — e depois, olhando os
+Parâmetros gerais, disse a regra com todas as letras:
+
+> *"Centro de custo da estrutura (1) é o que será rateado entre BWSCE e demais
+> obras que selecionarmos, só que ele na verdade são dois centros: o BWS
+> Construções e o CON - Escritório Central. Ambos formam o projeto BWS. (…)
+> Centro de custo da estrutura (2) é totalmente rateável apenas entre demais
+> obras, fora BWSCE."*
+
+Eram **dois defeitos**, e nenhum era da tela:
+
+1. cada campo só aceitava **um** centro de custo — o "CON - Escritório
+   Central" não tinha onde entrar, e o BWSNE estava somado no lugar dele (é a
+   diferença dos 815 mil; a configuração da produção era `BWS Construções` +
+   `BWSNE`, vista no print dele);
+2. a conta do cenário **juntava matriz e filial num bolo só** — a filial
+   também era dividida com o projeto principal. O modelo antigo (Streamlit,
+   regras com escopo) separava; o cenário, quando nasceu, perdeu isso.
+
+**O que mudou:**
+
+- `depto_admin_matriz` e `depto_admin_filial` guardam **listas**, separadas
+  por ";" na mesma chave (`prestacao.centros_da_matriz / centros_da_filial /
+  centros_da_estrutura`). Um nome só continua valendo. **Sem migração.**
+- **Matriz** = o que se divide entre o projeto principal e os demais, pelos
+  percentuais da árvore. **Filial** = entra inteira (os percentuais da árvore
+  não mexem nela) e vai **só para as obras dos demais**, pela régua
+  (`calcular_rateio_do_cenario(..., so_dos_demais=)`). Mês sem obra dos demais
+  recebendo: o custo da filial vira "custo sem dono", à vista — **não** passa
+  para o principal (a regra "nada fica sem dono entre os lados" é da matriz).
+- A árvore do passo 2 e os lançamentos marcados um a um são **só da matriz**;
+  a filial aparece numa linha própria, com o valor. "A matriz gastou" passa a
+  ser, por construção, o DRE dos centros de custo da matriz.
+- **Conferência na tela** (`_estrutura_contra_o_projeto`): os centros de custo
+  da matriz contra todos os do projeto a que pertencem, com valor. Se a lista
+  difere, a tela mostra qual centro falta ou sobra; se bate, diz "✔ bate com o
+  DRE do projeto".
+- Os **juros de empréstimo** continuam indo pela régua do déficit, somando os
+  da matriz e os da filial. **Decisão minha, não confirmada com o dono:** o
+  juro lançado na filial pode cair em obra do projeto principal que estava no
+  vermelho. Se ele quiser o juro da filial só nos demais, é mudança pequena em
+  `alocar_juros_por_deficit`.
+
+**O que o dono precisa fazer depois de publicado:** em Cadastros › Parâmetros
+gerais, acrescentar "CON - Escritório Central" na MATRIZ e deixar o BWSNE na
+FILIAL. Enquanto não fizer, a montagem acusa a diferença com o nome do centro.
+
+**Os números do resultado MUDAM** com esta publicação (BWSCE deixa de receber
+parte do BWSNE) e de novo quando ele acertar os centros de custo. É o
+conserto, mas é para ser dito antes de alguém comparar com um relatório já
+tirado.
+
+### O mesmo dia, antes disso
+
+- **"Não salvou: o servidor respondeu 500"** no Salvar tudo. Reproduzido: a
+  montagem mandava a página inteira em `multipart`, e o Werkzeug recusa acima
+  de 1.000 campos (cada conta leva 34, quase todos de linhas de período em
+  branco). O erro genérico do painel transformava o 413 em 500. Agora a tela
+  manda em texto simples, sem as linhas em branco (3.988 campos → 745 no
+  ensaio); o painel aceita formulário grande (`TETO_DE_CAMPOS`); o 413 tem
+  mensagem própria; e, se falhar, a barra mostra o **motivo** que o servidor
+  deu. Não vi o log da produção — a causa foi reproduzida aqui, não lida lá.
+- **Sócios**: botão **Excluir** (recusado para quem tem ajuste lançado —
+  ajuste é dinheiro registrado; os percentuais vão junto) e **posição** por
+  setas ▲▼. A posição fica em `config` (`ordem_dos_socios`), não em coluna
+  nova, para não pedir atualização do banco; vale nas colunas do "Quem
+  divide", na página "Como é feita" e nos quadros do resultado.
+- **"Quem divide"** abre cada projeto nas obras dele, como o passo 1; a obra
+  em branco mostra em cinza o percentual que está valendo (do projeto ou de
+  "Todas as obras").
+- **Os juros na montagem** viraram valor e categoria (o dono: "essas
+  informações geram confusão"). O quadro grande ficou só em Configurações ›
+  Conferências — e passou a somar os juros e multas pagos, como a conta: eram
+  R$ 3.039.343,02 num quadro e R$ 3.030.809,67 no outro. A causa (o encargo)
+  está no código; a diferença exata de 8.533,35 **não foi conferida na base**.
+- **Armadilha de teste achada:** teste que grava `config` e não devolve deixa
+  o banco do trabalhador do xdist sujo **entre execuções** (os bancos
+  `erp_teste_gwN` não são recriados). Um teste antigo falhou por isso, uma
+  vez. Quem mexer em `config` num teste devolve no `finally`.
+
+## "Onde estão as configurações de rateio dos grupos e categorias?" — 11/11/2026 (tarde)
+
+O dono: *"só vejo a parte de juros de empréstimo."* Ele estava em Cadastros
+(a antiga Parâmetros), onde a aba "Regras de rateio" tinha saído com a
+prestação antiga; os percentuais ficam na montagem, passo 2 — e o caminho até
+lá era um botão pequeno ("← Montar") no resultado.
+
+- **A mesma barra nas quatro telas da prestação** (`painel_prestacao_nav.html`):
+  Resultado · Como é feita · Montar o cenário · Cadastros, cada botão dizendo
+  o que tem dentro ("percentuais dos grupos e categorias" está escrito no de
+  Montar). Os botões soltos de ir de uma tela a outra saíram.
+- Cadastros abre com um aviso que leva direto ao passo 2 da montagem.
+- A árvore vazia diz por quê (nenhuma despesa nos centros de custo da
+  estrutura, e quais são) em vez de aparecer só o cabeçalho.
+
+## A tarifa que o OMIE "bloqueou", e o projeto que abre nas obras — 11/11/2026 (tarde)
+
+**1. Trocar a obra de uma tarifa (lançamento de conta) — primeira tentativa
+real.** O dono tentou o 11307316641 e leu só: *"A Omie bloqueou as chamadas por
+consumo excessivo e pediu 59 segundos."* A consulta tinha funcionado (a tela
+mostrou "Departamento: — → 10691072391"); o bloqueio veio na gravação.
+
+O que o código mostrava (a causa não foi confirmada — o log do servidor não
+abre daqui): uma resposta 500 do OMIE que não estivesse na lista de "erros
+definitivos" era tratada como passageira e a MESMA chamada era repetida. O
+OMIE pune a repetição com "consumo redundante, aguarde 59 segundos" — e a
+primeira resposta, que é o motivo de verdade, ficava só no log. É o mesmo
+enredo de 21/09/2026 (período contábil fechado). E o que era enviado tinha
+bloco que a gravação provavelmente não aceita.
+
+Conserto:
+- **Gravação não se repete** (`_call(uma_vez=True)` em alterar/excluir título
+  e alterar lançamento de conta): uma chamada, e o erro do OMIE como veio.
+- **O bloqueio conta o que veio antes**: `OmieBloqueada` leva o texto do OMIE
+  e a primeira recusa.
+- **`AlterarLancCC` só manda o que é da gravação**: saem `diversos` (os dados
+  da conciliação), `nCodAgrup`, `info`, a transferência sem conta de destino e
+  a lista vazia de categorias.
+- A tela diz "Nada foi alterado no OMIE" em vez de "0 alterados — e já no
+  painel".
+**CONTINUA NÃO VERIFICADO** se o OMIE aceita `AlterarLancCC` com esse formato,
+e se deixa alterar lançamento conciliado. A próxima tentativa do dono mostra o
+erro de verdade, se houver. Outra hipótese, que não exclui a primeira: o
+"Ler as obras dos lançamentos de conta" rodando ao mesmo tempo consome a
+mesma API.
+
+**2. "No fora da análise, deveria podermos expandir o projeto e ver as obras
+e editar cada obra de dentro do projeto."** No passo 1 da montagem (e em
+Cadastros › Fora da análise) cada projeto abre (▸) nas obras DELE; já vem
+aberto quando alguma obra tem situação própria. Obra de projeto que está fora
+aparece como "fora — pelo projeto". Procurar uma obra mostra o projeto dela em
+cima. "Abrir todos os projetos" no lugar de "mostrar todas as obras". A obra
+sem projeto fica no fim, solta.
+
+## Publicado em 11/11/2026, 18:08 (UTC) — e uma falha de CI não explicada
+
+Foi para a `main` (`4625cb9b`): o passo 1 "o que entra", o Salvar tudo, os
+vários períodos, o custo da matriz aberto por centro de custo, o quadro dos
+juros reescrito — com a `main` de outros chats trazida antes.
+
+**Fica anotado:** a verificação do GitHub FALHOU no commit `386dc5cc` (antes de
+trazer a `main`) e o teste que falhou não foi identificado — o registro que a
+ferramenta devolve é só o fim do job, que é o log do Postgres. Não reproduziu:
+a suíte inteira passou aqui (com a biblioteca de imagens consertada nesta
+máquina: `python3 -m pip install --ignore-installed Pillow`) e passou no
+GitHub no commit seguinte (`4625cb9b`, com a `main` dentro). Se voltar a
+falhar sem motivo, o primeiro suspeito é teste que depende da ordem dos
+arquivos no mesmo trabalhador — a montagem passou a lembrar a despesa da
+matriz até a próxima carga (`consultas._lembrando`), e teste que grava no
+`fato` sem chamar `consultas.esquecer_listas()` leria o guardado de outro.
+
+**Pendente do dono depois desta publicação:** apertar "Ler as obras dos
+lançamentos de conta" (ele viu um de 03/01/2025, R$ 79.346,96, como "(obra
+ainda não lida do OMIE)" — nunca tinha apertado); conferir em Cadastros ›
+Parâmetros gerais os dois centros de custo da estrutura (ele entende que são
+"BWS Construções" e "Escritório Central"; de fábrica o segundo é "BWSNE").
+
+## A montagem depois de o dono usar: o que entra primeiro, Salvar tudo, de onde vem o custo — 11/11/2026 (noite)
+
+O dono, usando a versão publicada às 01:55:
+- *"Fora da análise era para ser uma das primeiras perguntas. Na hora que eu
+  colocar fora, não era mais nem para aparecer em quem divide o resultado,
+  quem recebe o custo da matriz. A gente tira num canto, aí ele fica
+  aparecendo no outro."*
+- *"A gente grava, aí ele some e fica só um textozinho (…) o ideal é manter o
+  quadro com a obra e a condição que está."* e *"considerar não é a regra? Tá
+  esquisito."*
+- *"Eu tenho que gravar um por um. Por que eu não posso abrir várias
+  caixinhas (…) e depois gravar tudo de uma vez? Isso vale para tudo."*
+- *"O projeto BWS é exatamente os custos da matriz, não é? Acho que não era
+  para ele aparecer aqui."*
+- *"A matriz gastou 15,4 milhões (…) os dois centros de custo que compõem
+  [a estrutura] dão 13,2 executado e 14,19 comprometido. De onde é que está
+  sendo puxado esse outro valor?"*
+
+**O que mudou:**
+1. **Passo 1 = "Quais projetos e obras entram"** (era o 4, "Fora da análise").
+   Um quadro que não some: TODOS os projetos sempre à vista, com a situação
+   escrita (entra / fora / entra só até MM/AAAA); as obras aparecem quando têm
+   situação própria ou ao procurar. Entrar é a regra e não se escolhe: a linha
+   tem uma caixinha "Tirar da análise" e um mês opcional "ou entra só até".
+   O que foi tirado em Cadastros (vale para todo cenário) aparece no mesmo
+   quadro, travado. Campos: `fora_chave`, `fora_total`, `fora_ate`.
+2. **O que está fora some dos passos seguintes**: "quem recebe" e "quem
+   divide" só listam o que entra (`_projetos_e_obras_da_montagem`). A regra de
+   "quem recebe" e a participação de quem saiu NÃO são apagadas — voltam se o
+   projeto voltar (`_gravar_quem_recebe` preserva as regras que não vieram no
+   formulário).
+3. **Projeto que é só a estrutura não aparece**: só entra nas listas o projeto
+   com ao menos uma obra que não seja centro de custo da estrutura. Era só
+   aparência — projeto sem obra nunca recebeu nem dividiu nada.
+4. **"Salvar tudo"**: barra fixa no pé da montagem. Grava os cinco passos num
+   envio só (`acao=tudo`); o botão de qualquer passo faz o mesmo. Confere o
+   que pode recusar (mês faltando, percentual inválido) ANTES de gravar
+   qualquer seção. Avisa em quais passos há alteração não salva e volta para
+   onde a tela estava.
+5. **Vários períodos antes de salvar**: "＋ outro período" abre até seis linhas
+   novas por conta. Sócios: "＋ mais linhas" (até 20 novos por salvada).
+6. **De onde vem "a matriz gastou"**: a tela agora escreve — a soma das
+   despesas (DRE) dos DOIS centros de custo configurados como estrutura, cada
+   um com o seu valor, a medida (comprometido/executado), o período (todos os
+   anos) e o que está sem data, com link para o DRE filtrado por eles.
+   **Suspeita não confirmada** (a base não abre daqui): a configuração de
+   fábrica é "BWS Construções" + "BWSNE" (migração 002), e ele descreveu a
+   estrutura como "BWS Construções" + "Escritório Central". Os dois campos de
+   Parâmetros gerais deixaram de ser texto livre: viraram lista dos centros
+   de custo da base ("Centro de custo da estrutura (1) e (2)").
+
+## "Onde estão os juros de empréstimo": o quadro reescrito — 11/11/2026 (noite)
+
+O dono colou o quadro ("o que a prestação conta hoje: R$ 2.358.331,00", um
+parágrafo sobre DRE × Fluxo de Caixa, e "Fora desta lista: −R$ 1.960.842,91
+de juros e multa por atraso") e escreveu: *"Não entendi!"*. A categoria dele
+é uma só: Despesas Financeiras › Juros sobre Empréstimos.
+
+Dois defeitos no quadro:
+- o número do topo somava a categoria na EMPRESA INTEIRA (matriz, filial e
+  obras, só o pago). A prestação só distribui pelo caixa o juro lançado na
+  matriz/filial; o lançado direto numa obra já é despesa dela
+  (`prestacao.separar_juros`). O número não era o que a conta usa;
+- o texto explicava o mecanismo (DRE, Fluxo de Caixa, "contada") em vez de
+  dizer o que acontece com o dinheiro.
+
+Agora (`consultas.conferencia_dos_juros(configuradas, deptos_admin)`): quais
+categorias contam, e três números com uma frase cada — **lançado na matriz e
+na filial** (é o que se distribui), **lançado direto numa obra** (fica nela) e
+**juros e multa por atraso** (não é juro de empréstimo; fica na obra que
+atrasou). A tabela categoria por categoria ficou recolhida ("Conferir"), com
+as colunas "na matriz/filial" e "direto em obra". Categoria marcada que o OMIE
+não trata como despesa ganha um aviso vermelho próprio.
+
+NÃO VERIFICADO com os números dele: quanto dos R$ 2,36 milhões está na
+matriz/filial e quanto está direto em obra — é o que o quadro novo vai dizer.
+
 ## A prestação de contas ANTIGA saiu — 11/11/2026 (noite)
 
 O dono: *"eu não sei o que é essa prestação de conta antiga. Se não tá
