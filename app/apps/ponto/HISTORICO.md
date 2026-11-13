@@ -22,19 +22,10 @@ arquivo.
 
 ## Pendente AGORA
 
-0v. **ESPERANDO O DONO (13/11/2026): dividir Ponto e Pessoal no menu, a ordem das telas e a FICHA ÚNICA da pessoa.**
-   Ele pediu para ver como ficaria antes de fazer. A proposta foi mandada no chat:
-   · Menu: **Pessoal** (Colaboradores, Solicitações ao DP, Contabilidade e agente, Despesas com colaborador) e **Ponto**
-     de volta no topo, com as telas agrupadas pelo uso — acompanhar (Quadro, Hoje, Painel, Qualidade), tratar
-     (Validações, Alertas, Espelho, Banco de horas), conferir (Mosaico, Fotos de cadastro, Rondas), cadastro e fechamento
-     (Pessoas no ponto, Relatórios, Configuração). A junção vive em `erp/routes.py` (`_juntar_ponto_com_pessoal`) — área
-     do ERP; a ordem das telas do ponto, em `gestao.ABAS` (o teste `test_todas_as_telas_estao_no_menu` guarda a ordem de
-     28/10 e muda junto).
-   · Ficha única: clicar na pessoa em QUALQUER tela abre a mesma janela — o cadastro do ERP (resumo, dados, pagamentos,
-     documentos) e o ponto (dia, espelho, pedidos, aparelhos, configuração do ponto, rosto). Hoje são duas: a do ERP
-     (`erp_colaboradores.html`, aba "Ponto e espelho" mais pobre) e a do ponto (`dlg-pessoa`). Toca a área do ERP: o chat
-     do ERP precisa saber, para não mexer na tela de Colaboradores ao mesmo tempo.
-   Decisões pendentes: a ordem proposta; quem faz a ficha única (este chat, avisando o do ERP, ou o do ERP).
+0v. **FEITO NO RAMO, NÃO PUBLICADO (13/11/2026): o Ponto separado de Pessoal no menu, a ordem nova das telas e a
+   FICHA ÚNICA da pessoa.** O dono aprovou a ordem e mandou fazer a ficha única por aqui, e **publicar só quando
+   tudo estiver pronto** (junto com o "Completar o período pela escala"). Ver a seção de 13/11/2026 abaixo. Mexe na
+   área do ERP (`erp/routes.py`, `erp_colaboradores.html`) — registrado no `erp/HISTORICO.md` e avisado ao chat do ERP.
 
 0w. **O TERMO DO PONTO NO CELULAR — PUBLICADO em 07/11/2026 (migração 028).** Ver a seção de 07/11/2026 abaixo.
    Conferir com o dono se apertou "Aplicar atualizações do ponto". O INPI ficou para depois, por decisão do dono —
@@ -578,7 +569,28 @@ já existem."*
   prévia, POST a inclusão; `tratar_ponto`; fora do alcance, 404). Teste: `test_ponto_completar_periodo_banco.py`.
   E a janela no navegador.
 
-**A proposta de divisão do menu e da ficha única** ficou com o dono para decidir (ver "Pendente AGORA", item 0v).
+**O menu e a ordem das telas** (aprovados pelo dono no mesmo dia): o Ponto volta a ser um módulo, logo depois de
+Pessoal (`erp/routes.py`, `_ponto_ao_lado_de_pessoal`), com as telas pelo uso — Quadro · Hoje · Painel · Qualidade
+(acompanhar) · Validações · Alertas · Espelho · Banco de horas (tratar) · Mosaico · Fotos de cadastro · Rondas
+(conferir) · Pessoas no ponto · Relatórios · Configuração (`gestao.ABAS`).
+
+**A FICHA ÚNICA DA PESSOA.** O dono: *"eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
+pessoa eu tenho acesso — seja ponto, configurações, liberação de aparelhos, tudo."* Havia duas janelas: a de
+Colaboradores (cadastro, pagamentos, documentos e um "Ponto e espelho" pobre) e a do ponto (`dlg-pessoa`). Agora:
+- **A janela do ponto é a ficha única.** Abas: **Cadastro** (novo — identificação, vínculo e pagamento, dependentes,
+  o que falta para admitir, lidos do ERP: `/erp/api/colaboradores/<id>/historico` e `/ficha`), Dia, Espelho do mês,
+  Pedidos, **Pagamentos** (novo — por verba e o histórico, do mesmo `/historico`), Aparelhos, **Configuração do
+  ponto** (era "Cadastro"; a chave continua `cadastro`) e Conferência do rosto. Quem não tem `ver_pessoal` /
+  `editar_colaboradores` não vê as abas do ERP (a trava de verdade é a rota do ERP).
+- **Ela abre sozinha** em `/erp/ponto/pessoa/<id>` (aba `ponto_ficha`, fora do menu; sem o topo do ERP) — e a tela
+  de **Colaboradores mostra essa página num quadro** ao clicar na pessoa. Quem não enxerga o ponto continua na
+  ficha antiga do ERP.
+- **Editar o cadastro e os documentos (ler e arquivar) continuam no formulário do ERP** — nada de regra duplicada:
+  dentro de Colaboradores, a janela pede à tela (mensagem `bws-ficha`) e ela abre o formulário; aberta numa tela do
+  ponto, abre `/erp/colaboradores?editar=<id>` (ou `?documentos=`) em outra aba.
+- Testes: `test_ponto_ficha_unica_banco.py`; os do menu ajustados (`test_caixa_e_portal.py`, `test_ponto_fase2.py`,
+  `test_ponto_consolidacao_banco.py`). Suíte inteira: 11.000 passaram. E no navegador: o menu, a lista de
+  Colaboradores abrindo a ficha única, a aba Configuração do ponto, e o "Editar" abrindo o formulário do ERP.
 
 ## 11/11/2026 (quarta) — O Painel do ponto: gráficos e a comparação de dois períodos
 

@@ -21,6 +21,29 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 🔀 13/11/2026 — o Ponto saiu de dentro de Pessoal, e a ficha da pessoa virou UMA (feito pelo chat do Ponto)
+
+**Feito no ramo `feature/modulo-ponto`, pelo chat do Ponto, com o "pode" do dono para mexer aqui.** Não publicado
+ainda: o dono quer publicar quando tudo estiver pronto. Se este chat for mexer na tela de **Colaboradores** ou no
+**menu**, traga a `main` antes — senão os dois lados vão se pisar.
+
+O dono, 13/11/2026: *"quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande (…) era
+melhor dividir (…) e tem duas informações que não estão integradas: em Colaboradores eu clico na pessoa e não vejo o
+ponto; no ponto, o cadastro parece mais completo (…) eu cliquei no cadastro da pessoa, a partir daquele nome, tudo
+que envolve a pessoa eu tenho acesso."*
+
+- **Menu** (`routes.py`): `_juntar_ponto_com_pessoal` virou `_ponto_ao_lado_de_pessoal` — o Ponto volta a ser um
+  módulo, logo depois de Pessoal; Pessoal fica com Colaboradores · Solicitações ao DP · Contabilidade e agente ·
+  Despesas com colaborador. As abas do Ponto e a ordem delas são do módulo do ponto (`ponto/gestao.py`, `ABAS`).
+  Testes ajustados: `test_caixa_e_portal.py` (o Ponto logo depois de Pessoal) e `test_ponto_fase2.py`.
+- **Ficha única** (`erp_colaboradores.html`): clicar na pessoa da lista abre `abrirFichaUnica` — a janela da pessoa
+  do Ponto (`/erp/ponto/pessoa/<id>`, num quadro dentro da tela), que agora tem as abas **Cadastro** (lê
+  `/historico` e `/ficha` daqui — só mostra) e **Pagamentos**, além do ponto inteiro. **Editar o cadastro** e os
+  **documentos** continuam sendo o formulário DAQUI: a janela pede (mensagem `bws-ficha`) e esta tela abre
+  `abrirFichaCompleta` ou `ficha(id, "documentos")`. Quem NÃO enxerga o ponto continua na ficha de sempre
+  (`ficha`), que não foi tirada. A tela também aceita `?editar=`, `?documentos=` e `?pessoa=` no endereço — é por
+  onde a janela, aberta numa tela do ponto, manda editar.
+
 ### 📥 A IMPORTAÇÃO DAS PESSOAS: pare de pedir "o arquivo"
 
 **Eu estava pedindo a coisa errada, e por um motivo que vale guardar:** o botão

@@ -117,6 +117,11 @@
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
   <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{# A FICHA ÚNICA DA PESSOA (13/11/2026): a mesma janela que abre clicando no nome em qualquer tela do ponto — o
+   cadastro, os pagamentos, o ponto, os aparelhos, a configuração do ponto e o rosto. Ela mora no módulo do ponto
+   (/erp/ponto/pessoa/<id>) e aparece aqui inteira; editar o cadastro e os documentos voltam para o formulário daqui. #}
+<dialog id="dlg-unica" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
+  <iframe id="unica-quadro" title="Ficha da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -286,7 +291,7 @@ function desenhar(){
     <td><span class="selo ${c.situacao==="ATIVO"?"aprovado":"outro"}">${rotulo(c.situacao)}</span></td>
   </tr>`).join("");
   document.querySelectorAll("[data-c]").forEach(tr=>tr.addEventListener("click",
-    ()=>ficha(+tr.dataset.c)));
+    ()=>abrirFichaUnica(+tr.dataset.c)));
 }
 
 function etiquetaDaEtapa(c){
@@ -333,22 +338,42 @@ function pendenciasDaLinha(c){
 // ---------------------------------------------------------------------------
 let ABA_FICHA_PESSOA = "resumo", FICHA_ID = null, FICHA_H = null;
 
-async function ficha(id){
+// A FICHA ÚNICA (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
+// pessoa eu tenho acesso — seja ponto, configurações, liberação de aparelhos, tudo"). Quem enxerga o ponto abre a
+// janela do ponto, que agora traz o cadastro e os pagamentos daqui; quem não enxerga, a ficha de sempre (abaixo).
+function abrirFichaUnica(id){
+  if (!PODE_VER_PONTO) return ficha(id);
+  els("unica-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
+  els("dlg-unica").showModal();
+}
+els("dlg-unica").addEventListener("close", () => { els("unica-quadro").src = "about:blank"; });
+// o que a janela pede: fechar, ou abrir aqui o formulário (editar) ou os documentos (ler e arquivar)
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (ev.origin !== location.origin || d.tipo !== "bws-ficha") return;
+  if (els("dlg-unica").open) els("dlg-unica").close();
+  if (d.acao === "editar" && d.id) abrirFichaCompleta(Number(d.id));
+  else if (d.acao === "documentos" && d.id) ficha(Number(d.id), "documentos");
+});
+
+async function ficha(id, aba){
   try {
     const {historico: h} = await api(`/erp/api/colaboradores/${id}/historico`);
-    FICHA_ID = id; FICHA_H = h; ABA_FICHA_PESSOA = "resumo";
+    FICHA_ID = id; FICHA_H = h; ABA_FICHA_PESSOA = aba || "resumo";
     const c = h.colaborador;
     els("dlg-titulo").textContent = `${c.nome} — ${documento(c.cpf)}`;
     const dalista = COL.find(x => x.id === id) || {};
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
       ${cabecaDaFicha(c, dalista)}
       <div class="subabas" id="fp-abas">
-        <button class="subaba ativa" data-fp="resumo">Resumo</button>
+        <button class="subaba" data-fp="resumo">Resumo</button>
         ${PODE_VER_PONTO ? `<button class="subaba" data-fp="ponto">Ponto e espelho</button>` : ""}
         <button class="subaba" data-fp="pagamentos">Pagamentos</button>
         <button class="subaba" data-fp="documentos">Documentos</button>
       </div>
       <div id="fp-painel"></div>`;
+    els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
+      b.classList.toggle("ativa", b.dataset.fp === ABA_FICHA_PESSOA));
     els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
       b.addEventListener("click", () => {
         els("fp-abas").querySelectorAll(".subaba").forEach(x =>
@@ -1652,7 +1677,16 @@ els("btn-limpar").addEventListener("click", () => {
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
 
-carregar();
+// O atalho de outra tela (13/11/2026): a ficha única, aberta fora daqui, manda editar (?editar=) ou os documentos
+// (?documentos=) para cá; ?pessoa= abre a própria ficha única.
+function abrirPeloEndereco(){
+  const q = new URLSearchParams(location.search);
+  const n = k => /^\d+$/.test(q.get(k) || "") ? Number(q.get(k)) : null;
+  if (n("editar")) abrirFichaCompleta(n("editar"));
+  else if (n("documentos")) ficha(n("documentos"), "documentos");
+  else if (n("pessoa")) abrirFichaUnica(n("pessoa"));
+}
+carregar().then(abrirPeloEndereco);
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");
