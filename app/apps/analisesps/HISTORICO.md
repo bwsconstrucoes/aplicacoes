@@ -12262,6 +12262,7 @@ somente Solicitações de uma conta especifica"*.
 - Vale também para o relatório anexado na geração (`folha_pagamento._relatorio_por_conta`
   usa o mesmo montado).
 - Teste: `test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio`.
+- **Publicado em 13/11/2026** (sem migração).
 
 #### Leva 266 — Pagamento avulso: a mesma pessoa em obras diferentes é RATEIO (13/11/2026)
 
