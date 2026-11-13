@@ -558,7 +558,9 @@ to achando que não ta gravando direito"* (a folga de 03/11, terça, paga pelo s
   ficam como falta parcial. O que enganava era o texto: "compensação não cumprida — a folga virou falta", para quem
   pagou quase tudo. Agora são dois avisos (`espelho.py`): **COMPENSACAO_INCOMPLETA** — "Compensação incompleta —
   07/11 cobriu 8h01 das 9h00; faltam 0h59" — quando cobriu parte; **COMPENSACAO_NAO_CUMPRIDA** ("nada coberto")
-  só quando não cobriu nada. Oferecido a ele, não feito: a regra "dia por dia" (trabalhou o dia, a folga fica paga
+  só quando não cobriu nada. E o dia coberto em parte deixou de levar a etiqueta "falta" (que fazia nascer também o
+  alerta "Falta sem justificativa") — fica "Falta parcial" com a compensação incompleta dizendo quanto faltou.
+  Oferecido a ele, não feito: a regra "dia por dia" (trabalhou o dia, a folga fica paga
   inteira, sem contar horas) — é decisão dele.
 - **Intervalo curto** (`apuracao.py`, `INTERVALO_CURTO_AVISO_MIN = 50`): na jornada de mais de 6 h, o aviso acende
   abaixo de 50 min (era 60). Dito a ele: a lei pede 60 (CLT art. 71) e o tempo que faltou é devido com 50% (§4º) —

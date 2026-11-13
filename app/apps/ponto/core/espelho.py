@@ -422,9 +422,14 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         if compensacao_falhou:
             r.alertas.append(compensacao_falhou["subtipo"])
             if r.situacao == "FALTA" and compensacao_falhou["minutos"]:
+                # o dia não é falta inteira: a etiqueta "falta" (e o alerta "Falta sem justificativa") saem — o que
+                # ficou devendo está dito na compensação incompleta (13/11/2026, o dono: "trabalhou parcial e ficou
+                # devendo 59 minutos")
                 r.situacao, r.falta = "FALTA_PARCIAL", False
+                r.alertas = [a for a in r.alertas if a != "FALTA"]
         if r.situacao == "FALTA" and any(h["minutos"] for h in horas_aqui) and not r.abonado:
             r.situacao, r.falta = "FALTA_PARCIAL", False      # faltou o dia, mas parte dele está paga em horas
+            r.alertas = [a for a in r.alertas if a != "FALTA"]
         # trabalhou no dia da folga compensatória: as horas contam (como dia de descanso trabalhado)
         if (r.abonado and do_dia and aprovadas and aprovadas[0]["tipo"] == "COMPENSACAO"):
             r.extra = r.trabalhado
