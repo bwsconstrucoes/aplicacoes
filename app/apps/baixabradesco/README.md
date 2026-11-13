@@ -67,12 +67,50 @@ separado**.
 | **LogBaixaBradesco** (aba na SPsBD) | o registro do que já foi processado, para não pagar duas vezes |
 | **BaixaBradescoFila** (aba na SPsBD) | a fila de falhas para tentar de novo |
 
-Da SPsBD o robô carrega só duas fatias, e não a planilha inteira:
+Da SPsBD o robô usa só duas fatias:
 
 - as SPs **a pagar e agendadas** (coluna O = `Pagar`, coluna AB entre
   `agendar`, `agendado` e `falhaagendar`) — é onde ele procura o comprovante;
-- as SPs **já marcadas como pagas mas sem data de pagamento e com comprovante
-  guardado** — são as que a planilha já resolveu e o Omie ficou para trás.
+- as SPs **já marcadas como pagas, com comprovante guardado, sem data de
+  pagamento ou pagas nos últimos 30 dias** — são as que a planilha já resolveu
+  e o Omie pode ter ficado para trás.
+
+### De onde vêm essas duas fatias (desde 13/11/2026)
+
+Até 12/11 o robô **baixava a planilha inteira** (`A:AK`, ~52 mil linhas × 37
+colunas, 150–250 MB) e filtrava depois — a cada comprovante. Era o que segurava
+as linhas de atendimento do serviço por minutos.
+
+Agora (`sheets.load_spsbd_pela_copia`, chamado por `core.carregar_sps_candidatas`):
+
+| De onde | O quê |
+|---|---|
+| **a cópia da SPsBD no banco do Análise de SPs** (`analisesps/copia_sps.py`) | os campos de cada SP candidata: valor, credor, tipo, código de barras, data, comprovante… |
+| **a planilha, na hora, num pedido só** | cabeçalho + as colunas **A** (ID), **O** (status), **V** (carimbo), **AB** (agendado) e **AK** (conta) de todas as linhas |
+| **a planilha, linha inteira** | só as candidatas que **mudaram** desde a última sincronização da cópia (carimbo, status ou agendado diferentes) ou que a cópia não conhece |
+
+⚠️ **O status nunca vem da cópia.** Ela pode estar horas atrás (só anda com a
+tela do Análise de SPs aberta). "Pagar" ou "Pago" é sempre o da planilha,
+lido no momento da baixa — é isso que segura o pagamento em dobro, igual era
+antes.
+
+**Volta sozinho ao caminho antigo** (planilha inteira) quando: o banco não
+responde, a cópia está vazia, mais de 300 candidatas mudaram desde a última
+sincronização (`LIMITE_RELEITURA`), a planilha muda de lugar no meio da leitura,
+ou qualquer defeito inesperado no caminho novo. **Cota do Google estourada não
+volta**: sobe como erro, como sempre, e vai para a fila tardia.
+
+**Para desligar sem publicar código:** `BAIXABRADESCO_SPSBD_PELA_COPIA=0` no
+Render. **Para saber qual caminho foi usado:** a resposta traz
+`resumo.fonte_spsbd` — `copia` (com quantas linhas vieram da cópia e quantas
+foram relidas) ou `planilha_inteira` (com o motivo). O log do Render também
+avisa quando cai no caminho antigo.
+
+A **escrita** não mudou: continua achando a linha pelo ID na coluna A no
+momento de gravar (`execute_spsbd_updates`), nunca pelo número de linha guardado.
+
+A rota de diagnóstico (`/diagnostico`) continua lendo a planilha inteira: é
+manual e rara, ficou de fora de propósito.
 
 ## Como ele descobre de qual SP é o comprovante
 
@@ -450,6 +488,7 @@ Eram três defeitos somados, e cada um multiplicava o outro:
 | nada impedia disparos sobrepostos | o cron dispara de 5 em 5 minutos; passada mais lenta que isso fazia a seguinte começar junto, lendo os mesmos arquivos e refazendo o mesmo trabalho — com 4 linhas de atendimento, duas ou três sobrepostas tomam o serviço | **uma passada por vez**, com marca que expira em 15 min se o serviço reiniciar no meio |
 | o mesmo comprovante reenviado entrava várias vezes | reenviar durante a crise de cota criava um arquivo novo a cada envio, e todos eram processados | **impressão digital do pedido na entrada** |
 | — | adiado de dias atrás já foi reenviado ou resolvido na mão | **descarte acima de 2 dias** (`IDADE_MAXIMA_DIAS`) |
+| a fila de **falhas** pega carona no mesmo disparo, sem relógio (13/11/2026) | até 55 itens por disparo (Omie, planilha, Pipefy, avisos), e cada baixa drena mais 10 de carona — o log de 13/11 mostrou o cron com 459 s e o `/executar` do Make com 452 s | **teto de tempo**: nenhum item novo começa depois de 90 s no cron (`PRAZO_DRENAGEM_CRON_S`) nem depois de 30 s na carona da baixa (`PRAZO_DRENAGEM_LOTE_S`); o resto fica pendente, sem gastar tentativa |
 
 **Por que a trava de duplicidade que já existia não resolvia:** ela funciona,
 mas decide **depois** da carga pesada. O trabalho inútil era pago antes de ser

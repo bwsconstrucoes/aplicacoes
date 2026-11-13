@@ -592,8 +592,16 @@ def _frase_do_resumo(por_etapa: Dict[str, int], vencidos: int, agendados: int,
 ORDEM_ETAPAS = ('omie', 'sheets', 'pipefy', 'zapi')
 
 
-def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None) -> dict:
+def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None,
+                     prazo_s: Optional[float] = None) -> dict:
     """Anda com a fila, uma etapa por vez, na ordem da importância.
+
+    ⚠️ `prazo_s` — TETO DE TEMPO DA PASSADA (13/11/2026). Sem ele, a drenagem
+    segurava uma das quatro linhas de atendimento pelo tempo que os itens
+    levassem: até 55 por disparo do cron, cada um com Omie, planilha, Pipefy.
+    O log do dono mostrou a rota do cron ocupando linha havia 459 s. Com o teto,
+    nenhum item NOVO começa depois do prazo; o que sobrar fica PENDENTE para a
+    próxima passada, sem gastar tentativa. O item que já começou termina.
 
     ⚠️ `descartar_avisos_antigos=False` é obrigatório aqui, e não é detalhe:
     limpar em massa o acumulado de avisos antigos é decisão do dono. Quando o
@@ -602,11 +610,16 @@ def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None) ->
     que foi dito que ele não tocaria.
     """
     base = dict(payload or {})
+    if prazo_s:
+        base['_prazo_monotonic'] = time.monotonic() + float(prazo_s)
     saida: Dict[str, Any] = {}
     for etapa in ORDEM_ETAPAS:
         limite = int(limites.get(etapa) or 0)
         if limite <= 0:
             continue
+        if prazo_s and time.monotonic() >= base['_prazo_monotonic']:
+            saida['parou_por_prazo_na_etapa'] = etapa
+            break
         pedido = dict(base)
         pedido.update({'etapas': [etapa], 'limite': limite,
                        'descartar_avisos_antigos': False})
@@ -620,6 +633,9 @@ def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None) ->
                 'o_que_falta_configurar': r.get('o_que_falta_configurar'),
                 'interrompido': r.get('interrompido'),
             }
+            if r.get('interrompido') == 'prazo_da_passada':
+                saida['parou_por_prazo_na_etapa'] = etapa
+                break
             if r.get('interrompido') == 'cota_do_google':
                 # Cota estourada: para aqui e deixa o resto para a próxima vez.
                 saida['parou_por_cota_na_etapa'] = etapa
@@ -973,7 +989,13 @@ def reprocessar_fila(payload: dict) -> dict:
     bloqueados: List[Dict[str, Any]] = []
     pulados: List[Dict[str, Any]] = []
 
+    prazo = payload.get('_prazo_monotonic')
     for posicao, item in enumerate(pendentes):
+        if prazo and time.monotonic() >= float(prazo):
+            # Teto de tempo da passada (ver `drenar_por_etapa`): o resto fica
+            # PENDENTE, intacto, para a próxima.
+            interrompido = 'prazo_da_passada'
+            break
         if pausa and posicao:
             time.sleep(pausa)
         row_number = int(item.get('_row_number'))

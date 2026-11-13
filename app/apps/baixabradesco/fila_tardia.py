@@ -280,9 +280,18 @@ def _dispensar_avisos_vencidos(payload: dict | None = None) -> dict:
         return {'erro': str(e)[:200]}
 
 
+# ⚠️ TETO DE TEMPO DA DRENAGEM NO CRON — 13/11/2026. O dono, vendo o log com a
+# rota do cron ocupando uma das quatro linhas havia 459 s: *"acho que essa fila
+# tardia tem mais é atrapalhado"*. Boa parte do tempo não era a fila tardia em
+# si (2 adiados por disparo), e sim a fila de FALHAS que pega carona neste mesmo
+# disparo — até 55 itens, sem relógio. Com o teto, nenhum item novo começa depois
+# de 90 s; o resto anda no disparo seguinte, cinco minutos depois.
+PRAZO_DRENAGEM_CRON_S = 90
+
+
 def _drenar_a_fila(payload: dict | None = None) -> dict:
     from .fila import drenar_por_etapa
-    return drenar_por_etapa(LIMITES_CRON, payload)
+    return drenar_por_etapa(LIMITES_CRON, payload, prazo_s=PRAZO_DRENAGEM_CRON_S)
 
 
 def _descrever_item(nome: str) -> dict:

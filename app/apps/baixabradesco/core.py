@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import logging
+import os
 import threading
 import time
 from typing import Dict, Any, List
@@ -12,6 +14,7 @@ from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
 from .parser_sicredi import is_sicredi, parse_sicredi_text
+from .sheets import CopiaIndisponivel, load_spsbd_pela_copia
 from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, execute_omie, codigo_integracao
@@ -20,6 +23,8 @@ from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_aut
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
 from .fila import enqueue_failure
 from .avisos import enviar_aviso
+
+logger = logging.getLogger('baixabradesco.core')
 
 # Teto por comprovante baixado via URL — evita que um download gigante entre
 # 100% na RAM e derrube o worker (limite Render: 2GB).
@@ -48,6 +53,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     sps_omie_pendente = {}
     fingerprints_processados: Dict[str, str] = {}   # impressão digital → nº da SP
     google_error = ''
+    fonte_spsbd: Dict[str, Any] = {}
 
     try:
         gc = get_gc()
@@ -56,16 +62,9 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Uma leitura só da coluna de comprovantes já baixados. É o que impede
         # a mesma página virar baixa duas vezes.
         fingerprints_processados = load_fingerprints_processados(gc)
-        # ⚠️ Memória: baixa o range A:AK da SPsBD (todas as ~52k linhas) UMA
-        # única vez e compartilha entre os dois loaders. Antes cada loader
-        # fazia sua própria chamada, dobrando o pico de RAM por request.
-        _sps_values = load_spsbd_values(gc)
-        # Carrega apenas SPs com O=Pagar e AB=agendar/agendado/falhaagendar
-        # Necessário para matches sem ID
-        sps_index = load_spsbd_operacional(gc, values=_sps_values)
-        # SPs com Pago+AG preenchido+X vazia: Omie possivelmente pendente
-        sps_omie_pendente = load_spsbd_omie_pendente(gc, values=_sps_values)
-        del _sps_values  # libera as 52k linhas cruas imediatamente
+        # As SPs candidatas: pela cópia do Análise de SPs + as colunas que
+        # decidem, lidas da planilha na hora. Sem a cópia, a planilha inteira.
+        sps_index, sps_omie_pendente, fonte_spsbd = carregar_sps_candidatas(gc)
     except Exception as e:
         google_error = str(e)
         if not modo_teste:
@@ -360,6 +359,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             'duplicados_ja_baixados': len(duplicados),
             'baixas_concluidas': len(completados),
             'google_error': google_error,
+            'fonte_spsbd': fonte_spsbd,
         },
         'recusados': recusados,
         'duplicados': duplicados,
@@ -380,6 +380,53 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         resultado['aviso'] = enviar_aviso(resultado, payload)
 
     return resultado
+
+
+def _parece_cota(erro: Exception) -> bool:
+    msg = str(erro)
+    return '429' in msg or 'Quota exceeded' in msg or 'RESOURCE_EXHAUSTED' in msg
+
+
+def carregar_sps_candidatas(gc):
+    """As duas listas de SPs candidatas: a operacional (a pagar e agendadas) e a
+    de Omie possivelmente pendente (pagas há pouco com comprovante).
+
+    Desde 13/11/2026, pelo caminho da cópia (`sheets.load_spsbd_pela_copia`):
+    os campos vêm do banco do Análise de SPs, e o status de cada candidata vem
+    da planilha, lido na hora. A planilha inteira só é baixada quando a cópia
+    não serve — e a resposta diz qual dos dois caminhos foi usado
+    (`resumo.fonte_spsbd`).
+
+    Cota do Google estourada continua subindo como erro, igual antes: é ela que
+    manda o pedido para a fila tardia. Qualquer outro tropeço no caminho novo
+    cai no antigo, que é mais lento e conhecido.
+
+    `BAIXABRADESCO_SPSBD_PELA_COPIA=0` no Render desliga o caminho novo sem
+    precisar publicar código — é a volta atrás, se algo parecer errado.
+    """
+    motivo = ''
+    if os.getenv('BAIXABRADESCO_SPSBD_PELA_COPIA', '1').strip() in ('0', 'false', 'nao', 'não'):
+        motivo = 'desligado pela variável BAIXABRADESCO_SPSBD_PELA_COPIA'
+    else:
+        try:
+            operacional, pendente, info = load_spsbd_pela_copia(gc)
+            return operacional, pendente, info
+        except CopiaIndisponivel as e:
+            motivo = str(e)
+        except Exception as e:  # noqa: BLE001
+            if _parece_cota(e):
+                raise
+            motivo = f'erro no caminho da cópia: {str(e)[:150]}'
+            logger.exception('BaixaBradesco: caminho da cópia falhou; usando a planilha inteira')
+
+    logger.warning('BaixaBradesco: SPsBD pela planilha inteira — %s', motivo)
+    # ⚠️ Memória: baixa o range A:AK da SPsBD (todas as ~52k linhas) UMA
+    # única vez e compartilha entre os dois loaders.
+    valores = load_spsbd_values(gc)
+    operacional = load_spsbd_operacional(gc, values=valores)
+    pendente = load_spsbd_omie_pendente(gc, values=valores)
+    del valores
+    return operacional, pendente, {'fonte': 'planilha_inteira', 'motivo': motivo}
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
@@ -728,6 +775,11 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
 # prioridade — a fila é sobre lotes passados.
 LIMITES_LOTE = {'omie': 3, 'sheets': 3, 'pipefy': 2, 'zapi': 2}
 
+# Teto de tempo da carona (13/11/2026): a drenagem não começa item novo depois
+# disto. O log do dono mostrou o `/executar` do Make ocupando linha havia 452 s —
+# acima do próprio teto de 300 s do Make. O comprovante do lote é a prioridade.
+PRAZO_DRENAGEM_LOTE_S = 30
+
 
 def _drenar_fila(payload: dict, limites: dict | None = None) -> dict:
     """Reprocessa algumas pendências da fila, junto com o lote.
@@ -748,7 +800,8 @@ def _drenar_fila(payload: dict, limites: dict | None = None) -> dict:
     """
     try:
         from .fila import drenar_por_etapa
-        return drenar_por_etapa(limites or LIMITES_LOTE, payload)
+        return drenar_por_etapa(limites or LIMITES_LOTE, payload,
+                                prazo_s=PRAZO_DRENAGEM_LOTE_S)
     except Exception as e:
         return {'ok': False, 'erro': str(e)[:200]}
 

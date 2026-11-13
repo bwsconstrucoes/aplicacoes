@@ -12244,6 +12244,30 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 265 — A cópia da SPsBD passa a servir o BaixaBradesco (13/11/2026)
+
+- Pedido do chat do BaixaBradesco: cada baixa de comprovante baixava a SPsBD
+  inteira (`A:AK`, ~52 mil linhas) e segurava uma das quatro linhas de
+  atendimento por minutos. A tabela `analisesps.sps` já é essa planilha, em dia
+  pela sincronização — o robô passou a ler daqui.
+- **Peça nova, só de leitura:** `copia_sps.py`, com duas funções:
+  `situacao_por_sp()` (carimbo, status e agendado de cada SP) e
+  `linhas_candidatas(dias)` (as SPs a pagar e agendadas, ou pagas há pouco com
+  comprovante, no formato de uma linha da planilha, A..AK). Nada aqui grava;
+  nenhuma tela mudou; sem migração.
+- ⚠️ **O status não vem daqui.** A cópia só anda com a tela aberta (ou de
+  madrugada) e pode estar horas atrás. O robô lê da planilha, na hora, as
+  colunas A, O, V, AB e AK, e usa da cópia só os campos das linhas cujo
+  carimbo, status e agendado batem com a planilha; as outras ele relê inteiras.
+  O porquê completo está em `baixabradesco/HISTORICO.md`, 13/11/2026.
+- **Consequência para esta área:** a sincronização ganhou um segundo cliente.
+  Mudar o nome de uma coluna em `colunas.py`, o formato do carimbo (V) ou o que
+  `linha_para_dicionario` guarda agora afeta o BaixaBradesco também — há teste
+  com banco ligando as duas pontas (`test_analisesps_copia_sps_banco.py`). Se a
+  cópia falhar, o robô volta sozinho a baixar a planilha inteira: mais lento,
+  não errado.
+- A tela de Comprovantes, que chama o robô direto, também passa pela cópia.
+
 #### Leva 264 — Telegram: um grupo novo a cada envio (WhatsApp1, WhatsApp2…), com repetidas (12/11/2026)
 
 - *"Mesmo que elas já estejam no lote, elas integrem o lote que está sendo criado. Elas

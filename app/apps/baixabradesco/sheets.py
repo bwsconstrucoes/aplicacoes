@@ -78,34 +78,50 @@ def load_spsbd_operacional(gc=None, values: list | None = None) -> Dict[str, SpR
     """
     if values is None:
         values = load_spsbd_values(gc)
-    all_values = values
-    if not all_values or len(all_values) < 2:
+    if not values or len(values) < 2:
         return {}
+    return _filtrar_operacional(values[0], enumerate(values[1:], start=2))
 
-    headers = all_values[0]
-    # Índices das colunas de filtro (0-based)
-    IDX_O  = 14  # Status Pgt
-    IDX_AB = 27  # Agendado
 
-    STATUS_PGT_OK   = {'pagar'}
-    STATUS_AGEND_OK = {'agendar', 'agendado', 'falhaagendar'}
+# Índices das colunas que decidem quem é candidata (0-based). São os MESMOS no
+# caminho antigo (planilha inteira) e no novo (cópia + colunas frescas).
+IDX_O  = 14  # Status Pgt
+IDX_V  = 21  # Carimbo da última alteração
+IDX_X  = 23  # Data do Pagamento
+IDX_AB = 27  # Agendado
+IDX_AG = 32  # Comprovante
+IDX_AK = 36  # Conta Pagamento
 
+STATUS_PGT_OK   = {'pagar'}
+STATUS_AGEND_OK = {'agendar', 'agendado', 'falhaagendar'}
+
+
+def _celula(row, idx: int) -> str:
+    return (row[idx] if idx < len(row) else '') or ''
+
+
+def _registro(headers, row_num: int, row) -> SpRecord:
+    row = list(row) + [''] * (len(headers) - len(row))
+    r = {headers[i]: row[i] for i in range(len(headers))}
+    r['_row_number'] = row_num
+    return row_to_sp_record(r)
+
+
+def _e_operacional(row) -> bool:
+    return (_celula(row, IDX_O).strip().lower() in STATUS_PGT_OK
+            and _celula(row, IDX_AB).strip().lower() in STATUS_AGEND_OK)
+
+
+def _filtrar_operacional(headers, linhas) -> Dict[str, SpRecord]:
+    """`linhas`: pares (número da linha na planilha, células). Só materializa
+    o dicionário das poucas que passam no filtro."""
     result = {}
-    for row_num, row in enumerate(all_values[1:], start=2):
-        status_pgt   = (row[IDX_O]  if IDX_O  < len(row) else '').strip().lower()
-        status_agend = (row[IDX_AB] if IDX_AB < len(row) else '').strip().lower()
-
-        if status_pgt not in STATUS_PGT_OK or status_agend not in STATUS_AGEND_OK:
+    for row_num, row in linhas:
+        if not _e_operacional(row):
             continue
-
-        # Só materializa dict/estende a linha para as poucas que passam no filtro
-        row = list(row) + [''] * (len(headers) - len(row))
-        r = {headers[i]: row[i] for i in range(len(headers))}
-        r['_row_number'] = row_num
-        sp = row_to_sp_record(r)
+        sp = _registro(headers, row_num, row)
         if sp.id:
             result[sp.id] = sp
-
     return result
 
 
@@ -149,38 +165,210 @@ def load_spsbd_omie_pendente(gc=None, values: list | None = None) -> Dict[str, S
     """
     if values is None:
         values = load_spsbd_values(gc)
-    all_values = values
-    if not all_values or len(all_values) < 2:
+    if not values or len(values) < 2:
         return {}
+    return _filtrar_omie_pendente(values[0], enumerate(values[1:], start=2))
 
-    headers = all_values[0]
-    IDX_O  = 14  # Status Pgt (O)
-    IDX_X  = 23  # Data Pagamento (X)
-    IDX_AG = 32  # Comprovante (AG)
 
+def _e_omie_pendente(row) -> bool:
+    if _celula(row, IDX_O).strip().lower() != 'pago':
+        return False
+    if not _celula(row, IDX_AG).strip():
+        return False
+    # Sem data de pagamento, ou paga há pouco: nos dois casos o Omie ainda
+    # pode estar pendente e vale deixar o comprovante reenviado alcançar.
+    data_pgt = _celula(row, IDX_X).strip()
+    return not data_pgt or _pago_ha_pouco(data_pgt)
+
+
+def _filtrar_omie_pendente(headers, linhas) -> Dict[str, SpRecord]:
     result = {}
-    for row_num, row in enumerate(all_values[1:], start=2):
-        status_pgt = (row[IDX_O]  if IDX_O  < len(row) else '').strip().lower()
-        data_pgt   = (row[IDX_X]  if IDX_X  < len(row) else '').strip()
-        comprovante= (row[IDX_AG] if IDX_AG < len(row) else '').strip()
-
-        if status_pgt != 'pago':
+    for row_num, row in linhas:
+        if not _e_omie_pendente(row):
             continue
-        if not comprovante:
-            continue
-        # Sem data de pagamento, ou paga há pouco: nos dois casos o Omie ainda
-        # pode estar pendente e vale deixar o comprovante reenviado alcançar.
-        if data_pgt and not _pago_ha_pouco(data_pgt):
-            continue
-
-        row = list(row) + [''] * (len(headers) - len(row))
-        r = {headers[i]: row[i] for i in range(len(headers))}
-        r['_row_number'] = row_num
-        sp = row_to_sp_record(r)
+        sp = _registro(headers, row_num, row)
         if sp.id:
             result[sp.id] = sp
-
     return result
+
+
+# ── A SPsBD sem baixar a planilha inteira (13/11/2026) ───────────────────────
+#
+# O log que o dono colou em 13/11: "AS 4 LINHAS OCUPADAS: POST
+# /api/baixabradesco/processar-fila-tardia há 459 s; POST
+# /api/baixabradesco/executar há 452 s; …". O serviço tem um processo e quatro
+# linhas de atendimento, e cada baixa segurava uma delas baixando a SPsBD inteira
+# (`A:AK`, ~52 mil linhas × 37 colunas, 150–250 MB). Com o Make, a fila tardia e
+# a tela de Comprovantes baixando ao mesmo tempo, todas disputavam o mesmo
+# download e a mesma cota do Google.
+#
+# O Análise de SPs já guarda uma cópia da SPsBD no Postgres. O caminho novo usa
+# a cópia para os CAMPOS (valor, credor, código de barras…) e a planilha, na
+# hora, só para as colunas que DECIDEM:
+#
+#   A  (ID)            — onde cada SP mora, e quais existem agora;
+#   O  (Status Pgt)    — "Pagar" ou "Pago". NUNCA vem da cópia: é ele que
+#                        impede pagar duas vezes;
+#   V  (carimbo)       — diz se a linha mudou depois da última sincronização;
+#   AB (Agendado)      — junto do O, decide quem é candidata;
+#   AK (Conta)         — a cópia não guarda, e o casamento por conta precisa.
+#
+# Linha cujo carimbo, status ou agendamento divergem da cópia — ou que a cópia
+# nem conhece — é RELIDA INTEIRA da planilha. Só ela, não as 52 mil.
+#
+# Com isso a SP candidata tem o status da planilha NO MOMENTO DA BAIXA, igual ao
+# caminho antigo — a cópia pode estar horas atrás (ela só anda com a tela do
+# Análise de SPs aberta) sem que isso vire baixa em SP já paga.
+#
+# QUANDO VOLTA AO CAMINHO ANTIGO (`CopiaIndisponivel`): banco fora, cópia vazia,
+# linhas demais mudadas desde a sincronização (cópia velha demais para valer a
+# pena), ou a planilha mudando de lugar no meio da leitura. Nesses casos baixa-se
+# a planilha inteira, como sempre foi — mais lento, nunca errado.
+
+LIMITE_RELEITURA = 300   # acima disso a cópia está velha demais: planilha inteira
+FAIXAS_POR_PEDIDO = 100  # quantos trechos de linha vão num pedido ao Google
+
+
+class CopiaIndisponivel(RuntimeError):
+    """A cópia do banco não serve agora; use a planilha inteira."""
+
+
+def _copia_padrao():
+    from app.apps.analisesps import copia_sps
+    return copia_sps
+
+
+def _faixas(numeros: List[int]) -> List[tuple]:
+    """[5, 6, 7, 10] → [(5, 7), (10, 10)]: linhas vizinhas num trecho só."""
+    faixas = []
+    for n in sorted(set(numeros)):
+        if faixas and n == faixas[-1][1] + 1:
+            faixas[-1] = (faixas[-1][0], n)
+        else:
+            faixas.append((n, n))
+    return faixas
+
+
+def _reler_linhas(ws, alvos: Dict[int, str]) -> Dict[int, list]:
+    """Relê da planilha, inteiras, as linhas pedidas (nº da linha → ID esperado).
+
+    Confere o ID de cada uma: se alguém inseriu ou apagou linha acima entre a
+    primeira leitura e esta, o número aponta para OUTRA SP — e aí é melhor
+    desistir da cópia do que casar comprovante com a SP errada."""
+    if not alvos:
+        return {}
+    faixas = _faixas(list(alvos))
+    lidas: Dict[int, list] = {}
+    for inicio in range(0, len(faixas), FAIXAS_POR_PEDIDO):
+        lote = faixas[inicio:inicio + FAIXAS_POR_PEDIDO]
+        blocos = ws.batch_get([f'A{a}:AK{b}' for a, b in lote])
+        for (a, b), bloco in zip(lote, blocos):
+            bloco = bloco or []
+            for desloc in range(b - a + 1):
+                n = a + desloc
+                if n not in alvos:
+                    continue
+                linha = list(bloco[desloc]) if desloc < len(bloco) else []
+                if as_string(_celula(linha, 0)) != alvos[n]:
+                    raise CopiaIndisponivel(
+                        f'a planilha mudou durante a leitura (linha {n} não é mais '
+                        f'a SP {alvos[n]})')
+                lidas[n] = linha
+    return lidas
+
+
+def load_spsbd_pela_copia(gc=None, copia=None, limite_releitura: int = LIMITE_RELEITURA):
+    """As mesmas duas listas de `load_spsbd_operacional` e
+    `load_spsbd_omie_pendente`, sem baixar a SPsBD inteira.
+
+    Devolve `(operacional, omie_pendente, info)`. `info` diz quantas linhas
+    vieram da cópia e quantas foram relidas da planilha — vai para o resumo da
+    resposta, para se poder ver em produção o que aconteceu.
+
+    Levanta `CopiaIndisponivel` quando a cópia não serve (ver acima). Erro do
+    Google NÃO vira `CopiaIndisponivel`: passa adiante, como no caminho antigo,
+    para a cota estourada continuar indo para a fila tardia.
+    """
+    copia = copia or _copia_padrao()
+    try:
+        situacao = copia.situacao_por_sp()
+        linhas_copia = copia.linhas_candidatas(DIAS_OMIE_PENDENTE)
+    except Exception as e:
+        raise CopiaIndisponivel(f'cópia do Análise de SPs fora do ar: {str(e)[:150]}')
+    if not situacao:
+        raise CopiaIndisponivel('a cópia do Análise de SPs está vazia')
+
+    gc = gc or get_gc()
+    ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
+    # Um pedido só, com o cabeçalho e as cinco colunas estreitas.
+    blocos = ws.batch_get(['A1:AK1', 'A2:A', 'O2:O', 'V2:V', 'AB2:AB', 'AK2:AK'])
+    blocos = list(blocos) + [[]] * (6 - len(blocos))
+    headers = list(blocos[0][0]) if blocos[0] else []
+    if not headers:
+        raise CopiaIndisponivel('a planilha veio sem cabeçalho')
+    colunas = [[(c[0] if c else '') for c in (b or [])] for b in blocos[1:6]]
+    ids, sts, carimbos, agendas, contas = colunas
+
+    def _na(col, i):
+        return as_string(col[i]) if i < len(col) else ''
+
+    da_copia: Dict[int, list] = {}
+    reler: Dict[int, str] = {}
+    for i in range(len(ids)):
+        sp_id = _na(ids, i)
+        if not sp_id:
+            continue
+        n = i + 2
+        status = _na(sts, i)
+        agenda = _na(agendas, i)
+        st = status.lower()
+        # Só interessa quem pode virar candidata pelo status DA PLANILHA.
+        if not ((st in STATUS_PGT_OK and agenda.lower() in STATUS_AGEND_OK) or st == 'pago'):
+            continue
+        carimbo = _na(carimbos, i)
+        conhecida = situacao.get(sp_id)
+        mudou = (conhecida is None
+                 or conhecida[0] != carimbo
+                 or conhecida[1].lower() != st
+                 or conhecida[2].lower() != agenda.lower())
+        if mudou:
+            reler[n] = sp_id
+            continue
+        linha = linhas_copia.get(sp_id)
+        if linha is None:
+            if st in STATUS_PGT_OK:
+                # A pagar e agendada na planilha, mas a cópia não a trouxe:
+                # não deveria acontecer. Na dúvida, relê.
+                reler[n] = sp_id
+            # Paga, sem mudança, e pela cópia não é candidata (paga há muito
+            # tempo, ou sem comprovante). Igual na planilha.
+            continue
+        linha = list(linha) + [''] * (IDX_AK + 1 - len(linha))
+        # As colunas frescas mandam sobre o que a cópia tiver.
+        linha[IDX_O] = status
+        linha[IDX_V] = carimbo
+        linha[IDX_AB] = agenda
+        linha[IDX_AK] = _na(contas, i)
+        da_copia[n] = linha
+
+    if len(reler) > limite_releitura:
+        raise CopiaIndisponivel(
+            f'{len(reler)} linhas mudaram desde a última sincronização da cópia '
+            f'(limite {limite_releitura})')
+
+    relidas = _reler_linhas(ws, reler)
+    todas = dict(da_copia)
+    todas.update(relidas)
+    em_ordem = sorted(todas.items())   # mesma ordem da planilha: a última vence
+
+    operacional = _filtrar_operacional(headers, em_ordem)
+    pendente = _filtrar_omie_pendente(headers, em_ordem)
+    info = {
+        'fonte': 'copia',
+        'linhas_da_copia': len(da_copia),
+        'relidas_da_planilha': len(relidas),
+    }
+    return operacional, pendente, info
 
 
 def load_spsagendar(gc=None) -> List[SpRecord]:

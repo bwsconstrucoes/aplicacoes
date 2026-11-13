@@ -802,6 +802,35 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 13/11/2026 — o BaixaBradesco passa a ler a SPsBD pela cópia do Análise de SPs (atravessa áreas)
+
+O dono, com o log mostrando as 4 linhas tomadas (`processar-fila-tardia` há
+459 s, `baixabradesco/executar` há 452 s): *"continuo tendo problema e acho que
+é sempre que envolve essa baixabradesco"*.
+
+**A causa de fundo:** cada baixa baixava a SPsBD inteira (`A:AK`, ~52 mil
+linhas × 37 colunas, 150–250 MB). **O que mudou:** o robô usa a cópia que o
+Análise de SPs já mantém no Postgres (`analisesps/copia_sps.py`, só leitura)
+para os campos, e lê da planilha, na hora, só as colunas que decidem (A, O, V,
+AB, AK). Candidata que mudou desde a última sincronização é relida inteira.
+
+**A regra que atravessa áreas:** a cópia do Análise de SPs pode estar horas
+atrás (só sincroniza com a tela aberta). **Nenhum módulo decide status de
+pagamento pela cópia** — o status é sempre lido da planilha no momento da
+decisão. A cópia serve para achar e descrever; a planilha decide. E quem mexer
+em `analisesps/colunas.py` ou na sincronização agora afeta também o
+BaixaBradesco.
+
+Sem a cópia (banco fora, cópia vazia ou velha demais), o robô volta sozinho à
+planilha inteira. Desliga sem publicar código com
+`BAIXABRADESCO_SPSBD_PELA_COPIA=0` no Render (variável nova, não é credencial).
+
+**Junto, pela frase do dono de que a fila tardia "tem mais é atrapalhado":** a
+rota do cron drenava também a fila de falhas (até 55 itens) e cada baixa drenava
+mais 10 de carona, sem limite de tempo. Ficou um teto: 90 s no cron, 30 s na
+carona. Detalhes e a decisão que ficou com o dono em
+`app/apps/baixabradesco/HISTORICO.md`, 13/11/2026. Sem migração.
+
 ### 12/11/2026 — o "processar nova SP" do Make passa a rodar UM POR VEZ
 
 O dono: *"tá super lento"*, com o log do Render mostrando as 4 linhas de

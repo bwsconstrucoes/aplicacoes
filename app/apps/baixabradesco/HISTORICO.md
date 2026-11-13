@@ -1788,3 +1788,133 @@ biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
 **Não verificado:** nada disso rodou em produção. O sinal de que funcionou é o
 serviço parar de engasgar quando há comprovante na fila — e `pendentes` caindo
 de 2 em 2 por disparo, em vez de tudo de uma vez.
+
+---
+
+### 13/11/2026 — a baixa deixa de baixar a SPsBD inteira (e a drenagem ganha relógio)
+
+O dono colou o log do Render e disse: *"continuo tendo problema e acho que é
+sempre que envolve essa baixabradesco"*:
+
+```
+AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 459 s;
+POST /api/baixabradesco/executar há 452 s; POST /api/atualizaspbotao/executar há 43 s; ...
+```
+
+A correção de 12/11 (2 adiados por disparo, uma passada por vez, impressão
+digital) era **contenção**, e a entrada de 12/11 aqui em cima já dizia isso: a
+causa de fundo, cada processamento baixar a SPsBD inteira, tinha ficado de fora.
+Esta sessão foi atrás dela. No meio do trabalho, ele acrescentou: *"acho que
+essa fila tardia tem mais é atrapalhado"*. Isso levou ao segundo achado.
+
+**1. A leitura da SPsBD (a causa de fundo).** Cada baixa — do Make, da fila
+tardia ou da tela de Comprovantes do Análise de SPs — fazia `ws.get('A:AK')`:
+~52 mil linhas × 37 colunas, 150–250 MB, num pedido só ao Google, e só depois
+filtrava as poucas centenas que interessam. Agora (`sheets.load_spsbd_pela_copia`):
+
+- os **campos** vêm da cópia da SPsBD que o Análise de SPs já mantém no
+  Postgres (`analisesps/copia_sps.py`, função nova de leitura, só lê);
+- a planilha é lida **na hora**, num pedido só, nas colunas que **decidem**:
+  A (ID), O (status), V (carimbo), AB (agendado) e AK (conta) — ~5 colunas
+  curtas em vez de 37;
+- candidata que **mudou** desde a última sincronização (carimbo, status ou
+  agendado diferentes da cópia) ou que a cópia não conhece é **relida
+  inteira** da planilha — só ela.
+
+**A decisão que mais importa, e por que o desenho é este e não o sugerido no
+pedido.** O pedido sugeria: achar as candidatas pela cópia e, antes de
+escrever, reler da planilha só a linha casada. Li como a cópia é mantida e
+mudei uma parte: **a cópia só anda quando alguém está com a tela do Análise de
+SPs aberta** (`tarefas.manter_fresco`, de 5 em 5 min) ou de madrugada. Fora
+disso pode estar **horas** atrás. Achar candidata pelo status da cópia teria
+dois erros:
+
+- **SP agendada depois da sincronização não seria achada** — comprovante sem
+  número de SP (FGTS, boleto pelo código de barras, BeeVale, Pix agendado)
+  voltaria "não localizado";
+- pior, e silencioso: **duas SPs de mesmo valor e mesma conta, uma delas
+  agendada há pouco** — a cópia veria uma só e o robô baixaria nela, quando a
+  planilha mostraria duas e o robô pararia para conferência. Comprovante na SP
+  errada é exatamente o erro que custa dinheiro sem dar sinal.
+
+Por isso o **status vem sempre da planilha, para todas as candidatas, no
+momento da baixa** (a coluna O, junto com AB), e não só da linha casada. É a
+mesma garantia do caminho antigo, que também lia a planilha no começo da baixa.
+O custo dessa escolha é uma coluna estreita a mais por coluna decisiva; o ganho
+é que a cópia atrasada não muda nenhuma decisão de status. A AK entrou porque a
+cópia **não guarda** a conta (`colunas.py` marca como descartável), e sem ela o
+filtro por conta afrouxa — o que poderia fazer um comprovante de outra conta
+casar sozinho.
+
+**O que continua com o mesmo ponto cego da sincronização do Análise de SPs:**
+um campo descritivo (valor, credor, código de barras) alterado por script **sem
+carimbar a coluna V e sem mexer no status** fica com o valor velho da cópia até
+a próxima sincronização. O status e a conta nunca têm esse problema.
+
+**A escrita não mudou.** `execute_spsbd_updates` acha a linha pelo ID na coluna
+A no momento de gravar, como sempre; o número de linha das SPs candidatas nem é
+usado para escrever (e, no caminho novo, ele é o da planilha, conferido).
+
+**Volta ao caminho antigo** (`CopiaIndisponivel` → planilha inteira, como
+antes): banco fora, cópia vazia, mais de 300 candidatas mudadas desde a última
+sincronização (`LIMITE_RELEITURA`), a planilha mudando de lugar entre a leitura
+estreita e a releitura (a linha relida não é mais a SP esperada), ou qualquer
+defeito inesperado no caminho novo. **Cota do Google estourada NÃO volta:** sobe
+como erro, para a rota adiar o pedido na fila tardia — baixar a planilha inteira
+em seguida esbarraria na mesma cota.
+
+**Para ver em produção qual caminho rodou:** `resumo.fonte_spsbd` na resposta
+(`copia`, com quantas linhas vieram da cópia e quantas foram relidas; ou
+`planilha_inteira`, com o motivo) e, no log do Render, o aviso "SPsBD pela
+planilha inteira — <motivo>". **Para desligar sem publicar código:**
+`BAIXABRADESCO_SPSBD_PELA_COPIA=0` no Render.
+
+**2. A fila de falhas pegando carona sem relógio (o que estava por trás da
+frase dele).** Olhando o que a rota `processar-fila-tardia` faz a cada 5
+minutos: os 2 adiados são a menor parte. No mesmo disparo ela **drena a fila de
+falhas** — até 15 do Omie, 15 da planilha, 15 do Pipefy e 10 avisos (55 itens),
+cada um com chamadas externas — e cada baixa, inclusive a do Make, drena mais
+10 de carona (`LIMITES_LOTE`). Nada disso tinha limite de tempo. É a explicação
+mais provável dos 459 s do cron e dos 452 s do `/executar` (acima do próprio
+teto de 300 s do Make).
+
+Ficou um **teto de tempo**: nenhum item novo começa depois de **90 s** no cron
+(`fila_tardia.PRAZO_DRENAGEM_CRON_S`) nem depois de **30 s** na carona da baixa
+(`core.PRAZO_DRENAGEM_LOTE_S`). O item que já começou termina; o que sobrou
+fica PENDENTE, com as mesmas tentativas, para o disparo seguinte. Os limites de
+quantidade (15/15/15/10 e 3/3/2/2) ficaram como estavam — eram do mutirão de
+08/10 e mexer neles é decisão dele.
+
+**A pergunta que ficou com o dono** (ele disse que acha que a fila tardia
+"tem mais é atrapalhado"):
+
+- **A fila tardia em si** (os pedidos adiados por cota) passa a custar pouco
+  com a leitura nova, e a cota deve estourar bem menos. Desligá-la significaria
+  o Make receber erro quando a cota estoura e ter de reenviar.
+- **A fila de falhas no cron** é outra coisa: é o que conclui baixa que ficou
+  pela metade (Omie aceitou e a planilha não gravou, por exemplo). Desligar a
+  carona dela no cron deixa essas pendências paradas até alguém chamar
+  `reprocessar-fila` à mão — e em 08/10 descobrimos que, quando dependia disso,
+  ela **nunca** andou.
+- Minha sugestão: manter as duas com a leitura nova e o teto de tempo, olhar o
+  log por alguns dias, e só então decidir. Se ele preferir desligar já, o
+  caminho mais simples e reversível é pausar o job do cron-job.org.
+
+**Verificado:** 30 testes novos (`test_baixabradesco_spsbd_pela_copia.py`: a
+cópia dá as mesmas listas do caminho antigo, um pedido estreito só ao Google, a
+conta e o número da linha vêm da planilha, status da planilha manda sobre a
+cópia, SP agendada/nova/alterada depois da sincronização é relida, linhas
+vizinhas num trecho só, as cinco voltas ao caminho antigo, cota sobe como erro,
+a variável desliga, e o teto de tempo da drenagem; e
+`test_analisesps_copia_sps_banco.py`, contra Postgres de verdade: o filtro SQL
+das candidatas, o formato da linha, e as duas pontas ligadas — cópia gravada
+pelo caminho da sincronização, lida pelo robô, igual ao caminho antigo). Área
+inteira e suíte completa rodadas com banco local; aplicação subindo com os 18
+blueprints.
+**Não verificado:** nada disso rodou contra a planilha e o banco de produção.
+O primeiro sinal é o `resumo.fonte_spsbd` da primeira baixa depois de publicar:
+`copia` com `relidas_da_planilha` pequeno é o esperado. Se vier
+`planilha_inteira`, o motivo diz por quê. Não medi o tempo ganho — o sinal é o
+log de "linhas ocupadas" parar de mostrar o BaixaBradesco com centenas de
+segundos.
+**Sem migração de banco.**
