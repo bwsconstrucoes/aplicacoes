@@ -21,6 +21,42 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚠️ A TELA DE COLABORADORES ESTÁ SENDO REESCRITA PELO CHAT DO PONTO (13/11/2026)
+
+O chat do ponto avisou que, **com o "pode" do dono**, está mexendo em DOIS
+arquivos desta área, no ramo `feature/modulo-ponto` — **ainda não publicado**:
+
+1. **O menu** (`routes.py`): o Ponto volta a ser módulo próprio, ao lado de
+   Pessoal. Pessoal fica com Colaboradores · Solicitações ao DP · Contabilidade
+   e agente · Despesas com colaborador.
+2. **A ficha única** (`erp_colaboradores.html`): clicar na pessoa passa a abrir
+   a janela do Ponto num quadro, com abas Cadastro e Pagamentos (só leitura).
+   Editar o cadastro e os documentos continua no formulário daqui.
+
+**O pedido deles:** não mexer nesses dois lugares até a publicação sair;
+depois dela, trazer a `main` antes de encostar neles.
+
+#### ⚑ O QUE ELES PRECISAM SABER, E PODE SE PERDER NA JUNÇÃO
+
+`erp_colaboradores.html` **mudou na `main` em 11/11/2026** (commits `16857ed` e
+`6a8551e`), e é a mesma tela que eles estão reescrevendo.
+
+O que mudou: *"Empresa do grupo"* e *"CNPJ de admissão"* eram **dois campos
+lado a lado para o mesmo fato** — e a caixinha de empresa **nunca funcionou**,
+porque `pessoas.opcoes()` não devolvia `empresas`. O único jeito de dizer a
+empresa era digitar o CNPJ no texto livre ao lado, e os dois podiam divergir.
+Agora é **um campo só**, a lista chega de verdade, e `cnpj_admissao` é derivado
+da empresa escolhida, no servidor.
+
+**Se o ramo deles foi cortado antes de 11/11, a junção pode desfazer isso em
+silêncio.** A trava que pega:
+`tests/test_caixa_e_portal.py::test_nenhuma_tela_pergunta_a_empresa_duas_vezes`
+— se ela ficar vermelha depois da junção, não é teste chato, é o campo
+duplicado voltando. Mais quatro no mesmo arquivo defendem a regra.
+
+**Eu não consegui avisá-los por mensagem** (a sessão deles não estava rodando).
+Fica aqui, que é a memória que atravessa chats.
+
 ### 📥 A IMPORTAÇÃO DAS PESSOAS: pare de pedir "o arquivo"
 
 **Eu estava pedindo a coisa errada, e por um motivo que vale guardar:** o botão
