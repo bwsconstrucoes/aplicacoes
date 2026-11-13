@@ -21,41 +21,47 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### ⚠️ A TELA DE COLABORADORES ESTÁ SENDO REESCRITA PELO CHAT DO PONTO (13/11/2026)
+### ✔️ 13/11/2026 — a junção do Ponto NÃO desfez o campo único de empresa (conferido)
 
-O chat do ponto avisou que, **com o "pode" do dono**, está mexendo em DOIS
-arquivos desta área, no ramo `feature/modulo-ponto` — **ainda não publicado**:
+Os dois chats mexeram na MESMA tela (`erp_colaboradores.html`) na mesma
+semana: o do ERP em 11/11 (empresa de registro num campo só) e o do Ponto em
+13/11 (ficha única). **Conferido depois da publicação deles: o conserto
+sobreviveu** — a tela tem um campo só, o texto livre do CNPJ não voltou, e as
+cinco travas passam.
 
-1. **O menu** (`routes.py`): o Ponto volta a ser módulo próprio, ao lado de
-   Pessoal. Pessoal fica com Colaboradores · Solicitações ao DP · Contabilidade
-   e agente · Despesas com colaborador.
-2. **A ficha única** (`erp_colaboradores.html`): clicar na pessoa passa a abrir
-   a janela do Ponto num quadro, com abas Cadastro e Pagamentos (só leitura).
-   Editar o cadastro e os documentos continua no formulário daqui.
+⚑ **Fica registrado porque o próximo encontro desses dois pode não ter a mesma
+sorte.** O que protege é
+`tests/test_caixa_e_portal.py::test_nenhuma_tela_pergunta_a_empresa_duas_vezes`:
+se ela ficar vermelha depois de uma junção, **não é teste chato — é o campo
+duplicado voltando**, e o conserto é refazer a junção, nunca apagar o teste.
 
-**O pedido deles:** não mexer nesses dois lugares até a publicação sair;
-depois dela, trazer a `main` antes de encostar neles.
+O defeito que ela guarda: *"Empresa do grupo"* e *"CNPJ de admissão"* eram dois
+campos para o mesmo fato, e a caixinha de empresa nunca funcionou porque
+`pessoas.opcoes()` não devolvia `empresas` — o único jeito de dizer a empresa
+era digitar o CNPJ no texto ao lado, e os dois podiam divergir.
 
-#### ⚑ O QUE ELES PRECISAM SABER, E PODE SE PERDER NA JUNÇÃO
+### 🔀 13/11/2026 — o Ponto saiu de dentro de Pessoal, e a ficha da pessoa virou UMA (feito pelo chat do Ponto)
 
-`erp_colaboradores.html` **mudou na `main` em 11/11/2026** (commits `16857ed` e
-`6a8551e`), e é a mesma tela que eles estão reescrevendo.
+**Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui, e PUBLICADO em 13/11/2026** (a nota original
+dizia "não publicado ainda"; corrigido pelo chat do ERP depois da publicação). Quem for mexer na tela de
+**Colaboradores** ou no **menu**: traga a `main` antes, senão os dois lados se pisam.
 
-O que mudou: *"Empresa do grupo"* e *"CNPJ de admissão"* eram **dois campos
-lado a lado para o mesmo fato** — e a caixinha de empresa **nunca funcionou**,
-porque `pessoas.opcoes()` não devolvia `empresas`. O único jeito de dizer a
-empresa era digitar o CNPJ no texto livre ao lado, e os dois podiam divergir.
-Agora é **um campo só**, a lista chega de verdade, e `cnpj_admissao` é derivado
-da empresa escolhida, no servidor.
+O dono, 13/11/2026: *"quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande (…) era
+melhor dividir (…) e tem duas informações que não estão integradas: em Colaboradores eu clico na pessoa e não vejo o
+ponto; no ponto, o cadastro parece mais completo (…) eu cliquei no cadastro da pessoa, a partir daquele nome, tudo
+que envolve a pessoa eu tenho acesso."*
 
-**Se o ramo deles foi cortado antes de 11/11, a junção pode desfazer isso em
-silêncio.** A trava que pega:
-`tests/test_caixa_e_portal.py::test_nenhuma_tela_pergunta_a_empresa_duas_vezes`
-— se ela ficar vermelha depois da junção, não é teste chato, é o campo
-duplicado voltando. Mais quatro no mesmo arquivo defendem a regra.
-
-**Eu não consegui avisá-los por mensagem** (a sessão deles não estava rodando).
-Fica aqui, que é a memória que atravessa chats.
+- **Menu** (`routes.py`): `_juntar_ponto_com_pessoal` virou `_ponto_ao_lado_de_pessoal` — o Ponto volta a ser um
+  módulo, logo depois de Pessoal; Pessoal fica com Colaboradores · Solicitações ao DP · Contabilidade e agente ·
+  Despesas com colaborador. As abas do Ponto e a ordem delas são do módulo do ponto (`ponto/gestao.py`, `ABAS`).
+  Testes ajustados: `test_caixa_e_portal.py` (o Ponto logo depois de Pessoal) e `test_ponto_fase2.py`.
+- **Ficha única** (`erp_colaboradores.html`): clicar na pessoa da lista abre `abrirFichaUnica` — a janela da pessoa
+  do Ponto (`/erp/ponto/pessoa/<id>`, num quadro dentro da tela), que agora tem as abas **Cadastro** (lê
+  `/historico` e `/ficha` daqui — só mostra) e **Pagamentos**, além do ponto inteiro. **Editar o cadastro** e os
+  **documentos** continuam sendo o formulário DAQUI: a janela pede (mensagem `bws-ficha`) e esta tela abre
+  `abrirFichaCompleta` ou `ficha(id, "documentos")`. Quem NÃO enxerga o ponto continua na ficha de sempre
+  (`ficha`), que não foi tirada. A tela também aceita `?editar=`, `?documentos=` e `?pessoa=` no endereço — é por
+  onde a janela, aberta numa tela do ponto, manda editar.
 
 ### 📥 A IMPORTAÇÃO DAS PESSOAS: pare de pedir "o arquivo"
 

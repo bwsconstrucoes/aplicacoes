@@ -12873,67 +12873,41 @@ except Exception:  # noqa: BLE001
     logger.exception("ERP: a gestão do ponto não carregou; o ERP segue sem ela")
 
 
-def _juntar_ponto_com_pessoal() -> None:
-    """O PONTO PASSA A MORAR DENTRO DE PESSOAL (06/11/2026).
+def _ponto_ao_lado_de_pessoal() -> None:
+    """O PONTO VOLTA A TER O PRÓPRIO LUGAR NO MENU, LOGO DEPOIS DE PESSOAL (13/11/2026).
 
-    Pedido do dono, olhando os dois módulos lado a lado:
+    Histórico: em 06/11/2026 as abas do ponto foram para DENTRO de Pessoal (o dono: *"a gente tem lá pessoal e tem
+    ponto (…) já seria o momento de integrar isso aí"*). Em 13/11/2026 ele voltou atrás no MENU, mantendo a integração
+    onde ela importa — a ficha da pessoa:
 
-    > *"a gente tem lá pessoal e tem ponto. Eu tô achando que já seria o momento
-    > de integrar isso aí. (…) tem cadastro da pessoa, tem cadastro no ponto.
-    > Tem a tela de visualizar pessoas num lado, no outro. Não deveria ser
-    > assim, né? A gente tem que falar a mesma linguagem nos dois lados, afinal
-    > é a mesma empresa, é o mesmo ERP."*
+    > *"Quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande, muito longa (…) ficou
+    > um pouco bagunçado, era melhor dividir a parte de ponto e a parte de pessoal."*
 
-    POR QUE AQUI E NÃO NO MÓDULO DO PONTO: o menu é do ERP. O ponto se registra
-    inserindo o módulo dele na lista; quem decide como a lista se organiza é
-    este arquivo. Assim a junção não mexe em nenhum arquivo da área do ponto —
-    e se o ponto não carregar, esta função não faz nada e o ERP sobe igual.
+    E a integração que ele queria de verdade era outra: clicar na pessoa e ver TUDO dela (cadastro, ponto, aparelhos,
+    pagamentos) numa janela só — feita na janela da pessoa do ponto, que a tela de Colaboradores agora abre
+    (ver `erp_colaboradores.html`, `ficha`).
 
-    O QUE ELA FAZ, e só isto: move as abas do módulo "ponto" para o fim das
-    abas de "pessoal", apaga o módulo que ficou vazio e reaponta o mapa de
-    aba → módulo. Nenhuma rota muda, nenhuma permissão muda, nenhuma tela do
-    ponto é tocada: as telas dele continuam existindo no mesmo endereço, só
-    passam a acender a aba "Pessoal" lá em cima em vez de "Ponto".
+    O QUE ESTA FUNÇÃO FAZ, e só isto: põe o módulo "ponto" logo depois de "pessoal" e ordena as abas de Pessoal pelo
+    dia a dia. As abas do ponto (e a ordem delas, decidida com o dono em 13/11) são do módulo do ponto
+    (`app/apps/ponto/gestao.py`, `ABAS`). Nenhuma rota e nenhuma permissão mudam. Se o ponto não carregar, nada aqui
+    quebra: o ERP sobe sem o menu dele.
     """
     pessoal = next((m for m in MODULOS if m["chave"] == "pessoal"), None)
     ponto = next((m for m in MODULOS if m["chave"] == "ponto"), None)
+    if pessoal is not None:
+        ORDEM = ("colaboradores", "dp_solicitacoes", "dp_contabilidade", "dc")
+        pessoal["abas"] = ([a for chave in ORDEM for a in pessoal["abas"] if a[0] == chave]
+                           + [a for a in pessoal["abas"] if a[0] not in ORDEM])
     if pessoal is None or ponto is None:
         return
-    # A ORDEM É PELO DIA A DIA, não pela origem. Juntar e deixar as quatro do
-    # ERP na frente das treze do ponto poria "Despesas com colaborador" antes do
-    # "Quadro" do ponto — e quem abre esta área de manhã abre o quadro e o
-    # cadastro, não a despesa. A lista abaixo é a ordem desejada; o que não
-    # estiver nela entra depois, na ordem em que já estava.
-    ORDEM = ("colaboradores", "ponto_quadro", "ponto_pendencias", "ponto_espelho",
-             "ponto_hoje", "dp_solicitacoes", "dp_contabilidade", "dc",
-             "ponto_banco", "ponto_alertas")
-    juntas = list(pessoal["abas"]) + list(ponto["abas"])
-    # "PESSOAS" do ponto virou "Pessoas no ponto" (06/11/2026). É a tela que ele
-    # apontou como duplicada: *"tem a tela de visualizar pessoas num lado, no
-    # outro."* Ela continua existindo — é de outra área e tem uso próprio (a
-    # foto de cadastro) — mas o nome passa a dizer QUAL das duas é, em vez de
-    # duas abas "Pessoas"/"Colaboradores" sem diferença visível.
-    juntas = [(c, "Pessoas no ponto" if c == "ponto_pessoas" else n, r)
-              for c, n, r in juntas]
-    pessoal["abas"] = (
-        [a for chave in ORDEM for a in juntas if a[0] == chave]
-        + [a for a in juntas if a[0] not in ORDEM])
-    pessoal["descricao"] = ("Cadastro das pessoas, ponto eletrônico, pedidos ao "
-                            "DP e despesas com colaboradores")
     MODULOS.remove(ponto)
-    _MODULO_DA_ABA.update({chave: "pessoal" for chave, _, _ in ponto["abas"]})
-    # As abas do ponto que não estão no menu (hoje nenhuma) também precisam
-    # reapontar, senão a tela delas abriria com o menu do Financeiro aceso.
-    for chave, valor in list(_MODULO_DA_ABA.items()):
-        if valor == "ponto":
-            _MODULO_DA_ABA[chave] = "pessoal"
+    MODULOS.insert(MODULOS.index(pessoal) + 1, ponto)
 
 
 try:
-    _juntar_ponto_com_pessoal()
+    _ponto_ao_lado_de_pessoal()
 except Exception:  # noqa: BLE001
-    logger.exception("ERP: não consegui juntar o Ponto com Pessoal; os dois "
-                     "módulos seguem separados no menu")
+    logger.exception("ERP: não consegui pôr o Ponto ao lado de Pessoal no menu; a ordem fica a de origem")
 
 # MENSAGERIA (05/10/2026) — a tela "Mensagens" (por onde cada aviso sai, teto
 # do WhatsApp, registro) entra do mesmo jeito: rotas em
