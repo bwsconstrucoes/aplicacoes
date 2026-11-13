@@ -115,7 +115,9 @@
     documento de dependente e documentos diversos</b>, mais os campos do
     cadastro que estiverem <b>em branco</b> aqui. O que já está preenchido no
     ERP <b>não é trocado</b>. Rodar de novo <b>não traz nada duas vezes</b>.
-    O <b>ASO não vem</b>: ele vence, e o card não diz até quando vale.</div>
+    O <b>ASO não vem</b>: ele vence, e o card não diz até quando vale.
+    <b>Você não digita número de card em lugar nenhum</b>: o sistema acha cada
+    pessoa pelo CPF do card.</div>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-pc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-pc" disabled>Trazer do Pipefy</button>
@@ -423,17 +425,60 @@ async function situacaoDoCadastroPipefy(){
         if (els(b)) els(b).disabled = true; });
       return;
     }
-    onde.innerHTML = `<b>${x.ativos_com_card}</b> pessoa(s) trabalhando com
-      número de card` + (x.sem_card ? ` · <b>${x.sem_card}</b> sem card (essas
-      não entram)` : "") + (x.cards_ja_lidos ? ` · já vieram
-      <b>${x.ja_guardados}</b> documento(s) de ${x.cards_ja_lidos} card(s)` : "")
-      + (x.ja_falharam ? ` · <b>${x.ja_falharam}</b> não desceu(desceram)` : "");
+    // ⚑ ZERO COM CARD NÃO É IMPEDIMENTO — e dizer que era foi o defeito de
+    // 13/11/2026. Ele apertou "conferir" e levou "nenhuma pessoa com número de
+    // card nesse filtro", sem ter onde digitar número nenhum. Agora a primeira
+    // coisa que a importação faz é ACHAR as pessoas, pelo CPF do card.
+    if (x.precisa_mapear) {
+      onde.innerHTML = `<b>Ninguém aqui tem número de card ainda — e você não
+        precisa digitar nenhum.</b> A primeira rodada varre o pipe do Pipefy e
+        acha cada pessoa <b>pelo CPF</b>; o número do card fica guardado no
+        cadastro dela para as próximas. Comece pelo <b>Conferir sem gravar</b>:
+        ele mostra quantos cards casaram, quantos não têm CPF e quantos são de
+        gente que não está no ERP — sem gravar nada.`;
+    } else {
+      onde.innerHTML = `<b>${x.ativos_com_card}</b> pessoa(s) trabalhando com
+        número de card` + (x.sem_card ? ` · <b>${x.sem_card}</b> sem card` : "")
+        + (x.cards_ja_lidos ? ` · já vieram <b>${x.ja_guardados}</b>
+        documento(s) de ${x.cards_ja_lidos} card(s)` : "")
+        + (x.ja_falharam ? ` · <b>${x.ja_falharam}</b> não desceu(desceram)` : "");
+    }
   } catch(e){ onde.textContent = e.message; }
 }
 
 function pintarRelatorioPC(rel){
   if (!rel) return "";
   const linhas = [];
+  // O CASAMENTO POR CPF, quando houve. É a parte que responde "de onde saiu
+  // essa gente toda", e a que mostra o que NÃO casou — que é onde mora o
+  // trabalho humano.
+  const m = rel.mapeamento;
+  if (m) {
+    linhas.push(`<div class="cartao-dica"><b>${m.cards_no_pipe}</b> card(s) no
+      pipe · <b>${m.casados}</b> casaram com pessoa do ERP pelo CPF ·
+      <b>${m.gravados}</b> ganharam o número do card ·
+      ${m.cards_sem_cpf} sem CPF no card ·
+      ${m.cards_sem_pessoa} de gente que não está no ERP ·
+      ${m.cpf_com_dois_cards} CPF(s) com dois cards</div>`);
+    const d = rel.mapeamento_detalhe || {};
+    if ((d.dois_cards || []).length)
+      linhas.push(`<h4>CPF com mais de um card (${d.dois_cards.length})</h4>
+        <div class="cartao-dica">Nenhum destes entra: escolher um dos dois
+          seria adivinhar qual é o cadastro bom.</div>
+        <table><thead><tr><th>CPF</th><th>Cards</th></tr></thead><tbody>${
+        d.dois_cards.map(x=>`<tr><td class="dados">${escapar(documento(x.cpf))}</td>
+          <td class="dados">${escapar((x.cards||[]).join(", "))}</td></tr>`
+        ).join("")}</tbody></table>`);
+    if ((d.sem_pessoa || []).length)
+      linhas.push(`<h4>Cards de gente que não está no ERP (${d.sem_pessoa.length})</h4>
+        <div class="cartao-dica">Primeiros 50. A importação <b>não cria
+          pessoa</b> — estes ficam de fora até alguém cadastrar.</div>
+        <table><thead><tr><th>Card</th><th>Título</th><th>CPF</th></tr></thead>
+        <tbody>${d.sem_pessoa.map(x=>`<tr><td class="dados">${escapar(x.card)}</td>
+          <td>${escapar(x.titulo||"")}</td>
+          <td class="dados">${escapar(documento(x.cpf||""))}</td></tr>`
+        ).join("")}</tbody></table>`);
+  }
   linhas.push(`<div class="cartao-dica"><b>${rel.pessoas_lidas}</b> pessoa(s)
     lida(s) de ${rel.pessoas_na_fila} na fila · <b>${rel.documentos_guardados}</b>
     documento(s) ${rel.simulado ? "entrariam" : "guardados"} ·

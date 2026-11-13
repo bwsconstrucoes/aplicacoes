@@ -179,6 +179,70 @@ def ler_cards(ids: Iterable[Any],
     return saida, falhas
 
 
+PIPE_CADASTRO = "301487297"          # CADASTRO COLABORADORES
+
+
+def varrer_pipe(pipe_id: str = PIPE_CADASTRO, token: Optional[str] = None,
+                campos: Optional[tuple[str, ...]] = None,
+                teto_de_paginas: int = 200,
+                aviso=None) -> list[dict]:
+    """TODOS os cards do pipe, página por página — só os campos pedidos.
+
+    ⚑ POR QUE ISTO EXISTE, e é o conserto do defeito de 13/11/2026: eu tinha
+    construído a importação assumindo que o número do card já estava no
+    cadastro de cada pessoa (`colaboradores.ref_pipefy`). **Não estava** — e,
+    como não havia onde digitar, o botão nunca ia funcionar. Ele viu na hora:
+    *"onde é que eu coloco os números do card se não tem campo?"*
+
+    A resposta certa é que **não deve haver campo nenhum**: o card tem o CPF,
+    o cadastro tem o CPF, e é o sistema que casa os dois. Ninguém digita
+    3.664 números.
+
+    A paginação é a mesma do `scripts/exportar_pipefy.py`, que já roda: 50 por
+    vez, seguindo o cursor. `campos` enxuga o que vem de cada card — varrer o
+    pipe inteiro trazendo todos os 51 campos seria muito mais dado do que o
+    casamento por CPF precisa.
+    """
+    token = token or _token()
+    saida: list[dict] = []
+    cursor, pagina = None, 0
+    pedacos = ("field { id } value" if not campos else "field { id } value")
+    while pagina < teto_de_paginas:
+        depois = f', after: "{cursor}"' if cursor else ""
+        consulta = (
+            "query { allCards(pipeId: %s, first: 50%s) {"
+            " pageInfo { hasNextPage endCursor }"
+            " edges { node { id title fields { %s } } } } }"
+            % (_numero_do_card(pipe_id), depois, pedacos))
+        dados, erros = graphql_parcial(consulta, token)
+        if erros:
+            raise ErroDoPipefy("O Pipefy devolveu erro ao varrer o pipe: "
+                               + " | ".join(str(v) for v in erros.values()))
+        bloco = (dados or {}).get("allCards") or {}
+        for borda in (bloco.get("edges") or []):
+            no = (borda or {}).get("node") or {}
+            lidos = {}
+            for campo in (no.get("fields") or []):
+                ident = (campo.get("field") or {}).get("id")
+                if ident and (campos is None or ident in campos):
+                    lidos[ident] = ("" if campo.get("value") is None
+                                    else str(campo.get("value")))
+            saida.append({"id": str(no.get("id") or ""),
+                          "titulo": str(no.get("title") or ""),
+                          "campos": lidos})
+        pagina += 1
+        if aviso:
+            aviso(len(saida), pagina)
+        if not (bloco.get("pageInfo") or {}).get("hasNextPage"):
+            break
+        cursor = (bloco.get("pageInfo") or {}).get("endCursor")
+        if not cursor:
+            break
+    logger.info("ERP/pipefy: %d card(s) varridos em %d página(s)",
+                len(saida), pagina)
+    return saida
+
+
 # ---------------------------------------------------------------------------
 # OS ANEXOS
 # ---------------------------------------------------------------------------

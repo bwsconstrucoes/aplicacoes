@@ -145,6 +145,87 @@ LISTAS: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# CASAR CARD COM PESSOA PELO CPF — o conserto de 13/11/2026
+#
+# Eu tinha construído isto assumindo que o número do card já estava no cadastro
+# (`colaboradores.ref_pipefy`). Não estava. E como não havia onde digitar, o
+# botão só sabia dizer "nenhuma pessoa com número de card nesse filtro". Ele:
+# *"onde é que eu coloco os números do card se não tem campo?"*
+#
+# ⚑ A RESPOSTA CERTA É QUE NÃO DEVE HAVER CAMPO. O card tem o CPF e o cadastro
+# tem o CPF: quem casa os dois é o sistema. Ninguém digita 3.664 números, e um
+# número digitado errado colaria o documento de uma pessoa na ficha de outra.
+# ---------------------------------------------------------------------------
+CAMPO_CPF_DO_CARD = "cpf"           # do export do pipe 301487297
+
+
+def _so_digitos(valor: Any) -> str:
+    return "".join(c for c in str(valor or "") if c.isdigit())
+
+
+def casar_por_cpf(s: Session, cards: list[dict[str, Any]]) -> dict[str, Any]:
+    """Liga cada card à pessoa do ERP pelo CPF. Devolve o que casou e o que não.
+
+    Card sem CPF, CPF que não existe aqui e DOIS cards para o mesmo CPF são
+    tratados como casos à parte — o último de propósito: escolher um dos dois
+    seria adivinhar qual é o cadastro bom.
+    """
+    por_cpf: dict[str, list[dict]] = {}
+    sem_cpf: list[dict] = []
+    for card in cards:
+        cpf = _so_digitos((card.get("campos") or {}).get(CAMPO_CPF_DO_CARD))
+        if len(cpf) != 11:
+            sem_cpf.append(card)
+            continue
+        por_cpf.setdefault(cpf, []).append(card)
+
+    repetidos = {cpf: lista for cpf, lista in por_cpf.items() if len(lista) > 1}
+    unicos = {cpf: lista[0] for cpf, lista in por_cpf.items() if len(lista) == 1}
+
+    pessoas = {}
+    if unicos:
+        linhas = s.execute(text("""
+            SELECT id, nome, cpf, situacao, btrim(COALESCE(ref_pipefy, '')) AS card
+              FROM colaboradores
+             WHERE regexp_replace(cpf, '\\D', '', 'g') = ANY(:cpfs)"""),
+            {"cpfs": list(unicos)}).mappings().all()
+        for l in linhas:
+            pessoas[_so_digitos(l["cpf"])] = dict(l)
+
+    casados, sem_pessoa = [], []
+    for cpf, card in unicos.items():
+        pessoa = pessoas.get(cpf)
+        if pessoa is None:
+            sem_pessoa.append({"card": card["id"], "titulo": card["titulo"],
+                               "cpf": cpf})
+            continue
+        casados.append({"colaborador_id": pessoa["id"], "nome": pessoa["nome"],
+                        "cpf": cpf, "situacao": pessoa["situacao"],
+                        "card": card["id"], "ja_tinha_card": bool(pessoa["card"])})
+    return {
+        "casados": casados,
+        "cards_sem_cpf": [{"card": c["id"], "titulo": c["titulo"]} for c in sem_cpf],
+        "cards_sem_pessoa": sem_pessoa,
+        "cpf_com_dois_cards": [
+            {"cpf": cpf, "cards": [c["id"] for c in lista]}
+            for cpf, lista in repetidos.items()],
+    }
+
+
+def gravar_o_card_na_pessoa(s: Session, casados: list[dict[str, Any]]) -> int:
+    """Grava o número do card em quem ainda não tinha.
+
+    Assim a segunda rodada não precisa varrer o pipe inteiro de novo — e a
+    ficha da pessoa passa a dizer de qual card ela veio."""
+    novos = [c for c in casados if not c.get("ja_tinha_card")]
+    for c in novos:
+        s.execute(text("UPDATE colaboradores SET ref_pipefy = :card"
+                       " WHERE id = :i AND COALESCE(btrim(ref_pipefy),'') = ''"),
+                  {"card": str(c["card"]), "i": c["colaborador_id"]})
+    return len(novos)
+
+
+# ---------------------------------------------------------------------------
 # Quem entra
 # ---------------------------------------------------------------------------
 def quem_tem_card(s: Session, *, so_ativos: bool = True,
@@ -313,6 +394,32 @@ def _vazios(s: Session, colaborador_id: int,
             if not str(linha.get(campo) or "").strip()}
 
 
+def mapear_cards(s: Session, *, simular: bool = True, varrer=None,
+                 pipe_id: str = cliente.PIPE_CADASTRO) -> dict[str, Any]:
+    """Varre o pipe, casa cada card com a pessoa pelo CPF e (se não for
+    simulação) grava o número do card em quem ainda não tinha.
+
+    `varrer` existe para o teste entregar cards de mentira sem rede."""
+    busca = varrer or cliente.varrer_pipe
+    cards = busca(pipe_id, campos=(CAMPO_CPF_DO_CARD,))
+    r = casar_por_cpf(s, cards)
+    gravados = 0
+    if not simular:
+        gravados = gravar_o_card_na_pessoa(s, r["casados"])
+    novos = [c for c in r["casados"] if not c.get("ja_tinha_card")]
+    return {
+        "cards_no_pipe": len(cards),
+        "casados": r["casados"],
+        "cards_sem_cpf": r["cards_sem_cpf"],
+        "cards_sem_pessoa": r["cards_sem_pessoa"],
+        "cpf_com_dois_cards": r["cpf_com_dois_cards"],
+        "gravados": gravados if not simular else len(novos),
+        "detalhe": {
+            "sem_pessoa": r["cards_sem_pessoa"][:50],
+            "dois_cards": r["cpf_com_dois_cards"][:50]},
+    }
+
+
 # ---------------------------------------------------------------------------
 # A importação
 # ---------------------------------------------------------------------------
@@ -320,7 +427,7 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
              simular: bool = True, so_ativos: bool = True,
              obra_id: Optional[int] = None,
              teto_de_pessoas: Optional[int] = POR_RODADA,
-             ler_cards=None) -> dict[str, Any]:
+             ler_cards=None, casar: bool = True, varrer=None) -> dict[str, Any]:
     """Lê os cards das pessoas e traz documentos e campos vazios.
 
     Com `simular=True` (o padrão) NADA é gravado e nenhum arquivo é baixado:
@@ -333,6 +440,18 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     ler = ler_cards or cliente.ler_cards
     pessoas = quem_tem_card(s, so_ativos=so_ativos, obra_id=obra_id,
                             teto=teto_de_pessoas)
+    # ⚑ NINGUÉM COM CARD? ENTÃO ACHE OS CARDS. Até 13/11/2026 isto parava aqui
+    # com "nenhuma pessoa com número de card", e não havia onde digitar o
+    # número — o botão não tinha como funcionar nunca. Agora o sistema varre o
+    # pipe e casa pelo CPF; o número do card é RESULTADO da importação, não
+    # requisito dela.
+    mapeamento = None
+    if not pessoas and casar:
+        mapeamento = mapear_cards(s, simular=simular, varrer=varrer)
+        if not simular and mapeamento["casados"]:
+            s.flush()
+        pessoas = quem_tem_card(s, so_ativos=so_ativos, obra_id=obra_id,
+                                teto=teto_de_pessoas) if not simular else []
     relatorio: dict[str, Any] = {
         "simulado": bool(simular),
         "pessoas_na_fila": len(pessoas),
@@ -345,7 +464,14 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "falhas": [],
         "por_pessoa": [],
         "de_fora": dict(PAPEIS_DE_FORA),
+        "mapeamento": None,
     }
+    if mapeamento is not None:
+        relatorio["mapeamento"] = {
+            k: (len(v) if isinstance(v, list) else v)
+            for k, v in mapeamento.items() if k != "detalhe"}
+        relatorio["mapeamento_detalhe"] = mapeamento.get("detalhe")
+    relatorio["pessoas_na_fila"] = len(pessoas)
     if not pessoas:
         return relatorio
 
@@ -516,6 +642,10 @@ def situacao(s: Session) -> dict[str, Any]:
           FROM pipefy_importado""")).mappings().first() or {}
     return {
         "tem_token": cliente.tem_token(),
+        # ⚑ A TELA PRECISA SABER QUE ZERO CARDS NÃO É IMPEDIMENTO. Era por não
+        # saber disso que ela oferecia um botão cujo único desfecho possível
+        # era "nenhuma pessoa com número de card nesse filtro" (13/11/2026).
+        "precisa_mapear": int(linha.get("ativos_com_card") or 0) == 0,
         "ativos": int(linha.get("ativos") or 0),
         "com_card": int(linha.get("com_card") or 0),
         "ativos_com_card": int(linha.get("ativos_com_card") or 0),
