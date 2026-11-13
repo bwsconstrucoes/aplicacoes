@@ -1568,6 +1568,7 @@ const ROTULO_ALERTA_DIA = {
   FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
   HORA_EXTRA_NEGADA: "hora extra negada na conferência",
   COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — a folga virou falta",
+  COMPENSACAO_INCOMPLETA: "compensação incompleta — faltou parte das horas",
   TRABALHOU_NA_FOLGA: "trabalhou no dia da folga compensatória (as horas contam)",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
@@ -6593,9 +6594,11 @@ function desenharAlertas() {
         return `<tr>
           ${PODE_TRATAR ? `<td><input type="checkbox" data-a-marcar="${a.id}" ${A_MARCADOS.has(a.id) ? "checked" : ""} aria-label="marcar este alerta"></td>` : ""}
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico, termo].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${a.funcao ? `<small style="display:block">função: <b>${escapar(a.funcao)}</b></small>` : ""}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico, termo].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
-          <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
+          <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}${a.dia_semana
+            ? `<small style="display:block">${escapar(a.dia_semana)}</small>` : ""}${a.feriado
+            ? `<small style="display:block; color:#8A5A00; font-weight:700" title="feriado na obra do alerta">🎉 feriado: ${escapar(a.feriado)}</small>` : ""}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
             ${a.tratado_por ? `<small>${escapar(a.tratado_por)}, ${escapar(quando(a.tratado_em))}</small>` : ""}
             ${a.nota ? `<small>“${escapar(a.nota)}”</small>` : ""}</td>
@@ -6734,7 +6737,7 @@ marcarAtalhoDoPeriodo();
 // "⭐ usar como foto de cadastro" direto no alerta do rosto: a foto da batida vira a de cadastro, e o alerta, resolvido
 let FOTO_CAD_ALERTA = Date.now();
 // os alertas de UM dia da pessoa: o atalho "abrir o dia" leva à janela dela naquele dia
-const ALERTA_DE_DIA = new Set(["FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA",
+const ALERTA_DE_DIA = new Set(["FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "COMPENSACAO_INCOMPLETA", "TRABALHOU_NA_FOLGA",
   "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H", "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO",
   "TRABALHO_EM_FERIADO", "FORA_DO_CICLO", "BATIDA_NO_MEIO_DO_TURNO", "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA",
   "SEM_FOTO", "FOTO_ESCURA", "FOTO_REPETIDA", "CAMERA_TRAVADA", "ROSTO_NAO_CONFERE", "QR_ANTIGO_USADO",

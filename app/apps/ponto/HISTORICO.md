@@ -548,6 +548,30 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 13/11/2026 (sexta, noite) — Alertas com função, dia da semana e feriado; intervalo curto abaixo de 50 min; a compensação incompleta
+
+O dono, num pedido só: *"em alerta mostrar função do colaborador; o alerta de intervalo curto somente se inferior a
+50 min; na tela de alerta, exibir o dia da semana e informar se for feriado"* — e *"veja esse pedido de compensação,
+to achando que não ta gravando direito"* (a folga de 03/11, terça, paga pelo sábado 07/11).
+- **A compensação gravava certo.** A regra é a de 29/10 (decisão dele: "automático"): a folga fica paga no que o dia
+  trabalhado RENDEU. O sábado rendeu 8h01 (06:50–15:52, com 1h01 de almoço); a terça pedia 9h00 — faltam 0h59, que
+  ficam como falta parcial. O que enganava era o texto: "compensação não cumprida — a folga virou falta", para quem
+  pagou quase tudo. Agora são dois avisos (`espelho.py`): **COMPENSACAO_INCOMPLETA** — "Compensação incompleta —
+  07/11 cobriu 8h01 das 9h00; faltam 0h59" — quando cobriu parte; **COMPENSACAO_NAO_CUMPRIDA** ("nada coberto")
+  só quando não cobriu nada. E o dia coberto em parte deixou de levar a etiqueta "falta" (que fazia nascer também o
+  alerta "Falta sem justificativa") — fica "Falta parcial" com a compensação incompleta dizendo quanto faltou.
+  Oferecido a ele, não feito: a regra "dia por dia" (trabalhou o dia, a folga fica paga
+  inteira, sem contar horas) — é decisão dele.
+- **Intervalo curto** (`apuracao.py`, `INTERVALO_CURTO_AVISO_MIN = 50`): na jornada de mais de 6 h, o aviso acende
+  abaixo de 50 min (era 60). Dito a ele: a lei pede 60 (CLT art. 71) e o tempo que faltou é devido com 50% (§4º) —
+  o aviso só deixou de acender entre 50 e 59. Na jornada de 4 a 6 h, continua abaixo de 15 min.
+- **Alertas** (`alertas._funcao_dia_e_feriado`): cada linha traz a função da pessoa (da mesma base do ponto —
+  `cadastros.funcoes_de`), o dia da semana e, se for feriado na obra do alerta, "🎉 feriado: <nome>" (o mesmo
+  calendário do espelho).
+- Testes: `test_ponto_tipos_ausencia_banco.py` (a incompleta com o texto), `test_ponto_apuracao.py` (58 min não
+  acende, 49 acende), `test_ponto_alertas_pagina_banco.py` (dia da semana, feriado e função na linha). E a tela de
+  Alertas no navegador (o feriado de Finados aparecendo).
+
 ## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
 
 O dono: *"o ideal seria rodar apenas na madrugada"*. A busca (`core/feriados_busca.py`) era acordada pelas planilhas
@@ -561,6 +585,8 @@ de apoio do Análise de SPs (de hora em hora, com a tela deles aberta) e pela le
   daquela tela passou a dizer "só de madrugada".
 - **Preço**: obra nova em cidade nova ganha os feriados na madrugada seguinte (antes, em até uma hora).
 - Teste: `test_ponto_feriados_busca_banco.py::test_a_busca_automatica_so_roda_de_madrugada`.
+**Publicado em 13/11/2026** (com o "pode" do dono, junto com a obra no "Completar o período"; suíte inteira: 11.001
+passaram). Sem migração.
 
 ## 13/11/2026 (sexta) — Completar o período de uma pessoa pela escala; a proposta de divisão do menu e da ficha única
 
