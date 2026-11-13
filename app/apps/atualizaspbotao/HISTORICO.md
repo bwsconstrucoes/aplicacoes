@@ -7,12 +7,8 @@ encerrar. O que o módulo faz está no `README.md`.
 
 1. **Publicar o desligamento do Log** (13/11/2026, botão e SP nova) — espera o
    "pode".
-2. **Agendamento do `sync_logs` confirmado ativo** (13/11/2026: o dono mostrou
-   o cron-job.org chamando `aplicacoes.bwsconstrucoes.com.br/api/sync_logs/incremental`).
-   Cada chamada lê a aba Log INTEIRA (A:AG) — com o Log congelado, é leitura
-   pesada à toa a cada 30 s. **As planilhas "Análises de Pagamentos" ainda são usadas?** E os agendamentos
-   do `sync_logs` (cron-job.org) ainda estão ligados? Com o Log congelado, a
-   cópia não traz mais nada novo — se ninguém usa, desligar os agendamentos.
+2. **Depois de publicar, ler no Render as linhas `[atualizaspbotao]`** do
+   próximo botão lento: elas dizem a etapa que segura e se o clique se repetiu.
 3. **Saber o que o dono quer mudar no botão.** Já se sabe que o "do Render" é
    este mesmo módulo (ver "Como o botão é disparado"); falta o objetivo do
    trabalho. Nada foi alterado no código.
@@ -48,7 +44,7 @@ Consequências:
 | 13/05/2026 | Conserto automático "alterar → incluir" quando o Omie diz que o título não existe (erro Client-103); números com até 10 casas decimais |
 | 22/06/2026 | Carimbo de data/hora de Fortaleza na coluna V da SPsBD |
 | 24/09/2026 | README e este HISTÓRICO criados (nenhuma mudança de código) |
-| 13/11/2026 | Escrita na aba `Log` desligada (pedido do dono) |
+| 13/11/2026 | Escrita na aba `Log` desligada (pedido do dono); medição por etapa e recusa de clique repetido na mesma SP |
 
 ## 24/09/2026 — primeira sessão desta área
 
@@ -122,6 +118,40 @@ fixa de 2 s da planilha de cálculo e as chamadas ao Omie.
 - O `sync_logs` copia a aba Log para as planilhas "Análises de Pagamentos"
   (`docs/sync_logs.md`). Se ele estiver ligado, essas cópias também congelam.
   Se elas ainda são usadas, ficou como pergunta ao dono.
+
+## 13/11/2026 — botão lento e disparando muito
+
+**O que o dono mostrou** (log do Render, 18:39–18:40): três chamadas do botão
+abertas ao mesmo tempo (78 s, 72 s e uma nova), uma terminando em **155 s**, e
+as 4 linhas do serviço ocupadas — 3 delas pelo botão. Pergunta dele: "não sei
+pq o atualizasp tá disparando tanto".
+
+**O que o log não diz:** se as três chamadas eram da mesma SP (gente clicando
+de novo porque a página demora) ou de SPs diferentes, nem em que etapa foram
+os 155 s. O código não registrava nenhuma das duas coisas.
+
+**O que entrou (ramo, não publicado):**
+
+1. **Medição por etapa** — uma linha `[atualizaspbotao] SP N: terminou em X s —
+   abrir planilha …, boleto …, planilha de cálculo …, SPsBD …, Omie …` por
+   chamada; cada chamada ao Omie registra seu tempo e status; espera de mais
+   de 1 s na fila da planilha de cálculo também é registrada (essa fila
+   serializa todos os botões — um por vez).
+2. **Clique repetido na mesma SP é recusado** enquanto a primeira chamada não
+   termina: resposta 409 com a página "A SP N já está sendo atualizada.
+   Aguarde…", sem tocar em planilha nem Omie. SPs diferentes seguem em
+   paralelo. **Risco não verificado:** como o cenário do Make trata a resposta
+   409 — o botão já devolvia 400/500 em erro, então o Make já recebe respostas
+   de erro hoje; se o cenário estiver configurado para desligar após erros,
+   o clique repetido conta como um.
+
+**Suspeitas a confirmar com a medição:** Omie lento (cada chamada pode esperar
+até 30 s, e o fluxo faz até 3 — cliente, inclusão, conserto automático) e a
+fila da planilha de cálculo (espera fixa de 2 s por botão, um por vez).
+
+**`sync_logs`:** o dono informou que o agendamento do cron-job.org **já
+estava desligado**. A aba Log congelada não tem efeito nas "Análises de
+Pagamentos" além do que já existia.
 
 ## O que precisa ser confirmado com o dono
 

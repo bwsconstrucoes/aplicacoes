@@ -5,6 +5,7 @@ core.py — Orquestração principal (portado do executeBusinessLogic_ do Princi
 
 import os
 import json
+import time
 import logging
 from base64 import b64decode
 
@@ -50,9 +51,32 @@ def validar_payload(payload: dict):
 
 
 def executar(payload: dict) -> dict:
+    # Mede cada etapa e escreve UMA linha no log do Render ao final — é o que
+    # diz onde estão os minutos quando o botão fica lento (13/11/2026: 155 s).
+    sp_id  = as_string(payload.get('id'))
+    tempos = {}
+    marco  = [time.monotonic()]
+    inicio = marco[0]
+
+    def _medir(etapa: str):
+        agora = time.monotonic()
+        tempos[etapa] = round(agora - marco[0], 1)
+        marco[0] = agora
+
+    logger.info(f"[atualizaspbotao] SP {sp_id}: começou")
+    try:
+        return _executar(payload, _medir)
+    finally:
+        partes = ', '.join(f'{k} {v:.1f}s'.replace('.', ',') for k, v in tempos.items())
+        total = f'{time.monotonic() - inicio:.1f}'.replace('.', ',')
+        logger.info(f"[atualizaspbotao] SP {sp_id}: terminou em {total} s — {partes}")
+
+
+def _executar(payload: dict, _medir) -> dict:
     gc = _get_gc()
     spreadsheet_id = payload.get('spreadsheetId') or CONFIG['SPREADSHEET_ID']
     ss = gc.open_by_key(spreadsheet_id)
+    _medir('abrir planilha')
 
     result = {'secoes': {}}
     p = dict(payload)
@@ -60,6 +84,7 @@ def executar(payload: dict) -> dict:
     # 1. Validação de boleto/DDA
     result['secoes']['validacaoBoletoDDA'] = secao_validacao_boleto_dda(p, ss)
     p = _incorporar_validacao_boleto(p, result['secoes']['validacaoBoletoDDA'])
+    _medir('boleto')
 
     # 2. Pipefy
     result['secoes']['pipefy'] = secao_pipefy(p, result['secoes']['validacaoBoletoDDA'])
@@ -69,6 +94,7 @@ def executar(payload: dict) -> dict:
         parametros_omie = secao_parametros_omie(p, gc)
         result['secoes']['parametrosOmie'] = parametros_omie
         p = _incorporar_parametros_omie(p, parametros_omie)
+        _medir('planilha de cálculo')
     else:
         result['secoes']['parametrosOmie'] = {
             'ok': False, 'ignorado': True,
@@ -82,10 +108,12 @@ def executar(payload: dict) -> dict:
         logger.info(f"[core] Centros extraídos do OmieRateioMultiplo: {list(centros_rateio.keys())}")
         p.update(centros_rateio)
     result['secoes']['atualizaLogeSPsBD'] = secao_atualiza_log_e_spsbd(ss, p)
+    _medir('SPsBD')
 
     # 5. Omie (API externa)
     if as_string(p.get('omieAppKey')) and as_string(p.get('omieAppSecret')):
         result['secoes']['omie'] = secao_omie(p, result['secoes']['parametrosOmie'])
+        _medir('Omie')
 
         codigo_integracao = as_string(
             result['secoes']['omie'].get('titulo', {}).get('codigo_lancamento_integracao')
@@ -94,6 +122,7 @@ def executar(payload: dict) -> dict:
             result['secoes']['atualizaSpsbdOmie'] = atualizar_spsbd_codigo_integracao_omie(
                 ss, p, codigo_integracao
             )
+            _medir('código Omie na SPsBD')
         else:
             result['secoes']['atualizaSpsbdOmie'] = {
                 'ok': False, 'ignorado': True,
