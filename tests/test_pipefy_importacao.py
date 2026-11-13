@@ -301,3 +301,101 @@ def test_numero_de_card_que_nao_e_numero_nao_vira_consulta(mundo):
     assert cliente.card_valido("111) { pipes { id } } #") is False
     with pytest.raises(cliente.ErroDoPipefy):
         cliente._numero_do_card("não é número")
+
+
+# ---------------------------------------------------------------------------
+# NINGUÉM PRECISA DIGITAR NÚMERO DE CARD (13/11/2026)
+#
+# Ele, olhando a tela: *"eu clico em conferir sem gravar e dá uma mensagem lá
+# em cima: nenhuma pessoa com número de card do Pipefy nesse filtro. E onde é
+# que eu coloco os números do card se não tem campo?"*
+#
+# Eu tinha construído a importação assumindo que `colaboradores.ref_pipefy` já
+# estava preenchido. Não estava — e, como não havia onde digitar, o botão não
+# tinha como funcionar NUNCA. O card tem o CPF e o cadastro tem o CPF: quem
+# casa os dois é o sistema.
+# ---------------------------------------------------------------------------
+def _cards_do_pipe(*pares):
+    """(id do card, CPF) → o formato que `varrer_pipe` devolve."""
+    return [{"id": str(i), "titulo": f"card {i}", "campos": {"cpf": cpf}}
+            for i, cpf in pares]
+
+
+def test_o_card_acha_a_pessoa_pelo_CPF(mundo):
+    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(("900", CPF_A)))
+    assert len(r["casados"]) == 1
+    assert r["casados"][0]["colaborador_id"] == mundo["com_card"].id
+    assert r["casados"][0]["card"] == "900"
+
+
+def test_o_CPF_casa_com_e_sem_pontuacao(mundo):
+    """O card traz "529.982.247-25"; o cadastro guarda como foi digitado."""
+    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(("901", "529.982.247-25")))
+    assert len(r["casados"]) == 1
+
+
+def test_card_sem_CPF_e_card_de_quem_nao_existe_aqui_sao_separados(mundo):
+    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(
+        ("902", ""), ("903", "11144477735"), ("904", CPF_A)))
+    assert [c["card"] for c in r["cards_sem_cpf"]] == ["902"]
+    # CPF_B é a Pessoa Sem Card, que existe; 111.444.777-35 É o CPF_B.
+    assert len(r["casados"]) == 2
+
+
+def test_DOIS_cards_para_o_mesmo_CPF_nao_escolhem_nenhum(mundo):
+    """Escolher um dos dois seria adivinhar qual é o cadastro bom — e o errado
+    colaria os documentos de um período na ficha do outro."""
+    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(
+        ("905", CPF_A), ("906", CPF_A)))
+    assert r["casados"] == []
+    assert r["cpf_com_dois_cards"][0]["cards"] == ["905", "906"]
+
+
+def test_a_simulacao_do_mapeamento_NAO_grava_o_card(mundo):
+    mundo["s"].execute(
+        text("UPDATE colaboradores SET ref_pipefy = NULL WHERE id = :i"),
+        {"i": mundo["com_card"].id})
+    r = imp.mapear_cards(mundo["s"], simular=True,
+                         varrer=lambda p, campos=None: _cards_do_pipe(("907", CPF_A)))
+    assert r["cards_no_pipe"] == 1 and len(r["casados"]) == 1
+    mundo["s"].flush()
+    guardado = mundo["s"].execute(
+        text("SELECT ref_pipefy FROM colaboradores WHERE id = :i"),
+        {"i": mundo["com_card"].id}).scalar()
+    assert not guardado
+
+
+def test_gravar_de_verdade_poe_o_card_na_pessoa(mundo):
+    """Assim a segunda rodada não varre o pipe inteiro de novo."""
+    mundo["s"].execute(
+        text("UPDATE colaboradores SET ref_pipefy = NULL WHERE id = :i"),
+        {"i": mundo["com_card"].id})
+    imp.mapear_cards(mundo["s"], simular=False,
+                     varrer=lambda p, campos=None: _cards_do_pipe(("908", CPF_A)))
+    mundo["s"].flush()
+    assert mundo["s"].execute(
+        text("SELECT ref_pipefy FROM colaboradores WHERE id = :i"),
+        {"i": mundo["com_card"].id}).scalar() == "908"
+
+
+def test_ninguem_com_card_NAO_e_mais_beco_sem_saida(mundo, monkeypatch):
+    """O defeito inteiro, num teste: sem card em ninguém, a importação achava
+    as pessoas em vez de dizer 'nenhuma pessoa com número de card'."""
+    mundo["s"].execute(text("UPDATE colaboradores SET ref_pipefy = NULL"))
+    mundo["s"].flush()
+    assert imp.quem_tem_card(mundo["s"]) == []
+
+    relatorio = imp.importar(
+        mundo["s"], mundo["dp"], simular=True,
+        varrer=lambda p, campos=None: _cards_do_pipe(("909", CPF_A)),
+        ler_cards=_leitor(_card()))
+    assert relatorio["mapeamento"]["cards_no_pipe"] == 1
+    assert relatorio["mapeamento"]["casados"] == 1
+
+
+def test_a_situacao_avisa_que_e_preciso_mapear(mundo):
+    """A tela precisa saber disso para não oferecer um botão que só sabe
+    falhar — foi exatamente o que ele viu."""
+    mundo["s"].execute(text("UPDATE colaboradores SET ref_pipefy = NULL"))
+    mundo["s"].flush()
+    assert imp.situacao(mundo["s"])["precisa_mapear"] is True

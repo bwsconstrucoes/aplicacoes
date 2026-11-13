@@ -13,10 +13,10 @@
 #}
 {% block titulo %}Ponto — {{ {
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
-  "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_relatorios": "Relatórios", "ponto_alertas": "Alertas",
+  "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas no ponto", "ponto_banco": "Banco de horas", "ponto_relatorios": "Relatórios", "ponto_alertas": "Alertas",
   "ponto_qualidade": "Qualidade", "ponto_painel": "Painel",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
-{% block classe_corpo %}{% if aba_ponto in ("ponto_banco", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
+{% block classe_corpo %}{% if aba_ponto in ("ponto_banco", "ponto_rondas") %}sem-filtros{% elif aba_ponto == "ponto_ficha" %}sem-filtros embutido{% endif %}{% endblock %}
 
 {# =========================================================================
    BARRA DA ESQUERDA (filtros)
@@ -638,6 +638,10 @@
   <a class="topo-btn" id="doc-aba" target="_blank" rel="noopener" style="margin-left:auto; text-decoration:none">abrir em outra aba</a>
   <button class="topo-btn" type="button" onclick="els('dlg-doc').close()">Fechar</button></div>
   <div class="dlg-corpo" id="doc-corpo">carregando…</div></dialog>
+{# COMPLETAR O PERÍODO PELA ESCALA (13/11/2026): de um dia a outro, as batidas da escala que faltam — com a prévia. #}
+<dialog id="dlg-completar" class="dlg-pessoa"><div class="dlg-topo"><h3 id="cp-titulo">Completar o período pela escala</h3>
+  <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-completar').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="cp-corpo">carregando…</div></dialog>
 <dialog id="dlg-mapa" class="dlg-pessoa"><div class="dlg-topo"><h3 id="mp-titulo">Onde a batida foi feita</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-mapa').close()">Fechar</button></div>
   <div class="dlg-corpo" id="mp-corpo">carregando…</div></dialog>
@@ -656,7 +660,19 @@
       guardada sem alteração.</div>
   </div></dialog>
 
-{% if aba_ponto == "ponto_hoje" %}
+{% if aba_ponto == "ponto_ficha" %}
+{# A FICHA ÚNICA SOZINHA (13/11/2026): a janela da pessoa ocupando a página inteira, sem o menu — é o que a tela de
+   Colaboradores mostra dentro dela. #}
+<style>
+  body:has(.corpo.embutido) header.topo, body:has(.corpo.embutido) #ia-botao,
+  body:has(.corpo.embutido) #ia-painel { display:none !important; }
+  body:has(.corpo.embutido) .corpo { min-height:0; }
+  body:has(.corpo.embutido) #dlg-pessoa { width:100vw; max-width:100vw; height:100vh; max-height:100vh; margin:0;
+                                          border-radius:0; border:0; }
+  body:has(.corpo.embutido) #dlg-pessoa::backdrop { background:#fff; }
+</style>
+<div id="mensagem"></div>
+{% elif aba_ponto == "ponto_hoje" %}
 {# ------------------------------------------------------------------ HOJE #}
 <h2>Ponto do dia <small id="h-sub"></small></h2>
 <div id="mensagem"></div>
@@ -1462,6 +1478,9 @@ const PODE_TRATAR = {{ 'true' if pode.tratar_ponto else 'false' }};
 const PODE_DP = {{ 'true' if pode.aprovar_afastamento else 'false' }};
 const PODE_FECHAR = {{ 'true' if pode.fechar_competencia else 'false' }};
 const PODE_CONFIGURAR = {{ 'true' if pode.configurar_ponto else 'false' }};
+// a ficha única da pessoa (13/11/2026): o cadastro e os pagamentos do ERP, para quem pode
+const PODE_VER_PESSOAL = {{ 'true' if pode.ver_pessoal else 'false' }};
+const PODE_EDITAR_COLAB = {{ 'true' if pode.editar_colaboradores else 'false' }};
 
 // ---------------------------------------------------------------------------
 // HORA EM h:mm — 545 minutos viram "9h05". O cálculo do ponto é todo em
@@ -1664,9 +1683,15 @@ function desenharPainel() {
   const pend = (P.pedidos || []).filter(x => String(x.status).startsWith("AGUARDANDO")).length + (P.em_conferencia || []).length;
   els("dp-titulo").textContent = p.nome;
   const quem = {id: p.id, nome: p.nome, obra: (p.obra_principal || {}).codigo};
-  const abas = [["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
-                ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Cadastro"],
+  // A FICHA ÚNICA (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
+  // pessoa eu tenho acesso"): o cadastro e os pagamentos do ERP entram como abas; "Cadastro" do ponto virou
+  // "Configuração do ponto" (a chave continua "cadastro" — os atalhos das outras telas abrem nela).
+  const abas = [...(PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? [["pessoa", "Cadastro"]] : []),
+                ["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
+                ...(PODE_VER_PESSOAL ? [["pagamentos", "Pagamentos"]] : []),
+                ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Configuração do ponto"],
                 ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]];
+  if (!abas.some(([k]) => k === PAINEL_ABA)) PAINEL_ABA = "dia";
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
@@ -1680,6 +1705,7 @@ function desenharPainel() {
       title="ver se o código chegou pelo WhatsApp, ou gerar um para entregar em mãos">🔑 código de acesso do aplicativo</button>` : ""}</div>
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
+      <button class="btn secundario" type="button" id="dp-completar" title="de um dia a outro: as batidas da escala que faltam, sem mexer nas que existem">📅 Completar o período pela escala</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
       <button class="btn secundario" type="button" id="dp-compensacao-horas" title="as horas a mais de um dia pagam a saída mais cedo de outro">⏱️ Compensação de horas</button>
       <button class="btn secundario" type="button" id="dp-permuta" title="troca de plantão entre dois vigias do 12x36">🔁 Permuta (vigia)</button>
@@ -1691,12 +1717,15 @@ function desenharPainel() {
     <div class="sub-abas">${abas.map(([k, r]) => `<button type="button" data-dp-aba="${k}" class="${k === PAINEL_ABA ? "ativa" : ""}">${escapar(r)}</button>`).join("")}</div>
     <div id="dp-msg"></div>
     <div id="dp-conteudo">${({dia: painelDia, mes: painelMes, pedidos: painelPedidos, aparelhos: painelAparelhos,
-                              cadastro: painelCadastro, rosto: painelRosto}[PAINEL_ABA] || painelDia)()}</div>`;
+                              cadastro: painelCadastro, rosto: painelRosto, pessoa: painelPessoaErp,
+                              pagamentos: painelPagamentosErp}[PAINEL_ABA] || painelDia)()}</div>`;
+  if (PAINEL_ABA === "pessoa" || PAINEL_ABA === "pagamentos") carregarErpDaPessoa(p.id);
   els("dp-corpo").querySelectorAll("[data-dp-aba]").forEach(b => b.addEventListener("click", () => {
     PAINEL_ABA = b.dataset.dpAba; desenharPainel(); }));
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
+  ligar("dp-completar", () => completarPeriodo(quem, recarregarPainel));
   ligar("dp-compensacao-horas", () => registrarCompensacaoDeHoras(quem, recarregarPainel));
   ligar("dp-permuta", () => registrarPermuta(quem, recarregarPainel));
   ligar("dp-documento", () => entregarDocumento(quem, recarregarPainel));
@@ -2075,6 +2104,90 @@ function painelAparelhos() {
           : `<button class="btn secundario" type="button" data-dp-aparelho="${a.id}">Alterar…</button>
              <button class="btn secundario" type="button" data-dp-bloquear="${a.id}">Bloquear</button>`}</td></tr>`).join("")}
     </tbody></table>` : `<div class="vazio"><b>Nenhum aparelho</b>em nome desta pessoa — ela bate no ponto da obra.</div>`);
+}
+
+// ---------------------------------------------------------------------------
+// O CADASTRO E OS PAGAMENTOS DO ERP DENTRO DA FICHA DA PESSOA (13/11/2026). A regra e os dados são do ERP
+// (`/erp/api/colaboradores/<id>/historico` — ver_pessoal — e `/ficha` — editar_colaboradores); aqui só se mostra.
+// Editar e os documentos (ler e arquivar) continuam no formulário do ERP: dentro da tela de Colaboradores, a janela
+// pede a ela que abra; fora dela, abre em outra aba.
+// ---------------------------------------------------------------------------
+let ERP_DA_PESSOA = null;          // {id, historico, ficha, erro}
+function avisarQuemMostra(acao, id) {
+  try { if (window.parent !== window) window.parent.postMessage({tipo: "bws-ficha", acao, id}, location.origin); }
+  catch (e) { /* sem a tela de fora, nada a avisar */ }
+}
+function abrirCadastroNoErp(id, oque) {
+  if (window.parent !== window) return avisarQuemMostra(oque, id);
+  window.open(`/erp/colaboradores?${oque}=${encodeURIComponent(id)}`, "_blank", "noopener");
+}
+async function carregarErpDaPessoa(id) {
+  if (ERP_DA_PESSOA && ERP_DA_PESSOA.id === id) return pintarErpDaPessoa();
+  ERP_DA_PESSOA = {id, historico: null, ficha: null, erro: null};
+  const [h, f] = await Promise.all([
+    PODE_VER_PESSOAL ? api(`/erp/api/colaboradores/${id}/historico`).catch(e => ({erro: e.message})) : null,
+    PODE_EDITAR_COLAB ? api(`/erp/api/colaboradores/${id}/ficha`).catch(e => ({erro: e.message})) : null]);
+  if (!ERP_DA_PESSOA || ERP_DA_PESSOA.id !== id) return;
+  ERP_DA_PESSOA.historico = h && !h.erro ? h.historico : null;
+  ERP_DA_PESSOA.ficha = f && !f.erro ? f.colaborador : null;
+  ERP_DA_PESSOA.erro = (h && h.erro) || (f && f.erro) || null;
+  pintarErpDaPessoa();
+}
+const ROTULO_ERP = v => String(v || "").toLowerCase().replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+const dinheiro = v => v == null ? "—" : Number(v).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+function painelPessoaErp() { return `<div id="dp-erp"><p class="suave">carregando o cadastro…</p></div>`; }
+function painelPagamentosErp() { return `<div id="dp-erp"><p class="suave">carregando os pagamentos…</p></div>`; }
+function pintarErpDaPessoa() {
+  const alvo = els("dp-erp"), E = ERP_DA_PESSOA;
+  if (!alvo || !E) return;
+  if (!E.historico && !E.ficha) {
+    alvo.innerHTML = `<div class="aviso alerta">${escapar(E.erro || "O cadastro desta pessoa não abriu.")}</div>`; return; }
+  if (PAINEL_ABA === "pagamentos") {
+    const h = E.historico;
+    if (!h) { alvo.innerHTML = `<div class="cartao-dica">Você não tem acesso aos pagamentos.</div>`; return; }
+    alvo.innerHTML = `<div class="kpis" style="margin:8px 0"><div class="kpi estatico ciano"><div class="kpi-rotulo">Pago nos 12 meses</div>
+        <div class="kpi-valor" style="font-size:17px">${dinheiro(h.ultimos_12_meses)}</div><div class="kpi-sub">${dinheiro(h.total)} no total</div></div></div>
+      ${h.por_verba.length ? `<h4 style="margin:10px 0 6px">Por verba</h4><table><tbody>${h.por_verba.map(v =>
+        `<tr><td>${escapar(v.verba)}</td><td class="direita dados">${dinheiro(v.valor)}</td></tr>`).join("")}</tbody></table>` : ""}
+      <h4 style="margin:14px 0 6px">Histórico de pagamentos</h4>
+      <div class="cartao-dica">Reúne as despesas em lote (DC), os títulos lançados em nome dela e a parte dela nas guias coletivas, como o FGTS do mês.</div>
+      <div class="tabela-rolagem" style="max-height:420px"><table><thead><tr><th>Data</th><th>Origem</th><th>Referência</th>
+        <th>Descrição</th><th class="direita">Valor</th><th>Situação</th></tr></thead><tbody>
+        ${h.lancamentos.map(l => `<tr><td class="dados">${dataBR(l.data)}</td>
+          <td><span class="selo ${l.origem === "DC" ? "aprovado" : l.origem === "RATEADO" ? "outro" : "aguardando"}">${
+            l.origem === "DC" ? "Despesa" : l.origem === "RATEADO" ? "Rateado" : "Título"}</span></td>
+          <td class="dados">${escapar(l.referencia || "")}</td><td class="desc">${escapar(l.descricao || "")}</td>
+          <td class="direita dados">${l.valor != null ? dinheiro(l.valor) : "—"}</td><td>${escapar(ROTULO_ERP(l.situacao))}</td></tr>`).join("")
+          || `<tr><td colspan="6" class="cartao-dica">Nada pago a esta pessoa ainda.</td></tr>`}</tbody></table></div>`;
+    return;
+  }
+  const c = E.ficha || {}, h = (E.historico || {}).colaborador || {};
+  const v = (c.vinculos || []).find(x => x.aberto) || (c.vinculos || [])[0] || {};
+  const campo = (r, valor) => valor ? `<div class="campo"><label>${escapar(r)}</label><div class="dados" style="padding:4px 0">${escapar(String(valor))}</div></div>` : "";
+  const data = x => x ? dataBR(String(x).slice(0, 10)) : "";
+  const end = [c.logradouro, c.numero_endereco, c.complemento, c.bairro, c.municipio && `${c.municipio}${c.uf ? "/" + c.uf : ""}`, c.cep]
+    .filter(Boolean).join(", ");
+  alvo.innerHTML = `
+    ${(c.falta || []).length ? `<div class="aviso alerta" style="margin:8px 0"><b>Falta para admitir:</b> ${c.falta.map(escapar).join(", ")}.</div>` : ""}
+    ${(c.falta_documento || []).length ? `<div class="aviso alerta" style="margin:6px 0"><b>Papéis que faltam no Arquivo:</b> ${c.falta_documento.map(escapar).join(", ")}.</div>` : ""}
+    <h4 style="margin:10px 0 4px">Identificação</h4>
+    <div class="form-grade">${campo("CPF", documento(c.cpf || h.cpf || ""))}${campo("Nascimento", data(c.data_nascimento))}${campo("Telefone", c.telefone)}
+      ${campo("E-mail", c.email)}${campo("RG", c.rg && `${c.rg}${c.rg_orgao ? " " + c.rg_orgao : ""}${c.rg_uf ? "/" + c.rg_uf : ""}`)}
+      ${campo("PIS", c.pis)}${campo("Mãe", c.nome_mae)}${campo("Endereço", end)}</div>
+    <h4 style="margin:12px 0 4px">Vínculo e pagamento</h4>
+    <div class="form-grade">${campo("Situação", ROTULO_ERP(c.situacao || h.situacao))}${campo("Vínculo", v.vinculo_rotulo || ROTULO_ERP(c.vinculo))}
+      ${campo("Cargo", c.cargo || v.cargo || h.funcao)}${campo("Convenção", c.convencao || v.convencao)}
+      ${campo("Admissão", data(v.admissao || c.admissao || h.admissao))}${campo("Desligamento", data(v.demissao || c.demissao || h.demissao))}
+      ${campo("Matrícula", v.matricula || c.matricula)}${campo("Salário", (v.salario || c.salario) && dinheiro(v.salario || c.salario))}
+      ${campo("PIX", c.pix_chave && `${ROTULO_ERP(c.pix_tipo)} ${c.pix_chave}`)}${campo("Banco", c.banco && `${c.banco} ag. ${c.agencia || "—"} c/c ${c.conta || "—"}`)}</div>
+    ${(c.dependentes || []).length ? `<h4 style="margin:12px 0 4px">Dependentes</h4><ul style="margin:0 0 0 18px">${c.dependentes.map(d =>
+      `<li>${escapar(d.nome)} — ${escapar(d.parentesco_rotulo || "")}${d.data_nascimento ? `, ${data(d.data_nascimento)}` : ""}</li>`).join("")}</ul>` : ""}
+    ${!E.ficha ? `<div class="cartao-dica" style="margin-top:10px">Os dados completos do cadastro aparecem para quem cadastra colaboradores.</div>` : ""}
+    ${PODE_EDITAR_COLAB ? `<div class="barra-acoes" style="margin-top:14px">
+      <button class="btn" type="button" id="dp-erp-editar">✏️ Editar o cadastro completo</button>
+      <button class="btn secundario" type="button" id="dp-erp-docs">📎 Documentos (ler e arquivar)</button></div>` : ""}`;
+  if (els("dp-erp-editar")) els("dp-erp-editar").addEventListener("click", () => abrirCadastroNoErp(E.id, "editar"));
+  if (els("dp-erp-docs")) els("dp-erp-docs").addEventListener("click", () => abrirCadastroNoErp(E.id, "documentos"));
 }
 
 function painelCadastro() {
@@ -3087,6 +3200,94 @@ async function registrarCompensacaoDeHoras(p, depois) {
   } catch (e) { falhou(e); }
 }
 
+// COMPLETAR O PERÍODO PELA ESCALA (13/11/2026, o dono: "botar o dia de início, o dia de fim e bater a batida padrão
+// da escala (…) com uma tacada só (…) quando tiver ponto intercalado, o sistema tem que confirmar, e não bater por cima
+// das batidas que já existem"). A prévia dia a dia; o dia que já tem batida pede a confirmação; cada dia entra inteiro
+// ou não entra.
+async function completarPeriodo(p, depois) {
+  if (!p) return;
+  const dlg = els("dlg-completar"), corpo = els("cp-corpo");
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const h = new Date(), ontem = new Date(h.getFullYear(), h.getMonth(), h.getDate() - 1);
+  const semana = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate() - 6);
+  els("cp-titulo").textContent = `Completar o período pela escala — ${p.nome}`;
+  corpo.innerHTML = `<p style="margin:0 0 10px">Escolha o período. Em cada dia entram <b>só as batidas da escala que faltam</b>:
+      o dia sem nenhuma batida ganha o dia inteiro; o dia que já tem batida ganha só as que faltam — <b>as que existem
+      ficam como estão</b>. Antes de incluir, você confere dia a dia.</p>
+    <div class="qd-par" style="grid-template-columns:1fr 1fr auto; align-items:end">
+      <div class="campo"><label for="cp-de">De</label><input type="date" id="cp-de" value="${iso(semana)}"></div>
+      <div class="campo"><label for="cp-ate">Até</label><input type="date" id="cp-ate" value="${iso(ontem)}"></div>
+      <button class="btn" type="button" id="cp-ver">Ver o que vai entrar</button></div>
+    <div id="cp-previa" style="margin-top:12px"></div>`;
+  if (!dlg.open) dlg.showModal();
+  const ver = async () => {
+    const alvo = els("cp-previa");
+    alvo.innerHTML = `<p class="suave">montando a prévia…</p>`;
+    let d;
+    try { d = await api(`/erp/api/ponto/pessoas/${p.id}/completar?de=${els("cp-de").value}&ate=${els("cp-ate").value}`); }
+    catch (e) { alvo.innerHTML = `<div class="aviso alerta">${escapar(e.message)}</div>`; return; }
+    const linhas = d.dias.map(x => `<tr${x.tipo === "COMPLETAR" ? ' style="background:#FDF6E7"' : ""}>
+        <td>${x.tipo !== "NADA" ? `<input type="checkbox" data-cp-dia="${x.data}" data-cp-tipo="${x.tipo}" checked aria-label="incluir ${dataBR(x.data)}">` : ""}</td>
+        <td class="dados"><b>${dataBR(x.data).slice(0, 5)}</b> <small style="display:inline">${escapar((x.dia_semana || "").slice(0, 3))}</small></td>
+        <td class="dados">${x.batidas.map(escapar).join(" ") || `<span class="suave">nenhuma</span>`}${x.obras.length
+          ? `<small style="display:block">obra ${x.obras.map(escapar).join(", ")}</small>` : ""}</td>
+        <td class="dados">${x.incluir.map(i => `<b>${escapar(i.hora)}</b> <small style="display:inline">${escapar(i.rotulo.toLowerCase())}</small>`).join("<br>") || "—"}</td>
+        <td><small>${x.tipo === "COMPLETAR" ? "⚠️ " : ""}${escapar(x.nota)}</small></td></tr>`).join("");
+    alvo.innerHTML = `<p style="margin:0 0 6px">Escala: <b>${escapar(d.escala || "a padrão da empresa")}</b> ·
+        ${d.dias_inteiros} dia(s) sem batida · ${d.dias_completar} dia(s) com batida faltando · <b>${d.batidas}</b> batida(s) a incluir</p>
+      ${d.batidas ? "" : `<div class="aviso">Nada a incluir neste período: os dias estão completos, ou a escala não prevê batida neles.</div>`}
+      <div class="tabela-rolagem" style="max-height:46vh"><table><thead><tr><th class="sem-ordem"></th><th class="sem-ordem">Dia</th>
+        <th class="sem-ordem">Já tem</th><th class="sem-ordem">Vai entrar</th><th class="sem-ordem"></th></tr></thead><tbody>${linhas}</tbody></table></div>
+      ${d.batidas ? `<div class="campo" style="margin-top:10px"><label for="cp-obra">Obra em que as batidas entram</label>
+          <select id="cp-obra"><option value="">escolha a obra…</option></select></div>
+        <div class="campo" style="margin-top:10px"><label for="cp-motivo">Motivo (vai no registro de cada batida)</label>
+          <textarea id="cp-motivo" rows="2" placeholder="ex.: trabalhou na obra PG-A nesta semana; o aparelho da obra estava sem sinal"></textarea></div>
+        <label class="opcao" id="cp-conf-linha" style="margin-top:8px"><input type="checkbox" id="cp-conf">
+          <span class="rotulo">Conferi os dias que <b>já têm batida</b> (em amarelo): neles entram só as que faltam.</span></label>
+        <div id="cp-msg"></div>
+        <div class="barra-acoes" style="margin-top:10px"><button class="btn" type="button" id="cp-ok">Incluir</button></div>` : ""}`;
+    if (!d.batidas) return;
+    // a obra (13/11/2026, o dono: "precisa definir a obra antes de incluir"): a lista das obras de quem lança, já
+    // com a sugerida marcada — a em que a pessoa mais bateu nos últimos dias, ou a do cadastro
+    try {
+      const obras = (await api("/erp/api/ponto/obras")).obras || [];
+      els("cp-obra").innerHTML = `<option value="">escolha a obra…</option>` + obras.map(o =>
+        `<option value="${o.id}" ${d.obra_sugerida && o.id === d.obra_sugerida.id ? "selected" : ""}>${escapar(rotuloObra(o))}</option>`).join("");
+    } catch (e) { /* sem a lista, a escolha fica vazia e o incluir pede a obra */ }
+    const marcados = () => [...alvo.querySelectorAll("[data-cp-dia]:checked")];
+    const atualizar = () => {
+      const m = marcados(), parciais = m.filter(c => c.dataset.cpTipo === "COMPLETAR").length;
+      const n = m.reduce((s, c) => s + (d.dias.find(x => x.data === c.dataset.cpDia) || {incluir: []}).incluir.length, 0);
+      els("cp-ok").textContent = `Incluir ${n} batida(s) em ${m.length} dia(s)`;
+      els("cp-ok").disabled = !m.length;
+      els("cp-conf-linha").style.display = parciais ? "" : "none";
+    };
+    alvo.querySelectorAll("[data-cp-dia]").forEach(c => c.addEventListener("change", atualizar));
+    atualizar();
+    els("cp-ok").addEventListener("click", async () => {
+      const m = marcados(), motivo = els("cp-motivo").value.trim();
+      const msg = t => { els("cp-msg").innerHTML = `<div class="aviso alerta" style="margin-top:8px">${escapar(t)}</div>`; };
+      if (!els("cp-obra").value) return msg("Escolha a obra em que as batidas entram.");
+      if (motivo.length < 10) return msg("Diga o motivo (pelo menos 10 letras) — ele vai no registro de cada batida.");
+      if (m.some(c => c.dataset.cpTipo === "COMPLETAR") && !els("cp-conf").checked)
+        return msg("Confirme que conferiu os dias que já têm batida (os em amarelo).");
+      els("cp-ok").disabled = true; els("cp-ok").textContent = "Incluindo…";
+      try {
+        const r = await postar(`/erp/api/ponto/pessoas/${p.id}/completar`, {datas: m.map(c => c.dataset.cpDia), motivo,
+                                                                             obra: els("cp-obra").value});
+        const ruins = r.resultados.filter(x => !x.ok);
+        alvo.innerHTML = `<div class="aviso ok"><b>${r.batidas} batida(s) incluída(s) em ${r.feitos} dia(s), na obra
+            ${escapar(els("cp-obra").selectedOptions[0] ? els("cp-obra").selectedOptions[0].textContent : "")}.</b>
+            Entram como ajuste da gestão, já aprovadas, e não contam contra a pessoa na qualidade.</div>
+          ${ruins.length ? `<div class="aviso alerta" style="margin-top:8px"><b>${ruins.length} dia(s) ficaram de fora:</b>
+            <ul style="margin:6px 0 0 18px">${ruins.map(x => `<li>${dataBR(x.data)} — ${escapar(x.erro || "")}</li>`).join("")}</ul></div>` : ""}`;
+        if (depois) await depois();
+      } catch (e) { els("cp-ok").disabled = false; atualizar(); msg(e.message); }
+    });
+  };
+  els("cp-ver").addEventListener("click", ver);
+}
+
 // A PERMUTA DE PLANTÃO (31/10/2026, migração 024): só entre vigias do 12x36. Um pedido; aprovado, o lado do
 // colega entra junto, e o espelho dos dois diz "Permuta com …".
 async function registrarPermuta(p, depois) {
@@ -3492,7 +3693,13 @@ async function bloquearAparelho(a, depois) {
   } catch (e) { falhou(e); }
 }
 
-{% if aba_ponto == "ponto_hoje" %}
+{% if aba_ponto == "ponto_ficha" %}
+// A FICHA ÚNICA SOZINHA (13/11/2026): abre a janela da pessoa na aba Cadastro. Fechar a janela avisa a tela que a
+// mostra (Colaboradores), que fecha o quadro dela.
+const FICHA_ID = {{ ficha_id|int }};
+els("dlg-pessoa").addEventListener("close", () => avisarQuemMostra("fechar"));
+abrirPessoaPainel(FICHA_ID, null, PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia");
+{% elif aba_ponto == "ponto_hoje" %}
 // ===========================================================================
 // HOJE — quem bateu, quem não bateu, por obra. A tela do encarregado às 7h30.
 // ===========================================================================

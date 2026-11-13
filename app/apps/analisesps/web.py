@@ -6974,7 +6974,7 @@ def tela_lote():
             if voltaram:
                 aviso = ((aviso + " ") if aviso else "") + (
                     f"{len(voltaram)} SP(s) que chegaram pelo Telegram com a "
-                    "tela aberta foram mantidas no grupo WhatsApp.")
+                    "tela aberta foram mantidas no lote (grupo do último envio).")
 
         lote.salvar(conteudo, quem, pessoa)
         return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))

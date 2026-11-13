@@ -12244,6 +12244,26 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 264 — Telegram: um grupo novo a cada envio (WhatsApp1, WhatsApp2…), com repetidas (12/11/2026)
+
+- *"Mesmo que elas já estejam no lote, elas integrem o lote que está sendo criado. Elas
+  podem ficar repetidas. (…) se enviar uma lista de SPs agora, e enviar outra lista
+  mais tarde, quero que seja criado um novo lote. Daí fica WhatsApp1, WhatsApp2."*
+- Era UM grupo "WhatsApp" que somava tudo, e a SP que já estava em qualquer grupo era
+  pulada. Agora (`lote.proximo_grupo_whatsapp`, `lote.juntar_num_grupo`,
+  `telegram_lote.grupo_do_envio`): cada envio cria "WhatsApp" + (maior número + 1) no
+  TOPO do lote (o "WhatsApp" antigo, sem número, conta zero); a SP que está em outro
+  grupo entra assim mesmo (repetida); dentro do mesmo grupo não repete.
+- ⚠️ **O mesmo envio cortado em várias mensagens:** o Telegram corta colagem longa;
+  o que chega até 2 minutos depois da mensagem anterior (`JANELA_DO_MESMO_ENVIO_S`)
+  vai para o MESMO grupo — a memória é `analisesps.meta` ›
+  `telegram_lote.ultimo_grupo.<pessoa>`.
+- A proteção da tela aberta (`manter_chegadas`) devolve o que sumiu ao grupo do
+  último envio. Limite: uma SP que chegou pelo robô e TAMBÉM está em outro grupo não
+  é devolvida se o salvar apagar só o grupo dela (a base não guarda o grupo de cada
+  chegada).
+- Testes: `test_analisesps_lote_whatsapp.py`, `test_analisesps_telegram_lote_banco.py`.
+
 #### Leva 263 — Gerar e lançar no Pipefy numa tacada só (11/11/2026)
 
 - *"Primeiro a gente gera o arquivo e depois lança no Pipefy. Eu queria poder ter a

@@ -56,25 +56,27 @@ logger = logging.getLogger("ponto.gestao")
 # O módulo no menu do ERP
 # ---------------------------------------------------------------------------
 ABAS = [
-    # 28/10/2026, o dono: "as telas que foram ocultadas precisam voltar". Todas de novo no menu,
-    # na ordem do dia a dia; a janela da pessoa continua abrindo de qualquer uma.
+    # A ORDEM PELO USO (13/11/2026, o dono: "quadro, painel, eles já estão meio relacionados (…) as telas deveriam estar
+    # mais próximas"; aprovada por ele no mesmo dia). Acompanhar · tratar · conferir a obra e as fotos · cadastro e
+    # fechamento. O Ponto voltou a ter o próprio lugar no menu, logo depois de Pessoal (`erp/routes.py`).
     ("ponto_quadro", "Quadro", "erp.ponto_pagina_quadro"),
-    ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
-    ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
-    ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
     ("ponto_hoje", "Hoje", "erp.ponto_pagina_hoje"),
+    ("ponto_painel", "Painel", "erp.ponto_pagina_painel"),
+    ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
+    ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
+    ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
+    ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
+    ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
     ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
     ("ponto_fotos", "Fotos de cadastro", "erp.ponto_pagina_fotos_cadastro"),
-    ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
-    ("ponto_painel", "Painel", "erp.ponto_pagina_painel"),          # 11/11/2026: os gráficos e a comparação
-    ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
     ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
-    ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
+    ("ponto_pessoas", "Pessoas no ponto", "erp.ponto_pagina_pessoas"),
     ("ponto_relatorios", "Relatórios", "erp.ponto_pagina_relatorios"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
 # Nenhuma tela fora do menu desde 28/10/2026 (todas voltaram).
-ABAS_FORA_DO_MENU: tuple = ()
+# A ficha única da pessoa aberta sozinha (13/11/2026): a tela de Colaboradores a mostra dentro dela.
+ABAS_FORA_DO_MENU: tuple = ("ponto_ficha",)
 MODULO = {
     "chave": "ponto", "nome": "Ponto", "sigla": "PON",
     "descricao": "Ponto eletrônico: quem bateu, espelho, pedidos, banco de horas e alertas",
@@ -82,6 +84,9 @@ MODULO = {
 }
 ACOES_DA_TELA = ("ver_ponto", "tratar_ponto", "aprovar_afastamento", "fechar_competencia",
                  "configurar_ponto")
+# As do ERP que a FICHA ÚNICA da pessoa usa (13/11/2026): o cadastro e os pagamentos (`ver_pessoal`), os dados
+# completos e o editar (`editar_colaboradores`). Só escondem aba e botão — a trava é a rota do ERP.
+ACOES_DA_FICHA = ("ver_pessoal", "editar_colaboradores")
 
 
 def _registrar_no_menu() -> None:
@@ -174,7 +179,7 @@ def _exigir_pessoa(conn, quem: Quem, colaborador_id: int) -> dict:
     return ocorrencias.exigir_pessoa_no_alcance(conn, quem, colaborador_id)
 
 
-def _pagina(aba: str):
+def _pagina(aba: str, **extra):
     try:
         rotina.disparar_se_preciso()
     except Exception:  # noqa: BLE001 — rotina nunca derruba tela
@@ -201,8 +206,9 @@ def _pagina(aba: str):
     except Exception:  # noqa: BLE001
         pass
     ctx = R._contexto(aba)
-    ctx["pode"] = {**ctx.get("pode", {}), **R._pode_agora(*ACOES_DA_TELA)}
-    return _render("gestao.html", aba_ponto=aba, **ctx)
+    # a ficha única da pessoa (13/11/2026) mostra o cadastro e os pagamentos do ERP — quem pode, vê
+    ctx["pode"] = {**ctx.get("pode", {}), **R._pode_agora(*ACOES_DA_TELA, *ACOES_DA_FICHA)}
+    return _render("gestao.html", aba_ponto=aba, **extra, **ctx)
 
 
 def _datas_da_competencia(valor) -> tuple[dt.date, dt.date]:
@@ -293,6 +299,17 @@ def ponto_pagina_alertas():
 @permissao("ver_ponto")
 def ponto_pagina_qualidade():
     return _pagina("ponto_qualidade")
+
+
+@bp.route("/erp/ponto/pessoa/<int:colaborador_id>")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_ficha(colaborador_id: int):
+    """A FICHA ÚNICA DA PESSOA, sozinha na página (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir
+    daquele nome, tudo que envolve a pessoa eu tenho acesso — ponto, configurações, aparelhos, tudo"). É a mesma
+    janela que abre clicando no nome em qualquer tela do ponto; a tela de Colaboradores a mostra dentro dela. A pessoa
+    fora do alcance responde dentro da janela, como "não encontrada"."""
+    return _pagina("ponto_ficha", ficha_id=colaborador_id)
 
 
 @bp.route("/erp/ponto/painel")
@@ -1786,6 +1803,29 @@ def ponto_api_quadro_incluir():
                 quem.nome, len(r), sum(1 for x in r if x.get("ok")))
     return _ok(resultados=r, feitas=sum(1 for x in r if x.get("ok")),
                aprovadas=sum(1 for x in r if x.get("aprovado")))
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/completar", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoa_completar(colaborador_id: int):
+    """COMPLETAR O PERÍODO PELA ESCALA (13/11/2026): GET `?de=&ate=` é a prévia, dia a dia; POST `{datas, motivo}`
+    inclui, nos dias confirmados, só as batidas da escala que faltam — as que existem ficam como estão."""
+    from .core import quadro
+    quem = _quem()
+    if request.method == "GET":
+        with db.conexao() as conn:
+            return _ok(**quadro.previa_do_periodo(conn, quem, colaborador_id, request.args.get("de"),
+                                                  request.args.get("ate")))
+    d = _corpo()
+    with db.conexao() as conn:                       # a pessoa fora do alcance é 404 antes de qualquer coisa
+        ocorrencias.exigir_pessoa_no_alcance(conn, quem, colaborador_id)
+    r = quadro.completar_periodo(quem, colaborador_id, d.get("datas") or [], motivo=d.get("motivo"), obra=d.get("obra"))
+    logger.info("Ponto: período completado pela escala para %s por %s — %d dia(s), %d feito(s)",
+                colaborador_id, quem.nome, len(r), sum(1 for x in r if x.get("ok")))
+    return _ok(resultados=r, feitos=sum(1 for x in r if x.get("ok")),
+               batidas=sum(int(x.get("batidas") or 0) for x in r if x.get("ok")))
 
 
 @bp.route("/erp/api/ponto/quadro/abonar", methods=["POST"])

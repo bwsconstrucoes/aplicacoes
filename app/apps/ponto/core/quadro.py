@@ -359,10 +359,11 @@ def _cada_item(quem: Quem, itens: list[dict], fazer) -> list[dict]:
 
 
 def _ajuste_em_lote(conn: Connection, quem: Quem, pessoa: dict, d: dict, dia: dt.date, minuto: int,
-                    motivo: str) -> dict:
+                    motivo: str, obra: Optional[str] = None) -> dict:
+    """`obra`: a escolhida por quem lança (o completar do período); sem ela, a da batida do dia ou a do cadastro."""
     from . import ocorrencias
     momento = dt.datetime.combine(dia, dt.time(0)) + dt.timedelta(minutes=minuto)
-    obra = next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or pessoa.get("obra_codigo")
+    obra = obra or next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or pessoa.get("obra_codigo")
     if not obra:
         raise ErroDeValidacao("a pessoa não tem obra no dia nem no cadastro")
     o = ocorrencias.criar(conn, quem, {
@@ -561,3 +562,114 @@ def mapa(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None) -> dic
                     "obra": p["obra"], "data": p["data_referencia"].isoformat()} for p in pontos],
         "pontos_cortados": len(pontos) >= MAX_PONTOS_NO_MAPA,
     }
+
+
+# ---------------------------------------------------------------------------
+# COMPLETAR O PERÍODO DE UMA PESSOA PELA ESCALA (13/11/2026)
+#
+# O dono: *"digamos que a pessoa trabalhou determinada obra e eu quero bater os pontos de uma semana inteira: botar o
+# dia de início, o dia de fim e bater a batida padrão da escala (…) com uma tacada só (…) Eventualmente corrigir todos
+# os pontos da pessoa numa semana: um dia não bateu, outro esqueceu uma batida (…) o sistema tem que ter só o cuidado
+# de confirmar, e obviamente não bater por cima das batidas que já existem."*
+#
+# Primeiro a PRÉVIA (`previa_do_periodo`): dia a dia, o que existe e o que entraria. Depois a inclusão
+# (`completar_periodo`), só nos dias que quem lança confirmou. Em cada dia entram SÓ as batidas que a escala previa e
+# que faltam (`espelho` › "faltando") — a que existe nunca é tocada, e o horário que já tem pedido esperando também não
+# entra de novo. O caminho é o do lote do quadro: um ajuste da gestão por batida, aprovado na hora, marcado "em lote"
+# (não conta contra a pessoa na qualidade), com as travas de sempre (mês fechado, batida repetida).
+# ---------------------------------------------------------------------------
+MAX_DIAS_PERIODO = 31
+
+
+def _hora_do_minuto(minuto: int) -> str:
+    m = int(minuto) % 1440
+    return f"{m // 60:02d}:{m % 60:02d}" + (" (dia seguinte)" if int(minuto) >= 1440 else "")
+
+
+def _periodo_da_pessoa(de, ate) -> tuple[dt.date, dt.date]:
+    inicio, fim = _data(de, "de"), _data(ate, "ate")
+    if fim < inicio:
+        inicio, fim = fim, inicio
+    hoje = horario.hoje()
+    if inicio > hoje:
+        raise ErroDeValidacao("o período ainda não começou", campo="de")
+    fim = min(fim, hoje)
+    if (fim - inicio).days + 1 > MAX_DIAS_PERIODO:
+        raise ErroDeValidacao(f"no máximo {MAX_DIAS_PERIODO} dias de cada vez", campo="ate")
+    return inicio, fim
+
+
+def previa_do_periodo(conn: Connection, quem: Quem, colaborador_id: int, de, ate) -> dict:
+    """O que entraria, dia a dia: DIA_INTEIRO (sem batida nenhuma — a escala inteira), COMPLETAR (já tem batida — só
+    as que faltam), ou NADA (com o porquê: completo, descanso, abonado, mês fechado…)."""
+    from . import competencias, ocorrencias
+    pessoa = ocorrencias.exigir_pessoa_no_alcance(conn, quem, int(colaborador_id))
+    inicio, fim = _periodo_da_pessoa(de, ate)
+    esp = espelho.montar(conn, int(colaborador_id), inicio, fim)
+    fechadas: dict = {}
+    dias = []
+    for d in esp["dias"]:
+        data = dt.date.fromisoformat(d["data"])
+        comp = data.replace(day=1)
+        if comp not in fechadas:
+            fechadas[comp] = competencias.esta_fechada(conn, comp)
+        batidas = [b["hora"] for b in d["batidas"] if b.get("status") != "REJEITADA"]
+        obras_do_dia = sorted({b["obra"] for b in d["batidas"] if b.get("status") != "REJEITADA" and b.get("obra")})
+        incluir = [{"rotulo": f["rotulo"], "hora": _hora_do_minuto(f["minuto"])} for f in d["faltando"]]
+        if fechadas[comp]:
+            tipo, nota = "NADA", "mês fechado — reabra o mês para mexer"
+        elif incluir and not batidas:
+            tipo, nota = "DIA_INTEIRO", "sem nenhuma batida: entra o dia inteiro da escala"
+        elif incluir:
+            tipo, nota = "COMPLETAR", "já tem batida: entram só as que faltam, as que existem ficam como estão"
+        else:
+            tipo, incluir = "NADA", []
+            oc = (d.get("ocorrencia") or {}).get("rotulo")
+            nota = ("completo" if batidas else oc or {"DESCANSO": "descanso", "SEM_ESCALA": "sem escala",
+                                                        "ABONADO": "abonado", "COMPENSADO": "compensado"}.get(
+                d.get("situacao"), "a escala não prevê batida neste dia"))
+        dias.append({"data": d["data"], "dia_semana": d.get("dia_semana"), "situacao": d.get("situacao"),
+                     "batidas": batidas, "obras": obras_do_dia, "incluir": incluir, "tipo": tipo, "nota": nota})
+    # A OBRA (13/11/2026, o dono: "precisa definir a obra antes de incluir"): quem lança escolhe; a sugerida é a em que
+    # a pessoa mais bateu nos últimos dias, ou a do cadastro.
+    sugerida = cadastros.obra_pelo_ponto(conn, int(colaborador_id)) or (
+        cadastros.resolver_obra(conn, pessoa.get("obra_codigo")) if pessoa.get("obra_codigo") else None)
+    return {"pessoa": {"id": int(pessoa["id"]), "nome": pessoa["nome"]}, "de": inicio.isoformat(),
+            "obra_sugerida": ({"id": int(sugerida["id"]), "codigo": sugerida["codigo"]} if sugerida else None),
+            "ate": fim.isoformat(), "escala": next((d.get("escala") for d in esp["dias"] if d.get("escala")), None),
+            "dias": dias, "dias_inteiros": sum(1 for x in dias if x["tipo"] == "DIA_INTEIRO"),
+            "dias_completar": sum(1 for x in dias if x["tipo"] == "COMPLETAR"),
+            "batidas": sum(len(x["incluir"]) for x in dias)}
+
+
+def completar_periodo(quem: Quem, colaborador_id: int, datas: list, *, motivo: str, obra) -> list[dict]:
+    """Inclui, em cada dia confirmado, as batidas da escala que faltam, NA OBRA escolhida. Cada dia na sua transação:
+    ou entram todas as daquele dia, ou nenhuma — e um dia recusado não desfaz os outros."""
+    motivo = _motivo_do_lote(motivo)
+    if obra in (None, ""):
+        raise ErroDeValidacao("escolha a obra em que as batidas entram", campo="obra")
+    with db.conexao() as conn:
+        a_obra = cadastros.resolver_obra(conn, obra)
+    if not a_obra or (quem.obras is not None and int(a_obra["id"]) not in quem.obras):
+        raise ErroDeValidacao("obra não encontrada — escolha na lista", campo="obra")
+    try:
+        datas = sorted({_data(x, "datas") for x in (datas or [])})
+    except ErroDeValidacao:
+        raise ErroDeValidacao("lista de dias ilegível", campo="datas") from None
+    if not datas:
+        raise ErroDeValidacao("marque ao menos um dia", campo="datas")
+    if len(datas) > MAX_DIAS_PERIODO or (datas[-1] - datas[0]).days + 1 > MAX_DIAS_PERIODO:
+        raise ErroDeValidacao(f"no máximo {MAX_DIAS_PERIODO} dias de cada vez", campo="datas")
+    if datas[-1] > horario.hoje():
+        raise ErroDeValidacao("dia no futuro", campo="datas")
+
+    def completar_dia(conn, pessoa, d, dia):
+        if not d["faltando"]:
+            raise ErroDeValidacao("neste dia não falta batida pela escala (ou já tem pedido esperando)")
+        feitas = [_ajuste_em_lote(conn, quem, pessoa, d, dia, int(f["minuto"]), motivo, obra=a_obra["codigo"])
+                  for f in d["faltando"]]
+        return {"hora": " · ".join(x["hora"] for x in feitas), "batidas": len(feitas), "obra": a_obra["codigo"],
+                "aprovado": all(x["aprovado"] for x in feitas), "status": feitas[-1]["status"]}
+
+    return _cada_item(quem, [{"colaborador_id": int(colaborador_id), "data": x.isoformat()} for x in datas],
+                      completar_dia)

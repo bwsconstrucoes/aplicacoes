@@ -21,6 +21,95 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 13/11/2026 — A IMPORTAÇÃO DO PIPEFY PEDIA UM NÚMERO QUE NÃO EXISTIA
+
+Ele, na primeira vez que usou a tela:
+
+> *"Eu clico em conferir sem gravar e dá uma mensagem lá em cima: nenhuma
+> pessoa com número de card do Pipefy nesse filtro. E onde é que eu coloco os
+> números do card se não tem campo?"*
+
+**Tinha razão, e o defeito era meu, de desenho.** Eu construí a importação
+assumindo que `colaboradores.ref_pipefy` já estava preenchido em produção.
+**Não estava** — e, como a tela não tinha onde digitar o número, o botão
+**não tinha como funcionar nunca**. A recusa dava a entender que faltava um
+filtro; o que faltava era o dado inteiro.
+
+⚑ **E a resposta certa não era criar o campo.** O card tem o CPF, o cadastro
+tem o CPF: quem casa os dois é o sistema. Ninguém digita 3.664 números — e um
+número digitado errado colaria os documentos de uma pessoa na ficha de outra.
+
+**Como ficou:** quando ninguém tem card, a primeira rodada **varre o pipe**
+(50 por página, a mesma paginação do `scripts/exportar_pipefy.py`, trazendo só
+o CPF de cada card), casa pelo CPF e **grava o número do card** em quem
+casou — então a segunda rodada não varre nada. O número do card virou
+**resultado** da importação, não requisito dela.
+
+**Três casos que NÃO entram, e aparecem no relatório em vez de sumir:**
+
+- **card sem CPF** — não há por onde casar;
+- **card de quem não está no ERP** — a importação não cria pessoa (decisão de
+  antes, mantida); fica a lista para alguém cadastrar;
+- ⚑ **dois cards para o mesmo CPF** — e aqui a recusa é deliberada: escolher um
+  dos dois seria adivinhar qual é o cadastro bom, e o errado colaria os
+  documentos de um período na ficha do outro.
+
+**A tela também mentia por omissão:** dizia "0 pessoa(s) com número de card" e
+oferecia o botão assim mesmo. Agora, quando ninguém tem card, ela explica que
+**não é preciso digitar nenhum** e que a primeira rodada serve justamente para
+achar as pessoas.
+
+⚑ **A LIÇÃO, porque ela não é só desta tela:** eu construí uma tela inteira,
+com 17 testes verdes, em cima de uma suposição sobre o estado da PRODUÇÃO que
+eu nunca pude conferir daqui — e os testes não pegam isso, porque o mundo de
+teste eu mesmo preencho. Funcionalidade que depende de dado já existente
+precisa perguntar antes: *esse dado existe mesmo, hoje, lá?*
+
+### ✔️ 13/11/2026 — a junção do Ponto NÃO desfez o campo único de empresa (conferido)
+
+Os dois chats mexeram na MESMA tela (`erp_colaboradores.html`) na mesma
+semana: o do ERP em 11/11 (empresa de registro num campo só) e o do Ponto em
+13/11 (ficha única). **Conferido depois da publicação deles: o conserto
+sobreviveu** — a tela tem um campo só, o texto livre do CNPJ não voltou, e as
+cinco travas passam.
+
+⚑ **Fica registrado porque o próximo encontro desses dois pode não ter a mesma
+sorte.** O que protege é
+`tests/test_caixa_e_portal.py::test_nenhuma_tela_pergunta_a_empresa_duas_vezes`:
+se ela ficar vermelha depois de uma junção, **não é teste chato — é o campo
+duplicado voltando**, e o conserto é refazer a junção, nunca apagar o teste.
+
+O defeito que ela guarda: *"Empresa do grupo"* e *"CNPJ de admissão"* eram dois
+campos para o mesmo fato, e a caixinha de empresa nunca funcionou porque
+`pessoas.opcoes()` não devolvia `empresas` — o único jeito de dizer a empresa
+era digitar o CNPJ no texto ao lado, e os dois podiam divergir.
+
+### 🔀 13/11/2026 — o Ponto saiu de dentro de Pessoal, e a ficha da pessoa virou UMA (feito pelo chat do Ponto)
+
+**Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui, e PUBLICADO em 13/11/2026** (a nota original
+dizia "não publicado ainda"; corrigido pelo chat do ERP depois da publicação). Quem for mexer na tela de
+**Colaboradores** ou no **menu**: traga a `main` antes, senão os dois lados se pisam.
+**Feito pelo chat do Ponto, com o "pode" do dono para mexer aqui. PUBLICADO em 13/11/2026** (suíte inteira: 11.000
+passaram). Se este chat for mexer na tela de **Colaboradores** ou no
+**menu**, traga a `main` antes — senão os dois lados vão se pisar.
+
+O dono, 13/11/2026: *"quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande (…) era
+melhor dividir (…) e tem duas informações que não estão integradas: em Colaboradores eu clico na pessoa e não vejo o
+ponto; no ponto, o cadastro parece mais completo (…) eu cliquei no cadastro da pessoa, a partir daquele nome, tudo
+que envolve a pessoa eu tenho acesso."*
+
+- **Menu** (`routes.py`): `_juntar_ponto_com_pessoal` virou `_ponto_ao_lado_de_pessoal` — o Ponto volta a ser um
+  módulo, logo depois de Pessoal; Pessoal fica com Colaboradores · Solicitações ao DP · Contabilidade e agente ·
+  Despesas com colaborador. As abas do Ponto e a ordem delas são do módulo do ponto (`ponto/gestao.py`, `ABAS`).
+  Testes ajustados: `test_caixa_e_portal.py` (o Ponto logo depois de Pessoal) e `test_ponto_fase2.py`.
+- **Ficha única** (`erp_colaboradores.html`): clicar na pessoa da lista abre `abrirFichaUnica` — a janela da pessoa
+  do Ponto (`/erp/ponto/pessoa/<id>`, num quadro dentro da tela), que agora tem as abas **Cadastro** (lê
+  `/historico` e `/ficha` daqui — só mostra) e **Pagamentos**, além do ponto inteiro. **Editar o cadastro** e os
+  **documentos** continuam sendo o formulário DAQUI: a janela pede (mensagem `bws-ficha`) e esta tela abre
+  `abrirFichaCompleta` ou `ficha(id, "documentos")`. Quem NÃO enxerga o ponto continua na ficha de sempre
+  (`ficha`), que não foi tirada. A tela também aceita `?editar=`, `?documentos=` e `?pessoa=` no endereço — é por
+  onde a janela, aberta numa tela do ponto, manda editar.
+
 ### 📥 A IMPORTAÇÃO DAS PESSOAS: pare de pedir "o arquivo"
 
 **Eu estava pedindo a coisa errada, e por um motivo que vale guardar:** o botão
