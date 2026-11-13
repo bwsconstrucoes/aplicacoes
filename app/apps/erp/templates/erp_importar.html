@@ -101,14 +101,19 @@
   <div class="cartao-cab"><h3>Cadastro das pessoas (Pipefy)</h3>
     <small>traz os documentos e preenche o que está vazio — nunca troca o que já está aqui</small></div>
   <div id="pipefy-cadastro-situacao" class="cartao-dica">olhando…</div>
-  <div class="form-grade">
-    <div class="campo"><label for="pc-quantas">Quantas pessoas nesta rodada</label>
-      <input type="number" id="pc-quantas" min="1" max="300" value="50"></div>
-    <div class="campo"><label for="pc-quem">Quem entra</label>
-      <select id="pc-quem">
-        <option value="ativos">só quem está trabalhando</option>
-        <option value="todos">todo mundo que tem card, inclusive desligados</option>
-      </select></div>
+  {# ⚑ QUEM DIZ QUAIS CARDS É ELE. A primeira versão varria o pipe inteiro e
+     casava pelo CPF — e trazia card CANCELADO e card REPETIDO. Ele, em
+     13/11/2026: *"eu prefiro listar os cards (…) eu vou listar os cards que eu
+     quero que você busque. E você faz a pesquisa card a card e puxa as
+     informações e grava."* Ele tem a planilha com os números; escolher quais
+     entram é decisão dele, não adivinhação minha. #}
+  <div class="campo">
+    <label for="pc-cards">Números dos cards</label>
+    <textarea id="pc-cards" rows="4"
+      placeholder="853990032&#10;1329563540, 1332040352&#10;https://app.pipefy.com/open-cards/1329567174"></textarea>
+    <div class="dica">Um por linha, separados por vírgula, ou colados direto de
+      uma coluna da planilha. Endereço do card também serve. Número repetido
+      entra uma vez só.</div>
   </div>
   <div class="dica" style="margin-top:8px">Entram <b>documento de
     identificação, CTPS (as duas páginas), CPF, comprovante de endereço, foto,
@@ -116,8 +121,8 @@
     cadastro que estiverem <b>em branco</b> aqui. O que já está preenchido no
     ERP <b>não é trocado</b>. Rodar de novo <b>não traz nada duas vezes</b>.
     O <b>ASO não vem</b>: ele vence, e o card não diz até quando vale.
-    <b>Você não digita número de card em lugar nenhum</b>: o sistema acha cada
-    pessoa pelo CPF do card.</div>
+    <b>Card cancelado ou repetido não é problema do sistema</b>: entra o que
+    você listar, e só.</div>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-pc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-pc" disabled>Trazer do Pipefy</button>
@@ -429,20 +434,11 @@ async function situacaoDoCadastroPipefy(){
     // 13/11/2026. Ele apertou "conferir" e levou "nenhuma pessoa com número de
     // card nesse filtro", sem ter onde digitar número nenhum. Agora a primeira
     // coisa que a importação faz é ACHAR as pessoas, pelo CPF do card.
-    if (x.precisa_mapear) {
-      onde.innerHTML = `<b>Ninguém aqui tem número de card ainda — e você não
-        precisa digitar nenhum.</b> A primeira rodada varre o pipe do Pipefy e
-        acha cada pessoa <b>pelo CPF</b>; o número do card fica guardado no
-        cadastro dela para as próximas. Comece pelo <b>Conferir sem gravar</b>:
-        ele mostra quantos cards casaram, quantos não têm CPF e quantos são de
-        gente que não está no ERP — sem gravar nada.`;
-    } else {
-      onde.innerHTML = `<b>${x.ativos_com_card}</b> pessoa(s) trabalhando com
-        número de card` + (x.sem_card ? ` · <b>${x.sem_card}</b> sem card` : "")
-        + (x.cards_ja_lidos ? ` · já vieram <b>${x.ja_guardados}</b>
+    onde.innerHTML = `Cole abaixo os números dos cards que devem ser buscados —
+      o sistema lê <b>card a card</b> e acha a pessoa pelo <b>CPF do card</b>.`
+      + (x.cards_ja_lidos ? ` · já vieram <b>${x.ja_guardados}</b>
         documento(s) de ${x.cards_ja_lidos} card(s)` : "")
-        + (x.ja_falharam ? ` · <b>${x.ja_falharam}</b> não desceu(desceram)` : "");
-    }
+      + (x.ja_falharam ? ` · <b>${x.ja_falharam}</b> não desceu(desceram)` : "");
   } catch(e){ onde.textContent = e.message; }
 }
 
@@ -452,33 +448,21 @@ function pintarRelatorioPC(rel){
   // O CASAMENTO POR CPF, quando houve. É a parte que responde "de onde saiu
   // essa gente toda", e a que mostra o que NÃO casou — que é onde mora o
   // trabalho humano.
-  const m = rel.mapeamento;
-  if (m) {
-    linhas.push(`<div class="cartao-dica"><b>${m.cards_no_pipe}</b> card(s) no
-      pipe · <b>${m.casados}</b> casaram com pessoa do ERP pelo CPF ·
-      <b>${m.gravados}</b> ganharam o número do card ·
-      ${m.cards_sem_cpf} sem CPF no card ·
-      ${m.cards_sem_pessoa} de gente que não está no ERP ·
-      ${m.cpf_com_dois_cards} CPF(s) com dois cards</div>`);
-    const d = rel.mapeamento_detalhe || {};
-    if ((d.dois_cards || []).length)
-      linhas.push(`<h4>CPF com mais de um card (${d.dois_cards.length})</h4>
-        <div class="cartao-dica">Nenhum destes entra: escolher um dos dois
-          seria adivinhar qual é o cadastro bom.</div>
-        <table><thead><tr><th>CPF</th><th>Cards</th></tr></thead><tbody>${
-        d.dois_cards.map(x=>`<tr><td class="dados">${escapar(documento(x.cpf))}</td>
-          <td class="dados">${escapar((x.cards||[]).join(", "))}</td></tr>`
-        ).join("")}</tbody></table>`);
-    if ((d.sem_pessoa || []).length)
-      linhas.push(`<h4>Cards de gente que não está no ERP (${d.sem_pessoa.length})</h4>
-        <div class="cartao-dica">Primeiros 50. A importação <b>não cria
-          pessoa</b> — estes ficam de fora até alguém cadastrar.</div>
-        <table><thead><tr><th>Card</th><th>Título</th><th>CPF</th></tr></thead>
-        <tbody>${d.sem_pessoa.map(x=>`<tr><td class="dados">${escapar(x.card)}</td>
-          <td>${escapar(x.titulo||"")}</td>
-          <td class="dados">${escapar(documento(x.cpf||""))}</td></tr>`
-        ).join("")}</tbody></table>`);
-  }
+  if (rel.motivo)
+    linhas.push(`<div class="cartao-dica">${escapar(rel.motivo)}</div>`);
+  if (rel.cards_pedidos)
+    linhas.push(`<div class="cartao-dica"><b>${rel.cards_pedidos}</b> card(s)
+      na sua lista · <b>${rel.pessoas_na_fila}</b> acharam a pessoa pelo CPF ·
+      ${(rel.cards_sem_pessoa||[]).length} não acharam ·
+      ${(rel.cards_sem_resposta||[]).length} o Pipefy não devolveu</div>`);
+  if ((rel.cards_sem_pessoa || []).length)
+    linhas.push(`<h4>Cards que não acharam a pessoa (${rel.cards_sem_pessoa.length})</h4>
+      <div class="cartao-dica">A importação <b>não cria pessoa</b>: ou o card
+        está sem CPF, ou esse CPF ainda não está no ERP.</div>
+      <table><thead><tr><th>Card</th><th>Título</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.cards_sem_pessoa.map(x=>`<tr><td class="dados">${escapar(x.card)}</td>
+        <td>${escapar(x.titulo||"")}</td>
+        <td>${escapar(x.motivo||"")}</td></tr>`).join("")}</tbody></table>`);
   linhas.push(`<div class="cartao-dica"><b>${rel.pessoas_lidas}</b> pessoa(s)
     lida(s) de ${rel.pessoas_na_fila} na fila · <b>${rel.documentos_guardados}</b>
     documento(s) ${rel.simulado ? "entrariam" : "guardados"} ·
@@ -510,11 +494,12 @@ function pintarRelatorioPC(rel){
 
 async function mandarCadastroPipefy(gravar){
   const onde = els("resultado-pc");
-  const corpo = {
-    gravar: !!gravar,
-    so_ativos: els("pc-quem") ? els("pc-quem").value === "ativos" : true,
-    teto_de_pessoas: els("pc-quantas") ? Number(els("pc-quantas").value) : 50,
-  };
+  const texto = els("pc-cards") ? els("pc-cards").value : "";
+  if (!/\d{6,}/.test(texto)) {
+    aviso("mensagem", "Cole os números dos cards que devem ser buscados.", "erro");
+    return;
+  }
+  const corpo = {gravar: !!gravar, cards: texto};
   ["btn-conferir-pc", "btn-gravar-pc"].forEach(b => {
     if (els(b)) els(b).disabled = true; });
   onde.innerHTML = `<div class="cartao-dica">Na fila. Isso leva alguns
@@ -563,8 +548,10 @@ async function mandarCadastroPipefy(gravar){
 
 // Mudar o filtro invalida a conferência: conferiu 50 ativos e gravou 300 de
 // todo mundo seria exatamente o engano que a trava existe para evitar.
-["pc-quantas", "pc-quem"].forEach(c => {
-  if (els(c)) els(c).addEventListener("change", () => {
+// Mexer na lista invalida a conferência: conferir dez cards e gravar
+// trezentos seria o engano que a trava existe para evitar.
+["pc-cards"].forEach(c => {
+  if (els(c)) els(c).addEventListener("input", () => {
     PC_CONFERIDO = false;
     if (els("btn-gravar-pc")) els("btn-gravar-pc").disabled = true;
     if (els("resultado-pc")) els("resultado-pc").innerHTML = "";

@@ -97,11 +97,8 @@ def importar_cadastro_pipefy(s: Session, parametros: dict[str, Any],
 
     simular = bool(parametros.get("simular", True))
     andamento(0, 1, "Lendo os cards no Pipefy…")
-    rel = imp.importar(
-        s, _usuario(s, parametros), simular=simular,
-        so_ativos=bool(parametros.get("so_ativos", True)),
-        obra_id=parametros.get("obra_id"),
-        teto_de_pessoas=parametros.get("teto_de_pessoas") or imp.POR_RODADA)
+    rel = imp.importar(s, _usuario(s, parametros), simular=simular,
+                       cards=parametros.get("cards"))
     if not simular:
         s.commit()
     andamento(1, 1, "Terminado.")

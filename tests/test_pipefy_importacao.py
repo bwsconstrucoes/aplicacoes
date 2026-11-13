@@ -55,7 +55,7 @@ def mundo(sessao_real):
         "cpf": CPF_A, "nome": "Pessoa Com Card", "obra_id": obra.id,
         "pis": PIS_A, "vinculo": "CTPS", "admissao": "2024-01-05"}, dp)
     sessao_real.execute(
-        text("UPDATE colaboradores SET ref_pipefy = '111' WHERE id = :i"),
+        text("UPDATE colaboradores SET ref_pipefy = '853990032' WHERE id = :i"),
         {"i": com_card.id})
 
     # Outra sem card nenhum: não pode entrar na fila.
@@ -67,9 +67,20 @@ def mundo(sessao_real):
             "com_card": com_card, "sem_card": sem_card}
 
 
+# ⚑ NÚMERO DE CARD DE VERDADE TEM 9 DÍGITOS, e o teste usa um assim de
+# propósito: a leitura da lista colada só aceita 6 dígitos ou mais (a mesma
+# regra do importador de SPs, que roda há meses). A primeira versão deste
+# arquivo usava "111" e o card simplesmente não era pedido — o teste falhava
+# por um motivo que não tinha nada a ver com o que ele defendia.
+CARD = "853990032"
+
+
 def _card(**campos):
-    """Um card de mentira, no formato que `ler_cards` devolve."""
-    return {"111": {"id": "111", "titulo": "Pessoa Com Card",
+    """Um card de mentira, no formato que `ler_cards` devolve.
+
+    O CPF vai junto por padrão: é por ele que o card acha a pessoa."""
+    campos.setdefault("cpf", CPF_A)
+    return {"853990032": {"id": "853990032", "titulo": "Pessoa Com Card",
                     "fase": "Cadastro Concluído", "campos": dict(campos)}}
 
 
@@ -114,7 +125,7 @@ def test_campo_ja_preenchido_aqui_NAO_e_trocado_pelo_do_card(mundo):
     """O cadastro daqui foi conferido por gente; o card pode ter dois anos."""
     relatorio = imp.importar(
         mundo["s"], mundo["dp"], simular=False,
-        ler_cards=_leitor(_card(pis="99999999999", nome_da_m_e="Maria Mãe")))
+        cards="853990032", ler_cards=_leitor(_card(pis="99999999999", nome_da_m_e="Maria Mãe")))
     mundo["s"].flush()
     mundo["s"].refresh(mundo["com_card"])
     assert mundo["com_card"].pis == PIS_A          # o do ERP, não o do card
@@ -178,7 +189,7 @@ def test_a_simulacao_nao_grava_nada_e_nao_baixa_nada(mundo, monkeypatch):
 
     relatorio = imp.importar(
         mundo["s"], mundo["dp"], simular=True,
-        ler_cards=_leitor(_card(carteira_de_trabalho='["https://x/c.jpg"]',
+        cards="853990032", ler_cards=_leitor(_card(carteira_de_trabalho='["https://x/c.jpg"]',
                                 nome_da_m_e="Maria Mãe")))
     assert relatorio["simulado"] is True
     assert relatorio["documentos_guardados"] == 1     # "VAI ENTRAR"
@@ -192,7 +203,7 @@ def test_a_simulacao_nao_grava_nada_e_nao_baixa_nada(mundo, monkeypatch):
 def test_o_documento_entra_no_cadastro_da_pessoa(mundo, monkeypatch):
     monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
     imp.importar(mundo["s"], mundo["dp"], simular=False,
-                 ler_cards=_leitor(_card(ctps_1='["https://x/conta.pdf"]')))
+                 cards="853990032", ler_cards=_leitor(_card(ctps_1='["https://x/conta.pdf"]')))
     mundo["s"].flush()
     quantos = mundo["s"].execute(text("""
         SELECT count(*) FROM documentos
@@ -208,14 +219,14 @@ def test_a_segunda_passada_nao_baixa_de_novo(mundo, monkeypatch):
     monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
     cards = _card(ctps_1='["https://x/conta.pdf"]')
     imp.importar(mundo["s"], mundo["dp"], simular=False,
-                 ler_cards=_leitor(cards))
+                 cards="853990032", ler_cards=_leitor(cards))
     mundo["s"].flush()
 
     def nao_pode_baixar(*a, **k):                # pragma: no cover
         raise AssertionError("a segunda passada não pode baixar de novo")
     monkeypatch.setattr(cliente, "baixar", nao_pode_baixar)
     de_novo = imp.importar(mundo["s"], mundo["dp"], simular=False,
-                           ler_cards=_leitor(cards))
+                           cards="853990032", ler_cards=_leitor(cards))
     assert de_novo["documentos_ja_tinha"] == 1
     assert de_novo["documentos_guardados"] == 0
 
@@ -235,7 +246,7 @@ def test_um_arquivo_que_falha_NAO_derruba_os_outros(mundo, monkeypatch):
 
     relatorio = imp.importar(
         mundo["s"], mundo["dp"], simular=False,
-        ler_cards=_leitor(_card(ctps_1='["https://x/quebrado.pdf"]',
+        cards="853990032", ler_cards=_leitor(_card(ctps_1='["https://x/quebrado.pdf"]',
                                 attachment_t_tulo='["https://x/cpf.pdf"]')))
     assert relatorio["documentos_que_falharam"] == 1
     assert relatorio["documentos_guardados"] == 1
@@ -252,11 +263,11 @@ def test_a_falha_fica_registrada_com_o_motivo(mundo, monkeypatch):
     monkeypatch.setattr(cliente, "baixar", lambda e, t: (_ for _ in ()).throw(
         cliente.ErroDoPipefy("arquivo acima de 25 MB — não baixei.")))
     imp.importar(mundo["s"], mundo["dp"], simular=False,
-                 ler_cards=_leitor(_card(foto='["https://x/f.jpg"]')))
+                 cards="853990032", ler_cards=_leitor(_card(foto='["https://x/f.jpg"]')))
     mundo["s"].flush()
     linha = mundo["s"].execute(text("""
         SELECT resultado, detalhe FROM pipefy_importado
-         WHERE card = '111' AND campo = 'foto'""")).first()
+         WHERE card = '853990032' AND campo = 'foto'""")).first()
     assert linha is not None and linha[0] == "FALHOU"
     assert "25 MB" in linha[1]
 
@@ -264,16 +275,16 @@ def test_a_falha_fica_registrada_com_o_motivo(mundo, monkeypatch):
 def test_card_que_o_pipefy_nao_devolve_vira_linha_do_relatorio(mundo):
     relatorio = imp.importar(
         mundo["s"], mundo["dp"], simular=True,
-        ler_cards=_leitor({}, {"111": "card apagado"}))
+        cards="853990032", ler_cards=_leitor({}, {"853990032": "card apagado"}))
     assert relatorio["pessoas_lidas"] == 0
-    assert relatorio["cards_sem_resposta"][0]["card"] == "111"
+    assert relatorio["cards_sem_resposta"][0]["card"] == "853990032"
 
 
 def test_o_relatorio_diz_o_que_ficou_de_fora(mundo):
     """O ASO não entra porque vence e o card não diz até quando. Omitir isso
     faria o DP achar que o atestado foi importado."""
     relatorio = imp.importar(mundo["s"], mundo["dp"], simular=True,
-                             ler_cards=_leitor(_card()))
+                             cards="853990032", ler_cards=_leitor(_card()))
     assert "aso" in relatorio["de_fora"]
 
 
@@ -289,7 +300,7 @@ def test_anexo_sem_endereco_completo_NAO_vira_endereco_chutado(mundo):
 
     relatorio = imp.importar(
         mundo["s"], mundo["dp"], simular=True,
-        ler_cards=_leitor(_card(foto='["orgs/1/uploads/2/f.jpg"]')))
+        cards="853990032", ler_cards=_leitor(_card(foto='["orgs/1/uploads/2/f.jpg"]')))
     assert relatorio["documentos_que_falharam"] == 1
     assert relatorio["documentos_guardados"] == 0
     assert "endereço" in relatorio["falhas"][0]["motivo"]
@@ -303,99 +314,92 @@ def test_numero_de_card_que_nao_e_numero_nao_vira_consulta(mundo):
         cliente._numero_do_card("não é número")
 
 
+
+
 # ---------------------------------------------------------------------------
-# NINGUÉM PRECISA DIGITAR NÚMERO DE CARD (13/11/2026)
+# A LISTA É DELE (13/11/2026, a segunda correção do mesmo dia)
 #
-# Ele, olhando a tela: *"eu clico em conferir sem gravar e dá uma mensagem lá
-# em cima: nenhuma pessoa com número de card do Pipefy nesse filtro. E onde é
-# que eu coloco os números do card se não tem campo?"*
+# A primeira versão varria o pipe inteiro e casava pelo CPF. Ele viu o
+# resultado e derrubou:
 #
-# Eu tinha construído a importação assumindo que `colaboradores.ref_pipefy` já
-# estava preenchido. Não estava — e, como não havia onde digitar, o botão não
-# tinha como funcionar NUNCA. O card tem o CPF e o cadastro tem o CPF: quem
-# casa os dois é o sistema.
+#   *"eu prefiro listar os cards, porque você está trazendo card duplicado, só
+#   que aí tem card que está cancelado, isso aqui não me interessa. Eu vou
+#   listar os cards que eu quero que você busque. E você faz a pesquisa card a
+#   card e puxa as informações e grava."*
+#
+# Tem razão: card cancelado e card repetido são lixo que só QUEM CONHECE o
+# pipe sabe separar — e ele tem a planilha com os números certos.
 # ---------------------------------------------------------------------------
-def _cards_do_pipe(*pares):
-    """(id do card, CPF) → o formato que `varrer_pipe` devolve."""
-    return [{"id": str(i), "titulo": f"card {i}", "campos": {"cpf": cpf}}
-            for i, cpf in pares]
+def test_a_lista_colada_aceita_todo_jeito_de_colar():
+    """Coluna de planilha, vírgula, endereço do card. Repetido entra uma vez."""
+    achados = imp.ids_dos_cards(
+        "853990032\n1329563540, 1332040352\n"
+        "https://app.pipefy.com/open-cards/1329567174\n853990032")
+    assert achados == ["853990032", "1329563540", "1332040352", "1329567174"]
 
 
-def test_o_card_acha_a_pessoa_pelo_CPF(mundo):
-    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(("900", CPF_A)))
-    assert len(r["casados"]) == 1
-    assert r["casados"][0]["colaborador_id"] == mundo["com_card"].id
-    assert r["casados"][0]["card"] == "900"
+def test_a_lista_ignora_o_que_nao_e_numero_de_card():
+    """Cabeçalho de coluna e número curto não viram card."""
+    assert imp.ids_dos_cards("Nº do card\nabc 12 345678901 x") == ["345678901"]
+    assert imp.ids_dos_cards("") == []
+    assert imp.ids_dos_cards(None) == []
 
 
-def test_o_CPF_casa_com_e_sem_pontuacao(mundo):
-    """O card traz "529.982.247-25"; o cadastro guarda como foi digitado."""
-    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(("901", "529.982.247-25")))
-    assert len(r["casados"]) == 1
+def test_sem_lista_a_importacao_nao_faz_nada(mundo):
+    """E diz por quê — em vez de varrer o pipe por conta própria."""
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards="")
+    assert r["pessoas_na_fila"] == 0 and r["motivo"]
 
 
-def test_card_sem_CPF_e_card_de_quem_nao_existe_aqui_sao_separados(mundo):
-    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(
-        ("902", ""), ("903", "11144477735"), ("904", CPF_A)))
-    assert [c["card"] for c in r["cards_sem_cpf"]] == ["902"]
-    # CPF_B é a Pessoa Sem Card, que existe; 111.444.777-35 É o CPF_B.
-    assert len(r["casados"]) == 2
+def test_busca_SO_os_cards_da_lista(mundo, monkeypatch):
+    """⚑ O teste que guarda o pedido dele: o que não está na lista não é
+    buscado. Card cancelado e card repetido ficam de fora porque ELE não os
+    listou — não porque o sistema tentou adivinhar."""
+    pedidos = {}
+
+    def ler(ids):
+        pedidos["ids"] = list(ids)
+        return _card(cpf=CPF_A), {}
+
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True,
+                     cards=f"{CARD}\n1332040352\n{CARD}", ler_cards=ler)
+    assert pedidos["ids"] == [CARD, "1332040352"]          # sem o repetido
+    assert r["cards_pedidos"] == 2
 
 
-def test_DOIS_cards_para_o_mesmo_CPF_nao_escolhem_nenhum(mundo):
-    """Escolher um dos dois seria adivinhar qual é o cadastro bom — e o errado
-    colaria os documentos de um período na ficha do outro."""
-    r = imp.casar_por_cpf(mundo["s"], _cards_do_pipe(
-        ("905", CPF_A), ("906", CPF_A)))
-    assert r["casados"] == []
-    assert r["cpf_com_dois_cards"][0]["cards"] == ["905", "906"]
-
-
-def test_a_simulacao_do_mapeamento_NAO_grava_o_card(mundo):
-    mundo["s"].execute(
-        text("UPDATE colaboradores SET ref_pipefy = NULL WHERE id = :i"),
-        {"i": mundo["com_card"].id})
-    r = imp.mapear_cards(mundo["s"], simular=True,
-                         varrer=lambda p, campos=None: _cards_do_pipe(("907", CPF_A)))
-    assert r["cards_no_pipe"] == 1 and len(r["casados"]) == 1
+def test_a_pessoa_vem_do_CPF_DO_CARD_e_nao_do_cadastro(mundo):
+    """O cadastro não tem o número do card — foi o que quebrou na primeira
+    versão. Quem liga card e pessoa é o CPF que vem dentro do card."""
+    mundo["s"].execute(text("UPDATE colaboradores SET ref_pipefy = NULL"))
     mundo["s"].flush()
-    guardado = mundo["s"].execute(
-        text("SELECT ref_pipefy FROM colaboradores WHERE id = :i"),
-        {"i": mundo["com_card"].id}).scalar()
-    assert not guardado
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards="853990032",
+                     ler_cards=_leitor(_card(cpf=CPF_A)))
+    assert r["pessoas_na_fila"] == 1
+    assert r["por_pessoa"][0]["colaborador_id"] == mundo["com_card"].id
 
 
-def test_gravar_de_verdade_poe_o_card_na_pessoa(mundo):
-    """Assim a segunda rodada não varre o pipe inteiro de novo."""
-    mundo["s"].execute(
-        text("UPDATE colaboradores SET ref_pipefy = NULL WHERE id = :i"),
-        {"i": mundo["com_card"].id})
-    imp.mapear_cards(mundo["s"], simular=False,
-                     varrer=lambda p, campos=None: _cards_do_pipe(("908", CPF_A)))
+def test_card_sem_CPF_e_CPF_que_nao_existe_aqui_viram_linha_do_relatorio(mundo):
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards="853990032",
+                     ler_cards=_leitor(_card(cpf="")))
+    assert r["pessoas_na_fila"] == 0
+    assert "CPF" in r["cards_sem_pessoa"][0]["motivo"]
+
+    r2 = imp.importar(mundo["s"], mundo["dp"], simular=True, cards="853990032",
+                      ler_cards=_leitor(_card(cpf="63511291024")))
+    assert r2["pessoas_na_fila"] == 0
+    assert "não cria pessoa" in r2["cards_sem_pessoa"][0]["motivo"]
+
+
+def test_gravar_de_verdade_guarda_o_numero_do_card_na_pessoa(mundo, monkeypatch):
+    """A procedência: de qual card veio a ficha. E evita buscar de novo."""
+    monkeypatch.setattr(cliente, "baixar", lambda e, t: b"%PDF-1.4 fingindo")
+    mundo["s"].execute(text("UPDATE colaboradores SET ref_pipefy = NULL"))
+    mundo["s"].flush()
+    outro = "1329567174"
+    imp.importar(mundo["s"], mundo["dp"], simular=False, cards=outro,
+                 ler_cards=_leitor({outro: {"id": outro, "titulo": "x",
+                                            "fase": "", "campos": {"cpf": CPF_A}}}))
     mundo["s"].flush()
     assert mundo["s"].execute(
         text("SELECT ref_pipefy FROM colaboradores WHERE id = :i"),
-        {"i": mundo["com_card"].id}).scalar() == "908"
-
-
-def test_ninguem_com_card_NAO_e_mais_beco_sem_saida(mundo, monkeypatch):
-    """O defeito inteiro, num teste: sem card em ninguém, a importação achava
-    as pessoas em vez de dizer 'nenhuma pessoa com número de card'."""
-    mundo["s"].execute(text("UPDATE colaboradores SET ref_pipefy = NULL"))
-    mundo["s"].flush()
-    assert imp.quem_tem_card(mundo["s"]) == []
-
-    relatorio = imp.importar(
-        mundo["s"], mundo["dp"], simular=True,
-        varrer=lambda p, campos=None: _cards_do_pipe(("909", CPF_A)),
-        ler_cards=_leitor(_card()))
-    assert relatorio["mapeamento"]["cards_no_pipe"] == 1
-    assert relatorio["mapeamento"]["casados"] == 1
-
-
-def test_a_situacao_avisa_que_e_preciso_mapear(mundo):
-    """A tela precisa saber disso para não oferecer um botão que só sabe
-    falhar — foi exatamente o que ele viu."""
-    mundo["s"].execute(text("UPDATE colaboradores SET ref_pipefy = NULL"))
-    mundo["s"].flush()
-    assert imp.situacao(mundo["s"])["precisa_mapear"] is True
+        {"i": mundo["com_card"].id}).scalar() == outro

@@ -44,6 +44,7 @@ AS QUATRO REGRAS DESTE ARQUIVO, e cada uma existe por um motivo:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -161,68 +162,6 @@ CAMPO_CPF_DO_CARD = "cpf"           # do export do pipe 301487297
 
 def _so_digitos(valor: Any) -> str:
     return "".join(c for c in str(valor or "") if c.isdigit())
-
-
-def casar_por_cpf(s: Session, cards: list[dict[str, Any]]) -> dict[str, Any]:
-    """Liga cada card à pessoa do ERP pelo CPF. Devolve o que casou e o que não.
-
-    Card sem CPF, CPF que não existe aqui e DOIS cards para o mesmo CPF são
-    tratados como casos à parte — o último de propósito: escolher um dos dois
-    seria adivinhar qual é o cadastro bom.
-    """
-    por_cpf: dict[str, list[dict]] = {}
-    sem_cpf: list[dict] = []
-    for card in cards:
-        cpf = _so_digitos((card.get("campos") or {}).get(CAMPO_CPF_DO_CARD))
-        if len(cpf) != 11:
-            sem_cpf.append(card)
-            continue
-        por_cpf.setdefault(cpf, []).append(card)
-
-    repetidos = {cpf: lista for cpf, lista in por_cpf.items() if len(lista) > 1}
-    unicos = {cpf: lista[0] for cpf, lista in por_cpf.items() if len(lista) == 1}
-
-    pessoas = {}
-    if unicos:
-        linhas = s.execute(text("""
-            SELECT id, nome, cpf, situacao, btrim(COALESCE(ref_pipefy, '')) AS card
-              FROM colaboradores
-             WHERE regexp_replace(cpf, '\\D', '', 'g') = ANY(:cpfs)"""),
-            {"cpfs": list(unicos)}).mappings().all()
-        for l in linhas:
-            pessoas[_so_digitos(l["cpf"])] = dict(l)
-
-    casados, sem_pessoa = [], []
-    for cpf, card in unicos.items():
-        pessoa = pessoas.get(cpf)
-        if pessoa is None:
-            sem_pessoa.append({"card": card["id"], "titulo": card["titulo"],
-                               "cpf": cpf})
-            continue
-        casados.append({"colaborador_id": pessoa["id"], "nome": pessoa["nome"],
-                        "cpf": cpf, "situacao": pessoa["situacao"],
-                        "card": card["id"], "ja_tinha_card": bool(pessoa["card"])})
-    return {
-        "casados": casados,
-        "cards_sem_cpf": [{"card": c["id"], "titulo": c["titulo"]} for c in sem_cpf],
-        "cards_sem_pessoa": sem_pessoa,
-        "cpf_com_dois_cards": [
-            {"cpf": cpf, "cards": [c["id"] for c in lista]}
-            for cpf, lista in repetidos.items()],
-    }
-
-
-def gravar_o_card_na_pessoa(s: Session, casados: list[dict[str, Any]]) -> int:
-    """Grava o número do card em quem ainda não tinha.
-
-    Assim a segunda rodada não precisa varrer o pipe inteiro de novo — e a
-    ficha da pessoa passa a dizer de qual card ela veio."""
-    novos = [c for c in casados if not c.get("ja_tinha_card")]
-    for c in novos:
-        s.execute(text("UPDATE colaboradores SET ref_pipefy = :card"
-                       " WHERE id = :i AND COALESCE(btrim(ref_pipefy),'') = ''"),
-                  {"card": str(c["card"]), "i": c["colaborador_id"]})
-    return len(novos)
 
 
 # ---------------------------------------------------------------------------
@@ -394,30 +333,70 @@ def _vazios(s: Session, colaborador_id: int,
             if not str(linha.get(campo) or "").strip()}
 
 
-def mapear_cards(s: Session, *, simular: bool = True, varrer=None,
-                 pipe_id: str = cliente.PIPE_CADASTRO) -> dict[str, Any]:
-    """Varre o pipe, casa cada card com a pessoa pelo CPF e (se não for
-    simulação) grava o número do card em quem ainda não tinha.
+# ---------------------------------------------------------------------------
+# A LISTA QUE ELE COLA
+# ---------------------------------------------------------------------------
+def ids_dos_cards(texto: Any) -> list[str]:
+    """Os números dos cards, colados de qualquer jeito.
 
-    `varrer` existe para o teste entregar cards de mentira sem rede."""
-    busca = varrer or cliente.varrer_pipe
-    cards = busca(pipe_id, campos=(CAMPO_CPF_DO_CARD,))
-    r = casar_por_cpf(s, cards)
-    gravados = 0
-    if not simular:
-        gravados = gravar_o_card_na_pessoa(s, r["casados"])
-    novos = [c for c in r["casados"] if not c.get("ja_tinha_card")]
-    return {
-        "cards_no_pipe": len(cards),
-        "casados": r["casados"],
-        "cards_sem_cpf": r["cards_sem_cpf"],
-        "cards_sem_pessoa": r["cards_sem_pessoa"],
-        "cpf_com_dois_cards": r["cpf_com_dois_cards"],
-        "gravados": gravados if not simular else len(novos),
-        "detalhe": {
-            "sem_pessoa": r["cards_sem_pessoa"][:50],
-            "dois_cards": r["cpf_com_dois_cards"][:50]},
-    }
+    Um por linha, separados por vírgula ou espaço, ou colados direto de uma
+    COLUNA DA PLANILHA — é de lá que ele os tira. Endereço inteiro do card
+    também serve. Repetido entra uma vez só: colar a mesma coluna duas vezes é
+    acidente comum, e buscar o mesmo card duas vezes seria tempo jogado fora.
+
+    A regra é a mesma do importador de SPs, que já roda há meses
+    (`core/importadores/pipefy_cards.extrair_ids`): seis dígitos ou mais.
+    """
+    if isinstance(texto, (list, tuple)):
+        texto = " ".join(str(x) for x in texto)
+    return list(dict.fromkeys(re.findall(r"\b\d{6,}\b", str(texto or ""))))
+
+
+def relatorio_vazio(motivo: str) -> dict[str, Any]:
+    return {"simulado": True, "motivo": motivo, "pessoas_na_fila": 0,
+            "pessoas_lidas": 0, "documentos_guardados": 0,
+            "documentos_ja_tinha": 0, "documentos_que_falharam": 0,
+            "campos_preenchidos": 0, "cards_sem_resposta": [], "falhas": [],
+            "por_pessoa": [], "de_fora": dict(PAPEIS_DE_FORA),
+            "cards_pedidos": 0, "cards_sem_pessoa": []}
+
+
+def _pessoas_dos_cards(s: Session, lidos: dict[str, Any]) -> tuple[list, list]:
+    """Casa cada card lido com a pessoa do ERP, pelo CPF do próprio card.
+
+    ⚑ O CPF, e não o número do card guardado no cadastro: o cadastro não tem
+    esse número (foi o que quebrou na primeira versão). O card traz o CPF, o
+    ERP tem o CPF — e quem casa os dois é o sistema, não a digitação.
+    """
+    por_cpf: dict[str, dict] = {}
+    sem_cpf = []
+    for card, bruto in lidos.items():
+        cpf = _so_digitos((bruto.get("campos") or {}).get(CAMPO_CPF_DO_CARD))
+        if len(cpf) != 11:
+            sem_cpf.append({"card": str(card), "titulo": bruto.get("titulo", ""),
+                            "motivo": "o card não tem CPF preenchido"})
+            continue
+        por_cpf[cpf] = {"card": str(card), "titulo": bruto.get("titulo", "")}
+    if not por_cpf:
+        return [], sem_cpf
+    linhas = s.execute(text("""
+        SELECT id, nome, cpf, situacao
+          FROM colaboradores
+         WHERE regexp_replace(cpf, '\\D', '', 'g') = ANY(:cpfs)"""),
+        {"cpfs": list(por_cpf)}).mappings().all()
+    achadas = {_so_digitos(l["cpf"]): dict(l) for l in linhas}
+    pessoas, sem_pessoa = [], list(sem_cpf)
+    for cpf, dado in por_cpf.items():
+        pessoa = achadas.get(cpf)
+        if pessoa is None:
+            sem_pessoa.append({"card": dado["card"], "titulo": dado["titulo"],
+                               "motivo": "o CPF do card não está no ERP — a "
+                                         "importação não cria pessoa"})
+            continue
+        pessoas.append({"id": pessoa["id"], "nome": pessoa["nome"],
+                        "cpf": pessoa["cpf"], "card": dado["card"],
+                        "situacao": pessoa["situacao"]})
+    return pessoas, sem_pessoa
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +406,7 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
              simular: bool = True, so_ativos: bool = True,
              obra_id: Optional[int] = None,
              teto_de_pessoas: Optional[int] = POR_RODADA,
-             ler_cards=None, casar: bool = True, varrer=None) -> dict[str, Any]:
+             ler_cards=None, cards: Any = None) -> dict[str, Any]:
     """Lê os cards das pessoas e traz documentos e campos vazios.
 
     Com `simular=True` (o padrão) NADA é gravado e nenhum arquivo é baixado:
@@ -438,23 +417,25 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     `ler_cards` existe para o teste poder entregar cards de mentira sem rede.
     """
     ler = ler_cards or cliente.ler_cards
-    pessoas = quem_tem_card(s, so_ativos=so_ativos, obra_id=obra_id,
-                            teto=teto_de_pessoas)
-    # ⚑ NINGUÉM COM CARD? ENTÃO ACHE OS CARDS. Até 13/11/2026 isto parava aqui
-    # com "nenhuma pessoa com número de card", e não havia onde digitar o
-    # número — o botão não tinha como funcionar nunca. Agora o sistema varre o
-    # pipe e casa pelo CPF; o número do card é RESULTADO da importação, não
-    # requisito dela.
-    mapeamento = None
-    if not pessoas and casar:
-        mapeamento = mapear_cards(s, simular=simular, varrer=varrer)
-        if not simular and mapeamento["casados"]:
-            s.flush()
-        pessoas = quem_tem_card(s, so_ativos=so_ativos, obra_id=obra_id,
-                                teto=teto_de_pessoas) if not simular else []
+    # ⚑ QUEM DIZ QUAIS CARDS É ELE, e isso é a correção de 13/11/2026 (a
+    # segunda). A primeira versão varria o pipe inteiro e casava pelo CPF —
+    # trazia card CANCELADO e card REPETIDO, que não interessam. Ele:
+    #
+    #   *"eu prefiro listar os cards, porque você está trazendo card
+    #   duplicado, só que aí tem card que está cancelado, isso aqui não me
+    #   interessa. Eu vou listar os cards que eu quero que você busque. E você
+    #   faz a pesquisa card a card e puxa as informações e grava."*
+    #
+    # Ele tem a planilha com os números; escolher quais entram é decisão dele,
+    # não adivinhação minha. Uma porta só: a lista colada.
+    pedidos = ids_dos_cards(cards)
+    if not pedidos:
+        return relatorio_vazio(
+            "Cole os números dos cards que devem ser buscados.")
     relatorio: dict[str, Any] = {
         "simulado": bool(simular),
-        "pessoas_na_fila": len(pessoas),
+        "cards_pedidos": len(pedidos),
+        "pessoas_na_fila": 0,
         "pessoas_lidas": 0,
         "documentos_guardados": 0,
         "documentos_ja_tinha": 0,
@@ -464,23 +445,27 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "falhas": [],
         "por_pessoa": [],
         "de_fora": dict(PAPEIS_DE_FORA),
-        "mapeamento": None,
+        "cards_sem_pessoa": [],
     }
-    if mapeamento is not None:
-        relatorio["mapeamento"] = {
-            k: (len(v) if isinstance(v, list) else v)
-            for k, v in mapeamento.items() if k != "detalhe"}
-        relatorio["mapeamento_detalhe"] = mapeamento.get("detalhe")
+    # CARD A CARD, como ele pediu — em levas de 20 por ida à API.
+    lidos, falhas_de_card = ler(pedidos)
+    for card, motivo in (falhas_de_card or {}).items():
+        relatorio["cards_sem_resposta"].append({"card": str(card),
+                                                "motivo": str(motivo)})
+    pessoas, sem_pessoa = _pessoas_dos_cards(s, lidos)
+    relatorio["cards_sem_pessoa"] = sem_pessoa
     relatorio["pessoas_na_fila"] = len(pessoas)
     if not pessoas:
         return relatorio
 
-    cards = [p["card"] for p in pessoas]
-    lidos, falhas_de_card = ler(cards)
-    for card, motivo in (falhas_de_card or {}).items():
-        relatorio["cards_sem_resposta"].append({"card": str(card),
-                                                "motivo": str(motivo)})
-    ja_veio = o_que_ja_veio(s, cards)
+    # O número do card fica guardado no cadastro: é a procedência, e evita
+    # buscar de novo quem já veio.
+    if not simular:
+        for p in pessoas:
+            s.execute(text("UPDATE colaboradores SET ref_pipefy = :c"
+                           " WHERE id = :i AND COALESCE(btrim(ref_pipefy),'') = ''"),
+                      {"c": p["card"], "i": p["id"]})
+    ja_veio = o_que_ja_veio(s, [p["card"] for p in pessoas])
 
     for pessoa in pessoas:
         card = str(pessoa["card"])
@@ -642,10 +627,9 @@ def situacao(s: Session) -> dict[str, Any]:
           FROM pipefy_importado""")).mappings().first() or {}
     return {
         "tem_token": cliente.tem_token(),
-        # ⚑ A TELA PRECISA SABER QUE ZERO CARDS NÃO É IMPEDIMENTO. Era por não
-        # saber disso que ela oferecia um botão cujo único desfecho possível
-        # era "nenhuma pessoa com número de card nesse filtro" (13/11/2026).
-        "precisa_mapear": int(linha.get("ativos_com_card") or 0) == 0,
+        # ⚑ A TELA NÃO DEPENDE MAIS DISTO para saber se dá para importar: a
+        # fila é a LISTA QUE ELE COLA. Os números abaixo contam o que já veio,
+        # que é outra pergunta — "de quem eu já trouxe?".
         "ativos": int(linha.get("ativos") or 0),
         "com_card": int(linha.get("com_card") or 0),
         "ativos_com_card": int(linha.get("ativos_com_card") or 0),
