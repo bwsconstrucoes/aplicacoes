@@ -281,6 +281,40 @@ _BASES_CONSULTA = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# O CADASTRO NO ERP (14/11/2026) — mensageria/telegram_cadastro.py
+#
+# Pedido do dono: trazer o cadastro do Telegram para dentro do sistema e só
+# deixar se cadastrar quem é colaborador (ou operador) com telefone no ERP. O
+# robô procura a pessoa PRIMEIRO no ERP; as duas planilhas antigas ficam de
+# reserva. Grava no banco E na aba TelegramID (o Make e a emissão de nota ainda
+# procuram lá). Sem o banco da mensageria (antes da migração 103), tudo segue
+# como antes, só pelas planilhas.
+# ---------------------------------------------------------------------------
+def _cadastro_erp():
+    """(módulo telegram_cadastro, módulo db) se o banco da mensageria alcança."""
+    try:
+        from app.apps.mensageria import db as m_db, telegram_cadastro as tc
+        if m_db.disponivel():
+            return tc, m_db
+    except Exception as e:  # noqa: BLE001
+        print(f"[telegram_bot] cadastro do ERP indisponível: {e!r}")
+    return None
+
+
+def _pessoa_no_erp(telefone=None, cpf=None):
+    erp = _cadastro_erp()
+    if not erp:
+        return None
+    tc, m_db = erp
+    try:
+        with m_db.conexao() as conn:
+            return tc.achar_pessoa(conn, telefone=telefone, cpf=cpf)
+    except Exception as e:  # noqa: BLE001
+        print(f"[telegram_bot] ERP não respondeu na busca da pessoa: {e!r}")
+        return None
+
+
 def _consultar_bases(telefone=None, cpf=None):
     """
     Procura por telefone OU cpf nas bases de consulta (sem gravar nada).
@@ -289,6 +323,14 @@ def _consultar_bases(telefone=None, cpf=None):
       leitura_ok -> False se alguma base ficou inacessível (distingue
                     "não encontrado" de "sistema indisponível")
     """
+    pessoa_erp = _pessoa_no_erp(telefone=telefone, cpf=cpf)
+    if pessoa_erp:
+        return {"cpf": pessoa_erp["cpf"], "nome": pessoa_erp["nome"],
+                "telefone_base": pessoa_erp["telefone"],
+                "base": ("ERP (colaboradores)" if pessoa_erp["tipo"] == "COLABORADOR"
+                         else "ERP (operadores)"),
+                "erp": pessoa_erp}, True
+
     alvo_tel = _variantes_telefone(telefone) if telefone else set()
     alvo_cpf = _normalizar_cpf(cpf) if cpf else None
     leitura_ok = True
@@ -367,6 +409,18 @@ def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
     do Telegram substitui o chat_id antigo); senão, insere nova.
     Retry com backoff para APIError (rate limit).
     """
+    gravou_no_erp = False
+    erp = _cadastro_erp()
+    if erp:
+        tc, m_db = erp
+        try:
+            with m_db.conexao() as conn:
+                tc.gravar_cadastro(conn, chat_id=chat_id, cpf=cpf, telefone=telefone, nome=nome,
+                                   origem=origem, observacao=obs)
+                tc.marcar_usado(conn, chat_id, cpf)
+            gravou_no_erp = True
+        except Exception as e:  # noqa: BLE001 — a planilha abaixo ainda grava
+            print(f"[telegram_bot] não gravei o cadastro no ERP: {e!r}")
     linha_existente, _ = _buscar_cadastro_por_chat_id(chat_id)
     if not linha_existente:
         linha_existente = _buscar_linha_por_cpf(cpf)
@@ -379,7 +433,11 @@ def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
         origem,
         obs,
     ]
-    ws = _aba_telegram_id()
+    try:
+        ws = _aba_telegram_id()
+    except Exception as e:  # noqa: BLE001 — com o ERP gravado, a planilha é cópia
+        print(f"[telegram_bot] planilha TelegramID indisponível: {e!r}")
+        return gravou_no_erp
     for tentativa in range(3):
         try:
             if linha_existente:
@@ -399,7 +457,7 @@ def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
         except Exception as e:
             print(f"[telegram_bot] Erro gravando TelegramID: {e}")
             time.sleep(1)
-    return False
+    return gravou_no_erp
 
 
 # ---------------------------------------------------------------------------
@@ -731,6 +789,62 @@ def _lote_analisesps(chat_id, texto):
                 "instantes ou use o Extrair SPs na tela do Lote.")
 
 
+def _abrir_convite(chat_id, codigo, nome_tg):
+    """A pessoa tocou no link pessoal do convite. Reconhece quem é e pede só
+    para confirmar o número — o número é o que prova que o Telegram é dela."""
+    erp = _cadastro_erp()
+    convite = None
+    if erp:
+        tc, m_db = erp
+        try:
+            with m_db.conexao() as conn:
+                convite = tc.abrir_link(conn, codigo, chat_id)
+        except Exception as e:  # noqa: BLE001
+            print(f"[telegram_bot] convite não abriu: {e!r}")
+    linha, nome_cad = _buscar_cadastro_por_chat_id(chat_id)
+    if linha:
+        _tg_enviar(chat_id, MSG_JA_CADASTRADO.format(nome=_primeiro_nome(nome_cad, nome_tg)),
+                   remover_teclado=True)
+        return jsonify({"ok": True})
+    if not convite:
+        _tg_enviar(chat_id, "⚠️ Este link de convite venceu ou já foi usado.\n\n" + MSG_BOAS_VINDAS,
+                   teclado=_teclado_contato())
+        return jsonify({"ok": True})
+    _tg_enviar(chat_id,
+               f"👋 Olá, *{_primeiro_nome(convite.get('nome'), nome_tg)}*! Falta só um passo para "
+               "receber os avisos da BWS por aqui.\n\nToque no botão abaixo para confirmar o seu "
+               "número de telefone.", teclado=_teclado_contato())
+    return jsonify({"ok": True})
+
+
+def _cadastrar_pelo_convite(chat_id, telefone, nome_tg):
+    """O número do Telegram não está no cadastro de ninguém — é comum: a
+    pessoa usa outro chip no Telegram. Se este chat abriu um convite há pouco,
+    o convite (que chegou no WhatsApp do número do cadastro) diz quem é."""
+    erp = _cadastro_erp()
+    if not erp:
+        return False
+    tc, m_db = erp
+    try:
+        with m_db.conexao() as conn:
+            convite = tc.convite_aberto_do_chat(conn, chat_id)
+    except Exception as e:  # noqa: BLE001
+        print(f"[telegram_bot] convite do chat não lido: {e!r}")
+        return False
+    if not convite:
+        return False
+    ok = _gravar_cadastro(chat_id, convite.get("cpf", ""), telefone, convite.get("nome", ""),
+                          origem="CONVITE",
+                          obs=(f"Pelo link do convite; o número do Telegram difere do cadastro "
+                               f"({convite.get('telefone', '')}) — conferir"))
+    if ok:
+        _tg_enviar(chat_id, MSG_SUCESSO.format(nome=_primeiro_nome(convite.get("nome"), nome_tg)),
+                   remover_teclado=True)
+        _log_pendencia("CADASTRO_PELO_CONVITE", telefone=telefone, cpf=convite.get("cpf", ""),
+                       chat_id=chat_id, nome=nome_tg, obs="número do Telegram diferente do cadastro")
+    return ok
+
+
 @telegram_bp.route("/telegram/webhook", methods=["POST"])
 def telegram_webhook():
     # Validação de origem: header enviado pelo Telegram em todo POST
@@ -816,6 +930,8 @@ def telegram_webhook():
             _log_pendencia("ERRO_LEITURA_BASES", telefone=telefone,
                            chat_id=chat_id, nome=nome_tg,
                            obs="Sheets indisponível durante cadastro por telefone")
+        elif _cadastrar_pelo_convite(chat_id, telefone, nome_tg):
+            pass
         else:
             _tg_enviar(chat_id, MSG_NAO_ENCONTRADO_TEL, remover_teclado=True)
             _log_pendencia("TELEFONE_NAO_ENCONTRADO", telefone=telefone,
@@ -832,6 +948,10 @@ def telegram_webhook():
     # do cadastro e do contracheque porque o link de ligar chega como
     # "/start lote_<código>". Mensagem sem número de SP segue o caminho de
     # sempre — e um erro de lá nunca derruba o robô dos colaboradores.
+    # ---- 1.4) Link pessoal do convite (14/11/2026): "/start c_<código>" ----
+    if texto.startswith("/start c_"):
+        return _abrir_convite(chat_id, texto.split("c_", 1)[1].strip(), nome_tg)
+
     resposta_lote = _lote_analisesps(chat_id, texto or msg.get("caption") or "")
     if resposta_lote:
         _tg_enviar(chat_id, resposta_lote, remover_teclado=True)
@@ -1003,11 +1123,34 @@ def _lookup_chat_id(telefone=None, cpf=None):
     de consulta pelo telefone informado e casa pela coluna CPF — cobre o
     caso do RH atualizar o número na base sem a pessoa refazer o cadastro.
     """
+    erp = _cadastro_erp()
+    erp_e_a_fonte = False
+    if erp:
+        tc, m_db = erp
+        try:
+            with m_db.conexao() as conn:
+                achado = tc.chat_id_de(conn, telefone=telefone, cpf=cpf)
+                # Depois de "Trazer da planilha" na tela, o banco tem tudo que
+                # a planilha tinha (o robô grava nos dois): sem a planilha, a
+                # resposta do banco basta.
+                erp_e_a_fonte = bool(tc.core.ler_parametro(conn, tc.ULTIMA_IMPORTACAO, ""))
+            if achado:
+                return achado
+        except Exception as e:  # noqa: BLE001 — cai para a planilha
+            print(f"[telegram_bot] ERP não respondeu na busca do chat: {e!r}")
+
     alvo_tel = _variantes_telefone(telefone) if telefone else set()
     alvo_cpf = _normalizar_cpf(cpf) if cpf else None
     cpfs_por_tel = {}
 
-    for linha in _linhas_telegram_id()[1:]:
+    try:
+        linhas_tgid = _linhas_telegram_id()
+    except Exception as e:  # noqa: BLE001
+        if erp_e_a_fonte:
+            print(f"[telegram_bot] planilha TelegramID fora; vale o cadastro do ERP: {e!r}")
+            return None
+        raise
+    for linha in linhas_tgid[1:]:
         tel_cel = linha[TGID_COL_TEL - 1] if len(linha) >= TGID_COL_TEL else ""
         cpf_cel = linha[TGID_COL_CPF - 1] if len(linha) >= TGID_COL_CPF else ""
         id_cel = linha[TGID_COL_ID - 1] if len(linha) >= TGID_COL_ID else ""
@@ -1074,8 +1217,20 @@ MSG_AVISO_CADASTRO_WA = (
 )
 
 
-def _wa_aviso_cadastro(telefone):
-    """Envia o alerta de migração via Z-API. Retorna dict com o resultado."""
+def _wa_aviso_cadastro(telefone, cpf=None, tipo_que_falhou="externo.telegram_enviar"):
+    """Avisa pelo WhatsApp quem não tem Telegram. Desde 14/11/2026 é o CONVITE
+    da mensageria (link pessoal, só colaborador/operador do ERP, um a cada 7
+    dias por pessoa, em segundo plano). Sem a mensageria no banco, o aviso
+    antigo abaixo (um a cada 6 h por telefone)."""
+    erp = _cadastro_erp()
+    if erp:
+        tc, _ = erp
+        try:
+            r = tc.convidar_se_preciso(telefone=telefone, cpf=cpf, tipo_que_falhou=tipo_que_falhou)
+            return {"ok": True if r.get("status") == "AGENDADO" else None,
+                    "detalhe": r.get("detalhe", "")}
+        except Exception as e:  # noqa: BLE001
+            print(f"[telegram_bot] convite da mensageria falhou: {e!r}")
     tel = re.sub(r"\D", "", telefone or "")
     if not tel:
         return {"ok": False, "detalhe": "sem telefone para avisar"}
@@ -1215,6 +1370,19 @@ def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
     return False, "falha após 3 tentativas"
 
 
+def _anotar_envio_externo(telefone, cpf, mensagem, nome_arquivo, status, detalhe, chat_id=""):
+    """O que chega pelo /telegram/enviar (Make, emissão de nota) também vai para
+    o registro da tela Mensagens — só anotação: a resposta ao chamador não muda."""
+    try:
+        from app.apps import notificador
+        notificador._registrar(notificador._mensageria(), tipo="externo.telegram_enviar", canal="telegram",
+                               destinatario=str(chat_id or re.sub(r"\D", "", telefone or "")),
+                               cpf=cpf or "", texto=mensagem or "", nome_arquivo=nome_arquivo or "",
+                               status=status, detalhe=(detalhe or "")[:300], origem="/telegram/enviar")
+    except Exception as e:  # noqa: BLE001
+        print(f"[telegram_bot] não anotei o envio externo: {e!r}")
+
+
 @telegram_bp.route("/telegram/enviar", methods=["POST"])
 def telegram_enviar():
     # Autenticação: mesma chave secreta do webhook, no header X-Api-Key
@@ -1279,8 +1447,12 @@ def telegram_enviar():
                     tel_aviso = (pessoa or {}).get("telefone_base", "")
                 except Exception:
                     tel_aviso = ""
+            # Anota ANTES de decidir o convite: a trava "só depois de N mensagens
+            # que não chegaram" conta esta também.
+            _anotar_envio_externo(telefone, cpf, mensagem, nome_arquivo, "SEM_DESTINO",
+                                  "sem Telegram cadastrado")
             if avisar_whatsapp:
-                aviso = _wa_aviso_cadastro(tel_aviso)
+                aviso = _wa_aviso_cadastro(tel_aviso, cpf=cpf or None)
             else:
                 aviso = {"ok": None,
                          "detalhe": "aviso suprimido pelo chamador "
@@ -1304,6 +1476,8 @@ def telegram_enviar():
             conteudo_bytes=bytes_upload,
             nome_arquivo=nome_arquivo or None, legenda=mensagem,
         )
+        _anotar_envio_externo(telefone, cpf, mensagem, nome_arquivo or arquivo_url,
+                              "ENVIADO" if ok else "FALHOU", "" if ok else detalhe, chat_id)
         if ok:
             return jsonify({"ok": True, "chat_id": chat_id, "enviado": tipo})
         _log_pendencia("FALHA_ENVIO_ARQUIVO", telefone=telefone, cpf=cpf,
@@ -1312,7 +1486,9 @@ def telegram_enviar():
                         "detalhe": detalhe}), 502
 
     if _tg_enviar(chat_id, mensagem):
+        _anotar_envio_externo(telefone, cpf, mensagem, "", "ENVIADO", "", chat_id)
         return jsonify({"ok": True, "chat_id": chat_id, "enviado": "texto"})
+    _anotar_envio_externo(telefone, cpf, mensagem, "", "FALHOU", "falha no envio do texto", chat_id)
     _log_pendencia("FALHA_ENVIO_TEXTO", telefone=telefone, cpf=cpf,
                    chat_id=chat_id, obs=mensagem[:200])
     return jsonify({"ok": False, "erro": "falha_envio_texto"}), 502

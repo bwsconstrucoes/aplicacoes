@@ -2107,6 +2107,44 @@ diário não nasce sem relato. Agora:
 - "Em quais obras falta diário este mês?" — já respondido pelo "Onde está
   faltando".
 
+## 3z-quater. QUEM TEM TELEGRAM, E O CONVITE A QUEM NÃO TEM (14/11/2026)
+
+Ele: *"tem muita gente fazendo solicitações, mas não está recebendo mensagens
+porque não tem cadastro no Telegram (…) a pessoa receber as orientações de como
+proceder para se cadastrar (…) e a gente visualizar esse cadastramento dentro
+do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram**
+(`app/apps/mensageria/telegram_cadastro.py`).
+
+### O que dá para perguntar agora
+- Quem ainda não tem Telegram cadastrado? (só colaborador não desligado e
+  operador do ERP **com telefone** — quem não tem telefone no cadastro não entra
+  na conta)
+- Quem deixou de receber mensagem por não ter Telegram nos últimos 30 dias, e
+  quantas? (filtro "Sem Telegram e com mensagem que não chegou")
+- Fulano recebeu o convite? Quando? Abriu o link? Se cadastrou pelo convite?
+- Quantos convites saíram hoje / esta semana, automáticos e pela tela? (aba
+  Enviadas, tipo "Convite para cadastrar o Telegram")
+- Quantas pessoas se cadastraram no Telegram este mês?
+- O aviso que o Make mandou para fulano chegou? (aba Enviadas, tipo "Envio
+  externo pelo Telegram" — desde 14/11/2026 o `/telegram/enviar` também anota)
+- Tem Telegram ligado a alguém que não está no ERP? ("Cadastros a conferir")
+
+### ⚠️ Palavras que mudam a resposta aqui
+- **"não recebeu"**: aqui é "o Telegram respondeu que a pessoa não tem
+  cadastro" (SEM_DESTINO). Mensagem que o Telegram aceitou e a pessoa não leu
+  conta como entregue — o sistema não sabe se foi lida.
+- **"convidado"**: convite que SAIU. Convite barrado no teto do WhatsApp ou com
+  o WhatsApp desligado fica anotado, mas não conta para a espera entre convites.
+- **"tem Telegram"**: tem cadastro ativo no ERP. Antes de alguém apertar "Trazer
+  da planilha TelegramID", quem se cadastrou pela planilha aparece como "não tem".
+
+### O que o sistema ainda NÃO responde
+- "Fulano leu a mensagem?" — o Telegram não devolve leitura para robô.
+- "Quem bloqueou o robô?" — só aparece quando um envio falha ("Falhou"), não
+  numa lista.
+- Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
+  do dono (só colaborador com telefone).
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

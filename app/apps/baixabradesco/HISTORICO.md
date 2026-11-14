@@ -8,6 +8,14 @@ ela é assim**, e o que aconteceu no caminho. Leia os dois antes de mexer.
 
 ---
 
+## 14/11/2026 — um teste que quebrava sozinho com a data (feito pelo chat da Mensageria)
+
+`tests/test_baixabradesco_fila_tardia.py` gravava o adiado de teste com a data
+fixa "12/11/2026 09:00:00". A fila descarta adiado com mais de 2 dias
+(`IDADE_MAXIMA_DIAS`), então em 14/11/2026 de manhã três testes passaram a falhar
+sem nada mudar no código — e qualquer envio de qualquer chat ficaria vermelho no
+GitHub. Agora a data é "uma hora atrás". Só o teste mudou; o código da baixa não.
+
 ## Onde o trabalho está
 
 A baixa de comprovantes era um cenário do Make.com montado peça por peça. Virou

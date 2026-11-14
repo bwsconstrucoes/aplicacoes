@@ -802,6 +802,32 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 14/11/2026 — O CADASTRO DO TELEGRAM ENTRA NO ERP, e quem não recebe é convidado pelo WhatsApp (atravessa áreas)
+
+O dono viu muita gente pedindo coisas e não recebendo a resposta, porque não tem
+Telegram cadastrado. Pediu: identificar quem não recebe, orientar por WhatsApp
+como se cadastrar, trazer o cadastro da planilha para o sistema e enxergá-lo na
+Mensageria — só para colaborador com telefone. E o convite **não** a cada
+mensagem perdida ("senão a gente pode correr o risco de ser banido de novo").
+
+**O que mudou, por área:**
+- **Mensageria**: aba ERP › Mensagens › Cadastro do Telegram;
+  `mensageria/telegram_cadastro.py`; convite automático com três travas (primeira
+  falha; depois só após mais 5 falhas E 7 dias; máximo 3 por pessoa) e manual.
+- **ERP**: migração **103** (schema `mensageria`; lê `colaboradores` e `usuarios`).
+- **Telegram** (`telegram_bot.py`): acha a pessoa no ERP antes das planilhas,
+  grava no banco e na aba `TelegramID`, entende o link pessoal do convite
+  (`/start c_<código>`, tratado ANTES do lote do Análise de SPs), e o
+  `/telegram/enviar` passou a anotar no registro da Mensageria. **A resposta ao
+  Make não mudou.**
+- **Notificador**: quando o Telegram responde "não cadastrado" e nada mais
+  entregou, pede o convite à Mensageria.
+- **BaixaBradesco**: só um teste que quebrava com a data (ver o histórico dela).
+
+**A regra que fica:** o cadastro do Telegram é do ERP. A aba `TelegramID`
+continua sendo escrita até o Make e a emissão de nota pararem de procurar lá;
+quando pararem, a escrita na planilha pode sair.
+
 ### 13/11/2026 — AtualizaSPBotão: memória própria e aba Log desligada (atravessa áreas)
 
 `app/apps/atualizaspbotao/` entrou na tabela de áreas do `CLAUDE.md`, com

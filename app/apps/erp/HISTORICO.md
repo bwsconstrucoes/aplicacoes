@@ -21,6 +21,16 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ✉️ 14/11/2026 — MIGRAÇÃO 103: o cadastro do Telegram (feita pelo chat da Mensageria)
+
+`103_cadastro_do_telegram.sql`: tabelas `mensageria.telegram_cadastros` e
+`mensageria.convites` (com chave estrangeira para `colaboradores` e `usuarios`)
+e o tipo "Convite para cadastrar o Telegram" ligado. **Próxima migração do ERP
+é a 104.** Nada mudou nas tabelas do ERP; a mensageria só LÊ `colaboradores`
+(nome, CPF, telefone, situação, operador) e `usuarios` (nome, CPF, telefone,
+ativo). ⚠️ Renomear essas colunas para o convite e o robô do Telegram.
+Detalhe em `app/apps/mensageria/HISTORICO.md`.
+
 ### ⚑ 13/11/2026 — O EFETIVO DO PONTO NO DIÁRIO ESTAVA ERRADO: TRÊS DEFEITOS
 
 Ele, olhando o diário: *"eu acho que ele está dobrando o efetivo. Eu acho que

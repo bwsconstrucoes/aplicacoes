@@ -36,6 +36,62 @@ no próprio código.
 
 ---
 
+## 14/11/2026 — O CADASTRO DO TELEGRAM VEIO PARA O ERP, e quem não recebe é convidado pelo WhatsApp
+
+**O pedido**, nas palavras do dono: *"tem muita gente fazendo solicitações, mas
+não está recebendo mensagens porque não tem cadastro no Telegram (…) o
+mensageria identifica que a mensagem não foi entregue, aí ele manda uma
+mensagem no WhatsApp explicando (…) que ela precisa fazer o cadastro (…) essa
+questão dessa planilha, trazer para dentro do sistema também, e a gente
+visualizar esse cadastramento dentro do mensageria."* Quem pode: *"os
+colaboradores (…) que têm telefone"*. E, no meio do trabalho: *"na primeira
+mensagem que não dá certo, a gente encaminha o WhatsApp. Mas não a cada
+mensagem que der errada (…) depois de algumas outras mensagens, aí manda mais
+uma (…) senão a gente pode correr o risco de ser banido de novo."*
+
+**Feito no ramo `claude/amazing-wright-f8g0bm`** (não publicado):
+
+1. **Aba Cadastro do Telegram** em ERP › Mensagens: quem pode se cadastrar,
+   quem tem e quem não tem, quantas mensagens não chegaram em 30 dias, o último
+   convite (automático ou pela tela, se abriu o link, se se cadastrou), convidar
+   um ou até 50, desligar um Telegram, e "Cadastros a conferir" (Telegram que
+   não bate com ninguém do ERP). Configuração do convite na mesma aba.
+2. **Migração 103 do ERP**: `mensageria.telegram_cadastros` e
+   `mensageria.convites`; o tipo `telegram.aviso_cadastro` passa de Desligado
+   para Só WhatsApp (só se ninguém mexeu nele na tela).
+3. **O convite automático** (primeira falha; depois só após mais 5 falhas E 7
+   dias; no máximo 3 por pessoa) pelo notificador e pelo `/telegram/enviar`.
+4. **O robô**: acha a pessoa no ERP antes das planilhas; grava no banco e na
+   planilha; entende o link pessoal (`/start c_<código>`) antes do lote do
+   Análise de SPs; aceita o número de outro chip quando veio de um convite;
+   a planilha fora do ar não derruba mais um cadastro já gravado no ERP.
+5. **O registro** passou a anotar o que chega pelo `/telegram/enviar`.
+6. As perguntas que isto responde entraram no `erp/PERGUNTAS.md` (3z-quater).
+
+**Verificado:** suíte inteira com banco de verdade (Postgres local descartável
+neste contêiner), e o fluxo de ponta a ponta com banco: mensagem perdida → um
+convite (a segunda perdida logo depois não gera outro) → link → número de outro
+chip → cadastrado → a mensagem seguinte chega pelo Telegram. Tela fotografada.
+**Não verificado:** envio real pelo Z-API e pelo Telegram (sem credenciais aqui).
+
+**Decisões tomadas por mim, com o motivo** (o dono pode trocar):
+- Números das travas: 5 mensagens, 7 dias, 3 automáticos por pessoa. Pela
+  tela: um por dia por pessoa, até 50 por vez com 20–45 s entre eles.
+- Convidar e trazer a planilha é do Administrador (`configurar_mensagens`);
+  Diretor financeiro e DP só veem. Se o RH for convidar, é dar a seção a ele.
+- Link pessoal com o número ainda confirmado no Telegram: o link facilita, o
+  número prova. Vale 30 dias e é de uso único.
+
+### O que está pendente AGORA (pelo dono)
+1. "Pode" para publicar; ao juntar, **apertar "Aplicar atualizações do banco"**
+   (a 103) no mesmo momento.
+2. Em ERP › Mensagens › Cadastro do Telegram, apertar **Trazer da planilha
+   TelegramID** uma vez. Até lá, quem já tinha Telegram aparece como "não tem" —
+   e o convite automático NÃO vai para essas pessoas, porque o robô ainda acha o
+   cadastro delas na planilha.
+3. Conferir que a chave geral do WhatsApp está ligada (aba Tipos e canais) e ler
+   o texto do convite.
+
 ## 31/10/2026 — uma situação nova no registro, vinda do chat do Ponto: "Barrado na origem"
 
 O dono, no chat do Ponto: *"preciso que essas mensagens mesmo que bloqueadas apareçam no mensageria, pq assim tenho

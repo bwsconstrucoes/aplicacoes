@@ -5,7 +5,7 @@
   O `pode` aqui só esconde controle que a pessoa não pode usar; a trava de
   verdade é o @permissao de cada rota em app/apps/mensageria/gestao.py.
 #}
-{% block titulo %}Mensagens — {{ "Enviadas" if aba_msg == "msg_envios" else "Tipos e canais" }} — ERP BWS{% endblock %}
+{% block titulo %}Mensagens — {{ {"msg_envios": "Enviadas", "msg_telegram": "Cadastro do Telegram"}.get(aba_msg, "Tipos e canais") }} — ERP BWS{% endblock %}
 {% block classe_corpo %}{% if aba_msg == "msg_tipos" %}sem-filtros{% endif %}{% endblock %}
 
 {% block filtros %}
@@ -31,6 +31,23 @@
   <div class="cartao-dica" style="margin-top:16px">
     O registro guarda <b>90 dias</b> de tudo que o sistema tentou mandar: por onde, para quem,
     o texto e o que aconteceu. Depois disso é apagado sozinho.
+  </div>
+{% elif aba_msg == "msg_telegram" %}
+  <div class="filtros-cab"><h2>Cadastro do Telegram</h2></div>
+  <div class="campo"><label for="tg-filtro">Mostrar</label>
+    <select id="tg-filtro" data-sem-busca>
+      <option value="falha" selected>Sem Telegram e com mensagem que não chegou</option>
+      <option value="sem">Todos sem Telegram</option>
+      <option value="convidados">Convidados que ainda não se cadastraram</option>
+      <option value="com">Com Telegram</option>
+      <option value="">Todos</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="tg-busca">Buscar</label>
+    <input id="tg-busca" placeholder="nome, CPF ou telefone" autocomplete="off" data-sem-mascara></div>
+  <button class="btn" id="tg-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    Aparecem os <b>colaboradores que não estão desligados</b> e os <b>operadores do ERP</b> que têm
+    telefone no cadastro — é quem pode se cadastrar no Telegram da empresa. Quem não tem telefone
+    não aparece: o telefone se acerta no cadastro do colaborador.
   </div>
 {% endif %}
 {% endblock %}
@@ -80,6 +97,43 @@
   </div>
 </div>
 {% endif %}
+
+{% elif aba_msg == "msg_telegram" %}
+<h2>Cadastro do Telegram</h2>
+<div id="tg-totais" class="cartao">carregando…</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Convite pelo WhatsApp</h3><small id="tg-link"></small></div>
+  <div class="cartao-dica" style="margin-top:0">
+    Na <b>primeira</b> mensagem do Telegram que <b>não chega porque a pessoa não tem cadastro</b>, o
+    sistema manda este convite pelo WhatsApp, com um <b>link pessoal</b> para o robô da BWS. Quem toca
+    no link só precisa confirmar o número. <b>Não sai um convite a cada mensagem perdida:</b> o próximo
+    só depois de mais algumas mensagens que não chegaram <b>e</b> de alguns dias, e até um máximo por
+    pessoa — o WhatsApp bloqueia quando insiste. Só vai para colaborador ou operador com telefone no
+    ERP, e conta no teto do WhatsApp da aba Tipos e canais.
+    <b>{nome}</b> vira o primeiro nome da pessoa e <b>{link}</b> o link pessoal.
+  </div>
+  <div id="tg-config">carregando…</div>
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra"><span class="resumo" id="tg-resumo">carregando…</span><span class="espaco"></span>
+    {% if pode.configurar_mensagens %}<button class="btn" id="tg-convidar" type="button" disabled>Convidar os marcados</button>{% endif %}</div>
+  <div class="tabela-rolagem"><div id="tg-pessoas"></div></div>
+</div>
+
+<div class="cartao" style="margin-top:16px">
+  <div class="cartao-cab"><h3>Cadastros a conferir</h3><small>Telegram ligado que não bate com ninguém do ERP</small>
+    {% if pode.configurar_mensagens %}<button class="btn secundario" id="tg-importar" type="button">Trazer da planilha TelegramID</button>{% endif %}</div>
+  <div class="cartao-dica" style="margin-top:0">
+    Até 14/11/2026 o cadastro do Telegram ficava só na aba <b>TelegramID</b> de uma planilha Google. O
+    robô continua escrevendo lá (o Make ainda procura nela), mas agora grava também aqui. <b>Trazer da
+    planilha</b> copia o que já existe — pode apertar quantas vezes quiser, ninguém é duplicado.
+    Aparece aqui quem tem Telegram mas não foi achado no ERP pelo CPF nem pelo telefone: geralmente
+    desligado, ou com o telefone diferente no cadastro.
+  </div>
+  <div class="tabela-rolagem" style="max-height:none"><div id="tg-conferir"></div></div>
+</div>
 
 {% elif aba_msg == "msg_envios" %}
 <h2>Mensagens enviadas</h2>
@@ -183,11 +237,140 @@ els("t-enviar").addEventListener("click", async () => {
 {% endif %}
 carregar();
 
+{% elif aba_msg == "msg_telegram" %}
+const dia = iso => iso ? new Date(iso).toLocaleDateString("pt-BR") : "";
+const CONVITE = {ENVIADO: ["Convite enviado", "ok"], FALHOU: ["Convite falhou", "erro"], LIMITE: ["Barrado no teto", "alerta"],
+                 DESLIGADO: ["WhatsApp desligado", "info"], PENDENTE: ["Saindo…", "info"]};
+let MARCADOS = new Set();
+function pilula(txt, cls){ return `<span class="aviso ${cls}" style="display:inline-block; padding:2px 8px; margin:0; font-size:12px">${escapar(txt)}</span>`; }
+async function carregarTelegram(){
+  const q = new URLSearchParams({filtro: els("tg-filtro").value, busca: els("tg-busca").value});
+  els("tg-resumo").textContent = "carregando…";
+  try {
+    const d = await api("/erp/api/mensagens/telegram?" + q);
+    if (bancoAtrasado(d)) { ["tg-totais", "tg-config", "tg-resumo", "tg-pessoas", "tg-conferir"].forEach(i => els(i).innerHTML = ""); return; }
+    desenharTotais(d); desenharConfig(d); desenharPessoas(d); desenharConferir(d);
+  } catch (e) { els("tg-resumo").textContent = ""; els("tg-pessoas").innerHTML = `<div class="aviso erro" style="margin:12px">${escapar(e.message)}</div>`; }
+}
+function desenharTotais(d){
+  const t = d.totais;
+  els("tg-totais").innerHTML = `<div style="display:flex; gap:28px; flex-wrap:wrap">
+    <div><small>Podem se cadastrar</small><div style="font-size:22px; font-weight:700">${t.pessoas}</div></div>
+    <div><small>Com Telegram</small><div style="font-size:22px; font-weight:700; color:var(--verde)">${t.com_telegram}</div></div>
+    <div><small>Sem Telegram</small><div style="font-size:22px; font-weight:700">${t.sem_telegram}</div></div>
+    <div><small>Sem Telegram e com mensagem que não chegou (30 dias)</small><div style="font-size:22px; font-weight:700; color:var(--vermelho)">${t.com_falha}</div></div>
+    <div><small>A conferir</small><div style="font-size:22px; font-weight:700">${t.a_conferir}</div></div></div>
+    ${d.ultima_importacao ? "" : '<div class="aviso alerta" style="margin-top:10px">Os cadastros da planilha TelegramID ainda não foram trazidos para cá — enquanto isso, quem já tem Telegram aparece como "sem". Use <b>Trazer da planilha TelegramID</b>, no fim da página.</div>'}`;
+}
+function desenharConfig(d){
+  els("tg-link").textContent = "robô: " + d.link_do_robo;
+  const dis = PODE_CONFIGURAR ? "" : "disabled";
+  els("tg-config").innerHTML = `
+    <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-end">
+      <label class="opcao" style="margin:0"><input type="checkbox" id="tg-auto" ${d.convite_automatico ? "checked" : ""} ${dis}>
+        <span class="rotulo"><b>Convidar sozinho quando a mensagem não chegar</b></span></label>
+      <div class="campo" style="margin:0"><label for="tg-falhas">Próximo convite depois de (mensagens que não chegaram)</label>
+        <input id="tg-falhas" value="${d.falhas_entre}" style="width:80px" inputmode="numeric" data-sem-mascara ${dis}></div>
+      <div class="campo" style="margin:0"><label for="tg-intervalo">e de pelo menos (dias)</label>
+        <input id="tg-intervalo" value="${d.intervalo_dias}" style="width:80px" inputmode="numeric" data-sem-mascara ${dis}></div>
+      <div class="campo" style="margin:0"><label for="tg-maximo">No máximo, por pessoa (automáticos)</label>
+        <input id="tg-maximo" value="${d.maximo_automatico}" style="width:80px" inputmode="numeric" data-sem-mascara ${dis}></div>
+    </div>
+    <div class="campo" style="margin-top:12px"><label for="tg-texto">Texto do convite</label>
+      <textarea id="tg-texto" rows="12" style="width:100%; font-family:inherit" ${dis}>${escapar(d.texto)}</textarea></div>
+    ${PODE_CONFIGURAR ? `<div style="display:flex; gap:10px; margin-top:8px">
+      <button class="btn" id="tg-gravar" type="button">Gravar</button>
+      <button class="btn secundario" id="tg-padrao" type="button">Voltar ao texto sugerido</button></div>` : ""}`;
+  if (!PODE_CONFIGURAR) return;
+  els("tg-padrao").addEventListener("click", () => { els("tg-texto").value = d.texto_padrao; });
+  els("tg-gravar").addEventListener("click", async () => {
+    try { await api("/erp/api/mensagens/telegram/configurar", {method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({automatico: els("tg-auto").checked, intervalo_dias: els("tg-intervalo").value,
+                                  falhas_entre: els("tg-falhas").value, maximo_automatico: els("tg-maximo").value,
+                                  texto: els("tg-texto").value === d.texto_padrao ? "" : els("tg-texto").value})});
+      aviso("mensagem", "Convite gravado.", "ok"); carregarTelegram();
+    } catch (e) { aviso("mensagem", e.message, "erro"); }
+  });
+}
+function desenharPessoas(d){
+  const L = d.pessoas; MARCADOS = new Set();
+  els("tg-resumo").innerHTML = `<b>${L.length}</b> ${L.length === 1 ? "pessoa" : "pessoas"}`;
+  atualizarBotao(d.lote_maximo);
+  if (!L.length) { els("tg-pessoas").innerHTML = '<div class="aviso info" style="margin:12px">Ninguém com esse filtro.</div>'; return; }
+  els("tg-pessoas").innerHTML = '<table><thead><tr>' + (PODE_CONFIGURAR ? '<th style="width:28px"><input type="checkbox" id="tg-todos"></th>' : '')
+    + '<th>Pessoa</th><th>Telefone</th><th>Telegram</th><th>Mensagens que não chegaram (30 dias)</th><th>Último convite</th>'
+    + (PODE_CONFIGURAR ? '<th></th>' : '') + '</tr></thead><tbody>'
+    + L.map(l => {
+        const c = l.convite, [cr, cc] = c ? (CONVITE[c.status] || [c.status, "info"]) : ["", ""];
+        const tg = l.telegram ? pilula("Cadastrado" + (l.telegram_desde ? " em " + dia(l.telegram_desde) : ""), "ok") : pilula("Não tem", "alerta");
+        const conv = !c ? "—" : `${pilula(cr, cc)}<br><small>${dia(c.criado_em)}${c.motivo === "AUTOMATICO" ? " · automático" : " · pela tela"}${c.usado_em ? " · <b>cadastrou-se pelo link</b>" : (c.aberto_em ? " · abriu o link" : "")}</small>`;
+        return `<tr>${PODE_CONFIGURAR ? `<td>${l.telegram ? "" : `<input type="checkbox" class="tg-marca" data-chave="${escapar(l.chave)}">`}</td>` : ""}
+          <td><b>${escapar(l.nome)}</b><br><small>${l.tipo === "COLABORADOR" ? "Colaborador" : "Operador do ERP"}${l.cpf ? " · CPF " + escapar(l.cpf) : ""}</small></td>
+          <td style="white-space:nowrap">${escapar(telefoneBonito(l.telefone))}</td><td>${tg}</td>
+          <td>${l.falhas_30d ? `<b>${l.falhas_30d}</b><br><small>a última em ${dia(l.ultima_falha)}</small>` : "—"}</td><td>${conv}</td>
+          ${PODE_CONFIGURAR ? `<td style="white-space:nowrap">${l.telegram
+              ? `<button class="link-btn tg-desv" data-id="${l.cadastro_id}" type="button">desligar</button>`
+              : `<button class="link-btn tg-um" data-chave="${escapar(l.chave)}" type="button">convidar agora</button>`}</td>` : ""}</tr>`;
+      }).join("") + "</tbody></table>";
+  if (!PODE_CONFIGURAR) return;
+  els("tg-todos").addEventListener("change", ev => { document.querySelectorAll(".tg-marca").forEach(cx => { cx.checked = ev.target.checked;
+    cx.checked ? MARCADOS.add(cx.dataset.chave) : MARCADOS.delete(cx.dataset.chave); }); atualizarBotao(d.lote_maximo); });
+  document.querySelectorAll(".tg-marca").forEach(cx => cx.addEventListener("change", ev => {
+    ev.target.checked ? MARCADOS.add(ev.target.dataset.chave) : MARCADOS.delete(ev.target.dataset.chave); atualizarBotao(d.lote_maximo); }));
+  document.querySelectorAll(".tg-um").forEach(b => b.addEventListener("click", () => convidar([b.dataset.chave])));
+  document.querySelectorAll(".tg-desv").forEach(b => b.addEventListener("click", () => desligar(b.dataset.id)));
+}
+function atualizarBotao(maximo){
+  const b = els("tg-convidar"); if (!b) return;
+  b.disabled = !MARCADOS.size; b.textContent = MARCADOS.size ? `Convidar os ${MARCADOS.size} marcados` : "Convidar os marcados";
+  b.onclick = () => { if (MARCADOS.size > maximo) { aviso("mensagem", `No máximo ${maximo} por vez — o WhatsApp bloqueia lote grande.`, "erro"); return; }
+    convidar([...MARCADOS]); };
+}
+async function convidar(chaves){
+  if (chaves.length > 1 && !confirm(`Mandar o convite pelo WhatsApp para ${chaves.length} pessoas? Saem um por vez, com intervalo, e contam no teto do WhatsApp.`)) return;
+  try { const d = await api("/erp/api/mensagens/telegram/convidar", {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({chaves})});
+    if (bancoAtrasado(d)) return;
+    aviso("mensagem", d.em_fila ? `${d.em_fila} convites na fila — saem um a cada meio minuto, mais ou menos. Acompanhe na aba Enviadas.` : "Convite enviado.", "ok");
+    carregarTelegram();
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+}
+async function desligar(id){
+  if (!confirm("Desligar este Telegram do cadastro? A pessoa deixa de receber por ele até se cadastrar de novo.")) return;
+  try { await api("/erp/api/mensagens/telegram/desvincular", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id})});
+    aviso("mensagem", "Desligado.", "ok"); carregarTelegram(); } catch (e) { aviso("mensagem", e.message, "erro"); }
+}
+function desenharConferir(d){
+  const L = d.a_conferir;
+  if (!L.length) { els("tg-conferir").innerHTML = '<div class="aviso ok" style="margin:0">Nada a conferir: todo Telegram ligado pertence a alguém do ERP.</div>'; return; }
+  els("tg-conferir").innerHTML = '<table><thead><tr><th>Nome no cadastro</th><th>CPF</th><th>Telefone</th><th>Desde</th><th>Observação</th>'
+    + (PODE_CONFIGURAR ? '<th></th>' : '') + '</tr></thead><tbody>'
+    + L.map(c => `<tr><td>${escapar(c.nome || "—")}</td><td>${escapar(c.cpf || "—")}</td><td>${escapar(telefoneBonito(c.telefone))}</td>
+        <td>${dia(c.criado_em)}</td><td style="white-space:normal; max-width:360px"><small>${escapar(c.observacao || "")}</small></td>
+        ${PODE_CONFIGURAR ? `<td><button class="link-btn tg-desv2" data-id="${c.id}" type="button">desligar</button></td>` : ""}</tr>`).join("")
+    + "</tbody></table>";
+  document.querySelectorAll(".tg-desv2").forEach(b => b.addEventListener("click", () => desligar(b.dataset.id)));
+}
+{% if pode.configurar_mensagens %}
+els("tg-importar").addEventListener("click", async () => {
+  const b = els("tg-importar"); b.disabled = true; b.textContent = "Lendo a planilha…";
+  try { const d = await api("/erp/api/mensagens/telegram/importar", {method: "POST"});
+    if (!bancoAtrasado(d)) aviso("mensagem", `Planilha trazida: ${d.novos} novos, ${d.atualizados} já existiam, ${d.ignorados} linhas sem id do Telegram.`, "ok");
+    carregarTelegram();
+  } catch (e) { aviso("mensagem", e.message, "erro"); } finally { b.disabled = false; b.textContent = "Trazer da planilha TelegramID"; }
+});
+{% endif %}
+els("tg-ver").addEventListener("click", carregarTelegram);
+els("tg-busca").addEventListener("keydown", ev => { if (ev.key === "Enter") carregarTelegram(); });
+els("tg-filtro").addEventListener("change", carregarTelegram);
+carregarTelegram();
+
 {% elif aba_msg == "msg_envios" %}
 async function tiposNoFiltro(){
   try { const d = await api("/erp/api/mensagens/tipos"); if (d.banco_atrasado) return;
     els("f-tipo").innerHTML = '<option value="">Todos</option>' + d.tipos.map(t => `<option value="${escapar(t.chave)}">${escapar(t.nome)}</option>`).join("")
-      + '<option value="mensageria.teste">Teste da tela</option><option value="sem_tipo">Sem tipo (módulos antigos)</option>';
+      + '<option value="mensageria.teste">Teste da tela</option><option value="sem_tipo">Sem tipo (módulos antigos)</option>'
+      + '<option value="externo.telegram_enviar">Envio externo pelo Telegram (Make, emissão de nota)</option>';
   } catch (e) { /* o filtro fica só com "Todos" */ }
 }
 async function ver(){
