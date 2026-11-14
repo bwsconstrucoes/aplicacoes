@@ -2009,3 +2009,28 @@ problema diferente:
 
 **Verificado:** área inteira passando (337 testes), suíte completa com 2 falhas
 por biblioteca ausente neste ambiente, aplicação subindo.
+
+### 14/11/2026 — "Fórmula Query", e o risco que esse detalhe trouxe
+
+Ele precisou: *"Fórmula Query"*.
+
+Parece detalhe e não é. **QUERY devolve `#N/A` em dois casos que chegam com a
+mesma cara: fórmula quebrada e nenhum resultado.** Se o robô tratasse isso como
+"a aba respondeu, e está vazia", **toda** baixa passaria a não encontrar SP — e,
+com o plano B enxugado na entrada anterior (que já não reconstrói o índice
+operacional), ele nem iria procurar na SPsBD. **Uma fórmula quebrada pararia as
+baixas em silêncio.**
+
+Conferi: a proteção já existe, e por construção, não por sorte. O sinal de "a
+aba respondeu" é o **índice ter conteúdo** (`leu_da_aba_enxuta = bool(sps_index)`),
+não a leitura ter devolvido algo — `[['#N/A']]` devolve algo e não serve para
+nada. Índice vazio cai no caminho `spsbd_completa_aba_indisponivel`, que lê a
+SPsBD e reconstrói os dois índices.
+
+**Fórmula quebrada deixa a baixa LENTA, nunca CEGA.** Travado com teste para os
+seis casos que produzem índice vazio (`#N/A`, `#REF!`, `#VALUE!`, `#ERROR!`, só
+cabeçalho, aba vazia), porque é exatamente o tipo de proteção que alguém remove
+sem perceber ao "simplificar".
+
+**Verificado:** 345 testes da área passando, suíte completa com as 2 falhas de
+biblioteca ausente neste ambiente, aplicação subindo.

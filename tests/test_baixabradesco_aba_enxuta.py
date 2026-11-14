@@ -444,3 +444,54 @@ def test_o_filtro_exige_os_DOIS_status_nao_so_o_agendamento():
     index = sheets.load_spsbd_operacional(values=valores)
 
     assert list(index) == ['aberta']
+
+
+# =====================================================================
+# 6. a aba é uma QUERY — e QUERY devolve #N/A
+# =====================================================================
+# O dono precisou em 14/11/2026: *"Fórmula Query"*. Isso traz um risco próprio,
+# e ele é sério: uma QUERY devolve `#N/A` tanto quando a fórmula quebra **como
+# quando não há resultado nenhum**. Os dois casos chegam aqui com a mesma cara.
+#
+# Se o robô tratasse isso como "a aba respondeu, e está vazia", TODA baixa
+# passaria a não encontrar SP — e, com o plano B enxugado, ele nem iria procurar
+# na SPsBD. Uma fórmula quebrada pararia as baixas em silêncio.
+#
+# A proteção é a mesma para os dois casos e é a certa: índice vazio = aba não
+# respondeu = lê a SPsBD. Fórmula quebrada deixa a baixa LENTA, nunca CEGA.
+
+@pytest.mark.parametrize('valores, descricao', [
+    ([['#N/A']],                      'QUERY sem resultado ou quebrada'),
+    ([['#REF!']],                     'referência perdida'),
+    ([['#VALUE!']],                   'tipo errado no critério'),
+    ([['#ERROR!']],                   'fórmula mal escrita'),
+    ([CABECALHO],                      'só o cabeçalho, nenhuma linha'),
+    ([],                               'aba vazia'),
+])
+def test_query_sem_resultado_util_devolve_indice_vazio(valores, descricao):
+    index = sheets.load_spsbd_operacional(values=valores,
+                                          linha_vem_da_coluna_ac=True)
+
+    assert index == {}, descricao
+
+
+def test_indice_vazio_faz_o_robo_ler_a_SPsBD_em_vez_de_ficar_cego():
+    """É o que impede uma fórmula quebrada de parar as baixas em silêncio."""
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core.processar_baixabradesco)
+
+    # o sinal de "a aba respondeu" é o índice ter conteúdo, não a leitura ter
+    # devolvido algo — `[['#N/A']]` devolve algo e não serve para nada
+    assert 'leu_da_aba_enxuta = bool(sps_index)' in fonte
+    assert 'if not leu_da_aba_enxuta and not modo_teste:' in fonte
+    trecho = fonte[fonte.index('if not leu_da_aba_enxuta'):]
+    assert 'load_spsbd_operacional' in trecho      # reconstrói o índice
+    assert 'load_spsbd_omie_pendente' in trecho    # e o das pagas
+    assert "'spsbd_completa_aba_indisponivel'" in trecho
+
+
+def test_uma_linha_de_erro_nao_derruba_a_leitura():
+    """`#N/A` no lugar do cabeçalho não pode virar exceção."""
+    for ruim in ([['#N/A']], [['#REF!'], ['#REF!']], [[None]]):
+        sheets.load_spsbd_operacional(values=ruim, linha_vem_da_coluna_ac=True)

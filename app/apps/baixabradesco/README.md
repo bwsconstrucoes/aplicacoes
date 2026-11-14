@@ -430,8 +430,16 @@ resultado de consulta. `A:AK` limita as colunas, nunca as linhas.
 espelha a SPsAgendar com **as mesmas colunas da SPsBD**. Ela tem dezenas de
 linhas, não 52 mil.
 
-**A aba é alimentada por fórmula** (o dono confirmou em 14/11/2026), logo é
-instantânea e espelha exatamente o conjunto filtrado. Isso tem uma consequência
+**A aba é alimentada por uma fórmula QUERY** (o dono confirmou em 14/11/2026),
+logo é instantânea e espelha exatamente o conjunto filtrado.
+
+⚠️ **E QUERY devolve `#N/A` em dois casos que chegam com a mesma cara:** fórmula
+quebrada **e** nenhum resultado. Por isso o sinal de "a aba respondeu" é o
+**índice ter conteúdo**, não a leitura ter devolvido algo — `[['#N/A']]` devolve
+algo e não serve para nada. Índice vazio (por `#N/A`, `#REF!`, só cabeçalho ou
+aba ausente) manda o robô ler a SPsBD. **Fórmula quebrada deixa a baixa lenta,
+nunca cega** — sem isso, uma QUERY com erro pararia todas as baixas em silêncio,
+já que o plano B enxugado não reconstrói o índice operacional. Isso tem uma consequência
 que vale entender antes de mexer: **reler a SPsBD com o MESMO filtro não pode
 achar nada novo.** Esse pedaço saiu do código — era baixar 52 mil linhas para
 confirmar o que a aba já disse.
