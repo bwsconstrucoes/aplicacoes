@@ -152,6 +152,24 @@ fila da planilha de cálculo (espera fixa de 2 s por botão, um por vez).
 estava desligado**. A aba Log congelada não tem efeito nas "Análises de
 Pagamentos" além do que já existia.
 
+## 14/11/2026 — quem mais dispara o "atualizatitulo"
+
+O dono viu chegar ao Make o aviso `{"id": "…", "acao": "atualizatitulo"}` no
+gancho `hook.us1.make.com/ssvbu6…` e perguntou se outra aplicação do Render o
+dispara. **Sim:** a ficha da SP no **Análise de SPs** tem o botão **"Atualizar"**
+(`analisesps_ficha.html`), um link para `ANALISESPS_HOOK_OMIE?id=<SP>&acao=atualizatitulo`
+— o mesmo formato. O endereço fica só na variável do Render (não no código);
+se for o `ssvbu6…`, cada clique ali dispara o botão. O mesmo endereço vinha do
+Streamlit do PC do dono, que pode ainda estar em uso. Além disso, os links dos
+cards do Pipefy usam o mesmo padrão `?cardid=…&acao=…` (ver
+`erp/DE_PARA_PIPEFY_DP.md`, outro gancho, do DP).
+
+Como separar as origens no Make (ligar "Get request headers" no webhook): o
+`Referer` diz de onde veio o clique — `aplicacoes.bwsconstrucoes.com.br/...`
+é a ficha do Análise de SPs; `app.pipefy.com` é o card; vazio pode ser o
+Streamlit, e-mail ou robô. Nada mudou no código do Análise de SPs (outra
+área).
+
 ## O que precisa ser confirmado com o dono
 
 Respondido em 24/09/2026: quem chama a rota (Pipefy → Make → Render) e que o
