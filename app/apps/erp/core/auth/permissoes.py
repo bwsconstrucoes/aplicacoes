@@ -1011,6 +1011,18 @@ def exigir_entidade_no_escopo(s: Session, usuario: Usuario,
     if tipo == "obra":
         exigir_obra_no_escopo(s, usuario, entidade_id)
         return
+    # ⚑ A FOTO DO DIÁRIO herda o escopo da OBRA do dia (14/11/2026). Sem
+    # isto, quem é preso a uma obra baixaria a foto de qualquer outra — e os
+    # números dos anexos são sequenciais, então um laço varreria o acervo.
+    if tipo == "diario_foto":
+        from sqlalchemy import text as _text
+        linha = s.execute(_text(
+            "SELECT obra_id FROM diarios_obra WHERE id = :d"),
+            {"d": entidade_id}).first()
+        if linha is None:
+            raise ErroNaoEncontrado("Registro não encontrado.")
+        exigir_obra_no_escopo(s, usuario, linha[0])
+        return
     if tipo == "contrato_servico":
         c = s.get(ContratoServico, entidade_id)
         if c is None:

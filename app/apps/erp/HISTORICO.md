@@ -21,6 +21,115 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 14/11/2026 — AS FOTOS DO DIÁRIO, com folha de anexo no papel
+
+Ele: *"era muito interessante a gente poder colocar serviços executados e
+fotos, e integrar isso no diário impresso também. (…) A página, sempre quando
+tiver foto, mostra na página seguinte. (…) é como se fosse um anexo ao diário,
+essa página das fotos, para não interferir no layout que a gente já trabalhou e
+já tem. (…) Lembrando que fotos sempre no Google Drive."* E, depois de ver três
+exemplos: *"sim, podemos limitar a qtd a 6."*
+
+⚑ **NÃO TEM TABELA NOVA, e isso é decisão de projeto.** O ERP já tem a máquina
+inteira de anexo (`core/documentos/armazenamento.py`): comprime a imagem, manda
+para o **Google Drive**, cai para o banco quando o Drive não responde, confere
+permissão e escopo na entrega, guarda hash contra duplicata e tem a rotina que
+leva para o Drive o que ficou no banco. Criar `diario_fotos` com upload próprio
+seria ter **duas verdades** sobre onde o arquivo da empresa mora — e a segunda
+nasceria sem nenhuma dessas proteções.
+
+Então a foto é um anexo com `entidade_tipo = "diario_foto"` e
+`entidade_id = diarios_obra.id`; a **legenda é a `descricao`** do anexo. Entrou
+a categoria `FOTO` e o escopo `diario_foto` (que herda a obra do dia) —
+**sem o escopo, quem é preso a uma obra baixaria a foto de qualquer outra**,
+porque os números dos anexos são sequenciais.
+
+**As regras próprias do diário**, em `core/diario_fotos.py`: teto de 6 por dia,
+só imagem, o dia precisa estar gravado, e **depois de FECHADO acrescenta mas
+não tira** — o papel já saiu com ela.
+
+**O PAPEL:** folha de anexo própria (`erp_diario_papel_fotos.html`), depois da
+folha do dia, **igual nos três modelos** — o RDO do órgão é cláusula de
+contrato e não se mexe; o anexo é nosso. Quantas fotos por folha é decidido
+pela QUANTIDADE (1–2 grandes, 3–4 em duas colunas, 5–6 em três linhas): quem
+anexa escolhe fotos, não formato. A imagem vai **embutida e encolhida a 900px**
+— por link dependeria da sessão de quem imprime, e 90 dias × 6 fotos em 1800px
+seria um PDF que não passa em e-mail.
+
+**A tela é UMA SÓ, e serve o portal da obra:** o portal não tem diário próprio,
+ele manda para `/erp/obras/diario` (`core/portal.py`, área "obra", `so_tela`).
+Por isso o campo leva `capture="environment"` — no celular abre a câmera direto.
+
+**Três tropeços que viraram comentário no código:**
+
+1. `loop.parent` não existe nesta versão do Jinja — a numeração da foto na
+   segunda folha do anexo quebrava a impressão inteira (erro 500).
+2. `<figure>` nasce com **40px de margem lateral** no navegador: a foto saía
+   menor que a coluna, com faixa branca dos dois lados, sem motivo aparente.
+3. `height: 100%` não preenche o quadro dentro de um item flexível de altura
+   automática. A imagem precisa de posição absoluta.
+
+### ⚑ 14/11/2026 — O DIÁRIO: ordem da tela, quem assina, e repetir o dia
+
+Quatro pedidos dele no mesmo dia, todos sobre facilitar o preenchimento.
+
+**1. A ORDEM DA TELA NÃO É A ORDEM DO PAPEL.** Ele: *"a posição do efetivo está
+muito… normalmente é muita gente e acaba atrapalhando a visualização da tela
+onde a gente faz o preenchimento. E o equipamento de obra está muito embaixo.
+(…) a pessoa tende a esquecer os equipamentos porque está muito embaixo."*
+
+A regra que fica: **em cima o que alguém DIGITA, embaixo o que o sistema já
+sabe.** Agora é obra → o dia → equipamentos → fiscalização → efetivo →
+material. Numa obra com 40 pessoas, a lista do ponto empurrava equipamentos e
+fiscalização para fora da tela. **O PAPEL continua na ordem do modelo** — lá a
+ordem é cláusula de contrato.
+
+**2. QUEM ASSINA O DIÁRIO.** Ele perguntou de onde vinham empresa, responsável
+técnico e registro profissional. Vêm do **cadastro da obra** (a empresa pelo
+vínculo com o cadastro de empresas). O que faltava era isto:
+
+- os três **não apareciam** na tela do diário, então ninguém descobria que
+  estavam vazios até o papel sair sem assinatura;
+- o **CREA não existia no cadastro da obra** — a coluna existia desde a
+  migração, o diário JÁ IMPRIMIA o campo, e não havia onde digitá-lo. Mesmo
+  defeito do seguro-garantia: o que não está na lista de campos graváveis é
+  descartado em silêncio. Entrou agora na tela de Obras e nas duas listas da
+  rota (gravar e devolver).
+
+Faltando qualquer um, a tela do diário avisa em destaque e oferece
+**"preencher agora"** — que grava **no cadastro da obra**, não no dia. É a
+regra do "uma porta só": a informação tem um lugar, e a tela que precisa dela
+oferece atalho para lá. Gravado no dia, amanhã estaria vazio de novo.
+
+**3. REPETIR UM DIA EM VÁRIOS DIAS.** Ele: *"esse dia aqui foi igual aos 3
+próximos. Ou então esse sábado foi igual a outros 4 sábados."*
+
+Dois atalhos (dias seguidos / mesmo dia da semana), e um segundo passo que
+**mostra as datas uma a uma, por extenso**, pedindo a palavra REPETIR. Não é
+burocracia: repetir escreve documento em dias que a pessoa não está olhando, e
+não há desfazer. Três travas: não sobrescreve dia já escrito, não escreve o
+futuro, não escreve fora do prazo da obra — e os pulados voltam ditos, com o
+motivo. Teto de 31 dias. Os equipamentos só vão junto se mandarem.
+
+### ⚑ 14/11/2026 — O DEFEITO MAIS CARO DO DIA: POST sem cabeçalho grava NADA e diz "ok"
+
+Construindo o "preencher quem assina", a tela avisou **"Gravado no cadastro da
+obra."** e o cadastro continuou em branco.
+
+**A causa:** `fetch` com `JSON.stringify` no corpo e **sem**
+`Content-Type: application/json`. O Flask lê com `request.get_json(silent=True)`,
+recebe `None`, aplica um dicionário vazio, não grava nada — e responde
+`ok: true`. O pior tipo de defeito: silencioso, com confirmação verde em cima.
+
+⚠️ **E NÃO ERA SÓ A TELA NOVA.** A varredura achou o mesmo esquecimento em
+**Colaboradores** (a marcação do ponto dentro da ficha da pessoa: *"Marcação
+salva no ponto."* sem salvar nada) e em **sete** chamadas do
+**DP › Contabilidade** — todas de meses atrás, nenhuma percebida.
+
+**O conserto ficou no ajudante `api()` do `erp_base.html`**, que agora põe o
+cabeçalho sozinho quando o corpo é texto. `FormData` fica de fora de propósito:
+nele o navegador monta o `boundary`, e fixar o tipo à mão quebra o upload.
+`tests/test_telas_mandam_json.py` guarda as duas pontas.
 ### ✉️ 14/11/2026 — MIGRAÇÃO 103: o cadastro do Telegram (feita pelo chat da Mensageria)
 
 `103_cadastro_do_telegram.sql`: tabelas `mensageria.telegram_cadastros`,

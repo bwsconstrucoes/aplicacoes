@@ -24,6 +24,27 @@ automatizado**. Esta sessão começou por aí — primeiro escrever o que a apli
 faz, depois cobrir com teste as três peças onde um erro custa dinheiro sem dar
 sinal: os dois leitores de comprovante e o casador de pagamentos.
 
+### ⚑ 14/11/2026 — um teste da fila tardia vencia sozinho (conserto de outra área)
+
+Quem mexeu: o chat do **ERP**, que não toca nesta área — e por isso o registro
+fica aqui. A suíte inteira quebrou em 14/11/2026 **sem ninguém ter mexido em
+código nenhum**: `tests/test_baixabradesco_fila_tardia.py` criava o comprovante
+adiado com a data escrita à mão, `'12/11/2026 09:00:00'`.
+
+Como `IDADE_MAXIMA_DIAS = 2`, no dia 14 aquele adiado passou a ser
+**descartado por idade** — e o teste que espera processamento deixou de ver
+chamada nenhuma. **Não era defeito do sistema: era a data vencendo.**
+
+O conserto é só de teste: a data agora é relativa a agora (`_agora_menos()`), e
+os dois testes que conferiam o texto do resumo passaram a comparar com a mesma
+data em vez de com o dia 12. O vizinho
+(`test_adiado_antigo_e_descartado_sem_gastar_processamento`) já fazia assim.
+
+**A regra que fica, e vale para qualquer área:** teste que escreve data à mão
+num fluxo que tem prazo (idade máxima, vencimento, validade) é bomba-relógio —
+ele passa hoje e quebra num dia qualquer, dando a impressão de que alguém
+estragou alguma coisa.
+
 ### O que está pendente AGORA
 
 **Publicado em 11/09/2026** (junção `1a21605`), com o "pode" do dono: os **dois
