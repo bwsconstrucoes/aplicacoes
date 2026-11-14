@@ -66,16 +66,37 @@ def test_as_SPs_coladas_entram_no_grupo_WHATSAPP_no_topo_do_lote_dele(app):
     lote.salvar("Pagar amanhã\n1111111111", "THIAGO", "thiago")
 
     resposta = telegram_lote.receber(CHAT, PEDIDO)
-    assert "2 SP(s) entraram no grupo WhatsApp" in resposta
+    assert "2 SP(s) entraram no grupo WhatsApp1" in resposta
     assert "Não achei na base" in resposta and "1426036999" in resposta
-    assert _lote() == ("WhatsApp\n1426036778\n1426036999\n\n"
+    assert _lote() == ("WhatsApp1\n1426036778\n1426036999\n\n"
                        "Pagar amanhã\n1111111111")
     assert lote.ler("thiago")["salvo_por"] == "THIAGO (Telegram)"
 
-    # o segundo envio SOMA no mesmo grupo, e o repetido não entra de novo
+    # Logo em seguida (o Telegram corta colagem longa em várias mensagens): o MESMO
+    # grupo, e o que já está nele não repete.
     resposta = telegram_lote.receber(CHAT, "SP 1426036778 e SP 2222222222")
-    assert "1 já estava(m) no seu lote: 1426036778" in resposta
-    assert _lote().startswith("WhatsApp\n1426036778\n1426036999\n2222222222\n\n")
+    assert "1 já estava(m) no grupo WhatsApp1: 1426036778" in resposta
+    assert _lote().startswith("WhatsApp1\n1426036778\n1426036999\n2222222222\n\n")
+
+    # MAIS TARDE (12/11/2026): grupo NOVO, e a SP que já está no lote entra repetida.
+    _envio_anterior_ha(minutos=10)
+    resposta = telegram_lote.receber(CHAT, "SP 1426036778 e SP 1111111111")
+    assert "2 SP(s) entraram no grupo WhatsApp2" in resposta
+    assert "fica repetida" in resposta
+    assert _lote().startswith("WhatsApp2\n1426036778\n1111111111\n\nWhatsApp1\n")
+
+
+def _envio_anterior_ha(minutos: int):
+    """Faz de conta que o último envio pelo robô foi há `minutos` minutos."""
+    import json
+    from app.apps.analisesps import telegram_lote
+    from app.apps.analisesps.db import consultar_um, conexao
+    chave = telegram_lote.CHAVE_DO_ULTIMO_GRUPO.format(pessoa="thiago")
+    dado = json.loads(consultar_um("SELECT valor FROM analisesps.meta WHERE chave = ?", (chave,))[0])
+    dado["em"] = "2020-01-01T00:00:00-03:00"
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.meta SET valor = ? WHERE chave = ?", (json.dumps(dado), chave))
+        conn.commit()
 
 
 def test_avisa_quando_a_SP_esta_no_lote_de_OUTRA_pessoa(app):
@@ -146,7 +167,7 @@ def test_a_TELA_ABERTA_nao_apaga_no_salvar_o_que_chegou_pelo_robo(app):
             "acao": "salvar", "versao": versao,
             "conteudo": "Pagar amanhã\n1111111111\n3333333333"})
         assert r.status_code == 302 and "Telegram" in r.location
-        assert _lote().startswith("WhatsApp\n1426036778\n1426036999\n\n")
+        assert _lote().startswith("WhatsApp1\n1426036778\n1426036999\n\n")
         assert "3333333333" in _lote()
 
         # Agora a tela carregou a versão nova e a pessoa TIRA uma de propósito:
@@ -154,7 +175,7 @@ def test_a_TELA_ABERTA_nao_apaga_no_salvar_o_que_chegou_pelo_robo(app):
         versao = str(lote.ler("thiago")["salvo_em"])
         cliente.post("/analisesps/lote", data={
             "acao": "salvar", "versao": versao,
-            "conteudo": "WhatsApp\n1426036778\n\nPagar amanhã\n1111111111"})
+            "conteudo": "WhatsApp1\n1426036778\n\nPagar amanhã\n1111111111"})
     assert "1426036999" not in _lote()
 
 
@@ -202,7 +223,7 @@ def test_o_WEBHOOK_do_robo_entrega_ao_lote_e_responde(app, monkeypatch):
         manda(PEDIDO)
     assert "ligada ao usuário THIAGO" in enviadas[0][1]
     assert "2 SP(s) entraram" in enviadas[1][1]
-    assert _lote().startswith("WhatsApp\n1426036778")
+    assert _lote().startswith("WhatsApp1\n1426036778")
 
 
 def test_ERRO_do_analisesps_nao_derruba_o_robo(app, monkeypatch):

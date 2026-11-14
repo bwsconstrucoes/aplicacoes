@@ -59,6 +59,7 @@ from dataclasses import dataclass, field
 from itertools import combinations
 from typing import Optional
 
+INTERVALO_CURTO_AVISO_MIN = 50   # jornada de mais de 6 h: o aviso acende abaixo disto (13/11/2026)
 TOLERANCIA_POR_MARCACAO = 5
 TOLERANCIA_DIARIA = 10
 LIMITE_EXTRA_DIA = 120
@@ -422,7 +423,10 @@ def apurar_dia(dia: dt.date, escala: Optional[Escala], batidas: list[dt.datetime
     if r.extra > LIMITE_EXTRA_DIA and escala.tipo != "CICLO_12X36":
         r.alertas.append("EXTRA_ACIMA_DE_2H")
     if escala.tipo != "CICLO_12X36":
-        precisa = 60 if r.trabalhado > 360 else (15 if r.trabalhado > 240 else 0)
+        # O AVISO DE INTERVALO CURTO (13/11/2026, o dono: "exibir somente se inferior a 50 min"): na jornada de mais de
+        # 6 h, abaixo de 50 min (a lei pede 60 — CLT art. 71 —, e o tempo que faltou é devido com 50%, §4º; o aviso é
+        # que deixou de acender entre 50 e 59). Na de 4 a 6 h, abaixo de 15 min, como antes.
+        precisa = INTERVALO_CURTO_AVISO_MIN if r.trabalhado > 360 else (15 if r.trabalhado > 240 else 0)
         if precisa and (r.intervalo or 0) < precisa:
             r.alertas.append("INTERVALO_CURTO")
     return r

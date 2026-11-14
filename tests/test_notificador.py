@@ -23,6 +23,8 @@ def ambiente_limpo(monkeypatch):
         monkeypatch.delenv(v, raising=False)
     # Estes testes são da camada das VARIÁVEIS: a mensageria fica "fora do ar".
     monkeypatch.setattr(notificador, "_mensageria", lambda: None)
+    from app.apps.telegram import telegram_bot
+    monkeypatch.setattr(telegram_bot, "_cadastro_erp", lambda: None)
 
 
 @pytest.fixture

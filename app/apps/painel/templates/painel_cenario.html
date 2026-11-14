@@ -110,7 +110,7 @@
   <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
   <input type="hidden" name="periodo_chave" value="{{ chave }}">
   {% if desde == 'inicio' %}<input type="hidden" name="periodo_desde" value="inicio">
-  <input type="hidden" name="periodo_ate" value="">{% endif %}
+  <input type="hidden" name="periodo_ate" value=""><input type="hidden" name="periodo_valor" value="">{% endif %}
   {% set fica = n(regra[0]) if regra else '' %}
   {% set filial = n(regra[1]) if regra else '' %}
   <span style="display:inline-flex; gap:4px; align-items:center; white-space:nowrap">
@@ -140,6 +140,8 @@
       <small><b>Quando a regra vale só num período.</b> Diga <b>de</b> que mês <b>até</b> que mês
         (inclusive). Só o “de” = dali em diante; só o “até” = do início até ali. Os campos são os
         mesmos: % que fica no {{ principal or 'principal' }}, % que é da {{ filial_nome }}, e o resto rateia.
+        <b>“Antes, ficam R$”</b> é opcional: um valor em reais do total do período que fica inteiro no
+        {{ principal or 'principal' }} — pró-labore, por exemplo — e os percentuais valem para o que sobra.
         <b>Mês fora de todos os períodos</b> segue a linha da conta, acima
         ({% if regra %}{{ n(regra[0]) }} · {{ n(regra[1]) }}{% elif herda %}em branco: herda {{ n(herda[0]) }} · {{ n(herda[1]) }}{% else %}em branco{% endif %}).</small>
       {% for p in lista %}
@@ -150,12 +152,20 @@
         <small>até</small>
         <input type="month" name="periodo_ate" value="{{ p.ate }}" data-original="{{ p.ate }}"
                aria-label="até que mês">
+        {% set fixo = p.valor_txt %}
+        <small title="um valor em reais que fica inteiro no {{ principal or 'principal' }}, antes dos percentuais">antes, ficam R$</small>
+        <input name="periodo_valor" value="{{ fixo }}" data-original="{{ fixo }}" data-sem-mascara
+               inputmode="decimal" placeholder="0,00" style="width:120px; text-align:right"
+               aria-label="valor em reais que fica no {{ principal or 'principal' }} antes dos percentuais">
+        <small>e do resto:</small>
         {{ campos_da_regra(nivel, chave, p.desde, (p.fica, p.filial)) }}
         {# o dinheiro que segue esta linha #}
         <small style="color:var(--tinta-suave)">
           {% if p.total|abs > 0.005 %}
           neste período: <b>{{ brl(p.total) }}</b> —
-          fica {{ brl(p.v_fica) }} · {{ filial_nome }} {{ brl(p.v_filial) }} · rateia {{ brl(p.v_rateia) }}
+          fica {{ brl(p.v_fica) }}{% if p.valor %} (com os R$ {{ p.valor_txt }} destacados){% endif %}
+          · {{ filial_nome }} {{ brl(p.v_filial) }} · rateia {{ brl(p.v_rateia) }}
+          {% if p.valor_passa %}<b style="color:var(--vermelho)">· o valor destacado é maior que o total do período: fica tudo</b>{% endif %}
           {% else %}sem custo neste período{% endif %}
         </small>
       </span>
@@ -173,6 +183,11 @@
         <input type="month" name="periodo_desde" data-original="" aria-label="de que mês">
         <small>até</small>
         <input type="month" name="periodo_ate" data-original="" aria-label="até que mês">
+        <small title="um valor em reais que fica inteiro no {{ principal or 'principal' }}, antes dos percentuais">antes, ficam R$</small>
+        <input name="periodo_valor" data-original="" data-sem-mascara inputmode="decimal"
+               placeholder="0,00" style="width:120px; text-align:right"
+               aria-label="valor em reais que fica no {{ principal or 'principal' }} antes dos percentuais">
+        <small>e do resto:</small>
         {{ campos_da_regra(nivel, chave, '', none) }}
       </span>
       {% endfor %}
@@ -881,7 +896,9 @@
     document.querySelectorAll("form[data-secao] [data-linha-regra]").forEach(l => {
       const fica = l.querySelector('[name="periodo_fica"]');
       const filial = l.querySelector('[name="periodo_filial"]');
-      if (fica && filial && !fica.value.trim() && !filial.value.trim()) {
+      const fixo = l.querySelector('[name="periodo_valor"]');
+      if (fica && filial && !fica.value.trim() && !filial.value.trim()
+          && !(fixo && fixo.value.trim())) {
         // a conta continua "presente" (é assim que se apaga a regra dela)
         l.querySelectorAll('input[name^="periodo_"]:not([name="periodo_presente"])')
          .forEach(c => { if (!c.disabled) campos.push(c); });
@@ -1052,7 +1069,7 @@
   });
 
   // o que mudou e ainda não foi salvo fica marcado
-  const campos = [...form.querySelectorAll('input[name="periodo_fica"], input[name="periodo_filial"], input[type="month"][name="periodo_desde"], input[type="month"][name="periodo_ate"]')];
+  const campos = [...form.querySelectorAll('input[name="periodo_fica"], input[name="periodo_filial"], input[name="periodo_valor"]:not([type="hidden"]), input[type="month"][name="periodo_desde"], input[type="month"][name="periodo_ate"]')];
   function pendentes() {
     let n = 0;
     campos.forEach(c => {

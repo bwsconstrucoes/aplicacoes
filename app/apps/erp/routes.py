@@ -4463,6 +4463,12 @@ def api_pipefy_cadastro_situacao():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# Quantos cards por rodada. O mesmo espírito do limite da importação de SPs:
+# uma rodada que não termina antes da renovação do serviço no Render é uma
+# rodada perdida no meio.
+TETO_DE_CARDS_POR_RODADA = 300
+
+
 @bp.route("/erp/api/importar/pipefy-cadastro", methods=["POST"])
 @login_obrigatorio
 @permissao("importar")
@@ -4482,32 +4488,30 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": (
             "Este servidor não tem o token do Pipefy configurado "
             "(PIPEFY_API_TOKEN). Sem ele não dá para ler os cards.")}), 400
-    try:
-        teto = int(d.get("teto_de_pessoas") or imp.POR_RODADA)
-    except (TypeError, ValueError):
-        teto = imp.POR_RODADA
-    teto = max(1, min(teto, 300))
+    # ⚑ A FILA É A LISTA QUE ELE COLA (13/11/2026). Antes eu varria o pipe
+    # inteiro e casava pelo CPF — e trazia card cancelado e card repetido, que
+    # não interessam. Ele: *"eu vou listar os cards que eu quero que você
+    # busque. E você faz a pesquisa card a card e puxa as informações."*
+    pedidos = imp.ids_dos_cards(d.get("cards"))
+    if not pedidos:
+        return jsonify({"ok": False, "erro": (
+            "Cole os números dos cards que devem ser buscados.")}), 400
+    if len(pedidos) > TETO_DE_CARDS_POR_RODADA:
+        return jsonify({"ok": False, "erro": (
+            f"{len(pedidos)} cards de uma vez — faça em blocos de até "
+            f"{TETO_DE_CARDS_POR_RODADA}.")}), 400
     try:
         trabalhos.registrar_todos()
         with get_session() as s:
             usuario = _usuario_logado(s)
-            quantos = len(imp.quem_tem_card(
-                s, so_ativos=bool(d.get("so_ativos", True)),
-                obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
-                teto=teto))
-            if not quantos:
-                return jsonify({"ok": False, "erro": (
-                    "Nenhuma pessoa com número de card do Pipefy nesse "
-                    "filtro.")}), 400
             t = tarefas.enfileirar(
                 s, "importar_cadastro_pipefy",
-                {"simular": not gravar,
-                 "so_ativos": bool(d.get("so_ativos", True)),
-                 "obra_id": (int(d["obra_id"]) if d.get("obra_id") else None),
-                 "teto_de_pessoas": teto,
+                {"simular": not gravar, "cards": pedidos,
+                 "regravar": bool(d.get("regravar")),
                  "usuario_id": usuario.id if usuario else None},
-                rotulo=("Conferir sem gravar: " if not gravar
-                        else "Trazer do Pipefy: ") + f"{quantos} pessoa(s)",
+                rotulo=(("Conferir sem gravar: " if not gravar
+                         else "Trazer do Pipefy: ")
+                        + f"{len(pedidos)} card(s)"),
                 usuario=usuario)
             linha = tarefas.ler(s, t.id)
             s.commit()
@@ -4516,6 +4520,50 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao enfileirar a importação do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# AS PERGUNTAS QUE A IMPORTAÇÃO DEIXOU — e quem responde é gente
+#
+# Ele, em 13/11/2026: *"quando houver divergência entre o que a IA lê e o que
+# está cadastrado, aí você questiona. E o humano decide."*
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/cadastro/divergencias")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_cadastro_divergencias():
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "perguntas": imp.perguntas_abertas(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar as divergências do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/cadastro/divergencias/<int:divergencia_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_cadastro_divergencia_decidir(divergencia_id: int):
+    """Alguém escolheu qual versão vale — e o cadastro passa a dizer isso."""
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = imp.decidir(s, divergencia_id,
+                            str(d.get("fonte") or ""), usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao decidir a divergência")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -12000,6 +12048,43 @@ def api_diario_importar():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/obras/cdiarios", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_obras_cdiarios():
+    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
+    propósito, nada é escrito. E o que já está preenchido no cadastro só é
+    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
+    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    """
+    from app.apps.erp.core.importadores import obras_cdiarios as imp
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+    if not (arquivo.filename or "").lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "erro":
+                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                        "Arquivo › Fazer download › Microsoft Excel."}), 400
+    gravar = request.form.get("gravar") in ("1", "true", "sim")
+    regravar = request.form.get("regravar") in ("1", "true", "sim")
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = imp.importar(s, conteudo, usuario.id if usuario else None,
+                               simular=not gravar, regravar=regravar)
+            if gravar:
+                s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao completar obras pela C. Di\u00e1rios")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/calendario")
 @login_obrigatorio
 @permissao("ver_diario")
@@ -12873,67 +12958,41 @@ except Exception:  # noqa: BLE001
     logger.exception("ERP: a gestão do ponto não carregou; o ERP segue sem ela")
 
 
-def _juntar_ponto_com_pessoal() -> None:
-    """O PONTO PASSA A MORAR DENTRO DE PESSOAL (06/11/2026).
+def _ponto_ao_lado_de_pessoal() -> None:
+    """O PONTO VOLTA A TER O PRÓPRIO LUGAR NO MENU, LOGO DEPOIS DE PESSOAL (13/11/2026).
 
-    Pedido do dono, olhando os dois módulos lado a lado:
+    Histórico: em 06/11/2026 as abas do ponto foram para DENTRO de Pessoal (o dono: *"a gente tem lá pessoal e tem
+    ponto (…) já seria o momento de integrar isso aí"*). Em 13/11/2026 ele voltou atrás no MENU, mantendo a integração
+    onde ela importa — a ficha da pessoa:
 
-    > *"a gente tem lá pessoal e tem ponto. Eu tô achando que já seria o momento
-    > de integrar isso aí. (…) tem cadastro da pessoa, tem cadastro no ponto.
-    > Tem a tela de visualizar pessoas num lado, no outro. Não deveria ser
-    > assim, né? A gente tem que falar a mesma linguagem nos dois lados, afinal
-    > é a mesma empresa, é o mesmo ERP."*
+    > *"Quando a gente juntou ponto dentro de pessoal, a quantidade de telas ficou muito grande, muito longa (…) ficou
+    > um pouco bagunçado, era melhor dividir a parte de ponto e a parte de pessoal."*
 
-    POR QUE AQUI E NÃO NO MÓDULO DO PONTO: o menu é do ERP. O ponto se registra
-    inserindo o módulo dele na lista; quem decide como a lista se organiza é
-    este arquivo. Assim a junção não mexe em nenhum arquivo da área do ponto —
-    e se o ponto não carregar, esta função não faz nada e o ERP sobe igual.
+    E a integração que ele queria de verdade era outra: clicar na pessoa e ver TUDO dela (cadastro, ponto, aparelhos,
+    pagamentos) numa janela só — feita na janela da pessoa do ponto, que a tela de Colaboradores agora abre
+    (ver `erp_colaboradores.html`, `ficha`).
 
-    O QUE ELA FAZ, e só isto: move as abas do módulo "ponto" para o fim das
-    abas de "pessoal", apaga o módulo que ficou vazio e reaponta o mapa de
-    aba → módulo. Nenhuma rota muda, nenhuma permissão muda, nenhuma tela do
-    ponto é tocada: as telas dele continuam existindo no mesmo endereço, só
-    passam a acender a aba "Pessoal" lá em cima em vez de "Ponto".
+    O QUE ESTA FUNÇÃO FAZ, e só isto: põe o módulo "ponto" logo depois de "pessoal" e ordena as abas de Pessoal pelo
+    dia a dia. As abas do ponto (e a ordem delas, decidida com o dono em 13/11) são do módulo do ponto
+    (`app/apps/ponto/gestao.py`, `ABAS`). Nenhuma rota e nenhuma permissão mudam. Se o ponto não carregar, nada aqui
+    quebra: o ERP sobe sem o menu dele.
     """
     pessoal = next((m for m in MODULOS if m["chave"] == "pessoal"), None)
     ponto = next((m for m in MODULOS if m["chave"] == "ponto"), None)
+    if pessoal is not None:
+        ORDEM = ("colaboradores", "dp_solicitacoes", "dp_contabilidade", "dc")
+        pessoal["abas"] = ([a for chave in ORDEM for a in pessoal["abas"] if a[0] == chave]
+                           + [a for a in pessoal["abas"] if a[0] not in ORDEM])
     if pessoal is None or ponto is None:
         return
-    # A ORDEM É PELO DIA A DIA, não pela origem. Juntar e deixar as quatro do
-    # ERP na frente das treze do ponto poria "Despesas com colaborador" antes do
-    # "Quadro" do ponto — e quem abre esta área de manhã abre o quadro e o
-    # cadastro, não a despesa. A lista abaixo é a ordem desejada; o que não
-    # estiver nela entra depois, na ordem em que já estava.
-    ORDEM = ("colaboradores", "ponto_quadro", "ponto_pendencias", "ponto_espelho",
-             "ponto_hoje", "dp_solicitacoes", "dp_contabilidade", "dc",
-             "ponto_banco", "ponto_alertas")
-    juntas = list(pessoal["abas"]) + list(ponto["abas"])
-    # "PESSOAS" do ponto virou "Pessoas no ponto" (06/11/2026). É a tela que ele
-    # apontou como duplicada: *"tem a tela de visualizar pessoas num lado, no
-    # outro."* Ela continua existindo — é de outra área e tem uso próprio (a
-    # foto de cadastro) — mas o nome passa a dizer QUAL das duas é, em vez de
-    # duas abas "Pessoas"/"Colaboradores" sem diferença visível.
-    juntas = [(c, "Pessoas no ponto" if c == "ponto_pessoas" else n, r)
-              for c, n, r in juntas]
-    pessoal["abas"] = (
-        [a for chave in ORDEM for a in juntas if a[0] == chave]
-        + [a for a in juntas if a[0] not in ORDEM])
-    pessoal["descricao"] = ("Cadastro das pessoas, ponto eletrônico, pedidos ao "
-                            "DP e despesas com colaboradores")
     MODULOS.remove(ponto)
-    _MODULO_DA_ABA.update({chave: "pessoal" for chave, _, _ in ponto["abas"]})
-    # As abas do ponto que não estão no menu (hoje nenhuma) também precisam
-    # reapontar, senão a tela delas abriria com o menu do Financeiro aceso.
-    for chave, valor in list(_MODULO_DA_ABA.items()):
-        if valor == "ponto":
-            _MODULO_DA_ABA[chave] = "pessoal"
+    MODULOS.insert(MODULOS.index(pessoal) + 1, ponto)
 
 
 try:
-    _juntar_ponto_com_pessoal()
+    _ponto_ao_lado_de_pessoal()
 except Exception:  # noqa: BLE001
-    logger.exception("ERP: não consegui juntar o Ponto com Pessoal; os dois "
-                     "módulos seguem separados no menu")
+    logger.exception("ERP: não consegui pôr o Ponto ao lado de Pessoal no menu; a ordem fica a de origem")
 
 # MENSAGERIA (05/10/2026) — a tela "Mensagens" (por onde cada aviso sai, teto
 # do WhatsApp, registro) entra do mesmo jeito: rotas em

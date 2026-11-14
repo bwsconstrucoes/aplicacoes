@@ -1,0 +1,12 @@
+-- Um VALOR FIXO que fica no projeto principal, antes dos percentuais (12/11/2026).
+--
+-- O dono: "num determinado período, eu quero desconsiderar do rateio um
+-- determinado valor. (…) tenho 2 milhões de custo, deixarei 500 mil
+-- exclusivamente na matriz e farei rateio de 50/50 no resto. (…) tem algumas
+-- despesas que são notórias, que na verdade é o pró-labore dos sócios da
+-- matriz — eu não quero que esse pró-labore seja rateado."
+--
+-- `valor_fica` é esse valor, em reais, do total da conta no período da linha.
+-- Sai primeiro e fica inteiro no projeto principal; os percentuais da linha
+-- valem para o que sobra. Zero = não há valor fixo (como era).
+ALTER TABLE painel.cenario_peso_periodo ADD COLUMN IF NOT EXISTS valor_fica NUMERIC(16,2) NOT NULL DEFAULT 0;

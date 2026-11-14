@@ -206,24 +206,54 @@ def lista_do_campo(valor: Any) -> list[Any]:
     return [texto]
 
 
+# A raiz do armazenamento do Pipefy, para o anexo que vem como CAMINHO.
+RAIZ_DO_ARQUIVO = "https://app.pipefy.com/storage/v1/signed/"
+
+
 def endereco_do_anexo(item: Any) -> str:
-    """O endereço de onde baixar — ou VAZIO quando não dá para saber.
+    """O endereço de onde baixar — aceitando as DUAS formas que o Pipefy usa.
 
-    ⚑ E VAZIO É UMA RESPOSTA LEGÍTIMA, não um caso a contornar. Eu ia montar o
-    endereço a partir de um caminho solto (`orgs/…/uploads/…`), chutando a
-    raiz do armazenamento do Pipefy. Não é preciso: o importador de cards que
-    este monorepo JÁ roda em produção (`core/importadores/pipefy_cards.py`)
-    mostra que, nesta conta, o campo de anexo vem com o endereço COMPLETO —
-    ele aceita só o que começa com http, e funciona há meses.
+    ⚑ AQUI EU ERREI DUAS VEZES, EM SENTIDOS OPOSTOS, e vale ficar escrito.
+    Primeiro eu ia montar o endereço chutando a raiz do armazenamento; depois
+    passei a aceitar SÓ o endereço completo, porque o importador de SPs deste
+    monorepo faz assim e funciona há meses. Em 13/11/2026 ele usou a
+    importação do cadastro e o resultado foi: *"a documentação que está
+    anexada no pipe não veio para cá (…) não veio nenhum documento"*.
 
-    Então a regra é a mesma, e o que não for endereço completo vira linha do
-    relatório. Chutar a raiz daria um endereço que ou não responde, ou — pior —
-    responde outra coisa, e aí o arquivo de alguém entraria no cadastro de
-    outra pessoa.
+    A diferença é que são PIPES DIFERENTES, e o Pipefy devolve o campo de
+    anexo ora como endereço completo, ora como o caminho do arquivo dentro do
+    armazenamento. Recusar o caminho era jogar fora todos os documentos.
+
+    Então as duas formas entram, e o relatório diz qual foi usada — nada aqui
+    é silencioso. O que não se parecer com nenhuma das duas continua virando
+    linha do relatório, em vez de endereço inventado.
     """
     alvo = item.get("url") if isinstance(item, dict) else item
     alvo = str(alvo or "").strip()
-    return alvo if alvo.startswith("http://") or alvo.startswith("https://") else ""
+    if not alvo:
+        return ""
+    if alvo.startswith("http://") or alvo.startswith("https://"):
+        return alvo
+    # Caminho dentro do armazenamento ("orgs/…/uploads/…/arquivo.pdf").
+    if "/" in alvo and "." in alvo.rsplit("/", 1)[-1]:
+        return RAIZ_DO_ARQUIVO + alvo.lstrip("/")
+    return ""
+
+
+def forma_do_anexo(item: Any) -> str:
+    """Como o endereço foi entendido — para o relatório poder DIZER.
+
+    Sem isto, "não veio documento nenhum" é um mistério; com isto, a
+    conferência mostra o que o Pipefy devolveu em cada campo."""
+    alvo = item.get("url") if isinstance(item, dict) else item
+    alvo = str(alvo or "").strip()
+    if not alvo:
+        return "vazio"
+    if alvo.startswith("http://") or alvo.startswith("https://"):
+        return "endereço completo"
+    if "/" in alvo and "." in alvo.rsplit("/", 1)[-1]:
+        return "caminho no armazenamento"
+    return "não reconhecido"
 
 
 def nome_do_anexo(item: Any) -> str:

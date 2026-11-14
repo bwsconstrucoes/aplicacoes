@@ -124,16 +124,15 @@
       <b>Telegram</b> —
       {% if telegram.ligacao %}
         ligado desde {{ telegram.ligacao.ligado_em|momento_br }}. Cole no robô
-        as mensagens de pedido de pagamento: as SPs entram no grupo
-        <b>WhatsApp</b>, no topo deste lote.
+        as mensagens de pedido de pagamento: cada envio vira um grupo novo
+        (<b>WhatsApp1</b>, <b>WhatsApp2</b>…), no topo deste lote — mesmo SP que já esteja em outro grupo.
         {% if telegram.pode_ligar %}
           <button type="button" class="btn secundario" data-telegram="desligar">Desligar o Telegram</button>
         {% endif %}
       {% elif telegram.pode_ligar %}
         ligue UMA VEZ a sua conversa com o robô da BWS (fica ligada de vez) e
-        cole lá as mensagens de pedido de pagamento do WhatsApp: as SPs entram
-        sozinhas no grupo
-        <b>WhatsApp</b>, no topo deste lote.
+        cole lá as mensagens de pedido de pagamento do WhatsApp: cada envio vira
+        sozinho um grupo novo (<b>WhatsApp1</b>, <b>WhatsApp2</b>…), no topo deste lote.
         <button type="button" class="btn secundario" data-telegram="ligar">Ligar ao Telegram</button>
       {% else %}
         para ligar o robô, entre com o seu usuário (não com a senha geral).

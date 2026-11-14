@@ -871,7 +871,44 @@
       verTudo.href = dados.ver_tudo;
       verTudo.textContent = "Ver na Receita de Obra";
       verTudo.style.display = dados.pode_abrir ? "" : "none";
-      if (!dados.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nenhuma medição nos filtros atuais.</p>'; return; }
+      // AS OUTRAS RECEITAS (12/11/2026): a linha do DRE soma também o que não é
+      // medição. Vão num quadro próprio, e a conta de baixo fecha com o DRE.
+      const ot = dados.outras_total || {quantas: 0, recebido: 0, a_receber: 0};
+      const outras = dados.outras || [];
+      const daVisao = v => visao === "quitadas" ? v.recebido
+                         : visao === "a_receber" ? v.a_receber : v.recebido + v.a_receber;
+      const medicoesDaVisao = visao === "quitadas" ? t.recebido + t.retido
+                            : visao === "a_receber" ? t.a_receber : t.bruto;
+      const quadroDasOutras = !outras.length ? "" : `
+        <h4 style="margin:16px 0 4px">Outras receitas — não são medição</h4>
+        <p class="cartao-dica" style="margin:0 0 6px">Rendimento, estorno, devolução e o que mais
+          entrou como receita sem ser “Receita de Obras”. O DRE soma na mesma linha.</p>
+        <table class="sem-quebra"><thead><tr>
+          <th class="sem-ordem">Categoria</th><th class="sem-ordem">De quem</th>
+          <th class="sem-ordem">Obra</th><th class="sem-ordem">Documento</th>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem direita">Recebido</th><th class="sem-ordem direita">A receber</th>
+        </tr></thead><tbody>${outras.map(l => `<tr>
+          <td class="desc">${escapar(l.categoria)}</td>
+          <td class="desc">${escapar(l.cliente || "—")}</td>
+          <td class="desc">${escapar(l.obra)}</td>
+          <td class="desc">${l.link ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener">${escapar(l.documento || "Pipefy")} ↗</a>` : escapar(l.documento || "—")}</td>
+          <td class="dados">${data(l.data)}</td>
+          <td class="dados direita v-pos">${moeda(l.recebido)}</td>
+          <td class="dados direita v-aberto">${moeda(l.a_receber)}</td></tr>`).join("")}
+        </tbody></table>`
+        + (ot.quantas > outras.length && visao === "todas"
+            ? `<p class="cartao-dica">Mostrando os ${outras.length} maiores de ${ot.quantas}. O total abaixo é de todos.</p>` : "");
+      const fechamento = `
+        <p style="margin:14px 0 0; padding:8px 10px; border:1px solid var(--borda); border-radius:8px">
+          <b>Para bater com o DRE:</b> medições <b>${moeda(medicoesDaVisao)}</b>
+          + outras receitas <b>${moeda(daVisao(ot))}</b>
+          = <b>${moeda(medicoesDaVisao + daVisao(ot))}</b> — a “Receita Bruta” do DRE nesta coluna.
+        </p>`;
+      if (!dados.linhas.length) {
+        corpo.innerHTML = '<p class="cartao-dica">Nenhuma medição nos filtros atuais.</p>' + quadroDasOutras + fechamento;
+        return;
+      }
       corpo.innerHTML = `<table class="sem-quebra">
         <thead><tr>
           <th class="sem-ordem">Medição</th><th class="sem-ordem">Cliente</th>
@@ -882,7 +919,8 @@
           <th class="sem-ordem">Situação</th>
         </tr></thead>
         <tbody>${dados.linhas.map(l => linha(l, dados.pode_abrir)).join("")}</tbody></table>`
-        + (dados.linhas.length >= 300 ? '<p class="cartao-dica">Mostrando os 300 títulos mais recentes. A lista inteira está na Receita de Obra.</p>' : "");
+        + (dados.linhas.length >= 300 ? '<p class="cartao-dica">Mostrando os 300 títulos mais recentes. A lista inteira está na Receita de Obra.</p>' : "")
+        + quadroDasOutras + fechamento;
     } catch (e) {
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar as medições. Tente de novo.</p>';
     }

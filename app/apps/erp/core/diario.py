@@ -288,6 +288,32 @@ def _endereco(o) -> str:
 # ---------------------------------------------------------------------------
 # 2. O EFETIVO — vem do PONTO, e é a melhor parte do desenho
 # ---------------------------------------------------------------------------
+# ⚑ A HORA DA BATIDA É UTC NO BANCO, E O DIÁRIO MOSTRAVA ASSIM (13/11/2026).
+#
+# Ele: *"aí tá aparecendo uns horários esquisitos também."* Esquisitos porque
+# estavam TRÊS HORAS ADIANTADOS: `ponto.marcacoes.timestamp_servidor` é
+# TIMESTAMPTZ gravado em UTC (o Render e o Postgres rodam em UTC), e a área do
+# ponto converte para Fortaleza em toda saída (`ponto/horario.py:para_local`).
+# O diário imprimia o valor cru — quem bateu 7:00 aparecia às 10:00.
+#
+# A conversão é feita NO BANCO, com `AT TIME ZONE`, e não em Python: assim o
+# MIN/MAX continua sendo sobre o instante real, e o ERP não passa a depender
+# do módulo de outra área, que é o que o `CLAUDE.md` manda evitar. O nome do
+# fuso vive aqui, com a fonte apontada; Fortaleza não adota horário de verão,
+# então não há armadilha de data.
+FUSO_DA_EMPRESA = "America/Fortaleza"   # fonte: app/apps/ponto/horario.py
+
+# ⚑ E O FILTRO DE BATIDA VÁLIDA ERA UMA PALAVRA QUE NÃO EXISTE NO PONTO.
+#
+# O diário pedia as batidas "não canceladas". Os status de `ponto.marcacoes`
+# são VALIDA, EM_ANALISE, AJUSTADA e REJEITADA — cancelada não é um deles. Ou
+# seja: o filtro não tirava NADA, e **batida REJEITADA contava como gente em
+# obra**. O ponto inteiro usa "não rejeitada" (qualidade, folha, espelho,
+# arquivos fiscais); o diário era o único fora do passo. AJUSTADA fica DENTRO
+# de propósito: é a batida que a pessoa esqueceu e o supervisor incluiu, não
+# uma correção que substitui outra.
+
+
 def efetivo_do_ponto(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     """Quem bateu ponto NESTA obra NESTE dia, com função e horário.
 
@@ -322,35 +348,42 @@ def efetivo_do_ponto(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     # `analisesps`, a primeira falha INTEIRA e levaria o efetivo junto — e aí
     # voltaríamos ao "o ponto não respondeu" por causa de uma tabela que nem é
     # do ponto.
+    # ⚑ O CARGO DO REGISTRO VEM POR SUBCONSULTA, E NÃO POR JOIN (13/11/2026).
+    #
+    # Com `LEFT JOIN analisesps.colaborador` + `GROUP BY …, r.cargo`, bastava
+    # o mesmo CPF existir em DUAS grafias naquela tabela (lá o CPF é a chave
+    # como TEXTO, e o casamento aqui é por dígitos) para a MESMA PESSOA virar
+    # duas linhas — e duas pessoas na conta do efetivo. A subconsulta com
+    # LIMIT 1 devolve no máximo um valor por pessoa, aconteça o que acontecer
+    # do outro lado: contagem de gente em obra não pode depender de a tabela
+    # vizinha estar limpa.
     de_onde = """
             SELECT c.id, c.nome,
                    COALESCE(NULLIF(btrim(cg.nome), ''),
                             NULLIF(btrim(f.nome), ''),
                             {registro}'') AS funcao,
-                   MIN(m.timestamp_servidor) AS entrada,
-                   MAX(m.timestamp_servidor) AS saida,
+                   MIN(m.timestamp_servidor AT TIME ZONE :fuso) AS entrada,
+                   MAX(m.timestamp_servidor AT TIME ZONE :fuso) AS saida,
                    count(*) AS batidas
               FROM ponto.marcacoes m
               JOIN colaboradores c ON c.id = m.colaborador_id
               LEFT JOIN cargos cg ON cg.id = c.cargo_id
               LEFT JOIN funcoes f ON f.id = c.funcao_id
-              {junta}
              WHERE m.obra_id = :o
                AND m.data_referencia = :d
-               AND m.status <> 'CANCELADA'
-             GROUP BY c.id, c.nome, cg.nome, f.nome{mais}
+               AND m.status <> 'REJEITADA'
+             GROUP BY c.id, c.nome, c.cpf, cg.nome, f.nome
              ORDER BY c.nome"""
-    linhas = _consulta_opcional(
-        s, de_onde.format(
-            registro="NULLIF(btrim(r.cargo), ''), ",
-            junta=("LEFT JOIN analisesps.colaborador r "
-                   "ON regexp_replace(r.cpf, '\\D', '', 'g') = "
-                   "regexp_replace(c.cpf, '\\D', '', 'g')"),
-            mais=", r.cargo"),
-        o=obra_id, d=dia)
+    do_registro = ("NULLIF(btrim(("
+                   " SELECT r.cargo FROM analisesps.colaborador r"
+                   " WHERE regexp_replace(r.cpf, '\\D', '', 'g')"
+                   "     = regexp_replace(c.cpf, '\\D', '', 'g')"
+                   " LIMIT 1)), ''), ")
+    linhas = _consulta_opcional(s, de_onde.format(registro=do_registro),
+                                o=obra_id, d=dia, fuso=FUSO_DA_EMPRESA)
     if linhas is None:
-        linhas = _consulta_opcional(
-            s, de_onde.format(registro="", junta="", mais=""), o=obra_id, d=dia)
+        linhas = _consulta_opcional(s, de_onde.format(registro=""),
+                                    o=obra_id, d=dia, fuso=FUSO_DA_EMPRESA)
     if linhas is None:
         return {**vazio,
                 "indisponivel": "O ponto não respondeu. O efetivo pode ser "
@@ -404,7 +437,7 @@ def lotados_que_bateram_em_outra(s: Session, obra_id: int,
               JOIN obras o ON o.id = m.obra_id
              WHERE c.obra_id = :o AND m.obra_id <> :o
                AND m.data_referencia = :d
-               AND m.status <> 'CANCELADA'
+               AND m.status <> 'REJEITADA'
              ORDER BY c.nome LIMIT 50""", o=obra_id, d=dia) or []
     return [{"colaborador_id": l["id"], "nome": l["nome"], "onde": l["onde"]}
             for l in linhas]
@@ -506,11 +539,10 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
     if linha is None:
         sugere_sem, motivo_sem = nasce_sem_expediente(s, obra_id, dia)
 
-    return {
-        "obra": cab,
-        "data": str(dia),
-        "existe": linha is not None,
-        "diario": _para_tela(s, linha) if linha is not None else {
+    # ⚑ `_para_tela` UMA VEZ SÓ: ela vai ao banco buscar extras, equipamentos e
+    # correções. Chamá-la de novo para olhar o efetivo importado dobraria essas
+    # consultas a cada abertura de dia.
+    tela = _para_tela(s, linha) if linha is not None else {
             "situacao": "ABERTO",
             "tempo_manha": "", "tempo_tarde": "", "relato": "",
             "ocorrencias": "", "fiscalizacao_esteve": False,
@@ -525,10 +557,21 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
             "informado_por": "", "importado_de": "",
             "equipamentos_lista": [], "equipamentos_resumo": "",
             "equipamentos_disponivel": _tem_equipamentos_em_tabela(s),
-        },
+        }
+
+    return {
+        "obra": cab,
+        "data": str(dia),
+        "existe": linha is not None,
+        "diario": tela,
         "sugere_sem_expediente": sugere_sem,
         "motivo_sem_expediente": motivo_sem,
         "efetivo": efetivo,
+        # ⚑ A LISTA DA PLANILHA ENTRA NA SOMA? Decidido aqui, onde se conhecem
+        # as duas fontes, e não na tela — o papel usa a mesma regra, e duas
+        # versões divergiriam no primeiro ajuste. Ver `importado_conta`.
+        "efetivo_importado_conta": importado_conta(
+            efetivo, tela.get("efetivo_importado")),
         "avisos_do_ponto": lotados_que_bateram_em_outra(s, obra_id, dia),
         "material": material_recebido(s, obra_id, dia),
         # ⚑ O RELATO DE ONTEM, para reaproveitar. Pedido dele: *"é muito comum
@@ -1068,7 +1111,7 @@ def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
     com_ponto = {l["data_referencia"] for l in (_consulta_opcional(s, """
             SELECT DISTINCT data_referencia FROM ponto.marcacoes
              WHERE obra_id = :o AND data_referencia BETWEEN :i AND :f
-               AND status <> 'CANCELADA'""",
+               AND status <> 'REJEITADA'""",
             o=obra_id, i=primeiro_dia, f=ultimo_dia) or [])}
     feriados = {l["data"]: l["nome"] for l in (_consulta_opcional(s, """
             SELECT data, nome FROM ponto.feriados
@@ -1511,6 +1554,30 @@ def _embutir(dados: Optional[bytes], mime: Optional[str]) -> str:
     return f"data:{tipo};base64,{base64.b64encode(bytes(dados)).decode()}"
 
 
+def importado_conta(efetivo: dict[str, Any],
+                    importado: Optional[list[dict[str, Any]]]) -> bool:
+    """O efetivo vindo da planilha entra na soma? Só se o ponto não tiver nada.
+
+    ⚑ ELE ACHOU O DEFEITO OLHANDO O NÚMERO (13/11/2026): *"eu acho que ele
+    está dobrando o efetivo (…) está dando um valor acima do que é o real. E
+    não é nem dobrando, não."*
+
+    Era isto. Os 1.427 diários da planilha antiga trazem o efetivo do dia em
+    `diario_efetivo_extra` (origem IMPORTADO). Quando o MESMO dia também tem
+    batida de ponto — e tem, porque a planilha vai até datas em que o ponto já
+    rodava —, o diário somava **os dois registros da mesma gente**: 17 da
+    planilha + 9 do ponto = 26 pessoas numa obra que teve 9. Não dava o dobro
+    exato justamente porque são contagens diferentes do mesmo dia.
+
+    A REGRA, e ela é de documento, não de tela: quando há batida, **o ponto
+    manda** — é a fonte com nome, hora e foto. A lista da planilha continua
+    aparecendo, dita como o que veio da planilha, mas FORA da soma. Sem
+    batida (o caso dos anos anteriores), a planilha é o único registro que
+    existe e conta inteira, como sempre contou.
+    """
+    return not bool(efetivo.get("por_funcao")) and bool(importado)
+
+
 def _efetivo_para_o_papel(efetivo: dict[str, Any],
                           extras: list[dict[str, Any]],
                           importado: Optional[list[dict[str, Any]]] = None
@@ -1518,15 +1585,19 @@ def _efetivo_para_o_papel(efetivo: dict[str, Any],
     """Função e quantidade. O próprio e o terceirizado em linhas separadas —
     quem lê o RDO precisa distinguir mão de obra própria de contratada.
 
-    ⚑ `importado` conta como PRÓPRIO, e tem de contar: num diário vindo da
-    planilha antiga ele é o efetivo da obra naquele dia. O ponto eletrônico
-    não existia ali, então `por_funcao` vem vazio — e sem somar o importado o
-    papel de 1.380 dias sairia declarando zero pessoa em obra.
+    ⚑ `importado` conta como PRÓPRIO **só quando o ponto não tem ninguém**.
+    Num diário vindo da planilha antiga ele é o efetivo da obra naquele dia, e
+    sem ele o papel de 1.380 dias sairia declarando zero pessoa em obra. Mas
+    quando o dia TAMBÉM tem batida, os dois são registros da mesma gente, e
+    somá-los inflava o efetivo — foi o que ele viu em 13/11/2026. Ver
+    `importado_conta`.
     """
     proprio = [{"funcao": f["funcao"], "quantidade": f["quantidade"],
                 "tipo": "próprio"} for f in efetivo.get("por_funcao", [])]
-    proprio += [{"funcao": f["funcao"], "quantidade": f["quantidade"],
-                 "tipo": "próprio"} for f in (importado or [])]
+    soma_importado = importado_conta(efetivo, importado)
+    if soma_importado:
+        proprio += [{"funcao": f["funcao"], "quantidade": f["quantidade"],
+                     "tipo": "próprio"} for f in (importado or [])]
     de_fora = [{"funcao": (e["funcao"] or e["descricao"]),
                 "quantidade": e["quantidade"], "tipo": "terceirizado",
                 "empresa": e.get("empresa") or e["descricao"]} for e in extras]
@@ -1536,6 +1607,9 @@ def _efetivo_para_o_papel(efetivo: dict[str, Any],
         "total_terceirizado": sum(f["quantidade"] for f in de_fora),
         "total": (sum(f["quantidade"] for f in proprio)
                   + sum(f["quantidade"] for f in de_fora)),
+        # A lista da planilha que FICOU DE FORA da soma, para o papel poder
+        # dizer que ela existe. Calar seria esconder registro de obra.
+        "da_planilha_fora_da_soma": ([] if soma_importado else (importado or [])),
         "indisponivel": efetivo.get("indisponivel"),
     }
 

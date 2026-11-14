@@ -643,6 +643,37 @@ def regra_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
     return 100.0 - float(pct_padrao), 0.0, ("padrao", "", "")
 
 
+def valor_fixo_da_regra(pesos: dict, origem) -> float:
+    """O valor em reais que a linha de regra `origem` — (nível, chave, desde)
+    — manda ficar no projeto principal antes dos percentuais. Zero se não há."""
+    nivel, chave, desde = origem
+    for p in ((pesos.get("periodos") or {}).get(nivel) or {}).get(chave) or []:
+        if p[0] == desde:
+            return abs(float(p[4])) if len(p) > 4 and p[4] else 0.0
+    return 0.0
+
+
+def partes_com_valor_fixo(fica: float, filial: float, valor_fixo: float,
+                          total: float) -> tuple:
+    """As duas partes, em por cento, depois de destacar um VALOR FIXO.
+
+    12/11/2026, o dono: "tenho 2 milhões de custo, deixarei 500 mil
+    exclusivamente na matriz e farei rateio de 50/50 no resto" — é o
+    pró-labore dos sócios, que ele não quer ratear. O valor sai primeiro e
+    fica inteiro no projeto principal; os percentuais da linha valem para o
+    que sobra. Como o total do período é um só, isso vira um percentual
+    efetivo que se aplica igual a todos os meses dele: o valor fixo se
+    espalha na proporção do custo de cada mês.
+
+    `total` é o custo que segue a linha no período (qualquer sinal). Valor
+    fixo maior que o total: fica tudo."""
+    total, valor_fixo = abs(float(total or 0)), abs(float(valor_fixo or 0))
+    if valor_fixo <= 0.005 or total <= 0.005:
+        return fica, filial
+    destacado = min(valor_fixo, total) / total            # de 0 a 1
+    return (destacado * 100.0 + fica * (1 - destacado), filial * (1 - destacado))
+
+
 def partes_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
                     pct_padrao: float, mes: str | None = None) -> tuple:
     """(% que fica no projeto principal, % que é da filial) — ver
@@ -764,6 +795,10 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
     for linha in despesa_admin:
         chave = (linha["mes"], linha.get("grupo") or "", linha.get("categoria") or "")
         baldes[chave] = baldes.get(chave, 0.0) + float(linha["valor"] or 0)
+    # Em duas passadas, por causa do VALOR FIXO de um período (12/11/2026):
+    # ele sai do total que segue a linha de regra, e esse total só se conhece
+    # depois de olhar todos os baldes.
+    com_regra, total_da_regra = [], {}
     for chave, bruto in baldes.items():
         mes_l, grupo_l, categoria_l = chave
         valor = bruto - fora.get(chave, 0.0)
@@ -775,8 +810,14 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
                            "mes": SEM_DATA, "valor": valor,
                            "motivo": "lançamento sem data: não dá para ratear por mês"})
             continue
-        _destinar(mes_l, valor, *partes_da_conta(
-            pesos, grupo_l, categoria_l, "", pct_padrao, mes=mes_l))
+        fica, filial, origem = regra_da_conta(
+            pesos, grupo_l, categoria_l, "", pct_padrao, mes=mes_l)
+        com_regra.append((mes_l, valor, fica, filial, origem))
+        total_da_regra[origem] = total_da_regra.get(origem, 0.0) + valor
+    fixo_da_regra = {o: valor_fixo_da_regra(pesos, o) for o in total_da_regra}
+    for mes_l, valor, fica, filial, origem in com_regra:
+        _destinar(mes_l, valor, *partes_com_valor_fixo(
+            fica, filial, fixo_da_regra[origem], total_da_regra[origem]))
 
     # 2b. A filial: inteira, e só para os demais.
     da_filial: dict[str, float] = {}

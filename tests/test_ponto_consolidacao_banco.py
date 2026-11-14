@@ -15,10 +15,12 @@ def test_todas_as_telas_estao_no_menu():
     """28/10/2026, o dono: "as telas que foram ocultadas precisam voltar"."""
     from app.apps.ponto import gestao
     abas = [a[0] for a in gestao.ABAS]
-    assert abas[:4] == ["ponto_quadro", "ponto_pessoas", "ponto_espelho", "ponto_pendencias"]
+    # a ordem pelo uso (13/11/2026): acompanhar, tratar, conferir, cadastro e fechamento
+    assert abas[:4] == ["ponto_quadro", "ponto_hoje", "ponto_painel", "ponto_qualidade"]
+    assert abas[4:8] == ["ponto_pendencias", "ponto_alertas", "ponto_espelho", "ponto_banco"]
     assert {"ponto_hoje", "ponto_mosaico", "ponto_fotos", "ponto_alertas", "ponto_qualidade", "ponto_rondas",
             "ponto_banco", "ponto_relatorios", "ponto_config"} <= set(abas)
-    assert gestao.ABAS_FORA_DO_MENU == ()
+    assert gestao.ABAS_FORA_DO_MENU == ("ponto_ficha",)          # a ficha única sozinha (13/11/2026)
 
 
 def test_filtro_pessoas_ativo_e_argumentos():

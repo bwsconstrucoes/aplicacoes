@@ -1017,15 +1017,50 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
    nasceria com 104 alarmes por ano e ninguém olharia para ele de novo. */
 .cal-dia.falta { background: var(--vermelho-palido, #FDECEC); border-color: var(--vermelho, #A32020);
                  color: var(--vermelho, #A32020); font-weight: 700; }
+/* DIA ESCRITO É VERDE — fechado ou não (13/11/2026).
+
+   O âmbar do "aberto" era lido como falta de dado, e não era: diário não se
+   grava sem relato. Verde CHEIO = fechado (documento). Verde VAZADO = escrito
+   e ainda aberto, que ainda pede uma passada para fechar. A diferença fica na
+   borda tracejada, não na cor — assim "tem trabalho aqui" continua sendo o
+   vermelho, e só ele. */
 .cal-dia.fechado { background: var(--verde-palido, #E8F6EE); border-color: var(--verde, #1C6B3C);
                    color: var(--verde, #1C6B3C); font-weight: 600; }
-.cal-dia.aberto { background: var(--ambar-palido, #FFF6E5); border-color: var(--amarelo, #F4B942);
-                  color: var(--ambar-escuro, #8A5B00); font-weight: 600; }
+.cal-dia.aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C);
+                  color: var(--verde, #1C6B3C); font-weight: 600; }
 .cal-dia.descanso { background: var(--fundo-suave, #F4F6FA); color: var(--tinta-suave, #5A6B85); }
 .cal-dia.sem_expediente { background: var(--fundo-suave, #F4F6FA);
                           color: var(--tinta-suave, #5A6B85); font-style: italic; }
 .cal-dia.fora { background: transparent; border-color: transparent;
                 color: var(--borda-forte, #C9D3E4); cursor: default; }
+/* O DIA QUE ESTÁ ABERTO NA TELA. Como o campo de data saiu da coluna, é esta
+   marca que responde "qual dia eu estou editando". */
+.cal-dia.escolhido { outline: 2px solid var(--azul, #31507F); outline-offset: 1px; }
+
+/* A LEGENDA — a pergunta dele ("esse laranja é porque falta algum dado?") só
+   existiu porque a cor não tinha onde se explicar. */
+.cal-legenda {
+  display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px;
+  font-size: 11px; color: var(--tinta-suave, #5A6B85);
+}
+.cal-legenda span { display: inline-flex; align-items: center; gap: 4px; }
+.cal-amostra {
+  width: 11px; height: 11px; border-radius: 3px; display: inline-block;
+  border: 1px solid var(--borda, #E6EAF2); background: #fff;
+}
+.cal-amostra.fechado { background: var(--verde-palido, #E8F6EE);
+                       border-color: var(--verde, #1C6B3C); }
+.cal-amostra.aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C); }
+.cal-amostra.falta { background: var(--vermelho-palido, #FDECEC);
+                     border-color: var(--vermelho, #A32020); }
+.cal-amostra.descanso, .cal-amostra.sem_expediente {
+  background: var(--fundo-suave, #F4F6FA); }
+
+/* A BARRA DO MÊS — ◀ novembro de 2026 ▶ (13/11/2026). As setas são do
+   tamanho do dedo porque esta coluna também é usada no celular. */
+.mes-nav { display: flex; align-items: center; gap: 6px; }
+.mes-nav input[type="month"] { flex: 1; min-width: 0; }
+.mes-nav .btn { padding: 6px 10px; line-height: 1; flex: 0 0 auto; }
 
 /* ---------------------------------------------------------------------------
    ETIQUETA — a marca pequena de situação, ao lado de um texto

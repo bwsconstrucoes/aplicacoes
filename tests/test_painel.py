@@ -459,6 +459,10 @@ def _consultar_falso(sql, params=()):
     # dos juros (10/11/2026). Três colunas; aqui, nenhum aporte.
     if "to_char(data, 'YYYY-MM')" in sql and "Devolução de Aporte" in sql:
         return []
+    # as outras receitas na janela do DRE (12/11/2026): os títulos e o total.
+    # Aqui, nenhuma — o que a janela soma está no teste com banco de verdade.
+    if "COALESCE(categoria,'') <> 'Receita de Obras'" in sql:
+        return [(0, 0, 0)] if "COUNT(DISTINCT codigo_lancamento)" in sql else []
     for marca, resposta in RESPOSTAS_FALSAS.items():
         if marca in sql:
             return resposta

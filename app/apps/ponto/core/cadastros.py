@@ -192,6 +192,15 @@ def obras_da_pessoa(conn: Connection, colaborador_id: int) -> set[int]:
     return obras
 
 
+def funcoes_de(conn: Connection, ids: list[int]) -> dict[int, str]:
+    """{pessoa: função} — da mesma base do resto do ponto (o ERP ou o Registro de Colaboradores)."""
+    if not ids:
+        return {}
+    linhas = db.todos(conn, _sql_colaborador(conn) + " WHERE c.id = ANY(:ids)", ids=[int(i) for i in ids],
+                      jornada_padrao=JORNADA_PADRAO)
+    return {int(l["id"]): l["funcao"] for l in linhas if l.get("funcao")}
+
+
 def listar_colaboradores(conn: Connection, *, so_ativos: bool = True,
                          obra_id: int | None = None) -> list[dict]:
     sql = _sql_colaborador(conn) + " WHERE 1 = 1"

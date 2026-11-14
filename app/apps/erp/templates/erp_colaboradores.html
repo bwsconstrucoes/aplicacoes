@@ -109,7 +109,10 @@
     <span id="exportar" style="display:flex; gap:6px"></span>
   </div>
   <div class="tabela-rolagem">
-  <table><thead><tr><th>Nome</th><th>CPF</th><th>Cargo</th><th>Obra</th>
+  {# ⚑ A EMPRESA NA LISTA (13/11/2026). Ele: *"aqui em colaboradores, essa
+     questão sempre vai ser um dado importante. Para a gente visualizar fácil,
+     a empresa."* #}
+  <table><thead><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Cargo</th><th>Obra</th>
     <th>Vínculo</th><th>Etapa</th><th>Pendências</th>
     <th class="direita">Salário/diária</th><th>Situação</th></tr></thead>
     <tbody id="corpo"></tbody></table>
@@ -117,6 +120,11 @@
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
   <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{# A FICHA ÚNICA DA PESSOA (13/11/2026): a mesma janela que abre clicando no nome em qualquer tela do ponto — o
+   cadastro, os pagamentos, o ponto, os aparelhos, a configuração do ponto e o rosto. Ela mora no módulo do ponto
+   (/erp/ponto/pessoa/<id>) e aparece aqui inteira; editar o cadastro e os documentos voltam para o formulário daqui. #}
+<dialog id="dlg-unica" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
+  <iframe id="unica-quadro" title="Ficha da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -133,6 +141,7 @@ const PODE_IMPORTAR = {{ 'true' if pode.configurar else 'false' }};
    módulo do ponto registra as ações dele no menu do ERP, então `pode.ver_ponto`
    chega aqui como qualquer outra. #}
 const PODE_VER_PONTO = {{ 'true' if pode.ver_ponto else 'false' }};
+const PODE_VER_MENSAGENS = {{ 'true' if pode.ver_mensagens else 'false' }};
 let COL = [], OBRAS = [], FUNCOES = [], ETAPAS = [], CARGOS = [], CONVENCOES = [];
 
 // O PAINEL ESCOLHIDO recorta a lista. Vazio = a lista inteira.
@@ -229,7 +238,7 @@ function desenhar(){
   // situação), mas ANTES do painel escolhido — senão clicar num painel zeraria
   // a conta dos outros, e o DP perderia a visão do todo.
   const base = COL.filter(c => {
-    if (b && !`${c.nome} ${c.cpf} ${documento(c.cpf)} ${c.matricula||""}`
+    if (b && !`${c.nome} ${c.cpf} ${documento(c.cpf)} ${c.empresa||""}`
               .toLowerCase().includes(b)) return false;
     if (sit === "DESLIGADO" && (c.situacao||"") === "ATIVO") return false;
     if (sit === "ATIVO" && (c.situacao||"") !== "ATIVO") return false;
@@ -273,8 +282,12 @@ function desenhar(){
   if (!l.length) els("vazio").innerHTML =
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(c=>`<tr style="cursor:pointer" data-c="${c.id}">
-    <td><b>${escapar(c.nome)}</b>${c.matricula?`<small>mat. ${escapar(c.matricula)}</small>`:""}</td>
+    {# A matrícula saiu do nome em 13/11/2026: ele não usa mais ("a gente vai
+       usar o ID Fortes, o CPF"). O lugar dela virou a EMPRESA, que ele pediu
+       para enxergar fácil. #}
+    <td><b>${escapar(c.nome)}</b></td>
     <td class="dados">${documento(c.cpf)}</td>
+    <td>${escapar(c.empresa || "—")}</td>
     <td>${escapar(c.cargo || c.funcao || "—")}</td>
     <td class="dados">${escapar(c.obra||"—")}</td>
     <td>${c.vinculo === "PRESTADOR" ? "Prestador" : "CTPS"}
@@ -286,7 +299,7 @@ function desenhar(){
     <td><span class="selo ${c.situacao==="ATIVO"?"aprovado":"outro"}">${rotulo(c.situacao)}</span></td>
   </tr>`).join("");
   document.querySelectorAll("[data-c]").forEach(tr=>tr.addEventListener("click",
-    ()=>ficha(+tr.dataset.c)));
+    ()=>abrirFichaUnica(+tr.dataset.c)));
 }
 
 function etiquetaDaEtapa(c){
@@ -333,22 +346,43 @@ function pendenciasDaLinha(c){
 // ---------------------------------------------------------------------------
 let ABA_FICHA_PESSOA = "resumo", FICHA_ID = null, FICHA_H = null;
 
-async function ficha(id){
+// A FICHA ÚNICA (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
+// pessoa eu tenho acesso — seja ponto, configurações, liberação de aparelhos, tudo"). Quem enxerga o ponto abre a
+// janela do ponto, que agora traz o cadastro e os pagamentos daqui; quem não enxerga, a ficha de sempre (abaixo).
+function abrirFichaUnica(id){
+  if (!PODE_VER_PONTO) return ficha(id);
+  els("unica-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
+  els("dlg-unica").showModal();
+}
+els("dlg-unica").addEventListener("close", () => { els("unica-quadro").src = "about:blank"; });
+// o que a janela pede: fechar, ou abrir aqui o formulário (editar) ou os documentos (ler e arquivar)
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (ev.origin !== location.origin || d.tipo !== "bws-ficha") return;
+  if (els("dlg-unica").open) els("dlg-unica").close();
+  if (d.acao === "editar" && d.id) abrirFichaCompleta(Number(d.id));
+  else if (d.acao === "documentos" && d.id) ficha(Number(d.id), "documentos");
+});
+
+async function ficha(id, aba){
   try {
     const {historico: h} = await api(`/erp/api/colaboradores/${id}/historico`);
-    FICHA_ID = id; FICHA_H = h; ABA_FICHA_PESSOA = "resumo";
+    FICHA_ID = id; FICHA_H = h; ABA_FICHA_PESSOA = aba || "resumo";
     const c = h.colaborador;
     els("dlg-titulo").textContent = `${c.nome} — ${documento(c.cpf)}`;
     const dalista = COL.find(x => x.id === id) || {};
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
       ${cabecaDaFicha(c, dalista)}
       <div class="subabas" id="fp-abas">
-        <button class="subaba ativa" data-fp="resumo">Resumo</button>
+        <button class="subaba" data-fp="resumo">Resumo</button>
         ${PODE_VER_PONTO ? `<button class="subaba" data-fp="ponto">Ponto e espelho</button>` : ""}
         <button class="subaba" data-fp="pagamentos">Pagamentos</button>
         <button class="subaba" data-fp="documentos">Documentos</button>
+        ${PODE_VER_MENSAGENS ? `<button class="subaba" data-fp="mensagens">Telegram e mensagens</button>` : ""}
       </div>
       <div id="fp-painel"></div>`;
+    els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
+      b.classList.toggle("ativa", b.dataset.fp === ABA_FICHA_PESSOA));
     els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
       b.addEventListener("click", () => {
         els("fp-abas").querySelectorAll(".subaba").forEach(x =>
@@ -399,6 +433,7 @@ function painelDaPessoa(){
   if (ABA_FICHA_PESSOA === "resumo") return pintarResumoDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "ponto") return pintarPontoDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "pagamentos") return pintarPagamentosDaPessoa(alvo);
+  if (ABA_FICHA_PESSOA === "mensagens") return mensagensDaPessoa(alvo, FICHA_ID);
   return pintarDocumentosDaPessoa(alvo);
 }
 
@@ -1652,7 +1687,16 @@ els("btn-limpar").addEventListener("click", () => {
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
 
-carregar();
+// O atalho de outra tela (13/11/2026): a ficha única, aberta fora daqui, manda editar (?editar=) ou os documentos
+// (?documentos=) para cá; ?pessoa= abre a própria ficha única.
+function abrirPeloEndereco(){
+  const q = new URLSearchParams(location.search);
+  const n = k => /^\d+$/.test(q.get(k) || "") ? Number(q.get(k)) : null;
+  if (n("editar")) abrirFichaCompleta(n("editar"));
+  else if (n("documentos")) ficha(n("documentos"), "documentos");
+  else if (n("pessoa")) abrirFichaUnica(n("pessoa"));
+}
+carregar().then(abrirPeloEndereco);
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

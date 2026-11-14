@@ -117,9 +117,13 @@ CATALOGO: list[dict] = [
      "politica": TELEGRAM_OU_WHATSAPP,
      "descricao": "A mensagem de teste mandada pela própria tela (o canal é escolhido na hora)."},
     # Telegram
+    # Ligado em 14/11/2026, pedido do dono: quem não recebe por falta de
+    # cadastro no Telegram é convidado pelo WhatsApp (mensageria/telegram_cadastro.py).
     {"chave": "telegram.aviso_cadastro", "nome": "Convite para cadastrar o Telegram", "modulo": "Telegram",
-     "politica": DESLIGADO,
-     "descricao": "Mensagem por WhatsApp a quem deveria ter recebido um aviso no Telegram e ainda não se cadastrou."},
+     "politica": WHATSAPP,
+     "descricao": ("Mensagem por WhatsApp, com link pessoal para o robô, a colaborador que deveria ter "
+                   "recebido um aviso no Telegram e ainda não se cadastrou — no máximo um a cada 7 dias "
+                   "por pessoa. Também sai pela aba Cadastro do Telegram.")},
 ]
 _POR_CHAVE = {t["chave"]: t for t in CATALOGO}
 
@@ -383,5 +387,13 @@ def resumo(conn) -> dict:
             "whatsapp_ligado": whatsapp_ligado(conn), "retencao_dias": RETENCAO_DIAS}
 
 
+# Nomes de origens que não são tipos do catálogo (não têm política: só aparecem
+# no registro).
+NOMES_FORA_DO_CATALOGO = {
+    "externo.telegram_enviar": "Envio externo pelo Telegram (Make, emissão de nota)",
+    "sem_tipo": "Sem tipo (módulos antigos)",
+}
+
+
 def nome_do_tipo(chave: str) -> str:
-    return (_POR_CHAVE.get(chave) or {}).get("nome") or chave
+    return ((_POR_CHAVE.get(chave) or {}).get("nome") or NOMES_FORA_DO_CATALOGO.get(chave) or chave)

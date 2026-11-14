@@ -2,6 +2,8 @@
 """
 chatbot/sheets_cache.py
 Cache em memória da planilha de colaboradores (Dados Documentos).
+⚑ Desde 14/11/2026, depois de "Migrar da planilha" na tela Mensagens do ERP, a
+lista vem do cadastro de colaboradores do ERP — a planilha só vale antes disso.
 TTL de 30 minutos para evitar chamadas repetidas à API do Google.
 
 Mapeamento de colunas (aba Dados Documentos):
@@ -95,6 +97,30 @@ def _carregar_planilha() -> list[dict]:
     return colaboradores
 
 
+def _carregar_do_erp() -> list[dict] | None:
+    """Os colaboradores do ERP, no mesmo formato da planilha — quando o cadastro
+    do Telegram já foi migrado na tela Mensagens (14/11/2026: o dono decidiu
+    eliminar as planilhas e usar a base do DP; a "Dados Documentos" já tinha
+    sido substituída pela base do ERP em 05/11/2026). None = seguir na planilha."""
+    try:
+        from app.apps.mensageria import db as m_db, telegram_cadastro as tc
+        if not m_db.disponivel():
+            return None
+        with m_db.conexao() as conn:
+            if not tc.migrado(conn):
+                return None
+            linhas = m_db.todos(conn, "SELECT nome, cpf, telefone, situacao FROM public.colaboradores")
+    except Exception as e:  # noqa: BLE001 — sem ERP, a planilha de sempre
+        logger.warning(f"[sheets_cache] ERP indisponível, usando a planilha: {e}")
+        return None
+    dados = [{'cpf': _normalizar_cpf(c['cpf']), 'nome': (c['nome'] or '').strip(),
+              'tel': _normalizar_telefone(c['telefone']),
+              'status': 'Colaboradores Desligados' if c['situacao'] == 'DESLIGADO' else ''}
+             for c in linhas if _normalizar_cpf(c['cpf'])]
+    logger.info(f"[sheets_cache] {len(dados)} colaboradores carregados do ERP.")
+    return dados
+
+
 def get_colaboradores() -> list[dict]:
     """Retorna lista de colaboradores, usando cache se disponível."""
     with _lock:
@@ -103,7 +129,9 @@ def get_colaboradores() -> list[dict]:
             return _cache['dados']
 
     # Carrega fora do lock para não bloquear outras threads
-    dados = _carregar_planilha()
+    dados = _carregar_do_erp()
+    if dados is None:
+        dados = _carregar_planilha()
     with _lock:
         _cache['dados'] = dados
         _cache['carregado_em'] = time.time()

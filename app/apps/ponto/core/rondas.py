@@ -449,6 +449,13 @@ def _volta_do_relogio() -> None:
             rodar(db.conexao)
         except Exception as e:  # noqa: BLE001 — o relógio nunca morre por erro de uma rodada
             logger.warning("Ponto: relógio das rondas — rodada falhou: %s", str(e)[:300])
+        try:
+            # a busca automática de feriados, só de madrugada (13/11/2026): fora da janela não faz nada, e dentro
+            # dela confere no máximo uma vez por hora — feriados_busca.buscar_se_preciso
+            from . import feriados_busca
+            feriados_busca.buscar_se_preciso("madrugada (relógio do ponto)")
+        except Exception:  # noqa: BLE001
+            logger.warning("Ponto: a busca de feriados da madrugada falhou", exc_info=True)
         time.sleep(INTERVALO_RELOGIO_S)
 
 
