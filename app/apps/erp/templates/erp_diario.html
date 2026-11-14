@@ -81,6 +81,10 @@
 {% block scripts %}
 <script>
 const PODE_LANCAR = {{ 'true' if pode.lancar_diario else 'false' }};
+// Quem pode mexer no CADASTRO da obra — é outra permissão, e é a que decide
+// se o atalho "preencher agora" aparece. A trava de verdade é o @permissao da
+// rota; isto só evita oferecer um botão que responderia 403.
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar else 'false' }};
 let OBRAS = [], DIA = null, HOJE = new Date().toISOString().slice(0, 10);
 
 // ⚑ O QUE CADA COR DO CALENDÁRIO QUER DIZER (13/11/2026).
@@ -250,9 +254,26 @@ function blocoDaObra(){
         ${celula("Ordem de serviço", dataBR(o.data_ordem_servico))}
         ${celula("Início", dataBR(o.data_inicio))}
         ${celula("Término previsto", dataBR(o.data_termino))}
+        {# ⚑ OS TRÊS QUE ASSINAM O PAPEL (14/11/2026). Ele: *"me explica de
+           onde é que está vindo o responsável técnico, número do registro
+           profissional e a empresa (…) empresa é a empresa do contrato, né?
+           Então isso aqui já deveria vir preenchido."*
+
+           Vêm do CADASTRO DA OBRA — a empresa pelo vínculo da obra com o
+           cadastro de empresas, os outros dois pelos campos do contrato. O
+           que faltava era isto: eles não apareciam aqui, então ninguém
+           descobria que estavam vazios até o papel sair sem assinatura. #}
+        ${celula("Empresa (contratada)", o.empresa_razao || o.empresa)}
         ${celula("Responsável técnico", o.responsavel_tecnico)}
-        ${celula("CREA", o.crea)}
+        ${celula("Registro profissional", o.crea || o.art_rrt)}
       </div>
+      ${faltaParaAssinar(o).length ? `<div class="aviso ${
+          PODE_CONFIGURAR ? "alerta" : ""}" style="margin-top:10px">
+        <b>O papel vai sair sem assinatura identificada.</b> Falta no cadastro
+        desta obra: ${escapar(faltaParaAssinar(o).join(", "))}.
+        ${PODE_CONFIGURAR
+          ? `<button class="link-btn" id="btn-assinatura">preencher agora</button>`
+          : `Peça a quem cuida do cadastro de obras.`}</div>` : ""}
       ${o.objeto ? `<p class="desc" style="margin-top:10px"><b>Objeto:</b>
         ${escapar(o.objeto)}</p>` : ""}
       ${p.total ? `
@@ -266,6 +287,80 @@ function blocoDaObra(){
 
 function celula(rotulo, valor){
   return `<div><span>${escapar(rotulo)}</span><b>${escapar(valor || "—")}</b></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// O QUE FALTA PARA O PAPEL SAIR ASSINADO (14/11/2026)
+//
+// Os três modelos imprimem o bloco de assinatura da CONTRATADA com empresa,
+// responsável técnico e número de registro. Os três saem do cadastro da obra;
+// faltando um, o papel sai com a linha em branco — e diário sem responsável
+// técnico identificado é diário que a fiscalização devolve.
+// ---------------------------------------------------------------------------
+function faltaParaAssinar(o){
+  const falta = [];
+  if (!(o.empresa_razao || o.empresa)) falta.push("a empresa");
+  if (!o.responsavel_tecnico) falta.push("o responsável técnico");
+  if (!(o.crea || o.art_rrt)) falta.push("o registro profissional (CREA/CAU ou ART)");
+  return falta;
+}
+
+// ⚑ UMA PORTA SÓ, E O DADO MORA NO CADASTRO DA OBRA.
+//
+// Ele: *"gostaria de poder colocar ou puxar da base de dados (…) se tiver na
+// base de dados, ok. Se não tiver, eu poder preencher."*
+//
+// Preencher AQUI grava no cadastro da obra, não no diário do dia. É a mesma
+// regra do `CLAUDE.md` sobre o documento dentro do formulário: a informação
+// tem um lugar só, e a tela que precisa dela oferece um atalho para lá. Se
+// fosse gravado no dia, amanhã estaria vazio de novo — e a medição, a nota e
+// a ART continuariam sem saber quem é o responsável técnico.
+async function completarAssinatura(){
+  const o = DIA.obra;
+  let empresas = [];
+  try { empresas = (await api("/erp/api/empresas")).empresas || []; }
+  catch(e){ /* sem permissão ou sem cadastro: segue só com os campos de texto */ }
+  const campos = [];
+  if (empresas.length) {
+    campos.push({nome: "empresa_id", rotulo: "Empresa (contratada)",
+                 tipo: "select", largura: 6,
+                 valor: String(o.empresa_id || ""),
+                 opcoes: [{valor: "", rotulo: "— escolha —"}].concat(
+                   empresas.map(x => ({valor: String(x.id),
+                                       rotulo: x.nome_fantasia || x.razao_social}))),
+                 dica: "É a empresa do contrato. Ela assina o diário e é por "
+                     + "ela que saem a nota e a cotação."});
+  }
+  campos.push(
+    {nome: "responsavel_tecnico", rotulo: "Responsável técnico", largura: 6,
+     valor: o.responsavel_tecnico || "", exemplo: "Eng. Fulano de Tal"},
+    {nome: "crea_obra", rotulo: "CREA/CAU do responsável", largura: 3,
+     valor: o.crea || "", exemplo: "PE-180.442/D"},
+    {nome: "art_rrt", rotulo: "ART/RRT da obra", largura: 3,
+     valor: o.art_rrt || "",
+     dica: "Sai no papel quando não há CREA preenchido."});
+
+  const r = await perguntar({
+    titulo: "Quem assina o diário desta obra",
+    textoOk: "Gravar no cadastro da obra",
+    aviso: "Isto grava no <b>cadastro da obra</b>, não neste dia: vale para "
+         + "todos os diários dela, e também para a medição e a nota.",
+    campos});
+  if (!r) return;
+  try {
+    const corpo = {};
+    Object.entries(r).forEach(([k, v]) => { if (v !== "") corpo[k] = v; });
+    // ⚑ O CABEÇALHO `Content-Type` NÃO É ENFEITE, e isto me custou uma
+    // rodada: sem ele, o Flask lê o corpo como vazio, grava NADA e responde
+    // "ok" do mesmo jeito. A tela dizia "Gravado no cadastro da obra" e o
+    // cadastro continuava em branco. Todo POST com JSON desta casa manda o
+    // cabeçalho — há teste varrendo as telas atrás de quem esquecer.
+    await api(`/erp/api/obras/${o.obra_id}`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify(corpo)});
+    aviso("mensagem", "Gravado no cadastro da obra.", "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 function blocoDoEfetivo(){
@@ -532,6 +627,13 @@ function blocoDoRelato(){
         <button class="btn" id="btn-salvar">Gravar</button>
         ${DIA.existe && d.situacao === "ABERTO"
           ? `<button class="btn secundario" id="btn-fechar">Fechar o dia</button>` : ""}
+        {# ⚑ REPETIR O DIA (14/11/2026). Ele: *"digamos que eu queira replicar
+           um determinado relato para vários dias (…) esse dia aqui foi igual
+           aos 3 próximos. Ou então esse sábado foi igual a outros 4 sábados."*
+           Só aparece em dia JÁ GRAVADO: é ele que vai ser copiado. #}
+        ${DIA.existe
+          ? `<button class="btn secundario" id="btn-repetir">Repetir este dia
+             em outros dias</button>` : ""}
         ${d.situacao === "FECHADO"
           ? `<span class="etiqueta verde">fechado em ${momentoBR(d.fechado_em)}</span>` : ""}
       </div>` : ""}
@@ -572,21 +674,40 @@ function blocoDaFiscalizacao(){
 
 function pintar(){
   const d = DIA.diario;
+  // ⚑ A ORDEM DA TELA NÃO É A ORDEM DO PAPEL (14/11/2026).
+  //
+  // Ele: *"a posição do efetivo está muito… normalmente é muita gente e acaba
+  // atrapalhando a visualização da tela de onde a gente faz o preenchimento.
+  // E o equipamento de obra está muito embaixo. Vamos deixar equipamento de
+  // obra e observações da fiscalização antes da parte do efetivo. Isso na
+  // tela, não é no modelo. Porque a pessoa tende a esquecer os equipamentos
+  // porque está muito embaixo."*
+  //
+  // A regra que fica: **em cima o que alguém DIGITA, embaixo o que o sistema
+  // já sabe.** O efetivo (do ponto) e o material (de Suprimentos) não têm
+  // campo nenhum — são leitura. Numa obra com 40 pessoas, a lista empurrava
+  // equipamentos e fiscalização para fora da tela, e campo que não se vê é
+  // campo que não se preenche.
+  //
+  // O PAPEL CONTINUA NA ORDEM DO MODELO, e tem de continuar: lá a ordem é
+  // cláusula de contrato (ver `erp_diario_papel_orgao.html`).
   els("painel").innerHTML =
-    blocoDaObra() + blocoDoRelato() + blocoDoEfetivo()
-    + blocoDosEquipamentos() + blocoDoMaterial()
-    + blocoDaFiscalizacao();
+    blocoDaObra() + blocoDoRelato()
+    + blocoDosEquipamentos() + blocoDaFiscalizacao()
+    + blocoDoEfetivo() + blocoDoMaterial();
 
   const liga = (id, ev, fn) => { if (els(id)) els(id).addEventListener(ev, fn); };
   liga("d-sem", "change", () => {
     els("d-corpo").classList.toggle("oculto", els("d-sem").checked);
   });
+  liga("btn-assinatura", "click", completarAssinatura);
   liga("btn-salvar", "click", gravar);
   liga("btn-fechar", "click", fecharODia);
   liga("btn-obs-fisc", "click", registrarObservacao);
   liga("btn-extra", "click", acrescentarExtra);
   liga("btn-equip", "click", acrescentarEquipamento);
   liga("btn-equip-ontem", "click", repetirEquipamentosDeOntem);
+  liga("btn-repetir", "click", repetirEsteDia);
   liga("btn-ontem", "click", () => {
     els("d-relato").value = (DIA.relato_anterior || {}).relato || "";
     els("d-relato").focus();
@@ -853,6 +974,91 @@ async function removerExtra(id){
     await api(`/erp/api/diario/${els("f-obra").value}/extras`,
       {method: "POST", headers: {"Content-Type": "application/json"},
        body: JSON.stringify({remover: id, data: els("f-data").value})});
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// REPETIR ESTE DIA EM OUTROS DIAS (14/11/2026)
+//
+// Ele: *"esse dia aqui foi igual aos 3 próximos aqui. Ou então esse sábado foi
+// igual a outros 4 sábados aqui. Então eu gostaria de poder replicar isso aqui
+// de forma fácil."*
+//
+// ⚑ SÃO DOIS PASSOS, E O SEGUNDO NÃO É BUROCRACIA: primeiro se escolhe COMO
+// repetir, depois o sistema mostra EXATAMENTE em quais dias vai escrever, com
+// data por extenso, e só então grava. Repetir é escrever documento em dias que
+// a pessoa não está olhando — e aqui não há desfazer.
+//
+// Dia que já tem diário nunca é sobrescrito; vem dito na volta, com o motivo.
+// ---------------------------------------------------------------------------
+const SEMANA = ["domingo", "segunda-feira", "terça-feira", "quarta-feira",
+                "quinta-feira", "sexta-feira", "sábado"];
+
+async function repetirEsteDia(){
+  const obra = els("f-obra").value, de = els("f-data").value;
+  const diaDaSemana = SEMANA[new Date(de + "T12:00:00").getDay()];
+  const r = await perguntar({
+    titulo: "Repetir este dia em outros dias",
+    textoOk: "Ver em quais dias",
+    aviso: "Copia o relato, as ocorrências, o histórico, o tempo e o horário. "
+         + "<b>Nunca escreve por cima</b> de um dia que já tem diário.",
+    campos: [
+      {nome: "modo", rotulo: "Repetir em", tipo: "select", largura: 4,
+       valor: "seguidos",
+       opcoes: [{valor: "seguidos", rotulo: "dias seguidos"},
+                {valor: "mesmo_dia_da_semana",
+                 rotulo: `outros dias de ${diaDaSemana}`}]},
+      {nome: "quantos", rotulo: "Quantos dias", tipo: "number", largura: 2,
+       valor: "3"},
+      {nome: "equipamentos", rotulo: "Levar os equipamentos junto",
+       tipo: "select", largura: 6, valor: "0",
+       opcoes: [{valor: "0", rotulo: "Não — só o texto e o tempo"},
+                {valor: "1", rotulo: "Sim, a mesma lista de equipamentos"}],
+       dica: "Só marque se as máquinas continuaram as mesmas nesses dias."},
+    ]});
+  if (!r) return;
+
+  let dias = [];
+  try {
+    dias = (await api(`/erp/api/diario/${obra}/repetir`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({de, sugerir: true, modo: r.modo,
+                             quantos: r.quantos})})).dias || [];
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  if (!dias.length) {
+    aviso("mensagem", "Não achei dia livre para receber a cópia — os "
+        + "próximos já têm diário, ou estão fora do prazo da obra.", "alerta");
+    return;
+  }
+
+  // ⚑ A CONFIRMAÇÃO MOSTRA AS DATAS, uma a uma. "Copiar para 3 dias" não diz
+  // quais, e quais é justamente o que a pessoa precisa conferir.
+  const lista = dias.map(x => `${dataBR(x)} (${
+    SEMANA[new Date(x + "T12:00:00").getDay()]})`).join(" · ");
+  const ok = await perguntar({
+    titulo: `Escrever o mesmo relato em ${dias.length} dia(s)?`,
+    textoOk: "Repetir nestes dias",
+    aviso: `<b>${lista}</b>`,
+    campos: [{nome: "confirma", rotulo: "Escreva REPETIR para confirmar",
+              largura: 6, obrigatorio: true,
+              dica: "Isto grava diário nestes dias. Não há desfazer."}]});
+  if (!ok) return;
+  if ((ok.confirma || "").trim().toUpperCase() !== "REPETIR") {
+    aviso("mensagem", "Não repeti — você não confirmou.", "info");
+    return;
+  }
+  try {
+    const d = await api(`/erp/api/diario/${obra}/repetir`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({de, dias,
+                             com_equipamentos: r.equipamentos === "1"})});
+    const pulou = (d.pulados || []).length
+      ? ` ${d.pulados.length} dia(s) ficaram de fora: ` + d.pulados.map(
+          x => `${dataBR(x.data)} (${x.motivo})`).join(", ") + "."
+      : "";
+    aviso("mensagem", `Relato escrito em ${d.copiados.length} dia(s).${pulou}`,
+          d.copiados.length ? "ok" : "alerta");
     await carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }

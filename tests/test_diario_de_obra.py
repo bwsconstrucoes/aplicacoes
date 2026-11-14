@@ -1443,3 +1443,119 @@ def test_so_o_modelo_do_orgao_ganha_esse_estilo():
     assert '{% if r.modelo == "orgao" %}' in css
     for outro in ("erp_diario_papel_bws.html", "erp_diario_papel_completo.html"):
         assert "faixa-org" not in _ler(outro)
+
+
+# ---------------------------------------------------------------------------
+# REPETIR UM DIA EM VÁRIOS DIAS (14/11/2026)
+#
+# Ele: *"esse dia aqui foi igual aos 3 próximos aqui. Ou então esse sábado foi
+# igual a outros 4 sábados aqui."*
+#
+# ⚑ REPETIR ESCREVE DOCUMENTO EM DIAS QUE NINGUÉM ESTÁ OLHANDO, e não há
+# desfazer. Por isso as travas são testadas uma a uma.
+# ---------------------------------------------------------------------------
+@banco_
+def test_repetir_copia_o_relato_e_o_tempo_para_os_dias_escolhidos(
+        sessao_real, obra, dono):
+    from datetime import date as _date, timedelta as _td
+    base = _date.today() - _td(days=6)
+    svc.salvar(sessao_real, obra, base,
+               {"relato": "Concretagem da laje do bloco B.",
+                "tempo_manha": "Bom", "tempo_tarde": "Nublado",
+                "horario_trabalho": "7:00 às 17:00",
+                "ocorrencias": "Visita técnica pela manhã."}, dono)
+    sessao_real.flush()
+    alvos = [base + _td(days=1), base + _td(days=2)]
+
+    r = svc.repetir_dia(sessao_real, obra, base, alvos, dono)
+    sessao_real.flush()
+    assert r["copiados"] == [str(d) for d in alvos]
+    assert r["pulados"] == []
+    for d in alvos:
+        copia = svc.abrir_dia(sessao_real, obra, d)["diario"]
+        assert copia["relato"] == "Concretagem da laje do bloco B."
+        assert copia["tempo_manha"] == "BOM"
+        assert copia["ocorrencias"] == "Visita técnica pela manhã."
+
+
+@banco_
+def test_repetir_nunca_escreve_por_cima_de_dia_ja_escrito(sessao_real, obra, dono):
+    """⚑ A trava que mais importa: diário é documento. Perder o relato de quem
+    esteve na obra porque alguém marcou o dia errado é estrago que não se
+    desfaz."""
+    from datetime import date as _date, timedelta as _td
+    base = _date.today() - _td(days=6)
+    ocupado = base + _td(days=1)
+    svc.salvar(sessao_real, obra, base, {"relato": "Dia de origem."}, dono)
+    svc.salvar(sessao_real, obra, ocupado,
+               {"relato": "O QUE A OBRA ESCREVEU NESTE DIA."}, dono)
+    sessao_real.flush()
+
+    r = svc.repetir_dia(sessao_real, obra, base, [ocupado, base + _td(days=2)], dono)
+    sessao_real.flush()
+    assert str(ocupado) not in r["copiados"]
+    assert any(p["data"] == str(ocupado) and "já tem diário" in p["motivo"]
+               for p in r["pulados"])
+    assert svc.abrir_dia(sessao_real, obra, ocupado)["diario"]["relato"] \
+        == "O QUE A OBRA ESCREVEU NESTE DIA."
+
+
+@banco_
+def test_repetir_nao_escreve_o_futuro(sessao_real, obra, dono):
+    """Diário é relato do que aconteceu. Repetir para a frente viraria
+    previsão — e previsão assinada pela fiscalização é outra coisa."""
+    from datetime import date as _date, timedelta as _td
+    hoje = _date.today()
+    svc.salvar(sessao_real, obra, hoje, {"relato": "Hoje."}, dono)
+    sessao_real.flush()
+    r = svc.repetir_dia(sessao_real, obra, hoje, [hoje + _td(days=1)], dono)
+    assert r["copiados"] == []
+    assert r["pulados"][0]["motivo"] == "ainda não aconteceu"
+
+
+@banco_
+def test_repetir_recusa_dia_de_origem_sem_diario(sessao_real, obra, dono):
+    from datetime import date as _date, timedelta as _td
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    with pytest.raises(ErroNaoEncontrado):
+        svc.repetir_dia(sessao_real, obra, _date.today() - _td(days=3),
+                        [_date.today() - _td(days=2)], dono)
+
+
+@banco_
+def test_repetir_tem_teto_para_caber_na_conferencia(sessao_real, obra, dono):
+    """Repetir mês inteiro numa tacada é o caminho para trinta diários iguais
+    que ninguém leu."""
+    from datetime import date as _date, timedelta as _td
+    base = _date.today() - _td(days=60)
+    svc.salvar(sessao_real, obra, base, {"relato": "Origem."}, dono)
+    sessao_real.flush()
+    with pytest.raises(ErroValidacao):
+        svc.repetir_dia(sessao_real, obra, base,
+                        [base + _td(days=n) for n in range(1, 40)], dono)
+
+
+@banco_
+def test_o_atalho_dos_sabados_pula_de_sete_em_sete(sessao_real, obra, dono):
+    """*"esse sábado foi igual a outros 4 sábados aqui."* O atalho anda de
+    semana em semana e só oferece dia que ainda não tem diário."""
+    from datetime import date as _date, timedelta as _td
+    hoje = _date.today()
+    base = hoje - _td(days=28)
+    svc.salvar(sessao_real, obra, base, {"relato": "Sábado de origem."}, dono)
+    sessao_real.flush()
+    dias = svc.dias_para_repetir(sessao_real, obra, base, "mesmo_dia_da_semana", 3)
+    assert dias == [str(base + _td(days=7 * n)) for n in (1, 2, 3)]
+    assert all(_date.fromisoformat(d).weekday() == base.weekday() for d in dias)
+
+
+@banco_
+def test_o_atalho_nao_oferece_dia_que_ja_tem_diario(sessao_real, obra, dono):
+    from datetime import date as _date, timedelta as _td
+    base = _date.today() - _td(days=10)
+    svc.salvar(sessao_real, obra, base, {"relato": "Origem."}, dono)
+    svc.salvar(sessao_real, obra, base + _td(days=1), {"relato": "Já escrito."}, dono)
+    sessao_real.flush()
+    dias = svc.dias_para_repetir(sessao_real, obra, base, "seguidos", 2)
+    assert str(base + _td(days=1)) not in dias
+    assert dias == [str(base + _td(days=2)), str(base + _td(days=3))]

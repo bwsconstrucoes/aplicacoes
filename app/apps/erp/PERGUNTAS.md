@@ -2048,6 +2048,20 @@ meses. Agora o ERP também lê, pela tela de Importar.
   que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
   não existe.
 
+### Quem assina o diário, e o dia repetido (14/11/2026)
+
+- "Quais obras estão sem responsável técnico, sem registro profissional ou sem
+  empresa?" — é o que faz o papel sair com a assinatura em branco. A tela do
+  diário avisa por obra; a resposta geral ainda é varredura no cadastro.
+- "Este diário foi escrito ou foi repetido de outro dia?" — ⚠️ **o sistema NÃO
+  responde isso.** O dia repetido nasce como diário comum, criado pela pessoa
+  que mandou repetir. Se isso passar a importar (e numa auditoria de medição
+  pode importar), é coluna nova.
+- **"igual"**, quando ele diz "esse dia foi igual aos 3 próximos": é o relato,
+  as ocorrências, o histórico, o tempo e o horário. **Não** é o efetivo (vem do
+  ponto, dia a dia) nem o material (vem de Suprimentos). Os equipamentos só vão
+  se mandarem.
+
 ### ⚠️ O efetivo do dia: três palavras que mudam a resposta (13/11/2026)
 
 Ele achou o defeito olhando o número: *"eu acho que ele está dobrando o

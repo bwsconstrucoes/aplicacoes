@@ -34,8 +34,25 @@ def pasta(tmp_path, monkeypatch):
     return tmp_path
 
 
+# ⚑ A DATA DO ADIADO É RELATIVA A HOJE, e não pode voltar a ser fixa.
+#
+# Era '12/11/2026 09:00:00', escrito à mão. Em 14/11/2026 a suíte quebrou
+# sozinha, sem ninguém ter mexido no código: `IDADE_MAXIMA_DIAS = 2`, então o
+# adiado de 12/11 passou a ser DESCARTADO POR IDADE — e o teste que espera
+# processamento parou de ver chamada nenhuma.
+#
+# Não era defeito do sistema: era a data vencendo. O vizinho
+# (`test_adiado_antigo_e_descartado_sem_gastar_processamento`) já usava a hora
+# de agora justamente por isso.
+def _agora_menos(horas=1):
+    import datetime as _dt
+    return (_dt.datetime.now() - _dt.timedelta(hours=horas)).strftime(
+        '%d/%m/%Y %H:%M:%S')
+
+
 def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
-           criado_em='12/11/2026 09:00:00', tentativas=0):
+           criado_em=None, tentativas=0):
+    criado_em = criado_em or _agora_menos()
     item = {
         'payload': {
             'attachments': [{'filename': a, 'base64': 'JVBERi0x...'} for a in arquivos],
@@ -55,14 +72,17 @@ def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
 # =====================================================================
 
 def test_o_resumo_mostra_os_comprovantes_adiados(pasta):
-    _adiar(pasta, arquivos=('pix_fornecedor.pdf',))
+    quando = _agora_menos()
+    _adiar(pasta, arquivos=('pix_fornecedor.pdf',), criado_em=quando)
 
     r = mod.resumo_fila_tardia()
 
     assert r['pendentes'] == 1
     item = r['itens'][0]
     assert item['comprovantes'] == ['pix_fornecedor.pdf']
-    assert item['criado_em'] == '12/11/2026 09:00:00'
+    # A data não é mais escrita à mão (ver `_adiar`): o que importa é que ela
+    # volte INTEIRA do arquivo, com hora e tudo, e não que seja um dia certo.
+    assert item['criado_em'] == quando
     assert '429' in item['erro_original']
 
 
@@ -80,12 +100,13 @@ def test_o_resumo_NUNCA_devolve_o_payload_nem_as_credenciais(pasta):
 
 
 def test_o_resumo_avisa_que_publicacao_apaga_a_fila(pasta):
-    _adiar(pasta)
+    quando = _agora_menos()
+    _adiar(pasta, criado_em=quando)
 
     r = mod.resumo_fila_tardia()
 
     assert 'APAGA' in r['em_portugues']
-    assert '12/11/2026' in r['em_portugues']
+    assert quando[:10] in r['em_portugues']
 
 
 def test_fila_vazia_diz_isso_sem_rodeio(pasta):

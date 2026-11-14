@@ -1183,7 +1183,31 @@ function aviso(alvo, texto, tipo) {
   els(alvo).innerHTML = `<div class="aviso ${tipo}">${texto}</div>`;
   if (tipo === "ok") setTimeout(() => { const e = els(alvo); if (e) e.innerHTML = ""; }, 8000);
 }
+// ⚑ O CABEÇALHO DO JSON É POSTO AQUI, UMA VEZ, PARA TODAS AS TELAS.
+//
+// Achado em 14/11/2026, construindo o "preencher quem assina o diário": sem
+// `Content-Type: application/json`, o Flask lê o corpo com
+// `request.get_json(silent=True)` e recebe NADA. A rota aplica um dicionário
+// vazio, não grava coisa nenhuma — e responde `ok: true`. A tela mostra o
+// aviso verde de "Gravado" em cima de um banco que não mudou.
+//
+// ⚠️ E NÃO ERA SÓ A MINHA TELA: a varredura achou o mesmo esquecimento em
+// Colaboradores (a marcação do ponto na ficha da pessoa) e em sete chamadas
+// do DP › Contabilidade. Por isso o conserto mora no ajudante, e não em cada
+// chamada: quem esquecer daqui para a frente continua funcionando.
+//
+// `FormData` fica de fora de propósito — nele o navegador monta o `boundary`
+// sozinho, e fixar o tipo à mão quebra o envio de arquivo.
 async function api(url, opcoes) {
+  if (opcoes && typeof opcoes.body === "string") {
+    const temTipo = Object.keys(opcoes.headers || {})
+      .some(h => h.toLowerCase() === "content-type");
+    if (!temTipo) {
+      opcoes = Object.assign({}, opcoes, {
+        headers: Object.assign({"Content-Type": "application/json"},
+                               opcoes.headers || {})});
+    }
+  }
   const r = await fetch(url, opcoes);
   if (r.status === 401) { location.href = "/erp/entrar"; throw new Error("Sessão expirada."); }
   const d = await r.json();

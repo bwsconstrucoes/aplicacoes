@@ -21,6 +21,68 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 14/11/2026 — O DIÁRIO: ordem da tela, quem assina, e repetir o dia
+
+Quatro pedidos dele no mesmo dia, todos sobre facilitar o preenchimento.
+
+**1. A ORDEM DA TELA NÃO É A ORDEM DO PAPEL.** Ele: *"a posição do efetivo está
+muito… normalmente é muita gente e acaba atrapalhando a visualização da tela
+onde a gente faz o preenchimento. E o equipamento de obra está muito embaixo.
+(…) a pessoa tende a esquecer os equipamentos porque está muito embaixo."*
+
+A regra que fica: **em cima o que alguém DIGITA, embaixo o que o sistema já
+sabe.** Agora é obra → o dia → equipamentos → fiscalização → efetivo →
+material. Numa obra com 40 pessoas, a lista do ponto empurrava equipamentos e
+fiscalização para fora da tela. **O PAPEL continua na ordem do modelo** — lá a
+ordem é cláusula de contrato.
+
+**2. QUEM ASSINA O DIÁRIO.** Ele perguntou de onde vinham empresa, responsável
+técnico e registro profissional. Vêm do **cadastro da obra** (a empresa pelo
+vínculo com o cadastro de empresas). O que faltava era isto:
+
+- os três **não apareciam** na tela do diário, então ninguém descobria que
+  estavam vazios até o papel sair sem assinatura;
+- o **CREA não existia no cadastro da obra** — a coluna existia desde a
+  migração, o diário JÁ IMPRIMIA o campo, e não havia onde digitá-lo. Mesmo
+  defeito do seguro-garantia: o que não está na lista de campos graváveis é
+  descartado em silêncio. Entrou agora na tela de Obras e nas duas listas da
+  rota (gravar e devolver).
+
+Faltando qualquer um, a tela do diário avisa em destaque e oferece
+**"preencher agora"** — que grava **no cadastro da obra**, não no dia. É a
+regra do "uma porta só": a informação tem um lugar, e a tela que precisa dela
+oferece atalho para lá. Gravado no dia, amanhã estaria vazio de novo.
+
+**3. REPETIR UM DIA EM VÁRIOS DIAS.** Ele: *"esse dia aqui foi igual aos 3
+próximos. Ou então esse sábado foi igual a outros 4 sábados."*
+
+Dois atalhos (dias seguidos / mesmo dia da semana), e um segundo passo que
+**mostra as datas uma a uma, por extenso**, pedindo a palavra REPETIR. Não é
+burocracia: repetir escreve documento em dias que a pessoa não está olhando, e
+não há desfazer. Três travas: não sobrescreve dia já escrito, não escreve o
+futuro, não escreve fora do prazo da obra — e os pulados voltam ditos, com o
+motivo. Teto de 31 dias. Os equipamentos só vão junto se mandarem.
+
+### ⚑ 14/11/2026 — O DEFEITO MAIS CARO DO DIA: POST sem cabeçalho grava NADA e diz "ok"
+
+Construindo o "preencher quem assina", a tela avisou **"Gravado no cadastro da
+obra."** e o cadastro continuou em branco.
+
+**A causa:** `fetch` com `JSON.stringify` no corpo e **sem**
+`Content-Type: application/json`. O Flask lê com `request.get_json(silent=True)`,
+recebe `None`, aplica um dicionário vazio, não grava nada — e responde
+`ok: true`. O pior tipo de defeito: silencioso, com confirmação verde em cima.
+
+⚠️ **E NÃO ERA SÓ A TELA NOVA.** A varredura achou o mesmo esquecimento em
+**Colaboradores** (a marcação do ponto dentro da ficha da pessoa: *"Marcação
+salva no ponto."* sem salvar nada) e em **sete** chamadas do
+**DP › Contabilidade** — todas de meses atrás, nenhuma percebida.
+
+**O conserto ficou no ajudante `api()` do `erp_base.html`**, que agora põe o
+cabeçalho sozinho quando o corpo é texto. `FormData` fica de fora de propósito:
+nele o navegador monta o `boundary`, e fixar o tipo à mão quebra o upload.
+`tests/test_telas_mandam_json.py` guarda as duas pontas.
+
 ### ⚑ 13/11/2026 — O EFETIVO DO PONTO NO DIÁRIO ESTAVA ERRADO: TRÊS DEFEITOS
 
 Ele, olhando o diário: *"eu acho que ele está dobrando o efetivo. Eu acho que

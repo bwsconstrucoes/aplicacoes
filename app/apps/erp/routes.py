@@ -6193,6 +6193,14 @@ def api_obra(obra_id: int):
                 # é descartado em silêncio, e a tela recarrega mostrando vazio.
                 texto = ("nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
                          "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
+                         # ⚑ `crea_obra` ENTRA EM 14/11/2026, e é o mesmo
+                         # defeito do seguro-garantia: a coluna existe desde a
+                         # migração, o DIÁRIO IMPRIME o CREA — e não havia
+                         # onde digitá-lo. O papel saía com o campo vazio e
+                         # ninguém sabia por quê. Ele perguntou: *"me explica
+                         # de onde é que está vindo o responsável técnico,
+                         # número do registro profissional e a empresa."*
+                         "crea_obra "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
                          "observacoes_fiscais orgao_resumido status seguro_garantia "
                          # O CONTRATANTE NO PAPEL DO DIÁRIO (09/11/2026): a
@@ -6346,6 +6354,9 @@ def api_obra(obra_id: int):
             dados = {c: getattr(obra, c) for c in (
                 "id codigo nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
                 "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
+                # Volta junto, senão o formulário remonta vazio e o salvamento
+                # seguinte APAGA — o defeito do seguro-garantia, de novo.
+                "crea_obra "
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 # Voltam junto, senão o formulário remonta vazio e o
@@ -12082,6 +12093,50 @@ def api_obras_cdiarios():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao completar obras pela C. Di\u00e1rios")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/repetir", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_repetir(obra_id: int):
+    """Copia um dia escrito para outros dias que ainda não têm diário.
+
+    Pedido dele em 14/11/2026: *"esse dia aqui foi igual aos 3 próximos. Ou
+    então esse sábado foi igual a outros 4 sábados."*
+
+    ⚑ NUNCA SOBRESCREVE dia já escrito, não escreve o futuro e não escreve
+    fora do prazo da obra. Os pulados voltam ditos, com o motivo de cada um —
+    "copiei 3 de 5" sem dizer quais é pior que não copiar.
+    """
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            origem = _dia_do_pedido(d.get("de"))
+            # Dois caminhos: os atalhos ("os 3 próximos", "os 4 sábados") e a
+            # lista marcada no calendário. O atalho só SUGERE — quem confirma
+            # manda a lista, e é ela que vale.
+            if d.get("sugerir"):
+                return jsonify({"ok": True, "dias": svc.dias_para_repetir(
+                    s, obra_id, origem, str(d.get("modo") or "seguidos"),
+                    int(d.get("quantos") or 1))})
+            destinos = []
+            for bruto in (d.get("dias") or []):
+                destinos.append(_dia_do_pedido(bruto))
+            r = svc.repetir_dia(s, obra_id, origem, destinos, usuario,
+                                com_equipamentos=bool(d.get("com_equipamentos")))
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao repetir o dia do diário")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

@@ -75,6 +75,11 @@ TEMPO_ROTULOS = {
 
 # Os campos que a OBRA escreve. A observação da fiscalização NÃO está aqui, e
 # essa ausência é a regra 1 lá de cima — ela não é esquecimento.
+# Quantos dias uma repetição alcança de uma vez. Não é número mágico: é o que
+# ainda dá para uma pessoa conferir na tela antes de confirmar. Repetir um mês
+# inteiro numa tacada é o caminho para trinta diários iguais que ninguém leu.
+TETO_DE_REPETICAO = 31
+
 CAMPOS_DA_OBRA = (
     "tempo_manha", "tempo_tarde", "relato", "ocorrencias",
     "fiscalizacao_esteve", "fiscalizacao_quem", "sem_expediente",
@@ -441,6 +446,142 @@ def lotados_que_bateram_em_outra(s: Session, obra_id: int,
              ORDER BY c.nome LIMIT 50""", o=obra_id, d=dia) or []
     return [{"colaborador_id": l["id"], "nome": l["nome"], "onde": l["onde"]}
             for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# REPETIR UM DIA EM VÁRIOS DIAS (14/11/2026)
+#
+# Ele: *"digamos que eu queira replicar um determinado relato para vários dias
+# e gostaria de poder fazer isso também. Ó, esse dia aqui foi igual aos 3
+# próximos aqui. Ou então esse sábado foi igual a outros 4 sábados aqui."*
+#
+# ⚑ TRÊS TRAVAS, E NENHUMA É BUROCRACIA:
+#
+# 1. **DIA QUE JÁ TEM DIÁRIO NÃO É SOBRESCRITO.** É a mesma regra da
+#    importação da planilha, e pelo mesmo motivo: diário é documento. Marcar
+#    por engano um dia já escrito e perder o relato de quem esteve na obra é
+#    estrago que não se desfaz. Os pulados voltam ditos, um a um.
+# 2. **NÃO SE ESCREVE O FUTURO.** Diário é relato do que aconteceu. Dia à
+#    frente de hoje é recusado — senão a repetição vira previsão, e previsão
+#    assinada pela fiscalização é outra coisa.
+# 3. **NÃO SE ESCREVE FORA DO PRAZO DA OBRA.** Antes do início ou depois do
+#    término, o dia nem deveria existir no calendário.
+#
+# O QUE É COPIADO: o relato, as ocorrências, o histórico, o tempo e o horário
+# de trabalho — o que de fato se repete quando dois dias são iguais. A
+# observação da FISCALIZAÇÃO nunca é copiada (regra 1 do topo deste arquivo:
+# ela é de quem fiscaliza, não da obra). Os equipamentos vão junto só se
+# mandarem, porque máquina que saiu da obra não pode reaparecer sozinha em
+# quatro dias.
+# ---------------------------------------------------------------------------
+CAMPOS_QUE_SE_REPETEM = ("tempo_manha", "tempo_tarde", "relato", "ocorrencias",
+                         "historico", "horario_trabalho", "sem_expediente")
+
+
+def repetir_dia(s: Session, obra_id: int, origem: date, destinos: list[date],
+                usuario: Optional[Usuario] = None, *,
+                com_equipamentos: bool = False) -> dict[str, Any]:
+    """Copia um dia escrito para outros dias que ainda não têm diário."""
+    cab = cabecalho(s, obra_id, origem)
+    de = _linha(s, obra_id, origem)
+    if de is None:
+        raise ErroNaoEncontrado(
+            "O dia que você quer repetir ainda não foi gravado. Grave-o "
+            "primeiro — é ele que será copiado.")
+    if not destinos:
+        raise ErroValidacao("Escolha pelo menos um dia para receber a cópia.")
+    if len(destinos) > TETO_DE_REPETICAO:
+        raise ErroValidacao(
+            f"São no máximo {TETO_DE_REPETICAO} dias de uma vez. Repetir mês "
+            f"inteiro de uma tacada é o tipo de coisa que ninguém confere.")
+
+    hoje = date.today()
+    inicio = cab["data_inicio"]
+    fim = cab["data_termino"]
+    escritos = {l["data"] for l in (_consulta_opcional(s, """
+            SELECT data FROM diarios_obra
+             WHERE obra_id = :o AND data = ANY(:d)""",
+            o=obra_id, d=list(destinos)) or [])}
+
+    copiados, pulados = [], []
+    equipamentos = _consulta_opcional(s, """
+            SELECT descricao, quantidade, observacao, insumo_id
+              FROM diario_equipamentos WHERE diario_id = :i ORDER BY id""",
+            i=de["id"]) or [] if com_equipamentos else []
+
+    for dia in sorted(set(destinos)):
+        if dia == origem:
+            continue
+        if dia > hoje:
+            pulados.append({"data": str(dia), "motivo": "ainda não aconteceu"})
+            continue
+        if inicio and str(dia) < inicio:
+            pulados.append({"data": str(dia), "motivo": "antes do início da obra"})
+            continue
+        if fim and str(dia) > fim:
+            pulados.append({"data": str(dia), "motivo": "depois do término da obra"})
+            continue
+        if dia in escritos:
+            pulados.append({"data": str(dia),
+                            "motivo": "este dia já tem diário escrito"})
+            continue
+
+        # ⚑ PASSA PELO `salvar`, e não por um INSERT próprio: é ele que valida
+        # (dia com expediente precisa de relato), grava a auditoria e conhece
+        # as regras do diário fechado. Um INSERT paralelo aqui seria uma
+        # segunda verdade sobre como um diário nasce.
+        salvar(s, obra_id, dia,
+               {c: de[c] for c in CAMPOS_QUE_SE_REPETEM}, usuario)
+        if equipamentos:
+            novo = _linha(s, obra_id, dia)
+            for item in equipamentos:
+                s.execute(text("""
+                    INSERT INTO diario_equipamentos
+                        (diario_id, descricao, quantidade, observacao, insumo_id)
+                    VALUES (:i, :d, :q, :obs, :ins)"""),
+                    {"i": novo["id"], "d": item["descricao"],
+                     "q": item["quantidade"], "obs": item["observacao"],
+                     "ins": item["insumo_id"]})
+        copiados.append(str(dia))
+
+    s.flush()
+    logger.info("ERP/diário: %s repetido em %d dia(s) na obra %s",
+                origem, len(copiados), obra_id)
+    return {"de": str(origem), "copiados": copiados, "pulados": pulados,
+            "equipamentos_por_dia": len(equipamentos)}
+
+
+def dias_para_repetir(s: Session, obra_id: int, origem: date,
+                      modo: str, quantos: int) -> list[str]:
+    """Os dias que os atalhos oferecem — já sem os que não podem receber.
+
+    Dois atalhos, que são as duas frases dele: *"esse dia aqui foi igual aos 3
+    próximos"* (`seguidos`) e *"esse sábado foi igual a outros 4 sábados"*
+    (`mesmo_dia_da_semana`). O terceiro caminho é marcar no calendário à mão.
+    """
+    if modo not in ("seguidos", "mesmo_dia_da_semana"):
+        raise ErroValidacao("Não entendi como repetir.")
+    quantos = max(1, min(int(quantos or 1), TETO_DE_REPETICAO))
+    cab = cabecalho(s, obra_id, origem)
+    hoje = date.today()
+    passo = 1 if modo == "seguidos" else 7
+    achados: list[str] = []
+    dia = origem
+    # Procura para a frente até juntar `quantos` dias que de fato cabem. O
+    # limite de voltas existe para a obra encerrada não varrer o calendário
+    # inteiro atrás de dias que nunca vão aparecer.
+    for _ in range(TETO_DE_REPETICAO * 7):
+        dia = dia + timedelta(days=passo)
+        if dia > hoje:
+            break
+        if cab["data_termino"] and str(dia) > cab["data_termino"]:
+            break
+        if _linha(s, obra_id, dia) is not None:
+            continue
+        achados.append(str(dia))
+        if len(achados) >= quantos:
+            break
+    return achados
 
 
 # ---------------------------------------------------------------------------
