@@ -12244,6 +12244,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 267 — Pagamento avulso: o relatório conta a pessoa do rateio UMA vez e mostra o rateio (13/11/2026)
+
+- *"Quando tem rateio, o relatório não tá saindo direito. Diverge na qtd de pessoas no
+  próprio relatório, tem qtds diferentes e não relata nada sobre o rateio."*
+- Causa: `montado_do_relatorio` mandava ao relatório comum (`folha_relatorio`) UMA LINHA
+  POR LINHA COLADA. O relatório conta "pessoas a pagar" pela lista, mas os quadros por
+  obra e por conta contam CPF distinto — a mesma pessoa em 2 obras dava 2 num lugar e 1
+  no outro, e o "de quantas" contava linhas.
+- Agora as linhas do mesmo CPF viram UMA pessoa: as obras ficam dentro (`por_obra`), o
+  valor é a soma, a obra aparece "A R$ x + B R$ y" e a situação "Rateio em N obras"
+  (ou "Mesma pessoa N vezes (soma num pagamento)" quando é repetição sem rateio).
+- PDF e Excel ganham, só quando há rateio: uma frase no alto ("N pessoa(s) com rateio
+  entre obras: sai somado numa transferência; cada obra fica com a sua parte") e o
+  quadro/aba **"Rateio entre obras"** (pessoa, obra, valor na obra, total). No recorte
+  por conta, sem o "(0)" de dias depois da obra.
+- Vale também para o relatório anexado na geração (`folha_pagamento._relatorio_por_conta`
+  usa o mesmo montado).
+- Teste: `test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio`.
+
 #### Leva 266 — Pagamento avulso: a mesma pessoa em obras diferentes é RATEIO (13/11/2026)
 
 - *"Eu quero lançar um CPF, valores diferentes para obras diferentes. E isso seria para
