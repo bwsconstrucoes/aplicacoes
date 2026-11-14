@@ -72,39 +72,53 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         if not modo_teste:
             raise RuntimeError(f'Falha ao carregar dados Google Sheets: {e}')
 
-    # ── O plano B: a SPsBD inteira, lida no máximo UMA vez e só se precisar ──
+    # ── O plano B existe para UMA coisa só: as SPs já marcadas "Pago" ──────
     #
-    # Dois motivos para precisar:
-    #   1. a SP do comprovante não apareceu na aba enxuta;
-    #   2. o comprovante é reenvio e precisamos saber se a baixa anterior ficou
-    #      pela metade — isso mora nas SPs já marcadas "Pago", que não estão na
-    #      aba enxuta.
+    # O dono fechou a regra em 14/11/2026 e isso enxugou o desenho:
     #
-    # Enquanto nenhum dos dois acontecer, as 52 mil linhas não são baixadas.
-    estado_spsbd = {'completa': False, 'fonte': 'aba_enxuta' if leu_da_aba_enxuta else 'spsbd_direto'}
+    #   *"Se a gente só baixa o que está no status agendar, agendado ou falha
+    #   agendado, então tudo que está nesses três status vai aparecer na aba
+    #   baixabradesco."* — e, perguntado como a aba é alimentada: *"a aba é
+    #   alimentada via fórmula, então é instantânea."*
+    #
+    # Fórmula viva + mesmo conjunto = **reler a SPsBD com o MESMO filtro não
+    # pode achar nada novo**. Era custo puro: 52 mil linhas para confirmar o que
+    # a aba já tinha dito. Esse pedaço saiu.
+    #
+    # O que sobra, e é legítimo: a SP pode estar **já marcada "Pago" com o Omie
+    # pendente**. Essas, por definição, NÃO estão na aba enxuta (que espelha as
+    # abertas), e é o que permite um reenvio concluir baixa pela metade —
+    # defeito real consertado em 13/09/2026. Só isso justifica a leitura grande,
+    # e só quando o comprovante não casou com nada.
+    estado_spsbd = {'leu': False, 'fonte': 'aba_enxuta' if leu_da_aba_enxuta else 'spsbd_direto'}
 
-    def _completar_com_spsbd():
-        """Lê a SPsBD inteira (uma vez) e completa os índices."""
-        nonlocal sps_index, sps_omie_pendente
-        if estado_spsbd['completa'] or modo_teste:
+    def _carregar_omie_pendente():
+        """Lê a SPsBD (uma vez por lote) só para as SPs pagas com Omie pendente."""
+        nonlocal sps_omie_pendente
+        if estado_spsbd['leu'] or modo_teste:
             return
-        estado_spsbd['completa'] = True
+        estado_spsbd['leu'] = True
         try:
             valores = load_spsbd_values(gc)
-            completo = load_spsbd_operacional(gc, values=valores)
-            completo.update(sps_index)   # o que veio da aba enxuta prevalece
-            sps_index = completo
             sps_omie_pendente = load_spsbd_omie_pendente(gc, values=valores)
             del valores                  # libera as 52k linhas cruas na hora
-            estado_spsbd['fonte'] = 'spsbd_completa'
+            estado_spsbd['fonte'] = 'spsbd_omie_pendente'
         except Exception as e:
-            # Não derruba o lote: a aba enxuta já pode ter resolvido o resto.
+            # Não derruba o lote: a aba enxuta já resolveu o resto.
             estado_spsbd['erro'] = str(e)[:200]
 
     if not leu_da_aba_enxuta and not modo_teste:
-        # Aba enxuta ausente ou vazia: volta ao comportamento antigo, para a
-        # baixa não parar por causa de uma aba renomeada.
-        _completar_com_spsbd()
+        # Aba enxuta ausente ou vazia (renomeada, apagada, fórmula com erro):
+        # volta ao comportamento antigo, para a baixa não parar por causa disso.
+        try:
+            _valores = load_spsbd_values(gc)
+            sps_index = load_spsbd_operacional(gc, values=_valores)
+            sps_omie_pendente = load_spsbd_omie_pendente(gc, values=_valores)
+            del _valores
+            estado_spsbd['leu'] = True
+            estado_spsbd['fonte'] = 'spsbd_completa_aba_indisponivel'
+        except Exception as e:
+            estado_spsbd['erro'] = str(e)[:200]
 
     # ── Processa cada comprovante / cada página ────────────────────────────────
     plans: List[ExecutionPlan] = []
@@ -213,18 +227,16 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             # ser vinculada a nenhuma solicitação financeira.
             match = match_receipt(rec, sps_index, sps_agendar)
 
-            # Não achou na aba enxuta: AGORA vale as 52 mil linhas. É o plano B
-            # do dono, e é o que mantém o caso raro funcionando sem cobrar o
-            # preço dele em todos os outros.
-            if match.status == 'nao_localizado' and not estado_spsbd['completa']:
-                _completar_com_spsbd()
-                match = match_receipt(rec, sps_index, sps_agendar)
-
-            # Fallback: SP já marcada Pago na planilha mas Omie pendente
-            if match.status == 'nao_localizado' and sps_omie_pendente:
-                match_pendente = match_omie_pendente(rec, sps_omie_pendente)
-                if match_pendente.status == 'localizado':
-                    match = match_pendente
+            # Não casou com nada. Repetir o mesmo casamento contra a SPsBD seria
+            # inútil (a aba é fórmula viva do mesmo conjunto). O único lugar
+            # onde a SP ainda pode estar é entre as já marcadas "Pago" com o
+            # Omie pendente — e aí sim vale a leitura grande, uma vez por lote.
+            if match.status == 'nao_localizado':
+                _carregar_omie_pendente()
+                if sps_omie_pendente:
+                    match_pendente = match_omie_pendente(rec, sps_omie_pendente)
+                    if match_pendente.status == 'localizado':
+                        match = match_pendente
 
             analisadas.append({'page_num': page_num, 'rec': rec, 'match': match})
 

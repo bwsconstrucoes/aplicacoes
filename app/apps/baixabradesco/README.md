@@ -430,10 +430,16 @@ resultado de consulta. `A:AK` limita as colunas, nunca as linhas.
 espelha a SPsAgendar com **as mesmas colunas da SPsBD**. Ela tem dezenas de
 linhas, não 52 mil.
 
+**A aba é alimentada por fórmula** (o dono confirmou em 14/11/2026), logo é
+instantânea e espelha exatamente o conjunto filtrado. Isso tem uma consequência
+que vale entender antes de mexer: **reler a SPsBD com o MESMO filtro não pode
+achar nada novo.** Esse pedaço saiu do código — era baixar 52 mil linhas para
+confirmar o que a aba já disse.
+
 | Quando | O que o robô lê |
 |---|---|
 | sempre | a aba **`baixabradesco`** (dezenas de linhas) |
-| só quando a SP não foi encontrada ali | a **SPsBD inteira**, uma vez por lote |
+| só quando o comprovante não casou com nada | a SPsBD, uma vez por lote, **e só para as SPs já marcadas "Pago" com o Omie pendente** |
 
 ⚠️ **Reenvio NÃO dispara a leitura das 52 mil linhas**, e isso é decisão de
 desenho, não esquecimento. O dono: *"reenvio é algo que acontece com alguma
@@ -451,10 +457,10 @@ O que se perde no caso raro — a aba não espelhou uma SP ainda aberta: o reenv
 o número da SP vai no motivo, com o pedido de avisar se ela ainda estiver como
 "Pagar".
 
-O retorno traz `fonte_das_sps`: `aba_enxuta` é o caminho rápido,
-`spsbd_completa` quer dizer que foi preciso ler tudo. **É por aí que se mede se
-a aba está cobrindo** — se aparecer `spsbd_completa` com frequência, algo não
-está espelhando.
+O retorno traz `fonte_das_sps`. **É por aí que se mede se a aba está
+cobrindo** — se a leitura grande aparecer com frequência, ou os comprovantes
+estão chegando para SPs fora dos três status de agendamento, ou a fórmula da aba
+parou de cobrir alguma coisa.
 
 ### A coluna AC, e por que ela economiza a segunda leitura gigante
 

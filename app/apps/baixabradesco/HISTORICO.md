@@ -1975,3 +1975,37 @@ legítimos, e só esses dois:
 **Se o `fonte_das_sps` vier `spsbd_completa` com frequência**, é um destes dois —
 e vale descobrir qual antes de mexer em mais nada. Pergunta aberta ao dono: a
 aba é fórmula viva ou rotina?
+
+### 14/11/2026 — a aba é fórmula viva, e isso tirou uma leitura grande do caminho
+
+Resposta dele à pergunta da entrada anterior:
+
+> *"A aba é alimentada via fórmula, então é instantânea."*
+
+Isso fechou o raciocínio e permitiu enxugar o desenho: **fórmula viva + mesmo
+conjunto filtrado = reler a SPsBD com o MESMO filtro não pode achar nada novo.**
+Era baixar 52 mil linhas para confirmar o que a aba já havia dito. Esse pedaço
+saiu.
+
+O que sobrou do plano B, e é legítimo: quando o comprovante **não casa com
+nada**, a SP ainda pode estar **já marcada "Pago" com o Omie pendente**. Essas,
+por definição, não estão na aba enxuta, e é o que permite um reenvio concluir
+baixa pela metade (defeito de 13/09/2026). Então a leitura grande passou a
+servir **só** para montar esse índice, uma vez por lote.
+
+Junto saiu outra bobagem que eu tinha deixado: depois de ler a SPsBD, o código
+**repetia o mesmo casamento**. Com a aba sendo o mesmo conjunto, o segundo
+casamento daria exatamente o mesmo resultado. Agora vai direto ao índice das
+pagas.
+
+**Os rótulos de `fonte_das_sps` ficaram mais honestos**, porque cada um indica um
+problema diferente:
+
+| Valor | O que significa |
+|---|---|
+| `aba_enxuta` | caminho rápido, o esperado |
+| `spsbd_omie_pendente` | algum comprovante não casou e foi preciso procurar entre as pagas |
+| `spsbd_completa_aba_indisponivel` | a aba não respondeu (renomeada, apagada, fórmula com erro) |
+
+**Verificado:** área inteira passando (337 testes), suíte completa com 2 falhas
+por biblioteca ausente neste ambiente, aplicação subindo.

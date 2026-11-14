@@ -173,18 +173,38 @@ def test_o_plano_B_le_a_spsbd_uma_unica_vez():
     import inspect
     from app.apps.baixabradesco import core
     fonte = inspect.getsource(core.processar_baixabradesco)
-    # a trava de "uma vez só" e o motivo estão no código, não na memória de quem leu
-    assert "estado_spsbd['completa']" in fonte
+    assert "estado_spsbd['leu']" in fonte
     assert 'load_spsbd_values' in fonte
 
 
-def test_o_plano_B_e_acionado_quando_nao_acha():
+def test_o_plano_B_serve_SO_para_as_pagas_com_omie_pendente():
+    """A aba é fórmula viva do mesmo conjunto (o dono confirmou em 14/11/2026).
+
+    Então repetir o mesmo casamento contra a SPsBD não pode achar nada novo —
+    seria baixar 52 mil linhas para confirmar o que a aba já disse. O único
+    lugar onde a SP ainda pode estar é entre as já marcadas "Pago".
+    """
     import inspect
     from app.apps.baixabradesco import core
     fonte = inspect.getsource(core.processar_baixabradesco)
-    assert "match.status == 'nao_localizado' and not estado_spsbd['completa']" in fonte
-    # e tenta casar DE NOVO depois de completar — senão a leitura foi em vão
-    assert fonte.count('match = match_receipt(rec, sps_index, sps_agendar)') >= 2
+
+    # aciona pelo "não achou" e vai direto ao omie_pendente
+    assert "if match.status == 'nao_localizado':" in fonte
+    assert '_carregar_omie_pendente()' in fonte
+    # e NÃO repete o casamento comum depois de ler
+    assert fonte.count('match = match_receipt(rec, sps_index, sps_agendar)') == 1
+
+
+def test_o_plano_B_nao_reconstroi_o_indice_operacional():
+    """Era custo puro: a aba já tem exatamente esse conjunto."""
+    import inspect
+    from app.apps.baixabradesco import core
+    carregador = inspect.getsource(core.processar_baixabradesco)
+    inicio = carregador.index('def _carregar_omie_pendente')
+    fim = carregador.index('if not leu_da_aba_enxuta')
+    corpo = carregador[inicio:fim]
+    assert 'load_spsbd_omie_pendente' in corpo
+    assert 'load_spsbd_operacional' not in corpo
 
 
 def test_reenvio_NAO_dispara_a_leitura_gigante():
