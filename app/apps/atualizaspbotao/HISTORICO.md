@@ -193,6 +193,14 @@ o Streamlit no PC do dono, um Apps Script antigo com gatilho de tempo (o código
 deste módulo foi traduzido de um), ou o próprio cenário reenviando. O
 User-Agent do webhook no Make separa os quatro.
 
+**Scripts do Google conferidos (14/11/2026):** os 16 projetos de Apps Script
+avulsos do Drive da conta `contato@` foram baixados e lidos (só leitura) —
+**nenhum** contém o gancho `ssvbu6…` nem "atualizatitulo", e nenhum chama
+webhook do Make. O script original do botão ("FIN - Solicitações Financeiro -
+Botão (SPsBD, Log, Boleto)") só recebe pedidos. Ficaram de fora os scripts
+**presos a planilhas** (o Drive não os lista) — esses só aparecem em
+script.google.com › Meus acionadores / Execuções.
+
 **Para achar a origem, no log do Render:** se as linhas mostram as mesmas
 poucas SPs voltando a cada poucos minutos, é ciclo; se são SPs diferentes e
 antigas, é algo varrendo a base (outro cenário do Make, script). No Make, os
