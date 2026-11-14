@@ -55,6 +55,33 @@ def load_spsbd_values(gc=None) -> list:
     return ws.get('A:AK')
 
 
+# A aba que o dono criou em 14/11/2026 para tirar as 52 mil linhas do caminho.
+# Ela espelha a SPsAgendar (as SPs operacionais) mas com as MESMAS COLUNAS da
+# SPsBD — por isso os mesmos índices e o mesmo leitor servem para as duas.
+ABA_ENXUTA = 'baixabradesco'
+
+
+def load_baixabradesco_values(gc=None) -> list:
+    """Lê a aba enxuta. Devolve [] quando ela não existe ou está vazia.
+
+    Palavras do dono: *"a probabilidade do registro que a aplicação procura
+    estar em SPsAgendar é perto de 100%. Todavia nela não ficam todas as
+    informações. Criei a aba 'baixabradesco'. Nela sim estão os mesmos
+    registros de SPsAgendar só que com as mesmas informações de SPsBD. Então,
+    primeiro procure nela. Se não achar, só então você vai pra SPsBD."*
+
+    Devolver lista vazia em vez de levantar erro é de propósito: se a aba for
+    renomeada ou apagada, o robô volta a ler a SPsBD inteira — mais lento, mas
+    funcionando. Baixa que para vale menos que baixa devagar.
+    """
+    gc = gc or get_gc()
+    try:
+        ws = gc.open_by_key(SPS_SHEET_ID).worksheet(ABA_ENXUTA)
+        return ws.get('A:AK') or []
+    except Exception:
+        return []
+
+
 def load_spsbd_index(gc=None) -> Dict[str, SpRecord]:
     gc = gc or get_gc()
     rows = get_sheet_rows(gc, SPS_SHEET_ID, 'SPsBD')
@@ -68,7 +95,14 @@ def load_spsbd_index(gc=None) -> Dict[str, SpRecord]:
 
 
 
-def load_spsbd_operacional(gc=None, values: list | None = None) -> Dict[str, SpRecord]:
+# Coluna AC da aba enxuta: o número da linha onde aquele registro vive na
+# SPsBD. Informação do dono em 14/11/2026, e ela economiza a SEGUNDA leitura
+# gigante — a da gravação, que varria a coluna A inteira para achar a linha.
+IDX_LINHA_NA_SPSBD = 28   # AC, 0-based
+
+
+def load_spsbd_operacional(gc=None, values: list | None = None,
+                           linha_vem_da_coluna_ac: bool = False) -> Dict[str, SpRecord]:
     """Carrega apenas SPs operacionais da SPsBD (O=Pagar + AB=agendar/agendado/falhaagendar).
 
     ⚠️ ws.get('A:AK') traz TODAS as ~52k linhas (só limita colunas). Por isso,
@@ -101,7 +135,20 @@ def load_spsbd_operacional(gc=None, values: list | None = None) -> Dict[str, SpR
         # Só materializa dict/estende a linha para as poucas que passam no filtro
         row = list(row) + [''] * (len(headers) - len(row))
         r = {headers[i]: row[i] for i in range(len(headers))}
-        r['_row_number'] = row_num
+        # Lendo a aba enxuta, `row_num` é a linha DELA — inútil para gravar na
+        # SPsBD. A coluna AC diz a linha de verdade. Quando ela não vier
+        # preenchida, fica sem número e a gravação cai na busca pelo ID, que é
+        # o caminho de sempre.
+        linha_real = 0
+        if linha_vem_da_coluna_ac:
+            bruto = row[IDX_LINHA_NA_SPSBD] if IDX_LINHA_NA_SPSBD < len(row) else ''
+            try:
+                linha_real = int(str(bruto).strip() or 0)
+            except Exception:
+                linha_real = 0
+            if linha_real < 2:          # 1 é o cabeçalho; 0 é "não sei"
+                linha_real = 0
+        r['_row_number'] = linha_real if linha_vem_da_coluna_ac else row_num
         sp = row_to_sp_record(r)
         if sp.id:
             result[sp.id] = sp
@@ -346,9 +393,19 @@ def build_spsbd_updates(plan) -> List[dict]:
     from datetime import datetime
     carimbo = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+    # Atalho: quando se sabe a linha (coluna AC da aba enxuta), a gravação
+    # confere aquela linha e pronto — em vez de varrer a coluna A inteira.
+    linha = 0
+    if plan.match.sp is not None:
+        try:
+            linha = int(getattr(plan.match.sp, 'row_number', 0) or 0)
+        except Exception:
+            linha = 0
+
     return [{
         'sheet_id': SPS_SHEET_ID,
         'aba':      'SPsBD',
+        'linha':    linha,
         'filtros':  {'A': '=' + plan.match.id},
         'updates':  {
             'O':  'Pago',
@@ -425,10 +482,27 @@ def execute_spsbd_updates(updates: list) -> dict:
             if not filtros or not updates_cols:
                 continue
 
+            # ⚠️ ATALHO COM CONFERÊNCIA. A linha vem da aba enxuta, que é um
+            # espelho — e espelho pode estar velho. Gravar numa linha errada
+            # marcaria a SP ERRADA como paga, e ninguém perceberia olhando a
+            # tela. Então lê UMA célula para confirmar que ali está mesmo o ID
+            # esperado; se não estiver, cai na varredura de sempre.
+            target_row = None
+            linha_sugerida = int(upd.get('linha') or 0)
+            esperado = (filtros.get('A') or '')[1:].strip()
+            if linha_sugerida >= 2 and esperado:
+                try:
+                    achado = sheet.get(f'A{linha_sugerida}')
+                    valor = (achado[0][0] if achado and achado[0] else '')
+                    if as_string(valor).strip() == esperado:
+                        target_row = linha_sugerida
+                except Exception:
+                    target_row = None
+
             # Busca só as colunas dos filtros, a partir da linha 2 (pula header)
             col_letras = list(filtros.keys())
             col_ranges = [f'{l}2:{l}' for l in col_letras]
-            fetched = sheet.batch_get(col_ranges)
+            fetched = sheet.batch_get(col_ranges) if target_row is None else []
 
             # col_data[letra] = lista de valores (índice 0 = linha 2 da planilha)
             col_data = {}
@@ -437,8 +511,7 @@ def execute_spsbd_updates(updates: list) -> dict:
 
             n_rows = max((len(v) for v in col_data.values()), default=0)
 
-            target_row = None
-            for i in range(n_rows):
+            for i in range(n_rows) if target_row is None else ():
                 match = True
                 for col_letra, condicao in filtros.items():
                     vals = col_data.get(col_letra, [])

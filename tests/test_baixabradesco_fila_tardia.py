@@ -34,8 +34,17 @@ def pasta(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _agora_br():
+    import time as _t
+    return _t.strftime('%d/%m/%Y %H:%M:%S')
+
+
 def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
-           criado_em='12/11/2026 09:00:00', tentativas=0):
+           criado_em=None, tentativas=0):
+    # ⚠️ A data nasce de HOJE, não fixa. Com data fixa, este arquivo passava
+    # quando foi escrito e quebrava dois dias depois, sozinho, por causa do
+    # descarte por idade — teste que depende do calendário mente sobre o código.
+    criado_em = criado_em or _agora_br()
     item = {
         'payload': {
             'attachments': [{'filename': a, 'base64': 'JVBERi0x...'} for a in arquivos],
@@ -55,7 +64,8 @@ def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
 # =====================================================================
 
 def test_o_resumo_mostra_os_comprovantes_adiados(pasta):
-    _adiar(pasta, arquivos=('pix_fornecedor.pdf',))
+    _adiar(pasta, arquivos=('pix_fornecedor.pdf',),
+           criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
@@ -80,7 +90,7 @@ def test_o_resumo_NUNCA_devolve_o_payload_nem_as_credenciais(pasta):
 
 
 def test_o_resumo_avisa_que_publicacao_apaga_a_fila(pasta):
-    _adiar(pasta)
+    _adiar(pasta, criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
@@ -264,8 +274,7 @@ def test_cada_passada_processa_poucos_adiados(pasta, monkeypatch):
 def test_adiado_antigo_e_descartado_sem_gastar_processamento(pasta, monkeypatch):
     """"Tentando fazer baixa de coisa que nem precisaria mais" — exatamente."""
     _adiar(pasta, nome='1600000000_velho.json', criado_em='01/01/2026 08:00:00')
-    _adiar(pasta, nome='1700000000_novo.json',
-           criado_em=__import__('time').strftime('%d/%m/%Y %H:%M:%S'))
+    _adiar(pasta, nome='1700000000_novo.json')
     chamadas = []
     import app.apps.baixabradesco.core as core
     monkeypatch.setattr(core, 'processar_baixabradesco',

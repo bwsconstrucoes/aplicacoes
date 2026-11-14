@@ -414,6 +414,53 @@ para nascer lixo. E leitura que falha **não** autoriza escrita nenhuma: escreve
 por cima do que não se conseguiu ler é como o lixo nasceu. A seleção também
 ignora linha cujo Status seja "STATUS", para o estrago não voltar a contar.
 
+## A aba enxuta: a SPsBD inteira deixou de ser o caminho normal
+
+Era a causa de fundo da lentidão. O robô baixava a SPsBD completa — **52 mil
+linhas × 37 colunas** — a cada lote de comprovantes, para usar algumas dezenas
+de linhas. Nos registros de 13/11/2026, `/api/baixabradesco/executar` levou
+**162 s**; com quatro linhas de atendimento, isso derrubava quem estava usando a
+tela.
+
+**Por que era "inteira":** o Google Sheets não tem filtro. Não existe pedir "só
+as linhas em que a coluna O é Pagar" — a API entrega faixa de células, não
+resultado de consulta. `A:AK` limita as colunas, nunca as linhas.
+
+**A solução foi do dono** (14/11/2026): ele criou a aba **`baixabradesco`**, que
+espelha a SPsAgendar com **as mesmas colunas da SPsBD**. Ela tem dezenas de
+linhas, não 52 mil.
+
+| Quando | O que o robô lê |
+|---|---|
+| sempre | a aba **`baixabradesco`** (dezenas de linhas) |
+| só quando a SP não foi encontrada ali | a **SPsBD inteira**, uma vez por lote |
+| só quando um reenvio precisa saber se a baixa anterior ficou pela metade | idem |
+
+O retorno traz `fonte_das_sps`: `aba_enxuta` é o caminho rápido,
+`spsbd_completa` quer dizer que foi preciso ler tudo. **É por aí que se mede se
+a aba está cobrindo** — se aparecer `spsbd_completa` com frequência, algo não
+está espelhando.
+
+### A coluna AC, e por que ela economiza a segunda leitura gigante
+
+A coluna **AC da aba enxuta diz em que linha aquele registro está na SPsBD**.
+Com isso, a gravação não precisa mais varrer a coluna A inteira (52 mil valores)
+só para achar onde escrever.
+
+⚠️ **Mas a linha é tratada como PISTA, nunca como verdade.** A aba é um espelho,
+e espelho pode estar velho. Gravar numa linha errada marcaria **a SP errada como
+paga**, e ninguém perceberia olhando a tela. Então: lê **uma célula** para
+confirmar que o ID esperado está ali; se não estiver — ou se a leitura falhar —
+cai na varredura de sempre.
+
+Linha sem AC preenchida, ou com lixo, fica **sem número**, e a gravação busca
+pelo ID. Número chutado seria pior que número nenhum.
+
+### Se a aba for renomeada ou apagada
+
+O robô volta a ler a SPsBD inteira. Mais lento, mas funcionando: **baixa devagar
+vale mais que baixa parada.**
+
 ## A fila tardia: onde fica, como ver, como limpar
 
 São **duas** filas, e confundi-las dá diagnóstico errado:

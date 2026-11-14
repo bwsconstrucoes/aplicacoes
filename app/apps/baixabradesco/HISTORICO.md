@@ -1846,3 +1846,64 @@ geral), área inteira passando, aplicação subindo. Suíte completa: 2 falhas, 
 duas por biblioteca ausente neste ambiente.
 **Não verificado:** o efeito em produção. O sinal é a linha
 `processar-fila-tardia` sumir dos registros de requisições lentas.
+
+---
+
+### 14/11/2026 — a SPsBD inteira deixou de ser o caminho normal (ideia do dono)
+
+Ele perguntou por que o robô baixava a planilha completa. Expliquei: o Google
+Sheets **não tem filtro** — não existe pedir "só as linhas em que Status Pgt é
+Pagar". A API entrega faixa de células, não resultado de consulta; `A:AK` limita
+as colunas, nunca as linhas. Então, para filtrar, era obrigatório trazer tudo e
+filtrar em memória: **52 mil linhas baixadas para usar umas 50.**
+
+Ofereci dois caminhos (ler só o fim da planilha; ou confiar na SPsAgendar).
+**Ele trouxe um terceiro, melhor que os dois:**
+
+> *"Vamos para o caminho C. A probabilidade do registro que a aplicação procura
+> estar em SPsAgendar é perto de 100%. Todavia nela não ficam todas as
+> informações. Criei a aba 'baixabradesco'. Nela sim estão os mesmos registros
+> de SPsAgendar só que com as mesmas informações de SPsBD. Então, primeiro
+> procure nela. Se não achar, só então você vai pra SPsBD."*
+
+E, em seguida: *"a coluna AC de baixabradesco é a linha onde está o registro em
+SPsBD."*
+
+**O que ficou:**
+
+- **A aba `baixabradesco` é o caminho normal.** Mesmas colunas da SPsBD, então o
+  mesmo filtro e o mesmo leitor servem.
+- **A SPsBD inteira virou plano B**, lida no máximo **uma vez por lote**, e só
+  em dois casos: (1) a SP não apareceu na aba enxuta; (2) um reenvio precisa
+  saber se a baixa anterior ficou pela metade — isso mora nas SPs já marcadas
+  "Pago", que não estão na aba enxuta.
+- **A coluna AC eliminou a SEGUNDA leitura gigante**, a da gravação, que varria
+  a coluna A inteira só para achar onde escrever.
+- **O retorno traz `fonte_das_sps`** (`aba_enxuta` ou `spsbd_completa`). Era o
+  que faltava para medir em vez de supor: se aparecer `spsbd_completa` com
+  frequência, algo não está espelhando.
+
+**A decisão de segurança que sustenta a coluna AC, e ela não é opcional:** a aba
+é um **espelho**, e espelho pode estar velho. Gravar numa linha errada marcaria
+**a SP errada como paga**, e isso ninguém percebe olhando a tela. Então a linha é
+tratada como **pista**: lê **uma célula** para confirmar que o ID esperado está
+ali e, se não estiver — ou se a leitura falhar —, cai na varredura de sempre.
+Linha sem AC, ou com lixo, fica sem número e a gravação busca pelo ID. **Número
+chutado seria pior que número nenhum.** O dono conferiu esse desenho com todas as
+letras: *"você vê qual a linha e antes de gravar confirma, do contrário, busca,
+né isso?"* — é isso.
+
+**Aba renomeada ou apagada não para a baixa:** o leitor devolve lista vazia e o
+robô volta ao comportamento antigo. Baixa devagar vale mais que baixa parada.
+
+**Um defeito meu, achado de raspão:** um teste da fila tardia dependia de data
+fixa (`12/11/2026`) e quebrou sozinho dois dias depois, por causa do descarte por
+idade. Teste que depende do calendário mente sobre o código. A data agora nasce
+de hoje.
+
+**Verificado:** 18 testes novos na aba enxuta e na coluna AC, área inteira
+passando (328 testes), aplicação subindo. Suíte completa: 2 falhas, as duas por
+biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
+**Não verificado:** nada disso tocou a planilha de verdade. O sinal de que
+funcionou é `/api/baixabradesco/executar` sair dos registros de requisições
+lentas, e `fonte_das_sps` vir `aba_enxuta` na maioria dos lotes.
