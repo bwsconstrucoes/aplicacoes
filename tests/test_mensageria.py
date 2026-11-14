@@ -192,7 +192,8 @@ def test_ponto_nasce_liberado_no_whatsapp_e_o_resto_so_telegram():
                if k.startswith("erp.") and k not in DO_ERP_NO_WHATSAPP)
     assert all(por[k] == core.WHATSAPP for k in DO_ERP_NO_WHATSAPP), \
         "os avisos do DP para a OBRA saem por WhatsApp: a obra não tem Telegram"
-    assert por["telegram.aviso_cadastro"] == core.DESLIGADO
+    # 14/11/2026: o dono ligou o convite de cadastro do Telegram (nascia desligado).
+    assert por["telegram.aviso_cadastro"] == core.WHATSAPP
 
 
 # ---------------------------------------------------------------------------

@@ -1480,6 +1480,7 @@ const PODE_FECHAR = {{ 'true' if pode.fechar_competencia else 'false' }};
 const PODE_CONFIGURAR = {{ 'true' if pode.configurar_ponto else 'false' }};
 // a ficha única da pessoa (13/11/2026): o cadastro e os pagamentos do ERP, para quem pode
 const PODE_VER_PESSOAL = {{ 'true' if pode.ver_pessoal else 'false' }};
+const PODE_VER_MENSAGENS = {{ 'true' if pode.ver_mensagens else 'false' }};
 const PODE_EDITAR_COLAB = {{ 'true' if pode.editar_colaboradores else 'false' }};
 
 // ---------------------------------------------------------------------------
@@ -1691,7 +1692,8 @@ function desenharPainel() {
                 ["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
                 ...(PODE_VER_PESSOAL ? [["pagamentos", "Pagamentos"]] : []),
                 ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Configuração do ponto"],
-                ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]];
+                ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`],
+                ...(PODE_VER_MENSAGENS ? [["mensagens", "Telegram e mensagens"]] : [])];
   if (!abas.some(([k]) => k === PAINEL_ABA)) PAINEL_ABA = "dia";
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
@@ -1719,8 +1721,10 @@ function desenharPainel() {
     <div id="dp-msg"></div>
     <div id="dp-conteudo">${({dia: painelDia, mes: painelMes, pedidos: painelPedidos, aparelhos: painelAparelhos,
                               cadastro: painelCadastro, rosto: painelRosto, pessoa: painelPessoaErp,
-                              pagamentos: painelPagamentosErp}[PAINEL_ABA] || painelDia)()}</div>`;
+                              pagamentos: painelPagamentosErp,
+                              mensagens: () => '<div id="dp-mensagens"></div>'}[PAINEL_ABA] || painelDia)()}</div>`;
   if (PAINEL_ABA === "pessoa" || PAINEL_ABA === "pagamentos") carregarErpDaPessoa(p.id);
+  if (PAINEL_ABA === "mensagens") mensagensDaPessoa(els("dp-mensagens"), p.id);  // bloco da Mensageria (erp_base)
   els("dp-corpo").querySelectorAll("[data-dp-aba]").forEach(b => b.addEventListener("click", () => {
     PAINEL_ABA = b.dataset.dpAba; desenharPainel(); }));
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
