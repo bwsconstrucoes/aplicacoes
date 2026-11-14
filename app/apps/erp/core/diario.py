@@ -673,6 +673,8 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
     de uma obra sem encher a tabela de diários vazios — e o calendário de
     pendências continua dizendo a verdade sobre o que foi escrito.
     """
+    from app.apps.erp.core import diario_fotos as svc_fotos
+
     cab = cabecalho(s, obra_id, dia)
     linha = _linha(s, obra_id, dia)
     efetivo = efetivo_do_ponto(s, obra_id, dia)
@@ -711,6 +713,13 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
         # ⚑ A LISTA DA PLANILHA ENTRA NA SOMA? Decidido aqui, onde se conhecem
         # as duas fontes, e não na tela — o papel usa a mesma regra, e duas
         # versões divergiriam no primeiro ajuste. Ver `importado_conta`.
+        # ⚑ AS FOTOS DO DIA (14/11/2026). Vêm como lista de números e
+        # legendas, nunca como imagem: a tela pede cada foto pela rota do
+        # anexo, que é quem confere permissão e escopo. Mandar a imagem aqui
+        # dentro faria a abertura de um dia com seis fotos carregar vários
+        # megabytes antes de desenhar qualquer coisa.
+        "fotos": (svc_fotos.listar(s, linha["id"]) if linha is not None else []),
+        "fotos_teto": svc_fotos.TETO_POR_DIA,
         "efetivo_importado_conta": importado_conta(
             efetivo, tela.get("efetivo_importado")),
         "avisos_do_ponto": lotados_que_bateram_em_outra(s, obra_id, dia),
@@ -1454,6 +1463,12 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             # ⚑ A CONTAGEM, NÃO OS NOMES. Decisão dele, e boa prática: o RDO
             # circula fora da empresa.
             "efetivo": _efetivo_para_o_papel(efetivo, extras, importado),
+            # ⚑ O ANEXO FOTOGRÁFICO (14/11/2026). Ele: *"é como se fosse um
+            # anexo ao diário, essa página das fotos, para não interferir no
+            # layout que a gente já trabalhou."* Por isso as fotos vêm na
+            # página, mas o modelo as desenha DEPOIS da folha do dia, em
+            # folha própria — os três quadros da folha continuam intocados.
+            "fotos": (_fotos_do_papel(s, linha["id"]) if linha is not None else []),
             "material": material_recebido(s, obra_id, dia),
             "correcoes": _correcoes(s, linha["id"]) if linha else [],
         })
@@ -1717,6 +1732,12 @@ def importado_conta(efetivo: dict[str, Any],
     existe e conta inteira, como sempre contou.
     """
     return not bool(efetivo.get("por_funcao")) and bool(importado)
+
+
+def _fotos_do_papel(s: Session, diario_id: int) -> list[dict[str, Any]]:
+    """As fotos embutidas, encolhidas para caber num relatório de 90 dias."""
+    from app.apps.erp.core import diario_fotos as svc_fotos
+    return svc_fotos.para_o_papel(s, diario_id)
 
 
 def _efetivo_para_o_papel(efetivo: dict[str, Any],

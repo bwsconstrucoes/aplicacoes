@@ -998,6 +998,33 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   border-left: 4px solid var(--amarelo, #F4B942);
 }
 
+/* ---------------------------------------------------------------------------
+   AS FOTOS DO DIÁRIO (14/11/2026)
+
+   Grade que se ajusta sozinha: no ERP cabem três ou quatro por linha; no
+   celular (o portal da obra manda para esta mesma tela) cai para uma só, com
+   a foto grande o bastante para a pessoa conferir o que fotografou antes de
+   anexar. `aspect-ratio` fixo para a linha não dançar conforme a foto ser
+   deitada ou em pé.
+   --------------------------------------------------------------------------- */
+.fotos-grade {
+  display: grid; gap: 10px; margin-top: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.foto-item { margin: 0; border: 1px solid var(--borda, #E6EAF2); border-radius: 8px;
+             overflow: hidden; background: #fff; }
+.foto-item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+                 display: block; background: var(--fundo-suave, #F4F6FA); }
+.foto-item figcaption { padding: 6px 8px 8px; }
+.foto-item .foto-legenda { width: 100%; font-size: 12px; padding: 4px 6px;
+                           border: 1px solid var(--borda, #E6EAF2); border-radius: 6px; }
+.foto-item figcaption > span { font-size: 12px; color: var(--tinta, #10233F); }
+.foto-pe { display: flex; align-items: center; justify-content: space-between;
+           gap: 6px; margin-top: 4px; }
+@media (max-width: 520px) {
+  .fotos-grade { grid-template-columns: 1fr; }
+}
+
 /* ---- O calendário de pendências, no feitio do que o ponto já usa ---- */
 .cal-mes { font-size: 13px; margin-bottom: 8px; }
 .cal-grade {

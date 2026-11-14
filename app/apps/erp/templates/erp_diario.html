@@ -643,6 +643,103 @@ function blocoDoRelato(){
     </div>`;
 }
 
+// ---------------------------------------------------------------------------
+// AS FOTOS DO DIA (14/11/2026)
+//
+// Ele: *"era muito interessante a gente poder colocar serviços executados e
+// fotos, e integrar isso no diário impresso também. (…) é como se fosse um
+// anexo ao diário, essa página das fotos, para não interferir no layout que a
+// gente já trabalhou. (…) Lembrando que fotos sempre no Google Drive."*
+//
+// ⚑ A MESMA TELA SERVE O PORTAL DA OBRA. O portal não tem diário próprio:
+// ele manda para cá (`core/portal.py`, área "obra", `so_tela`). Por isso o
+// campo de arquivo leva `capture="environment"` — no celular isso abre a
+// CÂMERA direto, que é como a foto vai ser tirada em 90% das vezes.
+//
+// A imagem NÃO vem dentro da resposta do dia: cada foto é pedida pela rota do
+// anexo, que confere permissão e escopo. Seis fotos embutidas fariam a
+// abertura do dia baixar vários megabytes antes de desenhar qualquer coisa.
+// ---------------------------------------------------------------------------
+function blocoDasFotos(){
+  const fotos = DIA.fotos || [], teto = DIA.fotos_teto || 6;
+  const podeMexer = PODE_LANCAR && DIA.existe;
+  const fechado = (DIA.diario.situacao === "FECHADO");
+  return `
+    <div class="cartao">
+      <h3>Fotos do dia <small>${fotos.length} de ${teto}</small></h3>
+      <p class="cartao-dica">Elas saem no diário impresso, numa
+        <b>folha de anexo</b> depois da folha do dia — o formato do RDO não
+        muda. Ficam guardadas no Google Drive da empresa.</p>
+      ${!DIA.existe ? `<div class="cartao-dica">Grave o dia primeiro: a foto
+        fica presa ao diário, não à data.</div>` : ""}
+      ${fotos.length ? `<div class="fotos-grade">${fotos.map(f => `
+        <figure class="foto-item">
+          <a href="/erp/anexo/${f.id}" target="_blank" title="abrir a foto inteira">
+            <img src="/erp/anexo/${f.id}" alt="${escapar(f.legenda || f.nome)}"
+                 loading="lazy"></a>
+          <figcaption>
+            ${podeMexer && !fechado
+              ? `<input class="foto-legenda" data-legenda="${f.id}"
+                   value="${escapar(f.legenda)}" placeholder="Legenda — o que a foto mostra"
+                   maxlength="300">`
+              : `<span>${escapar(f.legenda || "sem legenda")}</span>`}
+            <div class="foto-pe">
+              <small class="desc">${f.kb} KB ${f.no_drive
+                ? "· no Drive" : "· <b>ainda no banco</b>"}</small>
+              ${podeMexer && !fechado
+                ? `<button class="link-btn" data-tira-foto="${f.id}">tirar</button>` : ""}
+            </div>
+          </figcaption>
+        </figure>`).join("")}</div>` : ""}
+      ${podeMexer && fotos.length < teto ? `
+        <div class="campo" style="margin-top:10px">
+          <label for="d-foto">Acrescentar foto</label>
+          <input type="file" id="d-foto" accept="image/*" capture="environment">
+          <small class="desc">No celular, isto abre a câmera. JPG, PNG ou WEBP.</small>
+        </div>` : ""}
+      ${podeMexer && fotos.length >= teto ? `<div class="cartao-dica">
+        Este dia já tem o máximo de ${teto} fotos. Para trocar, tire uma
+        antes.</div>` : ""}
+      ${fechado && fotos.length ? `<div class="cartao-dica">Diário fechado:
+        acrescentar foto ainda pode, tirar não — o papel já saiu com ela.</div>` : ""}
+    </div>`;
+}
+
+async function mandarFoto(){
+  const campo = els("d-foto"), arq = campo && campo.files[0];
+  if (!arq) return;
+  const legenda = await perguntar({
+    titulo: "O que esta foto mostra?",
+    textoOk: "Anexar ao dia",
+    aviso: "A legenda sai embaixo da foto no diário impresso.",
+    campos: [{nome: "legenda", rotulo: "Legenda", largura: 6,
+              exemplo: "Concretagem da laje do bloco B"}]});
+  if (!legenda) { campo.value = ""; return; }
+  const fd = new FormData();
+  fd.append("foto", arq);
+  fd.append("legenda", legenda.legenda || "");
+  campo.disabled = true;
+  try {
+    const r = await api(
+      `/erp/api/diario/${els("f-obra").value}/fotos?data=${els("f-data").value}`,
+      {method: "POST", body: fd});
+    aviso("mensagem", r.no_drive
+      ? "Foto guardada no Google Drive."
+      : "Foto guardada — o Drive não respondeu agora, então ela ficou no "
+        + "banco e vai para o Drive depois.", r.no_drive ? "ok" : "alerta");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); campo.disabled = false; }
+}
+
+async function mexerNaFoto(corpo){
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/fotos`
+              + `?data=${els("f-data").value}`,
+              {method: "POST", body: JSON.stringify(corpo)});
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
 function listaDeTempo(id, valor, travado){
   // id="d-manha" id="d-tarde" — escritos aqui para a trava das telas enxergar
   return `<select id="${id}" ${travado ? "disabled" : ""}>
@@ -692,7 +789,7 @@ function pintar(){
   // O PAPEL CONTINUA NA ORDEM DO MODELO, e tem de continuar: lá a ordem é
   // cláusula de contrato (ver `erp_diario_papel_orgao.html`).
   els("painel").innerHTML =
-    blocoDaObra() + blocoDoRelato()
+    blocoDaObra() + blocoDoRelato() + blocoDasFotos()
     + blocoDosEquipamentos() + blocoDaFiscalizacao()
     + blocoDoEfetivo() + blocoDoMaterial();
 
@@ -708,6 +805,14 @@ function pintar(){
   liga("btn-equip", "click", acrescentarEquipamento);
   liga("btn-equip-ontem", "click", repetirEquipamentosDeOntem);
   liga("btn-repetir", "click", repetirEsteDia);
+  liga("d-foto", "change", mandarFoto);
+  document.querySelectorAll("[data-tira-foto]").forEach(b =>
+    b.addEventListener("click", () => mexerNaFoto({remover: +b.dataset.tiraFoto})));
+  // A legenda grava ao SAIR do campo, não a cada tecla: quem digita no
+  // celular não quer uma ida ao servidor por letra.
+  document.querySelectorAll("[data-legenda]").forEach(c =>
+    c.addEventListener("change", () => mexerNaFoto(
+      {legendar: +c.dataset.legenda, legenda: c.value})));
   liga("btn-ontem", "click", () => {
     els("d-relato").value = (DIA.relato_anterior || {}).relato || "";
     els("d-relato").focus();

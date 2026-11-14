@@ -21,6 +21,54 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 14/11/2026 — AS FOTOS DO DIÁRIO, com folha de anexo no papel
+
+Ele: *"era muito interessante a gente poder colocar serviços executados e
+fotos, e integrar isso no diário impresso também. (…) A página, sempre quando
+tiver foto, mostra na página seguinte. (…) é como se fosse um anexo ao diário,
+essa página das fotos, para não interferir no layout que a gente já trabalhou e
+já tem. (…) Lembrando que fotos sempre no Google Drive."* E, depois de ver três
+exemplos: *"sim, podemos limitar a qtd a 6."*
+
+⚑ **NÃO TEM TABELA NOVA, e isso é decisão de projeto.** O ERP já tem a máquina
+inteira de anexo (`core/documentos/armazenamento.py`): comprime a imagem, manda
+para o **Google Drive**, cai para o banco quando o Drive não responde, confere
+permissão e escopo na entrega, guarda hash contra duplicata e tem a rotina que
+leva para o Drive o que ficou no banco. Criar `diario_fotos` com upload próprio
+seria ter **duas verdades** sobre onde o arquivo da empresa mora — e a segunda
+nasceria sem nenhuma dessas proteções.
+
+Então a foto é um anexo com `entidade_tipo = "diario_foto"` e
+`entidade_id = diarios_obra.id`; a **legenda é a `descricao`** do anexo. Entrou
+a categoria `FOTO` e o escopo `diario_foto` (que herda a obra do dia) —
+**sem o escopo, quem é preso a uma obra baixaria a foto de qualquer outra**,
+porque os números dos anexos são sequenciais.
+
+**As regras próprias do diário**, em `core/diario_fotos.py`: teto de 6 por dia,
+só imagem, o dia precisa estar gravado, e **depois de FECHADO acrescenta mas
+não tira** — o papel já saiu com ela.
+
+**O PAPEL:** folha de anexo própria (`erp_diario_papel_fotos.html`), depois da
+folha do dia, **igual nos três modelos** — o RDO do órgão é cláusula de
+contrato e não se mexe; o anexo é nosso. Quantas fotos por folha é decidido
+pela QUANTIDADE (1–2 grandes, 3–4 em duas colunas, 5–6 em três linhas): quem
+anexa escolhe fotos, não formato. A imagem vai **embutida e encolhida a 900px**
+— por link dependeria da sessão de quem imprime, e 90 dias × 6 fotos em 1800px
+seria um PDF que não passa em e-mail.
+
+**A tela é UMA SÓ, e serve o portal da obra:** o portal não tem diário próprio,
+ele manda para `/erp/obras/diario` (`core/portal.py`, área "obra", `so_tela`).
+Por isso o campo leva `capture="environment"` — no celular abre a câmera direto.
+
+**Três tropeços que viraram comentário no código:**
+
+1. `loop.parent` não existe nesta versão do Jinja — a numeração da foto na
+   segunda folha do anexo quebrava a impressão inteira (erro 500).
+2. `<figure>` nasce com **40px de margem lateral** no navegador: a foto saía
+   menor que a coluna, com faixa branca dos dois lados, sem motivo aparente.
+3. `height: 100%` não preenche o quadro dentro de um item flexível de altura
+   automática. A imagem precisa de posição absoluta.
+
 ### ⚑ 14/11/2026 — O DIÁRIO: ordem da tela, quem assina, e repetir o dia
 
 Quatro pedidos dele no mesmo dia, todos sobre facilitar o preenchimento.

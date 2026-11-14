@@ -12096,6 +12096,56 @@ def api_obras_cdiarios():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/diario/<int:obra_id>/fotos", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_fotos(obra_id: int):
+    """Anexa uma foto ao dia — ou troca a legenda, ou tira a foto.
+
+    Pedido dele em 14/11/2026: *"poder colocar serviços executados e fotos, e
+    integrar isso no diário impresso. (…) Lembrando que fotos sempre no Google
+    Drive."* E vão: a foto passa pelo armazenamento de sempre, que comprime,
+    manda para o Drive e só cai para o banco se o Drive não responder.
+
+    Três verbos numa rota só porque a tela trata as três coisas no mesmo
+    bloco; o que muda é o corpo. Upload vem como `multipart`, os outros dois
+    como JSON.
+    """
+    from app.apps.erp.core import diario_fotos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dia = _dia_do_pedido(request.args.get("data"))
+            arquivo = request.files.get("foto")
+            if arquivo is not None:
+                r = svc.anexar(s, obra_id, dia, arquivo.read(),
+                               arquivo.filename or "foto.jpg",
+                               legenda=request.form.get("legenda", ""),
+                               usuario=usuario)
+                s.commit()
+                return jsonify({"ok": True, **r})
+            d = request.get_json(silent=True) or {}
+            if d.get("remover"):
+                svc.remover(s, obra_id, dia, int(d["remover"]), usuario)
+            elif d.get("legendar"):
+                svc.legendar(s, obra_id, dia, int(d["legendar"]),
+                             d.get("legenda") or "", usuario)
+            else:
+                return jsonify({"ok": False,
+                                "erro": "Não entendi o que fazer com a foto."}), 400
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na foto do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/repetir", methods=["POST"])
 @login_obrigatorio
 @permissao("lancar_diario")

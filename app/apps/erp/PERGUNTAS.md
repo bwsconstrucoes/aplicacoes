@@ -2048,6 +2048,27 @@ meses. Agora o ERP também lê, pela tela de Importar.
   que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
   não existe.
 
+### As fotos do diário (14/11/2026)
+
+- "Quais dias desta obra estão sem foto?" — dá para responder: a foto é anexo
+  do dia, e dia sem anexo é dia sem foto.
+- "Quantas fotos tem este mês?" / "Quanto espaço as fotos da obra ocupam?" —
+  o tamanho de cada uma está guardado.
+- ⚠️ **"as fotos estão no Drive?"** — nem sempre. Quando o Drive não responde
+  na hora do envio, a foto fica **no banco** e vai para o Drive depois, pela
+  rotina de mudança. A tela diz isso em cada foto, e a resposta tem de dizer
+  também: "12 fotos, 2 ainda no banco" é diferente de "12 fotos no Drive".
+- ⚠️ **"foto do dia"** é o anexo do diário (teto de 6). **Não** é a foto do
+  ponto (a do reconhecimento facial, que é de pessoa) nem o documento da obra
+  (que fica no Arquivo). Três coisas diferentes com o mesmo apelido.
+
+#### O que o sistema ainda NÃO responde
+
+- "Esta foto é mesmo deste dia?" — não há conferência de data da imagem; vale
+  o dia em que foi anexada ao diário.
+- "O que aparece na foto?" — a legenda é digitada por gente. Ninguém lê a
+  imagem.
+
 ### Quem assina o diário, e o dia repetido (14/11/2026)
 
 - "Quais obras estão sem responsável técnico, sem registro profissional ou sem

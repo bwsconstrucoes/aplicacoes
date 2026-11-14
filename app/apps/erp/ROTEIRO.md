@@ -61,7 +61,11 @@
       calendário** com legenda (verde = escrito, vermelho = falta — o âmbar
       saiu porque era lido como "falta dado" sem faltar nada), a **impressão
       por período** e a **importação do cadastro das obras pela C. Diários**,
-      que é o que enche o cabeçalho do diário. **Falta:** a medição de chuva da estação
+      que é o que enche o cabeçalho do diário. Em 14/11/2026: a **ordem da
+      tela** (o que se digita em cima, o que o sistema sabe embaixo), **quem
+      assina** preenchível a partir do diário, **repetir um dia em vários** e
+      as **fotos do dia** (teto de 6, no Google Drive, com folha de anexo no
+      papel depois da folha do dia). **Falta:** a medição de chuva da estação
       (`clima_medido` existe e está vazia), e o conceito de PARADA — sem os
       dois não dá para responder "quantos dias de prazo posso pedir por
       chuva". Ele também vai mandar os modelos de diário que as prefeituras
