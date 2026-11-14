@@ -1809,3 +1809,249 @@ biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
 **Não verificado:** nada disso rodou em produção. O sinal de que funcionou é o
 serviço parar de engasgar quando há comprovante na fila — e `pendentes` caindo
 de 2 em 2 por disparo, em vez de tudo de uma vez.
+
+---
+
+### 13/11/2026 — limitar a quantidade não bastou: o teto que faltava era de TEMPO
+
+O dono mandou os registros do servidor, e eles mostram o problema sem margem:
+
+```
+AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 283 s;
+                      POST /api/baixabradesco/executar há 162 s;
+                      POST /api/atualizaspbotao/executar há 61 s;
+                      POST /telegram/enviar há 0 s
+LENTA: POST /api/atualizaspbotao/executar — 138,3 s
+LENTA: POST /api/processarnovasp/executar — 167,3 s
+```
+
+E, em seguida: *"essa fila tardia tá fudendo tudo."*
+
+**Por que o limite de quantidade (entregue em 12/11) não resolveu:** ele limitou
+os *adiados*, mas a passada faz muito mais que isso. Ela também zera o atraso,
+dispensa aviso vencido e drena a fila de falhas em quatro etapas — cerca de
+**seis leituras da aba de controle** e **dezenas de chamadas de rede**, tudo
+dentro de **uma** requisição. Cada pedaço é pequeno; a soma é que segurava a
+linha. Eu tinha contado os itens e não o relógio.
+
+**O que ficou:**
+
+- **Teto de tempo de 40 s para a requisição inteira** (`ORCAMENTO_SEG`). Cada
+  etapa e cada item olham o relógio; o que não couber fica para o disparo
+  seguinte, cinco minutos depois. A fila existe exatamente para isso.
+- **O prazo é passado adiante** para a drenagem: parar *entre* etapas não basta,
+  porque uma etapa sozinha pode levar minutos.
+- **1 adiado por disparo** (era 2): cada um carrega a SPsBD inteira, e dois já
+  estouram o orçamento.
+- **Limites da drenagem de 15/15/15/10 para 8/8/8/5.**
+- **Chave geral `BAIXABRADESCO_CARONA=0`**, no Render: desliga a carona sem
+  publicar nada e sem mexer no cron. Existe porque ele precisava de um
+  interruptor NA HORA, e publicar é uma ida e volta.
+- **`BAIXABRADESCO_ORCAMENTO_SEG`** aperta o teto pelo ambiente; `0` numa chamada
+  à mão desliga (para drenar tudo de uma vez quando alguém está olhando).
+
+**⚠️ O que esta entrega NÃO resolve, e é importante não vender como resolvido:**
+
+1. **`/api/baixabradesco/executar` levou 162 s** — é o processamento do
+   comprovante em si, não a fila tardia. O custo é a carga da SPsBD (`A:AK`,
+   ~52 mil linhas) a cada chamada. É a causa de fundo, já anotada em 12/11, e
+   continua de pé.
+2. **`atualizaspbotao` (138 s) e `processarnovasp` (167 s) NÃO são desta área.**
+   Nos registros dele, metade das linhas ocupadas é desses dois. Mesmo com a
+   fila tardia comportada, eles seguem tomando o serviço. O `[omie]
+   AlterarContaPagar falhou com Client-103` dos registros também é do
+   `atualizaspbotao`. Isso precisa de outro chat.
+
+**Verificado:** 24 testes de cron (9 novos sobre o teto de tempo e a chave
+geral), área inteira passando, aplicação subindo. Suíte completa: 2 falhas, as
+duas por biblioteca ausente neste ambiente.
+**Não verificado:** o efeito em produção. O sinal é a linha
+`processar-fila-tardia` sumir dos registros de requisições lentas.
+
+---
+
+### 14/11/2026 — a SPsBD inteira deixou de ser o caminho normal (ideia do dono)
+
+Ele perguntou por que o robô baixava a planilha completa. Expliquei: o Google
+Sheets **não tem filtro** — não existe pedir "só as linhas em que Status Pgt é
+Pagar". A API entrega faixa de células, não resultado de consulta; `A:AK` limita
+as colunas, nunca as linhas. Então, para filtrar, era obrigatório trazer tudo e
+filtrar em memória: **52 mil linhas baixadas para usar umas 50.**
+
+Ofereci dois caminhos (ler só o fim da planilha; ou confiar na SPsAgendar).
+**Ele trouxe um terceiro, melhor que os dois:**
+
+> *"Vamos para o caminho C. A probabilidade do registro que a aplicação procura
+> estar em SPsAgendar é perto de 100%. Todavia nela não ficam todas as
+> informações. Criei a aba 'baixabradesco'. Nela sim estão os mesmos registros
+> de SPsAgendar só que com as mesmas informações de SPsBD. Então, primeiro
+> procure nela. Se não achar, só então você vai pra SPsBD."*
+
+E, em seguida: *"a coluna AC de baixabradesco é a linha onde está o registro em
+SPsBD."*
+
+**O que ficou:**
+
+- **A aba `baixabradesco` é o caminho normal.** Mesmas colunas da SPsBD, então o
+  mesmo filtro e o mesmo leitor servem.
+- **A SPsBD inteira virou plano B**, lida no máximo **uma vez por lote**, e só
+  em dois casos: (1) a SP não apareceu na aba enxuta; (2) um reenvio precisa
+  saber se a baixa anterior ficou pela metade — isso mora nas SPs já marcadas
+  "Pago", que não estão na aba enxuta.
+- **A coluna AC eliminou a SEGUNDA leitura gigante**, a da gravação, que varria
+  a coluna A inteira só para achar onde escrever.
+- **O retorno traz `fonte_das_sps`** (`aba_enxuta` ou `spsbd_completa`). Era o
+  que faltava para medir em vez de supor: se aparecer `spsbd_completa` com
+  frequência, algo não está espelhando.
+
+**A decisão de segurança que sustenta a coluna AC, e ela não é opcional:** a aba
+é um **espelho**, e espelho pode estar velho. Gravar numa linha errada marcaria
+**a SP errada como paga**, e isso ninguém percebe olhando a tela. Então a linha é
+tratada como **pista**: lê **uma célula** para confirmar que o ID esperado está
+ali e, se não estiver — ou se a leitura falhar —, cai na varredura de sempre.
+Linha sem AC, ou com lixo, fica sem número e a gravação busca pelo ID. **Número
+chutado seria pior que número nenhum.** O dono conferiu esse desenho com todas as
+letras: *"você vê qual a linha e antes de gravar confirma, do contrário, busca,
+né isso?"* — é isso.
+
+**Aba renomeada ou apagada não para a baixa:** o leitor devolve lista vazia e o
+robô volta ao comportamento antigo. Baixa devagar vale mais que baixa parada.
+
+**Um defeito meu, achado de raspão:** um teste da fila tardia dependia de data
+fixa (`12/11/2026`) e quebrou sozinho dois dias depois, por causa do descarte por
+idade. Teste que depende do calendário mente sobre o código. A data agora nasce
+de hoje.
+
+**Verificado:** 18 testes novos na aba enxuta e na coluna AC, área inteira
+passando (328 testes), aplicação subindo. Suíte completa: 2 falhas, as duas por
+biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
+**Não verificado:** nada disso tocou a planilha de verdade. O sinal de que
+funcionou é `/api/baixabradesco/executar` sair dos registros de requisições
+lentas, e `fonte_das_sps` vir `aba_enxuta` na maioria dos lotes.
+
+### 14/11/2026 (continuação) — a frequência do reenvio desfez uma decisão minha
+
+Uma hora depois, ele acrescentou:
+
+> *"Reenvio é algo que acontece com alguma frequência, pq às vezes mandamos um
+> arquivo com alguns comprovantes e de repente algum já havia sido baixado."*
+
+Isso derrubou uma escolha que eu tinha acabado de fazer. Na entrega acima, a
+decisão "a baixa anterior ficou pela metade?" consultava a aba enxuta e, **se a
+SP não estivesse lá, mandava ler a SPsBD inteira** — meu raciocínio era que
+ausência na aba não prova que a baixa acabou.
+
+**Mas comprovante já baixado tem a SP em "Pago", e SP paga não está na aba
+enxuta** (ela espelha as abertas). Ou seja: na prática, **quase todo lote com um
+repetido disparava a leitura das 52 mil linhas** — o caso mais comum anularia a
+otimização inteira. Eu tinha otimizado o caminho raro e deixado o frequente
+pagando a conta.
+
+**Como ficou:** a aba enxuta decide sozinha. SP nela = baixa pela metade, o
+reenvio passa e conclui. SP fora dela = baixa completa, o reenvio é barrado.
+
+**O que se perde, dito sem rodeio:** se a aba deixar de espelhar uma SP ainda
+aberta, o reenvio é recusado como repetido e a SP continua "Pagar". **Não é
+perda de dinheiro** — é uma baixa que não acontece e que alguém precisa ver.
+Por isso o número da SP passou a ir no motivo, junto com o pedido de avisar caso
+ela ainda esteja como "Pagar". É o inverso do defeito de 13/09 (quando o reenvio
+era barrado em silêncio): agora é barrado dizendo qual SP conferir.
+
+**A lição:** a frequência de cada caminho é informação de negócio, e eu não
+tinha. Otimizar sem saber qual caminho é o comum é apostar.
+
+### 14/11/2026 — o dono fechou a regra, e ela torna o "não localizei" acionável
+
+> *"Se a gente só baixa o que está no status agendar, agendado ou falha
+> agendado, então tudo que está nesses três status vai aparecer na aba
+> baixabradesco. Se não tiver, ou vai estar pago, ou vai estar no status pagar.
+> Mas o combinado é que só baixe naqueles outros três. Ou seja, comprovante
+> rodou, a SP não foi encontrada. Por que o registro não foi encontrado? Porque
+> não está no status que deveria. Concorda?"*
+
+**Concordo, com uma precisão:** o filtro exige **os dois** — `Status Pgt =
+Pagar` **e** `Agendado` em {agendar, agendado, falha agendar}. Ele descreveu a
+segunda coluna; a primeira é o que faz o comprovante repetido ser reconhecido
+como repetido (SP paga sai do conjunto). O efeito é o que ele disse.
+
+**A consequência que importa, e ela é de mensagem, não de código:** "não
+localizei" quase nunca é problema de leitura do comprovante — é a SP estar fora
+do status em que a baixa acontece. O motivo passou a dizer isso e o que fazer:
+*"confira o status dela: se já estiver paga, a baixa talvez já tenha acontecido;
+se estiver em 'pagar' sem agendamento, falta agendar."* Transforma o aviso de
+"deu errado" em uma ação.
+
+**A outra consequência, anotada para quem for mexer:** se a aba enxuta espelha
+exatamente o conjunto filtrado, então o plano B — reler a SPsBD inteira com o
+MESMO filtro — não pode achar nada novo. Ele continua ali por dois motivos
+legítimos, e só esses dois:
+
+1. **`omie_pendente`**: SPs já marcadas "Pago" com o Omie pendente. Por
+   definição não estão na aba enxuta, e é o que faz um reenvio concluir baixa
+   pela metade (defeito de 13/09/2026).
+2. **atraso do espelho**: se a aba for alimentada por rotina e não por fórmula
+   viva, existe uma janela em que a SP já está no status certo e ainda não
+   apareceu ali.
+
+**Se o `fonte_das_sps` vier `spsbd_completa` com frequência**, é um destes dois —
+e vale descobrir qual antes de mexer em mais nada. Pergunta aberta ao dono: a
+aba é fórmula viva ou rotina?
+
+### 14/11/2026 — a aba é fórmula viva, e isso tirou uma leitura grande do caminho
+
+Resposta dele à pergunta da entrada anterior:
+
+> *"A aba é alimentada via fórmula, então é instantânea."*
+
+Isso fechou o raciocínio e permitiu enxugar o desenho: **fórmula viva + mesmo
+conjunto filtrado = reler a SPsBD com o MESMO filtro não pode achar nada novo.**
+Era baixar 52 mil linhas para confirmar o que a aba já havia dito. Esse pedaço
+saiu.
+
+O que sobrou do plano B, e é legítimo: quando o comprovante **não casa com
+nada**, a SP ainda pode estar **já marcada "Pago" com o Omie pendente**. Essas,
+por definição, não estão na aba enxuta, e é o que permite um reenvio concluir
+baixa pela metade (defeito de 13/09/2026). Então a leitura grande passou a
+servir **só** para montar esse índice, uma vez por lote.
+
+Junto saiu outra bobagem que eu tinha deixado: depois de ler a SPsBD, o código
+**repetia o mesmo casamento**. Com a aba sendo o mesmo conjunto, o segundo
+casamento daria exatamente o mesmo resultado. Agora vai direto ao índice das
+pagas.
+
+**Os rótulos de `fonte_das_sps` ficaram mais honestos**, porque cada um indica um
+problema diferente:
+
+| Valor | O que significa |
+|---|---|
+| `aba_enxuta` | caminho rápido, o esperado |
+| `spsbd_omie_pendente` | algum comprovante não casou e foi preciso procurar entre as pagas |
+| `spsbd_completa_aba_indisponivel` | a aba não respondeu (renomeada, apagada, fórmula com erro) |
+
+**Verificado:** área inteira passando (337 testes), suíte completa com 2 falhas
+por biblioteca ausente neste ambiente, aplicação subindo.
+
+### 14/11/2026 — "Fórmula Query", e o risco que esse detalhe trouxe
+
+Ele precisou: *"Fórmula Query"*.
+
+Parece detalhe e não é. **QUERY devolve `#N/A` em dois casos que chegam com a
+mesma cara: fórmula quebrada e nenhum resultado.** Se o robô tratasse isso como
+"a aba respondeu, e está vazia", **toda** baixa passaria a não encontrar SP — e,
+com o plano B enxugado na entrada anterior (que já não reconstrói o índice
+operacional), ele nem iria procurar na SPsBD. **Uma fórmula quebrada pararia as
+baixas em silêncio.**
+
+Conferi: a proteção já existe, e por construção, não por sorte. O sinal de "a
+aba respondeu" é o **índice ter conteúdo** (`leu_da_aba_enxuta = bool(sps_index)`),
+não a leitura ter devolvido algo — `[['#N/A']]` devolve algo e não serve para
+nada. Índice vazio cai no caminho `spsbd_completa_aba_indisponivel`, que lê a
+SPsBD e reconstrói os dois índices.
+
+**Fórmula quebrada deixa a baixa LENTA, nunca CEGA.** Travado com teste para os
+seis casos que produzem índice vazio (`#N/A`, `#REF!`, `#VALUE!`, `#ERROR!`, só
+cabeçalho, aba vazia), porque é exatamente o tipo de proteção que alguém remove
+sem perceber ao "simplificar".
+
+**Verificado:** 345 testes da área passando, suíte completa com as 2 falhas de
+biblioteca ausente neste ambiente, aplicação subindo.

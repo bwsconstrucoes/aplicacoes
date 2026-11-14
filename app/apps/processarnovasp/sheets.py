@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 PLANILHA_PRINCIPAL = '1lrP1HOvwqyXiVdP2kuTgG7sJjl2QXl0WT4lwkd392DA'
 ABA_SPSBD          = 'SPsBD'
 ABA_LOG            = 'Log'
+# Desligado em 13/11/2026 a pedido do dono ("não precisa mais"): SP nova deixa
+# de gravar na aba Log. Para religar, voltar para True.
+LOG_ATIVO          = False
 ABA_FALHA          = 'FalhaProcessar'
 
 # Empresa BWS — usada no campo CPF quando é Transferência de Recursos
@@ -390,6 +393,8 @@ def inserir_log(gc, payload: dict, rateio_descritivo: dict, ss=None) -> dict:
     Equivalente aos módulos 731 (transferência/pag.fut) e 738 (fluxo principal).
     ss (opcional): Spreadsheet já aberto — se fornecido evita fetch_metadata redundante.
     """
+    if not LOG_ATIVO:
+        return {'ok': True, 'pulado': True, 'motivo': 'Aba Log desativada'}
     if ss is None:
         ss = gc.open_by_key(PLANILHA_PRINCIPAL)
     sh = ss.worksheet(ABA_LOG)

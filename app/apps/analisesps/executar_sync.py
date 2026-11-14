@@ -59,8 +59,21 @@ def main(argv=None) -> int:
     log.info("Iniciando '%s' (execução %d) em processo separado.",
              modo, execucao_id)
 
-    from .tarefas import encadear_comprovantes, executar_trabalho
-    ok = executar_trabalho(modo, execucao_id)
+    from .tarefas import encadear_comprovantes, executar_trabalho, manter_viva
+    # ⚠️ O BATIMENTO NÃO DEPENDE DO TRABALHO (13/11/2026). O dono, com a baixa dos
+    # comprovantes parada na "leva 3 de 5, desde 09:30": a execução só batia ponto
+    # quando o trabalho anotava uma etapa — e uma leva no robô do BaixaBradesco
+    # passou a levar MINUTOS (a SPsBD inteira, disputada com o Make). Com 3 minutos
+    # sem batimento a execução era dada por morta, outra começava por cima e
+    # devolvia à fila o lote que a primeira ainda processava. Agora um relógio à
+    # parte bate de minuto em minuto enquanto ESTE processo vive; se ele morrer
+    # (publicação, reinício), o batimento para junto e a execução é dada por morta
+    # como antes.
+    parar = manter_viva(execucao_id)
+    try:
+        ok = executar_trabalho(modo, execucao_id)
+    finally:
+        parar()
     log.info("'%s' terminada: %s", modo, "ok" if ok else "com falha")
     # A fila de comprovantes não espera ninguém apertar botão (08/10/2026).
     encadear_comprovantes(modo)

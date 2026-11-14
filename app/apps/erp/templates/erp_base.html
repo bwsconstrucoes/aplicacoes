@@ -748,6 +748,46 @@ function comBusca(alvo, textoVazio) {
 // o servidor, pelo mesmo recorte por obra da listagem.
 let ENC = {tipo: null, id: null, pessoas: null};
 
+// ---------------------------------------------------------------------------
+// O TELEGRAM E AS MENSAGENS DE UMA PESSOA (14/11/2026) — o mesmo bloco na ficha
+// do colaborador (Pessoal) e na ficha única do ponto, para não existir em duas
+// cópias. Lê da Mensageria (/erp/api/mensagens/pessoa/<id>); quem não tem
+// "ver_mensagens" recebe recusa e o bloco some sem barulho.
+// ---------------------------------------------------------------------------
+async function mensagensDaPessoa(alvo, colaboradorId){
+  if (!alvo) return;
+  alvo.innerHTML = "carregando…";
+  const quando = iso => iso ? new Date(iso).toLocaleString("pt-BR", {dateStyle: "short", timeStyle: "short"}) : "";
+  const pilula = (t, c) => `<span class="aviso ${c}" style="display:inline-block; padding:2px 8px; margin:0; font-size:12px">${escapar(t)}</span>`;
+  const SIT = {ENVIADO: ["Entregue", "ok"], SEM_DESTINO: ["Sem Telegram", "alerta"], FALHOU: ["Falhou", "erro"],
+               DESLIGADO: ["Tipo desligado", "info"], LIMITE: ["Teto do WhatsApp", "alerta"], BARRADO: ["Barrada na origem", "alerta"]};
+  try {
+    const d = await api(`/erp/api/mensagens/pessoa/${encodeURIComponent(colaboradorId)}`);
+    if (d.banco_atrasado) { alvo.innerHTML = `<div class="aviso alerta">${escapar(d.erro)}</div>`; return; }
+    const t = d.telegram, c = d.convite, n = {};
+    (d.contagem_30d || []).forEach(x => { n[x.canal + ":" + x.status] = (n[x.canal + ":" + x.status] || 0) + x.n; });
+    const soma = f => Object.entries(n).filter(([k]) => f(k)).reduce((a, [, v]) => a + v, 0);
+    const situacao = t ? pilula(`Telegram cadastrado desde ${quando(t.desde).slice(0, 10)}`, "ok")
+        + (t.telefone_diverge ? `<div class="aviso alerta" style="margin-top:6px">O Telegram está num número diferente do cadastro. Atualize o telefone no cadastro se ele mudou.</div>` : "")
+      : !d.pode_cadastrar ? pilula(d.colaborador.situacao === "DESLIGADO" ? "Desligado — não recebe" : "Sem telefone no cadastro — não pode se cadastrar no Telegram", "alerta")
+      : pilula("Não tem Telegram cadastrado — os avisos não chegam", "alerta");
+    alvo.innerHTML = `<div style="margin-top:12px">${situacao}
+      ${c ? `<div style="margin-top:8px"><small>Último convite pelo WhatsApp: ${quando(c.criado_em)} — ${escapar(c.status === "ENVIADO" ? "enviado" : c.status.toLowerCase())}${c.usado_em ? ", cadastrou-se pelo link" : c.aberto_em ? ", abriu o link" : ""}${c.motivo === "AUTOMATICO" ? " (automático)" : ""}</small></div>` : ""}
+      <div style="display:flex; gap:22px; margin:12px 0; flex-wrap:wrap">
+        <div><small>Entregues pelo Telegram (30 dias)</small><div style="font-size:20px; font-weight:700">${soma(k => k === "telegram:ENVIADO")}</div></div>
+        <div><small>Entregues pelo WhatsApp (30 dias)</small><div style="font-size:20px; font-weight:700">${soma(k => k === "whatsapp:ENVIADO")}</div></div>
+        <div><small>Não chegaram (30 dias)</small><div style="font-size:20px; font-weight:700">${soma(k => /SEM_DESTINO|FALHOU/.test(k))}</div></div></div>
+      ${d.mensagens.length ? `<div class="tabela-rolagem" style="max-height:340px"><table><thead><tr><th>Quando</th><th>Mensagem</th><th>Canal</th><th>Situação</th><th>O que foi dito</th></tr></thead><tbody>
+        ${d.mensagens.map(m => { const [r, k] = SIT[m.status] || [m.status, "info"];
+          return `<tr><td style="white-space:nowrap">${quando(m.criado_em)}</td><td>${escapar(m.tipo_nome)}</td>
+            <td>${m.canal === "telegram" ? "Telegram" : m.canal === "whatsapp" ? "WhatsApp" : "—"}</td><td>${pilula(r, k)}</td>
+            <td style="white-space:normal; max-width:360px"><small>${escapar(m.texto || "")}</small></td></tr>`; }).join("")}</tbody></table></div>`
+        : '<div class="aviso info">Nenhuma mensagem registrada para esta pessoa nos últimos 90 dias.</div>'}
+      <div style="margin-top:10px"><a class="link-btn" href="/erp/mensagens/painel?pessoa=${encodeURIComponent(d.colaborador.nome)}" target="_blank">ver tudo no painel das mensagens</a>
+        · <a class="link-btn" href="/erp/mensagens/telegram" target="_blank">cadastro do Telegram</a></div></div>`;
+  } catch (e) { alvo.innerHTML = ""; }
+}
+
 async function abrirEncaminhar(tipo, id){
   const dlg = document.getElementById("dlg-enc");
   if (!dlg) return;

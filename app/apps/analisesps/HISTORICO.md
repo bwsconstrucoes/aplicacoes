@@ -12244,6 +12244,61 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 267 — Pagamento avulso: o relatório conta a pessoa do rateio UMA vez e mostra o rateio (13/11/2026)
+
+- *"Quando tem rateio, o relatório não tá saindo direito. Diverge na qtd de pessoas no
+  próprio relatório, tem qtds diferentes e não relata nada sobre o rateio."*
+- Causa: `montado_do_relatorio` mandava ao relatório comum (`folha_relatorio`) UMA LINHA
+  POR LINHA COLADA. O relatório conta "pessoas a pagar" pela lista, mas os quadros por
+  obra e por conta contam CPF distinto — a mesma pessoa em 2 obras dava 2 num lugar e 1
+  no outro, e o "de quantas" contava linhas.
+- Agora as linhas do mesmo CPF viram UMA pessoa: as obras ficam dentro (`por_obra`), o
+  valor é a soma, a obra aparece "A R$ x + B R$ y" e a situação "Rateio em N obras"
+  (ou "Mesma pessoa N vezes (soma num pagamento)" quando é repetição sem rateio).
+- PDF e Excel ganham, só quando há rateio: uma frase no alto ("N pessoa(s) com rateio
+  entre obras: sai somado numa transferência; cada obra fica com a sua parte") e o
+  quadro/aba **"Rateio entre obras"** (pessoa, obra, valor na obra, total). No recorte
+  por conta, sem o "(0)" de dias depois da obra.
+- Vale também para o relatório anexado na geração (`folha_pagamento._relatorio_por_conta`
+  usa o mesmo montado).
+- Teste: `test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio`.
+
+#### Leva 266 — Pagamento avulso: a mesma pessoa em obras diferentes é RATEIO (13/11/2026)
+
+- *"Eu quero lançar um CPF, valores diferentes para obras diferentes. E isso seria para
+  efeito de rateio. Mas na hora de consolidar o arquivo, ele vai somar os valores. E
+  agora isso tem que ser alertado (…) para a gente não, sem querer, lançar errado."*
+- Desde 17/10 toda repetição era tratada como provável erro (só a 1ª marcada, aviso
+  vermelho). Agora (`pagamento_avulso._repetidos_em_obras_diferentes`): quando TODAS
+  as linhas da pessoa têm obra DITA por quem colou (colada ou trocada na linha — obra
+  do ponto/cadastro é palpite e não conta) e as obras são todas diferentes, é
+  **rateio**: todas vêm MARCADAS, selo "RATEIO n/N", aviso amarelo próprio no alto
+  ("no arquivo, as linhas da mesma conta viram UM pagamento, somando; na SP, rateado
+  por obra"). Mesma obra repetida, ou obra vinda do ponto/cadastro: como antes.
+- A janela de gerar avisa por CONTA (`criticas_de_repetidos`): "RATEIO — fulano em 2
+  obras: nesta conta, A R$ x + B R$ y = R$ z num pagamento só", e continua pedindo
+  "gerar com aviso" — o alerta que ele pediu antes de o arquivo sair.
+- Testes: `test_analisesps_pagamento_avulso.py`.
+
+#### Leva 265 — As tarefas em processo separado batem o ponto por relógio (13/11/2026)
+
+- O dono, com a baixa dos comprovantes "leva 3 de 5, desde 09:30" (mais de 40 min) e
+  o "Retomar a fila" recusado. A causa da lentidão é o robô do BaixaBradesco (cada
+  baixa baixa a SPsBD inteira; disputa com o Make — tarefa sugerida para o chat dele).
+  Mas havia uma falha NOSSA que piorava: a execução só batia ponto (`visto_em`) quando
+  o trabalho anotava uma etapa. Uma leva parada minutos no robô = 3 min sem batimento
+  = execução dada por morta → outra baixa podia começar por cima, e o
+  `destravar_parados` devolvia à fila o lote que a primeira ainda processava.
+- **Agora** `executar_sync.main` liga um relógio (`tarefas.manter_viva`, de 60 em 60 s,
+  numa linha à parte, só `visto_em`, só enquanto `fim IS NULL`) durante a execução
+  inteira. Processo morto (publicação, reinício) = relógio morto junto = execução dada
+  por morta como antes.
+- **Limite que fica:** uma execução VIVA mas presa (o robô sem responder) agora segura a
+  pista dela indefinidamente — antes ela "morria" sozinha em 3 min. Não há botão para
+  encerrar; se acontecer, o reinício do serviço resolve.
+- Teste: `test_analisesps_fila_colaboradores_banco.py` (o relógio mantém viva sem mexer
+  na etapa).
+
 #### Leva 264 — Telegram: um grupo novo a cada envio (WhatsApp1, WhatsApp2…), com repetidas (12/11/2026)
 
 - *"Mesmo que elas já estejam no lote, elas integrem o lote que está sendo criado. Elas

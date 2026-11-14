@@ -110,6 +110,86 @@ def test_SELECAO_e_OBRA_trocada_valem_ate_colar_outra_lista(banco_avulso):
     assert not _por(pa.calcular())[(SAIU, D("200.00"))]["pagar"], "lista nova, sem ajustes"
 
 
+def test_a_mesma_pessoa_em_OBRAS_DIFERENTES_coladas_e_RATEIO(banco_avulso, monkeypatch, app):  # noqa: F811
+    """13/11/2026: *"lançar um CPF, valores diferentes para obras diferentes (…) para
+    efeito de rateio. Mas na hora de consolidar o arquivo, ele vai somar os valores. E
+    isso tem que ser alertado."*"""
+    from app.apps.analisesps import folha_pagamento as fp, pagamento_avulso as pa
+    pa.gravar_lista("997.133.493-34\t1.000,00\tCREPEOLINDA\n"
+                    "997.133.493-34\t300,00\tIFSPSAOJOSE\n"
+                    "997.133.493-34\t50,00\tCREPEOLINDA", quem="MARCELO")
+    c = pa.calcular()
+    linhas = sorted(c["pessoas"], key=lambda p: p["ordem"])
+    # 3 linhas: CREPEOLINDA duas vezes = obra repetida → NÃO é rateio (provável erro).
+    assert not any(p.get("rateio") for p in linhas)
+    pa.gravar_lista("997.133.493-34\t1.000,00\tCREPEOLINDA\n"
+                    "997.133.493-34\t300,00\tIFSPSAOJOSE", quem="MARCELO")
+    c = pa.calcular()
+    assert all(p["pagar"] and p["rateio"] for p in c["pessoas"]), "rateio: todas marcadas"
+    assert c["pessoas"][0]["motivos"][0].startswith("RATEIO: esta pessoa aparece em 2 obras")
+    [r] = c["repetidos"]
+    assert r["rateio"] and r["marcadas"] == 2 and r["total_marcado"] == D("1300.00")
+    # A janela de gerar avisa por conta (as duas obras saem por contas diferentes aqui).
+    criticas = pa.criticas_de_repetidos(pa.linhas_a_pagar(c))
+    assert set(criticas) == {"50024", "7011"}
+    assert criticas["50024"][0].startswith("RATEIO — ATIVO UM em 2 obras")
+    from tests.test_analisesps_telas import _como_mestre
+    tela = _como_mestre(app).get("/analisesps/folha/avulso").get_data(as_text=True)
+    assert "em MAIS DE UMA OBRA (rateio)" in tela and "RATEIO 1/2" in tela
+    assert "aparece(m) MAIS DE UMA VEZ" not in tela
+
+
+def test_RATEIO_na_MESMA_conta_vira_UM_pagamento_somado(banco_avulso, monkeypatch):
+    from app.apps.analisesps import folha_pagamento as fp, pagamento_avulso as pa
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.contas_diarios SET conta_pagamento = '50024'")
+        conn.commit()
+    pa.gravar_lista("997.133.493-34\t1.000,00\tCREPEOLINDA\n"
+                    "997.133.493-34\t300,00\tIFSPSAOJOSE", quem="MARCELO")
+    c = pa.calcular()
+    [frase] = pa.criticas_de_repetidos(pa.linhas_a_pagar(c))["50024"]
+    assert "R$ 1.300,00 num pagamento só" in frase
+    saida, _ = _gerar(monkeypatch)
+    [arquivo] = [a for a in saida["arquivos"] if a["destino"] == "beevale"]
+    assert arquivo["total"] == D("1300.00")
+
+
+def test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio(banco_avulso):
+    """13/11/2026: *"quando tem rateio, o relatório não tá saindo direito. Diverge na
+    quantidade de pessoas (…) e não relata nada sobre o rateio."*"""
+    from app.apps.analisesps import folha_pagamento as fp, folha_relatorio as fr
+    from app.apps.analisesps import pagamento_avulso as pa
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.contas_diarios SET conta_pagamento = '50024'")
+        conn.commit()
+    pa.gravar_lista("997.133.493-34\t1.000,00\tCREPEOLINDA\n"
+                    "997.133.493-34\t300,00\tIFSPSAOJOSE\n"
+                    "035.134.413-63\t200,00\tCREPEOLINDA", quem="MARCELO")
+    montado = pa.montado_do_relatorio(pa.calcular())
+    assert len(montado["pessoas"]) == 2 and montado["totais"]["pessoas"] == 2
+    ativo = next(p for p in montado["pessoas"] if p["cpf"] == ATIVO)
+    assert ativo["valor"] == D("1300.00") and len(ativo["por_obra"]) == 2
+    assert ativo["situacao_rotulo"].startswith("Rateio em 2 obras")
+    assert "CREPEOLINDA R$ 1.000,00 + IFSPSAOJOSE R$ 300,00" == ativo["obras_resumo"]
+    r = fr.montar(montado, fp.conta_por_obra())
+    assert r["quantas"] == 1, "só o ATIVO entra (o desligado vem desmarcado)"
+    [conta] = r["grupos"]["por_conta"]
+    assert (conta["pessoas"], conta["valor"]) == (1, D("1300.00"))
+    assert {o["obra"]: o["pessoas"] for o in r["grupos"]["por_obra"]} == {
+        "CREPEOLINDA": 1, "IFSPSAOJOSE": 1}
+    assert any(s_["nome"].startswith("Rateio em 2 obras") for s_ in r["grupos"]["por_situacao"])
+    assert ativo["rateio_entre_obras"] == [{"obra": "CREPEOLINDA", "valor": D("1000.00")},
+                                           {"obra": "IFSPSAOJOSE", "valor": D("300.00")}]
+    assert "1 pessoa com rateio entre obras" in fr._rateio_texto(r)
+    from openpyxl import load_workbook
+    import io
+    livro = load_workbook(io.BytesIO(fr.excel(r)))
+    assert [c.value for c in livro["Rateio entre obras"]["C"]][1:] == ["CREPEOLINDA", "IFSPSAOJOSE"]
+    assert fr.pdf(r).startswith(b"%PDF")
+
+
 def _marcar_a_repetida():
     """As duas linhas do mesmo CPF marcadas — pagar duas vezes é decisão."""
     from app.apps.analisesps import pagamento_avulso as pa

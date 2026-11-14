@@ -414,6 +414,82 @@ para nascer lixo. E leitura que falha **não** autoriza escrita nenhuma: escreve
 por cima do que não se conseguiu ler é como o lixo nasceu. A seleção também
 ignora linha cujo Status seja "STATUS", para o estrago não voltar a contar.
 
+## A aba enxuta: a SPsBD inteira deixou de ser o caminho normal
+
+Era a causa de fundo da lentidão. O robô baixava a SPsBD completa — **52 mil
+linhas × 37 colunas** — a cada lote de comprovantes, para usar algumas dezenas
+de linhas. Nos registros de 13/11/2026, `/api/baixabradesco/executar` levou
+**162 s**; com quatro linhas de atendimento, isso derrubava quem estava usando a
+tela.
+
+**Por que era "inteira":** o Google Sheets não tem filtro. Não existe pedir "só
+as linhas em que a coluna O é Pagar" — a API entrega faixa de células, não
+resultado de consulta. `A:AK` limita as colunas, nunca as linhas.
+
+**A solução foi do dono** (14/11/2026): ele criou a aba **`baixabradesco`**, que
+espelha a SPsAgendar com **as mesmas colunas da SPsBD**. Ela tem dezenas de
+linhas, não 52 mil.
+
+**A aba é alimentada por uma fórmula QUERY** (o dono confirmou em 14/11/2026),
+logo é instantânea e espelha exatamente o conjunto filtrado.
+
+⚠️ **E QUERY devolve `#N/A` em dois casos que chegam com a mesma cara:** fórmula
+quebrada **e** nenhum resultado. Por isso o sinal de "a aba respondeu" é o
+**índice ter conteúdo**, não a leitura ter devolvido algo — `[['#N/A']]` devolve
+algo e não serve para nada. Índice vazio (por `#N/A`, `#REF!`, só cabeçalho ou
+aba ausente) manda o robô ler a SPsBD. **Fórmula quebrada deixa a baixa lenta,
+nunca cega** — sem isso, uma QUERY com erro pararia todas as baixas em silêncio,
+já que o plano B enxugado não reconstrói o índice operacional. Isso tem uma consequência
+que vale entender antes de mexer: **reler a SPsBD com o MESMO filtro não pode
+achar nada novo.** Esse pedaço saiu do código — era baixar 52 mil linhas para
+confirmar o que a aba já disse.
+
+| Quando | O que o robô lê |
+|---|---|
+| sempre | a aba **`baixabradesco`** (dezenas de linhas) |
+| só quando o comprovante não casou com nada | a SPsBD, uma vez por lote, **e só para as SPs já marcadas "Pago" com o Omie pendente** |
+
+⚠️ **Reenvio NÃO dispara a leitura das 52 mil linhas**, e isso é decisão de
+desenho, não esquecimento. O dono: *"reenvio é algo que acontece com alguma
+frequência, pq às vezes mandamos um arquivo com alguns comprovantes e de repente
+algum já havia sido baixado."* Comprovante já baixado tem a SP em "Pago", e SP
+paga **não está** na aba enxuta — se a ausência ali disparasse a leitura
+completa, quase todo lote com um repetido pagaria o preço, e a otimização
+morreria no caso mais comum.
+
+Então a aba enxuta decide: **SP nela = baixa pela metade** (o reenvio passa e
+conclui); **SP fora dela = baixa completa** (o reenvio é barrado como repetido).
+
+O que se perde no caso raro — a aba não espelhou uma SP ainda aberta: o reenvio
+é recusado e a SP continua "Pagar". **Não há perda de dinheiro, e fica visível**:
+o número da SP vai no motivo, com o pedido de avisar se ela ainda estiver como
+"Pagar".
+
+O retorno traz `fonte_das_sps`. **É por aí que se mede se a aba está
+cobrindo** — se a leitura grande aparecer com frequência, ou os comprovantes
+estão chegando para SPs fora dos três status de agendamento, ou a fórmula da aba
+parou de cobrir alguma coisa.
+
+### A coluna AC, e por que ela economiza a segunda leitura gigante
+
+A coluna **AC da aba enxuta diz em que linha aquele registro está na SPsBD**.
+Com isso, a gravação não precisa mais varrer a coluna A inteira (52 mil valores)
+só para achar onde escrever.
+
+⚠️ **Mas a linha é tratada como PISTA, nunca como verdade.** A aba é um espelho,
+e espelho pode estar velho. Gravar numa linha errada marcaria **a SP errada como
+paga**, e ninguém perceberia olhando a tela. Então: lê **uma célula** para
+confirmar que o ID esperado está ali; se não estiver — ou se a leitura falhar —
+cai na varredura de sempre.
+
+Linha sem AC preenchida, ou com lixo, fica **sem número**, e a gravação busca
+pelo ID. Número chutado seria pior que número nenhum.
+
+### Se a aba for renomeada ou apagada
+
+O robô volta a ler a SPsBD inteira. Mais lento, mas funcionando: **baixa devagar
+vale mais que baixa parada.**
+
 ## A fila tardia: onde fica, como ver, como limpar
 
 São **duas** filas, e confundi-las dá diagnóstico errado:
@@ -446,7 +522,9 @@ Eram três defeitos somados, e cada um multiplicava o outro:
 
 | Defeito | Por que derrubava | O limite que ficou |
 |---|---|---|
-| o laço não tinha limite | um disparo reprocessava **todos** os adiados numa requisição, e cada um custa a carga inteira da SPsBD (A:AK, ~52 mil linhas) | **2 por disparo** (`LIMITE_POR_DISPARO`) |
+| a soma das etapas de carona segurava uma linha por minutos | a passada também **zera o atraso, dispensa aviso vencido e drena a fila em 4 etapas**: ~6 leituras da aba de controle e dezenas de chamadas de rede. Em 13/11/2026 um disparo ficou **283 s** no ar | **teto de TEMPO de 40 s** para a requisição inteira (`ORCAMENTO_SEG`); o que não couber fica para o disparo seguinte |
+| não havia como desligar sem publicar | — | **`BAIXABRADESCO_CARONA=0`** no Render desliga a carona na hora; `BAIXABRADESCO_ORCAMENTO_SEG` aperta o teto |
+| o laço não tinha limite | um disparo reprocessava **todos** os adiados numa requisição, e cada um custa a carga inteira da SPsBD (A:AK, ~52 mil linhas) | **1 por disparo** (`LIMITE_POR_DISPARO`) |
 | nada impedia disparos sobrepostos | o cron dispara de 5 em 5 minutos; passada mais lenta que isso fazia a seguinte começar junto, lendo os mesmos arquivos e refazendo o mesmo trabalho — com 4 linhas de atendimento, duas ou três sobrepostas tomam o serviço | **uma passada por vez**, com marca que expira em 15 min se o serviço reiniciar no meio |
 | o mesmo comprovante reenviado entrava várias vezes | reenviar durante a crise de cota criava um arquivo novo a cada envio, e todos eram processados | **impressão digital do pedido na entrada** |
 | — | adiado de dias atrás já foi reenviado ou resolvido na mão | **descarte acima de 2 dias** (`IDADE_MAXIMA_DIAS`) |

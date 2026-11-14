@@ -341,10 +341,34 @@ def enviar_telegram(telefone=None, cpf=None, chat_id=None, mensagem="",
                       mensagem=mensagem, arquivo_url=arquivo_url,
                       arquivo_base64=arquivo_base64,
                       nome_arquivo=nome_arquivo, tipo=tipo)
-    _registrar(_mensageria(), tipo=finalidade or "sem_tipo", canal="telegram",
+    m = _mensageria()
+    _registrar(m, tipo=finalidade or "sem_tipo", canal="telegram",
                destinatario=str(r.get("chat_id") or telefone or ""), cpf=cpf or "", texto=mensagem,
                nome_arquivo=nome_arquivo or "", status=_status_tg(r), detalhe=str(r.get("detalhe") or r.get("erro") or ""))
+    _convidar_se_nao_chegou(m, {"telegram": r}, telefone, cpf, finalidade)
     return r
+
+
+def _convidar_se_nao_chegou(m, resultados, telefone, cpf, finalidade):
+    """A mensagem do Telegram não chegou porque a pessoa não tem cadastro, e
+    nenhum outro canal entregou: a mensageria manda o CONVITE pelo WhatsApp
+    (pedido do dono, 14/11/2026). Ela decide se pode (é colaborador? já foi
+    convidado há pouco?) e manda em segundo plano. Nunca derruba o envio."""
+    if not m:
+        return
+    tg = resultados.get("telegram") or {}
+    if tg.get("erro") != "nao_cadastrado":
+        return
+    if any((r or {}).get("ok") for r in resultados.values()):
+        return
+    try:
+        from app.apps.mensageria import telegram_cadastro
+        r = telegram_cadastro.convidar_se_preciso(telefone=telefone, cpf=cpf,
+                                                  tipo_que_falhou=finalidade or "sem_tipo")
+        if r.get("status") == "AGENDADO":
+            tg["convite"] = r.get("detalhe")
+    except Exception:  # noqa: BLE001
+        print("[notificador] o convite do Telegram não saiu")
 
 
 def _status_tg(r):
@@ -470,4 +494,5 @@ def notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
                                             "detalhe": "não executado"}
             break
 
+    _convidar_se_nao_chegou(m, resultados, telefone_norm or None, cpf, finalidade)
     return resultados

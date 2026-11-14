@@ -383,6 +383,7 @@ def calcular() -> dict:
         p["ajuste_pagar"] = aj.get("pagar")
         pessoas.append(p)
 
+    _repetidos_em_obras_diferentes(pessoas)
     pessoas.sort(key=lambda p: (p["pagar"], not p["motivos"], (p["nome"] or "").lower(),
                                 p["ordem"] or 0))
     a_pagar = calcular_pessoas_a_pagar({"pessoas": pessoas})
@@ -398,6 +399,49 @@ def calcular() -> dict:
     return base
 
 
+def _repetidos_em_obras_diferentes(pessoas) -> None:
+    """⚠️ A MESMA PESSOA EM OBRAS DIFERENTES É RATEIO, NÃO ERRO (13/11/2026). O dono:
+    *"eu quero lançar um CPF, valores diferentes para obras diferentes. E isso seria
+    para efeito de rateio. Mas na hora de consolidar o arquivo, ele vai somar os
+    valores. E agora isso tem que ser alertado (…) para a gente não, sem querer,
+    lançar errado."*
+
+    Quando TODAS as linhas da pessoa têm obra e as obras são todas diferentes, as
+    linhas vêm MARCADAS (não só a 1ª) e o recado diz o que acontece: no arquivo, um
+    pagamento só por conta, somando; na SP, o rateio por obra. A mesma pessoa duas
+    vezes na MESMA obra continua sendo tratada como provável erro (só a 1ª marcada).
+    Rateio só quando a obra de TODAS as linhas foi dita por quem colou (colada ou
+    trocada na linha) — obra tirada do ponto ou do cadastro não conta."""
+    por_cpf: dict = {}
+    for p in pessoas:
+        if p.get("repetido"):
+            por_cpf.setdefault(p["cpf"], []).append(p)
+    for ps in por_cpf.values():
+        obras = [p.get("obra") or "" for p in ps]
+        if not all(obras) or len(set(obras)) != len(obras):
+            continue
+        # SÓ COM A OBRA DITA POR VOCÊ em todas as linhas (colada na lista ou trocada
+        # na linha). Obra que veio do ponto ou do cadastro é palpite do sistema: uma
+        # linha colada sem obra, repetida, é muito mais provável erro do que rateio.
+        if any(p.get("obra_de_onde") not in ("colada", "voce") for p in ps):
+            continue
+        total = sum((p["valor"] for p in ps), Decimal("0.00"))
+        partes = " + ".join(f"{p['obra']} R$ {formatos.moeda(p['valor'])}"
+                            for p in sorted(ps, key=lambda x: x.get("ordem") or 0))
+        for p in ps:
+            p["rateio"] = True
+            p["motivos"] = [m for m in p["motivos"] if not m.startswith("REPETIDO")]
+            p["motivos"].insert(0, (
+                f"RATEIO: esta pessoa aparece em {len(ps)} obras ({partes} = R$ "
+                f"{formatos.moeda(total)}). No arquivo, as linhas da mesma conta viram UM "
+                "pagamento, somando; na SP, o valor fica rateado por obra. Confira se é "
+                "isso mesmo."))
+            if not p["impossivel"] and p["conta"] and p.get("situacao") != colaboradores.SITUACAO_SAIU:
+                p["pagar_calculado"] = True
+                if p.get("ajuste_pagar") is None:
+                    p["pagar"] = True
+
+
 def repetidos(pessoas) -> list:
     """`[{cpf, nome, vezes, linhas: [{ordem, valor, pagar}], marcadas, total_marcado}]`
     — quem aparece mais de uma vez na lista, para o aviso do alto da tela."""
@@ -411,8 +455,9 @@ def repetidos(pessoas) -> list:
         marcadas = [x for x in ps if x["pagar"]]
         saida.append({"cpf": cpf, "cpf_bonito": ps[0]["cpf_bonito"],
                       "nome": ps[0]["nome"] or ps[0]["cpf_bonito"], "vezes": len(ps),
+                      "rateio": all(x.get("rateio") for x in ps),
                       "linhas": [{"ordem": x.get("ordem"), "valor": x["valor"],
-                                  "pagar": x["pagar"]} for x in ps],
+                                  "obra": x.get("obra") or "", "pagar": x["pagar"]} for x in ps],
                       "marcadas": len(marcadas),
                       "total_marcado": sum((x["valor"] for x in marcadas), Decimal("0.00"))})
     return sorted(saida, key=lambda r: r["nome"])
@@ -428,9 +473,23 @@ def criticas_de_repetidos(linhas_a_pagar) -> dict:
     for cpf, ls in por_cpf.items():
         if len(ls) < 2:
             continue
+        nome = ls[0]["nome"] or cpf_bonito(cpf)
+        if all(l.get("rateio") for l in ls):     # a mesma regra da tela (`_repetidos_em_obras_diferentes`)
+            # O RATEIO (13/11/2026): obras diferentes. Por conta, porque é por conta
+            # que o arquivo consolida — e cada conta diz quanto vai num pagamento só.
+            for conta in sorted({l["conta"] for l in ls}):
+                da_conta = [l for l in ls if l["conta"] == conta]
+                partes = " + ".join(f"{l['obra']} R$ {formatos.moeda(l['valor'])}" for l in da_conta)
+                total = sum((Decimal(str(l["valor"])) for l in da_conta), Decimal("0.00"))
+                frase = (f"RATEIO — {nome} em {len(ls)} obras: nesta conta, {partes}"
+                         + (f" = R$ {formatos.moeda(total)} num pagamento só" if len(da_conta) > 1
+                            else " (as outras obras saem por outra conta)")
+                         + ". Confirme que é para pagar assim.")
+                saida.setdefault(conta, []).append(frase)
+            continue
         valores = " + ".join(f"R$ {formatos.moeda(l['valor'])}" for l in ls)
         total = sum((Decimal(str(l["valor"])) for l in ls), Decimal("0.00"))
-        frase = (f"{ls[0]['nome'] or cpf_bonito(cpf)} está marcado(a) {len(ls)} vezes "
+        frase = (f"{nome} está marcado(a) {len(ls)} vezes "
                  f"({valores} = R$ {formatos.moeda(total)}) — confirme que é para pagar "
                  "assim, ou desmarque a repetida.")
         for conta in {l["conta"] for l in ls}:
@@ -477,7 +536,8 @@ def linhas_a_pagar(calculado: dict | None = None) -> list:
     return [{"cpf": p["cpf"], "nome": p["nome"], "obra": p["obra"], "conta": p["conta"],
              "verba": VERBA, "valor": p["valor"], "dias": 0, "origem": VERBA,
              "natureza": p["tipo_despesa"], "carteira": p["carteira"],
-             "chave": p["chave"], "tipo_despesa": p["tipo_despesa"]}
+             "chave": p["chave"], "tipo_despesa": p["tipo_despesa"],
+             "rateio": bool(p.get("rateio"))}
             for p in calcular_pessoas_a_pagar(calculado)]
 
 
@@ -534,21 +594,57 @@ def apagar_lotes(analise_ids) -> int:
 # ---------------------------------------------------------------------------
 def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
                          so_a_pagar: bool = False) -> dict:
+    """O montado do relatório compartilhado das folhas (`folha_relatorio`): UMA linha
+    por PESSOA, com as obras dela dentro.
+
+    ⚠️ ERA UMA LINHA POR LINHA COLADA (13/11/2026). O dono: *"quando tem rateio, o
+    relatório não tá saindo direito. Diverge na quantidade de pessoas no próprio
+    relatório, tem quantidades diferentes e não relata nada sobre o rateio."* O
+    relatório conta pessoas pela lista e, nos quadros por obra e por conta, por CPF
+    distinto — a mesma pessoa em duas linhas dava dois números. Agora as linhas do
+    mesmo CPF viram uma pessoa: as que entram no pagamento formam o `por_obra` (é
+    assim que o arquivo consolida), o valor é a soma delas, e a situação diz
+    "Rateio em N obras"."""
     from .horario import agora
     pessoas = calculado["pessoas"] if pessoas is None else pessoas
-    linhas = []
+    por_cpf: dict = {}
     for p in pessoas:
-        entra = bool(p["pagar"] and p["valor"] > 0)
-        if so_a_pagar and not entra:
+        por_cpf.setdefault(p["cpf"], []).append(p)
+    linhas = []
+    for cpf, ps in por_cpf.items():
+        ps = sorted(ps, key=lambda x: x.get("ordem") or 0)
+        entram = [p for p in ps if p["pagar"] and p["valor"] > 0]
+        if so_a_pagar and not entram:
             continue
+        base_ = entram or ps
+        obras: dict = {}
+        for p in base_:
+            obras[p["obra"] or ""] = obras.get(p["obra"] or "", Decimal("0.00")) + p["valor"]
+        valor = sum(obras.values(), Decimal("0.00"))
+        primeira = ps[0]
+        varias = len(obras) > 1
+        rateio = varias and all(p.get("rateio") for p in base_)
+        if rateio:
+            situacao = f"Rateio em {len(obras)} obras"
+        elif len(base_) > 1:
+            situacao = (f"Mesma pessoa {len(base_)} vezes (soma num pagamento) · "
+                        f"{primeira['tipo_despesa']}")
+        else:
+            situacao = f"{primeira['tipo_despesa']} · obra {primeira['rotulo_obra'] or '—'}"
         linhas.append({
-            "entra": entra, "cpf": p["cpf"], "nome_na_tela": p["nome"] or p["cpf_bonito"],
-            "cargo": p["cargo"], "fase": p["fase"],
-            "por_obra": [{"obra": p["obra"], "dias": 0, "valor": p["valor"]}],
-            "por_dia": [], "dias_no_ponto": 0, "valor": p["valor"], "valor_por_dia": None,
-            "obras_resumo": p["obra"] or "-", "obra_do_cadastro": p["obra_cadastro"],
-            "contas": [p["conta"]] if p["conta"] else [],
-            "situacao_rotulo": f"{p['tipo_despesa']} · obra {p['rotulo_obra'] or '—'}"})
+            "entra": bool(entram), "cpf": cpf,
+            "nome_na_tela": primeira["nome"] or primeira["cpf_bonito"],
+            "cargo": primeira["cargo"], "fase": primeira["fase"],
+            "por_obra": [{"obra": o, "dias": 0, "valor": v} for o, v in obras.items()],
+            "por_dia": [], "dias_no_ponto": 0, "valor": valor, "valor_por_dia": None,
+            "obras_resumo": (" + ".join(f"{o or '-'} R$ {formatos.moeda(v)}" for o, v in obras.items())
+                             if varias else (next(iter(obras)) or "-")),
+            "obra_do_cadastro": primeira["obra_cadastro"],
+            "contas": sorted({p["conta"] for p in base_ if p["conta"]}),
+            "situacao_rotulo": situacao,
+            # O bloco "Rateio entre obras" do relatório (`folha_relatorio`).
+            "rateio_entre_obras": ([{"obra": o or "-", "valor": v} for o, v in obras.items()]
+                                   if rateio else [])})
     hoje = agora().strftime("%d/%m/%Y")
     descricao = calculado.get("descricao") or ""
     return {"titulo": f"Pagamento avulso {hoje}" + (f" — {descricao}" if descricao else ""),
@@ -556,4 +652,4 @@ def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
             "folha": {"competencia": hoje,
                       "rotulo_do_tipo": descricao or calculado.get("tipo_despesa") or ""},
             "pessoas": linhas, "filtros_texto": [], "filtros": filtros or {},
-            "totais": {"pessoas": len(pessoas)}, "fechamento": None}
+            "totais": {"pessoas": len(por_cpf)}, "fechamento": None}
