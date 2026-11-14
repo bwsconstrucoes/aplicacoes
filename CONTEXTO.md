@@ -822,7 +822,6 @@ mensagem perdida ("senão a gente pode correr o risco de ser banido de novo").
   Make não mudou.**
 - **Notificador**: quando o Telegram responde "não cadastrado" e nada mais
   entregou, pede o convite à Mensageria.
-- **BaixaBradesco**: só um teste que quebrava com a data (ver o histórico dela).
 
 **A regra que fica:** o cadastro do Telegram é do ERP.
 

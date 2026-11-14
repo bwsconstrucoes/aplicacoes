@@ -20,6 +20,7 @@ Duas coisas que este arquivo trava:
 """
 import json
 import os
+from datetime import datetime
 
 import pytest
 
@@ -36,13 +37,11 @@ def pasta(tmp_path, monkeypatch):
 
 def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
            criado_em=None, tentativas=0):
-    # Uma hora atrás, SEMPRE. Até 14/11/2026 isto era a data fixa
-    # '12/11/2026 09:00:00': a fila descarta adiado com mais de
-    # IDADE_MAXIMA_DIAS (2) e, dois dias depois, o teste passou a quebrar
-    # sozinho — sem nada mudar no código.
+    # Sem data, o adiado nasce AGORA. Uma data fixa envelhece: passados os
+    # IDADE_MAXIMA_DIAS, a fila descarta o item antes de processá-lo e o teste
+    # quebra sozinho no calendário (foi o que aconteceu em 14/11/2026).
     if criado_em is None:
-        from datetime import datetime, timedelta
-        criado_em = (datetime.now() - timedelta(hours=1)).strftime('%d/%m/%Y %H:%M:%S')
+        criado_em = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
     item = {
         'payload': {
             'attachments': [{'filename': a, 'base64': 'JVBERi0x...'} for a in arquivos],
@@ -62,15 +61,14 @@ def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
 # =====================================================================
 
 def test_o_resumo_mostra_os_comprovantes_adiados(pasta):
-    nome = _adiar(pasta, arquivos=('pix_fornecedor.pdf',))
-    gravado = json.loads((pasta / nome).read_text(encoding='utf-8'))['criado_em']
+    _adiar(pasta, arquivos=('pix_fornecedor.pdf',), criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
     assert r['pendentes'] == 1
     item = r['itens'][0]
     assert item['comprovantes'] == ['pix_fornecedor.pdf']
-    assert item['criado_em'] == gravado
+    assert item['criado_em'] == '12/11/2026 09:00:00'
     assert '429' in item['erro_original']
 
 
@@ -88,13 +86,12 @@ def test_o_resumo_NUNCA_devolve_o_payload_nem_as_credenciais(pasta):
 
 
 def test_o_resumo_avisa_que_publicacao_apaga_a_fila(pasta):
-    nome = _adiar(pasta)
-    gravado = json.loads((pasta / nome).read_text(encoding='utf-8'))['criado_em']
+    _adiar(pasta, criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
     assert 'APAGA' in r['em_portugues']
-    assert gravado[:10] in r['em_portugues']
+    assert '12/11/2026' in r['em_portugues']
 
 
 def test_fila_vazia_diz_isso_sem_rodeio(pasta):

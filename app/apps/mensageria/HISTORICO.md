@@ -50,7 +50,11 @@ o que, com filtragens na sidebar (…) com gráficos (…) por dia, por período
 horário."* E: *"você já cruza as informações, vê se tem alguém que está faltando.
 Acredito que você consegue acessar a base de dados."*
 
-**Feito (no mesmo ramo, não publicado):**
+**PUBLICADO em 14/11/2026, com o "pode" do dono** ("estamos migrando do Make e
+Pipefy para o ERP; se der problema depois resolveremos"). Falta ele apertar
+"Aplicar atualizações do banco" (103) e "Migrar da planilha agora".
+
+**Feito:**
 1. **Regra rígida no robô**: número diferente do cadastro não cadastra; CPF
    digitado não cadastra; troca de número só se o novo estiver no cadastro. A
    pessoa é mandada ao DP e a tentativa entra na **fila do DP** (tabela nova
