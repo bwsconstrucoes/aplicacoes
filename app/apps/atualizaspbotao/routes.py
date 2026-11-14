@@ -6,8 +6,11 @@ Body JSON: payload completo (mesmo formato enviado ao Apps Script atual)
 Header ou body: campo "secret" para autenticação
 """
 
+import hashlib
+import json
 import logging
 import threading
+import time
 from flask import Blueprint, request, jsonify
 from .core import validar_payload, executar
 from .utils import as_string
@@ -21,6 +24,21 @@ bp = Blueprint('atualizaspbotao', __name__)
 # 4 linhas do serviço). Vale por processo — o Render roda 1 worker.
 _sps_em_andamento: set = set()
 _trava_sps = threading.Lock()
+
+# Última atualização BEM-SUCEDIDA de cada SP: impressão dos dados, hora e
+# resultado. O mesmo pedido com os MESMOS dados dentro de REPETIDO_JANELA_S
+# devolve o resultado anterior sem tocar em planilha nem no Omie — nada mudou,
+# não há o que refazer (14/11/2026: mais de 400 disparos num fim de semana, de
+# origem desconhecida). A linha de log de cada repetição é também o diagnóstico.
+REPETIDO_JANELA_S = 15 * 60
+_ultimos: dict = {}
+
+
+def _impressao(payload: dict) -> str:
+    """Impressão curta dos dados recebidos (sem a senha), para comparar pedidos."""
+    dados = {k: v for k, v in payload.items() if k != 'secret'}
+    bruto = json.dumps(dados, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha1(bruto.encode('utf-8')).hexdigest()[:10]
 
 
 @bp.route('/executar', methods=['POST'])
@@ -37,10 +55,20 @@ def rota_executar():
         }), 400
 
     sp_id = as_string(payload.get('id'))
+    impressao = _impressao(payload)
+    agora = time.time()
     with _trava_sps:
+        for k in [k for k, v in _ultimos.items() if agora - v[1] > REPETIDO_JANELA_S]:
+            _ultimos.pop(k, None)
+        anterior = _ultimos.get(sp_id)
         repetido = sp_id in _sps_em_andamento
-        if not repetido:
+        if not repetido and not (anterior and anterior[0] == impressao):
             _sps_em_andamento.add(sp_id)
+    if not repetido and anterior and anterior[0] == impressao:
+        logger.warning(f"[atualizaspbotao] SP {sp_id}: pedido IDÊNTICO ao de {agora - anterior[1]:.0f} s "
+                       f"atrás (dados {impressao}) — devolvido o resultado anterior, nada refeito")
+        return jsonify(anterior[2]), 200
+    logger.info(f"[atualizaspbotao] SP {sp_id}: pedido recebido (dados {impressao})")
     if repetido:
         logger.warning(f"[atualizaspbotao] SP {sp_id}: clique repetido recusado — a anterior ainda está rodando")
         msg = (f"A SP {sp_id} já está sendo atualizada. Aguarde a primeira atualização "
@@ -52,6 +80,8 @@ def rota_executar():
         resultado = executar(payload)
         resultado['ok']       = True
         resultado['response'] = _html_resultado(payload, resultado)
+        with _trava_sps:
+            _ultimos[sp_id] = (impressao, time.time(), resultado)
         return jsonify(resultado), 200
 
     except Exception as e:

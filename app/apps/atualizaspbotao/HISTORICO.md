@@ -170,6 +170,28 @@ Como separar as origens no Make (ligar "Get request headers" no webhook): o
 Streamlit, e-mail ou robô. Nada mudou no código do Análise de SPs (outra
 área).
 
+## 14/11/2026 — mais de 400 disparos num fim de semana
+
+O dono procurou `ANALISESPS_HOOK_OMIE` no Render e **não encontrou** — logo o
+botão "Atualizar" da ficha do Análise de SPs nem aparece, e não é a origem.
+Mais de 400 disparos de sábado para domingo, com a empresa parada, não é gente
+clicando: é automático. Suspeita principal, **não confirmada**: um ciclo — o
+botão responde, o Make grava no card do Pipefy (etiquetas, código do Omie), uma
+automação do Pipefy "campo atualizado → webhook" dispara o botão de novo.
+
+**O que entrou (ramo):** pedido da mesma SP com os **mesmos dados** dentro de
+15 minutos depois de uma atualização bem-sucedida devolve o resultado anterior,
+sem tocar em planilha nem no Omie. Cada pedido grava uma impressão curta dos
+dados no log (`SP N: pedido recebido (dados abc123)`), e cada repetição
+devolvida, `pedido IDÊNTICO`. Isso protege o Omie e as planilhas, mas **não
+para os disparos** — o Make continua gastando operações. A origem se corta no
+Pipefy ou no Make.
+
+**Para achar a origem, no log do Render:** se as linhas mostram as mesmas
+poucas SPs voltando a cada poucos minutos, é ciclo; se são SPs diferentes e
+antigas, é algo varrendo a base (outro cenário do Make, script). No Make, os
+cabeçalhos do webhook (User-Agent) dizem quem chamou.
+
 ## O que precisa ser confirmado com o dono
 
 Respondido em 24/09/2026: quem chama a rota (Pipefy → Make → Render) e que o
