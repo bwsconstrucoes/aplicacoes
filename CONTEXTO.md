@@ -824,9 +824,19 @@ mensagem perdida ("senão a gente pode correr o risco de ser banido de novo").
   entregou, pede o convite à Mensageria.
 - **BaixaBradesco**: só um teste que quebrava com a data (ver o histórico dela).
 
-**A regra que fica:** o cadastro do Telegram é do ERP. A aba `TelegramID`
-continua sendo escrita até o Make e a emissão de nota pararem de procurar lá;
-quando pararem, a escrita na planilha pode sair.
+**A regra que fica:** o cadastro do Telegram é do ERP.
+
+**No mesmo dia, à tarde — regra rígida e fim das planilhas.** O dono decidiu:
+o número do Telegram tem de bater com o telefone do cadastro do ERP (CPF não
+cadastra; quem não bate vai para a fila do DP atualizar o telefone), e as
+planilhas do cadastro do Telegram e de consulta (TelegramID, Pendências
+Telegram, Dados Documentos e Colaborador (Cartões), NO QUE TOCA ao robô e ao
+chatbot) deixam de ser usadas depois do botão "Migrar da planilha" (tela
+Mensagens), que cruza a TelegramID com o ERP. Também: aba **Painel** (monitoramento
+com gráficos e filtros), e a aba **Telegram e mensagens** na ficha do colaborador
+(ERP e ficha única do ponto), por um bloco único no `erp_base.html`. As outras
+áreas que leem "Dados Documentos" para outros fins (Análise de SPs, baixa,
+emissão) **não foram tocadas**. Detalhe em `mensageria/HISTORICO.md`.
 
 ### 13/11/2026 — AtualizaSPBotão: memória própria e aba Log desligada (atravessa áreas)
 

@@ -2128,6 +2128,17 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
 - O aviso que o Make mandou para fulano chegou? (aba Enviadas, tipo "Envio
   externo pelo Telegram" — desde 14/11/2026 o `/telegram/enviar` também anota)
 - Tem Telegram ligado a alguém que não está no ERP? ("Cadastros a conferir")
+- Quem tentou se cadastrar no Telegram e o número não bateu? (fila do DP, na
+  aba Cadastro do Telegram — a regra é rígida desde 14/11/2026)
+- Quais colaboradores ativos estão sem telefone no cadastro?
+- Quantas mensagens saíram hoje / nesta semana, pelo Telegram e pelo WhatsApp?
+  Quantas não chegaram? (ERP › Mensagens › Painel)
+- Que mensagens fulano recebeu, e quantas? De que tipo? Pelo quê? (Painel,
+  filtro Pessoa; ou a aba "Telegram e mensagens" na ficha do colaborador)
+- Em que hora do dia / dia da semana sai mais mensagem?
+- Que tipo de mensagem mais sai? Qual mais falha?
+- Quanto WhatsApp o ponto gastou este mês? (Painel, De onde vem = Ponto, canal
+  WhatsApp)
 
 ### ⚠️ Palavras que mudam a resposta aqui
 - **"não recebeu"**: aqui é "o Telegram respondeu que a pessoa não tem
@@ -2135,8 +2146,11 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
   conta como entregue — o sistema não sabe se foi lida.
 - **"convidado"**: convite que SAIU. Convite barrado no teto do WhatsApp ou com
   o WhatsApp desligado fica anotado, mas não conta para a espera entre convites.
-- **"tem Telegram"**: tem cadastro ativo no ERP. Antes de alguém apertar "Trazer
-  da planilha TelegramID", quem se cadastrou pela planilha aparece como "não tem".
+- **"tem Telegram"**: tem cadastro ativo no ERP. Antes de alguém apertar "Migrar
+  da planilha", quem se cadastrou pela planilha aparece como "não tem".
+- **"entregue"** (Painel): o Telegram ou o WhatsApp ACEITOU. Não quer dizer lida.
+- **"barrada"** (Painel): o sistema segurou antes de sair (tipo ou WhatsApp
+  desligado, teto, ou o ponto barrou na origem). Não é o mesmo que "não chegou".
 
 ### O que o sistema ainda NÃO responde
 - "Fulano leu a mensagem?" — o Telegram não devolve leitura para robô.

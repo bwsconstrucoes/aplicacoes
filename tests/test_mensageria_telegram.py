@@ -205,9 +205,13 @@ def test_as_rotas_novas_declaram_a_acao_certa():
     mapa = routes._REGISTRO_PERMISSOES
     assert mapa["erp.mensagens_pagina_telegram"]["GET"] == "ver_mensagens"
     assert mapa["erp.mensagens_api_telegram"]["GET"] == "ver_mensagens"
-    for ep in ("convidar", "configurar", "importar", "desvincular"):
+    for ep in ("convidar", "configurar", "migrar", "desvincular"):
         assert mapa[f"erp.mensagens_api_telegram_{ep}"]["POST"] == "configurar_mensagens"
     assert ("msg_telegram", "Cadastro do Telegram", "erp.mensagens_pagina_telegram") in gestao.ABAS
+    # O painel é a primeira aba (o menu abre nele) e a ficha da pessoa só lê
+    assert gestao.ABAS[0] == ("msg_painel", "Painel", "erp.mensagens_pagina_painel")
+    assert mapa["erp.mensagens_api_painel"]["GET"] == "ver_mensagens"
+    assert mapa["erp.mensagens_api_pessoa"]["GET"] == "ver_mensagens"
 
 
 def test_a_aba_abre_para_quem_ve_e_so_o_admin_convida(app, monkeypatch):
@@ -215,7 +219,8 @@ def test_a_aba_abre_para_quem_ve_e_so_o_admin_convida(app, monkeypatch):
     r = c.get("/erp/mensagens/telegram")
     assert r.status_code == 200 and "Cadastro do Telegram" in r.get_data(as_text=True)
     assert c.post("/erp/api/mensagens/telegram/convidar", json={"chaves": ["C1"]}).status_code == 403
-    assert c.post("/erp/api/mensagens/telegram/importar").status_code == 403
+    assert c.post("/erp/api/mensagens/telegram/migrar").status_code == 403
+    assert c.get("/erp/mensagens/painel").status_code == 200
     assert _como(app, monkeypatch, P.CONSULTA).get("/erp/mensagens/telegram").status_code == 403
 
 
@@ -226,6 +231,11 @@ def test_convite_em_lote_tem_teto_e_pede_o_whatsapp_ligado(app, monkeypatch):
     r = c.post("/erp/api/mensagens/telegram/convidar", json={"chaves": [f"C{i}" for i in range(60)]})
     assert r.status_code == 400 and "50" in r.get_json()["erro"]
     assert c.post("/erp/api/mensagens/telegram/convidar", json={"chaves": []}).status_code == 400
+    # Antes de migrar a planilha, nada de convite pela tela
+    monkeypatch.setattr(tc, "migrado", lambda conn: False)
+    r = c.post("/erp/api/mensagens/telegram/convidar", json={"chaves": ["C1"]})
+    assert r.status_code == 400 and "migre" in r.get_json()["erro"]
+    monkeypatch.setattr(tc, "migrado", lambda conn: True)
     monkeypatch.setattr(tc.core, "whatsapp_ligado", lambda conn: False)
     r = c.post("/erp/api/mensagens/telegram/convidar", json={"chaves": ["C1"]})
     assert r.status_code == 400 and "desligado" in r.get_json()["erro"]
@@ -237,3 +247,107 @@ def test_intervalo_entre_convites_tem_limite(app, monkeypatch):
     c = _como(app, monkeypatch, P.ADMIN)
     assert c.post("/erp/api/mensagens/telegram/configurar", json={"intervalo_dias": "0"}).status_code == 400
     assert c.post("/erp/api/mensagens/telegram/configurar", json={"texto": "sem o link"}).status_code == 400
+
+
+
+# ---------------------------------------------------------------------------
+# A regra rígida no robô (dono, 14/11/2026)
+# ---------------------------------------------------------------------------
+def _contato(c, chat, telefone):
+    return c.post("/telegram/webhook", json={"message": {"chat": {"id": chat}, "from": {"id": chat, "first_name": "Zé"},
+                                                         "contact": {"user_id": chat, "phone_number": telefone}}})
+
+
+def test_numero_que_nao_bate_nao_cadastra_e_vai_para_o_dp(robo, monkeypatch):
+    tb, c, enviados = robo
+    gravados, fila = [], []
+    monkeypatch.setattr(tb, "_buscar_cadastro_por_chat_id", lambda chat: (None, None))
+    monkeypatch.setattr(tb, "_consultar_bases", lambda **kw: (None, True))
+    monkeypatch.setattr(tb, "_gravar_cadastro", lambda *a, **k: gravados.append(a) or True)
+    monkeypatch.setattr(tb, "_cadastro_erp", lambda: None)
+    monkeypatch.setattr(tb, "_log_pendencia", lambda evento, **kw: fila.append((evento, kw)))
+    _contato(c, 31, "+5585911112222")
+    assert gravados == []
+    assert "não está no cadastro da BWS" in enviados[-1][1] and "DP" in enviados[-1][1]
+    assert fila[-1][0] == "TELEFONE_NAO_BATE" and fila[-1][1]["telefone"] == "5585911112222"
+
+
+def test_cpf_digitado_nao_cadastra_mais(robo, monkeypatch):
+    tb, c, enviados = robo
+    gravados, fila = [], []
+    monkeypatch.setattr(tb, "_buscar_cadastro_por_chat_id", lambda chat: (None, None))
+    monkeypatch.setattr(tb, "_assistente_processar_texto", lambda *a: False)
+    monkeypatch.setattr(tb, "_lote_analisesps", lambda *a: None)
+    monkeypatch.setattr(tb, "_registro_por_chat_id", lambda chat: None)
+    monkeypatch.setattr(tb, "_consultar_bases", lambda **kw: ({"nome": "Ana Lima", "cpf": "11111111111"}, True))
+    monkeypatch.setattr(tb, "_gravar_cadastro", lambda *a, **k: gravados.append(a) or True)
+    monkeypatch.setattr(tb, "_log_pendencia", lambda evento, **kw: fila.append((evento, kw)))
+    c.post("/telegram/webhook", json={"message": {"chat": {"id": 41}, "from": {"id": 41}, "text": "111.111.111-11"}})
+    assert gravados == [] and "só pelo número" in enviados[-1][1]
+    assert fila[-1][0] == "CPF_DIGITADO" and fila[-1][1]["obs"] == "Ana Lima"
+
+
+def test_trocar_o_numero_so_vale_se_o_novo_estiver_no_cadastro(robo, monkeypatch):
+    tb, c, enviados = robo
+    gravados = []
+    monkeypatch.setattr(tb, "_buscar_cadastro_por_chat_id", lambda chat: (5, "Ana Lima"))
+    monkeypatch.setattr(tb, "_registro_por_chat_id",
+                        lambda chat: {"cpf": "11111111111", "telefone": "5585999990001", "nome": "Ana Lima"})
+    monkeypatch.setattr(tb, "_gravar_cadastro", lambda *a, **k: gravados.append(a) or True)
+    monkeypatch.setattr(tb, "_cadastro_erp", lambda: None)
+    monkeypatch.setattr(tb, "_log_pendencia", lambda *a, **k: None)
+    monkeypatch.setattr(tb, "_consultar_bases", lambda **kw: (None, True))
+    _contato(c, 51, "+5585977776666")                       # número que não é de ninguém
+    assert gravados == [] and "não está no cadastro" in enviados[-1][1]
+    monkeypatch.setattr(tb, "_consultar_bases", lambda **kw: ({"cpf": "11111111111", "nome": "Ana Lima"}, True))
+    _contato(c, 51, "+5585977776666")                       # o DP atualizou o telefone da Ana
+    assert gravados and "Número confirmado" in enviados[-1][1]
+
+
+def test_depois_da_migracao_o_robo_nao_toca_em_planilha(robo, monkeypatch):
+    tb, _, _ = robo
+
+    class TcFalso:
+        @staticmethod
+        def migrado(conn):
+            return True
+
+        @staticmethod
+        def chat_id_de(conn, **kw):
+            return None
+
+        @staticmethod
+        def achar_pessoa(conn, **kw):
+            return None
+
+        @staticmethod
+        def cadastro_por_chat(conn, chat):
+            return None
+
+        class core:
+            @staticmethod
+            def ler_parametro(conn, chave, padrao=""):
+                return "2026-11-14"
+
+    class DbFalso:
+        @staticmethod
+        def conexao():
+            return contextlib.nullcontext()
+
+    monkeypatch.setattr(tb, "_cadastro_erp", lambda: (TcFalso, DbFalso))
+    for nome in ("_linhas_telegram_id", "_ler_valores_com_retry", "_aba_telegram_id", "_aba_pendencias"):
+        monkeypatch.setattr(tb, nome, lambda *a, **k: pytest.fail("leu ou escreveu planilha depois da migração"))
+    assert tb._lookup_chat_id(telefone="5585999990001") is None
+    assert tb._consultar_bases(telefone="5585999990001") == (None, True)
+    assert tb._buscar_cadastro_por_chat_id(1) == (None, None)
+    assert tb._registro_por_chat_id(1) is None
+    tb._log_pendencia("FALHA_ENVIO_TEXTO", telefone="5585")       # não é do DP: só não faz nada
+
+
+def test_a_ficha_do_colaborador_tem_a_aba_de_mensagens():
+    """O bloco é do erp_base (um só) e as duas fichas o chamam."""
+    from pathlib import Path
+    raiz = Path(__file__).resolve().parents[1] / "app" / "apps"
+    assert "async function mensagensDaPessoa(" in (raiz / "erp/templates/erp_base.html").read_text(encoding="utf-8")
+    assert "mensagensDaPessoa(alvo, FICHA_ID)" in (raiz / "erp/templates/erp_colaboradores.html").read_text(encoding="utf-8")
+    assert "mensagensDaPessoa(els(\"dp-mensagens\"), p.id)" in (raiz / "ponto/templates/ponto/gestao.html").read_text(encoding="utf-8")

@@ -13,12 +13,14 @@ telefone."*
 O que mora aqui:
 
   · QUEM PODE: colaborador do ERP que não está desligado e tem telefone, e
-    operador do ERP ativo com telefone. Ninguém mais recebe convite, e o robô
-    só reconhece essas pessoas pelo ERP (as planilhas antigas seguem como
-    reserva no robô).
+    operador do ERP ativo com telefone. Ninguém mais recebe convite.
+  · REGRA RÍGIDA (dono, 14/11/2026): o número que o Telegram confirma tem de
+    bater com o telefone do cadastro do ERP. Não bateu, não cadastra — a
+    pessoa pede ao DP para atualizar o telefone, e a tentativa fica na fila
+    do DP (`mensageria.telegram_tentativas`). CPF digitado não cadastra.
   · O CADASTRO (`mensageria.telegram_cadastros`): quem tem Telegram ligado, e
-    a quem do ERP pertence. A aba "TelegramID" da planilha continua sendo
-    escrita junto pelo robô, porque o Make e a emissão de nota procuram lá.
+    a quem do ERP pertence. Substitui a aba "TelegramID" da planilha: depois
+    de "Migrar da planilha", nenhuma planilha é lida nem escrita.
   · O CONVITE (`mensageria.convites`): mensagem de WhatsApp com um LINK
     PESSOAL (t.me/<robô>?start=c_<código>). Quem toca no link é reconhecido
     pelo robô e só precisa confirmar o número.
@@ -53,7 +55,11 @@ CONVITE_INTERVALO = "convite.intervalo_dias"
 CONVITE_TEXTO = "convite.texto"
 CONVITE_FALHAS_ENTRE = "convite.falhas_entre"
 CONVITE_MAXIMO = "convite.maximo_automatico"
-ULTIMA_IMPORTACAO = "telegram.ultima_importacao"
+# A planilha morre (decisão do dono, 14/11/2026): depois do botão "Migrar da
+# planilha", o robô e os envios só usam o ERP. Antes dele, tudo segue como era.
+MIGRADO_EM = "telegram.migrado_em"
+ULTIMA_IMPORTACAO = MIGRADO_EM
+RELATORIO_MIGRACAO = "telegram.relatorio_migracao"
 INTERVALO_PADRAO_DIAS = 7
 # Pedido do dono, 14/11/2026: "na primeira mensagem que não dá certo, a gente
 # encaminha o WhatsApp. Mas não a cada mensagem que der errada (…) depois de
@@ -269,29 +275,155 @@ def desvincular(conn, cadastro_id: int, por: str = "") -> None:
         raise ValueError("cadastro não encontrado")
 
 
-def importar_planilha(conn, linhas: list[list[str]], por: str = "") -> dict:
-    """Traz a aba TelegramID (cabeçalho na 1ª linha: data, CPF, telefone, id do
-    chat, nome, origem, observação). Quem já está no banco só ganha o que faltar."""
+def migrado(conn) -> bool:
+    return bool(core.ler_parametro(conn, MIGRADO_EM, ""))
+
+
+def migrar_planilha(conn, linhas: list[list[str]], por: str = "") -> dict:
+    """Traz a aba TelegramID (data, CPF, telefone, id do chat, nome, origem,
+    observação) e CRUZA cada linha com o ERP:
+
+      ok          a pessoa está no ERP e o telefone bate — entra ativa;
+      divergente  a pessoa está no ERP pelo CPF, mas o telefone do Telegram é
+                  outro — entra ATIVA (cortar quem já recebe não é o objetivo)
+                  e vai para a lista do DP atualizar o telefone;
+      fora        não é colaborador ativo nem operador do ERP (desligado, ou
+                  nunca foi) — NÃO entra;
+      sem_chat    linha sem id do Telegram — ignorada.
+
+    Pode rodar de novo: quem já está no banco só ganha o que faltar. Depois
+    dela, a planilha não é mais usada."""
+    import json
     pessoas = pessoas_elegiveis(conn)
-    novos = atualizados = ignorados = 0
+    rel = {"ok": [], "divergente": [], "fora": [], "sem_chat": 0, "novos": 0, "atualizados": 0}
     for linha in (linhas or [])[1:]:
         linha = list(linha) + [""] * 7
         chat = (linha[3] or "").strip()
         if not re.fullmatch(r"-?\d{3,20}", chat):
-            ignorados += 1
+            rel["sem_chat"] += 1
             continue
+        cpf_planilha, tel_planilha, nome_planilha = linha[1], linha[2], (linha[4] or "").strip()
+        por_cpf = achar_pessoa(conn, cpf=cpf_planilha, pessoas=pessoas) if digitos(cpf_planilha) else None
+        por_tel = achar_pessoa(conn, telefone=tel_planilha, pessoas=pessoas) if digitos(tel_planilha) else None
+        pessoa = por_cpf or por_tel
+        resumo = {"nome": (pessoa or {}).get("nome") or nome_planilha, "cpf": normalizar_cpf(cpf_planilha),
+                  "telefone_telegram": telefone_canonico(tel_planilha),
+                  "telefone_erp": (pessoa or {}).get("telefone", "")}
+        if not pessoa:
+            rel["fora"].append(resumo)
+            continue
+        bate = bool(variantes_telefone(tel_planilha) & variantes_telefone(pessoa["telefone"]))
         existia = cadastro_por_chat(conn, chat)
-        pessoa = achar_pessoa(conn, cpf=linha[1] or None, telefone=linha[2] or None, pessoas=pessoas)
-        gravar_cadastro(conn, chat_id=chat, cpf=linha[1], telefone=linha[2], nome=linha[4],
-                        origem=(existia or {}).get("origem") or "PLANILHA",
-                        observacao=(existia or {}).get("observacao") or "trazido da aba TelegramID",
+        gravar_cadastro(conn, chat_id=chat, cpf=pessoa["cpf"], telefone=tel_planilha or pessoa["telefone"],
+                        nome=pessoa["nome"], origem=(existia or {}).get("origem") or "PLANILHA",
+                        observacao=("migrado da aba TelegramID" if bate or not digitos(tel_planilha) else
+                                    "migrado da aba TelegramID; telefone do Telegram diferente do cadastro"),
                         pessoa=pessoa)
-        if existia:
-            atualizados += 1
-        else:
-            novos += 1
-    core.gravar_parametro(conn, ULTIMA_IMPORTACAO, core._agora().isoformat(), por)
-    return {"novos": novos, "atualizados": atualizados, "ignorados": ignorados}
+        rel["atualizados" if existia else "novos"] += 1
+        rel["ok" if bate or not digitos(tel_planilha) else "divergente"].append(resumo)
+    momento = core._agora().isoformat()
+    core.gravar_parametro(conn, MIGRADO_EM, momento, por)
+    guardado = {**rel, "em": momento, "por": por,
+                "contagem": {"ok": len(rel["ok"]), "divergente": len(rel["divergente"]),
+                             "fora": len(rel["fora"]), "sem_chat": rel["sem_chat"]}}
+    core.gravar_parametro(conn, RELATORIO_MIGRACAO, json.dumps(guardado, ensure_ascii=False)[:200000], por)
+    return guardado
+
+
+def relatorio_migracao(conn) -> Optional[dict]:
+    import json
+    bruto = core.ler_parametro(conn, RELATORIO_MIGRACAO, "")
+    try:
+        return json.loads(bruto) if bruto else None
+    except ValueError:
+        return None
+
+
+def importar_planilha(conn, linhas, por: str = "") -> dict:
+    """Nome antigo (mesma coisa que migrar_planilha), mantido para quem chamava."""
+    r = migrar_planilha(conn, linhas, por)
+    return {"novos": r["novos"], "atualizados": r["atualizados"], "ignorados": r["sem_chat"] + len(r["fora"])}
+
+
+# ---------------------------------------------------------------------------
+# A fila do DP: quem tentou e o número não bateu, quem não tem telefone
+# ---------------------------------------------------------------------------
+def registrar_tentativa(conn, *, chat_id, telefone="", cpf="", nome_telegram="", nome_erp="",
+                        motivo="") -> None:
+    db.executar(conn, """INSERT INTO mensageria.telegram_tentativas
+                           (chat_id, telefone, cpf, nome_telegram, nome_erp, motivo)
+                         VALUES (:chat, :tel, :cpf, :nt, :ne, :m)""",
+                chat=str(chat_id), tel=telefone_canonico(telefone) if digitos(telefone) else "",
+                cpf=normalizar_cpf(cpf), nt=(nome_telegram or "")[:120], ne=(nome_erp or "")[:200],
+                m=(motivo or "")[:40])
+
+
+def tentativas_pendentes(conn, dias: int = 60) -> list[dict]:
+    """Tentativas recentes de quem AINDA não tem cadastro (a mais nova por chat)."""
+    linhas = db.todos(conn, """
+        SELECT DISTINCT ON (t.chat_id) t.*
+          FROM mensageria.telegram_tentativas t
+         WHERE t.criado_em > now() - make_interval(days => :d)
+           AND NOT EXISTS (SELECT 1 FROM mensageria.telegram_cadastros c
+                            WHERE c.chat_id = t.chat_id AND c.ativo)
+         ORDER BY t.chat_id, t.criado_em DESC""", d=dias)
+    return sorted(linhas, key=lambda l: l["criado_em"], reverse=True)
+
+
+def sem_telefone(conn) -> list[dict]:
+    return db.todos(conn, """SELECT id, nome, cpf FROM public.colaboradores
+                              WHERE coalesce(situacao, '') <> 'DESLIGADO'
+                                AND length(regexp_replace(coalesce(telefone, ''), '\\D', '', 'g')) < 10
+                              ORDER BY nome""")
+
+
+def colaborador_por_cpf(conn, cpf) -> Optional[dict]:
+    """Para o contracheque do robô: nome, CPF, telefone e se está desligado —
+    do ERP, no formato que o assistente já usava ({cpf, nome, tel, status})."""
+    c = db.um(conn, """SELECT nome, cpf, telefone, situacao FROM public.colaboradores
+                        WHERE regexp_replace(cpf, '\\D', '', 'g') = :cpf LIMIT 1""", cpf=normalizar_cpf(cpf))
+    if not c:
+        return None
+    return {"cpf": normalizar_cpf(c["cpf"]), "nome": c["nome"] or "", "tel": c["telefone"] or "",
+            "status": "Colaboradores Desligados" if c["situacao"] == "DESLIGADO" else "",
+            "desligado": c["situacao"] == "DESLIGADO"}
+
+
+def resumo_da_pessoa(conn, colaborador_id: int) -> dict:
+    """O Telegram e as mensagens de UM colaborador — para a ficha dele no ERP."""
+    c = db.um(conn, "SELECT id, nome, cpf, telefone, situacao FROM public.colaboradores WHERE id = :i",
+              i=int(colaborador_id))
+    if not c:
+        raise ValueError("colaborador não encontrado")
+    cpf = normalizar_cpf(c["cpf"])
+    pessoa = {"cpf": cpf, "telefone": telefone_canonico(c["telefone"]) if digitos(c["telefone"]) else ""}
+    cad = db.um(conn, """SELECT * FROM mensageria.telegram_cadastros
+                          WHERE ativo AND (colaborador_id = :i OR (cpf <> '' AND cpf = :cpf))
+                          ORDER BY atualizado_em DESC LIMIT 1""", i=c["id"], cpf=cpf or "~")
+    destinos = _destinos_da_pessoa(pessoa) + ([cad["chat_id"]] if cad else [])
+    mensagens = db.todos(conn, """SELECT criado_em, tipo, canal, status, detalhe, texto FROM mensageria.envios
+                                   WHERE (cpf <> '' AND cpf = :cpf) OR destinatario = ANY(:d)
+                                   ORDER BY id DESC LIMIT 15""", cpf=cpf or "~", d=destinos)
+    contagem = db.todos(conn, """SELECT canal, status, count(*) AS n FROM mensageria.envios
+                                  WHERE criado_em > now() - interval '30 days'
+                                    AND ((cpf <> '' AND cpf = :cpf) OR destinatario = ANY(:d))
+                                  GROUP BY canal, status""", cpf=cpf or "~", d=destinos)
+    convite = db.um(conn, """SELECT criado_em, status, motivo, aberto_em, usado_em FROM mensageria.convites
+                              WHERE (cpf <> '' AND cpf = :cpf) OR telefone = :tel
+                              ORDER BY criado_em DESC LIMIT 1""", cpf=cpf or "~", tel=pessoa["telefone"] or "~")
+    for m in mensagens:
+        m["tipo_nome"] = core.nome_do_tipo(m["tipo"])
+    return {"colaborador": {"id": c["id"], "nome": c["nome"], "situacao": c["situacao"],
+                            "telefone": pessoa["telefone"]},
+            "pode_cadastrar": bool(pessoa["telefone"]) and c["situacao"] != "DESLIGADO",
+            "telegram": ({"chat_id": cad["chat_id"], "desde": cad["criado_em"], "origem": cad["origem"],
+                          "telefone": cad["telefone"],
+                          "telefone_diverge": bool(cad["telefone"] and pessoa["telefone"]
+                                                   and not (variantes_telefone(cad["telefone"])
+                                                            & variantes_telefone(pessoa["telefone"])))}
+                         if cad else None),
+            "convite": convite, "contagem_30d": contagem, "mensagens": mensagens,
+            "chave": f"C{c['id']}"}
 
 
 # ---------------------------------------------------------------------------
@@ -537,10 +669,20 @@ def painel(conn, *, filtro: str = "", busca: str = "") -> dict:
                        "convite": ({k: conv.get(k) for k in ("criado_em", "status", "detalhe", "motivo",
                                                              "aberto_em", "usado_em")} if conv else None)})
     soltos = [c for c in ativos if c["id"] not in usados_ids]
+    for l in linhas:
+        cad = next((c for c in ativos if c["id"] == l["cadastro_id"]), None)
+        l["telefone_diverge"] = bool(cad and cad["telefone"]
+                                     and not (variantes_telefone(cad["telefone"]) & variantes_telefone(l["telefone"])))
+        l["telegram_telefone"] = (cad or {}).get("telefone", "")
     totais = {"pessoas": len(linhas), "com_telegram": sum(1 for l in linhas if l["telegram"]),
               "sem_telegram": sum(1 for l in linhas if not l["telegram"]),
               "com_falha": sum(1 for l in linhas if not l["telegram"] and l["falhas_30d"]),
-              "a_conferir": len(soltos)}
+              "a_conferir": len(soltos),
+              "telefone_diverge": sum(1 for l in linhas if l["telefone_diverge"])}
+    faltando_telefone = sem_telefone(conn)
+    totais["sem_telefone"] = len(faltando_telefone)
+    tentativas = tentativas_pendentes(conn)
+    totais["tentativas"] = len(tentativas)
     b = (busca or "").strip().lower()
     bd = digitos(busca)
     if b:
@@ -553,9 +695,13 @@ def painel(conn, *, filtro: str = "", busca: str = "") -> dict:
         linhas = [l for l in linhas if l["telegram"]]
     elif filtro == "convidados":
         linhas = [l for l in linhas if not l["telegram"] and l["convite"]]
+    elif filtro == "diverge":
+        linhas = [l for l in linhas if l["telefone_diverge"]]
     return {"pessoas": linhas, "a_conferir": soltos, "totais": totais,
             "convite_automatico": convite_automatico_ligado(conn), "intervalo_dias": intervalo_dias(conn),
             "falhas_entre": falhas_entre(conn), "maximo_automatico": maximo_automatico(conn),
             "texto": texto_do_convite(conn), "texto_padrao": TEXTO_PADRAO,
             "ultima_importacao": core.ler_parametro(conn, ULTIMA_IMPORTACAO, ""), "link_do_robo": link_do_robo(),
+            "migrado": migrado(conn), "relatorio_migracao": relatorio_migracao(conn),
+            "sem_telefone": faltando_telefone, "tentativas": tentativas,
             "lote_maximo": LOTE_MAXIMO}

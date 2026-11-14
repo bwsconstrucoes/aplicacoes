@@ -28,11 +28,12 @@ from flask import jsonify, render_template_string, request
 from app.apps.erp import routes as R
 from app.apps.erp.routes import bp, login_obrigatorio, permissao
 
-from . import core, db, telegram_cadastro as tc
+from . import core, db, painel, telegram_cadastro as tc
 
 logger = logging.getLogger("mensageria.gestao")
 
 ABAS = [
+    ("msg_painel", "Painel", "erp.mensagens_pagina_painel"),
     ("msg_tipos", "Tipos e canais", "erp.mensagens_pagina_tipos"),
     ("msg_envios", "Enviadas", "erp.mensagens_pagina_envios"),
     ("msg_telegram", "Cadastro do Telegram", "erp.mensagens_pagina_telegram"),
@@ -256,6 +257,7 @@ def mensagens_api_telegram():
         if l.get("convite"):
             l["convite"] = {k: _iso(v) for k, v in l["convite"].items()}
     d["a_conferir"] = [{k: _iso(v) for k, v in c.items()} for c in d["a_conferir"]]
+    d["tentativas"] = [{k: _iso(v) for k, v in c.items()} for c in d["tentativas"]]
     return jsonify({"ok": True, **d})
 
 
@@ -293,6 +295,9 @@ def mensagens_api_telegram_convidar():
     if len(chaves) > tc.LOTE_MAXIMO:
         raise ValueError(f"no máximo {tc.LOTE_MAXIMO} convites por vez — o WhatsApp bloqueia lote grande")
     with db.conexao() as conn:
+        if not tc.migrado(conn):
+            raise ValueError("migre antes o cadastro da planilha (botão no fim desta aba) — sem isso, "
+                             "quem já tem Telegram pela planilha receberia convite à toa")
         if not core.whatsapp_ligado(conn):
             raise ValueError("o WhatsApp está desligado na aba Tipos e canais — ligue antes de convidar")
         elegiveis = {p["chave"]: p for p in tc.pessoas_elegiveis(conn)}
@@ -340,21 +345,24 @@ def mensagens_api_telegram_configurar():
     return jsonify({"ok": True})
 
 
-@bp.route("/erp/api/mensagens/telegram/importar", methods=["POST"])
+@bp.route("/erp/api/mensagens/telegram/migrar", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar_mensagens")
 @_api
-def mensagens_api_telegram_importar():
-    """Traz a aba TelegramID da planilha para o ERP. Pode rodar quantas vezes
-    quiser: quem já está no banco só ganha o que faltar."""
+def mensagens_api_telegram_migrar():
+    """Traz a aba TelegramID para o ERP, CRUZANDO cada linha com o cadastro de
+    colaboradores, e desliga a planilha: daí em diante o robô e os envios só
+    usam o ERP. Pode rodar de novo (antes de alguém editar a planilha à mão,
+    por exemplo): quem já está no banco só ganha o que faltar."""
     from app.apps.telegram import telegram_bot as tb
     try:
         linhas = tb._ler_valores_com_retry(tb.PLAN_TGID_ID, tb.ABA_TGID)
     except Exception as e:  # noqa: BLE001
         raise ValueError(f"não consegui ler a aba TelegramID da planilha: {str(e)[:200]}")
     with db.conexao() as conn:
-        r = tc.importar_planilha(conn, linhas, _quem())
-    return jsonify({"ok": True, **r})
+        r = tc.migrar_planilha(conn, linhas, _quem())
+    logger.info("Mensagens: cadastro do Telegram migrado da planilha por %s: %s", _quem(), r["contagem"])
+    return jsonify({"ok": True, "relatorio": r})
 
 
 @bp.route("/erp/api/mensagens/telegram/desvincular", methods=["POST"])
@@ -370,6 +378,53 @@ def mensagens_api_telegram_desvincular():
     with db.conexao() as conn:
         tc.desvincular(conn, cadastro_id, _quem())
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# PAINEL (14/11/2026) — o monitoramento: o que saiu, para quem, por onde, quando
+# ---------------------------------------------------------------------------
+@bp.route("/erp/mensagens/painel")
+@login_obrigatorio
+@permissao("ver_mensagens")
+def mensagens_pagina_painel():
+    return _pagina("msg_painel")
+
+
+@bp.route("/erp/api/mensagens/painel")
+@login_obrigatorio
+@permissao("ver_mensagens")
+@_api
+def mensagens_api_painel():
+    a = request.args
+    filtros = {k: (a.get(k) or "").strip()[:80] for k in ("de", "ate", "dias", "canal", "tipo", "modulo",
+                                                          "situacao", "pessoa")}
+    with db.conexao() as conn:
+        d = painel.dados(conn, filtros)
+    return jsonify({"ok": True, **d})
+
+
+# ---------------------------------------------------------------------------
+# A FICHA DO COLABORADOR (14/11/2026) — o Telegram e as mensagens dele, dentro
+# do cadastro de pessoas. Lê; quem convida ou desliga é a aba Cadastro do Telegram.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/mensagens/pessoa/<int:colaborador_id>")
+@login_obrigatorio
+@permissao("ver_mensagens")
+@_api
+def mensagens_api_pessoa(colaborador_id: int):
+    with db.conexao() as conn:
+        try:
+            d = tc.resumo_da_pessoa(conn, colaborador_id)
+        except ValueError:
+            return jsonify({"ok": False, "erro": "não encontrado"}), 404
+    if d.get("telegram"):
+        d["telegram"]["desde"] = _iso(d["telegram"].get("desde"))
+    if d.get("convite"):
+        d["convite"] = {k: _iso(v) for k, v in d["convite"].items()}
+    for m in d["mensagens"]:
+        m["criado_em"] = _iso(m["criado_em"])
+        m["texto"] = (m.get("texto") or "")[:200]
+    return jsonify({"ok": True, **d})
 
 
 _registrar_no_menu()

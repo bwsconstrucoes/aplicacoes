@@ -36,6 +36,73 @@ no próprio código.
 
 ---
 
+## 14/11/2026 (tarde) — REGRA RÍGIDA, FIM DAS PLANILHAS, PAINEL E A FICHA DA PESSOA
+
+O dono perguntou se o número do Telegram era conferido com o do cadastro. Era,
+mas com duas brechas: o CPF digitado cadastrava mesmo sem o número bater, e o
+link do convite que eu tinha acabado de fazer aceitava outro chip. Decisão dele:
+*"ser rígido. Se a pessoa não tiver o telefone batendo com o do cadastro, ele
+tem que atualizar o telefone do cadastro. E isso tem que solicitar o DP.
+Eliminar essas planilhas (…) deixar tudo funcionando com os dados que nós temos
+dos colaboradores do DP (…) embutir o ID do Telegram no cadastro de cada um (…)
+uma espécie de dashboard com monitoramento, com o tipo de mensagem, para quem e
+o que, com filtragens na sidebar (…) com gráficos (…) por dia, por período, por
+horário."* E: *"você já cruza as informações, vê se tem alguém que está faltando.
+Acredito que você consegue acessar a base de dados."*
+
+**Feito (no mesmo ramo, não publicado):**
+1. **Regra rígida no robô**: número diferente do cadastro não cadastra; CPF
+   digitado não cadastra; troca de número só se o novo estiver no cadastro. A
+   pessoa é mandada ao DP e a tentativa entra na **fila do DP** (tabela nova
+   `mensageria.telegram_tentativas`, na própria migração 103).
+2. **Fim das planilhas**, com uma chave só: o botão **Migrar da planilha**.
+   Ele copia a aba TelegramID cruzando com o ERP (confere / telefone diferente /
+   fora do ERP) e guarda o relatório. Depois dele: o robô só reconhece e grava
+   pelo ERP; a busca do chat dos avisos só olha o ERP; o contracheque do Telegram
+   e o do chatbot de WhatsApp leem o colaborador do ERP; "Pendências Telegram"
+   virou a fila do DP. Antes dele, tudo segue como era — publicar não muda nada
+   até alguém apertar.
+3. **Painel** (primeira aba do módulo): filtros na barra da esquerda, números do
+   topo, gráficos por dia, hora e dia da semana, tipos, pessoas e as últimas
+   mensagens com o texto.
+4. **A ficha do colaborador** ganhou a aba **Telegram e mensagens** (Pessoal ›
+   Colaboradores e a ficha única do ponto).
+5. Na aba Cadastro do Telegram: a fila do DP, quem está sem telefone, o aviso
+   de Telegram com número diferente, e o relatório da migração.
+
+**O cruzamento que o dono pediu NÃO foi feito por mim:** este contêiner não
+alcança o banco de produção nem a planilha (sem credenciais, e não deve ter). Ele
+roda NO SERVIDOR, quando alguém aperta "Migrar da planilha", e o resultado fica
+na tela. É o mesmo cruzamento, com os dados de verdade.
+
+**Decisões minhas, com o motivo:**
+- Quem estava na planilha com o telefone diferente do ERP **entra ativo** e vai
+  para a lista do DP acertar — cortar quem já recebe não era o objetivo. A regra
+  rígida vale para cadastro novo e troca de número. Se o dono quiser rígido
+  também para esses, é desligar na tela, um a um, ou eu mudo a migração.
+- Quem estava na planilha e não é mais colaborador ativo **não entra**.
+- O "ID do Telegram" não virou coluna nova na tabela de colaboradores: fica na
+  tabela do cadastro do Telegram, ligada ao colaborador, e APARECE na ficha dele.
+  Assim o ERP não ganha coluna que só a mensageria usa, e o operador (quem entra
+  no sistema) também pode ter Telegram.
+- O painel é a primeira aba do módulo, porque é o que mais se abre.
+
+**Verificado:** suíte inteira com banco de verdade; fluxo com banco: migração
+(1 confere, 1 telefone diferente, 1 fora), número errado recusado e na fila do
+DP, CPF recusado, DP acerta o telefone e o cadastro passa, contracheque pelo ERP,
+e depois da migração nenhuma planilha foi tocada (o teste falharia). Telas
+fotografadas (painel com 420 mensagens de duas semanas, cadastro, ficha).
+
+### O que está pendente AGORA (pelo dono) — substitui a lista abaixo
+1. "Pode" para publicar; **apertar "Aplicar atualizações do banco"** (103) no
+   mesmo momento. Publicar sozinho não muda o robô: ele continua nas planilhas.
+2. **ERP › Mensagens › Cadastro do Telegram › "Migrar da planilha agora"**, e ler
+   o relatório: quem tem telefone diferente (o DP acerta) e quem ficou de fora.
+3. Ver a lista "Colaboradores sem telefone no cadastro" — essas pessoas não
+   conseguem se cadastrar até o DP preencher.
+4. Dizer se algum cenário do Make lê a aba TelegramID direto (sem chamar o
+   sistema): se sim, ele precisa passar a usar o `/telegram/enviar`.
+
 ## 14/11/2026 — O CADASTRO DO TELEGRAM VEIO PARA O ERP, e quem não recebe é convidado pelo WhatsApp
 
 **O pedido**, nas palavras do dono: *"tem muita gente fazendo solicitações, mas

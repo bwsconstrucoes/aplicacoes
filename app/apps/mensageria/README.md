@@ -140,27 +140,58 @@ o teto da mensageria é a segunda cerca, para a empresa inteira.
 
 ---
 
+## O painel (14/11/2026)
+
+`painel.py`; aba **Painel** (a primeira do módulo). Tudo do registro
+`mensageria.envios`, no período escolhido (até 90 dias), com hora e dia de
+Fortaleza. Filtros na barra da esquerda: período (hoje, 7, 30, 90 dias ou datas),
+canal, de onde vem (módulo), tipo, situação (entregue, não chegou, barrada) e
+pessoa (nome, CPF ou telefone). Mostra: os números do topo; entregues por dia
+(Telegram × WhatsApp); não chegaram por dia; entregues por hora do dia e por dia
+da semana; os tipos de mensagem (Telegram, WhatsApp, não chegou); as pessoas
+(quantas, por onde, quais tipos, a última); e as últimas 200 mensagens com o
+texto. Clicar no nome filtra a pessoa. A **pessoa** de cada linha é achada pelo
+CPF, pelo telefone (com/sem 55 e nono dígito) ou pelo id do chat, contra
+colaboradores, operadores e o cadastro do Telegram; sem casar, aparece como
+"Fora do cadastro (telefone)". Gráficos em SVG desenhado no próprio arquivo,
+sem biblioteca: azul = Telegram, laranja = WhatsApp, vermelho = não chegou.
+
+**Na ficha do colaborador** (Pessoal › Colaboradores, e a ficha única do
+ponto): aba **Telegram e mensagens**, com a situação do Telegram, o último
+convite, as contagens de 30 dias e as últimas 15 mensagens, e o link para o
+painel já filtrado. O bloco é um só, `mensagensDaPessoa` no `erp_base.html`;
+lê `/erp/api/mensagens/pessoa/<id>` (`ver_mensagens`).
+
 ## O cadastro do Telegram e o convite (14/11/2026)
 
 Código em `telegram_cadastro.py`; tela na aba **Cadastro do Telegram**; tabelas
 `mensageria.telegram_cadastros` e `mensageria.convites` (migração **103** do ERP).
 
 **Quem pode se cadastrar:** colaborador do ERP que não está desligado e tem
-telefone, e operador do ERP ativo com telefone (decisão do dono). Quem não está
-nessa lista não recebe convite, e o robô só o reconhece pelas planilhas antigas.
+telefone, e operador do ERP ativo com telefone (decisão do dono).
 
-**Onde mora o cadastro:** no banco do ERP. O robô grava ali **e** na aba
-`TelegramID` da planilha (o Make e a emissão de nota ainda procuram lá, e nada
-deles mudou). A busca do chat (`_lookup_chat_id`) olha o banco primeiro; depois
-de alguém apertar **Trazer da planilha TelegramID**, a planilha fora do ar não
-impede mais a resposta "não cadastrado". O robô também passou a procurar a
-pessoa **primeiro no ERP** (colaboradores e operadores), com as duas planilhas
-antigas de reserva.
+**REGRA RÍGIDA (dono, 14/11/2026):** o número que o Telegram confirma (botão
+"Compartilhar meu número") tem de bater com o telefone do cadastro do ERP — com
+ou sem 55, com ou sem o nono dígito. Não bateu: **não cadastra**; o robô manda a
+pessoa pedir ao DP para atualizar o telefone, e a tentativa entra na **fila do
+DP** (`mensageria.telegram_tentativas`, aba Cadastro do Telegram). **CPF digitado
+não cadastra** (só entra na fila, para o DP saber quem é). Trocar de número vale
+a mesma regra.
+
+**As planilhas morrem — e a chave é o botão "Migrar da planilha".** Antes dele,
+tudo segue como era (o robô lê as abas "Dados Documentos", "Colaborador
+(Cartões)" e "TelegramID" e escreve nesta e na "Pendências Telegram"). O botão
+copia a aba TelegramID para `mensageria.telegram_cadastros` **cruzando cada linha
+com o ERP**: confere (entra), telefone diferente (entra, e o DP acerta), fora do
+ERP (não entra). Daí em diante **nenhuma planilha é lida nem escrita**: o robô
+reconhece só pelo ERP, grava só no ERP, a busca do chat dos avisos olha só o ERP,
+o contracheque pelo Telegram e pelo WhatsApp (chatbot) leem o colaborador do ERP,
+e a fila do DP substitui a "Pendências Telegram". O relatório do cruzamento fica
+guardado e aparece na tela.
 
 **O convite:** WhatsApp com um **link pessoal** (`t.me/<robô>?start=c_<código>`,
-vale 30 dias, uma vez). Quem toca no link é saudado pelo nome e só confirma o
-número. Se o número do Telegram for de outro chip, o convite aberto nas últimas
-48 h diz quem é — o cadastro fica com observação "conferir".
+vale 30 dias, uma vez). Quem toca no link é saudado pelo nome e confirma o
+número — que precisa bater, como qualquer outro. O link só facilita.
 
 - **Automático** — na **primeira** mensagem do Telegram que não chega por falta
   de cadastro (pelo notificador ou pelo `/telegram/enviar`), se a pessoa é
@@ -223,12 +254,13 @@ mensageria**: responde a quem escreveu, e só.
 
 ## Riscos e limites conhecidos
 
-- **A planilha `TelegramID` ainda é escrita**, durante a transição. Quem
-  cadastrou pela planilha só aparece na tela depois de "Trazer da planilha".
-- **Link de convite repassado:** quem receber o link de outra pessoa e o abrir
-  ainda precisa compartilhar o número; se o número não for de ninguém, o convite
-  aberto liga o Telegram àquela pessoa, com observação "conferir". É o mesmo
-  tamanho de risco que o cadastro por CPF já tinha.
+- **Make lendo a aba TelegramID direto:** se algum cenário do Make lê a planilha
+  sem passar pelo `/telegram/enviar`, depois da migração ele deixa de ver os
+  cadastros novos. O código do repositório não lê mais a aba; o Make não dá para
+  conferir daqui.
+- **Quem estava na planilha com o telefone diferente** foi migrado ATIVO (para
+  não cortar quem já recebe) e aparece com aviso "DP acertar". A regra rígida vale
+  para cadastro novo e para troca de número.
 - **Estado em memória**: sessões do chatbot/Telegram, cache da `TelegramID`,
   a trava "já avisei nesta hora" do teto fica no banco, mas a faxina diária
   do registro usa um relógio em memória (reinício só adianta a faxina).

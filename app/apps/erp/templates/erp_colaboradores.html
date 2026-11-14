@@ -141,6 +141,7 @@ const PODE_IMPORTAR = {{ 'true' if pode.configurar else 'false' }};
    módulo do ponto registra as ações dele no menu do ERP, então `pode.ver_ponto`
    chega aqui como qualquer outra. #}
 const PODE_VER_PONTO = {{ 'true' if pode.ver_ponto else 'false' }};
+const PODE_VER_MENSAGENS = {{ 'true' if pode.ver_mensagens else 'false' }};
 let COL = [], OBRAS = [], FUNCOES = [], ETAPAS = [], CARGOS = [], CONVENCOES = [];
 
 // O PAINEL ESCOLHIDO recorta a lista. Vazio = a lista inteira.
@@ -377,6 +378,7 @@ async function ficha(id, aba){
         ${PODE_VER_PONTO ? `<button class="subaba" data-fp="ponto">Ponto e espelho</button>` : ""}
         <button class="subaba" data-fp="pagamentos">Pagamentos</button>
         <button class="subaba" data-fp="documentos">Documentos</button>
+        ${PODE_VER_MENSAGENS ? `<button class="subaba" data-fp="mensagens">Telegram e mensagens</button>` : ""}
       </div>
       <div id="fp-painel"></div>`;
     els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
@@ -431,6 +433,7 @@ function painelDaPessoa(){
   if (ABA_FICHA_PESSOA === "resumo") return pintarResumoDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "ponto") return pintarPontoDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "pagamentos") return pintarPagamentosDaPessoa(alvo);
+  if (ABA_FICHA_PESSOA === "mensagens") return mensagensDaPessoa(alvo, FICHA_ID);
   return pintarDocumentosDaPessoa(alvo);
 }
 

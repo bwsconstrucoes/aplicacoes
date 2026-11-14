@@ -13,9 +13,10 @@
 --
 --   telegram_cadastros  quem tem Telegram ligado à empresa: o id do chat, o
 --                       CPF, o telefone, e A QUEM do ERP ele pertence
---                       (colaborador ou operador). A planilha continua sendo
---                       escrita junto, durante a transição, porque o Make e a
---                       emissão de nota ainda procuram lá.
+--                       (colaborador ou operador). Substitui a aba "TelegramID"
+--                       da planilha: o botão "Migrar da planilha" (tela
+--                       Mensagens) copia o que existe, e dali em diante a
+--                       planilha não é mais lida nem escrita.
 --   convites            cada convite mandado pelo WhatsApp: para quem, por
 --                       quê (mensagem que não chegou, ou pedido da tela), o
 --                       código do link pessoal e se a pessoa usou.
@@ -61,6 +62,23 @@ CREATE TABLE IF NOT EXISTS mensageria.convites (
 CREATE INDEX IF NOT EXISTS convites_cpf ON mensageria.convites (cpf, criado_em DESC);
 CREATE INDEX IF NOT EXISTS convites_telefone ON mensageria.convites (telefone, criado_em DESC);
 CREATE INDEX IF NOT EXISTS convites_chat ON mensageria.convites (chat_id) WHERE chat_id <> '';
+
+-- Quem tentou se cadastrar no robô e NÃO conseguiu — no lugar da aba
+-- "Pendências Telegram" da planilha. A regra é rígida (decisão do dono,
+-- 14/11/2026): o número do Telegram tem de bater com o telefone do cadastro do
+-- ERP; se não bate, quem resolve é o DP, atualizando o telefone. Esta lista é a
+-- fila do DP para isso.
+CREATE TABLE IF NOT EXISTS mensageria.telegram_tentativas (
+    id             BIGSERIAL PRIMARY KEY,
+    criado_em      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    chat_id        TEXT NOT NULL DEFAULT '',
+    telefone       TEXT NOT NULL DEFAULT '',      -- o número que o Telegram confirmou
+    cpf            TEXT NOT NULL DEFAULT '',      -- digitado pela pessoa, quando digitou
+    nome_telegram  TEXT NOT NULL DEFAULT '',
+    nome_erp       TEXT NOT NULL DEFAULT '',      -- quem o convite ou o CPF indicam ser
+    motivo         TEXT NOT NULL DEFAULT ''       -- TELEFONE_NAO_BATE | CPF_SEM_TELEFONE_IGUAL | ...
+);
+CREATE INDEX IF NOT EXISTS telegram_tentativas_criado ON mensageria.telegram_tentativas (criado_em DESC);
 
 UPDATE mensageria.tipos SET politica = 'WHATSAPP'
  WHERE chave = 'telegram.aviso_cadastro' AND politica = 'DESLIGADO'
