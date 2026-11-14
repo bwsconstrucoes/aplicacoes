@@ -201,6 +201,12 @@ Botão (SPsBD, Log, Boleto)") só recebe pedidos. Ficaram de fora os scripts
 **presos a planilhas** (o Drive não os lista) — esses só aparecem em
 script.google.com › Meus acionadores / Execuções.
 
+**✔ Origem achada e desligada pelo dono (14/11/2026):** era um script do
+Google com agendamento **de hora em hora** disparando o gancho. O dono desativou
+o agendamento. Nome do script e se ele está preso a alguma planilha: não
+informados. Se os disparos voltarem, procurar outro agendamento antes de
+mexer no código.
+
 **Para achar a origem, no log do Render:** se as linhas mostram as mesmas
 poucas SPs voltando a cada poucos minutos, é ciclo; se são SPs diferentes e
 antigas, é algo varrendo a base (outro cenário do Make, script). No Make, os
