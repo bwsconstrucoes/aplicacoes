@@ -20,6 +20,7 @@ Duas coisas que este arquivo trava:
 """
 import json
 import os
+from datetime import datetime
 
 import pytest
 
@@ -35,7 +36,12 @@ def pasta(tmp_path, monkeypatch):
 
 
 def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
-           criado_em='12/11/2026 09:00:00', tentativas=0):
+           criado_em=None, tentativas=0):
+    # Sem data, o adiado nasce AGORA. Uma data fixa envelhece: passados os
+    # IDADE_MAXIMA_DIAS, a fila descarta o item antes de processá-lo e o teste
+    # quebra sozinho no calendário (foi o que aconteceu em 14/11/2026).
+    if criado_em is None:
+        criado_em = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
     item = {
         'payload': {
             'attachments': [{'filename': a, 'base64': 'JVBERi0x...'} for a in arquivos],
@@ -55,7 +61,7 @@ def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
 # =====================================================================
 
 def test_o_resumo_mostra_os_comprovantes_adiados(pasta):
-    _adiar(pasta, arquivos=('pix_fornecedor.pdf',))
+    _adiar(pasta, arquivos=('pix_fornecedor.pdf',), criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
@@ -80,7 +86,7 @@ def test_o_resumo_NUNCA_devolve_o_payload_nem_as_credenciais(pasta):
 
 
 def test_o_resumo_avisa_que_publicacao_apaga_a_fila(pasta):
-    _adiar(pasta)
+    _adiar(pasta, criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
