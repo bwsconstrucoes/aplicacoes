@@ -187,6 +187,13 @@ devolvida, `pedido IDÊNTICO`. Isso protege o Omie e as planilhas, mas **não
 para os disparos** — o Make continua gastando operações. A origem se corta no
 Pipefy ou no Make.
 
+**❌ Retirada antes de publicar (14/11/2026), decisão do dono:** a devolução
+do resultado anterior para pedido idêntico em 15 min nunca foi ao ar. Motivo,
+nas palavras dele: *"eu posso ter a necessidade de atualizar a mesma SP mais
+uma vez em menos de 15 minutos"*. **Não recolocar.** Fica só a recusa do clique
+enquanto a MESMA SP ainda está rodando (publicada em 13/11), que não impede
+atualizar de novo logo depois de terminar.
+
 **Descartado pelo dono (14/11/2026): não existe automação no Pipefy** — o
 ciclo pelo Pipefy está fora. Restam: outro cenário do Make chamando o gancho,
 o Streamlit no PC do dono, um Apps Script antigo com gatilho de tempo (o código
