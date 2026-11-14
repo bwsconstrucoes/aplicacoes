@@ -1938,3 +1938,40 @@ era barrado em silêncio): agora é barrado dizendo qual SP conferir.
 
 **A lição:** a frequência de cada caminho é informação de negócio, e eu não
 tinha. Otimizar sem saber qual caminho é o comum é apostar.
+
+### 14/11/2026 — o dono fechou a regra, e ela torna o "não localizei" acionável
+
+> *"Se a gente só baixa o que está no status agendar, agendado ou falha
+> agendado, então tudo que está nesses três status vai aparecer na aba
+> baixabradesco. Se não tiver, ou vai estar pago, ou vai estar no status pagar.
+> Mas o combinado é que só baixe naqueles outros três. Ou seja, comprovante
+> rodou, a SP não foi encontrada. Por que o registro não foi encontrado? Porque
+> não está no status que deveria. Concorda?"*
+
+**Concordo, com uma precisão:** o filtro exige **os dois** — `Status Pgt =
+Pagar` **e** `Agendado` em {agendar, agendado, falha agendar}. Ele descreveu a
+segunda coluna; a primeira é o que faz o comprovante repetido ser reconhecido
+como repetido (SP paga sai do conjunto). O efeito é o que ele disse.
+
+**A consequência que importa, e ela é de mensagem, não de código:** "não
+localizei" quase nunca é problema de leitura do comprovante — é a SP estar fora
+do status em que a baixa acontece. O motivo passou a dizer isso e o que fazer:
+*"confira o status dela: se já estiver paga, a baixa talvez já tenha acontecido;
+se estiver em 'pagar' sem agendamento, falta agendar."* Transforma o aviso de
+"deu errado" em uma ação.
+
+**A outra consequência, anotada para quem for mexer:** se a aba enxuta espelha
+exatamente o conjunto filtrado, então o plano B — reler a SPsBD inteira com o
+MESMO filtro — não pode achar nada novo. Ele continua ali por dois motivos
+legítimos, e só esses dois:
+
+1. **`omie_pendente`**: SPs já marcadas "Pago" com o Omie pendente. Por
+   definição não estão na aba enxuta, e é o que faz um reenvio concluir baixa
+   pela metade (defeito de 13/09/2026).
+2. **atraso do espelho**: se a aba for alimentada por rotina e não por fórmula
+   viva, existe uma janela em que a SP já está no status certo e ainda não
+   apareceu ali.
+
+**Se o `fonte_das_sps` vier `spsbd_completa` com frequência**, é um destes dois —
+e vale descobrir qual antes de mexer em mais nada. Pergunta aberta ao dono: a
+aba é fórmula viva ou rotina?

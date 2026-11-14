@@ -376,3 +376,51 @@ def test_falha_ao_conferir_a_celula_cai_na_varredura(monkeypatch):
 
     assert aba.varreduras == 1
     assert r['ok'] is True
+
+
+# =====================================================================
+# 5. "não localizei" quase sempre quer dizer "status errado"
+# =====================================================================
+# Esclarecimento do dono em 14/11/2026: *"se a gente só baixa o que está no
+# status agendar, agendado ou falha agendado, então tudo que está nesses três
+# status vai aparecer na aba baixabradesco. Se não tiver, ou vai estar pago, ou
+# vai estar no status pagar. (...) Por que o registro não foi encontrado? Porque
+# não está no status que deveria."*
+#
+# Então a mensagem tem de dizer O QUE FAZER, não só que falhou.
+
+def test_o_motivo_de_nao_achar_manda_conferir_o_status():
+    from app.apps.baixabradesco import matcher
+
+    assert 'agendar' in matcher.MOTIVO_NAO_LOCALIZADO
+    assert 'confira o status' in matcher.MOTIVO_NAO_LOCALIZADO
+    assert 'já estiver paga' in matcher.MOTIVO_NAO_LOCALIZADO
+    assert 'falta agendar' in matcher.MOTIVO_NAO_LOCALIZADO
+
+
+def test_comprovante_sem_candidato_recebe_esse_motivo():
+    from app.apps.baixabradesco import matcher
+    from app.apps.baixabradesco.models import ExtractedReceipt
+
+    rec = ExtractedReceipt(filename='x.pdf', page=1, valor_pago='999.999,00')
+    r = matcher.match_receipt(rec, {}, [])
+
+    assert r.status == 'nao_localizado'
+    assert 'confira o status' in r.motivo
+
+
+def test_o_filtro_exige_os_DOIS_status_nao_so_o_agendamento():
+    """Precisão que vale registrada: não é só a coluna Agendado.
+
+    O robô exige Status Pgt = "Pagar" **e** Agendado em um dos três. Uma SP
+    marcada "Pago" com Agendado = "agendado" não entra — e é isso que faz o
+    comprovante repetido ser reconhecido como repetido.
+    """
+    valores = [CABECALHO,
+               _linha('aberta', status_pgt='Pagar', agendado='agendado'),
+               _linha('paga_mas_agendada', status_pgt='Pago', agendado='agendado'),
+               _linha('pagar_sem_agendar', status_pgt='Pagar', agendado='')]
+
+    index = sheets.load_spsbd_operacional(values=valores)
+
+    assert list(index) == ['aberta']

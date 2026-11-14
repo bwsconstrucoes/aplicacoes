@@ -10,6 +10,26 @@ BEEVALE_MULTIPLICADOR = Decimal('1.015')
 BEEVALE_TOL = Decimal('0.02')
 
 
+# ⚠️ O motivo diz O QUE FAZER, não só que falhou. Esclarecimento do dono em
+# 14/11/2026, e ele muda o que a mensagem deveria sempre ter dito:
+#
+#   *"Se a gente só baixa o que está no status agendar, agendado ou falha
+#   agendado, então tudo que está nesses três status vai aparecer na aba
+#   baixabradesco. Se não tiver, ou vai estar pago, ou vai estar no status
+#   pagar. (...) Por que o registro não foi encontrado? Porque não está no
+#   status que deveria."*
+#
+# Ou seja: "não localizei" quase nunca é problema de leitura do comprovante — é
+# a SP estar fora do status em que a baixa acontece. Dizer isso transforma o
+# aviso de "deu errado" em "confira o status da SP", que é a ação.
+MOTIVO_NAO_LOCALIZADO = (
+    'Nenhuma SP encontrada. Em geral quer dizer que a SP não está em '
+    '"agendar", "agendado" ou "falha agendar" — confira o status dela: se já '
+    'estiver paga, a baixa talvez já tenha acontecido; se estiver em "pagar" '
+    'sem agendamento, falta agendar.'
+)
+
+
 def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps_agendar: List[SpRecord]) -> MatchResult:
     if receipt.id_pipefy:
         sp = sps_index.get(receipt.id_pipefy)
@@ -55,7 +75,8 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
     if receipt.tipo_comprovante == 'transferencia':
         return MatchResult(status='transferencia_sem_sp', metodo='transferencia_sem_id', motivo='Transferência sem ID e sem SP única encontrada.')
 
-    return MatchResult(status='nao_localizado', metodo='sem_match', motivo='Não foi possível localizar SP automaticamente.')
+    return MatchResult(status='nao_localizado', metodo='sem_match',
+                       motivo=MOTIVO_NAO_LOCALIZADO)
 
 
 def _result_from_candidates(cands: List[SpRecord], metodo: str, motivo: str) -> MatchResult:
@@ -63,7 +84,8 @@ def _result_from_candidates(cands: List[SpRecord], metodo: str, motivo: str) -> 
         return MatchResult(status='localizado', metodo=metodo, id=cands[0].id, sp=cands[0], candidatos=cands, motivo=motivo)
     if len(cands) > 1:
         return MatchResult(status='pendente_validacao', metodo=metodo, candidatos=cands, motivo=f'{motivo} Porém retornou {len(cands)} candidatos.')
-    return MatchResult(status='nao_localizado', metodo=metodo, motivo=f'{motivo} Nenhum candidato encontrado.')
+    return MatchResult(status='nao_localizado', metodo=metodo,
+                       motivo=f'{motivo} {MOTIVO_NAO_LOCALIZADO}')
 
 
 def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
