@@ -187,6 +187,12 @@ devolvida, `pedido IDÊNTICO`. Isso protege o Omie e as planilhas, mas **não
 para os disparos** — o Make continua gastando operações. A origem se corta no
 Pipefy ou no Make.
 
+**Descartado pelo dono (14/11/2026): não existe automação no Pipefy** — o
+ciclo pelo Pipefy está fora. Restam: outro cenário do Make chamando o gancho,
+o Streamlit no PC do dono, um Apps Script antigo com gatilho de tempo (o código
+deste módulo foi traduzido de um), ou o próprio cenário reenviando. O
+User-Agent do webhook no Make separa os quatro.
+
 **Para achar a origem, no log do Render:** se as linhas mostram as mesmas
 poucas SPs voltando a cada poucos minutos, é ciclo; se são SPs diferentes e
 antigas, é algo varrendo a base (outro cenário do Make, script). No Make, os
