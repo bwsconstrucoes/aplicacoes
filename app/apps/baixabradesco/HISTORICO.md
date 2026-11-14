@@ -1907,3 +1907,34 @@ biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
 **Não verificado:** nada disso tocou a planilha de verdade. O sinal de que
 funcionou é `/api/baixabradesco/executar` sair dos registros de requisições
 lentas, e `fonte_das_sps` vir `aba_enxuta` na maioria dos lotes.
+
+### 14/11/2026 (continuação) — a frequência do reenvio desfez uma decisão minha
+
+Uma hora depois, ele acrescentou:
+
+> *"Reenvio é algo que acontece com alguma frequência, pq às vezes mandamos um
+> arquivo com alguns comprovantes e de repente algum já havia sido baixado."*
+
+Isso derrubou uma escolha que eu tinha acabado de fazer. Na entrega acima, a
+decisão "a baixa anterior ficou pela metade?" consultava a aba enxuta e, **se a
+SP não estivesse lá, mandava ler a SPsBD inteira** — meu raciocínio era que
+ausência na aba não prova que a baixa acabou.
+
+**Mas comprovante já baixado tem a SP em "Pago", e SP paga não está na aba
+enxuta** (ela espelha as abertas). Ou seja: na prática, **quase todo lote com um
+repetido disparava a leitura das 52 mil linhas** — o caso mais comum anularia a
+otimização inteira. Eu tinha otimizado o caminho raro e deixado o frequente
+pagando a conta.
+
+**Como ficou:** a aba enxuta decide sozinha. SP nela = baixa pela metade, o
+reenvio passa e conclui. SP fora dela = baixa completa, o reenvio é barrado.
+
+**O que se perde, dito sem rodeio:** se a aba deixar de espelhar uma SP ainda
+aberta, o reenvio é recusado como repetido e a SP continua "Pagar". **Não é
+perda de dinheiro** — é uma baixa que não acontece e que alguém precisa ver.
+Por isso o número da SP passou a ir no motivo, junto com o pedido de avisar caso
+ela ainda esteja como "Pagar". É o inverso do defeito de 13/09 (quando o reenvio
+era barrado em silêncio): agora é barrado dizendo qual SP conferir.
+
+**A lição:** a frequência de cada caminho é informação de negócio, e eu não
+tinha. Otimizar sem saber qual caminho é o comum é apostar.

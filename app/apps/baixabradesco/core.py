@@ -163,17 +163,39 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             # faltava na planilha.
             if rec.fingerprint and rec.fingerprint in fingerprints_processados:
                 sp_registrada = as_string(fingerprints_processados.get(rec.fingerprint))
-                # Se a SP não está na aba enxuta, não dá para concluir que a
-                # baixa está completa: pode só não estar ali. Consulta a SPsBD
-                # antes de barrar o reenvio como repetido.
-                if sp_registrada and sp_registrada not in sps_index:
-                    _completar_com_spsbd()
+                # ⚠️ AQUI NÃO SE LÊ A SPsBD INTEIRA, e a razão é o próprio uso.
+                #
+                # O dono em 14/11/2026: *"reenvio é algo que acontece com alguma
+                # frequência, pq às vezes mandamos um arquivo com alguns
+                # comprovantes e de repente algum já havia sido baixado."*
+                #
+                # Comprovante já baixado tem a SP em "Pago", e SP paga NÃO está
+                # na aba enxuta (que espelha as abertas). Se a ausência na aba
+                # disparasse a leitura das 52 mil linhas, quase todo lote com um
+                # repetido pagaria esse preço — ou seja, o caso mais comum
+                # anularia a otimização inteira.
+                #
+                # Então a aba enxuta decide: SP nela = baixa pela metade (o
+                # reenvio passa e conclui); SP fora dela = baixa completa (o
+                # reenvio é barrado). O dono garante que a SP aberta está na aba
+                # em ~100% dos casos.
+                #
+                # O que se perde no caso raro (aba não espelhou uma SP aberta):
+                # o reenvio é recusado como repetido e a SP continua "Pagar".
+                # Não há perda de dinheiro, e fica VISÍVEL — por isso o número
+                # da SP vai no motivo, para dar para conferir na hora.
                 baixa_incompleta = bool(sp_registrada) and sp_registrada in sps_index
                 if not baixa_incompleta:
                     duplicados.append({
                         'arquivo': att.filename,
                         'pagina': page_num,
-                        'motivo': 'Comprovante já baixado antes (consta na LogBaixaBradesco).',
+                        'sp': sp_registrada,
+                        'motivo': ('Comprovante já baixado antes (consta na '
+                                   'LogBaixaBradesco)'
+                                   + (f' — SP {sp_registrada}.' if sp_registrada else '.')
+                                   + ' Se essa SP ainda estiver como "Pagar" na'
+                                     ' planilha, avise: significa que a baixa'
+                                     ' ficou pela metade e o reenvio precisa passar.'),
                     })
                     continue
                 completados.append({

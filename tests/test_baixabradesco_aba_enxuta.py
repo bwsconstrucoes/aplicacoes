@@ -187,14 +187,32 @@ def test_o_plano_B_e_acionado_quando_nao_acha():
     assert fonte.count('match = match_receipt(rec, sps_index, sps_agendar)') >= 2
 
 
-def test_reenvio_nao_e_barrado_so_porque_a_SP_nao_esta_na_aba_enxuta():
-    """A SP pode simplesmente não estar ali; isso não prova que a baixa acabou."""
+def test_reenvio_NAO_dispara_a_leitura_gigante():
+    """O caso mais comum não pode anular a otimização.
+
+    O dono em 14/11/2026: *"reenvio é algo que acontece com alguma frequência,
+    pq às vezes mandamos um arquivo com alguns comprovantes e de repente algum
+    já havia sido baixado."*
+
+    Comprovante já baixado tem a SP em "Pago", e SP paga não está na aba enxuta.
+    Se a ausência ali disparasse a leitura das 52 mil linhas, quase todo lote
+    com um repetido pagaria esse preço.
+    """
     import inspect
     from app.apps.baixabradesco import core
     fonte = inspect.getsource(core.processar_baixabradesco)
-    i_check = fonte.index('sp_registrada and sp_registrada not in sps_index')
-    i_decide = fonte.index('baixa_incompleta = bool(sp_registrada)')
-    assert i_check < i_decide        # confere na SPsBD ANTES de decidir
+    decisao = fonte[fonte.index('if rec.fingerprint and rec.fingerprint in fingerprints_processados'):
+                    fonte.index('# Primeiro localiza a SP/título')]
+    assert '_completar_com_spsbd()' not in decisao
+
+
+def test_o_repetido_diz_qual_SP_para_dar_para_conferir():
+    """O caso raro (aba não espelhou uma SP aberta) tem de ficar visível."""
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core.processar_baixabradesco)
+    assert "'sp': sp_registrada," in fonte
+    assert 'ainda estiver como "Pagar"' in fonte
 
 
 def test_aba_enxuta_vazia_cai_no_comportamento_antigo():

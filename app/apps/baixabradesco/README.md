@@ -434,7 +434,22 @@ linhas, não 52 mil.
 |---|---|
 | sempre | a aba **`baixabradesco`** (dezenas de linhas) |
 | só quando a SP não foi encontrada ali | a **SPsBD inteira**, uma vez por lote |
-| só quando um reenvio precisa saber se a baixa anterior ficou pela metade | idem |
+
+⚠️ **Reenvio NÃO dispara a leitura das 52 mil linhas**, e isso é decisão de
+desenho, não esquecimento. O dono: *"reenvio é algo que acontece com alguma
+frequência, pq às vezes mandamos um arquivo com alguns comprovantes e de repente
+algum já havia sido baixado."* Comprovante já baixado tem a SP em "Pago", e SP
+paga **não está** na aba enxuta — se a ausência ali disparasse a leitura
+completa, quase todo lote com um repetido pagaria o preço, e a otimização
+morreria no caso mais comum.
+
+Então a aba enxuta decide: **SP nela = baixa pela metade** (o reenvio passa e
+conclui); **SP fora dela = baixa completa** (o reenvio é barrado como repetido).
+
+O que se perde no caso raro — a aba não espelhou uma SP ainda aberta: o reenvio
+é recusado e a SP continua "Pagar". **Não há perda de dinheiro, e fica visível**:
+o número da SP vai no motivo, com o pedido de avisar se ela ainda estiver como
+"Pagar".
 
 O retorno traz `fonte_das_sps`: `aba_enxuta` é o caminho rápido,
 `spsbd_completa` quer dizer que foi preciso ler tudo. **É por aí que se mede se
