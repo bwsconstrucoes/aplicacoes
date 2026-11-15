@@ -152,6 +152,73 @@ fila da planilha de cálculo (espera fixa de 2 s por botão, um por vez).
 estava desligado**. A aba Log congelada não tem efeito nas "Análises de
 Pagamentos" além do que já existia.
 
+## 14/11/2026 — quem mais dispara o "atualizatitulo"
+
+O dono viu chegar ao Make o aviso `{"id": "…", "acao": "atualizatitulo"}` no
+gancho `hook.us1.make.com/ssvbu6…` e perguntou se outra aplicação do Render o
+dispara. **Sim:** a ficha da SP no **Análise de SPs** tem o botão **"Atualizar"**
+(`analisesps_ficha.html`), um link para `ANALISESPS_HOOK_OMIE?id=<SP>&acao=atualizatitulo`
+— o mesmo formato. O endereço fica só na variável do Render (não no código);
+se for o `ssvbu6…`, cada clique ali dispara o botão. O mesmo endereço vinha do
+Streamlit do PC do dono, que pode ainda estar em uso. Além disso, os links dos
+cards do Pipefy usam o mesmo padrão `?cardid=…&acao=…` (ver
+`erp/DE_PARA_PIPEFY_DP.md`, outro gancho, do DP).
+
+Como separar as origens no Make (ligar "Get request headers" no webhook): o
+`Referer` diz de onde veio o clique — `aplicacoes.bwsconstrucoes.com.br/...`
+é a ficha do Análise de SPs; `app.pipefy.com` é o card; vazio pode ser o
+Streamlit, e-mail ou robô. Nada mudou no código do Análise de SPs (outra
+área).
+
+## 14/11/2026 — mais de 400 disparos num fim de semana
+
+O dono procurou `ANALISESPS_HOOK_OMIE` no Render e **não encontrou** — logo o
+botão "Atualizar" da ficha do Análise de SPs nem aparece, e não é a origem.
+Mais de 400 disparos de sábado para domingo, com a empresa parada, não é gente
+clicando: é automático. Suspeita principal, **não confirmada**: um ciclo — o
+botão responde, o Make grava no card do Pipefy (etiquetas, código do Omie), uma
+automação do Pipefy "campo atualizado → webhook" dispara o botão de novo.
+
+**O que entrou (ramo):** pedido da mesma SP com os **mesmos dados** dentro de
+15 minutos depois de uma atualização bem-sucedida devolve o resultado anterior,
+sem tocar em planilha nem no Omie. Cada pedido grava uma impressão curta dos
+dados no log (`SP N: pedido recebido (dados abc123)`), e cada repetição
+devolvida, `pedido IDÊNTICO`. Isso protege o Omie e as planilhas, mas **não
+para os disparos** — o Make continua gastando operações. A origem se corta no
+Pipefy ou no Make.
+
+**❌ Retirada antes de publicar (14/11/2026), decisão do dono:** a devolução
+do resultado anterior para pedido idêntico em 15 min nunca foi ao ar. Motivo,
+nas palavras dele: *"eu posso ter a necessidade de atualizar a mesma SP mais
+uma vez em menos de 15 minutos"*. **Não recolocar.** Fica só a recusa do clique
+enquanto a MESMA SP ainda está rodando (publicada em 13/11), que não impede
+atualizar de novo logo depois de terminar.
+
+**Descartado pelo dono (14/11/2026): não existe automação no Pipefy** — o
+ciclo pelo Pipefy está fora. Restam: outro cenário do Make chamando o gancho,
+o Streamlit no PC do dono, um Apps Script antigo com gatilho de tempo (o código
+deste módulo foi traduzido de um), ou o próprio cenário reenviando. O
+User-Agent do webhook no Make separa os quatro.
+
+**Scripts do Google conferidos (14/11/2026):** os 16 projetos de Apps Script
+avulsos do Drive da conta `contato@` foram baixados e lidos (só leitura) —
+**nenhum** contém o gancho `ssvbu6…` nem "atualizatitulo", e nenhum chama
+webhook do Make. O script original do botão ("FIN - Solicitações Financeiro -
+Botão (SPsBD, Log, Boleto)") só recebe pedidos. Ficaram de fora os scripts
+**presos a planilhas** (o Drive não os lista) — esses só aparecem em
+script.google.com › Meus acionadores / Execuções.
+
+**✔ Origem achada e desligada pelo dono (14/11/2026):** era um script do
+Google com agendamento **de hora em hora** disparando o gancho. O dono desativou
+o agendamento. Nome do script e se ele está preso a alguma planilha: não
+informados. Se os disparos voltarem, procurar outro agendamento antes de
+mexer no código.
+
+**Para achar a origem, no log do Render:** se as linhas mostram as mesmas
+poucas SPs voltando a cada poucos minutos, é ciclo; se são SPs diferentes e
+antigas, é algo varrendo a base (outro cenário do Make, script). No Make, os
+cabeçalhos do webhook (User-Agent) dizem quem chamou.
+
 ## O que precisa ser confirmado com o dono
 
 Respondido em 24/09/2026: quem chama a rota (Pipefy → Make → Render) e que o

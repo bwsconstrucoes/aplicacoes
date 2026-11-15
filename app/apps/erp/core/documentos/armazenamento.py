@@ -43,8 +43,12 @@ DPI_RASTER = 150
 # vários documentos: o par nota + boleto é o caso mais comum de todos, e sem a
 # categoria os dois ficavam como "outro" — o que apaga justamente a diferença
 # que interessa na hora de procurar.
+# FOTO entrou em 14/11/2026, com o anexo fotográfico do diário de obra: sem
+# ela, a foto do dia ficava como "outro" e sumia no meio de nota e boleto na
+# tela do Arquivo — que é onde se procura quando a fiscalização pede.
 CATEGORIAS = ("COMPROVANTE", "NOTA", "BOLETO", "GUIA", "CONTRATO", "ART",
-              "SEGURO", "OS", "PRESTACAO_CONTAS", "MEDICAO", "PROPOSTA", "OUTRO")
+              "SEGURO", "OS", "PRESTACAO_CONTAS", "MEDICAO", "PROPOSTA",
+              "FOTO", "OUTRO")
 
 _MIMES = {
     ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",

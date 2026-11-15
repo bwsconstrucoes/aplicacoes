@@ -507,6 +507,8 @@ async function desenharPainel(i, id){
           <tr><td>Local</td><td>${o.municipio||"—"}${o.uf?"/"+o.uf:""}</td></tr>
           <tr><td>CNO</td><td class="dados">${o.cno||"—"}</td></tr>
           <tr><td>ART/RRT</td><td class="dados">${o.art_rrt||"—"}</td></tr>
+          <tr><td>Responsável técnico</td><td>${escapar(o.responsavel_tecnico||"—")}</td></tr>
+          <tr><td>CREA/CAU</td><td class="dados">${escapar(o.crea_obra||"—")}</td></tr>
           <tr><td>Vigência até</td><td class="dados">${dataBR(o.vigencia_fim)}</td></tr>
           <tr><td>Data-base do orçamento</td><td class="dados">${dataBR(o.data_base)}</td></tr>
         </tbody></table>
@@ -552,6 +554,10 @@ async function desenharPainel(i, id){
         ${campo("UF","o-uf",d.uf)}${campo("CEP","o-cep",d.cep)}
         ${campo("CNO","o-cno",d.cno)}${campo("ART/RRT","o-art",d.art_rrt)}
         ${campo("Responsável técnico","o-rt",d.responsavel_tecnico)}
+        {# ⚑ O CREA ENTRA AQUI EM 14/11/2026. A coluna existia desde a
+           migração e o DIÁRIO JÁ IMPRIMIA o CREA — só não havia onde
+           digitá-lo. O papel saía com o campo vazio e ninguém sabia por quê. #}
+        ${campo("CREA/CAU do responsável","o-crea",d.crea_obra)}
         ${campo("Latitude","o-lat",d.latitude)}${campo("Longitude","o-lng",d.longitude)}
         <div class="campo"><label>Conta corrente de pagamento</label>
           <select id="o-conta"><option value="">— não definida —</option>
@@ -598,6 +604,7 @@ async function desenharPainel(i, id){
         objeto:"o-objeto", orgao_resumido:"o-orgao", endereco:"o-endereco",
         numero_endereco:"o-numero", bairro:"o-bairro", municipio:"o-municipio", uf:"o-uf",
         cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
+        crea_obra:"o-crea",
         engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng",
         conta_bancaria_id:"o-conta", projeto_id:"o-projeto",
         empresa_id:"o-empresa"});

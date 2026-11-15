@@ -2048,6 +2048,41 @@ meses. Agora o ERP também lê, pela tela de Importar.
   que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
   não existe.
 
+### As fotos do diário (14/11/2026)
+
+- "Quais dias desta obra estão sem foto?" — dá para responder: a foto é anexo
+  do dia, e dia sem anexo é dia sem foto.
+- "Quantas fotos tem este mês?" / "Quanto espaço as fotos da obra ocupam?" —
+  o tamanho de cada uma está guardado.
+- ⚠️ **"as fotos estão no Drive?"** — nem sempre. Quando o Drive não responde
+  na hora do envio, a foto fica **no banco** e vai para o Drive depois, pela
+  rotina de mudança. A tela diz isso em cada foto, e a resposta tem de dizer
+  também: "12 fotos, 2 ainda no banco" é diferente de "12 fotos no Drive".
+- ⚠️ **"foto do dia"** é o anexo do diário (teto de 6). **Não** é a foto do
+  ponto (a do reconhecimento facial, que é de pessoa) nem o documento da obra
+  (que fica no Arquivo). Três coisas diferentes com o mesmo apelido.
+
+#### O que o sistema ainda NÃO responde
+
+- "Esta foto é mesmo deste dia?" — não há conferência de data da imagem; vale
+  o dia em que foi anexada ao diário.
+- "O que aparece na foto?" — a legenda é digitada por gente. Ninguém lê a
+  imagem.
+
+### Quem assina o diário, e o dia repetido (14/11/2026)
+
+- "Quais obras estão sem responsável técnico, sem registro profissional ou sem
+  empresa?" — é o que faz o papel sair com a assinatura em branco. A tela do
+  diário avisa por obra; a resposta geral ainda é varredura no cadastro.
+- "Este diário foi escrito ou foi repetido de outro dia?" — ⚠️ **o sistema NÃO
+  responde isso.** O dia repetido nasce como diário comum, criado pela pessoa
+  que mandou repetir. Se isso passar a importar (e numa auditoria de medição
+  pode importar), é coluna nova.
+- **"igual"**, quando ele diz "esse dia foi igual aos 3 próximos": é o relato,
+  as ocorrências, o histórico, o tempo e o horário. **Não** é o efetivo (vem do
+  ponto, dia a dia) nem o material (vem de Suprimentos). Os equipamentos só vão
+  se mandarem.
+
 ### ⚠️ O efetivo do dia: três palavras que mudam a resposta (13/11/2026)
 
 Ele achou o defeito olhando o número: *"eu acho que ele está dobrando o
@@ -2106,6 +2141,58 @@ diário não nasce sem relato. Agora:
   vazado, e é trabalho de conferência, não de redação.
 - "Em quais obras falta diário este mês?" — já respondido pelo "Onde está
   faltando".
+
+## 3z-quater. QUEM TEM TELEGRAM, E O CONVITE A QUEM NÃO TEM (14/11/2026)
+
+Ele: *"tem muita gente fazendo solicitações, mas não está recebendo mensagens
+porque não tem cadastro no Telegram (…) a pessoa receber as orientações de como
+proceder para se cadastrar (…) e a gente visualizar esse cadastramento dentro
+do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram**
+(`app/apps/mensageria/telegram_cadastro.py`).
+
+### O que dá para perguntar agora
+- Quem ainda não tem Telegram cadastrado? (só colaborador não desligado e
+  operador do ERP **com telefone** — quem não tem telefone no cadastro não entra
+  na conta)
+- Quem deixou de receber mensagem por não ter Telegram nos últimos 30 dias, e
+  quantas? (filtro "Sem Telegram e com mensagem que não chegou")
+- Fulano recebeu o convite? Quando? Abriu o link? Se cadastrou pelo convite?
+- Quantos convites saíram hoje / esta semana, automáticos e pela tela? (aba
+  Enviadas, tipo "Convite para cadastrar o Telegram")
+- Quantas pessoas se cadastraram no Telegram este mês?
+- O aviso que o Make mandou para fulano chegou? (aba Enviadas, tipo "Envio
+  externo pelo Telegram" — desde 14/11/2026 o `/telegram/enviar` também anota)
+- Tem Telegram ligado a alguém que não está no ERP? ("Cadastros a conferir")
+- Quem tentou se cadastrar no Telegram e o número não bateu? (fila do DP, na
+  aba Cadastro do Telegram — a regra é rígida desde 14/11/2026)
+- Quais colaboradores ativos estão sem telefone no cadastro?
+- Quantas mensagens saíram hoje / nesta semana, pelo Telegram e pelo WhatsApp?
+  Quantas não chegaram? (ERP › Mensagens › Painel)
+- Que mensagens fulano recebeu, e quantas? De que tipo? Pelo quê? (Painel,
+  filtro Pessoa; ou a aba "Telegram e mensagens" na ficha do colaborador)
+- Em que hora do dia / dia da semana sai mais mensagem?
+- Que tipo de mensagem mais sai? Qual mais falha?
+- Quanto WhatsApp o ponto gastou este mês? (Painel, De onde vem = Ponto, canal
+  WhatsApp)
+
+### ⚠️ Palavras que mudam a resposta aqui
+- **"não recebeu"**: aqui é "o Telegram respondeu que a pessoa não tem
+  cadastro" (SEM_DESTINO). Mensagem que o Telegram aceitou e a pessoa não leu
+  conta como entregue — o sistema não sabe se foi lida.
+- **"convidado"**: convite que SAIU. Convite barrado no teto do WhatsApp ou com
+  o WhatsApp desligado fica anotado, mas não conta para a espera entre convites.
+- **"tem Telegram"**: tem cadastro ativo no ERP. Antes de alguém apertar "Migrar
+  da planilha", quem se cadastrou pela planilha aparece como "não tem".
+- **"entregue"** (Painel): o Telegram ou o WhatsApp ACEITOU. Não quer dizer lida.
+- **"barrada"** (Painel): o sistema segurou antes de sair (tipo ou WhatsApp
+  desligado, teto, ou o ponto barrou na origem). Não é o mesmo que "não chegou".
+
+### O que o sistema ainda NÃO responde
+- "Fulano leu a mensagem?" — o Telegram não devolve leitura para robô.
+- "Quem bloqueou o robô?" — só aparece quando um envio falha ("Falhou"), não
+  numa lista.
+- Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
+  do dono (só colaborador com telefone).
 
 ## 4. Como esta lista vira código
 

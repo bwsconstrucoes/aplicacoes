@@ -196,6 +196,63 @@
   .org .assin-org .campo-assin { border-top: .6pt solid #000; padding-top: 2pt; }
 {% endif %}
 
+  /* =====================================================================
+     A FOLHA DE ANEXO FOTOGRÁFICO (14/11/2026)
+
+     Ele: *"a página, sempre quando tiver foto, mostra na página seguinte (…)
+     é como se fosse um anexo ao diário, essa página das fotos, PARA NÃO
+     INTERFERIR no layout que a gente já trabalhou e já tem."*
+
+     Por isso ela é uma folha À PARTE, com estilo próprio, e os quadros do dia
+     continuam intocados nos três modelos. O cabeçalho dela repete obra, data
+     e contrato: folha de anexo que se solta do maço vira foto órfã, e foto
+     órfã não serve de prova de nada.
+
+     ⚑ QUANTAS POR FOLHA É DECIDIDO PELA QUANTIDADE, não por configuração —
+     foi o que ele aceitou em 14/11/2026. Uma ou duas fotos saem grandes (uma
+     por linha); três ou quatro, em duas colunas; cinco ou seis, em duas
+     colunas e três linhas. Quem anexa nunca escolhe formato: escolhe fotos.
+     ===================================================================== */
+  .anexo-foto { page-break-before: always; display: flex;
+                flex-direction: column; min-height: 274mm; }
+  .anexo-foto .cab-anexo { border: .8pt solid var(--fio-forte);
+                           padding: 5pt 8pt; display: flex; gap: 10pt;
+                           align-items: center; }
+  .anexo-foto .cab-anexo .meio { flex: 1; min-width: 0; }
+  .anexo-foto .cab-anexo b { display: block; font-size: 10pt; }
+  .anexo-foto .cab-anexo span { font-size: 7.6pt; color: var(--rotulo); }
+  .anexo-foto .titulo-anexo { text-align: center; font-weight: 700;
+                              font-size: 8.4pt; letter-spacing: .6pt;
+                              text-transform: uppercase;
+                              border: .5pt solid var(--fio); border-top: 0;
+                              padding: 3pt; }
+  .fotos-papel { flex: 1 1 0; min-height: 0; display: grid; gap: 6pt;
+                 padding: 6pt 0; }
+  .fotos-papel.de1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .fotos-papel.de2 { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  .fotos-papel.de4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .fotos-papel.de6 { grid-template-columns: 1fr 1fr;
+                     grid-template-rows: 1fr 1fr 1fr; }
+  /* ⚑ `margin: 0` NÃO É ENFEITE: `<figure>` nasce com 40px de margem lateral
+     no navegador, e isso aparecia como uma faixa branca de cada lado da foto
+     dentro da folha — a foto ficava menor que a coluna sem motivo nenhum. */
+  .foto-papel { display: flex; flex-direction: column; min-height: 0;
+                overflow: hidden; margin: 0; }
+  /* ⚑ A FOTO PRECISA PREENCHER O QUADRO, e `height:100%` sozinho não faz
+     isso na impressão: dentro de um item flexível de altura automática ele
+     colapsa, e a imagem volta ao tamanho natural — sobrava faixa branca à
+     direita de cada foto. Posição absoluta dentro do quadro resolve, e o
+     `cover` corta o excesso em vez de deformar a foto. */
+  .foto-papel .quadro-foto { flex: 1; border: .5pt solid var(--fio-forte);
+                             overflow: hidden; min-height: 0;
+                             position: relative; }
+  .foto-papel img { position: absolute; top: 0; left: 0;
+                    width: 100%; height: 100%; object-fit: cover;
+                    display: block; }
+  .foto-papel .legenda-foto { font-size: 7.4pt; padding: 2.5pt 2pt 0;
+                              line-height: 1.25; }
+  .foto-papel .legenda-foto b { display: block; font-size: 7.8pt; }
+
   .topo { border: .8pt solid var(--fio-forte); }
   .topo-linha { display: flex; border-bottom: .5pt solid var(--fio); }
   .topo-linha:last-child { border-bottom: 0; }
@@ -317,6 +374,10 @@
   {% elif r.modelo == "orgao" %}{% include "erp_diario_papel_orgao.html" %}
   {% else %}{% include "erp_diario_papel_completo.html" %}{% endif %}
 </div>
+{# A FOLHA DE ANEXO vem logo depois da folha do dia, e só quando há foto.
+   É o pedido dele, com todas as letras: *"a página, sempre quando tiver foto,
+   mostra na página seguinte."* #}
+{% if p.fotos %}{% include "erp_diario_papel_fotos.html" %}{% endif %}
 {% endfor %}
 
 {% if not r.paginas %}

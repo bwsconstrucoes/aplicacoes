@@ -3,6 +3,14 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 14/11/2026 — a ficha única ganhou a aba "Telegram e mensagens" (feito pelo chat da Mensageria)
+
+Pedido do dono: o Telegram de cada pessoa e as mensagens que ela recebeu dentro do cadastro dela. Na janela da
+pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, só para quem tem `ver_mensagens`
+(Administrador, Diretor financeiro, DP). O conteúdo é o bloco `mensagensDaPessoa` do `erp_base.html` — o mesmo
+da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
+`app/apps/mensageria/HISTORICO.md`.
+
 ## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
 
 ⚠️ **Mexi num arquivo desta área sem ser o chat dela, e por isso fica anotado
