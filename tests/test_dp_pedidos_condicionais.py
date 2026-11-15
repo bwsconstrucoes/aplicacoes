@@ -298,6 +298,9 @@ def test_a_tela_recebe_a_traducao_de_todo_valor_usado_nas_condicoes():
             for gatilho, aceitos in regras.items():
                 alcancaveis = set(t["traducoes"].get(gatilho, {}).values())
                 alcancaveis |= set(t["opcoes"].get(gatilho, []))
+                # "*" é o curinga (qualquer resposta serve) — não é um valor
+                # da caixinha, e por isso não passa por esta conferência.
+                alcancaveis.add("*")
                 for valor in aceitos:
                     assert valor in alcancaveis, (
                         f"{t['valor']}/visiveis_se: '{valor}' (gatilho "
@@ -638,3 +641,73 @@ def test_atender_grava_a_empresa_na_ficha_da_pessoa(mundo):
     from app.apps.erp.db.models.cadastros import Colaborador
     c = mundo["s"].get(Colaborador, r["colaborador_id"])
     assert c.empresa_id == mundo["empresa_id"]
+
+
+# ---------------------------------------------------------------------------
+# O VALOR DO AUXÍLIO: ELE PEDIU, E A DIVISÃO ANTERIOR ESTAVA ERRADA
+# ---------------------------------------------------------------------------
+def test_o_valor_dos_auxilios_e_campo_de_quem_PEDE():
+    """⚑ 15/11/2026, ele: *"não foi colocado campo para colocar valor de
+    transporte e alimentação."*
+
+    Eu havia trazido a CATEGORIA para o formulário e deixado o VALOR com o DP.
+    A divisão estava errada, e o próprio checklist do DP confessava: ele dizia
+    "conferir o valor com a obra" — ou seja, o número nasce na obra. Perguntar
+    ao DP um valor que ele vai ter de ligar para a obra para saber é pôr uma
+    ligação telefônica dentro do sistema.
+    """
+    for chave in ("CADASTRO", "AJUDA_DE_CUSTO"):
+        regra = svc.TIPOS[chave]
+        for campo in ("aux_alimentacao", "aux_transporte"):
+            assert campo in regra["campos"], (
+                f"{chave} pergunta a categoria do auxílio e não o valor")
+            assert campo not in regra.get("campos_do_dp", ()), (
+                f"{chave}: o valor não pode estar nos dois lados")
+
+
+def test_o_valor_so_aparece_depois_da_categoria():
+    """Antes de escolher a categoria, "valor da alimentação" não quer dizer
+    nada — e campo sem sentido na tela é campo que alguém preenche errado."""
+    for chave in ("CADASTRO", "AJUDA_DE_CUSTO"):
+        regra = svc.TIPOS[chave]
+        assert svc._nao_cabe_agora(regra, "aux_alimentacao", {}) is True
+        assert svc._nao_cabe_agora(
+            regra, "aux_alimentacao", {"categoria_alimentacao": "SEG_QUI"}) is False
+        assert svc._nao_cabe_agora(regra, "aux_transporte", {}) is True
+        assert svc._nao_cabe_agora(
+            regra, "aux_transporte", {"categoria_transporte": "DIARIO"}) is False
+
+
+def test_o_curinga_vale_para_QUALQUER_resposta():
+    """⚑ "*" EXISTE PARA NÃO TER DE LISTAR AS NOVE OPÇÕES uma por uma — e
+    listar as nove é o jeito de esquecer a décima quando ela nascer.
+
+    O valor do auxílio faz sentido assim que a categoria é escolhida, seja
+    qual for ela.
+    """
+    regra = svc.TIPOS["AJUDA_DE_CUSTO"]
+    for opcao in svc.CATEGORIAS["categoria_transporte"]:
+        assert svc._nao_cabe_agora(
+            regra, "aux_transporte", {"categoria_transporte": opcao}) is False, (
+            f"com a categoria '{opcao}' escolhida, o valor devia aparecer")
+    # E com a categoria em branco, não.
+    assert svc._nao_cabe_agora(
+        regra, "aux_transporte", {"categoria_transporte": ""}) is True
+
+
+@pytest.mark.banco
+def test_o_valor_informado_pela_obra_chega_ao_cadastro(mundo):
+    """A prova de ponta a ponta: a obra informa, o atendimento aplica."""
+    p = svc.abrir(mundo["s"], _cad(
+        mundo, categoria_alimentacao="SEG_SEX", aux_alimentacao="25,00",
+        categoria_transporte="DIARIO", aux_transporte="11,50"),
+        mundo["obra_user"])
+    assert p["dados"]["aux_alimentacao"] == "25,00"
+    r = svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    from app.apps.erp.db.models.cadastros import Colaborador
+    c = mundo["s"].get(Colaborador, r["colaborador_id"])
+    assert float(c.aux_alimentacao) == 25.0
+    assert float(c.aux_transporte) == 11.5
+    assert c.categoria_alimentacao == "SEG_SEX"
+    assert c.categoria_transporte == "DIARIO"

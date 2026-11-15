@@ -349,14 +349,27 @@ TIPOS: dict[str, dict[str, Any]] = {
         # próprio: ele já era uma das opções de Categoria Auxílio Transporte.
         # `descontar_vt` é a pergunta que faltava — o VT desconta em folha, e
         # quem concede precisa dizer se vai descontar ou se a empresa absorve.
-        "campos": ("solicitacao", "categoria_alimentacao", "categoria_transporte",
+        "campos": ("solicitacao",
+                   "categoria_alimentacao", "aux_alimentacao",
+                   "categoria_transporte", "aux_transporte",
                    "descontar_vt", "observacao"),
         "obrigatorios": ("solicitacao",),
-        # Só se pergunta o desconto quando há vale-transporte para descontar.
-        "visiveis_se": {"descontar_vt": {
-            "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
-        "campos_do_dp": ("aux_alimentacao", "aux_transporte"),
-        "checklist": ("Conferir o valor com a obra", "Atualizar o cadastro",
+        # Só se pergunta o desconto quando há vale-transporte para descontar,
+        # e o VALOR só depois de escolhida a categoria — antes disso, "valor
+        # da alimentação" não quer dizer nada.
+        "visiveis_se": {
+            "aux_alimentacao": {"categoria_alimentacao": ("*",)},
+            "aux_transporte": {"categoria_transporte": ("*",)},
+            "descontar_vt": {
+                "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
+        # ⚑ O VALOR SAIU DOS CAMPOS DO DP em 15/11/2026, a pedido dele: *"não
+        # foi colocado campo para colocar valor de transporte e
+        # alimentação."* Quem combina o valor com a pessoa é a OBRA — e o
+        # próprio checklist dizia "conferir o valor com a obra", o que é
+        # confissão de que o número nasce lá.
+        "campos_do_dp": (),
+        "checklist": ("Conferir o valor que a obra informou",
+                      "Atualizar o cadastro",
                       "Cadastro no sistema de transporte (se houver VT)",
                       "Encaminhamento do cartão (se houver VT)"),
     },
@@ -435,8 +448,9 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "num_ctps", "num_pis",
                    "data_inicio", "cargo_pleiteado_id",
                    "pagamento", "valor_diaria", "valor_mes",
-                   "meio_transporte", "categoria_alimentacao",
-                   "categoria_transporte", "descontar_vt",
+                   "meio_transporte",
+                   "categoria_alimentacao", "aux_alimentacao",
+                   "categoria_transporte", "aux_transporte", "descontar_vt",
                    "observacao"),
         "obrigatorios": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
                          "tipo_documentacao", "empresa_id",
@@ -489,6 +503,10 @@ TIPOS: dict[str, dict[str, Any]] = {
         # dizer que é CTPS, e a resposta fica no formulário.
         "visiveis_se": {
             "tipo_contrato": {"tipo_documentacao": ("PRESTADOR",)},
+            # O valor só é perguntado depois de escolhida a categoria: antes
+            # disso, "valor da alimentação" não quer dizer nada.
+            "aux_alimentacao": {"categoria_alimentacao": ("*",)},
+            "aux_transporte": {"categoria_transporte": ("*",)},
             "descontar_vt": {
                 "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
         "vem_do_documento": {
@@ -503,8 +521,19 @@ TIPOS: dict[str, dict[str, Any]] = {
         # pessoa come na obra todo dia ou volta para casa na sexta. Ele:
         # *"ajuda de custo e vale transporte têm que estar no cadastro
         # inicial, não como pedido separado depois."*
-        "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario",
-                         "aux_alimentacao", "aux_transporte"),
+        # ⚑ O VALOR DOS AUXÍLIOS SAIU DAQUI em 15/11/2026, a pedido dele:
+        # *"não foi colocado campo para colocar valor de transporte e
+        # alimentação."*
+        #
+        # Eu havia deixado o VALOR com o DP e trazido só a CATEGORIA para o
+        # formulário. A divisão estava errada: quem combina o valor com a
+        # pessoa é a OBRA — e o próprio checklist do DP dizia "conferir o
+        # valor com a obra", o que é confissão de que o número nasce lá.
+        # Perguntar ao DP um número que ele vai ter de ligar para a obra para
+        # saber é pôr uma ligação telefônica dentro do sistema.
+        #
+        # O DP continua podendo corrigir na ficha da pessoa.
+        "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario"),
         # ⚑ OS PAPÉIS SÃO OBRIGATÓRIOS, E O PEDIDO NÃO SAI SEM ELES.
         #
         # Eu tinha proposto deixar entrar incompleto, e ele derrubou — com o
@@ -747,7 +776,14 @@ def _nao_cabe_agora(regra: dict[str, Any], campo: str,
     if not regras:
         return False
     for gatilho, aceitos in regras.items():
-        if str(pedido.get(gatilho) or "") in tuple(aceitos):
+        valor = str(pedido.get(gatilho) or "")
+        # ⚑ "*" É O CURINGA: o campo nasce quando o gatilho tem QUALQUER
+        # resposta. É o caso do valor do auxílio — ele faz sentido assim que a
+        # categoria é escolhida, qualquer que seja ela, e listar as nove
+        # opções uma por uma só criaria o jeito de esquecer a décima.
+        if "*" in tuple(aceitos) and valor:
+            return False
+        if valor in tuple(aceitos):
             return False
     return True
 

@@ -539,8 +539,14 @@ function condicaoDoCampo(regra, c){
        Em "CTPS" os dois são iguais e eu não percebi; em "Prestador de
        Serviço" não são. Pego pela trava que exige que todo valor usado numa
        condição seja alcançável pelo que a tela mostra. #}
-    for (const r of nasce)
-      if (!r.aceitos.includes(traduz(r.gatilho, v[r.gatilho]))) return false;
+    for (const r of nasce) {
+      const resposta = v[r.gatilho] || "";
+      {# "*" é o curinga: basta o gatilho ter QUALQUER resposta. É o valor do
+         auxílio, que faz sentido assim que a categoria é escolhida — listar
+         as nove opções uma por uma só criaria o jeito de esquecer a décima. #}
+      if (r.aceitos.includes("*")) { if (!resposta) return false; continue; }
+      if (!r.aceitos.includes(traduz(r.gatilho, resposta))) return false;
+    }
     return true;
   };
 }

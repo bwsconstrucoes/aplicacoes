@@ -541,6 +541,11 @@ function pintarCamposDoTipo(){
   ligarFiltroDeObra();
   ligarPapeis(t);
   ligarCriticaDoCPF(t);
+  {# ⚑ UMA MUDANÇA EM QUALQUER CAMPO REDESENHA AS CONDIÇÕES. Um ouvinte só, no
+     bloco dos campos, em vez de um por campo: campo que o servidor
+     acrescentar depois continua funcionando sem ninguém lembrar. #}
+  els("p-campos").addEventListener("change", () => conferirOQueFalta(t));
+  els("p-campos").addEventListener("input", () => conferirOQueFalta(t));
   conferirOQueFalta(t);
 }
 
@@ -1013,14 +1018,57 @@ function camposDesteVinculo(t){
   return {campos: comuns, obrigatorios: []};
 }
 
+{# ⚑ O MOTOR DE CONDIÇÕES DO PORTAL (15/11/2026) — três regras, todas vindas
+   do servidor, nenhuma escrita aqui:
+
+     · `por_vinculo`  — o vínculo da PESSOA decide os campos (desligamento);
+     · `ocultos_se`   — a resposta de outro campo some com este (CTPS tira
+                        "pagamento" e "valor do mês");
+     · `visiveis_se`  — o campo só nasce quando outro campo responde algo
+                        ("*" = qualquer resposta: é o valor do auxílio, que só
+                        faz sentido depois da categoria).
+
+   Faltava TUDO menos a primeira. O portal é a tela DA OBRA, e mostrava "tipo
+   de contrato" para quem tem carteira e "valor do auxílio" antes da
+   categoria. #}
+function respostasAgora(t){
+  const v = {};
+  (t.campos || []).forEach(c => {
+    const e = els("p-" + c);
+    if (e) v[c] = e.value || "";
+  });
+  return v;
+}
+
 function aplicarVinculo(t){
   const ramo = camposDesteVinculo(t);
-  if (!ramo) return;
+  const v = respostasAgora(t);
+  const traduz = (campo, valor) =>
+    ((t.traducoes || {})[campo] || {})[valor] || valor || "";
   (t.campos || []).forEach(c => {
     const caixa = els("p-" + c);
     if (!caixa) return;
     const rotulo = caixa.closest("label");
-    if (rotulo) rotulo.classList.toggle("oculto", !ramo.campos.includes(c));
+    if (!rotulo) return;
+    let some = false;
+    // 1) não é campo deste vínculo
+    if (ramo && !ramo.campos.includes(c)) some = true;
+    // 2) outra resposta some com ele
+    Object.entries(t.ocultos_se || {}).forEach(([gatilho, mapa]) => {
+      Object.entries(mapa).forEach(([valor, lista]) => {
+        if ((lista || []).includes(c) && traduz(gatilho, v[gatilho]) === valor)
+          some = true;
+      });
+    });
+    // 3) ele só nasce quando outro campo responde
+    Object.entries((t.visiveis_se || {})[c] || {}).forEach(
+      ([gatilho, aceitos]) => {
+        const resposta = v[gatilho] || "";
+        if ((aceitos || []).includes("*")) { if (!resposta) some = true; }
+        else if (!(aceitos || []).includes(traduz(gatilho, resposta)))
+          some = true;
+      });
+    rotulo.classList.toggle("oculto", some);
   });
 }
 
@@ -1037,6 +1085,11 @@ function conferirOQueFalta(t){
   (ramo ? ramo.obrigatorios : (t.obrigatorios || [])).forEach(c => {
     if (t.repete && CAMPOS_REPETIDOS.includes(c)) return;   // cuidado abaixo
     const campo = els("p-" + c);
+    // ⚑ CAMPO ESCONDIDO NÃO É COBRADO: cobrar o que não aparece trava o
+    // pedido sem explicação — o botão diria "falta o valor do mês" sobre um
+    // campo que a pessoa não tem como ver.
+    const caixa = campo && campo.closest("label");
+    if (caixa && caixa.classList.contains("oculto")) return;
     if (campo && !campo.value) falta.push((ROTULO[c] || c).toLowerCase());
   });
   if (t.repete)

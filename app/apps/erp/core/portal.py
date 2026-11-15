@@ -373,6 +373,24 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                                   for c, mapa in (d.get("documentos_se") or {}).items()},
                 "obrigatorios_se": {c: {v: list(p) for v, p in mapa.items()}
                                     for c, mapa in (d.get("obrigatorios_se") or {}).items()},
+                # ⚑ AS CONDIÇÕES DE CAMPO FALTAVAM NO PORTAL (15/11/2026), e
+                # isso é buraco e não detalhe: o portal é a tela DA OBRA, e sem
+                # elas ele mostrava "tipo de contrato" para quem tem carteira,
+                # "valor do mês" para diarista e o valor do auxílio antes de a
+                # categoria ser escolhida. A tela do DP tinha o motor; esta,
+                # não. Mesma falha das três rodadas anteriores: eu conferi a
+                # tela que estava construindo.
+                "ocultos_se": {c: {v: list(p) for v, p in mapa.items()}
+                               for c, mapa in (d.get("ocultos_se") or {}).items()},
+                "visiveis_se": {c: {v: list(p) for v, p in mapa.items()}
+                                for c, mapa in (d.get("visiveis_se") or {}).items()},
+                # O rótulo→código: as condições são escritas com o código que
+                # o banco guarda, e a caixinha manda o rótulo. Sem isto a
+                # condição não dispara — defeito que já aconteceu na tela do
+                # DP, com o "Tipo de Contrato".
+                "traducoes": {x: dict(svc_sp.DO_PIPE_PARA_O_CODIGO[x])
+                              for x in campos
+                              if x in svc_sp.DO_PIPE_PARA_O_CODIGO},
                 "repete": bool(d.get("repete")),
                 "vem_do_documento": dict(d.get("vem_do_documento") or {}),
                 # ⚑ O QUE O CADASTRO JÁ TEM não se pergunta de novo. Ele, em
