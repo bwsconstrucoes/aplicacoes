@@ -12244,7 +12244,7 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
-#### Leva 268 — Relatório completo do lote, para a parceria (15/11/2026) — EM PRÉVIA, não publicado
+#### Leva 268 — Relatório completo do lote, para a parceria (15/11/2026)
 
 - *"A gente vai lá nas solicitações, filtra, faz um print da tela, cola no WhatsApp, depois
   baixa todos os anexos (…) e cola também (…) Eu gostaria de um relatório do lote (…) bonito,
@@ -12276,6 +12276,10 @@ somente Solicitações de uma conta especifica"*.
   relacionando os pagamentos de um determinado evento."* Os títulos do lote organizam o
   trabalho aqui dentro e não dizem nada à parceria; saíram do relatório (inclusive o
   quadro "por grupo do lote"). A mesma SP em dois grupos entra uma vez.
+- As três rotas novas entraram em `auth.TELA_DA_ROTA` com a tela "lote" — sem isso, quem
+  entra com usuário próprio ficava barrado (a suíte acusou antes de publicar).
+- **Publicado em 15/11/2026** (sem migração). Não conferido com anexos reais do Dropbox,
+  Drive e Pipefy: o primeiro lote de verdade é o teste.
 - Testes: `test_analisesps_lote_relatorio_completo.py`.
 
 #### Leva 267 — Pagamento avulso: o relatório conta a pessoa do rateio UMA vez e mostra o rateio (13/11/2026)
