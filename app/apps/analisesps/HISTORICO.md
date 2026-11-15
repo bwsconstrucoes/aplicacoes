@@ -12244,6 +12244,44 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 268 — Relatório completo do lote, para a parceria (15/11/2026)
+
+- *"A gente vai lá nas solicitações, filtra, faz um print da tela, cola no WhatsApp, depois
+  baixa todos os anexos (…) e cola também (…) Eu gostaria de um relatório do lote (…) bonito,
+  organizado, com os agrupamentos (…) resumida, analítica, detalhada (…) e embutir todos os
+  anexos (…) a data, quem decide sou eu na hora de gerar."* E pediu para ver o visual antes
+  de fechar.
+- `lote_relatorio_completo.py`: um PDF só — capa (total, números, pontos de atenção,
+  agrupamentos por obra, tipo de despesa, forma e conta de pagamento, maiores credores
+  quando há mais de 5), relação analítica SEPARADA POR OBRA (linha clicável),
+  e uma página por SP seguida dos ANEXOS embutidos, cada página com uma faixa "PAGAMENTO n ·
+  SP · credor · anexo k · página i de N" e "voltar à relação". Sumário lateral (marcadores).
+- **Anexo da folha** (pedido no mesmo dia): SP sem anexo usa o "Relatório (PDF): <link>" da
+  descrição. Os outros links da descrição (planilha de pagamento, cadastro de colaboradores,
+  planilha de análise) NÃO vão para o parceiro: no texto impresso viram "(link interno, não
+  incluído)" — são planilhas com dado bancário/pessoal. Decisão minha, a confirmar com ele.
+- Link do Drive baixa pela conta de serviço (`drive.baixar_arquivo`); os outros com teto
+  de 20 MB por anexo e 90 MB por relatório; até 60 páginas por anexo. Imagem vira página;
+  planilha/Word/página de login ficam listadas com o motivo, sem derrubar o relatório.
+- **Gera FORA do pedido** (linha própria, até 2 ao mesmo tempo; a tela acompanha a cada
+  2 s e baixa) — baixar dezenas de anexos seguraria uma das 4 linhas do serviço. Fica na
+  memória do processo e numa pasta temporária por 2 h: renovação do serviço no meio perde o
+  trabalho (a tela diz para gerar de novo).
+- Tela do Lote: botão "Relatório completo (para a parceria)" (também no celular, com
+  "Compartilhar" direto para o WhatsApp onde o navegador permite) e "Relatório completo do
+  grupo" em cada grupo. Janela: data do pagamento (sugere amanhã), para quem, título, "só
+  estas obras" (quando há mais de uma) e "embutir os documentos".
+- **Por obra, e não pelos grupos do lote** (dono, vendo a prévia): *"tem um pagar amanhã,
+  aí tem outro (…) folha e locação. Eu não entendi essa divisão, sendo que a gente tá
+  relacionando os pagamentos de um determinado evento."* Os títulos do lote organizam o
+  trabalho aqui dentro e não dizem nada à parceria; saíram do relatório (inclusive o
+  quadro "por grupo do lote"). A mesma SP em dois grupos entra uma vez.
+- As três rotas novas entraram em `auth.TELA_DA_ROTA` com a tela "lote" — sem isso, quem
+  entra com usuário próprio ficava barrado (a suíte acusou antes de publicar).
+- **Publicado em 15/11/2026** (sem migração). Não conferido com anexos reais do Dropbox,
+  Drive e Pipefy: o primeiro lote de verdade é o teste.
+- Testes: `test_analisesps_lote_relatorio_completo.py`.
+
 #### Leva 267 — Pagamento avulso: o relatório conta a pessoa do rateio UMA vez e mostra o rateio (13/11/2026)
 
 - *"Quando tem rateio, o relatório não tá saindo direito. Diverge na qtd de pessoas no
@@ -12262,6 +12300,7 @@ somente Solicitações de uma conta especifica"*.
 - Vale também para o relatório anexado na geração (`folha_pagamento._relatorio_por_conta`
   usa o mesmo montado).
 - Teste: `test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio`.
+- **Publicado em 13/11/2026** (sem migração).
 
 #### Leva 266 — Pagamento avulso: a mesma pessoa em obras diferentes é RATEIO (13/11/2026)
 
