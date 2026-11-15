@@ -21,6 +21,80 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 15/11/2026 (terceira olhada dele) — O PORTAL: TEXTO QUE NÃO SE ENTENDE, CPF SEM CRÍTICA E CAMPO QUE NÃO ESPERA
+
+Ele voltou com três coisas, e acertou o diagnóstico da terceira: *"eu acho que
+você não viu isso direito"*. As três estavam no **portal** — e o padrão do meu
+erro é o mesmo das duas anteriores: eu conferi a tela que estava construindo
+(a do DP) e não a que a obra usa.
+
+**1. "Sai do documento" não é explicação.** Ele: *"não dá para compreender o
+texto que está. Por exemplo, tem nome completo, aí embaixo tem 'sai do
+documento'. Que diabo de explicação é essa?"*
+
+Era taquigrafia minha: eu querendo dizer "não precisa digitar, a leitura do
+papel preenche" e escrevendo uma frase que não diz nem uma coisa nem outra.
+Reescritos os SEIS recados daquele bloco. Agora: *"não precisa digitar: anexe
+o documento de identificação aqui embaixo e este campo se preenche sozinho."*
+
+**2. O CPF não era criticado no portal.** Ele: *"o nome está pesquisável, o
+CNPJ, o CPF vai ser criticado se a pessoa já existir?"*
+
+**Não era — e esse é o pior caso:** a obra preenchia o cadastro inteiro,
+fotografava os três documentos, e só ao enviar descobria que a pessoa já
+existe. Na tela do ERP o aviso chegava no quarto dígito desde 06/11/2026; no
+portal, que é por onde a obra trabalha, não chegava nunca.
+
+Entrou `/erp/portal/api/conferir-cpf` (autenticação do portal, 401 para quem
+não entrou, devolve só existe/nome/situação) e a crítica aparece embaixo do
+campo **dizendo o que vai acontecer**: ativo barra o envio, desligado avisa que
+o pedido vai como readmissão, livre segue.
+
+⚑ **O NOME NÃO É PROCURADO, e é escolha.** Duas pessoas podem ter o mesmo
+nome, e o mesmo nome se escreve de três jeitos: procurar por nome daria "já
+existe" para homônimo e "não existe" para quem foi cadastrado abreviado. Quem
+identifica é o CPF.
+
+⚑ **E O PORTAL NÃO TEM O `api()` DO ERP.** Ele é página solta, não estende o
+`erp_base.html`, e tem o ajudante próprio (`chamar`). Eu usei o do ERP: o erro
+caiu calado no `catch` e a crítica simplesmente não aparecia, sem nada no
+console. Só o navegador mostrou.
+
+**3. O desligamento exibia os dois campos.** Ele: *"já exibe data do aviso
+prévio e data de saída (…) os campos têm que ser ocultados condicionalmente,
+como era no Pipefy."*
+
+Eu escondia o campo do outro vínculo **depois** de escolher a pessoa, e antes
+disso deixava os dois à mostra — aviso prévio (de carteira) e data de saída (de
+prestador) juntos, como se fossem duas perguntas do mesmo caso. Agora, sem
+saber de quem é o pedido, aparece só a escolha da pessoa e a observação; o
+resto nasce quando o sistema já sabe quem é. Vale no portal e na tela do DP.
+
+#### Dois defeitos achados ao conferir, os dois do MESMO feitio
+
+E o feitio é o que importa registrar: **rótulo que a tela mostra x código que o
+banco guarda.**
+
+- **O tipo de contrato nunca abria.** A condição estava escrita com
+  "PRESTADOR" (o código, porque é com ele que o SERVIDOR compara) e a caixinha
+  manda "Prestador de Serviço". Em "CTPS" os dois são iguais — e foi por isso
+  que passou na conferência. A tela passou a traduzir, e a trava de
+  `test_dp_pedidos_condicionais.py` passou a cobrar isso em `visiveis_se`
+  também, como já cobrava nos outros dois mapas.
+- **A lista dele vinha com as nove opções.** A tela apontava para
+  `tipos_contrato` — a lista que serve para LER ficha antiga — em vez de
+  `tipos_contrato_prestador`. Agora são seis nas três telas.
+
+#### Uma trava aprendeu a ver mais
+
+`test_telas_javascript.py` acusou dois ids que existem de verdade
+(`c-vinculo`, `c-contrato`), porque eles são criados dentro de `lista()` e não
+aparecem escritos como `id="..."` no arquivo. Ela passou a reconhecer os ids
+que `lista()`, `campoTexto()`, `campoData()` e `sim_nao()` criam. A regra não
+afrouxou — o id continua tendo de ser criado em algum lugar; o que mudou é que
+ela conhece mais um jeito de criar. Exceção escrita à mão deixaria a próxima
+tela errar de novo.
+
 ### ⚑ 15/11/2026 (depois de publicar) — DOIS ERROS MEUS QUE ELE VIU NA PRIMEIRA OLHADA
 
 Publiquei, ele abriu, e achou duas coisas em minutos. As duas valem registro
