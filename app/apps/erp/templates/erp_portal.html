@@ -315,6 +315,8 @@ const ROTULO = {
   data_inicio: "Data de Início",
   justificativa: "Justificativa de Alteração do Cargo",
   conceder: "Conceder Vale Transporte?",
+  descontar_vt: "Descontar o vale-transporte em folha?",
+  continua_prestador: "A pessoa continua trabalhando depois de sair da carteira?",
   valor_total: "Valor Total do Desconto",
   parcelas: "Quantidade de Parcelas",
   valor_parcela: "Valor da Parcela",
@@ -325,6 +327,13 @@ const SIM_NAO = {
   salario_familia: ["Sim, pedir", "Não pedir"],
   dependente_ir: ["Sim, conta", "Não conta"],
   conceder: ["Conceder", "Cancelar"],
+  // ⚑ 15/11/2026. O desconto do vale-transporte, e a pergunta que fecha o
+  // buraco do ponto: desligar corta o acesso ao aparelho da obra na data de
+  // saída, e readmissão esquecida deixa a pessoa sem conseguir bater no dia
+  // seguinte. O "não" vem em segundo porque é a resposta neutra.
+  descontar_vt: ["Sim, descontar em folha", "Não, a empresa absorve"],
+  continua_prestador: ["Sim, continua como prestador de serviço",
+                       "Não, está saindo da empresa"],
 };
 // CAMPO DE DATA TEM DE ABRIR O CALENDÁRIO DO CELULAR. Data que cai como texto
 // livre volta "12/3", "12-03-26" e "ontem" — e o DP arruma à mão.
@@ -414,7 +423,14 @@ function pintarCamposDoTipo(){
   els("p-explica").textContent = t ? t.explicacao : "";
   els("p-enviar").disabled = !t;
   if (!t) { els("p-campos").innerHTML = ""; return; }
-  const obrig = new Set(t.obrigatorios || []);
+  {# ⚑ O ASTERISCO É A UNIÃO DOS VÍNCULOS (15/11/2026), e funciona porque o
+     campo do vínculo errado fica ESCONDIDO: "data de saída" é obrigatória
+     para prestador e "a pessoa continua?" para carteira, e quem vê um não vê
+     o outro. Sem a união, o campo aparecia sem marca e o botão cobrava dele —
+     "falta o quê?" sobre um campo sem asterisco. #}
+  const obrig = new Set([].concat(
+    t.obrigatorios || [],
+    ...Object.values(t.por_vinculo || {}).map(x => x.obrigatorios || [])));
   PESSOA_ESCOLHIDA = null;
   els("p-campos").innerHTML =
     {# ⚑ "COLABORADOR", e não "de quem é o pedido". Ele, em 10/11/2026: *"eu
@@ -850,13 +866,50 @@ function recadoDosCamposDePapel(t){
   });
 }
 
+{# ---------------------------------------------------------------------------
+   O VÍNCULO DA PESSOA DECIDE OS CAMPOS (15/11/2026)
+
+   Ele: *"vamos ter um tipo só de desligamento (…) forma de desligamento só
+   para CTPS, e para prestador só a data de saída."*
+
+   O desligamento virou UM tipo, e os campos saem do vínculo de quem foi
+   escolhido. A regra vem do servidor (`por_vinculo`), a mesma que a tela do
+   DP lê — aqui ela só é aplicada ao desenho.
+
+   ⚑ ESCONDE E TIRA DA COBRANÇA JUNTO. Esconder o campo e continuar exigindo
+   dele é o defeito que trava o pedido sem explicação: o botão diria "falta a
+   data do aviso prévio" sobre um campo que a pessoa não tem como ver.
+   --------------------------------------------------------------------------- #}
+function camposDesteVinculo(t){
+  const vinculos = t.por_vinculo || {};
+  const v = ((PESSOA_ESCOLHIDA || {}).vinculo || "").toUpperCase();
+  const ramo = vinculos[v];
+  return ramo ? {campos: ramo.campos || [], obrigatorios: ramo.obrigatorios || []}
+              : null;
+}
+
+function aplicarVinculo(t){
+  const ramo = camposDesteVinculo(t);
+  if (!ramo) return;
+  (t.campos || []).forEach(c => {
+    const caixa = els("p-" + c);
+    if (!caixa) return;
+    const rotulo = caixa.closest("label");
+    if (rotulo) rotulo.classList.toggle("oculto", !ramo.campos.includes(c));
+  });
+}
+
 function conferirOQueFalta(t){
   if (!t) return;
   recadoDosCamposDePapel(t);
+  aplicarVinculo(t);
+  const ramo = camposDesteVinculo(t);
   const falta = [];
   if (t.exige_pessoa && !(els("p-pessoa") && els("p-pessoa").value))
     falta.push("o colaborador");
-  (t.obrigatorios || []).forEach(c => {
+  // Sabido o vínculo, a cobrança é a DELE: campo do outro vínculo está
+  // escondido, e cobrar o que não aparece trava o pedido sem explicação.
+  (ramo ? ramo.obrigatorios : (t.obrigatorios || [])).forEach(c => {
     if (t.repete && CAMPOS_REPETIDOS.includes(c)) return;   // cuidado abaixo
     const campo = els("p-" + c);
     if (campo && !campo.value) falta.push((ROTULO[c] || c).toLowerCase());

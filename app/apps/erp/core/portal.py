@@ -100,8 +100,14 @@ AREAS: tuple[dict[str, Any], ...] = (
         # Porta que anuncia o que não tem é pior que porta fechada: a pessoa
         # entra, não acha, e deixa de confiar no resto da tela. Há teste
         # conferindo cada palavra daqui contra os tipos da área.
-        "explicacao": "cadastro, desligamento, readmissão, dados da pessoa, "
-                      "dependente, ajuda de custo e vale-transporte",
+        # ⚑ "readmissão" e "vale-transporte" SAÍRAM DA FRASE em 15/11/2026,
+        # junto com os tipos: a readmissão acontece dentro do cadastro (pelo
+        # CPF) e o vale-transporte dentro da ajuda de custo. Prometer na porta
+        # um tipo que não está na lista é o defeito que esta frase já causou
+        # uma vez, com férias.
+        "explicacao": "cadastro, desligamento, prestador que vai para a "
+                      "carteira, cargo, dados da pessoa, dependente e ajuda "
+                      "de custo",
         "pronta": True,
     },
     {
@@ -140,10 +146,22 @@ AREAS: tuple[dict[str, Any], ...] = (
 # desconto em folha, por exemplo, é do DP — a obra não lança desconto no
 # salário de ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
 TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
+    # ⚑ READMISSAO E VALE_TRANSPORTE SAÍRAM EM 15/11/2026, e a razão é a
+    # mesma dos dois: eles deixaram de existir como tipo.
+    #
+    #   · readmissão → o pedido de CADASTRO detecta o CPF que já existe e se
+    #     converte sozinho. Quem abre não precisa saber de antemão se a pessoa
+    #     já passou pela empresa — e era justamente quem NÃO sabia que criava
+    #     a segunda ficha dela.
+    #   · vale-transporte → virou opção dentro da AJUDA_DE_CUSTO, onde as
+    #     categorias de transporte já viviam.
+    #
+    # Deixá-los aqui seria pior que esquecer: a obra continuaria abrindo pelo
+    # portal um tipo que a tela do DP não oferece mais.
     "pessoal": (
-        "CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
+        "CADASTRO", "DESLIGAMENTO", "ADMISSAO_PRESTADOR",
         "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
-        "VALE_TRANSPORTE", "DIVERSOS",
+        "DIVERSOS",
     ),
 }
 
@@ -318,7 +336,14 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 continue
             d = svc_sp.TIPOS[k]
             campos = list(d["campos"])
-            if "obra_id" not in campos:
+            # ⚑ A OBRA SÓ ONDE NÃO HÁ DE ONDE TIRÁ-LA (15/11/2026). Ele: *"a
+            # obra está no cadastro. Ignora isso aí, tira isso aí"* — e,
+            # perguntado se valia para gente nova: *"admissão nova ou de
+            # colaborador demitido tem que ter a obra. Demais não precisa."*
+            # Mesma regra da tela do DP, pela mesma razão: pedido sobre quem
+            # já tem ficha tira a obra da ficha, e perguntar de novo abre a
+            # porta para duas respostas diferentes.
+            if not d["exige_pessoa"] and "obra_id" not in campos:
                 campos.insert(0, "obra_id")
             saida.append({
                 "chave": k, "area": area, "nome": d["nome"],
@@ -329,8 +354,20 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 # Pipe. A tela não decide nem um nem outro — se decidisse,
                 # divergiriam do que o servidor exige, e a pessoa descobriria
                 # isso só na recusa do envio.
-                "obrigatorios": ["obra_id"] + [x for x in d.get("obrigatorios", ())
-                                               if x != "obra_id"],
+                "obrigatorios": (
+                    [x for x in d.get("obrigatorios", ()) if x != "obra_id"]
+                    if d["exige_pessoa"]
+                    else ["obra_id"] + [x for x in d.get("obrigatorios", ())
+                                        if x != "obra_id"]),
+                # ⚑ O VÍNCULO DA PESSOA DECIDE OS CAMPOS (desligamento). A
+                # obra escolhe a pessoa e o formulário se ajusta: carteira
+                # pede forma e aviso prévio; prestador, só a data de saída.
+                # A regra é a MESMA que a tela do DP lê — uma fonte só.
+                "por_vinculo": {
+                    v: {"campos": list(r.get("campos") or d["campos"]),
+                        "obrigatorios": list(r.get("obrigatorios")
+                                             or d.get("obrigatorios", ()))}
+                    for v, r in (d.get("por_vinculo") or {}).items()},
                 "documentos": list(d.get("documentos", ())),
                 "documentos_se": {c: {v: list(p) for v, p in mapa.items()}
                                   for c, mapa in (d.get("documentos_se") or {}).items()},
