@@ -440,7 +440,15 @@ const CAMPO_PEDIDO = {
 };
 const LISTA_DO_CAMPO = {
   forma_desligamento: "formas_desligamento", vinculo: "vinculos",
-  tipo_contrato: "tipos_contrato", parentesco: "parentescos",
+  // ⚑ `tipos_contrato_prestador`, e NÃO `tipos_contrato` (15/11/2026): o
+  // campo só aparece para prestador, então oferecer as duas opções de CLT
+  // seria oferecer a escolha que ele mandou tirar. Ele: *"CTPS não abre tipo
+  // de contrato, porque já é CLT. Então não tem CTPS Pró-labore, PJ."*
+  //
+  // Achado no navegador: o campo abria e fechava certo, e a caixinha vinha com
+  // as NOVE opções — porque esta linha apontava para a lista de LER ficha
+  // antiga, e não para a de escolher.
+  tipo_contrato: "tipos_contrato_prestador", parentesco: "parentescos",
   categoria_alimentacao: "categorias_alimentacao",
   categoria_transporte: "categorias_transporte", meio_transporte: "meios_transporte",
   motivo: "motivos_alteracao", uf: "ufs",
@@ -499,14 +507,40 @@ function condicaoDoCampo(regra, c){
     doVinculo[v] = ((regra.por_vinculo[v] || {}).campos || []).includes(c);
   });
 
+  {# Os campos que valem para TODO vínculo: são os que podem aparecer antes de
+     a pessoa ser escolhida. Ver o comentário no `erp_portal.html`. #}
+  const comuns = {};
+  vinculos.forEach(v => {
+    comuns[v] = ((regra.por_vinculo[v] || {}).campos || []).includes(c);
+  });
+  const valeParaTodos = vinculos.length > 0
+    && vinculos.every(v => comuns[v]);
+
   if (!some.length && !nasce.length && !vinculos.length) return null;
   return v => {
     const vinc = (((v.__pessoa || {}).vinculo) || "").toUpperCase();
+    {# ⚑ SEM PESSOA ESCOLHIDA, SÓ O QUE VALE PARA TODOS (15/11/2026).
+
+       Ele: *"Desligamento do colaborador já exibe data do aviso prévio e data
+       de saída. (…) os campos têm que ser ocultados condicionalmente, como
+       era no Pipefy."*
+
+       Antes eu escondia o campo do outro vínculo DEPOIS de escolher a pessoa,
+       e até então deixava os dois à mostra — aviso prévio e data de saída
+       juntos, como se fossem duas perguntas do mesmo caso. #}
+    if (vinculos.length && !vinc && !valeParaTodos) return false;
     if (vinc && vinculos.includes(vinc) && !doVinculo[vinc]) return false;
     for (const r of some)
       if (traduz(r.gatilho, v[r.gatilho]) === r.valor) return false;
+    {# ⚑ TRADUZ AQUI TAMBÉM, e esta linha é CONSERTO (15/11/2026): sem ela, o
+       "Tipo de Contrato" nunca aparecia. A condição é escrita com o CÓDIGO
+       que o banco guarda ("PRESTADOR") porque é com ele que o SERVIDOR
+       compara; a caixinha mostra o rótulo do Pipe ("Prestador de Serviço").
+       Em "CTPS" os dois são iguais e eu não percebi; em "Prestador de
+       Serviço" não são. Pego pela trava que exige que todo valor usado numa
+       condição seja alcançável pelo que a tela mostra. #}
     for (const r of nasce)
-      if (!r.aceitos.includes(v[r.gatilho] || "")) return false;
+      if (!r.aceitos.includes(traduz(r.gatilho, v[r.gatilho]))) return false;
     return true;
   };
 }

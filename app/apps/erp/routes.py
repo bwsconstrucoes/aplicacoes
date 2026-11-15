@@ -12448,6 +12448,44 @@ def api_portal_pessoas():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/portal/api/conferir-cpf")
+@permissao_publica("o portal tem autenticação própria, do ponto — ver "
+                   "core/portal.quem_esta")
+def api_portal_conferir_cpf():
+    """"Esta pessoa já existe?" — respondido ENQUANTO o CPF é digitado.
+
+    ⚑ FALTAVA NO PORTAL, e ele perguntou por isso em 15/11/2026, olhando o
+    formulário de cadastro: *"o nome está pesquisável, o CNPJ, o CPF vai ser
+    criticado se a pessoa já existir?"*
+
+    A resposta era NÃO — e isso é o pior caso: a obra preenchia o cadastro
+    inteiro, anexava os três documentos, e só ao enviar descobria que a pessoa
+    já existia. Na tela do ERP o aviso já chegava no quarto dígito desde
+    06/11/2026; no portal, que é por onde a obra trabalha, não chegava nunca.
+
+    ⚑ O QUE ELA DEVOLVE É O MÍNIMO: existe, o nome, e se está ativa ou
+    desligada. Nada de salário, endereço ou documento — quem abre pedido não
+    precisa disso, e varrer CPFs não mapearia o cadastro.
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_portal.quem_esta(s, usuario)            # 401 se não entrou
+            achado = svc_pessoas.conferir_cpf(s, request.args.get("cpf", ""))
+        # O recado completo do cadastro traz "abra a ficha dela" — coisa que
+        # quem está na obra não pode fazer. A frase daqui é a do portal.
+        return jsonify({"ok": True, "situacao": achado["situacao"],
+                        "nome": achado.get("nome", ""),
+                        "aviso": achado.get("aviso", "")})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao conferir o CPF")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/portal/api/ler-documento", methods=["POST"])
 @permissao_publica("o portal tem autenticação própria, do ponto — ver "
                    "core/portal.quem_esta")

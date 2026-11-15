@@ -289,14 +289,20 @@ def test_a_tela_recebe_a_traducao_de_todo_valor_usado_nas_condicoes():
                         f"{t['valor']}/{chave}: '{valor}' (gatilho {gatilho}) "
                         f"não é alcançável pelo que a tela mostra — a condição "
                         f"nunca vai disparar")
-        # `visiveis_se` é escrito com o RÓTULO (a categoria não tem tradução).
+        # ⚑ `visiveis_se` SEGUE A MESMA REGRA (15/11/2026), e ela pegou um
+        # defeito de verdade: a condição do "Tipo de Contrato" estava escrita
+        # com o código ("PRESTADOR") e a caixinha manda o rótulo ("Prestador
+        # de Serviço") — o campo nunca aparecia. A tela passou a traduzir, e
+        # esta trava agora aceita os dois caminhos, como os outros dois mapas.
         for campo, regras in (t["visiveis_se"] or {}).items():
             for gatilho, aceitos in regras.items():
-                opcoes = set(t["opcoes"].get(gatilho, []))
+                alcancaveis = set(t["traducoes"].get(gatilho, {}).values())
+                alcancaveis |= set(t["opcoes"].get(gatilho, []))
                 for valor in aceitos:
-                    assert valor in opcoes, (
-                        f"{t['valor']}/visiveis_se: '{valor}' não está entre as "
-                        f"opções de {gatilho}")
+                    assert valor in alcancaveis, (
+                        f"{t['valor']}/visiveis_se: '{valor}' (gatilho "
+                        f"{gatilho}) não é alcançável pelo que a tela mostra — "
+                        f"o campo '{campo}' nunca vai aparecer")
 
 
 # ---------------------------------------------------------------------------

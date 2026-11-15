@@ -418,6 +418,13 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
 
     listas = {campo: par(campo, chaves, ROTULOS.get(campo, {}))
               for campo, chaves in svc.DA_LISTA.items()}
+    # ⚑ TIPO DE CONTRATO: só os de PRESTADOR (15/11/2026). O `DA_LISTA` traz
+    # os nove valores aceitos, que servem para LER ficha antiga; o campo só
+    # aparece para prestador, e lá as duas opções de CLT não existem. Ele:
+    # *"CTPS não abre tipo de contrato, porque já é CLT."*
+    listas["tipo_contrato"] = par(
+        "tipo_contrato", svc.TIPOS_CONTRATO_PRESTADOR,
+        svc.TIPO_CONTRATO_ROTULOS)
     # Estes dois são campos do PEDIDO, não do cadastro, então não estão no
     # `DA_LISTA` — mas a lista é a mesma do cadastro.
     listas["forma_desligamento"] = par(

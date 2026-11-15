@@ -510,16 +510,26 @@ function pintarCamposDoTipo(){
           return `<label class="campo-portal">${esc(rot)}
             <input id="p-${c}" name="${c}" type="${tipo}"
               ${modo ? `inputmode="${modo}"` : ""}>
-            <small class="do-papel" id="pd-${c}">escolha o colaborador — se o
-              cadastro tiver, já vem preenchido</small>
+            <small class="do-papel" id="pd-${c}">escolha o colaborador acima;
+              se o cadastro dele já tiver este dado, ele vem preenchido</small>
           </label>`;
         if (dePapel)
           return `<label class="campo-portal" id="pw-${c}" data-de-papel="${c}">
             ${esc(rot)}
             <input id="p-${c}" name="${c}" type="${tipo}"
               ${modo ? `inputmode="${modo}"` : ""}>
-            <small class="do-papel" id="pd-${c}">sai do documento — anexe
-              ${esc(ROTULO_PAPEL[dePapel] || dePapel)} e ele se preenche</small>
+            {# ⚑ O TEXTO ERA INCOMPREENSÍVEL, e ele falou isso com todas as
+               letras (15/11/2026): *"não dá para compreender o texto que
+               está. Por exemplo, tem nome completo, aí embaixo tem 'sai do
+               documento'. Que diabo de explicação é essa?"*
+
+               Tinha razão. "Sai do documento" era taquigrafia minha: eu
+               querendo dizer "não precisa digitar, a leitura do papel
+               preenche", e escrevendo uma frase que não diz nem uma coisa nem
+               outra. Agora a dica diz o que a PESSOA faz e o que acontece. #}
+            <small class="do-papel" id="pd-${c}">não precisa digitar: anexe
+              ${esc(ROTULO_PAPEL[dePapel] || dePapel)} aqui embaixo e este
+              campo se preenche sozinho</small>
           </label>`;
         return `<label class="campo-portal">${esc(rot)}
           <input id="p-${c}" name="${c}" type="${tipo}"
@@ -530,7 +540,93 @@ function pintarCamposDoTipo(){
   ligarRepetidos(t);
   ligarFiltroDeObra();
   ligarPapeis(t);
+  ligarCriticaDoCPF(t);
   conferirOQueFalta(t);
+}
+
+{# ---------------------------------------------------------------------------
+   O CPF É CRITICADO ENQUANTO SE DIGITA (15/11/2026)
+
+   Ele, olhando o formulário de cadastro: *"o nome está pesquisável, o CNPJ, o
+   CPF vai ser criticado se a pessoa já existir?"*
+
+   A resposta era NÃO, e esse é o pior caso: a obra preenchia o cadastro
+   inteiro, fotografava os três documentos, e só ao enviar descobria que a
+   pessoa já existe. Na tela do ERP o aviso chegava no quarto dígito desde
+   06/11/2026; aqui, que é por onde a obra trabalha, não chegava nunca.
+
+   ⚑ E O RECADO DIZ O QUE VAI ACONTECER, não só que existe:
+     · desligado → o pedido segue, e vai como READMISSÃO;
+     · ativo     → não há o que cadastrar, e o envio é barrado;
+     · livre     → segue o cadastro.
+
+   Quanto ao NOME: ele não é procurado, e é escolha. Duas pessoas podem ter o
+   mesmo nome, e três jeitos de escrever o mesmo nome são a mesma pessoa — quem
+   identifica é o CPF. Procurar por nome daria "já existe" para homônimo e
+   "não existe" para quem foi cadastrado com o nome abreviado.
+   --------------------------------------------------------------------------- #}
+let CPF_JA_EXISTE = null;
+
+function ligarCriticaDoCPF(t){
+  CPF_JA_EXISTE = null;
+  const campo = els("p-cpf");
+  if (!campo || t.exige_pessoa) return;       // pedido de quem já tem ficha
+  const recado = document.createElement("small");
+  recado.className = "do-papel";
+  recado.id = "pd-cpf-critica";
+  campo.parentElement.appendChild(recado);
+  let espera = null, pedido = 0;
+  campo.addEventListener("input", () => {
+    clearTimeout(espera);
+    CPF_JA_EXISTE = null;
+    const digitos = (campo.value || "").replace(/\D/g, "");
+    if (digitos.length < 11) {
+      recado.textContent = digitos.length
+        ? "digite os 11 números do CPF" : "";
+      recado.className = "do-papel";
+      conferirOQueFalta(t);
+      return;
+    }
+    espera = setTimeout(async () => {
+      const meu = ++pedido;
+      recado.textContent = "conferindo se já existe…";
+      recado.className = "do-papel";
+      try {
+        {# ⚑ `chamar`, e não `api`: o portal é página SOLTA, não estende o
+           `erp_base.html` e por isso não tem o ajudante do ERP. Eu usei o do
+           ERP e o erro caiu calado no `catch` — a crítica simplesmente não
+           aparecia, sem nada no console. #}
+        const r = await chamar(`/erp/portal/api/conferir-cpf?cpf=${
+          encodeURIComponent(digitos)}`);
+        if (meu !== pedido) return;           // chegou atrasada
+        CPF_JA_EXISTE = r;
+        if (r.situacao === "invalido") {
+          recado.textContent = "este CPF não passa na conferência dos "
+            + "dígitos — confira o número";
+          recado.className = "do-papel pede";
+        } else if (r.situacao === "ativo") {
+          {# O recado não diz "cadastrado"/"cadastrada": o nome não informa o
+             gênero de ninguém, e errar isso numa tela que a pessoa lê sobre
+             ela mesma é falta de educação do sistema. #}
+          recado.textContent = `${r.nome} já tem cadastro ATIVO no sistema — `
+            + "não precisa cadastrar de novo. Fale com o DP.";
+          recado.className = "do-papel pede";
+        } else if (r.situacao === "desligado") {
+          recado.textContent = `${r.nome} já teve cadastro aqui, hoje `
+            + "desligado: este pedido vai como READMISSÃO, e o cadastro volta "
+            + "sem redigitar nada.";
+          recado.className = "do-papel ok";
+        } else {
+          recado.textContent = "não existe cadastro com este CPF — segue o "
+            + "cadastro novo";
+          recado.className = "do-papel ok";
+        }
+      } catch(e){
+        if (meu === pedido) { recado.textContent = ""; }
+      }
+      conferirOQueFalta(t);
+    }, 400);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -854,19 +950,22 @@ function recadoDosCamposDePapel(t){
       dica.textContent = "já está no cadastro — confira se bate com o documento";
       dica.className = "do-papel ok";
     } else if (campo.value) {
-      dica.textContent = anexado ? "veio do documento — confira"
-                                 : "preenchido à mão";
+      dica.textContent = anexado
+        ? "foi lido do documento que você anexou — confira se está certo"
+        : "digitado por você";
       dica.className = "do-papel ok";
     } else if (!papel) {
-      dica.textContent = "não está no cadastro desta pessoa — digite";
+      dica.textContent = "o cadastro desta pessoa não tem este dado — digite";
       dica.className = "do-papel pede";
     } else if (!anexado) {
-      dica.textContent = "sai do documento — anexe "
-        + (ROTULO_PAPEL[papel] || papel) + " e ele se preenche";
+      dica.textContent = "não precisa digitar: anexe "
+        + (ROTULO_PAPEL[papel] || papel) + " aqui embaixo e este campo se "
+        + "preenche sozinho";
       dica.className = "do-papel";
     } else {
       // ⚑ A leitura rodou e não achou: AGORA sim vira pergunta.
-      dica.textContent = "não achei este número no documento — digite";
+      dica.textContent = "não encontrei este dado no documento anexado — "
+        + "digite à mão";
       dica.className = "do-papel pede";
     }
   });
@@ -888,10 +987,30 @@ function recadoDosCamposDePapel(t){
    --------------------------------------------------------------------------- #}
 function camposDesteVinculo(t){
   const vinculos = t.por_vinculo || {};
+  if (!Object.keys(vinculos).length) return null;
   const v = ((PESSOA_ESCOLHIDA || {}).vinculo || "").toUpperCase();
   const ramo = vinculos[v];
-  return ramo ? {campos: ramo.campos || [], obrigatorios: ramo.obrigatorios || []}
-              : null;
+  if (ramo)
+    return {campos: ramo.campos || [], obrigatorios: ramo.obrigatorios || []};
+  {# ⚑ ENQUANTO NINGUÉM ESCOLHEU A PESSOA, SÓ APARECE O QUE VALE PARA TODOS.
+
+     Ele, olhando a tela (15/11/2026): *"Desligamento do colaborador já exibe
+     data do aviso prévio e data de saída. (…) os campos eles têm que ser
+     ocultados condicionalmente, como era no Pipefy. Eu acho que você não viu
+     isso direito."*
+
+     Tinha razão, e o furo era meu: eu escondia o campo do OUTRO vínculo
+     depois de escolher a pessoa, mas antes disso deixava os DOIS à mostra —
+     aviso prévio (que é de carteira) e data de saída (que é de prestador), no
+     mesmo formulário, como se fossem as duas perguntas do mesmo caso.
+
+     Agora, sem saber de quem é o pedido, aparece só o que é comum a todos os
+     vínculos: ou seja, a escolha da pessoa e a observação. O resto nasce
+     quando o sistema já sabe quem é — que é o que o Pipe fazia. #}
+  const todos = Object.values(vinculos);
+  const comuns = (todos[0].campos || []).filter(
+    c => todos.every(x => (x.campos || []).includes(c)));
+  return {campos: comuns, obrigatorios: []};
 }
 
 function aplicarVinculo(t){
@@ -929,6 +1048,13 @@ function conferirOQueFalta(t){
   papeisExigidos(t).forEach(c => {
     if (!PAPEIS[c]) falta.push(ROTULO_PAPEL[c] || c);
   });
+  // CPF de quem já está ATIVO não vira pedido: não há o que cadastrar, há uma
+  // ficha para o DP corrigir. O servidor recusa igual — isto é para a pessoa
+  // não encher o formulário inteiro antes de saber.
+  if (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "ativo")
+    falta.push("outro CPF (este já está ativo)");
+  if (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "invalido")
+    falta.push("um CPF válido");
   const botao = els("p-enviar");
   if (botao) {
     botao.disabled = falta.length > 0;
