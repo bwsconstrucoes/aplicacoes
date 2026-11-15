@@ -1128,7 +1128,29 @@ function painelDaFicha(){
   } else if (ABA_FICHA === 2) {
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Vínculo *</label>${lista("c-vinculo", o.vinculos, c.vinculo, "")}</div>
-      <div class="campo"><label>Tipo de contrato</label>${lista("c-contrato", o.tipos_contrato, c.tipo_contrato)}</div>
+      {# ⚑ TIPO DE CONTRATO SÓ PARA PRESTADOR (15/11/2026).
+
+         Ele: *"CTPS não abre tipo de contrato, porque já é CLT. Então não tem
+         CTPS pró-labore, PJ. Está errado. Tem que ocultar o campo. Abre o
+         campo só se for prestador de serviço."*
+
+         O defeito era pior que feio: dava para gravar alguém de CARTEIRA com
+         tipo de contrato "PJ", e aí a ficha dizia duas coisas que se
+         contradizem sobre o mesmo vínculo — e quem fosse ler depois (a folha,
+         a contabilidade, um relatório) não teria como saber qual valia.
+
+         A lista também encurtou: são os SEIS de prestador
+         (`tipos_contrato_prestador`), e não os nove. As duas opções de CLT
+         continuam existindo para LER ficha antiga, só não se escolhem mais.
+
+         Trocar para CTPS LIMPA o campo, de propósito: carteira não tem tipo
+         de contrato, e deixar "PJ" guardado numa pessoa que passou a ter
+         carteira é justamente a contradição que isto resolve. #}
+      <div class="campo oculto" id="c-contrato-caixa"><label>Tipo de contrato</label>${
+        lista("c-contrato", o.tipos_contrato_prestador || o.tipos_contrato,
+              c.tipo_contrato)}
+        <small class="ajuda">PJ, RPA, aprendiz, estágio… só para quem não tem
+          carteira assinada.</small></div>
       {# ⚑ UM CAMPO SÓ. Ele, em 11/11/2026: *"empresa para registro e CNPJ
          para admissão é campo duplicado. É a mesma informação."* Tinha razão,
          e era pior: um era caixinha do cadastro de Empresas e o outro era
@@ -1147,8 +1169,12 @@ function painelDaFicha(){
           // isto no mesmo dia em que foi escrito. O cadastro guarda com ou
           // sem pontuação (os dois existem na base), e o ajudante do
           // `erp_base.html` é quem sabe pintar os dois igual.
+          // ⚑ SEM CNPJ, A LISTA DIZ QUE ESTÁ SEM (15/11/2026). Antes a
+          // empresa sem CNPJ aparecia só com o nome, e ninguém sabia que
+          // havia cadastro a arrumar — e era justamente por causa dela que a
+          // caixinha do pedido mostrava três de quatro.
           rotulo: e.cnpj ? `${e.razao_social} — ${documento(e.cnpj)}`
-                         : e.razao_social})),
+                         : `${e.razao_social} — sem CNPJ no cadastro`})),
         c.empresa_id)}
         <small class="ajuda" id="c-cnpjadm-recado">${
           c.empresa_id ? "o CNPJ vem do cadastro da empresa"
@@ -1193,8 +1219,11 @@ function painelDaFicha(){
       ${campoTexto("CNPJ (PJ)", "c-cnpjpj", c.cnpj_pj, 'name="cnpj"')}
       ${campoTexto("ID Fortes", "c-fortes", c.id_fortes)}
     </div>
-    <div class="cartao-dica"><b>Vínculo</b> diz se há carteira assinada; <b>tipo de
-      contrato</b> diz qual é o regime. Prestador não precisa de PIS nem de CTPS.</div>`;
+    <div class="cartao-dica"><b>Vínculo</b> diz se há carteira assinada. Quem tem
+      carteira é sempre CLT, então o <b>tipo de contrato</b> só aparece para
+      prestador — é lá que se diz PJ, RPA, aprendiz ou estágio. Prestador não
+      precisa de PIS nem de CTPS.</div>`;
+    ligarTipoDeContrato();
   } else if (ABA_FICHA === 3) {
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Categoria do auxílio-alimentação</label>${lista(
@@ -1317,6 +1346,29 @@ function conferirCpfDigitando(){
 }
 
 function valorDe(id){ const e = els(id); return e ? e.value : undefined; }
+
+{# ---------------------------------------------------------------------------
+   O TIPO DE CONTRATO SÓ EXISTE PARA PRESTADOR (15/11/2026)
+
+   Ele: *"CTPS não abre tipo de contrato, porque já é CLT."*
+
+   ⚑ TROCAR PARA CARTEIRA LIMPA O CAMPO, e isso é de propósito: deixar "PJ"
+   guardado numa pessoa que passou a ter carteira é exatamente a contradição
+   que esta regra existe para acabar. O campo continua no formulário (só
+   escondido), porque o salvamento só manda o que está na tela — removê-lo
+   deixaria o valor antigo intacto no banco.
+   --------------------------------------------------------------------------- #}
+function ligarTipoDeContrato(){
+  const vinc = els("c-vinculo"), caixa = els("c-contrato-caixa");
+  if (!vinc || !caixa) return;
+  const aplicar = () => {
+    const prestador = vinc.value === "PRESTADOR";
+    caixa.classList.toggle("oculto", !prestador);
+    if (!prestador && els("c-contrato")) els("c-contrato").value = "";
+  };
+  vinc.addEventListener("change", aplicar);
+  aplicar();
+}
 
 function corpoDoCadastro(){
   const c = FICHA || {};

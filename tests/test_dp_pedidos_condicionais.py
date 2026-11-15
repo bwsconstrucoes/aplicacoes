@@ -210,7 +210,7 @@ def test_telefone_pix_e_diaria_sao_obrigatorios_em_todo_cadastro():
     for forma in ("CTPS", "PRESTADOR"):
         exige = svc.exigencias("CADASTRO", {"tipo_documentacao": forma})["campos"]
         for campo in ("telefone", "pix_tipo", "pix_chave", "valor_diaria",
-                      "cnpj_admissao"):
+                      "empresa_id"):
             assert campo in exige, f"{campo} não é obrigatório em {forma}"
 
 
@@ -324,6 +324,17 @@ def mundo(sessao_real):
     cargo_id = sessao_real.execute(text("""
         INSERT INTO cargos (nome, ativo) VALUES ('Servente de teste', TRUE)
         RETURNING id""")).scalar()
+    # ⚑ DUAS EMPRESAS, e a segunda SEM CNPJ de propósito: é o caso real do
+    # grupo (a C3 está cadastrada sem CNPJ) e era por causa dele que a
+    # caixinha mostrava três de quatro.
+    empresa_id = sessao_real.execute(text("""
+        INSERT INTO empresas (razao_social, nome_fantasia, cnpj, ativo)
+        VALUES ('BWS COND LTDA', 'MATRIZ/COND', '00.079.526/0001-09', TRUE)
+        RETURNING id""")).scalar()
+    empresa_sem_cnpj = sessao_real.execute(text("""
+        INSERT INTO empresas (razao_social, nome_fantasia, cnpj, ativo)
+        VALUES ('C3 COND LTDA', 'C3/COND', '', TRUE)
+        RETURNING id""")).scalar()
     carteira = svc_pessoas.salvar(sessao_real, {
         "cpf": CPF_A, "nome": "Carteira Da Silva", "admissao": "2024-01-05",
         "obra_id": o.id, "salario": "1800", "vinculo": "CTPS"}, dp)
@@ -332,7 +343,8 @@ def mundo(sessao_real):
         "obra_id": o.id, "vinculo": "PRESTADOR"}, dp)
     sessao_real.flush()
     return {"s": sessao_real, "dp": dp, "obra_user": obra, "obra": o,
-            "obra2": o2, "cargo_id": cargo_id,
+            "obra2": o2, "cargo_id": cargo_id, "empresa_id": empresa_id,
+            "empresa_sem_cnpj": empresa_sem_cnpj,
             "carteira": carteira, "prestador": prestador}
 
 
@@ -342,7 +354,7 @@ def _cad(mundo, **extra):
             "tipo_documentacao": "Prestador de Serviço",
             "tipo_contrato": "PJ", "pagamento": "Diarista",
             "cargo_pleiteado_id": mundo["cargo_id"],
-            "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+            "empresa_id": mundo["empresa_id"],
             "telefone": "85988881111", "pix_tipo": "CPF", "pix_chave": CPF_C,
             "valor_diaria": "130,00", "data_inicio": "2026-06-01",
             "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
@@ -530,3 +542,93 @@ def test_desligamento_comum_nao_cria_pendencia(mundo):
                 mundo["dp"])
     mundo["s"].flush()
     assert svc.readmissoes_esquecidas(mundo["s"]) == []
+
+
+# ---------------------------------------------------------------------------
+# A EMPRESA: ELE COBROU TRÊS VEZES, E NAS DUAS PRIMEIRAS EU CONSERTEI O LUGAR
+# ERRADO
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_a_empresa_SEM_CNPJ_tambem_aparece_na_lista(mundo):
+    """⚑ O DEFEITO QUE ELE VIU TRÊS VEZES, e a terceira foi assim
+    (15/11/2026): *"em relação à empresa, CNPJ da empresa, você continua
+    errando. Você está pegando do cadastro do colaborador, eu acho. Tem que
+    pegar do cadastro das empresas do ERP. Lá já estão cadastradas 4 empresas.
+    E continua aparecendo errado, ou seja, não está sendo usado o cadastro
+    correto."*
+
+    **A lista VINHA do cadastro de Empresas. O erro era o CAMPO.** Ele pedia um
+    CNPJ ("CNPJ para Admissão"), então a lista só podia oferecer empresa que
+    TEM CNPJ preenchido — e a quarta do grupo, cadastrada sem CNPJ, sumia. Na
+    segunda cobrança eu "consertei" escrevendo embaixo do campo quem havia
+    ficado de fora: isso explica o sintoma e mantém o defeito.
+
+    O campo certo é a EMPRESA. O CNPJ é um dado dela, que o cadastro dela
+    guarda. Agora as quatro aparecem, e a que está sem CNPJ aparece DIZENDO
+    que está — cadastrar o CNPJ que falta volta a ser arrumar o cadastro da
+    empresa, não condição para abrir um pedido.
+    """
+    lista = svc.empresas_para_escolher(mundo["s"])
+    ids = {x["id"] for x in lista}
+    assert mundo["empresa_id"] in ids
+    assert mundo["empresa_sem_cnpj"] in ids, (
+        "a empresa sem CNPJ desapareceu da lista — é EXATAMENTE o defeito que "
+        "ele viu três vezes")
+    # E ela aparece dizendo o que falta, em vez de sumir calada.
+    sem = next(x for x in lista if x["id"] == mundo["empresa_sem_cnpj"])
+    assert "sem CNPJ no cadastro" in sem["rotulo"]
+
+
+@pytest.mark.banco
+def test_sem_empresa_cadastrada_a_lista_vem_VAZIA_e_nao_inventada(mundo):
+    """⚑ A LISTA DE SOCORRO FOI APAGADA, e isto é o teste dela.
+
+    Antes, se a consulta não achasse nada, a caixinha mostrava TRÊS empresas
+    escritas dentro do código — e três era exatamente o número que ele
+    reclamou de ver. Lista inventada que parece certa é pior que lista vazia:
+    ninguém desconfia dela, e o pedido sai gravado com um CNPJ que ninguém
+    cadastrou.
+    """
+    assert svc.empresas_para_escolher(None) == []
+    # E nenhum CNPJ continua escrito à mão nas listas fechadas.
+    for campo, opcoes in svc.CATEGORIAS.items():
+        for o in opcoes:
+            assert "/0001-" not in str(o), (
+                f"voltou um CNPJ digitado dentro do código, em {campo}")
+
+
+@pytest.mark.banco
+def test_empresa_inativa_e_recusada_ao_abrir_o_pedido(mundo):
+    """Tela esconde opção; servidor é que recusa. Sem esta trava, um pedido
+    antigo reenviado registraria alguém numa empresa que a empresa fechou."""
+    from sqlalchemy import text
+    morta = mundo["s"].execute(text("""
+        INSERT INTO empresas (razao_social, cnpj, ativo)
+        VALUES ('EMPRESA FECHADA LTDA', '11.222.333/0001-81', FALSE)
+        RETURNING id""")).scalar()
+    mundo["s"].flush()
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(mundo["s"], _cad(mundo, empresa_id=morta), mundo["obra_user"])
+    assert "inativa" in str(e.value)
+
+
+@pytest.mark.banco
+def test_o_pedido_guarda_a_empresa_E_o_CNPJ_dela_para_o_DP_ler(mundo):
+    """A escolha que vale é a empresa; o CNPJ viaja junto para o DP não ter de
+    abrir outra tela. Um é derivado do outro, num lugar só, e por isso os dois
+    não podem divergir."""
+    p = svc.abrir(mundo["s"], _cad(mundo), mundo["obra_user"])
+    assert str(p["dados"]["empresa_id"]) == str(mundo["empresa_id"])
+    assert p["dados"]["cnpj_admissao"] == "00.079.526/0001-09"
+
+
+@pytest.mark.banco
+def test_atender_grava_a_empresa_na_ficha_da_pessoa(mundo):
+    """O pedido dizia a empresa e o cadastro ficava sem ela: é o tipo de
+    divergência que o atendimento existe para não deixar acontecer."""
+    p = svc.abrir(mundo["s"], _cad(mundo), mundo["obra_user"])
+    r = svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    from app.apps.erp.db.models.cadastros import Colaborador
+    c = mundo["s"].get(Colaborador, r["colaborador_id"])
+    assert c.empresa_id == mundo["empresa_id"]

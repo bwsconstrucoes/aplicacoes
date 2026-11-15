@@ -445,10 +445,14 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
         # no código. Ele, em 11/11/2026: *"empresa para registro e CNPJ para
         # admissão é campo duplicado. É a mesma informação."* Empresa nova do
         # grupo entra sozinha aqui, sem ninguém lembrar de mexer em código.
+        # ⚑ TODAS AS ATIVAS, inclusive a que está sem CNPJ — ela aparece
+        # dizendo que está (15/11/2026). O campo é a EMPRESA; o CNPJ é um dado
+        # dela. Antes o campo pedia o CNPJ, e por isso a empresa sem CNPJ
+        # desaparecia da lista sem explicação.
         from app.apps.erp.core import pessoal_solicitacoes as svc_sp_emp
-        listas["cnpj_admissao"] = [
-            {"valor": x, "rotulo": x}
-            for x in svc_sp_emp.opcoes_de_empresa(s)]
+        listas["empresa_id"] = [
+            {"valor": x["id"], "rotulo": x["rotulo"]}
+            for x in svc_sp_emp.empresas_para_escolher(s)]
         # ⚑ "Cargo Pleiteado" e "Cargo Deferido" são o nome do Pipe para a
         # MESMA lista de cargos. Sem estas duas linhas eles saíam como texto
         # livre — e ele viu: *"o cargo. Se o cara já tem cargo, já era para

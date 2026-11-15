@@ -878,14 +878,28 @@ def test_quem_manda_so_o_CNPJ_continua_funcionando(sessao_real, dono, banco):
 @banco_
 def test_a_lista_de_empresas_do_pedido_sai_do_CADASTRO(sessao_real, banco):
     """Empresa nova do grupo tem de aparecer sozinha na caixinha do pedido —
-    sem ninguém lembrar de digitar o CNPJ dentro do código."""
+    sem ninguém lembrar de digitar o CNPJ dentro do código.
+
+    ⚑ E A SEM CNPJ TAMBÉM APARECE, desde 15/11/2026. Era o defeito que ele
+    cobrou três vezes: o campo pedia um CNPJ, então empresa sem CNPJ
+    cadastrado sumia da lista — quatro cadastradas, três aparecendo. O campo
+    virou a EMPRESA, e o CNPJ é um dado dela.
+    """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     from app.apps.erp.db.models.cadastros import Empresa
-    sessao_real.add(Empresa(razao_social="EMPRESA NOVA DO GRUPO LTDA",
-                            cnpj="11222333000181", nome_fantasia="NOVA"))
+    nova = Empresa(razao_social="EMPRESA NOVA DO GRUPO LTDA",
+                   cnpj="11222333000181", nome_fantasia="NOVA")
+    sem_cnpj = Empresa(razao_social="EMPRESA SEM CNPJ LTDA", cnpj="",
+                       nome_fantasia="SEM CNPJ")
+    sessao_real.add_all([nova, sem_cnpj])
     sessao_real.flush()
-    achadas = svc_sp.opcoes_de_empresa(sessao_real)
-    assert any("11222333000181" in x and "NOVA" in x for x in achadas), achadas
+    achadas = svc_sp.empresas_para_escolher(sessao_real)
+    por_id = {x["id"]: x for x in achadas}
+    assert nova.id in por_id, achadas
+    assert "11222333000181" in por_id[nova.id]["rotulo"]
+    assert sem_cnpj.id in por_id, (
+        "a empresa sem CNPJ sumiu da lista — é o defeito que ele viu três vezes")
+    assert "sem CNPJ no cadastro" in por_id[sem_cnpj.id]["rotulo"]
 
 
 def test_nenhuma_tela_pergunta_a_empresa_duas_vezes():

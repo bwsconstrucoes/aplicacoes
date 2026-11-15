@@ -241,9 +241,9 @@ TIPOS: dict[str, dict[str, Any]] = {
         # salário e matrícula: ele, com todas as letras, *"convenção coletiva,
         # é DP quem decide"* e *"matrícula, não é o funcionário que decide"*.
         "campos": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
-                   "cnpj_admissao", "observacao"),
+                   "empresa_id", "observacao"),
         "obrigatorios": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
-                         "cnpj_admissao"),
+                         "empresa_id"),
         "campos_do_dp": ("cargo_id", "convencao_id", "salario", "matricula"),
         "checklist": ("Atualizar a data de admissão", "Conferir cargo e convenção",
                       "Conferir a obra", "Atualizar a matrícula",
@@ -431,7 +431,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         # não é campo opcional — é pendência que alguém vai correr atrás
         # depois, por WhatsApp.
         "campos": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
-                   "tipo_documentacao", "tipo_contrato", "cnpj_admissao",
+                   "tipo_documentacao", "tipo_contrato", "empresa_id",
                    "num_ctps", "num_pis",
                    "data_inicio", "cargo_pleiteado_id",
                    "pagamento", "valor_diaria", "valor_mes",
@@ -439,7 +439,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "categoria_transporte", "descontar_vt",
                    "observacao"),
         "obrigatorios": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
-                         "tipo_documentacao", "cnpj_admissao",
+                         "tipo_documentacao", "empresa_id",
                          "data_inicio", "cargo_pleiteado_id", "valor_diaria"),
         # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
         # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
@@ -477,10 +477,20 @@ TIPOS: dict[str, dict[str, Any]] = {
         # VALOR DO MÊS também só aparece para mensalista — diarista não tem
         # valor de mês, tem diária.
         "ocultos_se": {"tipo_documentacao": {
-            "CTPS": ("pagamento", "valor_mes", "tipo_contrato")},
+            "CTPS": ("pagamento", "valor_mes")},
             "pagamento": {"DIARISTA": ("valor_mes",)}},
-        "visiveis_se": {"descontar_vt": {
-            "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
+        # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre para prestador — ele
+        # foi literal (15/11/2026): *"tem que ocultar o campo. Abre o campo só
+        # se for prestador de serviço."*
+        #
+        # A diferença entre "esconder quando é CTPS" e "só abrir quando é
+        # prestador" parece a mesma e não é: na primeira, o campo aparece
+        # ENQUANTO ninguém escolheu nada — e aí alguém responde "PJ" antes de
+        # dizer que é CTPS, e a resposta fica no formulário.
+        "visiveis_se": {
+            "tipo_contrato": {"tipo_documentacao": ("PRESTADOR",)},
+            "descontar_vt": {
+                "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
         "vem_do_documento": {
             "num_ctps": "CTPS-INFORMACOES",
             "num_pis": "CTPS-INFORMACOES",
@@ -554,17 +564,12 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
     # As duas opções de CLT (determinado e indeterminado) existem no cadastro
     # da pessoa e continuam lá — o que saiu foi PERGUNTAR num formulário onde
     # a resposta já está decidida pelo tipo de documentação.
-    "tipo_contrato": ("PJ", "Autônomo (RPA)", "Autônomo mensalista",
-                      "Jovem aprendiz", "Estágio", "Pró-labore"),
-    # ⚑ ESTA LISTA É SÓ O SOCORRO. A de verdade sai do CADASTRO DE EMPRESAS
-    # (`opcoes_de_empresa`), pela mesma regra das outras caixinhas: *"a fonte é
-    # o cadastro, não uma cópia; lista que mudar lá muda aqui sozinha"*.
-    # Empresa nova do grupo tinha de ser digitada aqui dentro do código, e
-    # ninguém ia lembrar. Ficam estas três para o caso de a tela ser montada
-    # sem banco (teste, e o próprio arquivo sendo lido por fora).
-    "cnpj_admissao": ("00.079.526/0001-09 - MATRIZ/CE",
-                      "50.422.792/0001-09 - INFRADENDE",
-                      "20.198.694/0001-20 - C3"),
+    # A fonte é o cadastro de pessoas: `TIPOS_CONTRATO_PRESTADOR`. Duas
+    # listas para a mesma escolha divergem no primeiro mês — foi o que
+    # aconteceu com as categorias de auxílio, no mesmo dia.
+    "tipo_contrato": tuple(
+        svc_pessoas.TIPO_CONTRATO_ROTULOS[c]
+        for c in svc_pessoas.TIPOS_CONTRATO_PRESTADOR),
     "parentesco": ("Filho", "Cônjuge"),
     "pagamento": ("Diarista", "Mensalista"),
     "meio_transporte": ("Nenhum", "Transporte Coletivo", "Moto", "Bicicleta"),
@@ -679,10 +684,8 @@ DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
     # Os códigos são os que `core/cadastros/pessoas.py` já grava na coluna
     # `tipo_contrato` — a tradução existe para a tela mostrar português e o
     # banco continuar com o que os relatórios entendem.
-    "tipo_contrato": {"PJ": "PJ", "Autônomo (RPA)": "AUTONOMO_RPA",
-                      "Autônomo mensalista": "AUTONOMO_MENSALISTA",
-                      "Jovem aprendiz": "JOVEM_APRENDIZ",
-                      "Estágio": "ESTAGIO", "Pró-labore": "PRO_LABORE"},
+    "tipo_contrato": {svc_pessoas.TIPO_CONTRATO_ROTULOS[c]: c
+                      for c in svc_pessoas.TIPOS_CONTRATO_PRESTADOR},
     "descontar_vt": {"Sim, descontar em folha": "1", "Não, a empresa absorve": "0"},
     "continua_prestador": {"Não, está saindo da empresa": "0",
                            "Sim, continua como prestador de serviço": "1"},
@@ -963,6 +966,22 @@ ROTULOS: dict[str, str] = {
     "tipo_documentacao": "Tipo de Documentação para Cadastro",
     "cargo_pleiteado_id": "Cargo Pleiteado",
     "cargo_deferido_id": "Cargo Deferido",
+    # ⚑ "EMPRESA PARA REGISTRO", e não "CNPJ para Admissão" (15/11/2026).
+    #
+    # Ele, pela terceira vez no assunto: *"em relação à empresa, CNPJ da
+    # empresa, você continua errando (…) tem que pegar do cadastro das
+    # empresas do ERP. Lá já estão cadastradas 4 empresas."*
+    #
+    # Tinha razão, e a raiz era o próprio campo: ele pedia um CNPJ, então a
+    # lista só podia oferecer empresa QUE TEM CNPJ — e a quarta, que está
+    # cadastrada sem CNPJ, desaparecia. O campo certo é a EMPRESA; o CNPJ é
+    # um dado dela, que o cadastro dela guarda.
+    #
+    # Agora o pedido guarda o NÚMERO da empresa, igual à ficha da pessoa faz
+    # (`empresa_id`), e as quatro aparecem. Ele mesmo já havia dito em
+    # 11/11/2026: *"empresa para registro e CNPJ para admissão é campo
+    # duplicado. É a mesma informação."*
+    "empresa_id": "Empresa para registro",
     "cnpj_admissao": "CNPJ para Admissão",
     "justificativa": "Justificativa de Alteração do Cargo",
     "num_ctps": "Nº CTPS",
@@ -1042,74 +1061,68 @@ ABERTAS = ("ABERTA", "EM_ANALISE")
 
 
 def _opcoes(s: Optional[Session], campo: str) -> list[str]:
-    """As opções de um campo de caixinha — do cadastro quando houver."""
-    if campo == "cnpj_admissao":
-        return opcoes_de_empresa(s)
+    """As opções de um campo de caixinha fechada."""
     return list(CATEGORIAS.get(campo, ()))
 
 
-def opcoes_de_empresa(s: Optional[Session] = None) -> list[str]:
-    """As empresas do grupo, como a caixinha mostra: "CNPJ - nome".
+def empresas_para_escolher(s: Optional[Session] = None) -> list[dict[str, Any]]:
+    """AS EMPRESAS DO GRUPO, direto do cadastro de Empresas do ERP.
 
-    ⚑ UMA INFORMAÇÃO, UMA FONTE. Ele, em 11/11/2026: *"empresa para registro e
-    CNPJ para admissão é campo duplicado. É a mesma informação."* Tem razão — e
-    era pior do que parecia: a lista das três empresas estava DIGITADA no
-    código, enquanto o cadastro de Empresas tinha as mesmas três com razão
-    social e CNPJ. Empresa nova do grupo precisaria ser escrita aqui dentro.
+    ⚑ ELE COBROU ISTO TRÊS VEZES, e nas duas primeiras eu consertei o lugar
+    errado. 15/11/2026: *"em relação à empresa, CNPJ da empresa, você continua
+    errando. Você está pegando do cadastro do colaborador, eu acho. Tem que
+    pegar do cadastro das empresas do ERP. Lá já estão cadastradas 4 empresas.
+    E continua aparecendo errado, ou seja, não está sendo usado o cadastro
+    correto."*
 
-    O formato "CNPJ - nome" é mantido porque é o que os pedidos já abertos têm
-    gravado: trocar a forma faria o pedido de ontem e o de hoje parecerem
-    empresas diferentes.
-    """
-    if s is None:
-        return list(CATEGORIAS.get("cnpj_admissao", ()))
-    linhas = s.execute(text("""
-        SELECT cnpj, COALESCE(NULLIF(btrim(nome_fantasia), ''), razao_social) AS nome
-          FROM empresas
-         WHERE ativo IS NOT FALSE AND COALESCE(btrim(cnpj), '') <> ''
-         ORDER BY nome""")).mappings().all()
-    achadas = [f"{l['cnpj']} - {l['nome']}" for l in linhas]
-    # Cadastro vazio não pode deixar a caixinha vazia: aí o pedido não sairia
-    # e ninguém entenderia por quê.
-    return achadas or list(CATEGORIAS.get("cnpj_admissao", ()))
+    **A lista VINHA do cadastro de Empresas — o erro era o CAMPO.** Ele pedia
+    um CNPJ ("CNPJ para Admissão"), então a lista só podia oferecer empresa que
+    TEM CNPJ preenchido; a quarta, cadastrada sem CNPJ, desaparecia. Eu tinha
+    "consertado" escrevendo embaixo do campo quem havia ficado de fora — o que
+    explica o sintoma e mantém o defeito.
 
+    O campo certo é a EMPRESA. O CNPJ é um dado dela, que o cadastro dela
+    guarda, e o sistema busca quando precisa. Assim as quatro aparecem, e
+    cadastrar o CNPJ que falta volta a ser o que é: arrumar o cadastro da
+    empresa, não condição para abrir um pedido.
 
-def empresas_de_fora(s: Optional[Session] = None) -> list[dict[str, str]]:
-    """As empresas do cadastro que NÃO entram na caixinha, e por quê.
-
-    ⚑ ELE ACHOU ISTO EM 15/11/2026: *"CNPJ para admissão, ele não está
-    exibindo os CNPJs das obras cadastradas. Não sei de onde é que ele está
-    pegando essa informação. Está exibindo 3, quando a gente tem 4 CNPJ
-    cadastrados no ERP."*
-
-    A lista VEM do cadastro, sim — mas duas condições tiram empresa de lá sem
-    dizer nada: estar **marcada como inativa** e estar **sem CNPJ**. A caixinha
-    mostrava o resto e pronto, e quem olhava não tinha como saber que faltava
-    uma, nem por quê. Sumir em silêncio é o defeito; a regra em si está certa
-    (empresa sem CNPJ não tem o que oferecer num campo que É o CNPJ).
-
-    Então a tela passa a DIZER quem ficou de fora. Consertar o cadastro é do
-    dono; descobrir que há o que consertar é do sistema.
+    ⚑ E NÃO HÁ MAIS LISTA DE SOCORRO. Antes, se a consulta não achasse nada, a
+    caixinha mostrava TRÊS empresas escritas dentro do código. Três — o mesmo
+    número que ele reclamou de ver. Lista inventada que parece certa é pior que
+    lista vazia: ninguém desconfia dela. Agora, sem cadastro, a lista vem
+    vazia e a tela diz o que fazer.
     """
     if s is None:
         return []
     linhas = s.execute(text("""
-        SELECT COALESCE(NULLIF(btrim(nome_fantasia), ''), razao_social) AS nome,
-               (ativo IS FALSE) AS inativa,
-               (COALESCE(btrim(cnpj), '') = '') AS sem_cnpj
+        SELECT id, razao_social,
+               COALESCE(NULLIF(btrim(nome_fantasia), ''), razao_social) AS nome,
+               COALESCE(btrim(cnpj), '') AS cnpj
           FROM empresas
-         WHERE ativo IS FALSE OR COALESCE(btrim(cnpj), '') = ''
-         ORDER BY nome""")).mappings().all()
-    saida = []
-    for l in linhas:
-        motivos = []
-        if l["inativa"]:
-            motivos.append("está marcada como inativa")
-        if l["sem_cnpj"]:
-            motivos.append("está sem CNPJ no cadastro")
-        saida.append({"nome": l["nome"] or "(sem nome)",
-                      "motivo": " e ".join(motivos)})
-    return saida
+         WHERE ativo IS NOT FALSE
+         ORDER BY razao_social""")).mappings().all()
+    return [{"id": l["id"], "nome": l["nome"],
+             "razao_social": l["razao_social"], "cnpj": l["cnpj"],
+             # O rótulo que a caixinha mostra. Sem CNPJ, DIZ que está sem — a
+             # pessoa escolhe a empresa certa e sabe que há cadastro a arrumar.
+             "rotulo": (f"{l['nome']} — {l['cnpj']}" if l["cnpj"]
+                        else f"{l['nome']} — sem CNPJ no cadastro")}
+            for l in linhas]
+
+
+def empresa_do_pedido(s: Session, empresa_id: Any) -> dict[str, Any]:
+    """A empresa escolhida, ou erro dizendo o que fazer."""
+    linha = s.execute(text("""
+        SELECT id, razao_social, COALESCE(btrim(cnpj), '') AS cnpj, ativo
+          FROM empresas WHERE id = :i"""),
+        {"i": int(empresa_id)}).mappings().first()
+    if linha is None:
+        raise ErroValidacao("Empresa não encontrada no cadastro.")
+    if linha["ativo"] is False:
+        raise ErroValidacao(
+            f"{linha['razao_social']} está marcada como inativa no cadastro de "
+            f"Empresas — não dá para registrar ninguém por ela.")
+    return dict(linha)
 
 
 def readmissoes_esquecidas(s: Session) -> list[dict[str, Any]]:
@@ -1124,10 +1137,10 @@ def readmissoes_esquecidas(s: Session) -> list[dict[str, Any]]:
     para trabalhar no dia seguinte e não consegue bater — e quem descobre é a
     obra, às sete da manhã, sem saber o motivo.
 
-    A conta aqui é simples e por isso confiável: pedido de desligamento que
-    respondeu "continua como prestador", pessoa ainda DESLIGADA, e nenhum
-    vínculo aberto. Enquanto as três coisas valerem, a pendência aparece na
-    tela do DP.
+    A conta tem três condições, e todas têm de valer: o pedido disse que
+    continua, a pessoa está desligada, e não há vínculo aberto. Feita a
+    readmissão, a pendência sai sozinha — ninguém precisa dar baixa nela, que é
+    o tipo de lista que ninguém mantém.
     """
     linhas = s.execute(text("""
         SELECT d.numero, d.colaborador_id, d.atendido_em, d.criado_em,
@@ -1327,6 +1340,17 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # continua sendo recusa — aí não há nada para readmitir, há uma ficha para
     # corrigir.
     readmissao = False
+    # ⚑ A EMPRESA ESCOLHIDA É CONFERIDA AQUI, e o CNPJ dela entra no pedido
+    # (15/11/2026). O pedido guarda o NÚMERO da empresa — é o que o cadastro
+    # da pessoa usa (`empresa_id`) — e o CNPJ vai junto só para o DP ler sem
+    # abrir outra tela, e para o que já lia `cnpj_admissao` continuar lendo.
+    #
+    # Conferir aqui, e não só na tela, é o que impede pedido com empresa
+    # inativa ou inexistente: tela esconde opção, servidor é que recusa.
+    if dados.get("empresa_id"):
+        emp = empresa_do_pedido(s, dados["empresa_id"])
+        dados = {**dados, "cnpj_admissao": emp["cnpj"] or None}
+
     if tipo == "CADASTRO":
         from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
         cpf = somente_digitos(dados.get("cpf") or "")
@@ -1360,6 +1384,11 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
         # Fica GRAVADO no pedido, e não só deduzido depois: é o que faz a
         # tela do DP e o histórico dizerem "readmissão" em vez de "cadastro".
         pedido["readmissao"] = "1"
+    # O CNPJ da empresa escolhida viaja no pedido para o DP LER — a escolha
+    # que vale é `empresa_id`. Dois campos para a mesma coisa só não divergem
+    # porque um deles é derivado do outro, aqui, num lugar só.
+    if pedido.get("empresa_id") and dados.get("cnpj_admissao"):
+        pedido["cnpj_admissao"] = dados["cnpj_admissao"]
 
     # Duas conferências que evitam fila com pedido impossível. O resto é do
     # atendimento: conferir tudo na abertura empurraria o trabalho do DP para a
@@ -1807,8 +1836,11 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
                                 if x["aberta"] and 0 < x["feitos"] < x["total_itens"]),
         },
         "tipos": tipos_para_tela(s),
-        # Quem ficou de fora da caixinha de CNPJ, e por quê (15/11/2026).
-        "empresas_fora": empresas_de_fora(s),
+        # ⚑ AS EMPRESAS DO GRUPO, direto do cadastro de Empresas — TODAS as
+        # ativas, inclusive a que está sem CNPJ (ela aparece dizendo que
+        # está). Ver `empresas_para_escolher`: o erro antigo era o CAMPO pedir
+        # um CNPJ, e não a lista vir do lugar errado.
+        "empresas": empresas_para_escolher(s),
         # Quem foi desligado dizendo que continua, e não foi readmitido: o
         # ponto não aceita essa pessoa amanhã (15/11/2026).
         "readmissoes_pendentes": readmissoes_esquecidas(s),

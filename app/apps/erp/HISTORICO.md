@@ -21,6 +21,84 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 15/11/2026 (depois de publicar) — DOIS ERROS MEUS QUE ELE VIU NA PRIMEIRA OLHADA
+
+Publiquei, ele abriu, e achou duas coisas em minutos. As duas valem registro
+porque o padrão de erro é o mesmo nas duas: **eu consertei o lugar onde fui
+olhar, não o lugar onde o defeito morava.**
+
+#### 1. O tipo de contrato aparecia para quem tem carteira
+
+Ele: *"Você ainda errou no tipo de contrato. CTPS não abre tipo de contrato,
+porque já é CLT. Então não tem CTPS Pró-labore, PJ. Tá errado. Tem que ocultar
+o campo. Abre o campo só se for prestador de serviço."*
+
+**Onde eu tinha consertado:** no formulário de PEDIDO do DP, que era a tela
+que eu estava construindo.
+
+**Onde o defeito estava:** também na FICHA DA PESSOA (Colaboradores › Vínculo
+e pagamento), que é onde o DP de fato cadastra gente — e lá o campo aparecia
+sempre, com as NOVE opções, inclusive as de CLT. Dava para gravar alguém de
+carteira com tipo de contrato "PJ", e aí a ficha dizia duas coisas que se
+contradizem sobre o mesmo vínculo; quem fosse ler depois (a folha, a
+contabilidade, um relatório) não teria como saber qual valia.
+
+**Como ficou:** o campo nasce FECHADO e abre só quando o vínculo é prestador —
+nas duas telas. A diferença entre "esconder quando é CTPS" e "só abrir quando
+é prestador" parece a mesma e não é: na primeira, o campo fica à mostra
+enquanto ninguém escolheu nada, e alguém responde "PJ" antes de dizer que é
+CTPS. Trocar para carteira LIMPA o campo, de propósito.
+
+A lista encurtou para os SEIS de prestador, e a fonte é uma só
+(`TIPOS_CONTRATO_PRESTADOR`, em `core/cadastros/pessoas.py`). As duas opções
+de CLT continuam entre os valores aceitos, para LER ficha antiga.
+
+#### 2. A empresa: a terceira vez que ele cobrou o mesmo assunto
+
+Ele: *"Em relação à empresa, CNPJ da empresa, você continua errando. Você está
+pegando do cadastro do colaborador, eu acho. Tem que pegar do cadastro das
+empresas do ERP. Lá já estão cadastradas 4 empresas. E continua aparecendo
+errado, ou seja, não está sendo usado o cadastro correto. A base correta."*
+
+**A lista VINHA do cadastro de Empresas.** O erro era o **CAMPO**: ele pedia um
+CNPJ ("CNPJ para Admissão"), então a consulta só podia oferecer empresa com
+CNPJ preenchido — e a **C3 está cadastrada sem CNPJ**. Quatro cadastradas,
+três aparecendo.
+
+**O que eu fiz na cobrança anterior, e por que não resolveu:** escrevi embaixo
+do campo quem havia ficado de fora e por quê. Isso EXPLICA o sintoma e mantém
+o defeito — e o defeito era o campo existir.
+
+**Como ficou:** o campo é a **EMPRESA**, não o CNPJ. O pedido guarda o número
+da empresa (`empresa_id`), igual à ficha da pessoa já fazia; o CNPJ é um dado
+dela, que o cadastro dela guarda e o sistema busca ao gravar. As quatro
+aparecem, e a que está sem CNPJ aparece **dizendo** que está — nas duas telas e
+no portal. Cadastrar o CNPJ que falta volta a ser arrumar o cadastro da
+empresa, e não condição para abrir um pedido.
+
+⚑ **E A LISTA DE SOCORRO FOI APAGADA.** Havia TRÊS empresas escritas dentro do
+código, usadas quando a consulta não achasse nada — e três era exatamente o
+número que ele reclamou de ver, nas duas vezes. Nunca confirmei se era isso que
+aparecia, mas o risco não se justifica: lista inventada que parece certa é pior
+que lista vazia, porque ninguém desconfia dela. Agora, sem cadastro, a lista vem
+vazia e a tela diz o que fazer.
+
+#### A lição, porque ela não é destas duas telas
+
+**Campo que pede um dado DERIVADO de um cadastro vai sempre excluir quem está
+com esse dado em branco.** "CNPJ para admissão" não é a pergunta: a pergunta é
+"por qual empresa?". Quando a pergunta é a entidade, o cadastro dela pode estar
+incompleto sem desaparecer da lista.
+
+E: **quando ele reclama de uma tela, a mesma regra provavelmente vive em
+outras duas.** O tipo de contrato estava no pedido, na ficha e no portal. Da
+próxima vez, procurar as três ANTES de dizer que está pronto.
+
+Testes: `tests/test_dp_pedidos_condicionais.py` ganhou cinco casos sobre a
+empresa — entre eles o que exige que a empresa SEM CNPJ apareça na lista, e o
+que proíbe CNPJ escrito dentro do código.
+
+
 ### ⚑ 15/11/2026 — OS FORMULÁRIOS DO DP PASSAM A SE AJUSTAR AO CASO
 
 Pedido longo dele, com seis decisões no mesmo texto, e todas atacam o mesmo

@@ -72,6 +72,26 @@ TIPO_CONTRATO_ROTULOS = {
     "TEMPORARIO": "Temporário",
     "PRO_LABORE": "Pró-labore",
 }
+# ⚑ OS TIPOS DE CONTRATO QUE SE OFERECEM — e são SÓ OS DE PRESTADOR
+# (15/11/2026). Ele, vendo o campo aberto para quem tem carteira: *"CTPS não
+# abre tipo de contrato, porque já é CLT. Então não tem CTPS pró-labore, PJ.
+# Está errado. Tem que ocultar o campo. Abre o campo só se for prestador de
+# serviço."*
+#
+# Tem razão, e o defeito era pior que feio: dava para gravar uma pessoa de
+# CARTEIRA com tipo de contrato "PJ", e aí o cadastro dizia duas coisas que se
+# contradizem sobre o mesmo vínculo. Quem fosse ler depois — a folha, a
+# contabilidade, um relatório — não teria como saber qual valia.
+#
+# As duas opções de CLT CONTINUAM na lista de valores aceitos (`TIPOS_CONTRATO`,
+# acima): há gente cadastrada com elas, e apagar o valor deixaria a ficha dessa
+# gente sem explicação. O que saiu foi OFERECER a escolha onde ela não existe.
+TIPOS_CONTRATO_PRESTADOR = ("PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA",
+                            "JOVEM_APRENDIZ", "ESTAGIO", "PRO_LABORE")
+for _tc in TIPOS_CONTRATO_PRESTADOR:
+    if _tc not in TIPOS_CONTRATO:
+        raise ValueError(f"tipo de contrato de prestador desconhecido: {_tc}")
+
 SEXOS = ("M", "F")
 SEXO_ROTULOS = {"M": "Masculino", "F": "Feminino"}
 ESTADOS_CIVIS = ("SOLTEIRO", "CASADO", "DIVORCIADO", "VIUVO", "UNIAO_ESTAVEL")
@@ -180,6 +200,10 @@ def opcoes(s: Optional[Session] = None) -> dict[str, Any]:
         "empresas": empresas,
         "vinculos": par(VINCULOS, VINCULO_ROTULOS),
         "tipos_contrato": par(TIPOS_CONTRATO, TIPO_CONTRATO_ROTULOS),
+        # ⚑ A LISTA QUE A TELA OFERECE: só os de prestador. A de cima fica
+        # para LER ficha antiga (ver `TIPOS_CONTRATO_PRESTADOR`).
+        "tipos_contrato_prestador": par(TIPOS_CONTRATO_PRESTADOR,
+                                        TIPO_CONTRATO_ROTULOS),
         "sexos": par(SEXOS, SEXO_ROTULOS),
         "estados_civis": par(ESTADOS_CIVIS, ESTADO_CIVIL_ROTULOS),
         "escolaridades": par(ESCOLARIDADES, ESCOLARIDADE_ROTULOS),

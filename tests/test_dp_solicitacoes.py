@@ -52,8 +52,17 @@ def mundo(sessao_real):
         RETURNING id""")).scalar()
     sessao_real.flush()
     cargo = type("Cargo", (), {"id": cargo_id})()
+    # ⚑ UMA EMPRESA DE VERDADE NO MUNDO DE TESTE (15/11/2026): o pedido passou
+    # a guardar o NÚMERO da empresa do cadastro, não um CNPJ digitado — e o
+    # servidor confere se ela existe e está ativa.
+    empresa_id = sessao_real.execute(_t("""
+        INSERT INTO empresas (razao_social, nome_fantasia, cnpj, ativo)
+        VALUES ('BWS DE TESTE LTDA', 'MATRIZ/TESTE', '00.079.526/0001-09', TRUE)
+        RETURNING id""")).scalar()
+    sessao_real.flush()
     return {"s": sessao_real, "dp": dp, "encarregado": encarregado,
-            "obra": obra, "pessoa": c, "cargo": cargo}
+            "obra": obra, "pessoa": c, "cargo": cargo,
+            "empresa_id": empresa_id}
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +189,7 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
         "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
         "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "José Repetido",
                                "cpf": CPF_A,
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "obra_id": mundo["obra"].id}, mundo["encarregado"])
     assert "já tem cadastro" in str(e.value)
 
@@ -213,7 +222,7 @@ def test_atender_readmissao_READMITE_de_verdade(mundo):
                          {"data_saida": "2025-06-30"}, mundo["dp"])
     mundo["s"].flush()
     p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id}, mundo["dp"])
     # Salário e a data de admissão efetiva são do DP: a obra pede o cargo.
@@ -233,7 +242,7 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
         "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
         "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id,
         "nome": "Maria Nova De Teste", "cpf": CPF_B,
-        "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+        "empresa_id": mundo["empresa_id"],
         # Obrigatórios desde 15/11/2026 — ver `_cadastro`, abaixo.
         "telefone": "85988887777", "pix_tipo": "CPF", "pix_chave": CPF_B,
         "valor_diaria": "150,00", "tipo_contrato": "PJ",
@@ -305,7 +314,7 @@ def test_pedido_impossivel_nao_e_atendido_pela_metade(mundo):
     """Readmitir quem está ativo é recusado pela regra do cadastro — e o pedido
     NÃO pode ficar "atendido" com o cadastro intacto."""
     p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id,
                                "admissao": "2026-02-01"}, mundo["dp"])
@@ -382,7 +391,7 @@ def test_marcar_item_poe_o_pedido_em_analise(mundo):
 
 def test_desmarcar_item_volta_atras(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id,
                                "admissao": "2026-02-01"}, mundo["dp"])
@@ -578,7 +587,7 @@ def _cadastro(mundo, **extra):
             "pagamento": "Diarista", "cargo_pleiteado_id": mundo["cargo"].id,
             # Desde 11/11/2026 o cadastro também diz POR QUAL EMPRESA — a
             # readmissão já perguntava, e quem cria a pessoa é este aqui.
-            "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+            "empresa_id": mundo["empresa_id"],
             # ⚑ OBRIGATÓRIOS DESDE 15/11/2026, por decisão dele: *"telefone é
             # obrigatoriíssimo (…) é vital"*, *"chave Pix obrigatória"*, e o
             # valor da diária *"vamos colocar como obrigatório"*. Sem telefone
@@ -988,11 +997,19 @@ def test_todo_tipo_que_ADMITE_alguem_pergunta_por_qual_empresa(mundo):
     ADMITEM = ("CADASTRO", "READMISSAO")
     for chave in ADMITEM:
         regra = svc.TIPOS[chave]
-        assert "cnpj_admissao" in regra["campos"], (
+        # ⚑ O CAMPO VIROU `empresa_id` EM 15/11/2026, e isto não é detalhe de
+        # nome: enquanto ele pedia um CNPJ, a lista só podia oferecer empresa
+        # QUE TEM CNPJ — e a quarta do grupo, cadastrada sem CNPJ, sumia da
+        # caixinha. Ele cobrou três vezes: *"tem que pegar do cadastro das
+        # empresas do ERP. Lá já estão cadastradas 4 empresas."*
+        assert "empresa_id" in regra["campos"], (
             f"{chave} registra alguém numa empresa e não pergunta qual")
-        assert "cnpj_admissao" in regra["obrigatorios"], (
+        assert "empresa_id" in regra["obrigatorios"], (
             f"{chave} pergunta a empresa mas deixa passar em branco — o DP "
-            f"ficaria sem saber por qual das três registrar")
+            f"ficaria sem saber por qual registrar")
+        assert "cnpj_admissao" not in regra["campos"], (
+            f"{chave} voltou a pedir o CNPJ digitado em vez da empresa — e "
+            f"aí a empresa sem CNPJ cadastrado desaparece da lista de novo")
 
 
 def test_a_empresa_e_perguntada_UMA_vez_so(mundo):
@@ -1015,4 +1032,4 @@ def test_o_cadastro_sem_a_empresa_e_recusado(mundo):
             "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
                            "COMPROVANTE-ENDERECO-PESSOA", "CTPS-FOTO",
                            "CTPS-INFORMACOES"]}, mundo["encarregado"])
-    assert "CNPJ para Admissão" in str(e.value)
+    assert "Empresa para registro" in str(e.value)

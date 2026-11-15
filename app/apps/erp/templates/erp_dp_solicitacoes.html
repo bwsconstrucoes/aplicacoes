@@ -585,17 +585,12 @@ async function novaSolicitacao(){
     if (opcoesServidor && opcoesServidor.length
         && !nomeLista && c !== "cargo_id" && c !== "convencao_id"
         && c !== "obra_id") {
-      const fora = (c === "cnpj_admissao" ? (DADOS.empresas_fora || []) : []);
       campos.push({
         nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c, tipo: "select",
         largura: extra.largura || 3,
         opcoes: [{valor: "", rotulo: "—"}].concat(
           opcoesServidor.map(x => ({valor: x, rotulo: x}))),
-        dica: fora.length
-          ? `Não aparece${fora.length > 1 ? "m" : ""} aqui: `
-            + fora.map(x => `<b>${escapar(x.nome)}</b> (${escapar(x.motivo)})`)
-                .join(", ") + ". Arrume em Administração › Empresas."
-          : extra.dica});
+        dica: extra.dica});
     } else if (nomeLista && listas[nomeLista]) {
       {# ⚑ A CAIXINHA DO CNPJ DIZ QUEM FICOU DE FORA (15/11/2026).
 
@@ -630,6 +625,27 @@ async function novaSolicitacao(){
                    opcoes: [{valor: "", rotulo: "—"}].concat(
                      listas[nomeLista].filter(o => o.em_uso !== false)),
                    dica: extra.dica});
+    } else if (c === "empresa_id") {
+      {# ⚑ A EMPRESA VEM DO CADASTRO DE EMPRESAS DO ERP, e TODAS as ativas
+         aparecem — inclusive a que está sem CNPJ (ela aparece dizendo que
+         está). 15/11/2026, terceira vez que ele cobra o assunto: *"tem que
+         pegar do cadastro das empresas do ERP. Lá já estão cadastradas 4
+         empresas. E continua aparecendo errado."*
+
+         A lista VINHA do cadastro; o erro era o CAMPO. Ele pedia um CNPJ, e
+         por isso a lista só podia oferecer empresa que TEM CNPJ — a quarta
+         sumia. Agora se escolhe a EMPRESA, e o CNPJ dela é um dado do
+         cadastro dela, que o servidor busca. #}
+      const empresas = DADOS.empresas || [];
+      campos.push({
+        nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || "Empresa para registro",
+        tipo: "select", largura: 3,
+        opcoes: [{valor: "", rotulo: "escolha a empresa…"}].concat(
+          empresas.map(x => ({valor: x.id, rotulo: x.rotulo}))),
+        dica: empresas.length
+          ? "É por esta empresa que a pessoa é registrada na folha."
+          : "<b>Nenhuma empresa ativa no cadastro.</b> Cadastre em "
+            + "Administração › Empresas antes de abrir o pedido."});
     } else if (c === "cargo_id" || c === "cargo_pleiteado_id"
                || c === "convencao_id") {
       {# `cargo_pleiteado_id` entra aqui em 15/11/2026: era caixa de TEXTO, e

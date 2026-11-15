@@ -308,6 +308,12 @@ const ROTULO = {
   valor_diaria: "Valor da Diária",
   valor_mes: "Valor do Mês",
   tipo_readmissao: "Tipo de Readmissão",
+  // ⚑ "Empresa para registro", e não "CNPJ para Admissão" (15/11/2026): o
+  // campo é a EMPRESA, e o CNPJ é um dado dela. Enquanto ele pedia o CNPJ, a
+  // empresa cadastrada SEM CNPJ desaparecia da lista sem explicação — e eram
+  // quatro cadastradas aparecendo três. O rótulo antigo fica para os pedidos
+  // já gravados, que mostram o que foi pedido na época.
+  empresa_id: "Empresa para registro",
   cnpj_admissao: "CNPJ para Admissão",
   solicitacao: "Solicitação",
   meio_transporte: "Meio de Transporte para chegar à Obra?",
