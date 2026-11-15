@@ -12096,6 +12096,38 @@ def api_obras_cdiarios():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/diario/quadro")
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_quadro():
+    """O mês inteiro de TODAS as obras: linhas de obra, colunas de dia.
+
+    Pedido dele em 15/11/2026: *"aqui era para mostrar por mês, todas as obras
+    (…) cada coluna é um dia (…) você bate o olho e já visualiza exatamente
+    todos os dias que estão faltando (…) clicar e já ir direto para o dia."*
+
+    ⚑ RESPEITA O ESCOPO: quem é preso a obras vê só as dele. Sem isto, o
+    quadro seria a porta dos fundos para a lista inteira de obras da empresa.
+    """
+    from datetime import date as _date
+
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        hoje = _date.today()
+        ano = request.args.get("ano", type=int) or hoje.year
+        mes = request.args.get("mes", type=int) or hoje.month
+        with get_session() as s:
+            minhas = obras_do_usuario(s, _usuario_logado(s))
+            return jsonify({"ok": True, **svc.quadro_do_mes(
+                s, ano, mes, obra_ids=minhas)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no quadro do mês do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/fotos", methods=["POST"])
 @login_obrigatorio
 @permissao("lancar_diario")

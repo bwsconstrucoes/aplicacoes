@@ -444,12 +444,60 @@ async function novaSolicitacao(){
   for (const c of regra.campos) {
     const extra = CAMPO_PEDIDO[c] || {};
     const nomeLista = LISTA_DO_CAMPO[c];
-    if (nomeLista && listas[nomeLista]) {
-      campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, tipo: "select",
-                   largura: extra.largura || 3, opcoes: listas[nomeLista]});
-    } else if (c === "cargo_id" || c === "convencao_id") {
-      const fonte = c === "cargo_id" ? (o.cargos || []) : (o.convencoes || []);
-      campos.push({nome: c, rotulo: ROTULO_CAMPO[c], tipo: "select", largura: 3,
+    {# ⚑ O RÓTULO E A LISTA VÊM DO SERVIDOR PRIMEIRO (15/11/2026).
+
+       Ele: *"CNPJ para admissão, ele não está exibindo os CNPJs das obras
+       cadastradas. Não sei de onde é que ele está pegando essa informação."*
+
+       A resposta é que não estava pegando de lugar nenhum: esta tela tinha a
+       PRÓPRIA lista de rótulos e de caixinhas, escrita aqui dentro, e ela
+       ficou para trás da lista do servidor. Campo que o servidor conhece e
+       esta tela não aparecia com o nome técnico cru — "cnpj_admissao",
+       "tipo_documentacao", "cargo_pleiteado_id" — e como caixa de texto
+       vazia, sem as opções que o servidor já mandava prontas.
+
+       Agora o servidor manda e a tela obedece; os mapas daqui viraram
+       SOCORRO, para o caso de um campo que ele não descreva. Uma informação,
+       uma fonte — a mesma regra que tirou a lista de CNPJs de dentro do
+       código, semana passada. #}
+    const rotuloServidor = (regra.rotulos || {})[c];
+    const opcoesServidor = (regra.opcoes || {})[c];
+    if (opcoesServidor && opcoesServidor.length
+        && !nomeLista && c !== "cargo_id" && c !== "convencao_id"
+        && c !== "obra_id") {
+      const fora = (c === "cnpj_admissao" ? (DADOS.empresas_fora || []) : []);
+      campos.push({
+        nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c, tipo: "select",
+        largura: extra.largura || 3,
+        opcoes: [{valor: "", rotulo: "—"}].concat(
+          opcoesServidor.map(x => ({valor: x, rotulo: x}))),
+        dica: fora.length
+          ? `Não aparece${fora.length > 1 ? "m" : ""} aqui: `
+            + fora.map(x => `<b>${escapar(x.nome)}</b> (${escapar(x.motivo)})`)
+                .join(", ") + ". Arrume em Administração › Empresas."
+          : extra.dica});
+    } else if (nomeLista && listas[nomeLista]) {
+      {# ⚑ A CAIXINHA DO CNPJ DIZ QUEM FICOU DE FORA (15/11/2026).
+
+         Ele: *"ele não está exibindo os CNPJs das obras cadastradas (…) está
+         exibindo 3, quando a gente tem 4 CNPJ cadastrados no ERP."*
+
+         A lista vem do cadastro de Empresas, sim — mas empresa marcada como
+         inativa, ou sem CNPJ preenchido, não tem como entrar num campo que É
+         o CNPJ. O defeito não era a regra: era sumir em silêncio. Agora a
+         dica embaixo do campo nomeia quem faltou e o motivo, que é o que
+         transforma "cadê a quarta?" em "ah, está sem CNPJ". #}
+      campos.push({nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c,
+                   tipo: "select", largura: extra.largura || 3,
+                   opcoes: listas[nomeLista], dica: extra.dica});
+    } else if (c === "cargo_id" || c === "cargo_pleiteado_id"
+               || c === "convencao_id") {
+      {# `cargo_pleiteado_id` entra aqui em 15/11/2026: era caixa de TEXTO, e
+         o nome já dizia que é um número de cargo. Quem pedia admissão digitava
+         "pedreiro" e o DP recebia um texto que não casa com cadastro nenhum. #}
+      const fonte = (c === "convencao_id" ? (o.convencoes || []) : (o.cargos || []));
+      campos.push({nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c],
+                   tipo: "select", largura: 3,
                    opcoes: [{valor: "", rotulo: "—"}].concat(
                      fonte.map(x => ({valor: x.id, rotulo: x.nome})))});
     } else if (c === "obra_id") {
@@ -464,8 +512,8 @@ async function novaSolicitacao(){
                    opcoes: [{valor: "", rotulo: "escolha a obra…"}].concat(
                      (o.obras || []).map(x => ({valor: x.id, rotulo: x.codigo})))});
     } else {
-      campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, largura: extra.largura || 3,
-                   ...extra});
+      campos.push({nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c,
+                   largura: extra.largura || 3, ...extra});
     }
   }
   const r = await perguntar({titulo: regra.rotulo,

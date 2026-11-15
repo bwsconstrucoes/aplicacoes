@@ -21,6 +21,75 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 15/11/2026 — O DIÁRIO NO CELULAR, e o quadro do mês como porta da tela
+
+Ele abriu o diário no celular: *"ele está abrindo tal qual no computador. Só
+que no computador a gente tem uma tela ampla (…) aqui não é local de gestão, é
+local apenas de lançamento de informação."* Cinco coisas saíram daí.
+
+**1. O QUADRO DO MÊS virou a tela inicial.** Ele descreveu o que já usa:
+*"uma planilha, cada coluna é um dia, dia 1, dia 2, até o final do mês, e cada
+dia tem uma marcação dizendo se está ou não preenchido. Você bate o olho e já
+visualiza exatamente todos os dias que estão faltando. E a partir dessa
+informação, clicar e já ir direto para o dia."* É isso: obras nas linhas, dias
+nas colunas, as MESMAS cores do calendário de uma obra, e o clique no quadrado
+vermelho abre aquele dia daquela obra. A primeira coluna fica presa ao rolar
+para o lado, senão no dia 25 ninguém sabe mais de que obra é a linha.
+
+**2. A TELA NÃO ABRE MAIS NUMA OBRA.** *"Não fica legal entrar na tela já da
+primeira obra. Inclusive, no próprio computador também."* Entrando pelo
+quadro, não há obra escolhida — e a obra se escolhe pelo dia que falta, que é
+o caminho de quem vai preencher.
+
+**3. O MÊS EM PORTUGUÊS.** *"No filtro, o mês está 2026-11. A gente está no
+Brasil, então é para ser 11/2026."* O campo `type="month"` escreve no formato
+do NAVEGADOR e não há como mandar nele — num aparelho configurado em inglês
+sai "2026-11". Viraram duas caixinhas, mês por nome e ano, que escrevem certo
+em qualquer aparelho e ainda são mais fáceis de tocar.
+
+**4. A BUSCA DE OBRA FUNCIONA NO CELULAR.** *"Eu botei o nome de uma obra e ele
+não… aí eu tenho que clicar. No computador você começa a escrever e já vai
+exibindo (…) e no celular não aparece."* A busca da casa filtra as opções
+DENTRO do `<select>`, e no celular o `<select>` só mostra a lista depois de a
+pessoa tocar nele — digitar parecia não fazer nada. Agora os achados aparecem
+na própria coluna e se tocam.
+
+**5. NO CELULAR, O RELATO VEM PRIMEIRO.** *"O cabeçalho, aquilo ali são muitas
+informações (…) bastava a obra. Efetivo do dia, de forma mais resumida."* Na
+tela estreita a ordem muda — relato, fotos, equipamentos, fiscalização, e só
+depois a ficha da obra e o efetivo, os dois recolhidos. No computador nada
+mudou: lá a tela é larga e a visão de gestão cabe junto.
+
+⚠️ **OBRA CONCLUÍDA NO QUADRO É DADO, NÃO CÓDIGO.** Ele: *"não era para estar
+exibindo as obras que estão concluídas."* O filtro `status <> 'ENCERRADA'` já
+existia e continua — obra que aparece ali é obra marcada como **ATIVA** no
+cadastro. Encerrar é na tela de Obras. (Se a C. Diários tiver uma coluna de
+situação, dá para trazer na importação; eu não sei o nome dela.)
+
+### ⚑ 15/11/2026 — O PEDIDO DO DP MOSTRAVA NOME TÉCNICO E CAIXINHA VAZIA
+
+Ele: *"CNPJ para admissão, ele não está exibindo os CNPJs das obras
+cadastradas. Não sei de onde é que ele está pegando essa informação. Está
+exibindo 3, quando a gente tem 4 CNPJ cadastrados no ERP."*
+
+**Duas coisas diferentes, e as duas eram defeito:**
+
+1. **A tela do DP tinha a PRÓPRIA lista de rótulos e caixinhas**, escrita
+   dentro do template, e ela ficou para trás da lista do servidor. Campo que o
+   servidor descreve e a tela não conhecia aparecia com o **nome técnico cru**
+   (`cnpj_admissao`, `tipo_documentacao`, `cargo_pleiteado_id`) e como caixa de
+   TEXTO vazia — sem as opções que o servidor já mandava prontas. Agora o
+   servidor manda e a tela obedece; os mapas de lá viraram socorro. De quebra,
+   `cargo_pleiteado_id` deixou de ser texto livre: era pedir "pedreiro" escrito
+   à mão e o DP receber algo que não casa com cadastro nenhum.
+2. **A quarta empresa sumia em silêncio.** A lista vem do cadastro, sim, mas
+   duas condições tiram empresa de lá: estar marcada como **inativa** e estar
+   **sem CNPJ**. A regra está certa (campo que É o CNPJ não tem o que oferecer
+   sem CNPJ); o defeito era não dizer. Agora a dica embaixo do campo nomeia
+   quem ficou de fora e por quê. **Reproduzido**: 4 empresas cadastradas, 3 na
+   caixinha, e a tela dizendo "Não aparece aqui: C3 (está sem CNPJ no
+   cadastro)".
+
 ### ⚑ 14/11/2026 — AS FOTOS DO DIÁRIO, com folha de anexo no papel
 
 Ele: *"era muito interessante a gente poder colocar serviços executados e

@@ -2048,6 +2048,19 @@ meses. Agora o ERP também lê, pela tela de Importar.
   que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
   não existe.
 
+### O quadro do mês do diário (15/11/2026)
+
+- "Quantos dias de diário faltam neste mês, e em quais obras?" — é o que o
+  quadro mostra de um olhar, e a conta vem pronta por obra.
+- "Em que dias a obra X não tem diário?" — as células vermelhas da linha dela.
+- ⚠️ **"obra"** no quadro é obra **não encerrada**. Obra concluída que ainda
+  aparece está marcada como ATIVA no cadastro — a resposta certa é "está
+  aparecendo porque o cadastro dela não foi encerrado", nunca "o sistema
+  errou".
+- ⚠️ **"falta diário"** já desconta fim de semana, feriado, dia antes do
+  início e depois do término da obra, e o futuro. Sábado com ponto batido
+  conta como dia útil — porque teve trabalho.
+
 ### As fotos do diário (14/11/2026)
 
 - "Quais dias desta obra estão sem foto?" — dá para responder: a foto é anexo

@@ -660,6 +660,44 @@ def opcoes_de_empresa(s: Optional[Session] = None) -> list[str]:
     return achadas or list(CATEGORIAS.get("cnpj_admissao", ()))
 
 
+def empresas_de_fora(s: Optional[Session] = None) -> list[dict[str, str]]:
+    """As empresas do cadastro que NÃO entram na caixinha, e por quê.
+
+    ⚑ ELE ACHOU ISTO EM 15/11/2026: *"CNPJ para admissão, ele não está
+    exibindo os CNPJs das obras cadastradas. Não sei de onde é que ele está
+    pegando essa informação. Está exibindo 3, quando a gente tem 4 CNPJ
+    cadastrados no ERP."*
+
+    A lista VEM do cadastro, sim — mas duas condições tiram empresa de lá sem
+    dizer nada: estar **marcada como inativa** e estar **sem CNPJ**. A caixinha
+    mostrava o resto e pronto, e quem olhava não tinha como saber que faltava
+    uma, nem por quê. Sumir em silêncio é o defeito; a regra em si está certa
+    (empresa sem CNPJ não tem o que oferecer num campo que É o CNPJ).
+
+    Então a tela passa a DIZER quem ficou de fora. Consertar o cadastro é do
+    dono; descobrir que há o que consertar é do sistema.
+    """
+    if s is None:
+        return []
+    linhas = s.execute(text("""
+        SELECT COALESCE(NULLIF(btrim(nome_fantasia), ''), razao_social) AS nome,
+               (ativo IS FALSE) AS inativa,
+               (COALESCE(btrim(cnpj), '') = '') AS sem_cnpj
+          FROM empresas
+         WHERE ativo IS FALSE OR COALESCE(btrim(cnpj), '') = ''
+         ORDER BY nome""")).mappings().all()
+    saida = []
+    for l in linhas:
+        motivos = []
+        if l["inativa"]:
+            motivos.append("está marcada como inativa")
+        if l["sem_cnpj"]:
+            motivos.append("está sem CNPJ no cadastro")
+        saida.append({"nome": l["nome"] or "(sem nome)",
+                      "motivo": " e ".join(motivos)})
+    return saida
+
+
 def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
     """Os tipos, com os campos que cada um pede.
 
@@ -1191,5 +1229,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
                                 if x["aberta"] and 0 < x["feitos"] < x["total_itens"]),
         },
         "tipos": tipos_para_tela(s),
+        # Quem ficou de fora da caixinha de CNPJ, e por quê (15/11/2026).
+        "empresas_fora": empresas_de_fora(s),
         "situacoes": [{"valor": c, "rotulo": r} for c, r in SITUACAO_ROTULOS.items()],
     }
