@@ -101,8 +101,22 @@ CATEGORIA_ALIMENTACAO_ROTULOS = {
     "SEG_QUI": "Segunda à quinta", "SEG_SEX": "Segunda à sexta",
     "MENSAL": "Mensal", "MES": "Mês",
 }
-CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "SEG_E_SEX", "VALE_TRANSPORTE",
-                         "DIARIO_E_VT", "VEICULO", "MOTOCICLETA", "BICICLETA", "CARTAO")
+# ⚑ "MES" ENTROU EM 15/11/2026, para o transporte ter o mesmo vocabulário da
+# alimentação. Ele, sobre as categorias: *"renomeia mensal para mês e explica
+# cada modo de cálculo — diário é dias úteis, mês é o valor cheio, mensal é 30
+# ou 31 vezes o valor."*
+#
+# A alimentação já tinha as duas (MENSAL e MES), e são contas DIFERENTES: uma
+# multiplica pelos dias do mês, a outra é fixa. O transporte tinha só MENSAL, e
+# quem quisesse pagar um valor cheio de transporte não tinha como dizer isso —
+# ia escolher "Mensal" e o valor sairia multiplicado.
+#
+# Acrescentar é barato e não desfaz nada: a coluna é TEXT (migração 086), não
+# há ENUM no banco, e ninguém decide nada com um `switch` exaustivo nestes
+# valores. Ficha antiga continua com o que tem.
+CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "MES", "SEG_E_SEX",
+                         "VALE_TRANSPORTE", "DIARIO_E_VT", "VEICULO",
+                         "MOTOCICLETA", "BICICLETA", "CARTAO")
 # O QUE SAIU DE USO, e por que não sai do código (05/11/2026, dele: *"isso aqui
 # a gente nem utiliza mais, cartão no transporte"*): apagar o valor deixaria sem
 # explicação a ficha de quem foi cadastrado com ele, e a folha de um mês fechado
@@ -110,7 +124,8 @@ CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "SEG_E_SEX", "VALE_TRANSPORTE",
 # apenas das caixinhas de cadastro NOVO.
 CATEGORIAS_TRANSPORTE_FORA_DE_USO = ("CARTAO",)
 CATEGORIA_TRANSPORTE_ROTULOS = {
-    "DIARIO": "Diário", "MENSAL": "Mensal", "SEG_E_SEX": "Segunda e sexta",
+    "DIARIO": "Diário", "MENSAL": "Mensal", "MES": "Mês",
+    "SEG_E_SEX": "Segunda e sexta",
     "VALE_TRANSPORTE": "Vale-transporte", "DIARIO_E_VT": "Diário e vale-transporte",
     "VEICULO": "Veículo", "MOTOCICLETA": "Motocicleta", "BICICLETA": "Bicicleta",
     "CARTAO": "Cartão (não paga em dinheiro)",

@@ -79,6 +79,7 @@ def test_tipo_que_exige_pessoa_cobra_a_pessoa(mundo):
     with pytest.raises(ErroValidacao) as e:
         svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"},
                   mundo["dp"])
     assert "escolha a pessoa" in str(e.value).lower()
@@ -134,7 +135,18 @@ def test_os_rotulos_sao_os_do_pipe_e_nao_os_meus():
     assert "Prestador que passa a ter carteira" not in nomes   # inventado
     assert "Desligamento de Prestador de Serviço" in nomes
     assert svc.ROTULOS["categoria_alimentacao"] == "Categoria Auxílio Alimentação"
-    assert svc.CATEGORIAS["categoria_alimentacao"][0] == "Segunda à Quinta"
+    # ⚑ AS OPÇÕES DESTE CAMPO MUDARAM DE FONTE em 15/11/2026, e isto NÃO é
+    # voltar a inventar a roda: elas passaram a vir do CADASTRO DE PESSOAS, que
+    # é onde o valor fica gravado. Havia duas listas para o mesmo campo — o
+    # rótulo do Pipe aqui e o código do cadastro lá —, a tela usava uma e o
+    # pedido gravava a outra, e o atendimento não conseguia aplicar o
+    # benefício. O rótulo que a pessoa LÊ continua em português; o que viaja é
+    # o código. Ver `test_a_categoria_do_auxilio_tem_UMA_fonte_so`, em
+    # `test_dp_pedidos_condicionais.py`.
+    from app.apps.erp.core.cadastros import pessoas as _p
+    assert svc.CATEGORIAS["categoria_alimentacao"] == tuple(
+        _p.CATEGORIAS_ALIMENTACAO)
+    assert _p.CATEGORIA_ALIMENTACAO_ROTULOS["SEG_QUI"] == "Segunda à quinta"
     assert svc.ROTULOS["tipo_readmissao"] == "Tipo de Readmissão"
     # As quatro formas de desligamento, como estão lá.
     assert svc.CATEGORIAS["forma_desligamento"] == (
@@ -148,6 +160,7 @@ def test_o_checklist_do_tipo_nasce_com_o_pedido(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     assert p["total_itens"] == 11 and p["feitos"] == 0
     assert any("TRCT" in i["descricao"] for i in p["itens"])
@@ -180,7 +193,8 @@ def test_atender_desligamento_DESLIGA_de_verdade(mundo):
         "tipo": "DESLIGAMENTO", "colaborador_id": mundo["pessoa"].id,
         "aviso_previo": "2026-03-01",
         # O rótulo do Pipe; o que fica gravado é PEDIDO_COLABORADOR.
-        "forma_desligamento": "Demissão com Aviso Trabalhado"}, mundo["dp"])
+        "forma_desligamento": "Demissão com Aviso Trabalhado",
+        "continua_prestador": "Não, está saindo da empresa"}, mundo["dp"])
     # ⚑ A DATA DE SAÍDA É DO DP, e vai ao ATENDER. Ele, em 10/11/2026: *"de
     # saída, o último dia trabalhado, não é a pessoa que está pedindo que vai
     # dizer. Ele vai colocar só a data do aviso prévio."*
@@ -217,8 +231,14 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
     p = svc.abrir(mundo["s"], {
         "tipo": "CADASTRO", "tipo_documentacao": "Prestador de Serviço",
         "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
-        "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "Maria Nova De Teste", "cpf": CPF_B,
+        "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id,
+        "nome": "Maria Nova De Teste", "cpf": CPF_B,
         "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+        # Obrigatórios desde 15/11/2026 — ver `_cadastro`, abaixo.
+        "telefone": "85988887777", "pix_tipo": "CPF", "pix_chave": CPF_B,
+        "valor_diaria": "150,00", "tipo_contrato": "PJ",
+        # Mensalista declara o valor do mês; diarista não tem valor de mês.
+        "valor_mes": "3.300,00",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01"}, mundo["encarregado"])
     assert p["colaborador_id"] is None          # a pessoa ainda não existe
@@ -325,6 +345,7 @@ def test_cancelar_nao_apaga_o_pedido(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     r = svc.cancelar(mundo["s"], p["id"], {"motivo": "a pessoa desistiu de sair"},
                      mundo["dp"])
@@ -352,6 +373,7 @@ def test_marcar_item_poe_o_pedido_em_analise(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     assert p["situacao"] == "ABERTA"
     r = svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
@@ -373,6 +395,7 @@ def test_item_de_outro_pedido_e_recusado(mundo):
     p1 = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                 "colaborador_id": mundo["pessoa"].id,
                                 "forma_desligamento": "Demissão com Aviso Trabalhado",
+                                "continua_prestador": "Não, está saindo da empresa",
                                 "aviso_previo": "2026-03-01"}, mundo["dp"])
     p2 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "outro",
                            "obra_id": mundo["obra"].id}, mundo["dp"])
@@ -402,6 +425,7 @@ def test_em_andamento_conta_o_checklist_comecado_e_nao_terminado(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
     mundo["s"].flush()
@@ -496,17 +520,33 @@ def test_sem_dizer_a_obra_vale_a_do_cadastro_da_pessoa(mundo):
     assert svc.ler(mundo["s"], r["id"])["obra_id"] == mundo["obra"].id
 
 
-def test_todo_tipo_oferece_a_obra_na_tela():
-    """⚑ A TRAVA. A obra é acrescentada em `tipos_para_tela`, e não copiada em
-    cada tipo: esquecer de copiá-la no tipo número doze seria o defeito
-    garantido — e ele só apareceria quando alguém tentasse abrir justamente
-    aquele pedido, com o pedido já digitado."""
+def test_a_obra_so_e_perguntada_quando_nao_ha_de_onde_tira_la():
+    """⚑ A TRAVA, e a regra MUDOU em 15/11/2026, por decisão dele.
+
+    Antes a obra era perguntada em TODO pedido. Ele cortou: *"a obra está no
+    cadastro. Ignora isso aí, tira isso aí"* — e, perguntado se valia também
+    para o cadastro de gente nova: *"admissão nova ou de colaborador demitido
+    tem que ter a obra. Demais não precisa."*
+
+    A divisão é exatamente `exige_pessoa`: pedido sobre quem JÁ tem ficha tira
+    a obra da ficha; pedido que CRIA a ficha (cadastro, readmissão) não tem de
+    onde tirar, e pergunta. A trava continua sendo a mesma: a obra é
+    acrescentada em `tipos_para_tela`, num lugar só, e não copiada em cada
+    tipo — esquecer de copiá-la no tipo número doze seria o defeito garantido.
+    """
     for t in svc.tipos_para_tela():
-        assert "obra_id" in t["campos"], f"{t['valor']} não pergunta a obra"
-    # E no tipo que NÃO a declarava, ela entra na frente: "de qual obra é
-    # isto?" é a primeira pergunta de quem abre um pedido, não a última.
-    diversos = next(t for t in svc.tipos_para_tela() if t["valor"] == "DIVERSOS")
-    assert diversos["campos"][0] == "obra_id"
+        if t["exige_pessoa"]:
+            assert "obra_id" not in t["campos"], (
+                f"{t['valor']} pergunta a obra, e a pessoa escolhida já tem uma "
+                f"na ficha — perguntar abre a porta para duas respostas")
+        else:
+            assert "obra_id" in t["campos"], (
+                f"{t['valor']} não pergunta a obra, e não tem ficha de onde "
+                f"tirá-la")
+            # Ela entra na FRENTE: "de qual obra é isto?" é a primeira
+            # pergunta de quem abre um pedido, não a última.
+            assert t["campos"][0] == "obra_id", (
+                f"{t['valor']}: a obra não está na frente")
 
 
 def test_o_requerente_saiu_de_uso():
@@ -539,6 +579,15 @@ def _cadastro(mundo, **extra):
             # Desde 11/11/2026 o cadastro também diz POR QUAL EMPRESA — a
             # readmissão já perguntava, e quem cria a pessoa é este aqui.
             "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+            # ⚑ OBRIGATÓRIOS DESDE 15/11/2026, por decisão dele: *"telefone é
+            # obrigatoriíssimo (…) é vital"*, *"chave Pix obrigatória"*, e o
+            # valor da diária *"vamos colocar como obrigatório"*. Sem telefone
+            # ninguém avisa a pessoa de nada; sem chave Pix ela não recebe.
+            "telefone": "85999990000",
+            "pix_tipo": "CPF", "pix_chave": CPF_B,
+            "valor_diaria": "120,00",
+            # Prestador declara QUE tipo de prestador é (CTPS não: é sempre CLT).
+            "tipo_contrato": "Autônomo (RPA)",
             "data_inicio": "2026-05-01"}
     base.update(extra)
     return base

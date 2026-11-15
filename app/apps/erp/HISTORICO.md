@@ -21,6 +21,159 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 15/11/2026 — OS FORMULÁRIOS DO DP PASSAM A SE AJUSTAR AO CASO
+
+Pedido longo dele, com seis decisões no mesmo texto, e todas atacam o mesmo
+defeito: **o formulário perguntava coisa que não se aplicava, ou obrigava a
+pessoa a escolher o tipo certo antes de saber a diferença entre eles.**
+
+Ele fechou com *"rode aí tudo, faça as perguntas para esclarecer alguma coisa
+que não ficou direito, e vamos para frente"*, e respondeu quatro perguntas:
+
+1. **Obra**: *"admissão nova ou de colaborador demitido tem que ter a obra.
+   Demais não precisa."*
+2. **Atestado**: acima de 15 dias o sistema abre o afastamento sozinho.
+3. **Desligado que vira prestador**: continua demitindo e readmitindo — com
+   uma trava para o esquecimento não ser silencioso.
+4. **Desligamento**: um tipo só, com os campos saindo do vínculo da pessoa.
+
+#### O que mudou, item por item
+
+**Um desligamento só.** O tipo "Desligamento de Prestador de Serviço" saiu da
+caixinha. Escolhida a pessoa, o sistema lê o vínculo dela no cadastro: carteira
+mostra forma de desligamento e aviso prévio; prestador mostra só a data de
+saída. A regra mora em `TIPOS["DESLIGAMENTO"]["por_vinculo"]` e é lida pelos
+três que precisam dela — a tela (para mostrar), o `abrir` (para recusar) e o
+checklist (onze passos de rescisão para CTPS, três para prestador).
+
+**Readmissão deixou de ser um tipo.** No cadastro, o CPF decide: se já existe
+alguém DESLIGADO com aquele CPF, o sistema oferece a readmissão e o mesmo
+pedido se converte — o atendimento reabre o vínculo em vez de criar ficha nova.
+Antes era recusa seca, e quem não soubesse que existia um tipo chamado
+Readmissão tentava de novo com o nome escrito diferente: nascia a segunda ficha
+da mesma pessoa. CPF de quem está ATIVO continua sendo recusa (não há o que
+readmitir; há ficha para corrigir).
+
+**Vale-transporte virou opção da ajuda de custo**, que é o que ele já era na
+lista de categorias. Entrou a pergunta que faltava: descontar em folha ou a
+empresa absorve.
+
+**O cadastro ficou condicional.** CTPS esconde "pagamento" e "valor do mês"
+(em carteira o valor é o da convenção) e esconde "tipo de contrato" (é sempre
+CLT); prestador passa a exigir o tipo de contrato — PJ, autônomo RPA, autônomo
+mensalista, jovem aprendiz, estágio, pró-labore — e diarista/mensalista. "Valor
+do mês" só aparece para mensalista. **Telefone, chave Pix e valor da diária
+ficaram obrigatórios**, pela mesma razão dos documentos: sem telefone ninguém
+avisa a pessoa de nada e sem Pix ela não recebe.
+
+**Cada opção de categoria tem a conta escrita embaixo do campo** — "Mensal" e
+"Mês" ficavam lado a lado dando contas diferentes, e nada escrito.
+
+**A obra só é perguntada onde não há de onde tirá-la**: cadastro novo e
+readmissão. Nos outros onze tipos ela sai da ficha da pessoa.
+
+#### A trava do bug do ponto
+
+O desligamento de carteira passou a perguntar, **obrigatoriamente**, se a
+pessoa continua trabalhando. Respondido "sim, como prestador": o checklist do
+DP ganha dois passos ("abrir a readmissão — SEM ela o ponto não aceita a pessoa
+no dia seguinte") e a tela de Solicitações mostra, acima da fila, a lista de
+**readmissões que ninguém fez** (`readmissoes_esquecidas`).
+
+O mecanismo do bug que ele relatou: desligar corta o acesso ao aparelho da obra
+na data de saída; readmissão esquecida = a pessoa aparece para trabalhar e não
+consegue bater, e quem descobre é a obra, às sete da manhã, sem saber o motivo.
+A pergunta é obrigatória de propósito — pergunta opcional sobre algo que, se
+esquecido, deixa alguém sem bater o ponto é pergunta que não foi feita.
+
+#### O atestado de mais de 15 dias (área do PONTO)
+
+`app/apps/ponto/core/afastamento_longo.py`, chamado quando um ATESTADO termina
+aprovado. Soma os dias de atestado aprovado da pessoa na janela de 60 dias; se
+passou de 15, abre um AFASTAMENTO **aguardando o DP** — não aprovado.
+
+Os primeiros 15 dias são da empresa; do 16º em diante o benefício é do INSS. A
+soma pega o caso que escapa: quatro atestados de cinco dias não chamam atenção
+nenhum, juntos passam do limite. **Nasce como pedido, e não aprovado**, porque
+afastamento aprovado muda o que a folha paga e a soma legal vale para a MESMA
+doença — coisa que só quem lê o atestado sabe. Declaração de comparecimento
+fica fora da conta (é consulta de horas, não dia de doença).
+
+⚠️ **Isto mexeu em `app/apps/ponto/`**, que é outra área. A mudança é de dois
+lugares só: o módulo novo e um `elif` em `core/ocorrencias.py::_aplicar`,
+dentro de um `try` — defeito na regra nova não pode desfazer a aprovação do
+atestado. Registrado também no `HISTORICO.md` do ponto.
+
+#### Cinco defeitos achados no caminho, e quatro deles só o navegador pegou
+
+1. **A caixinha de obra do DP estava VAZIA** — a tela monta a lista com
+   `obras` da rota `/erp/api/colaboradores/opcoes`, e essa chave **nunca
+   existiu** lá. Como a obra passou a ser obrigatória em 10/11/2026, **não
+   havia como abrir um pedido de cadastro de colaborador desde então**: o
+   pedido mais importante da fila estava impossível, e a tela não dizia por
+   quê. A rota agora manda as obras, respeitando o recorte de quem é preso a
+   obra.
+2. **Toda caixinha vinha com a primeira opção já escolhida**, porque faltava a
+   opção vazia na frente. Em "Categoria Auxílio Alimentação" isso concedia
+   "Segunda à quinta" a todo cadastro novo, calado. Em "Forma de Desligamento"
+   era pior: dava para confirmar sem escolher nada e o pedido saía como "A
+   pedido do colaborador" — a forma que não paga aviso nem multa.
+3. **Duas listas para a mesma categoria de auxílio**: a do DP, com os rótulos
+   do Pipe ("Vale Transporte"), e a do cadastro, com os códigos que a coluna
+   guarda ("VALE_TRANSPORTE"). A tela usava uma e o pedido gravava a outra, e
+   o atendimento não tinha como aplicar o benefício. Agora a fonte é o
+   cadastro, que é de onde a folha lê.
+4. **Os ouvintes de um diálogo sobravam para o seguinte.** O `perguntar()` do
+   `erp_base.html` reaproveitava a mesma janela, e `addEventListener` acumula:
+   com campos condicionais, a janela de escolher o tipo e a do formulário
+   rodavam as duas regras, a antiga mexendo nos campos da nova pela POSIÇÃO.
+   Agora a janela nasce nova a cada pergunta — quem não existe não escuta.
+5. **Escolher um prestador escondia o campo de escolher a pessoa**: ele não
+   constava da lista de campos do vínculo, e a regra o tratou como campo do
+   outro vínculo.
+
+Também saiu de circulação, nas caixinhas de pedido novo, a opção "Cartão" do
+transporte, que ele aposentou em 05/11/2026 e continuava à escolha.
+
+#### Onde isto vive
+
+- `core/pessoal_solicitacoes.py` — `por_vinculo`, `ocultos_se`, `visiveis_se`,
+  `campos_do_tipo`, `obrigatorios_do_tipo`, `campos_do_dp_do_tipo`,
+  `checklist_do_tipo`, `readmissoes_esquecidas`, `EXPLICACAO_DA_OPCAO`.
+- `templates/erp_base.html` — o `perguntar()` passou a aceitar campo
+  condicional (`mostrar_se`), dica que muda (`dica_de`) e obrigatoriedade que
+  muda (`obrigatorio_se`). Mora no ajudante, e não na tela do DP, pela mesma
+  razão da máscara de CNPJ: tela nova nasce com isto de graça.
+- `templates/erp_dp_solicitacoes.html` — monta as condições do que o servidor
+  manda; nenhuma regra escrita na tela.
+- `core/auth/permissoes.py` — ação nova `conferir_cpf_colaborador`, implicada
+  por `editar_colaboradores` e `solicitar_dp`. Antes a conferência de CPF
+  exigia `editar_colaboradores`, que a obra não tem: o aviso não aparecia para
+  quem mais precisa dele.
+- `app/apps/ponto/core/afastamento_longo.py` — a regra dos 15 dias.
+- Testes: `tests/test_dp_pedidos_condicionais.py` (30) e
+  `tests/test_ponto_atestado_longo_banco.py` (8).
+
+#### O que ficou de fora, e o que eu assumi
+
+- **"Mês" entrou na lista de transporte** (a alimentação já tinha as duas).
+  Sem isso não havia como pagar um valor cheio de transporte: quem quisesse
+  escolhia "Mensal" e o valor saía multiplicado pelos dias do mês. É só
+  acrescentar valor numa coluna TEXT, sem migração.
+- **A pergunta "continua trabalhando?" é obrigatória** no desligamento de
+  carteira. Custa um clique no desligamento comum; o esquecimento custa uma
+  obra parada às sete da manhã. Se ele achar ruim, troco para opcional com
+  "não" pré-marcado.
+- **O afastamento aberto pelo sistema começa no dia que estourou a conta** e
+  termina no último dia do atestado. Com atestados picados essa data é um
+  ponto de partida, não a verdade — o DP ajusta, e é por isso que o pedido
+  nasce aberto.
+- **Não mexi** em: segunda via de crachá, planilhas de cadastro, contrato/
+  etiqueta/termos e documentação de rescisão — ele disse que "não importam".
+- **Não verificado em produção**: nada disto rodou com dado real. Rodou na
+  cópia local, tela por tela, no navegador.
+
+
 ### ⚑ 15/11/2026 — O CONTRATO DE EXPERIÊNCIA PASSA A CRITICAR O DESLIGAMENTO
 
 Ele: *"se é encerramento de contrato de experiência, nós temos essa

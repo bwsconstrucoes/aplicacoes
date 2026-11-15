@@ -805,6 +805,26 @@ def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
 
 def _aplicar(conn: Connection, o: dict, quem: Quem) -> None:
     """O que muda no mundo quando o pedido termina aprovado."""
+    # ⚑ ATESTADO QUE PASSA DE 15 DIAS ABRE O AFASTAMENTO (15/11/2026).
+    #
+    # Decisão do dono, escolhendo entre abrir sozinho, sempre manual e sempre
+    # automático: *"acima de 15 dias, o sistema abre sozinho."* Os primeiros 15
+    # dias são da empresa; do 16º em diante o benefício é do INSS, e aí deixa
+    # de ser abono de falta e passa a ser afastamento.
+    #
+    # Fica ANTES do resto e dentro de um `try`: a regra é um acréscimo, e um
+    # defeito nela não pode desfazer a aprovação do atestado — o atestado já
+    # está certo, e a pessoa precisa dele abonado hoje. Ver
+    # `core/afastamento_longo.py` para a conta e o porquê de o afastamento
+    # nascer AGUARDANDO O DP, e não aprovado.
+    if o["tipo"] == "ATESTADO":
+        from . import afastamento_longo
+        try:
+            with conn.begin_nested():
+                afastamento_longo.conferir(conn, o, quem_nome=quem.nome)
+        except Exception:  # noqa: BLE001
+            logger.exception("Ponto: a conferência dos 15 dias do atestado %s "
+                             "falhou — o atestado segue aprovado", o.get("id"))
     if o["tipo"] == "COMPENSACAO" and o.get("subtipo") == PERMUTA:
         _aplicar_permuta(conn, o, quem)
     elif o["tipo"] == "AJUSTE_BATIDA":

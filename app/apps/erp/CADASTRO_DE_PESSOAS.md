@@ -259,13 +259,13 @@ VT, Veículo, Motocicleta, Bicicleta, Cartão), meio de transporte (4), chave Pi
 | Solicitação de Férias | **já existe** (ponto) |
 | Ajuste de Ponto e Faltas | **já existe** (ponto) |
 | Foto Relógio de Ponto | **já existe** (o ponto tira foto na batida) |
-| Desligamento de Colaborador / de Prestador | **criar** — um só, com forma de desligamento, aviso prévio, último dia, data de saída, faltas a descontar, checklist |
+| Desligamento de Colaborador / de Prestador | ✔ **FEITO, e é UM TIPO SÓ desde 15/11/2026** — escolhida a pessoa, os campos saem do vínculo dela: carteira pede forma e aviso prévio, prestador pede só a data de saída. E pergunta se a pessoa continua trabalhando, para cobrar a readmissão |
 | Cancelar Solicitação de Desligamento | **criar** (cancelar pedido, com motivo) |
-| Readmissão de Colaborador | **criar** — achar o desligado e trazer de volta, sem apagar o vínculo anterior |
+| Readmissão de Colaborador | ✔ **FEITO, e DEIXOU DE SER UM TIPO em 15/11/2026** — o pedido de cadastro detecta o CPF que já existe e se converte em readmissão. Ninguém precisa saber de antemão se a pessoa já passou pela empresa |
 | Admissão de Prestador de Serviço | **criar** — é a troca de vínculo (prestador → CTPS) |
 | Pré-Cadastro de Colaborador | **criar** (cadastro em duas etapas, como o pipe faz) |
 | Solicitação de Cadastro de Dependente | **criar** + tabela de dependentes |
-| Solicitação de Vale Transporte | **criar** (com as 9 categorias) |
+| Solicitação de Vale Transporte | ✔ **FEITO, e DEIXOU DE SER UM TIPO em 15/11/2026** — virou opção dentro da Ajuda de Custo, que é onde as categorias de transporte já viviam, mais a pergunta de descontar em folha |
 | Solicitação de Ajuda de Custo | **criar** |
 | Solicitação de Alteração de Cargo | **criar** (cargo pleiteado, deferido, salário, justificativa) |
 | Atualização de Dados Cadastrais / de Telefone / Chave Pix | **criar** — um pedido só, "atualizar dado", com o que muda |

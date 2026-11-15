@@ -272,7 +272,7 @@ PALAVRAS: dict[str, dict[str, str]] = {
         "SEGUNDAAQUINTA": "SEG_QUI", "SEGUNDAASEXTA": "SEG_SEX",
         "MENSAL": "MENSAL", "MES": "MES"},
     "categoria_transporte": {
-        "DIARIO": "DIARIO", "MENSAL": "MENSAL",
+        "DIARIO": "DIARIO", "MENSAL": "MENSAL", "MES": "MES",
         "SEGUNDAESEXTA": "SEG_E_SEX", "VALETRANSPORTE": "VALE_TRANSPORTE",
         "DIARIOEVALETRANSPORTE": "DIARIO_E_VT", "VEICULO": "VEICULO",
         "MOTOCICLETA": "MOTOCICLETA", "BICICLETA": "BICICLETA",

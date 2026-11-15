@@ -2207,6 +2207,90 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
 - Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
   do dono (só colaborador com telefone).
 
+## 3z-quinquies. O PEDIDO QUE SE AJUSTA AO CASO, E O ATESTADO LONGO (15/11/2026)
+
+Seis decisões dele num pedido só: desligamento único, readmissão detectada pelo
+CPF, vale-transporte dentro da ajuda de custo, formulário condicional, a trava
+do desligado que continua como prestador, e o atestado de mais de 15 dias.
+
+### ⚠️ Três palavras novas que precisam de uma definição só
+
+| A palavra | Os significados possíveis | Decisão |
+|---|---|---|
+| **"readmissão"** | o pedido de cadastro que se converteu (tipo CADASTRO com `readmissao`), ou o antigo tipo READMISSAO, ou qualquer segundo vínculo da pessoa? | ⬜ a decidir — hoje há as três coisas no banco, e contar as três juntas é o certo para "quantas readmissões houve"; para "readmissões pendentes" valem só as cobradas pela trava |
+| **"dias de atestado"** | dias de calendário COBERTOS, ou a soma do tamanho de cada atestado? | ✔ **FECHADO: dias cobertos.** Dois atestados sobrepostos somariam o mesmo dia duas vezes e empurrariam alguém para o INSS sem motivo |
+| **"afastado"** | quem tem AFASTAMENTO aprovado, ou quem tem pedido de afastamento aberto (inclusive o que o sistema abriu sozinho)? | ⬜ a decidir — o pedido aberto pelo sistema NÃO é afastamento ainda; o DP pode negar |
+
+### Perguntas que já dão resposta exata
+
+**Sobre o desligamento**
+
+- Quantos desligamentos foram pedidos este mês? E quantos eram de prestador?
+- Quais desligamentos de carteira estão esperando o DP?
+- Quantos desligamentos foram por encerramento de contrato de experiência?
+- Quem foi desligado dizendo que **continua trabalhando**? *(a lista da trava)*
+- **Tem alguém sem conseguir bater o ponto por readmissão esquecida?** —
+  `readmissoes_esquecidas`; é a pergunta que o dono vai fazer de manhã
+- Quantos dias, em média, o DP leva para fechar um desligamento?
+- Quais desligamentos têm checklist começado e não terminado?
+
+**Sobre cadastro e readmissão**
+
+- Quantos cadastros de colaborador foram pedidos este mês?
+- **Quantos desses eram readmissão** (o CPF já existia)?
+- Quem foi readmitido este ano? Por qual empresa?
+- Quais pedidos de cadastro estão parados por falta de documento?
+- Quantos cadastros entraram como CTPS e quantos como prestador?
+- Dos prestadores, quantos são PJ, RPA, mensalista, aprendiz, estágio,
+  pró-labore?
+- Quem foi cadastrado sem telefone ou sem chave Pix? *(resposta certa hoje:
+  ninguém novo — os dois são obrigatórios desde 15/11/2026; a pergunta serve
+  para achar os ANTIGOS)*
+
+**Sobre benefícios**
+
+- Quem tem vale-transporte? E de quem a empresa absorve o desconto?
+- Quantas pessoas têm auxílio alimentação em cada categoria?
+- Qual a diferença de custo entre "Mensal" e "Mês" no transporte? ⚠️ *depende
+  da palavra: "Mensal" multiplica pelos dias do mês, "Mês" é valor cheio*
+- Quais pedidos de ajuda de custo estão abertos?
+
+**Sobre o atestado longo (área do ponto)**
+
+- Quantos dias de atestado o fulano tem nos últimos 60 dias?
+- Quem passou dos 15 dias de atestado e devia estar no INSS?
+- Quais afastamentos o sistema abriu sozinho e ainda esperam o DP?
+- Quantos afastamentos abertos pelo sistema o DP negou? ⚠️ *se este número for
+  alto, a regra está errando e precisa ser revista — é o termômetro dela*
+- Quem tem atestado picado somando perto do limite? *(a pergunta que previne,
+  em vez de reagir)*
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- "Quais desligamentos estão abertos?" — quem é preso a obra vê os da obra
+  dele, mais o que ele mesmo abriu.
+- "Tem readmissão pendente?" — a lista da trava hoje **não** é recortada por
+  obra, porque é alerta do DP. Se ela for para a tela da obra, precisa do
+  recorte.
+- Atestado e afastamento são **sigilosos** (LGPD, art. 11): CID, médico, CRM e
+  o papel só saem para quem aprova afastamento. Pergunta sobre "quem está de
+  atestado" responde os dias, nunca a doença.
+
+### Perguntas que o sistema AINDA NÃO responde, e o que falta
+
+- **"Esse atestado é da mesma doença do anterior?"** — falta comparar CID, e a
+  soma legal dos 15 dias vale para a mesma doença. Hoje o sistema soma TUDO e
+  manda o DP conferir. É a limitação mais importante desta entrega.
+- **"Quanto a empresa já pagou de atestado este ano?"** — falta ligar o
+  atestado ao valor do dia na folha.
+- **"Essa pessoa já foi desligada e readmitida quantas vezes?"** — o dado
+  existe (`colaborador_vinculos`), falta a função.
+- **"Quanto tempo a pessoa ficou fora entre um vínculo e o outro?"** — idem.
+- **"O prestador que virou CTPS ficou quantos dias sem vínculo?"** — é o buraco
+  que gera o bug do ponto; a trava avisa, mas ninguém mede.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

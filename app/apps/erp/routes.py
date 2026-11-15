@@ -11429,20 +11429,44 @@ def api_dc_acao(despesa_id: int, acao: str):
 @login_obrigatorio
 @permissao("ver_pessoal")
 def api_colaboradores_opcoes():
-    """As listas das caixinhas (vínculo, contrato, escolaridade…) e os cargos."""
+    """As listas das caixinhas (vínculo, contrato, escolaridade…) e os cargos.
+
+    ⚑ AS OBRAS ENTRARAM EM 15/11/2026, e isto era DEFEITO EM PRODUÇÃO: a tela
+    de Solicitações ao DP monta a caixinha de obra com `o.obras` desta rota —
+    que nunca existiu aqui. Resultado: a caixinha vinha com uma opção só ("
+    escolha a obra…"), e como a obra é obrigatória, **não havia como abrir um
+    pedido de cadastro de colaborador** desde que ela passou a ser exigida
+    (10/11/2026). O pedido mais importante da fila estava impossível, e a tela
+    não dizia por quê — a lista simplesmente estava vazia.
+
+    ⚑ RESPEITA O RECORTE POR OBRA: `obras_do_usuario` devolve `None` para quem
+    alcança todas, e a lista das permitidas para quem é preso a obra. Mandar
+    todas as obras para quem só enxerga uma seria vazar o nome das outras numa
+    caixinha — e deixar abrir pedido onde ele não deveria.
+    """
+    from sqlalchemy import select
+
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
     from app.apps.erp.core.cadastros import cargos as svc_cargos
     from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    from app.apps.erp.db.models.cadastros import Obra
     with get_session() as s:
+        permitidas = obras_do_usuario(s, _usuario_logado(s))
+        obras = [o for o in s.scalars(select(Obra).order_by(Obra.codigo)).all()
+                 if getattr(o, "status", None) != "ENCERRADA"
+                 and (permitidas is None or o.id in set(permitidas))]
         # SEM O PISO: esta rota é aberta a quem tem `ver_pessoal` (inclui
         # supervisor de obra e parceiro), e eles precisam da lista de cargos
         # para a caixinha — não da tabela salarial da empresa.
         return jsonify({"ok": True, **svc_pessoas.opcoes(s),
-                        **svc_cargos.listar(s, com_salario=False)})
+                        **svc_cargos.listar(s, com_salario=False),
+                        "obras": [{"id": o.id, "codigo": o.codigo,
+                                   "nome": o.nome} for o in obras]})
 
 
 @bp.route("/erp/api/colaboradores/conferir-cpf")
 @login_obrigatorio
-@permissao("editar_colaboradores")
+@permissao("conferir_cpf_colaborador")
 def api_colaboradores_conferir_cpf():
     """"Esta pessoa já existe?" — respondido ENQUANTO se digita.
 
