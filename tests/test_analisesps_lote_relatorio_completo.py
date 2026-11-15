@@ -101,12 +101,25 @@ def test_so_as_obras_escolhidas_entram_e_os_numeros_acompanham():
     d = rc.montar_dados(montado, obras=["ESCPE18"], data_pagamento=dt.date(2026, 11, 16),
                         extras={})
     assert [l["id"] for l in d["linhas"]] == ["1384831001", "1384831003"]
-    assert [g["titulo"] for g in d["grupos"]] == ["Pagar amanhã", "Folha"], \
-        "grupo sem SP da obra escolhida não aparece"
+    assert [g["titulo"] for g in d["grupos"]] == ["ESCPE18"], \
+        "a relação é por obra, não pelos grupos do lote"
     assert d["total"] == D("130.00") and d["quantidade"] == 2
     assert [o["nome"] for o in d["obras"]] == ["ESCPE18"]
     assert [l["_n"] for l in d["linhas"]] == [1, 2]
     assert [l["id"] for l in d["sem_anexo"]] == ["1384831001"]
+
+
+def test_a_relacao_sai_por_obra_da_maior_para_a_menor_e_sem_repetir_a_sp():
+    """O dono, vendo a prévia: os títulos do lote ("Pagar amanhã", "Folha e locação")
+    não fazem sentido para a parceria."""
+    from app.apps.analisesps import lote_relatorio_completo as rc
+    montado = _montado(("Pagar amanhã", [_sp(1, obra="A", valor="10"), _sp(2, obra="B", valor="90")]),
+                       ("WhatsApp1", [_sp(3, obra="A", valor="5"), _sp(1, obra="A", valor="10")]))
+    d = rc.montar_dados(montado, extras={})
+    assert [(g["titulo"], [l["id"][-1] for l in g["linhas"]]) for g in d["grupos"]] == [
+        ("B", ["2"]), ("A", ["1", "3"])]
+    assert [l["_n"] for l in d["linhas"]] == [1, 2, 3]
+    assert d["total"] == D("105") and "por_grupo" not in d
 
 
 def test_as_obras_do_lote_para_a_janela():

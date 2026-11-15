@@ -256,19 +256,30 @@ def montar_dados(montado: dict, *, titulo: str = "", para: str = "",
     """O que o PDF precisa, a partir do lote montado (`lote.montar`). `obras`:
     só estas (vazio = todas) — para mandar a um parceiro só o que é da obra dele."""
     filtro = {" ".join(str(o).split()) for o in (obras or []) if str(o).strip()}
-    grupos, todas = [], []
+    # ⚠️ A RELAÇÃO É POR OBRA, NÃO PELOS GRUPOS DO LOTE (dono, 15/11/2026, vendo a
+    # prévia): *"tem um pagar amanhã, aí tem outro (…) folha e locação. Eu não entendi
+    # essa divisão, sendo que a gente tá relacionando os pagamentos de um determinado
+    # evento."* Os títulos do lote ("Pagar amanhã", "WhatsApp1") organizam o trabalho
+    # aqui dentro e não dizem nada a quem recebe; a obra é o que a parceria reconhece.
+    # A mesma SP em dois grupos do lote entra uma vez só.
+    vistas, todas = set(), []
     for g in montado.get("grupos") or []:
-        linhas = [dict(l) for l in g.get("linhas") or []
-                  if not filtro or _obra(l) in filtro]
-        if not linhas:
-            continue
-        grupos.append({"titulo": g.get("titulo_exibido") or g.get("titulo") or "Lote",
-                       "linhas": linhas,
-                       "total": sum((Decimal(str(l.get("valor_num") or 0)) for l in linhas),
-                                    Decimal("0"))})
-        todas.extend(linhas)
+        for l in g.get("linhas") or []:
+            if str(l["id"]) in vistas or (filtro and _obra(l) not in filtro):
+                continue
+            vistas.add(str(l["id"]))
+            todas.append(dict(l))
+    por_obra: dict = {}
+    for l in todas:
+        por_obra.setdefault(_obra(l), []).append(l)
+    grupos = [{"titulo": obra, "linhas": linhas,
+               "total": sum((Decimal(str(l.get("valor_num") or 0)) for l in linhas),
+                            Decimal("0"))}
+              for obra, linhas in por_obra.items()]
+    grupos.sort(key=lambda g: -g["total"])
+    todas = [l for g in grupos for l in g["linhas"]]
     if extras is None:
-        extras = _extras(list(dict.fromkeys(str(l["id"]) for l in todas)))
+        extras = _extras([str(l["id"]) for l in todas])
     numero = 0
     for g in grupos:
         for l in g["linhas"]:
@@ -287,10 +298,6 @@ def montar_dados(montado: dict, *, titulo: str = "", para: str = "",
         "quantidade": len(todas),
         "credores": len({(l.get("documento") or l.get("credor") or "") for l in todas}),
         "obras": _agrupar(todas, _obra),
-        "por_grupo": [{"nome": g["titulo"], "quantidade": len(g["linhas"]),
-                       "total": g["total"],
-                       "percentual": (g["total"] * 100 / (total or 1)).quantize(Decimal("0.1"))}
-                      for g in grupos],
         "por_tipo": _agrupar(todas, lambda l: l.get("tipo_despesa")),
         "por_forma": _agrupar(todas, lambda l: l.get("forma_pagamento")),
         "por_conta": _agrupar(todas, lambda l: l.get("conta")),
@@ -453,8 +460,6 @@ class _Relatorio:
         self.pdf.set_y(y + 23)
 
         self.atencao()
-        if len(d["por_grupo"]) > 1:
-            self.quadro("Por grupo do lote", d["por_grupo"])
         self.quadro("Por obra", d["obras"])
         self.quadro("Por tipo de despesa", d["por_tipo"])
         # Forma e conta de pagamento lado a lado: são listas curtas.
@@ -586,9 +591,10 @@ class _Relatorio:
         self.pdf.set_y(y + 2)
 
     # --- relação analítica ----------------------------------------------
+    # Sem a coluna da obra: a relação já vem separada por obra.
     COLUNAS = [("#", 7, "R"), ("SP", 20, "L"), ("VENC.", 15, "L"),
-               ("CREDOR / DESCRIÇÃO", 62, "L"), ("OBRA", 23, "L"),
-               ("TIPO DE DESPESA", 26, "L"), ("FORMA", 13, "L"), ("VALOR", 20, "R")]
+               ("CREDOR / DESCRIÇÃO", 75, "L"),
+               ("TIPO DE DESPESA", 30, "L"), ("FORMA", 17, "L"), ("VALOR", 22, "R")]
 
     def relacao(self):
         pdf = self.pdf
@@ -641,7 +647,7 @@ class _Relatorio:
         x = 12
         valores = [str(l["_n"]), str(l["id"]), _data(l.get("vencimento_d"))[:5] + "/"
                    + _data(l.get("vencimento_d"))[8:10] if l.get("vencimento_d") else "-",
-                   None, _obra(l), l.get("tipo_despesa") or "-",
+                   None, l.get("tipo_despesa") or "-",
                    l.get("forma_pagamento") or "-", _moeda(l.get("valor_num"))]
         for (titulo, w, a), v in zip(self.COLUNAS, valores):
             if titulo == "CREDOR / DESCRIÇÃO":
@@ -677,7 +683,7 @@ class _Relatorio:
         self.primeira_pagina_da_sp[str(l["id"])] = pdf.page_no() - 1
         d = self.d
         self.escrever(12, 9, 140, 4, f"PAGAMENTO {l['_n']} DE {d['quantidade']}  ·  "
-                      f"{l['_grupo']}".upper(), 6.8, "B", TINTA_SUAVE)
+                      f"OBRA {l['_grupo']}".upper(), 6.8, "B", TINTA_SUAVE)
         self.escrever(12, 9, self.largura, 4, "< voltar à relação", 7, "", AZUL_CLARO,
                       "R", link="relacao")
 

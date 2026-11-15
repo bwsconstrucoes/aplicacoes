@@ -12252,8 +12252,8 @@ somente Solicitações de uma conta especifica"*.
   anexos (…) a data, quem decide sou eu na hora de gerar."* E pediu para ver o visual antes
   de fechar.
 - `lote_relatorio_completo.py`: um PDF só — capa (total, números, pontos de atenção,
-  agrupamentos por grupo do lote, obra, tipo de despesa, forma e conta de pagamento,
-  maiores credores quando há mais de 5), relação analítica grupo a grupo (linha clicável),
+  agrupamentos por obra, tipo de despesa, forma e conta de pagamento, maiores credores
+  quando há mais de 5), relação analítica SEPARADA POR OBRA (linha clicável),
   e uma página por SP seguida dos ANEXOS embutidos, cada página com uma faixa "PAGAMENTO n ·
   SP · credor · anexo k · página i de N" e "voltar à relação". Sumário lateral (marcadores).
 - **Anexo da folha** (pedido no mesmo dia): SP sem anexo usa o "Relatório (PDF): <link>" da
@@ -12271,6 +12271,11 @@ somente Solicitações de uma conta especifica"*.
   "Compartilhar" direto para o WhatsApp onde o navegador permite) e "Relatório completo do
   grupo" em cada grupo. Janela: data do pagamento (sugere amanhã), para quem, título, "só
   estas obras" (quando há mais de uma) e "embutir os documentos".
+- **Por obra, e não pelos grupos do lote** (dono, vendo a prévia): *"tem um pagar amanhã,
+  aí tem outro (…) folha e locação. Eu não entendi essa divisão, sendo que a gente tá
+  relacionando os pagamentos de um determinado evento."* Os títulos do lote organizam o
+  trabalho aqui dentro e não dizem nada à parceria; saíram do relatório (inclusive o
+  quadro "por grupo do lote"). A mesma SP em dois grupos entra uma vez.
 - Testes: `test_analisesps_lote_relatorio_completo.py`.
 
 #### Leva 267 — Pagamento avulso: o relatório conta a pessoa do rateio UMA vez e mostra o rateio (13/11/2026)
