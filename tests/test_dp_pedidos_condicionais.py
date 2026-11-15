@@ -711,3 +711,55 @@ def test_o_valor_informado_pela_obra_chega_ao_cadastro(mundo):
     assert float(c.aux_transporte) == 11.5
     assert c.categoria_alimentacao == "SEG_SEX"
     assert c.categoria_transporte == "DIARIO"
+
+
+# ---------------------------------------------------------------------------
+# O BECO SEM SAÍDA DA TELA DO DP
+# ---------------------------------------------------------------------------
+def test_a_tela_do_DP_nao_promete_tipo_que_exige_papel_sem_ter_onde_anexar():
+    """⚑ TRÊS TIPOS NÃO SAÍAM DA TELA DO DP, e ela não dizia isso (15/11/2026).
+
+    Achado respondendo a uma pergunta dele: *"o nome e CPF são preenchidos a
+    partir dos documentos anexados? Se for assim, o correto é que o campo para
+    anexar esse documento era para ser o primeiro, não é não?"*
+
+    São preenchidos, sim — e a conferência mostrou que a tela do DP **não tem
+    campo para anexar nada**. Cadastro de Colaborador, Admissão de Prestador e
+    Cadastro de Dependente exigem papel: a pessoa preenchia DOZE campos,
+    confirmava, e levava "Falta anexar…" sobre papéis que a janela nunca
+    ofereceu onde pôr. Beco sem saída, e estava em produção.
+
+    Esta trava é de TEXTO porque o defeito era de tela: ou a tela aprende a
+    anexar, ou ela diz para onde ir. Hoje ela diz. Se alguém acrescentar um
+    tipo com papel e a tela voltar a fingir que dá conta, isto quebra.
+    """
+    from pathlib import Path
+    tela = Path("app/apps/erp/templates/erp_dp_solicitacoes.html").read_text(
+        encoding="utf-8")
+    # A tela trata o caso pelo que o SERVIDOR declara (`documentos`), e não
+    # por uma lista de tipos escrita aqui — tipo novo nasce tratado.
+    assert "(regra.documentos || []).length" in tela, (
+        "a tela não desvia mais o tipo que exige papel: quem escolher vai "
+        "preencher tudo para levar 'Falta anexar' no fim")
+    # E todo papel exigido por algum tipo tem nome em português nesta tela.
+    for regra in svc.TIPOS.values():
+        for papel in tuple(regra.get("documentos", ())) + tuple(
+                p for mapa in (regra.get("documentos_se") or {}).values()
+                for lista in mapa.values() for p in lista):
+            assert f'"{papel}":' in tela, (
+                f"{papel} sairia com o código cru no recado da tela do DP")
+
+
+def test_todo_tipo_que_exige_papel_existe_no_PORTAL():
+    """O recado manda a pessoa para o portal — então o tipo tem de estar lá.
+
+    Mandar para uma tela que não oferece aquele pedido seria trocar um beco sem
+    saída por outro, com um passo a mais.
+    """
+    from app.apps.erp.core import portal as svc_portal
+    for chave, regra in svc.TIPOS.items():
+        if regra.get("oculto") or not regra.get("documentos"):
+            continue
+        assert chave in svc_portal.TIPOS_DO_PORTAL, (
+            f"{chave} exige papel, a tela do DP manda para o portal, e o "
+            f"portal não oferece este tipo")

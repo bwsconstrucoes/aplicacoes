@@ -439,7 +439,26 @@ function pintarCamposDoTipo(){
     ...Object.values(t.por_vinculo || {}).map(x => x.obrigatorios || [])));
   PESSOA_ESCOLHIDA = null;
   els("p-campos").innerHTML =
-    {# ⚑ "COLABORADOR", e não "de quem é o pedido". Ele, em 10/11/2026: *"eu
+    {# ⚑ OS DOCUMENTOS VÊM PRIMEIRO (15/11/2026), e esta era REGRA DELE desde
+       17/09/2026, escrita no `CLAUDE.md`: *"o documento entra DENTRO, como um
+       bloco no topo do formulário — jogue o documento aqui, ele preenche os
+       campos abaixo."*
+
+       Eu tinha posto no fim. Ele notou pela pergunta certa: *"o nome e CPF são
+       preenchidos a partir dos documentos anexados? Se for assim, o correto é
+       que o campo para anexar esse documento era para ser o primeiro, não é
+       não?"*
+
+       É, e a ordem errada custava trabalho de verdade: a pessoa DIGITAVA nome
+       e CPF, descia, anexava o documento, e a leitura preenchia por cima do
+       que ela acabou de digitar. Ou — pior — ela digitava diferente do
+       documento e ficava com dois dados divergentes na mesma tela, sem saber
+       qual ia valer.
+
+       Agora a primeira coisa é "fotografe os documentos"; os campos vêm
+       depois, a maioria já preenchida. #}
+    blocoDosPapeis(t)
+    + {# ⚑ "COLABORADOR", e não "de quem é o pedido". Ele, em 10/11/2026: *"eu
        falei sobre de quem é o pedido. Isso é termo que se usa, cara. Bota
        colaborador."* No Pipe o campo se chama "CPF Colaborador". #}
     (t.exige_pessoa ? `<label class="campo-portal">Colaborador *
@@ -528,14 +547,13 @@ function pintarCamposDoTipo(){
                preenche", e escrevendo uma frase que não diz nem uma coisa nem
                outra. Agora a dica diz o que a PESSOA faz e o que acontece. #}
             <small class="do-papel" id="pd-${c}">não precisa digitar: anexe
-              ${esc(ROTULO_PAPEL[dePapel] || dePapel)} aqui embaixo e este
+              ${esc(ROTULO_PAPEL[dePapel] || dePapel)} ali em cima e este
               campo se preenche sozinho</small>
           </label>`;
         return `<label class="campo-portal">${esc(rot)}
           <input id="p-${c}" name="${c}" type="${tipo}"
             ${modo ? `inputmode="${modo}"` : ""}></label>`;
-      }).join("")
-    + blocoDosPapeis(t);
+      }).join("");
   ligarBuscaDePessoa();
   ligarRepetidos(t);
   ligarFiltroDeObra();
@@ -850,10 +868,11 @@ function blocoDosPapeis(t){
   const papeis = papeisExigidos(t);
   if (!papeis.length) return "";
   return `<div class="papeis" id="p-papeis">
-    <b>Documentos</b>
-    <p class="ajuda">Sem eles o pedido não sai — é o que o DP precisa para
-      cadastrar e para a pessoa entrar no sistema de pagamento. Fotografe
-      direito: o sistema lê e preenche os campos sozinho.</p>
+    <b>1. Comece pelos documentos</b>
+    <p class="ajuda">Fotografe estes papéis e o sistema <b>lê e preenche os
+      campos abaixo</b> — nome, CPF e os números da carteira. Fotografe
+      direito, de frente e sem sombra. Sem eles o pedido não sai: é o que o DP
+      precisa para cadastrar e para a pessoa entrar no sistema de pagamento.</p>
     <div id="p-papeis-lista"></div></div>`;
 }
 
@@ -964,7 +983,7 @@ function recadoDosCamposDePapel(t){
       dica.className = "do-papel pede";
     } else if (!anexado) {
       dica.textContent = "não precisa digitar: anexe "
-        + (ROTULO_PAPEL[papel] || papel) + " aqui embaixo e este campo se "
+        + (ROTULO_PAPEL[papel] || papel) + " ali em cima e este campo se "
         + "preenche sozinho";
       dica.className = "do-papel";
     } else {

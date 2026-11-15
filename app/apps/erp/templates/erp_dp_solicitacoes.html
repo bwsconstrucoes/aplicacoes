@@ -438,6 +438,17 @@ const CAMPO_PEDIDO = {
   cpf: {nome_campo: "cpf"}, telefone: {nome_campo: "telefone"}, cep: {nome_campo: "cep"},
   nome: {largura: 4, obrigatorio: true},
 };
+{# O nome de cada papel em português — o recado acima diz "comprovante de
+   endereço", não "COMPROVANTE-ENDERECO-PESSOA". #}
+const ROTULO_PAPEL_DP = {
+  "DOC-IDENTIDADE": "documento de identificação (RG, CNH ou CTPS)",
+  "CPF-DOC": "CPF",
+  "COMPROVANTE-ENDERECO-PESSOA": "comprovante de endereço",
+  "CTPS-FOTO": "CTPS (página com a foto)",
+  "CTPS-INFORMACOES": "CTPS (página com as informações)",
+  "DOC-DEPENDENTE": "documento do dependente (certidão ou RG)",
+};
+
 const LISTA_DO_CAMPO = {
   forma_desligamento: "formas_desligamento", vinculo: "vinculos",
   // ⚑ `tipos_contrato_prestador`, e NÃO `tipos_contrato` (15/11/2026): o
@@ -581,6 +592,47 @@ async function novaSolicitacao(){
               opcoes: DADOS.tipos.map(t => ({valor: t.valor, rotulo: t.rotulo}))}]});
   if (!escolha) return;
   const regra = DADOS.tipos.find(t => t.valor === escolha.tipo);
+
+  {# ⚑ TRÊS TIPOS NÃO SAÍAM DESTA TELA, E ELA NÃO DIZIA ISSO (15/11/2026).
+
+     Achado respondendo a uma pergunta dele: *"o nome e CPF são preenchidos a
+     partir dos documentos anexados?"* São — e a conferência mostrou que esta
+     tela **não tem campo para anexar nada**. Resultado: Cadastro de
+     Colaborador, Admissão de Prestador e Cadastro de Dependente exigem papel,
+     e aqui a pessoa preenchia DOZE campos, confirmava, e levava "Falta
+     anexar: documento de identificação, CPF, comprovante de endereço" — sobre
+     papéis que a janela nunca ofereceu onde pôr. Beco sem saída, e estava em
+     produção.
+
+     ⚑ POR QUE NÃO CONSTRUÍ O ANEXO AQUI: o portal já tem isso pronto, com
+     foto pelo celular e leitura do documento preenchendo os campos — e é no
+     celular, na obra, que o papel está na mão. Fazer uma segunda versão disso
+     aqui seria manter dois caminhos para o mesmo trabalho; e o DP, para
+     cadastrar direto, tem a ficha completa em Colaboradores, que já lê
+     documento.
+
+     O que esta tela precisa é PARAR DE PROMETER o que não entrega — e dizer
+     para onde ir. #}
+  if ((regra.documentos || []).length) {
+    const papeis = (regra.documentos || [])
+      .map(c => ROTULO_PAPEL_DP[c] || c);
+    const r = await perguntar({
+      titulo: regra.rotulo,
+      aviso: `Este pedido só sai <b>com os papéis anexados</b>: ${
+        papeis.map(escapar).join(", ")}. Esta tela não anexa arquivo — quem
+        anexa é o <b>portal da obra</b>, pelo celular, onde a foto do
+        documento ainda <b>preenche os campos sozinha</b>.`
+        + (regra.valor === "CADASTRO"
+           ? ` <br><br>Se você mesmo vai cadastrar a pessoa agora, o caminho é
+               <b>Pessoal › Colaboradores › + Colaborador</b>: lá está a ficha
+               completa, e ela também lê documento.`
+           : ""),
+      textoOk: "Abrir o portal da obra",
+      campos: []});
+    if (r) location.href = "/erp/portal";
+    return;
+  }
+
   const listas = {...o, sim_nao: [{valor: "1", rotulo: "Sim"}, {valor: "", rotulo: "Não"}],
     cartoes: [{valor: "PAGAMENTO", rotulo: "Cartão de pagamento"},
               {valor: "VALE_TRANSPORTE", rotulo: "Cartão de vale-transporte"}],
