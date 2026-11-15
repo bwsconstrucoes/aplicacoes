@@ -21,6 +21,54 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 15/11/2026 — O CONTRATO DE EXPERIÊNCIA PASSA A CRITICAR O DESLIGAMENTO
+
+Ele: *"se é encerramento de contrato de experiência, nós temos essa
+informação, nós temos campo para ela na base de dados (…) a gente pode
+contratar 45 mais 45, 30 mais 60, 60 mais 30, ou pode contratar 90 dias direto
+(…) eu quero facilitar a seleção do tipo de desligamento."* E: *"quando é
+encerramento de contrato de experiência, eu não preciso dar aviso. Então essa
+data de aviso já se torna desnecessária, concorda?"*
+
+**Concordo, e é direito, não preferência.** O contrato de experiência acaba
+porque o prazo acabou; aviso prévio existe para quem ROMPE antes do fim (CLT,
+art. 481). Exigir a data obrigava a pessoa a inventar uma — e data inventada
+vira conta errada na rescisão.
+
+**Tudo sai de dois campos que JÁ EXISTIAM e ninguém usava:**
+`colaboradores.admissao` e `colaboradores.contrato_experiencia` (migração
+086). Sem tabela nova. A regra mora em `core/pessoal_experiencia.py`:
+
+- lê o arranjo pelos NÚMEROS, não pelo texto ("45+45 dias", "45 + 45" e
+  "45 dias, prorrogável por mais 45" são a mesma coisa — o cadastro tem as
+  três grafias, vindas da planilha, do Pipe e da digitação);
+- **o primeiro dia conta**: 45 dias a partir de 1º de março acabam em 14 de
+  abril, não em 15. Um dia de erro aqui é a diferença entre encerrar no prazo
+  e romper o contrato antes;
+- diz a FASE de hoje (primeira parte, prorrogação, ou já venceu) e escreve a
+  frase em português, que é a mesma na tela e no papel;
+- **contrato vencido avisa que virou prazo indeterminado** — e aí o
+  desligamento não é mais encerramento de experiência. É o aviso que evita o
+  pedido errado;
+- número acima de 90 no cadastro é ignorado: é o teto da CLT, logo é erro de
+  digitação, e tratá-lo como prazo faria o sistema avisar a data errada.
+
+**Onde isso aparece:** ao escolher a pessoa em qualquer pedido, a busca passou
+a mostrar **vínculo, tipo de contrato, data de início e a situação do contrato
+de experiência**. Era outro pedido dele do mesmo dia: *"na hora que selecionar
+o colaborador, a gente já sabe que tipo de colaborador ele é — isso o sistema
+já tem que informar."*
+
+⚠️ **A TRAVA DO AVISO PRÉVIO MORA NO SERVIDOR**, em `exigencias()`, não só na
+tela: tela esconde campo, servidor é que recusa pedido. E `exige_aviso_previo`
+aceita **o rótulo e o código** (a tela manda "Encerramento de Contrato de
+Experiência", o servidor trabalha com "FIM_EXPERIENCIA") — valer só um dos
+dois faria a tela esconder o campo e o servidor continuar exigindo, que é o
+pior desfecho: a pessoa não vê onde preencher nem consegue enviar.
+
+**25 provas** em `tests/test_contrato_experiencia.py`, incluindo a virada de
+fase dia a dia e a concordância entre tela e servidor.
+
 ### ⚑ 15/11/2026 — O DIÁRIO NO CELULAR, e o quadro do mês como porta da tela
 
 Ele abriu o diário no celular: *"ele está abrindo tal qual no computador. Só

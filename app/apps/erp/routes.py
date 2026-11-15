@@ -8992,6 +8992,16 @@ def api_colaboradores_buscar():
                 consulta = consulta.where(
                     Colaborador.obra_id.in_(list(permitidas) or [-1]))
             achados = list(s.scalars(consulta.limit(8)).all())
+            # ⚑ O VÍNCULO VAI JUNTO (15/11/2026). Ele: *"na hora que
+            # selecionar o colaborador, a gente já sabe que tipo de
+            # colaborador ele é. Isso o sistema já tem que informar: dados
+            # básicos ali, prestador tal, iniciou tal, tipo de vínculo dele,
+            # se é carteira de trabalho, se é prestador — isso já tem que
+            # aparecer para facilitar para quem está pedindo o desligamento."*
+            #
+            # E com ele o CONTRATO DE EXPERIÊNCIA, que é o que mais muda o
+            # pedido: muda a forma do desligamento e tira o aviso prévio.
+            from app.apps.erp.core import pessoal_experiencia as svc_exp
             return jsonify({"ok": True, "pessoas": [{
                 "id": c.id, "nome": c.nome, "cpf": c.cpf,
                 "situacao": c.situacao or "ATIVO",
@@ -8999,6 +9009,11 @@ def api_colaboradores_buscar():
                 # e homônimo em obra é comum.
                 "obra": (s.get(Obra, c.obra_id).codigo
                          if c.obra_id and s.get(Obra, c.obra_id) else ""),
+                "vinculo": c.vinculo or "",
+                "tipo_contrato": c.tipo_contrato or "",
+                "admissao": str(c.admissao) if c.admissao else None,
+                "cnpj_admissao": c.cnpj_admissao or "",
+                "experiencia": svc_exp.situacao(c.admissao, c.contrato_experiencia),
             } for c in achados]})
     except Exception as e:
         logger.exception("ERP: falha na busca de colaborador")

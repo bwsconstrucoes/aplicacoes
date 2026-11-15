@@ -509,10 +509,28 @@ def exigencias(tipo: str, pedido: Optional[dict[str, Any]] = None,
     enquanto a pessoa preenche. Assim o bloqueio não é uma parede no fim: é
     uma lista que a pessoa vê desde o começo.
     """
+    from app.apps.erp.core import pessoal_experiencia as svc_exp
+
     regra = TIPOS[tipo]
     p = traduzir_do_pipe(pedido or {})
     campos = tuple(regra.get("obrigatorios", ())) + _condicionais(
         regra, "obrigatorios_se", p)
+    # ⚑ ENCERRAMENTO DE CONTRATO DE EXPERIÊNCIA NÃO TEM AVISO PRÉVIO, e por
+    # isso a data deixa de ser exigida (15/11/2026). Ele: *"quando é
+    # encerramento de contrato de experiência, eu não preciso dar aviso.
+    # Então essa data de aviso já se torna desnecessária, concorda?"*
+    #
+    # É direito, não preferência: o contrato acaba porque o prazo acabou.
+    # Aviso prévio existe para quem ROMPE antes do fim. Exigir a data aqui
+    # obrigava a pessoa a inventar uma — e data inventada vira conta errada
+    # na rescisão.
+    #
+    # A trava mora AQUI, e não só na tela: tela esconde campo, servidor é que
+    # recusa pedido. As duas precisam concordar, e concordam porque leem a
+    # mesma função.
+    if "aviso_previo" in campos and not svc_exp.exige_aviso_previo(
+            p.get("forma_desligamento")):
+        campos = tuple(c for c in campos if c != "aviso_previo")
     # O que o cadastro já tem sai da exigência: não se pergunta de novo.
     if ja_tem:
         campos = tuple(c for c in campos if not str(ja_tem.get(c) or "").strip())

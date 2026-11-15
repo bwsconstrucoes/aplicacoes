@@ -1208,11 +1208,41 @@ function ligarBuscaDePessoa(i){
               <small>${documento(p.cpf)}${p.obra ? " · obra " + escapar(p.obra) : ""}${
                 p.situacao === "DESLIGADO" ? " · desligado" : ""}</small></button>`).join("")
           : `<small class="desc">Ninguém encontrado com isso.</small>`;
+        {# ⚑ ESCOLHEU A PESSOA? MOSTRE O VÍNCULO DELA (15/11/2026).
+
+           Ele: *"na hora que selecionar o colaborador, a gente já sabe que
+           tipo de colaborador ele é. Isso o sistema já tem que informar:
+           prestador tal, iniciou tal, tipo de vínculo, se é carteira de
+           trabalho — isso já tem que aparecer para facilitar para quem está
+           pedindo o desligamento."*
+
+           E, acima de tudo, o CONTRATO DE EXPERIÊNCIA: é ele que muda a forma
+           do desligamento e tira o aviso prévio. Quem pede não tem como saber
+           de cor quando acaba o contrato de cada um — o sistema tem. #}
+        const porId = {};
+        (r.pessoas || []).forEach(x => { porId[String(x.id)] = x; });
         achados.querySelectorAll(".busca-achado").forEach(b =>
           b.addEventListener("click", () => {
             oculto.value = b.dataset.id;
             campo.value = b.dataset.nome;
-            achados.innerHTML = `<small class="desc">✓ escolhido</small>`;
+            const p = porId[b.dataset.id] || {};
+            achados.innerHTML = `<div class="ficha-escolhida">
+              <b>✓ ${escapar(p.nome || b.dataset.nome)}</b>
+              <small>${[p.vinculo, p.tipo_contrato,
+                        p.admissao ? "desde " + dataBR(p.admissao) : "",
+                        p.obra ? "obra " + p.obra : "",
+                        p.situacao === "DESLIGADO" ? "JÁ DESLIGADO" : ""]
+                       .filter(Boolean).map(escapar).join(" · ")}</small>
+              ${(p.experiencia && p.experiencia.texto)
+                ? `<div class="aviso ${p.experiencia.ja_acabou ? "alerta" : ""}"
+                     style="margin-top:6px">${
+                     escapar(p.experiencia.texto).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+                   }</div>` : ""}
+            </div>`;
+            // A tela que pediu a busca pode querer reagir (esconder o aviso
+            // prévio, por exemplo). Quem não escuta, não muda nada.
+            campo.dispatchEvent(new CustomEvent("pessoa-escolhida",
+              {bubbles: true, detail: p}));
           }));
       } catch(e){ achados.innerHTML = `<small class="desc">${escapar(e.message)}</small>`; }
     }, 300);

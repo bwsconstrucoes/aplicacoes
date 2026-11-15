@@ -998,6 +998,15 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   border-left: 4px solid var(--amarelo, #F4B942);
 }
 
+/* A ficha curta da pessoa escolhida na busca (15/11/2026): vínculo, início e
+   o contrato de experiência, que é o que muda a forma do desligamento. */
+.ficha-escolhida {
+  border: 1px solid var(--borda, #E6EAF2); border-radius: 8px;
+  padding: 8px 10px; margin-top: 6px; background: var(--fundo-suave, #F4F6FA);
+}
+.ficha-escolhida small { display: block; color: var(--tinta-suave, #5A6B85);
+                         font-size: 11.5px; margin-top: 2px; }
+
 /* O bloco que no celular nasce fechado (15/11/2026). No computador ele vem
    com `open` e o resumo some: lá a tela é larga e a visão de gestão cabe
    junto; no celular, o que importa é o campo que a pessoa vai preencher. */
