@@ -542,3 +542,57 @@ def test_achar_campo_sem_pedaco_nenhum_devolve_vazio():
     assert pipefy.achar_campo({}, "valor") == ""
 
 
+
+
+# ---------------------------------------------------------------------------
+# A CHAVE PIX DO PAGAMENTO VIA SP (dono, 16/11/2026): marcada pelo tipo do cadastro,
+# não "Aleatória / Atualizar Chave".
+# ---------------------------------------------------------------------------
+def _pipe_com_chaves(opcoes=("CPF", "CNPJ", "E-mail", "Telefone", "Aleatória"),
+                     sem=()):
+    campos = {c: {"opcoes": []} for c in ("cnpj_1", "chave_pix_cpf", "chave_pix_de_email",
+                                          "chave_pix_telefone", "chave_pix_aleat_ria")
+              if c not in sem}
+    campos["tipo"] = {"opcoes": list(opcoes)}
+    return campos
+
+
+@pytest.mark.parametrize("tipo,chave,campo,valor,opcao", [
+    ("CPF", "52998224725", "chave_pix_cpf", "529.982.247-25", "CPF"),
+    ("CNPJ", "12345678000195", "cnpj_1", "12.345.678/0001-95", "CNPJ"),
+    ("E-mail", "fulano@x.com", "chave_pix_de_email", "fulano@x.com", "E-mail"),
+    ("Celular", "(81) 99999-0000", "chave_pix_telefone", "(81) 99999-0000", "Telefone"),
+    ("Aleatória", "a7398865-d869", "chave_pix_aleat_ria", "a7398865-d869", "Aleatória"),
+])
+def test_a_chave_do_cadastro_vai_marcada_no_tipo_dela(tipo, chave, campo, valor, opcao):
+    campos = dict(fcd.campos_da_chave({"tipo_chave": tipo, "chave_pix": chave},
+                                      _pipe_com_chaves()))
+    assert campos == {"tipo": opcao, campo: valor}
+
+
+def test_a_opcao_marcada_e_a_escrita_no_pipe():
+    campos = dict(fcd.campos_da_chave({"tipo_chave": "CPF", "chave_pix": "52998224725"},
+                                      _pipe_com_chaves(opcoes=("Chave CPF", "Chave CNPJ"))))
+    assert campos["tipo"] == "Chave CPF"
+
+
+@pytest.mark.parametrize("fav,pipe", [
+    ({"tipo_chave": "—", "chave_pix": ""}, _pipe_com_chaves()),
+    ({"tipo_chave": "CPF", "chave_pix": "52998224725"}, _pipe_com_chaves(opcoes=("CNPJ",))),
+    ({"tipo_chave": "CPF", "chave_pix": "52998224725"}, _pipe_com_chaves(sem=("chave_pix_cpf",))),
+])
+def test_sem_chave_ou_sem_o_campo_no_pipe_volta_o_atualizar_chave(fav, pipe):
+    assert dict(fcd.campos_da_chave(fav, pipe)) == {
+        "tipo": "Aleatória", "chave_pix_aleat_ria": "Atualizar Chave"}
+
+
+def test_a_sp_do_via_sp_nao_marca_mais_aleatoria():
+    grupo = {"tipo_sp": "777"}
+    sp = {"descricao": "x", "valor": D("100"), "rateio": "", "destino": "",
+          "favorecido": {"nome": "FULANO", "pj": False, "documento": "529.982.247-25",
+                         "tipo_chave": "CPF", "chave_pix": "529.982.247-25"}}
+    pipe = {**_pipe_com_chaves(), "cpf": {}, "cpf_1": {}}
+    campos = {c["campo"]: c["valor"] for c in fcd.campos_da_sp(
+        grupo, sp, "", dt.datetime(2026, 11, 16), pipe)}
+    assert campos["tipo"] == "CPF" and campos["chave_pix_cpf"] == "529.982.247-25"
+    assert "chave_pix_aleat_ria" not in campos

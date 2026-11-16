@@ -12244,6 +12244,29 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 270 — Pagamento via SP: a chave Pix do cadastro vai marcada, não "Aleatória" (16/11/2026)
+
+- *"Está sendo marcado todos como aleatória e colocado atualizar PIX, sendo que já está
+  puxando do cadastro a chave PIX, que é CNPJ ou CPF (…) Aí eu estou tendo que alterar
+  todas as SPs geradas, uma por uma."*
+- Causa: a SP de cada pessoa seguia o padrão das SPs de folha (que pagam o banco, não a
+  pessoa): "tipo" = Aleatória e chave = "Atualizar Chave", com a chave de verdade só na
+  descrição.
+- Agora (`folha_cards.campos_da_chave`): o "tipo" ("Selecione a chave PIX a ser
+  utilizada") recebe a OPÇÃO do próprio pipe que casa com o tipo do cadastro (CPF, CNPJ,
+  e-mail, telefone, aleatória), e a chave vai no campo daquele tipo — `chave_pix_cpf`,
+  `cnpj_1`, `chave_pix_de_email`, `chave_pix_telefone`, `chave_pix_aleat_ria` (os mesmos
+  que a importação do ERP lê). CPF e CNPJ vão formatados.
+- Volta "Aleatória / Atualizar Chave" (e a etiqueta "Atualizar Pix") só quando o cadastro
+  não tem chave, o pipe não tem a opção ou não tem o campo daquela chave — para o card não
+  sair com o tipo marcado e a chave em lugar nenhum.
+- ⚠️ NÃO CONFERIDO no Pipefy de verdade: as opções e os campos de chave do pipe de SP vêm
+  da importação do ERP e da leitura do pipe no lançamento, não de um card criado. As SPs
+  já geradas com "Aleatória" continuam como estão (corrigir no Pipefy é escrever em
+  sistema de terceiro — só com o dono pedindo).
+- Testes: `test_analisesps_folha_cards.py` (a chave por tipo e as voltas ao padrão) e
+  `test_analisesps_gratificados.py`.
+
 #### Leva 269 — Relatório completo do lote: os anexos entram otimizados (16/11/2026)
 
 - *"Existe anexos muito grandes em tamanho. Preciso dar uma otimizada neles antes de gerar
