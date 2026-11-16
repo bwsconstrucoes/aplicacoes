@@ -12258,6 +12258,7 @@ somente Solicitações de uma conta especifica"*.
   nítido; três anexos pesados somando 37 MB → relatório de 1,1 MB.
 - Com isso os tetos subiram (valem para o arquivo como chega, que é o que ocupa memória):
   40 MB por anexo (era 20) e 150 MB somados (era 90).
+- **Publicado em 16/11/2026** (sem migração). Não conferido com anexos reais.
 
 #### Leva 268 — Relatório completo do lote, para a parceria (15/11/2026)
 
