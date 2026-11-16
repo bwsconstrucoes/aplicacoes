@@ -762,14 +762,24 @@ comparação de réguas lado a lado; **fechamento** que congela a versão aprova
 - **Não há combinado anterior** sobre o critério (entendimento do chat: a
   frase veio truncada pelo ditado — "Nada do sabão. Nenhum combinado anterior").
 
-**O que isso muda na análise:** a divisão desigual por obra tem papel; o que
-NÃO se sabe é se os acordos dizem COMO o custo da matriz e os juros entram no
-resultado de cada obra, ou só os percentuais de cada sócio. Se dizem, a
-prestação tem de seguir o que está assinado; se não dizem, o critério (régua,
-percentuais por período, juros pelo buraco) é novo, vale para trás e precisa
-da aprovação escrita de todos ANTES da equalização. **Pergunta feita a ele, sem
-resposta ainda.** Ficou sugerido também simular a régua contando empreiteiros,
-para medir quanto isso desloca entre as obras.
+**Duas decisões dele que ENCERRAM pontos da análise — não reabrir:**
+
+1. **A divisão entre os sócios não é problema.** *"O rateio entre os sócios,
+   isso não é problema. Esqueça isso. (…) Já é um acordo consolidado."* O que
+   está parametrizado no painel segue o acordo. O chat tinha perguntado se os
+   acordos diziam COMO a matriz e os juros entram no resultado da obra; ele
+   respondeu que o assunto está resolvido entre eles.
+2. **Empreiteiro NÃO entra na régua, e é de propósito.** O motivo, dele: o
+   empreiteiro pode ter dez funcionários, mas para a matriz é **uma pessoa só
+   que se paga**; compras é da obra, não do empreiteiro; a sala técnica não tem
+   relação com ele. *"Quanto mais empreiteiro, a obra se torna mais fácil — e
+   essas obras mais fáceis são as mais rápidas. Meio que uma coisa corresponde
+   à outra."* A comparação de réguas contando empreiteiro, que o chat tinha
+   sugerido, **foi dispensada**.
+
+O motivo da régua (mês a mês captura a duração; empreiteiro é um contrato só)
+passou a estar ESCRITO na página "Como é feita", passo 3 — é a página que os
+sócios leem.
 
 ## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
 
