@@ -69,6 +69,23 @@ TETO_DE_LINHAS = 5000
 # planilha.
 _COLUNAS = {
     "codigo": ("codigo primario", "código primário", "codigo", "centro de custo"),
+    # ⚑ O NÚMERO DA CONTABILIDADE (16/11/2026). Ele: *"em relação a setor, eu
+    # criei, está na planilha C. Diários, tem a coluna Centro de Custo da
+    # Contabilidade. E é exatamente esse setor aí."*
+    #
+    # Esta coluna já existia na planilha e era LIDA E DESCARTADA, por não ter
+    # onde morar no cadastro. Agora ela é a ponte entre o nome que a BWS dá à
+    # obra ("094") e o que a contabilidade dá ("164.01") — e é por ela que a
+    # ficha de registro do Fortes acha a obra de cada pessoa.
+    #
+    # ⚠️ O CASAMENTO É EXATO (o cabeçalho tem de ser igual ao alias), e é por
+    # isso que ela não colide com "centro de custo" ali em cima, que é outro
+    # nome do código primário. São duas colunas diferentes com nome parecido —
+    # exatamente o tipo de coisa que casamento "por pedaço do nome" trocaria.
+    "centro_custo_contabil": ("centro de custo da contabilidade",
+                              "centro de custo contabilidade",
+                              "centro de custo contabil",
+                              "centro de custo contábil"),
     "contrato": ("contrato",),
     "objeto": ("objeto",),
     "municipio": ("municipio", "município"),
@@ -109,7 +126,7 @@ SO_NO_CADASTRO = [
 ]
 
 _TEXTOS = ("contrato", "objeto", "municipio", "uf", "cno", "cliente",
-           "cnpj_cliente", "tributacao")
+           "cnpj_cliente", "tributacao", "centro_custo_contabil")
 _NUMEROS = ("valor_contrato", "aliquota_iss")
 
 ROTULOS = {
@@ -117,6 +134,7 @@ ROTULOS = {
     "uf": "UF", "cno": "CNO", "cliente": "Cliente",
     "cnpj_cliente": "CNPJ do cliente", "valor_contrato": "Valor do contrato",
     "aliquota_iss": "Alíquota de ISS", "tributacao": "Tributação",
+    "centro_custo_contabil": "Centro de custo da contabilidade",
 }
 
 

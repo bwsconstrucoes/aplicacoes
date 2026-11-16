@@ -58,6 +58,25 @@
       de cadastro desde 10/11, e a caixinha que vinha com a primeira opção já
       escolhida. Ver `HISTORICO.md`, 15/11/2026.
 
+- [x] **IMPORTAR AS FICHAS DE REGISTRO DO FORTES (16/11/2026).** Migração 104.
+      As fichas em PDF que a contabilidade manda entram por leitura direta do
+      arquivo — **sem IA, sem custo e sem chute**: PIS, CTPS (número, série e
+      UF), data de admissão, data de demissão e o último salário do histórico
+      vão para o cadastro de quem já existe no ERP, casando pelo CPF. Nome,
+      nome do pai, nome da mãe e data de nascimento NÃO sobrescrevem nada:
+      quando diferem, viram pergunta na fila de divergências, porque o que
+      vale é o nosso cadastro. Cargo ficou de fora por decisão do dono (a
+      nomenclatura é nossa); o setor da contabilidade entrou como **centro de
+      custo da contabilidade** no cadastro da obra, ao lado do nosso código,
+      e vem também da coluna nova da planilha C. Diários. Tem "conferir sem
+      gravar" antes de qualquer gravação, e página sem camada de texto é
+      relatada como ilegível em vez de adivinhada. Criar gente nova a partir
+      da ficha existe mas vem desligado — a ficha não traz cargo, telefone
+      nem chave Pix. **O histórico de salário e de admissões NÃO vem, e está
+      decidido:** o ERP guarda o quadro de hoje e o que a contabilidade precisa
+      receber; a história fica no Fortes, que é o sistema de folha. Ver
+      `HISTORICO.md`, 16/11/2026.
+
 ## Em andamento
 
 - [ ] **DIÁRIO DE OBRA** — migrações 092, 093, **097, 098 e 099**. **Pronto:** o dia que
