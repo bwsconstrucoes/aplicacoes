@@ -2321,6 +2321,13 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
   listar em 16/11; antes só o Arquivo mostrava)*
 - De quem é este documento, e como abro o cadastro dele? *(o nome do dono
   virou link no Arquivo)*
+- De onde veio cada campo deste cadastro: da planilha, do card ou da ficha do
+  Fortes? ⚠️ *três fontes é o desenho, não um acidente — ver a tabela no
+  `HISTORICO.md` de 16/11*
+- Quem está na planilha "Dados Documentos" e não está no ERP? E o contrário?
+- Quantas pessoas ficaram sem vínculo ou sem pagamento depois de importar?
+  ⚠️ *se for muita gente, é sinal de que a cópia da planilha está velha —
+  aperte "Atualizar cadastro" na Análise de SPs antes de importar*
 
 ### Perguntas que o sistema ainda não responde, e o que falta
 

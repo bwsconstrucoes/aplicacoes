@@ -1023,3 +1023,75 @@ def test_fase_que_eu_nao_conheco_e_RELATADA_em_vez_de_chutada(mundo):
     mundo["s"].refresh(mundo["com_card"])
     assert mundo["com_card"].etapa == antes
     assert [x["fase"] for x in r["fases_sem_etapa"]] == ["Fase Inventada"]
+
+
+# ---------------------------------------------------------------------------
+# O ESPELHO DA PLANILHA "DADOS DOCUMENTOS" — 16/11/2026
+#
+# Ele: *"todos os dados do card estão na planilha na Dados Documentos, ela é
+# espelho do card. Não era mais fácil ler de lá? Trazer do pipefy somente os
+# documentos? Que é o que não está lá."*
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def no_espelho(mundo, banco_analisesps):
+    """A pessoa do card, também na cópia da planilha."""
+    from sqlalchemy import text as _t
+    from app.apps.erp.db.models.cadastros import Cargo
+    # O cargo da planilha precisa EXISTIR aqui: nome que não bate não entra.
+    mundo["s"].add(Cargo(nome="Pedreiro", ativo=True))
+    mundo["s"].flush()
+    mundo["s"].execute(_t("""
+        INSERT INTO analisesps.colaborador
+               (cpf, nome, tipo, tipo_contrato, cargo, convencao, obra_codigo,
+                celular, valor_diaria, modo_alimentacao, valor_alimentacao,
+                modo_transporte, valor_transporte)
+        VALUES (:c, 'Pessoa Com Card', 'Prestador de Serviço', 'Autônomo (RPA)',
+                'Pedreiro', 'CE-Fortaleza', 'PIP-01', '85988887777',
+                180.00, 'Seg-Qui', 22.00, 'Diário', 10.00)
+        ON CONFLICT (cpf) DO NOTHING"""), {"c": CPF_A})
+    mundo["s"].flush()
+    return mundo
+
+
+@pytest.mark.banco
+def test_o_VINCULO_e_o_PAGAMENTO_vem_da_planilha(no_espelho):
+    """Os dois que ele viu faltando. Nenhum deles estava no de-para do card —
+    e campo cujo apelido eu não acertei não dá erro: entra vazio e some."""
+    m = no_espelho
+    imp.importar(m["s"], m["dp"], simular=False, cards=[CARD], regravar=True,
+                 ler_papel=False, ler_cards=_leitor(_card()))
+    m["s"].flush()
+    m["s"].refresh(m["com_card"])
+    assert m["com_card"].vinculo == "PRESTADOR"
+    # Tem diária cadastrada, logo é diarista.
+    assert m["com_card"].mensalista is False
+    assert str(m["com_card"].valor_diaria) == "180.00"
+
+
+@pytest.mark.banco
+def test_a_planilha_traz_tambem_contrato_cargo_convencao_obra_e_auxilios(no_espelho):
+    m = no_espelho
+    imp.importar(m["s"], m["dp"], simular=False, cards=[CARD], regravar=True,
+                 ler_papel=False, ler_cards=_leitor(_card()))
+    m["s"].flush()
+    m["s"].refresh(m["com_card"])
+    assert m["com_card"].tipo_contrato == "AUTONOMO_RPA"
+    assert m["com_card"].cargo_id is not None
+    assert m["com_card"].obra_id == m["obra"].id
+    assert m["com_card"].categoria_alimentacao == "SEG_QUI"
+    assert str(m["com_card"].aux_alimentacao) == "22.00"
+    assert m["com_card"].categoria_transporte == "DIARIO"
+    assert m["com_card"].telefone
+
+
+@pytest.mark.banco
+def test_quem_NAO_esta_na_planilha_entra_so_com_o_card(mundo):
+    """Sem a cópia, ou sem a pessoa nela, a importação segue como antes —
+    não pode quebrar por causa de uma fonte que é complemento."""
+    r = imp.importar(mundo["s"], mundo["dp"], simular=False, cards=[CARD],
+                     regravar=True, ler_papel=False,
+                     ler_cards=_leitor(_card(pis="99988877766")))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].pis == "99988877766"
+    assert r["pessoas_lidas"] == 1

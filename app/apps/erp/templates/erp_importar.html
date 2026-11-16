@@ -813,6 +813,18 @@ function pintarRelatorioPC(rel){
         <td class="desc">${escapar(c.motivo)}</td></tr>`).join("")}
       </tbody></table></div>`);
 
+  // ⚑ DE ONDE VEIO CADA COISA (16/11/2026). A importação passou a ler a
+  // planilha "Dados Documentos" além do card, e quem confere precisa saber
+  // qual das duas falou — senão "o sistema preencheu" vira caixa-preta.
+  const doEspelho = (rel.por_pessoa || []).filter(p => (p.do_espelho||[]).length);
+  if (doEspelho.length)
+    linhas.push(`<div class="cartao-dica" style="margin-top:10px">
+      <b>${doEspelho.length} pessoa(s) tiveram campos vindos da planilha
+      “Dados Documentos”</b> — é de lá que saem vínculo, pagamento, tipo de
+      contrato, cargo, convenção, obra e os auxílios. Do Pipefy vêm os
+      <b>documentos</b> e os dados de identidade (RG, pai, mãe, endereço), que
+      não estão na planilha.</div>`);
+
   const comCoisa = (rel.por_pessoa || []).filter(
     p => (p.documentos || []).length || Object.keys(p.campos || {}).length);
   if (comCoisa.length)
