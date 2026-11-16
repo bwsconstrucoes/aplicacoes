@@ -651,6 +651,46 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A evolução do rateio para os sócios — PROPOSTA, nada construído — 16/11/2026
+
+O dono mostrou a prestação a um dos sócios e saiu com o pedido: **o número final
+não basta**. Os sócios precisam abrir e entender, mês a mês, o que está sendo
+rateado, com base em quê, quanto cada obra absorve, como está o caixa da obra e
+quanto de juros ela absorveu — por **obra**, por **projeto** e por **estrutura**
+(BWSCE × BWSFILIAL). Ele pediu para VER uma tela antes de qualquer construção, e
+perguntou onde isso cabe melhor: dentro da prestação, em relatório, ou nos dois.
+
+**O que foi entregue: só um desenho clicável, com números inventados** (nenhum
+dado da empresa), publicado como página privada dele no claude.ai — não está no
+repositório nem no sistema. **Nenhuma linha do painel foi mexida por isso.**
+
+**A recomendação feita a ele (aguardando resposta):** as duas coisas, saindo da
+MESMA conta para não divergirem.
+
+- **Tela nova "Evolução", dentro da prestação**, para explorar: (1) "o caminho do
+  dinheiro" — matriz gastou → fica no BWSCE / é da BWSFILIAL / rateia; filial;
+  juros → quanto cada estrutura absorveu; (2) colunas mês a mês; (3) árvore
+  estrutura › projeto › obra com pessoal (a régua), % da régua, estrutura
+  absorvida, juros absorvidos e % do total; (4) clicar num nome abre a **ficha
+  mês a mês** (pessoal, %, absorvido, caixa do mês e acumulado, juros da empresa,
+  % do buraco, juros absorvidos); (5) clicar num mês abre **a conta daquele mês
+  em palavras**, passo a passo, com saída para os lançamentos.
+- **Relatório completo (PDF + planilha)** para entregar e guardar: capa com as
+  regras, o caminho do dinheiro, por estrutura e por projeto, uma página por
+  obra, memória da matriz mês a mês, batimento com o DRE. Tirável de uma obra
+  só, de um projeto ou da empresa.
+
+**O que já existe e não deve ser duplicado:** Resultado (por obra, quotas,
+posição, memória do rateio e dos juros dos últimos 36 meses, gráfico da vida de
+uma obra, batimento), "Como é feita" e o download do cenário. A tela nova deve
+REUSAR o cálculo de `_calcular_cenario` / `calcular_rateio_do_cenario`, não
+refazer a conta ao lado.
+
+**Perguntas que ficaram com ele:** se o período é a vida toda ou ano a ano; se o
+sócio só-leitura vê tudo ou só as obras dele; se a obra fora da prestação
+aparece (como "fora") ou some; se o relatório vem na mesma leva ou depois da
+tela. **Não construir antes da resposta.**
+
 ## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
 
 **NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
