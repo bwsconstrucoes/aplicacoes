@@ -92,9 +92,15 @@ LEITURA_DA_PRESTACAO = frozenset({
     "painel.prestacao_contas",       # a aba do menu
     "painel.cenario_resultado",      # o resultado, por obra e por sócio
     "painel.cenario_como",           # como a conta é feita
+    "painel.cenario_evolucao",       # a evolução mês a mês, por obra/projeto/estrutura
     "painel.cenario_montagem",       # a montagem — vê, não grava
     "painel.prestacao_parametros",   # os cadastros — vê, não grava
 })
+
+
+# os arquivos que quem lê a prestação baixa: o do Resultado e o da Evolução —
+# a mesma informação das telas que ela já abre
+DOWNLOADS_DA_PRESTACAO = frozenset({"cenario", "evolucao"})
 
 
 def le_a_prestacao(pessoa=None) -> bool:
@@ -213,10 +219,18 @@ def exigir_login():
     if (endpoint in LEITURA_DA_PRESTACAO and request.method == "GET"
             and le_a_prestacao(pessoa)):
         return None
+    #    ... e GRAVA NO PRÓPRIO CENÁRIO (13/11/2026, o dono: "cada usuário
+    #    que tem acesso à prestação possa fazer suas edições (…) aproveitando o
+    #    que já está editado"). Aqui só passa a porta: SE o cenário é dela quem
+    #    confere é a rota (`web.cenario_gravar`), que recusa com "não
+    #    encontrado" qualquer gravação no cenário de outro. Os Cadastros
+    #    (`prestacao_parametros`) continuam só de leitura para ela.
+    if endpoint == "painel.cenario_gravar" and le_a_prestacao(pessoa):
+        return None
     #    ... e baixa o relatório dela, mesmo sem obra marcada (a regra 3 é
     #    das telas de obra). O que ele pode baixar quem decide é `pode_baixar`.
     if (endpoint == "painel.baixar" and le_a_prestacao(pessoa)
-            and (request.view_args or {}).get("assunto") == "cenario"):
+            and (request.view_args or {}).get("assunto") in DOWNLOADS_DA_PRESTACAO):
         return None
 
     # 1. area que escreve ou abre a base inteira: nunca, para ninguem preso
@@ -327,7 +341,7 @@ def pode_baixar(assunto: str) -> bool:
     if e_administrador():
         return True
     # quem lê a prestação baixa o relatório dela — é a mesma informação da tela
-    if assunto == "cenario" and le_a_prestacao():
+    if assunto in DOWNLOADS_DA_PRESTACAO and le_a_prestacao():
         return True
     if assunto in SO_DO_DONO_PARA_BAIXAR:
         return False
