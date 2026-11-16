@@ -504,6 +504,39 @@ def do_espelho(s: Session, cpf: str) -> dict[str, Any]:
     saida["_nomes"] = {"cargo": _limpo(linha.get("cargo")),
                        "convencao": _limpo(linha.get("convencao")),
                        "obra": _limpo(linha.get("obra_codigo"))}
+
+    # ⚑ A PLANILHA CRUA VAI JUNTO, E ISTO É O CONSERTO DE 16/11/2026 À NOITE.
+    #
+    # Ele, depois da terceira tentativa frustrada: *"meu Deus do céu, socorro!
+    # É só casar informação da planilha vs campo do ERP. Tu não tá
+    # conseguindo. Tu precisa fazer algo diferente. O que tu precisa de mim?"*
+    #
+    # ELE ESTAVA CERTO, E O ERRO ERA SEMPRE O MESMO: eu li os NOMES das colunas
+    # (estão na migração, são verificáveis) e INVENTEI os VALORES que elas
+    # guardam. Se a planilha escreve "Seg a Qui" e eu esperava "Segunda a
+    # Quinta", o campo não entra — e, pior, não reclama. Três rodadas dele
+    # para descobrir o que o sistema sabia desde o primeiro segundo.
+    #
+    # Agora a linha crua da planilha e TODO valor que não foi traduzido voltam
+    # no relatório. Ninguém mais precisa adivinhar: a tela mostra o que está
+    # escrito lá e o que o sistema fez com aquilo.
+    saida["_cru"] = {k: ("" if v is None else str(v)) for k, v in linha.items()}
+    nao_entendi = []
+    if not saida.get("vinculo"):
+        nao_entendi.append({"coluna": "tipo / tipo_contrato", "campo": "Vínculo",
+                            "valor": f'{_limpo(linha.get("tipo"))} / '
+                                     f'{_limpo(linha.get("tipo_contrato"))}'})
+    if _limpo(linha.get("tipo_contrato")) and not saida.get("tipo_contrato"):
+        nao_entendi.append({"coluna": "tipo_contrato", "campo": "Tipo de contrato",
+                            "valor": _limpo(linha.get("tipo_contrato"))})
+    for de, para, rotulo in (("modo_alimentacao", "categoria_alimentacao",
+                              "Categoria do auxílio-alimentação"),
+                             ("modo_transporte", "categoria_transporte",
+                              "Categoria do auxílio-transporte")):
+        if _limpo(linha.get(de)) and not saida.get(para):
+            nao_entendi.append({"coluna": de, "campo": rotulo,
+                                "valor": _limpo(linha.get(de))})
+    saida["_nao_entendi"] = nao_entendi
     return saida
 
 
@@ -648,6 +681,7 @@ def relatorio_vazio(motivo: str) -> dict[str, Any]:
             "documentos_ja_tinha": 0, "documentos_que_falharam": 0,
             "campos_preenchidos": 0, "cards_sem_resposta": [], "falhas": [],
             "cargos_sem_par": [], "fases_sem_etapa": [],
+            "planilha_nao_entendi": [],
             "rotulos": dict(ROTULO_DO_CAMPO),
             "por_pessoa": [], "de_fora": dict(PAPEIS_DE_FORA),
             "cards_pedidos": 0, "cards_sem_pessoa": []}
@@ -1058,6 +1092,9 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         # lista, a pessoa simplesmente ficaria na etapa antiga e ninguém
         # saberia por quê.
         "fases_sem_etapa": [],
+        # Valor que a planilha escreve e que o de-para não conhece. É a lista
+        # que acaba com a adivinhação: ela diz o que está escrito lá.
+        "planilha_nao_entendi": [],
         # Para a tela falar "Cargo" e não "cargo_id" com quem confere cadastro.
         "rotulos": dict(ROTULO_DO_CAMPO),
         "por_pessoa": [],
@@ -1141,10 +1178,27 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         # adivinhação que VÍNCULO e PAGAMENTO nunca entraram.
         espelho = do_espelho(s, pessoa.get("cpf") or "")
         nomes_do_espelho = espelho.pop("_nomes", {}) if espelho else {}
+        cru_da_planilha = espelho.pop("_cru", {}) if espelho else {}
+        nao_entendi = espelho.pop("_nao_entendi", []) if espelho else []
+        if cru_da_planilha:
+            linha["planilha_crua"] = cru_da_planilha
         if espelho:
+            ligacoes = _ligacoes_do_espelho(s, nomes_do_espelho)
             achados.update(espelho)
-            achados.update(_ligacoes_do_espelho(s, nomes_do_espelho))
-            linha["do_espelho"] = sorted(espelho)
+            achados.update(ligacoes)
+            linha["do_espelho"] = sorted(espelho) + sorted(ligacoes)
+            # Nome que a planilha traz e que não existe como cadastro aqui.
+            for chave, campo, rotulo in (("cargo", "cargo_id", "Cargo"),
+                                         ("convencao", "convencao_id", "Convenção"),
+                                         ("obra", "obra_id", "Obra")):
+                if nomes_do_espelho.get(chave) and campo not in ligacoes:
+                    nao_entendi.append({
+                        "coluna": chave, "campo": rotulo,
+                        "valor": nomes_do_espelho[chave] + " — não existe no ERP"})
+        if nao_entendi:
+            linha["planilha_nao_entendi"] = nao_entendi
+            for x in nao_entendi:
+                relatorio["planilha_nao_entendi"].append({**x, "nome": pessoa["nome"]})
 
         cargo_id, cargo_nome = cargo_do_card(s, campos)
         if cargo_id and "cargo_id" not in achados:

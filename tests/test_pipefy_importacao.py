@@ -1095,3 +1095,52 @@ def test_quem_NAO_esta_na_planilha_entra_so_com_o_card(mundo):
     mundo["s"].refresh(mundo["com_card"])
     assert mundo["com_card"].pis == "99988877766"
     assert r["pessoas_lidas"] == 1
+
+
+@pytest.mark.banco
+def test_valor_da_planilha_que_eu_NAO_conheco_e_MOSTRADO_em_vez_de_sumir(mundo, banco_analisesps):
+    """O conserto de 16/11/2026 à noite, e a lição mais cara do dia.
+
+    Ele, na terceira tentativa frustrada: *"meu Deus do céu, socorro! É só
+    casar informação da planilha vs campo do ERP. Tu não tá conseguindo (…) o
+    que tu precisa de mim?"*
+
+    Eu lia os NOMES das colunas — que estão na migração e são verificáveis — e
+    INVENTAVA os VALORES que elas guardam. Valor que não bate no de-para não
+    dá erro: o campo fica vazio e cala. Três rodadas dele para descobrir o que
+    o sistema sabia desde o primeiro segundo.
+    """
+    from sqlalchemy import text as _t
+    mundo["s"].execute(_t("""
+        INSERT INTO analisesps.colaborador
+               (cpf, nome, tipo, tipo_contrato, modo_alimentacao, cargo)
+        VALUES (:c, 'Pessoa Com Card', 'Prestador de Serviço',
+                'Contrato Esquisito Que Ninguem Previu',
+                'Seg a Qui', 'Cargo Que Nao Existe Aqui')
+        ON CONFLICT (cpf) DO NOTHING"""), {"c": CPF_A})
+    mundo["s"].flush()
+
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=[CARD],
+                     regravar=True, ler_papel=False, ler_cards=_leitor(_card()))
+    escritos = {x["valor"] for x in r["planilha_nao_entendi"]}
+    # O que está ESCRITO na planilha aparece, com o nome da coluna e o campo
+    # que ficou vazio — é o que acaba com a adivinhação.
+    assert any("Contrato Esquisito" in v for v in escritos)
+    assert any("Seg a Qui" in v for v in escritos)
+    assert any("Cargo Que Nao Existe Aqui" in v for v in escritos)
+
+
+@pytest.mark.banco
+def test_a_linha_CRUA_da_planilha_volta_no_relatorio(mundo, banco_analisesps):
+    """Para conferir contra a planilha aberta ao lado, sem adivinhar."""
+    from sqlalchemy import text as _t
+    mundo["s"].execute(_t("""
+        INSERT INTO analisesps.colaborador (cpf, nome, cargo)
+        VALUES (:c, 'Pessoa Com Card', 'Pedreiro')
+        ON CONFLICT (cpf) DO NOTHING"""), {"c": CPF_A})
+    mundo["s"].flush()
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=[CARD],
+                     regravar=True, ler_papel=False, ler_cards=_leitor(_card()))
+    crua = r["por_pessoa"][0]["planilha_crua"]
+    assert crua["cargo"] == "Pedreiro"
+    assert "modo_alimentacao" in crua and "tipo" in crua

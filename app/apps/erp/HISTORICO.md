@@ -21,6 +21,53 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑⚑ 16/11/2026 — A LIÇÃO MAIS CARA DO DIA: EU LIA OS NOMES DAS COLUNAS E INVENTAVA OS VALORES
+
+> *"Meu Deus do céu, socorro! É só casar informação da planilha vs campo do
+> ERP. Tu não tá conseguindo. Já foram várias tentativas. Tu precisa fazer
+> algo diferente. O que tu precisa de mim? Quer que diga cada coluna pra cada
+> campo?"*
+
+**Ele estava certo, e o erro era sempre o mesmo, em três rodadas seguidas.**
+
+#### O mecanismo, porque entender isto é o que impede a quarta vez
+
+Os **NOMES** das colunas eu li da migração — são verificáveis, e acertei.
+Os **VALORES** que essas colunas guardam eu **inventei**: escrevi que o modo
+de alimentação viria como "Segunda a Quinta" quando a planilha pode dizer
+"Seg a Qui"; que o tipo de contrato viria "Autônomo (RPA)" quando pode vir
+escrito de outro jeito.
+
+**E valor que não bate no de-para não dá erro.** O campo fica vazio e cala.
+Para ele, isso é indistinguível de "o sistema não funciona" — e foram três
+tentativas para descobrir uma coisa que o sistema sabia desde o primeiro
+segundo: o que estava escrito na planilha.
+
+É o MESMO defeito que eu já havia diagnosticado de manhã nos apelidos dos
+campos do Pipefy ("campo cujo apelido eu não acertei não dá erro: entra vazio
+e some") — e repeti à noite, com a planilha, depois de escrever a frase.
+
+#### O conserto: o sistema mostra, ninguém adivinha
+
+O relatório de "Conferir sem gravar" passou a trazer duas coisas:
+
+1. **"Valores da planilha que eu não reconheci"** — pessoa, coluna, o que está
+   ESCRITO lá, e o campo que ficou vazio por causa disso. É a lista que acaba
+   com a adivinhação: basta olhá-la para saber o que corrigir, no de-para ou
+   na planilha.
+2. **A linha CRUA da planilha, coluna por coluna**, por pessoa. Serve para
+   conferir contra a planilha aberta ao lado — e para ver na hora se a cópia
+   está velha (campo cheio lá, vazio aqui ⇒ apertar "Atualizar cadastro" na
+   Análise de SPs).
+
+#### ⚑ A REGRA, para quem vier depois
+
+**Nunca traduza um valor de fonte externa sem um caminho que mostre o que não
+foi traduzido.** Tabela de-para é palpite até que o dado real a confirme; sem
+o relatório, o palpite errado é invisível e o custo cai inteiro no dono, em
+rodadas de tentativa. Nome de coluna se lê na migração; **valor de coluna só
+o dado real diz.**
+
 ### ⚑ 16/11/2026 (noite) — A IMPORTAÇÃO PASSA A LER A PLANILHA, E O PIPEFY FICA SÓ COM OS DOCUMENTOS
 
 Ele viu que **vínculo e pagamento não entravam** e foi direto à raiz:
