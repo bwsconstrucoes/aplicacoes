@@ -21,6 +21,51 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 16/11/2026 (noite) — O DOCUMENTO ESTAVA LÁ; A FICHA É QUE NUNCA MOSTROU
+
+Ele importou uma pessoa do Pipefy e voltou:
+
+> *"Eu falei que o documento não estava aparecendo no cadastro dele, mas quando
+> eu vim aqui na administração arquivo, apareceu. Não sei se isso interfere em
+> alguma coisa que foi feita até agora."*
+
+**Interfere no diagnóstico, não no conserto.** A aba "Documentos" da ficha do
+colaborador **só oferecia anexar**: ela não listava nada, nunca listou. Tinha
+um botão "Abrir o Arquivo — lá dá para filtrar por pessoa", e era esse o
+caminho. Então o documento sempre esteve certo, ligado à pessoa certa; o que
+faltava era a ficha mostrá-lo.
+
+⚠️ **A conclusão sobre o "JÁ TINHA" continua valendo** (ver a entrada de mais
+cedo): aquela trava — só contar como já importado o que AINDA ESTÁ na ficha da
+pessoa — é correta e necessária de qualquer forma. O que muda é que o sintoma
+que ele relatou (*"não veio nada de documentos"*) tinha ESTA causa, e não
+aquela. **A lição é minha: quando ele diz "não aparece", a primeira pergunta é
+"aparece onde?" — eu fui consertar a gravação antes de conferir a exibição.**
+
+**O conserto.** A aba agora lista os documentos da pessoa (tipo, arquivo,
+validade e quando entrou). A rota do Arquivo passou a aceitar filtro por
+colaborador — o serviço já sabia fazer isso, só não havia como pedir.
+
+### ⚑ 16/11/2026 (noite) — DO DOCUMENTO PARA O CADASTRO DO DONO, EM UM CLIQUE
+
+Pedido dele, no mesmo olhar:
+
+> *"Se esse cara aqui é um colaborador, aí tem aqui a informação de quem. Esse
+> de quem aqui era para eu clicar e já abrir o cadastro da pessoa. Da mesma
+> forma, se é um documento de uma empresa, eu clicar e já abrir o cadastro da
+> empresa. Ou o cadastro da obra, se for de obra."*
+
+A coluna "De quem" do Arquivo já trazia o nome — era **texto morto**. Quem via
+um documento e queria conferir a pessoa tinha de decorar o nome, trocar de
+tela e procurar.
+
+Agora o nome é link e abre a ficha certa: **colaborador, empresa, obra ou
+fornecedor**. Lançamento (título, medição) continua texto — não tem ficha
+própria para abrir.
+
+⚑ **A tela de Empresas não abria por link e passou a abrir** (`?empresa=`). Era
+a única das quatro que faltava; obra, colaborador e fornecedor já abriam.
+
 ### ⚑ 16/11/2026 — AS ETAPAS PERDEM A PALAVRA "CADASTRO", E A FASE DO PIPE VIRA ETAPA
 
 #### Os nomes

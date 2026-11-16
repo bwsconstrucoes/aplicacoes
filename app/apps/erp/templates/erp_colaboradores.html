@@ -713,6 +713,35 @@ function aplicarLeituraNaPessoaNova(r){
     </div>`;
 }
 
+async function listarDocumentosDaPessoa(id){
+  const onde = els("pdoc-lista");
+  if (!onde) return;
+  try {
+    const d = await api(`/erp/api/arquivo?colaborador_id=${id}`);
+    const docs = d.documentos || [];
+    if (!docs.length) {
+      onde.innerHTML = `<div class="cartao-dica">Nenhum documento arquivado
+        para esta pessoa ainda.</div>`;
+      return;
+    }
+    onde.innerHTML = `<h4 style="margin-bottom:6px">Documentos desta pessoa
+      (${docs.length})</h4>
+      <div class="tabela-rolagem" style="max-height:320px"><table>
+      <thead><tr><th>Documento</th><th>Arquivo</th><th>Validade</th>
+        <th>Guardado em</th></tr></thead>
+      <tbody>${docs.map(x => `<tr>
+        <td><b>${escapar(x.tipo_nome)}</b></td>
+        <td class="desc"><a href="/erp/anexo/${x.anexo_id}" target="_blank"
+            class="mono" style="font-size:12px">${escapar(x.nome)}</a></td>
+        <td>${x.validade ? dataBR(x.validade) : "—"}</td>
+        <td class="dados">${escapar(x.em || "")}</td></tr>`).join("")}
+      </tbody></table></div>`;
+  } catch(e){
+    onde.innerHTML = `<div class="aviso erro">Não deu para listar os
+      documentos: ${escapar(e.message)}</div>`;
+  }
+}
+
 function pintarDocumentosDaPessoa(alvo){
   alvo.innerHTML = PODE_ARQUIVAR ? `
     <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
@@ -730,10 +759,19 @@ function pintarDocumentosDaPessoa(alvo){
       </div>
       <div id="pdoc-leitura"></div>
     </div>
+    {# ⚑ A LISTA DO QUE A PESSOA JÁ TEM (16/11/2026). Esta aba só OFERECIA
+       anexar: não mostrava documento nenhum. O dono importou uma pessoa do
+       Pipefy e disse: *"eu falei que o documento não estava aparecendo no
+       cadastro dele, mas quando eu vim aqui na administração arquivo,
+       apareceu."* O documento estava certo o tempo todo — a ficha é que
+       nunca listou. Sem isto, quem confere um cadastro não tem como saber o
+       que já chegou e o que falta sem trocar de tela. #}
+    <div id="pdoc-lista" style="margin-top:12px">carregando os documentos…</div>
     <div style="margin-top:10px"><a class="btn secundario" target="_blank"
        href="/erp/arquivo">Abrir o Arquivo</a>
-       <small class="desc">— lá dá para filtrar por pessoa.</small></div>`
+       <small class="desc">— lá dá para ver os de todo mundo.</small></div>`
     : `<div class="cartao-dica">Você não tem acesso aos documentos de pessoas.</div>`;
+  if (els("pdoc-lista")) listarDocumentosDaPessoa(FICHA_ID);
   if (els("btn-pdoc-ler")) {
     PDOC = null;
     els("btn-pdoc-ler").addEventListener("click", () => lerDocumentoDaPessoa(FICHA_ID));
