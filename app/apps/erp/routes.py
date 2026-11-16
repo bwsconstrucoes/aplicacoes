@@ -7066,6 +7066,14 @@ def api_arquivo():
             grupo=(request.args.get("grupo") or "").strip(),
             empresa_id=(int(request.args["empresa_id"]) if request.args.get("empresa_id") else None),
             obra_id=(int(request.args["obra_id"]) if request.args.get("obra_id") else None),
+            # ⚑ FILTRAR POR PESSOA (16/11/2026). O serviço já sabia fazer isso;
+            # a rota é que não deixava pedir. Sem ela, a ficha do colaborador
+            # não tinha como listar os documentos dele — e foi exatamente o que
+            # o dono viu: *"eu falei que o documento não estava aparecendo no
+            # cadastro dele, mas quando eu vim na administração arquivo,
+            # apareceu."* O documento estava certo o tempo todo; a ficha é que
+            # nunca mostrou nenhum.
+            colaborador_id=request.args.get("colaborador_id", type=int),
             competencia=_comp(),
             situacao=(request.args.get("situacao") or "").strip(),
             busca=(request.args.get("busca") or "").strip())

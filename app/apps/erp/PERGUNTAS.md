@@ -2317,6 +2317,10 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
   "nenhuma"; fase nova no pipe aparece aqui antes de virar problema*
 - Quem está com situação diferente da etapa? *(ex.: etapa Desligado e situação
   ATIVO — é o que faria a pessoa continuar batendo ponto)*
+- Quais documentos esta pessoa já tem, e quais faltam? *(a ficha passou a
+  listar em 16/11; antes só o Arquivo mostrava)*
+- De quem é este documento, e como abro o cadastro dele? *(o nome do dono
+  virou link no Arquivo)*
 
 ### Perguntas que o sistema ainda não responde, e o que falta
 
