@@ -944,3 +944,82 @@ def test_o_card_regrava_por_cima_mas_NUNCA_o_nome(mundo):
     assert mundo["com_card"].pis == "99988877766"
     # E o nome não.
     assert mundo["com_card"].nome == antes
+
+
+# ---------------------------------------------------------------------------
+# A FASE DO PIPEFY VIRA ETAPA (e situação) — 16/11/2026
+# ---------------------------------------------------------------------------
+def test_cada_fase_do_pipe_vira_a_etapa_que_ele_ditou():
+    """A correlação, com as palavras dele, uma a uma.
+
+    *"O que está no Pipefy como colaboradores afastados vai ficar como
+    afastado nas etapas do ERP. O que estiver como cadastro cancelado vai
+    ficar como cancelado (…) cadastros adicionais vai ficar em conferência."*
+    """
+    from app.apps.erp.core.cadastros.pessoas import etapa_da_fase
+    assert etapa_da_fase("Colaboradores Afastados")[0] == "AFASTADO"
+    assert etapa_da_fase("Cadastro Cancelado")[0] == "CANCELADO"
+    assert etapa_da_fase("Colaboradores Desligados")[0] == "DESLIGADO"
+    assert etapa_da_fase("Cadastro Concluído")[0] == "CONCLUIDO"
+    assert etapa_da_fase("Cadastro Inicial")[0] == "CADASTRO_INICIAL"
+    assert etapa_da_fase("Cadastros Adicionais")[0] == "EM_CONFERENCIA"
+
+
+def test_a_fase_diz_tambem_a_SITUACAO_que_e_o_que_o_ponto_le():
+    """Era o último dado que faltava para o ponto largar a planilha."""
+    from app.apps.erp.core.cadastros.pessoas import etapa_da_fase
+    assert etapa_da_fase("Colaboradores Afastados")[1] == "AFASTADO"
+    assert etapa_da_fase("Colaboradores Desligados")[1] == "DESLIGADO"
+    assert etapa_da_fase("Cadastro Concluído")[1] == "ATIVO"
+    # Cancelado é quem nunca chegou a ser da empresa: deixá-lo ATIVO o manteria
+    # batendo ponto e aparecendo na folha.
+    assert etapa_da_fase("Cadastro Cancelado")[1] == "DESLIGADO"
+
+
+def test_fase_desconhecida_NAO_mexe_na_etapa():
+    """Chutar a etapa tira a pessoa da fila de trabalho do DP sem ninguém
+    perceber — e some calado é o pior jeito de errar."""
+    from app.apps.erp.core.cadastros.pessoas import etapa_da_fase
+    assert etapa_da_fase("Fase Que Alguém Inventou") == (None, None)
+    assert etapa_da_fase("") == (None, None)
+    assert etapa_da_fase(None) == (None, None)
+
+
+def test_os_nomes_das_etapas_perderam_a_palavra_cadastro():
+    """Ele: *"esse nome cadastro pode ser eliminado. Vai ficar inicial só,
+    concluído, cancelado."* A palavra aparecia em três dos oito e faltava nos
+    outros cinco — não distinguia nada, só fazia a lista parecer duas."""
+    from app.apps.erp.core.cadastros.pessoas import ETAPA_ROTULOS
+    assert ETAPA_ROTULOS["CADASTRO_INICIAL"] == "Inicial"
+    assert ETAPA_ROTULOS["EM_CONFERENCIA"] == "Conferência"
+    assert ETAPA_ROTULOS["CONCLUIDO"] == "Concluído"
+    assert ETAPA_ROTULOS["CANCELADO"] == "Cancelado"
+    assert not [r for r in ETAPA_ROTULOS.values() if "adastro" in r]
+
+
+@pytest.mark.banco
+def test_a_importacao_poe_a_pessoa_na_etapa_da_fase_do_card(mundo):
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp2
+    cards = {"853990032": {"id": "853990032", "titulo": "Pessoa Com Card",
+                           "fase": "Colaboradores Afastados",
+                           "campos": {"cpf": CPF_A}}}
+    imp2.importar(mundo["s"], mundo["dp"], simular=False, cards=[CARD],
+                  regravar=True, ler_papel=False, ler_cards=_leitor(cards))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].etapa == "AFASTADO"
+    assert mundo["com_card"].situacao == "AFASTADO"
+
+
+@pytest.mark.banco
+def test_fase_que_eu_nao_conheco_e_RELATADA_em_vez_de_chutada(mundo):
+    antes = mundo["com_card"].etapa
+    r = imp.importar(mundo["s"], mundo["dp"], simular=False, cards=[CARD],
+                     regravar=True, ler_papel=False,
+                     ler_cards=_leitor({"853990032": {
+                         "id": "853990032", "titulo": "x",
+                         "fase": "Fase Inventada", "campos": {"cpf": CPF_A}}}))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].etapa == antes
+    assert [x["fase"] for x in r["fases_sem_etapa"]] == ["Fase Inventada"]

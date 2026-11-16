@@ -802,6 +802,110 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 16/11/2026 — DECIDIDO: O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA (atravessa áreas: Ponto, ERP e Análise de SPs)
+
+**Ainda NÃO foi feito.** Fica registrado porque é decisão tomada, com condição
+escrita, e quem pegar qualquer uma das três áreas precisa saber que ela existe.
+
+Ele, depois de descobrir que o cargo que o ponto mostra pode vir de uma
+terceira lista: *"assim que eu conseguir importar tudo do pipefy e das fichas,
+quero cortar o vínculo com a planilha."*
+
+**O QUE É O VÍNCULO.** O ponto usa como base o **Registro de Colaboradores** —
+a cópia da planilha do Análise de SPs (`analisesps.colaborador`) — e não o
+cadastro do ERP. Quando a pessoa está lá, a planilha MANDA em: nome, celular
+(o WhatsApp do PIN e do QR), **cargo**, obra, admissão, data de saída, a
+situação (ativo/afastado/desligado, lida da "Fase Atual" do Pipefy) e **quem
+não bate ponto** (PJ e pró-labore pelo tipo de contrato, mais a obra ESCRUSSAS).
+
+**CORTAR O VÍNCULO É UM CAMPO DE ESCOLHA, JÁ CONSTRUÍDO**, na Configuração do
+ponto: *"Base que o ponto usa"* → **ERP** em vez de Registro
+(`registro.gravar_fonte`, parâmetro `pessoas.fonte`). Não precisa de código.
+
+⚠️ **O QUE PRECISA SER VERDADE ANTES, e é aqui que mora o risco.** Virando a
+chave, tudo o que a planilha preenchia passa a sair do cadastro do ERP. Para
+cada pessoa que bate ponto o ERP precisa ter:
+
+| O que | Quem preenche hoje |
+|---|---|
+| nome, CPF, obra | já vem |
+| telefone | a importação do Pipefy. ⚠️ **NÃO é impeditivo para bater ponto** — ver a correção abaixo |
+| **cargo** | a importação do Pipefy, desde 16/11 (só quando o nome casa) |
+| admissão | Pipefy e ficha do Fortes |
+| **situação** (ativo / afastado / desligado) | ⚠️ **NINGUÉM.** A planilha lê da "Fase Atual" do Pipefy; o ERP tem `colaboradores.situacao` e a importação não a preenche |
+| **quem não bate ponto** (PJ, pró-labore, obra ESCRUSSAS) | ✔ **RESOLVIDO em 16/11/2026** — ver abaixo |
+
+#### ⚠️ CORREÇÃO: O TELEFONE NÃO IMPEDE NINGUÉM DE BATER PONTO
+
+Eu havia escrito que quem ficasse sem telefone não bateria. **Está errado**, e
+ele corrigiu no mesmo dia:
+
+> *"Uma coisa é não ter telefone, outra coisa é não conseguir acessar. Então
+> não é para ser impeditivo o telefone. É impeditivo para ele verificar o
+> ponto dele. Mas outro colaborador vai conseguir bater o ponto. Ele não vai
+> conseguir bater o ponto próprio, se ele for liberado para isso, que é
+> minoria."*
+
+Quem bate ponto é a obra, no aparelho da obra. O telefone serve para **a
+pessoa conferir o ponto dela** e para bater pelo próprio celular — que é
+permissão dada a poucos. Sem telefone, a pessoa bate normalmente; ela só não
+acompanha sozinha.
+
+**O que decide quem não bate ponto é o TIPO DE CONTRATO**, e nada mais.
+
+#### ✔ A REGRA DE QUEM NÃO BATE, ditada por ele e já implementada
+
+> *"Quando é prestador de serviço, quem é que bate ponto? É o autônomo RPA e o
+> autônomo mensalista. Os demais não batem ponto (…) PJ não bate ponto,
+> pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz bate
+> ponto."*
+
+Os nove tipos do cadastro:
+
+| Batem ponto | Não batem |
+|---|---|
+| CLT (determinado e indeterminado), Temporário, Autônomo RPA, Autônomo mensalista, Jovem aprendiz, Estágio | **PJ, Pró-labore** |
+
+Mais a obra **ESCRUSSAS**, que não bate ponto seja qual for o contrato, como
+já era pela planilha. A **exceção marcada pelo DP** (migração 025) continua
+passando por cima de tudo isso.
+
+Implementado em `ponto/core/cadastros.py` (`TIPOS_CONTRATO_SEM_PONTO`), com
+teste em `tests/test_ponto_nao_bate_pelo_contrato_banco.py`. **Antes disto,
+usando o cadastro do ERP como base, NINGUÉM ficava de fora** — PJ e pró-labore
+passariam a bater ponto no dia da virada, e ponto de PJ é o registro que não
+se quer ter, porque parece vínculo de emprego.
+
+#### ✔ A SITUAÇÃO TAMBÉM FOI RESOLVIDA, no mesmo dia
+
+Era o último buraco. A **fase do card do Pipefy** passou a virar, na
+importação, a **etapa** do cadastro E a **situação** da pessoa:
+
+| Fase no Pipefy | Etapa | Situação |
+|---|---|---|
+| Colaboradores Afastados | Afastado | AFASTADO |
+| Colaboradores Desligados | Desligado | DESLIGADO |
+| Cadastro Cancelado | Cancelado | DESLIGADO |
+| Cadastros Adicionais | Conferência | ATIVO |
+| Cadastro Concluído | Concluído | ATIVO |
+| Cadastro Inicial | Inicial | ATIVO |
+
+Fase não reconhecida não mexe em nada e é relatada. **Com isto, tudo o que a
+planilha preenchia passa a existir no cadastro do ERP** — falta só rodar as
+importações.
+
+**A ordem certa, quando chegar a hora:** (1) terminar as importações; (2)
+conferir na Configuração do ponto os números que já existem ali — "Faltam no
+ERP", "Estão só no ERP", "Sem obra reconhecida" —, todos em zero; (3) conferir
+por amostragem que a situação das pessoas ficou certa; (4) só então virar a
+chave. **Virar
+com gente sem obra reconhecida ou com a situação errada é o que derruba a
+batida**, e isso aparece na manhã seguinte, com gente parada no portão.
+
+---
+
+---
+
 ### 16/11/2026 — `scripts/testes.sh -q` rodava a suíte SEM paralelismo (atravessa áreas)
 
 O dono, esperando uma publicação: *"JESUS, é tempo demais (…) precisamos otimizar

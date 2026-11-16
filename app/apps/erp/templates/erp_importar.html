@@ -778,6 +778,18 @@ function pintarRelatorioPC(rel){
       <tbody>${rel.cargos_sem_par.map(x => `<tr><td>${escapar(x.nome)}</td>
         <td class="dados">${escapar(x.cargo)}</td></tr>`).join("")}</tbody></table>`);
 
+  // ⚑ FASE DO PIPE QUE NÃO VIROU ETAPA (16/11/2026). Sem esta lista a pessoa
+  // ficaria na etapa antiga e ninguém saberia por quê.
+  if ((rel.fases_sem_etapa || []).length)
+    linhas.push(`<h4>Fase do card que eu não reconheci (${
+      rel.fases_sem_etapa.length})</h4>
+      <div class="cartao-dica">A etapa destes cadastros <b>não foi mexida</b> —
+        chutar a etapa tira a pessoa da fila do DP sem ninguém perceber. Me
+        mostre a fase abaixo e eu acrescento a correlação.</div>
+      <table><thead><tr><th>Pessoa</th><th>Fase no card</th></tr></thead>
+      <tbody>${rel.fases_sem_etapa.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.fase)}</td></tr>`).join("")}</tbody></table>`);
+
   // ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ (16/11/2026). Sem isto, "o card veio
   // vazio", "o ERP já tinha" e "o valor foi recusado" eram a mesma coisa na
   // tela: nenhuma linha. Ele olhou e disse "me parece que não tá puxando é
