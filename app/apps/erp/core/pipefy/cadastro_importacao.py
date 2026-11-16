@@ -371,6 +371,168 @@ def cargo_do_card(s: Session, campos: dict[str, str]) -> tuple[Optional[int], st
     return None, nome
 
 
+# ===========================================================================
+# O ESPELHO DO CARD QUE JÁ ESTÁ NO BANCO — 16/11/2026
+#
+# Ele, depois de ver que vínculo e pagamento não entravam: *"todos os dados do
+# card estão na planilha na Dados Documentos, ela é espelho do card. Não era
+# mais fácil ler de lá? Trazer do pipefy somente os documentos? Que é o que
+# não está lá."*
+#
+# ⚑ ELE TEM RAZÃO, E A RAZÃO É MAIS FORTE DO QUE "MAIS FÁCIL". Ler do card
+# exige adivinhar o apelido interno de cada campo no Pipefy
+# (`anexo_ctps_rg_cpf_comprovante_de_endere_o`, `phone_t_tulo`,
+# `select_t_tulo`…). Campo cujo apelido eu não acertei não dá erro: entra
+# vazio e some. Foi exatamente o que aconteceu com VÍNCULO e PAGAMENTO — e
+# ninguém tinha como saber, porque "o card não trouxe" e "eu não sei o nome do
+# campo" tinham a mesma aparência.
+#
+# A planilha "Dados Documentos" já é lida pela Análise de SPs e vive no banco
+# (`analisesps.colaborador`), com nome de coluna que uma pessoa escreve e
+# confere. Não precisa de token, não vai à internet e não adivinha nada.
+#
+# ⚑ O QUE SÓ O CARD TEM, e por isso o Pipefy continua sendo chamado: os
+# DOCUMENTOS (anexos) e os dados de identidade — RG, nome do pai e da mãe,
+# sexo, estado civil, escolaridade, naturalidade e endereço. PIS e CTPS vêm da
+# ficha do Fortes.
+#
+# A ORDEM DE FORÇA, quando os dois falam do mesmo campo: a planilha ganha. Ela
+# é o espelho conferido, e é por ela que a folha é feita hoje.
+# ===========================================================================
+DO_ESPELHO_DIRETO = {
+    "celular": "telefone",
+    "id_fortes": "id_fortes",
+    "data_nascimento": "data_nascimento",
+    "data_inicio": "data_inicio",
+    "data_admissao": "admissao",
+    "valor_diaria": "valor_diaria",
+    "valor_alimentacao": "aux_alimentacao",
+    "valor_transporte": "aux_transporte",
+}
+# O texto da planilha virando a opção do cadastro. Fora desta tabela não entra
+# — a mesma regra do card, pelo mesmo motivo: acertar por acaso é pior que
+# errar, porque funciona no teste e erra no dado real.
+ESPELHO_MODO_PARA_CATEGORIA = {
+    "SEGQUI": "SEG_QUI", "SEGUNDAAQUINTA": "SEG_QUI",
+    "SEGSEX": "SEG_SEX", "SEGUNDAASEXTA": "SEG_SEX",
+    "MENSAL": "MENSAL", "MES": "MES", "DIARIO": "DIARIO",
+    "CARTAO": "CARTAO", "VALETRANSPORTE": "VALE_TRANSPORTE",
+}
+
+
+def _vinculo_do_espelho(tipo: Any, tipo_contrato: Any) -> Optional[str]:
+    """CTPS ou PRESTADOR, a partir do que a planilha escreve.
+
+    A coluna "Tipo" é a que a folha já usa para separar quem entra nas contas
+    de horas; `tipo_contrato` serve de desempate quando ela vem vazia.
+    """
+    junto = _cru(tipo) + " " + _cru(tipo_contrato)
+    if any(p in junto for p in ("PRESTADOR", "RPA", "AUTONOM", "PJ",
+                                "PROLABORE", "ESTAG", "APRENDIZ")):
+        return "PRESTADOR"
+    if "CTPS" in junto or "CLT" in junto:
+        return "CTPS"
+    return None
+
+
+def do_espelho(s: Session, cpf: str) -> dict[str, Any]:
+    """O que a planilha "Dados Documentos" sabe sobre esta pessoa.
+
+    Devolve as colunas do cadastro do ERP já traduzidas. Vazio quando a pessoa
+    não está na planilha ou a cópia não existe neste banco — e aí a importação
+    segue só com o card, como antes.
+    """
+    # ⚑ SAVEPOINT, E ELE NÃO É ZELO: em Postgres, uma consulta que falha aborta
+    # a transação INTEIRA — mesmo pega por `except`. Sem isto, um banco sem a
+    # cópia da planilha derrubava as 50 pessoas da rodada com um erro que não
+    # tinha nada a ver com elas. É a mesma lição do `_trazer_um`, e eu caí nela
+    # de novo em 16/11/2026; o teste pegou.
+    marca = s.begin_nested()
+    try:
+        linha = s.execute(text("""
+            SELECT tipo, tipo_contrato, cargo, convencao, obra_codigo,
+                   celular, id_fortes, data_nascimento, data_inicio,
+                   data_admissao, valor_diaria, valor_alimentacao,
+                   modo_alimentacao, valor_transporte, modo_transporte
+              FROM analisesps.colaborador
+             WHERE cpf = :c"""), {"c": _so_digitos(cpf)}).mappings().first()
+        marca.commit()
+    except Exception:            # noqa: BLE001 — sem a cópia, segue sem ela
+        marca.rollback()
+        return {}
+    if linha is None:
+        return {}
+
+    saida: dict[str, Any] = {}
+    for de, para in DO_ESPELHO_DIRETO.items():
+        valor = linha.get(de)
+        if valor not in (None, "", 0):
+            saida[para] = valor
+
+    vinculo = _vinculo_do_espelho(linha.get("tipo"), linha.get("tipo_contrato"))
+    if vinculo:
+        saida["vinculo"] = vinculo
+        # ⚑ PAGAMENTO (diarista × mensalista) sai do VALOR DA DIÁRIA, e isto é
+        # escolha com motivo: a planilha não tem uma coluna dizendo "é
+        # mensalista". Quem tem diária cadastrada é diarista; quem não tem,
+        # mensalista. É a mesma leitura que a folha já faz.
+        saida["mensalista"] = not bool(linha.get("valor_diaria"))
+
+    bruto = _cru(linha.get("tipo_contrato"))
+    for codigo in _svc_pessoas().TIPOS_CONTRATO:
+        if _cru(codigo) == bruto:
+            saida["tipo_contrato"] = codigo
+            break
+    else:
+        traduzido = {
+            "AUTONOMORPA": "AUTONOMO_RPA", "RPA": "AUTONOMO_RPA",
+            "AUTONOMOMENSALISTA": "AUTONOMO_MENSALISTA",
+            "PROLABORE": "PRO_LABORE", "PJ": "PJ", "ESTAGIO": "ESTAGIO",
+            "JOVEMAPRENDIZ": "JOVEM_APRENDIZ", "TEMPORARIO": "TEMPORARIO",
+            "CLTTEMPODETERMINADO": "CLT_DETERMINADO",
+            "CLTTEMPOINDETERMINADO": "CLT_INDETERMINADO",
+        }.get(bruto)
+        if traduzido:
+            saida["tipo_contrato"] = traduzido
+
+    for de, para in (("modo_alimentacao", "categoria_alimentacao"),
+                     ("modo_transporte", "categoria_transporte")):
+        achado = ESPELHO_MODO_PARA_CATEGORIA.get(_cru(linha.get(de)))
+        if achado:
+            saida[para] = achado
+
+    saida["_nomes"] = {"cargo": _limpo(linha.get("cargo")),
+                       "convencao": _limpo(linha.get("convencao")),
+                       "obra": _limpo(linha.get("obra_codigo"))}
+    return saida
+
+
+def _ligacoes_do_espelho(s: Session, nomes: dict[str, str]) -> dict[str, int]:
+    """Cargo, convenção e obra pelo NOME, exatos — nunca por semelhança."""
+    from app.apps.erp.db.models.cadastros import Cargo, Convencao, Obra
+
+    saida: dict[str, int] = {}
+    if nomes.get("cargo"):
+        alvo = _cru(nomes["cargo"])
+        for c in s.scalars(select(Cargo).where(Cargo.ativo.is_(True))).all():
+            if _cru(c.nome) == alvo:
+                saida["cargo_id"] = c.id
+                break
+    if nomes.get("convencao"):
+        alvo = _cru(nomes["convencao"])
+        for c in s.scalars(select(Convencao)).all():
+            if _cru(c.nome) == alvo:
+                saida["convencao_id"] = c.id
+                break
+    if nomes.get("obra"):
+        alvo = _cru(nomes["obra"])
+        for o in s.scalars(select(Obra)).all():
+            if _cru(o.codigo) == alvo:
+                saida["obra_id"] = o.id
+                break
+    return saida
+
+
 def anexos_do_card(campos: dict[str, str]) -> list[dict[str, Any]]:
     """Cada arquivo pendurado no card, com o tipo que ele vai ter aqui."""
     saida = []
@@ -973,10 +1135,21 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                 {"nome": pessoa["nome"], "card": card,
                  "fase": str(bruto.get("fase")).strip()})
 
+        # ⚑ O ESPELHO DA PLANILHA ENTRA AQUI E MANDA (16/11/2026). É o pedido
+        # dele: os dados do card já estão em "Dados Documentos", e lá os nomes
+        # das colunas são legíveis — não se adivinha apelido de campo. Foi por
+        # adivinhação que VÍNCULO e PAGAMENTO nunca entraram.
+        espelho = do_espelho(s, pessoa.get("cpf") or "")
+        nomes_do_espelho = espelho.pop("_nomes", {}) if espelho else {}
+        if espelho:
+            achados.update(espelho)
+            achados.update(_ligacoes_do_espelho(s, nomes_do_espelho))
+            linha["do_espelho"] = sorted(espelho)
+
         cargo_id, cargo_nome = cargo_do_card(s, campos)
-        if cargo_id:
+        if cargo_id and "cargo_id" not in achados:
             achados["cargo_id"] = cargo_id
-        elif cargo_nome:
+        elif cargo_nome and "cargo_id" not in achados:
             linha["cargo_sem_par"] = cargo_nome
             relatorio["cargos_sem_par"].append(
                 {"nome": pessoa["nome"], "card": card, "cargo": cargo_nome})

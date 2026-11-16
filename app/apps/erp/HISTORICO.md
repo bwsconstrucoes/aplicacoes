@@ -21,6 +21,54 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 16/11/2026 (noite) — A IMPORTAÇÃO PASSA A LER A PLANILHA, E O PIPEFY FICA SÓ COM OS DOCUMENTOS
+
+Ele viu que **vínculo e pagamento não entravam** e foi direto à raiz:
+
+> *"Todos os dados do card estão na planilha na Dados Documentos, ela é
+> espelho do card. Não era mais fácil ler de lá? Trazer do pipefy somente os
+> documentos? Que é o que não está lá."*
+
+**Ele tem razão, e a razão é mais forte que "mais fácil".**
+
+#### Por que vínculo e pagamento sumiram, e por que isso ia se repetir
+
+Ler do card exige **adivinhar o apelido interno de cada campo no Pipefy** —
+`anexo_ctps_rg_cpf_comprovante_de_endere_o`, `phone_t_tulo`, `select_t_tulo`.
+Campo cujo apelido eu não acertei **não dá erro**: entra vazio e some. Vínculo
+e pagamento nunca estiveram no de-para, e ninguém tinha como saber, porque "o
+card não trouxe" e "eu não sei o nome do campo" têm exatamente a mesma cara.
+
+A planilha "Dados Documentos" **já é lida pela Análise de SPs e já vive no
+banco** (`analisesps.colaborador`, 30 colunas, atualizada por botão e de duas
+em duas horas). Os nomes das colunas são palavras que uma pessoa escreve e
+confere. Não precisa de token, não vai à internet e não adivinha nada.
+
+#### A divisão de trabalho, agora
+
+| Vem da **planilha** (manda) | Vem do **card** | Vem da **ficha do Fortes** |
+|---|---|---|
+| vínculo, pagamento (diarista × mensalista), tipo de contrato, cargo, convenção, obra, telefone, valor da diária, auxílios (valor e categoria), nascimento, datas, código do Fortes | **os documentos (anexos)** e a identidade que só ele tem: RG, nome do pai e da mãe, sexo, estado civil, escolaridade, naturalidade, endereço | PIS, CTPS, admissão, salário, demissão |
+
+**Quem não está na planilha entra só com o card**, como antes — o espelho é
+complemento, não condição.
+
+#### Pagamento: a escolha que eu fiz, porque a planilha não tem a coluna
+
+A planilha **não diz "é mensalista"**. Quem tem **valor de diária cadastrado**
+é diarista; quem não tem, mensalista. É a mesma leitura que a folha já faz.
+Está escrito aqui porque é dedução, não dado — se ele quiser diferente, muda
+num lugar só.
+
+#### ⚠️ E um erro meu que o teste pegou, pela segunda vez no repositório
+
+A consulta à cópia da planilha estava dentro de um `try/except` — e **em
+Postgres uma consulta que falha aborta a transação INTEIRA, mesmo pega por
+`except`**. Num banco sem a cópia, a rodada inteira de 50 pessoas caía com um
+erro que não tinha nada a ver com elas. O conserto é o SAVEPOINT, exatamente
+como o `_trazer_um` já fazia e documentava. **Eu caí na armadilha que este
+próprio arquivo descreve** — fica registrado para a terceira vez não acontecer.
+
 ### ⚑ 16/11/2026 (noite) — O DOCUMENTO ESTAVA LÁ; A FICHA É QUE NUNCA MOSTROU
 
 Ele importou uma pessoa do Pipefy e voltou:
