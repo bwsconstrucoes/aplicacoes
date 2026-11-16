@@ -2291,6 +2291,71 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 
 ---
 
+## 3z-sexies. A FICHA DO FORTES, E AS DUAS NOMENCLATURAS DA OBRA (16/11/2026)
+
+A ficha de registro do Fortes entrou por leitura direta do PDF, e com ela veio
+o centro de custo da contabilidade no cadastro da obra.
+
+### ⚠️ Duas palavras novas que precisam de uma definição só
+
+| A palavra | Os significados possíveis | Decisão |
+|---|---|---|
+| **"obra"** | o código da BWS ("094") ou o centro de custo da contabilidade ("164.01")? | ✔ **FECHADO: as DUAS ficam.** Ele: *"nós vamos continuar com a nossa nomenclatura e a contabilidade tem a dela também. A gente manter as duas."* Quem pergunta pela obra fala o código da BWS; quem vem da contabilidade fala o centro de custo. O assistente aceita os dois e responde com o da BWS |
+| **"salário"** | o do cadastro do ERP ou o último do histórico do Fortes? | ✔ **FECHADO: o do Fortes manda**, e a importação atualiza o do ERP. Se os dois discordam, quem está certo é quem emitiu o holerite |
+
+### Perguntas que já dão resposta exata
+
+- Quantas pessoas estão sem o código do Fortes no cadastro?
+- Qual o centro de custo da contabilidade da obra 094? E qual obra é a 164.01?
+- Quais obras estão sem centro de custo da contabilidade? ⚠️ *é a pergunta que
+  explica por que uma ficha entrou sem obra*
+- Quem está no Fortes e não está no ERP? E o contrário?
+- Quais nomes estão diferentes entre o ERP e a ficha do Fortes? *(a fila de
+  divergências, com `origem = 'FORTES'`)* ⚠️ *só o que DISCORDA entra aí:
+  campo vazio no ERP a ficha preenche, sem virar pergunta*
+- Quantas fichas foram recusadas na importação, e por quê?
+- Para quem o Fortes diz uma obra e o ERP diz outra? ⚠️ *o sistema não decide:
+  avisa que os dois discordam*
+- Quem está sem PIS ou sem CTPS no cadastro? *(depois da importação, deve ser
+  quem não tem ficha)*
+
+### ⚠️ Perguntas que o ERP NÃO vai responder, e isso está decidido
+
+**FECHADO em 16/11/2026, por ele, com todas as letras:** *"a ficha de cadastro
+ela vai ter mais dados que a gente precisa. Só da parte cadastral mesmo e das
+informações necessárias para encaminhamento para a contabilidade. O sistema que
+vai armazenar esses históricos de salário, de admissões, etc. e tal, é lá.
+Então, é desnecessário."*
+
+O ERP guarda **o estado de hoje** de cada pessoa e o que é preciso para
+encaminhar à contabilidade. **A história fica no Fortes**, que é o sistema de
+folha. Isto não é limitação a ser vencida depois — é divisão de trabalho.
+
+| Pergunta | Quem responde |
+|---|---|
+| "Qual era o salário do fulano em 2019?" | **o Fortes.** A ficha traz treze mudanças de 2014 a 2026; a importação aproveita a última de propósito |
+| "Quantas vezes o fulano mudou de cargo?" | **o Fortes** — e aqui há razão a mais: a nomenclatura de cargo dele foi recusada |
+| "Quantas admissões o fulano teve?" | **o Fortes** |
+
+⚑ **E há uma consequência que é regra de código, não só de conversa:** a
+importação **não escreve** na tabela de alterações do ERP
+(`colaborador_alteracoes`). Aquela lista é o que a BWS DECIDIU — promoção,
+transferência, com motivo e justificativa assinados por alguém. Uma importação
+de 575 fichas despejaria ali 575 "alterações de salário" que ninguém decidiu, e
+a lista que é consultada viraria lixo. Há teste travando isso.
+
+**O que o assistente responde quando perguntarem pelo histórico:** "isso está no
+Fortes, o ERP guarda o quadro de hoje" — não "não sei".
+
+### Perguntas que o sistema ainda não responde, e o que falta
+
+- **"Este atestado é da mesma doença do anterior?"** — continua aberta (falta
+  comparar CID).
+- **"Qual a jornada contratual do fulano?"** — está na ficha e não é lida; a
+  escala de verdade é a do ponto.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
