@@ -44,11 +44,13 @@ AS QUATRO REGRAS DESTE ARQUIVO, e cada uma existe por um motivo:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroValidacao
 from app.apps.erp.core.pipefy import cliente
 from app.apps.erp.db.models.cadastros import Usuario
 
@@ -107,7 +109,10 @@ TEXTOS: dict[str, str] = {
     "n_identidade": "rg",
     "nome_da_m_e": "nome_mae",
     "nome_do_pai": "nome_pai",
-    "matr_cula": "matricula",
+    # ⚑ MATRÍCULA SAIU em 13/11/2026. Ele: *"essa informação de matrícula,
+    # cara, isso aqui não precisa não. Esse campo é desnecessário, que a gente
+    # não usa mais negócio de matrícula não. A gente vai usar o ID Fortes, o
+    # CPF aqui dentro do nosso sistema e pronto."*
     "endere_o_rua": "logradouro",
     "n_mero2": "numero_endereco",
     "bairro": "bairro",
@@ -163,68 +168,6 @@ def _so_digitos(valor: Any) -> str:
     return "".join(c for c in str(valor or "") if c.isdigit())
 
 
-def casar_por_cpf(s: Session, cards: list[dict[str, Any]]) -> dict[str, Any]:
-    """Liga cada card à pessoa do ERP pelo CPF. Devolve o que casou e o que não.
-
-    Card sem CPF, CPF que não existe aqui e DOIS cards para o mesmo CPF são
-    tratados como casos à parte — o último de propósito: escolher um dos dois
-    seria adivinhar qual é o cadastro bom.
-    """
-    por_cpf: dict[str, list[dict]] = {}
-    sem_cpf: list[dict] = []
-    for card in cards:
-        cpf = _so_digitos((card.get("campos") or {}).get(CAMPO_CPF_DO_CARD))
-        if len(cpf) != 11:
-            sem_cpf.append(card)
-            continue
-        por_cpf.setdefault(cpf, []).append(card)
-
-    repetidos = {cpf: lista for cpf, lista in por_cpf.items() if len(lista) > 1}
-    unicos = {cpf: lista[0] for cpf, lista in por_cpf.items() if len(lista) == 1}
-
-    pessoas = {}
-    if unicos:
-        linhas = s.execute(text("""
-            SELECT id, nome, cpf, situacao, btrim(COALESCE(ref_pipefy, '')) AS card
-              FROM colaboradores
-             WHERE regexp_replace(cpf, '\\D', '', 'g') = ANY(:cpfs)"""),
-            {"cpfs": list(unicos)}).mappings().all()
-        for l in linhas:
-            pessoas[_so_digitos(l["cpf"])] = dict(l)
-
-    casados, sem_pessoa = [], []
-    for cpf, card in unicos.items():
-        pessoa = pessoas.get(cpf)
-        if pessoa is None:
-            sem_pessoa.append({"card": card["id"], "titulo": card["titulo"],
-                               "cpf": cpf})
-            continue
-        casados.append({"colaborador_id": pessoa["id"], "nome": pessoa["nome"],
-                        "cpf": cpf, "situacao": pessoa["situacao"],
-                        "card": card["id"], "ja_tinha_card": bool(pessoa["card"])})
-    return {
-        "casados": casados,
-        "cards_sem_cpf": [{"card": c["id"], "titulo": c["titulo"]} for c in sem_cpf],
-        "cards_sem_pessoa": sem_pessoa,
-        "cpf_com_dois_cards": [
-            {"cpf": cpf, "cards": [c["id"] for c in lista]}
-            for cpf, lista in repetidos.items()],
-    }
-
-
-def gravar_o_card_na_pessoa(s: Session, casados: list[dict[str, Any]]) -> int:
-    """Grava o número do card em quem ainda não tinha.
-
-    Assim a segunda rodada não precisa varrer o pipe inteiro de novo — e a
-    ficha da pessoa passa a dizer de qual card ela veio."""
-    novos = [c for c in casados if not c.get("ja_tinha_card")]
-    for c in novos:
-        s.execute(text("UPDATE colaboradores SET ref_pipefy = :card"
-                       " WHERE id = :i AND COALESCE(btrim(ref_pipefy),'') = ''"),
-                  {"card": str(c["card"]), "i": c["colaborador_id"]})
-    return len(novos)
-
-
 # ---------------------------------------------------------------------------
 # Quem entra
 # ---------------------------------------------------------------------------
@@ -256,12 +199,34 @@ def o_que_ja_veio(s: Session, cards: list[str]) -> set[tuple[str, str, int]]:
 
     ⚑ É ISTO que torna a segunda passada instantânea. Sem ela, "já tenho esse
     arquivo" só se descobre DEPOIS de baixá-lo, porque a comparação é pelo
-    conteúdo."""
+    conteúdo.
+
+    ⚑ E "JÁ VEIO" TEM DE SER VERDADE — conserto de 16/11/2026. O dono olhou a
+    ficha de uma pessoa cujo relatório dizia sete documentos "JÁ TINHA" e
+    respondeu: *"não veio nada de documentos."* Esta anotação dizia que o
+    arquivo tinha entrado; a ficha não tinha arquivo nenhum.
+
+    A anotação é por CARD, e o documento é de uma PESSOA. Qualquer coisa que
+    tenha separado os dois depois — o documento apagado à mão, o card casado
+    com outra pessoa numa rodada antiga, o cadastro refeito — deixava a
+    anotação de pé e o arquivo não. E o pior: quanto mais se reimportava, mais
+    o sistema afirmava que estava tudo lá.
+
+    Agora só conta como "já veio" o que AINDA ESTÁ na ficha daquela pessoa. O
+    que não estiver é baixado de novo — que é o desfecho certo: na dúvida,
+    trazer de novo custa um download; não trazer custa um documento que ninguém
+    sabe que falta.
+    """
     if not cards:
         return set()
     linhas = s.execute(text("""
-        SELECT card, campo, item FROM pipefy_importado
-         WHERE card = ANY(:cards) AND resultado <> 'FALHOU'"""),
+        SELECT p.card, p.campo, p.item
+          FROM pipefy_importado p
+          JOIN documentos d ON d.id = p.documento_id
+         WHERE p.card = ANY(:cards)
+           AND p.resultado <> 'FALHOU'
+           AND p.documento_id IS NOT NULL
+           AND d.colaborador_id = p.colaborador_id"""),
         {"cards": list(cards)}).all()
     return {(str(l[0]), str(l[1]), int(l[2])) for l in linhas}
 
@@ -329,7 +294,7 @@ PALAVRAS: dict[str, dict[str, str]] = {
         "SEGUNDAAQUINTA": "SEG_QUI", "SEGUNDAASEXTA": "SEG_SEX",
         "MENSAL": "MENSAL", "MES": "MES"},
     "categoria_transporte": {
-        "DIARIO": "DIARIO", "MENSAL": "MENSAL",
+        "DIARIO": "DIARIO", "MENSAL": "MENSAL", "MES": "MES",
         "SEGUNDAESEXTA": "SEG_E_SEX", "VALETRANSPORTE": "VALE_TRANSPORTE",
         "DIARIOEVALETRANSPORTE": "DIARIO_E_VT", "VEICULO": "VEICULO",
         "MOTOCICLETA": "MOTOCICLETA", "BICICLETA": "BICICLETA",
@@ -363,6 +328,49 @@ def _da_lista(valor: str, validos, coluna: str = "") -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# O CARGO — pedido dele em 16/11/2026: *"queria que o cargo fosse preenchido
+# por essa importação também."*
+#
+# ⚑ POR QUE ELE ESTAVA DE FORA, e por que agora pode entrar. No Pipefy o cargo
+# é um CONECTOR: o card guarda o id de um registro de outro pipe, e id de lá
+# não quer dizer nada aqui. Mas o campo também devolve o NOME ("PEDREIRO"), e
+# nome casa com o cadastro de cargos do ERP, que tem nome único.
+#
+# ⚑ E O CASAMENTO É EXATO, DE PROPÓSITO. Cargo decide piso da convenção, CBO,
+# riscos e EPI — "parecido" aqui vira salário errado e EPI errado. Ou o nome é
+# o mesmo (sem acento e sem caixa, que é diferença de digitação, não de
+# cargo), ou NÃO ENTRA e o relatório diz o nome que veio, para alguém criar o
+# cargo ou corrigir o card. Adivinhar sairia mais caro que não preencher.
+#
+# ⚑ CARGO E FUNÇÃO NÃO SÃO A MESMA COISA, e ele perguntou isso no mesmo dia.
+# `funcoes` = o que a pessoa faz na obra, com a DIÁRIA de referência (é o que
+# o diário de obra usa). `cargos` = o cargo registrado, com CBO, riscos e EPI,
+# ligado à convenção — é o que a contabilidade recebe. A importação preenche
+# o CARGO, que é o do registro.
+# ---------------------------------------------------------------------------
+CAMPOS_DE_CARGO = ("cargo", "cargo_pretendido", "cargo_pleiteado", "fun_o",
+                   "funcao", "cargo_fun_o", "cargo_do_colaborador")
+
+
+def cargo_do_card(s: Session, campos: dict[str, str]) -> tuple[Optional[int], str]:
+    """(id do cargo, nome que veio no card). O id é None quando não casou."""
+    from app.apps.erp.db.models.cadastros import Cargo
+
+    nome = ""
+    for chave in CAMPOS_DE_CARGO:
+        nome = _limpo(campos.get(chave))
+        if nome:
+            break
+    if not nome:
+        return None, ""
+    alvo = _cru(nome)
+    for c in s.scalars(select(Cargo).where(Cargo.ativo.is_(True))).all():
+        if _cru(c.nome) == alvo:
+            return c.id, nome
+    return None, nome
+
+
 def anexos_do_card(campos: dict[str, str]) -> list[dict[str, Any]]:
     """Cada arquivo pendurado no card, com o tipo que ele vai ter aqui."""
     saida = []
@@ -371,9 +379,68 @@ def anexos_do_card(campos: dict[str, str]) -> list[dict[str, Any]]:
             endereco = cliente.endereco_do_anexo(item)
             saida.append({"campo": campo, "item": posicao, "tipo": tipo,
                           "endereco": endereco,
+                          "forma": cliente.forma_do_anexo(item),
                           "nome": cliente.nome_do_anexo(item),
                           "bruto": item})
     return saida
+
+
+def raio_x_dos_anexos(campos: dict[str, str]) -> list[dict[str, Any]]:
+    """O que o Pipefy devolveu em CADA campo de anexo deste card.
+
+    ⚑ ISTO EXISTE POR CAUSA DE 13/11/2026, quando ele importou e: *"a
+    documentação que está anexada no pipe não veio para cá (…) não veio nenhum
+    documento"*. Eu não tinha como saber por quê — aqui não há acesso ao
+    Pipefy —, e o relatório não dizia nada: campo vazio e campo que eu não
+    soube ler davam o mesmo silêncio.
+
+    Agora a conferência MOSTRA, campo por campo, quantos itens vieram e de que
+    forma. A próxima rodada dele responde a pergunta sozinha, em vez de
+    virar mais uma ida e volta.
+    """
+    linhas = []
+    for campo, tipo in PAPEIS.items():
+        itens = cliente.lista_do_campo(campos.get(campo))
+        formas = sorted({cliente.forma_do_anexo(x) for x in itens})
+        linhas.append({
+            "campo": campo, "tipo": tipo, "quantos": len(itens),
+            "formas": formas,
+            # Uma AMOSTRA curta do que veio, para eu poder consertar o que
+            # ainda não entendi sem precisar de acesso ao Pipefy.
+            "amostra": (str(itens[0])[:120] if itens else "")})
+    return linhas
+
+
+# ---------------------------------------------------------------------------
+# A EMPRESA DE REGISTRO, pelo CNPJ que vem no próprio card
+#
+# Ele, em 13/11/2026: *"numa empresa para registro, o que o ERP grava é um
+# pouquinho diferente do que está na planilha, mas na planilha dá para
+# localizar o CNPJ. E assim, ele não importou, eu tenho que reimportar, não
+# importou."*
+#
+# ⚑ O TEXTO DIFERE DOS DOIS LADOS, O CNPJ NÃO. No pipe a opção é
+# "00.079.526/0001-09 - BWS"; no cadastro de Empresas a razão social é outra.
+# Comparar texto nunca ia casar. Comparar os 14 dígitos casa sempre — e é o
+# que ele apontou.
+# ---------------------------------------------------------------------------
+CAMPOS_DE_EMPRESA = ("cnpj_para_admiss_o", "empresa_para_registro")
+
+
+def empresa_do_card(s: Session, campos: dict[str, str]) -> Optional[int]:
+    """O id da empresa do ERP cujo CNPJ aparece no card — ou nada."""
+    for campo in CAMPOS_DE_EMPRESA:
+        digitos = _so_digitos(_limpo(campos.get(campo)))
+        if len(digitos) != 14:
+            continue
+        achada = s.execute(text("""
+            SELECT id FROM empresas
+             WHERE regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') = :c
+               AND ativo IS NOT FALSE
+             LIMIT 1"""), {"c": digitos}).scalar()
+        if achada:
+            return int(achada)
+    return None
 
 
 def _vazios(s: Session, colaborador_id: int,
@@ -394,30 +461,386 @@ def _vazios(s: Session, colaborador_id: int,
             if not str(linha.get(campo) or "").strip()}
 
 
-def mapear_cards(s: Session, *, simular: bool = True, varrer=None,
-                 pipe_id: str = cliente.PIPE_CADASTRO) -> dict[str, Any]:
-    """Varre o pipe, casa cada card com a pessoa pelo CPF e (se não for
-    simulação) grava o número do card em quem ainda não tinha.
+# ---------------------------------------------------------------------------
+# A LISTA QUE ELE COLA
+# ---------------------------------------------------------------------------
+def ids_dos_cards(texto: Any) -> list[str]:
+    """Os números dos cards, colados de qualquer jeito.
 
-    `varrer` existe para o teste entregar cards de mentira sem rede."""
-    busca = varrer or cliente.varrer_pipe
-    cards = busca(pipe_id, campos=(CAMPO_CPF_DO_CARD,))
-    r = casar_por_cpf(s, cards)
-    gravados = 0
-    if not simular:
-        gravados = gravar_o_card_na_pessoa(s, r["casados"])
-    novos = [c for c in r["casados"] if not c.get("ja_tinha_card")]
-    return {
-        "cards_no_pipe": len(cards),
-        "casados": r["casados"],
-        "cards_sem_cpf": r["cards_sem_cpf"],
-        "cards_sem_pessoa": r["cards_sem_pessoa"],
-        "cpf_com_dois_cards": r["cpf_com_dois_cards"],
-        "gravados": gravados if not simular else len(novos),
-        "detalhe": {
-            "sem_pessoa": r["cards_sem_pessoa"][:50],
-            "dois_cards": r["cpf_com_dois_cards"][:50]},
-    }
+    Um por linha, separados por vírgula ou espaço, ou colados direto de uma
+    COLUNA DA PLANILHA — é de lá que ele os tira. Endereço inteiro do card
+    também serve. Repetido entra uma vez só: colar a mesma coluna duas vezes é
+    acidente comum, e buscar o mesmo card duas vezes seria tempo jogado fora.
+
+    A regra é a mesma do importador de SPs, que já roda há meses
+    (`core/importadores/pipefy_cards.extrair_ids`): seis dígitos ou mais.
+    """
+    if isinstance(texto, (list, tuple)):
+        texto = " ".join(str(x) for x in texto)
+    return list(dict.fromkeys(re.findall(r"\b\d{6,}\b", str(texto or ""))))
+
+
+def relatorio_vazio(motivo: str) -> dict[str, Any]:
+    return {"simulado": True, "motivo": motivo, "pessoas_na_fila": 0,
+            "pessoas_lidas": 0, "documentos_guardados": 0,
+            "documentos_ja_tinha": 0, "documentos_que_falharam": 0,
+            "campos_preenchidos": 0, "cards_sem_resposta": [], "falhas": [],
+            "cargos_sem_par": [], "fases_sem_etapa": [],
+            "rotulos": dict(ROTULO_DO_CAMPO),
+            "por_pessoa": [], "de_fora": dict(PAPEIS_DE_FORA),
+            "cards_pedidos": 0, "cards_sem_pessoa": []}
+
+
+def _pessoas_dos_cards(s: Session, lidos: dict[str, Any]) -> tuple[list, list]:
+    """Casa cada card lido com a pessoa do ERP, pelo CPF do próprio card.
+
+    ⚑ O CPF, e não o número do card guardado no cadastro: o cadastro não tem
+    esse número (foi o que quebrou na primeira versão). O card traz o CPF, o
+    ERP tem o CPF — e quem casa os dois é o sistema, não a digitação.
+    """
+    por_cpf: dict[str, dict] = {}
+    sem_cpf = []
+    for card, bruto in lidos.items():
+        cpf = _so_digitos((bruto.get("campos") or {}).get(CAMPO_CPF_DO_CARD))
+        if len(cpf) != 11:
+            sem_cpf.append({"card": str(card), "titulo": bruto.get("titulo", ""),
+                            "motivo": "o card não tem CPF preenchido"})
+            continue
+        por_cpf[cpf] = {"card": str(card), "titulo": bruto.get("titulo", "")}
+    if not por_cpf:
+        return [], sem_cpf
+    linhas = s.execute(text("""
+        SELECT id, nome, cpf, situacao
+          FROM colaboradores
+         WHERE regexp_replace(cpf, '\\D', '', 'g') = ANY(:cpfs)"""),
+        {"cpfs": list(por_cpf)}).mappings().all()
+    achadas = {_so_digitos(l["cpf"]): dict(l) for l in linhas}
+    pessoas, sem_pessoa = [], list(sem_cpf)
+    for cpf, dado in por_cpf.items():
+        pessoa = achadas.get(cpf)
+        if pessoa is None:
+            sem_pessoa.append({"card": dado["card"], "titulo": dado["titulo"],
+                               "motivo": "o CPF do card não está no ERP — a "
+                                         "importação não cria pessoa"})
+            continue
+        pessoas.append({"id": pessoa["id"], "nome": pessoa["nome"],
+                        "cpf": pessoa["cpf"], "card": dado["card"],
+                        "situacao": pessoa["situacao"]})
+    return pessoas, sem_pessoa
+
+
+# ---------------------------------------------------------------------------
+# O QUE O CARD NÃO DISSE, O DOCUMENTO PODE DIZER
+#
+# Ele, em 13/11/2026: *"teve um determinado cadastro aí que a gente tem o PIS
+# gravado no pipe, mas ele não identificou o PIS, deve ter dado alguma
+# divergência (…) eu quero assim: vai importar, se tem alguma coisa faltando,
+# pô, lê os documentos, lê os anexos do pipe."*
+#
+# ⚑ SÓ O QUE FALTA, E SÓ COM O PAPEL QUE JÁ VEIO. A leitura custa IA, então
+# ela não roda para quem está completo, e nunca baixa nada a mais: lê o
+# arquivo que a importação ACABOU de trazer. O que ela achar entra pela mesma
+# porta dos outros campos — nunca por cima do que já estava preenchido, a não
+# ser que ele tenha pedido para regravar.
+# ---------------------------------------------------------------------------
+# Campo do pedido → coluna do cadastro. A leitura devolve os nomes do
+# formulário do DP (`num_pis`), e aqui eles viram coluna.
+DO_PAPEL_PARA_O_CADASTRO = {
+    "num_pis": "pis", "num_ctps": "ctps_numero",
+    "data_nascimento": "data_nascimento", "telefone": "telefone",
+}
+# Em que ordem tentar: a página de informações da CTPS é a que traz PIS e
+# número; o documento de identificação vem depois.
+PAPEIS_QUE_VALE_LER = ("CTPS-INFORMACOES", "DOC-IDENTIDADE", "CPF-DOC")
+
+
+def _o_que_ainda_falta(s: Session, colaborador_id: int) -> set[str]:
+    """As colunas que a leitura poderia preencher e que seguem vazias."""
+    colunas = sorted(set(DO_PAPEL_PARA_O_CADASTRO.values()))
+    linha = s.execute(
+        text(f"SELECT {', '.join(colunas)} FROM colaboradores WHERE id = :i"),
+        {"i": colaborador_id}).mappings().first()
+    if linha is None:
+        return set()
+    return {c for c in colunas if not str(linha.get(c) or "").strip()}
+
+
+def ler_o_que_veio(s: Session, colaborador_id: int,
+                   trazidos: list[dict[str, Any]],
+                   ler=None) -> tuple[dict[str, str], dict[str, str]]:
+    """Lê os papéis recém-trazidos.
+
+    Devolve DUAS coisas: o que preenche buraco (para gravar) e **tudo o que o
+    papel disse** (para o confronto).
+
+    ⚑ A SEGUNDA EXISTE POR UM DEFEITO QUE O TESTE PEGOU: eu devolvia só o que
+    ia ser gravado, e o NOME não está entre os campos que a importação
+    preenche sozinha. Resultado: o nome lido do documento nunca chegava ao
+    confronto — justamente o campo que ele mais quer conferir (*"verificar se
+    o nome cadastrado está batendo com o que está no pipe, com o que está no
+    documento da pessoa"*).
+    """
+    faltando = _o_que_ainda_falta(s, colaborador_id)
+    if not trazidos:
+        return {}, {}
+    funcao = ler
+    if funcao is None:
+        from app.apps.erp.core import documentos_de_pessoa
+        funcao = documentos_de_pessoa.ler
+    achados: dict[str, str] = {}
+    tudo: dict[str, str] = {}
+    for papel in PAPEIS_QUE_VALE_LER:
+        for doc in trazidos:
+            if doc.get("tipo") != papel or not doc.get("conteudo"):
+                continue
+            try:
+                lido = funcao(doc["conteudo"], doc.get("nome") or "", papel)
+            except Exception as e:                       # noqa: BLE001
+                logger.warning("ERP/pipefy: leitura de %s falhou (%s)",
+                               papel, e)
+                continue
+            for campo, valor in (lido.get("campos") or {}).items():
+                if not str(valor or "").strip():
+                    continue
+                # TUDO fica, com o nome que a leitura usa — é o que o
+                # confronto compara.
+                tudo.setdefault(campo, str(valor).strip())
+                coluna = DO_PAPEL_PARA_O_CADASTRO.get(campo)
+                if coluna and coluna in faltando:
+                    achados[coluna] = str(valor).strip()
+                    faltando.discard(coluna)
+            break           # um papel de cada tipo basta
+    return achados, tudo
+
+
+# ---------------------------------------------------------------------------
+# O CONFRONTO: o cadastro, o card e o documento dizendo coisas diferentes
+#
+# Ele, em 13/11/2026: *"a gente tem a IA aqui para trabalhar com a gente.
+# Seria a hora, na importação, da gente confrontar dados dos documentos.
+# Verificar se o nome cadastrado está batendo com o que está no pipe, com o
+# que está no documento da pessoa (…) porque o que tem mais força é o
+# documento da pessoa (…) de repente a contabilidade está errada também.
+# Errou a nomenclatura, o nome, a coisa. Eu preciso corrigir isso aí."*
+#
+# ⚑ O DOCUMENTO TEM MAIS FORÇA — MAS NÃO GRAVA SOZINHO. A ordem de confiança
+# é documento > card > cadastro, e é por isso que o documento aparece como a
+# sugestão. Só que quem lê o documento é uma IA, que erra em silêncio: trocar
+# o nome de uma pessoa na folha por causa de uma leitura torta é estrago que
+# ninguém percebe até o pagamento voltar.
+#
+# Então a divergência é MOSTRADA, com as três versões lado a lado e a de maior
+# força já marcada — e alguém confirma. É a mesma regra do documento que
+# preenche o cadastro: *"o que a leitura preenche fica editável e vai para
+# conferência"* (CLAUDE.md, 17/09/2026).
+# ---------------------------------------------------------------------------
+# O que vale a pena confrontar: o que identifica a pessoa e o que vai para a
+# folha. Não entra o que muda legitimamente (telefone, endereço): ali
+# divergência é atualização, não erro.
+A_CONFRONTAR = {
+    "nome": "Nome",
+    "data_nascimento": "Data de nascimento",
+    "pis": "Nº PIS",
+    "ctps_numero": "Nº CTPS",
+}
+# De onde o card traz cada um deles.
+DO_CARD = {"nome": "nome_completo", "data_nascimento": "data_de_nascimento",
+           "pis": "pis", "ctps_numero": "ctps"}
+# E de onde a leitura do documento traz.
+DO_DOCUMENTO = {"nome": "nome", "data_nascimento": "data_nascimento",
+                "pis": "num_pis", "ctps_numero": "num_ctps"}
+
+
+# ⚑ DATA SE COMPARA COMO DATA, NÃO COMO TEXTO — conserto de 16/11/2026, e o
+# dono pegou: *"o que não bateu na crítica ainda foi errada. ERP trabalhando
+# com data em padrão errado."* A tela mostrava, como divergência a decidir:
+#
+#     Data de nascimento | No ERP 1988-03-30 | No card 30/03/1988
+#
+# É a MESMA data. O cadastro guarda data de verdade (e o Postgres a escreve
+# ano-mês-dia); o card escreve dia/mês/ano. Comparando letra por letra,
+# "19880330" nunca é "30031988" — então TODA pessoa com data de nascimento
+# aparecia como divergente. Numa carga de 575, são 575 perguntas falsas, e
+# uma fila cheia de pergunta falsa é uma fila que ninguém lê: a divergência
+# de verdade afunda no meio.
+def _como_data(valor: Any):
+    """A data por trás do texto, ou None quando não for data."""
+    import datetime as _dt
+    if isinstance(valor, _dt.datetime):
+        return valor.date()
+    if isinstance(valor, _dt.date):
+        return valor
+    texto = str(valor or "").strip()[:10]
+    if not texto:
+        return None
+    for formato in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return _dt.datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
+def data_para_pessoa(valor: Any) -> str:
+    """Toda data que uma PESSOA vai ler sai em dia/mês/ano.
+
+    Ano-mês-dia é como o banco escreve, não como se lê um nascimento aqui.
+    O que não for data sai como está."""
+    d = _como_data(valor)
+    return d.strftime("%d/%m/%Y") if d else str(valor or "").strip()
+
+
+def _igual(a: Any, b: Any) -> bool:
+    """Compara sem acento, sem caixa e sem pontuação — e data como data.
+
+    "José da Silva" e "JOSE DA SILVA" são a mesma pessoa; "123.45678.90-0" e
+    "12345678900" são o mesmo PIS; 1988-03-30 e 30/03/1988 são o mesmo dia.
+    Acusar qualquer um desses como divergência encheria a tela de ruído e
+    faria ninguém olhar o que importa."""
+    da, db = _como_data(a), _como_data(b)
+    if da is not None and db is not None:
+        return da == db
+    return _cru(a) == _cru(b)
+
+
+def confrontar(s: Session, colaborador_id: int, campos_do_card: dict[str, str],
+               do_documento: dict[str, str]) -> list[dict[str, Any]]:
+    """As três versões de cada dado, quando elas não batem.
+
+    Devolve uma linha por campo divergente, com o que cada fonte diz e qual
+    delas tem mais força. Campo que ninguém contradiz não vira linha.
+    """
+    colunas = sorted(A_CONFRONTAR)
+    linha = s.execute(
+        text(f"SELECT {', '.join(colunas)} FROM colaboradores WHERE id = :i"),
+        {"i": colaborador_id}).mappings().first()
+    if linha is None:
+        return []
+    saida = []
+    for campo, rotulo in A_CONFRONTAR.items():
+        aqui = str(linha.get(campo) or "").strip()
+        no_card = _limpo(campos_do_card.get(DO_CARD.get(campo, ""), ""))
+        no_papel = str(do_documento.get(DO_DOCUMENTO.get(campo, ""), "") or "").strip()
+        tem = [x for x in (aqui, no_card, no_papel) if x]
+        if len(tem) < 2:
+            continue                     # uma fonte só não contradiz ninguém
+        if all(_igual(tem[0], x) for x in tem[1:]):
+            continue                     # todos de acordo
+        # A de maior força entre as que existem: documento, depois card.
+        vence = "documento" if no_papel else ("card" if no_card else "cadastro")
+        saida.append({
+            "campo": campo, "rotulo": rotulo,
+            "no_cadastro": aqui, "no_card": no_card, "no_documento": no_papel,
+            "mais_forte": vence,
+            "sugerido": no_papel or no_card or aqui})
+    return saida
+
+
+def guardar_divergencias(s: Session, colaborador_id: int,
+                        linhas: list[dict[str, Any]], card: str) -> int:
+    """Põe cada divergência na fila de quem decide.
+
+    ⚑ GUARDAR É O QUE TRANSFORMA UM AVISO EM TRABALHO. O relatório é de uma
+    rodada: fechou a tela, perdeu-se. Com 575 pessoas, "anote num papel o que
+    não bateu" não é plano. Ele, em 13/11/2026: *"quando houver divergência
+    entre o que a IA lê e o que está cadastrado, aí você questiona. E o humano
+    decide."*
+
+    Reimportar a mesma gente é normal na carga inicial, então a pergunta
+    ABERTA é uma por pessoa e campo — senão a lista cresceria sem ninguém ter
+    decidido nada. Se o card mudou, a pergunta aberta é atualizada.
+    """
+    postas = 0
+    for d in linhas:
+        s.execute(text("""
+            INSERT INTO cadastro_divergencias
+                   (colaborador_id, campo, no_cadastro, no_card, no_documento,
+                    mais_forte, origem, referencia)
+            VALUES (:i, :campo, :aqui, :card_v, :papel, :forte, 'PIPEFY', :card)
+            ON CONFLICT (colaborador_id, campo) WHERE situacao = 'ABERTA'
+            DO UPDATE SET no_cadastro = EXCLUDED.no_cadastro,
+                          no_card = EXCLUDED.no_card,
+                          no_documento = EXCLUDED.no_documento,
+                          mais_forte = EXCLUDED.mais_forte,
+                          referencia = EXCLUDED.referencia"""),
+            {"i": colaborador_id, "campo": d["campo"], "aqui": d["no_cadastro"],
+             "card_v": d["no_card"], "papel": d["no_documento"],
+             "forte": d["mais_forte"], "card": str(card)})
+        postas += 1
+    return postas
+
+
+def perguntas_abertas(s: Session, teto: int = 300) -> list[dict[str, Any]]:
+    """O que está esperando alguém decidir."""
+    linhas = s.execute(text("""
+        SELECT d.id, d.colaborador_id, c.nome, c.cpf, d.campo, d.no_cadastro,
+               d.no_card, d.no_documento, d.mais_forte, d.referencia
+          FROM cadastro_divergencias d
+          JOIN colaboradores c ON c.id = d.colaborador_id
+         WHERE d.situacao = 'ABERTA'
+         ORDER BY c.nome, d.campo
+         LIMIT :t"""), {"t": teto}).mappings().all()
+    return [{**dict(l), "rotulo": A_CONFRONTAR.get(l["campo"], l["campo"])}
+            for l in linhas]
+
+
+def decidir(s: Session, divergencia_id: int, fonte: str,
+            usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    """Alguém escolheu qual versão vale — e o cadastro passa a dizer isso.
+
+    `fonte` é "cadastro" (fica como está), "card", "documento" ou "ignorar".
+    A gravação passa pelas MESMAS funções da tela: se o cadastro recusa um PIS
+    inválido, esta porta recusa também.
+    """
+    d = s.execute(text("""
+        SELECT * FROM cadastro_divergencias WHERE id = :i"""),
+        {"i": divergencia_id}).mappings().first()
+    if d is None:
+        raise ErroNaoEncontrado("Divergência não encontrada.")
+    if d["situacao"] != "ABERTA":
+        raise ErroValidacao("Esta divergência já foi decidida.")
+    escolhas = {"cadastro": d["no_cadastro"], "card": d["no_card"],
+                "documento": d["no_documento"]}
+    if fonte == "ignorar":
+        s.execute(text("""
+            UPDATE cadastro_divergencias
+               SET situacao = 'IGNORADA', decidido_por = :u, decidido_em = now()
+             WHERE id = :i"""),
+            {"i": divergencia_id, "u": usuario.id if usuario else None})
+        return {"id": divergencia_id, "situacao": "IGNORADA"}
+    if fonte not in escolhas:
+        raise ErroValidacao(
+            "Escolha de onde vem o valor: do cadastro, do card ou do documento.")
+    valor = str(escolhas[fonte] or "").strip()
+    if not valor:
+        raise ErroValidacao("Essa fonte não tem valor para gravar.")
+    if fonte != "cadastro":
+        try:
+            _gravar_campos(s, int(d["colaborador_id"]), {d["campo"]: valor},
+                           usuario, permitir_nome=(d["campo"] == "nome"))
+        except ErroValidacao as e:
+            # ⚑ O RECADO PRECISA DIZER O QUE É. A gravação passa pelas
+            # conferências do cadastro inteiro, então uma pessoa com CPF
+            # inválido gravado dava "CPF inválido" ao decidir o NOME dela — e
+            # quem leu isso ia procurar o erro no lugar errado. Visto na tela
+            # em 13/11/2026.
+            recado = str(e)
+            if "CPF" in recado.upper() and d["campo"] != "cpf":
+                raise ErroValidacao(
+                    f"Não deu para gravar: o CPF desta pessoa está inválido no "
+                    f"cadastro. Corrija a ficha dela primeiro, e depois decida "
+                    f"isto aqui. (O cadastro recusou: {recado})") from e
+            raise
+    s.execute(text("""
+        UPDATE cadastro_divergencias
+           SET situacao = 'RESOLVIDA', escolhido = :v, decidido_por = :u,
+               decidido_em = now()
+         WHERE id = :i"""),
+        {"i": divergencia_id, "v": valor,
+         "u": usuario.id if usuario else None})
+    logger.info("ERP/cadastro: divergência %s resolvida com o valor do %s",
+                divergencia_id, fonte)
+    return {"id": divergencia_id, "situacao": "RESOLVIDA", "valor": valor}
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +850,8 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
              simular: bool = True, so_ativos: bool = True,
              obra_id: Optional[int] = None,
              teto_de_pessoas: Optional[int] = POR_RODADA,
-             ler_cards=None, casar: bool = True, varrer=None) -> dict[str, Any]:
+             ler_cards=None, cards: Any = None,
+             regravar: bool = False, ler_papel: Any = None) -> dict[str, Any]:
     """Lê os cards das pessoas e traz documentos e campos vazios.
 
     Com `simular=True` (o padrão) NADA é gravado e nenhum arquivo é baixado:
@@ -438,23 +862,25 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     `ler_cards` existe para o teste poder entregar cards de mentira sem rede.
     """
     ler = ler_cards or cliente.ler_cards
-    pessoas = quem_tem_card(s, so_ativos=so_ativos, obra_id=obra_id,
-                            teto=teto_de_pessoas)
-    # ⚑ NINGUÉM COM CARD? ENTÃO ACHE OS CARDS. Até 13/11/2026 isto parava aqui
-    # com "nenhuma pessoa com número de card", e não havia onde digitar o
-    # número — o botão não tinha como funcionar nunca. Agora o sistema varre o
-    # pipe e casa pelo CPF; o número do card é RESULTADO da importação, não
-    # requisito dela.
-    mapeamento = None
-    if not pessoas and casar:
-        mapeamento = mapear_cards(s, simular=simular, varrer=varrer)
-        if not simular and mapeamento["casados"]:
-            s.flush()
-        pessoas = quem_tem_card(s, so_ativos=so_ativos, obra_id=obra_id,
-                                teto=teto_de_pessoas) if not simular else []
+    # ⚑ QUEM DIZ QUAIS CARDS É ELE, e isso é a correção de 13/11/2026 (a
+    # segunda). A primeira versão varria o pipe inteiro e casava pelo CPF —
+    # trazia card CANCELADO e card REPETIDO, que não interessam. Ele:
+    #
+    #   *"eu prefiro listar os cards, porque você está trazendo card
+    #   duplicado, só que aí tem card que está cancelado, isso aqui não me
+    #   interessa. Eu vou listar os cards que eu quero que você busque. E você
+    #   faz a pesquisa card a card e puxa as informações e grava."*
+    #
+    # Ele tem a planilha com os números; escolher quais entram é decisão dele,
+    # não adivinhação minha. Uma porta só: a lista colada.
+    pedidos = ids_dos_cards(cards)
+    if not pedidos:
+        return relatorio_vazio(
+            "Cole os números dos cards que devem ser buscados.")
     relatorio: dict[str, Any] = {
         "simulado": bool(simular),
-        "pessoas_na_fila": len(pessoas),
+        "cards_pedidos": len(pedidos),
+        "pessoas_na_fila": 0,
         "pessoas_lidas": 0,
         "documentos_guardados": 0,
         "documentos_ja_tinha": 0,
@@ -462,25 +888,52 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "campos_preenchidos": 0,
         "cards_sem_resposta": [],
         "falhas": [],
+        # Cargo que o card trouxe e que não existe no cadastro de cargos: a
+        # lista é a resposta de "por que o cargo não veio", com o nome exato
+        # para alguém criar ou corrigir.
+        "cargos_sem_par": [],
+        # Fase do pipe que o sistema não soube traduzir em etapa: sem esta
+        # lista, a pessoa simplesmente ficaria na etapa antiga e ninguém
+        # saberia por quê.
+        "fases_sem_etapa": [],
+        # Para a tela falar "Cargo" e não "cargo_id" com quem confere cadastro.
+        "rotulos": dict(ROTULO_DO_CAMPO),
         "por_pessoa": [],
         "de_fora": dict(PAPEIS_DE_FORA),
-        "mapeamento": None,
+        "cards_sem_pessoa": [],
+        "regravando": bool(regravar),
+        "anexos_no_pipe": 0,
+        "anexos_que_nao_entendi": 0,
+        "campos_do_documento": 0,
+        "divergencias": 0,
     }
-    if mapeamento is not None:
-        relatorio["mapeamento"] = {
-            k: (len(v) if isinstance(v, list) else v)
-            for k, v in mapeamento.items() if k != "detalhe"}
-        relatorio["mapeamento_detalhe"] = mapeamento.get("detalhe")
+    # CARD A CARD, como ele pediu — em levas de 20 por ida à API.
+    lidos, falhas_de_card = ler(pedidos)
+    for card, motivo in (falhas_de_card or {}).items():
+        relatorio["cards_sem_resposta"].append({"card": str(card),
+                                                "motivo": str(motivo)})
+    pessoas, sem_pessoa = _pessoas_dos_cards(s, lidos)
+    relatorio["cards_sem_pessoa"] = sem_pessoa
     relatorio["pessoas_na_fila"] = len(pessoas)
     if not pessoas:
         return relatorio
 
-    cards = [p["card"] for p in pessoas]
-    lidos, falhas_de_card = ler(cards)
-    for card, motivo in (falhas_de_card or {}).items():
-        relatorio["cards_sem_resposta"].append({"card": str(card),
-                                                "motivo": str(motivo)})
-    ja_veio = o_que_ja_veio(s, cards)
+    # O número do card fica guardado no cadastro: é a procedência, e evita
+    # buscar de novo quem já veio.
+    if not simular:
+        for p in pessoas:
+            s.execute(text("UPDATE colaboradores SET ref_pipefy = :c"
+                           " WHERE id = :i AND COALESCE(btrim(ref_pipefy),'') = ''"),
+                      {"c": p["card"], "i": p["id"]})
+    # ⚑ REGRAVAR É PARA A CARGA INICIAL, e ele pediu com todas as letras em
+    # 13/11/2026: *"isso aí vai acontecer só nesse começo. Então, se eu
+    # precisar reimportar, eu quero reimportar e regravar as coisas."*
+    #
+    # Desligado por padrão: no dia a dia, sobrescrever o que alguém conferiu à
+    # mão é o pior desfecho possível de uma importação. Na carga inicial é o
+    # contrário — o que está aqui veio pela metade, e o card é a fonte.
+    ja_veio = set() if regravar else o_que_ja_veio(
+        s, [p["card"] for p in pessoas])
 
     for pessoa in pessoas:
         card = str(pessoa["card"])
@@ -490,10 +943,54 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         relatorio["pessoas_lidas"] += 1
         campos = bruto.get("campos") or {}
         linha = {"colaborador_id": pessoa["id"], "nome": pessoa["nome"],
-                 "card": card, "documentos": [], "campos": {}}
+                 "card": card, "documentos": [], "campos": {},
+                 "anexos_do_card": raio_x_dos_anexos(campos)}
 
         # 1. Os campos que estão vazios aqui.
-        preencher = _vazios(s, pessoa["id"], dados_do_card(campos))
+        achados = dados_do_card(campos)
+        empresa_id = empresa_do_card(s, campos)
+        if empresa_id:
+            # `empresa_id` não é texto: entra como ligação, e o servidor
+            # deriva o CNPJ de admissão dela (ver `pessoas.salvar`).
+            achados["empresa_id"] = empresa_id
+        # ⚑ A FASE DO CARD VIRA ETAPA E SITUAÇÃO — 16/11/2026, pedido dele:
+        # *"na importação você já tem que deixar a fase correta, né? Casar a
+        # fase com a etapa."*
+        #
+        # E vale mais do que arrumação: a fase é o único lugar que diz se a
+        # pessoa está afastada ou desligada, e a SITUAÇÃO era o último dado
+        # que faltava para o ponto poder largar a planilha do Análise de SPs.
+        #
+        # Fase que o sistema não reconhece não mexe em nada — chutar a etapa
+        # tira a pessoa da fila de trabalho do DP sem ninguém perceber.
+        etapa, situacao = _svc_pessoas().etapa_da_fase(bruto.get("fase"))
+        if etapa:
+            achados["etapa"] = etapa
+            achados["situacao"] = situacao
+            linha["fase_do_card"] = bruto.get("fase")
+        elif (bruto.get("fase") or "").strip():
+            relatorio["fases_sem_etapa"].append(
+                {"nome": pessoa["nome"], "card": card,
+                 "fase": str(bruto.get("fase")).strip()})
+
+        cargo_id, cargo_nome = cargo_do_card(s, campos)
+        if cargo_id:
+            achados["cargo_id"] = cargo_id
+        elif cargo_nome:
+            linha["cargo_sem_par"] = cargo_nome
+            relatorio["cargos_sem_par"].append(
+                {"nome": pessoa["nome"], "card": card, "cargo": cargo_nome})
+        preencher = achados if regravar else _vazios(s, pessoa["id"], achados)
+        # ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ — conserto de 16/11/2026. Ele
+        # olhou o relatório, viu um campo só e disse: *"a verdade é que me
+        # parece que não tá puxando é nada."* E ele não tinha como saber: o
+        # relatório mostrava o que ENTROU e calava sobre o resto, então "o
+        # card veio vazio", "o ERP já tinha" e "o valor foi recusado" tinham
+        # exatamente a mesma aparência — nenhuma linha. Silêncio é a pior
+        # resposta de uma importação, porque parece defeito mesmo quando é
+        # acerto.
+        linha["nao_preenchidos"] = _por_que_nao(s, pessoa["id"], campos,
+                                                achados, preencher)
         if preencher:
             linha["campos"] = preencher
             relatorio["campos_preenchidos"] += len(preencher)
@@ -501,6 +998,11 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                 _gravar_campos(s, pessoa["id"], preencher, usuario)
 
         # 2. Os documentos.
+        trazidos: list[dict[str, Any]] = []
+        for item in linha["anexos_do_card"]:
+            relatorio["anexos_no_pipe"] += item["quantos"]
+            if "não reconhecido" in (item["formas"] or []):
+                relatorio["anexos_que_nao_entendi"] += 1
         for anexo in anexos_do_card(campos):
             chave = (card, anexo["campo"], anexo["item"])
             if chave in ja_veio:
@@ -522,11 +1024,13 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                 linha["documentos"].append({**_resumo(anexo),
                                             "situacao": "VAI ENTRAR"})
                 continue
-            ok, motivo = _trazer_um(s, pessoa, anexo, usuario)
+            ok, motivo, conteudo = _trazer_um(s, pessoa, anexo, usuario)
             if ok:
                 relatorio["documentos_guardados"] += 1
                 linha["documentos"].append({**_resumo(anexo),
                                             "situacao": "GUARDADO"})
+                trazidos.append({"tipo": anexo["tipo"], "nome": anexo["nome"],
+                                 "conteudo": conteudo})
             else:
                 relatorio["documentos_que_falharam"] += 1
                 relatorio["falhas"].append(
@@ -534,6 +1038,31 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                      "arquivo": anexo["nome"], "motivo": motivo})
                 linha["documentos"].append({**_resumo(anexo),
                                             "situacao": "FALHOU"})
+        # 3. O QUE O CARD NÃO DISSE, O PAPEL PODE DIZER — e só agora, com os
+        # arquivos na mão. Na simulação não roda: ela não baixa nada, e
+        # leitura por IA custa dinheiro.
+        disse_o_papel: dict[str, str] = {}
+        if not simular and trazidos and ler_papel is not False:
+            do_papel, disse_o_papel = ler_o_que_veio(
+                s, pessoa["id"], trazidos, ler=(ler_papel or None))
+            if do_papel:
+                linha["do_documento"] = do_papel
+                relatorio["campos_do_documento"] += len(do_papel)
+                _gravar_campos(s, pessoa["id"], do_papel, usuario)
+            # ⚑ O CONFRONTO roda DEPOIS de preencher: o que entrou agora já
+            # não é divergência, é buraco tapado. O que sobrar é desacordo de
+            # verdade entre o que está aqui, o que o card diz e o que o papel
+            # mostra.
+        # O confronto roda SEMPRE: card contra cadastro já vale, mesmo sem
+        # papel lido — e vale na simulação também, que é onde ele quer ver.
+        briga = confrontar(s, pessoa["id"], campos, disse_o_papel)
+        if briga:
+            linha["divergencias"] = briga
+            relatorio["divergencias"] += len(briga)
+            # Na simulação a dúvida só aparece; gravando, ela entra na fila
+            # de quem decide — senão some junto com a tela.
+            if not simular:
+                guardar_divergencias(s, pessoa["id"], briga, card)
         relatorio["por_pessoa"].append(linha)
 
     logger.info(
@@ -543,13 +1072,89 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     return relatorio
 
 
+def _svc_pessoas():
+    from app.apps.erp.core.cadastros import pessoas as svc
+    return svc
+
+
+def _por_que_nao(s: Session, colaborador_id: int, campos_do_card: dict[str, str],
+                 achados: dict[str, Any],
+                 preenchidos: dict[str, Any]) -> list[dict[str, str]]:
+    """Campo a campo: por que ele NÃO entrou nesta pessoa.
+
+    Três motivos, e eles são bem diferentes entre si — confundi-los é o que
+    faz uma importação correta parecer quebrada:
+
+    - **o cadastro já tinha** (o card trouxe, mas aqui já havia valor);
+    - **o card não trouxe** (veio vazio de lá);
+    - **o card trouxe e não serve** (texto fora das opções que o cadastro
+      aceita — ele é descartado de propósito, senão a pessoa inteira pararia).
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc
+
+    atual: dict[str, Any] = {}
+    if achados:
+        colunas = ", ".join(sorted(c for c in achados if c != "cargo_id") or ["id"])
+        linha = s.execute(text(f"SELECT {colunas} FROM colaboradores WHERE id = :i"),
+                          {"i": colaborador_id}).mappings().first()
+        atual = dict(linha or {})
+
+    fora: list[dict[str, str]] = []
+    for campo, valor in sorted(achados.items()):
+        if campo in preenchidos:
+            continue
+        fora.append({"campo": campo, "rotulo": ROTULO_DO_CAMPO.get(campo, campo),
+                     "motivo": "o cadastro já tinha",
+                     "no_card": str(valor),
+                     "no_erp": str(atual.get(campo) or "")})
+    # O que o card tentou mandar para uma caixinha fechada e foi recusado.
+    for de, para in LISTAS.items():
+        if para in achados:
+            continue
+        bruto = _limpo(campos_do_card.get(de))
+        if not bruto:
+            continue
+        fora.append({"campo": para, "rotulo": ROTULO_DO_CAMPO.get(para, para),
+                     "motivo": ("o card diz algo que não é opção do cadastro — "
+                                f"as opções são: {', '.join(svc.DA_LISTA.get(para) or ())}"),
+                     "no_card": bruto, "no_erp": ""})
+    # E o que o card simplesmente não trouxe.
+    for de, para in list(TEXTOS.items()) + list(DATAS.items()):
+        if para in achados or _limpo(campos_do_card.get(de)):
+            continue
+        fora.append({"campo": para, "rotulo": ROTULO_DO_CAMPO.get(para, para),
+                     "motivo": "o card veio vazio", "no_card": "", "no_erp": ""})
+    return fora
+
+
+# Nome em português de cada coluna, para o relatório não falar em nome de
+# banco de dados com quem está conferindo cadastro.
+ROTULO_DO_CAMPO: dict[str, str] = {
+    "pis": "Nº PIS", "ctps_numero": "Nº CTPS", "ctps_serie": "Série da CTPS",
+    "ctps_uf": "UF da CTPS", "ctps_emissao": "Emissão da CTPS",
+    "rg": "RG", "rg_uf": "UF do RG", "rg_orgao": "Órgão do RG",
+    "rg_emissao": "Emissão do RG", "nome_mae": "Nome da mãe",
+    "nome_pai": "Nome do pai", "data_nascimento": "Data de nascimento",
+    "logradouro": "Endereço", "numero_endereco": "Número", "bairro": "Bairro",
+    "cep": "CEP", "uf": "UF", "telefone": "Telefone", "sexo": "Sexo",
+    "estado_civil": "Estado civil", "escolaridade": "Escolaridade",
+    "naturalidade_uf": "UF de nascimento", "admissao": "Admissão",
+    "data_inicio": "Data de início", "meio_transporte": "Meio de transporte",
+    "categoria_alimentacao": "Categoria do auxílio-alimentação",
+    "categoria_transporte": "Categoria do auxílio-transporte",
+    "empresa_id": "Empresa", "cargo_id": "Cargo",
+    "etapa": "Etapa do cadastro", "situacao": "Situação",
+}
+
+
 def _resumo(anexo: dict[str, Any]) -> dict[str, Any]:
     return {"tipo": anexo["tipo"], "arquivo": anexo["nome"],
             "campo": anexo["campo"]}
 
 
 def _gravar_campos(s: Session, colaborador_id: int, campos: dict[str, str],
-                   usuario: Optional[Usuario]) -> None:
+                   usuario: Optional[Usuario],
+                   permitir_nome: bool = False) -> None:
     """Grava pelas MESMAS funções da tela, nunca com UPDATE solto.
 
     É a regra que a fila do DP já segue: se a conferência do cadastro recusa um
@@ -561,11 +1166,24 @@ def _gravar_campos(s: Session, colaborador_id: int, campos: dict[str, str],
     c = s.get(Colaborador, colaborador_id)
     if c is None:
         return
-    svc.salvar(s, {**campos, "cpf": c.cpf, "nome": c.nome}, usuario)
+    # ⚑ O NOME SÓ MUDA QUANDO ALGUÉM DECIDIU QUE MUDA — e o CPF, nunca.
+    #
+    # A importação em massa força `nome=c.nome` de propósito: ela preenche
+    # buraco, não renomeia gente. Mas a DECISÃO de uma divergência é
+    # exatamente o caso em que o nome deve mudar — e o teste pegou que, sem
+    # esta porta, escolher "o do documento" no campo nome não fazia nada.
+    #
+    # O CPF fica de fora dos dois caminhos: ele é a identidade da pessoa no
+    # sistema, e trocá-lo criaria um segundo cadastro em vez de corrigir o
+    # primeiro.
+    novo_nome = " ".join(str(campos.get("nome") or "").split())
+    svc.salvar(s, {**campos, "cpf": c.cpf,
+                   "nome": (novo_nome if (permitir_nome and novo_nome)
+                            else c.nome)}, usuario)
 
 
 def _trazer_um(s: Session, pessoa: dict[str, Any], anexo: dict[str, Any],
-               usuario: Optional[Usuario]) -> tuple[bool, str]:
+               usuario: Optional[Usuario]) -> tuple[bool, str, bytes]:
     """Baixa UM arquivo e o arquiva no cadastro da pessoa.
 
     ⚑ CADA ARQUIVO NO SEU SAVEPOINT. Em Postgres, uma consulta que falha aborta
@@ -596,7 +1214,7 @@ def _trazer_um(s: Session, pessoa: dict[str, Any], anexo: dict[str, Any],
              "item": anexo["item"], "pessoa": pessoa["id"], "doc": doc.id,
              "u": usuario.id if usuario else None})
         marca.commit()
-        return True, ""
+        return True, "", conteudo
     except Exception as e:                  # noqa: BLE001 — um arquivo só cai
         marca.rollback()
         motivo = str(e)[:300]
@@ -616,7 +1234,7 @@ def _trazer_um(s: Session, pessoa: dict[str, Any], anexo: dict[str, Any],
                  "d": motivo, "u": usuario.id if usuario else None})
         except Exception:                        # pragma: no cover - defensivo
             pass
-        return False, motivo
+        return False, motivo, b""
 
 
 # ---------------------------------------------------------------------------
@@ -642,10 +1260,9 @@ def situacao(s: Session) -> dict[str, Any]:
           FROM pipefy_importado""")).mappings().first() or {}
     return {
         "tem_token": cliente.tem_token(),
-        # ⚑ A TELA PRECISA SABER QUE ZERO CARDS NÃO É IMPEDIMENTO. Era por não
-        # saber disso que ela oferecia um botão cujo único desfecho possível
-        # era "nenhuma pessoa com número de card nesse filtro" (13/11/2026).
-        "precisa_mapear": int(linha.get("ativos_com_card") or 0) == 0,
+        # ⚑ A TELA NÃO DEPENDE MAIS DISTO para saber se dá para importar: a
+        # fila é a LISTA QUE ELE COLA. Os números abaixo contam o que já veio,
+        # que é outra pergunta — "de quem eu já trouxe?".
         "ativos": int(linha.get("ativos") or 0),
         "com_card": int(linha.get("com_card") or 0),
         "ativos_com_card": int(linha.get("ativos_com_card") or 0),

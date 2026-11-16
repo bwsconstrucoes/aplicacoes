@@ -75,6 +75,11 @@ TEMPO_ROTULOS = {
 
 # Os campos que a OBRA escreve. A observação da fiscalização NÃO está aqui, e
 # essa ausência é a regra 1 lá de cima — ela não é esquecimento.
+# Quantos dias uma repetição alcança de uma vez. Não é número mágico: é o que
+# ainda dá para uma pessoa conferir na tela antes de confirmar. Repetir um mês
+# inteiro numa tacada é o caminho para trinta diários iguais que ninguém leu.
+TETO_DE_REPETICAO = 31
+
 CAMPOS_DA_OBRA = (
     "tempo_manha", "tempo_tarde", "relato", "ocorrencias",
     "fiscalizacao_esteve", "fiscalizacao_quem", "sem_expediente",
@@ -288,6 +293,32 @@ def _endereco(o) -> str:
 # ---------------------------------------------------------------------------
 # 2. O EFETIVO — vem do PONTO, e é a melhor parte do desenho
 # ---------------------------------------------------------------------------
+# ⚑ A HORA DA BATIDA É UTC NO BANCO, E O DIÁRIO MOSTRAVA ASSIM (13/11/2026).
+#
+# Ele: *"aí tá aparecendo uns horários esquisitos também."* Esquisitos porque
+# estavam TRÊS HORAS ADIANTADOS: `ponto.marcacoes.timestamp_servidor` é
+# TIMESTAMPTZ gravado em UTC (o Render e o Postgres rodam em UTC), e a área do
+# ponto converte para Fortaleza em toda saída (`ponto/horario.py:para_local`).
+# O diário imprimia o valor cru — quem bateu 7:00 aparecia às 10:00.
+#
+# A conversão é feita NO BANCO, com `AT TIME ZONE`, e não em Python: assim o
+# MIN/MAX continua sendo sobre o instante real, e o ERP não passa a depender
+# do módulo de outra área, que é o que o `CLAUDE.md` manda evitar. O nome do
+# fuso vive aqui, com a fonte apontada; Fortaleza não adota horário de verão,
+# então não há armadilha de data.
+FUSO_DA_EMPRESA = "America/Fortaleza"   # fonte: app/apps/ponto/horario.py
+
+# ⚑ E O FILTRO DE BATIDA VÁLIDA ERA UMA PALAVRA QUE NÃO EXISTE NO PONTO.
+#
+# O diário pedia as batidas "não canceladas". Os status de `ponto.marcacoes`
+# são VALIDA, EM_ANALISE, AJUSTADA e REJEITADA — cancelada não é um deles. Ou
+# seja: o filtro não tirava NADA, e **batida REJEITADA contava como gente em
+# obra**. O ponto inteiro usa "não rejeitada" (qualidade, folha, espelho,
+# arquivos fiscais); o diário era o único fora do passo. AJUSTADA fica DENTRO
+# de propósito: é a batida que a pessoa esqueceu e o supervisor incluiu, não
+# uma correção que substitui outra.
+
+
 def efetivo_do_ponto(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     """Quem bateu ponto NESTA obra NESTE dia, com função e horário.
 
@@ -322,35 +353,42 @@ def efetivo_do_ponto(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     # `analisesps`, a primeira falha INTEIRA e levaria o efetivo junto — e aí
     # voltaríamos ao "o ponto não respondeu" por causa de uma tabela que nem é
     # do ponto.
+    # ⚑ O CARGO DO REGISTRO VEM POR SUBCONSULTA, E NÃO POR JOIN (13/11/2026).
+    #
+    # Com `LEFT JOIN analisesps.colaborador` + `GROUP BY …, r.cargo`, bastava
+    # o mesmo CPF existir em DUAS grafias naquela tabela (lá o CPF é a chave
+    # como TEXTO, e o casamento aqui é por dígitos) para a MESMA PESSOA virar
+    # duas linhas — e duas pessoas na conta do efetivo. A subconsulta com
+    # LIMIT 1 devolve no máximo um valor por pessoa, aconteça o que acontecer
+    # do outro lado: contagem de gente em obra não pode depender de a tabela
+    # vizinha estar limpa.
     de_onde = """
             SELECT c.id, c.nome,
                    COALESCE(NULLIF(btrim(cg.nome), ''),
                             NULLIF(btrim(f.nome), ''),
                             {registro}'') AS funcao,
-                   MIN(m.timestamp_servidor) AS entrada,
-                   MAX(m.timestamp_servidor) AS saida,
+                   MIN(m.timestamp_servidor AT TIME ZONE :fuso) AS entrada,
+                   MAX(m.timestamp_servidor AT TIME ZONE :fuso) AS saida,
                    count(*) AS batidas
               FROM ponto.marcacoes m
               JOIN colaboradores c ON c.id = m.colaborador_id
               LEFT JOIN cargos cg ON cg.id = c.cargo_id
               LEFT JOIN funcoes f ON f.id = c.funcao_id
-              {junta}
              WHERE m.obra_id = :o
                AND m.data_referencia = :d
-               AND m.status <> 'CANCELADA'
-             GROUP BY c.id, c.nome, cg.nome, f.nome{mais}
+               AND m.status <> 'REJEITADA'
+             GROUP BY c.id, c.nome, c.cpf, cg.nome, f.nome
              ORDER BY c.nome"""
-    linhas = _consulta_opcional(
-        s, de_onde.format(
-            registro="NULLIF(btrim(r.cargo), ''), ",
-            junta=("LEFT JOIN analisesps.colaborador r "
-                   "ON regexp_replace(r.cpf, '\\D', '', 'g') = "
-                   "regexp_replace(c.cpf, '\\D', '', 'g')"),
-            mais=", r.cargo"),
-        o=obra_id, d=dia)
+    do_registro = ("NULLIF(btrim(("
+                   " SELECT r.cargo FROM analisesps.colaborador r"
+                   " WHERE regexp_replace(r.cpf, '\\D', '', 'g')"
+                   "     = regexp_replace(c.cpf, '\\D', '', 'g')"
+                   " LIMIT 1)), ''), ")
+    linhas = _consulta_opcional(s, de_onde.format(registro=do_registro),
+                                o=obra_id, d=dia, fuso=FUSO_DA_EMPRESA)
     if linhas is None:
-        linhas = _consulta_opcional(
-            s, de_onde.format(registro="", junta="", mais=""), o=obra_id, d=dia)
+        linhas = _consulta_opcional(s, de_onde.format(registro=""),
+                                    o=obra_id, d=dia, fuso=FUSO_DA_EMPRESA)
     if linhas is None:
         return {**vazio,
                 "indisponivel": "O ponto não respondeu. O efetivo pode ser "
@@ -404,10 +442,146 @@ def lotados_que_bateram_em_outra(s: Session, obra_id: int,
               JOIN obras o ON o.id = m.obra_id
              WHERE c.obra_id = :o AND m.obra_id <> :o
                AND m.data_referencia = :d
-               AND m.status <> 'CANCELADA'
+               AND m.status <> 'REJEITADA'
              ORDER BY c.nome LIMIT 50""", o=obra_id, d=dia) or []
     return [{"colaborador_id": l["id"], "nome": l["nome"], "onde": l["onde"]}
             for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# REPETIR UM DIA EM VÁRIOS DIAS (14/11/2026)
+#
+# Ele: *"digamos que eu queira replicar um determinado relato para vários dias
+# e gostaria de poder fazer isso também. Ó, esse dia aqui foi igual aos 3
+# próximos aqui. Ou então esse sábado foi igual a outros 4 sábados aqui."*
+#
+# ⚑ TRÊS TRAVAS, E NENHUMA É BUROCRACIA:
+#
+# 1. **DIA QUE JÁ TEM DIÁRIO NÃO É SOBRESCRITO.** É a mesma regra da
+#    importação da planilha, e pelo mesmo motivo: diário é documento. Marcar
+#    por engano um dia já escrito e perder o relato de quem esteve na obra é
+#    estrago que não se desfaz. Os pulados voltam ditos, um a um.
+# 2. **NÃO SE ESCREVE O FUTURO.** Diário é relato do que aconteceu. Dia à
+#    frente de hoje é recusado — senão a repetição vira previsão, e previsão
+#    assinada pela fiscalização é outra coisa.
+# 3. **NÃO SE ESCREVE FORA DO PRAZO DA OBRA.** Antes do início ou depois do
+#    término, o dia nem deveria existir no calendário.
+#
+# O QUE É COPIADO: o relato, as ocorrências, o histórico, o tempo e o horário
+# de trabalho — o que de fato se repete quando dois dias são iguais. A
+# observação da FISCALIZAÇÃO nunca é copiada (regra 1 do topo deste arquivo:
+# ela é de quem fiscaliza, não da obra). Os equipamentos vão junto só se
+# mandarem, porque máquina que saiu da obra não pode reaparecer sozinha em
+# quatro dias.
+# ---------------------------------------------------------------------------
+CAMPOS_QUE_SE_REPETEM = ("tempo_manha", "tempo_tarde", "relato", "ocorrencias",
+                         "historico", "horario_trabalho", "sem_expediente")
+
+
+def repetir_dia(s: Session, obra_id: int, origem: date, destinos: list[date],
+                usuario: Optional[Usuario] = None, *,
+                com_equipamentos: bool = False) -> dict[str, Any]:
+    """Copia um dia escrito para outros dias que ainda não têm diário."""
+    cab = cabecalho(s, obra_id, origem)
+    de = _linha(s, obra_id, origem)
+    if de is None:
+        raise ErroNaoEncontrado(
+            "O dia que você quer repetir ainda não foi gravado. Grave-o "
+            "primeiro — é ele que será copiado.")
+    if not destinos:
+        raise ErroValidacao("Escolha pelo menos um dia para receber a cópia.")
+    if len(destinos) > TETO_DE_REPETICAO:
+        raise ErroValidacao(
+            f"São no máximo {TETO_DE_REPETICAO} dias de uma vez. Repetir mês "
+            f"inteiro de uma tacada é o tipo de coisa que ninguém confere.")
+
+    hoje = date.today()
+    inicio = cab["data_inicio"]
+    fim = cab["data_termino"]
+    escritos = {l["data"] for l in (_consulta_opcional(s, """
+            SELECT data FROM diarios_obra
+             WHERE obra_id = :o AND data = ANY(:d)""",
+            o=obra_id, d=list(destinos)) or [])}
+
+    copiados, pulados = [], []
+    equipamentos = _consulta_opcional(s, """
+            SELECT descricao, quantidade, observacao, insumo_id
+              FROM diario_equipamentos WHERE diario_id = :i ORDER BY id""",
+            i=de["id"]) or [] if com_equipamentos else []
+
+    for dia in sorted(set(destinos)):
+        if dia == origem:
+            continue
+        if dia > hoje:
+            pulados.append({"data": str(dia), "motivo": "ainda não aconteceu"})
+            continue
+        if inicio and str(dia) < inicio:
+            pulados.append({"data": str(dia), "motivo": "antes do início da obra"})
+            continue
+        if fim and str(dia) > fim:
+            pulados.append({"data": str(dia), "motivo": "depois do término da obra"})
+            continue
+        if dia in escritos:
+            pulados.append({"data": str(dia),
+                            "motivo": "este dia já tem diário escrito"})
+            continue
+
+        # ⚑ PASSA PELO `salvar`, e não por um INSERT próprio: é ele que valida
+        # (dia com expediente precisa de relato), grava a auditoria e conhece
+        # as regras do diário fechado. Um INSERT paralelo aqui seria uma
+        # segunda verdade sobre como um diário nasce.
+        salvar(s, obra_id, dia,
+               {c: de[c] for c in CAMPOS_QUE_SE_REPETEM}, usuario)
+        if equipamentos:
+            novo = _linha(s, obra_id, dia)
+            for item in equipamentos:
+                s.execute(text("""
+                    INSERT INTO diario_equipamentos
+                        (diario_id, descricao, quantidade, observacao, insumo_id)
+                    VALUES (:i, :d, :q, :obs, :ins)"""),
+                    {"i": novo["id"], "d": item["descricao"],
+                     "q": item["quantidade"], "obs": item["observacao"],
+                     "ins": item["insumo_id"]})
+        copiados.append(str(dia))
+
+    s.flush()
+    logger.info("ERP/diário: %s repetido em %d dia(s) na obra %s",
+                origem, len(copiados), obra_id)
+    return {"de": str(origem), "copiados": copiados, "pulados": pulados,
+            "equipamentos_por_dia": len(equipamentos)}
+
+
+def dias_para_repetir(s: Session, obra_id: int, origem: date,
+                      modo: str, quantos: int) -> list[str]:
+    """Os dias que os atalhos oferecem — já sem os que não podem receber.
+
+    Dois atalhos, que são as duas frases dele: *"esse dia aqui foi igual aos 3
+    próximos"* (`seguidos`) e *"esse sábado foi igual a outros 4 sábados"*
+    (`mesmo_dia_da_semana`). O terceiro caminho é marcar no calendário à mão.
+    """
+    if modo not in ("seguidos", "mesmo_dia_da_semana"):
+        raise ErroValidacao("Não entendi como repetir.")
+    quantos = max(1, min(int(quantos or 1), TETO_DE_REPETICAO))
+    cab = cabecalho(s, obra_id, origem)
+    hoje = date.today()
+    passo = 1 if modo == "seguidos" else 7
+    achados: list[str] = []
+    dia = origem
+    # Procura para a frente até juntar `quantos` dias que de fato cabem. O
+    # limite de voltas existe para a obra encerrada não varrer o calendário
+    # inteiro atrás de dias que nunca vão aparecer.
+    for _ in range(TETO_DE_REPETICAO * 7):
+        dia = dia + timedelta(days=passo)
+        if dia > hoje:
+            break
+        if cab["data_termino"] and str(dia) > cab["data_termino"]:
+            break
+        if _linha(s, obra_id, dia) is not None:
+            continue
+        achados.append(str(dia))
+        if len(achados) >= quantos:
+            break
+    return achados
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +673,8 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
     de uma obra sem encher a tabela de diários vazios — e o calendário de
     pendências continua dizendo a verdade sobre o que foi escrito.
     """
+    from app.apps.erp.core import diario_fotos as svc_fotos
+
     cab = cabecalho(s, obra_id, dia)
     linha = _linha(s, obra_id, dia)
     efetivo = efetivo_do_ponto(s, obra_id, dia)
@@ -506,11 +682,10 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
     if linha is None:
         sugere_sem, motivo_sem = nasce_sem_expediente(s, obra_id, dia)
 
-    return {
-        "obra": cab,
-        "data": str(dia),
-        "existe": linha is not None,
-        "diario": _para_tela(s, linha) if linha is not None else {
+    # ⚑ `_para_tela` UMA VEZ SÓ: ela vai ao banco buscar extras, equipamentos e
+    # correções. Chamá-la de novo para olhar o efetivo importado dobraria essas
+    # consultas a cada abertura de dia.
+    tela = _para_tela(s, linha) if linha is not None else {
             "situacao": "ABERTO",
             "tempo_manha": "", "tempo_tarde": "", "relato": "",
             "ocorrencias": "", "fiscalizacao_esteve": False,
@@ -525,10 +700,28 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
             "informado_por": "", "importado_de": "",
             "equipamentos_lista": [], "equipamentos_resumo": "",
             "equipamentos_disponivel": _tem_equipamentos_em_tabela(s),
-        },
+        }
+
+    return {
+        "obra": cab,
+        "data": str(dia),
+        "existe": linha is not None,
+        "diario": tela,
         "sugere_sem_expediente": sugere_sem,
         "motivo_sem_expediente": motivo_sem,
         "efetivo": efetivo,
+        # ⚑ A LISTA DA PLANILHA ENTRA NA SOMA? Decidido aqui, onde se conhecem
+        # as duas fontes, e não na tela — o papel usa a mesma regra, e duas
+        # versões divergiriam no primeiro ajuste. Ver `importado_conta`.
+        # ⚑ AS FOTOS DO DIA (14/11/2026). Vêm como lista de números e
+        # legendas, nunca como imagem: a tela pede cada foto pela rota do
+        # anexo, que é quem confere permissão e escopo. Mandar a imagem aqui
+        # dentro faria a abertura de um dia com seis fotos carregar vários
+        # megabytes antes de desenhar qualquer coisa.
+        "fotos": (svc_fotos.listar(s, linha["id"]) if linha is not None else []),
+        "fotos_teto": svc_fotos.TETO_POR_DIA,
+        "efetivo_importado_conta": importado_conta(
+            efetivo, tela.get("efetivo_importado")),
         "avisos_do_ponto": lotados_que_bateram_em_outra(s, obra_id, dia),
         "material": material_recebido(s, obra_id, dia),
         # ⚑ O RELATO DE ONTEM, para reaproveitar. Pedido dele: *"é muito comum
@@ -1068,7 +1261,7 @@ def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
     com_ponto = {l["data_referencia"] for l in (_consulta_opcional(s, """
             SELECT DISTINCT data_referencia FROM ponto.marcacoes
              WHERE obra_id = :o AND data_referencia BETWEEN :i AND :f
-               AND status <> 'CANCELADA'""",
+               AND status <> 'REJEITADA'""",
             o=obra_id, i=primeiro_dia, f=ultimo_dia) or [])}
     feriados = {l["data"]: l["nome"] for l in (_consulta_opcional(s, """
             SELECT data, nome FROM ponto.feriados
@@ -1110,6 +1303,111 @@ def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
     return {"obra": cab, "ano": ano, "mes": mes, "dias": dias,
             "faltam": faltam,
             "primeiro_dia_da_semana": primeiro_dia.weekday()}
+
+
+# ---------------------------------------------------------------------------
+# O QUADRO DO MÊS — obras nas linhas, dias nas colunas (15/11/2026)
+#
+# Ele: *"aqui era para mostrar por mês, todas as obras e por mês, da mesma
+# forma que o calendário (…) Eu até tenho um controle desse no computador, é
+# uma planilha. Cada coluna é um dia. Dia 1, dia 2, dia 3, até o final do mês.
+# E ali cada dia tem uma marcação dizendo se está ou se não está preenchido.
+# Porque você bate o olho e já visualiza exatamente todos os dias que estão
+# faltando. E a partir dessa informação, clicar e já ir direto para o dia que
+# está faltando."*
+#
+# ⚑ ESTE QUADRO VIROU A PORTA DA TELA, e isso resolve outra queixa do mesmo
+# dia: *"não fica legal entrar na tela já da primeira obra."* Entrando pelo
+# quadro, não há obra escolhida — a obra se escolhe clicando no dia que falta,
+# que é exatamente o caminho de quem vai preencher.
+#
+# ⚑ OBRA CONCLUÍDA NÃO ENTRA: *"concluído, não tem mais diário, aí fica
+# poluída essa tela."* O filtro é `status <> 'ENCERRADA'`, o mesmo de sempre —
+# obra que continua aparecendo é obra que segue marcada como ATIVA no
+# cadastro, e isso se resolve lá, não aqui.
+#
+# ⚑ UMA CONSULTA POR COISA, NUNCA UMA POR DIA. Com 15 obras e 30 dias são 450
+# células: pedir o estado de cada uma ao banco seriam 450 idas, e a tela
+# demoraria mais que o mês inteiro de trabalho que ela mostra.
+# ---------------------------------------------------------------------------
+def quadro_do_mes(s: Session, ano: int, mes: int, *,
+                  obra_ids: Optional[list[int]] = None) -> dict[str, Any]:
+    """Todas as obras do mês, dia a dia, com o estado de cada dia."""
+    import calendar as _cal
+
+    if not 1 <= mes <= 12:
+        raise ErroValidacao("Mês inválido.")
+    _, ultimo = _cal.monthrange(ano, mes)
+    primeiro_dia, ultimo_dia = date(ano, mes, 1), date(ano, mes, ultimo)
+    hoje = date.today()
+
+    obras = s.execute(text("""
+        SELECT id, codigo, nome, data_inicio, data_termino
+          FROM obras
+         WHERE status <> 'ENCERRADA'
+           AND (:todas OR id = ANY(:obras))
+         ORDER BY codigo"""),
+        {"obras": obra_ids or [], "todas": obra_ids is None}).mappings().all()
+    if not obras:
+        return {"ano": ano, "mes": mes, "dias": [], "obras": [],
+                "faltam": 0, "hoje": str(hoje)}
+
+    ids = [o["id"] for o in obras]
+    escritos: dict[tuple[int, date], str] = {}
+    for l in s.execute(text("""
+        SELECT obra_id, data, situacao, sem_expediente
+          FROM diarios_obra
+         WHERE obra_id = ANY(:o) AND data BETWEEN :i AND :f"""),
+        {"o": ids, "i": primeiro_dia, "f": ultimo_dia}).mappings().all():
+        escritos[(l["obra_id"], l["data"])] = (
+            "sem_expediente" if l["sem_expediente"]
+            else ("fechado" if l["situacao"] == "FECHADO" else "aberto"))
+
+    # O ponto diz quais sábados e feriados tiveram trabalho — sem isso, um
+    # sábado trabalhado apareceria como descanso e a falta sumiria do quadro.
+    com_ponto = {(l["obra_id"], l["data_referencia"]) for l in (
+        _consulta_opcional(s, """
+            SELECT DISTINCT obra_id, data_referencia FROM ponto.marcacoes
+             WHERE obra_id = ANY(:o) AND data_referencia BETWEEN :i AND :f
+               AND status <> 'REJEITADA'""",
+            o=ids, i=primeiro_dia, f=ultimo_dia) or [])}
+    feriados = {l["data"]: l["nome"] for l in (_consulta_opcional(s, """
+            SELECT data, nome FROM ponto.feriados
+             WHERE data BETWEEN :i AND :f AND obra_id IS NULL""",
+            i=primeiro_dia, f=ultimo_dia) or [])}
+
+    dias = [{"dia": n, "data": str(date(ano, mes, n)),
+             "semana": date(ano, mes, n).weekday(),
+             "feriado": feriados.get(date(ano, mes, n), "")}
+            for n in range(1, ultimo + 1)]
+
+    linhas, faltam_total = [], 0
+    for o in obras:
+        celulas, faltam = [], 0
+        for n in range(1, ultimo + 1):
+            d = date(ano, mes, n)
+            teve_ponto = (o["id"], d) in com_ponto
+            fora = bool((o["data_inicio"] and d < o["data_inicio"])
+                        or (o["data_termino"] and d > o["data_termino"])
+                        or d > hoje)
+            estado = escritos.get((o["id"], d))
+            if estado is None:
+                if fora:
+                    estado = "fora"
+                elif (d.weekday() >= 5 or d in feriados) and not teve_ponto:
+                    estado = "descanso"
+                else:
+                    estado = "falta"
+                    faltam += 1
+            celulas.append(estado)
+        faltam_total += faltam
+        linhas.append({
+            "obra_id": o["id"], "codigo": o["codigo"], "nome": o["nome"],
+            "rotulo": rotulo_da_obra(o["codigo"], o["nome"]),
+            "celulas": celulas, "faltam": faltam})
+
+    return {"ano": ano, "mes": mes, "dias": dias, "obras": linhas,
+            "faltam": faltam_total, "hoje": str(hoje)}
 
 
 def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
@@ -1270,6 +1568,12 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             # ⚑ A CONTAGEM, NÃO OS NOMES. Decisão dele, e boa prática: o RDO
             # circula fora da empresa.
             "efetivo": _efetivo_para_o_papel(efetivo, extras, importado),
+            # ⚑ O ANEXO FOTOGRÁFICO (14/11/2026). Ele: *"é como se fosse um
+            # anexo ao diário, essa página das fotos, para não interferir no
+            # layout que a gente já trabalhou."* Por isso as fotos vêm na
+            # página, mas o modelo as desenha DEPOIS da folha do dia, em
+            # folha própria — os três quadros da folha continuam intocados.
+            "fotos": (_fotos_do_papel(s, linha["id"]) if linha is not None else []),
             "material": material_recebido(s, obra_id, dia),
             "correcoes": _correcoes(s, linha["id"]) if linha else [],
         })
@@ -1511,6 +1815,36 @@ def _embutir(dados: Optional[bytes], mime: Optional[str]) -> str:
     return f"data:{tipo};base64,{base64.b64encode(bytes(dados)).decode()}"
 
 
+def importado_conta(efetivo: dict[str, Any],
+                    importado: Optional[list[dict[str, Any]]]) -> bool:
+    """O efetivo vindo da planilha entra na soma? Só se o ponto não tiver nada.
+
+    ⚑ ELE ACHOU O DEFEITO OLHANDO O NÚMERO (13/11/2026): *"eu acho que ele
+    está dobrando o efetivo (…) está dando um valor acima do que é o real. E
+    não é nem dobrando, não."*
+
+    Era isto. Os 1.427 diários da planilha antiga trazem o efetivo do dia em
+    `diario_efetivo_extra` (origem IMPORTADO). Quando o MESMO dia também tem
+    batida de ponto — e tem, porque a planilha vai até datas em que o ponto já
+    rodava —, o diário somava **os dois registros da mesma gente**: 17 da
+    planilha + 9 do ponto = 26 pessoas numa obra que teve 9. Não dava o dobro
+    exato justamente porque são contagens diferentes do mesmo dia.
+
+    A REGRA, e ela é de documento, não de tela: quando há batida, **o ponto
+    manda** — é a fonte com nome, hora e foto. A lista da planilha continua
+    aparecendo, dita como o que veio da planilha, mas FORA da soma. Sem
+    batida (o caso dos anos anteriores), a planilha é o único registro que
+    existe e conta inteira, como sempre contou.
+    """
+    return not bool(efetivo.get("por_funcao")) and bool(importado)
+
+
+def _fotos_do_papel(s: Session, diario_id: int) -> list[dict[str, Any]]:
+    """As fotos embutidas, encolhidas para caber num relatório de 90 dias."""
+    from app.apps.erp.core import diario_fotos as svc_fotos
+    return svc_fotos.para_o_papel(s, diario_id)
+
+
 def _efetivo_para_o_papel(efetivo: dict[str, Any],
                           extras: list[dict[str, Any]],
                           importado: Optional[list[dict[str, Any]]] = None
@@ -1518,15 +1852,19 @@ def _efetivo_para_o_papel(efetivo: dict[str, Any],
     """Função e quantidade. O próprio e o terceirizado em linhas separadas —
     quem lê o RDO precisa distinguir mão de obra própria de contratada.
 
-    ⚑ `importado` conta como PRÓPRIO, e tem de contar: num diário vindo da
-    planilha antiga ele é o efetivo da obra naquele dia. O ponto eletrônico
-    não existia ali, então `por_funcao` vem vazio — e sem somar o importado o
-    papel de 1.380 dias sairia declarando zero pessoa em obra.
+    ⚑ `importado` conta como PRÓPRIO **só quando o ponto não tem ninguém**.
+    Num diário vindo da planilha antiga ele é o efetivo da obra naquele dia, e
+    sem ele o papel de 1.380 dias sairia declarando zero pessoa em obra. Mas
+    quando o dia TAMBÉM tem batida, os dois são registros da mesma gente, e
+    somá-los inflava o efetivo — foi o que ele viu em 13/11/2026. Ver
+    `importado_conta`.
     """
     proprio = [{"funcao": f["funcao"], "quantidade": f["quantidade"],
                 "tipo": "próprio"} for f in efetivo.get("por_funcao", [])]
-    proprio += [{"funcao": f["funcao"], "quantidade": f["quantidade"],
-                 "tipo": "próprio"} for f in (importado or [])]
+    soma_importado = importado_conta(efetivo, importado)
+    if soma_importado:
+        proprio += [{"funcao": f["funcao"], "quantidade": f["quantidade"],
+                     "tipo": "próprio"} for f in (importado or [])]
     de_fora = [{"funcao": (e["funcao"] or e["descricao"]),
                 "quantidade": e["quantidade"], "tipo": "terceirizado",
                 "empresa": e.get("empresa") or e["descricao"]} for e in extras]
@@ -1536,6 +1874,9 @@ def _efetivo_para_o_papel(efetivo: dict[str, Any],
         "total_terceirizado": sum(f["quantidade"] for f in de_fora),
         "total": (sum(f["quantidade"] for f in proprio)
                   + sum(f["quantidade"] for f in de_fora)),
+        # A lista da planilha que FICOU DE FORA da soma, para o papel poder
+        # dizer que ela existe. Calar seria esconder registro de obra.
+        "da_planilha_fora_da_soma": ([] if soma_importado else (importado or [])),
         "indisponivel": efetivo.get("indisponivel"),
     }
 

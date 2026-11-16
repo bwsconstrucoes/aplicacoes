@@ -695,6 +695,18 @@ els("btn-limpar").addEventListener("click", () => {
 });
 els("btn-nova").addEventListener("click", novaEmpresa);
 
-carregar();
+// ⚑ ABRIR UMA EMPRESA POR LINK (16/11/2026). Pedido dele, olhando o Arquivo:
+// *"se é um documento de uma empresa, eu clicar e já abrir o cadastro da
+// empresa."* As telas de obra, colaborador e fornecedor já abriam por
+// endereço; esta não, e era a única que faltava para o Arquivo poder apontar
+// para todos os donos.
+carregar().then(() => {
+  const pedida = new URLSearchParams(location.search).get("empresa");
+  if (!pedida) return;
+  const id = +pedida;
+  if ((D.empresas || []).some(e => e.id === id)) abrir(id);
+  else aviso("mensagem", "Esta empresa não está na lista — ou foi apagada, "
+    + "ou está inativa (marque “mostrar inativas”).", "erro");
+});
 </script>
 {% endblock %}

@@ -3,6 +3,110 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 16/11/2026 — quem não bate ponto passa a sair do TIPO DE CONTRATO (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi em `core/cadastros.py` vindo de outra área.** Está escrito aqui porque
+é mudança de comportamento do ponto, e quem pegar esta área precisa saber.
+
+**O buraco.** Usando o **cadastro do ERP** como base de pessoas (`pessoas.fonte
+= ERP`), `nao_bate` era `NULL::text`: **ninguém ficava de fora**. A regra
+existia só no caminho da planilha (`registro.nao_bate_sql`, lendo a coluna
+"tipo" do Registro de Colaboradores).
+
+Isso não incomodava enquanto a base era a planilha — mas o dono decidiu em
+16/11/2026 **cortar o vínculo com ela** assim que terminar as importações do
+Pipefy e das fichas do Fortes (ver `CONTEXTO.md`, mesma data). No dia da
+virada, **PJ e pró-labore passariam a bater ponto** — e ponto de PJ é
+exatamente o registro que não se quer ter, porque parece vínculo de emprego. O
+defeito só apareceria depois, numa manhã, com batida de quem não devia bater.
+
+**A regra, ditada por ele:**
+
+> *"Quando é prestador de serviço, quem é que bate ponto? É o autônomo RPA e o
+> autônomo mensalista. Os demais não batem ponto (…) PJ não bate ponto,
+> pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz bate
+> ponto."*
+
+| Batem ponto | Não batem |
+|---|---|
+| CLT (determinado e indeterminado), Temporário, Autônomo RPA, Autônomo mensalista, Jovem aprendiz, Estágio | **PJ, Pró-labore** |
+
+Mais a obra **ESCRUSSAS**, como já era pela planilha. A **exceção do DP**
+(migração 025) continua passando por cima de tudo — a regra automática não
+tira a decisão de ninguém.
+
+**Detalhes que não são óbvios:**
+
+- **Sem `tipo_contrato` preenchido, a pessoa BATE.** Cadastro pela metade não
+  barra ninguém: o erro caro aqui é gente parada no portão, não uma batida a
+  mais que depois se confere.
+- **Banco sem a coluna não derruba o ponto** — a coluna é conferida antes
+  (`_tem_tipo_contrato`), e sem ela ninguém fica de fora.
+- Nada disso muda enquanto a base for a planilha. É preparo para a virada.
+
+**Teste:** `tests/test_ponto_nao_bate_pelo_contrato_banco.py` (banco de
+verdade — isto vive num `CASE`, que o dublê da suíte não enxerga).
+
+### ⚠️ E uma correção sobre o telefone, que estava escrita errada
+
+Eu havia dito ao dono que quem ficasse sem telefone no cadastro não bateria
+ponto. **Está errado**, e ele corrigiu: *"uma coisa é não ter telefone, outra
+coisa é não conseguir acessar (…) não é para ser impeditivo o telefone. É
+impeditivo para ele verificar o ponto dele."* Quem bate é a obra, no aparelho
+da obra. O telefone serve para a pessoa **conferir** o ponto dela e para bater
+pelo próprio celular, que é permissão de poucos.
+
+---
+
+## 15/11/2026 — o atestado que passa de 15 dias abre o afastamento sozinho (feito pelo chat do ERP/DP)
+
+⚠️ **Mudança feita por outro chat.** O assunto nasceu no chat do DP, num pedido
+longo do dono sobre os formulários de solicitação, e ele escolheu entre três
+caminhos: *"Acima de 15 dias, o sistema abre sozinho."*
+
+**A razão dos 15:** os primeiros 15 dias de atestado são da EMPRESA — ela paga
+e abona as faltas. Do 16º em diante o benefício é do INSS, e aí deixa de ser
+abono de falta e passa a ser AFASTAMENTO (perícia, documento, outro tratamento
+na folha). A mesma conta vale com atestados PICADOS: a lei soma os dias da
+mesma doença dentro de 60 dias, e quatro atestados de cinco dias não chamam
+atenção nenhum — juntos passam do limite. Por isso não ficou manual: ninguém do
+DP vai somar à mão os atestados de 575 pessoas.
+
+**O que foi mexido, e é pouco de propósito:**
+
+- `core/afastamento_longo.py` — **arquivo novo**, com a conta e a decisão.
+- `core/ocorrencias.py::_aplicar` — **um `elif`**, dentro de um `try`: defeito
+  na regra nova não pode desfazer a aprovação do atestado, que já está certa e
+  a pessoa precisa dela abonada hoje.
+- `tests/test_ponto_atestado_longo_banco.py` — oito testes com banco de
+  verdade.
+
+**Nenhuma migração, nenhuma coluna nova, nenhuma tela mexida.**
+
+**⚑ O AFASTAMENTO NASCE `AGUARDANDO_DP`, NÃO APROVADO.** Afastamento aprovado
+muda o que a folha paga, e a soma legal vale para a MESMA doença — coisa que só
+quem lê o CID sabe. Aberto como pedido, com a conta escrita na descrição, o
+pior caso é o DP negar. A descrição começa com "ABERTO PELO SISTEMA" e diz
+quantos dias somaram, em quantos atestados e em que janela.
+
+**O que ficou de fora:** a declaração de comparecimento não entra na soma (é
+consulta de horas, não dia de doença); o módulo não agenda perícia, não abona
+nada por conta própria e não mexe no atestado que o disparou. E a data de
+início do afastamento é um ponto de partida, não a verdade — com atestados
+picados o DP ajusta, e é para isso que o pedido nasce aberto.
+
+**Não testado em produção.** Rodou na suíte com Postgres local.
+
+---
+
+## 14/11/2026 — a ficha única ganhou a aba "Telegram e mensagens" (feito pelo chat da Mensageria)
+
+Pedido do dono: o Telegram de cada pessoa e as mensagens que ela recebeu dentro do cadastro dela. Na janela da
+pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, só para quem tem `ver_mensagens`
+(Administrador, Diretor financeiro, DP). O conteúdo é o bloco `mensagensDaPessoa` do `erp_base.html` — o mesmo
+da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
+`app/apps/mensageria/HISTORICO.md`.
+
 ## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
 
 ⚠️ **Mexi num arquivo desta área sem ser o chat dela, e por isso fica anotado

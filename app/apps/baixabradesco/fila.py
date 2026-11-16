@@ -973,7 +973,15 @@ def reprocessar_fila(payload: dict) -> dict:
     bloqueados: List[Dict[str, Any]] = []
     pulados: List[Dict[str, Any]] = []
 
+    prazo_ate = payload.get('prazo_ate')
     for posicao, item in enumerate(pendentes):
+        # ⚠️ Teto de TEMPO, não só de quantidade. O serviço tem quatro linhas de
+        # atendimento e esta varredura roda dentro de uma requisição: segurar uma
+        # linha por minutos trava quem está usando a tela. O que não couber fica
+        # para o disparo seguinte — a fila é feita para isso.
+        if prazo_ate and time.time() > prazo_ate:
+            interrompido = 'tempo'
+            break
         if pausa and posicao:
             time.sleep(pausa)
         row_number = int(item.get('_row_number'))

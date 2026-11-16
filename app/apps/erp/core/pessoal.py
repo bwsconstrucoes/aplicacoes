@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import (
-    Categoria, Colaborador, Funcao, Obra, PerfilUsuario, Usuario,
+    Cargo, Categoria, Colaborador, Obra, PerfilUsuario, Usuario,
 )
 from app.apps.erp.db.models.financeiro import (
     DespesaColaborador, DespesaColaboradorItem,
@@ -133,7 +133,9 @@ def salvar_colaborador(s: Session, dados: dict[str, Any], usuario: Usuario) -> C
     # havia como tirar o colaborador da obra nem apagar a função pela tela — a
     # pessoa escolhia o traço, salvava, e o cadastro voltava com a obra de
     # antes, sem nenhum recado.
-    for campo in ("funcao_id", "obra_id"):
+    # `cargo_id` no lugar de `funcao_id` desde a migração 105: cargo e função
+    # viraram a mesma coisa.
+    for campo in ("cargo_id", "obra_id"):
         if campo in dados:
             bruto = dados[campo]
             setattr(c, campo, int(bruto) if bruto not in (None, "", 0, "0") else None)
@@ -165,8 +167,15 @@ def _apoio_da_lista(s: Session, ids: list[int], pessoas: list) -> tuple:
 
     cargos = {c.id: c.nome for c in s.scalars(select(Cargo)).all()}
     convencoes = {c.id: c.nome for c in s.scalars(select(Convencao)).all()}
+    # ⚑ A EMPRESA ENTRA NA LISTA (13/11/2026). Ele: *"aqui em colaboradores,
+    # essa questão sempre vai ser um dado importante. Para a gente visualizar
+    # fácil, a empresa."* Uma consulta para a lista inteira, pelo mesmo motivo
+    # de cargo e convenção: por pessoa seriam 575 idas ao banco.
+    from app.apps.erp.db.models.cadastros import Empresa
+    empresas = {e.id: (e.nome_fantasia or e.razao_social)
+                for e in s.scalars(select(Empresa)).all()}
     if not ids:
-        return cargos, convencoes, {}, {}, {}
+        return cargos, convencoes, {}, {}, {}, empresas
 
     # OS PAPÉIS QUE FALTAM, de uma vez: o que cada pessoa TEM, e a conta do que
     # falta é feita em memória contra a lista da admissão.
@@ -202,7 +211,7 @@ def _apoio_da_lista(s: Session, ids: list[int], pessoas: list) -> tuple:
         SELECT colaborador_id, count(*) FROM dp_devolucoes
          WHERE colaborador_id = ANY(:ids) AND situacao IN ('ABERTA','COBRADA')
          GROUP BY colaborador_id""")
-    return cargos, convencoes, faltando_papel, pedidos, devolucoes
+    return cargos, convencoes, faltando_papel, pedidos, devolucoes, empresas
 
 
 def _contar_pendencia(s: Session, ids: list[int], sql: str) -> dict[int, int]:
@@ -247,7 +256,7 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
     from app.apps.erp.core.auth.permissoes import obras_do_usuario
 
     stmt = select(Colaborador).options(
-        selectinload(Colaborador.funcao), selectinload(Colaborador.obra))
+        selectinload(Colaborador.cargo), selectinload(Colaborador.obra))
     if usuario is not None:
         permitidas = obras_do_usuario(s, usuario)
         if permitidas is not None:
@@ -263,17 +272,22 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
     # AS CONSULTAS DE APOIO, UMA VEZ PARA A LISTA INTEIRA. Fazer isto por
     # pessoa seriam 575 idas ao banco para abrir uma tela — é a diferença entre
     # a tela abrir e a tela travar.
-    cargos, convencoes, faltando_papel, pedidos, devolucoes = _apoio_da_lista(
-        s, [c.id for c in pessoas], pessoas)
+    (cargos, convencoes, faltando_papel, pedidos, devolucoes,
+     empresas) = _apoio_da_lista(s, [c.id for c in pessoas], pessoas)
 
     return [{
         "id": c.id, "nome": c.nome, "cpf": c.cpf, "matricula": c.matricula,
-        "funcao": c.funcao.nome if c.funcao else None,
-        "funcao_id": c.funcao_id,
+        # `funcao`/`funcao_id` continuam no JSON com o nome antigo porque o
+        # ponto e as telas já os leem assim — mas o que vai neles é o CARGO
+        # (migração 105).
+        "funcao": c.cargo.nome if c.cargo else None,
+        "funcao_id": c.cargo_id,
+        "cargo": c.cargo.nome if c.cargo else None,
+        "cargo_id": c.cargo_id,
         "obra": c.obra.codigo if c.obra else None, "obra_id": c.obra_id,
         "regime": c.regime, "situacao": c.situacao,
         "valor_diaria": float(c.valor_diaria) if c.valor_diaria else (
-            float(c.funcao.valor_diaria) if c.funcao and c.funcao.valor_diaria else None),
+            float(c.cargo.valor_diaria) if c.cargo and c.cargo.valor_diaria else None),
         "aux_alimentacao": float(c.aux_alimentacao) if c.aux_alimentacao else None,
         "aux_transporte": float(c.aux_transporte) if c.aux_transporte else None,
         # O TIPO DA CHAVE PIX volta junto (22/09/2026). Ele não voltava, e a
@@ -298,6 +312,9 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
         "vinculo": c.vinculo or "CTPS",
         "cargo": cargos.get(c.cargo_id or 0, ""),
         "cargo_id": c.cargo_id,
+        # A empresa de registro, para a lista poder mostrar e filtrar por ela.
+        "empresa": empresas.get(c.empresa_id or 0, ""),
+        "empresa_id": c.empresa_id,
         "convencao": convencoes.get(c.convencao_id or 0, ""),
         "convencao_id": c.convencao_id,
         "empresa_id": c.empresa_id,
@@ -388,7 +405,7 @@ def criticar(s: Session, itens: list[dict[str, Any]], *, obra_id: Optional[int] 
                 marcar(i, "P8", "Diária exige a quantidade de dias.", "BLOQUEIA")
             else:
                 referencia = colab.valor_diaria or (
-                    colab.funcao.valor_diaria if colab.funcao else None)
+                    colab.cargo.valor_diaria if colab.cargo else None)
                 if referencia:
                     esperado = (Decimal(str(qtd)) * Decimal(referencia)).quantize(_CENT)
                     if abs(esperado - valor) > _CENT:
@@ -785,7 +802,7 @@ def historico(s: Session, colaborador_id: int, meses: int = 24) -> dict[str, Any
                      if l["data"] >= (date.today() - timedelta(days=365)).isoformat())
     return {
         "colaborador": {"id": c.id, "nome": c.nome, "cpf": c.cpf,
-                        "funcao": c.funcao.nome if c.funcao else None,
+                        "funcao": c.cargo.nome if c.cargo else None,
                         "obra": c.obra.codigo if c.obra else None,
                         "situacao": c.situacao,
                         "admissao": c.admissao.isoformat() if c.admissao else None,

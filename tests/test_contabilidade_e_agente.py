@@ -398,6 +398,8 @@ def test_a_triagem_aponta_desligamento_de_quem_ja_saiu(sessao_real, dono, pessoa
     p = sp.abrir(sessao_real, {
         "tipo": "DESLIGAMENTO", "colaborador_id": pessoa.id,
         "forma_desligamento": "Demissão com Aviso Trabalhado",
+        # Obrigatório desde 15/11/2026 — a trava do bug do ponto.
+        "continua_prestador": "Não, está saindo da empresa",
         "aviso_previo": "2026-12-01"}, dono)
     r = ag.triagem(sessao_real, p["id"])
     assert any("já está desligado" in x for x in r["incoerencias"])

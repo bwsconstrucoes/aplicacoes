@@ -4463,6 +4463,12 @@ def api_pipefy_cadastro_situacao():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# Quantos cards por rodada. O mesmo espírito do limite da importação de SPs:
+# uma rodada que não termina antes da renovação do serviço no Render é uma
+# rodada perdida no meio.
+TETO_DE_CARDS_POR_RODADA = 300
+
+
 @bp.route("/erp/api/importar/pipefy-cadastro", methods=["POST"])
 @login_obrigatorio
 @permissao("importar")
@@ -4482,35 +4488,30 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": (
             "Este servidor não tem o token do Pipefy configurado "
             "(PIPEFY_API_TOKEN). Sem ele não dá para ler os cards.")}), 400
-    try:
-        teto = int(d.get("teto_de_pessoas") or imp.POR_RODADA)
-    except (TypeError, ValueError):
-        teto = imp.POR_RODADA
-    teto = max(1, min(teto, 300))
+    # ⚑ A FILA É A LISTA QUE ELE COLA (13/11/2026). Antes eu varria o pipe
+    # inteiro e casava pelo CPF — e trazia card cancelado e card repetido, que
+    # não interessam. Ele: *"eu vou listar os cards que eu quero que você
+    # busque. E você faz a pesquisa card a card e puxa as informações."*
+    pedidos = imp.ids_dos_cards(d.get("cards"))
+    if not pedidos:
+        return jsonify({"ok": False, "erro": (
+            "Cole os números dos cards que devem ser buscados.")}), 400
+    if len(pedidos) > TETO_DE_CARDS_POR_RODADA:
+        return jsonify({"ok": False, "erro": (
+            f"{len(pedidos)} cards de uma vez — faça em blocos de até "
+            f"{TETO_DE_CARDS_POR_RODADA}.")}), 400
     try:
         trabalhos.registrar_todos()
         with get_session() as s:
             usuario = _usuario_logado(s)
-            quantos = len(imp.quem_tem_card(
-                s, so_ativos=bool(d.get("so_ativos", True)),
-                obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
-                teto=teto))
-            # ⚑ ZERO NÃO É MAIS RECUSA. Até 13/11/2026 isto respondia "nenhuma
-            # pessoa com número de card nesse filtro" — e não havia onde
-            # digitar o número, então o botão não tinha como funcionar nunca.
-            # Agora o trabalho começa justamente por achar os cards: varre o
-            # pipe e casa pelo CPF.
             t = tarefas.enfileirar(
                 s, "importar_cadastro_pipefy",
-                {"simular": not gravar,
-                 "so_ativos": bool(d.get("so_ativos", True)),
-                 "obra_id": (int(d["obra_id"]) if d.get("obra_id") else None),
-                 "teto_de_pessoas": teto,
+                {"simular": not gravar, "cards": pedidos,
+                 "regravar": bool(d.get("regravar")),
                  "usuario_id": usuario.id if usuario else None},
                 rotulo=(("Conferir sem gravar: " if not gravar
                          else "Trazer do Pipefy: ")
-                        + (f"{quantos} pessoa(s)" if quantos
-                           else "achar as pessoas pelo CPF")),
+                        + f"{len(pedidos)} card(s)"),
                 usuario=usuario)
             linha = tarefas.ler(s, t.id)
             s.commit()
@@ -4519,6 +4520,50 @@ def api_importar_pipefy_cadastro():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao enfileirar a importação do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# AS PERGUNTAS QUE A IMPORTAÇÃO DEIXOU — e quem responde é gente
+#
+# Ele, em 13/11/2026: *"quando houver divergência entre o que a IA lê e o que
+# está cadastrado, aí você questiona. E o humano decide."*
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/cadastro/divergencias")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_cadastro_divergencias():
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "perguntas": imp.perguntas_abertas(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar as divergências do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/cadastro/divergencias/<int:divergencia_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_cadastro_divergencia_decidir(divergencia_id: int):
+    """Alguém escolheu qual versão vale — e o cadastro passa a dizer isso."""
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = imp.decidir(s, divergencia_id,
+                            str(d.get("fonte") or ""), usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao decidir a divergência")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -6148,6 +6193,21 @@ def api_obra(obra_id: int):
                 # é descartado em silêncio, e a tela recarrega mostrando vazio.
                 texto = ("nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
                          "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
+                         # ⚑ `crea_obra` ENTRA EM 14/11/2026, e é o mesmo
+                         # defeito do seguro-garantia: a coluna existe desde a
+                         # migração, o DIÁRIO IMPRIME o CREA — e não havia
+                         # onde digitá-lo. O papel saía com o campo vazio e
+                         # ninguém sabia por quê. Ele perguntou: *"me explica
+                         # de onde é que está vindo o responsável técnico,
+                         # número do registro profissional e a empresa."*
+                         "crea_obra "
+                         # ⚑ O CENTRO DE CUSTO DA CONTABILIDADE (16/11/2026).
+                         # É o código que o escritório usa para a MESMA obra
+                         # ("164.01" onde a BWS diz "094"). As duas
+                         # nomenclaturas convivem por decisão do dono; é por
+                         # este campo que a ficha do Fortes acha a obra da
+                         # pessoa. Obra sem ele faz a ficha entrar sem obra.
+                         "centro_custo_contabil "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
                          "observacoes_fiscais orgao_resumido status seguro_garantia "
                          # O CONTRATANTE NO PAPEL DO DIÁRIO (09/11/2026): a
@@ -6301,6 +6361,12 @@ def api_obra(obra_id: int):
             dados = {c: getattr(obra, c) for c in (
                 "id codigo nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
                 "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
+                # Volta junto, senão o formulário remonta vazio e o salvamento
+                # seguinte APAGA — o defeito do seguro-garantia, de novo.
+                "crea_obra "
+                # Volta junto, senão o formulário remonta vazio e o
+                # salvamento seguinte APAGA — o defeito do seguro-garantia.
+                "centro_custo_contabil "
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 # Voltam junto, senão o formulário remonta vazio e o
@@ -7000,6 +7066,14 @@ def api_arquivo():
             grupo=(request.args.get("grupo") or "").strip(),
             empresa_id=(int(request.args["empresa_id"]) if request.args.get("empresa_id") else None),
             obra_id=(int(request.args["obra_id"]) if request.args.get("obra_id") else None),
+            # ⚑ FILTRAR POR PESSOA (16/11/2026). O serviço já sabia fazer isso;
+            # a rota é que não deixava pedir. Sem ela, a ficha do colaborador
+            # não tinha como listar os documentos dele — e foi exatamente o que
+            # o dono viu: *"eu falei que o documento não estava aparecendo no
+            # cadastro dele, mas quando eu vim na administração arquivo,
+            # apareceu."* O documento estava certo o tempo todo; a ficha é que
+            # nunca mostrou nenhum.
+            colaborador_id=request.args.get("colaborador_id", type=int),
             competencia=_comp(),
             situacao=(request.args.get("situacao") or "").strip(),
             busca=(request.args.get("busca") or "").strip())
@@ -8936,6 +9010,16 @@ def api_colaboradores_buscar():
                 consulta = consulta.where(
                     Colaborador.obra_id.in_(list(permitidas) or [-1]))
             achados = list(s.scalars(consulta.limit(8)).all())
+            # ⚑ O VÍNCULO VAI JUNTO (15/11/2026). Ele: *"na hora que
+            # selecionar o colaborador, a gente já sabe que tipo de
+            # colaborador ele é. Isso o sistema já tem que informar: dados
+            # básicos ali, prestador tal, iniciou tal, tipo de vínculo dele,
+            # se é carteira de trabalho, se é prestador — isso já tem que
+            # aparecer para facilitar para quem está pedindo o desligamento."*
+            #
+            # E com ele o CONTRATO DE EXPERIÊNCIA, que é o que mais muda o
+            # pedido: muda a forma do desligamento e tira o aviso prévio.
+            from app.apps.erp.core import pessoal_experiencia as svc_exp
             return jsonify({"ok": True, "pessoas": [{
                 "id": c.id, "nome": c.nome, "cpf": c.cpf,
                 "situacao": c.situacao or "ATIVO",
@@ -8943,6 +9027,11 @@ def api_colaboradores_buscar():
                 # e homônimo em obra é comum.
                 "obra": (s.get(Obra, c.obra_id).codigo
                          if c.obra_id and s.get(Obra, c.obra_id) else ""),
+                "vinculo": c.vinculo or "",
+                "tipo_contrato": c.tipo_contrato or "",
+                "admissao": str(c.admissao) if c.admissao else None,
+                "cnpj_admissao": c.cnpj_admissao or "",
+                "experiencia": svc_exp.situacao(c.admissao, c.contrato_experiencia),
             } for c in achados]})
     except Exception as e:
         logger.exception("ERP: falha na busca de colaborador")
@@ -11220,27 +11309,44 @@ def api_colaboradores():
 @login_obrigatorio
 @permissao(GET="ver_pessoal", POST="editar_colaboradores")
 def api_funcoes():
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from decimal import Decimal as _D
-    from app.apps.erp.db.models.cadastros import Funcao
+    # ⚑ ESTA ROTA FALA COM `cargos` DESDE 16/11/2026 (migração 105). Cargo e
+    # função viraram a mesma coisa — *"vamos chamar só de cargo e acabou"* —
+    # e o endereço continua `/erp/api/funcoes` só para não quebrar nada que já
+    # o chame. Ela devolve `funcoes` E `cargos` com o mesmo conteúdo, para a
+    # tela poder ser trocada sem pressa.
+    from app.apps.erp.db.models.cadastros import Cargo
     try:
         with get_session() as s:
             if request.method == "POST":
                 d = request.get_json(silent=True) or {}
                 nome = (d.get("nome") or "").strip()
                 if not nome:
-                    return jsonify({"ok": False, "erro": "Informe o nome da função."}), 400
-                f = Funcao(nome=nome,
-                           valor_diaria=(_D(str(d["valor_diaria"]).replace(",", "."))
-                                         if d.get("valor_diaria") else None))
+                    return jsonify({"ok": False, "erro": "Informe o nome do cargo."}), 400
+                # Mesmo nome é o mesmo cargo: duas listas paralelas foi
+                # exatamente o problema que a migração 105 acabou de resolver.
+                ja = s.scalars(select(Cargo).where(
+                    func.upper(func.btrim(Cargo.nome)) == nome.strip().upper())).first()
+                diaria = (_D(str(d["valor_diaria"]).replace(",", "."))
+                          if d.get("valor_diaria") else None)
+                if ja is not None:
+                    if diaria is not None:
+                        ja.valor_diaria = diaria
+                    ja.ativo = True
+                    s.commit()
+                    return jsonify({"ok": True, "funcao_id": ja.id,
+                                    "cargo_id": ja.id, "ja_existia": True})
+                f = Cargo(nome=nome, valor_diaria=diaria)
                 s.add(f)
                 s.commit()
-                return jsonify({"ok": True, "funcao_id": f.id})
-            return jsonify({"ok": True, "funcoes": [
+                return jsonify({"ok": True, "funcao_id": f.id, "cargo_id": f.id})
+            lista = [
                 {"id": f.id, "nome": f.nome,
                  "valor_diaria": float(f.valor_diaria) if f.valor_diaria else None}
-                for f in s.scalars(select(Funcao).where(Funcao.ativo.is_(True))
-                                   .order_by(Funcao.nome)).all()]})
+                for f in s.scalars(select(Cargo).where(Cargo.ativo.is_(True))
+                                   .order_by(Cargo.nome)).all()]
+            return jsonify({"ok": True, "funcoes": lista, "cargos": lista})
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
@@ -11358,20 +11464,44 @@ def api_dc_acao(despesa_id: int, acao: str):
 @login_obrigatorio
 @permissao("ver_pessoal")
 def api_colaboradores_opcoes():
-    """As listas das caixinhas (vínculo, contrato, escolaridade…) e os cargos."""
+    """As listas das caixinhas (vínculo, contrato, escolaridade…) e os cargos.
+
+    ⚑ AS OBRAS ENTRARAM EM 15/11/2026, e isto era DEFEITO EM PRODUÇÃO: a tela
+    de Solicitações ao DP monta a caixinha de obra com `o.obras` desta rota —
+    que nunca existiu aqui. Resultado: a caixinha vinha com uma opção só ("
+    escolha a obra…"), e como a obra é obrigatória, **não havia como abrir um
+    pedido de cadastro de colaborador** desde que ela passou a ser exigida
+    (10/11/2026). O pedido mais importante da fila estava impossível, e a tela
+    não dizia por quê — a lista simplesmente estava vazia.
+
+    ⚑ RESPEITA O RECORTE POR OBRA: `obras_do_usuario` devolve `None` para quem
+    alcança todas, e a lista das permitidas para quem é preso a obra. Mandar
+    todas as obras para quem só enxerga uma seria vazar o nome das outras numa
+    caixinha — e deixar abrir pedido onde ele não deveria.
+    """
+    from sqlalchemy import select
+
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
     from app.apps.erp.core.cadastros import cargos as svc_cargos
     from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    from app.apps.erp.db.models.cadastros import Obra
     with get_session() as s:
+        permitidas = obras_do_usuario(s, _usuario_logado(s))
+        obras = [o for o in s.scalars(select(Obra).order_by(Obra.codigo)).all()
+                 if getattr(o, "status", None) != "ENCERRADA"
+                 and (permitidas is None or o.id in set(permitidas))]
         # SEM O PISO: esta rota é aberta a quem tem `ver_pessoal` (inclui
         # supervisor de obra e parceiro), e eles precisam da lista de cargos
         # para a caixinha — não da tabela salarial da empresa.
         return jsonify({"ok": True, **svc_pessoas.opcoes(s),
-                        **svc_cargos.listar(s, com_salario=False)})
+                        **svc_cargos.listar(s, com_salario=False),
+                        "obras": [{"id": o.id, "codigo": o.codigo,
+                                   "nome": o.nome} for o in obras]})
 
 
 @bp.route("/erp/api/colaboradores/conferir-cpf")
 @login_obrigatorio
-@permissao("editar_colaboradores")
+@permissao("conferir_cpf_colaborador")
 def api_colaboradores_conferir_cpf():
     """"Esta pessoa já existe?" — respondido ENQUANTO se digita.
 
@@ -12003,6 +12133,169 @@ def api_diario_importar():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/obras/cdiarios", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_obras_cdiarios():
+    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
+    propósito, nada é escrito. E o que já está preenchido no cadastro só é
+    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
+    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    """
+    from app.apps.erp.core.importadores import obras_cdiarios as imp
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+    if not (arquivo.filename or "").lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "erro":
+                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                        "Arquivo › Fazer download › Microsoft Excel."}), 400
+    gravar = request.form.get("gravar") in ("1", "true", "sim")
+    regravar = request.form.get("regravar") in ("1", "true", "sim")
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = imp.importar(s, conteudo, usuario.id if usuario else None,
+                               simular=not gravar, regravar=regravar)
+            if gravar:
+                s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao completar obras pela C. Di\u00e1rios")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/quadro")
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_quadro():
+    """O mês inteiro de TODAS as obras: linhas de obra, colunas de dia.
+
+    Pedido dele em 15/11/2026: *"aqui era para mostrar por mês, todas as obras
+    (…) cada coluna é um dia (…) você bate o olho e já visualiza exatamente
+    todos os dias que estão faltando (…) clicar e já ir direto para o dia."*
+
+    ⚑ RESPEITA O ESCOPO: quem é preso a obras vê só as dele. Sem isto, o
+    quadro seria a porta dos fundos para a lista inteira de obras da empresa.
+    """
+    from datetime import date as _date
+
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        hoje = _date.today()
+        ano = request.args.get("ano", type=int) or hoje.year
+        mes = request.args.get("mes", type=int) or hoje.month
+        with get_session() as s:
+            minhas = obras_do_usuario(s, _usuario_logado(s))
+            return jsonify({"ok": True, **svc.quadro_do_mes(
+                s, ano, mes, obra_ids=minhas)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no quadro do mês do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/fotos", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_fotos(obra_id: int):
+    """Anexa uma foto ao dia — ou troca a legenda, ou tira a foto.
+
+    Pedido dele em 14/11/2026: *"poder colocar serviços executados e fotos, e
+    integrar isso no diário impresso. (…) Lembrando que fotos sempre no Google
+    Drive."* E vão: a foto passa pelo armazenamento de sempre, que comprime,
+    manda para o Drive e só cai para o banco se o Drive não responder.
+
+    Três verbos numa rota só porque a tela trata as três coisas no mesmo
+    bloco; o que muda é o corpo. Upload vem como `multipart`, os outros dois
+    como JSON.
+    """
+    from app.apps.erp.core import diario_fotos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dia = _dia_do_pedido(request.args.get("data"))
+            arquivo = request.files.get("foto")
+            if arquivo is not None:
+                r = svc.anexar(s, obra_id, dia, arquivo.read(),
+                               arquivo.filename or "foto.jpg",
+                               legenda=request.form.get("legenda", ""),
+                               usuario=usuario)
+                s.commit()
+                return jsonify({"ok": True, **r})
+            d = request.get_json(silent=True) or {}
+            if d.get("remover"):
+                svc.remover(s, obra_id, dia, int(d["remover"]), usuario)
+            elif d.get("legendar"):
+                svc.legendar(s, obra_id, dia, int(d["legendar"]),
+                             d.get("legenda") or "", usuario)
+            else:
+                return jsonify({"ok": False,
+                                "erro": "Não entendi o que fazer com a foto."}), 400
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na foto do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/repetir", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_repetir(obra_id: int):
+    """Copia um dia escrito para outros dias que ainda não têm diário.
+
+    Pedido dele em 14/11/2026: *"esse dia aqui foi igual aos 3 próximos. Ou
+    então esse sábado foi igual a outros 4 sábados."*
+
+    ⚑ NUNCA SOBRESCREVE dia já escrito, não escreve o futuro e não escreve
+    fora do prazo da obra. Os pulados voltam ditos, com o motivo de cada um —
+    "copiei 3 de 5" sem dizer quais é pior que não copiar.
+    """
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            origem = _dia_do_pedido(d.get("de"))
+            # Dois caminhos: os atalhos ("os 3 próximos", "os 4 sábados") e a
+            # lista marcada no calendário. O atalho só SUGERE — quem confirma
+            # manda a lista, e é ela que vale.
+            if d.get("sugerir"):
+                return jsonify({"ok": True, "dias": svc.dias_para_repetir(
+                    s, obra_id, origem, str(d.get("modo") or "seguidos"),
+                    int(d.get("quantos") or 1))})
+            destinos = []
+            for bruto in (d.get("dias") or []):
+                destinos.append(_dia_do_pedido(bruto))
+            r = svc.repetir_dia(s, obra_id, origem, destinos, usuario,
+                                com_equipamentos=bool(d.get("com_equipamentos")))
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao repetir o dia do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/calendario")
 @login_obrigatorio
 @permissao("ver_diario")
@@ -12187,6 +12480,44 @@ def api_portal_pessoas():
         return jsonify({"ok": False, "erro": str(e)}), 401
     except Exception as e:
         logger.exception("ERP/portal: falha ao procurar pessoa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/portal/api/conferir-cpf")
+@permissao_publica("o portal tem autenticação própria, do ponto — ver "
+                   "core/portal.quem_esta")
+def api_portal_conferir_cpf():
+    """"Esta pessoa já existe?" — respondido ENQUANTO o CPF é digitado.
+
+    ⚑ FALTAVA NO PORTAL, e ele perguntou por isso em 15/11/2026, olhando o
+    formulário de cadastro: *"o nome está pesquisável, o CNPJ, o CPF vai ser
+    criticado se a pessoa já existir?"*
+
+    A resposta era NÃO — e isso é o pior caso: a obra preenchia o cadastro
+    inteiro, anexava os três documentos, e só ao enviar descobria que a pessoa
+    já existia. Na tela do ERP o aviso já chegava no quarto dígito desde
+    06/11/2026; no portal, que é por onde a obra trabalha, não chegava nunca.
+
+    ⚑ O QUE ELA DEVOLVE É O MÍNIMO: existe, o nome, e se está ativa ou
+    desligada. Nada de salário, endereço ou documento — quem abre pedido não
+    precisa disso, e varrer CPFs não mapearia o cadastro.
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_portal.quem_esta(s, usuario)            # 401 se não entrou
+            achado = svc_pessoas.conferir_cpf(s, request.args.get("cpf", ""))
+        # O recado completo do cadastro traz "abra a ficha dela" — coisa que
+        # quem está na obra não pode fazer. A frase daqui é a do portal.
+        return jsonify({"ok": True, "situacao": achado["situacao"],
+                        "nome": achado.get("nome", ""),
+                        "aviso": achado.get("aviso", "")})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao conferir o CPF")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -12753,6 +13084,45 @@ def api_colaboradores_importar():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao importar a planilha de pessoas")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/importar-fichas", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_colaboradores_importar_fichas():
+    """As fichas de registro do Fortes (PDF) para dentro do ERP.
+
+    ⚑ LÊ A CAMADA DE TEXTO, não a imagem: a ficha é PDF gerado pelo Fortes, e
+    o número está escrito lá, exato. Sem IA, sem custo e sem erro de leitura —
+    o que importa num campo como o PIS, que tem onze dígitos e só acusa erro
+    quando o INSS reclama. Ficha digitalizada (só imagem) é devolvida como
+    ilegível, com o número da página, em vez de adivinhada.
+
+    `gravar=0` simula e devolve o relatório sem tocar no banco.
+    `criar_novos=1` deixa a ficha CRIAR quem o ERP não tem — nasce desligado,
+    porque a ficha não traz cargo (decisão dele: a nomenclatura é nossa), nem
+    telefone, nem chave Pix, que são obrigatórios no cadastro de hoje.
+    """
+    from app.apps.erp.core.importadores import fichas_fortes
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Envie o PDF das fichas."}), 400
+    gravar = request.form.get("gravar") == "1"
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = fichas_fortes.importar(
+                s, arquivo.read(), gravar=gravar,
+                criar_novos=request.form.get("criar_novos") == "1",
+                usuario=usuario)
+            # Na simulação nada é escrito, e o rollback é a garantia disso.
+            s.commit() if gravar else s.rollback()
+        return jsonify({"ok": True, "relatorio": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao importar as fichas do Fortes")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

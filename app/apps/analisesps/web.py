@@ -7048,7 +7048,102 @@ def tela_lote():
         painel=painel,
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        rc_obras=_obras_por_grupo(montado),
+        amanha=_amanha_iso())
+
+
+def _amanha_iso() -> str:
+    """Amanhã, no dia de Brasília — a data que a janela do relatório sugere."""
+    import datetime as _dt
+
+    from .horario import agora
+    return (agora().date() + _dt.timedelta(days=1)).isoformat()
+
+
+def _obras_por_grupo(montado: dict) -> dict:
+    """As obras do lote inteiro (chave 0) e de cada grupo (1, 2…), para a janela do
+    relatório completo oferecer "só estas obras"."""
+    from . import lote_relatorio_completo as rc
+
+    def lista(m):
+        return [{"obra": o, "quantidade": q, "total": float(t)}
+                for o, q, t in rc.obras_do_lote(m)]
+    saida = {"0": lista(montado)}
+    for n, g in enumerate(montado.get("grupos") or [], start=1):
+        saida[str(n)] = lista({"grupos": [g]})
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# O RELATÓRIO COMPLETO DO LOTE, para a parceria (15/11/2026) — ver
+# `lote_relatorio_completo.py`. A geração roda fora do pedido (baixar os anexos
+# leva tempo); a tela pede, acompanha o andamento e baixa.
+# ---------------------------------------------------------------------------
+@bp.route("/lote/relatorio-completo", methods=["POST"])
+@exige_consulta
+def lote_relatorio_completo_iniciar():
+    import datetime as _dt
+
+    from . import lote, lote_relatorio_completo as rc
+    dados = request.get_json(silent=True) or {}
+    try:
+        montado = lote.montar(lote.ler(auth.pessoa_atual())["conteudo"])
+        grupo = int(dados.get("grupo") or 0)
+        if grupo:
+            so, titulo_do_grupo = _grupo_do_lote(grupo)
+            if so is None:
+                return {"ok": False, "erro": titulo_do_grupo}, 404
+            montado = so
+        data = None
+        if dados.get("data"):
+            try:
+                data = _dt.date.fromisoformat(str(dados["data"])[:10])
+            except ValueError:
+                return {"ok": False, "erro": "Data do pagamento inválida."}, 400
+        relatorio = rc.montar_dados(
+            montado, titulo=str(dados.get("titulo") or "")[:120],
+            para=str(dados.get("para") or "")[:120], data_pagamento=data,
+            obras=[str(o) for o in (dados.get("obras") or [])][:200],
+            quem=auth.nome_atual() or "")
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou montar o relatório completo do lote")
+        return {"ok": False, "erro": f"Não consegui montar o relatório: {e}"}, 500
+    if not relatorio["quantidade"]:
+        return {"ok": False, "erro": "Não há SPs para pôr no relatório (o lote está "
+                                     "vazio, ou nenhuma é das obras escolhidas)."}, 400
+    chave = rc.iniciar(relatorio, com_anexos=bool(dados.get("anexos", True)))
+    return {"ok": True, "chave": chave,
+            "estado": url_for("analisesps.lote_relatorio_completo_estado", chave=chave)}
+
+
+@bp.route("/lote/relatorio-completo/<chave>")
+@exige_consulta
+def lote_relatorio_completo_estado(chave: str):
+    from . import lote_relatorio_completo as rc
+    t = rc.estado(chave)
+    if not t:
+        return {"ok": False, "erro": "Este relatório não existe mais (o serviço pode ter "
+                                     "sido renovado). Gere de novo."}, 404
+    return {"ok": True, "pronto": t["pronto"], "erro": t["erro"], "etapa": t["etapa"],
+            "feitos": t["feitos"], "total": t["total"], "nome": t["nome"],
+            "tamanho": t.get("tamanho") or 0,
+            "arquivo": (url_for("analisesps.lote_relatorio_completo_arquivo", chave=chave)
+                        if t["pronto"] else "")}
+
+
+@bp.route("/lote/relatorio-completo/<chave>/arquivo")
+@exige_consulta
+def lote_relatorio_completo_arquivo(chave: str):
+    from flask import send_file
+
+    from . import lote_relatorio_completo as rc
+    t = rc.estado(chave)
+    if not t or not t["pronto"] or not os.path.exists(t["caminho"]):
+        return render_template("analisesps_erro.html", titulo="Relatório não encontrado",
+                               mensagem="O relatório não existe mais. Gere de novo."), 404
+    return send_file(t["caminho"], mimetype="application/pdf", as_attachment=True,
+                     download_name=t["nome"])
 
 
 @bp.route("/lote/telegram", methods=["POST"])

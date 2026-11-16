@@ -53,9 +53,26 @@ fi
 
 export ERP_TEST_DATABASE_URL="$BANCO"
 
-# Com alvo (um arquivo, um -k), roda direto: o paralelismo custa uns segundos
+# Com ALVO (um arquivo, um -k), roda direto: o paralelismo custa uns segundos
 # para subir os trabalhadores e não compensa em pouca coisa.
-if [ "$#" -gt 0 ]; then
+#
+# ⚠️ OPÇÃO NÃO É ALVO (16/11/2026). Até aqui QUALQUER argumento desligava o
+# paralelismo — e `scripts/testes.sh -q` rodava a suíte inteira teste a teste, em
+# ~40 minutos em vez de ~10, sem ninguém perceber por quê. O dono: *"JESUS, é tempo
+# demais (…) precisamos otimizar esses testes."* Agora só arquivo, pasta ou `-k`
+# rodam sem paralelismo; opções soltas (`-q`, `-p no:warnings`, `-x`) vão junto da
+# suíte paralela.
+tem_alvo=0
+anterior=""
+for arg in "$@"; do
+  case "$arg" in
+    -k|-m) tem_alvo=1 ;;
+    -*) ;;
+    *) if [ "$anterior" != "-p" ]; then tem_alvo=1; fi ;;
+  esac
+  anterior="$arg"
+done
+if [ "$tem_alvo" -eq 1 ]; then
   exec python3 -m pytest "$@"
 fi
-exec python3 -m pytest -n auto --dist loadfile
+exec python3 -m pytest -n auto --dist loadfile "$@"

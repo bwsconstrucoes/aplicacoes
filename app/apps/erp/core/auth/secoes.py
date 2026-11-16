@@ -172,8 +172,20 @@ SECOES: list[dict[str, Any]] = [
     # É a divisão que o pipe fazia na mão, com um checklist chamado "você não
     # possui autorização para esta solicitação".
     {"chave": "pes_solicitacoes", "area": "Pessoal", "nome": "Solicitações ao DP",
-     "explicacao": "desligamento, readmissão, dependente, ajuda de custo, VT",
-     "ler": ["solicitar_dp"], "editar": ["atender_dp"]},
+     # ⚑ A FRASE MUDOU EM 15/11/2026, junto com os tipos: readmissão agora
+     # acontece DENTRO do cadastro (o CPF a detecta) e o vale-transporte
+     # dentro da ajuda de custo. Prometer na explicação um tipo que não está
+     # mais na lista é o defeito que esta classe de frase já causou uma vez,
+     # com férias no portal.
+     "explicacao": "cadastro, desligamento, cargo, dependente e ajuda de custo",
+     # ⚑ `conferir_cpf_colaborador` MORA AQUI (15/11/2026): quem abre pedido
+     # precisa saber se o CPF já tem cadastro — é o que faz o pedido de
+     # cadastro se converter em readmissão em vez de criar a segunda ficha da
+     # pessoa. Quem cadastra pela tela de Colaboradores ganha a mesma ação por
+     # implicação (`ACOES_IMPLICADAS`), e é por isso que ela é uma ação
+     # própria: duas portas diferentes precisam da mesma resposta.
+     "ler": ["solicitar_dp", "conferir_cpf_colaborador"],
+     "editar": ["atender_dp"]},
     # LER = acompanhar o pedido que nasceu da requisição da obra — é o que
     # acaba com o "e aí, saiu?" por WhatsApp. EDITAR = pedir, cobrar, conferir o
     # retorno e ligar as rotinas do agente.

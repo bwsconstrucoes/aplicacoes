@@ -100,8 +100,14 @@ AREAS: tuple[dict[str, Any], ...] = (
         # Porta que anuncia o que não tem é pior que porta fechada: a pessoa
         # entra, não acha, e deixa de confiar no resto da tela. Há teste
         # conferindo cada palavra daqui contra os tipos da área.
-        "explicacao": "cadastro, desligamento, readmissão, dados da pessoa, "
-                      "dependente, ajuda de custo e vale-transporte",
+        # ⚑ "readmissão" e "vale-transporte" SAÍRAM DA FRASE em 15/11/2026,
+        # junto com os tipos: a readmissão acontece dentro do cadastro (pelo
+        # CPF) e o vale-transporte dentro da ajuda de custo. Prometer na porta
+        # um tipo que não está na lista é o defeito que esta frase já causou
+        # uma vez, com férias.
+        "explicacao": "cadastro, desligamento, prestador que vai para a "
+                      "carteira, cargo, dados da pessoa, dependente e ajuda "
+                      "de custo",
         "pronta": True,
     },
     {
@@ -140,10 +146,22 @@ AREAS: tuple[dict[str, Any], ...] = (
 # desconto em folha, por exemplo, é do DP — a obra não lança desconto no
 # salário de ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
 TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
+    # ⚑ READMISSAO E VALE_TRANSPORTE SAÍRAM EM 15/11/2026, e a razão é a
+    # mesma dos dois: eles deixaram de existir como tipo.
+    #
+    #   · readmissão → o pedido de CADASTRO detecta o CPF que já existe e se
+    #     converte sozinho. Quem abre não precisa saber de antemão se a pessoa
+    #     já passou pela empresa — e era justamente quem NÃO sabia que criava
+    #     a segunda ficha dela.
+    #   · vale-transporte → virou opção dentro da AJUDA_DE_CUSTO, onde as
+    #     categorias de transporte já viviam.
+    #
+    # Deixá-los aqui seria pior que esquecer: a obra continuaria abrindo pelo
+    # portal um tipo que a tela do DP não oferece mais.
     "pessoal": (
-        "CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
+        "CADASTRO", "DESLIGAMENTO", "ADMISSAO_PRESTADOR",
         "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
-        "VALE_TRANSPORTE", "DIVERSOS",
+        "DIVERSOS",
     ),
 }
 
@@ -318,7 +336,14 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 continue
             d = svc_sp.TIPOS[k]
             campos = list(d["campos"])
-            if "obra_id" not in campos:
+            # ⚑ A OBRA SÓ ONDE NÃO HÁ DE ONDE TIRÁ-LA (15/11/2026). Ele: *"a
+            # obra está no cadastro. Ignora isso aí, tira isso aí"* — e,
+            # perguntado se valia para gente nova: *"admissão nova ou de
+            # colaborador demitido tem que ter a obra. Demais não precisa."*
+            # Mesma regra da tela do DP, pela mesma razão: pedido sobre quem
+            # já tem ficha tira a obra da ficha, e perguntar de novo abre a
+            # porta para duas respostas diferentes.
+            if not d["exige_pessoa"] and "obra_id" not in campos:
                 campos.insert(0, "obra_id")
             saida.append({
                 "chave": k, "area": area, "nome": d["nome"],
@@ -329,13 +354,43 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 # Pipe. A tela não decide nem um nem outro — se decidisse,
                 # divergiriam do que o servidor exige, e a pessoa descobriria
                 # isso só na recusa do envio.
-                "obrigatorios": ["obra_id"] + [x for x in d.get("obrigatorios", ())
-                                               if x != "obra_id"],
+                "obrigatorios": (
+                    [x for x in d.get("obrigatorios", ()) if x != "obra_id"]
+                    if d["exige_pessoa"]
+                    else ["obra_id"] + [x for x in d.get("obrigatorios", ())
+                                        if x != "obra_id"]),
+                # ⚑ O VÍNCULO DA PESSOA DECIDE OS CAMPOS (desligamento). A
+                # obra escolhe a pessoa e o formulário se ajusta: carteira
+                # pede forma e aviso prévio; prestador, só a data de saída.
+                # A regra é a MESMA que a tela do DP lê — uma fonte só.
+                "por_vinculo": {
+                    v: {"campos": list(r.get("campos") or d["campos"]),
+                        "obrigatorios": list(r.get("obrigatorios")
+                                             or d.get("obrigatorios", ()))}
+                    for v, r in (d.get("por_vinculo") or {}).items()},
                 "documentos": list(d.get("documentos", ())),
                 "documentos_se": {c: {v: list(p) for v, p in mapa.items()}
                                   for c, mapa in (d.get("documentos_se") or {}).items()},
                 "obrigatorios_se": {c: {v: list(p) for v, p in mapa.items()}
                                     for c, mapa in (d.get("obrigatorios_se") or {}).items()},
+                # ⚑ AS CONDIÇÕES DE CAMPO FALTAVAM NO PORTAL (15/11/2026), e
+                # isso é buraco e não detalhe: o portal é a tela DA OBRA, e sem
+                # elas ele mostrava "tipo de contrato" para quem tem carteira,
+                # "valor do mês" para diarista e o valor do auxílio antes de a
+                # categoria ser escolhida. A tela do DP tinha o motor; esta,
+                # não. Mesma falha das três rodadas anteriores: eu conferi a
+                # tela que estava construindo.
+                "ocultos_se": {c: {v: list(p) for v, p in mapa.items()}
+                               for c, mapa in (d.get("ocultos_se") or {}).items()},
+                "visiveis_se": {c: {v: list(p) for v, p in mapa.items()}
+                                for c, mapa in (d.get("visiveis_se") or {}).items()},
+                # O rótulo→código: as condições são escritas com o código que
+                # o banco guarda, e a caixinha manda o rótulo. Sem isto a
+                # condição não dispara — defeito que já aconteceu na tela do
+                # DP, com o "Tipo de Contrato".
+                "traducoes": {x: dict(svc_sp.DO_PIPE_PARA_O_CODIGO[x])
+                              for x in campos
+                              if x in svc_sp.DO_PIPE_PARA_O_CODIGO},
                 "repete": bool(d.get("repete")),
                 "vem_do_documento": dict(d.get("vem_do_documento") or {}),
                 # ⚑ O QUE O CADASTRO JÁ TEM não se pergunta de novo. Ele, em
@@ -381,6 +436,13 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
 
     listas = {campo: par(campo, chaves, ROTULOS.get(campo, {}))
               for campo, chaves in svc.DA_LISTA.items()}
+    # ⚑ TIPO DE CONTRATO: só os de PRESTADOR (15/11/2026). O `DA_LISTA` traz
+    # os nove valores aceitos, que servem para LER ficha antiga; o campo só
+    # aparece para prestador, e lá as duas opções de CLT não existem. Ele:
+    # *"CTPS não abre tipo de contrato, porque já é CLT."*
+    listas["tipo_contrato"] = par(
+        "tipo_contrato", svc.TIPOS_CONTRATO_PRESTADOR,
+        svc.TIPO_CONTRATO_ROTULOS)
     # Estes dois são campos do PEDIDO, não do cadastro, então não estão no
     # `DA_LISTA` — mas a lista é a mesma do cadastro.
     listas["forma_desligamento"] = par(
@@ -408,10 +470,14 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
         # no código. Ele, em 11/11/2026: *"empresa para registro e CNPJ para
         # admissão é campo duplicado. É a mesma informação."* Empresa nova do
         # grupo entra sozinha aqui, sem ninguém lembrar de mexer em código.
+        # ⚑ TODAS AS ATIVAS, inclusive a que está sem CNPJ — ela aparece
+        # dizendo que está (15/11/2026). O campo é a EMPRESA; o CNPJ é um dado
+        # dela. Antes o campo pedia o CNPJ, e por isso a empresa sem CNPJ
+        # desaparecia da lista sem explicação.
         from app.apps.erp.core import pessoal_solicitacoes as svc_sp_emp
-        listas["cnpj_admissao"] = [
-            {"valor": x, "rotulo": x}
-            for x in svc_sp_emp.opcoes_de_empresa(s)]
+        listas["empresa_id"] = [
+            {"valor": x["id"], "rotulo": x["rotulo"]}
+            for x in svc_sp_emp.empresas_para_escolher(s)]
         # ⚑ "Cargo Pleiteado" e "Cargo Deferido" são o nome do Pipe para a
         # MESMA lista de cargos. Sem estas duas linhas eles saíam como texto
         # livre — e ele viu: *"o cargo. Se o cara já tem cargo, já era para

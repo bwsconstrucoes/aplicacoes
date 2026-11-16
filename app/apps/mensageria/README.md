@@ -140,6 +140,82 @@ o teto da mensageria é a segunda cerca, para a empresa inteira.
 
 ---
 
+## O painel (14/11/2026)
+
+`painel.py`; aba **Painel** (a primeira do módulo). Tudo do registro
+`mensageria.envios`, no período escolhido (até 90 dias), com hora e dia de
+Fortaleza. Filtros na barra da esquerda: período (hoje, 7, 30, 90 dias ou datas),
+canal, de onde vem (módulo), tipo, situação (entregue, não chegou, barrada) e
+pessoa (nome, CPF ou telefone). Mostra: os números do topo; entregues por dia
+(Telegram × WhatsApp); não chegaram por dia; entregues por hora do dia e por dia
+da semana; os tipos de mensagem (Telegram, WhatsApp, não chegou); as pessoas
+(quantas, por onde, quais tipos, a última); e as últimas 200 mensagens com o
+texto. Clicar no nome filtra a pessoa. A **pessoa** de cada linha é achada pelo
+CPF, pelo telefone (com/sem 55 e nono dígito) ou pelo id do chat, contra
+colaboradores, operadores e o cadastro do Telegram; sem casar, aparece como
+"Fora do cadastro (telefone)". Gráficos em SVG desenhado no próprio arquivo,
+sem biblioteca: azul = Telegram, laranja = WhatsApp, vermelho = não chegou.
+
+**Na ficha do colaborador** (Pessoal › Colaboradores, e a ficha única do
+ponto): aba **Telegram e mensagens**, com a situação do Telegram, o último
+convite, as contagens de 30 dias e as últimas 15 mensagens, e o link para o
+painel já filtrado. O bloco é um só, `mensagensDaPessoa` no `erp_base.html`;
+lê `/erp/api/mensagens/pessoa/<id>` (`ver_mensagens`).
+
+## O cadastro do Telegram e o convite (14/11/2026)
+
+Código em `telegram_cadastro.py`; tela na aba **Cadastro do Telegram**; tabelas
+`mensageria.telegram_cadastros` e `mensageria.convites` (migração **103** do ERP).
+
+**Quem pode se cadastrar:** colaborador do ERP que não está desligado e tem
+telefone, e operador do ERP ativo com telefone (decisão do dono).
+
+**REGRA RÍGIDA (dono, 14/11/2026):** o número que o Telegram confirma (botão
+"Compartilhar meu número") tem de bater com o telefone do cadastro do ERP — com
+ou sem 55, com ou sem o nono dígito. Não bateu: **não cadastra**; o robô manda a
+pessoa pedir ao DP para atualizar o telefone, e a tentativa entra na **fila do
+DP** (`mensageria.telegram_tentativas`, aba Cadastro do Telegram). **CPF digitado
+não cadastra** (só entra na fila, para o DP saber quem é). Trocar de número vale
+a mesma regra.
+
+**As planilhas morrem — e a chave é o botão "Migrar da planilha".** Antes dele,
+tudo segue como era (o robô lê as abas "Dados Documentos", "Colaborador
+(Cartões)" e "TelegramID" e escreve nesta e na "Pendências Telegram"). O botão
+copia a aba TelegramID para `mensageria.telegram_cadastros` **cruzando cada linha
+com o ERP**: confere (entra), telefone diferente (entra, e o DP acerta), fora do
+ERP (não entra). Daí em diante **nenhuma planilha é lida nem escrita**: o robô
+reconhece só pelo ERP, grava só no ERP, a busca do chat dos avisos olha só o ERP,
+o contracheque pelo Telegram e pelo WhatsApp (chatbot) leem o colaborador do ERP,
+e a fila do DP substitui a "Pendências Telegram". O relatório do cruzamento fica
+guardado e aparece na tela.
+
+**O convite:** WhatsApp com um **link pessoal** (`t.me/<robô>?start=c_<código>`,
+vale 30 dias, uma vez). Quem toca no link é saudado pelo nome e confirma o
+número — que precisa bater, como qualquer outro. O link só facilita.
+
+- **Automático** — na **primeira** mensagem do Telegram que não chega por falta
+  de cadastro (pelo notificador ou pelo `/telegram/enviar`), se a pessoa é
+  elegível. O próximo só sai depois de **mais N mensagens que não chegaram**
+  (padrão 5) **e** de **N dias** (padrão 7), e no máximo **3 automáticos por
+  pessoa**. Pedido do dono: *"não a cada mensagem que der errada (…) senão a
+  gente pode correr o risco de ser banido de novo"*. Os três números se mudam na
+  tela. Roda em segundo plano: quem mandou a mensagem original não espera.
+- **Pela tela** — um a um (resposta na hora) ou até 50 marcados (saem um por vez,
+  com 20–45 s entre eles; o lote para se bater no teto). No máximo um por dia por
+  pessoa; não conta para o máximo automático.
+- Os dois passam pelo tipo `telegram.aviso_cadastro` (**Só WhatsApp** desde a
+  103), pela chave geral do WhatsApp e pelo teto — e ficam na aba Enviadas.
+  Convite que não saiu (WhatsApp desligado, teto) não conta como convite.
+
+**O texto** é editável na tela (`{nome}` = primeiro nome, `{link}` = link
+pessoal, obrigatório); o sugerido está em `TEXTO_PADRAO`. Pela tela, a frase
+"tentou te mandar uma mensagem" sai do texto sugerido, porque não houve
+mensagem perdida.
+
+**O registro ganhou o Make:** o que passa por `/telegram/enviar` é anotado como
+"Envio externo pelo Telegram (Make, emissão de nota)" — só anotação, a resposta
+ao Make não mudou.
+
 ## O bot do Telegram e o chatbot, em resumo
 
 **Telegram.** `/start` → botão "Compartilhar meu número" → procura o número em
@@ -148,8 +224,8 @@ duas abas de planilha só de leitura (*Dados Documentos* e *Colaborador
 → pede CPF. Falhas vão para a aba *Pendências Telegram*. Depois de cadastrado,
 `1`/"contracheque" abre o assistente (reusa os módulos do chatbot).
 `/telegram/enviar` manda texto ou arquivo por `chat_id`, `telefone` ou `cpf`
-(procura na `TelegramID`, cache de 2 min); quem não tem cadastro gera o tipo
-`telegram.aviso_cadastro` (hoje desligado). Links vão **sem preview** — o
+(procura no cadastro do ERP e depois na `TelegramID`); quem não tem cadastro
+recebe o convite da seção acima. Links vão **sem preview** — o
 robô do Telegram fazia GET na URL e disparava links de ação (16/07/2026).
 
 **Chatbot (WhatsApp).** Z-API → `/api/chatbot/webhook` → pede CPF, confere
@@ -168,16 +244,23 @@ mensageria**: responde a quem escreveu, e só.
 - `tests/test_mensageria_banco.py` (`@pytest.mark.banco`) — a migração 083, a
   semeadura do catálogo, a contagem do teto, a limpeza dos 90 dias.
 - `tests/test_notificador.py` — a camada das variáveis (sem mensageria).
+- `tests/test_mensageria_telegram.py` e `tests/test_mensageria_telegram_banco.py`
+  — quem pode, a busca do chat, a troca de conta, as três travas do convite, o
+  link pessoal, a cópia da planilha, o painel, o robô (link do convite antes do
+  lote do Análise de SPs) e a tela.
 - **O bot do Telegram e o chatbot continuam sem teste.**
 
 ---
 
 ## Riscos e limites conhecidos
 
-- **O cadastro do Telegram ainda é planilha.** Quem tem Telegram está na aba
-  `TelegramID`; o ERP não sabe. "Só Telegram" para quem não se cadastrou vira
-  "sem destinatário" no registro. Trazer o cadastro para o ERP é o próximo
-  passo da área (ver `HISTORICO.md`).
+- **Make lendo a aba TelegramID direto:** se algum cenário do Make lê a planilha
+  sem passar pelo `/telegram/enviar`, depois da migração ele deixa de ver os
+  cadastros novos. O código do repositório não lê mais a aba; o Make não dá para
+  conferir daqui.
+- **Quem estava na planilha com o telefone diferente** foi migrado ATIVO (para
+  não cortar quem já recebe) e aparece com aviso "DP acertar". A regra rígida vale
+  para cadastro novo e para troca de número.
 - **Estado em memória**: sessões do chatbot/Telegram, cache da `TelegramID`,
   a trava "já avisei nesta hora" do teto fica no banco, mas a faxina diária
   do registro usa um relógio em memória (reinício só adianta a faxina).
