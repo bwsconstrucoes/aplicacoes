@@ -485,7 +485,8 @@ def relatorio_vazio(motivo: str) -> dict[str, Any]:
             "pessoas_lidas": 0, "documentos_guardados": 0,
             "documentos_ja_tinha": 0, "documentos_que_falharam": 0,
             "campos_preenchidos": 0, "cards_sem_resposta": [], "falhas": [],
-            "cargos_sem_par": [], "rotulos": dict(ROTULO_DO_CAMPO),
+            "cargos_sem_par": [], "fases_sem_etapa": [],
+            "rotulos": dict(ROTULO_DO_CAMPO),
             "por_pessoa": [], "de_fora": dict(PAPEIS_DE_FORA),
             "cards_pedidos": 0, "cards_sem_pessoa": []}
 
@@ -891,6 +892,10 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         # lista é a resposta de "por que o cargo não veio", com o nome exato
         # para alguém criar ou corrigir.
         "cargos_sem_par": [],
+        # Fase do pipe que o sistema não soube traduzir em etapa: sem esta
+        # lista, a pessoa simplesmente ficaria na etapa antiga e ninguém
+        # saberia por quê.
+        "fases_sem_etapa": [],
         # Para a tela falar "Cargo" e não "cargo_id" com quem confere cadastro.
         "rotulos": dict(ROTULO_DO_CAMPO),
         "por_pessoa": [],
@@ -948,6 +953,26 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
             # `empresa_id` não é texto: entra como ligação, e o servidor
             # deriva o CNPJ de admissão dela (ver `pessoas.salvar`).
             achados["empresa_id"] = empresa_id
+        # ⚑ A FASE DO CARD VIRA ETAPA E SITUAÇÃO — 16/11/2026, pedido dele:
+        # *"na importação você já tem que deixar a fase correta, né? Casar a
+        # fase com a etapa."*
+        #
+        # E vale mais do que arrumação: a fase é o único lugar que diz se a
+        # pessoa está afastada ou desligada, e a SITUAÇÃO era o último dado
+        # que faltava para o ponto poder largar a planilha do Análise de SPs.
+        #
+        # Fase que o sistema não reconhece não mexe em nada — chutar a etapa
+        # tira a pessoa da fila de trabalho do DP sem ninguém perceber.
+        etapa, situacao = _svc_pessoas().etapa_da_fase(bruto.get("fase"))
+        if etapa:
+            achados["etapa"] = etapa
+            achados["situacao"] = situacao
+            linha["fase_do_card"] = bruto.get("fase")
+        elif (bruto.get("fase") or "").strip():
+            relatorio["fases_sem_etapa"].append(
+                {"nome": pessoa["nome"], "card": card,
+                 "fase": str(bruto.get("fase")).strip()})
+
         cargo_id, cargo_nome = cargo_do_card(s, campos)
         if cargo_id:
             achados["cargo_id"] = cargo_id
@@ -1047,6 +1072,11 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     return relatorio
 
 
+def _svc_pessoas():
+    from app.apps.erp.core.cadastros import pessoas as svc
+    return svc
+
+
 def _por_que_nao(s: Session, colaborador_id: int, campos_do_card: dict[str, str],
                  achados: dict[str, Any],
                  preenchidos: dict[str, Any]) -> list[dict[str, str]]:
@@ -1113,6 +1143,7 @@ ROTULO_DO_CAMPO: dict[str, str] = {
     "categoria_alimentacao": "Categoria do auxílio-alimentação",
     "categoria_transporte": "Categoria do auxílio-transporte",
     "empresa_id": "Empresa", "cargo_id": "Cargo",
+    "etapa": "Etapa do cadastro", "situacao": "Situação",
 }
 
 

@@ -2299,6 +2299,7 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 |---|---|---|
 | **"cargo"** | o cargo registrado ou a função na obra? | ✔ **FECHADO em 16/11/2026, migração 105: não há mais duas coisas.** Ele: *"vamos chamar só de cargo e acabou."* `funcoes` virou visão de `cargos`, e o cargo carrega a diária. "Função" e "cargo" são a MESMA resposta |
 | **"não veio"** | o card não trouxe, o ERP já tinha, ou o valor foi recusado? | ✔ **FECHADO:** são três coisas diferentes e o relatório agora diz qual |
+| **"etapa"** vs **"situação"** | "em que pé está o cadastro?" ou "a pessoa está na empresa?" | ✔ **FECHADO e são DUAS coisas.** A fase do Pipefy misturava as duas; desde 16/11 a importação desdobra. Pergunta sobre fila de trabalho responde pela ETAPA; pergunta sobre folha e ponto responde pela SITUAÇÃO |
 
 ### Perguntas que já dão resposta exata
 
@@ -2311,6 +2312,11 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 - Para quem a importação não preencheu nada, e por quê?
 - Quantas divergências abertas são de data? ⚠️ *se voltar a crescer, a
   comparação de data quebrou de novo*
+- Quantos cadastros estão em cada etapa, e há quanto tempo parados?
+- Quais fases do Pipefy entraram sem virar etapa? ⚠️ *a resposta deve ser
+  "nenhuma"; fase nova no pipe aparece aqui antes de virar problema*
+- Quem está com situação diferente da etapa? *(ex.: etapa Desligado e situação
+  ATIVO — é o que faria a pessoa continuar batendo ponto)*
 
 ### Perguntas que o sistema ainda não responde, e o que falta
 

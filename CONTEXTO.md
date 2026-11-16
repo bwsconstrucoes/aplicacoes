@@ -876,10 +876,29 @@ usando o cadastro do ERP como base, NINGUÉM ficava de fora** — PJ e pró-labo
 passariam a bater ponto no dia da virada, e ponto de PJ é o registro que não
 se quer ter, porque parece vínculo de emprego.
 
+#### ✔ A SITUAÇÃO TAMBÉM FOI RESOLVIDA, no mesmo dia
+
+Era o último buraco. A **fase do card do Pipefy** passou a virar, na
+importação, a **etapa** do cadastro E a **situação** da pessoa:
+
+| Fase no Pipefy | Etapa | Situação |
+|---|---|---|
+| Colaboradores Afastados | Afastado | AFASTADO |
+| Colaboradores Desligados | Desligado | DESLIGADO |
+| Cadastro Cancelado | Cancelado | DESLIGADO |
+| Cadastros Adicionais | Conferência | ATIVO |
+| Cadastro Concluído | Concluído | ATIVO |
+| Cadastro Inicial | Inicial | ATIVO |
+
+Fase não reconhecida não mexe em nada e é relatada. **Com isto, tudo o que a
+planilha preenchia passa a existir no cadastro do ERP** — falta só rodar as
+importações.
+
 **A ordem certa, quando chegar a hora:** (1) terminar as importações; (2)
 conferir na Configuração do ponto os números que já existem ali — "Faltam no
-ERP", "Estão só no ERP", "Sem obra reconhecida" —, todos em zero; (3) resolver
-a **situação**, que é o que ainda falta; (4) só então virar a chave. **Virar
+ERP", "Estão só no ERP", "Sem obra reconhecida" —, todos em zero; (3) conferir
+por amostragem que a situação das pessoas ficou certa; (4) só então virar a
+chave. **Virar
 com gente sem obra reconhecida ou com a situação errada é o que derruba a
 batida**, e isso aparece na manhã seguinte, com gente parada no portão.
 

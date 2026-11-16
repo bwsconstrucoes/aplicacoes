@@ -21,6 +21,75 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 16/11/2026 — AS ETAPAS PERDEM A PALAVRA "CADASTRO", E A FASE DO PIPE VIRA ETAPA
+
+#### Os nomes
+
+Ele: *"por exemplo, cadastro inicial. Aí tem cadastro concluído. Mas as outras
+você não utilizou cadastro (…) esse nome cadastro pode ser eliminado. Vai
+ficar inicial só, concluído, cancelado."*
+
+Tinha razão: a palavra aparecia em **três dos oito** nomes e faltava nos outros
+cinco, então não distinguia nada — só fazia a lista parecer duas listas.
+
+| Antes | Agora |
+|---|---|
+| Cadastro inicial | **Inicial** |
+| Em conferência do DP | **Conferência** |
+| Cadastro concluído | **Concluído** |
+| Cadastro cancelado | **Cancelado** |
+| Contrato a assinar, Na contabilidade, Afastado, Desligado | iguais |
+
+⚠️ **O código não mudou** (`CADASTRO_INICIAL` continua `CADASTRO_INICIAL`). Ele
+está gravado na coluna `etapa` de cada pessoa e em toda linha do histórico de
+etapas; renomeá-lo exigiria migração para ganhar zero, porque ninguém vê o
+código. Quem ler `CADASTRO_INICIAL` no banco está lendo "Inicial".
+
+Ele também disse que **depois quer rever se as oito são necessárias** — fica
+anotado, não foi mexido.
+
+#### A correlação com o Pipefy, ditada por ele
+
+> *"O que está no Pipefy como colaboradores afastados vai ficar como afastado
+> nas etapas do ERP. O que estiver como cadastro cancelado vai ficar como
+> cancelado. O que está como colaboradores desligados vai ficar como
+> desligado. O que está como cadastro concluído vai ficar como concluído. O
+> que está como cadastro inicial vai ficar como inicial. E o que está como
+> cadastros adicionais vai ficar em conferência. (…) Na importação você já tem
+> que deixar a fase correta, né? Casar a fase com a etapa."*
+
+| Fase no Pipefy | Etapa no ERP | Situação |
+|---|---|---|
+| Colaboradores Afastados | Afastado | AFASTADO |
+| Colaboradores Desligados | Desligado | DESLIGADO |
+| Cadastro Cancelado | Cancelado | **DESLIGADO** |
+| Cadastros Adicionais | Conferência | ATIVO |
+| Cadastro Concluído | Concluído | ATIVO |
+| Cadastro Inicial | Inicial | ATIVO |
+
+⚑ **UMA FASE DE LÁ VIRA DUAS COISAS AQUI, e esse é o ponto.** `etapa` responde
+"o que falta fazer neste cadastro?" e manda na fila do DP; `situacao` responde
+"esta pessoa está na empresa?" e manda na folha e no ponto. A fase do Pipefy
+misturava as duas — foi o defeito que a separação em duas colunas corrigiu, e
+agora a importação sabe desdobrar.
+
+⚑ **E ISTO FECHA O ÚLTIMO BURACO PARA O PONTO LARGAR A PLANILHA.** A situação
+era o único dado que nenhuma importação preenchia (ver a entrada logo abaixo).
+Agora preenche.
+
+**Duas decisões minhas, ditas aqui porque ele pode querer diferente:**
+
+1. **Cancelado vira situação DESLIGADO.** Um cadastro cancelado é de alguém que
+   nunca chegou a ser da empresa; deixá-lo ATIVO o manteria batendo ponto e
+   aparecendo na folha.
+2. **Fase que o sistema não reconhece não mexe em nada**, e vai para uma lista
+   no relatório ("Fase do card que eu não reconheci"). Chutar a etapa tira a
+   pessoa da fila de trabalho do DP sem ninguém perceber — some calado é o
+   pior jeito de errar.
+
+A comparação é por pedaço do nome, sem acento e sem caixa ("desligad" pega
+singular e plural), porque brigar por maiúscula perderia a pessoa inteira.
+
 ### ⚑ DECIDIDO E AINDA NÃO FEITO — O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA
 
 > *"Assim que eu conseguir importar tudo do pipefy e das fichas, quero cortar

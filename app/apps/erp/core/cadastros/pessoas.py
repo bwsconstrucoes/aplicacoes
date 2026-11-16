@@ -1240,16 +1240,84 @@ def para_folha(s: Session, *, so_ativos: bool = True,
 # ===========================================================================
 ETAPAS = ("CADASTRO_INICIAL", "EM_CONFERENCIA", "CONTRATO_A_ASSINAR",
           "NA_CONTABILIDADE", "CONCLUIDO", "AFASTADO", "DESLIGADO", "CANCELADO")
+# ⚑ OS NOMES PERDERAM A PALAVRA "CADASTRO" em 16/11/2026, por pedido dele:
+# *"por exemplo, cadastro inicial. Aí tem cadastro concluído. Mas as outras
+# você não utilizou cadastro. Enfim, eu acho que esse nome cadastro pode ser
+# eliminado. Vai ficar inicial só, concluído, cancelado."* Ele tinha razão: a
+# palavra aparecia em três dos oito e faltava nos outros cinco, então não
+# distinguia nada — só fazia a lista parecer duas listas.
+#
+# ⚑ O CÓDIGO (`CADASTRO_INICIAL`) NÃO MUDOU, e isso é de propósito: ele está
+# gravado na coluna `etapa` de cada colaborador e em toda linha do histórico de
+# etapas. Renomeá-lo exigiria migração para ganhar zero — ninguém vê o código,
+# só o rótulo. Quem ler "CADASTRO_INICIAL" no banco está lendo "Inicial".
 ETAPA_ROTULOS = {
-    "CADASTRO_INICIAL": "Cadastro inicial",
-    "EM_CONFERENCIA": "Em conferência do DP",
+    "CADASTRO_INICIAL": "Inicial",
+    "EM_CONFERENCIA": "Conferência",
     "CONTRATO_A_ASSINAR": "Contrato a assinar",
     "NA_CONTABILIDADE": "Na contabilidade",
-    "CONCLUIDO": "Cadastro concluído",
+    "CONCLUIDO": "Concluído",
     "AFASTADO": "Afastado",
     "DESLIGADO": "Desligado",
-    "CANCELADO": "Cadastro cancelado",
+    "CANCELADO": "Cancelado",
 }
+
+# ===========================================================================
+# A FASE DO PIPEFY VIRA ETAPA DO ERP — correlação ditada por ele em 16/11/2026
+#
+# *"O que está no Pipefy como colaboradores afastados vai ficar como afastado
+# nas etapas do ERP. O que estiver como cadastro cancelado vai ficar como
+# cancelado. O que está como colaboradores desligados vai ficar como
+# desligado. O que está como cadastro concluído vai ficar como concluído. O
+# que está como cadastro inicial vai ficar como inicial. E o que está como
+# cadastros adicionais vai ficar em conferência."*
+#
+# ⚑ POR QUE ISTO IMPORTA ALÉM DA ARRUMAÇÃO: a fase também diz a SITUAÇÃO da
+# pessoa (está na empresa? está afastada? saiu?), e a situação é o último dado
+# que faltava para o ponto poder abandonar a planilha do Análise de SPs e
+# passar a ler o cadastro do ERP. Ver `CONTEXTO.md`, 16/11/2026.
+#
+# ETAPA ≠ SITUAÇÃO continua valendo: `etapa` responde "o que falta fazer neste
+# cadastro?" e manda na fila do DP; `situacao` responde "esta pessoa está na
+# empresa?" e manda na folha e no ponto. A fase do Pipefy misturava as duas, e
+# é por isso que uma fase de lá vira DUAS coisas aqui.
+#
+# A comparação é por PEDAÇO do nome, sem acento e sem caixa, porque o nome da
+# fase no pipe tem variação ("Colaboradores Desligados", "Cadastros
+# Adicionais") e brigar por plural ou maiúscula perderia a pessoa inteira.
+# ===========================================================================
+FASE_PIPEFY_PARA_ETAPA = (
+    # (pedaço procurado na fase, etapa do ERP, situação)
+    ("afastad",              "AFASTADO",         "AFASTADO"),
+    ("desligad",             "DESLIGADO",        "DESLIGADO"),
+    # "cancelado" antes de "cadastro" para a fase "Cadastro Cancelado" não cair
+    # na regra de "cadastro inicial".
+    ("cancelad",             "CANCELADO",        "DESLIGADO"),
+    ("adicion",              "EM_CONFERENCIA",   "ATIVO"),
+    ("conclu",               "CONCLUIDO",        "ATIVO"),
+    ("inicial",              "CADASTRO_INICIAL", "ATIVO"),
+)
+
+
+def etapa_da_fase(fase: Any) -> tuple[Optional[str], Optional[str]]:
+    """(etapa, situação) a partir do nome da fase do Pipefy.
+
+    Devolve `(None, None)` quando a fase não é reconhecida — e aí NADA é
+    mexido. Chutar a etapa de um cadastro é pior que não preenchê-la: a etapa
+    é a fila de trabalho do DP, e uma pessoa posta em "concluído" por engano
+    simplesmente some dessa fila.
+
+    ⚠️ CANCELADO VIRA SITUAÇÃO "DESLIGADO", e isto é escolha com motivo: um
+    cadastro cancelado é de alguém que nunca chegou a ser da empresa. Deixá-lo
+    ATIVO o manteria batendo ponto e aparecendo na folha.
+    """
+    texto = _sem_acento(str(fase or "")).strip().lower()
+    if not texto:
+        return None, None
+    for pedaco, etapa, situacao in FASE_PIPEFY_PARA_ETAPA:
+        if pedaco in texto:
+            return etapa, situacao
+    return None, None
 # O DIRECIONAMENTO: é para isto que a etapa existe. A tela mostra esta frase,
 # não o código da etapa — quem abre a fila precisa saber o que FAZER.
 ETAPA_O_QUE_FAZER = {
