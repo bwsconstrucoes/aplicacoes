@@ -458,6 +458,18 @@ class Obra(Base):
     uf: Mapped[Optional[str]] = mapped_column(Text)
     endereco: Mapped[Optional[str]] = mapped_column(Text)
     codigo_omie_depto: Mapped[Optional[str]] = mapped_column(Text, unique=True)
+    # ⚑ COMO A CONTABILIDADE CHAMA ESTA OBRA (migração 104, 16/11/2026). Ele:
+    # *"nós vamos continuar com a nossa nomenclatura e a contabilidade tem a
+    # dela também, que também é importante. A gente manter as duas."*
+    #
+    # O ERP chama a obra de "094"; a contabilidade, de "164.01". A ficha de
+    # registro do Fortes traz o número DELES, e é por esta coluna que a
+    # importação das fichas acha de que obra a ficha fala.
+    #
+    # NÃO é única de propósito: planilha em construção tem repetição e branco.
+    # A importação avisa quando dois se repetem; recusar tudo por isso seria
+    # trocar um problema de cadastro por um de importação.
+    centro_custo_contabil: Mapped[Optional[str]] = mapped_column(Text)
     ref_sheets: Mapped[Optional[str]] = mapped_column(Text)
     objeto: Mapped[Optional[str]] = mapped_column(Text)
     cliente: Mapped[Optional[str]] = mapped_column(Text)

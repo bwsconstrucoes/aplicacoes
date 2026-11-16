@@ -2291,6 +2291,49 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 
 ---
 
+## 3z-sexies. A FICHA DO FORTES, E AS DUAS NOMENCLATURAS DA OBRA (16/11/2026)
+
+A ficha de registro do Fortes entrou por leitura direta do PDF, e com ela veio
+o centro de custo da contabilidade no cadastro da obra.
+
+### ⚠️ Duas palavras novas que precisam de uma definição só
+
+| A palavra | Os significados possíveis | Decisão |
+|---|---|---|
+| **"obra"** | o código da BWS ("094") ou o centro de custo da contabilidade ("164.01")? | ✔ **FECHADO: as DUAS ficam.** Ele: *"nós vamos continuar com a nossa nomenclatura e a contabilidade tem a dela também. A gente manter as duas."* Quem pergunta pela obra fala o código da BWS; quem vem da contabilidade fala o centro de custo. O assistente aceita os dois e responde com o da BWS |
+| **"salário"** | o do cadastro do ERP ou o último do histórico do Fortes? | ✔ **FECHADO: o do Fortes manda**, e a importação atualiza o do ERP. Se os dois discordam, quem está certo é quem emitiu o holerite |
+
+### Perguntas que já dão resposta exata
+
+- Quantas pessoas estão sem o código do Fortes no cadastro?
+- Qual o centro de custo da contabilidade da obra 094? E qual obra é a 164.01?
+- Quais obras estão sem centro de custo da contabilidade? ⚠️ *é a pergunta que
+  explica por que uma ficha entrou sem obra*
+- Quem está no Fortes e não está no ERP? E o contrário?
+- Quais nomes estão diferentes entre o ERP e a ficha do Fortes? *(a fila de
+  divergências, com `origem = 'FORTES'`)* ⚠️ *só o que DISCORDA entra aí:
+  campo vazio no ERP a ficha preenche, sem virar pergunta*
+- Quantas fichas foram recusadas na importação, e por quê?
+- Para quem o Fortes diz uma obra e o ERP diz outra? ⚠️ *o sistema não decide:
+  avisa que os dois discordam*
+- Quem está sem PIS ou sem CTPS no cadastro? *(depois da importação, deve ser
+  quem não tem ficha)*
+
+### Perguntas que o sistema AINDA NÃO responde, e o que falta
+
+- **"Qual era o salário do fulano em 2019?"** — a ficha TEM o histórico inteiro
+  (treze mudanças, de 2014 a 2026) e a importação só aproveita o último. O ERP
+  tem tabela para o histórico e ela fica vazia. É o maior desperdício desta
+  entrega, e está assim de propósito: ele pediu só os dados que já se trabalha.
+- **"Quantas vezes o fulano mudou de cargo?"** — mesma coisa, e aqui há razão a
+  mais: ele recusou a nomenclatura de cargo do Fortes.
+- **"Este atestado é da mesma doença do anterior?"** — continua aberta (falta
+  comparar CID).
+- **"Qual a jornada contratual do fulano?"** — está na ficha e não é lida; a
+  escala de verdade é a do ponto.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

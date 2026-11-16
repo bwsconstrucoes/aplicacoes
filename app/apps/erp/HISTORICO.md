@@ -21,6 +21,154 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 16/11/2026 — A FICHA DO FORTES ENTRA DIRETO DO PDF, SEM IA
+
+Ele mandou a ficha ("Registro de Empregado") que estava devendo e pediu a
+reorientação de como fazer as importações. **A ficha mudou a recomendação.**
+
+#### O que eu ia recomendar, e por que caiu
+
+Ia recomendar exportar PLANILHA do Fortes em vez de ler 575 PDFs: leitura por
+IA custa dinheiro e erra justamente onde o erro é caro — PIS e CTPS têm onze
+dígitos, e um algarismo trocado só aparece quando o INSS reclama.
+
+**Abrindo o arquivo, a recomendação caiu: a ficha é PDF GERADO pelo Fortes,
+com camada de texto.** O número está escrito lá, exato. Ler é achar o rótulo e
+pegar o que vem depois — custo zero, erro zero. Ele decidiu: *"como eu já tenho
+as fichas aqui, eu quero trabalhar com as fichas mesmo."*
+
+⚠️ **Ficha DIGITALIZADA não tem essa camada**, e aí a leitura devolve a página
+como ilegível com o número dela, em vez de adivinhar.
+
+#### Quem manda em qual campo — decisão dele, 16/11/2026
+
+| | Quem manda | Palavra dele |
+|---|---|---|
+| PIS, CTPS, admissão, salário, demissão, código do Fortes | **a ficha** | *"concordo em relação ao Fortes mandar em PIS, CTPS, admissão, salário, demissão"* |
+| nome, nome do pai e da mãe, nascimento | **o ERP** — e a ficha é LIDA assim mesmo | *"o ideal é que quem mande seja nós (…) mas eu gostaria que fosse feita a leitura também, para saber, porque às vezes o pessoal pode errar"* |
+| **cargo** | o ERP, e a ficha nem é lida | *"o cargo a gente vai utilizar a nossa nomenclatura. A dele está feia"* |
+| **telefone** | ninguém — não entra | *"o telefone não é o da contabilidade, eu não sabia nem que eles tinham aí, então ignora isso aí"* |
+
+E o que o ERP não guarda **fica na ficha**: matrícula do eSocial, etnia/raça,
+título de eleitor, CIPA, exame médico, jornada, contribuição sindical. Ele:
+*"o que a ficha tem a mais que no ERP, deixa na ficha. A gente não precisa."*
+
+⚑ **O TELEFONE TINHA MOTIVO DOBRADO PARA FICAR DE FORA**, e eu havia achado
+isso antes de ele decidir: na ficha o DDD está num campo ("Fone: 85") e o
+número noutro ("Celular: 89355012"), e o celular tem **oito dígitos** — falta o
+9 que entrou em 2016. Importar encheria o cadastro de telefone que não
+completa, bem no campo que acabou de virar obrigatório.
+
+#### Como a ficha acha a obra — e a migração 104
+
+Pelo **Setor**: "164.01 - OBRA ESCVARZEA CONST EEM COM 12 SALAS/SETOR". O
+número é o centro de custo DA CONTABILIDADE. Ele: *"em relação a setor, eu
+criei, está na planilha C. Diários, tem a coluna Centro de Custo da
+Contabilidade. E é exatamente esse setor aí. Ou seja, nós vamos continuar com
+a nossa nomenclatura e a contabilidade tem a dela também. A gente manter as
+duas."*
+
+**Migração 104** põe `obras.centro_custo_contabil`, e a importação da C.
+Diários passa a trazer essa coluna — que já existia na planilha e era lida e
+descartada por não ter onde morar. Ela é a ponte entre "094" (nosso) e "164.01"
+(deles). Casa pelo NÚMERO, nunca pelo nome escrito à mão.
+
+⚠️ **Centro de custo sem obra no ERP não derruba a importação**: a pessoa entra
+sem obra e o relatório diz qual número não tem dono. E quando a ficha aponta
+uma obra diferente da que o ERP diz, **nada é mudado** — só se avisa que os dois
+sistemas discordam.
+
+#### Três erros meus, pegos na primeira leitura da ficha real
+
+Ficam escritos porque são a cara do problema de ler papel por rótulo:
+
+1. **A série da CTPS vinha "00001 DV:"** — o rótulo seguinte colava no valor,
+   porque eu só cortava em espaço DUPLO e a ficha usa espaço simples ali.
+2. **A UF da CTPS vinha a do EMPREGADOR.** "UF:" aparece SEIS vezes na ficha
+   (empregador, naturalidade, endereço, CTPS, RG, órgão de classe) e eu pegava
+   a primeira. Todo mundo entraria com a UF da BWS, e ninguém notaria enquanto
+   as duas fossem CE.
+3. **O salário vinha o último ESCRITO, não o último por DATA.** A ficha escreve
+   quatro por linha e a ordem do papel é a de leitura, não a do tempo: a pessoa
+   entraria ganhando 2.230,00 (06/2025) quando ganha 2.382,00 (06/2026).
+
+#### Três defeitos pegos exercitando a tela, e nenhum deles aparecia em teste
+
+1. **Data e dinheiro saíam do jeito do banco**: o relatório mostrava
+   "2014-03-12" e "2382.00". Quem confere a importação está conferindo CONTRA
+   O PAPEL, e o papel diz 12/03/2014 e 2.382,00. **E por trás do feio havia
+   coisa pior:** a ficha entrega a data como TEXTO e o cadastro guarda como
+   DATA — comparados crus, nunca batiam, e a admissão de todo mundo entrava
+   como "mudança" em toda importação. O relatório prometeria 575 mudanças
+   onde não havia nenhuma, e quem conferisse deixaria de confiar nele — que é
+   a única coisa que protege a gravação.
+2. **Campo VAZIO no ERP virava pergunta** — e isso teria sido um desastre
+   silencioso. Nome do pai, nome da mãe e nascimento quase nunca estão no
+   cadastro; tratá-los como "o ERP manda" abria uma pergunta para cada um, em
+   cada ficha: 575 fichas viravam mais de mil perguntas sobre dados que
+   ninguém tinha, e a fila de divergências — que existe para o caso raro —
+   ficaria inútil. **A regra passou a ser: campo vazio a ficha PREENCHE;
+   campo com valor diferente vira pergunta e nada muda.** Não há o que
+   defender num campo vazio. A decisão dele ("quem manda somos nós") continua
+   valendo inteira onde existem duas respostas.
+
+Fica escrito porque o primeiro é feio e o segundo é caro, e nenhum dos dois
+aparece em teste de regra de negócio: só aparece abrindo a tela.
+
+#### O que NÃO foi feito, e por quê
+
+**Criar gente nova pela ficha nasce DESLIGADO** (`criar_novos`). A ficha tem o
+bastante para criar alguém, mas não traz cargo — ele recusou a nomenclatura do
+Fortes —, nem telefone, nem chave Pix, que são obrigatórios no cadastro de
+hoje. Quem nascesse por aí ficaria incompleto, e cadastro pela metade é dívida
+que ninguém paga. **Quem diz QUEM existe continua sendo a exportação do Pipe**;
+a ficha diz o que o Fortes sabe sobre quem já existe. O relatório conta quantas
+fichas são de gente que o ERP não tem, para a decisão ser com número na mão.
+
+#### O campo na ficha da obra, acrescentado depois
+
+O centro de custo da contabilidade nasceu vindo só da planilha C. Diários — e
+isso deixava um buraco: obra cadastrada À MÃO no ERP nunca teria o número, e
+toda ficha daquela obra entraria sem obra, sem ninguém entender por quê. Ele
+agora é um campo da ficha da obra (aba Cadastro), com a dica dizendo para que
+serve. É a mesma lição do seguro-garantia e do CREA: campo que o sistema USA e
+não tem onde ser digitado vira defeito invisível.
+
+#### Onde isto vive
+
+- `core/importadores/fichas_fortes.py` — a leitura e a importação.
+- `scripts/migracoes/104_centro_de_custo_da_contabilidade.sql`.
+- `core/importadores/obras_cdiarios.py` — passa a trazer a coluna.
+- Tela: Colaboradores › **Importar fichas do Fortes (PDF)**, com "conferir sem
+  gravar" antes.
+- A divergência de nome vai para a fila que JÁ EXISTE (`cadastro_divergencias`,
+  migração 102), com `origem = 'FORTES'` — uma segunda lista de pendências
+  seria uma segunda lista para alguém esquecer de olhar.
+- Testes: `tests/test_fichas_fortes.py`, com a ficha real **anonimizada** em
+  `tests/dados/` (teste não guarda CPF, PIS nem RG de pessoa de verdade).
+- Ficha da obra: campo "Centro de custo da contabilidade" (`erp_obras.html`),
+  gravado e devolvido pela rota da obra.
+
+#### ⚠️ Nota de ambiente, para quem pegar a próxima sessão
+
+A máquina desta sessão foi recriada em 16/11/2026 e perdeu QUASE TODAS as
+bibliotecas (requests, boto3, gspread, lxml, dropbox, qrcode, erpbrasil…). A
+primeira rodada da suíte deu 512 falhas e 213 erros que **não eram do código**:
+eram importações quebradas. Duas armadilhas, porque custaram tempo:
+
+1. **`pip` e `python` apontavam para versões diferentes do Python** (3.13 e
+   3.11). `pip install` dizia "instalado com sucesso" e o `python` continuava
+   sem achar nada. O certo é `python3 -m pip install`.
+2. **`docopt` não compila nesta máquina** (vem junto com o `num2words`) e
+   derruba a instalação INTEIRA, porque o pip resolve tudo antes de instalar.
+   O jeito: instalar o `requirements.txt` sem o `num2words`, e depois ele
+   sozinho com `--no-deps`.
+
+Suíte verde de novo depois disso. **Falha em massa em áreas que você não
+tocou é quase sempre ambiente, não código** — vale conferir uma importação
+antes de caçar defeito.
+
+
 ### ⚑ 15/11/2026 (terceira olhada dele) — O PORTAL: TEXTO QUE NÃO SE ENTENDE, CPF SEM CRÍTICA E CAMPO QUE NÃO ESPERA
 
 Ele voltou com três coisas, e acertou o diagnóstico da terceira: *"eu acho que

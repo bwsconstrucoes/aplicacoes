@@ -6201,6 +6201,13 @@ def api_obra(obra_id: int):
                          # de onde é que está vindo o responsável técnico,
                          # número do registro profissional e a empresa."*
                          "crea_obra "
+                         # ⚑ O CENTRO DE CUSTO DA CONTABILIDADE (16/11/2026).
+                         # É o código que o escritório usa para a MESMA obra
+                         # ("164.01" onde a BWS diz "094"). As duas
+                         # nomenclaturas convivem por decisão do dono; é por
+                         # este campo que a ficha do Fortes acha a obra da
+                         # pessoa. Obra sem ele faz a ficha entrar sem obra.
+                         "centro_custo_contabil "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
                          "observacoes_fiscais orgao_resumido status seguro_garantia "
                          # O CONTRATANTE NO PAPEL DO DIÁRIO (09/11/2026): a
@@ -6357,6 +6364,9 @@ def api_obra(obra_id: int):
                 # Volta junto, senão o formulário remonta vazio e o salvamento
                 # seguinte APAGA — o defeito do seguro-garantia, de novo.
                 "crea_obra "
+                # Volta junto, senão o formulário remonta vazio e o
+                # salvamento seguinte APAGA — o defeito do seguro-garantia.
+                "centro_custo_contabil "
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 # Voltam junto, senão o formulário remonta vazio e o
@@ -13049,6 +13059,45 @@ def api_colaboradores_importar():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao importar a planilha de pessoas")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/importar-fichas", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_colaboradores_importar_fichas():
+    """As fichas de registro do Fortes (PDF) para dentro do ERP.
+
+    ⚑ LÊ A CAMADA DE TEXTO, não a imagem: a ficha é PDF gerado pelo Fortes, e
+    o número está escrito lá, exato. Sem IA, sem custo e sem erro de leitura —
+    o que importa num campo como o PIS, que tem onze dígitos e só acusa erro
+    quando o INSS reclama. Ficha digitalizada (só imagem) é devolvida como
+    ilegível, com o número da página, em vez de adivinhada.
+
+    `gravar=0` simula e devolve o relatório sem tocar no banco.
+    `criar_novos=1` deixa a ficha CRIAR quem o ERP não tem — nasce desligado,
+    porque a ficha não traz cargo (decisão dele: a nomenclatura é nossa), nem
+    telefone, nem chave Pix, que são obrigatórios no cadastro de hoje.
+    """
+    from app.apps.erp.core.importadores import fichas_fortes
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Envie o PDF das fichas."}), 400
+    gravar = request.form.get("gravar") == "1"
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = fichas_fortes.importar(
+                s, arquivo.read(), gravar=gravar,
+                criar_novos=request.form.get("criar_novos") == "1",
+                usuario=usuario)
+            # Na simulação nada é escrito, e o rollback é a garantia disso.
+            s.commit() if gravar else s.rollback()
+        return jsonify({"ok": True, "relatorio": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao importar as fichas do Fortes")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
