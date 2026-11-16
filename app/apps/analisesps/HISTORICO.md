@@ -12266,6 +12266,7 @@ somente Solicitações de uma conta especifica"*.
   sistema de terceiro — só com o dono pedindo).
 - Testes: `test_analisesps_folha_cards.py` (a chave por tipo e as voltas ao padrão) e
   `test_analisesps_gratificados.py`.
+- **Publicado em 16/11/2026** (sem migração).
 
 #### Leva 269 — Relatório completo do lote: os anexos entram otimizados (16/11/2026)
 
