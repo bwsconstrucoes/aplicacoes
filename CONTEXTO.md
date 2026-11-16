@@ -904,6 +904,22 @@ batida**, e isso aparece na manhã seguinte, com gente parada no portão.
 
 ---
 
+---
+
+### 16/11/2026 — `scripts/testes.sh -q` rodava a suíte SEM paralelismo (atravessa áreas)
+
+O dono, esperando uma publicação: *"JESUS, é tempo demais (…) precisamos otimizar
+esses testes."* A causa estava no próprio script: QUALQUER argumento desligava o
+`-n auto`, para que `scripts/testes.sh tests/test_x.py` rodasse um arquivo só. Mas
+`scripts/testes.sh -q` (ou `-p no:warnings`) também caía ali, e a suíte inteira
+rodava teste a teste: **~40 minutos em vez de ~8**, medido no mesmo contêiner de 4
+processadores. O chat do Análise de SPs fez isso por dias sem perceber.
+
+Agora só ALVO (arquivo, pasta, `-k`, `-m`) roda sem paralelismo; opções soltas vão
+junto da suíte paralela. Medido depois: suíte inteira em 490 s, sem falha. Nenhum teste
+isolado domina (o mais lento, 12 s); o tempo é o volume. **Para rodar a suíte inteira:
+`scripts/testes.sh` (com ou sem opções) — nunca `python -m pytest` sem `-n auto`.**
+
 ### 16/11/2026 — CARGO E FUNÇÃO VIRAM UMA COISA SÓ (atravessa áreas: ERP, Ponto e Portal)
 
 Decisão do dono: *"em relação a cargo e função, vamos chamar só de cargo e
