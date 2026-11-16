@@ -80,8 +80,13 @@
 
   <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:12px">
     + Colaborador</button>
+  {# ⚑ "+ Função" VIROU "+ Cargo" em 16/11/2026 (migração 105). Ele perguntou
+     se cargo e função eram a mesma coisa e decidiu: *"vamos chamar só de
+     cargo e acabou."* Eram duas listas paralelas, e dava para alguém ser
+     "Pedreiro" numa e "Servente" na outra. O id do botão continua
+     `btn-funcao` para não mexer em quem já o escuta. #}
   <button class="btn secundario" id="btn-funcao" style="width:100%; margin-top:6px">
-    + Função</button>
+    + Cargo</button>
   {% if pode.configurar %}
   <button class="btn secundario" id="btn-importar" style="width:100%; margin-top:6px">
     Importar pessoas de planilha</button>
@@ -1847,18 +1852,25 @@ els("btn-novo").addEventListener("click", ()=>formulario(null));
 if (els("btn-importar")) els("btn-importar").addEventListener("click", abrirImportacaoDePessoas);
 if (els("btn-fichas")) els("btn-fichas").addEventListener("click", abrirImportacaoDeFichas);
 els("btn-funcao").addEventListener("click", async () => {
-  const r = await perguntar({titulo:"Nova função",
-    campos:[{nome:"nome", rotulo:"Nome da função", obrigatorio:true, largura:2,
+  const r = await perguntar({titulo:"Novo cargo",
+    campos:[{nome:"nome", rotulo:"Nome do cargo", obrigatorio:true, largura:2,
              exemplo:"Pedreiro"},
             {nome:"diaria", rotulo:"Diária de referência", largura:1, exemplo:"180,00"}],
     textoOk:"Cadastrar"});
   if (!r) return;
   const {nome, diaria} = r;
   try {
-    await api("/erp/api/funcoes", {method:"POST", headers:{"Content-Type":"application/json"},
+    const d = await api("/erp/api/funcoes", {method:"POST",
+      headers:{"Content-Type":"application/json"},
       body: JSON.stringify({nome, valor_diaria: diaria})});
-    FUNCOES = (await api("/erp/api/funcoes")).funcoes;
-    aviso("mensagem", `Função ${nome} cadastrada.`, "ok");
+    const nova = await api("/erp/api/funcoes");
+    FUNCOES = nova.funcoes; CARGOS = nova.cargos || nova.funcoes;
+    // As caixinhas de cargo precisam enxergar o que acabou de nascer, senão a
+    // pessoa cadastra o cargo e não consegue escolhê-lo em seguida.
+    montarFiltros();
+    aviso("mensagem", d.ja_existia
+      ? `O cargo ${nome} já existia — a diária foi atualizada.`
+      : `Cargo ${nome} cadastrado.`, "ok");
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 });
 // O filtro de situação é o único que volta ao banco (a API devolve só os ativos

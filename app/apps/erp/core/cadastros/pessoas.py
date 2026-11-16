@@ -369,7 +369,9 @@ DINHEIRO = ("salario", "valor_mes", "valor_diaria", "aux_alimentacao",
 BOOLEANOS = ("ctps_digital", "primeiro_emprego", "mensalista", "recebe_gratificacao",
              "parcela_unica", "recebe_via_sp", "cesta_basica_extra", "vale_refeicao",
              "adicional_transferencia", "solicitar_salario_familia")
-LIGACOES = ("funcao_id", "obra_id", "cargo_id", "convencao_id", "empresa_id",
+# `funcao_id` saiu daqui na migração 105 — virou cópia automática de
+# `cargo_id` no banco, e escrever nela é recusado.
+LIGACOES = ("obra_id", "cargo_id", "convencao_id", "empresa_id",
             "responsavel_id")
 DA_LISTA = {
     "sexo": SEXOS, "estado_civil": ESTADOS_CIVIS, "escolaridade": ESCOLARIDADES,
@@ -1124,7 +1126,7 @@ def o_que_falta(c: Colaborador) -> list[str]:
 def para_folha(s: Session, *, so_ativos: bool = True,
                obra_id: Optional[int] = None) -> list[dict[str, Any]]:
     """O cadastro de quem recebe, na forma que a folha lê. Só leitura."""
-    from app.apps.erp.db.models.cadastros import Funcao, Obra
+    from app.apps.erp.db.models.cadastros import Obra
 
     def dinheiro(v: Any) -> Optional[float]:
         return float(v) if v is not None else None
@@ -1133,7 +1135,6 @@ def para_folha(s: Session, *, so_ativos: bool = True,
         return v.isoformat() if v else None
 
     cargos = {c.id: c.nome for c in s.scalars(select(Cargo)).all()}
-    funcoes = {f.id: f.nome for f in s.scalars(select(Funcao)).all()}
     convencoes = {c.id: c.nome for c in s.scalars(select(Convencao)).all()}
     obras = {o.id: (o.codigo, o.nome) for o in s.scalars(select(Obra)).all()}
     dependentes: dict[int, int] = {}
@@ -1162,7 +1163,7 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             # Pipefy, que é o que já está decidido.
             "card_pipefy": c.ref_pipefy or "",
             "id_fortes": c.id_fortes or "",
-            "cargo": cargos.get(c.cargo_id or 0) or funcoes.get(c.funcao_id or 0, ""),
+            "cargo": cargos.get(c.cargo_id or 0, ""),
             "convencao": convencoes.get(c.convencao_id or 0, ""),
             "convencao_categoria": c.convencao_categoria or "",
             "obra_codigo": codigo_obra, "obra_cadastro": codigo_obra,

@@ -58,12 +58,16 @@ def acervo(sessao_real):
     s.add_all([creche, escola])
     s.flush()
 
-    aberto = DocumentoTipo(codigo="CONTRATO-OBRA", nome="Contrato da obra",
-                           grupo="OBRA", dono="OBRA", sigilo="ABERTO")
-    pessoal = DocumentoTipo(codigo="FOLHA", nome="Documento de pessoal",
-                            grupo="PESSOAL", dono="PESSOA",
-                            sigilo="PESSOAL")
-    s.add_all([aberto, pessoal])
+# ⚑ `merge` E NÃO `add`, desde 16/11/2026: o catálogo de tipos de documento
+# passou a ser aplicado junto com as migrações (os 69 tipos do código chegam ao
+# banco sozinhos), então o tipo que este teste quer JÁ EXISTE. `merge` ajusta o
+# que existe e cria o que falta — `add` quebrava com chave duplicada.
+    aberto = s.merge(DocumentoTipo(codigo="CONTRATO-OBRA", nome="Contrato da obra",
+                                   grupo="OBRA", dono="OBRA", sigilo="ABERTO",
+                                   vence=False, por_competencia=False))
+    pessoal = s.merge(DocumentoTipo(codigo="FOLHA", nome="Documento de pessoal",
+                                    grupo="PESSOAL", dono="PESSOA",
+                                    sigilo="PESSOAL"))
     s.flush()
 
     pedreiro = Colaborador(nome="José da Silva", cpf="12345678901")
