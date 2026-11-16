@@ -21,6 +21,55 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 16/11/2026 (fim do dia) — CARGO E FUNÇÃO VIRAM UMA COISA SÓ, E O CARD PASSA A MANDAR
+
+Duas decisões dele, no mesmo recado.
+
+#### 1. *"Vamos chamar só de cargo e acabou"* — migração 105
+
+Ele perguntou se cargo e função eram a mesma coisa, eu mostrei que não eram
+mas se sobrepunham, e ele fechou. **Eram duas tabelas respondendo "o que a
+pessoa faz"**, cada uma crescendo por um lado: dava para alguém ser "Pedreiro"
+na função e "Servente" no cargo sem ninguém notar.
+
+O `cargo` ganhou a **diária de referência**, que era a única coisa que só a
+função tinha. Cada função virou cargo (mesmo nome = mesma coisa), quem tinha
+função e não tinha cargo passou a ter o cargo equivalente, e o botão
+"+ Função" da tela de Pessoal virou **"+ Cargo"**.
+
+⚑ **O QUE A MIGRAÇÃO NÃO APAGA, E É A PARTE QUE IMPORTA.** Quatro consultas do
+**PONTO** e uma do **PORTAL** fazem `LEFT JOIN funcoes f ON f.id = c.funcao_id`
+para mostrar o nome. O ponto é aparelho homologado (REP-P) e mexer nele a
+partir do ERP seria arriscar o que não precisa ser arriscado. Então:
+
+- **`funcoes` virou uma VISÃO sobre `cargos`** — mesmos ids, mesmos nomes;
+- **`colaboradores.funcao_id` virou cópia automática de `cargo_id`**, mantida
+  pelo próprio banco (coluna gerada).
+
+Resultado: **nenhuma consulta de outra área precisou mudar uma letra**, e todas
+passaram a mostrar o cargo. Quem escreve, escreve só em cargo — o banco recusa
+escrita em `funcao_id`, e por isso ela saiu do modelo do ERP.
+
+⚠️ **Para quem mexer no ponto depois:** `funcoes` não é mais tabela, é visão.
+`INSERT`/`UPDATE` nela falha. Se um dia o ponto precisar escrever função, ele
+tem de escrever `cargos`.
+
+#### 2. *"Eu quero que o que vier do pipe preencha o ERP"*
+
+> *"Não adianta eu ter que já ter uma base e ter que preencher de novo."*
+
+Estava ao contrário: a importação só preenchia campo **vazio**, e a caixinha
+"regravar por cima" vinha **desmarcada**. Na carga inicial isso é o pior dos
+mundos — **o Pipefy É a base**, e deixar o ERP "ganhar" com um valor pela
+metade obriga a redigitar o que já existe.
+
+Agora a caixinha nasce **marcada**: o card manda. **A proteção que fica de pé é
+a que importa: NOME e CPF nunca são trocados por importação**, e a diferença
+neles vira pergunta na fila. Trocar o nome de alguém na folha por uma leitura
+torta só aparece quando o pagamento volta — isso não muda.
+
+Quem quiser o comportamento antigo (só preencher o que está vazio) desmarca.
+
 ### ⚑ 16/11/2026 (à tarde) — A IMPORTAÇÃO DO PIPEFY: QUATRO DEFEITOS, UM DELES CRESCENDO SOZINHO
 
 Ele rodou a importação dos cards de verdade, olhou a ficha de uma pessoa

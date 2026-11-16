@@ -2297,13 +2297,13 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 
 | A palavra | Os significados possíveis | Decisão |
 |---|---|---|
-| **"cargo"** | o cargo registrado (`cargos`: CBO, riscos, EPI, convenção) ou a função na obra (`funcoes`: a diária)? | ⚠️ **ABERTO.** São duas tabelas, e as duas respondem "o que a pessoa faz". A importação preenche o **cargo**. Quem perguntar "qual o cargo do fulano" pode querer qualquer um dos dois — o assistente deve dizer os dois quando divergirem |
+| **"cargo"** | o cargo registrado ou a função na obra? | ✔ **FECHADO em 16/11/2026, migração 105: não há mais duas coisas.** Ele: *"vamos chamar só de cargo e acabou."* `funcoes` virou visão de `cargos`, e o cargo carrega a diária. "Função" e "cargo" são a MESMA resposta |
 | **"não veio"** | o card não trouxe, o ERP já tinha, ou o valor foi recusado? | ✔ **FECHADO:** são três coisas diferentes e o relatório agora diz qual |
 
 ### Perguntas que já dão resposta exata
 
-- Quantas pessoas têm cargo diferente da função? ⚠️ *a pergunta que mostra a
-  sobreposição das duas tabelas*
+- Qual o cargo do fulano, e qual a diária de referência dele? *(uma coisa só
+  desde 16/11; "função" é sinônimo e responde igual)*
 - Quais cargos vieram nos cards e não existem no nosso cadastro de cargos?
 - Quantos documentos do Pipefy ainda não entraram, e de quem?
 - Quais tipos de documento o código tem e o banco não tem? *(depois do

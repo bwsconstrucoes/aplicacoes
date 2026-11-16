@@ -915,3 +915,32 @@ def test_o_relatorio_diz_POR_QUE_um_campo_nao_foi_preenchido(mundo):
     assert "não é opção" in fora["sexo"]
     # E o que o card simplesmente não mandou também aparece.
     assert fora["nome_mae"] == "o card veio vazio"
+
+
+def test_a_tela_vem_com_O_CARD_MANDA_marcado():
+    """Decisão dele em 16/11/2026: *"eu quero que o que vier do pipe preencha
+    o ERP (…) não adianta eu ter que já ter uma base e ter que preencher de
+    novo."* Estava ao contrário — só preenchia campo vazio, e a caixinha vinha
+    desmarcada. Fica em teste porque é um atributo de uma linha de HTML: some
+    numa edição distraída e ninguém nota até a próxima carga."""
+    from pathlib import Path
+    tela = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp" /
+            "templates" / "erp_importar.html").read_text(encoding="utf-8")
+    assert 'id="pc-regravar" checked' in tela
+
+
+@pytest.mark.banco
+def test_o_card_regrava_por_cima_mas_NUNCA_o_nome(mundo):
+    """O card manda nos dados — menos no nome e no CPF, que são a identidade
+    da pessoa na folha. A diferença neles vira pergunta, não troca."""
+    antes = mundo["com_card"].nome
+    imp.importar(mundo["s"], mundo["dp"], simular=False, cards=[CARD],
+                 regravar=True, ler_papel=False,
+                 ler_cards=_leitor(_card(pis="99988877766",
+                                         nome_completo="OUTRO NOME QUALQUER")))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    # O PIS que já existia aqui FOI trocado pelo do card.
+    assert mundo["com_card"].pis == "99988877766"
+    # E o nome não.
+    assert mundo["com_card"].nome == antes
