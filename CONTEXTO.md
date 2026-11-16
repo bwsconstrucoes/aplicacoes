@@ -802,6 +802,53 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 16/11/2026 — DECIDIDO: O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA (atravessa áreas: Ponto, ERP e Análise de SPs)
+
+**Ainda NÃO foi feito.** Fica registrado porque é decisão tomada, com condição
+escrita, e quem pegar qualquer uma das três áreas precisa saber que ela existe.
+
+Ele, depois de descobrir que o cargo que o ponto mostra pode vir de uma
+terceira lista: *"assim que eu conseguir importar tudo do pipefy e das fichas,
+quero cortar o vínculo com a planilha."*
+
+**O QUE É O VÍNCULO.** O ponto usa como base o **Registro de Colaboradores** —
+a cópia da planilha do Análise de SPs (`analisesps.colaborador`) — e não o
+cadastro do ERP. Quando a pessoa está lá, a planilha MANDA em: nome, celular
+(o WhatsApp do PIN e do QR), **cargo**, obra, admissão, data de saída, a
+situação (ativo/afastado/desligado, lida da "Fase Atual" do Pipefy) e **quem
+não bate ponto** (PJ e pró-labore pelo tipo de contrato, mais a obra ESCRUSSAS).
+
+**CORTAR O VÍNCULO É UM CAMPO DE ESCOLHA, JÁ CONSTRUÍDO**, na Configuração do
+ponto: *"Base que o ponto usa"* → **ERP** em vez de Registro
+(`registro.gravar_fonte`, parâmetro `pessoas.fonte`). Não precisa de código.
+
+⚠️ **O QUE PRECISA SER VERDADE ANTES, e é aqui que mora o risco.** Virando a
+chave, tudo o que a planilha preenchia passa a sair do cadastro do ERP. Para
+cada pessoa que bate ponto o ERP precisa ter:
+
+| O que | Quem preenche hoje |
+|---|---|
+| nome, CPF, obra | já vem |
+| **telefone** (é o WhatsApp do PIN e do QR — sem ele a pessoa não bate) | a importação do Pipefy |
+| **cargo** | a importação do Pipefy, desde 16/11 (só quando o nome casa) |
+| admissão | Pipefy e ficha do Fortes |
+| **situação** (ativo / afastado / desligado) | ⚠️ **NINGUÉM.** A planilha lê da "Fase Atual" do Pipefy; o ERP tem `colaboradores.situacao` e a importação não a preenche |
+| **quem não bate ponto** (PJ, pró-labore, obra ESCRUSSAS) | ⚠️ **hoje é automático PELA PLANILHA**. Na base ERP vira marcação à mão, pessoa por pessoa |
+
+**As duas últimas linhas são o trabalho que falta**, e nenhuma delas é grande:
+o ERP já guarda `tipo_contrato` (PJ, PRO_LABORE…), que é exatamente o que a
+planilha usa para decidir quem não bate — dá para a base ERP deduzir a mesma
+coisa, em vez de exigir marcação manual de 575 pessoas.
+
+**A ordem certa, quando chegar a hora:** (1) terminar as importações; (2)
+conferir na Configuração do ponto os números que já existem ali — "Faltam no
+ERP", "Estão só no ERP", "Sem obra reconhecida" —, todos em zero; (3) resolver
+situação e "não bate ponto"; (4) só então virar a chave. **Virar antes derruba
+a batida de quem ficou sem telefone ou sem obra**, e isso aparece na manhã
+seguinte, com gente parada no portão.
+
+---
+
 ### 16/11/2026 — CARGO E FUNÇÃO VIRAM UMA COISA SÓ (atravessa áreas: ERP, Ponto e Portal)
 
 Decisão do dono: *"em relação a cargo e função, vamos chamar só de cargo e

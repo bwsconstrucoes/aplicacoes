@@ -21,6 +21,32 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ DECIDIDO E AINDA NÃO FEITO — O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA
+
+> *"Assim que eu conseguir importar tudo do pipefy e das fichas, quero cortar
+> o vínculo com a planilha."* (16/11/2026)
+
+Isto importa para o ERP mesmo sendo do ponto, porque **o que destrava a
+decisão é o cadastro daqui ficar completo**. Hoje o ponto usa como base o
+Registro de Colaboradores (a planilha do Análise de SPs), e é de lá que saem
+nome, celular, cargo, obra, admissão, situação e quem não bate ponto — não do
+cadastro do ERP.
+
+Virar a chave é um campo de escolha que já existe (Configuração do ponto,
+"Base que o ponto usa"). **O trabalho é encher o cadastro antes.**
+
+⚠️ **Dois buracos que nenhuma importação tapa hoje**, e eles são o que falta:
+
+1. **A situação** (ativo / afastado / desligado). A planilha lê da "Fase Atual"
+   do Pipefy; a importação de cards NÃO preenche `colaboradores.situacao`.
+2. **Quem não bate ponto** (PJ, pró-labore, obra ESCRUSSAS). Hoje é automático
+   pela planilha; na base ERP viraria marcação à mão, 575 vezes. O ERP já tem
+   `tipo_contrato`, que é exatamente o dado que a planilha usa — dá para
+   deduzir em vez de marcar.
+
+O detalhe inteiro, com a ordem certa de fazer, está em `CONTEXTO.md` ›
+Histórico de decisões, 16/11/2026.
+
 ### ⚑ 16/11/2026 (fim do dia) — CARGO E FUNÇÃO VIRAM UMA COISA SÓ, E O CARD PASSA A MANDAR
 
 Duas decisões dele, no mesmo recado.
