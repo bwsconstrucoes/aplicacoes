@@ -1648,6 +1648,10 @@ def _calcular_cenario(cenario: dict) -> dict:
         "juros_fora_do_resultado": sum(v for (o, _m), v in juros["alocacoes"].items()
                                        if o not in obras),
         "principal": principal,
+        # para a tela de EVOLUÇÃO (16/11/2026): o lado de cada obra e o juro
+        # da empresa em cada mês — a conta já os tinha, só não devolvia
+        "lado_de": lado_de,
+        "juros_por_mes": juros_por_mes,
     }
 
 
@@ -2396,6 +2400,85 @@ def cenario_como():
         "painel_cenario_como.html", **contexto,
         cenarios=lista, cenario=atual,
         e=_explicacao_do_cenario(atual, prestacao_dados.config()))
+
+
+def _evolucao_do_cenario(atual: dict) -> tuple[dict, dict]:
+    """A conta do cenário e a evolução montada em cima dela — para a tela e
+    para o relatório, que assim saem do mesmo número."""
+    from . import evolucao
+    calculo = _calcular_cenario(atual)
+    dados = evolucao.montar(
+        calculo, principal=calculo["principal"],
+        criterio=atual.get("criterio") or "pessoal",
+        janela=str(atual.get("janela") or "1"),
+        juros_por_deficit=bool(atual.get("juros_por_deficit", 1)))
+    return calculo, dados
+
+
+@bp.route("/prestacao/evolucao")
+def cenario_evolucao():
+    """A evolução do rateio: a conta do cenário aberta mês a mês, por
+    estrutura, por projeto e por obra.
+
+    16/11/2026, o dono: "os sócios precisam entender como é que está a
+    evolução (…) precisa conseguir ver com detalhe como é que aqueles números
+    foram sendo absorvidos mês a mês". Só leitura — nada se grava aqui."""
+    import calendar
+    from . import cenarios, consultas, evolucao, prestacao, prestacao_dados
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    lista = cenarios.listar(_de_quem())
+    atual = _cenario_do_pedido(lista)
+    if atual is None:
+        return redirect(url_for("painel.cenario_montagem"))
+
+    calculo, dados = _evolucao_do_cenario(atual)
+    visao = evolucao.visao_valida(dados, request.args.get("visao") or "")
+    arvore = evolucao.linhas_da_arvore(dados, visao)
+    # o nó aberto na ficha: o pedido, se existir NESTA visão; senão o primeiro
+    no = evolucao.achar(dados, request.args.get("ver") or "")
+    if no is None and arvore:
+        no = evolucao.achar(dados, arvore[0]["chave"])
+    ficha = evolucao.ficha(dados, no, com_a_conta=True) if no else None
+
+    # Os lançamentos por trás de um mês só abrem para o administrador: a tela
+    # de lançamentos segue as obras liberadas a cada pessoa, e a matriz (onde
+    # está a folha) não é obra de ninguém.
+    config = prestacao_dados.config()
+    links = None
+    if auth.e_administrador():
+        def _faixa(mes):
+            ano, m = int(mes[:4]), int(mes[5:7])
+            return f"{mes}-01", f"{mes}-{calendar.monthrange(ano, m)[1]:02d}"
+        links = {"faixa": _faixa, "matriz": prestacao.centros_da_matriz(config),
+                 "visao": "executado" if atual.get("medida") == "executado" else "comprometido"}
+
+    return render_template(
+        "painel_cenario_evolucao.html",
+        **dict(_contexto_comum("prestacao"),
+               so_leitura=not cenarios.altera(atual, _de_quem())),
+        cenarios=lista, cenario=atual, criterios=cenarios.CRITERIOS,
+        janelas=cenarios.JANELAS,
+        e=dados, visao=visao, arvore=arvore, ficha=ficha,
+        ver=no["chave"] if no else "", links=links,
+        pct=evolucao.pct,
+        grafico_geral=evolucao.colunas(
+            dados["meses"],
+            ("estrutura_principal", "estrutura_demais", "juros_absorvidos")),
+        grafico_da_ficha=(evolucao.colunas(ficha["linhas"], ("estrutura", "juros"))
+                          if ficha else []),
+        # o caminho até o nó aberto, para a árvore já vir aberta nele
+        abertos=_caminho_ate(arvore, no["chave"]) if no else [],
+        batimento=calculo["batimento"])
+
+
+def _caminho_ate(arvore: list, chave: str) -> list[str]:
+    """As linhas que precisam estar abertas para o nó `chave` aparecer."""
+    for linha in arvore:
+        if linha["chave"] == chave:
+            partes = linha["linha"].split("/")
+            return ["/".join(partes[:i]) for i in range(1, len(partes))]
+    return []
 
 
 @bp.route("/prestacao/resultado")
@@ -3877,7 +3960,50 @@ def baixar(assunto):
             ("No OMIE", C["conferencia_lado"], _lado(no_omie)),
         ]
 
+    # A capa do PDF é a do relatório financeiro geral, com os números do DRE.
+    # O relatório de evolução tem capa própria: o cenário e o caminho do
+    # dinheiro. O montador a deixa aqui.
+    capa_propria: dict = {}
+
+    def _abas_da_evolucao():
+        """A evolução do rateio em arquivo (16/11/2026) — as MESMAS tabelas da
+        tela, porque saem do mesmo `evolucao.montar`. Com `ver` na URL é o
+        recorte de uma estrutura, de um projeto ou de uma obra."""
+        from . import cenarios, evolucao
+        from .horario import agora
+        from .pdf import brl as brl_pdf
+        atual = cenarios.completo(request.args.get("cenario") or 0)
+        if atual is not None and not cenarios.enxerga(atual, _de_quem()):
+            atual = None
+        if atual is None:
+            return [("Evolucao", [("o_que", "O que"), ("valor", "Valor")],
+                     [{"o_que": "Cenario", "valor": "nenhum escolhido"}])]
+        calculo, dados = _evolucao_do_cenario(atual)
+        no = evolucao.achar(dados, request.args.get("ver") or "")
+        recorte = (f"{no['nome']} ({no['tipo']})" if no else "a empresa inteira")
+        caminho = evolucao.linhas_do_caminho(dados)
+        capa_propria.update(
+            titulo=f"Evolução do Rateio — cenário {atual['nome']}",
+            subtitulo=(f"Gerado em {agora():%d/%m/%Y às %H:%M} (Brasília)  ·  "
+                       f"Recorte: {recorte}  ·  Régua: "
+                       f"{cenarios.CRITERIOS.get(atual['criterio'], atual['criterio'])} "
+                       f"({cenarios.JANELAS.get(atual['janela'], atual['janela'])})  ·  "
+                       f"Base: {atual['medida']}"),
+            resumo=[("O caminho do dinheiro — toda a vida da empresa", "")]
+                   + [(l["o_que"], brl_pdf(l["valor"])) for l in caminho],
+            observacao=("O que cada um ABSORVEU está como custo, em valor positivo; o caixa "
+                        "mantém o sinal (negativo é buraco). As regras do cenário estão no "
+                        "arquivo do Resultado, aba Parametros. As listas longas saem cortadas "
+                        "no PDF e completas na planilha."))
+        return evolucao.abas(
+            dados, calculo, no["chave"] if no else "",
+            # a ficha de CADA obra só no PDF e só a pedido: são centenas de
+            # páginas, e montar isso leva alguns segundos de processador
+            ficha_de_cada_obra=(request.args.get("formato") == "pdf"
+                                and request.args.get("obras") == "todas"))
+
     montadores = {
+        "evolucao": _abas_da_evolucao,
         "dre": lambda: [("DRE", C["dre"], _dre())],
         "conferencia": _abas_da_conferencia,
         "calendario": _abas_do_calendario,
@@ -3943,13 +4069,16 @@ def baixar(assunto):
     # qual esta certo.
     if request.args.get("formato") == "pdf":
         from . import pdf as pdf_painel
-        conteudo = pdf_painel.montar(
-            abas, titulo="Relatório Financeiro BWS Construções",
-            subtitulo=_subtitulo_do_relatorio(f),
-            resumo=_resumo_do_relatorio(f),
-            observacao=("Os mesmos números da planilha do botão ao lado. "
-                        "As listas longas saem cortadas aqui e completas lá."),
-            graficos_iniciais=_graficos_do_relatorio(f) if assunto == "completo" else ())
+        if capa_propria:
+            conteudo = pdf_painel.montar(abas, **capa_propria)
+        else:
+            conteudo = pdf_painel.montar(
+                abas, titulo="Relatório Financeiro BWS Construções",
+                subtitulo=_subtitulo_do_relatorio(f),
+                resumo=_resumo_do_relatorio(f),
+                observacao=("Os mesmos números da planilha do botão ao lado. "
+                            "As listas longas saem cortadas aqui e completas lá."),
+                graficos_iniciais=_graficos_do_relatorio(f) if assunto == "completo" else ())
         return Response(
             conteudo, mimetype="application/pdf",
             headers={"Content-Disposition":

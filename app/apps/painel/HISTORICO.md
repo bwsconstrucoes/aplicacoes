@@ -651,45 +651,109 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
-## A evolução do rateio para os sócios — PROPOSTA, nada construído — 16/11/2026
+## A evolução do rateio para os sócios — tela e relatório — 16/11/2026
+
+**NÃO PUBLICADO** — está no ramo, junto com os cenários por pessoa, à espera do
+"pode" do dono. **Não tem migração própria** (a 028 é da leva dos cenários).
 
 O dono mostrou a prestação a um dos sócios e saiu com o pedido: **o número final
-não basta**. Os sócios precisam abrir e entender, mês a mês, o que está sendo
-rateado, com base em quê, quanto cada obra absorve, como está o caixa da obra e
-quanto de juros ela absorveu — por **obra**, por **projeto** e por **estrutura**
-(BWSCE × BWSFILIAL). Ele pediu para VER uma tela antes de qualquer construção, e
-perguntou onde isso cabe melhor: dentro da prestação, em relatório, ou nos dois.
+não basta**. *"Os sócios não vão se conter apenas com o cálculo final, sem
+compreender na minúcia como é que aqueles valores estão chegando e sendo
+apropriados (…) precisa poder observar por obra, por projeto, por estrutura."*
+Ele pediu para VER uma tela antes de construir; viu um desenho clicável com
+números inventados (página privada dele no claude.ai, fora do repositório) e
+respondeu as quatro perguntas:
 
-**O que foi entregue: só um desenho clicável, com números inventados** (nenhum
-dado da empresa), publicado como página privada dele no claude.ai — não está no
-repositório nem no sistema. **Nenhuma linha do painel foi mexida por isso.**
+| Pergunta | Decisão dele |
+|---|---|
+| Período | **a vida toda** — "a prestação de contas é global, então vamos ver tudo" |
+| Quem só lê a prestação | **vê também** |
+| Obra fora da prestação | **não se exibe** |
+| Tela primeiro, relatório depois? | **tudo junto** |
 
-**A recomendação feita a ele (aguardando resposta):** as duas coisas, saindo da
-MESMA conta para não divergirem.
+### O que foi feito
 
-- **Tela nova "Evolução", dentro da prestação**, para explorar: (1) "o caminho do
-  dinheiro" — matriz gastou → fica no BWSCE / é da BWSFILIAL / rateia; filial;
-  juros → quanto cada estrutura absorveu; (2) colunas mês a mês; (3) árvore
-  estrutura › projeto › obra com pessoal (a régua), % da régua, estrutura
-  absorvida, juros absorvidos e % do total; (4) clicar num nome abre a **ficha
-  mês a mês** (pessoal, %, absorvido, caixa do mês e acumulado, juros da empresa,
-  % do buraco, juros absorvidos); (5) clicar num mês abre **a conta daquele mês
-  em palavras**, passo a passo, com saída para os lançamentos.
-- **Relatório completo (PDF + planilha)** para entregar e guardar: capa com as
-  regras, o caminho do dinheiro, por estrutura e por projeto, uma página por
-  obra, memória da matriz mês a mês, batimento com o DRE. Tirável de uma obra
-  só, de um projeto ou da empresa.
+- **Tela "Evolução"** (`/painel/prestacao/evolucao`, botão novo no menu da
+  prestação): o caminho do dinheiro (matriz → fica / é da BWSFILIAL / rateia;
+  filial; juros → quanto cada estrutura absorveu, e se a conta fecha); colunas
+  mês a mês; a árvore **estrutura › projeto › obra** (ou por projeto, ou por
+  obra); a **ficha mês a mês** de qualquer nó; e, ao clicar num mês, **a conta
+  dele em palavras**, passo a passo.
+- **Relatório** (`/painel/baixar/evolucao`, planilha e PDF): as mesmas tabelas.
+  Da empresa inteira, ou o recorte de uma estrutura, de um projeto ou de uma
+  obra (`ver=`). O PDF tem uma versão "com a ficha de cada obra"
+  (`obras=todas`), que é escolha de quem baixa.
 
-**O que já existe e não deve ser duplicado:** Resultado (por obra, quotas,
-posição, memória do rateio e dos juros dos últimos 36 meses, gráfico da vida de
-uma obra, batimento), "Como é feita" e o download do cenário. A tela nova deve
-REUSAR o cálculo de `_calcular_cenario` / `calcular_rateio_do_cenario`, não
-refazer a conta ao lado.
+### As decisões de construção, e o motivo
 
-**Perguntas que ficaram com ele:** se o período é a vida toda ou ano a ano; se o
-sócio só-leitura vê tudo ou só as obras dele; se a obra fora da prestação
-aparece (como "fora") ou some; se o relatório vem na mesma leva ou depois da
-tela. **Não construir antes da resposta.**
+- **NÃO HÁ CONTA NOVA.** `evolucao.py` só reorganiza o que
+  `web._calcular_cenario` devolve. Para isso `prestacao.calcular_rateio_do_cenario`
+  e `alocar_juros_por_deficit` passaram a devolver um `detalhe` (as parcelas de
+  cada obra em cada mês, as partes do mês, o custo por grupo, o buraco de cada
+  obra) — **sem mudar nenhum número de `alocacoes`**. Há teste conferindo que a
+  soma das parcelas dá a alocação e que a árvore fecha com o Resultado. Uma
+  segunda conta ao lado da primeira seria um segundo número para o mesmo fato.
+- **Custo absorvido é dito positivo** ("absorveu R$ 41.239"), como na página
+  "Como é feita"; o caixa mantém o sinal.
+- **O lado principal abre direto nas obras** — ele É um projeto só; abrir
+  "projeto" dentro dele repetiria a linha. No relatório, a ficha de um projeto
+  que é a estrutura inteira também não se repete.
+- **Sem projeto principal não há visão "por estrutura"**: cai para "por projeto".
+- **Os lançamentos por trás de um mês só abrem para o administrador.** A tela de
+  lançamentos segue as obras liberadas a cada pessoa, e a matriz (onde está a
+  folha) não é obra de ninguém. Liberar isso a quem só lê é decisão do dono —
+  ficou perguntado.
+- **O PDF com a ficha de cada obra é opção, não padrão.** Medido com 174 obras
+  × 60 meses: ~12 s de processador para montar (o padrão, com estruturas e
+  projetos, leva ~1 s). Roda dentro do gunicorn; se pesar no uso real, o
+  caminho é mandá-lo para processo separado, como o "Só refazer os números".
+- **A ficha abre na própria página, não em janela por cima** — no celular a
+  janela esconde a tabela de onde se veio. A árvore abre e fecha sem ir ao
+  servidor; trocar de nó recarrega a página (refaz a conta, como o Resultado).
+- De carona: os botões do menu da prestação **não quebravam linha no celular**
+  e empurravam a página 62 px para o lado, nas quatro telas. Consertado no
+  `painel_prestacao_nav.html`.
+
+### O que NÃO foi verificado
+
+- **Nunca rodou contra a base real.** Testado com um ano de dados inventados
+  (5 obras, 2 estruturas) e com a suíte. O tempo da tela com as ~174 obras e
+  os ~6 anos reais é desconhecido — ela faz a mesma conta do Resultado mais a
+  montagem da árvore.
+- O gráfico mensal com ~80 meses foi desenhado para rolar de lado; só foi visto
+  com 12.
+
+### A consultoria pedida no mesmo dia (resumo — a íntegra ficou no chat)
+
+O dono pediu uma análise contábil, financeira e jurídica do modelo, para saber
+se o defende numa discussão entre sócios. **Veredito dado:** a lógica do rateio
+é defensável (o que tem dono vai para o dono, só o comum é rateado; mão de obra
+mês a mês captura a DURAÇÃO da obra, que faturamento não captura; juros para
+quem estava no vermelho). **O que está frágil não é a fórmula:**
+
+1. não há acordo assinado entre os sócios — e ele é sócio, administrador e
+   autor das regras;
+2. os percentuais por período ("50% em 2022") são estimativa sem fato escrito
+   que os sustente;
+3. a régua mede REAIS do grupo de pessoal da obra, não quantidade de gente
+   (rescisão infla o mês; empreiteiro fora do grupo não pesa; obra no começo ou
+   encerrada demanda sem ter folha);
+4. uma régua só para custos de natureza diferente;
+5. a prestação é pelo PAGO e o balanço é por competência — só se distribui
+   lucro que existe no balanço;
+6. dinheiro sem dono declarado (receita da matriz desconsiderada, obras fora,
+   sobras, não apropriado);
+7. obra com caixa sobrando financia a outra de graça (só juro de banco é
+   repartido); e o juro do buraco de obra encerrada passa para as outras;
+8. os números se mexem (a conta é refeita do OMIE) e a base tem pendências.
+
+**Sugerido e NÃO construído (só se ele pedir):** campo de MOTIVO por regra;
+comparação de réguas lado a lado; **fechamento** que congela a versão aprovada.
+
+**Perguntas que ficaram com ele** (travam só a parte jurídica): a BWSNE é
+filial do mesmo CNPJ? o contrato social prevê divisão por obra? os parceiros
+têm contrato? empreiteiro entra no grupo de pessoal no OMIE? a prestação vai
+gerar pagamento entre sócios? há combinado anterior por escrito?
 
 ## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
 
