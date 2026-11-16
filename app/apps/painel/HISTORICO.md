@@ -653,8 +653,9 @@ sai.
 
 ## A evolução do rateio para os sócios — tela e relatório — 16/11/2026
 
-**NÃO PUBLICADO** — está no ramo, junto com os cenários por pessoa, à espera do
-"pode" do dono. **Não tem migração própria** (a 028 é da leva dos cenários).
+**PUBLICADO em 16/11/2026, 22:30 UTC** (`b2eaa1e4`), com o "pode" do dono, junto
+com os cenários por pessoa. **Não tem migração própria** (a 028 é da leva dos
+cenários — o dono foi avisado para apertar "Aplicar atualizações do banco").
 
 O dono mostrou a prestação a um dos sócios e saiu com o pedido: **o número final
 não basta**. *"Os sócios não vão se conter apenas com o cálculo final, sem
@@ -784,8 +785,9 @@ Tirado antes de publicar. Texto para os sócios lerem só entra a pedido dele.
 
 ## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
-migração (028):** ao publicar, ele aperta "Aplicar atualizações do banco".
+**PUBLICADO em 16/11/2026, 22:30 UTC** (`b2eaa1e4`), com o "pode" do dono. **Tem
+migração (028):** ele foi avisado para apertar "Aplicar atualizações do banco"
+no mesmo momento — se algo da prestação falhar, conferir primeiro se apertou.
 
 O dono: *"a prestação de contas está meio como se estivesse vinculada a apenas
 um usuário (…) eu queria que cada usuário que tem acesso à prestação possa
