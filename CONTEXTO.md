@@ -802,6 +802,37 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 16/11/2026 — CARGO E FUNÇÃO VIRAM UMA COISA SÓ (atravessa áreas: ERP, Ponto e Portal)
+
+Decisão do dono: *"em relação a cargo e função, vamos chamar só de cargo e
+acabou."* Havia duas tabelas respondendo "o que a pessoa faz" — `funcoes`
+(nome + diária) e `cargos` (nome + CBO, riscos, EPIs, convenção) —, e dava
+para alguém ser "Pedreiro" numa e "Servente" na outra sem ninguém notar.
+
+**Migração 105.** O cargo ganhou a diária; cada função virou cargo pelo nome;
+quem tinha só função passou a ter o cargo equivalente.
+
+⚑ **O QUE TODO MUNDO PRECISA SABER, E É O PONTO DESTA ENTRADA.** Quatro
+consultas do **PONTO** (`core/mosaico.py`, `core/dispositivos.py`,
+`core/confianca.py`, `core/alertas.py`) e uma do **PORTAL** fazem
+`LEFT JOIN funcoes f ON f.id = c.funcao_id`. **Nenhuma delas precisou mudar**,
+porque a migração não apagou nada:
+
+- **`funcoes` agora é uma VISÃO sobre `cargos`** (mesmos ids e nomes);
+- **`colaboradores.funcao_id` agora é uma coluna GERADA**, cópia automática de
+  `cargo_id`, mantida pelo banco.
+
+⚠️ **A armadilha, para quem for mexer depois:** `funcoes` **não é mais tabela**.
+`INSERT`/`UPDATE`/`DELETE` nela falham, e escrever em `colaboradores.funcao_id`
+também — o banco recusa escrita em coluna gerada. Quem precisar gravar o que a
+pessoa faz grava em `cargos` / `colaboradores.cargo_id`. Por isso `funcao_id`
+saiu do modelo do ERP e a classe `Funcao` deixou de existir.
+
+O ponto é aparelho homologado (REP-P): a forma desta migração foi escolhida
+justamente para **não exigir mudança nenhuma no código dele**.
+
+---
+
 ### 15/11/2026 — O ATESTADO DE MAIS DE 15 DIAS ABRE O AFASTAMENTO SOZINHO (atravessa áreas: DP e Ponto)
 
 O assunto nasceu no chat do **DP**, num pedido longo do dono sobre os

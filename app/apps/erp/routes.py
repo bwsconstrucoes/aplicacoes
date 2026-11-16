@@ -11301,27 +11301,44 @@ def api_colaboradores():
 @login_obrigatorio
 @permissao(GET="ver_pessoal", POST="editar_colaboradores")
 def api_funcoes():
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from decimal import Decimal as _D
-    from app.apps.erp.db.models.cadastros import Funcao
+    # ⚑ ESTA ROTA FALA COM `cargos` DESDE 16/11/2026 (migração 105). Cargo e
+    # função viraram a mesma coisa — *"vamos chamar só de cargo e acabou"* —
+    # e o endereço continua `/erp/api/funcoes` só para não quebrar nada que já
+    # o chame. Ela devolve `funcoes` E `cargos` com o mesmo conteúdo, para a
+    # tela poder ser trocada sem pressa.
+    from app.apps.erp.db.models.cadastros import Cargo
     try:
         with get_session() as s:
             if request.method == "POST":
                 d = request.get_json(silent=True) or {}
                 nome = (d.get("nome") or "").strip()
                 if not nome:
-                    return jsonify({"ok": False, "erro": "Informe o nome da função."}), 400
-                f = Funcao(nome=nome,
-                           valor_diaria=(_D(str(d["valor_diaria"]).replace(",", "."))
-                                         if d.get("valor_diaria") else None))
+                    return jsonify({"ok": False, "erro": "Informe o nome do cargo."}), 400
+                # Mesmo nome é o mesmo cargo: duas listas paralelas foi
+                # exatamente o problema que a migração 105 acabou de resolver.
+                ja = s.scalars(select(Cargo).where(
+                    func.upper(func.btrim(Cargo.nome)) == nome.strip().upper())).first()
+                diaria = (_D(str(d["valor_diaria"]).replace(",", "."))
+                          if d.get("valor_diaria") else None)
+                if ja is not None:
+                    if diaria is not None:
+                        ja.valor_diaria = diaria
+                    ja.ativo = True
+                    s.commit()
+                    return jsonify({"ok": True, "funcao_id": ja.id,
+                                    "cargo_id": ja.id, "ja_existia": True})
+                f = Cargo(nome=nome, valor_diaria=diaria)
                 s.add(f)
                 s.commit()
-                return jsonify({"ok": True, "funcao_id": f.id})
-            return jsonify({"ok": True, "funcoes": [
+                return jsonify({"ok": True, "funcao_id": f.id, "cargo_id": f.id})
+            lista = [
                 {"id": f.id, "nome": f.nome,
                  "valor_diaria": float(f.valor_diaria) if f.valor_diaria else None}
-                for f in s.scalars(select(Funcao).where(Funcao.ativo.is_(True))
-                                   .order_by(Funcao.nome)).all()]})
+                for f in s.scalars(select(Cargo).where(Cargo.ativo.is_(True))
+                                   .order_by(Cargo.nome)).all()]
+            return jsonify({"ok": True, "funcoes": lista, "cargos": lista})
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
