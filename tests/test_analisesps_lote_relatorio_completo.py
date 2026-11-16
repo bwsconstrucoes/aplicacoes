@@ -218,3 +218,49 @@ def test_relatorio_que_nao_existe_responde_404(app_lote):
     cliente = como(app_lote, SENHA_CONSULTA)
     assert cliente.get("/analisesps/lote/relatorio-completo/abc").status_code == 404
     assert cliente.get("/analisesps/lote/relatorio-completo/abc/arquivo").status_code == 404
+
+
+# --- a otimização dos anexos (dono, 16/11/2026) -----------------------------
+def _foto_pesada(w=3000, h=4000) -> bytes:
+    """Uma "foto de celular": ruído em JPEG de alta qualidade, que não comprime."""
+    import io
+    import os
+
+    from PIL import Image
+    imagem = Image.frombytes("RGB", (w, h), os.urandom(w * h * 3))
+    saida = io.BytesIO()
+    imagem.save(saida, "JPEG", quality=95)
+    return saida.getvalue()
+
+
+def test_a_foto_grande_e_reduzida_antes_de_entrar():
+    from PIL import Image
+    import io
+    from app.apps.analisesps import lote_relatorio_completo as rc
+    original = _foto_pesada()
+    reduzida, tipo = rc._otimizar_foto(original, "jpg")
+    assert tipo == "jpg" and len(reduzida) < len(original) / 3
+    assert max(Image.open(io.BytesIO(reduzida)).size) == rc.LADO_MAXIMO_DA_FOTO
+
+
+def test_foto_pequena_fica_como_esta():
+    from app.apps.analisesps import lote_relatorio_completo as rc
+    pequena = _png_falso()
+    assert rc._otimizar_foto(pequena, "png") == (pequena, "png")
+
+
+def test_o_pdf_digitalizado_pesado_sai_leve_no_relatorio():
+    import fitz
+    from app.apps.analisesps import lote_relatorio_completo as rc
+    if not hasattr(fitz.Document, "rewrite_images"):
+        pytest.skip("PyMuPDF sem rewrite_images")
+    scan = fitz.open()
+    for _ in range(2):
+        pagina = scan.new_page()
+        pagina.insert_image(pagina.rect, stream=_foto_pesada())
+    pesado = scan.tobytes()
+    d = rc.montar_dados(_montado(("G", [_sp(1, anexo_link="https://x/scan.pdf")])), extras={})
+    conteudo = rc.montar_pdf(d, baixar=lambda u: pesado)
+    assert len(conteudo) < len(pesado) / 4, (len(conteudo), len(pesado))
+    assert sum("PAGAMENTO 1  ·  SP" in p.get_text()
+               for p in fitz.open(stream=conteudo, filetype="pdf")) == 2
