@@ -2291,6 +2291,37 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 
 ---
 
+## 3z-septies. A IMPORTAÇÃO DO PIPEFY, DEPOIS DOS CONSERTOS (16/11/2026)
+
+### ⚠️ Duas palavras que pareciam uma só
+
+| A palavra | Os significados possíveis | Decisão |
+|---|---|---|
+| **"cargo"** | o cargo registrado (`cargos`: CBO, riscos, EPI, convenção) ou a função na obra (`funcoes`: a diária)? | ⚠️ **ABERTO.** São duas tabelas, e as duas respondem "o que a pessoa faz". A importação preenche o **cargo**. Quem perguntar "qual o cargo do fulano" pode querer qualquer um dos dois — o assistente deve dizer os dois quando divergirem |
+| **"não veio"** | o card não trouxe, o ERP já tinha, ou o valor foi recusado? | ✔ **FECHADO:** são três coisas diferentes e o relatório agora diz qual |
+
+### Perguntas que já dão resposta exata
+
+- Quantas pessoas têm cargo diferente da função? ⚠️ *a pergunta que mostra a
+  sobreposição das duas tabelas*
+- Quais cargos vieram nos cards e não existem no nosso cadastro de cargos?
+- Quantos documentos do Pipefy ainda não entraram, e de quem?
+- Quais tipos de documento o código tem e o banco não tem? *(depois do
+  conserto de 16/11 a resposta deve ser sempre "nenhum")*
+- Para quem a importação não preencheu nada, e por quê?
+- Quantas divergências abertas são de data? ⚠️ *se voltar a crescer, a
+  comparação de data quebrou de novo*
+
+### Perguntas que o sistema ainda não responde, e o que falta
+
+- **"Este documento é o mesmo que já está na ficha?"** — a comparação é por
+  card e campo, não pelo conteúdo do arquivo. Dois arquivos iguais vindos de
+  campos diferentes entram duas vezes.
+- **"O cargo do card é o mesmo que o da ficha do Fortes?"** — a ficha do
+  Fortes não tem o cargo lido (decisão do dono: a nomenclatura é nossa).
+
+---
+
 ## 3z-sexies. A FICHA DO FORTES, E AS DUAS NOMENCLATURAS DA OBRA (16/11/2026)
 
 A ficha de registro do Fortes entrou por leitura direta do PDF, e com ela veio

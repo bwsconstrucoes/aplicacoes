@@ -21,6 +21,120 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 16/11/2026 (à tarde) — A IMPORTAÇÃO DO PIPEFY: QUATRO DEFEITOS, UM DELES CRESCENDO SOZINHO
+
+Ele rodou a importação dos cards de verdade, olhou a ficha de uma pessoa
+(ALESON) e trouxe quatro coisas. **As quatro eram defeito, e três delas eram
+da mesma família: o sistema sabia e não contava.**
+
+#### 1. A data que não batia com ela mesma — e ele acertou o diagnóstico
+
+A tela oferecia, como divergência a DECIDIR:
+
+> Data de nascimento · No ERP **1988-03-30** · No card **30/03/1988**
+
+Ele: *"o que não bateu na crítica ainda foi errada. ERP trabalhando com data em
+padrão errado."* É a mesma data. O cadastro guarda data de verdade (e o
+Postgres a escreve ano-mês-dia); o card escreve dia/mês/ano. A comparação era
+letra por letra, então **toda pessoa com data de nascimento virava pergunta
+falsa** — numa carga de 575, são 575 perguntas inventadas, e a divergência de
+verdade afunda no meio delas. Uma fila cheia de ruído é uma fila que ninguém lê.
+
+Agora data se compara como data, e **toda data que uma pessoa vê sai em
+dia/mês/ano** — na tela e no relatório.
+
+⚠️ **Mesmíssimo defeito que eu havia acabado de consertar na ficha do Fortes,
+de manhã, neste mesmo dia.** Em dois importadores diferentes, pela mesma
+causa: data que vem como texto comparada com data que vem do banco. Se
+aparecer um terceiro importador, é a primeira coisa a conferir.
+
+#### 2. Quatro arquivos recusados: "Tipo de documento desconhecido"
+
+`FOTO-COLABORADOR` e `DOC-PESSOA-OUTRO` não existiam no banco de produção.
+
+**A causa é da família do CREA e do seguro-garantia:** os **69** tipos de
+documento moram no CÓDIGO (`core/arquivo/catalogo.py`) e só chegavam ao banco
+quando alguém apertava um botão escondido na tela de Arquivo. Tipo novo subia
+para o Render e ficava invisível até esse clique — que ninguém sabia que
+precisava dar, porque nada avisava. **Banco recém-migrado tem SETE tipos.**
+
+Agora o catálogo é aplicado junto com as migrações, no **mesmo botão
+"Aplicar atualizações do banco"** que ele já aperta a cada publicação. Só CRIA
+o que falta, nunca apaga nem desativa — tipo desligado à mão continua
+desligado. E falhar ali não derruba as migrações, que já foram confirmadas
+uma a uma: o catálogo é acessório, e acessório não pode fazer o principal
+parecer quebrado.
+
+#### 3. "JÁ TINHA" sete documentos, e a ficha estava vazia
+
+Ele: *"não veio nada de documentos."*
+
+A anotação de controle (`pipefy_importado`) é por **CARD**; o documento é de
+uma **PESSOA**. Qualquer coisa que separe os dois depois — documento apagado à
+mão, card casado com outra pessoa numa rodada antiga, cadastro refeito —
+deixava a anotação de pé e o arquivo não. **E o defeito crescia sozinho:
+quanto mais se reimportava, mais o sistema afirmava que estava tudo lá.**
+
+Agora só conta como "já veio" o que AINDA ESTÁ na ficha daquela pessoa. O que
+não estiver é baixado de novo — na dúvida, trazer de novo custa um download;
+não trazer custa um documento que ninguém sabe que falta.
+
+#### 4. "Me parece que não tá puxando é nada" — e ele não tinha como saber
+
+O relatório mostrava o que ENTROU e calava sobre o resto. Então **"o card veio
+vazio", "o ERP já tinha" e "o valor foi recusado" tinham exatamente a mesma
+aparência: nenhuma linha.** Silêncio é a pior resposta de uma importação,
+porque parece defeito mesmo quando é acerto — e foi o que aconteceu.
+
+Entrou a seção **"Campos que NÃO foram preenchidos"**, com o motivo de cada um
+e o que cada fonte diz. E a coluna "Campos" deixou de mostrar nome de banco
+(`cargo_id` virou "Cargo").
+
+#### E o cargo, que ele pediu
+
+> *"Queria que o cargo fosse preenchido por essa importação também."*
+
+Estava de fora porque no Pipefy o cargo é um CONECTOR (o card guarda o id de
+um registro de lá). Mas o campo devolve o NOME, e nome casa com o cadastro de
+cargos daqui.
+
+**O casamento é EXATO, de propósito:** cargo decide piso da convenção, CBO,
+riscos e EPI — "parecido" aqui vira salário errado e EPI errado. Ou o nome é o
+mesmo (sem acento e sem caixa, que é diferença de digitação), ou não entra e o
+relatório diz **o nome que veio no card**, para alguém criar o cargo ou
+corrigir a origem. Antes isso seria um beco sem saída: o cargo não vinha e não
+havia como saber por quê.
+
+#### O efeito colateral nos testes, para quem vier depois
+
+Aplicar o catálogo junto com as migrações quebrou seis arquivos de teste: eles
+criavam à mão tipos que agora JÁ EXISTEM (`CONTRATO-OBRA`, `FOLHA`,
+`CERTIDAO`), e o banco recusava a chave duplicada. Passaram a usar `merge` em
+vez de `add` — ajusta o que existe, cria o que falta.
+
+⚠️ **E tem uma armadilha no `merge` que custou uma rodada:** ele só sobrescreve
+o que o objeto traz ESCRITO. Como no catálogo de verdade o contrato VENCE, o
+tipo continuava exigindo validade e o teste falhava por um motivo que não tinha
+nada a ver com o que ele defendia. Por isso os testes agora escrevem
+`vence=False` de propósito.
+
+#### ⚑ CARGO E FUNÇÃO NÃO SÃO A MESMA COISA — ele perguntou no mesmo dia
+
+> *"Dentro do cadastro existe o campo cargo. Na tela de pessoal existe o botão
+> função. São a mesma coisa?"*
+
+| | O que é | O que carrega | Quem usa |
+|---|---|---|---|
+| **Função** (`funcoes`) | o que a pessoa faz NA OBRA | nome + **diária de referência** | o diário de obra (efetivo do dia) e o pagamento de diarista |
+| **Cargo** (`cargos`) | o cargo REGISTRADO | nome + **CBO**, descrição, riscos, EPIs, ligado à convenção | a folha, a contabilidade, o PPRA/EPI |
+
+Não são a mesma coisa, mas **se sobrepõem**, e isso é dívida registrada: as
+duas respondem "o que a pessoa faz", e hoje dá para uma pessoa ser "Pedreiro"
+na função e "Servente" no cargo sem ninguém notar. A importação preenche o
+**cargo**, que é o do registro. **Vale decidir com ele, um dia, se função vira
+só um apelido do cargo com diária** — não mexi nisso porque fundir os dois
+mexe no diário de obra, que é papel assinado.
+
 ### ⚑ 16/11/2026 — A FICHA DO FORTES ENTRA DIRETO DO PDF, SEM IA
 
 Ele mandou a ficha ("Registro de Empregado") que estava devendo e pediu a

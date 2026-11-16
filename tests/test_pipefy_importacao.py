@@ -788,3 +788,130 @@ def test_o_CPF_nunca_muda_por_decisao(mundo):
     """Trocar o CPF criaria um segundo cadastro em vez de corrigir o
     primeiro — e é por ele que o pagamento acha a pessoa."""
     assert "cpf" not in imp.A_CONFRONTAR
+
+
+# ---------------------------------------------------------------------------
+# OS QUATRO CONSERTOS DE 16/11/2026 — todos achados por ele numa importação
+# de verdade, nenhum deles visível em teste antes.
+# ---------------------------------------------------------------------------
+def test_data_igual_escrita_de_OUTRO_JEITO_nao_e_divergencia():
+    """*"O que não bateu na crítica ainda foi errada. ERP trabalhando com data
+    em padrão errado."* O cadastro guarda data e o Postgres a escreve
+    ano-mês-dia; o card escreve dia/mês/ano. Letra por letra nunca batiam —
+    então TODA pessoa com data de nascimento virava pergunta falsa. Numa carga
+    de 575, a fila de verdade afunda no meio das 575 inventadas."""
+    import datetime as dt
+    assert imp._igual("1988-03-30", "30/03/1988")
+    assert imp._igual(dt.date(1988, 3, 30), "30/03/1988")
+    assert imp._igual("1988-03-30 00:00:00", "30/03/1988")
+    # E datas diferentes continuam diferentes.
+    assert not imp._igual("1988-03-30", "30/04/1988")
+    # O que não é data continua comparado como texto.
+    assert imp._igual("José da Silva", "JOSE DA SILVA")
+    assert not imp._igual("José da Silva", "Maria da Silva")
+
+
+def test_data_sai_na_tela_em_dia_mes_ano():
+    assert imp.data_para_pessoa("1988-03-30") == "30/03/1988"
+    assert imp.data_para_pessoa("30/03/1988") == "30/03/1988"
+    assert imp.data_para_pessoa("") == ""
+    assert imp.data_para_pessoa("PEDREIRO") == "PEDREIRO"
+
+
+@pytest.mark.banco
+def test_o_catalogo_de_documentos_entra_com_o_botao_do_banco(sessao_real):
+    """Os quatro arquivos que ficaram de fora diziam "Tipo de documento
+    desconhecido: FOTO-COLABORADOR". Os 69 tipos moram no CÓDIGO e só chegavam
+    ao banco por um botão escondido na tela de Arquivo — banco recém-migrado
+    tem SETE. É a mesma família do CREA e do seguro-garantia: o sistema usa uma
+    coisa que não tem como chegar ao banco sozinha."""
+    from sqlalchemy import text as _t
+    from app.apps.erp.core.arquivo import catalogo
+
+    r = catalogo.aplicar(sessao_real)
+    assert r["total"] == len(catalogo.CATALOGO)
+    faltando = sessao_real.execute(_t(
+        "SELECT count(*) FROM documento_tipos WHERE codigo = ANY(:c)"),
+        {"c": [c[0] for c in catalogo.CATALOGO]}).scalar()
+    assert faltando == len(catalogo.CATALOGO)
+    # E os dois que falharam na importação dele existem.
+    for codigo in ("FOTO-COLABORADOR", "DOC-PESSOA-OUTRO"):
+        assert catalogo.obter(sessao_real, codigo) is not None
+
+
+@pytest.mark.banco
+def test_JA_TINHA_so_vale_se_o_documento_ainda_estiver_na_ficha(mundo, monkeypatch):
+    """*"Não veio nada de documentos."* O relatório dizia sete "JÁ TINHA" e a
+    ficha estava vazia: a anotação é por CARD e o documento é de uma PESSOA.
+    Qualquer coisa que separe os dois deixava a anotação de pé e o arquivo
+    não — e quanto mais se reimportava, mais o sistema afirmava que estava
+    tudo lá."""
+    from sqlalchemy import text as _t
+    monkeypatch.setattr(cliente, "baixar", lambda *a, **k: b"%PDF-1.4 teste")
+    cards = _card(foto="https://app.pipefy.com/x/FOTO.pdf")
+
+    imp.importar(mundo["s"], mundo["dp"], simular=False,
+                 cards=[CARD], ler_cards=_leitor(cards), ler_papel=False)
+    mundo["s"].flush()
+    assert imp.o_que_ja_veio(mundo["s"], [CARD])      # anotado
+
+    # O documento some da ficha (apagado à mão, cadastro refeito, o que for).
+    mundo["s"].execute(_t("DELETE FROM documentos WHERE colaborador_id = :i"),
+                       {"i": mundo["com_card"].id})
+    mundo["s"].flush()
+    assert not imp.o_que_ja_veio(mundo["s"], [CARD])  # não mente mais
+
+    # E a importação seguinte traz de novo, em vez de dizer "JÁ TINHA".
+    r = imp.importar(mundo["s"], mundo["dp"], simular=False,
+                     cards=[CARD], ler_cards=_leitor(cards), ler_papel=False)
+    assert r["documentos_guardados"] == 1
+    assert r["documentos_ja_tinha"] == 0
+
+
+@pytest.mark.banco
+def test_o_cargo_do_card_entra_quando_o_nome_BATE(mundo):
+    """Pedido dele: *"queria que o cargo fosse preenchido por essa importação
+    também."*"""
+    from app.apps.erp.db.models.cadastros import Cargo
+    mundo["s"].add(Cargo(nome="Pedreiro", ativo=True))
+    mundo["s"].flush()
+
+    r = imp.importar(mundo["s"], mundo["dp"], simular=False, cards=[CARD],
+                     ler_cards=_leitor(_card(cargo="PEDREIRO")), ler_papel=False)
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].cargo_id is not None
+    assert not r["cargos_sem_par"]
+
+
+@pytest.mark.banco
+def test_cargo_que_NAO_existe_aqui_nao_e_adivinhado_e_o_nome_e_relatado(mundo):
+    """Cargo decide piso da convenção, CBO, riscos e EPI — "parecido" vira
+    salário e EPI errados. Não entra, e o relatório diz o nome exato para
+    alguém criar o cargo ou corrigir o card."""
+    r = imp.importar(mundo["s"], mundo["dp"], simular=False, cards=[CARD],
+                     ler_cards=_leitor(_card(cargo="AJUDANTE DE PEDREIRO II")),
+                     ler_papel=False)
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].cargo_id is None
+    assert [x["cargo"] for x in r["cargos_sem_par"]] == ["AJUDANTE DE PEDREIRO II"]
+
+
+@pytest.mark.banco
+def test_o_relatorio_diz_POR_QUE_um_campo_nao_foi_preenchido(mundo):
+    """*"A verdade é que me parece que não tá puxando é nada."* E ele não tinha
+    como saber: o relatório mostrava o que ENTROU e calava sobre o resto, então
+    "o card veio vazio", "o ERP já tinha" e "o valor foi recusado" tinham a
+    mesma aparência — nenhuma linha."""
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=[CARD],
+                     ler_cards=_leitor(_card(pis="99988877766",
+                                             sexo="Não sei dizer")),
+                     ler_papel=False)
+    fora = {c["campo"]: c["motivo"] for c in r["por_pessoa"][0]["nao_preenchidos"]}
+    # O PIS já estava preenchido aqui — o do card não troca.
+    assert "já tinha" in fora["pis"]
+    # "Não sei dizer" não é opção do cadastro, e o motivo diz quais são.
+    assert "não é opção" in fora["sexo"]
+    # E o que o card simplesmente não mandou também aparece.
+    assert fora["nome_mae"] == "o card veio vazio"

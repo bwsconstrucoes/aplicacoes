@@ -655,6 +655,17 @@ async function situacaoDoCadastroPipefy(){
   } catch(e){ onde.textContent = e.message; }
 }
 
+// ⚑ ANO-MÊS-DIA É COMO O BANCO ESCREVE, NÃO COMO SE LÊ UM NASCIMENTO. O dono
+// viu "No ERP 1988-03-30 · No card 30/03/1988" oferecido como divergência a
+// decidir e respondeu: *"o que não bateu na crítica ainda foi errada. ERP
+// trabalhando com data em padrão errado."* O servidor passou a comparar data
+// como data (não vira mais divergência); aqui ela passa a APARECER como se lê.
+function dataSeForData(valor){
+  const t = String(valor == null ? "" : valor).trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : t;
+}
+
 function pintarRelatorioPC(rel){
   if (!rel) return "";
   const linhas = [];
@@ -740,12 +751,49 @@ function pintarRelatorioPC(rel){
         <td>${escapar(d.nome)}</td>
         <td>${escapar(d.rotulo)}</td>
         <td${d.mais_forte === "cadastro" ? ' style="font-weight:600"' : ""}>${
-          escapar(d.no_cadastro || "—")}</td>
+          escapar(dataSeForData(d.no_cadastro) || "—")}</td>
         <td${d.mais_forte === "card" ? ' style="font-weight:600"' : ""}>${
-          escapar(d.no_card || "—")}</td>
+          escapar(dataSeForData(d.no_card) || "—")}</td>
         <td${d.mais_forte === "documento" ? ' style="font-weight:600"' : ""}>${
-          escapar(d.no_documento || "—")}</td>
+          escapar(dataSeForData(d.no_documento) || "—")}</td>
         <td>${escapar(d.mais_forte)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ O CARGO QUE O CARD TROUXE E NÃO EXISTE AQUI (16/11/2026). Ele pediu que
+  // a importação preenchesse o cargo; ela preenche quando o nome bate. Quando
+  // não bate, isto diz o nome exato — porque "o cargo não veio" sem dizer o
+  // que veio no card é um beco sem saída.
+  if ((rel.cargos_sem_par || []).length)
+    linhas.push(`<h4>Cargo do card que não existe no ERP (${
+      rel.cargos_sem_par.length})</h4>
+      <div class="cartao-dica">O cargo decide piso da convenção, CBO, riscos e
+        EPI — por isso ele só entra quando o nome é <b>o mesmo</b>. Crie o
+        cargo em Pessoal, ou corrija o nome no card, e importe de novo.</div>
+      <table><thead><tr><th>Pessoa</th><th>Cargo no card</th></tr></thead>
+      <tbody>${rel.cargos_sem_par.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.cargo)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ (16/11/2026). Sem isto, "o card veio
+  // vazio", "o ERP já tinha" e "o valor foi recusado" eram a mesma coisa na
+  // tela: nenhuma linha. Ele olhou e disse "me parece que não tá puxando é
+  // nada" — e não tinha como saber se estava ou não.
+  const calados = [];
+  (rel.por_pessoa || []).forEach(p => (p.nao_preenchidos || []).forEach(
+    c => calados.push({...c, nome: p.nome})));
+  if (calados.length)
+    linhas.push(`<h4>Campos que NÃO foram preenchidos (${calados.length})</h4>
+      <div class="cartao-dica">Isto não é erro — é o que a importação deixou
+        como estava, e <b>o motivo de cada um</b>. "O cadastro já tinha"
+        significa que o card não foi ignorado: o valor daqui é que tem
+        preferência.</div>
+      <div class="tabela-rolagem" style="max-height:320px">
+      <table><thead><tr><th>Pessoa</th><th>Campo</th><th>No ERP</th>
+        <th>No card</th><th>Por quê</th></tr></thead>
+      <tbody>${calados.map(c => `<tr><td>${escapar(c.nome)}</td>
+        <td>${escapar(c.rotulo)}</td>
+        <td class="dados">${escapar(dataSeForData(c.no_erp) || "—")}</td>
+        <td class="dados">${escapar(dataSeForData(c.no_card) || "—")}</td>
+        <td class="desc">${escapar(c.motivo)}</td></tr>`).join("")}
+      </tbody></table></div>`);
 
   const comCoisa = (rel.por_pessoa || []).filter(
     p => (p.documentos || []).length || Object.keys(p.campos || {}).length);
@@ -755,7 +803,9 @@ function pintarRelatorioPC(rel){
       <tbody>${comCoisa.map(p=>`<tr><td>${escapar(p.nome)}</td>
         <td>${(p.documentos||[]).map(d=>`${escapar(d.tipo)} <small>(${
           escapar(d.situacao)})</small>`).join("<br>") || "—"}</td>
-        <td>${Object.keys(p.campos||{}).join(", ") || "—"}</td></tr>`).join("")}</tbody></table>`);
+        <td>${Object.keys(p.campos||{}).map(
+          c => escapar((rel.rotulos||{})[c] || c)).join(", ") || "—"}</td>
+        </tr>`).join("")}</tbody></table>`);
   return linhas.join("");
 }
 
