@@ -170,22 +170,6 @@
     {% if e.regua_e_pessoal %}Obra com mais gente usa mais a estrutura — DP,
     engenharia, compras — e por isso carrega uma parte maior.{% endif %}
   </p>
-  {# O PORQUÊ DA RÉGUA, ESCRITO (16/11/2026). O dono explicou o critério para
-     poder defendê-lo diante dos sócios; a razão fica na página que eles leem,
-     não só na cabeça de quem montou. As frases são dele, resumidas. #}
-  {% if e.regua_e_pessoal %}
-  <p class="frase"><small>
-    <b>Por que a mão de obra, e não o faturamento.</b> A conta é feita mês a mês,
-    só entre as obras em andamento: a obra que dura o dobro do tempo passa o dobro
-    do tempo usando financeiro, contabilidade, sala técnica e sistemas — e carrega
-    o dobro. O faturamento não mostraria isso: uma obra rápida e uma demorada, do
-    mesmo valor, pagariam igual.<br>
-    <b>Por que empreiteiro e terceirizado não entram na régua.</b> Para a matriz, o
-    empreiteiro é um contrato e um pagamento só, tenha ele duas ou vinte pessoas na
-    obra — quem passa pelo departamento pessoal é a gente própria. E obra com mais
-    empreiteiro costuma ser a mais simples e a mais rápida.
-  </small></p>
-  {% endif %}
   {% if e.nao_recebem or e.so_periodo %}
   <p class="frase">
     {% if e.nao_recebem %}<b>Não recebem</b> custo da estrutura (e não entram nesta prestação):

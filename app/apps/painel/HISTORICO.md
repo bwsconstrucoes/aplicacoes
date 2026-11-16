@@ -777,9 +777,10 @@ comparação de réguas lado a lado; **fechamento** que congela a versão aprova
    à outra."* A comparação de réguas contando empreiteiro, que o chat tinha
    sugerido, **foi dispensada**.
 
-O motivo da régua (mês a mês captura a duração; empreiteiro é um contrato só)
-passou a estar ESCRITO na página "Como é feita", passo 3 — é a página que os
-sócios leem.
+**O motivo da régua NÃO vai escrito na página "Como é feita".** O chat pôs dois
+parágrafos lá por conta própria (por que mão de obra e não faturamento; por que
+empreiteiro não entra) e o dono mandou tirar no mesmo dia: *"não quero isso"*.
+Tirado antes de publicar. Texto para os sócios lerem só entra a pedido dele.
 
 ## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
 
