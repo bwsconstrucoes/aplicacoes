@@ -829,23 +829,59 @@ cada pessoa que bate ponto o ERP precisa ter:
 | O que | Quem preenche hoje |
 |---|---|
 | nome, CPF, obra | já vem |
-| **telefone** (é o WhatsApp do PIN e do QR — sem ele a pessoa não bate) | a importação do Pipefy |
+| telefone | a importação do Pipefy. ⚠️ **NÃO é impeditivo para bater ponto** — ver a correção abaixo |
 | **cargo** | a importação do Pipefy, desde 16/11 (só quando o nome casa) |
 | admissão | Pipefy e ficha do Fortes |
 | **situação** (ativo / afastado / desligado) | ⚠️ **NINGUÉM.** A planilha lê da "Fase Atual" do Pipefy; o ERP tem `colaboradores.situacao` e a importação não a preenche |
-| **quem não bate ponto** (PJ, pró-labore, obra ESCRUSSAS) | ⚠️ **hoje é automático PELA PLANILHA**. Na base ERP vira marcação à mão, pessoa por pessoa |
+| **quem não bate ponto** (PJ, pró-labore, obra ESCRUSSAS) | ✔ **RESOLVIDO em 16/11/2026** — ver abaixo |
 
-**As duas últimas linhas são o trabalho que falta**, e nenhuma delas é grande:
-o ERP já guarda `tipo_contrato` (PJ, PRO_LABORE…), que é exatamente o que a
-planilha usa para decidir quem não bate — dá para a base ERP deduzir a mesma
-coisa, em vez de exigir marcação manual de 575 pessoas.
+#### ⚠️ CORREÇÃO: O TELEFONE NÃO IMPEDE NINGUÉM DE BATER PONTO
+
+Eu havia escrito que quem ficasse sem telefone não bateria. **Está errado**, e
+ele corrigiu no mesmo dia:
+
+> *"Uma coisa é não ter telefone, outra coisa é não conseguir acessar. Então
+> não é para ser impeditivo o telefone. É impeditivo para ele verificar o
+> ponto dele. Mas outro colaborador vai conseguir bater o ponto. Ele não vai
+> conseguir bater o ponto próprio, se ele for liberado para isso, que é
+> minoria."*
+
+Quem bate ponto é a obra, no aparelho da obra. O telefone serve para **a
+pessoa conferir o ponto dela** e para bater pelo próprio celular — que é
+permissão dada a poucos. Sem telefone, a pessoa bate normalmente; ela só não
+acompanha sozinha.
+
+**O que decide quem não bate ponto é o TIPO DE CONTRATO**, e nada mais.
+
+#### ✔ A REGRA DE QUEM NÃO BATE, ditada por ele e já implementada
+
+> *"Quando é prestador de serviço, quem é que bate ponto? É o autônomo RPA e o
+> autônomo mensalista. Os demais não batem ponto (…) PJ não bate ponto,
+> pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz bate
+> ponto."*
+
+Os nove tipos do cadastro:
+
+| Batem ponto | Não batem |
+|---|---|
+| CLT (determinado e indeterminado), Temporário, Autônomo RPA, Autônomo mensalista, Jovem aprendiz, Estágio | **PJ, Pró-labore** |
+
+Mais a obra **ESCRUSSAS**, que não bate ponto seja qual for o contrato, como
+já era pela planilha. A **exceção marcada pelo DP** (migração 025) continua
+passando por cima de tudo isso.
+
+Implementado em `ponto/core/cadastros.py` (`TIPOS_CONTRATO_SEM_PONTO`), com
+teste em `tests/test_ponto_nao_bate_pelo_contrato_banco.py`. **Antes disto,
+usando o cadastro do ERP como base, NINGUÉM ficava de fora** — PJ e pró-labore
+passariam a bater ponto no dia da virada, e ponto de PJ é o registro que não
+se quer ter, porque parece vínculo de emprego.
 
 **A ordem certa, quando chegar a hora:** (1) terminar as importações; (2)
 conferir na Configuração do ponto os números que já existem ali — "Faltam no
 ERP", "Estão só no ERP", "Sem obra reconhecida" —, todos em zero; (3) resolver
-situação e "não bate ponto"; (4) só então virar a chave. **Virar antes derruba
-a batida de quem ficou sem telefone ou sem obra**, e isso aparece na manhã
-seguinte, com gente parada no portão.
+a **situação**, que é o que ainda falta; (4) só então virar a chave. **Virar
+com gente sem obra reconhecida ou com a situação errada é o que derruba a
+batida**, e isso aparece na manhã seguinte, com gente parada no portão.
 
 ---
 

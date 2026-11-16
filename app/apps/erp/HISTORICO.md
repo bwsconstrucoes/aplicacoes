@@ -35,14 +35,21 @@ cadastro do ERP.
 Virar a chave é um campo de escolha que já existe (Configuração do ponto,
 "Base que o ponto usa"). **O trabalho é encher o cadastro antes.**
 
-⚠️ **Dois buracos que nenhuma importação tapa hoje**, e eles são o que falta:
+**Um buraco continua aberto, e ele é o que falta:**
 
-1. **A situação** (ativo / afastado / desligado). A planilha lê da "Fase Atual"
-   do Pipefy; a importação de cards NÃO preenche `colaboradores.situacao`.
-2. **Quem não bate ponto** (PJ, pró-labore, obra ESCRUSSAS). Hoje é automático
-   pela planilha; na base ERP viraria marcação à mão, 575 vezes. O ERP já tem
-   `tipo_contrato`, que é exatamente o dado que a planilha usa — dá para
-   deduzir em vez de marcar.
+- **A situação** (ativo / afastado / desligado). A planilha lê da "Fase Atual"
+  do Pipefy; a importação de cards NÃO preenche `colaboradores.situacao`.
+
+**O outro já foi tapado no mesmo dia:** quem não bate ponto passou a sair do
+**tipo de contrato** do cadastro (PJ e pró-labore não batem; CLT, temporário,
+autônomo RPA, autônomo mensalista, jovem aprendiz e estágio batem), mais a
+obra ESCRUSSAS. Antes disso, na base ERP, `nao_bate` era nulo e **ninguém
+ficava de fora** — PJ bateria ponto no dia da virada.
+
+⚠️ **E eu havia escrito aqui que sem telefone a pessoa não bate. Está errado**,
+e ele corrigiu: quem bate é a obra, no aparelho da obra. O telefone serve para
+a pessoa CONFERIR o ponto dela e para bater pelo próprio celular, que é
+permissão de poucos. Sem telefone, ela bate normalmente.
 
 O detalhe inteiro, com a ordem certa de fazer, está em `CONTEXTO.md` ›
 Histórico de decisões, 16/11/2026.
