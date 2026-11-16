@@ -72,6 +72,26 @@ TIPO_CONTRATO_ROTULOS = {
     "TEMPORARIO": "Temporário",
     "PRO_LABORE": "Pró-labore",
 }
+# ⚑ OS TIPOS DE CONTRATO QUE SE OFERECEM — e são SÓ OS DE PRESTADOR
+# (15/11/2026). Ele, vendo o campo aberto para quem tem carteira: *"CTPS não
+# abre tipo de contrato, porque já é CLT. Então não tem CTPS pró-labore, PJ.
+# Está errado. Tem que ocultar o campo. Abre o campo só se for prestador de
+# serviço."*
+#
+# Tem razão, e o defeito era pior que feio: dava para gravar uma pessoa de
+# CARTEIRA com tipo de contrato "PJ", e aí o cadastro dizia duas coisas que se
+# contradizem sobre o mesmo vínculo. Quem fosse ler depois — a folha, a
+# contabilidade, um relatório — não teria como saber qual valia.
+#
+# As duas opções de CLT CONTINUAM na lista de valores aceitos (`TIPOS_CONTRATO`,
+# acima): há gente cadastrada com elas, e apagar o valor deixaria a ficha dessa
+# gente sem explicação. O que saiu foi OFERECER a escolha onde ela não existe.
+TIPOS_CONTRATO_PRESTADOR = ("PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA",
+                            "JOVEM_APRENDIZ", "ESTAGIO", "PRO_LABORE")
+for _tc in TIPOS_CONTRATO_PRESTADOR:
+    if _tc not in TIPOS_CONTRATO:
+        raise ValueError(f"tipo de contrato de prestador desconhecido: {_tc}")
+
 SEXOS = ("M", "F")
 SEXO_ROTULOS = {"M": "Masculino", "F": "Feminino"}
 ESTADOS_CIVIS = ("SOLTEIRO", "CASADO", "DIVORCIADO", "VIUVO", "UNIAO_ESTAVEL")
@@ -101,8 +121,22 @@ CATEGORIA_ALIMENTACAO_ROTULOS = {
     "SEG_QUI": "Segunda à quinta", "SEG_SEX": "Segunda à sexta",
     "MENSAL": "Mensal", "MES": "Mês",
 }
-CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "SEG_E_SEX", "VALE_TRANSPORTE",
-                         "DIARIO_E_VT", "VEICULO", "MOTOCICLETA", "BICICLETA", "CARTAO")
+# ⚑ "MES" ENTROU EM 15/11/2026, para o transporte ter o mesmo vocabulário da
+# alimentação. Ele, sobre as categorias: *"renomeia mensal para mês e explica
+# cada modo de cálculo — diário é dias úteis, mês é o valor cheio, mensal é 30
+# ou 31 vezes o valor."*
+#
+# A alimentação já tinha as duas (MENSAL e MES), e são contas DIFERENTES: uma
+# multiplica pelos dias do mês, a outra é fixa. O transporte tinha só MENSAL, e
+# quem quisesse pagar um valor cheio de transporte não tinha como dizer isso —
+# ia escolher "Mensal" e o valor sairia multiplicado.
+#
+# Acrescentar é barato e não desfaz nada: a coluna é TEXT (migração 086), não
+# há ENUM no banco, e ninguém decide nada com um `switch` exaustivo nestes
+# valores. Ficha antiga continua com o que tem.
+CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "MES", "SEG_E_SEX",
+                         "VALE_TRANSPORTE", "DIARIO_E_VT", "VEICULO",
+                         "MOTOCICLETA", "BICICLETA", "CARTAO")
 # O QUE SAIU DE USO, e por que não sai do código (05/11/2026, dele: *"isso aqui
 # a gente nem utiliza mais, cartão no transporte"*): apagar o valor deixaria sem
 # explicação a ficha de quem foi cadastrado com ele, e a folha de um mês fechado
@@ -110,7 +144,8 @@ CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "SEG_E_SEX", "VALE_TRANSPORTE",
 # apenas das caixinhas de cadastro NOVO.
 CATEGORIAS_TRANSPORTE_FORA_DE_USO = ("CARTAO",)
 CATEGORIA_TRANSPORTE_ROTULOS = {
-    "DIARIO": "Diário", "MENSAL": "Mensal", "SEG_E_SEX": "Segunda e sexta",
+    "DIARIO": "Diário", "MENSAL": "Mensal", "MES": "Mês",
+    "SEG_E_SEX": "Segunda e sexta",
     "VALE_TRANSPORTE": "Vale-transporte", "DIARIO_E_VT": "Diário e vale-transporte",
     "VEICULO": "Veículo", "MOTOCICLETA": "Motocicleta", "BICICLETA": "Bicicleta",
     "CARTAO": "Cartão (não paga em dinheiro)",
@@ -165,6 +200,10 @@ def opcoes(s: Optional[Session] = None) -> dict[str, Any]:
         "empresas": empresas,
         "vinculos": par(VINCULOS, VINCULO_ROTULOS),
         "tipos_contrato": par(TIPOS_CONTRATO, TIPO_CONTRATO_ROTULOS),
+        # ⚑ A LISTA QUE A TELA OFERECE: só os de prestador. A de cima fica
+        # para LER ficha antiga (ver `TIPOS_CONTRATO_PRESTADOR`).
+        "tipos_contrato_prestador": par(TIPOS_CONTRATO_PRESTADOR,
+                                        TIPO_CONTRATO_ROTULOS),
         "sexos": par(SEXOS, SEXO_ROTULOS),
         "estados_civis": par(ESTADOS_CIVIS, ESTADO_CIVIL_ROTULOS),
         "escolaridades": par(ESCOLARIDADES, ESCOLARIDADE_ROTULOS),

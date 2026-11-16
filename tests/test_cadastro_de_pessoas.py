@@ -63,7 +63,12 @@ def test_as_listas_de_opcoes_saem_prontas_para_a_tela():
     o = svc.opcoes()
     assert {x["valor"] for x in o["vinculos"]} == {"CTPS", "PRESTADOR"}
     assert len(o["tipos_contrato"]) == 9           # as 9 do pipe
-    assert len(o["categorias_transporte"]) == 9    # as 9 do pipe, com "Cartão"
+    # ⚑ DEZ desde 15/11/2026: "Mês" entrou para o transporte ter o mesmo
+    # vocabulário da alimentação. Sem ele não havia como pagar um valor CHEIO
+    # de transporte — quem quisesse escolhia "Mensal" e o valor saía
+    # multiplicado pelos dias do mês. Nove eram as do Pipe (com "Cartão", que
+    # saiu de uso e continua na lista para explicar ficha antiga).
+    assert len(o["categorias_transporte"]) == 10
     assert any(x["valor"] == "CARTAO" and "não paga" in x["rotulo"]
                for x in o["categorias_transporte"])
     assert len(o["ufs"]) == 27

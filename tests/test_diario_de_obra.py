@@ -1559,3 +1559,90 @@ def test_o_atalho_nao_oferece_dia_que_ja_tem_diario(sessao_real, obra, dono):
     dias = svc.dias_para_repetir(sessao_real, obra, base, "seguidos", 2)
     assert str(base + _td(days=1)) not in dias
     assert dias == [str(base + _td(days=2)), str(base + _td(days=3))]
+
+
+# ---------------------------------------------------------------------------
+# O QUADRO DO MÊS — obras nas linhas, dias nas colunas (15/11/2026)
+#
+# Ele: *"aqui era para mostrar por mês, todas as obras (…) cada coluna é um
+# dia (…) você bate o olho e já visualiza exatamente todos os dias que estão
+# faltando. E a partir dessa informação, clicar e já ir direto para o dia."*
+# ---------------------------------------------------------------------------
+@banco_
+def test_o_quadro_tem_uma_coluna_por_dia_do_mes(sessao_real, obra, dono):
+    from datetime import date as _date
+    hoje = _date.today()
+    q = svc.quadro_do_mes(sessao_real, hoje.year, hoje.month)
+    import calendar
+    assert len(q["dias"]) == calendar.monthrange(hoje.year, hoje.month)[1]
+    linha = next(o for o in q["obras"] if o["obra_id"] == obra)
+    assert len(linha["celulas"]) == len(q["dias"])
+
+
+@banco_
+def test_o_quadro_marca_o_dia_escrito_e_conta_o_que_falta(sessao_real, obra, dono):
+    from datetime import date as _date, timedelta as _td
+    quando = _date.today() - _td(days=1)
+    svc.salvar(sessao_real, obra, quando, {"relato": "Serviço do dia."}, dono)
+    sessao_real.flush()
+    q = svc.quadro_do_mes(sessao_real, quando.year, quando.month)
+    linha = next(o for o in q["obras"] if o["obra_id"] == obra)
+    assert linha["celulas"][quando.day - 1] == "aberto"
+    # o dia escrito não entra na conta do que falta
+    assert linha["faltam"] == sum(1 for c in linha["celulas"] if c == "falta")
+
+
+@banco_
+def test_obra_encerrada_nao_polui_o_quadro(sessao_real, dono):
+    """⚑ Ele: *"não era para estar exibindo as obras que estão concluídas.
+    Concluído, não tem mais diário, aí fica poluída essa tela."*"""
+    from datetime import date as _date
+    oid = sessao_real.execute(text("""
+        INSERT INTO obras (codigo, nome, status)
+        VALUES ('QD-ENCERRADA', 'Obra acabada', 'ENCERRADA') RETURNING id""")).scalar()
+    sessao_real.flush()
+    hoje = _date.today()
+    q = svc.quadro_do_mes(sessao_real, hoje.year, hoje.month)
+    assert oid not in [o["obra_id"] for o in q["obras"]]
+
+
+@banco_
+def test_o_quadro_nao_cobra_diario_fora_do_prazo_da_obra(sessao_real, dono):
+    """Antes do início e depois do término o dia nem deveria existir — cobrar
+    diário ali encheria o quadro de vermelho que ninguém pode preencher."""
+    from datetime import date as _date, timedelta as _td
+    hoje = _date.today()
+    inicio = hoje - _td(days=2)
+    oid = sessao_real.execute(text("""
+        INSERT INTO obras (codigo, nome, status, data_inicio)
+        VALUES ('QD-NOVA', 'Obra que começou ontem', 'ATIVA', :i)
+        RETURNING id"""), {"i": inicio}).scalar()
+    sessao_real.flush()
+    q = svc.quadro_do_mes(sessao_real, hoje.year, hoje.month)
+    linha = next(o for o in q["obras"] if o["obra_id"] == oid)
+    if inicio.day > 1:
+        assert linha["celulas"][0] == "fora"
+    # depois de hoje também não se cobra: diário é relato do que aconteceu
+    if hoje.day < len(linha["celulas"]):
+        assert linha["celulas"][hoje.day] == "fora"
+
+
+@banco_
+def test_o_quadro_respeita_o_escopo_de_quem_olha(sessao_real, obra, dono):
+    """Sem isto, o quadro seria a porta dos fundos para a lista inteira de
+    obras da empresa."""
+    from datetime import date as _date
+    outra = sessao_real.execute(text("""
+        INSERT INTO obras (codigo, nome, status)
+        VALUES ('QD-OUTRA', 'Obra de outro', 'ATIVA') RETURNING id""")).scalar()
+    sessao_real.flush()
+    hoje = _date.today()
+    q = svc.quadro_do_mes(sessao_real, hoje.year, hoje.month, obra_ids=[obra])
+    assert [o["obra_id"] for o in q["obras"]] == [obra]
+    assert outra not in [o["obra_id"] for o in q["obras"]]
+
+
+@banco_
+def test_mes_invalido_e_recusado_em_vez_de_quebrar(sessao_real):
+    with pytest.raises(ErroValidacao):
+        svc.quadro_do_mes(sessao_real, 2026, 13)

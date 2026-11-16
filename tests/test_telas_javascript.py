@@ -256,6 +256,26 @@ def test_a_tela_nao_procura_elemento_que_nao_existe(tela: Path):
     escritos |= set(re.findall(r'id="([\w-]+)"', BASE.read_text(encoding="utf-8")))
     # e ids montados com interpolação (id="pg-${i}") não se resolvem aqui
     prefixos = tuple(p for p in re.findall(r'id="([\w-]*?)\$\{', texto))
+    # ⚑ E OS IDS QUE OS AJUDANTES DE CAMPO CRIAM (15/11/2026).
+    #
+    # `lista("c-vinculo", …)`, `campoTexto("Matrícula", "c-mat", …)`,
+    # `campoData(…)` e `sim_nao(…)` montam `id="${id}"` dentro de si — o id
+    # existe de verdade na página, mas não aparece escrito em lugar nenhum do
+    # arquivo, então esta varredura não o via.
+    #
+    # Achado quando a ficha passou a chamar `els("c-vinculo")` para esconder o
+    # tipo de contrato de quem tem carteira: a trava acusou dois ids que
+    # existem. A regra continua a mesma — o id tem de ser CRIADO em algum
+    # lugar —, o que mudou é que ela passou a reconhecer mais um jeito de
+    # criar. Fosse pela exceção escrita à mão, a próxima tela erraria de novo.
+    for ajudante in ("lista", "campoData", "sim_nao"):
+        escritos |= set(re.findall(
+            ajudante + r'\(\s*"([\w-]+)"', texto))
+    # `campoTexto` e os do mesmo feitio recebem o RÓTULO primeiro e o id
+    # depois.
+    for ajudante in ("campoTexto", "campoData", "sim_nao"):
+        escritos |= set(re.findall(
+            ajudante + r'\(\s*"[^"]*"\s*,\s*"([\w-]+)"', texto))
 
     faltando = sorted(
         i for i in _ids_pedidos(codigo)

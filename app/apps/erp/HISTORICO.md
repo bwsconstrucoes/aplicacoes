@@ -21,6 +21,428 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 15/11/2026 (terceira olhada dele) — O PORTAL: TEXTO QUE NÃO SE ENTENDE, CPF SEM CRÍTICA E CAMPO QUE NÃO ESPERA
+
+Ele voltou com três coisas, e acertou o diagnóstico da terceira: *"eu acho que
+você não viu isso direito"*. As três estavam no **portal** — e o padrão do meu
+erro é o mesmo das duas anteriores: eu conferi a tela que estava construindo
+(a do DP) e não a que a obra usa.
+
+**1. "Sai do documento" não é explicação.** Ele: *"não dá para compreender o
+texto que está. Por exemplo, tem nome completo, aí embaixo tem 'sai do
+documento'. Que diabo de explicação é essa?"*
+
+Era taquigrafia minha: eu querendo dizer "não precisa digitar, a leitura do
+papel preenche" e escrevendo uma frase que não diz nem uma coisa nem outra.
+Reescritos os SEIS recados daquele bloco. Agora: *"não precisa digitar: anexe
+o documento de identificação aqui embaixo e este campo se preenche sozinho."*
+
+**2. O CPF não era criticado no portal.** Ele: *"o nome está pesquisável, o
+CNPJ, o CPF vai ser criticado se a pessoa já existir?"*
+
+**Não era — e esse é o pior caso:** a obra preenchia o cadastro inteiro,
+fotografava os três documentos, e só ao enviar descobria que a pessoa já
+existe. Na tela do ERP o aviso chegava no quarto dígito desde 06/11/2026; no
+portal, que é por onde a obra trabalha, não chegava nunca.
+
+Entrou `/erp/portal/api/conferir-cpf` (autenticação do portal, 401 para quem
+não entrou, devolve só existe/nome/situação) e a crítica aparece embaixo do
+campo **dizendo o que vai acontecer**: ativo barra o envio, desligado avisa que
+o pedido vai como readmissão, livre segue.
+
+⚑ **O NOME NÃO É PROCURADO, e é escolha.** Duas pessoas podem ter o mesmo
+nome, e o mesmo nome se escreve de três jeitos: procurar por nome daria "já
+existe" para homônimo e "não existe" para quem foi cadastrado abreviado. Quem
+identifica é o CPF.
+
+⚑ **E O PORTAL NÃO TEM O `api()` DO ERP.** Ele é página solta, não estende o
+`erp_base.html`, e tem o ajudante próprio (`chamar`). Eu usei o do ERP: o erro
+caiu calado no `catch` e a crítica simplesmente não aparecia, sem nada no
+console. Só o navegador mostrou.
+
+**3. O desligamento exibia os dois campos.** Ele: *"já exibe data do aviso
+prévio e data de saída (…) os campos têm que ser ocultados condicionalmente,
+como era no Pipefy."*
+
+Eu escondia o campo do outro vínculo **depois** de escolher a pessoa, e antes
+disso deixava os dois à mostra — aviso prévio (de carteira) e data de saída (de
+prestador) juntos, como se fossem duas perguntas do mesmo caso. Agora, sem
+saber de quem é o pedido, aparece só a escolha da pessoa e a observação; o
+resto nasce quando o sistema já sabe quem é. Vale no portal e na tela do DP.
+
+#### Dois defeitos achados ao conferir, os dois do MESMO feitio
+
+E o feitio é o que importa registrar: **rótulo que a tela mostra x código que o
+banco guarda.**
+
+- **O tipo de contrato nunca abria.** A condição estava escrita com
+  "PRESTADOR" (o código, porque é com ele que o SERVIDOR compara) e a caixinha
+  manda "Prestador de Serviço". Em "CTPS" os dois são iguais — e foi por isso
+  que passou na conferência. A tela passou a traduzir, e a trava de
+  `test_dp_pedidos_condicionais.py` passou a cobrar isso em `visiveis_se`
+  também, como já cobrava nos outros dois mapas.
+- **A lista dele vinha com as nove opções.** A tela apontava para
+  `tipos_contrato` — a lista que serve para LER ficha antiga — em vez de
+  `tipos_contrato_prestador`. Agora são seis nas três telas.
+
+#### Uma trava aprendeu a ver mais
+
+`test_telas_javascript.py` acusou dois ids que existem de verdade
+(`c-vinculo`, `c-contrato`), porque eles são criados dentro de `lista()` e não
+aparecem escritos como `id="..."` no arquivo. Ela passou a reconhecer os ids
+que `lista()`, `campoTexto()`, `campoData()` e `sim_nao()` criam. A regra não
+afrouxou — o id continua tendo de ser criado em algum lugar; o que mudou é que
+ela conhece mais um jeito de criar. Exceção escrita à mão deixaria a próxima
+tela errar de novo.
+
+### ⚑ 15/11/2026 (depois de publicar) — DOIS ERROS MEUS QUE ELE VIU NA PRIMEIRA OLHADA
+
+Publiquei, ele abriu, e achou duas coisas em minutos. As duas valem registro
+porque o padrão de erro é o mesmo nas duas: **eu consertei o lugar onde fui
+olhar, não o lugar onde o defeito morava.**
+
+#### 1. O tipo de contrato aparecia para quem tem carteira
+
+Ele: *"Você ainda errou no tipo de contrato. CTPS não abre tipo de contrato,
+porque já é CLT. Então não tem CTPS Pró-labore, PJ. Tá errado. Tem que ocultar
+o campo. Abre o campo só se for prestador de serviço."*
+
+**Onde eu tinha consertado:** no formulário de PEDIDO do DP, que era a tela
+que eu estava construindo.
+
+**Onde o defeito estava:** também na FICHA DA PESSOA (Colaboradores › Vínculo
+e pagamento), que é onde o DP de fato cadastra gente — e lá o campo aparecia
+sempre, com as NOVE opções, inclusive as de CLT. Dava para gravar alguém de
+carteira com tipo de contrato "PJ", e aí a ficha dizia duas coisas que se
+contradizem sobre o mesmo vínculo; quem fosse ler depois (a folha, a
+contabilidade, um relatório) não teria como saber qual valia.
+
+**Como ficou:** o campo nasce FECHADO e abre só quando o vínculo é prestador —
+nas duas telas. A diferença entre "esconder quando é CTPS" e "só abrir quando
+é prestador" parece a mesma e não é: na primeira, o campo fica à mostra
+enquanto ninguém escolheu nada, e alguém responde "PJ" antes de dizer que é
+CTPS. Trocar para carteira LIMPA o campo, de propósito.
+
+A lista encurtou para os SEIS de prestador, e a fonte é uma só
+(`TIPOS_CONTRATO_PRESTADOR`, em `core/cadastros/pessoas.py`). As duas opções
+de CLT continuam entre os valores aceitos, para LER ficha antiga.
+
+#### 2. A empresa: a terceira vez que ele cobrou o mesmo assunto
+
+Ele: *"Em relação à empresa, CNPJ da empresa, você continua errando. Você está
+pegando do cadastro do colaborador, eu acho. Tem que pegar do cadastro das
+empresas do ERP. Lá já estão cadastradas 4 empresas. E continua aparecendo
+errado, ou seja, não está sendo usado o cadastro correto. A base correta."*
+
+**A lista VINHA do cadastro de Empresas.** O erro era o **CAMPO**: ele pedia um
+CNPJ ("CNPJ para Admissão"), então a consulta só podia oferecer empresa com
+CNPJ preenchido — e a **C3 está cadastrada sem CNPJ**. Quatro cadastradas,
+três aparecendo.
+
+**O que eu fiz na cobrança anterior, e por que não resolveu:** escrevi embaixo
+do campo quem havia ficado de fora e por quê. Isso EXPLICA o sintoma e mantém
+o defeito — e o defeito era o campo existir.
+
+**Como ficou:** o campo é a **EMPRESA**, não o CNPJ. O pedido guarda o número
+da empresa (`empresa_id`), igual à ficha da pessoa já fazia; o CNPJ é um dado
+dela, que o cadastro dela guarda e o sistema busca ao gravar. As quatro
+aparecem, e a que está sem CNPJ aparece **dizendo** que está — nas duas telas e
+no portal. Cadastrar o CNPJ que falta volta a ser arrumar o cadastro da
+empresa, e não condição para abrir um pedido.
+
+⚑ **E A LISTA DE SOCORRO FOI APAGADA.** Havia TRÊS empresas escritas dentro do
+código, usadas quando a consulta não achasse nada — e três era exatamente o
+número que ele reclamou de ver, nas duas vezes. Nunca confirmei se era isso que
+aparecia, mas o risco não se justifica: lista inventada que parece certa é pior
+que lista vazia, porque ninguém desconfia dela. Agora, sem cadastro, a lista vem
+vazia e a tela diz o que fazer.
+
+#### A lição, porque ela não é destas duas telas
+
+**Campo que pede um dado DERIVADO de um cadastro vai sempre excluir quem está
+com esse dado em branco.** "CNPJ para admissão" não é a pergunta: a pergunta é
+"por qual empresa?". Quando a pergunta é a entidade, o cadastro dela pode estar
+incompleto sem desaparecer da lista.
+
+E: **quando ele reclama de uma tela, a mesma regra provavelmente vive em
+outras duas.** O tipo de contrato estava no pedido, na ficha e no portal. Da
+próxima vez, procurar as três ANTES de dizer que está pronto.
+
+Testes: `tests/test_dp_pedidos_condicionais.py` ganhou cinco casos sobre a
+empresa — entre eles o que exige que a empresa SEM CNPJ apareça na lista, e o
+que proíbe CNPJ escrito dentro do código.
+
+
+### ⚑ 15/11/2026 — OS FORMULÁRIOS DO DP PASSAM A SE AJUSTAR AO CASO
+
+Pedido longo dele, com seis decisões no mesmo texto, e todas atacam o mesmo
+defeito: **o formulário perguntava coisa que não se aplicava, ou obrigava a
+pessoa a escolher o tipo certo antes de saber a diferença entre eles.**
+
+Ele fechou com *"rode aí tudo, faça as perguntas para esclarecer alguma coisa
+que não ficou direito, e vamos para frente"*, e respondeu quatro perguntas:
+
+1. **Obra**: *"admissão nova ou de colaborador demitido tem que ter a obra.
+   Demais não precisa."*
+2. **Atestado**: acima de 15 dias o sistema abre o afastamento sozinho.
+3. **Desligado que vira prestador**: continua demitindo e readmitindo — com
+   uma trava para o esquecimento não ser silencioso.
+4. **Desligamento**: um tipo só, com os campos saindo do vínculo da pessoa.
+
+#### O que mudou, item por item
+
+**Um desligamento só.** O tipo "Desligamento de Prestador de Serviço" saiu da
+caixinha. Escolhida a pessoa, o sistema lê o vínculo dela no cadastro: carteira
+mostra forma de desligamento e aviso prévio; prestador mostra só a data de
+saída. A regra mora em `TIPOS["DESLIGAMENTO"]["por_vinculo"]` e é lida pelos
+três que precisam dela — a tela (para mostrar), o `abrir` (para recusar) e o
+checklist (onze passos de rescisão para CTPS, três para prestador).
+
+**Readmissão deixou de ser um tipo.** No cadastro, o CPF decide: se já existe
+alguém DESLIGADO com aquele CPF, o sistema oferece a readmissão e o mesmo
+pedido se converte — o atendimento reabre o vínculo em vez de criar ficha nova.
+Antes era recusa seca, e quem não soubesse que existia um tipo chamado
+Readmissão tentava de novo com o nome escrito diferente: nascia a segunda ficha
+da mesma pessoa. CPF de quem está ATIVO continua sendo recusa (não há o que
+readmitir; há ficha para corrigir).
+
+**Vale-transporte virou opção da ajuda de custo**, que é o que ele já era na
+lista de categorias. Entrou a pergunta que faltava: descontar em folha ou a
+empresa absorve.
+
+**O cadastro ficou condicional.** CTPS esconde "pagamento" e "valor do mês"
+(em carteira o valor é o da convenção) e esconde "tipo de contrato" (é sempre
+CLT); prestador passa a exigir o tipo de contrato — PJ, autônomo RPA, autônomo
+mensalista, jovem aprendiz, estágio, pró-labore — e diarista/mensalista. "Valor
+do mês" só aparece para mensalista. **Telefone, chave Pix e valor da diária
+ficaram obrigatórios**, pela mesma razão dos documentos: sem telefone ninguém
+avisa a pessoa de nada e sem Pix ela não recebe.
+
+**Cada opção de categoria tem a conta escrita embaixo do campo** — "Mensal" e
+"Mês" ficavam lado a lado dando contas diferentes, e nada escrito.
+
+**A obra só é perguntada onde não há de onde tirá-la**: cadastro novo e
+readmissão. Nos outros onze tipos ela sai da ficha da pessoa.
+
+#### A trava do bug do ponto
+
+O desligamento de carteira passou a perguntar, **obrigatoriamente**, se a
+pessoa continua trabalhando. Respondido "sim, como prestador": o checklist do
+DP ganha dois passos ("abrir a readmissão — SEM ela o ponto não aceita a pessoa
+no dia seguinte") e a tela de Solicitações mostra, acima da fila, a lista de
+**readmissões que ninguém fez** (`readmissoes_esquecidas`).
+
+O mecanismo do bug que ele relatou: desligar corta o acesso ao aparelho da obra
+na data de saída; readmissão esquecida = a pessoa aparece para trabalhar e não
+consegue bater, e quem descobre é a obra, às sete da manhã, sem saber o motivo.
+A pergunta é obrigatória de propósito — pergunta opcional sobre algo que, se
+esquecido, deixa alguém sem bater o ponto é pergunta que não foi feita.
+
+#### O atestado de mais de 15 dias (área do PONTO)
+
+`app/apps/ponto/core/afastamento_longo.py`, chamado quando um ATESTADO termina
+aprovado. Soma os dias de atestado aprovado da pessoa na janela de 60 dias; se
+passou de 15, abre um AFASTAMENTO **aguardando o DP** — não aprovado.
+
+Os primeiros 15 dias são da empresa; do 16º em diante o benefício é do INSS. A
+soma pega o caso que escapa: quatro atestados de cinco dias não chamam atenção
+nenhum, juntos passam do limite. **Nasce como pedido, e não aprovado**, porque
+afastamento aprovado muda o que a folha paga e a soma legal vale para a MESMA
+doença — coisa que só quem lê o atestado sabe. Declaração de comparecimento
+fica fora da conta (é consulta de horas, não dia de doença).
+
+⚠️ **Isto mexeu em `app/apps/ponto/`**, que é outra área. A mudança é de dois
+lugares só: o módulo novo e um `elif` em `core/ocorrencias.py::_aplicar`,
+dentro de um `try` — defeito na regra nova não pode desfazer a aprovação do
+atestado. Registrado também no `HISTORICO.md` do ponto.
+
+#### Cinco defeitos achados no caminho, e quatro deles só o navegador pegou
+
+1. **A caixinha de obra do DP estava VAZIA** — a tela monta a lista com
+   `obras` da rota `/erp/api/colaboradores/opcoes`, e essa chave **nunca
+   existiu** lá. Como a obra passou a ser obrigatória em 10/11/2026, **não
+   havia como abrir um pedido de cadastro de colaborador desde então**: o
+   pedido mais importante da fila estava impossível, e a tela não dizia por
+   quê. A rota agora manda as obras, respeitando o recorte de quem é preso a
+   obra.
+2. **Toda caixinha vinha com a primeira opção já escolhida**, porque faltava a
+   opção vazia na frente. Em "Categoria Auxílio Alimentação" isso concedia
+   "Segunda à quinta" a todo cadastro novo, calado. Em "Forma de Desligamento"
+   era pior: dava para confirmar sem escolher nada e o pedido saía como "A
+   pedido do colaborador" — a forma que não paga aviso nem multa.
+3. **Duas listas para a mesma categoria de auxílio**: a do DP, com os rótulos
+   do Pipe ("Vale Transporte"), e a do cadastro, com os códigos que a coluna
+   guarda ("VALE_TRANSPORTE"). A tela usava uma e o pedido gravava a outra, e
+   o atendimento não tinha como aplicar o benefício. Agora a fonte é o
+   cadastro, que é de onde a folha lê.
+4. **Os ouvintes de um diálogo sobravam para o seguinte.** O `perguntar()` do
+   `erp_base.html` reaproveitava a mesma janela, e `addEventListener` acumula:
+   com campos condicionais, a janela de escolher o tipo e a do formulário
+   rodavam as duas regras, a antiga mexendo nos campos da nova pela POSIÇÃO.
+   Agora a janela nasce nova a cada pergunta — quem não existe não escuta.
+5. **Escolher um prestador escondia o campo de escolher a pessoa**: ele não
+   constava da lista de campos do vínculo, e a regra o tratou como campo do
+   outro vínculo.
+
+Também saiu de circulação, nas caixinhas de pedido novo, a opção "Cartão" do
+transporte, que ele aposentou em 05/11/2026 e continuava à escolha.
+
+#### Onde isto vive
+
+- `core/pessoal_solicitacoes.py` — `por_vinculo`, `ocultos_se`, `visiveis_se`,
+  `campos_do_tipo`, `obrigatorios_do_tipo`, `campos_do_dp_do_tipo`,
+  `checklist_do_tipo`, `readmissoes_esquecidas`, `EXPLICACAO_DA_OPCAO`.
+- `templates/erp_base.html` — o `perguntar()` passou a aceitar campo
+  condicional (`mostrar_se`), dica que muda (`dica_de`) e obrigatoriedade que
+  muda (`obrigatorio_se`). Mora no ajudante, e não na tela do DP, pela mesma
+  razão da máscara de CNPJ: tela nova nasce com isto de graça.
+- `templates/erp_dp_solicitacoes.html` — monta as condições do que o servidor
+  manda; nenhuma regra escrita na tela.
+- `core/auth/permissoes.py` — ação nova `conferir_cpf_colaborador`, implicada
+  por `editar_colaboradores` e `solicitar_dp`. Antes a conferência de CPF
+  exigia `editar_colaboradores`, que a obra não tem: o aviso não aparecia para
+  quem mais precisa dele.
+- `app/apps/ponto/core/afastamento_longo.py` — a regra dos 15 dias.
+- Testes: `tests/test_dp_pedidos_condicionais.py` (30) e
+  `tests/test_ponto_atestado_longo_banco.py` (8).
+
+#### O que ficou de fora, e o que eu assumi
+
+- **"Mês" entrou na lista de transporte** (a alimentação já tinha as duas).
+  Sem isso não havia como pagar um valor cheio de transporte: quem quisesse
+  escolhia "Mensal" e o valor saía multiplicado pelos dias do mês. É só
+  acrescentar valor numa coluna TEXT, sem migração.
+- **A pergunta "continua trabalhando?" é obrigatória** no desligamento de
+  carteira. Custa um clique no desligamento comum; o esquecimento custa uma
+  obra parada às sete da manhã. Se ele achar ruim, troco para opcional com
+  "não" pré-marcado.
+- **O afastamento aberto pelo sistema começa no dia que estourou a conta** e
+  termina no último dia do atestado. Com atestados picados essa data é um
+  ponto de partida, não a verdade — o DP ajusta, e é por isso que o pedido
+  nasce aberto.
+- **Não mexi** em: segunda via de crachá, planilhas de cadastro, contrato/
+  etiqueta/termos e documentação de rescisão — ele disse que "não importam".
+- **Não verificado em produção**: nada disto rodou com dado real. Rodou na
+  cópia local, tela por tela, no navegador.
+
+
+### ⚑ 15/11/2026 — O CONTRATO DE EXPERIÊNCIA PASSA A CRITICAR O DESLIGAMENTO
+
+Ele: *"se é encerramento de contrato de experiência, nós temos essa
+informação, nós temos campo para ela na base de dados (…) a gente pode
+contratar 45 mais 45, 30 mais 60, 60 mais 30, ou pode contratar 90 dias direto
+(…) eu quero facilitar a seleção do tipo de desligamento."* E: *"quando é
+encerramento de contrato de experiência, eu não preciso dar aviso. Então essa
+data de aviso já se torna desnecessária, concorda?"*
+
+**Concordo, e é direito, não preferência.** O contrato de experiência acaba
+porque o prazo acabou; aviso prévio existe para quem ROMPE antes do fim (CLT,
+art. 481). Exigir a data obrigava a pessoa a inventar uma — e data inventada
+vira conta errada na rescisão.
+
+**Tudo sai de dois campos que JÁ EXISTIAM e ninguém usava:**
+`colaboradores.admissao` e `colaboradores.contrato_experiencia` (migração
+086). Sem tabela nova. A regra mora em `core/pessoal_experiencia.py`:
+
+- lê o arranjo pelos NÚMEROS, não pelo texto ("45+45 dias", "45 + 45" e
+  "45 dias, prorrogável por mais 45" são a mesma coisa — o cadastro tem as
+  três grafias, vindas da planilha, do Pipe e da digitação);
+- **o primeiro dia conta**: 45 dias a partir de 1º de março acabam em 14 de
+  abril, não em 15. Um dia de erro aqui é a diferença entre encerrar no prazo
+  e romper o contrato antes;
+- diz a FASE de hoje (primeira parte, prorrogação, ou já venceu) e escreve a
+  frase em português, que é a mesma na tela e no papel;
+- **contrato vencido avisa que virou prazo indeterminado** — e aí o
+  desligamento não é mais encerramento de experiência. É o aviso que evita o
+  pedido errado;
+- número acima de 90 no cadastro é ignorado: é o teto da CLT, logo é erro de
+  digitação, e tratá-lo como prazo faria o sistema avisar a data errada.
+
+**Onde isso aparece:** ao escolher a pessoa em qualquer pedido, a busca passou
+a mostrar **vínculo, tipo de contrato, data de início e a situação do contrato
+de experiência**. Era outro pedido dele do mesmo dia: *"na hora que selecionar
+o colaborador, a gente já sabe que tipo de colaborador ele é — isso o sistema
+já tem que informar."*
+
+⚠️ **A TRAVA DO AVISO PRÉVIO MORA NO SERVIDOR**, em `exigencias()`, não só na
+tela: tela esconde campo, servidor é que recusa pedido. E `exige_aviso_previo`
+aceita **o rótulo e o código** (a tela manda "Encerramento de Contrato de
+Experiência", o servidor trabalha com "FIM_EXPERIENCIA") — valer só um dos
+dois faria a tela esconder o campo e o servidor continuar exigindo, que é o
+pior desfecho: a pessoa não vê onde preencher nem consegue enviar.
+
+**25 provas** em `tests/test_contrato_experiencia.py`, incluindo a virada de
+fase dia a dia e a concordância entre tela e servidor.
+
+### ⚑ 15/11/2026 — O DIÁRIO NO CELULAR, e o quadro do mês como porta da tela
+
+Ele abriu o diário no celular: *"ele está abrindo tal qual no computador. Só
+que no computador a gente tem uma tela ampla (…) aqui não é local de gestão, é
+local apenas de lançamento de informação."* Cinco coisas saíram daí.
+
+**1. O QUADRO DO MÊS virou a tela inicial.** Ele descreveu o que já usa:
+*"uma planilha, cada coluna é um dia, dia 1, dia 2, até o final do mês, e cada
+dia tem uma marcação dizendo se está ou não preenchido. Você bate o olho e já
+visualiza exatamente todos os dias que estão faltando. E a partir dessa
+informação, clicar e já ir direto para o dia."* É isso: obras nas linhas, dias
+nas colunas, as MESMAS cores do calendário de uma obra, e o clique no quadrado
+vermelho abre aquele dia daquela obra. A primeira coluna fica presa ao rolar
+para o lado, senão no dia 25 ninguém sabe mais de que obra é a linha.
+
+**2. A TELA NÃO ABRE MAIS NUMA OBRA.** *"Não fica legal entrar na tela já da
+primeira obra. Inclusive, no próprio computador também."* Entrando pelo
+quadro, não há obra escolhida — e a obra se escolhe pelo dia que falta, que é
+o caminho de quem vai preencher.
+
+**3. O MÊS EM PORTUGUÊS.** *"No filtro, o mês está 2026-11. A gente está no
+Brasil, então é para ser 11/2026."* O campo `type="month"` escreve no formato
+do NAVEGADOR e não há como mandar nele — num aparelho configurado em inglês
+sai "2026-11". Viraram duas caixinhas, mês por nome e ano, que escrevem certo
+em qualquer aparelho e ainda são mais fáceis de tocar.
+
+**4. A BUSCA DE OBRA FUNCIONA NO CELULAR.** *"Eu botei o nome de uma obra e ele
+não… aí eu tenho que clicar. No computador você começa a escrever e já vai
+exibindo (…) e no celular não aparece."* A busca da casa filtra as opções
+DENTRO do `<select>`, e no celular o `<select>` só mostra a lista depois de a
+pessoa tocar nele — digitar parecia não fazer nada. Agora os achados aparecem
+na própria coluna e se tocam.
+
+**5. NO CELULAR, O RELATO VEM PRIMEIRO.** *"O cabeçalho, aquilo ali são muitas
+informações (…) bastava a obra. Efetivo do dia, de forma mais resumida."* Na
+tela estreita a ordem muda — relato, fotos, equipamentos, fiscalização, e só
+depois a ficha da obra e o efetivo, os dois recolhidos. No computador nada
+mudou: lá a tela é larga e a visão de gestão cabe junto.
+
+⚠️ **OBRA CONCLUÍDA NO QUADRO É DADO, NÃO CÓDIGO.** Ele: *"não era para estar
+exibindo as obras que estão concluídas."* O filtro `status <> 'ENCERRADA'` já
+existia e continua — obra que aparece ali é obra marcada como **ATIVA** no
+cadastro. Encerrar é na tela de Obras. (Se a C. Diários tiver uma coluna de
+situação, dá para trazer na importação; eu não sei o nome dela.)
+
+### ⚑ 15/11/2026 — O PEDIDO DO DP MOSTRAVA NOME TÉCNICO E CAIXINHA VAZIA
+
+Ele: *"CNPJ para admissão, ele não está exibindo os CNPJs das obras
+cadastradas. Não sei de onde é que ele está pegando essa informação. Está
+exibindo 3, quando a gente tem 4 CNPJ cadastrados no ERP."*
+
+**Duas coisas diferentes, e as duas eram defeito:**
+
+1. **A tela do DP tinha a PRÓPRIA lista de rótulos e caixinhas**, escrita
+   dentro do template, e ela ficou para trás da lista do servidor. Campo que o
+   servidor descreve e a tela não conhecia aparecia com o **nome técnico cru**
+   (`cnpj_admissao`, `tipo_documentacao`, `cargo_pleiteado_id`) e como caixa de
+   TEXTO vazia — sem as opções que o servidor já mandava prontas. Agora o
+   servidor manda e a tela obedece; os mapas de lá viraram socorro. De quebra,
+   `cargo_pleiteado_id` deixou de ser texto livre: era pedir "pedreiro" escrito
+   à mão e o DP receber algo que não casa com cadastro nenhum.
+2. **A quarta empresa sumia em silêncio.** A lista vem do cadastro, sim, mas
+   duas condições tiram empresa de lá: estar marcada como **inativa** e estar
+   **sem CNPJ**. A regra está certa (campo que É o CNPJ não tem o que oferecer
+   sem CNPJ); o defeito era não dizer. Agora a dica embaixo do campo nomeia
+   quem ficou de fora e por quê. **Reproduzido**: 4 empresas cadastradas, 3 na
+   caixinha, e a tela dizendo "Não aparece aqui: C3 (está sem CNPJ no
+   cadastro)".
+
 ### ⚑ 14/11/2026 — AS FOTOS DO DIÁRIO, com folha de anexo no papel
 
 Ele: *"era muito interessante a gente poder colocar serviços executados e

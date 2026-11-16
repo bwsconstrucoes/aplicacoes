@@ -802,6 +802,41 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 15/11/2026 — O ATESTADO DE MAIS DE 15 DIAS ABRE O AFASTAMENTO SOZINHO (atravessa áreas: DP e Ponto)
+
+O assunto nasceu no chat do **DP**, num pedido longo do dono sobre os
+formulários de solicitação, e a mudança caiu na área do **Ponto** — por isso
+fica registrada aqui, além dos dois `HISTORICO.md`.
+
+Ele escolheu entre três caminhos (sempre manual, sempre automático, ou acima de
+um limite) e decidiu: *"Acima de 15 dias, o sistema abre sozinho."*
+
+**A razão dos 15 dias:** os primeiros 15 dias de atestado são da EMPRESA — ela
+paga e abona as faltas. Do 16º em diante o benefício é do INSS, e aí deixa de
+ser abono de falta e passa a ser AFASTAMENTO. A mesma conta vale com atestados
+PICADOS: a lei soma os dias da mesma doença dentro de 60 dias, e quatro
+atestados de cinco dias não chamam atenção nenhum — juntos passam do limite.
+Ninguém do DP vai somar isso à mão para 575 pessoas.
+
+**O que mudou, por área:**
+- **Ponto**: `core/afastamento_longo.py` (arquivo novo) e **um `elif`** em
+  `core/ocorrencias.py::_aplicar`, dentro de um `try` — defeito na regra nova
+  não pode desfazer a aprovação do atestado. Nenhuma migração, nenhuma coluna,
+  nenhuma tela mexida. Testes: `tests/test_ponto_atestado_longo_banco.py`.
+- **ERP/DP**: nada do atestado em si; a decisão veio do pedido de lá.
+
+**⚑ O AFASTAMENTO NASCE `AGUARDANDO_DP`, NÃO APROVADO.** Afastamento aprovado
+muda o que a folha paga, e a soma legal vale para a MESMA doença — coisa que só
+quem lê o CID sabe. Aberto como pedido, com a conta escrita na descrição, o
+pior caso é o DP negar. É a única razão pela qual uma regra automática pôde
+entrar aqui sem risco de dinheiro errado.
+
+**A limitação, dita por escrito:** o sistema **não compara CID**, então soma
+atestados de doenças diferentes. A descrição do pedido avisa o DP disso. Se o
+número de afastamentos NEGADOS pelo DP for alto, é sinal de que a regra está
+errando e precisa do CID — é o termômetro dela.
+
+
 ### 14/11/2026 — O CADASTRO DO TELEGRAM ENTRA NO ERP, e quem não recebe é convidado pelo WhatsApp (atravessa áreas)
 
 O dono viu muita gente pedindo coisas e não recebendo a resposta, porque não tem

@@ -3,6 +3,47 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 15/11/2026 — o atestado que passa de 15 dias abre o afastamento sozinho (feito pelo chat do ERP/DP)
+
+⚠️ **Mudança feita por outro chat.** O assunto nasceu no chat do DP, num pedido
+longo do dono sobre os formulários de solicitação, e ele escolheu entre três
+caminhos: *"Acima de 15 dias, o sistema abre sozinho."*
+
+**A razão dos 15:** os primeiros 15 dias de atestado são da EMPRESA — ela paga
+e abona as faltas. Do 16º em diante o benefício é do INSS, e aí deixa de ser
+abono de falta e passa a ser AFASTAMENTO (perícia, documento, outro tratamento
+na folha). A mesma conta vale com atestados PICADOS: a lei soma os dias da
+mesma doença dentro de 60 dias, e quatro atestados de cinco dias não chamam
+atenção nenhum — juntos passam do limite. Por isso não ficou manual: ninguém do
+DP vai somar à mão os atestados de 575 pessoas.
+
+**O que foi mexido, e é pouco de propósito:**
+
+- `core/afastamento_longo.py` — **arquivo novo**, com a conta e a decisão.
+- `core/ocorrencias.py::_aplicar` — **um `elif`**, dentro de um `try`: defeito
+  na regra nova não pode desfazer a aprovação do atestado, que já está certa e
+  a pessoa precisa dela abonada hoje.
+- `tests/test_ponto_atestado_longo_banco.py` — oito testes com banco de
+  verdade.
+
+**Nenhuma migração, nenhuma coluna nova, nenhuma tela mexida.**
+
+**⚑ O AFASTAMENTO NASCE `AGUARDANDO_DP`, NÃO APROVADO.** Afastamento aprovado
+muda o que a folha paga, e a soma legal vale para a MESMA doença — coisa que só
+quem lê o CID sabe. Aberto como pedido, com a conta escrita na descrição, o
+pior caso é o DP negar. A descrição começa com "ABERTO PELO SISTEMA" e diz
+quantos dias somaram, em quantos atestados e em que janela.
+
+**O que ficou de fora:** a declaração de comparecimento não entra na soma (é
+consulta de horas, não dia de doença); o módulo não agenda perícia, não abona
+nada por conta própria e não mexe no atestado que o disparou. E a data de
+início do afastamento é um ponto de partida, não a verdade — com atestados
+picados o DP ajusta, e é para isso que o pedido nasce aberto.
+
+**Não testado em produção.** Rodou na suíte com Postgres local.
+
+---
+
 ## 14/11/2026 — a ficha única ganhou a aba "Telegram e mensagens" (feito pelo chat da Mensageria)
 
 Pedido do dono: o Telegram de cada pessoa e as mensagens que ela recebeu dentro do cadastro dela. Na janela da

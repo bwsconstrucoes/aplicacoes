@@ -8992,6 +8992,16 @@ def api_colaboradores_buscar():
                 consulta = consulta.where(
                     Colaborador.obra_id.in_(list(permitidas) or [-1]))
             achados = list(s.scalars(consulta.limit(8)).all())
+            # ⚑ O VÍNCULO VAI JUNTO (15/11/2026). Ele: *"na hora que
+            # selecionar o colaborador, a gente já sabe que tipo de
+            # colaborador ele é. Isso o sistema já tem que informar: dados
+            # básicos ali, prestador tal, iniciou tal, tipo de vínculo dele,
+            # se é carteira de trabalho, se é prestador — isso já tem que
+            # aparecer para facilitar para quem está pedindo o desligamento."*
+            #
+            # E com ele o CONTRATO DE EXPERIÊNCIA, que é o que mais muda o
+            # pedido: muda a forma do desligamento e tira o aviso prévio.
+            from app.apps.erp.core import pessoal_experiencia as svc_exp
             return jsonify({"ok": True, "pessoas": [{
                 "id": c.id, "nome": c.nome, "cpf": c.cpf,
                 "situacao": c.situacao or "ATIVO",
@@ -8999,6 +9009,11 @@ def api_colaboradores_buscar():
                 # e homônimo em obra é comum.
                 "obra": (s.get(Obra, c.obra_id).codigo
                          if c.obra_id and s.get(Obra, c.obra_id) else ""),
+                "vinculo": c.vinculo or "",
+                "tipo_contrato": c.tipo_contrato or "",
+                "admissao": str(c.admissao) if c.admissao else None,
+                "cnpj_admissao": c.cnpj_admissao or "",
+                "experiencia": svc_exp.situacao(c.admissao, c.contrato_experiencia),
             } for c in achados]})
     except Exception as e:
         logger.exception("ERP: falha na busca de colaborador")
@@ -11414,20 +11429,44 @@ def api_dc_acao(despesa_id: int, acao: str):
 @login_obrigatorio
 @permissao("ver_pessoal")
 def api_colaboradores_opcoes():
-    """As listas das caixinhas (vínculo, contrato, escolaridade…) e os cargos."""
+    """As listas das caixinhas (vínculo, contrato, escolaridade…) e os cargos.
+
+    ⚑ AS OBRAS ENTRARAM EM 15/11/2026, e isto era DEFEITO EM PRODUÇÃO: a tela
+    de Solicitações ao DP monta a caixinha de obra com `o.obras` desta rota —
+    que nunca existiu aqui. Resultado: a caixinha vinha com uma opção só ("
+    escolha a obra…"), e como a obra é obrigatória, **não havia como abrir um
+    pedido de cadastro de colaborador** desde que ela passou a ser exigida
+    (10/11/2026). O pedido mais importante da fila estava impossível, e a tela
+    não dizia por quê — a lista simplesmente estava vazia.
+
+    ⚑ RESPEITA O RECORTE POR OBRA: `obras_do_usuario` devolve `None` para quem
+    alcança todas, e a lista das permitidas para quem é preso a obra. Mandar
+    todas as obras para quem só enxerga uma seria vazar o nome das outras numa
+    caixinha — e deixar abrir pedido onde ele não deveria.
+    """
+    from sqlalchemy import select
+
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
     from app.apps.erp.core.cadastros import cargos as svc_cargos
     from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    from app.apps.erp.db.models.cadastros import Obra
     with get_session() as s:
+        permitidas = obras_do_usuario(s, _usuario_logado(s))
+        obras = [o for o in s.scalars(select(Obra).order_by(Obra.codigo)).all()
+                 if getattr(o, "status", None) != "ENCERRADA"
+                 and (permitidas is None or o.id in set(permitidas))]
         # SEM O PISO: esta rota é aberta a quem tem `ver_pessoal` (inclui
         # supervisor de obra e parceiro), e eles precisam da lista de cargos
         # para a caixinha — não da tabela salarial da empresa.
         return jsonify({"ok": True, **svc_pessoas.opcoes(s),
-                        **svc_cargos.listar(s, com_salario=False)})
+                        **svc_cargos.listar(s, com_salario=False),
+                        "obras": [{"id": o.id, "codigo": o.codigo,
+                                   "nome": o.nome} for o in obras]})
 
 
 @bp.route("/erp/api/colaboradores/conferir-cpf")
 @login_obrigatorio
-@permissao("editar_colaboradores")
+@permissao("conferir_cpf_colaborador")
 def api_colaboradores_conferir_cpf():
     """"Esta pessoa já existe?" — respondido ENQUANTO se digita.
 
@@ -12096,6 +12135,38 @@ def api_obras_cdiarios():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/diario/quadro")
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_quadro():
+    """O mês inteiro de TODAS as obras: linhas de obra, colunas de dia.
+
+    Pedido dele em 15/11/2026: *"aqui era para mostrar por mês, todas as obras
+    (…) cada coluna é um dia (…) você bate o olho e já visualiza exatamente
+    todos os dias que estão faltando (…) clicar e já ir direto para o dia."*
+
+    ⚑ RESPEITA O ESCOPO: quem é preso a obras vê só as dele. Sem isto, o
+    quadro seria a porta dos fundos para a lista inteira de obras da empresa.
+    """
+    from datetime import date as _date
+
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        hoje = _date.today()
+        ano = request.args.get("ano", type=int) or hoje.year
+        mes = request.args.get("mes", type=int) or hoje.month
+        with get_session() as s:
+            minhas = obras_do_usuario(s, _usuario_logado(s))
+            return jsonify({"ok": True, **svc.quadro_do_mes(
+                s, ano, mes, obra_ids=minhas)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no quadro do mês do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/fotos", methods=["POST"])
 @login_obrigatorio
 @permissao("lancar_diario")
@@ -12374,6 +12445,44 @@ def api_portal_pessoas():
         return jsonify({"ok": False, "erro": str(e)}), 401
     except Exception as e:
         logger.exception("ERP/portal: falha ao procurar pessoa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/portal/api/conferir-cpf")
+@permissao_publica("o portal tem autenticação própria, do ponto — ver "
+                   "core/portal.quem_esta")
+def api_portal_conferir_cpf():
+    """"Esta pessoa já existe?" — respondido ENQUANTO o CPF é digitado.
+
+    ⚑ FALTAVA NO PORTAL, e ele perguntou por isso em 15/11/2026, olhando o
+    formulário de cadastro: *"o nome está pesquisável, o CNPJ, o CPF vai ser
+    criticado se a pessoa já existir?"*
+
+    A resposta era NÃO — e isso é o pior caso: a obra preenchia o cadastro
+    inteiro, anexava os três documentos, e só ao enviar descobria que a pessoa
+    já existia. Na tela do ERP o aviso já chegava no quarto dígito desde
+    06/11/2026; no portal, que é por onde a obra trabalha, não chegava nunca.
+
+    ⚑ O QUE ELA DEVOLVE É O MÍNIMO: existe, o nome, e se está ativa ou
+    desligada. Nada de salário, endereço ou documento — quem abre pedido não
+    precisa disso, e varrer CPFs não mapearia o cadastro.
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_portal.quem_esta(s, usuario)            # 401 se não entrou
+            achado = svc_pessoas.conferir_cpf(s, request.args.get("cpf", ""))
+        # O recado completo do cadastro traz "abra a ficha dela" — coisa que
+        # quem está na obra não pode fazer. A frase daqui é a do portal.
+        return jsonify({"ok": True, "situacao": achado["situacao"],
+                        "nome": achado.get("nome", ""),
+                        "aviso": achado.get("aviso", "")})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao conferir o CPF")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

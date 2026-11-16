@@ -1073,12 +1073,23 @@ document.addEventListener("DOMContentLoaded", () => {
 // têm algum detalhe assim".
 function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
   return new Promise(resolve => {
-    let dlg = els("dlg-pergunta");
-    if (!dlg) {
-      dlg = document.createElement("dialog");
-      dlg.id = "dlg-pergunta";
-      document.body.appendChild(dlg);
-    }
+    {# ⚑ A JANELA NASCE NOVA A CADA PERGUNTA, e isto é CONSERTO de 15/11/2026.
+
+       Antes ela era reaproveitada (`els("dlg-pergunta")`), e com os campos
+       condicionais isso virou defeito de verdade: `addEventListener` ACUMULA.
+       A janela de escolher o tipo registrava o ouvinte dela; a janela do
+       formulário registrava outro; e aí uma troca de campo rodava os DOIS —
+       o antigo olhando a lista de campos da janela que já fechou, mexendo nos
+       campos da nova pela POSIÇÃO. Campo escondido por engano, dica
+       sobrescrita, e nada disso aparece num teste de Python.
+
+       Trocar o nó em vez de limpar ouvintes um por um é o conserto que não
+       tem como ficar incompleto: quem não existe não escuta. #}
+    const anterior = els("dlg-pergunta");
+    if (anterior) anterior.remove();
+    const dlg = document.createElement("dialog");
+    dlg.id = "dlg-pergunta";
+    document.body.appendChild(dlg);
     dlg.innerHTML = `
       <div class="dlg-topo"><h3>${titulo}</h3>
         <button class="topo-btn" style="margin-left:auto" data-cancelar>Cancelar</button></div>
@@ -1086,8 +1097,14 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
         ${avisoTexto ? `<div class="aviso info">${avisoTexto}</div>` : ""}
         <div class="form-grade">
           ${campos.map((c, i) => `
-            <div class="campo" style="grid-column:span ${c.largura || 3}">
-              <label>${c.rotulo}${c.obrigatorio ? " *" : ""}</label>
+            <div class="campo" data-pg-campo="${i}"
+                 style="grid-column:span ${c.largura || 3}">
+              {# O ASTERISCO PODE MUDAR DE LUGAR enquanto a pessoa preenche:
+                 marcar CTPS passa a exigir a carteira e o PIS, que até então
+                 eram opcionais. Por isso ele vive num <span> próprio e não
+                 colado no rótulo. #}
+              <label>${c.rotulo}<span id="pg-${i}-obr">${
+                c.obrigatorio || c.obrigatorio_se ? " *" : ""}</span></label>
               {# ⚑ O VALOR VAI ESCAPADO, e isto não é zelo: desde 10/11/2026 o
                  diálogo recebe RELATO DE OBRA (a sugestão de texto por IA),
                  que é texto livre de verdade. Um `<` no meio de "laje < 10cm"
@@ -1119,7 +1136,8 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
                    <div id="pg-${i}-achados" class="busca-achados"></div>`
                 : `<input id="pg-${i}" name="${c.nome || ""}" type="${c.tipo || "text"}"
                      value="${escapar(c.valor || "")}" placeholder="${escapar(c.exemplo || "")}">`}
-              ${c.dica ? `<div class="dica">${c.dica}</div>` : ""}
+              ${(c.dica || c.dica_de)
+                ? `<div class="dica" id="pg-${i}-dica">${c.dica || ""}</div>` : ""}
             </div>`).join("")}
         </div>
         <div id="pg-erro"></div>
@@ -1128,12 +1146,72 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           <button class="btn secundario" data-cancelar>Cancelar</button>
         </div>
       </div>`;
+    {# -----------------------------------------------------------------------
+       CAMPO QUE SÓ APARECE QUANDO FAZ SENTIDO (15/11/2026)
+
+       Ele, olhando o formulário de cadastro de colaborador: *"esse formulário
+       aqui está muito desorganizado (…) quando é CTPS, o valor é o da
+       convenção, então valor do mês e pagamento diarista ou mensalista não se
+       aplicam. No Pipe tem condicionais: dependendo do que você escolhe, ele
+       exibe ou esconde os campos."*
+
+       Mora AQUI, no ajudante, e não na tela do DP, pela mesma razão da máscara
+       de CNPJ e da caixa de busca: tela nova nasce com isto de graça, e quem
+       escrever o próximo formulário condicional não vai reinventar o motor.
+
+       São duas funções que o chamador passa, e as duas recebem o MESMO objeto:
+       o que está preenchido agora, por nome de campo, mais `__pessoa` (a ficha
+       de quem foi escolhido na busca, quando houver).
+
+         · `mostrar_se(v)` → false esconde o campo;
+         · `dica_de(v)`    → troca o texto de ajuda embaixo dele.
+
+       ⚑ CAMPO ESCONDIDO NÃO É OBRIGATÓRIO E NÃO VIAJA. Sem isso, o diálogo
+       recusaria por um campo invisível (impossível de corrigir) ou mandaria ao
+       servidor um valor que a pessoa não escolheu — e, no cadastro, um "valor
+       do mês" digitado antes de marcar CTPS viraria salário.
+       ----------------------------------------------------------------------- #}
+    let pessoaEscolhida = null;
+    const escondido = i => {
+      const d = dlg.querySelector(`[data-pg-campo="${i}"]`);
+      return !d || d.style.display === "none";
+    };
+    function valoresAgora(){
+      const v = {__pessoa: pessoaEscolhida};
+      campos.forEach((c, i) => {
+        const e = els(`pg-${i}`);
+        if (!e || !c.nome) return;
+        if (c.tipo === "pessoa") { v[c.nome] = (els(`pg-${i}-id`) || {}).value || ""; }
+        else if (c.tipo === "arquivo") { v[c.nome] = (e.files || [])[0] || null; }
+        else { v[c.nome] = e.value || ""; }
+      });
+      return v;
+    }
+    function aplicarCondicoes(){
+      const v = valoresAgora();
+      campos.forEach((c, i) => {
+        const caixa = dlg.querySelector(`[data-pg-campo="${i}"]`);
+        if (!caixa) return;
+        const some = typeof c.mostrar_se === "function" && !c.mostrar_se(v);
+        caixa.style.display = some ? "none" : "";
+        if (typeof c.dica_de === "function") {
+          const alvo = els(`pg-${i}-dica`);
+          if (alvo) alvo.innerHTML = c.dica_de(v) || c.dica || "";
+        }
+        if (typeof c.obrigatorio_se === "function") {
+          const marca = els(`pg-${i}-obr`);
+          if (marca) marca.textContent = c.obrigatorio_se(v) ? " *" : "";
+        }
+      });
+    }
     const fechar = valor => { dlg.close(); resolve(valor); };
     dlg.querySelectorAll("[data-cancelar]").forEach(b =>
       b.addEventListener("click", () => fechar(null)));
     dlg.querySelector("[data-ok]").addEventListener("click", () => {
       const saida = {};
       for (let i = 0; i < campos.length; i++) {
+        // Campo escondido pelas condições não é exigido nem enviado.
+        if (escondido(i)) continue;
         // CAMPO DE ARQUIVO devolve o arquivo, não o texto: `.value` num input
         // de arquivo é um caminho falso ("C:\\fakepath\\nota.pdf") que não
         // serve para nada, e mandá-lo como se fosse o arquivo é o tipo de
@@ -1162,7 +1240,9 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           continue;
         }
         const valor = (els(`pg-${i}`).value || "").trim();
-        if (campos[i].obrigatorio && !valor) {
+        const exige = typeof campos[i].obrigatorio_se === "function"
+          ? campos[i].obrigatorio_se(valoresAgora()) : campos[i].obrigatorio;
+        if (exige && !valor) {
           aviso("pg-erro", `Preencha ${campos[i].rotulo.toLowerCase()}.`, "erro");
           return;
         }
@@ -1171,6 +1251,16 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
       fechar(saida);
     });
     campos.forEach((c, i) => { if (c.tipo === "pessoa") ligarBuscaDePessoa(i); });
+    aplicarCondicoes();
+    {# ⚑ UMA MUDANÇA EM QUALQUER CAMPO REDESENHA AS CONDIÇÕES. Um ouvinte só,
+       no diálogo, em vez de um por campo: campo que o chamador acrescentar
+       depois continua funcionando. #}
+    dlg.addEventListener("input", aplicarCondicoes);
+    dlg.addEventListener("change", aplicarCondicoes);
+    dlg.addEventListener("pessoa-escolhida", e => {
+      pessoaEscolhida = e.detail || null;
+      aplicarCondicoes();
+    });
     dlg.addEventListener("cancel", () => fechar(null), {once: true});
     dlg.showModal();
     setTimeout(() => els("pg-0") && els("pg-0").focus(), 50);
@@ -1208,11 +1298,41 @@ function ligarBuscaDePessoa(i){
               <small>${documento(p.cpf)}${p.obra ? " · obra " + escapar(p.obra) : ""}${
                 p.situacao === "DESLIGADO" ? " · desligado" : ""}</small></button>`).join("")
           : `<small class="desc">Ninguém encontrado com isso.</small>`;
+        {# ⚑ ESCOLHEU A PESSOA? MOSTRE O VÍNCULO DELA (15/11/2026).
+
+           Ele: *"na hora que selecionar o colaborador, a gente já sabe que
+           tipo de colaborador ele é. Isso o sistema já tem que informar:
+           prestador tal, iniciou tal, tipo de vínculo, se é carteira de
+           trabalho — isso já tem que aparecer para facilitar para quem está
+           pedindo o desligamento."*
+
+           E, acima de tudo, o CONTRATO DE EXPERIÊNCIA: é ele que muda a forma
+           do desligamento e tira o aviso prévio. Quem pede não tem como saber
+           de cor quando acaba o contrato de cada um — o sistema tem. #}
+        const porId = {};
+        (r.pessoas || []).forEach(x => { porId[String(x.id)] = x; });
         achados.querySelectorAll(".busca-achado").forEach(b =>
           b.addEventListener("click", () => {
             oculto.value = b.dataset.id;
             campo.value = b.dataset.nome;
-            achados.innerHTML = `<small class="desc">✓ escolhido</small>`;
+            const p = porId[b.dataset.id] || {};
+            achados.innerHTML = `<div class="ficha-escolhida">
+              <b>✓ ${escapar(p.nome || b.dataset.nome)}</b>
+              <small>${[p.vinculo, p.tipo_contrato,
+                        p.admissao ? "desde " + dataBR(p.admissao) : "",
+                        p.obra ? "obra " + p.obra : "",
+                        p.situacao === "DESLIGADO" ? "JÁ DESLIGADO" : ""]
+                       .filter(Boolean).map(escapar).join(" · ")}</small>
+              ${(p.experiencia && p.experiencia.texto)
+                ? `<div class="aviso ${p.experiencia.ja_acabou ? "alerta" : ""}"
+                     style="margin-top:6px">${
+                     escapar(p.experiencia.texto).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+                   }</div>` : ""}
+            </div>`;
+            // A tela que pediu a busca pode querer reagir (esconder o aviso
+            // prévio, por exemplo). Quem não escuta, não muda nada.
+            campo.dispatchEvent(new CustomEvent("pessoa-escolhida",
+              {bubbles: true, detail: p}));
           }));
       } catch(e){ achados.innerHTML = `<small class="desc">${escapar(e.message)}</small>`; }
     }, 300);

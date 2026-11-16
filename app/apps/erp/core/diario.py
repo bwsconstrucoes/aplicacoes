@@ -1305,6 +1305,111 @@ def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
             "primeiro_dia_da_semana": primeiro_dia.weekday()}
 
 
+# ---------------------------------------------------------------------------
+# O QUADRO DO MÊS — obras nas linhas, dias nas colunas (15/11/2026)
+#
+# Ele: *"aqui era para mostrar por mês, todas as obras e por mês, da mesma
+# forma que o calendário (…) Eu até tenho um controle desse no computador, é
+# uma planilha. Cada coluna é um dia. Dia 1, dia 2, dia 3, até o final do mês.
+# E ali cada dia tem uma marcação dizendo se está ou se não está preenchido.
+# Porque você bate o olho e já visualiza exatamente todos os dias que estão
+# faltando. E a partir dessa informação, clicar e já ir direto para o dia que
+# está faltando."*
+#
+# ⚑ ESTE QUADRO VIROU A PORTA DA TELA, e isso resolve outra queixa do mesmo
+# dia: *"não fica legal entrar na tela já da primeira obra."* Entrando pelo
+# quadro, não há obra escolhida — a obra se escolhe clicando no dia que falta,
+# que é exatamente o caminho de quem vai preencher.
+#
+# ⚑ OBRA CONCLUÍDA NÃO ENTRA: *"concluído, não tem mais diário, aí fica
+# poluída essa tela."* O filtro é `status <> 'ENCERRADA'`, o mesmo de sempre —
+# obra que continua aparecendo é obra que segue marcada como ATIVA no
+# cadastro, e isso se resolve lá, não aqui.
+#
+# ⚑ UMA CONSULTA POR COISA, NUNCA UMA POR DIA. Com 15 obras e 30 dias são 450
+# células: pedir o estado de cada uma ao banco seriam 450 idas, e a tela
+# demoraria mais que o mês inteiro de trabalho que ela mostra.
+# ---------------------------------------------------------------------------
+def quadro_do_mes(s: Session, ano: int, mes: int, *,
+                  obra_ids: Optional[list[int]] = None) -> dict[str, Any]:
+    """Todas as obras do mês, dia a dia, com o estado de cada dia."""
+    import calendar as _cal
+
+    if not 1 <= mes <= 12:
+        raise ErroValidacao("Mês inválido.")
+    _, ultimo = _cal.monthrange(ano, mes)
+    primeiro_dia, ultimo_dia = date(ano, mes, 1), date(ano, mes, ultimo)
+    hoje = date.today()
+
+    obras = s.execute(text("""
+        SELECT id, codigo, nome, data_inicio, data_termino
+          FROM obras
+         WHERE status <> 'ENCERRADA'
+           AND (:todas OR id = ANY(:obras))
+         ORDER BY codigo"""),
+        {"obras": obra_ids or [], "todas": obra_ids is None}).mappings().all()
+    if not obras:
+        return {"ano": ano, "mes": mes, "dias": [], "obras": [],
+                "faltam": 0, "hoje": str(hoje)}
+
+    ids = [o["id"] for o in obras]
+    escritos: dict[tuple[int, date], str] = {}
+    for l in s.execute(text("""
+        SELECT obra_id, data, situacao, sem_expediente
+          FROM diarios_obra
+         WHERE obra_id = ANY(:o) AND data BETWEEN :i AND :f"""),
+        {"o": ids, "i": primeiro_dia, "f": ultimo_dia}).mappings().all():
+        escritos[(l["obra_id"], l["data"])] = (
+            "sem_expediente" if l["sem_expediente"]
+            else ("fechado" if l["situacao"] == "FECHADO" else "aberto"))
+
+    # O ponto diz quais sábados e feriados tiveram trabalho — sem isso, um
+    # sábado trabalhado apareceria como descanso e a falta sumiria do quadro.
+    com_ponto = {(l["obra_id"], l["data_referencia"]) for l in (
+        _consulta_opcional(s, """
+            SELECT DISTINCT obra_id, data_referencia FROM ponto.marcacoes
+             WHERE obra_id = ANY(:o) AND data_referencia BETWEEN :i AND :f
+               AND status <> 'REJEITADA'""",
+            o=ids, i=primeiro_dia, f=ultimo_dia) or [])}
+    feriados = {l["data"]: l["nome"] for l in (_consulta_opcional(s, """
+            SELECT data, nome FROM ponto.feriados
+             WHERE data BETWEEN :i AND :f AND obra_id IS NULL""",
+            i=primeiro_dia, f=ultimo_dia) or [])}
+
+    dias = [{"dia": n, "data": str(date(ano, mes, n)),
+             "semana": date(ano, mes, n).weekday(),
+             "feriado": feriados.get(date(ano, mes, n), "")}
+            for n in range(1, ultimo + 1)]
+
+    linhas, faltam_total = [], 0
+    for o in obras:
+        celulas, faltam = [], 0
+        for n in range(1, ultimo + 1):
+            d = date(ano, mes, n)
+            teve_ponto = (o["id"], d) in com_ponto
+            fora = bool((o["data_inicio"] and d < o["data_inicio"])
+                        or (o["data_termino"] and d > o["data_termino"])
+                        or d > hoje)
+            estado = escritos.get((o["id"], d))
+            if estado is None:
+                if fora:
+                    estado = "fora"
+                elif (d.weekday() >= 5 or d in feriados) and not teve_ponto:
+                    estado = "descanso"
+                else:
+                    estado = "falta"
+                    faltam += 1
+            celulas.append(estado)
+        faltam_total += faltam
+        linhas.append({
+            "obra_id": o["id"], "codigo": o["codigo"], "nome": o["nome"],
+            "rotulo": rotulo_da_obra(o["codigo"], o["nome"]),
+            "celulas": celulas, "faltam": faltam})
+
+    return {"ano": ano, "mes": mes, "dias": dias, "obras": linhas,
+            "faltam": faltam_total, "hoje": str(hoje)}
+
+
 def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
                         obra_ids: Optional[list[int]] = None,
                         dias: int = 30) -> list[dict[str, Any]]:

@@ -45,6 +45,19 @@
 - [x] De-para do plano antigo → novo, com fila de pendências — `ab50e9a`
 - [x] Lançamento categoria-first + crítica de duplicidade na entrada — `03a0faa`
 
+- [x] **DP — os formulários que se ajustam ao caso (15/11/2026).** Desligamento
+      virou UM tipo só (os campos saem do vínculo da pessoa); readmissão
+      deixou de ser tipo (o CPF do cadastro a detecta e oferece);
+      vale-transporte virou opção da ajuda de custo; o cadastro ganhou
+      condicionais (CTPS esconde pagamento e valor do mês; prestador pede o
+      tipo de contrato) e telefone, chave Pix e valor da diária passaram a ser
+      obrigatórios; cada categoria de auxílio explica a própria conta. Mais a
+      trava do desligado que continua como prestador, e o atestado de mais de
+      15 dias abrindo o afastamento para o DP. **Cinco defeitos consertados no
+      caminho**, entre eles a caixinha de obra vazia que impedia abrir pedido
+      de cadastro desde 10/11, e a caixinha que vinha com a primeira opção já
+      escolhida. Ver `HISTORICO.md`, 15/11/2026.
+
 ## Em andamento
 
 - [ ] **DIÁRIO DE OBRA** — migrações 092, 093, **097, 098 e 099**. **Pronto:** o dia que
