@@ -115,6 +115,30 @@ Ficam escritos porque são a cara do problema de ler papel por rótulo:
 Fica escrito porque o primeiro é feio e o segundo é caro, e nenhum dos dois
 aparece em teste de regra de negócio: só aparece abrindo a tela.
 
+#### ⚑ O HISTÓRICO NÃO VEM, E ISSO ESTÁ DECIDIDO (16/11/2026)
+
+Eu tinha relatado como "o maior desperdício desta entrega" o fato de a ficha
+trazer treze mudanças de salário e a importação aproveitar só a última. **Ele
+fechou a questão, e a resposta é que não é desperdício nenhum:**
+
+> *"A ficha de cadastro ela vai ter mais dados que a gente precisa. Só da parte
+> cadastral mesmo e das informações necessárias para encaminhamento para a
+> contabilidade. O sistema que vai armazenar esses históricos de salário, de
+> admissões, etc. e tal, é lá. Então, é desnecessário."*
+
+**O ERP guarda o estado de HOJE** de cada pessoa, mais o que é preciso para
+encaminhar à contabilidade. **A história fica no Fortes**, que é o sistema de
+folha. Não é limitação a vencer depois — é divisão de trabalho, e quem for
+mexer aqui não deve "melhorar" isso.
+
+⚑ **Consequência que virou trava de código:** a importação **não escreve** em
+`colaborador_alteracoes`. Aquela tabela é o que a BWS DECIDIU — promoção,
+transferência, com motivo e justificativa de alguém. Uma importação de 575
+fichas despejaria ali 575 "alterações de salário" que ninguém decidiu, e a
+lista que é consultada viraria lixo. Já era assim (a importação usa `salvar`,
+não `registrar_alteracao`), mas agora **há teste segurando** — porque isto
+passou a ser regra dele, e regra sem teste some na primeira refatoração.
+
 #### O que NÃO foi feito, e por quê
 
 **Criar gente nova pela ficha nasce DESLIGADO** (`criar_novos`). A ficha tem o

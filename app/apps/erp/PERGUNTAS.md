@@ -2319,14 +2319,36 @@ o centro de custo da contabilidade no cadastro da obra.
 - Quem está sem PIS ou sem CTPS no cadastro? *(depois da importação, deve ser
   quem não tem ficha)*
 
-### Perguntas que o sistema AINDA NÃO responde, e o que falta
+### ⚠️ Perguntas que o ERP NÃO vai responder, e isso está decidido
 
-- **"Qual era o salário do fulano em 2019?"** — a ficha TEM o histórico inteiro
-  (treze mudanças, de 2014 a 2026) e a importação só aproveita o último. O ERP
-  tem tabela para o histórico e ela fica vazia. É o maior desperdício desta
-  entrega, e está assim de propósito: ele pediu só os dados que já se trabalha.
-- **"Quantas vezes o fulano mudou de cargo?"** — mesma coisa, e aqui há razão a
-  mais: ele recusou a nomenclatura de cargo do Fortes.
+**FECHADO em 16/11/2026, por ele, com todas as letras:** *"a ficha de cadastro
+ela vai ter mais dados que a gente precisa. Só da parte cadastral mesmo e das
+informações necessárias para encaminhamento para a contabilidade. O sistema que
+vai armazenar esses históricos de salário, de admissões, etc. e tal, é lá.
+Então, é desnecessário."*
+
+O ERP guarda **o estado de hoje** de cada pessoa e o que é preciso para
+encaminhar à contabilidade. **A história fica no Fortes**, que é o sistema de
+folha. Isto não é limitação a ser vencida depois — é divisão de trabalho.
+
+| Pergunta | Quem responde |
+|---|---|
+| "Qual era o salário do fulano em 2019?" | **o Fortes.** A ficha traz treze mudanças de 2014 a 2026; a importação aproveita a última de propósito |
+| "Quantas vezes o fulano mudou de cargo?" | **o Fortes** — e aqui há razão a mais: a nomenclatura de cargo dele foi recusada |
+| "Quantas admissões o fulano teve?" | **o Fortes** |
+
+⚑ **E há uma consequência que é regra de código, não só de conversa:** a
+importação **não escreve** na tabela de alterações do ERP
+(`colaborador_alteracoes`). Aquela lista é o que a BWS DECIDIU — promoção,
+transferência, com motivo e justificativa assinados por alguém. Uma importação
+de 575 fichas despejaria ali 575 "alterações de salário" que ninguém decidiu, e
+a lista que é consultada viraria lixo. Há teste travando isso.
+
+**O que o assistente responde quando perguntarem pelo histórico:** "isso está no
+Fortes, o ERP guarda o quadro de hoje" — não "não sei".
+
+### Perguntas que o sistema ainda não responde, e o que falta
+
 - **"Este atestado é da mesma doença do anterior?"** — continua aberta (falta
   comparar CID).
 - **"Qual a jornada contratual do fulano?"** — está na ficha e não é lida; a

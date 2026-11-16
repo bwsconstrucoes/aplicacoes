@@ -415,3 +415,33 @@ def test_admissao_IGUAL_nao_e_contada_como_mudanca(mundo):
                         usuario=mundo["dp"])
     mudancas = r["atualizadas"][0]["mudancas"] if r["atualizadas"] else []
     assert not [m for m in mudancas if m["campo"] == "admissao"]
+
+
+@pytest.mark.banco
+def test_a_importacao_NAO_escreve_no_historico_de_alteracoes_do_ERP(mundo):
+    """A tabela de alterações é o que o ERP DECIDIU, não o que o Fortes sabe.
+
+    Decisão do dono em 16/11/2026: *"o sistema que vai armazenar esses
+    históricos de salário, de admissões, etc. e tal, é lá. Então, é
+    desnecessário."* O ERP guarda a parte cadastral e o que é preciso para
+    encaminhar à contabilidade — a história fica no Fortes.
+
+    Sem esta trava, uma importação de 575 fichas escreveria 575 "alterações
+    de salário" que ninguém decidiu, e a lista de promoções e transferências
+    da BWS — que tem motivo e justificativa, e é consultada — viraria lixo.
+    """
+    from sqlalchemy import text
+    from app.apps.erp.core.importadores import fichas_fortes as svc_ff
+
+    antes = mundo["s"].execute(
+        text("SELECT count(*) FROM colaborador_alteracoes")).scalar()
+    r = svc_ff.importar(mundo["s"], _pdf_do_exemplo(), gravar=True,
+                        usuario=mundo["dp"])
+    mundo["s"].flush()
+    # O salário entrou mesmo — senão o teste passaria por não ter feito nada.
+    mundo["s"].refresh(mundo["pessoa"])
+    assert str(mundo["pessoa"].salario) == "2382.00"
+    assert r["atualizadas"]
+    depois = mundo["s"].execute(
+        text("SELECT count(*) FROM colaborador_alteracoes")).scalar()
+    assert depois == antes

@@ -72,7 +72,10 @@
       gravar" antes de qualquer gravação, e página sem camada de texto é
       relatada como ilegível em vez de adivinhada. Criar gente nova a partir
       da ficha existe mas vem desligado — a ficha não traz cargo, telefone
-      nem chave Pix. Ver `HISTORICO.md`, 16/11/2026.
+      nem chave Pix. **O histórico de salário e de admissões NÃO vem, e está
+      decidido:** o ERP guarda o quadro de hoje e o que a contabilidade precisa
+      receber; a história fica no Fortes, que é o sistema de folha. Ver
+      `HISTORICO.md`, 16/11/2026.
 
 ## Em andamento
 
