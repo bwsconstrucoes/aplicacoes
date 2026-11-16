@@ -750,10 +750,26 @@ quem estava no vermelho). **O que está frágil não é a fórmula:**
 **Sugerido e NÃO construído (só se ele pedir):** campo de MOTIVO por regra;
 comparação de réguas lado a lado; **fechamento** que congela a versão aprovada.
 
-**Perguntas que ficaram com ele** (travam só a parte jurídica): a BWSNE é
-filial do mesmo CNPJ? o contrato social prevê divisão por obra? os parceiros
-têm contrato? empreiteiro entra no grupo de pessoal no OMIE? a prestação vai
-gerar pagamento entre sócios? há combinado anterior por escrito?
+**As respostas dele, no mesmo dia (16/11/2026):**
+
+- A **BWSNE é filial do mesmo CNPJ** — uma empresa só, um balanço só.
+- **Há acordos assinados que regem a distribuição do resultado** ("todo o
+  rateio está documentado").
+- **Empreiteiro e terceirizado NÃO entram na despesa com pessoal** — ficam em
+  categoria à parte. Logo a régua de mão de obra mede só a folha própria.
+- **A prestação vai gerar a EQUALIZAÇÃO entre os sócios** — ou seja, dinheiro
+  vai mudar de mão por causa destes números.
+- **Não há combinado anterior** sobre o critério (entendimento do chat: a
+  frase veio truncada pelo ditado — "Nada do sabão. Nenhum combinado anterior").
+
+**O que isso muda na análise:** a divisão desigual por obra tem papel; o que
+NÃO se sabe é se os acordos dizem COMO o custo da matriz e os juros entram no
+resultado de cada obra, ou só os percentuais de cada sócio. Se dizem, a
+prestação tem de seguir o que está assinado; se não dizem, o critério (régua,
+percentuais por período, juros pelo buraco) é novo, vale para trás e precisa
+da aprovação escrita de todos ANTES da equalização. **Pergunta feita a ele, sem
+resposta ainda.** Ficou sugerido também simular a régua contando empreiteiros,
+para medir quanto isso desloca entre as obras.
 
 ## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
 
