@@ -53,8 +53,24 @@ from .pdf import _texto
 
 logger = logging.getLogger("analisesps.lote_relatorio_completo")
 
-MAXIMO_ANEXO = 20 * 1024 * 1024          # o mesmo teto da leitura por IA
-MAXIMO_TOTAL = 90 * 1024 * 1024          # a soma dos anexos de um relatório
+# Os tetos valem para o arquivo como ele vem (ANTES de otimizar): é o que ocupa
+# memória enquanto baixa. Subiram em 16/11/2026 junto com a otimização — o anexo
+# grande agora entra, só que reduzido.
+MAXIMO_ANEXO = 40 * 1024 * 1024
+MAXIMO_TOTAL = 150 * 1024 * 1024         # a soma dos anexos de um relatório
+
+# A OTIMIZAÇÃO DOS ANEXOS (dono, 16/11/2026): *"existe anexos muito grandes em
+# tamanho. Preciso dar uma otimizada neles antes de gerar o relatório completo."*
+# O que pesa num anexo é quase sempre FOTO ou DIGITALIZAÇÃO: uma nota fotografada
+# pelo celular vem com 4000 px e 5 MB, para ser lida numa tela de telefone. Cada
+# imagem é reduzida para a resolução de leitura (DPI_ALVO, numa folha A4) e salva
+# como JPEG na QUALIDADE abaixo — o texto continua legível e o arquivo cai a uma
+# fração. Texto e desenho de PDF gerado por sistema (NF-e, boleto) não são imagem
+# e não mudam.
+DPI_ALVO = 130
+DPI_A_PARTIR_DE = 160                    # imagem já abaixo disso fica como está
+QUALIDADE_JPEG = 70
+LADO_MAXIMO_DA_FOTO = 2000               # px: A4 a ~170 dpi
 MAXIMO_PAGINAS_POR_ANEXO = 60
 SEGUNDOS_DE_ESPERA = 60
 
@@ -179,6 +195,46 @@ def baixar_anexo(url: str) -> bytes:
     return b"".join(pedacos)
 
 
+def _otimizar_foto(conteudo: bytes, tipo: str) -> tuple:
+    """A foto reduzida a `LADO_MAXIMO_DA_FOTO` e em JPEG. Fica a original quando a
+    reduzida não sai menor, ou quando a imagem não abre (o PyMuPDF tenta depois)."""
+    import io
+
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(io.BytesIO(conteudo)) as foto:
+            foto = ImageOps.exif_transpose(foto)       # foto de celular deitada
+            if foto.mode not in ("RGB", "L"):
+                fundo = Image.new("RGB", foto.size, "white")
+                if foto.mode in ("RGBA", "LA", "P"):
+                    foto = foto.convert("RGBA")
+                    fundo.paste(foto, mask=foto.split()[-1])
+                else:
+                    fundo.paste(foto.convert("RGB"))
+                foto = fundo
+            foto.thumbnail((LADO_MAXIMO_DA_FOTO, LADO_MAXIMO_DA_FOTO))
+            saida = io.BytesIO()
+            foto.save(saida, "JPEG", quality=QUALIDADE_JPEG, optimize=True)
+    except Exception:  # noqa: BLE001 — sem otimizar, mas embutida
+        logger.info("Relatório completo do lote: não consegui reduzir uma foto")
+        return conteudo, tipo
+    reduzida = saida.getvalue()
+    return (reduzida, "jpg") if len(reduzida) < len(conteudo) else (conteudo, tipo)
+
+
+def _otimizar_pdf(doc) -> None:
+    """Reduz as imagens de dentro do PDF (digitalização, foto colada) à resolução
+    de leitura. Em versão do PyMuPDF sem `rewrite_images`, segue sem otimizar."""
+    if not hasattr(doc, "rewrite_images"):
+        return
+    try:
+        doc.rewrite_images(dpi_threshold=DPI_A_PARTIR_DE, dpi_target=DPI_ALVO,
+                           quality=QUALIDADE_JPEG, lossy=True, lossless=True,
+                           bitonal=False, color=True, gray=True)
+    except Exception:  # noqa: BLE001 — sem otimizar, mas embutido
+        logger.exception("Relatório completo do lote: não consegui reduzir as imagens de um PDF")
+
+
 def _preparar_anexo(conteudo: bytes):
     """(documento fitz pronto para embutir, número de páginas) ou levanta
     `RuntimeError` dizendo por que não dá para embutir."""
@@ -189,8 +245,10 @@ def _preparar_anexo(conteudo: bytes):
         if doc.needs_pass:
             doc.close()
             raise RuntimeError("o PDF tem senha")
+        _otimizar_pdf(doc)
         return doc
     if tipo in ("png", "jpg", "gif", "webp"):
+        conteudo, tipo = _otimizar_foto(conteudo, tipo)
         imagem = fitz.open(stream=conteudo, filetype=tipo)
         doc = fitz.open("pdf", imagem.convert_to_pdf())
         imagem.close()
@@ -974,7 +1032,8 @@ def montar_pdf(dados: dict, baixar=None, progresso=None, com_anexos: bool = True
             fontsize=6.5, fontname="helv", color=(0.55, 0.6, 0.68))
         pagina.insert_text((w - 90, h - 14), f"página {i + 1} de {total_paginas}",
                            fontsize=6.5, fontname="helv", color=(0.55, 0.6, 0.68))
-    saida = final.tobytes(garbage=3, deflate=True)
+    saida = final.tobytes(garbage=4, deflate=True, deflate_images=True,
+                          deflate_fonts=True, use_objstms=1)
     final.close()
     return saida
 

@@ -12244,6 +12244,21 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 269 — Relatório completo do lote: os anexos entram otimizados (16/11/2026)
+
+- *"Existe anexos muito grandes em tamanho. Preciso dar uma otimizada neles antes de gerar
+  o relatório completo."*
+- O peso é foto e digitalização. Agora cada anexo é reduzido ao embutir: foto vai a no
+  máximo 2000 px e JPEG qualidade 70 (`_otimizar_foto`, também desvira foto de celular);
+  imagem dentro de PDF acima de 160 dpi vai a 130 dpi, JPEG 70 (`_otimizar_pdf`, pelo
+  `rewrite_images` do PyMuPDF — em versão sem ele, segue sem otimizar). Texto e desenho
+  de PDF gerado por sistema (NF-e, boleto) não são imagem e não mudam. O PDF final sai
+  com compressão máxima.
+- Medido: nota digitalizada a 300 dpi, 26 MB → 0,35 MB no relatório, texto de 8 pt
+  nítido; três anexos pesados somando 37 MB → relatório de 1,1 MB.
+- Com isso os tetos subiram (valem para o arquivo como chega, que é o que ocupa memória):
+  40 MB por anexo (era 20) e 150 MB somados (era 90).
+
 #### Leva 268 — Relatório completo do lote, para a parceria (15/11/2026)
 
 - *"A gente vai lá nas solicitações, filtra, faz um print da tela, cola no WhatsApp, depois
