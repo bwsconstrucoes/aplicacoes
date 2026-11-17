@@ -3,6 +3,58 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## ⚑ 17/11/2026 — TROCAR A BASE DO PONTO ERA DECISÃO NO ESCURO (feito pelo chat do ERP/DP)
+
+**O dono trocou a base do ponto para o cadastro do ERP** (Ponto › Configuração ›
+Geral › "Base de pessoas do ponto") e perguntou, olhando os números do cartão:
+
+> *"Esses são os KPIs, tudo certo né?"*
+
+Com estes números na tela: 616 ativos de 3.667 linhas · 11 afastados · **20 não
+batem pela planilha** · **0 faltam no ERP** · 0 só no ERP · **40 sem obra
+reconhecida**.
+
+**NÃO ESTAVA TUDO CERTO, e a causa é de desenho:** os seis números do cartão são
+**todos calculados sobre a PLANILHA**. Eles descrevem a base que se está
+DEIXANDO, não a que se está PEGANDO. Quem troca a chave olhando só para eles
+troca no escuro.
+
+**O número que mais importa era justamente o enganoso.** "Não batem pela
+planilha: 20" (PJ, pró-labore e a obra ESCRUSSAS) é regra **da planilha**.
+Passando para o ERP, quem não bate sai do **tipo de contrato do cadastro** — a
+mudança de 16/11, logo abaixo nesta memória. **A tela não mostrava o número
+equivalente.** Se o tipo de contrato estiver em branco ou errado, PJ e
+pró-labore **começam a bater ponto**; e batida é registro legal do REP-P,
+encadeada por hash, que não se apaga como se corrige um cadastro.
+
+**E havia um caso que NENHUM dos seis contava:** quem está **ativo na planilha e
+DESLIGADO no ERP**. Essa pessoa simplesmente **para de conseguir bater** no dia
+da virada, e ninguém saberia antes de ela reclamar.
+
+### As três contas que o cartão passou a mostrar (`registro.pelo_erp`)
+
+| Conta | Para que serve |
+|---|---|
+| **Não batem pelo ERP** | comparar com o número da planilha. Vem **menor**? falta tipo de contrato em quem não devia bater. A tela mostra os dois lado a lado e avisa em vermelho quando diferem |
+| **Ativos sem obra no ERP** | "faltam no ERP = 0" garante que a PESSOA existe, não que ela tem OBRA. Sem obra, a batida acontece e cai em conferência, sem cerca |
+| **Ativos na planilha, desligados no ERP** | estes param de bater se a base for o ERP |
+
+**⚑ REUSA `cadastros._nao_bate_do_erp()`, não reimplementa.** É a MESMA regra que
+decide a batida de verdade. Duas cópias divergiriam, e aí a tela diria "pode
+virar" sobre uma conta diferente da que vale na hora de bater.
+
+**Achado por teste, e vale saber:** quando a cópia da planilha não existe no
+banco, `retrato()` devolvia antes de calcular — então as contas do ERP ficavam
+de fora **exatamente quando são a única fonte de informação** (sem cópia, a base
+É o ERP). Agora vão nos dois caminhos. E a terceira conta devolve `None`, não
+zero, sem a planilha para comparar: zero afirmaria "não há ninguém nessa
+situação", o que não se pode dizer sem ter com o que comparar.
+
+**⚠️ Pendente do dono:** ele trocou a base para o ERP **durante a manhã, com o
+pessoal batendo**. Recomendei voltar para a planilha até conferir as três contas
+— a troca é um clique, e a cópia da planilha estava fresca (12:02 do mesmo dia).
+Quem pegar esta área: conferir em que base o ponto está antes de qualquer coisa.
+
 ## 17/11/2026 — PEDIR ACESSO AO PORTAL pelo "Meu ponto" (feito pelo chat do ERP/DP)
 
 ⚠️ **Mexi no ponto vindo de outra área.** Arquivos novos/tocados:
