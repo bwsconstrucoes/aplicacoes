@@ -313,11 +313,81 @@ def ler_linha(cabecalho: dict[str, int], linha: list[str]) -> dict[str, Any]:
                                 "campo": campo,
                                 "motivo": "não é uma das opções do cadastro"})
 
-    # ⚑ PAGAMENTO: a planilha não tem coluna dizendo "é mensalista". Quem tem
-    # VALOR DIÁRIA é diarista; quem não tem, mensalista. É a leitura que a
-    # folha já faz — e fica escrito porque é dedução, não dado.
+    # ===================================================================
+    # PAGAMENTO: QUEM TEM "VALOR DO MÊS" É MENSALISTA, E ELE MANDA
+    #
+    # ⚑ Corrigido em 17/11/2026 com ele olhando o caso da Amanda, que tem as
+    # duas coisas na planilha: *"no caso da Amanda, vai se sobrepor a
+    # informação Valor do Mês (…) ela não tem diária mais, é dado antigo."*
+    #
+    # Minha regra anterior era "quem tem diária é diarista", e ela errava
+    # exatamente nesse caso. Contado na planilha (3.667 linhas, 17/11/2026):
+    #
+    #   3.166  só diária          → diarista
+    #      58  só valor do mês    → mensalista
+    #      53  os DOIS            → mensalista; a diária é resto antigo
+    #     390  nenhum dos dois    → mensalista (não há diária para pagar)
+    #
+    # Os 53 são o caso dela: a diária ficou na planilha de quando a pessoa era
+    # diarista e ninguém apagou. Trazê-la poria um valor morto na ficha de
+    # quem é pago por mês — e diária na ficha é o que a folha usa para pagar
+    # dia de fim de semana.
+    # ===================================================================
     if saida.get("vinculo"):
-        saida["mensalista"] = "valor_diaria" not in saida
+        por_mes = "valor_mes" in saida
+        saida["mensalista"] = por_mes or "valor_diaria" not in saida
+        if por_mes and "valor_diaria" in saida:
+            nao_entendi.append({
+                "coluna": "Valor Diária", "campo": "valor_diaria",
+                "valor": saida.pop("valor_diaria"),
+                "motivo": ("não entrou: esta pessoa tem Valor do Mês, então é "
+                           "mensalista — a diária na planilha é dado antigo")})
+
+    # ===================================================================
+    # DUAS INCOERÊNCIAS QUE A PLANILHA TEM, E O QUE ELE DECIDIU (17/11/2026)
+    #
+    # Varri as 3.667 linhas atrás de situações discrepantes — a pedido dele:
+    # *"você devia analisar outras situações discrepantes e me questionar"* —
+    # e levei a lista. Estas duas mudam o que entra no cadastro.
+    #
+    # 1) "Tipo" × "Tipo de Contrato" SE CONTRADIZEM em 57 linhas (prestador
+    #    com contrato CLT, ou CTPS com RPA/aprendiz). Ele: *"todos que são
+    #    prestador de serviço, que não estão desligados, estão com o contrato
+    #    correto"* — e a conta confirma: 48 das 57 são de gente DESLIGADA,
+    #    dado velho. As 9 ativas são erro de digitação na planilha.
+    #    Então o "Tipo" manda (é a coluna que a folha já usa), e a
+    #    contradição é RELATADA em vez de sumir.
+    #
+    # 2) DATA DE SAÍDA PREENCHIDA quer dizer que a pessoa SAIU, qualquer que
+    #    seja a fase. Ele: *"quem está em Solicitações DP pode estar com data
+    #    de saída — é gente que já saiu e o cadastro não foi finalizado,
+    #    aguardando documentação. E quem está com o cadastro concluído NÃO
+    #    PODE ter data de saída."*
+    #    Então: data de saída ⇒ desligado; e "Cadastro Concluído" com data de
+    #    saída é incoerência da planilha e vai para a lista (são 6 hoje).
+    # ===================================================================
+    contrato_e_de_prestador = saida.get("tipo_contrato") in (
+        "PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA", "JOVEM_APRENDIZ",
+        "ESTAGIO", "PRO_LABORE")
+    if saida.get("vinculo") and saida.get("tipo_contrato"):
+        bate = ((saida["vinculo"] == "PRESTADOR") == contrato_e_de_prestador)
+        if not bate:
+            nao_entendi.append({
+                "coluna": "Tipo × Tipo de Contrato", "campo": "vinculo",
+                "valor": f'{crua(LISTAS["vinculo"][0])} com '
+                         f'{crua(LISTAS["tipo_contrato"][0])}',
+                "motivo": ("as duas colunas se contradizem — vale o “Tipo”, "
+                           "que é o que a folha usa; confira na planilha")})
+
+    if saida.get("demissao"):
+        saida["situacao"] = "DESLIGADO"
+        if _cru(crua(NOMES["fase"])) == _cru("Cadastro Concluído"):
+            nao_entendi.append({
+                "coluna": "Data de Saída × Fase Atual", "campo": "situacao",
+                "valor": f'saída {crua(DATAS["demissao"])} com a fase '
+                         f'"Cadastro Concluído"',
+                "motivo": ("cadastro concluído não pode ter data de saída — "
+                           "entrou como DESLIGADO; arrume a fase na planilha")})
 
     nomes_saida = {chave: crua(nomes) for chave, nomes in NOMES.items()}
     # "00.079.526/0001-09 - BWS" → só o CNPJ.

@@ -155,12 +155,35 @@ def test_o_centro_de_custo_vem_com_a_descricao_colada():
     assert d["_nomes"]["centro_custo_contabil"] == "164.01"
 
 
-def test_pagamento_sai_do_valor_da_diaria():
-    """A planilha não tem coluna dizendo "é mensalista". Fica escrito porque é
-    dedução, não dado: quem tem diária é diarista."""
-    com = _linha(**{"Tipo": "CTPS", "Valor Diária": "130,00"})
-    sem = _linha(**{"Tipo": "CTPS", "Valor Diária": ""})
-    assert com["mensalista"] is False and sem["mensalista"] is True
+def test_quem_tem_so_diaria_e_DIARISTA():
+    """3.166 das 3.667 pessoas da planilha."""
+    d = _linha(**{"Tipo": "CTPS", "Valor Diária": "130,00"})
+    assert d["mensalista"] is False and d["valor_diaria"] == "130.00"
+
+
+def test_quem_tem_VALOR_DO_MES_e_MENSALISTA_e_a_diaria_antiga_NAO_entra():
+    """⚑ O caso da Amanda, corrigido com ele em 17/11/2026: *"no caso da
+    Amanda, vai se sobrepor a informação Valor do Mês (…) ela não tem diária
+    mais, é dado antigo."*
+
+    Minha regra anterior ("quem tem diária é diarista") errava exatamente
+    aqui. São 53 pessoas na planilha com as duas coisas: a diária ficou de
+    quando a pessoa era diarista e ninguém apagou. Trazê-la poria um valor
+    morto na ficha de quem é pago por mês — e é a diária da ficha que a folha
+    usa para pagar dia de fim de semana.
+    """
+    d = _linha(**{"Tipo": "Prestador de Serviço", "Valor do Mês": "5.209,50",
+                  "Valor Diária": "100,00"})
+    assert d["mensalista"] is True
+    assert d["valor_mes"] == "5209.50"
+    assert "valor_diaria" not in d
+    # E não some calado: o relatório diz que ignorou e por quê.
+    assert any("mensalista" in x["motivo"] for x in d["_nao_entendi"])
+
+
+def test_quem_nao_tem_nem_um_nem_outro_e_MENSALISTA():
+    """390 pessoas: não há diária para pagar."""
+    assert _linha(**{"Tipo": "CTPS"})["mensalista"] is True
 
 
 def test_valor_que_eu_NAO_conheco_e_RELATADO_e_nao_chutado():
@@ -275,3 +298,58 @@ def test_falha_ao_ler_a_planilha_VOLTA_ESCRITA(mundo):
                                  "linhas": 0, "colunas": 0})
     assert r["planilha"]["erro"] == "credencial faltando"
     assert not r["atualizadas"]
+
+
+# ---------------------------------------------------------------------------
+# AS INCOERÊNCIAS DA PLANILHA — varridas nas 3.667 linhas e decididas por ele
+# em 17/11/2026, depois do pedido: *"você devia analisar outras situações
+# discrepantes e me questionar"*.
+# ---------------------------------------------------------------------------
+def test_data_de_saida_manda_a_pessoa_esta_DESLIGADA():
+    """Ele: *"quem está em Solicitações DP pode estar com data de saída — é
+    gente que já saiu e o cadastro não foi finalizado, aguardando
+    documentação."* Então a data manda, qualquer que seja a fase. Sem isto,
+    37 pessoas que já saíram entrariam ATIVAS — e continuariam batendo ponto
+    e aparecendo na folha."""
+    d = _linha(**{"Tipo": "CTPS", "Data de Saída": "07/10/2026",
+                  "Fase Atual": "Solicitações DP"})
+    assert d["situacao"] == "DESLIGADO" and d["demissao"] == "2026-10-07"
+    # Esse caso é legítimo: não vira aviso.
+    assert not d["_nao_entendi"]
+
+
+def test_cadastro_CONCLUIDO_com_data_de_saida_e_INCOERENCIA_e_e_relatada():
+    """Ele: *"quem está com o cadastro concluído NÃO PODE ter data de
+    saída."* São 6 hoje. Entra como desligado e vai para a lista."""
+    d = _linha(**{"Tipo": "CTPS", "Data de Saída": "07/10/2026",
+                  "Fase Atual": "Cadastro Concluído"})
+    assert d["situacao"] == "DESLIGADO"
+    assert any("não pode ter data de saída" in x["motivo"]
+               for x in d["_nao_entendi"])
+
+
+def test_tipo_e_contrato_que_se_contradizem_sao_RELATADOS():
+    """57 linhas na planilha. Ele conferiu: *"todos que são prestador de
+    serviço, que não estão desligados, estão com o contrato correto"* — e a
+    conta bate (48 das 57 são de desligados, dado velho). O "Tipo" manda,
+    porque é a coluna que a folha usa; a contradição é relatada."""
+    d = _linha(**{"Tipo": "CTPS", "Tipo de Contrato": "Autônomo (RPA)"})
+    assert d["vinculo"] == "CTPS"          # o Tipo mandou
+    assert d["tipo_contrato"] == "AUTONOMO_RPA"
+    assert any("se contradizem" in x["motivo"] for x in d["_nao_entendi"])
+
+
+def test_vinculo_e_contrato_coerentes_NAO_viram_aviso():
+    for tipo, contrato in (("CTPS", "CLT (tempo determinado)"),
+                           ("Prestador de Serviço", "Autônomo (RPA)"),
+                           ("Prestador de Serviço", "PJ"),
+                           ("Prestador de Serviço", "Jovem aprendiz")):
+        d = _linha(**{"Tipo": tipo, "Tipo de Contrato": contrato})
+        assert not d["_nao_entendi"], (tipo, contrato)
+
+
+def test_o_PIS_do_prestador_ENTRA():
+    """173 prestadores têm PIS de um emprego CLT anterior. Ele: levar — o PIS
+    é da pessoa, não do contrato."""
+    d = _linha(**{"Tipo": "Prestador de Serviço", "Nº PIS": "160.83716.18-8"})
+    assert d["pis"] == "16083716188"

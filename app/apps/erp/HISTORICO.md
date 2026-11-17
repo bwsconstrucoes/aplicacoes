@@ -21,6 +21,70 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — AS INCOERÊNCIAS DA PLANILHA, VARRIDAS E DECIDIDAS COM ELE
+
+> *"Você devia analisar outras situações discrepantes e me questionar."*
+
+Pedido justo, e é o oposto do que eu vinha fazendo: descobrir um problema por
+vez, cada um custando uma rodada dele. Varri as **3.667 linhas** e levei a
+lista. Três decisões saíram daí.
+
+#### 1. "Valor do Mês" manda sobre a diária
+
+Ele, no caso da Amanda: *"vai se sobrepor a informação Valor do Mês (…) ela
+não tem diária mais, é dado antigo."*
+
+| Na planilha | Quantos | Vira |
+|---|---|---|
+| só diária | 3.166 | diarista |
+| só Valor do Mês | 58 | mensalista |
+| **os DOIS** | **53** | **mensalista; a diária NÃO entra** |
+| nenhum | 390 | mensalista |
+
+Os 53 são o caso dela: a diária ficou de quando a pessoa era diarista e
+ninguém apagou. Trazê-la poria valor morto na ficha de quem é pago por mês —
+e é a diária da ficha que a folha usa para pagar dia de fim de semana. Minha
+regra anterior ("quem tem diária é diarista") errava exatamente aí.
+
+#### 2. Data de saída manda sobre a fase
+
+Ele: *"quem está em Solicitações DP pode estar com data de saída — é gente
+que já saiu e o cadastro não foi finalizado, aguardando documentação. E quem
+está com o cadastro concluído NÃO PODE ter data de saída."*
+
+São **37** com data de saída e fase de gente ativa. Sem esta regra, **todas
+entrariam ATIVAS** — e continuariam batendo ponto e aparecendo na folha.
+Agora: data de saída ⇒ **DESLIGADO**, qualquer que seja a fase. E os **6** com
+"Cadastro Concluído" + data de saída viram aviso, porque são erro da planilha.
+
+#### 3. "Tipo" × "Tipo de Contrato" que se contradizem
+
+**57 linhas**: prestador com contrato CLT, ou CTPS com RPA/aprendiz. Ele
+conferiu e disse que entre os ativos isso não existe — e a conta deu razão a
+ele: **48 das 57 são de gente DESLIGADA**, dado velho. **As 9 ativas são erro
+de digitação na planilha**, e elas têm nome (estão no relatório da
+importação).
+
+O **"Tipo" manda**, porque é a coluna que a folha já usa para separar quem
+entra nas contas de horas. A contradição é **relatada**, nunca engolida.
+
+#### 4. O PIS do prestador entra
+
+173 prestadores têm PIS de um emprego CLT anterior. Ele: levar — **o PIS é da
+pessoa, não do contrato**.
+
+#### O que a varredura também mostrou, e NÃO vira regra
+
+- **1.614 CTPS sem nº de CTPS** e **623 sem PIS** — é o que a importação da
+  ficha do Fortes existe para tapar.
+- **274 ativos sem centro de custo da contabilidade** — não trava a
+  importação; trava a ficha do Fortes achar a obra da pessoa.
+- **18 ativos sem salário, sem valor do mês e sem diária.**
+- **5 sem admissão e sem data de início**; **4 com tipo de Pix sem a chave.**
+
+Ficam escritos aqui porque são trabalho de planilha, não de código — e porque
+da próxima vez a pergunta certa é essa lista, não uma pessoa de cada vez.
+
 ### ⚑ 17/11/2026 — DUAS PORTAS: DADOS PELA PLANILHA, DOCUMENTOS PELO PIPEFY
 
 > *"Mas por que rodar com o card dela se quero que puxe da planilha?"*
