@@ -1930,6 +1930,81 @@ nem qual número ela devolve. A primeira emissão de verdade é a primeira prova
 
 ## Incidentes
 
+### A nota com dez centavos a mais, e o laço sem saída — 17/11/2026
+
+**O caso.** A nota da obra CREPEEXU, medição 19, saiu por **R$ 13.053,64** quando
+devia ser **R$ 13.053,54**. O dono corrigiu o Valor da Medição no card, atualizou
+o título no Omie, e foi substituir a nota. Não tinha caminho — e a tela ainda
+brigava com ela mesma:
+
+```
+Valor da Medição (teto)   R$ 13.053,54
+Esta nota                 R$ 13.053,64
+🚫 Valor desta nota (R$ 13.053,64) é MAIOR que o Valor da Medição (R$ 13.053,54).
+```
+
+**Eram três coisas, e as três estão consertadas.**
+
+**1. A tela propunha um valor e se recusava a emiti-lo.** Na substituição, o
+valor-base da nota nova era o da nota ANTIGA, lido do slot, **cego ao card**. O
+default faz sentido — é o que "substituir" quer dizer, e é a única fonte quando a
+nota antiga era parcial, porque o campo 'Valor Parcial' é um dos doze que a
+conclusão limpa. Mas o **Valor da Medição não é limpo**: ele sobrevive, é onde o
+dono corrige as coisas, e por isso é confiável. Agora o valor-base é
+`min(valor da nota antiga, Valor da Medição − outras notas válidas)`: quando a
+medição comporta menos, o card ganha; quando comporta o mesmo ou mais (toda
+substituição normal), nada muda. O ajuste **nunca é silencioso** — a tela mostra,
+no banner da substituição, de onde o valor saiu e como mudá-lo.
+A regra virou `worker.valor_base_substituicao`, fora do `preparar`, para caber
+num teste.
+
+**2. Cancelar no portal não destravava a reemissão — e virou um laço.** O
+município só aceita substituir por valor igual ou maior; **valor menor é
+cancelamento**. Mas cancelar no portal, sozinho, não mudava nada aqui: o slot do
+card continuava "válido", **consumindo o teto da medição**, então a nota nova era
+barrada por "a soma das válidas excede o Valor da Medição". E o único jeito de
+marcar a antiga como cancelada era o `/emissao/recuperar`, que **exige o XML de
+uma nota nova** — justamente a que ainda não podia ser emitida. Cachorro correndo
+atrás do próprio rabo.
+
+**Tela nova: `/emissao/cancelada` — "Nota cancelada no portal".** Ela separa
+"registrar o cancelamento" de "registrar a nota nova", que são duas coisas
+diferentes e só aconteciam juntas. Recebe o card e o número (curto ou longo),
+marca o slot como Cancelada, escreve CANCELADA na linha da planilha (com o motivo,
+se houver) e tira o número do título no Omie. No fim diz **quanto ainda cabe
+emitir** — é a informação que destrava a reemissão.
+
+O que ela **não** faz, e está escrito na tela: não cancela na prefeitura (é no
+portal, e é lá que vale), não apaga a linha da planilha (só marca, preserva o
+histórico) e **não mexe nas retenções do título**. As retenções continuam as da
+nota cancelada até a nota nova ser emitida — e aí a nota nova as regrava, porque
+passa a ser a primeira válida da medição (`concluir`, passo [2]).
+
+**3. O banner da substituição prometia o que o botão recusa.** Ele dizia *"Ao
+emitir, a NF X será marcada como Cancelada no card e na planilha"* — e o botão
+Emitir recusa substituição desde 07/10/2026. Foi esse texto que prendeu o dono no
+laço: ele lia uma promessa e clicava num botão que não a cumpre. Agora o banner
+diz que o botão não substitui, para que serve a tela nesse caso (conferir os
+números) e os dois caminhos: valor igual ou maior → Substituir no portal +
+Recuperar entrega; valor menor → cancelar no portal + Nota cancelada no portal +
+emitir normalmente.
+
+**E um quarto, de tabela: o número do slot casava por TEXTO.** `slots_preenchidos`
+comparava o número a ignorar com `==`, então `3377` nunca batia com
+`2600000003377`. A nota substituída continuava contando no teto e a emissão era
+barrada, sem o dono ter como adivinhar que o problema era o formato do número.
+Agora casa pelo sequencial, como em `substituicao`. **É o terceiro lugar onde esse
+mesmo erro apareceu** (os outros dois em 09/11/2026) — se aparecer um quarto,
+comparar número de nota por texto deve virar erro de revisão.
+
+**A lição que vale guardar:** a tela não pode propor um valor que a validação da
+mesma tela vai barrar. Quando o default vem de uma fonte (a nota antiga) e o teto
+vem de outra (o card), o default tem de ser limitado pelo teto na origem — não
+conferido depois.
+
+**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (21 casos,
+com os números reais do incidente). Rodados contra o código velho, 18 falham.
+
 ### A substituição que não cancelou a nota antiga — 09/11/2026
 
 **O que o dono viu:** ele substituiu a NF `2600000003352` pelo botão
@@ -2146,6 +2221,13 @@ que diz o que está errado sem mostrar o que é.
 Não são funcionalidade: são conserto. Vale saber que existem antes de escrever
 script novo.
 
+- **`/emissao/cancelada`** — **"Nota cancelada no portal"**: registra aqui dentro
+  uma nota que foi cancelada na prefeitura. Marca o slot do card como Cancelada,
+  escreve CANCELADA na linha da planilha e tira o número do título no Omie; no fim
+  diz quanto ainda cabe emitir na medição. É o que **destrava a reemissão** — sem
+  ela, o slot válido consome o teto e a nota nova é barrada. Não cancela nada na
+  prefeitura, e não mexe nas retenções do título (a nota nova as regrava).
+  Ver o incidente de 17/11/2026.
 - **`/emissao/recuperar`** — refaz o pós-emissão de uma nota já emitida, colando
   o XML. Sem "completo", refaz só a entrega (Drive, links, Descrição). Com
   "completo", refaz tudo — e tem trava anti-duplicação. É o que fecha o ciclo
@@ -2188,6 +2270,13 @@ script novo.
 7. **Valor que vai para o Omie ou para a planilha se confere contra o XML da
    nota.** O card é recalculado na hora, e a conclusão limpa os campos de
    entrada dele — recalcular depois dá número errado. O XML é o documento.
+8. **A tela não propõe valor que ela mesma vai barrar.** Default que vem de uma
+   fonte (a nota antiga) tem de ser limitado pelo teto da outra (o card) **na
+   origem**, não conferido depois. Regra nascida do laço de 17/11/2026.
+9. **Número de nota não se compara por texto.** O padrão nacional grava 13
+   dígitos (ano + sequencial) e quem digita tem o curto na mão. Compare pelo
+   sequencial (`substituicao._chave_numero`). O mesmo erro já apareceu em três
+   lugares diferentes.
 
 ---
 

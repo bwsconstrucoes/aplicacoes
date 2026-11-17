@@ -64,8 +64,15 @@ def slots_preenchidos(card: dict, ignorar_numero=None) -> list[dict]:
     """Slots A–E já preenchidos no card, com status/número/valor e flag 'valida'.
     Lê pelos field_id verificados em pipefy_update.CAMPOS_SLOT.
     Se 'ignorar_numero' for passado, esse nº (nota em substituição) não conta como válido."""
+    # ⚠️ A nota a ignorar casa pelo SEQUENCIAL, não pelo texto. No padrão nacional
+    # o slot guarda os 13 dígitos (ano + sequencial, ex.: 2600000003377) e quem
+    # digita o número costuma ter o curto na mão (3377). Comparando texto, o curto
+    # nunca batia: a nota substituída continuava contando no teto e a emissão era
+    # barrada por "a soma das válidas excede o Valor da Medição" — com o dono sem
+    # ter como adivinhar que o problema era o formato do número.
+    import substituicao as _sub
     por_id = card.get("campos_por_id", {}) or {}
-    ign = str(ignorar_numero).strip() if ignorar_numero else None
+    ign = _sub._chave_numero(ignorar_numero) if ignorar_numero else None
     out = []
     for s in "ABCDE":
         f = pf.CAMPOS_SLOT[s]
@@ -74,7 +81,7 @@ def slots_preenchidos(card: dict, ignorar_numero=None) -> list[dict]:
             continue
         numero = (por_id.get(f["numero"]) or "").strip()
         valida = _norm(status).startswith("VALID")   # 'Válida'
-        if ign and numero == ign:
+        if ign and _sub._chave_numero(numero) == ign:
             valida = False                            # nota em substituição: não conta no teto
         out.append({
             "slot": s,

@@ -478,6 +478,7 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | Rota | Para quê |
 |---|---|
 | `/emissao?card_id=…` | a tela principal: espelho, discriminação editável, emitir |
+| `/emissao/cancelada` | **"Nota cancelada no portal".** Depois de cancelar uma nota na prefeitura, registra o cancelamento aqui: slot do card → Cancelada, linha da planilha → CANCELADA (com o motivo), e o número sai do título no Omie. Diz no fim quanto ainda cabe emitir na medição. **É o que destrava a reemissão:** enquanto a nota antiga continuar válida no card ela consome o teto, e a nota nova é barrada. Não cancela nada na prefeitura, e não mexe nas retenções do título — a nota nova as regrava, por ser a primeira válida |
 | `/emissao/recuperar` | nota **já emitida** cujo pós-emissão falhou ou nem rodou. Cola-se o XML; com "completo" marcado refaz tudo (tem trava anti-duplicação e **trava de valor contra o XML**), sem marcar refaz só a entrega no Drive. Preencher o nº da **nota substituída** cancela a antiga no card, na planilha e no título do Omie — número curto ou longo, tanto faz |
 | `/emissao/regerar` | regrava os PDFs de notas já concluídas com o layout atual, no mesmo link |
 | `/emissao/nacional` | roda o fechamento nacional na mão |
@@ -528,6 +529,22 @@ cancelou a nota antiga em lugar nenhum (incidente no `HISTORICO.md`):
 - **O resultado dos três lugares aparece no topo da tela**, com ✅ ou ❌ em cada
   um — slot do card, planilha e número no título do Omie — e o que fazer à mão
   quando algum falha. Antes era uma linha no meio do log.
+
+### Valor da nota errado: substituir ou cancelar?
+
+Decidido pelo caso de 17/11/2026 (incidente no `HISTORICO.md`), e a diferença é do
+município, não nossa:
+
+| O valor novo é… | Caminho |
+|---|---|
+| **igual ou maior** | botão **Substituir** no portal da prefeitura, depois `/emissao/recuperar` com o nº da antiga no campo da nota substituída |
+| **menor** (ou troca de competência) | o município **não aceita substituir** — é cancelamento. Cancele no portal, registre em **`/emissao/cancelada`** e emita a nota nova pela tela normal, sem o campo de substituição |
+
+Na substituição, o valor-base da nota nova é o da **nota antiga**, limitado ao que
+o **Valor da Medição do card** comporta hoje (menos as outras notas válidas).
+Corrigiu a medição para menos no card? O card ganha, e a tela diz no banner que
+ajustou e de onde o valor saiu. Antes ela propunha o valor da nota antiga e, no
+passo seguinte, se recusava a emiti-lo.
 
 ### ⚠️ A trava de valor, e ela guarda dinheiro
 
