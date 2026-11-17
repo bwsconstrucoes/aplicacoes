@@ -427,12 +427,23 @@ function caixinhaDaPessoa(c){
     </div>`;
 }
 
+{# ⚠️ ETAPA QUE NÃO É COLUNA CAI NA PRIMEIRA, e isto não é detalhe: entre
+   publicar o código e alguém apertar "Aplicar atualizações do banco", existe
+   gente gravada na etapa antiga ("EM_CONFERENCIA"). Sem esta linha, essas
+   pessoas não apareceriam em coluna nenhuma — desapareceriam do quadro, sem
+   erro, até o botão ser apertado. Some calado é o pior jeito de errar. #}
+const COLUNAS_DO_QUADRO = ETAPAS.map(e => e.valor);
+function colunaDe(c){
+  const e = c.etapa || "CONCLUIDO";
+  return COLUNAS_DO_QUADRO.includes(e) ? e : COLUNAS_DO_QUADRO[0];
+}
+
 function desenharQuadro(lista){
   const onde = els("quadro");
   onde.innerHTML = `<div style="display:flex; gap:10px; align-items:flex-start;
       min-width:max-content">` +
     ETAPAS.map(e => {
-      const dela = lista.filter(c => (c.etapa||"CONCLUIDO") === e.valor);
+      const dela = lista.filter(c => colunaDe(c) === e.valor);
       return `<div class="coluna-kanban" data-etapa="${e.valor}"
         style="width:250px; flex:0 0 250px; background:var(--fundo-2);
                border:1px solid var(--borda); border-radius:10px; padding:8px">
@@ -550,7 +561,7 @@ function desenhar(){
   // as outras. Ver o comentário acima.
   els("f-etapas").querySelectorAll("[data-conta-etapa]").forEach(s => {
     const n = semEtapa.filter(
-      c => (c.etapa||"CONCLUIDO") === s.dataset.contaEtapa).length;
+      c => colunaDe(c) === s.dataset.contaEtapa).length;
     s.textContent = ` · ${n}`;
   });
 
