@@ -21,6 +21,53 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — "PARTE DOS DADOS VEM, MAS VÍNCULO E PAGAMENTO CONTINUA EM BRANCO"
+
+A frase dele foi o diagnóstico inteiro, e ela diz duas coisas: a planilha
+ESTAVA sendo lida (parte dos dados vinha) e **dois campos específicos nunca
+entravam**.
+
+#### A causa, e ela é de uma linha
+
+`vinculo` **NUNCA está vazio**: todo cadastro nasce com `"CTPS"`
+(`pessoas.salvar`). E a importação passava tudo pelo filtro "só preenche o que
+está VAZIO aqui". Resultado: o vínculo era considerado "já preenchido" e
+**pulado — em toda importação, para sempre**. `mensalista` (o pagamento) ia
+junto, porque só é deduzido quando há vínculo.
+
+Os outros campos entravam porque estavam mesmo vazios. Daí "parte dos dados
+vem": não era aleatório, era exatamente a regra funcionando contra o objetivo.
+
+#### O conserto
+
+**O que vem da PLANILHA não passa mais pelo filtro.** Ela não é palpite: é o
+cadastro que a empresa mantém, o espelho do card. Ele já tinha dito isso sobre
+o card — *"eu quero que o que vier do pipe preencha o ERP; não adianta eu ter
+que já ter uma base e ter que preencher de novo"* — e a planilha é o espelho
+desse card. O filtro continua valendo para o que vem do CARD e do DOCUMENTO,
+que aí sim podem estar velhos.
+
+#### E a tela passou a mostrar o que está acontecendo
+
+> *"Você precisa me MOSTRAR o que tá acontecendo, como tá fazendo."*
+
+Ele estava certo pela terceira vez no mesmo assunto. A leitura da planilha
+podia falhar INTEIRA — credencial, aba renomeada, planilha movida — e a tela
+não dizia uma palavra: o erro ia para o log do Render, que ele não abre.
+"Não aconteceu nada" e "falhou e eu não te contei" tinham a mesma cara.
+
+Agora o relatório abre com isto, e em vermelho quando falha:
+
+- **quantas pessoas foram lidas da planilha**, de qual aba, quantas colunas;
+- **o erro do Google por extenso**, quando houver;
+- **quem tem card e não está na planilha** (entra só com documento).
+
+⚑ **A regra: silêncio não é resultado.** Três vezes no mesmo dia um valor
+sumiu calado — apelido de campo do Pipefy, valor de coluna da planilha, e
+agora um filtro que pulava. Toda vez o custo caiu nele, em rodadas de
+tentativa. **Quando um dado não entra, a tela tem de dizer que não entrou e
+por quê.**
+
 ### ⚑⚑⚑ 16/11/2026 — EU TINHA ACESSO À PLANILHA E NÃO OLHEI
 
 > *"Por que você não consulta a planilha? Você tem acesso:

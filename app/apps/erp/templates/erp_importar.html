@@ -813,6 +813,43 @@ function pintarRelatorioPC(rel){
         <td class="desc">${escapar(c.motivo)}</td></tr>`).join("")}
       </tbody></table></div>`);
 
+  // ⚑ A PLANILHA, EM PRIMEIRO LUGAR NA TELA (17/11/2026).
+  //
+  // Ele: *"meu, não tá funcionando. Você precisa me MOSTRAR o que tá
+  // acontecendo, como tá fazendo. A planilha tá sendo atualizada e os dados
+  // não alimentam o ERP."*
+  //
+  // E ele estava certo de novo: a leitura da planilha podia falhar inteira
+  // (credencial, aba renomeada, planilha movida) e a tela não dizia UMA
+  // palavra — o erro ia para o log do Render, que ele não abre. "Não
+  // aconteceu nada" e "falhou e eu não te contei" tinham a mesma cara.
+  //
+  // Agora isto é a primeira coisa do relatório, e fica vermelho quando falha.
+  const pl = rel.planilha || {};
+  if (pl.erro)
+    linhas.push(`<div class="aviso erro"><b>NÃO consegui ler a planilha — por
+      isso nenhum dado dela entrou.</b><br>
+      Planilha: <span class="mono">${escapar(pl.planilha || "—")}</span> ·
+      aba <b>${escapar(pl.aba || "—")}</b><br>
+      <b>O que o Google respondeu:</b> ${escapar(pl.erro)}</div>`);
+  else if (rel.planilha_lida !== undefined)
+    linhas.push(`<div class="cartao-dica"><b>Planilha lida agora:
+      ${rel.planilha_lida} pessoa(s)</b> na aba
+      <b>${escapar(pl.aba || "Dados Documentos")}</b>${
+        pl.colunas ? ` · ${pl.colunas} colunas reconhecidas` : ""}.
+      É leitura ao vivo — o que você editar lá vale nesta mesma importação.</div>`);
+
+  // Quem tem card e não está na planilha: entra só com o documento.
+  if ((rel.fora_da_planilha || []).length)
+    linhas.push(`<h4>Não achei na planilha (${rel.fora_da_planilha.length})</h4>
+      <div class="cartao-dica">O CPF destas pessoas não está na aba
+        <b>Dados Documentos</b>. Elas entram só com os documentos do card —
+        nenhum campo de cadastro vem da planilha.</div>
+      <table><thead><tr><th>Pessoa</th><th>CPF</th><th>Card</th></tr></thead>
+      <tbody>${rel.fora_da_planilha.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${documento(x.cpf)}</td>
+        <td class="dados">${escapar(x.card)}</td></tr>`).join("")}</tbody></table>`);
+
   // ⚑ O QUE A PLANILHA ESCREVE, CRU, E O QUE EU NÃO ENTENDI (16/11/2026).
   //
   // Ele, na terceira tentativa frustrada: *"é só casar informação da planilha
@@ -839,14 +876,13 @@ function pintarRelatorioPC(rel){
   // planilha aberta ao lado, sem ninguém ter de adivinhar nada.
   const comCrua = (rel.por_pessoa || []).filter(p => p.planilha_crua);
   if (comCrua.length)
-    linhas.push(`<h4>O que a planilha “Dados Documentos” diz, coluna por
-      coluna (${comCrua.length})</h4>
-      <div class="cartao-dica">Exatamente como está lá. Compare com a planilha
-        aberta: se algo estiver em branco aqui e preenchido lá, a cópia está
-        velha — aperte <b>Atualizar cadastro</b> na Análise de SPs.</div>
+    linhas.push(`<h4>O que veio da planilha para cada pessoa (${comCrua.length})</h4>
+      <div class="cartao-dica">Campo do ERP e o valor que a planilha mandou,
+        já traduzido. Se um campo que está preenchido na planilha não aparecer
+        aqui, é ele que eu não estou lendo — me mostre.</div>
       ${comCrua.map(p => `<details style="margin-top:6px">
         <summary><b>${escapar(p.nome)}</b></summary>
-        <table><thead><tr><th>Coluna</th><th>Valor</th></tr></thead>
+        <table><thead><tr><th>Campo do ERP</th><th>Valor</th></tr></thead>
         <tbody>${Object.entries(p.planilha_crua).map(([k, v]) =>
           `<tr><td class="dados">${escapar(k)}</td>
            <td class="dados">${escapar(v) || "<i>vazio</i>"}</td></tr>`).join("")}

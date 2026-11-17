@@ -1068,7 +1068,9 @@ def _planilha(cpf=None, **trocas):
     campos.update(trocas)
     cab = pl.cabecalho_de(list(campos))
     lido = pl.ler_linha(cab, list(campos.values()))
-    return lambda: {pl._digitos(campos["CPF (Cadastro de Pessoa Física)"]): lido}
+    return lambda: {"pessoas": {pl._digitos(campos["CPF (Cadastro de Pessoa Física)"]): lido},
+                    "erro": "", "planilha": "(teste)", "aba": "Dados Documentos",
+                    "linhas": 1, "colunas": 20}
 
 
 @pytest.fixture
@@ -1169,7 +1171,37 @@ def test_quem_tem_card_e_NAO_esta_na_planilha_e_relatado(mundo):
     """Entra só com o documento, e o relatório diz quem foi."""
     r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=[CARD],
                      regravar=True, ler_papel=False, ler_cards=_leitor(_card()),
-                     ler_planilha=lambda: {})
+                     ler_planilha=lambda: {"pessoas": {}, "erro": "", "planilha": "(teste)",
+                                           "aba": "", "linhas": 0, "colunas": 0})
     assert [x["cpf"] for x in r["fora_da_planilha"]] == [CPF_A]
 
 
+
+
+@pytest.mark.banco
+def test_VINCULO_da_planilha_entra_mesmo_com_o_cadastro_JA_preenchido(mundo):
+    """A causa de "parte dos dados vem, mas vínculo e pagamento continua em
+    branco" — 17/11/2026.
+
+    `vinculo` NUNCA está vazio: todo cadastro nasce com "CTPS". O filtro de
+    "só preenche o que está vazio" o considerava já preenchido e pulava, em
+    toda importação, para sempre. O que vem da PLANILHA não passa mais por
+    esse filtro: ela é o cadastro que a empresa mantém, não um palpite.
+    """
+    from app.apps.erp.db.models.cadastros import Cargo, Convencao
+    mundo["s"].add_all([Cargo(nome="Pedreiro", ativo=True),
+                        Convencao(nome="CE-Fortaleza")])
+    # O cadastro já tem vínculo (nasce CTPS) e já tem diária.
+    mundo["com_card"].vinculo = "CTPS"
+    mundo["com_card"].mensalista = True
+    mundo["s"].flush()
+
+    # regravar DESLIGADO de propósito: é o caso em que o defeito aparecia.
+    imp.importar(mundo["s"], mundo["dp"], simular=False, cards=[CARD],
+                 regravar=False, ler_papel=False, ler_cards=_leitor(_card()),
+                 ler_planilha=_planilha())
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["com_card"])
+    assert mundo["com_card"].vinculo == "PRESTADOR"
+    assert mundo["com_card"].mensalista is False     # tem diária na planilha
+    assert mundo["com_card"].tipo_contrato == "AUTONOMO_RPA"
