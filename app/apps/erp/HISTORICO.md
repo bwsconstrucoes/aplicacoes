@@ -21,6 +21,80 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — O MÉTODO: por que ele estava corrigindo minúcia a minúcia
+
+**A pergunta dele, e é a mais importante do dia:**
+
+> *"Talvez eu não esteja utilizando a melhor estratégia (…) a gente está
+> ficando muitos vazios. (…) Eu quero um agente. Eu precisaria de algo pensante
+> também, não para ficar cada mínimo detalhe para eu decidir ou corrigir. Eu
+> estou tendo que corrigir minúcia a minúcia, porque nada está ficando 100%. E
+> está muito desgastante, cansativo e demorado. Eu estou fazendo errado do jeito
+> que a gente está fazendo aqui. Tem um método melhor?"*
+
+**A causa, medida e não opinada.** A especificação do Pipefy existe neste
+repositório desde 04/11/2026 — `DE_PARA_PIPEFY_DP.md`, a exportação dos dois
+pipes pelo GraphQL, com os campos e as fases. O ERP tem 13 dos tipos de pedido.
+**E nada, em lugar nenhum, comparava os dois.**
+
+Consequência exata: **o único detector de vão era ele abrir uma tela e sentir
+falta.** Um por um, operando, na pior hora. Não era falta de análise nem de
+chat — era falta de um *placar*.
+
+#### O que foi feito: `PLACAR_DO_DP.md` + `tests/test_placar_do_dp.py`
+
+Uma linha por coisa que o Pipefy faz, e **um veredito** em cada:
+✅ está no ERP · 🔀 está em OUTRO lugar do ERP (de propósito) · ❌ falta ·
+⚰️ morre com o Pipefy · ❓ precisa da resposta dele.
+
+**O primeiro placar, medido hoje — 51 itens:**
+
+| | |
+|---|---|
+| ✅ no ERP | 26 |
+| 🔀 em outro lugar (ponto, contabilidade, DC) | 11 |
+| ❌ faltam | 6 |
+| ⚰️ morrem com o Pipefy | 2 |
+| ❓ esperando resposta dele | 7 |
+
+Os **6 que faltam** são de uma família só: 2ª via de cartão (Somapay e vale
+transporte) e crachá — cada um aparecendo duas vezes no Pipe, com dois nomes.
+
+O teste recusa **três silêncios**: item do de-para sem linha no placar, linha
+sem veredito, e placar dizendo ❌ para o que o ERP já tem. E imprime a conta em
+cada rodada da suíte, para o vão deixar de ser sensação e passar a ser número.
+
+⚠️ **O placar não exige que tudo esteja pronto** — ❌ e ⚰️ são vereditos
+legítimos. O que ele proíbe é o vão que ninguém mapeou.
+
+#### O que o placar AINDA não mede, e como fechar
+
+A exportação de 04/11 trouxe **campos e fases**, não **automações**. Então
+ninguém conferiu: os disparos de e-mail por fase, as condicionais de campo, as
+transições automáticas, as 20 opções de "Motivo" do ajuste de ponto e quem era
+responsável por cada fase.
+
+**O caminho é o mesmo que já funcionou:** pedir ao Pipefy a exportação das
+automações, como foi feito com os campos. É uma coisa que ele faz uma vez e que
+cala dezenas de perguntas — e é a diferença entre a próxima sessão trabalhar
+sozinha ou devolver minúcia para ele decidir.
+
+#### A mudança de método, escrita para valer nas próximas sessões
+
+1. **Antes de concluir que algo não existe neste ERP, PROCURE.** A chance de
+   estar construído e inalcançável é maior que a de não existir. Aconteceu duas
+   vezes hoje: a etapa com regra desde 05/11 e sem botão até 17/11, e os
+   pedidos à contabilidade inteiros numa tela que ele não achou.
+2. **Entregar o PROCEDIMENTO, não a peça nomeada.** Ao mexer em X, perguntar:
+   o que alguém faz antes e depois de X, e isso está alcançável? Era o que
+   faltava quando a situação saiu do cadastro sem a etapa fechar o laço.
+3. **Juntar as decisões dele em UMA passada**, com recomendação em cada, em vez
+   de uma pergunta por detalhe. O placar é o formato disso.
+4. **Tela se confere no navegador.** Os três defeitos silenciosos de hoje
+   (contadores zerados, movimentação morta, recado atrás da janela) não
+   apareceram em teste nenhum — apareceram dirigindo a tela.
+
+
 ### ⚑ 17/11/2026 (noite) — O AMBIENTE DA PESSOA, AS DEMANDAS DENTRO DELE, E A TRAVA DE CONCLUIR
 
 **Esta entrada começa com a cobrança dele, porque ela é o conteúdo:**
