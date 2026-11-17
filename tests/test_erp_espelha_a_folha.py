@@ -53,9 +53,23 @@ def _modos_que_a_folha_entende() -> set[str]:
 A_FOLHA_AINDA_NAO_ENTENDE = {"SEG_E_SEX", "VEICULO", "MOTOCICLETA", "BICICLETA"}
 
 
+# ⚑ "NÃO RECEBE" É A AUSÊNCIA DE AUXÍLIO, não um modo de calcular (17/11/2026).
+# Ele pediu a opção: *"adicionar para ambos os campos a opção Não recebe."*
+#
+# A folha calcula o auxílio pelo MODO (o texto). Não existe modo "não recebe" —
+# existe não ter auxílio. Então o ERP manda VAZIO, e o teste abaixo prova
+# justamente isso, em vez de exigir que a folha reconheça uma palavra que não
+# deveria chegar lá.
+def test_nao_recebe_vai_VAZIO_para_a_folha():
+    assert erp.CATEGORIA_ALIMENTACAO_PARA_FOLHA["NAO_RECEBE"] == ""
+    assert erp.CATEGORIA_TRANSPORTE_PARA_FOLHA["NAO_RECEBE"] == ""
+
+
 def test_folha_entende_toda_categoria_de_ALIMENTACAO_que_o_ERP_manda():
     entende = _modos_que_a_folha_entende()
     for codigo in erp.CATEGORIAS_ALIMENTACAO:
+        if codigo == "NAO_RECEBE":
+            continue              # ver o teste acima: vai vazio, de propósito
         palavra = erp.CATEGORIA_ALIMENTACAO_PARA_FOLHA[codigo]
         assert fa._sem_acento(palavra) in entende, (
             f"o ERP manda “{palavra}” para {codigo} e a folha não reconhece — "
@@ -65,6 +79,8 @@ def test_folha_entende_toda_categoria_de_ALIMENTACAO_que_o_ERP_manda():
 def test_folha_entende_as_categorias_de_TRANSPORTE_que_dao_para_entender():
     entende = _modos_que_a_folha_entende()
     for codigo in erp.CATEGORIAS_TRANSPORTE:
+        if codigo == "NAO_RECEBE":
+            continue              # ver `test_nao_recebe_vai_VAZIO_para_a_folha`
         palavra = erp.CATEGORIA_TRANSPORTE_PARA_FOLHA[codigo]
         reconhece = fa._sem_acento(palavra) in entende
         if codigo in A_FOLHA_AINDA_NAO_ENTENDE:

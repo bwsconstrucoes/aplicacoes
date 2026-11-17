@@ -173,9 +173,23 @@ CONTRATOS_EXPERIENCIA = (
 # é o contrato entre o ERP e a folha — e o teste
 # `test_folha_entende_o_que_o_ERP_manda` é quem o cobra.
 # ===========================================================================
+# ⚠️ "NÃO RECEBE" VIRA PALAVRA VAZIA PARA A FOLHA, e isto é escolha pensada
+# (17/11/2026).
+#
+# A folha calcula o auxílio a partir do MODO (o texto). "Não recebe" não é um
+# modo de calcular: é a ausência de auxílio. Mandar a palavra "Não recebe" para
+# lá seria mandar um modo que a folha não conhece — e modo desconhecido ela
+# trata como zero, o que por sorte dá o resultado certo, mas por acidente.
+# Vazio diz a mesma coisa de propósito.
+#
+# E `para_folha` ZERA O VALOR junto quando a categoria é esta: cadastro que
+# tinha valor e passou a "não recebe" não pode mandar o número velho para a
+# folha, porque do outro lado não há nada que o barre.
+_SEM_AUXILIO = ""
 CATEGORIA_ALIMENTACAO_PARA_FOLHA = {
     "SEG_QUI": "Segunda à Quinta", "SEG_SEX": "Segunda à Sexta",
     "MENSAL": "Mensal", "MES": "Mês",
+    "NAO_RECEBE": _SEM_AUXILIO,
 }
 CATEGORIA_TRANSPORTE_PARA_FOLHA = {
     "DIARIO": "Diário", "MENSAL": "Mensal", "MES": "Mês",
@@ -183,12 +197,22 @@ CATEGORIA_TRANSPORTE_PARA_FOLHA = {
     "DIARIO_E_VT": "Diário e Vale Transporte", "VEICULO": "Veículo",
     "MOTOCICLETA": "Motocicleta", "BICICLETA": "Bicicleta",
     "CARTAO": "Cartão",
+    "NAO_RECEBE": _SEM_AUXILIO,
 }
 
-CATEGORIAS_ALIMENTACAO = ("SEG_QUI", "SEG_SEX", "MENSAL", "MES")
+# ⚑ "NÃO RECEBE" ENTROU EM 17/11/2026, a pedido dele: *"adicionar para ambos
+# os campos a opção 'Não recebe'."*
+#
+# O motivo é o que a ausência de resposta não diz: campo de categoria em branco
+# pode ser "ninguém preencheu ainda" OU "esta pessoa não recebe auxílio" — e as
+# duas coisas pedem ação oposta do DP (correr atrás, ou deixar como está). Com
+# a opção explícita, o vazio volta a significar uma coisa só: falta responder.
+NAO_RECEBE = "NAO_RECEBE"
+CATEGORIAS_ALIMENTACAO = ("SEG_QUI", "SEG_SEX", "MENSAL", "MES", NAO_RECEBE)
 CATEGORIA_ALIMENTACAO_ROTULOS = {
     "SEG_QUI": "Segunda à quinta", "SEG_SEX": "Segunda à sexta",
     "MENSAL": "Mensal", "MES": "Mês",
+    NAO_RECEBE: "Não recebe",
 }
 # ⚑ "MES" ENTROU EM 15/11/2026, para o transporte ter o mesmo vocabulário da
 # alimentação. Ele, sobre as categorias: *"renomeia mensal para mês e explica
@@ -205,7 +229,7 @@ CATEGORIA_ALIMENTACAO_ROTULOS = {
 # valores. Ficha antiga continua com o que tem.
 CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "MES", "SEG_E_SEX",
                          "VALE_TRANSPORTE", "DIARIO_E_VT", "VEICULO",
-                         "MOTOCICLETA", "BICICLETA", "CARTAO")
+                         "MOTOCICLETA", "BICICLETA", "CARTAO", NAO_RECEBE)
 # O QUE SAIU DE USO, e por que não sai do código (05/11/2026, dele: *"isso aqui
 # a gente nem utiliza mais, cartão no transporte"*): apagar o valor deixaria sem
 # explicação a ficha de quem foi cadastrado com ele, e a folha de um mês fechado
@@ -218,6 +242,7 @@ CATEGORIA_TRANSPORTE_ROTULOS = {
     "VALE_TRANSPORTE": "Vale-transporte", "DIARIO_E_VT": "Diário e vale-transporte",
     "VEICULO": "Veículo", "MOTOCICLETA": "Motocicleta", "BICICLETA": "Bicicleta",
     "CARTAO": "Cartão (não paga em dinheiro)",
+    NAO_RECEBE: "Não recebe",
 }
 MEIOS_TRANSPORTE = ("NENHUM", "COLETIVO", "MOTO", "BICICLETA")
 MEIO_TRANSPORTE_ROTULOS = {"NENHUM": "Nenhum", "COLETIVO": "Transporte coletivo",
@@ -1313,12 +1338,17 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "salario": dinheiro(c.salario),
             "valor_diaria": dinheiro(c.valor_diaria),
             "valor_mes": dinheiro(c.valor_mes),
-            "valor_alimentacao": dinheiro(c.aux_alimentacao),
+            # ⚠️ "NÃO RECEBE" ZERA O VALOR (17/11/2026). Quem passou a não
+            # receber e tinha valor no cadastro mandaria o número velho para a
+            # folha — e do outro lado não há nada que o barre.
+            "valor_alimentacao": ("" if c.categoria_alimentacao == NAO_RECEBE
+                                  else dinheiro(c.aux_alimentacao)),
             # ⚠️ A PALAVRA DA FOLHA, não o rótulo da tela — ver
             # `CATEGORIA_ALIMENTACAO_PARA_FOLHA`. A folha compara TEXTO.
             "modo_alimentacao": CATEGORIA_ALIMENTACAO_PARA_FOLHA.get(
                 c.categoria_alimentacao or "", c.categoria_alimentacao or ""),
-            "valor_transporte": dinheiro(c.aux_transporte),
+            "valor_transporte": ("" if c.categoria_transporte == NAO_RECEBE
+                                 else dinheiro(c.aux_transporte)),
             # ⚠️ A PALAVRA DA FOLHA, não o rótulo da tela — ver
             # `CATEGORIA_TRANSPORTE_PARA_FOLHA`. Aqui o rótulo da tela
             # QUEBRAVA a folha: ela espera "Vale Transporte" e o rótulo é

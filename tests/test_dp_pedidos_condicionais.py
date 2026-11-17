@@ -235,9 +235,30 @@ def test_telefone_pix_e_diaria_sao_obrigatorios_em_todo_cadastro():
     """
     for forma in ("CTPS", "PRESTADOR"):
         exige = svc.exigencias("CADASTRO", {"tipo_documentacao": forma})["campos"]
-        for campo in ("telefone", "pix_tipo", "pix_chave", "valor_diaria",
-                      "empresa_id"):
+        for campo in ("telefone", "pix_tipo", "pix_chave", "empresa_id"):
             assert campo in exige, f"{campo} não é obrigatório em {forma}"
+
+    # ⚑ A DIÁRIA MUDOU DE REGRA EM 17/11/2026, e foi ele quem mudou: *"Valor da
+    # Diária → exibir campo para CLT e se for Prestador de Serviço (Autônomo
+    # (RPA)); demais, não exibir."*
+    #
+    # Ela era obrigatória SEMPRE — inclusive para PJ e pró-labore, que não têm
+    # diária. Campo que não se aplica e é exigido é pedido que não sai, e a
+    # pessoa não tem como resolver. Agora a exigência segue o TIPO DE CONTRATO,
+    # e só onde o campo aparece.
+    for contrato in ("CLT_INDETERMINADO", "CLT_DETERMINADO", "AUTONOMO_RPA"):
+        exige = svc.exigencias("CADASTRO", {"tipo_contrato": contrato})["campos"]
+        assert "valor_diaria" in exige, f"a diária é obrigatória em {contrato}"
+    for contrato in ("PJ", "PRO_LABORE", "ESTAGIO", "JOVEM_APRENDIZ"):
+        exige = svc.exigencias("CADASTRO", {"tipo_contrato": contrato})["campos"]
+        assert "valor_diaria" not in exige, (
+            f"{contrato} não tem diária — exigi-la trava o pedido sem saída")
+
+    # ⚑ E O PJ PASSOU A PEDIR OS DADOS DA EMPRESA DELE (mesma data): *"quando
+    # for pessoa PJ, abrir campos Razão social (PJ) e CNPJ (PJ)."* Sem eles o
+    # DP recebe um PJ e vai pedir a nota fiscal sem saber em nome de quem sai.
+    pj = svc.exigencias("CADASTRO", {"tipo_contrato": "PJ"})["campos"]
+    assert "razao_social_pj" in pj and "cnpj_pj" in pj
 
 
 def test_toda_opcao_de_categoria_tem_a_conta_escrita():
@@ -391,6 +412,16 @@ def _cad(mundo, **extra):
             "cargo_pleiteado_id": mundo["cargo_id"],
             "empresa_id": mundo["empresa_id"],
             "telefone": "85988881111", "pix_tipo": "CPF", "pix_chave": CPF_C,
+            # ⚑ PJ PEDE OS DADOS DA EMPRESA DELE desde 17/11/2026 (ele: *"quando
+            # for pessoa PJ, abrir campos Razão social (PJ) e CNPJ (PJ)"*) — e
+            # as duas ajudas passaram a ser obrigatórias na mesma data.
+            "razao_social_pj": "GENTE NOVA SERVICOS LTDA",
+            "cnpj_pj": "71000003000106",
+            "categoria_alimentacao": "NAO_RECEBE",
+            "categoria_transporte": "NAO_RECEBE",
+            # A diária NÃO é mais exigida de PJ (ele: *"exibir para CLT e
+            # Autônomo (RPA); demais, não exibir"*), mas informá-la aqui não
+            # atrapalha: o que o teste prova é o resto do pedido.
             "valor_diaria": "130,00", "data_inicio": "2026-06-01",
             "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
                            "COMPROVANTE-ENDERECO-PESSOA"]}

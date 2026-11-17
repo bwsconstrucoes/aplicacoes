@@ -443,18 +443,45 @@ TIPOS: dict[str, dict[str, Any]] = {
         # nada, e sem chave Pix ela não recebe. Campo que o pagamento exige
         # não é campo opcional — é pendência que alguém vai correr atrás
         # depois, por WhatsApp.
+        # ⚑ "MEIO DE TRANSPORTE PARA CHEGAR À OBRA?" SAIU EM 17/11/2026, e foi
+        # ele quem mandou: *"eliminar campo: Meio de Transporte para chegar à
+        # Obra?"*
+        #
+        # O campo vinha do Pipefy e perguntava de ônibus/moto/bicicleta. Quem
+        # responde o que a folha precisa é a AJUDA COM TRANSPORTE (a categoria),
+        # que diz se é diário, vale-transporte, veículo, moto… Perguntar as
+        # duas coisas dava duas respostas sobre transporte, e só uma delas
+        # chegava ao pagamento.
+        #
+        # ⚑ RAZÃO SOCIAL E CNPJ ENTRARAM, só para PJ (`visiveis_se` abaixo).
+        # Ele: *"quando for pessoa PJ, abrir campos Razão social (PJ) e CNPJ
+        # (PJ)."* Sem eles o DP recebia um PJ e ia pedir a nota fiscal sem
+        # saber em nome de quem ela sai.
         "campos": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
-                   "tipo_documentacao", "tipo_contrato", "empresa_id",
+                   "tipo_documentacao", "tipo_contrato",
+                   "razao_social_pj", "cnpj_pj", "empresa_id",
                    "num_ctps", "num_pis",
                    "data_inicio", "cargo_pleiteado_id",
                    "pagamento", "valor_diaria", "valor_mes",
-                   "meio_transporte",
                    "categoria_alimentacao", "aux_alimentacao",
                    "categoria_transporte", "aux_transporte", "descontar_vt",
                    "observacao"),
+        # ⚑ AS DUAS AJUDAS VIRARAM OBRIGATÓRIAS (17/11/2026). Ele:
+        # *"renomear campos e torná-los obrigatórios."*
+        #
+        # Só dá para exigir porque a lista ganhou "Não recebe": antes, obrigar
+        # forçaria a inventar uma categoria para quem não recebe nada. Com a
+        # opção explícita, a resposta sempre existe — e o DP deixa de receber
+        # cadastro em que "não sei" e "não recebe" são a mesma casa vazia.
+        #
+        # VALOR DA DIÁRIA saiu dos obrigatórios fixos: ele só aparece para CLT
+        # e autônomo (RPA), e campo que não aparece não pode ser exigido — o
+        # envio travaria sem a pessoa ter como resolver. Virou
+        # `obrigatorios_se`, abaixo.
         "obrigatorios": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
                          "tipo_documentacao", "empresa_id",
-                         "data_inicio", "cargo_pleiteado_id", "valor_diaria"),
+                         "data_inicio", "cargo_pleiteado_id",
+                         "categoria_alimentacao", "categoria_transporte"),
         # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
         # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
         # PIS também."*
@@ -474,9 +501,18 @@ TIPOS: dict[str, dict[str, Any]] = {
         # CTPS: a carteira e o PIS (que saem da LEITURA, abaixo).
         # PRESTADOR: o tipo de contrato (PJ, RPA, aprendiz…) e se é diarista
         # ou mensalista — duas coisas que, em carteira, não se escolhem.
+        # ⚑ E A DIÁRIA É EXIGIDA ONDE ELA APARECE (17/11/2026). Ele: *"Valor da
+        # Diária → exibir campo para CLT e se for Prestador de Serviço
+        # (Autônomo (RPA)); demais, não exibir."* Então ela é obrigatória
+        # nesses três casos, e nos outros não existe.
         "obrigatorios_se": {"tipo_documentacao": {
             "CTPS": ("num_ctps", "num_pis", "tipo_contrato"),
             "PRESTADOR": ("tipo_contrato", "pagamento")},
+            "tipo_contrato": {
+                "CLT_INDETERMINADO": ("valor_diaria",),
+                "CLT_DETERMINADO": ("valor_diaria",),
+                "AUTONOMO_RPA": ("valor_diaria",),
+                "PJ": ("razao_social_pj", "cnpj_pj")},
             "pagamento": {"MENSALISTA": ("valor_mes",)}},
         # ⚑ O QUE NÃO SE APLICA NEM APARECE (15/11/2026). Ele: *"quando é
         # CTPS, o valor é o da convenção, então valor do mês e pagamento
@@ -510,6 +546,23 @@ TIPOS: dict[str, dict[str, Any]] = {
         # respondeu, qualquer coisa) e não as duas opções soltas.
         "visiveis_se": {
             "tipo_contrato": {"tipo_documentacao": ("*",)},
+            # ⚑ A DIÁRIA SÓ ONDE ELA EXISTE (17/11/2026). Ele: *"Valor da
+            # Diária → exibir campo para CLT e se for Prestador de Serviço
+            # (Autônomo (RPA)); demais, não exibir."*
+            #
+            # Antes ela aparecia sempre, inclusive para PJ e pró-labore, que
+            # não têm diária — e campo que não se aplica e fica na tela é
+            # campo que alguém preenche. Jovem aprendiz fica DE FORA: ele
+            # disse "CLT", e aprendiz é mensalista pela própria lei.
+            # ⚑ EM CÓDIGO, e não em rótulo: é o código que a coluna guarda e
+            # que `traduzir_do_pipe` deixa no pedido. Escrevi em rótulo na
+            # primeira versão e o campo não apareceu em caso NENHUM — o mesmo
+            # defeito de alfabeto que deixou "Tipo de contrato" sem opções.
+            "valor_diaria": {"tipo_contrato": (
+                "CLT_INDETERMINADO", "CLT_DETERMINADO", "AUTONOMO_RPA")},
+            # ⚑ OS DADOS DA EMPRESA DO PJ nascem com o PJ, e só com ele.
+            "razao_social_pj": {"tipo_contrato": ("PJ",)},
+            "cnpj_pj": {"tipo_contrato": ("PJ",)},
             # O valor só é perguntado depois de escolhida a categoria: antes
             # disso, "valor da alimentação" não quer dizer nada.
             "aux_alimentacao": {"categoria_alimentacao": ("*",)},
@@ -681,6 +734,10 @@ EXPLICACAO_DA_OPCAO: dict[str, dict[str, str]] = {
         "SEG_SEX": "paga os cinco dias úteis da semana",
         "MENSAL": "o valor vezes os dias do mês (30 ou 31), trabalhados ou não",
         "MES": "o valor cheio do mês, sem contar dias",
+        # ⚑ "NÃO RECEBE" (17/11/2026, pedido dele). A explicação importa porque
+        # essa é a resposta que ANTES era o campo em branco — e em branco
+        # queria dizer duas coisas ao mesmo tempo.
+        "NAO_RECEBE": "não há ajuda com alimentação para esta pessoa",
     },
     "categoria_transporte": {
         "DIARIO": "o valor vezes os dias úteis em que a pessoa trabalhou no mês",
@@ -693,6 +750,7 @@ EXPLICACAO_DA_OPCAO: dict[str, dict[str, str]] = {
         "MOTOCICLETA": "a pessoa usa moto própria",
         "BICICLETA": "a pessoa usa bicicleta própria",
         "CARTAO": "saiu de uso — fica só para explicar ficha antiga",
+        "NAO_RECEBE": "não há ajuda com transporte para esta pessoa",
     },
     "descontar_vt": {
         "Sim, descontar em folha": "o desconto legal do vale-transporte sai do salário",
@@ -799,6 +857,14 @@ def _nao_cabe_agora(regra: dict[str, Any], campo: str,
         return False
     for gatilho, aceitos in regras.items():
         valor = str(pedido.get(gatilho) or "")
+        # ⚑ OS DOIS ALFABETOS (17/11/2026). O certo é escrever a regra em
+        # CÓDIGO, e é assim que ela está. Mas aceitar o rótulo também custa uma
+        # linha e evita a classe de defeito que já apareceu duas vezes num dia:
+        # regra escrita no alfabeto errado não dá erro — o campo só não
+        # aparece, e quem descobre é quem abre a tela.
+        rotulos = DO_PIPE_PARA_O_CODIGO.get(gatilho, {})
+        aceitos = tuple(aceitos) + tuple(
+            rotulos.get(a, a) for a in tuple(aceitos))
         # ⚑ "*" É O CURINGA: o campo nasce quando o gatilho tem QUALQUER
         # resposta. É o caso do valor do auxílio — ele faz sentido assim que a
         # categoria é escolhida, qualquer que seja ela, e listar as nove
@@ -1021,7 +1087,11 @@ ROTULOS: dict[str, str] = {
     "data_saida": "Data de Saída",
     "data_inicio": "Data de Início",
     "tipo_readmissao": "Tipo de Readmissão",
-    "tipo_documentacao": "Tipo de Documentação para Cadastro",
+    # ⚑ "VÍNCULO" desde 17/11/2026 — ele: *"renomear Tipo de Documentação para
+    # Cadastro = Vínculo."* O CÓDIGO da coluna não muda (`tipo_documentacao`),
+    # e os valores gravados continuam CTPS/PRESTADOR: o que muda é a palavra
+    # que a pessoa lê, e ela passa a ser a MESMA que a ficha da pessoa usa.
+    "tipo_documentacao": "Vínculo",
     "cargo_pleiteado_id": "Cargo Pleiteado",
     "cargo_deferido_id": "Cargo Deferido",
     # ⚑ "EMPRESA PARA REGISTRO", e não "CNPJ para Admissão" (15/11/2026).
@@ -1056,8 +1126,8 @@ ROTULOS: dict[str, str] = {
     "valor_diaria": "Valor da Diária",
     "valor_mes": "Valor do Mês",
     "meio_transporte": "Meio de Transporte para chegar à Obra?",
-    "categoria_alimentacao": "Categoria Auxílio Alimentação",
-    "categoria_transporte": "Categoria Auxílio Transporte",
+    "categoria_alimentacao": "Ajuda com Alimentação",
+    "categoria_transporte": "Ajuda com Transporte",
     "aux_alimentacao": "Valor (Auxílio Alimentação)",
     "aux_transporte": "Valor (Auxílio Transporte)",
     "solicitacao": "Solicitação",
@@ -1065,6 +1135,11 @@ ROTULOS: dict[str, str] = {
     "descontar_vt": "Descontar o vale-transporte em folha?",
     "continua_prestador": "A pessoa continua trabalhando depois de sair da carteira?",
     "tipo_contrato": "Tipo de Contrato",
+    # ⚑ OS DADOS DA EMPRESA DO PJ (17/11/2026). Os mesmos nomes que a ficha da
+    # pessoa já usa (`razao_social_pj`, `cnpj_pj`), para o pedido cair direto
+    # no cadastro sem tradução no meio.
+    "razao_social_pj": "Razão social (PJ)",
+    "cnpj_pj": "CNPJ (PJ)",
     "valor_total": "Valor Total do Desconto",
     "parcelas": "Quantidade de Parcelas",
     "valor_parcela": "Valor da Parcela",

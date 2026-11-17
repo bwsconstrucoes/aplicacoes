@@ -68,7 +68,13 @@ def test_as_listas_de_opcoes_saem_prontas_para_a_tela():
     # de transporte — quem quisesse escolhia "Mensal" e o valor saía
     # multiplicado pelos dias do mês. Nove eram as do Pipe (com "Cartão", que
     # saiu de uso e continua na lista para explicar ficha antiga).
-    assert len(o["categorias_transporte"]) == 10
+    # ⚑ ONZE desde 17/11/2026: "Não recebe" entrou nas duas listas, a pedido
+    # dele. É a opção que faz o campo em branco voltar a significar uma coisa
+    # só — antes, vazio era "ninguém preencheu" E "não recebe nada", e as duas
+    # pedem ação oposta do DP.
+    assert len(o["categorias_transporte"]) == 11
+    assert "NAO_RECEBE" in {x["valor"] for x in o["categorias_transporte"]}
+    assert "NAO_RECEBE" in {x["valor"] for x in o["categorias_alimentacao"]}
     assert any(x["valor"] == "CARTAO" and "não paga" in x["rotulo"]
                for x in o["categorias_transporte"])
     assert len(o["ufs"]) == 27

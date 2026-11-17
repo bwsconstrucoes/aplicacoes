@@ -308,9 +308,14 @@ const ROTULO = {
   municipio: "Cidade", uf: "Estado", data_nascimento: "Data de nascimento",
   salario_familia: "Pedir salário-família?",
   dependente_ir: "Conta no imposto de renda?",
-  categoria_alimentacao: "Como paga a alimentação",
+  // ⚑ RENOMEADOS EM 17/11/2026, a pedido dele: *"Como paga o transporte =
+  // Ajuda com Transporte, que alimenta Categoria do auxílio-transporte; Como
+  // paga a alimentação = Ajuda com Alimentação."* O nome antigo descrevia o
+  // JEITO de pagar; o novo diz O QUE É — e é assim que o dado se chama na
+  // ficha da pessoa, o que acaba com duas palavras para o mesmo campo.
+  categoria_alimentacao: "Ajuda com Alimentação",
   aux_alimentacao: "Valor da alimentação (R$)",
-  categoria_transporte: "Como paga o transporte",
+  categoria_transporte: "Ajuda com Transporte",
   aux_transporte: "Valor do transporte (R$)",
   conceder: "Conceder ou cancelar?", meio_transporte: "Meio de transporte",
   // ⚑ OS RÓTULOS DO PIPE (10/11/2026). Ele: *"por que não está usando o
@@ -320,13 +325,22 @@ const ROTULO = {
   // Campo que o BLOCO REPETIDO cuida: nunca sai como caixinha solta, mas
   // precisa de rótulo para o teste que varre os campos do portal.
   dependentes: "Dependentes",
-  tipo_documentacao: "Tipo de Documentação para Cadastro",
+  // ⚑ "VÍNCULO", e não "Tipo de Documentação para Cadastro" (17/11/2026).
+  // Ele: *"renomear Tipo de Documentação para Cadastro = Vínculo (…) o ideal é
+  // ficar CTPS e Prestador de Serviço."* É a mesma palavra que a ficha da
+  // pessoa e a lista de Colaboradores já usam para o mesmo dado — o nome
+  // antigo vinha do Pipefy e descrevia a PAPELADA, não o vínculo.
+  tipo_documentacao: "Vínculo",
   num_ctps: "Nº CTPS",
   num_pis: "Nº PIS",
   cargo_pleiteado_id: "Cargo Pleiteado",
   cargo_deferido_id: "Cargo Deferido",
   pagamento: "Pagamento",
   valor_diaria: "Valor da Diária",
+  // ⚑ Os dados da empresa do PJ (17/11/2026): aparecem só quando o tipo de
+  // contrato é PJ. Mesmos nomes da ficha da pessoa.
+  razao_social_pj: "Razão social (PJ)",
+  cnpj_pj: "CNPJ (PJ)",
   valor_mes: "Valor do Mês",
   tipo_readmissao: "Tipo de Readmissão",
   // ⚑ "Empresa para registro", e não "CNPJ para Admissão" (15/11/2026): o
@@ -496,9 +510,17 @@ function pintarCamposDoTipo(){
         // ⚑ O ASTERISCO. Ele: *"Pipe, todo campo obrigatório, ele tem um
         // asterisco, facilita. Aqui não, ninguém sabe o que é obrigatório."*
         // A lista vem da regra, que a tirou do Pipe — não é escrita aqui.
-        const rot = (ROTULO[c] || c.replace(/_/g, " ")) + (obrig.has(c) ? " *" : "");
+        //
+        // ⚑ E ELE PODE MUDAR DE LUGAR ENQUANTO SE PREENCHE (17/11/2026):
+        // escolher CTPS passa a exigir o PIS e o tipo de contrato; escolher PJ
+        // passa a exigir a razão social e o CNPJ. Por isso o asterisco vive
+        // num <span> próprio, repintado por `pintarAsteriscos`, e não colado
+        // no rótulo de uma vez — era por isso que o campo ficava obrigatório
+        // no servidor e sem marca nenhuma na tela.
+        const rot = esc(ROTULO[c] || c.replace(/_/g, " "))
+          + `<span class="obrig" data-obrig="${esc(c)}">${obrig.has(c) ? " *" : ""}</span>`;
         if (tipo === "textarea")
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <textarea id="p-${c}" name="${c}" rows="3"></textarea></label>`;
         {# A OBRA É OBRIGATÓRIA desde 10/11/2026 — ver `pessoal_solicitacoes`.
            Quando a obra que alcança é UMA só (o caso do administrativo de uma
@@ -518,7 +540,7 @@ function pintarCamposDoTipo(){
             ? DADOS.obra_sugerida : "";
           const ja = obras.length === 1 ? obras[0].id : sugerida;
           const nome = (obras.find(o => String(o.id) === String(ja)) || {});
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             ${obras.length > 6 ? `<input type="search" id="p-obra-filtro"
                placeholder="digite para filtrar a obra" autocomplete="off">` : ""}
             <select id="p-${c}" name="${c}">
@@ -536,7 +558,7 @@ function pintarCamposDoTipo(){
         // digitaria "acordo", "mandado embora" e "pediu pra sair" para a mesma
         // coisa, e o DP passaria a traduzir à mão o que o sistema já sabe.
         if (SIM_NAO[c])
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <select id="p-${c}" name="${c}">
               <option value="">escolha…</option>
               <option value="1">${esc(SIM_NAO[c][0])}</option>
@@ -544,7 +566,7 @@ function pintarCamposDoTipo(){
             </select></label>`;
         const lista = (DADOS.listas || {})[c];
         if (lista)
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <select id="p-${c}" name="${c}">
               <option value="">escolha…</option>
               ${lista.map(o => `<option value="${esc(o.valor)}">${esc(o.rotulo)}</option>`).join("")}
@@ -562,7 +584,7 @@ function pintarCamposDoTipo(){
         // com a linha do recado — senão não teria onde dizer "já está no
         // cadastro".
         if (!dePapel && (t.ja_no_cadastro || {})[c])
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <input id="p-${c}" name="${c}" type="${tipo}"
               ${modo ? `inputmode="${modo}"` : ""}>
             <small class="do-papel" id="pd-${c}">escolha o colaborador acima;
@@ -570,7 +592,7 @@ function pintarCamposDoTipo(){
           </label>`;
         if (dePapel)
           return `<label class="campo-portal" id="pw-${c}" data-de-papel="${c}">
-            ${esc(rot)}
+            ${rot}
             <input id="p-${c}" name="${c}" type="${tipo}"
               ${modo ? `inputmode="${modo}"` : ""}>
             {# ⚑ O TEXTO ERA INCOMPREENSÍVEL, e ele falou isso com todas as
@@ -586,7 +608,7 @@ function pintarCamposDoTipo(){
               ${esc(ROTULO_PAPEL[dePapel] || dePapel)} ali em cima e este
               campo se preenche sozinho</small>
           </label>`;
-        return `<label class="campo-portal">${esc(rot)}
+        return `<label class="campo-portal">${rot}
           <input id="p-${c}" name="${c}" type="${tipo}"
             ${modo ? `inputmode="${modo}"` : ""}></label>`;
       }).join("");
@@ -731,14 +753,14 @@ function pintarRepetidos(t){
         const rot = (ROTULO[c] || c.replace(/_/g, " ")) + " *";
         const lista = (DADOS.listas || {})[c];
         if (lista)
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <select data-rep="${i}" data-campo="${c}">
               <option value="">escolha…</option>
               ${lista.map(o => `<option value="${esc(o.valor)}"
                 ${item[c] === o.valor ? "selected" : ""}
                 >${esc(o.rotulo)}</option>`).join("")}
             </select></label>`;
-        return `<label class="campo-portal">${esc(rot)}
+        return `<label class="campo-portal">${rot}
           <input data-rep="${i}" data-campo="${c}"
                  type="${TIPO_CAMPO[c] || "text"}"
                  value="${esc(item[c] || "")}"></label>`;
@@ -1045,6 +1067,44 @@ function recadoDosCamposDePapel(t){
    dele é o defeito que trava o pedido sem explicação: o botão diria "falta a
    data do aviso prévio" sobre um campo que a pessoa não tem como ver.
    --------------------------------------------------------------------------- #}
+{# ⚑ O QUE É OBRIGATÓRIO AGORA (17/11/2026).
+
+   A regra tem DUAS listas: `obrigatorios` (sempre) e `obrigatorios_se` (depende
+   de outra resposta). O portal só lia a primeira — então "se for CTPS, o PIS e
+   o tipo de contrato são obrigatórios" valia no servidor e não aparecia na
+   tela: sem asterisco, e o botão de enviar deixava passar.
+
+   Ele pediu os dois em 17/11: *"se Tipo de Documentação para Cadastro = CTPS,
+   obrigatório Nº PIS, Tipo de contrato"* e *"renomear campos e torná-los
+   obrigatórios"*.
+
+   ⚠️ A COMPARAÇÃO ACEITA OS DOIS ALFABETOS (rótulo e código) pela mesma razão
+   do `opcoes_se`: a caixinha de lista fechada guarda o RÓTULO, e as chaves da
+   regra são o CÓDIGO. Comparar um com o outro é o defeito que deixou o campo
+   "Tipo de contrato" sem opção nenhuma. #}
+function obrigatoriosAgora(t){
+  const v = respostasAgora(t);
+  const traduz = (campo, valor) =>
+    ((t.traducoes || {})[campo] || {})[valor] || valor || "";
+  const ramo = camposDesteVinculo(t);
+  const lista = new Set(ramo ? ramo.obrigatorios : (t.obrigatorios || []));
+  Object.entries(t.obrigatorios_se || {}).forEach(([gatilho, mapa]) => {
+    const resposta = v[gatilho] || "";
+    Object.entries(mapa).forEach(([valor, campos]) => {
+      if (resposta === valor || traduz(gatilho, resposta) === valor)
+        (campos || []).forEach(c => lista.add(c));
+    });
+  });
+  return lista;
+}
+
+function pintarAsteriscos(t){
+  const obrigatorios = obrigatoriosAgora(t);
+  document.querySelectorAll("[data-obrig]").forEach(span => {
+    span.textContent = obrigatorios.has(span.dataset.obrig) ? " *" : "";
+  });
+}
+
 function camposDesteVinculo(t){
   const vinculos = t.por_vinculo || {};
   if (!Object.keys(vinculos).length) return null;
@@ -1116,12 +1176,18 @@ function aplicarVinculo(t){
       });
     });
     // 3) ele só nasce quando outro campo responde
+    {# ⚑ OS DOIS ALFABETOS (17/11/2026), mesma razão do `opcoes_se` logo abaixo:
+       a caixinha guarda o RÓTULO ("CLT (tempo indeterminado)") e a regra pode
+       estar escrita em CÓDIGO ("CLT_INDETERMINADO"). Comparar só um dos dois
+       escondia o campo que devia aparecer — foi o que aconteceu com o Valor da
+       Diária, que não apareceu em caso nenhum. #}
     Object.entries((t.visiveis_se || {})[c] || {}).forEach(
       ([gatilho, aceitos]) => {
         const resposta = v[gatilho] || "";
-        if ((aceitos || []).includes("*")) { if (!resposta) some = true; }
-        else if (!(aceitos || []).includes(traduz(gatilho, resposta)))
-          some = true;
+        const lista = aceitos || [];
+        if (lista.includes("*")) { if (!resposta) some = true; }
+        else if (!lista.includes(resposta)
+                 && !lista.includes(traduz(gatilho, resposta))) some = true;
       });
     {# ⚑ 4) A LISTA DO CAMPO MUDA COM OUTRA RESPOSTA (17/11/2026).
 
@@ -1137,22 +1203,40 @@ function aplicarVinculo(t){
        o DP um registro em carteira com contrato de PJ, que é o defeito mais
        caro que uma caixinha pode produzir.
 
-       O servidor manda a lista em RÓTULO (é o que a tela do DP mostra); aqui
-       a caixinha guarda o CÓDIGO, então a tradução que já viaja junto
-       converte um no outro. #}
+       ⚑ CONSERTO DE 17/11/2026, e o comentário acima estava ERRADO — era ele
+       que escondia o defeito. Eu escrevi que "a caixinha guarda o CÓDIGO".
+       Ela guarda o RÓTULO: as opções de lista fechada nascem com
+       `value="CLT (tempo indeterminado)"`, não `value="CLT_INDETERMINADO"`.
+
+       Então eu traduzia a lista permitida para CÓDIGO e comparava com um
+       valor em RÓTULO. Nada casava:
+
+         · CTPS → NENHUMA opção aparecia (as três têm rótulo ≠ código);
+         · Prestador → só "PJ", porque é o único cujo rótulo é igual ao
+           código.
+
+       Foi exatamente o que ele relatou: *"o campo Tipo de contrato não está
+       exibindo as opções conforme Tipo de Documentação para Cadastro
+       corretamente."*
+
+       Agora a comparação aceita OS DOIS alfabetos, nos dois lados. Fixar um
+       só seria trocar este defeito por outro no dia em que uma tela passar a
+       guardar código — e o teste do navegador não cobre tela que ninguém
+       abriu. #}
     const porResposta = (t.opcoes_se || {})[c];
     if (porResposta && !some) {
-      const codigos = new Set();
+      const aceitos = new Set();
       Object.entries(porResposta).forEach(([gatilho, mapa]) => {
         const escolhido = traduz(gatilho, v[gatilho] || "");
-        (mapa[escolhido] || []).forEach(r => codigos.add(traduz(c, r)));
+        (mapa[escolhido] || []).forEach(r => { aceitos.add(r); aceitos.add(traduz(c, r)); });
       });
+      const cabeNaLista = valor => aceitos.has(valor) || aceitos.has(traduz(c, valor));
       Array.from(caixa.options).forEach(o => {
-        const cabe = !o.value || codigos.has(o.value);
+        const cabe = !o.value || cabeNaLista(o.value);
         o.hidden = !cabe;
         o.disabled = !cabe;
       });
-      if (caixa.value && !codigos.has(caixa.value)) caixa.value = "";
+      if (caixa.value && !cabeNaLista(caixa.value)) caixa.value = "";
     }
     rotulo.classList.toggle("oculto", some);
   });
@@ -1162,13 +1246,13 @@ function conferirOQueFalta(t){
   if (!t) return;
   recadoDosCamposDePapel(t);
   aplicarVinculo(t);
-  const ramo = camposDesteVinculo(t);
+  pintarAsteriscos(t);
   const falta = [];
   if (t.exige_pessoa && !(els("p-pessoa") && els("p-pessoa").value))
     falta.push("o colaborador");
   // Sabido o vínculo, a cobrança é a DELE: campo do outro vínculo está
   // escondido, e cobrar o que não aparece trava o pedido sem explicação.
-  (ramo ? ramo.obrigatorios : (t.obrigatorios || [])).forEach(c => {
+  obrigatoriosAgora(t).forEach(c => {
     if (t.repete && CAMPOS_REPETIDOS.includes(c)) return;   // cuidado abaixo
     const campo = els("p-" + c);
     // ⚑ CAMPO ESCONDIDO NÃO É COBRADO: cobrar o que não aparece trava o

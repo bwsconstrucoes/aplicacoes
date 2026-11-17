@@ -646,11 +646,22 @@ function ligarArrastar(){
         return;
       }
       {# A mudança vai para o banco ANTES de a tela mostrar: se falhar, o
-         cartão não pode ter "andado" aos olhos de quem arrastou. #}
+         cartão não pode ter "andado" aos olhos de quem arrastou.
+
+         ⚑ CONSERTO DE 17/11/2026, e o defeito era meu: eu escrevi
+         `{metodo: "POST", corpo: {...}}`. Esses nomes NÃO EXISTEM no `fetch` —
+         os certos são `method` e `body`. O navegador ignorou os dois, mandou
+         um GET sem corpo, a rota só aceita POST, e a tela dizia "Falha na
+         operação" sem mais nada.
+
+         Pegou as DUAS formas de mudar etapa (o quadro e o diálogo da ficha),
+         que é exatamente o que ele relatou: *"no quadro, não consigo
+         movimentar os cadastros para outras etapas."* Agora há teste varrendo
+         as telas por nome de opção de fetch em português. #}
       try {
         await api(`/erp/api/colaboradores/${id}/etapa`,
-                  {metodo: "POST", corpo: {etapa: destino,
-                                           motivo: "movido no quadro"}});
+                  {method: "POST", body: JSON.stringify(
+                     {etapa: destino, motivo: "movido no quadro"})});
         pessoa.etapa = destino;
         const rot = (ETAPAS.find(x => x.valor === destino) || {}).rotulo || destino;
         aviso("mensagem", `${pessoa.nome} → ${rot}.`, "ok");
@@ -2244,7 +2255,7 @@ async function concluirAConferencia(){
              + "assinar, carteira assinada vai para a contabilidade.")) return;
   try {
     const r = await api(`/erp/api/colaboradores/${FICHA.id}/etapa`,
-                        {metodo: "POST", corpo: {acao: "conferido"}});
+                        {method: "POST", body: JSON.stringify({acao: "conferido"})});
     aviso("mensagem", r.rotulo ? `Foi para “${r.rotulo}”.` : "Conferência concluída.",
           "ok");
     await abrirFichaCompleta(FICHA.id);
@@ -2298,7 +2309,8 @@ async function abrirMudancaDeEtapa(){
   if (!r) return;
   try {
     await api(`/erp/api/colaboradores/${FICHA.id}/etapa`,
-              {metodo: "POST", corpo: {etapa: r.etapa, motivo: r.motivo || ""}});
+              {method: "POST", body: JSON.stringify(
+                 {etapa: r.etapa, motivo: r.motivo || ""})});
     aviso("mensagem", "Etapa mudada.", "ok");
     await abrirFichaCompleta(FICHA.id);
     carregar();
