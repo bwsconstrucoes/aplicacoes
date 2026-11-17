@@ -384,6 +384,13 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                                for c, mapa in (d.get("ocultos_se") or {}).items()},
                 "visiveis_se": {c: {v: list(p) for v, p in mapa.items()}
                                 for c, mapa in (d.get("visiveis_se") or {}).items()},
+                # Campo cuja LISTA muda com outra resposta: o tipo de
+                # contrato, que tem uma lista para CTPS e outra para
+                # prestador (17/11/2026).
+                "opcoes_se": {
+                    c: {v: {vv: list(pp) for vv, pp in m.items()}
+                        for v, m in mapa.items()}
+                    for c, mapa in (d.get("opcoes_se") or {}).items()},
                 # O rótulo→código: as condições são escritas com o código que
                 # o banco guarda, e a caixinha manda o rótulo. Sem isto a
                 # condição não dispara — defeito que já aconteceu na tela do
@@ -436,12 +443,22 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
 
     listas = {campo: par(campo, chaves, ROTULOS.get(campo, {}))
               for campo, chaves in svc.DA_LISTA.items()}
-    # ⚑ TIPO DE CONTRATO: só os de PRESTADOR (15/11/2026). O `DA_LISTA` traz
-    # os nove valores aceitos, que servem para LER ficha antiga; o campo só
-    # aparece para prestador, e lá as duas opções de CLT não existem. Ele:
-    # *"CTPS não abre tipo de contrato, porque já é CLT."*
+    # ⚑ TIPO DE CONTRATO: os de CTPS E os de prestador, nesta ordem
+    # (17/11/2026). O `DA_LISTA` traz todos os valores aceitos, inclusive os
+    # que só servem para LER ficha antiga — esta lista é a de ESCOLHER.
+    #
+    # Em 15/11/2026 eram só os de prestador, porque "CTPS é sempre CLT". Ele
+    # corrigiu a premissa em 17/11/2026: *"Se Jovem Aprendiz é CTPS,
+    # precisamos poder selecionar o tipo de contrato entre: CLT (tempo
+    # indeterminado), CLT (tempo determinado), Jovem Aprendiz."* Jovem
+    # aprendiz tem carteira, então a escolha existe dos dois lados.
+    #
+    # Quem mostra a metade certa é a TELA, por `opcoes_se` — e não esta
+    # lista, que precisa conter as duas para a caixinha nunca ficar sem a
+    # opção certa enquanto a pessoa troca de documentação.
     listas["tipo_contrato"] = par(
-        "tipo_contrato", svc.TIPOS_CONTRATO_PRESTADOR,
+        "tipo_contrato",
+        svc.TIPOS_CONTRATO_CTPS + svc.TIPOS_CONTRATO_PRESTADOR,
         svc.TIPO_CONTRATO_ROTULOS)
     # Estes dois são campos do PEDIDO, não do cadastro, então não estão no
     # `DA_LISTA` — mas a lista é a mesma do cadastro.

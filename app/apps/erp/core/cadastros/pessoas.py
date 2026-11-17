@@ -87,10 +87,28 @@ TIPO_CONTRATO_ROTULOS = {
 # acima): há gente cadastrada com elas, e apagar o valor deixaria a ficha dessa
 # gente sem explicação. O que saiu foi OFERECER a escolha onde ela não existe.
 TIPOS_CONTRATO_PRESTADOR = ("PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA",
-                            "JOVEM_APRENDIZ", "ESTAGIO", "PRO_LABORE")
-for _tc in TIPOS_CONTRATO_PRESTADOR:
+                            "ESTAGIO", "PRO_LABORE")
+# ⚑ CARTEIRA ASSINADA TAMBÉM TEM TIPO DE CONTRATO — 17/11/2026, e foi ele
+# quem viu a consequência: *"se Jovem Aprendiz é CTPS, precisamos poder
+# selecionar o tipo de contrato entre CLT (tempo indeterminado), CLT (tempo
+# determinado) e Jovem Aprendiz."*
+#
+# Até aqui o campo sumia quando o vínculo era CTPS, porque eu tratava
+# "carteira" como sinônimo de "CLT" — a correção dele em 15/11 (*"CTPS não
+# abre tipo de contrato, porque já é CLT"*) estava certa para o que se sabia
+# então. O contrato de APRENDIZAGEM quebrou a premissa: é formal, com carteira
+# assinada, e NÃO é CLT. Então o campo volta para CTPS, com estas três opções.
+#
+# ⚠️ E `JOVEM_APRENDIZ` SAIU da lista de prestador pelo mesmo motivo: oferecê-lo
+# nos dois lados deixaria a mesma pessoa cadastrável como prestador OU como
+# carteira com o mesmo contrato — a contradição que a separação existe para
+# impedir.
+TIPOS_CONTRATO_CTPS = ("CLT_INDETERMINADO", "CLT_DETERMINADO", "JOVEM_APRENDIZ")
+for _tc in TIPOS_CONTRATO_PRESTADOR + TIPOS_CONTRATO_CTPS:
     if _tc not in TIPOS_CONTRATO:
-        raise ValueError(f"tipo de contrato de prestador desconhecido: {_tc}")
+        raise ValueError(f"tipo de contrato desconhecido: {_tc}")
+if set(TIPOS_CONTRATO_PRESTADOR) & set(TIPOS_CONTRATO_CTPS):
+    raise ValueError("um tipo de contrato não pode ser dos dois vínculos")
 
 SEXOS = ("M", "F")
 SEXO_ROTULOS = {"M": "Masculino", "F": "Feminino"}
@@ -202,6 +220,7 @@ def opcoes(s: Optional[Session] = None) -> dict[str, Any]:
         "tipos_contrato": par(TIPOS_CONTRATO, TIPO_CONTRATO_ROTULOS),
         # ⚑ A LISTA QUE A TELA OFERECE: só os de prestador. A de cima fica
         # para LER ficha antiga (ver `TIPOS_CONTRATO_PRESTADOR`).
+        "tipos_contrato_ctps": par(TIPOS_CONTRATO_CTPS, TIPO_CONTRATO_ROTULOS),
         "tipos_contrato_prestador": par(TIPOS_CONTRATO_PRESTADOR,
                                         TIPO_CONTRATO_ROTULOS),
         "sexos": par(SEXOS, SEXO_ROTULOS),

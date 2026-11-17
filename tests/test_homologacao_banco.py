@@ -1,165 +1,26 @@
-"""Homologação por perfil — automatizada, com banco de verdade.
+"""Homologação: os casos do roteiro, por extenso, e as separações de alçada.
 
-O roteiro de homologação (`HOMOLOGACAO_PERFIS.md`) pede que o dono navegue
-com um usuário de cada perfil e confira o que abre e o que é recusado. Isto
-aqui faz a parte mecânica disso a cada envio, contra um Postgres real:
+⚑ POR QUE ESTE ARQUIVO EXISTE SEPARADO (17/11/2026).
 
-  - para CADA perfil e CADA tela ou consulta sem parâmetro na URL, a resposta
-    é "abre" (não 403, não 500) quando o perfil tem a ação, e 403 quando não;
-  - para CADA ação de escrita sem parâmetro, o perfil que não a tem recebe 403
-    antes de qualquer outra coisa.
+A homologação por perfil era UM arquivo com 1.659 casos — e `--dist loadfile`,
+que a suíte usa, mantém os testes de um mesmo arquivo no MESMO trabalhador.
+Resultado: um processo levava 482 s sozinho enquanto os outros três ficavam
+parados, e a suíte inteira levava 491 s. Ele cobrou: *"precisa otimizar eles."*
 
-A lista de telas e ações NÃO é escrita à mão: vem do registro de permissões
-do próprio código. Tela nova entra sozinha; tela que mude de ação também.
-
-O que sobra para o olho humano: o visual, a leitura de documentos por IA e os
-fluxos que exigem dados reais (avalizar, pagar). O roteiro continua valendo
-para isso — mas encolheu.
+Dividir em quatro arquivos é o que deixa o paralelismo alcançá-los. A regra
+não mudou nem um pouco: o que era conferido continua sendo, nos mesmos casos.
+O que mora em comum (o inventário de rotas, os perfis, os usuários de teste)
+está em `tests/homologacao.py`, que NÃO é arquivo de teste — é a peça que os
+quatro leem.
 """
 from __future__ import annotations
 
 import pytest
-from flask import Flask
 
-from app.apps.erp import routes
-from app.apps.erp.core.auth.permissoes import PERMISSOES, ROTULOS
-from app.apps.erp.core.auth.service import gerar_hash
-from app.apps.erp.db.models.cadastros import PerfilUsuario as P, Usuario
-
-from conftest import como
+from homologacao import (  # noqa: F401  (`operadores` é fixture, usada por nome)
+    INVENTARIO, LEITURAS, ESCRITAS, P, PERMISSOES, como, operadores)
 
 pytestmark = pytest.mark.banco
-
-# Endpoints deixados de fora, com o motivo escrito:
-FORA = {
-    "erp.api_aplicar_migracoes",   # abre conexão própria, fora da transação do teste
-    "erp.pagina_login", "erp.sair", "erp.health",   # públicos, não têm perfil
-}
-
-PERFIS_DO_ROTEIRO = (P.ADMINISTRATIVO_OBRA, P.SUPERVISOR_OBRA, P.FINANCEIRO,
-                     P.DEPARTAMENTO_PESSOAL)
-TODOS_OS_PERFIS = tuple(P)
-
-
-def _inventario():
-    """(endpoint, caminho, método, ação) para toda rota SEM parâmetro na URL."""
-    a = Flask(__name__)
-    a.secret_key = "inventario"
-    a.register_blueprint(routes.bp)
-    saida = []
-    for regra in a.url_map.iter_rules():
-        if not regra.endpoint.startswith("erp.") or regra.arguments:
-            continue
-        if regra.endpoint in FORA or regra.endpoint in routes._ISENTOS:
-            continue
-        mapa = routes._REGISTRO_PERMISSOES.get(regra.endpoint) or {}
-        for metodo in ("GET", "POST"):
-            if metodo in regra.methods and mapa.get(metodo):
-                saida.append((regra.endpoint, str(regra), metodo, mapa[metodo]))
-    return sorted(saida)
-
-
-INVENTARIO = _inventario()
-LEITURAS = [x for x in INVENTARIO if x[2] == "GET"]
-ESCRITAS = [x for x in INVENTARIO if x[2] == "POST"]
-
-
-def _id(caso):
-    endpoint, caminho, metodo, acao = caso
-    return f"{metodo} {caminho} [{acao}]"
-
-
-@pytest.fixture
-def operadores(sessao_real) -> dict[P, Usuario]:
-    """Um usuário de cada perfil, no banco de verdade."""
-    senha = gerar_hash("senha-de-homologacao-1")
-    pessoas = {}
-    for perfil in TODOS_OS_PERFIS:
-        u = Usuario(nome=f"Homologação {ROTULOS.get(perfil, perfil.value)}",
-                    email=f"homolog.{perfil.value.lower()}@teste.bws.local",
-                    senha_hash=senha, perfil=perfil)
-        sessao_real.add(u)
-        pessoas[perfil] = u
-    sessao_real.flush()
-    sessao_real.commit()
-    return pessoas
-
-
-# ---------------------------------------------------------------------------
-# Leituras: abre para quem tem a ação, recusa para quem não tem
-# ---------------------------------------------------------------------------
-@pytest.mark.parametrize("perfil", PERFIS_DO_ROTEIRO, ids=lambda p: p.value)
-@pytest.mark.parametrize("caso", LEITURAS, ids=_id)
-def test_leitura_abre_ou_recusa_conforme_o_perfil(app_real, operadores, perfil, caso):
-    endpoint, caminho, _metodo, acao = caso
-    c = como(app_real, operadores[perfil].id)
-
-    r = c.get(caminho)
-
-    if perfil in PERMISSOES[acao]:
-        assert r.status_code != 403, f"{perfil.value} devia abrir {caminho}"
-        assert r.status_code < 500, (
-            f"{caminho} quebrou (HTTP {r.status_code}) para {perfil.value} "
-            f"com a base vazia: {r.get_data(as_text=True)[:300]}")
-    else:
-        assert r.status_code == 403, (
-            f"{perfil.value} NÃO devia abrir {caminho} (recebeu {r.status_code})")
-
-
-# ---------------------------------------------------------------------------
-# Toda tela ABRE de verdade para alguém
-#
-# O teste acima percorre quatro perfis do roteiro. Quando NENHUM deles tem a
-# ação da tela, ele só confere o 403 — e a tela nunca chega a ser desenhada.
-# Foi por esse buraco que a tela de Banco de preços foi para produção com um
-# `{% endblock %}` faltando: ela exige "comprar", nenhum dos quatro perfis tem
-# essa ação, e o erro só apareceu quando uma pessoa abriu a página.
-#
-# Aqui cada tela é desenhada por um perfil que PODE abri-la. Se o template não
-# compila, se falta uma variável no contexto, se a consulta quebra com a base
-# vazia — cai aqui, e não na frente do dono.
-# ---------------------------------------------------------------------------
-TELAS = [c for c in LEITURAS if "/api/" not in c[1]]
-
-
-@pytest.mark.parametrize("caso", TELAS, ids=_id)
-def test_toda_tela_e_desenhada_por_quem_pode_abrir(app_real, operadores, caso):
-    _endpoint, caminho, _metodo, acao = caso
-    quem = sorted(PERMISSOES[acao], key=lambda p: p.value)
-    assert quem, f"a ação {acao} não pertence a perfil nenhum"
-
-    c = como(app_real, operadores[quem[0]].id)
-    # Segue o desvio: alguns endereços antigos continuam existindo e levam à
-    # tela nova (é o caso de /erp/suprimentos/cadastros). O que importa é que
-    # no fim uma página seja DESENHADA.
-    r = c.get(caminho, follow_redirects=True)
-
-    assert r.status_code == 200, (
-        f"{caminho} não abriu para {quem[0].value} (HTTP {r.status_code}). "
-        f"Com a base vazia, toda tela do ERP tem de desenhar. "
-        f"{r.get_data(as_text=True)[:300]}")
-    corpo = r.get_data(as_text=True)
-    assert "<body" in corpo.lower(), f"{caminho} respondeu 200 sem página"
-    assert "/erp/entrar" not in r.request.path, (
-        f"{caminho} jogou {quem[0].value} para o login em vez de abrir")
-
-
-# ---------------------------------------------------------------------------
-# Escritas: quem não tem a ação é barrado antes de qualquer outra checagem
-# ---------------------------------------------------------------------------
-@pytest.mark.parametrize("perfil", PERFIS_DO_ROTEIRO, ids=lambda p: p.value)
-@pytest.mark.parametrize("caso", ESCRITAS, ids=_id)
-def test_escrita_sem_alcada_e_recusada(app_real, operadores, perfil, caso):
-    endpoint, caminho, _metodo, acao = caso
-    if perfil in PERMISSOES[acao]:
-        pytest.skip("perfil tem a ação; escrita real exige dados e é coberta pelos testes de domínio")
-    c = como(app_real, operadores[perfil].id)
-
-    r = c.post(caminho, json={})
-
-    assert r.status_code == 403, (
-        f"{perfil.value} NÃO devia poder {caminho} (recebeu {r.status_code})")
-
 
 # ---------------------------------------------------------------------------
 # Os casos do roteiro, por extenso — para o documento e o teste dizerem o mesmo

@@ -1183,6 +1183,21 @@ colunas sem histórico.
   de CTPS)
 - OK **Quantas pessoas ativas temos, por vínculo e por tipo de contrato?** 🔒
   (escopo por obra) ⚠️ ("ativo" = situação ATIVA e sem demissão já passada)
+- OK **Quantos jovens aprendizes temos, e em que obras?** ⚠️ (palavra
+  decisiva: jovem aprendiz é CTPS — carteira assinada — mas NÃO é CLT.
+  Contar "CLT" e esperar que o aprendiz entre no número é o erro que já
+  aconteceu, em 17/11/2026, e ele teve de corrigir)
+- OK **Quem tem carteira assinada mas não é CLT?** (é a lista dos aprendizes;
+  a pergunta existe porque a cota de aprendizagem é fiscalizada)
+- OK **Quantos são CLT por tempo DETERMINADO, e quando cada contrato vence?**
+  ⚠️ (contrato por tempo determinado tem prazo; quem deixa vencer sem avisar
+  vira indeterminado sozinho) — FALTA: o ERP guarda o tipo de contrato, mas
+  não guarda a DATA DE FIM do contrato determinado. Sem ela, a segunda metade
+  da pergunta não tem resposta, e o assistente deve dizer isso
+- OK **Alguém de carteira está cadastrado com contrato de prestador (PJ, RPA)?**
+  (deve dar ZERO desde 17/11/2026: as duas listas são separadas e o sistema
+  não deixa mais escolher o contrato do outro lado. Se aparecer alguém, é
+  ficha antiga, anterior à separação — e é para corrigir)
 - OK **Quem tem dependente no salário-família? Quantos dependentes no total?**
   ⚠️ (salário-família e dependente de IR são marcas DIFERENTES — a resposta
   precisa dizer qual das duas foi usada)

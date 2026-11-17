@@ -21,6 +21,146 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — JOVEM APRENDIZ DERRUBOU A REGRA DE 15/11: CTPS ESCOLHE CONTRATO
+
+> *"Uma coisa que você não percebeu. Se Jovem Aprendiz é CTPS, precisamos
+> poder selecionar o tipo de contrato entre: CLT (tempo indeterminado), CLT
+> (tempo determinado), Jovem Aprendiz."*
+
+**Isto é um conserto de PREMISSA, não de código.** Em 15/11/2026 ele tinha
+mandado FECHAR o campo "tipo de contrato" para quem é CTPS, e o motivo era
+bom: *"CTPS não abre tipo de contrato, porque já é CLT."* Eu fechei, e a
+regra passou duas semanas parecendo certa.
+
+Ela caiu no dia em que a varredura da planilha acusou **9 ativos com "Tipo =
+CTPS" e um contrato que eu classificava como de prestador**. Cinco deles eram
+jovem aprendiz. Ele: *"CTPS e jovem aprendiz na verdade estão corretos, esse é
+o certo. Não tinha previsto esse tipo de contrato formal. Não é CLT mas é
+Jovem aprendiz."* Contrato de aprendizagem é formal, tem carteira assinada, e
+**não é CLT** — então "CTPS ⇒ CLT" era falso, e com ele caiu o fechamento do
+campo.
+
+**O que mudou, em uma frase:** o tipo de contrato agora é **um campo só com
+duas listas** — quem é CTPS escolhe entre CLT (tempo indeterminado), CLT
+(tempo determinado) e jovem aprendiz; quem é prestador escolhe entre PJ,
+autônomo (RPA), autônomo mensalista, estágio e pró-labore.
+
+**Onde vale** (os quatro lugares onde a escolha existe, e por isso os quatro
+foram mexidos — um que ficasse para trás gravaria a contradição de volta):
+
+| Onde | O que mudou |
+|---|---|
+| Ficha do colaborador | o campo volta a aparecer para carteira, com as três opções; trocar de vínculo **apaga** o contrato que não cabe no novo |
+| Readmissão e troca de vínculo | duas caixinhas de mesmo nome, uma por vínculo — só a visível é gravada |
+| Formulário do DP (admissão) | a caixinha abre depois da documentação e mostra a metade certa; **virou obrigatória para CTPS também** |
+| Portal da obra | a mesma coisa, pela mesma regra vinda do servidor |
+
+**O que NÃO mudou, e é o essencial:** continua impossível gravar alguém de
+carteira como "PJ". A separação que existia é a mesma; o que mudou é que o
+lado CTPS deixou de ser vazio e passou a ter três opções próprias.
+
+**Decisão minha, dita aqui porque ele pode querer diferente:** tornei o campo
+**obrigatório também para CTPS** no pedido de admissão. Jovem aprendiz e CLT
+mudam a folha, a guia e o prazo do contrato — deixar em branco empurra a
+dúvida para o DP adivinhar depois, e adivinhar errado só aparece na rescisão.
+Se ele preferir opcional, é uma linha.
+
+**Máquina nova que isto criou:** `opcoes_se` — "a lista deste campo depende da
+resposta daquele". Mora no servidor (`pessoal_solicitacoes.TIPOS`), viaja para
+as duas telas e é aplicada pelas duas. Já existiam `ocultos_se` e
+`visiveis_se` para ESCONDER campo; faltava a de **trocar a lista**, e sem ela
+a única saída seria duplicar o campo — dois campos para uma coluna só, que é
+o jeito de gravar os dois e não saber qual vale.
+
+**Travado por teste:** sete casos novos em `tests/test_dp_solicitacoes.py`
+garantem que nenhum contrato apareça nos dois lados, que toda opção das duas
+listas tenha código no banco, e que o campo não nasça antes da documentação
+ser escolhida.
+
+---
+
+### ⚑ 17/11/2026 — AS INCOERÊNCIAS DA PLANILHA, VARRIDAS E DECIDIDAS COM ELE
+
+> *"Você devia analisar outras situações discrepantes e me questionar."*
+
+Pedido justo, e é o oposto do que eu vinha fazendo: descobrir um problema por
+vez, cada um custando uma rodada dele. Varri as **3.667 linhas** e levei a
+lista. Três decisões saíram daí.
+
+#### 1. "Valor do Mês" manda sobre a diária
+
+Ele, no caso da Amanda: *"vai se sobrepor a informação Valor do Mês (…) ela
+não tem diária mais, é dado antigo."*
+
+| Na planilha | Quantos | Vira |
+|---|---|---|
+| só diária | 3.166 | diarista |
+| só Valor do Mês | 58 | mensalista |
+| **os DOIS** | **53** | **mensalista; a diária NÃO entra** |
+| nenhum | 390 | mensalista |
+
+Os 53 são o caso dela: a diária ficou de quando a pessoa era diarista e
+ninguém apagou. Trazê-la poria valor morto na ficha de quem é pago por mês —
+e é a diária da ficha que a folha usa para pagar dia de fim de semana. Minha
+regra anterior ("quem tem diária é diarista") errava exatamente aí.
+
+#### 2. Data de saída: depende da fase, e as duas pontas são dele
+
+Ele: *"quem está em Solicitações DP pode estar com data de saída — é gente
+que já saiu e o cadastro não foi finalizado, aguardando documentação. E quem
+está com o cadastro concluído NÃO PODE ter data de saída (…) é apagar a data
+de saída e manter ativo."*
+
+| Fase | Com data de saída |
+|---|---|
+| Solicitações DP, Desligados, … | **a data manda: DESLIGADO** |
+| **Cadastro Concluído** (6 pessoas) | **a data NÃO entra, a pessoa fica ATIVA**, e o caso é relatado |
+
+São **31** no primeiro caso: sem a regra, entrariam ATIVAS e continuariam
+batendo ponto e na folha. E **6** no segundo: ali a data é que está errada —
+desligar alguém que está trabalhando tira a pessoa do ponto e da folha, que é
+o erro mais caro dos dois.
+
+#### 3. "Tipo" × "Tipo de Contrato" que se contradizem
+
+Eram **57 linhas** na minha primeira conta: prestador com contrato CLT, ou
+CTPS com RPA/aprendiz.
+
+⚑ **E 12 delas eram acusação minha, não erro dele.** Ele olhou a lista dos 9
+ativos e corrigiu: *"CTPS e jovem aprendiz na verdade estão corretos, esse é
+o certo. Não tinha previsto esse tipo de contrato formal. Não é CLT mas é
+Jovem aprendiz."* **O contrato de aprendizagem é formal, com carteira
+assinada** — casa com "Tipo = CTPS" e não é contradição nenhuma. Sobraram
+**45**, e dessas **41 são de gente desligada** (dado velho). As **4 ativas**
+(CTPS com Autônomo RPA) ele confirmou que estão erradas e vai corrigir.
+
+A lição: eu classifiquei como "erro da planilha" um tipo de contrato que eu
+simplesmente não conhecia. **Antes de chamar um dado de errado, conferir se a
+regra é minha ou do negócio** — a lista de contratos com carteira agora está
+escrita no código, em vez de deduzida por exclusão.
+
+O **"Tipo" manda**, porque é a coluna que a folha já usa para separar quem
+entra nas contas de horas. A contradição é **relatada**, nunca engolida.
+
+#### 4. O PIS do prestador entra
+
+173 prestadores têm PIS de um emprego CLT anterior. Ele: levar — **o PIS é da
+pessoa, não do contrato**.
+
+#### O que a varredura também mostrou, e NÃO vira regra
+
+- **1.614 CTPS sem nº de CTPS** e **623 sem PIS** — é o que a importação da
+  ficha do Fortes existe para tapar.
+- **274 ativos sem centro de custo da contabilidade** — não trava a
+  importação; trava a ficha do Fortes achar a obra da pessoa. ⚠️ Ele avisou
+  que **parte disso é gente que não é CTPS**, e aí é esperado: quem não é
+  registrado não aparece no Fortes.
+- **18 ativos sem salário, sem valor do mês e sem diária.**
+- **5 sem admissão e sem data de início**; **4 com tipo de Pix sem a chave.**
+
+Ficam escritos aqui porque são trabalho de planilha, não de código — e porque
+da próxima vez a pergunta certa é essa lista, não uma pessoa de cada vez.
+
 ### ⚑ 17/11/2026 — DUAS PORTAS: DADOS PELA PLANILHA, DOCUMENTOS PELO PIPEFY
 
 > *"Mas por que rodar com o card dela se quero que puxe da planilha?"*
