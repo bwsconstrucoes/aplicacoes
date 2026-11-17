@@ -286,25 +286,29 @@ def test_sem_card_ou_sem_numero_a_tela_pede_de_volta(cliente, mundo):
 # --------------------------------------------------------------------------- #
 # O banner da substituição não pode prometer o que o botão recusa
 # --------------------------------------------------------------------------- #
-def test_o_aviso_da_substituicao_manda_para_o_caminho_certo(cliente, monkeypatch):
-    """Antes ele dizia "ao emitir, a nota antiga será marcada como Cancelada" — e
-    o botão Emitir recusa substituição desde 07/10/2026. Foi esse laço que prendeu
-    o dono em 17/11."""
-    import app.apps.emissaonf.web as web
+def test_o_banner_diz_o_que_o_botao_emitir_faz_de_verdade(cliente):
+    """Duas versões deste banner foram cobradas em 17/11/2026: a primeira
+    PROMETIA um cancelamento que o botão não fazia; a segunda EXPLICAVA dois
+    caminhos para o dono navegar à mão. Agora ele diz o que o botão faz."""
     fonte = open(os.path.join(_EMISSAONF, "web.py"), encoding="utf-8").read()
-    assert "O botão Emitir NÃO faz substituição" in fonte
-    assert "Nota cancelada no portal" in fonte
+    assert "Ao clicar em <b>Emitir</b>, eu confiro os valores" in fonte
     assert "Ao emitir, a NF" not in fonte, \
         "a promessa antiga não pode ter sobrado em lugar nenhum"
+    assert "O botão Emitir NÃO faz substituição" not in fonte, \
+        "agora ele faz — a tela pergunta e cuida do resto"
 
 
 # --------------------------------------------------------------------------- #
-# A mensagem do botão Emitir tem de apontar o caminho CERTO para o caso
+# O FLUXO ÚNICO: a tela decide, pergunta uma vez, e faz o resto
 #
-# 17/11/2026: o dono clicou em Emitir com a substituição preenchida e recebeu
-# "substitua a NF 2600000003377 pelo botão Substituir do portal" — justamente o
-# que o município não aceita para valor menor. Ele seguiu a instrução e
-# continuou preso. A mensagem agora olha os números antes de instruir.
+# 17/11/2026, pedido do dono depois de bater em três paredes seguidas:
+#
+#   "o correto é a própria automação entender o que é que precisa ser feito e
+#    sugerir. Se na hora que for tentar emitir a nota, for percebido que é
+#    necessário cancelamento, aí (…) questionar se é para cancelar, cancelar e
+#    depois emitir. (…) para o pipe e para o homem não importa se é substituição
+#    ou se é cancelamento. E nem para a planilha. (…) O procedimento
+#    diferenciado fica só no sistema da prefeitura."
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def emissao(monkeypatch):
@@ -322,31 +326,47 @@ def _tentar_emitir(cliente, **extra):
     return cliente.post("/emissao/emitir", data=dados).get_data(as_text=True)
 
 
-def test_valor_menor_manda_cancelar_e_nao_substituir(cliente, emissao):
+def test_valor_menor_ja_vem_com_cancelar_marcado(cliente, emissao):
     """O caso real: nota de 13.053,64 e card corrigido para 13.053,54."""
     corpo = _tentar_emitir(cliente)
-    assert "caminho ➋ (cancelamento)" in corpo
-    assert "/emissao/cancelada" in corpo
+    assert "valor MENOR, então o caminho é CANCELAR" in corpo
     assert "13.053,64" in corpo and "13.053,54" in corpo
+    # a opção certa já vem escolhida — ele confirma, não decide
+    i_can = corpo.index("value='cancelar'")
+    assert "checked" in corpo[i_can:i_can + 40]
 
 
-def test_valor_maior_manda_substituir_pelo_portal(cliente, emissao):
+def test_valor_maior_ja_vem_com_substituir_marcado(cliente, emissao):
     corpo = _tentar_emitir(cliente, valor="20.000,00")
-    assert "caminho ➊ (substituição)" in corpo
-    assert "Substituir" in corpo
+    assert "igual ou maior, então dá para SUBSTITUIR" in corpo
+    i_sub = corpo.index("value='substituir'")
+    assert "checked" in corpo[i_sub:i_sub + 40]
 
 
-def test_os_dois_caminhos_aparecem_sempre(cliente, emissao):
-    """Mesmo com o diagnóstico pronto, as duas regras ficam à vista — quem
-    conferir depois precisa entender por que foi um e não o outro."""
+def test_a_tela_diz_que_so_o_portal_e_trabalho_dele(cliente, emissao):
+    """O ponto do desenho: aqui dentro os dois casos são iguais."""
     corpo = _tentar_emitir(cliente)
-    assert "IGUAL OU MAIOR" in corpo and "MENOR" in corpo
+    assert "única" in corpo and "portal da prefeitura" in corpo
+    assert "o procedimento é o mesmo nos dois casos" in corpo
 
 
-def test_sem_conseguir_ler_o_card_a_orientacao_ainda_sai(cliente, monkeypatch):
-    """Lição de 07/10/2026: a explicação não pode depender de carregar o card.
-    Sem ela, quem tentava substituir recebia uma mensagem sobre um parâmetro
-    do link em vez de "isto não funciona mais"."""
+def test_nada_e_emitido_antes_de_ele_confirmar(cliente, emissao, monkeypatch):
+    """A tela de pergunta não pode emitir nada — nem preparar o card."""
+    web, _card_ = emissao
+    chamou = []
+    monkeypatch.setattr(web._worker, "preparar",
+                        lambda *a, **k: chamou.append(1) or {})
+    _tentar_emitir(cliente)
+    assert chamou == [], "não pode nem preparar a emissão antes do 'já fiz no portal'"
+    assert "nada foi emitido e" in _tentar_emitir(cliente)
+
+
+def test_sem_conseguir_ler_o_card_os_dois_caminhos_sao_oferecidos(cliente, monkeypatch):
+    """Nunca se chuta um caminho: sem os valores, quem escolhe é ele.
+
+    E a tela não pode ficar inalcançável por causa disso — lição de 07/10/2026,
+    quando o aviso vinha depois de carregar o card e quem tentava substituir
+    recebia uma mensagem sobre um parâmetro do link."""
     import app.apps.emissaonf.web as web
 
     def explode(cid):
@@ -354,6 +374,36 @@ def test_sem_conseguir_ler_o_card_a_orientacao_ainda_sai(cliente, monkeypatch):
 
     monkeypatch.setattr(web, "_so_o_card", explode)
     corpo = _tentar_emitir(cliente)
-    assert "Substituir pela tela não funciona mais" in corpo
-    assert "IGUAL OU MAIOR" in corpo and "MENOR" in corpo
-    assert "caminho ➋ (cancelamento)" not in corpo      # sem a conta, sem palpite
+    assert "Não consegui conferir os valores" in corpo
+    assert "value='cancelar'" in corpo and "value='substituir'" in corpo
+    assert "checked" not in corpo, "sem os valores não se marca nenhuma opção"
+
+
+def test_nota_fora_dos_slots_tambem_oferece_os_dois(cliente, emissao):
+    corpo = _tentar_emitir(cliente, nota_substituida="9999")
+    assert "não está em nenhum dos slots" in corpo
+    assert "value='cancelar'" in corpo and "value='substituir'" in corpo
+
+
+def test_o_aviso_do_bdi_vazio_aparece_antes_do_portal(cliente, emissao):
+    """O campo silencioso: vazio não barra nada e faz a retenção sair a mais.
+    Avisar antes de ele mexer no portal é mais barato que depois."""
+    corpo = _tentar_emitir(cliente)
+    assert "Valor BDI Diferenciado" in corpo
+    assert "retenções vão a mais" in corpo
+
+
+def test_substituir_confirmado_manda_terminar_na_recuperacao(cliente, emissao):
+    """No caminho da substituição a nota nova nasce NO PORTAL — não há o que
+    emitir aqui, e o que falta é registrar."""
+    corpo = _tentar_emitir(cliente, ja_fiz_no_portal="on", acao_portal="substituir")
+    assert "nasceu no portal" in corpo
+    assert "/emissao/recuperar" in corpo
+    assert f"nota_substituida={NOTA_LONGO}" in corpo
+
+
+def test_a_recuperacao_abre_preenchida_pelo_link(cliente):
+    corpo = cliente.get(f"/emissao/recuperar?token={TOKEN}&card_id={CARD}"
+                        f"&nota_substituida={NOTA_LONGO}").get_data(as_text=True)
+    assert f"value='{CARD}'" in corpo
+    assert f"value='{NOTA_LONGO}'" in corpo

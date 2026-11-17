@@ -530,15 +530,39 @@ cancelou a nota antiga em lugar nenhum (incidente no `HISTORICO.md`):
   um — slot do card, planilha e número no título do Omie — e o que fazer à mão
   quando algum falha. Antes era uma linha no meio do log.
 
-### Valor da nota errado: substituir ou cancelar?
+### Trocar uma nota por outra: UMA porta, uma pergunta
 
-Decidido pelo caso de 17/11/2026 (incidente no `HISTORICO.md`), e a diferença é do
-município, não nossa:
+Desenho dado pelo dono em 17/11/2026: *"para o pipe e para o homem não importa se
+é substituição ou se é cancelamento. E nem para a planilha. (…) o procedimento
+diferenciado fica só no sistema da prefeitura."*
 
-| O valor novo é… | Caminho |
-|---|---|
-| **igual ou maior** | botão **Substituir** no portal da prefeitura, depois `/emissao/recuperar` com o nº da antiga no campo da nota substituída |
-| **menor** (ou troca de competência) | o município **não aceita substituir** — é cancelamento. Cancele no portal, registre em **`/emissao/cancelada`** e emita a nota nova pela tela normal, sem o campo de substituição |
+**Deste lado, cancelamento e substituição são a mesma operação:** o slot vira
+Cancelada, a planilha ganha CANCELADA, o número sai do título do Omie e o teto da
+medição libera. A diferença existe **só no portal**.
+
+**Então o caminho é um só:** na tela de emissão, preencha o nº da nota substituída
+e clique em **Emitir**. A tela:
+
+1. lê os valores e diz **qual é o caso**, com os números na frente, já com a opção
+   certa marcada — valor **menor** ⇒ CANCELAR (o município não aceita substituir
+   por menor); **igual ou maior** ⇒ SUBSTITUIR;
+2. avisa se o **Valor BDI Diferenciado** está vazio no card, antes de você mexer
+   no portal;
+3. você faz no portal e clica em "Já fiz no portal — continuar":
+   - **CANCELAR** → ela **emite a nota nova** e, na mesma ação, marca a antiga
+     como Cancelada no card, na planilha e no título do Omie;
+   - **SUBSTITUIR** → a nota nova nasce no portal, então ela leva para
+     "Recuperar entrega" **já preenchida**.
+
+Nada é enviado à prefeitura antes dessa confirmação; fechar a tela não muda nada.
+
+**`/emissao/cancelada` é para quando não há nota nova agora** — a nota foi
+cancelada e ponto, ou a nova já saiu por outro caminho.
+
+**As retenções do título acompanham:** quando a nota que sai era a única válida da
+medição, as retenções são regravadas pela medição integral na mesma chamada que
+troca o número. Havendo outra nota válida, ficam como estão (já são as da medição
+integral). Pelo `/emissao/recuperar` elas **não** são mexidas, e o log diz isso.
 
 Na substituição, o valor-base da nota nova é o da **nota antiga**, limitado ao que
 o **Valor da Medição do card** comporta hoje (menos as outras notas válidas).

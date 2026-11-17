@@ -2011,8 +2011,68 @@ dele**, com os dois valores na tela. Se o Pipefy não responder, o texto genéri
 sai do mesmo jeito, sem o diagnóstico — a explicação nunca pode depender de uma
 chamada que falha, que é a lição de 07/10/2026.
 
-**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (25 casos,
-com os números reais do incidente). Rodados contra o código velho, 18 falham.
+### O desenho certo, que foi ELE quem deu — 17/11/2026
+
+Depois de bater em três paredes seguidas (mensagem genérica, instrução errada
+para o caso, e navegar até outra tela à mão), ele disse como devia ser — e estava
+certo:
+
+> *"Eu acho que o correto aí (…) é a própria automação entender o que é que
+> precisa ser feito e sugerir. Se na hora que for tentar emitir a nota, for
+> percebido que é necessário cancelamento, aí (…) questionar se é para cancelar,
+> cancelar e depois emitir. (…) **Porque para o pipe e para o homem não importa se
+> é substituição ou se é cancelamento. E nem para a planilha.** A gente utiliza a
+> mesma nomenclatura que a gente vem utilizando, faz o mesmo procedimento dos
+> slots do pipe. Aí (…) o procedimento diferenciado fica só no sistema da
+> prefeitura."*
+
+**O que isso quer dizer, e é a regra:** cancelamento e substituição são a MESMA
+operação deste lado — slot vira Cancelada, planilha ganha CANCELADA, número sai
+do título do Omie, teto da medição libera. A diferença existe **só no portal da
+prefeitura**, e é uma frase: qual botão ele aperta lá.
+
+**Como ficou.** Preencher o nº da nota substituída na tela de emissão e clicar em
+Emitir leva a **uma pergunta só**:
+
+1. A tela lê os valores e diz **qual é o caso**, com os dois números na frente —
+   e já deixa a opção certa marcada. Valor menor ⇒ CANCELAR (o município não
+   aceita substituir por menor). Valor igual ou maior ⇒ SUBSTITUIR.
+2. Avisa, antes de ele mexer no portal, se o **Valor BDI Diferenciado** está vazio
+   — é o campo que a conclusão anterior apaga e que não barra nada: vazio, só faz
+   as retenções saírem a mais, em silêncio.
+3. Ele faz no portal e clica em **"Já fiz no portal — continuar"**.
+   - **CANCELAR:** o sistema **emite a nota nova aqui** e, na mesma ação, marca a
+     antiga como Cancelada no slot, na planilha e no título do Omie.
+   - **SUBSTITUIR:** a nota nova nasce no portal (é o que o botão dele faz), então
+     não há o que emitir aqui — a tela leva para "Recuperar entrega" **já
+     preenchida** com o card e o número.
+4. Nada é enviado à prefeitura antes dessa confirmação, e fechar a tela não muda
+   nada.
+
+**E um erro antigo que apareceu ao fazer isso: a substituição nunca corrigiu as
+RETENÇÕES do título.** Ela trocava só o número no `numero_documento_fiscal` e
+deixava as retenções da nota que saiu. Numa correção de valor — que é o motivo de
+quase toda substituição — isso é retenção errada parada no Omie. Agora, quando a
+nota que sai era a **única válida** da medição, as retenções são **regravadas pela
+medição integral** na MESMA chamada que troca o número (o Omie trava o registro
+por alguns segundos depois de cada escrita, então duas escritas seguidas no mesmo
+título falham — por isso `alterar_retencoes` ganhou o parâmetro `remover`). Se
+ainda houver outra nota válida, as retenções ficam como estão: elas já são as da
+medição integral, gravadas pela primeira nota, e regravar dobraria.
+
+No caminho do `/emissao/recuperar` as retenções continuam **não** sendo mexidas —
+lá o card já teve os campos limpos e recalcular é arriscado —, mas agora o log
+**diz isso em voz alta** e aponta a tela "Tributos no Omie".
+
+**A `/emissao/cancelada` continua, com papel definido:** ela é para quando **não
+há nota nova agora** (a nota foi cancelada e ponto, ou a nova já foi emitida por
+outro caminho). A porta principal passou a ser a tela de emissão, e as duas telas
+dizem isso uma da outra.
+
+**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (30 casos,
+com os números reais do incidente) e `tests/test_emissaonf_emissao_ponta_a_ponta.py`
+(o fluxo do cancelamento de ponta a ponta, e o caso em que as retenções NÃO devem
+ser regravadas).
 
 ### A substituição que não cancelou a nota antiga — 09/11/2026
 
@@ -2264,7 +2324,8 @@ Não são funcionalidade: são conserto. Vale saber que existem antes de escreve
 script novo.
 
 - **`/emissao/cancelada`** — **"Nota cancelada no portal"**: registra aqui dentro
-  uma nota que foi cancelada na prefeitura. Marca o slot do card como Cancelada,
+  uma nota que foi cancelada na prefeitura **quando não há nota nova agora**. Se
+  há nota nova, o caminho é a tela de emissão (ver o desenho de 17/11/2026). Marca o slot do card como Cancelada,
   escreve CANCELADA na linha da planilha e tira o número do título no Omie; no fim
   diz quanto ainda cabe emitir na medição. É o que **destrava a reemissão** — sem
   ela, o slot válido consome o teto e a nota nova é barrada. Não cancela nada na

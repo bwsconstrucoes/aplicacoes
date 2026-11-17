@@ -131,6 +131,21 @@ def checar(card: dict, r, ignorar_numero=None) -> dict:
     if not _norm(card.get("banco")) and not eh_substituicao:
         bloqueios.append("'Banco para Recebimento' é obrigatório e está vazio.")
 
+    # ---- os campos que a conclusão LIMPA, numa REEMISSÃO ----
+    # ⚠️ Card que já teve nota tem doze campos de entrada apagados pela conclusão.
+    # Dois deles BARRAM a emissão e a pessoa vê o motivo (Tipo de Medição, Banco).
+    # O 'Valor BDI Diferenciado' é o perigoso: vazio ele não barra nada — só faz as
+    # bases de INSS e ISS saírem MAIORES, e as retenções vão a mais em silêncio.
+    # Foi o que custou R$ 85 mil de retenção errada em 09/11/2026, por outro
+    # caminho. Aqui o aviso é barato; a conta errada não é.
+    if slots and _dec_norm(card.get("bdi")) <= 0:
+        avisos.append(
+            "Este card JÁ TEVE nota, e a conclusão anterior apagou o 'Valor BDI "
+            "Diferenciado'. Se esta medição tem BDI diferenciado, preencha no card "
+            "antes de emitir: sem ele as bases de INSS e ISS saem MAIORES e as "
+            "retenções vão a mais. Se esta medição não tem BDI diferenciado, ignore "
+            "este aviso.")
+
     # ---- coerência do período da medição ----
     p_ini = _parse_data_br(card.get("periodo_ini"))
     p_fim = _parse_data_br(card.get("periodo_fim"))
