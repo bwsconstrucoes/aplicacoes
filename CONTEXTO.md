@@ -802,6 +802,33 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 17/11/2026 — A chamada do Make não espera mais a baixa; e "questionar visando a otimização" virou regra (atravessa áreas)
+
+**A parte do BaixaBradesco** (detalhe em `app/apps/baixabradesco/HISTORICO.md`):
+o módulo HTTP do Make dava "This module timed out" o tempo todo, e o "break" do
+cenário **remandava o lote inteiro** — duas execuções do mesmo arquivo lado a
+lado, ocupando duas das quatro linhas de atendimento (registros do Render de
+16/11: 162 s, 194 s, 246 s, 460 s, 522 s, 602 s na mesma rota). Decisão do dono:
+*"no Make eu não preciso de resposta para cada baixa. O cenário manda e
+acabou-se."* Agora `POST /api/baixabradesco/executar` responde na hora, o lote é
+gravado em disco antes da resposta (garantia de que a baixa acontece), lote
+repetido é recusado na porta, e o relatório por comprovante vai para o
+**Telegram**. A execução virou por fase: planilha e Pipefy agrupam o lote
+inteiro; o Omie não, porque a API baixa um título por chamada.
+
+⚠️ **Só a ROTA responde assim.** Quem chama `processar_baixabradesco` por dentro
+do serviço — `analisesps/comprovantes.py` e a fila de adiados — continua
+recebendo o resultado completo, porque as duas dependem dele. O parâmetro é
+`em_segundo_plano`, e o padrão é **não**.
+
+**A parte que atravessa tudo:** o dono pediu *"não deixe de me questionar
+visando a otimização"*, depois de apontar que a ineficiência estava escrita no
+próprio código havia meses. A regra entrou no `CLAUDE.md`: contar o custo da
+operação (chamadas de rede, leituras de planilha, por item e por lote) antes de
+mexer numa área, e **relatar** o que a conta mostrar — mesmo sem mexer. Não
+fazer sem pedir continua valendo; não FALAR sem ser perguntado nunca foi regra.
+
+
 ### 14/11/2026 — O CADASTRO DO TELEGRAM ENTRA NO ERP, e quem não recebe é convidado pelo WhatsApp (atravessa áreas)
 
 O dono viu muita gente pedindo coisas e não recebendo a resposta, porque não tem
