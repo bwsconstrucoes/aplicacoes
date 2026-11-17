@@ -453,104 +453,206 @@ def _conferir_gravacao(sheet, target_row: int, updates_cols: dict) -> list:
     return falta
 
 
+def _ler_em_blocos(sheet, ranges: list, tamanho: int = 100) -> list:
+    """`batch_get` em pedaços. Uma leitura para muitas células, não uma por célula."""
+    saida = []
+    for i in range(0, len(ranges), tamanho):
+        saida.extend(sheet.batch_get(ranges[i:i + tamanho]))
+    return saida
+
+
+def _valor_do_bloco(bloco) -> str:
+    if bloco and bloco[0]:
+        return as_string(bloco[0][0])
+    return ''
+
+
+def _localizar_linhas(sheet, updates: list, indices: list, por_update: list) -> dict:
+    """Descobre a linha de cada update gastando o MENOS possível de leitura.
+
+    Primeiro confere, numa leitura só, todas as linhas sugeridas pela aba
+    enxuta (coluna AC). O que não confirmar cai na varredura da coluna — e a
+    varredura também é UMA leitura para o grupo inteiro, não uma por update.
+    """
+    linhas: dict = {}
+    sugeridas = []
+    pendentes = []
+
+    for i in indices:
+        upd = updates[i]
+        esperado = (upd.get('filtros', {}).get('A') or '')[1:].strip()
+        try:
+            linha = int(upd.get('linha') or 0)
+        except Exception:
+            linha = 0
+        if linha >= 2 and esperado:
+            sugeridas.append((i, linha, esperado))
+        else:
+            pendentes.append(i)
+
+    if sugeridas:
+        try:
+            lidos = _ler_em_blocos(sheet, [f'A{linha}' for _, linha, _ in sugeridas])
+        except Exception:
+            lidos = []
+        for pos, (i, linha, esperado) in enumerate(sugeridas):
+            bloco = lidos[pos] if pos < len(lidos) else None
+            if _valor_do_bloco(bloco).strip() == esperado:
+                linhas[i] = linha
+            else:
+                pendentes.append(i)
+
+    if not pendentes:
+        return linhas
+
+    letras = []
+    for i in pendentes:
+        for letra in (updates[i].get('filtros') or {}):
+            if letra not in letras:
+                letras.append(letra)
+    try:
+        colunas = sheet.batch_get([f'{letra}2:{letra}' for letra in letras])
+    except Exception as e:
+        for i in pendentes:
+            por_update[i] = {'ok': False, 'erro': f'não deu para ler a coluna ({str(e)[:80]})'}
+        return linhas
+
+    dados = {letra: [(v[0] if v else '') for v in vals]
+             for letra, vals in zip(letras, colunas)}
+    total = max((len(v) for v in dados.values()), default=0)
+
+    for i in pendentes:
+        filtros = updates[i].get('filtros') or {}
+        achou = None
+        for k in range(total):
+            bate = True
+            for letra, condicao in filtros.items():
+                valores = dados.get(letra) or []
+                valor = valores[k] if k < len(valores) else ''
+                op = condicao[0] if condicao else '='
+                alvo = condicao[1:].strip()
+                if op == '=' and valor != alvo:
+                    bate = False
+                    break
+                if op == '!' and valor == alvo:
+                    bate = False
+                    break
+            if bate:
+                achou = k + 2   # +2: o cabeçalho e o índice que começa em zero
+                break
+        if achou is None:
+            por_update[i] = {'ok': False,
+                             'erro': f"linha não encontrada para {filtros}"}
+        else:
+            linhas[i] = achou
+
+    return linhas
+
+
+def _gravar_grupo(sheet, updates: list, indices: list, por_update: list) -> None:
+    """Grava e confere TODAS as linhas de uma aba em duas chamadas."""
+    linhas = _localizar_linhas(sheet, updates, indices, por_update)
+    if not linhas:
+        return
+
+    dados = []
+    for i, linha in linhas.items():
+        for letra, valor in (updates[i].get('updates') or {}).items():
+            dados.append({'range': f'{letra}{linha}', 'values': [[valor]]})
+    sheet.batch_update(dados, value_input_option='USER_ENTERED')
+
+    # Confere lendo de volta. Gravação que não chegou é o defeito mais frequente
+    # desta área, e ela nunca avisava: o `batch_update` não levanta erro quando a
+    # escrita não vale (linha travada, permissão, resposta parcial do Google).
+    conferir = []
+    for i, linha in linhas.items():
+        for letra, valor in (updates[i].get('updates') or {}).items():
+            if letra in COLUNAS_CONFERIDAS and as_string(valor):
+                conferir.append((i, letra, valor, f'{letra}{linha}'))
+
+    faltas: dict = {}
+    if conferir:
+        try:
+            lidos = _ler_em_blocos(sheet, [c[3] for c in conferir])
+        except Exception as e:
+            lidos = []
+            for i in linhas:
+                faltas.setdefault(i, []).append(f'não deu para conferir ({str(e)[:80]})')
+        for pos, (i, letra, esperado, _faixa) in enumerate(conferir):
+            if pos >= len(lidos):
+                continue
+            atual = _valor_do_bloco(lidos[pos])
+            if normalize_compact(atual) != normalize_compact(esperado):
+                faltas.setdefault(i, []).append(
+                    f'{letra} (esperado "{esperado}", está "{atual}")')
+
+    for i, linha in linhas.items():
+        if faltas.get(i):
+            por_update[i] = {
+                'ok': False,
+                'erro': f'linha {linha}: gravação não confirmada em ' + ', '.join(faltas[i]),
+            }
+        else:
+            por_update[i] = {'ok': True, 'erro': '', 'linha': linha}
+
+
 def execute_spsbd_updates(updates: list) -> dict:
-    """Executa updates na planilha via gspread (chamada direta, sem GAS).
+    """Grava na SPsBD. UMA conversa com o Google para o lote inteiro.
 
-    Devolve `{'ok': bool, 'gravados': int, 'erros': [...]}`. Antes engolia
-    qualquer falha em silêncio, e uma gravação perdida deixava a SP como
-    "Pagar" para sempre — sem ninguém saber, porque o Omie já tinha baixado.
+    ⚠️ REESCRITA EM 17/11/2026, A PEDIDO DO DONO — e o motivo é tempo.
+    Ele viu a baixa levar de 3 a 10 minutos e perguntou o óbvio:
 
-    Otimizado para memória: busca APENAS as colunas usadas nos filtros
-    (ex.: A:A para localizar a linha pelo ID) em vez de get_all_values(),
-    que baixava a planilha inteira (~52k linhas × todas as colunas) só para
-    achar uma linha — era a principal causa de pico de RAM, pior ainda
-    porque roda em thread por plano (N lotes = N downloads simultâneos).
-    A gravação usa batch_update (1 chamada) em vez de update_cell por célula.
+        *"é uma série de tarefas repetidas, né? (…) depois fazer lançar um
+        único comando para atualizar a planilha."*
+
+    Estava certo. Cada comprovante gastava TRÊS idas ao Google (conferir a
+    linha, gravar, reler para confirmar). Trinta comprovantes = noventa idas,
+    uma esperando a outra. Agora o lote inteiro gasta três, não importa se são
+    dois comprovantes ou cinquenta.
+
+    O que NÃO mudou, de propósito: a conferência de que a célula ficou com o
+    valor (ela é a defesa contra a baixa silenciosa) e o fato de a gravação
+    acontecer antes de a resposta sair.
+
+    Devolve também `por_update`: o resultado de CADA update, na mesma ordem em
+    que entraram. É o que permite enfileirar só o comprovante que falhou, em
+    vez de tratar o lote inteiro como perdido.
+
+    Memória e cota: busca APENAS as colunas usadas nos filtros, nunca
+    `get_all_values()` — que baixava as ~52 mil linhas inteiras e foi a causa
+    do estouro de RAM de julho de 2026.
     """
     if not updates:
-        return {'ok': True, 'gravados': 0, 'erros': []}
-    gravados = 0
-    erros = []
+        return {'ok': True, 'gravados': 0, 'erros': [], 'por_update': []}
+
+    por_update = [{'ok': False, 'erro': 'não processado'} for _ in updates]
+    grupos: dict = {}
+    for i, upd in enumerate(updates):
+        if not ((upd.get('filtros') or {}) and (upd.get('updates') or {})):
+            por_update[i] = {'ok': False, 'erro': 'update sem filtro ou sem colunas'}
+            continue
+        grupos.setdefault((upd.get('sheet_id'), upd.get('aba')), []).append(i)
+
     gc = get_gc()
-    for upd in updates:
+    for (sheet_id, aba), indices in grupos.items():
         try:
-            ss    = gc.open_by_key(upd['sheet_id'])
-            sheet = ss.worksheet(upd['aba'])
-
-            filtros      = upd.get('filtros', {})
-            updates_cols = upd.get('updates', {})
-            if not filtros or not updates_cols:
-                continue
-
-            # ⚠️ ATALHO COM CONFERÊNCIA. A linha vem da aba enxuta, que é um
-            # espelho — e espelho pode estar velho. Gravar numa linha errada
-            # marcaria a SP ERRADA como paga, e ninguém perceberia olhando a
-            # tela. Então lê UMA célula para confirmar que ali está mesmo o ID
-            # esperado; se não estiver, cai na varredura de sempre.
-            target_row = None
-            linha_sugerida = int(upd.get('linha') or 0)
-            esperado = (filtros.get('A') or '')[1:].strip()
-            if linha_sugerida >= 2 and esperado:
-                try:
-                    achado = sheet.get(f'A{linha_sugerida}')
-                    valor = (achado[0][0] if achado and achado[0] else '')
-                    if as_string(valor).strip() == esperado:
-                        target_row = linha_sugerida
-                except Exception:
-                    target_row = None
-
-            # Busca só as colunas dos filtros, a partir da linha 2 (pula header)
-            col_letras = list(filtros.keys())
-            col_ranges = [f'{l}2:{l}' for l in col_letras]
-            fetched = sheet.batch_get(col_ranges) if target_row is None else []
-
-            # col_data[letra] = lista de valores (índice 0 = linha 2 da planilha)
-            col_data = {}
-            for letra, vals in zip(col_letras, fetched):
-                col_data[letra] = [(v[0] if v else '') for v in vals]
-
-            n_rows = max((len(v) for v in col_data.values()), default=0)
-
-            for i in range(n_rows) if target_row is None else ():
-                match = True
-                for col_letra, condicao in filtros.items():
-                    vals = col_data.get(col_letra, [])
-                    val  = vals[i] if i < len(vals) else ''
-                    op   = condicao[0] if condicao else '='
-                    alvo = condicao[1:].strip()
-                    if op == '=' and val != alvo:
-                        match = False; break
-                    elif op == '!' and val == alvo:
-                        match = False; break
-                if match:
-                    target_row = i + 2  # +2: header pulado e i é 0-based
-                    break  # update_multiple=false: apenas primeira linha
-
-            if target_row is None:
-                erros.append(f"linha não encontrada para {upd.get('filtros')}")
-                continue
-
-            # Grava todas as células de uma vez (1 chamada à API)
-            data = [
-                {'range': f'{col_letra}{target_row}', 'values': [[novo_val]]}
-                for col_letra, novo_val in updates_cols.items()
-            ]
-            sheet.batch_update(data, value_input_option='USER_ENTERED')
-
-            # Confere lendo de volta. Gravação que não chegou é o defeito mais
-            # frequente desta área, e ela nunca avisava: o batch_update não
-            # levanta erro quando a escrita não vale (linha travada, permissão,
-            # resposta parcial do Google).
-            falta = _conferir_gravacao(sheet, target_row, updates_cols)
-            if falta:
-                erros.append(f'linha {target_row}: gravação não confirmada em {falta}')
-                continue
-            gravados += 1
-
+            sheet = gc.open_by_key(sheet_id).worksheet(aba)
         except Exception as e:
-            erros.append(str(e)[:200])
+            for i in indices:
+                por_update[i] = {'ok': False, 'erro': str(e)[:200]}
+            continue
+        try:
+            _gravar_grupo(sheet, updates, indices, por_update)
+        except Exception as e:
+            for i in indices:
+                if not por_update[i].get('ok'):
+                    por_update[i] = {'ok': False, 'erro': str(e)[:200]}
 
-    return {'ok': not erros and gravados > 0, 'gravados': gravados, 'erros': erros}
+    gravados = sum(1 for r in por_update if r.get('ok'))
+    erros = [r.get('erro') for r in por_update if not r.get('ok') and r.get('erro')]
+    return {'ok': not erros and gravados > 0, 'gravados': gravados,
+            'erros': erros, 'por_update': por_update}
+
 
 # ── Controle de duplicatas via aba LogBaixaBradesco ───────────────────────────
 
@@ -605,16 +707,26 @@ def check_fingerprint_processado(gc, fingerprint: str) -> bool:
         return False
 
 
-def registrar_fingerprint(gc, fingerprint: str, sp_id: str, valor: str,
-                          data: str, arquivo: str):
-    """Registra fingerprint processado para evitar reprocessamento."""
+def registrar_fingerprints(gc, linhas: list) -> dict:
+    """Registra VÁRIAS impressões digitais numa única gravação.
+
+    Uma por comprovante era uma ida ao Google por comprovante — mesmo rodando
+    em segundo plano, gastava cota que o resto do lote precisava.
+    `linhas` é uma lista de (impressão, sp, valor, data, arquivo).
+    """
+    if not linhas:
+        return {'ok': True, 'gravados': 0}
     try:
         from datetime import datetime
         ws = _get_log_sheet(gc)
-        ws.append_row(
-            [fingerprint, sp_id, valor, data, arquivo,
-             datetime.now().strftime('%d/%m/%Y %H:%M:%S')],
-            value_input_option='USER_ENTERED'
+        agora = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        ws.append_rows(
+            [[fp, sp, valor, data, arquivo, agora]
+             for fp, sp, valor, data, arquivo in linhas],
+            value_input_option='USER_ENTERED',
         )
-    except Exception:
-        pass
+        return {'ok': True, 'gravados': len(linhas)}
+    except Exception as e:
+        return {'ok': False, 'gravados': 0, 'erro': str(e)[:200]}
+
+

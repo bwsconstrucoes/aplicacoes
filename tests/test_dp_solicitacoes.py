@@ -1033,3 +1033,77 @@ def test_o_cadastro_sem_a_empresa_e_recusado(mundo):
                            "COMPROVANTE-ENDERECO-PESSOA", "CTPS-FOTO",
                            "CTPS-INFORMACOES"]}, mundo["encarregado"])
     assert "Empresa para registro" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# TIPO DE CONTRATO: DUAS LISTAS, UM CAMPO SÓ (17/11/2026)
+#
+# Ele: *"Se Jovem Aprendiz é CTPS, precisamos poder selecionar o tipo de
+# contrato entre: CLT (tempo indeterminado), CLT (tempo determinado), Jovem
+# Aprendiz."*
+#
+# Em 15/11 o campo tinha sido FECHADO para CTPS, com o motivo "CTPS é sempre
+# CLT". A premissa caiu: contrato de aprendizagem tem carteira e não é CLT.
+# Agora o campo abre dos dois lados, com listas diferentes — e estes testes
+# existem para que nunca mais um lado ofereça o contrato do outro, que é o
+# defeito que deixava gravar alguém de carteira como "PJ".
+# ---------------------------------------------------------------------------
+def _admissao():
+    return svc.TIPOS["CADASTRO"]
+
+
+def test_o_tipo_de_contrato_tem_uma_lista_para_cada_documentacao():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    assert set(mapa["CTPS"]) == {"CLT (tempo indeterminado)",
+                                 "CLT (tempo determinado)", "Jovem aprendiz"}
+    assert "PJ" in mapa["PRESTADOR"]
+    # Nenhum contrato aparece nos dois lados: é isso que impede a contradição.
+    assert not set(mapa["CTPS"]) & set(mapa["PRESTADOR"])
+
+
+def test_carteira_NAO_oferece_contrato_de_prestador():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    for proibido in ("PJ", "Autônomo (RPA)", "Autônomo mensalista",
+                     "Pró-labore", "Estágio"):
+        assert proibido not in mapa["CTPS"]
+
+
+def test_prestador_NAO_oferece_contrato_de_carteira():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    for proibido in ("CLT (tempo indeterminado)", "CLT (tempo determinado)",
+                     "Jovem aprendiz"):
+        assert proibido not in mapa["PRESTADOR"]
+
+
+def test_o_campo_so_abre_depois_de_escolhida_a_documentacao():
+    """Nem antes (alguém responderia "PJ" sem dizer que é CTPS), nem só para
+    um dos lados (era o defeito que este conserto desfaz)."""
+    assert (_admissao()["visiveis_se"]["tipo_contrato"]["tipo_documentacao"]
+            == ("*",))
+
+
+def test_toda_opcao_das_duas_listas_tem_traducao_para_o_codigo():
+    """A tela manda o rótulo; a coluna guarda o código. Opção sem tradução
+    gravaria o texto da caixinha no banco — e nenhum relatório o entende."""
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    traduz = svc.DO_PIPE_PARA_O_CODIGO["tipo_contrato"]
+    for lista in mapa.values():
+        for rotulo in lista:
+            assert rotulo in traduz, f"{rotulo} não tem código"
+
+
+def test_carteira_tambem_EXIGE_o_tipo_de_contrato():
+    """Jovem aprendiz e CLT mudam a folha e a guia — deixar em branco empurra
+    a dúvida para o DP adivinhar depois."""
+    exige = _admissao()["obrigatorios_se"]["tipo_documentacao"]
+    assert "tipo_contrato" in exige["CTPS"]
+    assert "tipo_contrato" in exige["PRESTADOR"]
+
+
+def test_o_formulario_que_a_tela_recebe_leva_as_duas_listas(mundo):
+    """Sem isto a tela mostraria a lista cheia, com os dois lados juntos."""
+    tipos = svc.tipos_para_tela(mundo["s"])
+    cadastro = next(t for t in tipos if t["valor"] == "CADASTRO")
+    mapa = cadastro["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    assert "Jovem aprendiz" in mapa["CTPS"]
+    assert "PJ" in mapa["PRESTADOR"]

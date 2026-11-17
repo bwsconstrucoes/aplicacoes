@@ -3,6 +3,61 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 16/11/2026 — quem não bate ponto passa a sair do TIPO DE CONTRATO (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi em `core/cadastros.py` vindo de outra área.** Está escrito aqui porque
+é mudança de comportamento do ponto, e quem pegar esta área precisa saber.
+
+**O buraco.** Usando o **cadastro do ERP** como base de pessoas (`pessoas.fonte
+= ERP`), `nao_bate` era `NULL::text`: **ninguém ficava de fora**. A regra
+existia só no caminho da planilha (`registro.nao_bate_sql`, lendo a coluna
+"tipo" do Registro de Colaboradores).
+
+Isso não incomodava enquanto a base era a planilha — mas o dono decidiu em
+16/11/2026 **cortar o vínculo com ela** assim que terminar as importações do
+Pipefy e das fichas do Fortes (ver `CONTEXTO.md`, mesma data). No dia da
+virada, **PJ e pró-labore passariam a bater ponto** — e ponto de PJ é
+exatamente o registro que não se quer ter, porque parece vínculo de emprego. O
+defeito só apareceria depois, numa manhã, com batida de quem não devia bater.
+
+**A regra, ditada por ele:**
+
+> *"Quando é prestador de serviço, quem é que bate ponto? É o autônomo RPA e o
+> autônomo mensalista. Os demais não batem ponto (…) PJ não bate ponto,
+> pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz bate
+> ponto."*
+
+| Batem ponto | Não batem |
+|---|---|
+| CLT (determinado e indeterminado), Temporário, Autônomo RPA, Autônomo mensalista, Jovem aprendiz, Estágio | **PJ, Pró-labore** |
+
+Mais a obra **ESCRUSSAS**, como já era pela planilha. A **exceção do DP**
+(migração 025) continua passando por cima de tudo — a regra automática não
+tira a decisão de ninguém.
+
+**Detalhes que não são óbvios:**
+
+- **Sem `tipo_contrato` preenchido, a pessoa BATE.** Cadastro pela metade não
+  barra ninguém: o erro caro aqui é gente parada no portão, não uma batida a
+  mais que depois se confere.
+- **Banco sem a coluna não derruba o ponto** — a coluna é conferida antes
+  (`_tem_tipo_contrato`), e sem ela ninguém fica de fora.
+- Nada disso muda enquanto a base for a planilha. É preparo para a virada.
+
+**Teste:** `tests/test_ponto_nao_bate_pelo_contrato_banco.py` (banco de
+verdade — isto vive num `CASE`, que o dublê da suíte não enxerga).
+
+### ⚠️ E uma correção sobre o telefone, que estava escrita errada
+
+Eu havia dito ao dono que quem ficasse sem telefone no cadastro não bateria
+ponto. **Está errado**, e ele corrigiu: *"uma coisa é não ter telefone, outra
+coisa é não conseguir acessar (…) não é para ser impeditivo o telefone. É
+impeditivo para ele verificar o ponto dele."* Quem bate é a obra, no aparelho
+da obra. O telefone serve para a pessoa **conferir** o ponto dela e para bater
+pelo próprio celular, que é permissão de poucos.
+
+---
+
 ## 15/11/2026 — o atestado que passa de 15 dias abre o afastamento sozinho (feito pelo chat do ERP/DP)
 
 ⚠️ **Mudança feita por outro chat.** O assunto nasceu no chat do DP, num pedido

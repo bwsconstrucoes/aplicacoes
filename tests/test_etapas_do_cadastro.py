@@ -181,7 +181,7 @@ def test_o_salto_proibido_e_recusado_dizendo_os_caminhos(sessao_real, dono):
     with pytest.raises(ErroValidacao) as e:
         svc.mover_etapa(sessao_real, c.id, "CONCLUIDO", dono)
     assert "não dá para ir direto" in str(e.value)
-    assert "Em conferência do DP" in str(e.value), \
+    assert "Conferência" in str(e.value), \
         "a recusa tem de DIZER por onde dá para ir"
 
 

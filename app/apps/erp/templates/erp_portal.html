@@ -1087,6 +1087,37 @@ function aplicarVinculo(t){
         else if (!(aceitos || []).includes(traduz(gatilho, resposta)))
           some = true;
       });
+    {# ⚑ 4) A LISTA DO CAMPO MUDA COM OUTRA RESPOSTA (17/11/2026).
+
+       É o tipo de contrato. Ele: *"Se Jovem Aprendiz é CTPS, precisamos poder
+       selecionar o tipo de contrato entre: CLT (tempo indeterminado), CLT
+       (tempo determinado), Jovem Aprendiz."* Quem é CTPS escolhe entre essas
+       três; quem é prestador, entre PJ, autônomo (RPA), autônomo mensalista,
+       estágio e pró-labore.
+
+       A caixinha nasce com as duas listas e esconde a metade que não é do
+       caso. E se a resposta que já estava lá sair da lista — alguém marcou
+       "PJ" e depois trocou para CTPS — ela é APAGADA: deixá-la mandaria para
+       o DP um registro em carteira com contrato de PJ, que é o defeito mais
+       caro que uma caixinha pode produzir.
+
+       O servidor manda a lista em RÓTULO (é o que a tela do DP mostra); aqui
+       a caixinha guarda o CÓDIGO, então a tradução que já viaja junto
+       converte um no outro. #}
+    const porResposta = (t.opcoes_se || {})[c];
+    if (porResposta && !some) {
+      const codigos = new Set();
+      Object.entries(porResposta).forEach(([gatilho, mapa]) => {
+        const escolhido = traduz(gatilho, v[gatilho] || "");
+        (mapa[escolhido] || []).forEach(r => codigos.add(traduz(c, r)));
+      });
+      Array.from(caixa.options).forEach(o => {
+        const cabe = !o.value || codigos.has(o.value);
+        o.hidden = !cabe;
+        o.disabled = !cabe;
+      });
+      if (caixa.value && !codigos.has(caixa.value)) caixa.value = "";
+    }
     rotulo.classList.toggle("oculto", some);
   });
 }

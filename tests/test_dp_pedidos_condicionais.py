@@ -161,12 +161,22 @@ def test_o_desconto_do_vt_so_e_exigido_quando_ha_vale_transporte():
 
 def test_cadastro_de_carteira_nao_pergunta_pagamento_nem_valor_do_mes():
     """*"Quando é CTPS, o valor é o da convenção."* Dois valores para o mesmo
-    salário é o que esta regra evita."""
+    salário é o que esta regra evita.
+
+    ⚑ O TIPO DE CONTRATO SAIU DESTA LISTA em 17/11/2026, e isso é correção de
+    premissa. Ele tinha mandado fechá-lo para CTPS em 15/11 ("já é CLT"), e
+    depois viu a consequência: *"Se Jovem Aprendiz é CTPS, precisamos poder
+    selecionar o tipo de contrato."* Aprendizagem é contrato formal, com
+    carteira, e não é CLT — então carteira TEM tipo de contrato, só que com
+    outra lista. O que continua proibido é o pagamento e o valor do mês, que
+    é o ponto deste teste.
+    """
     exige = svc.exigencias("CADASTRO", {"tipo_documentacao": "CTPS"})["campos"]
-    for proibido in ("pagamento", "valor_mes", "tipo_contrato"):
+    for proibido in ("pagamento", "valor_mes"):
         assert proibido not in exige, f"{proibido} continua exigido em CTPS"
-    # Mas a carteira e o PIS passam a ser exigidos.
+    # Mas a carteira, o PIS e o tipo de contrato passam a ser exigidos.
     assert "num_ctps" in exige and "num_pis" in exige
+    assert "tipo_contrato" in exige
 
 
 def test_cadastro_de_prestador_pergunta_o_tipo_de_contrato():
@@ -175,17 +185,33 @@ def test_cadastro_de_prestador_pergunta_o_tipo_de_contrato():
     assert "num_ctps" not in exige
 
 
-def test_o_tipo_de_contrato_do_prestador_tem_as_seis_opcoes_dele():
-    """*"PJ, autônomo RPA, autônomo mensalista, jovem aprendiz, estagiário,
-    pró-labore."* As duas de CLT existem no cadastro e NÃO entram aqui: em
-    carteira o tipo não se escolhe."""
+def test_cada_documentacao_tem_a_sua_lista_de_tipo_de_contrato():
+    """17/11/2026 — o jovem aprendiz mudou esta regra, e vale contar por quê.
+
+    Em 15/11 a lista era UMA, com seis opções, e o jovem aprendiz estava entre
+    elas como se fosse prestador. Ele corrigiu: *"CTPS e jovem aprendiz na
+    verdade estão corretos (…) não é CLT mas é Jovem aprendiz."* Contrato de
+    aprendizagem tem carteira assinada — então ele pertence ao lado CTPS, e o
+    lado CTPS deixou de ser vazio.
+
+    Agora são duas listas sem interseção nenhuma. É a interseção que permitia
+    gravar alguém de carteira como "PJ", e é por isso que o teste confere
+    justamente ela.
+    """
     from app.apps.erp.core.cadastros.pessoas import TIPOS_CONTRATO
-    codigos = [svc.DO_PIPE_PARA_O_CODIGO["tipo_contrato"][o]
-               for o in svc.CATEGORIAS["tipo_contrato"]]
-    assert codigos == ["PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA",
-                       "JOVEM_APRENDIZ", "ESTAGIO", "PRO_LABORE"]
+    mapa = svc.TIPOS["CADASTRO"]["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    codigo = svc.DO_PIPE_PARA_O_CODIGO["tipo_contrato"]
+
+    carteira = [codigo[o] for o in mapa["CTPS"]]
+    prestador = [codigo[o] for o in mapa["PRESTADOR"]]
+
+    assert carteira == ["CLT_INDETERMINADO", "CLT_DETERMINADO", "JOVEM_APRENDIZ"]
+    assert prestador == ["PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA",
+                         "ESTAGIO", "PRO_LABORE"]
+    assert not set(carteira) & set(prestador)
+
     # Todo código tem de existir no cadastro, senão gravar quebra na hora.
-    for c in codigos:
+    for c in carteira + prestador:
         assert c in TIPOS_CONTRATO, f"{c} não existe no cadastro da pessoa"
 
 

@@ -172,7 +172,7 @@ def test_o_plano_B_le_a_spsbd_uma_unica_vez():
     """Duas páginas sem SP não podem custar duas leituras de 52 mil linhas."""
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
     assert "estado_spsbd['leu']" in fonte
     assert 'load_spsbd_values' in fonte
 
@@ -186,7 +186,7 @@ def test_o_plano_B_serve_SO_para_as_pagas_com_omie_pendente():
     """
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
 
     # aciona pelo "não achou" e vai direto ao omie_pendente
     assert "if match.status == 'nao_localizado':" in fonte
@@ -199,7 +199,7 @@ def test_o_plano_B_nao_reconstroi_o_indice_operacional():
     """Era custo puro: a aba já tem exatamente esse conjunto."""
     import inspect
     from app.apps.baixabradesco import core
-    carregador = inspect.getsource(core.processar_baixabradesco)
+    carregador = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
     inicio = carregador.index('def _carregar_omie_pendente')
     fim = carregador.index('if not leu_da_aba_enxuta')
     corpo = carregador[inicio:fim]
@@ -220,7 +220,7 @@ def test_reenvio_NAO_dispara_a_leitura_gigante():
     """
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
     decisao = fonte[fonte.index('if rec.fingerprint and rec.fingerprint in fingerprints_processados'):
                     fonte.index('# Primeiro localiza a SP/título')]
     assert '_completar_com_spsbd()' not in decisao
@@ -230,7 +230,7 @@ def test_o_repetido_diz_qual_SP_para_dar_para_conferir():
     """O caso raro (aba não espelhou uma SP aberta) tem de ficar visível."""
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
     assert "'sp': sp_registrada," in fonte
     assert 'ainda estiver como "Pagar"' in fonte
 
@@ -238,7 +238,7 @@ def test_o_repetido_diz_qual_SP_para_dar_para_conferir():
 def test_aba_enxuta_vazia_cai_no_comportamento_antigo():
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
     assert 'if not leu_da_aba_enxuta and not modo_teste:' in fonte
 
 
@@ -319,9 +319,13 @@ class _AbaGravacao:
             self.varreduras += 1
             maior = max(self.id_na_linha) if self.id_na_linha else 1
             return [[[self.id_na_linha.get(n, '')] for n in range(2, maior + 1)]]
-        # conferência de célula: devolve o que foi gravado ali
+        # A pista da aba enxuta agora também chega por batch_get (uma leitura
+        # para TODAS as linhas sugeridas do lote, em vez de uma por update).
         saida = []
         for f in faixas:
+            if f.startswith('A') and f[1:].isdigit():
+                saida.append(self.get(f))
+                continue
             valor = ''
             for item in self.gravado:
                 if item['range'] == f:
@@ -479,7 +483,7 @@ def test_indice_vazio_faz_o_robo_ler_a_SPsBD_em_vez_de_ficar_cego():
     """É o que impede uma fórmula quebrada de parar as baixas em silêncio."""
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
 
     # o sinal de "a aba respondeu" é o índice ter conteúdo, não a leitura ter
     # devolvido algo — `[['#N/A']]` devolve algo e não serve para nada

@@ -1183,6 +1183,35 @@ colunas sem histórico.
   de CTPS)
 - OK **Quantas pessoas ativas temos, por vínculo e por tipo de contrato?** 🔒
   (escopo por obra) ⚠️ ("ativo" = situação ATIVA e sem demissão já passada)
+- OK **Quem está com o cadastro parado, e em que etapa?** (é a fila do DP:
+  Inicial = ninguém olhou; Conferência = o DP está olhando; Contrato a assinar
+  = PJ esperando assinatura; Na contabilidade = eSocial em andamento) ⚠️
+  (palavra decisiva: **etapa não é situação**. Etapa responde "o que falta
+  FAZER neste cadastro"; situação responde "esta pessoa está na empresa".
+  Misturar as duas foi o defeito que gerou 25 pessoas "Concluído + Desligado",
+  corrigido em 17/11/2026)
+- OK **Tem alguém com etapa e situação se contradizendo?** (deve dar ZERO
+  desde a migração 106: quem saiu da empresa tem etapa "Desligado", quem está
+  afastado tem "Afastado". Se aparecer alguém, algo escreveu direto no banco)
+- OK **Quanto tempo cada cadastro está parado na mesma etapa?** — FALTA: o
+  histórico de etapas guarda a data de cada mudança, mas não há tela nem
+  consulta que mostre "parado há N dias". É o que transformaria a fila do DP
+  em cobrança
+- OK **Quantos jovens aprendizes temos, e em que obras?** ⚠️ (palavra
+  decisiva: jovem aprendiz é CTPS — carteira assinada — mas NÃO é CLT.
+  Contar "CLT" e esperar que o aprendiz entre no número é o erro que já
+  aconteceu, em 17/11/2026, e ele teve de corrigir)
+- OK **Quem tem carteira assinada mas não é CLT?** (é a lista dos aprendizes;
+  a pergunta existe porque a cota de aprendizagem é fiscalizada)
+- OK **Quantos são CLT por tempo DETERMINADO, e quando cada contrato vence?**
+  ⚠️ (contrato por tempo determinado tem prazo; quem deixa vencer sem avisar
+  vira indeterminado sozinho) — FALTA: o ERP guarda o tipo de contrato, mas
+  não guarda a DATA DE FIM do contrato determinado. Sem ela, a segunda metade
+  da pergunta não tem resposta, e o assistente deve dizer isso
+- OK **Alguém de carteira está cadastrado com contrato de prestador (PJ, RPA)?**
+  (deve dar ZERO desde 17/11/2026: as duas listas são separadas e o sistema
+  não deixa mais escolher o contrato do outro lado. Se aparecer alguém, é
+  ficha antiga, anterior à separação — e é para corrigir)
 - OK **Quem tem dependente no salário-família? Quantos dependentes no total?**
   ⚠️ (salário-família e dependente de IR são marcas DIFERENTES — a resposta
   precisa dizer qual das duas foi usada)
@@ -2299,6 +2328,7 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 |---|---|---|
 | **"cargo"** | o cargo registrado ou a função na obra? | ✔ **FECHADO em 16/11/2026, migração 105: não há mais duas coisas.** Ele: *"vamos chamar só de cargo e acabou."* `funcoes` virou visão de `cargos`, e o cargo carrega a diária. "Função" e "cargo" são a MESMA resposta |
 | **"não veio"** | o card não trouxe, o ERP já tinha, ou o valor foi recusado? | ✔ **FECHADO:** são três coisas diferentes e o relatório agora diz qual |
+| **"etapa"** vs **"situação"** | "em que pé está o cadastro?" ou "a pessoa está na empresa?" | ✔ **FECHADO e são DUAS coisas.** A fase do Pipefy misturava as duas; desde 16/11 a importação desdobra. Pergunta sobre fila de trabalho responde pela ETAPA; pergunta sobre folha e ponto responde pela SITUAÇÃO |
 
 ### Perguntas que já dão resposta exata
 
@@ -2311,6 +2341,22 @@ do desligado que continua como prestador, e o atestado de mais de 15 dias.
 - Para quem a importação não preencheu nada, e por quê?
 - Quantas divergências abertas são de data? ⚠️ *se voltar a crescer, a
   comparação de data quebrou de novo*
+- Quantos cadastros estão em cada etapa, e há quanto tempo parados?
+- Quais fases do Pipefy entraram sem virar etapa? ⚠️ *a resposta deve ser
+  "nenhuma"; fase nova no pipe aparece aqui antes de virar problema*
+- Quem está com situação diferente da etapa? *(ex.: etapa Desligado e situação
+  ATIVO — é o que faria a pessoa continuar batendo ponto)*
+- Quais documentos esta pessoa já tem, e quais faltam? *(a ficha passou a
+  listar em 16/11; antes só o Arquivo mostrava)*
+- De quem é este documento, e como abro o cadastro dele? *(o nome do dono
+  virou link no Arquivo)*
+- De onde veio cada campo deste cadastro: da planilha, do card ou da ficha do
+  Fortes? ⚠️ *três fontes é o desenho, não um acidente — ver a tabela no
+  `HISTORICO.md` de 16/11*
+- Quem está na planilha "Dados Documentos" e não está no ERP? E o contrário?
+- Quantas pessoas ficaram sem vínculo ou sem pagamento depois de importar?
+  ⚠️ *se for muita gente, é sinal de que a cópia da planilha está velha —
+  aperte "Atualizar cadastro" na Análise de SPs antes de importar*
 
 ### Perguntas que o sistema ainda não responde, e o que falta
 

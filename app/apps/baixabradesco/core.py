@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import logging
+import os
 import threading
 import time
+import uuid
 from typing import Dict, Any, List
 
 import requests
@@ -12,21 +15,206 @@ from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
 from .parser_sicredi import is_sicredi, parse_sicredi_text
-from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, load_baixabradesco_values, find_bank_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, load_baixabradesco_values, find_bank_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprints
 from .matcher import match_receipt
 from .omie import build_omie_plan, execute_omie, codigo_integracao
-from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
+from .pipefy import (build_get_cards_query, build_update_card_mutation,
+                     build_update_cards_mutation, cards_recusados, execute_graphql)
 from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
 from .fila import enqueue_failure
-from .avisos import enviar_aviso
+from .fila_tardia import (adiar_payload, guardar_recebido,
+                          impressao_do_pedido, soltar_recebido)
+from .avisos import enviar_aviso, enviar_relatorio
 
 # Teto por comprovante baixado via URL — evita que um download gigante entre
 # 100% na RAM e derrube o worker (limite Render: 2GB).
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
-def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
+# ── A PORTA: o Make não espera mais, e um lote só roda uma vez ───────────────
+#
+# ⚠️ DOIS DEFEITOS QUE SE ALIMENTAVAM — relato do dono em 16/11/2026:
+#
+#   *"o módulo do Make que chama a baixa constantemente dá erro: This module
+#   timed out. E suspeito ainda que quando ele tenta reexecutar, ele manda o
+#   comprovante todo novamente (…) tem um módulo break no cenário e ele repete
+#   a operação."*
+#
+# Ele estava certo nos dois pontos, e um multiplicava o outro:
+#
+# 1. **A baixa demorava mais do que o Make espera.** Os registros do Render de
+#    16/11 mostram 162 s, 194 s, 246 s, 460 s, 522 s e 602 s na mesma rota. O
+#    custo é por comprovante — Omie, Dropbox, planilha, Pipefy — e trinta
+#    comprovantes são trinta vezes isso.
+#
+# 2. **O "break" do cenário remandava o lote inteiro.** E a chamada antiga NÃO
+#    para quando o Make desiste: o serviço continua trabalhando. Resultado: duas
+#    execuções do mesmo arquivo lado a lado, ocupando DUAS das quatro linhas de
+#    atendimento, dobrando o consumo de cota do Google e do Omie — o que deixava
+#    tudo mais lento, o que causava mais timeout, o que causava mais reenvio. Nos
+#    registros das 20:28 as duas aparecem juntas ("há 477 s" e "há 114 s").
+#
+# A DECISÃO DO DONO, no mesmo dia, resolveu o lado dele do problema:
+#
+#   *"no Make eu não preciso de resposta para cada baixa. A gente não está
+#   utilizando isso. O cenário manda e acabou-se. (…) Basta dizer: ó, tá
+#   processando. (…) O que precisa ser garantido é que, uma vez feita a chamada,
+#   a baixa aconteça. (…) O retorno ao final de tudo você me manda no Telegram."*
+#
+# Então esta porta faz três coisas e só:
+#
+# · **Guarda o lote em disco** antes de qualquer resposta, e só apaga quando a
+#   baixa termina. É o que sustenta a garantia — ver `fila_tardia.guardar_recebido`
+#   para o que ela cobre e o que não cobre.
+# · **Responde na hora** "recebi, estou processando". O Make nunca mais vê
+#   timeout, nunca mais dispara o break.
+# · **Recusa o lote repetido.** Mesma impressão digital já rodando = responde na
+#   hora, sem refazer nada. É a defesa contra o reenvio que ainda escapar.
+#
+# A tela do Análise de SPs e a fila de adiados chamam com `inline=True`: as duas
+# PRECISAM do resultado completo (uma para mostrar na tela, a outra para decidir
+# se apaga o adiado), e nenhuma das duas ocupa linha de atendimento do serviço.
+MAX_LOTES_EM_PARALELO = int(os.getenv('BAIXABRADESCO_MAX_LOTES', '') or 6)
+
+_LOTES_TRINCO = threading.Lock()
+_LOTES_EM_ANDAMENTO: Dict[str, Dict[str, Any]] = {}
+
+logger = logging.getLogger(__name__)
+
+
+def lotes_em_andamento() -> List[Dict[str, Any]]:
+    """O que está rodando agora. NUNCA devolve o payload: ele traz credencial."""
+    agora = time.time()
+    with _LOTES_TRINCO:
+        itens = list(_LOTES_EM_ANDAMENTO.items())
+    return [{
+        'lote': chave,
+        'arquivos': info.get('arquivos') or [],
+        'comprovantes': info.get('comprovantes') or 0,
+        'rodando_ha_segundos': int(agora - (info.get('inicio') or agora)),
+    } for chave, info in itens]
+
+
+def _soltar_lote(chave: str) -> None:
+    with _LOTES_TRINCO:
+        _LOTES_EM_ANDAMENTO.pop(chave, None)
+
+
+def _e_falta_de_cota(erro: BaseException) -> bool:
+    msg = str(erro)
+    return ('Falha ao carregar dados Google Sheets' in msg
+            and ('429' in msg or 'Quota exceeded' in msg or 'RESOURCE_EXHAUSTED' in msg))
+
+
+def processar_baixabradesco(payload: Dict[str, Any],
+                            em_segundo_plano: bool = False) -> Dict[str, Any]:
+    """Porta de entrada da baixa. Ver o comentário acima.
+
+    ⚠️ O SEGUNDO PLANO É SÓ PARA QUEM CHEGA DE FORA, pela rota HTTP — ou seja,
+    para o Make. Quem chama esta função POR DENTRO do serviço (a tela do
+    Análise de SPs, a fila de adiados) não passa nada e continua recebendo o
+    resultado completo: uma precisa dele para mostrar "baixado" na tela, a
+    outra para decidir se apaga o adiado. Nenhuma das duas ocupa linha de
+    atendimento do serviço, então nenhuma tem o problema que isto resolve.
+    """
+    if bool(payload.get('modo_teste', True)) or not em_segundo_plano:
+        return _processar_lote(payload)
+
+    anexos = normalize_attachments(payload)
+    if not anexos:
+        raise ValueError('Nenhum comprovante enviado. Use attachments/comprovantes com filename e base64 ou url.')
+
+    # Sem impressão digital (formato inesperado), cada pedido é um lote novo: é
+    # melhor repetir trabalho do que travar uma baixa de verdade.
+    chave = impressao_do_pedido(payload) or uuid.uuid4().hex[:32]
+    nomes = [a.filename for a in anexos][:20]
+
+    with _LOTES_TRINCO:
+        em_curso = _LOTES_EM_ANDAMENTO.get(chave)
+        if em_curso:
+            return {
+                'ok': True,
+                'app': 'baixabradesco',
+                'modo_teste': False,
+                'ja_em_andamento': True,
+                'lote': chave,
+                'rodando_ha_segundos': int(time.time() - (em_curso.get('inicio') or time.time())),
+                'comprovantes_recebidos': len(anexos),
+                'motivo': ('Estes mesmos comprovantes já estão sendo processados neste '
+                           'servidor. Nada foi refeito e nada foi baixado duas vezes — '
+                           'o resultado chega no Telegram quando terminar.'),
+            }
+        if len(_LOTES_EM_ANDAMENTO) >= MAX_LOTES_EM_PARALELO:
+            # Nunca deixar a fila de linhas de fundo crescer sem teto: memória é
+            # 2 GB e cada lote carrega os PDFs inteiros.
+            logger.warning('BaixaBradesco: %s lotes já em andamento; este espera a vez.',
+                           MAX_LOTES_EM_PARALELO)
+            return {
+                'ok': True,
+                'app': 'baixabradesco',
+                'modo_teste': False,
+                'recusado_por_lotacao': True,
+                'lotes_em_andamento': MAX_LOTES_EM_PARALELO,
+                'comprovantes_recebidos': len(anexos),
+                'motivo': ('O servidor já está processando o máximo de lotes ao mesmo '
+                           'tempo. Reenvie estes comprovantes daqui a alguns minutos.'),
+            }
+        _LOTES_EM_ANDAMENTO[chave] = {
+            'inicio': time.time(),
+            'arquivos': nomes,
+            'comprovantes': len(anexos),
+        }
+
+    # Disco ANTES da resposta: é isto que sustenta "uma vez chamado, a baixa
+    # acontece". Guardado com a mesma conta da fila de adiados, então o serviço
+    # automático que já existe termina o que ficou pela metade.
+    guardado = guardar_recebido(payload)
+
+    def _rodar():
+        try:
+            resultado = _processar_lote(payload)
+        except BaseException as e:
+            _soltar_lote(chave)
+            if _e_falta_de_cota(e):
+                # Já está guardado em disco; o serviço automático reprocessa.
+                logger.warning('BaixaBradesco: lote %s parou por cota do Google; fica guardado.', chave)
+                if not guardado:
+                    try:
+                        adiar_payload(payload, str(e))
+                    except Exception:
+                        pass
+                return
+            logger.error('BaixaBradesco: lote %s falhou: %s', chave, e)
+            return
+        _soltar_lote(chave)
+        # Só agora o lote sai do disco: terminou de verdade.
+        soltar_recebido(guardado)
+        try:
+            resumo = resultado.get('resumo') or {}
+            logger.info('BaixaBradesco: lote %s concluído — %s', chave, resumo)
+        except Exception:
+            pass
+
+    threading.Thread(target=_rodar, daemon=True, name=f'baixa-{chave[:8]}').start()
+
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'modo_teste': False,
+        'recebido': True,
+        'lote': chave,
+        'comprovantes_recebidos': len(anexos),
+        'arquivos': nomes,
+        'guardado_em_disco': bool(guardado),
+        'motivo': ('Recebido. A baixa está sendo processada no servidor e o resultado '
+                   'de cada comprovante chega no Telegram ao terminar. NÃO reenvie: '
+                   'reenviar o mesmo arquivo não adianta nada enquanto este lote roda.'),
+    }
+
+
+def _processar_lote(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Faz o lote inteiro, do começo ao fim. Quem chama é a porta, acima."""
     modo_teste = bool(payload.get('modo_teste', True))
     attachments = normalize_attachments(payload)
     if not attachments:
@@ -324,106 +512,24 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             pass  # falha no get não deve parar a execução
 
-    # ── Executa planos em produção ─────────────────────────────────────────────
-    pipefy_mutations_batch: List[str] = []
-
-    if not modo_teste:
-        for plan in plans:
-            if not plan.pode_executar:
-                continue
-
-            card_info = card_data.get(str(plan.match.id)) if plan.match.id else None
-            if card_info:
-                plan.responses['pipefy_card_info'] = card_info
-
-            # 1. Omie
-            if plan.omie_requests and executar_omie:
-                plan.responses['omie'] = _executar_sequencia_omie(plan, payload)
-
-            # 2. Registra fingerprint se baixa OK ou título já estava PAGO
-            _omie_ok = any(
-                s.get('step') == 'baixar' and s.get('response', {}).get('ok')
-                for s in (plan.responses.get('omie') or [])
-            )
-            _omie_ja_pago = getattr(plan, '_omie_ja_pago', False)
-            if (_omie_ok or _omie_ja_pago) and gc:
-                _fp   = plan.receipt.fingerprint
-                _sid  = plan.match.id if plan.match else ''
-                _val  = plan.receipt.valor_pago
-                _data = plan.receipt.data_pagamento
-                _arq  = plan.receipt.filename
-                _gc   = gc  # captura referência local para o thread
-                def _reg(fp=_fp, sid=_sid, v=_val, d=_data, a=_arq, g=_gc):
-                    try:
-                        registrar_fingerprint(g, fp, sid, v, d, a)
-                    except Exception:
-                        pass
-                threading.Thread(target=_reg, daemon=True).start()
-
-            # ⚠️ O OMIE MANDA NA PLANILHA E NO CARD — 16/09/2026.
-            #
-            # Cobrança do dono em 14/09: *"baixam na planilha, mas não baixam
-            # no Omie. Não tem sentido. (…) Se eu estou mandando pra baixar é
-            # pra baixar, tem que baixar as duas coisas."*
-            #
-            # A planilha e o card eram marcados como pagos INDEPENDENTE do que
-            # o Omie tivesse respondido. Quando o Omie recusava, a SP ficava
-            # "paga" em dois lugares e em aberto no terceiro — e ninguém
-            # descobria, porque a tela dizia que tinha dado certo.
-            #
-            # Agora: se a baixa no Omie era para acontecer e NÃO se confirmou,
-            # não se marca nada. É melhor a SP continuar aparecendo como a
-            # pagar (e alguém refazer) do que sumir da fila sem ter sido paga
-            # no sistema que a contabilidade lê.
-            #
-            # "Já estava paga no Omie" conta como confirmação: nesse caso a
-            # planilha e o card É QUE estão atrasados, e é para atualizá-los
-            # que este trecho existe.
-            devia_baixar = bool(plan.omie_requests and executar_omie)
-            omie_confirmou = bool(_omie_ok or _omie_ja_pago)
-            if devia_baixar and not omie_confirmou:
-                plan.responses['nao_marcou'] = (
-                    'A planilha e o card NÃO foram marcados: o Omie não '
-                    'confirmou a baixa. Resolva no Omie e reenvie o '
-                    'comprovante — ele não baixa duas vezes.')
-                continue
-
-            # 2. Sheets SPsBD — gravação CONFIRMADA, antes de responder
-            if plan.sheets_updates and atualizar_spsbd:
-                _gravar_planilha(plan, payload)
-
-            # 3. Pipefy mutation montada com dados do get
-            if atualizar_pipefy and plan.match.id:
-                mutation = build_update_card_mutation(plan, card_info)
-                plan.pipefy_update_mutation = mutation
-                try:
-                    pipefy_resp = execute_graphql(mutation)
-                    plan.responses['pipefy'] = [pipefy_resp]
-                    if not pipefy_resp.get('ok'):
-                        fila_resp = enqueue_failure(plan, 'pipefy', 'pipefy_erro', str(pipefy_resp), payload)
-                        plan.responses['fila_pipefy'] = fila_resp
-                except Exception as e:
-                    plan.responses['pipefy'] = [{'ok': False, 'error': str(e)}]
-                    plan.responses['fila_pipefy'] = enqueue_failure(plan, 'pipefy', 'pipefy_exception', str(e), payload)
-
-            # 4. WhatsApp direto via Z-API, após getCard
-            if enviar_whatsapp:
-                try:
-                    plan.whatsapp_messages = build_whatsapp_messages(plan, payload)
-                    if plan.whatsapp_messages:
-                        zapi_resp = _executar_zapi(plan.whatsapp_messages, payload)
-                        plan.responses['zapi'] = zapi_resp
-                        if any(not r.get('ok') for r in zapi_resp):
-                            plan.responses['fila_zapi'] = enqueue_failure(plan, 'zapi', 'zapi_erro', str(zapi_resp), payload)
-                    else:
-                        plan.responses['zapi'] = [{'skipped': True, 'reason': 'sem_telefone_ou_campos_pipefy'}]
-                except Exception as e:
-                    # WhatsApp nunca pode derrubar a baixa; registra no output e segue.
-                    plan.responses['zapi'] = [{'ok': False, 'status': 0, 'error': str(e)}]
-                    plan.responses['fila_zapi'] = enqueue_failure(plan, 'zapi', 'zapi_exception', str(e), payload)
-                    plan.whatsapp_messages = []
-
-        # Pipefy e Z-API são executados por plano acima, para manter o output correto.
+    # ── Executa os planos em produção, EM FASES ───────────────────────────────
+    #
+    # ⚠️ FASES, E NÃO UM COMPROVANTE POR VEZ — pedido do dono em 17/11/2026:
+    #
+    #   *"é uma série de tarefas repetidas, né? (…) processar todos os PDFs
+    #   primeiro, identificar primeiro cada SP, depois buscar na planilha,
+    #   depois lançar um único comando para atualizar a planilha (…) um único
+    #   comando pra atualizar o pipefy, fazendo uma mutation e atualizar vários
+    #   cards ao mesmo tempo."*
+    #
+    # Antes, cada comprovante percorria sozinho o caminho inteiro: Omie,
+    # planilha (três idas ao Google), card do Pipefy (uma ida), WhatsApp. Trinta
+    # comprovantes eram trinta vezes isso, uma espera atrás da outra.
+    fases = _executar_em_fases(
+        plans, card_data, payload, gc,
+        executar_omie=executar_omie, atualizar_spsbd=atualizar_spsbd,
+        atualizar_pipefy=atualizar_pipefy, enviar_whatsapp=enviar_whatsapp,
+    ) if not modo_teste else {}
 
     # ── Monta output de modo_teste (preview de tudo que seria feito) ───────────
     resultado = {
@@ -446,6 +552,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             'baixas_concluidas': len(completados),
             'google_error': google_error,
         },
+        'fases': fases,
         'recusados': recusados,
         'duplicados': duplicados,
         'completados': completados,
@@ -463,6 +570,16 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     # resposta: a baixa já aconteceu, o aviso é sobre o que ficou de fora.
     if not modo_teste:
         resultado['aviso'] = enviar_aviso(resultado, payload)
+
+    # O relatório do lote inteiro, no Telegram. Ele é a resposta que ANTES ia
+    # para o Make — e que o dono pediu, em 17/11/2026, para receber no Telegram,
+    # já que o Make deixou de esperar: *"manda no Telegram o que você
+    # encaminharia no Make."* Nunca derruba a baixa, que já aconteceu.
+    if not modo_teste:
+        try:
+            resultado['relatorio'] = enviar_relatorio(resultado, payload)
+        except Exception as e:
+            resultado['relatorio'] = {'ok': False, 'erro': str(e)[:200]}
 
     return resultado
 
@@ -814,6 +931,287 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
 LIMITES_LOTE = {'omie': 3, 'sheets': 3, 'pipefy': 2, 'zapi': 2}
 
 
+def _executar_em_fases(plans: List[ExecutionPlan], card_data: dict, payload: dict, gc,
+                       *, executar_omie: bool, atualizar_spsbd: bool,
+                       atualizar_pipefy: bool, enviar_whatsapp: bool) -> Dict[str, Any]:
+    """Executa o lote por etapa, agrupando o que o sistema do outro lado aceita.
+
+    A ORDEM É A MESMA DE SEMPRE, e isso não é detalhe: o Omie manda na planilha
+    e no card. Só muda que agora cada etapa trata o lote inteiro de uma vez, em
+    vez de o lote inteiro passar pelas quatro etapas um comprovante por vez.
+
+    O que dá para agrupar e o que não dá:
+
+    · **Omie — NÃO dá.** A API de contas a pagar baixa um título por chamada.
+      Fica um de cada vez, e é o que sobra de demora. (As chamadas também não
+      são disparadas em paralelo de propósito: o Omie limita pedidos por
+      segundo por chave, e uma recusa dele é o único ponto desta rotina onde o
+      engano custa dinheiro.)
+    · **Impressões digitais — dá.** Uma gravação para todas.
+    · **Planilha — dá.** Três idas ao Google para o lote inteiro.
+    · **Pipefy — dá.** Uma mutation para vários cards.
+    · **WhatsApp — fica por plano**, porque é mensagem para pessoas diferentes.
+    """
+    executaveis = [p for p in plans if p.pode_executar]
+    saida: Dict[str, Any] = {
+        'executaveis': len(executaveis), 'omie_confirmados': 0,
+        'planilha': {}, 'pipefy': {}, 'impressoes': {},
+    }
+    if not executaveis:
+        return saida
+
+    for plan in executaveis:
+        card_info = card_data.get(str(plan.match.id)) if plan.match.id else None
+        if card_info:
+            plan.responses['pipefy_card_info'] = card_info
+
+    # ── Fase 1: Omie, um título por chamada ───────────────────────────────────
+    confirmados: List[ExecutionPlan] = []
+    para_registrar: List[tuple] = []
+
+    for plan in executaveis:
+        if plan.omie_requests and executar_omie:
+            plan.responses['omie'] = _executar_sequencia_omie(plan, payload)
+
+        _omie_ok = any(
+            s.get('step') == 'baixar' and s.get('response', {}).get('ok')
+            for s in (plan.responses.get('omie') or [])
+        )
+        _omie_ja_pago = getattr(plan, '_omie_ja_pago', False)
+        if (_omie_ok or _omie_ja_pago) and gc:
+            para_registrar.append((
+                plan.receipt.fingerprint,
+                plan.match.id if plan.match else '',
+                plan.receipt.valor_pago,
+                plan.receipt.data_pagamento,
+                plan.receipt.filename,
+            ))
+
+        # ⚠️ O OMIE MANDA NA PLANILHA E NO CARD — 16/09/2026.
+        #
+        # Cobrança do dono em 14/09: *"baixam na planilha, mas não baixam no
+        # Omie. Não tem sentido. (…) Se eu estou mandando pra baixar é pra
+        # baixar, tem que baixar as duas coisas."*
+        #
+        # A planilha e o card eram marcados como pagos INDEPENDENTE do que o
+        # Omie tivesse respondido. Quando o Omie recusava, a SP ficava "paga"
+        # em dois lugares e em aberto no terceiro — e ninguém descobria, porque
+        # a tela dizia que tinha dado certo.
+        #
+        # Agora: se a baixa no Omie era para acontecer e NÃO se confirmou, não
+        # se marca nada. É melhor a SP continuar aparecendo como a pagar (e
+        # alguém refazer) do que sumir da fila sem ter sido paga no sistema que
+        # a contabilidade lê.
+        #
+        # "Já estava paga no Omie" conta como confirmação: nesse caso a planilha
+        # e o card É QUE estão atrasados, e é para atualizá-los que isto existe.
+        devia_baixar = bool(plan.omie_requests and executar_omie)
+        omie_confirmou = bool(_omie_ok or _omie_ja_pago)
+        if devia_baixar and not omie_confirmou:
+            plan.responses['nao_marcou'] = (
+                'A planilha e o card NÃO foram marcados: o Omie não '
+                'confirmou a baixa. Resolva no Omie e reenvie o '
+                'comprovante — ele não baixa duas vezes.')
+            continue
+
+        confirmados.append(plan)
+
+    saida['omie_confirmados'] = len(confirmados)
+
+    # ── Fase 2: impressões digitais, UMA gravação ─────────────────────────────
+    #
+    # Em segundo plano como sempre foi: ela protege contra baixa repetida num
+    # lote FUTURO, e segurar a resposta por ela não traz nada.
+    if para_registrar and gc:
+        saida['impressoes'] = {'enviadas': len(para_registrar)}
+        _registrar_impressoes_em_segundo_plano(gc, list(para_registrar))
+
+    # ── Fase 3: planilha, UMA gravação para o lote ────────────────────────────
+    if atualizar_spsbd:
+        alvos = [p for p in confirmados if p.sheets_updates]
+        if alvos:
+            saida['planilha'] = _gravar_planilha_em_lote(alvos, payload)
+
+    # ── Fase 4: Pipefy, uma mutation para vários cards ────────────────────────
+    if atualizar_pipefy:
+        alvos = [p for p in confirmados if plan_tem_card(p)]
+        if alvos:
+            saida['pipefy'] = _atualizar_cards_em_lote(alvos, card_data, payload)
+
+    # ── Fase 5: WhatsApp, por destinatário ────────────────────────────────────
+    if enviar_whatsapp:
+        for plan in confirmados:
+            try:
+                plan.whatsapp_messages = build_whatsapp_messages(plan, payload)
+                if plan.whatsapp_messages:
+                    zapi_resp = _executar_zapi(plan.whatsapp_messages, payload)
+                    plan.responses['zapi'] = zapi_resp
+                    if any(not r.get('ok') for r in zapi_resp):
+                        plan.responses['fila_zapi'] = enqueue_failure(
+                            plan, 'zapi', 'zapi_erro', str(zapi_resp), payload)
+                else:
+                    plan.responses['zapi'] = [{'skipped': True, 'reason': 'sem_telefone_ou_campos_pipefy'}]
+            except Exception as e:
+                # WhatsApp nunca pode derrubar a baixa; registra no output e segue.
+                plan.responses['zapi'] = [{'ok': False, 'status': 0, 'error': str(e)}]
+                plan.responses['fila_zapi'] = enqueue_failure(plan, 'zapi', 'zapi_exception', str(e), payload)
+                plan.whatsapp_messages = []
+
+    return saida
+
+
+def plan_tem_card(plan: ExecutionPlan) -> bool:
+    return bool(plan.match and plan.match.id)
+
+
+def _registrar_impressoes_em_segundo_plano(gc, linhas: List[tuple]) -> None:
+    def _rodar():
+        try:
+            registrar_fingerprints(gc, linhas)
+        except Exception:
+            pass
+    threading.Thread(target=_rodar, daemon=True).start()
+
+
+def _gravar_planilha_em_lote(plans: List[ExecutionPlan], payload: dict) -> Dict[str, Any]:
+    """Grava a SPsBD de TODOS os comprovantes confirmados numa conversa só.
+
+    Mantém o que importa do caminho antigo: a gravação é CONFERIDA e acontece
+    antes de a resposta sair, e o comprovante que não gravou vai para a fila —
+    só ele, não o lote inteiro.
+    """
+    mapa: List[ExecutionPlan] = []
+    updates: List[dict] = []
+    for plan in plans:
+        for upd in plan.sheets_updates:
+            mapa.append(plan)
+            updates.append(upd)
+
+    if not updates:
+        return {'ok': True, 'gravados': 0}
+
+    def _rodar(lista):
+        try:
+            return execute_spsbd_updates(lista)
+        except Exception as e:
+            return {'ok': False, 'gravados': 0, 'erros': [str(e)[:200]],
+                    'por_update': [{'ok': False, 'erro': str(e)[:200]} for _ in lista]}
+
+    resultado = _rodar(updates)
+    por_update = list(resultado.get('por_update') or
+                      [{'ok': False, 'erro': 'sem detalhe'} for _ in updates])
+    por_update += [{'ok': False, 'erro': 'sem detalhe'}] * (len(updates) - len(por_update))
+
+    # Segunda tentativa só para o que faltou. Quase sempre é cota do Google,
+    # que é por minuto — esperar dois segundos resolve a resposta parcial.
+    faltando = [i for i, r in enumerate(por_update) if not r.get('ok')]
+    if faltando:
+        time.sleep(2)
+        segunda = _rodar([updates[i] for i in faltando])
+        detalhe = segunda.get('por_update') or []
+        for pos, i in enumerate(faltando):
+            if pos < len(detalhe):
+                por_update[i] = detalhe[pos]
+
+    por_plano: Dict[int, List[dict]] = {}
+    for i, plan in enumerate(mapa):
+        por_plano.setdefault(id(plan), []).append(por_update[i])
+
+    gravados = 0
+    for plan in plans:
+        detalhes = por_plano.get(id(plan)) or []
+        ok = bool(detalhes) and all(d.get('ok') for d in detalhes)
+        plan.responses['sheets'] = {
+            'ok': ok,
+            'gravados': sum(1 for d in detalhes if d.get('ok')),
+            'erros': [d.get('erro') for d in detalhes if not d.get('ok') and d.get('erro')],
+            'em_lote': True,
+            'tentativas': 2 if faltando else 1,
+        }
+        if ok:
+            gravados += 1
+            continue
+        try:
+            plan.responses['fila_sheets'] = enqueue_failure(
+                plan, 'sheets', 'sheets_erro', str(detalhes), payload)
+        except Exception as e:
+            plan.responses['fila_sheets'] = {'ok': False, 'erro': str(e)[:200]}
+
+    return {'ok': gravados == len(plans), 'gravados': gravados,
+            'comprovantes': len(plans), 'chamadas_poupadas': max(0, 3 * len(plans) - 3)}
+
+
+def _atualizar_cards_em_lote(plans: List[ExecutionPlan], card_data: dict,
+                             payload: dict) -> Dict[str, Any]:
+    """Atualiza vários cards do Pipefy por mutation.
+
+    O tamanho do pedaço é modesto de propósito: cada card já gasta cerca de dez
+    apelidos dentro da mutation, e documento grande demais o Pipefy recusa
+    inteiro. Ajustável por BAIXABRADESCO_PIPEFY_LOTE.
+    """
+    try:
+        tamanho = int(os.getenv('BAIXABRADESCO_PIPEFY_LOTE', '') or 5)
+    except Exception:
+        tamanho = 5
+    tamanho = max(1, tamanho)
+
+    atualizados = 0
+    recusados = 0
+    chamadas = 0
+
+    for inicio in range(0, len(plans), tamanho):
+        pedaco = plans[inicio:inicio + tamanho]
+        itens = [(p, card_data.get(str(p.match.id))) for p in pedaco]
+        try:
+            texto, mapa = build_update_cards_mutation(itens)
+        except Exception as e:
+            texto, mapa = '', {}
+            for p in pedaco:
+                p.responses['pipefy'] = [{'ok': False, 'error': str(e)}]
+        if not texto:
+            for p in pedaco:
+                recusados += 1
+                _enfileirar_pipefy(p, 'pipefy_sem_mutation', 'mutation vazia', payload)
+            continue
+
+        try:
+            resposta = execute_graphql(texto)
+        except Exception as e:
+            resposta = {'ok': False, 'status': 0, 'body': {}, 'error': str(e)}
+        chamadas += 1
+
+        ruins = cards_recusados(resposta, mapa)
+        for idx, plan in enumerate(pedaco):
+            if idx in ruins:
+                recusados += 1
+                plan.responses['pipefy'] = [{'ok': False, 'em_lote': True,
+                                             'status': resposta.get('status'),
+                                             'erro': str(resposta.get('body') or
+                                                         resposta.get('error'))[:300]}]
+                _enfileirar_pipefy(plan, 'pipefy_erro', str(resposta)[:300], payload)
+            else:
+                atualizados += 1
+                plan.responses['pipefy'] = [{'ok': True, 'em_lote': True,
+                                             'status': resposta.get('status')}]
+
+    return {'ok': recusados == 0, 'atualizados': atualizados,
+            'recusados': recusados, 'chamadas': chamadas,
+            'chamadas_poupadas': max(0, len(plans) - chamadas)}
+
+
+def _enfileirar_pipefy(plan: ExecutionPlan, tipo: str, mensagem: str, payload: dict) -> None:
+    """A fila reprocessa UM card por vez, e para isso precisa da mutation dele."""
+    try:
+        plan.pipefy_update_mutation = build_update_card_mutation(
+            plan, plan.responses.get('pipefy_card_info'))
+    except Exception:
+        plan.pipefy_update_mutation = ''
+    try:
+        plan.responses['fila_pipefy'] = enqueue_failure(plan, 'pipefy', tipo, mensagem, payload)
+    except Exception as e:
+        plan.responses['fila_pipefy'] = {'ok': False, 'erro': str(e)[:200]}
+
+
 def _drenar_fila(payload: dict, limites: dict | None = None) -> dict:
     """Reprocessa algumas pendências da fila, junto com o lote.
 
@@ -836,52 +1234,6 @@ def _drenar_fila(payload: dict, limites: dict | None = None) -> dict:
         return drenar_por_etapa(limites or LIMITES_LOTE, payload)
     except Exception as e:
         return {'ok': False, 'erro': str(e)[:200]}
-
-
-def _gravar_planilha(plan: ExecutionPlan, payload: dict) -> dict:
-    """Grava na SPsBD, confere, e só então deixa a resposta sair.
-
-    ⚠️ Isto era um "manda e esquece" numa thread de fundo, e era a causa da
-    não-atualização silenciosa que o dono via com frequência. Três coisas
-    conspiravam:
-
-    1. A resposta ao Make saía ANTES de a gravação terminar. O gunicorn recicla
-       o trabalhador a cada mil pedidos e o serviço reinicia a cada publicação —
-       nos dois casos a thread morria no meio, sem erro em lugar nenhum.
-    2. O resultado da gravação era escrito no plano DEPOIS de a resposta já ter
-       sido montada: quem lia o retorno nunca via o que aconteceu.
-    3. Ninguém conferia se a célula ficou com o valor.
-
-    O custo é ~1 segundo por comprovante na resposta. O limite do Make é 300
-    segundos, e baixa errada custa mais do que um segundo.
-    """
-    tentativas = []
-    for tentativa in (1, 2):
-        try:
-            resultado = execute_spsbd_updates(plan.sheets_updates)
-        except Exception as e:
-            resultado = {'ok': False, 'gravados': 0, 'erros': [str(e)[:200]]}
-        tentativas.append(resultado)
-        if resultado.get('ok'):
-            break
-        if tentativa == 1:
-            # Quase sempre é cota do Google (429), que é por minuto. Uma segunda
-            # tentativa imediata resolve o caso de resposta parcial; cota mesmo
-            # cai na fila logo abaixo.
-            time.sleep(2)
-
-    final = tentativas[-1]
-    final['tentativas'] = len(tentativas)
-    plan.responses['sheets'] = final
-
-    if not final.get('ok'):
-        try:
-            plan.responses['fila_sheets'] = enqueue_failure(
-                plan, 'sheets', 'sheets_erro', str(tentativas), payload)
-        except Exception as e:
-            plan.responses['fila_sheets'] = {'ok': False, 'erro': str(e)[:200]}
-
-    return final
 
 
 def _executar_pipefy_batch(mutations: List[str]) -> List[dict]:

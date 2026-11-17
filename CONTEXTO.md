@@ -802,6 +802,136 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 17/11/2026 — A chamada do Make não espera mais a baixa; e "questionar visando a otimização" virou regra (atravessa áreas)
+
+**A parte do BaixaBradesco** (detalhe em `app/apps/baixabradesco/HISTORICO.md`):
+o módulo HTTP do Make dava "This module timed out" o tempo todo, e o "break" do
+cenário **remandava o lote inteiro** — duas execuções do mesmo arquivo lado a
+lado, ocupando duas das quatro linhas de atendimento (registros do Render de
+16/11: 162 s, 194 s, 246 s, 460 s, 522 s, 602 s na mesma rota). Decisão do dono:
+*"no Make eu não preciso de resposta para cada baixa. O cenário manda e
+acabou-se."* Agora `POST /api/baixabradesco/executar` responde na hora, o lote é
+gravado em disco antes da resposta (garantia de que a baixa acontece), lote
+repetido é recusado na porta, e o relatório por comprovante vai para o
+**Telegram**. A execução virou por fase: planilha e Pipefy agrupam o lote
+inteiro; o Omie não, porque a API baixa um título por chamada.
+
+⚠️ **Só a ROTA responde assim.** Quem chama `processar_baixabradesco` por dentro
+do serviço — `analisesps/comprovantes.py` e a fila de adiados — continua
+recebendo o resultado completo, porque as duas dependem dele. O parâmetro é
+`em_segundo_plano`, e o padrão é **não**.
+
+**A parte que atravessa tudo:** o dono pediu *"não deixe de me questionar
+visando a otimização"*, depois de apontar que a ineficiência estava escrita no
+próprio código havia meses. A regra entrou no `CLAUDE.md`: contar o custo da
+operação (chamadas de rede, leituras de planilha, por item e por lote) antes de
+mexer numa área, e **relatar** o que a conta mostrar — mesmo sem mexer. Não
+fazer sem pedir continua valendo; não FALAR sem ser perguntado nunca foi regra.
+
+### 16/11/2026 — DECIDIDO: O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA (atravessa áreas: Ponto, ERP e Análise de SPs)
+
+**Ainda NÃO foi feito.** Fica registrado porque é decisão tomada, com condição
+escrita, e quem pegar qualquer uma das três áreas precisa saber que ela existe.
+
+Ele, depois de descobrir que o cargo que o ponto mostra pode vir de uma
+terceira lista: *"assim que eu conseguir importar tudo do pipefy e das fichas,
+quero cortar o vínculo com a planilha."*
+
+**O QUE É O VÍNCULO.** O ponto usa como base o **Registro de Colaboradores** —
+a cópia da planilha do Análise de SPs (`analisesps.colaborador`) — e não o
+cadastro do ERP. Quando a pessoa está lá, a planilha MANDA em: nome, celular
+(o WhatsApp do PIN e do QR), **cargo**, obra, admissão, data de saída, a
+situação (ativo/afastado/desligado, lida da "Fase Atual" do Pipefy) e **quem
+não bate ponto** (PJ e pró-labore pelo tipo de contrato, mais a obra ESCRUSSAS).
+
+**CORTAR O VÍNCULO É UM CAMPO DE ESCOLHA, JÁ CONSTRUÍDO**, na Configuração do
+ponto: *"Base que o ponto usa"* → **ERP** em vez de Registro
+(`registro.gravar_fonte`, parâmetro `pessoas.fonte`). Não precisa de código.
+
+⚠️ **O QUE PRECISA SER VERDADE ANTES, e é aqui que mora o risco.** Virando a
+chave, tudo o que a planilha preenchia passa a sair do cadastro do ERP. Para
+cada pessoa que bate ponto o ERP precisa ter:
+
+| O que | Quem preenche hoje |
+|---|---|
+| nome, CPF, obra | já vem |
+| telefone | a importação do Pipefy. ⚠️ **NÃO é impeditivo para bater ponto** — ver a correção abaixo |
+| **cargo** | a importação do Pipefy, desde 16/11 (só quando o nome casa) |
+| admissão | Pipefy e ficha do Fortes |
+| **situação** (ativo / afastado / desligado) | ⚠️ **NINGUÉM.** A planilha lê da "Fase Atual" do Pipefy; o ERP tem `colaboradores.situacao` e a importação não a preenche |
+| **quem não bate ponto** (PJ, pró-labore, obra ESCRUSSAS) | ✔ **RESOLVIDO em 16/11/2026** — ver abaixo |
+
+#### ⚠️ CORREÇÃO: O TELEFONE NÃO IMPEDE NINGUÉM DE BATER PONTO
+
+Eu havia escrito que quem ficasse sem telefone não bateria. **Está errado**, e
+ele corrigiu no mesmo dia:
+
+> *"Uma coisa é não ter telefone, outra coisa é não conseguir acessar. Então
+> não é para ser impeditivo o telefone. É impeditivo para ele verificar o
+> ponto dele. Mas outro colaborador vai conseguir bater o ponto. Ele não vai
+> conseguir bater o ponto próprio, se ele for liberado para isso, que é
+> minoria."*
+
+Quem bate ponto é a obra, no aparelho da obra. O telefone serve para **a
+pessoa conferir o ponto dela** e para bater pelo próprio celular — que é
+permissão dada a poucos. Sem telefone, a pessoa bate normalmente; ela só não
+acompanha sozinha.
+
+**O que decide quem não bate ponto é o TIPO DE CONTRATO**, e nada mais.
+
+#### ✔ A REGRA DE QUEM NÃO BATE, ditada por ele e já implementada
+
+> *"Quando é prestador de serviço, quem é que bate ponto? É o autônomo RPA e o
+> autônomo mensalista. Os demais não batem ponto (…) PJ não bate ponto,
+> pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz bate
+> ponto."*
+
+Os nove tipos do cadastro:
+
+| Batem ponto | Não batem |
+|---|---|
+| CLT (determinado e indeterminado), Temporário, Autônomo RPA, Autônomo mensalista, Jovem aprendiz, Estágio | **PJ, Pró-labore** |
+
+Mais a obra **ESCRUSSAS**, que não bate ponto seja qual for o contrato, como
+já era pela planilha. A **exceção marcada pelo DP** (migração 025) continua
+passando por cima de tudo isso.
+
+Implementado em `ponto/core/cadastros.py` (`TIPOS_CONTRATO_SEM_PONTO`), com
+teste em `tests/test_ponto_nao_bate_pelo_contrato_banco.py`. **Antes disto,
+usando o cadastro do ERP como base, NINGUÉM ficava de fora** — PJ e pró-labore
+passariam a bater ponto no dia da virada, e ponto de PJ é o registro que não
+se quer ter, porque parece vínculo de emprego.
+
+#### ✔ A SITUAÇÃO TAMBÉM FOI RESOLVIDA, no mesmo dia
+
+Era o último buraco. A **fase do card do Pipefy** passou a virar, na
+importação, a **etapa** do cadastro E a **situação** da pessoa:
+
+| Fase no Pipefy | Etapa | Situação |
+|---|---|---|
+| Colaboradores Afastados | Afastado | AFASTADO |
+| Colaboradores Desligados | Desligado | DESLIGADO |
+| Cadastro Cancelado | Cancelado | DESLIGADO |
+| Cadastros Adicionais | Conferência | ATIVO |
+| Cadastro Concluído | Concluído | ATIVO |
+| Cadastro Inicial | Inicial | ATIVO |
+
+Fase não reconhecida não mexe em nada e é relatada. **Com isto, tudo o que a
+planilha preenchia passa a existir no cadastro do ERP** — falta só rodar as
+importações.
+
+**A ordem certa, quando chegar a hora:** (1) terminar as importações; (2)
+conferir na Configuração do ponto os números que já existem ali — "Faltam no
+ERP", "Estão só no ERP", "Sem obra reconhecida" —, todos em zero; (3) conferir
+por amostragem que a situação das pessoas ficou certa; (4) só então virar a
+chave. **Virar
+com gente sem obra reconhecida ou com a situação errada é o que derruba a
+batida**, e isso aparece na manhã seguinte, com gente parada no portão.
+
+---
+
+---
+
 ### 16/11/2026 — `scripts/testes.sh -q` rodava a suíte SEM paralelismo (atravessa áreas)
 
 O dono, esperando uma publicação: *"JESUS, é tempo demais (…) precisamos otimizar
@@ -1441,6 +1571,75 @@ tocado** — é outra área, e mudar a identidade lá muda o que o ERP já gravo
 chat do ERP precisa decidir se a importação de extrato dele
 (`core/pagamentos/service.py`) sofre do mesmo problema com o Bradesco e, se
 sim, aplicar a mesma regra com uma refeitura das identidades já gravadas.
+
+### 17/11/2026 — PARA QUE o ERP existe: substituir planilha, Pipefy e OMIE
+
+Ele disse isto duas vezes no mesmo dia, a segunda depois de eu tratar o Pipefy
+como opção viva:
+
+> *"Não vai ter Pipefy mais. Preciso dizer de novo?"*
+
+> *"O ERP vai substituir planilha e Pipefy e Omie."*
+
+**Está registrado aqui, e não só no histórico do ERP, porque muda o desenho de
+TODAS as áreas** — e porque chat novo não lembra de conversa, só do que está
+escrito. O detalhe prático está no `CLAUDE.md`, na seção de mesmo nome.
+
+**O que vira o quê:**
+
+| Sai | Quem assume |
+|---|---|
+| Pipefy (cadastro de colaboradores, SPs, fluxos do DP) | ERP |
+| Planilhas (Registro de Colaboradores, C. Diários, SPsBD) | ERP |
+| OMIE (títulos, contas a pagar e a receber) | ERP |
+
+**A consequência para quem for mexer em qualquer área:** importação de
+Pipefy, de planilha e do OMIE é **ferramenta de mudança, não de operação** —
+serve para trazer o que já existe, e não se desenha funcionalidade
+dependendo dela para sempre. Integração de IDA (o ERP escrevendo em OMIE ou
+em planilha) é caminho que vai morrer: antes de criar mais uma, perguntar se
+não é o ERP que deveria ser a fonte.
+
+⚠️ **E isto NÃO autoriza desligar nem apagar nada.** Os três estão em
+produção e a empresa depende deles hoje; a ordem e o momento de cada
+desligamento são decisão dele.
+
+---
+
+### 17/11/2026 — a suíte caiu de ~8 min para ~5 min, e o gargalo era UM arquivo
+
+**Segunda cobrança dele sobre o mesmo assunto** (16/11/2026): *"eu havia
+comentado da demora dos testes (…) precisa otimizar eles."* A primeira foi em
+29/09, logo abaixo nesta lista — e o conserto de lá continua valendo. O que
+apareceu agora é outro gargalo, criado depois.
+
+**Onde estava:** a homologação por perfil (`tests/test_homologacao*_banco.py`)
+tinha crescido para **1.659 casos num arquivo só**. A suíte roda com
+`--dist loadfile`, que mantém os testes de um mesmo arquivo no MESMO
+trabalhador — de propósito, para as fixtures de sessão não serem refeitas. O
+efeito colateral: um processo trabalhava 8 minutos sozinho enquanto os outros
+três ficavam ociosos. O arquivo ERA a suíte.
+
+**Dois consertos, nenhum deles afrouxando regra:**
+
+1. **Dividido em quatro arquivos** — leituras, telas, escritas e o roteiro — com
+   o que é comum em `tests/homologacao.py`, que **não** é arquivo de teste (não
+   começa com `test_`), é a peça que os quatro leem. Agora o paralelismo os
+   alcança. Os mesmos casos continuam sendo conferidos, contra o mesmo Postgres.
+2. **A senha de teste passou a ser embaralhada uma vez**, não uma por caso: eram
+   1.659 × 63 ms para produzir sempre o MESMO texto. Embaralhar senha é caro de
+   propósito — é o que torna inviável adivinhar senha por tentativa —, e em
+   produção esse custo é a proteção. Nestes testes é desperdício puro: nenhum
+   deles faz login por senha; todos entram pela sessão.
+
+**Medido:** 11.500 testes, de ~491 s para **306 s** com quatro trabalhadores.
+
+**A armadilha, para quem vier depois:** com `--dist loadfile`, um arquivo de
+teste gigante é um gargalo invisível — a suíte "demora" sem que nenhum teste
+individual seja lento. Se a demora voltar, o primeiro lugar a olhar é
+`--durations=20`, procurando um ARQUIVO que concentra casos, não um teste caro.
+
+---
 
 ### 29/09/2026 — a suíte de testes, de inviável a um comando
 

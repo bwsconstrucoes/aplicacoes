@@ -21,6 +21,632 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — DECIDIDO: AS OITO ETAPAS FICAM, porque o Pipefy sai
+
+Ele perguntou se duas delas eram necessárias — *"Precisa dessas abaixo?
+Contrato a assinar / Na contabilidade"* — e, logo depois, respondeu a própria
+pergunta sem saber: *"Não vai ter Pipefy mais."*
+
+**Com o Pipefy saindo, as duas ficam, e a razão é só uma:** elas são os dois
+lugares onde um cadastro espera ALGUÉM DE FORA — a assinatura do PJ e o
+eSocial na contabilidade. Se o ERP não as tiver, "Conferência concluída" passa
+a ter um destino só, e o DP perde a diferença entre "falta a assinatura do PJ"
+e "nada pendente". Essa diferença hoje mora no quadro do Pipefy; quando ele
+for desligado, não mora em lugar nenhum.
+
+**O que é importante saber:** nenhuma fase da planilha cai nessas duas. As
+sete fases de lá são Inicial, Solicitações DP, Cadastros Adicionais,
+Concluído, Afastados, Desligados e Cancelado. As duas só se enchem quando o DP
+aperta **"Conferência concluída"** dentro do ERP — e aí o destino é escolhido
+pela REGRA, pelo vínculo (prestador → concluído, PJ → contrato a assinar,
+CTPS → contabilidade), nunca à mão.
+
+**Pendente de verdade, e é o que falta para a fila do DP virar cobrança:**
+"quanto tempo este cadastro está parado nesta etapa?" O histórico de etapas
+guarda a data de cada mudança, mas não há tela nem consulta que mostre "parado
+há N dias". Registrado em `PERGUNTAS.md`.
+
+---
+
+### ⚑ 17/11/2026 — A IMPORTAÇÃO DA PLANILHA: SEIS DEFEITOS NUMA TARDE
+
+> *"Veja como é frustrante. Olha quanto tempo tá sendo tomado para uma simples
+> importação de dados."*
+
+Ele tem razão, e o registro aqui é para a próxima sessão não repetir o padrão:
+**eu entreguei a importação seis vezes como "pronta", e ele a testou seis
+vezes achando defeito.** Cada rodada custou horas dele. O que todos os seis
+defeitos têm em comum está no fim desta seção.
+
+**O que estava errado, na ordem em que ele achou:**
+
+| O que ficava vazio | A causa de verdade |
+|---|---|
+| Razão social e CNPJ do PJ | nunca foram mapeados — as colunas chamam-se "Nome Credor" e "Pix CNPJ", nomes que não dizem o que guardam |
+| Empresa de registro | eu casava por NOME. A planilha diz "00.079.526/0001-09 - BWS", o ERP diz "BWS CONSTRUÇÕES - 00.079.526/0001-09". Mesma empresa, textos que nunca iam bater |
+| Contrato de experiência | a planilha escreve "45 dias, prorrogável por mais 45 dias"; a caixinha do ERP só tem "45+45 dias". O texto entrava cru e a ficha mostrava o campo VAZIO com o dado gravado por baixo |
+| Etapa (a fase do Pipefy) | a correlação existia e estava certa — **ligada só na importação pelo Pipefy**. A da planilha, que virou o caminho principal, lia "Fase Atual" apenas para decidir a data de saída |
+| Nº, série, UF e emissão da CTPS | **"Nº" e "N°"**. O ordinal masculino e o sinal de grau são indistinguíveis na tela e eram letras diferentes para o código: "Nº CTPS" virava `NOCTPS`, "N° CTPS" virava `NCTPS`. Cabeçalho redigitado por alguém fazia a coluna desaparecer sem erro nenhum |
+| 38 pessoas recusadas | PIS com dígito errado derrubava o cadastro INTEIRO — 50 campos de fora por causa de um número de onze dígitos. Ele: *"importa sem o PIS e deixa como pendência"* |
+
+**Mais duas coisas que ele achou na tela, e não na importação:**
+
+- **Não havia como mudar a etapa de ninguém.** A regra de para onde dá para ir
+  existia desde 05/11 e a tela não a conhecia — a etapa era um rótulo que
+  ninguém conseguia mexer. Ele: *"Como mudo uma pessoa de fase/etapa?"* e, em
+  seguida, o que importa: *"as fases do Pipefy é para o DP saber o que fazer;
+  aqui ele fica perdido."* Agora a etapa é botão, oferece só os caminhos
+  legais, pede o motivo (vai para o histórico), e o cadastro em conferência
+  tem o botão **"Conferência concluída"** — o destino é escolhido pela REGRA,
+  pelo vínculo, porque no Pipefy deixar escolher à mão fazia prestador cair na
+  fila da contabilidade esperando um e-mail que nunca saía.
+- **25 pessoas com etapa "Concluído" e situação "Desligado".** Ele: *"Tá
+  errado."* Estava. Etapa e situação são campos independentes de propósito
+  (etapa = o que falta FAZER; situação = a pessoa está na empresa?), e cada
+  importação mexia num sem olhar o outro. Independentes não quer dizer
+  livres: agora a **situação arrasta a etapa** no `salvar`, e a migração
+  **106** arruma quem já estava assim.
+
+**O que mudou de comportamento, e é decisão dele:**
+
+- **A importação passou a CADASTRAR quem falta** — ele: *"Pq não cadastrou a
+  partir da planilha?"* Só quem a planilha mostra como **ativo**: das 3.667
+  linhas, ~2.960 são desligados, e trazer essa base morta encheria lista de
+  obra, folha e relatório.
+- **Cargo e convenção que faltam são criados** pelo nome (o resto se preenche
+  nas telas deles). **Obra não**: é cadastro pesado, e obra fantasma é pior
+  que código não casado.
+- **"Sem Convenção" quer dizer sem convenção**, e não uma convenção chamada
+  "Sem Convenção".
+- **"Solicitações DP" → Inicial.** Ele apontou que essa fase não tinha par.
+  "Inicial" quer dizer "o DP ainda não olhou", que é a descrição que ele deu
+  dessa fase. Se quiser etapa própria para ela, é migração.
+- **Razão social e CNPJ do PJ só entram para quem é PJ.** As colunas podem
+  estar preenchidas para todo mundo ("credor" é quem recebe), e dar razão
+  social a um CLT faria a ficha afirmar duas coisas que se contradizem.
+
+### ⚑ O QUE OS SEIS DEFEITOS TÊM EM COMUM — leia antes de mexer em importação
+
+**Todos eram silenciosos.** Nenhum deu erro. A importação dizia "atualizada",
+o relatório ficava verde, e o campo ficava vazio. Isso é pior que falhar: ele
+só descobria abrindo ficha por ficha.
+
+**Dois consertos de método, para não haver a sétima rodada:**
+
+1. **O relatório agora lista as COLUNAS DA PLANILHA QUE EU NÃO LEIO.** Campo
+   vazio tem duas causas que de fora são idênticas — a coluna está vazia, ou a
+   coluna existe e eu não a reconheço. Descobrir qual das duas custava uma
+   rodada dele, e custou quatro. Agora está na tela.
+2. **`_cru` trata "º" e "°" como a mesma coisa**, e os nomes de coluna aceitam
+   variações ("Nº CTPS", "Nº da CTPS", "Número da CTPS"). Cabeçalho é texto
+   que gente digita; brigar por um caractere invisível perde a coluna inteira.
+
+**E a lição que vale para a próxima importação de qualquer coisa:** de-para
+escrito de cabeça é palpite. O que prende o palpite é (a) ler a fonte de
+verdade e (b) fazer o relatório dizer o que ele NÃO soube ler. Sem (b), o
+defeito vira trabalho do dono.
+
+---
+
+### ⚑ 17/11/2026 — JOVEM APRENDIZ DERRUBOU A REGRA DE 15/11: CTPS ESCOLHE CONTRATO
+
+> *"Uma coisa que você não percebeu. Se Jovem Aprendiz é CTPS, precisamos
+> poder selecionar o tipo de contrato entre: CLT (tempo indeterminado), CLT
+> (tempo determinado), Jovem Aprendiz."*
+
+**Isto é um conserto de PREMISSA, não de código.** Em 15/11/2026 ele tinha
+mandado FECHAR o campo "tipo de contrato" para quem é CTPS, e o motivo era
+bom: *"CTPS não abre tipo de contrato, porque já é CLT."* Eu fechei, e a
+regra passou duas semanas parecendo certa.
+
+Ela caiu no dia em que a varredura da planilha acusou **9 ativos com "Tipo =
+CTPS" e um contrato que eu classificava como de prestador**. Cinco deles eram
+jovem aprendiz. Ele: *"CTPS e jovem aprendiz na verdade estão corretos, esse é
+o certo. Não tinha previsto esse tipo de contrato formal. Não é CLT mas é
+Jovem aprendiz."* Contrato de aprendizagem é formal, tem carteira assinada, e
+**não é CLT** — então "CTPS ⇒ CLT" era falso, e com ele caiu o fechamento do
+campo.
+
+**O que mudou, em uma frase:** o tipo de contrato agora é **um campo só com
+duas listas** — quem é CTPS escolhe entre CLT (tempo indeterminado), CLT
+(tempo determinado) e jovem aprendiz; quem é prestador escolhe entre PJ,
+autônomo (RPA), autônomo mensalista, estágio e pró-labore.
+
+**Onde vale** (os quatro lugares onde a escolha existe, e por isso os quatro
+foram mexidos — um que ficasse para trás gravaria a contradição de volta):
+
+| Onde | O que mudou |
+|---|---|
+| Ficha do colaborador | o campo volta a aparecer para carteira, com as três opções; trocar de vínculo **apaga** o contrato que não cabe no novo |
+| Readmissão e troca de vínculo | duas caixinhas de mesmo nome, uma por vínculo — só a visível é gravada |
+| Formulário do DP (admissão) | a caixinha abre depois da documentação e mostra a metade certa; **virou obrigatória para CTPS também** |
+| Portal da obra | a mesma coisa, pela mesma regra vinda do servidor |
+
+**O que NÃO mudou, e é o essencial:** continua impossível gravar alguém de
+carteira como "PJ". A separação que existia é a mesma; o que mudou é que o
+lado CTPS deixou de ser vazio e passou a ter três opções próprias.
+
+**Decisão minha, dita aqui porque ele pode querer diferente:** tornei o campo
+**obrigatório também para CTPS** no pedido de admissão. Jovem aprendiz e CLT
+mudam a folha, a guia e o prazo do contrato — deixar em branco empurra a
+dúvida para o DP adivinhar depois, e adivinhar errado só aparece na rescisão.
+Se ele preferir opcional, é uma linha.
+
+**Máquina nova que isto criou:** `opcoes_se` — "a lista deste campo depende da
+resposta daquele". Mora no servidor (`pessoal_solicitacoes.TIPOS`), viaja para
+as duas telas e é aplicada pelas duas. Já existiam `ocultos_se` e
+`visiveis_se` para ESCONDER campo; faltava a de **trocar a lista**, e sem ela
+a única saída seria duplicar o campo — dois campos para uma coluna só, que é
+o jeito de gravar os dois e não saber qual vale.
+
+**Travado por teste:** sete casos novos em `tests/test_dp_solicitacoes.py`
+garantem que nenhum contrato apareça nos dois lados, que toda opção das duas
+listas tenha código no banco, e que o campo não nasça antes da documentação
+ser escolhida.
+
+---
+
+### ⚑ 17/11/2026 — AS INCOERÊNCIAS DA PLANILHA, VARRIDAS E DECIDIDAS COM ELE
+
+> *"Você devia analisar outras situações discrepantes e me questionar."*
+
+Pedido justo, e é o oposto do que eu vinha fazendo: descobrir um problema por
+vez, cada um custando uma rodada dele. Varri as **3.667 linhas** e levei a
+lista. Três decisões saíram daí.
+
+#### 1. "Valor do Mês" manda sobre a diária
+
+Ele, no caso da Amanda: *"vai se sobrepor a informação Valor do Mês (…) ela
+não tem diária mais, é dado antigo."*
+
+| Na planilha | Quantos | Vira |
+|---|---|---|
+| só diária | 3.166 | diarista |
+| só Valor do Mês | 58 | mensalista |
+| **os DOIS** | **53** | **mensalista; a diária NÃO entra** |
+| nenhum | 390 | mensalista |
+
+Os 53 são o caso dela: a diária ficou de quando a pessoa era diarista e
+ninguém apagou. Trazê-la poria valor morto na ficha de quem é pago por mês —
+e é a diária da ficha que a folha usa para pagar dia de fim de semana. Minha
+regra anterior ("quem tem diária é diarista") errava exatamente aí.
+
+#### 2. Data de saída: depende da fase, e as duas pontas são dele
+
+Ele: *"quem está em Solicitações DP pode estar com data de saída — é gente
+que já saiu e o cadastro não foi finalizado, aguardando documentação. E quem
+está com o cadastro concluído NÃO PODE ter data de saída (…) é apagar a data
+de saída e manter ativo."*
+
+| Fase | Com data de saída |
+|---|---|
+| Solicitações DP, Desligados, … | **a data manda: DESLIGADO** |
+| **Cadastro Concluído** (6 pessoas) | **a data NÃO entra, a pessoa fica ATIVA**, e o caso é relatado |
+
+São **31** no primeiro caso: sem a regra, entrariam ATIVAS e continuariam
+batendo ponto e na folha. E **6** no segundo: ali a data é que está errada —
+desligar alguém que está trabalhando tira a pessoa do ponto e da folha, que é
+o erro mais caro dos dois.
+
+#### 3. "Tipo" × "Tipo de Contrato" que se contradizem
+
+Eram **57 linhas** na minha primeira conta: prestador com contrato CLT, ou
+CTPS com RPA/aprendiz.
+
+⚑ **E 12 delas eram acusação minha, não erro dele.** Ele olhou a lista dos 9
+ativos e corrigiu: *"CTPS e jovem aprendiz na verdade estão corretos, esse é
+o certo. Não tinha previsto esse tipo de contrato formal. Não é CLT mas é
+Jovem aprendiz."* **O contrato de aprendizagem é formal, com carteira
+assinada** — casa com "Tipo = CTPS" e não é contradição nenhuma. Sobraram
+**45**, e dessas **41 são de gente desligada** (dado velho). As **4 ativas**
+(CTPS com Autônomo RPA) ele confirmou que estão erradas e vai corrigir.
+
+A lição: eu classifiquei como "erro da planilha" um tipo de contrato que eu
+simplesmente não conhecia. **Antes de chamar um dado de errado, conferir se a
+regra é minha ou do negócio** — a lista de contratos com carteira agora está
+escrita no código, em vez de deduzida por exclusão.
+
+O **"Tipo" manda**, porque é a coluna que a folha já usa para separar quem
+entra nas contas de horas. A contradição é **relatada**, nunca engolida.
+
+#### 4. O PIS do prestador entra
+
+173 prestadores têm PIS de um emprego CLT anterior. Ele: levar — **o PIS é da
+pessoa, não do contrato**.
+
+#### O que a varredura também mostrou, e NÃO vira regra
+
+- **1.614 CTPS sem nº de CTPS** e **623 sem PIS** — é o que a importação da
+  ficha do Fortes existe para tapar.
+- **274 ativos sem centro de custo da contabilidade** — não trava a
+  importação; trava a ficha do Fortes achar a obra da pessoa. ⚠️ Ele avisou
+  que **parte disso é gente que não é CTPS**, e aí é esperado: quem não é
+  registrado não aparece no Fortes.
+- **18 ativos sem salário, sem valor do mês e sem diária.**
+- **5 sem admissão e sem data de início**; **4 com tipo de Pix sem a chave.**
+
+Ficam escritos aqui porque são trabalho de planilha, não de código — e porque
+da próxima vez a pergunta certa é essa lista, não uma pessoa de cada vez.
+
+### ⚑ 17/11/2026 — DUAS PORTAS: DADOS PELA PLANILHA, DOCUMENTOS PELO PIPEFY
+
+> *"Mas por que rodar com o card dela se quero que puxe da planilha?"*
+
+A pergunta expôs um resto de desenho antigo que eu não tinha visto. **O card
+servia para DUAS coisas**: achar a pessoa e baixar os documentos. A planilha
+tem o CPF — ela acha a pessoa sozinha. Exigir o número do card para trazer
+dado que já está na planilha era pedir 575 números para nada.
+
+**Agora são duas portas, na tela de Importar:**
+
+| Porta | O que traz | Precisa de quê |
+|---|---|---|
+| **Cadastro das pessoas (planilha)** | vínculo, pagamento, contrato, cargo, convenção, obra, salário, diária, auxílios, endereço, RG, pai, mãe, nascimento, Pix… | **nada** — casa pelo CPF |
+| **Documentos das pessoas (Pipefy)** | os arquivos anexados ao card | os números dos cards |
+
+**Três travas, e cada uma tem motivo:**
+
+1. **NUNCA cria gente.** Quem está na planilha e não no ERP é contado e
+   listado. Criar cadastro em massa a partir de planilha é o engano que se
+   descobre depois de 3.000 linhas.
+2. **Nome e CPF nunca são trocados** — a identidade da pessoa na folha.
+3. **Gravar só depois de conferir**, e dá para pedir **só alguns CPFs** —
+   é como se começa: duas pessoas, confere a ficha, depois solta o resto.
+
+**O relatório diz tudo o que aconteceu:** quantas pessoas na planilha, quantas
+mudariam, quem não tem cadastro, o que foi recusado, e os valores que eu não
+reconheci — com o que está escrito na planilha e o campo que ficou vazio.
+
+⚑ **E o teste-armadilha `test_nomes_indefinidos` pegou um `import re` que
+faltava na rota nova.** Vale anotar: sem ele, a rota só quebraria quando
+alguém colasse um CPF — e o erro seria "500" sem explicação.
+
+### ⚑ 17/11/2026 — "PARTE DOS DADOS VEM, MAS VÍNCULO E PAGAMENTO CONTINUA EM BRANCO"
+
+A frase dele foi o diagnóstico inteiro, e ela diz duas coisas: a planilha
+ESTAVA sendo lida (parte dos dados vinha) e **dois campos específicos nunca
+entravam**.
+
+#### A causa, e ela é de uma linha
+
+`vinculo` **NUNCA está vazio**: todo cadastro nasce com `"CTPS"`
+(`pessoas.salvar`). E a importação passava tudo pelo filtro "só preenche o que
+está VAZIO aqui". Resultado: o vínculo era considerado "já preenchido" e
+**pulado — em toda importação, para sempre**. `mensalista` (o pagamento) ia
+junto, porque só é deduzido quando há vínculo.
+
+Os outros campos entravam porque estavam mesmo vazios. Daí "parte dos dados
+vem": não era aleatório, era exatamente a regra funcionando contra o objetivo.
+
+#### O conserto
+
+**O que vem da PLANILHA não passa mais pelo filtro.** Ela não é palpite: é o
+cadastro que a empresa mantém, o espelho do card. Ele já tinha dito isso sobre
+o card — *"eu quero que o que vier do pipe preencha o ERP; não adianta eu ter
+que já ter uma base e ter que preencher de novo"* — e a planilha é o espelho
+desse card. O filtro continua valendo para o que vem do CARD e do DOCUMENTO,
+que aí sim podem estar velhos.
+
+#### E a tela passou a mostrar o que está acontecendo
+
+> *"Você precisa me MOSTRAR o que tá acontecendo, como tá fazendo."*
+
+Ele estava certo pela terceira vez no mesmo assunto. A leitura da planilha
+podia falhar INTEIRA — credencial, aba renomeada, planilha movida — e a tela
+não dizia uma palavra: o erro ia para o log do Render, que ele não abre.
+"Não aconteceu nada" e "falhou e eu não te contei" tinham a mesma cara.
+
+Agora o relatório abre com isto, e em vermelho quando falha:
+
+- **quantas pessoas foram lidas da planilha**, de qual aba, quantas colunas;
+- **o erro do Google por extenso**, quando houver;
+- **quem tem card e não está na planilha** (entra só com documento).
+
+⚑ **A regra: silêncio não é resultado.** Três vezes no mesmo dia um valor
+sumiu calado — apelido de campo do Pipefy, valor de coluna da planilha, e
+agora um filtro que pulava. Toda vez o custo caiu nele, em rodadas de
+tentativa. **Quando um dado não entra, a tela tem de dizer que não entrou e
+por quê.**
+
+### ⚑⚑⚑ 16/11/2026 — EU TINHA ACESSO À PLANILHA E NÃO OLHEI
+
+> *"Por que você não consulta a planilha? Você tem acesso:
+> 1fqi4QUOVGUd1_4Gg4vK5qP_IMOSgFaw8DD9MDgmM3vo"*
+>
+> *"Esse erro foi muito infantil seu."*
+
+**Foi.** Três rodadas dele escrevendo o de-para de cabeça, e a planilha estava
+a uma chamada de distância. Abri a aba "Dados Documentos" e duas coisas caíram
+de uma vez:
+
+#### 1. A planilha tem TUDO — eu tinha dito o contrário, duas vezes
+
+Eu havia escrito aqui, com todas as letras, que RG, nome do pai e da mãe,
+sexo, estado civil, escolaridade, naturalidade e endereço **só existiam no
+card do Pipefy**. **Estão todos na planilha**, nas 79 colunas da aba. Ele disse
+isso desde o começo — *"a planilha é espelho do card"* — e eu respondi com uma
+tabela de divisão de trabalho que estava errada.
+
+**Do Pipefy sobra uma coisa só: os DOCUMENTOS (anexos).** Exatamente o que ele
+propôs na primeira vez.
+
+#### 2. Os valores não eram o que eu tinha inventado
+
+| O que eu escrevi | O que a planilha escreve |
+|---|---|
+| "Segunda a Sexta" | **"Segunda à Sexta"** (com crase) |
+| (não previ) | **"Motocicleta"**, **"Diário e Vale Transporte"** |
+| (não previ) | **"Solteiro (a)"**, **"Casado (a)"** — com o "(a)" |
+| (não previ) | **"CLT (tempo Indeterminado)"** — com "I" maiúsculo |
+
+#### O que foi feito, e como fica provado
+
+`core/importadores/planilha_dp.py` foi escrito **com a aba aberta**: cada nome
+de coluna e cada valor das listas saiu da planilha de verdade, com a contagem
+de quantas pessoas usam cada um. Depois de escrito, rodei o de-para contra as
+**3.667 linhas reais**: **54 campos preenchidos e ZERO valores não
+traduzidos**. Antes de entregar, não depois.
+
+`tests/test_planilha_dp.py` tranca cada um desses valores, com a contagem
+anotada ao lado. Quem mexer no de-para sem olhar a planilha cai lá.
+
+⚑ **E A LEITURA É AO VIVO, não da cópia no banco.** A cópia
+(`analisesps.colaborador`) tem **30 das 79 colunas** e fica velha entre uma
+atualização e outra — ele atualizou a planilha, importou, e nada mudou, porque
+a cópia era de antes. Agora a importação lê a aba na hora, uma vez por rodada.
+
+#### A regra, e desta vez com o mecanismo escrito
+
+**Quando existir a fonte, LEIA A FONTE.** Eu tinha a ferramenta do Google
+Drive disponível o tempo todo. Escrever de-para de cabeça é barato e parece
+produtivo; custou três rodadas dele e uma frustração que não precisava existir.
+
+**Antes de entregar qualquer de-para: rodar contra o dado real e mostrar
+quantos valores não traduziram.** Se não dá para rodar contra o real, o
+de-para não está pronto — está adivinhado.
+
+### ⚑⚑ 16/11/2026 — A LIÇÃO MAIS CARA DO DIA: EU LIA OS NOMES DAS COLUNAS E INVENTAVA OS VALORES
+
+> *"Meu Deus do céu, socorro! É só casar informação da planilha vs campo do
+> ERP. Tu não tá conseguindo. Já foram várias tentativas. Tu precisa fazer
+> algo diferente. O que tu precisa de mim? Quer que diga cada coluna pra cada
+> campo?"*
+
+**Ele estava certo, e o erro era sempre o mesmo, em três rodadas seguidas.**
+
+#### O mecanismo, porque entender isto é o que impede a quarta vez
+
+Os **NOMES** das colunas eu li da migração — são verificáveis, e acertei.
+Os **VALORES** que essas colunas guardam eu **inventei**: escrevi que o modo
+de alimentação viria como "Segunda a Quinta" quando a planilha pode dizer
+"Seg a Qui"; que o tipo de contrato viria "Autônomo (RPA)" quando pode vir
+escrito de outro jeito.
+
+**E valor que não bate no de-para não dá erro.** O campo fica vazio e cala.
+Para ele, isso é indistinguível de "o sistema não funciona" — e foram três
+tentativas para descobrir uma coisa que o sistema sabia desde o primeiro
+segundo: o que estava escrito na planilha.
+
+É o MESMO defeito que eu já havia diagnosticado de manhã nos apelidos dos
+campos do Pipefy ("campo cujo apelido eu não acertei não dá erro: entra vazio
+e some") — e repeti à noite, com a planilha, depois de escrever a frase.
+
+#### O conserto: o sistema mostra, ninguém adivinha
+
+O relatório de "Conferir sem gravar" passou a trazer duas coisas:
+
+1. **"Valores da planilha que eu não reconheci"** — pessoa, coluna, o que está
+   ESCRITO lá, e o campo que ficou vazio por causa disso. É a lista que acaba
+   com a adivinhação: basta olhá-la para saber o que corrigir, no de-para ou
+   na planilha.
+2. **A linha CRUA da planilha, coluna por coluna**, por pessoa. Serve para
+   conferir contra a planilha aberta ao lado — e para ver na hora se a cópia
+   está velha (campo cheio lá, vazio aqui ⇒ apertar "Atualizar cadastro" na
+   Análise de SPs).
+
+#### ⚑ A REGRA, para quem vier depois
+
+**Nunca traduza um valor de fonte externa sem um caminho que mostre o que não
+foi traduzido.** Tabela de-para é palpite até que o dado real a confirme; sem
+o relatório, o palpite errado é invisível e o custo cai inteiro no dono, em
+rodadas de tentativa. Nome de coluna se lê na migração; **valor de coluna só
+o dado real diz.**
+
+### ⚑ 16/11/2026 (noite) — A IMPORTAÇÃO PASSA A LER A PLANILHA, E O PIPEFY FICA SÓ COM OS DOCUMENTOS
+
+Ele viu que **vínculo e pagamento não entravam** e foi direto à raiz:
+
+> *"Todos os dados do card estão na planilha na Dados Documentos, ela é
+> espelho do card. Não era mais fácil ler de lá? Trazer do pipefy somente os
+> documentos? Que é o que não está lá."*
+
+**Ele tem razão, e a razão é mais forte que "mais fácil".**
+
+#### Por que vínculo e pagamento sumiram, e por que isso ia se repetir
+
+Ler do card exige **adivinhar o apelido interno de cada campo no Pipefy** —
+`anexo_ctps_rg_cpf_comprovante_de_endere_o`, `phone_t_tulo`, `select_t_tulo`.
+Campo cujo apelido eu não acertei **não dá erro**: entra vazio e some. Vínculo
+e pagamento nunca estiveram no de-para, e ninguém tinha como saber, porque "o
+card não trouxe" e "eu não sei o nome do campo" têm exatamente a mesma cara.
+
+A planilha "Dados Documentos" **já é lida pela Análise de SPs e já vive no
+banco** (`analisesps.colaborador`, 30 colunas, atualizada por botão e de duas
+em duas horas). Os nomes das colunas são palavras que uma pessoa escreve e
+confere. Não precisa de token, não vai à internet e não adivinha nada.
+
+#### A divisão de trabalho, agora
+
+| Vem da **planilha** (manda) | Vem do **card** | Vem da **ficha do Fortes** |
+|---|---|---|
+| vínculo, pagamento (diarista × mensalista), tipo de contrato, cargo, convenção, obra, telefone, valor da diária, auxílios (valor e categoria), nascimento, datas, código do Fortes | **os documentos (anexos)** e a identidade que só ele tem: RG, nome do pai e da mãe, sexo, estado civil, escolaridade, naturalidade, endereço | PIS, CTPS, admissão, salário, demissão |
+
+**Quem não está na planilha entra só com o card**, como antes — o espelho é
+complemento, não condição.
+
+#### Pagamento: a escolha que eu fiz, porque a planilha não tem a coluna
+
+A planilha **não diz "é mensalista"**. Quem tem **valor de diária cadastrado**
+é diarista; quem não tem, mensalista. É a mesma leitura que a folha já faz.
+Está escrito aqui porque é dedução, não dado — se ele quiser diferente, muda
+num lugar só.
+
+#### ⚠️ E um erro meu que o teste pegou, pela segunda vez no repositório
+
+A consulta à cópia da planilha estava dentro de um `try/except` — e **em
+Postgres uma consulta que falha aborta a transação INTEIRA, mesmo pega por
+`except`**. Num banco sem a cópia, a rodada inteira de 50 pessoas caía com um
+erro que não tinha nada a ver com elas. O conserto é o SAVEPOINT, exatamente
+como o `_trazer_um` já fazia e documentava. **Eu caí na armadilha que este
+próprio arquivo descreve** — fica registrado para a terceira vez não acontecer.
+
+### ⚑ 16/11/2026 (noite) — O DOCUMENTO ESTAVA LÁ; A FICHA É QUE NUNCA MOSTROU
+
+Ele importou uma pessoa do Pipefy e voltou:
+
+> *"Eu falei que o documento não estava aparecendo no cadastro dele, mas quando
+> eu vim aqui na administração arquivo, apareceu. Não sei se isso interfere em
+> alguma coisa que foi feita até agora."*
+
+**Interfere no diagnóstico, não no conserto.** A aba "Documentos" da ficha do
+colaborador **só oferecia anexar**: ela não listava nada, nunca listou. Tinha
+um botão "Abrir o Arquivo — lá dá para filtrar por pessoa", e era esse o
+caminho. Então o documento sempre esteve certo, ligado à pessoa certa; o que
+faltava era a ficha mostrá-lo.
+
+⚠️ **A conclusão sobre o "JÁ TINHA" continua valendo** (ver a entrada de mais
+cedo): aquela trava — só contar como já importado o que AINDA ESTÁ na ficha da
+pessoa — é correta e necessária de qualquer forma. O que muda é que o sintoma
+que ele relatou (*"não veio nada de documentos"*) tinha ESTA causa, e não
+aquela. **A lição é minha: quando ele diz "não aparece", a primeira pergunta é
+"aparece onde?" — eu fui consertar a gravação antes de conferir a exibição.**
+
+**O conserto.** A aba agora lista os documentos da pessoa (tipo, arquivo,
+validade e quando entrou). A rota do Arquivo passou a aceitar filtro por
+colaborador — o serviço já sabia fazer isso, só não havia como pedir.
+
+### ⚑ 16/11/2026 (noite) — DO DOCUMENTO PARA O CADASTRO DO DONO, EM UM CLIQUE
+
+Pedido dele, no mesmo olhar:
+
+> *"Se esse cara aqui é um colaborador, aí tem aqui a informação de quem. Esse
+> de quem aqui era para eu clicar e já abrir o cadastro da pessoa. Da mesma
+> forma, se é um documento de uma empresa, eu clicar e já abrir o cadastro da
+> empresa. Ou o cadastro da obra, se for de obra."*
+
+A coluna "De quem" do Arquivo já trazia o nome — era **texto morto**. Quem via
+um documento e queria conferir a pessoa tinha de decorar o nome, trocar de
+tela e procurar.
+
+Agora o nome é link e abre a ficha certa: **colaborador, empresa, obra ou
+fornecedor**. Lançamento (título, medição) continua texto — não tem ficha
+própria para abrir.
+
+⚑ **A tela de Empresas não abria por link e passou a abrir** (`?empresa=`). Era
+a única das quatro que faltava; obra, colaborador e fornecedor já abriam.
+
+### ⚑ 16/11/2026 — AS ETAPAS PERDEM A PALAVRA "CADASTRO", E A FASE DO PIPE VIRA ETAPA
+
+#### Os nomes
+
+Ele: *"por exemplo, cadastro inicial. Aí tem cadastro concluído. Mas as outras
+você não utilizou cadastro (…) esse nome cadastro pode ser eliminado. Vai
+ficar inicial só, concluído, cancelado."*
+
+Tinha razão: a palavra aparecia em **três dos oito** nomes e faltava nos outros
+cinco, então não distinguia nada — só fazia a lista parecer duas listas.
+
+| Antes | Agora |
+|---|---|
+| Cadastro inicial | **Inicial** |
+| Em conferência do DP | **Conferência** |
+| Cadastro concluído | **Concluído** |
+| Cadastro cancelado | **Cancelado** |
+| Contrato a assinar, Na contabilidade, Afastado, Desligado | iguais |
+
+⚠️ **O código não mudou** (`CADASTRO_INICIAL` continua `CADASTRO_INICIAL`). Ele
+está gravado na coluna `etapa` de cada pessoa e em toda linha do histórico de
+etapas; renomeá-lo exigiria migração para ganhar zero, porque ninguém vê o
+código. Quem ler `CADASTRO_INICIAL` no banco está lendo "Inicial".
+
+Ele também disse que **depois quer rever se as oito são necessárias** — fica
+anotado, não foi mexido.
+
+#### A correlação com o Pipefy, ditada por ele
+
+> *"O que está no Pipefy como colaboradores afastados vai ficar como afastado
+> nas etapas do ERP. O que estiver como cadastro cancelado vai ficar como
+> cancelado. O que está como colaboradores desligados vai ficar como
+> desligado. O que está como cadastro concluído vai ficar como concluído. O
+> que está como cadastro inicial vai ficar como inicial. E o que está como
+> cadastros adicionais vai ficar em conferência. (…) Na importação você já tem
+> que deixar a fase correta, né? Casar a fase com a etapa."*
+
+| Fase no Pipefy | Etapa no ERP | Situação |
+|---|---|---|
+| Colaboradores Afastados | Afastado | AFASTADO |
+| Colaboradores Desligados | Desligado | DESLIGADO |
+| Cadastro Cancelado | Cancelado | **DESLIGADO** |
+| Cadastros Adicionais | Conferência | ATIVO |
+| Cadastro Concluído | Concluído | ATIVO |
+| Cadastro Inicial | Inicial | ATIVO |
+
+⚑ **UMA FASE DE LÁ VIRA DUAS COISAS AQUI, e esse é o ponto.** `etapa` responde
+"o que falta fazer neste cadastro?" e manda na fila do DP; `situacao` responde
+"esta pessoa está na empresa?" e manda na folha e no ponto. A fase do Pipefy
+misturava as duas — foi o defeito que a separação em duas colunas corrigiu, e
+agora a importação sabe desdobrar.
+
+⚑ **E ISTO FECHA O ÚLTIMO BURACO PARA O PONTO LARGAR A PLANILHA.** A situação
+era o único dado que nenhuma importação preenchia (ver a entrada logo abaixo).
+Agora preenche.
+
+**Duas decisões minhas, ditas aqui porque ele pode querer diferente:**
+
+1. **Cancelado vira situação DESLIGADO.** Um cadastro cancelado é de alguém que
+   nunca chegou a ser da empresa; deixá-lo ATIVO o manteria batendo ponto e
+   aparecendo na folha.
+2. **Fase que o sistema não reconhece não mexe em nada**, e vai para uma lista
+   no relatório ("Fase do card que eu não reconheci"). Chutar a etapa tira a
+   pessoa da fila de trabalho do DP sem ninguém perceber — some calado é o
+   pior jeito de errar.
+
+A comparação é por pedaço do nome, sem acento e sem caixa ("desligad" pega
+singular e plural), porque brigar por maiúscula perderia a pessoa inteira.
+
+### ⚑ DECIDIDO E AINDA NÃO FEITO — O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA
+
+> *"Assim que eu conseguir importar tudo do pipefy e das fichas, quero cortar
+> o vínculo com a planilha."* (16/11/2026)
+
+Isto importa para o ERP mesmo sendo do ponto, porque **o que destrava a
+decisão é o cadastro daqui ficar completo**. Hoje o ponto usa como base o
+Registro de Colaboradores (a planilha do Análise de SPs), e é de lá que saem
+nome, celular, cargo, obra, admissão, situação e quem não bate ponto — não do
+cadastro do ERP.
+
+Virar a chave é um campo de escolha que já existe (Configuração do ponto,
+"Base que o ponto usa"). **O trabalho é encher o cadastro antes.**
+
+**Um buraco continua aberto, e ele é o que falta:**
+
+- **A situação** (ativo / afastado / desligado). A planilha lê da "Fase Atual"
+  do Pipefy; a importação de cards NÃO preenche `colaboradores.situacao`.
+
+**O outro já foi tapado no mesmo dia:** quem não bate ponto passou a sair do
+**tipo de contrato** do cadastro (PJ e pró-labore não batem; CLT, temporário,
+autônomo RPA, autônomo mensalista, jovem aprendiz e estágio batem), mais a
+obra ESCRUSSAS. Antes disso, na base ERP, `nao_bate` era nulo e **ninguém
+ficava de fora** — PJ bateria ponto no dia da virada.
+
+⚠️ **E eu havia escrito aqui que sem telefone a pessoa não bate. Está errado**,
+e ele corrigiu: quem bate é a obra, no aparelho da obra. O telefone serve para
+a pessoa CONFERIR o ponto dela e para bater pelo próprio celular, que é
+permissão de poucos. Sem telefone, ela bate normalmente.
+
+O detalhe inteiro, com a ordem certa de fazer, está em `CONTEXTO.md` ›
+Histórico de decisões, 16/11/2026.
+
 ### ⚑ 16/11/2026 (fim do dia) — CARGO E FUNÇÃO VIRAM UMA COISA SÓ, E O CARD PASSA A MANDAR
 
 Duas decisões dele, no mesmo recado.

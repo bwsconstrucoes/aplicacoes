@@ -45,27 +45,100 @@ NIVEIS = ("grupo", "categoria", "lancamento")
 _CAMPOS = ("id", "nome", "criterio", "janela", "pct_padrao", "juros_por_deficit",
            "juros_sem_deficit", "taxa_adm_pct", "medida", "observacao")
 
-_SELECT = ("SELECT id, nome, criterio, janela, pct_padrao, juros_por_deficit, "
-           "       juros_sem_deficit, taxa_adm_pct, medida, observacao "
-           "  FROM cenario")
+_COLUNAS = ("c.id, c.nome, c.criterio, c.janela, c.pct_padrao, c.juros_por_deficit, "
+            "c.juros_sem_deficit, c.taxa_adm_pct, c.medida, c.observacao")
+
+
+def tem_dono() -> bool:
+    """A migração 028 já foi aplicada? Sem ela todo cenário é do administrador,
+    e só ele grava — ninguém cria cópia própria."""
+    try:
+        return bool(consultar(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = 'painel'"
+            "   AND table_name = 'cenario' AND column_name = 'dono_id'"))
+    except Exception:  # noqa: BLE001 — banco de teste dublado
+        return False
+
+
+def _select() -> str:
+    """O SELECT do cenário, com o dono (número e nome) quando a coluna existe."""
+    if tem_dono():
+        return (f"SELECT {_COLUNAS}, c.dono_id,"
+                "       COALESCE(NULLIF(u.nome, ''), u.usuario, '')"
+                "  FROM cenario c LEFT JOIN usuarios u ON u.id = c.dono_id")
+    return f"SELECT {_COLUNAS}, NULL, '' FROM cenario c"
 
 
 def _linha(t) -> dict:
-    cenario = dict(zip(_CAMPOS, t))
+    cenario = dict(zip(_CAMPOS + ("dono_id", "dono"), t))
     for campo in ("pct_padrao", "taxa_adm_pct"):
         cenario[campo] = float(cenario[campo] or 0)
     cenario["juros_por_deficit"] = int(cenario["juros_por_deficit"] or 0)
+    cenario["dono_id"] = int(cenario["dono_id"]) if cenario["dono_id"] else None
     return cenario
 
 
 # ----------------------------------------------------------------------- ler
-def listar() -> list[dict]:
-    return [_linha(t) for t in consultar(_SELECT + " ORDER BY nome")]
+TODOS = object()        # o administrador: enxerga os cenários de todo mundo
+
+
+def listar(de=TODOS) -> list[dict]:
+    """Os cenários que alguém enxerga (13/11/2026 — cada cenário tem dono).
+
+    `de` = `TODOS` (o administrador): todos, os dele primeiro e depois os de
+    cada pessoa. `de` = o número de uma pessoa do cadastro de acesso: os DELA
+    primeiro, e os do administrador — que ela vê e copia, mas não altera. O
+    cenário de outra pessoa ela não enxerga."""
+    if de is TODOS:
+        ordem = " ORDER BY (c.dono_id IS NOT NULL), 12, c.nome" if tem_dono() else " ORDER BY c.nome"
+        return [_linha(t) for t in consultar(_select() + ordem)]
+    if not tem_dono():
+        return [_linha(t) for t in consultar(_select() + " ORDER BY c.nome")]
+    return [_linha(t) for t in consultar(
+        _select() + " WHERE c.dono_id IS NULL OR c.dono_id = ?"
+                    " ORDER BY (c.dono_id IS NULL), c.nome", [int(de)])]
 
 
 def buscar(cenario_id) -> dict | None:
-    t = consultar_um(_SELECT + " WHERE id = ?", [int(cenario_id)])
+    try:
+        numero = int(cenario_id)
+    except (TypeError, ValueError):
+        return None
+    t = consultar_um(_select() + " WHERE c.id = ?", [numero])
     return _linha(t) if t else None
+
+
+def enxerga(cenario: dict | None, de=TODOS) -> bool:
+    """A pessoa `de` pode VER este cenário? O administrador vê todos; a pessoa,
+    os dela e os do administrador."""
+    if not cenario:
+        return False
+    return de is TODOS or cenario.get("dono_id") in (None, int(de))
+
+
+def altera(cenario: dict | None, de=TODOS) -> bool:
+    """A pessoa `de` pode ALTERAR este cenário? O administrador, todos; a
+    pessoa, só os dela."""
+    if not cenario:
+        return False
+    return de is TODOS or (cenario.get("dono_id") is not None
+                           and cenario.get("dono_id") == int(de))
+
+
+def nome_livre(base: str, dono_id=None) -> str:
+    """`base`, ou `base (2)`, `base (3)`… — o primeiro que o dono ainda não
+    usa. O nome é único por dono; a cópia não pode falhar por causa disso."""
+    base = (base or "").strip() or "Sem nome"
+    if tem_dono():
+        usados = {n for (n,) in consultar(
+            "SELECT nome FROM cenario WHERE COALESCE(dono_id, 0) = ?", [int(dono_id or 0)])}
+    else:
+        usados = {n for (n,) in consultar("SELECT nome FROM cenario")}
+    nome, n = base, 1
+    while nome in usados:
+        n += 1
+        nome = f"{base} ({n})"
+    return nome
 
 
 def pesos_fixos(cenario_id) -> dict:
@@ -418,10 +491,14 @@ def _limpar(valor, padrao: float = 0.0, teto: float = 100.0) -> float:
     return min(max(v, 0.0), teto)
 
 
-def criar(nome: str, **campos) -> int:
-    """Cria um cenário. Nome repetido é recusado pelo banco, de propósito:
-    dois cenários com o mesmo nome tornam a comparação inútil."""
+def criar(nome: str, dono_id=None, **campos) -> int:
+    """Cria um cenário — do administrador, ou de `dono_id` (uma pessoa do
+    cadastro de acesso). Nome repetido do MESMO dono é recusado pelo banco, de
+    propósito: dois cenários com o mesmo nome tornam a comparação inútil."""
     nome = (nome or "").strip() or "Sem nome"
+    if dono_id is not None and not tem_dono():
+        raise ValueError("Para cada pessoa ter os próprios cenários, aplique antes as "
+                         "atualizações do banco (Configurações › Aplicar atualizações do banco).")
     with conexao() as conn:
         cur = conn.execute(
             "INSERT INTO cenario (nome, criterio, janela, pct_padrao, "
@@ -440,6 +517,9 @@ def criar(nome: str, **campos) -> int:
              campos.get("medida", "executado"),
              (campos.get("observacao") or "").strip()))
         novo = cur.fetchone()[0]
+        if dono_id is not None:
+            conn.execute("UPDATE cenario SET dono_id = ? WHERE id = ?",
+                         (int(dono_id), int(novo)))
         conn.commit()
     return int(novo)
 
@@ -649,10 +729,16 @@ def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
     return sum(1 for v in limpas.values() if v is not None)
 
 
-def apagar_participacao(participacao_id) -> None:
+def apagar_participacao(participacao_id, cenario_id=None) -> None:
+    """Apaga uma participação. Com `cenario_id`, só se ela for DELE — quem só
+    pode mexer no próprio cenário não apaga, pelo número, a de outro."""
     with conexao() as conn:
-        conn.execute("DELETE FROM cenario_participacao WHERE id = ?",
-                     [int(participacao_id)])
+        if cenario_id is None:
+            conn.execute("DELETE FROM cenario_participacao WHERE id = ?",
+                         [int(participacao_id)])
+        else:
+            conn.execute("DELETE FROM cenario_participacao WHERE id = ? AND cenario_id = ?",
+                         [int(participacao_id), int(cenario_id)])
         conn.commit()
 
 
@@ -692,16 +778,22 @@ def reincluir(cenario_id, item: str) -> None:
         conn.commit()
 
 
-def duplicar(cenario_id, nome: str) -> int:
-    """Copia um cenário inteiro com outro nome.
+def duplicar(cenario_id, nome: str, dono_id=None) -> int:
+    """Copia um cenário inteiro com outro nome — para o administrador ou, com
+    `dono_id`, para uma pessoa do cadastro de acesso.
 
     É o que torna barato perguntar "e se fosse faturamento?": parte-se do que
     já está pronto e troca-se uma coisa só, em vez de configurar tudo de novo.
+    E é como a pessoa começa do que o dono já montou (13/11/2026): a cópia leva
+    a régua, todas as regras das contas, os períodos, quem recebe, quem divide
+    e o que está fora — e passa a ser dela.
     """
     origem = buscar(cenario_id)
     if not origem:
         raise ValueError("Cenário não encontrado.")
-    novo = criar(nome, **{c: origem[c] for c in _CAMPOS if c not in ("id", "nome")})
+    nome = nome_livre((nome or "").strip() or origem["nome"], dono_id)
+    novo = criar(nome, dono_id=dono_id,
+                 **{c: origem[c] for c in _CAMPOS if c not in ("id", "nome")})
     with conexao() as conn:
         conn.execute(
             "INSERT INTO cenario_peso (cenario_id, nivel, chave, pct) "

@@ -451,15 +451,15 @@ const ROTULO_PAPEL_DP = {
 
 const LISTA_DO_CAMPO = {
   forma_desligamento: "formas_desligamento", vinculo: "vinculos",
-  // ⚑ `tipos_contrato_prestador`, e NÃO `tipos_contrato` (15/11/2026): o
-  // campo só aparece para prestador, então oferecer as duas opções de CLT
-  // seria oferecer a escolha que ele mandou tirar. Ele: *"CTPS não abre tipo
-  // de contrato, porque já é CLT. Então não tem CTPS Pró-labore, PJ."*
+  // ⚑ `tipo_contrato` SAIU DAQUI em 17/11/2026, e o motivo é que ele tem DUAS
+  // listas, não uma: quem é CTPS escolhe entre as duas CLTs e jovem aprendiz;
+  // quem é prestador escolhe entre PJ, autônomo (RPA), autônomo mensalista,
+  // estágio e pró-labore. Uma linha fixa aqui só saberia apontar para uma.
   //
-  // Achado no navegador: o campo abria e fechava certo, e a caixinha vinha com
-  // as NOVE opções — porque esta linha apontava para a lista de LER ficha
-  // antiga, e não para a de escolher.
-  tipo_contrato: "tipos_contrato_prestador", parentesco: "parentescos",
+  // Quem decide agora é `opcoes_se`, que o servidor manda — logo abaixo, na
+  // montagem dos campos. Duas caixinhas com o MESMO nome, cada uma com a sua
+  // lista e a sua condição; só a visível é coletada.
+  parentesco: "parentescos",
   categoria_alimentacao: "categorias_alimentacao",
   categoria_transporte: "categorias_transporte", meio_transporte: "meios_transporte",
   motivo: "motivos_alteracao", uf: "ufs",
@@ -674,6 +674,32 @@ async function novaSolicitacao(){
        código, semana passada. #}
     const rotuloServidor = (regra.rotulos || {})[c];
     const opcoesServidor = (regra.opcoes || {})[c];
+    {# ⚑ CAMPO CUJA LISTA MUDA COM OUTRA RESPOSTA (17/11/2026).
+
+       É o tipo de contrato. Ele: *"Se Jovem Aprendiz é CTPS, precisamos poder
+       selecionar o tipo de contrato entre: CLT (tempo indeterminado), CLT
+       (tempo determinado), Jovem Aprendiz."* Jovem aprendiz tem carteira —
+       então CTPS não é sempre CLT, e a escolha existe dos dois lados, com
+       listas diferentes.
+
+       O jeito é UMA caixinha por lista, as duas com o MESMO nome e cada uma
+       com a sua condição: o coletor do formulário pula campo escondido, então
+       só a visível é gravada. Trocar as opções de um <select> na mão deixaria
+       para trás a resposta antiga — alguém escolhe "PJ", volta e marca CTPS, e
+       o pedido vai com "PJ" num registro em carteira. #}
+    const porResposta = (regra.opcoes_se || {})[c];
+    if (porResposta) {
+      Object.entries(porResposta).forEach(([gatilho, mapa]) =>
+        Object.entries(mapa).forEach(([valor, lista]) => {
+          campos.push({
+            nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c,
+            tipo: "select", largura: extra.largura || 3,
+            opcoes: [{valor: "", rotulo: "—"}].concat(
+              (lista || []).map(x => ({valor: x, rotulo: x}))),
+            dica: extra.dica, _so_quando: {gatilho, valor}});
+        }));
+      continue;
+    }
     if (opcoesServidor && opcoesServidor.length
         && !nomeLista && c !== "cargo_id" && c !== "convencao_id"
         && c !== "obra_id") {
@@ -786,7 +812,17 @@ async function novaSolicitacao(){
   campos.forEach(cp => {
     if (!cp.nome) return;
     const cond = condicaoDoCampo(regra, cp.nome);
-    if (cond) cp.mostrar_se = cond;
+    {# A caixinha que só vale para uma resposta soma a sua condição à do
+       campo: aparece quando o campo apareceria E quando o gatilho está
+       naquele valor. #}
+    const so = cp._so_quando;
+    if (so) {
+      const traduzir = (campo, valor) =>
+        ((regra.traducoes || {})[campo] || {})[valor] || valor || "";
+      cp.mostrar_se = v => (!cond || cond(v))
+        && traduzir(so.gatilho, v[so.gatilho]) === so.valor;
+      delete cp._so_quando;
+    } else if (cond) cp.mostrar_se = cond;
     const dica = dicaDaOpcao(regra, cp.nome, cp.dica);
     if (dica) cp.dica_de = dica;
     if (marcados.has(cp.nome)) cp.obrigatorio = true;

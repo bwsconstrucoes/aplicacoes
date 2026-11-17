@@ -60,7 +60,12 @@ TELAS = {
     # gravado no banco. Reaproveitar a chave daria a essas pessoas, sem ninguém
     # decidir, a empresa inteira e a parte de cada sócio. Com a chave nova, só
     # entra quem o dono marcar a partir de agora.
-    "prestacao_leitura": "Prestação de Contas — só ver (mostra a empresa inteira e a parte de cada sócio)",
+    # 13/11/2026: quem tem esta tela também cria os PRÓPRIOS cenários, a
+    # partir de um que já existe — "cada usuário que tem acesso à prestação
+    # possa fazer suas edições". Continua sem alterar o cenário do
+    # administrador e sem mexer nos cadastros.
+    "prestacao_leitura": ("Prestação de Contas — vê tudo e monta os próprios cenários, sem alterar "
+                          "os seus (mostra a empresa inteira e a parte de cada sócio)"),
 }
 
 # A chave da tela acima, para quem confere o acesso.

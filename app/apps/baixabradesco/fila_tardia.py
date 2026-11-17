@@ -121,6 +121,16 @@ def _impressao_do_pedido(payload: dict) -> str:
     return hashlib.sha256('\n'.join(sorted(partes)).encode('utf-8')).hexdigest()[:32]
 
 
+def impressao_do_pedido(payload: dict) -> str:
+    """Nome público de `_impressao_do_pedido`.
+
+    A porta do `core` usa esta MESMA conta para reconhecer o lote que o Make
+    reenviou. Ficar com uma conta só evita que a porta e a fila discordem sobre
+    o que é "o mesmo lote".
+    """
+    return _impressao_do_pedido(payload)
+
+
 def _ja_esta_na_fila(impressao: str) -> str:
     """Nome do arquivo já enfileirado com a mesma impressão, ou vazio."""
     if not impressao:
@@ -223,6 +233,101 @@ def adiar_payload(payload: dict, erro: str) -> dict:
         'pendentes': len(_listar()),
         'motivo': 'Quota do Google Sheets excedida; payload enfileirado para reprocessamento automático.',
     }
+
+
+# ── O lote GUARDADO antes de responder ───────────────────────────────────────
+#
+# Exigência do dono em 17/11/2026, quando decidimos que o Make não espera mais
+# a resposta:
+#
+#   *"O que precisa ser garantido é o quê? Uma vez encaminhado, feita a chamada
+#   do Make para o BaixaBradesco, a baixa aconteça."*
+#
+# Sem isto, responder antes de terminar seria uma promessa que o serviço não
+# pode cumprir: o trabalho continua numa linha de fundo, e uma publicação ou a
+# renovação do trabalhador do gunicorn mata essa linha no meio. O lote some sem
+# deixar rastro, e o Make — que já recebeu "ok" — não reenvia.
+#
+# Com isto, o lote é gravado em disco ANTES de a resposta sair e só é apagado
+# quando a baixa termina. Morreu no meio? O arquivo continua lá, e o mesmo
+# serviço automático que já reprocessa os adiados por cota termina o serviço.
+#
+# ⚠️ O QUE ISSO **NÃO** GARANTE, e precisa estar escrito: a pasta é a /tmp. Uma
+# PUBLICAÇÃO apaga a pasta inteira (container novo), e aí o lote se perde do
+# mesmo jeito. E o resgate depende do disparo periódico estar ligado. Ou seja: a
+# garantia é contra a renovação do trabalhador, que é o caso comum, não contra
+# publicação no meio de uma baixa.
+TETO_GUARDAR_BYTES = 25 * 1024 * 1024   # lote maior que isto não cabe na /tmp
+
+
+def _podar_abandonados() -> int:
+    """Joga fora o que passou da idade máxima, ANTES de guardar mais um.
+
+    Sem isto, com o serviço automático desligado a pasta só cresce: cada lote
+    guardado carrega os PDFs inteiros em base64, e a /tmp do Render não é
+    grande. Um lote de dois dias atrás já foi reenviado ou resolvido na mão —
+    é o mesmo critério que o reprocessamento usa.
+    """
+    limite = time.time() - IDADE_MAXIMA_DIAS * 86400
+    jogados = 0
+    try:
+        for nome in _listar():
+            caminho = os.path.join(FILA_DIR, nome)
+            try:
+                if os.path.getmtime(caminho) < limite:
+                    os.remove(caminho)
+                    jogados += 1
+            except Exception:
+                continue
+    except Exception:
+        return jogados
+    return jogados
+
+
+def guardar_recebido(payload: dict) -> str:
+    """Guarda o lote em disco antes de responder. Devolve o nome do arquivo.
+
+    Nunca levanta erro: se não der para guardar, a baixa acontece do mesmo
+    jeito — só fica sem a rede de proteção, e quem chamou avisa isso na
+    resposta.
+    """
+    try:
+        _garantir_dir()
+        _podar_abandonados()
+        impressao = _impressao_do_pedido(payload)
+        # Já está na pasta (sobrou de uma execução que morreu): é esse arquivo
+        # que esta execução vai concluir e apagar. Não duplica.
+        repetido = _ja_esta_na_fila(impressao)
+        if repetido:
+            return repetido
+
+        texto = json.dumps({
+            'payload': payload,
+            'impressao': impressao,
+            'erro_original': 'recebido do Make; a baixa ainda não terminou',
+            'tentativas': 0,
+            'criado_em': time.strftime('%d/%m/%Y %H:%M:%S'),
+        }, ensure_ascii=False)
+        if len(texto.encode('utf-8', 'ignore')) > TETO_GUARDAR_BYTES:
+            return ''
+
+        nome = f'{int(time.time())}_{uuid.uuid4().hex[:8]}.json'
+        with open(os.path.join(FILA_DIR, nome), 'w', encoding='utf-8') as f:
+            f.write(texto)
+        return nome
+    except Exception:
+        return ''
+
+
+def soltar_recebido(nome: str) -> bool:
+    """Apaga o lote guardado — chamado quando a baixa terminou de verdade."""
+    if not nome:
+        return False
+    try:
+        os.remove(os.path.join(FILA_DIR, nome))
+        return True
+    except Exception:
+        return False
 
 
 # Quanto o cron drena por disparo. Ele roda de 5 em 5 minutos: 15 por etapa dá
@@ -509,6 +614,9 @@ def _processar_adiados(payload, resultados, descartados_por_idade) -> dict:
 
         feitos += 1
         try:
+            # SEM segundo plano, de propósito: a fila PRECISA do resultado completo
+            # para decidir se apaga o arquivo. Não pode receber um "recebi, estou
+            # processando" e apagar um lote que ainda nem começou.
             r = processar_baixabradesco(item.get('payload') or {})
             resultados.append({'arquivo': nome, 'ok': True, 'resumo': r.get('resumo')})
             os.remove(caminho)

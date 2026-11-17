@@ -7,7 +7,7 @@
 <h2>Resultado do cenário
   <small>o resultado final por obra, e quanto é de direito de cada um</small>
 </h2>
-{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{% from "painel_prestacao_nav.html" import nav_da_prestacao, rotulo_do_cenario %}
 {{ nav_da_prestacao('resultado', cenario.id) }}
 {% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 
@@ -16,8 +16,7 @@
     <label for="cenario">Cenário</label>
     <select id="cenario" name="cenario" onchange="this.form.submit()">
       {% for c in cenarios %}
-      <option value="{{ c.id }}" {% if c.id == cenario.id %}selected{% endif %}>
-        {{ c.nome }}</option>
+      <option value="{{ c.id }}" {% if c.id == cenario.id %}selected{% endif %}>{{ rotulo_do_cenario(c, meu_numero) }}</option>
       {% endfor %}
     </select>
   </div>
