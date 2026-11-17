@@ -21,6 +21,63 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑⚑⚑ 16/11/2026 — EU TINHA ACESSO À PLANILHA E NÃO OLHEI
+
+> *"Por que você não consulta a planilha? Você tem acesso:
+> 1fqi4QUOVGUd1_4Gg4vK5qP_IMOSgFaw8DD9MDgmM3vo"*
+>
+> *"Esse erro foi muito infantil seu."*
+
+**Foi.** Três rodadas dele escrevendo o de-para de cabeça, e a planilha estava
+a uma chamada de distância. Abri a aba "Dados Documentos" e duas coisas caíram
+de uma vez:
+
+#### 1. A planilha tem TUDO — eu tinha dito o contrário, duas vezes
+
+Eu havia escrito aqui, com todas as letras, que RG, nome do pai e da mãe,
+sexo, estado civil, escolaridade, naturalidade e endereço **só existiam no
+card do Pipefy**. **Estão todos na planilha**, nas 79 colunas da aba. Ele disse
+isso desde o começo — *"a planilha é espelho do card"* — e eu respondi com uma
+tabela de divisão de trabalho que estava errada.
+
+**Do Pipefy sobra uma coisa só: os DOCUMENTOS (anexos).** Exatamente o que ele
+propôs na primeira vez.
+
+#### 2. Os valores não eram o que eu tinha inventado
+
+| O que eu escrevi | O que a planilha escreve |
+|---|---|
+| "Segunda a Sexta" | **"Segunda à Sexta"** (com crase) |
+| (não previ) | **"Motocicleta"**, **"Diário e Vale Transporte"** |
+| (não previ) | **"Solteiro (a)"**, **"Casado (a)"** — com o "(a)" |
+| (não previ) | **"CLT (tempo Indeterminado)"** — com "I" maiúsculo |
+
+#### O que foi feito, e como fica provado
+
+`core/importadores/planilha_dp.py` foi escrito **com a aba aberta**: cada nome
+de coluna e cada valor das listas saiu da planilha de verdade, com a contagem
+de quantas pessoas usam cada um. Depois de escrito, rodei o de-para contra as
+**3.667 linhas reais**: **54 campos preenchidos e ZERO valores não
+traduzidos**. Antes de entregar, não depois.
+
+`tests/test_planilha_dp.py` tranca cada um desses valores, com a contagem
+anotada ao lado. Quem mexer no de-para sem olhar a planilha cai lá.
+
+⚑ **E A LEITURA É AO VIVO, não da cópia no banco.** A cópia
+(`analisesps.colaborador`) tem **30 das 79 colunas** e fica velha entre uma
+atualização e outra — ele atualizou a planilha, importou, e nada mudou, porque
+a cópia era de antes. Agora a importação lê a aba na hora, uma vez por rodada.
+
+#### A regra, e desta vez com o mecanismo escrito
+
+**Quando existir a fonte, LEIA A FONTE.** Eu tinha a ferramenta do Google
+Drive disponível o tempo todo. Escrever de-para de cabeça é barato e parece
+produtivo; custou três rodadas dele e uma frustração que não precisava existir.
+
+**Antes de entregar qualquer de-para: rodar contra o dado real e mostrar
+quantos valores não traduziram.** Se não dá para rodar contra o real, o
+de-para não está pronto — está adivinhado.
+
 ### ⚑⚑ 16/11/2026 — A LIÇÃO MAIS CARA DO DIA: EU LIA OS NOMES DAS COLUNAS E INVENTAVA OS VALORES
 
 > *"Meu Deus do céu, socorro! É só casar informação da planilha vs campo do
