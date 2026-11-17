@@ -13223,17 +13223,21 @@ def api_colaboradores_remover():
     ids = [int(x) for x in (d.get("ids") or []) if str(x).strip().isdigit()]
     if not ids:
         return jsonify({"ok": False, "erro": "Nenhuma pessoa escolhida."}), 400
-    apagadas, recusadas = [], []
+    apagadas, desligadas, recusadas = [], [], []
     with get_session() as s:
         usuario = _usuario_logado(s)
         for cid in ids:
             try:
-                apagadas.append(svc_pessoas.remover_cadastro(
-                    s, cid, usuario, levar_junto=True))
+                r = svc_pessoas.remover_cadastro(s, cid, usuario,
+                                                 levar_junto=True)
+                # Tem batida de ponto ⇒ desligada, não apagada (regra dele em
+                # 17/11/2026; batida é registro legal do REP-P).
+                (desligadas if r.get("desligada") else apagadas).append(r)
             except ErroValidacao as e:
                 recusadas.append({"id": cid, "motivo": str(e)})
         s.commit()
-    return jsonify({"ok": True, "apagadas": apagadas, "recusadas": recusadas})
+    return jsonify({"ok": True, "apagadas": apagadas,
+                    "desligadas": desligadas, "recusadas": recusadas})
 
 
 @bp.route("/erp/api/colaboradores/para-folha")

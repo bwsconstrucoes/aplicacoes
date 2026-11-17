@@ -682,7 +682,8 @@ def importar(s, usuario=None, *, gravar: bool = False,
         "atualizadas": [], "criadas": [], "sem_cadastro": [], "recusadas": [],
         "nao_entendi": [], "cadastros_criados": [],
         "criou": bool(criar),
-        "limpou": bool(so_estes), "apagadas": [], "nao_deu_para_apagar": [],
+        "limpou": bool(so_estes), "apagadas": [], "desligadas": [],
+        "nao_deu_para_apagar": [],
         # As colunas que a planilha tem e este de-para não lê. É a resposta
         # para "por que este campo está vazio?" sem precisar perguntar.
         "colunas_que_eu_nao_uso": sorted(
@@ -885,8 +886,17 @@ def importar(s, usuario=None, *, gravar: bool = False,
                 # 17/11/2026, vendo a recusa: *"como se nunca fiz nada no
                 # ERP?"* e *"não quero descobrir, quero EXCLUIR."*
                 r = svc.remover_cadastro(s, pessoa.id, usuario, levar_junto=True)
-                rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome,
-                                        "levou_junto": r.get("levou_junto") or {}})
+                # ⚑ TEM PONTO ⇒ DESLIGADA, não apagada. Regra dele em
+                # 17/11/2026: *"tem ponto, desligado. Não tem ponto, excluir.
+                # É o único impeditivo."* Batida é registro legal do REP-P.
+                if r.get("desligada"):
+                    rel["desligadas"].append({
+                        "cpf": digitos, "nome": pessoa.nome,
+                        "batidas": r.get("batidas") or 0,
+                        "motivo": r.get("motivo") or ""})
+                else:
+                    rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome,
+                                            "levou_junto": r.get("levou_junto") or {}})
             except ErroValidacao as e:
                 rel["nao_deu_para_apagar"].append({
                     "cpf": digitos, "nome": pessoa.nome, "motivo": str(e)[:300]})

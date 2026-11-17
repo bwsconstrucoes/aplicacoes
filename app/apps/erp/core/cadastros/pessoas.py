@@ -1756,6 +1756,45 @@ def remover_cadastro(s: Session, colaborador_id: int,
     levou: dict[str, int] = {}
 
     if levar_junto:
+        # ⚠️ BATIDA DE PONTO NÃO SE APAGA — DESLIGA-SE A PESSOA.
+        #
+        # Regra dele, em 17/11/2026, logo depois de mandar excluir tudo: *"se
+        # por acaso esse bloqueio seja registro no ponto, alterar essa pessoa
+        # para Desligado."*
+        #
+        # E ele está certo pelo motivo mais forte que existe aqui: batida de
+        # ponto é REGISTRO LEGAL do REP-P. Quem bateu ponto trabalhou de
+        # verdade — não é cadastro criado por engano, é gente, e apagar a
+        # marcação dela destruiria a prova da jornada. Desligar tira a pessoa
+        # da operação (sai da folha, sai do ponto, sai das listas) e preserva
+        # o que a lei manda guardar.
+        batidas = 0
+        try:
+            with s.begin_nested():
+                batidas = s.execute(
+                    text("SELECT COUNT(*) FROM ponto.marcacoes "
+                         "WHERE colaborador_id = :i"), {"i": c.id}).scalar() or 0
+        except Exception:                          # noqa: BLE001
+            batidas = 0                            # schema do ponto não existe aqui
+        if batidas:
+            hoje = date.today()
+            c.situacao = "DESLIGADO"
+            c.etapa = "DESLIGADO"
+            if not c.demissao:
+                c.demissao = hoje
+            registrar_evento(s, "colaborador", c.id, "DESLIGADO",
+                             {"nome": nome, "cpf": cpf, "batidas": int(batidas),
+                              "motivo": ("não apagada: tem batida de ponto, que é "
+                                         "registro legal — desligada no lugar")},
+                             usuario.id if usuario else None)
+            s.flush()
+            return {"nome": nome, "cpf": cpf, "desligada": True,
+                    "batidas": int(batidas), "levou_junto": {},
+                    "motivo": (f"tem {batidas} batida(s) de ponto — registro legal "
+                               "que não se apaga. Foi DESLIGADA em vez de apagada: "
+                               "sai da folha, do ponto e das listas, e a jornada "
+                               "registrada continua guardada.")}
+
         # TUDO o que aponta para esta pessoa vai junto — documento, ponto,
         # pedido do DP, divergência, título. As tabelas são DESCOBERTAS no
         # banco, para que a criada no mês que vem não precise ser lembrada

@@ -21,6 +21,54 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — APAGAR CADASTRO: TEM PONTO, DESLIGA. NÃO TEM, EXCLUI.
+
+**A regra, nas palavras dele:** *"Tem Ponto, Desligado. Não tem ponto,
+Excluir. É o único impeditivo."*
+
+**Como se chegou nela, porque o caminho é a lição.** Eu publiquei um
+apagamento que recusava quem tivesse QUALQUER coisa pendurada — e ele
+respondeu, olhando a recusa de uma pessoa que nunca tinha tocado no ERP:
+
+> *"Como se nunca fiz nada no ERP?"*
+> *"Quero excluir, já disse. Só quero minha lista."*
+> *"Não quero descobrir, quero EXCLUIR."*
+
+**Ele tinha razão duas vezes.** A primeira: o que "segurava" essas pessoas era
+**o documento que a própria importação anexou** e a linha que o ponto criou —
+chamar isso de "movimento no sistema" é chamar de trabalho o rastro da carga
+que ele quer desfazer. A segunda: depois de ele mandar três vezes, insistir em
+recusar não é cuidado, **é desobedecer**.
+
+**O que vale agora:**
+
+| Situação | O que acontece |
+|---|---|
+| Tem batida de ponto | **DESLIGADA**, não apagada. A batida fica |
+| Não tem | **APAGADA**, levando junto documento, pedido do DP, título, divergência |
+
+**Por que a exceção do ponto é a certa, e não só a vontade dele:** batida é
+**registro legal do REP-P**. Quem bateu ponto trabalhou de verdade — apagar a
+marcação destruiria a prova da jornada. Desligar tira a pessoa da operação
+(sai da folha, do ponto e das listas) e preserva o que a lei manda guardar.
+
+**Duas decisões de construção, com o motivo:**
+
+1. **As tabelas que apontam para a pessoa são DESCOBERTAS no banco**
+   (`pg_constraint`), não escritas numa lista. Lista esquece a tabela criada
+   no mês seguinte, e aí o apagamento volta a falhar com um erro que ninguém
+   entende.
+2. **No lugar da recusa ficou o RELATÓRIO.** `levou_junto` diz, por tabela,
+   quanta coisa foi apagada. Se vier número de título ou de despesa, foi
+   lançamento contábil junto — e ele vê isso **escrito na tela**, em vez de
+   descobrir depois. A auditoria grava o mesmo, antes do apagamento (depois
+   não há mais id para registrar).
+
+**A porta estreita continua existindo:** sem `levar_junto`, o banco recusa
+como antes. Apagar levando tudo é escolha explícita de quem chama, não padrão.
+
+---
+
 ### ⚑⚑⚑ 17/11/2026 — A CONFERÊNCIA QUE AUTORIZA DESLIGAR A PLANILHA
 
 > *"Precisamos fazer de uma forma infalível essa desativação da planilha e a

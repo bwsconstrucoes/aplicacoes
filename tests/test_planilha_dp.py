@@ -724,3 +724,47 @@ def test_sem_levar_junto_o_banco_ainda_recusa(mundo):
     mundo["s"].flush()
     with pytest.raises(ErroValidacao):
         svc.remover_cadastro(mundo["s"], mundo["pessoa"].id, mundo["dp"])
+
+
+@pytest.mark.banco
+def test_quem_bateu_ponto_e_DESLIGADA_e_nao_apagada(mundo):
+    """Regra dele, em 17/11/2026: *"tem ponto, desligado. Não tem ponto,
+    excluir. É o único impeditivo."*
+
+    E ele está certo pelo motivo mais forte que existe aqui: batida de ponto é
+    REGISTRO LEGAL do REP-P. Quem bateu ponto trabalhou de verdade — apagar a
+    marcação destruiria a prova da jornada. Desligar tira a pessoa da operação
+    e preserva o que a lei manda guardar.
+
+    ⚠️ O teste só vale com o schema do ponto no banco; sem ele, não há o que
+    conferir e ele é pulado — em vez de passar por engano.
+    """
+    from sqlalchemy import select, text
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    s = mundo["s"]
+    try:
+        with s.begin_nested():
+            s.execute(text("SELECT 1 FROM ponto.marcacoes LIMIT 1"))
+    except Exception:                              # noqa: BLE001
+        pytest.skip("o schema do ponto não existe neste banco")
+
+    s.execute(text(
+        "INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id,"
+        " data_referencia, origem, hash_encadeado)"
+        " VALUES (999001, :c, :o, CURRENT_DATE, 'PWA', 'teste')"),
+        {"c": mundo["pessoa"].id, "o": mundo["obra"].id})
+    s.flush()
+
+    r = svc.remover_cadastro(s, mundo["pessoa"].id, mundo["dp"],
+                             levar_junto=True)
+    s.flush()
+    assert r["desligada"] is True and r["batidas"] == 1
+    # A pessoa CONTINUA no cadastro, e a batida também.
+    viva = s.scalars(select(Colaborador).where(
+        Colaborador.cpf == "09676749486")).first()
+    assert viva is not None
+    assert viva.situacao == "DESLIGADO" and viva.etapa == "DESLIGADO"
+    assert s.execute(text("SELECT COUNT(*) FROM ponto.marcacoes"
+                          " WHERE colaborador_id = :c"),
+                     {"c": viva.id}).scalar() == 1
