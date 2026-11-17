@@ -147,8 +147,9 @@
     <small>os dados saem da aba “Dados Documentos” — sem precisar de card</small></div>
   <div class="cartao-dica">Lê a planilha <b>Registro de Colaboradores</b>, aba
     <b>Dados Documentos</b>, <b>ao vivo</b>: o que você editar lá vale nesta
-    mesma importação. Casa pelo <b>CPF</b> e preenche o cadastro de quem já
-    existe no ERP — <b>nunca cria gente</b>.
+    mesma importação. Casa pelo <b>CPF</b>, preenche o cadastro de quem já
+    existe e <b>cadastra quem falta</b> — só quem a planilha mostra como
+    <b>ativo</b>, porque as ~2.960 pessoas desligadas são base morta.
     <br><br>O que a planilha manda: <b>vínculo, pagamento, tipo de contrato,
     cargo, convenção, obra, salário, diária, auxílios, endereço, RG, nome do
     pai e da mãe, nascimento, chave Pix</b> e o resto do cadastro.
@@ -967,15 +968,63 @@ function pintarRelatorioPLC(rel){
       planilha</b>, aba <b>${escapar(pl.aba || "Dados Documentos")}</b>${
         pl.colunas ? ` · ${pl.colunas} colunas` : ""} ·
       <b>${(rel.atualizadas||[]).length}</b> ${rel.gravou ? "atualizada(s)" : "mudariam"}
-      · <b>${(rel.sem_cadastro||[]).length}</b> sem cadastro no ERP.
+      · <b>${(rel.criadas||[]).length}</b> ${rel.gravou ? "cadastrada(s) agora" : "nasceriam"}
+      · <b>${(rel.sem_cadastro||[]).length}</b> de fora.
       ${rel.gravou ? "" : "<b>Nada foi gravado.</b>"}</div>`);
 
+  {# ⚑ AS PESSOAS QUE NASCERAM. Ele, em 17/11/2026: *"Pq não cadastrou a
+     partir da planilha?"* Agora cadastra — só quem está ativo —, e a lista
+     aparece separada da de quem já existia, porque são coisas diferentes para
+     conferir: a atualizada se confere pelo campo que mudou, a nova se confere
+     pela ficha inteira. #}
+  if ((rel.criadas || []).length)
+    L.push(`<h4>Cadastradas ${rel.gravou ? "agora" : "(nasceriam)"} a partir da
+      planilha (${rel.criadas.length})</h4>
+      <div class="cartao-dica">Entram <b>só as ativas</b>: a planilha tem cerca
+        de 2.960 pessoas desligadas, e trazer essa base morta encheria lista de
+        obra, folha e relatório. <b>Confira a ficha de uma delas.</b></div>
+      <div class="tabela-rolagem" style="max-height:220px"><table>
+      <thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+      <tbody>${rel.criadas.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+        <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  {# Cargo e convenção nascem pelo nome; a tela deles enche o resto. #}
+  if ((rel.cadastros_criados || []).length)
+    L.push(`<h4>Cargos e convenções ${rel.gravou ? "criados" : "que nasceriam"} (${
+      rel.cadastros_criados.length})</h4>
+      <div class="cartao-dica">Nasceram só com o <b>nome</b>, que é o que a
+        planilha tem. Piso, descrição e o resto se preenchem nas telas de
+        Cargos e de Convenções.</div>
+      <div class="tabela-rolagem" style="max-height:200px"><table>
+      <thead><tr><th>O quê</th><th>Nome</th></tr></thead>
+      <tbody>${rel.cadastros_criados.map(x => `<tr><td>${escapar(x.tipo)}</td>
+        <td class="dados">${escapar(x.nome)}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  {# ⚑ AS COLUNAS QUE EU NÃO LEIO (17/11/2026). Ele já perguntou quatro vezes
+     por que tal campo ficou vazio, e de fora as duas causas são idênticas: a
+     coluna está vazia na planilha, ou a coluna existe e eu não a reconheço.
+     Isto responde qual das duas é, sem custar uma rodada dele. #}
+  if ((rel.colunas_que_eu_nao_uso || []).length)
+    L.push(`<details style="margin-top:12px"><summary><b>Colunas da planilha
+      que eu não leio (${rel.colunas_que_eu_nao_uso.length})</b> — abra se
+      algum campo ficou vazio</summary>
+      <div class="cartao-dica">Se o campo que você procura corresponde a uma
+        destas, é porque a correlação não existe ainda: <b>me mande o nome da
+        coluna e o nome do campo no ERP</b> e eu ligo os dois.</div>
+      <div class="tabela-rolagem" style="max-height:220px">
+        <div class="dados" style="padding:8px; line-height:1.9">${
+          rel.colunas_que_eu_nao_uso.map(c =>
+            `<span class="etiqueta">${escapar(c)}</span>`).join(" ")}</div>
+      </div></details>`);
+
   if ((rel.nao_entendi || []).length)
-    L.push(`<h4>⚠️ Valores da planilha que eu não reconheci (${
+    L.push(`<h4>⚠️ Pendências — o que ficou de fora do cadastro (${
       rel.nao_entendi.length})</h4>
-      <div class="cartao-dica"><b>É aqui que o cadastro fica incompleto.</b>
-        Corrija na planilha, ou me mostre esta lista e eu acerto a
-        correlação.</div>
+      <div class="cartao-dica"><b>A pessoa entrou; este campo não.</b>
+        Corrija na planilha e rode de novo, ou me mostre esta lista e eu acerto
+        a correlação.</div>
       <div class="tabela-rolagem" style="max-height:280px"><table>
       <thead><tr><th>Pessoa</th><th>Coluna</th><th>Está escrito</th>
         <th>Campo</th><th>Por quê</th></tr></thead>
@@ -998,9 +1047,10 @@ function pintarRelatorioPLC(rel){
       </tbody></table></div>`);
 
   if ((rel.sem_cadastro || []).length)
-    L.push(`<h4>Na planilha e sem cadastro no ERP (${rel.sem_cadastro.length})</h4>
-      <div class="cartao-dica">A importação <b>nunca cria gente</b>. Cadastre
-        em Pessoal e rode de novo.</div>
+    L.push(`<h4>Ficaram de fora (${rel.sem_cadastro.length})</h4>
+      <div class="cartao-dica">Quem a planilha mostra como <b>desligado</b> não
+        é cadastrado — é base morta. O motivo de cada um está na última
+        coluna.</div>
       <div class="tabela-rolagem" style="max-height:220px"><table>
       <thead><tr><th>Pessoa</th><th>CPF</th><th>Por quê</th></tr></thead>
       <tbody>${rel.sem_cadastro.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
