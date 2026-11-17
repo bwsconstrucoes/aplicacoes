@@ -198,6 +198,37 @@
   <div id="resultado-plc"></div>
 </div>
 
+{# ===========================================================================
+   A CONFERÊNCIA QUE AUTORIZA DESLIGAR A PLANILHA (17/11/2026)
+
+   Ele: *"precisamos fazer de uma forma infalível essa desativação da planilha
+   e a leitura do Análise de SPs pela base do ERP. A GRAVIDADE DISSO É PAGAR
+   FUNCIONÁRIOS DE FORMA EQUIVOCADA."*
+
+   "Infalível" não se consegue raciocinando sobre o código — consegue-se
+   calculando as duas coisas e comparando. Fica em primeiro lugar na tela, e
+   não no fim, porque é a decisão mais cara que se toma aqui.
+   =========================================================================== #}
+<div class="cartao" style="border-color:var(--ambar)">
+  <div class="cartao-cab"><h3>Conferência: o ERP paga igual à planilha?</h3>
+    <small>responder “sim” para todo mundo é o que autoriza desligar a planilha</small></div>
+  <div class="cartao-dica">Pessoa por pessoa, compara o que a folha do
+    <b>Análise de SPs</b> decidiria lendo a <b>planilha</b> com o que ela
+    decidiria lendo o <b>ERP</b>.
+    <br><br>O primeiro item é o que importa: <b>“esta pessoa pode receber?”</b>
+    — respondido pela <b>mesma regra</b> do Análise de SPs, alimentada pelos
+    dois lados. Divergência ali quer dizer alguém recebendo que não devia, ou
+    deixando de receber.
+    <br><br><b>Nada é alterado.</b> Esta tela só lê.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="max-width:220px">
+      <label for="cf-ate">Pagando até (último dia do período)</label>
+      <input type="date" id="cf-ate"></div>
+    <button class="btn" id="btn-conferencia">Comparar agora</button>
+  </div>
+  <div id="resultado-cf"></div>
+</div>
+
 {# ⚑ DESFAZER O QUE A IMPORTAÇÃO CRIOU (17/11/2026).
 
    Ele, depois de uma importação: *"tem mais gente no ERP do que eu coloquei
@@ -1275,6 +1306,126 @@ async function apagarCriadosMarcados(){
       await listarCriadosRecentemente();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
+
+{# ---------------------------------------------------------------------------
+   A CONFERÊNCIA ERP × PLANILHA — ver o cartão acima
+   --------------------------------------------------------------------------- #}
+async function rodarConferenciaDaFolha(){
+  const onde = els("resultado-cf");
+  const ate = (els("cf-ate") || {}).value || "";
+  onde.innerHTML = `<div class="cartao-dica">Comparando as duas bases, pessoa
+    por pessoa…</div>`;
+  if (els("btn-conferencia")) els("btn-conferencia").disabled = true;
+  try {
+    const r = await api("/erp/api/conferencia-folha" + (ate ? `?ate=${ate}` : ""));
+    if (!r.ok) {
+      onde.innerHTML = `<div class="aviso erro"><b>Não deu para comparar:</b>
+        ${escapar(r.erro || "motivo não informado")}</div>`;
+      return;
+    }
+    const L = [];
+    {# O VEREDICTO PRIMEIRO, em uma linha, porque é a única coisa que ele
+       precisa ler para saber se pode desligar a planilha. #}
+    L.push(`<div class="aviso ${r.pronto_para_desligar ? "ok" : "erro"}"
+      style="font-size:15px">
+      <b>${r.pronto_para_desligar
+        ? "✔ As duas bases pagariam igual — dá para desligar a planilha."
+        : "✖ AINDA NÃO dá para desligar a planilha."}</b><br>
+      ${r.total_erp} pessoa(s) no ERP · ${r.total_planilha} na planilha ·
+      <b>${r.iguais}</b> idênticas${r.quando
+        ? ` · planilha atualizada em ${escapar(r.quando.replace("T", " ").slice(0, 16))}`
+        : ""}</div>`);
+
+    if ((r.trava_diferente || []).length)
+      L.push(`<h4 style="color:var(--vermelho)">⚠️ PAGAMENTO: as duas bases
+        discordam sobre quem pode receber (${r.trava_diferente.length})</h4>
+        <div class="cartao-dica">É o item mais grave. <b>Resolva estes
+          antes de qualquer outra coisa.</b></div>
+        <div class="tabela-rolagem" style="max-height:320px"><table>
+        <thead><tr><th>Pessoa</th><th>CPF</th><th>Pela planilha</th>
+          <th>Pelo ERP</th><th>Por quê</th></tr></thead>
+        <tbody>${r.trava_diferente.map(x => `<tr>
+          <td><b>${escapar(x.nome)}</b></td>
+          <td class="dados">${documento(x.cpf)}</td>
+          <td>${x.planilha_paga ? "PAGA" : "não paga"}
+            <small>(${escapar(x.planilha)})</small></td>
+          <td>${x.erp_paga ? "PAGA" : "não paga"}
+            <small>(${escapar(x.erp)})</small></td>
+          <td class="desc">${escapar(x.motivo_erp || x.motivo_planilha || "")}</td>
+          </tr>`).join("")}</tbody></table></div>`);
+
+    if ((r.so_na_planilha || []).length)
+      L.push(`<h4>Na planilha e NÃO no ERP (${r.so_na_planilha.length})</h4>
+        <div class="cartao-dica">Enquanto houver gente aqui, desligar a
+          planilha <b>faz essas pessoas desaparecerem da folha</b>.</div>
+        <div class="tabela-rolagem" style="max-height:240px"><table>
+        <thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+        <tbody>${r.so_na_planilha.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div>`);
+
+    if ((r.divergentes || []).length) {
+      const dinheiro = r.divergentes.filter(d => d.pesa_dinheiro);
+      L.push(`<h4>Campos que não batem (${r.divergentes.length} pessoa(s),
+        ${dinheiro.length} com efeito em dinheiro)</h4>
+        <div class="tabela-rolagem" style="max-height:420px"><table>
+        <thead><tr><th>Pessoa</th><th>O quê</th><th>Na planilha</th>
+          <th>No ERP</th></tr></thead>
+        <tbody>${r.divergentes.flatMap(p => p.campos.map((c, i) => `<tr>
+          <td>${i === 0 ? `<b>${escapar(p.nome)}</b>` : ""}</td>
+          <td>${c.peso === "dinheiro" ? "💰 " : ""}${escapar(c.rotulo)}</td>
+          <td class="dados">${escapar(c.planilha)}</td>
+          <td class="dados">${escapar(c.erp)}</td></tr>`)).join("")}
+        </tbody></table></div>`);
+    }
+
+    const porCampo = Object.entries(r.por_campo || {}).sort((a, b) => b[1] - a[1]);
+    if (porCampo.length)
+      L.push(`<h4>Onde a diferença se concentra</h4>
+        <div class="tabela-rolagem" style="max-height:240px"><table>
+        <thead><tr><th>Campo</th><th class="direita">Pessoas</th></tr></thead>
+        <tbody>${porCampo.map(([campo, n]) => `<tr><td>${escapar(campo)}</td>
+          <td class="direita dados">${n}</td></tr>`).join("")}
+        </tbody></table></div>
+        <div class="dica">Um campo com muita gente costuma ser UMA causa só —
+          uma coluna que eu não leio, ou uma palavra escrita diferente. Me
+          mande esta lista.</div>`);
+
+    if ((r.so_no_erp || []).length)
+      L.push(`<details style="margin-top:12px"><summary>No ERP e não na
+        planilha (${r.so_no_erp.length})</summary>
+        <div class="cartao-dica">Não impede o desligamento: é gente que já está
+          só aqui. Mas confira se não é cadastro criado por engano — o cartão
+          abaixo apaga esses.</div>
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <tbody>${r.so_no_erp.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div></details>`);
+
+    if ((r.nomes_diferentes || []).length)
+      L.push(`<details style="margin-top:8px"><summary>Nomes diferentes no
+        mesmo CPF (${r.nomes_diferentes.length})</summary>
+        <div class="cartao-dica">Não muda um centavo, então não trava o
+          desligamento — mas costuma ser cadastro duplicado em algum
+          lugar.</div>
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <thead><tr><th>CPF</th><th>Na planilha</th><th>No ERP</th></tr></thead>
+        <tbody>${r.nomes_diferentes.map(x => `<tr>
+          <td class="dados">${documento(x.cpf)}</td>
+          <td>${escapar(x.planilha)}</td><td>${escapar(x.erp)}</td>
+          </tr>`).join("")}</tbody></table></div></details>`);
+
+    onde.innerHTML = L.join("");
+  } catch(e){
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  } finally {
+    if (els("btn-conferencia")) els("btn-conferencia").disabled = false;
+  }
+}
+
+if (els("btn-conferencia"))
+  els("btn-conferencia").addEventListener("click", rodarConferenciaDaFolha);
 
 if (els("btn-listar-rm"))
   els("btn-listar-rm").addEventListener("click", listarCriadosRecentemente);

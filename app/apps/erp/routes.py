@@ -13163,6 +13163,34 @@ def api_colaborador_etapa(colaborador_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/conferencia-folha")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_conferencia_folha():
+    """O ERP e a planilha pagariam a mesma coisa? — ver `conferencia_folha`.
+
+    ⚑ 17/11/2026. Ele: *"precisamos fazer de uma forma infalível essa
+    desativação da planilha e a leitura do Análise de SPs pela base do ERP. A
+    gravidade disso é pagar funcionários de forma equivocada."*
+
+    Exige `editar_colaboradores` porque o relatório carrega salário, auxílios e
+    valor de diária de todo mundo.
+    """
+    from datetime import date as _date
+
+    from app.apps.erp.core import conferencia_folha
+    ate = None
+    bruto = (request.args.get("ate") or "").strip()
+    if bruto:
+        try:
+            ate = _date.fromisoformat(bruto)
+        except ValueError:
+            return jsonify({"ok": False,
+                            "erro": "Data inválida — use AAAA-MM-DD."}), 400
+    with get_session() as s:
+        return jsonify(conferencia_folha.comparar(s, ate=ate))
+
+
 @bp.route("/erp/api/colaboradores/criados-recentemente")
 @login_obrigatorio
 @permissao("editar_colaboradores")

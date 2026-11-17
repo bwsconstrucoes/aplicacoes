@@ -21,6 +21,50 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑⚑⚑ 17/11/2026 — A CONFERÊNCIA QUE AUTORIZA DESLIGAR A PLANILHA
+
+> *"Precisamos fazer de uma forma infalível essa desativação da planilha e a
+> leitura do Análise de SPs pela base do ERP. **A gravidade disso é pagar
+> funcionários de forma equivocada.**"*
+
+**O roteiro inteiro está em `DESLIGAR_A_PLANILHA.md`, nesta pasta.** Leia-o
+antes de mexer em qualquer coisa que toque a folha.
+
+**A decisão de desenho, e ela é a coisa a entender:** "infalível" não se
+consegue raciocinando sobre o código — nem com mais um relatório meu dizendo
+que está tudo certo. Consegue-se **calculando as duas coisas e comparando**, e
+virando a chave só quando a diferença for zero.
+
+Então existe agora uma tela (**ERP › Importar**, primeiro cartão) que compara,
+pessoa por pessoa, o que a folha decidiria lendo a PLANILHA com o que ela
+decidiria lendo o ERP. Ela é só leitura.
+
+**O item mais grave dela não é um campo: é uma pergunta.** *"Esta pessoa pode
+receber?"* — e ela é respondida pela **mesma função do Análise de SPs**
+(`situacao_no_pagamento`), alimentada uma vez com cada ficha. Reimplementar
+essa regra aqui seria o pior caminho possível: a cópia divergiria da original e
+a conferência passaria a comparar o ERP com uma regra que não é a que paga.
+
+A tela dá **um veredicto em uma linha**, e ele só fica verde quando não há
+divergência de pagamento, não há gente só na planilha e não há divergência que
+mexa em dinheiro.
+
+**⚠️ O que o verde NÃO prova, e está escrito na tela e no roteiro:** que as duas
+bases *dizem* o mesmo. Ele não gera folha. O passo que fecha isso é **gerar a
+mesma folha duas vezes no Análise de SPs** — uma lendo a planilha, outra lendo
+o ERP — e comparar os totais, antes de pagar. Quem tratar o verde como "pode
+pagar" pulou um passo.
+
+**Uma carga pesada que a conferência expôs e que vale saber:** a folha lê o
+campo `fase` esperando o nome da fase do Pipefy ("Colaboradores Desligados"), e
+o ERP manda a SITUAÇÃO ("DESLIGADO"). Funciona — a regra procura os pedaços
+"desligad" e "afastad", que estão nas duas formas. Mas é coincidência de
+vocabulário, não desenho: se alguém trocar a situação do ERP para "INATIVO", a
+folha passa a pagar quem saiu, **em silêncio**. Há teste travando isso
+(`test_conferencia_folha.py`).
+
+---
+
 ### ⚑⚑ 17/11/2026 — O ERP ESPELHA A FOLHA DO ANÁLISE DE SPs? CONFERIDO, E ACHOU DEFEITO
 
 > *"Toda aquela parte de folha de pagamento do Análise de SPs faz a leitura de
