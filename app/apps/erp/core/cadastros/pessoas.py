@@ -51,12 +51,50 @@ logger = logging.getLogger(__name__)
 # As listas do pipe, em um lugar só
 # ---------------------------------------------------------------------------
 VINCULOS = ("CTPS", "PRESTADOR")
-VINCULO_ROTULOS = {"CTPS": "Carteira assinada (CTPS)",
-                   "PRESTADOR": "Prestador de serviço"}
+# ⚑ AS DUAS PALAVRAS, IGUAIS EM TODO LUGAR (17/11/2026). Ele: *"o ideal é
+# ficar CTPS e Prestador de Serviço. Observar o impacto disso, pois as
+# nomenclaturas estão diferentes."*
+#
+# Estavam mesmo: a tela mostrava "Carteira assinada (CTPS)" e "Prestador de
+# serviço" (s minúsculo), a folha compara "CTPS" e "Prestador de Serviço", e o
+# portal mostrava outra coisa. Três grafias para dois valores.
+#
+# ⚠️ ISTO MUDA SÓ O QUE SE LÊ. O que viaja para a folha é `VINCULO_PLANILHA`,
+# logo abaixo, e ele NÃO foi tocado — tem teste prendendo cada palavra dele
+# contra o que a folha compara (`test_erp_espelha_a_folha`).
+VINCULO_ROTULOS = {"CTPS": "CTPS", "PRESTADOR": "Prestador de Serviço"}
 # Como a PLANILHA escreve o mesmo dado (coluna D "Tipo de Cadastro" e coluna Z
 # "Tipo" são a mesma coisa, confirmado por ele em 05/11/2026). A folha compara
 # texto, então a palavra tem de chegar igual à que ela já lia.
 VINCULO_PLANILHA = {"CTPS": "CTPS", "PRESTADOR": "Prestador de Serviço"}
+
+
+def vinculo_pelo_contrato(tipo_contrato: Any) -> str:
+    """O vínculo que este tipo de contrato implica, ou "" se não implica nada.
+
+    ⚑ EXISTE PARA NÃO ADIVINHAR: a importação já confere a coerência entre os
+    dois (`planilha_dp`), e o cadastro pela tela recusa valor fora da lista.
+    O que sobra é o vínculo VAZIO — e aí o tipo de contrato responde sozinho.
+    """
+    codigo = str(tipo_contrato or "").strip().upper()
+    if codigo in TIPOS_CONTRATO_PRESTADOR:
+        return "PRESTADOR"
+    if codigo in TIPOS_CONTRATO_CTPS:
+        return "CTPS"
+    return ""
+
+
+def _tipo_para_a_folha(c) -> str:
+    """A palavra do vínculo que vai para a folha — ver o comentário no uso."""
+    vinculo = str(c.vinculo or "").strip().upper()
+    if vinculo not in VINCULO_PLANILHA:
+        vinculo = vinculo_pelo_contrato(getattr(c, "tipo_contrato", None))
+    if not vinculo:
+        logger.warning(
+            "Folha: colaborador %s está sem vínculo E sem tipo de contrato — "
+            "vai para a folha como CTPS por falta de informação", c.id)
+        vinculo = "CTPS"
+    return VINCULO_PLANILHA[vinculo]
 TIPOS_CONTRATO = (
     "CLT_DETERMINADO", "CLT_INDETERMINADO", "PJ", "AUTONOMO_RPA",
     "AUTONOMO_MENSALISTA", "JOVEM_APRENDIZ", "ESTAGIO", "TEMPORARIO", "PRO_LABORE",
@@ -941,7 +979,10 @@ def trocar_vinculo(s: Session, colaborador_id: int, dados: dict[str, Any],
             "começar depois disso.")
     from datetime import timedelta
     atual.demissao = inicio - timedelta(days=1)
-    atual.motivo = f"passou a {VINCULO_ROTULOS.get(destino, destino)}"
+    # ⚑ "passou a TER VÍNCULO X" (17/11/2026): com o rótulo encurtado para
+    # "CTPS", a frase antiga virava "passou a CTPS", que não se lê. A palavra é
+    # a que ele pediu; a frase em volta é que se ajusta a ela.
+    atual.motivo = f"passou a ter vínculo {VINCULO_ROTULOS.get(destino, destino)}"
     novo = ColaboradorVinculo(
         colaborador_id=c.id, vinculo=destino,
         tipo_contrato=_da_lista(dados.get("tipo_contrato"), TIPOS_CONTRATO,
@@ -1329,7 +1370,20 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "obra_nome": nome_obra,
             # "Tipo" é o vínculo, e só tem dois valores. A subvariação é o
             # tipo de contrato, logo abaixo.
-            "tipo": VINCULO_PLANILHA.get(c.vinculo or "CTPS", "CTPS"),
+            # ⚠️ VÍNCULO EM BRANCO NÃO VIRA "CTPS" NO ESCURO (17/11/2026).
+            #
+            # Esta linha devolvia "CTPS" para qualquer valor que não estivesse
+            # no mapa — inclusive para o vínculo VAZIO. E a folha decide a
+            # diária com `tipo == "Prestador de Serviço" E contrato ==
+            # "Autônomo (RPA)"`: um RPA com o vínculo em branco era pago como
+            # CTPS, sem erro em lugar nenhum. É o "pagar funcionário de forma
+            # equivocada" que ele teme, e acontecia em silêncio.
+            #
+            # Agora, faltando o vínculo, quem responde é o TIPO DE CONTRATO —
+            # que diz isso sem ambiguidade (PJ, RPA, autônomo mensalista,
+            # estágio e pró-labore são prestador; as CLTs e o aprendiz, não).
+            # Só quando os DOIS estão vazios sobra o "CTPS", e aí fica no log.
+            "tipo": _tipo_para_a_folha(c),
             "vinculo": c.vinculo or "CTPS",
             "pagamento": "MENSALISTA" if c.mensalista else "DIARISTA",
             "tipo_contrato": TIPO_CONTRATO_ROTULOS.get(c.tipo_contrato or "",

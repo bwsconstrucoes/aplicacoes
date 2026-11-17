@@ -21,6 +21,114 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — A FILA DO PORTAL: dois defeitos silenciosos e os campos que ele pediu
+
+**Ele mandou uma fila de doze ajustes** sobre o pedido de cadastro do portal, a
+tela de Pessoal e o quadro. Dois itens eram DEFEITO, e os dois do mesmo tipo:
+**escrever em português uma coisa que a plataforma lê em inglês, ou comparar
+código com rótulo.** Nenhum dos dois dá erro — a tela só não funciona.
+
+**1. "No quadro, não consigo movimentar os cadastros para outras etapas."**
+
+Eu havia escrito `{metodo: "POST", corpo: {...}}`. Esses nomes não existem no
+`fetch`: são `method` e `body`. O navegador ignora opção que não conhece,
+mandou um **GET sem corpo**, a rota só aceita POST, e a tela dizia "Falha na
+operação". Pegou as **três** chamadas: arrastar no quadro, mudar etapa pelo
+diálogo e concluir a conferência — ou seja, a movimentação de etapa estava
+**inteiramente morta**, e é justamente a funcionalidade que ele mais pediu.
+
+Virou teste: `tests/test_telas_opcoes_do_fetch.py` varre as telas por opção de
+fetch com nome em português (`metodo`, `corpo`, `cabecalhos`, `sinal`).
+
+**2. "O campo Tipo de contrato não está exibindo as opções corretamente."**
+
+Pior do que ele viu: com **CTPS não aparecia opção nenhuma**, e com Prestador
+só "PJ". A tela traduzia a lista permitida para CÓDIGO e comparava com o valor
+da caixinha, que é **RÓTULO** — e "PJ" era o único cujo rótulo é igual ao
+código. **O comentário do código afirmava o contrário do que o código fazia**, e
+foi ele que escondeu o defeito. O mesmo erro de alfabeto escondia o **Valor da
+Diária**, que não aparecia em caso nenhum.
+
+**O que mudou nos campos, tudo a pedido dele:**
+
+| Antes | Agora |
+|---|---|
+| "Tipo de Documentação para Cadastro" | **"Vínculo"** |
+| "Como paga a alimentação / o transporte" | **"Ajuda com Alimentação / Transporte"**, e **obrigatórias** |
+| (não havia) | opção **"Não recebe"** nas duas |
+| "Meio de Transporte para chegar à Obra?" | **eliminado** |
+| Valor da Diária sempre | só **CLT e Autônomo (RPA)** |
+| PJ sem os dados da empresa | abre **Razão social (PJ)** e **CNPJ (PJ)** |
+| Situação como campo em "Vínculo e pagamento" | **vem da etapa** |
+
+**⚑ "Não recebe" só foi possível junto com "obrigatório".** Antes, exigir a
+categoria forçaria a inventar uma para quem não recebe nada. Com a opção
+explícita, o campo em branco volta a significar **uma** coisa: falta responder.
+
+**⚠️ E ELA VAI VAZIA PARA A FOLHA**, não com a palavra "Não recebe": a folha
+calcula pelo MODO, e "não recebe" não é um modo — é a ausência de auxílio. Mais
+que isso: `para_folha` **zera o valor** quando a categoria é essa, senão um
+cadastro que tinha valor e passou a "não recebe" mandaria o número velho, e do
+outro lado não há nada que o barre.
+
+### ⚑ 17/11/2026 — A SITUAÇÃO VEM DA ETAPA, e o laço que faltava fechar
+
+Ele: *"dentro de vínculo e pagamento, a situação é um reflexo das etapas. Não
+precisa ter mais esse campo."* Tinha razão — eram duas maneiras de dizer a
+mesma coisa, e elas discordavam: arrastar alguém para "Desligado" no quadro
+deixava a situação em ATIVO.
+
+**⚠️ MAS TIRAR O CAMPO, SOZINHO, TERIA SIDO GRAVE.** Até 17/11 `mover_etapa`
+**não mexia na situação**. Sem fechar esse laço, o sistema ficaria sem jeito
+nenhum de desligar alguém — e `colaboradores.situacao` é o que o **PONTO** lê
+para decidir quem bate, e o que a **mensageria** lê para não mandar aviso a
+quem saiu. A pessoa movida para "Desligado" no quadro continuaria batendo ponto
+e recebendo aviso da empresa.
+
+Então a ordem foi: **primeiro a etapa passou a definir a situação**
+(`SITUACAO_DA_ETAPA`), **depois** o campo saiu. A situação continua aparecendo
+na ficha e na lista; o que saiu foi o jeito de digitá-la por fora da etapa.
+
+### ⚑ 17/11/2026 — O VÍNCULO: a resposta sobre o impacto no pagamento
+
+Ele pediu: *"renomear Tipo de Documentação para Cadastro = Vínculo. Observar o
+impacto disso, pois as nomenclaturas estão diferentes, o ideal é ficar CTPS e
+Prestador de Serviço. (…) Ve o impacto disso na parte de pagamento dos
+colaboradores de analisesps."*
+
+**A resposta curta: renomear NÃO afeta o pagamento.** São duas listas
+separadas, e só uma chega à folha:
+
+| Lista | Para que serve |
+|---|---|
+| `VINCULO_ROTULOS` | o que a pessoa LÊ na tela — era "Carteira assinada (CTPS)" e "Prestador de serviço" |
+| `VINCULO_PLANILHA` | o que VIAJA para a folha — "CTPS" e "Prestador de Serviço" |
+
+Mexi só na primeira, e agora **as duas são a mesma palavra** (fim das três
+grafias para dois valores). A segunda tem teste prendendo cada palavra dela
+contra o que a folha compara.
+
+**⚠️ MAS OLHANDO O IMPACTO APARECEU COISA PIOR, e esta é a parte que importa.**
+
+`para_folha` devolvia **"CTPS" para qualquer vínculo fora do mapa — inclusive o
+VAZIO**. E a folha decide a diária com `tipo == "Prestador de Serviço"` **E**
+`contrato == "Autônomo (RPA)"`. Logo: **um autônomo RPA com o vínculo em branco
+era pago como CTPS**, sem erro em lugar nenhum. É exatamente o *"pagar
+funcionário de forma equivocada"* que ele teme, e acontecia calado.
+
+Agora, faltando o vínculo, **quem responde é o tipo de contrato** — que diz
+isso sem ambiguidade (PJ, RPA, autônomo mensalista, estágio e pró-labore são
+prestador; as CLTs e o aprendiz, não). Só quando os **dois** estão vazios sobra
+o "CTPS", e aí **fica no log**, porque aí é chute.
+
+**Sobre "equalizar os já cadastrados":** a coluna só aceita CTPS ou PRESTADOR —
+o cadastro pela tela recusa outro valor e a importação traduz o texto da
+planilha para o código. O que pode existir é o vínculo **vazio**, e é
+justamente esse caso que o conserto acima resolve sem precisar mexer em dado.
+**Não escrevi migração de dados**: não há como eu contar daqui quantos estão
+vazios, e reescrever coluna que decide pagamento sem ver o número antes é o
+oposto do cuidado que ele pediu.
+
 ### ⚑ 17/11/2026 — A CHAVE DE SEGREDOS: o erro estava certo e era inútil
 
 **O que ele viu:** *"fui gravar o email no cadastro da empresa e apareceu: A

@@ -286,7 +286,12 @@ def test_prestador_que_vira_CTPS_mantem_o_periodo_de_prestador(sessao_real, dono
     assert novo["vinculo"] == "CTPS" and novo["aberto"]
     # o vínculo antigo fecha no dia ANTERIOR: sem buraco e sem sobreposição
     assert antigo["vinculo"] == "PRESTADOR" and antigo["demissao"] == "2026-01-31"
-    assert "carteira" in antigo["motivo"].lower()
+    # ⚑ A FRASE MUDOU EM 17/11/2026 junto com o rótulo: ele pediu *"o ideal é
+    # ficar CTPS e Prestador de Serviço"*, então "Carteira assinada (CTPS)"
+    # virou só "CTPS" — e a frase passou a ser "passou a ter vínculo CTPS",
+    # porque "passou a CTPS" não se lê.
+    assert "ctps" in antigo["motivo"].lower()
+    assert "vínculo" in antigo["motivo"].lower()
 
 
 @banco_
