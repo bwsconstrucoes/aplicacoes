@@ -1546,6 +1546,41 @@ chat do ERP precisa decidir se a importação de extrato dele
 (`core/pagamentos/service.py`) sofre do mesmo problema com o Bradesco e, se
 sim, aplicar a mesma regra com uma refeitura das identidades já gravadas.
 
+### 17/11/2026 — a suíte caiu de ~8 min para ~5 min, e o gargalo era UM arquivo
+
+**Segunda cobrança dele sobre o mesmo assunto** (16/11/2026): *"eu havia
+comentado da demora dos testes (…) precisa otimizar eles."* A primeira foi em
+29/09, logo abaixo nesta lista — e o conserto de lá continua valendo. O que
+apareceu agora é outro gargalo, criado depois.
+
+**Onde estava:** a homologação por perfil (`tests/test_homologacao*_banco.py`)
+tinha crescido para **1.659 casos num arquivo só**. A suíte roda com
+`--dist loadfile`, que mantém os testes de um mesmo arquivo no MESMO
+trabalhador — de propósito, para as fixtures de sessão não serem refeitas. O
+efeito colateral: um processo trabalhava 8 minutos sozinho enquanto os outros
+três ficavam ociosos. O arquivo ERA a suíte.
+
+**Dois consertos, nenhum deles afrouxando regra:**
+
+1. **Dividido em quatro arquivos** — leituras, telas, escritas e o roteiro — com
+   o que é comum em `tests/homologacao.py`, que **não** é arquivo de teste (não
+   começa com `test_`), é a peça que os quatro leem. Agora o paralelismo os
+   alcança. Os mesmos casos continuam sendo conferidos, contra o mesmo Postgres.
+2. **A senha de teste passou a ser embaralhada uma vez**, não uma por caso: eram
+   1.659 × 63 ms para produzir sempre o MESMO texto. Embaralhar senha é caro de
+   propósito — é o que torna inviável adivinhar senha por tentativa —, e em
+   produção esse custo é a proteção. Nestes testes é desperdício puro: nenhum
+   deles faz login por senha; todos entram pela sessão.
+
+**Medido:** 11.500 testes, de ~491 s para **306 s** com quatro trabalhadores.
+
+**A armadilha, para quem vier depois:** com `--dist loadfile`, um arquivo de
+teste gigante é um gargalo invisível — a suíte "demora" sem que nenhum teste
+individual seja lento. Se a demora voltar, o primeiro lugar a olhar é
+`--durations=20`, procurando um ARQUIVO que concentra casos, não um teste caro.
+
+---
+
 ### 29/09/2026 — a suíte de testes, de inviável a um comando
 
 **Cobrança do dono, e procedente:** *"está demorando meia hora, uma hora para
