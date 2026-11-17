@@ -642,6 +642,10 @@
 <dialog id="dlg-completar" class="dlg-pessoa"><div class="dlg-topo"><h3 id="cp-titulo">Completar o período pela escala</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-completar').close()">Fechar</button></div>
   <div class="dlg-corpo" id="cp-corpo">carregando…</div></dialog>
+{# O CADASTRO DO ERP DENTRO DO PONTO (17/11/2026) — ver `abrirCadastroNoErp`. É o MESMO formulário da tela de
+   Colaboradores, servido sem cabeçalho nem lista; aqui ele só aparece. Não há um segundo cadastro. #}
+<dialog id="dlg-cadastro" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
+  <iframe id="cad-quadro" title="Cadastro da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 <dialog id="dlg-mapa" class="dlg-pessoa"><div class="dlg-topo"><h3 id="mp-titulo">Onde a batida foi feita</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-mapa').close()">Fechar</button></div>
   <div class="dlg-corpo" id="mp-corpo">carregando…</div></dialog>
@@ -2122,9 +2126,25 @@ function avisarQuemMostra(acao, id) {
   try { if (window.parent !== window) window.parent.postMessage({tipo: "bws-ficha", acao, id}, location.origin); }
   catch (e) { /* sem a tela de fora, nada a avisar */ }
 }
+// ⚑ O CADASTRO ABRE AQUI, EM CIMA, SEM SAIR DA TELA (17/11/2026). Ele: *"quando estou vendo o pessoal pelo ponto e
+// coloco pra abrir o cadastro, ele remete pra página de pessoal, quando deveria apenas abrir o modal correspondente
+// sem necessidade de ir pra outro lado. Os dados de cada um tem que estar de fácil acesso e todos correlacionados."*
+//
+// São três situações, e cada uma tem o caminho mais curto:
+//  · dentro da tela de Colaboradores (ela nos mostra): pede a ELA que abra o formulário — é o dono do formulário;
+//  · aqui, no ponto, e é o CADASTRO: abre o mesmo formulário do ERP numa janela em cima desta
+//    (`/erp/colaboradores/cadastro/<id>`), que vem sem cabeçalho, sem filtro e sem lista;
+//  · os DOCUMENTOS: continuam na tela de Colaboradores, em outra aba — ler e arquivar papel é trabalho de lá, e a
+//    janela de documentos ainda não sabe aparecer sozinha. Quando souber, cai no mesmo caminho do cadastro.
 function abrirCadastroNoErp(id, oque) {
   if (window.parent !== window) return avisarQuemMostra(oque, id);
+  if (oque === "editar") return abrirCadastroEmCima(id);
   window.open(`/erp/colaboradores?${oque}=${encodeURIComponent(id)}`, "_blank", "noopener");
+}
+
+function abrirCadastroEmCima(id) {
+  els("cad-quadro").src = `/erp/colaboradores/cadastro/${encodeURIComponent(id)}`;
+  els("dlg-cadastro").showModal();
 }
 async function carregarErpDaPessoa(id) {
   if (ERP_DA_PESSOA && ERP_DA_PESSOA.id === id) return pintarErpDaPessoa();
@@ -3703,6 +3723,16 @@ async function bloquearAparelho(a, depois) {
 // mostra (Colaboradores), que fecha o quadro dela.
 const FICHA_ID = {{ ficha_id|int }};
 els("dlg-pessoa").addEventListener("close", () => avisarQuemMostra("fechar"));
+
+// O formulário do ERP, de dentro da janela, avisa quando fecha e quando grava. Gravou: o que está na tela do ponto
+// (nome, obra, situação) pode ter mudado, então se recarrega a ficha da pessoa — não a tela inteira.
+els("dlg-cadastro").addEventListener("close", () => { els("cad-quadro").src = "about:blank"; });
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (ev.origin !== location.origin || d.tipo !== "bws-cadastro") return;
+  if (d.acao === "fechou") els("dlg-cadastro").close();
+  if (d.acao === "gravou") { ERP_DA_PESSOA = null; if (PAINEL && PAINEL.pessoa) carregarErpDaPessoa(PAINEL.pessoa.id); }
+});
 abrirPessoaPainel(FICHA_ID, null, PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia");
 {% elif aba_ponto == "ponto_hoje" %}
 // ===========================================================================

@@ -21,6 +21,94 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — OS CAMPOS QUE FALTAVAM, O CADASTRO QUE ABRE DENTRO DO PONTO, E UM DEFEITO QUE ESCONDIA AS TRÊS ABAS
+
+Pedido dele, em três partes: *"no cadastro, não vi campo referente à Data de
+Aviso Prévio, Saída e Último dia Trabalhado. Faça uma varredura e veja se ainda
+tem campo omisso. Outra coisa, quando estou vendo o pessoal pelo ponto e coloco
+pra abrir o cadastro ele remete pra página de pessoal, quando deveria apenas
+abrir o modal correspondente sem necessidade de ir pra outro lado. Os dados de
+cada um tem que estar de fácil acesso e todos correlacionados."*
+
+#### 1. A varredura: onze colunas sem campo, e a pior não era nenhuma das três
+
+Comparei coluna por coluna o que a tabela `colaboradores` guarda (82 colunas)
+com o que a ficha manda ao gravar. **Onze** não tinham campo. As três que ele
+citou estavam entre elas — mas a mais perigosa era outra:
+
+| Coluna | Por que faltava doer |
+|---|---|
+| **`data_inicio`** | a folha compara **início × admissão** para decidir se o dia é DIÁRIA ou CTPS (`analisesps/folha_vinculo.py`). O período em que a pessoa trabalhou **antes de ser registrada** era ilegível e inalterável pela tela |
+| `banco`, `agencia`, `conta` | há quem receba por depósito, e a ficha não respondia "por onde esta pessoa recebe?" |
+| `aviso_previo`, `ultimo_dia`, `demissao` | entravam só pelo pedido de desligamento; corrigir uma data errada exigia abrir outro desligamento |
+| `observacoes` | campo de texto livre que a importação preenchia e ninguém via |
+
+Todos ganharam campo em "Vínculo e pagamento", com um recado curto na tela: as
+três datas de saída **vêm do desligamento** e aqui se corrigem; a **data de
+saída** é o que tira a pessoa do ponto e da folha; e mexer nela **não desliga**
+ninguém — quem desliga é a etapa.
+
+**Nove colunas continuam sem campo de propósito**, e cada uma com o motivo
+escrito no teste novo (`tests/test_ficha_nao_esconde_campo.py`), que **falha se
+alguém acrescentar coluna sem campo nem motivo**. Sete são decisão fechada
+(chave da linha, carimbos do banco, foto, `cnpj_admissao` que vem da empresa,
+`etapa` e `situacao` que vêm da etapa, `ref_pipefy`, `requerente`,
+`responsavel_id`). **Duas são DÚVIDA ABERTA, e ficam para ele decidir:**
+
+- **`regime`** — nasce com "CLT" e parece ser o VÍNCULO com outro nome. Dar
+  campo a ela seria criar duas maneiras de dizer a mesma coisa (é a armadilha
+  que o campo "Situação" acabou de custar). **Não acrescentei campo e não
+  apaguei a coluna**: proponho tirá-la, e a decisão é dele.
+- **`convencao_categoria`** — vai para a folha, mas a categoria já vem da
+  convenção do cargo (`cargo_convencao.categoria`). Aqui parece cópia da
+  importação do Pipefy. Mesma proposta, mesma espera.
+
+#### 2. ⚠️ O DEFEITO QUE A TELA REVELOU: gravar fora da primeira aba não gravava NADA
+
+Achado dirigindo a tela no navegador, e **não era defeito novo** — estava em
+produção:
+
+> **Gravar o cadastro em qualquer aba que não fosse "Identificação" respondia
+> "Informe o nome completo" e não gravava nada.** Endereço, Vínculo e
+> pagamento, Benefícios: três abas inteiras.
+
+**A causa são duas regras certas que se atropelam.** As abas do formulário se
+desenham **uma por vez**, então os campos da aba fechada não existem na tela; e
+a gravação manda **só o que está na tela** (regra certa, que existe para não
+apagar o que a aba fechada guardava). Mas gravar é *"cria ou atualiza pelo
+CPF"*, e o servidor exige nome e CPF **em toda** gravação. O CPF já tinha volta
+por cima; o **nome não tinha**.
+
+Isso importa duas vezes: além do estrago em si, os campos que ele pediu hoje
+**moram na terceira aba** — sem este conserto, teriam sido decoração.
+
+Virou teste no mesmo arquivo: o que o servidor exige sempre tem de ter de onde
+vir quando o campo não está na aba aberta.
+
+#### 3. O cadastro abre DENTRO do ponto, sem trocar de tela
+
+O caminho inverso já existia desde 13/11 (a tela de Pessoal mostra a ficha do
+ponto dentro dela). Faltava a volta: pelo ponto, "Editar o cadastro completo"
+abria **outra aba** na tela de Pessoal.
+
+Agora abre uma janela **em cima** da ficha do ponto, com o **mesmo** formulário
+do ERP — não há um segundo cadastro. Gravou, a ficha do ponto se atualiza
+sozinha; fechou por dentro, a janela de fora fecha.
+
+**Como foi feito, porque muda o custo:** o ERP ganhou um **modo embutido**
+(`erp_base.html`) — a tela chega sem cabeçalho, sem filtro lateral e **sem
+carregar a lista**. Abrir o cadastro assim custa **3 chamadas** (obras, funções
+e opções do cadastro) contra as **5** da tela inteira, e nenhuma delas traz as
+mais de mil pessoas da lista. O caminho antigo (abrir em outra aba) **continua
+de pé para os DOCUMENTOS**, porque ler e arquivar papel é trabalho da tela de
+Pessoal e aquela janela ainda não sabe aparecer sozinha.
+
+**O que ficou de fora e ele precisa saber:** o modo embutido é um segundo jeito
+de dizer o que a ficha do ponto já dizia com estilo próprio dentro dela (desde
+13/11). **Não unifiquei os dois** — mexer naquela tela não estava no pedido. A
+nota está no código, nos dois lugares.
+
+
 ### ⚑ 17/11/2026 — A FILA DO PORTAL: dois defeitos silenciosos e os campos que ele pediu
 
 **Ele mandou uma fila de doze ajustes** sobre o pedido de cadastro do portal, a

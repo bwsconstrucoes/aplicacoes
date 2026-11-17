@@ -261,6 +261,23 @@ const PODE_VER_PONTO = {{ 'true' if pode.ver_ponto else 'false' }};
 const PODE_VER_MENSAGENS = {{ 'true' if pode.ver_mensagens else 'false' }};
 let COL = [], OBRAS = [], FUNCOES = [], ETAPAS = [], CARGOS = [], CONVENCOES = [];
 
+{# ⚑ ESTA TELA DENTRO DE OUTRA (17/11/2026) — ver o motivo em
+   `routes.py` › pagina_colaborador_embutido e o estilo em `erp_base.html`.
+
+   Embutida, ela é só o formulário de UMA pessoa: não carrega a lista (que são
+   mais de mil linhas e não serve para nada aqui) e avisa quem a mostra quando
+   a janela fecha, para a tela de fora voltar a mandar. #}
+const EMBUTIDO = {{ 'true' if embutido else 'false' }};
+const ABRIR_CADASTRO = {{ abrir_cadastro|int if abrir_cadastro else 'null' }};
+
+// Quem embute (a ficha do ponto) escuta estes avisos: "fechei" e "gravei".
+function avisarQuemEmbute(acao){
+  if (!EMBUTIDO) return;
+  try { if (window.parent !== window)
+    window.parent.postMessage({tipo: "bws-cadastro", acao}, location.origin); }
+  catch (e) { /* sem tela de fora, nada a avisar */ }
+}
+
 // O PAINEL ESCOLHIDO recorta a lista. Vazio = a lista inteira.
 let PENDENCIA = "";
 
@@ -1774,6 +1791,22 @@ function painelDaFicha(){
       ${campoTexto("Matrícula", "c-mat", c.matricula)}
       <div class="campo"><label>Contrato de experiência</label>${lista("c-exper",
         o.contratos_experiencia, c.contrato_experiencia)}</div>
+      {# ⚑ AS DATAS DO VÍNCULO, TODAS (17/11/2026). Ele: *"no cadastro, não vi
+         campo referente à Data de Aviso Prévio, Saída e Último dia
+         Trabalhado. Faça uma varredura e veja se ainda tem campo omisso."*
+
+         A varredura achou 11 colunas sem campo na ficha. Estas quatro são as
+         que mexem em dinheiro:
+
+         · DATA DE INÍCIO é a mais perigosa, e ela nem aparecia: a folha
+           compara início × admissão para decidir se o dia é DIÁRIA ou CTPS
+           (`analisesps/folha_vinculo.py`). Quem começou antes de ser
+           registrado recebe diária nesse intervalo — e esse intervalo era
+           ilegível e ineditável aqui.
+         · AVISO PRÉVIO, SAÍDA e ÚLTIMO DIA entravam só pelo pedido de
+           desligamento. Quem precisasse corrigir uma data errada não tinha
+           por onde: tinha de abrir outro desligamento. #}
+      ${campoData("Data de início", "c-datainicio", c.data_inicio)}
       ${campoData("Data de admissão", "c-admissao", c.admissao)}
       ${campoTexto("Salário", "c-salario", c.salario ? numero(c.salario) : "")}
       ${sim_nao("Mensalista?", "c-mensalista", c.mensalista)}
@@ -1814,6 +1847,36 @@ function painelDaFicha(){
         ["CPF", "EMAIL", "TELEFONE", "ALEATORIA"].map(x => ({valor: x, rotulo: x})), c.pix_tipo)}</div>
       <div class="campo" style="grid-column:span 2"><label>Chave Pix</label>
         <input id="c-pix" value="${escapar(c.pix_chave || "")}"></div>
+      {# ⚑ AS DATAS DA SAÍDA, EDITÁVEIS AQUI (17/11/2026). O servidor já as
+         aceitava (`pessoas.DATAS`) — faltava o campo, então elas só entravam
+         pelo pedido de desligamento e ninguém conseguia corrigir uma data
+         errada sem abrir outro desligamento.
+
+         Ficam sempre visíveis, e não só para quem saiu: é olhando a ficha que
+         alguém descobre que a data está errada. Vazias para quem está na
+         ativa, que é a leitura certa. #}
+      ${campoData("Data do aviso prévio", "c-avisoprevio", c.aviso_previo)}
+      ${campoData("Último dia trabalhado", "c-ultimodia", c.ultimo_dia)}
+      ${campoData("Data de saída", "c-demissao", c.demissao)}
+      {# OBSERVAÇÕES: o servidor já guardava a coluna e a ficha não tinha onde
+         escrever. É o campo que recebe o que não cabe em campo nenhum — e sem
+         ele isso ia para a observação do AUXÍLIO, que é outra coisa. #}
+      <div class="campo" style="grid-column:span 3"><label for="c-obs">Observações</label>
+        <textarea id="c-obs" rows="2" style="width:100%; font-family:inherit"
+          >${escapar(c.observacoes || "")}</textarea></div>
+      <div class="campo" style="grid-column:span 3">
+        <div class="cartao-dica" style="margin:0">As três datas da saída nascem
+          do <b>pedido de desligamento</b> e ficam aqui para <b>corrigir</b>. A
+          <b>data de saída</b> é a que tira a pessoa do ponto e da folha; o
+          <b>último dia trabalhado</b> pode ser diferente dela (aviso
+          indenizado). Mudar a data de saída <b>não</b> desliga a pessoa —
+          quem faz isso é a etapa.</div></div>
+      {# OS DADOS BANCÁRIOS: o Pix já estava aqui, a conta não — e há quem
+         receba por depósito. Sem eles a ficha não respondia "por onde esta
+         pessoa recebe?" sozinha. #}
+      ${campoTexto("Banco", "c-banco", c.banco)}
+      ${campoTexto("Agência", "c-agencia", c.agencia)}
+      ${campoTexto("Conta", "c-conta", c.conta)}
       ${campoTexto("Razão social (PJ)", "c-razao", c.razao_social_pj, 'style="grid-column:span 2"')}
       ${campoTexto("CNPJ (PJ)", "c-cnpjpj", c.cnpj_pj, 'name="cnpj"')}
       ${campoTexto("ID Fortes", "c-fortes", c.id_fortes)}
@@ -2088,7 +2151,23 @@ function ligarTipoDeContrato(){
 
 function corpoDoCadastro(){
   const c = FICHA || {};
-  const d = {nome: valorDe("c-nome"), cpf: valorDe("c-cpf") || c.cpf};
+  {# ⚑ O NOME E O CPF VÊM DA PESSOA QUANDO NÃO ESTÃO NA TELA (17/11/2026).
+
+     As abas do formulário se desenham UMA POR VEZ: na de "Vínculo e
+     pagamento" os campos da Identificação não existem no documento. O CPF já
+     tinha a volta por cima; o NOME não tinha — e o servidor exige os dois
+     SEMPRE, porque gravar é "cria ou atualiza pelo CPF".
+
+     O resultado, achado dirigindo a tela: gravar em QUALQUER aba que não
+     fosse a primeira respondia **"Informe o nome completo"** e não gravava
+     nada. Endereço, vínculo e pagamento, benefícios — três abas inteiras. Não
+     era defeito novo; era defeito que ninguém tinha visto, e ele aparece
+     porque as datas de saída e os dados bancários que ele pediu hoje moram na
+     terceira aba.
+
+     ⚠️ `??` e não `||`: apagar o nome na tela (vazio) tem de dar erro, não
+     reviver em silêncio o nome que estava gravado. #}
+  const d = {nome: valorDe("c-nome") ?? c.nome, cpf: valorDe("c-cpf") || c.cpf};
   const mapa = {
     "c-nasc": "data_nascimento", "c-sexo": "sexo", "c-civil": "estado_civil",
     "c-escol": "escolaridade", "c-mae": "nome_mae", "c-pai": "nome_pai",
@@ -2106,7 +2185,12 @@ function corpoDoCadastro(){
     // a poder divergir, que é o defeito que acabou de ser consertado.
     "c-cargo": "cargo_id", "c-convencao": "convencao_id",
     "c-obra": "obra_id", "c-mat": "matricula", "c-exper": "contrato_experiencia",
+    "c-datainicio": "data_inicio",
     "c-admissao": "admissao", "c-salario": "salario", "c-mensalista": "mensalista",
+    "c-banco": "banco", "c-agencia": "agencia", "c-conta": "conta",
+    "c-obs": "observacoes",
+    "c-avisoprevio": "aviso_previo", "c-ultimodia": "ultimo_dia",
+    "c-demissao": "demissao",
     // "c-sit" SAIU em 17/11/2026: a situação vem da etapa, não de um campo.
     "c-diaria": "valor_diaria", "c-pixtipo": "pix_tipo",
     "c-pix": "pix_chave", "c-razao": "razao_social_pj", "c-cnpjpj": "cnpj_pj",
@@ -2140,7 +2224,8 @@ async function salvarCadastro(){
     FICHA = r.colaborador;
     aviso("dlg-msg", "Cadastro salvo.", "ok");
     pintarOQueFalta();
-    carregar();
+    // Embutida não há lista para atualizar: avisa a tela de fora, que tem.
+    if (EMBUTIDO) avisarQuemEmbute("gravou"); else carregar();
     // Depois de salvar, as abas de dependente e histórico passam a valer.
     els("c-abas").querySelectorAll("[data-aba]").forEach(x => x.disabled = false);
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
@@ -2153,6 +2238,7 @@ function fecharFormulario(){
   const volta = VOLTAR_PARA_FICHA;
   VOLTAR_PARA_FICHA = null;
   els("dlg").close();
+  if (EMBUTIDO) return;          // quem avisa é o ouvinte de "close"
   if (volta) ficha(volta, "resumo");
 }
 
@@ -2738,7 +2824,24 @@ function abrirPeloEndereco(){
   else if (n("documentos")) ficha(n("documentos"), "documentos");
   else if (n("pessoa")) abrirFichaUnica(n("pessoa"));
 }
-carregar().then(abrirPeloEndereco);
+// EMBUTIDA, a partida é outra: só o que o formulário precisa (obras, funções
+// e as opções do cadastro) e a janela da pessoa já aberta. A lista inteira de
+// colaboradores fica de fora de propósito — ela não aparece aqui.
+async function partirEmbutido(){
+  try {
+    OBRAS = (await api("/erp/api/lancamento/dados")).dados.obras;
+    FUNCOES = (await api("/erp/api/funcoes")).funcoes;
+    const o = await api("/erp/api/colaboradores/opcoes");
+    ETAPAS = o.etapas || []; CARGOS = o.cargos || []; CONVENCOES = o.convencoes || [];
+    await abrirFichaCompleta(ABRIR_CADASTRO);
+    // Fechar pelo Esc também tem de avisar quem está mostrando.
+    els("dlg").addEventListener("close", () => avisarQuemEmbute("fechou"));
+  } catch(e){ document.body.innerHTML =
+    `<div class="aviso alerta" style="margin:16px">${e.message}</div>`; }
+}
+
+if (EMBUTIDO) partirEmbutido();
+else carregar().then(abrirPeloEndereco);
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

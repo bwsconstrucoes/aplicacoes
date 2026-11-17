@@ -3,6 +3,43 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## ⚑ 17/11/2026 — O CADASTRO DO ERP ABRE DENTRO DA FICHA DO PONTO (feito pelo chat do ERP/DP)
+
+**O que mudou nesta tela:** na ficha da pessoa, aba **Cadastro**, o botão
+"✏️ Editar o cadastro completo" **não abre mais outra aba** na tela de Pessoal.
+Abre uma janela em cima desta, com o **mesmo** formulário do ERP.
+
+Pedido do dono: *"quando estou vendo o pessoal pelo ponto e coloco pra abrir o
+cadastro ele remete pra página de pessoal, quando deveria apenas abrir o modal
+correspondente sem necessidade de ir pra outro lado. Os dados de cada um tem
+que estar de fácil acesso e todos correlacionados."*
+
+**Como funciona, e o que NÃO mudou:**
+
+- A janela mostra `/erp/colaboradores/cadastro/<id>` — rota nova no ERP que
+  serve a tela de Colaboradores em **modo embutido**: sem cabeçalho, sem filtro
+  lateral e **sem carregar a lista**. São **3** chamadas de rede (obras, funções
+  e opções do cadastro) contra as 5 da tela inteira.
+- **Gravou lá dentro, a ficha do ponto se atualiza sozinha** (só o painel da
+  pessoa, não a tela toda). Fechou por dentro, a janela de fora fecha.
+- **Dentro da tela de Colaboradores nada mudou:** quando a ficha do ponto está
+  aparecendo DENTRO dela (iframe), o botão continua pedindo a ELA que abra o
+  formulário — ela é a dona do formulário. Caminho antigo, intacto.
+- **Os DOCUMENTOS continuam abrindo em outra aba.** Ler e arquivar papel é
+  trabalho da tela de Pessoal, e aquela janela ainda não sabe aparecer sozinha.
+  Quando souber, cai no mesmo caminho.
+- Fora do alcance de quem abre, a janela responde **"Esta pessoa não está entre
+  as que você acompanha"** — em português, não o JSON técnico que uma API
+  devolveria.
+
+**⚠️ Dívida anotada, não paga:** esta tela já tinha o próprio jeito de aparecer
+"embutida" (o estilo de `.corpo.embutido`, de 13/11), e o ERP ganhou agora um
+segundo (`body.embutido`, em `erp_base.html`). São dois jeitos de dizer a mesma
+coisa. **Não unifiquei** — mexer nesta tela além do pedido não estava
+autorizado. A nota está nos dois lugares do código.
+
+---
+
 ## ⚑ 17/11/2026 — TROCAR A BASE DO PONTO ERA DECISÃO NO ESCURO (feito pelo chat do ERP/DP)
 
 **O dono trocou a base do ponto para o cadastro do ERP** (Ponto › Configuração ›

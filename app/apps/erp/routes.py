@@ -919,6 +919,47 @@ def pagina_colaboradores():
                            **_contexto("colaboradores"))
 
 
+@bp.route("/erp/colaboradores/cadastro/<int:colaborador_id>")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def pagina_colaborador_embutido(colaborador_id: int):
+    """O FORMULÁRIO DO CADASTRO SOZINHO, para aparecer DENTRO de outra tela.
+
+    ⚑ 17/11/2026, pedido dele: *"quando estou vendo o pessoal pelo ponto e
+    coloco pra abrir o cadastro, ele remete pra página de pessoal, quando
+    deveria apenas abrir o modal correspondente sem necessidade de ir pra outro
+    lado."*
+
+    É a MESMA tela de Colaboradores e o MESMO formulário — não há um segundo
+    cadastro. O que muda é que ela chega sem cabeçalho, sem filtro e sem lista
+    (`embutido`), já com a janela da pessoa aberta. Quem a mostra (hoje a ficha
+    do ponto) a põe numa janela e fica onde está.
+
+    Custo, porque vale dizer: aberta assim ela NÃO carrega a lista de
+    colaboradores — são 3 chamadas (obras, funções e opções do cadastro) em vez
+    das 5 da tela inteira, e nenhuma delas traz as mais de mil pessoas.
+    """
+    from app.apps.erp.core.arquivo.service import sigilos_visiveis
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    with get_session() as _s:
+        usuario = _usuario_logado(_s)
+        # Fora do alcance responde "não encontrado" (ver o CLAUDE.md) — mas
+        # como isto é PÁGINA, e não API, a resposta é em português dentro da
+        # janela. O errorhandler do blueprint devolve JSON, e quem abrisse a
+        # janela leria `{"erro": ...}` na tela.
+        try:
+            exigir_colaborador_no_escopo(_s, usuario, colaborador_id)
+        except ErroNaoEncontrado:
+            return ("<!doctype html><meta charset=utf-8>"
+                    "<div style=\"font:15px system-ui; padding:24px\">"
+                    "Esta pessoa não está entre as que você acompanha.</div>"), 404
+        ve_pessoal = "PESSOAL" in sigilos_visiveis(usuario)
+    return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
+                           embutido=True, abrir_cadastro=colaborador_id,
+                           **_contexto("colaboradores"))
+
+
 @bp.route("/erp/cargos")
 @login_obrigatorio
 @permissao("editar_colaboradores")

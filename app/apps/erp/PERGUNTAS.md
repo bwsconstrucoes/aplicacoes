@@ -2560,6 +2560,50 @@ está contando.**
 
 ---
 
+## 3z-undecies. AS DATAS DA SAÍDA, O INÍCIO ANTES DO REGISTRO E A CONTA BANCÁRIA (17/11/2026)
+
+Os campos que a varredura de 17/11 trouxe para a ficha tornam estas perguntas
+possíveis — e **antes dela nenhuma tinha resposta pela tela**, porque o dado
+existia no banco e não aparecia em lugar nenhum.
+
+### O que dá para perguntar agora
+
+- **"Quem está em aviso prévio hoje?"** — as pessoas com `aviso_previo`
+  preenchido e sem data de saída ainda.
+- **"Quando foi o último dia trabalhado do fulano?"** — e ⚠️ ele é **diferente
+  da data de saída**: o último dia é o que a pessoa de fato trabalhou; a data
+  de saída é a que tira do ponto e da folha. Toda resposta que misturar os dois
+  está errada.
+- **"Quem saiu neste mês?"** — por `demissao` (data de saída).
+- **"Quem começou a trabalhar antes de ser registrado, e por quantos dias?"** —
+  a diferença entre **data de início** e **data de admissão**. ⚠️ É a pergunta
+  que mais vale a pena conferir: **é esse intervalo que a folha usa para decidir
+  se o dia é pago como DIÁRIA ou como CTPS** (`analisesps/folha_vinculo.py`).
+  Resposta errada aqui é pagamento errado.
+- **"Quem recebe por depósito e não por Pix?"** — quem tem banco, agência e
+  conta e não tem chave Pix.
+- **"Que gente tem dados bancários pela metade?"** — banco sem agência, agência
+  sem conta. ⚠️ Vale perguntar porque **nada no sistema barra isso**.
+
+### As palavras ambíguas desta parte
+
+| Palavra | As duas leituras |
+|---|---|
+| **"saiu"** | pela **data de saída** (`demissao`) ou pela **etapa Desligado**? Desde 17/11 a etapa define a situação, mas a DATA é digitada à parte — e as duas podem discordar |
+| **"último dia"** | último dia **trabalhado** ou último dia **de vínculo**? São campos diferentes |
+| **"entrou na empresa"** | **data de início** (começou a trabalhar) ou **admissão** (foi registrado)? |
+
+### O que o sistema ainda NÃO responde
+
+- **"Em quantos casos a data de saída e a etapa discordam?"** — a conta dá, mas
+  não há pergunta pronta, e é justamente onde um erro de digitação se esconde:
+  alguém com data de saída preenchida e etapa ainda em Concluído **continua
+  batendo ponto**.
+- **"Esta pessoa recebeu tudo o que devia na saída?"** — o sistema não tem a
+  rescisão; ela mora no Fortes.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
