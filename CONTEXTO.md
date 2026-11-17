@@ -827,6 +827,7 @@ próprio código havia meses. A regra entrou no `CLAUDE.md`: contar o custo da
 operação (chamadas de rede, leituras de planilha, por item e por lote) antes de
 mexer numa área, e **relatar** o que a conta mostrar — mesmo sem mexer. Não
 fazer sem pedir continua valendo; não FALAR sem ser perguntado nunca foi regra.
+
 ### 16/11/2026 — DECIDIDO: O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA (atravessa áreas: Ponto, ERP e Análise de SPs)
 
 **Ainda NÃO foi feito.** Fica registrado porque é decisão tomada, com condição
