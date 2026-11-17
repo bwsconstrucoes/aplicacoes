@@ -524,3 +524,107 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
         f"Identificação da declaração:\n{id_dps}",
         id_dps=id_dps,
     )
+
+
+# --------------------------------------------------------------------------- #
+# CANCELAMENTO na prefeitura — o único caminho deste sistema que apaga um
+# documento fiscal, e ele NÃO se desfaz.
+#
+# Pedido do dono em 17/11/2026: "Não é tudo automático, não? (…) E por que tu não
+# faz tudo?" Não havia motivo bom — o endereço da API já estava no
+# `el_nfse_nacional.registrar_evento`, o schema do pedido está versionado em
+# `xsd_nacional/`, e a assinatura é a mesma da declaração. Faltava montar o XML.
+# --------------------------------------------------------------------------- #
+class CancelamentoRecusado(RuntimeError):
+    """A prefeitura recusou o cancelamento. A nota continua VÁLIDA."""
+
+    def __init__(self, motivos, bruto=None):
+        self.motivos = motivos or []
+        self.bruto = bruto
+        super().__init__(" | ".join(str(m) for m in self.motivos) or "recusado sem motivo")
+
+
+def cancelar_nota(ctx: dict, chave_acesso: str, token: str, producao: bool,
+                  motivo_codigo: str, motivo_texto: str) -> dict:
+    """Registra na prefeitura o evento de cancelamento da nota.
+
+    ⚠️ **Isto não tem volta.** Nota cancelada não volta a valer, e cancelar a nota
+    errada é o pior erro possível nesta área. Quem chama precisa ter confirmado o
+    número E o valor da nota com a pessoa antes.
+
+    Devolve `{"ok": True, "resposta": ...}` em caso de aceite. Levanta
+    `CancelamentoRecusado` quando a prefeitura recusa — e aí **a nota continua
+    válida**, nada mudou.
+    """
+    import evento_cancelamento as evt
+
+    chave_pem, cert_pem = ctx.get("chave_pem"), ctx.get("cert_pem")
+    if not (chave_pem and cert_pem):
+        raise NotaNaoSaiu("Certificado A1 não carregado — sem ele não dá para assinar "
+                          "o cancelamento.")
+    if not token:
+        raise NotaNaoSaiu("Token de integração da prefeitura ausente — ver a tela de "
+                          "Diagnóstico.")
+    cnpj = (ctx.get("dados_rps") and getattr(ctx["dados_rps"], "prest_cnpj", "")) or ""
+    if not cnpj:
+        cnpj = (ctx.get("cred", {}) or {}).get("CNPJ_PRESTADOR", "")
+    xml = evt.montar_xml(chave_acesso, cnpj, motivo_codigo, motivo_texto, producao,
+                         chave_pem=chave_pem, cert_pem=cert_pem)
+
+    cliente = nac.ELNfseNacional(
+        token=token, chave_pem=chave_pem, cert_pem=cert_pem,
+        ambiente="producao" if producao else "homologacao",
+    )
+    resp = cliente.registrar_evento(chave_acesso, xml)
+    motivos = nac.ELNfseNacional.erros_da_resposta(resp)
+    if motivos:
+        raise CancelamentoRecusado(explicar_erros(motivos), bruto=resp)
+    return {"ok": True, "resposta": resp}
+
+
+def chave_da_nota(ctx: dict, numero, token: str, producao: bool,
+                  planilha=None) -> str:
+    """Acha a chave de acesso (50 dígitos) de uma nota já emitida, pelo número.
+
+    A chave é o que identifica a nota no padrão nacional, e é o que o
+    cancelamento exige. Ela é procurada em duas fontes, na ordem do mais barato
+    para o mais confiável:
+
+    1. a aba **Controle Nacional** da planilha, coluna `chave` — de graça, mas só
+       tem as notas que passaram por lá;
+    2. a **própria prefeitura**: o identificador da declaração é derivado do
+       número da nota, e a consulta devolve a nota com a chave dentro. Custa uma
+       chamada e não depende de a planilha estar em dia.
+
+    Devolve "" quando nenhuma das duas acha — e aí quem chama pede a chave à
+    pessoa, que a tem na DANFSe.
+    """
+    from worker import sequencial_da_nota
+    seq = sequencial_da_nota(numero)
+    if not seq:
+        return ""
+
+    if planilha is not None:
+        try:
+            import controle_nacional as ctrl
+            ws = planilha.worksheet(ctrl.ABA_CONTROLE)
+            for linha in ws.get_all_values()[1:]:
+                if not linha or sequencial_da_nota(linha[0]) != seq:
+                    continue
+                chave = "".join(c for c in (linha[13] if len(linha) > 13 else "")
+                                if c.isdigit())
+                if len(chave) == 50:
+                    return chave
+        except Exception:
+            pass                       # a planilha é atalho, não fonte obrigatória
+
+    try:
+        cnpj = (ctx.get("dados_rps") and getattr(ctx["dados_rps"], "prest_cnpj", "")) or ""
+        if not cnpj:
+            return ""
+        id_dps = nac.gerar_id_dps(nac.COD_IBGE_EUSEBIO, cnpj, 1, seq)
+        dados = consultar(ctx, id_dps, token, producao)
+        chave = "".join(c for c in str(dados.get("chave") or "") if c.isdigit())
+        return chave if len(chave) == 50 else ""
+    except Exception:
+        return ""

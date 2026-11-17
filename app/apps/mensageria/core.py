@@ -117,9 +117,13 @@ CATALOGO: list[dict] = [
      "politica": TELEGRAM_OU_WHATSAPP,
      "descricao": "A mensagem de teste mandada pela própria tela (o canal é escolhido na hora)."},
     # Telegram
+    # Ligado em 14/11/2026, pedido do dono: quem não recebe por falta de
+    # cadastro no Telegram é convidado pelo WhatsApp (mensageria/telegram_cadastro.py).
     {"chave": "telegram.aviso_cadastro", "nome": "Convite para cadastrar o Telegram", "modulo": "Telegram",
-     "politica": DESLIGADO,
-     "descricao": "Mensagem por WhatsApp a quem deveria ter recebido um aviso no Telegram e ainda não se cadastrou."},
+     "politica": WHATSAPP,
+     "descricao": ("Mensagem por WhatsApp, com link pessoal para o robô, a colaborador que deveria ter "
+                   "recebido um aviso no Telegram e ainda não se cadastrou — no máximo um a cada 7 dias "
+                   "por pessoa. Também sai pela aba Cadastro do Telegram.")},
 ]
 _POR_CHAVE = {t["chave"]: t for t in CATALOGO}
 
@@ -168,6 +172,33 @@ def _inteiro(texto: str, padrao: int) -> int:
 
 def whatsapp_ligado(conn) -> bool:
     return ler_parametro(conn, WHATSAPP_LIGADO, "") == "1"
+
+
+# ---------------------------------------------------------------------------
+# NÃO MANDAR MENSAGEM PARA QUEM FOI DESLIGADO (17/11/2026)
+#
+# Decisão dele, dita com todas as letras: *"essa correlação entre o ERP e as
+# pessoas é fundamental, tendo em vista a questão do bloqueio de envio de
+# mensagens para as pessoas desligadas. Por isso que tem que estar tudo
+# correlacionado."*
+#
+# ⚑ NASCE LIGADO. Não é configuração que se descobre depois: ele pediu o
+# bloqueio, então o padrão é bloquear. A chave existe para o caso contrário —
+# se um dia ele precisar avisar alguém que já saiu, desliga pela tela em vez de
+# esperar código novo.
+#
+# ⚑ O QUE ISTO BLOQUEIA, E O QUE NÃO: bloqueia o que a EMPRESA MANDA (passa
+# pelo `notificador.notificar`). NÃO bloqueia o robô RESPONDENDO a quem pede —
+# o contracheque pelo Telegram sai por outro caminho (`telegram_bot._tg_enviar`)
+# e continua funcionando, porque quem acabou de sair costuma precisar do último
+# contracheque. A separação é o que faz o bloqueio não virar um problema novo.
+# ---------------------------------------------------------------------------
+BLOQUEAR_DESLIGADOS = "bloquear_desligados"
+BARRADO_DESLIGADO = "DESLIGADO_DA_EMPRESA"
+
+
+def bloqueia_desligados(conn) -> bool:
+    return ler_parametro(conn, BLOQUEAR_DESLIGADOS, "1") == "1"
 
 
 def tetos(conn) -> tuple[int, int]:
@@ -383,5 +414,13 @@ def resumo(conn) -> dict:
             "whatsapp_ligado": whatsapp_ligado(conn), "retencao_dias": RETENCAO_DIAS}
 
 
+# Nomes de origens que não são tipos do catálogo (não têm política: só aparecem
+# no registro).
+NOMES_FORA_DO_CATALOGO = {
+    "externo.telegram_enviar": "Envio externo pelo Telegram (Make, emissão de nota)",
+    "sem_tipo": "Sem tipo (módulos antigos)",
+}
+
+
 def nome_do_tipo(chave: str) -> str:
-    return (_POR_CHAVE.get(chave) or {}).get("nome") or chave
+    return ((_POR_CHAVE.get(chave) or {}).get("nome") or NOMES_FORA_DO_CATALOGO.get(chave) or chave)

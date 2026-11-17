@@ -133,6 +133,46 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
+    # ⚑ VER A REMUNERAÇÃO É AÇÃO PRÓPRIA desde 17/11/2026, e ela existe por um
+    # pedido dele, ao decidir liberar o ERP para o administrativo de obra:
+    #
+    #   *"Eles não são DP, eles são administrativos de obra. Então eles vão
+    #    visualizar PARCIAL as informações. (…) não é para ter acesso à
+    #    documentação dos colaboradores, é para ter um acesso mais restrito."*
+    #   *"Visão restrita é os dados básicos mesmo. (…) saber se tem algum dado
+    #    tipo demissional, aviso prévio, data de saída, se já botou o telefone,
+    #    em que etapa está."*
+    #
+    # ⚠️ ANTES DISTO, QUEM ABRIA A TELA DE PESSOAL VIA TUDO: salário, valor de
+    # diária, auxílios, PIS, chave Pix. `ver_pessoal` era uma porta só, e o
+    # administrativo de obra a tinha. Era o achado que travava a liberação.
+    #
+    # A separação é entre DUAS perguntas diferentes:
+    #   `ver_pessoal`     — posso abrir a tela e ver QUEM trabalha aqui?
+    #   `ver_remuneracao` — posso ver QUANTO essa pessoa recebe e como?
+    #
+    # A lista é a de `ver_pessoal` MENOS o administrativo de obra. Nenhum
+    # outro perfil perde nada: mexer no alcance de quem já trabalha com isso
+    # não foi pedido, e tirar acesso sem pedir quebra o trabalho de alguém.
+    "ver_remuneracao": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.DEPARTAMENTO_PESSOAL, P.PARCEIRO},
+    # ⚑ "ESTE CPF JÁ TEM CADASTRO?" — AÇÃO PRÓPRIA (15/11/2026).
+    #
+    # A conferência é usada por DOIS caminhos com pesos diferentes: o DP
+    # cadastrando pela tela de Colaboradores, e a OBRA abrindo um pedido de
+    # cadastro — que agora se converte em readmissão quando o CPF já existe.
+    #
+    # Ela estava declarada como `editar_colaboradores`, que a obra não tem: o
+    # aviso simplesmente não aparecia para quem mais precisava dele. Declarar
+    # uma ação e conferir outra por dentro faria a declaração mentir, então a
+    # ação é PRÓPRIA e as duas a implicam (ACOES_IMPLICADAS).
+    #
+    # O que ela devolve é de propósito o mínimo: existe, o nome, se está ativa
+    # ou desligada. Não devolve salário, endereço nem documento — quem só abre
+    # pedido não precisa disso, e varrer CPFs não mapearia o cadastro.
+    "conferir_cpf_colaborador": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                                 P.GESTOR_OBRA, P.SUPERVISOR_OBRA,
+                                 P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     # A FILA DE SOLICITAÇÕES DO DP (05/11/2026). Duas ações, e a divisão vem do
     # pipe que ela substitui: lá o formulário perguntava "requisição solicitada
     # por um terceiro?" porque o encarregado abre pedido para a equipe dele.
@@ -175,8 +215,17 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # quê NÃO é esta ação, é o SIGILO do tipo (aberto, restrito, pessoal) e o
     # escopo por obra: folha de pagamento e documento de sócio não aparecem
     # para quem não é do financeiro ou do DP, mesmo com esta ação marcada.
+    # ⚑ O ADMINISTRATIVO DE OBRA SAIU DAQUI em 17/11/2026, e ele foi direto ao
+    # ponto quando perguntei: *"Tirar o arquivo desse perfil, sim. Visualizar
+    # os arquivos da documentação da pessoa, não."*
+    #
+    # ⚠️ ELE PERDE O ARQUIVO INTEIRO, não só os documentos de pessoa — foi dito
+    # e confirmado antes de mexer. O Arquivo é um lugar só, com documento de
+    # obra, de empresa, de contrato e de colaborador juntos; não havia como
+    # tirar uma gaveta e deixar as outras sem inventar um recorte novo que
+    # ninguém pediu.
     "ver_arquivo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.SUPERVISOR_OBRA,
                         P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA, P.PARCEIRO},
     "arquivar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                         P.DEPARTAMENTO_PESSOAL, P.GESTOR_OBRA},
@@ -314,6 +363,9 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "cancelar_titulo": ("aprovar", "lancar"),
     # Quem configura as mensagens enxerga a tela delas.
     "ver_mensagens": ("configurar_mensagens",),
+    # Quem cadastra colaborador e quem abre pedido ao DP precisam da MESMA
+    # resposta: "este CPF já existe?". Ver o comentário da ação, acima.
+    "conferir_cpf_colaborador": ("editar_colaboradores", "solicitar_dp"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -343,8 +395,10 @@ ACAO_ROTULOS = {
     "ver_obras":            "Ver o painel de obras",
     "ver_locacoes":         "Ver as locações de equipamento",
     "ver_pessoal":          "Ver despesas de colaborador",
+    "ver_remuneracao":      "Ver salário, diária e dados de pagamento",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
+    "conferir_cpf_colaborador": "Conferir se um CPF já tem cadastro",
     "solicitar_dp":         "Abrir solicitação ao DP",
     "atender_dp":           "Atender solicitação do DP",
     "pedir_contabilidade":  "Pedir à contabilidade e cobrar o retorno",
@@ -1010,6 +1064,18 @@ def exigir_entidade_no_escopo(s: Session, usuario: Usuario,
         return
     if tipo == "obra":
         exigir_obra_no_escopo(s, usuario, entidade_id)
+        return
+    # ⚑ A FOTO DO DIÁRIO herda o escopo da OBRA do dia (14/11/2026). Sem
+    # isto, quem é preso a uma obra baixaria a foto de qualquer outra — e os
+    # números dos anexos são sequenciais, então um laço varreria o acervo.
+    if tipo == "diario_foto":
+        from sqlalchemy import text as _text
+        linha = s.execute(_text(
+            "SELECT obra_id FROM diarios_obra WHERE id = :d"),
+            {"d": entidade_id}).first()
+        if linha is None:
+            raise ErroNaoEncontrado("Registro não encontrado.")
+        exigir_obra_no_escopo(s, usuario, linha[0])
         return
     if tipo == "contrato_servico":
         c = s.get(ContratoServico, entidade_id)

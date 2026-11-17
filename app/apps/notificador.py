@@ -69,6 +69,7 @@ from app.apps.telegram.telegram_bot import (
     _lookup_chat_id,
     _tg_enviar,
     _tg_enviar_arquivo,
+    motivo_da_ultima_falha as _motivo_tg,
 )
 
 # ---------------------------------------------------------------------------
@@ -190,7 +191,7 @@ def _tg_notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
 
     ok = _tg_enviar(chat_id, mensagem)
     return {"ok": ok, "chat_id": chat_id,
-            "detalhe": "ok" if ok else "falha no envio"}
+            "detalhe": "ok" if ok else (_motivo_tg() or "falha no envio")}
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +313,14 @@ def enviar_whatsapp(telefone, mensagem, finalidade=None):
     tel = re.sub(r"\D", "", telefone or "")
     if not tel:
         return {"ok": False, "erro": "sem_telefone"}
+    # A MESMA TRAVA do `notificar` — ver o comentário lá. Aqui também, porque
+    # este caminho (sem finalidade) é o que os módulos antigos usam.
+    m0 = _mensageria()
+    bloqueio = _bloqueio_de_desligado(m0, tel, None)
+    if bloqueio:
+        _registrar(m0, tipo=finalidade or "sem_tipo", canal="whatsapp", destinatario=tel,
+                   cpf="", texto=mensagem, nome_arquivo="", status="BARRADO", detalhe=bloqueio)
+        return {"ok": None, "detalhe": bloqueio}
     r = _wa_enviar_texto(tel, mensagem)
     _registrar(_mensageria(), tipo=finalidade or "sem_tipo", canal="whatsapp", destinatario=tel,
                cpf="", texto=mensagem, nome_arquivo="",
@@ -337,14 +346,46 @@ def enviar_telegram(telefone=None, cpf=None, chat_id=None, mensagem="",
             or {"ok": None, "detalhe": "sem canal"}
     if not _canal_ativo("telegram", finalidade):
         return {"ok": None, "detalhe": "canal desativado (env NOTIFICAR_*)"}
+    m0 = _mensageria()
+    bloqueio = _bloqueio_de_desligado(m0, re.sub(r"\D", "", telefone or ""), cpf)
+    if bloqueio:
+        _registrar(m0, tipo=finalidade or "sem_tipo", canal="telegram",
+                   destinatario=str(chat_id or telefone or ""), cpf=cpf or "",
+                   texto=mensagem, nome_arquivo=nome_arquivo or "",
+                   status="BARRADO", detalhe=bloqueio)
+        return {"ok": None, "detalhe": bloqueio}
     r = _tg_notificar(telefone=telefone, cpf=cpf, chat_id=chat_id,
                       mensagem=mensagem, arquivo_url=arquivo_url,
                       arquivo_base64=arquivo_base64,
                       nome_arquivo=nome_arquivo, tipo=tipo)
-    _registrar(_mensageria(), tipo=finalidade or "sem_tipo", canal="telegram",
+    m = _mensageria()
+    _registrar(m, tipo=finalidade or "sem_tipo", canal="telegram",
                destinatario=str(r.get("chat_id") or telefone or ""), cpf=cpf or "", texto=mensagem,
                nome_arquivo=nome_arquivo or "", status=_status_tg(r), detalhe=str(r.get("detalhe") or r.get("erro") or ""))
+    _convidar_se_nao_chegou(m, {"telegram": r}, telefone, cpf, finalidade)
     return r
+
+
+def _convidar_se_nao_chegou(m, resultados, telefone, cpf, finalidade):
+    """A mensagem do Telegram não chegou porque a pessoa não tem cadastro, e
+    nenhum outro canal entregou: a mensageria manda o CONVITE pelo WhatsApp
+    (pedido do dono, 14/11/2026). Ela decide se pode (é colaborador? já foi
+    convidado há pouco?) e manda em segundo plano. Nunca derruba o envio."""
+    if not m:
+        return
+    tg = resultados.get("telegram") or {}
+    if tg.get("erro") != "nao_cadastrado":
+        return
+    if any((r or {}).get("ok") for r in resultados.values()):
+        return
+    try:
+        from app.apps.mensageria import telegram_cadastro
+        r = telegram_cadastro.convidar_se_preciso(telefone=telefone, cpf=cpf,
+                                                  tipo_que_falhou=finalidade or "sem_tipo")
+        if r.get("status") == "AGENDADO":
+            tg["convite"] = r.get("detalhe")
+    except Exception:  # noqa: BLE001
+        print("[notificador] o convite do Telegram não saiu")
 
 
 def _status_tg(r):
@@ -358,6 +399,22 @@ def _status_tg(r):
 # ---------------------------------------------------------------------------
 # Função pública
 # ---------------------------------------------------------------------------
+
+def _bloqueio_de_desligado(m, telefone, cpf):
+    """A mensageria diz se esta pessoa foi desligada da empresa. Sem mensageria
+    no ar, não há correlação com o ERP e nada é barrado — a trava é um
+    acréscimo de gestão, não pode virar motivo de aviso não sair."""
+    if not m or not (telefone or cpf):
+        return None
+    try:
+        from app.apps.mensageria import telegram_cadastro
+        _m_core, m_db = m
+        with m_db.conexao() as conn:
+            return telegram_cadastro.motivo_do_bloqueio(conn, telefone=telefone, cpf=cpf)
+    except Exception:  # noqa: BLE001
+        print("[notificador] não consegui conferir desligamento; seguindo com o envio")
+        return None
+
 
 def notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
               arquivo_url=None, arquivo_base64=None, nome_arquivo=None,
@@ -404,6 +461,26 @@ def notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
                        cpf=cpf or "", texto=mensagem, nome_arquivo=nome_arquivo or "",
                        status="DESLIGADO", detalhe=decisao.motivo)
             return {"mensageria": {"ok": None, "detalhe": decisao.motivo}}
+
+    # ⚑ A TRAVA DE QUEM SAIU DA EMPRESA (17/11/2026). Decisão dele: *"essa
+    # correlação entre o ERP e as pessoas é fundamental, tendo em vista a
+    # questão do bloqueio de envio de mensagens para as pessoas desligadas."*
+    #
+    # Fica AQUI, e não em cada chamador, por um motivo prático: são sete
+    # módulos chamando o notificador (ERP, ponto, Análise de SPs, BaixaBradesco,
+    # ProcessarNovaSP, ValidaSP e o bot). Trava espalhada por sete lugares é
+    # trava que um deles esquece.
+    #
+    # ⚠️ ISTO BARRA O QUE A EMPRESA MANDA. O robô RESPONDENDO a quem pede (o
+    # contracheque pelo Telegram) não passa por aqui — sai por
+    # `telegram_bot._tg_enviar` — e continua funcionando de propósito: quem
+    # acabou de sair costuma precisar do último contracheque.
+    bloqueio = _bloqueio_de_desligado(m, telefone_norm, cpf)
+    if bloqueio:
+        _registrar(m, tipo=finalidade or "sem_tipo", canal="", destinatario=telefone_norm or str(chat_id or ""),
+                   cpf=cpf or "", texto=mensagem, nome_arquivo=nome_arquivo or "",
+                   status="BARRADO", detalhe=bloqueio)
+        return {"mensageria": {"ok": None, "detalhe": bloqueio}}
 
     def _ativo(canal):
         return True if decisao is not None else _canal_ativo(canal, finalidade)
@@ -470,4 +547,5 @@ def notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
                                             "detalhe": "não executado"}
             break
 
+    _convidar_se_nao_chegou(m, resultados, telefone_norm or None, cpf, finalidade)
     return resultados

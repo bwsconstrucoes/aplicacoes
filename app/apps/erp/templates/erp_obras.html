@@ -507,6 +507,8 @@ async function desenharPainel(i, id){
           <tr><td>Local</td><td>${o.municipio||"—"}${o.uf?"/"+o.uf:""}</td></tr>
           <tr><td>CNO</td><td class="dados">${o.cno||"—"}</td></tr>
           <tr><td>ART/RRT</td><td class="dados">${o.art_rrt||"—"}</td></tr>
+          <tr><td>Responsável técnico</td><td>${escapar(o.responsavel_tecnico||"—")}</td></tr>
+          <tr><td>CREA/CAU</td><td class="dados">${escapar(o.crea_obra||"—")}</td></tr>
           <tr><td>Vigência até</td><td class="dados">${dataBR(o.vigencia_fim)}</td></tr>
           <tr><td>Data-base do orçamento</td><td class="dados">${dataBR(o.data_base)}</td></tr>
         </tbody></table>
@@ -545,6 +547,16 @@ async function desenharPainel(i, id){
     if (i === 1) {
       alvo.innerHTML = `<div class="form-grade">
         ${campo("Código","o-codigo",d.codigo)}${campo("Nome","o-nome",d.nome)}
+        {# O CENTRO DE CUSTO DA CONTABILIDADE (16/11/2026). O escritório chama
+           a mesma obra por outro código, e é por ele que a ficha de registro
+           do Fortes descobre em que obra a pessoa está. Obra sem este código
+           faz a ficha entrar SEM obra — e aí alguém tem de escolher à mão. #}
+        <div class="campo"><label>Centro de custo da contabilidade</label>
+          <input id="o-ccc" value="${d.centro_custo_contabil ?? ""}"
+                 placeholder="164.01" data-sem-mascara>
+          <div class="dica">O código que a contabilidade usa para ESTA obra.
+            É por ele que a ficha de registro do Fortes descobre a obra da
+            pessoa. Em branco, a ficha entra sem obra.</div></div>
         ${campo("Cliente","o-cliente",d.cliente)}${campo("CNPJ do cliente","o-cnpj",d.cnpj_cliente)}
         ${campo("Objeto","o-objeto",d.objeto)}${campo("Órgão","o-orgao",d.orgao_resumido)}
         ${campo("Endereço","o-endereco",d.endereco)}${campo("Número","o-numero",d.numero_endereco)}
@@ -552,6 +564,10 @@ async function desenharPainel(i, id){
         ${campo("UF","o-uf",d.uf)}${campo("CEP","o-cep",d.cep)}
         ${campo("CNO","o-cno",d.cno)}${campo("ART/RRT","o-art",d.art_rrt)}
         ${campo("Responsável técnico","o-rt",d.responsavel_tecnico)}
+        {# ⚑ O CREA ENTRA AQUI EM 14/11/2026. A coluna existia desde a
+           migração e o DIÁRIO JÁ IMPRIMIA o CREA — só não havia onde
+           digitá-lo. O papel saía com o campo vazio e ninguém sabia por quê. #}
+        ${campo("CREA/CAU do responsável","o-crea",d.crea_obra)}
         ${campo("Latitude","o-lat",d.latitude)}${campo("Longitude","o-lng",d.longitude)}
         <div class="campo"><label>Conta corrente de pagamento</label>
           <select id="o-conta"><option value="">— não definida —</option>
@@ -598,6 +614,7 @@ async function desenharPainel(i, id){
         objeto:"o-objeto", orgao_resumido:"o-orgao", endereco:"o-endereco",
         numero_endereco:"o-numero", bairro:"o-bairro", municipio:"o-municipio", uf:"o-uf",
         cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
+        crea_obra:"o-crea", centro_custo_contabil:"o-ccc",
         engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng",
         conta_bancaria_id:"o-conta", projeto_id:"o-projeto",
         empresa_id:"o-empresa"});

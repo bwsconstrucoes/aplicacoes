@@ -72,9 +72,17 @@ def acervo(sessao_real, monkeypatch):
 
     creche = Obra(codigo="CRECHE", nome="Creche do Eusébio")
     escola = Obra(codigo="ESCOLA", nome="Escola do Planalto")
-    tipo = DocumentoTipo(codigo="CONTRATO-OBRA", nome="Contrato da obra",
-                         grupo="OBRA", dono="OBRA", sigilo="ABERTO")
-    s.add_all([creche, escola, tipo])
+    # ⚑ `merge` E NÃO `add`, desde 16/11/2026: o catálogo de tipos de documento
+    # passou a ser aplicado junto com as migrações (os 69 tipos do código chegam
+    # ao banco sozinhos), então o tipo que este teste quer JÁ EXISTE. `merge`
+    # ajusta o que existe e cria o que falta — `add` quebrava com chave duplicada.
+    # `vence=False` explícito: no catálogo de verdade o contrato VENCE, e o
+    # `merge` só sobrescreve o que o objeto traz escrito. Sem isto o
+    # arquivamento passa a exigir validade e o teste falha por outro motivo.
+    tipo = s.merge(DocumentoTipo(codigo="CONTRATO-OBRA", nome="Contrato da obra",
+                                 grupo="OBRA", dono="OBRA", sigilo="ABERTO",
+                                 vence=False, por_competencia=False))
+    s.add_all([creche, escola])
     s.flush()
 
     def arquivar(nome, obra, texto):

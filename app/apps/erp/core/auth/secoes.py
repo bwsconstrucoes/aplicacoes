@@ -168,12 +168,38 @@ SECOES: list[dict[str, Any]] = [
     {"chave": "pes_colaboradores", "area": "Pessoal", "nome": "Colaboradores",
      "explicacao": "o cadastro das pessoas da obra",
      "ler": ["ver_pessoal"], "editar": ["editar_colaboradores"]},
+    # ⚑ SALÁRIO É SEÇÃO PRÓPRIA (17/11/2026), e não um pedaço de
+    # "Colaboradores": quem precisa ver quem está na obra e em que etapa do
+    # cadastro ela está não precisa ver quanto cada um ganha. Era o pedido
+    # dele para o administrativo de obra — *"visão restrita é os dados básicos
+    # mesmo"* — e, posta aqui, a separação passa a valer para QUALQUER perfil
+    # que ele monte pela tela, não só para aquele.
+    #
+    # Sem "editar": quem muda salário muda o cadastro (`editar_colaboradores`).
+    # Esta seção é só sobre ENXERGAR o número.
+    {"chave": "pes_remuneracao", "area": "Pessoal", "nome": "Salário e pagamento",
+     "explicacao": ("salário, diária, auxílios, Pix, banco e os documentos de "
+                    "pagamento — quem não tem isto vê a pessoa, não o quanto "
+                    "ela ganha"),
+     "ler": ["ver_remuneracao"], "editar": []},
     # LER = abrir pedido e acompanhar o que abriu; EDITAR = atender e recusar.
     # É a divisão que o pipe fazia na mão, com um checklist chamado "você não
     # possui autorização para esta solicitação".
     {"chave": "pes_solicitacoes", "area": "Pessoal", "nome": "Solicitações ao DP",
-     "explicacao": "desligamento, readmissão, dependente, ajuda de custo, VT",
-     "ler": ["solicitar_dp"], "editar": ["atender_dp"]},
+     # ⚑ A FRASE MUDOU EM 15/11/2026, junto com os tipos: readmissão agora
+     # acontece DENTRO do cadastro (o CPF a detecta) e o vale-transporte
+     # dentro da ajuda de custo. Prometer na explicação um tipo que não está
+     # mais na lista é o defeito que esta classe de frase já causou uma vez,
+     # com férias no portal.
+     "explicacao": "cadastro, desligamento, cargo, dependente e ajuda de custo",
+     # ⚑ `conferir_cpf_colaborador` MORA AQUI (15/11/2026): quem abre pedido
+     # precisa saber se o CPF já tem cadastro — é o que faz o pedido de
+     # cadastro se converter em readmissão em vez de criar a segunda ficha da
+     # pessoa. Quem cadastra pela tela de Colaboradores ganha a mesma ação por
+     # implicação (`ACOES_IMPLICADAS`), e é por isso que ela é uma ação
+     # própria: duas portas diferentes precisam da mesma resposta.
+     "ler": ["solicitar_dp", "conferir_cpf_colaborador"],
+     "editar": ["atender_dp"]},
     # LER = acompanhar o pedido que nasceu da requisição da obra — é o que
     # acaba com o "e aí, saiu?" por WhatsApp. EDITAR = pedir, cobrar, conferir o
     # retorno e ligar as rotinas do agente.

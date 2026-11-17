@@ -1,0 +1,501 @@
+# -*- coding: utf-8 -*-
+"""A aba enxuta primeiro; a SPsBD inteira só como plano B.
+
+Decisão do dono em 14/11/2026, depois de eu explicar por que o robô baixava as
+52 mil linhas da SPsBD a cada comprovante:
+
+> *"Vamos para o caminho C. A probabilidade do registro que a aplicação procura
+> estar em SPsAgendar é perto de 100%. Todavia nela não ficam todas as
+> informações. Criei a aba 'baixabradesco'. Nela sim estão os mesmos registros
+> de SPsAgendar só que com as mesmas informações de SPsBD. Então, primeiro
+> procure nela. Se não achar, só então você vai pra SPsBD."*
+
+Era a causa de fundo do travamento: `/api/baixabradesco/executar` levava 162 s
+nos registros de 13/11/2026, e com quatro linhas de atendimento isso derrubava
+quem estava usando a tela. Dezenas de linhas no lugar de 52 mil.
+
+O que este arquivo trava, porque errar em qualquer direção custa:
+
+1. **O caso comum não lê a SPsBD.** Se voltar a ler, voltou o problema.
+2. **O caso raro continua funcionando.** Comprovante cuja SP não está na aba
+   enxuta ainda tem de ser encontrado — só mais devagar.
+3. **Aba ausente não para a baixa.** Se alguém renomear ou apagar a aba, o robô
+   volta ao comportamento antigo. Baixa devagar vale mais que baixa parada.
+4. **Reenvio não é barrado por engano.** A decisão "a baixa anterior ficou pela
+   metade?" olha as SPs que faltam pagar; se a SP não está na aba enxuta, não dá
+   para concluir que está tudo certo — tem de conferir na SPsBD antes de barrar.
+"""
+import pytest
+
+from app.apps.baixabradesco import sheets
+
+
+# Mesmas colunas da SPsBD (A..AK). O cabeçalho é o que o leitor usa.
+CABECALHO = [
+    'ID', 'Solicitação', 'Vencim.', 'Nome do Credor', 'CPF/CNPJ',
+    'Descrição da Despesa', 'Valor Total', 'Centro de Custo', 'Tipo de Despesa',
+    'Tipo de Pagamento', 'Responsável pelo Registro', 'Dt. Autorização',
+    'Responsável Autorização', 'Status Aut.', 'Status Pgt', 'Código Integração',
+    'Anexo Link', 'Card Link', 'Anexo', 'Card', 'Status Aut. Símbolo',
+    'Status Pgt. Simbolo', 'Pesquisa', 'Data do Pagamento', 'Info de Pgt',
+    'Parcela', 'Nº da NF', 'Agendado', 'Linha', 'Nº do Pedido', 'Anuente',
+    'Status Anuencia', 'Comprovante', 'Validação', 'Código de Barras',
+    'ID Pipefy Contrato', 'Conta Pagamento',
+]
+
+
+def _linha(sp_id, valor='1.000,00', status_pgt='Pagar', agendado='agendado'):
+    linha = [''] * len(CABECALHO)
+    linha[0] = sp_id                  # A  = ID
+    linha[6] = valor                  # G  = Valor Total
+    linha[14] = status_pgt            # O  = Status Pgt
+    linha[27] = agendado              # AB = Agendado
+    return linha
+
+
+class _Aba:
+    def __init__(self, linhas, nome=''):
+        self.linhas = linhas
+        self.nome = nome
+        self.leituras = []
+
+    def get(self, faixa):
+        self.leituras.append(faixa)
+        return [CABECALHO] + self.linhas if self.linhas else []
+
+
+class _Planilha:
+    def __init__(self, abas):
+        self.abas = abas
+        self.pedidas = []
+
+    def worksheet(self, nome):
+        self.pedidas.append(nome)
+        if nome not in self.abas:
+            raise Exception(f'aba {nome} não existe')
+        return self.abas[nome]
+
+
+class _Google:
+    def __init__(self, planilha):
+        self.planilha = planilha
+
+    def open_by_key(self, key):
+        return self.planilha
+
+
+# =====================================================================
+# 1. o leitor da aba enxuta
+# =====================================================================
+
+def test_le_as_mesmas_colunas_da_spsbd(monkeypatch):
+    """A aba espelha a SPsBD em colunas — mesmos índices, mesmo leitor."""
+    aba = _Aba([_linha('1234567')])
+    planilha = _Planilha({sheets.ABA_ENXUTA: aba})
+    monkeypatch.setattr(sheets, 'get_gc', lambda: _Google(planilha))
+
+    valores = sheets.load_baixabradesco_values()
+
+    assert aba.leituras == ['A:AK']
+    assert planilha.pedidas == [sheets.ABA_ENXUTA]
+    assert valores[0] == CABECALHO
+
+
+def test_aba_ausente_devolve_vazio_em_vez_de_derrubar(monkeypatch):
+    """Aba renomeada ou apagada não pode parar a baixa."""
+    planilha = _Planilha({})            # a aba enxuta não existe
+    monkeypatch.setattr(sheets, 'get_gc', lambda: _Google(planilha))
+
+    assert sheets.load_baixabradesco_values() == []
+
+
+def test_aba_vazia_devolve_vazio(monkeypatch):
+    planilha = _Planilha({sheets.ABA_ENXUTA: _Aba([])})
+    monkeypatch.setattr(sheets, 'get_gc', lambda: _Google(planilha))
+
+    assert sheets.load_baixabradesco_values() == []
+
+
+def test_o_filtro_operacional_funciona_igual_na_aba_enxuta(monkeypatch):
+    """O mesmo filtro de sempre: Status Pgt=Pagar e Agendado reconhecido."""
+    valores = [CABECALHO,
+               _linha('aberta'),
+               _linha('ja_paga', status_pgt='Pago'),
+               _linha('sem_agendamento', agendado=''),
+               _linha('falha', agendado='falhaagendar')]
+
+    index = sheets.load_spsbd_operacional(values=valores)
+
+    assert sorted(index) == ['aberta', 'falha']
+
+
+# =====================================================================
+# 2. o caso comum não toca na SPsBD
+# =====================================================================
+
+def test_a_aba_enxuta_resolvendo_a_spsbd_NAO_e_lida(monkeypatch):
+    from app.apps.baixabradesco import core
+
+    lidas = []
+    monkeypatch.setattr(core, 'load_baixabradesco_values',
+                        lambda gc=None: [CABECALHO, _linha('1234567')])
+    monkeypatch.setattr(core, 'load_spsbd_values',
+                        lambda gc=None: lidas.append('spsbd') or [CABECALHO])
+    monkeypatch.setattr(core, 'load_spsbd_omie_pendente',
+                        lambda gc=None, values=None: lidas.append('omie_pendente') or {})
+
+    index = core.load_spsbd_operacional(values=core.load_baixabradesco_values())
+
+    assert '1234567' in index
+    assert lidas == []
+
+
+def test_o_retorno_diz_de_onde_veio_a_lista():
+    """Para dar para MEDIR, em vez de supor."""
+    import inspect
+    fonte = inspect.getsource(core_fonte())
+    assert "'fonte_das_sps'" in fonte
+    assert "'aba_enxuta'" in fonte
+    assert "'spsbd_completa'" in fonte
+
+
+def core_fonte():
+    from app.apps.baixabradesco import core
+    return core
+
+
+# =====================================================================
+# 3. o plano B continua existindo
+# =====================================================================
+
+def test_o_plano_B_le_a_spsbd_uma_unica_vez():
+    """Duas páginas sem SP não podem custar duas leituras de 52 mil linhas."""
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+    assert "estado_spsbd['leu']" in fonte
+    assert 'load_spsbd_values' in fonte
+
+
+def test_o_plano_B_serve_SO_para_as_pagas_com_omie_pendente():
+    """A aba é fórmula viva do mesmo conjunto (o dono confirmou em 14/11/2026).
+
+    Então repetir o mesmo casamento contra a SPsBD não pode achar nada novo —
+    seria baixar 52 mil linhas para confirmar o que a aba já disse. O único
+    lugar onde a SP ainda pode estar é entre as já marcadas "Pago".
+    """
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+
+    # aciona pelo "não achou" e vai direto ao omie_pendente
+    assert "if match.status == 'nao_localizado':" in fonte
+    assert '_carregar_omie_pendente()' in fonte
+    # e NÃO repete o casamento comum depois de ler
+    assert fonte.count('match = match_receipt(rec, sps_index, sps_agendar)') == 1
+
+
+def test_o_plano_B_nao_reconstroi_o_indice_operacional():
+    """Era custo puro: a aba já tem exatamente esse conjunto."""
+    import inspect
+    from app.apps.baixabradesco import core
+    carregador = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+    inicio = carregador.index('def _carregar_omie_pendente')
+    fim = carregador.index('if not leu_da_aba_enxuta')
+    corpo = carregador[inicio:fim]
+    assert 'load_spsbd_omie_pendente' in corpo
+    assert 'load_spsbd_operacional' not in corpo
+
+
+def test_reenvio_NAO_dispara_a_leitura_gigante():
+    """O caso mais comum não pode anular a otimização.
+
+    O dono em 14/11/2026: *"reenvio é algo que acontece com alguma frequência,
+    pq às vezes mandamos um arquivo com alguns comprovantes e de repente algum
+    já havia sido baixado."*
+
+    Comprovante já baixado tem a SP em "Pago", e SP paga não está na aba enxuta.
+    Se a ausência ali disparasse a leitura das 52 mil linhas, quase todo lote
+    com um repetido pagaria esse preço.
+    """
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+    decisao = fonte[fonte.index('if rec.fingerprint and rec.fingerprint in fingerprints_processados'):
+                    fonte.index('# Primeiro localiza a SP/título')]
+    assert '_completar_com_spsbd()' not in decisao
+
+
+def test_o_repetido_diz_qual_SP_para_dar_para_conferir():
+    """O caso raro (aba não espelhou uma SP aberta) tem de ficar visível."""
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+    assert "'sp': sp_registrada," in fonte
+    assert 'ainda estiver como "Pagar"' in fonte
+
+
+def test_aba_enxuta_vazia_cai_no_comportamento_antigo():
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+    assert 'if not leu_da_aba_enxuta and not modo_teste:' in fonte
+
+
+# =====================================================================
+# 4. a coluna AC: a linha do registro na SPsBD
+# =====================================================================
+# Informação do dono, 14/11/2026: *"a coluna AC de baixabradesco é a linha onde
+# está o registro em SPsBD"*. Ela economiza a SEGUNDA leitura gigante — a da
+# gravação, que varria a coluna A inteira (52 mil valores) só para achar a linha
+# onde escrever.
+#
+# ⚠️ Mas a aba é um ESPELHO, e espelho pode estar velho. Gravar numa linha
+# errada marcaria a SP ERRADA como paga, e ninguém perceberia olhando a tela.
+# Por isso a linha é tratada como PISTA, confirmada lendo uma célula.
+
+def _linha_com_ac(sp_id, linha_spsbd, valor='1.000,00'):
+    linha = _linha(sp_id, valor=valor)
+    linha[28] = str(linha_spsbd)      # AC
+    return linha
+
+
+def test_a_linha_da_spsbd_vem_da_coluna_AC():
+    valores = [CABECALHO, _linha_com_ac('1234567', 48321)]
+
+    index = sheets.load_spsbd_operacional(values=valores,
+                                          linha_vem_da_coluna_ac=True)
+
+    assert index['1234567'].row_number == 48321
+
+
+def test_sem_a_coluna_AC_fica_sem_numero_e_nao_inventa():
+    """Número chutado seria pior que número nenhum: grava na SP errada."""
+    valores = [CABECALHO, _linha('1234567')]          # AC vazia
+
+    index = sheets.load_spsbd_operacional(values=valores,
+                                          linha_vem_da_coluna_ac=True)
+
+    assert index['1234567'].row_number == 0
+
+
+def test_coluna_AC_com_lixo_ou_cabecalho_e_ignorada():
+    for ruim in ('abc', '0', '1', '', '-5'):
+        valores = [CABECALHO, _linha_com_ac('1234567', ruim)]
+        index = sheets.load_spsbd_operacional(values=valores,
+                                              linha_vem_da_coluna_ac=True)
+        assert index['1234567'].row_number == 0, ruim
+
+
+def test_lendo_a_SPsBD_a_linha_continua_sendo_a_posicao_real():
+    """Na SPsBD, a linha é a própria posição — não a coluna AC."""
+    valores = [CABECALHO, _linha_com_ac('1234567', 99999)]
+
+    index = sheets.load_spsbd_operacional(values=valores)   # sem o atalho
+
+    assert index['1234567'].row_number == 2
+
+
+# --- a gravação usa a pista, mas confere ---------------------------------
+
+class _AbaGravacao:
+    def __init__(self, id_na_linha, total_linhas=3):
+        self.id_na_linha = id_na_linha          # {linha: id}
+        self.total = total_linhas
+        self.celulas_lidas = []
+        self.varreduras = 0
+        self.gravado = []
+
+    def get(self, faixa):
+        self.celulas_lidas.append(faixa)
+        linha = int(faixa[1:])
+        return [[self.id_na_linha.get(linha, '')]]
+
+    def batch_get(self, faixas):
+        # A varredura é a leitura de COLUNA inteira ('A2:A'). A conferência
+        # pós-gravação também usa batch_get, mas numa célula ('O48321') — contar
+        # as duas como a mesma coisa era o defeito deste dublê.
+        if any(f.endswith(':A') or f.endswith(':A1000000') for f in faixas):
+            self.varreduras += 1
+            maior = max(self.id_na_linha) if self.id_na_linha else 1
+            return [[[self.id_na_linha.get(n, '')] for n in range(2, maior + 1)]]
+        # A pista da aba enxuta agora também chega por batch_get (uma leitura
+        # para TODAS as linhas sugeridas do lote, em vez de uma por update).
+        saida = []
+        for f in faixas:
+            if f.startswith('A') and f[1:].isdigit():
+                saida.append(self.get(f))
+                continue
+            valor = ''
+            for item in self.gravado:
+                if item['range'] == f:
+                    valor = item['values'][0][0]
+            saida.append([[valor]])
+        return saida
+
+    def batch_update(self, data, value_input_option=None):
+        self.gravado.extend(data)
+
+
+def _planilha_de_gravacao(monkeypatch, aba):
+    monkeypatch.setattr(sheets, 'get_gc', lambda: _Google(_Planilha({'SPsBD': aba})))
+
+
+def test_a_gravacao_confere_a_linha_e_nao_varre_a_coluna(monkeypatch):
+    aba = _AbaGravacao({48321: '1234567'})
+    _planilha_de_gravacao(monkeypatch, aba)
+
+    r = sheets.execute_spsbd_updates([{
+        'sheet_id': 'x', 'aba': 'SPsBD', 'linha': 48321,
+        'filtros': {'A': '=1234567'}, 'updates': {'O': 'Pago'},
+    }])
+
+    assert r['ok'] is True
+    assert aba.celulas_lidas[0] == 'A48321'      # uma célula
+    assert aba.varreduras == 0                   # nenhuma varredura
+    assert aba.gravado[0]['range'] == 'O48321'
+
+
+def test_linha_errada_no_espelho_NAO_grava_na_SP_errada(monkeypatch):
+    """O caso que justifica a conferência: o espelho envelheceu."""
+    aba = _AbaGravacao({48321: 'OUTRA_SP', 7: '1234567'})
+    _planilha_de_gravacao(monkeypatch, aba)
+
+    r = sheets.execute_spsbd_updates([{
+        'sheet_id': 'x', 'aba': 'SPsBD', 'linha': 48321,
+        'filtros': {'A': '=1234567'}, 'updates': {'O': 'Pago'},
+    }])
+
+    assert aba.varreduras == 1                   # caiu na varredura de sempre
+    assert r['ok'] is True
+    assert all(d['range'].endswith('7') for d in aba.gravado)   # linha 7, a certa
+
+
+def test_sem_pista_de_linha_a_gravacao_funciona_como_antes(monkeypatch):
+    aba = _AbaGravacao({7: '1234567'})
+    _planilha_de_gravacao(monkeypatch, aba)
+
+    r = sheets.execute_spsbd_updates([{
+        'sheet_id': 'x', 'aba': 'SPsBD', 'linha': 0,
+        'filtros': {'A': '=1234567'}, 'updates': {'O': 'Pago'},
+    }])
+
+    assert aba.celulas_lidas == []
+    assert aba.varreduras == 1
+    assert r['ok'] is True
+
+
+def test_falha_ao_conferir_a_celula_cai_na_varredura(monkeypatch):
+    class _AbaQueFalhaNaCelula(_AbaGravacao):
+        def get(self, faixa):
+            raise RuntimeError('Google recusou')
+
+    aba = _AbaQueFalhaNaCelula({7: '1234567'})
+    _planilha_de_gravacao(monkeypatch, aba)
+
+    r = sheets.execute_spsbd_updates([{
+        'sheet_id': 'x', 'aba': 'SPsBD', 'linha': 48321,
+        'filtros': {'A': '=1234567'}, 'updates': {'O': 'Pago'},
+    }])
+
+    assert aba.varreduras == 1
+    assert r['ok'] is True
+
+
+# =====================================================================
+# 5. "não localizei" quase sempre quer dizer "status errado"
+# =====================================================================
+# Esclarecimento do dono em 14/11/2026: *"se a gente só baixa o que está no
+# status agendar, agendado ou falha agendado, então tudo que está nesses três
+# status vai aparecer na aba baixabradesco. Se não tiver, ou vai estar pago, ou
+# vai estar no status pagar. (...) Por que o registro não foi encontrado? Porque
+# não está no status que deveria."*
+#
+# Então a mensagem tem de dizer O QUE FAZER, não só que falhou.
+
+def test_o_motivo_de_nao_achar_manda_conferir_o_status():
+    from app.apps.baixabradesco import matcher
+
+    assert 'agendar' in matcher.MOTIVO_NAO_LOCALIZADO
+    assert 'confira o status' in matcher.MOTIVO_NAO_LOCALIZADO
+    assert 'já estiver paga' in matcher.MOTIVO_NAO_LOCALIZADO
+    assert 'falta agendar' in matcher.MOTIVO_NAO_LOCALIZADO
+
+
+def test_comprovante_sem_candidato_recebe_esse_motivo():
+    from app.apps.baixabradesco import matcher
+    from app.apps.baixabradesco.models import ExtractedReceipt
+
+    rec = ExtractedReceipt(filename='x.pdf', page=1, valor_pago='999.999,00')
+    r = matcher.match_receipt(rec, {}, [])
+
+    assert r.status == 'nao_localizado'
+    assert 'confira o status' in r.motivo
+
+
+def test_o_filtro_exige_os_DOIS_status_nao_so_o_agendamento():
+    """Precisão que vale registrada: não é só a coluna Agendado.
+
+    O robô exige Status Pgt = "Pagar" **e** Agendado em um dos três. Uma SP
+    marcada "Pago" com Agendado = "agendado" não entra — e é isso que faz o
+    comprovante repetido ser reconhecido como repetido.
+    """
+    valores = [CABECALHO,
+               _linha('aberta', status_pgt='Pagar', agendado='agendado'),
+               _linha('paga_mas_agendada', status_pgt='Pago', agendado='agendado'),
+               _linha('pagar_sem_agendar', status_pgt='Pagar', agendado='')]
+
+    index = sheets.load_spsbd_operacional(values=valores)
+
+    assert list(index) == ['aberta']
+
+
+# =====================================================================
+# 6. a aba é uma QUERY — e QUERY devolve #N/A
+# =====================================================================
+# O dono precisou em 14/11/2026: *"Fórmula Query"*. Isso traz um risco próprio,
+# e ele é sério: uma QUERY devolve `#N/A` tanto quando a fórmula quebra **como
+# quando não há resultado nenhum**. Os dois casos chegam aqui com a mesma cara.
+#
+# Se o robô tratasse isso como "a aba respondeu, e está vazia", TODA baixa
+# passaria a não encontrar SP — e, com o plano B enxugado, ele nem iria procurar
+# na SPsBD. Uma fórmula quebrada pararia as baixas em silêncio.
+#
+# A proteção é a mesma para os dois casos e é a certa: índice vazio = aba não
+# respondeu = lê a SPsBD. Fórmula quebrada deixa a baixa LENTA, nunca CEGA.
+
+@pytest.mark.parametrize('valores, descricao', [
+    ([['#N/A']],                      'QUERY sem resultado ou quebrada'),
+    ([['#REF!']],                     'referência perdida'),
+    ([['#VALUE!']],                   'tipo errado no critério'),
+    ([['#ERROR!']],                   'fórmula mal escrita'),
+    ([CABECALHO],                      'só o cabeçalho, nenhuma linha'),
+    ([],                               'aba vazia'),
+])
+def test_query_sem_resultado_util_devolve_indice_vazio(valores, descricao):
+    index = sheets.load_spsbd_operacional(values=valores,
+                                          linha_vem_da_coluna_ac=True)
+
+    assert index == {}, descricao
+
+
+def test_indice_vazio_faz_o_robo_ler_a_SPsBD_em_vez_de_ficar_cego():
+    """É o que impede uma fórmula quebrada de parar as baixas em silêncio."""
+    import inspect
+    from app.apps.baixabradesco import core
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+
+    # o sinal de "a aba respondeu" é o índice ter conteúdo, não a leitura ter
+    # devolvido algo — `[['#N/A']]` devolve algo e não serve para nada
+    assert 'leu_da_aba_enxuta = bool(sps_index)' in fonte
+    assert 'if not leu_da_aba_enxuta and not modo_teste:' in fonte
+    trecho = fonte[fonte.index('if not leu_da_aba_enxuta'):]
+    assert 'load_spsbd_operacional' in trecho      # reconstrói o índice
+    assert 'load_spsbd_omie_pendente' in trecho    # e o das pagas
+    assert "'spsbd_completa_aba_indisponivel'" in trecho
+
+
+def test_uma_linha_de_erro_nao_derruba_a_leitura():
+    """`#N/A` no lugar do cabeçalho não pode virar exceção."""
+    for ruim in ([['#N/A']], [['#REF!'], ['#REF!']], [[None]]):
+        sheets.load_spsbd_operacional(values=ruim, linha_vem_da_coluna_ac=True)

@@ -998,6 +998,105 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   border-left: 4px solid var(--amarelo, #F4B942);
 }
 
+/* A ficha curta da pessoa escolhida na busca (15/11/2026): vínculo, início e
+   o contrato de experiência, que é o que muda a forma do desligamento. */
+.ficha-escolhida {
+  border: 1px solid var(--borda, #E6EAF2); border-radius: 8px;
+  padding: 8px 10px; margin-top: 6px; background: var(--fundo-suave, #F4F6FA);
+}
+.ficha-escolhida small { display: block; color: var(--tinta-suave, #5A6B85);
+                         font-size: 11.5px; margin-top: 2px; }
+
+/* O bloco que no celular nasce fechado (15/11/2026). No computador ele vem
+   com `open` e o resumo some: lá a tela é larga e a visão de gestão cabe
+   junto; no celular, o que importa é o campo que a pessoa vai preencher. */
+.recolhivel > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600; padding: 6px 0;
+  color: var(--azul, #31507F); list-style: none;
+}
+.recolhivel > summary::-webkit-details-marker { display: none; }
+.recolhivel > summary::before { content: "▸ "; }
+.recolhivel[open] > summary::before { content: "▾ "; }
+.recolhivel[open] > summary { color: var(--tinta-suave, #5A6B85); font-weight: 400; }
+
+/* ---------------------------------------------------------------------------
+   O QUADRO DO MÊS DO DIÁRIO — obras nas linhas, dias nas colunas (15/11/2026)
+
+   A primeira coluna fica PRESA ao rolar para o lado: num mês de 31 dias, sem
+   isso, quem rola até o dia 25 não sabe mais de que obra é a linha. É a mesma
+   ideia da planilha que ele já usa no computador.
+   --------------------------------------------------------------------------- */
+.quadro-rolagem { overflow-x: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }
+.quadro-mes { border-collapse: separate; border-spacing: 2px; font-size: 11px; }
+.quadro-mes th, .quadro-mes td { padding: 0; }
+.quadro-mes thead th {
+  width: 20px; min-width: 20px; text-align: center; font-weight: 600;
+  color: var(--tinta-suave, #5A6B85); padding-bottom: 3px;
+}
+.quadro-mes thead th.fds { color: var(--borda-forte, #C9D3E4); }
+.quadro-mes .obra-col {
+  position: sticky; left: 0; z-index: 2; background: #fff;
+  text-align: left; min-width: 150px; max-width: 190px; padding-right: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.quadro-mes .obra-col span {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.quadro-mes tbody .obra-col { font-weight: 600; height: 22px; }
+.quadro-mes tbody td {
+  width: 20px; height: 20px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--borda, #E6EAF2); background: #fff;
+}
+/* As cores são as MESMAS do calendário de uma obra — duas paletas para a
+   mesma informação seria obrigar a pessoa a aprender duas vezes. */
+.quadro-mes td.q-falta { background: var(--vermelho-palido, #FDECEC);
+                         border-color: var(--vermelho, #A32020); }
+.quadro-mes td.q-fechado { background: var(--verde-palido, #E8F6EE);
+                           border-color: var(--verde, #1C6B3C); }
+.quadro-mes td.q-aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C); }
+.quadro-mes td.q-descanso, .quadro-mes td.q-sem_expediente {
+  background: var(--fundo-suave, #F4F6FA); }
+.quadro-mes td.q-fora { background: transparent; border-color: transparent;
+                        cursor: default; }
+.quadro-mes td:hover { outline: 2px solid var(--azul, #31507F); }
+.quadro-mes td.q-fora:hover { outline: 0; }
+
+/* A lista de obras achadas na busca da coluna da esquerda. */
+.busca-achados .achado {
+  display: block; width: 100%; text-align: left; padding: 7px 9px;
+  border: 1px solid var(--borda, #E6EAF2); border-radius: 7px;
+  background: #fff; cursor: pointer; font-family: inherit; font-size: 13px;
+  margin-top: 4px; color: var(--tinta, #10233F);
+}
+.busca-achados .achado:hover { border-color: var(--azul, #31507F); }
+
+/* ---------------------------------------------------------------------------
+   AS FOTOS DO DIÁRIO (14/11/2026)
+
+   Grade que se ajusta sozinha: no ERP cabem três ou quatro por linha; no
+   celular (o portal da obra manda para esta mesma tela) cai para uma só, com
+   a foto grande o bastante para a pessoa conferir o que fotografou antes de
+   anexar. `aspect-ratio` fixo para a linha não dançar conforme a foto ser
+   deitada ou em pé.
+   --------------------------------------------------------------------------- */
+.fotos-grade {
+  display: grid; gap: 10px; margin-top: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.foto-item { margin: 0; border: 1px solid var(--borda, #E6EAF2); border-radius: 8px;
+             overflow: hidden; background: #fff; }
+.foto-item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+                 display: block; background: var(--fundo-suave, #F4F6FA); }
+.foto-item figcaption { padding: 6px 8px 8px; }
+.foto-item .foto-legenda { width: 100%; font-size: 12px; padding: 4px 6px;
+                           border: 1px solid var(--borda, #E6EAF2); border-radius: 6px; }
+.foto-item figcaption > span { font-size: 12px; color: var(--tinta, #10233F); }
+.foto-pe { display: flex; align-items: center; justify-content: space-between;
+           gap: 6px; margin-top: 4px; }
+@media (max-width: 520px) {
+  .fotos-grade { grid-template-columns: 1fr; }
+}
+
 /* ---- O calendário de pendências, no feitio do que o ponto já usa ---- */
 .cal-mes { font-size: 13px; margin-bottom: 8px; }
 .cal-grade {
@@ -1017,15 +1116,50 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
    nasceria com 104 alarmes por ano e ninguém olharia para ele de novo. */
 .cal-dia.falta { background: var(--vermelho-palido, #FDECEC); border-color: var(--vermelho, #A32020);
                  color: var(--vermelho, #A32020); font-weight: 700; }
+/* DIA ESCRITO É VERDE — fechado ou não (13/11/2026).
+
+   O âmbar do "aberto" era lido como falta de dado, e não era: diário não se
+   grava sem relato. Verde CHEIO = fechado (documento). Verde VAZADO = escrito
+   e ainda aberto, que ainda pede uma passada para fechar. A diferença fica na
+   borda tracejada, não na cor — assim "tem trabalho aqui" continua sendo o
+   vermelho, e só ele. */
 .cal-dia.fechado { background: var(--verde-palido, #E8F6EE); border-color: var(--verde, #1C6B3C);
                    color: var(--verde, #1C6B3C); font-weight: 600; }
-.cal-dia.aberto { background: var(--ambar-palido, #FFF6E5); border-color: var(--amarelo, #F4B942);
-                  color: var(--ambar-escuro, #8A5B00); font-weight: 600; }
+.cal-dia.aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C);
+                  color: var(--verde, #1C6B3C); font-weight: 600; }
 .cal-dia.descanso { background: var(--fundo-suave, #F4F6FA); color: var(--tinta-suave, #5A6B85); }
 .cal-dia.sem_expediente { background: var(--fundo-suave, #F4F6FA);
                           color: var(--tinta-suave, #5A6B85); font-style: italic; }
 .cal-dia.fora { background: transparent; border-color: transparent;
                 color: var(--borda-forte, #C9D3E4); cursor: default; }
+/* O DIA QUE ESTÁ ABERTO NA TELA. Como o campo de data saiu da coluna, é esta
+   marca que responde "qual dia eu estou editando". */
+.cal-dia.escolhido { outline: 2px solid var(--azul, #31507F); outline-offset: 1px; }
+
+/* A LEGENDA — a pergunta dele ("esse laranja é porque falta algum dado?") só
+   existiu porque a cor não tinha onde se explicar. */
+.cal-legenda {
+  display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px;
+  font-size: 11px; color: var(--tinta-suave, #5A6B85);
+}
+.cal-legenda span { display: inline-flex; align-items: center; gap: 4px; }
+.cal-amostra {
+  width: 11px; height: 11px; border-radius: 3px; display: inline-block;
+  border: 1px solid var(--borda, #E6EAF2); background: #fff;
+}
+.cal-amostra.fechado { background: var(--verde-palido, #E8F6EE);
+                       border-color: var(--verde, #1C6B3C); }
+.cal-amostra.aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C); }
+.cal-amostra.falta { background: var(--vermelho-palido, #FDECEC);
+                     border-color: var(--vermelho, #A32020); }
+.cal-amostra.descanso, .cal-amostra.sem_expediente {
+  background: var(--fundo-suave, #F4F6FA); }
+
+/* A BARRA DO MÊS — ◀ novembro de 2026 ▶ (13/11/2026). As setas são do
+   tamanho do dedo porque esta coluna também é usada no celular. */
+.mes-nav { display: flex; align-items: center; gap: 6px; }
+.mes-nav input[type="month"] { flex: 1; min-width: 0; }
+.mes-nav .btn { padding: 6px 10px; line-height: 1; flex: 0 0 auto; }
 
 /* ---------------------------------------------------------------------------
    ETIQUETA — a marca pequena de situação, ao lado de um texto

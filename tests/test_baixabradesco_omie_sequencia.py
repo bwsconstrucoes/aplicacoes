@@ -220,13 +220,13 @@ def test_titulo_JA_PAGO_nao_altera_nem_paga_de_novo(monkeypatch):
 # duplicidade neste mesmo módulo.
 import inspect  # noqa: E402
 
-FONTE = inspect.getsource(core.processar_baixabradesco)
+FONTE = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
 
 
 def test_a_planilha_so_e_marcada_DEPOIS_de_o_omie_confirmar():
     posicao_guarda = FONTE.find('devia_baixar and not omie_confirmou')
-    posicao_sheets = FONTE.find('_gravar_planilha(plan, payload)')
-    posicao_pipefy = FONTE.find('build_update_card_mutation(plan, card_info)')
+    posicao_sheets = FONTE.find('_gravar_planilha_em_lote(')
+    posicao_pipefy = FONTE.find('_atualizar_cards_em_lote(')
 
     assert posicao_guarda != -1, (
         'sumiu a guarda que impede marcar a planilha sem o Omie ter confirmado')

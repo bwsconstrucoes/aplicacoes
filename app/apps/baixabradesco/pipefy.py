@@ -94,8 +94,13 @@ def execute_graphql(query: str) -> dict:
         return {'ok': False, 'status': 0, 'body': {}, 'error': str(e)}
 
 
-def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None) -> str:
-    """Monta a mutation de atualização do card com todos os campos necessários."""
+def _aliases_do_card(plan, card_info: Optional[Dict[str, Any]] = None,
+                     prefixo: str = 'n') -> List[str]:
+    """As linhas da mutation de UM card, com o prefixo que o chamador pedir.
+
+    O prefixo existe para o envio em lote: GraphQL exige apelido único dentro
+    do documento, e dois cards com `n1` se atropelariam.
+    """
     rec   = plan.receipt
     cid   = as_string(plan.match.id)
     banco_pipefy = as_string(plan.banco.codigo_pipefy if plan.banco else '')
@@ -125,7 +130,7 @@ def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None)
     def add(alias: str, field_id: str, value: str):
         v = escape_gql(as_string(value))
         aliases.append(
-            f'{alias}: updateCardField(input: {{card_id: "{cid}" field_id: "{field_id}" new_value: "{v}"}}) {{ clientMutationId }}'
+            f'{prefixo}{alias}: updateCardField(input: {{card_id: "{cid}" field_id: "{field_id}" new_value: "{v}"}}) {{ clientMutationId }}'
         )
 
     add('n1', 'valida_o_sp_1',           'Sim')
@@ -140,7 +145,7 @@ def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None)
     # Move para fase "Pago / Alimentar Omie" somente se ainda não estiver lá
     if fase_atual != 'Pago / Alimentar Omie':
         aliases.append(
-            f'n9: moveCardToPhase(input: {{card_id: "{cid}" destination_phase_id: {PHASE_PAGO_ALIMENTAR_OMIE}}}) {{ clientMutationId }}'
+            f'{prefixo}n9: moveCardToPhase(input: {{card_id: "{cid}" destination_phase_id: {PHASE_PAGO_ALIMENTAR_OMIE}}}) {{ clientMutationId }}'
         )
 
     # Se for Transferência de Recursos, atualiza banco_destino
@@ -151,10 +156,67 @@ def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None)
     dc_id = as_string(get_field_value(card_info, 'Conexão DC ID1')).strip()
     if dc_id:
         aliases.append(
-            f'n_dc: moveCardToPhase(input: {{card_id: "{escape_gql(dc_id)}" destination_phase_id: 340593562}}) {{ clientMutationId }}'
+            f'{prefixo}n_dc: moveCardToPhase(input: {{card_id: "{escape_gql(dc_id)}" destination_phase_id: 340593562}}) {{ clientMutationId }}'
         )
 
-    return 'mutation {\n' + '\n'.join(aliases) + '\n}'
+    return aliases
+
+
+def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None) -> str:
+    """Um card só. Continua existindo porque a fila reprocessa um de cada vez."""
+    return 'mutation {\n' + '\n'.join(_aliases_do_card(plan, card_info, 'n')) + '\n}'
+
+
+def build_update_cards_mutation(itens: List[tuple]) -> tuple:
+    """VÁRIOS cards numa mutation só — pedido do dono em 17/11/2026:
+
+        *"um único comando pra atualizar o pipefy, fazendo uma mutation e
+        atualizar vários cards ao mesmo tempo"*
+
+    Uma chamada por comprovante virava uma espera por comprovante. Agora um
+    documento leva o lote inteiro.
+
+    `itens` é uma lista de `(plan, card_info)`. Devolve `(texto, mapa)`, onde
+    `mapa` liga o prefixo do apelido ao índice do item — é por ele que se
+    descobre QUAL card o Pipefy recusou, para enfileirar só aquele.
+    """
+    linhas: List[str] = []
+    mapa: Dict[str, int] = {}
+    for idx, (plan, card_info) in enumerate(itens):
+        prefixo = f'c{idx}_'
+        mapa[prefixo] = idx
+        linhas.extend(_aliases_do_card(plan, card_info, prefixo))
+    if not linhas:
+        return '', {}
+    return 'mutation {\n' + '\n'.join(linhas) + '\n}', mapa
+
+
+def cards_recusados(resposta: dict, mapa: Dict[str, int]) -> set:
+    """Índices dos cards que o Pipefy NÃO aceitou.
+
+    ⚠️ Na dúvida, recusa todos. Um erro sem caminho (token inválido, rede fora,
+    resposta ilegível) não diz de quem é a culpa — e dar um card como atualizado
+    sem ter certeza é a não-atualização silenciosa de novo, agora em lote.
+    """
+    if resposta.get('ok'):
+        return set()
+    corpo = resposta.get('body') or {}
+    erros = corpo.get('errors') or []
+    if not erros:
+        return set(mapa.values())
+    ruins = set()
+    for erro in erros:
+        caminho = (erro or {}).get('path') or []
+        apelido = as_string(caminho[0]) if caminho else ''
+        achou = False
+        for prefixo, idx in mapa.items():
+            if apelido.startswith(prefixo):
+                ruins.add(idx)
+                achou = True
+                break
+        if not achou:
+            return set(mapa.values())
+    return ruins
 
 
 def escape_gql(value: str) -> str:

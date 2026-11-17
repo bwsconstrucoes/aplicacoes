@@ -3,6 +3,206 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## ⚑ 17/11/2026 — TROCAR A BASE DO PONTO ERA DECISÃO NO ESCURO (feito pelo chat do ERP/DP)
+
+**O dono trocou a base do ponto para o cadastro do ERP** (Ponto › Configuração ›
+Geral › "Base de pessoas do ponto") e perguntou, olhando os números do cartão:
+
+> *"Esses são os KPIs, tudo certo né?"*
+
+Com estes números na tela: 616 ativos de 3.667 linhas · 11 afastados · **20 não
+batem pela planilha** · **0 faltam no ERP** · 0 só no ERP · **40 sem obra
+reconhecida**.
+
+**NÃO ESTAVA TUDO CERTO, e a causa é de desenho:** os seis números do cartão são
+**todos calculados sobre a PLANILHA**. Eles descrevem a base que se está
+DEIXANDO, não a que se está PEGANDO. Quem troca a chave olhando só para eles
+troca no escuro.
+
+**O número que mais importa era justamente o enganoso.** "Não batem pela
+planilha: 20" (PJ, pró-labore e a obra ESCRUSSAS) é regra **da planilha**.
+Passando para o ERP, quem não bate sai do **tipo de contrato do cadastro** — a
+mudança de 16/11, logo abaixo nesta memória. **A tela não mostrava o número
+equivalente.** Se o tipo de contrato estiver em branco ou errado, PJ e
+pró-labore **começam a bater ponto**; e batida é registro legal do REP-P,
+encadeada por hash, que não se apaga como se corrige um cadastro.
+
+**E havia um caso que NENHUM dos seis contava:** quem está **ativo na planilha e
+DESLIGADO no ERP**. Essa pessoa simplesmente **para de conseguir bater** no dia
+da virada, e ninguém saberia antes de ela reclamar.
+
+### As três contas que o cartão passou a mostrar (`registro.pelo_erp`)
+
+| Conta | Para que serve |
+|---|---|
+| **Não batem pelo ERP** | comparar com o número da planilha. Vem **menor**? falta tipo de contrato em quem não devia bater. A tela mostra os dois lado a lado e avisa em vermelho quando diferem |
+| **Ativos sem obra no ERP** | "faltam no ERP = 0" garante que a PESSOA existe, não que ela tem OBRA. Sem obra, a batida acontece e cai em conferência, sem cerca |
+| **Ativos na planilha, desligados no ERP** | estes param de bater se a base for o ERP |
+
+**⚑ REUSA `cadastros._nao_bate_do_erp()`, não reimplementa.** É a MESMA regra que
+decide a batida de verdade. Duas cópias divergiriam, e aí a tela diria "pode
+virar" sobre uma conta diferente da que vale na hora de bater.
+
+**Achado por teste, e vale saber:** quando a cópia da planilha não existe no
+banco, `retrato()` devolvia antes de calcular — então as contas do ERP ficavam
+de fora **exatamente quando são a única fonte de informação** (sem cópia, a base
+É o ERP). Agora vão nos dois caminhos. E a terceira conta devolve `None`, não
+zero, sem a planilha para comparar: zero afirmaria "não há ninguém nessa
+situação", o que não se pode dizer sem ter com o que comparar.
+
+**⚠️ Pendente do dono:** ele trocou a base para o ERP **durante a manhã, com o
+pessoal batendo**. Recomendei voltar para a planilha até conferir as três contas
+— a troca é um clique, e a cópia da planilha estava fresca (12:02 do mesmo dia).
+Quem pegar esta área: conferir em que base o ponto está antes de qualquer coisa.
+
+## 17/11/2026 — PEDIR ACESSO AO PORTAL pelo "Meu ponto" (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi no ponto vindo de outra área.** Arquivos novos/tocados:
+`core/portal_do_erp.py` (novo), `app_colaborador.py` (rota
+`POST /ponto/app/api/portal/pedir` e o estado em `/app/api/eu`),
+`app_obra.py` (o estado em `/app/api/inicio`) e `templates/ponto/app.html`
+(a opção do menu e o diálogo do e-mail).
+
+**Desenho do dono:** *"que tal a partir do ponto eu requerer a liberação do
+acesso ao portal? (…) Ela já tem o cadastro no ponto, e lá pelo ponto ela vai
+informar o e-mail dela, na hora que ela pediu acesso ao portal."*
+
+**O problema.** O acesso ao ERP/portal só nasce com e-mail, e o e-mail da
+gente de obra o sistema **não tem** — ninguém pede e-mail para contratar. O DP
+não tem como adivinhar, então o acesso não nascia. Quem sabe o e-mail é a
+pessoa; e o ponto é o único lugar onde ela já está autenticada de verdade (CPF
++ PIN, com bloqueio por tentativa).
+
+**O que o ponto faz, e o que NÃO faz.** Faz: mostra "Pedir acesso ao portal"
+no menu do celular, pede o e-mail e coloca o pedido na fila, com a obra em que
+a pessoa **bate ponto** (`cadastros.obra_pelo_ponto`, 60 dias; na falta, a do
+cadastro). Mostra o andamento ("esperando a liberação", ou o motivo da recusa),
+e, quando liberado, o atalho para `/erp/portal`. **NÃO faz:** criar usuário do
+ERP, escolher perfil ou mandar convite. A decisão é do ERP, por quem tem
+`gerir_usuarios`, pela porta que já existia.
+
+**⚑ Só no CELULAR DA PESSOA, nunca no aparelho da obra.** No tablet quem está
+na frente da tela é qualquer um da equipe: e-mail digitado ali é e-mail que não
+se sabe de quem.
+
+**A fila mora no ERP** (`public.portal_pedidos_de_acesso`, migração **108 do
+ERP**) e a regra dela em `app/apps/erp/core/auth/pedidos_de_portal.py`. Aqui
+não há SQL dessa tabela, de propósito — duas cópias da mesma regra divergem.
+
+**⚠️ DEPENDE DO BOTÃO DO ERP, não do do ponto.** Enquanto a migração 108 não
+for aplicada ("Aplicar atualizações do banco", nas Configurações do ERP), o
+estado vem `disponivel: false` e **a opção nem aparece no menu**. Ninguém vê
+erro — só não vê o recurso. Foi escolha: errar para o lado de esconder.
+
+**Testes:** `tests/test_ponto_pede_acesso_ao_portal_banco.py` (8 casos, banco
+de verdade) — cobre o pedido pelo celular, a obra vir do ponto e não do
+cadastro, o andamento na tela, o DP ver e não liberar, sem PIN não pedir, e a
+obra sugerida no pedido do portal.
+
+## 16/11/2026 — quem não bate ponto passa a sair do TIPO DE CONTRATO (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi em `core/cadastros.py` vindo de outra área.** Está escrito aqui porque
+é mudança de comportamento do ponto, e quem pegar esta área precisa saber.
+
+**O buraco.** Usando o **cadastro do ERP** como base de pessoas (`pessoas.fonte
+= ERP`), `nao_bate` era `NULL::text`: **ninguém ficava de fora**. A regra
+existia só no caminho da planilha (`registro.nao_bate_sql`, lendo a coluna
+"tipo" do Registro de Colaboradores).
+
+Isso não incomodava enquanto a base era a planilha — mas o dono decidiu em
+16/11/2026 **cortar o vínculo com ela** assim que terminar as importações do
+Pipefy e das fichas do Fortes (ver `CONTEXTO.md`, mesma data). No dia da
+virada, **PJ e pró-labore passariam a bater ponto** — e ponto de PJ é
+exatamente o registro que não se quer ter, porque parece vínculo de emprego. O
+defeito só apareceria depois, numa manhã, com batida de quem não devia bater.
+
+**A regra, ditada por ele:**
+
+> *"Quando é prestador de serviço, quem é que bate ponto? É o autônomo RPA e o
+> autônomo mensalista. Os demais não batem ponto (…) PJ não bate ponto,
+> pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz bate
+> ponto."*
+
+| Batem ponto | Não batem |
+|---|---|
+| CLT (determinado e indeterminado), Temporário, Autônomo RPA, Autônomo mensalista, Jovem aprendiz, Estágio | **PJ, Pró-labore** |
+
+Mais a obra **ESCRUSSAS**, como já era pela planilha. A **exceção do DP**
+(migração 025) continua passando por cima de tudo — a regra automática não
+tira a decisão de ninguém.
+
+**Detalhes que não são óbvios:**
+
+- **Sem `tipo_contrato` preenchido, a pessoa BATE.** Cadastro pela metade não
+  barra ninguém: o erro caro aqui é gente parada no portão, não uma batida a
+  mais que depois se confere.
+- **Banco sem a coluna não derruba o ponto** — a coluna é conferida antes
+  (`_tem_tipo_contrato`), e sem ela ninguém fica de fora.
+- Nada disso muda enquanto a base for a planilha. É preparo para a virada.
+
+**Teste:** `tests/test_ponto_nao_bate_pelo_contrato_banco.py` (banco de
+verdade — isto vive num `CASE`, que o dublê da suíte não enxerga).
+
+### ⚠️ E uma correção sobre o telefone, que estava escrita errada
+
+Eu havia dito ao dono que quem ficasse sem telefone no cadastro não bateria
+ponto. **Está errado**, e ele corrigiu: *"uma coisa é não ter telefone, outra
+coisa é não conseguir acessar (…) não é para ser impeditivo o telefone. É
+impeditivo para ele verificar o ponto dele."* Quem bate é a obra, no aparelho
+da obra. O telefone serve para a pessoa **conferir** o ponto dela e para bater
+pelo próprio celular, que é permissão de poucos.
+
+---
+
+## 15/11/2026 — o atestado que passa de 15 dias abre o afastamento sozinho (feito pelo chat do ERP/DP)
+
+⚠️ **Mudança feita por outro chat.** O assunto nasceu no chat do DP, num pedido
+longo do dono sobre os formulários de solicitação, e ele escolheu entre três
+caminhos: *"Acima de 15 dias, o sistema abre sozinho."*
+
+**A razão dos 15:** os primeiros 15 dias de atestado são da EMPRESA — ela paga
+e abona as faltas. Do 16º em diante o benefício é do INSS, e aí deixa de ser
+abono de falta e passa a ser AFASTAMENTO (perícia, documento, outro tratamento
+na folha). A mesma conta vale com atestados PICADOS: a lei soma os dias da
+mesma doença dentro de 60 dias, e quatro atestados de cinco dias não chamam
+atenção nenhum — juntos passam do limite. Por isso não ficou manual: ninguém do
+DP vai somar à mão os atestados de 575 pessoas.
+
+**O que foi mexido, e é pouco de propósito:**
+
+- `core/afastamento_longo.py` — **arquivo novo**, com a conta e a decisão.
+- `core/ocorrencias.py::_aplicar` — **um `elif`**, dentro de um `try`: defeito
+  na regra nova não pode desfazer a aprovação do atestado, que já está certa e
+  a pessoa precisa dela abonada hoje.
+- `tests/test_ponto_atestado_longo_banco.py` — oito testes com banco de
+  verdade.
+
+**Nenhuma migração, nenhuma coluna nova, nenhuma tela mexida.**
+
+**⚑ O AFASTAMENTO NASCE `AGUARDANDO_DP`, NÃO APROVADO.** Afastamento aprovado
+muda o que a folha paga, e a soma legal vale para a MESMA doença — coisa que só
+quem lê o CID sabe. Aberto como pedido, com a conta escrita na descrição, o
+pior caso é o DP negar. A descrição começa com "ABERTO PELO SISTEMA" e diz
+quantos dias somaram, em quantos atestados e em que janela.
+
+**O que ficou de fora:** a declaração de comparecimento não entra na soma (é
+consulta de horas, não dia de doença); o módulo não agenda perícia, não abona
+nada por conta própria e não mexe no atestado que o disparou. E a data de
+início do afastamento é um ponto de partida, não a verdade — com atestados
+picados o DP ajusta, e é para isso que o pedido nasce aberto.
+
+**Não testado em produção.** Rodou na suíte com Postgres local.
+
+---
+
+## 14/11/2026 — a ficha única ganhou a aba "Telegram e mensagens" (feito pelo chat da Mensageria)
+
+Pedido do dono: o Telegram de cada pessoa e as mensagens que ela recebeu dentro do cadastro dela. Na janela da
+pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, só para quem tem `ver_mensagens`
+(Administrador, Diretor financeiro, DP). O conteúdo é o bloco `mensagensDaPessoa` do `erp_base.html` — o mesmo
+da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
+`app/apps/mensageria/HISTORICO.md`.
+
 ## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
 
 ⚠️ **Mexi num arquivo desta área sem ser o chat dela, e por isso fica anotado

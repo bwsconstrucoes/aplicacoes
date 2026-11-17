@@ -71,11 +71,14 @@ def _contrato(cenario, **kw):
 def _certidao(cenario, *, codigo="CND-FEDERAL", validade: date,
               vence=True, avisar_dias=30, empresa_id=None, obra_id=None):
     s = cenario["s"]
-    if s.get(DocumentoTipo, codigo) is None:
-        s.add(DocumentoTipo(codigo=codigo, nome="Certidão federal",
-                            grupo="CERTIDAO", dono="EMPRESA",
-                            vence=vence, avisar_dias=avisar_dias))
-        s.flush()
+    # ⚑ `merge`, desde 16/11/2026: o catálogo de tipos de documento passou a ser
+    # aplicado junto com as migrações, então o tipo pode já existir — e com
+    # OUTRO `vence`/`avisar_dias` que o deste teste. Com o `if` de antes, o
+    # teste herdava os valores do catálogo e falhava defendendo outra coisa.
+    s.merge(DocumentoTipo(codigo=codigo, nome="Certidão federal",
+                          grupo="CERTIDAO", dono="EMPRESA",
+                          vence=vence, avisar_dias=avisar_dias))
+    s.flush()
     import hashlib
     conteudo = f"{codigo}-{validade}".encode()
     anexo = Anexo(entidade_tipo="documento", entidade_id=0,

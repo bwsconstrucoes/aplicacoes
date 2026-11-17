@@ -11,6 +11,13 @@
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 
 {% if montado.quantidade %}
+  {# O RELATÓRIO COMPLETO, PARA A PARCERIA (15/11/2026) — `lote_relatorio_completo.py`.
+     Também no celular: é de lá que ele vai para o WhatsApp. #}
+  <p style="margin:-6px 0 10px">
+    <button type="button" class="btn" onclick="abrirRelatorioCompleto(0)"
+            title="Um PDF só, com o resumo, a relação, o detalhe de cada pagamento e os documentos embutidos">
+      Relatório completo (para a parceria)</button>
+  </p>
   {# `so-computador`: exportar e relatório saem do celular (10/10/2026). #}
   <p class="so-computador" style="margin:-6px 0 14px">
     <a class="btn secundario"
@@ -166,6 +173,11 @@
     <div class="cartao">
       <div class="cartao-cab">
         <h3>{{ grupo.titulo_exibido }}</h3>
+        {% if grupo.linhas %}
+          <button type="button" class="btn secundario" style="margin-left:auto"
+                  onclick="abrirRelatorioCompleto({{ gi }}, {{ grupo.titulo_exibido|tojson|forceescape }})"
+                  >Relatório completo do grupo</button>
+        {% endif %}
       </div>
 
       {# Os números do grupo, à vista. O total no meio e grande: é ele que
@@ -276,6 +288,150 @@
 
 {% block scripts %}
 {% include "analisesps_ficha_modal.html" %}
+
+<dialog class="dialogo" id="dialogo-rc" style="max-width:560px">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Relatório completo <small id="rc-de">do lote</small></h3>
+  <p class="cartao-dica" style="margin-top:0">
+    Um PDF só, para mandar à parceria: o resumo com os agrupamentos, a relação dos
+    pagamentos, o detalhe de cada um e os documentos (anexos) embutidos logo depois.
+  </p>
+  <form id="form-rc">
+    <label class="rotulo-campo" for="rc-data">Data do pagamento</label>
+    <input type="date" id="rc-data" name="data" value="{{ amanha }}" class="campo-largo">
+    <label class="rotulo-campo" for="rc-para">Para quem <span class="cartao-dica">(opcional)</span></label>
+    <input type="text" id="rc-para" name="para" maxlength="120" class="campo-largo"
+           placeholder="Ex.: Parceria da obra ESCPE18">
+    <label class="rotulo-campo" for="rc-titulo">Título <span class="cartao-dica">(opcional — sem ele, "Pagamentos de" e a data)</span></label>
+    <input type="text" id="rc-titulo" name="titulo" maxlength="120" class="campo-largo">
+    <div id="rc-obras-bloco">
+      <span class="rotulo-campo">Só estas obras</span>
+      <div id="rc-obras" class="rc-obras"></div>
+      <p class="cartao-dica" style="margin:2px 0 0">Desmarque o que não é da parceria — o
+        relatório sai só com as SPs das obras marcadas.</p>
+    </div>
+    <label style="display:block;margin-top:10px">
+      <input type="checkbox" id="rc-anexos" checked> Embutir os documentos (anexos) de cada pagamento
+    </label>
+    <div class="gd-botoes"><button class="btn" type="submit" id="rc-gerar">Gerar o relatório</button></div>
+  </form>
+  <div id="rc-andamento" hidden>
+    <div class="rc-barra"><div id="rc-barra-cheia"></div></div>
+    <p id="rc-etapa" class="cartao-dica"></p>
+    <p id="rc-pronto" hidden>
+      <a class="btn" id="rc-baixar" href="#">Baixar o PDF</a>
+      <button type="button" class="btn secundario" id="rc-compartilhar" hidden>Compartilhar (WhatsApp)</button>
+    </p>
+  </div>
+</dialog>
+<style>
+  .rc-obras { display:grid; grid-template-columns:1fr; gap:3px; max-height:180px; overflow:auto;
+    border:1px solid var(--borda); border-radius:8px; padding:6px 10px; }
+  .rc-obras label { display:flex; gap:8px; align-items:center; font-size:13px; }
+  .rc-obras .rc-valor { margin-left:auto; color:var(--tinta-suave); font-variant-numeric:tabular-nums; }
+  .rc-barra { height:8px; border-radius:4px; background:var(--papel); overflow:hidden; margin-top:10px; }
+  #rc-barra-cheia { height:100%; width:0; background:var(--azul-claro); transition:width .3s; }
+</style>
+<script>
+const RC_OBRAS = {{ rc_obras|tojson }};
+let rcGrupo = 0;
+function rcMoeda(v) {
+  return v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+}
+function abrirRelatorioCompleto(grupo, titulo) {
+  rcGrupo = grupo;
+  document.getElementById("rc-de").textContent = grupo ? ("do grupo " + titulo) : "do lote";
+  const caixa = document.getElementById("rc-obras");
+  caixa.textContent = "";
+  const obras = RC_OBRAS[String(grupo)] || [];
+  obras.forEach(o => {
+    const l = document.createElement("label");
+    const c = document.createElement("input");
+    c.type = "checkbox"; c.checked = true; c.value = o.obra; c.name = "obra";
+    const n = document.createElement("span"); n.textContent = o.obra;
+    const v = document.createElement("span"); v.className = "rc-valor";
+    v.textContent = o.quantidade + " SP(s) · " + rcMoeda(o.total);
+    l.append(c, n, v); caixa.append(l);
+  });
+  document.getElementById("rc-obras-bloco").hidden = obras.length < 2;
+  document.getElementById("form-rc").hidden = false;
+  document.getElementById("rc-andamento").hidden = true;
+  const d = document.getElementById("dialogo-rc");
+  if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+}
+document.getElementById("form-rc").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const marcadas = [...document.querySelectorAll("#rc-obras input:checked")].map(c => c.value);
+  const todas = document.querySelectorAll("#rc-obras input").length;
+  const corpo = {
+    grupo: rcGrupo, data: document.getElementById("rc-data").value,
+    para: document.getElementById("rc-para").value,
+    titulo: document.getElementById("rc-titulo").value,
+    obras: marcadas.length === todas ? [] : marcadas,
+    anexos: document.getElementById("rc-anexos").checked,
+  };
+  if (todas && !marcadas.length) { alert("Marque ao menos uma obra."); return; }
+  const botao = document.getElementById("rc-gerar");
+  const etapa = document.getElementById("rc-etapa");
+  botao.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.lote_relatorio_completo_iniciar') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+    document.getElementById("form-rc").hidden = true;
+    document.getElementById("rc-andamento").hidden = false;
+    document.getElementById("rc-pronto").hidden = true;
+    etapa.textContent = "Começando…";
+    rcAcompanhar(d.estado);
+  } catch (e) {
+    alert("Não consegui gerar: " + e.message);
+  } finally {
+    botao.disabled = false;
+  }
+});
+async function rcAcompanhar(endereco) {
+  const etapa = document.getElementById("rc-etapa");
+  const barra = document.getElementById("rc-barra-cheia");
+  for (;;) {
+    let d;
+    try {
+      const r = await fetch(endereco);
+      d = await r.json();
+    } catch (e) {
+      etapa.textContent = "Sem resposta do servidor; tentando de novo…";
+      await new Promise(ok => setTimeout(ok, 3000));
+      continue;
+    }
+    if (!d.ok || d.erro) { etapa.textContent = "Não consegui gerar: " + (d.erro || "erro"); return; }
+    const pct = d.pronto ? 100 : (d.total ? Math.round(90 * d.feitos / d.total) : 5);
+    barra.style.width = pct + "%";
+    etapa.textContent = d.pronto ? ("Pronto: " + d.nome + " (" + (d.tamanho / 1048576).toFixed(1).replace(".", ",") + " MB)")
+                                 : (d.etapa + (d.total ? " (" + d.feitos + " de " + d.total + ")" : ""));
+    if (d.pronto) { rcPronto(d); return; }
+    await new Promise(ok => setTimeout(ok, 2000));
+  }
+}
+function rcPronto(d) {
+  document.getElementById("rc-pronto").hidden = false;
+  const baixar = document.getElementById("rc-baixar");
+  baixar.href = d.arquivo;
+  baixar.setAttribute("download", d.nome);
+  // NO CELULAR, DIRETO PARA O WHATSAPP: o menu de compartilhar do aparelho recebe o
+  // próprio arquivo (não um link), quando o navegador sabe fazer isso.
+  const comp = document.getElementById("rc-compartilhar");
+  comp.hidden = !(navigator.canShare && window.File);
+  comp.onclick = async () => {
+    try {
+      const r = await fetch(d.arquivo);
+      const arquivo = new File([await r.blob()], d.nome, {type: "application/pdf"});
+      if (navigator.canShare({files: [arquivo]})) await navigator.share({files: [arquivo], title: d.nome});
+      else location.href = d.arquivo;
+    } catch (e) { if (e.name !== "AbortError") alert("Não consegui compartilhar: " + e.message); }
+  };
+}
+</script>
 <script>
 function abrirLote() {
   const d = document.getElementById("dialogo-lote");

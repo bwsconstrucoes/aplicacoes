@@ -1,0 +1,67 @@
+                                                                  REGISTRO DE EMPREGADO                                                                                              Número: 000104
+
+Empregador
+  Razão Social:      BWS CONSTRUCOES LTDA                              CNPJ: 00.079.526/0001-09                    Atividade Econômica:       41204
+      Endereço:      RUA LUIZ MOREIRA GOMES, 11                                                                          Código Município:    04285
+           Bairro:   PQ JABUTI                                        Cidade:    Eusébio                                                UF:   CE
+            CEP:     61760-000
+                                                                                                                                                                             Autenticação
+
+
+                                Dados Pessoais
+                                      Código:       000104                          Matrícula eSocial:     71428793860101120320140101
+                                       Nome:        FULANO DE TAL DA SILVA
+                                          Pai:      PAI DE TAL DA SILVA                                Mãe:    MAE DE TAL DOS SANTOS
+                                  Nascimento:       06/10/1983               Naturalidade:     Fortaleza                         UF:     CE       Nacionalidade:     Brasileira
+           3x4                          Sexo:       Masculino                Estado Civil:     Solteiro                                            Etnia ou Raça:     Não informado
+                                    Instrução:      Ensino Fundamental completo
+                                    Endereço:       Rua De Teste, 100                                                                            Bairro:    Bom Jardim
+                                      Cidade:       Fortaleza                                              UF:     CE                                 CEP:      60540-020
+                                        Fone:       85                   Celular:     89355012                    Email:
+
+
+Documentos
+ CTPS Número: 06491760                                      Série: 00001 DV:                            UF: CE    Emissão:                                     PIS/PASEP: 120.00000.00-4
+   RG Número: 1234567890123                              Emissão: 06/05/2002                 Órgão Emissor: SSP/CE         UF: CE                                    CPF: 714.287.938-60
+          Titulo: 000000000000                              Zona: 116                               Seção:  0213
+  Certif. Militar:                                          Série:                                    Tipo:        Categoria:
+    CSM/OAM:                                        RM/DN/COMAR:                                                                                                 Habilitação:
+ Órgão Classe:                                          Expedidor:           UF:                                                Expedição:                         Validade:
+Imigração
+   Ano de Chegada:                               Tipo de Visto:                              Validade da RG:                               Validade da CTPS:
+
+Dados Contratuais
+   Admissão:     12/03/2014           Forma de Pgto.:        Mensal                 Setor:    164.01 - OBRA ESCVARZEA CONST EEM COM 12 SALAS/SETOR
+                                                                                                                                           Desligamento:
+                                                                                                                                                    PRODUÇÃO
+
+Jornada de Trabalho                                                                                                      Outras Informações
+                                                                                                                                Participa do CIPA:       Não
+JORNADA: 000001 - HORARIO CONSTRUÇÃO CIVIL ESCALA:4 -
+JORNADA COM HORáRIO DIáRIO FIXO E FOLGA FIXA (NO DOMINGO)                                                                    Último Exame Médico:
+DIA E1       S1      E2     S2      E3     S3     E4     S4
+SEG 07:00 12:00 13:00 17:00
+TER 07:00 12:00 13:00 17:00
+QUA 07:00 12:00 13:00 17:00
+QUI 07:00 12:00 13:00 17:00
+SEX 07:00 12:00 13:00 16:00
+SáB FOLGA
+DOM FOLGA
+Histórico de Cargos e Funções
+Mês/Ano: 03/2014 CBO/Cargo: 715405-OPER. DE BETONEIRA Ñ AUT CAREG                                 Mês/Ano: 06/2014 CBO/Cargo: 782505-OPER DE BETONEIRA AUT CARREG
+Mês/Ano: 03/2017 CBO/Cargo: 782505-OPER DE BETONEIRA AUT CARREG                                   Mês/Ano: 08/2017 CBO/Cargo: 715405-OPER DE BETONEIRA AUT CARREG
+Mês/Ano: 07/2018 CBO/Cargo: 715405-OPER DE BETONEIRA AUT CARREG
+Histórico de Salários
+Mês/Ano: 03/2014       Valor:        787,00        Mês/Ano: 06/2014     Valor:       1.058,00     Mês/Ano: 07/2014           Valor:       1.153,22      Mês/Ano: 07/2015          Valor:     1.249,00
+Mês/Ano: 06/2016       Valor:       1.388,00       Mês/Ano: 08/2017     Valor:       1.453,10     Mês/Ano: 06/2019           Valor:       1.538,31      Mês/Ano: 05/2021          Valor:     1.633,99
+Mês/Ano: 07/2021       Valor:       1.698,04       Mês/Ano: 05/2022     Valor:       1.882,00     Mês/Ano: 06/2023           Valor:       1.995,00      Mês/Ano: 06/2024          Valor:     2.095,00
+Mês/Ano: 06/2025       Valor:       2.230,00       Mês/Ano: 06/2026     Valor:       2.382,00
+Histórico de Contribuições Sindicais
+Mês/Ano:     03/2014      Valor:           26,23                  Mês/Ano:      06/2015       Valor:              3,19                 Mês/Ano:      06/2015        Valor:           38,44
+Mês/Ano:     03/2016      Valor:            4,64                  Mês/Ano:      03/2016       Valor:             41,63                 Mês/Ano:      03/2017        Valor:            2,17
+
+
+
+
+                                 Assinatura do Empregador                                                                             Assinatura do Empregado
+

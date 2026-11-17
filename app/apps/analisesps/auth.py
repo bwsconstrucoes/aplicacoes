@@ -489,6 +489,10 @@ TELA_DA_ROTA = {
     "analisesps.lote_pdf": ("lote",),
     "analisesps.lote_grupo_pdf": ("lote",),
     "analisesps.lote_grupo_excel": ("lote",),
+    # O relatório completo do lote, para a parceria (15/11/2026).
+    "analisesps.lote_relatorio_completo_iniciar": ("lote",),
+    "analisesps.lote_relatorio_completo_estado": ("lote",),
+    "analisesps.lote_relatorio_completo_arquivo": ("lote",),
     "analisesps.tela_comprovantes": ("comprovantes",),
     "analisesps.enviar_comprovantes": ("comprovantes",),
     "analisesps.estado_comprovantes": ("comprovantes",),

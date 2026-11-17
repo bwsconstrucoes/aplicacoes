@@ -72,6 +72,19 @@
 </table>
 {%- elif e.indisponivel %}<div class="vazio">{{ e.indisponivel }}</div>
 {%- else %}<div class="vazio">Sem efetivo registrado neste dia.</div>{% endif -%}
+{#- ⚑ A LISTA DA PLANILHA QUE NÃO ENTROU NA SOMA (13/11/2026).
+
+    Dia que tem batida de ponto E efetivo importado da planilha antiga tem
+    DOIS registros da mesma gente. Somá-los inflava o efetivo do papel — foi o
+    que ele viu. Vale o ponto, que tem nome e hora. Mas a lista da planilha
+    não some do documento: ela é o que a obra informou na época, e apagá-la do
+    papel seria esconder registro. Sai embaixo, dita como é. -#}
+{%- if e.da_planilha_fora_da_soma %}
+<div class="vazio" style="margin-top:4pt">Informado na planilha antiga para
+  este dia, fora da contagem acima (o dia tem ponto registrado):
+  {{ e.da_planilha_fora_da_soma | map(attribute="funcao") | join(", ") }}
+  — {{ e.da_planilha_fora_da_soma | sum(attribute="quantidade") }} pessoa(s).</div>
+{%- endif -%}
 {% endmacro %}
 
 {# O MATERIAL RECEBIDO, que vem de Suprimentos e ninguém digita. #}

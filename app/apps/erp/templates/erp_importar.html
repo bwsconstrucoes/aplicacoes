@@ -89,6 +89,42 @@
   <div id="resultado-diario"></div>
 </div>
 
+{# ⚑ COMPLETAR O CADASTRO DAS OBRAS PELA C. DIÁRIOS (13/11/2026).
+
+   Ele, olhando o cabeçalho do diário: *"a gente cadastrou as obras, importou
+   lá na planilha C. Diários, tem todas as informações das obras, mas não está
+   trazendo aqui para o cabeçalho do diário."*
+
+   O cabeçalho não estava errado: ele lê o CADASTRO da obra, e o cadastro é
+   que estava vazio. A planilha de DIÁRIOS tem as colunas Contrato, Objeto,
+   Endereço e companhia, mas vieram vazias nas 1.427 linhas (conferido). Quem
+   tem esses dados é a C. Diários — a mesma que a emissão de NFS-e já lê. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cadastro das obras (C. Diários)</h3>
+    <small>completa o que falta no cadastro — é daqui que o cabeçalho do diário se enche</small></div>
+  <div class="form-grade">
+    <div class="campo"><label for="arq-obras">Arquivo .xlsx da C. Diários</label>
+      <input type="file" id="arq-obras" accept=".xlsx"></div>
+  </div>
+  <div class="dica" style="margin-top:8px">No Google Planilhas:
+    <b>Arquivo › Fazer download › Microsoft Excel</b>. A aba lida é a
+    <b>Centro de Custo</b>. Vem de lá: contrato, objeto, município, UF, CNO,
+    cliente, CNPJ do cliente, valor, alíquota de ISS e tributação.
+    <b>Não vem de lá</b>, e continua sendo digitado no cadastro da obra:
+    responsável técnico, CREA, ART, ordem de serviço e as datas de início e
+    término — são elas que fazem o quadro de prazo do diário aparecer.</div>
+  <label class="opcao" style="margin-top:10px">
+    <input type="checkbox" id="ob-regravar">
+    <span class="rotulo">Trocar também o que já está preenchido aqui</span></label>
+  <div class="dica">Desmarcado — o normal — só preenche campo vazio, e mostra
+    abaixo onde a planilha diverge do que já está no cadastro.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-conferir-obras">Conferir sem gravar</button>
+    <button class="btn" id="btn-gravar-obras" disabled>Completar o cadastro</button>
+  </div>
+  <div id="resultado-obras"></div>
+</div>
+
 {# ⚑ TRAZER DO PIPEFY O CADASTRO DAS PESSOAS (10/11/2026).
    Ele: *"tem o número do card do pipe, certo? Então, tu não consegue fazer
    logo essa importação, não? Faz a leitura do card, baixa os documentos,
@@ -97,18 +133,155 @@
    A tela diz ANTES o que vai acontecer e para quantas pessoas. Importação é a
    operação em que o engano custa mais caro para desfazer, então conferir sem
    gravar é o caminho normal, não o cuidadoso. #}
+{# ⚑ DUAS PORTAS, CADA UMA COM O SEU TRABALHO — 17/11/2026.
+
+   Ele, olhando a tela que pedia o número do card para trazer dados que estão
+   na planilha: *"mas por que rodar com o card dela se quero que puxe da
+   planilha?"* Tinha razão: o card servia para achar a pessoa e baixar os
+   documentos, e a planilha tem o CPF — ela acha sozinha.
+
+   DADOS      → desta porta, pela planilha, sem card nenhum.
+   DOCUMENTOS → pela porta de baixo, com os cards (é o que a planilha não tem). #}
 <div class="cartao">
-  <div class="cartao-cab"><h3>Cadastro das pessoas (Pipefy)</h3>
-    <small>traz os documentos e preenche o que está vazio — nunca troca o que já está aqui</small></div>
-  <div id="pipefy-cadastro-situacao" class="cartao-dica">olhando…</div>
-  <div class="form-grade">
-    <div class="campo"><label for="pc-quantas">Quantas pessoas nesta rodada</label>
-      <input type="number" id="pc-quantas" min="1" max="300" value="50"></div>
-    <div class="campo"><label for="pc-quem">Quem entra</label>
-      <select id="pc-quem">
-        <option value="ativos">só quem está trabalhando</option>
-        <option value="todos">todo mundo que tem card, inclusive desligados</option>
+  <div class="cartao-cab"><h3>Cadastro das pessoas (planilha)</h3>
+    <small>os dados saem da aba “Dados Documentos” — sem precisar de card</small></div>
+  <div class="cartao-dica">Lê a planilha <b>Registro de Colaboradores</b>, aba
+    <b>Dados Documentos</b>, <b>ao vivo</b>: o que você editar lá vale nesta
+    mesma importação. Casa pelo <b>CPF</b>, preenche o cadastro de quem já
+    existe. <b>Não cria gente</b>, a menos que você marque a opção abaixo.
+    <br><br>O que a planilha manda: <b>vínculo, pagamento, tipo de contrato,
+    cargo, convenção, obra, salário, diária, auxílios, endereço, RG, nome do
+    pai e da mãe, nascimento, chave Pix</b> e o resto do cadastro.
+    <b>Nome e CPF nunca são trocados.</b></div>
+  <div class="campo" style="margin-top:10px">
+    <label for="plc-cpfs">CPF de quem você quer trazer <small>(opcional)</small></label>
+    <textarea id="plc-cpfs" rows="2" placeholder="096.767.494-86"></textarea>
+    <div class="dica">Um por linha ou separados por vírgula. <b>Comece com uma
+      ou duas pessoas</b> e confira a ficha antes de soltar o resto.
+      <b>Em branco, vai a planilha inteira</b> — e se você escrever algo que eu
+      não entender, eu paro e aviso, em vez de trazer todo mundo.</div>
+  </div>
+  {# ⚑ CADASTRAR QUEM FALTA É ESCOLHA, E NASCE DESMARCADA (17/11/2026).
+
+     Ele: *"tem mais gente no ERP do que eu coloquei para importar. Só quero os
+     que eu coloquei para importar."*
+
+     Criar gente é a única coisa que esta importação faz que não se desfaz com
+     outra importação — atualizar campo errado se corrige rodando de novo;
+     pessoa criada por engano fica. Coisa que não se desfaz não pode ser
+     padrão. #}
+  <label class="opcao" style="margin-top:10px">
+    <input type="checkbox" id="plc-criar">
+    <span class="rotulo"><b>Cadastrar também quem não existe no ERP</b>
+      (só os ativos). Desmarcado — o normal — só preenche o cadastro de quem
+      já está aqui, e lista os outros sem criar nada.</span></label>
+  {# ⚑ LIMPAR A BASE (17/11/2026). Ele: *"eu já tinha cadastrado o pessoal que
+     tava vindo lá da análise SPs (…) mas eu não quero mais. Eu quero que
+     esteja só o pessoal que eu quero importar. O CPF que não tiver dentro da
+     minha lista de importação, eu quero que seja excluído dessa base."*
+
+     Só aparece como opção, e só funciona COM a lista de CPFs: campo em branco
+     quer dizer "a planilha inteira", e isso somado a isto apagaria o cadastro
+     todo. O servidor recusa sem a lista, não é só a tela que esconde. #}
+  <label class="opcao" style="margin-top:6px">
+    <input type="checkbox" id="plc-soestes">
+    <span class="rotulo" style="color:var(--vermelho)"><b>Deixar SÓ a minha
+      lista: apagar do ERP quem não está nela.</b> Exige a lista de CPFs
+      acima. O que estiver pendurado na pessoa (documento, pedido do DP,
+      título) <b>vai junto</b>. <b>A única exceção é quem bateu ponto</b>:
+      batida é registro legal, então essa pessoa é <b>desligada</b> em vez de
+      apagada. Aperte “Conferir sem gravar” primeiro: ele conta quantas
+      sairiam, sem apagar nada.</span></label>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-conferir-plc">Conferir sem gravar</button>
+    <button class="btn" id="btn-gravar-plc" disabled>Trazer da planilha</button>
+  </div>
+  <div id="resultado-plc"></div>
+</div>
+
+{# ===========================================================================
+   A CONFERÊNCIA QUE AUTORIZA DESLIGAR A PLANILHA (17/11/2026)
+
+   Ele: *"precisamos fazer de uma forma infalível essa desativação da planilha
+   e a leitura do Análise de SPs pela base do ERP. A GRAVIDADE DISSO É PAGAR
+   FUNCIONÁRIOS DE FORMA EQUIVOCADA."*
+
+   "Infalível" não se consegue raciocinando sobre o código — consegue-se
+   calculando as duas coisas e comparando. Fica em primeiro lugar na tela, e
+   não no fim, porque é a decisão mais cara que se toma aqui.
+   =========================================================================== #}
+<div class="cartao" style="border-color:var(--ambar)">
+  <div class="cartao-cab"><h3>Conferência: o ERP paga igual à planilha?</h3>
+    <small>responder “sim” para todo mundo é o que autoriza desligar a planilha</small></div>
+  <div class="cartao-dica">Pessoa por pessoa, compara o que a folha do
+    <b>Análise de SPs</b> decidiria lendo a <b>planilha</b> com o que ela
+    decidiria lendo o <b>ERP</b>.
+    <br><br>O primeiro item é o que importa: <b>“esta pessoa pode receber?”</b>
+    — respondido pela <b>mesma regra</b> do Análise de SPs, alimentada pelos
+    dois lados. Divergência ali quer dizer alguém recebendo que não devia, ou
+    deixando de receber.
+    <br><br><b>Nada é alterado.</b> Esta tela só lê.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="max-width:220px">
+      <label for="cf-ate">Pagando até (último dia do período)</label>
+      <input type="date" id="cf-ate"></div>
+    <button class="btn" id="btn-conferencia">Comparar agora</button>
+  </div>
+  <div id="resultado-cf"></div>
+</div>
+
+{# ⚑ DESFAZER O QUE A IMPORTAÇÃO CRIOU (17/11/2026).
+
+   Ele, depois de uma importação: *"tem mais gente no ERP do que eu coloquei
+   para importar. Só quero os que eu coloquei para importar."*
+
+   A causa foi consertada em dois lugares — a rota recusa CPF que não entendeu
+   em vez de cair na planilha inteira, e cadastrar quem falta virou opção
+   desmarcada. Mas sem este cartão a única saída para o estrago já feito seria
+   apagar gente no banco à mão, que é a pior coisa que existe. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cadastros criados recentemente</h3>
+    <small>para tirar quem entrou sem você pedir</small></div>
+  <div class="cartao-dica">Quem <b>nasceu</b> no cadastro nas últimas horas,
+    por importação ou à mão. <b>Só aparece aqui quem foi criado</b> — quem já
+    existia e só teve campos preenchidos não entra nesta lista.
+    <br><br>Apagar é <b>definitivo</b>, e de propósito: cadastro criado por
+    engano é lixo, não história — inativá-lo deixaria no sistema alguém que
+    nunca trabalhou aqui, aparecendo em busca e em lista para sempre.
+    O que estiver pendurado na pessoa (documento, pedido do DP, título)
+    <b>vai junto</b>. <b>A única exceção é quem bateu ponto</b>: batida é
+    registro legal, então essa pessoa é <b>desligada</b> em vez de apagada.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="max-width:200px"><label for="rm-horas">Criados nas últimas</label>
+      <select id="rm-horas">
+        <option value="6">6 horas</option>
+        <option value="24">24 horas</option>
+        <option value="48" selected>48 horas</option>
+        <option value="168">7 dias</option>
       </select></div>
+    <button class="btn secundario" id="btn-listar-rm">Ver quem foi criado</button>
+    <button class="btn vermelho" id="btn-apagar-rm" disabled>Apagar os marcados</button>
+  </div>
+  <div id="resultado-rm"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Documentos das pessoas (Pipefy)</h3>
+    <small>o que a planilha NÃO tem: os arquivos anexados ao card</small></div>
+  <div id="pipefy-cadastro-situacao" class="cartao-dica">olhando…</div>
+  {# ⚑ QUEM DIZ QUAIS CARDS É ELE. A primeira versão varria o pipe inteiro e
+     casava pelo CPF — e trazia card CANCELADO e card REPETIDO. Ele, em
+     13/11/2026: *"eu prefiro listar os cards (…) eu vou listar os cards que eu
+     quero que você busque. E você faz a pesquisa card a card e puxa as
+     informações e grava."* Ele tem a planilha com os números; escolher quais
+     entram é decisão dele, não adivinhação minha. #}
+  <div class="campo">
+    <label for="pc-cards">Números dos cards</label>
+    <textarea id="pc-cards" rows="4"
+      placeholder="853990032&#10;1329563540, 1332040352&#10;https://app.pipefy.com/open-cards/1329567174"></textarea>
+    <div class="dica">Um por linha, separados por vírgula, ou colados direto de
+      uma coluna da planilha. Endereço do card também serve. Número repetido
+      entra uma vez só.</div>
   </div>
   <div class="dica" style="margin-top:8px">Entram <b>documento de
     identificação, CTPS (as duas páginas), CPF, comprovante de endereço, foto,
@@ -116,13 +289,42 @@
     cadastro que estiverem <b>em branco</b> aqui. O que já está preenchido no
     ERP <b>não é trocado</b>. Rodar de novo <b>não traz nada duas vezes</b>.
     O <b>ASO não vem</b>: ele vence, e o card não diz até quando vale.
-    <b>Você não digita número de card em lugar nenhum</b>: o sistema acha cada
-    pessoa pelo CPF do card.</div>
+    <b>Card cancelado ou repetido não é problema do sistema</b>: entra o que
+    você listar, e só. Faltando um dado que o card não traz (PIS, nº da CTPS),
+    o sistema <b>lê o documento que acabou de baixar</b> e completa.</div>
+  {# ⚑ O CARD MANDA, E AGORA É O PADRÃO — decisão dele em 16/11/2026: *"eu
+     quero que o que vier do pipe preencha o ERP. É isso que eu quero. Não
+     adianta eu ter que já ter uma base e ter que preencher de novo."*
+
+     Estava ao contrário: só preenchia campo VAZIO, e a caixinha de regravar
+     vinha desmarcada. Na carga inicial isso é o pior dos mundos — o Pipefy É
+     a base, e deixar o ERP "ganhar" com um valor pela metade obriga a
+     redigitar o que já existe. A proteção que fica de pé é a que importa:
+     NOME e CPF nunca são trocados por importação (ver `_gravar_campos`), e a
+     diferença vai para a fila de divergências para alguém decidir. #}
+  <label class="opcao" style="margin:10px 0 0">
+    <input type="checkbox" id="pc-regravar" checked>
+    <span class="rotulo">O card <b>manda</b>: regrava por cima do que já está
+      aqui. <b>Nome e CPF nunca são trocados</b> — a diferença neles vira
+      pergunta. Desmarque para só preencher o que está vazio.</span></label>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-pc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-pc" disabled>Trazer do Pipefy</button>
   </div>
   <div id="resultado-pc"></div>
+</div>
+
+{# ⚑ A FILA DO QUE NÃO BATE. Ele, em 13/11/2026: *"quando houver divergência
+   entre o que a IA lê e o que está cadastrado, aí você questiona. E o humano
+   decide."* O relatório é de uma rodada; isto fica. #}
+<div class="cartao" id="cartao-divergencias" style="display:none">
+  <div class="cartao-cab"><h3>Dados que não batem — decida</h3>
+    <small>o que a importação achou diferente entre o ERP, o card e o documento</small></div>
+  <div class="dica">O <b>documento da pessoa</b> é o que tem mais força, e por
+    isso vem em negrito. Mas quem lê o documento é a IA, e ela erra calada —
+    trocar o nome de alguém na folha por uma leitura torta só aparece quando o
+    pagamento volta. Por isso a escolha é sua.</div>
+  <div id="lista-divergencias" style="margin-top:10px"></div>
 </div>
 {% endblock %}
 
@@ -336,6 +538,7 @@ function pintarResultadoDoDiario(r){
   if ((r.amostra || []).length)
     linhas.push(`<div class="tabela-wrap" style="margin-top:10px">
       <table><thead><tr><th>Obra</th><th>Dia</th><th>Relato</th>
+        <th>Efetivo do dia</th>
         <th class="direita">Pessoas</th></tr></thead>
       <tbody>${r.amostra.map(a=>`<tr>
         <td class="dados">${escapar(a.obra)}</td>
@@ -343,9 +546,26 @@ function pintarResultadoDoDiario(r){
         <td><small>${escapar((a.relato||"").replace(/\s+/g," ").slice(0,110))}${
           (a.relato||"").length > 110 ? "…" : ""}</small>${
           a.sem_expediente ? ` <span class="etiqueta">sem expediente</span>` : ""}</td>
-        <td class="direita dados">${a.pessoas || "—"}</td></tr>`).join("")}
+        {# ⚑ A LISTA, e não só a soma. Ele, em 13/11/2026, olhando a
+           conferência: *"não está importado aqui a listagem das pessoas. É
+           apenas não está aparecendo nesse quadro de leitura, ou é porque não
+           importa?"* Importa — mas quem lia "23 pessoas" não tinha como saber
+           se a leitura entendeu as funções ou engoliu uma linha, e conferir é
+           justamente para isso. #}
+        <td><small>${((a.efetivo||[]).map(e =>
+            `${e.quantidade} ${escapar(e.funcao)}`).join(" · ")) || "—"}</small>${
+          (a.sobras||[]).length ? `<br><small style="color:var(--vermelho)"
+            >não entendi: ${escapar(a.sobras.join(" | "))}</small>` : ""}</td>
+        <td class="direita dados">${a.pessoas || "—"}${
+          a.efetivo_total_na_planilha !== null &&
+          a.efetivo_total_na_planilha !== undefined &&
+          a.efetivo_total_na_planilha !== a.pessoas
+            ? `<br><small style="color:var(--vermelho)">planilha diz ${
+               a.efetivo_total_na_planilha}</small>` : ""}</td></tr>`).join("")}
       </tbody></table>
-      <div class="dica">Mostrando as ${r.amostra.length} primeiras.</div></div>`);
+      <div class="dica">Mostrando as ${r.amostra.length} primeiras. O efetivo
+        antigo vem <b>por função</b>, sem nomes — é assim que a planilha o
+        guarda, e é assim que ele entra aqui.</div></div>`);
 
   els("resultado-diario").innerHTML = linhas.join("");
   document.querySelectorAll(".mapa-obra").forEach(sel => {
@@ -402,6 +622,142 @@ if (els("btn-gravar-diario"))
   els("btn-gravar-diario").addEventListener("click", () => mandarDiario(true));
 
 // ---------------------------------------------------------------------------
+// COMPLETAR O CADASTRO DAS OBRAS PELA C. DIÁRIOS (13/11/2026)
+//
+// Mesma trava dos diários: gravar só abre depois de uma conferência do MESMO
+// arquivo. Aqui ela pesa ainda mais, porque o que se mexe é o cadastro que
+// alimenta o papel que a fiscalização assina.
+// ---------------------------------------------------------------------------
+let OBRAS_CONFERIDO = null;
+
+function travarGravarObras(){
+  OBRAS_CONFERIDO = null;
+  if (els("btn-gravar-obras")) els("btn-gravar-obras").disabled = true;
+}
+
+function pintarResultadoDasObras(rel){
+  const linhas = [];
+  linhas.push(`<div class="cartao-resumo">${
+    [[rel.linhas_no_arquivo, "linha(s) na planilha"],
+     [rel.obras_no_erp, "obra(s) no cadastro"],
+     [rel.simulado ? rel.completaria : rel.completadas,
+      rel.simulado ? "obra(s) seriam completadas" : "obra(s) completadas"],
+     [rel.ja_estavam_completas, "já estavam completas"]]
+      .map(([n, r]) => `<div><b>${n}</b><span>${r}</span></div>`).join("")}</div>`);
+
+  if ((rel.preenchidas || []).length) {
+    linhas.push(`<div class="tabela-wrap"><table>
+      <thead><tr><th>Obra</th><th>O que entra</th></tr></thead>
+      <tbody>${rel.preenchidas.map(o => `<tr>
+        <td><b>${escapar(o.obra)}</b><br><small class="desc">${escapar(o.nome)}</small></td>
+        <td>${Object.entries(o.campos).map(([k, v]) =>
+          `<div><b>${escapar(k)}:</b> ${escapar(String(v).slice(0, 120))}</div>`).join("")}</td>
+      </tr>`).join("")}</tbody></table></div>`);
+  }
+
+  if ((rel.conflitos || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">O que não bate</h4>
+      <div class="cartao-dica">${rel.conflitos[0].regravado
+        ? "Como você marcou trocar, o valor da planilha entra no lugar."
+        : "<b>Nada disto foi trocado.</b> O cadastro venceu. Para trocar, "
+          + "marque “trocar também o que já está preenchido”."}</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Obra</th><th>Campo</th><th>No cadastro</th>
+          <th>Na planilha</th></tr></thead>
+        <tbody>${rel.conflitos.map(c => `<tr>
+          <td>${escapar(c.obra)}</td><td>${escapar(c.rotulo)}</td>
+          <td>${escapar(String(c.no_erp).slice(0, 80))}</td>
+          <td>${escapar(String(c.na_planilha).slice(0, 80))}</td></tr>`).join("")}
+        </tbody></table></div>`);
+    if (rel.conflitos_total > rel.conflitos.length)
+      linhas.push(`<div class="cartao-dica">… e mais ${
+        rel.conflitos_total - rel.conflitos.length}.</div>`);
+  }
+
+  if ((rel.nao_encontradas || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">Na planilha, mas não no cadastro</h4>
+      <div class="cartao-dica">A importação <b>não cria obra</b>. Se alguma destas
+        tem de existir aqui, cadastre em Obras e confira de novo.</div>
+      <div class="cartao-dica">${rel.nao_encontradas.slice(0, 60)
+        .map(escapar).join(" · ")}</div>`);
+  }
+
+  // O QUE CONTINUA FALTANDO, e de onde vem. É metade do valor do relatório:
+  // sem isto, dá para importar e achar que o cabeçalho ficou completo.
+  const falta = (rel.so_no_cadastro || []).filter(f => f.obras_sem > 0);
+  if (falta.length) {
+    linhas.push(`<h4 style="margin-top:14px">O que a C. Diários não tem</h4>
+      <div class="cartao-dica">Estes cinco se digitam no cadastro da obra. Sem
+        <b>Início</b> e <b>Término previsto</b>, o diário não mostra o quadro de
+        prazo (“dia 37 de 180”).</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Campo</th><th class="direita">Obras sem ele</th>
+          <th>Por exemplo</th></tr></thead>
+        <tbody>${falta.map(f => `<tr><td>${escapar(f.rotulo)}</td>
+          <td class="direita"><span class="etiqueta ${
+            f.obras_sem ? "vermelha" : "verde"}">${f.obras_sem}</span></td>
+          <td><small class="desc">${(f.exemplos || []).map(escapar).join(", ")}</small></td>
+        </tr>`).join("")}</tbody></table></div>`);
+  }
+
+  if ((rel.colunas_ignoradas || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">Colunas que não aproveitei</h4>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Coluna</th><th>Por quê</th></tr></thead>
+        <tbody>${rel.colunas_ignoradas.map(c => `<tr>
+          <td>${escapar(c.coluna)}</td><td>${escapar(c.motivo)}</td></tr>`).join("")}
+        </tbody></table></div>`);
+  }
+
+  els("resultado-obras").innerHTML = linhas.join("");
+}
+
+async function mandarObras(gravar){
+  const arq = els("arq-obras").files[0];
+  if (!arq) { aviso("mensagem", "Escolha o arquivo .xlsx da C. Diários.", "erro"); return; }
+  if (gravar && OBRAS_CONFERIDO !== assinaturaDoArquivo(arq)) {
+    aviso("mensagem", "Confira sem gravar antes — o arquivo mudou desde a "
+        + "última conferência.", "erro");
+    travarGravarObras();
+    return;
+  }
+  const fd = new FormData();
+  fd.append("arquivo", arq);
+  if (gravar) fd.append("gravar", "1");
+  if (els("ob-regravar").checked) fd.append("regravar", "1");
+  ["btn-conferir-obras", "btn-gravar-obras"].forEach(
+    b => { if (els(b)) els(b).disabled = true; });
+  try {
+    const d = await api("/erp/api/obras/cdiarios", {method: "POST", body: fd});
+    pintarResultadoDasObras(d.resultado);
+    if (gravar) {
+      OBRAS_CONFERIDO = null;
+      aviso("mensagem", `${d.resultado.completadas} obra(s) completada(s).`, "ok");
+    } else {
+      OBRAS_CONFERIDO = assinaturaDoArquivo(arq);
+      aviso("mensagem", "Conferido. Nada foi gravado — leia o resumo e, se "
+          + "estiver certo, aperte Completar o cadastro.", "info");
+    }
+  } catch(e){
+    travarGravarObras();
+    aviso("mensagem", e.message, "erro");
+  }
+  // ⚠ O `finally` do destravamento mora aqui, fora do `try`: na primeira
+  // versão do cartão do Pipefy um erro deixava os dois botões travados para
+  // sempre, e a tela só voltava a funcionar recarregando.
+  if (els("btn-conferir-obras")) els("btn-conferir-obras").disabled = false;
+  if (els("btn-gravar-obras"))
+    els("btn-gravar-obras").disabled = OBRAS_CONFERIDO === null;
+}
+
+if (els("btn-conferir-obras"))
+  els("btn-conferir-obras").addEventListener("click", () => mandarObras(false));
+if (els("btn-gravar-obras"))
+  els("btn-gravar-obras").addEventListener("click", () => mandarObras(true));
+if (els("arq-obras")) els("arq-obras").addEventListener("change", travarGravarObras);
+if (els("ob-regravar")) els("ob-regravar").addEventListener("change", travarGravarObras);
+
+// ---------------------------------------------------------------------------
 // TRAZER DO PIPEFY O CADASTRO DAS PESSOAS
 //
 // ⚑ O BOTÃO DE GRAVAR NASCE TRAVADO e só abre depois de uma conferência. É a
@@ -429,21 +785,23 @@ async function situacaoDoCadastroPipefy(){
     // 13/11/2026. Ele apertou "conferir" e levou "nenhuma pessoa com número de
     // card nesse filtro", sem ter onde digitar número nenhum. Agora a primeira
     // coisa que a importação faz é ACHAR as pessoas, pelo CPF do card.
-    if (x.precisa_mapear) {
-      onde.innerHTML = `<b>Ninguém aqui tem número de card ainda — e você não
-        precisa digitar nenhum.</b> A primeira rodada varre o pipe do Pipefy e
-        acha cada pessoa <b>pelo CPF</b>; o número do card fica guardado no
-        cadastro dela para as próximas. Comece pelo <b>Conferir sem gravar</b>:
-        ele mostra quantos cards casaram, quantos não têm CPF e quantos são de
-        gente que não está no ERP — sem gravar nada.`;
-    } else {
-      onde.innerHTML = `<b>${x.ativos_com_card}</b> pessoa(s) trabalhando com
-        número de card` + (x.sem_card ? ` · <b>${x.sem_card}</b> sem card` : "")
-        + (x.cards_ja_lidos ? ` · já vieram <b>${x.ja_guardados}</b>
+    onde.innerHTML = `Cole abaixo os números dos cards que devem ser buscados —
+      o sistema lê <b>card a card</b> e acha a pessoa pelo <b>CPF do card</b>.`
+      + (x.cards_ja_lidos ? ` · já vieram <b>${x.ja_guardados}</b>
         documento(s) de ${x.cards_ja_lidos} card(s)` : "")
-        + (x.ja_falharam ? ` · <b>${x.ja_falharam}</b> não desceu(desceram)` : "");
-    }
+      + (x.ja_falharam ? ` · <b>${x.ja_falharam}</b> não desceu(desceram)` : "");
   } catch(e){ onde.textContent = e.message; }
+}
+
+// ⚑ ANO-MÊS-DIA É COMO O BANCO ESCREVE, NÃO COMO SE LÊ UM NASCIMENTO. O dono
+// viu "No ERP 1988-03-30 · No card 30/03/1988" oferecido como divergência a
+// decidir e respondeu: *"o que não bateu na crítica ainda foi errada. ERP
+// trabalhando com data em padrão errado."* O servidor passou a comparar data
+// como data (não vira mais divergência); aqui ela passa a APARECER como se lê.
+function dataSeForData(valor){
+  const t = String(valor == null ? "" : valor).trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : t;
 }
 
 function pintarRelatorioPC(rel){
@@ -452,33 +810,21 @@ function pintarRelatorioPC(rel){
   // O CASAMENTO POR CPF, quando houve. É a parte que responde "de onde saiu
   // essa gente toda", e a que mostra o que NÃO casou — que é onde mora o
   // trabalho humano.
-  const m = rel.mapeamento;
-  if (m) {
-    linhas.push(`<div class="cartao-dica"><b>${m.cards_no_pipe}</b> card(s) no
-      pipe · <b>${m.casados}</b> casaram com pessoa do ERP pelo CPF ·
-      <b>${m.gravados}</b> ganharam o número do card ·
-      ${m.cards_sem_cpf} sem CPF no card ·
-      ${m.cards_sem_pessoa} de gente que não está no ERP ·
-      ${m.cpf_com_dois_cards} CPF(s) com dois cards</div>`);
-    const d = rel.mapeamento_detalhe || {};
-    if ((d.dois_cards || []).length)
-      linhas.push(`<h4>CPF com mais de um card (${d.dois_cards.length})</h4>
-        <div class="cartao-dica">Nenhum destes entra: escolher um dos dois
-          seria adivinhar qual é o cadastro bom.</div>
-        <table><thead><tr><th>CPF</th><th>Cards</th></tr></thead><tbody>${
-        d.dois_cards.map(x=>`<tr><td class="dados">${escapar(documento(x.cpf))}</td>
-          <td class="dados">${escapar((x.cards||[]).join(", "))}</td></tr>`
-        ).join("")}</tbody></table>`);
-    if ((d.sem_pessoa || []).length)
-      linhas.push(`<h4>Cards de gente que não está no ERP (${d.sem_pessoa.length})</h4>
-        <div class="cartao-dica">Primeiros 50. A importação <b>não cria
-          pessoa</b> — estes ficam de fora até alguém cadastrar.</div>
-        <table><thead><tr><th>Card</th><th>Título</th><th>CPF</th></tr></thead>
-        <tbody>${d.sem_pessoa.map(x=>`<tr><td class="dados">${escapar(x.card)}</td>
-          <td>${escapar(x.titulo||"")}</td>
-          <td class="dados">${escapar(documento(x.cpf||""))}</td></tr>`
-        ).join("")}</tbody></table>`);
-  }
+  if (rel.motivo)
+    linhas.push(`<div class="cartao-dica">${escapar(rel.motivo)}</div>`);
+  if (rel.cards_pedidos)
+    linhas.push(`<div class="cartao-dica"><b>${rel.cards_pedidos}</b> card(s)
+      na sua lista · <b>${rel.pessoas_na_fila}</b> acharam a pessoa pelo CPF ·
+      ${(rel.cards_sem_pessoa||[]).length} não acharam ·
+      ${(rel.cards_sem_resposta||[]).length} o Pipefy não devolveu</div>`);
+  if ((rel.cards_sem_pessoa || []).length)
+    linhas.push(`<h4>Cards que não acharam a pessoa (${rel.cards_sem_pessoa.length})</h4>
+      <div class="cartao-dica">A importação <b>não cria pessoa</b>: ou o card
+        está sem CPF, ou esse CPF ainda não está no ERP.</div>
+      <table><thead><tr><th>Card</th><th>Título</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.cards_sem_pessoa.map(x=>`<tr><td class="dados">${escapar(x.card)}</td>
+        <td>${escapar(x.titulo||"")}</td>
+        <td>${escapar(x.motivo||"")}</td></tr>`).join("")}</tbody></table>`);
   linhas.push(`<div class="cartao-dica"><b>${rel.pessoas_lidas}</b> pessoa(s)
     lida(s) de ${rel.pessoas_na_fila} na fila · <b>${rel.documentos_guardados}</b>
     documento(s) ${rel.simulado ? "entrariam" : "guardados"} ·
@@ -496,6 +842,196 @@ function pintarRelatorioPC(rel){
       <tbody>${rel.falhas.map(f=>`<tr><td>${escapar(f.nome)}</td>
         <td class="dados">${escapar(f.arquivo)}</td>
         <td>${escapar(f.motivo)}</td></tr>`).join("")}</tbody></table>`);
+  // ⚑ O RAIO-X DOS ANEXOS. Quando nenhum documento veio, o relatório não
+  // dizia nada — e descobrir o porquê custou uma ida e volta com ele.
+  if (rel.anexos_no_pipe !== undefined)
+    linhas.push(`<div class="cartao-dica"><b>${rel.anexos_no_pipe}</b>
+      anexo(s) encontrado(s) nos cards` +
+      (rel.anexos_que_nao_entendi ? ` · <b>${rel.anexos_que_nao_entendi}</b>
+        em formato que eu não reconheci — me mostre a amostra abaixo` : "") +
+      (rel.campos_do_documento ? ` · <b>${rel.campos_do_documento}</b>
+        campo(s) preenchido(s) lendo o próprio documento` : "") +
+      (rel.divergencias ? ` · <b>${rel.divergencias}</b> dado(s) que não
+        batem entre ERP, card e documento` : "") +
+      (rel.regravando ? ` · <b>regravando por cima</b>` : "") + `</div>`);
+  const comAnexo = (rel.por_pessoa || []).filter(
+    p => (p.anexos_do_card || []).some(a => a.quantos));
+  if (comAnexo.length)
+    linhas.push(`<h4>O que o Pipefy devolveu em cada campo de anexo</h4>
+      <table><thead><tr><th>Pessoa</th><th>Campo do pipe</th><th>Vira</th>
+      <th class="direita">Quantos</th><th>Forma</th><th>Amostra</th></tr></thead>
+      <tbody>${comAnexo.map(p => (p.anexos_do_card||[])
+        .filter(a => a.quantos)
+        .map(a => `<tr><td>${escapar(p.nome)}</td>
+          <td class="dados">${escapar(a.campo)}</td>
+          <td>${escapar(a.tipo)}</td>
+          <td class="direita">${a.quantos}</td>
+          <td>${escapar((a.formas||[]).join(", "))}</td>
+          <td class="dados" style="font-size:11px">${escapar(a.amostra||"")}</td>
+        </tr>`).join("")).join("")}</tbody></table>`);
+  // ⚑ AS DIVERGÊNCIAS, em primeiro lugar na tela: é o que precisa de gente.
+  // Ele, em 13/11/2026: *"verificar se o nome cadastrado está batendo com o
+  // que está no pipe, com o que está no documento da pessoa (…) o que tem
+  // mais força é o documento da pessoa (…) eu preciso corrigir isso aí."*
+  const brigas = [];
+  (rel.por_pessoa || []).forEach(p => (p.divergencias || []).forEach(
+    d => brigas.push({...d, nome: p.nome, colaborador_id: p.colaborador_id})));
+  if (brigas.length)
+    linhas.push(`<h4>Dados que não batem (${brigas.length})</h4>
+      <div class="cartao-dica"><b>Nada disto foi trocado.</b> O documento da
+        pessoa é o que tem mais força, e por isso vem marcado — mas quem lê o
+        documento é a IA, que erra calada. Trocar o nome de alguém na folha
+        por uma leitura torta só aparece quando o pagamento volta. Confira e
+        corrija na ficha da pessoa.</div>
+      <table><thead><tr><th>Pessoa</th><th>Campo</th><th>No ERP</th>
+        <th>No card</th><th>No documento</th><th>Vale</th></tr></thead>
+      <tbody>${brigas.map(d => `<tr>
+        <td>${escapar(d.nome)}</td>
+        <td>${escapar(d.rotulo)}</td>
+        <td${d.mais_forte === "cadastro" ? ' style="font-weight:600"' : ""}>${
+          escapar(dataSeForData(d.no_cadastro) || "—")}</td>
+        <td${d.mais_forte === "card" ? ' style="font-weight:600"' : ""}>${
+          escapar(dataSeForData(d.no_card) || "—")}</td>
+        <td${d.mais_forte === "documento" ? ' style="font-weight:600"' : ""}>${
+          escapar(dataSeForData(d.no_documento) || "—")}</td>
+        <td>${escapar(d.mais_forte)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ O CARGO QUE O CARD TROUXE E NÃO EXISTE AQUI (16/11/2026). Ele pediu que
+  // a importação preenchesse o cargo; ela preenche quando o nome bate. Quando
+  // não bate, isto diz o nome exato — porque "o cargo não veio" sem dizer o
+  // que veio no card é um beco sem saída.
+  if ((rel.cargos_sem_par || []).length)
+    linhas.push(`<h4>Cargo do card que não existe no ERP (${
+      rel.cargos_sem_par.length})</h4>
+      <div class="cartao-dica">O cargo decide piso da convenção, CBO, riscos e
+        EPI — por isso ele só entra quando o nome é <b>o mesmo</b>. Crie o
+        cargo em Pessoal, ou corrija o nome no card, e importe de novo.</div>
+      <table><thead><tr><th>Pessoa</th><th>Cargo no card</th></tr></thead>
+      <tbody>${rel.cargos_sem_par.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.cargo)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ FASE DO PIPE QUE NÃO VIROU ETAPA (16/11/2026). Sem esta lista a pessoa
+  // ficaria na etapa antiga e ninguém saberia por quê.
+  if ((rel.fases_sem_etapa || []).length)
+    linhas.push(`<h4>Fase do card que eu não reconheci (${
+      rel.fases_sem_etapa.length})</h4>
+      <div class="cartao-dica">A etapa destes cadastros <b>não foi mexida</b> —
+        chutar a etapa tira a pessoa da fila do DP sem ninguém perceber. Me
+        mostre a fase abaixo e eu acrescento a correlação.</div>
+      <table><thead><tr><th>Pessoa</th><th>Fase no card</th></tr></thead>
+      <tbody>${rel.fases_sem_etapa.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.fase)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ (16/11/2026). Sem isto, "o card veio
+  // vazio", "o ERP já tinha" e "o valor foi recusado" eram a mesma coisa na
+  // tela: nenhuma linha. Ele olhou e disse "me parece que não tá puxando é
+  // nada" — e não tinha como saber se estava ou não.
+  const calados = [];
+  (rel.por_pessoa || []).forEach(p => (p.nao_preenchidos || []).forEach(
+    c => calados.push({...c, nome: p.nome})));
+  if (calados.length)
+    linhas.push(`<h4>Campos que NÃO foram preenchidos (${calados.length})</h4>
+      <div class="cartao-dica">Isto não é erro — é o que a importação deixou
+        como estava, e <b>o motivo de cada um</b>. "O cadastro já tinha"
+        significa que o card não foi ignorado: o valor daqui é que tem
+        preferência.</div>
+      <div class="tabela-rolagem" style="max-height:320px">
+      <table><thead><tr><th>Pessoa</th><th>Campo</th><th>No ERP</th>
+        <th>No card</th><th>Por quê</th></tr></thead>
+      <tbody>${calados.map(c => `<tr><td>${escapar(c.nome)}</td>
+        <td>${escapar(c.rotulo)}</td>
+        <td class="dados">${escapar(dataSeForData(c.no_erp) || "—")}</td>
+        <td class="dados">${escapar(dataSeForData(c.no_card) || "—")}</td>
+        <td class="desc">${escapar(c.motivo)}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  // ⚑ A PLANILHA, EM PRIMEIRO LUGAR NA TELA (17/11/2026).
+  //
+  // Ele: *"meu, não tá funcionando. Você precisa me MOSTRAR o que tá
+  // acontecendo, como tá fazendo. A planilha tá sendo atualizada e os dados
+  // não alimentam o ERP."*
+  //
+  // E ele estava certo de novo: a leitura da planilha podia falhar inteira
+  // (credencial, aba renomeada, planilha movida) e a tela não dizia UMA
+  // palavra — o erro ia para o log do Render, que ele não abre. "Não
+  // aconteceu nada" e "falhou e eu não te contei" tinham a mesma cara.
+  //
+  // Agora isto é a primeira coisa do relatório, e fica vermelho quando falha.
+  const pl = rel.planilha || {};
+  if (pl.erro)
+    linhas.push(`<div class="aviso erro"><b>NÃO consegui ler a planilha — por
+      isso nenhum dado dela entrou.</b><br>
+      Planilha: <span class="mono">${escapar(pl.planilha || "—")}</span> ·
+      aba <b>${escapar(pl.aba || "—")}</b><br>
+      <b>O que o Google respondeu:</b> ${escapar(pl.erro)}</div>`);
+  else if (rel.planilha_lida !== undefined)
+    linhas.push(`<div class="cartao-dica"><b>Planilha lida agora:
+      ${rel.planilha_lida} pessoa(s)</b> na aba
+      <b>${escapar(pl.aba || "Dados Documentos")}</b>${
+        pl.colunas ? ` · ${pl.colunas} colunas reconhecidas` : ""}.
+      É leitura ao vivo — o que você editar lá vale nesta mesma importação.</div>`);
+
+  // Quem tem card e não está na planilha: entra só com o documento.
+  if ((rel.fora_da_planilha || []).length)
+    linhas.push(`<h4>Não achei na planilha (${rel.fora_da_planilha.length})</h4>
+      <div class="cartao-dica">O CPF destas pessoas não está na aba
+        <b>Dados Documentos</b>. Elas entram só com os documentos do card —
+        nenhum campo de cadastro vem da planilha.</div>
+      <table><thead><tr><th>Pessoa</th><th>CPF</th><th>Card</th></tr></thead>
+      <tbody>${rel.fora_da_planilha.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${documento(x.cpf)}</td>
+        <td class="dados">${escapar(x.card)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ O QUE A PLANILHA ESCREVE, CRU, E O QUE EU NÃO ENTENDI (16/11/2026).
+  //
+  // Ele, na terceira tentativa frustrada: *"é só casar informação da planilha
+  // vs campo do ERP. Tu não tá conseguindo (…) o que tu precisa de mim?"*
+  // Precisava disto: ver o que está ESCRITO na planilha. Eu lia os nomes das
+  // colunas (verificáveis) e inventava os valores — e valor que não bate não
+  // reclama, só não entra.
+  const naoEntendi = rel.planilha_nao_entendi || [];
+  if (naoEntendi.length)
+    linhas.push(`<h4>⚠️ Valores da planilha que eu não reconheci (${
+      naoEntendi.length})</h4>
+      <div class="cartao-dica"><b>É aqui que o cadastro fica incompleto.</b>
+        Cada linha mostra o que está escrito na planilha e o campo que ficou
+        sem preencher. <b>Me mostre esta lista</b> e eu acerto a correlação de
+        uma vez — ou corrija a planilha, se o valor estiver errado lá.</div>
+      <table><thead><tr><th>Pessoa</th><th>Coluna da planilha</th>
+        <th>Está escrito</th><th>Campo que ficou vazio</th></tr></thead>
+      <tbody>${naoEntendi.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.coluna)}</td>
+        <td class="dados"><b>${escapar(x.valor)}</b></td>
+        <td>${escapar(x.campo)}</td></tr>`).join("")}</tbody></table>`);
+
+  // A LINHA CRUA DA PLANILHA, pessoa por pessoa. Serve para conferir contra a
+  // planilha aberta ao lado, sem ninguém ter de adivinhar nada.
+  const comCrua = (rel.por_pessoa || []).filter(p => p.planilha_crua);
+  if (comCrua.length)
+    linhas.push(`<h4>O que veio da planilha para cada pessoa (${comCrua.length})</h4>
+      <div class="cartao-dica">Campo do ERP e o valor que a planilha mandou,
+        já traduzido. Se um campo que está preenchido na planilha não aparecer
+        aqui, é ele que eu não estou lendo — me mostre.</div>
+      ${comCrua.map(p => `<details style="margin-top:6px">
+        <summary><b>${escapar(p.nome)}</b></summary>
+        <table><thead><tr><th>Campo do ERP</th><th>Valor</th></tr></thead>
+        <tbody>${Object.entries(p.planilha_crua).map(([k, v]) =>
+          `<tr><td class="dados">${escapar(k)}</td>
+           <td class="dados">${escapar(v) || "<i>vazio</i>"}</td></tr>`).join("")}
+        </tbody></table></details>`).join("")}`);
+
+  // ⚑ DE ONDE VEIO CADA COISA (16/11/2026). A importação passou a ler a
+  // planilha "Dados Documentos" além do card, e quem confere precisa saber
+  // qual das duas falou — senão "o sistema preencheu" vira caixa-preta.
+  const doEspelho = (rel.por_pessoa || []).filter(p => (p.do_espelho||[]).length);
+  if (doEspelho.length)
+    linhas.push(`<div class="cartao-dica" style="margin-top:10px">
+      <b>${doEspelho.length} pessoa(s) tiveram campos vindos da planilha
+      “Dados Documentos”</b> — é de lá que saem vínculo, pagamento, tipo de
+      contrato, cargo, convenção, obra e os auxílios. Do Pipefy vêm os
+      <b>documentos</b> e os dados de identidade (RG, pai, mãe, endereço), que
+      não estão na planilha.</div>`);
+
   const comCoisa = (rel.por_pessoa || []).filter(
     p => (p.documentos || []).length || Object.keys(p.campos || {}).length);
   if (comCoisa.length)
@@ -504,17 +1040,444 @@ function pintarRelatorioPC(rel){
       <tbody>${comCoisa.map(p=>`<tr><td>${escapar(p.nome)}</td>
         <td>${(p.documentos||[]).map(d=>`${escapar(d.tipo)} <small>(${
           escapar(d.situacao)})</small>`).join("<br>") || "—"}</td>
-        <td>${Object.keys(p.campos||{}).join(", ") || "—"}</td></tr>`).join("")}</tbody></table>`);
+        <td>${Object.keys(p.campos||{}).map(
+          c => escapar((rel.rotulos||{})[c] || c)).join(", ") || "—"}</td>
+        </tr>`).join("")}</tbody></table>`);
   return linhas.join("");
 }
 
+// ⚑ A PORTA DOS DADOS — sem card (17/11/2026). Ele: *"mas por que rodar com
+// o card dela se quero que puxe da planilha?"*
+let PLC_CONFERIDO = false;
+
+function pintarRelatorioPLC(rel){
+  if (!rel) return "";
+  const pl = rel.planilha || {};
+  const L = [];
+  if (pl.erro)
+    L.push(`<div class="aviso erro"><b>NÃO consegui ler a planilha — por isso
+      nada entrou.</b><br>Planilha:
+      <span class="mono">${escapar(pl.planilha || "—")}</span> · aba
+      <b>${escapar(pl.aba || "—")}</b><br>
+      <b>O que o Google respondeu:</b> ${escapar(pl.erro)}</div>`);
+  else
+    L.push(`<div class="cartao-dica"><b>${rel.pessoas_na_planilha} pessoa(s) na
+      planilha</b>, aba <b>${escapar(pl.aba || "Dados Documentos")}</b>${
+        pl.colunas ? ` · ${pl.colunas} colunas` : ""} ·
+      <b>${(rel.atualizadas||[]).length}</b> ${rel.gravou ? "atualizada(s)" : "mudariam"}
+      · <b>${(rel.criadas||[]).length}</b> ${rel.gravou ? "cadastrada(s) agora" : "nasceriam"}
+      · <b>${(rel.sem_cadastro||[]).length}</b> de fora.
+      ${rel.gravou ? "" : "<b>Nada foi gravado.</b>"}</div>`);
+
+  {# ⚑ AS PESSOAS QUE NASCERAM. Ele, em 17/11/2026: *"Pq não cadastrou a
+     partir da planilha?"* Agora cadastra — só quem está ativo —, e a lista
+     aparece separada da de quem já existia, porque são coisas diferentes para
+     conferir: a atualizada se confere pelo campo que mudou, a nova se confere
+     pela ficha inteira. #}
+  if ((rel.criadas || []).length)
+    L.push(`<h4>Cadastradas ${rel.gravou ? "agora" : "(nasceriam)"} a partir da
+      planilha (${rel.criadas.length})</h4>
+      <div class="cartao-dica">Entram <b>só as ativas</b>: a planilha tem cerca
+        de 2.960 pessoas desligadas, e trazer essa base morta encheria lista de
+        obra, folha e relatório. <b>Confira a ficha de uma delas.</b></div>
+      <div class="tabela-rolagem" style="max-height:220px"><table>
+      <thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+      <tbody>${rel.criadas.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+        <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  {# Cargo e convenção nascem pelo nome; a tela deles enche o resto. #}
+  if ((rel.cadastros_criados || []).length)
+    L.push(`<h4>Cargos e convenções ${rel.gravou ? "criados" : "que nasceriam"} (${
+      rel.cadastros_criados.length})</h4>
+      <div class="cartao-dica">Nasceram só com o <b>nome</b>, que é o que a
+        planilha tem. Piso, descrição e o resto se preenchem nas telas de
+        Cargos e de Convenções.</div>
+      <div class="tabela-rolagem" style="max-height:200px"><table>
+      <thead><tr><th>O quê</th><th>Nome</th></tr></thead>
+      <tbody>${rel.cadastros_criados.map(x => `<tr><td>${escapar(x.tipo)}</td>
+        <td class="dados">${escapar(x.nome)}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  {# ⚑ AS COLUNAS QUE EU NÃO LEIO (17/11/2026). Ele já perguntou quatro vezes
+     por que tal campo ficou vazio, e de fora as duas causas são idênticas: a
+     coluna está vazia na planilha, ou a coluna existe e eu não a reconheço.
+     Isto responde qual das duas é, sem custar uma rodada dele. #}
+  {# A LIMPEZA DA BASE vem PRIMEIRO no relatório, antes de tudo: é a parte
+     que não se desfaz, e tem de ser a primeira coisa que ele lê. #}
+  if (rel.limpou)
+    L.push(`<div class="aviso ${rel.gravou ? "erro" : "ambar"}">
+      <b>${rel.gravou ? "Apagadas" : "Seriam apagadas"}:
+      ${(rel.apagadas||[]).length} pessoa(s)</b> que estão no ERP e não na sua
+      lista${(rel.desligadas||[]).length
+        ? ` · <b>${rel.desligadas.length} desligada(s)</b> em vez de apagada(s),
+            por terem batido ponto` : ""}.${
+        rel.gravou ? "" : " <b>Nada foi apagado ainda.</b>"}
+      ${(rel.apagadas||[]).length ? `
+        <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table><thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+        <tbody>${rel.apagadas.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}</div>`);
+
+  {# ⚑ TEM PONTO ⇒ DESLIGADA, não apagada. Regra dele em 17/11/2026: *"tem
+     ponto, desligado. Não tem ponto, excluir. É o único impeditivo."* Batida
+     é registro legal do REP-P: apagá-la destruiria a prova da jornada de quem
+     trabalhou de verdade. #}
+  if ((rel.desligadas || []).length)
+    L.push(`<h4>Desligadas em vez de apagadas (${rel.desligadas.length})</h4>
+      <div class="cartao-dica">Estas <b>bateram ponto</b> — e batida é registro
+        legal, que não se apaga. Foram <b>desligadas</b>: saem da folha, do
+        ponto e das listas, e a jornada registrada continua guardada.</div>
+      <div class="tabela-rolagem" style="max-height:240px"><table>
+      <thead><tr><th>Pessoa</th><th>CPF</th><th class="direita">Batidas</th></tr></thead>
+      <tbody>${rel.desligadas.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+        <td class="dados">${documento(x.cpf)}</td>
+        <td class="direita dados">${x.batidas || 0}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.nao_deu_para_apagar || []).length)
+    L.push(`<h4>Não deu para apagar (${rel.nao_deu_para_apagar.length})</h4>
+      <div class="cartao-dica">Estas têm movimento no sistema — não são engano
+        de carga. Se não deviam estar aqui, <b>desligue</b> em vez de
+        apagar.</div>
+      <div class="tabela-rolagem" style="max-height:220px"><table>
+      <thead><tr><th>Pessoa</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.nao_deu_para_apagar.map(x => `<tr>
+        <td>${escapar(x.nome || "—")}</td>
+        <td class="desc">${escapar(x.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.colunas_que_eu_nao_uso || []).length)
+    L.push(`<details style="margin-top:12px"><summary><b>Colunas da planilha
+      que eu não leio (${rel.colunas_que_eu_nao_uso.length})</b> — abra se
+      algum campo ficou vazio</summary>
+      <div class="cartao-dica">Se o campo que você procura corresponde a uma
+        destas, é porque a correlação não existe ainda: <b>me mande o nome da
+        coluna e o nome do campo no ERP</b> e eu ligo os dois.</div>
+      <div class="tabela-rolagem" style="max-height:220px">
+        <div class="dados" style="padding:8px; line-height:1.9">${
+          rel.colunas_que_eu_nao_uso.map(c =>
+            `<span class="etiqueta">${escapar(c)}</span>`).join(" ")}</div>
+      </div></details>`);
+
+  if ((rel.nao_entendi || []).length)
+    L.push(`<h4>⚠️ Pendências — o que ficou de fora do cadastro (${
+      rel.nao_entendi.length})</h4>
+      <div class="cartao-dica"><b>A pessoa entrou; este campo não.</b>
+        Corrija na planilha e rode de novo, ou me mostre esta lista e eu acerto
+        a correlação.</div>
+      <div class="tabela-rolagem" style="max-height:280px"><table>
+      <thead><tr><th>Pessoa</th><th>Coluna</th><th>Está escrito</th>
+        <th>Campo</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.nao_entendi.map(x => `<tr><td>${escapar(x.nome || "")}</td>
+        <td class="dados">${escapar(x.coluna)}</td>
+        <td class="dados"><b>${escapar(x.valor)}</b></td>
+        <td>${escapar(x.campo)}</td>
+        <td class="desc">${escapar(x.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.atualizadas || []).length)
+    L.push(`<h4>O que ${rel.gravou ? "entrou" : "entraria"} (${
+      rel.atualizadas.length})</h4>
+      <div class="tabela-rolagem" style="max-height:360px"><table>
+      <thead><tr><th>Pessoa</th><th>Campo</th><th>Valor da planilha</th></tr></thead>
+      <tbody>${rel.atualizadas.flatMap(p => Object.entries(p.campos).map(
+        ([k, v]) => `<tr><td>${escapar(p.nome)}</td>
+          <td>${escapar((rel.rotulos||{})[k] || k)}</td>
+          <td class="dados">${escapar(v)}</td></tr>`)).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.sem_cadastro || []).length)
+    L.push(`<h4>Ficaram de fora (${rel.sem_cadastro.length})</h4>
+      <div class="cartao-dica">Quem a planilha mostra como <b>desligado</b> não
+        é cadastrado — é base morta. O motivo de cada um está na última
+        coluna.</div>
+      <div class="tabela-rolagem" style="max-height:220px"><table>
+      <thead><tr><th>Pessoa</th><th>CPF</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.sem_cadastro.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+        <td class="dados">${documento(x.cpf)}</td>
+        <td class="desc">${escapar(x.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.recusadas || []).length)
+    L.push(`<div class="aviso erro" style="margin-top:10px">
+      <b>Recusadas pela conferência do cadastro (${rel.recusadas.length})</b>
+      <div class="tabela-rolagem" style="max-height:180px"><table>
+      <thead><tr><th>Pessoa</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.recusadas.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="desc">${escapar(x.motivo)}</td></tr>`).join("")}
+      </tbody></table></div></div>`);
+  return L.join("");
+}
+
+async function mandarCadastroPlanilha(gravar){
+  const onde = els("resultado-plc");
+  const corpo = {gravar: !!gravar, cpfs: els("plc-cpfs").value,
+                 criar: !!(els("plc-criar") || {}).checked,
+                 so_estes: !!(els("plc-soestes") || {}).checked};
+  {# Apagar gente não acontece por clique distraído: a confirmação diz o que
+     vai acontecer, e só aparece na hora de gravar. #}
+  if (gravar && corpo.so_estes
+      && !confirm("Isto vai APAGAR do ERP todo mundo que não está na sua "
+                + "lista de CPFs.\n\nNão tem volta. Quem já tem movimento "
+                + "tem esses registros apagados junto. Quem bateu ponto é "
+                + "DESLIGADA em vez de apagada.\n\nVocê conferiu a lista de "
+                + "quem sairia?"))
+    return;
+  ["btn-conferir-plc", "btn-gravar-plc"].forEach(b => {
+    if (els(b)) els(b).disabled = true; });
+  onde.innerHTML = `<div class="cartao-dica">Na fila — a leitura da planilha
+    leva alguns segundos.</div><div id="andamento-plc"></div>`;
+  try {
+    const d = await api("/erp/api/importar/planilha-cadastro",
+                        {method:"POST", body: JSON.stringify(corpo),
+                         headers: {"Content-Type":"application/json"}});
+    const fim = await acompanharTarefa(d.tarefa.id,
+                                       {alvo: "andamento-plc", intervalo: 2000});
+    if (!fim) {
+      aviso("mensagem", "O trabalho continua rodando — veja o andamento em "
+          + "Configurações.", "info");
+      return;
+    }
+    if (fim.situacao !== "CONCLUIDA") {
+      PLC_CONFERIDO = false;
+      aviso("mensagem", "Não terminou: " + (fim.erro || "motivo não informado"),
+            "erro");
+      return;
+    }
+    const rel = (fim.resultado || {}).relatorio;
+    onde.innerHTML = pintarRelatorioPLC(rel);
+    PLC_CONFERIDO = !gravar;
+    aviso("mensagem", (fim.resultado || {}).resumo || "Terminado.",
+          gravar ? "ok" : "info");
+  } catch(e){
+    PLC_CONFERIDO = false;
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  } finally {
+    if (els("btn-conferir-plc")) els("btn-conferir-plc").disabled = false;
+    // Gravar só depois de conferir: é a mesma trava da importação de cards.
+    if (els("btn-gravar-plc")) els("btn-gravar-plc").disabled = !PLC_CONFERIDO;
+  }
+}
+
+{# ---------------------------------------------------------------------------
+   OS CADASTROS CRIADOS RECENTEMENTE, e como tirar quem não foi pedido
+   --------------------------------------------------------------------------- #}
+async function listarCriadosRecentemente(){
+  const onde = els("resultado-rm");
+  const horas = (els("rm-horas") || {}).value || "48";
+  onde.innerHTML = `<div class="cartao-dica">Procurando…</div>`;
+  if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = true;
+  try {
+    const r = await api(`/erp/api/colaboradores/criados-recentemente?horas=${horas}`);
+    const gente = r.pessoas || [];
+    if (!gente.length) {
+      onde.innerHTML = `<div class="cartao-dica">Ninguém foi criado nesse
+        período.</div>`;
+      return;
+    }
+    onde.innerHTML = `<h4>${gente.length} cadastro(s) criado(s)</h4>
+      <div class="tabela-rolagem" style="max-height:360px"><table>
+      <thead><tr><th style="width:36px"></th><th>Pessoa</th><th>CPF</th>
+        <th>Situação</th><th>Criado em</th><th>Por quem</th></tr></thead>
+      <tbody>${gente.map(p => `<tr>
+        <td><input type="checkbox" class="rm-um" value="${p.id}"></td>
+        <td>${escapar(p.nome)}</td>
+        <td class="dados">${documento(p.cpf)}</td>
+        <td>${escapar(p.situacao)}</td>
+        <td class="dados">${escapar((p.criado_em || "").replace("T", " ").slice(0, 16))}</td>
+        <td class="desc">${escapar(p.por_quem)}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="dica" style="margin-top:8px">Marque <b>quem você NÃO pediu
+        para importar</b> e aperte “Apagar os marcados”.</div>`;
+    onde.querySelectorAll(".rm-um").forEach(c =>
+      c.addEventListener("change", () => {
+        const algum = onde.querySelectorAll(".rm-um:checked").length > 0;
+        if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = !algum;
+      }));
+  } catch(e){
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  }
+}
+
+async function apagarCriadosMarcados(){
+  const onde = els("resultado-rm");
+  const ids = Array.from(onde.querySelectorAll(".rm-um:checked")).map(c => c.value);
+  if (!ids.length) return;
+  {# Apagar gente é definitivo: a confirmação diz QUANTAS e que não volta. #}
+  if (!confirm(`Apagar ${ids.length} cadastro(s)?\n\n`
+             + "Isto NÃO tem volta. Quem já tem título, documento, pedido do "
+             + "DP tem esses registros APAGADOS JUNTO. Quem bateu ponto é "
+             + "DESLIGADA em vez de apagada — batida é registro legal.")) return;
+  if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = true;
+  try {
+    const r = await api("/erp/api/colaboradores/remover",
+                        {method: "POST", body: JSON.stringify({ids}),
+                         headers: {"Content-Type": "application/json"}});
+    const fora = (r.apagadas || []).length;
+    const desl = (r.desligadas || []).length;
+    const ficou = (r.recusadas || []);
+    aviso("mensagem",
+          `${fora} apagada(s)`
+          + (desl ? `, ${desl} desligada(s) por terem batido ponto` : "")
+          + (ficou.length ? `, ${ficou.length} recusada(s)` : "."),
+          ficou.length ? "info" : "ok");
+    if (ficou.length)
+      onde.innerHTML = `<div class="aviso erro"><b>Não deu para apagar
+        (${ficou.length})</b><ul>${ficou.map(x =>
+          `<li>${escapar(x.motivo)}</li>`).join("")}</ul></div>` + onde.innerHTML;
+    else
+      await listarCriadosRecentemente();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+{# ---------------------------------------------------------------------------
+   A CONFERÊNCIA ERP × PLANILHA — ver o cartão acima
+   --------------------------------------------------------------------------- #}
+async function rodarConferenciaDaFolha(){
+  const onde = els("resultado-cf");
+  const ate = (els("cf-ate") || {}).value || "";
+  onde.innerHTML = `<div class="cartao-dica">Comparando as duas bases, pessoa
+    por pessoa…</div>`;
+  if (els("btn-conferencia")) els("btn-conferencia").disabled = true;
+  try {
+    const r = await api("/erp/api/conferencia-folha" + (ate ? `?ate=${ate}` : ""));
+    if (!r.ok) {
+      onde.innerHTML = `<div class="aviso erro"><b>Não deu para comparar:</b>
+        ${escapar(r.erro || "motivo não informado")}</div>`;
+      return;
+    }
+    const L = [];
+    {# O VEREDICTO PRIMEIRO, em uma linha, porque é a única coisa que ele
+       precisa ler para saber se pode desligar a planilha. #}
+    L.push(`<div class="aviso ${r.pronto_para_desligar ? "ok" : "erro"}"
+      style="font-size:15px">
+      <b>${r.pronto_para_desligar
+        ? "✔ As duas bases pagariam igual — dá para desligar a planilha."
+        : "✖ AINDA NÃO dá para desligar a planilha."}</b><br>
+      ${r.total_erp} pessoa(s) no ERP · ${r.total_planilha} na planilha ·
+      <b>${r.iguais}</b> idênticas${r.quando
+        ? ` · planilha atualizada em ${escapar(r.quando.replace("T", " ").slice(0, 16))}`
+        : ""}</div>`);
+
+    if ((r.trava_diferente || []).length)
+      L.push(`<h4 style="color:var(--vermelho)">⚠️ PAGAMENTO: as duas bases
+        discordam sobre quem pode receber (${r.trava_diferente.length})</h4>
+        <div class="cartao-dica">É o item mais grave. <b>Resolva estes
+          antes de qualquer outra coisa.</b></div>
+        <div class="tabela-rolagem" style="max-height:320px"><table>
+        <thead><tr><th>Pessoa</th><th>CPF</th><th>Pela planilha</th>
+          <th>Pelo ERP</th><th>Por quê</th></tr></thead>
+        <tbody>${r.trava_diferente.map(x => `<tr>
+          <td><b>${escapar(x.nome)}</b></td>
+          <td class="dados">${documento(x.cpf)}</td>
+          <td>${x.planilha_paga ? "PAGA" : "não paga"}
+            <small>(${escapar(x.planilha)})</small></td>
+          <td>${x.erp_paga ? "PAGA" : "não paga"}
+            <small>(${escapar(x.erp)})</small></td>
+          <td class="desc">${escapar(x.motivo_erp || x.motivo_planilha || "")}</td>
+          </tr>`).join("")}</tbody></table></div>`);
+
+    if ((r.so_na_planilha || []).length)
+      L.push(`<h4>Na planilha e NÃO no ERP (${r.so_na_planilha.length})</h4>
+        <div class="cartao-dica">Enquanto houver gente aqui, desligar a
+          planilha <b>faz essas pessoas desaparecerem da folha</b>.</div>
+        <div class="tabela-rolagem" style="max-height:240px"><table>
+        <thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+        <tbody>${r.so_na_planilha.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div>`);
+
+    if ((r.divergentes || []).length) {
+      const dinheiro = r.divergentes.filter(d => d.pesa_dinheiro);
+      L.push(`<h4>Campos que não batem (${r.divergentes.length} pessoa(s),
+        ${dinheiro.length} com efeito em dinheiro)</h4>
+        <div class="tabela-rolagem" style="max-height:420px"><table>
+        <thead><tr><th>Pessoa</th><th>O quê</th><th>Na planilha</th>
+          <th>No ERP</th></tr></thead>
+        <tbody>${r.divergentes.flatMap(p => p.campos.map((c, i) => `<tr>
+          <td>${i === 0 ? `<b>${escapar(p.nome)}</b>` : ""}</td>
+          <td>${c.peso === "dinheiro" ? "💰 " : ""}${escapar(c.rotulo)}</td>
+          <td class="dados">${escapar(c.planilha)}</td>
+          <td class="dados">${escapar(c.erp)}</td></tr>`)).join("")}
+        </tbody></table></div>`);
+    }
+
+    const porCampo = Object.entries(r.por_campo || {}).sort((a, b) => b[1] - a[1]);
+    if (porCampo.length)
+      L.push(`<h4>Onde a diferença se concentra</h4>
+        <div class="tabela-rolagem" style="max-height:240px"><table>
+        <thead><tr><th>Campo</th><th class="direita">Pessoas</th></tr></thead>
+        <tbody>${porCampo.map(([campo, n]) => `<tr><td>${escapar(campo)}</td>
+          <td class="direita dados">${n}</td></tr>`).join("")}
+        </tbody></table></div>
+        <div class="dica">Um campo com muita gente costuma ser UMA causa só —
+          uma coluna que eu não leio, ou uma palavra escrita diferente. Me
+          mande esta lista.</div>`);
+
+    if ((r.so_no_erp || []).length)
+      L.push(`<details style="margin-top:12px"><summary>No ERP e não na
+        planilha (${r.so_no_erp.length})</summary>
+        <div class="cartao-dica">Não impede o desligamento: é gente que já está
+          só aqui. Mas confira se não é cadastro criado por engano — o cartão
+          abaixo apaga esses.</div>
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <tbody>${r.so_no_erp.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div></details>`);
+
+    if ((r.nomes_diferentes || []).length)
+      L.push(`<details style="margin-top:8px"><summary>Nomes diferentes no
+        mesmo CPF (${r.nomes_diferentes.length})</summary>
+        <div class="cartao-dica">Não muda um centavo, então não trava o
+          desligamento — mas costuma ser cadastro duplicado em algum
+          lugar.</div>
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <thead><tr><th>CPF</th><th>Na planilha</th><th>No ERP</th></tr></thead>
+        <tbody>${r.nomes_diferentes.map(x => `<tr>
+          <td class="dados">${documento(x.cpf)}</td>
+          <td>${escapar(x.planilha)}</td><td>${escapar(x.erp)}</td>
+          </tr>`).join("")}</tbody></table></div></details>`);
+
+    onde.innerHTML = L.join("");
+  } catch(e){
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  } finally {
+    if (els("btn-conferencia")) els("btn-conferencia").disabled = false;
+  }
+}
+
+if (els("btn-conferencia"))
+  els("btn-conferencia").addEventListener("click", rodarConferenciaDaFolha);
+
+if (els("btn-listar-rm"))
+  els("btn-listar-rm").addEventListener("click", listarCriadosRecentemente);
+if (els("btn-apagar-rm"))
+  els("btn-apagar-rm").addEventListener("click", apagarCriadosMarcados);
+
+if (els("btn-conferir-plc"))
+  els("btn-conferir-plc").addEventListener("click", () => mandarCadastroPlanilha(false));
+if (els("btn-gravar-plc"))
+  els("btn-gravar-plc").addEventListener("click", () => mandarCadastroPlanilha(true));
+if (els("plc-cpfs"))
+  els("plc-cpfs").addEventListener("input", () => {
+    PLC_CONFERIDO = false;
+    if (els("btn-gravar-plc")) els("btn-gravar-plc").disabled = true;
+  });
+
 async function mandarCadastroPipefy(gravar){
   const onde = els("resultado-pc");
-  const corpo = {
-    gravar: !!gravar,
-    so_ativos: els("pc-quem") ? els("pc-quem").value === "ativos" : true,
-    teto_de_pessoas: els("pc-quantas") ? Number(els("pc-quantas").value) : 50,
-  };
+  const texto = els("pc-cards") ? els("pc-cards").value : "";
+  if (!/\d{6,}/.test(texto)) {
+    aviso("mensagem", "Cole os números dos cards que devem ser buscados.", "erro");
+    return;
+  }
+  const corpo = {gravar: !!gravar, cards: texto,
+                 regravar: !!(els("pc-regravar") && els("pc-regravar").checked)};
   ["btn-conferir-pc", "btn-gravar-pc"].forEach(b => {
     if (els(b)) els(b).disabled = true; });
   onde.innerHTML = `<div class="cartao-dica">Na fila. Isso leva alguns
@@ -548,6 +1511,7 @@ async function mandarCadastroPipefy(gravar){
           + "estiver certo, aperte Trazer do Pipefy.", "info");
     }
     situacaoDoCadastroPipefy();
+    pintarDivergencias();
   } catch(e){
     PC_CONFERIDO = false;
     onde.innerHTML = "";
@@ -563,8 +1527,10 @@ async function mandarCadastroPipefy(gravar){
 
 // Mudar o filtro invalida a conferência: conferiu 50 ativos e gravou 300 de
 // todo mundo seria exatamente o engano que a trava existe para evitar.
-["pc-quantas", "pc-quem"].forEach(c => {
-  if (els(c)) els(c).addEventListener("change", () => {
+// Mexer na lista invalida a conferência: conferir dez cards e gravar
+// trezentos seria o engano que a trava existe para evitar.
+["pc-cards", "pc-regravar"].forEach(c => {
+  if (els(c)) els(c).addEventListener("input", () => {
     PC_CONFERIDO = false;
     if (els("btn-gravar-pc")) els("btn-gravar-pc").disabled = true;
     if (els("resultado-pc")) els("resultado-pc").innerHTML = "";
@@ -575,7 +1541,62 @@ if (els("btn-conferir-pc"))
 if (els("btn-gravar-pc"))
   els("btn-gravar-pc").addEventListener("click", () => mandarCadastroPipefy(true));
 
+// ---------------------------------------------------------------------------
+// AS PERGUNTAS QUE A IMPORTAÇÃO DEIXOU
+// ---------------------------------------------------------------------------
+const FONTES = [["documento", "o do documento"], ["card", "o do card"],
+                ["cadastro", "manter o do ERP"], ["ignorar", "ignorar"]];
+
+async function pintarDivergencias(){
+  const cartao = els("cartao-divergencias"), onde = els("lista-divergencias");
+  if (!onde) return;
+  let d;
+  try { d = await api("/erp/api/cadastro/divergencias"); }
+  catch(e) { cartao.style.display = "none"; return; }
+  const p = d.perguntas || [];
+  cartao.style.display = p.length ? "" : "none";
+  if (!p.length) return;
+  onde.innerHTML = `<table><thead><tr><th>Pessoa</th><th>Campo</th>
+    <th>No ERP</th><th>No card</th><th>No documento</th><th>Decidir</th>
+    </tr></thead><tbody>${p.map(x => `<tr data-d="${x.id}">
+      <td>${escapar(x.nome)}<small>${escapar(documento(x.cpf||""))}</small></td>
+      <td>${escapar(x.rotulo)}</td>
+      <td${x.mais_forte === "cadastro" ? ' style="font-weight:600"' : ""}>${
+        escapar(x.no_cadastro || "—")}</td>
+      <td${x.mais_forte === "card" ? ' style="font-weight:600"' : ""}>${
+        escapar(x.no_card || "—")}</td>
+      <td${x.mais_forte === "documento" ? ' style="font-weight:600"' : ""}>${
+        escapar(x.no_documento || "—")}</td>
+      <td><div style="display:flex; gap:4px; flex-wrap:wrap">${
+        FONTES.filter(([f]) => f === "ignorar" || f === "cadastro" ||
+                      (f === "card" ? x.no_card : x.no_documento))
+          .map(([f, rot]) => `<button class="btn secundario" style="padding:4px 8px"
+            data-decidir="${f}">${escapar(rot)}</button>`).join("")}
+      </div></td></tr>`).join("")}</tbody></table>`;
+  onde.querySelectorAll("[data-decidir]").forEach(b =>
+    b.addEventListener("click", () => decidirDivergencia(
+      b.closest("tr").dataset.d, b.dataset.decidir, b)));
+}
+
+async function decidirDivergencia(id, fonte, botao){
+  // Trava os botões da linha: dois cliques seguidos gravariam duas vezes.
+  const linha = botao.closest("tr");
+  linha.querySelectorAll("button").forEach(x => x.disabled = true);
+  try {
+    await api(`/erp/api/cadastro/divergencias/${id}`,
+              {method: "POST", body: JSON.stringify({fonte}),
+               headers: {"Content-Type": "application/json"}});
+    aviso("mensagem", fonte === "ignorar" ? "Ignorada."
+          : "Cadastro atualizado.", "ok");
+    pintarDivergencias();
+  } catch(e) {
+    linha.querySelectorAll("button").forEach(x => x.disabled = false);
+    aviso("mensagem", e.message, "erro");
+  }
+}
+
 situacaoDoCadastroPipefy();
+pintarDivergencias();
 preencher();
 </script>
 {% endblock %}

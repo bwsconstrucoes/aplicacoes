@@ -20,6 +20,7 @@ Duas coisas que este arquivo trava:
 """
 import json
 import os
+from datetime import datetime
 
 import pytest
 
@@ -35,7 +36,12 @@ def pasta(tmp_path, monkeypatch):
 
 
 def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
-           criado_em='12/11/2026 09:00:00', tentativas=0):
+           criado_em=None, tentativas=0):
+    # Sem data, o adiado nasce AGORA. Uma data fixa envelhece: passados os
+    # IDADE_MAXIMA_DIAS, a fila descarta o item antes de processá-lo e o teste
+    # quebra sozinho no calendário (foi o que aconteceu em 14/11/2026).
+    if criado_em is None:
+        criado_em = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
     item = {
         'payload': {
             'attachments': [{'filename': a, 'base64': 'JVBERi0x...'} for a in arquivos],
@@ -55,7 +61,7 @@ def _adiar(pasta, nome='1700000000_abc123.json', arquivos=('comprovante.pdf',),
 # =====================================================================
 
 def test_o_resumo_mostra_os_comprovantes_adiados(pasta):
-    _adiar(pasta, arquivos=('pix_fornecedor.pdf',))
+    _adiar(pasta, arquivos=('pix_fornecedor.pdf',), criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
@@ -80,7 +86,7 @@ def test_o_resumo_NUNCA_devolve_o_payload_nem_as_credenciais(pasta):
 
 
 def test_o_resumo_avisa_que_publicacao_apaga_a_fila(pasta):
-    _adiar(pasta)
+    _adiar(pasta, criado_em='12/11/2026 09:00:00')
 
     r = mod.resumo_fila_tardia()
 
@@ -214,7 +220,7 @@ def test_uma_passada_por_vez(pasta, monkeypatch):
     quatro linhas de atendimento do serviço."""
     _adiar(pasta)
     import app.apps.baixabradesco.core as core
-    monkeypatch.setattr(core, 'processar_baixabradesco', lambda p: {'resumo': {}})
+    monkeypatch.setattr(core, 'processar_baixabradesco', lambda p, inline=False: {'resumo': {}})
 
     assert mod._tomar_lock() is True          # alguém já está rodando
     r = mod.processar_fila_tardia({})
@@ -237,7 +243,7 @@ def test_a_trava_e_solta_mesmo_quando_da_erro(pasta, monkeypatch):
     _adiar(pasta)
     import app.apps.baixabradesco.core as core
     monkeypatch.setattr(core, 'processar_baixabradesco',
-                        lambda p: (_ for _ in ()).throw(RuntimeError('boom')))
+                        lambda p, inline=False: (_ for _ in ()).throw(RuntimeError('boom')))
 
     mod.processar_fila_tardia({})
 
@@ -252,7 +258,7 @@ def test_cada_passada_processa_poucos_adiados(pasta, monkeypatch):
     chamadas = []
     import app.apps.baixabradesco.core as core
     monkeypatch.setattr(core, 'processar_baixabradesco',
-                        lambda p: chamadas.append(p) or {'resumo': {}})
+                        lambda p, inline=False: chamadas.append(p) or {'resumo': {}})
 
     r = mod.processar_fila_tardia({})
 
@@ -269,7 +275,7 @@ def test_adiado_antigo_e_descartado_sem_gastar_processamento(pasta, monkeypatch)
     chamadas = []
     import app.apps.baixabradesco.core as core
     monkeypatch.setattr(core, 'processar_baixabradesco',
-                        lambda p: chamadas.append(p) or {'resumo': {}})
+                        lambda p, inline=False: chamadas.append(p) or {'resumo': {}})
 
     r = mod.processar_fila_tardia({})
 

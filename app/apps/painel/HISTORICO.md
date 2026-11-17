@@ -651,12 +651,198 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A evolução do rateio para os sócios — tela e relatório — 16/11/2026
+
+**NÃO PUBLICADO** — está no ramo, junto com os cenários por pessoa, à espera do
+"pode" do dono. **Não tem migração própria** (a 028 é da leva dos cenários).
+
+O dono mostrou a prestação a um dos sócios e saiu com o pedido: **o número final
+não basta**. *"Os sócios não vão se conter apenas com o cálculo final, sem
+compreender na minúcia como é que aqueles valores estão chegando e sendo
+apropriados (…) precisa poder observar por obra, por projeto, por estrutura."*
+Ele pediu para VER uma tela antes de construir; viu um desenho clicável com
+números inventados (página privada dele no claude.ai, fora do repositório) e
+respondeu as quatro perguntas:
+
+| Pergunta | Decisão dele |
+|---|---|
+| Período | **a vida toda** — "a prestação de contas é global, então vamos ver tudo" |
+| Quem só lê a prestação | **vê também** |
+| Obra fora da prestação | **não se exibe** |
+| Tela primeiro, relatório depois? | **tudo junto** |
+
+### O que foi feito
+
+- **Tela "Evolução"** (`/painel/prestacao/evolucao`, botão novo no menu da
+  prestação): o caminho do dinheiro (matriz → fica / é da BWSFILIAL / rateia;
+  filial; juros → quanto cada estrutura absorveu, e se a conta fecha); colunas
+  mês a mês; a árvore **estrutura › projeto › obra** (ou por projeto, ou por
+  obra); a **ficha mês a mês** de qualquer nó; e, ao clicar num mês, **a conta
+  dele em palavras**, passo a passo.
+- **Relatório** (`/painel/baixar/evolucao`, planilha e PDF): as mesmas tabelas.
+  Da empresa inteira, ou o recorte de uma estrutura, de um projeto ou de uma
+  obra (`ver=`). O PDF tem uma versão "com a ficha de cada obra"
+  (`obras=todas`), que é escolha de quem baixa.
+
+### As decisões de construção, e o motivo
+
+- **NÃO HÁ CONTA NOVA.** `evolucao.py` só reorganiza o que
+  `web._calcular_cenario` devolve. Para isso `prestacao.calcular_rateio_do_cenario`
+  e `alocar_juros_por_deficit` passaram a devolver um `detalhe` (as parcelas de
+  cada obra em cada mês, as partes do mês, o custo por grupo, o buraco de cada
+  obra) — **sem mudar nenhum número de `alocacoes`**. Há teste conferindo que a
+  soma das parcelas dá a alocação e que a árvore fecha com o Resultado. Uma
+  segunda conta ao lado da primeira seria um segundo número para o mesmo fato.
+- **Custo absorvido é dito positivo** ("absorveu R$ 41.239"), como na página
+  "Como é feita"; o caixa mantém o sinal.
+- **O lado principal abre direto nas obras** — ele É um projeto só; abrir
+  "projeto" dentro dele repetiria a linha. No relatório, a ficha de um projeto
+  que é a estrutura inteira também não se repete.
+- **Sem projeto principal não há visão "por estrutura"**: cai para "por projeto".
+- **Os lançamentos por trás de um mês só abrem para o administrador.** A tela de
+  lançamentos segue as obras liberadas a cada pessoa, e a matriz (onde está a
+  folha) não é obra de ninguém. Liberar isso a quem só lê é decisão do dono —
+  ficou perguntado.
+- **O PDF com a ficha de cada obra é opção, não padrão.** Medido com 174 obras
+  × 60 meses: ~12 s de processador para montar (o padrão, com estruturas e
+  projetos, leva ~1 s). Roda dentro do gunicorn; se pesar no uso real, o
+  caminho é mandá-lo para processo separado, como o "Só refazer os números".
+- **A ficha abre na própria página, não em janela por cima** — no celular a
+  janela esconde a tabela de onde se veio. A árvore abre e fecha sem ir ao
+  servidor; trocar de nó recarrega a página (refaz a conta, como o Resultado).
+- De carona: os botões do menu da prestação **não quebravam linha no celular**
+  e empurravam a página 62 px para o lado, nas quatro telas. Consertado no
+  `painel_prestacao_nav.html`.
+
+### O que NÃO foi verificado
+
+- **Nunca rodou contra a base real.** Testado com um ano de dados inventados
+  (5 obras, 2 estruturas) e com a suíte. O tempo da tela com as ~174 obras e
+  os ~6 anos reais é desconhecido — ela faz a mesma conta do Resultado mais a
+  montagem da árvore.
+- O gráfico mensal com ~80 meses foi desenhado para rolar de lado; só foi visto
+  com 12.
+
+### A consultoria pedida no mesmo dia (resumo — a íntegra ficou no chat)
+
+O dono pediu uma análise contábil, financeira e jurídica do modelo, para saber
+se o defende numa discussão entre sócios. **Veredito dado:** a lógica do rateio
+é defensável (o que tem dono vai para o dono, só o comum é rateado; mão de obra
+mês a mês captura a DURAÇÃO da obra, que faturamento não captura; juros para
+quem estava no vermelho). **O que está frágil não é a fórmula:**
+
+1. não há acordo assinado entre os sócios — e ele é sócio, administrador e
+   autor das regras;
+2. os percentuais por período ("50% em 2022") são estimativa sem fato escrito
+   que os sustente;
+3. a régua mede REAIS do grupo de pessoal da obra, não quantidade de gente
+   (rescisão infla o mês; empreiteiro fora do grupo não pesa; obra no começo ou
+   encerrada demanda sem ter folha);
+4. uma régua só para custos de natureza diferente;
+5. a prestação é pelo PAGO e o balanço é por competência — só se distribui
+   lucro que existe no balanço;
+6. dinheiro sem dono declarado (receita da matriz desconsiderada, obras fora,
+   sobras, não apropriado);
+7. obra com caixa sobrando financia a outra de graça (só juro de banco é
+   repartido); e o juro do buraco de obra encerrada passa para as outras;
+8. os números se mexem (a conta é refeita do OMIE) e a base tem pendências.
+
+**Sugerido e NÃO construído (só se ele pedir):** campo de MOTIVO por regra;
+comparação de réguas lado a lado; **fechamento** que congela a versão aprovada.
+
+**As respostas dele, no mesmo dia (16/11/2026):**
+
+- A **BWSNE é filial do mesmo CNPJ** — uma empresa só, um balanço só.
+- **Há acordos assinados que regem a distribuição do resultado** ("todo o
+  rateio está documentado").
+- **Empreiteiro e terceirizado NÃO entram na despesa com pessoal** — ficam em
+  categoria à parte. Logo a régua de mão de obra mede só a folha própria.
+- **A prestação vai gerar a EQUALIZAÇÃO entre os sócios** — ou seja, dinheiro
+  vai mudar de mão por causa destes números.
+- **Não há combinado anterior** sobre o critério (entendimento do chat: a
+  frase veio truncada pelo ditado — "Nada do sabão. Nenhum combinado anterior").
+
+**Duas decisões dele que ENCERRAM pontos da análise — não reabrir:**
+
+1. **A divisão entre os sócios não é problema.** *"O rateio entre os sócios,
+   isso não é problema. Esqueça isso. (…) Já é um acordo consolidado."* O que
+   está parametrizado no painel segue o acordo. O chat tinha perguntado se os
+   acordos diziam COMO a matriz e os juros entram no resultado da obra; ele
+   respondeu que o assunto está resolvido entre eles.
+2. **Empreiteiro NÃO entra na régua, e é de propósito.** O motivo, dele: o
+   empreiteiro pode ter dez funcionários, mas para a matriz é **uma pessoa só
+   que se paga**; compras é da obra, não do empreiteiro; a sala técnica não tem
+   relação com ele. *"Quanto mais empreiteiro, a obra se torna mais fácil — e
+   essas obras mais fáceis são as mais rápidas. Meio que uma coisa corresponde
+   à outra."* A comparação de réguas contando empreiteiro, que o chat tinha
+   sugerido, **foi dispensada**.
+
+**O motivo da régua NÃO vai escrito na página "Como é feita".** O chat pôs dois
+parágrafos lá por conta própria (por que mão de obra e não faturamento; por que
+empreiteiro não entra) e o dono mandou tirar no mesmo dia: *"não quero isso"*.
+Tirado antes de publicar. Texto para os sócios lerem só entra a pedido dele.
+
+## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
+migração (028):** ao publicar, ele aperta "Aplicar atualizações do banco".
+
+O dono: *"a prestação de contas está meio como se estivesse vinculada a apenas
+um usuário (…) eu queria que cada usuário que tem acesso à prestação possa
+fazer suas edições, do jeito que ele quiser. Todavia, que ele pudesse
+aproveitar o que já está editado — eu já criei um cenário e tudo, aí eu queria
+que o próximo usuário fizesse a partir dali."*
+
+**O desenho: cada cenário tem DONO** (`cenario.dono_id`, migração 028; vazio =
+do administrador).
+
+- Quem tem a caixinha da prestação no cadastro de acesso **vê** os cenários do
+  administrador (sem alterar) e os **dele**. No cenário do administrador
+  aparece "Criar a minha cópia para editar": a cópia leva a régua, todas as
+  regras das contas (com período e valor fixo), quem recebe, quem divide e o
+  que está fora — e passa a ser dele. Também pode criar um do zero e apagar
+  os dele.
+- **O cenário de uma pessoa não aparece para outra.** O administrador vê os de
+  todos, com o nome de quem é, e pode alterar qualquer um.
+- **Os Cadastros continuam só do administrador** (sócios, ajustes, fora da
+  análise geral, projeto das obras, centros de custo da matriz e da filial,
+  categorias de juros): valem para todo cenário, e "projeto das obras" muda
+  quem enxerga cada obra. A pessoa os vê, não altera.
+- O nome do cenário passou a ser único **por dono** (era na tabela inteira).
+- Apagar o acesso da pessoa apaga os cenários dela (ON DELETE CASCADE).
+
+**Quem garante:** `auth.exigir_login` deixa a pessoa chegar a
+`painel.cenario_gravar`; **a rota** confere o dono antes de qualquer ação
+(`cenarios.altera / enxerga`) e responde "não encontrado" para cenário de
+outro. `apagar_participacao` passou a exigir que a participação seja do
+cenário do pedido (antes apagava pelo número, de qualquer cenário). Sem a
+migração 028, só o administrador grava — como era.
+
+**Decisão minha, dita a ele:** não criei uma segunda caixinha. A que existia
+("só ver") passa a dar também os cenários próprios — a cópia de uma pessoa não
+altera nada de ninguém e mostra o mesmo dado que ela já via. O rótulo mudou.
+A chave continua `prestacao_leitura`.
+
+### Achado e consertado junto: baixar o cenário dava erro
+
+O teste da cópia achou: **desde 12/11 (período com fim), baixar a planilha ou
+o PDF de um cenário COM regra por período respondia erro 500** — o trecho que
+escreve os parâmetros (`_abas_do_cenario`) ainda lia a regra no formato de
+antes das três partes. Estava no ar; o dono não tinha reclamado. O teste de
+download que existia usava um cenário sem regra nenhuma, e por isso passou.
+Agora há um com período fechado, só "até", "a partir de" e valor fixo.
+
 ## A baixa com desconto puxava o recebimento inteiro para a data dela — 12/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
-migração. **Depois de publicar é preciso refazer os números** (Configurações ›
-"Só refazer os números", que não baixa nada do OMIE — ou esperar a carga da
-madrugada): o conserto é em como o `fato` é montado.
+**PUBLICADO em 12/11/2026, 15:49 (UTC)** — `fe87630b`, com o "pode" do dono e
+a bateria completa verde aqui (10.996) e no GitHub. Sem migração.
+**O conserto só aparece depois de refazer os números** (Configurações › "Só
+refazer os números", que não baixa nada do OMIE — ou a carga da madrugada): é
+em como o `fato` é montado. Avisado ao dono.
+
+**Perguntar ao dono no próximo chat:** se, depois de refazer os números, a
+medição dele voltou para 2020/2021 na Receita de Obra e no fluxo. Se não
+voltou, pedir a obra e a medição e ler as pernas do título.
 
 O dono: uma medição recebida em parcelas em 2020 e 2021, com R$ 5.000 que
 ficaram faltando; em 06/06/2026 ele deu um desconto e baixou o resto — e o

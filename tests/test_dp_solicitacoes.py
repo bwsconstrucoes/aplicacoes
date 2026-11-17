@@ -52,8 +52,17 @@ def mundo(sessao_real):
         RETURNING id""")).scalar()
     sessao_real.flush()
     cargo = type("Cargo", (), {"id": cargo_id})()
+    # ⚑ UMA EMPRESA DE VERDADE NO MUNDO DE TESTE (15/11/2026): o pedido passou
+    # a guardar o NÚMERO da empresa do cadastro, não um CNPJ digitado — e o
+    # servidor confere se ela existe e está ativa.
+    empresa_id = sessao_real.execute(_t("""
+        INSERT INTO empresas (razao_social, nome_fantasia, cnpj, ativo)
+        VALUES ('BWS DE TESTE LTDA', 'MATRIZ/TESTE', '00.079.526/0001-09', TRUE)
+        RETURNING id""")).scalar()
+    sessao_real.flush()
     return {"s": sessao_real, "dp": dp, "encarregado": encarregado,
-            "obra": obra, "pessoa": c, "cargo": cargo}
+            "obra": obra, "pessoa": c, "cargo": cargo,
+            "empresa_id": empresa_id}
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +88,7 @@ def test_tipo_que_exige_pessoa_cobra_a_pessoa(mundo):
     with pytest.raises(ErroValidacao) as e:
         svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"},
                   mundo["dp"])
     assert "escolha a pessoa" in str(e.value).lower()
@@ -134,7 +144,18 @@ def test_os_rotulos_sao_os_do_pipe_e_nao_os_meus():
     assert "Prestador que passa a ter carteira" not in nomes   # inventado
     assert "Desligamento de Prestador de Serviço" in nomes
     assert svc.ROTULOS["categoria_alimentacao"] == "Categoria Auxílio Alimentação"
-    assert svc.CATEGORIAS["categoria_alimentacao"][0] == "Segunda à Quinta"
+    # ⚑ AS OPÇÕES DESTE CAMPO MUDARAM DE FONTE em 15/11/2026, e isto NÃO é
+    # voltar a inventar a roda: elas passaram a vir do CADASTRO DE PESSOAS, que
+    # é onde o valor fica gravado. Havia duas listas para o mesmo campo — o
+    # rótulo do Pipe aqui e o código do cadastro lá —, a tela usava uma e o
+    # pedido gravava a outra, e o atendimento não conseguia aplicar o
+    # benefício. O rótulo que a pessoa LÊ continua em português; o que viaja é
+    # o código. Ver `test_a_categoria_do_auxilio_tem_UMA_fonte_so`, em
+    # `test_dp_pedidos_condicionais.py`.
+    from app.apps.erp.core.cadastros import pessoas as _p
+    assert svc.CATEGORIAS["categoria_alimentacao"] == tuple(
+        _p.CATEGORIAS_ALIMENTACAO)
+    assert _p.CATEGORIA_ALIMENTACAO_ROTULOS["SEG_QUI"] == "Segunda à quinta"
     assert svc.ROTULOS["tipo_readmissao"] == "Tipo de Readmissão"
     # As quatro formas de desligamento, como estão lá.
     assert svc.CATEGORIAS["forma_desligamento"] == (
@@ -148,6 +169,7 @@ def test_o_checklist_do_tipo_nasce_com_o_pedido(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     assert p["total_itens"] == 11 and p["feitos"] == 0
     assert any("TRCT" in i["descricao"] for i in p["itens"])
@@ -167,7 +189,7 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
         "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
         "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "José Repetido",
                                "cpf": CPF_A,
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "obra_id": mundo["obra"].id}, mundo["encarregado"])
     assert "já tem cadastro" in str(e.value)
 
@@ -180,7 +202,8 @@ def test_atender_desligamento_DESLIGA_de_verdade(mundo):
         "tipo": "DESLIGAMENTO", "colaborador_id": mundo["pessoa"].id,
         "aviso_previo": "2026-03-01",
         # O rótulo do Pipe; o que fica gravado é PEDIDO_COLABORADOR.
-        "forma_desligamento": "Demissão com Aviso Trabalhado"}, mundo["dp"])
+        "forma_desligamento": "Demissão com Aviso Trabalhado",
+        "continua_prestador": "Não, está saindo da empresa"}, mundo["dp"])
     # ⚑ A DATA DE SAÍDA É DO DP, e vai ao ATENDER. Ele, em 10/11/2026: *"de
     # saída, o último dia trabalhado, não é a pessoa que está pedindo que vai
     # dizer. Ele vai colocar só a data do aviso prévio."*
@@ -199,7 +222,7 @@ def test_atender_readmissao_READMITE_de_verdade(mundo):
                          {"data_saida": "2025-06-30"}, mundo["dp"])
     mundo["s"].flush()
     p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id}, mundo["dp"])
     # Salário e a data de admissão efetiva são do DP: a obra pede o cargo.
@@ -217,8 +240,14 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
     p = svc.abrir(mundo["s"], {
         "tipo": "CADASTRO", "tipo_documentacao": "Prestador de Serviço",
         "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
-        "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "Maria Nova De Teste", "cpf": CPF_B,
-        "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+        "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id,
+        "nome": "Maria Nova De Teste", "cpf": CPF_B,
+        "empresa_id": mundo["empresa_id"],
+        # Obrigatórios desde 15/11/2026 — ver `_cadastro`, abaixo.
+        "telefone": "85988887777", "pix_tipo": "CPF", "pix_chave": CPF_B,
+        "valor_diaria": "150,00", "tipo_contrato": "PJ",
+        # Mensalista declara o valor do mês; diarista não tem valor de mês.
+        "valor_mes": "3.300,00",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01"}, mundo["encarregado"])
     assert p["colaborador_id"] is None          # a pessoa ainda não existe
@@ -285,7 +314,7 @@ def test_pedido_impossivel_nao_e_atendido_pela_metade(mundo):
     """Readmitir quem está ativo é recusado pela regra do cadastro — e o pedido
     NÃO pode ficar "atendido" com o cadastro intacto."""
     p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id,
                                "admissao": "2026-02-01"}, mundo["dp"])
@@ -325,6 +354,7 @@ def test_cancelar_nao_apaga_o_pedido(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     r = svc.cancelar(mundo["s"], p["id"], {"motivo": "a pessoa desistiu de sair"},
                      mundo["dp"])
@@ -352,6 +382,7 @@ def test_marcar_item_poe_o_pedido_em_analise(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     assert p["situacao"] == "ABERTA"
     r = svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
@@ -360,7 +391,7 @@ def test_marcar_item_poe_o_pedido_em_analise(mundo):
 
 def test_desmarcar_item_volta_atras(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
-                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "empresa_id": mundo["empresa_id"],
                                "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id,
                                "admissao": "2026-02-01"}, mundo["dp"])
@@ -373,6 +404,7 @@ def test_item_de_outro_pedido_e_recusado(mundo):
     p1 = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                 "colaborador_id": mundo["pessoa"].id,
                                 "forma_desligamento": "Demissão com Aviso Trabalhado",
+                                "continua_prestador": "Não, está saindo da empresa",
                                 "aviso_previo": "2026-03-01"}, mundo["dp"])
     p2 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "outro",
                            "obra_id": mundo["obra"].id}, mundo["dp"])
@@ -402,6 +434,7 @@ def test_em_andamento_conta_o_checklist_comecado_e_nao_terminado(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
     mundo["s"].flush()
@@ -496,17 +529,33 @@ def test_sem_dizer_a_obra_vale_a_do_cadastro_da_pessoa(mundo):
     assert svc.ler(mundo["s"], r["id"])["obra_id"] == mundo["obra"].id
 
 
-def test_todo_tipo_oferece_a_obra_na_tela():
-    """⚑ A TRAVA. A obra é acrescentada em `tipos_para_tela`, e não copiada em
-    cada tipo: esquecer de copiá-la no tipo número doze seria o defeito
-    garantido — e ele só apareceria quando alguém tentasse abrir justamente
-    aquele pedido, com o pedido já digitado."""
+def test_a_obra_so_e_perguntada_quando_nao_ha_de_onde_tira_la():
+    """⚑ A TRAVA, e a regra MUDOU em 15/11/2026, por decisão dele.
+
+    Antes a obra era perguntada em TODO pedido. Ele cortou: *"a obra está no
+    cadastro. Ignora isso aí, tira isso aí"* — e, perguntado se valia também
+    para o cadastro de gente nova: *"admissão nova ou de colaborador demitido
+    tem que ter a obra. Demais não precisa."*
+
+    A divisão é exatamente `exige_pessoa`: pedido sobre quem JÁ tem ficha tira
+    a obra da ficha; pedido que CRIA a ficha (cadastro, readmissão) não tem de
+    onde tirar, e pergunta. A trava continua sendo a mesma: a obra é
+    acrescentada em `tipos_para_tela`, num lugar só, e não copiada em cada
+    tipo — esquecer de copiá-la no tipo número doze seria o defeito garantido.
+    """
     for t in svc.tipos_para_tela():
-        assert "obra_id" in t["campos"], f"{t['valor']} não pergunta a obra"
-    # E no tipo que NÃO a declarava, ela entra na frente: "de qual obra é
-    # isto?" é a primeira pergunta de quem abre um pedido, não a última.
-    diversos = next(t for t in svc.tipos_para_tela() if t["valor"] == "DIVERSOS")
-    assert diversos["campos"][0] == "obra_id"
+        if t["exige_pessoa"]:
+            assert "obra_id" not in t["campos"], (
+                f"{t['valor']} pergunta a obra, e a pessoa escolhida já tem uma "
+                f"na ficha — perguntar abre a porta para duas respostas")
+        else:
+            assert "obra_id" in t["campos"], (
+                f"{t['valor']} não pergunta a obra, e não tem ficha de onde "
+                f"tirá-la")
+            # Ela entra na FRENTE: "de qual obra é isto?" é a primeira
+            # pergunta de quem abre um pedido, não a última.
+            assert t["campos"][0] == "obra_id", (
+                f"{t['valor']}: a obra não está na frente")
 
 
 def test_o_requerente_saiu_de_uso():
@@ -538,7 +587,16 @@ def _cadastro(mundo, **extra):
             "pagamento": "Diarista", "cargo_pleiteado_id": mundo["cargo"].id,
             # Desde 11/11/2026 o cadastro também diz POR QUAL EMPRESA — a
             # readmissão já perguntava, e quem cria a pessoa é este aqui.
-            "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+            "empresa_id": mundo["empresa_id"],
+            # ⚑ OBRIGATÓRIOS DESDE 15/11/2026, por decisão dele: *"telefone é
+            # obrigatoriíssimo (…) é vital"*, *"chave Pix obrigatória"*, e o
+            # valor da diária *"vamos colocar como obrigatório"*. Sem telefone
+            # ninguém avisa a pessoa de nada; sem chave Pix ela não recebe.
+            "telefone": "85999990000",
+            "pix_tipo": "CPF", "pix_chave": CPF_B,
+            "valor_diaria": "120,00",
+            # Prestador declara QUE tipo de prestador é (CTPS não: é sempre CLT).
+            "tipo_contrato": "Autônomo (RPA)",
             "data_inicio": "2026-05-01"}
     base.update(extra)
     return base
@@ -939,11 +997,19 @@ def test_todo_tipo_que_ADMITE_alguem_pergunta_por_qual_empresa(mundo):
     ADMITEM = ("CADASTRO", "READMISSAO")
     for chave in ADMITEM:
         regra = svc.TIPOS[chave]
-        assert "cnpj_admissao" in regra["campos"], (
+        # ⚑ O CAMPO VIROU `empresa_id` EM 15/11/2026, e isto não é detalhe de
+        # nome: enquanto ele pedia um CNPJ, a lista só podia oferecer empresa
+        # QUE TEM CNPJ — e a quarta do grupo, cadastrada sem CNPJ, sumia da
+        # caixinha. Ele cobrou três vezes: *"tem que pegar do cadastro das
+        # empresas do ERP. Lá já estão cadastradas 4 empresas."*
+        assert "empresa_id" in regra["campos"], (
             f"{chave} registra alguém numa empresa e não pergunta qual")
-        assert "cnpj_admissao" in regra["obrigatorios"], (
+        assert "empresa_id" in regra["obrigatorios"], (
             f"{chave} pergunta a empresa mas deixa passar em branco — o DP "
-            f"ficaria sem saber por qual das três registrar")
+            f"ficaria sem saber por qual registrar")
+        assert "cnpj_admissao" not in regra["campos"], (
+            f"{chave} voltou a pedir o CNPJ digitado em vez da empresa — e "
+            f"aí a empresa sem CNPJ cadastrado desaparece da lista de novo")
 
 
 def test_a_empresa_e_perguntada_UMA_vez_so(mundo):
@@ -966,4 +1032,78 @@ def test_o_cadastro_sem_a_empresa_e_recusado(mundo):
             "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
                            "COMPROVANTE-ENDERECO-PESSOA", "CTPS-FOTO",
                            "CTPS-INFORMACOES"]}, mundo["encarregado"])
-    assert "CNPJ para Admissão" in str(e.value)
+    assert "Empresa para registro" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# TIPO DE CONTRATO: DUAS LISTAS, UM CAMPO SÓ (17/11/2026)
+#
+# Ele: *"Se Jovem Aprendiz é CTPS, precisamos poder selecionar o tipo de
+# contrato entre: CLT (tempo indeterminado), CLT (tempo determinado), Jovem
+# Aprendiz."*
+#
+# Em 15/11 o campo tinha sido FECHADO para CTPS, com o motivo "CTPS é sempre
+# CLT". A premissa caiu: contrato de aprendizagem tem carteira e não é CLT.
+# Agora o campo abre dos dois lados, com listas diferentes — e estes testes
+# existem para que nunca mais um lado ofereça o contrato do outro, que é o
+# defeito que deixava gravar alguém de carteira como "PJ".
+# ---------------------------------------------------------------------------
+def _admissao():
+    return svc.TIPOS["CADASTRO"]
+
+
+def test_o_tipo_de_contrato_tem_uma_lista_para_cada_documentacao():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    assert set(mapa["CTPS"]) == {"CLT (tempo indeterminado)",
+                                 "CLT (tempo determinado)", "Jovem aprendiz"}
+    assert "PJ" in mapa["PRESTADOR"]
+    # Nenhum contrato aparece nos dois lados: é isso que impede a contradição.
+    assert not set(mapa["CTPS"]) & set(mapa["PRESTADOR"])
+
+
+def test_carteira_NAO_oferece_contrato_de_prestador():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    for proibido in ("PJ", "Autônomo (RPA)", "Autônomo mensalista",
+                     "Pró-labore", "Estágio"):
+        assert proibido not in mapa["CTPS"]
+
+
+def test_prestador_NAO_oferece_contrato_de_carteira():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    for proibido in ("CLT (tempo indeterminado)", "CLT (tempo determinado)",
+                     "Jovem aprendiz"):
+        assert proibido not in mapa["PRESTADOR"]
+
+
+def test_o_campo_so_abre_depois_de_escolhida_a_documentacao():
+    """Nem antes (alguém responderia "PJ" sem dizer que é CTPS), nem só para
+    um dos lados (era o defeito que este conserto desfaz)."""
+    assert (_admissao()["visiveis_se"]["tipo_contrato"]["tipo_documentacao"]
+            == ("*",))
+
+
+def test_toda_opcao_das_duas_listas_tem_traducao_para_o_codigo():
+    """A tela manda o rótulo; a coluna guarda o código. Opção sem tradução
+    gravaria o texto da caixinha no banco — e nenhum relatório o entende."""
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    traduz = svc.DO_PIPE_PARA_O_CODIGO["tipo_contrato"]
+    for lista in mapa.values():
+        for rotulo in lista:
+            assert rotulo in traduz, f"{rotulo} não tem código"
+
+
+def test_carteira_tambem_EXIGE_o_tipo_de_contrato():
+    """Jovem aprendiz e CLT mudam a folha e a guia — deixar em branco empurra
+    a dúvida para o DP adivinhar depois."""
+    exige = _admissao()["obrigatorios_se"]["tipo_documentacao"]
+    assert "tipo_contrato" in exige["CTPS"]
+    assert "tipo_contrato" in exige["PRESTADOR"]
+
+
+def test_o_formulario_que_a_tela_recebe_leva_as_duas_listas(mundo):
+    """Sem isto a tela mostraria a lista cheia, com os dois lados juntos."""
+    tipos = svc.tipos_para_tela(mundo["s"])
+    cadastro = next(t for t in tipos if t["valor"] == "CADASTRO")
+    mapa = cadastro["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    assert "Jovem aprendiz" in mapa["CTPS"]
+    assert "PJ" in mapa["PRESTADOR"]

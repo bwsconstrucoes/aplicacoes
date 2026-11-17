@@ -296,6 +296,28 @@ async function carregar(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+// ⚑ DO DOCUMENTO PARA O CADASTRO DO DONO — pedido dele em 16/11/2026, olhando
+// o Arquivo: *"se esse cara aqui é um colaborador, aí tem aqui a informação de
+// quem. Esse de quem aqui era para eu clicar e já abrir o cadastro da pessoa.
+// Da mesma forma, se é um documento de uma empresa, eu clicar e já abrir o
+// cadastro da empresa. Ou o cadastro da obra, se for de obra."*
+//
+// O nome do dono já estava escrito aqui; era texto morto. Quem vê um documento
+// e quer conferir a pessoa tinha de decorar o nome, trocar de tela e procurar.
+function linkDoDono(d){
+  const nome = escapar(d.dono || "");
+  if (!nome) return "—";
+  const onde = d.colaborador_id ? `/erp/colaboradores?pessoa=${d.colaborador_id}`
+             : d.empresa_id     ? `/erp/empresas?empresa=${d.empresa_id}`
+             : d.obra_id        ? `/erp/obras?obra=${d.obra_id}`
+             : d.fornecedor_id  ? `/erp/suprimentos/fornecedores?fornecedor=${d.fornecedor_id}`
+             : "";
+  // Lançamento (título, medição) não tem ficha própria para abrir: fica texto.
+  if (!onde) return nome;
+  return `<a href="${onde}" title="Abrir o cadastro">${nome}</a>`;
+}
+
+
 function desenhar(){
   const r = RESUMO;
   els("kpis").innerHTML = `
@@ -329,7 +351,7 @@ function desenhar(){
           class="mono" style="font-size:12px">${d.nome}</a>
         ${d.nome_original && d.nome_original !== d.nome
           ? `<br><small>enviado como ${d.nome_original}</small>` : ""}</td>
-      <td>${d.dono || "—"}</td>
+      <td>${linkDoDono(d)}</td>
       <td>${d.competencia ? d.competencia.split("-").reverse().join("/") : "—"}</td>
       <td>${dataBR(d.emissao)}</td>
       <td>${dataBR(d.validade)}</td>
