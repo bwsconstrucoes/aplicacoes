@@ -819,14 +819,29 @@ async function procurarPessoa(termo){
   const meu = ++BUSCA_PEDIDO;
   let d;
   try {
-    const r = await fetch("/erp/portal/api/pessoas?q=" + encodeURIComponent(termo));
+    {# ⚑ O TIPO VAI JUNTO (17/11/2026). Ele: *"na admissão de prestador, na
+       busca aparecer somente os que são Prestador de Serviço."* Quem filtra é
+       o SERVIDOR, pelo `so_vinculo` da regra — a tela só diz de que pedido se
+       trata. Mandar o vínculo direto daqui deixaria trocá-lo no navegador. #}
+    const tipoAgora = (els("p-tipo") || {}).value || "";
+    const r = await fetch("/erp/portal/api/pessoas?q=" + encodeURIComponent(termo)
+                          + "&tipo=" + encodeURIComponent(tipoAgora));
     d = await r.json();
   } catch(e) { return; }
   if (meu !== BUSCA_PEDIDO) return;        // chegou fora de ordem: descarta
   const achados = (d && d.pessoas) || [];
   if (!achados.length) {
+    {# O recado diz POR QUE não achou, quando o tipo filtra: "ninguém com esse
+       nome" sobre uma busca que só mostra prestador manda a pessoa procurar de
+       novo o que não está lá. #}
+    const soVinculo = ((DADOS.tipos || []).find(
+      x => x.chave === ((els("p-tipo") || {}).value || "")) || {}).so_vinculo;
     onde.innerHTML = `<div class="ajuda">Ninguém com esse nome ou CPF nas
-      suas obras.</div>`;
+      suas obras${soVinculo === "PRESTADOR"
+        ? " <b>entre os prestadores de serviço</b> — este pedido é só para quem"
+          + " ainda não tem carteira assinada"
+        : soVinculo === "CTPS"
+        ? " <b>entre quem tem carteira assinada</b>" : ""}.</div>`;
     return;
   }
   // ⚑ A PESSOA INTEIRA fica guardada, não só os pedacinhos que cabem num

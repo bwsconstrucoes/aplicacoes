@@ -349,6 +349,9 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 "chave": k, "area": area, "nome": d["nome"],
                 "explicacao": d["explicacao"],
                 "exige_pessoa": d["exige_pessoa"],
+                # ⚑ O vínculo que este tipo aceita, quando ele aceita só um
+                # (17/11/2026): a busca de pessoa filtra por ele.
+                "so_vinculo": d.get("so_vinculo") or "",
                 "campos": campos,
                 # ⚑ O ASTERISCO E OS PAPÉIS VÊM DA REGRA, que os tirou do
                 # Pipe. A tela não decide nem um nem outro — se decidisse,
@@ -901,9 +904,26 @@ def _cpf_do_fim(cpf: Any) -> str:
     return ("…" + so_digito[-3:]) if len(so_digito) >= 3 else ""
 
 
+def vinculo_do_tipo(chave: str) -> str:
+    """O vínculo que este tipo de pedido aceita, ou "" para todos.
+
+    ⚑ QUEM DECIDE É A REGRA, não a tela: a tela manda a chave do tipo e o
+    servidor olha em `TIPOS`. Se a tela mandasse o vínculo direto, bastaria
+    trocá-lo no navegador para a busca voltar a oferecer todo mundo.
+    """
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    regra = svc_sp.TIPOS.get(str(chave or "").strip().upper()) or {}
+    return str(regra.get("so_vinculo") or "")
+
+
 def procurar_pessoas(s: Session, usuario: Optional[Usuario],
-                     termo: str) -> list[dict[str, Any]]:
-    """Quem bate com o que foi digitado, dentro do alcance de quem procura."""
+                     termo: str, *, so_vinculo: str = "") -> list[dict[str, Any]]:
+    """Quem bate com o que foi digitado, dentro do alcance de quem procura.
+
+    `so_vinculo`: restringe ao vínculo pedido pelo TIPO de solicitação — ver
+    `so_vinculo` em `pessoal_solicitacoes.TIPOS`. É o caso da admissão de
+    prestador, que só pode ser feita para quem É prestador (17/11/2026).
+    """
     procurado = str(termo or "").strip()
     so_digito = "".join(c for c in procurado if c.isdigit())
     if len(procurado) < MINIMO_DA_BUSCA_DE_PESSOA and len(so_digito) < 3:
@@ -913,6 +933,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
         # Quem só pede por si não procura ninguém: devolve a si mesmo.
         return [x for x in pessoas_ao_alcance(s, usuario)
                 if procurado.lower() in str(x["nome"]).lower()]
+    alvo = (so_vinculo or "").strip().upper()
     obras = obras_que_alcanca(s, eu)
     if obras is not None and not obras:
         return []
@@ -934,6 +955,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
           LEFT JOIN funcoes f ON f.id = c.funcao_id
          WHERE (:todas OR c.obra_id = ANY(:obras))
            AND c.situacao = 'ATIVO'
+           AND (:vinculo = '' OR upper(COALESCE(c.vinculo, 'CTPS')) = :vinculo)
            AND (translate(lower(c.nome),
                           'áàâãäéèêëíìîïóòôõöúùûüç',
                           'aaaaaeeeeiiiiooooouuuuc') LIKE :nome
@@ -946,6 +968,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
          # `unaccent` (que não está instalada): quem digita "jose" acha
          # "José", que é como se digita no celular, com pressa.
          "nome": "%" + _sem_acento(procurado) + "%", "digitos": so_digito,
+         "vinculo": alvo,
          "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
              "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],

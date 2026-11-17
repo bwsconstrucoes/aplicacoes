@@ -12848,7 +12848,12 @@ def api_portal_pessoas():
             usuario = _usuario_logado(s)
             svc_portal.quem_esta(s, usuario)            # 401 se não entrou
             achados = svc_portal.procurar_pessoas(
-                s, usuario, request.args.get("q", ""))
+                s, usuario, request.args.get("q", ""),
+                # O tipo de pedido pode valer só para um vínculo — a admissão
+                # de prestador, por exemplo. A tela diz qual; o servidor
+                # confere contra a regra, para a tela não poder alargar.
+                so_vinculo=svc_portal.vinculo_do_tipo(
+                    request.args.get("tipo", "")))
         return jsonify({"ok": True, "pessoas": achados})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401

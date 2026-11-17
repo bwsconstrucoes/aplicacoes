@@ -1615,6 +1615,26 @@ def caminho_depois_da_conferencia(c: Colaborador) -> tuple[str, str]:
             "eSocial")
 
 
+# ⚑ A SITUAÇÃO DE CADA ETAPA (17/11/2026). Ele: *"a situação é um reflexo das
+# etapas."* Então a etapa manda, e a situação deixou de ser um campo que alguém
+# digita — ver `mover_etapa`.
+#
+# ⚠️ ESTE MAPA É LIDO PELO PONTO, DE LONGE: `colaboradores.situacao` é o que
+# decide quem pode bater ponto, e quem está DESLIGADO também deixa de receber
+# aviso da empresa (a trava de 17/11 na mensageria). Mudar uma linha daqui muda
+# as duas coisas.
+SITUACAO_DA_ETAPA = {
+    "CADASTRO_INICIAL": "ATIVO",
+    "EM_CONFERENCIA": "ATIVO",     # etapa antiga, mantida para histórico
+    "CONTRATO_A_ASSINAR": "ATIVO",
+    "CONCLUIDO": "ATIVO",
+    "NA_CONTABILIDADE": "ATIVO",
+    "AFASTADO": "AFASTADO",
+    "DESLIGADO": "DESLIGADO",
+    "CANCELADO": "DESLIGADO",
+}
+
+
 def mover_etapa(s: Session, colaborador_id: int, para: str,
                 usuario: Optional[Usuario], *, motivo: str = "",
                 automatico: bool = False) -> Colaborador:
@@ -1637,6 +1657,23 @@ def mover_etapa(s: Session, colaborador_id: int, para: str,
     # respeitar. O que fica é o registro: quem moveu, de onde, para onde e por
     # quê.
     c.etapa = para
+    # ⚑ A ETAPA PASSA A DEFINIR A SITUAÇÃO (17/11/2026). Ele: *"dentro de
+    # vínculo e pagamento, a situação é um reflexo das etapas. Não precisa ter
+    # mais esse campo."*
+    #
+    # ⚠️ ISTO TINHA DE VIR ANTES DE TIRAR O CAMPO, e é a parte que faltava:
+    # até aqui mover a etapa NÃO mexia na situação. Então tirar o campo
+    # deixaria o cadastro sem jeito nenhum de desligar alguém — e a situação é
+    # o que o PONTO lê para decidir quem pode bater. Uma pessoa movida para
+    # "Desligado" no quadro continuaria batendo ponto, e o aviso da empresa
+    # continuaria indo para ela.
+    #
+    # "Cancelado" vira DESLIGADO por consequência (cadastro que nunca virou
+    # gente na empresa), e os demais voltam para ATIVO — inclusive quem volta
+    # de um afastamento, que é o caminho da readmissão.
+    situacao_nova = SITUACAO_DA_ETAPA.get(para)
+    if situacao_nova and (c.situacao or "").upper() != situacao_nova:
+        c.situacao = situacao_nova
     s.add(ColaboradorEtapa(colaborador_id=c.id, de=de, para=para,
                            motivo=motivo or None,
                            usuario_id=usuario.id if usuario else None,

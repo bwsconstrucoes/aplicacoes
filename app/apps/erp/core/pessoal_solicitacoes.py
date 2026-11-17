@@ -255,6 +255,19 @@ TIPOS: dict[str, dict[str, Any]] = {
         "nome": "Admissão de Prestador de Serviço",
         "explicacao": "o prestador passa a ter registro em carteira",
         "exige_pessoa": True, "executa": "trocar_vinculo",
+        # ⚑ A BUSCA SÓ OFERECE PRESTADOR (17/11/2026). Ele: *"na admissão de
+        # prestador, na busca aparecer somente os que são Prestador de
+        # Serviço."*
+        #
+        # É o tipo de pedido que não tem como dar certo com a pessoa errada:
+        # admitir em carteira quem JÁ está em carteira não é operação que
+        # exista. Antes a caixinha oferecia o cadastro inteiro da obra, e o
+        # erro só aparecia no atendimento do DP — depois de alguém anexar as
+        # fotos da carteira.
+        #
+        # `so_vinculo` é genérico de propósito: tipo novo que valha só para um
+        # vínculo declara o dele e a busca passa a filtrar sozinha.
+        "so_vinculo": "PRESTADOR",
         # ⚑ SÓ SE PEDE O QUE O CADASTRO NÃO TEM. Ele, em 10/11/2026:
         # *"admissão de prestador de serviço, vamos requerer os dados. Se não
         # tivermos, né? Acho que é interessante uma consulta, ver se tem
