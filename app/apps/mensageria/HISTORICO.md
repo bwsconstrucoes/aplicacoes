@@ -70,6 +70,30 @@ a CONCLUSÃO para quem olhava. Pedaço é dado; gestão é conclusão.
    contagem bate com a lista que ela abre — número que não bate com a tela é
    pior que número nenhum.
 
+### O teste de envio passou a aceitar o ID do Telegram
+
+Ele, na mesma conversa: *"quando eu boto o Telegram, o canal, fica até
+incompatível a digitação do ID. (…) Eu gostaria de poder botar também o ID.
+Tipo assim, você botar o ID ou o telefone, porque fica mais uma opção, mais
+direta de teste."* Natural: ele acabou de ganhar a coluna do ID na lista, então
+o caminho é copiar de lá e colar no teste.
+
+**O "incompatível a digitação" era defeito meu:** o campo se chamava
+`telefone`, e o `erp_base.html` põe máscara de telefone pelo NOME do campo — a
+máscara brigava com a digitação do ID. Agora o campo leva `data-sem-mascara`.
+
+**⚑ COMO O SISTEMA SABE QUAL É QUAL, e é a parte que erraria em silêncio:** um
+ID do Telegram tem 9 ou 10 dígitos e um telefone com DDD tem 10 ou 11 — eles
+**se sobrepõem**. Contar dígitos mandaria mensagem para o lugar errado sem
+avisar. Então o sistema **procura o valor entre os IDs cadastrados**: achou, é
+ID (e a resposta diz de quem); não achou, é telefone. ID de grupo é negativo e
+aí não há ambiguidade nenhuma. No WhatsApp o ID não vale — ali ele não quer
+dizer nada.
+
+**E a resposta diz para onde foi** ("Teste enviado para o ID 123456 (Bia
+Rocha)"), que é a pergunta que o teste existe para responder. Um campo só, não
+dois lado a lado: a pessoa não escolhe caminho, cola o que tem na mão.
+
 ### ⚠️ A pergunta dele que precisa ficar registrada
 
 > *"Eles são colaboradores, né? Se não for colaborador, ele desliga automático,

@@ -436,3 +436,92 @@ def test_o_painel_explica_todo_veredito_que_ele_usa(conn, gente):
     assert usados <= set(d["diagnosticos"])
     for v in d["diagnosticos"].values():
         assert v["rotulo"] and v["explicacao"] and v["cor"]
+
+
+# ===========================================================================
+# O TESTE ACEITA TELEFONE **OU** ID DO TELEGRAM (17/11/2026)
+#
+# Ele: *"quando eu boto o Telegram, o canal, fica até incompatível a digitação
+# do ID. (…) Eu gostaria de poder botar também o ID. Tipo assim, você botar o
+# ID ou o telefone, porque fica mais uma opção, mais direta de teste."*
+#
+# ⚑ O QUE ESTES CASOS GUARDAM é a parte que erraria em silêncio: um ID do
+# Telegram tem 9 ou 10 dígitos e um telefone com DDD tem 10 ou 11 — eles se
+# SOBREPÕEM. Contar dígitos mandaria mensagem para o lugar errado sem avisar.
+# A regra é PROCURAR o valor entre os IDs cadastrados.
+# ===========================================================================
+def _destino(canal, valor):
+    from app.apps.mensageria import gestao
+    return gestao._destino_do_teste(canal, valor)
+
+
+def test_id_cadastrado_e_reconhecido_como_id(conn, gente):
+    tc.gravar_cadastro(conn, chat_id=1234567890, cpf="22222222222", nome="Bia Rocha")
+
+    tipo, valor, como = _destino("telegram", "1234567890")
+
+    assert tipo == "chat" and valor == "1234567890"
+    assert "ID 1234567890" in como and "Bia Rocha" in como, (
+        "a resposta tem de dizer de quem é o ID — é assim que ele vê se o "
+        "sistema leu o que ele quis dizer")
+
+
+def test_telefone_continua_sendo_telefone(conn, gente):
+    tipo, valor, como = _destino("telegram", "(85) 99999-0001")
+
+    assert tipo == "telefone" and valor == "5585999990001"
+    assert "telefone" in como
+
+
+def test_o_55_e_posto_quando_falta(conn):
+    assert _destino("whatsapp", "85999990001")[1] == "5585999990001"
+    assert _destino("whatsapp", "5585999990001")[1] == "5585999990001"
+
+
+def test_numero_com_cara_de_telefone_que_E_um_id_cadastrado_vale_como_id(conn, gente):
+    """O caso que faz a regra existir: 11 dígitos serve de telefone E pode ser
+    um ID. Quem está cadastrado ganha."""
+    tc.gravar_cadastro(conn, chat_id=85999990002, cpf="22222222222")
+
+    tipo, valor, _ = _destino("telegram", "85999990002")
+
+    assert tipo == "chat" and valor == "85999990002"
+
+
+def test_id_de_grupo_e_negativo_e_nao_ha_ambiguidade(conn):
+    """Grupo do Telegram tem ID negativo, e telefone negativo não existe."""
+    tipo, valor, _ = _destino("telegram", "-1001234567890")
+
+    assert tipo == "chat" and valor == "-1001234567890"
+
+
+def test_no_whatsapp_o_id_do_telegram_nao_vale(conn, gente):
+    """Aceitar um ID de Telegram no WhatsApp mandaria mensagem para um número
+    inventado."""
+    tc.gravar_cadastro(conn, chat_id=85999990002, cpf="22222222222")
+
+    tipo, valor, _ = _destino("whatsapp", "85999990002")
+
+    assert tipo == "telefone" and valor == "5585999990002"
+
+
+def test_vazio_e_curto_sao_recusados_com_recado_que_ensina(conn):
+    import pytest as _pytest
+    with _pytest.raises(ValueError) as e1:
+        _destino("telegram", "")
+    with _pytest.raises(ValueError) as e2:
+        _destino("telegram", "9999")
+    with _pytest.raises(ValueError) as e3:
+        _destino("whatsapp", "9999")
+
+    assert "ID do Telegram" in str(e1.value)
+    assert "Cadastro do Telegram" in str(e2.value), "o recado diz ONDE achar o ID"
+    assert "ID" not in str(e3.value), "no WhatsApp não se oferece o que não serve"
+
+
+def test_id_nao_cadastrado_com_cara_de_telefone_vira_telefone(conn):
+    """Sem cadastro para confirmar, o palpite é telefone — e a resposta diz
+    isso, para ele ver que não foi pelo caminho que esperava."""
+    tipo, _, como = _destino("telegram", "1234567890")
+
+    assert tipo == "telefone" and "telefone" in como

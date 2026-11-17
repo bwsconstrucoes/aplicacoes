@@ -173,9 +173,25 @@
   <div class="cartao-dica" style="margin-top:0">Para conferir que o canal está funcionando. Pelo
     Telegram, a pessoa precisa estar cadastrada no bot. Pelo WhatsApp, a chave geral acima precisa
     estar ligada, e o envio conta no teto. Fica no registro como "mensageria.teste".</div>
+  {# ⚑ O CAMPO ACEITA TELEFONE **OU** ID DO TELEGRAM (17/11/2026). Ele:
+     *"quando eu boto o Telegram, o canal, fica até incompatível a digitação do
+     ID. (…) Eu gostaria de poder botar também o ID, porque fica mais uma
+     opção, mais direta de teste."*
+
+     Um campo só, e não dois lado a lado: é a regra "um cadastro, uma porta" —
+     a pessoa não escolhe caminho, ela cola o que tem na mão. Quem decide se
+     aquilo é ID ou telefone é o servidor, procurando o valor entre os IDs
+     cadastrados, e a resposta diz qual dos dois ele usou.
+
+     ⚠️ `data-sem-mascara` É O CONSERTO DO QUE ELE SENTIU: o campo se chamava
+     `telefone`, então o `erp_base.html` punha máscara de telefone nele pelo
+     NOME — e a máscara brigava com a digitação do ID. #}
   <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
-    <div class="campo" style="min-width:220px"><label for="t-telefone">Telefone com DDD</label>
-      <input id="t-telefone" name="telefone" placeholder="(85) 9 9999-9999"></div>
+    <div class="campo" style="min-width:260px"><label for="t-destino">Para quem</label>
+      <input id="t-destino" data-sem-mascara autocomplete="off"
+             placeholder="(85) 9 9999-9999 ou o ID do Telegram">
+      <div class="dica" id="t-dica">Telefone com DDD — ou, no Telegram, o
+        <b>ID</b> que aparece na aba Cadastro do Telegram.</div></div>
     <div class="campo"><label for="t-canal">Canal</label>
       <select id="t-canal" data-sem-busca><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option></select></div>
     <button class="btn" id="t-enviar" type="button">Enviar teste</button>
@@ -407,11 +423,25 @@ function desenharTipos(tipos){
   }));
 }
 {% if pode.configurar_mensagens %}
+{# A dica muda com o canal: no WhatsApp o ID do Telegram não quer dizer nada,
+   e oferecê-lo ali seria oferecer um caminho que não existe. #}
+function ajustarDicaDoTeste(){
+  const tg = els("t-canal").value === "telegram";
+  els("t-dica").innerHTML = tg
+    ? 'Telefone com DDD — ou o <b>ID</b> que aparece na aba Cadastro do Telegram.'
+    : 'Telefone com DDD. (O ID do Telegram só vale para o canal Telegram.)';
+  els("t-destino").placeholder = tg ? "(85) 9 9999-9999 ou o ID do Telegram"
+                                    : "(85) 9 9999-9999";
+}
+els("t-canal").addEventListener("change", ajustarDicaDoTeste);
+ajustarDicaDoTeste();
 els("t-enviar").addEventListener("click", async () => {
   const b = els("t-enviar"); b.disabled = true;
   try { const d = await api("/erp/api/mensagens/teste", {method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({telefone: els("t-telefone").value, canal: els("t-canal").value})});
-    if (!bancoAtrasado(d)) aviso("mensagem", "Teste enviado. Confira o celular e a aba Enviadas.", "ok");
+          body: JSON.stringify({destino: els("t-destino").value, canal: els("t-canal").value})});
+    {# A mensagem diz PARA ONDE foi — é o que o teste existe para responder. #}
+    if (!bancoAtrasado(d)) aviso("mensagem",
+      `Teste enviado para o ${escapar(d.destino || "destino")}. Confira o celular e a aba Enviadas.`, "ok");
   } catch (e) { aviso("mensagem", e.message, "erro"); } finally { b.disabled = false; }
 });
 {% endif %}

@@ -85,8 +85,11 @@ por WhatsApp e a migração do cadastro da planilha.
   política: **Só Telegram** · **Telegram; WhatsApp para quem não tem
   Telegram** · **Só WhatsApp** · **Desligado**. Tipo novo que o código
   declarar aparece sozinho, nascendo "Só Telegram".
-- **Mandar uma mensagem de teste** — telefone e canal; passa pela chave geral
-  e pelo teto; fica no registro como `mensageria.teste`.
+- **Mandar uma mensagem de teste** — canal e **telefone OU ID do Telegram**
+  (17/11/2026). Um campo só: o servidor procura o valor entre os IDs
+  cadastrados — achou, é ID; não achou, é telefone — e a resposta diz qual dos
+  dois usou. No WhatsApp o ID não vale. Passa pela chave geral e pelo teto;
+  fica no registro como `mensageria.teste`.
 
 **Enviadas** — o registro dos últimos 90 dias, com filtros por período, canal,
 situação (enviada, falhou, sem destinatário, tipo desligado, teto), tipo e
@@ -103,7 +106,7 @@ quebrar.
 | GET | `/erp/api/mensagens/tipos` · `/erp/api/mensagens/enviadas` | `ver_mensagens` |
 | POST | `/erp/api/mensagens/politica` `{chave, politica}` | `configurar_mensagens` |
 | POST | `/erp/api/mensagens/parametros` `{whatsapp_ligado, por_hora, por_dia}` | `configurar_mensagens` |
-| POST | `/erp/api/mensagens/teste` `{telefone, canal}` | `configurar_mensagens` |
+| POST | `/erp/api/mensagens/teste` `{destino, canal}` — `destino` é telefone ou ID do Telegram; `telefone` continua aceito | `configurar_mensagens` |
 
 ---
 
