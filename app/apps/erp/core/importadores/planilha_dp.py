@@ -366,9 +366,21 @@ def ler_linha(cabecalho: dict[str, int], linha: list[str]) -> dict[str, Any]:
     #    Então: data de saída ⇒ desligado; e "Cadastro Concluído" com data de
     #    saída é incoerência da planilha e vai para a lista (são 6 hoje).
     # ===================================================================
-    contrato_e_de_prestador = saida.get("tipo_contrato") in (
-        "PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA", "JOVEM_APRENDIZ",
-        "ESTAGIO", "PRO_LABORE")
+    # ⚑ JOVEM APRENDIZ É CTPS, e eu não tinha previsto. Ele, em 17/11/2026,
+    # olhando os 9 ativos que eu havia acusado de erro: *"CTPS e jovem
+    # aprendiz na verdade estão corretos, esse é o certo. Não tinha previsto
+    # esse tipo de contrato formal. Não é CLT mas é Jovem aprendiz."*
+    # O contrato de aprendizagem é formal, com carteira assinada — por isso
+    # casa com "Tipo = CTPS". Os outros quatro (CTPS com Autônomo RPA) ele
+    # confirmou que estão errados mesmo e vai corrigir na planilha.
+    # A lista vem do CADASTRO (`TIPOS_CONTRATO_CTPS`), não de uma cópia
+    # escrita aqui: duas listas para a mesma regra divergem no primeiro mês.
+    # "TEMPORARIO" entra à parte porque só existe em ficha antiga — ele não é
+    # oferecido em cadastro novo, mas a planilha ainda tem gente com ele.
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    CONTRATO_COM_CARTEIRA = svc_pessoas.TIPOS_CONTRATO_CTPS + ("TEMPORARIO",)
+    contrato_e_de_prestador = (saida.get("tipo_contrato")
+                               not in CONTRATO_COM_CARTEIRA)
     if saida.get("vinculo") and saida.get("tipo_contrato"):
         bate = ((saida["vinculo"] == "PRESTADOR") == contrato_e_de_prestador)
         if not bate:
@@ -380,14 +392,22 @@ def ler_linha(cabecalho: dict[str, int], linha: list[str]) -> dict[str, Any]:
                            "que é o que a folha usa; confira na planilha")})
 
     if saida.get("demissao"):
-        saida["situacao"] = "DESLIGADO"
+        # ⚑ "CADASTRO CONCLUÍDO" COM DATA DE SAÍDA: a data é que está errada.
+        # Ele decidiu em 17/11/2026: *"Cadastro Concluído com data de saída é
+        # apagar a data de saída e manter ativo."* São 6 pessoas hoje. A data
+        # NÃO entra (ela desligaria alguém que está trabalhando) e o caso vai
+        # para a lista, para ser arrumado na planilha.
         if _cru(crua(NOMES["fase"])) == _cru("Cadastro Concluído"):
             nao_entendi.append({
-                "coluna": "Data de Saída × Fase Atual", "campo": "situacao",
-                "valor": f'saída {crua(DATAS["demissao"])} com a fase '
-                         f'"Cadastro Concluído"',
-                "motivo": ("cadastro concluído não pode ter data de saída — "
-                           "entrou como DESLIGADO; arrume a fase na planilha")})
+                "coluna": "Data de Saída", "campo": "demissao",
+                "valor": saida.pop("demissao"),
+                "motivo": ("não entrou: a fase é “Cadastro Concluído”, que é "
+                           "gente trabalhando — a data de saída está errada e "
+                           "precisa ser apagada na planilha")})
+        else:
+            # Nas outras fases a data manda: a pessoa saiu, o cadastro é que
+            # não foi finalizado (o caso de "Solicitações DP").
+            saida["situacao"] = "DESLIGADO"
 
     nomes_saida = {chave: crua(nomes) for chave, nomes in NOMES.items()}
     # "00.079.526/0001-09 - BWS" → só o CNPJ.

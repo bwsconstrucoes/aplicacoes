@@ -475,7 +475,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         # PRESTADOR: o tipo de contrato (PJ, RPA, aprendiz…) e se é diarista
         # ou mensalista — duas coisas que, em carteira, não se escolhem.
         "obrigatorios_se": {"tipo_documentacao": {
-            "CTPS": ("num_ctps", "num_pis"),
+            "CTPS": ("num_ctps", "num_pis", "tipo_contrato"),
             "PRESTADOR": ("tipo_contrato", "pagamento")},
             "pagamento": {"MENSALISTA": ("valor_mes",)}},
         # ⚑ O QUE NÃO SE APLICA NEM APARECE (15/11/2026). Ele: *"quando é
@@ -493,22 +493,44 @@ TIPOS: dict[str, dict[str, Any]] = {
         "ocultos_se": {"tipo_documentacao": {
             "CTPS": ("pagamento", "valor_mes")},
             "pagamento": {"DIARISTA": ("valor_mes",)}},
-        # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre para prestador — ele
-        # foi literal (15/11/2026): *"tem que ocultar o campo. Abre o campo só
-        # se for prestador de serviço."*
+        # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre DEPOIS de escolhida a
+        # documentação — e aí abre para as DUAS, com listas diferentes.
         #
-        # A diferença entre "esconder quando é CTPS" e "só abrir quando é
-        # prestador" parece a mesma e não é: na primeira, o campo aparece
-        # ENQUANTO ninguém escolheu nada — e aí alguém responde "PJ" antes de
-        # dizer que é CTPS, e a resposta fica no formulário.
+        # Em 15/11/2026 ele mandou fechá-lo para CTPS: *"tem que ocultar o
+        # campo. Abre o campo só se for prestador de serviço."* O motivo era
+        # "CTPS é sempre CLT". Em 17/11/2026 ele corrigiu a premissa, não a
+        # regra: *"Se Jovem Aprendiz é CTPS, precisamos poder selecionar o
+        # tipo de contrato entre: CLT (tempo indeterminado), CLT (tempo
+        # determinado), Jovem Aprendiz."* Jovem aprendiz TEM carteira — então
+        # CTPS não é sempre CLT, e a escolha existe dos dois lados.
+        #
+        # O que não mudou é o essencial: o campo não aparece ENQUANTO ninguém
+        # escolheu a documentação. Senão alguém responde "PJ" antes de dizer
+        # que é CTPS, e a resposta errada fica no formulário. Por isso "*" (já
+        # respondeu, qualquer coisa) e não as duas opções soltas.
         "visiveis_se": {
-            "tipo_contrato": {"tipo_documentacao": ("PRESTADOR",)},
+            "tipo_contrato": {"tipo_documentacao": ("*",)},
             # O valor só é perguntado depois de escolhida a categoria: antes
             # disso, "valor da alimentação" não quer dizer nada.
             "aux_alimentacao": {"categoria_alimentacao": ("*",)},
             "aux_transporte": {"categoria_transporte": ("*",)},
             "descontar_vt": {
                 "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
+        # ⚑ A LISTA DO CAMPO MUDA CONFORME OUTRA RESPOSTA (17/11/2026).
+        #
+        # Tipo de contrato é um campo só, com duas listas: quem é CTPS escolhe
+        # entre as duas CLTs e jovem aprendiz; quem é prestador escolhe entre
+        # PJ, autônomo (RPA), autônomo mensalista, estágio e pró-labore.
+        #
+        # Dois CAMPOS seria o caminho errado: a coluna que o banco grava é uma
+        # só (`tipo_contrato`), e dois campos para uma coluna é o jeito de
+        # gravar os dois e não saber qual vale. A fonte das duas listas é o
+        # cadastro de pessoas — cópia aqui diverge no primeiro mês.
+        "opcoes_se": {"tipo_contrato": {"tipo_documentacao": {
+            "CTPS": tuple(svc_pessoas.TIPO_CONTRATO_ROTULOS[c]
+                          for c in svc_pessoas.TIPOS_CONTRATO_CTPS),
+            "PRESTADOR": tuple(svc_pessoas.TIPO_CONTRATO_ROTULOS[c]
+                               for c in svc_pessoas.TIPOS_CONTRATO_PRESTADOR)}}},
         "vem_do_documento": {
             "num_ctps": "CTPS-INFORMACOES",
             "num_pis": "CTPS-INFORMACOES",
@@ -585,20 +607,19 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
         "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado"),
     "tipo_readmissao": ("Prestador de Serviço", "CTPS"),
     "tipo_documentacao": ("Prestador de Serviço", "CTPS"),
-    # ⚑ SÓ PARA PRESTADOR, E SÃO ESTES SEIS (15/11/2026). Ele: *"tipo de
-    # contrato para prestador: PJ, autônomo RPA, autônomo mensalista, jovem
-    # aprendiz, estagiário, pró-labore. E para CTPS tira, porque é sempre
-    # CLT."*
+    # ⚑ AS DUAS LISTAS JUNTAS, e quem escolhe de verdade é `opcoes_se`: a
+    # caixinha só abre depois do tipo de documentação, e aí mostra a lista
+    # daquele lado (CTPS ou prestador). Esta aqui é o que sobra quando a tela
+    # pergunta o campo fora da admissão — e cobre os dois, para nunca mostrar
+    # uma lista menor do que a resposta certa.
     #
-    # As duas opções de CLT (determinado e indeterminado) existem no cadastro
-    # da pessoa e continuam lá — o que saiu foi PERGUNTAR num formulário onde
-    # a resposta já está decidida pelo tipo de documentação.
-    # A fonte é o cadastro de pessoas: `TIPOS_CONTRATO_PRESTADOR`. Duas
-    # listas para a mesma escolha divergem no primeiro mês — foi o que
-    # aconteceu com as categorias de auxílio, no mesmo dia.
+    # A fonte é o cadastro de pessoas. Duas listas para a mesma escolha
+    # divergem no primeiro mês — foi o que aconteceu com as categorias de
+    # auxílio, em 15/11/2026.
     "tipo_contrato": tuple(
         svc_pessoas.TIPO_CONTRATO_ROTULOS[c]
-        for c in svc_pessoas.TIPOS_CONTRATO_PRESTADOR),
+        for c in (svc_pessoas.TIPOS_CONTRATO_CTPS
+                  + svc_pessoas.TIPOS_CONTRATO_PRESTADOR)),
     "parentesco": ("Filho", "Cônjuge"),
     "pagamento": ("Diarista", "Mensalista"),
     "meio_transporte": ("Nenhum", "Transporte Coletivo", "Moto", "Bicicleta"),
@@ -714,7 +735,8 @@ DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
     # `tipo_contrato` — a tradução existe para a tela mostrar português e o
     # banco continuar com o que os relatórios entendem.
     "tipo_contrato": {svc_pessoas.TIPO_CONTRATO_ROTULOS[c]: c
-                      for c in svc_pessoas.TIPOS_CONTRATO_PRESTADOR},
+                      for c in (svc_pessoas.TIPOS_CONTRATO_CTPS
+                                + svc_pessoas.TIPOS_CONTRATO_PRESTADOR)},
     "descontar_vt": {"Sim, descontar em folha": "1", "Não, a empresa absorve": "0"},
     "continua_prestador": {"Não, está saindo da empresa": "0",
                            "Sim, continua como prestador de serviço": "1"},
@@ -1270,6 +1292,12 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
                       "visiveis_se": {
                           k: {kk: list(vv) for kk, vv in mapa.items()}
                           for k, mapa in (d.get("visiveis_se") or {}).items()},
+                      # Campo cuja LISTA depende de outra resposta (tipo de
+                      # contrato, que muda com o tipo de documentação).
+                      "opcoes_se": {
+                          k: {kk: {kkk: list(vvv) for kkk, vvv in mm.items()}
+                              for kk, mm in mapa.items()}
+                          for k, mapa in (d.get("opcoes_se") or {}).items()},
                       # ⚑ O RÓTULO→CÓDIGO VIAJA JUNTO, e sem isto as condições
                       # da tela não funcionariam: as listas acima são escritas
                       # com o CÓDIGO que o banco guarda ("CTPS", "DIARISTA"),

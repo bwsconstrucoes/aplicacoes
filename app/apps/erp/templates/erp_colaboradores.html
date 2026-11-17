@@ -1196,11 +1196,20 @@ function painelDaFicha(){
          Trocar para CTPS LIMPA o campo, de propósito: carteira não tem tipo
          de contrato, e deixar "PJ" guardado numa pessoa que passou a ter
          carteira é justamente a contradição que isto resolve. #}
+      {# ⚑ O CAMPO VOLTA PARA CTPS em 17/11/2026, e a lista muda com o
+         vínculo. Ele viu a consequência que eu não tinha visto: *"se Jovem
+         Aprendiz é CTPS, precisamos poder selecionar o tipo de contrato
+         entre CLT (tempo indeterminado), CLT (tempo determinado) e Jovem
+         Aprendiz."* A correção dele de 15/11 (*"CTPS não abre tipo de
+         contrato, porque já é CLT"*) valia para o que se sabia então —
+         aprendizagem é contrato formal, com carteira, e não é CLT. #}
+      {# NASCE COM AS DUAS LISTAS e `ligarTipoDeContrato` corta a metade que
+         não é do vínculo. Se nascesse só com a metade, abrir a ficha de quem
+         tem carteira mostraria o campo VAZIO — o valor gravado não estaria
+         entre as opções, e a caixinha descartaria o que o banco tem. #}
       <div class="campo oculto" id="c-contrato-caixa"><label>Tipo de contrato</label>${
-        lista("c-contrato", o.tipos_contrato_prestador || o.tipos_contrato,
-              c.tipo_contrato)}
-        <small class="ajuda">PJ, RPA, aprendiz, estágio… só para quem não tem
-          carteira assinada.</small></div>
+        lista("c-contrato", o.tipos_contrato, c.tipo_contrato)}
+        <small class="ajuda" id="c-contrato-ajuda">&nbsp;</small></div>
       {# ⚑ UM CAMPO SÓ. Ele, em 11/11/2026: *"empresa para registro e CNPJ
          para admissão é campo duplicado. É a mesma informação."* Tinha razão,
          e era pior: um era caixinha do cadastro de Empresas e o outro era
@@ -1411,10 +1420,28 @@ function valorDe(id){ const e = els(id); return e ? e.value : undefined; }
 function ligarTipoDeContrato(){
   const vinc = els("c-vinculo"), caixa = els("c-contrato-caixa");
   if (!vinc || !caixa) return;
+  const sel = els("c-contrato"), ajuda = els("c-contrato-ajuda");
+  // A lista depende do vínculo: carteira tem as duas CLT e o aprendiz;
+  // prestador tem PJ, RPA, mensalista, estágio e pró-labore. Oferecer os dois
+  // lados juntos é o que permitia gravar alguém de carteira como "PJ".
+  const opcoes = {
+    CTPS: OPCOES.tipos_contrato_ctps || [],
+    PRESTADOR: OPCOES.tipos_contrato_prestador || [],
+  };
   const aplicar = () => {
-    const prestador = vinc.value === "PRESTADOR";
-    caixa.classList.toggle("oculto", !prestador);
-    if (!prestador && els("c-contrato")) els("c-contrato").value = "";
+    const v = vinc.value;
+    const lista = opcoes[v] || [];
+    caixa.classList.toggle("oculto", !v || !lista.length);
+    if (ajuda) ajuda.textContent = v === "CTPS"
+      ? "Carteira assinada: CLT, ou contrato de aprendizagem."
+      : "PJ, RPA, mensalista, estágio ou pró-labore.";
+    if (!sel) return;
+    const antes = sel.value;
+    sel.innerHTML = `<option value=""></option>` + lista.map(
+      x => `<option value="${x.valor}">${escapar(x.rotulo)}</option>`).join("");
+    // Trocar de vínculo LIMPA o campo quando o contrato de antes não cabe no
+    // vínculo novo — é a contradição que a separação existe para impedir.
+    sel.value = lista.some(x => x.valor === antes) ? antes : "";
   };
   vinc.addEventListener("change", aplicar);
   aplicar();
@@ -1558,8 +1585,16 @@ async function abrirReadmissao(){
     campos: [
       {nome: "admissao", rotulo: "Data de admissão", tipo: "date", obrigatorio: true},
       {nome: "vinculo", rotulo: "Vínculo", tipo: "select", opcoes: (o.vinculos || [])},
+      // ⚑ A LISTA SEGUE O VÍNCULO (17/11/2026): carteira tem as duas CLT e o
+      // aprendiz; prestador tem PJ, RPA, mensalista, estágio e pró-labore.
+      // São dois campos com o MESMO nome, cada um visível para um vínculo —
+      // o coletor do `perguntar()` só lê o que está na tela.
       {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato || [])},
+       largura: 4, opcoes: (o.tipos_contrato_ctps || []),
+       mostrar_se: v => v.vinculo === "CTPS"},
+      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
+       largura: 4, opcoes: (o.tipos_contrato_prestador || []),
+       mostrar_se: v => v.vinculo === "PRESTADOR"},
       {nome: "salario", rotulo: "Salário", exemplo: "2.230,00"},
       {nome: "matricula", rotulo: "Matrícula nova"},
     ]});
@@ -1581,7 +1616,11 @@ async function abrirTrocaDeVinculo(){
        opcoes: (o.vinculos || [])},
       {nome: "admissao", rotulo: "A partir de", tipo: "date", obrigatorio: true},
       {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato || [])},
+       largura: 4, opcoes: (o.tipos_contrato_ctps || []),
+       mostrar_se: v => v.vinculo === "CTPS"},
+      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
+       largura: 4, opcoes: (o.tipos_contrato_prestador || []),
+       mostrar_se: v => v.vinculo === "PRESTADOR"},
       {nome: "salario", rotulo: "Salário", exemplo: "2.230,00"},
     ]});
   if (r) acaoDoVinculo("trocar-vinculo", r);

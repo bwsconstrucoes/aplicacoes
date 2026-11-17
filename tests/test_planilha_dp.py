@@ -318,14 +318,33 @@ def test_data_de_saida_manda_a_pessoa_esta_DESLIGADA():
     assert not d["_nao_entendi"]
 
 
-def test_cadastro_CONCLUIDO_com_data_de_saida_e_INCOERENCIA_e_e_relatada():
-    """Ele: *"quem está com o cadastro concluído NÃO PODE ter data de
-    saída."* São 6 hoje. Entra como desligado e vai para a lista."""
+def test_cadastro_CONCLUIDO_com_data_de_saida_IGNORA_A_DATA_e_mantem_ativo():
+    """Ele decidiu em 17/11/2026: *"Cadastro Concluído com data de saída é
+    apagar a data de saída e manter ativo."*
+
+    São 6 pessoas. A data NÃO entra — ela desligaria alguém que está
+    trabalhando, e desligado não bate ponto nem entra na folha. O caso vai
+    para a lista, para ser arrumado na planilha.
+    """
     d = _linha(**{"Tipo": "CTPS", "Data de Saída": "07/10/2026",
                   "Fase Atual": "Cadastro Concluído"})
-    assert d["situacao"] == "DESLIGADO"
-    assert any("não pode ter data de saída" in x["motivo"]
+    assert "demissao" not in d and "situacao" not in d
+    assert any("está errada e precisa ser apagada" in x["motivo"]
                for x in d["_nao_entendi"])
+
+
+def test_JOVEM_APRENDIZ_com_CTPS_esta_CERTO_e_nao_vira_aviso():
+    """⚑ Eu não tinha previsto. Ele, olhando os 9 ativos que eu havia acusado
+    de erro: *"CTPS e jovem aprendiz na verdade estão corretos, esse é o
+    certo. Não tinha previsto esse tipo de contrato formal. Não é CLT mas é
+    Jovem aprendiz."*
+
+    O contrato de aprendizagem é formal, com carteira assinada. Dos 9 que eu
+    acusei, 5 eram isto — acusação minha, não erro dele.
+    """
+    d = _linha(**{"Tipo": "CTPS", "Tipo de Contrato": "Jovem aprendiz"})
+    assert d["vinculo"] == "CTPS" and d["tipo_contrato"] == "JOVEM_APRENDIZ"
+    assert not d["_nao_entendi"]
 
 
 def test_tipo_e_contrato_que_se_contradizem_sao_RELATADOS():
@@ -343,7 +362,8 @@ def test_vinculo_e_contrato_coerentes_NAO_viram_aviso():
     for tipo, contrato in (("CTPS", "CLT (tempo determinado)"),
                            ("Prestador de Serviço", "Autônomo (RPA)"),
                            ("Prestador de Serviço", "PJ"),
-                           ("Prestador de Serviço", "Jovem aprendiz")):
+                           ("CTPS", "Jovem aprendiz"),
+                           ("Prestador de Serviço", "PJ")):
         d = _linha(**{"Tipo": tipo, "Tipo de Contrato": contrato})
         assert not d["_nao_entendi"], (tipo, contrato)
 
