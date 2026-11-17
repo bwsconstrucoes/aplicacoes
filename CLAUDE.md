@@ -491,6 +491,55 @@ Já vale em: obra (contrato, matrícula CNO, ART, OS), colaborador e empresa
 (Cartão CNPJ — `abrirCadastroDeEmpresa`, no `erp_base.html`, usada pela tela de
 Empresas e pela criação de obra).
 
+## ⚠️ O ERP VAI SUBSTITUIR A PLANILHA, O PIPEFY E O OMIE
+
+**Ele teve de dizer isto duas vezes no mesmo dia, 17/11/2026** — a primeira
+depois de eu oferecer "continuar controlando no Pipefy" como se fosse uma
+opção viva:
+
+> *"Não vai ter Pipefy mais. Preciso dizer de novo?"*
+
+> *"O ERP vai substituir planilha e Pipefy e Omie."*
+
+Não precisava repetir. A informação estava na conversa e não no repositório —
+e chat novo nasce sem saber. **Esta é a frase mais importante deste arquivo
+para entender PARA QUE o ERP está sendo construído**, e ela vale para as nove
+áreas, não só para o ERP:
+
+| Sai | O que ele faz hoje | Quem assume |
+|---|---|---|
+| **Pipefy** | cadastro de colaboradores, SPs, fluxos do DP | ERP |
+| **Planilhas** (Registro de Colaboradores, C. Diários, SPsBD) | a base que o Make alimenta e que meio sistema lê | ERP |
+| **OMIE** | financeiro — títulos, contas a pagar e a receber | ERP |
+
+**O ERP não é um espelho desses três, nem um relatório sobre eles: é o lugar
+onde o dado passa a viver.** Ele já havia dito, em 16/11: *"assim que eu
+conseguir importar tudo do Pipefy e das fichas, quero cortar o vínculo com a
+planilha."*
+
+**O que isso decide, e não precisa ser perguntado de novo:**
+
+| Coisa | O que vale |
+|---|---|
+| Importação pelo Pipefy, pela planilha e do OMIE | **ferramenta de mudança, não de operação.** Serve para trazer o que já existe. Não desenhe funcionalidade que dependa dela para sempre |
+| Integração de ida (o ERP ESCREVENDO em OMIE/planilha) | caminho que vai morrer. Antes de criar mais uma, pergunte se não é o ERP que deveria ser a fonte |
+| As ETAPAS do cadastro (Inicial, Conferência, Contrato a assinar, Na contabilidade, Concluído, Afastado, Desligado, Cancelado) | **ficam, e ganham importância.** Eram "a fase do card"; passam a ser a única fila de trabalho do DP. Ele: *"as fases do Pipefy é para o DP saber o que fazer; aqui ele fica perdido"* |
+| Toda etapa precisa ser ALCANÇÁVEL pela tela | se o DP não consegue mover alguém, a fila congela. Isto já falhou: a regra de transição existia desde 05/11 e a tela não tinha botão até 17/11 |
+| Entrada de cadastro novo | o formulário do ERP (portal da obra → pedido do DP), **não** o card |
+| "Está no Pipefy" | **nunca é resposta** para onde um dado deve morar, nem justificativa para o ERP não ter algo |
+
+**A pergunta que substitui "como está no Pipefy / na planilha / no OMIE?":**
+se os três fossem desligados amanhã, isto que estou entregando deixaria a
+equipe conseguir trabalhar? Se a resposta for não, falta coisa — e falta no
+ERP.
+
+⚠️ **Isto NÃO é autorização para desligar nada, nem para apagar integração
+que está de pé.** A ordem dos desligamentos, e quando, é decisão dele —
+ver a regra "o que ela SUBSTITUI?" logo abaixo. Hoje o OMIE, o Pipefy e as
+planilhas estão em produção e a empresa depende deles.
+
+---
+
 ## Funcionalidade nova pergunta: o que ela SUBSTITUI?
 
 Cobrança dele em 17/11/2026, e ela é a continuação direta da regra "um

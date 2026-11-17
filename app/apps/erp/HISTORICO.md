@@ -21,6 +21,33 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — DECIDIDO: AS OITO ETAPAS FICAM, porque o Pipefy sai
+
+Ele perguntou se duas delas eram necessárias — *"Precisa dessas abaixo?
+Contrato a assinar / Na contabilidade"* — e, logo depois, respondeu a própria
+pergunta sem saber: *"Não vai ter Pipefy mais."*
+
+**Com o Pipefy saindo, as duas ficam, e a razão é só uma:** elas são os dois
+lugares onde um cadastro espera ALGUÉM DE FORA — a assinatura do PJ e o
+eSocial na contabilidade. Se o ERP não as tiver, "Conferência concluída" passa
+a ter um destino só, e o DP perde a diferença entre "falta a assinatura do PJ"
+e "nada pendente". Essa diferença hoje mora no quadro do Pipefy; quando ele
+for desligado, não mora em lugar nenhum.
+
+**O que é importante saber:** nenhuma fase da planilha cai nessas duas. As
+sete fases de lá são Inicial, Solicitações DP, Cadastros Adicionais,
+Concluído, Afastados, Desligados e Cancelado. As duas só se enchem quando o DP
+aperta **"Conferência concluída"** dentro do ERP — e aí o destino é escolhido
+pela REGRA, pelo vínculo (prestador → concluído, PJ → contrato a assinar,
+CTPS → contabilidade), nunca à mão.
+
+**Pendente de verdade, e é o que falta para a fila do DP virar cobrança:**
+"quanto tempo este cadastro está parado nesta etapa?" O histórico de etapas
+guarda a data de cada mudança, mas não há tela nem consulta que mostre "parado
+há N dias". Registrado em `PERGUNTAS.md`.
+
+---
+
 ### ⚑ 17/11/2026 — A IMPORTAÇÃO DA PLANILHA: SEIS DEFEITOS NUMA TARDE
 
 > *"Veja como é frustrante. Olha quanto tempo tá sendo tomado para uma simples
