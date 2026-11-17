@@ -548,11 +548,26 @@ e clique em **Emitir**. A tela:
    por menor); **igual ou maior** ⇒ SUBSTITUIR;
 2. avisa se o **Valor BDI Diferenciado** está vazio no card, antes de você mexer
    no portal;
-3. você faz no portal e clica em "Já fiz no portal — continuar":
-   - **CANCELAR** → ela **emite a nota nova** e, na mesma ação, marca a antiga
-     como Cancelada no card, na planilha e no título do Omie;
-   - **SUBSTITUIR** → a nota nova nasce no portal, então ela leva para
-     "Recuperar entrega" **já preenchida**.
+3. você confirma (motivo + uma caixa, porque **nota que sai de cena não volta**)
+   e **o sistema faz tudo — você não abre o portal**:
+
+| Valor da nota nova | Mecanismo |
+|---|---|
+| **igual ou maior** | a nota nova é emitida com o grupo `subst` dentro da declaração, levando a chave da antiga; **a plataforma nacional cancela a antiga por conta dela** |
+| **menor** | o sistema manda o evento de cancelamento (`e101101`) da antiga e **só depois** emite a nova. Recusado o cancelamento, a nova **não** é emitida — duas notas válidas do mesmo serviço é pior que nenhuma |
+
+Nos dois casos, em seguida: slot → Cancelada, planilha → CANCELADA, número
+sai/entra no título do Omie, retenções regravadas quando for o caso.
+
+E fica ao lado o caminho manual, **"Já fiz no portal — só emitir"**: o sistema não
+mexe na prefeitura, só emite e registra.
+
+⚠️ **Nenhum dos dois mecanismos foi exercitado contra a prefeitura de verdade.**
+O que dá para conferir sem gastar nota foi conferido: a declaração com `subst` e o
+pedido de cancelamento **validam contra os schemas oficiais**, e há teste disso.
+O que nenhum teste alcança é se a plataforma de Eusébio aceita — prazo, perfil,
+análise fiscal. A primeira vez é numa nota real, e por isso o caminho manual
+continua de pé.
 
 Nada é enviado à prefeitura antes dessa confirmação; fechar a tela não muda nada.
 

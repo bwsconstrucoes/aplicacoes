@@ -2069,7 +2069,114 @@ há nota nova agora** (a nota foi cancelada e ponto, ou a nova já foi emitida p
 outro caminho). A porta principal passou a ser a tela de emissão, e as duas telas
 dizem isso uma da outra.
 
-**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (30 casos,
+### E o cancelamento na prefeitura virou do sistema — 17/11/2026
+
+Ele perguntou, e a pergunta derrubou a última desculpa:
+
+> *"Não é tudo automático, não? A automação cancela e emite nova nota? (…) E por
+> que tu não faz tudo?"*
+
+**Não havia motivo bom.** O endereço da API já estava no código
+(`el_nfse_nacional.registrar_evento` → `POST nfse/{chave}/eventos`), o schema
+oficial do pedido está versionado em `xsd_nacional/pedRegEvento_v1.01.xsd`, e a
+assinatura é a mesma da declaração. Faltava montar o XML do evento — e ninguém
+tinha feito.
+
+**Como o padrão nacional cancela:** não existe "apagar a nota". Registra-se um
+EVENTO sobre ela, o `e101101` ("Cancelamento de NFS-e"), num `pedRegEvento`
+assinado com o A1 e mandado GZip+Base64. O identificador do pedido tem forma fixa
+e o schema é quem manda: **"PRE" + chave de acesso (50) + tipo do evento (6)** =
+`PRE` + 56 dígitos. A documentação do campo menciona um `nPedRegEvento` no fim,
+mas o `pattern` só aceita 56 dígitos e 50 + 6 já os fecham — o número do pedido
+aparece no identificador do EVENTO que a plataforma devolve, não no pedido.
+Módulo novo: `evento_cancelamento.py`.
+
+**A chave de acesso é procurada sozinha**, em duas fontes (`emitir_dps.chave_da_nota`):
+a aba Controle Nacional, que é de graça, e, se não achar, a própria prefeitura —
+o identificador da declaração é derivado do número da nota, e a consulta devolve
+a nota com a chave dentro. Não achando nenhuma das duas, **nada é cancelado nem
+emitido**: cancelar sem saber qual nota é o erro que não tem volta.
+
+**A ordem não é estética, é a regra:** cancela primeiro, emite depois. Se a
+prefeitura recusar o cancelamento, a nota antiga continua valendo e a nova **não**
+é emitida — duas notas válidas do mesmo serviço é o pior desfecho possível desta
+área, pior que ficar sem emitir.
+
+**Três travas, porque isto não se desfaz:**
+
+1. o motivo é obrigatório — código oficial (1 erro na emissão, 2 serviço não
+   prestado, 9 outros) e uma frase de 15 a 255 letras, criticada **aqui** e não
+   na prefeitura;
+2. uma caixa de confirmação que repete o número da nota. Sem ela, nada roda — nem
+   a emissão começa;
+3. o caminho de escape fica: **"Já cancelei no portal — só emitir"**, para quando
+   ele já cancelou à mão ou a API recusar.
+
+**O que NÃO foi verificado, e é o risco que fica:** nenhum cancelamento foi
+enviado de verdade. O que dá para conferir sem cancelar uma nota foi conferido —
+o pedido **valida contra o schema oficial** da prefeitura, e há teste disso. O
+que nenhum teste alcança: se a plataforma de Eusébio aceita o evento por API
+(pode exigir prazo, perfil ou análise fiscal) e se o `xMotivo` que mandamos passa
+pela crítica dela. A primeira vez é numa nota de verdade, e por isso o caminho do
+portal continua de pé lado a lado.
+
+### ⚠️ A SUBSTITUIÇÃO SEMPRE FOI POSSÍVEL — o erro era meu, e durou semanas
+
+Ele perguntou, em 17/11/2026, depois de eu entregar meia automação três vezes
+seguidas:
+
+> *"Se eu abrir aqui o emissor pedindo a troca da nota, você automaticamente vai
+> entender se é substituição ou se é cancelamento. Se for substituição, você
+> substitui e emite a nova nota e faz todo o procedimento do pipe. Se for nota de
+> valor menor, aí você vai cancelar e emitir a nova nota e atualizar o Pipefy e o
+> OMIE (…) do mesmo jeito. Foi isso que eu pedi. E eu não estou entendendo por
+> que isso não está acontecendo. **Tem alguma limitação que eu não estou
+> entendendo?**"*
+
+**Não tinha limitação nenhuma. Tinha uma afirmação errada minha, dentro do
+código, repetida para ele em cada tela desde 07/10/2026:**
+
+> *"No modelo nacional a substituição é um evento registrado sobre a nota, e esse
+> caminho ainda não está pronto aqui."*
+
+A primeira metade é meia verdade e a segunda é consequência dela. **O grupo
+`subst` existe no `TCInfDPS`**, entre `cLocEmi` e `prest`, com a chave da nota
+substituída, o código e o motivo. Presente esse grupo na declaração da nota nova,
+**a plataforma nacional cancela a antiga por conta dela** (gera o evento
+`e105102`). Nunca foi preciso evento à parte nem portal.
+
+**Como o erro se manteve de pé por semanas:** em 07/10, com a emissão parada e a
+prefeitura tendo desligado o modelo antigo, a substituição pela tela foi desligada
+junto — e a explicação escrita naquele dia virou a verdade do sistema. Eu mesmo
+derrubei essa crença lendo os XSDs semanas depois, **falei isso para ele, e não
+mexi no código.** Ler o schema e não aplicar é pior que não ter lido: o sistema
+continuou dizendo o contrário do que eu já sabia.
+
+**A lição, que vale mais que o conserto:** quando uma tela afirma "o padrão não
+permite X", essa frase tem de citar onde no schema está escrito que não permite.
+Se não citar, ela é uma suspeita com cara de fato — e suspeita não vira mensagem
+para o dono.
+
+**Como ficou, e agora é o que ele pediu desde o começo.** Nos DOIS casos o
+sistema faz tudo e ele não abre o portal:
+
+| Valor da nota nova | O que o sistema faz |
+|---|---|
+| **igual ou maior** | emite a nota nova com o grupo `subst` dentro da declaração; a plataforma nacional cancela a antiga |
+| **menor** | manda o evento `e101101` cancelando a antiga, **e só depois** emite a nova |
+
+E, nos dois, em seguida: slot vira Cancelada, planilha ganha CANCELADA, número
+sai/entra no título do Omie e as retenções são regravadas quando a nota nova
+passa a ser a única válida da medição.
+
+**A ordem no caso do cancelamento não é estética:** cancela primeiro, emite
+depois. Recusado o cancelamento, a nota nova **não** é emitida — duas notas
+válidas do mesmo serviço é pior que ficar sem emitir.
+
+**O caminho manual continua ao lado** ("Já fiz no portal — só emitir"), porque
+nenhum dos dois mecanismos foi exercitado contra a prefeitura de verdade.
+
+**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (39 casos,
 com os números reais do incidente) e `tests/test_emissaonf_emissao_ponta_a_ponta.py`
 (o fluxo do cancelamento de ponta a ponta, e o caso em que as retenções NÃO devem
 ser regravadas).

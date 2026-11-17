@@ -326,28 +326,33 @@ def _tentar_emitir(cliente, **extra):
     return cliente.post("/emissao/emitir", data=dados).get_data(as_text=True)
 
 
-def test_valor_menor_ja_vem_com_cancelar_marcado(cliente, emissao):
-    """O caso real: nota de 13.053,64 e card corrigido para 13.053,54."""
+def test_valor_menor_vai_direto_para_a_tela_de_cancelar(cliente, emissao):
+    """O caso real: nota de 13.053,64 e card corrigido para 13.053,54.
+
+    Valor menor é cancelamento, e o cancelamento é do sistema — então a tela já
+    abre na confirmação, sem fazer ele escolher entre caminhos."""
     corpo = _tentar_emitir(cliente)
     assert "valor MENOR, então o caminho é CANCELAR" in corpo
     assert "13.053,64" in corpo and "13.053,54" in corpo
-    # a opção certa já vem escolhida — ele confirma, não decide
-    i_can = corpo.index("value='cancelar'")
-    assert "checked" in corpo[i_can:i_can + 40]
+    assert "Cancelar a NF 2600000003377 e emitir a nota nova" in corpo
 
 
-def test_valor_maior_ja_vem_com_substituir_marcado(cliente, emissao):
+def test_valor_maior_vai_direto_para_a_tela_de_substituir(cliente, emissao):
+    """Valor igual ou maior dá para substituir — e a substituição também é do
+    sistema: a chave da nota antiga vai dentro da declaração da nota nova."""
     corpo = _tentar_emitir(cliente, valor="20.000,00")
     assert "igual ou maior, então dá para SUBSTITUIR" in corpo
-    i_sub = corpo.index("value='substituir'")
-    assert "checked" in corpo[i_sub:i_sub + 40]
+    assert "Substituir a NF 2600000003377 pela nota nova" in corpo
+    assert "a plataforma nacional cancela a antiga" in corpo
+    assert "Você não precisa abrir o portal" in corpo
 
 
-def test_a_tela_diz_que_so_o_portal_e_trabalho_dele(cliente, emissao):
-    """O ponto do desenho: aqui dentro os dois casos são iguais."""
+def test_a_tela_diz_que_o_sistema_faz_as_duas_coisas(cliente, emissao):
+    """O ponto do desenho: uma ação só, e o sistema cuida das duas pontas."""
     corpo = _tentar_emitir(cliente)
-    assert "única" in corpo and "portal da prefeitura" in corpo
-    assert "o procedimento é o mesmo nos dois casos" in corpo
+    assert "cancelo a NF 2600000003377" in corpo
+    assert "na prefeitura" in corpo
+    assert "numa só vez" in corpo
 
 
 def test_nada_e_emitido_antes_de_ele_confirmar(cliente, emissao, monkeypatch):
@@ -356,9 +361,9 @@ def test_nada_e_emitido_antes_de_ele_confirmar(cliente, emissao, monkeypatch):
     chamou = []
     monkeypatch.setattr(web._worker, "preparar",
                         lambda *a, **k: chamou.append(1) or {})
-    _tentar_emitir(cliente)
-    assert chamou == [], "não pode nem preparar a emissão antes do 'já fiz no portal'"
-    assert "nada foi emitido e" in _tentar_emitir(cliente)
+    corpo = _tentar_emitir(cliente)
+    assert chamou == [], "não pode nem preparar a emissão antes da confirmação"
+    assert "nada sai de cena e nada é" in corpo
 
 
 def test_sem_conseguir_ler_o_card_os_dois_caminhos_sao_oferecidos(cliente, monkeypatch):
@@ -393,13 +398,10 @@ def test_o_aviso_do_bdi_vazio_aparece_antes_do_portal(cliente, emissao):
     assert "retenções vão a mais" in corpo
 
 
-def test_substituir_confirmado_manda_terminar_na_recuperacao(cliente, emissao):
-    """No caminho da substituição a nota nova nasce NO PORTAL — não há o que
-    emitir aqui, e o que falta é registrar."""
+def test_substituir_sem_confirmar_nao_faz_nada(cliente, emissao):
+    """A substituição também tira uma nota de cena, então também pede confirmação."""
     corpo = _tentar_emitir(cliente, ja_fiz_no_portal="on", acao_portal="substituir")
-    assert "nasceu no portal" in corpo
-    assert "/emissao/recuperar" in corpo
-    assert f"nota_substituida={NOTA_LONGO}" in corpo
+    assert "não marcou a confirmação" in corpo
 
 
 def test_a_recuperacao_abre_preenchida_pelo_link(cliente):
@@ -407,3 +409,86 @@ def test_a_recuperacao_abre_preenchida_pelo_link(cliente):
                         f"&nota_substituida={NOTA_LONGO}").get_data(as_text=True)
     assert f"value='{CARD}'" in corpo
     assert f"value='{NOTA_LONGO}'" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# O CANCELAMENTO NA PREFEITURA — o sistema faz, ele só confirma
+#
+# 17/11/2026: "Não é tudo automático, não? A automação cancela e emite nova nota?
+# (…) E por que tu não faz tudo?" Não havia motivo bom: o endereço da API já
+# estava no código, o schema do pedido está versionado em xsd_nacional/ e a
+# assinatura é a mesma da declaração. Faltava montar o XML do evento.
+# --------------------------------------------------------------------------- #
+CHAVE = "2" * 50
+
+
+def test_o_pedido_de_cancelamento_valida_contra_o_schema_oficial():
+    """A única conferência de verdade que existe sem cancelar uma nota: o schema
+    oficial da prefeitura, versionado em `xsd_nacional/`."""
+    from lxml import etree
+    import evento_cancelamento as ev
+    xsd = etree.XMLSchema(etree.parse(
+        os.path.join(_EMISSAONF, "xsd_nacional", "pedRegEvento_v1.01.xsd")))
+    xml = ev.montar_xml(CHAVE, "28520007952600", "1",
+                        "Valor da medicao corrigido; nota substituida por outra", True)
+    doc = etree.fromstring(xml)
+    assert xsd.validate(doc), [e.message for e in xsd.error_log]
+
+
+def test_o_identificador_do_pedido_tem_a_forma_que_o_schema_exige():
+    """PRE + chave (50) + tipo do evento (6) = PRE + 56 dígitos."""
+    import re
+    import evento_cancelamento as ev
+    ident = ev.gerar_id_pedido(CHAVE)
+    assert re.fullmatch(r"PRE[0-9]{56}", ident)
+    assert ident.endswith("101101")
+
+
+def test_chave_com_tamanho_errado_e_barrada_aqui_nao_na_prefeitura():
+    import evento_cancelamento as ev
+    with pytest.raises(ev.DadoInvalido) as e:
+        ev.montar_xml("123", "28520007952600", "1", "Motivo com tamanho suficiente", True)
+    assert "50 dígitos" in str(e.value)
+
+
+def test_motivo_curto_e_barrado_aqui(a_prefeitura_exige_de_15_a_255=None):
+    import evento_cancelamento as ev
+    with pytest.raises(ev.DadoInvalido) as e:
+        ev.montar_xml(CHAVE, "28520007952600", "1", "errado", True)
+    assert "15 a 255" in str(e.value)
+
+
+def test_motivo_inexistente_e_barrado_aqui():
+    import evento_cancelamento as ev
+    with pytest.raises(ev.DadoInvalido) as e:
+        ev.montar_xml(CHAVE, "28520007952600", "7", "Motivo com tamanho suficiente", True)
+    assert "não existe" in str(e.value)
+
+
+def test_homologacao_e_producao_vao_no_pedido():
+    from lxml import etree
+    import evento_cancelamento as ev
+    for producao, esperado in ((True, "1"), (False, "2")):
+        doc = etree.fromstring(ev.montar_xml(CHAVE, "28520007952600", "1",
+                                             "Motivo com tamanho suficiente", producao))
+        amb = doc.find(".//{http://www.sped.fazenda.gov.br/nfse}tpAmb")
+        assert amb.text == esperado
+
+
+def test_a_tela_de_cancelamento_pede_confirmacao_e_motivo(cliente, emissao):
+    corpo = _tentar_emitir(cliente)
+    assert "Cancelar na prefeitura e emitir" in corpo
+    assert "NÃO SE DESFAZ" in corpo
+    assert "motivo_codigo" in corpo and "motivo_texto" in corpo
+    assert "confirmo_cancelamento" in corpo
+    # o caminho de escape continua existindo
+    assert "Já fiz no portal" in corpo
+
+
+def test_sem_marcar_a_confirmacao_nada_acontece(cliente, emissao, monkeypatch):
+    web, _c = emissao
+    chamou = []
+    monkeypatch.setattr(web._worker, "preparar", lambda *a, **k: chamou.append(1) or {})
+    corpo = _tentar_emitir(cliente, ja_fiz_no_portal="on", acao_portal="cancelar")
+    assert "não marcou a confirmação" in corpo
+    assert chamou == [], "nem a emissão pode começar sem a confirmação"
