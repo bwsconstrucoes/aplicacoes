@@ -148,8 +148,7 @@
   <div class="cartao-dica">Lê a planilha <b>Registro de Colaboradores</b>, aba
     <b>Dados Documentos</b>, <b>ao vivo</b>: o que você editar lá vale nesta
     mesma importação. Casa pelo <b>CPF</b>, preenche o cadastro de quem já
-    existe e <b>cadastra quem falta</b> — só quem a planilha mostra como
-    <b>ativo</b>, porque as ~2.960 pessoas desligadas são base morta.
+    existe. <b>Não cria gente</b>, a menos que você marque a opção abaixo.
     <br><br>O que a planilha manda: <b>vínculo, pagamento, tipo de contrato,
     cargo, convenção, obra, salário, diária, auxílios, endereço, RG, nome do
     pai e da mãe, nascimento, chave Pix</b> e o resto do cadastro.
@@ -158,14 +157,63 @@
     <label for="plc-cpfs">CPF de quem você quer trazer <small>(opcional)</small></label>
     <textarea id="plc-cpfs" rows="2" placeholder="096.767.494-86"></textarea>
     <div class="dica">Um por linha ou separados por vírgula. <b>Comece com uma
-      ou duas pessoas</b> e confira a ficha antes de soltar o resto. Em branco,
-      vai a planilha inteira.</div>
+      ou duas pessoas</b> e confira a ficha antes de soltar o resto.
+      <b>Em branco, vai a planilha inteira</b> — e se você escrever algo que eu
+      não entender, eu paro e aviso, em vez de trazer todo mundo.</div>
   </div>
+  {# ⚑ CADASTRAR QUEM FALTA É ESCOLHA, E NASCE DESMARCADA (17/11/2026).
+
+     Ele: *"tem mais gente no ERP do que eu coloquei para importar. Só quero os
+     que eu coloquei para importar."*
+
+     Criar gente é a única coisa que esta importação faz que não se desfaz com
+     outra importação — atualizar campo errado se corrige rodando de novo;
+     pessoa criada por engano fica. Coisa que não se desfaz não pode ser
+     padrão. #}
+  <label class="opcao" style="margin-top:10px">
+    <input type="checkbox" id="plc-criar">
+    <span class="rotulo"><b>Cadastrar também quem não existe no ERP</b>
+      (só os ativos). Desmarcado — o normal — só preenche o cadastro de quem
+      já está aqui, e lista os outros sem criar nada.</span></label>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-plc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-plc" disabled>Trazer da planilha</button>
   </div>
   <div id="resultado-plc"></div>
+</div>
+
+{# ⚑ DESFAZER O QUE A IMPORTAÇÃO CRIOU (17/11/2026).
+
+   Ele, depois de uma importação: *"tem mais gente no ERP do que eu coloquei
+   para importar. Só quero os que eu coloquei para importar."*
+
+   A causa foi consertada em dois lugares — a rota recusa CPF que não entendeu
+   em vez de cair na planilha inteira, e cadastrar quem falta virou opção
+   desmarcada. Mas sem este cartão a única saída para o estrago já feito seria
+   apagar gente no banco à mão, que é a pior coisa que existe. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cadastros criados recentemente</h3>
+    <small>para tirar quem entrou sem você pedir</small></div>
+  <div class="cartao-dica">Quem <b>nasceu</b> no cadastro nas últimas horas,
+    por importação ou à mão. <b>Só aparece aqui quem foi criado</b> — quem já
+    existia e só teve campos preenchidos não entra nesta lista.
+    <br><br>Apagar é <b>definitivo</b>, e de propósito: cadastro criado por
+    engano é lixo, não história — inativá-lo deixaria no sistema alguém que
+    nunca trabalhou aqui, aparecendo em busca e em lista para sempre.
+    <b>Quem já tem movimento</b> (título, documento, pedido do DP, ponto)
+    <b>não é apagada</b>: o sistema recusa e diz o motivo.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="max-width:200px"><label for="rm-horas">Criados nas últimas</label>
+      <select id="rm-horas">
+        <option value="6">6 horas</option>
+        <option value="24">24 horas</option>
+        <option value="48" selected>48 horas</option>
+        <option value="168">7 dias</option>
+      </select></div>
+    <button class="btn secundario" id="btn-listar-rm">Ver quem foi criado</button>
+    <button class="btn vermelho" id="btn-apagar-rm" disabled>Apagar os marcados</button>
+  </div>
+  <div id="resultado-rm"></div>
 </div>
 
 <div class="cartao">
@@ -1071,7 +1119,8 @@ function pintarRelatorioPLC(rel){
 
 async function mandarCadastroPlanilha(gravar){
   const onde = els("resultado-plc");
-  const corpo = {gravar: !!gravar, cpfs: els("plc-cpfs").value};
+  const corpo = {gravar: !!gravar, cpfs: els("plc-cpfs").value,
+                 criar: !!(els("plc-criar") || {}).checked};
   ["btn-conferir-plc", "btn-gravar-plc"].forEach(b => {
     if (els(b)) els(b).disabled = true; });
   onde.innerHTML = `<div class="cartao-dica">Na fila — a leitura da planilha
@@ -1108,6 +1157,79 @@ async function mandarCadastroPlanilha(gravar){
     if (els("btn-gravar-plc")) els("btn-gravar-plc").disabled = !PLC_CONFERIDO;
   }
 }
+
+{# ---------------------------------------------------------------------------
+   OS CADASTROS CRIADOS RECENTEMENTE, e como tirar quem não foi pedido
+   --------------------------------------------------------------------------- #}
+async function listarCriadosRecentemente(){
+  const onde = els("resultado-rm");
+  const horas = (els("rm-horas") || {}).value || "48";
+  onde.innerHTML = `<div class="cartao-dica">Procurando…</div>`;
+  if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = true;
+  try {
+    const r = await api(`/erp/api/colaboradores/criados-recentemente?horas=${horas}`);
+    const gente = r.pessoas || [];
+    if (!gente.length) {
+      onde.innerHTML = `<div class="cartao-dica">Ninguém foi criado nesse
+        período.</div>`;
+      return;
+    }
+    onde.innerHTML = `<h4>${gente.length} cadastro(s) criado(s)</h4>
+      <div class="tabela-rolagem" style="max-height:360px"><table>
+      <thead><tr><th style="width:36px"></th><th>Pessoa</th><th>CPF</th>
+        <th>Situação</th><th>Criado em</th><th>Por quem</th></tr></thead>
+      <tbody>${gente.map(p => `<tr>
+        <td><input type="checkbox" class="rm-um" value="${p.id}"></td>
+        <td>${escapar(p.nome)}</td>
+        <td class="dados">${documento(p.cpf)}</td>
+        <td>${escapar(p.situacao)}</td>
+        <td class="dados">${escapar((p.criado_em || "").replace("T", " ").slice(0, 16))}</td>
+        <td class="desc">${escapar(p.por_quem)}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="dica" style="margin-top:8px">Marque <b>quem você NÃO pediu
+        para importar</b> e aperte “Apagar os marcados”.</div>`;
+    onde.querySelectorAll(".rm-um").forEach(c =>
+      c.addEventListener("change", () => {
+        const algum = onde.querySelectorAll(".rm-um:checked").length > 0;
+        if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = !algum;
+      }));
+  } catch(e){
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  }
+}
+
+async function apagarCriadosMarcados(){
+  const onde = els("resultado-rm");
+  const ids = Array.from(onde.querySelectorAll(".rm-um:checked")).map(c => c.value);
+  if (!ids.length) return;
+  {# Apagar gente é definitivo: a confirmação diz QUANTAS e que não volta. #}
+  if (!confirm(`Apagar ${ids.length} cadastro(s)?\n\n`
+             + "Isto NÃO tem volta. Quem já tem título, documento, pedido do "
+             + "DP ou ponto não será apagada — o sistema recusa e diz o "
+             + "motivo.")) return;
+  if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = true;
+  try {
+    const r = await api("/erp/api/colaboradores/remover",
+                        {method: "POST", body: JSON.stringify({ids}),
+                         headers: {"Content-Type": "application/json"}});
+    const fora = (r.apagadas || []).length, ficou = (r.recusadas || []);
+    aviso("mensagem",
+          `${fora} apagada(s)` + (ficou.length ? `, ${ficou.length} recusada(s)` : "."),
+          ficou.length ? "info" : "ok");
+    if (ficou.length)
+      onde.innerHTML = `<div class="aviso erro"><b>Não deu para apagar
+        (${ficou.length})</b><ul>${ficou.map(x =>
+          `<li>${escapar(x.motivo)}</li>`).join("")}</ul></div>` + onde.innerHTML;
+    else
+      await listarCriadosRecentemente();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+if (els("btn-listar-rm"))
+  els("btn-listar-rm").addEventListener("click", listarCriadosRecentemente);
+if (els("btn-apagar-rm"))
+  els("btn-apagar-rm").addEventListener("click", apagarCriadosMarcados);
 
 if (els("btn-conferir-plc"))
   els("btn-conferir-plc").addEventListener("click", () => mandarCadastroPlanilha(false));

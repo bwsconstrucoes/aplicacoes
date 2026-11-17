@@ -21,6 +21,50 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — "TEM MAIS GENTE NO ERP DO QUE EU COLOQUEI PRA IMPORTAR"
+
+> *"Tem mais gente no ERP do que eu coloquei pra importar. Só quero os que eu
+> coloquei pra importar."*
+
+**Duas causas, e as duas eram minhas:**
+
+1. **Cadastrar quem falta era PADRÃO.** Eu havia ligado isso de manhã, quando
+   ele perguntou *"pq não cadastrou a partir da planilha?"* — e deixei ligado
+   por padrão. Errado: **criar gente é a única coisa que esta importação faz
+   que não se desfaz rodando de novo.** Campo preenchido errado se corrige na
+   importação seguinte; pessoa criada por engano fica. Coisa que não se desfaz
+   não pode ser padrão. Virou opção, **desmarcada**.
+2. **A rota caía na PLANILHA INTEIRA quando não entendia o CPF digitado**, e
+   em silêncio. Campo em branco quer dizer "a planilha inteira", e CPF com um
+   dígito faltando virava campo em branco: *"importe estas três"* virava
+   *"importe as 700"*, sem uma linha de aviso. Agora, **escreveu e eu não
+   entendi ⇒ recusa**, dizendo o que fazer. A diferença entre "não pedi
+   ninguém" e "pedi e você não entendeu" ficou explícita.
+
+**O conserto do estrago — cartão "Cadastros criados recentemente", em
+Importar.** Lista quem NASCEU no cadastro nas últimas horas (lido da
+auditoria, não da tabela: é ela que sabe quando cada um nasceu e por quem),
+com caixinha para marcar e apagar. Sem isso, a única saída seria apagar gente
+no banco à mão.
+
+**Duas decisões dentro dele, com o motivo:**
+
+- **Apaga, não inativa.** Cadastro criado por engano é **lixo, não história**:
+  inativá-lo deixaria no sistema alguém que nunca trabalhou aqui, aparecendo
+  em busca, em lista e em conferência para sempre.
+- **Quem tem movimento não é apagada, e quem decide é o BANCO.** A conferência
+  não é uma lista de tabelas escrita no código — é a tentativa de apagar, e a
+  recusa das chaves que ligam as tabelas, capturada e traduzida para
+  português. Lista escrita à mão esqueceria a tabela criada no mês seguinte;
+  o banco não esquece. Quem tem título, documento, pedido do DP ou ponto volta
+  na lista de recusadas com o motivo, e o lote segue.
+
+**O rastro fica:** antes de apagar, a auditoria grava `CADASTRO_REMOVIDO` com
+nome, CPF e quem apagou — depois do apagamento não há mais id para registrar,
+e sem o rastro isto não se defenderia numa conferência.
+
+---
+
 ### ⚑ 17/11/2026 — DECIDIDO: AS OITO ETAPAS FICAM, porque o Pipefy sai
 
 Ele perguntou se duas delas eram necessárias — *"Precisa dessas abaixo?

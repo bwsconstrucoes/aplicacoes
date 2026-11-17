@@ -4492,9 +4492,29 @@ def api_importar_planilha_cadastro():
     d = request.get_json(silent=True) or {}
     gravar = bool(d.get("gravar"))
     # Lista opcional de CPFs: é como se começa, com dois ou três.
-    cpfs = [c for c in re.findall(r"\d[\d.\-]{9,}", str(d.get("cpfs") or ""))]
+    escrito = str(d.get("cpfs") or "").strip()
+    cpfs = [c for c in re.findall(r"\d[\d.\-]{9,}", escrito)]
     cpfs = [re.sub(r"\D", "", c) for c in cpfs]
     cpfs = [c for c in cpfs if len(c) == 11]
+    # ⚑ ESCREVEU E EU NÃO ENTENDI ⇒ RECUSA, nunca "a planilha inteira".
+    #
+    # Ele, em 17/11/2026: *"tem mais gente no ERP do que eu coloquei para
+    # importar. Só quero os que eu coloquei para importar."*
+    #
+    # Era este o defeito, e ele é do tipo mais caro: campo em branco quer
+    # dizer "a planilha inteira", e CPF que o sistema não conseguia ler virava
+    # campo em branco. Ou seja, um CPF digitado com um dígito faltando
+    # transformava "importe estas três pessoas" em "importe as 700" — sem uma
+    # linha de aviso.
+    #
+    # Agora a diferença entre "não pedi ninguém" e "pedi e você não entendeu"
+    # é explícita, e a segunda para o trabalho antes de ele começar.
+    if escrito and not cpfs:
+        return jsonify({"ok": False, "erro":
+                        "Você escreveu algo no campo de CPF e eu não achei "
+                        "nenhum CPF de 11 dígitos ali. Confira o que digitou. "
+                        "Para trazer a planilha inteira, deixe o campo "
+                        "totalmente em branco."}), 400
     try:
         trabalhos.registrar_todos()
         with get_session() as s:
@@ -4502,11 +4522,17 @@ def api_importar_planilha_cadastro():
             t = tarefas.enfileirar(
                 s, "importar_cadastro_planilha",
                 {"gravar": gravar, "cpfs": cpfs,
+                 # ⚑ CADASTRAR QUEM FALTA É OPT-IN (17/11/2026). Criar gente é
+                 # a única coisa que esta importação faz que não se desfaz com
+                 # outra importação — então não pode ser padrão. Ele achou o
+                 # ERP com mais gente do que pediu, e tinha razão.
+                 "criar": bool(d.get("criar")),
                  "usuario_id": usuario.id if usuario else None},
                 rotulo=(("Conferir sem gravar" if not gravar
                          else "Trazer da planilha")
                         + (f": {len(cpfs)} pessoa(s)" if cpfs
-                           else ": a planilha inteira")),
+                           else ": a planilha inteira")
+                        + (" (cadastrando quem falta)" if d.get("criar") else "")),
                 usuario=usuario)
             linha = tarefas.ler(s, t.id)
             s.commit()
@@ -13077,6 +13103,50 @@ def api_colaborador_etapa(colaborador_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao mover a etapa do cadastro")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/criados-recentemente")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_colaboradores_criados_recentemente():
+    """Quem nasceu no cadastro nas últimas horas — para conferir e desfazer.
+
+    ⚑ 17/11/2026. Ele, depois de uma importação: *"tem mais gente no ERP do
+    que eu coloquei para importar. Só quero os que eu coloquei para importar."*
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    horas = request.args.get("horas", type=int) or 48
+    with get_session() as s:
+        return jsonify({"ok": True, "horas": horas,
+                        "pessoas": svc_pessoas.criados_recentemente(
+                            s, horas=min(max(horas, 1), 720))})
+
+
+@bp.route("/erp/api/colaboradores/remover", methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_colaboradores_remover():
+    """Apaga cadastros criados por engano — um por um, dizendo o que deu.
+
+    Recusa quem tem movimento, e a recusa vem do BANCO (ver
+    `pessoas.remover_cadastro`). Quem não pôde ser apagada volta na lista de
+    recusadas com o motivo, em vez de o lote inteiro falhar por causa de uma.
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    d = request.get_json(silent=True) or {}
+    ids = [int(x) for x in (d.get("ids") or []) if str(x).strip().isdigit()]
+    if not ids:
+        return jsonify({"ok": False, "erro": "Nenhuma pessoa escolhida."}), 400
+    apagadas, recusadas = [], []
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        for cid in ids:
+            try:
+                apagadas.append(svc_pessoas.remover_cadastro(s, cid, usuario))
+            except ErroValidacao as e:
+                recusadas.append({"id": cid, "motivo": str(e)})
+        s.commit()
+    return jsonify({"ok": True, "apagadas": apagadas, "recusadas": recusadas})
 
 
 @bp.route("/erp/api/colaboradores/para-folha")

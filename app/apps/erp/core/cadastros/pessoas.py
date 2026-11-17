@@ -1564,3 +1564,84 @@ def fila_do_cadastro(s: Session, *, etapa: str = "",
         })
     saida.sort(key=lambda x: (-(x["dias_parado"] or 0), _sem_acento(x["nome"])))
     return saida
+
+
+# ===========================================================================
+# DESFAZER UM CADASTRO CRIADO POR ENGANO (17/11/2026)
+#
+# Ele, depois de uma importação: *"tem mais gente no ERP do que eu coloquei
+# para importar. Só quero os que eu coloquei para importar."*
+#
+# A causa foi consertada em dois lugares (a rota recusa CPF que não entendeu em
+# vez de cair na planilha inteira, e cadastrar quem falta virou opção
+# desmarcada). Mas o estrago já estava feito, e sem isto a única saída seria
+# apagar gente no banco à mão — que é a pior coisa que existe.
+#
+# ⚠️ POR QUE APAGAR, E NÃO "INATIVAR": a pessoa nunca foi da empresa no ERP.
+# Marcar como desligada deixaria no cadastro alguém que nunca trabalhou, e ela
+# apareceria em busca, em lista e em conferência para sempre, confundindo quem
+# olha. Cadastro criado por engano é LIXO, não história.
+#
+# ⚠️ E SÓ APAGA QUEM NÃO TEM MOVIMENTO. Quem já tem título, documento, pedido
+# do DP ou batida de ponto não é engano: é gente com vida no sistema. A
+# conferência disso NÃO é uma lista de tabelas escrita aqui — é o próprio banco
+# que recusa, pelas chaves que ligam as tabelas, e a recusa é capturada e
+# explicada. Lista escrita à mão esqueceria uma tabela nova; o banco não.
+# ===========================================================================
+def criados_recentemente(s: Session, *, horas: int = 48) -> list[dict[str, Any]]:
+    """Quem foi CRIADO nas últimas horas, para alguém conferir e desfazer.
+
+    Lê o registro de auditoria, não a tabela: é ele que sabe QUANDO cada
+    cadastro nasceu e quem o criou.
+    """
+    linhas = s.execute(text("""
+        SELECT c.id, c.nome, c.cpf, c.situacao, c.etapa,
+               e.criado_em, u.nome AS por_quem
+          FROM eventos e
+          JOIN colaboradores c ON c.id = e.entidade_id
+          LEFT JOIN usuarios u ON u.id = e.usuario_id
+         WHERE e.entidade_tipo = 'colaborador'
+           AND e.acao = 'CRIADO'
+           AND e.criado_em >= NOW() - CAST(:janela AS interval)
+         ORDER BY e.criado_em DESC, c.nome
+    """), {"janela": f"{int(horas)} hours"}).mappings().all()
+    return [{"id": l["id"], "nome": l["nome"], "cpf": l["cpf"],
+             "situacao": l["situacao"] or "ATIVO", "etapa": l["etapa"] or "",
+             "criado_em": l["criado_em"].isoformat() if l["criado_em"] else "",
+             "por_quem": l["por_quem"] or "—"} for l in linhas]
+
+
+def remover_cadastro(s: Session, colaborador_id: int,
+                     usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Apaga um cadastro que nunca devia ter existido.
+
+    Recusa quem tem movimento — e quem decide isso é o BANCO, pelas chaves que
+    ligam as tabelas. Tentar e ouvir "não" é mais seguro que conferir numa
+    lista de tabelas escrita aqui, que esqueceria a tabela criada no mês
+    seguinte.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    nome, cpf = c.nome, c.cpf
+
+    # A auditoria é escrita ANTES: depois do apagamento não há mais id para
+    # registrar, e o rastro de quem apagou o quê é o que torna isto
+    # defensável numa conferência.
+    registrar_evento(s, "colaborador", c.id, "CADASTRO_REMOVIDO",
+                     {"nome": nome, "cpf": cpf,
+                      "motivo": "criado por engano em importação"},
+                     usuario.id if usuario else None)
+    try:
+        with s.begin_nested():
+            s.delete(c)
+            s.flush()
+    except IntegrityError:
+        raise ErroValidacao(
+            f"{nome} não pode ser apagada: ela já tem movimento no sistema "
+            "(título, documento, pedido do DP ou ponto). Isso não é cadastro "
+            "criado por engano — se ela não devia estar aqui, desligue em vez "
+            "de apagar.")
+    return {"nome": nome, "cpf": cpf}

@@ -264,7 +264,7 @@ def test_conferir_sem_gravar_nao_toca_no_cadastro(mundo):
 def test_quem_esta_ATIVO_na_planilha_e_CADASTRADO(mundo):
     """Ele, em 17/11/2026, vendo uma pessoa listada como "não existe no ERP":
     *"Pq não cadastrou a partir da planilha?"*"""
-    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True, criar=True,
                     ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
                                 "Nome Completo": "NINGUEM CONHECIDO"}))
     assert [x["cpf"] for x in r["criadas"]] == ["11144477735"]
@@ -281,7 +281,7 @@ def test_quem_esta_ATIVO_na_planilha_e_CADASTRADO(mundo):
 def test_quem_esta_DESLIGADO_na_planilha_NAO_e_cadastrado(mundo):
     """São ~2.960 das 3.667 linhas. Trazer essa base morta encheria lista de
     obra, folha e relatório — e a decisão dele, de 04/11/2026, é só os ativos."""
-    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True, criar=True,
                     ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
                                 "Nome Completo": "JA SAIU DA EMPRESA",
                                 "Data de Saída": "10/03/2025"}))
@@ -631,3 +631,71 @@ def test_a_lista_de_colunas_que_eu_leio_cobre_as_que_ele_ditou():
                    "Nº CTPS", "Série (CTPS)", "UF (CTPS)",
                    "Data de Emissão (CTPS)"):
         assert pl._cru(coluna) in uso, coluna
+
+
+# ---------------------------------------------------------------------------
+# "SÓ QUERO OS QUE EU COLOQUEI PRA IMPORTAR" (17/11/2026)
+#
+# Ele, depois de uma importação: *"tem mais gente no ERP do que eu coloquei
+# para importar."*
+#
+# Duas causas, as duas consertadas, e as duas aqui:
+#   1. cadastrar quem falta era PADRÃO. Criar gente é a única coisa que esta
+#      importação faz que não se desfaz rodando de novo — não pode ser padrão;
+#   2. a rota caía na PLANILHA INTEIRA quando não entendia o CPF digitado.
+#      Campo em branco quer dizer "tudo", e CPF com um dígito faltando virava
+#      campo em branco: "importe estas três" virava "importe as 700", calado.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_por_padrao_a_importacao_NAO_cria_gente(mundo):
+    """Sem pedir, ninguém nasce."""
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
+                                "Nome Completo": "NINGUEM CONHECIDO"}))
+    assert not r["criadas"]
+    assert [x["cpf"] for x in r["sem_cadastro"]] == ["11144477735"]
+
+
+@pytest.mark.banco
+def test_cadastro_criado_por_engano_pode_ser_apagado(mundo):
+    """Cadastro criado por engano é lixo, não história: inativá-lo deixaria no
+    sistema alguém que nunca trabalhou aqui, aparecendo em busca para sempre."""
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    pl.importar(mundo["s"], mundo["dp"], gravar=True, criar=True,
+                ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
+                            "Nome Completo": "ENTROU SEM SER PEDIDO"}))
+    mundo["s"].flush()
+    nova = mundo["s"].scalars(
+        select(Colaborador).where(Colaborador.cpf == "11144477735")).first()
+    assert nova is not None
+
+    # Ela aparece na lista de "criados recentemente", que é como ele a acha.
+    recentes = svc.criados_recentemente(mundo["s"], horas=48)
+    assert any(p["cpf"] == "11144477735" for p in recentes)
+
+    svc.remover_cadastro(mundo["s"], nova.id, mundo["dp"])
+    mundo["s"].flush()
+    assert mundo["s"].scalars(
+        select(Colaborador).where(Colaborador.cpf == "11144477735")).first() is None
+
+
+@pytest.mark.banco
+def test_quem_ja_tem_movimento_NAO_e_apagada(mundo):
+    """Quem já tem documento, título ou ponto não é engano: é gente com vida no
+    sistema. E quem recusa é o BANCO, pelas chaves — não uma lista de tabelas
+    escrita à mão, que esqueceria a tabela criada no mês seguinte."""
+    from sqlalchemy import text
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    # Um pedido do DP no nome dela é movimento suficiente: alguém já pediu
+    # alguma coisa para esta pessoa, então ela não é cadastro criado por engano.
+    mundo["s"].execute(text(
+        "INSERT INTO dp_pedidos (numero, template, colaborador_id)"
+        " VALUES ('TESTE-1', 'CADASTRO', :c)"),
+        {"c": mundo["pessoa"].id})
+    mundo["s"].flush()
+    with pytest.raises(ErroValidacao) as e:
+        svc.remover_cadastro(mundo["s"], mundo["pessoa"].id, mundo["dp"])
+    assert "movimento" in str(e.value)

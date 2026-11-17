@@ -102,7 +102,7 @@ def importar_cadastro_planilha(s: Session, parametros: dict[str, Any],
     andamento(0, 1, "Lendo a planilha “Dados Documentos”…")
     rel = svc.importar(s, _usuario(s, parametros), gravar=gravar,
                        cpfs=parametros.get("cpfs"),
-                       criar=parametros.get("criar", True) is not False)
+                       criar=bool(parametros.get("criar")))
     if gravar:
         s.commit()
     andamento(1, 1, "Terminado.")

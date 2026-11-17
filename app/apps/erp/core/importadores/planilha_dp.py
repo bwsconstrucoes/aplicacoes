@@ -622,7 +622,7 @@ def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
 # ===========================================================================
 def importar(s, usuario=None, *, gravar: bool = False,
              cpfs: Optional[list[str]] = None,
-             criar: bool = True,
+             criar: bool = False,
              ler=None) -> dict[str, Any]:
     """Enche o cadastro de quem está na planilha, e cadastra quem falta.
 
