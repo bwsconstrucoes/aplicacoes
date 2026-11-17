@@ -683,20 +683,44 @@ def test_cadastro_criado_por_engano_pode_ser_apagado(mundo):
 
 
 @pytest.mark.banco
-def test_quem_ja_tem_movimento_NAO_e_apagada(mundo):
-    """Quem já tem documento, título ou ponto não é engano: é gente com vida no
-    sistema. E quem recusa é o BANCO, pelas chaves — não uma lista de tabelas
-    escrita à mão, que esqueceria a tabela criada no mês seguinte."""
-    from sqlalchemy import text
-    from app.apps.erp.core.comum.auditoria import ErroValidacao
+def test_o_que_esta_pendurado_na_pessoa_VAI_JUNTO(mundo):
+    """Ele, em 17/11/2026, vendo a recusa de alguém que ele nunca tocou:
+    *"Como se nunca fiz nada no ERP?"* — e depois *"não quero descobrir,
+    quero EXCLUIR."*
 
-    # Um pedido do DP no nome dela é movimento suficiente: alguém já pediu
-    # alguma coisa para esta pessoa, então ela não é cadastro criado por engano.
+    O que "segurava" essas pessoas era o documento que a PRÓPRIA importação
+    anexou e a linha que o ponto criou. Chamar isso de "movimento no sistema"
+    é chamar de trabalho o rastro da carga que ele quer desfazer.
+    """
+    from sqlalchemy import select, text
+    from app.apps.erp.db.models.cadastros import Colaborador
+
     mundo["s"].execute(text(
         "INSERT INTO dp_pedidos (numero, template, colaborador_id)"
         " VALUES ('TESTE-1', 'CADASTRO', :c)"),
         {"c": mundo["pessoa"].id})
     mundo["s"].flush()
-    with pytest.raises(ErroValidacao) as e:
+
+    r = svc.remover_cadastro(mundo["s"], mundo["pessoa"].id, mundo["dp"],
+                             levar_junto=True)
+    mundo["s"].flush()
+    assert mundo["s"].scalars(select(Colaborador).where(
+        Colaborador.cpf == "09676749486")).first() is None
+    # E o relatório DIZ o que foi junto — é o que substitui a recusa.
+    assert r["levou_junto"].get("public.dp_pedidos") == 1
+
+
+@pytest.mark.banco
+def test_sem_levar_junto_o_banco_ainda_recusa(mundo):
+    """A porta estreita continua existindo para quem chamar sem autorização
+    explícita: apagar levando tudo é escolha de quem chama, não padrão."""
+    from sqlalchemy import text
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    mundo["s"].execute(text(
+        "INSERT INTO dp_pedidos (numero, template, colaborador_id)"
+        " VALUES ('TESTE-2', 'CADASTRO', :c)"),
+        {"c": mundo["pessoa"].id})
+    mundo["s"].flush()
+    with pytest.raises(ErroValidacao):
         svc.remover_cadastro(mundo["s"], mundo["pessoa"].id, mundo["dp"])
-    assert "movimento" in str(e.value)

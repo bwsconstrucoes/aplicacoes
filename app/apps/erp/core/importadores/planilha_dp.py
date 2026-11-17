@@ -880,8 +880,13 @@ def importar(s, usuario=None, *, gravar: bool = False,
                 rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome})
                 continue
             try:
-                svc.remover_cadastro(s, pessoa.id, usuario)
-                rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome})
+                # ⚑ LEVA JUNTO o que está pendurado na pessoa (documento da
+                # própria importação, linha do ponto, pedido do DP). Ele, em
+                # 17/11/2026, vendo a recusa: *"como se nunca fiz nada no
+                # ERP?"* e *"não quero descobrir, quero EXCLUIR."*
+                r = svc.remover_cadastro(s, pessoa.id, usuario, levar_junto=True)
+                rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome,
+                                        "levou_junto": r.get("levou_junto") or {}})
             except ErroValidacao as e:
                 rel["nao_deu_para_apagar"].append({
                     "cpf": digitos, "nome": pessoa.nome, "motivo": str(e)[:300]})

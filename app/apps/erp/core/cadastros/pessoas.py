@@ -1675,14 +1675,77 @@ def criados_recentemente(s: Session, *, horas: int = 48) -> list[dict[str, Any]]
              "por_quem": l["por_quem"] or "—"} for l in linhas]
 
 
+# ⚠️ AS TABELAS QUE GUARDAM DINHEIRO LANÇADO.
+#
+# NÃO servem mais para recusar o apagamento — servem para CONTAR e MOSTRAR.
+# Ele foi literal em 17/11/2026, depois de duas recusas minhas: *"não quero
+# descobrir, quero EXCLUIR."* Apagar é decisão dele, e ele a tomou.
+#
+# O que fica é o aviso honesto: se o relatório mostrar número aqui, foi
+# apagado lançamento contábil junto, e ele precisa ver isso escrito — não
+# descobrir depois.
+DINHEIRO_LANCADO = {
+    "public.titulos": "título lançado",
+    "public.titulo_colaboradores": "rateio de título",
+    "public.despesa_colaborador_itens": "item de despesa",
+}
+
+
+def _quem_aponta_para_colaborador(s: Session) -> list[tuple[str, str]]:
+    """(tabela, coluna) de tudo que aponta para `colaboradores`, lido do BANCO.
+
+    Lido do banco, e não escrito aqui, porque lista escrita à mão esquece a
+    tabela criada depois — e aí o apagamento volta a falhar com um erro que
+    ninguém entende. Só vêm as que SEGURAM: as que já apagam em cascata se
+    resolvem sozinhas.
+    """
+    linhas = s.execute(text("""
+        SELECT n.nspname || '.' || c.conrelid::regclass::text AS tabela,
+               a.attname AS coluna
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          JOIN pg_namespace n ON n.oid = t.relnamespace
+          JOIN pg_attribute a ON a.attrelid = c.conrelid
+                             AND a.attnum = ANY (c.conkey)
+         WHERE c.contype = 'f'
+           AND c.confrelid = 'public.colaboradores'::regclass
+           AND c.confdeltype <> 'c'
+    """)).all()
+    saida = []
+    for tabela, coluna in linhas:
+        # O regclass já traz o schema quando não é o `public` do search_path;
+        # normaliza para "schema.tabela" sem duplicar.
+        nome = tabela.split(".")
+        limpo = ".".join(nome[-2:]) if len(nome) >= 2 else "public." + tabela
+        if "." not in limpo:
+            limpo = "public." + limpo
+        saida.append((limpo, coluna))
+    return saida
+
+
 def remover_cadastro(s: Session, colaborador_id: int,
-                     usuario: Optional[Usuario]) -> dict[str, Any]:
+                     usuario: Optional[Usuario], *,
+                     levar_junto: bool = False) -> dict[str, Any]:
     """Apaga um cadastro que nunca devia ter existido.
 
-    Recusa quem tem movimento — e quem decide isso é o BANCO, pelas chaves que
-    ligam as tabelas. Tentar e ouvir "não" é mais seguro que conferir numa
-    lista de tabelas escrita aqui, que esqueceria a tabela criada no mês
-    seguinte.
+    ⚑ `levar_junto` ENTROU EM 17/11/2026, e o motivo está nas palavras dele.
+    A primeira versão recusava quem tivesse QUALQUER coisa pendurada, e ele
+    respondeu, olhando a recusa:
+
+        *"Como se nunca fiz nada no ERP?"*
+        *"Quero excluir, já disse. Só quero minha lista."*
+        *"Não quero descobrir, quero EXCLUIR."*
+
+    Ele tinha razão duas vezes. Primeiro porque o que "segurava" essas pessoas
+    era o DOCUMENTO QUE A PRÓPRIA IMPORTAÇÃO ANEXOU e a linha que o ponto
+    criou — chamar isso de "movimento no sistema" é chamar de trabalho o
+    rastro da carga que ele quer desfazer. Segundo porque, depois de ele
+    mandar três vezes, insistir em recusar não é cuidado: é desobedecer.
+
+    Então, com `levar_junto`, TUDO o que aponta para a pessoa morre com ela.
+    O que fica no lugar da recusa é o RELATÓRIO: `levou_junto` diz, por
+    tabela, quanta coisa foi apagada — e se vier número de título ou de
+    despesa, ele vê na tela que lançamento contábil foi junto.
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -1690,12 +1753,33 @@ def remover_cadastro(s: Session, colaborador_id: int,
     if c is None:
         raise ErroValidacao("Colaborador não encontrado.")
     nome, cpf = c.nome, c.cpf
+    levou: dict[str, int] = {}
+
+    if levar_junto:
+        # TUDO o que aponta para esta pessoa vai junto — documento, ponto,
+        # pedido do DP, divergência, título. As tabelas são DESCOBERTAS no
+        # banco, para que a criada no mês que vem não precise ser lembrada
+        # aqui; o que apaga em cascata nem aparece, porque se resolve sozinho.
+        #
+        # ⚠️ Se vier número das tabelas de `DINHEIRO_LANCADO`, foi apagado
+        # lançamento contábil. Não é motivo para parar — ele autorizou —, mas
+        # TEM de aparecer no relatório, e é por isso que `levou` é devolvido.
+        for tabela, coluna in _quem_aponta_para_colaborador(s):
+            try:
+                with s.begin_nested():
+                    r = s.execute(
+                        text(f"DELETE FROM {tabela} WHERE {coluna} = :i"),
+                        {"i": c.id})
+                    if r.rowcount:
+                        levou[tabela] = levou.get(tabela, 0) + r.rowcount
+            except Exception as erro:              # noqa: BLE001
+                logger.warning("remover %s: %s não deu (%s)", cpf, tabela, erro)
 
     # A auditoria é escrita ANTES: depois do apagamento não há mais id para
     # registrar, e o rastro de quem apagou o quê é o que torna isto
     # defensável numa conferência.
     registrar_evento(s, "colaborador", c.id, "CADASTRO_REMOVIDO",
-                     {"nome": nome, "cpf": cpf,
+                     {"nome": nome, "cpf": cpf, "levou_junto": levou,
                       "motivo": "criado por engano em importação"},
                      usuario.id if usuario else None)
     try:
@@ -1704,8 +1788,6 @@ def remover_cadastro(s: Session, colaborador_id: int,
             s.flush()
     except IntegrityError:
         raise ErroValidacao(
-            f"{nome} não pode ser apagada: ela já tem movimento no sistema "
-            "(título, documento, pedido do DP ou ponto). Isso não é cadastro "
-            "criado por engano — se ela não devia estar aqui, desligue em vez "
-            "de apagar.")
-    return {"nome": nome, "cpf": cpf}
+            f"{nome} não pode ser apagada: ainda há registro ligado a ela no "
+            "sistema. Me mande este recado que eu descubro o que é.")
+    return {"nome": nome, "cpf": cpf, "levou_junto": levou}

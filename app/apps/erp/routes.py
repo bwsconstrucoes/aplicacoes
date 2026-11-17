@@ -13228,7 +13228,8 @@ def api_colaboradores_remover():
         usuario = _usuario_logado(s)
         for cid in ids:
             try:
-                apagadas.append(svc_pessoas.remover_cadastro(s, cid, usuario))
+                apagadas.append(svc_pessoas.remover_cadastro(
+                    s, cid, usuario, levar_junto=True))
             except ErroValidacao as e:
                 recusadas.append({"id": cid, "motivo": str(e)})
         s.commit()
