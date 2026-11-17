@@ -962,7 +962,11 @@ def test_cada_fase_do_pipe_vira_a_etapa_que_ele_ditou():
     assert etapa_da_fase("Colaboradores Desligados")[0] == "DESLIGADO"
     assert etapa_da_fase("Cadastro Concluído")[0] == "CONCLUIDO"
     assert etapa_da_fase("Cadastro Inicial")[0] == "CADASTRO_INICIAL"
-    assert etapa_da_fase("Cadastros Adicionais")[0] == "EM_CONFERENCIA"
+    # "Conferência" morreu em 17/11/2026, fundida na "Inicial" (migração 107).
+    assert etapa_da_fase("Cadastros Adicionais")[0] == "CADASTRO_INICIAL"
+    # E "Solicitações DP", que não tinha par, foi para "Solicitações" — ele:
+    # *"senão eu vou perder meu controle."*
+    assert etapa_da_fase("Solicitações DP")[0] == "NA_CONTABILIDADE"
 
 
 def test_a_fase_diz_tambem_a_SITUACAO_que_e_o_que_o_ponto_le():
@@ -985,16 +989,24 @@ def test_fase_desconhecida_NAO_mexe_na_etapa():
     assert etapa_da_fase(None) == (None, None)
 
 
-def test_os_nomes_das_etapas_perderam_a_palavra_cadastro():
-    """Ele: *"esse nome cadastro pode ser eliminado. Vai ficar inicial só,
-    concluído, cancelado."* A palavra aparecia em três dos oito e faltava nos
-    outros cinco — não distinguia nada, só fazia a lista parecer duas."""
-    from app.apps.erp.core.cadastros.pessoas import ETAPA_ROTULOS
-    assert ETAPA_ROTULOS["CADASTRO_INICIAL"] == "Inicial"
-    assert ETAPA_ROTULOS["EM_CONFERENCIA"] == "Conferência"
-    assert ETAPA_ROTULOS["CONCLUIDO"] == "Concluído"
-    assert ETAPA_ROTULOS["CANCELADO"] == "Cancelado"
-    assert not [r for r in ETAPA_ROTULOS.values() if "adastro" in r]
+def test_as_SETE_etapas_que_ele_ditou_e_nesta_ordem():
+    """Ele, em 17/11/2026: *"bota inicial, assinar, contabilidade, concluído,
+    afastado e desligado e cancelado (…) esse na contabilidade a gente vai
+    chamar de solicitações. Vamos deixar depois de concluído."*
+
+    A ORDEM importa: é a ordem das colunas do quadro e dos contadores.
+    """
+    from app.apps.erp.core.cadastros.pessoas import ETAPAS, ETAPA_ROTULOS
+    assert [ETAPA_ROTULOS[e] for e in ETAPAS] == [
+        "Inicial", "Assinar", "Concluído", "Solicitações",
+        "Afastado", "Desligado", "Cancelado"]
+    # "Conferência" saiu de circulação, mas o rótulo fica para o histórico e a
+    # ficha antiga não aparecerem com o código cru.
+    assert "EM_CONFERENCIA" not in ETAPAS
+    assert "EM_CONFERENCIA" in ETAPA_ROTULOS
+    # A palavra "cadastro" continua fora dos nomes (pedido dele em 16/11).
+    assert not [ETAPA_ROTULOS[e] for e in ETAPAS
+                if "adastro" in ETAPA_ROTULOS[e]]
 
 
 @pytest.mark.banco

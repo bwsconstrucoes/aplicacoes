@@ -68,15 +68,43 @@
     </div>
   </div>
 
-  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
-  <div class="campo"><label>Cargo</label><select id="f-cargo"></select></div>
-  <div class="campo"><label>Convenção</label><select id="f-convencao"></select></div>
-  <div class="campo"><label>Pagamento</label>
-    <select id="f-pagamento">
-      <option value="">todos</option>
-      <option value="MENSALISTA">mensalista</option>
-      <option value="DIARISTA">diarista</option>
-    </select></div>
+  {# ⚑ OBRA, CARGO E CONVENÇÃO VIRARAM BLOCOS, como no Análise de SPs
+     (17/11/2026). Ele: *"esse tipo de filtro aqui de obra e cargo tá feio. Vê
+     como é que tá em análise de SPs também na parte de solicitações para
+     ficar parecido."*
+
+     O que muda além do visual, e é o que importa: dava para escolher UMA obra
+     só. Agora marca-se quantas quiser, o bloco abre e fecha, mostra quantas
+     estão marcadas, e ganha uma procura quando a lista passa de doze — que é
+     a mesma régua de lá, pelo mesmo motivo: doze se acham com o olho, oitenta
+     obras não. #}
+  <div class="filtro" id="bl-obra">
+    <button class="filtro-cab" type="button"><span>Obra</span>
+      <span class="filtro-badge oculto"></span><span class="seta">▾</span></button>
+    <div class="filtro-cont"></div>
+  </div>
+  <div class="filtro" id="bl-cargo">
+    <button class="filtro-cab" type="button"><span>Cargo</span>
+      <span class="filtro-badge oculto"></span><span class="seta">▾</span></button>
+    <div class="filtro-cont"></div>
+  </div>
+  <div class="filtro" id="bl-convencao">
+    <button class="filtro-cab" type="button"><span>Convenção</span>
+      <span class="filtro-badge oculto"></span><span class="seta">▾</span></button>
+    <div class="filtro-cont"></div>
+  </div>
+  <div class="filtro">
+    <button class="filtro-cab" type="button"><span>Pagamento</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="pag" value="" checked>
+        <span class="rotulo">Todos</span></label>
+      <label class="opcao"><input type="radio" name="pag" value="MENSALISTA">
+        <span class="rotulo">Mensalista</span></label>
+      <label class="opcao"><input type="radio" name="pag" value="DIARISTA">
+        <span class="rotulo">Diarista</span></label>
+    </div>
+  </div>
 
   <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:12px">
     + Colaborador</button>
@@ -120,13 +148,39 @@
    de nada — o valor está em poder ir de "12 sem papel" para as 12 pessoas. #}
 <div class="kpis" id="pendencias" style="margin-bottom:14px"></div>
 
+{# ⚑ O QUADRO (KANBAN) — pedido dele em 17/11/2026, e com o motivo:
+
+   *"Para mudar a pessoa de etapa, eu tenho que clicar, buscar a pessoa,
+   clicar na pessoa, editar o cadastro em histórico e mudar a etapa. Isso é
+   burrice. (…) a movimentação das pessoas de etapa tem que ser simples. (…)
+   Tem uma visão Kanban também aqui. (…) aí você exibe na caixinha da pessoa o
+   nome, CPF, o cargo, o tipo de vínculo, a obra."*
+
+   Arrastar é o gesto que ele já tem na mão, do Pipefy. A lista continua ao
+   lado porque ela é melhor para procurar e conferir — o quadro é para MOVER.
+
+   ⚠️ O QUE APARECE NA CAIXINHA É ESCOLHA DELE: *"eu queria até poder definir o
+   que é exibido nesse…"* — as marcações ficam guardadas no próprio navegador,
+   porque é preferência de quem olha, não dado do sistema. #}
 <div class="tabela-wrap">
   <div class="tabela-barra">
     <span id="resumo-lista" class="desc"></span>
     <span class="espaco"></span>
+    <div style="display:flex; gap:4px">
+      <button class="btn secundario" id="ver-lista">Lista</button>
+      <button class="btn" id="ver-quadro">Quadro</button>
+    </div>
+    <span class="espaco"></span>
     <span id="exportar" style="display:flex; gap:6px"></span>
   </div>
-  <div class="tabela-rolagem">
+  <div id="quadro-opcoes" class="oculto"
+       style="padding:8px 10px; border-bottom:1px solid var(--borda);
+              display:flex; gap:14px; flex-wrap:wrap; align-items:center">
+    <span class="desc">Mostrar na caixinha:</span>
+  </div>
+  <div id="quadro" class="oculto" style="overflow-x:auto; padding:10px">
+  </div>
+  <div class="tabela-rolagem" id="area-lista">
   {# ⚑ A EMPRESA NA LISTA (13/11/2026). Ele: *"aqui em colaboradores, essa
      questão sempre vai ser um dado importante. Para a gente visualizar fácil,
      a empresa."* #}
@@ -136,7 +190,10 @@
     <tbody id="corpo"></tbody></table>
 </div><div class="vazio oculto" id="vazio"></div></div>
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
-  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  {# "Fechar" volta UMA tela quando veio da ficha da pessoa — ver
+     `VOLTAR_PARA_FICHA`. #}
+  <button class="topo-btn" style="margin-left:auto"
+          onclick="fecharFormulario()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
 {# A FICHA ÚNICA DA PESSOA (13/11/2026): a mesma janela que abre clicando no nome em qualquer tela do ponto — o
    cadastro, os pagamentos, o ponto, os aparelhos, a configuração do ponto e o rosto. Ela mora no módulo do ponto
@@ -186,13 +243,55 @@ async function carregar(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+{# A partir de quantas opções o bloco ganha procura. É a mesma régua do
+   Análise de SPs, e pelo mesmo motivo: doze se acham com o olho; oitenta
+   obras, não — e rolar a lista procurando "creche" é coisa que se faz vinte
+   vezes por dia. #}
+const PROCURA_A_PARTIR_DE = 12;
+
+function montarBloco(id, nome, itens, rotulo){
+  const bloco = els(id);
+  if (!bloco) return;
+  const cont = bloco.querySelector(".filtro-cont");
+  cont.innerHTML =
+    (itens.length >= PROCURA_A_PARTIR_DE
+      ? `<input type="search" class="procura-opcao" autocomplete="off"
+           placeholder="Procurar…" aria-label="Procurar">` : "")
+    + `<div class="filtro-opcoes">` + itens.map(x =>
+        `<label class="opcao"><input type="checkbox" name="${nome}"
+           value="${x.id}"><span class="rotulo"
+           title="${escapar(rotulo(x))}">${escapar(rotulo(x))}</span></label>`
+      ).join("") + `</div>`;
+  cont.querySelectorAll(`input[name=${nome}]`).forEach(i =>
+    i.addEventListener("change", () => { pintarBadge(bloco, nome); desenhar(); }));
+  const procura = cont.querySelector(".procura-opcao");
+  if (procura) procura.addEventListener("input", () => {
+    const q = procura.value.trim().toLowerCase();
+    cont.querySelectorAll(".opcao").forEach(o =>
+      o.classList.toggle("oculto",
+        !!q && !o.textContent.toLowerCase().includes(q)));
+  });
+}
+
+function pintarBadge(bloco, nome){
+  const n = bloco.querySelectorAll(`input[name=${nome}]:checked`).length;
+  const badge = bloco.querySelector(".filtro-badge");
+  if (!badge) return;
+  badge.textContent = n;
+  badge.classList.toggle("oculto", !n);
+}
+
+function marcadosDe(id, nome){
+  const bloco = els(id);
+  if (!bloco) return [];
+  return [...bloco.querySelectorAll(`input[name=${nome}]:checked`)]
+    .map(i => i.value);
+}
+
 function montarFiltros(){
-  els("f-obra").innerHTML = `<option value="">todas</option>` +
-    OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("");
-  els("f-cargo").innerHTML = `<option value="">todos</option>` +
-    CARGOS.map(c=>`<option value="${c.id}">${escapar(c.nome)}</option>`).join("");
-  els("f-convencao").innerHTML = `<option value="">todas</option>` +
-    CONVENCOES.map(c=>`<option value="${c.id}">${escapar(c.nome)}</option>`).join("");
+  montarBloco("bl-obra", "fobra", OBRAS, rotuloObra);
+  montarBloco("bl-cargo", "fcargo", CARGOS, c => c.nome);
+  montarBloco("bl-convencao", "fconvencao", CONVENCOES, c => c.nome);
   // AS ETAPAS COM A CONTA DE CADA UMA: é o quadro do Pipefy virado filtro.
   els("f-etapas").innerHTML =
     `<label class="opcao"><input type="radio" name="etapa" value="" checked>
@@ -246,27 +345,192 @@ function pintarPendencias(base){
     }));
 }
 
+{# ===========================================================================
+   O QUADRO — ver o comentário no HTML, acima da área `#quadro`
+   =========================================================================== #}
+const CAIXINHA = [
+  {chave: "cpf",      rotulo: "CPF",      padrao: true},
+  {chave: "cargo",    rotulo: "Cargo",    padrao: true},
+  {chave: "vinculo",  rotulo: "Vínculo",  padrao: true},
+  {chave: "obra",     rotulo: "Obra",     padrao: true},
+  {chave: "empresa",  rotulo: "Empresa",  padrao: false},
+  {chave: "pendencias", rotulo: "Pendências", padrao: true},
+  {chave: "dias",     rotulo: "Dias parado", padrao: false},
+];
+{# A preferência de quem olha mora no navegador DELE: não é dado do sistema, e
+   guardá-la no banco obrigaria todo mundo a ver o mesmo. #}
+function mostraNaCaixinha(){
+  try {
+    const salvo = JSON.parse(localStorage.getItem("erp-caixinha") || "null");
+    if (Array.isArray(salvo)) return new Set(salvo);
+  } catch(e){ /* navegador sem localStorage: vale o padrão */ }
+  return new Set(CAIXINHA.filter(x => x.padrao).map(x => x.chave));
+}
+let CAMPOS_CAIXINHA = mostraNaCaixinha();
+let MODO = "lista";
+
+function montarOpcoesDoQuadro(){
+  const onde = els("quadro-opcoes");
+  if (!onde || onde.dataset.pronto) return;
+  onde.innerHTML = `<span class="desc">Mostrar na caixinha:</span>` +
+    CAIXINHA.map(x => `<label class="opcao" style="margin:0">
+      <input type="checkbox" data-caixinha="${x.chave}"
+        ${CAMPOS_CAIXINHA.has(x.chave) ? "checked" : ""}>
+      <span class="rotulo">${escapar(x.rotulo)}</span></label>`).join("");
+  onde.querySelectorAll("[data-caixinha]").forEach(i =>
+    i.addEventListener("change", () => {
+      i.checked ? CAMPOS_CAIXINHA.add(i.dataset.caixinha)
+                : CAMPOS_CAIXINHA.delete(i.dataset.caixinha);
+      try {
+        localStorage.setItem("erp-caixinha",
+                             JSON.stringify([...CAMPOS_CAIXINHA]));
+      } catch(e){ /* sem localStorage, vale só nesta visita */ }
+      desenhar();
+    }));
+  onde.dataset.pronto = "1";
+}
+
+function trocarModo(novo){
+  MODO = novo;
+  const quadro = novo === "quadro";
+  els("quadro").classList.toggle("oculto", !quadro);
+  els("quadro-opcoes").classList.toggle("oculto", !quadro);
+  els("area-lista").classList.toggle("oculto", quadro);
+  els("ver-quadro").className = quadro ? "btn" : "btn secundario";
+  els("ver-lista").className = quadro ? "btn secundario" : "btn";
+  if (quadro) montarOpcoesDoQuadro();
+  try { localStorage.setItem("erp-modo-colaboradores", novo); } catch(e){}
+  desenhar();
+}
+
+function caixinhaDaPessoa(c){
+  const linhas = [];
+  if (CAMPOS_CAIXINHA.has("cpf")) linhas.push(documento(c.cpf));
+  if (CAMPOS_CAIXINHA.has("cargo")) linhas.push(escapar(c.cargo || c.funcao || "sem cargo"));
+  if (CAMPOS_CAIXINHA.has("vinculo"))
+    linhas.push(escapar((c.vinculo === "PRESTADOR" ? "Prestador" : "CTPS")
+      + (c.tipo_contrato_rotulo ? ` · ${c.tipo_contrato_rotulo}` : "")));
+  if (CAMPOS_CAIXINHA.has("obra")) linhas.push(escapar(c.obra || "sem obra"));
+  if (CAMPOS_CAIXINHA.has("empresa")) linhas.push(escapar(c.empresa || "—"));
+  if (CAMPOS_CAIXINHA.has("dias") && c.dias_parado != null)
+    linhas.push(`parado há ${c.dias_parado} dia(s)`);
+  const pend = CAMPOS_CAIXINHA.has("pendencias") ? pendenciasDaLinha(c) : "";
+  return `<div class="cartao-kanban" draggable="true" data-id="${c.id}"
+      onclick="abrirFichaCompleta(${c.id})"
+      style="background:var(--fundo); border:1px solid var(--borda);
+             border-radius:8px; padding:8px 10px; margin-bottom:8px;
+             cursor:grab">
+      <b>${escapar(c.nome)}</b>
+      ${linhas.length ? `<div class="desc" style="font-size:12px; line-height:1.5">
+        ${linhas.join("<br>")}</div>` : ""}
+      ${pend ? `<div style="margin-top:4px">${pend}</div>` : ""}
+    </div>`;
+}
+
+function desenharQuadro(lista){
+  const onde = els("quadro");
+  onde.innerHTML = `<div style="display:flex; gap:10px; align-items:flex-start;
+      min-width:max-content">` +
+    ETAPAS.map(e => {
+      const dela = lista.filter(c => (c.etapa||"CONCLUIDO") === e.valor);
+      return `<div class="coluna-kanban" data-etapa="${e.valor}"
+        style="width:250px; flex:0 0 250px; background:var(--fundo-2);
+               border:1px solid var(--borda); border-radius:10px; padding:8px">
+        <div style="font-weight:600; margin-bottom:6px">
+          ${escapar(e.rotulo)} <span class="desc">· ${dela.length}</span></div>
+        <div class="desc" style="font-size:11px; margin-bottom:8px">
+          ${escapar(e.o_que_fazer || "")}</div>
+        <div class="solta-aqui" data-etapa="${e.valor}"
+             style="min-height:60px">${dela.map(caixinhaDaPessoa).join("")}</div>
+      </div>`;
+    }).join("") + `</div>`;
+  ligarArrastar();
+}
+
+{# Arrastar e soltar sem biblioteca: são três eventos, e trazer uma
+   dependência para isso seria pagar caro por pouco. #}
+function ligarArrastar(){
+  let pegou = null;
+  els("quadro").querySelectorAll(".cartao-kanban").forEach(cartao => {
+    cartao.addEventListener("dragstart", ev => {
+      pegou = cartao.dataset.id;
+      cartao.style.opacity = "0.4";
+      ev.dataTransfer.effectAllowed = "move";
+    });
+    cartao.addEventListener("dragend", () => {
+      pegou = null; cartao.style.opacity = "";
+    });
+  });
+  els("quadro").querySelectorAll(".solta-aqui").forEach(area => {
+    area.addEventListener("dragover", ev => {
+      ev.preventDefault();
+      area.style.background = "var(--realce)";
+    });
+    area.addEventListener("dragleave", () => { area.style.background = ""; });
+    area.addEventListener("drop", async ev => {
+      ev.preventDefault();
+      area.style.background = "";
+      const id = pegou; pegou = null;
+      if (!id) return;
+      const pessoa = COL.find(c => String(c.id) === String(id));
+      const destino = area.dataset.etapa;
+      if (!pessoa || (pessoa.etapa||"CONCLUIDO") === destino) return;
+      if (!PODE_EDITAR) {
+        aviso("mensagem", "Você não tem permissão para mover cadastro.", "erro");
+        return;
+      }
+      {# A mudança vai para o banco ANTES de a tela mostrar: se falhar, o
+         cartão não pode ter "andado" aos olhos de quem arrastou. #}
+      try {
+        await api(`/erp/api/colaboradores/${id}/etapa`,
+                  {metodo: "POST", corpo: {etapa: destino,
+                                           motivo: "movido no quadro"}});
+        pessoa.etapa = destino;
+        const rot = (ETAPAS.find(x => x.valor === destino) || {}).rotulo || destino;
+        aviso("mensagem", `${pessoa.nome} → ${rot}.`, "ok");
+        desenhar();
+      } catch(e){
+        aviso("mensagem", e.message, "erro");
+        desenhar();
+      }
+    });
+  });
+}
+
 function desenhar(){
   const b = (els("f-busca").value||"").trim().toLowerCase();
   const sit = (document.querySelector("input[name=sit]:checked") || {}).value;
   const vinc = (document.querySelector("input[name=vinc]:checked") || {}).value;
   const etapa = (document.querySelector("input[name=etapa]:checked") || {}).value;
+  const pag = (document.querySelector("input[name=pag]:checked") || {}).value;
+  const obras = marcadosDe("bl-obra", "fobra");
+  const cargos = marcadosDe("bl-cargo", "fcargo");
+  const convs = marcadosDe("bl-convencao", "fconvencao");
 
   // A BASE dos painéis é a lista depois dos filtros de recorte (obra, cargo,
   // situação), mas ANTES do painel escolhido — senão clicar num painel zeraria
   // a conta dos outros, e o DP perderia a visão do todo.
-  const base = COL.filter(c => {
+  {# ⚑ A CONTA DE CADA ETAPA NÃO PODE SUMIR AO ESCOLHER UMA (17/11/2026).
+
+     Ele: *"gostei do numerador das etapas, quantas pessoas tem em cada etapa,
+     mas tem um problema. Se eu botar em todas, aparece. Se eu clicar numa
+     etapa inicial, aí some das outras. É para continuar aparecendo."*
+
+     A causa: a base dos contadores já tinha o filtro de ETAPA aplicado, então
+     escolher "Inicial" zerava todas as outras contas — e o DP perdia
+     justamente a visão que o quadro do Pipefy dava de graça.
+
+     Agora são DUAS bases: `semEtapa` (tudo menos a etapa escolhida) alimenta
+     os contadores; `base` (com ela) alimenta a lista. #}
+  const passaNosOutros = c => {
     if (b && !`${c.nome} ${c.cpf} ${documento(c.cpf)} ${c.empresa||""}`
               .toLowerCase().includes(b)) return false;
     if (sit === "DESLIGADO" && (c.situacao||"") === "ATIVO") return false;
     if (sit === "ATIVO" && (c.situacao||"") !== "ATIVO") return false;
     if (vinc && (c.vinculo||"CTPS") !== vinc) return false;
-    if (etapa && (c.etapa||"CONCLUIDO") !== etapa) return false;
-    if (els("f-obra").value && String(c.obra_id||"") !== els("f-obra").value) return false;
-    if (els("f-cargo").value && String(c.cargo_id||"") !== els("f-cargo").value) return false;
-    if (els("f-convencao").value
-        && String(c.convencao_id||"") !== els("f-convencao").value) return false;
-    const pag = els("f-pagamento").value;
+    if (obras.length && !obras.includes(String(c.obra_id||""))) return false;
+    if (cargos.length && !cargos.includes(String(c.cargo_id||""))) return false;
+    if (convs.length && !convs.includes(String(c.convencao_id||""))) return false;
     if (pag === "MENSALISTA" && !c.salario) return false;
     if (pag === "DIARISTA" && !c.valor_diaria) return false;
     if (els("f-falta-dado").checked && !(c.falta||[]).length) return false;
@@ -276,12 +540,18 @@ function desenhar(){
     if (els("f-sem-obra").checked && (c.obra_id || c.situacao !== "ATIVO")) return false;
     if (els("f-sem-pagamento").checked && c.tem_pagamento) return false;
     return true;
-  });
+  };
+  const semEtapa = COL.filter(passaNosOutros);
+  const base = etapa
+    ? semEtapa.filter(c => (c.etapa||"CONCLUIDO") === etapa)
+    : semEtapa;
   pintarPendencias(base);
-  // A conta de cada etapa, dentro do filtro lateral.
+  // A conta de cada etapa — sobre `semEtapa`, para que escolher uma não zere
+  // as outras. Ver o comentário acima.
   els("f-etapas").querySelectorAll("[data-conta-etapa]").forEach(s => {
-    const n = base.filter(c => (c.etapa||"CONCLUIDO") === s.dataset.contaEtapa).length;
-    s.textContent = n ? ` · ${n}` : "";
+    const n = semEtapa.filter(
+      c => (c.etapa||"CONCLUIDO") === s.dataset.contaEtapa).length;
+    s.textContent = ` · ${n}`;
   });
 
   const l = base.filter(c => {
@@ -296,9 +566,23 @@ function desenhar(){
   els("resumo-lista").textContent = l.length === COL.length
     ? `${l.length} pessoa(s)`
     : `${l.length} de ${COL.length} pessoa(s)`;
-  els("vazio").classList.toggle("oculto", l.length>0);
+  els("vazio").classList.toggle("oculto", l.length>0 || MODO === "quadro");
   if (!l.length) els("vazio").innerHTML =
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
+  {# ⚠️ NO QUADRO, O FILTRO DE ETAPA NÃO SE APLICA: escolher "Inicial" e ver um
+     quadro com uma coluna só seria o contrário do que o quadro serve. Ele usa
+     `semEtapa`, que é a mesma base dos contadores. #}
+  if (MODO === "quadro") {
+    desenharQuadro(semEtapa.filter(c => {
+      if (PENDENCIA === "etapa") return ehEmAndamento(c);
+      if (PENDENCIA === "dado") return (c.falta||[]).length;
+      if (PENDENCIA === "papel") return (c.falta_documento||[]).length;
+      if (PENDENCIA === "pedido") return c.pedidos_abertos;
+      if (PENDENCIA === "devolucao") return c.devolucoes_abertas;
+      return true;
+    }));
+    return;
+  }
   els("corpo").innerHTML = l.map(c=>`<tr style="cursor:pointer" data-c="${c.id}">
     {# A matrícula saiu do nome em 13/11/2026: ele não usa mais ("a gente vai
        usar o ID Fortes, o CPF"). O lugar dela virou a EMPRESA, que ele pediu
@@ -499,7 +783,17 @@ function pintarResumoDaPessoa(alvo){
       <button class="btn secundario" id="ir-editar">Abrir o cadastro completo</button>
       ${PODE_VER_PONTO ? `<button class="btn secundario" id="ir-ponto">Ver o ponto do mês</button>` : ""}
     </div>`;
+  {# ⚑ ABRIR O CADASTRO COMPLETO NÃO PODE PERDER O CAMINHO DE VOLTA
+     (17/11/2026). Ele: *"quando eu clico em editar o cadastro completo, eu
+     saio daquela tela inicial. (…) se eu fechar, salvar o cadastro, ele era
+     para voltar para aquela primeira tela do colaborador. Aí não, ele fecha
+     total. Não tá legal assim."*
+
+     Tinha razão: as telas se abrem uma sobre a outra, então fechar tem de
+     VOLTAR uma, não fechar todas. `VOLTAR_PARA_FICHA` guarda de quem a pessoa
+     veio; quem fecha o formulário reabre a ficha dela. #}
   els("ir-editar").addEventListener("click", () => {
+    VOLTAR_PARA_FICHA = FICHA_ID;
     els("dlg").close();
     formulario(COL.find(x => x.id === FICHA_ID));
   });
@@ -1011,6 +1305,10 @@ function sim_nao(rotuloTexto, id, valor){
     <option value="1" ${valor === true ? "selected" : ""}>Sim</option>
     <option value="0" ${valor === false ? "selected" : ""}>Não</option></select></div>`;
 }
+
+{# De qual ficha o formulário foi aberto — ver o comentário em "ir-editar".
+   `null` quer dizer que ele veio da lista, e aí fechar é fechar mesmo. #}
+let VOLTAR_PARA_FICHA = null;
 
 async function formulario(c){
   c = c || {};
@@ -1651,6 +1949,15 @@ async function salvarCadastro(){
   b.disabled = false;
 }
 
+{# Fechar o formulário: volta para a ficha da pessoa se foi de lá que ele
+   veio, em vez de jogar de volta para a lista. #}
+function fecharFormulario(){
+  const volta = VOLTAR_PARA_FICHA;
+  VOLTAR_PARA_FICHA = null;
+  els("dlg").close();
+  if (volta) ficha(volta, "resumo");
+}
+
 async function abrirFichaCompleta(id){
   try {
     const r = await api(`/erp/api/colaboradores/${id}/ficha`);
@@ -2164,11 +2471,22 @@ if (els("btn-fichas")) els("btn-fichas").addEventListener("click", abrirImportac
 // O filtro de situação é o único que volta ao banco (a API devolve só os ativos
 // por padrão). Todos os outros recortam em memória — a lista inteira já está
 // aqui, e ir ao banco por filtro faria a tela piscar a cada clique.
+if (els("ver-quadro")) els("ver-quadro").addEventListener(
+  "click", () => trocarModo("quadro"));
+if (els("ver-lista")) els("ver-lista").addEventListener(
+  "click", () => trocarModo("lista"));
+{# Volta no modo em que ele estava: trocar de tela e perder o quadro a cada
+   visita seria obrigá-lo a reescolher sempre. #}
+try {
+  if (localStorage.getItem("erp-modo-colaboradores") === "quadro")
+    setTimeout(() => trocarModo("quadro"), 0);
+} catch(e){ /* sem localStorage: começa na lista */ }
+
 els("f-busca").addEventListener("input", desenhar);
 document.querySelectorAll("input[name=sit]").forEach(i =>
   i.addEventListener("change", carregar));
-["f-obra", "f-cargo", "f-convencao", "f-pagamento"].forEach(i =>
-  els(i).addEventListener("change", desenhar));
+document.querySelectorAll("input[name=pag]").forEach(i =>
+  i.addEventListener("change", desenhar));
 ["f-falta-dado", "f-falta-papel", "f-pedido", "f-devolucao", "f-sem-obra",
  "f-sem-pagamento"].forEach(i => els(i).addEventListener("change", desenhar));
 document.querySelectorAll("input[name=vinc]").forEach(i =>
@@ -2176,7 +2494,18 @@ document.querySelectorAll("input[name=vinc]").forEach(i =>
 
 els("btn-limpar").addEventListener("click", () => {
   els("f-busca").value = "";
-  ["f-obra", "f-cargo", "f-convencao", "f-pagamento"].forEach(i => els(i).value = "");
+  ["bl-obra", "bl-cargo", "bl-convencao"].forEach(id => {
+    const bloco = els(id);
+    if (!bloco) return;
+    bloco.querySelectorAll("input[type=checkbox]").forEach(i => i.checked = false);
+    const badge = bloco.querySelector(".filtro-badge");
+    if (badge) badge.classList.add("oculto");
+    const procura = bloco.querySelector(".procura-opcao");
+    if (procura) procura.value = "";
+    bloco.querySelectorAll(".opcao").forEach(o => o.classList.remove("oculto"));
+  });
+  const semPag = document.querySelector("input[name=pag][value='']");
+  if (semPag) semPag.checked = true;
   ["f-falta-dado", "f-falta-papel", "f-pedido", "f-devolucao", "f-sem-obra",
    "f-sem-pagamento"].forEach(i => els(i).checked = false);
   document.querySelector("input[name=sit][value=ATIVO]").checked = true;

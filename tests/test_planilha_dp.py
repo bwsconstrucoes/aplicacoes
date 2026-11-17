@@ -533,7 +533,7 @@ def test_o_PIS_que_nao_fecha_vira_PENDENCIA_e_a_pessoa_entra():
     ("Colaboradores Desligados", "DESLIGADO",        "DESLIGADO"),
     ("Cadastro Concluído",       "CONCLUIDO",        "ATIVO"),
     ("Colaboradores Afastados",  "AFASTADO",         "AFASTADO"),
-    ("Cadastros Adicionais",     "EM_CONFERENCIA",   "ATIVO"),
+    ("Cadastros Adicionais",     "CADASTRO_INICIAL", "ATIVO"),
     ("Cadastro Inicial",         "CADASTRO_INICIAL", "ATIVO"),
     ("Cadastro Cancelado",       "CANCELADO",        "DESLIGADO"),
     # Esta não tinha par, e ele apontou: *"Não existe = Solicitações DP."*

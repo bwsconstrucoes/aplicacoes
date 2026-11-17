@@ -574,9 +574,27 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
     # "Cancelado" fica de fora da arrumação: é cadastro que nunca virou gente
     # na empresa, e a situação dele é desligado por consequência, não por ter
     # saído. Mexer nele apagaria essa diferença.
+    # ⚑ A ARRUMAÇÃO NÃO PASSA POR CIMA DE UMA ETAPA DITA — conserto de
+    # 17/11/2026, e ele achou o sintoma: *"eu pedi para que todos que tivessem
+    # Solicitações DP fossem na contabilidade, não foram. Apenas uma parte, só
+    # 12 de 43."*
+    #
+    # Eram 31 pessoas com data de saída. A importação mandava a etapa certa
+    # (Solicitações, vinda da fase) E a situação DESLIGADO (vinda da data), e
+    # esta arrumação, logo depois, trocava a etapa por "Desligado" — apagando
+    # a informação que a fase acabou de dar.
+    #
+    # E ele está certo de querer as 43 lá: alguém que saiu e tem cadastro por
+    # finalizar É trabalho pendente do DP. É exatamente para isso que a etapa
+    # "Solicitações" existe.
+    #
+    # Então: quem DISSE a etapa manda. A arrumação só age quando ninguém disse
+    # — que é o caso do desligamento pela tela (`desligar`), onde a etapa tem
+    # mesmo de seguir a situação.
+    etapa_foi_dita = bool(str(dados.get("etapa") or "").strip())
     agora = (c.situacao or "ATIVO").upper()
     etapa_agora = (c.etapa or "CONCLUIDO").upper()
-    if etapa_agora != "CANCELADO":
+    if etapa_agora != "CANCELADO" and not etapa_foi_dita:
         if agora == "DESLIGADO" and etapa_agora != "DESLIGADO":
             c.etapa = "DESLIGADO"
         elif agora == "AFASTADO" and etapa_agora != "AFASTADO":
@@ -1363,8 +1381,24 @@ def para_folha(s: Session, *, so_ativos: bool = True,
 # responde "esta pessoa está na empresa?" e manda na folha; `etapa` responde "o
 # que falta fazer neste cadastro?" e manda na fila de trabalho do DP.
 # ===========================================================================
-ETAPAS = ("CADASTRO_INICIAL", "EM_CONFERENCIA", "CONTRATO_A_ASSINAR",
-          "NA_CONTABILIDADE", "CONCLUIDO", "AFASTADO", "DESLIGADO", "CANCELADO")
+# ⚑ SETE ETAPAS, NESTA ORDEM, e ele ditou a lista em 17/11/2026:
+#
+#   *"Era por isso que eu queria menos fase, porque fica fase demais. Ó,
+#    inicial e conferência: não precisa ter duas, isso aqui é uma só.
+#    Conferência inicial é para ser a mesma fase. (…) bota inicial, assinar,
+#    contabilidade, concluído, afastado e desligado e cancelado. Esse na
+#    contabilidade (…) a gente vai chamar de solicitações. Vamos deixar depois
+#    de concluído."*
+#
+# ⚠️ A ORDEM DA TUPLA É A ORDEM DAS COLUNAS DO KANBAN e dos contadores. Mexer
+# nela muda a tela; não é lista alfabética nem histórica.
+#
+# ⚠️ "SOLICITAÇÕES" FICA DEPOIS DE "CONCLUÍDO" de propósito, e isso parece
+# errado até entender o fluxo dele: é a fase onde está quem JÁ SAIU e tem
+# cadastro por finalizar, mais o que a contabilidade está tratando. Não é um
+# passo antes de concluir — é trabalho que sobra depois.
+ETAPAS = ("CADASTRO_INICIAL", "CONTRATO_A_ASSINAR", "CONCLUIDO",
+          "NA_CONTABILIDADE", "AFASTADO", "DESLIGADO", "CANCELADO")
 # ⚑ OS NOMES PERDERAM A PALAVRA "CADASTRO" em 16/11/2026, por pedido dele:
 # *"por exemplo, cadastro inicial. Aí tem cadastro concluído. Mas as outras
 # você não utilizou cadastro. Enfim, eu acho que esse nome cadastro pode ser
@@ -1376,15 +1410,29 @@ ETAPAS = ("CADASTRO_INICIAL", "EM_CONFERENCIA", "CONTRATO_A_ASSINAR",
 # gravado na coluna `etapa` de cada colaborador e em toda linha do histórico de
 # etapas. Renomeá-lo exigiria migração para ganhar zero — ninguém vê o código,
 # só o rótulo. Quem ler "CADASTRO_INICIAL" no banco está lendo "Inicial".
+#
+# ⚑ "CONFERÊNCIA" MORREU em 17/11/2026, fundida na "Inicial". Ele: *"inicial e
+# conferência, não precisa ter duas, isso aqui é uma só."* Tinha razão: as
+# duas queriam dizer "o DP ainda está mexendo neste cadastro", e a fronteira
+# entre elas era invenção minha — ninguém sabia dizer quando uma virava a
+# outra. O código `EM_CONFERENCIA` sai de circulação; a migração 107 passa
+# quem estava nele para `CADASTRO_INICIAL`.
 ETAPA_ROTULOS = {
     "CADASTRO_INICIAL": "Inicial",
-    "EM_CONFERENCIA": "Conferência",
-    "CONTRATO_A_ASSINAR": "Contrato a assinar",
-    "NA_CONTABILIDADE": "Na contabilidade",
+    "CONTRATO_A_ASSINAR": "Assinar",
     "CONCLUIDO": "Concluído",
+    # ⚠️ O CÓDIGO CONTINUA "NA_CONTABILIDADE" e o rótulo é "Solicitações".
+    # Parece descuido e não é: o código está gravado na coluna `etapa` de cada
+    # colaborador e em toda linha do histórico, e renomeá-lo custaria migração
+    # para ganhar zero — ninguém vê o código, só o rótulo. Quem ler
+    # "NA_CONTABILIDADE" no banco está lendo "Solicitações".
+    "NA_CONTABILIDADE": "Solicitações",
     "AFASTADO": "Afastado",
     "DESLIGADO": "Desligado",
     "CANCELADO": "Cancelado",
+    # Fica no mapa só para a ficha antiga e o histórico não aparecerem com o
+    # código cru. Não está em `ETAPAS`, então ninguém escolhe mais.
+    "EM_CONFERENCIA": "Inicial (nome antigo: Conferência)",
 }
 
 # ===========================================================================
@@ -1418,7 +1466,9 @@ FASE_PIPEFY_PARA_ETAPA = (
     # "cancelado" antes de "cadastro" para a fase "Cadastro Cancelado" não cair
     # na regra de "cadastro inicial".
     ("cancelad",             "CANCELADO",        "DESLIGADO"),
-    ("adicion",              "EM_CONFERENCIA",   "ATIVO"),
+    # "Cadastros Adicionais" ia para Conferência, que morreu em 17/11/2026
+    # (migração 107). Vai para Inicial, que é a mesma coisa agora.
+    ("adicion",              "CADASTRO_INICIAL", "ATIVO"),
     ("conclu",               "CONCLUIDO",        "ATIVO"),
     ("inicial",              "CADASTRO_INICIAL", "ATIVO"),
     # ⚑ "SOLICITAÇÕES DP" → NA CONTABILIDADE, e quem decidiu foi ele.
@@ -1465,39 +1515,51 @@ def etapa_da_fase(fase: Any) -> tuple[Optional[str], Optional[str]]:
 # O DIRECIONAMENTO: é para isto que a etapa existe. A tela mostra esta frase,
 # não o código da etapa — quem abre a fila precisa saber o que FAZER.
 ETAPA_O_QUE_FAZER = {
-    "CADASTRO_INICIAL": "O DP ainda não olhou. Conferir a coerência e jogar os "
-                        "documentos para a leitura preencher o resto.",
-    "EM_CONFERENCIA": "Conferir o que a leitura preencheu e completar o que "
-                      "falta — depois disto o caminho se separa por vínculo.",
+    "CADASTRO_INICIAL": "O DP está com este cadastro: conferir a coerência, "
+                        "jogar os documentos para a leitura preencher o resto "
+                        "e completar o que faltar.",
     "CONTRATO_A_ASSINAR": "Gerar o contrato do PJ, colher a assinatura e "
                           "arquivar.",
-    "NA_CONTABILIDADE": "A contabilidade está fazendo o registro no eSocial. "
-                        "O ERP cobra o retorno.",
     "CONCLUIDO": "Nada pendente.",
+    "NA_CONTABILIDADE": "Solicitação em aberto: a contabilidade está tratando, "
+                        "ou é alguém que já saiu com o cadastro por finalizar.",
     "AFASTADO": "Acompanhar o afastamento; a pessoa continua cadastrada.",
     "DESLIGADO": "Pessoa fora da folha.",
     "CANCELADO": "Cadastro abandonado antes de virar gente na empresa.",
+    "EM_CONFERENCIA": "Etapa antiga, fundida na Inicial.",
 }
-# PARA ONDE DÁ PARA IR DE CADA LUGAR. Existe para impedir o salto que o quadro
-# do Pipefy permitia arrastando o card: cadastro saindo de "inicial" direto
-# para "concluído" sem ninguém conferir documento nenhum.
+# ⚑ A LISTA DE SALTOS PROIBIDOS FOI EMBORA em 17/11/2026, e isto é decisão
+# dele, não simplificação minha:
+#
+#   *"Para mudar a pessoa de etapa, eu tenho que clicar, buscar a pessoa,
+#    clicar na pessoa, editar o cadastro em histórico e mudar a etapa. Isso é
+#    burrice. (…) a movimentação das pessoas de etapa tem que ser simples.
+#    (…) E tem que ter Kanban para poder a gente movimentar."*
+#
+# A regra antiga existia para impedir um cadastro de pular a conferência. Mas
+# ela foi escrita para uma tela em que mover era raro; num quadro que se
+# arrasta, ela vira um "não pode" a cada gesto — e quem usa aprende a
+# contornar, não a respeitar. A proteção que FICA é a que importa: toda
+# mudança vai para o histórico, com quem moveu e por quê.
+#
+# O mapa continua existindo porque a tela o usa para SUGERIR o caminho natural
+# (o que ela mostra primeiro), não para recusar o resto.
 ETAPAS_SEGUINTES = {
-    "CADASTRO_INICIAL": ("EM_CONFERENCIA", "CANCELADO"),
-    "EM_CONFERENCIA": ("CONTRATO_A_ASSINAR", "NA_CONTABILIDADE", "CONCLUIDO",
-                       "CANCELADO"),
-    "CONTRATO_A_ASSINAR": ("CONCLUIDO", "CANCELADO"),
-    "NA_CONTABILIDADE": ("CONCLUIDO", "CANCELADO"),
-    # De concluído dá para ir para afastamento e desligamento — e VOLTAR de
-    # afastado, que é o que o pipe não deixava e obrigava a criar card novo.
-    "CONCLUIDO": ("AFASTADO", "DESLIGADO", "EM_CONFERENCIA"),
+    "CADASTRO_INICIAL": ("CONTRATO_A_ASSINAR", "NA_CONTABILIDADE", "CONCLUIDO",
+                         "CANCELADO"),
+    "CONTRATO_A_ASSINAR": ("CONCLUIDO", "NA_CONTABILIDADE", "CANCELADO"),
+    "CONCLUIDO": ("NA_CONTABILIDADE", "AFASTADO", "DESLIGADO",
+                  "CADASTRO_INICIAL"),
+    "NA_CONTABILIDADE": ("CONCLUIDO", "AFASTADO", "DESLIGADO", "CANCELADO"),
     "AFASTADO": ("CONCLUIDO", "DESLIGADO"),
     # Readmissão não é mudança de etapa: é vínculo novo (ver `readmitir`), e ela
-    # recoloca a pessoa em conferência.
-    "DESLIGADO": ("EM_CONFERENCIA",),
-    "CANCELADO": ("EM_CONFERENCIA",),
+    # recoloca a pessoa na fila do DP.
+    "DESLIGADO": ("CADASTRO_INICIAL",),
+    "CANCELADO": ("CADASTRO_INICIAL",),
+    "EM_CONFERENCIA": ("CADASTRO_INICIAL",),
 }
 # As etapas em que o cadastro está PARADO esperando alguém — a fila do DP.
-ETAPAS_ABERTAS = ("CADASTRO_INICIAL", "EM_CONFERENCIA", "CONTRATO_A_ASSINAR",
+ETAPAS_ABERTAS = ("CADASTRO_INICIAL", "CONTRATO_A_ASSINAR",
                   "NA_CONTABILIDADE")
 # Os tipos de contrato de prestador que "morrem no DP", com as palavras dele.
 CONTRATOS_QUE_EXIGEM_ASSINATURA = ("PJ",)
@@ -1540,13 +1602,10 @@ def mover_etapa(s: Session, colaborador_id: int, para: str,
     de = (c.etapa or "CONCLUIDO").upper()
     if para == de:
         return c
-    if para not in ETAPAS_SEGUINTES.get(de, ()):
-        raise ErroValidacao(
-            f"De “{ETAPA_ROTULOS.get(de, de)}” não dá para ir direto para "
-            f"“{ETAPA_ROTULOS.get(para, para)}”. "
-            f"Os caminhos daqui são: "
-            + ", ".join(ETAPA_ROTULOS.get(x, x)
-                        for x in ETAPAS_SEGUINTES.get(de, ())) + ".")
+    # ⚑ NÃO RECUSA MAIS O SALTO (17/11/2026) — ver `ETAPAS_SEGUINTES`. Num
+    # quadro que se arrasta, "não pode" a cada gesto ensina a contornar, não a
+    # respeitar. O que fica é o registro: quem moveu, de onde, para onde e por
+    # quê.
     c.etapa = para
     s.add(ColaboradorEtapa(colaborador_id=c.id, de=de, para=para,
                            motivo=motivo or None,
@@ -1577,11 +1636,8 @@ def concluir_conferencia(s: Session, colaborador_id: int,
         raise ErroValidacao("Colaborador não encontrado.")
     if (c.etapa or "").upper() not in ("CADASTRO_INICIAL", "EM_CONFERENCIA"):
         raise ErroValidacao(
-            "Este cadastro não está em conferência — está em "
+            "Este cadastro não está na fila do DP — está em "
             f"“{ETAPA_ROTULOS.get(c.etapa or '', c.etapa or '')}”.")
-    if (c.etapa or "").upper() == "CADASTRO_INICIAL":
-        mover_etapa(s, c.id, "EM_CONFERENCIA", usuario,
-                    motivo="o DP começou a conferir", automatico=True)
     para, porque = caminho_depois_da_conferencia(c)
     mover_etapa(s, c.id, para, usuario, motivo=porque, automatico=True)
     return {"etapa": para, "rotulo": ETAPA_ROTULOS[para], "porque": porque,

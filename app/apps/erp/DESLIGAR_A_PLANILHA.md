@@ -109,6 +109,90 @@ para algo, o ERP precisa dele; se não, morre com a planilha.
 
 ---
 
+---
+
+# As DUAS desativações — e elas são independentes
+
+> Ele, em 17/11/2026: *"Como é que eu desligo atualização via diários ou via
+> planilha, para a gente desconectar essa atualização lá e passar a trabalhar
+> só por aqui? E do jeito que tá o ponto, tá pegando os dados de onde? Já é
+> essa base? O que preciso fazer para ele ficar aqui?"*
+
+São **duas chaves diferentes**, em dois lugares diferentes. Uma não mexe na
+outra, e nenhuma das duas exige programador.
+
+## 1 · O PONTO — hoje ele NÃO lê o ERP
+
+**De onde o ponto está lendo agora:** da **cópia da planilha** que o Análise de
+SPs guarda (a tabela `analisesps.colaborador`, alimentada pelo botão
+"Atualizar cadastro" de lá). É o padrão do sistema, e foi pedido seu na época.
+
+Na prática, hoje, o ponto pega destas duas fontes ao mesmo tempo:
+
+| O quê | De onde |
+|---|---|
+| nome, telefone, cargo, obra, situação, datas, quem não bate ponto | **da planilha** (via Análise de SPs) |
+| jornada, raio da obra, foto, banco de horas, exceções do DP | do próprio ponto |
+
+Quando a planilha não tem a pessoa, ele cai no cadastro do ERP.
+
+### Como virar a chave
+
+**ERP › Ponto › Gestão › bloco "Base de pessoas"** → troque de
+**"Registro de Colaboradores"** para **"ERP"**.
+
+A tela pergunta antes de confirmar e mostra um retrato da base — inclusive
+**quantas pessoas estão na planilha e faltam no ERP**, com exemplos. Esse
+número tem de estar **zero** antes de virar: quem falta no ERP simplesmente
+para de bater ponto.
+
+### O que muda no mesmo instante
+
+- **PJ e pró-labore param de bater ponto.** Era regra que só existia no caminho
+  da planilha; agora ela existe nos dois (decisão sua de 16/11). Quem bate:
+  CLT (os dois), temporário, autônomo RPA, autônomo mensalista, jovem aprendiz
+  e estágio.
+- **A obra ESCRUSSAS continua fora**, como já era.
+- **A exceção marcada pelo DP continua valendo por cima** — quem for marcado
+  bate, mesmo sendo PJ.
+- **O início do contrato continua sendo a MENOR** entre "data de início" e
+  "data de admissão", como na planilha. O diarista começa antes da carteira, e
+  mudar a data do papel não pode apagar o direito de registrar o dia.
+
+### O que conferir antes
+
+1. **"Faltam no ERP" tem de ser zero.** A própria tela tem um botão para
+   cadastrar os que faltam.
+2. **Obra preenchida em todo mundo que bate ponto.** Sem obra, não há cerca
+   nem conferência de local.
+3. **Tipo de contrato preenchido**, porque agora é ele que decide quem bate.
+
+**Dá para voltar atrás:** a mesma chave volta para "Registro de Colaboradores"
+a qualquer momento.
+
+## 2 · O ANÁLISE DE SPs — a folha
+
+Essa é a do roteiro acima: ela só se desliga quando a **conferência** ficar
+verde e a folha for gerada duas vezes com o mesmo resultado.
+
+**A atualização da planilha em si** (o robô do Make que copia o Pipefy para
+ela) é desligada **por você, no Make** — o ERP não a controla. Por isso a ordem
+importa: primeiro o ERP vira a fonte das duas pontas (ponto e folha), e **só
+então** o robô é desligado. Ao contrário, as duas pontas ficam sem base.
+
+## A ordem que eu faria
+
+1. **Limpar e importar** o cadastro no ERP (com a sua lista).
+2. **Zerar "faltam no ERP"** na tela do ponto.
+3. **Virar a chave do PONTO** para ERP. Acompanhar um dia de batidas.
+4. **Rodar a conferência da folha** até ficar verde.
+5. **Gerar a folha duas vezes** no Análise de SPs e comparar os totais.
+6. **Só então desligar o robô do Make.**
+
+Os passos 3 e 4 são independentes: dá para virar o ponto sem mexer na folha.
+
+---
+
 ## Onde isto mora no código
 
 | O quê | Onde |
@@ -119,6 +203,8 @@ para algo, o ERP precisa dele; se não, morre com a planilha.
 | A palavra que a folha lê (≠ rótulo da tela) | `pessoas.CATEGORIA_*_PARA_FOLHA` |
 | O teste que cobra o espelho | `tests/test_erp_espelha_a_folha.py` |
 | O teste da conferência | `tests/test_conferencia_folha.py` |
+| A chave do ponto | `app/apps/ponto/core/registro.py` (`pessoas.fonte`) |
+| O agente de DP, explicado | `app/apps/erp/COMO_O_AGENTE_TRABALHA.md` |
 
 **Os dois testes leem os DOIS lados de verdade** — o `folha_auxilio` do Análise
 de SPs e o cadastro do ERP. Não há valor copiado dentro deles: quem mudar um
