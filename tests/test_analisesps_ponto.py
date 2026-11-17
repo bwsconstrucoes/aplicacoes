@@ -1218,6 +1218,30 @@ def test_o_automatico_PULA_o_mes_que_ja_entrou_hoje_sem_pedir_nada(banco_ponto, 
     assert ponto.carga_do_mes(2026, 8)["dias"] == 2
 
 
+def test_mes_todo_no_ponto_eletronico_nao_vai_ao_mobponto_nem_avisa(banco_ponto, monkeypatch):
+    """17/11/2026: o aviso "a carga PAROU (…) o Mobponto não retornou colaboradores
+    para 11/2026" chegava todo dia — o mês inteiro já vem do ponto eletrônico."""
+    import datetime as dt
+    from app.apps.analisesps import avisos_ponto, ponto, tarefas
+    from app.apps.analisesps.db import conexao
+    monkeypatch.setattr(ponto, "corte_do_ponto_novo",
+                        lambda ano, mes: dt.date(2026, 10, 16)
+                        if (ano, mes) >= (2026, 10) else None)
+    assert ponto.mes_todo_no_ponto_novo(2026, 11)
+    assert not ponto.mes_todo_no_ponto_novo(2026, 10), "outubro é misto: até 15 é Mobponto"
+    assert not ponto.mes_todo_no_ponto_novo(2026, 9)
+    assert ponto.o_que_fazer_no_automatico(2026, 11) == "ponto_novo"
+
+    pedidas = dublar(monkeypatch, [])
+    avisos = []
+    monkeypatch.setattr(ponto, "meses_do_ponto_diario", lambda hoje=None: [(2026, 11)])
+    monkeypatch.setattr(avisos_ponto, "avisar_que_parou", lambda m: avisos.append(m) or {})
+    with conexao() as conn:
+        execucao = tarefas._abrir_execucao(conn, "ponto_diario", "agendador")
+    assert tarefas.executar_trabalho("ponto_diario", execucao) is True
+    assert pedidas == [] and avisos == []
+
+
 # ---------------------------------------------------------------------------
 # 30/09/2026 — *"o ponto foi baixado, mas ninguém foi associado ao ponto."*
 #

@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 271 — A carga diária do Mobponto deixa de pedir o mês que já é todo do ponto eletrônico (17/11/2026)
+
+- O dono recebeu no Telegram: *"⚠️ Ponto do Mobponto: a carga PAROU. Motivo: ponto que
+  NÃO entrou — 11/2026: o Mobponto não retornou colaboradores para 11/2026"*, e disse:
+  *"acho que é de uma rotina daqui que não está sendo mais necessária, visto que mudamos
+  o sistema de ponto."*
+- Era a carga automática (`tarefas`, etapa `ponto_diario`): pedia ao Mobponto o mês
+  corrente todo dia. Desde a base mista (21/10/2026, corte 16/10), do corte em diante a
+  folha lê o ponto eletrônico — novembro não tem nada no Mobponto, e a "parada" virava
+  aviso.
+- Agora `ponto.o_que_fazer_no_automatico` devolve "ponto_novo" para o mês que começa no
+  corte ou depois (`mes_todo_no_ponto_novo`), e a carga só anota "vem do ponto
+  eletrônico". Outubro (misto) e os meses antes continuam indo ao Mobponto. Com a chave da
+  base mista DESLIGADA, nada muda — e o aviso voltaria.
+- Não mexi no botão manual de Folha PGT › Ponto nem nos outros usos do Mobponto (lançar
+  ponto, apoios). Teste: `test_mes_todo_no_ponto_eletronico_nao_vai_ao_mobponto_nem_avisa`.
+
 #### Leva 270 — Pagamento via SP: a chave Pix do cadastro vai marcada, não "Aleatória" (16/11/2026)
 
 - *"Está sendo marcado todos como aleatória e colocado atualizar PIX, sendo que já está
