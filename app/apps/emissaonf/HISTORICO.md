@@ -2002,7 +2002,16 @@ mesma tela vai barrar. Quando o default vem de uma fonte (a nota antiga) e o tet
 vem de outra (o card), o default tem de ser limitado pelo teto na origem — não
 conferido depois.
 
-**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (21 casos,
+**E um quinto, que só apareceu quando ele tentou de novo:** a mensagem do botão
+Emitir mandava, **sem olhar nada**, usar o botão "Substituir" do portal —
+justamente o que o município não aceita para valor menor. Ele seguiu a instrução
+e continuou preso. Agora a mensagem lê o card antes de instruir: mostra os dois
+caminhos (igual ou maior → substituir; menor → cancelar) e diz **qual é o caso
+dele**, com os dois valores na tela. Se o Pipefy não responder, o texto genérico
+sai do mesmo jeito, sem o diagnóstico — a explicação nunca pode depender de uma
+chamada que falha, que é a lição de 07/10/2026.
+
+**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (25 casos,
 com os números reais do incidente). Rodados contra o código velho, 18 falham.
 
 ### A substituição que não cancelou a nota antiga — 09/11/2026
@@ -2213,6 +2222,39 @@ continua no histórico do repositório** até ser trocado na origem.
 **A regra que ficou:** o certificado e a senha **nunca entram no chat**, e
 nenhum segredo entra no código. Diagnóstico se faz pela tela `/emissao/diag`,
 que diz o que está errado sem mostrar o que é.
+
+---
+
+## O custo de abrir a tela de emissão — contado em 17/11/2026
+
+Registrado porque o `CLAUDE.md` pede a conta mesmo quando não se vai mexer, e
+porque ninguém a tinha feito nesta área.
+
+**Abrir a tela de emissão de UMA nota (`worker.preparar`) custa de 9 a 12 idas à
+rede**, e uma delas é cara:
+
+| Passo | Idas | Observação |
+|---|---|---|
+| credenciais (aba 'Credenciais') | 2–3 | abre a planilha, acha a aba, lê tudo |
+| card do Pipefy | 1 | |
+| **C. Diários inteira** (`get_all_values`) | 2–3 | **a aba toda**, para achar UMA obra |
+| numeração: coluna de nºs da 'Notas BWS' | 2–3 | mais a leitura das declarações enviadas |
+| municípios IBGE | 0 | arquivo local (lido duas vezes, de graça) |
+
+**O que isso quer dizer na prática:** emitir uma nota paga ~10 idas; e o fluxo de
+substituição paga **duas vezes** (uma no GET da tela, outra no POST). A
+C. Diários inteira é o item mais pesado, e é a mesma leitura que todas as áreas
+fazem — ela divide a cota do Google com o painel, o Análise de SPs e o ponto.
+
+**Não foi mexido, e é decisão do dono.** O caminho óbvio seria guardar a
+C. Diários em memória por alguns minutos (como outras áreas já fazem) e ler só a
+faixa de colunas usada em vez da aba toda. Fica anotado como oportunidade: a
+emissão é de poucas notas por dia, então o ganho é mais de **cota do Google** do
+que de tempo.
+
+**O que já foi barateado no mesmo dia:** a mensagem que explica o caminho da
+substituição carregava a planilha de notas sem precisar dela (`_so_o_card` em vez
+de `_card_aba_e_cred`) — 2 a 3 idas a menos, numa tela que é só texto.
 
 ---
 

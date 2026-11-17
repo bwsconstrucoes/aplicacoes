@@ -296,3 +296,64 @@ def test_o_aviso_da_substituicao_manda_para_o_caminho_certo(cliente, monkeypatch
     assert "Nota cancelada no portal" in fonte
     assert "Ao emitir, a NF" not in fonte, \
         "a promessa antiga não pode ter sobrado em lugar nenhum"
+
+
+# --------------------------------------------------------------------------- #
+# A mensagem do botão Emitir tem de apontar o caminho CERTO para o caso
+#
+# 17/11/2026: o dono clicou em Emitir com a substituição preenchida e recebeu
+# "substitua a NF 2600000003377 pelo botão Substituir do portal" — justamente o
+# que o município não aceita para valor menor. Ele seguiu a instrução e
+# continuou preso. A mensagem agora olha os números antes de instruir.
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def emissao(monkeypatch):
+    """A tela de emissão com o card dublado — nada sai daqui."""
+    import app.apps.emissaonf.web as web
+    card = _card()
+    monkeypatch.setattr(web, "_so_o_card", lambda cid: (card, {"PIPEFY_TOKEN": "t"}))
+    return web, card
+
+
+def _tentar_emitir(cliente, **extra):
+    dados = {"token": TOKEN, "card_id": CARD, "confirmo": "on",
+             "nota_substituida": NOTA_LONGO}
+    dados.update(extra)
+    return cliente.post("/emissao/emitir", data=dados).get_data(as_text=True)
+
+
+def test_valor_menor_manda_cancelar_e_nao_substituir(cliente, emissao):
+    """O caso real: nota de 13.053,64 e card corrigido para 13.053,54."""
+    corpo = _tentar_emitir(cliente)
+    assert "caminho ➋ (cancelamento)" in corpo
+    assert "/emissao/cancelada" in corpo
+    assert "13.053,64" in corpo and "13.053,54" in corpo
+
+
+def test_valor_maior_manda_substituir_pelo_portal(cliente, emissao):
+    corpo = _tentar_emitir(cliente, valor="20.000,00")
+    assert "caminho ➊ (substituição)" in corpo
+    assert "Substituir" in corpo
+
+
+def test_os_dois_caminhos_aparecem_sempre(cliente, emissao):
+    """Mesmo com o diagnóstico pronto, as duas regras ficam à vista — quem
+    conferir depois precisa entender por que foi um e não o outro."""
+    corpo = _tentar_emitir(cliente)
+    assert "IGUAL OU MAIOR" in corpo and "MENOR" in corpo
+
+
+def test_sem_conseguir_ler_o_card_a_orientacao_ainda_sai(cliente, monkeypatch):
+    """Lição de 07/10/2026: a explicação não pode depender de carregar o card.
+    Sem ela, quem tentava substituir recebia uma mensagem sobre um parâmetro
+    do link em vez de "isto não funciona mais"."""
+    import app.apps.emissaonf.web as web
+
+    def explode(cid):
+        raise RuntimeError("Pipefy fora do ar")
+
+    monkeypatch.setattr(web, "_so_o_card", explode)
+    corpo = _tentar_emitir(cliente)
+    assert "Substituir pela tela não funciona mais" in corpo
+    assert "IGUAL OU MAIOR" in corpo and "MENOR" in corpo
+    assert "caminho ➋ (cancelamento)" not in corpo      # sem a conta, sem palpite

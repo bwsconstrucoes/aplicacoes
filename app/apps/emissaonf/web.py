@@ -258,6 +258,82 @@ def pagina():
                     mimetype="text/html")
 
 
+def _explicacao_substituicao(card_id, nota_sub, val_over=None) -> str:
+    """O texto que a tela de emissão devolve quando alguém tenta substituir.
+
+    **A ordem importa, e é lição de 07/10/2026:** a explicação é montada ANTES de
+    qualquer coisa que possa falhar. Já aconteceu de o aviso ficar inalcançável
+    porque vinha depois de carregar o card — e quem tentava substituir uma nota
+    fora dos slots recebia uma mensagem sobre um parâmetro do link, em vez de
+    "isto não funciona mais, use o portal".
+
+    Então: o texto genérico existe sempre, e os números do card só o ENRIQUECEM
+    quando dá para lê-los. Se o Pipefy não responder, a pessoa ainda recebe a
+    orientação completa — só não recebe a conta pronta.
+    """
+    n = html.escape(str(nota_sub))
+    cabeca = (f"<b>Substituir pela tela não funciona mais.</b> Em 07/10/2026 a "
+              f"prefeitura desativou o modelo antigo, e com ele o campo que mandava a "
+              f"nota substituída dentro da nota nova. No modelo nacional a substituição "
+              f"é um evento registrado sobre a nota, e esse caminho ainda não está "
+              f"pronto aqui.<br><br>")
+
+    caminho_maior = (
+        f"<b>➊ Se a nota nova for de valor IGUAL OU MAIOR:</b> substitua a NF {n} pelo "
+        f"botão \"Substituir\" do portal da prefeitura. Depois, no "
+        f"<b>/emissao/recuperar</b>: cole o XML da nota NOVA, ponha {n} no campo "
+        f"\"nota substituída\" e <b>marque \"concluir completo\"</b>. Ele registra a "
+        f"nota nova (Notas BWS, Omie, slot, Drive, Descrição) e cancela a {n} nos três "
+        f"lugares, mostrando no fim se cada um deu certo.")
+    caminho_menor = (
+        f"<b>➋ Se a nota nova for de valor MENOR</b> (ou mudar de competência): <b>o "
+        f"município não aceita substituir</b> — isso é <b>cancelamento</b>. Cancele a "
+        f"NF {n} no portal, registre em <b>/emissao/cancelada</b> (\"Nota cancelada no "
+        f"portal\") e depois emita a nota nova por esta mesma tela, <b>sem</b> o campo "
+        f"de nota substituída. A tela de cancelamento marca o slot, a planilha e tira o "
+        f"número do título do Omie — é isso que libera o teto da medição para a nota "
+        f"nova sair.")
+
+    # A conta pronta, quando o card responder. Nunca impede a mensagem de sair.
+    diagnostico = ""
+    try:
+        card, _cred = _so_o_card(card_id)
+        antiga = None
+        for slot in _val.slots_preenchidos(card):
+            if _sub._chave_numero(slot["numero"]) == _sub._chave_numero(nota_sub):
+                antiga = Decimal(str(slot["valor"]))
+                break
+        # O valor que a nota nova teria: o que ele digitou, ou o default da
+        # substituição — a MESMA regra que a tela usa, para a conta aqui não
+        # divergir do que ele viu no espelho.
+        if val_over:
+            alvo = Decimal(str(val_over))
+        else:
+            _texto, _aj = _worker.valor_base_substituicao(card, nota_sub)
+            alvo = Decimal(_texto) if _texto else _val._dec_norm(card.get("valor_medicao"))
+        if antiga is not None and alvo > 0:
+            if alvo < antiga:
+                diagnostico = (
+                    f"<div style='background:#fdecea;border:1px solid #f5c6c2;color:#a32118;"
+                    f"padding:12px;border-radius:6px;margin:0 0 14px'>"
+                    f"<b>No SEU caso é o caminho ➋ (cancelamento).</b> A NF {n} é de "
+                    f"R$ {_val.brl(antiga)} e a nota nova sairia por R$ {_val.brl(alvo)} — "
+                    f"menor. O portal não vai aceitar substituir por esse valor; cancele "
+                    f"a {n} e registre em <b>/emissao/cancelada</b>.</div>")
+            else:
+                diagnostico = (
+                    f"<div style='background:#e9f7ef;border:1px solid #b6e2c6;color:#1a7a3c;"
+                    f"padding:12px;border-radius:6px;margin:0 0 14px'>"
+                    f"<b>No SEU caso é o caminho ➊ (substituição).</b> A NF {n} é de "
+                    f"R$ {_val.brl(antiga)} e a nota nova sairia por R$ {_val.brl(alvo)} — "
+                    f"igual ou maior, que é o que o município aceita.</div>")
+    except Exception:
+        pass                       # sem a conta, a orientação completa já basta
+
+    return (cabeca + diagnostico + "<b>O que fazer agora — depende do VALOR da nota "
+            "nova:</b><br><br>" + caminho_maior + "<br><br>" + caminho_menor)
+
+
 @bp.route("/emitir", methods=["POST"])
 def emitir():
     if not _token_ok():
@@ -282,23 +358,16 @@ def emitir():
     # operação da API. Enquanto esse caminho não existir aqui — e ele não dá
     # para ser ensaiado sem emitir nota de verdade — a substituição é feita
     # pelo portal, como já era o caminho da nota emitida manualmente.
+    #
+    # ⚠️ **E o caminho depende do VALOR, o que esta mensagem ignorava.** Em
+    # 17/11/2026 o dono precisava BAIXAR uma nota em dez centavos; a mensagem
+    # mandou, sem olhar nada, usar o botão "Substituir" do portal — justamente o
+    # que o município não aceita para valor menor. Ele seguiu a instrução e
+    # continuou preso. Agora ela olha os números do card antes de instruir.
     if nota_sub:
-        return Response(_pagina_explicacao(
-            f"<b>Substituir pela tela não funciona mais.</b> Em 07/10/2026 a prefeitura "
-            f"desativou o modelo antigo, e com ele o campo que mandava a nota "
-            f"substituída dentro da nota nova. No modelo nacional a substituição é "
-            f"um evento registrado sobre a nota, e esse caminho ainda não está "
-            f"pronto aqui.<br><br>"
-            f"<b>O que fazer agora:</b> substitua a NF {html.escape(nota_sub)} pelo "
-            f"botão \"Substituir\" do portal da prefeitura. Depois, no "
-            f"<b>/emissao/recuperar</b>: cole o XML da nota NOVA, ponha "
-            f"{html.escape(nota_sub)} no campo \"nota substituída\" e "
-            f"<b>marque \"concluir completo\"</b>. Ele faz as duas metades — "
-            f"registra a nota nova (Notas BWS, Omie, slot, Drive, Descrição) e "
-            f"cancela a {html.escape(nota_sub)} no slot do card, na planilha e no "
-            f"título do Omie, mostrando no fim se cada um dos três deu certo. É o "
-            f"mesmo caminho que já se usava para nota emitida manualmente."),
-            mimetype="text/html")
+        return Response(_pagina_explicacao(_explicacao_substituicao(card_id, nota_sub,
+                                                                    val_over)),
+                        mimetype="text/html")
 
     with _LOCK:
         if card_id in _EMITINDO:
@@ -622,6 +691,22 @@ def _card_e_aba_notas(card_id):
     card = _pipefy.extrair_card(_pipefy.get_card(card_id, token))
     ws = _worker.abrir_aba(gc.open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
     return card, ws
+
+
+def _so_o_card(card_id):
+    """Só o card do Pipefy e as credenciais — sem abrir a planilha de notas.
+
+    Existe por conta de custo, e a conta é esta: `_card_aba_e_cred` abre a
+    planilha e procura a aba 'Notas BWS', o que são 2 a 3 idas ao Google a mais.
+    Quem só precisa LER um valor do card (a mensagem que explica o caminho da
+    substituição, por exemplo) não tem por que pagar por isso.
+    """
+    gc = _worker.cliente_gspread()
+    cred = _worker.ler_credenciais(gc)
+    token = cred.get("PIPEFY_TOKEN")
+    if not token:
+        raise KeyError("PIPEFY_TOKEN não encontrado na aba 'Credenciais'.")
+    return _pipefy.extrair_card(_pipefy.get_card(card_id, token)), cred
 
 
 def _card_aba_e_cred(card_id):
