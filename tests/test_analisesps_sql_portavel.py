@@ -565,6 +565,9 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # Partir o PDF de comprovantes em levas de dez páginas. Já estava no
         # requirements (o BaixaBradesco usa), então nada novo entrou.
         "pypdf": "pypdf",
+        # O relatório completo do lote (15/11/2026) embute os anexos com o
+        # PyMuPDF, que já estava no requirements (pdf_processor, email_financeiro).
+        "fitz": "pymupdf",
         # A busca de notas na Receita. CÓDIGO DE TERCEIRO DE PROPÓSITO: ela
         # resolve a assinatura digital do pedido com o certificado A1, que é a
         # parte onde escrever do zero custa caro — o erro volta como "recusado"

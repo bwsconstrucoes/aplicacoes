@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import (
-    Categoria, Colaborador, Funcao, Obra, PerfilUsuario, Usuario,
+    Cargo, Categoria, Colaborador, Obra, PerfilUsuario, Usuario,
 )
 from app.apps.erp.db.models.financeiro import (
     DespesaColaborador, DespesaColaboradorItem,
@@ -133,7 +133,9 @@ def salvar_colaborador(s: Session, dados: dict[str, Any], usuario: Usuario) -> C
     # havia como tirar o colaborador da obra nem apagar a função pela tela — a
     # pessoa escolhia o traço, salvava, e o cadastro voltava com a obra de
     # antes, sem nenhum recado.
-    for campo in ("funcao_id", "obra_id"):
+    # `cargo_id` no lugar de `funcao_id` desde a migração 105: cargo e função
+    # viraram a mesma coisa.
+    for campo in ("cargo_id", "obra_id"):
         if campo in dados:
             bruto = dados[campo]
             setattr(c, campo, int(bruto) if bruto not in (None, "", 0, "0") else None)
@@ -254,7 +256,7 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
     from app.apps.erp.core.auth.permissoes import obras_do_usuario
 
     stmt = select(Colaborador).options(
-        selectinload(Colaborador.funcao), selectinload(Colaborador.obra))
+        selectinload(Colaborador.cargo), selectinload(Colaborador.obra))
     if usuario is not None:
         permitidas = obras_do_usuario(s, usuario)
         if permitidas is not None:
@@ -275,12 +277,17 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
 
     return [{
         "id": c.id, "nome": c.nome, "cpf": c.cpf, "matricula": c.matricula,
-        "funcao": c.funcao.nome if c.funcao else None,
-        "funcao_id": c.funcao_id,
+        # `funcao`/`funcao_id` continuam no JSON com o nome antigo porque o
+        # ponto e as telas já os leem assim — mas o que vai neles é o CARGO
+        # (migração 105).
+        "funcao": c.cargo.nome if c.cargo else None,
+        "funcao_id": c.cargo_id,
+        "cargo": c.cargo.nome if c.cargo else None,
+        "cargo_id": c.cargo_id,
         "obra": c.obra.codigo if c.obra else None, "obra_id": c.obra_id,
         "regime": c.regime, "situacao": c.situacao,
         "valor_diaria": float(c.valor_diaria) if c.valor_diaria else (
-            float(c.funcao.valor_diaria) if c.funcao and c.funcao.valor_diaria else None),
+            float(c.cargo.valor_diaria) if c.cargo and c.cargo.valor_diaria else None),
         "aux_alimentacao": float(c.aux_alimentacao) if c.aux_alimentacao else None,
         "aux_transporte": float(c.aux_transporte) if c.aux_transporte else None,
         # O TIPO DA CHAVE PIX volta junto (22/09/2026). Ele não voltava, e a
@@ -398,7 +405,7 @@ def criticar(s: Session, itens: list[dict[str, Any]], *, obra_id: Optional[int] 
                 marcar(i, "P8", "Diária exige a quantidade de dias.", "BLOQUEIA")
             else:
                 referencia = colab.valor_diaria or (
-                    colab.funcao.valor_diaria if colab.funcao else None)
+                    colab.cargo.valor_diaria if colab.cargo else None)
                 if referencia:
                     esperado = (Decimal(str(qtd)) * Decimal(referencia)).quantize(_CENT)
                     if abs(esperado - valor) > _CENT:
@@ -795,7 +802,7 @@ def historico(s: Session, colaborador_id: int, meses: int = 24) -> dict[str, Any
                      if l["data"] >= (date.today() - timedelta(days=365)).isoformat())
     return {
         "colaborador": {"id": c.id, "nome": c.nome, "cpf": c.cpf,
-                        "funcao": c.funcao.nome if c.funcao else None,
+                        "funcao": c.cargo.nome if c.cargo else None,
                         "obra": c.obra.codigo if c.obra else None,
                         "situacao": c.situacao,
                         "admissao": c.admissao.isoformat() if c.admissao else None,

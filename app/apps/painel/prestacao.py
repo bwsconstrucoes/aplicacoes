@@ -347,6 +347,10 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
     alocacoes: dict[tuple, float] = {}
     sobras: list[dict] = []
     memoria: list[dict] = []
+    # o buraco de cada obra em cada mês, e por que régua o juro foi repartido
+    # (16/11/2026 — a tela de evolução mostra a conta mês a mês)
+    buracos_do_mes: dict[tuple, float] = {}
+    criterio_do_mes: dict[str, str] = {}
 
     rateio_do_mes: dict[str, dict[str, float]] = {}
     for (obra, mes), valor in (rateio_recebido or {}).items():
@@ -363,6 +367,8 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
         deficits = {o: -v for o, v in acumulado.items()
                     if v < -0.005 and _ativa(o)}
         juro = juros_por_mes.get(mes, 0.0)
+        for o, buraco in deficits.items():
+            buracos_do_mes[(o, mes)] = buraco
 
         pesos, criterio = deficits, "déficit de caixa"
         necessidade: dict[str, float] = {}
@@ -401,6 +407,7 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
                     "motivo": "nenhuma obra estava com o caixa negativo neste mês",
                 })
 
+        criterio_do_mes[mes] = criterio
         memoria.append({
             "mes": mes,
             "juros": round(juro, 2),
@@ -421,7 +428,8 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
             "motivo": "lançamento sem data: não dá para saber de que mês é o buraco",
         })
 
-    return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria}
+    return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria,
+            "detalhe": {"buracos": buracos_do_mes, "criterio": criterio_do_mes}}
 
 
 def corte_dos_juros(pessoal, caixa, obras) -> dict:
@@ -763,15 +771,27 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
     para_lado: dict[tuple, float] = {}
     sobras: list[dict] = []
 
-    def _destinar(mes, valor, fica, filial):
+    # O DETALHE (16/11/2026, o dono: "os sócios não vão se conter apenas com o
+    # cálculo final, sem compreender na minúcia como é que aqueles valores
+    # estão chegando e sendo apropriados"). A conta sempre soube de onde veio
+    # cada real — por grupo de despesa, por mês, por obra — e somava tudo numa
+    # alocação só. Isto guarda as parcelas, sem mudar nenhum número.
+    por_grupo_mes: dict[tuple, dict] = {}
+
+    def _destinar(mes, valor, fica, filial, grupo=""):
         """Soma ao bolo do mês e guarda quanto já tem lado: o que fica no
         principal e o que é da filial. O resto se rateia entre todas."""
         pool[mes] = pool.get(mes, 0.0) + valor
+        do_grupo = por_grupo_mes.setdefault(
+            (mes, grupo or "(sem grupo)"), {"valor": 0.0, "fica": 0.0, "filial": 0.0})
+        do_grupo["valor"] += valor
         if separa:
             para_lado[(mes, "principal")] = (para_lado.get((mes, "principal"), 0.0)
                                              + valor * fica / 100.0)
             para_lado[(mes, "demais")] = (para_lado.get((mes, "demais"), 0.0)
                                           + valor * filial / 100.0)
+            do_grupo["fica"] += valor * fica / 100.0
+            do_grupo["filial"] += valor * filial / 100.0
     for e in excecoes or []:
         chave = (e["mes"], e.get("grupo") or "", e.get("categoria") or "")
         valor = float(e["valor"] or 0)
@@ -784,7 +804,7 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
             continue
         _destinar(e["mes"], valor, *partes_da_conta(
             pesos, e.get("grupo"), e.get("categoria"), str(e.get("codigo") or ""),
-            pct_padrao, mes=e["mes"]))
+            pct_padrao, mes=e["mes"]), grupo=e.get("grupo") or "")
 
     # 2. O que sobrou de cada balde segue a regra do seu nível.
     # A mesma conta pode vir em mais de uma linha (dois centros de custo da
@@ -812,12 +832,13 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
             continue
         fica, filial, origem = regra_da_conta(
             pesos, grupo_l, categoria_l, "", pct_padrao, mes=mes_l)
-        com_regra.append((mes_l, valor, fica, filial, origem))
+        com_regra.append((mes_l, valor, fica, filial, origem, grupo_l))
         total_da_regra[origem] = total_da_regra.get(origem, 0.0) + valor
     fixo_da_regra = {o: valor_fixo_da_regra(pesos, o) for o in total_da_regra}
-    for mes_l, valor, fica, filial, origem in com_regra:
+    for mes_l, valor, fica, filial, origem, grupo_l in com_regra:
         _destinar(mes_l, valor, *partes_com_valor_fixo(
-            fica, filial, fixo_da_regra[origem], total_da_regra[origem]))
+            fica, filial, fixo_da_regra[origem], total_da_regra[origem]),
+            grupo=grupo_l)
 
     # 2b. A filial: inteira, e só para os demais.
     da_filial: dict[str, float] = {}
@@ -842,6 +863,8 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
 
     alocacoes: dict[tuple, float] = {}
     memoria: list[dict] = []
+    partes_do_mes: dict[str, dict] = {}
+    por_obra_mes: dict[tuple, dict] = {}
     for mes in meses:
         bolo = pool.get(mes, 0.0)
         # só quem RECEBE neste mês (projeto que não recebe, ou que já saiu,
@@ -872,10 +895,25 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
                            "motivo": "nenhuma obra dos demais projetos recebendo neste "
                                      "mês — o custo da filial não vai para o projeto "
                                      "principal"})
-        for valor, grupo_de_obras in ((livre, fatias),
-                                      (a_principal, do_lado["principal"]),
-                                      (a_demais, do_lado["demais"]),
-                                      (a_filial, do_lado["demais"])):
+        # as partes do mês como de fato foram repartidas (depois de o lado
+        # sem ninguém passar a parte dele para o outro)
+        partes_do_mes[mes] = {
+            "bolo": bolo, "livre": livre, "principal": a_principal,
+            "demais": a_demais, "filial": a_filial, "obras": len(fatias),
+        }
+        soma_de_todas = sum(fatias.values())
+        for obra, fracao in fatias.items():
+            soma_do_lado = sum(do_lado.get(lado_de.get(obra), {}).values())
+            por_obra_mes[(obra, mes)] = {
+                "livre": 0.0, "lado": 0.0, "filial": 0.0,
+                # quanto a obra pesa na régua: entre todas, e dentro do lado
+                "fracao": fracao / soma_de_todas if soma_de_todas > 0 else 0.0,
+                "fracao_do_lado": fracao / soma_do_lado if soma_do_lado > 0 else 0.0,
+            }
+        for parcela, valor, grupo_de_obras in (("livre", livre, fatias),
+                                               ("lado", a_principal, do_lado["principal"]),
+                                               ("lado", a_demais, do_lado["demais"]),
+                                               ("filial", a_filial, do_lado["demais"])):
             total = sum(grupo_de_obras.values())
             if abs(valor) <= 0.005 or total <= 0:
                 continue
@@ -883,6 +921,7 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
                 parte = valor * fracao / total
                 if abs(parte) > 0.005:
                     alocacoes[(obra, mes)] = alocacoes.get((obra, mes), 0.0) + parte
+                    por_obra_mes[(obra, mes)][parcela] += parte
         memoria.append({
             "mes": mes,
             "pool": round(bolo, 2),
@@ -892,6 +931,11 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         })
 
     return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria,
+            # as parcelas de cada número — ver "O DETALHE", no começo
+            "detalhe": {"partes_do_mes": partes_do_mes,
+                        "por_obra_mes": por_obra_mes,
+                        "por_grupo_mes": por_grupo_mes,
+                        "filial_por_mes": dict(da_filial)},
             "fora_por_mes": fora_por_mes,
             "fora_por_conta": sorted(
                 ({"grupo": g, "categoria": c, "valor": round(v, 2)}

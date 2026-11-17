@@ -1163,13 +1163,14 @@ def etiquetas_da_sp(sp: dict) -> list:
 
 
 def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
-                 agora: _dt.datetime) -> list:
+                 agora: _dt.datetime, campos_do_pipe=None) -> list:
     """Os campos da Solicitação de Pagamento, no padrão do script do BeeVale
     (`_createPipefyCard_`), com Pix e chave aleatória "Atualizar Chave"."""
     favorecido = FAVORECIDO.get(sp.get("destino") or "", FAVORECIDO["somapay"])
     proprio = sp.get("favorecido")
     if proprio:
-        return _campos_da_sp_individual(grupo, sp, link_analise, agora, proprio)
+        return _campos_da_sp_individual(grupo, sp, link_analise, agora, proprio,
+                                        campos_do_pipe)
     campos = [
         ("data", agora.strftime("%d/%m/%Y %H:%M")),
         ("data_de_pagamento", agora.strftime("%d/%m/%Y")),
@@ -1202,15 +1203,75 @@ def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
     return [{"campo": c, "valor": v} for c, v in campos]
 
 
+# ⚠️ A CHAVE PIX DO CADASTRO VAI MARCADA, E NÃO "ALEATÓRIA / ATUALIZAR CHAVE" (dono,
+# 16/11/2026): *"está sendo marcado todos como aleatória e colocado atualizar PIX,
+# sendo que já está puxando do cadastro a chave PIX, que é CNPJ ou CPF (…) ao invés de
+# marcar [em] selecione a chave PIX a ser utilizada CNPJ ou CPF, marca aleatória. Aí eu
+# estou tendo que alterar todas as SPs geradas, uma por uma."*
+#
+# O campo "tipo" do pipe ("Selecione a chave PIX a ser utilizada") recebe a OPÇÃO do
+# próprio pipe que corresponde ao tipo da chave do cadastro, e a chave vai no campo
+# daquele tipo (os mesmos que a importação do ERP lê: `cnpj_1`, `chave_pix_cpf`,
+# `chave_pix_de_email`, `chave_pix_telefone`, `chave_pix_aleat_ria`). Só quando o
+# cadastro não tem chave, ou o pipe não tem a opção, volta o padrão das folhas
+# ("Aleatória" / "Atualizar Chave") — e a etiqueta "Atualizar Pix" avisa na lista.
+CAMPO_DA_CHAVE = {"cpf": "chave_pix_cpf", "cnpj": "cnpj_1", "email": "chave_pix_de_email",
+                  "telefone": "chave_pix_telefone", "aleatoria": "chave_pix_aleat_ria"}
+
+
+def tipo_da_chave(tipo) -> str:
+    """"cpf", "cnpj", "email", "telefone", "aleatoria" ou "" — do texto do cadastro
+    ou de uma opção do pipe."""
+    t = _sem_acento(tipo).replace("-", "").replace(" ", "")
+    for chave, pistas in (("cnpj", ("cnpj",)), ("cpf", ("cpf",)),
+                          ("email", ("email",)),
+                          ("telefone", ("telefone", "celular", "fone")),
+                          ("aleatoria", ("aleat", "evp"))):
+        if any(x in t for x in pistas):
+            return chave
+    return ""
+
+
+def _chave_formatada(tipo: str, chave: str) -> str:
+    d = "".join(c for c in str(chave or "") if c.isdigit())
+    if tipo == "cpf" and len(d) == 11:
+        return _cpf_bonito(d)
+    if tipo == "cnpj" and len(d) == 14:
+        return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
+    return " ".join(str(chave or "").split())
+
+
+ROTULO_DO_TIPO = {"cpf": "CPF", "cnpj": "CNPJ", "email": "E-mail", "telefone": "Telefone",
+                  "aleatoria": "Aleatória"}
+
+
+def campos_da_chave(fav: dict, campos_do_pipe=None) -> list:
+    """`[(campo, valor)]` do "tipo" e da chave Pix da SP de uma pessoa.
+
+    `campos_do_pipe` (os campos do pipe de SP, lidos do Pipefy no lançamento): a
+    opção marcada é a do próprio pipe, e o pipe tem de ter o campo daquela chave —
+    senão, o padrão das folhas, para o card não sair com o tipo marcado e a chave
+    em lugar nenhum. Sem ele (a conta feita fora do lançamento), o rótulo de costume."""
+    tipo = tipo_da_chave(fav.get("tipo_chave"))
+    chave = " ".join(str(fav.get("chave_pix") or "").split())
+    opcao = ROTULO_DO_TIPO.get(tipo)
+    if campos_do_pipe is not None and tipo:
+        opcoes = (campos_do_pipe.get("tipo") or {}).get("opcoes") or []
+        opcao = next((o for o in opcoes if tipo_da_chave(o) == tipo),
+                     None if opcoes else opcao)
+        if CAMPO_DA_CHAVE[tipo] not in campos_do_pipe:
+            opcao = None
+    if not chave or not opcao:
+        return [("tipo", "Aleatória"), ("chave_pix_aleat_ria", CHAVE_PIX_A_ATUALIZAR)]
+    return [("tipo", opcao), (CAMPO_DA_CHAVE[tipo], _chave_formatada(tipo, chave))]
+
+
 def _campos_da_sp_individual(grupo: dict, sp: dict, link_analise: str,
-                             agora: _dt.datetime, fav: dict) -> list:
+                             agora: _dt.datetime, fav: dict, campos_do_pipe=None) -> list:
     """A SP do pagamento via SP: o mesmo padrão das folhas, com o favorecido sendo
-    a pessoa (ou o credor PJ). ⚠️ A CHAVE PIX VAI ESCRITA NA DESCRIÇÃO e o campo
-    da chave segue o padrão das folhas ("Aleatória" / "Atualizar Chave") — os
-    campos de chave CPF, CNPJ, e-mail e telefone do pipe não foram conferidos; a
-    exceção é a chave aleatória, que vai no próprio campo."""
+    a pessoa (ou o credor PJ). A chave Pix vai escrita na descrição E marcada no
+    campo do tipo dela (`campos_da_chave`)."""
     pj = bool(fav.get("pj"))
-    aleatoria = _sem_acento(fav.get("tipo_chave")).startswith("aleat")
     campos = [
         ("data", agora.strftime("%d/%m/%Y %H:%M")),
         ("data_de_pagamento", agora.strftime("%d/%m/%Y")),
@@ -1221,14 +1282,12 @@ def _campos_da_sp_individual(grupo: dict, sp: dict, link_analise: str,
         ("rateio_m_ltiplo_entre_centros_de_custo", "Sim"),
         ("rateio_m_ltiplo", sp["rateio"]),
         ("a_despesa_gerou_emiss_o_de_nota_fiscal", "Não"),
-        ("tipo", "Aleatória"),
         ("selecione_o_procedimento", "Solicitar Pagamento"),
         ("requisi_o_solicitada_por_um_terceiro", "Não"),
         ("alimenta_o_de_equipe", "Não"),
         ("colaborador_solicitante", RESPONSAVEL),
         ("parcelas", "1x Parcela"),
         ("tipo_de_despesa", sp.get("tipo_sp") or grupo["tipo_sp"]),
-        ("chave_pix_aleat_ria", fav.get("chave_pix") if aleatoria else CHAVE_PIX_A_ATUALIZAR),
         ("link_planilha_de_an_lise", link_analise),
         ("valida_o_sp_1", "Sim"), ("lan_amento_via_api", "Sim"),
         ("etiquetas", etiquetas_da_sp(sp)),
@@ -1238,6 +1297,9 @@ def _campos_da_sp_individual(grupo: dict, sp: dict, link_analise: str,
         campos += [("cnpj", fav.get("documento") or ""), ("cnpj_1", fav.get("documento") or "")]
     else:
         campos += [("cpf", fav.get("documento") or ""), ("cpf_1", fav.get("documento") or "")]
+    # A chave por último: no PJ com chave CNPJ, o `cnpj_1` é o campo da chave.
+    da_chave = dict(campos_da_chave(fav, campos_do_pipe))
+    campos = [(c, v) for c, v in campos if c not in da_chave] + list(da_chave.items())
     return [{"campo": c, "valor": v} for c, v in campos]
 
 
@@ -1304,7 +1366,8 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
                 chave_sp = sp.get("chave") or sp["conta"]
                 feito = (estado["sps"].get(chave_sp) or {})
                 if not feito.get("id"):
-                    valores = [v for v in campos_da_sp(grupo, sp, vista["link_analise"], agora)
+                    valores = [v for v in campos_da_sp(grupo, sp, vista["link_analise"], agora,
+                                                       existentes)
                                if v["campo"] in existentes]
                     na_criacao, depois = _separar(valores, sp_pipe["inicio"])
                     card = pipefy.criar_card(PIPE_SP, sp.get("titulo") or grupo["grupo"],

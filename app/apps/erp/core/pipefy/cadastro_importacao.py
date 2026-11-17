@@ -47,7 +47,7 @@ import logging
 import re
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroValidacao
@@ -199,12 +199,34 @@ def o_que_ja_veio(s: Session, cards: list[str]) -> set[tuple[str, str, int]]:
 
     ⚑ É ISTO que torna a segunda passada instantânea. Sem ela, "já tenho esse
     arquivo" só se descobre DEPOIS de baixá-lo, porque a comparação é pelo
-    conteúdo."""
+    conteúdo.
+
+    ⚑ E "JÁ VEIO" TEM DE SER VERDADE — conserto de 16/11/2026. O dono olhou a
+    ficha de uma pessoa cujo relatório dizia sete documentos "JÁ TINHA" e
+    respondeu: *"não veio nada de documentos."* Esta anotação dizia que o
+    arquivo tinha entrado; a ficha não tinha arquivo nenhum.
+
+    A anotação é por CARD, e o documento é de uma PESSOA. Qualquer coisa que
+    tenha separado os dois depois — o documento apagado à mão, o card casado
+    com outra pessoa numa rodada antiga, o cadastro refeito — deixava a
+    anotação de pé e o arquivo não. E o pior: quanto mais se reimportava, mais
+    o sistema afirmava que estava tudo lá.
+
+    Agora só conta como "já veio" o que AINDA ESTÁ na ficha daquela pessoa. O
+    que não estiver é baixado de novo — que é o desfecho certo: na dúvida,
+    trazer de novo custa um download; não trazer custa um documento que ninguém
+    sabe que falta.
+    """
     if not cards:
         return set()
     linhas = s.execute(text("""
-        SELECT card, campo, item FROM pipefy_importado
-         WHERE card = ANY(:cards) AND resultado <> 'FALHOU'"""),
+        SELECT p.card, p.campo, p.item
+          FROM pipefy_importado p
+          JOIN documentos d ON d.id = p.documento_id
+         WHERE p.card = ANY(:cards)
+           AND p.resultado <> 'FALHOU'
+           AND p.documento_id IS NOT NULL
+           AND d.colaborador_id = p.colaborador_id"""),
         {"cards": list(cards)}).all()
     return {(str(l[0]), str(l[1]), int(l[2])) for l in linhas}
 
@@ -272,7 +294,7 @@ PALAVRAS: dict[str, dict[str, str]] = {
         "SEGUNDAAQUINTA": "SEG_QUI", "SEGUNDAASEXTA": "SEG_SEX",
         "MENSAL": "MENSAL", "MES": "MES"},
     "categoria_transporte": {
-        "DIARIO": "DIARIO", "MENSAL": "MENSAL",
+        "DIARIO": "DIARIO", "MENSAL": "MENSAL", "MES": "MES",
         "SEGUNDAESEXTA": "SEG_E_SEX", "VALETRANSPORTE": "VALE_TRANSPORTE",
         "DIARIOEVALETRANSPORTE": "DIARIO_E_VT", "VEICULO": "VEICULO",
         "MOTOCICLETA": "MOTOCICLETA", "BICICLETA": "BICICLETA",
@@ -304,6 +326,83 @@ def _da_lista(valor: str, validos, coluna: str = "") -> str:
         if _cru(opcao) == alvo:
             return opcao
     return ""
+
+
+# ---------------------------------------------------------------------------
+# O CARGO — pedido dele em 16/11/2026: *"queria que o cargo fosse preenchido
+# por essa importação também."*
+#
+# ⚑ POR QUE ELE ESTAVA DE FORA, e por que agora pode entrar. No Pipefy o cargo
+# é um CONECTOR: o card guarda o id de um registro de outro pipe, e id de lá
+# não quer dizer nada aqui. Mas o campo também devolve o NOME ("PEDREIRO"), e
+# nome casa com o cadastro de cargos do ERP, que tem nome único.
+#
+# ⚑ E O CASAMENTO É EXATO, DE PROPÓSITO. Cargo decide piso da convenção, CBO,
+# riscos e EPI — "parecido" aqui vira salário errado e EPI errado. Ou o nome é
+# o mesmo (sem acento e sem caixa, que é diferença de digitação, não de
+# cargo), ou NÃO ENTRA e o relatório diz o nome que veio, para alguém criar o
+# cargo ou corrigir o card. Adivinhar sairia mais caro que não preencher.
+#
+# ⚑ CARGO E FUNÇÃO NÃO SÃO A MESMA COISA, e ele perguntou isso no mesmo dia.
+# `funcoes` = o que a pessoa faz na obra, com a DIÁRIA de referência (é o que
+# o diário de obra usa). `cargos` = o cargo registrado, com CBO, riscos e EPI,
+# ligado à convenção — é o que a contabilidade recebe. A importação preenche
+# o CARGO, que é o do registro.
+# ---------------------------------------------------------------------------
+CAMPOS_DE_CARGO = ("cargo", "cargo_pretendido", "cargo_pleiteado", "fun_o",
+                   "funcao", "cargo_fun_o", "cargo_do_colaborador")
+
+
+def cargo_do_card(s: Session, campos: dict[str, str]) -> tuple[Optional[int], str]:
+    """(id do cargo, nome que veio no card). O id é None quando não casou."""
+    from app.apps.erp.db.models.cadastros import Cargo
+
+    nome = ""
+    for chave in CAMPOS_DE_CARGO:
+        nome = _limpo(campos.get(chave))
+        if nome:
+            break
+    if not nome:
+        return None, ""
+    alvo = _cru(nome)
+    for c in s.scalars(select(Cargo).where(Cargo.ativo.is_(True))).all():
+        if _cru(c.nome) == alvo:
+            return c.id, nome
+    return None, nome
+
+
+# ⚑ A CÓPIA DA PLANILHA NO BANCO SAIU DAQUI em 16/11/2026, poucas horas depois
+# de entrar. Ela tem 30 das 79 colunas da aba e fica velha entre uma
+# atualização e outra: o dono atualizou a planilha, importou, e nada mudou.
+# A leitura agora é da planilha AO VIVO — `core/importadores/planilha_dp.py`,
+# escrito com a aba aberta, coluna por coluna e valor por valor.
+#
+# O que sobrou aqui é só o casamento dos NOMES (cargo, convenção, obra) com os
+# cadastros do ERP, que continua valendo seja qual for a fonte.
+def _ligacoes_do_espelho(s: Session, nomes: dict[str, str]) -> dict[str, int]:
+    """Cargo, convenção e obra pelo NOME, exatos — nunca por semelhança."""
+    from app.apps.erp.db.models.cadastros import Cargo, Convencao, Obra
+
+    saida: dict[str, int] = {}
+    if nomes.get("cargo"):
+        alvo = _cru(nomes["cargo"])
+        for c in s.scalars(select(Cargo).where(Cargo.ativo.is_(True))).all():
+            if _cru(c.nome) == alvo:
+                saida["cargo_id"] = c.id
+                break
+    if nomes.get("convencao"):
+        alvo = _cru(nomes["convencao"])
+        for c in s.scalars(select(Convencao)).all():
+            if _cru(c.nome) == alvo:
+                saida["convencao_id"] = c.id
+                break
+    if nomes.get("obra"):
+        alvo = _cru(nomes["obra"])
+        for o in s.scalars(select(Obra)).all():
+            if _cru(o.codigo) == alvo:
+                saida["obra_id"] = o.id
+                break
+    return saida
 
 
 def anexos_do_card(campos: dict[str, str]) -> list[dict[str, Any]]:
@@ -420,6 +519,10 @@ def relatorio_vazio(motivo: str) -> dict[str, Any]:
             "pessoas_lidas": 0, "documentos_guardados": 0,
             "documentos_ja_tinha": 0, "documentos_que_falharam": 0,
             "campos_preenchidos": 0, "cards_sem_resposta": [], "falhas": [],
+            "cargos_sem_par": [], "fases_sem_etapa": [],
+            "planilha_nao_entendi": [],
+            "fora_da_planilha": [], "planilha_lida": 0,
+            "rotulos": dict(ROTULO_DO_CAMPO),
             "por_pessoa": [], "de_fora": dict(PAPEIS_DE_FORA),
             "cards_pedidos": 0, "cards_sem_pessoa": []}
 
@@ -584,12 +687,55 @@ DO_DOCUMENTO = {"nome": "nome", "data_nascimento": "data_nascimento",
                 "pis": "num_pis", "ctps_numero": "num_ctps"}
 
 
+# ⚑ DATA SE COMPARA COMO DATA, NÃO COMO TEXTO — conserto de 16/11/2026, e o
+# dono pegou: *"o que não bateu na crítica ainda foi errada. ERP trabalhando
+# com data em padrão errado."* A tela mostrava, como divergência a decidir:
+#
+#     Data de nascimento | No ERP 1988-03-30 | No card 30/03/1988
+#
+# É a MESMA data. O cadastro guarda data de verdade (e o Postgres a escreve
+# ano-mês-dia); o card escreve dia/mês/ano. Comparando letra por letra,
+# "19880330" nunca é "30031988" — então TODA pessoa com data de nascimento
+# aparecia como divergente. Numa carga de 575, são 575 perguntas falsas, e
+# uma fila cheia de pergunta falsa é uma fila que ninguém lê: a divergência
+# de verdade afunda no meio.
+def _como_data(valor: Any):
+    """A data por trás do texto, ou None quando não for data."""
+    import datetime as _dt
+    if isinstance(valor, _dt.datetime):
+        return valor.date()
+    if isinstance(valor, _dt.date):
+        return valor
+    texto = str(valor or "").strip()[:10]
+    if not texto:
+        return None
+    for formato in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return _dt.datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
+def data_para_pessoa(valor: Any) -> str:
+    """Toda data que uma PESSOA vai ler sai em dia/mês/ano.
+
+    Ano-mês-dia é como o banco escreve, não como se lê um nascimento aqui.
+    O que não for data sai como está."""
+    d = _como_data(valor)
+    return d.strftime("%d/%m/%Y") if d else str(valor or "").strip()
+
+
 def _igual(a: Any, b: Any) -> bool:
-    """Compara sem acento, sem caixa e sem pontuação.
+    """Compara sem acento, sem caixa e sem pontuação — e data como data.
 
     "José da Silva" e "JOSE DA SILVA" são a mesma pessoa; "123.45678.90-0" e
-    "12345678900" são o mesmo PIS. Acusar isso como divergência encheria a
-    tela de ruído e faria ninguém olhar o que importa."""
+    "12345678900" são o mesmo PIS; 1988-03-30 e 30/03/1988 são o mesmo dia.
+    Acusar qualquer um desses como divergência encheria a tela de ruído e
+    faria ninguém olhar o que importa."""
+    da, db = _como_data(a), _como_data(b)
+    if da is not None and db is not None:
+        return da == db
     return _cru(a) == _cru(b)
 
 
@@ -741,7 +887,10 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
              obra_id: Optional[int] = None,
              teto_de_pessoas: Optional[int] = POR_RODADA,
              ler_cards=None, cards: Any = None,
-             regravar: bool = False, ler_papel: Any = None) -> dict[str, Any]:
+             regravar: bool = False, ler_papel: Any = None,
+             # A leitura da planilha entra por aqui para o teste poder trocá-la
+             # — a de verdade vai ao Google, e teste não vai à internet.
+             ler_planilha=None) -> dict[str, Any]:
     """Lê os cards das pessoas e traz documentos e campos vazios.
 
     Com `simular=True` (o padrão) NADA é gravado e nenhum arquivo é baixado:
@@ -778,6 +927,21 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "campos_preenchidos": 0,
         "cards_sem_resposta": [],
         "falhas": [],
+        # Cargo que o card trouxe e que não existe no cadastro de cargos: a
+        # lista é a resposta de "por que o cargo não veio", com o nome exato
+        # para alguém criar ou corrigir.
+        "cargos_sem_par": [],
+        # Fase do pipe que o sistema não soube traduzir em etapa: sem esta
+        # lista, a pessoa simplesmente ficaria na etapa antiga e ninguém
+        # saberia por quê.
+        "fases_sem_etapa": [],
+        # Valor que a planilha escreve e que o de-para não conhece. É a lista
+        # que acaba com a adivinhação: ela diz o que está escrito lá.
+        "planilha_nao_entendi": [],
+        "fora_da_planilha": [],
+        "planilha_lida": 0,
+        # Para a tela falar "Cargo" e não "cargo_id" com quem confere cadastro.
+        "rotulos": dict(ROTULO_DO_CAMPO),
         "por_pessoa": [],
         "de_fora": dict(PAPEIS_DE_FORA),
         "cards_sem_pessoa": [],
@@ -815,6 +979,18 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     ja_veio = set() if regravar else o_que_ja_veio(
         s, [p["card"] for p in pessoas])
 
+    # ⚑ A PLANILHA "Dados Documentos" É LIDA UMA VEZ, AO VIVO (16/11/2026).
+    # Ele: *"a planilha é espelho do card."* É verdade — eu conferi lendo a
+    # aba: as 79 colunas têm TUDO o que o card tem, inclusive RG, nome do pai
+    # e da mãe, endereço, sexo e escolaridade, que eu havia afirmado existirem
+    # só no card. Do Pipefy sobra o que a planilha não tem: os DOCUMENTOS.
+    #
+    # Ao vivo, e não da cópia no banco: a cópia tem 30 das 79 colunas e fica
+    # velha entre uma atualização e outra — ele atualizou a planilha, importou,
+    # e nada mudou, porque a cópia era de antes.
+    da_planilha = (ler_planilha or _svc_planilha().carregar_por_cpf)()
+    relatorio["planilha_lida"] = len(da_planilha)
+
     for pessoa in pessoas:
         card = str(pessoa["card"])
         bruto = lidos.get(card)
@@ -833,7 +1009,78 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
             # `empresa_id` não é texto: entra como ligação, e o servidor
             # deriva o CNPJ de admissão dela (ver `pessoas.salvar`).
             achados["empresa_id"] = empresa_id
+        # ⚑ A FASE DO CARD VIRA ETAPA E SITUAÇÃO — 16/11/2026, pedido dele:
+        # *"na importação você já tem que deixar a fase correta, né? Casar a
+        # fase com a etapa."*
+        #
+        # E vale mais do que arrumação: a fase é o único lugar que diz se a
+        # pessoa está afastada ou desligada, e a SITUAÇÃO era o último dado
+        # que faltava para o ponto poder largar a planilha do Análise de SPs.
+        #
+        # Fase que o sistema não reconhece não mexe em nada — chutar a etapa
+        # tira a pessoa da fila de trabalho do DP sem ninguém perceber.
+        etapa, situacao = _svc_pessoas().etapa_da_fase(bruto.get("fase"))
+        if etapa:
+            achados["etapa"] = etapa
+            achados["situacao"] = situacao
+            linha["fase_do_card"] = bruto.get("fase")
+        elif (bruto.get("fase") or "").strip():
+            relatorio["fases_sem_etapa"].append(
+                {"nome": pessoa["nome"], "card": card,
+                 "fase": str(bruto.get("fase")).strip()})
+
+        # ⚑ O ESPELHO DA PLANILHA ENTRA AQUI E MANDA (16/11/2026). É o pedido
+        # dele: os dados do card já estão em "Dados Documentos", e lá os nomes
+        # das colunas são legíveis — não se adivinha apelido de campo. Foi por
+        # adivinhação que VÍNCULO e PAGAMENTO nunca entraram.
+        espelho = dict(da_planilha.get(_so_digitos(pessoa.get("cpf") or "")) or {})
+        nomes_do_espelho = espelho.pop("_nomes", {}) if espelho else {}
+        nao_entendi = espelho.pop("_nao_entendi", []) if espelho else []
+        # O CPF e o NOME não entram por aqui: o CPF é a identidade da pessoa, e
+        # o nome só muda por decisão de alguém (ver `_gravar_campos`).
+        espelho.pop("cpf", None)
+        espelho.pop("nome", None)
+        if not espelho:
+            relatorio["fora_da_planilha"].append(
+                {"nome": pessoa["nome"], "cpf": pessoa.get("cpf", ""),
+                 "card": card})
+        else:
+            linha["planilha_crua"] = dict(espelho)
+            ligacoes = _ligacoes_do_espelho(s, nomes_do_espelho)
+            achados.update(espelho)
+            achados.update(ligacoes)
+            linha["do_espelho"] = sorted(espelho) + sorted(ligacoes)
+            # Nome que a planilha traz e que não existe como cadastro aqui.
+            for chave, campo, rotulo in (("cargo", "cargo_id", "Cargo"),
+                                         ("convencao", "convencao_id", "Convenção"),
+                                         ("obra", "obra_id", "Obra")):
+                if nomes_do_espelho.get(chave) and campo not in ligacoes:
+                    nao_entendi.append({
+                        "coluna": chave, "campo": rotulo,
+                        "valor": nomes_do_espelho[chave] + " — não existe no ERP"})
+        if nao_entendi:
+            linha["planilha_nao_entendi"] = nao_entendi
+            for x in nao_entendi:
+                relatorio["planilha_nao_entendi"].append({**x, "nome": pessoa["nome"]})
+
+        cargo_id, cargo_nome = cargo_do_card(s, campos)
+        if cargo_id and "cargo_id" not in achados:
+            achados["cargo_id"] = cargo_id
+        elif cargo_nome and "cargo_id" not in achados:
+            linha["cargo_sem_par"] = cargo_nome
+            relatorio["cargos_sem_par"].append(
+                {"nome": pessoa["nome"], "card": card, "cargo": cargo_nome})
         preencher = achados if regravar else _vazios(s, pessoa["id"], achados)
+        # ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ — conserto de 16/11/2026. Ele
+        # olhou o relatório, viu um campo só e disse: *"a verdade é que me
+        # parece que não tá puxando é nada."* E ele não tinha como saber: o
+        # relatório mostrava o que ENTROU e calava sobre o resto, então "o
+        # card veio vazio", "o ERP já tinha" e "o valor foi recusado" tinham
+        # exatamente a mesma aparência — nenhuma linha. Silêncio é a pior
+        # resposta de uma importação, porque parece defeito mesmo quando é
+        # acerto.
+        linha["nao_preenchidos"] = _por_que_nao(s, pessoa["id"], campos,
+                                                achados, preencher)
         if preencher:
             linha["campos"] = preencher
             relatorio["campos_preenchidos"] += len(preencher)
@@ -913,6 +1160,86 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "simulada" if simular else "de verdade", relatorio["pessoas_lidas"],
         relatorio["documentos_guardados"], relatorio["campos_preenchidos"])
     return relatorio
+
+
+def _svc_planilha():
+    from app.apps.erp.core.importadores import planilha_dp as svc
+    return svc
+
+
+def _svc_pessoas():
+    from app.apps.erp.core.cadastros import pessoas as svc
+    return svc
+
+
+def _por_que_nao(s: Session, colaborador_id: int, campos_do_card: dict[str, str],
+                 achados: dict[str, Any],
+                 preenchidos: dict[str, Any]) -> list[dict[str, str]]:
+    """Campo a campo: por que ele NÃO entrou nesta pessoa.
+
+    Três motivos, e eles são bem diferentes entre si — confundi-los é o que
+    faz uma importação correta parecer quebrada:
+
+    - **o cadastro já tinha** (o card trouxe, mas aqui já havia valor);
+    - **o card não trouxe** (veio vazio de lá);
+    - **o card trouxe e não serve** (texto fora das opções que o cadastro
+      aceita — ele é descartado de propósito, senão a pessoa inteira pararia).
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc
+
+    atual: dict[str, Any] = {}
+    if achados:
+        colunas = ", ".join(sorted(c for c in achados if c != "cargo_id") or ["id"])
+        linha = s.execute(text(f"SELECT {colunas} FROM colaboradores WHERE id = :i"),
+                          {"i": colaborador_id}).mappings().first()
+        atual = dict(linha or {})
+
+    fora: list[dict[str, str]] = []
+    for campo, valor in sorted(achados.items()):
+        if campo in preenchidos:
+            continue
+        fora.append({"campo": campo, "rotulo": ROTULO_DO_CAMPO.get(campo, campo),
+                     "motivo": "o cadastro já tinha",
+                     "no_card": str(valor),
+                     "no_erp": str(atual.get(campo) or "")})
+    # O que o card tentou mandar para uma caixinha fechada e foi recusado.
+    for de, para in LISTAS.items():
+        if para in achados:
+            continue
+        bruto = _limpo(campos_do_card.get(de))
+        if not bruto:
+            continue
+        fora.append({"campo": para, "rotulo": ROTULO_DO_CAMPO.get(para, para),
+                     "motivo": ("o card diz algo que não é opção do cadastro — "
+                                f"as opções são: {', '.join(svc.DA_LISTA.get(para) or ())}"),
+                     "no_card": bruto, "no_erp": ""})
+    # E o que o card simplesmente não trouxe.
+    for de, para in list(TEXTOS.items()) + list(DATAS.items()):
+        if para in achados or _limpo(campos_do_card.get(de)):
+            continue
+        fora.append({"campo": para, "rotulo": ROTULO_DO_CAMPO.get(para, para),
+                     "motivo": "o card veio vazio", "no_card": "", "no_erp": ""})
+    return fora
+
+
+# Nome em português de cada coluna, para o relatório não falar em nome de
+# banco de dados com quem está conferindo cadastro.
+ROTULO_DO_CAMPO: dict[str, str] = {
+    "pis": "Nº PIS", "ctps_numero": "Nº CTPS", "ctps_serie": "Série da CTPS",
+    "ctps_uf": "UF da CTPS", "ctps_emissao": "Emissão da CTPS",
+    "rg": "RG", "rg_uf": "UF do RG", "rg_orgao": "Órgão do RG",
+    "rg_emissao": "Emissão do RG", "nome_mae": "Nome da mãe",
+    "nome_pai": "Nome do pai", "data_nascimento": "Data de nascimento",
+    "logradouro": "Endereço", "numero_endereco": "Número", "bairro": "Bairro",
+    "cep": "CEP", "uf": "UF", "telefone": "Telefone", "sexo": "Sexo",
+    "estado_civil": "Estado civil", "escolaridade": "Escolaridade",
+    "naturalidade_uf": "UF de nascimento", "admissao": "Admissão",
+    "data_inicio": "Data de início", "meio_transporte": "Meio de transporte",
+    "categoria_alimentacao": "Categoria do auxílio-alimentação",
+    "categoria_transporte": "Categoria do auxílio-transporte",
+    "empresa_id": "Empresa", "cargo_id": "Cargo",
+    "etapa": "Etapa do cadastro", "situacao": "Situação",
+}
 
 
 def _resumo(anexo: dict[str, Any]) -> dict[str, Any]:

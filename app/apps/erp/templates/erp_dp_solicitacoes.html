@@ -62,6 +62,7 @@
 {% block conteudo %}
 <h2>Solicitações ao DP <small>o que a obra pede e o DP resolve</small></h2>
 <div id="mensagem"></div>
+<div id="readmissoes"></div>
 
 <div class="kpis" id="kpis" style="margin-bottom:12px"></div>
 
@@ -180,6 +181,33 @@ function desenhar(){
       <div class="kpi-valor">${i.atendidas || 0}</div></div>
     <div class="kpi estatico"><div class="kpi-rotulo">Recusadas</div>
       <div class="kpi-valor">${i.recusadas || 0}</div></div>`;
+  {# ⚑ AS READMISSÕES QUE NINGUÉM FEZ, EM CIMA DE TUDO (15/11/2026).
+
+     Ele: *"o colaborador que é desligado da carteira e continua como
+     prestador (…) isso aí provoca de vez em quando um bug na parte do
+     ponto."*
+
+     O mecanismo: desligar corta o acesso ao aparelho da obra na data de
+     saída. Readmissão esquecida = a pessoa aparece para trabalhar e não
+     consegue bater, e quem descobre é a obra, às sete da manhã, sem saber o
+     motivo. Decisão dele foi manter demitir-e-readmitir; isto é a trava que
+     faltava para o esquecimento não ser silencioso.
+
+     Fica ACIMA da fila porque não é um pedido a atender: é gente sem acesso
+     ao ponto agora. #}
+  const pend = DADOS.readmissoes_pendentes || [];
+  els("readmissoes").innerHTML = pend.length ? `
+    <div class="aviso alerta">
+      <b>${pend.length === 1 ? "Uma readmissão não foi feita"
+                             : pend.length + " readmissões não foram feitas"}</b>
+      — o desligamento dizia que a pessoa continua trabalhando, mas ela segue
+      desligada. <b>Sem a readmissão o ponto não aceita essa pessoa.</b>
+      <ul style="margin:6px 0 0 18px">${pend.map(x => `<li>
+        ${escapar(x.pessoa)}${x.obra ? " · obra " + escapar(x.obra) : ""}${
+        x.saiu_em ? " · saiu em " + dataBR(x.saiu_em) : ""}
+        <small>(${escapar(x.numero)})</small></li>`).join("")}</ul>
+    </div>` : "";
+
   // A conta de cada tipo, dentro do filtro lateral.
   els("f-tipos").querySelectorAll("[data-conta-tipo]").forEach(s => {
     const n = l.filter(x => x.tipo === s.dataset.contaTipo).length;
@@ -322,7 +350,10 @@ async function atender(){
     DEPENDENTE: "cadastra o dependente",
     AJUDA_DE_CUSTO: "atualiza os benefícios no cadastro",
     VALE_TRANSPORTE: "atualiza o transporte no cadastro",
-    CADASTRO: "CRIA o cadastro da pessoa no ERP",
+    CADASTRO: ABERTA.readmissao
+      ? "READMITE a pessoa: o cadastro dela volta a ativo, com vínculo novo "
+        + "(o anterior fica no histórico)"
+      : "CRIA o cadastro da pessoa no ERP",
   }[ABERTA.tipo];
   // ⚑ OS CAMPOS DO DP ENTRAM AQUI, e não no formulário de quem pede.
   //
@@ -336,7 +367,12 @@ async function atender(){
   // DP. Aqui ela é a lista `campos_do_dp` do tipo, e este é o lugar dela.
   const tipo = (DADOS.tipos || []).find(
     x => (x.valor || x.chave) === ABERTA.tipo) || {};
-  const doDP = (tipo.campos_do_dp || []).filter(c => CAMPO_PEDIDO[c] !== false);
+  {# ⚑ A LISTA VEM DO PEDIDO, não do tipo (15/11/2026). No desligamento ela
+     depende do vínculo da pessoa: a data de saída de quem tem carteira é
+     conta do DP (último dia + aviso prévio); a do prestador já veio da obra,
+     e pedi-la de novo aqui abriria a porta para duas datas diferentes. #}
+  const doDP = (ABERTA.campos_do_dp || tipo.campos_do_dp || [])
+    .filter(c => CAMPO_PEDIDO[c] !== false);
   const campos = doDP.map(c => {
     const rot = (tipo.rotulos_do_dp || {})[c] || c.replace(/_/g, " ");
     const opcoes = (tipo.opcoes_do_dp || {})[c];
@@ -402,15 +438,150 @@ const CAMPO_PEDIDO = {
   cpf: {nome_campo: "cpf"}, telefone: {nome_campo: "telefone"}, cep: {nome_campo: "cep"},
   nome: {largura: 4, obrigatorio: true},
 };
+{# O nome de cada papel em português — o recado acima diz "comprovante de
+   endereço", não "COMPROVANTE-ENDERECO-PESSOA". #}
+const ROTULO_PAPEL_DP = {
+  "DOC-IDENTIDADE": "documento de identificação (RG, CNH ou CTPS)",
+  "CPF-DOC": "CPF",
+  "COMPROVANTE-ENDERECO-PESSOA": "comprovante de endereço",
+  "CTPS-FOTO": "CTPS (página com a foto)",
+  "CTPS-INFORMACOES": "CTPS (página com as informações)",
+  "DOC-DEPENDENTE": "documento do dependente (certidão ou RG)",
+};
+
 const LISTA_DO_CAMPO = {
   forma_desligamento: "formas_desligamento", vinculo: "vinculos",
-  tipo_contrato: "tipos_contrato", parentesco: "parentescos",
+  // ⚑ `tipos_contrato_prestador`, e NÃO `tipos_contrato` (15/11/2026): o
+  // campo só aparece para prestador, então oferecer as duas opções de CLT
+  // seria oferecer a escolha que ele mandou tirar. Ele: *"CTPS não abre tipo
+  // de contrato, porque já é CLT. Então não tem CTPS Pró-labore, PJ."*
+  //
+  // Achado no navegador: o campo abria e fechava certo, e a caixinha vinha com
+  // as NOVE opções — porque esta linha apontava para a lista de LER ficha
+  // antiga, e não para a de escolher.
+  tipo_contrato: "tipos_contrato_prestador", parentesco: "parentescos",
   categoria_alimentacao: "categorias_alimentacao",
   categoria_transporte: "categorias_transporte", meio_transporte: "meios_transporte",
   motivo: "motivos_alteracao", uf: "ufs",
   salario_familia: "sim_nao", dependente_ir: "sim_nao", conceder: "sim_nao",
   qual_cartao: "cartoes", qual_documentacao: "documentacoes",
 };
+
+{# ---------------------------------------------------------------------------
+   AS CONDIÇÕES DO FORMULÁRIO — montadas do que o servidor mandou
+
+   ⚑ 15/11/2026. Ele: *"no Pipe tem condicionais: dependendo do que você
+   escolhe, ele exibe ou esconde os campos. Aqui tem que ser assim também."*
+
+   Três fontes de condição, todas vindas do servidor — nenhuma escrita aqui:
+
+     · `por_vinculo`  — o vínculo da PESSOA escolhida decide os campos. É o
+                        desligamento: carteira pede forma e aviso prévio,
+                        prestador pede data de saída.
+     · `ocultos_se`   — a resposta de outro campo some com este. É o cadastro:
+                        marcar CTPS tira "valor do mês" e "pagamento", porque
+                        em carteira o valor é o da convenção.
+     · `visiveis_se`  — o contrário: o campo só nasce quando outro campo tem
+                        certo valor. É o desconto do vale-transporte.
+
+   ⚑ POR QUE O SERVIDOR MANDA E A TELA OBEDECE, e não o contrário: a mesma
+   regra tem de valer nos dois lados. Tela que esconde campo sem o servidor
+   saber produz o pedido impossível de corrigir — o servidor recusa pedindo
+   algo que a pessoa não tem como ver. #}
+function condicaoDoCampo(regra, c){
+  const traduz = (campo, valor) =>
+    ((regra.traducoes || {})[campo] || {})[valor] || valor || "";
+
+  // 1) some quando outro campo tiver certo valor
+  const some = [];
+  Object.entries(regra.ocultos_se || {}).forEach(([gatilho, mapa]) =>
+    Object.entries(mapa).forEach(([valor, lista]) => {
+      if ((lista || []).includes(c)) some.push({gatilho, valor});
+    }));
+
+  // 2) só nasce quando outro campo tiver um destes valores
+  const nasce = Object.entries((regra.visiveis_se || {})[c] || {})
+    .map(([gatilho, aceitos]) => ({gatilho, aceitos: aceitos || []}));
+
+  // 3) é campo deste vínculo?
+  //
+  // ⚑ SÓ VALE PARA CAMPO DO TIPO, e isto é conserto: a pergunta "quem é a
+  // pessoa?" (`colaborador_id`) não está em `campos` — ela é acrescentada à
+  // parte, porque não é campo do formulário, é a escolha que o abre. Sem esta
+  // linha, escolher um prestador ESCONDIA o próprio campo de escolher a
+  // pessoa: ele não constava da lista do vínculo, e a regra o tratava como
+  // campo do outro vínculo. Achado no navegador.
+  const noTipo = (regra.campos || []).includes(c);
+  const vinculos = noTipo ? Object.keys(regra.por_vinculo || {}) : [];
+  const doVinculo = {};
+  vinculos.forEach(v => {
+    doVinculo[v] = ((regra.por_vinculo[v] || {}).campos || []).includes(c);
+  });
+
+  {# Os campos que valem para TODO vínculo: são os que podem aparecer antes de
+     a pessoa ser escolhida. Ver o comentário no `erp_portal.html`. #}
+  const comuns = {};
+  vinculos.forEach(v => {
+    comuns[v] = ((regra.por_vinculo[v] || {}).campos || []).includes(c);
+  });
+  const valeParaTodos = vinculos.length > 0
+    && vinculos.every(v => comuns[v]);
+
+  if (!some.length && !nasce.length && !vinculos.length) return null;
+  return v => {
+    const vinc = (((v.__pessoa || {}).vinculo) || "").toUpperCase();
+    {# ⚑ SEM PESSOA ESCOLHIDA, SÓ O QUE VALE PARA TODOS (15/11/2026).
+
+       Ele: *"Desligamento do colaborador já exibe data do aviso prévio e data
+       de saída. (…) os campos têm que ser ocultados condicionalmente, como
+       era no Pipefy."*
+
+       Antes eu escondia o campo do outro vínculo DEPOIS de escolher a pessoa,
+       e até então deixava os dois à mostra — aviso prévio e data de saída
+       juntos, como se fossem duas perguntas do mesmo caso. #}
+    if (vinculos.length && !vinc && !valeParaTodos) return false;
+    if (vinc && vinculos.includes(vinc) && !doVinculo[vinc]) return false;
+    for (const r of some)
+      if (traduz(r.gatilho, v[r.gatilho]) === r.valor) return false;
+    {# ⚑ TRADUZ AQUI TAMBÉM, e esta linha é CONSERTO (15/11/2026): sem ela, o
+       "Tipo de Contrato" nunca aparecia. A condição é escrita com o CÓDIGO
+       que o banco guarda ("PRESTADOR") porque é com ele que o SERVIDOR
+       compara; a caixinha mostra o rótulo do Pipe ("Prestador de Serviço").
+       Em "CTPS" os dois são iguais e eu não percebi; em "Prestador de
+       Serviço" não são. Pego pela trava que exige que todo valor usado numa
+       condição seja alcançável pelo que a tela mostra. #}
+    for (const r of nasce) {
+      const resposta = v[r.gatilho] || "";
+      {# "*" é o curinga: basta o gatilho ter QUALQUER resposta. É o valor do
+         auxílio, que faz sentido assim que a categoria é escolhida — listar
+         as nove opções uma por uma só criaria o jeito de esquecer a décima. #}
+      if (r.aceitos.includes("*")) { if (!resposta) return false; continue; }
+      if (!r.aceitos.includes(traduz(r.gatilho, resposta))) return false;
+    }
+    return true;
+  };
+}
+
+{# A EXPLICAÇÃO DA OPÇÃO ESCOLHIDA, embaixo do campo (15/11/2026).
+
+   Ele: *"explica cada modo de cálculo."* E o motivo é concreto: "Mensal" e
+   "Mês" ficam lado a lado na mesma caixinha e dão contas DIFERENTES — uma
+   multiplica pelos dias do mês, a outra é o valor cheio. Duas palavras
+   parecidas, duas contas, nada escrito: o erro só aparece na folha. #}
+function dicaDaOpcao(regra, c, dicaFixa){
+  const mapa = (regra.explicacoes || {})[c];
+  if (!mapa) return null;
+  return v => {
+    const e = mapa[v[c] || ""];
+    {# O NOME DA OPÇÃO NÃO SE REPETE AQUI: ele está na caixinha logo acima, e
+       o que viaja no campo é o CÓDIGO ("MENSAL") — escrever o código embaixo
+       de um campo que mostra "Mensal" é mostrar à pessoa a palavra do banco,
+       que é justamente o que o ERP não faz em tela. #}
+    return (e ? escapar(e)
+              : "Escolha uma opção para ver o que ela significa.")
+           + (dicaFixa ? "<br>" + dicaFixa : "");
+  };
+}
 
 async function novaSolicitacao(){
   const o = await api("/erp/api/colaboradores/opcoes");
@@ -421,6 +592,47 @@ async function novaSolicitacao(){
               opcoes: DADOS.tipos.map(t => ({valor: t.valor, rotulo: t.rotulo}))}]});
   if (!escolha) return;
   const regra = DADOS.tipos.find(t => t.valor === escolha.tipo);
+
+  {# ⚑ TRÊS TIPOS NÃO SAÍAM DESTA TELA, E ELA NÃO DIZIA ISSO (15/11/2026).
+
+     Achado respondendo a uma pergunta dele: *"o nome e CPF são preenchidos a
+     partir dos documentos anexados?"* São — e a conferência mostrou que esta
+     tela **não tem campo para anexar nada**. Resultado: Cadastro de
+     Colaborador, Admissão de Prestador e Cadastro de Dependente exigem papel,
+     e aqui a pessoa preenchia DOZE campos, confirmava, e levava "Falta
+     anexar: documento de identificação, CPF, comprovante de endereço" — sobre
+     papéis que a janela nunca ofereceu onde pôr. Beco sem saída, e estava em
+     produção.
+
+     ⚑ POR QUE NÃO CONSTRUÍ O ANEXO AQUI: o portal já tem isso pronto, com
+     foto pelo celular e leitura do documento preenchendo os campos — e é no
+     celular, na obra, que o papel está na mão. Fazer uma segunda versão disso
+     aqui seria manter dois caminhos para o mesmo trabalho; e o DP, para
+     cadastrar direto, tem a ficha completa em Colaboradores, que já lê
+     documento.
+
+     O que esta tela precisa é PARAR DE PROMETER o que não entrega — e dizer
+     para onde ir. #}
+  if ((regra.documentos || []).length) {
+    const papeis = (regra.documentos || [])
+      .map(c => ROTULO_PAPEL_DP[c] || c);
+    const r = await perguntar({
+      titulo: regra.rotulo,
+      aviso: `Este pedido só sai <b>com os papéis anexados</b>: ${
+        papeis.map(escapar).join(", ")}. Esta tela não anexa arquivo — quem
+        anexa é o <b>portal da obra</b>, pelo celular, onde a foto do
+        documento ainda <b>preenche os campos sozinha</b>.`
+        + (regra.valor === "CADASTRO"
+           ? ` <br><br>Se você mesmo vai cadastrar a pessoa agora, o caminho é
+               <b>Pessoal › Colaboradores › + Colaborador</b>: lá está a ficha
+               completa, e ela também lê documento.`
+           : ""),
+      textoOk: "Abrir o portal da obra",
+      campos: []});
+    if (r) location.href = "/erp/portal";
+    return;
+  }
+
   const listas = {...o, sim_nao: [{valor: "1", rotulo: "Sim"}, {valor: "", rotulo: "Não"}],
     cartoes: [{valor: "PAGAMENTO", rotulo: "Cartão de pagamento"},
               {valor: "VALE_TRANSPORTE", rotulo: "Cartão de vale-transporte"}],
@@ -444,12 +656,96 @@ async function novaSolicitacao(){
   for (const c of regra.campos) {
     const extra = CAMPO_PEDIDO[c] || {};
     const nomeLista = LISTA_DO_CAMPO[c];
-    if (nomeLista && listas[nomeLista]) {
-      campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, tipo: "select",
-                   largura: extra.largura || 3, opcoes: listas[nomeLista]});
-    } else if (c === "cargo_id" || c === "convencao_id") {
-      const fonte = c === "cargo_id" ? (o.cargos || []) : (o.convencoes || []);
-      campos.push({nome: c, rotulo: ROTULO_CAMPO[c], tipo: "select", largura: 3,
+    {# ⚑ O RÓTULO E A LISTA VÊM DO SERVIDOR PRIMEIRO (15/11/2026).
+
+       Ele: *"CNPJ para admissão, ele não está exibindo os CNPJs das obras
+       cadastradas. Não sei de onde é que ele está pegando essa informação."*
+
+       A resposta é que não estava pegando de lugar nenhum: esta tela tinha a
+       PRÓPRIA lista de rótulos e de caixinhas, escrita aqui dentro, e ela
+       ficou para trás da lista do servidor. Campo que o servidor conhece e
+       esta tela não aparecia com o nome técnico cru — "cnpj_admissao",
+       "tipo_documentacao", "cargo_pleiteado_id" — e como caixa de texto
+       vazia, sem as opções que o servidor já mandava prontas.
+
+       Agora o servidor manda e a tela obedece; os mapas daqui viraram
+       SOCORRO, para o caso de um campo que ele não descreva. Uma informação,
+       uma fonte — a mesma regra que tirou a lista de CNPJs de dentro do
+       código, semana passada. #}
+    const rotuloServidor = (regra.rotulos || {})[c];
+    const opcoesServidor = (regra.opcoes || {})[c];
+    if (opcoesServidor && opcoesServidor.length
+        && !nomeLista && c !== "cargo_id" && c !== "convencao_id"
+        && c !== "obra_id") {
+      campos.push({
+        nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c, tipo: "select",
+        largura: extra.largura || 3,
+        opcoes: [{valor: "", rotulo: "—"}].concat(
+          opcoesServidor.map(x => ({valor: x, rotulo: x}))),
+        dica: extra.dica});
+    } else if (nomeLista && listas[nomeLista]) {
+      {# ⚑ A CAIXINHA DO CNPJ DIZ QUEM FICOU DE FORA (15/11/2026).
+
+         Ele: *"ele não está exibindo os CNPJs das obras cadastradas (…) está
+         exibindo 3, quando a gente tem 4 CNPJ cadastrados no ERP."*
+
+         A lista vem do cadastro de Empresas, sim — mas empresa marcada como
+         inativa, ou sem CNPJ preenchido, não tem como entrar num campo que É
+         o CNPJ. O defeito não era a regra: era sumir em silêncio. Agora a
+         dica embaixo do campo nomeia quem faltou e o motivo, que é o que
+         transforma "cadê a quarta?" em "ah, está sem CNPJ". #}
+      {# ⚑ OPÇÃO FORA DE USO NÃO ENTRA EM PEDIDO NOVO (15/11/2026). O cadastro
+         marca `em_uso: false` no que saiu de circulação — o "Cartão" do
+         transporte, que ele tirou em 05/11/2026 (*"isso aqui a gente nem
+         utiliza mais"*) — e o valor continua existindo só para explicar a
+         ficha de quem já tem. Esta tela mostrava a lista inteira, então dava
+         para escolher hoje o que foi aposentado. #}
+      {# ⚑ A CAIXINHA COMEÇA VAZIA, e isto é CONSERTO de 15/11/2026.
+
+         Sem a opção vazia na frente, o navegador já deixa a PRIMEIRA
+         selecionada — e ela viaja no pedido mesmo que ninguém a tenha
+         escolhido. Em "Categoria Auxílio Alimentação" isso concedia "Segunda
+         à quinta" a todo cadastro novo, calado. Em "Forma de Desligamento",
+         que é obrigatória, era pior: dava para confirmar sem escolher nada e
+         o pedido saía como "A pedido do colaborador" — a forma que não paga
+         aviso nem multa.
+
+         Achado no navegador, não na suíte: é escolha feita pelo HTML, e
+         nenhum teste de Python chega nela. #}
+      campos.push({nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c,
+                   tipo: "select", largura: extra.largura || 3,
+                   opcoes: [{valor: "", rotulo: "—"}].concat(
+                     listas[nomeLista].filter(o => o.em_uso !== false)),
+                   dica: extra.dica});
+    } else if (c === "empresa_id") {
+      {# ⚑ A EMPRESA VEM DO CADASTRO DE EMPRESAS DO ERP, e TODAS as ativas
+         aparecem — inclusive a que está sem CNPJ (ela aparece dizendo que
+         está). 15/11/2026, terceira vez que ele cobra o assunto: *"tem que
+         pegar do cadastro das empresas do ERP. Lá já estão cadastradas 4
+         empresas. E continua aparecendo errado."*
+
+         A lista VINHA do cadastro; o erro era o CAMPO. Ele pedia um CNPJ, e
+         por isso a lista só podia oferecer empresa que TEM CNPJ — a quarta
+         sumia. Agora se escolhe a EMPRESA, e o CNPJ dela é um dado do
+         cadastro dela, que o servidor busca. #}
+      const empresas = DADOS.empresas || [];
+      campos.push({
+        nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || "Empresa para registro",
+        tipo: "select", largura: 3,
+        opcoes: [{valor: "", rotulo: "escolha a empresa…"}].concat(
+          empresas.map(x => ({valor: x.id, rotulo: x.rotulo}))),
+        dica: empresas.length
+          ? "É por esta empresa que a pessoa é registrada na folha."
+          : "<b>Nenhuma empresa ativa no cadastro.</b> Cadastre em "
+            + "Administração › Empresas antes de abrir o pedido."});
+    } else if (c === "cargo_id" || c === "cargo_pleiteado_id"
+               || c === "convencao_id") {
+      {# `cargo_pleiteado_id` entra aqui em 15/11/2026: era caixa de TEXTO, e
+         o nome já dizia que é um número de cargo. Quem pedia admissão digitava
+         "pedreiro" e o DP recebia um texto que não casa com cadastro nenhum. #}
+      const fonte = (c === "convencao_id" ? (o.convencoes || []) : (o.cargos || []));
+      campos.push({nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c],
+                   tipo: "select", largura: 3,
                    opcoes: [{valor: "", rotulo: "—"}].concat(
                      fonte.map(x => ({valor: x.id, rotulo: x.nome})))});
     } else if (c === "obra_id") {
@@ -464,14 +760,83 @@ async function novaSolicitacao(){
                    opcoes: [{valor: "", rotulo: "escolha a obra…"}].concat(
                      (o.obras || []).map(x => ({valor: x.id, rotulo: x.codigo})))});
     } else {
-      campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, largura: extra.largura || 3,
-                   ...extra});
+      campos.push({nome: c, rotulo: rotuloServidor || ROTULO_CAMPO[c] || c,
+                   largura: extra.largura || 3, ...extra});
     }
   }
+  {# ⚑ AS CONDIÇÕES E O ASTERISCO SÃO COLADOS DEPOIS, num lugar só.
+
+     Os quatro ramos acima montam o campo (caixinha, cargo, obra, texto); as
+     condições não dependem de qual ramo foi, só do NOME do campo. Colar nos
+     quatro seria copiar a mesma coisa quatro vezes e esquecer no quinto.
+
+     O ASTERISCO passa a vir do SERVIDOR, e não da lista escrita nesta tela.
+     Era o que ele cobrou em 10/11/2026 (*"ninguém sabe o que é obrigatório, o
+     que não é"*) e a lista daqui já estava ficando para trás: campo que o
+     servidor exige e esta tela não sabia aparecia sem marca. #}
+  const marcados = new Set([].concat(
+    regra.obrigatorios || [],
+    ...Object.values(regra.por_vinculo || {}).map(x => x.obrigatorios || [])));
+  const marcadosSe = {};
+  Object.entries(regra.obrigatorios_se || {}).forEach(([gatilho, mapa]) =>
+    Object.entries(mapa).forEach(([valor, lista]) =>
+      (lista || []).forEach(c => {
+        (marcadosSe[c] = marcadosSe[c] || []).push({gatilho, valor});
+      })));
+  campos.forEach(cp => {
+    if (!cp.nome) return;
+    const cond = condicaoDoCampo(regra, cp.nome);
+    if (cond) cp.mostrar_se = cond;
+    const dica = dicaDaOpcao(regra, cp.nome, cp.dica);
+    if (dica) cp.dica_de = dica;
+    if (marcados.has(cp.nome)) cp.obrigatorio = true;
+    // Obrigatório SÓ EM CERTO CASO: a marca acende quando o caso chega.
+    const quando = marcadosSe[cp.nome];
+    if (quando && !cp.obrigatorio) {
+      const traduz = (campo, valor) =>
+        ((regra.traducoes || {})[campo] || {})[valor] || valor || "";
+      cp.obrigatorio_se = v =>
+        quando.some(x => traduz(x.gatilho, v[x.gatilho]) === x.valor);
+    }
+  });
+
   const r = await perguntar({titulo: regra.rotulo,
     aviso: `${regra.explicacao}. O pedido vai para o DP.`,
     textoOk: "Abrir a solicitação", campos});
   if (!r) return;
+  {# ⚑ O CPF QUE JÁ EXISTE: O SISTEMA OFERECE A READMISSÃO (15/11/2026).
+
+     Ele: *"na admissão, quando digitar o CPF, o sistema tem que detectar que
+     a pessoa já tem cadastro e oferecer a readmissão. Aí readmissão deixa de
+     ser um tipo de solicitação."*
+
+     Antes era RECUSA seca: "já tem cadastro, é uma readmissão" — e quem pediu
+     tinha de fechar a janela, descobrir que existia um tipo chamado
+     Readmissão, e redigitar tudo. Quem não soubesse disso tentava de novo com
+     o nome escrito diferente, e nascia a segunda ficha da mesma pessoa.
+
+     Agora o sistema pergunta e CONVERTE. O servidor faz a mesma conferência
+     ao gravar — esta aqui é para a pessoa saber antes, não para confiar. #}
+  if (escolha.tipo === "CADASTRO" && r.cpf) {
+    let ja = null;
+    try {
+      ja = await api(`/erp/api/colaboradores/conferir-cpf?cpf=${
+        encodeURIComponent(r.cpf)}`);
+    } catch(e){ /* não achou resposta: o servidor confere de novo ao gravar */ }
+    if (ja && ja.situacao === "ativo") {
+      aviso("mensagem", ja.aviso, "erro");
+      return;
+    }
+    if (ja && ja.situacao === "desligado") {
+      const segue = await perguntar({
+        titulo: "Esta pessoa já tem cadastro",
+        aviso: `${escapar(ja.aviso)} <br><br>O pedido vai como
+          <b>readmissão</b>: o cadastro dela volta, com a data de início que
+          você informou, e a passagem anterior fica no histórico.`,
+        textoOk: "Abrir como readmissão", campos: []});
+      if (!segue) return;
+    }
+  }
   try {
     const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
       headers: {"Content-Type": "application/json"},

@@ -133,6 +133,23 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
+    # ⚑ "ESTE CPF JÁ TEM CADASTRO?" — AÇÃO PRÓPRIA (15/11/2026).
+    #
+    # A conferência é usada por DOIS caminhos com pesos diferentes: o DP
+    # cadastrando pela tela de Colaboradores, e a OBRA abrindo um pedido de
+    # cadastro — que agora se converte em readmissão quando o CPF já existe.
+    #
+    # Ela estava declarada como `editar_colaboradores`, que a obra não tem: o
+    # aviso simplesmente não aparecia para quem mais precisava dele. Declarar
+    # uma ação e conferir outra por dentro faria a declaração mentir, então a
+    # ação é PRÓPRIA e as duas a implicam (ACOES_IMPLICADAS).
+    #
+    # O que ela devolve é de propósito o mínimo: existe, o nome, se está ativa
+    # ou desligada. Não devolve salário, endereço nem documento — quem só abre
+    # pedido não precisa disso, e varrer CPFs não mapearia o cadastro.
+    "conferir_cpf_colaborador": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                                 P.GESTOR_OBRA, P.SUPERVISOR_OBRA,
+                                 P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     # A FILA DE SOLICITAÇÕES DO DP (05/11/2026). Duas ações, e a divisão vem do
     # pipe que ela substitui: lá o formulário perguntava "requisição solicitada
     # por um terceiro?" porque o encarregado abre pedido para a equipe dele.
@@ -314,6 +331,9 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "cancelar_titulo": ("aprovar", "lancar"),
     # Quem configura as mensagens enxerga a tela delas.
     "ver_mensagens": ("configurar_mensagens",),
+    # Quem cadastra colaborador e quem abre pedido ao DP precisam da MESMA
+    # resposta: "este CPF já existe?". Ver o comentário da ação, acima.
+    "conferir_cpf_colaborador": ("editar_colaboradores", "solicitar_dp"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -345,6 +365,7 @@ ACAO_ROTULOS = {
     "ver_pessoal":          "Ver despesas de colaborador",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
+    "conferir_cpf_colaborador": "Conferir se um CPF já tem cadastro",
     "solicitar_dp":         "Abrir solicitação ao DP",
     "atender_dp":           "Atender solicitação do DP",
     "pedir_contabilidade":  "Pedir à contabilidade e cobrar o retorno",
@@ -1010,6 +1031,18 @@ def exigir_entidade_no_escopo(s: Session, usuario: Usuario,
         return
     if tipo == "obra":
         exigir_obra_no_escopo(s, usuario, entidade_id)
+        return
+    # ⚑ A FOTO DO DIÁRIO herda o escopo da OBRA do dia (14/11/2026). Sem
+    # isto, quem é preso a uma obra baixaria a foto de qualquer outra — e os
+    # números dos anexos são sequenciais, então um laço varreria o acervo.
+    if tipo == "diario_foto":
+        from sqlalchemy import text as _text
+        linha = s.execute(_text(
+            "SELECT obra_id FROM diarios_obra WHERE id = :d"),
+            {"d": entidade_id}).first()
+        if linha is None:
+            raise ErroNaoEncontrado("Registro não encontrado.")
+        exigir_obra_no_escopo(s, usuario, linha[0])
         return
     if tipo == "contrato_servico":
         c = s.get(ContratoServico, entidade_id)

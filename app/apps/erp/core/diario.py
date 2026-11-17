@@ -75,6 +75,11 @@ TEMPO_ROTULOS = {
 
 # Os campos que a OBRA escreve. A observação da fiscalização NÃO está aqui, e
 # essa ausência é a regra 1 lá de cima — ela não é esquecimento.
+# Quantos dias uma repetição alcança de uma vez. Não é número mágico: é o que
+# ainda dá para uma pessoa conferir na tela antes de confirmar. Repetir um mês
+# inteiro numa tacada é o caminho para trinta diários iguais que ninguém leu.
+TETO_DE_REPETICAO = 31
+
 CAMPOS_DA_OBRA = (
     "tempo_manha", "tempo_tarde", "relato", "ocorrencias",
     "fiscalizacao_esteve", "fiscalizacao_quem", "sem_expediente",
@@ -444,6 +449,142 @@ def lotados_que_bateram_em_outra(s: Session, obra_id: int,
 
 
 # ---------------------------------------------------------------------------
+# REPETIR UM DIA EM VÁRIOS DIAS (14/11/2026)
+#
+# Ele: *"digamos que eu queira replicar um determinado relato para vários dias
+# e gostaria de poder fazer isso também. Ó, esse dia aqui foi igual aos 3
+# próximos aqui. Ou então esse sábado foi igual a outros 4 sábados aqui."*
+#
+# ⚑ TRÊS TRAVAS, E NENHUMA É BUROCRACIA:
+#
+# 1. **DIA QUE JÁ TEM DIÁRIO NÃO É SOBRESCRITO.** É a mesma regra da
+#    importação da planilha, e pelo mesmo motivo: diário é documento. Marcar
+#    por engano um dia já escrito e perder o relato de quem esteve na obra é
+#    estrago que não se desfaz. Os pulados voltam ditos, um a um.
+# 2. **NÃO SE ESCREVE O FUTURO.** Diário é relato do que aconteceu. Dia à
+#    frente de hoje é recusado — senão a repetição vira previsão, e previsão
+#    assinada pela fiscalização é outra coisa.
+# 3. **NÃO SE ESCREVE FORA DO PRAZO DA OBRA.** Antes do início ou depois do
+#    término, o dia nem deveria existir no calendário.
+#
+# O QUE É COPIADO: o relato, as ocorrências, o histórico, o tempo e o horário
+# de trabalho — o que de fato se repete quando dois dias são iguais. A
+# observação da FISCALIZAÇÃO nunca é copiada (regra 1 do topo deste arquivo:
+# ela é de quem fiscaliza, não da obra). Os equipamentos vão junto só se
+# mandarem, porque máquina que saiu da obra não pode reaparecer sozinha em
+# quatro dias.
+# ---------------------------------------------------------------------------
+CAMPOS_QUE_SE_REPETEM = ("tempo_manha", "tempo_tarde", "relato", "ocorrencias",
+                         "historico", "horario_trabalho", "sem_expediente")
+
+
+def repetir_dia(s: Session, obra_id: int, origem: date, destinos: list[date],
+                usuario: Optional[Usuario] = None, *,
+                com_equipamentos: bool = False) -> dict[str, Any]:
+    """Copia um dia escrito para outros dias que ainda não têm diário."""
+    cab = cabecalho(s, obra_id, origem)
+    de = _linha(s, obra_id, origem)
+    if de is None:
+        raise ErroNaoEncontrado(
+            "O dia que você quer repetir ainda não foi gravado. Grave-o "
+            "primeiro — é ele que será copiado.")
+    if not destinos:
+        raise ErroValidacao("Escolha pelo menos um dia para receber a cópia.")
+    if len(destinos) > TETO_DE_REPETICAO:
+        raise ErroValidacao(
+            f"São no máximo {TETO_DE_REPETICAO} dias de uma vez. Repetir mês "
+            f"inteiro de uma tacada é o tipo de coisa que ninguém confere.")
+
+    hoje = date.today()
+    inicio = cab["data_inicio"]
+    fim = cab["data_termino"]
+    escritos = {l["data"] for l in (_consulta_opcional(s, """
+            SELECT data FROM diarios_obra
+             WHERE obra_id = :o AND data = ANY(:d)""",
+            o=obra_id, d=list(destinos)) or [])}
+
+    copiados, pulados = [], []
+    equipamentos = _consulta_opcional(s, """
+            SELECT descricao, quantidade, observacao, insumo_id
+              FROM diario_equipamentos WHERE diario_id = :i ORDER BY id""",
+            i=de["id"]) or [] if com_equipamentos else []
+
+    for dia in sorted(set(destinos)):
+        if dia == origem:
+            continue
+        if dia > hoje:
+            pulados.append({"data": str(dia), "motivo": "ainda não aconteceu"})
+            continue
+        if inicio and str(dia) < inicio:
+            pulados.append({"data": str(dia), "motivo": "antes do início da obra"})
+            continue
+        if fim and str(dia) > fim:
+            pulados.append({"data": str(dia), "motivo": "depois do término da obra"})
+            continue
+        if dia in escritos:
+            pulados.append({"data": str(dia),
+                            "motivo": "este dia já tem diário escrito"})
+            continue
+
+        # ⚑ PASSA PELO `salvar`, e não por um INSERT próprio: é ele que valida
+        # (dia com expediente precisa de relato), grava a auditoria e conhece
+        # as regras do diário fechado. Um INSERT paralelo aqui seria uma
+        # segunda verdade sobre como um diário nasce.
+        salvar(s, obra_id, dia,
+               {c: de[c] for c in CAMPOS_QUE_SE_REPETEM}, usuario)
+        if equipamentos:
+            novo = _linha(s, obra_id, dia)
+            for item in equipamentos:
+                s.execute(text("""
+                    INSERT INTO diario_equipamentos
+                        (diario_id, descricao, quantidade, observacao, insumo_id)
+                    VALUES (:i, :d, :q, :obs, :ins)"""),
+                    {"i": novo["id"], "d": item["descricao"],
+                     "q": item["quantidade"], "obs": item["observacao"],
+                     "ins": item["insumo_id"]})
+        copiados.append(str(dia))
+
+    s.flush()
+    logger.info("ERP/diário: %s repetido em %d dia(s) na obra %s",
+                origem, len(copiados), obra_id)
+    return {"de": str(origem), "copiados": copiados, "pulados": pulados,
+            "equipamentos_por_dia": len(equipamentos)}
+
+
+def dias_para_repetir(s: Session, obra_id: int, origem: date,
+                      modo: str, quantos: int) -> list[str]:
+    """Os dias que os atalhos oferecem — já sem os que não podem receber.
+
+    Dois atalhos, que são as duas frases dele: *"esse dia aqui foi igual aos 3
+    próximos"* (`seguidos`) e *"esse sábado foi igual a outros 4 sábados"*
+    (`mesmo_dia_da_semana`). O terceiro caminho é marcar no calendário à mão.
+    """
+    if modo not in ("seguidos", "mesmo_dia_da_semana"):
+        raise ErroValidacao("Não entendi como repetir.")
+    quantos = max(1, min(int(quantos or 1), TETO_DE_REPETICAO))
+    cab = cabecalho(s, obra_id, origem)
+    hoje = date.today()
+    passo = 1 if modo == "seguidos" else 7
+    achados: list[str] = []
+    dia = origem
+    # Procura para a frente até juntar `quantos` dias que de fato cabem. O
+    # limite de voltas existe para a obra encerrada não varrer o calendário
+    # inteiro atrás de dias que nunca vão aparecer.
+    for _ in range(TETO_DE_REPETICAO * 7):
+        dia = dia + timedelta(days=passo)
+        if dia > hoje:
+            break
+        if cab["data_termino"] and str(dia) > cab["data_termino"]:
+            break
+        if _linha(s, obra_id, dia) is not None:
+            continue
+        achados.append(str(dia))
+        if len(achados) >= quantos:
+            break
+    return achados
+
+
+# ---------------------------------------------------------------------------
 # 3. O MATERIAL QUE CHEGOU — vem de Suprimentos
 # ---------------------------------------------------------------------------
 def material_recebido(s: Session, obra_id: int, dia: date) -> list[dict[str, Any]]:
@@ -532,6 +673,8 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
     de uma obra sem encher a tabela de diários vazios — e o calendário de
     pendências continua dizendo a verdade sobre o que foi escrito.
     """
+    from app.apps.erp.core import diario_fotos as svc_fotos
+
     cab = cabecalho(s, obra_id, dia)
     linha = _linha(s, obra_id, dia)
     efetivo = efetivo_do_ponto(s, obra_id, dia)
@@ -570,6 +713,13 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
         # ⚑ A LISTA DA PLANILHA ENTRA NA SOMA? Decidido aqui, onde se conhecem
         # as duas fontes, e não na tela — o papel usa a mesma regra, e duas
         # versões divergiriam no primeiro ajuste. Ver `importado_conta`.
+        # ⚑ AS FOTOS DO DIA (14/11/2026). Vêm como lista de números e
+        # legendas, nunca como imagem: a tela pede cada foto pela rota do
+        # anexo, que é quem confere permissão e escopo. Mandar a imagem aqui
+        # dentro faria a abertura de um dia com seis fotos carregar vários
+        # megabytes antes de desenhar qualquer coisa.
+        "fotos": (svc_fotos.listar(s, linha["id"]) if linha is not None else []),
+        "fotos_teto": svc_fotos.TETO_POR_DIA,
         "efetivo_importado_conta": importado_conta(
             efetivo, tela.get("efetivo_importado")),
         "avisos_do_ponto": lotados_que_bateram_em_outra(s, obra_id, dia),
@@ -1155,6 +1305,111 @@ def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
             "primeiro_dia_da_semana": primeiro_dia.weekday()}
 
 
+# ---------------------------------------------------------------------------
+# O QUADRO DO MÊS — obras nas linhas, dias nas colunas (15/11/2026)
+#
+# Ele: *"aqui era para mostrar por mês, todas as obras e por mês, da mesma
+# forma que o calendário (…) Eu até tenho um controle desse no computador, é
+# uma planilha. Cada coluna é um dia. Dia 1, dia 2, dia 3, até o final do mês.
+# E ali cada dia tem uma marcação dizendo se está ou se não está preenchido.
+# Porque você bate o olho e já visualiza exatamente todos os dias que estão
+# faltando. E a partir dessa informação, clicar e já ir direto para o dia que
+# está faltando."*
+#
+# ⚑ ESTE QUADRO VIROU A PORTA DA TELA, e isso resolve outra queixa do mesmo
+# dia: *"não fica legal entrar na tela já da primeira obra."* Entrando pelo
+# quadro, não há obra escolhida — a obra se escolhe clicando no dia que falta,
+# que é exatamente o caminho de quem vai preencher.
+#
+# ⚑ OBRA CONCLUÍDA NÃO ENTRA: *"concluído, não tem mais diário, aí fica
+# poluída essa tela."* O filtro é `status <> 'ENCERRADA'`, o mesmo de sempre —
+# obra que continua aparecendo é obra que segue marcada como ATIVA no
+# cadastro, e isso se resolve lá, não aqui.
+#
+# ⚑ UMA CONSULTA POR COISA, NUNCA UMA POR DIA. Com 15 obras e 30 dias são 450
+# células: pedir o estado de cada uma ao banco seriam 450 idas, e a tela
+# demoraria mais que o mês inteiro de trabalho que ela mostra.
+# ---------------------------------------------------------------------------
+def quadro_do_mes(s: Session, ano: int, mes: int, *,
+                  obra_ids: Optional[list[int]] = None) -> dict[str, Any]:
+    """Todas as obras do mês, dia a dia, com o estado de cada dia."""
+    import calendar as _cal
+
+    if not 1 <= mes <= 12:
+        raise ErroValidacao("Mês inválido.")
+    _, ultimo = _cal.monthrange(ano, mes)
+    primeiro_dia, ultimo_dia = date(ano, mes, 1), date(ano, mes, ultimo)
+    hoje = date.today()
+
+    obras = s.execute(text("""
+        SELECT id, codigo, nome, data_inicio, data_termino
+          FROM obras
+         WHERE status <> 'ENCERRADA'
+           AND (:todas OR id = ANY(:obras))
+         ORDER BY codigo"""),
+        {"obras": obra_ids or [], "todas": obra_ids is None}).mappings().all()
+    if not obras:
+        return {"ano": ano, "mes": mes, "dias": [], "obras": [],
+                "faltam": 0, "hoje": str(hoje)}
+
+    ids = [o["id"] for o in obras]
+    escritos: dict[tuple[int, date], str] = {}
+    for l in s.execute(text("""
+        SELECT obra_id, data, situacao, sem_expediente
+          FROM diarios_obra
+         WHERE obra_id = ANY(:o) AND data BETWEEN :i AND :f"""),
+        {"o": ids, "i": primeiro_dia, "f": ultimo_dia}).mappings().all():
+        escritos[(l["obra_id"], l["data"])] = (
+            "sem_expediente" if l["sem_expediente"]
+            else ("fechado" if l["situacao"] == "FECHADO" else "aberto"))
+
+    # O ponto diz quais sábados e feriados tiveram trabalho — sem isso, um
+    # sábado trabalhado apareceria como descanso e a falta sumiria do quadro.
+    com_ponto = {(l["obra_id"], l["data_referencia"]) for l in (
+        _consulta_opcional(s, """
+            SELECT DISTINCT obra_id, data_referencia FROM ponto.marcacoes
+             WHERE obra_id = ANY(:o) AND data_referencia BETWEEN :i AND :f
+               AND status <> 'REJEITADA'""",
+            o=ids, i=primeiro_dia, f=ultimo_dia) or [])}
+    feriados = {l["data"]: l["nome"] for l in (_consulta_opcional(s, """
+            SELECT data, nome FROM ponto.feriados
+             WHERE data BETWEEN :i AND :f AND obra_id IS NULL""",
+            i=primeiro_dia, f=ultimo_dia) or [])}
+
+    dias = [{"dia": n, "data": str(date(ano, mes, n)),
+             "semana": date(ano, mes, n).weekday(),
+             "feriado": feriados.get(date(ano, mes, n), "")}
+            for n in range(1, ultimo + 1)]
+
+    linhas, faltam_total = [], 0
+    for o in obras:
+        celulas, faltam = [], 0
+        for n in range(1, ultimo + 1):
+            d = date(ano, mes, n)
+            teve_ponto = (o["id"], d) in com_ponto
+            fora = bool((o["data_inicio"] and d < o["data_inicio"])
+                        or (o["data_termino"] and d > o["data_termino"])
+                        or d > hoje)
+            estado = escritos.get((o["id"], d))
+            if estado is None:
+                if fora:
+                    estado = "fora"
+                elif (d.weekday() >= 5 or d in feriados) and not teve_ponto:
+                    estado = "descanso"
+                else:
+                    estado = "falta"
+                    faltam += 1
+            celulas.append(estado)
+        faltam_total += faltam
+        linhas.append({
+            "obra_id": o["id"], "codigo": o["codigo"], "nome": o["nome"],
+            "rotulo": rotulo_da_obra(o["codigo"], o["nome"]),
+            "celulas": celulas, "faltam": faltam})
+
+    return {"ano": ano, "mes": mes, "dias": dias, "obras": linhas,
+            "faltam": faltam_total, "hoje": str(hoje)}
+
+
 def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
                         obra_ids: Optional[list[int]] = None,
                         dias: int = 30) -> list[dict[str, Any]]:
@@ -1313,6 +1568,12 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             # ⚑ A CONTAGEM, NÃO OS NOMES. Decisão dele, e boa prática: o RDO
             # circula fora da empresa.
             "efetivo": _efetivo_para_o_papel(efetivo, extras, importado),
+            # ⚑ O ANEXO FOTOGRÁFICO (14/11/2026). Ele: *"é como se fosse um
+            # anexo ao diário, essa página das fotos, para não interferir no
+            # layout que a gente já trabalhou."* Por isso as fotos vêm na
+            # página, mas o modelo as desenha DEPOIS da folha do dia, em
+            # folha própria — os três quadros da folha continuam intocados.
+            "fotos": (_fotos_do_papel(s, linha["id"]) if linha is not None else []),
             "material": material_recebido(s, obra_id, dia),
             "correcoes": _correcoes(s, linha["id"]) if linha else [],
         })
@@ -1576,6 +1837,12 @@ def importado_conta(efetivo: dict[str, Any],
     existe e conta inteira, como sempre contou.
     """
     return not bool(efetivo.get("por_funcao")) and bool(importado)
+
+
+def _fotos_do_papel(s: Session, diario_id: int) -> list[dict[str, Any]]:
+    """As fotos embutidas, encolhidas para caber num relatório de 90 dias."""
+    from app.apps.erp.core import diario_fotos as svc_fotos
+    return svc_fotos.para_o_papel(s, diario_id)
 
 
 def _efetivo_para_o_papel(efetivo: dict[str, Any],

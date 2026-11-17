@@ -174,7 +174,7 @@ def o_que_falta_para_pedir(s: Session, template: str,
     falta = []
     for campo in regra["exige"]:
         if campo == "cargo":
-            tem = c.cargo_id or c.funcao_id
+            tem = c.cargo_id
         elif campo == "empresa":
             tem = c.empresa_id or c.cnpj_admissao
         elif campo == "forma_desligamento":

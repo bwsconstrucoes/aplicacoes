@@ -1,0 +1,439 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Evolução do rateio — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# A EVOLUÇÃO DO RATEIO (16/11/2026). O dono, depois de mostrar a prestação a
+   um sócio: "os sócios não vão se conter apenas com o cálculo final, sem
+   compreender na minúcia como é que aqueles valores estão chegando e sendo
+   apropriados (…) precisa poder observar por obra, por projeto, por estrutura".
+
+   Só leitura, e SEM conta própria: tudo vem de `evolucao.montar`, que só
+   reorganiza o que o cenário já calculou. O que a obra ABSORVEU é dito como
+   custo (positivo); o caixa mantém o sinal. #}
+
+{% block conteudo %}
+<style>
+  .evo-caminho { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .evo-caixa { border: 1px solid var(--borda); border-left: 5px solid var(--azul-claro);
+               border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .evo-caixa small.rotulo { display: block; font-size: 11px; text-transform: uppercase;
+                            letter-spacing: .05em; color: var(--tinta-suave); }
+  .evo-caixa b.valor { display: block; font-family: var(--fonte-dados); font-size: 18px; }
+  .evo-caixa .partes { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; font-size: 13px; }
+  .evo-caixa .partes span { display: flex; justify-content: space-between; gap: 8px; }
+  .evo-caixa .partes i { font-style: normal; font-family: var(--fonte-dados); white-space: nowrap; }
+  .evo-caixa.principal { border-left-color: var(--azul-claro); }
+  .evo-caixa.demais { border-left-color: var(--amarelo); }
+  .evo-caixa.juros { border-left-color: var(--roxo); }
+  .evo-caixa.origem { border-left-color: var(--cinza); }
+  .evo-caixa.alerta { border-left-color: var(--vermelho); }
+
+  .evo-grafico-rola { overflow-x: auto; }
+  .evo-grafico { display: flex; gap: 3px; align-items: flex-end; height: 170px; padding-top: 6px; }
+  .evo-coluna { flex: 1 0 11px; min-width: 11px; display: flex; flex-direction: column;
+                align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+  .evo-pilha { width: 100%; max-width: 40px; display: flex; flex-direction: column-reverse;
+               border-radius: 3px 3px 0 0; overflow: hidden; }
+  .evo-coluna small { font-size: 10.5px; color: var(--tinta-suave); font-family: var(--fonte-dados);
+                      height: 13px; white-space: nowrap; }
+  .evo-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px;
+                 color: var(--tinta-suave); margin-top: 8px; }
+  .evo-legenda i { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+                   margin-right: 5px; vertical-align: -1px; }
+
+  .evo-arvore td.nome { white-space: nowrap; }
+  .evo-arvore tr[data-nivel="1"] td.nome { padding-left: 28px; }
+  .evo-arvore tr[data-nivel="2"] td.nome { padding-left: 48px; }
+  .evo-abre { border: 0; background: none; color: var(--azul-claro); font: inherit;
+              font-weight: 700; cursor: pointer; padding: 0 4px 0 0; }
+  .evo-arvore a.no { color: var(--azul-claro); font-weight: 700; text-decoration: none; }
+  .evo-arvore a.no:hover { text-decoration: underline; }
+  tr.evo-escolhida td { background: #FFF4D6; }
+  tr.evo-total td { font-weight: 700; background: #F7F9FC; }
+
+  .evo-ficha th:first-child, .evo-ficha td.mes { position: sticky; left: 0; white-space: nowrap; }
+  .evo-ficha td.mes { background: var(--branco); }
+  tr.evo-mes { cursor: pointer; }
+  tr.evo-mes.evo-escolhida td.mes { background: #FFF4D6; }
+  tr.evo-conta td { background: #F7F9FC; font-size: 14px; line-height: 1.55; }
+  .evo-conta-dentro { position: sticky; left: 10px; max-width: min(100%, calc(100vw - 96px));
+                      white-space: normal; }
+  .evo-conta-dentro ol { margin: 6px 0 0; padding-left: 20px; display: flex;
+                         flex-direction: column; gap: 6px; }
+  .evo-conta-dentro b { font-family: var(--fonte-dados); }
+</style>
+
+<h2>Evolução do rateio
+  <small>mês a mês: o que foi rateado, com base em quê, e quanto cada um absorveu</small>
+</h2>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao, rotulo_do_cenario %}
+{{ nav_da_prestacao('evolucao', cenario.id) }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
+
+<form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
+  <input type="hidden" name="visao" value="{{ visao }}">
+  <div class="campo" style="max-width:360px">
+    <label for="cenario">Cenário</label>
+    <select id="cenario" name="cenario" onchange="this.form.submit()">
+      {% for c in cenarios %}
+      <option value="{{ c.id }}" {% if c.id == cenario.id %}selected{% endif %}>{{ rotulo_do_cenario(c, meu_numero) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <span class="resumo">
+    Régua: <b>{{ 'faturamento' if cenario.criterio == 'faturamento' else 'mão de obra' }}</b>
+    ({{ janelas.get(cenario.janela, cenario.janela) }})
+    &nbsp;·&nbsp; base <b>{{ cenario.medida }}</b>
+    &nbsp;·&nbsp; período <b>toda a vida da empresa</b>
+  </span>
+  <span class="espaco"></span>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.baixar', assunto='evolucao', cenario=cenario.id) }}">⬇ Relatório completo (planilha)</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.baixar', assunto='evolucao', formato='pdf', cenario=cenario.id) }}">⬇ PDF</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     title="Uma página por obra, além das estruturas e dos projetos. Leva alguns segundos para montar."
+     href="{{ url_for('painel.baixar', assunto='evolucao', formato='pdf', cenario=cenario.id, obras='todas') }}">⬇ PDF com a ficha de cada obra</a>
+</form>
+
+<div class="chips nao-imprime" style="gap:8px">
+  <span class="resumo">Olhar</span>
+  {% for chave, rotulo in [('estrutura', 'Por estrutura'), ('projeto', 'Por projeto'), ('obra', 'Por obra')] %}
+  {% if chave != 'estrutura' or e.tem_lados %}
+  <a class="modulo-btn {% if visao == chave %}ativo{% endif %}"
+     href="{{ url_for('painel.cenario_evolucao', cenario=cenario.id, visao=chave) }}"
+     style="background:{{ 'var(--azul)' if visao == chave else 'var(--branco)' }};
+            color:{{ '#fff' if visao == chave else 'var(--tinta)' }};
+            border:1px solid var(--borda); text-decoration:none; padding:6px 14px">{{ rotulo }}</a>
+  {% endif %}
+  {% endfor %}
+</div>
+
+{% if not arvore %}
+<div class="aviso info">Este cenário ainda não tem obra absorvendo custo da matriz.
+  Confira em <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">Montar o cenário</a>
+  quem recebe e os centros de custo da estrutura.</div>
+{% else %}
+
+<!-- ===================== O CAMINHO DO DINHEIRO ===================== -->
+{% set c = e.caminho %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O caminho do dinheiro</h3>
+    <small>de onde saiu o custo e onde ele foi parar</small>
+  </div>
+  <div class="evo-caminho">
+    <div class="evo-caixa origem">
+      <small class="rotulo">A matriz gastou</small>
+      <b class="valor">{{ brl(c.matriz) }}</b>
+      {% if e.tem_lados %}
+      <div class="partes">
+        <span>fica no {{ e.nome_do_lado.principal }}<i>{{ brl(c.fica) }}</i></span>
+        <span>é da {{ e.nome_do_lado.demais }}<i>{{ brl(c.da_filial) }}</i></span>
+        <span>rateia entre todas<i>{{ brl(c.rateia) }}</i></span>
+      </div>
+      {% else %}<small>rateado entre todas as obras</small>{% endif %}
+    </div>
+    {% if c.filial|abs > 0.005 %}
+    <div class="evo-caixa origem">
+      <small class="rotulo">A filial gastou</small>
+      <b class="valor">{{ brl(c.filial) }}</b>
+      <small>vai inteira para as obras da {{ e.nome_do_lado.demais }}</small>
+    </div>
+    {% endif %}
+    <div class="evo-caixa juros">
+      <small class="rotulo">Juros de empréstimo</small>
+      <b class="valor">{{ brl(c.juros) }}</b>
+      <small>{{ 'vão para quem estava com o caixa no vermelho' if e.juros_por_deficit
+                else 'neste cenário entram junto com a estrutura' }}</small>
+    </div>
+    {% for lado in ('principal', 'demais') %}
+    {% set p = c.por_lado[lado] %}
+    {% if p.n_obras %}
+    <div class="evo-caixa {{ lado }}">
+      <small class="rotulo">{{ p.nome }} absorve{{ 'ram' if not e.tem_lados else 'u' }} · {{ p.n_obras }} obra(s)</small>
+      <b class="valor">{{ brl(p.absorvido) }}</b>
+      <div class="partes">
+        <span>de estrutura<i>{{ brl(p.estrutura) }}</i></span>
+        <span>de juros<i>{{ brl(p.juros) }}</i></span>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% if c.sem_dono|abs > 0.005 %}
+    <div class="evo-caixa alerta">
+      <small class="rotulo">Ficou sem dono</small>
+      <b class="valor">{{ brl(c.sem_dono) }}</b>
+      <small>custo que não coube em obra nenhuma —
+        <a href="{{ url_for('painel.cenario_resultado', cenario=cenario.id) }}#batimento">ver no Resultado</a></small>
+    </div>
+    {% endif %}
+    {% if c.juros_fora|abs > 0.005 %}
+    <div class="evo-caixa alerta">
+      <small class="rotulo">Juros em obras fora da prestação</small>
+      <b class="valor">{{ brl(c.juros_fora) }}</b>
+      <small>o caixa delas conta, mas elas não aparecem aqui</small>
+    </div>
+    {% endif %}
+  </div>
+  {% if c.fecha %}
+  <p class="cartao-dica"><b>A conta fecha:</b> o que saiu (matriz, filial e juros) é igual ao que as
+    obras absorveram{% if c.sem_dono|abs > 0.005 or c.juros_fora|abs > 0.005 %}, mais o que está
+    nos quadros vermelhos{% endif %}.</p>
+  {% else %}
+  <div class="aviso erro" style="margin-top:10px"><b>A conta não fecha:</b> há {{ brl(c.diferenca) }}
+    de diferença entre o que saiu e o que foi absorvido. Confira o batimento na tela de
+    <a href="{{ url_for('painel.cenario_resultado', cenario=cenario.id) }}#batimento">Resultado</a>.</div>
+  {% endif %}
+</div>
+
+<!-- ===================== MÊS A MÊS ===================== -->
+{% macro colunas(grafico, cores) %}
+<div class="evo-grafico-rola">
+  <div class="evo-grafico" role="img" aria-label="Colunas mês a mês"
+       style="min-width:{{ grafico|length * 14 }}px">
+    {% for col in grafico %}
+    <div class="evo-coluna" title="{{ col.rotulo }}: {{ brl(col.total) }}">
+      <div class="evo-pilha" style="height:{{ col.altura }}%">
+        {% for parte in col.partes %}
+        <div style="height:{{ parte }}%; background:{{ cores[loop.index0] }}"></div>
+        {% endfor %}
+      </div>
+      <small>{{ col.marca }}</small>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Mês a mês: quanto {{ 'cada estrutura absorveu' if e.tem_lados else 'as obras absorveram' }}</h3>
+    <small>estrutura (matriz{{ ' e filial' if c.filial|abs > 0.005 else '' }}) e juros de empréstimo</small>
+  </div>
+  {{ colunas(grafico_geral, ['var(--azul-claro)', 'var(--amarelo)', 'var(--roxo)']) }}
+  <div class="evo-legenda">
+    {% if e.tem_lados %}
+    <span><i style="background:var(--azul-claro)"></i>{{ e.nome_do_lado.principal }}</span>
+    <span><i style="background:var(--amarelo)"></i>{{ e.nome_do_lado.demais }}</span>
+    {% else %}
+    <span><i style="background:var(--amarelo)"></i>Estrutura</span>
+    {% endif %}
+    <span><i style="background:var(--roxo)"></i>Juros de empréstimo</span>
+  </div>
+</div>
+
+<!-- ===================== QUEM ABSORVEU O QUÊ ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Quem absorveu o quê</h3>
+    <small>▸ abre; o nome mostra a ficha mês a mês logo abaixo</small>
+  </div>
+  <div class="tabela-rolagem" style="max-height:560px">
+    <table class="sem-quebra evo-arvore" id="evo-arvore">
+      <thead>
+        <tr>
+          <th class="sem-ordem">{{ {'estrutura': 'Estrutura › projeto › obra', 'projeto': 'Projeto › obra', 'obra': 'Obra'}[visao] }}</th>
+          <th class="sem-ordem direita">{{ 'Faturamento' if e.criterio == 'faturamento' else 'Mão de obra' }} (a régua)</th>
+          <th class="sem-ordem direita">% da régua</th>
+          <th class="sem-ordem direita">Estrutura absorvida</th>
+          <th class="sem-ordem direita">Juros absorvidos</th>
+          <th class="sem-ordem direita">Total absorvido</th>
+          <th class="sem-ordem direita">% do total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for n in arvore %}
+        <tr data-linha="{{ n.linha }}" data-pai="{{ n.pai }}" data-nivel="{{ n.nivel }}"
+            class="{{ 'evo-escolhida' if n.chave == ver else '' }}"
+            {% if n.pai and n.pai not in abertos %}hidden{% endif %}>
+          <td class="nome">
+            {% if n.tem_filhos %}
+            <button type="button" class="evo-abre" data-abre="{{ n.linha }}"
+                    aria-expanded="{{ 'true' if n.linha in abertos else 'false' }}"
+                    aria-label="Abrir {{ n.nome }}">{{ '▾' if n.linha in abertos else '▸' }}</button>
+            {% endif %}
+            <a class="no" href="{{ url_for('painel.cenario_evolucao', cenario=cenario.id, visao=visao, ver=n.chave) }}#ficha">{{ n.nome }}</a>
+            {% if n.tipo != 'obra' %}<span class="selo neutro">{{ n.n_obras }} obra{{ 's' if n.n_obras != 1 else '' }}</span>{% endif %}
+          </td>
+          <td class="dados direita">{{ brl(n.regua) }}</td>
+          <td class="dados direita">{{ pct(n.pct_regua) }}</td>
+          <td class="dados direita">{{ brl(n.estrutura) }}</td>
+          <td class="dados direita">{{ brl(n.juros) }}</td>
+          <td class="dados direita"><b>{{ brl(n.absorvido) }}</b></td>
+          <td class="dados direita">{{ pct(n.pct_absorvido) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="evo-total">
+          <td>Total</td>
+          <td class="dados direita">{{ brl(e.geral.regua) }}</td>
+          <td class="dados direita">100,0%</td>
+          <td class="dados direita">{{ brl(e.geral.estrutura) }}</td>
+          <td class="dados direita">{{ brl(e.geral.juros) }}</td>
+          <td class="dados direita">{{ brl(e.geral.absorvido) }}</td>
+          <td class="dados direita">100,0%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    <b>% da régua</b> é quanto {{ 'do faturamento' if e.criterio == 'faturamento' else 'da mão de obra' }}
+    de todas as obras, somando todos os meses, é deste nome. A divisão de verdade é feita
+    <b>mês a mês</b> — por isso o percentual absorvido não é igual ao da régua: obra que
+    trabalhou num mês caro para a matriz absorve mais. Só aparecem as obras que estão na prestação.
+    {% if e.sem_lado %}{{ e.sem_lado|length }} obra(s) sem projeto não recebem estrutura nem juros
+    e não aparecem aqui — estão na tela de Resultado.{% endif %}
+  </p>
+</div>
+
+<!-- ===================== A FICHA ===================== -->
+{% if ficha %}
+{% set no = ficha.no %}
+<div class="cartao" id="ficha">
+  <div class="cartao-cab">
+    <h3>Ficha mês a mês — {{ no.nome }}</h3>
+    <small>
+      {% if no.tipo == 'obra' %}obra do projeto {{ no.projeto }}{% if e.tem_lados %} · {{ no.lado_nome }}{% endif %}
+      {% elif no.tipo == 'projeto' %}projeto com {{ no.n_obras }} obra(s){% if e.tem_lados %} · {{ no.lado_nome }}{% endif %}
+      {% else %}estrutura com {{ no.n_obras }} obra(s){% endif %}
+    </small>
+  </div>
+  <div class="tabela-barra" style="border:0; padding:0 0 10px">
+    <span class="resumo">Absorveu <b>{{ brl(ficha.total.absorvido) }}</b> —
+      <b>{{ brl(ficha.total.estrutura) }}</b> de estrutura e
+      <b>{{ brl(ficha.total.juros) }}</b> de juros.</span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ url_for('painel.baixar', assunto='evolucao', cenario=cenario.id, ver=no.chave) }}">⬇ Só {{ 'esta obra' if no.tipo == 'obra' else 'este projeto' if no.tipo == 'projeto' else 'esta estrutura' }} (planilha)</a>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ url_for('painel.baixar', assunto='evolucao', formato='pdf', cenario=cenario.id, ver=no.chave) }}">⬇ PDF</a>
+  </div>
+
+  {{ colunas(grafico_da_ficha, ['var(--azul-claro)', 'var(--roxo)']) }}
+  <div class="evo-legenda">
+    <span><i style="background:var(--azul-claro)"></i>Estrutura absorvida</span>
+    <span><i style="background:var(--roxo)"></i>Juros absorvidos</span>
+  </div>
+
+  <p class="cartao-dica" style="margin:12px 0 8px"><b>Clique num mês</b> para abrir a conta dele, passo a passo.</p>
+  <div class="tabela-rolagem" style="max-height:none">
+    <table class="sem-quebra evo-ficha" id="evo-ficha">
+      <thead>
+        <tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">{{ 'Faturamento' if e.criterio == 'faturamento' else 'Mão de obra' }}</th>
+          <th class="sem-ordem direita">% da régua</th>
+          <th class="sem-ordem direita">Estrutura absorvida</th>
+          <th class="sem-ordem direita">Caixa do mês</th>
+          <th class="sem-ordem direita">Caixa acumulado</th>
+          <th class="sem-ordem direita">Juros da empresa</th>
+          <th class="sem-ordem direita">% dos juros</th>
+          <th class="sem-ordem direita">Juros absorvidos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in ficha.linhas %}
+        <tr class="evo-mes" data-mes="{{ l.mes }}" tabindex="0" role="button" aria-expanded="false">
+          <td class="mes"><b>{{ l.rotulo }}</b> <span class="seta">▸</span></td>
+          <td class="dados direita">{{ brl(l.regua) }}</td>
+          <td class="dados direita">{{ pct(l.fracao) if l.fracao > 0 else '—' }}</td>
+          <td class="dados direita">{{ brl(l.estrutura) }}</td>
+          <td class="dados direita {{ classe_valor(l.caixa) }}">{{ brl(l.caixa) }}</td>
+          <td class="dados direita {{ classe_valor(l.acumulado) }}">{{ brl(l.acumulado) }}</td>
+          <td class="dados direita">{{ brl(l.juros_da_empresa) }}</td>
+          <td class="dados direita">{{ pct(l.pct_dos_juros) if l.juros|abs > 0.005 else '—' }}</td>
+          <td class="dados direita">{{ brl(l.juros) if l.juros|abs > 0.005 else '—' }}</td>
+        </tr>
+        <tr class="evo-conta" data-conta="{{ l.mes }}" hidden>
+          <td colspan="9"><div class="evo-conta-dentro">
+            <b>A conta de {{ l.rotulo }} — {{ no.nome }}</b>
+            <ol>{% for passo in l.conta %}<li>{{ passo }}</li>{% endfor %}</ol>
+            {% if links %}
+            {% set de, ate = links.faixa(l.mes) %}
+            <p class="cartao-dica nao-imprime" style="margin:8px 0 0">
+              Abrir os lançamentos deste mês:
+              {% for centro in links.matriz %}
+              <a href="{{ url_for('painel.analitico', obra=centro, de=de, ate=ate, visao=links.visao) }}">{{ centro }}</a>{{ ' · ' if not loop.last or no.tipo == 'obra' }}
+              {% endfor %}
+              {% if no.tipo == 'obra' %}
+              <a href="{{ url_for('painel.analitico', obra=no.nome, de=de, ate=ate, visao=links.visao) }}">{{ no.nome }}</a>
+              {% endif %}
+            </p>
+            {% endif %}
+          </div></td>
+        </tr>
+        {% endfor %}
+        <tr class="evo-total">
+          <td class="mes">Total</td>
+          <td class="dados direita">{{ brl(ficha.total.regua) }}</td>
+          <td class="dados direita">{{ pct(ficha.total.pct_regua) }}</td>
+          <td class="dados direita">{{ brl(ficha.total.estrutura) }}</td>
+          <td class="dados direita {{ classe_valor(ficha.total.caixa) }}">{{ brl(ficha.total.caixa) }}</td>
+          <td class="dados direita {{ classe_valor(ficha.total.acumulado) }}">{{ brl(ficha.total.acumulado) }}</td>
+          <td class="dados direita">{{ brl(ficha.total.juros_da_empresa) }}</td>
+          <td class="dados direita"></td>
+          <td class="dados direita">{{ brl(ficha.total.juros) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    <b>Caixa do mês</b> é o que {{ 'a obra' if no.tipo == 'obra' else 'o conjunto' }} recebeu menos o que pagou,
+    sem a estrutura. <b>Caixa acumulado</b> já desconta a estrutura absorvida — é ele que diz se
+    estava no vermelho, e é pelo tamanho do buraco que os juros são repartidos.
+    <b>Juros da empresa</b> é o total pago no mês, para comparar com a parte que coube aqui.
+  </p>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  // a árvore: abrir e fechar sem ir ao servidor
+  var arvore = document.getElementById("evo-arvore");
+  if (arvore) {
+    var filhosDe = function (linha) {
+      return arvore.querySelectorAll('tr[data-pai="' + CSS.escape(linha) + '"]');
+    };
+    var fechar = function (linha) {
+      filhosDe(linha).forEach(function (tr) {
+        tr.hidden = true;
+        var b = tr.querySelector("[data-abre]");
+        if (b) { b.textContent = "▸"; b.setAttribute("aria-expanded", "false"); }
+        fechar(tr.dataset.linha);
+      });
+    };
+    arvore.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-abre]");
+      if (!b) return;
+      var aberto = b.getAttribute("aria-expanded") === "true";
+      if (aberto) fechar(b.dataset.abre);
+      else filhosDe(b.dataset.abre).forEach(function (tr) { tr.hidden = false; });
+      b.textContent = aberto ? "▸" : "▾";
+      b.setAttribute("aria-expanded", aberto ? "false" : "true");
+    });
+  }
+  // a ficha: o mês abre a conta dele
+  var ficha = document.getElementById("evo-ficha");
+  if (ficha) {
+    var alternar = function (tr) {
+      var conta = ficha.querySelector('tr[data-conta="' + tr.dataset.mes + '"]');
+      if (!conta) return;
+      conta.hidden = !conta.hidden;
+      tr.classList.toggle("evo-escolhida", !conta.hidden);
+      tr.setAttribute("aria-expanded", conta.hidden ? "false" : "true");
+      tr.querySelector(".seta").textContent = conta.hidden ? "▸" : "▾";
+    };
+    ficha.addEventListener("click", function (e) {
+      if (e.target.closest("a")) return;
+      var tr = e.target.closest("tr.evo-mes");
+      if (tr) alternar(tr);
+    });
+    ficha.addEventListener("keydown", function (e) {
+      var tr = e.target.closest("tr.evo-mes");
+      if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); alternar(tr); }
+    });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

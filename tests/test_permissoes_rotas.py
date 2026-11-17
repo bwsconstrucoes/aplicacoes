@@ -170,6 +170,21 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     até 500 nomes, e pôr o CPF de todos no navegador para poder filtrar ali
     seria entregar o cadastro a quem abrisse o código da página.
 
+    **A DÉCIMA SEGUNDA ENTROU EM 15/11/2026: conferir o CPF no portal.**
+
+    Ele perguntou, olhando o formulário de cadastro: *"o CPF vai ser criticado
+    se a pessoa já existir?"* No portal, não era — a obra preenchia o cadastro
+    inteiro, fotografava os três documentos, e só ao enviar descobria que a
+    pessoa já existe.
+
+    ⚑ MESMA RAZÃO DAS OUTRAS TRÊS DO PORTAL, e a mesma defesa: ela chama
+    `quem_esta()` na primeira linha, então quem não entrou leva 401. Está nesta
+    lista porque o guard do ERP olha a sessão do ERP, que o portal não usa.
+
+    O que ela devolve a quem ENTROU é o mínimo: se o CPF existe, o nome, e se
+    está ativo ou desligado. Nada de salário, endereço, telefone ou documento —
+    quem abre pedido não precisa disso, e varrer CPFs não mapearia o cadastro.
+
     **A NONA ENTROU EM 10/11/2026: "esqueci minha senha".** Pelo mesmo motivo
     da oitava — quem esqueceu a senha não tem como entrar para pedir. Ela não
     diz se a conta existe (a resposta é idêntica nos dois casos), não lista
@@ -188,7 +203,8 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
         "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
         "erp.pagina_primeiro_acesso", "erp.pagina_esqueci_a_senha",
-        "erp.api_portal_pessoas", "erp.api_portal_ler_documento"}
+        "erp.api_portal_pessoas", "erp.api_portal_ler_documento",
+        "erp.api_portal_conferir_cpf"}
 
 
 def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):

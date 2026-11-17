@@ -160,15 +160,21 @@
     <b>Card cancelado ou repetido não é problema do sistema</b>: entra o que
     você listar, e só. Faltando um dado que o card não traz (PIS, nº da CTPS),
     o sistema <b>lê o documento que acabou de baixar</b> e completa.</div>
-  {# ⚑ REGRAVAR É PARA A CARGA INICIAL. Ele, em 13/11/2026: *"isso aí vai
-     acontecer só nesse começo. Então, se eu precisar reimportar, eu quero
-     reimportar e regravar as coisas."* Desligado por padrão: no dia a dia,
-     passar por cima do que alguém conferiu à mão é o pior desfecho de uma
-     importação. #}
+  {# ⚑ O CARD MANDA, E AGORA É O PADRÃO — decisão dele em 16/11/2026: *"eu
+     quero que o que vier do pipe preencha o ERP. É isso que eu quero. Não
+     adianta eu ter que já ter uma base e ter que preencher de novo."*
+
+     Estava ao contrário: só preenchia campo VAZIO, e a caixinha de regravar
+     vinha desmarcada. Na carga inicial isso é o pior dos mundos — o Pipefy É
+     a base, e deixar o ERP "ganhar" com um valor pela metade obriga a
+     redigitar o que já existe. A proteção que fica de pé é a que importa:
+     NOME e CPF nunca são trocados por importação (ver `_gravar_campos`), e a
+     diferença vai para a fila de divergências para alguém decidir. #}
   <label class="opcao" style="margin:10px 0 0">
-    <input type="checkbox" id="pc-regravar">
-    <span class="rotulo">Trazer de novo e <b>regravar por cima</b> — para a
-      carga inicial, quando o que vale é o que está no card</span></label>
+    <input type="checkbox" id="pc-regravar" checked>
+    <span class="rotulo">O card <b>manda</b>: regrava por cima do que já está
+      aqui. <b>Nome e CPF nunca são trocados</b> — a diferença neles vira
+      pergunta. Desmarque para só preencher o que está vazio.</span></label>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-pc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-pc" disabled>Trazer do Pipefy</button>
@@ -655,6 +661,17 @@ async function situacaoDoCadastroPipefy(){
   } catch(e){ onde.textContent = e.message; }
 }
 
+// ⚑ ANO-MÊS-DIA É COMO O BANCO ESCREVE, NÃO COMO SE LÊ UM NASCIMENTO. O dono
+// viu "No ERP 1988-03-30 · No card 30/03/1988" oferecido como divergência a
+// decidir e respondeu: *"o que não bateu na crítica ainda foi errada. ERP
+// trabalhando com data em padrão errado."* O servidor passou a comparar data
+// como data (não vira mais divergência); aqui ela passa a APARECER como se lê.
+function dataSeForData(valor){
+  const t = String(valor == null ? "" : valor).trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : t;
+}
+
 function pintarRelatorioPC(rel){
   if (!rel) return "";
   const linhas = [];
@@ -740,12 +757,112 @@ function pintarRelatorioPC(rel){
         <td>${escapar(d.nome)}</td>
         <td>${escapar(d.rotulo)}</td>
         <td${d.mais_forte === "cadastro" ? ' style="font-weight:600"' : ""}>${
-          escapar(d.no_cadastro || "—")}</td>
+          escapar(dataSeForData(d.no_cadastro) || "—")}</td>
         <td${d.mais_forte === "card" ? ' style="font-weight:600"' : ""}>${
-          escapar(d.no_card || "—")}</td>
+          escapar(dataSeForData(d.no_card) || "—")}</td>
         <td${d.mais_forte === "documento" ? ' style="font-weight:600"' : ""}>${
-          escapar(d.no_documento || "—")}</td>
+          escapar(dataSeForData(d.no_documento) || "—")}</td>
         <td>${escapar(d.mais_forte)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ O CARGO QUE O CARD TROUXE E NÃO EXISTE AQUI (16/11/2026). Ele pediu que
+  // a importação preenchesse o cargo; ela preenche quando o nome bate. Quando
+  // não bate, isto diz o nome exato — porque "o cargo não veio" sem dizer o
+  // que veio no card é um beco sem saída.
+  if ((rel.cargos_sem_par || []).length)
+    linhas.push(`<h4>Cargo do card que não existe no ERP (${
+      rel.cargos_sem_par.length})</h4>
+      <div class="cartao-dica">O cargo decide piso da convenção, CBO, riscos e
+        EPI — por isso ele só entra quando o nome é <b>o mesmo</b>. Crie o
+        cargo em Pessoal, ou corrija o nome no card, e importe de novo.</div>
+      <table><thead><tr><th>Pessoa</th><th>Cargo no card</th></tr></thead>
+      <tbody>${rel.cargos_sem_par.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.cargo)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ FASE DO PIPE QUE NÃO VIROU ETAPA (16/11/2026). Sem esta lista a pessoa
+  // ficaria na etapa antiga e ninguém saberia por quê.
+  if ((rel.fases_sem_etapa || []).length)
+    linhas.push(`<h4>Fase do card que eu não reconheci (${
+      rel.fases_sem_etapa.length})</h4>
+      <div class="cartao-dica">A etapa destes cadastros <b>não foi mexida</b> —
+        chutar a etapa tira a pessoa da fila do DP sem ninguém perceber. Me
+        mostre a fase abaixo e eu acrescento a correlação.</div>
+      <table><thead><tr><th>Pessoa</th><th>Fase no card</th></tr></thead>
+      <tbody>${rel.fases_sem_etapa.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.fase)}</td></tr>`).join("")}</tbody></table>`);
+
+  // ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ (16/11/2026). Sem isto, "o card veio
+  // vazio", "o ERP já tinha" e "o valor foi recusado" eram a mesma coisa na
+  // tela: nenhuma linha. Ele olhou e disse "me parece que não tá puxando é
+  // nada" — e não tinha como saber se estava ou não.
+  const calados = [];
+  (rel.por_pessoa || []).forEach(p => (p.nao_preenchidos || []).forEach(
+    c => calados.push({...c, nome: p.nome})));
+  if (calados.length)
+    linhas.push(`<h4>Campos que NÃO foram preenchidos (${calados.length})</h4>
+      <div class="cartao-dica">Isto não é erro — é o que a importação deixou
+        como estava, e <b>o motivo de cada um</b>. "O cadastro já tinha"
+        significa que o card não foi ignorado: o valor daqui é que tem
+        preferência.</div>
+      <div class="tabela-rolagem" style="max-height:320px">
+      <table><thead><tr><th>Pessoa</th><th>Campo</th><th>No ERP</th>
+        <th>No card</th><th>Por quê</th></tr></thead>
+      <tbody>${calados.map(c => `<tr><td>${escapar(c.nome)}</td>
+        <td>${escapar(c.rotulo)}</td>
+        <td class="dados">${escapar(dataSeForData(c.no_erp) || "—")}</td>
+        <td class="dados">${escapar(dataSeForData(c.no_card) || "—")}</td>
+        <td class="desc">${escapar(c.motivo)}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  // ⚑ O QUE A PLANILHA ESCREVE, CRU, E O QUE EU NÃO ENTENDI (16/11/2026).
+  //
+  // Ele, na terceira tentativa frustrada: *"é só casar informação da planilha
+  // vs campo do ERP. Tu não tá conseguindo (…) o que tu precisa de mim?"*
+  // Precisava disto: ver o que está ESCRITO na planilha. Eu lia os nomes das
+  // colunas (verificáveis) e inventava os valores — e valor que não bate não
+  // reclama, só não entra.
+  const naoEntendi = rel.planilha_nao_entendi || [];
+  if (naoEntendi.length)
+    linhas.push(`<h4>⚠️ Valores da planilha que eu não reconheci (${
+      naoEntendi.length})</h4>
+      <div class="cartao-dica"><b>É aqui que o cadastro fica incompleto.</b>
+        Cada linha mostra o que está escrito na planilha e o campo que ficou
+        sem preencher. <b>Me mostre esta lista</b> e eu acerto a correlação de
+        uma vez — ou corrija a planilha, se o valor estiver errado lá.</div>
+      <table><thead><tr><th>Pessoa</th><th>Coluna da planilha</th>
+        <th>Está escrito</th><th>Campo que ficou vazio</th></tr></thead>
+      <tbody>${naoEntendi.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.coluna)}</td>
+        <td class="dados"><b>${escapar(x.valor)}</b></td>
+        <td>${escapar(x.campo)}</td></tr>`).join("")}</tbody></table>`);
+
+  // A LINHA CRUA DA PLANILHA, pessoa por pessoa. Serve para conferir contra a
+  // planilha aberta ao lado, sem ninguém ter de adivinhar nada.
+  const comCrua = (rel.por_pessoa || []).filter(p => p.planilha_crua);
+  if (comCrua.length)
+    linhas.push(`<h4>O que a planilha “Dados Documentos” diz, coluna por
+      coluna (${comCrua.length})</h4>
+      <div class="cartao-dica">Exatamente como está lá. Compare com a planilha
+        aberta: se algo estiver em branco aqui e preenchido lá, a cópia está
+        velha — aperte <b>Atualizar cadastro</b> na Análise de SPs.</div>
+      ${comCrua.map(p => `<details style="margin-top:6px">
+        <summary><b>${escapar(p.nome)}</b></summary>
+        <table><thead><tr><th>Coluna</th><th>Valor</th></tr></thead>
+        <tbody>${Object.entries(p.planilha_crua).map(([k, v]) =>
+          `<tr><td class="dados">${escapar(k)}</td>
+           <td class="dados">${escapar(v) || "<i>vazio</i>"}</td></tr>`).join("")}
+        </tbody></table></details>`).join("")}`);
+
+  // ⚑ DE ONDE VEIO CADA COISA (16/11/2026). A importação passou a ler a
+  // planilha "Dados Documentos" além do card, e quem confere precisa saber
+  // qual das duas falou — senão "o sistema preencheu" vira caixa-preta.
+  const doEspelho = (rel.por_pessoa || []).filter(p => (p.do_espelho||[]).length);
+  if (doEspelho.length)
+    linhas.push(`<div class="cartao-dica" style="margin-top:10px">
+      <b>${doEspelho.length} pessoa(s) tiveram campos vindos da planilha
+      “Dados Documentos”</b> — é de lá que saem vínculo, pagamento, tipo de
+      contrato, cargo, convenção, obra e os auxílios. Do Pipefy vêm os
+      <b>documentos</b> e os dados de identidade (RG, pai, mãe, endereço), que
+      não estão na planilha.</div>`);
 
   const comCoisa = (rel.por_pessoa || []).filter(
     p => (p.documentos || []).length || Object.keys(p.campos || {}).length);
@@ -755,7 +872,9 @@ function pintarRelatorioPC(rel){
       <tbody>${comCoisa.map(p=>`<tr><td>${escapar(p.nome)}</td>
         <td>${(p.documentos||[]).map(d=>`${escapar(d.tipo)} <small>(${
           escapar(d.situacao)})</small>`).join("<br>") || "—"}</td>
-        <td>${Object.keys(p.campos||{}).join(", ") || "—"}</td></tr>`).join("")}</tbody></table>`);
+        <td>${Object.keys(p.campos||{}).map(
+          c => escapar((rel.rotulos||{})[c] || c)).join(", ") || "—"}</td>
+        </tr>`).join("")}</tbody></table>`);
   return linhas.join("");
 }
 

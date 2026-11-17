@@ -2048,6 +2048,54 @@ meses. Agora o ERP também lê, pela tela de Importar.
   que ganha aditivo precisa da data trocada à mão, e o histórico do aditivo
   não existe.
 
+### O quadro do mês do diário (15/11/2026)
+
+- "Quantos dias de diário faltam neste mês, e em quais obras?" — é o que o
+  quadro mostra de um olhar, e a conta vem pronta por obra.
+- "Em que dias a obra X não tem diário?" — as células vermelhas da linha dela.
+- ⚠️ **"obra"** no quadro é obra **não encerrada**. Obra concluída que ainda
+  aparece está marcada como ATIVA no cadastro — a resposta certa é "está
+  aparecendo porque o cadastro dela não foi encerrado", nunca "o sistema
+  errou".
+- ⚠️ **"falta diário"** já desconta fim de semana, feriado, dia antes do
+  início e depois do término da obra, e o futuro. Sábado com ponto batido
+  conta como dia útil — porque teve trabalho.
+
+### As fotos do diário (14/11/2026)
+
+- "Quais dias desta obra estão sem foto?" — dá para responder: a foto é anexo
+  do dia, e dia sem anexo é dia sem foto.
+- "Quantas fotos tem este mês?" / "Quanto espaço as fotos da obra ocupam?" —
+  o tamanho de cada uma está guardado.
+- ⚠️ **"as fotos estão no Drive?"** — nem sempre. Quando o Drive não responde
+  na hora do envio, a foto fica **no banco** e vai para o Drive depois, pela
+  rotina de mudança. A tela diz isso em cada foto, e a resposta tem de dizer
+  também: "12 fotos, 2 ainda no banco" é diferente de "12 fotos no Drive".
+- ⚠️ **"foto do dia"** é o anexo do diário (teto de 6). **Não** é a foto do
+  ponto (a do reconhecimento facial, que é de pessoa) nem o documento da obra
+  (que fica no Arquivo). Três coisas diferentes com o mesmo apelido.
+
+#### O que o sistema ainda NÃO responde
+
+- "Esta foto é mesmo deste dia?" — não há conferência de data da imagem; vale
+  o dia em que foi anexada ao diário.
+- "O que aparece na foto?" — a legenda é digitada por gente. Ninguém lê a
+  imagem.
+
+### Quem assina o diário, e o dia repetido (14/11/2026)
+
+- "Quais obras estão sem responsável técnico, sem registro profissional ou sem
+  empresa?" — é o que faz o papel sair com a assinatura em branco. A tela do
+  diário avisa por obra; a resposta geral ainda é varredura no cadastro.
+- "Este diário foi escrito ou foi repetido de outro dia?" — ⚠️ **o sistema NÃO
+  responde isso.** O dia repetido nasce como diário comum, criado pela pessoa
+  que mandou repetir. Se isso passar a importar (e numa auditoria de medição
+  pode importar), é coluna nova.
+- **"igual"**, quando ele diz "esse dia foi igual aos 3 próximos": é o relato,
+  as ocorrências, o histórico, o tempo e o horário. **Não** é o efetivo (vem do
+  ponto, dia a dia) nem o material (vem de Suprimentos). Os equipamentos só vão
+  se mandarem.
+
 ### ⚠️ O efetivo do dia: três palavras que mudam a resposta (13/11/2026)
 
 Ele achou o defeito olhando o número: *"eu acho que ele está dobrando o
@@ -2158,6 +2206,203 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
   numa lista.
 - Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
   do dono (só colaborador com telefone).
+
+## 3z-quinquies. O PEDIDO QUE SE AJUSTA AO CASO, E O ATESTADO LONGO (15/11/2026)
+
+Seis decisões dele num pedido só: desligamento único, readmissão detectada pelo
+CPF, vale-transporte dentro da ajuda de custo, formulário condicional, a trava
+do desligado que continua como prestador, e o atestado de mais de 15 dias.
+
+### ⚠️ Três palavras novas que precisam de uma definição só
+
+| A palavra | Os significados possíveis | Decisão |
+|---|---|---|
+| **"readmissão"** | o pedido de cadastro que se converteu (tipo CADASTRO com `readmissao`), ou o antigo tipo READMISSAO, ou qualquer segundo vínculo da pessoa? | ⬜ a decidir — hoje há as três coisas no banco, e contar as três juntas é o certo para "quantas readmissões houve"; para "readmissões pendentes" valem só as cobradas pela trava |
+| **"dias de atestado"** | dias de calendário COBERTOS, ou a soma do tamanho de cada atestado? | ✔ **FECHADO: dias cobertos.** Dois atestados sobrepostos somariam o mesmo dia duas vezes e empurrariam alguém para o INSS sem motivo |
+| **"afastado"** | quem tem AFASTAMENTO aprovado, ou quem tem pedido de afastamento aberto (inclusive o que o sistema abriu sozinho)? | ⬜ a decidir — o pedido aberto pelo sistema NÃO é afastamento ainda; o DP pode negar |
+
+### Perguntas que já dão resposta exata
+
+**Sobre o desligamento**
+
+- Quantos desligamentos foram pedidos este mês? E quantos eram de prestador?
+- Quais desligamentos de carteira estão esperando o DP?
+- Quantos desligamentos foram por encerramento de contrato de experiência?
+- Quem foi desligado dizendo que **continua trabalhando**? *(a lista da trava)*
+- **Tem alguém sem conseguir bater o ponto por readmissão esquecida?** —
+  `readmissoes_esquecidas`; é a pergunta que o dono vai fazer de manhã
+- Quantos dias, em média, o DP leva para fechar um desligamento?
+- Quais desligamentos têm checklist começado e não terminado?
+
+**Sobre cadastro e readmissão**
+
+- Quantos cadastros de colaborador foram pedidos este mês?
+- **Quantos desses eram readmissão** (o CPF já existia)?
+- Quem foi readmitido este ano? Por qual empresa?
+- Quais pedidos de cadastro estão parados por falta de documento?
+- Quantos cadastros entraram como CTPS e quantos como prestador?
+- Dos prestadores, quantos são PJ, RPA, mensalista, aprendiz, estágio,
+  pró-labore?
+- Quem foi cadastrado sem telefone ou sem chave Pix? *(resposta certa hoje:
+  ninguém novo — os dois são obrigatórios desde 15/11/2026; a pergunta serve
+  para achar os ANTIGOS)*
+
+**Sobre benefícios**
+
+- Quem tem vale-transporte? E de quem a empresa absorve o desconto?
+- Quantas pessoas têm auxílio alimentação em cada categoria?
+- Qual a diferença de custo entre "Mensal" e "Mês" no transporte? ⚠️ *depende
+  da palavra: "Mensal" multiplica pelos dias do mês, "Mês" é valor cheio*
+- Quais pedidos de ajuda de custo estão abertos?
+
+**Sobre o atestado longo (área do ponto)**
+
+- Quantos dias de atestado o fulano tem nos últimos 60 dias?
+- Quem passou dos 15 dias de atestado e devia estar no INSS?
+- Quais afastamentos o sistema abriu sozinho e ainda esperam o DP?
+- Quantos afastamentos abertos pelo sistema o DP negou? ⚠️ *se este número for
+  alto, a regra está errando e precisa ser revista — é o termômetro dela*
+- Quem tem atestado picado somando perto do limite? *(a pergunta que previne,
+  em vez de reagir)*
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- "Quais desligamentos estão abertos?" — quem é preso a obra vê os da obra
+  dele, mais o que ele mesmo abriu.
+- "Tem readmissão pendente?" — a lista da trava hoje **não** é recortada por
+  obra, porque é alerta do DP. Se ela for para a tela da obra, precisa do
+  recorte.
+- Atestado e afastamento são **sigilosos** (LGPD, art. 11): CID, médico, CRM e
+  o papel só saem para quem aprova afastamento. Pergunta sobre "quem está de
+  atestado" responde os dias, nunca a doença.
+
+### Perguntas que o sistema AINDA NÃO responde, e o que falta
+
+- **"Esse atestado é da mesma doença do anterior?"** — falta comparar CID, e a
+  soma legal dos 15 dias vale para a mesma doença. Hoje o sistema soma TUDO e
+  manda o DP conferir. É a limitação mais importante desta entrega.
+- **"Quanto a empresa já pagou de atestado este ano?"** — falta ligar o
+  atestado ao valor do dia na folha.
+- **"Essa pessoa já foi desligada e readmitida quantas vezes?"** — o dado
+  existe (`colaborador_vinculos`), falta a função.
+- **"Quanto tempo a pessoa ficou fora entre um vínculo e o outro?"** — idem.
+- **"O prestador que virou CTPS ficou quantos dias sem vínculo?"** — é o buraco
+  que gera o bug do ponto; a trava avisa, mas ninguém mede.
+
+---
+
+## 3z-septies. A IMPORTAÇÃO DO PIPEFY, DEPOIS DOS CONSERTOS (16/11/2026)
+
+### ⚠️ Duas palavras que pareciam uma só
+
+| A palavra | Os significados possíveis | Decisão |
+|---|---|---|
+| **"cargo"** | o cargo registrado ou a função na obra? | ✔ **FECHADO em 16/11/2026, migração 105: não há mais duas coisas.** Ele: *"vamos chamar só de cargo e acabou."* `funcoes` virou visão de `cargos`, e o cargo carrega a diária. "Função" e "cargo" são a MESMA resposta |
+| **"não veio"** | o card não trouxe, o ERP já tinha, ou o valor foi recusado? | ✔ **FECHADO:** são três coisas diferentes e o relatório agora diz qual |
+| **"etapa"** vs **"situação"** | "em que pé está o cadastro?" ou "a pessoa está na empresa?" | ✔ **FECHADO e são DUAS coisas.** A fase do Pipefy misturava as duas; desde 16/11 a importação desdobra. Pergunta sobre fila de trabalho responde pela ETAPA; pergunta sobre folha e ponto responde pela SITUAÇÃO |
+
+### Perguntas que já dão resposta exata
+
+- Qual o cargo do fulano, e qual a diária de referência dele? *(uma coisa só
+  desde 16/11; "função" é sinônimo e responde igual)*
+- Quais cargos vieram nos cards e não existem no nosso cadastro de cargos?
+- Quantos documentos do Pipefy ainda não entraram, e de quem?
+- Quais tipos de documento o código tem e o banco não tem? *(depois do
+  conserto de 16/11 a resposta deve ser sempre "nenhum")*
+- Para quem a importação não preencheu nada, e por quê?
+- Quantas divergências abertas são de data? ⚠️ *se voltar a crescer, a
+  comparação de data quebrou de novo*
+- Quantos cadastros estão em cada etapa, e há quanto tempo parados?
+- Quais fases do Pipefy entraram sem virar etapa? ⚠️ *a resposta deve ser
+  "nenhuma"; fase nova no pipe aparece aqui antes de virar problema*
+- Quem está com situação diferente da etapa? *(ex.: etapa Desligado e situação
+  ATIVO — é o que faria a pessoa continuar batendo ponto)*
+- Quais documentos esta pessoa já tem, e quais faltam? *(a ficha passou a
+  listar em 16/11; antes só o Arquivo mostrava)*
+- De quem é este documento, e como abro o cadastro dele? *(o nome do dono
+  virou link no Arquivo)*
+- De onde veio cada campo deste cadastro: da planilha, do card ou da ficha do
+  Fortes? ⚠️ *três fontes é o desenho, não um acidente — ver a tabela no
+  `HISTORICO.md` de 16/11*
+- Quem está na planilha "Dados Documentos" e não está no ERP? E o contrário?
+- Quantas pessoas ficaram sem vínculo ou sem pagamento depois de importar?
+  ⚠️ *se for muita gente, é sinal de que a cópia da planilha está velha —
+  aperte "Atualizar cadastro" na Análise de SPs antes de importar*
+
+### Perguntas que o sistema ainda não responde, e o que falta
+
+- **"Este documento é o mesmo que já está na ficha?"** — a comparação é por
+  card e campo, não pelo conteúdo do arquivo. Dois arquivos iguais vindos de
+  campos diferentes entram duas vezes.
+- **"O cargo do card é o mesmo que o da ficha do Fortes?"** — a ficha do
+  Fortes não tem o cargo lido (decisão do dono: a nomenclatura é nossa).
+
+---
+
+## 3z-sexies. A FICHA DO FORTES, E AS DUAS NOMENCLATURAS DA OBRA (16/11/2026)
+
+A ficha de registro do Fortes entrou por leitura direta do PDF, e com ela veio
+o centro de custo da contabilidade no cadastro da obra.
+
+### ⚠️ Duas palavras novas que precisam de uma definição só
+
+| A palavra | Os significados possíveis | Decisão |
+|---|---|---|
+| **"obra"** | o código da BWS ("094") ou o centro de custo da contabilidade ("164.01")? | ✔ **FECHADO: as DUAS ficam.** Ele: *"nós vamos continuar com a nossa nomenclatura e a contabilidade tem a dela também. A gente manter as duas."* Quem pergunta pela obra fala o código da BWS; quem vem da contabilidade fala o centro de custo. O assistente aceita os dois e responde com o da BWS |
+| **"salário"** | o do cadastro do ERP ou o último do histórico do Fortes? | ✔ **FECHADO: o do Fortes manda**, e a importação atualiza o do ERP. Se os dois discordam, quem está certo é quem emitiu o holerite |
+
+### Perguntas que já dão resposta exata
+
+- Quantas pessoas estão sem o código do Fortes no cadastro?
+- Qual o centro de custo da contabilidade da obra 094? E qual obra é a 164.01?
+- Quais obras estão sem centro de custo da contabilidade? ⚠️ *é a pergunta que
+  explica por que uma ficha entrou sem obra*
+- Quem está no Fortes e não está no ERP? E o contrário?
+- Quais nomes estão diferentes entre o ERP e a ficha do Fortes? *(a fila de
+  divergências, com `origem = 'FORTES'`)* ⚠️ *só o que DISCORDA entra aí:
+  campo vazio no ERP a ficha preenche, sem virar pergunta*
+- Quantas fichas foram recusadas na importação, e por quê?
+- Para quem o Fortes diz uma obra e o ERP diz outra? ⚠️ *o sistema não decide:
+  avisa que os dois discordam*
+- Quem está sem PIS ou sem CTPS no cadastro? *(depois da importação, deve ser
+  quem não tem ficha)*
+
+### ⚠️ Perguntas que o ERP NÃO vai responder, e isso está decidido
+
+**FECHADO em 16/11/2026, por ele, com todas as letras:** *"a ficha de cadastro
+ela vai ter mais dados que a gente precisa. Só da parte cadastral mesmo e das
+informações necessárias para encaminhamento para a contabilidade. O sistema que
+vai armazenar esses históricos de salário, de admissões, etc. e tal, é lá.
+Então, é desnecessário."*
+
+O ERP guarda **o estado de hoje** de cada pessoa e o que é preciso para
+encaminhar à contabilidade. **A história fica no Fortes**, que é o sistema de
+folha. Isto não é limitação a ser vencida depois — é divisão de trabalho.
+
+| Pergunta | Quem responde |
+|---|---|
+| "Qual era o salário do fulano em 2019?" | **o Fortes.** A ficha traz treze mudanças de 2014 a 2026; a importação aproveita a última de propósito |
+| "Quantas vezes o fulano mudou de cargo?" | **o Fortes** — e aqui há razão a mais: a nomenclatura de cargo dele foi recusada |
+| "Quantas admissões o fulano teve?" | **o Fortes** |
+
+⚑ **E há uma consequência que é regra de código, não só de conversa:** a
+importação **não escreve** na tabela de alterações do ERP
+(`colaborador_alteracoes`). Aquela lista é o que a BWS DECIDIU — promoção,
+transferência, com motivo e justificativa assinados por alguém. Uma importação
+de 575 fichas despejaria ali 575 "alterações de salário" que ninguém decidiu, e
+a lista que é consultada viraria lixo. Há teste travando isso.
+
+**O que o assistente responde quando perguntarem pelo histórico:** "isso está no
+Fortes, o ERP guarda o quadro de hoje" — não "não sei".
+
+### Perguntas que o sistema ainda não responde, e o que falta
+
+- **"Este atestado é da mesma doença do anterior?"** — continua aberta (falta
+  comparar CID).
+- **"Qual a jornada contratual do fulano?"** — está na ficha e não é lida; a
+  escala de verdade é a do ponto.
+
+---
 
 ## 4. Como esta lista vira código
 

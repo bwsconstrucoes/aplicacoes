@@ -201,7 +201,8 @@ DE_PARA_VALOR: dict[str, dict[str, str]] = {
         "mensal": "MENSAL", "mes": "MES",
     },
     "categoria_transporte": {
-        "diario": "DIARIO", "mensal": "MENSAL", "segunda e sexta": "SEG_E_SEX",
+        "diario": "DIARIO", "mensal": "MENSAL", "mes": "MES",
+        "segunda e sexta": "SEG_E_SEX",
         "vale transporte": "VALE_TRANSPORTE", "vale-transporte": "VALE_TRANSPORTE",
         "diario e vale transporte": "DIARIO_E_VT", "veiculo": "VEICULO",
         "motocicleta": "MOTOCICLETA", "bicicleta": "BICICLETA", "cartao": "CARTAO",

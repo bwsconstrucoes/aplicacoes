@@ -269,6 +269,11 @@ def test_VIA_SP_uma_SP_POR_PESSOA_com_o_favorecido_e_o_rateio_dela(banco_gm, mon
               for v in fcd.campos_da_sp(grupo, sp_dois, "", dt.datetime(2026, 10, 17))}
     assert campos["radio_horizontal_t_tulo"] == "Pessoa Física"
     assert campos["cpf"] == "529.982.247-25" and "cnpj" not in campos
+    # 16/11/2026: a chave do cadastro vai marcada no tipo dela, não "Aleatória".
+    um_campos = {v["campo"]: v["valor"]
+                 for v in fcd.campos_da_sp(grupo, sp_um, "", dt.datetime(2026, 10, 17))}
+    assert um_campos["tipo"] == "CNPJ" and um_campos["cnpj_1"] == "12.345.678/0001-95"
+    assert "chave_pix_aleat_ria" not in um_campos
     assert um["valores"]["radio_horizontal_t_tulo"] == "Pessoa Jurídica"
     assert um["valores"]["cnpj"] == "12.345.678/0001-95"
     assert "Chave Pix (CNPJ): 12345678000195" in um["valores"]["descri_o"]

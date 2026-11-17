@@ -12244,6 +12244,84 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 270 — Pagamento via SP: a chave Pix do cadastro vai marcada, não "Aleatória" (16/11/2026)
+
+- *"Está sendo marcado todos como aleatória e colocado atualizar PIX, sendo que já está
+  puxando do cadastro a chave PIX, que é CNPJ ou CPF (…) Aí eu estou tendo que alterar
+  todas as SPs geradas, uma por uma."*
+- Causa: a SP de cada pessoa seguia o padrão das SPs de folha (que pagam o banco, não a
+  pessoa): "tipo" = Aleatória e chave = "Atualizar Chave", com a chave de verdade só na
+  descrição.
+- Agora (`folha_cards.campos_da_chave`): o "tipo" ("Selecione a chave PIX a ser
+  utilizada") recebe a OPÇÃO do próprio pipe que casa com o tipo do cadastro (CPF, CNPJ,
+  e-mail, telefone, aleatória), e a chave vai no campo daquele tipo — `chave_pix_cpf`,
+  `cnpj_1`, `chave_pix_de_email`, `chave_pix_telefone`, `chave_pix_aleat_ria` (os mesmos
+  que a importação do ERP lê). CPF e CNPJ vão formatados.
+- Volta "Aleatória / Atualizar Chave" (e a etiqueta "Atualizar Pix") só quando o cadastro
+  não tem chave, o pipe não tem a opção ou não tem o campo daquela chave — para o card não
+  sair com o tipo marcado e a chave em lugar nenhum.
+- ⚠️ NÃO CONFERIDO no Pipefy de verdade: as opções e os campos de chave do pipe de SP vêm
+  da importação do ERP e da leitura do pipe no lançamento, não de um card criado. As SPs
+  já geradas com "Aleatória" continuam como estão (corrigir no Pipefy é escrever em
+  sistema de terceiro — só com o dono pedindo).
+- Testes: `test_analisesps_folha_cards.py` (a chave por tipo e as voltas ao padrão) e
+  `test_analisesps_gratificados.py`.
+- **Publicado em 16/11/2026** (sem migração).
+
+#### Leva 269 — Relatório completo do lote: os anexos entram otimizados (16/11/2026)
+
+- *"Existe anexos muito grandes em tamanho. Preciso dar uma otimizada neles antes de gerar
+  o relatório completo."*
+- O peso é foto e digitalização. Agora cada anexo é reduzido ao embutir: foto vai a no
+  máximo 2000 px e JPEG qualidade 70 (`_otimizar_foto`, também desvira foto de celular);
+  imagem dentro de PDF acima de 160 dpi vai a 130 dpi, JPEG 70 (`_otimizar_pdf`, pelo
+  `rewrite_images` do PyMuPDF — em versão sem ele, segue sem otimizar). Texto e desenho
+  de PDF gerado por sistema (NF-e, boleto) não são imagem e não mudam. O PDF final sai
+  com compressão máxima.
+- Medido: nota digitalizada a 300 dpi, 26 MB → 0,35 MB no relatório, texto de 8 pt
+  nítido; três anexos pesados somando 37 MB → relatório de 1,1 MB.
+- Com isso os tetos subiram (valem para o arquivo como chega, que é o que ocupa memória):
+  40 MB por anexo (era 20) e 150 MB somados (era 90).
+- **Publicado em 16/11/2026** (sem migração). Não conferido com anexos reais.
+
+#### Leva 268 — Relatório completo do lote, para a parceria (15/11/2026)
+
+- *"A gente vai lá nas solicitações, filtra, faz um print da tela, cola no WhatsApp, depois
+  baixa todos os anexos (…) e cola também (…) Eu gostaria de um relatório do lote (…) bonito,
+  organizado, com os agrupamentos (…) resumida, analítica, detalhada (…) e embutir todos os
+  anexos (…) a data, quem decide sou eu na hora de gerar."* E pediu para ver o visual antes
+  de fechar.
+- `lote_relatorio_completo.py`: um PDF só — capa (total, números, pontos de atenção,
+  agrupamentos por obra, tipo de despesa, forma e conta de pagamento, maiores credores
+  quando há mais de 5), relação analítica SEPARADA POR OBRA (linha clicável),
+  e uma página por SP seguida dos ANEXOS embutidos, cada página com uma faixa "PAGAMENTO n ·
+  SP · credor · anexo k · página i de N" e "voltar à relação". Sumário lateral (marcadores).
+- **Anexo da folha** (pedido no mesmo dia): SP sem anexo usa o "Relatório (PDF): <link>" da
+  descrição. Os outros links da descrição (planilha de pagamento, cadastro de colaboradores,
+  planilha de análise) NÃO vão para o parceiro: no texto impresso viram "(link interno, não
+  incluído)" — são planilhas com dado bancário/pessoal. Decisão minha, a confirmar com ele.
+- Link do Drive baixa pela conta de serviço (`drive.baixar_arquivo`); os outros com teto
+  de 20 MB por anexo e 90 MB por relatório; até 60 páginas por anexo. Imagem vira página;
+  planilha/Word/página de login ficam listadas com o motivo, sem derrubar o relatório.
+- **Gera FORA do pedido** (linha própria, até 2 ao mesmo tempo; a tela acompanha a cada
+  2 s e baixa) — baixar dezenas de anexos seguraria uma das 4 linhas do serviço. Fica na
+  memória do processo e numa pasta temporária por 2 h: renovação do serviço no meio perde o
+  trabalho (a tela diz para gerar de novo).
+- Tela do Lote: botão "Relatório completo (para a parceria)" (também no celular, com
+  "Compartilhar" direto para o WhatsApp onde o navegador permite) e "Relatório completo do
+  grupo" em cada grupo. Janela: data do pagamento (sugere amanhã), para quem, título, "só
+  estas obras" (quando há mais de uma) e "embutir os documentos".
+- **Por obra, e não pelos grupos do lote** (dono, vendo a prévia): *"tem um pagar amanhã,
+  aí tem outro (…) folha e locação. Eu não entendi essa divisão, sendo que a gente tá
+  relacionando os pagamentos de um determinado evento."* Os títulos do lote organizam o
+  trabalho aqui dentro e não dizem nada à parceria; saíram do relatório (inclusive o
+  quadro "por grupo do lote"). A mesma SP em dois grupos entra uma vez.
+- As três rotas novas entraram em `auth.TELA_DA_ROTA` com a tela "lote" — sem isso, quem
+  entra com usuário próprio ficava barrado (a suíte acusou antes de publicar).
+- **Publicado em 15/11/2026** (sem migração). Não conferido com anexos reais do Dropbox,
+  Drive e Pipefy: o primeiro lote de verdade é o teste.
+- Testes: `test_analisesps_lote_relatorio_completo.py`.
+
 #### Leva 267 — Pagamento avulso: o relatório conta a pessoa do rateio UMA vez e mostra o rateio (13/11/2026)
 
 - *"Quando tem rateio, o relatório não tá saindo direito. Diverge na qtd de pessoas no
@@ -12262,6 +12340,7 @@ somente Solicitações de uma conta especifica"*.
 - Vale também para o relatório anexado na geração (`folha_pagamento._relatorio_por_conta`
   usa o mesmo montado).
 - Teste: `test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio`.
+- **Publicado em 13/11/2026** (sem migração).
 
 #### Leva 266 — Pagamento avulso: a mesma pessoa em obras diferentes é RATEIO (13/11/2026)
 

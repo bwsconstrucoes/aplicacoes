@@ -16,7 +16,31 @@
   <div class="filtros-cab">
     <h2>Obra</h2>
   </div>
-  <div class="campo"><label>Qual obra</label><select id="f-obra"></select></div>
+  {# ⚑ A OBRA SE PROCURA DIGITANDO, E O RESULTADO SE TOCA (15/11/2026).
+
+     Ele, no celular: *"o filtro não funcionou direito. Eu botei o nome de uma
+     obra e ele não… aí eu tenho que clicar. No computador você começa a
+     escrever e já vai exibindo na caixinha da seleção as obras que têm a ver
+     com aquele nome. E no celular não aparece. Na prática, isso pode gerar
+     confusão."*
+
+     Tinha razão, e a causa é do navegador: a busca automática da casa filtra
+     as opções DENTRO do `<select>`, e no celular o `<select>` só mostra a
+     lista depois que a pessoa toca nele — então digitar parecia não fazer
+     nada. Aqui a lista de achados aparece na própria coluna, e se toca nela.
+     O `<select>` continua existindo, escondido, porque é dele que o resto da
+     tela lê a obra escolhida.
+
+     `data-sem-busca` desliga a busca automática: duas buscas no mesmo campo
+     seria pior que nenhuma. #}
+  <div class="campo">
+    <label for="f-obra-busca">Qual obra</label>
+    <input type="search" id="f-obra-busca" autocomplete="off"
+           placeholder="digite o código ou o nome">
+    <div id="obras-achadas" class="busca-achados"></div>
+    <select id="f-obra" data-sem-busca style="display:none"></select>
+    <div id="obra-escolhida" class="desc" style="margin-top:6px"></div>
+  </div>
   {# O MÊS, COM SETAS — e o dia se escolhe no calendário (13/11/2026).
 
      Ele: *"tem aqui um filtro de dia, sendo que embaixo a gente tem um mês
@@ -31,12 +55,24 @@
      porque é ele que o resto da tela lê; quem o preenche agora é o
      calendário. #}
   <input type="hidden" id="f-data" name="data">
+  {# ⚑ MÊS E ANO EM DUAS CAIXINHAS, e não no campo de mês do navegador.
+
+     Ele, em 15/11/2026: *"no filtro, no sidebar, o mês está 2026-11. A gente
+     está no Brasil, né? Então é para ser 11/2026."*
+
+     O campo `type="month"` escreve a data no formato do NAVEGADOR, não no do
+     Brasil — num celular configurado em inglês ele mostra "2026-11" e não há
+     como mandar nele. Duas caixinhas escrevem "novembro" e "2026" em
+     qualquer aparelho, e ainda são mais fáceis de tocar com o dedo. O campo
+     escondido `f-mes` continua existindo porque o resto da tela lê dele. #}
+  <input type="hidden" id="f-mes" name="mes">
   <div class="campo">
-    <label for="f-mes">Mês</label>
+    <label for="f-mes-nome">Mês</label>
     <div class="mes-nav">
       <button class="btn secundario" type="button" id="btn-mes-antes"
               title="Mês anterior" aria-label="Mês anterior">◀</button>
-      <input type="month" id="f-mes" name="mes">
+      <select id="f-mes-nome" data-sem-busca></select>
+      <select id="f-ano" data-sem-busca></select>
       <button class="btn secundario" type="button" id="btn-mes-depois"
               title="Próximo mês" aria-label="Próximo mês">▶</button>
     </div>
@@ -59,8 +95,9 @@
       equipamentos e no que a fiscalização escreveu. Acento não atrapalha.</small>
   </div>
   <div id="achados"></div>
+  {# O QUADRO DO MÊS é a tela inicial — este botão é a volta para ela. #}
   <button class="btn secundario" id="btn-pendencias" style="width:100%; margin-top:12px">
-    Onde está faltando</button>
+    ◀ Quadro do mês (todas as obras)</button>
   {# IMPRIMIR. Abre a folha do dia em outra aba, no modelo que o CONTRATO
      exige. A escolha entre os três modelos fica na própria folha, para ele
      poder folhear os formatos sem voltar aqui. #}
@@ -81,6 +118,10 @@
 {% block scripts %}
 <script>
 const PODE_LANCAR = {{ 'true' if pode.lancar_diario else 'false' }};
+// Quem pode mexer no CADASTRO da obra — é outra permissão, e é a que decide
+// se o atalho "preencher agora" aparece. A trava de verdade é o @permissao da
+// rota; isto só evita oferecer um botão que responderia 403.
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar else 'false' }};
 let OBRAS = [], DIA = null, HOJE = new Date().toISOString().slice(0, 10);
 
 // ⚑ O QUE CADA COR DO CALENDÁRIO QUER DIZER (13/11/2026).
@@ -134,8 +175,15 @@ function diaPorExtenso(iso){
 // destino (31 de janeiro + 1 mês = 28/29 de fevereiro, e não 3 de março).
 function andarMes(passo){
   const [a, m] = (els("f-mes").value || mesDoDia()).split("-").map(Number);
-  const dia = +(els("f-data").value || HOJE).slice(8, 10);
   const alvo = new Date(a, m - 1 + passo, 1);
+  // Sem obra escolhida, as setas folheiam o QUADRO do mês — que é a tela
+  // inicial. Com obra, folheiam o calendário dela, como antes.
+  if (!els("f-obra").value) {
+    montarMesEAno(`${alvo.getFullYear()}-${String(alvo.getMonth() + 1).padStart(2, "0")}`);
+    pintarQuadro();
+    return;
+  }
+  const dia = +(els("f-data").value || HOJE).slice(8, 10);
   const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
   irPara(new Date(alvo.getFullYear(), alvo.getMonth(),
                   Math.min(dia, ultimo)));
@@ -145,32 +193,119 @@ function irPara(d){
   const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
             + `-${String(d.getDate()).padStart(2, "0")}`;
   els("f-data").value = iso;
-  els("f-mes").value = iso.slice(0, 7);
+  montarMesEAno(iso.slice(0, 7));
   carregar();
 }
 
 async function iniciar(){
   els("f-data").value = HOJE;
-  els("f-mes").value = HOJE.slice(0, 7);
+  montarMesEAno(HOJE.slice(0, 7));
   try {
     OBRAS = (await api("/erp/api/obras")).obras || [];
   } catch(e){ aviso("mensagem", e.message, "erro"); return; }
-  els("f-obra").innerHTML = OBRAS.map(o =>
+  {# ⚑ A TELA NÃO ABRE MAIS NUMA OBRA (15/11/2026). Ele: *"não fica legal
+     entrar na tela já da primeira obra. Inclusive, no próprio computador
+     também. A tela inicial devia ser esse calendário, mas sem obra
+     selecionada."* A primeira opção é vazia e fica escolhida: o `<select>`
+     existe para o resto da tela ler, mas ninguém entra num diário por
+     acidente. #}
+  els("f-obra").innerHTML = `<option value=""></option>` + OBRAS.map(o =>
     `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
-  els("f-obra").addEventListener("change", carregar);
+  els("f-obra").value = "";
+  els("f-obra").addEventListener("change", () => {
+    mostrarObraEscolhida();
+    carregar();
+  });
   els("f-data").addEventListener("change", carregar);
   els("btn-mes-antes").addEventListener("click", () => andarMes(-1));
   els("btn-mes-depois").addEventListener("click", () => andarMes(1));
-  // Escolher o mês direto no campo cai no dia 1º — é de lá que se folheia.
-  els("f-mes").addEventListener("change", () => {
-    const [a, m] = (els("f-mes").value || mesDoDia()).split("-").map(Number);
-    if (a && m) irPara(new Date(a, m - 1, 1));
-  });
-  els("btn-pendencias").addEventListener("click", abrirPendencias);
+  els("f-mes-nome").addEventListener("change", trocouOMes);
+  els("f-ano").addEventListener("change", trocouOMes);
+  els("btn-pendencias").addEventListener("click", voltarAoQuadro);
   ligarBusca();
+  ligarBuscaDeObra();
   els("btn-papel").addEventListener("click", imprimir);
-  if (OBRAS.length) carregar();
-  else els("painel").innerHTML = `<div class="vazio">Nenhuma obra ao seu alcance.</div>`;
+  if (!OBRAS.length) {
+    els("painel").innerHTML = `<div class="vazio">Nenhuma obra ao seu alcance.</div>`;
+    return;
+  }
+  pintarQuadro();          // a porta da tela é o quadro do mês
+}
+
+// ---------------------------------------------------------------------------
+// O MÊS E O ANO EM DUAS CAIXINHAS — e o campo escondido que o resto lê
+// ---------------------------------------------------------------------------
+function montarMesEAno(valor){
+  const [a, m] = valor.split("-").map(Number);
+  const anoAgora = new Date().getFullYear();
+  els("f-mes-nome").innerHTML = MESES.map((nome, i) =>
+    `<option value="${i + 1}" ${i + 1 === m ? "selected" : ""}>${nome}</option>`).join("");
+  // Dez anos para trás e um para a frente: diário é do passado, e o que
+  // existe para a frente é só a virada do ano em dezembro.
+  const anos = [];
+  for (let x = anoAgora + 1; x >= anoAgora - 10; x--) anos.push(x);
+  els("f-ano").innerHTML = anos.map(x =>
+    `<option value="${x}" ${x === a ? "selected" : ""}>${x}</option>`).join("");
+  els("f-mes").value = valor;
+}
+
+function trocouOMes(){
+  const a = +els("f-ano").value, m = +els("f-mes-nome").value;
+  els("f-mes").value = `${a}-${String(m).padStart(2, "0")}`;
+  if (els("f-obra").value) irPara(new Date(a, m - 1, 1));
+  else pintarQuadro();
+}
+
+// ---------------------------------------------------------------------------
+// PROCURAR A OBRA DIGITANDO — e tocar no resultado
+//
+// No celular, filtrar as opções DENTRO do `<select>` não mostra nada até a
+// pessoa tocar nele. Aqui os achados aparecem na própria coluna.
+// ---------------------------------------------------------------------------
+function ligarBuscaDeObra(){
+  const campo = els("f-obra-busca"), alvo = els("obras-achadas");
+  const pintar = () => {
+    const q = _semAcento(campo.value.trim());
+    if (!q) { alvo.innerHTML = ""; return; }
+    const achadas = OBRAS.filter(o =>
+      _semAcento(rotuloObra(o)).includes(q)).slice(0, 12);
+    alvo.innerHTML = achadas.length
+      ? achadas.map(o => `<button type="button" class="achado"
+          data-obra="${o.id}">${escapar(rotuloObra(o))}</button>`).join("")
+      : `<small class="desc">Nenhuma obra com isso no nome.</small>`;
+    alvo.querySelectorAll("[data-obra]").forEach(b =>
+      b.addEventListener("click", () => {
+        els("f-obra").value = b.dataset.obra;
+        campo.value = "";
+        alvo.innerHTML = "";
+        mostrarObraEscolhida();
+        carregar();
+      }));
+  };
+  campo.addEventListener("input", pintar);
+}
+
+function _semAcento(texto){
+  return (texto || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function mostrarObraEscolhida(){
+  const id = els("f-obra").value;
+  const o = OBRAS.find(x => String(x.id) === String(id));
+  els("obra-escolhida").innerHTML = o
+    ? `<b>${escapar(rotuloObra(o))}</b> · <button class="link-btn"
+        id="btn-trocar-obra">trocar</button>`
+    : "Nenhuma obra escolhida — o quadro abaixo mostra todas.";
+  const trocar = els("btn-trocar-obra");
+  if (trocar) trocar.addEventListener("click", voltarAoQuadro);
+}
+
+function voltarAoQuadro(){
+  els("f-obra").value = "";
+  DIA = null;
+  mostrarObraEscolhida();
+  els("cal").innerHTML = "";
+  pintarQuadro();
 }
 
 // ---------------------------------------------------------------------------
@@ -220,11 +355,11 @@ function ligarBusca(){
 
 async function carregar(){
   const obra = els("f-obra").value, data = els("f-data").value || HOJE;
-  if (!obra) return;
+  if (!obra) { pintarQuadro(); return; }
   // O campo de mês acompanha o dia — inclusive quando quem mudou o dia foi a
   // busca por relato, que pula para outro mês sem passar pelas setas.
   els("f-data").value = data;
-  els("f-mes").value = data.slice(0, 7);
+  montarMesEAno(data.slice(0, 7));
   try {
     DIA = await api(`/erp/api/diario/${obra}?data=${data}`);
     pintar();
@@ -235,6 +370,18 @@ async function carregar(){
 // ---------------------------------------------------------------------------
 // O QUE O SISTEMA SABE — os blocos que não têm campo nenhum
 // ---------------------------------------------------------------------------
+// A tela é estreita (celular, ou janela pequena)? Decidido na hora de
+// desenhar, não por regra de estilo: o que muda aqui é a ORDEM e o que vem
+// fechado, e isso o CSS não faz sozinho.
+function estreita(){ return window.innerWidth <= 760; }
+
+// Um bloco que no celular nasce fechado e no computador fica aberto. Sem
+// `open`, o navegador esconde o conteúdo — é o comportamento que queremos lá.
+function recolhivel(titulo, conteudo){
+  return `<details class="recolhivel" ${estreita() ? "" : "open"}>
+    <summary>${escapar(titulo)}</summary>${conteudo}</details>`;
+}
+
 function blocoDaObra(){
   const o = DIA.obra, p = o.prazo || {};
   const atrasada = p.faltam !== null && p.faltam < 0;
@@ -245,16 +392,34 @@ function blocoDaObra(){
          iguais ("AERO ARACATI" / "Aero Aracati") e a linha aparecia repetida.
          O ajudante já existia desde 10/09/2026 — eu é que não o usei. #}
       <h3>${escapar(rotuloObra(o))}</h3>
+      ${recolhivel("Dados da obra", `
       <div class="grade-auto">
         ${celula("Contrato", o.contrato)}
         ${celula("Ordem de serviço", dataBR(o.data_ordem_servico))}
         ${celula("Início", dataBR(o.data_inicio))}
         ${celula("Término previsto", dataBR(o.data_termino))}
+        {# ⚑ OS TRÊS QUE ASSINAM O PAPEL (14/11/2026). Ele: *"me explica de
+           onde é que está vindo o responsável técnico, número do registro
+           profissional e a empresa (…) empresa é a empresa do contrato, né?
+           Então isso aqui já deveria vir preenchido."*
+
+           Vêm do CADASTRO DA OBRA — a empresa pelo vínculo da obra com o
+           cadastro de empresas, os outros dois pelos campos do contrato. O
+           que faltava era isto: eles não apareciam aqui, então ninguém
+           descobria que estavam vazios até o papel sair sem assinatura. #}
+        ${celula("Empresa (contratada)", o.empresa_razao || o.empresa)}
         ${celula("Responsável técnico", o.responsavel_tecnico)}
-        ${celula("CREA", o.crea)}
+        ${celula("Registro profissional", o.crea || o.art_rrt)}
       </div>
+      ${faltaParaAssinar(o).length ? `<div class="aviso ${
+          PODE_CONFIGURAR ? "alerta" : ""}" style="margin-top:10px">
+        <b>O papel vai sair sem assinatura identificada.</b> Falta no cadastro
+        desta obra: ${escapar(faltaParaAssinar(o).join(", "))}.
+        ${PODE_CONFIGURAR
+          ? `<button class="link-btn" id="btn-assinatura">preencher agora</button>`
+          : `Peça a quem cuida do cadastro de obras.`}</div>` : ""}
       ${o.objeto ? `<p class="desc" style="margin-top:10px"><b>Objeto:</b>
-        ${escapar(o.objeto)}</p>` : ""}
+        ${escapar(o.objeto)}</p>` : ""}`)}
       ${p.total ? `
         <div class="barra-prazo"><i style="width:${Math.min(100, p.pct || 0)}%"></i></div>
         <div class="desc"><b>Dia ${p.decorridos}</b> de ${p.total} ·
@@ -266,6 +431,80 @@ function blocoDaObra(){
 
 function celula(rotulo, valor){
   return `<div><span>${escapar(rotulo)}</span><b>${escapar(valor || "—")}</b></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// O QUE FALTA PARA O PAPEL SAIR ASSINADO (14/11/2026)
+//
+// Os três modelos imprimem o bloco de assinatura da CONTRATADA com empresa,
+// responsável técnico e número de registro. Os três saem do cadastro da obra;
+// faltando um, o papel sai com a linha em branco — e diário sem responsável
+// técnico identificado é diário que a fiscalização devolve.
+// ---------------------------------------------------------------------------
+function faltaParaAssinar(o){
+  const falta = [];
+  if (!(o.empresa_razao || o.empresa)) falta.push("a empresa");
+  if (!o.responsavel_tecnico) falta.push("o responsável técnico");
+  if (!(o.crea || o.art_rrt)) falta.push("o registro profissional (CREA/CAU ou ART)");
+  return falta;
+}
+
+// ⚑ UMA PORTA SÓ, E O DADO MORA NO CADASTRO DA OBRA.
+//
+// Ele: *"gostaria de poder colocar ou puxar da base de dados (…) se tiver na
+// base de dados, ok. Se não tiver, eu poder preencher."*
+//
+// Preencher AQUI grava no cadastro da obra, não no diário do dia. É a mesma
+// regra do `CLAUDE.md` sobre o documento dentro do formulário: a informação
+// tem um lugar só, e a tela que precisa dela oferece um atalho para lá. Se
+// fosse gravado no dia, amanhã estaria vazio de novo — e a medição, a nota e
+// a ART continuariam sem saber quem é o responsável técnico.
+async function completarAssinatura(){
+  const o = DIA.obra;
+  let empresas = [];
+  try { empresas = (await api("/erp/api/empresas")).empresas || []; }
+  catch(e){ /* sem permissão ou sem cadastro: segue só com os campos de texto */ }
+  const campos = [];
+  if (empresas.length) {
+    campos.push({nome: "empresa_id", rotulo: "Empresa (contratada)",
+                 tipo: "select", largura: 6,
+                 valor: String(o.empresa_id || ""),
+                 opcoes: [{valor: "", rotulo: "— escolha —"}].concat(
+                   empresas.map(x => ({valor: String(x.id),
+                                       rotulo: x.nome_fantasia || x.razao_social}))),
+                 dica: "É a empresa do contrato. Ela assina o diário e é por "
+                     + "ela que saem a nota e a cotação."});
+  }
+  campos.push(
+    {nome: "responsavel_tecnico", rotulo: "Responsável técnico", largura: 6,
+     valor: o.responsavel_tecnico || "", exemplo: "Eng. Fulano de Tal"},
+    {nome: "crea_obra", rotulo: "CREA/CAU do responsável", largura: 3,
+     valor: o.crea || "", exemplo: "PE-180.442/D"},
+    {nome: "art_rrt", rotulo: "ART/RRT da obra", largura: 3,
+     valor: o.art_rrt || "",
+     dica: "Sai no papel quando não há CREA preenchido."});
+
+  const r = await perguntar({
+    titulo: "Quem assina o diário desta obra",
+    textoOk: "Gravar no cadastro da obra",
+    aviso: "Isto grava no <b>cadastro da obra</b>, não neste dia: vale para "
+         + "todos os diários dela, e também para a medição e a nota.",
+    campos});
+  if (!r) return;
+  try {
+    const corpo = {};
+    Object.entries(r).forEach(([k, v]) => { if (v !== "") corpo[k] = v; });
+    // ⚑ O CABEÇALHO `Content-Type` NÃO É ENFEITE, e isto me custou uma
+    // rodada: sem ele, o Flask lê o corpo como vazio, grava NADA e responde
+    // "ok" do mesmo jeito. A tela dizia "Gravado no cadastro da obra" e o
+    // cadastro continuava em branco. Todo POST com JSON desta casa manda o
+    // cabeçalho — há teste varrendo as telas atrás de quem esquecer.
+    await api(`/erp/api/obras/${o.obra_id}`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify(corpo)});
+    aviso("mensagem", "Gravado no cadastro da obra.", "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 function blocoDoEfetivo(){
@@ -306,6 +545,7 @@ function blocoDoEfetivo(){
       ${(e.por_funcao || []).length ? `<div class="chips-funcao">${
         e.por_funcao.map(f => `<span class="etiqueta">${escapar(f.funcao)} · ${f.quantidade}</span>`).join("")
       }</div>` : ""}
+      ${recolhivel("Ver a lista de quem esteve", `
       {# NOME E FUNÇÃO EM COLUNAS, e não a função escondida numa linha
          cinzenta embaixo do nome. Ele olhou a tela e disse: *"não tem aqui a
          função da pessoa, está só o nome."* Estava lá — pequena demais para
@@ -339,6 +579,7 @@ function blocoDoEfetivo(){
             p.saida ? " – " + escapar(p.saida) : ""}</td></tr>`).join("")}
         </tbody></table></div>` : (vindos.length ? "" : `<div class="cartao-dica">
           Ninguém bateu ponto nesta obra neste dia.</div>`)}
+      `)}
       ${extras.length ? `<div class="tabela-wrap" style="margin-top:8px">
         <table><tbody>${extras.map(x => `<tr>
           <td><b>${escapar(x.descricao)}</b><br><small class="desc">${
@@ -532,6 +773,13 @@ function blocoDoRelato(){
         <button class="btn" id="btn-salvar">Gravar</button>
         ${DIA.existe && d.situacao === "ABERTO"
           ? `<button class="btn secundario" id="btn-fechar">Fechar o dia</button>` : ""}
+        {# ⚑ REPETIR O DIA (14/11/2026). Ele: *"digamos que eu queira replicar
+           um determinado relato para vários dias (…) esse dia aqui foi igual
+           aos 3 próximos. Ou então esse sábado foi igual a outros 4 sábados."*
+           Só aparece em dia JÁ GRAVADO: é ele que vai ser copiado. #}
+        ${DIA.existe
+          ? `<button class="btn secundario" id="btn-repetir">Repetir este dia
+             em outros dias</button>` : ""}
         ${d.situacao === "FECHADO"
           ? `<span class="etiqueta verde">fechado em ${momentoBR(d.fechado_em)}</span>` : ""}
       </div>` : ""}
@@ -539,6 +787,103 @@ function blocoDoRelato(){
         documento: corrigir daqui em diante pede o motivo, e fica registrado o
         que mudou.</p>` : ""}
     </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// AS FOTOS DO DIA (14/11/2026)
+//
+// Ele: *"era muito interessante a gente poder colocar serviços executados e
+// fotos, e integrar isso no diário impresso também. (…) é como se fosse um
+// anexo ao diário, essa página das fotos, para não interferir no layout que a
+// gente já trabalhou. (…) Lembrando que fotos sempre no Google Drive."*
+//
+// ⚑ A MESMA TELA SERVE O PORTAL DA OBRA. O portal não tem diário próprio:
+// ele manda para cá (`core/portal.py`, área "obra", `so_tela`). Por isso o
+// campo de arquivo leva `capture="environment"` — no celular isso abre a
+// CÂMERA direto, que é como a foto vai ser tirada em 90% das vezes.
+//
+// A imagem NÃO vem dentro da resposta do dia: cada foto é pedida pela rota do
+// anexo, que confere permissão e escopo. Seis fotos embutidas fariam a
+// abertura do dia baixar vários megabytes antes de desenhar qualquer coisa.
+// ---------------------------------------------------------------------------
+function blocoDasFotos(){
+  const fotos = DIA.fotos || [], teto = DIA.fotos_teto || 6;
+  const podeMexer = PODE_LANCAR && DIA.existe;
+  const fechado = (DIA.diario.situacao === "FECHADO");
+  return `
+    <div class="cartao">
+      <h3>Fotos do dia <small>${fotos.length} de ${teto}</small></h3>
+      <p class="cartao-dica">Elas saem no diário impresso, numa
+        <b>folha de anexo</b> depois da folha do dia — o formato do RDO não
+        muda. Ficam guardadas no Google Drive da empresa.</p>
+      ${!DIA.existe ? `<div class="cartao-dica">Grave o dia primeiro: a foto
+        fica presa ao diário, não à data.</div>` : ""}
+      ${fotos.length ? `<div class="fotos-grade">${fotos.map(f => `
+        <figure class="foto-item">
+          <a href="/erp/anexo/${f.id}" target="_blank" title="abrir a foto inteira">
+            <img src="/erp/anexo/${f.id}" alt="${escapar(f.legenda || f.nome)}"
+                 loading="lazy"></a>
+          <figcaption>
+            ${podeMexer && !fechado
+              ? `<input class="foto-legenda" data-legenda="${f.id}"
+                   value="${escapar(f.legenda)}" placeholder="Legenda — o que a foto mostra"
+                   maxlength="300">`
+              : `<span>${escapar(f.legenda || "sem legenda")}</span>`}
+            <div class="foto-pe">
+              <small class="desc">${f.kb} KB ${f.no_drive
+                ? "· no Drive" : "· <b>ainda no banco</b>"}</small>
+              ${podeMexer && !fechado
+                ? `<button class="link-btn" data-tira-foto="${f.id}">tirar</button>` : ""}
+            </div>
+          </figcaption>
+        </figure>`).join("")}</div>` : ""}
+      ${podeMexer && fotos.length < teto ? `
+        <div class="campo" style="margin-top:10px">
+          <label for="d-foto">Acrescentar foto</label>
+          <input type="file" id="d-foto" accept="image/*" capture="environment">
+          <small class="desc">No celular, isto abre a câmera. JPG, PNG ou WEBP.</small>
+        </div>` : ""}
+      ${podeMexer && fotos.length >= teto ? `<div class="cartao-dica">
+        Este dia já tem o máximo de ${teto} fotos. Para trocar, tire uma
+        antes.</div>` : ""}
+      ${fechado && fotos.length ? `<div class="cartao-dica">Diário fechado:
+        acrescentar foto ainda pode, tirar não — o papel já saiu com ela.</div>` : ""}
+    </div>`;
+}
+
+async function mandarFoto(){
+  const campo = els("d-foto"), arq = campo && campo.files[0];
+  if (!arq) return;
+  const legenda = await perguntar({
+    titulo: "O que esta foto mostra?",
+    textoOk: "Anexar ao dia",
+    aviso: "A legenda sai embaixo da foto no diário impresso.",
+    campos: [{nome: "legenda", rotulo: "Legenda", largura: 6,
+              exemplo: "Concretagem da laje do bloco B"}]});
+  if (!legenda) { campo.value = ""; return; }
+  const fd = new FormData();
+  fd.append("foto", arq);
+  fd.append("legenda", legenda.legenda || "");
+  campo.disabled = true;
+  try {
+    const r = await api(
+      `/erp/api/diario/${els("f-obra").value}/fotos?data=${els("f-data").value}`,
+      {method: "POST", body: fd});
+    aviso("mensagem", r.no_drive
+      ? "Foto guardada no Google Drive."
+      : "Foto guardada — o Drive não respondeu agora, então ela ficou no "
+        + "banco e vai para o Drive depois.", r.no_drive ? "ok" : "alerta");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); campo.disabled = false; }
+}
+
+async function mexerNaFoto(corpo){
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/fotos`
+              + `?data=${els("f-data").value}`,
+              {method: "POST", body: JSON.stringify(corpo)});
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 function listaDeTempo(id, valor, travado){
@@ -572,21 +917,61 @@ function blocoDaFiscalizacao(){
 
 function pintar(){
   const d = DIA.diario;
-  els("painel").innerHTML =
-    blocoDaObra() + blocoDoRelato() + blocoDoEfetivo()
-    + blocoDosEquipamentos() + blocoDoMaterial()
-    + blocoDaFiscalizacao();
+  // ⚑ A ORDEM DA TELA NÃO É A ORDEM DO PAPEL (14/11/2026).
+  //
+  // Ele: *"a posição do efetivo está muito… normalmente é muita gente e acaba
+  // atrapalhando a visualização da tela de onde a gente faz o preenchimento.
+  // E o equipamento de obra está muito embaixo. Vamos deixar equipamento de
+  // obra e observações da fiscalização antes da parte do efetivo. Isso na
+  // tela, não é no modelo. Porque a pessoa tende a esquecer os equipamentos
+  // porque está muito embaixo."*
+  //
+  // A regra que fica: **em cima o que alguém DIGITA, embaixo o que o sistema
+  // já sabe.** O efetivo (do ponto) e o material (de Suprimentos) não têm
+  // campo nenhum — são leitura. Numa obra com 40 pessoas, a lista empurrava
+  // equipamentos e fiscalização para fora da tela, e campo que não se vê é
+  // campo que não se preenche.
+  //
+  // O PAPEL CONTINUA NA ORDEM DO MODELO, e tem de continuar: lá a ordem é
+  // cláusula de contrato (ver `erp_diario_papel_orgao.html`).
+  // ⚑ NO CELULAR A ORDEM MUDA, E O MOTIVO É DELE (15/11/2026): *"quando você
+  // abre pelo celular (…) o cabeçalho, aquilo ali são muitas informações. Na
+  // tela do celular isso não deveria estar sendo exibido dessa forma, bastava
+  // a obra. Efetivo do dia, colocar também de forma mais resumida. A gente tem
+  // que dar mais destaque ao relato (…) porque aqui não é local de gestão, é
+  // local apenas de lançamento de informação."*
+  //
+  // Então, na tela estreita, o RELATO vem primeiro e o que é leitura (a ficha
+  // da obra, o efetivo) desce e vem fechado. No computador nada muda: lá a
+  // tela é larga e a visão de gestão cabe junto.
+  els("painel").innerHTML = estreita()
+    ? blocoDoRelato() + blocoDasFotos() + blocoDosEquipamentos()
+      + blocoDaFiscalizacao() + blocoDaObra() + blocoDoEfetivo()
+      + blocoDoMaterial()
+    : blocoDaObra() + blocoDoRelato() + blocoDasFotos()
+      + blocoDosEquipamentos() + blocoDaFiscalizacao()
+      + blocoDoEfetivo() + blocoDoMaterial();
 
   const liga = (id, ev, fn) => { if (els(id)) els(id).addEventListener(ev, fn); };
   liga("d-sem", "change", () => {
     els("d-corpo").classList.toggle("oculto", els("d-sem").checked);
   });
+  liga("btn-assinatura", "click", completarAssinatura);
   liga("btn-salvar", "click", gravar);
   liga("btn-fechar", "click", fecharODia);
   liga("btn-obs-fisc", "click", registrarObservacao);
   liga("btn-extra", "click", acrescentarExtra);
   liga("btn-equip", "click", acrescentarEquipamento);
   liga("btn-equip-ontem", "click", repetirEquipamentosDeOntem);
+  liga("btn-repetir", "click", repetirEsteDia);
+  liga("d-foto", "change", mandarFoto);
+  document.querySelectorAll("[data-tira-foto]").forEach(b =>
+    b.addEventListener("click", () => mexerNaFoto({remover: +b.dataset.tiraFoto})));
+  // A legenda grava ao SAIR do campo, não a cada tecla: quem digita no
+  // celular não quer uma ida ao servidor por letra.
+  document.querySelectorAll("[data-legenda]").forEach(c =>
+    c.addEventListener("change", () => mexerNaFoto(
+      {legendar: +c.dataset.legenda, legenda: c.value})));
   liga("btn-ontem", "click", () => {
     els("d-relato").value = (DIA.relato_anterior || {}).relato || "";
     els("d-relato").focus();
@@ -855,6 +1240,168 @@ async function removerExtra(id){
        body: JSON.stringify({remover: id, data: els("f-data").value})});
     await carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// REPETIR ESTE DIA EM OUTROS DIAS (14/11/2026)
+//
+// Ele: *"esse dia aqui foi igual aos 3 próximos aqui. Ou então esse sábado foi
+// igual a outros 4 sábados aqui. Então eu gostaria de poder replicar isso aqui
+// de forma fácil."*
+//
+// ⚑ SÃO DOIS PASSOS, E O SEGUNDO NÃO É BUROCRACIA: primeiro se escolhe COMO
+// repetir, depois o sistema mostra EXATAMENTE em quais dias vai escrever, com
+// data por extenso, e só então grava. Repetir é escrever documento em dias que
+// a pessoa não está olhando — e aqui não há desfazer.
+//
+// Dia que já tem diário nunca é sobrescrito; vem dito na volta, com o motivo.
+// ---------------------------------------------------------------------------
+const SEMANA = ["domingo", "segunda-feira", "terça-feira", "quarta-feira",
+                "quinta-feira", "sexta-feira", "sábado"];
+
+async function repetirEsteDia(){
+  const obra = els("f-obra").value, de = els("f-data").value;
+  const diaDaSemana = SEMANA[new Date(de + "T12:00:00").getDay()];
+  const r = await perguntar({
+    titulo: "Repetir este dia em outros dias",
+    textoOk: "Ver em quais dias",
+    aviso: "Copia o relato, as ocorrências, o histórico, o tempo e o horário. "
+         + "<b>Nunca escreve por cima</b> de um dia que já tem diário.",
+    campos: [
+      {nome: "modo", rotulo: "Repetir em", tipo: "select", largura: 4,
+       valor: "seguidos",
+       opcoes: [{valor: "seguidos", rotulo: "dias seguidos"},
+                {valor: "mesmo_dia_da_semana",
+                 rotulo: `outros dias de ${diaDaSemana}`}]},
+      {nome: "quantos", rotulo: "Quantos dias", tipo: "number", largura: 2,
+       valor: "3"},
+      {nome: "equipamentos", rotulo: "Levar os equipamentos junto",
+       tipo: "select", largura: 6, valor: "0",
+       opcoes: [{valor: "0", rotulo: "Não — só o texto e o tempo"},
+                {valor: "1", rotulo: "Sim, a mesma lista de equipamentos"}],
+       dica: "Só marque se as máquinas continuaram as mesmas nesses dias."},
+    ]});
+  if (!r) return;
+
+  let dias = [];
+  try {
+    dias = (await api(`/erp/api/diario/${obra}/repetir`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({de, sugerir: true, modo: r.modo,
+                             quantos: r.quantos})})).dias || [];
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  if (!dias.length) {
+    aviso("mensagem", "Não achei dia livre para receber a cópia — os "
+        + "próximos já têm diário, ou estão fora do prazo da obra.", "alerta");
+    return;
+  }
+
+  // ⚑ A CONFIRMAÇÃO MOSTRA AS DATAS, uma a uma. "Copiar para 3 dias" não diz
+  // quais, e quais é justamente o que a pessoa precisa conferir.
+  const lista = dias.map(x => `${dataBR(x)} (${
+    SEMANA[new Date(x + "T12:00:00").getDay()]})`).join(" · ");
+  const ok = await perguntar({
+    titulo: `Escrever o mesmo relato em ${dias.length} dia(s)?`,
+    textoOk: "Repetir nestes dias",
+    aviso: `<b>${lista}</b>`,
+    campos: [{nome: "confirma", rotulo: "Escreva REPETIR para confirmar",
+              largura: 6, obrigatorio: true,
+              dica: "Isto grava diário nestes dias. Não há desfazer."}]});
+  if (!ok) return;
+  if ((ok.confirma || "").trim().toUpperCase() !== "REPETIR") {
+    aviso("mensagem", "Não repeti — você não confirmou.", "info");
+    return;
+  }
+  try {
+    const d = await api(`/erp/api/diario/${obra}/repetir`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({de, dias,
+                             com_equipamentos: r.equipamentos === "1"})});
+    const pulou = (d.pulados || []).length
+      ? ` ${d.pulados.length} dia(s) ficaram de fora: ` + d.pulados.map(
+          x => `${dataBR(x.data)} (${x.motivo})`).join(", ") + "."
+      : "";
+    aviso("mensagem", `Relato escrito em ${d.copiados.length} dia(s).${pulou}`,
+          d.copiados.length ? "ok" : "alerta");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// O QUADRO DO MÊS — a tela inicial (15/11/2026)
+//
+// Ele: *"aqui era para mostrar por mês, todas as obras. Eu até tenho um
+// controle desse no computador, é uma planilha: cada coluna é um dia, dia 1,
+// dia 2, até o final do mês, e cada dia tem uma marcação dizendo se está ou
+// não preenchido. Você bate o olho e já visualiza exatamente todos os dias que
+// estão faltando. E a partir dessa informação, clicar e já ir direto para o
+// dia que está faltando."*
+//
+// ⚑ É A PORTA DA TELA, e isso resolve a outra queixa do mesmo dia: entrando
+// pelo quadro, não há obra escolhida — a obra se escolhe clicando no quadrado
+// vermelho, que é o caminho de quem vai preencher.
+//
+// A primeira coluna fica PRESA ao rolar para o lado: num mês de 31 dias, sem
+// isso, a pessoa rola até o dia 25 e não sabe mais de que obra é a linha.
+// ---------------------------------------------------------------------------
+async function pintarQuadro(){
+  const [ano, mes] = (els("f-mes").value || mesDoDia()).split("-").map(Number);
+  els("painel").innerHTML = `<div class="cartao"><h3>Quadro do mês</h3>
+    <p class="cartao-dica">Carregando…</p></div>`;
+  let q;
+  try {
+    q = await api(`/erp/api/diario/quadro?ano=${ano}&mes=${mes}`);
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+
+  if (!q.obras.length) {
+    els("painel").innerHTML = `<div class="cartao"><h3>Quadro do mês</h3>
+      <div class="vazio">Nenhuma obra em andamento.</div></div>`;
+    return;
+  }
+  const cab = q.dias.map(d => `<th class="${d.semana >= 5 ? "fds" : ""}"
+      title="${escapar(dataBR(d.data) + (d.feriado ? " · " + d.feriado : ""))}"
+    >${d.dia}</th>`).join("");
+  const linhas = q.obras.map(o => `
+    <tr>
+      <th class="obra-col" title="${escapar(o.rotulo)}">
+        <span>${escapar(o.rotulo)}</span>
+        ${o.faltam ? `<b class="etiqueta vermelha">${o.faltam}</b>` : ""}
+      </th>
+      ${o.celulas.map((e, i) => `<td class="q-${e}"
+          data-obra="${o.obra_id}" data-dia="${q.dias[i].data}"
+          title="${escapar(dataBR(q.dias[i].data) + " · "
+                   + (ESTADO_ROTULO[e] || e))}"></td>`).join("")}
+    </tr>`).join("");
+
+  els("painel").innerHTML = `
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h3>Quadro do mês <small>${MESES[q.mes - 1]} de ${q.ano}</small></h3>
+        ${q.faltam
+          ? `<span class="etiqueta vermelha">${q.faltam} dia(s) sem diário</span>`
+          : `<span class="etiqueta verde">tudo em dia</span>`}
+      </div>
+      <p class="cartao-dica">Cada coluna é um dia. <b>Clique no quadrado
+        vermelho</b> para abrir e preencher aquele dia. Obra concluída não
+        aparece aqui — se alguma sobrar, encerre o cadastro dela em Obras.</p>
+      <div class="quadro-rolagem">
+        <table class="quadro-mes">
+          <thead><tr><th class="obra-col">Obra</th>${cab}</tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>
+      <div class="cal-legenda">${LEGENDA.map(([e, texto]) =>
+        `<span><i class="cal-amostra ${e}"></i>${escapar(texto)}</span>`).join("")}</div>
+    </div>`;
+
+  els("painel").querySelectorAll("[data-dia]").forEach(c =>
+    c.addEventListener("click", () => {
+      els("f-obra").value = c.dataset.obra;
+      els("f-data").value = c.dataset.dia;
+      montarMesEAno(c.dataset.dia.slice(0, 7));
+      mostrarObraEscolhida();
+      carregar();
+    }));
 }
 
 // ---------------------------------------------------------------------------

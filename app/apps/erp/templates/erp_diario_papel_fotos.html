@@ -1,0 +1,61 @@
+{# ===========================================================================
+   O ANEXO FOTOGRÁFICO DO DIÁRIO (14/11/2026)
+
+   Ele: *"a página, sempre quando tiver foto, mostra na página seguinte. (…)
+   é como se fosse um anexo ao diário, essa página das fotos, para não
+   interferir no layout que a gente já trabalhou e já tem."*
+
+   ⚑ POR QUE ESTA FOLHA É A MESMA NOS TRÊS MODELOS: o RDO do órgão é cláusula
+   de contrato e não se mexe nele; o anexo, não — ele é NOSSO. Um formato só
+   evita três folhas de anexo divergindo no primeiro ajuste. O cabeçalho é que
+   se adapta, repetindo o contratante quando o modelo é o do órgão.
+
+   ⚑ E POR QUE O CABEÇALHO SE REPETE: folha de anexo que se solta do maço
+   vira foto órfã, e foto órfã não prova nada. Obra, contrato e data em toda
+   folha, mais a contagem ("folha 1 de 2" do anexo).
+   =========================================================================== #}
+{% import "erp_diario_papel_macros.html" as m %}
+
+{# Quantas cabem por folha é decidido pela QUANTIDADE — nunca por
+   configuração. Uma ou duas saem grandes; três ou quatro em duas colunas;
+   cinco ou seis em duas colunas e três linhas. #}
+{% set por_folha = 2 if p.fotos | length <= 2 else (4 if p.fotos | length <= 4 else 6) %}
+{% set folhas = (p.fotos | length + por_folha - 1) // por_folha %}
+
+{% for bloco in p.fotos | batch(por_folha) %}
+{# A folha de fora guardada numa variável: `loop.parent` não existe em todas
+   as versões do Jinja, e a numeração da foto precisa saber em que folha está
+   (foto 5 e 6 na segunda folha continuam sendo 5 e 6, não 1 e 2). #}
+{% set n_folha = loop.index0 %}
+<div class="anexo-foto">
+  <div class="cab-anexo">
+    <i class="logo {{ 'logo-contratante' if r.logos.contratante and r.modelo == 'orgao'
+                      else ('logo-empresa' if r.logos.empresa else 'vazia') }}"></i>
+    <div class="meio">
+      <b>Anexo fotográfico do Diário de Obra</b>
+      <span>{{ r.obra.rotulo }}
+        {%- if r.obra.contrato %} · Contrato {{ r.obra.contrato }}{% endif %}
+        · {{ m.br(p.data) }} · {{ p.dia_da_semana }}</span>
+    </div>
+    <div style="text-align:right">
+      <b style="font-size:8.6pt">Folha {{ loop.index }}/{{ folhas }}</b>
+      <span>do anexo</span>
+    </div>
+  </div>
+  <div class="titulo-anexo">Serviços executados — registro fotográfico</div>
+  <div class="fotos-papel de{{ bloco | length if bloco | length in (1, 2) else por_folha }}">
+    {% for f in bloco %}
+    <figure class="foto-papel">
+      <div class="quadro-foto"><img src="{{ f.dados }}" alt=""></div>
+      <figcaption class="legenda-foto">
+        <b>Foto {{ loop.index0 + 1 + (n_folha * por_folha) }}</b>
+        {{ f.legenda or "sem legenda" }}</figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  <div class="rodape">
+    <span>Anexo do RDO · {{ r.obra.codigo }} · {{ m.br(p.data) }}</span>
+    <span>Emitido pelo ERP BWS em {{ m.br(r.gerado_em) }}</span>
+  </div>
+</div>
+{% endfor %}
