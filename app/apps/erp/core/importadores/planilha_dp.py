@@ -404,3 +404,113 @@ def carregar(planilha_id: str = "") -> dict[str, Any]:
 def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
     """Só as pessoas — para quem não se importa com o diagnóstico."""
     return carregar(planilha_id).get("pessoas") or {}
+
+
+# ===========================================================================
+# IMPORTAR DIRETO DA PLANILHA — sem card nenhum (17/11/2026)
+#
+# Ele, olhando a tela que pedia o número do card: *"mas por que rodar com o
+# card dela se quero que puxe da planilha?"*
+#
+# ⚑ TEM RAZÃO, E A PERGUNTA EXPÕE UM RESTO DE DESENHO ANTIGO. O card servia
+# para duas coisas: achar a pessoa e baixar os DOCUMENTOS. A planilha tem o
+# CPF — ela acha a pessoa sozinha. Exigir o número do card para trazer dados
+# que estão na planilha era obrigá-lo a colar 575 números para nada.
+#
+# Ficam duas portas, cada uma com o seu trabalho:
+#   · DADOS      → daqui, pela planilha, sem card;
+#   · DOCUMENTOS → pelo Pipefy, com os cards (é o que a planilha não tem).
+# ===========================================================================
+def importar(s, usuario=None, *, gravar: bool = False,
+             cpfs: Optional[list[str]] = None,
+             ler=None) -> dict[str, Any]:
+    """Enche o cadastro de quem está na planilha E já existe no ERP.
+
+    `cpfs` limita a algumas pessoas — é como se começa, com duas ou três, em
+    vez de soltar 3.600 de uma vez. Sem ele, vai a planilha inteira.
+
+    NUNCA cria gente: quem está na planilha e não no ERP é CONTADO e listado.
+    Criar cadastro em massa a partir de uma planilha é o tipo de coisa que se
+    descobre errada depois de 3.000 linhas.
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+    from app.apps.erp.db.models.cadastros import Cargo, Colaborador, Convencao, Obra
+    from sqlalchemy import select
+
+    lido = (ler or carregar)()
+    pessoas = lido.get("pessoas") or {}
+    rel: dict[str, Any] = {
+        "gravou": bool(gravar),
+        "planilha": {k: lido.get(k) for k in
+                     ("erro", "planilha", "aba", "linhas", "colunas")},
+        "pessoas_na_planilha": len(pessoas),
+        "atualizadas": [], "sem_cadastro": [], "recusadas": [],
+        "nao_entendi": [],
+    }
+    if not pessoas:
+        return rel
+
+    alvo = {re.sub(r"\D", "", c) for c in (cpfs or []) if c}
+    if alvo:
+        pessoas = {k: v for k, v in pessoas.items() if k in alvo}
+        rel["pedidos"] = sorted(alvo)
+        for c in sorted(alvo - set(pessoas)):
+            rel["sem_cadastro"].append({"cpf": c, "nome": "",
+                                        "motivo": "não está na planilha"})
+
+    # Os cadastros do ERP, uma consulta só — 3.600 pessoas × 3 consultas cada
+    # seria a diferença entre segundos e minutos.
+    por_cpf = {re.sub(r"\D", "", c.cpf): c
+               for c in s.scalars(select(Colaborador)).all()}
+    cargos = {_cru(c.nome): c.id for c in s.scalars(select(Cargo)).all()}
+    convencoes = {_cru(c.nome): c.id for c in s.scalars(select(Convencao)).all()}
+    obras = {_cru(o.codigo): o.id for o in s.scalars(select(Obra)).all()}
+
+    for cpf, dados in pessoas.items():
+        dados = dict(dados)
+        nomes = dados.pop("_nomes", {})
+        for x in dados.pop("_nao_entendi", []):
+            rel["nao_entendi"].append({**x, "cpf": cpf,
+                                       "nome": dados.get("nome", "")})
+        pessoa = por_cpf.get(cpf)
+        if pessoa is None:
+            rel["sem_cadastro"].append({"cpf": cpf, "nome": dados.get("nome", ""),
+                                        "motivo": "não existe no ERP"})
+            continue
+
+        # As ligações, pelo nome exato — nome que não bate é relatado.
+        for chave, campo, tabela, rotulo in (
+                ("cargo", "cargo_id", cargos, "Cargo"),
+                ("convencao", "convencao_id", convencoes, "Convenção"),
+                ("obra", "obra_id", obras, "Obra")):
+            escrito = nomes.get(chave) or ""
+            if not escrito:
+                continue
+            achado = tabela.get(_cru(escrito))
+            if achado:
+                dados[campo] = achado
+            else:
+                rel["nao_entendi"].append({
+                    "coluna": chave, "campo": rotulo, "cpf": cpf,
+                    "nome": dados.get("nome", ""), "valor": escrito,
+                    "motivo": "não existe no cadastro do ERP"})
+
+        # ⚠️ O CPF é a identidade e o NOME só muda por decisão de alguém.
+        dados.pop("cpf", None)
+        mudou = {k: v for k, v in dados.items()
+                 if k != "nome" and str(getattr(pessoa, k, "") or "") != str(v)}
+        if not mudou:
+            continue
+        if gravar:
+            try:
+                svc.salvar(s, {**dados, "cpf": pessoa.cpf, "nome": pessoa.nome},
+                           usuario)
+            except ErroValidacao as e:
+                rel["recusadas"].append({"cpf": cpf, "nome": pessoa.nome,
+                                         "motivo": str(e)[:300]})
+                continue
+        rel["atualizadas"].append(
+            {"cpf": cpf, "nome": pessoa.nome,
+             "campos": {k: str(v) for k, v in sorted(mudou.items())}})
+    return rel

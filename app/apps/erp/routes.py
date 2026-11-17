@@ -4469,6 +4469,52 @@ def api_pipefy_cadastro_situacao():
 TETO_DE_CARDS_POR_RODADA = 300
 
 
+@bp.route("/erp/api/importar/planilha-cadastro", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_importar_planilha_cadastro():
+    """Põe na fila a leitura da planilha "Dados Documentos" e o preenchimento
+    dos cadastros.
+
+    ⚑ SEM CARD NENHUM — e foi ele quem apontou, em 17/11/2026: *"mas por que
+    rodar com o card dela se quero que puxe da planilha?"* O card servia para
+    achar a pessoa e baixar os documentos; a planilha tem o CPF e acha
+    sozinha. Exigir o número do card para trazer dado que está na planilha era
+    pedir 575 números para nada.
+
+    Os DOCUMENTOS continuam vindo do Pipefy (`/erp/api/importar/pipefy-cadastro`):
+    é o que a planilha não tem.
+    """
+    import re
+
+    from app.apps.erp.core.comum import tarefas, trabalhos
+
+    d = request.get_json(silent=True) or {}
+    gravar = bool(d.get("gravar"))
+    # Lista opcional de CPFs: é como se começa, com dois ou três.
+    cpfs = [c for c in re.findall(r"\d[\d.\-]{9,}", str(d.get("cpfs") or ""))]
+    cpfs = [re.sub(r"\D", "", c) for c in cpfs]
+    cpfs = [c for c in cpfs if len(c) == 11]
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            t = tarefas.enfileirar(
+                s, "importar_cadastro_planilha",
+                {"gravar": gravar, "cpfs": cpfs,
+                 "usuario_id": usuario.id if usuario else None},
+                rotulo=(("Conferir sem gravar" if not gravar
+                         else "Trazer da planilha")
+                        + (f": {len(cpfs)} pessoa(s)" if cpfs
+                           else ": a planilha inteira")),
+                usuario=usuario)
+            linha = tarefas.ler(s, t.id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/importar/pipefy-cadastro", methods=["POST"])
 @login_obrigatorio
 @permissao("importar")

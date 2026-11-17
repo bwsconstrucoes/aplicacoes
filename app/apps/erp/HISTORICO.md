@@ -21,6 +21,39 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — DUAS PORTAS: DADOS PELA PLANILHA, DOCUMENTOS PELO PIPEFY
+
+> *"Mas por que rodar com o card dela se quero que puxe da planilha?"*
+
+A pergunta expôs um resto de desenho antigo que eu não tinha visto. **O card
+servia para DUAS coisas**: achar a pessoa e baixar os documentos. A planilha
+tem o CPF — ela acha a pessoa sozinha. Exigir o número do card para trazer
+dado que já está na planilha era pedir 575 números para nada.
+
+**Agora são duas portas, na tela de Importar:**
+
+| Porta | O que traz | Precisa de quê |
+|---|---|---|
+| **Cadastro das pessoas (planilha)** | vínculo, pagamento, contrato, cargo, convenção, obra, salário, diária, auxílios, endereço, RG, pai, mãe, nascimento, Pix… | **nada** — casa pelo CPF |
+| **Documentos das pessoas (Pipefy)** | os arquivos anexados ao card | os números dos cards |
+
+**Três travas, e cada uma tem motivo:**
+
+1. **NUNCA cria gente.** Quem está na planilha e não no ERP é contado e
+   listado. Criar cadastro em massa a partir de planilha é o engano que se
+   descobre depois de 3.000 linhas.
+2. **Nome e CPF nunca são trocados** — a identidade da pessoa na folha.
+3. **Gravar só depois de conferir**, e dá para pedir **só alguns CPFs** —
+   é como se começa: duas pessoas, confere a ficha, depois solta o resto.
+
+**O relatório diz tudo o que aconteceu:** quantas pessoas na planilha, quantas
+mudariam, quem não tem cadastro, o que foi recusado, e os valores que eu não
+reconheci — com o que está escrito na planilha e o campo que ficou vazio.
+
+⚑ **E o teste-armadilha `test_nomes_indefinidos` pegou um `import re` que
+faltava na rota nova.** Vale anotar: sem ele, a rota só quebraria quando
+alguém colasse um CPF — e o erro seria "500" sem explicação.
+
 ### ⚑ 17/11/2026 — "PARTE DOS DADOS VEM, MAS VÍNCULO E PAGAMENTO CONTINUA EM BRANCO"
 
 A frase dele foi o diagnóstico inteiro, e ela diz duas coisas: a planilha
