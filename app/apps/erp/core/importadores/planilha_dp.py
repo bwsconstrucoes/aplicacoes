@@ -352,24 +352,37 @@ PLANILHA = os.getenv("ANALISESPS_SHEET_DADOS_DOCUMENTOS",
                      "1fqi4QUOVGUd1_4Gg4vK5qP_IMOSgFaw8DD9MDgmM3vo")
 
 
-def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
-    """A aba inteira, indexada pelo CPF (só dígitos).
+def carregar(planilha_id: str = "") -> dict[str, Any]:
+    """A aba inteira, indexada pelo CPF, MAIS o que aconteceu ao ler.
 
-    Devolve {} quando a planilha não pôde ser lida — e aí a importação segue
-    com o que tiver, dizendo o motivo. Derrubar a importação inteira porque o
-    Google demorou seria trocar um cadastro incompleto por nenhum.
+    ⚑ O "MAIS O QUE ACONTECEU" É O CONSERTO DE 17/11/2026, e é a terceira vez
+    que o mesmo tipo de silêncio custa uma rodada dele:
+
+        *"Meu, não tá funcionando. Você precisa me mostrar o que tá
+         acontecendo, como tá fazendo. A planilha tá sendo atualizada e os
+         dados não alimentam o ERP."*
+
+    A primeira versão engolia o erro num `logger.warning` e devolvia `{}`. Log
+    é para quem abre o Render; ele abre a TELA. Falha de credencial, planilha
+    renomeada, aba trocada de nome — tudo isso virava "não aconteceu nada",
+    sem uma linha na tela dizendo por quê.
+
+    Agora volta sempre: quantas pessoas foram lidas, qual planilha e qual aba,
+    e o ERRO por extenso quando houver. Quem usa não precisa adivinhar, e eu
+    não preciso pedir print.
     """
-    from app.apps.analisesps.credenciais import cliente, com_retry
-
+    chave = planilha_id or PLANILHA
     try:
-        aba = com_retry(lambda: cliente()
-                        .open_by_key(planilha_id or PLANILHA).worksheet(ABA))
+        from app.apps.analisesps.credenciais import cliente, com_retry
+        aba = com_retry(lambda: cliente().open_by_key(chave).worksheet(ABA))
         linhas = com_retry(lambda: aba.get_all_values())
     except Exception as e:                       # noqa: BLE001
         logger.warning("ERP/planilha-dp: não deu para ler a planilha (%s)", e)
-        return {}
+        return {"pessoas": {}, "erro": str(e)[:500], "planilha": chave, "aba": ABA,
+                "linhas": 0}
     if len(linhas) < 2:
-        return {}
+        return {"pessoas": {}, "planilha": chave, "aba": ABA, "linhas": len(linhas),
+                "erro": f'A aba "{ABA}" veio vazia.'}
 
     cabecalho = cabecalho_de(linhas[0])
     i_cpf = _coluna(cabecalho, SO_DIGITOS["cpf"])
@@ -384,4 +397,10 @@ def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
             continue
         saida[cpf] = ler_linha(cabecalho, linha)
     logger.info("ERP/planilha-dp: %d pessoa(s) lidas da aba %s", len(saida), ABA)
-    return saida
+    return {"pessoas": saida, "erro": "", "planilha": chave, "aba": ABA,
+            "linhas": len(linhas) - 1, "colunas": len(cabecalho)}
+
+
+def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
+    """Só as pessoas — para quem não se importa com o diagnóstico."""
+    return carregar(planilha_id).get("pessoas") or {}
