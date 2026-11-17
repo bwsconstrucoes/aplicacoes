@@ -21,6 +21,316 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚠️ 17/11/2026 — AVISO PRÉVIO VIRAVA DESLIGAMENTO: o pior defeito do dia
+
+**Ele achou na tela, horas depois de ligar o cadastro do ERP como base do
+ponto:** *"pessoas que estavam com último dia trabalhado mesmo depois de hoje e
+estavam na fase Solicitações DP, quando ativei o cadastro do ERP foram
+considerados desligados. Não sei se todos, mas aconteceu."*
+
+**O estrago é o pior que este sistema sabe fazer: gente cumprindo aviso prévio
+parou de conseguir bater ponto.** Quem cumpre aviso prévio trabalha, e a
+jornada dela é **registro legal do REP-P** — dia sem batida é buraco na prova
+da jornada, e não se conserta depois. Pelo mesmo erro essa gente também **saía
+da folha** (`para_folha` descartava quem tinha data de saída, mesmo futura) e
+**perdia o acesso ao sistema** no ato.
+
+#### A causa, e ela estava escrita em quatro lugares
+
+Cada um escrevia "DESLIGADO" ao ver que **EXISTIA** uma data de saída, **sem
+olhar se ela já tinha chegado**. Uma saída marcada para a semana que vem valia
+como saída de ontem:
+
+| Onde | O que fazia |
+|---|---|
+| `importadores/planilha_dp.py` | fase ≠ "Cadastro Concluído" + data de saída → `situacao = DESLIGADO`. **Foi por aqui que a maioria passou** |
+| `cadastros/pessoas.py` › `salvar` | `if c.demissao and situacao == ATIVO: DESLIGADO` |
+| `pessoal.py` › `salvar_colaborador` | a mesma linha |
+| `arquivo/preenchimento.py` | a mesma linha, ao ler o termo de rescisão |
+| `cadastros/pessoas.py` › `desligar` | desligava na hora, com data futura ou não |
+
+E uma quinta régua, diferente das outras: o `cpf` que procura readmissão
+comparava `<= hoje`. **Cinco lugares, três réguas.**
+
+#### Por que só apareceu quando a base do ponto virou o ERP
+
+Porque o ponto tinha duas respostas para a mesma pergunta:
+
+| Base do ponto | Como ele decidia "está desligado?" |
+|---|---|
+| Planilha (Registro de Colaboradores) | **perguntava a data**: `r.data_saida < hoje` |
+| Cadastro do ERP | **acreditava na caixinha**: `c.situacao` |
+
+A caixinha estava errada desde a importação. Trocar a base não causou o
+defeito — **tornou visível** um dado errado que já estava gravado.
+
+#### O conserto, em três camadas (e nenhuma precisa dele)
+
+1. **Uma régua só:** `pessoas.ja_saiu(demissao)` — e ela é a MESMA do ponto:
+   `<` hoje, porque **a pessoa trabalha o último dia**. Saída marcada para hoje
+   bate ponto hoje. Os cinco lugares passaram a usá-la.
+2. **O ponto pergunta a data nas DUAS bases** (`ponto/core/cadastros.py`,
+   `_SITUACAO_DO_ERP`). Isto tem três efeitos que valem mais que o conserto:
+   quem está em aviso prévio **volta a bater hoje, sem mexer em dado nenhum**;
+   no dia da saída a pessoa sai do ponto **sozinha**, sem ninguém apertar nada
+   e sem depender de rotina rodando na hora certa; e o bloqueio automático do
+   celular passa a cair no dia certo.
+3. **Migração 109** arruma a coluna de quem já estava marcado errado — porque o
+   ERP também lê `situacao` nas listas do Pessoal e na folha, e lá não há CASE
+   nenhum. Devolve à ativa quem tem saída marcada para hoje ou depois, tira
+   quem está trabalhando da coluna "Desligado" do quadro (vai para
+   "Solicitações", que é o trabalho pendente que ela é), e **deixa rastro de
+   cada pessoa** em `eventos`, ação `SITUACAO_CORRIGIDA`.
+
+**`desligar` com data futura passou a AGENDAR:** grava as datas, mantém a
+pessoa ativa, não move a etapa (o cadastro dela é trabalho pendente do DP) e
+**não corta o acesso** — quem cumpre aviso prévio ainda precisa do portal e do
+"Meu ponto".
+
+#### ⚠️ O que a migração pode trazer de volta sem dever, e ele precisa saber
+
+Alguém que **realmente saiu** e cuja data de saída foi **digitada errada**
+(2027 em vez de 2026) volta para a ativa. Isso é erro de cadastro, e aqui ele
+passa de invisível a visível: a pessoa reaparece nas listas e no ponto. O
+rastro de cada mudança está em `eventos`. Não há como eu contar daqui quantos
+são — a conta tem de ser feita no banco de verdade.
+
+#### Dois defeitos achados de passagem, junto
+
+- **Voltar para a ativa jogava a pessoa numa etapa que a tela não mostra.** Era
+  `EM_CONFERENCIA`, e essa etapa saiu de circulação hoje (migração 107,
+  "Conferência" fundida na "Inicial"): não tem coluna no quadro. Quem voltasse
+  à ativa **desaparecia da fila do DP**. Agora vai para "Inicial".
+- **A regra da data não valia para cadastro NOVO.** `(c.situacao or "")` em vez
+  de `(c.situacao or "ATIVO")`: num cadastro novo a situação ainda é nula em
+  memória, a comparação dava falso, e alguém já desligado entrava pela
+  importação com a caixinha em ATIVO.
+
+**Presos em teste:** `tests/test_saida_agendada_nao_desliga.py` (a régua, a
+folha, o `desligar`, a etapa viva, a importação, e uma guarda que recusa o
+sexto lugar comparando data à mão) e
+`tests/test_aviso_previo_no_ponto_banco.py` (o ponto com Postgres de verdade,
+com a caixinha errada de propósito, mais a migração 109 e o rastro dela).
+
+
+### ⚑ 17/11/2026 — OS CAMPOS QUE FALTAVAM, O CADASTRO QUE ABRE DENTRO DO PONTO, E UM DEFEITO QUE ESCONDIA AS TRÊS ABAS
+
+Pedido dele, em três partes: *"no cadastro, não vi campo referente à Data de
+Aviso Prévio, Saída e Último dia Trabalhado. Faça uma varredura e veja se ainda
+tem campo omisso. Outra coisa, quando estou vendo o pessoal pelo ponto e coloco
+pra abrir o cadastro ele remete pra página de pessoal, quando deveria apenas
+abrir o modal correspondente sem necessidade de ir pra outro lado. Os dados de
+cada um tem que estar de fácil acesso e todos correlacionados."*
+
+#### 1. A varredura: onze colunas sem campo, e a pior não era nenhuma das três
+
+Comparei coluna por coluna o que a tabela `colaboradores` guarda (82 colunas)
+com o que a ficha manda ao gravar. **Onze** não tinham campo. As três que ele
+citou estavam entre elas — mas a mais perigosa era outra:
+
+| Coluna | Por que faltava doer |
+|---|---|
+| **`data_inicio`** | a folha compara **início × admissão** para decidir se o dia é DIÁRIA ou CTPS (`analisesps/folha_vinculo.py`). O período em que a pessoa trabalhou **antes de ser registrada** era ilegível e inalterável pela tela |
+| `banco`, `agencia`, `conta` | há quem receba por depósito, e a ficha não respondia "por onde esta pessoa recebe?" |
+| `aviso_previo`, `ultimo_dia`, `demissao` | entravam só pelo pedido de desligamento; corrigir uma data errada exigia abrir outro desligamento |
+| `observacoes` | campo de texto livre que a importação preenchia e ninguém via |
+
+Todos ganharam campo em "Vínculo e pagamento", com um recado curto na tela: as
+três datas de saída **vêm do desligamento** e aqui se corrigem; a **data de
+saída** é o que tira a pessoa do ponto e da folha; e mexer nela **não desliga**
+ninguém — quem desliga é a etapa.
+
+**Nove colunas continuam sem campo de propósito**, e cada uma com o motivo
+escrito no teste novo (`tests/test_ficha_nao_esconde_campo.py`), que **falha se
+alguém acrescentar coluna sem campo nem motivo**. Sete são decisão fechada
+(chave da linha, carimbos do banco, foto, `cnpj_admissao` que vem da empresa,
+`etapa` e `situacao` que vêm da etapa, `ref_pipefy`, `requerente`,
+`responsavel_id`). **Duas são DÚVIDA ABERTA, e ficam para ele decidir:**
+
+- **`regime`** — nasce com "CLT" e parece ser o VÍNCULO com outro nome. Dar
+  campo a ela seria criar duas maneiras de dizer a mesma coisa (é a armadilha
+  que o campo "Situação" acabou de custar). **Não acrescentei campo e não
+  apaguei a coluna**: proponho tirá-la, e a decisão é dele.
+- **`convencao_categoria`** — vai para a folha, mas a categoria já vem da
+  convenção do cargo (`cargo_convencao.categoria`). Aqui parece cópia da
+  importação do Pipefy. Mesma proposta, mesma espera.
+
+#### 2. ⚠️ O DEFEITO QUE A TELA REVELOU: gravar fora da primeira aba não gravava NADA
+
+Achado dirigindo a tela no navegador, e **não era defeito novo** — estava em
+produção:
+
+> **Gravar o cadastro em qualquer aba que não fosse "Identificação" respondia
+> "Informe o nome completo" e não gravava nada.** Endereço, Vínculo e
+> pagamento, Benefícios: três abas inteiras.
+
+**A causa são duas regras certas que se atropelam.** As abas do formulário se
+desenham **uma por vez**, então os campos da aba fechada não existem na tela; e
+a gravação manda **só o que está na tela** (regra certa, que existe para não
+apagar o que a aba fechada guardava). Mas gravar é *"cria ou atualiza pelo
+CPF"*, e o servidor exige nome e CPF **em toda** gravação. O CPF já tinha volta
+por cima; o **nome não tinha**.
+
+Isso importa duas vezes: além do estrago em si, os campos que ele pediu hoje
+**moram na terceira aba** — sem este conserto, teriam sido decoração.
+
+Virou teste no mesmo arquivo: o que o servidor exige sempre tem de ter de onde
+vir quando o campo não está na aba aberta.
+
+#### 3. O cadastro abre DENTRO do ponto, sem trocar de tela
+
+O caminho inverso já existia desde 13/11 (a tela de Pessoal mostra a ficha do
+ponto dentro dela). Faltava a volta: pelo ponto, "Editar o cadastro completo"
+abria **outra aba** na tela de Pessoal.
+
+Agora abre uma janela **em cima** da ficha do ponto, com o **mesmo** formulário
+do ERP — não há um segundo cadastro. Gravou, a ficha do ponto se atualiza
+sozinha; fechou por dentro, a janela de fora fecha.
+
+**Como foi feito, porque muda o custo:** o ERP ganhou um **modo embutido**
+(`erp_base.html`) — a tela chega sem cabeçalho, sem filtro lateral e **sem
+carregar a lista**. Abrir o cadastro assim custa **3 chamadas** (obras, funções
+e opções do cadastro) contra as **5** da tela inteira, e nenhuma delas traz as
+mais de mil pessoas da lista. O caminho antigo (abrir em outra aba) **continua
+de pé para os DOCUMENTOS**, porque ler e arquivar papel é trabalho da tela de
+Pessoal e aquela janela ainda não sabe aparecer sozinha.
+
+**O que ficou de fora e ele precisa saber:** o modo embutido é um segundo jeito
+de dizer o que a ficha do ponto já dizia com estilo próprio dentro dela (desde
+13/11). **Não unifiquei os dois** — mexer naquela tela não estava no pedido. A
+nota está no código, nos dois lugares.
+
+
+### ⚑ 17/11/2026 — A FILA DO PORTAL: dois defeitos silenciosos e os campos que ele pediu
+
+**Ele mandou uma fila de doze ajustes** sobre o pedido de cadastro do portal, a
+tela de Pessoal e o quadro. Dois itens eram DEFEITO, e os dois do mesmo tipo:
+**escrever em português uma coisa que a plataforma lê em inglês, ou comparar
+código com rótulo.** Nenhum dos dois dá erro — a tela só não funciona.
+
+**1. "No quadro, não consigo movimentar os cadastros para outras etapas."**
+
+Eu havia escrito `{metodo: "POST", corpo: {...}}`. Esses nomes não existem no
+`fetch`: são `method` e `body`. O navegador ignora opção que não conhece,
+mandou um **GET sem corpo**, a rota só aceita POST, e a tela dizia "Falha na
+operação". Pegou as **três** chamadas: arrastar no quadro, mudar etapa pelo
+diálogo e concluir a conferência — ou seja, a movimentação de etapa estava
+**inteiramente morta**, e é justamente a funcionalidade que ele mais pediu.
+
+Virou teste: `tests/test_telas_opcoes_do_fetch.py` varre as telas por opção de
+fetch com nome em português (`metodo`, `corpo`, `cabecalhos`, `sinal`).
+
+**2. "O campo Tipo de contrato não está exibindo as opções corretamente."**
+
+Pior do que ele viu: com **CTPS não aparecia opção nenhuma**, e com Prestador
+só "PJ". A tela traduzia a lista permitida para CÓDIGO e comparava com o valor
+da caixinha, que é **RÓTULO** — e "PJ" era o único cujo rótulo é igual ao
+código. **O comentário do código afirmava o contrário do que o código fazia**, e
+foi ele que escondeu o defeito. O mesmo erro de alfabeto escondia o **Valor da
+Diária**, que não aparecia em caso nenhum.
+
+**O que mudou nos campos, tudo a pedido dele:**
+
+| Antes | Agora |
+|---|---|
+| "Tipo de Documentação para Cadastro" | **"Vínculo"** |
+| "Como paga a alimentação / o transporte" | **"Ajuda com Alimentação / Transporte"**, e **obrigatórias** |
+| (não havia) | opção **"Não recebe"** nas duas |
+| "Meio de Transporte para chegar à Obra?" | **eliminado** |
+| Valor da Diária sempre | só **CLT e Autônomo (RPA)** |
+| PJ sem os dados da empresa | abre **Razão social (PJ)** e **CNPJ (PJ)** |
+| Situação como campo em "Vínculo e pagamento" | **vem da etapa** |
+
+**⚑ "Não recebe" só foi possível junto com "obrigatório".** Antes, exigir a
+categoria forçaria a inventar uma para quem não recebe nada. Com a opção
+explícita, o campo em branco volta a significar **uma** coisa: falta responder.
+
+**⚠️ E ELA VAI VAZIA PARA A FOLHA**, não com a palavra "Não recebe": a folha
+calcula pelo MODO, e "não recebe" não é um modo — é a ausência de auxílio. Mais
+que isso: `para_folha` **zera o valor** quando a categoria é essa, senão um
+cadastro que tinha valor e passou a "não recebe" mandaria o número velho, e do
+outro lado não há nada que o barre.
+
+### ⚑ 17/11/2026 — A SITUAÇÃO VEM DA ETAPA, e o laço que faltava fechar
+
+Ele: *"dentro de vínculo e pagamento, a situação é um reflexo das etapas. Não
+precisa ter mais esse campo."* Tinha razão — eram duas maneiras de dizer a
+mesma coisa, e elas discordavam: arrastar alguém para "Desligado" no quadro
+deixava a situação em ATIVO.
+
+**⚠️ MAS TIRAR O CAMPO, SOZINHO, TERIA SIDO GRAVE.** Até 17/11 `mover_etapa`
+**não mexia na situação**. Sem fechar esse laço, o sistema ficaria sem jeito
+nenhum de desligar alguém — e `colaboradores.situacao` é o que o **PONTO** lê
+para decidir quem bate, e o que a **mensageria** lê para não mandar aviso a
+quem saiu. A pessoa movida para "Desligado" no quadro continuaria batendo ponto
+e recebendo aviso da empresa.
+
+Então a ordem foi: **primeiro a etapa passou a definir a situação**
+(`SITUACAO_DA_ETAPA`), **depois** o campo saiu. A situação continua aparecendo
+na ficha e na lista; o que saiu foi o jeito de digitá-la por fora da etapa.
+
+### ⚑ 17/11/2026 — O VÍNCULO: a resposta sobre o impacto no pagamento
+
+Ele pediu: *"renomear Tipo de Documentação para Cadastro = Vínculo. Observar o
+impacto disso, pois as nomenclaturas estão diferentes, o ideal é ficar CTPS e
+Prestador de Serviço. (…) Ve o impacto disso na parte de pagamento dos
+colaboradores de analisesps."*
+
+**A resposta curta: renomear NÃO afeta o pagamento.** São duas listas
+separadas, e só uma chega à folha:
+
+| Lista | Para que serve |
+|---|---|
+| `VINCULO_ROTULOS` | o que a pessoa LÊ na tela — era "Carteira assinada (CTPS)" e "Prestador de serviço" |
+| `VINCULO_PLANILHA` | o que VIAJA para a folha — "CTPS" e "Prestador de Serviço" |
+
+Mexi só na primeira, e agora **as duas são a mesma palavra** (fim das três
+grafias para dois valores). A segunda tem teste prendendo cada palavra dela
+contra o que a folha compara.
+
+**⚠️ MAS OLHANDO O IMPACTO APARECEU COISA PIOR, e esta é a parte que importa.**
+
+`para_folha` devolvia **"CTPS" para qualquer vínculo fora do mapa — inclusive o
+VAZIO**. E a folha decide a diária com `tipo == "Prestador de Serviço"` **E**
+`contrato == "Autônomo (RPA)"`. Logo: **um autônomo RPA com o vínculo em branco
+era pago como CTPS**, sem erro em lugar nenhum. É exatamente o *"pagar
+funcionário de forma equivocada"* que ele teme, e acontecia calado.
+
+Agora, faltando o vínculo, **quem responde é o tipo de contrato** — que diz
+isso sem ambiguidade (PJ, RPA, autônomo mensalista, estágio e pró-labore são
+prestador; as CLTs e o aprendiz, não). Só quando os **dois** estão vazios sobra
+o "CTPS", e aí **fica no log**, porque aí é chute.
+
+**⚑ "EQUALIZAR" ERA OUTRA COISA, e ele esclareceu mostrando os dois campos
+lado a lado:**
+
+> *"Quando eu falo em equalizar falo em relação aos dois campos abaixo:
+> **Vínculo** — Carteira Assinada (CTPS) / Prestador de Serviço;
+> **Tipo de Documentação para Cadastro** — Prestador de Serviço / CTPS."*
+
+Não era dado: eram **as OPÇÕES dos dois campos**, que mostravam palavras
+diferentes e em ordem invertida para a MESMA coisa. E são a mesma coisa de
+verdade — o "Tipo de Documentação" do pedido **vira** o `vinculo` da pessoa
+quando o DP atende.
+
+**A causa: duas listas escritas à mão, em dois arquivos.** Uma dizia "Carteira
+Assinada (CTPS)", a outra "CTPS", e a ordem não combinava.
+
+**O conserto não foi acertar as duas — foi passar a ter UMA.** As opções do
+pedido agora saem do cadastro de pessoas (`VINCULOS` + `VINCULO_ROTULOS`), que
+é onde o valor fica gravado. Vale também para "Tipo de Readmissão", que é a
+mesma pergunta ("volta como o quê?"). Acertar as duas à mão resolveria hoje e
+divergiria de novo no próximo rótulo que alguém mudasse num lado só — tem teste
+prendendo a FONTE, não a palavra.
+
+**Sobre "equalizar os já cadastrados" (o que eu havia entendido antes):** a coluna só aceita CTPS ou PRESTADOR —
+o cadastro pela tela recusa outro valor e a importação traduz o texto da
+planilha para o código. O que pode existir é o vínculo **vazio**, e é
+justamente esse caso que o conserto acima resolve sem precisar mexer em dado.
+**Não escrevi migração de dados**: não há como eu contar daqui quantos estão
+vazios, e reescrever coluna que decide pagamento sem ver o número antes é o
+oposto do cuidado que ele pediu.
+
 ### ⚑ 17/11/2026 — A CHAVE DE SEGREDOS: o erro estava certo e era inútil
 
 **O que ele viu:** *"fui gravar o email no cadastro da empresa e apareceu: A

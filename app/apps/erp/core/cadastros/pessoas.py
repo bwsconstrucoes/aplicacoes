@@ -51,12 +51,50 @@ logger = logging.getLogger(__name__)
 # As listas do pipe, em um lugar só
 # ---------------------------------------------------------------------------
 VINCULOS = ("CTPS", "PRESTADOR")
-VINCULO_ROTULOS = {"CTPS": "Carteira assinada (CTPS)",
-                   "PRESTADOR": "Prestador de serviço"}
+# ⚑ AS DUAS PALAVRAS, IGUAIS EM TODO LUGAR (17/11/2026). Ele: *"o ideal é
+# ficar CTPS e Prestador de Serviço. Observar o impacto disso, pois as
+# nomenclaturas estão diferentes."*
+#
+# Estavam mesmo: a tela mostrava "Carteira assinada (CTPS)" e "Prestador de
+# serviço" (s minúsculo), a folha compara "CTPS" e "Prestador de Serviço", e o
+# portal mostrava outra coisa. Três grafias para dois valores.
+#
+# ⚠️ ISTO MUDA SÓ O QUE SE LÊ. O que viaja para a folha é `VINCULO_PLANILHA`,
+# logo abaixo, e ele NÃO foi tocado — tem teste prendendo cada palavra dele
+# contra o que a folha compara (`test_erp_espelha_a_folha`).
+VINCULO_ROTULOS = {"CTPS": "CTPS", "PRESTADOR": "Prestador de Serviço"}
 # Como a PLANILHA escreve o mesmo dado (coluna D "Tipo de Cadastro" e coluna Z
 # "Tipo" são a mesma coisa, confirmado por ele em 05/11/2026). A folha compara
 # texto, então a palavra tem de chegar igual à que ela já lia.
 VINCULO_PLANILHA = {"CTPS": "CTPS", "PRESTADOR": "Prestador de Serviço"}
+
+
+def vinculo_pelo_contrato(tipo_contrato: Any) -> str:
+    """O vínculo que este tipo de contrato implica, ou "" se não implica nada.
+
+    ⚑ EXISTE PARA NÃO ADIVINHAR: a importação já confere a coerência entre os
+    dois (`planilha_dp`), e o cadastro pela tela recusa valor fora da lista.
+    O que sobra é o vínculo VAZIO — e aí o tipo de contrato responde sozinho.
+    """
+    codigo = str(tipo_contrato or "").strip().upper()
+    if codigo in TIPOS_CONTRATO_PRESTADOR:
+        return "PRESTADOR"
+    if codigo in TIPOS_CONTRATO_CTPS:
+        return "CTPS"
+    return ""
+
+
+def _tipo_para_a_folha(c) -> str:
+    """A palavra do vínculo que vai para a folha — ver o comentário no uso."""
+    vinculo = str(c.vinculo or "").strip().upper()
+    if vinculo not in VINCULO_PLANILHA:
+        vinculo = vinculo_pelo_contrato(getattr(c, "tipo_contrato", None))
+    if not vinculo:
+        logger.warning(
+            "Folha: colaborador %s está sem vínculo E sem tipo de contrato — "
+            "vai para a folha como CTPS por falta de informação", c.id)
+        vinculo = "CTPS"
+    return VINCULO_PLANILHA[vinculo]
 TIPOS_CONTRATO = (
     "CLT_DETERMINADO", "CLT_INDETERMINADO", "PJ", "AUTONOMO_RPA",
     "AUTONOMO_MENSALISTA", "JOVEM_APRENDIZ", "ESTAGIO", "TEMPORARIO", "PRO_LABORE",
@@ -173,9 +211,23 @@ CONTRATOS_EXPERIENCIA = (
 # é o contrato entre o ERP e a folha — e o teste
 # `test_folha_entende_o_que_o_ERP_manda` é quem o cobra.
 # ===========================================================================
+# ⚠️ "NÃO RECEBE" VIRA PALAVRA VAZIA PARA A FOLHA, e isto é escolha pensada
+# (17/11/2026).
+#
+# A folha calcula o auxílio a partir do MODO (o texto). "Não recebe" não é um
+# modo de calcular: é a ausência de auxílio. Mandar a palavra "Não recebe" para
+# lá seria mandar um modo que a folha não conhece — e modo desconhecido ela
+# trata como zero, o que por sorte dá o resultado certo, mas por acidente.
+# Vazio diz a mesma coisa de propósito.
+#
+# E `para_folha` ZERA O VALOR junto quando a categoria é esta: cadastro que
+# tinha valor e passou a "não recebe" não pode mandar o número velho para a
+# folha, porque do outro lado não há nada que o barre.
+_SEM_AUXILIO = ""
 CATEGORIA_ALIMENTACAO_PARA_FOLHA = {
     "SEG_QUI": "Segunda à Quinta", "SEG_SEX": "Segunda à Sexta",
     "MENSAL": "Mensal", "MES": "Mês",
+    "NAO_RECEBE": _SEM_AUXILIO,
 }
 CATEGORIA_TRANSPORTE_PARA_FOLHA = {
     "DIARIO": "Diário", "MENSAL": "Mensal", "MES": "Mês",
@@ -183,12 +235,22 @@ CATEGORIA_TRANSPORTE_PARA_FOLHA = {
     "DIARIO_E_VT": "Diário e Vale Transporte", "VEICULO": "Veículo",
     "MOTOCICLETA": "Motocicleta", "BICICLETA": "Bicicleta",
     "CARTAO": "Cartão",
+    "NAO_RECEBE": _SEM_AUXILIO,
 }
 
-CATEGORIAS_ALIMENTACAO = ("SEG_QUI", "SEG_SEX", "MENSAL", "MES")
+# ⚑ "NÃO RECEBE" ENTROU EM 17/11/2026, a pedido dele: *"adicionar para ambos
+# os campos a opção 'Não recebe'."*
+#
+# O motivo é o que a ausência de resposta não diz: campo de categoria em branco
+# pode ser "ninguém preencheu ainda" OU "esta pessoa não recebe auxílio" — e as
+# duas coisas pedem ação oposta do DP (correr atrás, ou deixar como está). Com
+# a opção explícita, o vazio volta a significar uma coisa só: falta responder.
+NAO_RECEBE = "NAO_RECEBE"
+CATEGORIAS_ALIMENTACAO = ("SEG_QUI", "SEG_SEX", "MENSAL", "MES", NAO_RECEBE)
 CATEGORIA_ALIMENTACAO_ROTULOS = {
     "SEG_QUI": "Segunda à quinta", "SEG_SEX": "Segunda à sexta",
     "MENSAL": "Mensal", "MES": "Mês",
+    NAO_RECEBE: "Não recebe",
 }
 # ⚑ "MES" ENTROU EM 15/11/2026, para o transporte ter o mesmo vocabulário da
 # alimentação. Ele, sobre as categorias: *"renomeia mensal para mês e explica
@@ -205,7 +267,7 @@ CATEGORIA_ALIMENTACAO_ROTULOS = {
 # valores. Ficha antiga continua com o que tem.
 CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "MES", "SEG_E_SEX",
                          "VALE_TRANSPORTE", "DIARIO_E_VT", "VEICULO",
-                         "MOTOCICLETA", "BICICLETA", "CARTAO")
+                         "MOTOCICLETA", "BICICLETA", "CARTAO", NAO_RECEBE)
 # O QUE SAIU DE USO, e por que não sai do código (05/11/2026, dele: *"isso aqui
 # a gente nem utiliza mais, cartão no transporte"*): apagar o valor deixaria sem
 # explicação a ficha de quem foi cadastrado com ele, e a folha de um mês fechado
@@ -218,6 +280,7 @@ CATEGORIA_TRANSPORTE_ROTULOS = {
     "VALE_TRANSPORTE": "Vale-transporte", "DIARIO_E_VT": "Diário e vale-transporte",
     "VEICULO": "Veículo", "MOTOCICLETA": "Motocicleta", "BICICLETA": "Bicicleta",
     "CARTAO": "Cartão (não paga em dinheiro)",
+    NAO_RECEBE: "Não recebe",
 }
 MEIOS_TRANSPORTE = ("NENHUM", "COLETIVO", "MOTO", "BICICLETA")
 MEIO_TRANSPORTE_ROTULOS = {"NENHUM": "Nenhum", "COLETIVO": "Transporte coletivo",
@@ -405,8 +468,11 @@ def conferir_cpf(s: Session, cpf: Any) -> dict[str, Any]:
     c = s.scalars(select(Colaborador).where(Colaborador.cpf == d)).first()
     if c is None:
         return {"situacao": "livre"}
-    desligado = (c.situacao or "").upper() == "DESLIGADO" or (
-        c.demissao is not None and c.demissao <= date.today())
+    # ⚠️ A RÉGUA É A ÚNICA (`ja_saiu`): até 17/11/2026 aqui era `<= hoje`, e em
+    # `salvar` era "a data existe". Três lugares, três réguas. Quem sai HOJE
+    # ainda trabalha hoje — então não é readmissão, é a ficha dela que abre.
+    desligado = ja_saiu(c.demissao) or (
+        (c.situacao or "").upper() == "DESLIGADO" and c.demissao is None)
     saida = {
         "situacao": "desligado" if desligado else "ativo",
         "colaborador_id": c.id, "nome": c.nome,
@@ -460,6 +526,40 @@ DA_LISTA = {
     "naturalidade_uf": UFS, "categoria_alimentacao": CATEGORIAS_ALIMENTACAO,
     "categoria_transporte": CATEGORIAS_TRANSPORTE, "meio_transporte": MEIOS_TRANSPORTE,
 }
+
+
+# ===========================================================================
+# ⚑ SAÍDA AGENDADA NÃO É SAÍDA — 17/11/2026
+#
+# Ele: *"pessoas que estavam com último dia trabalhado mesmo depois de hoje e
+# estavam na fase Solicitações DP, quando ativei o cadastro do ERP foram
+# considerados desligados."*
+#
+# Estava certo, e o estrago é dos piores: **gente em aviso prévio parou de
+# conseguir bater ponto**. Quem cumpre aviso prévio TRABALHA — e a jornada dela
+# é registro legal do REP-P, que não pode ter buraco.
+#
+# A causa eram quatro lugares escrevendo "DESLIGADO" ao ver que EXISTE uma data
+# de saída, **sem olhar se ela já chegou**. Uma saída marcada para a semana que
+# vem virava saída de ontem.
+#
+# A régua é a MESMA que o ponto já usava quando a base era a planilha
+# (`ponto/core/registro.py`: `r.data_saida < hoje`), e é de propósito: a pessoa
+# **trabalha o último dia**. Saída marcada para hoje ainda bate ponto hoje.
+#
+# ⚠️ Quem pergunta "já saiu?" tem de usar ESTA função. Comparar data à mão em
+# mais um lugar é como os quatro apareceram.
+# ===========================================================================
+def ja_saiu(demissao: Optional[date], *, hoje: Optional[date] = None) -> bool:
+    """A data de saída já passou? Vazia ou no futuro = a pessoa ainda trabalha."""
+    if demissao is None:
+        return False
+    return demissao < (hoje or date.today())
+
+
+def saida_agendada(demissao: Optional[date], *, hoje: Optional[date] = None) -> bool:
+    """Tem saída marcada que ainda NÃO chegou — está cumprindo aviso prévio."""
+    return demissao is not None and not ja_saiu(demissao, hoje=hoje)
 
 
 def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
@@ -531,7 +631,15 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
 
     # A SITUAÇÃO SEGUE A DATA, e não o contrário: quem tem demissão lançada está
     # desligado, mesmo que alguém esqueça de trocar a caixinha.
-    if c.demissao and (c.situacao or "").upper() == "ATIVO":
+    #
+    # ⚠️ MAS SÓ DEPOIS QUE A DATA CHEGA — ver `ja_saiu` acima. Até 17/11/2026
+    # esta linha olhava só se a data EXISTIA, e tirou do ponto quem estava
+    # cumprindo aviso prévio.
+    # ⚠️ `or "ATIVO"` e não `or ""`: num cadastro NOVO a situação ainda é nula
+    # em memória (o "ATIVO" é padrão do banco e só chega no flush), e com `or
+    # ""` a comparação dava falso — a regra não valia para cadastro novo. Era
+    # como alguém já desligado entrava pela importação com a caixinha em ATIVO.
+    if ja_saiu(c.demissao) and (c.situacao or "ATIVO").upper() == "ATIVO":
         c.situacao = "DESLIGADO"
     # O vínculo nasce CTPS quando ninguém disse — é o caso da esmagadora
     # maioria, e deixar nulo faria a folha ter de adivinhar.
@@ -600,10 +708,16 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
         elif agora == "AFASTADO" and etapa_agora != "AFASTADO":
             c.etapa = "AFASTADO"
         elif agora == "ATIVO" and etapa_agora in ("DESLIGADO", "AFASTADO"):
-            # Voltou para a ativa: o cadastro volta para a conferência do DP,
-            # que é o mesmo caminho da readmissão — e não direto para
-            # "concluído", porque alguém tem de olhar o que mudou.
-            c.etapa = "EM_CONFERENCIA"
+            # Voltou para a ativa: o cadastro volta para a fila do DP, que é o
+            # mesmo caminho da readmissão — e não direto para "concluído",
+            # porque alguém tem de olhar o que mudou.
+            #
+            # ⚠️ ERA "EM_CONFERENCIA", e isso virou defeito em 17/11/2026,
+            # quando "Conferência" foi fundida na "Inicial" (migração 107): o
+            # código saiu de `ETAPAS` e **não tem coluna no quadro**. Quem
+            # voltasse para a ativa caía numa etapa que a tela não mostra —
+            # desaparecia da fila do DP sem ninguém notar.
+            c.etapa = "CADASTRO_INICIAL"
 
     s.flush()
 
@@ -708,7 +822,14 @@ def desligar(s: Session, colaborador_id: int, dados: dict[str, Any],
         raise ErroValidacao("Informe a data de saída.")
     forma = _da_lista(dados.get("forma_desligamento"), FORMAS_DESLIGAMENTO,
                       "forma de desligamento")
-    c.demissao, c.situacao = saida, "DESLIGADO"
+    # ⚑ SAÍDA MARCADA PARA O FUTURO NÃO DESLIGA HOJE (17/11/2026). A pessoa
+    # cumpre o aviso prévio trabalhando: continua batendo ponto, continua na
+    # folha e continua com acesso. O que se grava agora são as DATAS; a
+    # situação vira "desligado" quando o dia chegar — e quem percebe isso sem
+    # ninguém apertar nada é o próprio ponto, que compara a data com hoje.
+    c.demissao = saida
+    if ja_saiu(saida):
+        c.situacao = "DESLIGADO"
     c.aviso_previo = _data(dados.get("aviso_previo"), "aviso prévio") or c.aviso_previo
     c.ultimo_dia = _data(dados.get("ultimo_dia"), "último dia") or c.ultimo_dia
     v = vinculo_aberto(s, c.id)
@@ -720,17 +841,26 @@ def desligar(s: Session, colaborador_id: int, dados: dict[str, Any],
     # A ETAPA ANDA COM A SITUAÇÃO aqui, porque desligar encerra o trabalho sobre
     # este cadastro — e deixar a etapa para trás faria a pessoa continuar na
     # fila do DP depois de sair da empresa.
-    if (c.etapa or "").upper() != "DESLIGADO":
+    #
+    # ⚠️ Com a saída AGENDADA a etapa fica onde está: o cadastro de quem está
+    # cumprindo aviso prévio é trabalho pendente do DP, não trabalho encerrado.
+    if ja_saiu(saida) and (c.etapa or "").upper() != "DESLIGADO":
         c.etapa = "DESLIGADO"
         s.add(ColaboradorEtapa(
             colaborador_id=c.id, de=None, para="DESLIGADO",
             motivo="desligamento lançado", automatico=True,
             usuario_id=usuario.id if usuario else None))
         s.flush()
-    registrar_evento(s, "colaborador", c.id, "DESLIGADO",
+    registrar_evento(s, "colaborador", c.id,
+                     "DESLIGADO" if ja_saiu(saida) else "DESLIGAMENTO_AGENDADO",
                      {"data_saida": str(saida), "forma": forma,
-                      "motivo": dados.get("motivo")}, usuario.id if usuario else None)
-    bloquear_acesso(s, c, usuario, motivo="desligamento")
+                      "motivo": dados.get("motivo"),
+                      "agendado": not ja_saiu(saida)},
+                     usuario.id if usuario else None)
+    # O acesso ao sistema cai junto com a saída, não antes: quem cumpre aviso
+    # prévio ainda precisa do portal e do "Meu ponto".
+    if ja_saiu(saida):
+        bloquear_acesso(s, c, usuario, motivo="desligamento")
     return c
 
 
@@ -916,7 +1046,10 @@ def trocar_vinculo(s: Session, colaborador_id: int, dados: dict[str, Any],
             "começar depois disso.")
     from datetime import timedelta
     atual.demissao = inicio - timedelta(days=1)
-    atual.motivo = f"passou a {VINCULO_ROTULOS.get(destino, destino)}"
+    # ⚑ "passou a TER VÍNCULO X" (17/11/2026): com o rótulo encurtado para
+    # "CTPS", a frase antiga virava "passou a CTPS", que não se lê. A palavra é
+    # a que ele pediu; a frase em volta é que se ajusta a ela.
+    atual.motivo = f"passou a ter vínculo {VINCULO_ROTULOS.get(destino, destino)}"
     novo = ColaboradorVinculo(
         colaborador_id=c.id, vinculo=destino,
         tipo_contrato=_da_lista(dados.get("tipo_contrato"), TIPOS_CONTRATO,
@@ -1278,7 +1411,11 @@ def para_folha(s: Session, *, so_ativos: bool = True,
 
     saida = []
     for c in s.scalars(select(Colaborador)).all():
-        ativo = (c.situacao or "ATIVO").upper() == "ATIVO" and c.demissao is None
+        # ⚠️ "ATIVO" AQUI É DINHEIRO: quem cai fora desta lista não entra na
+        # folha. Até 17/11/2026 bastava EXISTIR data de saída para sair — e
+        # quem estava cumprindo aviso prévio, trabalhando, saía da folha.
+        ativo = ((c.situacao or "ATIVO").upper() == "ATIVO"
+                 and not ja_saiu(c.demissao))
         if so_ativos and not ativo:
             continue
         if obra_id and c.obra_id != obra_id:
@@ -1304,7 +1441,20 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "obra_nome": nome_obra,
             # "Tipo" é o vínculo, e só tem dois valores. A subvariação é o
             # tipo de contrato, logo abaixo.
-            "tipo": VINCULO_PLANILHA.get(c.vinculo or "CTPS", "CTPS"),
+            # ⚠️ VÍNCULO EM BRANCO NÃO VIRA "CTPS" NO ESCURO (17/11/2026).
+            #
+            # Esta linha devolvia "CTPS" para qualquer valor que não estivesse
+            # no mapa — inclusive para o vínculo VAZIO. E a folha decide a
+            # diária com `tipo == "Prestador de Serviço" E contrato ==
+            # "Autônomo (RPA)"`: um RPA com o vínculo em branco era pago como
+            # CTPS, sem erro em lugar nenhum. É o "pagar funcionário de forma
+            # equivocada" que ele teme, e acontecia em silêncio.
+            #
+            # Agora, faltando o vínculo, quem responde é o TIPO DE CONTRATO —
+            # que diz isso sem ambiguidade (PJ, RPA, autônomo mensalista,
+            # estágio e pró-labore são prestador; as CLTs e o aprendiz, não).
+            # Só quando os DOIS estão vazios sobra o "CTPS", e aí fica no log.
+            "tipo": _tipo_para_a_folha(c),
             "vinculo": c.vinculo or "CTPS",
             "pagamento": "MENSALISTA" if c.mensalista else "DIARISTA",
             "tipo_contrato": TIPO_CONTRATO_ROTULOS.get(c.tipo_contrato or "",
@@ -1313,12 +1463,17 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "salario": dinheiro(c.salario),
             "valor_diaria": dinheiro(c.valor_diaria),
             "valor_mes": dinheiro(c.valor_mes),
-            "valor_alimentacao": dinheiro(c.aux_alimentacao),
+            # ⚠️ "NÃO RECEBE" ZERA O VALOR (17/11/2026). Quem passou a não
+            # receber e tinha valor no cadastro mandaria o número velho para a
+            # folha — e do outro lado não há nada que o barre.
+            "valor_alimentacao": ("" if c.categoria_alimentacao == NAO_RECEBE
+                                  else dinheiro(c.aux_alimentacao)),
             # ⚠️ A PALAVRA DA FOLHA, não o rótulo da tela — ver
             # `CATEGORIA_ALIMENTACAO_PARA_FOLHA`. A folha compara TEXTO.
             "modo_alimentacao": CATEGORIA_ALIMENTACAO_PARA_FOLHA.get(
                 c.categoria_alimentacao or "", c.categoria_alimentacao or ""),
-            "valor_transporte": dinheiro(c.aux_transporte),
+            "valor_transporte": ("" if c.categoria_transporte == NAO_RECEBE
+                                 else dinheiro(c.aux_transporte)),
             # ⚠️ A PALAVRA DA FOLHA, não o rótulo da tela — ver
             # `CATEGORIA_TRANSPORTE_PARA_FOLHA`. Aqui o rótulo da tela
             # QUEBRAVA a folha: ela espera "Vale Transporte" e o rótulo é
@@ -1585,6 +1740,26 @@ def caminho_depois_da_conferencia(c: Colaborador) -> tuple[str, str]:
             "eSocial")
 
 
+# ⚑ A SITUAÇÃO DE CADA ETAPA (17/11/2026). Ele: *"a situação é um reflexo das
+# etapas."* Então a etapa manda, e a situação deixou de ser um campo que alguém
+# digita — ver `mover_etapa`.
+#
+# ⚠️ ESTE MAPA É LIDO PELO PONTO, DE LONGE: `colaboradores.situacao` é o que
+# decide quem pode bater ponto, e quem está DESLIGADO também deixa de receber
+# aviso da empresa (a trava de 17/11 na mensageria). Mudar uma linha daqui muda
+# as duas coisas.
+SITUACAO_DA_ETAPA = {
+    "CADASTRO_INICIAL": "ATIVO",
+    "EM_CONFERENCIA": "ATIVO",     # etapa antiga, mantida para histórico
+    "CONTRATO_A_ASSINAR": "ATIVO",
+    "CONCLUIDO": "ATIVO",
+    "NA_CONTABILIDADE": "ATIVO",
+    "AFASTADO": "AFASTADO",
+    "DESLIGADO": "DESLIGADO",
+    "CANCELADO": "DESLIGADO",
+}
+
+
 def mover_etapa(s: Session, colaborador_id: int, para: str,
                 usuario: Optional[Usuario], *, motivo: str = "",
                 automatico: bool = False) -> Colaborador:
@@ -1607,6 +1782,23 @@ def mover_etapa(s: Session, colaborador_id: int, para: str,
     # respeitar. O que fica é o registro: quem moveu, de onde, para onde e por
     # quê.
     c.etapa = para
+    # ⚑ A ETAPA PASSA A DEFINIR A SITUAÇÃO (17/11/2026). Ele: *"dentro de
+    # vínculo e pagamento, a situação é um reflexo das etapas. Não precisa ter
+    # mais esse campo."*
+    #
+    # ⚠️ ISTO TINHA DE VIR ANTES DE TIRAR O CAMPO, e é a parte que faltava:
+    # até aqui mover a etapa NÃO mexia na situação. Então tirar o campo
+    # deixaria o cadastro sem jeito nenhum de desligar alguém — e a situação é
+    # o que o PONTO lê para decidir quem pode bater. Uma pessoa movida para
+    # "Desligado" no quadro continuaria batendo ponto, e o aviso da empresa
+    # continuaria indo para ela.
+    #
+    # "Cancelado" vira DESLIGADO por consequência (cadastro que nunca virou
+    # gente na empresa), e os demais voltam para ATIVO — inclusive quem volta
+    # de um afastamento, que é o caminho da readmissão.
+    situacao_nova = SITUACAO_DA_ETAPA.get(para)
+    if situacao_nova and (c.situacao or "").upper() != situacao_nova:
+        c.situacao = situacao_nova
     s.add(ColaboradorEtapa(colaborador_id=c.id, de=de, para=para,
                            motivo=motivo or None,
                            usuario_id=usuario.id if usuario else None,

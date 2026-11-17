@@ -1088,10 +1088,13 @@ def aplicar_no_colaborador(s: Session, colaborador_id: int, escolhas: dict[str, 
                         f"{_mostrar(feitio, novo)}")
 
     # Desligamento lido do termo de rescisão fecha a situação junto: cadastro
-    # com data de demissão e situação ATIVO mente para quem monta a folha.
-    if c.demissao and c.situacao == "ATIVO":
+    # com data de demissão JÁ PASSADA e situação ATIVO mente para quem monta a
+    # folha. ⚠️ Data no futuro é aviso prévio e NÃO desliga — ver
+    # `cadastros.pessoas.ja_saiu` (conserto de 17/11/2026).
+    from app.apps.erp.core.cadastros.pessoas import ja_saiu
+    if ja_saiu(c.demissao) and c.situacao == "ATIVO":
         c.situacao = "DESLIGADO"
-        mudancas.append("Situação: Ativo → Desligado (tem data de demissão)")
+        mudancas.append("Situação: Ativo → Desligado (a data de saída já passou)")
 
     if mudancas:
         c.atualizado_em = datetime.now()

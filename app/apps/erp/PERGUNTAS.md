@@ -407,6 +407,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Que batidas faltam ao Fulano entre tal e tal dia, pela escala? 🔒 (janela da pessoa › "📅 Completar o período pela escala" › "Ver o que vai entrar": a prévia dia a dia, sem gravar nada; até 31 dias; só quem trata o ponto; desde 13/11/2026)
 - Quantas batidas a gestão incluiu em lote para o Fulano? (ajustes com o motivo "incluída em lote pela gestão" — no espelho e nos pedidos da pessoa; ❌ ainda não há um relatório só dessas)
 - O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
+- Que rondas foram feitas sem foto, e de quem? (Alertas › Tipo "Ronda registrada sem foto", um por ronda, com o motivo; e nas telas Rondas / Quadro › Rondas o chip "· sem foto"; desde 17/11/2026; a localização sempre foi gravada)
 - Quais alertas do mês passado ainda estão abertos? (Alertas › Período "Mês anterior", Situação "Abertos"; "mês passado" = o DIA do alerta no mês anterior, não o dia em que o alerta foi criado; desde 10/11/2026)
 - Quantos alertas a obra X tem abertos? (Alertas › filtro "Obra", com a contagem de cada; muda com o período, o tipo e a gravidade escolhidos, e com as obras de quem pergunta)
 - Quantos alertas de cada tipo estão abertos? (Alertas › filtro "Tipo de alerta", com a contagem de cada; muda com a situação e a gravidade escolhidas, e com as obras de quem pergunta)
@@ -2557,6 +2558,100 @@ está contando.**
   dois carimbos existem (convite e cadastro); falta a conta.
 - **"Quem nunca recebeu NADA desde que entrou na empresa?"** — dá para
   deduzir, mas não há pergunta pronta.
+
+---
+
+## 3z-undecies. AS DATAS DA SAÍDA, O INÍCIO ANTES DO REGISTRO E A CONTA BANCÁRIA (17/11/2026)
+
+Os campos que a varredura de 17/11 trouxe para a ficha tornam estas perguntas
+possíveis — e **antes dela nenhuma tinha resposta pela tela**, porque o dado
+existia no banco e não aparecia em lugar nenhum.
+
+### O que dá para perguntar agora
+
+- **"Quem está em aviso prévio hoje?"** — as pessoas com `aviso_previo`
+  preenchido e sem data de saída ainda.
+- **"Quando foi o último dia trabalhado do fulano?"** — e ⚠️ ele é **diferente
+  da data de saída**: o último dia é o que a pessoa de fato trabalhou; a data
+  de saída é a que tira do ponto e da folha. Toda resposta que misturar os dois
+  está errada.
+- **"Quem saiu neste mês?"** — por `demissao` (data de saída).
+- **"Quem começou a trabalhar antes de ser registrado, e por quantos dias?"** —
+  a diferença entre **data de início** e **data de admissão**. ⚠️ É a pergunta
+  que mais vale a pena conferir: **é esse intervalo que a folha usa para decidir
+  se o dia é pago como DIÁRIA ou como CTPS** (`analisesps/folha_vinculo.py`).
+  Resposta errada aqui é pagamento errado.
+- **"Quem recebe por depósito e não por Pix?"** — quem tem banco, agência e
+  conta e não tem chave Pix.
+- **"Que gente tem dados bancários pela metade?"** — banco sem agência, agência
+  sem conta. ⚠️ Vale perguntar porque **nada no sistema barra isso**.
+
+### As palavras ambíguas desta parte
+
+| Palavra | As duas leituras |
+|---|---|
+| **"saiu"** | pela **data de saída** (`demissao`) ou pela **etapa Desligado**? Desde 17/11 a etapa define a situação, mas a DATA é digitada à parte — e as duas podem discordar |
+| **"último dia"** | último dia **trabalhado** ou último dia **de vínculo**? São campos diferentes |
+| **"entrou na empresa"** | **data de início** (começou a trabalhar) ou **admissão** (foi registrado)? |
+
+### O que o sistema ainda NÃO responde
+
+- **"Em quantos casos a data de saída e a etapa discordam?"** — a conta dá, mas
+  não há pergunta pronta, e é justamente onde um erro de digitação se esconde:
+  alguém com data de saída preenchida e etapa ainda em Concluído **continua
+  batendo ponto**.
+- **"Esta pessoa recebeu tudo o que devia na saída?"** — o sistema não tem a
+  rescisão; ela mora no Fortes.
+
+---
+
+## 3z-duodecies. AVISO PRÉVIO: quem está saindo mas ainda trabalha (17/11/2026)
+
+Esta parte nasceu de um defeito, e as perguntas abaixo existem para que ele não
+volte sem ninguém notar. O defeito: **data de saída marcada para o futuro
+valia como saída de ontem** — e quem cumpria aviso prévio parava de bater ponto
+e saía da folha.
+
+### A palavra que precisava de definição, e é a mais perigosa daqui
+
+| Palavra | As leituras possíveis |
+|---|---|
+| **"desligado"** | ① a caixinha `situacao` diz DESLIGADO; ② a **data de saída já passou**; ③ a etapa do cadastro é "Desligado". **As três podem discordar**, e discordavam |
+
+**A régua do sistema, decidida em 17/11/2026 e igual em todo lugar:** desligado
+é quem tem **data de saída ANTERIOR a hoje**. Saída marcada para hoje ainda é
+gente ativa hoje — **a pessoa trabalha o último dia**, e a batida desse dia é o
+que a rescisão usa.
+
+### O que dá para perguntar
+
+- **"Quem está cumprindo aviso prévio?"** — tem data de saída marcada que ainda
+  não chegou. ⚠️ Essa gente **está ativa**: bate ponto, entra na folha e tem
+  acesso ao sistema.
+- **"Quem sai nos próximos 15 dias?"** — a lista que o DP precisa para preparar
+  rescisão.
+- **"Quantos saíram de verdade neste mês?"** — só os de data já passada.
+- **"Tem alguém marcado como desligado que ainda está trabalhando?"** — a
+  pergunta que acha o defeito de novo: situação DESLIGADO com data de saída de
+  hoje ou depois. **Hoje a resposta certa é zero.**
+- **"Tem alguém na coluna Desligado do quadro com a situação ativa?"** — a
+  mesma incoerência, pelo outro lado.
+
+### Perguntas que mudam de resposta conforme quem pergunta
+
+- **"Quantas pessoas a obra X tem hoje?"** — quem está em aviso prévio **conta**:
+  está trabalhando. Resposta que a exclui está errada.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quantas pessoas têm data de saída digitada errada?"** — não dá. Uma data
+  no futuro distante (2027 em vez de 2026) é indistinguível de um aviso prévio
+  longo. O sinal possível seria "saída marcada para mais de 90 dias", que não
+  existe como pergunta nem como alerta.
+- **"Quem perdeu batida de ponto no período em que foi marcado desligado por
+  engano?"** — esta é a conta do estrago, e ela importa: dia sem batida é
+  buraco na prova da jornada. Os dados existem (as marcações e as datas), mas
+  a conta não está escrita.
 
 ---
 

@@ -894,6 +894,7 @@ function rondasDoDia(x) {
 // O WhatsApp traz o link (/ponto/app?ronda=…). Aberto, mostra quanto tempo falta;
 // a ronda é a foto e a localização — sem as duas, não vale.
 const RONDA_TOKEN = new URLSearchParams(location.search).get("ronda");
+const TENTATIVAS_ANTES_DE_SEM_FOTO = 3;
 let RONDA_TIMER = null;
 async function abrirRonda() {
   clearInterval(RONDA_TIMER);
@@ -905,7 +906,11 @@ async function abrirRonda() {
   $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">🔦 Ronda surpresa — ${esc(r.numero)}ª do turno</h2>
     ${aberta ? `<p>Tire a foto agora, aqui na obra, com a localização ligada.</p>
       <div class="aviso ambar" id="ro-tempo"></div>
-      <button class="btn grande" type="button" id="ro-foto">📷 Tirar a foto e registrar a ronda</button>`
+      <button class="btn grande" type="button" id="ro-foto">📷 Tirar a foto e registrar a ronda</button>
+      <div id="ro-sem-foto" class="oculto" style="margin-top:14px">
+        <p class="pequeno" style="margin:0 0 6px">Tentou ${TENTATIVAS_ANTES_DE_SEM_FOTO} vezes e a foto não sai? Só nesse
+          caso, registre sem foto: <b>o escritório recebe um aviso</b> de que esta ronda veio sem foto, e confere.</p>
+        <button class="link" type="button" id="ro-so-local">Registrar sem foto (o escritório é avisado)</button></div>`
     : `<div class="aviso ${r.feita_em ? "ok" : "info"}">${r.feita_em ? `Esta ronda já foi registrada (${esc(r.feita_em)}).` : "Esta ronda não está mais aberta."}</div>`}
     <div id="ro-msg" class="aviso erro oculto"></div>`;
   if (!$("dlg").open) $("dlg").showModal();
@@ -920,25 +925,52 @@ async function abrirRonda() {
   };
   relogio(); RONDA_TIMER = setInterval(relogio, 1000);
   const erro = t => { $("ro-msg").textContent = t; $("ro-msg").classList.remove("oculto"); };
+  // A RONDA SEM FOTO (17/11/2026, o dono: "memória cheia (…) o mais importante é a geolocalização (…) para a pessoa
+  // não perder a ronda"): a foto que não sai — ou que não chega ao servidor — oferece registrar só com a localização.
+  // 17/11/2026, o dono: "não gostei, pois induz a pessoa a tirar sem a foto" — o caminho sem foto só aparece depois
+  // de TENTATIVAS_ANTES_DE_SEM_FOTO tentativas que não deram certo (a foto que não saiu ou que não chegou), discreto,
+  // e dizendo que o escritório é avisado. A foto continua sendo o botão grande.
+  let porQueSemFoto = "", tentativas = 0;
+  const oferecerSemFoto = motivo => {
+    porQueSemFoto = motivo;
+    if (++tentativas >= TENTATIVAS_ANTES_DE_SEM_FOTO) $("ro-sem-foto").classList.remove("oculto");
+  };
+  const registrar = async (foto, botao, textoBotao) => {
+    botao.textContent = "Procurando a localização…";
+    const local = await localizacao();
+    if (!local) { botao.disabled = false; botao.textContent = textoBotao;
+      return erro("Ligue a localização do celular e tente de novo: sem ela, a ronda não vale."); }
+    botao.textContent = "Enviando…";
+    const feito = await chamar("/ponto/app/api/ronda", {token: RONDA_TOKEN, foto_base64: foto || "",
+      sem_foto: foto ? "" : `${porQueSemFoto || "o celular não conseguiu tirar a foto"}, depois de ${tentativas} tentativas`,
+      latitude: local.latitude, longitude: local.longitude, precisao: local.precisao});
+    fechar();
+    const onde = feito.dentro_da_cerca === true ? "na obra" : feito.distancia_metros != null ? `a ${Math.round(feito.distancia_metros)} m da obra` : "";
+    $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">${feito.status === "FEITA" ? "✅ Ronda registrada" : "⏱ Ronda registrada com atraso"}</h2>
+      <p>${esc(feito.hora)}${onde ? ` · ${esc(onde)}` : ""}. Obrigado!</p>
+      ${feito.sem_foto ? `<div class="aviso ambar">Foi sem foto. Se a memória do celular estiver cheia, apague fotos ou vídeos antigos.</div>` : ""}`;
+  };
   $("ro-foto").onclick = async () => {
-    $("ro-foto").disabled = true;
-    try {
-      const foto = await tirarFoto();
-      if (!foto) { $("ro-foto").disabled = false; return erro("A foto não foi tirada — tente de novo."); }
-      $("ro-foto").textContent = "Procurando a localização…";
-      const local = await localizacao();
-      if (!local) { $("ro-foto").disabled = false; $("ro-foto").textContent = "📷 Tirar a foto e registrar a ronda";
-        return erro("Ligue a localização do celular e tente de novo: sem ela, a ronda não vale."); }
-      const feito = await chamar("/ponto/app/api/ronda", {token: RONDA_TOKEN, foto_base64: foto,
-        latitude: local.latitude, longitude: local.longitude, precisao: local.precisao});
-      fechar();
-      const onde = feito.dentro_da_cerca === true ? "na obra" : feito.distancia_metros != null ? `a ${Math.round(feito.distancia_metros)} m da obra` : "";
-      $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">${feito.status === "FEITA" ? "✅ Ronda registrada" : "⏱ Ronda registrada com atraso"}</h2>
-        <p>${esc(feito.hora)}${onde ? ` · ${esc(onde)}` : ""}. Obrigado!</p>`;
-    } catch (e) {
-      $("ro-foto").disabled = false; $("ro-foto").textContent = "📷 Tirar a foto e registrar a ronda";
+    const b = $("ro-foto"), texto = "📷 Tirar a foto e registrar a ronda";
+    b.disabled = true;
+    let foto = null;
+    try { foto = await tirarFoto(); } catch (e) { foto = null; }
+    if (!foto) { b.disabled = false;
+      oferecerSemFoto("o celular não conseguiu tirar a foto (memória cheia?)");
+      return erro("A foto não foi tirada. Tente de novo."); }
+    try { await registrar(foto, b, texto); }
+    catch (e) {
+      b.disabled = false; b.textContent = texto;
       erro(e.message);
+      // a foto não chegou (sem rede, servidor fora, foto grande demais): o caminho sem foto fica à mão
+      if (!e.status || e.status >= 500 || e.status === 413) oferecerSemFoto(`a foto não foi enviada (${e.message})`);
     }
+  };
+  $("ro-so-local").onclick = async () => {
+    const b = $("ro-so-local"), texto = "Registrar sem foto (o escritório é avisado)";
+    b.disabled = true;
+    try { await registrar(null, b, texto); }
+    catch (e) { b.disabled = false; b.textContent = texto; erro(e.message); }
   };
 }
 
@@ -1191,12 +1223,15 @@ function tirarFoto() {
       const img = new Image();
       const url = URL.createObjectURL(f);
       img.onload = () => {
-        const lado = 1024, k = Math.min(1, lado / Math.max(img.width, img.height));
-        const c = document.createElement("canvas");
-        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        resolve(c.toDataURL("image/jpeg", 0.8));
+        try {             // celular com a memória cheia falha aqui: vira "sem foto", não um erro solto (17/11/2026)
+          const lado = 1024, k = Math.min(1, lado / Math.max(img.width, img.height));
+          const c = document.createElement("canvas");
+          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          const dado = c.toDataURL("image/jpeg", 0.8);
+          resolve(dado && dado.length > 1000 ? dado : null);
+        } catch (e) { resolve(null); }
       };
       img.onerror = () => resolve(null);
       img.src = url;

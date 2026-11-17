@@ -17,8 +17,40 @@
 <meta name="apple-mobile-web-app-title" content="ERP BWS">
 <link rel="apple-touch-icon" href="{{ url_for('erp.static', filename='icone-apple.png') }}">
 <link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
+
+{# ⚑ UMA TELA DO ERP DENTRO DE OUTRA — O MODO EMBUTIDO (17/11/2026)
+
+   Pedido dele: *"quando estou vendo o pessoal pelo ponto e coloco pra abrir o
+   cadastro, ele remete pra página de pessoal, quando deveria apenas abrir o
+   modal correspondente sem necessidade de ir pra outro lado. Os dados de cada
+   um tem que estar de fácil acesso e todos correlacionados."*
+
+   O caminho inverso já existia: a tela de Colaboradores mostra a ficha do
+   ponto dentro dela. Faltava a volta. Em `embutido`, a tela aparece SÓ com a
+   janela que ela foi chamada para abrir: sem o cabeçalho, sem os módulos, sem
+   o filtro lateral, sem a lista e sem o assistente — nada disso faz sentido
+   dentro de outra tela que já tem os seus.
+
+   A tela da ficha do ponto faz o mesmo desde 13/11/2026, com um estilo
+   próprio dentro dela (`gestao.html`, `.corpo.embutido`). São dois jeitos de
+   dizer a mesma coisa: quem mexer naquela tela pode passá-la para cá.
+
+   ⚠️ A janela (`<dialog>`) NÃO pode ser escondida junto: o que está em
+   `display:none` não abre, nem no topo da pilha. Por isso a regra esconde os
+   irmãos dela, não o pai. #}
+<style>
+  body.embutido > header.topo,
+  body.embutido > .aviso-migracoes,
+  body.embutido > .ia-botao,
+  body.embutido > .abrir-filtros,
+  body.embutido > .ia-painel,
+  body.embutido .corpo > .filtros { display: none !important; }
+  body.embutido .corpo { padding: 0; }
+  body.embutido .principal > :not(dialog) { display: none !important; }
+  body.embutido .principal { padding: 0; min-height: 0; }
+</style>
 </head>
-<body>
+<body{% if embutido %} class="embutido"{% endif %}>
 <header class="topo">
   <a class="topo-marca" href="{{ url_for('erp.pagina_inicio') }}"
      style="text-decoration:none; color:inherit" title="Trocar de módulo">
@@ -86,7 +118,7 @@
 </header>
 
 {% if migracoes_pendentes %}
-<div style="background:#B3261E; color:#fff; padding:10px 16px; font-size:13.5px;
+<div class="aviso-migracoes" style="background:#B3261E; color:#fff; padding:10px 16px; font-size:13.5px;
             display:flex; gap:12px; align-items:center; flex-wrap:wrap">
   <b>Banco desatualizado</b>
   <span>{{ migracoes_pendentes|length }} atualização(ões) pendente(s)
@@ -239,6 +271,9 @@ const ACENTOS = {
   "dedutivel": "Dedutível", "indedutivel": "Indedutível",
   "lucro real": "Lucro real", "lucro presumido": "Lucro presumido",
   "ret": "RET (patrimônio de afetação)", "desonerada": "Folha desonerada",
+  // Ações de trilha que aparecem na ficha da pessoa (17/11/2026).
+  "desligamento agendado": "Desligamento agendado (a pessoa ainda trabalha)",
+  "situacao corrigida": "Situação corrigida",
 };
 const rotulo = s => {
   const limpo = (s||"").replace(/_/g," ").toLowerCase();

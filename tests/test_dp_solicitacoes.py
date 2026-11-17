@@ -143,7 +143,20 @@ def test_os_rotulos_sao_os_do_pipe_e_nao_os_meus():
     assert "Admissão de Prestador de Serviço" in nomes
     assert "Prestador que passa a ter carteira" not in nomes   # inventado
     assert "Desligamento de Prestador de Serviço" in nomes
-    assert svc.ROTULOS["categoria_alimentacao"] == "Categoria Auxílio Alimentação"
+    # ⚑ ESTE RÓTULO SAIU DO PIPE EM 17/11/2026, e foi O DONO quem mandou:
+    # *"renomear campos (…) Como paga o transporte = Ajuda com Transporte, que
+    # alimenta Categoria do auxílio-transporte; Como paga a alimentação = Ajuda
+    # com Alimentação."*
+    #
+    # A regra "use o termo do Pipe" continua valendo para o resto: ela existe
+    # porque a equipe já está acostumada com aquelas palavras. Quando é ELE que
+    # pede outra palavra, a palavra dele ganha — e aí o teste muda junto, em vez
+    # de travar a tela no nome antigo.
+    assert svc.ROTULOS["categoria_alimentacao"] == "Ajuda com Alimentação"
+    assert svc.ROTULOS["categoria_transporte"] == "Ajuda com Transporte"
+    # ⚑ E "VÍNCULO", no lugar de "Tipo de Documentação para Cadastro" (mesma
+    # data, mesmo motivo): é a palavra que a ficha da pessoa já usa.
+    assert svc.ROTULOS["tipo_documentacao"] == "Vínculo"
     # ⚑ AS OPÇÕES DESTE CAMPO MUDARAM DE FONTE em 15/11/2026, e isto NÃO é
     # voltar a inventar a roda: elas passaram a vir do CADASTRO DE PESSOAS, que
     # é onde o valor fica gravado. Havia duas listas para o mesmo campo — o
@@ -246,6 +259,10 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
         # Obrigatórios desde 15/11/2026 — ver `_cadastro`, abaixo.
         "telefone": "85988887777", "pix_tipo": "CPF", "pix_chave": CPF_B,
         "valor_diaria": "150,00", "tipo_contrato": "PJ",
+        # ⚑ Desde 17/11/2026: PJ declara a empresa dele, e as duas ajudas são
+        # obrigatórias (com "Não recebe" disponível para quem não recebe).
+        "razao_social_pj": "MARIA NOVA SERVICOS LTDA", "cnpj_pj": "71000004000180",
+        "categoria_alimentacao": "NAO_RECEBE", "categoria_transporte": "NAO_RECEBE",
         # Mensalista declara o valor do mês; diarista não tem valor de mês.
         "valor_mes": "3.300,00",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
@@ -597,6 +614,14 @@ def _cadastro(mundo, **extra):
             "valor_diaria": "120,00",
             # Prestador declara QUE tipo de prestador é (CTPS não: é sempre CLT).
             "tipo_contrato": "Autônomo (RPA)",
+            # ⚑ AS DUAS AJUDAS SÃO OBRIGATÓRIAS DESDE 17/11/2026, por decisão
+            # dele: *"renomear campos e torná-los obrigatórios."* Só dá para
+            # exigir porque a lista ganhou "Não recebe" — antes, obrigar
+            # forçaria a inventar uma categoria para quem não recebe nada. O
+            # cadastro de teste usa "Não recebe" justamente para provar que a
+            # resposta existe para esse caso.
+            "categoria_alimentacao": "NAO_RECEBE",
+            "categoria_transporte": "NAO_RECEBE",
             "data_inicio": "2026-05-01"}
     base.update(extra)
     return base
