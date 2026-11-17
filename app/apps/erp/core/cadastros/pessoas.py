@@ -134,6 +134,57 @@ CONTRATOS_EXPERIENCIA = (
 )
 # "Cartão" na categoria de transporte quer dizer que NÃO se paga em dinheiro —
 # e era a origem de pagamento em duplicidade.
+# ===========================================================================
+# ⚠️ A PALAVRA QUE A FOLHA DO ANÁLISE DE SPs LÊ — e ela NÃO é o rótulo da tela
+#
+# Pedido dele em 17/11/2026, antes de desligar a planilha:
+#
+#   *"Toda aquela parte de folha de pagamento do Análise de SPs faz a leitura
+#    de uma série de colunas para determinar se o pagamento é de diarista, de
+#    alimentação, de transporte, de gratificado ou mensalista. (…) você tem
+#    que fazer essa análise e saber se o ERP está correspondente. (…) E aí não
+#    pode ter falha nenhuma."*
+#
+# A conferência foi feita, e achou isto: a folha decide por TEXTO, comparando
+# com as palavras da planilha depois de tirar acento e caixa. O ERP mandava o
+# RÓTULO DA TELA, que em sete categorias de transporte é diferente:
+#
+#   · "Vale-transporte"            — a folha espera "Vale Transporte" (sem o
+#                                     hífen). Um hífen e o auxílio diário não
+#                                     era calculado.
+#   · "Diário e vale-transporte"   — mesma coisa.
+#   · "Cartão (não paga em dinheiro)" — a folha espera só "Cartão"; o resto é
+#                                     explicação que entrou no dado.
+#
+# Hífen não é detalhe quando a comparação é de texto: ela é exata depois do
+# acento, e "vale-transporte" nunca seria "vale transporte". O efeito é
+# pagamento a menos — e, nas palavras do próprio Análise de SPs, *"ninguém
+# repara num pagamento a menos tão rápido quanto num a mais"*.
+#
+# ⚠️ QUATRO CATEGORIAS A FOLHA NÃO RECONHECE NEM HOJE, lendo a planilha:
+# "Segunda e Sexta" (9 pessoas), "Motocicleta" (9), "Veículo" e "Bicicleta".
+# Elas NÃO são defeito deste mapa — a planilha escreve assim e a folha também
+# não as entende; essas pessoas já ficam sem cálculo de transporte hoje.
+# Levado a ele como pendência, porque a decisão é de negócio: ou a folha
+# aprende essas quatro, ou essas pessoas têm outra categoria.
+#
+# A fonte aqui é a PLANILHA, palavra por palavra (lida em 16/11/2026 e travada
+# em `tests/test_planilha_dp.py`). Quando a planilha sair de cena, esta tabela
+# é o contrato entre o ERP e a folha — e o teste
+# `test_folha_entende_o_que_o_ERP_manda` é quem o cobra.
+# ===========================================================================
+CATEGORIA_ALIMENTACAO_PARA_FOLHA = {
+    "SEG_QUI": "Segunda à Quinta", "SEG_SEX": "Segunda à Sexta",
+    "MENSAL": "Mensal", "MES": "Mês",
+}
+CATEGORIA_TRANSPORTE_PARA_FOLHA = {
+    "DIARIO": "Diário", "MENSAL": "Mensal", "MES": "Mês",
+    "SEG_E_SEX": "Segunda e Sexta", "VALE_TRANSPORTE": "Vale Transporte",
+    "DIARIO_E_VT": "Diário e Vale Transporte", "VEICULO": "Veículo",
+    "MOTOCICLETA": "Motocicleta", "BICICLETA": "Bicicleta",
+    "CARTAO": "Cartão",
+}
+
 CATEGORIAS_ALIMENTACAO = ("SEG_QUI", "SEG_SEX", "MENSAL", "MES")
 CATEGORIA_ALIMENTACAO_ROTULOS = {
     "SEG_QUI": "Segunda à quinta", "SEG_SEX": "Segunda à sexta",
@@ -1245,12 +1296,21 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "valor_diaria": dinheiro(c.valor_diaria),
             "valor_mes": dinheiro(c.valor_mes),
             "valor_alimentacao": dinheiro(c.aux_alimentacao),
-            "modo_alimentacao": CATEGORIA_ALIMENTACAO_ROTULOS.get(
+            # ⚠️ A PALAVRA DA FOLHA, não o rótulo da tela — ver
+            # `CATEGORIA_ALIMENTACAO_PARA_FOLHA`. A folha compara TEXTO.
+            "modo_alimentacao": CATEGORIA_ALIMENTACAO_PARA_FOLHA.get(
                 c.categoria_alimentacao or "", c.categoria_alimentacao or ""),
             "valor_transporte": dinheiro(c.aux_transporte),
-            # "Cartão" quer dizer que NÃO se paga em dinheiro — a folha precisa
-            # desta palavra inteira, e foi ela a origem de pagamento em dobro.
-            "modo_transporte": CATEGORIA_TRANSPORTE_ROTULOS.get(
+            # ⚠️ A PALAVRA DA FOLHA, não o rótulo da tela — ver
+            # `CATEGORIA_TRANSPORTE_PARA_FOLHA`. Aqui o rótulo da tela
+            # QUEBRAVA a folha: ela espera "Vale Transporte" e o rótulo é
+            # "Vale-transporte"; espera "Cartão" e o rótulo é "Cartão (não
+            # paga em dinheiro)".
+            #
+            # "Cartão" quer dizer que NÃO se paga em dinheiro, e a folha
+            # precisa reconhecer essa palavra: foi ela a origem de pagamento
+            # em dobro.
+            "modo_transporte": CATEGORIA_TRANSPORTE_PARA_FOLHA.get(
                 c.categoria_transporte or "", c.categoria_transporte or ""),
             "valor_gratificacao": dinheiro(c.valor_gratificacao),
             "parcela_unica": "Sim" if c.parcela_unica else "",
@@ -1361,21 +1421,25 @@ FASE_PIPEFY_PARA_ETAPA = (
     ("adicion",              "EM_CONFERENCIA",   "ATIVO"),
     ("conclu",               "CONCLUIDO",        "ATIVO"),
     ("inicial",              "CADASTRO_INICIAL", "ATIVO"),
-    # ⚑ "SOLICITAÇÕES DP" NÃO TINHA PAR, e ele apontou isso em 17/11/2026:
-    # *"Não existe = Solicitações DP."*
+    # ⚑ "SOLICITAÇÕES DP" → NA CONTABILIDADE, e quem decidiu foi ele.
     #
-    # Vai para INICIAL, e o motivo é o que a etapa quer dizer: "o DP ainda não
-    # olhou". É exatamente a descrição que ele deu dessa fase — *"pessoas que
-    # já saíram e que ainda não foram o cadastro finalizado, aguardando
-    # documentação"*. Cadastro que o DP ainda não fechou é cadastro inicial.
+    # Em 17/11/2026 ele apontou que a fase não tinha par (*"Não existe =
+    # Solicitações DP"*). Eu a mandei para INICIAL, pelo raciocínio de que
+    # "o DP ainda não olhou". Ele corrigiu no mesmo dia, e com o motivo:
+    #
+    #   *"todos que estiverem na fase do Pipefy Solicitações DP, eu quero que
+    #    você correlacione com a etapa Na contabilidade, porque senão eu vou
+    #    perder meu controle."*
+    #
+    # É o dono do processo dizendo o que aquela fase SIGNIFICA na prática: não
+    # é "ninguém olhou ainda", é "está na mão da contabilidade, esperando o
+    # registro". Misturar com Inicial juntaria duas filas diferentes e tiraria
+    # dele a visão de quem está travado fora da empresa.
     #
     # Fica DEPOIS de "desligad" na ordem, de propósito: quem está em
     # Solicitações DP e tem data de saída é desligado pela data, não pela
     # fase — a regra da data de saída, em `planilha_dp`, decide isso.
-    #
-    # Se ele quiser uma etapa PRÓPRIA para essa fase, aí é migração: a coluna
-    # `etapa` tem lista fechada, e etapa nova exige um `.sql` numerado.
-    ("solicita",             "CADASTRO_INICIAL", "ATIVO"),
+    ("solicita",             "NA_CONTABILIDADE", "ATIVO"),
 )
 
 

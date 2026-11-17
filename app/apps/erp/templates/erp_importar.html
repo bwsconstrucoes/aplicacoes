@@ -175,6 +175,22 @@
     <span class="rotulo"><b>Cadastrar também quem não existe no ERP</b>
       (só os ativos). Desmarcado — o normal — só preenche o cadastro de quem
       já está aqui, e lista os outros sem criar nada.</span></label>
+  {# ⚑ LIMPAR A BASE (17/11/2026). Ele: *"eu já tinha cadastrado o pessoal que
+     tava vindo lá da análise SPs (…) mas eu não quero mais. Eu quero que
+     esteja só o pessoal que eu quero importar. O CPF que não tiver dentro da
+     minha lista de importação, eu quero que seja excluído dessa base."*
+
+     Só aparece como opção, e só funciona COM a lista de CPFs: campo em branco
+     quer dizer "a planilha inteira", e isso somado a isto apagaria o cadastro
+     todo. O servidor recusa sem a lista, não é só a tela que esconde. #}
+  <label class="opcao" style="margin-top:6px">
+    <input type="checkbox" id="plc-soestes">
+    <span class="rotulo" style="color:var(--vermelho)"><b>Deixar SÓ a minha
+      lista: apagar do ERP quem não está nela.</b> Exige a lista de CPFs
+      acima. Quem já tem movimento (título, documento, pedido do DP, ponto)
+      <b>não é apagada</b> — volta na lista com o motivo. Aperte
+      “Conferir sem gravar” primeiro: ele conta quantas sairiam, sem apagar
+      nada.</span></label>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-plc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-plc" disabled>Trazer da planilha</button>
@@ -1054,6 +1070,32 @@ function pintarRelatorioPLC(rel){
      por que tal campo ficou vazio, e de fora as duas causas são idênticas: a
      coluna está vazia na planilha, ou a coluna existe e eu não a reconheço.
      Isto responde qual das duas é, sem custar uma rodada dele. #}
+  {# A LIMPEZA DA BASE vem PRIMEIRO no relatório, antes de tudo: é a parte
+     que não se desfaz, e tem de ser a primeira coisa que ele lê. #}
+  if (rel.limpou)
+    L.push(`<div class="aviso ${rel.gravou ? "erro" : "ambar"}">
+      <b>${rel.gravou ? "Apagadas" : "Seriam apagadas"}:
+      ${(rel.apagadas||[]).length} pessoa(s)</b> que estão no ERP e não na sua
+      lista.${rel.gravou ? "" : " <b>Nada foi apagado ainda.</b>"}
+      ${(rel.apagadas||[]).length ? `
+        <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table><thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+        <tbody>${rel.apagadas.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}</div>`);
+
+  if ((rel.nao_deu_para_apagar || []).length)
+    L.push(`<h4>Não deu para apagar (${rel.nao_deu_para_apagar.length})</h4>
+      <div class="cartao-dica">Estas têm movimento no sistema — não são engano
+        de carga. Se não deviam estar aqui, <b>desligue</b> em vez de
+        apagar.</div>
+      <div class="tabela-rolagem" style="max-height:220px"><table>
+      <thead><tr><th>Pessoa</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.nao_deu_para_apagar.map(x => `<tr>
+        <td>${escapar(x.nome || "—")}</td>
+        <td class="desc">${escapar(x.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
   if ((rel.colunas_que_eu_nao_uso || []).length)
     L.push(`<details style="margin-top:12px"><summary><b>Colunas da planilha
       que eu não leio (${rel.colunas_que_eu_nao_uso.length})</b> — abra se
@@ -1120,7 +1162,15 @@ function pintarRelatorioPLC(rel){
 async function mandarCadastroPlanilha(gravar){
   const onde = els("resultado-plc");
   const corpo = {gravar: !!gravar, cpfs: els("plc-cpfs").value,
-                 criar: !!(els("plc-criar") || {}).checked};
+                 criar: !!(els("plc-criar") || {}).checked,
+                 so_estes: !!(els("plc-soestes") || {}).checked};
+  {# Apagar gente não acontece por clique distraído: a confirmação diz o que
+     vai acontecer, e só aparece na hora de gravar. #}
+  if (gravar && corpo.so_estes
+      && !confirm("Isto vai APAGAR do ERP todo mundo que não está na sua "
+                + "lista de CPFs.\n\nNão tem volta. Quem já tem movimento "
+                + "não é apagada.\n\nVocê conferiu a lista de quem sairia?"))
+    return;
   ["btn-conferir-plc", "btn-gravar-plc"].forEach(b => {
     if (els(b)) els(b).disabled = true; });
   onde.innerHTML = `<div class="cartao-dica">Na fila — a leitura da planilha

@@ -623,6 +623,7 @@ def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
 def importar(s, usuario=None, *, gravar: bool = False,
              cpfs: Optional[list[str]] = None,
              criar: bool = False,
+             so_estes: bool = False,
              ler=None) -> dict[str, Any]:
     """Enche o cadastro de quem está na planilha, e cadastra quem falta.
 
@@ -642,6 +643,29 @@ def importar(s, usuario=None, *, gravar: bool = False,
 
     Quem a planilha mostra como desligado continua fora, e é dito no relatório
     com esse motivo — não com "não existe no ERP", que não explicava nada.
+
+    ⚑ `so_estes` LIMPA A BASE, e é a coisa mais perigosa deste arquivo.
+
+    Ele pediu em 17/11/2026, depois de achar no ERP gente que havia entrado
+    numa carga antiga (a do Análise de SPs, que alimentava o ponto):
+
+        *"Eu já tinha cadastrado o pessoal que tava vindo lá da análise SPs
+         (…) mas eu não quero mais. Eu quero que esteja só o pessoal que eu
+         quero importar. (…) o CPF que não tiver dentro da minha lista de
+         importação, eu quero que seja excluído dessa base de dados aqui."*
+
+    Então, com `so_estes`, quem está no ERP e NÃO está na lista de CPFs é
+    APAGADO. Três travas, e nenhuma é opcional:
+
+      1. **Sem lista de CPFs, não faz nada.** Lista vazia quer dizer "a
+         planilha inteira", e isto somado àquilo apagaria o cadastro todo.
+         É o erro que não se desfaz, então ele é impedido aqui, não avisado.
+      2. **Quem tem movimento não é apagada** — a recusa vem do banco, pelas
+         chaves (ver `pessoas.remover_cadastro`), e volta no relatório com o
+         nome e o motivo. Gente com título, documento, pedido ou ponto não é
+         engano de carga.
+      3. **`gravar=False` só CONTA**, sem apagar nada: é como ele vê o tamanho
+         do estrago antes de autorizar.
     """
     from app.apps.erp.core.cadastros import pessoas as svc
     from app.apps.erp.core.comum.auditoria import ErroValidacao
@@ -658,6 +682,7 @@ def importar(s, usuario=None, *, gravar: bool = False,
         "atualizadas": [], "criadas": [], "sem_cadastro": [], "recusadas": [],
         "nao_entendi": [], "cadastros_criados": [],
         "criou": bool(criar),
+        "limpou": bool(so_estes), "apagadas": [], "nao_deu_para_apagar": [],
         # As colunas que a planilha tem e este de-para não lê. É a resposta
         # para "por que este campo está vazio?" sem precisar perguntar.
         "colunas_que_eu_nao_uso": sorted(
@@ -836,4 +861,28 @@ def importar(s, usuario=None, *, gravar: bool = False,
         rel["atualizadas"].append(
             {"cpf": cpf, "nome": pessoa.nome,
              "campos": {k: str(v) for k, v in sorted(mudou.items())}})
+
+    # =======================================================================
+    # "SÓ QUERO O PESSOAL QUE EU COLOQUEI PRA IMPORTAR" — ver a docstring.
+    # =======================================================================
+    if so_estes:
+        if not alvo:
+            rel["nao_entendi"].append({
+                "coluna": "—", "campo": "Limpar a base", "valor": "",
+                "motivo": ("não fiz nada: limpar a base exige a lista de CPFs. "
+                           "Sem ela, isto apagaria o cadastro inteiro")})
+            return rel
+        for digitos, pessoa in sorted(por_cpf.items(),
+                                      key=lambda x: x[1].nome or ""):
+            if digitos in alvo:
+                continue
+            if not gravar:
+                rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome})
+                continue
+            try:
+                svc.remover_cadastro(s, pessoa.id, usuario)
+                rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome})
+            except ErroValidacao as e:
+                rel["nao_deu_para_apagar"].append({
+                    "cpf": digitos, "nome": pessoa.nome, "motivo": str(e)[:300]})
     return rel

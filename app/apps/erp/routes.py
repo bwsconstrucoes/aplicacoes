@@ -4527,12 +4527,21 @@ def api_importar_planilha_cadastro():
                  # outra importação — então não pode ser padrão. Ele achou o
                  # ERP com mais gente do que pediu, e tinha razão.
                  "criar": bool(d.get("criar")),
+                 # ⚑ LIMPAR A BASE: apaga quem está no ERP e não está na
+                 # lista. Ele pediu em 17/11/2026 (*"o CPF que não tiver
+                 # dentro da minha lista de importação, eu quero que seja
+                 # excluído dessa base de dados"*). Só vale COM lista — o
+                 # importador recusa sem ela, porque lista vazia quer dizer
+                 # "a planilha inteira" e isso apagaria o cadastro todo.
+                 "so_estes": bool(d.get("so_estes")) and bool(cpfs),
                  "usuario_id": usuario.id if usuario else None},
                 rotulo=(("Conferir sem gravar" if not gravar
                          else "Trazer da planilha")
                         + (f": {len(cpfs)} pessoa(s)" if cpfs
                            else ": a planilha inteira")
-                        + (" (cadastrando quem falta)" if d.get("criar") else "")),
+                        + (" (cadastrando quem falta)" if d.get("criar") else "")
+                        + (" + APAGANDO quem não está na lista"
+                           if d.get("so_estes") and cpfs else "")),
                 usuario=usuario)
             linha = tarefas.ler(s, t.id)
             s.commit()
@@ -11375,6 +11384,55 @@ def api_colaboradores():
     except Exception as e:
         logger.exception("ERP: falha em colaboradores")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/convencoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="editar_colaboradores")
+def api_convencoes():
+    """As convenções coletivas, e a criação de uma nova de dentro do cadastro.
+
+    ⚑ 17/11/2026, pedido dele com todas as letras: *"eu não quero um botão
+    mais cargo. Cargo é para estar. Quando a gente for cadastrar, aqui eu ter
+    a relação de cargos e daqui DENTRO do cadastro eu poder criar um novo
+    cargo, criar uma nova convenção. Eu não posso criar obra, porque obra se
+    cria no outro canto, mas isso aqui é área exclusiva do DP."*
+
+    É a regra "um cadastro, uma porta" do `CLAUDE.md` aplicada à lista: a
+    pessoa não sai da ficha para cadastrar o que falta na caixinha.
+    """
+    from sqlalchemy import func, select
+
+    from app.apps.erp.db.models.cadastros import Convencao
+    try:
+        with get_session() as s:
+            if request.method == "POST":
+                d = request.get_json(silent=True) or {}
+                nome = (d.get("nome") or "").strip()
+                if not nome:
+                    return jsonify({"ok": False,
+                                    "erro": "Informe o nome da convenção."}), 400
+                # Mesmo nome é a mesma convenção: duas linhas para o mesmo
+                # acordo fariam duas pessoas da mesma obra terem pisos
+                # diferentes sem ninguém ver.
+                ja = s.scalars(select(Convencao).where(
+                    func.upper(func.btrim(Convencao.nome)) == nome.upper())).first()
+                if ja is not None:
+                    ja.ativo = True
+                    s.commit()
+                    return jsonify({"ok": True, "convencao_id": ja.id,
+                                    "ja_existia": True})
+                nova = Convencao(nome=nome,
+                                 uf=(d.get("uf") or "").strip().upper() or None)
+                s.add(nova)
+                s.commit()
+                return jsonify({"ok": True, "convencao_id": nova.id})
+            return jsonify({"ok": True, "convencoes": [
+                {"id": c.id, "nome": c.nome, "uf": c.uf or ""}
+                for c in s.scalars(select(Convencao).where(
+                    Convencao.ativo.is_not(False)).order_by(Convencao.nome)).all()]})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/funcoes", methods=["GET", "POST"])

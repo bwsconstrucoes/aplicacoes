@@ -536,10 +536,11 @@ def test_o_PIS_que_nao_fecha_vira_PENDENCIA_e_a_pessoa_entra():
     ("Cadastros Adicionais",     "EM_CONFERENCIA",   "ATIVO"),
     ("Cadastro Inicial",         "CADASTRO_INICIAL", "ATIVO"),
     ("Cadastro Cancelado",       "CANCELADO",        "DESLIGADO"),
-    # Esta é a que não tinha par, e ele apontou: *"Não existe = Solicitações
-    # DP."* Vai para Inicial, que é o que a etapa quer dizer — "o DP ainda não
-    # olhou".
-    ("Solicitações DP",          "CADASTRO_INICIAL", "ATIVO"),
+    # Esta não tinha par, e ele apontou: *"Não existe = Solicitações DP."*
+    # Eu a mandei para Inicial; ele corrigiu no mesmo dia, com o motivo:
+    # *"correlacione com a etapa Na contabilidade, porque senão eu vou perder
+    # meu controle."* É o dono do processo dizendo o que a fase significa.
+    ("Solicitações DP",          "NA_CONTABILIDADE", "ATIVO"),
 ])
 def test_a_fase_da_planilha_vira_a_etapa_do_ERP(fase, etapa, situacao):
     lido = _linha(**{"Fase Atual": fase})
@@ -568,7 +569,7 @@ def test_a_data_de_saida_manda_mais_que_a_fase():
     o cadastro finalizado."*"""
     lido = _linha(**{"Fase Atual": "Solicitações DP",
                      "Data de Saída": "10/03/2025"})
-    assert lido["etapa"] == "CADASTRO_INICIAL"
+    assert lido["etapa"] == "NA_CONTABILIDADE"
     assert lido["situacao"] == "DESLIGADO"
 
 

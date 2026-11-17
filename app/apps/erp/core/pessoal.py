@@ -310,6 +310,18 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
         # filtra e CONTA por ela — uma chamada por linha seriam 575 chamadas.
         "etapa": (c.etapa or "CONCLUIDO"),
         "vinculo": c.vinculo or "CTPS",
+        # ⚑ O TIPO DE CONTRATO VAI PARA A LISTA (17/11/2026). Ele, olhando a
+        # coluna de vínculo: *"aí tem CTPS diarista. (…) Como é que a pessoa é
+        # CTPS diarista? Aqui é para ser o vínculo: CTPS ou prestador de
+        # serviço. Aí tem que ter, para identificar melhor, o tipo de
+        # contrato — se é PJ, se é o quê."*
+        #
+        # Embaixo do vínculo a tela escrevia "mensalista"/"diarista", que é
+        # COMO A PESSOA É PAGA — e colado em "CTPS" virava uma categoria que
+        # não existe. O que distingue de verdade é o contrato.
+        "tipo_contrato": c.tipo_contrato or "",
+        "tipo_contrato_rotulo": svc_pessoas.TIPO_CONTRATO_ROTULOS.get(
+            c.tipo_contrato or "", ""),
         "cargo": cargos.get(c.cargo_id or 0, ""),
         "cargo_id": c.cargo_id,
         # A empresa de registro, para a lista poder mostrar e filtrar por ela.

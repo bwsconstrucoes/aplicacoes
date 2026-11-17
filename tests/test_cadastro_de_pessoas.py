@@ -561,21 +561,34 @@ def test_a_leitura_para_a_folha_traz_todos_os_campos_que_ela_le(sessao_real, don
     assert eu["cargo"] == "PEDREIRO"
     assert eu["obra_codigo"] == "FOLHA-01"
     assert eu["tipo_contrato"] == "CLT (tempo indeterminado)"
-    assert eu["modo_alimentacao"] == "Segunda à sexta"
+    # ⚠️ A PALAVRA É A DA PLANILHA, não o rótulo da tela (17/11/2026): a folha
+    # compara TEXTO, e o rótulo "Segunda à sexta" (minúsculo) só casa porque a
+    # comparação tira a caixa — mas "Vale-transporte" NÃO casava com "Vale
+    # Transporte", e era um auxílio não calculado. Ver
+    # `CATEGORIA_TRANSPORTE_PARA_FOLHA` e `tests/test_erp_espelha_a_folha.py`.
+    assert eu["modo_alimentacao"] == "Segunda à Sexta"
     assert eu["valor_transporte"] == 180.0
     assert eu["pagamento"] == "MENSALISTA"
     assert eu["fase"] == "ATIVO" and eu["ativo"] is True
 
 
 @banco_
-def test_a_palavra_cartao_chega_inteira_na_folha(sessao_real, dono):
+def test_a_palavra_cartao_chega_na_folha_COMO_A_FOLHA_A_LE(sessao_real, dono):
     """"Cartão" no transporte quer dizer que NÃO se paga em dinheiro. Foi a
-    origem de pagamento em dobro — a folha precisa da palavra, não do código."""
+    origem de pagamento em dobro — a folha precisa reconhecer a palavra.
+
+    ⚑ MUDOU EM 17/11/2026, e o teste antigo travava o DEFEITO: ele exigia que
+    fosse o rótulo da tela, "Cartão (não paga em dinheiro)". A folha compara
+    texto e espera só "Cartão" — com a explicação colada, ela não reconhecia
+    nada, e a proteção contra o pagamento em dobro não valia. Agora o teste
+    pergunta ao próprio `folha_auxilio` se ele entende o que o ERP manda.
+    """
+    from app.apps.analisesps import folha_auxilio as fa
     from app.apps.erp.core.cadastros import pessoas as svc
     svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Recebe No Cartao",
                              "categoria_transporte": "CARTAO"}, dono)
     eu = next(x for x in svc.para_folha(sessao_real) if x["cpf"] == CPF_A)
-    assert "não paga em dinheiro" in eu["modo_transporte"]
+    assert fa._sem_acento(eu["modo_transporte"]) == fa.MODO_CARTAO
 
 
 @banco_

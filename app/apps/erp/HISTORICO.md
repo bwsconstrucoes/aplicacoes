@@ -21,6 +21,74 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑⚑ 17/11/2026 — O ERP ESPELHA A FOLHA DO ANÁLISE DE SPs? CONFERIDO, E ACHOU DEFEITO
+
+> *"Toda aquela parte de folha de pagamento do Análise de SPs faz a leitura de
+> uma série de colunas para determinar se o pagamento é de diarista, de
+> alimentação, de transporte, de gratificado ou mensalista. (…) você tem que
+> fazer essa análise e saber se o ERP está correspondente. (…) E aí não pode
+> ter falha nenhuma."*
+
+**Por que ele pediu agora:** o objetivo dele é desligar a planilha "Registro
+de Colaboradores" e fazer o Análise de SPs ler o ERP. Para isso o ERP tem de
+entregar os mesmos campos **com as mesmas palavras** — porque a folha decide
+por TEXTO.
+
+**O que a conferência achou — e era defeito de verdade, em silêncio:**
+
+| O ERP mandava | A folha espera | Efeito |
+|---|---|---|
+| `Vale-transporte` | `Vale Transporte` | **um hífen**, e o auxílio diário não era calculado |
+| `Diário e vale-transporte` | `Diário e Vale Transporte` | o mesmo |
+| `Cartão (não paga em dinheiro)` | `Cartão` | a proteção contra pagamento em DOBRO não valia |
+
+A causa: `para_folha` mandava o **rótulo da tela**, e rótulo é para pessoa ler.
+A folha compara texto depois de tirar acento e caixa — hífen e explicação
+colada não passam. **O erro não dava erro**: a pessoa caía em "modalidade não
+informada", saía com zero, e — nas palavras do próprio Análise de SPs —
+*"ninguém repara num pagamento a menos tão rápido quanto num a mais"*.
+
+Agora existe um mapa próprio (`CATEGORIA_*_PARA_FOLHA`), separado do rótulo da
+tela, com a palavra da PLANILHA. Quando a planilha sair, esse mapa é o contrato
+entre o ERP e a folha.
+
+**O que já estava certo, e é bom saber que foi conferido:** os 27 campos que a
+folha importa da planilha (de `CPF` a `Valor da Diária`), o vínculo
+(`Prestador de Serviço`) e o contrato (`Autônomo (RPA)`, as duas CLTs) que
+decidem diarista × CTPS dia a dia, e o `"Sim"` que decide gratificados e
+pagamento via SP. Todos batem, palavra por palavra.
+
+### ⚠️ DUAS PENDÊNCIAS QUE SÓ ELE DECIDE — e elas travam o desligamento
+
+**1. Quatro categorias de transporte que a folha NÃO entende, nem hoje:**
+`Segunda e Sexta` (9 pessoas), `Motocicleta` (9), `Veículo` e `Bicicleta`.
+
+Isto **não** é defeito do ERP: a planilha escreve exatamente essas palavras e a
+folha também não as reconhece — **essas pessoas já ficam sem cálculo de
+transporte hoje**. A folha só sabe `Mês`, `Mensal`, `Segunda à Sexta`,
+`Segunda à Quinta`, `Diário`, `Vale Transporte`, `Diário e Vale Transporte` e
+`Cartão`.
+
+Atenção a uma confusão fácil: **"Segunda e Sexta" não é "Segunda à Sexta"**. A
+primeira é só a ida e a volta da semana, de quem fica alojado na obra; a
+segunda é os cinco dias. A folha conhece a segunda e não a primeira.
+
+Ou a folha aprende as quatro, ou essas pessoas têm outra categoria. É decisão
+de negócio.
+
+**2. `Paga por BeeVale`** — a coluna existe na planilha, o Análise de SPs a
+importa e guarda, e **nenhuma conta da folha a usa**. O ERP não tem essa
+coluna. Se ela vai servir para algo, o ERP precisa do campo; se não, a coluna
+morre com a planilha.
+
+**Travado por teste:** `tests/test_erp_espelha_a_folha.py` lê os DOIS lados de
+verdade — o `folha_auxilio` do Análise de SPs e o cadastro do ERP — e falha se
+divergirem. Não há valor copiado lá dentro: quem mudar um dos lados cai nele.
+Dois testes antigos **travavam o defeito** (exigiam o rótulo da tela na folha)
+e foram corrigidos.
+
+---
+
 ### ⚑ 17/11/2026 — "TEM MAIS GENTE NO ERP DO QUE EU COLOQUEI PRA IMPORTAR"
 
 > *"Tem mais gente no ERP do que eu coloquei pra importar. Só quero os que eu

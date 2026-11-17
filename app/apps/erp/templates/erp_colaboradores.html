@@ -80,13 +80,19 @@
 
   <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:12px">
     + Colaborador</button>
-  {# ⚑ "+ Função" VIROU "+ Cargo" em 16/11/2026 (migração 105). Ele perguntou
-     se cargo e função eram a mesma coisa e decidiu: *"vamos chamar só de
-     cargo e acabou."* Eram duas listas paralelas, e dava para alguém ser
-     "Pedreiro" numa e "Servente" na outra. O id do botão continua
-     `btn-funcao` para não mexer em quem já o escuta. #}
-  <button class="btn secundario" id="btn-funcao" style="width:100%; margin-top:6px">
-    + Cargo</button>
+  {# ⚑ O BOTÃO "+ CARGO" SAIU DA BARRA em 17/11/2026, por pedido dele com
+     todas as letras: *"eu não quero um botão mais cargo. Isso que não tem
+     sentido. Cargo é para estar. Quando a gente for cadastrar, aqui eu ter a
+     relação de cargos e daqui DENTRO do cadastro eu poder criar um novo
+     cargo, criar uma nova convenção."*
+
+     É a regra "um cadastro, uma porta" (CLAUDE.md, 17/09/2026) aplicada à
+     caixinha: quem está preenchendo a ficha não sai dela para cadastrar o que
+     falta na lista. O "+ novo" agora vive ao lado dos campos Cargo e
+     Convenção, dentro do formulário — ver `ligarCriacaoDeLista`.
+
+     Obra NÃO ganha isso, e ele disse por quê: *"eu não posso criar obra,
+     porque obra se cria no outro canto."* #}
   {% if pode.configurar %}
   <button class="btn secundario" id="btn-importar" style="width:100%; margin-top:6px">
     Importar pessoas de planilha</button>
@@ -302,8 +308,25 @@ function desenhar(){
     <td>${escapar(c.empresa || "—")}</td>
     <td>${escapar(c.cargo || c.funcao || "—")}</td>
     <td class="dados">${escapar(c.obra||"—")}</td>
-    <td>${c.vinculo === "PRESTADOR" ? "Prestador" : "CTPS"}
-      ${c.salario ? "<small>mensalista</small>" : c.valor_diaria ? "<small>diarista</small>" : ""}</td>
+    {# ⚑ O VÍNCULO MOSTRA O TIPO DE CONTRATO, NÃO A FORMA DE PAGAMENTO
+       (17/11/2026). Ele: *"aí tem CTPS diarista. Eu não sei de onde é que
+       você está tirando isso aqui. Como é que a pessoa é CTPS diarista? Não
+       compreendi. (…) Aqui é para ser o vínculo: CTPS, que é carteira
+       assinada, ou prestador de serviço. Aí tem que ter, para identificar
+       melhor, o tipo de contrato — se é PJ, se é o quê."*
+
+       Ele estava certo e a leitura era confusa de verdade: embaixo do vínculo
+       eu escrevia "mensalista" ou "diarista", que é COMO A PESSOA É PAGA — e
+       colado em "CTPS" virava uma categoria que não existe. Quem tem carteira
+       pode ser pago por dia (ele mesmo decidiu isso em 10/11), mas isso não é
+       o vínculo dela.
+
+       Agora embaixo vem o TIPO DE CONTRATO (CLT, jovem aprendiz, PJ, RPA…),
+       que é o que distingue de verdade. A forma de pagamento já está na
+       coluna do valor, que é onde ela significa algo. #}
+    <td>${c.vinculo === "PRESTADOR" ? "Prestador de serviço" : "CTPS"}
+      ${c.tipo_contrato_rotulo
+        ? `<br><small>${escapar(c.tipo_contrato_rotulo)}</small>` : ""}</td>
     <td>${etiquetaDaEtapa(c)}</td>
     <td>${pendenciasDaLinha(c)}</td>
     <td class="direita dados">${c.salario ? numero(c.salario)
@@ -1253,11 +1276,22 @@ function painelDaFicha(){
                escolha a empresa para ligar ao cadastro`
             : "é por esta empresa que a pessoa é registrada na folha"}</small>
       </div>
-      <div class="campo"><label>Cargo</label>${lista("c-cargo",
-        (o.cargos || []).map(x => ({valor: x.id, rotulo: x.cbo ? `${x.nome} (${x.cbo})` : x.nome})),
-        c.cargo_id)}</div>
-      <div class="campo"><label>Convenção coletiva</label>${lista("c-convencao",
-        (o.convencoes || []).map(x => ({valor: x.id, rotulo: x.nome})), c.convencao_id)}</div>
+      {# ⚑ A LISTA TRAZ O "+ NOVO" DENTRO DELA (17/11/2026) — ver o comentário
+         onde o botão da barra saiu. Cargo e convenção são cadastro do DP, e
+         esta tela É a área dele: faltar um nome na caixinha não pode obrigar
+         ninguém a abandonar a ficha pela metade. #}
+      <div class="campo"><label>Cargo
+        ${PODE_EDITAR ? `<a href="#" id="c-cargo-novo"
+          style="float:right; font-weight:400">+ novo cargo</a>` : ""}</label>${
+        lista("c-cargo",
+          (o.cargos || []).map(x => ({valor: x.id, rotulo: x.cbo ? `${x.nome} (${x.cbo})` : x.nome})),
+          c.cargo_id)}</div>
+      <div class="campo"><label>Convenção coletiva
+        ${PODE_EDITAR ? `<a href="#" id="c-convencao-nova"
+          style="float:right; font-weight:400">+ nova convenção</a>` : ""}</label>${
+        lista("c-convencao",
+          (o.convencoes || []).map(x => ({valor: x.id, rotulo: x.nome})),
+          c.convencao_id)}</div>
       <div class="campo"><label>Obra</label><select id="c-obra"><option value="">—</option>
         ${OBRAS.map(x => `<option value="${x.id}" ${String(c.obra_id) === String(x.id)
           ? "selected" : ""}>${rotuloObra(x)}</option>`).join("")}</select></div>
@@ -1398,6 +1432,7 @@ function painelDaFicha(){
     if (els("c-trocar")) els("c-trocar").addEventListener("click", abrirTrocaDeVinculo);
     if (els("c-desligar")) els("c-desligar").addEventListener("click", abrirDesligamento);
   }
+  ligarCriacaoDeLista();
   aplicarMascaras(alvo);
   els("c-rodape").innerHTML = ABA_FICHA <= 3
     ? `<button class="btn" id="c-salvar">Salvar cadastro</button>`
@@ -1444,6 +1479,88 @@ function valorDe(id){ const e = els(id); return e ? e.value : undefined; }
    escondido), porque o salvamento só manda o que está na tela — removê-lo
    deixaria o valor antigo intacto no banco.
    --------------------------------------------------------------------------- #}
+{# ---------------------------------------------------------------------------
+   CRIAR CARGO E CONVENÇÃO DE DENTRO DA FICHA (17/11/2026)
+
+   Ele: *"eu não quero um botão mais cargo. (…) daqui DENTRO do cadastro eu
+   poder criar um novo cargo, criar uma nova convenção. Eu não posso criar
+   obra, porque obra se cria no outro canto, mas isso aqui é área exclusiva do
+   DP."*
+
+   O que o nasce já vem ESCOLHIDO na caixinha: criar e ter de procurar na lista
+   em seguida seria metade do conserto. E o que foi digitado no resto da ficha
+   não se perde — o diálogo é por cima, a ficha continua aberta atrás.
+   --------------------------------------------------------------------------- #}
+async function ligarCriacaoDeLista(){
+  const criar = async (alvo, titulo, rota, campos, chaveId, recarregar) => {
+    const link = els(alvo + "-gatilho");
+    if (!link) return;
+    link.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      const r = await perguntar({titulo, campos, textoOk: "Cadastrar"});
+      if (!r || !(r.nome || "").trim()) return;
+      try {
+        const d = await api(rota, {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(r)});
+        await recarregar();
+        // Nasce já escolhido: criar e ter de procurar na lista em seguida
+        // seria metade do conserto.
+        const caixa = els(alvo);
+        if (caixa && d[chaveId]) caixa.value = String(d[chaveId]);
+        aviso("mensagem", d.ja_existia
+          ? `“${r.nome}” já existia — escolhido na caixinha.`
+          : `“${r.nome}” cadastrado e escolhido.`, "ok");
+      } catch(e){ aviso("mensagem", e.message, "erro"); }
+    });
+  };
+
+  {# O id do link é o do campo + "-gatilho", para a função servir aos dois sem
+     saber o nome de nenhum. #}
+  const linkCargo = els("c-cargo-novo");
+  if (linkCargo) linkCargo.id = "c-cargo-gatilho";
+  const linkConv = els("c-convencao-nova");
+  if (linkConv) linkConv.id = "c-convencao-gatilho";
+
+  await criar("c-cargo", "Novo cargo", "/erp/api/funcoes",
+    [{nome: "nome", rotulo: "Nome do cargo", obrigatorio: true, largura: 2,
+      exemplo: "Pedreiro"},
+     {nome: "valor_diaria", rotulo: "Diária de referência", largura: 1,
+      exemplo: "180,00",
+      dica: "Opcional — é o valor que a obra usa como base para esse cargo."}],
+    "cargo_id",
+    async () => {
+      const nova = await api("/erp/api/funcoes");
+      FUNCOES = nova.funcoes; CARGOS = nova.cargos || nova.funcoes;
+      const caixa = els("c-cargo");
+      if (caixa) {
+        const antes = caixa.value;
+        caixa.innerHTML = `<option value="">—</option>` + CARGOS.map(x =>
+          `<option value="${x.id}">${escapar(x.nome)}</option>`).join("");
+        caixa.value = antes;
+      }
+      montarFiltros();
+    });
+
+  await criar("c-convencao", "Nova convenção coletiva", "/erp/api/convencoes",
+    [{nome: "nome", rotulo: "Nome da convenção", obrigatorio: true, largura: 2,
+      exemplo: "CE-Fortaleza",
+      dica: "Como ela é chamada na planilha do DP — o mesmo nome evita duas "
+          + "linhas para o mesmo acordo."},
+     {nome: "uf", rotulo: "UF", largura: 1, exemplo: "CE"}],
+    "convencao_id",
+    async () => {
+      const nova = await api("/erp/api/convencoes");
+      const caixa = els("c-convencao");
+      if (caixa) {
+        const antes = caixa.value;
+        caixa.innerHTML = `<option value="">—</option>` + (nova.convencoes || []).map(
+          x => `<option value="${x.id}">${escapar(x.nome)}</option>`).join("");
+        caixa.value = antes;
+      }
+    });
+}
+
 function ligarTipoDeContrato(){
   const vinc = els("c-vinculo"), caixa = els("c-contrato-caixa");
   if (!vinc || !caixa) return;
@@ -2041,28 +2158,9 @@ async function importarPessoas(gravar){
 els("btn-novo").addEventListener("click", ()=>formulario(null));
 if (els("btn-importar")) els("btn-importar").addEventListener("click", abrirImportacaoDePessoas);
 if (els("btn-fichas")) els("btn-fichas").addEventListener("click", abrirImportacaoDeFichas);
-els("btn-funcao").addEventListener("click", async () => {
-  const r = await perguntar({titulo:"Novo cargo",
-    campos:[{nome:"nome", rotulo:"Nome do cargo", obrigatorio:true, largura:2,
-             exemplo:"Pedreiro"},
-            {nome:"diaria", rotulo:"Diária de referência", largura:1, exemplo:"180,00"}],
-    textoOk:"Cadastrar"});
-  if (!r) return;
-  const {nome, diaria} = r;
-  try {
-    const d = await api("/erp/api/funcoes", {method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({nome, valor_diaria: diaria})});
-    const nova = await api("/erp/api/funcoes");
-    FUNCOES = nova.funcoes; CARGOS = nova.cargos || nova.funcoes;
-    // As caixinhas de cargo precisam enxergar o que acabou de nascer, senão a
-    // pessoa cadastra o cargo e não consegue escolhê-lo em seguida.
-    montarFiltros();
-    aviso("mensagem", d.ja_existia
-      ? `O cargo ${nome} já existia — a diária foi atualizada.`
-      : `Cargo ${nome} cadastrado.`, "ok");
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-});
+{# O ouvinte do botão "+ Cargo" saiu junto com o botão (17/11/2026): criar
+   cargo e convenção agora é um link DENTRO da ficha — ver
+   `ligarCriacaoDeLista`. #}
 // O filtro de situação é o único que volta ao banco (a API devolve só os ativos
 // por padrão). Todos os outros recortam em memória — a lista inteira já está
 // aqui, e ir ao banco por filtro faria a tela piscar a cada clique.
