@@ -2491,6 +2491,28 @@ acesso" sem dizer a qual é a resposta que ele não tem como conferir.
 - **"O fulano entrou no portal esta semana?"** — não há registro de último
   acesso em `usuarios`. Faltaria uma coluna e a gravação no login.
 
+## 3z-nonies. A CHAVE QUE CIFRA AS SENHAS (17/11/2026)
+
+Nasceu de um tropeço real dele, gravando a conta de e-mail de uma empresa.
+
+### Perguntas que o sistema responde
+
+- **"Por que não consigo salvar a senha do e-mail?"** — a tela diz o motivo
+  concreto (chave ausente, cortada, ou inventada) e onde se resolve.
+- **"A chave de segredos está certa?"** — Configurações › Chave de segredos.
+- **"Quantas senhas estão guardadas cifradas?"** — e é a pergunta que importa
+  antes de trocar a chave: trocar invalida todas.
+- **"Quais empresas ainda não têm conta de e-mail configurada?"** — já existia,
+  no painel de Empresas.
+
+### ⚠️ O que o sistema NUNCA responde, de propósito
+
+- **"Qual é a chave?"** / **"qual é a senha do e-mail da empresa X?"** /
+  **"qual é a senha do certificado?"** — o sistema guarda cifrado e só usa na
+  hora de enviar. Nem a tela, nem o log, nem o assistente devolvem esses
+  valores. Se alguém pedir, a resposta é "não mostro; posso dizer se está
+  configurada e se funciona".
+
 ---
 
 ## 4. Como esta lista vira código

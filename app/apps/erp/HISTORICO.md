@@ -21,6 +21,51 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — A CHAVE DE SEGREDOS: o erro estava certo e era inútil
+
+**O que ele viu:** *"fui gravar o email no cadastro da empresa e apareceu: A
+chave em ERP_CHAVE_SEGREDOS não tem o formato esperado. Ela é gerada uma única
+vez com Fernet.generate_key() — ver o cabeçalho de core/comum/segredos.py."*
+
+**O recado era verdadeiro e, mesmo assim, inútil — por duas razões:**
+
+1. **A tela não avisava ANTES.** `ha_chave()` perguntava só *"a variável
+   existe?"*. Com uma chave PRESENTE mas torta, a tela de Empresas não mostrava
+   aviso nenhum: ele preencheu a conta inteira, digitou a senha, clicou em
+   Salvar, e só então levou o recado. O aviso existia — e estava amarrado à
+   pergunta errada.
+2. **Mandava rodar um comando de programador.** `Fernet.generate_key()` e "ver
+   o cabeçalho de um arquivo .py" são instruções para quem tem terminal. Quem
+   opera este sistema não tem — na prática a mensagem dizia "chame alguém".
+
+**O que mudou:**
+
+- **`ha_chave()` agora pergunta "a chave SERVE?"**, não "existe?". Com isso o
+  aviso aparece antes de alguém digitar senha que não vai ser guardada.
+- **O diagnóstico diz O QUE há de errado**: quantos caracteres tem, quantos
+  faltam ou sobram, ou "tem o tamanho certo mas não é uma chave gerada pelo
+  sistema". ⚠️ **Nunca mostra a chave**, nem um pedaço — tem teste para isso,
+  porque esse recado vai para a tela e para o log, e segredo em log deixa de
+  ser segredo.
+- **O ERP gera a chave.** Configurações › **Chave de segredos**: um botão
+  sorteia uma válida, mostra na tela para copiar para a Environment do Render,
+  e avisa quantas senhas a troca invalidaria. ⚠️ **O ERP não guarda a chave** —
+  guardá-la no banco desfaria a razão de ela existir.
+- **As três telas que guardam segredo** (conta de e-mail da empresa, token de
+  emissão, certificado A1) passaram a usar o mesmo recado, com o motivo real e
+  um link para onde se resolve. Antes as três diziam "falta a chave" **mesmo
+  quando ela existia** — mandando procurar o que já estava lá.
+
+**⚑ DESCOBERTO AO ESCREVER O TESTE, e vale saber:** aspas em volta da chave e
+texto colado no fim **não a derrubam** — a decodificação ignora o que não é do
+alfabeto e para no `=` final. A primeira versão do diagnóstico dizia "tire as
+aspas que resolve" para chaves que já funcionavam. Sobrou o que de fato
+derruba: **tamanho errado** (cortada ao copiar) e **chave inventada**.
+
+**Então, para a chave que está hoje no Render:** ela não é nem "com aspas" nem
+"com lixo no fim" — é cortada ou não foi gerada pelo sistema. A tela nova diz
+qual dos dois.
+
 ### ⚑ 17/11/2026 — OS CONTADORES ZERADOS: a armadilha da constante que lê dado que ainda não chegou
 
 **O que ele viu, olhando a tela de Pessoal:** *"eu clico em inicial, o contador

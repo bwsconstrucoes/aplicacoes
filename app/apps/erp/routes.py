@@ -9573,6 +9573,83 @@ def api_diarias():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ===========================================================================
+# A CHAVE DE SEGREDOS — ver, diagnosticar e gerar uma nova
+#
+# Nasceu de um relato dele em 17/11/2026: *"fui gravar o email no cadastro da
+# empresa e apareceu: A chave em ERP_CHAVE_SEGREDOS não tem o formato
+# esperado."*
+#
+# Duas coisas estavam erradas, e nenhuma era a chave:
+#
+#  1. A TELA NÃO AVISAVA ANTES. Ela só perguntava "a variável existe?". Com uma
+#     chave presente mas torta, ele preenchia a conta inteira, digitava a senha
+#     e só então levava o recado.
+#  2. O RECADO MANDAVA RODAR UM COMANDO DE PROGRAMADOR
+#     (`Fernet.generate_key()`). Quem opera este sistema não roda comando
+#     nenhum — então a mensagem, na prática, dizia "chame alguém".
+#
+# ⚠️ O ERP GERA A CHAVE, MAS NÃO A GUARDA. Ela tem de ser copiada à mão para a
+# Environment do Render. Gravá-la no banco desfaria a razão de ela existir:
+# quem tivesse uma cópia do banco teria as senhas junto.
+# ===========================================================================
+@bp.route("/erp/api/chave-de-segredos")
+@login_obrigatorio
+@permissao("configurar")
+def api_chave_de_segredos():
+    """Em que pé está a chave — e o que a troca dela custaria.
+
+    ⚠️ NUNCA devolve o valor da chave. Só se ela serve, o que há de errado, e
+    quantos segredos já foram guardados com ela (porque trocar a chave
+    invalida todos eles, e quem decide trocar precisa saber disso ANTES).
+    """
+    from sqlalchemy import text as sa_text
+
+    from app.apps.erp.core.comum import segredos
+    try:
+        estado = dict(segredos.situacao())
+        with get_session() as s:
+            guardados = 0
+            for tabela, coluna in (("empresas", "smtp_senha_cifrada"),
+                                   ("empresas", "emissao_token_cifrado"),
+                                   ("parametros", None)):
+                try:
+                    with s.begin_nested():
+                        if coluna is None:
+                            continue
+                        n = s.execute(sa_text(
+                            f"SELECT count(*) FROM {tabela} "
+                            f" WHERE {coluna} IS NOT NULL")).scalar() or 0
+                        guardados += int(n)
+                except Exception:        # coluna que ainda não existe no banco
+                    pass
+        estado["segredos_guardados"] = guardados
+        return jsonify({"ok": True, **estado})
+    except Exception as e:
+        logger.exception("ERP: falha ao olhar a chave de segredos")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/chave-de-segredos/gerar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_chave_de_segredos_gerar():
+    """Sorteia uma chave válida para quem configura copiar para o Render.
+
+    ⚑ NÃO GRAVA NADA, nem no banco nem em arquivo, e NÃO ENTRA NO LOG. A
+    resposta existe uma vez, na tela de quem pediu, e acabou.
+    """
+    from app.apps.erp.core.comum import segredos
+    try:
+        logger.info("ERP: chave de segredos gerada para configuração "
+                    "(o valor não é registrado)")
+        return jsonify({"ok": True, "chave": segredos.gerar_chave(),
+                        "variavel": segredos.VARIAVEL})
+    except Exception as e:
+        logger.exception("ERP: falha ao gerar a chave de segredos")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/email-sistema", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao("configurar")

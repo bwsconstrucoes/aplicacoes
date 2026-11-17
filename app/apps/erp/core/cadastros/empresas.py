@@ -288,10 +288,8 @@ def definir_conta_de_email(s: Session, empresa_id: int, dados: dict[str, Any],
     senha = dados.get("smtp_senha")
     if senha:
         if not ha_chave():
-            raise ErroValidacao(
-                "A senha não foi guardada: falta a chave ERP_CHAVE_SEGREDOS na "
-                "Environment do Render. O resto da conta foi salvo — assim que "
-                "a chave existir, digite a senha de novo.")
+            from app.apps.erp.core.comum.segredos import recado_do_problema
+            raise ErroValidacao(recado_do_problema("A senha não foi guardada"))
         empresa.smtp_senha_cifrada = cifrar(str(senha))
         empresa.smtp_conferido_em = None      # senha nova, teste de novo
 
@@ -378,6 +376,12 @@ def _resumo(s: Session, e: Empresa, obras_por_empresa: dict[int, int]) -> dict[s
     }
 
 
+def _situacao_da_chave() -> dict:
+    """Em que pé está a chave de segredos — sem nunca devolver o valor dela."""
+    from app.apps.erp.core.comum.segredos import situacao
+    return situacao()
+
+
 def gerenciar(s: Session) -> dict[str, Any]:
     """A tela de empresas: a lista, as obras de cada uma, e as obras órfãs."""
     obras = s.scalars(select(Obra)).all()
@@ -399,6 +403,10 @@ def gerenciar(s: Session) -> dict[str, Any]:
         "empresas": linhas,
         "obras_sem_empresa": sorted(sem_empresa, key=lambda o: o["codigo"]),
         "tem_chave_de_segredos": ha_chave(),
+        # ⚑ O MOTIVO VAI JUNTO (17/11/2026). Dizer só "não tem chave" quando a
+        # chave EXISTE e está torta manda procurar o que já está lá — foi
+        # exatamente onde ele perdeu tempo.
+        "chave_de_segredos": _situacao_da_chave(),
         "seguranca_opcoes": list(SEGURANCAS),
         "indicadores": {
             "total": len(linhas),
