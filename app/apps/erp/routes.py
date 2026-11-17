@@ -76,6 +76,26 @@ def _saude_comecou():
             tarefas.acordar()
         except Exception:
             logger.warning("ERP/tarefas: não deu para iniciar a fila", exc_info=True)
+    # ⚑ A VIRADA DO DIA DOS DESLIGAMENTOS (17/11/2026). Ele: *"o ideal é cortar
+    # tudo, porque aí corre o risco de a gente esquecer."*
+    #
+    # Quem tem data de saída vencida e ainda está ativo é desligado aqui, e o
+    # login dela cai junto. Ver `core/cadastros/desligamentos_do_dia.py`.
+    #
+    # ⚠️ ESTÁ NESTE GANCHO, E NÃO EM OUTRO, DE PROPÓSITO: ele roda ANTES da
+    # guarda de permissão (que vem mais abaixo neste arquivo). Então, mesmo que
+    # a primeira pessoa a tocar o ERP no dia seja justamente quem saiu, a
+    # própria requisição dela desliga o cadastro e a guarda a recusa em
+    # seguida. Pendurado depois da guarda, ela entraria uma última vez.
+    #
+    # Depois da primeira vez do dia é a comparação de uma variável.
+    try:
+        from app.apps.erp.core.cadastros import desligamentos_do_dia
+        if desligamentos_do_dia.precisa_rodar():
+            with get_session() as s:
+                desligamentos_do_dia.aplicar_se_preciso(s)
+    except Exception:                               # noqa: BLE001
+        logger.warning("ERP/desligamentos: a virada do dia não rodou", exc_info=True)
 
 
 _FILA_ACORDADA = False
@@ -412,6 +432,29 @@ def _perfil_bruto(s) -> str:
     return linha[0] if linha else ""
 
 
+def _acesso_desativado(s) -> bool:
+    """O acesso desta sessão foi desativado DEPOIS de ela ter sido aberta?
+
+    ⚑ 17/11/2026. Até aqui `usuarios.ativo` era conferido SÓ no login: quem já
+    estava com a tela aberta continuava trabalhando mesmo depois de o acesso
+    ser desligado — e isso vale para o desligamento (a virada do dia, que corta
+    o login de quem saiu, por decisão dele) e para o bloqueio feito à mão pelo
+    DP. Agora a sessão cai no clique seguinte.
+
+    ⚠️ A CONSULTA É A MESMA de `_perfil_bruto`, por SQL direto e sem o ORM, e
+    sem coluna que dependa de migração nova: esta função roda antes de TODA
+    rota, inclusive da tela que aplica as migrações. Carregar o `Usuario` aqui
+    é o impasse circular que derrubou o ERP em 02/09/2026.
+    """
+    from sqlalchemy import text as _text
+    uid = session.get("erp_usuario_id")
+    if not uid:
+        return False
+    linha = s.execute(_text("SELECT ativo FROM usuarios WHERE id = :i"),
+                      {"i": uid}).first()
+    return bool(linha) and linha[0] is False
+
+
 def login_obrigatorio(fn):
     @wraps(fn)
     def _wrap(*a, **kw):
@@ -564,6 +607,18 @@ def _guarda_permissao():
     # modelo, ainda não criada), quebraria aqui, e o botão que conserta o banco
     # ficaria inalcançável: o impasse circular que derrubou o ERP em 2026-09-02.
     with get_session() as s:
+        # ⚑ ACESSO DESATIVADO DERRUBA A SESSÃO ABERTA (17/11/2026) — ver
+        # `_acesso_desativado`. Vem ANTES de tudo: quem teve o acesso cortado
+        # não tem perfil que valha.
+        if _acesso_desativado(s):
+            uid = session.get("erp_usuario_id")
+            session.clear()
+            logger.info("ERP/permissao: sessão do usuário %s encerrada — "
+                        "acesso desativado", uid)
+            if request.path.startswith("/erp/api/"):
+                return jsonify({"ok": False, "erro":
+                                "Seu acesso foi encerrado. Procure o DP."}), 401
+            return redirect(url_for("erp.pagina_login"))
         perfil = _perfil_bruto(s)
         excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
         # O PERFIL CADASTRADO (migração 065) decide, quando existe. Devolve

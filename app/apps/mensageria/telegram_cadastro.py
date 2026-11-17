@@ -513,9 +513,24 @@ def desligado_da_empresa(conn, *, telefone=None, cpf=None) -> Optional[dict]:
     if achar_pessoa(conn, telefone=telefone, cpf=cpf) is not None:
         return None
     # 2. é desligada?
+    #
+    # ⚑ A DATA DE SAÍDA VENCIDA CONTA, mesmo que a caixinha ainda diga ATIVO
+    # (17/11/2026). Decisão dele no dia: *"o ideal é cortar tudo, porque aí
+    # corre o risco de a gente esquecer."*
+    #
+    # A caixinha passa a DESLIGADO na virada do dia do ERP
+    # (`erp/core/cadastros/desligamentos_do_dia.py`), que roda na primeira
+    # requisição do ERP de cada dia. Mas o resumo da manhã sai pela ROTINA DO
+    # PONTO, disparada pela primeira batida depois das 6h — quase sempre ANTES
+    # de alguém do escritório abrir o ERP. Nessa janela, quem saiu ontem
+    # receberia o aviso da empresa.
+    #
+    # ⚠️ A régua é "anterior a hoje", a mesma do resto do sistema: quem sai HOJE
+    # ainda trabalha hoje e continua recebendo os avisos do dia.
     linhas = db.todos(conn, """
         SELECT nome, cpf, telefone, demissao FROM public.colaboradores
-         WHERE coalesce(situacao, '') = 'DESLIGADO'""")
+         WHERE coalesce(situacao, '') = 'DESLIGADO'
+            OR (demissao IS NOT NULL AND demissao < CURRENT_DATE)""")
     for c in linhas:
         if alvo_cpf and normalizar_cpf(c["cpf"]) == alvo_cpf:
             return _desligada(c)

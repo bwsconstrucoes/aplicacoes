@@ -2655,6 +2655,42 @@ que a rescisão usa.
 
 ---
 
+## 3z-terdecies. QUEM SAIU HOJE, E O QUE CAIU COM ELE (17/11/2026)
+
+A virada do dia dos desligamentos torna estas perguntas possíveis — e a
+primeira delas é a que o DP vai querer todo dia.
+
+### O que dá para perguntar
+
+- **"Quem saiu hoje?"** — quem a virada do dia desligou nesta data. ⚠️ A
+  resposta vem da **trilha** de cada pessoa (ação "Desligado", com o motivo
+  "a virada do dia: a data de saída chegou"), **não de uma tela** — hoje não
+  existe um painel "saíram hoje", e fazer um é trabalho novo.
+- **"Quem perdeu o acesso ao sistema por ter saído?"** — a trilha do usuário
+  registra "Acesso bloqueado" com o motivo.
+- **"Tem alguém com data de saída vencida e ainda ativo?"** — **a resposta
+  certa é zero**, e se não for, a virada do dia não está rodando. É a pergunta
+  que vigia o mecanismo.
+- **"Quem foi reativado depois de ter sido desligado pela data?"** — as duas
+  marcas estão na trilha, em ordem.
+
+### A palavra ambígua desta parte
+
+| Palavra | As duas leituras |
+|---|---|
+| **"cortar o acesso"** | ① o **ponto** (bater, Meu ponto, PIN, QR, celular) — cai pela data, sozinho; ② o **login no ERP e no portal** — cai na virada do dia. São mecanismos diferentes, e uma resposta que os misture está errada |
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quantos dias a pessoa ficou com acesso depois de ter saído?"** — a conta
+  dá (a data de saída e o carimbo do bloqueio existem), mas não está escrita. É
+  a pergunta que mediria se a virada do dia está atrasando.
+- **"O DP foi avisado de que estas pessoas saíram hoje?"** — **não há aviso
+  nenhum.** A virada desliga em silêncio, e isso é escolha dele ("corta tudo"),
+  não esquecimento. Se um dia ele quiser o aviso, é trabalho novo.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

@@ -21,6 +21,80 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — NO DIA DA SAÍDA, TUDO CAI SOZINHO (a outra metade do aviso prévio)
+
+Depois de o conserto do aviso prévio (logo abaixo) parar de desligar na hora
+quem tem saída marcada para o futuro, ficou a pergunta: **quem corta no dia?**
+Perguntei a ele, com as duas opções, e a resposta foi:
+
+> *"Não, o ideal é cortar tudo, porque aí corre o risco de a gente esquecer.
+> Então, se ela precisar de um contracheque, alguma coisa, ela solicita ao DP e
+> o DP manda."*
+
+**O que faltava:** o PONTO se resolvia sozinho (compara a data com hoje), mas
+três coisas leem a CAIXINHA `situacao`, e nada a virava quando o dia chegava —
+o **login no ERP e no portal**, as **mensagens da empresa** e as **listas do
+Pessoal**.
+
+#### A virada do dia (`core/cadastros/desligamentos_do_dia.py`)
+
+Uma vez por dia, na **primeira requisição do ERP**: quem tem data de saída
+anterior a hoje e ainda está ativo passa a DESLIGADO, a etapa vai para
+"Desligado" e **o login da pessoa é desativado**. Com isso **todo leitor acerta
+— inclusive os que ninguém lembrou de conferir**, porque o dado gravado volta a
+dizer a verdade em vez de cada tela ter de recalcular.
+
+Não há cron neste serviço, e não ter dependência externa é vantagem: nada para
+configurar, nada para quebrar em silêncio. É o mesmo desenho da rotina do dia
+do ponto. Depois da primeira vez do dia, é a comparação de uma variável — **sem
+nenhuma ida ao banco**, que é por que `precisa_rodar()` existe.
+
+**⚠️ A ORDEM DO GANCHO É PARTE DO CONSERTO.** Ele está pendurado ANTES da
+guarda de permissão. Então, mesmo que a primeira pessoa a tocar o ERP no dia
+seja justamente quem saiu, **a própria requisição dela desliga o cadastro e a
+guarda a recusa em seguida** — nenhuma última entrada. Pendurado depois da
+guarda, ela entraria uma vez. Tem teste prendendo isso.
+
+**⚠️ ISTO NÃO É O AGENTE DE DP DESLIGANDO NINGUÉM.** A regra nº 1 do agente
+(`AGENTE_DP.md` §5) é "não desliga". Aqui não há decisão: **uma pessoa do DP já
+registrou o desligamento, com data.** A rotina cumpre, no dia, o que foi
+autorizado antes — como um boleto agendado não é o banco decidindo pagar.
+
+#### Dois consertos que vieram com isso
+
+- **A sessão aberta agora cai.** `usuarios.ativo` era conferido **só no
+  login**: quem já estava com a tela aberta continuava trabalhando depois de o
+  acesso ser cortado. Vale para o desligamento E para o bloqueio feito à mão
+  pelo DP. A conferência é a MESMA consulta por SQL direto de `_perfil_bruto`,
+  sem ORM e sem coluna de migração nova — essa função roda antes de toda rota,
+  e carregar o `Usuario` ali é o impasse circular de 02/09/2026.
+- **A janela da manhã, na mensageria.** O resumo por WhatsApp é disparado pela
+  **rotina do ponto** (primeira batida depois das 6h), quase sempre ANTES de
+  alguém do escritório abrir o ERP — e nessa janela a caixinha ainda diz ATIVO.
+  Então `desligado_da_empresa` passou a barrar também por **data de saída
+  vencida**. Registrado em `mensageria/HISTORICO.md`.
+
+#### O que NÃO desliga, e ele perguntou exatamente isto
+
+**"Último dia trabalhado" e "aviso prévio" não cortam nada.** São informação
+para a rescisão (vão para o pedido na contabilidade e para a conferência da
+folha). **Quem decide é a DATA DE SAÍDA, e só ela.** Tem teste com esse nome.
+
+Cadastro com etapa "Cancelado" também não é tocado: é cadastro que nunca virou
+gente na empresa.
+
+#### O que fica de pé para ele decidir
+
+Reativar quem foi desligado pela virada é **um clique do DP** no cadastro. Não
+há aviso automático para o DP de "estas pessoas saíram hoje" — a lista está na
+trilha de cada pessoa (ação DESLIGADO, com `por` = "a virada do dia"), não numa
+tela. Se ele quiser esse aviso, é trabalho novo.
+
+**Teste:** `tests/test_virada_do_dia_dos_desligamentos_banco.py`, com Postgres
+de verdade — os cinco casos, a trilha, a idempotência, a ordem do gancho, a
+sessão que cai e a janela da manhã.
+
+
 ### ⚠️ 17/11/2026 — AVISO PRÉVIO VIRAVA DESLIGAMENTO: o pior defeito do dia
 
 **Ele achou na tela, horas depois de ligar o cadastro do ERP como base do
