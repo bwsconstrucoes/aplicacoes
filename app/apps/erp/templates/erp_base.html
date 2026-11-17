@@ -73,6 +73,14 @@
        >{{ usuario_nome }}<br>{{ usuario_perfil }}</a>
     <a class="topo-btn" href="{{ url_for('erp.pagina_meu_cadastro') }}"
        title="Minha conta, senha e chave Pix"><span class="so-largo">Minha conta</span><span class="so-estreito">Conta</span></a>
+    {# ⚑ O CAMINHO DE VOLTA PARA O PORTAL (17/11/2026). Ele: *"como é que eu
+       sei que eu estou no portal e do portal vou para o ERP ou vice-versa?"*
+       Não sabia porque não havia caminho nenhum: as duas telas usam o MESMO
+       login (e-mail e senha) e não se enxergavam. Agora cada uma aponta para
+       a outra. #}
+    <a class="topo-btn" href="{{ url_for('erp.pagina_portal') }}"
+       title="A tela enxuta: pedir e acompanhar, boa no celular"
+       >Portal</a>
     <a class="topo-btn" href="{{ url_for('erp.sair') }}">Sair</a>
   </div>
 </header>

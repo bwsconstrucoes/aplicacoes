@@ -21,6 +21,122 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — OS CONTADORES ZERADOS: a armadilha da constante que lê dado que ainda não chegou
+
+**O que ele viu, olhando a tela de Pessoal:** *"eu clico em inicial, o contador
+está tudo zerado. Do inicial, do assinar, concluir, está tudo zerado. Eu clico
+em quadro, também não está trazendo nada."*
+
+**A causa, em uma linha de código:**
+
+```
+const COLUNAS_DO_QUADRO = ETAPAS.map(e => e.valor);
+```
+
+`ETAPAS` só é preenchida quando o servidor responde. Essa linha roda ANTES —
+quando o arquivo carrega — e nessa hora a lista é `[]`. A constante congelou o
+vazio para sempre. Resultado: a função que diz em que coluna cada pessoa está
+devolvia "nenhuma" para todo mundo, os sete contadores davam zero e o quadro
+desenhava as colunas sem nenhuma caixinha dentro.
+
+**⚠️ POR QUE ISTO É PIOR QUE UM ERRO:** nada quebra. Nenhum aviso no navegador,
+o servidor responde 200, o HTML está correto, a suíte inteira passava. A tela
+só mostra zero — e quem descobre é quem olha. O defeito foi publicado e ficou
+no ar até ele abrir a tela.
+
+**O conserto** foi trocar a constante por uma função (lê na hora de usar) e, o
+que importa mais, **prender a classe inteira do defeito num teste**:
+`tests/test_telas_constante_de_dado_que_chega_depois.py` varre as 55 telas do
+ERP e recusa qualquer `const` de TOPO calculada sobre uma variável que a tela
+preenche depois. Conferido: com a linha velha de volta, o teste acusa.
+
+**Duas coisas de tela, no mesmo olhar dele:**
+
+1. **A configuração da caixinha saiu do meio da tela.** Ele: *"esse mostrar na
+   caixinha, aqui tá foda. Tu bota no meio da tela essa configuração, isso tem
+   que ser no outro canto. Isso tem que ser uma configuração mais escondida."*
+   Era uma faixa de sete caixinhas atravessando a tela para uma escolha que se
+   faz uma vez. Virou uma engrenagem ao lado de "Quadro", com um painelzinho
+   que abre por cima e fecha ao clicar fora.
+2. **O filtro "Etapa do cadastro" não fecha mais.** Ele: *"acho que é para
+   estar sempre ativo. Porque ele está oculto, aí a situação fica aberta."*
+   Fechado por acidente, somem com ele os contadores de cada etapa — que são a
+   visão que o quadro do Pipefy dava de graça. Virou rótulo sem botão.
+
+### ⚑ 17/11/2026 — TRÊS LOGINS, E AGORA ELES SE ENXERGAM (ponto · portal · ERP)
+
+**A pergunta dele, que abriu isto:** *"nós temos ponto, nós temos portal e
+temos ERP. Para o ERP ou portal, onde é o login? Como é que eu migro de uma
+tela para outra? Como é que eu sei que eu estou no portal e do portal vou para
+o ERP ou vice-versa? Eu não recordo como é que tá."*
+
+**Ele não recordava porque não havia o que recordar.** O mapa era este, e
+estava certo em cada parte e errado no conjunto:
+
+| Tela | Endereço | Como entra | Para quem |
+|---|---|---|---|
+| Meu ponto | `/ponto/app` | **CPF + PIN de 6 dígitos** (código por WhatsApp) | gente de obra |
+| Portal | `/erp/portal` | **e-mail + senha** (o MESMO login do ERP) | quem pede e acompanha |
+| ERP | `/erp` | **e-mail + senha** | quem opera o sistema |
+
+O portal e o ERP são a MESMA porta — quem entra num entra no outro. Só que
+não havia link nenhum nos dois sentidos, e a tela do portal não dizia onde a
+pessoa estava: o portal é o ERP sem o menu, então parecia o ERP quebrado.
+
+**O que mudou (três coisas pequenas e uma grande):**
+
+1. **O portal diz que é o portal.** O cabeçalho virou "Portal da obra".
+2. **Link do portal para o ERP** — só para quem tem mais que o portal. Para o
+   administrativo de obra que só pede, um botão que abre um menu de 18 telas é
+   convite a se perder.
+3. **Botão "Portal" no cabeçalho do ERP**, o caminho de volta.
+4. **A GRANDE: a pessoa pede o acesso pelo ponto.** Desenho dele: *"que tal a
+   partir do ponto eu requerer a liberação do acesso ao portal? Ela já tem o
+   cadastro no ponto, e lá pelo ponto ela vai informar o e-mail dela."*
+
+**Por que a 4ª resolve um problema real, e não é enfeite:** o acesso ao ERP só
+nasce com e-mail, e **o e-mail da gente de obra o sistema não tem** — ninguém
+pede e-mail para contratar peão. O DP não tem como adivinhar, então o acesso
+simplesmente não nascia. Quem sabe o e-mail é a pessoa, e ela já está
+autenticada no ponto todo dia, com CPF e PIN (que tem bloqueio por tentativa).
+
+**O caminho, ponta a ponta:** no menu do "Meu ponto" aparece "Pedir acesso ao
+portal"; ela informa o e-mail; o pedido entra numa fila; o ERP mostra a fila na
+tela de Colaboradores; quem libera cria o acesso como **administrativo de
+obra**, com a obra **em que ela bate ponto**, e manda o convite de primeira
+senha. Recusar guarda o motivo, e **o motivo volta para o celular dela** — sem
+isso ela pede de novo amanhã e ninguém sai do lugar.
+
+**⚑ NÃO É UMA PORTA NOVA DE LIBERAR ACESSO, e isso foi decisão explícita.** A
+porta é uma só e já existia: "Liberar acesso e convidar", na ficha da pessoa.
+O miolo dela saiu da rota e virou a função `_liberar_acesso` — a fila chama
+**exatamente a mesma**. Era a cobrança dele do mesmo dia (*"três botões para
+importar pessoas (…) às vezes não compreendo a lógica de complicar"*): pedido
+novo vira coisa a ACRESCENTAR em vez de alimentar o que já existe. Duas
+implementações do mesmo ato divergem — uma manda convite, a outra esquece.
+
+**⚠️ O QUE FALTA DECIDIR, E É DELE:** **quem libera é ADMIN, não o DP.** A ação
+`gerir_usuarios` já era de administrador antes desta fila existir, com o motivo
+escrito ("criar acesso ao sistema é ato de administrador, não de quem opera o
+DP"). A fila respeitou a regra que já havia — mas o efeito prático é que **o DP
+vê a fila e não resolve**, e quem opera o DP todo dia não é o ADMIN. Se ele
+quiser que o DP libere, é uma linha em `permissoes.py` (acrescentar
+`DEPARTAMENTO_PESSOAL` a `gerir_usuarios`) — e aí o DP passa a poder criar
+acesso para qualquer um, inclusive para si. Não mexi: é alçada, decisão dele.
+
+**A obra também virou sugestão no pedido do portal.** Ele: *"quando eu falei em
+geolocalização, na verdade eu quis dizer mais onde é que a pessoa (…) de qual
+obra ela está cuidando."* A caixinha de obra já vem escolhida com a obra em que
+a pessoa mais bateu ponto nos últimos 60 dias, com a frase "escolhemos X porque
+é onde você vem batendo ponto. Pode trocar". **Sugestão, nunca trava**: quem
+cobre colega em outro canteiro abre pedido para a outra obra. O cadastro
+envelhece; a batida, não.
+
+**MIGRAÇÃO 108** (`portal_pedidos_de_acesso`) — precisa do botão "Aplicar
+atualizações do banco". Até o botão ser apertado, o botão do celular
+**simplesmente não aparece** (o código pergunta se a tabela existe) — ninguém vê
+erro, só não vê o recurso.
+
 ### ⚑ 17/11/2026 — APAGAR CADASTRO: TEM PONTO, DESLIGA. NÃO TEM, EXCLUI.
 
 **A regra, nas palavras dele:** *"Tem Ponto, Desligado. Não tem ponto,

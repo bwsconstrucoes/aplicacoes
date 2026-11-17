@@ -16,10 +16,19 @@
   </div>
 
   {# A ETAPA É O QUE AS FASES DO CARD DAVAM DE GRAÇA: "o que falta fazer nesta
-     pessoa". É o primeiro filtro de propósito — é por ele que o DP trabalha. #}
+     pessoa". É o primeiro filtro de propósito — é por ele que o DP trabalha.
+
+     ⚑ E ELE NÃO FECHA MAIS (17/11/2026). Ele: *"o filtro etapas do cadastro
+     (…) acho que é para estar sempre ativo. Porque ele está oculto, aí a
+     situação fica aberta. (…) o de etapas eu acho que é para estar visível
+     sempre."*
+
+     Fechado por acidente, o filtro por onde o DP trabalha desaparece — e com
+     ele os contadores de cada etapa, que são a visão que o quadro do Pipefy
+     dava de graça. Então não tem mais botão de fechar: é um rótulo, e o
+     conteúdo fica sempre à vista. #}
   <div class="filtro aberto">
-    <button class="filtro-cab" type="button"><span>Etapa do cadastro</span>
-      <span class="seta">▾</span></button>
+    <div class="filtro-cab" style="cursor:default"><span>Etapa do cadastro</span></div>
     <div class="filtro-cont" id="f-etapas"></div>
   </div>
 
@@ -148,6 +157,15 @@
    de nada — o valor está em poder ir de "12 sem papel" para as 12 pessoas. #}
 <div class="kpis" id="pendencias" style="margin-bottom:14px"></div>
 
+{# ⚑ QUEM PEDIU ACESSO AO PORTAL (17/11/2026). Desenho dele: *"que tal a partir
+   do ponto eu requerer a liberação do acesso ao portal? Ela já tem o cadastro
+   no ponto, e lá pelo ponto ela vai informar o e-mail dela."*
+
+   O cartão só aparece quando TEM pedido na fila — espaço na tela não se gasta
+   com caixa vazia. Liberar aqui usa a MESMA porta da ficha da pessoa
+   ("Liberar acesso e convidar"): não é um segundo jeito de criar acesso. #}
+<div id="fila-portal" class="oculto" style="margin-bottom:14px"></div>
+
 {# ⚑ O QUADRO (KANBAN) — pedido dele em 17/11/2026, e com o motivo:
 
    *"Para mudar a pessoa de etapa, eu tenho que clicar, buscar a pessoa,
@@ -166,17 +184,33 @@
   <div class="tabela-barra">
     <span id="resumo-lista" class="desc"></span>
     <span class="espaco"></span>
-    <div style="display:flex; gap:4px">
+    <div style="display:flex; gap:4px; position:relative">
       <button class="btn secundario" id="ver-lista">Lista</button>
       <button class="btn" id="ver-quadro">Quadro</button>
+      {# ⚑ A CONFIGURAÇÃO DA CAIXINHA SAIU DO MEIO DA TELA (17/11/2026). Ele:
+         *"esse mostrar na caixinha, aqui tá foda, né? Tu bota no meio da tela
+         essa configuração, isso aqui tem que ser no outro canto. Isso tem que
+         ser uma configuração mais escondida. Não é para estar aqui exposto
+         dessa forma."*
+
+         Tinha razão: era uma faixa de sete caixinhas atravessando a tela, do
+         tamanho do conteúdo, para uma escolha que se faz UMA vez e não se
+         mexe mais. Virou uma engrenagem discreta ao lado de "Quadro", que
+         abre um painelzinho. Só aparece no modo quadro — na lista ela não
+         configura nada. #}
+      <button class="btn secundario oculto" id="btn-caixinha"
+              title="Escolher o que aparece na caixinha de cada pessoa"
+              aria-haspopup="true" aria-expanded="false">&#9881;</button>
+      {# O painel flutua ancorado na engrenagem (o pai tem `position:relative`):
+         abre por cima do quadro em vez de empurrar a tela para baixo. #}
+      <div id="quadro-opcoes" class="oculto"
+           style="position:absolute; top:calc(100% + 6px); right:0; z-index:30;
+                  background:var(--papel); border:1px solid var(--borda);
+                  border-radius:10px; box-shadow:0 6px 18px rgba(16,35,63,.16);
+                  padding:10px 12px; min-width:190px; text-align:left"></div>
     </div>
     <span class="espaco"></span>
     <span id="exportar" style="display:flex; gap:6px"></span>
-  </div>
-  <div id="quadro-opcoes" class="oculto"
-       style="padding:8px 10px; border-bottom:1px solid var(--borda);
-              display:flex; gap:14px; flex-wrap:wrap; align-items:center">
-    <span class="desc">Mostrar na caixinha:</span>
   </div>
   <div id="quadro" class="oculto" style="overflow-x:auto; padding:10px">
   </div>
@@ -186,7 +220,8 @@
      a empresa."* #}
   <table><thead><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Cargo</th><th>Obra</th>
     <th>Vínculo</th><th>Etapa</th><th>Pendências</th>
-    <th class="direita">Salário/diária</th><th>Situação</th></tr></thead>
+    {% if pode.ver_remuneracao %}<th class="direita">Salário/diária</th>{% endif %}
+    <th>Situação</th></tr></thead>
     <tbody id="corpo"></tbody></table>
 </div><div class="vazio oculto" id="vazio"></div></div>
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
@@ -211,6 +246,13 @@ const PODE_ARQUIVAR = {{ 'true' if pode.arquivar and ve_pessoal else 'false' }};
    COMPLETO — endereço, RG, PIS, filiação e dependentes — e quem desliga,
    readmite e registra alteração salarial. #}
 const PODE_EDITAR = {{ 'true' if pode.editar_colaboradores else 'false' }};
+{# ⚑ 17/11/2026 — quem não tem isto não vê salário, diária nem chave Pix.
+   O corte de verdade acontece no SERVIDOR (`pessoal._sem_remuneracao`): aqui
+   só se evita desenhar coluna que viria vazia. Ele: *"visão restrita é os
+   dados básicos mesmo (…) não é para ter acesso à documentação dos
+   colaboradores."* #}
+const VE_REMUNERACAO = {{ 'true' if pode.ver_remuneracao else 'false' }};
+const LIBERA_ACESSO = {{ 'true' if pode.gerir_usuarios else 'false' }};
 const PODE_IMPORTAR = {{ 'true' if pode.configurar else 'false' }};
 {# A aba do PONTO dentro da ficha só aparece para quem enxerga o ponto. O
    módulo do ponto registra as ações dele no menu do ERP, então `pode.ver_ponto`
@@ -240,6 +282,92 @@ async function carregar(){
       montarFiltros();
     }
     desenhar();
+    carregarFilaDoPortal();          // em paralelo: não atrasa a lista
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ===========================================================================
+// QUEM PEDIU ACESSO AO PORTAL (17/11/2026)
+//
+// A pessoa pede pelo celular do ponto, informando o e-mail dela — o dado que
+// faltava e que só ela tem. Aqui o DP libera ou recusa.
+//
+// ⚑ LIBERAR CHAMA A MESMA PORTA da ficha ("Liberar acesso e convidar"): no
+// servidor, as duas passam por `_liberar_acesso`. Não existe um segundo jeito
+// de criar acesso, de propósito.
+// ===========================================================================
+let FILA_PORTAL = [];
+
+async function carregarFilaDoPortal(){
+  const caixa = els("fila-portal");
+  if (!caixa || !LIBERA_ACESSO) return;
+  try {
+    const d = await api("/erp/api/portal/pedidos-de-acesso");
+    FILA_PORTAL = d.pedidos || [];
+  } catch(e){ return; }          // fila não é o assunto da tela: falha calada
+  if (!FILA_PORTAL.length) { caixa.classList.add("oculto"); caixa.innerHTML = ""; return; }
+  caixa.classList.remove("oculto");
+  caixa.innerHTML = `
+    <div class="cartao" style="border-left:4px solid var(--azul)">
+      <h3 style="margin:0 0 4px">🖥 ${FILA_PORTAL.length} ${FILA_PORTAL.length === 1
+        ? "pessoa pediu" : "pessoas pediram"} acesso ao portal</h3>
+      <div class="cartao-dica" style="margin:0 0 10px">Pediram pelo aplicativo do ponto e
+        informaram o e-mail. Liberar cria o acesso como <b>administrativo de obra</b>
+        (abre pedidos da obra; não vê salário nem documento de ninguém), liga a obra
+        em que a pessoa bate ponto e manda o convite para ela criar a senha dela.</div>
+      <table class="tabela"><thead><tr>
+        <th>Pessoa</th><th>E-mail informado</th><th>Obra (pelo ponto)</th><th></th>
+      </tr></thead><tbody>${FILA_PORTAL.map(p => `
+        <tr>
+          <td><b>${escapar(p.nome || "—")}</b>
+            ${p.situacao && p.situacao !== "ATIVO"
+              ? `<br><span class="etiqueta ambar">${escapar(p.situacao)}</span>` : ""}</td>
+          <td class="mono">${escapar(p.email)}</td>
+          <td>${escapar(p.obra || "—")}</td>
+          <td style="white-space:nowrap">
+            <button class="btn" type="button" data-liberar="${p.id}">Liberar e convidar</button>
+            <button class="btn secundario" type="button" data-recusar="${p.id}">Recusar</button>
+          </td>
+        </tr>`).join("")}</tbody></table>
+    </div>`;
+  caixa.querySelectorAll("[data-liberar]").forEach(b =>
+    b.addEventListener("click", () => decidirPedidoDePortal(+b.dataset.liberar, "LIBERAR")));
+  caixa.querySelectorAll("[data-recusar]").forEach(b =>
+    b.addEventListener("click", () => decidirPedidoDePortal(+b.dataset.recusar, "RECUSAR")));
+}
+
+async function decidirPedidoDePortal(id, acao){
+  const p = FILA_PORTAL.find(x => x.id === id);
+  if (!p) return;
+  let corpo = {acao};
+  if (acao === "RECUSAR") {
+    // O MOTIVO VOLTA PARA O CELULAR DA PESSOA. Recusa sem motivo faz ela pedir
+    // de novo amanhã, com o mesmo e-mail, e ninguém sai do lugar.
+    const r = await perguntar({titulo: "Recusar o pedido de acesso",
+      aviso: `${escapar(p.nome)} não vai receber o acesso. O motivo aparece para ela no aplicativo do ponto.`,
+      campos: [{nome: "motivo", rotulo: "Por quê?", largura: 6,
+                dica: "ex.: pedido não confere com a função dela"}],
+      textoOk: "Recusar"});
+    if (!r) return;
+    corpo.motivo = r.motivo || "";
+  } else {
+    const r = await perguntar({titulo: "Liberar o acesso ao portal",
+      aviso: `${escapar(p.nome)} vai receber um convite em <b>${escapar(p.email)}</b> para criar a senha dela.`
+           + (p.obra ? ` O acesso nasce enxergando a obra ${escapar(p.obra)}.` : ""),
+      campos: [{nome: "email", rotulo: "E-mail (confira)", valor: p.email, largura: 6}],
+      textoOk: "Liberar e convidar"});
+    if (!r) return;
+    corpo.email = r.email || p.email;
+  }
+  try {
+    const d = await api(`/erp/api/portal/pedidos-de-acesso/${id}`,
+                        {method:"POST", body: JSON.stringify(corpo)});
+    aviso("mensagem", acao === "LIBERAR"
+      ? `Acesso liberado para ${escapar(p.nome)}.`
+        + (d.convite && d.convite.enviado ? " O convite foi enviado."
+           : " ⚠️ O convite NÃO saiu — reenvie pela ficha da pessoa.")
+      : `Pedido de ${escapar(p.nome)} recusado.`, "ok");
+    await carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
@@ -369,10 +497,13 @@ function mostraNaCaixinha(){
 let CAMPOS_CAIXINHA = mostraNaCaixinha();
 let MODO = "lista";
 
+{# O PAINELZINHO, escondido atrás da engrenagem. Flutua ancorado no botão, em
+   vez de empurrar a tela: escolha que se faz uma vez não merece espaço fixo. #}
 function montarOpcoesDoQuadro(){
   const onde = els("quadro-opcoes");
   if (!onde || onde.dataset.pronto) return;
-  onde.innerHTML = `<span class="desc">Mostrar na caixinha:</span>` +
+  onde.innerHTML = `<div class="desc" style="margin-bottom:6px">O que aparece
+      na caixinha de cada pessoa</div>` +
     CAIXINHA.map(x => `<label class="opcao" style="margin:0">
       <input type="checkbox" data-caixinha="${x.chave}"
         ${CAMPOS_CAIXINHA.has(x.chave) ? "checked" : ""}>
@@ -390,15 +521,23 @@ function montarOpcoesDoQuadro(){
   onde.dataset.pronto = "1";
 }
 
+function abrirOpcoesDoQuadro(sim){
+  const onde = els("quadro-opcoes"), b = els("btn-caixinha");
+  montarOpcoesDoQuadro();
+  const abrir = sim === undefined ? onde.classList.contains("oculto") : sim;
+  onde.classList.toggle("oculto", !abrir);
+  b.setAttribute("aria-expanded", abrir ? "true" : "false");
+}
+
 function trocarModo(novo){
   MODO = novo;
   const quadro = novo === "quadro";
   els("quadro").classList.toggle("oculto", !quadro);
-  els("quadro-opcoes").classList.toggle("oculto", !quadro);
   els("area-lista").classList.toggle("oculto", quadro);
+  els("btn-caixinha").classList.toggle("oculto", !quadro);
+  if (!quadro) abrirOpcoesDoQuadro(false);     // sai do quadro, fecha o painel
   els("ver-quadro").className = quadro ? "btn" : "btn secundario";
   els("ver-lista").className = quadro ? "btn secundario" : "btn";
-  if (quadro) montarOpcoesDoQuadro();
   try { localStorage.setItem("erp-modo-colaboradores", novo); } catch(e){}
   desenhar();
 }
@@ -432,10 +571,26 @@ function caixinhaDaPessoa(c){
    gente gravada na etapa antiga ("EM_CONFERENCIA"). Sem esta linha, essas
    pessoas não apareceriam em coluna nenhuma — desapareceriam do quadro, sem
    erro, até o botão ser apertado. Some calado é o pior jeito de errar. #}
-const COLUNAS_DO_QUADRO = ETAPAS.map(e => e.valor);
+{# ⚑ CONSERTO DE 17/11/2026, e o defeito era este: a lista de colunas era
+   calculada UMA VEZ, quando o arquivo carrega — e nessa hora `ETAPAS` ainda é
+   `[]`, porque ela só é preenchida quando o servidor responde (`carregar`).
+   Resultado: `colunaDe` devolvia `undefined` para TODO MUNDO, e aí
+
+     · o contador de cada etapa dava zero — em todas;
+     · o quadro desenhava as colunas e NENHUMA caixinha caía dentro delas.
+
+   Foi exatamente o que ele viu: *"eu clico em inicial, o contador está tudo
+   zerado. Do inicial, do assinar, concluir, está tudo zerado. Eu clico em
+   quadro, também não está trazendo nada."*
+
+   Agora é FUNÇÃO, não constante: lê `ETAPAS` na hora de responder. Constante
+   que depende de dado que chega depois é sempre esta armadilha. #}
+function colunasDoQuadro(){ return ETAPAS.map(e => e.valor); }
 function colunaDe(c){
+  const colunas = colunasDoQuadro();
   const e = c.etapa || "CONCLUIDO";
-  return COLUNAS_DO_QUADRO.includes(e) ? e : COLUNAS_DO_QUADRO[0];
+  if (!colunas.length) return e;        // antes de a lista chegar, não some
+  return colunas.includes(e) ? e : colunas[0];
 }
 
 function desenharQuadro(lista){
@@ -624,8 +779,8 @@ function desenhar(){
         ? `<br><small>${escapar(c.tipo_contrato_rotulo)}</small>` : ""}</td>
     <td>${etiquetaDaEtapa(c)}</td>
     <td>${pendenciasDaLinha(c)}</td>
-    <td class="direita dados">${c.salario ? numero(c.salario)
-      : c.valor_diaria ? numero(c.valor_diaria) : "—"}</td>
+    ${VE_REMUNERACAO ? `<td class="direita dados">${c.salario ? numero(c.salario)
+      : c.valor_diaria ? numero(c.valor_diaria) : "—"}</td>` : ""}
     <td><span class="selo ${c.situacao==="ATIVO"?"aprovado":"outro"}">${rotulo(c.situacao)}</span></td>
   </tr>`).join("");
   document.querySelectorAll("[data-c]").forEach(tr=>tr.addEventListener("click",
@@ -751,9 +906,10 @@ function cabecaDaFicha(c, d){
           (d.vinculo || c.vinculo) === "PRESTADOR" ? "Prestador" : "CTPS"}</div>
         <div class="kpi-sub">${escapar(d.cargo || c.funcao || "sem cargo")}
           ${(d.obra || c.obra) ? "· " + escapar(d.obra || c.obra) : "· sem obra"}</div></div>
-      <div class="kpi estatico ciano"><div class="kpi-rotulo">Pago nos 12 meses</div>
+      ${VE_REMUNERACAO ? `<div class="kpi estatico ciano">
+        <div class="kpi-rotulo">Pago nos 12 meses</div>
         <div class="kpi-valor" style="font-size:17px">${moeda(FICHA_H.ultimos_12_meses)}</div>
-        <div class="kpi-sub">${moeda(FICHA_H.total)} no total</div></div>
+        <div class="kpi-sub">${moeda(FICHA_H.total)} no total</div></div>` : ""}
       <div class="kpi estatico ${(falta.length || papeis.length) ? "ambar" : "verde"}">
         <div class="kpi-rotulo">Pendências</div>
         <div class="kpi-valor" style="font-size:15px">${
@@ -2486,6 +2642,16 @@ if (els("ver-quadro")) els("ver-quadro").addEventListener(
   "click", () => trocarModo("quadro"));
 if (els("ver-lista")) els("ver-lista").addEventListener(
   "click", () => trocarModo("lista"));
+if (els("btn-caixinha")) els("btn-caixinha").addEventListener(
+  "click", e => { e.stopPropagation(); abrirOpcoesDoQuadro(); });
+{# Clique fora fecha, como toda caixinha flutuante. Sem isto ela fica aberta
+   atrás do que a pessoa for fazer em seguida. #}
+document.addEventListener("click", e => {
+  const painel = els("quadro-opcoes");
+  if (!painel || painel.classList.contains("oculto")) return;
+  if (painel.contains(e.target) || els("btn-caixinha").contains(e.target)) return;
+  abrirOpcoesDoQuadro(false);
+});
 {# Volta no modo em que ele estava: trocar de tela e perder o quadro a cada
    visita seria obrigá-lo a reescolher sempre. #}
 try {

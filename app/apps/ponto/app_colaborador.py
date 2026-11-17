@@ -35,7 +35,8 @@ from flask import Response, g, jsonify, render_template, request, send_from_dire
 
 from . import auth, db, horario
 from .core import (apuracao, banco, cadastros, competencias, dispositivos, envios, escalas, espelho, forma_de_bater,
-                   fotos, marcacoes, acesso, ocorrencias, papeis, qr, recusas, sem_internet)
+                   fotos, marcacoes, acesso, ocorrencias, papeis, portal_do_erp, qr, recusas,
+                   sem_internet)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, ErroDoPonto, NaoAutenticado, NaoEncontrado, Recusada
 from .routes import bp
@@ -473,8 +474,12 @@ def app_api_eu():
         para_escolher = obras or [{**cadastros.obra_para_json(o),
                                    "fora_da_cerca": marcacoes.modo_fora_da_cerca(conn, int(o["id"]))}
                                   for o in cadastradas]
+        # O ACESSO AO PORTAL (17/11/2026): em que pé está o pedido desta
+        # pessoa. Nunca derruba a tela — ponto sem portal continua batendo
+        # ponto, que é o que ele existe para fazer.
+        portal = portal_do_erp.meu_estado(conn, p)
     return _ok(nome=p["nome"], primeiro_nome=p["nome"].split(" ")[0], bate_no_celular=no_celular,
-               pede_no_celular=pede, administrativo=administrativo,
+               pede_no_celular=pede, administrativo=administrativo, portal=portal,
                cpf_final=p["cpf"][-3:], obra_principal=p.get("obra_codigo"),
                obras=obras, obras_para_escolher=para_escolher, hoje=esp["dias"][0], pedidos_pendentes=len(pedidos),
                # o pedido de correção escolhe entre TODAS as obras ativas (16/10/2026)
@@ -489,6 +494,26 @@ def _mes_pedido():
     from .core import competencias
     inicio = competencias.primeiro_dia(request.args.get("competencia") or horario.hoje())
     return inicio, competencias.ultimo_dia(inicio)
+
+
+# ---------------------------------------------------------------------------
+# PEDIR ACESSO AO PORTAL (17/11/2026) — ver core/portal_do_erp.py
+#
+# A pessoa está autenticada aqui com CPF e PIN; o que falta ao sistema é o
+# e-mail dela. Ela informa, o pedido entra na fila do DP, e quem libera é o
+# ERP pela porta que já existia. O ponto não cria acesso nenhum.
+# ---------------------------------------------------------------------------
+@bp.route("/app/api/portal/pedir", methods=["POST"])
+@auth.exige_colaborador
+def app_api_portal_pedir():
+    d = _corpo()
+    with db.conexao() as conn:
+        _quem(conn)                       # confirma que ela ainda entra no app
+        p = cadastros.colaborador_por_id(conn, _eu())
+        r = portal_do_erp.pedir(conn, p, d.get("email") or "")
+    if not r.get("ok"):
+        return jsonify({"ok": False, **r}), 400
+    return _ok(**{k: v for k, v in r.items() if k != "ok"})
 
 
 @bp.route("/app/api/qualidade/meu")

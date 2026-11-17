@@ -3,6 +3,50 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 17/11/2026 — PEDIR ACESSO AO PORTAL pelo "Meu ponto" (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi no ponto vindo de outra área.** Arquivos novos/tocados:
+`core/portal_do_erp.py` (novo), `app_colaborador.py` (rota
+`POST /ponto/app/api/portal/pedir` e o estado em `/app/api/eu`),
+`app_obra.py` (o estado em `/app/api/inicio`) e `templates/ponto/app.html`
+(a opção do menu e o diálogo do e-mail).
+
+**Desenho do dono:** *"que tal a partir do ponto eu requerer a liberação do
+acesso ao portal? (…) Ela já tem o cadastro no ponto, e lá pelo ponto ela vai
+informar o e-mail dela, na hora que ela pediu acesso ao portal."*
+
+**O problema.** O acesso ao ERP/portal só nasce com e-mail, e o e-mail da
+gente de obra o sistema **não tem** — ninguém pede e-mail para contratar. O DP
+não tem como adivinhar, então o acesso não nascia. Quem sabe o e-mail é a
+pessoa; e o ponto é o único lugar onde ela já está autenticada de verdade (CPF
++ PIN, com bloqueio por tentativa).
+
+**O que o ponto faz, e o que NÃO faz.** Faz: mostra "Pedir acesso ao portal"
+no menu do celular, pede o e-mail e coloca o pedido na fila, com a obra em que
+a pessoa **bate ponto** (`cadastros.obra_pelo_ponto`, 60 dias; na falta, a do
+cadastro). Mostra o andamento ("esperando a liberação", ou o motivo da recusa),
+e, quando liberado, o atalho para `/erp/portal`. **NÃO faz:** criar usuário do
+ERP, escolher perfil ou mandar convite. A decisão é do ERP, por quem tem
+`gerir_usuarios`, pela porta que já existia.
+
+**⚑ Só no CELULAR DA PESSOA, nunca no aparelho da obra.** No tablet quem está
+na frente da tela é qualquer um da equipe: e-mail digitado ali é e-mail que não
+se sabe de quem.
+
+**A fila mora no ERP** (`public.portal_pedidos_de_acesso`, migração **108 do
+ERP**) e a regra dela em `app/apps/erp/core/auth/pedidos_de_portal.py`. Aqui
+não há SQL dessa tabela, de propósito — duas cópias da mesma regra divergem.
+
+**⚠️ DEPENDE DO BOTÃO DO ERP, não do do ponto.** Enquanto a migração 108 não
+for aplicada ("Aplicar atualizações do banco", nas Configurações do ERP), o
+estado vem `disponivel: false` e **a opção nem aparece no menu**. Ninguém vê
+erro — só não vê o recurso. Foi escolha: errar para o lado de esconder.
+
+**Testes:** `tests/test_ponto_pede_acesso_ao_portal_banco.py` (8 casos, banco
+de verdade) — cobre o pedido pelo celular, a obra vir do ponto e não do
+cadastro, o andamento na tela, o DP ver e não liberar, sem PIN não pedir, e a
+obra sugerida no pedido do portal.
+
 ## 16/11/2026 — quem não bate ponto passa a sair do TIPO DE CONTRATO (feito pelo chat do ERP/DP)
 
 ⚠️ **Mexi em `core/cadastros.py` vindo de outra área.** Está escrito aqui porque

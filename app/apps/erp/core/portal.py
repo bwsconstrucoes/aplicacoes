@@ -978,6 +978,47 @@ def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str
              "rotulo": rotulo_da_obra(l["codigo"], l["nome"])} for l in linhas]
 
 
+def obra_sugerida(s: Session, usuario: Optional[Usuario]) -> Optional[int]:
+    """A obra que já vem escolhida no pedido — SUGESTÃO, nunca trava.
+
+    Ele, em 17/11/2026: *"quando eu falei em geolocalização, na verdade eu quis
+    dizer mais onde é que a pessoa (…) de qual obra ela está cuidando."* Quem
+    sabe responder isso é o PONTO: é o único lugar onde a presença fica
+    registrada todo dia. O cadastro envelhece — a pessoa muda de obra e ninguém
+    vai atualizar a ficha —, e a batida não.
+
+    A ordem é: a obra onde ela mais bateu ponto nos últimos 60 dias; na falta
+    de batida, a obra do cadastro dela; na falta das duas, nenhuma, e a pessoa
+    escolhe na lista.
+
+    ⚑ É SUGESTÃO, E A CAIXINHA CONTINUA ABERTA. Travar a obra pelo ponto
+    quebraria quem abre pedido para outra obra — e o administrativo faz isso
+    (cobre férias de colega em outro canteiro). Sugerir poupa um toque; travar
+    cria um impedimento que ninguém consegue contornar pela tela.
+
+    Nunca levanta: ponto fora do ar, sem migração ou sem colaborador ligado ao
+    operador devolve `None` e o pedido abre como antes.
+    """
+    if usuario is None:
+        return None
+    try:
+        linha = s.execute(text(
+            "SELECT id, obra_id FROM colaboradores WHERE usuario_id = :u "
+            " LIMIT 1"), {"u": int(usuario.id)}).mappings().first()
+        if linha is None:
+            return None
+        from app.apps.ponto import db as ponto_db
+        from app.apps.ponto.core import cadastros as ponto_cadastros
+        with ponto_db.conexao() as conn:
+            obra = ponto_cadastros.obra_pelo_ponto(conn, int(linha["id"]))
+        if obra:
+            return int(obra["id"])
+        return int(linha["obra_id"]) if linha["obra_id"] else None
+    except Exception:  # noqa: BLE001
+        logger.exception("Portal: falha ao sugerir a obra pelo ponto")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # UM CADASTRO SÓ: as marcações do PONTO dentro da ficha do ERP
 #

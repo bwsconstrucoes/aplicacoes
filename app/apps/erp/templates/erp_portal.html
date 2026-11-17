@@ -18,8 +18,8 @@
   .topo-portal { background: #0B2C5C; color: #fff; padding: 14px 16px;
          display: flex; align-items: center; gap: 10px; }
   .topo-portal b { font-size: 16px; }
-  .topo-portal small { opacity: .8; margin-left: auto; text-align: right;
-         line-height: 1.3; }
+  .topo-portal { justify-content: space-between; flex-wrap: wrap; }
+  .topo-portal small { display: block; opacity: .8; line-height: 1.3; }
   .caixa { max-width: 760px; margin: 0 auto; padding: 14px 14px 40px; }
   .bloco { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,35,63,.12);
          padding: 14px; margin-bottom: 12px; }
@@ -120,14 +120,35 @@
   .area.fechada { border-left-color: #C9D3E4; background: #F7F9FC; cursor: default; }
   .area.fechada b { color: #5A6B85; }
   .area.fechada small.conta { color: #8A5B00; }
+  .ir-erp { color: #fff; font-size: 13px; font-weight: 600; text-decoration: none;
+            border: 1px solid rgba(255,255,255,.45); border-radius: 999px;
+            padding: 7px 13px; white-space: nowrap; }
+  .dica-portal { display: block; font-weight: 400; color: #5A6B85;
+                 font-size: 12.5px; margin-top: 4px; }
   .voltar { background: none; border: 0; color: #31507F; font-size: 14px;
          font-weight: 600; cursor: pointer; padding: 4px 0; font-family: inherit; }
 </style>
 </head>
 <body>
+{# ⚑ A TELA PASSOU A DIZER ONDE VOCÊ ESTÁ (17/11/2026). Ele: *"como é que eu
+   sei que eu estou no portal e do portal vou para o ERP ou vice-versa? Eu não
+   recordo como é que tá."*
+
+   Não recordava porque não havia o que recordar: não existia link nenhum nos
+   dois sentidos, e nada na tela dizia em qual dos dois a pessoa estava — o
+   portal é o ERP sem o menu, então parecia o ERP quebrado.
+
+   O link para o ERP só aparece para quem tem mais que o portal. Para o
+   administrativo de obra que só pede e acompanha, um botão que leva a um menu
+   de 18 telas é convite a se perder. #}
 <div class="topo-portal">
-  <b>Solicitações</b>
-  <small id="quem">—</small>
+  <div>
+    <b>Portal da obra</b>
+    <small id="quem">—</small>
+  </div>
+  {% if pode_mais_que_o_portal %}
+  <a href="/erp" class="ir-erp">ERP completo →</a>
+  {% endif %}
 </div>
 <div class="caixa">
   <div id="recado"></div>
@@ -485,16 +506,31 @@ function pintarCamposDoTipo(){
            pedir um toque a mais no celular. #}
         if (c === "obra_id") {
           const obras = DADOS.obras_lista || [];
-          const unica = obras.length === 1 ? obras[0].id : "";
+          {# ⚑ A OBRA DO PONTO JÁ VEM ESCOLHIDA (17/11/2026). Ele: *"quis dizer
+             mais onde é que a pessoa (…) de qual obra ela está cuidando."* A
+             resposta vem de onde ela bateu ponto nos últimos 60 dias — o
+             cadastro envelhece, a batida não (`portal.obra_sugerida`).
+
+             SUGESTÃO, não trava: a caixinha continua aberta, porque quem
+             cobre colega em outro canteiro abre pedido para a outra obra. #}
+          const sugerida = DADOS.obra_sugerida
+            && obras.some(o => String(o.id) === String(DADOS.obra_sugerida))
+            ? DADOS.obra_sugerida : "";
+          const ja = obras.length === 1 ? obras[0].id : sugerida;
+          const nome = (obras.find(o => String(o.id) === String(ja)) || {});
           return `<label class="campo-portal">${esc(rot)}
             ${obras.length > 6 ? `<input type="search" id="p-obra-filtro"
                placeholder="digite para filtrar a obra" autocomplete="off">` : ""}
             <select id="p-${c}" name="${c}">
-              ${unica ? "" : `<option value="">escolha a obra…</option>`}
+              ${ja ? "" : `<option value="">escolha a obra…</option>`}
               ${obras.map(o => `<option value="${o.id}"
-                ${String(o.id) === String(unica) ? "selected" : ""}
+                ${String(o.id) === String(ja) ? "selected" : ""}
                 >${esc(o.rotulo || o.nome)}</option>`).join("")}
-            </select></label>`;
+            </select>
+            ${sugerida && obras.length > 1
+              ? `<small class="dica-portal">Escolhemos <b>${esc(nome.rotulo || nome.nome || "")}</b>
+                   porque é onde você vem batendo ponto. Pode trocar.</small>` : ""}
+            </label>`;
         }
         // CAMPO DE LISTA FECHADA VIRA CAIXINHA, nunca texto livre: a obra
         // digitaria "acordo", "mandado embora" e "pediu pra sair" para a mesma
