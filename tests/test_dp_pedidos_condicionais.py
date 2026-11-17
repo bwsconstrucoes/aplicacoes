@@ -820,3 +820,64 @@ def test_todo_tipo_que_exige_papel_existe_no_PORTAL():
         assert chave in svc_portal.TIPOS_DO_PORTAL, (
             f"{chave} exige papel, a tela do DP manda para o portal, e o "
             f"portal não oferece este tipo")
+
+
+# ===========================================================================
+# ⚑ O VÍNCULO TEM UMA FONTE SÓ (17/11/2026)
+#
+# Ele cobrou a equalização mostrando os dois campos lado a lado:
+#
+#   *"Quando eu falo em equalizar falo em relação aos dois campos abaixo:
+#    Vínculo — Carteira Assinada (CTPS) / Prestador de Serviço;
+#    Tipo de Documentação para Cadastro — Prestador de Serviço / CTPS."*
+#
+# São o MESMO dado com dois nomes: o "Tipo de Documentação" do pedido VIRA o
+# `vinculo` da pessoa quando o DP atende. Enquanto as listas eram escritas à
+# mão em dois arquivos, divergiram na palavra E na ordem.
+#
+# ⚠️ O QUE ESTE TESTE PRENDE não é a palavra de hoje — é a FONTE. Acertar as
+# duas listas à mão resolveria hoje e divergiria de novo no próximo rótulo que
+# alguém mudar num lado só.
+# ===========================================================================
+def test_o_vinculo_do_pedido_e_o_da_ficha_sao_A_MESMA_LISTA():
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    da_ficha = [p.VINCULO_ROTULOS[v] for v in p.VINCULOS]
+
+    assert list(svc.CATEGORIAS["tipo_documentacao"]) == da_ficha
+    # "Tipo de Readmissão" é a mesma pergunta ("volta como o quê?").
+    assert list(svc.CATEGORIAS["tipo_readmissao"]) == da_ficha
+
+
+def test_o_rotulo_escolhido_volta_a_ser_o_CODIGO_que_a_coluna_guarda():
+    """A tela mostra português; a coluna `vinculo` guarda CTPS/PRESTADOR. Se a
+    tradução não cobrir um rótulo, o pedido grava o rótulo na coluna — e aí a
+    folha deixa de reconhecer a pessoa como prestador."""
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    for campo in ("tipo_documentacao", "tipo_readmissao"):
+        mapa = svc.DO_PIPE_PARA_O_CODIGO[campo]
+        for rotulo in svc.CATEGORIAS[campo]:
+            assert rotulo in mapa, f"{campo}: “{rotulo}” sem tradução"
+            assert mapa[rotulo] in p.VINCULOS
+
+
+def test_toda_opcao_de_vinculo_tem_a_explicacao_na_tela():
+    """A dica de cada opção é indexada pelo RÓTULO. Rótulo que muda num lado só
+    faz a explicação desaparecer da tela, sem erro."""
+    mapa = svc.EXPLICACAO_DA_OPCAO["tipo_documentacao"]
+    for rotulo in svc.CATEGORIAS["tipo_documentacao"]:
+        assert mapa.get(rotulo), f"“{rotulo}” está sem explicação"
+
+
+def test_a_palavra_do_vinculo_e_a_mesma_que_a_folha_compara():
+    """Fecha o círculo: a palavra que a pessoa escolhe no pedido é a mesma que
+    a folha usa para decidir diária × CTPS."""
+    from app.apps.analisesps import folha_vinculo as fv
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    escolhido = svc.CATEGORIAS["tipo_documentacao"][1]        # Prestador
+    codigo = svc.DO_PIPE_PARA_O_CODIGO["tipo_documentacao"][escolhido]
+
+    assert codigo == "PRESTADOR"
+    assert fv._igual(p.VINCULO_PLANILHA[codigo], fv.PRESTADOR)

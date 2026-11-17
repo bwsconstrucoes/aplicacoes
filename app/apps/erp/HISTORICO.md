@@ -121,7 +121,29 @@ isso sem ambiguidade (PJ, RPA, autônomo mensalista, estágio e pró-labore são
 prestador; as CLTs e o aprendiz, não). Só quando os **dois** estão vazios sobra
 o "CTPS", e aí **fica no log**, porque aí é chute.
 
-**Sobre "equalizar os já cadastrados":** a coluna só aceita CTPS ou PRESTADOR —
+**⚑ "EQUALIZAR" ERA OUTRA COISA, e ele esclareceu mostrando os dois campos
+lado a lado:**
+
+> *"Quando eu falo em equalizar falo em relação aos dois campos abaixo:
+> **Vínculo** — Carteira Assinada (CTPS) / Prestador de Serviço;
+> **Tipo de Documentação para Cadastro** — Prestador de Serviço / CTPS."*
+
+Não era dado: eram **as OPÇÕES dos dois campos**, que mostravam palavras
+diferentes e em ordem invertida para a MESMA coisa. E são a mesma coisa de
+verdade — o "Tipo de Documentação" do pedido **vira** o `vinculo` da pessoa
+quando o DP atende.
+
+**A causa: duas listas escritas à mão, em dois arquivos.** Uma dizia "Carteira
+Assinada (CTPS)", a outra "CTPS", e a ordem não combinava.
+
+**O conserto não foi acertar as duas — foi passar a ter UMA.** As opções do
+pedido agora saem do cadastro de pessoas (`VINCULOS` + `VINCULO_ROTULOS`), que
+é onde o valor fica gravado. Vale também para "Tipo de Readmissão", que é a
+mesma pergunta ("volta como o quê?"). Acertar as duas à mão resolveria hoje e
+divergiria de novo no próximo rótulo que alguém mudasse num lado só — tem teste
+prendendo a FONTE, não a palavra.
+
+**Sobre "equalizar os já cadastrados" (o que eu havia entendido antes):** a coluna só aceita CTPS ou PRESTADOR —
 o cadastro pela tela recusa outro valor e a importação traduz o texto da
 planilha para o código. O que pode existir é o vínculo **vazio**, e é
 justamente esse caso que o conserto acima resolve sem precisar mexer em dado.

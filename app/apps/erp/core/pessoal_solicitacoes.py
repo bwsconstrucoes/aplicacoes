@@ -671,8 +671,29 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
     "forma_desligamento": (
         "À Pedido do Colaborador", "Encerramento de Contrato de Experiência",
         "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado"),
-    "tipo_readmissao": ("Prestador de Serviço", "CTPS"),
-    "tipo_documentacao": ("Prestador de Serviço", "CTPS"),
+    # ⚑ UMA FONTE SÓ PARA O VÍNCULO (17/11/2026), e é isto que ele cobrou:
+    #
+    #   *"Quando eu falo em equalizar falo em relação aos dois campos abaixo:
+    #    Vínculo — Carteira Assinada (CTPS) / Prestador de Serviço;
+    #    Tipo de Documentação para Cadastro — Prestador de Serviço / CTPS."*
+    #
+    # São o MESMO dado com dois nomes e duas listas: o "Tipo de Documentação"
+    # do pedido VIRA o `vinculo` da pessoa quando o DP atende. Enquanto as duas
+    # listas eram escritas à mão, uma dizia "Carteira Assinada (CTPS)" e a
+    # outra "CTPS", e a ordem era invertida.
+    #
+    # ⚑ A CORREÇÃO NÃO É ACERTAR AS DUAS: é ter UMA. Agora as opções saem do
+    # cadastro de pessoas (`VINCULOS` + `VINCULO_ROTULOS`), que é onde o valor
+    # fica gravado — então nunca mais divergem, nem na palavra nem na ordem.
+    # É o mesmo caminho que o `tipo_contrato` já seguia, pelo mesmo motivo:
+    # cópia de lista diverge no primeiro mês.
+    #
+    # "Tipo de Readmissão" é a MESMA pergunta ("volta como o quê?") e por isso
+    # bebe da mesma fonte.
+    "tipo_readmissao": tuple(svc_pessoas.VINCULO_ROTULOS[v]
+                             for v in svc_pessoas.VINCULOS),
+    "tipo_documentacao": tuple(svc_pessoas.VINCULO_ROTULOS[v]
+                               for v in svc_pessoas.VINCULOS),
     # ⚑ AS DUAS LISTAS JUNTAS, e quem escolhe de verdade é `opcoes_se`: a
     # caixinha só abre depois do tipo de documentação, e aí mostra a lista
     # daquele lado (CTPS ou prestador). Esta aqui é o que sobra quando a tela
@@ -776,9 +797,14 @@ EXPLICACAO_DA_OPCAO: dict[str, dict[str, str]] = {
             "o acesso ao ponto cai na saída, então a readmissão como prestador "
             "tem de ser feita no mesmo dia — o sistema vai cobrar isso do DP",
     },
+    # ⚑ AS CHAVES SEGUEM O RÓTULO, que agora vem do cadastro de pessoas: se
+    # alguém trocar a palavra lá e esquecer aqui, a dica some da tela. Tem
+    # teste cobrando as duas pontas (`test_dp_pedidos_condicionais`).
     "tipo_documentacao": {
-        "CTPS": "registro em carteira; o salário vem da convenção coletiva",
-        "Prestador de Serviço": "sem carteira; o valor é o combinado com a obra",
+        svc_pessoas.VINCULO_ROTULOS["CTPS"]:
+            "registro em carteira; o salário vem da convenção coletiva",
+        svc_pessoas.VINCULO_ROTULOS["PRESTADOR"]:
+            "sem carteira; o valor é o combinado com a obra",
     },
 }
 
@@ -800,8 +826,12 @@ DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
         "Demissão com Aviso Trabalhado": "AVISO_TRABALHADO",
         "Demissão com Aviso Indenizado": "AVISO_INDENIZADO",
     },
-    "tipo_readmissao": {"Prestador de Serviço": "PRESTADOR", "CTPS": "CTPS"},
-    "tipo_documentacao": {"Prestador de Serviço": "PRESTADOR", "CTPS": "CTPS"},
+    # Da mesma fonte das opções, logo acima: o rótulo que a pessoa escolhe
+    # volta a ser o código que a coluna `vinculo` guarda.
+    "tipo_readmissao": {svc_pessoas.VINCULO_ROTULOS[v]: v
+                        for v in svc_pessoas.VINCULOS},
+    "tipo_documentacao": {svc_pessoas.VINCULO_ROTULOS[v]: v
+                          for v in svc_pessoas.VINCULOS},
     # Os códigos são os que `core/cadastros/pessoas.py` já grava na coluna
     # `tipo_contrato` — a tradução existe para a tela mostrar português e o
     # banco continuar com o que os relatórios entendem.
