@@ -1032,23 +1032,53 @@ def test_fase_que_eu_nao_conheco_e_RELATADA_em_vez_de_chutada(mundo):
 # espelho do card. Não era mais fácil ler de lá? Trazer do pipefy somente os
 # documentos? Que é o que não está lá."*
 # ---------------------------------------------------------------------------
+# ⚑ A PLANILHA DE MENTIRA usa as COLUNAS E OS VALORES DE VERDADE da aba
+# "Dados Documentos", lidos dela em 16/11/2026. É o que separa este teste de
+# um que confirma o meu palpite: "Segunda à Sexta" tem crase, "Solteiro (a)"
+# tem o "(a)", e o tipo de contrato é "Autônomo (RPA)" com acento e parênteses.
+LINHA_DA_PLANILHA = [
+    ("CPF (Cadastro de Pessoa Física)", ""),       # preenchido por teste
+    ("Nome Completo", "PESSOA COM CARD"),
+    ("Tipo de Cadastro Radio horizontal", "Prestador de Serviço"),
+    ("Tipo de Contrato", "Autônomo (RPA)"),
+    ("Cargo [ ]", "Pedreiro"),
+    ("Convenção", "CE-Fortaleza"),
+    ("Código da Obra", "PIP-01"),
+    ("Telefone", "85 98888-7777"),
+    ("Valor Diária", "180,00"),
+    ("Categoria Auxílio Alimentação", "Segunda à Sexta"),
+    ("Valor Auxílio Alimentação", "22,00"),
+    ("Categoria Auxílio Transporte", "Diário"),
+    ("Valor Auxílio Transporte", "10,00"),
+    ("Sexo", "Masculino"),
+    ("Estado Civil", "Solteiro (a)"),
+    ("Escolaridade", "Ensino Médio"),
+    ("Data de Nascimento", "07/08/1983"),
+    ("Nome da Mãe", "MARIA DE TAL"),
+    ("CEP", "61.760-970"),
+    ("Chave Pix Tipo", "CPF"),
+]
+
+
+def _planilha(cpf=None, **trocas):
+    """A aba de mentira, no formato que `carregar_por_cpf` devolve."""
+    from app.apps.erp.core.importadores import planilha_dp as pl
+    campos = dict(LINHA_DA_PLANILHA)
+    campos["CPF (Cadastro de Pessoa Física)"] = cpf or CPF_A
+    campos.update(trocas)
+    cab = pl.cabecalho_de(list(campos))
+    lido = pl.ler_linha(cab, list(campos.values()))
+    return lambda: {pl._digitos(campos["CPF (Cadastro de Pessoa Física)"]): lido}
+
+
 @pytest.fixture
-def no_espelho(mundo, banco_analisesps):
-    """A pessoa do card, também na cópia da planilha."""
-    from sqlalchemy import text as _t
-    from app.apps.erp.db.models.cadastros import Cargo
-    # O cargo da planilha precisa EXISTIR aqui: nome que não bate não entra.
+def no_espelho(mundo):
+    """A pessoa do card, também na planilha."""
+    from app.apps.erp.db.models.cadastros import Cargo, Convencao
+    # Cargo e convenção da planilha precisam EXISTIR aqui: nome que não bate
+    # não entra, e é relatado.
     mundo["s"].add(Cargo(nome="Pedreiro", ativo=True))
-    mundo["s"].flush()
-    mundo["s"].execute(_t("""
-        INSERT INTO analisesps.colaborador
-               (cpf, nome, tipo, tipo_contrato, cargo, convencao, obra_codigo,
-                celular, valor_diaria, modo_alimentacao, valor_alimentacao,
-                modo_transporte, valor_transporte)
-        VALUES (:c, 'Pessoa Com Card', 'Prestador de Serviço', 'Autônomo (RPA)',
-                'Pedreiro', 'CE-Fortaleza', 'PIP-01', '85988887777',
-                180.00, 'Seg-Qui', 22.00, 'Diário', 10.00)
-        ON CONFLICT (cpf) DO NOTHING"""), {"c": CPF_A})
+    mundo["s"].add(Convencao(nome="CE-Fortaleza"))
     mundo["s"].flush()
     return mundo
 
@@ -1059,7 +1089,8 @@ def test_o_VINCULO_e_o_PAGAMENTO_vem_da_planilha(no_espelho):
     e campo cujo apelido eu não acertei não dá erro: entra vazio e some."""
     m = no_espelho
     imp.importar(m["s"], m["dp"], simular=False, cards=[CARD], regravar=True,
-                 ler_papel=False, ler_cards=_leitor(_card()))
+                 ler_papel=False, ler_cards=_leitor(_card()),
+                 ler_planilha=_planilha())
     m["s"].flush()
     m["s"].refresh(m["com_card"])
     assert m["com_card"].vinculo == "PRESTADOR"
@@ -1072,13 +1103,14 @@ def test_o_VINCULO_e_o_PAGAMENTO_vem_da_planilha(no_espelho):
 def test_a_planilha_traz_tambem_contrato_cargo_convencao_obra_e_auxilios(no_espelho):
     m = no_espelho
     imp.importar(m["s"], m["dp"], simular=False, cards=[CARD], regravar=True,
-                 ler_papel=False, ler_cards=_leitor(_card()))
+                 ler_papel=False, ler_cards=_leitor(_card()),
+                 ler_planilha=_planilha())
     m["s"].flush()
     m["s"].refresh(m["com_card"])
     assert m["com_card"].tipo_contrato == "AUTONOMO_RPA"
     assert m["com_card"].cargo_id is not None
     assert m["com_card"].obra_id == m["obra"].id
-    assert m["com_card"].categoria_alimentacao == "SEG_QUI"
+    assert m["com_card"].categoria_alimentacao == "SEG_SEX"   # "Segunda à Sexta"
     assert str(m["com_card"].aux_alimentacao) == "22.00"
     assert m["com_card"].categoria_transporte == "DIARIO"
     assert m["com_card"].telefone
@@ -1095,3 +1127,49 @@ def test_quem_NAO_esta_na_planilha_entra_so_com_o_card(mundo):
     mundo["s"].refresh(mundo["com_card"])
     assert mundo["com_card"].pis == "99988877766"
     assert r["pessoas_lidas"] == 1
+
+
+@pytest.mark.banco
+def test_valor_da_planilha_que_eu_NAO_conheco_e_MOSTRADO_em_vez_de_sumir(mundo):
+    """O conserto de 16/11/2026 à noite, e a lição mais cara do dia.
+
+    Ele, na terceira tentativa frustrada: *"meu Deus do céu, socorro! É só
+    casar informação da planilha vs campo do ERP. Tu não tá conseguindo (…) o
+    que tu precisa de mim?"* E depois: *"por que você não consulta a planilha?
+    Você tem acesso."*
+
+    Eu lia os NOMES das colunas — verificáveis — e INVENTAVA os VALORES.
+    Valor que não bate no de-para não dá erro: o campo fica vazio e cala.
+    """
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=[CARD],
+                     regravar=True, ler_papel=False, ler_cards=_leitor(_card()),
+                     ler_planilha=_planilha(**{
+                         "Tipo de Contrato": "Contrato Esquisito Que Ninguem Previu",
+                         "Categoria Auxílio Alimentação": "Quando Der",
+                         "Cargo [ ]": "Cargo Que Nao Existe Aqui"}))
+    escritos = " | ".join(x["valor"] for x in r["planilha_nao_entendi"])
+    assert "Contrato Esquisito" in escritos
+    assert "Quando Der" in escritos
+    assert "Cargo Que Nao Existe Aqui" in escritos
+
+
+@pytest.mark.banco
+def test_a_linha_da_planilha_volta_no_relatorio(mundo):
+    """Para conferir contra a planilha aberta ao lado, sem adivinhar."""
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=[CARD],
+                     regravar=True, ler_papel=False, ler_cards=_leitor(_card()),
+                     ler_planilha=_planilha())
+    crua = r["por_pessoa"][0]["planilha_crua"]
+    assert crua["sexo"] == "M" and crua["estado_civil"] == "SOLTEIRO"
+    assert crua["cep"] == "61760970"
+
+
+@pytest.mark.banco
+def test_quem_tem_card_e_NAO_esta_na_planilha_e_relatado(mundo):
+    """Entra só com o documento, e o relatório diz quem foi."""
+    r = imp.importar(mundo["s"], mundo["dp"], simular=True, cards=[CARD],
+                     regravar=True, ler_papel=False, ler_cards=_leitor(_card()),
+                     ler_planilha=lambda: {})
+    assert [x["cpf"] for x in r["fora_da_planilha"]] == [CPF_A]
+
+

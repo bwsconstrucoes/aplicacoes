@@ -813,6 +813,45 @@ function pintarRelatorioPC(rel){
         <td class="desc">${escapar(c.motivo)}</td></tr>`).join("")}
       </tbody></table></div>`);
 
+  // ⚑ O QUE A PLANILHA ESCREVE, CRU, E O QUE EU NÃO ENTENDI (16/11/2026).
+  //
+  // Ele, na terceira tentativa frustrada: *"é só casar informação da planilha
+  // vs campo do ERP. Tu não tá conseguindo (…) o que tu precisa de mim?"*
+  // Precisava disto: ver o que está ESCRITO na planilha. Eu lia os nomes das
+  // colunas (verificáveis) e inventava os valores — e valor que não bate não
+  // reclama, só não entra.
+  const naoEntendi = rel.planilha_nao_entendi || [];
+  if (naoEntendi.length)
+    linhas.push(`<h4>⚠️ Valores da planilha que eu não reconheci (${
+      naoEntendi.length})</h4>
+      <div class="cartao-dica"><b>É aqui que o cadastro fica incompleto.</b>
+        Cada linha mostra o que está escrito na planilha e o campo que ficou
+        sem preencher. <b>Me mostre esta lista</b> e eu acerto a correlação de
+        uma vez — ou corrija a planilha, se o valor estiver errado lá.</div>
+      <table><thead><tr><th>Pessoa</th><th>Coluna da planilha</th>
+        <th>Está escrito</th><th>Campo que ficou vazio</th></tr></thead>
+      <tbody>${naoEntendi.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="dados">${escapar(x.coluna)}</td>
+        <td class="dados"><b>${escapar(x.valor)}</b></td>
+        <td>${escapar(x.campo)}</td></tr>`).join("")}</tbody></table>`);
+
+  // A LINHA CRUA DA PLANILHA, pessoa por pessoa. Serve para conferir contra a
+  // planilha aberta ao lado, sem ninguém ter de adivinhar nada.
+  const comCrua = (rel.por_pessoa || []).filter(p => p.planilha_crua);
+  if (comCrua.length)
+    linhas.push(`<h4>O que a planilha “Dados Documentos” diz, coluna por
+      coluna (${comCrua.length})</h4>
+      <div class="cartao-dica">Exatamente como está lá. Compare com a planilha
+        aberta: se algo estiver em branco aqui e preenchido lá, a cópia está
+        velha — aperte <b>Atualizar cadastro</b> na Análise de SPs.</div>
+      ${comCrua.map(p => `<details style="margin-top:6px">
+        <summary><b>${escapar(p.nome)}</b></summary>
+        <table><thead><tr><th>Coluna</th><th>Valor</th></tr></thead>
+        <tbody>${Object.entries(p.planilha_crua).map(([k, v]) =>
+          `<tr><td class="dados">${escapar(k)}</td>
+           <td class="dados">${escapar(v) || "<i>vazio</i>"}</td></tr>`).join("")}
+        </tbody></table></details>`).join("")}`);
+
   // ⚑ DE ONDE VEIO CADA COISA (16/11/2026). A importação passou a ler a
   // planilha "Dados Documentos" além do card, e quem confere precisa saber
   // qual das duas falou — senão "o sistema preencheu" vira caixa-preta.
