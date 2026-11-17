@@ -2513,6 +2513,51 @@ Nasceu de um tropeço real dele, gravando a conta de e-mail de uma empresa.
   valores. Se alguém pedir, a resposta é "não mostro; posso dizer se está
   configurada e se funciona".
 
+## 3z-decies. QUEM RECEBE AS MENSAGENS DA EMPRESA (17/11/2026)
+
+Nasceu de ele olhar a tela de Mensagens com as 49 pessoas importadas e não
+conseguir responder "por que esta pessoa não está recebendo?".
+
+**⚠️ PALAVRA AMBÍGUA: "CADASTRADO".** São duas coisas:
+
+| Se ele disser | Quer dizer |
+|---|---|
+| "cadastrado no sistema" | tem ficha de colaborador no ERP |
+| "cadastrado no Telegram" | ligou o Telegram ao robô da BWS e por isso recebe aviso |
+
+Quase todo mundo é a primeira e não é a segunda. **A resposta diz qual das duas
+está contando.**
+
+### Perguntas que o sistema responde
+
+- **"Quem recebe mensagem pelo Telegram?"** / **"quantos dos nossos já
+  cadastraram?"**
+- **"Por que o fulano não está recebendo?"** — a resposta é um veredito: sem
+  Telegram · sem telefone no cadastro · telefone incompleto · recebe, mas com
+  número diferente.
+- **"Qual o ID do Telegram do fulano?"** — é identificador do robô, não
+  segredo, e serve exatamente para conferir quando algo dá errado.
+- **"Quem está com problema?"** — todo mundo cujo veredito não é "Recebe".
+- **"Quem perdeu mensagem nos últimos 30 dias, e quantas?"**
+- **"Quem foi convidado e não se cadastrou?"** / **"quem abriu o link e parou
+  no meio?"**
+- **"Quais colaboradores não têm telefone no cadastro?"** — é a pergunta que
+  destrava todas as outras, porque sem telefone não há convite possível.
+- **"Quem da obra X não recebe?"** — a obra e o cargo vêm do cadastro do ERP.
+- **"Quem tem Telegram ligado e não é mais da empresa?"** — "Cadastros a
+  conferir". ⚠️ O sistema **não desliga sozinho**: quem saiu ainda costuma
+  precisar do último contracheque pelo robô.
+
+### Perguntas que o sistema ainda NÃO responde, e o que falta
+
+- **"Esta pessoa leu a mensagem?"** — nem o Telegram nem o Z-API devolvem
+  leitura para o sistema. O registro sabe que **saiu**, não que foi lida, e
+  essa diferença tem de aparecer na resposta.
+- **"Quanto tempo o fulano levou para se cadastrar depois do convite?"** — os
+  dois carimbos existem (convite e cadastro); falta a conta.
+- **"Quem nunca recebeu NADA desde que entrou na empresa?"** — dá para
+  deduzir, mas não há pergunta pronta.
+
 ---
 
 ## 4. Como esta lista vira código

@@ -58,9 +58,22 @@ instalada e foi removida.
 
 ## A tela ERP › Mensagens
 
-Duas abas. Quem vê: `ver_mensagens` (Administrador, Diretor financeiro,
-Departamento pessoal). Quem mexe: `configurar_mensagens` (Administrador).
-Seção `adm_mensagens` no cadastro de perfis.
+Cinco abas: **Painel**, **Tipos e canais**, **Enviadas**, **Cadastro do
+Telegram** e **Convite e migração**. Quem vê: `ver_mensagens` (Administrador,
+Diretor financeiro, Departamento pessoal). Quem mexe: `configurar_mensagens`
+(Administrador). Seção `adm_mensagens` no cadastro de perfis.
+
+**Cadastro do Telegram** é a GESTÃO: uma linha por colaborador não desligado e
+por operador ativo — com ou sem telefone —, com obra, cargo, ID do Telegram e
+uma coluna **"Recebe?"** que conclui, em português, se a pessoa recebe e, se
+não, por que e o que fazer. Filtros: situação (8 recortes, cada um com a
+contagem), obra, cargo e quem é. Abaixo da lista, a fila do DP (tentaram se
+cadastrar e o número não bateu) e os cadastros a conferir (Telegram ligado que
+não bate com ninguém do ERP — em geral quem saiu da empresa; **o sistema não
+desliga sozinho**, ver o `HISTORICO.md` de 17/11/2026).
+
+**Convite e migração** é o que se ajusta uma vez: o texto e o ritmo do convite
+por WhatsApp e a migração do cadastro da planilha.
 
 **Tipos e canais**
 
@@ -86,7 +99,7 @@ quebrar.
 
 | Método | Rota | Ação |
 |---|---|---|
-| GET | `/erp/mensagens` · `/erp/mensagens/enviadas` | `ver_mensagens` |
+| GET | `/erp/mensagens` · `/erp/mensagens/enviadas` · `/erp/mensagens/telegram` · `/erp/mensagens/convite` | `ver_mensagens` |
 | GET | `/erp/api/mensagens/tipos` · `/erp/api/mensagens/enviadas` | `ver_mensagens` |
 | POST | `/erp/api/mensagens/politica` `{chave, politica}` | `configurar_mensagens` |
 | POST | `/erp/api/mensagens/parametros` `{whatsapp_ligado, por_hora, por_dia}` | `configurar_mensagens` |

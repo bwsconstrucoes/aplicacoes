@@ -7,6 +7,88 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## ⚑ 17/11/2026 — A GESTÃO DOS CADASTROS, reconstruída (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi na mensageria vindo de outra área.** Arquivos tocados:
+`telegram_cadastro.py`, `gestao.py` e `templates/mensagens.html`. Mais
+`tests/test_mensageria_telegram_banco.py` (10 casos novos).
+
+**O que ele disse, olhando a aba "Cadastro do Telegram" com as 49 pessoas
+importadas:**
+
+> *"Aqui está dizendo a data do cadastro, mas não aparece, por exemplo, o ID do
+> Telegram. Por que que não aparece aqui nessas informações? Até para a gente
+> comparar, de repente se der algum problema."*
+
+> *"Tem uma pessoa aqui que está dizendo que não está recebendo mensagens. Aí
+> eu não sei o que é que está acontecendo."*
+
+> *"A tela, eu estou achando que está meio poluída, porque está misturando o
+> cadastro com o convite pelo WhatsApp. Aí tem a migração da planilha, está
+> meio bagunçado. E assim, poucos filtros, pouca informação, pouca correlação
+> com o cadastro de colaboradores do ERP. Tem que estar mais integrado isso
+> aqui para entender. Eu preciso ter alguma gestão e compreender pessoas que
+> estão cadastradas, não estão cadastradas, estão com problema. Melhorou a
+> parte do painel e tudo, mas a gestão dos cadastros está pobre."*
+
+**Ele estava certo nos três, e a causa é a mesma:** a tela tinha todos os
+PEDAÇOS (tem Telegram? quantas mensagens falharam? o telefone bate?) e deixava
+a CONCLUSÃO para quem olhava. Pedaço é dado; gestão é conclusão.
+
+### O que mudou
+
+| Antes | Agora |
+|---|---|
+| Uma página com 6 blocos: migração, totais, fila do DP, convite (config + texto), lista, sem telefone, a conferir | **Duas abas.** "Cadastro do Telegram" = gestão de todo dia. **"Convite e migração"** = o que se ajusta uma vez |
+| O ID do Telegram não subia para a tela | Aparece na lista e em "a conferir", e **é buscável** |
+| A lista dava pedaços | **Coluna "Recebe?"** com veredito em português E o que fazer |
+| Abria filtrada em "sem Telegram e com mensagem que não chegou" | Abre em **Todos**, com 8 recortes, cada um com a sua contagem ao lado |
+| Sem obra, sem cargo | **Obra e cargo do cadastro do ERP**, e os dois são filtro. Link "ficha" abre a pessoa em Pessoal |
+| Quem não tem telefone ficava numa tabela no pé | **Entra na lista**, com veredito próprio — é quem nunca vai receber nada |
+| Tabela "sem telefone" separada | Virou o filtro "Sem telefone no cadastro" |
+
+**Os vereditos** (`DIAGNOSTICOS`, em `telegram_cadastro.py`):
+
+- **Recebe** — tem Telegram ligado.
+- **Recebe (número diferente)** — chega (o sistema acha pelo CPF), mas o número
+  confirmado no Telegram não é o do cadastro. ⚑ Dizer "não recebe" aqui seria
+  mentira; dizer só "recebe" esconderia trabalho do DP.
+- **Não recebe: sem Telegram** — pode ser convidada.
+- **Não recebe: sem telefone no cadastro** / **telefone incompleto** — o DP
+  acerta o cadastro ANTES; convidar não resolve, porque o convite vai por
+  WhatsApp.
+
+### Duas decisões de desenho que vale não desfazer
+
+1. **`pessoas_elegiveis` e `pessoas_do_erp` são funções diferentes, de
+   propósito.** A primeira responde "a quem o sistema PODE mandar convite?" —
+   e exige telefone, porque o convite é por WhatsApp; ela é usada pelo envio e
+   pelo robô. A segunda responde "quem a empresa tem, e como cada um está?".
+   Juntar as duas faria o sistema tentar convidar quem não tem como receber, ou
+   esconder da gestão exatamente quem mais precisa de atenção.
+2. **Os números do cabeçalho são os filtros.** Tem teste conferindo que cada
+   contagem bate com a lista que ela abre — número que não bate com a tela é
+   pior que número nenhum.
+
+### ⚠️ A pergunta dele que precisa ficar registrada
+
+> *"Eles são colaboradores, né? Se não for colaborador, ele desliga automático,
+> né?"*
+
+**NÃO desliga, e eu não mudei isso — porque desligar sozinho seria pior.** Quem
+é desligado da empresa sai da lista de gestão, mas o Telegram dela continua
+ligado e ela cai em **"Cadastros a conferir"**, com um botão de desligar.
+
+O motivo de não ser automático: **quem acabou de sair ainda costuma precisar do
+último contracheque pelo robô.** Cortar o Telegram no momento do desligamento
+tiraria isso dela — e o robô entrega contracheque a quem pede, não é aviso que
+a empresa manda. A tela agora explica isso em voz alta, no próprio cartão.
+
+Se ele decidir que quer automático, é uma mudança pequena, **mas é decisão
+dele** e tem esse custo junto.
+
+---
+
 ## Como esta memória nasceu — 05/10/2026
 
 O dono abriu um chat para estas aplicações e pediu duas coisas:

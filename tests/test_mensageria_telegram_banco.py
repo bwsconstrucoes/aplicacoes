@@ -298,3 +298,141 @@ def test_o_chatbot_do_whatsapp_le_o_erp_depois_da_migracao(conn, gente, monkeypa
     assert ana["nome"] == "Ana Lima" and ana["tel"] == "5585999990001"
     assert sheets_cache.esta_desligado(sheets_cache.buscar_por_cpf("33333333333"))
     sheets_cache.invalidar_cache()
+
+
+# ===========================================================================
+# A GESTÃO DOS CADASTROS (17/11/2026)
+#
+# Ele, olhando a tela: *"poucos filtros, pouca informação, pouca correlação com
+# o cadastro de colaboradores do ERP (…) eu preciso ter alguma gestão e
+# compreender pessoas que estão cadastradas, não estão cadastradas, estão com
+# problema."* E, sobre uma pessoa específica: *"está dizendo que não está
+# recebendo mensagens. Aí eu não sei o que é que está acontecendo."*
+#
+# O que os casos abaixo prendem é justamente o que faltava: o ID do Telegram na
+# resposta, o veredito por pessoa, quem não tem telefone APARECENDO na lista, e
+# a obra/cargo vindos do cadastro do ERP.
+# ===========================================================================
+def test_o_id_do_telegram_vai_para_a_tela(conn, gente):
+    """Pedido dele, com a razão: *"não aparece o ID do Telegram (…) até para a
+    gente comparar, de repente se der algum problema."* O dado sempre esteve na
+    tabela; só não subia."""
+    tc.gravar_cadastro(conn, chat_id=12345678, cpf="22222222222")
+
+    d = tc.painel(conn)
+
+    bia = next(p for p in d["pessoas"] if p["nome"] == "Bia Rocha")
+    assert bia["chat_id"] == "12345678"
+    # … e quem não tem Telegram não ganha id inventado
+    ana = next(p for p in d["pessoas"] if p["nome"] == "Ana Lima")
+    assert ana["chat_id"] == ""
+
+
+def test_o_id_do_telegram_tambem_e_buscavel(conn, gente):
+    """Se ele está na tela para comparar, tem de dar para procurar por ele."""
+    tc.gravar_cadastro(conn, chat_id=987654321, cpf="22222222222")
+
+    achados = [p["nome"] for p in tc.painel(conn, busca="987654321")["pessoas"]]
+
+    assert achados == ["Bia Rocha"]
+
+
+def test_cada_pessoa_ganha_um_veredito_em_portugues(conn, gente):
+    tc.gravar_cadastro(conn, chat_id=700, cpf="22222222222")
+
+    por = {p["nome"]: p for p in tc.painel(conn)["pessoas"]}
+
+    assert por["Bia Rocha"]["diagnostico"] == "RECEBE"
+    assert por["Ana Lima"]["diagnostico"] == "SEM_TELEGRAM"
+    assert por["Dan Sem Telefone"]["diagnostico"] == "SEM_TELEFONE"
+    # o veredito vem com rótulo e com O QUE FAZER — é o que vira gestão
+    assert por["Dan Sem Telefone"]["diagnostico_rotulo"].startswith("Não recebe")
+    assert "DP" in por["Dan Sem Telefone"]["diagnostico_explicacao"]
+    # o desligado da empresa não entra na lista de gestão
+    assert "Cid Desligado" not in por
+
+
+def test_quem_nao_tem_telefone_APARECE_na_lista(conn, gente):
+    """A tela antiga escondia essa gente numa tabela no pé da página. É
+    justamente quem nunca vai receber nada até o DP acertar o cadastro."""
+    nomes = [p["nome"] for p in tc.painel(conn)["pessoas"]]
+
+    assert "Dan Sem Telefone" in nomes
+    # … e ela NÃO entra em quem pode ser convidado, porque o convite vai por
+    # WhatsApp: as duas perguntas são diferentes e continuam separadas.
+    assert "Dan Sem Telefone" not in [p["nome"] for p in tc.pessoas_elegiveis(conn)]
+
+
+def test_telefone_incompleto_e_um_veredito_proprio(conn):
+    """Telefone sem DDD não serve para convite, e dizer "sem Telegram" para
+    essa pessoa mandaria o DP convidar quem não tem como receber."""
+    _colab(conn, "Eva Telefone Curto", "55555555555", "99999")
+
+    por = {p["nome"]: p for p in tc.painel(conn)["pessoas"]}
+
+    assert por["Eva Telefone Curto"]["diagnostico"] == "TELEFONE_CURTO"
+
+
+def test_telegram_com_outro_numero_RECEBE_mas_fica_marcado(conn, gente):
+    """A mensagem chega (o sistema acha pelo CPF), então dizer "não recebe"
+    seria mentira — mas o DP precisa acertar o telefone."""
+    tc.gravar_cadastro(conn, chat_id=701, cpf="22222222222", telefone="5585911112222")
+
+    por = {p["nome"]: p for p in tc.painel(conn)["pessoas"]}
+
+    assert por["Bia Rocha"]["diagnostico"] == "RECEBE_OUTRO_NUMERO"
+    assert por["Bia Rocha"]["telegram"] is True
+    assert por["Bia Rocha"]["telefone_diverge"] is True
+
+
+def test_a_obra_e_o_cargo_vem_do_cadastro_do_erp(conn):
+    """A correlação que ele pediu: *"pouca correlação com o cadastro de
+    colaboradores do ERP. Tem que estar mais integrado isso aqui."*"""
+    obra = conn.execute(text("INSERT INTO obras (codigo, nome, status) "
+                             "VALUES ('MSG-1', 'Creche do Bairro', 'ATIVA') RETURNING id")).scalar()
+    cargo = conn.execute(text("INSERT INTO cargos (nome) VALUES ('Servente') "
+                              "RETURNING id")).scalar()
+    conn.execute(text("INSERT INTO colaboradores (nome, cpf, telefone, situacao, obra_id, cargo_id) "
+                      "VALUES ('Fab Obra', '66666666666', '85999998888', 'ATIVO', :o, :c)"),
+                 {"o": obra, "c": cargo})
+
+    p = next(x for x in tc.painel(conn)["pessoas"] if x["nome"] == "Fab Obra")
+
+    assert "Creche do Bairro" in p["obra"]
+    assert p["cargo"] == "Servente"
+    assert p["colaborador_id"], "a tela precisa do id para linkar a ficha no Pessoal"
+
+
+def test_os_filtros_novos_recortam_a_lista(conn, gente):
+    tc.gravar_cadastro(conn, chat_id=702, cpf="22222222222")
+
+    semtel = [p["nome"] for p in tc.painel(conn, filtro="semtelefone")["pessoas"]]
+    problema = [p["nome"] for p in tc.painel(conn, filtro="problema")["pessoas"]]
+    recebe = [p["nome"] for p in tc.painel(conn, filtro="com")["pessoas"]]
+
+    assert semtel == ["Dan Sem Telefone"]
+    assert sorted(problema) == ["Ana Lima", "Dan Sem Telefone"]
+    assert recebe == ["Bia Rocha"]
+
+
+def test_os_numeros_do_cabecalho_batem_com_os_filtros(conn, gente):
+    """Número que não bate com a lista que ele abre é pior que número nenhum."""
+    tc.gravar_cadastro(conn, chat_id=703, cpf="22222222222")
+
+    t = tc.painel(conn)["totais"]
+
+    assert t["com_telegram"] == len(tc.painel(conn, filtro="com")["pessoas"])
+    assert t["sem_telegram"] == len(tc.painel(conn, filtro="sem")["pessoas"])
+    assert t["sem_telefone"] == len(tc.painel(conn, filtro="semtelefone")["pessoas"])
+    assert t["telefone_diverge"] == len(tc.painel(conn, filtro="diverge")["pessoas"])
+
+
+def test_o_painel_explica_todo_veredito_que_ele_usa(conn, gente):
+    """A tela desenha a explicação a partir do que o servidor manda. Veredito
+    sem verbete sairia como caixa vazia."""
+    d = tc.painel(conn)
+
+    usados = {p["diagnostico"] for p in d["pessoas"]}
+    assert usados <= set(d["diagnosticos"])
+    for v in d["diagnosticos"].values():
+        assert v["rotulo"] and v["explicacao"] and v["cor"]

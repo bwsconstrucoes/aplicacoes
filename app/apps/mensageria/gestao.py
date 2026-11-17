@@ -37,6 +37,16 @@ ABAS = [
     ("msg_tipos", "Tipos e canais", "erp.mensagens_pagina_tipos"),
     ("msg_envios", "Enviadas", "erp.mensagens_pagina_envios"),
     ("msg_telegram", "Cadastro do Telegram", "erp.mensagens_pagina_telegram"),
+    # ⚑ ABA NOVA EM 17/11/2026, e ela existe para DESENTULHAR a anterior. Ele,
+    # olhando o "Cadastro do Telegram": *"a tela, eu estou achando que está
+    # meio poluída, porque está misturando o cadastro com o convite pelo
+    # WhatsApp. Aí tem a migração da planilha, está meio bagunçado."*
+    #
+    # Tinha razão: numa página só havia a GESTÃO das pessoas (quem recebe, quem
+    # não, quem está com problema) e a CONFIGURAÇÃO do convite (automático,
+    # intervalos, texto) mais a migração da planilha — que se mexe uma vez na
+    # vida. Coisa de todo dia e coisa de uma vez não dividem página.
+    ("msg_convite", "Convite e migração", "erp.mensagens_pagina_convite"),
 ]
 MODULO = {
     "chave": "mensagens", "nome": "Mensagens", "sigla": "MSG",
@@ -237,6 +247,15 @@ def mensagens_api_teste():
 @permissao("ver_mensagens")
 def mensagens_pagina_telegram():
     return _pagina("msg_telegram")
+
+
+@bp.route("/erp/mensagens/convite")
+@login_obrigatorio
+@permissao("ver_mensagens")
+def mensagens_pagina_convite():
+    """O convite pelo WhatsApp e a migração da planilha — o que se configura
+    uma vez, fora da tela de gestão de todo dia (17/11/2026)."""
+    return _pagina("msg_convite")
 
 
 def _iso(v):

@@ -178,6 +178,112 @@ def pessoas_elegiveis(conn) -> list[dict]:
     return pessoas
 
 
+# ---------------------------------------------------------------------------
+# A GESTÃO: TODAS as pessoas do ERP, não só as que podem ser convidadas
+#
+# Pedido dele em 17/11/2026, olhando a tela: *"poucos filtros, pouca
+# informação, pouca correlação com o cadastro de colaboradores do ERP. Tem que
+# estar mais integrado isso aqui para entender. Eu preciso ter alguma gestão e
+# compreender pessoas que estão cadastradas, não estão cadastradas, estão com
+# problema."*
+#
+# ⚑ POR QUE UMA SEGUNDA FUNÇÃO, E NÃO MEXER NA `pessoas_elegiveis`: as duas
+# respondem perguntas DIFERENTES, e misturá-las estragaria as duas.
+#
+#   · `pessoas_elegiveis` responde "a quem o sistema PODE mandar convite?" —
+#     e a resposta exige telefone, porque o convite vai por WhatsApp. Ela é
+#     usada pelo envio e pelo robô; alargá-la faria o sistema tentar convidar
+#     quem não tem como receber.
+#   · esta responde "quem a empresa tem, e como cada um está?" — e aí quem NÃO
+#     tem telefone é justamente a informação que faltava: a tela antiga
+#     escondia essa gente numa tabela separada no pé da página.
+# ---------------------------------------------------------------------------
+def pessoas_do_erp(conn) -> list[dict]:
+    """Colaboradores não desligados e operadores ativos — COM ou SEM telefone,
+    já com a obra e o cargo, que é a correlação que faltava com o ERP."""
+    colabs = db.todos(conn, """
+        SELECT c.id, c.nome, c.cpf, c.telefone, c.situacao, c.etapa, c.usuario_id,
+               o.codigo AS obra_codigo, o.nome AS obra_nome, cg.nome AS cargo
+          FROM public.colaboradores c
+          LEFT JOIN public.obras o ON o.id = c.obra_id
+          LEFT JOIN public.cargos cg ON cg.id = c.cargo_id
+         WHERE coalesce(c.situacao, '') <> 'DESLIGADO'""")
+    usuarios = db.todos(conn, """
+        SELECT u.id, u.nome, u.cpf, u.telefone, u.perfil::text AS perfil
+          FROM public.usuarios u WHERE u.ativo""")
+    from app.apps.erp.core.comum.rotulos import rotulo_da_obra
+    pessoas, cpfs = [], set()
+    for c in colabs:
+        tel = telefone_canonico(c["telefone"]) if digitos(c["telefone"]) else ""
+        cpf = normalizar_cpf(c["cpf"])
+        if cpf:
+            cpfs.add(cpf)
+        pessoas.append({
+            "chave": f"C{c['id']}", "tipo": "COLABORADOR", "colaborador_id": c["id"],
+            "usuario_id": c.get("usuario_id"), "nome": (c["nome"] or "").strip(),
+            "cpf": cpf, "telefone": tel, "situacao": c.get("situacao") or "",
+            "etapa": c.get("etapa") or "", "cargo": c.get("cargo") or "",
+            "obra": (rotulo_da_obra(c["obra_codigo"], c["obra_nome"])
+                     if c.get("obra_codigo") else ""),
+            # O telefone serve para convite? É a mesma régua da
+            # `pessoas_elegiveis`, para as duas telas não discordarem.
+            "telefone_serve": len(digitos(tel)) >= 12})
+    vinculados = {c.get("usuario_id") for c in colabs if c.get("usuario_id")}
+    for u in usuarios:
+        cpf = normalizar_cpf(u.get("cpf"))
+        if u["id"] in vinculados or (cpf and cpf in cpfs):
+            continue
+        tel = telefone_canonico(u["telefone"]) if digitos(u["telefone"]) else ""
+        pessoas.append({
+            "chave": f"U{u['id']}", "tipo": "USUARIO", "colaborador_id": None,
+            "usuario_id": u["id"], "nome": (u["nome"] or "").strip(), "cpf": cpf,
+            "telefone": tel, "situacao": "OPERADOR", "etapa": "",
+            "cargo": (u.get("perfil") or "").replace("_", " ").capitalize(),
+            "obra": "", "telefone_serve": len(digitos(tel)) >= 12})
+    pessoas.sort(key=lambda p: p["nome"].lower())
+    return pessoas
+
+
+# ---------------------------------------------------------------------------
+# O DIAGNÓSTICO: "por que esta pessoa não recebe?"
+#
+# Ele, na mesma conversa: *"tem uma pessoa aqui que está dizendo que não está
+# recebendo mensagens. Aí eu não sei o que é que está acontecendo."*
+#
+# A tela tinha os pedaços (tem Telegram? quantas falharam? telefone bate?) e
+# deixava a conclusão para quem olhava. Agora o sistema conclui, numa frase, e
+# diz QUAL É O PRÓXIMO PASSO — que é o que transforma a lista em gestão.
+# ---------------------------------------------------------------------------
+DIAGNOSTICOS = {
+    "RECEBE": ("Recebe", "ok",
+               "tem Telegram ligado e as mensagens chegam"),
+    "RECEBE_OUTRO_NUMERO": ("Recebe (número diferente)", "alerta",
+                            "chega pelo Telegram, mas o número confirmado lá "
+                            "não é o do cadastro — o DP acerta o telefone"),
+    "SEM_TELEGRAM": ("Não recebe: sem Telegram", "alerta",
+                     "tem telefone no cadastro, então pode ser convidada pelo "
+                     "WhatsApp"),
+    "SEM_TELEFONE": ("Não recebe: sem telefone no cadastro", "erro",
+                     "sem telefone não dá para cadastrar nem convidar — o DP "
+                     "preenche em Pessoal › Colaboradores"),
+    "TELEFONE_CURTO": ("Não recebe: telefone incompleto", "erro",
+                       "o telefone do cadastro não tem DDD ou está faltando "
+                       "dígito — o DP corrige em Pessoal › Colaboradores"),
+}
+
+
+def diagnosticar(linha: dict) -> str:
+    """O veredito de UMA pessoa. Ordem importa: o impedimento mais de baixo
+    primeiro, porque é ele que tem de ser resolvido antes dos outros."""
+    if linha.get("telegram"):
+        return "RECEBE_OUTRO_NUMERO" if linha.get("telefone_diverge") else "RECEBE"
+    if not digitos(linha.get("telefone")):
+        return "SEM_TELEFONE"
+    if not linha.get("telefone_serve"):
+        return "TELEFONE_CURTO"
+    return "SEM_TELEGRAM"
+
+
 def achar_pessoa(conn, *, telefone=None, cpf=None, pessoas: Optional[list] = None) -> Optional[dict]:
     """A pessoa elegível com este CPF ou este telefone (CPF tem preferência)."""
     pessoas = pessoas if pessoas is not None else pessoas_elegiveis(conn)
@@ -633,7 +739,7 @@ def marcar_usado(conn, chat_id, cpf: str = "") -> None:
 # Para a tela
 # ---------------------------------------------------------------------------
 def painel(conn, *, filtro: str = "", busca: str = "") -> dict:
-    pessoas = pessoas_elegiveis(conn)
+    pessoas = pessoas_do_erp(conn)
     ativos = cadastros_ativos(conn)
     por_cpf = {normalizar_cpf(c["cpf"]): c for c in ativos if c["cpf"]}
     falhas = db.todos(conn, """SELECT cpf, destinatario, max(criado_em) AS ultima, count(*) AS n
@@ -664,31 +770,56 @@ def painel(conn, *, filtro: str = "", busca: str = "") -> dict:
                 ultima_falha = max(filter(None, [ultima_falha, f["ultima"]]))
         conv = convite_por.get(p["cpf"]) or convite_por.get(p["telefone"])
         linhas.append({**p, "telegram": bool(cad), "cadastro_id": (cad or {}).get("id"),
+                       # ⚑ O ID DO TELEGRAM VAI PARA A TELA (17/11/2026). Ele:
+                       # *"não aparece, por exemplo, o ID do Telegram. Por que
+                       # que não aparece aqui nessas informações? Até para a
+                       # gente comparar, de repente se der algum problema."*
+                       # O dado sempre esteve na tabela; só não subia.
+                       "chat_id": str((cad or {}).get("chat_id") or ""),
                        "telegram_desde": (cad or {}).get("criado_em"), "telegram_origem": (cad or {}).get("origem"),
                        "falhas_30d": n_falhas, "ultima_falha": ultima_falha,
                        "convite": ({k: conv.get(k) for k in ("criado_em", "status", "detalhe", "motivo",
                                                              "aberto_em", "usado_em")} if conv else None)})
     soltos = [c for c in ativos if c["id"] not in usados_ids]
+    for c in soltos:
+        c["chat_id"] = str(c.get("chat_id") or "")
     for l in linhas:
         cad = next((c for c in ativos if c["id"] == l["cadastro_id"]), None)
-        l["telefone_diverge"] = bool(cad and cad["telefone"]
+        l["telefone_diverge"] = bool(cad and cad["telefone"] and l["telefone"]
                                      and not (variantes_telefone(cad["telefone"]) & variantes_telefone(l["telefone"])))
         l["telegram_telefone"] = (cad or {}).get("telefone", "")
-    totais = {"pessoas": len(linhas), "com_telegram": sum(1 for l in linhas if l["telegram"]),
-              "sem_telegram": sum(1 for l in linhas if not l["telegram"]),
+        l["diagnostico"] = diagnosticar(l)
+        rotulo, cor, explicacao = DIAGNOSTICOS[l["diagnostico"]]
+        l["diagnostico_rotulo"] = rotulo
+        l["diagnostico_cor"] = cor
+        l["diagnostico_explicacao"] = explicacao
+    # ⚑ OS NÚMEROS SÃO UM POR VEREDITO, e cada um é um FILTRO na tela — é a
+    # régua da tela de Colaboradores, e pelo mesmo motivo: número solto não
+    # serve de nada; o valor está em ir de "7 sem telefone" para as 7 pessoas.
+    def quantos(*vereditos):
+        return sum(1 for l in linhas if l["diagnostico"] in vereditos)
+    totais = {"pessoas": len(linhas),
+              "com_telegram": quantos("RECEBE", "RECEBE_OUTRO_NUMERO"),
+              "sem_telegram": quantos("SEM_TELEGRAM"),
               "com_falha": sum(1 for l in linhas if not l["telegram"] and l["falhas_30d"]),
               "a_conferir": len(soltos),
-              "telefone_diverge": sum(1 for l in linhas if l["telefone_diverge"])}
+              "telefone_diverge": quantos("RECEBE_OUTRO_NUMERO"),
+              "sem_telefone": quantos("SEM_TELEFONE", "TELEFONE_CURTO")}
+    # A tabela separada de "sem telefone" continua existindo na resposta por
+    # compatibilidade, mas quem tem de olhar isso agora acha a mesma gente
+    # FILTRANDO a lista — era o "pouca correlação com o cadastro" dele.
     faltando_telefone = sem_telefone(conn)
-    totais["sem_telefone"] = len(faltando_telefone)
     tentativas = tentativas_pendentes(conn)
     totais["tentativas"] = len(tentativas)
     b = (busca or "").strip().lower()
     bd = digitos(busca)
     if b:
-        linhas = [l for l in linhas if b in l["nome"].lower() or (bd and (bd in l["cpf"] or bd in l["telefone"]))]
+        linhas = [l for l in linhas
+                  if b in l["nome"].lower()
+                  or (bd and (bd in l["cpf"] or bd in digitos(l["telefone"])
+                              or bd in l["chat_id"]))]
     if filtro == "sem":
-        linhas = [l for l in linhas if not l["telegram"]]
+        linhas = [l for l in linhas if l["diagnostico"] == "SEM_TELEGRAM"]
     elif filtro == "falha":
         linhas = [l for l in linhas if not l["telegram"] and l["falhas_30d"]]
     elif filtro == "com":
@@ -696,8 +827,16 @@ def painel(conn, *, filtro: str = "", busca: str = "") -> dict:
     elif filtro == "convidados":
         linhas = [l for l in linhas if not l["telegram"] and l["convite"]]
     elif filtro == "diverge":
-        linhas = [l for l in linhas if l["telefone_diverge"]]
+        linhas = [l for l in linhas if l["diagnostico"] == "RECEBE_OUTRO_NUMERO"]
+    elif filtro == "semtelefone":
+        linhas = [l for l in linhas
+                  if l["diagnostico"] in ("SEM_TELEFONE", "TELEFONE_CURTO")]
+    elif filtro == "problema":
+        # "Está com problema" na palavra dele: tudo que não é "Recebe".
+        linhas = [l for l in linhas if l["diagnostico"] != "RECEBE"]
     return {"pessoas": linhas, "a_conferir": soltos, "totais": totais,
+            "diagnosticos": {k: {"rotulo": v[0], "cor": v[1], "explicacao": v[2]}
+                             for k, v in DIAGNOSTICOS.items()},
             "convite_automatico": convite_automatico_ligado(conn), "intervalo_dias": intervalo_dias(conn),
             "falhas_entre": falhas_entre(conn), "maximo_automatico": maximo_automatico(conn),
             "texto": texto_do_convite(conn), "texto_padrao": TEXTO_PADRAO,
