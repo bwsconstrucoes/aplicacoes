@@ -3,6 +3,47 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## ⚑ 17/11/2026 — A FICHA ÚNICA VIROU "AMBIENTE DA PESSOA", COM TRÊS ÁREAS (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi nesta tela vindo de outra área.** Um arquivo: `gestao.html` — a
+fileira de abas da ficha da pessoa e o estilo dela.
+
+**O desenho é dele, e vale ler nas palavras dele:**
+
+> *"Imagina que eu cliquei no colaborador. Lá em cima fica o nome dela e ali
+> tem uma espécie de botão que direciona para a parte do ponto. Tipo assim, tem
+> o cadastro pessoal, aí tem a outra, aí eu clico ponto. Aí quando eu clico
+> ponto, abre toda a parte do ponto, as configurações, como se fosse a tela
+> abrindo lá do ponto. E quando eu clico de novo no cadastro pessoal, abre as
+> telas relacionadas ao cadastro. (…) A parte de mensagens a gente tem como
+> colocar dentro também. (…) Porque às vezes eu estou olhando uma determinada
+> pessoa e eu não preciso sair para ir para outra tela, para pesquisar o nome
+> dela de novo."*
+
+**O problema que isso resolve:** a ficha tinha **nove abas numa fileira só**, e
+elas não diziam o que pertencia a quê — "Cadastro" e "Configuração do ponto"
+ficavam lado a lado sendo coisas de mundos diferentes.
+
+**Agora são dois níveis:** a fileira de cima diz o ASSUNTO —
+**👤 Cadastro pessoal · 🕐 Ponto · 💬 Mensagens** — e a de baixo, o que ver
+dentro dele:
+
+| Área | Abas |
+|---|---|
+| 👤 Cadastro pessoal | Cadastro · Pagamentos |
+| 🕐 Ponto | Dia · Espelho do mês · Pedidos · Aparelhos · Configuração do ponto · Conferência do rosto |
+| 💬 Mensagens | Telegram e mensagens |
+
+**⚠️ NADA MUDOU do que cada painel faz nem de permissão.** A mesma aba continua
+aparecendo para quem já a enxergava, e área sem aba nenhuma não aparece (quem
+não vê pessoal não ganha uma área vazia). Trocar de área cai na primeira aba
+dela. O que mudou é o agrupamento.
+
+Conferido no navegador: as três áreas, a troca entre elas e a volta, sem erro
+de JavaScript.
+
+---
+
 ## ⚠️ 17/11/2026 — QUEM CUMPRE AVISO PRÉVIO VOLTOU A BATER PONTO (feito pelo chat do ERP/DP)
 
 **Leia isto se a base de pessoas do ponto estiver no cadastro do ERP.**

@@ -21,6 +21,140 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 (noite) — O AMBIENTE DA PESSOA, AS DEMANDAS DENTRO DELE, E A TRAVA DE CONCLUIR
+
+**Esta entrada começa com a cobrança dele, porque ela é o conteúdo:**
+
+> *"Embora eu já tenha discutido muito, você não está absorvendo por completo
+> as informações e não está visualizando dessa forma como a coisa tem que ser
+> feita. Está ficando sempre de forma muito superficial e eu estou tendo que
+> fazer muita complementação. Desde manhã cedo nisso aqui, a gente avançou, na
+> minha opinião, muito pouco."*
+
+E a pergunta dele que revelou o problema de verdade:
+
+> *"Nós temos lá os templates de requisições que a gente vai fazer à
+> contabilidade. E como é que a gente vai disparar isso? Porque eu não vi nada,
+> nenhum botão, nenhuma função que me permita fazer isso. Estou com um cadastro
+> novo, já olhei, está tudo ok, vou mandar para admissão na contabilidade. E
+> aí? Eu faço o que para isso acontecer?"*
+
+#### ⚠️ A DESCOBERTA QUE MUDA O DIAGNÓSTICO: o motor existia inteiro
+
+Antes de responder, li o código de ponta a ponta. **Tudo o que ele descreveu
+como ausente estava construído e alcançável:**
+
+| O que ele pediu | Onde já estava |
+|---|---|
+| modelos de requisição à contabilidade | `core/contabilidade.py`: 7 modelos (CTPS, alteração de cargo, férias, dependente, cônjuge, desligamento, cancelamento) |
+| campos obrigatórios por modelo | `o_que_falta_para_pedir` — o pedido não sai sem o que o outro lado precisa |
+| disparo de e-mail | `enviar`, pela conta da empresa, com o texto GUARDADO (não recalculado) |
+| prazo e cobrança | prazo em dias úteis, nº de cobranças, intervalo, escalada |
+| conferir o retorno | `receber` + `_comparar` campo a campo contra o cadastro; divergência não fecha |
+| as demandas da obra ao DP | `core/pessoal_solicitacoes.py`: 13 tipos, e `atender` faz o efeito no cadastro NA MESMA TRANSAÇÃO |
+| a bifurcação do cadastro | `caminho_depois_da_conferencia`: CTPS → contabilidade, PJ → contrato, prestador → concluído |
+| as telas | `ERP › DP › Solicitações` e `ERP › DP › Contabilidade`, com "+ Pedido", enviar, cobrar, receber, concluir |
+
+**Então o diagnóstico não é "falta funcionalidade" — é "falta no lugar onde ele
+olha".** Estava tudo numa tela à parte, onde se escolhe a pessoa de novo. De
+dentro do cadastro dela, não havia caminho nenhum. Ele disse melhor do que eu:
+*"às vezes eu estou olhando uma determinada pessoa e eu não preciso sair para
+ir para outra tela, para pesquisar o nome dela de novo. Dentro do ambiente dela
+eu já vejo tudo."*
+
+⚠️ **Para a próxima sessão, isto é o que importa:** antes de concluir que algo
+não existe neste ERP, PROCURE. A chance de estar construído e inalcançável é
+maior que a de não existir. Foi o mesmo padrão da etapa sem botão (05/11 → 17/11).
+
+#### O que foi entregue
+
+**1. O AMBIENTE DA PESSOA — três áreas** (desenho dele). A ficha única tinha
+NOVE abas numa fileira, com "Cadastro" e "Configuração do ponto" lado a lado
+sendo coisas de mundos diferentes. Agora a fileira de cima diz o ASSUNTO —
+**👤 Cadastro pessoal · 🕐 Ponto · 💬 Mensagens** — e a de baixo, o que ver
+dentro dele. Nenhum painel mudou, nenhuma permissão mudou: mudou o agrupamento.
+Vive em `ponto/templates/ponto/gestao.html` (a ficha única é de lá).
+
+**2. ARQUIVOS VIROU ABA do cadastro** (*"era melhor que tivesse uma outra aba
+dessas, arquivos, aí você clicar e uma tabelinha listando toda a documentação
+que já foi feito o upload"*). Mesma lista e mesma área de jogar documento que
+já existiam — estavam em outra janela, atrás de um botão.
+
+**3. DEMANDAS VIROU ABA do cadastro** — e é a resposta à cobrança dele:
+   · os **pedidos à contabilidade** desta pessoa, com situação, prazo, atraso e
+     o documento que fecha cada um;
+   · os **pedidos que a obra fez ao DP** sobre ela;
+   · **"📨 Mandar para a contabilidade…"**, que lista só os modelos que PODEM
+     sair com o cadastro como está, e mostra os outros com o que falta em cada
+     um — antes de escolher, não depois de recusar;
+   · dentro do pedido: o **texto que vai** para a contabilidade, a trilha, e os
+     botões que a situação permite (enviar · cobrar · recebi · concluir ·
+     aceitar divergência · cancelar).
+   Chama as MESMAS rotas da tela de Contabilidade. Não é um segundo jeito de
+   pedir, e a tela antiga continua servindo ao que ela é boa: a fila do dia
+   inteiro, de todo mundo, com os atrasados em cima.
+
+**4. ⚠️ A TRAVA DE CONCLUIR — e eu causei a falta dela hoje de manhã.**
+
+Ele: *"eu pego aquele cadastro, eu simplesmente concluo ele, jogo para
+concluído. Se for uma pessoa que é CLT, fica errado. E aí, tem trava para
+isso?"*
+
+Não tinha, e o motivo é meu: de manhã ele pediu que mover de etapa fosse
+simples e ganhasse quadro, e **eu tirei a lista de saltos proibidos INTEIRA.**
+Li "simples" como "sem trava", e não é a mesma coisa.
+
+A correção não é devolver a lista antiga (ela travava gesto que não precisa de
+trava, e isso ensina a contornar). É **uma trava, estreita**: ela não protege a
+ordem das etapas, protege a frase **"este cadastro está pronto"**. Recusa
+concluir quando:
+  · há **pedido à contabilidade em aberto** (qualquer vínculo) — concluir com
+    pedido de pé é perder o rastro do que a contabilidade ainda deve;
+  · é **CTPS sem o pedido de Assinatura de CTPS concluído** — o caso dele;
+  · é **prestador PJ sem o contrato arquivado**.
+
+E **ela diz o que destrava**, com o caminho ("é na aba Demandas do cadastro").
+Trava que só recusa ensina a contornar. Se o registro foi feito por fora do
+sistema, o caminho é abrir o pedido e concluí-lo com o motivo — fica registrado
+que foi por fora, em vez de o cadastro mentir.
+
+Mover entre as outras etapas continua **livre**, como ele pediu de manhã.
+
+#### Três defeitos achados dirigindo a tela (nenhum apareceu em teste)
+
+1. **Recado atrás da janela.** A trava recusava certo, com o recado certo — e
+   **o recado não aparecia**: ia para `#mensagem`, que fica na lista, atrás da
+   janela do cadastro (e no cadastro aberto dentro do ponto a lista nem é
+   desenhada). Para quem usa é o pior desfecho: aperta o botão, nada acontece,
+   nenhum erro. Virou o ajudante `recado()` e um teste de varredura.
+2. **Campo só de leitura quebrava o diálogo.** O `perguntar()` ganhou campo de
+   leitura (para MOSTRAR o texto do e-mail antes de perguntar), e a coleta dos
+   campos fazia `els(...).value` num campo que não tem input → a janela ficava
+   aberta e o botão não fazia nada, sem erro na tela.
+3. **Minha própria promessa no comentário.** Eu havia escrito que a tela
+   mostraria o que falta ANTES de escolher o modelo — e o código não fazia. O
+   servidor recusava depois. Hoje os modelos já chegam com o que falta nesta
+   pessoa, na mesma resposta que a tela já pedia.
+
+#### As abas do cadastro passaram a ter NOME, não número
+
+Eram `0,1,2,3,4,else`, e o botão Salvar aparecia com `ABA_FICHA <= 3`.
+Acrescentar aba no meio **renumerava todas em silêncio**. Com duas abas novas
+entrando, era defeito marcado para acontecer.
+
+#### O que NÃO foi feito, e fica para ele decidir
+
+- **As demandas do DP ainda abrem na tela de Solicitações** (em outra aba), não
+  dentro da aba Demandas. Atender um pedido é um formulário com os campos do
+  tipo, e trazê-lo para dentro é trabalho próprio.
+- **As etapas por tipo de demanda** que ele descreveu (*"encaminhar para
+  coletar assinatura"*, *"aguardando retorno da documentação"*) existem HOJE
+  como situação do PEDIDO (rascunho → enviado → cobrado → respondido →
+  divergente → concluído), não como etapas do cadastro. Pode ser que ele queira
+  as duas coisas; é decisão dele.
+- **A saúde do código** está medida na resposta a ele (ver abaixo), com números.
+
+
 ### ⚑ 17/11/2026 — NO DIA DA SAÍDA, TUDO CAI SOZINHO (a outra metade do aviso prévio)
 
 Depois de o conserto do aviso prévio (logo abaixo) parar de desligar na hora

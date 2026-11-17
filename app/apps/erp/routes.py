@@ -13218,14 +13218,29 @@ def api_dp_pedidos():
             usuario = _usuario_logado(s)
             if request.method == "GET":
                 permitidas = obras_do_usuario(s, usuario)
+                alvo = request.args.get("colaborador_id", type=int)
+                templates = svc_ct.templates_para_tela()
+                # ⚑ COM UMA PESSOA NA MÃO, CADA MODELO JÁ DIZ O QUE FALTA NELA
+                # (17/11/2026). Sem isto a tela só descobre a falta DEPOIS de
+                # a pessoa escolher o modelo e o servidor recusar — que é
+                # exatamente o que o Pipefy fazia, e o que a aba Demandas
+                # existe para não repetir. Vem na MESMA resposta: a tela já
+                # pedia esta lista, e perguntar por modelo seriam sete idas.
+                if alvo:
+                    from app.apps.erp.db.models.cadastros import Colaborador
+                    c = s.get(Colaborador, alvo)
+                    if c is not None:
+                        for t in templates:
+                            t["falta"] = svc_ct.o_que_falta_para_pedir(s, t["chave"], c)
+                            t["avisos"] = svc_ct.avisos_do_pedido(s, t["chave"], c)
                 return jsonify({
                     "ok": True,
                     "pedidos": svc_ct.listar(
                         s, situacao=request.args.get("situacao", ""),
                         atrasados=request.args.get("atrasados") == "1",
-                        colaborador_id=request.args.get("colaborador_id", type=int),
+                        colaborador_id=alvo,
                         obra_ids=list(permitidas) if permitidas is not None else None),
-                    "templates": svc_ct.templates_para_tela(),
+                    "templates": templates,
                     "emails": svc_ct.endereco_padrao(s)})
             r = svc_ct.abrir(s, request.get_json(silent=True) or {}, usuario)
             s.commit()

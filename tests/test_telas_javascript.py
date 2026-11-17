@@ -458,3 +458,48 @@ def test_campo_de_momento_nao_vai_para_o_ajudante_de_data(tela: Path):
         f"{tela.name} passa {errados} para `dataBR`, e o nome diz que é "
         f"TIMESTAMP. `dataBR` parte no hífen e inverte: com hora junto, sai "
         f"\"08 17:50:45+00:00/11/2026\" na tela. Use `momentoBR`.")
+
+
+# ---------------------------------------------------------------------------
+# ⚑ RECADO NÃO PODE SAIR ATRÁS DA JANELA ABERTA (17/11/2026)
+#
+# Achado dirigindo a tela: a trava de "concluído" recusou certo, com o recado
+# certo — e o recado NÃO APARECEU. Era escrito em `#mensagem`, que fica na
+# lista, atrás da janela do cadastro; e no cadastro aberto dentro do ponto a
+# lista não é nem desenhada, então ia para um elemento invisível.
+#
+# Para quem usa, é o pior desfecho possível: aperta o botão, nada acontece,
+# nenhum erro na tela. Parece sistema quebrado, e é trava funcionando.
+#
+# Esta varredura recusa a reincidência: função que roda com a janela do
+# cadastro aberta escreve com `recado(...)`, que escolhe o lugar certo.
+# ---------------------------------------------------------------------------
+FUNCOES_QUE_RODAM_COM_A_JANELA_ABERTA = (
+    "abrirMudancaDeEtapa", "concluirAConferencia", "abrirFichaCompleta",
+)
+
+
+def test_recado_de_quem_roda_com_a_janela_aberta_vai_para_dentro_dela():
+    import re
+    from pathlib import Path
+
+    tela = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp"
+            / "templates" / "erp_colaboradores.html").read_text(encoding="utf-8")
+    assert "function recado(" in tela, (
+        "o ajudante `recado()` sumiu — ele é quem põe o recado dentro da "
+        "janela aberta em vez de atrás dela")
+
+    ruins = []
+    for nome in FUNCOES_QUE_RODAM_COM_A_JANELA_ABERTA:
+        # o corpo da função até a próxima declaração no mesmo nível
+        m = re.search(rf"(async )?function {nome}\s*\(.*?\n\}}\n", tela, re.S)
+        if not m:
+            ruins.append(f"{nome}: função não encontrada (renomeada?)")
+            continue
+        if 'aviso("mensagem"' in m.group(0):
+            ruins.append(f'{nome}: escreve em "mensagem", que fica atrás da janela')
+
+    assert ruins == [], (
+        "\n  ".join(ruins)
+        + "\n  Use `recado(texto, tipo)`: com a janela aberta o recado vai "
+        "para dentro dela; sem janela, vai para a lista.")

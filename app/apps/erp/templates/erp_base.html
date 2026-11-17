@@ -1151,7 +1151,8 @@ document.addEventListener("DOMContentLoaded", () => {
 // isso, todo diálogo montado por aqui — e são dezenas no ERP — ficava de fora
 // da formatação, que foi justamente a queixa do dono de que "todas as telas
 // têm algum detalhe assim".
-function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
+function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto,
+                   botoes, semOk}) {
   return new Promise(resolve => {
     {# ⚑ A JANELA NASCE NOVA A CADA PERGUNTA, e isto é CONSERTO de 15/11/2026.
 
@@ -1189,7 +1190,16 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
                  diálogo recebe RELATO DE OBRA (a sugestão de texto por IA),
                  que é texto livre de verdade. Um `<` no meio de "laje < 10cm"
                  fechava a caixa e comia o resto do relato. #}
-              ${c.tipo === "textarea"
+              {# ⚑ CAMPO SÓ DE LEITURA (17/11/2026). Serve ao diálogo que
+                 precisa MOSTRAR antes de perguntar: o texto que vai para a
+                 contabilidade e a trilha do pedido. Antes disso, a única saída
+                 era uma caixa de texto desabilitada — que parece editável e
+                 engana. Não viaja de volta: não tem `value`. #}
+              ${c.tipo === "leitura"
+                ? `<div class="dados" style="white-space:pre-wrap; max-height:${c.altura || 220}px;
+                     overflow:auto; background:var(--fundo); border:1px solid var(--borda);
+                     border-radius:8px; padding:8px 10px; font-size:12.5px">${escapar(c.valor || "")}</div>`
+                : c.tipo === "textarea"
                 ? `<textarea id="pg-${i}" rows="${c.linhas || 4}"
                      placeholder="${escapar(c.exemplo || "")}">${escapar(c.valor || "")}</textarea>`
                 : c.tipo === "select"
@@ -1221,8 +1231,15 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
             </div>`).join("")}
         </div>
         <div id="pg-erro"></div>
-        <div style="margin-top:14px; display:flex; gap:8px">
-          <button class="btn" data-ok>${textoOk}</button>
+        {# ⚑ BOTÕES DE AÇÃO (17/11/2026): o diálogo que mostra UM registro e
+           oferece o que dá para fazer com ele agora (enviar, cobrar, concluir,
+           cancelar). Quem clica num deles volta em `_botao`, com os campos
+           preenchidos junto. `data-ok` continua sendo o Confirmar de sempre —
+           quem não passa `botoes` não vê diferença nenhuma. #}
+        <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+          ${(botoes || []).map((b, j) =>
+            `<button class="${b.classe || "btn secundario"}" data-acao="${j}">${b.texto}</button>`).join("")}
+          ${semOk ? "" : `<button class="btn" data-ok>${textoOk}</button>`}
           <button class="btn secundario" data-cancelar>Cancelar</button>
         </div>
       </div>`;
@@ -1259,6 +1276,7 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
     function valoresAgora(){
       const v = {__pessoa: pessoaEscolhida};
       campos.forEach((c, i) => {
+        if (c.tipo === "leitura") return;          // só mostra; não viaja
         const e = els(`pg-${i}`);
         if (!e || !c.nome) return;
         if (c.tipo === "pessoa") { v[c.nome] = (els(`pg-${i}-id`) || {}).value || ""; }
@@ -1287,11 +1305,19 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
     const fechar = valor => { dlg.close(); resolve(valor); };
     dlg.querySelectorAll("[data-cancelar]").forEach(b =>
       b.addEventListener("click", () => fechar(null)));
-    dlg.querySelector("[data-ok]").addEventListener("click", () => {
+    {# A conferência dos campos, usada pelo Confirmar E por cada botão de
+       ação: quem clica em "enviar" também preencheu o formulário. #}
+    const colher = () => {
       const saida = {};
       for (let i = 0; i < campos.length; i++) {
         // Campo escondido pelas condições não é exigido nem enviado.
         if (escondido(i)) continue;
+        // ⚠️ CAMPO SÓ DE LEITURA NÃO TEM INPUT, e por isso sai daqui ANTES de
+        // qualquer `els()`. Sem esta linha, `els("pg-0").value` estourava com
+        // "null is not an object" dentro do clique — e o efeito na tela era
+        // dos piores: a janela ficava aberta, o botão não fazia nada e NÃO
+        // aparecia erro nenhum. Achado dirigindo a tela, não por teste.
+        if (campos[i].tipo === "leitura") continue;
         // CAMPO DE ARQUIVO devolve o arquivo, não o texto: `.value` num input
         // de arquivo é um caminho falso ("C:\\fakepath\\nota.pdf") que não
         // serve para nada, e mandá-lo como se fosse o arquivo é o tipo de
@@ -1301,7 +1327,7 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           const arquivo = campo && campo.files && campo.files[0] ? campo.files[0] : null;
           if (campos[i].obrigatorio && !arquivo) {
             aviso("pg-erro", `Escolha ${campos[i].rotulo.toLowerCase()}.`, "erro");
-            return;
+            return null;
           }
           saida[campos[i].nome] = arquivo;
           continue;
@@ -1314,7 +1340,7 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           if (campos[i].obrigatorio && !escolhido) {
             aviso("pg-erro", "Escolha a pessoa na lista — digite parte do nome "
                   + "ou o CPF e clique no resultado.", "erro");
-            return;
+            return null;
           }
           saida[campos[i].nome] = escolhido;
           continue;
@@ -1324,12 +1350,25 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           ? campos[i].obrigatorio_se(valoresAgora()) : campos[i].obrigatorio;
         if (exige && !valor) {
           aviso("pg-erro", `Preencha ${campos[i].rotulo.toLowerCase()}.`, "erro");
-          return;
+          return null;
         }
         saida[campos[i].nome] = valor;
       }
-      fechar(saida);
+      return saida;
+    };
+    const ok = dlg.querySelector("[data-ok]");
+    if (ok) ok.addEventListener("click", () => {
+      const saida = colher();
+      if (saida) fechar(saida);
     });
+    {# Cada botão de ação devolve o que foi preenchido MAIS `_botao`. Assim
+       quem chamou decide pelo nome da ação, sem decorar posição. #}
+    dlg.querySelectorAll("[data-acao]").forEach(b =>
+      b.addEventListener("click", () => {
+        const saida = colher();
+        if (!saida) return;
+        fechar({...saida, _botao: (botoes[+b.dataset.acao] || {}).valor});
+      }));
     campos.forEach((c, i) => { if (c.tipo === "pessoa") ligarBuscaDePessoa(i); });
     aplicarCondicoes();
     {# ⚑ UMA MUDANÇA EM QUALQUER CAMPO REDESENHA AS CONDIÇÕES. Um ouvinte só,

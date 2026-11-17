@@ -2691,6 +2691,45 @@ primeira delas é a que o DP vai querer todo dia.
 
 ---
 
+## 3z-quaterdecies. AS DEMANDAS EM VOLTA DE UMA PESSOA (17/11/2026)
+
+A aba Demandas, dentro do cadastro, torna estas perguntas possíveis — e elas
+são as que o DP faz todo dia, sobre uma pessoa específica.
+
+### O que dá para perguntar
+
+- **"O que está pendente com a contabilidade desta pessoa?"** — os pedidos em
+  aberto, com prazo e com o documento que fecha cada um.
+- **"Este pedido está atrasado?"** — o prazo é em dias ÚTEIS a partir do envio.
+- **"O que já foi pedido à contabilidade sobre esta pessoa, e quando?"** — a
+  trilha de cada pedido, com o texto que foi mandado (guardado, não
+  recalculado: o pedido de março mostra o que foi pedido em março).
+- **"Por que não consigo concluir este cadastro?"** — a trava responde com o
+  motivo e o caminho.
+- **"Que pedidos a obra fez sobre esta pessoa?"** — e em que pé estão.
+- **"Quais pedidos à contabilidade eu POSSO abrir para esta pessoa agora?"** —
+  a lista já exclui os que não podem sair, dizendo o que falta em cada um.
+
+### As palavras ambíguas desta parte, e são três
+
+| Palavra | As leituras |
+|---|---|
+| **"pedido"** | ① o que a obra pede ao DP (`dp_solicitacoes`, nº DP-…); ② o que o DP pede à contabilidade (`dp_pedidos`, nº CT-…). **São filas diferentes** e uma resposta que as some está errada |
+| **"pendente"** | esperando a contabilidade? esperando o DP? esperando documento da pessoa? |
+| **"concluído"** | ① o PEDIDO concluído; ② o CADASTRO na etapa Concluído. O segundo depende do primeiro, mas não são a mesma coisa |
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quanto tempo a contabilidade leva, em média, por tipo de pedido?"** — os
+  carimbos existem (aberto, enviado, respondido, concluído); a conta não está
+  escrita. É a pergunta que diria se o prazo de 2 ou 3 dias úteis é realista.
+- **"Que cadastros estão travados, e por quê?"** — a trava responde um por um,
+  quando alguém tenta. Não há lista de "os travados e o motivo".
+- **"Atender o pedido do DP aqui dentro"** — a aba mostra e leva para a tela de
+  Solicitações. Atender ainda é lá.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

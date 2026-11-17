@@ -87,7 +87,15 @@ def test_o_mapa_de_caminhos_SUGERE_e_nao_proibe_mais():
     cada gesto ensina a contornar, não a respeitar.
 
     O mapa continua existindo para a tela SUGERIR o caminho natural; o que
-    protege agora é o histórico, que guarda quem moveu, de onde e por quê.
+    protege o resto é o histórico, que guarda quem moveu, de onde e por quê.
+
+    ⚠️ CORRIGIDO NA MESMA NOITE, e a correção importa: tirar a lista inteira
+    deixou passar o caso que ele cobrou em seguida — concluir um cadastro de
+    carteira sem o registro formal da contabilidade. Hoje existe UMA trava, e
+    ela é sobre a AFIRMAÇÃO "este cadastro está pronto", não sobre a ordem das
+    etapas (`tests/test_trava_de_concluir_cadastro_banco.py`). "Concluído"
+    continua no mapa de caminhos porque o caminho existe — quem o percorre é
+    que precisa ter cumprido o que ele exige.
     """
     # Toda etapa tem para onde ir — senão o cartão fica preso no quadro.
     for etapa in svc.ETAPAS:
@@ -189,24 +197,42 @@ def test_conferir_duas_vezes_e_recusado_com_a_etapa_de_agora(sessao_real, dono):
 
 
 @banco_
-def test_mover_para_qualquer_etapa_FUNCIONA_e_fica_no_historico(sessao_real, dono):
-    """⚑ MUDOU EM 17/11/2026 — ver `test_o_mapa_de_caminhos_SUGERE_e_nao_proibe_mais`.
+def test_mover_entre_as_etapas_FUNCIONA_e_fica_no_historico(sessao_real, dono):
+    """⚑ MUDOU DUAS VEZES EM 17/11/2026, e a segunda corrigiu a primeira.
 
-    O que substituiu a recusa é o REGISTRO: a mudança passa, e o histórico
-    guarda de onde veio, para onde foi e por quê.
+    De manhã a lista de saltos proibidos saiu inteira (ele pediu que mover
+    fosse simples e ganhasse quadro), e este teste afirmava que dava para ir
+    **para qualquer etapa**, incluindo "concluído".
+
+    À noite ele cobrou a trava, com o exemplo: *"eu pego aquele cadastro, eu
+    simplesmente concluo ele, jogo para concluído. Se for uma pessoa que é CLT,
+    fica errado. (…) E aí, tem trava para isso?"*
+
+    **Eu havia lido "simples" como "sem trava", e não é a mesma coisa.** Mover
+    entre as etapas de trabalho é gesto livre — travar isso só ensina a
+    contornar. Dizer "concluído" é AFIRMAR que o cadastro está pronto, e essa
+    afirmação tem de ser verdade: ver
+    `tests/test_trava_de_concluir_cadastro_banco.py`.
+
+    Este teste passou a guardar a parte que continua livre.
     """
     from sqlalchemy import select
     from app.apps.erp.db.models.cadastros import ColaboradorEtapa
 
-    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Vai Direto Pro Fim"}, dono)
-    svc.mover_etapa(sessao_real, c.id, "CONCLUIDO", dono,
+    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Vai Rodar As Etapas"}, dono)
+    svc.mover_etapa(sessao_real, c.id, "NA_CONTABILIDADE", dono,
                     motivo="movido no quadro")
     sessao_real.flush()
-    assert c.etapa == "CONCLUIDO"
+    assert c.etapa == "NA_CONTABILIDADE"
     trilha = sessao_real.scalars(select(ColaboradorEtapa).where(
         ColaboradorEtapa.colaborador_id == c.id)).all()
     ultima = trilha[-1]
-    assert ultima.para == "CONCLUIDO" and ultima.motivo == "movido no quadro"
+    assert ultima.para == "NA_CONTABILIDADE" and ultima.motivo == "movido no quadro"
+
+    # e o salto que a lista antiga proibia continua passando
+    svc.mover_etapa(sessao_real, c.id, "CONTRATO_A_ASSINAR", dono)
+    sessao_real.flush()
+    assert c.etapa == "CONTRATO_A_ASSINAR"
 
 
 @banco_
