@@ -21,6 +21,86 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — A IMPORTAÇÃO DA PLANILHA: SEIS DEFEITOS NUMA TARDE
+
+> *"Veja como é frustrante. Olha quanto tempo tá sendo tomado para uma simples
+> importação de dados."*
+
+Ele tem razão, e o registro aqui é para a próxima sessão não repetir o padrão:
+**eu entreguei a importação seis vezes como "pronta", e ele a testou seis
+vezes achando defeito.** Cada rodada custou horas dele. O que todos os seis
+defeitos têm em comum está no fim desta seção.
+
+**O que estava errado, na ordem em que ele achou:**
+
+| O que ficava vazio | A causa de verdade |
+|---|---|
+| Razão social e CNPJ do PJ | nunca foram mapeados — as colunas chamam-se "Nome Credor" e "Pix CNPJ", nomes que não dizem o que guardam |
+| Empresa de registro | eu casava por NOME. A planilha diz "00.079.526/0001-09 - BWS", o ERP diz "BWS CONSTRUÇÕES - 00.079.526/0001-09". Mesma empresa, textos que nunca iam bater |
+| Contrato de experiência | a planilha escreve "45 dias, prorrogável por mais 45 dias"; a caixinha do ERP só tem "45+45 dias". O texto entrava cru e a ficha mostrava o campo VAZIO com o dado gravado por baixo |
+| Etapa (a fase do Pipefy) | a correlação existia e estava certa — **ligada só na importação pelo Pipefy**. A da planilha, que virou o caminho principal, lia "Fase Atual" apenas para decidir a data de saída |
+| Nº, série, UF e emissão da CTPS | **"Nº" e "N°"**. O ordinal masculino e o sinal de grau são indistinguíveis na tela e eram letras diferentes para o código: "Nº CTPS" virava `NOCTPS`, "N° CTPS" virava `NCTPS`. Cabeçalho redigitado por alguém fazia a coluna desaparecer sem erro nenhum |
+| 38 pessoas recusadas | PIS com dígito errado derrubava o cadastro INTEIRO — 50 campos de fora por causa de um número de onze dígitos. Ele: *"importa sem o PIS e deixa como pendência"* |
+
+**Mais duas coisas que ele achou na tela, e não na importação:**
+
+- **Não havia como mudar a etapa de ninguém.** A regra de para onde dá para ir
+  existia desde 05/11 e a tela não a conhecia — a etapa era um rótulo que
+  ninguém conseguia mexer. Ele: *"Como mudo uma pessoa de fase/etapa?"* e, em
+  seguida, o que importa: *"as fases do Pipefy é para o DP saber o que fazer;
+  aqui ele fica perdido."* Agora a etapa é botão, oferece só os caminhos
+  legais, pede o motivo (vai para o histórico), e o cadastro em conferência
+  tem o botão **"Conferência concluída"** — o destino é escolhido pela REGRA,
+  pelo vínculo, porque no Pipefy deixar escolher à mão fazia prestador cair na
+  fila da contabilidade esperando um e-mail que nunca saía.
+- **25 pessoas com etapa "Concluído" e situação "Desligado".** Ele: *"Tá
+  errado."* Estava. Etapa e situação são campos independentes de propósito
+  (etapa = o que falta FAZER; situação = a pessoa está na empresa?), e cada
+  importação mexia num sem olhar o outro. Independentes não quer dizer
+  livres: agora a **situação arrasta a etapa** no `salvar`, e a migração
+  **106** arruma quem já estava assim.
+
+**O que mudou de comportamento, e é decisão dele:**
+
+- **A importação passou a CADASTRAR quem falta** — ele: *"Pq não cadastrou a
+  partir da planilha?"* Só quem a planilha mostra como **ativo**: das 3.667
+  linhas, ~2.960 são desligados, e trazer essa base morta encheria lista de
+  obra, folha e relatório.
+- **Cargo e convenção que faltam são criados** pelo nome (o resto se preenche
+  nas telas deles). **Obra não**: é cadastro pesado, e obra fantasma é pior
+  que código não casado.
+- **"Sem Convenção" quer dizer sem convenção**, e não uma convenção chamada
+  "Sem Convenção".
+- **"Solicitações DP" → Inicial.** Ele apontou que essa fase não tinha par.
+  "Inicial" quer dizer "o DP ainda não olhou", que é a descrição que ele deu
+  dessa fase. Se quiser etapa própria para ela, é migração.
+- **Razão social e CNPJ do PJ só entram para quem é PJ.** As colunas podem
+  estar preenchidas para todo mundo ("credor" é quem recebe), e dar razão
+  social a um CLT faria a ficha afirmar duas coisas que se contradizem.
+
+### ⚑ O QUE OS SEIS DEFEITOS TÊM EM COMUM — leia antes de mexer em importação
+
+**Todos eram silenciosos.** Nenhum deu erro. A importação dizia "atualizada",
+o relatório ficava verde, e o campo ficava vazio. Isso é pior que falhar: ele
+só descobria abrindo ficha por ficha.
+
+**Dois consertos de método, para não haver a sétima rodada:**
+
+1. **O relatório agora lista as COLUNAS DA PLANILHA QUE EU NÃO LEIO.** Campo
+   vazio tem duas causas que de fora são idênticas — a coluna está vazia, ou a
+   coluna existe e eu não a reconheço. Descobrir qual das duas custava uma
+   rodada dele, e custou quatro. Agora está na tela.
+2. **`_cru` trata "º" e "°" como a mesma coisa**, e os nomes de coluna aceitam
+   variações ("Nº CTPS", "Nº da CTPS", "Número da CTPS"). Cabeçalho é texto
+   que gente digita; brigar por um caractere invisível perde a coluna inteira.
+
+**E a lição que vale para a próxima importação de qualquer coisa:** de-para
+escrito de cabeça é palpite. O que prende o palpite é (a) ler a fonte de
+verdade e (b) fazer o relatório dizer o que ele NÃO soube ler. Sem (b), o
+defeito vira trabalho do dono.
+
+---
+
 ### ⚑ 17/11/2026 — JOVEM APRENDIZ DERRUBOU A REGRA DE 15/11: CTPS ESCOLHE CONTRATO
 
 > *"Uma coisa que você não percebeu. Se Jovem Aprendiz é CTPS, precisamos
