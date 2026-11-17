@@ -47,7 +47,7 @@ GRAVIDADE = {
     "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE", "CAMERA_TRAVADA": "ATENCAO",
     "SEQUENCIA_RAPIDA": "ATENCAO", "ROSTO_NAO_CONFERE": "URGENTE", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
     "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
-    "ASSINATURA_PENDENTE": "ATENCAO", "TERMO_PENDENTE": "ATENCAO",
+    "ASSINATURA_PENDENTE": "ATENCAO", "TERMO_PENDENTE": "ATENCAO", "RONDA_SEM_FOTO": "ATENCAO",
 }
 ROTULO = {
     "FALTA": "Falta sem justificativa", "FALTA_PARCIAL": "Falta parcial", "BATIDA_FALTANDO": "Batida faltando",
@@ -77,6 +77,7 @@ ROTULO = {
     "BATIDA_RECUSADA_FORA_DA_OBRA": "Tentou bater fora da área da obra",
     "ASSINATURA_PENDENTE": "Folhas de ponto sem assinatura",
     "TERMO_PENDENTE": "Termo do ponto sem assinatura",
+    "RONDA_SEM_FOTO": "Ronda registrada sem foto (o celular não conseguiu)",
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
 DO_DIA = {"FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "COMPENSACAO_INCOMPLETA", "TRABALHOU_NA_FOLGA", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",

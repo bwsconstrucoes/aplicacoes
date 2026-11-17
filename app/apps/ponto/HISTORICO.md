@@ -825,6 +825,29 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+
+## 17/11/2026 (terça) — A ronda sem foto: a localização basta, com um alerta
+
+O dono: *"o vigia (…) num determinado telefone, aquele problema de memória cheia: tenta bater e não consegue enviar a
+foto. O mais importante é a geolocalização (…) quando não desse, enviar sem a foto, da mesma forma que chega o ponto
+sem foto, e talvez um alerta, para a pessoa não perder a ronda."*
+- **No aplicativo** (ronda surpresa): se a foto não sai (a câmera não salvou, a imagem não abriu, o celular sem
+  memória quebrou a redução) — ou se ela não chegou ao servidor (sem rede, servidor fora) —, aparece "📍 Registrar só
+  com a localização (sem foto)", com a explicação "pode ser a memória do celular cheia". A página não tem como saber
+  se foi memória ou se a pessoa desistiu. **Ajustado no mesmo dia** (o dono: *"não gostei, pois induz a pessoa a tirar
+  sem a foto"*): o caminho sem foto só aparece depois de **3 tentativas** que não deram certo (`TENTATIVAS_ANTES_DE_SEM_FOTO`),
+  como um link discreto — "Tentou 3 vezes e a foto não sai? Só nesse caso, registre sem foto: o escritório recebe um
+  aviso" —, e o motivo gravado diz "depois de 3 tentativas". O botão grande continua sendo o da foto.
+  Depois de registrar, o aviso "foi sem foto — apague fotos ou vídeos antigos".
+- **No servidor** (`rondas.registrar`, `sem_foto=`): a LOCALIZAÇÃO continua obrigatória (é ela que prova a
+  presença). Sem foto, só com o motivo que o aplicativo manda; a foto que chega estragada também não derruba a
+  ronda — entra sem ela ("a foto chegou estragada"). A ronda fica FEITA (ou ATRASADA) com o motivo gravado
+  ("registrada sem foto: …").
+- **O alerta "Ronda registrada sem foto"** (`RONDA_SEM_FOTO`, um por ronda): diz o vigia, a ronda, a hora e o motivo,
+  e "confira o celular (memória cheia, câmera)". Nas telas Rondas e Quadro › Rondas, o chip diz "· sem foto".
+- Teste: `test_ponto_rondas_banco.py::test_a_ronda_sem_foto_entra_com_a_localizacao_e_um_alerta` (sem localização
+  não entra; sem foto com motivo entra; foto estragada entra sem ela; os dois alertas). E no celular simulado: a foto
+  falhando, o botão aparecendo e a ronda entrando sem foto.
 ## 13/11/2026 (sexta, noite) — Alertas com função, dia da semana e feriado; intervalo curto abaixo de 50 min; a compensação incompleta
 
 O dono, num pedido só: *"em alerta mostrar função do colaborador; o alerta de intervalo curto somente se inferior a
@@ -848,6 +871,7 @@ to achando que não ta gravando direito"* (a folga de 03/11, terça, paga pelo s
 - Testes: `test_ponto_tipos_ausencia_banco.py` (a incompleta com o texto), `test_ponto_apuracao.py` (58 min não
   acende, 49 acende), `test_ponto_alertas_pagina_banco.py` (dia da semana, feriado e função na linha). E a tela de
   Alertas no navegador (o feriado de Finados aparecendo).
+**Publicado em 13/11/2026** (com o "pode" do dono; suíte inteira: 11.009 passaram). Sem migração.
 
 ## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
 

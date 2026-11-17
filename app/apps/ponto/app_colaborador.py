@@ -1015,7 +1015,7 @@ def app_api_ronda_registrar():
     with db.conexao() as conn:
         r = rondas.registrar(conn, str(d.get("token") or ""), _eu(), latitude=d.get("latitude"),
                              longitude=d.get("longitude"), precisao=d.get("precisao"),
-                             foto_base64=d.get("foto_base64") or "")
+                             foto_base64=d.get("foto_base64") or "", sem_foto=d.get("sem_foto") or "")
     fotos.disparar_envio()
     return _ok(**r), 201
 
