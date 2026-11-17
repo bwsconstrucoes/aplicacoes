@@ -210,6 +210,17 @@ class DadosDPS:
 
     # prestador (BWS) - já preenchido com os dados reais
     prest_cnpj: str = "00079526000109"
+    # ---- SUBSTITUIÇÃO (grupo `subst` do infDPS) ----
+    # ⚠️ Este grupo EXISTE no padrão nacional, e por semanas o sistema disse o
+    # contrário. A mensagem que a tela de emissão mostrava desde 07/10/2026 —
+    # "o modelo nacional não tem esse campo" — estava errada: o `subst` está no
+    # `TCInfDPS`, entre `cLocEmi` e `prest`, e é por ele que a plataforma cancela
+    # a nota antiga sozinha, gerando o evento `e105102` ("Cancelamento de NFS-e
+    # por Substituição"). O dono cobrou em 17/11/2026: "tem alguma limitação que
+    # eu não estou entendendo?" Não tinha — tinha uma crença errada no código.
+    subst_chave: str = ""          # chave de acesso (50) da nota substituída
+    subst_motivo: str = "99"       # TSCodJustSubst: 01..05 ou 99 (Outros)
+    subst_motivo_texto: str = ""   # opcional; 15 a 255 caracteres quando vier
     prest_im: str = "101084492"
     prest_fone: str = ""
     op_simp_nac: int = 1            # 1 = Não optante (BWS é Lucro Real)
@@ -299,6 +310,30 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
     _sub(inf, "dCompet", d.d_compet)
     _sub(inf, "tpEmit", d.tp_emit)
     _sub(inf, "cLocEmi", d.c_loc_emi)
+
+    # SUBSTITUIÇÃO: entra entre cLocEmi e prest, na ordem do schema (TCInfDPS).
+    # Presente este grupo, a plataforma nacional CANCELA a nota substituída por
+    # conta própria — não é preciso mandar evento nenhum depois.
+    if d.subst_chave:
+        chave_sub = "".join(filter(str.isdigit, str(d.subst_chave)))
+        if len(chave_sub) != 50:
+            raise ValueError(
+                f"A chave da nota substituída tem de ter 50 dígitos, e esta tem "
+                f"{len(chave_sub)}.")
+        if str(d.subst_motivo) not in ("01", "02", "03", "04", "05", "99"):
+            raise ValueError(
+                f"Motivo de substituição '{d.subst_motivo}' não existe. Os códigos "
+                f"oficiais são 01 a 05 e 99 (Outros).")
+        sub = _sub(inf, "subst")
+        _sub(sub, "chSubstda", chave_sub)
+        _sub(sub, "cMotivo", str(d.subst_motivo))
+        texto = " ".join(str(d.subst_motivo_texto or "").split())
+        if texto:
+            if not (15 <= len(texto) <= 255):
+                raise ValueError(
+                    f"O motivo escrito da substituição tem de ter de 15 a 255 "
+                    f"caracteres, e este tem {len(texto)}.")
+            _sub(sub, "xMotivo", texto)
 
     prest = _sub(inf, "prest")
     _sub(prest, "CNPJ", "".join(filter(str.isdigit, d.prest_cnpj)))

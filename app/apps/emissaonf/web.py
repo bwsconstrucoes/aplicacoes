@@ -390,31 +390,96 @@ def _pagina_portal_primeiro(caso, card_id, nota_sub, token, campos_form) -> str:
                 f"<input type='radio' name='acao_portal' value='{valor}'{marcado}> "
                 f"<b>{rotulo}</b><br><span class='sub'>{explica}</span></label>")
 
+    # ---- o caso definido: um botão, e o sistema faz as duas pontas ----
+    if c in ("cancelamento", "substituicao"):
+        cancela = c == "cancelamento"
+        como = ("<b>cancelo a NF %s na prefeitura</b> (evento de cancelamento) e "
+                "emito a nota nova" % n if cancela else
+                "<b>emito a nota nova já declarando que ela substitui a NF %s</b> — e a "
+                "plataforma nacional cancela a antiga por conta dela" % n)
+        motivos = ("<option value='1' selected>1 — Erro na emissão</option>"
+                   "<option value='2'>2 — Serviço não prestado</option>"
+                   "<option value='9'>9 — Outros</option>" if cancela else
+                   "<option value='99' selected>99 — Outros</option>"
+                   "<option value='05'>05 — Rejeição pelo tomador</option>"
+                   "<option value='01'>01 — Desenquadramento do Simples Nacional</option>"
+                   "<option value='02'>02 — Enquadramento no Simples Nacional</option>"
+                   "<option value='03'>03 — Inclusão retroativa de imunidade/isenção</option>"
+                   "<option value='04'>04 — Exclusão retroativa de imunidade/isenção</option>")
+        titulo = ("Cancelar a NF %s e emitir a nota nova" % n if cancela else
+                  "Substituir a NF %s pela nota nova" % n)
+        return _doc("Confirmar a troca da nota", f"""
+      <h1>{titulo}</h1>
+      <p class='sub'>Eu faço tudo, numa só vez: {como}. Depois marco a {n} como
+      <b>Cancelada</b> no slot do card, escrevo CANCELADA na planilha e troco o número no
+      título do Omie — e as retenções do título são regravadas quando for o caso.
+      <b>Você não precisa abrir o portal da prefeitura.</b></p>
+      {diag}
+      {avisos_card}
+      <div class='err'><b>⚠️ Isto NÃO SE DESFAZ.</b> Nota fiscal que sai de cena não volta.
+      Confira o número e os dois valores acima antes de confirmar — a nota errada aqui é o
+      pior erro possível desta área.</div>
+      <div class='card'>
+        <form method='post' action='{url_for('.emitir')}'>
+          {hidden}
+          <input type='hidden' name='ja_fiz_no_portal' value='on'>
+          <input type='hidden' name='acao_portal' value='{"cancelar" if cancela else "substituir"}'>
+          <label class='lbl'>Motivo (a prefeitura exige):
+            <select name='motivo_codigo' style='width:100%;box-sizing:border-box;padding:8px;
+                    border:1px solid #c8d0da;border-radius:6px'>{motivos}</select></label>
+          <label class='lbl'>Em uma frase, o que aconteceu (15 a 255 letras):
+            <input name='motivo_texto' value='Valor da medicao corrigido; nota trocada por outra'
+                   style='width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8d0da;
+                   border-radius:6px'></label>
+          <label class='lbl'><input type='checkbox' name='confirmo_cancelamento'>
+            <b>Confirmo: tirar a NF {n} de cena e emitir a nota nova.</b></label>
+          <button type='submit'>{"Cancelar na prefeitura e emitir" if cancela else "Substituir e emitir"}</button>
+        </form>
+      </div>
+      <div class='card'><b>Se preferir fazer você mesmo no portal</b>
+        <form method='post' action='{url_for('.emitir')}'>
+          {hidden}
+          <input type='hidden' name='ja_fiz_no_portal' value='on'>
+          <input type='hidden' name='acao_portal' value='cancelado_a_mao'>
+          <p class='sub'>Cancele (ou substitua) a {n} no portal e clique aqui: eu não mexo
+          na prefeitura, só emito a nota nova e marco a {n} como Cancelada nos nossos
+          registros. É o caminho de escape se a prefeitura recusar o automático.</p>
+          <button type='submit' style='background:#55606d'>Já fiz no portal — só emitir</button>
+        </form>
+      </div>
+      <p class='sub'>Fechar esta tela não faz nada: <b>nada sai de cena e nada é
+      emitido</b>.</p>""")
+
+    # ---- não deu para ler os valores: quem escolhe é ele, e nada é chutado ----
     return _doc("Antes de emitir", f"""
-      <h1>A NF {n} precisa sair de cena no portal da prefeitura</h1>
-      <p class='sub'>É a <b>única</b> parte que o sistema não faz por você: o portal da
-      prefeitura pede o seu login. Aqui dentro — slot do card, planilha e título do Omie —
-      o procedimento é o mesmo nos dois casos, e eu faço tudo junto com a emissão.</p>
+      <h1>A NF {n} precisa sair de cena antes da nota nova</h1>
+      <p class='sub'>Eu faço as duas pontas sozinho — o que muda é COMO a nota antiga sai
+      de cena na prefeitura. Só não consegui conferir os valores para decidir por você.</p>
       {diag}
       {avisos_card}
       <div class='card'>
         <form method='post' action='{url_for('.emitir')}'>
           {hidden}
           <input type='hidden' name='ja_fiz_no_portal' value='on'>
-          <p><b>No portal da prefeitura, com a NF {n}, você vai:</b></p>
-          {_radio("cancelar", "CANCELAR a nota",
-                  "Depois eu emito a nota nova aqui e marco a " + n + " como Cancelada no "
-                  "card, na planilha e no título do Omie — tudo numa vez.")}
-          {_radio("substituir", "SUBSTITUIR a nota (botão &quot;Substituir&quot; do portal)",
-                  "A nota nova nasce NO PORTAL, não aqui. Depois eu termino o serviço pela "
-                  "tela &quot;Recuperar entrega&quot;, que já vai preenchida.")}
-          <p class='sub' style='margin-top:14px'><b>Faça isso no portal agora</b>, e só
-          então clique no botão abaixo.</p>
-          <button type='submit'>Já fiz no portal — continuar</button>
+          <input type='hidden' name='motivo_texto'
+                 value='Valor da medicao corrigido; nota trocada por outra'>
+          <p><b>O que fazer com a NF {n}:</b></p>
+          {_radio("substituir", "SUBSTITUIR — eu declaro a substituição e emito",
+                  "Vale quando a nota nova é de valor IGUAL OU MAIOR. A substituição vai "
+                  "dentro da declaração da nota nova e a plataforma cancela a antiga.")}
+          {_radio("cancelar", "CANCELAR — eu cancelo na prefeitura e emito",
+                  "Vale quando a nota nova é de valor MENOR: o município não aceita "
+                  "substituir por menor.")}
+          {_radio("cancelado_a_mao", "Eu faço no portal — você só emite",
+                  "Caminho de escape: eu não mexo na prefeitura, só emito e marco a "
+                  + n + " como Cancelada nos nossos registros.")}
+          <label class='lbl'><input type='checkbox' name='confirmo_cancelamento'>
+            <b>Confirmo: tirar a NF {n} de cena e emitir a nota nova.</b></label>
+          <button type='submit'>Continuar</button>
         </form>
       </div>
-      <p class='sub'>Se preferir não seguir agora, feche esta tela: <b>nada foi emitido e
-      nada foi alterado</b>. A nota antiga continua como está.</p>""")
+      <p class='sub'>Fechar esta tela não faz nada: <b>nada sai de cena e nada é
+      emitido</b>.</p>""")
 
 
 @bp.route("/emitir", methods=["POST"])
@@ -459,24 +524,14 @@ def emitir():
         return Response(_pagina_portal_primeiro(caso, card_id, nota_sub, token, campos),
                         mimetype="text/html")
 
-    if nota_sub and acao_portal == "substituir":
-        # A nota nova nasce no PORTAL (é o que o botão "Substituir" dele faz), então
-        # não há o que emitir daqui. O que falta é registrar: a tela de recuperação
-        # faz as duas metades, e vai com tudo preenchido.
-        link = (f"{url_for('.recuperar')}?token={html.escape(token)}"
-                f"&card_id={html.escape(card_id)}"
-                f"&nota_substituida={html.escape(str(nota_sub))}")
-        corpo = (f"<h1>A nota nova nasceu no portal</h1>"
-                 f"<div class='ok'>Nada foi emitido aqui, e está certo: quando você aperta "
-                 f"<b>Substituir</b> no portal, é ele que cria a nota nova.</div>"
-                 f"<div class='card'><b>Falta terminar o serviço</b>"
-                 f"<p>Baixe o <b>XML da nota NOVA</b> no portal e cole na tela abaixo. Ela "
-                 f"já vai com o card e o nº {html.escape(str(nota_sub))} preenchidos — "
-                 f"marque <b>\"concluir completo\"</b> e ela registra a nota nova "
-                 f"(planilha, Omie, slot, Drive, Descrição) e marca a "
-                 f"{html.escape(str(nota_sub))} como Cancelada nos três lugares.</p>"
-                 f"<p><a class='btn' href='{link}'>Terminar o serviço</a></p></div>")
-        return Response(_doc("Substituída no portal", corpo), mimetype="text/html")
+    # "cancelar" = o SISTEMA cancela na prefeitura. "cancelado_a_mao" = ele já
+    # cancelou no portal e aqui só se registra. Os dois seguem para a emissão.
+    if (nota_sub and acao_portal in ("cancelar", "substituir")
+            and request.form.get("confirmo_cancelamento") != "on"):
+        return Response(_pagina_erro(
+            "Você não marcou a confirmação do cancelamento. <b>Nada foi cancelado e nada "
+            "foi emitido.</b> Cancelamento de nota fiscal não se desfaz, então ele só sai "
+            "com a caixa marcada."), mimetype="text/html")
 
     with _LOCK:
         if card_id in _EMITINDO:
@@ -500,6 +555,49 @@ def emitir():
         dados = ctx["dados_rps"]
         dados.discriminacao = discr or getattr(dados, "discriminacao", "")
 
+        # ---- CANCELAMENTO NA PREFEITURA, quando é o sistema que faz ----
+        # Vem ANTES de emitir, de propósito: se a prefeitura recusar o
+        # cancelamento, a nota antiga continua valendo e NÃO se deve emitir a
+        # nova — duas notas válidas do mesmo serviço é o pior desfecho.
+        log_cancel = ""
+        chave_antiga = ""
+        if nota_sub and acao_portal in ("cancelar", "substituir"):
+            # A chave de acesso (50 dígitos) é o que identifica a nota antiga nos
+            # DOIS mecanismos: no evento de cancelamento e no grupo `subst` da
+            # declaração da nota nova.
+            chave_antiga = _edps.chave_da_nota(
+                ctx, nota_sub, _token_prefeitura(ctx["cred"]), _producao_permitida(),
+                planilha=(ctx["gc"].open_by_key(_worker.ID_PROC) if ctx.get("gc") else None))
+            if not chave_antiga:
+                return Response(_pagina_erro(
+                    f"Não achei a <b>chave de acesso</b> da NF {html.escape(str(nota_sub))} — "
+                    f"sem ela a prefeitura não sabe qual nota cancelar, e <b>nada foi "
+                    f"cancelado nem emitido</b>.<br><br>A chave tem 50 dígitos e está na "
+                    f"DANFSe da nota. Caminhos: cancele a nota no portal e volte marcando "
+                    f"<b>\"Já fiz no portal\"</b>, ou me diga a chave que eu incluo "
+                    f"um campo para ela."), mimetype="text/html")
+
+        if nota_sub and acao_portal == "cancelar":
+            try:
+                _edps.cancelar_nota(ctx, chave_antiga, _token_prefeitura(ctx["cred"]),
+                                    _producao_permitida(),
+                                    (request.form.get("motivo_codigo") or "1").strip(),
+                                    request.form.get("motivo_texto") or "")
+                log_cancel = (f">>> CANCELAMENTO NA PREFEITURA: a NF {nota_sub} foi "
+                              f"cancelada (chave {chave_antiga}).\n")
+            except _edps.CancelamentoRecusado as e:
+                return Response(_pagina_erro_diag(
+                    f"A prefeitura RECUSOU o cancelamento da NF {html.escape(str(nota_sub))}. "
+                    f"<b>Ela continua válida, e a nota nova NÃO foi emitida</b> — emitir "
+                    f"agora criaria duas notas válidas do mesmo serviço.",
+                    str(e)), mimetype="text/html")
+            except Exception as e:
+                return Response(_pagina_erro_diag(
+                    f"Não consegui cancelar a NF {html.escape(str(nota_sub))} na prefeitura. "
+                    f"<b>Nada foi emitido.</b> Se a nota aparecer cancelada no portal, volte "
+                    f"marcando \"Já fiz no portal\".",
+                    f"{type(e).__name__}: {e}"), mimetype="text/html")
+
         # Ensaio: manda a MESMA declaração para o ambiente de homologação da
         # prefeitura, que não tem validade fiscal. Serve para ver a nota inteira
         # antes de emitir de verdade — e é o único jeito de ensaiar, porque não
@@ -509,8 +607,23 @@ def emitir():
 
         data_emissao = datetime.date.today().isoformat()
         try:
+            # SUBSTITUIÇÃO: a chave da nota antiga vai DENTRO da declaração da
+            # nota nova (grupo `subst`), e a plataforma nacional cancela a antiga
+            # por conta dela — nada de evento depois, nada de portal. Este grupo
+            # sempre existiu no padrão; a tela dizia o contrário por engano meu.
+            _sub_args = {}
+            if nota_sub and acao_portal == "substituir" and chave_antiga:
+                _sub_args = {
+                    "subst_chave": chave_antiga,
+                    "subst_motivo": (request.form.get("motivo_codigo") or "99").strip(),
+                    "subst_motivo_texto": request.form.get("motivo_texto") or "",
+                }
+                log_cancel = (f">>> SUBSTITUIÇÃO DECLARADA: esta nota substitui a NF "
+                              f"{nota_sub} (chave {chave_antiga}); a plataforma "
+                              f"nacional cancela a antiga.\n")
             dps = _dps.montar(ctx["card"], ctx["obra"], ctx["r"], dados,
-                              ctx["prox"], ctx.get("ibge"), data_emissao, producao)
+                              ctx["prox"], ctx.get("ibge"), data_emissao, producao,
+                              **_sub_args)
         except _dps.DadoIncompativel as e:
             return Response(_pagina_erro(f"Emissão barrada: {e}"), mimetype="text/html")
 
@@ -583,6 +696,8 @@ def emitir():
 
         buf = io.StringIO()
         info_sub = None
+        if log_cancel:
+            buf.write(log_cancel)
         if ensaio:
             buf.write(f">>> ENSAIO em HOMOLOGAÇÃO — a nota {numero} NÃO tem validade "
                       f"fiscal, e nada foi gravado na planilha, no Omie, no card nem no "
