@@ -52,7 +52,8 @@
     <select id="f-status" data-sem-busca><option value="">Todas</option>
       <option value="ENVIADO">Enviada</option><option value="FALHOU">Falhou</option>
       <option value="SEM_DESTINO">Sem destinatário</option><option value="DESLIGADO">Tipo desligado</option>
-      <option value="LIMITE">Teto do WhatsApp</option><option value="BARRADO">Barrado na origem</option></select></div>
+      <option value="LIMITE">Teto do WhatsApp</option>
+      <option value="BARRADO">Barrada antes de sair (inclui quem foi desligado)</option></select></div>
   <div class="campo" style="margin-top:10px"><label for="f-tipo">Tipo</label>
     <select id="f-tipo" data-sem-busca><option value="">Todos</option></select></div>
   <div class="campo" style="margin-top:10px"><label for="f-busca">Buscar</label>
@@ -154,6 +155,32 @@
     Telegram.
   </div>
   <div id="wa-corpo">carregando…</div>
+</div>
+
+{# ===========================================================================
+   NÃO MANDAR PARA QUEM FOI DESLIGADO (17/11/2026)
+
+   Decisão dele: *"essa correlação entre o ERP e as pessoas é fundamental,
+   tendo em vista a questão do bloqueio de envio de mensagens para as pessoas
+   desligadas. Por isso que tem que estar tudo correlacionado."*
+
+   Nasce LIGADO: ele pediu o bloqueio, então o padrão é bloquear. A chave
+   existe para o caso contrário.
+   =========================================================================== #}
+<div class="cartao" id="c-desligados">
+  <div class="cartao-cab"><h3>Quem saiu da empresa</h3>
+    <small>a correlação com o cadastro do ERP, usada como trava</small></div>
+  <div class="cartao-dica" style="margin-top:0">
+    Com isto ligado, <b>nenhum aviso do sistema sai para quem está desligado</b>
+    no cadastro de colaboradores — nem por Telegram, nem por WhatsApp. A
+    mensagem não sai e fica no registro como <b>"barrada"</b>, com o nome de
+    quem foi e a data da saída, então nada acontece em silêncio.
+    <br><br>⚠️ <b>O que isto NÃO barra, de propósito:</b> o robô
+    <b>respondendo</b> a quem pede. Quem acabou de sair continua conseguindo
+    pedir o último contracheque pelo Telegram — ali é a pessoa que procura a
+    empresa, não a empresa que manda mensagem para ela.
+  </div>
+  <div id="bd-corpo">carregando…</div>
 </div>
 
 <div class="cartao" id="c-tipos">
@@ -351,8 +378,10 @@ const telefoneBonito = t => { const d = (t || "").replace(/\D/g, "");
   if (d.length === 12) return `(${d.slice(2,4)}) ${d.slice(4,8)}-${d.slice(8)}`; return t || ""; };
 const SITUACAO = {ENVIADO: ["Enviada", "ok"], FALHOU: ["Falhou", "erro"], SEM_DESTINO: ["Sem destinatário", "alerta"],
                   DESLIGADO: ["Tipo desligado", "info"], LIMITE: ["Teto do WhatsApp", "alerta"],
-                  // o módulo que segurou antes do WhatsApp (o ponto: CPF não achado, pessoa desligada, teto de pedidos)
-                  BARRADO: ["Barrado na origem", "alerta"]};
+                  // Barrada ANTES de sair, e são dois casos: o módulo que segurou (o ponto: CPF
+                  // não achado, teto de pedidos) e, desde 17/11/2026, a trava de quem foi
+                  // desligado da empresa. O "O que foi dito" na linha diz qual dos dois.
+                  BARRADO: ["Barrada antes de sair", "alerta"]};
 const CANAL = {telegram: "Telegram", whatsapp: "WhatsApp", "": "—"};
 function etiqueta(status){ const [r, c] = SITUACAO[status] || [status, "info"];
   return `<span class="aviso ${c}" style="display:inline-block; padding:2px 8px; margin:0; font-size:12px">${escapar(r)}</span>`; }
@@ -363,8 +392,8 @@ function bancoAtrasado(d){ if (!d.banco_atrasado) return false;
 async function carregar(){
   try {
     const d = await api("/erp/api/mensagens/tipos");
-    if (bancoAtrasado(d)) { els("wa-corpo").innerHTML = ""; els("tipos").innerHTML = ""; return; }
-    desenharWhatsapp(d); desenharTipos(d.tipos);
+    if (bancoAtrasado(d)) { els("wa-corpo").innerHTML = ""; els("tipos").innerHTML = ""; els("bd-corpo").innerHTML = ""; return; }
+    desenharWhatsapp(d); desenharBloqueioDeDesligados(d); desenharTipos(d.tipos);
   } catch (e) { els("tipos").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
 }
 function desenharWhatsapp(d){
@@ -399,6 +428,29 @@ function desenharWhatsapp(d){
             body: JSON.stringify({por_hora: els("wa-hora").value, por_dia: els("wa-dia").value})});
       aviso("mensagem", "Teto gravado.", "ok"); carregar();
     } catch (e) { aviso("mensagem", e.message, "erro"); }
+  });
+}
+function desenharBloqueioDeDesligados(d){
+  const ligado = d.bloquear_desligados !== false;
+  els("bd-corpo").innerHTML = `
+    <label class="opcao" style="margin:0"><input type="checkbox" id="bd-ligado"
+      ${ligado ? "checked" : ""} ${PODE_CONFIGURAR ? "" : "disabled"}>
+      <span class="rotulo"><b>Não mandar aviso para quem está desligado
+        ${ligado ? "— LIGADO" : "— desligado"}</b></span></label>
+    ${ligado ? "" : `<div class="aviso alerta" style="margin-top:8px">Enquanto isto
+      estiver desmarcado, o sistema <b>manda aviso para quem saiu da empresa</b>.</div>`}`;
+  if (!PODE_CONFIGURAR) return;
+  els("bd-ligado").addEventListener("change", async ev => {
+    const ligar = ev.target.checked;
+    if (!ligar && !confirm("Voltar a mandar aviso para quem está desligado da empresa? "
+                           + "Só desligue esta trava se precisar avisar alguém que já saiu.")) {
+      ev.target.checked = true; return; }
+    try { await api("/erp/api/mensagens/parametros", {method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({bloquear_desligados: ligar})});
+      aviso("mensagem", ligar ? "Quem saiu da empresa não recebe mais aviso."
+                              : "⚠️ A trava foi desligada: o sistema volta a mandar para quem saiu.", "ok");
+      carregar();
+    } catch (e) { aviso("mensagem", e.message, "erro"); ev.target.checked = !ligar; }
   });
 }
 function desenharTipos(tipos){

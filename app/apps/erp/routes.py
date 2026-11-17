@@ -232,6 +232,12 @@ ACOES_NA_TELA = (
                  # Quem não libera acesso não precisa ver fila que não pode
                  # resolver.
                  "gerir_usuarios",
+                 # ⚑ CONFIGURAR MENSAGENS (17/11/2026): o bloco "Mensagens" da
+                 # ficha da pessoa mora no `erp_base.html` (é o mesmo na ficha
+                 # do Pessoal e na do ponto) e oferece "Mandar um teste agora".
+                 # Sem a ação aqui, o botão não apareceria em tela nenhuma
+                 # além da própria tela Mensagens — inclusive para o ADMIN.
+                 "configurar_mensagens",
                  # Cancelar título é ação própria desde 12/09/2026: quem lança
                  # cancela o PRÓPRIO lançamento, e a tela precisa saber disso
                  # para mostrar o botão a quem não aprova.

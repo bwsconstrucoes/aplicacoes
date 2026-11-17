@@ -144,8 +144,10 @@ def mensagens_api_tipos():
         res = core.resumo(conn)
     for t in tipos:
         t["atualizado_em"] = t["atualizado_em"].isoformat() if t.get("atualizado_em") else ""
+    with db.conexao() as conn:
+        bloqueia = core.bloqueia_desligados(conn)
     return jsonify({"ok": True, "tipos": tipos, "politicas": core.POLITICAS, "resumo": res,
-                    "credenciais": _credenciais()})
+                    "credenciais": _credenciais(), "bloquear_desligados": bloqueia})
 
 
 @bp.route("/erp/api/mensagens/politica", methods=["POST"])
@@ -169,6 +171,11 @@ def mensagens_api_politica():
 def mensagens_api_parametros():
     d, quem = _corpo(), _quem()
     with db.conexao() as conn:
+        if "bloquear_desligados" in d:
+            liga = d["bloquear_desligados"] in (True, 1, "1", "true", "sim")
+            core.gravar_parametro(conn, core.BLOQUEAR_DESLIGADOS, "1" if liga else "0", quem)
+            logger.info("Mensagens: bloqueio de desligados %s por %s",
+                        "LIGADO" if liga else "DESLIGADO", quem)
         if "whatsapp_ligado" in d:
             ligado = d["whatsapp_ligado"] in (True, 1, "1", "true", "sim")
             core.gravar_parametro(conn, core.WHATSAPP_LIGADO, "1" if ligado else "", quem)

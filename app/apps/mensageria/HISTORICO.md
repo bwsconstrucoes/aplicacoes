@@ -94,14 +94,92 @@ dizer nada.
 Rocha)"), que é a pergunta que o teste existe para responder. Um campo só, não
 dois lado a lado: a pessoa não escolhe caminho, cola o que tem na mão.
 
+### ⚑ A TRAVA DE QUEM SAIU DA EMPRESA — ele decidiu, e está feita
+
+**Ele voltou ao assunto e fechou a decisão:** *"essa correlação entre o ERP e as
+pessoas é fundamental, tendo em vista a questão do bloqueio de envio de
+mensagens para as pessoas desligadas. Por isso que tem que estar tudo
+correlacionado."*
+
+**O que passou a valer:** com a trava ligada (e ela **nasce ligada**), nenhum
+aviso do sistema sai para quem está DESLIGADO no cadastro de colaboradores —
+nem por Telegram nem por WhatsApp. A mensagem não sai e fica no registro como
+**BARRADO**, com o nome de quem foi e a data da saída. Nada em silêncio.
+
+**⚑ ONDE A TRAVA MORA, e por que ali:** em `notificador.notificar` e nos dois
+atalhos (`enviar_telegram`, `enviar_whatsapp`). São **sete** módulos chamando o
+notificador — ERP, ponto, Análise de SPs, BaixaBradesco, ProcessarNovaSP,
+ValidaSP e o bot. Trava espalhada por sete lugares é trava que um deles
+esquece.
+
+**⚠️ O QUE ELA NÃO BARRA, E ISSO RESOLVE A RESSALVA QUE EU TINHA LEVANTADO:** o
+robô **respondendo** a quem pede. O contracheque pelo Telegram sai por
+`telegram_bot._tg_enviar`, que **não passa pelo notificador** — então quem
+acabou de sair continua conseguindo pedir o último contracheque. A trava barra
+o que a EMPRESA MANDA; não barra a pessoa procurando a empresa. Os dois pedidos
+dele (bloquear, e não deixar a pessoa sem o contracheque) caem em lados
+diferentes dessa linha, e por isso não há conflito.
+
+**A ordem das perguntas é o que evita barrar quem não devia**, e é a parte com
+mais teste:
+
+1. Esta pessoa está **ativa em algum lugar** (colaborador não desligado OU
+   operador do ERP ativo)? Se sim, **não barra**. Cobre o parceiro da obra e o
+   contador (operam o sistema e não são colaboradores) e o **recontratado** cujo
+   vínculo antigo ficou na tabela.
+2. Só então: existe colaborador **DESLIGADO** com este CPF ou telefone? Barra.
+3. Não achou ninguém? **Não barra.** Fornecedor, contabilidade, número que não é
+   de colaborador — barrar o desconhecido fecharia metade dos avisos.
+
+**A chave está na tela** (Mensagens › Tipos e canais › "Quem saiu da empresa"),
+para o dia em que ele precisar avisar alguém que já saiu, sem esperar código
+novo. Desligar pede confirmação, e a tela avisa em vermelho enquanto estiver
+desligada.
+
+### ⚑ A FICHA DA PESSOA PASSOU A RESPONDER "POR QUE NÃO RECEBE?"
+
+Ele: *"a partir do cadastro da pessoa, a gente conseguir ver as mensagens para
+aquela pessoa. Não sei se vai clicar no canto e abrir alguma coisa. Porque tem
+uma determinada pessoa que está cadastrada e ele está relatando que não está
+recebendo mensagem. E eu não consigo nem entender, a princípio. (…) Precisa ter
+um ambiente."*
+
+**O bloco já existia** — aba **Mensagens** na ficha da pessoa, em Pessoal, e na
+ficha única do ponto, o mesmo código no `erp_base.html`. Ele não achou, e
+achando não resolveria, por três buracos:
+
+1. **O motivo estava no banco e não na tela.** O sistema já guardava, em
+   português, por que a mensagem não chegou — *"a pessoa bloqueou o robô da BWS
+   no Telegram (ela precisa desbloquear e tocar em Iniciar)"*, *"o Telegram não
+   acha esta conversa"*. A coluna mostrava o TEXTO da mensagem e **não o
+   `detalhe`**. A resposta que ele procurava estava gravada e escondida. **É o
+   conserto mais importante desta rodada.**
+2. **Não havia veredito.** A ficha dava pedaços. Agora conclui, com o **mesmo**
+   `diagnosticar()` da tela de gestão — há teste provando que as duas nunca
+   discordam.
+3. **Não havia como testar na hora.** Agora tem **"Mandar um teste agora"**: em
+   vez de deduzir pelo histórico, manda uma e mostra o que o Telegram
+   respondeu. Usa o mesmo endereço do teste da tela Mensagens, não um segundo
+   caminho de enviar.
+
+Mais o **ID do Telegram** e o número confirmado, na própria ficha.
+
 ### ⚠️ A pergunta dele que precisa ficar registrada
 
 > *"Eles são colaboradores, né? Se não for colaborador, ele desliga automático,
 > né?"*
 
-**NÃO desliga, e eu não mudei isso — porque desligar sozinho seria pior.** Quem
-é desligado da empresa sai da lista de gestão, mas o Telegram dela continua
-ligado e ela cai em **"Cadastros a conferir"**, com um botão de desligar.
+**O CADASTRO não se desliga sozinho — mas O ENVIO passou a ser barrado**, e são
+coisas diferentes que vale não confundir:
+
+| | O que acontece |
+|---|---|
+| **O cadastro** (a linha em `telegram_cadastros`) | continua ativo. Quem saiu cai em "Cadastros a conferir", com um botão de desligar. **Isto é de propósito:** é esse cadastro que deixa a pessoa pedir o último contracheque ao robô |
+| **O envio** (o que a empresa manda) | **barrado**, desde a decisão dele de 17/11 — ver a seção da trava, acima |
+
+Quem é desligado da empresa sai da lista de gestão, mas o Telegram dela
+continua ligado e ela cai em **"Cadastros a conferir"**, com um botão de
+desligar.
 
 O motivo de não ser automático: **quem acabou de sair ainda costuma precisar do
 último contracheque pelo robô.** Cortar o Telegram no momento do desligamento

@@ -44,6 +44,14 @@ instalada e foi removida.
                                      ainda assim fica no registro como "sem_tipo"
 ```
 
+**⚑ ANTES DAS DUAS CAMADAS, A TRAVA DE QUEM SAIU** (17/11/2026): se o
+destinatário é um colaborador **DESLIGADO** e não está ativo em lugar nenhum, a
+mensagem **não sai** — fica no registro como `BARRADO`, com o nome e a data da
+saída. Mora em `notificador.notificar` e nos dois atalhos, nasce ligada e se
+desliga em Mensagens › Tipos e canais. **Não barra o robô RESPONDENDO** a quem
+pede o contracheque (`telegram_bot._tg_enviar` não passa pelo notificador), e é
+essa linha que faz a trava não deixar ninguém sem o último contracheque.
+
 **Duas camadas de liga/desliga, e a ordem importa:**
 
 1. **A tela ERP › Mensagens** (mensageria): quando o chamador diz o **tipo**

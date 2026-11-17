@@ -525,3 +525,138 @@ def test_id_nao_cadastrado_com_cara_de_telefone_vira_telefone(conn):
     tipo, _, como = _destino("telegram", "1234567890")
 
     assert tipo == "telefone" and "telefone" in como
+
+
+# ===========================================================================
+# NÃO MANDAR MENSAGEM PARA QUEM FOI DESLIGADO (17/11/2026)
+#
+# Decisão dele, dita com todas as letras: *"essa correlação entre o ERP e as
+# pessoas é fundamental, tendo em vista a questão do bloqueio de envio de
+# mensagens para as pessoas desligadas. Por isso que tem que estar tudo
+# correlacionado."*
+#
+# ⚠️ O QUE ESTES CASOS PROTEGEM é o lado perigoso da trava: barrar quem NÃO
+# devia. Um aviso que não sai e ninguém nota é pior que um aviso a mais.
+# ===========================================================================
+def test_quem_foi_desligado_e_barrado(conn, gente):
+    quem = tc.desligado_da_empresa(conn, telefone="85999990003")
+
+    assert quem and quem["nome"] == "Cid Desligado"
+    assert "desligada da empresa" in tc.motivo_do_bloqueio(conn, telefone="85999990003")
+
+
+def test_pelo_cpf_tambem(conn, gente):
+    assert tc.desligado_da_empresa(conn, cpf="333.333.333-33")
+
+
+def test_quem_esta_ativo_NAO_e_barrado(conn, gente):
+    assert tc.desligado_da_empresa(conn, telefone="85999990001") is None
+    assert tc.motivo_do_bloqueio(conn, telefone="85999990001") is None
+
+
+def test_numero_que_nao_e_de_ninguem_NAO_e_barrado(conn, gente):
+    """Fornecedor, contador, o celular de quem não é colaborador: barrar o
+    desconhecido fecharia metade dos avisos do sistema."""
+    assert tc.motivo_do_bloqueio(conn, telefone="85911110000") is None
+
+
+def test_recontratado_com_cadastro_antigo_NAO_e_barrado(conn, gente):
+    """O caso real que a ordem das perguntas resolve: a pessoa tem uma ficha
+    DESLIGADA (o vínculo antigo) e outra ATIVA. Procurar "existe desligado com
+    este telefone?" primeiro a barraria."""
+    # O CPF é único na tabela, então o vínculo antigo fica sem CPF (é como o
+    # cadastro repetido aparece de verdade: mesmo telefone, ficha incompleta).
+    _colab(conn, "Ana Lima (vínculo antigo)", "", "(85) 99999-0001", "DESLIGADO")
+
+    assert tc.motivo_do_bloqueio(conn, cpf="11111111111") is None
+    assert tc.motivo_do_bloqueio(conn, telefone="85999990001") is None
+
+
+def test_operador_do_erp_que_nao_e_colaborador_NAO_e_barrado(conn):
+    """O parceiro da obra e o contador operam o sistema e não são colaboradores
+    da BWS."""
+    from app.apps.erp.core.auth.service import gerar_hash
+    conn.execute(text("DELETE FROM usuarios WHERE email = 'parceiro.msg@teste.com'"))
+    conn.execute(text("INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, telefone) "
+                      "VALUES ('Parceiro da obra', 'parceiro.msg@teste.com', :h, 'PARCEIRO', "
+                      "        TRUE, '85988887777')"), {"h": gerar_hash("x" * 12)})
+    _colab(conn, "Homônimo Desligado", "", "85988887777", "DESLIGADO")
+
+    assert tc.motivo_do_bloqueio(conn, telefone="85988887777") is None
+
+
+def test_a_trava_pode_ser_desligada_pela_tela(conn, gente):
+    """Ela nasce ligada — ele pediu o bloqueio. A chave existe para o caso de
+    ele precisar avisar alguém que já saiu, sem esperar código novo."""
+    assert core.bloqueia_desligados(conn) is True
+    assert tc.motivo_do_bloqueio(conn, telefone="85999990003")
+
+    core.gravar_parametro(conn, core.BLOQUEAR_DESLIGADOS, "0", "teste")
+
+    assert core.bloqueia_desligados(conn) is False
+    assert tc.motivo_do_bloqueio(conn, telefone="85999990003") is None
+
+
+def test_o_notificador_barra_e_registra_o_motivo(conn, gente, monkeypatch):
+    """A trava inteira, pelo caminho de verdade: o aviso NÃO sai, e fica no
+    registro dizendo quem e por quê — nada acontece em silêncio."""
+    from app.apps import notificador
+    mandou = []
+    monkeypatch.setattr(notificador, "_tg_notificar",
+                        lambda **k: mandou.append(k) or {"ok": True})
+    monkeypatch.setattr(notificador, "_wa_enviar_texto",
+                        lambda *a, **k: mandou.append(a) or {"ok": True})
+
+    r = notificador.notificar(telefone="85999990003", mensagem="oi",
+                              finalidade="erp.titulo_pago")
+
+    assert mandou == [], "a mensagem NÃO pode sair"
+    assert "Cid Desligado" in r["mensageria"]["detalhe"]
+    linha = conn.execute(text("SELECT status, detalhe FROM mensageria.envios "
+                              " ORDER BY id DESC LIMIT 1")).mappings().first()
+    assert linha["status"] == "BARRADO"
+    assert "desligada da empresa" in linha["detalhe"]
+
+
+def test_o_notificador_deixa_passar_quem_esta_ativo(conn, gente, monkeypatch):
+    from app.apps import notificador
+    mandou = []
+    monkeypatch.setattr(notificador, "_tg_notificar",
+                        lambda **k: mandou.append(k) or {"ok": True, "chat_id": "1"})
+
+    notificador.notificar(telefone="85999990001", mensagem="oi",
+                          finalidade="erp.titulo_pago")
+
+    assert len(mandou) == 1
+
+
+# ---------------------------------------------------------------------------
+# O veredito na FICHA da pessoa — "por que esta não recebe?"
+# ---------------------------------------------------------------------------
+def test_a_ficha_conclui_em_vez_de_mostrar_so_os_pedacos(conn, gente):
+    tc.gravar_cadastro(conn, chat_id=4242, cpf="22222222222")
+
+    d = tc.resumo_da_pessoa(conn, gente["bia"])
+
+    assert d["diagnostico"] == "RECEBE"
+    assert d["telegram"]["chat_id"] == "4242"
+    assert d["diagnostico_rotulo"] and d["diagnostico_explicacao"]
+
+
+def test_a_ficha_de_quem_saiu_diz_que_o_robo_continua_respondendo(conn, gente):
+    """O cuidado que faz o bloqueio não virar um problema novo: quem saiu ainda
+    consegue pedir o último contracheque."""
+    d = tc.resumo_da_pessoa(conn, gente["cid"])
+
+    assert d["diagnostico"] == "DESLIGADO_DA_EMPRESA"
+    assert "contracheque" in d["diagnostico_explicacao"]
+
+
+def test_a_ficha_e_a_tela_de_gestao_nunca_discordam(conn, gente):
+    """As duas respondem a mesma pergunta; se divergirem, uma está mentindo."""
+    tc.gravar_cadastro(conn, chat_id=4343, cpf="22222222222")
+    da_lista = {p["colaborador_id"]: p["diagnostico"] for p in tc.painel(conn)["pessoas"]}
+
+    for cid, esperado in da_lista.items():
+        if cid:
+            assert tc.resumo_da_pessoa(conn, cid)["diagnostico"] == esperado

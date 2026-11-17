@@ -483,6 +483,72 @@ def sem_telefone(conn) -> list[dict]:
                               ORDER BY nome""")
 
 
+# ---------------------------------------------------------------------------
+# QUEM FOI DESLIGADO DA EMPRESA — a trava de envio (17/11/2026)
+#
+# Ele: *"essa correlação entre o ERP e as pessoas é fundamental, tendo em vista
+# a questão do bloqueio de envio de mensagens para as pessoas desligadas. Por
+# isso que tem que estar tudo correlacionado."*
+#
+# ⚑ A ORDEM DAS PERGUNTAS É O QUE EVITA BARRAR QUEM NÃO DEVIA, e ela importa:
+#
+#   1. Esta pessoa está ATIVA em algum lugar (colaborador não desligado ou
+#      operador ativo)? Se sim, NÃO barra — e isto cobre o caso real do
+#      parceiro da obra e do contador, que não são colaboradores da BWS mas
+#      operam o sistema, e o do recontratado cujo cadastro antigo ficou.
+#   2. Só então: existe colaborador DESLIGADO com este CPF ou telefone? Barra,
+#      dizendo quem e desde quando.
+#   3. Não achou ninguém? NÃO barra. Mensagem para fornecedor, para o
+#      escritório de contabilidade ou para um número que não é de colaborador
+#      nenhum continua saindo — barrar o desconhecido fecharia metade dos
+#      avisos do sistema sem ninguém entender.
+# ---------------------------------------------------------------------------
+def desligado_da_empresa(conn, *, telefone=None, cpf=None) -> Optional[dict]:
+    """Quem foi desligado e não está ativo em lugar nenhum. `None` = pode mandar."""
+    alvo_cpf = normalizar_cpf(cpf) if cpf else ""
+    variantes = variantes_telefone(telefone) if telefone else set()
+    if not alvo_cpf and not variantes:
+        return None
+    # 1. está ativa em algum lugar?
+    if achar_pessoa(conn, telefone=telefone, cpf=cpf) is not None:
+        return None
+    # 2. é desligada?
+    linhas = db.todos(conn, """
+        SELECT nome, cpf, telefone, demissao FROM public.colaboradores
+         WHERE coalesce(situacao, '') = 'DESLIGADO'""")
+    for c in linhas:
+        if alvo_cpf and normalizar_cpf(c["cpf"]) == alvo_cpf:
+            return _desligada(c)
+        if variantes and (variantes_telefone(c["telefone"]) & variantes):
+            return _desligada(c)
+    # 3. não é de ninguém que a gente conhece
+    return None
+
+
+def _desligada(c: dict) -> dict:
+    return {"nome": (c["nome"] or "").strip(), "cpf": normalizar_cpf(c["cpf"]),
+            "demissao": c.get("demissao").isoformat() if c.get("demissao") else ""}
+
+
+def motivo_do_bloqueio(conn, *, telefone=None, cpf=None) -> Optional[str]:
+    """A frase que vai para o registro quando a mensagem é barrada. `None` =
+    pode mandar. Nunca levanta: trava que derruba envio é pior que trava
+    nenhuma."""
+    try:
+        if not core.bloqueia_desligados(conn):
+            return None
+        quem = desligado_da_empresa(conn, telefone=telefone, cpf=cpf)
+        if not quem:
+            return None
+        desde = f" (saiu em {quem['demissao'][8:10]}/{quem['demissao'][5:7]}/{quem['demissao'][:4]})" \
+            if quem.get("demissao") else ""
+        return (f"{quem['nome'] or 'a pessoa'} foi desligada da empresa{desde} — "
+                "a tela Mensagens está configurada para não mandar aviso a quem saiu")
+    except Exception:  # noqa: BLE001
+        logger.exception("Mensageria: falha ao conferir se a pessoa foi desligada")
+        return None
+
+
 def colaborador_por_cpf(conn, cpf) -> Optional[dict]:
     """Para o contracheque do robô: nome, CPF, telefone e se está desligado —
     do ERP, no formato que o assistente já usava ({cpf, nome, tel, status})."""
@@ -519,8 +585,33 @@ def resumo_da_pessoa(conn, colaborador_id: int) -> dict:
                               ORDER BY criado_em DESC LIMIT 1""", cpf=cpf or "~", tel=pessoa["telefone"] or "~")
     for m in mensagens:
         m["tipo_nome"] = core.nome_do_tipo(m["tipo"])
+    # ⚑ O VEREDITO VAI PARA A FICHA (17/11/2026). Ele: *"a partir do cadastro da
+    # pessoa, a gente conseguir ver as mensagens para aquela pessoa (…) tem uma
+    # determinada pessoa que está cadastrada e ele está relatando que não está
+    # recebendo mensagem. E eu não consigo nem entender, a princípio."*
+    #
+    # A ficha mostrava os pedaços e não concluía. É o MESMO veredito da tela de
+    # gestão, calculado pela MESMA função — duas telas que respondem a mesma
+    # pergunta não podem discordar.
+    linha_para_veredito = {
+        "telegram": bool(cad), "telefone": pessoa["telefone"],
+        "telefone_serve": len(digitos(pessoa["telefone"])) >= 12,
+        "telefone_diverge": bool(cad and cad["telefone"] and pessoa["telefone"]
+                                 and not (variantes_telefone(cad["telefone"])
+                                          & variantes_telefone(pessoa["telefone"]))),
+    }
+    if (c["situacao"] or "") == "DESLIGADO":
+        veredito = ("DESLIGADO_DA_EMPRESA", "Desligada da empresa", "alerta",
+                    "o sistema não manda aviso para quem saiu; o robô continua "
+                    "respondendo quem pedir o contracheque")
+    else:
+        v = diagnosticar(linha_para_veredito)
+        veredito = (v, *DIAGNOSTICOS[v])
     return {"colaborador": {"id": c["id"], "nome": c["nome"], "situacao": c["situacao"],
                             "telefone": pessoa["telefone"]},
+            "diagnostico": veredito[0], "diagnostico_rotulo": veredito[1],
+            "diagnostico_cor": veredito[2], "diagnostico_explicacao": veredito[3],
+            "bloqueia_desligados": core.bloqueia_desligados(conn),
             "pode_cadastrar": bool(pessoa["telefone"]) and c["situacao"] != "DESLIGADO",
             "telegram": ({"chat_id": cad["chat_id"], "desde": cad["criado_em"], "origem": cad["origem"],
                           "telefone": cad["telefone"],
