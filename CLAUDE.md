@@ -491,6 +491,43 @@ Já vale em: obra (contrato, matrícula CNO, ART, OS), colaborador e empresa
 (Cartão CNPJ — `abrirCadastroDeEmpresa`, no `erp_base.html`, usada pela tela de
 Empresas e pela criação de obra).
 
+## Funcionalidade nova pergunta: o que ela SUBSTITUI?
+
+Cobrança dele em 17/11/2026, e ela é a continuação direta da regra "um
+cadastro, uma porta" logo acima:
+
+> *"Às vezes não compreendo a lógica de complicar. As pessoas já estão todas
+> no sistema (…) era só para equalizar e complementar os dados."*
+
+O que ele encontrou: **três** botões para importar pessoas — um por arquivo
+`.xlsx` (09/11), um por PDF do Fortes (16/11) e um pela planilha do Google ao
+vivo (17/11). Cada um nasceu respondendo ao que ele pediu naquele dia, e cada
+um estava certo sozinho. Juntos viraram um cardápio, e ele teve de perguntar
+duas vezes qual era o certo.
+
+**A causa, dita sem rodeio: pedido novo é tratado como coisa a ACRESCENTAR.**
+Acrescentar é barato para quem escreve — um botão novo não exige entender nem
+desmontar o que já existe. O custo não cai em quem escreve: cai nele, toda vez
+que abre a tela e precisa escolher entre caminhos sem saber a diferença.
+
+**A pergunta obrigatória, antes de entregar qualquer caminho novo:**
+
+> Isto é uma porta NOVA ou é a porta CERTA para algo que já tem porta?
+> Se é a certa, a antiga sai — ou, no mínimo, a resposta diz que ela ficou e
+> por quê.
+
+E quando a antiga fica, a tela tem de dizer **para que serve cada uma**, em
+português, sem obrigar ninguém a descobrir pela tentativa.
+
+**⚠️ Mas "a antiga sai" NÃO é autorização para apagar.** No mesmo dia, ao ver
+que eu ia tirar o botão antigo, ele cortou: *"eu não pedi pra tirar."* Tirar
+funcionalidade é mudança com risco — pode ser o caminho que alguém usa, ou o
+único que faz algo que o novo não faz. Então: **proponha, explique o que o
+novo cobre e o que se perde, e espere o "pode".** O que não se faz é entregar
+a terceira porta calado e deixá-lo descobrir sozinho que há três.
+
+---
+
 ## Padrões que já existem — reusar, não recriar
 
 - Resposta JSON: `{'ok': True, ...}` / `{'ok': False, 'erro': '...'}`.
