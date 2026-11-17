@@ -50,7 +50,20 @@ def _cru(texto: Any) -> str:
     É o que faz "Segunda à Sexta" e "SEGUNDA A SEXTA" serem a mesma coisa —
     diferença de digitação não pode custar um campo.
     """
-    sem = unicodedata.normalize("NFKD", str(texto or ""))
+    # ⚑ "Nº" E "N°" SÃO A MESMA COISA PARA QUEM DIGITA, E ERAM DUAS AQUI —
+    # e isto custou campos vazios em 17/11/2026 (nº da CTPS, série, UF e
+    # emissão). O "º" é o ordinal masculino e o "°" é o sinal de grau: na tela
+    # são indistinguíveis, mas o NFKD decompõe o primeiro em "o" e deixa o
+    # segundo intacto, que depois cai fora por não ser letra. Resultado:
+    # "Nº CTPS" virava NOCTPS e "N° CTPS" virava NCTPS — duas colunas
+    # diferentes para os olhos do código, idênticas para os olhos de quem
+    # preenche a planilha.
+    #
+    # Ninguém vai descobrir isso olhando a planilha, e é o tipo de defeito que
+    # volta sempre que alguém redigitar um cabeçalho. Os dois passam a valer
+    # "O", que é como as duas formas são lidas em voz alta.
+    bruto = str(texto or "").replace("°", "º")
+    sem = unicodedata.normalize("NFKD", bruto)
     sem = "".join(c for c in sem if not unicodedata.combining(c))
     return "".join(c for c in sem.upper() if c.isalnum())
 
@@ -119,26 +132,36 @@ TEXTO_DIRETO: dict[str, tuple[str, ...]] = {
     "bairro":           ("Bairro",),
     "uf":               ("UF (Endereço)",),
     "municipio":        ("Município",),
-    "ctps_numero":      ("Nº CTPS",),
-    "ctps_serie":       ("Série (CTPS)",),
-    "ctps_uf":          ("UF (CTPS)",),
-    "contrato_experiencia": ("Contrato de Experiência",),
+    # Os nomes alternativos não são enfeite: é uma planilha que gente digita,
+    # e cabeçalho redigitado muda de forma. O primeiro é o que está lá hoje.
+    "ctps_numero":      ("Nº CTPS", "Nº da CTPS", "Número da CTPS",
+                         "Numero CTPS", "CTPS Nº"),
+    "ctps_serie":       ("Série (CTPS)", "Série da CTPS", "Serie CTPS"),
+    "ctps_uf":          ("UF (CTPS)", "UF da CTPS"),
     "observacao_auxilio":   ("Observação Ajuda de Custo",),
     "id_fortes":        ("ID Fortes",),
     "requerente":       ("Responsável pela Solicitação",),
     "pix_chave":        ("Chave Pix",),
+    # ⚑ OS DOIS CAMPOS DO PJ, apontados por ele em 17/11/2026 — e os nomes das
+    # colunas não têm NADA a ver com o que elas guardam, por isso ficam
+    # anotados: a razão social do prestador PJ está em "Nome Credor", e o CNPJ
+    # dele em "Pix CNPJ" (é o CNPJ que recebe o Pix, que é o mesmo da empresa
+    # dele). Adivinhar pelo nome da coluna levaria aos campos errados.
+    "razao_social_pj":  ("Nome Credor", "Razão Social"),
 }
 # Campos que são número com pontuação na planilha e só dígitos no cadastro.
 SO_DIGITOS: dict[str, tuple[str, ...]] = {
     "cpf":      ("CPF (Cadastro de Pessoa Física)", "CPF Números"),
     "telefone": ("Telefone",),
     "cep":      ("CEP",),
-    "pis":      ("Nº PIS",),
+    "pis":      ("Nº PIS", "Nº do PIS", "Numero PIS"),
+    "cnpj_pj":  ("Pix CNPJ", "CNPJ (PJ)"),
 }
 DATAS: dict[str, tuple[str, ...]] = {
     "data_nascimento": ("Data de Nascimento",),
     "rg_emissao":      ("Data de Emissão (Documento de Identificação)",),
-    "ctps_emissao":    ("Data de Emissão (CTPS)",),
+    "ctps_emissao":    ("Data de Emissão (CTPS)", "Emissão da CTPS",
+                        "Data de Emissao (CTPS)"),
     "data_inicio":     ("Data de Início",),
     "admissao":        ("Data de Admissão",),
     "aviso_previo":    ("Data do Aviso Prévio",),
@@ -230,6 +253,22 @@ LISTAS: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
         "CPF": "CPF", "TELEFONE": "TELEFONE", "EMAIL": "EMAIL",
         "ALEATORIA": "ALEATORIA", "CNPJ": "CNPJ",
     }),
+    # ⚑ A PLANILHA ESCREVE A FRASE INTEIRA, O ERP GUARDA A ABREVIAÇÃO
+    # (17/11/2026). Ele: *"alguns campos as opções de seleção sequer existem no
+    # ERP."* Era este: a planilha diz "45 dias, prorrogável por mais 45 dias" e
+    # a caixinha do cadastro só tem "45+45 dias". O texto entrava cru, não
+    # casava com opção nenhuma, e a caixinha aparecia VAZIA na ficha — com o
+    # dado gravado por baixo. Pior que não importar: parece que não veio.
+    "contrato_experiencia": (("Contrato de Experiência",), {
+        "45DIASPRORROGAVELPORMAIS45DIAS": "45+45 dias",
+        "30DIASPRORROGAVELPORMAIS60DIAS": "30+60 dias",
+        "60DIASPRORROGAVELPORMAIS30DIAS": "60+30 dias",
+        "30DIASPRORROGAVELPORMAIS30DIAS": "30+30 dias",
+        "SEMCONTRATODEEXPERIENCIA": "Sem contrato de experiência",
+        # As abreviações também passam, para o dia em que a planilha mudar.
+        "4545DIAS": "45+45 dias", "3060DIAS": "30+60 dias",
+        "6030DIAS": "60+30 dias", "3030DIAS": "30+30 dias",
+    }),
 }
 
 # As colunas que viram LIGAÇÃO (cargo, convenção, obra, empresa): aqui sai o
@@ -242,6 +281,24 @@ NOMES: dict[str, tuple[str, ...]] = {
     "fase":     ("Fase Atual",),
     "centro_custo_contabil": ("Centro de Custo Contabilidade",),
 }
+
+
+def colunas_que_eu_uso() -> set[str]:
+    """Todo nome de coluna que este de-para sabe ler, na forma crua.
+
+    Serve para o relatório dizer o contrário: QUAIS colunas a planilha tem e
+    eu não uso. Campo vazio tem duas causas que de fora são idênticas — a
+    coluna está vazia, ou a coluna existe e eu não a reconheço. Sem esta
+    lista, descobrir qual das duas custa uma rodada do dono, e já custou
+    quatro.
+    """
+    usadas: set[str] = set()
+    for tabela in (TEXTO_DIRETO, SO_DIGITOS, DATAS, DINHEIRO, SIM_NAO, NOMES):
+        for nomes in tabela.values():
+            usadas.update(_cru(n) for n in nomes)
+    for nomes, _mapa in LISTAS.values():
+        usadas.update(_cru(n) for n in nomes)
+    return usadas
 
 
 def _coluna(cabecalho: dict[str, int], nomes: tuple[str, ...]) -> Optional[int]:
@@ -378,6 +435,33 @@ def ler_linha(cabecalho: dict[str, int], linha: list[str]) -> dict[str, Any]:
     # "TEMPORARIO" entra à parte porque só existe em ficha antiga — ele não é
     # oferecido em cadastro novo, mas a planilha ainda tem gente com ele.
     from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+
+    # =======================================================================
+    # ⚑ A FASE DA PLANILHA VIRA A ETAPA DO ERP — e isto é CONSERTO (17/11/2026)
+    #
+    # Ele, com razão e pela segunda vez: *"Veja as coisas que cansam muito. Eu
+    # já havia falado sobre isso: não foi feito correlação entre fase e etapa."*
+    #
+    # A correlação existia desde 16/11 e estava CERTA — mas ligada só na
+    # importação pelo Pipefy. A importação pela planilha, que nasceu um dia
+    # depois e virou o caminho principal, lia a coluna "Fase Atual" apenas
+    # para a regra da data de saída e jogava o resto fora. Ou seja: o dado
+    # estava na planilha, a tradução estava escrita, e ninguém as ligava.
+    #
+    # Uma fonte só (`etapa_da_fase`, no cadastro) para as duas importações —
+    # duas cópias da mesma correlação divergiriam na primeira mudança.
+    # =======================================================================
+    fase_escrita = crua(NOMES["fase"])
+    if fase_escrita:
+        etapa, situacao_da_fase = svc_pessoas.etapa_da_fase(fase_escrita)
+        if etapa:
+            saida["etapa"] = etapa
+            saida["situacao"] = situacao_da_fase
+        else:
+            nao_entendi.append({
+                "coluna": "Fase Atual", "campo": "Etapa", "valor": fase_escrita,
+                "motivo": "não sei para que etapa do ERP esta fase vai"})
+
     CONTRATO_COM_CARTEIRA = svc_pessoas.TIPOS_CONTRATO_CTPS + ("TEMPORARIO",)
     contrato_e_de_prestador = (saida.get("tipo_contrato")
                                not in CONTRATO_COM_CARTEIRA)
@@ -390,6 +474,21 @@ def ler_linha(cabecalho: dict[str, int], linha: list[str]) -> dict[str, Any]:
                          f'{crua(LISTAS["tipo_contrato"][0])}',
                 "motivo": ("as duas colunas se contradizem — vale o “Tipo”, "
                            "que é o que a folha usa; confira na planilha")})
+
+    # ⚑ RAZÃO SOCIAL E CNPJ DO PJ SÓ PARA QUEM É PJ (17/11/2026).
+    #
+    # As colunas são "Nome Credor" e "Pix CNPJ" — nomes que não dizem que o
+    # dado é do PJ. Se a planilha preencher "Nome Credor" para todo mundo (e
+    # "credor" é quem recebe, o que vale para qualquer pessoa), gravar isso em
+    # "Razão social (PJ)" daria empresa a quem não tem empresa — e aí o
+    # cadastro de um CLT afirmaria duas coisas que se contradizem.
+    #
+    # Decisão: quem não é PJ não recebe esses dois campos. Se a planilha só os
+    # preenche para PJ, esta guarda não custa nada; se preenche para todos,
+    # ela evita 2.600 fichas com razão social indevida.
+    if saida.get("tipo_contrato") != "PJ":
+        saida.pop("razao_social_pj", None)
+        saida.pop("cnpj_pj", None)
 
     if saida.get("demissao"):
         # ⚑ "CADASTRO CONCLUÍDO" COM DATA DE SAÍDA: a data é que está errada.
@@ -488,7 +587,17 @@ def carregar(planilha_id: str = "") -> dict[str, Any]:
         saida[cpf] = ler_linha(cabecalho, linha)
     logger.info("ERP/planilha-dp: %d pessoa(s) lidas da aba %s", len(saida), ABA)
     return {"pessoas": saida, "erro": "", "planilha": chave, "aba": ABA,
-            "linhas": len(linhas) - 1, "colunas": len(cabecalho)}
+            "linhas": len(linhas) - 1, "colunas": len(cabecalho),
+            # ⚑ O CABEÇALHO CRU VOLTA JUNTO (17/11/2026), e é para acabar com
+            # uma pergunta que já se repetiu quatro vezes: *"outros campos que
+            # estão ficando vazios"*.
+            #
+            # Campo vazio tem duas causas possíveis, e de fora elas são
+            # idênticas: a coluna está vazia na planilha, ou a coluna existe e
+            # eu não a reconheço (foi renomeada, ou tem um caractere
+            # parecido). O relatório passa a dizer qual das duas é, listando
+            # as colunas que a planilha tem e eu não uso.
+            "cabecalho": [c for c in linhas[0] if str(c or "").strip()]}
 
 
 def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
@@ -513,20 +622,31 @@ def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
 # ===========================================================================
 def importar(s, usuario=None, *, gravar: bool = False,
              cpfs: Optional[list[str]] = None,
+             criar: bool = True,
              ler=None) -> dict[str, Any]:
-    """Enche o cadastro de quem está na planilha E já existe no ERP.
+    """Enche o cadastro de quem está na planilha, e cadastra quem falta.
 
     `cpfs` limita a algumas pessoas — é como se começa, com duas ou três, em
     vez de soltar 3.600 de uma vez. Sem ele, vai a planilha inteira.
 
-    NUNCA cria gente: quem está na planilha e não no ERP é CONTADO e listado.
-    Criar cadastro em massa a partir de uma planilha é o tipo de coisa que se
-    descobre errada depois de 3.000 linhas.
+    ⚑ PASSOU A CADASTRAR EM 17/11/2026. Ele, olhando o relatório que listava
+    uma pessoa como "não existe no ERP": *"Pq não cadastrou a partir da
+    planilha?"*
+
+    A recusa anterior tinha um motivo — a planilha tem 3.667 linhas e cerca de
+    2.960 são de gente desligada, e criar tudo encheria o cadastro de base
+    morta, que depois aparece em lista de obra, em folha e em relatório. Mas a
+    resposta certa não era "não cadastro": era **cadastrar só quem está
+    ativo**, que é a regra que ele mesmo deu em 04/11/2026 (*"eu acho que a
+    gente deve colocar só os que estão ativos"*).
+
+    Quem a planilha mostra como desligado continua fora, e é dito no relatório
+    com esse motivo — não com "não existe no ERP", que não explicava nada.
     """
     from app.apps.erp.core.cadastros import pessoas as svc
     from app.apps.erp.core.comum.auditoria import ErroValidacao
     from app.apps.erp.db.models.cadastros import Cargo, Colaborador, Convencao, Obra
-    from sqlalchemy import select
+    from sqlalchemy import select, text
 
     lido = (ler or carregar)()
     pessoas = lido.get("pessoas") or {}
@@ -535,8 +655,14 @@ def importar(s, usuario=None, *, gravar: bool = False,
         "planilha": {k: lido.get(k) for k in
                      ("erro", "planilha", "aba", "linhas", "colunas")},
         "pessoas_na_planilha": len(pessoas),
-        "atualizadas": [], "sem_cadastro": [], "recusadas": [],
-        "nao_entendi": [],
+        "atualizadas": [], "criadas": [], "sem_cadastro": [], "recusadas": [],
+        "nao_entendi": [], "cadastros_criados": [],
+        "criou": bool(criar),
+        # As colunas que a planilha tem e este de-para não lê. É a resposta
+        # para "por que este campo está vazio?" sem precisar perguntar.
+        "colunas_que_eu_nao_uso": sorted(
+            c for c in (lido.get("cabecalho") or [])
+            if _cru(c) and _cru(c) not in colunas_que_eu_uso()),
     }
     if not pessoas:
         return rel
@@ -556,6 +682,20 @@ def importar(s, usuario=None, *, gravar: bool = False,
     cargos = {_cru(c.nome): c.id for c in s.scalars(select(Cargo)).all()}
     convencoes = {_cru(c.nome): c.id for c in s.scalars(select(Convencao)).all()}
     obras = {_cru(o.codigo): o.id for o in s.scalars(select(Obra)).all()}
+    # ⚑ A EMPRESA CASA PELO CNPJ, NUNCA PELO NOME (17/11/2026). Ele mostrou o
+    # motivo: a planilha escreve "00.079.526/0001-09 - BWS" e o cadastro do
+    # ERP tem "BWS CONSTRUÇÕES - 00.079.526/0001-09". É a MESMA empresa, com o
+    # nome e o número em ordem trocada e abreviações diferentes — comparar
+    # texto nunca ia bater, e era por isso que "Empresa de registro" ficava
+    # vazia em todo mundo.
+    #
+    # Os 14 dígitos são iguais nos dois lados, e são a identidade da empresa.
+    empresas = {}
+    for linha_e in s.execute(text(
+            "SELECT id, cnpj FROM empresas WHERE cnpj IS NOT NULL")).mappings():
+        digitos = re.sub(r"\D", "", str(linha_e["cnpj"] or ""))[:14]
+        if len(digitos) == 14:
+            empresas[digitos] = linha_e["id"]
 
     for cpf, dados in pessoas.items():
         dados = dict(dados)
@@ -564,38 +704,131 @@ def importar(s, usuario=None, *, gravar: bool = False,
             rel["nao_entendi"].append({**x, "cpf": cpf,
                                        "nome": dados.get("nome", "")})
         pessoa = por_cpf.get(cpf)
+        nasceu_agora = False
         if pessoa is None:
-            rel["sem_cadastro"].append({"cpf": cpf, "nome": dados.get("nome", ""),
-                                        "motivo": "não existe no ERP"})
-            continue
+            desligado = str(dados.get("situacao") or "").upper() == "DESLIGADO"
+            if not criar:
+                rel["sem_cadastro"].append({
+                    "cpf": cpf, "nome": dados.get("nome", ""),
+                    "motivo": "não existe no ERP"})
+                continue
+            if desligado:
+                rel["sem_cadastro"].append({
+                    "cpf": cpf, "nome": dados.get("nome", ""),
+                    "motivo": "desligado na planilha — base morta não entra"})
+                continue
+            nome_novo = " ".join(str(dados.get("nome") or "").split())
+            if len(nome_novo) < 4:
+                rel["recusadas"].append({
+                    "cpf": cpf, "nome": nome_novo,
+                    "motivo": "a planilha não traz o nome completo"})
+                continue
+            nasceu_agora = True
 
-        # As ligações, pelo nome exato — nome que não bate é relatado.
-        for chave, campo, tabela, rotulo in (
-                ("cargo", "cargo_id", cargos, "Cargo"),
-                ("convencao", "convencao_id", convencoes, "Convenção"),
-                ("obra", "obra_id", obras, "Obra")):
+        # ⚑ A EMPRESA DE REGISTRO, pelos 14 dígitos do CNPJ. Ver a montagem de
+        # `empresas`, acima: é o único jeito de "00.079.526/0001-09 - BWS"
+        # encontrar "BWS CONSTRUÇÕES - 00.079.526/0001-09".
+        escrito_empresa = nomes.get("empresa") or ""
+        if escrito_empresa:
+            digitos = re.sub(r"\D", "", escrito_empresa)[:14]
+            if len(digitos) == 14 and digitos in empresas:
+                dados["empresa_id"] = empresas[digitos]
+            else:
+                rel["nao_entendi"].append({
+                    "coluna": "CNPJ Admissão", "campo": "Empresa de registro",
+                    "cpf": cpf, "nome": dados.get("nome", ""),
+                    "valor": escrito_empresa,
+                    "motivo": ("CNPJ incompleto na planilha"
+                               if len(digitos) != 14
+                               else "não existe no cadastro de Empresas")})
+
+        # ⚑ CARGO E CONVENÇÃO SÃO CRIADOS quando faltam; OBRA não.
+        #
+        # A diferença não é capricho: cargo e convenção são, no ERP, um NOME —
+        # o resto (piso, descrição) se preenche na tela deles depois. Obra é
+        # cadastro pesado, com contrato, CNO, cliente e endereço; criar obra a
+        # partir de um código de planilha produziria obra fantasma, e o código
+        # que não casa já aparece no relatório para ele apontar qual é.
+        for chave, campo, tabela, rotulo, modelo in (
+                ("cargo", "cargo_id", cargos, "Cargo", Cargo),
+                ("convencao", "convencao_id", convencoes, "Convenção", Convencao),
+                ("obra", "obra_id", obras, "Obra", None)):
             escrito = nomes.get(chave) or ""
             if not escrito:
+                continue
+            # "Sem Convenção" na planilha quer dizer SEM convenção, e não uma
+            # convenção chamada "Sem Convenção" — criá-la seria inventar um
+            # cadastro para representar a ausência dele.
+            if chave == "convencao" and _cru(escrito).startswith("SEMCONVENCAO"):
+                dados[campo] = None
                 continue
             achado = tabela.get(_cru(escrito))
             if achado:
                 dados[campo] = achado
-            else:
+                continue
+            if modelo is None:
                 rel["nao_entendi"].append({
                     "coluna": chave, "campo": rotulo, "cpf": cpf,
                     "nome": dados.get("nome", ""), "valor": escrito,
                     "motivo": "não existe no cadastro do ERP"})
+                continue
+            if gravar:
+                with s.begin_nested():
+                    obj = modelo(nome=escrito)
+                    s.add(obj)
+                    s.flush()
+                tabela[_cru(escrito)] = obj.id
+                dados[campo] = obj.id
+            else:
+                # Na simulação não há id, mas o relatório já diz que vai nascer.
+                tabela[_cru(escrito)] = None
+            rel["cadastros_criados"].append({"tipo": rotulo, "nome": escrito})
+
+        # ⚑ PIS QUE NÃO FECHA NÃO DERRUBA A PESSOA — ele vira PENDÊNCIA.
+        #
+        # Ele, em 17/11/2026, vendo 38 pessoas recusadas por isso: *"Recusou só
+        # pq o dado não bateu? Importa sem o PIS e deixa como pendência."*
+        #
+        # Tinha razão, e o estrago era grande: o cadastro inteiro daquela
+        # pessoa — endereço, vínculo, cargo, salário, 50 campos — ficava de
+        # fora por causa de UM número de onze dígitos. O PIS errado não entra
+        # (número de INSS errado é pior que vazio, porque vai para a guia),
+        # mas o resto entra, e a pendência aparece na lista "o que falta para
+        # admitir", que já existe no ERP.
+        if "pis" in dados and not svc.pis_valido(dados["pis"]):
+            rel["nao_entendi"].append({
+                "coluna": "Nº PIS", "campo": "PIS/NIS", "cpf": cpf,
+                "nome": dados.get("nome", ""), "valor": str(dados["pis"]),
+                "motivo": ("não fecha os 11 dígitos — o resto do cadastro "
+                           "entrou, o PIS ficou pendente")})
+            dados.pop("pis")
 
         # ⚠️ O CPF é a identidade e o NOME só muda por decisão de alguém.
         dados.pop("cpf", None)
+
+        if nasceu_agora:
+            if gravar:
+                try:
+                    with s.begin_nested():
+                        pessoa = svc.salvar(
+                            s, {**dados, "cpf": cpf, "nome": nome_novo}, usuario)
+                    por_cpf[cpf] = pessoa
+                except ErroValidacao as e:
+                    rel["recusadas"].append({"cpf": cpf, "nome": nome_novo,
+                                             "motivo": str(e)[:300]})
+                    continue
+            rel["criadas"].append({"cpf": cpf, "nome": nome_novo})
+            continue
+
         mudou = {k: v for k, v in dados.items()
                  if k != "nome" and str(getattr(pessoa, k, "") or "") != str(v)}
         if not mudou:
             continue
         if gravar:
             try:
-                svc.salvar(s, {**dados, "cpf": pessoa.cpf, "nome": pessoa.nome},
-                           usuario)
+                with s.begin_nested():
+                    svc.salvar(s, {**dados, "cpf": pessoa.cpf,
+                                   "nome": pessoa.nome}, usuario)
             except ErroValidacao as e:
                 rel["recusadas"].append({"cpf": cpf, "nome": pessoa.nome,
                                          "motivo": str(e)[:300]})

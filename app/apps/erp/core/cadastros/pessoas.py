@@ -244,6 +244,16 @@ def opcoes(s: Optional[Session] = None) -> dict[str, Any]:
         "etapas": [{"valor": e, "rotulo": ETAPA_ROTULOS[e],
                     "o_que_fazer": ETAPA_O_QUE_FAZER.get(e, ""),
                     "aberta": e in ETAPAS_ABERTAS} for e in ETAPAS],
+        # ⚑ PARA ONDE DÁ PARA IR DE CADA ETAPA (17/11/2026). Ele: *"Como mudo
+        # uma pessoa de fase/etapa?"* e *"as fases do Pipefy é para o DP saber
+        # o que fazer; aqui ele fica perdido."*
+        #
+        # A regra existia (`mover_etapa` recusa o salto) e a tela não a
+        # conhecia — então não havia botão, e a etapa era um rótulo que ninguém
+        # conseguia mexer. A tela lê daqui para oferecer só os caminhos legais:
+        # oferecer todos e deixar o servidor recusar seria ensinar a errar.
+        "etapas_seguintes": {de: list(para)
+                             for de, para in ETAPAS_SEGUINTES.items()},
     }
 
 
@@ -489,6 +499,42 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
             c.etapa = pedida
     elif novo:
         c.etapa = "CADASTRO_INICIAL"
+
+    # =======================================================================
+    # ⚑ A SITUAÇÃO ARRASTA A ETAPA — e isto é CONSERTO de 17/11/2026.
+    #
+    # Ele achou na tela: *"se eu clico na etapa Concluído + Situação Só
+    # desligados aparece gente. (…) 25. Tá errado."*
+    #
+    # Estava errado mesmo, e o jeito de ficar errado é este: "etapa" e
+    # "situação" são campos independentes de propósito (etapa = o que falta
+    # FAZER no cadastro; situação = a pessoa está na empresa?), e cada
+    # importação mexia num sem olhar o outro. Resultado: 25 pessoas com o
+    # cadastro "Concluído" e a pessoa fora da empresa — duas afirmações que
+    # não podem ser verdade juntas.
+    #
+    # Independentes NÃO quer dizer livres. Há três combinações impossíveis, e
+    # em todas a SITUAÇÃO é que manda, porque é ela que decide folha e ponto:
+    #
+    #   · fora da empresa  ⇒ a etapa é "Desligado" (não há mais o que fazer);
+    #   · afastada         ⇒ a etapa é "Afastado";
+    #   · de volta à ativa ⇒ a etapa sai de "Desligado"/"Afastado".
+    #
+    # "Cancelado" fica de fora da arrumação: é cadastro que nunca virou gente
+    # na empresa, e a situação dele é desligado por consequência, não por ter
+    # saído. Mexer nele apagaria essa diferença.
+    agora = (c.situacao or "ATIVO").upper()
+    etapa_agora = (c.etapa or "CONCLUIDO").upper()
+    if etapa_agora != "CANCELADO":
+        if agora == "DESLIGADO" and etapa_agora != "DESLIGADO":
+            c.etapa = "DESLIGADO"
+        elif agora == "AFASTADO" and etapa_agora != "AFASTADO":
+            c.etapa = "AFASTADO"
+        elif agora == "ATIVO" and etapa_agora in ("DESLIGADO", "AFASTADO"):
+            # Voltou para a ativa: o cadastro volta para a conferência do DP,
+            # que é o mesmo caminho da readmissão — e não direto para
+            # "concluído", porque alguém tem de olhar o que mudou.
+            c.etapa = "EM_CONFERENCIA"
 
     s.flush()
 
@@ -1315,6 +1361,21 @@ FASE_PIPEFY_PARA_ETAPA = (
     ("adicion",              "EM_CONFERENCIA",   "ATIVO"),
     ("conclu",               "CONCLUIDO",        "ATIVO"),
     ("inicial",              "CADASTRO_INICIAL", "ATIVO"),
+    # ⚑ "SOLICITAÇÕES DP" NÃO TINHA PAR, e ele apontou isso em 17/11/2026:
+    # *"Não existe = Solicitações DP."*
+    #
+    # Vai para INICIAL, e o motivo é o que a etapa quer dizer: "o DP ainda não
+    # olhou". É exatamente a descrição que ele deu dessa fase — *"pessoas que
+    # já saíram e que ainda não foram o cadastro finalizado, aguardando
+    # documentação"*. Cadastro que o DP ainda não fechou é cadastro inicial.
+    #
+    # Fica DEPOIS de "desligad" na ordem, de propósito: quem está em
+    # Solicitações DP e tem data de saída é desligado pela data, não pela
+    # fase — a regra da data de saída, em `planilha_dp`, decide isso.
+    #
+    # Se ele quiser uma etapa PRÓPRIA para essa fase, aí é migração: a coluna
+    # `etapa` tem lista fechada, e etapa nova exige um `.sql` numerado.
+    ("solicita",             "CADASTRO_INICIAL", "ATIVO"),
 )
 
 

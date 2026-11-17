@@ -1572,6 +1572,40 @@ chat do ERP precisa decidir se a importação de extrato dele
 (`core/pagamentos/service.py`) sofre do mesmo problema com o Bradesco e, se
 sim, aplicar a mesma regra com uma refeitura das identidades já gravadas.
 
+### 17/11/2026 — PARA QUE o ERP existe: substituir planilha, Pipefy e OMIE
+
+Ele disse isto duas vezes no mesmo dia, a segunda depois de eu tratar o Pipefy
+como opção viva:
+
+> *"Não vai ter Pipefy mais. Preciso dizer de novo?"*
+
+> *"O ERP vai substituir planilha e Pipefy e Omie."*
+
+**Está registrado aqui, e não só no histórico do ERP, porque muda o desenho de
+TODAS as áreas** — e porque chat novo não lembra de conversa, só do que está
+escrito. O detalhe prático está no `CLAUDE.md`, na seção de mesmo nome.
+
+**O que vira o quê:**
+
+| Sai | Quem assume |
+|---|---|
+| Pipefy (cadastro de colaboradores, SPs, fluxos do DP) | ERP |
+| Planilhas (Registro de Colaboradores, C. Diários, SPsBD) | ERP |
+| OMIE (títulos, contas a pagar e a receber) | ERP |
+
+**A consequência para quem for mexer em qualquer área:** importação de
+Pipefy, de planilha e do OMIE é **ferramenta de mudança, não de operação** —
+serve para trazer o que já existe, e não se desenha funcionalidade
+dependendo dela para sempre. Integração de IDA (o ERP escrevendo em OMIE ou
+em planilha) é caminho que vai morrer: antes de criar mais uma, perguntar se
+não é o ERP que deveria ser a fonte.
+
+⚠️ **E isto NÃO autoriza desligar nem apagar nada.** Os três estão em
+produção e a empresa depende deles hoje; a ordem e o momento de cada
+desligamento são decisão dele.
+
+---
+
 ### 17/11/2026 — a suíte caiu de ~8 min para ~5 min, e o gargalo era UM arquivo
 
 **Segunda cobrança dele sobre o mesmo assunto** (16/11/2026): *"eu havia

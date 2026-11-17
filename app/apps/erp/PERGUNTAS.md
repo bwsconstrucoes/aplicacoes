@@ -1183,6 +1183,20 @@ colunas sem histórico.
   de CTPS)
 - OK **Quantas pessoas ativas temos, por vínculo e por tipo de contrato?** 🔒
   (escopo por obra) ⚠️ ("ativo" = situação ATIVA e sem demissão já passada)
+- OK **Quem está com o cadastro parado, e em que etapa?** (é a fila do DP:
+  Inicial = ninguém olhou; Conferência = o DP está olhando; Contrato a assinar
+  = PJ esperando assinatura; Na contabilidade = eSocial em andamento) ⚠️
+  (palavra decisiva: **etapa não é situação**. Etapa responde "o que falta
+  FAZER neste cadastro"; situação responde "esta pessoa está na empresa".
+  Misturar as duas foi o defeito que gerou 25 pessoas "Concluído + Desligado",
+  corrigido em 17/11/2026)
+- OK **Tem alguém com etapa e situação se contradizendo?** (deve dar ZERO
+  desde a migração 106: quem saiu da empresa tem etapa "Desligado", quem está
+  afastado tem "Afastado". Se aparecer alguém, algo escreveu direto no banco)
+- OK **Quanto tempo cada cadastro está parado na mesma etapa?** — FALTA: o
+  histórico de etapas guarda a data de cada mudança, mas não há tela nem
+  consulta que mostre "parado há N dias". É o que transformaria a fila do DP
+  em cobrança
 - OK **Quantos jovens aprendizes temos, e em que obras?** ⚠️ (palavra
   decisiva: jovem aprendiz é CTPS — carteira assinada — mas NÃO é CLT.
   Contar "CLT" e esperar que o aprendiz entre no número é o erro que já

@@ -414,7 +414,18 @@ function cabecaDaFicha(c, d){
   const etapa = ETAPAS.find(x => x.valor === (d.etapa || c.etapa)) || {};
   return `
     <div class="kpis">
-      <div class="kpi estatico"><div class="kpi-rotulo">Etapa</div>
+      {# ⚑ A ETAPA VIROU BOTÃO em 17/11/2026, e isto é conserto. Ele: *"Como
+         mudo uma pessoa de fase/etapa?"* e, logo depois: *"as fases do Pipefy
+         é para o DP saber o que fazer; aqui ele fica perdido."*
+
+         A regra de para onde dá para ir existia desde 05/11 e a tela não a
+         conhecia: a etapa era um rótulo que ninguém conseguia mexer. No
+         Pipefy o DP arrastava o card; aqui não havia equivalente, e a fila de
+         trabalho ficava congelada no que a importação tinha posto. #}
+      <div class="kpi estatico" ${PODE_EDITAR ? `style="cursor:pointer"
+        title="clique para mover este cadastro de etapa"
+        onclick="abrirMudancaDeEtapa()"` : ""}>
+        <div class="kpi-rotulo">Etapa ${PODE_EDITAR ? "· mudar" : ""}</div>
         <div class="kpi-valor" style="font-size:15px">${escapar(etapa.rotulo || "—")}</div>
         <div class="kpi-sub">${escapar(etapa.o_que_fazer || "")}</div></div>
       <div class="kpi estatico"><div class="kpi-rotulo">Vínculo e obra</div>
@@ -1361,11 +1372,27 @@ function painelDaFicha(){
       </tbody></table>
       ${PODE_EDITAR ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
         <button class="btn secundario" id="c-alteracao">Registrar alteração</button>
+        {# ⚑ "CONFERÊNCIA CONCLUÍDA" TEM BOTÃO PRÓPRIO (17/11/2026), e não é
+           uma das opções de "mudar etapa", porque quem decide o destino é a
+           REGRA e não a pessoa: prestador morre no DP e vai para concluído,
+           PJ vai para o contrato a assinar, CTPS vai para a contabilidade.
+
+           Ele: *"as fases do Pipefy é para o DP saber o que fazer; aqui ele
+           fica perdido."* No Pipefy, deixar escolher à mão foi o que fez
+           prestador cair na fila da contabilidade esperando um e-mail que
+           nunca saía. #}
+        ${["CADASTRO_INICIAL", "EM_CONFERENCIA"].includes(c.etapa || "")
+          ? `<button class="btn verde" id="c-conferido">Conferência concluída</button>`
+          : ""}
+        <button class="btn secundario" id="c-etapa">Mudar a etapa</button>
         ${c.situacao === "DESLIGADO"
           ? `<button class="btn" id="c-readmitir">Readmitir</button>`
           : `<button class="btn secundario" id="c-trocar">Trocar o vínculo</button>
              <button class="btn vermelho" id="c-desligar">Desligar</button>`}
       </div>` : ""}`;
+    if (els("c-etapa")) els("c-etapa").addEventListener("click", abrirMudancaDeEtapa);
+    if (els("c-conferido"))
+      els("c-conferido").addEventListener("click", concluirAConferencia);
     if (els("c-alteracao")) els("c-alteracao").addEventListener("click", abrirAlteracao);
     if (els("c-readmitir")) els("c-readmitir").addEventListener("click", abrirReadmissao);
     if (els("c-trocar")) els("c-trocar").addEventListener("click", abrirTrocaDeVinculo);
@@ -1599,6 +1626,92 @@ async function abrirReadmissao(){
       {nome: "matricula", rotulo: "Matrícula nova"},
     ]});
   if (r) acaoDoVinculo("readmitir", r);
+}
+
+{# ---------------------------------------------------------------------------
+   MOVER O CADASTRO DE ETAPA — o que o DP fazia arrastando o card no Pipefy
+
+   ⚑ 17/11/2026. Ele: *"Como mudo uma pessoa de fase/etapa?"* e, em seguida:
+   *"as fases do Pipefy é para o DP saber o que fazer; aqui ele fica perdido."*
+
+   O servidor já recusava o salto indevido (cadastro saindo de "Inicial" direto
+   para "Concluído" sem ninguém conferir documento). O que faltava era a tela
+   OFERECER os caminhos legais — e só eles: oferecer todos e deixar o servidor
+   recusar seria ensinar a errar e depois dar bronca.
+
+   O MOTIVO é pedido junto, e vai para o histórico de etapas. "Por que esta
+   pessoa voltou para conferência?" é pergunta de auditoria, e sem o motivo a
+   resposta é "alguém clicou".
+   --------------------------------------------------------------------------- #}
+{# A conferência do DP terminou: o SISTEMA escolhe o destino pelo vínculo.
+   É regra, não escolha — ver o comentário no botão. #}
+async function concluirAConferencia(){
+  if (!PODE_EDITAR || !FICHA || !FICHA.id) return;
+  if (!confirm(`Conferência de ${FICHA.nome} concluída?\n\n`
+             + "O sistema escolhe para onde o cadastro vai, pelo vínculo: "
+             + "prestador vai direto para concluído, PJ vai para o contrato a "
+             + "assinar, carteira assinada vai para a contabilidade.")) return;
+  try {
+    const r = await api(`/erp/api/colaboradores/${FICHA.id}/etapa`,
+                        {metodo: "POST", corpo: {acao: "conferido"}});
+    aviso("mensagem", r.rotulo ? `Foi para “${r.rotulo}”.` : "Conferência concluída.",
+          "ok");
+    await abrirFichaCompleta(FICHA.id);
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function abrirMudancaDeEtapa(){
+  if (!PODE_EDITAR || !FICHA || !FICHA.id) return;
+  const o = OPCOES || {};
+  const atual = (FICHA.etapa || "CONCLUIDO").toUpperCase();
+  const daqui = ((o.etapas_seguintes || {})[atual] || []);
+  const comoEsta = (ETAPAS.find(x => x.valor === atual) || {});
+
+  if (!daqui.length) {
+    aviso("mensagem", `De “${comoEsta.rotulo || atual}” não há para onde ir.`,
+          "info");
+    return;
+  }
+  {# A conferência do DP tem botão PRÓPRIO porque quem decide o destino é a
+     REGRA, não a pessoa: prestador morre no DP, PJ vai para o contrato, CTPS
+     vai para a contabilidade. Deixar escolher à mão foi o que, no Pipefy, fez
+     prestador cair na fila da contabilidade esperando um e-mail que nunca
+     saía. #}
+  const ehConferencia = atual === "EM_CONFERENCIA";
+  const r = await perguntar({
+    titulo: `Mover ${FICHA.nome} de etapa`,
+    aviso: `Hoje está em “${comoEsta.rotulo || atual}”. `
+         + (comoEsta.o_que_fazer || "")
+         + (ehConferencia
+            ? " Se a conferência terminou, use “Conferência concluída”: o"
+              + " sistema escolhe o destino pelo vínculo, que é regra e não"
+              + " escolha."
+            : ""),
+    textoOk: "Mover",
+    campos: [
+      {nome: "etapa", rotulo: "Mover para", tipo: "select", obrigatorio: true,
+       largura: 6,
+       opcoes: daqui.map(v => {
+         const e = ETAPAS.find(x => x.valor === v) || {};
+         return {valor: v, rotulo: e.rotulo || v};
+       }),
+       dica_de: v => {
+         const e = ETAPAS.find(x => x.valor === v.etapa) || {};
+         return e.o_que_fazer || "";
+       }},
+      {nome: "motivo", rotulo: "Por quê", largura: 6,
+       exemplo: "voltou do INSS; contrato assinado; saiu da empresa",
+       dica: "Vai para o histórico — é o que responde “por que mudou” depois."},
+    ]});
+  if (!r) return;
+  try {
+    await api(`/erp/api/colaboradores/${FICHA.id}/etapa`,
+              {metodo: "POST", corpo: {etapa: r.etapa, motivo: r.motivo || ""}});
+    aviso("mensagem", "Etapa mudada.", "ok");
+    await abrirFichaCompleta(FICHA.id);
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 async function abrirTrocaDeVinculo(){

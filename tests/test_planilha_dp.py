@@ -207,7 +207,7 @@ def mundo(sessao_real):
                  perfil=P.DEPARTAMENTO_PESSOAL, telefone="5585900000011")
     obra = Obra(codigo="GOIANAFLEX", nome="Obra da planilha", status="ATIVA")
     sessao_real.add_all([dp, obra, Cargo(nome="ENGENHEIRO CIVIL", ativo=True),
-                         Convencao(nome="Sem Convenção")])
+                         Convencao(nome="CE-Fortaleza")])
     sessao_real.flush()
     pessoa = svc.salvar(sessao_real, {
         "cpf": "09676749486", "nome": "Amanda Marques da Silva",
@@ -223,7 +223,7 @@ def _aba(**campos):
             "Tipo de Cadastro Radio horizontal": "Prestador de Serviço",
             "Tipo de Contrato": "PJ",
             "Cargo [ ]": "ENGENHEIRO CIVIL",
-            "Convenção": "Sem Convenção",
+            "Convenção": "CE-Fortaleza",
             "Código da Obra": "GOIANAFLEX",
             "Salário": "4.000,00", "Valor Diária": "100,00",
             "Município": "RECIFE", "UF (Endereço)": "PE"}
@@ -261,23 +261,101 @@ def test_conferir_sem_gravar_nao_toca_no_cadastro(mundo):
 
 
 @pytest.mark.banco
-def test_a_importacao_NUNCA_cria_gente(mundo):
-    """Criar cadastro em massa a partir de planilha é o tipo de engano que se
-    descobre depois de 3.000 linhas."""
+def test_quem_esta_ATIVO_na_planilha_e_CADASTRADO(mundo):
+    """Ele, em 17/11/2026, vendo uma pessoa listada como "não existe no ERP":
+    *"Pq não cadastrou a partir da planilha?"*"""
     r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
                     ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
                                 "Nome Completo": "NINGUEM CONHECIDO"}))
-    assert [x["cpf"] for x in r["sem_cadastro"]] == ["11144477735"]
-    assert not r["atualizadas"]
+    assert [x["cpf"] for x in r["criadas"]] == ["11144477735"]
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import Colaborador
+    nova = mundo["s"].scalars(
+        select(Colaborador).where(Colaborador.cpf == "11144477735")).first()
+    assert nova is not None and nova.nome == "NINGUEM CONHECIDO"
+    # E o cadastro dela já nasce com o que a planilha sabe.
+    assert nova.vinculo == "PRESTADOR" and nova.cargo_id is not None
 
 
 @pytest.mark.banco
-def test_cargo_e_obra_que_nao_existem_aqui_sao_RELATADOS(mundo):
+def test_quem_esta_DESLIGADO_na_planilha_NAO_e_cadastrado(mundo):
+    """São ~2.960 das 3.667 linhas. Trazer essa base morta encheria lista de
+    obra, folha e relatório — e a decisão dele, de 04/11/2026, é só os ativos."""
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
+                                "Nome Completo": "JA SAIU DA EMPRESA",
+                                "Data de Saída": "10/03/2025"}))
+    assert not r["criadas"]
+    assert any("desligado" in x["motivo"] for x in r["sem_cadastro"])
+
+
+@pytest.mark.banco
+def test_cargo_e_convencao_que_faltam_SAO_CRIADOS_e_a_obra_NAO(mundo):
+    """A diferença não é capricho: cargo e convenção são, no ERP, um NOME — o
+    resto se preenche na tela deles. Obra é cadastro pesado (contrato, CNO,
+    cliente), e obra fantasma é pior que código não casado."""
     r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
                     ler=_aba(**{"Cargo [ ]": "CARGO QUE NAO EXISTE",
+                                "Convenção": "PE-Petrolina",
                                 "Código da Obra": "OBRANENHUMA"}))
+    nasceram = {(x["tipo"], x["nome"]) for x in r["cadastros_criados"]}
+    assert ("Cargo", "CARGO QUE NAO EXISTE") in nasceram
+    assert ("Convenção", "PE-Petrolina") in nasceram
+    # A obra, não: o código que não casa continua sendo relatado.
     escritos = " | ".join(x["valor"] for x in r["nao_entendi"])
-    assert "CARGO QUE NAO EXISTE" in escritos and "OBRANENHUMA" in escritos
+    assert "OBRANENHUMA" in escritos
+    assert "CARGO QUE NAO EXISTE" not in escritos
+
+
+@pytest.mark.banco
+def test_SEM_CONVENCAO_na_planilha_quer_dizer_sem_convencao(mundo):
+    """E não uma convenção CHAMADA "Sem Convenção" — criá-la seria inventar um
+    cadastro para representar a ausência dele."""
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=_aba(**{"Convenção": "Sem Convenção"}))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert mundo["pessoa"].convencao_id is None
+    assert not [x for x in r["cadastros_criados"] if x["tipo"] == "Convenção"]
+
+
+@pytest.mark.banco
+def test_a_EMPRESA_DE_REGISTRO_casa_pelo_CNPJ_e_nao_pelo_nome(mundo):
+    """Ele mostrou o motivo em 17/11/2026: a planilha escreve
+    "00.079.526/0001-09 - BWS" e o cadastro tem "BWS CONSTRUÇÕES -
+    00.079.526/0001-09". Mesma empresa, textos diferentes — comparar nome
+    nunca ia bater, e era por isso que o campo ficava vazio em todo mundo.
+    """
+    from sqlalchemy import text
+    mundo["s"].execute(text(
+        "INSERT INTO empresas (razao_social, cnpj)"
+        " VALUES ('BWS CONSTRUÇÕES - 00.079.526/0001-09',"
+        "         '00.079.526/0001-09')"))
+    mundo["s"].flush()
+    pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                ler=_aba(**{"CNPJ Admissão": "00.079.526/0001-09 - BWS"}))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert mundo["pessoa"].empresa_id is not None
+
+
+@pytest.mark.banco
+def test_PIS_que_nao_fecha_NAO_derruba_a_pessoa_e_vira_pendencia(mundo):
+    """Ele, vendo 38 recusadas: *"Recusou só pq o dado não bateu? Importa sem
+    o PIS e deixa como pendência."*
+
+    O estrago era grande: 50 campos ficavam de fora por causa de um número de
+    onze dígitos.
+    """
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=_aba(**{"Nº PIS": "111.11111.11-1"}))
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert not r["recusadas"], "a pessoa não devia ser recusada pelo PIS"
+    assert r["atualizadas"], "o resto do cadastro tinha de entrar"
+    assert mundo["pessoa"].vinculo == "PRESTADOR"
+    assert not (mundo["pessoa"].pis or "")
+    assert any("PIS" in x["campo"] for x in r["nao_entendi"])
 
 
 @pytest.mark.banco
@@ -328,7 +406,12 @@ def test_cadastro_CONCLUIDO_com_data_de_saida_IGNORA_A_DATA_e_mantem_ativo():
     """
     d = _linha(**{"Tipo": "CTPS", "Data de Saída": "07/10/2026",
                   "Fase Atual": "Cadastro Concluído"})
-    assert "demissao" not in d and "situacao" not in d
+    assert "demissao" not in d
+    # Desde 17/11/2026 a fase também diz a situação, e "Cadastro Concluído" é
+    # ATIVO — antes o campo simplesmente não vinha, e a pessoa ficava com o
+    # que já estava no cadastro, qualquer que fosse.
+    assert d["situacao"] == "ATIVO"
+    assert d["etapa"] == "CONCLUIDO"
     assert any("está errada e precisa ser apagada" in x["motivo"]
                for x in d["_nao_entendi"])
 
@@ -373,3 +456,178 @@ def test_o_PIS_do_prestador_ENTRA():
     é da pessoa, não do contrato."""
     d = _linha(**{"Tipo": "Prestador de Serviço", "Nº PIS": "160.83716.18-8"})
     assert d["pis"] == "16083716188"
+
+
+# ---------------------------------------------------------------------------
+# AS CORRELAÇÕES QUE ELE DITOU EM 17/11/2026
+#
+# Ele mandou a lista de campo do ERP × cabeçalho da planilha, depois de ver
+# campos vazios na ficha de quem tinha acabado de ser importado. Cada caso
+# aqui trava uma dessas correlações — porque de-para quebrado some em silêncio:
+# a importação diz "atualizada" e o campo fica vazio.
+# ---------------------------------------------------------------------------
+def test_razao_social_do_pj_vem_de_nome_credor():
+    """Ele: *"Razão social (PJ) = Nome Credor."* O nome da coluna não diz o que
+    ela guarda — por isso a correlação fica travada por teste."""
+    lido = _linha(**{"Tipo de Contrato": "PJ",
+                     "Nome Credor": "MARCOS SERVICOS LTDA"})
+    assert lido["razao_social_pj"] == "MARCOS SERVICOS LTDA"
+
+
+def test_cnpj_do_pj_vem_de_pix_cnpj_e_so_os_digitos():
+    """Ele: *"CNPJ (PJ) = Pix CNPJ."*"""
+    lido = _linha(**{"Tipo de Contrato": "PJ",
+                     "Pix CNPJ": "12.345.678/0001-95"})
+    assert lido["cnpj_pj"] == "12345678000195"
+
+
+@pytest.mark.parametrize("escrito,esperado", [
+    ("45 dias, prorrogável por mais 45 dias", "45+45 dias"),
+    ("30 dias, prorrogável por mais 60 dias", "30+60 dias"),
+    ("Sem Contrato de Experiência", "Sem contrato de experiência"),
+])
+def test_contrato_de_experiencia_vira_a_opcao_que_o_ERP_tem(escrito, esperado):
+    """Ele, em 17/11/2026: *"alguns campos as opções de seleção sequer existem
+    no ERP."*
+
+    A planilha escreve a frase inteira; a caixinha do cadastro só tem a
+    abreviação. Sem esta tradução o texto entrava cru, não casava com opção
+    nenhuma, e a ficha mostrava o campo VAZIO com o dado gravado por baixo —
+    que é pior que não importar, porque parece que não veio.
+    """
+    assert _linha(**{"Contrato de Experiência": escrito})["contrato_experiencia"] == esperado
+    # E o traduzido TEM de existir na caixinha, senão a ficha segue vazia.
+    assert esperado in svc.CONTRATOS_EXPERIENCIA
+
+
+def test_a_convencao_sai_como_nome_para_quem_chama_casar():
+    """As sete opções que ele ditou: PE-Pernambuco, CE-Fortaleza,
+    BA-Sobradinho, CE-Interior, PE-Petrolina, MA-Imperatriz, Sem Convenção."""
+    assert _linha(**{"Convenção": "CE-Fortaleza"})["_nomes"]["convencao"] == "CE-Fortaleza"
+
+
+def test_o_PIS_que_nao_fecha_vira_PENDENCIA_e_a_pessoa_entra():
+    """Ele, vendo 38 pessoas recusadas por isso: *"Recusou só pq o dado não
+    bateu? Importa sem o PIS e deixa como pendência."*
+
+    Aqui se confere o que `ler_linha` entrega — o PIS sai como está escrito, e
+    quem decide descartá-lo é o `importar`, num lugar só.
+    """
+    lido = _linha(**{"Nº PIS": "111.11111.11-1", "Nome Completo": "JOAO DA SILVA"})
+    assert lido["pis"] == "11111111111"
+    assert not svc.pis_valido(lido["pis"])
+
+
+# ---------------------------------------------------------------------------
+# A FASE DA PLANILHA → A ETAPA DO ERP (17/11/2026)
+#
+# Ele, pela segunda vez: *"Veja as coisas que cansam muito. Eu já havia falado
+# sobre isso: não foi feito correlação entre fase e etapa."*
+#
+# A correlação existia e estava certa — ligada só na importação pelo Pipefy. A
+# da planilha, que virou o caminho principal, lia "Fase Atual" apenas para a
+# regra da data de saída. O dado estava lá, a tradução estava escrita, e nada
+# as ligava. Estes casos existem para que isso não possa acontecer de novo.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("fase,etapa,situacao", [
+    ("Colaboradores Desligados", "DESLIGADO",        "DESLIGADO"),
+    ("Cadastro Concluído",       "CONCLUIDO",        "ATIVO"),
+    ("Colaboradores Afastados",  "AFASTADO",         "AFASTADO"),
+    ("Cadastros Adicionais",     "EM_CONFERENCIA",   "ATIVO"),
+    ("Cadastro Inicial",         "CADASTRO_INICIAL", "ATIVO"),
+    ("Cadastro Cancelado",       "CANCELADO",        "DESLIGADO"),
+    # Esta é a que não tinha par, e ele apontou: *"Não existe = Solicitações
+    # DP."* Vai para Inicial, que é o que a etapa quer dizer — "o DP ainda não
+    # olhou".
+    ("Solicitações DP",          "CADASTRO_INICIAL", "ATIVO"),
+])
+def test_a_fase_da_planilha_vira_a_etapa_do_ERP(fase, etapa, situacao):
+    lido = _linha(**{"Fase Atual": fase})
+    assert lido["etapa"] == etapa
+    assert lido["situacao"] == situacao
+
+
+def test_TODA_etapa_traduzida_existe_no_cadastro():
+    """Etapa inventada é recusada pelo `salvar` e derruba a pessoa inteira."""
+    for _pedaco, etapa, situacao in svc.FASE_PIPEFY_PARA_ETAPA:
+        assert etapa in svc.ETAPAS, etapa
+        assert situacao in ("ATIVO", "AFASTADO", "DESLIGADO"), situacao
+
+
+def test_fase_que_eu_nao_conheco_e_RELATADA_e_a_etapa_fica_como_estava():
+    """Chutar a etapa é pior que não preenchê-la: ela é a fila de trabalho do
+    DP, e quem cai em "concluído" por engano simplesmente some dela."""
+    lido = _linha(**{"Fase Atual": "Alguma Fase Nova Que Criaram"})
+    assert "etapa" not in lido
+    assert any(x["campo"] == "Etapa" for x in lido["_nao_entendi"])
+
+
+def test_a_data_de_saida_manda_mais_que_a_fase():
+    """Quem está em "Solicitações DP" COM data de saída é desligado pela data.
+    Ele: *"seriam duas situações: pessoas que já saíram e que ainda não foram
+    o cadastro finalizado."*"""
+    lido = _linha(**{"Fase Atual": "Solicitações DP",
+                     "Data de Saída": "10/03/2025"})
+    assert lido["etapa"] == "CADASTRO_INICIAL"
+    assert lido["situacao"] == "DESLIGADO"
+
+
+def test_razao_social_e_cnpj_do_PJ_nao_vao_para_quem_nao_e_PJ():
+    """As colunas são "Nome Credor" e "Pix CNPJ" — e "credor" é quem recebe,
+    o que vale para qualquer pessoa. Gravar isso em "Razão social (PJ)" daria
+    empresa a quem não tem empresa."""
+    clt = _linha(**{"Tipo de Contrato": "CLT (Tempo Indeterminado)",
+                    "Nome Credor": "JOAO DA SILVA",
+                    "Pix CNPJ": "12.345.678/0001-95"})
+    assert "razao_social_pj" not in clt and "cnpj_pj" not in clt
+
+    pj = _linha(**{"Tipo de Contrato": "PJ",
+                   "Nome Credor": "SILVA SERVICOS LTDA",
+                   "Pix CNPJ": "12.345.678/0001-95"})
+    assert pj["razao_social_pj"] == "SILVA SERVICOS LTDA"
+    assert pj["cnpj_pj"] == "12345678000195"
+
+
+# ---------------------------------------------------------------------------
+# "Nº" E "N°" SÃO A MESMA COISA — o defeito mais invisível de todos
+#
+# Ele, em 17/11/2026, pela quarta vez na mesma conversa: *"Outros campos que
+# estão ficando vazios: Nº da CTPS, Série da CTPS, UF da CTPS, Emissão da
+# CTPS."*
+#
+# As quatro colunas estavam mapeadas e corretas. O que não batia era o
+# CABEÇALHO: "º" (ordinal masculino) e "°" (sinal de grau) são
+# indistinguíveis na tela, e o código os lia como letras diferentes. Cabeçalho
+# redigitado por alguém trocava um pelo outro, e a coluna inteira desaparecia
+# sem erro nenhum.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("cabeca", ["Nº CTPS", "N° CTPS", "Nº da CTPS",
+                                    "Número da CTPS", "CTPS Nº"])
+def test_o_numero_da_CTPS_entra_com_qualquer_forma_do_cabecalho(cabeca):
+    assert _linha(**{cabeca: "1234567"})["ctps_numero"] == "1234567"
+
+
+def test_os_quatro_campos_da_CTPS_entram():
+    lido = _linha(**{"Nº CTPS": "1234567", "Série (CTPS)": "0010",
+                     "UF (CTPS)": "PE", "Data de Emissão (CTPS)": "15/03/2019"})
+    assert lido["ctps_numero"] == "1234567"
+    assert lido["ctps_serie"] == "0010"
+    assert lido["ctps_uf"] == "PE"
+    assert lido["ctps_emissao"] == "2019-03-15"
+
+
+def test_o_ordinal_e_o_grau_viram_o_mesmo_texto():
+    """A causa, isolada: sem isto, uma das duas formas some sem erro."""
+    assert pl._cru("Nº PIS") == pl._cru("N° PIS")
+
+
+def test_a_lista_de_colunas_que_eu_leio_cobre_as_que_ele_ditou():
+    """Toda coluna que ele mandou correlacionar tem de estar na lista do que
+    eu leio — senão ela apareceria para ele como "coluna que eu não uso", que
+    é a pergunta que este trabalho inteiro existe para não repetir."""
+    uso = pl.colunas_que_eu_uso()
+    for coluna in ("Nome Credor", "Pix CNPJ", "CNPJ Admissão", "Cargo [ ]",
+                   "Convenção", "Contrato de Experiência", "Fase Atual",
+                   "Nº CTPS", "Série (CTPS)", "UF (CTPS)",
+                   "Data de Emissão (CTPS)"):
+        assert pl._cru(coluna) in uso, coluna
