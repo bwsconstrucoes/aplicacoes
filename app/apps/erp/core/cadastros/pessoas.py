@@ -468,8 +468,11 @@ def conferir_cpf(s: Session, cpf: Any) -> dict[str, Any]:
     c = s.scalars(select(Colaborador).where(Colaborador.cpf == d)).first()
     if c is None:
         return {"situacao": "livre"}
-    desligado = (c.situacao or "").upper() == "DESLIGADO" or (
-        c.demissao is not None and c.demissao <= date.today())
+    # ⚠️ A RÉGUA É A ÚNICA (`ja_saiu`): até 17/11/2026 aqui era `<= hoje`, e em
+    # `salvar` era "a data existe". Três lugares, três réguas. Quem sai HOJE
+    # ainda trabalha hoje — então não é readmissão, é a ficha dela que abre.
+    desligado = ja_saiu(c.demissao) or (
+        (c.situacao or "").upper() == "DESLIGADO" and c.demissao is None)
     saida = {
         "situacao": "desligado" if desligado else "ativo",
         "colaborador_id": c.id, "nome": c.nome,
@@ -523,6 +526,40 @@ DA_LISTA = {
     "naturalidade_uf": UFS, "categoria_alimentacao": CATEGORIAS_ALIMENTACAO,
     "categoria_transporte": CATEGORIAS_TRANSPORTE, "meio_transporte": MEIOS_TRANSPORTE,
 }
+
+
+# ===========================================================================
+# ⚑ SAÍDA AGENDADA NÃO É SAÍDA — 17/11/2026
+#
+# Ele: *"pessoas que estavam com último dia trabalhado mesmo depois de hoje e
+# estavam na fase Solicitações DP, quando ativei o cadastro do ERP foram
+# considerados desligados."*
+#
+# Estava certo, e o estrago é dos piores: **gente em aviso prévio parou de
+# conseguir bater ponto**. Quem cumpre aviso prévio TRABALHA — e a jornada dela
+# é registro legal do REP-P, que não pode ter buraco.
+#
+# A causa eram quatro lugares escrevendo "DESLIGADO" ao ver que EXISTE uma data
+# de saída, **sem olhar se ela já chegou**. Uma saída marcada para a semana que
+# vem virava saída de ontem.
+#
+# A régua é a MESMA que o ponto já usava quando a base era a planilha
+# (`ponto/core/registro.py`: `r.data_saida < hoje`), e é de propósito: a pessoa
+# **trabalha o último dia**. Saída marcada para hoje ainda bate ponto hoje.
+#
+# ⚠️ Quem pergunta "já saiu?" tem de usar ESTA função. Comparar data à mão em
+# mais um lugar é como os quatro apareceram.
+# ===========================================================================
+def ja_saiu(demissao: Optional[date], *, hoje: Optional[date] = None) -> bool:
+    """A data de saída já passou? Vazia ou no futuro = a pessoa ainda trabalha."""
+    if demissao is None:
+        return False
+    return demissao < (hoje or date.today())
+
+
+def saida_agendada(demissao: Optional[date], *, hoje: Optional[date] = None) -> bool:
+    """Tem saída marcada que ainda NÃO chegou — está cumprindo aviso prévio."""
+    return demissao is not None and not ja_saiu(demissao, hoje=hoje)
 
 
 def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
@@ -594,7 +631,15 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
 
     # A SITUAÇÃO SEGUE A DATA, e não o contrário: quem tem demissão lançada está
     # desligado, mesmo que alguém esqueça de trocar a caixinha.
-    if c.demissao and (c.situacao or "").upper() == "ATIVO":
+    #
+    # ⚠️ MAS SÓ DEPOIS QUE A DATA CHEGA — ver `ja_saiu` acima. Até 17/11/2026
+    # esta linha olhava só se a data EXISTIA, e tirou do ponto quem estava
+    # cumprindo aviso prévio.
+    # ⚠️ `or "ATIVO"` e não `or ""`: num cadastro NOVO a situação ainda é nula
+    # em memória (o "ATIVO" é padrão do banco e só chega no flush), e com `or
+    # ""` a comparação dava falso — a regra não valia para cadastro novo. Era
+    # como alguém já desligado entrava pela importação com a caixinha em ATIVO.
+    if ja_saiu(c.demissao) and (c.situacao or "ATIVO").upper() == "ATIVO":
         c.situacao = "DESLIGADO"
     # O vínculo nasce CTPS quando ninguém disse — é o caso da esmagadora
     # maioria, e deixar nulo faria a folha ter de adivinhar.
@@ -663,10 +708,16 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
         elif agora == "AFASTADO" and etapa_agora != "AFASTADO":
             c.etapa = "AFASTADO"
         elif agora == "ATIVO" and etapa_agora in ("DESLIGADO", "AFASTADO"):
-            # Voltou para a ativa: o cadastro volta para a conferência do DP,
-            # que é o mesmo caminho da readmissão — e não direto para
-            # "concluído", porque alguém tem de olhar o que mudou.
-            c.etapa = "EM_CONFERENCIA"
+            # Voltou para a ativa: o cadastro volta para a fila do DP, que é o
+            # mesmo caminho da readmissão — e não direto para "concluído",
+            # porque alguém tem de olhar o que mudou.
+            #
+            # ⚠️ ERA "EM_CONFERENCIA", e isso virou defeito em 17/11/2026,
+            # quando "Conferência" foi fundida na "Inicial" (migração 107): o
+            # código saiu de `ETAPAS` e **não tem coluna no quadro**. Quem
+            # voltasse para a ativa caía numa etapa que a tela não mostra —
+            # desaparecia da fila do DP sem ninguém notar.
+            c.etapa = "CADASTRO_INICIAL"
 
     s.flush()
 
@@ -771,7 +822,14 @@ def desligar(s: Session, colaborador_id: int, dados: dict[str, Any],
         raise ErroValidacao("Informe a data de saída.")
     forma = _da_lista(dados.get("forma_desligamento"), FORMAS_DESLIGAMENTO,
                       "forma de desligamento")
-    c.demissao, c.situacao = saida, "DESLIGADO"
+    # ⚑ SAÍDA MARCADA PARA O FUTURO NÃO DESLIGA HOJE (17/11/2026). A pessoa
+    # cumpre o aviso prévio trabalhando: continua batendo ponto, continua na
+    # folha e continua com acesso. O que se grava agora são as DATAS; a
+    # situação vira "desligado" quando o dia chegar — e quem percebe isso sem
+    # ninguém apertar nada é o próprio ponto, que compara a data com hoje.
+    c.demissao = saida
+    if ja_saiu(saida):
+        c.situacao = "DESLIGADO"
     c.aviso_previo = _data(dados.get("aviso_previo"), "aviso prévio") or c.aviso_previo
     c.ultimo_dia = _data(dados.get("ultimo_dia"), "último dia") or c.ultimo_dia
     v = vinculo_aberto(s, c.id)
@@ -783,17 +841,26 @@ def desligar(s: Session, colaborador_id: int, dados: dict[str, Any],
     # A ETAPA ANDA COM A SITUAÇÃO aqui, porque desligar encerra o trabalho sobre
     # este cadastro — e deixar a etapa para trás faria a pessoa continuar na
     # fila do DP depois de sair da empresa.
-    if (c.etapa or "").upper() != "DESLIGADO":
+    #
+    # ⚠️ Com a saída AGENDADA a etapa fica onde está: o cadastro de quem está
+    # cumprindo aviso prévio é trabalho pendente do DP, não trabalho encerrado.
+    if ja_saiu(saida) and (c.etapa or "").upper() != "DESLIGADO":
         c.etapa = "DESLIGADO"
         s.add(ColaboradorEtapa(
             colaborador_id=c.id, de=None, para="DESLIGADO",
             motivo="desligamento lançado", automatico=True,
             usuario_id=usuario.id if usuario else None))
         s.flush()
-    registrar_evento(s, "colaborador", c.id, "DESLIGADO",
+    registrar_evento(s, "colaborador", c.id,
+                     "DESLIGADO" if ja_saiu(saida) else "DESLIGAMENTO_AGENDADO",
                      {"data_saida": str(saida), "forma": forma,
-                      "motivo": dados.get("motivo")}, usuario.id if usuario else None)
-    bloquear_acesso(s, c, usuario, motivo="desligamento")
+                      "motivo": dados.get("motivo"),
+                      "agendado": not ja_saiu(saida)},
+                     usuario.id if usuario else None)
+    # O acesso ao sistema cai junto com a saída, não antes: quem cumpre aviso
+    # prévio ainda precisa do portal e do "Meu ponto".
+    if ja_saiu(saida):
+        bloquear_acesso(s, c, usuario, motivo="desligamento")
     return c
 
 
@@ -1344,7 +1411,11 @@ def para_folha(s: Session, *, so_ativos: bool = True,
 
     saida = []
     for c in s.scalars(select(Colaborador)).all():
-        ativo = (c.situacao or "ATIVO").upper() == "ATIVO" and c.demissao is None
+        # ⚠️ "ATIVO" AQUI É DINHEIRO: quem cai fora desta lista não entra na
+        # folha. Até 17/11/2026 bastava EXISTIR data de saída para sair — e
+        # quem estava cumprindo aviso prévio, trabalhando, saía da folha.
+        ativo = ((c.situacao or "ATIVO").upper() == "ATIVO"
+                 and not ja_saiu(c.demissao))
         if so_ativos and not ativo:
             continue
         if obra_id and c.obra_id != obra_id:

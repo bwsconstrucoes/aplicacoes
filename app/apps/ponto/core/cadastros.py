@@ -128,7 +128,40 @@ def _tem_tipo_contrato(conn: Connection) -> bool:
                              AND table_name = 'colaboradores'
                              AND column_name = 'tipo_contrato'""") is not None
 
-_DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
+# ⚑ A SITUAÇÃO PELA BASE DO ERP PERGUNTA A DATA, NÃO SÓ A CAIXINHA (17/11/2026)
+#
+# Ele, no dia em que a base do ponto virou o cadastro do ERP: *"pessoas que
+# estavam com último dia trabalhado mesmo depois de hoje e estavam na fase
+# Solicitações DP, quando ativei o cadastro do ERP foram considerados
+# desligados."*
+#
+# Era verdade, e o estrago é dos piores: **quem cumpre aviso prévio parou de
+# conseguir bater ponto**. Essa gente trabalha, e a jornada dela é registro
+# legal do REP-P — não pode ter buraco.
+#
+# A causa estava no ERP, que gravava "DESLIGADO" ao ver que EXISTIA data de
+# saída, sem olhar se ela havia chegado (consertado em
+# `erp/core/cadastros/pessoas.py`, `ja_saiu`). Mas o ponto tinha a sua parte:
+# com a planilha como base ele PERGUNTAVA a data (`r.data_saida < hoje`, logo
+# abaixo em `registro.trechos_sql`) e com o ERP ele apenas **acreditava na
+# caixinha**. Duas bases respondendo diferente à mesma pergunta.
+#
+# Agora as duas perguntam igual. Isso tem três efeitos que valem mais que o
+# conserto em si:
+#   · quem está em aviso prévio volta a bater **hoje**, sem mexer em dado;
+#   · no dia da saída a pessoa sai do ponto **sozinha** — ninguém precisa
+#     apertar nada, e nenhuma rotina precisa rodar na hora certa;
+#   · o bloqueio automático do celular (`desligamentos.py`) passa a cair no dia
+#     certo, nem antes nem depois.
+#
+# ⚠️ A régua é `<` hoje, igual à da planilha, e é de propósito: **a pessoa
+# trabalha o último dia**. Saída marcada para hoje bate ponto hoje.
+_SITUACAO_DO_ERP = """CASE
+    WHEN c.demissao IS NOT NULL AND c.demissao < CURRENT_DATE THEN 'DESLIGADO'
+    WHEN c.situacao = 'DESLIGADO' AND c.demissao IS NOT NULL THEN 'ATIVO'
+    ELSE c.situacao END"""
+
+_DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": _SITUACAO_DO_ERP,
            "admissao": "LEAST(c.data_inicio, c.admissao)",
            "demissao": "c.demissao", "telefone": "c.telefone",
            "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": "",

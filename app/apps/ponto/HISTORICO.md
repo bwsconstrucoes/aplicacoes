@@ -3,6 +3,46 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## ⚠️ 17/11/2026 — QUEM CUMPRE AVISO PRÉVIO VOLTOU A BATER PONTO (feito pelo chat do ERP/DP)
+
+**Leia isto se a base de pessoas do ponto estiver no cadastro do ERP.**
+
+Horas depois de a base virar o ERP, ele viu: *"pessoas que estavam com último
+dia trabalhado mesmo depois de hoje e estavam na fase Solicitações DP, quando
+ativei o cadastro do ERP foram considerados desligados."*
+
+**Gente cumprindo aviso prévio parou de conseguir bater ponto** — e a jornada
+dela é registro legal do REP-P, que não pode ter buraco.
+
+**A parte que era DESTE módulo:** o ponto tinha duas respostas para a mesma
+pergunta. Com a planilha como base ele **perguntava a data**
+(`r.data_saida < hoje`, em `registro.trechos_sql`); com o cadastro do ERP ele
+apenas **lia `c.situacao`**. O ERP havia gravado "DESLIGADO" ao ver que existia
+data de saída, sem olhar se ela tinha chegado (consertado lá, em
+`erp/core/cadastros/pessoas.py` › `ja_saiu`), e o ponto acreditou.
+
+**O que mudou aqui:** `_SITUACAO_DO_ERP`, em `core/cadastros.py` — a base ERP
+passa a perguntar a data, igual à planilha. Três efeitos:
+
+- quem está em aviso prévio **volta a bater hoje, sem mexer em dado nenhum**;
+- no dia da saída a pessoa sai do ponto **sozinha** — ninguém aperta nada, e
+  nenhuma rotina precisa rodar na hora certa;
+- o bloqueio automático do celular (`desligamentos.py`) passa a cair no dia
+  certo, nem antes nem depois. A régua é a MESMA das duas bases: `<` hoje,
+  porque **a pessoa trabalha o último dia**.
+
+⚠️ **O CASE também desfaz a caixinha errada na leitura:** quem está marcado
+DESLIGADO mas tem data de saída de hoje ou depois é lido como ATIVO. Isso
+existe porque o dado errado está gravado em produção; a migração 109 do ERP
+arruma a coluna. As duas coisas são necessárias — o ERP lê a mesma coluna nas
+listas do Pessoal e na folha, e lá não há CASE nenhum.
+
+**Teste com Postgres de verdade:** `tests/test_aviso_previo_no_ponto_banco.py`
+— quatro casos (aviso prévio, último dia hoje, saiu ontem, sem data), com a
+caixinha errada de propósito.
+
+---
+
 ## ⚑ 17/11/2026 — O CADASTRO DO ERP ABRE DENTRO DA FICHA DO PONTO (feito pelo chat do ERP/DP)
 
 **O que mudou nesta tela:** na ficha da pessoa, aba **Cadastro**, o botão

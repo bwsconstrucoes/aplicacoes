@@ -146,7 +146,11 @@ def salvar_colaborador(s: Session, dados: dict[str, Any], usuario: Usuario) -> C
     for campo in ("admissao", "demissao"):
         if campo in dados:
             setattr(c, campo, _data(dados[campo], campo))
-    if c.demissao and c.situacao == "ATIVO":
+    # Só depois que a data CHEGA — ver `cadastros.pessoas.ja_saiu`. Saída
+    # marcada para o futuro é aviso prévio: a pessoa trabalha, bate ponto e
+    # entra na folha (conserto de 17/11/2026).
+    from app.apps.erp.core.cadastros.pessoas import ja_saiu
+    if ja_saiu(c.demissao) and c.situacao == "ATIVO":
         c.situacao = "DESLIGADO"
     s.flush()
     registrar_evento(s, "colaborador", c.id, "CRIADO" if novo else "ALTERADO",

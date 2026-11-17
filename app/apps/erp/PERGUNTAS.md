@@ -2604,6 +2604,56 @@ existia no banco e não aparecia em lugar nenhum.
 
 ---
 
+## 3z-duodecies. AVISO PRÉVIO: quem está saindo mas ainda trabalha (17/11/2026)
+
+Esta parte nasceu de um defeito, e as perguntas abaixo existem para que ele não
+volte sem ninguém notar. O defeito: **data de saída marcada para o futuro
+valia como saída de ontem** — e quem cumpria aviso prévio parava de bater ponto
+e saía da folha.
+
+### A palavra que precisava de definição, e é a mais perigosa daqui
+
+| Palavra | As leituras possíveis |
+|---|---|
+| **"desligado"** | ① a caixinha `situacao` diz DESLIGADO; ② a **data de saída já passou**; ③ a etapa do cadastro é "Desligado". **As três podem discordar**, e discordavam |
+
+**A régua do sistema, decidida em 17/11/2026 e igual em todo lugar:** desligado
+é quem tem **data de saída ANTERIOR a hoje**. Saída marcada para hoje ainda é
+gente ativa hoje — **a pessoa trabalha o último dia**, e a batida desse dia é o
+que a rescisão usa.
+
+### O que dá para perguntar
+
+- **"Quem está cumprindo aviso prévio?"** — tem data de saída marcada que ainda
+  não chegou. ⚠️ Essa gente **está ativa**: bate ponto, entra na folha e tem
+  acesso ao sistema.
+- **"Quem sai nos próximos 15 dias?"** — a lista que o DP precisa para preparar
+  rescisão.
+- **"Quantos saíram de verdade neste mês?"** — só os de data já passada.
+- **"Tem alguém marcado como desligado que ainda está trabalhando?"** — a
+  pergunta que acha o defeito de novo: situação DESLIGADO com data de saída de
+  hoje ou depois. **Hoje a resposta certa é zero.**
+- **"Tem alguém na coluna Desligado do quadro com a situação ativa?"** — a
+  mesma incoerência, pelo outro lado.
+
+### Perguntas que mudam de resposta conforme quem pergunta
+
+- **"Quantas pessoas a obra X tem hoje?"** — quem está em aviso prévio **conta**:
+  está trabalhando. Resposta que a exclui está errada.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quantas pessoas têm data de saída digitada errada?"** — não dá. Uma data
+  no futuro distante (2027 em vez de 2026) é indistinguível de um aviso prévio
+  longo. O sinal possível seria "saída marcada para mais de 90 dias", que não
+  existe como pergunta nem como alerta.
+- **"Quem perdeu batida de ponto no período em que foi marcado desligado por
+  engano?"** — esta é a conta do estrago, e ela importa: dia sem batida é
+  buraco na prova da jornada. Os dados existem (as marcações e as datas), mas
+  a conta não está escrita.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

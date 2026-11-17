@@ -21,6 +21,98 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚠️ 17/11/2026 — AVISO PRÉVIO VIRAVA DESLIGAMENTO: o pior defeito do dia
+
+**Ele achou na tela, horas depois de ligar o cadastro do ERP como base do
+ponto:** *"pessoas que estavam com último dia trabalhado mesmo depois de hoje e
+estavam na fase Solicitações DP, quando ativei o cadastro do ERP foram
+considerados desligados. Não sei se todos, mas aconteceu."*
+
+**O estrago é o pior que este sistema sabe fazer: gente cumprindo aviso prévio
+parou de conseguir bater ponto.** Quem cumpre aviso prévio trabalha, e a
+jornada dela é **registro legal do REP-P** — dia sem batida é buraco na prova
+da jornada, e não se conserta depois. Pelo mesmo erro essa gente também **saía
+da folha** (`para_folha` descartava quem tinha data de saída, mesmo futura) e
+**perdia o acesso ao sistema** no ato.
+
+#### A causa, e ela estava escrita em quatro lugares
+
+Cada um escrevia "DESLIGADO" ao ver que **EXISTIA** uma data de saída, **sem
+olhar se ela já tinha chegado**. Uma saída marcada para a semana que vem valia
+como saída de ontem:
+
+| Onde | O que fazia |
+|---|---|
+| `importadores/planilha_dp.py` | fase ≠ "Cadastro Concluído" + data de saída → `situacao = DESLIGADO`. **Foi por aqui que a maioria passou** |
+| `cadastros/pessoas.py` › `salvar` | `if c.demissao and situacao == ATIVO: DESLIGADO` |
+| `pessoal.py` › `salvar_colaborador` | a mesma linha |
+| `arquivo/preenchimento.py` | a mesma linha, ao ler o termo de rescisão |
+| `cadastros/pessoas.py` › `desligar` | desligava na hora, com data futura ou não |
+
+E uma quinta régua, diferente das outras: o `cpf` que procura readmissão
+comparava `<= hoje`. **Cinco lugares, três réguas.**
+
+#### Por que só apareceu quando a base do ponto virou o ERP
+
+Porque o ponto tinha duas respostas para a mesma pergunta:
+
+| Base do ponto | Como ele decidia "está desligado?" |
+|---|---|
+| Planilha (Registro de Colaboradores) | **perguntava a data**: `r.data_saida < hoje` |
+| Cadastro do ERP | **acreditava na caixinha**: `c.situacao` |
+
+A caixinha estava errada desde a importação. Trocar a base não causou o
+defeito — **tornou visível** um dado errado que já estava gravado.
+
+#### O conserto, em três camadas (e nenhuma precisa dele)
+
+1. **Uma régua só:** `pessoas.ja_saiu(demissao)` — e ela é a MESMA do ponto:
+   `<` hoje, porque **a pessoa trabalha o último dia**. Saída marcada para hoje
+   bate ponto hoje. Os cinco lugares passaram a usá-la.
+2. **O ponto pergunta a data nas DUAS bases** (`ponto/core/cadastros.py`,
+   `_SITUACAO_DO_ERP`). Isto tem três efeitos que valem mais que o conserto:
+   quem está em aviso prévio **volta a bater hoje, sem mexer em dado nenhum**;
+   no dia da saída a pessoa sai do ponto **sozinha**, sem ninguém apertar nada
+   e sem depender de rotina rodando na hora certa; e o bloqueio automático do
+   celular passa a cair no dia certo.
+3. **Migração 109** arruma a coluna de quem já estava marcado errado — porque o
+   ERP também lê `situacao` nas listas do Pessoal e na folha, e lá não há CASE
+   nenhum. Devolve à ativa quem tem saída marcada para hoje ou depois, tira
+   quem está trabalhando da coluna "Desligado" do quadro (vai para
+   "Solicitações", que é o trabalho pendente que ela é), e **deixa rastro de
+   cada pessoa** em `eventos`, ação `SITUACAO_CORRIGIDA`.
+
+**`desligar` com data futura passou a AGENDAR:** grava as datas, mantém a
+pessoa ativa, não move a etapa (o cadastro dela é trabalho pendente do DP) e
+**não corta o acesso** — quem cumpre aviso prévio ainda precisa do portal e do
+"Meu ponto".
+
+#### ⚠️ O que a migração pode trazer de volta sem dever, e ele precisa saber
+
+Alguém que **realmente saiu** e cuja data de saída foi **digitada errada**
+(2027 em vez de 2026) volta para a ativa. Isso é erro de cadastro, e aqui ele
+passa de invisível a visível: a pessoa reaparece nas listas e no ponto. O
+rastro de cada mudança está em `eventos`. Não há como eu contar daqui quantos
+são — a conta tem de ser feita no banco de verdade.
+
+#### Dois defeitos achados de passagem, junto
+
+- **Voltar para a ativa jogava a pessoa numa etapa que a tela não mostra.** Era
+  `EM_CONFERENCIA`, e essa etapa saiu de circulação hoje (migração 107,
+  "Conferência" fundida na "Inicial"): não tem coluna no quadro. Quem voltasse
+  à ativa **desaparecia da fila do DP**. Agora vai para "Inicial".
+- **A regra da data não valia para cadastro NOVO.** `(c.situacao or "")` em vez
+  de `(c.situacao or "ATIVO")`: num cadastro novo a situação ainda é nula em
+  memória, a comparação dava falso, e alguém já desligado entrava pela
+  importação com a caixinha em ATIVO.
+
+**Presos em teste:** `tests/test_saida_agendada_nao_desliga.py` (a régua, a
+folha, o `desligar`, a etapa viva, a importação, e uma guarda que recusa o
+sexto lugar comparando data à mão) e
+`tests/test_aviso_previo_no_ponto_banco.py` (o ponto com Postgres de verdade,
+com a caixinha errada de propósito, mais a migração 109 e o rastro dela).
+
+
 ### ⚑ 17/11/2026 — OS CAMPOS QUE FALTAVAM, O CADASTRO QUE ABRE DENTRO DO PONTO, E UM DEFEITO QUE ESCONDIA AS TRÊS ABAS
 
 Pedido dele, em três partes: *"no cadastro, não vi campo referente à Data de
