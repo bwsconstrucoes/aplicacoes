@@ -748,6 +748,26 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+
+## 17/11/2026 (terça) — A ronda sem foto: a localização basta, com um alerta
+
+O dono: *"o vigia (…) num determinado telefone, aquele problema de memória cheia: tenta bater e não consegue enviar a
+foto. O mais importante é a geolocalização (…) quando não desse, enviar sem a foto, da mesma forma que chega o ponto
+sem foto, e talvez um alerta, para a pessoa não perder a ronda."*
+- **No aplicativo** (ronda surpresa): se a foto não sai (a câmera não salvou, a imagem não abriu, o celular sem
+  memória quebrou a redução) — ou se ela não chegou ao servidor (sem rede, servidor fora) —, aparece "📍 Registrar só
+  com a localização (sem foto)", com a explicação "pode ser a memória do celular cheia". A página não tem como saber
+  se foi memória ou se a pessoa desistiu; por isso o caminho sem foto só aparece DEPOIS de uma tentativa que falhou.
+  Depois de registrar, o aviso "foi sem foto — apague fotos ou vídeos antigos".
+- **No servidor** (`rondas.registrar`, `sem_foto=`): a LOCALIZAÇÃO continua obrigatória (é ela que prova a
+  presença). Sem foto, só com o motivo que o aplicativo manda; a foto que chega estragada também não derruba a
+  ronda — entra sem ela ("a foto chegou estragada"). A ronda fica FEITA (ou ATRASADA) com o motivo gravado
+  ("registrada sem foto: …").
+- **O alerta "Ronda registrada sem foto"** (`RONDA_SEM_FOTO`, um por ronda): diz o vigia, a ronda, a hora e o motivo,
+  e "confira o celular (memória cheia, câmera)". Nas telas Rondas e Quadro › Rondas, o chip diz "· sem foto".
+- Teste: `test_ponto_rondas_banco.py::test_a_ronda_sem_foto_entra_com_a_localizacao_e_um_alerta` (sem localização
+  não entra; sem foto com motivo entra; foto estragada entra sem ela; os dois alertas). E no celular simulado: a foto
+  falhando, o botão aparecendo e a ronda entrando sem foto.
 ## 13/11/2026 (sexta, noite) — Alertas com função, dia da semana e feriado; intervalo curto abaixo de 50 min; a compensação incompleta
 
 O dono, num pedido só: *"em alerta mostrar função do colaborador; o alerta de intervalo curto somente se inferior a

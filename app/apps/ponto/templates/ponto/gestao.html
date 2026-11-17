@@ -4077,7 +4077,7 @@ async function qdRondas() {
       <th>Rondas (${d.por_turno} por turno)</th></tr></thead><tbody>${d.turnos.map(t => `<tr>
       <td>${eloPessoa(t.colaborador_id, t.nome, t.noite)}</td><td class="dados">${diaCurto(t.noite)}</td><td class="dados">${escapar(t.obra || "")}</td>
       <td class="dados">${escapar(t.entrada || "—")}</td><td class="dados">${escapar(t.saida || "—")}</td>
-      <td>${t.rondas.map(r => `<span class="etq ${COR_RONDA[r.status] || "outro"}" title="${escapar(r.motivo || "")}">${r.numero}ª ${escapar(r.rotulo)}${r.feita ? ` ${escapar(r.feita)}` : r.hora ? ` ${escapar(r.hora)}` : ""}</span>
+      <td>${t.rondas.map(r => `<span class="etq ${COR_RONDA[r.status] || "outro"}" title="${escapar(r.motivo || "")}">${r.numero}ª ${escapar(r.rotulo)}${r.feita ? ` ${escapar(r.feita)}` : r.hora ? ` ${escapar(r.hora)}` : ""}${(r.status === "FEITA" || r.status === "ATRASADA") && !r.foto_id ? " · sem foto" : ""}</span>
         ${r.foto_id ? `<button class="link-btn" type="button" data-foto="r${r.id}" data-foto-url="/erp/api/ponto/rondas/${r.id}/foto" data-legenda="${escapar(`${t.nome} — ${r.numero}ª ronda`)}">📷</button>` : ""}`).join(" ")
         || `<span class="suave">nenhuma ronda</span>`}</td></tr>`).join("")}</tbody></table>`
     : `<div class="vazio"><b>Nenhum turno de vigia</b>neste período, com estes filtros. Para ver só os vigias, marque “Vigia” em Tipo de pessoa.</div>`;
@@ -7166,7 +7166,9 @@ function chipRonda(r, comFoto) {
   const dica = `${r.numero}ª ronda — ${r.rotulo}${r.hora ? `, saiu às ${r.hora}` : ""}${r.feita ? `, feita às ${r.feita}` : ""}${onde}${r.motivo ? ` (${r.motivo})` : ""}`;
   const cor = r.status === "PERDIDA" ? "color:var(--vermelho); font-weight:700"
             : (r.status === "FEITA" || r.status === "ATRASADA") && r.dentro_da_cerca === false ? "color:var(--laranja, #b45309); font-weight:700" : "";
-  const texto = `${ICONE_RONDA[r.status] || ""} ${r.feita || r.hora || r.rotulo}`;
+  // a ronda registrada sem foto (17/11/2026): diz, no próprio chip
+  const semFoto = (r.status === "FEITA" || r.status === "ATRASADA") && !r.foto_id;
+  const texto = `${ICONE_RONDA[r.status] || ""} ${r.feita || r.hora || r.rotulo}${semFoto ? " · sem foto" : ""}`;
   return comFoto && r.foto_id
     ? `<button class="chip" type="button" data-foto-ronda="${r.id}" title="${escapar(dica)}" style="${cor}">${escapar(texto)}</button>`
     : `<span class="chip" title="${escapar(dica)}" style="${cor}">${escapar(texto)}</span>`;

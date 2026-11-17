@@ -220,3 +220,37 @@ def test_a_ronda_nao_sai_depois_da_hora_de_sair(app, mundo, banco):
     with db.conexao() as conn:
         motivos = {x["motivo"] for x in db.todos(conn, "SELECT motivo FROM ponto.rondas WHERE status = 'CANCELADA'")}
     assert "o vigia já tinha batido a saída" in motivos
+
+
+def test_a_ronda_sem_foto_entra_com_a_localizacao_e_um_alerta(app, mundo, banco, monkeypatch):
+    """17/11/2026, o dono: "memória cheia: tenta bater e não consegue enviar a foto. O mais importante é a
+    geolocalização (…) enviar sem a foto (…) e talvez um alerta, para a pessoa não perder a ronda"."""
+    import base64
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import rondas
+    _vigia(app, mundo, mundo["joao"])
+    seg = _segunda_passada()
+    bater_via_chave(app, CPF_JOAO, local(seg, 17, 30))
+    agora = local(seg, 20, 0)
+    with db.conexao() as conn:                           # duas rondas abertas, com o link conhecido (sem o sorteio)
+        lista = db.todos(conn, "SELECT id FROM ponto.rondas ORDER BY numero")[:2]
+        for n, r in enumerate(lista):
+            db.executar(conn, """UPDATE ponto.rondas SET status = 'ENVIADA', token_hash = :h, enviada_em = :e,
+                                        prazo_ate = :p WHERE id = :i""",
+                        h=rondas._hash(f"tok{n}"), e=agora, p=agora + dt.timedelta(minutes=10), i=r["id"])
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    monkeypatch.setattr(horario, "agora", lambda: agora + dt.timedelta(minutes=2))
+    for n, corpo in ((0, {"sem_foto": "o celular não conseguiu tirar a foto (memória cheia?)"}),
+                     (1, {"foto_base64": "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8 lixo").decode()})):
+        # sem localização, nem sem foto entra: é a localização que prova a presença
+        assert cel.post("/ponto/app/api/ronda", json={"token": f"tok{n}", **corpo}).status_code == 400
+        r = cel.post("/ponto/app/api/ronda", json={"token": f"tok{n}", "latitude": OBRA_A[0], "longitude": OBRA_A[1],
+                                                   "precisao": 15, **corpo})
+        assert r.status_code == 201, r.get_json()
+        assert r.get_json()["status"] == "FEITA" and r.get_json()["sem_foto"] is True
+    with db.conexao() as conn:
+        feitas = db.todos(conn, "SELECT numero, foto_id, motivo, latitude FROM ponto.rondas WHERE status = 'FEITA' ORDER BY numero")
+        alertas = db.todos(conn, "SELECT mensagem FROM ponto.alertas WHERE codigo = 'RONDA_SEM_FOTO' ORDER BY id")
+    assert len(feitas) == 2 and all(f["foto_id"] is None and f["latitude"] for f in feitas)
+    assert "memória cheia" in feitas[0]["motivo"] and "estragada" in feitas[1]["motivo"]
+    assert len(alertas) == 2 and "sem foto" in alertas[0]["mensagem"] and "localização foi gravada" in alertas[0]["mensagem"]
