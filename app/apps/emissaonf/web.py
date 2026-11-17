@@ -40,6 +40,7 @@ import pipefy as _pipefy
 import notas_bws as _notas
 import base_faturamento as _bfat
 import omie_conferencia as _ocf
+import tributacao as _trib
 import conferir_emitido as _conf
 from decimal import Decimal
 import completar_imediato as _compl
@@ -157,7 +158,7 @@ CONTAS_PAGAMENTO = [
 ]
 
 
-def _efeitos_substituicao(ctx, nota_sub, numero, buf):
+def _efeitos_substituicao(ctx, nota_sub, numero, buf, regravar_retencoes=False):
     """Efeitos internos da substituição (a nova nota JÁ foi concluída): cancela a
     nota antiga no card (slot Válida->Cancelada), marca CANCELADA na planilha 'Notas BWS'
     e ajusta o título no Omie. O Omie é feito numa ÚNICA chamada (remove o nº antigo +
@@ -191,12 +192,46 @@ def _efeitos_substituicao(ctx, nota_sub, numero, buf):
         buf.write(f"\n>>> SUBSTITUIÇÃO (planilha) ERRO: {e}")
     try:
         integracao = ctx["card"].get("omie_integracao", "")
-        if integracao:
-            _, doc_omie = omie.substituir_numero(ctx["cred"], integracao, nota_sub, numero)
-            info["omie"] = f"nº {nota_sub} → {numero} no título (documento agora: {doc_omie or '(vazio)'})"
-        else:
+        if not integracao:
             info["omie"] = "card sem omie_integracao — nada a ajustar no Omie"
-        info["ok_omie"] = True
+            info["ok_omie"] = True
+        else:
+            # Sobrou outra nota VÁLIDA na medição (fora a que está saindo de cena)?
+            # Se sobrou, as retenções do título já são as da medição integral,
+            # gravadas pela primeira nota — só o número muda. Se não sobrou, a nota
+            # nova passa a ser a primeira válida e as retenções têm de ser
+            # REGRAVADAS, senão o título fica com as da nota que saiu.
+            outras = [x for x in _val.slots_preenchidos(ctx["card"],
+                                                        ignorar_numero=nota_sub)
+                      if x["valida"]]
+            if regravar_retencoes and not outras:
+                card, obra = ctx["card"], ctx["obra"]
+                r_int = _trib.calcular(card["valor_medicao"],
+                                       _trib.parse_categoria(obra.tributacao),
+                                       aliquota_iss=obra.aliquota_iss,
+                                       bdi_diferenciado=card["bdi"], iss_retido=True,
+                                       overrides=_trib.overrides_do_card(card))
+                _, doc_omie = omie.alterar_retencoes(ctx["cred"], integracao, r_int,
+                                                     omie.numero_curto(numero),
+                                                     remover=omie.numero_curto(nota_sub))
+                info["omie"] = (f"nº {nota_sub} → {numero} e retenções REGRAVADAS pela "
+                                f"medição integral (R$ {_val.brl(r_int.valor_total)}); "
+                                f"documento agora: {doc_omie or '(vazio)'}")
+            else:
+                _, doc_omie = omie.substituir_numero(ctx["cred"], integracao,
+                                                     omie.numero_curto(nota_sub),
+                                                     omie.numero_curto(numero))
+                info["omie"] = (f"nº {nota_sub} → {numero} no título (documento agora: "
+                                f"{doc_omie or '(vazio)'})")
+                if not regravar_retencoes:
+                    info["omie"] += (" — as RETENÇÕES do título não foram mexidas, "
+                                     "continuam as da nota antiga; se o valor mudou, "
+                                     "acerte em 'Tributos no Omie'")
+                elif outras:
+                    info["omie"] += (f" — retenções mantidas: ainda há "
+                                     f"{len(outras)} nota(s) válida(s) na medição, e "
+                                     f"elas já são as da medição integral")
+            info["ok_omie"] = True
         buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {info['omie']}")
     except Exception as e:
         info["omie"] = f"ERRO no Omie: {type(e).__name__}: {e}"
@@ -258,6 +293,130 @@ def pagina():
                     mimetype="text/html")
 
 
+def _caso_da_nota_que_sai(card_id, nota_sub, val_over=None) -> dict:
+    """Decide, pelos VALORES, o que precisa acontecer no portal com a nota antiga.
+
+    Devolve `{"caso", "antiga", "nova", "motivo"}`, com `caso` em
+    `cancelamento` / `substituicao` / `indefinido`.
+
+    ⚠️ **A diferença entre os dois existe SÓ no sistema da prefeitura** — foi o
+    dono quem disse, em 17/11/2026, e é o desenho certo:
+
+        "para o pipe e para o homem não importa se é substituição ou se é
+         cancelamento. E nem para a planilha. A gente utiliza a mesma
+         nomenclatura que a gente vem utilizando, faz o mesmo procedimento dos
+         slots do pipe. O procedimento diferenciado fica só no sistema da
+         prefeitura."
+
+    Aqui dentro, nos dois casos: o slot vira Cancelada, a linha da planilha ganha
+    CANCELADA, o número sai do título do Omie e o teto da medição libera. O que
+    muda é UMA frase: qual botão do portal ele aperta.
+
+    `indefinido` é quando não deu para ler os valores (Pipefy fora, nota fora dos
+    slots). Aí os dois caminhos são oferecidos e quem escolhe é ele — nunca se
+    chuta um.
+    """
+    fora = {"caso": "indefinido", "antiga": None, "nova": None, "motivo": ""}
+    try:
+        card, _cred = _so_o_card(card_id)
+    except Exception as e:
+        fora["motivo"] = f"não consegui ler o card ({type(e).__name__})"
+        return fora
+    antiga = None
+    for slot in _val.slots_preenchidos(card):
+        if _sub._chave_numero(slot["numero"]) == _sub._chave_numero(nota_sub):
+            antiga = Decimal(str(slot["valor"]))
+            break
+    if antiga is None:
+        fora["motivo"] = f"a NF {nota_sub} não está em nenhum dos slots A–E deste card"
+        return fora
+    if val_over:
+        nova = Decimal(str(val_over))
+    else:
+        texto, _aj = _worker.valor_base_substituicao(card, nota_sub)
+        nova = Decimal(texto) if texto else _val._dec_norm(card.get("valor_medicao"))
+    caso = "cancelamento" if nova < antiga else "substituicao"
+    return {"caso": caso, "antiga": antiga, "nova": nova, "motivo": "",
+            "card": card}
+
+
+def _pagina_portal_primeiro(caso, card_id, nota_sub, token, campos_form) -> str:
+    """A ÚNICA pergunta do fluxo: o que fazer no portal com a nota antiga.
+
+    Antes desta tela, quem preenchia "nota substituída" e clicava em Emitir
+    recebia um texto explicando dois caminhos e tinha de navegar até outra tela à
+    mão. O dono cobrou isso em 17/11/2026, com razão: *"o correto é a própria
+    automação entender o que precisa ser feito e sugerir."*
+    """
+    n = html.escape(str(nota_sub))
+    c = caso.get("caso")
+    hidden = "".join(
+        f"<input type='hidden' name='{html.escape(k)}' value='{html.escape(str(v))}'>"
+        for k, v in campos_form.items())
+
+    if c == "cancelamento":
+        diag = (f"<div class='err'><b>Esta nota nova é de valor MENOR, então o caminho é "
+                f"CANCELAR.</b><br>A NF {n} é de R$ {_val.brl(caso['antiga'])} e a nova "
+                f"sai por R$ {_val.brl(caso['nova'])}. O município <b>não aceita "
+                f"substituir por valor menor</b> — por isso cancelamento.</div>")
+        recomendado = "cancelar"
+    elif c == "substituicao":
+        diag = (f"<div class='ok'><b>Esta nota nova é de valor igual ou maior, então dá "
+                f"para SUBSTITUIR.</b><br>A NF {n} é de R$ {_val.brl(caso['antiga'])} e a "
+                f"nova sai por R$ {_val.brl(caso['nova'])}.</div>")
+        recomendado = "substituir"
+    else:
+        diag = (f"<div class='warn'><b>Não consegui conferir os valores</b>"
+                f"{' — ' + html.escape(caso.get('motivo') or '') if caso.get('motivo') else ''}. "
+                f"Escolha você: o município aceita <b>substituir</b> só por valor igual ou "
+                f"maior; valor menor é <b>cancelamento</b>.</div>")
+        recomendado = ""
+
+    # O BDI diferenciado é o campo silencioso: vazio, não barra nada e faz as
+    # retenções saírem a mais. Avisar ANTES do portal é mais barato que depois.
+    avisos_card = ""
+    if caso.get("card") is not None and _val._dec_norm(caso["card"].get("bdi")) <= 0:
+        avisos_card = ("<div class='warn'>⚠️ O <b>Valor BDI Diferenciado</b> está vazio no "
+                       "card (a conclusão da nota anterior apaga esse campo). Se esta "
+                       "medição tem BDI diferenciado, preencha no Pipefy e recarregue a "
+                       "tela de emissão <b>antes</b> de seguir: sem ele as bases de INSS e "
+                       "ISS saem MAIORES e as retenções vão a mais, sem aviso. Se a "
+                       "medição não tem BDI diferenciado, siga.</div>")
+
+    def _radio(valor, rotulo, explica):
+        marcado = " checked" if valor == recomendado else ""
+        return (f"<label class='lbl' style='background:#f6f8fb;border:1px solid #e1e7ee;"
+                f"border-radius:6px;padding:10px;display:block'>"
+                f"<input type='radio' name='acao_portal' value='{valor}'{marcado}> "
+                f"<b>{rotulo}</b><br><span class='sub'>{explica}</span></label>")
+
+    return _doc("Antes de emitir", f"""
+      <h1>A NF {n} precisa sair de cena no portal da prefeitura</h1>
+      <p class='sub'>É a <b>única</b> parte que o sistema não faz por você: o portal da
+      prefeitura pede o seu login. Aqui dentro — slot do card, planilha e título do Omie —
+      o procedimento é o mesmo nos dois casos, e eu faço tudo junto com a emissão.</p>
+      {diag}
+      {avisos_card}
+      <div class='card'>
+        <form method='post' action='{url_for('.emitir')}'>
+          {hidden}
+          <input type='hidden' name='ja_fiz_no_portal' value='on'>
+          <p><b>No portal da prefeitura, com a NF {n}, você vai:</b></p>
+          {_radio("cancelar", "CANCELAR a nota",
+                  "Depois eu emito a nota nova aqui e marco a " + n + " como Cancelada no "
+                  "card, na planilha e no título do Omie — tudo numa vez.")}
+          {_radio("substituir", "SUBSTITUIR a nota (botão &quot;Substituir&quot; do portal)",
+                  "A nota nova nasce NO PORTAL, não aqui. Depois eu termino o serviço pela "
+                  "tela &quot;Recuperar entrega&quot;, que já vai preenchida.")}
+          <p class='sub' style='margin-top:14px'><b>Faça isso no portal agora</b>, e só
+          então clique no botão abaixo.</p>
+          <button type='submit'>Já fiz no portal — continuar</button>
+        </form>
+      </div>
+      <p class='sub'>Se preferir não seguir agora, feche esta tela: <b>nada foi emitido e
+      nada foi alterado</b>. A nota antiga continua como está.</p>""")
+
+
 @bp.route("/emitir", methods=["POST"])
 def emitir():
     if not _token_ok():
@@ -275,30 +434,49 @@ def emitir():
         return Response(_pagina_erro("Você precisa marcar a confirmação antes de emitir."),
                         mimetype="text/html")
 
-    # ---- SUBSTITUIÇÃO não passa mais por aqui ----
-    # No modelo antigo a nova nota carregava, dentro dela, a identificação da
-    # nota que substituía. O modelo nacional não tem esse campo: lá a
-    # substituição é um EVENTO registrado sobre a nota já emitida, por outra
-    # operação da API. Enquanto esse caminho não existir aqui — e ele não dá
-    # para ser ensaiado sem emitir nota de verdade — a substituição é feita
-    # pelo portal, como já era o caminho da nota emitida manualmente.
-    if nota_sub:
-        return Response(_pagina_explicacao(
-            f"<b>Substituir pela tela não funciona mais.</b> Em 07/10/2026 a prefeitura "
-            f"desativou o modelo antigo, e com ele o campo que mandava a nota "
-            f"substituída dentro da nota nova. No modelo nacional a substituição é "
-            f"um evento registrado sobre a nota, e esse caminho ainda não está "
-            f"pronto aqui.<br><br>"
-            f"<b>O que fazer agora:</b> substitua a NF {html.escape(nota_sub)} pelo "
-            f"botão \"Substituir\" do portal da prefeitura. Depois, no "
-            f"<b>/emissao/recuperar</b>: cole o XML da nota NOVA, ponha "
-            f"{html.escape(nota_sub)} no campo \"nota substituída\" e "
-            f"<b>marque \"concluir completo\"</b>. Ele faz as duas metades — "
-            f"registra a nota nova (Notas BWS, Omie, slot, Drive, Descrição) e "
-            f"cancela a {html.escape(nota_sub)} no slot do card, na planilha e no "
-            f"título do Omie, mostrando no fim se cada um dos três deu certo. É o "
-            f"mesmo caminho que já se usava para nota emitida manualmente."),
-            mimetype="text/html")
+    # ---- A NOTA ANTIGA TEM DE SAIR DE CENA, E SÓ O PORTAL É DIFERENTE ----
+    # Desenho pedido pelo dono em 17/11/2026, depois de ele bater em três paredes
+    # seguidas (mensagem genérica, instrução errada para o caso, e navegar até
+    # outra tela à mão):
+    #
+    #   "o correto é a própria automação entender o que precisa ser feito e
+    #    sugerir. (…) para o pipe e para o homem não importa se é substituição ou
+    #    se é cancelamento. E nem para a planilha. (…) O procedimento
+    #    diferenciado fica só no sistema da prefeitura."
+    #
+    # Então: o sistema decide pelo VALOR, pergunta UMA vez o que ele vai fazer no
+    # portal, e faz o resto — inclusive emitir a nota nova, quando o caso é
+    # cancelamento. Aqui dentro os dois casos são idênticos: slot vira Cancelada,
+    # planilha ganha CANCELADA, número sai do título do Omie.
+    acao_portal = (request.form.get("acao_portal") or "").strip()
+    if nota_sub and request.form.get("ja_fiz_no_portal") != "on":
+        caso = _caso_da_nota_que_sai(card_id, nota_sub, val_over)
+        campos = {"card_id": card_id, "token": token, "discriminacao": discr,
+                  "nota_substituida": nota_sub, "tipo_medicao": tm_over,
+                  "valor": val_over or "", "serie_sub": serie_sub, "confirmo": "on"}
+        if request.form.get("ensaio") == "on":
+            campos["ensaio"] = "on"
+        return Response(_pagina_portal_primeiro(caso, card_id, nota_sub, token, campos),
+                        mimetype="text/html")
+
+    if nota_sub and acao_portal == "substituir":
+        # A nota nova nasce no PORTAL (é o que o botão "Substituir" dele faz), então
+        # não há o que emitir daqui. O que falta é registrar: a tela de recuperação
+        # faz as duas metades, e vai com tudo preenchido.
+        link = (f"{url_for('.recuperar')}?token={html.escape(token)}"
+                f"&card_id={html.escape(card_id)}"
+                f"&nota_substituida={html.escape(str(nota_sub))}")
+        corpo = (f"<h1>A nota nova nasceu no portal</h1>"
+                 f"<div class='ok'>Nada foi emitido aqui, e está certo: quando você aperta "
+                 f"<b>Substituir</b> no portal, é ele que cria a nota nova.</div>"
+                 f"<div class='card'><b>Falta terminar o serviço</b>"
+                 f"<p>Baixe o <b>XML da nota NOVA</b> no portal e cole na tela abaixo. Ela "
+                 f"já vai com o card e o nº {html.escape(str(nota_sub))} preenchidos — "
+                 f"marque <b>\"concluir completo\"</b> e ela registra a nota nova "
+                 f"(planilha, Omie, slot, Drive, Descrição) e marca a "
+                 f"{html.escape(str(nota_sub))} como Cancelada nos três lugares.</p>"
+                 f"<p><a class='btn' href='{link}'>Terminar o serviço</a></p></div>")
+        return Response(_doc("Substituída no portal", corpo), mimetype="text/html")
 
     with _LOCK:
         if card_id in _EMITINDO:
@@ -404,6 +582,7 @@ def emitir():
             pass
 
         buf = io.StringIO()
+        info_sub = None
         if ensaio:
             buf.write(f">>> ENSAIO em HOMOLOGAÇÃO — a nota {numero} NÃO tem validade "
                       f"fiscal, e nada foi gravado na planilha, no Omie, no card nem no "
@@ -414,10 +593,21 @@ def emitir():
                 with contextlib.redirect_stdout(buf):
                     _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx,
                                        id_dps=res.get("id_dps", "") if isinstance(res, dict) else "",
-                                       nota_substituida=None, nacional=True,
+                                       nota_substituida=(nota_sub or None), nacional=True,
                                        chave_nacional=chave)
             except Exception as e:
                 buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
+            # A nota antiga sai de cena — slot, planilha e título do Omie. Fica FORA
+            # do try do concluir de propósito: em 09/11/2026 um erro no concluir
+            # levou o cancelamento embora e a nota antiga continuou valendo.
+            if nota_sub:
+                try:
+                    info_sub = _efeitos_substituicao(ctx, nota_sub, numero, buf,
+                                                     regravar_retencoes=True)
+                except Exception as e:
+                    info_sub = None
+                    buf.write(f"\n>>> ERRO ao cancelar a nota antiga: "
+                              f"{type(e).__name__}: {e}")
 
         # A busca nacional em segundo plano não é mais disparada: ela existia para
         # ir atrás de uma nota que levava minutos para aparecer no nacional. Agora
@@ -427,7 +617,8 @@ def emitir():
         rid = uuid.uuid4().hex
         _RESULTADOS[rid] = {"numero": numero, "codigo": codigo, "data": data_iso,
                             "log": buf.getvalue(), "card_id": card_id, "prox": ctx.get("prox"),
-                            "sub": None, "chave": chave, "ensaio": ensaio}
+                            "sub": nota_sub or None, "chave": chave, "ensaio": ensaio,
+                            "info_sub": info_sub}
         return redirect(url_for(".resultado", id=rid, token=token))
     except Exception as e:
         return Response(_pagina_erro(f"Erro ao emitir: {type(e).__name__}: {e}"), mimetype="text/html")
@@ -624,6 +815,250 @@ def _card_e_aba_notas(card_id):
     return card, ws
 
 
+def _so_o_card(card_id):
+    """Só o card do Pipefy e as credenciais — sem abrir a planilha de notas.
+
+    Existe por conta de custo, e a conta é esta: `_card_aba_e_cred` abre a
+    planilha e procura a aba 'Notas BWS', o que são 2 a 3 idas ao Google a mais.
+    Quem só precisa LER um valor do card (a mensagem que explica o caminho da
+    substituição, por exemplo) não tem por que pagar por isso.
+    """
+    gc = _worker.cliente_gspread()
+    cred = _worker.ler_credenciais(gc)
+    token = cred.get("PIPEFY_TOKEN")
+    if not token:
+        raise KeyError("PIPEFY_TOKEN não encontrado na aba 'Credenciais'.")
+    return _pipefy.extrair_card(_pipefy.get_card(card_id, token)), cred
+
+
+def _card_aba_e_cred(card_id):
+    """O mesmo que `_card_e_aba_notas`, devolvendo também as credenciais.
+
+    Quem precisa mexer no Omie (ou no Pipefy com o token em mão) precisa das
+    credenciais, e carregar o card uma segunda vez só para isso seria um pedido a
+    mais ao Pipefy a cada uso.
+    """
+    gc = _worker.cliente_gspread()
+    cred = _worker.ler_credenciais(gc)
+    token = cred.get("PIPEFY_TOKEN")
+    if not token:
+        raise KeyError("PIPEFY_TOKEN não encontrado na aba 'Credenciais'.")
+    card = _pipefy.extrair_card(_pipefy.get_card(card_id, token))
+    ws = _worker.abrir_aba(gc.open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
+    return card, ws, cred
+
+
+def _bloco_falta(falta) -> str:
+    """A lista de campos a repreencher no card, em destaque na tela."""
+    if not falta:
+        return ("<div class='ok'>O card não tem campo de entrada vazio — a nota nova "
+                "pode ser emitida direto pela tela de emissão.</div>")
+    itens = "".join(f"<li><b>{html.escape(nome)}</b> — {html.escape(por_que)}</li>"
+                    for nome, por_que in falta)
+    return ("<div class='warn'><b>Antes de emitir a nota nova, preencha no card:</b>"
+            f"<ul>{itens}</ul>A conclusão da nota cancelada apagou esses campos — é o "
+            "comportamento normal dela, não é defeito. Preencha no Pipefy, recarregue a "
+            "tela de emissão e confira o espelho antes de emitir.</div>")
+
+
+def _o_que_falta_para_reemitir(card) -> list:
+    """Os campos que a conclusão anterior apagou e que a nota nova vai precisar.
+
+    ⚠️ **Por que isto existe.** Registrado o cancelamento, a pessoa vai emitir a
+    nota nova — e bate numa segunda parede, porque a conclusão da nota cancelada
+    **apagou doze campos de entrada do card**. Dois deles barram a emissão com
+    mensagem clara (Tipo de Medição e Banco). Um terceiro, o 'Valor BDI
+    Diferenciado', não barra nada: vazio, ele só faz as retenções saírem a mais,
+    em silêncio.
+
+    Dizer isso na hora do cancelamento é mais barato do que deixar a pessoa
+    descobrir uma parede por vez.
+    """
+    falta = []
+    if not str(card.get("tipo_medicao") or "").strip():
+        falta.append(("Tipo de Medição", "obrigatório — a emissão é barrada sem ele"))
+    if not str(card.get("banco") or "").strip():
+        falta.append(("Banco para Recebimento",
+                      "obrigatório — a emissão é barrada sem ele"))
+    if _val._dec_norm(card.get("bdi")) <= 0:
+        falta.append(("Valor BDI Diferenciado",
+                      "⚠️ NÃO barra a emissão. Se esta medição tem BDI diferenciado e "
+                      "ele ficar vazio, as bases de INSS e ISS saem MAIORES e as "
+                      "retenções vão a mais, sem aviso. Se a medição não tem BDI "
+                      "diferenciado, não há o que preencher"))
+    if not str(card.get("emissao_nf") or "").strip():
+        falta.append(("Emissão de Nota Fiscal",
+                      "vazio faz a nota sair pelo valor cheio da medição; se a nota "
+                      "nova for parcial, remarque e preencha o 'Valor Parcial'"))
+    return falta
+
+
+def _pagina_cancelada(token, card_id="", numero="", aviso=""):
+    t = html.escape(token)
+    box = (f"<div class='warn'>{html.escape(aviso)}</div>") if aviso else ""
+    return _doc("Nota cancelada no portal", f"""
+      <h1>Nota cancelada no portal</h1>
+      <p class='sub'>Use depois de <b>cancelar uma nota no portal da prefeitura</b>.
+      Esta tela só <b>registra</b> o cancelamento aqui dentro: marca o slot do card como
+      <b>Cancelada</b>, escreve CANCELADA na linha da planilha 'Notas BWS' e tira o número
+      da nota do título no Omie. Ela <b>não cancela nada na prefeitura</b> — isso é no
+      portal, e é lá que o cancelamento vale.</p>
+      <div class='ok'><b>Na maioria dos casos você não precisa desta tela.</b> Se a nota
+      antiga vai ser trocada por uma nova, use a <b>tela de emissão</b>: preencha o nº da
+      nota substituída, clique em Emitir, e ela pergunta o que fazer no portal e faz o
+      resto — inclusive emitir a nota nova. <b>Esta tela é para quando não há nota nova
+      agora:</b> a nota foi cancelada e ponto, ou a nova já foi emitida por outro
+      caminho.</div>
+      <div class='warn'><b>Para que isso serve, na prática:</b> enquanto a nota antiga
+      continuar marcada como válida no card, ela <b>consome o teto da medição</b> e a
+      emissão da nota nova é barrada ("soma das notas válidas excede o Valor da Medição").
+      Registrado o cancelamento, a nota nova sai pela tela normal de emissão — e, por ser a
+      única válida, ela regrava as retenções do título com os valores certos.</div>
+      {box}
+      <div class='card'>
+        <form method='post' action='{url_for('.cancelada')}'>
+          <label class='lbl'><b>Número do card no Pipefy</b>
+            <input name='card_id' value='{html.escape(card_id)}' style='padding:8px;
+                   border:1px solid #c8d0da;border-radius:6px'></label>
+          <label class='lbl'><b>Número da nota cancelada</b> — curto ou longo, tanto faz
+            <input name='numero' value='{html.escape(numero)}' placeholder='ex.: 3377 ou 2600000003377'
+                   style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
+          <label class='lbl'>Motivo (opcional, vai junto na observação da planilha)
+            <input name='motivo' placeholder='ex.: valor da medição estava errado'
+                   style='width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Registrar o cancelamento</button>
+        </form>
+        <p class='sub'>Pode repetir sem medo: marcar duas vezes como cancelada não muda
+        nada, e o número só sai do título do Omie se estiver lá.</p>
+      </div>""")
+
+
+@bp.route("/cancelada", methods=["GET", "POST"])
+def cancelada():
+    """Registra aqui dentro uma nota que foi CANCELADA no portal da prefeitura.
+
+    ⚠️ **Por que esta tela existe — 17/11/2026, e era um impasse de verdade.** Uma
+    nota saiu por R$ 13.053,64 quando devia ser R$ 13.053,54. O dono corrigiu o
+    Valor da Medição no card, atualizou o título e foi substituir a nota — e não
+    tinha caminho:
+
+    - **substituir não resolve valor MENOR.** O município só aceita substituição
+      por valor igual ou maior; valor menor é caso de **cancelamento**. E, desde
+      07/10/2026, substituir pela tela não funciona de jeito nenhum.
+    - **cancelar no portal, sozinho, não destravava a reemissão.** O slot do card
+      continuava "válido", consumindo o teto da medição, e a tela de emissão
+      barrava a nota nova. O único jeito de marcar a antiga como cancelada era o
+      `/emissao/recuperar`, que **exige o XML de uma nota nova** — justamente a que
+      ainda não podia ser emitida. Cachorro correndo atrás do próprio rabo.
+
+    Esta tela corta esse nó: ela separa "registrar o cancelamento" de "registrar a
+    nota nova", que são duas coisas diferentes e aconteciam só juntas.
+
+    **O que ela NÃO faz:** não cancela na prefeitura (é no portal), não apaga a
+    linha da planilha (preserva o histórico, só marca) e não mexe nas retenções do
+    título. As retenções continuam as da nota cancelada até a nota nova ser
+    emitida — e aí a nota nova as regrava, porque passa a ser a primeira válida.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    card_id = (request.values.get("card_id") or "").strip()
+    numero = _so_num(request.values.get("numero"))
+
+    if request.method == "GET":
+        return Response(_pagina_cancelada(token, card_id, numero), mimetype="text/html")
+
+    motivo = (request.form.get("motivo") or "").strip()
+    if not card_id or not numero:
+        return Response(_pagina_cancelada(token, card_id, numero,
+                        aviso="Preciso do número do card E do número da nota cancelada."),
+                        mimetype="text/html")
+
+    buf = io.StringIO()
+    info = {"numero_antigo": numero, "card": "", "planilha": "", "omie": "",
+            "ok_card": False, "ok_planilha": False, "ok_omie": False}
+    try:
+        with contextlib.redirect_stdout(buf):
+            print(f">>> REGISTRO DE CANCELAMENTO — nota {numero}, card {card_id}. "
+                  f"A prefeitura NÃO é tocada por esta tela.")
+            card, ws_notas, cred = _card_aba_e_cred(card_id)
+            print(f"    card {card_id}: obra {card.get('codigo_obra')} | "
+                  f"medição {card.get('numero_medicao')}")
+
+            # [1] o slot do card
+            try:
+                rc = _sub.cancelar_no_card(card, numero, cred["PIPEFY_TOKEN"])
+                info["card"], info["ok_card"] = rc["msg"], bool(rc.get("ok"))
+                print(f"[1] Card (slot) ........ {rc['msg']}")
+            except Exception as e:
+                info["card"] = f"ERRO: {type(e).__name__}: {e}"
+                print(f"[1] Card (slot) ........ ERRO: {e}")
+
+            # [2] a linha da planilha
+            try:
+                rp = _sub.cancelar_na_planilha(ws_notas, numero, motivo=motivo)
+                info["planilha"], info["ok_planilha"] = rp["msg"], bool(rp.get("ok"))
+                print(f"[2] Notas BWS .......... {rp['msg']}")
+            except Exception as e:
+                info["planilha"] = f"ERRO: {type(e).__name__}: {e}"
+                print(f"[2] Notas BWS .......... ERRO: {e}")
+
+            # [3] o número no título do Omie
+            try:
+                integracao = card.get("omie_integracao", "")
+                if not integracao:
+                    info["omie"] = "card sem código de integração do Omie — nada a tirar lá"
+                    info["ok_omie"] = True
+                else:
+                    _, doc = omie.remover_documento(cred, integracao,
+                                                    omie.numero_curto(numero))
+                    info["omie"] = (f"nº {numero} tirado do título "
+                                    f"(documento agora: {doc or '(vazio)'})")
+                    info["ok_omie"] = True
+                print(f"[3] Omie (título) ...... {info['omie']}")
+            except Exception as e:
+                info["omie"] = f"ERRO: {type(e).__name__}: {e}"
+                print(f"[3] Omie (título) ...... ERRO: {e}")
+
+            # o que a conclusão anterior apagou e a nota nova vai precisar
+            try:
+                info["falta"] = _o_que_falta_para_reemitir(card)
+                if info["falta"]:
+                    print("[4] Antes de reemitir ... preencher no card: "
+                          + ", ".join(n for n, _ in info["falta"]))
+            except Exception as e:
+                print(f"[4] Antes de reemitir ... não consegui conferir: {e}")
+
+            # o que sobrou de válido, para ele saber se a reemissão está liberada
+            try:
+                card2 = _pipefy.extrair_card(_pipefy.get_card(card_id, cred["PIPEFY_TOKEN"]))
+                validas = [x for x in _val.slots_preenchidos(card2) if x["valida"]]
+                soma = sum((x["valor"] for x in validas), Decimal("0"))
+                teto = _val._dec_norm(card2.get("valor_medicao"))
+                info["sobrou"] = (f"Ainda válidas no card: {len(validas)} nota(s), "
+                                  f"R$ {_val.brl(soma)}. Valor da Medição: R$ "
+                                  f"{_val.brl(teto)}. Cabe emitir até R$ "
+                                  f"{_val.brl(teto - soma)}.")
+                print(f"[5] Teto da medição .... {info['sobrou']}")
+            except Exception as e:
+                print(f"[5] Teto da medição .... não consegui conferir: {e}")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+
+    corpo = (f"<h1>Cancelamento da NF {html.escape(numero)} registrado</h1>"
+             + _painel_substituicao(info)
+             + (f"<div class='ok'>{html.escape(info['sobrou'])}</div>"
+                if info.get("sobrou") else "")
+             + _bloco_falta(info.get("falta"))
+             + "<div class='warn'>As <b>retenções do título no Omie continuam as da nota "
+               "cancelada</b>. Quem as corrige é a nota nova: ao emiti-la pela tela normal, "
+               "ela passa a ser a primeira válida da medição e regrava as retenções com os "
+               "valores certos.</div>"
+             + f"<div class='card'><b>Log</b><pre>{html.escape(buf.getvalue())}</pre></div>")
+    return Response(_doc("Cancelamento registrado", corpo), mimetype="text/html")
+
+
 @bp.route("/planilha", methods=["GET", "POST"])
 def planilha():
     """Acrescenta SÓ a linha da 'Notas BWS' — e não toca em mais nada.
@@ -723,7 +1158,9 @@ def _pagina_planilha(token, card_id, aviso=""):
       foi emitida à mão no portal, é
       <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a>. As duas
       fazem o serviço completo — e usar uma delas aqui preencheria um segundo slot
-      no card e mandaria o aviso ao cliente de novo.</p>
+      no card e mandaria o aviso ao cliente de novo. Se a nota foi
+      <b>cancelada</b> no portal, é
+      <a href='{url_for('.cancelada')}?token={t}'>Nota cancelada no portal</a>.</p>
       {box}
       <div class='card'>
         <form method='post' action='{url_for('.planilha')}' enctype='multipart/form-data'>
@@ -1453,8 +1890,9 @@ def _ids_da_nota(xml_texto: str):
     return _txt("Numero"), _txt("CodigoVerificacao"), (data[:10] if data else ""), False, ""
 
 
-def _pagina_recuperar(token):
+def _pagina_recuperar(token, card_id="", nota_sub=""):
     t = html.escape(token)
+    _ci, _ns = html.escape(str(card_id or "")), html.escape(str(nota_sub or ""))
     return _doc("Recuperar entrega", f"""
       <h1>Recuperar entrega de nota já emitida</h1>
       <div class='card'>
@@ -1463,12 +1901,12 @@ def _pagina_recuperar(token):
         É idempotente, pode repetir.</p>
         <form method='post' action='{url_for('.recuperar')}'>
           <label class='lbl'>card_id (Pipefy):
-            <input name='card_id' style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
+            <input name='card_id' value='{_ci}' style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
           <label class='lbl'>XML da NFS-e (baixe no portal da prefeitura e cole aqui):</label>
           <textarea name='xml' rows='12' placeholder='<?xml ...><CompNfse>...'></textarea>
           <label class='lbl'>Nº da nota substituída (opcional — só se esta nota substituiu outra
             que você cancelou/substituiu manualmente no portal):
-            <input name='nota_substituida' placeholder='ex.: 3352 ou 2600000003352'
+            <input name='nota_substituida' value='{_ns}' placeholder='ex.: 3352 ou 2600000003352'
                    style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
           <p class='sub' style='margin:-8px 0 12px'>Pode escrever o número curto (3352) ou o
             longo (2600000003352) — os dois encontram a mesma nota. <b>Preencher este campo já
@@ -1498,7 +1936,10 @@ def recuperar():
         return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
     token = request.values.get("token", "")
     if request.method == "GET":
-        return Response(_pagina_recuperar(token), mimetype="text/html")
+        return Response(_pagina_recuperar(token,
+                                          (request.args.get("card_id") or "").strip(),
+                                          _so_num(request.args.get("nota_substituida"))),
+                        mimetype="text/html")
 
     card_id = (request.form.get("card_id") or "").strip()
     xml_texto = (request.form.get("xml") or "").strip()
@@ -1874,6 +2315,7 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
         <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a> &nbsp;·&nbsp;
         <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a> &nbsp;·&nbsp;
+        <a href='{url_for('.cancelada')}?token={t}'>Nota cancelada no portal</a> &nbsp;·&nbsp;
         <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a> &nbsp;·&nbsp;
         <a href='{url_for('.omie_tributos')}?token={t}'>Tributos no Omie</a>
       </p>""")
@@ -1942,13 +2384,33 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
         _si = {_so_num(x["numero"]): x for x in _val.slots_preenchidos(card)}
         _vo = _si.get(nota_sub, {}).get("valor")
         _vt = f" (R$ {_val.brl(_vo)})" if _vo is not None else ""
+        # ⚠️ O banner já PROMETEU o que o botão não fazia, e já EXPLICOU dois
+        # caminhos para a pessoa navegar à mão. As duas versões foram cobradas
+        # (17/11/2026). Agora ele diz o que o botão realmente faz: perguntar uma
+        # vez o que fazer no portal, e cuidar do resto.
+        _aj = ctx.get("valor_ajustado")
+        _nota_aj = ""
+        if _aj:
+            _nota_aj = (
+                "<div style='background:#fff;border:1px solid #e08600;border-radius:6px;"
+                "padding:10px;margin-top:10px'>"
+                f"💡 <b>O valor desta nota foi ajustado pelo card.</b> A NF "
+                f"{html.escape(str(nota_sub))} era de R$ {_val.brl(_aj['antiga'])}, e o "
+                f"<b>Valor da Medição do card comporta R$ {_val.brl(_aj['cabe'])}</b> — "
+                f"então esta nota está calculada em <b>R$ {_val.brl(_aj['usado'])}</b>. "
+                "Se não é isso que você quer, digite o valor no campo "
+                "<i>Valor da nota</i>, abaixo, e clique em Recalcular.</div>")
         sub_banner = ("<div style='background:#fde7c2;border:2px solid #e08600;color:#7a4a00;"
                       "padding:14px;border-radius:8px;margin:0 0 16px;font-size:15px'>"
-                      f"🔁 <b>SUBSTITUIÇÃO DE NOTA</b> — esta emissão substitui a "
-                      f"<b>NF {html.escape(str(nota_sub))}</b>{_vt} (slot <b>{slot_old}</b>). "
-                      f"Ao emitir, a NF {html.escape(str(nota_sub))} será marcada como "
-                      "<b>Cancelada</b> no card e na planilha 'Notas BWS'. "
-                      "O teto abaixo já desconsidera a nota substituída.</div>")
+                      f"🔁 <b>ESTA NOTA SUBSTITUI A NF {html.escape(str(nota_sub))}</b>"
+                      f"{_vt} (slot <b>{slot_old}</b>). O teto abaixo já desconsidera ela."
+                      "<br><br>Ao clicar em <b>Emitir</b>, eu confiro os valores e te digo "
+                      "o que fazer com ela no <b>portal da prefeitura</b> — cancelar ou "
+                      "substituir, conforme o valor. Essa é a única parte que é sua, "
+                      "porque o portal pede o seu login. O resto é meu: marcar o slot como "
+                      "<b>Cancelada</b>, escrever CANCELADA na planilha e trocar o número "
+                      "no título do Omie."
+                      f"{_nota_aj}</div>")
         sub_hidden = f"<input type='hidden' name='nota_substituida' value='{html.escape(str(nota_sub))}'>"
     elif nota_sub and not slot_old:
         sub_bloqueio = (f"<div class='err'>🚫 SUBSTITUIÇÃO: a NF {html.escape(str(nota_sub))} não foi "
@@ -2021,7 +2483,8 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
                 <option value='NORMAL'{_tm_nor}>Normal (com dedução)</option>
                 <option value='SEM DEDUCAO'{_tm_sem}>Sem dedução</option>
               </select>
-              <label class='lbl'>Valor da nota (igual ou maior que a substituída):</label>
+              <label class='lbl'>Valor da nota (o município só aceita SUBSTITUIR por valor
+                igual ou maior; valor menor é cancelamento):</label>
               <div style='display:flex;gap:8px'>
                 <input id='valOver' type='text' value='{html.escape(_val_disp)}'
                        style='flex:1;padding:8px;border:1px solid #c8d0da;border-radius:6px'>
@@ -2111,6 +2574,9 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
               f"<a href='{url_for('.planilha')}?token={html.escape(token)}"
               f"&card_id={html.escape(card_id)}'>Só a linha da planilha</a>"
               f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.cancelada')}?token={html.escape(token)}"
+              f"&card_id={html.escape(card_id)}'>Nota cancelada no portal</a>"
+              f" &nbsp;·&nbsp; "
               f"<a href='{url_for('.faturamento')}?token={html.escape(token)}'>"
               f"Base de Faturamento</a>"
               f"</p>")
@@ -2138,14 +2604,16 @@ def _pagina_resultado(r):
                          f"({esperado}). É este número que está no documento do "
                          f"cliente e na planilha; a próxima nota sai como "
                          f"{esperado + 1}.</div>")
+    # A nota antiga que saiu de cena: o painel com ✅/❌ nos três lugares, o mesmo
+    # da tela de recuperação. Antes isto era um bloco solto que não dizia se cada
+    # passo deu certo — e foi exatamente o que passou batido em 09/11/2026.
     sub_box = ""
-    sub = r.get("sub")
-    if sub:
-        sub_box = (f"<div class='card'><b>🔁 Substituição da NF {html.escape(str(sub['numero_antigo']))}</b>"
-                   f"<div class='lbl'>No card: {html.escape(str(sub.get('card','') or '—'))}</div>"
-                   f"<div class='lbl'>Na planilha: {html.escape(str(sub.get('planilha','') or '—'))}</div>"
-                   "<p class='sub'>Obs.: o cancelamento fiscal junto à prefeitura (ABRASF), se necessário, "
-                   "é um passo separado e não é feito automaticamente.</p></div>")
+    if r.get("info_sub"):
+        sub_box = _painel_substituicao(r["info_sub"])
+    elif r.get("sub"):
+        sub_box = (f"<div class='warn'>A NF {html.escape(str(r['sub']))} deveria ter sido "
+                   f"marcada como Cancelada, e eu não tenho o resultado disso — confira o "
+                   f"log abaixo, e o slot no card.</div>")
     chave = str(r.get("chave") or "")
     chave_box = ""
     if chave:

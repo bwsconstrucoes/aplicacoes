@@ -1930,6 +1930,150 @@ nem qual número ela devolve. A primeira emissão de verdade é a primeira prova
 
 ## Incidentes
 
+### A nota com dez centavos a mais, e o laço sem saída — 17/11/2026
+
+**O caso.** A nota da obra CREPEEXU, medição 19, saiu por **R$ 13.053,64** quando
+devia ser **R$ 13.053,54**. O dono corrigiu o Valor da Medição no card, atualizou
+o título no Omie, e foi substituir a nota. Não tinha caminho — e a tela ainda
+brigava com ela mesma:
+
+```
+Valor da Medição (teto)   R$ 13.053,54
+Esta nota                 R$ 13.053,64
+🚫 Valor desta nota (R$ 13.053,64) é MAIOR que o Valor da Medição (R$ 13.053,54).
+```
+
+**Eram três coisas, e as três estão consertadas.**
+
+**1. A tela propunha um valor e se recusava a emiti-lo.** Na substituição, o
+valor-base da nota nova era o da nota ANTIGA, lido do slot, **cego ao card**. O
+default faz sentido — é o que "substituir" quer dizer, e é a única fonte quando a
+nota antiga era parcial, porque o campo 'Valor Parcial' é um dos doze que a
+conclusão limpa. Mas o **Valor da Medição não é limpo**: ele sobrevive, é onde o
+dono corrige as coisas, e por isso é confiável. Agora o valor-base é
+`min(valor da nota antiga, Valor da Medição − outras notas válidas)`: quando a
+medição comporta menos, o card ganha; quando comporta o mesmo ou mais (toda
+substituição normal), nada muda. O ajuste **nunca é silencioso** — a tela mostra,
+no banner da substituição, de onde o valor saiu e como mudá-lo.
+A regra virou `worker.valor_base_substituicao`, fora do `preparar`, para caber
+num teste.
+
+**2. Cancelar no portal não destravava a reemissão — e virou um laço.** O
+município só aceita substituir por valor igual ou maior; **valor menor é
+cancelamento**. Mas cancelar no portal, sozinho, não mudava nada aqui: o slot do
+card continuava "válido", **consumindo o teto da medição**, então a nota nova era
+barrada por "a soma das válidas excede o Valor da Medição". E o único jeito de
+marcar a antiga como cancelada era o `/emissao/recuperar`, que **exige o XML de
+uma nota nova** — justamente a que ainda não podia ser emitida. Cachorro correndo
+atrás do próprio rabo.
+
+**Tela nova: `/emissao/cancelada` — "Nota cancelada no portal".** Ela separa
+"registrar o cancelamento" de "registrar a nota nova", que são duas coisas
+diferentes e só aconteciam juntas. Recebe o card e o número (curto ou longo),
+marca o slot como Cancelada, escreve CANCELADA na linha da planilha (com o motivo,
+se houver) e tira o número do título no Omie. No fim diz **quanto ainda cabe
+emitir** — é a informação que destrava a reemissão.
+
+O que ela **não** faz, e está escrito na tela: não cancela na prefeitura (é no
+portal, e é lá que vale), não apaga a linha da planilha (só marca, preserva o
+histórico) e **não mexe nas retenções do título**. As retenções continuam as da
+nota cancelada até a nota nova ser emitida — e aí a nota nova as regrava, porque
+passa a ser a primeira válida da medição (`concluir`, passo [2]).
+
+**3. O banner da substituição prometia o que o botão recusa.** Ele dizia *"Ao
+emitir, a NF X será marcada como Cancelada no card e na planilha"* — e o botão
+Emitir recusa substituição desde 07/10/2026. Foi esse texto que prendeu o dono no
+laço: ele lia uma promessa e clicava num botão que não a cumpre. Agora o banner
+diz que o botão não substitui, para que serve a tela nesse caso (conferir os
+números) e os dois caminhos: valor igual ou maior → Substituir no portal +
+Recuperar entrega; valor menor → cancelar no portal + Nota cancelada no portal +
+emitir normalmente.
+
+**E um quarto, de tabela: o número do slot casava por TEXTO.** `slots_preenchidos`
+comparava o número a ignorar com `==`, então `3377` nunca batia com
+`2600000003377`. A nota substituída continuava contando no teto e a emissão era
+barrada, sem o dono ter como adivinhar que o problema era o formato do número.
+Agora casa pelo sequencial, como em `substituicao`. **É o terceiro lugar onde esse
+mesmo erro apareceu** (os outros dois em 09/11/2026) — se aparecer um quarto,
+comparar número de nota por texto deve virar erro de revisão.
+
+**A lição que vale guardar:** a tela não pode propor um valor que a validação da
+mesma tela vai barrar. Quando o default vem de uma fonte (a nota antiga) e o teto
+vem de outra (o card), o default tem de ser limitado pelo teto na origem — não
+conferido depois.
+
+**E um quinto, que só apareceu quando ele tentou de novo:** a mensagem do botão
+Emitir mandava, **sem olhar nada**, usar o botão "Substituir" do portal —
+justamente o que o município não aceita para valor menor. Ele seguiu a instrução
+e continuou preso. Agora a mensagem lê o card antes de instruir: mostra os dois
+caminhos (igual ou maior → substituir; menor → cancelar) e diz **qual é o caso
+dele**, com os dois valores na tela. Se o Pipefy não responder, o texto genérico
+sai do mesmo jeito, sem o diagnóstico — a explicação nunca pode depender de uma
+chamada que falha, que é a lição de 07/10/2026.
+
+### O desenho certo, que foi ELE quem deu — 17/11/2026
+
+Depois de bater em três paredes seguidas (mensagem genérica, instrução errada
+para o caso, e navegar até outra tela à mão), ele disse como devia ser — e estava
+certo:
+
+> *"Eu acho que o correto aí (…) é a própria automação entender o que é que
+> precisa ser feito e sugerir. Se na hora que for tentar emitir a nota, for
+> percebido que é necessário cancelamento, aí (…) questionar se é para cancelar,
+> cancelar e depois emitir. (…) **Porque para o pipe e para o homem não importa se
+> é substituição ou se é cancelamento. E nem para a planilha.** A gente utiliza a
+> mesma nomenclatura que a gente vem utilizando, faz o mesmo procedimento dos
+> slots do pipe. Aí (…) o procedimento diferenciado fica só no sistema da
+> prefeitura."*
+
+**O que isso quer dizer, e é a regra:** cancelamento e substituição são a MESMA
+operação deste lado — slot vira Cancelada, planilha ganha CANCELADA, número sai
+do título do Omie, teto da medição libera. A diferença existe **só no portal da
+prefeitura**, e é uma frase: qual botão ele aperta lá.
+
+**Como ficou.** Preencher o nº da nota substituída na tela de emissão e clicar em
+Emitir leva a **uma pergunta só**:
+
+1. A tela lê os valores e diz **qual é o caso**, com os dois números na frente —
+   e já deixa a opção certa marcada. Valor menor ⇒ CANCELAR (o município não
+   aceita substituir por menor). Valor igual ou maior ⇒ SUBSTITUIR.
+2. Avisa, antes de ele mexer no portal, se o **Valor BDI Diferenciado** está vazio
+   — é o campo que a conclusão anterior apaga e que não barra nada: vazio, só faz
+   as retenções saírem a mais, em silêncio.
+3. Ele faz no portal e clica em **"Já fiz no portal — continuar"**.
+   - **CANCELAR:** o sistema **emite a nota nova aqui** e, na mesma ação, marca a
+     antiga como Cancelada no slot, na planilha e no título do Omie.
+   - **SUBSTITUIR:** a nota nova nasce no portal (é o que o botão dele faz), então
+     não há o que emitir aqui — a tela leva para "Recuperar entrega" **já
+     preenchida** com o card e o número.
+4. Nada é enviado à prefeitura antes dessa confirmação, e fechar a tela não muda
+   nada.
+
+**E um erro antigo que apareceu ao fazer isso: a substituição nunca corrigiu as
+RETENÇÕES do título.** Ela trocava só o número no `numero_documento_fiscal` e
+deixava as retenções da nota que saiu. Numa correção de valor — que é o motivo de
+quase toda substituição — isso é retenção errada parada no Omie. Agora, quando a
+nota que sai era a **única válida** da medição, as retenções são **regravadas pela
+medição integral** na MESMA chamada que troca o número (o Omie trava o registro
+por alguns segundos depois de cada escrita, então duas escritas seguidas no mesmo
+título falham — por isso `alterar_retencoes` ganhou o parâmetro `remover`). Se
+ainda houver outra nota válida, as retenções ficam como estão: elas já são as da
+medição integral, gravadas pela primeira nota, e regravar dobraria.
+
+No caminho do `/emissao/recuperar` as retenções continuam **não** sendo mexidas —
+lá o card já teve os campos limpos e recalcular é arriscado —, mas agora o log
+**diz isso em voz alta** e aponta a tela "Tributos no Omie".
+
+**A `/emissao/cancelada` continua, com papel definido:** ela é para quando **não
+há nota nova agora** (a nota foi cancelada e ponto, ou a nova já foi emitida por
+outro caminho). A porta principal passou a ser a tela de emissão, e as duas telas
+dizem isso uma da outra.
+
+**Coberto por teste:** `tests/test_emissaonf_cancelamento_e_valor.py` (30 casos,
+com os números reais do incidente) e `tests/test_emissaonf_emissao_ponta_a_ponta.py`
+(o fluxo do cancelamento de ponta a ponta, e o caso em que as retenções NÃO devem
+ser regravadas).
+
 ### A substituição que não cancelou a nota antiga — 09/11/2026
 
 **O que o dono viu:** ele substituiu a NF `2600000003352` pelo botão
@@ -2141,11 +2285,52 @@ que diz o que está errado sem mostrar o que é.
 
 ---
 
+## O custo de abrir a tela de emissão — contado em 17/11/2026
+
+Registrado porque o `CLAUDE.md` pede a conta mesmo quando não se vai mexer, e
+porque ninguém a tinha feito nesta área.
+
+**Abrir a tela de emissão de UMA nota (`worker.preparar`) custa de 9 a 12 idas à
+rede**, e uma delas é cara:
+
+| Passo | Idas | Observação |
+|---|---|---|
+| credenciais (aba 'Credenciais') | 2–3 | abre a planilha, acha a aba, lê tudo |
+| card do Pipefy | 1 | |
+| **C. Diários inteira** (`get_all_values`) | 2–3 | **a aba toda**, para achar UMA obra |
+| numeração: coluna de nºs da 'Notas BWS' | 2–3 | mais a leitura das declarações enviadas |
+| municípios IBGE | 0 | arquivo local (lido duas vezes, de graça) |
+
+**O que isso quer dizer na prática:** emitir uma nota paga ~10 idas; e o fluxo de
+substituição paga **duas vezes** (uma no GET da tela, outra no POST). A
+C. Diários inteira é o item mais pesado, e é a mesma leitura que todas as áreas
+fazem — ela divide a cota do Google com o painel, o Análise de SPs e o ponto.
+
+**Não foi mexido, e é decisão do dono.** O caminho óbvio seria guardar a
+C. Diários em memória por alguns minutos (como outras áreas já fazem) e ler só a
+faixa de colunas usada em vez da aba toda. Fica anotado como oportunidade: a
+emissão é de poucas notas por dia, então o ganho é mais de **cota do Google** do
+que de tempo.
+
+**O que já foi barateado no mesmo dia:** a mensagem que explica o caminho da
+substituição carregava a planilha de notas sem precisar dela (`_so_o_card` em vez
+de `_card_aba_e_cred`) — 2 a 3 idas a menos, numa tela que é só texto.
+
+---
+
 ## Ferramentas que nasceram desses incidentes
 
 Não são funcionalidade: são conserto. Vale saber que existem antes de escrever
 script novo.
 
+- **`/emissao/cancelada`** — **"Nota cancelada no portal"**: registra aqui dentro
+  uma nota que foi cancelada na prefeitura **quando não há nota nova agora**. Se
+  há nota nova, o caminho é a tela de emissão (ver o desenho de 17/11/2026). Marca o slot do card como Cancelada,
+  escreve CANCELADA na linha da planilha e tira o número do título no Omie; no fim
+  diz quanto ainda cabe emitir na medição. É o que **destrava a reemissão** — sem
+  ela, o slot válido consome o teto e a nota nova é barrada. Não cancela nada na
+  prefeitura, e não mexe nas retenções do título (a nota nova as regrava).
+  Ver o incidente de 17/11/2026.
 - **`/emissao/recuperar`** — refaz o pós-emissão de uma nota já emitida, colando
   o XML. Sem "completo", refaz só a entrega (Drive, links, Descrição). Com
   "completo", refaz tudo — e tem trava anti-duplicação. É o que fecha o ciclo
@@ -2188,6 +2373,13 @@ script novo.
 7. **Valor que vai para o Omie ou para a planilha se confere contra o XML da
    nota.** O card é recalculado na hora, e a conclusão limpa os campos de
    entrada dele — recalcular depois dá número errado. O XML é o documento.
+8. **A tela não propõe valor que ela mesma vai barrar.** Default que vem de uma
+   fonte (a nota antiga) tem de ser limitado pelo teto da outra (o card) **na
+   origem**, não conferido depois. Regra nascida do laço de 17/11/2026.
+9. **Número de nota não se compara por texto.** O padrão nacional grava 13
+   dígitos (ano + sequencial) e quem digita tem o curto na mão. Compare pelo
+   sequencial (`substituicao._chave_numero`). O mesmo erro já apareceu em três
+   lugares diferentes.
 
 ---
 

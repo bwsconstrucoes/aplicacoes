@@ -478,6 +478,7 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | Rota | Para quê |
 |---|---|
 | `/emissao?card_id=…` | a tela principal: espelho, discriminação editável, emitir |
+| `/emissao/cancelada` | **"Nota cancelada no portal".** Depois de cancelar uma nota na prefeitura, registra o cancelamento aqui: slot do card → Cancelada, linha da planilha → CANCELADA (com o motivo), e o número sai do título no Omie. Diz no fim quanto ainda cabe emitir na medição. **É o que destrava a reemissão:** enquanto a nota antiga continuar válida no card ela consome o teto, e a nota nova é barrada. Não cancela nada na prefeitura, e não mexe nas retenções do título — a nota nova as regrava, por ser a primeira válida |
 | `/emissao/recuperar` | nota **já emitida** cujo pós-emissão falhou ou nem rodou. Cola-se o XML; com "completo" marcado refaz tudo (tem trava anti-duplicação e **trava de valor contra o XML**), sem marcar refaz só a entrega no Drive. Preencher o nº da **nota substituída** cancela a antiga no card, na planilha e no título do Omie — número curto ou longo, tanto faz |
 | `/emissao/regerar` | regrava os PDFs de notas já concluídas com o layout atual, no mesmo link |
 | `/emissao/nacional` | roda o fechamento nacional na mão |
@@ -528,6 +529,46 @@ cancelou a nota antiga em lugar nenhum (incidente no `HISTORICO.md`):
 - **O resultado dos três lugares aparece no topo da tela**, com ✅ ou ❌ em cada
   um — slot do card, planilha e número no título do Omie — e o que fazer à mão
   quando algum falha. Antes era uma linha no meio do log.
+
+### Trocar uma nota por outra: UMA porta, uma pergunta
+
+Desenho dado pelo dono em 17/11/2026: *"para o pipe e para o homem não importa se
+é substituição ou se é cancelamento. E nem para a planilha. (…) o procedimento
+diferenciado fica só no sistema da prefeitura."*
+
+**Deste lado, cancelamento e substituição são a mesma operação:** o slot vira
+Cancelada, a planilha ganha CANCELADA, o número sai do título do Omie e o teto da
+medição libera. A diferença existe **só no portal**.
+
+**Então o caminho é um só:** na tela de emissão, preencha o nº da nota substituída
+e clique em **Emitir**. A tela:
+
+1. lê os valores e diz **qual é o caso**, com os números na frente, já com a opção
+   certa marcada — valor **menor** ⇒ CANCELAR (o município não aceita substituir
+   por menor); **igual ou maior** ⇒ SUBSTITUIR;
+2. avisa se o **Valor BDI Diferenciado** está vazio no card, antes de você mexer
+   no portal;
+3. você faz no portal e clica em "Já fiz no portal — continuar":
+   - **CANCELAR** → ela **emite a nota nova** e, na mesma ação, marca a antiga
+     como Cancelada no card, na planilha e no título do Omie;
+   - **SUBSTITUIR** → a nota nova nasce no portal, então ela leva para
+     "Recuperar entrega" **já preenchida**.
+
+Nada é enviado à prefeitura antes dessa confirmação; fechar a tela não muda nada.
+
+**`/emissao/cancelada` é para quando não há nota nova agora** — a nota foi
+cancelada e ponto, ou a nova já saiu por outro caminho.
+
+**As retenções do título acompanham:** quando a nota que sai era a única válida da
+medição, as retenções são regravadas pela medição integral na mesma chamada que
+troca o número. Havendo outra nota válida, ficam como estão (já são as da medição
+integral). Pelo `/emissao/recuperar` elas **não** são mexidas, e o log diz isso.
+
+Na substituição, o valor-base da nota nova é o da **nota antiga**, limitado ao que
+o **Valor da Medição do card** comporta hoje (menos as outras notas válidas).
+Corrigiu a medição para menos no card? O card ganha, e a tela diz no banner que
+ajustou e de onde o valor saiu. Antes ela propunha o valor da nota antiga e, no
+passo seguinte, se recusava a emiti-lo.
 
 ### ⚠️ A trava de valor, e ela guarda dinheiro
 

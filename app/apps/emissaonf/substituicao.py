@@ -70,12 +70,22 @@ def cancelar_no_card(card: dict, numero, token: str, novo_numero=None) -> dict:
             "msg": f"slot {slot} (nº {numero}) marcado como '{STATUS_CANCELADA}' no card"}
 
 
-def cancelar_na_planilha(ws_notas, numero, novo_numero=None) -> dict:
+def cancelar_na_planilha(ws_notas, numero, novo_numero=None, motivo="") -> dict:
     """Marca a linha da nota antiga na 'Notas BWS' (coluna L = Observação).
-    Localiza pela coluna F (Nº Nota)."""
+    Localiza pela coluna F (Nº Nota).
+
+    `novo_numero` é a nota que substituiu esta (substituição). `motivo` é texto
+    livre, para o cancelamento puro — nota cancelada no portal sem outra tomando o
+    lugar dela. Quem lê a planilha meses depois precisa saber qual dos dois casos
+    foi, porque só um deles tem nota nova para procurar.
+    """
     col = ws_notas.col_values(6)  # F = Nº Nota
     alvo = _chave_numero(numero)
-    obs = "CANCELADA" + (f" — substituída pela NF {novo_numero}" if novo_numero else "")
+    obs = "CANCELADA"
+    if novo_numero:
+        obs += f" — substituída pela NF {novo_numero}"
+    if motivo:
+        obs += f" — {motivo}"
     for i, v in enumerate(col, start=1):
         if _chave_numero(v) == alvo:
             ws_notas.update(f"L{i}", [[obs]], value_input_option="USER_ENTERED")
