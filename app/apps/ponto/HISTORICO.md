@@ -761,6 +761,7 @@ sem foto, e talvez um alerta, para a pessoa não perder a ronda."*
   sem a foto"*): o caminho sem foto só aparece depois de **3 tentativas** que não deram certo (`TENTATIVAS_ANTES_DE_SEM_FOTO`),
   como um link discreto — "Tentou 3 vezes e a foto não sai? Só nesse caso, registre sem foto: o escritório recebe um
   aviso" —, e o motivo gravado diz "depois de 3 tentativas". O botão grande continua sendo o da foto.
+**Publicado em 17/11/2026** (com o "pode" do dono; suíte inteira: 11.822 passaram). Sem migração.
   Depois de registrar, o aviso "foi sem foto — apague fotos ou vídeos antigos".
 - **No servidor** (`rondas.registrar`, `sem_foto=`): a LOCALIZAÇÃO continua obrigatória (é ela que prova a
   presença). Sem foto, só com o motivo que o aplicativo manda; a foto que chega estragada também não derruba a
