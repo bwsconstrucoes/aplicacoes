@@ -103,6 +103,12 @@ def app_api_inicio():
         from .core import termo
         termo_pendente = bool(p) and bool(p.get("ativo_no_ponto")) and termo.disponivel(conn) and \
             termo.situacao_de(conn, [int(p["id"])])[int(p["id"])]["situacao"] == "FALTA"
+        # O ACESSO AO PORTAL (17/11/2026, core/portal_do_erp.py): o menu mostra
+        # "Pedir acesso ao portal" para quem ainda não tem, e o andamento para
+        # quem já pediu. NUNCA DERRUBA: sem a migração 108, vem
+        # `disponivel: False` e a opção simplesmente não aparece.
+        from .core import portal_do_erp
+        portal = portal_do_erp.meu_estado(conn, p) if p else {"disponivel": False}
     # No ponto da obra, "você entrou como" é o papel DA PESSOA aqui — não o do
     # aparelho (10/10/2026: a tela dizia "você entrou como ponto da obra").
     papel_aqui = None
@@ -124,7 +130,7 @@ def app_api_inicio():
               "qr_por_cpf": bool(da_obra), "meu_qr": bool(p) and not da_obra and bool(p.get("ativo_no_ponto")),
               # o ranking da equipe de quem responde por um ponto da obra (17/10/2026)
               "qualidade_equipe": responde_por_equipe},
-        alcance=_alcance_json(alc), negativas=avisos_de_negativa)
+        alcance=_alcance_json(alc), negativas=avisos_de_negativa, portal=portal)
 
 
 @bp.route("/app/api/ranking")

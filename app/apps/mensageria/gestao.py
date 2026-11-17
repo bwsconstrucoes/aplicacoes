@@ -37,6 +37,16 @@ ABAS = [
     ("msg_tipos", "Tipos e canais", "erp.mensagens_pagina_tipos"),
     ("msg_envios", "Enviadas", "erp.mensagens_pagina_envios"),
     ("msg_telegram", "Cadastro do Telegram", "erp.mensagens_pagina_telegram"),
+    # ⚑ ABA NOVA EM 17/11/2026, e ela existe para DESENTULHAR a anterior. Ele,
+    # olhando o "Cadastro do Telegram": *"a tela, eu estou achando que está
+    # meio poluída, porque está misturando o cadastro com o convite pelo
+    # WhatsApp. Aí tem a migração da planilha, está meio bagunçado."*
+    #
+    # Tinha razão: numa página só havia a GESTÃO das pessoas (quem recebe, quem
+    # não, quem está com problema) e a CONFIGURAÇÃO do convite (automático,
+    # intervalos, texto) mais a migração da planilha — que se mexe uma vez na
+    # vida. Coisa de todo dia e coisa de uma vez não dividem página.
+    ("msg_convite", "Convite e migração", "erp.mensagens_pagina_convite"),
 ]
 MODULO = {
     "chave": "mensagens", "nome": "Mensagens", "sigla": "MSG",
@@ -134,8 +144,10 @@ def mensagens_api_tipos():
         res = core.resumo(conn)
     for t in tipos:
         t["atualizado_em"] = t["atualizado_em"].isoformat() if t.get("atualizado_em") else ""
+    with db.conexao() as conn:
+        bloqueia = core.bloqueia_desligados(conn)
     return jsonify({"ok": True, "tipos": tipos, "politicas": core.POLITICAS, "resumo": res,
-                    "credenciais": _credenciais()})
+                    "credenciais": _credenciais(), "bloquear_desligados": bloqueia})
 
 
 @bp.route("/erp/api/mensagens/politica", methods=["POST"])
@@ -159,6 +171,11 @@ def mensagens_api_politica():
 def mensagens_api_parametros():
     d, quem = _corpo(), _quem()
     with db.conexao() as conn:
+        if "bloquear_desligados" in d:
+            liga = d["bloquear_desligados"] in (True, 1, "1", "true", "sim")
+            core.gravar_parametro(conn, core.BLOQUEAR_DESLIGADOS, "1" if liga else "0", quem)
+            logger.info("Mensagens: bloqueio de desligados %s por %s",
+                        "LIGADO" if liga else "DESLIGADO", quem)
         if "whatsapp_ligado" in d:
             ligado = d["whatsapp_ligado"] in (True, 1, "1", "true", "sim")
             core.gravar_parametro(conn, core.WHATSAPP_LIGADO, "1" if ligado else "", quem)
@@ -190,23 +207,70 @@ def mensagens_api_enviadas():
     return jsonify({"ok": True, "envios": linhas, "retencao_dias": core.RETENCAO_DIAS})
 
 
+# ---------------------------------------------------------------------------
+# O TESTE ACEITA TELEFONE **OU** ID DO TELEGRAM (17/11/2026)
+#
+# Pedido dele: *"quando eu boto o Telegram, o canal, fica até incompatível a
+# digitação do ID. (…) Eu gostaria de poder botar também o ID. Tipo assim, você
+# botar o ID ou o telefone, porque fica mais uma opção, mais direta de teste."*
+#
+# Ele tinha acabado de ganhar a coluna do ID na lista de cadastros — então o
+# caminho natural é copiar o ID de lá e colar aqui. Antes o campo só aceitava
+# telefone, e a máscara de telefone ainda atrapalhava a digitação do número.
+#
+# ⚑ COMO O SISTEMA SABE QUAL É QUAL, sem adivinhar: um ID do Telegram tem 9 ou
+# 10 dígitos e um telefone brasileiro com DDD tem 10 ou 11 — eles SE SOBREPÕEM,
+# então contar dígitos erraria. Em vez disso o sistema PROCURA o valor entre os
+# IDs já cadastrados: achou, é ID; não achou, é telefone. E a resposta diz qual
+# dos dois ele usou, para ele ver na hora se a leitura foi a esperada.
+# ---------------------------------------------------------------------------
+def _destino_do_teste(canal: str, bruto: str) -> tuple[str, str, str]:
+    """Devolve (tipo, valor, como_aparece). `tipo` é "chat" ou "telefone"."""
+    valor = re.sub(r"[^\d-]", "", str(bruto or ""))
+    digitos = re.sub(r"\D", "", valor)
+    if not digitos:
+        raise ValueError("informe o telefone com DDD"
+                         + (" ou o ID do Telegram" if canal == "telegram" else ""))
+    # ⚑ O ID SÓ VALE PARA O TELEGRAM. No WhatsApp um ID de Telegram não quer
+    # dizer nada, e aceitá-lo ali mandaria mensagem para um número inventado.
+    if canal == "telegram":
+        with db.conexao() as conn:
+            achado = db.um(conn, """SELECT chat_id, nome, telefone
+                                      FROM mensageria.telegram_cadastros
+                                     WHERE chat_id = :c AND ativo""", c=valor)
+        if achado:
+            quem = (achado["nome"] or "").strip()
+            return "chat", valor, f"ID {valor}" + (f" ({quem})" if quem else "")
+        # Grupo do Telegram tem ID negativo, e não existe telefone negativo:
+        # aqui não há ambiguidade nenhuma.
+        if valor.startswith("-"):
+            return "chat", valor, f"ID {valor}"
+    if len(digitos) < 10:
+        raise ValueError(
+            "informe o telefone com DDD"
+            + (" — ou um ID do Telegram que já esteja cadastrado "
+               "(a aba Cadastro do Telegram mostra os IDs)"
+               if canal == "telegram" else ""))
+    tel = digitos if digitos.startswith("55") else "55" + digitos
+    return "telefone", tel, f"telefone {tel}"
+
+
 @bp.route("/erp/api/mensagens/teste", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar_mensagens")
 @_api
 def mensagens_api_teste():
-    """Uma mensagem de teste para um telefone, pelo canal escolhido. Passa pela
-    chave geral do WhatsApp e pelo teto; fica no registro como "mensageria.teste"."""
+    """Uma mensagem de teste, pelo canal escolhido, para um telefone ou — no
+    Telegram — para um ID já cadastrado. Passa pela chave geral do WhatsApp e
+    pelo teto; fica no registro como "mensageria.teste"."""
     from app.apps import notificador
     d = _corpo()
     canal = str(d.get("canal") or "").strip().lower()
-    telefone = re.sub(r"\D", "", str(d.get("telefone") or ""))
     if canal not in ("telegram", "whatsapp"):
         raise ValueError("escolha o canal: telegram ou whatsapp")
-    if len(telefone) < 10:
-        raise ValueError("informe o telefone com DDD")
-    if not telefone.startswith("55"):
-        telefone = "55" + telefone
+    # `destino` é o nome novo; `telefone` continua aceito para não quebrar quem
+    # já chamava esta rota.
+    tipo, valor, como = _destino_do_teste(canal, d.get("destino") or d.get("telefone"))
     texto = f"✅ Teste da Mensageria do ERP BWS, pedido por {_quem() or 'um administrador'}."
     if canal == "whatsapp":
         with db.conexao() as conn:
@@ -215,18 +279,25 @@ def mensagens_api_teste():
             cabe, motivo = core.cabe_no_teto(conn)
         if not cabe:
             raise ValueError(motivo)
-        r = notificador._wa_enviar_texto(telefone, texto)
+        r = notificador._wa_enviar_texto(valor, texto)
         status = "ENVIADO" if r.get("ok") else "FALHOU"
+    elif tipo == "chat":
+        r = notificador._tg_notificar(chat_id=valor, mensagem=texto)
+        status = notificador._status_tg(r)
     else:
-        r = notificador._tg_notificar(telefone=telefone, mensagem=texto)
+        r = notificador._tg_notificar(telefone=valor, mensagem=texto)
         status = notificador._status_tg(r)
     with db.conexao() as conn:
-        core.registrar(conn, tipo="mensageria.teste", canal=canal, destinatario=telefone, cpf="",
+        core.registrar(conn, tipo="mensageria.teste", canal=canal, destinatario=valor, cpf="",
                        texto=texto, nome_arquivo="", status=status,
                        detalhe=str(r.get("detalhe") or r.get("erro") or ""), origem="tela Mensagens")
     if not r.get("ok"):
-        return jsonify({"ok": False, "erro": f"não saiu: {r.get('detalhe') or r.get('erro') or r}"}), 502
-    return jsonify({"ok": True, "status": status})
+        return jsonify({"ok": False,
+                        "erro": f"não saiu para o {como}: "
+                                f"{r.get('detalhe') or r.get('erro') or r}"}), 502
+    # ⚑ A RESPOSTA DIZ PARA ONDE FOI. Sem isso, "enviado" não responde a
+    # pergunta que o teste existe para responder.
+    return jsonify({"ok": True, "status": status, "destino": como, "tipo": tipo})
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +308,15 @@ def mensagens_api_teste():
 @permissao("ver_mensagens")
 def mensagens_pagina_telegram():
     return _pagina("msg_telegram")
+
+
+@bp.route("/erp/mensagens/convite")
+@login_obrigatorio
+@permissao("ver_mensagens")
+def mensagens_pagina_convite():
+    """O convite pelo WhatsApp e a migração da planilha — o que se configura
+    uma vez, fora da tela de gestão de todo dia (17/11/2026)."""
+    return _pagina("msg_convite")
 
 
 def _iso(v):

@@ -3500,6 +3500,34 @@ async function abrirMenu() {
                                acao: () => mostrarMeuQr()});
   }
 
+  // ===================================================================
+  // PEDIR ACESSO AO PORTAL (17/11/2026). Ele: *"que tal a partir do ponto eu
+  // requerer a liberação do acesso ao portal? Ela já tem o cadastro no ponto,
+  // e lá pelo ponto ela vai informar o e-mail dela."*
+  //
+  // Só aparece no CELULAR DA PESSOA, nunca no aparelho da obra: lá quem está
+  // na frente da tela é qualquer um da equipe, e e-mail digitado no aparelho
+  // de todos é e-mail que não se sabe de quem.
+  // ===================================================================
+  const pt = INICIO.portal || {};
+  if (p && !INICIO.da_obra && pt.disponivel) {
+    if (pt.tem_acesso) {
+      ops.push({icone: "🖥", titulo: "Portal da obra", sub: `você já tem acesso, com o e-mail ${pt.email} — abre no navegador`,
+                acao: () => { location.href = "/erp/portal"; }});
+    } else if (pt.pedido && pt.pedido.status === "PENDENTE") {
+      ops.push({icone: "⏳", titulo: "Acesso ao portal: pedido enviado", desligada: true,
+                sub: `esperando a liberação do escritório — o convite vai para ${pt.pedido.email}`});
+    } else if (pt.pedido && pt.pedido.status === "RECUSADO") {
+      ops.push({icone: "🖥", titulo: "Pedir acesso ao portal",
+                sub: pt.pedido.motivo ? `o pedido anterior não foi liberado: ${pt.pedido.motivo}` : "o pedido anterior não foi liberado — pode pedir de novo",
+                acao: () => pedirAcessoAoPortal(pt)});
+    } else {
+      ops.push({icone: "🖥", titulo: "Pedir acesso ao portal",
+                sub: "para abrir pedidos e acompanhar pelo computador — informe o seu e-mail",
+                acao: () => pedirAcessoAoPortal(pt)});
+    }
+  }
+
   mostrarAvisosDoPonto(p, pode);
   // Quem responde por um ponto da obra (ou de equipe) vê o ponto em dia da equipe (17/10/2026).
   // o "Ponto da minha equipe" (17/10/2026), desde 31/10/2026 o resumo gerencial das obras: para quem responde por um
@@ -3553,6 +3581,40 @@ async function pedirAprovacaoDoAparelho() {
   } catch (e) { aviso(e.message, "erro"); return false; }
 }
 $("m-pedir-aparelho").addEventListener("click", pedirAprovacaoDoAparelho);
+
+// O E-MAIL, num diálogo só. A tela NÃO decide nada: manda o pedido e diz que
+// quem libera é o escritório. Prometer acesso aqui seria prometer o que esta
+// tela não tem como cumprir.
+function pedirAcessoAoPortal(pt) {
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Pedir acesso ao portal</h2>
+    <p class="pequeno">O portal é a tela do computador para <b>abrir pedidos e acompanhar</b> o que você pediu.
+      Quem libera é o escritório. Informe o seu e-mail: é por ele que você recebe o convite para criar a sua senha.</p>
+    <label for="pa-email">Seu e-mail</label>
+    <input id="pa-email" type="email" inputmode="email" autocomplete="email"
+           placeholder="nome@exemplo.com" value="${esc(pt.email_sugerido || "")}">
+    <p class="pequeno" id="pa-erro" style="color:#b00020"></p>
+    <div style="display:flex; gap:8px; margin-top:10px">
+      <button class="btn sec" id="pa-nao" type="button" style="flex:1">Deixar para depois</button>
+      <button class="btn" id="pa-ok" type="button" style="flex:1">Pedir acesso</button>
+    </div>`;
+  $("dlg").showModal();
+  $("pa-email").focus();
+  $("pa-nao").onclick = () => $("dlg").close();
+  $("pa-ok").onclick = async () => {
+    const email = ($("pa-email").value || "").trim();
+    $("pa-erro").textContent = "";
+    $("pa-ok").disabled = true;
+    try {
+      await chamar("/ponto/app/api/portal/pedir", {email});
+      $("dlg").close();
+      aviso("Pedido enviado. Quando o escritório liberar, você recebe um e-mail para criar a sua senha.", "ok");
+      abrirMenu();
+    } catch (e) {
+      $("pa-erro").textContent = e.message;
+      $("pa-ok").disabled = false;
+    }
+  };
+}
 // Um CPF, num diálogo — para consultar o ponto de alguém ou mandar o QR dele.
 function perguntarCpf(titulo, explicacao, textoBotao, peloNome) {
   return new Promise(resolve => {

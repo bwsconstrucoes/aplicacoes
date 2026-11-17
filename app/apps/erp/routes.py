@@ -222,6 +222,22 @@ ACOES_NA_TELA = (
                  # a primeira foto mostrou, com o formulário inteiro na tela e
                  # nenhum botão de gravar embaixo dele.
                  "lancar_diario",
+                 # ⚑ VER REMUNERAÇÃO (17/11/2026): decide se a tela de Pessoal
+                 # mostra as colunas de salário e diária. O corte de verdade é
+                 # no servidor (`pessoal._sem_remuneracao`) — isto aqui é para
+                 # a tela não desenhar coluna que vai vir vazia.
+                 "ver_remuneracao",
+                 # ⚑ GERIR USUÁRIOS (17/11/2026): decide se a tela de Pessoal
+                 # mostra a fila de quem pediu acesso ao portal pelo ponto.
+                 # Quem não libera acesso não precisa ver fila que não pode
+                 # resolver.
+                 "gerir_usuarios",
+                 # ⚑ CONFIGURAR MENSAGENS (17/11/2026): o bloco "Mensagens" da
+                 # ficha da pessoa mora no `erp_base.html` (é o mesmo na ficha
+                 # do Pessoal e na do ponto) e oferece "Mandar um teste agora".
+                 # Sem a ação aqui, o botão não apareceria em tela nenhuma
+                 # além da própria tela Mensagens — inclusive para o ADMIN.
+                 "configurar_mensagens",
                  # Cancelar título é ação própria desde 12/09/2026: quem lança
                  # cancela o PRÓPRIO lançamento, e a tela precisa saber disso
                  # para mostrar o botão a quem não aprova.
@@ -9150,6 +9166,85 @@ def api_colaborador_foto(colaborador_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
+                    obra_id=None, convidar=True) -> dict:
+    """CRIA O ACESSO de um colaborador — a ÚNICA implementação disto.
+
+    ⚑ POR QUE É UMA FUNÇÃO E NÃO SÓ A ROTA (17/11/2026): a fila de pedidos
+    vindos do ponto precisa liberar acesso, e a tentação era escrever um
+    segundo caminho que faz "quase a mesma coisa". Foi exatamente a cobrança
+    dele naquele dia — *"três botões para importar pessoas (…) às vezes não
+    compreendo a lógica de complicar"*. Duas implementações do mesmo ato
+    divergem: uma manda convite, a outra esquece; uma liga a obra, a outra
+    não. Então há uma, e as duas portas chamam esta.
+
+    NÃO dá commit: quem chama decide quando fechar a transação (a fila precisa
+    marcar o pedido como atendido na MESMA transação — senão existe um instante
+    em que o acesso foi criado e o pedido continua na fila).
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.apps.erp.core.auth import convites as svc_convites
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import (
+        PerfilUsuario, Usuario, UsuarioObra,
+    )
+    import secrets as _secrets
+
+    email = (email or c.email or "").strip().lower()
+    if "@" not in email:
+        return {"ok": False, "erro":
+                "Informe o e-mail da pessoa — é por ele que ela entra e "
+                "recebe o convite."}
+    if (c.situacao or "").upper() == "DESLIGADO":
+        return {"ok": False, "erro":
+                "Esta pessoa está desligada. Readmita antes de liberar o "
+                "acesso."}
+    operador = s.scalars(
+        sa_select(Usuario).where(Usuario.email == email)).first()
+    if operador is None:
+        # SENHA SORTEADA E JOGADA FORA: a conta nasce sem senha utilizável, e
+        # quem define é a pessoa, pelo convite. Nasce com uma senha conhecida
+        # seria uma porta aberta até alguém trocar.
+        operador = Usuario(
+            nome=c.nome, email=email,
+            senha_hash=gerar_hash(_secrets.token_urlsafe(32)),
+            perfil=PerfilUsuario.CONSULTA, ativo=True,
+            telefone=(c.telefone or None))
+        s.add(operador)
+        s.flush()
+    elif not operador.ativo:
+        operador.ativo = True
+    # O CARGO, quando quem libera disse qual. A fila do portal manda
+    # ADMINISTRATIVO_OBRA; a ficha, nada, e aí fica o CONSULTA de sempre.
+    if perfil:
+        try:
+            operador.perfil = PerfilUsuario(str(perfil).strip().upper())
+        except ValueError:
+            return {"ok": False, "erro": f"Perfil desconhecido: {perfil}."}
+    if perfil_id:
+        operador.perfil_id = int(perfil_id)
+    svc.ligar_ao_operador(s, c.id, operador.id, autor)
+    # A OBRA DA PESSOA vira o alcance dela, que é o caso comum de quem
+    # trabalha em obra: sem isto o acesso nasce sem enxergar nada e alguém
+    # teria de ir marcar na outra tela. `obra_id` de fora (a obra em que ela
+    # bate ponto) tem preferência sobre a do cadastro, que envelhece.
+    alvo = int(obra_id) if obra_id else (int(c.obra_id) if c.obra_id else None)
+    if alvo and not getattr(operador, "ve_todas_as_obras", False):
+        ja = s.scalars(sa_select(UsuarioObra).where(
+            UsuarioObra.usuario_id == operador.id,
+            UsuarioObra.obra_id == alvo)).first()
+        if ja is None:
+            s.add(UsuarioObra(usuario_id=operador.id, obra_id=alvo))
+    convite = {"enviado": False, "erro": "", "link": ""}
+    if convidar:
+        convite = svc_convites.enviar(
+            s, operador.id, link_base=_link_do_convite(), autor=autor)
+    return {"ok": True, "usuario_id": operador.id, "email": email,
+            "obra_id": alvo, "convite": convite}
+
+
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/acesso",
           methods=["POST", "DELETE"])
 @login_obrigatorio
@@ -9173,15 +9268,8 @@ def api_colaborador_acesso(colaborador_id: int):
     DELETE desfaz a LIGAÇÃO, não o operador. Apagar o operador levaria junto a
     autoria de tudo o que ele lançou.
     """
-    from sqlalchemy import select as sa_select
-
-    from app.apps.erp.core.auth import convites as svc_convites
-    from app.apps.erp.core.auth.service import gerar_hash
     from app.apps.erp.core.cadastros import pessoas as svc
-    from app.apps.erp.db.models.cadastros import (
-        Colaborador, PerfilUsuario, Usuario,
-    )
-    import secrets as _secrets
+    from app.apps.erp.db.models.cadastros import Colaborador
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
@@ -9194,52 +9282,15 @@ def api_colaborador_acesso(colaborador_id: int):
                 return jsonify({"ok": True})
 
             d = request.get_json(silent=True) or {}
-            email = (d.get("email") or c.email or "").strip().lower()
-            if "@" not in email:
-                return jsonify({"ok": False, "erro":
-                                "Informe o e-mail da pessoa — é por ele que "
-                                "ela entra e recebe o convite."}), 400
-            if (c.situacao or "").upper() == "DESLIGADO":
-                return jsonify({"ok": False, "erro":
-                                "Esta pessoa está desligada. Readmita antes "
-                                "de liberar o acesso."}), 400
-            operador = s.scalars(
-                sa_select(Usuario).where(Usuario.email == email)).first()
-            if operador is None:
-                # SENHA SORTEADA E JOGADA FORA: a conta nasce sem senha
-                # utilizável, e quem define é a pessoa, pelo convite. Nasce
-                # com uma senha conhecida seria uma porta aberta até alguém
-                # trocar.
-                operador = Usuario(
-                    nome=c.nome, email=email,
-                    senha_hash=gerar_hash(_secrets.token_urlsafe(32)),
-                    perfil=PerfilUsuario.CONSULTA, ativo=True,
-                    telefone=(c.telefone or None))
-                s.add(operador)
-                s.flush()
-            elif not operador.ativo:
-                operador.ativo = True
-            if d.get("perfil_id"):
-                operador.perfil_id = int(d["perfil_id"])
-            svc.ligar_ao_operador(s, colaborador_id, operador.id, atual)
-            # A OBRA DA PESSOA vira o alcance dela, que é o caso comum de quem
-            # trabalha em obra: sem isto o acesso nasce sem enxergar nada e
-            # alguém teria de ir marcar na outra tela.
-            if c.obra_id and not getattr(operador, "ve_todas_as_obras", False):
-                from app.apps.erp.db.models.cadastros import UsuarioObra
-                ja = s.scalars(sa_select(UsuarioObra).where(
-                    UsuarioObra.usuario_id == operador.id,
-                    UsuarioObra.obra_id == c.obra_id)).first()
-                if ja is None:
-                    s.add(UsuarioObra(usuario_id=operador.id,
-                                      obra_id=c.obra_id))
-            convite = {"enviado": False, "erro": "", "link": ""}
-            if d.get("convidar", True):
-                convite = svc_convites.enviar(
-                    s, operador.id, link_base=_link_do_convite(), autor=atual)
+            r = _liberar_acesso(s, c, autor=atual, email=d.get("email"),
+                                perfil=d.get("perfil"),
+                                perfil_id=d.get("perfil_id"),
+                                obra_id=d.get("obra_id"),
+                                convidar=d.get("convidar", True))
+            if not r["ok"]:
+                return jsonify(r), 400
             s.commit()
-            return jsonify({"ok": True, "usuario_id": operador.id,
-                            "email": email, "convite": convite})
+            return jsonify(r)
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado as e:
@@ -9247,6 +9298,110 @@ def api_colaborador_acesso(colaborador_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao liberar acesso do colaborador %s",
                          colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# A FILA DE PEDIDOS DE ACESSO AO PORTAL (17/11/2026)
+#
+# Ele: *"que tal a partir do ponto eu requerer a liberação do acesso ao
+# portal? Ela já tem o cadastro no ponto, e lá pelo ponto ela vai informar o
+# e-mail dela."*
+#
+# O que esta fila resolve: o acesso só nasce com e-mail, e o e-mail da gente de
+# obra o sistema não tem — ninguém pede e-mail para contratar. A pessoa informa
+# no ponto (onde ela já está autenticada com CPF e PIN) e o DP decide aqui.
+#
+# ⚑ LIBERAR CHAMA `_liberar_acesso`, a MESMA função da ficha da pessoa. Não há
+# segundo caminho de criar acesso — ver o comentário dela.
+# ===========================================================================
+@bp.route("/erp/api/portal/pedidos-de-acesso")
+@login_obrigatorio
+@permissao("gerir_usuarios")
+def api_pedidos_de_acesso():
+    from app.apps.erp.core.auth import pedidos_de_portal as fila
+    try:
+        with get_session() as s:
+            conn = s.connection()
+            status = (request.args.get("status") or "PENDENTE").upper()
+            return jsonify({"ok": True,
+                            "pedidos": fila.listar(conn, status=status),
+                            "pendentes": fila.quantos_pendentes(conn),
+                            "disponivel": fila.tabela_existe(conn)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar os pedidos de acesso ao portal")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/portal/pedidos-de-acesso/<int:pedido_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("gerir_usuarios")
+def api_pedido_de_acesso_decidir(pedido_id: int):
+    """LIBERAR ou RECUSAR um pedido.
+
+    Liberar cria o acesso com o perfil escolhido (padrão
+    ADMINISTRATIVO_OBRA — quem pede acesso ao portal pela obra é quem abre
+    pedidos de lá), liga a obra em que a pessoa bate ponto e manda o convite
+    de primeira senha. Tudo numa transação só: ou o acesso nasce E o pedido
+    sai da fila, ou nada acontece.
+    """
+    from app.apps.erp.core.auth import pedidos_de_portal as fila
+    from app.apps.erp.db.models.cadastros import Colaborador
+    d = request.get_json(silent=True) or {}
+    acao = (d.get("acao") or "").strip().upper()
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            conn = s.connection()
+            pedidos = {p["id"]: p for p in fila.listar(conn, status="TODOS",
+                                                       limite=1000)}
+            p = pedidos.get(pedido_id)
+            if p is None:
+                raise ErroNaoEncontrado("Pedido não encontrado.")
+            if p["status"] != fila.PENDENTE:
+                return jsonify({"ok": False, "erro":
+                                "Este pedido já foi decidido."}), 400
+
+            if acao == "RECUSAR":
+                fila.decidir(conn, pedido_id, status=fila.RECUSADO,
+                             decidido_por=atual.id if atual else None,
+                             motivo=d.get("motivo") or "")
+                s.commit()
+                return jsonify({"ok": True, "status": fila.RECUSADO})
+            if acao != "LIBERAR":
+                return jsonify({"ok": False, "erro":
+                                "Diga o que fazer: LIBERAR ou RECUSAR."}), 400
+            if not p["colaborador_id"]:
+                return jsonify({"ok": False, "erro":
+                                "Este pedido não está ligado a um cadastro de "
+                                "colaborador."}), 400
+            c = s.get(Colaborador, p["colaborador_id"])
+            if c is None:
+                raise ErroNaoEncontrado("O cadastro desta pessoa não existe mais.")
+            r = _liberar_acesso(
+                s, c, autor=atual, email=d.get("email") or p["email"],
+                # ⚑ O PADRÃO É ADMINISTRATIVO DE OBRA, e é escolha explícita:
+                # é o perfil de quem abre pedido pela obra e NÃO vê salário
+                # nem documento de ninguém (`ver_remuneracao`, `ver_arquivo`).
+                # CONSULTA, o padrão da ficha, não deixaria ela pedir nada —
+                # o acesso nasceria inútil e ela voltaria a pedir.
+                perfil=d.get("perfil") or "ADMINISTRATIVO_OBRA",
+                perfil_id=d.get("perfil_id"), obra_id=p["obra_id"],
+                convidar=True)
+            if not r["ok"]:
+                return jsonify(r), 400
+            fila.decidir(conn, pedido_id, status=fila.LIBERADO,
+                         decidido_por=atual.id if atual else None,
+                         usuario_id=r["usuario_id"])
+            s.commit()
+            return jsonify({"ok": True, "status": fila.LIBERADO, **r})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao decidir o pedido de acesso %s", pedido_id)
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -9421,6 +9576,83 @@ def api_diarias():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha nos acréscimos da diária")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# A CHAVE DE SEGREDOS — ver, diagnosticar e gerar uma nova
+#
+# Nasceu de um relato dele em 17/11/2026: *"fui gravar o email no cadastro da
+# empresa e apareceu: A chave em ERP_CHAVE_SEGREDOS não tem o formato
+# esperado."*
+#
+# Duas coisas estavam erradas, e nenhuma era a chave:
+#
+#  1. A TELA NÃO AVISAVA ANTES. Ela só perguntava "a variável existe?". Com uma
+#     chave presente mas torta, ele preenchia a conta inteira, digitava a senha
+#     e só então levava o recado.
+#  2. O RECADO MANDAVA RODAR UM COMANDO DE PROGRAMADOR
+#     (`Fernet.generate_key()`). Quem opera este sistema não roda comando
+#     nenhum — então a mensagem, na prática, dizia "chame alguém".
+#
+# ⚠️ O ERP GERA A CHAVE, MAS NÃO A GUARDA. Ela tem de ser copiada à mão para a
+# Environment do Render. Gravá-la no banco desfaria a razão de ela existir:
+# quem tivesse uma cópia do banco teria as senhas junto.
+# ===========================================================================
+@bp.route("/erp/api/chave-de-segredos")
+@login_obrigatorio
+@permissao("configurar")
+def api_chave_de_segredos():
+    """Em que pé está a chave — e o que a troca dela custaria.
+
+    ⚠️ NUNCA devolve o valor da chave. Só se ela serve, o que há de errado, e
+    quantos segredos já foram guardados com ela (porque trocar a chave
+    invalida todos eles, e quem decide trocar precisa saber disso ANTES).
+    """
+    from sqlalchemy import text as sa_text
+
+    from app.apps.erp.core.comum import segredos
+    try:
+        estado = dict(segredos.situacao())
+        with get_session() as s:
+            guardados = 0
+            for tabela, coluna in (("empresas", "smtp_senha_cifrada"),
+                                   ("empresas", "emissao_token_cifrado"),
+                                   ("parametros", None)):
+                try:
+                    with s.begin_nested():
+                        if coluna is None:
+                            continue
+                        n = s.execute(sa_text(
+                            f"SELECT count(*) FROM {tabela} "
+                            f" WHERE {coluna} IS NOT NULL")).scalar() or 0
+                        guardados += int(n)
+                except Exception:        # coluna que ainda não existe no banco
+                    pass
+        estado["segredos_guardados"] = guardados
+        return jsonify({"ok": True, **estado})
+    except Exception as e:
+        logger.exception("ERP: falha ao olhar a chave de segredos")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/chave-de-segredos/gerar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_chave_de_segredos_gerar():
+    """Sorteia uma chave válida para quem configura copiar para o Render.
+
+    ⚑ NÃO GRAVA NADA, nem no banco nem em arquivo, e NÃO ENTRA NO LOG. A
+    resposta existe uma vez, na tela de quem pediu, e acabou.
+    """
+    from app.apps.erp.core.comum import segredos
+    try:
+        logger.info("ERP: chave de segredos gerada para configuração "
+                    "(o valor não é registrado)")
+        return jsonify({"ok": True, "chave": segredos.gerar_chave(),
+                        "variavel": segredos.VARIAVEL})
+    except Exception as e:
+        logger.exception("ERP: falha ao gerar a chave de segredos")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -12554,7 +12786,16 @@ def pagina_portal():
     para quem só quer fazer um pedido, é o oposto de "ambiente mais enxuto".
     Quem quiser o ERP inteiro vai nele — está a um endereço de distância.
     """
-    return render_template("erp_portal.html")
+    # ⚑ O link "ERP completo" só existe para quem tem mais que o portal
+    # (17/11/2026). Quem só pede e acompanha não precisa de um botão que leva
+    # a um menu de 18 telas — leva a se perder.
+    with get_session() as _s:
+        quem = _usuario_logado(_s)
+        from app.apps.erp.core.auth.permissoes import pode as _pode
+        mais = any(_pode(quem, a) for a in
+                   ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
+                    "ver_suprimentos", "configurar"))
+    return render_template("erp_portal.html", pode_mais_que_o_portal=mais)
 
 
 @bp.route("/erp/portal/api/inicio")
@@ -12580,6 +12821,9 @@ def api_portal_inicio():
                 "tipos": svc_portal.tipos(s),
                 "pessoas": svc_portal.pessoas_ao_alcance(s, usuario),
                 "obras_lista": svc_portal.obras_para_escolher(s, usuario),
+                # A obra onde a pessoa bate ponto, já escolhida na caixinha
+                # (17/11/2026). Sugestão: a lista continua aberta.
+                "obra_sugerida": svc_portal.obra_sugerida(s, usuario),
                 "listas": svc_portal.listas_fechadas(s),
                 "pedidos": svc_portal.meus_pedidos(s, usuario),
                 "devolucoes": svc_portal.minhas_devolucoes(s, usuario)})
@@ -13337,14 +13581,30 @@ def api_colaboradores_importar_fichas():
 @login_obrigatorio
 @permissao("ver_pessoal")
 def api_historico_colaborador(colaborador_id: int):
-    """Tudo que já se pagou a esta pessoa: DC, títulos diretos e rateados."""
+    """Tudo que já se pagou a esta pessoa: DC, títulos diretos e rateados.
+
+    ⚠️ QUEM NÃO VÊ REMUNERAÇÃO NÃO VÊ VALOR AQUI (17/11/2026). Esta rota pede
+    `ver_pessoal`, que o administrativo de obra tem — e ela devolve tudo o que
+    já se pagou à pessoa. Sem o corte, a visão restrita que ele pediu teria um
+    buraco do tamanho do histórico financeiro inteiro.
+
+    O painel continua abrindo: a pessoa, a obra, o cargo, a situação e as
+    datas. O que sai são os valores e as verbas.
+    """
+    from app.apps.erp.core.auth.permissoes import pode
     from app.apps.erp.core.pessoal import historico
     try:
         with get_session() as s:
             from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
-            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
-            return jsonify({"ok": True, "historico": historico(
-                s, colaborador_id, meses=request.args.get("meses", type=int) or 24)})
+            quem = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, quem, colaborador_id)
+            h = historico(
+                s, colaborador_id, meses=request.args.get("meses", type=int) or 24)
+            if not pode(quem, "ver_remuneracao"):
+                h = {**h, "lancamentos": [], "total": None,
+                     "ultimos_12_meses": None, "por_verba": [],
+                     "sem_remuneracao": True}
+            return jsonify({"ok": True, "historico": h})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
     except ErroNaoEncontrado:

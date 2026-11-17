@@ -275,7 +275,7 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
     (cargos, convencoes, faltando_papel, pedidos, devolucoes,
      empresas) = _apoio_da_lista(s, [c.id for c in pessoas], pessoas)
 
-    return [{
+    linhas = [{
         "id": c.id, "nome": c.nome, "cpf": c.cpf, "matricula": c.matricula,
         # `funcao`/`funcao_id` continuam no JSON com o nome antigo porque o
         # ponto e as telas já os leem assim — mas o que vai neles é o CARGO
@@ -339,6 +339,64 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
         "pedidos_abertos": pedidos.get(c.id, 0),
         "devolucoes_abertas": devolucoes.get(c.id, 0),
     } for c in pessoas]
+    return _sem_remuneracao(linhas, usuario)
+
+
+# ===========================================================================
+# A VISÃO RESTRITA — o administrativo de obra vê QUEM, não QUANTO
+#
+# ⚑ 17/11/2026, ao decidir liberar o ERP para o administrativo de obra:
+#
+#   *"Eles não são DP, eles são administrativos de obra. Então eles vão
+#    visualizar PARCIAL as informações."*
+#   *"Visão restrita é os dados básicos mesmo. Acho que até saber se tem algum
+#    dado tipo demissional, aviso prévio, data de saída. Se já botou o
+#    telefone, em que etapa da fase está."*
+#
+# ⚠️ ONDE ISTO TEM DE ACONTECER, e por que não é na tela: o corte é feito no
+# SERVIDOR, antes de os dados saírem. Esconder na tela deixaria o valor
+# viajando no JSON — e quem abre a ferramenta do navegador lê o salário de
+# todo mundo da obra. Tela que esconde não é permissão, é fantasia.
+#
+# O que o administrativo de obra CONTINUA vendo (a lista dele, confirmada):
+# nome, CPF, telefone, cargo, obra, empresa, vínculo e tipo de contrato,
+# situação, ETAPA do cadastro, admissão, e os demissionais — aviso prévio,
+# último dia e data de saída. Mais "o que falta" nesse cadastro, que é o que
+# o faz cobrar a pessoa.
+#
+# O que SAI: remuneração (salário, diária, valor do mês, auxílios,
+# gratificação), dados de pagamento (chave Pix, banco, agência, conta) e
+# documento pessoal (PIS, CTPS, RG, nome do pai e da mãe).
+# ===========================================================================
+SO_COM_REMUNERACAO = (
+    "salario", "valor_diaria", "valor_mes", "aux_alimentacao", "aux_transporte",
+    "valor_gratificacao", "pix_chave", "pix_tipo", "banco", "agencia", "conta",
+    "pis", "ctps_numero", "ctps_serie", "rg", "nome_mae", "nome_pai",
+    "razao_social_pj", "cnpj_pj",
+)
+
+
+def _sem_remuneracao(linhas: list[dict[str, Any]],
+                     usuario: Optional[Usuario]) -> list[dict[str, Any]]:
+    """Tira da resposta o que só quem tem `ver_remuneracao` pode ver.
+
+    `usuario=None` é chamada interna (folha, relatório, agente): não há quem
+    restringir, e restringir aqui esconderia dado de quem está calculando.
+    """
+    if usuario is None:
+        return linhas
+    from app.apps.erp.core.auth.permissoes import pode
+    if pode(usuario, "ver_remuneracao"):
+        return linhas
+    sem = []
+    for linha in linhas:
+        copia = {k: v for k, v in linha.items() if k not in SO_COM_REMUNERACAO}
+        # "tem_pagamento" FICA: é sim/não, não é o dado. O administrativo
+        # precisa saber que falta chave Pix para cobrar a pessoa — sem ver
+        # qual é a chave.
+        copia["sem_remuneracao"] = True
+        sem.append(copia)
+    return sem
 
 
 # ---------------------------------------------------------------------------

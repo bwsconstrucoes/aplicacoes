@@ -2431,6 +2431,133 @@ Fortes, o ERP guarda o quadro de hoje" — não "não sei".
 - **"Qual a jornada contratual do fulano?"** — está na ficha e não é lida; a
   escala de verdade é a do ponto.
 
+## 3z-octies. QUEM ENTRA EM QUE TELA, E QUEM PEDIU ACESSO (17/11/2026)
+
+Nasceu da pergunta dele: *"nós temos ponto, nós temos portal e temos ERP. Para
+o ERP ou portal, onde é o login? Como é que eu migro de uma tela para outra?"*
+— e do que veio em seguida: a pessoa pede o acesso ao portal pelo celular do
+ponto, informando o e-mail dela.
+
+**⚠️ PALAVRA AMBÍGUA NOVA: "ACESSO".** São três coisas diferentes, e misturá-las
+dá número errado:
+
+| Se ele disser | Quer dizer | Onde mora |
+|---|---|---|
+| "acesso ao ponto" | CPF + PIN de 6 dígitos, no celular | `ponto.colaborador_acesso` |
+| "acesso ao sistema" / "ao portal" / "ao ERP" | e-mail + senha (é O MESMO para portal e ERP) | `usuarios`, ligado por `colaboradores.usuario_id` |
+| "pedido de acesso" | a fila de quem pediu e ainda não foi liberado | `portal_pedidos_de_acesso` |
+
+**Na dúvida, a resposta diz qual dos três está contando.** "14 pessoas têm
+acesso" sem dizer a qual é a resposta que ele não tem como conferir.
+
+### Perguntas que o sistema responde
+
+- **"Quem pediu acesso ao portal e ainda não foi liberado?"** — a fila, com
+  nome, e-mail informado e a obra em que a pessoa bate ponto.
+- **"Faz quanto tempo que o fulano está esperando acesso?"** — `criado_em` do
+  pedido.
+- **"Quantas pessoas pediram acesso neste mês?"** / **"quantas foram
+  recusadas, e por quê?"** — o motivo fica gravado.
+- **"Quem tem acesso ao sistema?"** / **"quem é colaborador E tem login?"** —
+  `colaboradores.usuario_id` preenchido e `usuarios.ativo`.
+- **"Quem tem login e já foi desligado?"** — é a pergunta que mais importa:
+  acesso de quem saiu da empresa. A ligação do cadastro ao login (migração
+  096) existe exatamente para isso.
+- **"O fulano já criou a senha dele?"** — o convite tem `usado_em`; sem ele, o
+  convite foi enviado e a pessoa não entrou ainda.
+- **"Quem tem acesso e nunca entrou?"** — convite não usado + nenhum evento.
+- **"De qual obra o fulano está cuidando?"** — ⚠️ **a resposta vem do PONTO**
+  (onde ele mais bateu nos últimos 60 dias), não do cadastro. O cadastro
+  envelhece. Se as duas discordarem, a resposta diz as duas.
+- **"Quem é administrativo de obra?"** — e aqui a palavra tem DOIS lugares: o
+  perfil no ERP (`usuarios.perfil = ADMINISTRATIVO_OBRA`) e a marcação no
+  ponto (`ponto.colaborador_config.administrativo_obra`). Não são a mesma
+  coisa e podem divergir; a resposta diz qual está contando.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- **"Quanto o fulano ganha?"** — quem não tem `ver_remuneracao` (o
+  administrativo de obra, desde 17/11/2026) **não recebe o número**, nem na
+  tela nem na resposta. O corte é no servidor.
+- **"Quais os documentos do fulano?"** — o administrativo de obra não vê
+  arquivo de pessoa nenhuma.
+
+### Perguntas que o sistema ainda NÃO responde, e o que falta
+
+- **"Quem está esperando acesso há mais de X dias?"** — o dado está lá, falta
+  a pergunta virar função (e, se ele quiser, um aviso ao DP).
+- **"Quantas pessoas de obra deveriam ter portal e não têm?"** — depende de
+  uma definição que só ele tem: quem "deveria" ter. Hoje o sistema não sabe.
+- **"O fulano entrou no portal esta semana?"** — não há registro de último
+  acesso em `usuarios`. Faltaria uma coluna e a gravação no login.
+
+## 3z-nonies. A CHAVE QUE CIFRA AS SENHAS (17/11/2026)
+
+Nasceu de um tropeço real dele, gravando a conta de e-mail de uma empresa.
+
+### Perguntas que o sistema responde
+
+- **"Por que não consigo salvar a senha do e-mail?"** — a tela diz o motivo
+  concreto (chave ausente, cortada, ou inventada) e onde se resolve.
+- **"A chave de segredos está certa?"** — Configurações › Chave de segredos.
+- **"Quantas senhas estão guardadas cifradas?"** — e é a pergunta que importa
+  antes de trocar a chave: trocar invalida todas.
+- **"Quais empresas ainda não têm conta de e-mail configurada?"** — já existia,
+  no painel de Empresas.
+
+### ⚠️ O que o sistema NUNCA responde, de propósito
+
+- **"Qual é a chave?"** / **"qual é a senha do e-mail da empresa X?"** /
+  **"qual é a senha do certificado?"** — o sistema guarda cifrado e só usa na
+  hora de enviar. Nem a tela, nem o log, nem o assistente devolvem esses
+  valores. Se alguém pedir, a resposta é "não mostro; posso dizer se está
+  configurada e se funciona".
+
+## 3z-decies. QUEM RECEBE AS MENSAGENS DA EMPRESA (17/11/2026)
+
+Nasceu de ele olhar a tela de Mensagens com as 49 pessoas importadas e não
+conseguir responder "por que esta pessoa não está recebendo?".
+
+**⚠️ PALAVRA AMBÍGUA: "CADASTRADO".** São duas coisas:
+
+| Se ele disser | Quer dizer |
+|---|---|
+| "cadastrado no sistema" | tem ficha de colaborador no ERP |
+| "cadastrado no Telegram" | ligou o Telegram ao robô da BWS e por isso recebe aviso |
+
+Quase todo mundo é a primeira e não é a segunda. **A resposta diz qual das duas
+está contando.**
+
+### Perguntas que o sistema responde
+
+- **"Quem recebe mensagem pelo Telegram?"** / **"quantos dos nossos já
+  cadastraram?"**
+- **"Por que o fulano não está recebendo?"** — a resposta é um veredito: sem
+  Telegram · sem telefone no cadastro · telefone incompleto · recebe, mas com
+  número diferente.
+- **"Qual o ID do Telegram do fulano?"** — é identificador do robô, não
+  segredo, e serve exatamente para conferir quando algo dá errado.
+- **"Quem está com problema?"** — todo mundo cujo veredito não é "Recebe".
+- **"Quem perdeu mensagem nos últimos 30 dias, e quantas?"**
+- **"Quem foi convidado e não se cadastrou?"** / **"quem abriu o link e parou
+  no meio?"**
+- **"Quais colaboradores não têm telefone no cadastro?"** — é a pergunta que
+  destrava todas as outras, porque sem telefone não há convite possível.
+- **"Quem da obra X não recebe?"** — a obra e o cargo vêm do cadastro do ERP.
+- **"Quem tem Telegram ligado e não é mais da empresa?"** — "Cadastros a
+  conferir". ⚠️ O sistema **não desliga sozinho**: quem saiu ainda costuma
+  precisar do último contracheque pelo robô.
+
+### Perguntas que o sistema ainda NÃO responde, e o que falta
+
+- **"Esta pessoa leu a mensagem?"** — nem o Telegram nem o Z-API devolvem
+  leitura para o sistema. O registro sabe que **saiu**, não que foi lida, e
+  essa diferença tem de aparecer na resposta.
+- **"Quanto tempo o fulano levou para se cadastrar depois do convite?"** — os
+  dois carimbos existem (convite e cadastro); falta a conta.
+- **"Quem nunca recebeu NADA desde que entrou na empresa?"** — dá para
+  deduzir, mas não há pergunta pronta.
+
 ---
 
 ## 4. Como esta lista vira código

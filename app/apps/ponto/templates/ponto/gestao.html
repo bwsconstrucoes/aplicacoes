@@ -8166,6 +8166,63 @@ async function ligarRegistroAutomatico(ev) {
   caixa.disabled = false;
 }
 
+{# ===========================================================================
+   AS TRÊS CONTAS DO LADO DO ERP (17/11/2026)
+
+   Ele trocou a base para o cadastro do ERP e perguntou, olhando os números:
+   *"esses são os KPIs, tudo certo né?"*
+
+   Não estava: os seis números de cima são TODOS calculados sobre a PLANILHA.
+   Descrevem a base que se está deixando, não a que se está pegando. Trocar a
+   base olhando só para eles é trocar no escuro — e o escuro aqui custa caro,
+   porque batida é registro legal do REP-P e não se apaga.
+
+   Estes três são sobre o ERP, e é o que falta para a decisão:
+     · "Não batem pelo ERP" se compara com "Não batem pela planilha". Muito
+       menos quer dizer tipo de contrato em branco em quem não devia bater.
+     · "Sem obra no ERP": "faltam no ERP = 0" garante que a PESSOA existe, não
+       que ela tem OBRA.
+     · "Ativos na planilha e desligados no ERP": param de bater no dia da
+       virada. Nenhum dos seis contava este caso.
+   =========================================================================== #}
+function blocoPeloErp(d) {
+  const n = v => (v === null || v === undefined) ? null : v;
+  const naoBatem = n(d.nao_batem_pelo_erp), semObra = n(d.ativos_sem_obra_no_erp),
+        desligados = n(d.ativos_no_registro_desligados_no_erp);
+  if (naoBatem === null && semObra === null && desligados === null) {
+    return `<div class="cartao-dica" style="margin-top:12px">Não foi possível contar a
+      base pelo cadastro do ERP agora. O detalhe está no log do servidor.</div>`;
+  }
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor">${valor === null ? "?" : valor}</div><div class="kpi-sub">${sub}</div></div>`;
+  {# A COMPARAÇÃO É O PONTO. Dizer "20 na planilha, 3 no ERP" é o que faz a
+     pessoa parar antes de virar a chave; dois números em cartões diferentes
+     ela não cruza. #}
+  const daPlanilha = d.nao_batem_pela_planilha;
+  const diferenca = (naoBatem !== null && daPlanilha !== null && naoBatem !== daPlanilha);
+  return `<div class="suave" style="font-size:13px; margin-top:16px"><b>E pelo cadastro do ERP</b>
+      — é esta a base que vale quando a escolha abaixo é “Cadastro do ERP”:</div>
+    <div class="kpis" style="margin-top:8px">
+      ${kpi("Não batem pelo ERP", naoBatem, diferenca ? "vermelho" : "",
+            `pelo tipo de contrato · a planilha diz ${daPlanilha}`)}
+      ${kpi("Ativos sem obra no ERP", semObra, semObra ? "ambar" : "",
+            "a batida acontece, mas cai em conferência, sem cerca")}
+      ${kpi("Ativos na planilha, desligados no ERP", desligados, desligados ? "vermelho" : "",
+            "estes PARAM de bater se a base for o ERP")}
+    </div>
+    ${diferenca ? `<div class="aviso alerta" style="margin-top:8px">
+      <b>Os dois números de “não batem” estão diferentes:</b> ${daPlanilha} pela planilha e
+      ${naoBatem} pelo ERP. Pela planilha a regra lê a coluna de tipo; pelo ERP, o
+      <b>tipo de contrato do cadastro</b>. Se o do ERP for menor, falta tipo de contrato em
+      alguém que <b>não devia bater ponto</b> — e ponto de PJ é registro legal que não se
+      apaga. Confira em <a class="elo" href="/erp/colaboradores">Pessoal › Colaboradores</a>
+      antes de usar o cadastro do ERP como base.</div>` : ""}
+    ${desligados ? `<div class="aviso erro" style="margin-top:8px">
+      <b>${desligados} pessoa(s) ativa(s) na planilha estão DESLIGADAS no ERP.</b> Com a base no
+      ERP, elas não conseguem bater. Acerte a situação no cadastro ou mantenha a planilha como
+      base.</div>` : ""}`;
+}
+
 function desenharRegistro(d) {
   const alvo = els("c-registro");
   const emUso = d.usando ? "REGISTRO" : "ERP";
@@ -8176,7 +8233,7 @@ function desenharRegistro(d) {
   if (!d.disponivel) {
     alvo.innerHTML = `<div><b>Em uso:</b> ${ROTULO_FONTE.ERP}</div>
       <div class="cartao-dica">A cópia do Registro de Colaboradores não está neste banco; o ponto usa o
-        cadastro do ERP.</div>${blocoAutomatico(d)}<div id="c-registro-msg"></div>`;
+        cadastro do ERP.</div>${blocoPeloErp(d)}${blocoAutomatico(d)}<div id="c-registro-msg"></div>`;
     if (PODE_CONFIGURAR) els("c-registro-auto").addEventListener("change", ligarRegistroAutomatico);
     return;
   }
@@ -8198,6 +8255,7 @@ function desenharRegistro(d) {
       ${kpi("Sem obra reconhecida", d.ativos_sem_obra_reconhecida, d.ativos_sem_obra_reconhecida ? "ambar" : "",
             "código da obra do Registro que não existe no ERP")}
     </div>
+    ${blocoPeloErp(d)}
     ${escolha}
     ${d.faltam_no_erp ? `<div style="margin-top:12px"><b>Faltam no ERP</b>${exemplos.length ? ` — por exemplo:` : ""}
         ${exemplos.length ? `<div class="suave" style="font-size:13px">${exemplos.map(x =>

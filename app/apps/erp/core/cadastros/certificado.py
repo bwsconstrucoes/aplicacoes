@@ -130,10 +130,7 @@ def guardar(s: Session, empresa_id: int, conteudo: bytes, senha: str, *,
     if not segredos.ha_chave():
         # A recusa é o comportamento certo: sem a chave, guardar significaria
         # guardar em claro.
-        raise ErroCertificado(
-            "A chave de segredos do ERP não está configurada, e sem ela o "
-            "certificado não pode ser guardado com segurança. Defina "
-            "ERP_CHAVE_SEGREDOS na Environment do Render e tente de novo.")
+        raise ErroCertificado(segredos.recado_do_problema("O certificado não foi guardado"))
 
     dados = _ler_pfx(conteudo, senha)
 
@@ -188,10 +185,14 @@ def ler(s: Session, empresa_id: int) -> dict[str, Any]:
         EmpresaCertificado.empresa_id == empresa_id,
         EmpresaCertificado.situacao == "ATIVO")).first()
     if c is None:
-        return {"tem": False, "ha_chave": segredos.ha_chave()}
+        return {"tem": False, "ha_chave": segredos.ha_chave(),
+                # O motivo vai junto, para a tela não dizer "não está
+                # configurada" quando a chave existe e está torta (17/11/2026).
+                "problema_da_chave": segredos.situacao()["problema"]}
     dias = (c.valido_ate - date.today()).days
     return {
         "tem": True, "ha_chave": segredos.ha_chave(),
+        "problema_da_chave": segredos.situacao()["problema"],
         "id": c.id, "titular": c.titular or "", "documento": c.documento or "",
         "emissor": c.emissor or "", "numero_serie": c.numero_serie or "",
         "valido_de": c.valido_de.isoformat() if c.valido_de else None,

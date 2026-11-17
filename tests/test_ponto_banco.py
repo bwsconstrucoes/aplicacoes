@@ -640,3 +640,100 @@ def test_sem_chave_configurada_tudo_fecha_menos_o_registro(cliente, monkeypatch)
     r = cliente.post("/ponto/api/dispositivo/registrar", json={"device_uuid": UUID_TABLET})
     assert r.status_code == 201
     assert cliente.get("/ponto/health").get_json()["chave_configurada"] is False
+
+
+# ===========================================================================
+# AS TRÊS CONTAS DO LADO DO ERP (17/11/2026)
+#
+# Ele trocou a base do ponto para o cadastro do ERP e perguntou, olhando os
+# números da tela: *"esses são os KPIs, tudo certo né?"* Não estava: os seis
+# números do cartão são todos sobre a PLANILHA — descrevem a base que se está
+# deixando, não a que se está pegando.
+#
+# ⚠️ O QUE ESTES CASOS PROTEGEM é a decisão de virar a chave. O número que mais
+# importa é "não batem": pela planilha a regra lê a coluna de tipo; pelo ERP, o
+# TIPO DE CONTRATO do cadastro. Se o do ERP vier menor, PJ e pró-labore passam a
+# bater ponto — e batida é registro legal do REP-P, encadeada por hash, que não
+# se apaga como se corrige um cadastro.
+# ===========================================================================
+def test_as_contas_pelo_erp_usam_a_mesma_regra_da_batida(cliente, ponto, banco):
+    """Reusa `cadastros._nao_bate_do_erp`, não reimplementa: duas cópias da
+    regra divergiriam, e a tela diria "pode virar" sobre uma conta diferente da
+    que vale na hora da batida."""
+    from app.apps.ponto import db as pdb
+    from app.apps.ponto.core import registro
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET tipo_contrato = 'PJ' WHERE cpf = :c"),
+                     {"c": CPF_JOAO})
+        conn.commit()
+
+    with pdb.conexao() as conn:
+        d = registro.pelo_erp(conn)
+
+    assert d["nao_batem_pelo_erp"] >= 1, "o PJ do cadastro do ERP tem de ser contado"
+
+
+def test_conta_quem_esta_ativo_sem_obra_no_erp(cliente, ponto, banco):
+    """"Faltam no ERP = 0" garante que a PESSOA existe, não que ela tem OBRA.
+    Sem obra, a batida acontece e cai em conferência, sem cerca."""
+    from app.apps.ponto import db as pdb
+    from app.apps.ponto.core import registro
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET obra_id = NULL WHERE cpf = :c"),
+                     {"c": CPF_MARIA})
+        conn.commit()
+
+    with pdb.conexao() as conn:
+        d = registro.pelo_erp(conn)
+
+    assert d["ativos_sem_obra_no_erp"] >= 1
+
+
+def test_sem_a_copia_da_planilha_a_conta_de_quem_para_de_bater_nao_mente(cliente, ponto, banco):
+    """A terceira conta (ativo na planilha, desligado no ERP) depende da cópia
+    que a Análise de SPs guarda. Sem ela neste banco, a conta vem `None` — e NÃO
+    zero: zero diria "não há ninguém nessa situação", que é uma afirmação que
+    não se pode fazer sem a planilha para comparar."""
+    from app.apps.ponto import db as pdb
+    from app.apps.ponto.core import registro
+    with pdb.conexao() as conn:
+        tem_copia = conn.execute(text(
+            "SELECT 1 FROM information_schema.tables "
+            " WHERE table_schema = 'analisesps' AND table_name = 'colaborador'")).first()
+        d = registro.pelo_erp(conn)
+
+    if tem_copia:
+        assert d["ativos_no_registro_desligados_no_erp"] is not None
+    else:
+        assert d["ativos_no_registro_desligados_no_erp"] is None
+        # … e as outras duas, que só dependem do ERP, continuam respondendo
+        assert d["nao_batem_pelo_erp"] is not None
+        assert d["ativos_sem_obra_no_erp"] is not None
+
+
+def test_as_contas_nunca_derrubam_a_tela(cliente, ponto, monkeypatch):
+    """Número que falta aparece como `None` e a tela diz "não foi possível
+    contar" — melhor que um zero que parece tranquilidade."""
+    from app.apps.ponto import db as pdb
+    from app.apps.ponto.core import registro
+    monkeypatch.setattr(registro, "_tem_coluna_publica",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("banco fora")))
+
+    with pdb.conexao() as conn:
+        d = registro.pelo_erp(conn)
+
+    assert d == {"nao_batem_pelo_erp": None, "ativos_sem_obra_no_erp": None,
+                 "ativos_no_registro_desligados_no_erp": None}
+
+
+def test_o_retrato_entrega_as_tres_contas_para_a_tela(cliente, ponto):
+    r = cliente.get("/ponto/api/admin/migracoes")        # só para garantir o app no ar
+    assert r.status_code in (200, 401, 403)
+    from app.apps.ponto import db as pdb
+    from app.apps.ponto.core import registro
+    with pdb.conexao() as conn:
+        d = registro.retrato(conn)
+
+    for chave in ("nao_batem_pelo_erp", "ativos_sem_obra_no_erp",
+                  "ativos_no_registro_desligados_no_erp"):
+        assert chave in d, f"a tela desenha {chave}; sem ele sai '?' sem motivo"
