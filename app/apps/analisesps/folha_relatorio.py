@@ -240,8 +240,11 @@ def recortar_por_conta(pessoas, conta: str, contas_por_obra) -> list:
         saida.append({
             **p, "por_obra": dela, "valor": valor,
             "dias_no_ponto": sum((_dias(x.get("dias")) for x in dela), Decimal("0")),
+            # Sem dias (o pagamento avulso), sem o "(0)" depois da obra.
             "obras_resumo": ", ".join(
-                f"{x.get('obra') or SEM_OBRA} ({dias_txt(x.get('dias'))})" for x in dela),
+                f"{x.get('obra') or SEM_OBRA}"
+                + (f" ({dias_txt(x.get('dias'))})" if _dias(x.get("dias")) else "")
+                for x in dela),
             "por_dia": [d for d in (p.get("por_dia") or [])
                         if " ".join(str(d.get("obra") or "").split()).upper()
                         in obras_dela],
@@ -283,6 +286,13 @@ def montar(montado: dict, contas_por_obra: dict, conta: str = "") -> dict:
         # continua valendo, porque elas andam junto com a pessoa.
         "detalhe": montado.get("detalhe") or None,
         "paisagem": bool(montado.get("paisagem")),
+        # Quem aparece no detalhamento: só quem entra no pagamento — ou, com
+        # `detalhe_todos` (a complementar, 10/11/2026), também quem NÃO recebe agora
+        # (pago a mais, não pago antes), que é a informação do relatório. No recorte
+        # por conta, só quem recebe por aquela conta.
+        "pessoas_do_detalhe": (
+            [p for p in (montado.get("pessoas") or [])]
+            if montado.get("detalhe_todos") and not conta else pessoas),
     }
 
 
@@ -315,6 +325,24 @@ def _aviso_de_origem(dados) -> str:
             "fechada; o arquivo de pagamento é gerado a partir do fechamento).")
     return base + (" Os totais por obra e por conta consideram apenas os valores a "
                    "pagar; cada colaborador é rateado pelos dias em cada obra.")
+
+
+def _rateio_texto(dados) -> str:
+    """A frase do rateio entre obras (pagamento avulso, 13/11/2026). O dono: *"não
+    relata nada sobre o rateio"*. Vazia quando ninguém tem rateio."""
+    n = sum(1 for p in dados["pessoas"] if p.get("rateio_entre_obras"))
+    if not n:
+        return ""
+    return (f"{n} pessoa{'s' if n > 1 else ''} com rateio entre obras: o pagamento de "
+            f"cada uma sai somado, numa transferência só; cada obra fica com a sua "
+            f"parte (quadro \"Rateio entre obras\").")
+
+
+def _total_do_rateio(p) -> Decimal:
+    """A soma das obras do rateio — no recorte por conta, o `valor` da pessoa já é só
+    a parte daquela conta; o quadro mostra o rateio inteiro."""
+    return sum((_dinheiro(r["valor"]) for r in p.get("rateio_entre_obras") or []),
+               Decimal("0.00"))
 
 
 def _sim_nao(p) -> str:
@@ -357,6 +385,8 @@ def excel(dados: dict) -> bytes:
     resumo.append(["Pessoas a pagar", dados["quantas"]])
     resumo.append(["Total de pessoas na folha", dados["de_quantas"]])
     resumo.append(["Total a pagar", float(dados["grupos"]["total_pago"])])
+    if _rateio_texto(dados):
+        resumo.append([_rateio_texto(dados)])
     resumo.append([])
     resumo.append(["Filtros"])
     resumo.cell(row=resumo.max_row, column=1).font = negrito
@@ -374,7 +404,7 @@ def excel(dados: dict) -> bytes:
     if detalhe:
         espec = detalhe["excel"]
         aba = aba_nova(detalhe.get("aba") or "Lançamentos", espec["cabecalho"])
-        for p in dados["pessoas"]:
+        for p in dados.get("pessoas_do_detalhe") or dados["pessoas"]:
             aba.append(list(p.get("detalhe_excel") or []))
         moeda(aba, espec.get("moeda") or ())
         larguras(aba, espec.get("larguras") or [])
@@ -422,6 +452,20 @@ def excel(dados: dict) -> bytes:
     aba.append(["Total", "", "", float(g["total_pago"]), 100.0])
     moeda(aba, (3,))
     larguras(aba, [16, 60, 10, 15, 20])
+
+    # --- O RATEIO ENTRE OBRAS (pagamento avulso, 13/11/2026) ----------
+    com_rateio = [p for p in dados["pessoas"] if p.get("rateio_entre_obras")]
+    if com_rateio:
+        aba = aba_nova("Rateio entre obras", ["Nome", "CPF", "Obra", "Valor na obra",
+                                              "Total da pessoa"])
+        for p in com_rateio:
+            for i, r in enumerate(p["rateio_entre_obras"]):
+                aba.append([p.get("nome_na_tela") or "",
+                            cpf_bonito(p.get("cpf") or "") if p.get("cpf") else "",
+                            r["obra"], float(_dinheiro(r["valor"])),
+                            float(_total_do_rateio(p)) if i == 0 else None])
+        moeda(aba, (3, 4))
+        larguras(aba, [38, 15, 30, 14, 14])
 
     # --- AS AUSÊNCIAS (auxílio transporte, 05/10/2026) ----------------
     com_ausencia = [p for p in dados["pessoas"] if p.get("ausencias_detalhe")]
@@ -474,6 +518,9 @@ def pdf(dados: dict) -> bytes:
                                   "nenhum - folha completa") + ". "
                    + _aviso_de_origem(dados))
 
+    if _rateio_texto(dados):
+        doc.observacao(_rateio_texto(dados))
+
     doc.titulo_secao("Por conta de pagamento")
     doc.tabela(["Conta", "Obras", "Pessoas", "Valor", "%"],
                [[c["conta"], ", ".join(c["obras"]), str(c["pessoas"]),
@@ -493,8 +540,9 @@ def pdf(dados: dict) -> bytes:
     detalhe = dados.get("detalhe")
     if detalhe:
         espec = detalhe["pdf"]
-        doc.titulo_secao(f"{detalhe.get('titulo') or 'Detalhamento'} ({dados['quantas']})")
-        doc.tabela(espec["cabecalho"], [p.get("detalhe_pdf") or [] for p in dados["pessoas"]],
+        no_detalhe = dados.get("pessoas_do_detalhe") or dados["pessoas"]
+        doc.titulo_secao(f"{detalhe.get('titulo') or 'Detalhamento'} ({len(no_detalhe)})")
+        doc.tabela(espec["cabecalho"], [p.get("detalhe_pdf") or [] for p in no_detalhe],
                    larguras=[x * doc.pdf.epw / sum(espec["larguras"]) for x in espec["larguras"]],
                    direita=tuple(espec.get("direita") or ()), fonte=7,
                    linhas_max=espec.get("linhas_max", 4))
@@ -510,6 +558,21 @@ def pdf(dados: dict) -> bytes:
                     for p in dados["pessoas"]],
                    larguras=[x * k for x in (54, 32, 40, 18, 10, 20, 16)], direita=(4, 5),
                    fonte=7, linhas_max=2)
+
+    # O RATEIO ENTRE OBRAS (pagamento avulso, 13/11/2026): a mesma pessoa paga
+    # por mais de uma obra — quanto vai para cada uma.
+    com_rateio = [p for p in dados["pessoas"] if p.get("rateio_entre_obras")]
+    if com_rateio:
+        doc.titulo_secao(f"Rateio entre obras ({len(com_rateio)})")
+        linhas_r = []
+        for p in com_rateio:
+            for i, r in enumerate(p["rateio_entre_obras"]):
+                linhas_r.append([p.get("nome_na_tela") or "" if i == 0 else "",
+                                 r["obra"], _moeda_br(r["valor"]),
+                                 _moeda_br(_total_do_rateio(p)) if i == 0 else ""])
+        doc.tabela(["Nome", "Obra", "Valor na obra", "Total da pessoa"], linhas_r,
+                   larguras=[x * k for x in (70, 60, 30, 30)], direita=(2, 3), fonte=7,
+                   linhas_max=2)
 
     # AS AUSÊNCIAS E O DESCONTO (05/10/2026) — para quem vai analisar se há ou
     # não desconto: cada dia, o motivo do ponto e o que se decidiu.

@@ -45,102 +45,333 @@ NIVEIS = ("grupo", "categoria", "lancamento")
 _CAMPOS = ("id", "nome", "criterio", "janela", "pct_padrao", "juros_por_deficit",
            "juros_sem_deficit", "taxa_adm_pct", "medida", "observacao")
 
-_SELECT = ("SELECT id, nome, criterio, janela, pct_padrao, juros_por_deficit, "
-           "       juros_sem_deficit, taxa_adm_pct, medida, observacao "
-           "  FROM cenario")
+_COLUNAS = ("c.id, c.nome, c.criterio, c.janela, c.pct_padrao, c.juros_por_deficit, "
+            "c.juros_sem_deficit, c.taxa_adm_pct, c.medida, c.observacao")
+
+
+def tem_dono() -> bool:
+    """A migração 028 já foi aplicada? Sem ela todo cenário é do administrador,
+    e só ele grava — ninguém cria cópia própria."""
+    try:
+        return bool(consultar(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = 'painel'"
+            "   AND table_name = 'cenario' AND column_name = 'dono_id'"))
+    except Exception:  # noqa: BLE001 — banco de teste dublado
+        return False
+
+
+def _select() -> str:
+    """O SELECT do cenário, com o dono (número e nome) quando a coluna existe."""
+    if tem_dono():
+        return (f"SELECT {_COLUNAS}, c.dono_id,"
+                "       COALESCE(NULLIF(u.nome, ''), u.usuario, '')"
+                "  FROM cenario c LEFT JOIN usuarios u ON u.id = c.dono_id")
+    return f"SELECT {_COLUNAS}, NULL, '' FROM cenario c"
 
 
 def _linha(t) -> dict:
-    cenario = dict(zip(_CAMPOS, t))
+    cenario = dict(zip(_CAMPOS + ("dono_id", "dono"), t))
     for campo in ("pct_padrao", "taxa_adm_pct"):
         cenario[campo] = float(cenario[campo] or 0)
     cenario["juros_por_deficit"] = int(cenario["juros_por_deficit"] or 0)
+    cenario["dono_id"] = int(cenario["dono_id"]) if cenario["dono_id"] else None
     return cenario
 
 
 # ----------------------------------------------------------------------- ler
-def listar() -> list[dict]:
-    return [_linha(t) for t in consultar(_SELECT + " ORDER BY nome")]
+TODOS = object()        # o administrador: enxerga os cenários de todo mundo
+
+
+def listar(de=TODOS) -> list[dict]:
+    """Os cenários que alguém enxerga (13/11/2026 — cada cenário tem dono).
+
+    `de` = `TODOS` (o administrador): todos, os dele primeiro e depois os de
+    cada pessoa. `de` = o número de uma pessoa do cadastro de acesso: os DELA
+    primeiro, e os do administrador — que ela vê e copia, mas não altera. O
+    cenário de outra pessoa ela não enxerga."""
+    if de is TODOS:
+        ordem = " ORDER BY (c.dono_id IS NOT NULL), 12, c.nome" if tem_dono() else " ORDER BY c.nome"
+        return [_linha(t) for t in consultar(_select() + ordem)]
+    if not tem_dono():
+        return [_linha(t) for t in consultar(_select() + " ORDER BY c.nome")]
+    return [_linha(t) for t in consultar(
+        _select() + " WHERE c.dono_id IS NULL OR c.dono_id = ?"
+                    " ORDER BY (c.dono_id IS NULL), c.nome", [int(de)])]
 
 
 def buscar(cenario_id) -> dict | None:
-    t = consultar_um(_SELECT + " WHERE id = ?", [int(cenario_id)])
+    try:
+        numero = int(cenario_id)
+    except (TypeError, ValueError):
+        return None
+    t = consultar_um(_select() + " WHERE c.id = ?", [numero])
     return _linha(t) if t else None
 
 
-def pesos(cenario_id) -> dict:
-    """{nível: {chave: percentual}} — o que foi marcado neste cenário.
+def enxerga(cenario: dict | None, de=TODOS) -> bool:
+    """A pessoa `de` pode VER este cenário? O administrador vê todos; a pessoa,
+    os dela e os do administrador."""
+    if not cenario:
+        return False
+    return de is TODOS or cenario.get("dono_id") in (None, int(de))
 
-    E, em `periodos`, {nível: {chave: [(desde AAAA-MM, percentual), ...]}} — o
-    percentual que muda com o tempo (migração 024), em ordem de data."""
+
+def altera(cenario: dict | None, de=TODOS) -> bool:
+    """A pessoa `de` pode ALTERAR este cenário? O administrador, todos; a
+    pessoa, só os dela."""
+    if not cenario:
+        return False
+    return de is TODOS or (cenario.get("dono_id") is not None
+                           and cenario.get("dono_id") == int(de))
+
+
+def nome_livre(base: str, dono_id=None) -> str:
+    """`base`, ou `base (2)`, `base (3)`… — o primeiro que o dono ainda não
+    usa. O nome é único por dono; a cópia não pode falhar por causa disso."""
+    base = (base or "").strip() or "Sem nome"
+    if tem_dono():
+        usados = {n for (n,) in consultar(
+            "SELECT nome FROM cenario WHERE COALESCE(dono_id, 0) = ?", [int(dono_id or 0)])}
+    else:
+        usados = {n for (n,) in consultar("SELECT nome FROM cenario")}
+    nome, n = base, 1
+    while nome in usados:
+        n += 1
+        nome = f"{base} ({n})"
+    return nome
+
+
+def pesos_fixos(cenario_id) -> dict:
+    """{nível: {chave: percentual}} — o percentual fixo de cada conta, no
+    formato antigo: QUANTO SE RATEIA entre todas (o resto fica no principal).
+    Hoje só o lançamento marcado um a um nasce aqui; grupo e categoria passaram
+    para as regras por período, e o que restar deles aqui é herança."""
     saida = {nivel: {} for nivel in NIVEIS}
     for nivel, chave, pct in consultar(
             "SELECT nivel, chave, pct FROM cenario_peso WHERE cenario_id = ?",
             [int(cenario_id)]):
         if nivel in saida:
             saida[nivel][chave] = float(pct or 0)
+    return saida
+
+
+def pesos(cenario_id) -> dict:
+    """{nível: {chave: percentual fixo}} — ver `pesos_fixos` — e, em
+    `periodos`, {nível: {chave: [(desde, fica no principal, é da filial)]}}:
+    as três partes de cada conta (11/11/2026), em ordem de data."""
+    saida = pesos_fixos(cenario_id)
     saida["periodos"] = periodos(cenario_id)
     return saida
 
 
+def _colunas_dos_periodos() -> set:
+    """As colunas de `cenario_peso_periodo` — vazio se a migração 024 ainda não
+    foi aplicada. Diz também se a 025 (as três partes) já chegou."""
+    try:
+        return {c for (c,) in consultar(
+            "SELECT column_name FROM information_schema.columns"
+            " WHERE table_schema = 'painel' AND table_name = 'cenario_peso_periodo'")}
+    except Exception:  # noqa: BLE001 — banco de teste dublado
+        return set()
+
+
 def _tem_periodos() -> bool:
     """A migração 024 já foi aplicada? Sem ela, nada de período."""
-    try:
-        return bool(consultar(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'painel'"
-            "   AND table_name = 'cenario_peso_periodo'"))
-    except Exception:  # noqa: BLE001 — banco de teste dublado
-        return False
+    return bool(_colunas_dos_periodos())
+
+
+def _tem_tres_partes() -> bool:
+    """A migração 025 já foi aplicada? Sem ela não há onde guardar a parte da
+    filial — a parte que fica no principal ainda cabe nas colunas antigas."""
+    return "pct_fica" in _colunas_dos_periodos()
+
+
+def partes_do_formato_antigo(pct, principal=None) -> tuple:
+    """(fica no principal, é da filial) de uma linha gravada antes das três
+    partes: `pct` era "quanto entra" e `principal` "quanto do que entra vai
+    para o principal". O que não entrava FICA no principal; o resto se rateia
+    entre todas. É a mesma conversão da migração 025."""
+    entra = float(pct or 0)
+    return (100.0 - entra) + entra * float(principal or 0) / 100.0, 0.0
 
 
 def periodos(cenario_id) -> dict:
-    """{nível: {chave: [(desde, percentual, parte do principal | None), ...]}},
-    em ordem de data. A parte do principal é quanto do que entrou vai para o
-    projeto principal (o resto vai para os demais); None = sem separar."""
+    """{nível: {chave: [(desde, fica no principal, é da filial, até, valor
+    fixo), ...]}}, em ordem de começo. As duas partes em por cento; o que
+    falta para 100 se rateia entre todas as obras.
+
+    `desde` "1900-01" é a regra que vale sempre (a linha da conta); "0001-01"
+    é o período que só tem fim ("até 12/2020"). `até` vazio = sem fim. `valor
+    fixo` (R$) sai do total do período ANTES dos percentuais e fica inteiro no
+    projeto principal."""
     saida: dict = {nivel: {} for nivel in NIVEIS}
-    if not _tem_periodos():
+    colunas = _colunas_dos_periodos()
+    if not colunas:
         return saida
-    for nivel, chave, desde, pct, principal in consultar(
-            "SELECT nivel, chave, desde, pct, pct_principal FROM cenario_peso_periodo"
+    novas = "pct_fica, pct_filial" if "pct_fica" in colunas else "NULL, NULL"
+    fim = "ate" if "ate" in colunas else "''"
+    fixo = "valor_fica" if "valor_fica" in colunas else "0"
+    for nivel, chave, desde, pct, principal, fica, filial, ate, valor in consultar(
+            f"SELECT nivel, chave, desde, pct, pct_principal, {novas}, {fim}, {fixo}"
+            "  FROM cenario_peso_periodo"
             " WHERE cenario_id = ? ORDER BY nivel, chave, desde", [int(cenario_id)]):
-        if nivel in saida:
-            saida[nivel].setdefault(chave, []).append(
-                (desde, float(pct or 0), None if principal is None else float(principal)))
+        if nivel not in saida:
+            continue
+        if fica is None:
+            fica, filial = partes_do_formato_antigo(pct, principal)
+        saida[nivel].setdefault(chave, []).append(
+            (desde, float(fica), float(filial or 0), ate or "", float(valor or 0)))
     return saida
+
+
+def _tem_fim_de_periodo() -> bool:
+    """A migração 026 já foi aplicada? Sem ela não há onde guardar o "até"."""
+    return "ate" in _colunas_dos_periodos()
 
 
 _MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
+# o "mês" da regra que vale sempre — a linha da conta
+DESDE_O_INICIO = "1900-01"
+# o "começo" do período que só tem fim ("até 12/2020"): antes de tudo, e
+# diferente do de cima para as duas linhas caberem na mesma conta
+SEM_COMECO = "0001-01"
+
+
+def _preenchido(valor) -> bool:
+    return str(valor if valor is not None else "").strip() != ""
+
+
+def mes_seguinte(mes: str) -> str:
+    ano, m = int(mes[:4]), int(mes[5:7])
+    return f"{ano + (m == 12):04d}-{(m % 12) + 1:02d}"
+
+
+def mes_anterior(mes: str) -> str:
+    ano, m = int(mes[:4]), int(mes[5:7])
+    return f"{ano - (m == 1):04d}-{12 if m == 1 else m - 1:02d}"
+
+
+def _mes_br(mes: str) -> str:
+    return f"{mes[5:7]}/{mes[:4]}"
+
+
+def dinheiro(valor) -> float:
+    """Valor em reais digitado por gente: "500.000,00", "500000", "1.250,5".
+    Em branco é zero; negativo vira positivo (é um valor a destacar)."""
+    if isinstance(valor, (int, float)):
+        return abs(float(valor))
+    texto = str(valor or "").replace("R$", "").strip().replace(" ", "")
+    if not texto:
+        return 0.0
+    if "," in texto:                       # padrão brasileiro: ponto é milhar
+        texto = texto.replace(".", "").replace(",", ".")
+    elif texto.count(".") > 1 or (texto.count(".") == 1 and len(texto.split(".")[1]) == 3):
+        texto = texto.replace(".", "")     # "500.000" é quinhentos mil
+    try:
+        return abs(float(texto))
+    except ValueError:
+        raise ValueError(f"“{valor}” não é um valor em reais") from None
+
+
 def _periodos_limpos(lista) -> list[tuple]:
-    """[(desde, percentual, parte do principal | None)] válidos e em ordem.
-    Linha sem mês válido ou sem percentual é ignorada; mês repetido, vale o
-    último. A parte do principal em branco é None (sem separar os lados)."""
+    """[(desde, fica no principal, é da filial, até, valor fixo)] válidos e
+    em ordem.
+
+    Linha com as duas partes em branco e sem valor fixo é ignorada (é assim que se apaga);
+    começo em branco quer dizer "sempre" — ou, se a linha tem fim, "até ele";
+    começo repetido, vale o último. As duas partes não podem passar de 100 (o
+    que falta é o que se rateia), o fim não pode vir antes do começo, e dois
+    períodos com fim não podem se sobrepor."""
     limpos = {}
     for item in lista or []:
-        desde, pct = item[0], item[1]
-        principal = item[2] if len(item) > 2 else None
-        desde = (desde or "").strip()
-        if _MES.match(desde) and str(pct if pct is not None else "").strip():
-            p = None if principal is None or str(principal).strip() == "" else _limpar(principal)
-            limpos[desde] = (_limpar(pct), p)
-    return [(d, pct, p) for d, (pct, p) in sorted(limpos.items())]
+        desde, fica, filial, ate, valor = (list(item) + [None] * 5)[:5]
+        valor = dinheiro(valor)
+        if not _preenchido(fica) and not _preenchido(filial) and valor <= 0.005:
+            continue
+        desde, ate = (desde or "").strip(), (ate or "").strip()
+        if ate and not _MES.match(ate):
+            continue
+        desde = desde or (SEM_COMECO if ate else DESDE_O_INICIO)
+        if not _MES.match(desde):
+            continue
+        if ate and ate < desde:
+            raise ValueError(f"o período termina em {_mes_br(ate)}, antes de começar "
+                             f"({_mes_br(desde)})")
+        f = _limpar(fica) if _preenchido(fica) else 0.0
+        n = _limpar(filial) if _preenchido(filial) else 0.0
+        if f + n > 100.005:
+            raise ValueError(
+                f"as partes somam {f + n:.0f}% — o que fica no projeto principal "
+                "mais o que é da filial não pode passar de 100%")
+        limpos[desde] = (f, n, ate, round(valor, 2))
+    saida = [(d, f, n, ate, v) for d, (f, n, ate, v) in sorted(limpos.items())]
+    # dois períodos fechados que se cruzam: não dá para saber qual vale
+    com_data = [p for p in saida if p[0] != DESDE_O_INICIO]
+    for atual, proximo in zip(com_data, com_data[1:]):
+        if atual[3] and proximo[0] <= atual[3]:
+            raise ValueError(
+                f"dois períodos se sobrepõem: um vai até {_mes_br(atual[3])} e o "
+                f"outro começa em {_mes_br(proximo[0])}")
+    return saida
+
+
+def lacunas_dos_periodos(lista) -> list[tuple]:
+    """[(de, até)] dos meses que ficam ENTRE dois períodos sem regra de
+    período nenhuma (12/11/2026, o dono: "e se ficar uma lacuna? O sistema
+    acusa?"). Nesses meses vale a linha da conta — ou, sem ela, o nível de
+    cima. Não é erro; é para a tela avisar."""
+    com_data = sorted(p for p in lista or [] if p[0] != DESDE_O_INICIO)
+    fim_de = lambda p: p[3] if len(p) > 3 else ""  # noqa: E731
+    buracos = []
+    for atual, proximo in zip(com_data, com_data[1:]):
+        if not fim_de(atual) or mes_seguinte(fim_de(atual)) >= proximo[0]:
+            continue
+        de, ate = mes_seguinte(fim_de(atual)), mes_anterior(proximo[0])
+        # um período mais antigo, sem fim (ou com fim depois), ainda cobre o vão
+        coberto = any(p[0] <= de and (not fim_de(p) or fim_de(p) >= ate)
+                      for p in com_data if p is not atual)
+        if not coberto:
+            buracos.append((de, ate))
+    return buracos
 
 
 def gravar_periodos(cenario_id, nivel: str, chave: str, lista) -> None:
-    """Troca os períodos de UMA conta pelos da lista
-    [(desde, percentual[, parte do principal])]."""
+    """Troca as regras de UMA conta pelas da lista
+    [(desde, fica no principal, é da filial[, até[, valor fixo]])]."""
     if nivel not in NIVEIS or not (chave or "").strip() or not _tem_periodos():
         return
+    limpos = _periodos_limpos(lista)
+    colunas = _colunas_dos_periodos()
+    tres, com_fim, com_valor = ("pct_fica" in colunas, "ate" in colunas,
+                                "valor_fica" in colunas)
+    aplique = ("aplique antes as atualizações do banco (Configurações › Aplicar "
+               "atualizações do banco).")
+    if not tres and any(p[2] > 0.005 for p in limpos):
+        raise ValueError("Para dizer que parte de uma conta é da filial, " + aplique)
+    if not com_fim and any(p[3] for p in limpos):
+        raise ValueError("Para dar fim (\"até\") a um período, " + aplique)
+    if not com_valor and any(p[4] > 0.005 for p in limpos):
+        raise ValueError("Para destacar um valor fixo num período, " + aplique)
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_peso_periodo"
                      " WHERE cenario_id = ? AND nivel = ? AND chave = ?",
                      (int(cenario_id), nivel, chave.strip()))
-        for desde, pct, principal in _periodos_limpos(lista):
-            conn.execute("INSERT INTO cenario_peso_periodo"
-                         " (cenario_id, nivel, chave, desde, pct, pct_principal)"
-                         " VALUES (?,?,?,?,?,?)",
-                         (int(cenario_id), nivel, chave.strip(), desde, pct, principal))
+        for desde, fica, filial, ate, valor in limpos:
+            campos = {"cenario_id": int(cenario_id), "nivel": nivel,
+                      "chave": chave.strip(), "desde": desde,
+                      # sem a 025, a parte que fica cabe no formato antigo
+                      "pct": 100.0 - fica - filial if tres else 100.0 - fica}
+            if tres:
+                campos.update(pct_fica=fica, pct_filial=filial)
+            if com_fim:
+                campos["ate"] = ate
+            if com_valor:
+                campos["valor_fica"] = valor
+            conn.execute(
+                f"INSERT INTO cenario_peso_periodo ({', '.join(campos)})"
+                f" VALUES ({', '.join('?' for _ in campos)})", tuple(campos.values()))
         conn.commit()
 
 
@@ -260,10 +491,14 @@ def _limpar(valor, padrao: float = 0.0, teto: float = 100.0) -> float:
     return min(max(v, 0.0), teto)
 
 
-def criar(nome: str, **campos) -> int:
-    """Cria um cenário. Nome repetido é recusado pelo banco, de propósito:
-    dois cenários com o mesmo nome tornam a comparação inútil."""
+def criar(nome: str, dono_id=None, **campos) -> int:
+    """Cria um cenário — do administrador, ou de `dono_id` (uma pessoa do
+    cadastro de acesso). Nome repetido do MESMO dono é recusado pelo banco, de
+    propósito: dois cenários com o mesmo nome tornam a comparação inútil."""
     nome = (nome or "").strip() or "Sem nome"
+    if dono_id is not None and not tem_dono():
+        raise ValueError("Para cada pessoa ter os próprios cenários, aplique antes as "
+                         "atualizações do banco (Configurações › Aplicar atualizações do banco).")
     with conexao() as conn:
         cur = conn.execute(
             "INSERT INTO cenario (nome, criterio, janela, pct_padrao, "
@@ -277,9 +512,14 @@ def criar(nome: str, **campos) -> int:
              1 if str(campos.get("juros_por_deficit", 1)) in ("1", "True", "on") else 0,
              campos.get("juros_sem_deficit", "sobra"),
              _limpar(campos.get("taxa_adm_pct", 1.5), 1.5),
-             campos.get("medida", "comprometido"),
+             # cenário novo nasce pelo EXECUTADO (12/11/2026, o dono:
+             # "gostaria de trabalhar com o executado, e não com o comprometido")
+             campos.get("medida", "executado"),
              (campos.get("observacao") or "").strip()))
         novo = cur.fetchone()[0]
+        if dono_id is not None:
+            conn.execute("UPDATE cenario SET dono_id = ? WHERE id = ?",
+                         (int(dono_id), int(novo)))
         conn.commit()
     return int(novo)
 
@@ -343,17 +583,50 @@ def marcar_pesos(cenario_id, nivel: str, chaves, pct) -> int:
     return quantos
 
 
+def conferir_periodos(entradas) -> dict:
+    """{(nível, chave): [(desde, fica, filial, até)]} já limpo — ou ValueError
+    com o nome da conta. Roda ANTES de gravar qualquer coisa: o "Salvar tudo"
+    não pode gravar metade da página e recusar a outra.
+
+    `entradas`: [(nível, chave, desde, fica, filial[, até])], com `desde`
+    "inicio" na linha principal da conta."""
+    brutos: dict = {}
+    for entrada in entradas or ():
+        nivel, chave, desde, fica, filial, ate, valor = (list(entrada) + [None] * 7)[:7]
+        chave = (chave or "").strip()
+        desde, ate = (desde or "").strip(), (ate or "").strip()
+        try:
+            tem_valor = dinheiro(valor) > 0.005
+        except ValueError as e:
+            raise ValueError(f"{chave}: {e}.") from None
+        if desde == "inicio":                       # a linha principal da conta
+            desde, ate, valor = DESDE_O_INICIO, "", None
+        elif (_preenchido(fica) or _preenchido(filial) or tem_valor) and not desde and not ate:
+            raise ValueError(f"Falta o mês em {chave}: a linha de período tem "
+                             "percentual ou valor, mas não diz de quando até quando.")
+        brutos.setdefault((nivel, chave), []).append((desde, fica, filial, ate, valor))
+    limpos = {}
+    for (nivel, chave), lista in brutos.items():
+        try:
+            limpos[(nivel, chave)] = _periodos_limpos(lista)
+        except ValueError as e:
+            raise ValueError(f"{chave}: {e}.") from None
+    return limpos
+
+
 def gravar_periodos_da_arvore(cenario_id, presentes, entradas) -> int:
-    """Os períodos da árvore inteira, de uma vez. `presentes`: as contas cujo
-    editor estava na tela ("nível|chave") — só elas são trocadas, para uma
-    conta que a tela não mostrou não perder os períodos dela. `entradas`:
-    [(nível, chave, desde, percentual)]. Devolve quantas contas mudaram."""
+    """As regras da árvore inteira, de uma vez. `presentes`: as contas cuja
+    linha estava na tela ("nível|chave") — só elas são trocadas, para uma
+    conta que a tela não mostrou não perder a regra dela. `entradas`:
+    [(nível, chave, desde, fica no principal, é da filial, até)], com `desde`
+    "inicio" na linha principal da conta. Devolve quantas contas mudaram.
+
+    A linha principal é a regra "desde o início": o percentual fixo antigo
+    (`cenario_peso`) da conta sai junto, senão ele voltaria a valer quando a
+    pessoa apagasse a linha."""
+    novos = conferir_periodos(entradas)
     atuais = periodos(cenario_id)
-    novos: dict = {}
-    for entrada in entradas:
-        nivel, chave, desde, pct = entrada[:4]
-        principal = entrada[4] if len(entrada) > 4 else None
-        novos.setdefault((nivel, (chave or "").strip()), []).append((desde, pct, principal))
+    fixos = pesos_fixos(cenario_id)
     mudou = 0
     for item in presentes:
         nivel, _, chave = (item or "").partition("|")
@@ -361,9 +634,16 @@ def gravar_periodos_da_arvore(cenario_id, presentes, entradas) -> int:
         if nivel not in NIVEIS or not chave:
             continue
         lista = novos.get((nivel, chave), [])
-        if _periodos_limpos(lista) == list((atuais.get(nivel) or {}).get(chave, [])):
+        tem_fixo = chave in (fixos.get(nivel) or {})
+        if lista == list((atuais.get(nivel) or {}).get(chave, [])) and not tem_fixo:
             continue
         gravar_periodos(cenario_id, nivel, chave, lista)
+        if tem_fixo:
+            with conexao() as conn:
+                conn.execute("DELETE FROM cenario_peso"
+                             " WHERE cenario_id = ? AND nivel = ? AND chave = ?",
+                             (int(cenario_id), nivel, chave))
+                conn.commit()
         mudou += 1
     return mudou
 
@@ -407,10 +687,58 @@ def salvar_participacao(cenario_id, socio_id, pct, obra: str = "") -> None:
         conn.commit()
 
 
-def apagar_participacao(participacao_id) -> None:
+def conferir_grade(celulas: dict) -> dict:
+    """A grade conferida, sem gravar: `{(obra, sócio): percentual | None}`.
+    Separada para o "Salvar tudo" da montagem conferir ANTES de gravar
+    qualquer seção — um percentual errado não deixa a página salva pela metade."""
+    limpas = {}
+    for (obra, socio_id), valor in celulas.items():
+        texto = str(valor or "").strip()
+        if not texto:
+            limpas[((obra or "").strip(), int(socio_id))] = None
+            continue
+        try:
+            v = float(texto.replace(",", "."))
+        except ValueError:
+            v = -1
+        if not 0 <= v <= 100:
+            raise ValueError(f"Percentual inválido em {obra or 'Todas as obras'}: "
+                             f"\"{texto}\" (use um número de 0 a 100).")
+        limpas[((obra or "").strip(), int(socio_id))] = v
+    return limpas
+
+
+def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
+    """A grade "quem divide" inteira de uma vez: `{(obra, socio_id): "50"}`,
+    obra "" = todas as obras. Célula vazia apaga. Confere tudo antes de
+    gravar (11/11/2026 — ver `prestacao_dados.gravar_participacoes_em_grade`)."""
+    limpas = conferir_grade(celulas)
     with conexao() as conn:
-        conn.execute("DELETE FROM cenario_participacao WHERE id = ?",
-                     [int(participacao_id)])
+        for (obra, socio_id), pct in limpas.items():
+            if pct is None:
+                conn.execute("DELETE FROM cenario_participacao WHERE cenario_id = ?"
+                             " AND obra = ? AND socio_id = ?",
+                             (int(cenario_id), obra, socio_id))
+            else:
+                conn.execute(
+                    "INSERT INTO cenario_participacao (cenario_id, obra, socio_id, pct) "
+                    "VALUES (?,?,?,?) ON CONFLICT (cenario_id, obra, socio_id) "
+                    "DO UPDATE SET pct = excluded.pct",
+                    (int(cenario_id), obra, socio_id, pct))
+        conn.commit()
+    return sum(1 for v in limpas.values() if v is not None)
+
+
+def apagar_participacao(participacao_id, cenario_id=None) -> None:
+    """Apaga uma participação. Com `cenario_id`, só se ela for DELE — quem só
+    pode mexer no próprio cenário não apaga, pelo número, a de outro."""
+    with conexao() as conn:
+        if cenario_id is None:
+            conn.execute("DELETE FROM cenario_participacao WHERE id = ?",
+                         [int(participacao_id)])
+        else:
+            conn.execute("DELETE FROM cenario_participacao WHERE id = ? AND cenario_id = ?",
+                         [int(participacao_id), int(cenario_id)])
         conn.commit()
 
 
@@ -426,6 +754,23 @@ def excluir(cenario_id, item: str) -> None:
         conn.commit()
 
 
+def gravar_fora(cenario_id, itens) -> None:
+    """A lista "fora da análise" deste cenário inteira, de uma vez (11/11/2026):
+    fora totalmente ("obra:X") ou só depois de um mês ("obra:X@2024-06")."""
+    limpos = []
+    for item in itens or ():
+        item = (item or "").strip()
+        if (item.startswith(("obra:", "projeto:")) and len(item) >= 6
+                and item not in limpos):
+            limpos.append(item)
+    with conexao() as conn:
+        conn.execute("DELETE FROM cenario_excluida WHERE cenario_id = ?", (int(cenario_id),))
+        for item in limpos:
+            conn.execute("INSERT INTO cenario_excluida (cenario_id, item) VALUES (?,?)",
+                         (int(cenario_id), item))
+        conn.commit()
+
+
 def reincluir(cenario_id, item: str) -> None:
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_excluida WHERE cenario_id = ? AND item = ?",
@@ -433,16 +778,22 @@ def reincluir(cenario_id, item: str) -> None:
         conn.commit()
 
 
-def duplicar(cenario_id, nome: str) -> int:
-    """Copia um cenário inteiro com outro nome.
+def duplicar(cenario_id, nome: str, dono_id=None) -> int:
+    """Copia um cenário inteiro com outro nome — para o administrador ou, com
+    `dono_id`, para uma pessoa do cadastro de acesso.
 
     É o que torna barato perguntar "e se fosse faturamento?": parte-se do que
     já está pronto e troca-se uma coisa só, em vez de configurar tudo de novo.
+    E é como a pessoa começa do que o dono já montou (13/11/2026): a cópia leva
+    a régua, todas as regras das contas, os períodos, quem recebe, quem divide
+    e o que está fora — e passa a ser dela.
     """
     origem = buscar(cenario_id)
     if not origem:
         raise ValueError("Cenário não encontrado.")
-    novo = criar(nome, **{c: origem[c] for c in _CAMPOS if c not in ("id", "nome")})
+    nome = nome_livre((nome or "").strip() or origem["nome"], dono_id)
+    novo = criar(nome, dono_id=dono_id,
+                 **{c: origem[c] for c in _CAMPOS if c not in ("id", "nome")})
     with conexao() as conn:
         conn.execute(
             "INSERT INTO cenario_peso (cenario_id, nivel, chave, pct) "
@@ -458,9 +809,13 @@ def duplicar(cenario_id, nome: str) -> int:
             "SELECT ?, item FROM cenario_excluida WHERE cenario_id = ?",
             (novo, int(cenario_id)))
         if _tem_periodos():
+            colunas = "nivel, chave, desde, pct, pct_principal" + (
+                ", pct_fica, pct_filial" if _tem_tres_partes() else "") + (
+                ", ate" if _tem_fim_de_periodo() else "") + (
+                ", valor_fica" if "valor_fica" in _colunas_dos_periodos() else "")
             conn.execute(
-                "INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde, pct,"
-                " pct_principal) SELECT ?, nivel, chave, desde, pct, pct_principal"
+                f"INSERT INTO cenario_peso_periodo (cenario_id, {colunas})"
+                f" SELECT ?, {colunas}"
                 " FROM cenario_peso_periodo WHERE cenario_id = ?", (novo, int(cenario_id)))
         if _tem_projetos():
             conn.execute(

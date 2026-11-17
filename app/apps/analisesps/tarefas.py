@@ -141,7 +141,14 @@ MODOS_DO_CADASTRO = ("colaboradores",)
 MODOS_DOS_APOIOS = ("apoios", "notas_receita", "notas_ciencia", "fiscal", "fiscal_ia",
                     "faturamento", "faturamento_antigas", "faturamento_omie",
                     "faturamento_completar")
-PISTAS = ("geral", "pessoa", "cadastro", "ponto", "apoios")
+# ⚠️ A PISTA DOS COMPROVANTES (migração 056, 11/11/2026). O dono, preso atrás da
+# baixa: *"Já existe uma atualização em andamento (dando baixa nos comprovantes —
+# … leva 2 de 2, desde 08:31) (…) esse comprovante tão sempre demorando muito."* A
+# baixa (o robô do BaixaBradesco, leva por leva) não escreve na tabela das SPs — só
+# na planilha, pelo robô, que já roda pelo Make junto com a sincronização. Corre na
+# pista dela; a geral fica para a sincronização e a fila de envio.
+MODOS_DOS_COMPROVANTES = ("comprovantes",)
+PISTAS = ("geral", "pessoa", "cadastro", "ponto", "apoios", "comprovantes")
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
@@ -186,6 +193,8 @@ def pista_do(modo: str) -> str:
         return "cadastro"
     if modo in MODOS_DO_PONTO:
         return "ponto"
+    if modo in MODOS_DOS_COMPROVANTES:
+        return "comprovantes"
     return "apoios" if modo in MODOS_DOS_APOIOS else "geral"
 
 
@@ -310,6 +319,34 @@ def _fechar_execucao(conn, execucao_id: int, ok: bool, mensagem: str,
         "       linhas = ?, etapa = NULL, progresso = NULL WHERE id = ?",
         (ok, str(mensagem)[:2000], linhas, execucao_id))
     conn.commit()
+
+
+SEGUNDOS_DO_RELOGIO = 60
+
+
+def manter_viva(execucao_id: int, a_cada: float = SEGUNDOS_DO_RELOGIO):
+    """Bate o ponto da execução (`visto_em`) de `a_cada` em `a_cada` segundos, numa
+    linha à parte, enquanto o processo vive — sem mexer na etapa nem no andamento.
+    Devolve a função que para o relógio. Nunca levanta. Ver `executar_sync.main`."""
+    import threading
+    from .db import conexao
+    parar = threading.Event()
+
+    def bater():
+        while not parar.wait(a_cada):
+            try:
+                with conexao() as conn:
+                    conn.execute("UPDATE analisesps.execucoes SET visto_em = now() "
+                                 " WHERE id = ? AND fim IS NULL", (execucao_id,))
+                    conn.commit()
+            except Exception:  # noqa: BLE001 — perder um batimento não derruba nada
+                logger.warning("Análise de SPs: falhou bater o ponto da execução %s",
+                               execucao_id, exc_info=True)
+
+    linha = threading.Thread(target=bater, name=f"relogio-execucao-{execucao_id}",
+                             daemon=True)
+    linha.start()
+    return parar.set
 
 
 def _carimbar(execucao_id: int, etapa: str, progresso: str) -> None:
@@ -948,7 +985,7 @@ def encadear_comprovantes(modo: str) -> dict | None:
     tarefa é atendido quando a PISTA DOS APOIOS fica livre — ao fim de uma
     tarefa da geral ou dos apoios."""
     pista = pista_do(modo)
-    if pista not in ("geral", "apoios"):
+    if pista not in ("geral", "apoios", "comprovantes"):
         return None
     if pista == "apoios":
         return _encadear_faturamento(modo)
@@ -968,6 +1005,10 @@ def encadear_comprovantes(modo: str) -> dict | None:
             return disparar("comprovantes", disparo="fila de comprovantes")
     except Exception:  # noqa: BLE001 — sem a tabela, ou banco fora: fica para o botão
         logger.exception("Análise de SPs: não consegui encadear os comprovantes")
+        return None
+    if pista == "comprovantes":
+        # Ao fim de uma baixa, só o que chegou de comprovante enquanto ela rodava
+        # (acima); o resto da fila é da pista geral.
         return None
     # O cadastro de colaboradores pedido enquanto outra tarefa rodava
     # (16/10/2026): vem antes das cargas longas do Faturamento — é rápido, e é
@@ -1224,7 +1265,7 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
                             '"Aplicar atualizações do banco" em Configurações. '
                             "Até lá, espere a outra terminar."}
         if ("ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower()) \
-                and pista_do(modo) in ("ponto", "apoios"):
+                and pista_do(modo) in ("ponto", "apoios", "comprovantes"):
             # Sem a migração 055, o ponto e os apoios ainda dividem a pista
             # geral com as SPs (31/10/2026).
             return {"ok": False, "ocupado": True,

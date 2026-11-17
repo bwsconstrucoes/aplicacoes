@@ -79,14 +79,20 @@ def cenario(sessao_real):
     cat = Categoria(codigo="2.1.01", descricao="Material de construção",
                     grupo_codigo="2", grupo_nome="Custo de obra",
                     natureza="RESULTADO")
-    aberto = DocumentoTipo(codigo="CONTRATO-OBRA", nome="Contrato da obra",
-                           grupo="OBRA", dono="OBRA", sigilo="ABERTO")
-    da_empresa = DocumentoTipo(codigo="CERTIDAO", nome="Certidão da empresa",
-                               grupo="EMPRESA", dono="EMPRESA", sigilo="ABERTO")
-    pessoal = DocumentoTipo(codigo="FOLHA", nome="Documento de pessoal",
-                            grupo="PESSOAL", dono="PESSOA", sigilo="PESSOAL")
+    # ⚑ `merge` E NÃO `add`, desde 16/11/2026: o catálogo de tipos de documento
+    # passou a ser aplicado junto com as migrações (os 69 tipos do código chegam
+    # ao banco sozinhos), então o tipo que este teste quer JÁ EXISTE. `merge`
+    # ajusta o que existe e cria o que falta — `add` quebrava com chave duplicada.
+    aberto = s.merge(DocumentoTipo(codigo="CONTRATO-OBRA", nome="Contrato da obra",
+                                   grupo="OBRA", dono="OBRA", sigilo="ABERTO",
+                                   vence=False, por_competencia=False))
+    da_empresa = s.merge(DocumentoTipo(codigo="CERTIDAO", nome="Certidão da empresa",
+                                       grupo="EMPRESA", dono="EMPRESA", sigilo="ABERTO",
+                                       vence=False, por_competencia=False))
+    pessoal = s.merge(DocumentoTipo(codigo="FOLHA", nome="Documento de pessoal",
+                                    grupo="PESSOAL", dono="PESSOA", sigilo="PESSOAL"))
     bws = Empresa(razao_social="BWS Construções LTDA", cnpj="12345678000199")
-    s.add_all([creche, escola, forn, cat, aberto, da_empresa, pessoal, bws])
+    s.add_all([creche, escola, forn, cat, bws])
     s.flush()
 
     def pessoa(nome, email, perfil, obra=None):

@@ -11,7 +11,8 @@ from .core import processar_baixabradesco
 from .conferencia import conferir
 from .diagnostico import executar_diagnostico
 from .fila import reprocessar_fila, resumo_fila, zerar_fila_antiga
-from .fila_tardia import adiar_payload, processar_fila_tardia
+from .fila_tardia import (adiar_payload, limpar_fila_tardia,
+                          processar_fila_tardia, resumo_fila_tardia)
 
 
 def _authorized(payload: dict) -> bool:
@@ -31,7 +32,10 @@ def executar():
         if not _authorized(payload):
             return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
 
-        result = processar_baixabradesco(payload)
+        # `em_segundo_plano=True`: esta rota é a porta do Make, e ele não espera
+        # mais a resposta — decisão do dono em 17/11/2026. A baixa continua no
+        # servidor e o relatório de cada comprovante chega no Telegram.
+        result = processar_baixabradesco(payload, em_segundo_plano=True)
         return jsonify(result)
 
     except ValueError as e:
@@ -110,7 +114,16 @@ def fila_resumo_route():
             if segredo and request.args.get('secret') != segredo \
                     and request.headers.get('X-BaixaBradesco-Secret') != segredo:
                 return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
-        return jsonify(resumo_fila())
+        resumo = resumo_fila()
+        # O que está sendo baixado NESTE momento. É por aqui que se vê, do
+        # celular, se um lote ainda está rodando — já que o Make não espera
+        # mais a resposta.
+        try:
+            from .core import lotes_em_andamento
+            resumo['baixas_em_andamento'] = lotes_em_andamento()
+        except Exception as e:
+            resumo['baixas_em_andamento'] = {'erro': str(e)[:200]}
+        return jsonify(resumo)
     except Exception as e:
         return jsonify({
             'ok': False,
@@ -164,6 +177,50 @@ def zerar_fila_antiga_route():
         if not _authorized(payload):
             return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
         return jsonify(zerar_fila_antiga(payload))
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+
+@bp.route('/fila-tardia', methods=['GET', 'POST'])
+def fila_tardia_route():
+    """Mostra os comprovantes adiados. Não processa e não apaga nada."""
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        segredo = os.getenv('BAIXABRADESCO_SECRET', '')
+        if request.method == 'POST':
+            if not _authorized(payload):
+                return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        elif segredo and request.args.get('secret') != segredo \
+                and request.headers.get('X-BaixaBradesco-Secret') != segredo:
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        return jsonify(resumo_fila_tardia())
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+
+@bp.route('/limpar-fila-tardia', methods=['POST'])
+def limpar_fila_tardia_route():
+    """Descarta os comprovantes adiados. Exige `confirmar: true` no pedido.
+
+    Só POST, de propósito: isto joga fora comprovante que ainda não foi
+    baixado, e um endereço que o navegador (ou a prévia de um aplicativo de
+    mensagem) possa buscar sozinho dispararia isso por acidente.
+    """
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if not _authorized(payload):
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        return jsonify(limpar_fila_tardia(payload))
     except Exception as e:
         return jsonify({
             'ok': False,

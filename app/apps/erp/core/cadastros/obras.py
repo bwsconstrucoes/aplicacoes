@@ -160,3 +160,60 @@ def _dt(v):
         except ValueError:
             continue
     return None
+
+
+# ---------------------------------------------------------------------------
+# A LOGO DO CONTRATANTE — migração 093
+#
+# Ele, em 09/11/2026: *"tem que prever a possibilidade (…) de a gente colocar
+# logo da empresa para ela ser colocada dentro do diário também. Tanto a logo
+# da empresa, quanto outras logos (…) no caso aí, nós temos a logo da
+# prefeitura (…) usar esse padrão, logo do órgão e logo da prefeitura."*
+#
+# A logo da EMPRESA já existia, no cadastro de empresas. Esta é a do ÓRGÃO que
+# contrata, e ela é por OBRA: a mesma empresa atende prefeituras diferentes, e
+# cada contrato tem o seu cabeçalho.
+#
+# O MESMO LIMITE E OS MESMOS TIPOS da logo da empresa, de propósito: duas
+# regras diferentes para a mesma coisa dariam uma logo aceita no cadastro e
+# recusada na impressão — e quem descobre isso é quem está com a folha na mão,
+# na obra, na hora de entregar à fiscalização.
+# ---------------------------------------------------------------------------
+def definir_logo_contratante(s: Session, obra_id: int, mime: str,
+                             conteudo: bytes,
+                             usuario: Optional[Usuario]) -> Obra:
+    from app.apps.erp.core.cadastros.empresas import LIMITE_LOGO, MIMES_DE_LOGO
+    obra = s.get(Obra, obra_id)
+    if obra is None:
+        raise ErroValidacao("Obra não encontrada.")
+    mime = (mime or "").split(";")[0].strip().lower()
+    if mime not in MIMES_DE_LOGO:
+        raise ErroValidacao(
+            "A logo tem de ser PNG, JPG, WEBP ou SVG. "
+            f"O arquivo enviado é {mime or 'de tipo desconhecido'}.")
+    if not conteudo:
+        raise ErroValidacao("O arquivo da logo veio vazio.")
+    if len(conteudo) > LIMITE_LOGO:
+        raise ErroValidacao(
+            f"A logo tem {len(conteudo) // 1024} KB e o limite é "
+            f"{LIMITE_LOGO // 1024} KB. Ela vai dentro de cada folha de "
+            f"diário — arquivo grande deixa o papel pesado para mandar por "
+            f"e-mail.")
+    obra.contratante_logo = conteudo
+    obra.contratante_logo_mime = mime
+    registrar_evento(s, "obra", obra.id, "LOGO_CONTRATANTE_DEFINIDA",
+                     {"bytes": len(conteudo), "mime": mime},
+                     usuario.id if usuario else None)
+    return obra
+
+
+def remover_logo_contratante(s: Session, obra_id: int,
+                             usuario: Optional[Usuario]) -> Obra:
+    obra = s.get(Obra, obra_id)
+    if obra is None:
+        raise ErroValidacao("Obra não encontrada.")
+    obra.contratante_logo = None
+    obra.contratante_logo_mime = None
+    registrar_evento(s, "obra", obra.id, "LOGO_CONTRATANTE_REMOVIDA", {},
+                     usuario.id if usuario else None)
+    return obra

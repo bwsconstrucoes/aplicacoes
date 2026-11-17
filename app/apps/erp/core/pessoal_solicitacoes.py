@@ -24,6 +24,8 @@ desliga, alteração de cargo altera. O pedido e o efeito deixam de poder diverg
 """
 from __future__ import annotations
 
+import re
+
 import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -44,14 +46,137 @@ logger = logging.getLogger(__name__)
 # `executa` diz o que o atendimento faz no cadastro. `campos` é o que o
 # formulário pede, e vira o JSONB do pedido.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# OS TIPOS — e, desde 10/11/2026, com os RÓTULOS DO PIPE, letra por letra
+#
+# Ele, olhando a tela: *"Prestador que passa a ter carteira. Qual foi o termo
+# que eu usei? Por que não está usando o termo que está no Pipe? Por que está
+# querendo inventar a roda de novo? Uma coisa que já está certa, já está
+# funcionando, já está consolidada. Para que inventar?"*
+#
+# ⚑ A FONTE É `DE_PARA_PIPEFY_DP.md`, na pasta do ERP: os dois pipes
+# exportados pelo GraphQL, com rótulo, tipo, obrigatoriedade e opções. Campo
+# novo aqui se confere LÁ primeiro. Se o Pipe não tem, o ERP não inventa.
+#
+# ⚑ E A SEGUNDA LEITURA, que é a que eu tinha quebrado: no Pipe, o que está no
+# FORMULÁRIO INICIAL é da obra; o que está numa FASE é do DP. Matrícula,
+# convenção e os dois auxílios estão em FASE. Ele: *"matrícula, não é o
+# funcionário que decide. Como é que a pessoa vai readmitir uma pessoa, botar
+# uma matrícula? Quem solicita define uma matrícula?"*
+#
+# Por isso cada tipo tem DUAS listas:
+#   · `campos`        — o que a OBRA preenche no pedido;
+#   · `campos_do_dp`  — o que o DP preenche ao atender, na tela dele.
+# Campo de DP que aparecesse no formulário da obra é defeito, e há teste.
+# ---------------------------------------------------------------------------
 TIPOS: dict[str, dict[str, Any]] = {
     "DESLIGAMENTO": {
-        "nome": "Desligamento de colaborador",
+        # Pipe: "Desligamento de Colaborador".
+        "nome": "Desligamento de Colaborador",
         "explicacao": "fecha o vínculo e tira o acesso ao ponto",
         "exige_pessoa": True, "executa": "desligar",
-        "campos": ("data_saida", "aviso_previo", "ultimo_dia", "forma_desligamento",
-                   "faltas_a_descontar", "observacao"),
-        # Os ONZE itens do checklist do pipe, na ordem em que o DP faz.
+        # ⚑ SAÍRAM, e foi ele quem apontou: "último dia trabalhado" e "faltas
+        # a descontar". *"Não é a pessoa que está pedindo que vai dizer. Ele
+        # vai colocar só a data do aviso prévio. Faltas a descontar também
+        # não. Quem vai olhar isso aqui é o DP."* No Pipe, de fato, nenhum dos
+        # dois existe neste formulário.
+        # ⚑ A CHAVE PIX SAIU em 10/11/2026, a pedido dele: *"desligamento de
+        # colaborador, não precisa de chave Pix mais."* Ela existe no Pipe
+        # (para as verbas rescisórias), mas o ERP já tem a chave no cadastro
+        # da pessoa — pedir de novo no desligamento é pedir o que o sistema
+        # sabe, e abrir uma porta para digitarem uma chave diferente da
+        # cadastrada bem na hora de pagar a rescisão.
+        # ⚑ UM TIPO SÓ, E OS CAMPOS SAEM DO VÍNCULO DA PESSOA (15/11/2026).
+        #
+        # Ele: *"vamos ter um tipo só de desligamento, aí ele vai exibir os
+        # dados da pessoa (…) forma de desligamento só para CTPS, e para
+        # prestador só a data de saída."*
+        #
+        # Antes eram DOIS tipos na caixinha ("Desligamento de Colaborador" e
+        # "Desligamento de Prestador de Serviço"), e quem abria tinha de saber
+        # de antemão qual era o vínculo da pessoa para escolher o tipo certo.
+        # Escolher o errado preenchia campos que não se aplicam: aviso prévio
+        # de quem não tem aviso, data de saída de quem a tem calculada.
+        #
+        # O sistema SABE o vínculo — está no cadastro. Perguntar o que já se
+        # sabe, e deixar a resposta errada passar, é o defeito. `por_vinculo`
+        # diz o que cada vínculo pede; a tela lê isto depois de escolhida a
+        # pessoa, e o servidor confere pela MESMA lista.
+        #
+        # `campos` continua sendo a UNIÃO dos dois, porque é dela que saem os
+        # rótulos e as caixinhas — e porque pedido já gravado tem de continuar
+        # legível.
+        "campos": ("forma_desligamento", "aviso_previo", "data_saida",
+                   "continua_prestador", "observacao"),
+        # ⚑ O PADRÃO, QUANDO O VÍNCULO NÃO SE SABE, É O DA CARTEIRA — o mais
+        # exigente dos dois. Padrão vazio seria trava frouxa: um pedido que
+        # chegasse sem pessoa ligada passaria sem forma de desligamento
+        # nenhuma, e o DP receberia "desligue o fulano" e nada mais.
+        "obrigatorios": ("forma_desligamento", "aviso_previo"),
+        # ⚑ ENCERRAMENTO DE CONTRATO DE EXPERIÊNCIA NÃO TEM AVISO PRÉVIO, e
+        # agora o campo SOME da tela, não só deixa de ser exigido (15/11/2026).
+        # Ele: *"quando é encerramento de contrato de experiência, eu não
+        # preciso dar aviso. Então essa data de aviso já se torna
+        # desnecessária, concorda?"*
+        #
+        # Deixar o campo à mostra, mesmo opcional, convida a preencher — e
+        # data de aviso prévio onde não há aviso prévio vira conta errada na
+        # rescisão.
+        "ocultos_se": {"forma_desligamento": {
+            "FIM_EXPERIENCIA": ("aviso_previo",)}},
+        "por_vinculo": {
+            "CTPS": {
+                # ⚑ "ELA CONTINUA TRABALHANDO?" — A PERGUNTA QUE FECHA O BURACO
+                # (15/11/2026).
+                #
+                # Ele: *"como é que a gente faz com o colaborador que é
+                # desligado da carteira e continua como prestador? Ou apenas
+                # demite e readmite? (…) isso aí provoca de vez em quando um
+                # bug na parte do ponto."*
+                #
+                # Decisão dele: continua desligando e readmitindo — dois
+                # pedidos, como hoje. O que entra é a TRAVA: o desligamento
+                # pergunta se a pessoa segue trabalhando, e quando a resposta é
+                # sim o sistema passa a COBRAR a readmissão.
+                #
+                # O bug do ponto é consequência disso: desligar corta o acesso
+                # ao aparelho da obra na hora. Se a readmissão é esquecida, a
+                # pessoa aparece para trabalhar e não consegue bater. Ninguém
+                # avisava; a obra descobria às 7 da manhã.
+                #
+                # Agora: dois passos a mais no checklist do DP, e a lista de
+                # "readmissões pendentes" na tela de Solicitações
+                # (`readmissoes_esquecidas`). O pedido não pode ser fechado
+                # deixando isso em branco.
+                "campos": ("forma_desligamento", "aviso_previo",
+                           "continua_prestador", "observacao"),
+                "obrigatorios": ("forma_desligamento", "aviso_previo",
+                                 "continua_prestador"),
+                # A data de saída de quem tem carteira é CONTA do DP (último
+                # dia + aviso), não informação da obra.
+                "campos_do_dp": ("ultimo_dia", "data_saida",
+                                 "faltas_a_descontar"),
+            },
+            "PRESTADOR": {
+                # Prestador não tem aviso prévio — não há o que avisar. Tem a
+                # data em que a prestação acaba.
+                "campos": ("data_saida", "observacao"),
+                "obrigatorios": ("data_saida",),
+                # Prestador não tem aviso prévio nem faltas a descontar em
+                # folha: o DP não tem nada a acrescentar aqui.
+                "campos_do_dp": (),
+                "checklist": ("Conferir o período prestado",
+                              "Encerrar no sistema de pagamento",
+                              "Desativação no sistema de ponto"),
+            },
+        },
+        # ⚑ `data_saida` NÃO ENTRA AQUI, e isso é a trava funcionando: para o
+        # prestador ela é campo DA OBRA (é o fim combinado da prestação), e o
+        # mesmo campo nos dois lados é exatamente o que a separação proíbe.
+        # Ela é campo do DP só no ramo CTPS, acima, onde é conta dele.
+        "campos_do_dp": ("ultimo_dia", "faltas_a_descontar"),
+        # Os ONZE itens do checklist do pipe, na ordem em que o DP faz. É o
+        # checklist do vínculo CTPS; o do prestador está em `por_vinculo`.
         "checklist": (
             "Solicitação de aviso prévio ou encerramento de contrato",
             "Lançamento de faltas",
@@ -66,92 +191,917 @@ TIPOS: dict[str, dict[str, Any]] = {
             "Desativação no sistema de ponto",
         ),
     },
+    # ⚑ O PIPE TEM DOIS DESLIGAMENTOS, e eles pedem coisas diferentes: o do
+    # prestador não tem aviso prévio (não há), tem DATA DE SAÍDA. Eu tinha
+    # juntado os dois num só e pedido os campos dos dois ao mesmo tempo.
+    # ⚑ SAIU DA CAIXINHA EM 15/11/2026 (`oculto`), e a entrada FICA: há
+    # pedidos gravados com este tipo, e tirar a linha daqui deixaria o
+    # histórico deles sem rótulo e o atendimento sem checklist. Quem abre não
+    # vê mais; quem já abriu continua enxergando o que pediu.
+    "DESLIGAMENTO_PRESTADOR": {
+        "nome": "Desligamento de Prestador de Serviço",
+        "explicacao": "encerra a prestação de serviço",
+        "oculto": True,
+        "exige_pessoa": True, "executa": "desligar",
+        "campos": ("data_saida", "observacao"),
+        "obrigatorios": ("data_saida",),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o período prestado",
+                      "Encerrar no sistema de pagamento",
+                      "Desativação no sistema de ponto"),
+    },
+    "CANCELAR_DESLIGAMENTO": {
+        "nome": "Cancelar Solicitação de Desligamento",
+        "explicacao": "desfaz o pedido de desligamento antes de ele ser feito",
+        "exige_pessoa": True, "executa": None,
+        "campos": ("observacao",),
+        "obrigatorios": (),
+        "campos_do_dp": (),
+        "checklist": ("Conferir se o desligamento ainda não foi processado",
+                      "Cancelar o pedido"),
+    },
+    # ⚑ SAIU DA CAIXINHA EM 15/11/2026, e quem a substitui é o CADASTRO.
+    #
+    # Ele: *"na admissão, se o CPF já existir, o sistema detecta e oferece a
+    # readmissão — aí readmissão deixa de ser um tipo."*
+    #
+    # O motivo é que ninguém sabe, ao abrir o pedido, se a pessoa já passou
+    # por aqui — e era justamente quem NÃO sabia que escolhia "Cadastro" e
+    # criava a segunda ficha da mesma pessoa. Agora o CPF responde: digitado
+    # no cadastro, o sistema procura, e se achar alguém desligado o pedido
+    # vira readmissão sozinho (`é_readmissao`, em `abrir`). A entrada FICA
+    # aqui pelos pedidos já gravados.
     "READMISSAO": {
-        "nome": "Readmissão de colaborador",
+        "nome": "Readmissão de Colaborador",
         "explicacao": "traz a pessoa de volta sem refazer o cadastro",
+        "oculto": True,
         "exige_pessoa": True, "executa": "readmitir",
-        "campos": ("admissao", "vinculo", "tipo_contrato", "cargo_id", "convencao_id",
-                   "obra_id", "salario", "matricula", "observacao"),
+        # ⚑ "Tipo de Readmissão" é o nome no Pipe — eu tinha escrito "tipo de
+        # contrato", que não existe em lugar nenhum. E saíram daqui convenção,
+        # salário e matrícula: ele, com todas as letras, *"convenção coletiva,
+        # é DP quem decide"* e *"matrícula, não é o funcionário que decide"*.
+        "campos": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
+                   "empresa_id", "observacao"),
+        "obrigatorios": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
+                         "empresa_id"),
+        "campos_do_dp": ("cargo_id", "convencao_id", "salario", "matricula"),
         "checklist": ("Atualizar a data de admissão", "Conferir cargo e convenção",
                       "Conferir a obra", "Atualizar a matrícula",
                       "Reativar no sistema de pagamento"),
     },
     "ADMISSAO_PRESTADOR": {
-        "nome": "Prestador que passa a ter carteira",
-        "explicacao": "troca o vínculo sem apagar o período de prestador",
+        # Pipe: "Admissão de Prestador de Serviço". Eu tinha chamado de
+        # "Prestador que passa a ter carteira" — inventado.
+        "nome": "Admissão de Prestador de Serviço",
+        "explicacao": "o prestador passa a ter registro em carteira",
         "exige_pessoa": True, "executa": "trocar_vinculo",
-        "campos": ("admissao", "vinculo", "tipo_contrato", "cargo_id", "salario",
-                   "observacao"),
+        # ⚑ SÓ SE PEDE O QUE O CADASTRO NÃO TEM. Ele, em 10/11/2026:
+        # *"admissão de prestador de serviço, vamos requerer os dados. Se não
+        # tivermos, né? Acho que é interessante uma consulta, ver se tem
+        # CTPS, se tem PIS."*
+        #
+        # A pessoa JÁ EXISTE neste pedido (é um prestador virando CTPS), e o
+        # cadastro dela pode já ter os dois números. `ja_no_cadastro` diz de
+        # qual coluna cada campo vem; quando ela está preenchida, o campo sai
+        # da exigência e aparece só para conferir.
+        "campos": ("num_ctps", "num_pis", "salario_familia", "observacao"),
+        "obrigatorios": ("num_ctps", "num_pis", "salario_familia"),
+        "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis"},
+        "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
+        "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
+        # Mesma regra do cadastro: o número sai da foto da carteira que este
+        # pedido JÁ exige. Ninguém transcreve onze dígitos à mão.
+        "vem_do_documento": {"num_ctps": "CTPS-INFORMACOES",
+                             "num_pis": "CTPS-INFORMACOES"},
         "checklist": ("Conferir a documentação de admissão",
                       "Registrar na carteira", "Cadastro no sistema de pagamento"),
     },
     "ALTERACAO_CARGO": {
-        "nome": "Alteração de cargo ou salário",
-        "explicacao": "com o de→para e o motivo gravados",
+        "nome": "Solicitação de Alteração de Cargo",
+        "explicacao": "com o cargo pleiteado e a justificativa",
         "exige_pessoa": True, "executa": "alteracao",
-        "campos": ("vigencia", "cargo_id", "salario", "motivo", "justificativa"),
+        # No Pipe quem pede informa o CARGO PLEITEADO e a justificativa; o
+        # "Cargo Deferido" é a resposta, e salário é consequência dele.
+        "campos": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
+        "obrigatorios": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
+        "campos_do_dp": ("cargo_deferido_id", "salario"),
         "checklist": ("Conferir o piso da convenção", "Registrar a alteração",
                       "Atualizar no sistema de pagamento"),
     },
     "ATUALIZACAO_DADOS": {
-        "nome": "Atualização de dados cadastrais",
+        "nome": "Atualização de Dados Cadastrais",
         "explicacao": "telefone, chave Pix, endereço, nome",
         "exige_pessoa": True, "executa": "atualizar_cadastro",
-        "campos": ("o_que_muda", "telefone", "email", "pix_tipo", "pix_chave",
-                   "cep", "logradouro", "numero_endereco", "bairro", "municipio", "uf"),
+        # No Pipe é UM campo de texto ("Descreva as Informações a serem
+        # atualizadas"), e não onze caixinhas. Quem pede escreve o que mudou;
+        # o DP altera o cadastro com o documento na mão.
+        # ⚑ O ENDEREÇO FALTAVA, e a explicação do tipo já o prometia
+        # ("telefone, chave Pix, endereço, nome") — a mesma classe de defeito
+        # da porta do portal que anunciava férias. Ele viu: *"dados
+        # cadastrais pode ser telefone, chave Pix, endereço, né? Acho que
+        # faltou endereço aí."*
+        # ⚑ A EXPLICAÇÃO DESTE TIPO diz "telefone, chave Pix, endereço,
+        # nome" — então o nome também tem campo. Prometer na vitrine o que o
+        # formulário não tem é o mesmo defeito do portal que anunciava férias
+        # e não tinha; em miniatura, mas é.
+        "campos": ("descricao", "telefone", "pix_tipo", "pix_chave",
+                   "cep", "logradouro", "numero_endereco", "bairro",
+                   "municipio", "uf", "nome_novo"),
+        "obrigatorios": ("descricao",),
+        "campos_do_dp": (),
         "checklist": ("Conferir o documento que comprova", "Atualizar o cadastro",
                       "Atualizar no sistema de pagamento"),
     },
     "DEPENDENTE": {
-        "nome": "Cadastro de dependente",
-        "explicacao": "para salário-família e IR",
+        "nome": "Solicitação de Cadastro de Dependente",
+        "explicacao": "para salário-família",
         "exige_pessoa": True, "executa": "dependente",
-        "campos": ("nome", "parentesco", "data_nascimento", "cpf",
-                   "salario_familia", "dependente_ir", "observacao"),
+        # ⚑ SAIU "conta no imposto de renda". Ele: *"você acha que a pessoa lá
+        # da obra vai entender isso aqui, vai saber responder isso aqui? Conta
+        # no imposto de renda ou não conta? Não vai saber."* E, de fato, o
+        # Pipe não pergunta isso. Parentesco no Pipe é só Filho ou Cônjuge.
+        # ⚑ AQUI "nome" e "cpf" são DO DEPENDENTE, não do colaborador — e o
+        # rótulo precisa dizer isso, senão a tela pede duas vezes o nome de
+        # quem já foi escolhido na busca. `rotulos_proprios` manda sobre o
+        # `ROTULOS` geral.
+        "campos": ("nome", "parentesco", "data_nascimento", "dependentes",
+                   "observacao"),
+        "rotulos_proprios": {"nome": "Nome do Dependente",
+                             "cpf": "CPF do Dependente"},
+        "obrigatorios": ("nome", "parentesco", "data_nascimento"),
+        "campos_do_dp": ("cpf", "dependente_ir", "salario_familia"),
+        "documentos": ("DOC-DEPENDENTE",),
+        # ⚑ VÁRIOS DE UMA VEZ. Ele: *"dependente tem que ser um a um, não
+        # posso adicionar outro, não, para pedir mais de um."*
+        "repete": True,
         "checklist": ("Receber a certidão", "Cadastrar o dependente",
                       "Solicitar o salário-família"),
     },
     "AJUDA_DE_CUSTO": {
-        "nome": "Ajuda de custo",
-        "explicacao": "alimentação, transporte e observação",
+        "nome": "Solicitação de Ajuda de Custo",
+        "explicacao": "auxílio alimentação e auxílio transporte",
         "exige_pessoa": True, "executa": "beneficios",
-        "campos": ("categoria_alimentacao", "aux_alimentacao", "categoria_transporte",
-                   "aux_transporte", "obra_id", "observacao"),
-        "checklist": ("Conferir o valor com a obra", "Atualizar o cadastro"),
+        # ⚑ OS RÓTULOS E AS OPÇÕES SÃO OS DO PIPE. Ele: *"pagar alimentação,
+        # aí segunda, quinta, esse termo está errado. Como é que estava no
+        # Pipe? Para usar igual."* São "Categoria Auxílio Alimentação" e
+        # "Categoria Auxílio Transporte", e as opções estão em CATEGORIAS.
+        # ⚑ O VALE-TRANSPORTE ENTROU AQUI em 15/11/2026, e deixou de ser tipo
+        # próprio: ele já era uma das opções de Categoria Auxílio Transporte.
+        # `descontar_vt` é a pergunta que faltava — o VT desconta em folha, e
+        # quem concede precisa dizer se vai descontar ou se a empresa absorve.
+        "campos": ("solicitacao",
+                   "categoria_alimentacao", "aux_alimentacao",
+                   "categoria_transporte", "aux_transporte",
+                   "descontar_vt", "observacao"),
+        "obrigatorios": ("solicitacao",),
+        # Só se pergunta o desconto quando há vale-transporte para descontar,
+        # e o VALOR só depois de escolhida a categoria — antes disso, "valor
+        # da alimentação" não quer dizer nada.
+        "visiveis_se": {
+            "aux_alimentacao": {"categoria_alimentacao": ("*",)},
+            "aux_transporte": {"categoria_transporte": ("*",)},
+            "descontar_vt": {
+                "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
+        # ⚑ O VALOR SAIU DOS CAMPOS DO DP em 15/11/2026, a pedido dele: *"não
+        # foi colocado campo para colocar valor de transporte e
+        # alimentação."* Quem combina o valor com a pessoa é a OBRA — e o
+        # próprio checklist dizia "conferir o valor com a obra", o que é
+        # confissão de que o número nasce lá.
+        "campos_do_dp": (),
+        "checklist": ("Conferir o valor que a obra informou",
+                      "Atualizar o cadastro",
+                      "Cadastro no sistema de transporte (se houver VT)",
+                      "Encaminhamento do cartão (se houver VT)"),
     },
+    # ⚑ SAIU DA CAIXINHA EM 15/11/2026: virou OPÇÃO da ajuda de custo.
+    #
+    # Ele: *"vale transporte não precisa ser um tipo de solicitação à parte,
+    # ele é uma opção dentro de ajuda de custo."*
+    #
+    # E é verdade na própria lista: "Vale Transporte" já era uma das opções de
+    # Categoria Auxílio Transporte. Ter as duas coisas fazia o mesmo pedido
+    # caber em dois lugares — e quem concedesse VT pela ajuda de custo e
+    # alguém negasse pelo tipo próprio não teria como saber qual valia.
     "VALE_TRANSPORTE": {
-        "nome": "Vale-transporte",
-        "explicacao": "conceder, trocar a modalidade ou cancelar",
+        "nome": "Solicitação de Vale Transporte",
+        "explicacao": "conceder ou cancelar o vale-transporte",
+        "oculto": True,
         "exige_pessoa": True, "executa": "beneficios",
-        "campos": ("conceder", "categoria_transporte", "aux_transporte",
-                   "meio_transporte", "observacao"),
-        "checklist": ("Cadastro no sistema de transporte",
-                      "Encaminhamento do cartão"),
+        "campos": ("conceder", "observacao"),
+        "obrigatorios": ("conceder",),
+        "campos_do_dp": ("categoria_transporte", "aux_transporte"),
+        "checklist": ("Cadastro no Sistema de Transporte",
+                      "Encaminhamento do Cartão"),
     },
     "DESCONTO_EM_FOLHA": {
-        "nome": "Desconto em folha",
+        "nome": "Lançar Desconto em Folha",
         "explicacao": "valor total e número de parcelas",
         "exige_pessoa": True, "executa": None,
-        "campos": ("valor_total", "parcelas", "primeira_competencia", "observacao"),
+        "campos": ("valor_total", "parcelas", "valor_parcela", "data",
+                   "observacao"),
+        "obrigatorios": ("valor_total",),
+        "campos_do_dp": ("primeira_competencia",),
         "checklist": ("Conferir a autorização do colaborador",
                       "Lançar no sistema de pagamento"),
     },
-    "PRE_CADASTRO": {
-        "nome": "Pré-cadastro de colaborador",
-        "explicacao": "a obra manda o nome e o CPF; o DP completa",
+    # ⚑ NÃO EXISTE "PRÉ-CADASTRO", e isso foi ELE quem corrigiu em 09/11/2026:
+    # *"você colocou lá pré-cadastro colaborador, não existe esse pré-cadastro,
+    # existe o cadastro, ponto final. O cadastro já tem que vir com
+    # documentação e tudo mais."*
+    #
+    # ⚑ E OS DOIS PIPES VIRAM UM. Ele, em 10/11/2026: *"a gente está meio que
+    # unificando. Vai ser tudo DP, porque tudo é solicitação DP. O cadastro e
+    # as outras solicitações."* Por isso o cadastro é um TIPO desta fila, e
+    # não uma tela à parte.
+    "CADASTRO": {
+        "nome": "Cadastro de Colaborador",
+        "explicacao": "a obra abre com os dados E os documentos; o DP confere",
         "exige_pessoa": False, "executa": "criar_cadastro",
-        "campos": ("nome", "cpf", "obra_id", "cargo_id", "vinculo", "data_inicio",
-                   "telefone", "observacao"),
-        "checklist": ("Receber a documentação", "Completar o cadastro",
+        # Os rótulos vêm do pipe CADASTRO COLABORADORES. "Tipo de Documentação
+        # para Cadastro" é o nome certo do que eu chamava de "tipo de
+        # contrato"; "Função" é o nome certo de cargo neste formulário.
+        # ⚑ O CNPJ DA ADMISSÃO ENTROU EM 11/11/2026, quando ele reparou:
+        # *"na readmissão ou no cadastro de colaborador pergunta qual
+        # empresa?"* A readmissão perguntava; o CADASTRO NÃO — e é justamente
+        # ele que cria a pessoa. Sem isso o DP recebia um colaborador novo sem
+        # saber por qual das três empresas registrar, e ia perguntar por fora
+        # do sistema. No Pipe o campo está no formulário de ABERTURA, ou seja,
+        # é de quem pede — não é decisão do DP, como convenção e matrícula.
+        #
+        # UM campo só, e não dois: no Pipe há "Empresa para Registro" E "CNPJ
+        # para Admissão", mas as três empresas SÃO os três CNPJs. Perguntar as
+        # duas coisas é a duplicidade que ele já derrubou no diário ("ou é um
+        # ou é o outro").
+        # ⚑ A ORDEM É A DA CONVERSA, e isso foi pedido dele em 15/11/2026:
+        # *"esse formulário aqui está muito desorganizado."* Agora é: quem é a
+        # pessoa (nome, CPF, telefone, Pix) → que tipo de contratação →
+        # quando e para fazer o quê → quanto → os benefícios.
+        #
+        # ⚑ TELEFONE E CHAVE PIX SÃO OBRIGATÓRIOS. Ele: *"telefone é
+        # obrigatoríssimo (…) é vital"* e *"chave Pix obrigatória"*. O motivo
+        # é o mesmo dos documentos: sem telefone ninguém avisa a pessoa de
+        # nada, e sem chave Pix ela não recebe. Campo que o pagamento exige
+        # não é campo opcional — é pendência que alguém vai correr atrás
+        # depois, por WhatsApp.
+        "campos": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
+                   "tipo_documentacao", "tipo_contrato", "empresa_id",
+                   "num_ctps", "num_pis",
+                   "data_inicio", "cargo_pleiteado_id",
+                   "pagamento", "valor_diaria", "valor_mes",
+                   "meio_transporte",
+                   "categoria_alimentacao", "aux_alimentacao",
+                   "categoria_transporte", "aux_transporte", "descontar_vt",
+                   "observacao"),
+        "obrigatorios": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
+                         "tipo_documentacao", "empresa_id",
+                         "data_inicio", "cargo_pleiteado_id", "valor_diaria"),
+        # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
+        # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
+        # PIS também."*
+        #
+        # ⚑ MAS NINGUÉM DIGITA: eles saem da LEITURA das páginas da carteira,
+        # que já são anexadas no mesmo pedido. Ele, logo depois: *"eu vi que
+        # você está pedindo para que seja escrito PIS, CTPS, mas isso aí a
+        # gente já vai ler os documentos. O ideal era (…) se não encontrasse
+        # nos documentos, aí exigisse de outra forma."*
+        #
+        # Pedir para transcrever um número de onze dígitos de uma foto que
+        # acabou de ser tirada é trabalho dobrado — e é exatamente onde se
+        # troca um algarismo. `vem_do_documento` diz à tela que o campo nasce
+        # preenchido pela leitura e só vira pergunta quando ela não achar.
+        # ⚑ E O QUE CADA CONTRATAÇÃO PEDE A MAIS.
+        #
+        # CTPS: a carteira e o PIS (que saem da LEITURA, abaixo).
+        # PRESTADOR: o tipo de contrato (PJ, RPA, aprendiz…) e se é diarista
+        # ou mensalista — duas coisas que, em carteira, não se escolhem.
+        "obrigatorios_se": {"tipo_documentacao": {
+            "CTPS": ("num_ctps", "num_pis", "tipo_contrato"),
+            "PRESTADOR": ("tipo_contrato", "pagamento")},
+            "pagamento": {"MENSALISTA": ("valor_mes",)}},
+        # ⚑ O QUE NÃO SE APLICA NEM APARECE (15/11/2026). Ele: *"quando é
+        # CTPS, o valor é o da convenção, então valor do mês e pagamento
+        # diarista ou mensalista não se aplicam. Tipo de contrato também não:
+        # CTPS é sempre CLT."*
+        #
+        # Campo que não se aplica e fica na tela não é inofensivo: alguém
+        # preenche, o DP recebe um número que contraria a convenção, e aí há
+        # duas respostas para "quanto esta pessoa ganha". Esconder é a única
+        # forma de não ter a segunda.
+        #
+        # VALOR DO MÊS também só aparece para mensalista — diarista não tem
+        # valor de mês, tem diária.
+        "ocultos_se": {"tipo_documentacao": {
+            "CTPS": ("pagamento", "valor_mes")},
+            "pagamento": {"DIARISTA": ("valor_mes",)}},
+        # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre DEPOIS de escolhida a
+        # documentação — e aí abre para as DUAS, com listas diferentes.
+        #
+        # Em 15/11/2026 ele mandou fechá-lo para CTPS: *"tem que ocultar o
+        # campo. Abre o campo só se for prestador de serviço."* O motivo era
+        # "CTPS é sempre CLT". Em 17/11/2026 ele corrigiu a premissa, não a
+        # regra: *"Se Jovem Aprendiz é CTPS, precisamos poder selecionar o
+        # tipo de contrato entre: CLT (tempo indeterminado), CLT (tempo
+        # determinado), Jovem Aprendiz."* Jovem aprendiz TEM carteira — então
+        # CTPS não é sempre CLT, e a escolha existe dos dois lados.
+        #
+        # O que não mudou é o essencial: o campo não aparece ENQUANTO ninguém
+        # escolheu a documentação. Senão alguém responde "PJ" antes de dizer
+        # que é CTPS, e a resposta errada fica no formulário. Por isso "*" (já
+        # respondeu, qualquer coisa) e não as duas opções soltas.
+        "visiveis_se": {
+            "tipo_contrato": {"tipo_documentacao": ("*",)},
+            # O valor só é perguntado depois de escolhida a categoria: antes
+            # disso, "valor da alimentação" não quer dizer nada.
+            "aux_alimentacao": {"categoria_alimentacao": ("*",)},
+            "aux_transporte": {"categoria_transporte": ("*",)},
+            "descontar_vt": {
+                "categoria_transporte": ("VALE_TRANSPORTE", "DIARIO_E_VT")}},
+        # ⚑ A LISTA DO CAMPO MUDA CONFORME OUTRA RESPOSTA (17/11/2026).
+        #
+        # Tipo de contrato é um campo só, com duas listas: quem é CTPS escolhe
+        # entre as duas CLTs e jovem aprendiz; quem é prestador escolhe entre
+        # PJ, autônomo (RPA), autônomo mensalista, estágio e pró-labore.
+        #
+        # Dois CAMPOS seria o caminho errado: a coluna que o banco grava é uma
+        # só (`tipo_contrato`), e dois campos para uma coluna é o jeito de
+        # gravar os dois e não saber qual vale. A fonte das duas listas é o
+        # cadastro de pessoas — cópia aqui diverge no primeiro mês.
+        "opcoes_se": {"tipo_contrato": {"tipo_documentacao": {
+            "CTPS": tuple(svc_pessoas.TIPO_CONTRATO_ROTULOS[c]
+                          for c in svc_pessoas.TIPOS_CONTRATO_CTPS),
+            "PRESTADOR": tuple(svc_pessoas.TIPO_CONTRATO_ROTULOS[c]
+                               for c in svc_pessoas.TIPOS_CONTRATO_PRESTADOR)}}},
+        "vem_do_documento": {
+            "num_ctps": "CTPS-INFORMACOES",
+            "num_pis": "CTPS-INFORMACOES",
+            "nome": "DOC-IDENTIDADE",
+            "cpf": "DOC-IDENTIDADE",
+        },
+        # ⚑ Matrícula e convenção são do DP — estão em FASE no Pipe, não no
+        # formulário. Os VALORES dos auxílios também; a CATEGORIA deles subiu
+        # para o formulário em 15/11/2026, porque é a obra que sabe se a
+        # pessoa come na obra todo dia ou volta para casa na sexta. Ele:
+        # *"ajuda de custo e vale transporte têm que estar no cadastro
+        # inicial, não como pedido separado depois."*
+        # ⚑ O VALOR DOS AUXÍLIOS SAIU DAQUI em 15/11/2026, a pedido dele:
+        # *"não foi colocado campo para colocar valor de transporte e
+        # alimentação."*
+        #
+        # Eu havia deixado o VALOR com o DP e trazido só a CATEGORIA para o
+        # formulário. A divisão estava errada: quem combina o valor com a
+        # pessoa é a OBRA — e o próprio checklist do DP dizia "conferir o
+        # valor com a obra", o que é confissão de que o número nasce lá.
+        # Perguntar ao DP um número que ele vai ter de ligar para a obra para
+        # saber é pôr uma ligação telefônica dentro do sistema.
+        #
+        # O DP continua podendo corrigir na ficha da pessoa.
+        "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario"),
+        # ⚑ OS PAPÉIS SÃO OBRIGATÓRIOS, E O PEDIDO NÃO SAI SEM ELES.
+        #
+        # Eu tinha proposto deixar entrar incompleto, e ele derrubou — com o
+        # argumento que eu não tinha: *"se você permitir que entre funcionário
+        # sem os documentos, esse documento para ele voltar e ser concluído é
+        # um Deus nos acuda. (…) Não se consegue pagar o funcionário no
+        # SomaPay se não tiver CPF, não se consegue fazer o cadastro se não
+        # tiver comprovante de endereço e CPF."*
+        #
+        # Isso muda a conta inteira: deixar passar NÃO evita o mal que eu
+        # queria evitar — a pessoa continua sem receber —, e ainda cria um
+        # cadastro pela metade que ninguém fecha. Pendência de documento não é
+        # dívida que se paga depois; é dívida que ninguém paga.
+        "documentos": ("DOC-IDENTIDADE", "CPF-DOC",
+                       "COMPROVANTE-ENDERECO-PESSOA"),
+        "documentos_se": {"tipo_documentacao": {
+            "CTPS": ("CTPS-FOTO", "CTPS-INFORMACOES")}},
+        "checklist": ("Conferir se a documentação veio completa",
+                      "Conferir os dados contra os documentos",
                       "Conferir o que falta para admitir"),
+        # ⚑ QUANDO O CPF JÁ EXISTE, O PEDIDO É READMISSÃO — e o trabalho do
+        # DP é outro: não há cadastro para criar, há vínculo para reabrir.
+        # Este é o checklist que o tipo READMISSAO tinha, e que vem para cá
+        # junto com ele (15/11/2026).
+        "checklist_readmissao": (
+            "Conferir se a saída anterior está fechada",
+            "Atualizar a data de admissão", "Conferir cargo e convenção",
+            "Conferir a obra", "Atualizar a matrícula",
+            "Reativar no sistema de pagamento",
+            "Reativar no sistema de ponto"),
     },
     "DIVERSOS": {
-        "nome": "Outra solicitação",
+        "nome": "Solicitações Diversas",
         "explicacao": "o que não cabe nos tipos acima",
         "exige_pessoa": False, "executa": None,
         "campos": ("descricao",),
+        "obrigatorios": ("descricao",),
+        "campos_do_dp": (),
         "checklist": (),
     },
+}
+
+# ---------------------------------------------------------------------------
+# AS CAIXINHAS, com as opções do Pipe — palavra por palavra
+# ---------------------------------------------------------------------------
+CATEGORIAS: dict[str, tuple[str, ...]] = {
+    "forma_desligamento": (
+        "À Pedido do Colaborador", "Encerramento de Contrato de Experiência",
+        "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado"),
+    "tipo_readmissao": ("Prestador de Serviço", "CTPS"),
+    "tipo_documentacao": ("Prestador de Serviço", "CTPS"),
+    # ⚑ AS DUAS LISTAS JUNTAS, e quem escolhe de verdade é `opcoes_se`: a
+    # caixinha só abre depois do tipo de documentação, e aí mostra a lista
+    # daquele lado (CTPS ou prestador). Esta aqui é o que sobra quando a tela
+    # pergunta o campo fora da admissão — e cobre os dois, para nunca mostrar
+    # uma lista menor do que a resposta certa.
+    #
+    # A fonte é o cadastro de pessoas. Duas listas para a mesma escolha
+    # divergem no primeiro mês — foi o que aconteceu com as categorias de
+    # auxílio, em 15/11/2026.
+    "tipo_contrato": tuple(
+        svc_pessoas.TIPO_CONTRATO_ROTULOS[c]
+        for c in (svc_pessoas.TIPOS_CONTRATO_CTPS
+                  + svc_pessoas.TIPOS_CONTRATO_PRESTADOR)),
+    "parentesco": ("Filho", "Cônjuge"),
+    "pagamento": ("Diarista", "Mensalista"),
+    "meio_transporte": ("Nenhum", "Transporte Coletivo", "Moto", "Bicicleta"),
+    # ⚑ AS DUAS CATEGORIAS DE AUXÍLIO VÊM DO CADASTRO, não de uma cópia aqui
+    # (15/11/2026). Achado ao escrever a explicação de cada opção: havia DUAS
+    # listas para o mesmo campo — esta, com os rótulos do Pipe ("Segunda à
+    # Quinta", "Vale Transporte"), e a do cadastro de pessoas, com os códigos
+    # que a coluna guarda ("SEG_QUI", "VALE_TRANSPORTE").
+    #
+    # A tela já usava a do cadastro; o pedido gravava a desta lista. Ou seja: o
+    # pedido de ajuda de custo guardava um texto que o cadastro não reconhece,
+    # e o atendimento não tinha como aplicá-lo. Duas palavras para o mesmo
+    # dado, e a diferença só aparecia na hora de valer.
+    #
+    # A fonte é o cadastro, porque é lá que o valor fica gravado e é de lá que
+    # a folha lê. "CARTAO" fica fora: ele existe para explicar a ficha de quem
+    # já tem, e saiu de uso em cadastro novo (decisão dele em 05/11/2026).
+    "categoria_alimentacao": tuple(svc_pessoas.CATEGORIAS_ALIMENTACAO),
+    # ⚑ SEM "Cartão": ele existe na FASE do cadastro (o DP pode marcar), mas
+    # não no formulário de quem pede — e a lista do pedido é a do formulário.
+    # Oferecer no pedido uma opção que o Pipe só dá ao DP é recriar aqui uma
+    # escolha que lá já foi tirada de quem abre.
+    "categoria_transporte": tuple(
+        c for c in svc_pessoas.CATEGORIAS_TRANSPORTE
+        if c not in svc_pessoas.CATEGORIAS_TRANSPORTE_FORA_DE_USO),
+    "descontar_vt": ("Sim, descontar em folha", "Não, a empresa absorve"),
+    "pix_tipo": ("E-mail", "Telefone", "CPF", "Aleatória"),
+    "solicitacao": ("Solicitar ou Atualizar", "Cancelar"),
+    "conceder": ("Sim", "Não"),
+    # A pergunta é feita de forma que o "não" seja a resposta neutra: quem só
+    # desliga marca "não continua" e segue; quem sabe que a pessoa fica tem de
+    # dizer, e aí o sistema cobra a readmissão.
+    "continua_prestador": ("Não, está saindo da empresa",
+                           "Sim, continua como prestador de serviço"),
+    "salario_familia": ("Sim", "Não"),
+}
+
+# ---------------------------------------------------------------------------
+# O QUE CADA OPÇÃO SIGNIFICA — a conta, escrita embaixo do campo
+#
+# ⚑ PEDIDO DELE EM 15/11/2026: *"explica cada modo de cálculo. Diário é dias
+# úteis, mês é o valor cheio, mensal é 30 ou 31 vezes o valor, segunda e sexta
+# é para quem fica alojado."*
+#
+# O problema que isto resolve é concreto: "Mensal" e "Mês" estão lado a lado na
+# mesma caixinha e dão valores DIFERENTES — um multiplica pelos dias do mês, o
+# outro é fixo. Duas palavras parecidas para duas contas diferentes, sem nada
+# escrito, é erro garantido; e o erro só aparece na folha.
+#
+# A explicação vai para a TELA (dica embaixo do campo), não para um manual.
+# ---------------------------------------------------------------------------
+EXPLICACAO_DA_OPCAO: dict[str, dict[str, str]] = {
+    # ⚑ A CHAVE É O CÓDIGO, e não o rótulo: é o código que a caixinha manda e
+    # que a coluna guarda. Explicação escrita com o rótulo não casaria com
+    # nada, e a dica apareceria vazia — foi exatamente o que aconteceu na
+    # primeira tentativa, e só o navegador mostrou.
+    "categoria_alimentacao": {
+        "SEG_QUI": "paga quatro dias por semana — quem volta para casa na sexta",
+        "SEG_SEX": "paga os cinco dias úteis da semana",
+        "MENSAL": "o valor vezes os dias do mês (30 ou 31), trabalhados ou não",
+        "MES": "o valor cheio do mês, sem contar dias",
+    },
+    "categoria_transporte": {
+        "DIARIO": "o valor vezes os dias úteis em que a pessoa trabalhou no mês",
+        "MENSAL": "o valor vezes os dias do mês (30 ou 31), trabalhados ou não",
+        "MES": "o valor cheio do mês, sem contar dias",
+        "SEG_E_SEX": "só a ida e a volta da semana — quem fica alojado na obra",
+        "VALE_TRANSPORTE": "cartão de transporte coletivo, com desconto em folha",
+        "DIARIO_E_VT": "os dois: o valor por dia útil mais o cartão",
+        "VEICULO": "a pessoa usa carro próprio",
+        "MOTOCICLETA": "a pessoa usa moto própria",
+        "BICICLETA": "a pessoa usa bicicleta própria",
+        "CARTAO": "saiu de uso — fica só para explicar ficha antiga",
+    },
+    "descontar_vt": {
+        "Sim, descontar em folha": "o desconto legal do vale-transporte sai do salário",
+        "Não, a empresa absorve": "a empresa paga o transporte sem descontar nada",
+    },
+    "continua_prestador": {
+        "Não, está saindo da empresa":
+            "o acesso ao ponto cai na data de saída e não volta",
+        "Sim, continua como prestador de serviço":
+            "o acesso ao ponto cai na saída, então a readmissão como prestador "
+            "tem de ser feita no mesmo dia — o sistema vai cobrar isso do DP",
+    },
+    "tipo_documentacao": {
+        "CTPS": "registro em carteira; o salário vem da convenção coletiva",
+        "Prestador de Serviço": "sem carteira; o valor é o combinado com a obra",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# O RÓTULO DO PIPE ↔ O CÓDIGO QUE O ERP GRAVA
+#
+# ⚑ O BANCO NÃO MUDA. "À Pedido do Colaborador" é o que a pessoa LÊ; o que
+# fica gravado continua sendo `PEDIDO_COLABORADOR`, que é o que a regra de
+# desligamento e os relatórios já entendem. Trocar o conteúdo da coluna para
+# casar com o rótulo seria reescrever o passado de quem já foi desligado.
+#
+# A tradução é feita na BORDA (ao abrir e ao atender o pedido), num lugar só.
+# ---------------------------------------------------------------------------
+DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
+    "forma_desligamento": {
+        "À Pedido do Colaborador": "PEDIDO_COLABORADOR",
+        "Encerramento de Contrato de Experiência": "FIM_EXPERIENCIA",
+        "Demissão com Aviso Trabalhado": "AVISO_TRABALHADO",
+        "Demissão com Aviso Indenizado": "AVISO_INDENIZADO",
+    },
+    "tipo_readmissao": {"Prestador de Serviço": "PRESTADOR", "CTPS": "CTPS"},
+    "tipo_documentacao": {"Prestador de Serviço": "PRESTADOR", "CTPS": "CTPS"},
+    # Os códigos são os que `core/cadastros/pessoas.py` já grava na coluna
+    # `tipo_contrato` — a tradução existe para a tela mostrar português e o
+    # banco continuar com o que os relatórios entendem.
+    "tipo_contrato": {svc_pessoas.TIPO_CONTRATO_ROTULOS[c]: c
+                      for c in (svc_pessoas.TIPOS_CONTRATO_CTPS
+                                + svc_pessoas.TIPOS_CONTRATO_PRESTADOR)},
+    "descontar_vt": {"Sim, descontar em folha": "1", "Não, a empresa absorve": "0"},
+    "continua_prestador": {"Não, está saindo da empresa": "0",
+                           "Sim, continua como prestador de serviço": "1"},
+    "parentesco": {"Filho": "FILHO", "Cônjuge": "CONJUGE"},
+    "pagamento": {"Diarista": "DIARISTA", "Mensalista": "MENSALISTA"},
+    "salario_familia": {"Sim": "1", "Não": "0"},
+    "conceder": {"Sim": "1", "Não": "0"},
+    "pix_tipo": {"E-mail": "EMAIL", "Telefone": "TELEFONE", "CPF": "CPF",
+                 "Aleatória": "ALEATORIA"},
+}
+
+
+# ---------------------------------------------------------------------------
+# O QUE ESTE PEDIDO EXIGE — campos e papéis, inclusive os que dependem de
+# outra resposta
+# ---------------------------------------------------------------------------
+ROTULOS_DE_DOCUMENTO = {
+    "DOC-IDENTIDADE": "documento de identificação (RG, CNH ou CTPS)",
+    "CPF-DOC": "CPF",
+    "COMPROVANTE-ENDERECO-PESSOA": "comprovante de endereço",
+    "CTPS-FOTO": "CTPS (página com a foto)",
+    "CTPS-INFORMACOES": "CTPS (página com as informações)",
+    "DOC-DEPENDENTE": "documento do dependente (certidão ou RG)",
+}
+
+
+# ---------------------------------------------------------------------------
+# O VÍNCULO DA PESSOA DECIDE OS CAMPOS — um tipo, duas caras
+#
+# ⚑ ENTROU EM 15/11/2026, com o desligamento único. Ele: *"vamos ter um tipo
+# só de desligamento (…) forma de desligamento só para CTPS, e para prestador
+# só a data de saída."*
+#
+# A regra mora AQUI, num lugar só, e é lida pelos três que precisam dela: a
+# tela (para mostrar), o `abrir` (para recusar o que falta) e o checklist (para
+# o DP ter os passos do caso certo). Tela que esconde campo sem o servidor
+# saber é meia trava — some da vista e continua exigido.
+# ---------------------------------------------------------------------------
+def _ramo(tipo: str, vinculo: Optional[str]) -> dict[str, Any]:
+    """O pedaço do tipo que vale para este vínculo (vazio quando não há)."""
+    regra = TIPOS.get(tipo) or {}
+    chave = (vinculo or "").strip().upper()
+    return (regra.get("por_vinculo") or {}).get(chave) or {}
+
+
+def _nao_cabe_agora(regra: dict[str, Any], campo: str,
+                    pedido: dict[str, Any]) -> bool:
+    """Este campo ainda não faz sentido, pelo que já foi respondido?
+
+    `visiveis_se` é o contrário de `ocultos_se`: o campo NÃO aparece até que
+    outro campo tenha um dos valores listados. É o caso do desconto do
+    vale-transporte, que só existe se houver vale-transporte.
+
+    O padrão aqui é ESCONDER: campo que depende de uma escolha ainda não feita
+    não tem o que perguntar. Mostrar por padrão convidaria a responder antes de
+    a pergunta existir.
+    """
+    regras = (regra.get("visiveis_se") or {}).get(campo)
+    if not regras:
+        return False
+    for gatilho, aceitos in regras.items():
+        valor = str(pedido.get(gatilho) or "")
+        # ⚑ "*" É O CURINGA: o campo nasce quando o gatilho tem QUALQUER
+        # resposta. É o caso do valor do auxílio — ele faz sentido assim que a
+        # categoria é escolhida, qualquer que seja ela, e listar as nove
+        # opções uma por uma só criaria o jeito de esquecer a décima.
+        if "*" in tuple(aceitos) and valor:
+            return False
+        if valor in tuple(aceitos):
+            return False
+    return True
+
+
+def campos_do_tipo(tipo: str, vinculo: Optional[str] = None) -> tuple[str, ...]:
+    """Os campos que o formulário pede. Sem vínculo conhecido, a união deles.
+
+    A união é o certo quando não se sabe o vínculo: esconder campo por falta de
+    informação seria recusar o pedido por um dado que o sistema não tem.
+    """
+    regra = TIPOS[tipo]
+    return tuple(_ramo(tipo, vinculo).get("campos") or regra["campos"])
+
+
+def obrigatorios_do_tipo(tipo: str,
+                         vinculo: Optional[str] = None) -> tuple[str, ...]:
+    """O que é obrigatório neste tipo, para este vínculo."""
+    regra = TIPOS[tipo]
+    ramo = _ramo(tipo, vinculo)
+    if "obrigatorios" in ramo:
+        return tuple(ramo["obrigatorios"])
+    return tuple(regra.get("obrigatorios", ()))
+
+
+def campos_do_dp_do_tipo(tipo: str,
+                         vinculo: Optional[str] = None) -> tuple[str, ...]:
+    """O que o DP preenche ao atender, para este vínculo.
+
+    No desligamento a diferença é real: a data de saída de quem tem carteira é
+    CONTA do DP (último dia + aviso prévio), e a do prestador é informação da
+    obra (o fim combinado da prestação). Mesmo nome, donos diferentes.
+    """
+    regra = TIPOS[tipo]
+    ramo = _ramo(tipo, vinculo)
+    if "campos_do_dp" in ramo:
+        return tuple(ramo["campos_do_dp"])
+    return tuple(regra.get("campos_do_dp", ()))
+
+
+# ⚑ OS PASSOS QUE A RESPOSTA ACRESCENTA. Hoje é um só, e é o que fecha o
+# buraco do desligamento que continua como prestador: o acesso ao ponto cai na
+# saída, e se ninguém readmitir a pessoa não consegue bater no dia seguinte.
+PASSOS_A_MAIS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
+    "DESLIGAMENTO": {"continua_prestador": {"1": (
+        "Abrir a readmissão como prestador — SEM ela o ponto não aceita a "
+        "pessoa no dia seguinte",
+        "Conferir que a pessoa voltou a bater o ponto")}},
+}
+
+
+def checklist_do_tipo(tipo: str, vinculo: Optional[str] = None, *,
+                      readmissao: bool = False,
+                      pedido: Optional[dict[str, Any]] = None) -> tuple[str, ...]:
+    """Os passos que o DP faz — do vínculo certo, e não de um caso médio."""
+    regra = TIPOS[tipo]
+    if readmissao and regra.get("checklist_readmissao"):
+        base = tuple(regra["checklist_readmissao"])
+    else:
+        ramo = _ramo(tipo, vinculo)
+        base = tuple(ramo["checklist"] if "checklist" in ramo
+                     else regra.get("checklist", ()))
+    for campo, mapa in (PASSOS_A_MAIS.get(tipo) or {}).items():
+        valor = str((pedido or {}).get(campo) or "")
+        base += tuple(mapa.get(valor, ()))
+    return base
+
+
+def vinculo_da_pessoa(s: Session, colaborador_id: Optional[int]) -> Optional[str]:
+    """CTPS ou PRESTADOR, direto do cadastro — sem carregar o ORM inteiro."""
+    if not colaborador_id:
+        return None
+    v = s.execute(text("SELECT vinculo FROM colaboradores WHERE id = :i"),
+                  {"i": colaborador_id}).scalar()
+    return (str(v).strip().upper() or None) if v else None
+
+
+def _condicionais(regra: dict[str, Any], chave: str,
+                  pedido: dict[str, Any]) -> tuple[str, ...]:
+    """O que `obrigatorios_se` / `documentos_se` acrescentam, conforme a
+    resposta já dada. Ex.: escolher CTPS passa a exigir a carteira e o PIS."""
+    extra: list[str] = []
+    for campo, mapa in (regra.get(chave) or {}).items():
+        valor = pedido.get(campo)
+        if isinstance(valor, str):
+            extra += list(mapa.get(valor, ()))
+    return tuple(extra)
+
+
+# As colunas de `colaboradores` que qualquer tipo consulta. A busca de pessoa
+# do portal traz TODAS elas de uma vez, para a tela já nascer preenchida — sem
+# uma segunda ida ao servidor depois de escolher a pessoa.
+#
+# ⚑ Nome de coluna entra em SQL por interpolação (não dá para parametrizar
+# nome de coluna), então o formato é conferido aqui: só letra minúscula,
+# dígito e sublinhado. Tipo novo que escreva outra coisa quebra na importação
+# do módulo, e não em produção.
+COLUNAS_JA_NO_CADASTRO: tuple[str, ...] = tuple(sorted({
+    coluna
+    for regra in TIPOS.values()
+    for coluna in (regra.get("ja_no_cadastro") or {}).values()
+}))
+for _c in COLUNAS_JA_NO_CADASTRO:
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", _c):
+        raise ValueError(
+            f"ja_no_cadastro: {_c!r} não é nome de coluna aceitável.")
+
+
+def o_que_o_cadastro_ja_tem(s: Session, tipo: str,
+                            colaborador_id: Optional[int]) -> dict[str, Any]:
+    """O que esta pessoa já tem no cadastro, dos campos que o pedido pediria.
+
+    ⚑ PEDIR O QUE O SISTEMA JÁ SABE É O DEFEITO MAIS CARO de um formulário:
+    cansa quem preenche, e abre a porta para alguém digitar um número
+    diferente do cadastrado. Ele, em 10/11/2026: *"admissão de prestador de
+    serviço, vamos requerer os dados. Se não tivermos, né? Acho que é
+    interessante uma consulta, ver se tem CTPS, se tem PIS."*
+
+    Devolve `{campo: valor}` só do que ESTÁ preenchido. A tela mostra o valor
+    para conferência e o campo sai da exigência.
+    """
+    de_onde = (TIPOS.get(tipo) or {}).get("ja_no_cadastro") or {}
+    if not de_onde or not colaborador_id:
+        return {}
+    colunas = ", ".join(sorted(set(de_onde.values())))
+    linha = s.execute(
+        text(f"SELECT {colunas} FROM colaboradores WHERE id = :i"),
+        {"i": colaborador_id}).mappings().first()
+    if linha is None:
+        return {}
+    achados = {}
+    for campo, coluna in de_onde.items():
+        valor = linha.get(coluna)
+        if valor is not None and str(valor).strip():
+            achados[campo] = str(valor).strip()
+    return achados
+
+
+def exigencias(tipo: str, pedido: Optional[dict[str, Any]] = None,
+               ja_tem: Optional[dict[str, Any]] = None,
+               vinculo: Optional[str] = None) -> dict[str, Any]:
+    """O que falta para este pedido poder sair — campos E papéis.
+
+    A tela chama isto a cada mudança, para a lista ir se marcando sozinha
+    enquanto a pessoa preenche. Assim o bloqueio não é uma parede no fim: é
+    uma lista que a pessoa vê desde o começo.
+    """
+    from app.apps.erp.core import pessoal_experiencia as svc_exp
+
+    regra = TIPOS[tipo]
+    p = traduzir_do_pipe(pedido or {})
+    campos = obrigatorios_do_tipo(tipo, vinculo) + _condicionais(
+        regra, "obrigatorios_se", p)
+    # ⚑ CAMPO ESCONDIDO NÃO É CAMPO EXIGIDO, e esta linha é a que impede o
+    # defeito mais chato de formulário condicional: a tela esconde "valor do
+    # mês" porque é CTPS, a pessoa confirma, e o servidor recusa pedindo um
+    # campo que ela não tem como ver. Pedido impossível de corrigir.
+    escondidos = set(_condicionais(regra, "ocultos_se", p))
+    escondidos |= {c for c in campos if _nao_cabe_agora(regra, c, p)}
+    if escondidos:
+        campos = tuple(c for c in campos if c not in escondidos)
+    # O mesmo para o vínculo: campo que não é deste vínculo não se exige.
+    do_vinculo = set(campos_do_tipo(tipo, vinculo))
+    campos = tuple(c for c in campos if c in do_vinculo or c == "obra_id")
+    # ⚑ ENCERRAMENTO DE CONTRATO DE EXPERIÊNCIA NÃO TEM AVISO PRÉVIO, e por
+    # isso a data deixa de ser exigida (15/11/2026). Ele: *"quando é
+    # encerramento de contrato de experiência, eu não preciso dar aviso.
+    # Então essa data de aviso já se torna desnecessária, concorda?"*
+    #
+    # É direito, não preferência: o contrato acaba porque o prazo acabou.
+    # Aviso prévio existe para quem ROMPE antes do fim. Exigir a data aqui
+    # obrigava a pessoa a inventar uma — e data inventada vira conta errada
+    # na rescisão.
+    #
+    # A trava mora AQUI, e não só na tela: tela esconde campo, servidor é que
+    # recusa pedido. As duas precisam concordar, e concordam porque leem a
+    # mesma função.
+    if "aviso_previo" in campos and not svc_exp.exige_aviso_previo(
+            p.get("forma_desligamento")):
+        campos = tuple(c for c in campos if c != "aviso_previo")
+    # O que o cadastro já tem sai da exigência: não se pergunta de novo.
+    if ja_tem:
+        campos = tuple(c for c in campos if not str(ja_tem.get(c) or "").strip())
+    papeis = tuple(regra.get("documentos", ())) + _condicionais(
+        regra, "documentos_se", p)
+    return {
+        "campos": list(dict.fromkeys(campos)),
+        "documentos": [{"codigo": c, "rotulo": ROTULOS_DE_DOCUMENTO.get(c, c)}
+                       for c in dict.fromkeys(papeis)],
+    }
+
+
+def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
+    """Troca o rótulo que a pessoa escolheu pelo código que o ERP grava.
+
+    Aceita os DOIS: quem mandar o código direto (um teste, uma importação)
+    passa reto. É isso que permite trocar o rótulo na tela sem mexer em nada
+    mais embaixo.
+    """
+    saida = dict(dados)
+    for campo, mapa in DO_PIPE_PARA_O_CODIGO.items():
+        v = saida.get(campo)
+        if isinstance(v, str) and v in mapa:
+            saida[campo] = mapa[v]
+    return saida
+
+
+# O rótulo de cada campo, como está no Pipe. A tela lê daqui — não escreve
+# nome de campo à mão.
+ROTULOS: dict[str, str] = {
+    "obra_id": "Código da Obra",
+    "forma_desligamento": "Forma de Desligamento",
+    "aviso_previo": "Data do Aviso Prévio",
+    "data_saida": "Data de Saída",
+    "data_inicio": "Data de Início",
+    "tipo_readmissao": "Tipo de Readmissão",
+    "tipo_documentacao": "Tipo de Documentação para Cadastro",
+    "cargo_pleiteado_id": "Cargo Pleiteado",
+    "cargo_deferido_id": "Cargo Deferido",
+    # ⚑ "EMPRESA PARA REGISTRO", e não "CNPJ para Admissão" (15/11/2026).
+    #
+    # Ele, pela terceira vez no assunto: *"em relação à empresa, CNPJ da
+    # empresa, você continua errando (…) tem que pegar do cadastro das
+    # empresas do ERP. Lá já estão cadastradas 4 empresas."*
+    #
+    # Tinha razão, e a raiz era o próprio campo: ele pedia um CNPJ, então a
+    # lista só podia oferecer empresa QUE TEM CNPJ — e a quarta, que está
+    # cadastrada sem CNPJ, desaparecia. O campo certo é a EMPRESA; o CNPJ é
+    # um dado dela, que o cadastro dela guarda.
+    #
+    # Agora o pedido guarda o NÚMERO da empresa, igual à ficha da pessoa faz
+    # (`empresa_id`), e as quatro aparecem. Ele mesmo já havia dito em
+    # 11/11/2026: *"empresa para registro e CNPJ para admissão é campo
+    # duplicado. É a mesma informação."*
+    "empresa_id": "Empresa para registro",
+    "cnpj_admissao": "CNPJ para Admissão",
+    "justificativa": "Justificativa de Alteração do Cargo",
+    "num_ctps": "Nº CTPS",
+    "num_pis": "Nº PIS",
+    "salario_familia": "Solicitar Salário Família?",
+    "nome": "Nome do Colaborador",
+    "cpf": "CPF do Colaborador",
+    "parentesco": "Parentesco",
+    "data_nascimento": "Data de Nascimento do Dependente",
+    "telefone": "Telefone",
+    "pix_tipo": "Chave Pix",
+    "pix_chave": "Chave Pix (o dado)",
+    "pagamento": "Pagamento",
+    "valor_diaria": "Valor da Diária",
+    "valor_mes": "Valor do Mês",
+    "meio_transporte": "Meio de Transporte para chegar à Obra?",
+    "categoria_alimentacao": "Categoria Auxílio Alimentação",
+    "categoria_transporte": "Categoria Auxílio Transporte",
+    "aux_alimentacao": "Valor (Auxílio Alimentação)",
+    "aux_transporte": "Valor (Auxílio Transporte)",
+    "solicitacao": "Solicitação",
+    "conceder": "Conceder Vale Transporte?",
+    "descontar_vt": "Descontar o vale-transporte em folha?",
+    "continua_prestador": "A pessoa continua trabalhando depois de sair da carteira?",
+    "tipo_contrato": "Tipo de Contrato",
+    "valor_total": "Valor Total do Desconto",
+    "parcelas": "Quantidade de Parcelas",
+    "valor_parcela": "Valor da Parcela",
+    "data": "Data",
+    # O Pipe escreve "Endereço (Logradouro)", "Município" e "UF (Endereço)".
+    # Aqui vale a palavra que o resto do ERP já usa para o mesmo campo (Rua,
+    # Cidade, Estado): duas palavras para o mesmo campo em duas telas é o tipo
+    # de diferença que faz alguém achar que são coisas diferentes.
+    "cep": "CEP",
+    "logradouro": "Rua",
+    "numero_endereco": "Número",
+    "bairro": "Bairro",
+    "municipio": "Cidade",
+    "uf": "Estado",
+    # Casamento, divórcio, correção de grafia na certidão. Fica por último no
+    # formulário porque é o menos frequente dos quatro.
+    "nome_novo": "Nome completo (só se mudou)",
+    "descricao": "Descreva sua Solicitação:",
+    "observacao": "Observações:",
+}
+
+# Os campos que SÓ o DP preenche não estão no Pipe com rótulo próprio (eles
+# vivem nas fases, onde o nome da fase já diz o contexto). Estes são os nomes
+# que a tela do DP mostra.
+ROTULOS_DO_DP: dict[str, str] = {
+    "ultimo_dia": "Último dia trabalhado",
+    "faltas_a_descontar": "Faltas a descontar",
+    "matricula": "Matrícula",
+    "convencao_id": "Convenção",
+    "cargo_id": "Cargo",
+    "salario": "Salário",
+    "admissao": "Data de admissão efetiva",
+    "vigencia": "Vigência da alteração",
+    "motivo": "Motivo da alteração",
+    "dependente_ir": "Conta como dependente no IR",
+    "primeira_competencia": "Primeira competência do desconto",
+    "cpf": "CPF do dependente",
 }
 
 # OS DOIS TIPOS QUE SAÍRAM, em 05/11/2026, e por quê — para ninguém recriá-los
@@ -163,18 +1113,231 @@ TIPOS: dict[str, dict[str, Any]] = {
 #     ter dono de verdade: a ficha da pessoa diz quais papéis faltam, e o pedido
 #     à contabilidade cobra o retorno dela. Pedido solto não era rastreio, era
 #     lembrete.
-#
-# "Outra solicitação" FICOU, e foi decisão minha: é a única porta para o caso
-# incomum, e ela não custa nada. Se ele quiser fechar também, é uma linha.
 
 SITUACOES = ("ABERTA", "EM_ANALISE", "ATENDIDA", "RECUSADA", "CANCELADA")
 ABERTAS = ("ABERTA", "EM_ANALISE")
 
 
-def tipos_para_tela() -> list[dict[str, Any]]:
-    return [{"valor": c, "rotulo": d["nome"], "explicacao": d["explicacao"],
-             "exige_pessoa": d["exige_pessoa"], "campos": list(d["campos"])}
-            for c, d in TIPOS.items()]
+def _opcoes(s: Optional[Session], campo: str) -> list[str]:
+    """As opções de um campo de caixinha fechada."""
+    return list(CATEGORIAS.get(campo, ()))
+
+
+def empresas_para_escolher(s: Optional[Session] = None) -> list[dict[str, Any]]:
+    """AS EMPRESAS DO GRUPO, direto do cadastro de Empresas do ERP.
+
+    ⚑ ELE COBROU ISTO TRÊS VEZES, e nas duas primeiras eu consertei o lugar
+    errado. 15/11/2026: *"em relação à empresa, CNPJ da empresa, você continua
+    errando. Você está pegando do cadastro do colaborador, eu acho. Tem que
+    pegar do cadastro das empresas do ERP. Lá já estão cadastradas 4 empresas.
+    E continua aparecendo errado, ou seja, não está sendo usado o cadastro
+    correto."*
+
+    **A lista VINHA do cadastro de Empresas — o erro era o CAMPO.** Ele pedia
+    um CNPJ ("CNPJ para Admissão"), então a lista só podia oferecer empresa que
+    TEM CNPJ preenchido; a quarta, cadastrada sem CNPJ, desaparecia. Eu tinha
+    "consertado" escrevendo embaixo do campo quem havia ficado de fora — o que
+    explica o sintoma e mantém o defeito.
+
+    O campo certo é a EMPRESA. O CNPJ é um dado dela, que o cadastro dela
+    guarda, e o sistema busca quando precisa. Assim as quatro aparecem, e
+    cadastrar o CNPJ que falta volta a ser o que é: arrumar o cadastro da
+    empresa, não condição para abrir um pedido.
+
+    ⚑ E NÃO HÁ MAIS LISTA DE SOCORRO. Antes, se a consulta não achasse nada, a
+    caixinha mostrava TRÊS empresas escritas dentro do código. Três — o mesmo
+    número que ele reclamou de ver. Lista inventada que parece certa é pior que
+    lista vazia: ninguém desconfia dela. Agora, sem cadastro, a lista vem
+    vazia e a tela diz o que fazer.
+    """
+    if s is None:
+        return []
+    linhas = s.execute(text("""
+        SELECT id, razao_social,
+               COALESCE(NULLIF(btrim(nome_fantasia), ''), razao_social) AS nome,
+               COALESCE(btrim(cnpj), '') AS cnpj
+          FROM empresas
+         WHERE ativo IS NOT FALSE
+         ORDER BY razao_social""")).mappings().all()
+    return [{"id": l["id"], "nome": l["nome"],
+             "razao_social": l["razao_social"], "cnpj": l["cnpj"],
+             # O rótulo que a caixinha mostra. Sem CNPJ, DIZ que está sem — a
+             # pessoa escolhe a empresa certa e sabe que há cadastro a arrumar.
+             "rotulo": (f"{l['nome']} — {l['cnpj']}" if l["cnpj"]
+                        else f"{l['nome']} — sem CNPJ no cadastro")}
+            for l in linhas]
+
+
+def empresa_do_pedido(s: Session, empresa_id: Any) -> dict[str, Any]:
+    """A empresa escolhida, ou erro dizendo o que fazer."""
+    linha = s.execute(text("""
+        SELECT id, razao_social, COALESCE(btrim(cnpj), '') AS cnpj, ativo
+          FROM empresas WHERE id = :i"""),
+        {"i": int(empresa_id)}).mappings().first()
+    if linha is None:
+        raise ErroValidacao("Empresa não encontrada no cadastro.")
+    if linha["ativo"] is False:
+        raise ErroValidacao(
+            f"{linha['razao_social']} está marcada como inativa no cadastro de "
+            f"Empresas — não dá para registrar ninguém por ela.")
+    return dict(linha)
+
+
+def readmissoes_esquecidas(s: Session) -> list[dict[str, Any]]:
+    """Quem foi desligado dizendo que CONTINUA, e não foi readmitido.
+
+    ⚑ É A TRAVA DO BUG DO PONTO (15/11/2026). Ele: *"o colaborador que é
+    desligado da carteira e continua como prestador (…) isso aí provoca de vez
+    em quando um bug na parte do ponto."*
+
+    O mecanismo do bug: desligar corta o acesso ao aparelho da obra na data de
+    saída. Quando a readmissão como prestador é esquecida, a pessoa aparece
+    para trabalhar no dia seguinte e não consegue bater — e quem descobre é a
+    obra, às sete da manhã, sem saber o motivo.
+
+    A conta tem três condições, e todas têm de valer: o pedido disse que
+    continua, a pessoa está desligada, e não há vínculo aberto. Feita a
+    readmissão, a pendência sai sozinha — ninguém precisa dar baixa nela, que é
+    o tipo de lista que ninguém mantém.
+    """
+    linhas = s.execute(text("""
+        SELECT d.numero, d.colaborador_id, d.atendido_em, d.criado_em,
+               c.nome, c.demissao, o.codigo AS obra
+          FROM dp_solicitacoes d
+          JOIN colaboradores c ON c.id = d.colaborador_id
+          LEFT JOIN obras o ON o.id = d.obra_id
+         WHERE d.tipo = 'DESLIGAMENTO'
+           AND d.situacao <> 'CANCELADA'
+           AND d.dados ->> 'continua_prestador' = '1'
+           AND upper(COALESCE(c.situacao, '')) = 'DESLIGADO'
+           AND NOT EXISTS (SELECT 1 FROM colaborador_vinculos v
+                            WHERE v.colaborador_id = c.id
+                              AND v.demissao IS NULL)
+         ORDER BY c.demissao NULLS LAST, d.criado_em""")).mappings().all()
+    return [{"numero": l["numero"], "colaborador_id": l["colaborador_id"],
+             "pessoa": l["nome"], "obra": l["obra"] or "",
+             "saiu_em": l["demissao"].isoformat() if l["demissao"] else None}
+            for l in linhas]
+
+
+def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
+    """Os tipos, com os campos que cada um pede.
+
+    ⚑ A OBRA ENTRA EM TODOS, mesmo nos tipos que não a listavam (10/11/2026):
+    ela passou a ser obrigatória em todo pedido. Acrescentada AQUI, e não
+    copiada em cada tipo lá em cima, porque esquecer de copiá-la no tipo
+    número doze é o defeito garantido — e ele só apareceria quando alguém
+    tentasse abrir justamente aquele pedido.
+
+    Ela vai na FRENTE da lista: "de qual obra é isto?" é a primeira pergunta
+    de quem abre um pedido, não a última.
+    """
+    saida = []
+    for c, d in TIPOS.items():
+        # ⚑ TIPO OCULTO NÃO APARECE NA CAIXINHA (15/11/2026): desligamento de
+        # prestador, readmissão e vale-transporte viraram, respectivamente,
+        # ramo do desligamento, detecção de CPF no cadastro e opção da ajuda
+        # de custo. A entrada fica no dicionário pelos pedidos já gravados.
+        if d.get("oculto"):
+            continue
+        campos = list(d["campos"])
+        # ⚑ A OBRA SÓ SE PERGUNTA QUANDO NÃO HÁ DE ONDE TIRÁ-LA (15/11/2026).
+        #
+        # Ele: *"a obra está no cadastro. Ignora isso aí, tira isso aí"* — e,
+        # perguntado se isso valia para o cadastro de gente nova: *"admissão
+        # nova ou de colaborador demitido tem que ter a obra. Demais não
+        # precisa."*
+        #
+        # É exatamente a divisão `exige_pessoa`: pedido sobre quem já tem
+        # ficha tira a obra da ficha; pedido que CRIA a ficha (cadastro,
+        # readmissão) não tem de onde tirar, e pergunta. Perguntar nos outros
+        # era pedir onze vezes um dado que o sistema já tinha — e abrir a
+        # porta para alguém responder diferente do cadastro.
+        if not d["exige_pessoa"] and "obra_id" not in campos:
+            campos.insert(0, "obra_id")
+        # ⚑ O ASTERISCO VEM DAQUI, e agora ele é de verdade. Ele, em
+        # 10/11/2026: *"Pipe, todo campo obrigatório, ele tem um asterisco,
+        # facilita. Aqui não, ninguém sabe o que é obrigatório, o que é que
+        # não é."* A lista é a do Pipe, tipo por tipo.
+        obrigatorios = ([x for x in d.get("obrigatorios", ()) if x != "obra_id"]
+                        if d["exige_pessoa"]
+                        else ["obra_id"] + [x for x in d.get("obrigatorios", ())
+                                            if x != "obra_id"])
+        proprios = d.get("rotulos_proprios") or {}
+        saida.append({"valor": c, "rotulo": d["nome"],
+                      "explicacao": d["explicacao"],
+                      "exige_pessoa": d["exige_pessoa"], "campos": campos,
+                      "obrigatorios": obrigatorios,
+                      # ⚑ O QUE MUDA COM O VÍNCULO DA PESSOA (desligamento).
+                      # A tela redesenha o formulário ao escolher a pessoa; o
+                      # servidor confere pela mesma lista.
+                      "por_vinculo": {
+                          v: {"campos": list(r.get("campos") or campos),
+                              "obrigatorios": list(
+                                  r.get("obrigatorios")
+                                  or d.get("obrigatorios", ())),
+                              "campos_do_dp": list(
+                                  r.get("campos_do_dp")
+                                  if "campos_do_dp" in r
+                                  else d.get("campos_do_dp", ()))}
+                          for v, r in (d.get("por_vinculo") or {}).items()},
+                      # Campo que depende de outra resposta: o que passa a ser
+                      # exigido, e o que deixa de aparecer.
+                      "obrigatorios_se": {
+                          k: {kk: list(vv) for kk, vv in mapa.items()}
+                          for k, mapa in (d.get("obrigatorios_se") or {}).items()},
+                      "ocultos_se": {
+                          k: {kk: list(vv) for kk, vv in mapa.items()}
+                          for k, mapa in (d.get("ocultos_se") or {}).items()},
+                      "visiveis_se": {
+                          k: {kk: list(vv) for kk, vv in mapa.items()}
+                          for k, mapa in (d.get("visiveis_se") or {}).items()},
+                      # Campo cuja LISTA depende de outra resposta (tipo de
+                      # contrato, que muda com o tipo de documentação).
+                      "opcoes_se": {
+                          k: {kk: {kkk: list(vvv) for kkk, vvv in mm.items()}
+                              for kk, mm in mapa.items()}
+                          for k, mapa in (d.get("opcoes_se") or {}).items()},
+                      # ⚑ O RÓTULO→CÓDIGO VIAJA JUNTO, e sem isto as condições
+                      # da tela não funcionariam: as listas acima são escritas
+                      # com o CÓDIGO que o banco guarda ("CTPS", "DIARISTA"),
+                      # enquanto a caixinha mostra o rótulo do Pipe ("CTPS",
+                      # "Diarista"). Parecem iguais em um caso e são
+                      # diferentes no outro — que é justamente o jeito de o
+                      # defeito passar na conferência e aparecer na tela.
+                      "traducoes": {x: dict(DO_PIPE_PARA_O_CODIGO[x])
+                                    for x in campos
+                                    if x in DO_PIPE_PARA_O_CODIGO},
+                      # O que o DP preenche ao atender — NÃO vai no formulário
+                      # de quem pede. A tela de atendimento lê daqui.
+                      "campos_do_dp": list(d.get("campos_do_dp", ())),
+                      # Os papéis que este pedido exige, quando exige.
+                      "documentos": list(d.get("documentos", ())),
+                      # Pedido que aceita vários de uma vez (dependente).
+                      "repete": bool(d.get("repete")),
+                      # Qual papel preenche qual campo — a tela só pergunta
+                      # quando a leitura não achou.
+                      "vem_do_documento": dict(d.get("vem_do_documento") or {}),
+                      # O rótulo e as opções de cada campo, como no Pipe.
+                      "rotulos": {x: proprios.get(x, ROTULOS.get(x, x))
+                                  for x in campos},
+                      "opcoes": {x: _opcoes(s, x) for x in campos
+                                 if x in CATEGORIAS},
+                      # O que cada opção SIGNIFICA — a conta por extenso, para
+                      # ninguém ter de adivinhar a diferença entre "Mensal" e
+                      # "Mês" (15/11/2026).
+                      "explicacoes": {x: EXPLICACAO_DA_OPCAO[x]
+                                      for x in campos
+                                      if x in EXPLICACAO_DA_OPCAO},
+                      # O mesmo, para os campos que o DP preenche ao atender:
+                      # a tela dele lê daqui, e não de uma segunda lista.
+                      "rotulos_do_dp": {
+                          x: proprios.get(x, ROTULOS_DO_DP.get(x, ROTULOS.get(x, x)))
+                          for x in d.get("campos_do_dp", ())},
+                      "opcoes_do_dp": {x: _opcoes(s, x)
+                                       for x in d.get("campos_do_dp", ())
+                                       if x in CATEGORIAS}})
+    return saida
 
 
 def _dec(v: Any, campo: str) -> Optional[Decimal]:
@@ -223,26 +1386,146 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     if colaborador_id and pessoa is None:
         raise ErroValidacao("Colaborador não encontrado.")
 
+    # -----------------------------------------------------------------------
+    # ⚑ O CPF DECIDE SE É CADASTRO OU READMISSÃO (15/11/2026)
+    #
+    # Ele: *"na admissão, quando digitar o CPF, o sistema tem que detectar que
+    # a pessoa já tem cadastro e oferecer a readmissão. Aí readmissão deixa de
+    # ser um tipo de solicitação."*
+    #
+    # Antes, CPF repetido era RECUSA: "já tem cadastro, é uma readmissão" — e
+    # quem pediu tinha de fechar a janela, descobrir que existe um tipo
+    # chamado Readmissão, e redigitar tudo. Quem não soubesse disso tentava
+    # outra vez com o nome escrito diferente, e nascia a segunda ficha da
+    # mesma pessoa.
+    #
+    # Agora o pedido se CONVERTE: o mesmo formulário, a mesma pessoa, e o
+    # atendimento reabre o vínculo em vez de criar um cadastro. Pessoa ATIVA
+    # continua sendo recusa — aí não há nada para readmitir, há uma ficha para
+    # corrigir.
+    readmissao = False
+    # ⚑ A EMPRESA ESCOLHIDA É CONFERIDA AQUI, e o CNPJ dela entra no pedido
+    # (15/11/2026). O pedido guarda o NÚMERO da empresa — é o que o cadastro
+    # da pessoa usa (`empresa_id`) — e o CNPJ vai junto só para o DP ler sem
+    # abrir outra tela, e para o que já lia `cnpj_admissao` continuar lendo.
+    #
+    # Conferir aqui, e não só na tela, é o que impede pedido com empresa
+    # inativa ou inexistente: tela esconde opção, servidor é que recusa.
+    if dados.get("empresa_id"):
+        emp = empresa_do_pedido(s, dados["empresa_id"])
+        dados = {**dados, "cnpj_admissao": emp["cnpj"] or None}
+
+    if tipo == "CADASTRO":
+        from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
+        cpf = somente_digitos(dados.get("cpf") or "")
+        if not cpf_valido(cpf):
+            raise ErroValidacao("CPF inválido.")
+        ja = svc_pessoas.conferir_cpf(s, cpf)
+        if ja["situacao"] == "ativo":
+            raise ErroValidacao(ja["aviso"])
+        if ja["situacao"] == "desligado":
+            readmissao = True
+            colaborador_id = int(ja["colaborador_id"])
+            pessoa = s.get(Colaborador, colaborador_id)
+        dados = {**dados, "cpf": cpf}
+
     # O PEDIDO SÓ GUARDA OS CAMPOS DO TIPO. Sem esta peneira, o formulário de um
     # tipo deixaria lixo do outro no JSONB — e foi assim que o pipe terminou com
     # 106 campos e metade vazia em cada card.
-    pedido = {c: dados.get(c) for c in regra["campos"] if dados.get(c) not in (None, "")}
+    # O VÍNCULO DA PESSOA é o que diz quais campos este pedido tem. Vem do
+    # cadastro, nunca do formulário: quem abre não tem de saber se a pessoa é
+    # de carteira ou prestadora, e se tivesse de saber erraria.
+    # No CADASTRO o vínculo que vale é o ESCOLHIDO, não o que a pessoa tinha:
+    # numa readmissão ela pode estar voltando de prestador para carteira, e é a
+    # contratação nova que decide os campos.
+    escolhido = (traduzir_do_pipe(dados).get("tipo_documentacao")
+                 if tipo == "CADASTRO" else None)
+    vinculo = escolhido or (pessoa.vinculo if pessoa else None)
+    pedido = traduzir_do_pipe(
+        {c: dados.get(c) for c in campos_do_tipo(tipo, vinculo)
+         if dados.get(c) not in (None, "")})
+    if readmissao:
+        # Fica GRAVADO no pedido, e não só deduzido depois: é o que faz a
+        # tela do DP e o histórico dizerem "readmissão" em vez de "cadastro".
+        pedido["readmissao"] = "1"
+    # O CNPJ da empresa escolhida viaja no pedido para o DP LER — a escolha
+    # que vale é `empresa_id`. Dois campos para a mesma coisa só não divergem
+    # porque um deles é derivado do outro, aqui, num lugar só.
+    if pedido.get("empresa_id") and dados.get("cnpj_admissao"):
+        pedido["cnpj_admissao"] = dados["cnpj_admissao"]
 
     # Duas conferências que evitam fila com pedido impossível. O resto é do
     # atendimento: conferir tudo na abertura empurraria o trabalho do DP para a
     # obra, que é o contrário do que a fila existe para fazer.
-    if tipo == "DESLIGAMENTO" and not pedido.get("data_saida"):
-        raise ErroValidacao("Informe a data de saída.")
-    if tipo == "PRE_CADASTRO":
-        from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
-        cpf = somente_digitos(pedido.get("cpf") or "")
-        if not cpf_valido(cpf):
-            raise ErroValidacao("CPF inválido.")
-        ja = svc_pessoas.conferir_cpf(s, cpf)
-        if ja["situacao"] in ("ativo", "desligado"):
-            raise ErroValidacao(ja["aviso"])
-        pedido["cpf"] = cpf
+    # ⚑ O QUE FALTA É O QUE O PIPE MARCA COMO OBRIGATÓRIO, e nada além disso.
+    # Antes eu exigia a DATA DE SAÍDA no desligamento — campo que, no Pipe,
+    # não está neste formulário. Ele, em 10/11/2026: *"de saída, o último dia
+    # trabalhado, não é a pessoa que está pedindo que vai dizer. Ele vai
+    # colocar só a data do aviso prévio."* A data de saída é do DP, e entra
+    # no atendimento.
+    ja_tem = o_que_o_cadastro_ja_tem(s, tipo, colaborador_id)
+    # O que já estava no cadastro entra no pedido: ele fica completo, e o DP
+    # vê o número sem ter de abrir a ficha ao lado.
+    for campo, valor in ja_tem.items():
+        pedido.setdefault(campo, valor)
+    exige = exigencias(tipo, pedido, ja_tem, vinculo)
+    # ⚑ PEDIDO QUE ACEITA VÁRIOS (dependente) confere CADA UM, e não o corpo.
+    # Ele: *"dependente tem que ser um a um, não posso adicionar outro, não,
+    # para pedir mais de um."* Com a lista preenchida, exigir os campos no
+    # topo seria exigir um quarto dependente solto.
+    varios = pedido.get("dependentes")
+    if regra.get("repete") and isinstance(varios, list) and varios:
+        de_cada = [c for c in exige["campos"]
+                   if c not in ("obra_id", "dependentes")]
+        for n, um in enumerate(varios, 1):
+            falta = [ROTULOS.get(c, c) for c in de_cada
+                     if not (um or {}).get(c)]
+            if falta:
+                raise ErroValidacao(
+                    f"No {n}º dependente, falta preencher: "
+                    + ", ".join(falta) + ".")
+        faltando = []
+    else:
+        faltando = [ROTULOS.get(c, c) for c in exige["campos"]
+                    if c != "dependentes" and not pedido.get(c)]
+    # ⚑ A OBRA SAI DESTA CONTA, e tem conferência PRÓPRIA logo abaixo: ela
+    # pode vir do pedido OU do cadastro da pessoa, e exigi-la aqui recusaria
+    # o caso comum (pedido da pessoa, que já tem obra) antes de olhar o
+    # cadastro.
+    faltando = [x for x in faltando if x != ROTULOS["obra_id"]]
+    if faltando:
+        raise ErroValidacao("Falta preencher: " + ", ".join(faltando) + ".")
 
+    # ⚑ E OS PAPÉIS. `documentos` vem da tela: os códigos dos tipos que já
+    # foram anexados ao pedido (o arquivo em si já subiu e está esperando).
+    anexados = {str(x).strip().upper() for x in (dados.get("documentos") or [])}
+    sem_papel = [d["rotulo"] for d in exige["documentos"]
+                 if d["codigo"] not in anexados]
+    if sem_papel:
+        porque = (" Sem esses papéis o cadastro não se faz e a pessoa não "
+                  "entra no sistema de pagamento — por isso o pedido não sai "
+                  "incompleto." if tipo == "CADASTRO" else
+                  " O pedido não sai sem eles.")
+        raise ErroValidacao("Falta anexar: " + ", ".join(sem_papel) + "." + porque)
+    # ⚑ A OBRA É OBRIGATÓRIA EM TODO PEDIDO (10/11/2026). O dono: *"eu quero
+    # que seja obrigatória, porque a gente não sabe de onde é que está vindo
+    # aquela pessoa, para onde está indo trabalhar."*
+    #
+    # Ela pode vir de dois lugares, e a ordem importa: o que o pedido DISSE
+    # vence, e só na falta dele vale a obra do cadastro da pessoa. É o caso da
+    # transferência — a obra que pede é a de DESTINO, e sobrescrevê-la pela do
+    # cadastro mandaria o pedido para a obra de onde a pessoa está saindo.
+    #
+    # Quando não há nem uma nem outra, o pedido é RECUSADO em vez de entrar
+    # sem obra: pedido sem obra é pedido que ninguém sabe de onde veio, e
+    # quem for atendê-lo vai perguntar por WhatsApp — que é o trabalho que
+    # esta fila existe para acabar.
+    obra_do_pedido = (int(dados["obra_id"]) if dados.get("obra_id")
+                      else (pessoa.obra_id if pessoa else None))
+    if not obra_do_pedido:
+        raise ErroValidacao(
+            "Informe a obra. Sem ela não dá para saber de onde vem a pessoa "
+            "nem para onde ela vai trabalhar.")
     numero = proximo_numero(s)
     linha = s.execute(text("""
         INSERT INTO dp_solicitacoes
@@ -254,10 +1537,17 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
         "numero": numero, "tipo": tipo, "colaborador_id": colaborador_id,
         "nome": (pessoa.nome if pessoa else (pedido.get("nome") or None)),
         "cpf": (pessoa.cpf if pessoa else (pedido.get("cpf") or None)),
-        "obra_id": (int(dados["obra_id"]) if dados.get("obra_id")
-                    else (pessoa.obra_id if pessoa else None)),
+        "obra_id": obra_do_pedido,
         "solicitante": usuario.id if usuario else None,
-        "requerente": (str(dados.get("requerente") or "").strip() or None),
+        # ⚑ "REQUERENTE" SAIU DE USO EM 10/11/2026, por decisão dele:
+        # *"requerente era assim: eu solicito por alguém; aí esse alguém é o
+        # requerente. Mas vamos deixar de fora por enquanto."*
+        #
+        # A COLUNA FICA, e isso é escolha: há pedidos gravados com ela, e
+        # apagá-los tiraria a resposta de "quem pediu isto?" de registros que
+        # já existem. O que saiu foi PERGUNTAR. "Por enquanto" é a palavra
+        # dele — voltar é reabrir o campo, não refazer a tabela.
+        "requerente": None,
         "dados": __import__("json").dumps(pedido, ensure_ascii=False, default=str),
         "ref": _data(pedido.get("data_saida") or pedido.get("admissao")
                      or pedido.get("vigencia") or pedido.get("data_nascimento"), "data"),
@@ -265,7 +1555,9 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
                       or pedido.get("aux_transporte"), "valor"),
     })
     solicitacao_id = int(linha.scalar())
-    for i, item in enumerate(regra["checklist"]):
+    for i, item in enumerate(checklist_do_tipo(tipo, vinculo,
+                                               readmissao=readmissao,
+                                               pedido=pedido)):
         s.execute(text("""INSERT INTO dp_solicitacao_itens (solicitacao_id, ordem, descricao)
                           VALUES (:s, :o, :d)"""),
                   {"s": solicitacao_id, "o": i, "d": item})
@@ -312,13 +1604,29 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
     regra = TIPOS[p["tipo"]]
     # O que vale é o pedido, com o que o DP corrigiu em cima. Corrigir é normal:
     # a obra pede "salário 2200" e o DP acerta no piso da convenção.
-    pedido = {**p["dados"], **{k: v for k, v in (dados.get("dados") or {}).items()
-                               if v not in (None, "")}}
+    pedido = traduzir_do_pipe(
+        {**p["dados"], **{k: v for k, v in (dados.get("dados") or {}).items()
+                          if v not in (None, "")}})
     efeito: dict[str, Any] = {}
     executa = regra["executa"]
+    # A obra do pedido entra no efeito: é ela que o cadastro grava, e sem isso
+    # a pessoa nasceria (ou voltaria) sem obra — e quem é preso a uma obra não
+    # a enxergaria.
+    if p.get("obra_id"):
+        pedido.setdefault("obra_id", p["obra_id"])
     if executa and p["colaborador_id"]:
         alvo = p["colaborador_id"]
-        if executa == "desligar":
+        # ⚑ CADASTRO COM PESSOA LIGADA É READMISSÃO, e precisa estar ANTES dos
+        # outros ramos: sem este, `criar_cadastro` com `colaborador_id`
+        # preenchido entrava aqui, não casava com nenhum ramo, e o pedido era
+        # marcado como ATENDIDO sem nada ter acontecido. Atendimento que não
+        # faz nada e diz que fez é pior que erro — ninguém vai conferir.
+        if executa == "criar_cadastro":
+            svc_pessoas.readmitir(s, alvo, {
+                **pedido, "admissao": pedido.get("data_inicio"),
+                "vinculo": pedido.get("tipo_documentacao") or None}, usuario)
+            efeito["readmitiu"] = True
+        elif executa == "desligar":
             svc_pessoas.desligar(s, alvo, pedido, usuario)
         elif executa == "readmitir":
             svc_pessoas.readmitir(s, alvo, pedido, usuario)
@@ -327,10 +1635,28 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
         elif executa == "alteracao":
             svc_pessoas.registrar_alteracao(s, alvo, pedido, usuario)
         elif executa == "dependente":
-            svc_pessoas.salvar_dependente(s, alvo, pedido, usuario)
+            # ⚑ VÁRIOS DE UMA VEZ. Ele, em 10/11/2026: *"dependente tem que
+            # ser um a um, não posso adicionar outro, não, para pedir mais de
+            # um."* Um pedido com três filhos cadastra os três; o formato
+            # antigo (um dependente solto no corpo) continua valendo, porque
+            # é o que os pedidos já abertos têm gravado.
+            varios = pedido.get("dependentes")
+            if isinstance(varios, list) and varios:
+                for um in varios:
+                    svc_pessoas.salvar_dependente(
+                        s, alvo, traduzir_do_pipe(um), usuario)
+                efeito["dependentes"] = len(varios)
+            else:
+                svc_pessoas.salvar_dependente(s, alvo, pedido, usuario)
         elif executa in ("atualizar_cadastro", "beneficios"):
             c = s.get(Colaborador, alvo)
-            svc_pessoas.salvar(s, {**pedido, "cpf": c.cpf, "nome": c.nome}, usuario)
+            # ⚑ O CPF NÃO SE TROCA — é a identidade da pessoa no sistema. O
+            # NOME troca (casamento, divórcio, correção na certidão), mas só
+            # quando o pedido traz um: `nome` sozinho no corpo do pedido seria
+            # o nome ANTIGO vindo de volta, por isso o campo tem nome próprio.
+            novo_nome = " ".join(str(pedido.get("nome_novo") or "").split())
+            svc_pessoas.salvar(s, {**pedido, "cpf": c.cpf,
+                                   "nome": novo_nome or c.nome}, usuario)
         efeito["executou"] = executa
     elif executa == "criar_cadastro":
         c = svc_pessoas.salvar(s, {**pedido, "admissao": pedido.get("data_inicio")}, usuario)
@@ -435,7 +1761,8 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
     "atendida" antes de "aberta". Pego por teste.
     """
     linha = s.execute(text("""
-        SELECT d.*, c.nome AS pessoa, c.cpf AS pessoa_cpf, o.codigo AS obra,
+        SELECT d.*, c.nome AS pessoa, c.cpf AS pessoa_cpf, c.vinculo AS pessoa_vinculo,
+               o.codigo AS obra,
                u.nome AS solicitante, a.nome AS atendente
           FROM dp_solicitacoes d
           LEFT JOIN colaboradores c ON c.id = d.colaborador_id
@@ -447,6 +1774,12 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         raise ErroValidacao("Solicitação não encontrada.")
     d = dict(linha)
     regra = TIPOS.get(d["tipo"], {})
+    # ⚑ O PEDIDO CONVERTIDO DIZ O QUE ELE É. Um CADASTRO cujo CPF já existia é
+    # uma readmissão, e chamá-lo de "Cadastro de Colaborador" na fila faria o
+    # DP abrir esperando criar ficha nova.
+    rotulo_tipo = regra.get("nome", d["tipo"])
+    if d["tipo"] == "CADASTRO" and (d["dados"] or {}).get("readmissao"):
+        rotulo_tipo = "Readmissão de Colaborador"
     itens = s.execute(text("""SELECT i.id, i.ordem, i.descricao, i.feito, i.feito_em,
                                      u.nome AS por
                                 FROM dp_solicitacao_itens i
@@ -461,11 +1794,18 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
                         {"s": solicitacao_id}).mappings().all()
     return {
         "id": d["id"], "numero": d["numero"], "tipo": d["tipo"],
-        "tipo_rotulo": regra.get("nome", d["tipo"]),
+        "tipo_rotulo": rotulo_tipo,
+        "readmissao": bool((d["dados"] or {}).get("readmissao")),
         "situacao": d["situacao"],
         "situacao_rotulo": SITUACAO_ROTULOS.get(d["situacao"], d["situacao"]),
         "colaborador_id": d["colaborador_id"],
         "pessoa": d["pessoa"] or d["nome_informado"] or "",
+        # ⚑ O VÍNCULO VIAJA COM O PEDIDO. A tela do DP usa para saber quais
+        # campos são dele: no desligamento, a data de saída de quem tem
+        # carteira é conta do DP; a do prestador veio da obra.
+        "pessoa_vinculo": (d["pessoa_vinculo"] or "") if d["pessoa_vinculo"] else "",
+        "campos_do_dp": list(campos_do_dp_do_tipo(
+            d["tipo"], d["pessoa_vinculo"])) if d["tipo"] in TIPOS else [],
         "pessoa_cpf": d["pessoa_cpf"] or d["cpf_informado"] or "",
         "obra": d["obra"] or "", "obra_id": d["obra_id"],
         "solicitante": d["solicitante"] or "", "requerente": d["requerente"] or "",
@@ -510,7 +1850,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         onde.append("d.colaborador_id = :cid")
         params["cid"] = colaborador_id
     # O ESCOPO POR OBRA: quem é preso a obra vê o que é da obra dele, mais o que
-    # ele mesmo abriu (pedido de pré-cadastro ainda não tem obra ligada).
+    # ele mesmo abriu (pedido de cadastro ainda não tem obra ligada).
     if obra_ids is not None:
         if obra_ids:
             onde.append("(d.obra_id = ANY(:obras) OR d.solicitante_id = :eu)")
@@ -559,6 +1899,14 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
             "em_andamento": sum(1 for x in fila
                                 if x["aberta"] and 0 < x["feitos"] < x["total_itens"]),
         },
-        "tipos": tipos_para_tela(),
+        "tipos": tipos_para_tela(s),
+        # ⚑ AS EMPRESAS DO GRUPO, direto do cadastro de Empresas — TODAS as
+        # ativas, inclusive a que está sem CNPJ (ela aparece dizendo que
+        # está). Ver `empresas_para_escolher`: o erro antigo era o CAMPO pedir
+        # um CNPJ, e não a lista vir do lugar errado.
+        "empresas": empresas_para_escolher(s),
+        # Quem foi desligado dizendo que continua, e não foi readmitido: o
+        # ponto não aceita essa pessoa amanhã (15/11/2026).
+        "readmissoes_pendentes": readmissoes_esquecidas(s),
         "situacoes": [{"valor": c, "rotulo": r} for c, r in SITUACAO_ROTULOS.items()],
     }

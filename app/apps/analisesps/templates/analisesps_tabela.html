@@ -164,8 +164,12 @@
               {# A descrição é o texto mais comprido da linha. Letra menor e
                  corte na largura para ela não empurrar o resto da tabela para
                  fora da tela; o texto inteiro fica no title, e a coluna se
-                 esconde num clique. #}
-              <td data-col="{{ c.chave }}" class="texto-longo" title="{{ l[c.chave] or '' }}">{{ l[c.chave] or '' }}</td>
+                 esconde num clique.
+                 ⚠️ DUAS LINHAS desde 10/11/2026 (dono: *"sem aumentar a largura
+                 da tabela, quebrar essa informação e ela aparecer em duas
+                 linhas"*): o corte de duas linhas precisa de um bloco DENTRO da
+                 célula — aplicado na própria <td>, quebraria a tabela. #}
+              <td data-col="{{ c.chave }}" class="texto-longo" title="{{ l[c.chave] or '' }}"><div class="duas-linhas">{{ l[c.chave] or '' }}</div></td>
 
             {% elif c.tipo == 'alertas' %}
               <td data-col="{{ c.chave }}">

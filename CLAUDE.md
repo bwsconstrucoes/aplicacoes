@@ -22,6 +22,51 @@ Isso muda a resposta, não o cuidado com o código.
   verificado são decisão de negócio — e a decisão é dele. Não esconder atrás de
   "está pronto".
 
+## NÃO FAZER sem pedir é regra. NÃO FALAR não é.
+
+Pedido do dono em 17/11/2026, com todas as letras: **"não deixe de me
+questionar visando a otimização."**
+
+Veio depois de ele mesmo apontar o óbvio que estava na cara e passou meses sem
+ninguém dizer: a baixa de comprovantes gastava **três idas ao Google por
+comprovante** (noventa num lote de trinta) e **uma chamada ao Pipefy por card**.
+A cobrança dele foi justa: *"por que você não já sugeriu esse tipo de coisa? É
+muita ineficiência de algo óbvio."*
+
+**Por que aconteceu, para não repetir:** cada sessão foi atrás do que estava na
+frente — "a fila tem 2.270 linhas", "a fila tardia está travando tudo", "por que
+ler a planilha inteira". Todos consertos de verdade. Mas ninguém parou para
+fazer a conta mais simples que existe: **quantas idas à internet custa UMA
+operação, e quantas custa um lote dela?** O número já estava escrito num
+comentário do próprio código. Faltou multiplicar em voz alta.
+
+**A confusão que causou isso, e é ela que a regra corrige:** "não fazer o que
+não foi pedido" (regra certa, ele já cobrou) foi tratada como se fosse "não
+falar o que não foi perguntado" (regra que não existe). São coisas diferentes:
+
+- **Fazer** sem pedir custa trabalho refeito e mexe no sistema dele.
+- **Falar** custa três linhas de leitura, e a decisão continua sendo dele.
+
+**O que fazer, então:**
+
+1. Ao mexer numa área, **contar o custo da operação inteira antes** — quantas
+   chamadas de rede, quantas leituras de planilha, quantas por item e quantas
+   por lote — e dizer o que a conta mostrou, **mesmo que não vá mexer naquilo**.
+   Relatório, não obra.
+2. Ineficiência óbvia encontrada de passagem **se relata na resposta**, em duas
+   ou três linhas, com o número. Não se conserta por conta própria e não se
+   guarda em silêncio.
+3. Vale para os três custos que ele sente: **tempo de resposta**, **cota do
+   Google** (dividida por todas as áreas) e **as quatro linhas de atendimento**
+   do serviço.
+
+**E a outra metade, que é dele:** as maiores otimizações desta base vieram de
+informação que só o dono tinha — "a SP está em SPsAgendar em quase 100% dos
+casos" (cortou 52 mil linhas de leitura), "a coluna AC é a linha na SPsBD", "a
+resposta do Make eu não uso para nada" (derrubou a espera inteira). O código se
+lê; o negócio, não. **Na dúvida sobre como algo é usado na prática, perguntar
+sai mais barato que supor.**
+
 ## VÁRIAS TAREFAS NUM PEDIDO SÓ: vá até o fim, sem voltar no meio
 
 **Esta é a regra que mais foi quebrada, e o dono já a pediu mais de uma vez.**
@@ -133,13 +178,14 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 
 | Área | Pasta | Leia ANTES de mexer | Registre o estado em |
 |---|---|---|---|
-| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
+| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `DESLIGAR_A_PLANILHA.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
 | Painel OMIE | `app/apps/painel/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |
 | Emissão de NFS-e | `app/apps/emissaonf/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §9 — e o aviso de risco logo abaixo desta tabela | `HISTORICO.md` |
 | Ponto eletrônico (REP-P) | `app/apps/ponto/` | `README.md`, `HISTORICO.md`, `PLANO.md`, `CONTEXTO.md` §5.13 e §9 | `HISTORICO.md` |
 | ValidaSP (validação de SP, chamada pelo Make) | `app/apps/validasp/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.7 | `HISTORICO.md` |
+| AtualizaSPBotão (botão do Pipefy → Make → planilhas + Omie) | `app/apps/atualizaspbotao/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Mensageria (tela ERP › Mensagens, `notificador.py`, bot Telegram, chatbot WhatsApp) | `app/apps/mensageria/` (código e memória); mais `notificador.py`, `telegram/`, `chatbot/` | `README.md`, `HISTORICO.md` (na pasta `mensageria/`), `CONTEXTO.md` §4.4, §5.8 e §9 | `mensageria/HISTORICO.md` |
 
 **Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a
@@ -185,9 +231,21 @@ histórico **perdeu** o que aprendeu — o chat não é memória, o repositório
 **Juntar na `main` publica no Render na hora.** Regras:
 
 1. Só com o dono dizendo "pode". Trabalho em ramo é seguro; a `main` é produção.
-2. **Perguntar antes se há carga do painel ou sincronização do Análise de SPs
-   em andamento**: publicar reinicia o serviço e mata o trabalho longo. Já
-   aconteceu, causado por outro chat que não sabia.
+2. **Perguntar UMA VEZ POR CHAT se há carga do painel ou sincronização do
+   Análise de SPs em andamento**: publicar reinicia o serviço e mata o
+   trabalho longo. Já aconteceu, causado por outro chat que não sabia.
+
+   ⚠️ **UMA VEZ. Não a cada publicação.** Em 11/11/2026 ele cobrou:
+   *"Agora não pode mais. Pq tá perguntando duas vezes? Já havia afirmado."*
+   Ele tinha respondido "não tem nada rodando" horas antes, no mesmo chat, e
+   a pergunta voltou na publicação seguinte.
+
+   **Respondida, vale para o chat inteiro.** Um "pode publicar" depois disso
+   JÁ CARREGA a resposta — repetir a pergunta é pedir de novo o que ele já
+   deu, que é a mesma irritação da pausa no meio da fila, e custa as mesmas
+   horas. Se o chat durar dias e o estado do mundo puder ter mudado, a
+   pergunta cabe de novo **dizendo por que** ("faz dois dias que você
+   respondeu isso"); fora disso, não.
 3. Ramo com migração de banco: avisar o dono para apertar "Aplicar
    atualizações do banco" **no mesmo momento** da junção — ERP em
    Configurações, painel e Análise de SPs nas telas de configuração deles.
@@ -197,7 +255,7 @@ histórico **perdeu** o que aprendeu — o chat não é memória, o repositório
 **Mensagem de abertura** que o dono usa num chat novo (basta trocar a área):
 
 > Trabalhe na área **[ERP / Painel OMIE / Análise de SPs / BaixaBradesco /
-> Emissão de NFS-e / Ponto eletrônico / Mensageria]** deste repositório.
+> Emissão de NFS-e / Ponto eletrônico / Mensageria / AtualizaSPBotão]** deste repositório.
 > Leia o `CLAUDE.md` e os arquivos da área indicados nele, me diga em que pé o
 > trabalho está e o que consta como pendente, e confirme comigo antes de
 > começar. Não mexa nas outras áreas. Trabalhe no seu ramo e me pergunte antes
@@ -477,6 +535,92 @@ A regra, para todo cadastro novo:
 Já vale em: obra (contrato, matrícula CNO, ART, OS), colaborador e empresa
 (Cartão CNPJ — `abrirCadastroDeEmpresa`, no `erp_base.html`, usada pela tela de
 Empresas e pela criação de obra).
+
+## ⚠️ O ERP VAI SUBSTITUIR A PLANILHA, O PIPEFY E O OMIE
+
+**Ele teve de dizer isto duas vezes no mesmo dia, 17/11/2026** — a primeira
+depois de eu oferecer "continuar controlando no Pipefy" como se fosse uma
+opção viva:
+
+> *"Não vai ter Pipefy mais. Preciso dizer de novo?"*
+
+> *"O ERP vai substituir planilha e Pipefy e Omie."*
+
+Não precisava repetir. A informação estava na conversa e não no repositório —
+e chat novo nasce sem saber. **Esta é a frase mais importante deste arquivo
+para entender PARA QUE o ERP está sendo construído**, e ela vale para as nove
+áreas, não só para o ERP:
+
+| Sai | O que ele faz hoje | Quem assume |
+|---|---|---|
+| **Pipefy** | cadastro de colaboradores, SPs, fluxos do DP | ERP |
+| **Planilhas** (Registro de Colaboradores, C. Diários, SPsBD) | a base que o Make alimenta e que meio sistema lê | ERP |
+| **OMIE** | financeiro — títulos, contas a pagar e a receber | ERP |
+
+**O ERP não é um espelho desses três, nem um relatório sobre eles: é o lugar
+onde o dado passa a viver.** Ele já havia dito, em 16/11: *"assim que eu
+conseguir importar tudo do Pipefy e das fichas, quero cortar o vínculo com a
+planilha."*
+
+**O que isso decide, e não precisa ser perguntado de novo:**
+
+| Coisa | O que vale |
+|---|---|
+| Importação pelo Pipefy, pela planilha e do OMIE | **ferramenta de mudança, não de operação.** Serve para trazer o que já existe. Não desenhe funcionalidade que dependa dela para sempre |
+| Integração de ida (o ERP ESCREVENDO em OMIE/planilha) | caminho que vai morrer. Antes de criar mais uma, pergunte se não é o ERP que deveria ser a fonte |
+| As ETAPAS do cadastro (Inicial, Conferência, Contrato a assinar, Na contabilidade, Concluído, Afastado, Desligado, Cancelado) | **ficam, e ganham importância.** Eram "a fase do card"; passam a ser a única fila de trabalho do DP. Ele: *"as fases do Pipefy é para o DP saber o que fazer; aqui ele fica perdido"* |
+| Toda etapa precisa ser ALCANÇÁVEL pela tela | se o DP não consegue mover alguém, a fila congela. Isto já falhou: a regra de transição existia desde 05/11 e a tela não tinha botão até 17/11 |
+| Entrada de cadastro novo | o formulário do ERP (portal da obra → pedido do DP), **não** o card |
+| "Está no Pipefy" | **nunca é resposta** para onde um dado deve morar, nem justificativa para o ERP não ter algo |
+
+**A pergunta que substitui "como está no Pipefy / na planilha / no OMIE?":**
+se os três fossem desligados amanhã, isto que estou entregando deixaria a
+equipe conseguir trabalhar? Se a resposta for não, falta coisa — e falta no
+ERP.
+
+⚠️ **Isto NÃO é autorização para desligar nada, nem para apagar integração
+que está de pé.** A ordem dos desligamentos, e quando, é decisão dele —
+ver a regra "o que ela SUBSTITUI?" logo abaixo. Hoje o OMIE, o Pipefy e as
+planilhas estão em produção e a empresa depende deles.
+
+---
+
+## Funcionalidade nova pergunta: o que ela SUBSTITUI?
+
+Cobrança dele em 17/11/2026, e ela é a continuação direta da regra "um
+cadastro, uma porta" logo acima:
+
+> *"Às vezes não compreendo a lógica de complicar. As pessoas já estão todas
+> no sistema (…) era só para equalizar e complementar os dados."*
+
+O que ele encontrou: **três** botões para importar pessoas — um por arquivo
+`.xlsx` (09/11), um por PDF do Fortes (16/11) e um pela planilha do Google ao
+vivo (17/11). Cada um nasceu respondendo ao que ele pediu naquele dia, e cada
+um estava certo sozinho. Juntos viraram um cardápio, e ele teve de perguntar
+duas vezes qual era o certo.
+
+**A causa, dita sem rodeio: pedido novo é tratado como coisa a ACRESCENTAR.**
+Acrescentar é barato para quem escreve — um botão novo não exige entender nem
+desmontar o que já existe. O custo não cai em quem escreve: cai nele, toda vez
+que abre a tela e precisa escolher entre caminhos sem saber a diferença.
+
+**A pergunta obrigatória, antes de entregar qualquer caminho novo:**
+
+> Isto é uma porta NOVA ou é a porta CERTA para algo que já tem porta?
+> Se é a certa, a antiga sai — ou, no mínimo, a resposta diz que ela ficou e
+> por quê.
+
+E quando a antiga fica, a tela tem de dizer **para que serve cada uma**, em
+português, sem obrigar ninguém a descobrir pela tentativa.
+
+**⚠️ Mas "a antiga sai" NÃO é autorização para apagar.** No mesmo dia, ao ver
+que eu ia tirar o botão antigo, ele cortou: *"eu não pedi pra tirar."* Tirar
+funcionalidade é mudança com risco — pode ser o caminho que alguém usa, ou o
+único que faz algo que o novo não faz. Então: **proponha, explique o que o
+novo cobre e o que se perde, e espere o "pode".** O que não se faz é entregar
+a terceira porta calado e deixá-lo descobrir sozinho que há três.
+
+---
 
 ## Padrões que já existem — reusar, não recriar
 

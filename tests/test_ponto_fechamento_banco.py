@@ -117,31 +117,41 @@ def test_as_regras_do_dia():
     assert fe.falta_do_dia({"situacao": "OK", "debito": 0}) is None
 
 
-def _dia_do_corrente(banco, hoje: dt.date) -> dt.date | None:
+def _dia_do_corrente(banco, hoje: dt.date) -> tuple[dt.date, dt.date | None] | None:
     """Um dia de trabalho já passado, entre o dia 2 e o 24, cujo SEGUINTE
     também é dia de trabalho — o teste mede um dia com extra e o seguinte com
-    falta parcial, então os dois precisam valer.
+    falta parcial, então os dois precisam valer. Devolve também um dia ANTERIOR
+    de trabalho, no mesmo mês, para a parte da extra pequena.
 
     ⚠️ FERIADO CONTA (03/11/2026): este teste quebrou no dia seguinte a Finados,
     porque escolhia "segunda a quinta" só pelo dia da semana e caiu em 02/11.
     Em feriado a extra vira 100% e o dia sai dos previstos. O
     `dias_de_trabalho_antes` pula feriado nacional; o par de dias seguidos
     continua sendo exigido aqui.
+
+    ⚠️ E QUEBROU DE NOVO EM 11/11/2026, pelo MESMO motivo, no outro dia que o
+    teste usa: o `dia` já era escolhido pulando feriado, mas o dia da extra
+    pequena era `dia - 7` na marra — e caiu em 02/11, Finados. Daí ele vir
+    daqui também, e não de uma subtração: feriado não é dia de trabalho em
+    lugar nenhum do teste.
     """
     from tests.test_ponto_gestao_banco import dias_de_trabalho_antes
     uteis = set(dias_de_trabalho_antes(banco, hoje, quantos=20, dias_da_semana=(0, 1, 2, 3)))
     for d in sorted(uteis, reverse=True):
         if 2 <= d.day <= 24 and (d + dt.timedelta(days=1)) in uteis:
-            return d
+            # O mais recente dia de trabalho ANTES dele, no mesmo mês.
+            antes = [x for x in uteis if x < d and x.month == d.month]
+            return d, (max(antes) if antes else None)
     return None
 
 
 @pytest.mark.banco
 def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_analisesps):
     from app.apps.ponto import horario
-    dia = _dia_do_corrente(banco, horario.hoje())
-    if not dia:
+    escolha = _dia_do_corrente(banco, horario.hoje())
+    if not escolha:
         pytest.skip("nenhum par de dias de trabalho seguidos entre 2 e 24 nos últimos 60 dias")
+    dia, pequeno = escolha
     with banco.connect() as conn:                       # o ID Fortes vem do cadastro da Análise de SPs
         conn.execute(text("INSERT INTO analisesps.colaborador (cpf, nome, celular, cargo, fase, obra_codigo, id_fortes) "
                           "VALUES (:c, 'João Obra A', '85999990000', 'Pedreiro', 'Colaboradores Ativos', 'PG-A', '000123')"),
@@ -220,8 +230,9 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
 
     # a hora extra pequena DESCONSIDERADA (30/10/2026): o dia com até N minutos de extra não entra; a escolha fica
     # guardada até mudar
-    pequeno = dia - dt.timedelta(days=7)                # uma semana antes: 8 min de extra no dia
-    if pequeno.month == dia.month:
+    # `pequeno` vem do mesmo filtro que `dia` (pula feriado), e não de uma
+    # subtração de sete dias — ver o aviso em `_dia_do_corrente`.
+    if pequeno:
         for h, m in ((7, 0), (11, 0), (12, 0), (17, 8)):
             bater_via_chave(app, CPF_JOAO, local(pequeno, h, m))
         fp = dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 10}).get_json()

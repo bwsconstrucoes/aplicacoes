@@ -95,7 +95,7 @@ def test_falha_do_google_nao_derruba_o_lote():
 # comportamento aqui exigiria PDF, planilha e Omie de verdade, então o que se
 # confere é a ligação — e a ordem em que ela acontece.
 
-FONTE = inspect.getsource(core.processar_baixabradesco)
+FONTE = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
 
 
 def test_a_lista_e_carregada_uma_vez_no_lote():
@@ -155,7 +155,7 @@ def test_a_gravacao_na_planilha_deixou_de_ser_silenciosa():
     """
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core._gravar_planilha)
+    fonte = inspect.getsource(core._gravar_planilha_em_lote)
     assert "enqueue_failure(" in fonte
     assert "plan.responses['sheets']" in fonte
 
@@ -163,7 +163,8 @@ def test_a_gravacao_na_planilha_deixou_de_ser_silenciosa():
 def test_a_planilha_diz_se_gravou():
     """Antes devolvia None sempre, engolindo o erro dentro de um except vazio."""
     from app.apps.baixabradesco.sheets import execute_spsbd_updates
-    assert execute_spsbd_updates([]) == {'ok': True, 'gravados': 0, 'erros': []}
+    vazio = execute_spsbd_updates([])
+    assert vazio['ok'] is True and vazio['gravados'] == 0 and vazio['erros'] == []
 
 
 def test_o_reenvio_que_conclui_aparece_na_resposta():

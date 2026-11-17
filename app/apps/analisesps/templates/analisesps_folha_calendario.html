@@ -184,7 +184,8 @@
     O sistema busca sozinho os feriados <b>nacionais</b>, os <b>estaduais</b> dos estados
     com obra em andamento e os <b>municipais</b> dos municípios com obra em andamento — no
     começo de cada ano (o seguinte, a partir de 1º de dezembro) e quando entra obra em
-    estado ou município novo. Feriado excluído no ponto não volta.
+    estado ou município novo. Roda <b>só de madrugada</b>, das 2h às 5h; para buscar já, use o botão abaixo.
+    Feriado excluído no ponto não volta.
   </p>
   {% for a, info in busca.anos|dictsort %}
     <div class="cartao-dica" style="margin:4px 0">
@@ -201,7 +202,7 @@
   {% if busca.falta %}
     <p class="cartao-dica" style="margin:6px 0 0">Falta buscar:
       {% for a, f in busca.falta|dictsort %}{{ a }} ({% if f.nacional %}nacional, {% endif %}{{ f.ufs|length }} estado(s), {{ f.municipios|length }} município(s)){% if not loop.last %}; {% endif %}{% endfor %}
-      — a busca automática faz isso na próxima hora.</p>
+      — a busca automática faz isso na próxima madrugada (ou aperte “Buscar agora”).</p>
   {% endif %}
   {% if pode_operar %}
     <button class="btn secundario" id="btn-buscar-feriados" type="button" style="margin-top:8px">Buscar agora</button>

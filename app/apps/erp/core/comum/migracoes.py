@@ -70,6 +70,45 @@ def aplicar_pendentes() -> dict[str, Any]:
             erro = {"migracao": nome, "erro": texto[:800], "dica": dica}
             logger.exception("ERP: falha na migração %s", nome)
             break
+    catalogo = _catalogo_de_documentos() if not erro else {}
     return {"aplicadas": aplicadas, "erro": erro,
+            "tipos_de_documento": catalogo,
             "pendentes_restantes": [n for n in estado["pendentes"] if n not in aplicadas
                                     and (not erro or n != erro["migracao"])]}
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O CATÁLOGO DE TIPOS DE DOCUMENTO ENTRA AQUI — conserto de 16/11/2026
+#
+# O dono tentou importar os cards do Pipefy e quatro arquivos de uma pessoa só
+# ficaram de fora, todos com o mesmo recado: *"Tipo de documento desconhecido:
+# FOTO-COLABORADOR"*, *"…: DOC-PESSOA-OUTRO"*.
+#
+# A CAUSA, e ela é a mesma família do CREA e do seguro-garantia: os 69 tipos de
+# documento moram no CÓDIGO (`core/arquivo/catalogo.py`), e só chegavam ao
+# banco quando alguém apertava um botão escondido na tela de Arquivo. Um tipo
+# novo subia para o Render e ficava invisível para o sistema até esse clique —
+# que ninguém sabia que precisava dar, porque nada avisava. Banco recém-migrado
+# tem SETE tipos; o código tem SESSENTA E NOVE.
+#
+# Agora o catálogo é aplicado junto com as migrações, no mesmo botão que o
+# dono já aperta a cada publicação. Ele só CRIA o que falta e nunca apaga nem
+# desativa nada — tipo que alguém desligou à mão continua desligado.
+#
+# Falhar aqui NÃO derruba as migrações: elas já foram aplicadas e confirmadas,
+# uma a uma. O catálogo é o acessório, e um acessório não pode fazer parecer
+# que o principal falhou.
+# ---------------------------------------------------------------------------
+def _catalogo_de_documentos() -> dict[str, Any]:
+    from app.apps.erp.db.database import get_session
+
+    try:
+        from app.apps.erp.core.arquivo import catalogo as svc_catalogo
+        with get_session() as s:
+            r = svc_catalogo.aplicar(s)
+            s.commit()
+        logger.info("ERP: catálogo de documentos — %s", r)
+        return r
+    except Exception as e:                  # noqa: BLE001 — acessório, não trava
+        logger.exception("ERP: catálogo de documentos não pôde ser aplicado")
+        return {"erro": str(e)[:300]}

@@ -668,8 +668,11 @@ def _obra_do_ponto_por_cpf(ano: int, mes: int, inicio, fim,
     return saida
 
 
-def calcular(tipo: str, ano: int, mes: int) -> dict:
-    """A verba inteira do mês. Devolve as pessoas e os totais."""
+def calcular(tipo: str, ano: int, mes: int, empresa: str = "") -> dict:
+    """A verba inteira do mês. Devolve as pessoas e os totais.
+
+    `empresa`: o CNPJ de admissão (`empresa_da_folha`) — recorta a lista ANTES dos
+    totais; vazio = todas."""
     if tipo not in TIPOS:
         raise ErroDoAuxilio(f'verba "{tipo}" não reconhecida.')
 
@@ -739,6 +742,9 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         p["sem_obra"] = bool(p["pagar"] and p["valor"] > 0 and not p.get("obra")
                              and not p.get("rateio"))
 
+    from . import empresa_da_folha
+    pessoas, empresas = empresa_da_folha.preparar(pessoas, empresa)
+
     # ⚠️ QUEM PRECISA DE MÃO VEM PRIMEIRO. `False` ordena antes de `True`, então a
     # chave é `pagar` direto — na primeira versão eu escrevi `not pagar`, e a
     # lista saía ao contrário: os certos na frente e os problemas no fim, onde
@@ -764,6 +770,7 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
                 atual["da_regra"] += 1
 
     return {
+        "empresa": empresa_da_folha.normalizar(empresa), "empresas": empresas,
         "tipo": tipo,
         "rotulo": ROTULO_DO_TIPO[tipo],
         "ano": int(ano), "mes": int(mes),
@@ -795,7 +802,7 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         "com_ausencia": [p for p in pessoas if p.get("ausencias")
                          and not p.get("desconto_aplicado")
                          and p.get("desconto_proposto")],
-        "fechamento": fechamento(tipo, ano, mes),
+        "fechamento": fechamento(tipo, ano, mes, empresa),
     }
 
 
@@ -1097,12 +1104,13 @@ def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> d
 TIPOS_DO_FECHAMENTO = {"fim_de_mes": "Fim de mês", "quinzena": "Quinzena"}
 
 
-def fechamento(tipo: str, ano: int, mes: int) -> dict | None:
+def fechamento(tipo: str, ano: int, mes: int, empresa: str = "") -> dict | None:
     """O fechamento desta verba no mês, em qualquer dos dois pagamentos."""
-    from . import folha_apropriacao_guardada as guardada
+    from . import empresa_da_folha, folha_apropriacao_guardada as guardada
     for pagamento in TIPOS_DO_FECHAMENTO:
         try:
-            achado = guardada.fechamento(ano, mes, pagamento, tipo)
+            achado = guardada.fechamento(ano, mes, pagamento,
+                                         empresa_da_folha.verba_da_empresa(tipo, empresa))
         except Exception:  # noqa: BLE001
             logger.exception("Auxílio: não consegui ler o fechamento")
             achado = None
@@ -1353,12 +1361,13 @@ def apropriado(calculado: dict) -> dict:
 
 
 def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
-           quem: str = "") -> dict:
-    """Congela o auxílio do mês: quem recebe, quanto e de qual obra sai."""
+           quem: str = "", empresa: str = "") -> dict:
+    """Congela o auxílio do mês: quem recebe, quanto e de qual obra sai. `empresa`:
+    só as pessoas daquele CNPJ de admissão (`empresa_da_folha`)."""
     from . import folha_apropriacao_guardada as guardada
     if pagamento not in TIPOS_DO_FECHAMENTO:
         raise ErroDoAuxilio("selecione se o auxílio será pago na quinzena ou no fim de mês.")
-    calculado = calcular(tipo, ano, mes)
+    calculado = calcular(tipo, ano, mes, empresa)
     a_pagar = [p for p in calculado["pessoas"] if p["pagar"] and p["valor"] > 0]
     if not a_pagar:
         raise ErroDoAuxilio("nenhum colaborador marcado para receber este auxílio.")
@@ -1371,10 +1380,12 @@ def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
             '"outra obra…"). Sem obra não há conta de pagamento.')
     # Fechar um pagamento tira o fechamento do outro — senão a mesma verba do
     # mês sairia duas vezes.
+    from . import empresa_da_folha
+    verba = empresa_da_folha.verba_da_empresa(tipo, empresa)
     for outro in TIPOS_DO_FECHAMENTO:
         if outro != pagamento:
-            guardada.reabrir(ano, mes, outro, tipo, quem=quem)
+            guardada.reabrir(ano, mes, outro, verba, quem=quem)
     novo = guardada.fechar(ano, mes, pagamento, apropriado(calculado),
-                           verba=tipo, quem=quem)
+                           verba=verba, quem=quem)
     return {"id": novo, "pessoas": len(a_pagar), "total": calculado["total"],
             "pagamento": pagamento}

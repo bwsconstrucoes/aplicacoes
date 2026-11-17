@@ -2,6 +2,7 @@
 """omie.py — Integração com API Omie portada do Omie.gs"""
 
 import re
+import time
 import requests
 import logging
 from datetime import datetime
@@ -31,9 +32,12 @@ def _validar_entrada_omie(payload: dict):
 
 
 def _executar_chamada_omie(url: str, body: dict) -> dict:
+    inicio = time.monotonic()
     try:
         resp = requests.post(url, json=body, timeout=30)
         status = resp.status_code
+        logger.info(f"[atualizaspbotao] Omie {body.get('call')}: HTTP {status} em "
+                    f"{time.monotonic() - inicio:.1f} s")
         try:
             body_resp = resp.json()
         except Exception:
@@ -42,6 +46,8 @@ def _executar_chamada_omie(url: str, body: dict) -> dict:
         ok = 200 <= status < 300 and not has_fault
         return {'ok': ok, 'status': status, 'body': body_resp, 'raw': resp.text}
     except requests.RequestException as e:
+        logger.warning(f"[atualizaspbotao] Omie {body.get('call')}: falhou em "
+                       f"{time.monotonic() - inicio:.1f} s — {e}")
         return {'ok': False, 'status': 0, 'body': {}, 'raw': str(e)}
 
 

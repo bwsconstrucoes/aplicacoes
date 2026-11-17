@@ -41,6 +41,15 @@ TAMANHO_BLOCO = 4000
 
 REC, PAG = "1. Contas a Receber", "2. Contas a Pagar"
 NAO_APROP = "(não apropriado)"
+# Transferência entre contas da EMPRESA não tem obra, e não é para ter
+# (10/11/2026, o dono: "não é uma simples transferência? Como é que isso vai
+# estar apropriado?"). Com rótulo próprio ela não cai no "(não apropriado)",
+# que é a lista do que alguém precisa ir apropriar no OMIE.
+TRANSFERENCIA_ENTRE_CONTAS = "(transferência entre contas)"
+# O lançamento de conta cuja obra o painel AINDA NÃO PERGUNTOU ao OMIE (ou o
+# OMIE recusou a pergunta). Não é "(não apropriado)": pode muito bem ter obra
+# lá. Rótulo próprio desde 10/11/2026 — ver `gerar_linhas_lancamentos_cc`.
+OBRA_NAO_LIDA = "(obra ainda não lida do OMIE)"
 TOL = 0.10
 
 # Nomes das colunas como as telas antigas as chamavam. Ficam aqui porque a
@@ -1039,22 +1048,43 @@ def _escolher_recebimentos(movs, realizado):
     creditos = [m for m in pagos
                 if not (m.get("liquidado") == "S" or m.get("liquido", 0.0) > TOL)]
 
-    soma_cons = sum(m["valor"] for m in consolidadas)
+    # A BAIXA COM DESCONTO (12/11/2026). O dono: uma medição recebida em
+    # parcelas em 2020 e 2021, com R$ 5.000 que ficaram faltando; em 06/2026
+    # ele deu um desconto e baixou o resto — e o painel passou a mostrar o
+    # recebimento INTEIRO em junho de 2026, o que deixou a obra "no vermelho"
+    # por seis anos na régua dos juros.
+    #
+    # A perna consolidada traz o desconto DENTRO do valor quitado (é por isso
+    # que o realizado do título é "quitado menos desconto"); os créditos
+    # bancários trazem só o dinheiro que entrou. Comparadas cruas, as duas
+    # somas deixam de fechar pelo valor do desconto, e a regra antiga caía na
+    # consolidada: uma linha só, na data da ÚLTIMA baixa — a do desconto.
+    #
+    # Dinheiro é o valor menos o desconto. É ele que se compara, e é ele que
+    # vale em cada perna consolidada (a que é só desconto não é recebimento).
+    def _dinheiro(m):
+        return m["valor"] - (m.get("desconto") or 0.0)
+
+    soma_cons = sum(_dinheiro(m) for m in consolidadas)
     soma_cred = sum(m["valor"] for m in creditos)
 
     def _fecha(a, b):
         return abs(a - b) <= max(TOL, abs(b) * 0.001)
 
     if creditos:
-        # bate com a consolidada, ou (quando nao ha consolidada) com o realizado
+        # bate com a consolidada (em dinheiro), ou com o realizado do título
         if consolidadas and _fecha(soma_cred, soma_cons):
             return creditos, ORIGEM_CREDITO
-        if not consolidadas and _fecha(soma_cred, realizado):
+        if realizado > TOL and _fecha(soma_cred, realizado):
             return creditos, ORIGEM_CREDITO
         if not consolidadas:
             return creditos, ORIGEM_CREDITO
     if consolidadas:
-        return consolidadas, ORIGEM_MOV
+        em_dinheiro = [dict(m, valor=_dinheiro(m)) if (m.get("desconto") or 0.0) > TOL else m
+                       for m in consolidadas]
+        em_dinheiro = [m for m in em_dinheiro if m["valor"] > TOL]
+        # tudo virou desconto (título 100% descontado): fica como era
+        return (em_dinheiro or consolidadas), ORIGEM_MOV
     return creditos, ORIGEM_CREDITO
 
 
@@ -1369,6 +1399,21 @@ def _e_transferencia(bruto, codigo_categoria) -> bool:
             or str(d.get("cTipo") or "").upper() == "TRA")
 
 
+def _codigo_perguntado(bruto):
+    """O número com que a obra é perguntada ao OMIE (o mesmo de
+    `apropriacao_cc._CODIGO`: nCodMovCC, senão nCodLanc)."""
+    import json
+    try:
+        d = (json.loads(bruto) if isinstance(bruto, str) else (bruto or {})).get("detalhes") or {}
+    except (TypeError, ValueError, AttributeError):
+        return None
+    for chave in ("nCodMovCC", "nCodLanc"):
+        v = d.get(chave)
+        if str(v or "").strip().isdigit():
+            return int(v)
+    return None
+
+
 def _codigo_do_bruto(bruto):
     """O número do lançamento no OMIE, quando o movimento traz."""
     import json
@@ -1436,16 +1481,34 @@ def gerar_linhas_lancamentos_cc(conn):
         chave = f"COD:{codigo or 'CC' + str(mid)}"
         # a apropriação: do próprio movimento, se um dia vier; senão, da
         # consulta do lançamento no OMIE (migração 022) — é de onde ela vem hoje
+        # A resposta é guardada pelo número que foi PERGUNTADO (o nCodMovCC,
+        # ver `apropriacao_cc._CODIGO`); a linha leva o nCodLanc. Hoje são o
+        # mesmo número — procurar pelos dois é o que impede uma diferença
+        # futura de deixar o lançamento sem obra em silêncio.
+        resposta = apropriacoes.get(codigo)
+        if resposta is None:
+            resposta = apropriacoes.get(_codigo_perguntado(bruto))
         partes = (_departamentos_do_bruto(bruto)
-                  or _departamentos_do_bruto(apropriacoes.get(codigo))
+                  or _departamentos_do_bruto(resposta)
                   or [(None, 1.0)])
+        # SEM OBRA tem dois motivos, e eles não podem ter o mesmo nome
+        # (10/11/2026, o dono: um lançamento de 2020 "(não apropriado)" no
+        # painel e apropriado no OMIE — "situação gravíssima"). "(não
+        # apropriado)" é o OMIE dizendo que não tem obra; se o painel nem
+        # perguntou ainda, a linha diz isso.
+        nao_lida = resposta is None and not _departamentos_do_bruto(bruto)
         # o centavo que sobra do rateio vai para a última parte: a soma das
         # obras tem de dar o lançamento, ao centavo (100.000,01 em 50/50)
         total = round(sinal * valor, 2)
         valores = [round(total * frac, 2) for _c, frac in partes]
         valores[-1] = round(total - sum(valores[:-1]), 2)
+        transferencia = analise == "TRF" and _e_transferencia(bruto, ccat)
         for (cod_dep, _frac), parte in zip(partes, valores):
-            if cod_dep is None:
+            if cod_dep is None and transferencia:
+                dep, projeto = TRANSFERENCIA_ENTRE_CONTAS, ""
+            elif cod_dep is None and nao_lida:
+                dep, projeto = OBRA_NAO_LIDA, ""
+            elif cod_dep is None:
                 dep, projeto = NAO_APROP, NAO_APROP
             else:
                 dep = nomes_dep.get(cod_dep) or cod_dep
@@ -1476,7 +1539,16 @@ def reconstruir_fato(conn, tamanho_lote=2000):
     from ..db import conexao as _conexao_leitura
 
     with _conexao_leitura() as leitura:
-        conn.execute("TRUNCATE TABLE fato")
+        # DELETE, NÃO TRUNCATE (11/11/2026, o dono: "cliquei Receitas na DRE e
+        # já tá há muito tempo rodando e não mostra a tela"). O TRUNCATE trava
+        # a tabela INTEIRA até o fim da transação: durante os minutos do
+        # recálculo, toda tela que lia o fato ficava esperando — e, com 4 vias
+        # de atendimento, quatro telas presas paravam o serviço inteiro, ERP
+        # junto. O comentário acima prometia "as telas continuam enxergando o
+        # anterior inteiro"; com TRUNCATE era mentira. Com DELETE é verdade
+        # (conferido no banco: a leitura concorrente volta na hora, com o
+        # fato antigo). O preço: linhas mortas até o autovacuum passar.
+        conn.execute("DELETE FROM fato")
         sql = _insert_de("fato", COLUNAS_FATO)
         lote, total = [], 0
         # os títulos e, desde 07/10/2026, os lançamentos de conta corrente
@@ -1512,7 +1584,7 @@ def reconstruir_recebimentos(conn, tamanho_lote=2000):
 
     with _conexao_leitura() as leitura:
         registros = montar_recebimentos(leitura)
-    conn.execute("TRUNCATE TABLE fato_recebimentos")
+    conn.execute("DELETE FROM fato_recebimentos")   # não TRUNCATE: ver reconstruir_fato
     if not registros:
         conn.commit()
         return 0

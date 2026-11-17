@@ -1,56 +1,115 @@
-{# Onde estão os juros de empréstimo na base, categoria por categoria.
-   Usado na montagem do cenário e em Configurações › Conferências. #}
+{# Onde estão os juros de empréstimo — o que a prestação distribui e o que não.
+   Usado na montagem do cenário e em Configurações › Conferências.
+
+   REESCRITO em 11/11/2026. O dono leu o quadro antigo ("o que a prestação
+   conta hoje: R$ 2.358.331" e um parágrafo sobre DRE × Fluxo de Caixa) e
+   respondeu: "Não entendi!". Dois defeitos: o número do topo somava a
+   categoria na empresa inteira, e a prestação só distribui o juro lançado na
+   matriz/filial; e o texto explicava o mecanismo em vez de dizer o que
+   acontece com o dinheiro. Agora: três números, cada um com uma frase. #}
+{% macro v(x) %}{{ brl(x|abs) }}{% endmacro %}
 <div class="cartao" style="border-left:4px solid var(--ambar)">
   <div class="cartao-cab">
-    <h3>Onde estão os juros de empréstimo na base</h3>
-    <small>o que a prestação conta hoje: {{ brl(juros_conf.total_configurado_dre) }}</small>
+    <h3>Onde estão os juros de empréstimo</h3>
+    <small>o que vai para as obras pelo caixa, e o que não</small>
   </div>
-  <p class="cartao-dica" style="margin-top:0">
-    Toda categoria cujo nome fala em <b>juro, empréstimo, financiamento, IOF,
-    encargo ou amortização</b>, com a análise em que o OMIE a põe. A prestação
-    de contas só conta o que está marcado como <b>contada</b> — e só o que está
-    no <b>DRE</b>. O que está no <b>Fluxo de Caixa</b> não é despesa para o
-    painel: uma parcela de empréstimo lançada inteira (principal e juro juntos)
-    fica lá, e o juro que está dentro dela <b>não aparece em lugar nenhum</b>.
-    Para contar uma categoria, escreva o nome dela em Parâmetros › Geral ›
-    "Categoria dos juros de empréstimo" — várias, separadas por ponto-e-vírgula.
-    {% if juros_conf.encargos_de_atraso %}
-    <br><br>Fora desta lista: <b>{{ brl(juros_conf.encargos_de_atraso) }}</b> de
-    juros e multa <b>por atraso</b> em títulos comuns — é a linha "Juros e Multas
-    Pagos" do DRE, e não é juro de empréstimo.
-    {% endif %}
+
+  <p style="margin:0 0 10px; font-size:15px; line-height:1.5">
+    Contam como juros de empréstimo as categorias:
+    <b>{{ juros_conf.linhas|selectattr('contada')|map(attribute='categoria')|unique|join(' · ') or 'nenhuma' }}</b>.
+    <small>(Para mudar: Cadastros › Parâmetros gerais › Categorias dos juros.)</small>
   </p>
-  {% if juros_conf.linhas %}
-  <div class="tabela-rolagem" style="max-height:360px">
-    <table>
-      <thead><tr>
-        <th class="sem-ordem">Categoria</th>
-        <th class="sem-ordem">Código</th>
-        <th class="sem-ordem">Análise</th>
-        <th class="sem-ordem">Lado</th>
-        <th class="sem-ordem direita">Títulos</th>
-        <th class="sem-ordem direita">Pago</th>
-        <th class="sem-ordem direita">Em aberto</th>
-        <th class="sem-ordem">Contada?</th>
-      </tr></thead>
-      <tbody>
-      {% for l in juros_conf.linhas %}
-        <tr>
-          <td class="desc"><b>{{ l.categoria or '(sem categoria)' }}</b></td>
-          <td class="dados">{{ l.codigo }}</td>
-          <td class="desc">{{ l.analise }}</td>
-          <td class="desc">{{ l.tipo }}</td>
-          <td class="dados direita">{{ l.titulos }}</td>
-          <td class="dados direita">{{ brl(l.pago) }}</td>
-          <td class="dados direita">{{ brl(l.aberto) }}</td>
-          <td class="desc">{% if l.configurada and l.analise == 'DRE' %}<b>sim</b>
-            {% elif l.configurada %}<span style="color:var(--ambar-escuro, #8a5a00)">configurada, mas fora do DRE</span>
-            {% else %}não{% endif %}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin-bottom:12px">
+    {% if juros_conf.tem_estrutura %}
+    <div style="border:1px solid var(--borda); border-radius:10px; padding:10px 12px">
+      <small style="text-transform:uppercase; letter-spacing:.04em">Lançado na matriz e na filial</small>
+      <div style="font-size:20px; font-weight:700">{{ v(juros_conf.distribui) }}</div>
+      <small><b>É este que a prestação distribui:</b> vai para as obras que estavam
+        com o caixa negativo em cada mês.</small>
+    </div>
+    <div style="border:1px solid var(--borda); border-radius:10px; padding:10px 12px">
+      <small style="text-transform:uppercase; letter-spacing:.04em">Lançado direto numa obra</small>
+      <div style="font-size:20px; font-weight:700">{{ v(juros_conf.ja_nas_obras) }}</div>
+      <small>Já é despesa daquela obra. Fica nela e <b>não é redistribuído</b>.</small>
+    </div>
+    {% else %}
+    <div style="border:1px solid var(--borda); border-radius:10px; padding:10px 12px">
+      <small style="text-transform:uppercase; letter-spacing:.04em">Total nessas categorias</small>
+      <div style="font-size:20px; font-weight:700">{{ v(juros_conf.total_contado) }}</div>
+      <small>Na empresa inteira (matriz, filial e obras).</small>
+    </div>
+    {% endif %}
+    {% if juros_conf.encargos_de_atraso|abs > 0.005 %}
+    <div style="border:1px solid var(--borda); border-radius:10px; padding:10px 12px">
+      <small style="text-transform:uppercase; letter-spacing:.04em">Juros e multa por atraso</small>
+      <div style="font-size:20px; font-weight:700">{{ v(juros_conf.encargos_de_atraso) }}</div>
+      <small><b>Não é juro de empréstimo</b>: é o que se pagou a mais por quitar
+        conta atrasada. Fica na obra que atrasou (linha "Juros e Multas Pagos" do DRE).</small>
+    </div>
+    {% endif %}
   </div>
+
+  {% set parecidas = juros_conf.linhas|rejectattr('contada')|list %}
+  {% set fora_do_dre = parecidas|selectattr('configurada')|list %}
+  {% if fora_do_dre %}
+  <div class="aviso erro">
+    <b>Marcada como juro, mas não está entrando:</b>
+    {% for l in fora_do_dre %}{{ l.categoria }} ({{ v(l.total) }}){{ ' · ' if not loop.last }}{% endfor %}.
+    No OMIE ela não é despesa (está como “{{ fora_do_dre[0].analise or 'sem análise' }}”),
+    e a prestação só conta despesa.
+  </div>
+  {% endif %}
+
+  {% if juros_conf.linhas %}
+  <details>
+    <summary style="cursor:pointer; padding:6px 0">
+      <b>Conferir, categoria por categoria</b>
+      <small>— toda categoria com nome de juro, empréstimo, financiamento, IOF, encargo ou amortização
+      ({{ juros_conf.linhas|length }})</small>
+    </summary>
+    <p class="cartao-dica">
+      Serve para achar juro que está em outra categoria. <b>“Entra como juro?”</b> é
+      <b>sim</b> só para as categorias marcadas. Atenção à <b>parcela de empréstimo
+      lançada inteira</b> (principal e juro num lançamento só, em categoria de
+      amortização): o OMIE não a trata como despesa, e o juro que está dentro
+      dela não aparece para o painel — para aparecer, o juro tem de ser lançado
+      à parte, na categoria de juros.
+    </p>
+    <div class="tabela-rolagem" style="max-height:360px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">No OMIE é</th>
+          <th class="sem-ordem direita">Lançamentos</th>
+          <th class="sem-ordem direita">Total</th>
+          {% if juros_conf.tem_estrutura %}
+          <th class="sem-ordem direita">Na matriz/filial</th>
+          <th class="sem-ordem direita">Direto em obra</th>
+          {% endif %}
+          <th class="sem-ordem">Entra como juro?</th>
+        </tr></thead>
+        <tbody>
+        {% for l in juros_conf.linhas %}
+          <tr>
+            <td class="desc"><b>{{ l.categoria or '(sem categoria)' }}</b>
+              <small>{{ l.codigo }}{{ ' · a receber' if l.tipo == 'Receber' }}</small></td>
+            <td class="desc">{{ 'despesa (DRE)' if l.analise == 'DRE' else (l.analise or '—') }}</td>
+            <td class="dados direita">{{ l.titulos }}</td>
+            <td class="dados direita">{{ v(l.total) }}</td>
+            {% if juros_conf.tem_estrutura %}
+            <td class="dados direita">{{ v(l.na_estrutura) }}</td>
+            <td class="dados direita">{{ v(l.nas_obras) }}</td>
+            {% endif %}
+            <td class="desc">{% if l.contada %}<b>sim</b>
+              {% elif l.configurada %}<span style="color:var(--vermelho)">marcada, mas não é despesa no OMIE</span>
+              {% else %}não{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
   {% else %}
   <div class="aviso info">Nenhuma categoria da base fala em juro ou empréstimo.</div>
   {% endif %}

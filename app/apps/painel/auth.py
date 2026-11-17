@@ -67,7 +67,54 @@ SO_DO_ADMINISTRADOR = (
     # brecha ficava pior: mudar o projeto de uma obra muda quem a enxerga pelo
     # acesso por projeto.
     "painel.prestacao_parametros", "painel.prestacao_cenarios",
+    # A aba "Prestação de Contas" passou a abrir o cenário (11/11/2026): a
+    # prestação antiga saiu, e o cenário é da empresa inteira.
+    "painel.prestacao_contas",
 )
+
+# A PRESTAÇÃO DE CONTAS COMPARTILHADA, SÓ PARA LEITURA (11/11/2026, o dono:
+# "compartilhar prestação de conta com um determinado usuário: ele vai poder
+# visualizar parâmetros etc., mas não pode mexer em nada").
+#
+# Quem tem a tela "prestacao" marcada no cadastro de acesso ABRE estas rotas —
+# e só com GET. Elas continuam na lista de cima: para todo o resto do mundo a
+# regra não mudou, e qualquer gravação (POST) continua sendo só do
+# administrador. A lista é fechada, por nome inteiro e não por prefixo: rota
+# nova da prestação nasce fechada para quem só lê, até alguém a pôr aqui.
+#
+# Ela mostra a EMPRESA INTEIRA — não passa pelo filtro de obras da pessoa.
+# É o que o dono pediu (o sócio precisa ver a conta toda), e por isso a
+# caixinha do cadastro diz isso com todas as letras.
+# (a chave é nova de propósito — ver `usuarios.TELAS`: a "prestacao" antiga,
+# que ainda está gravada no cadastro de algumas pessoas, não abre nada)
+TELA_DA_PRESTACAO = "prestacao_leitura"
+LEITURA_DA_PRESTACAO = frozenset({
+    "painel.prestacao_contas",       # a aba do menu
+    "painel.cenario_resultado",      # o resultado, por obra e por sócio
+    "painel.cenario_como",           # como a conta é feita
+    "painel.cenario_evolucao",       # a evolução mês a mês, por obra/projeto/estrutura
+    "painel.cenario_montagem",       # a montagem — vê, não grava
+    "painel.prestacao_parametros",   # os cadastros — vê, não grava
+})
+
+
+# os arquivos que quem lê a prestação baixa: o do Resultado e o da Evolução —
+# a mesma informação das telas que ela já abre
+DOWNLOADS_DA_PRESTACAO = frozenset({"cenario", "evolucao"})
+
+
+def le_a_prestacao(pessoa=None) -> bool:
+    """A pessoa logada tem a prestação liberada para leitura? (O administrador
+    não "lê": ele pode tudo, e esta função responde False para ele.)"""
+    pessoa = pessoa if pessoa is not None else usuario_da_sessao()
+    return bool(pessoa) and TELA_DA_PRESTACAO in set(pessoa.get("telas") or [])
+
+
+def so_leitura() -> bool:
+    """Está logado e NÃO é o administrador — as telas da prestação usam isto
+    para esconder os botões de gravar de quem só pode ver."""
+    return esta_logado() and not e_administrador()
+
 
 # Rotas que podem responder sem login. Cada uma com o motivo escrito.
 PUBLICAS = {
@@ -167,6 +214,25 @@ def exigir_login():
     if pessoa is None:
         return redirect(url_for("painel.entrar"))
 
+    # 0. a prestação compartilhada: quem a tem liberada abre as telas dela —
+    #    só para ler. Qualquer outro método cai na regra 1 e é recusado.
+    if (endpoint in LEITURA_DA_PRESTACAO and request.method == "GET"
+            and le_a_prestacao(pessoa)):
+        return None
+    #    ... e GRAVA NO PRÓPRIO CENÁRIO (13/11/2026, o dono: "cada usuário
+    #    que tem acesso à prestação possa fazer suas edições (…) aproveitando o
+    #    que já está editado"). Aqui só passa a porta: SE o cenário é dela quem
+    #    confere é a rota (`web.cenario_gravar`), que recusa com "não
+    #    encontrado" qualquer gravação no cenário de outro. Os Cadastros
+    #    (`prestacao_parametros`) continuam só de leitura para ela.
+    if endpoint == "painel.cenario_gravar" and le_a_prestacao(pessoa):
+        return None
+    #    ... e baixa o relatório dela, mesmo sem obra marcada (a regra 3 é
+    #    das telas de obra). O que ele pode baixar quem decide é `pode_baixar`.
+    if (endpoint == "painel.baixar" and le_a_prestacao(pessoa)
+            and (request.view_args or {}).get("assunto") in DOWNLOADS_DA_PRESTACAO):
+        return None
+
     # 1. area que escreve ou abre a base inteira: nunca, para ninguem preso
     if endpoint.startswith(SO_DO_ADMINISTRADOR):
         logger.warning("Painel: %s tentou abrir %s, que e so do administrador.",
@@ -219,7 +285,6 @@ _ABAS_POR_ENDPOINT = {
     "painel.obras": "obras",
     "painel.execucao": "execucao",
     "painel.necessidade_caixa": "caixa",
-    "painel.prestacao_contas": "prestacao",
     "painel.extrato": "extrato",
     "painel.calendario": "calendario",
     "painel.calendario_dia": "calendario",
@@ -274,6 +339,9 @@ def pode_baixar(assunto: str) -> bool:
     """O administrador baixa tudo. Quem esta preso a obra, so o arquivo de uma
     tela que ele tem — e nunca o que abre a empresa inteira."""
     if e_administrador():
+        return True
+    # quem lê a prestação baixa o relatório dela — é a mesma informação da tela
+    if assunto in DOWNLOADS_DA_PRESTACAO and le_a_prestacao():
         return True
     if assunto in SO_DO_DONO_PARA_BAIXAR:
         return False

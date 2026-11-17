@@ -85,11 +85,11 @@
     // O servidor recusa lote acima do teto. Dizer isso DEPOIS de a pessoa ter
     // editado duzentas linhas seria cruel — o aviso aparece enquanto ela edita.
     if (pendentes > TETO_POR_LOTE) {
-      aviso.textContent = `${pendentes} títulos — o limite por envio é `
-        + `${TETO_POR_LOTE}. Estreite o filtro ou envie em partes.`;
+      aviso.textContent = `${pendentes} com alteração — vão os ${TETO_POR_LOTE} `
+        + `primeiros neste envio. Depois é só marcar todos e escolher de novo: `
+        + `os que já foram ficam de fora sozinhos.`;
     }
     aviso.classList.toggle("tem-pendencia", pendentes > 0);
-    aviso.classList.toggle("passou-do-teto", pendentes > TETO_POR_LOTE);
     document.querySelectorAll("[data-precisa-pendencia]").forEach(
       b => { b.disabled = pendentes === 0; });
   }
@@ -154,9 +154,25 @@
     picker.querySelector("[data-picker-vazio]").classList.toggle("oculto", quantos > 0);
   }
 
+  // O que a linha JA TEM. No lote, quem ja esta na obra (ou categoria)
+  // escolhida fica de fora: com 600 tarifas e um teto de 200 por envio, o
+  // segundo lote e "marcar todos, escolher a obra de novo" — e os ja enviados
+  // saem sozinhos, porque a lista volta mostrando a obra nova.
+  function jaEsta(cod, campo, codigo) {
+    const linhas = [...linhasDe(cod)];
+    if (!linhas.length) return false;
+    if (campo === "categoria") {
+      return linhas.every(tr => tr.dataset.categoriaAtual === String(codigo));
+    }
+    const obra = OBRAS.find(o => String(o.codigo) === String(codigo));
+    return !!obra && linhas.every(tr => tr.dataset.obraAtual === obra.nome);
+  }
+
   function escolher(codigo, rotulo) {
     if (!alvo) return;
+    const emLote = alvo.codigos.length > 1;
     alvo.codigos.forEach(cod => {
+      if (emLote && jaEsta(cod, alvo.campo, codigo)) return;
       const atual = rascunhos.get(cod) || {};
       atual[alvo.campo] = { codigo, rotulo };
       rascunhos.set(cod, atual);
@@ -251,7 +267,16 @@
             + "linha para editar, ou marque várias e use os botões de cima.");
       return;
     }
-    rascunhos.forEach((rascunho, codigo) => {
+    // Acima do teto vai a primeira leva; o servidor recusaria o lote inteiro.
+    const leva = [...rascunhos.entries()].slice(0, TETO_POR_LOTE);
+    if (rascunhos.size > TETO_POR_LOTE && !confirm(
+          `São ${rascunhos.size} lançamentos com alteração e o limite por envio `
+          + `é ${TETO_POR_LOTE}. Vão os ${TETO_POR_LOTE} primeiros agora; depois, `
+          + `marque todos e escolha de novo — os que já foram ficam de fora.`)) {
+      e.preventDefault();
+      return;
+    }
+    leva.forEach(([codigo, rascunho]) => {
       const por = (nome, valor) => {
         const i = document.createElement("input");
         i.type = "hidden"; i.name = nome; i.value = valor;

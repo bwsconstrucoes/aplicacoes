@@ -189,7 +189,7 @@ async function carregarListas(){
   const falhas = [];
   try {
     const d = (await api("/erp/api/lancamento/dados")).dados || {};
-    opcoes("f-obra", d.obras || [], o => `${o.codigo} · ${o.nome}`, "todas");
+    opcoes("f-obra", d.obras || [], o => rotuloObra(o), "todas");
     opcoes("f-fornecedor", d.fornecedores || [], f => f.nome, "todos");
     if (!(d.obras || []).length) falhas.push("obras");
   } catch(e){ falhas.push("obras e fornecedores"); }

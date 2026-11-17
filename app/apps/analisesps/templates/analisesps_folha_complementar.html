@@ -1,0 +1,43 @@
+{% extends "analisesps_base.html" %}
+{# ---------------------------------------------------------------------------
+   A FOLHA COMPLEMENTAR (10/11/2026) — ver `folha_complementar.py`.
+
+   A folha de um mês já pago, importada de novo, comparada com o que foi pago:
+   a receber (vem marcado, paga só a diferença), não pago antes (vem desmarcado),
+   pago a mais (só informa e vai para "a descontar") e sem mudança. O desenho é
+   o do exemplo aprovado pelo dono ("pode construir").
+   --------------------------------------------------------------------------- #}
+{% block titulo %}Complementar {{ folha.competencia }} — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Folha da contabilidade · {{ folha.competencia }} · {{ folha.rotulo_do_tipo }}</h2>
+<nav class="faixa-folha">
+  <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}">Folha</a>
+  <a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}" class="ativa">Complementar</a>
+  <a href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id) }}">Centros de custo</a>
+</nav>
+
+{% set comp_titulo_pago = "Este mês já foi pago" %}
+{% set comp_rotulo_novo = "Folha nova" %}
+{% set comp_rotulo_arquivo = "Folha complementar " ~ ((montado.verba if montado else "")[12:]) %}
+{% set comp_url_pdf = url_for('analisesps.folha_complementar_relatorio', folha_id=folha.id, formato='pdf') %}
+{% set comp_url_xlsx = url_for('analisesps.folha_complementar_relatorio', folha_id=folha.id, formato='xlsx') %}
+{% set comp_url_selecao = url_for('analisesps.folha_complementar_selecao') %}
+{% set comp_url_a_descontar = url_for('analisesps.folha_complementar_a_descontar') %}
+{% set comp_corpo = {'folha_id': folha.id} %}
+{% set gd_origem = 'complementar' %}
+{% set gd_dados = {'folha_id': folha.id} %}
+{% if erro %}
+  <div class="aviso erro"><b>Não foi possível montar a complementar.</b> {{ erro }}</div>
+{% elif not montado.ja_paga %}
+  <div class="aviso atencao"><b>Esta folha ainda não foi paga.</b> A complementar só existe
+    depois do pagamento: gere o arquivo na própria folha.</div>
+{% else %}
+{% include "_complementar_corpo.html" %}
+{% endif %}
+
+{% include "_complementar_fim.html" %}
+{% endblock %}

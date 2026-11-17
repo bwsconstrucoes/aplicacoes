@@ -482,11 +482,15 @@ def _chaves(linhas) -> list:
     return saida
 
 
-def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
-    """As linhas da aba Data, prontas para a tela e para o arquivo."""
+def calcular(recarregar: bool = False, mostrar_geradas: bool = False,
+             empresa: str = "") -> dict:
+    """As linhas da aba Data, prontas para a tela e para o arquivo.
+
+    `empresa`: o CNPJ de admissão (`empresa_da_folha`) — recorta as linhas ANTES dos
+    totais; vazio = todas."""
     from . import folha_cards, folha_pagamento as fpg
 
-    base = {"pessoas": [], "avisos": [], "total": Decimal("0.00"), "quantos": 0,
+    base = {"empresa": "", "empresas": [], "pessoas": [], "avisos": [], "total": Decimal("0.00"), "quantos": 0,
             "quantos_a_pagar": 0, "por_obra": [], "com_problema": [],
             "geradas": 0, "pronto": _pronto()}
     linhas = ler_data(recarregar)
@@ -598,6 +602,9 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
         p["ajuste_pagar"] = aj.get("pagar")
         pessoas.append(p)
 
+    from . import empresa_da_folha
+    base["empresa"] = empresa_da_folha.normalizar(empresa)
+    pessoas, base["empresas"] = empresa_da_folha.preparar(pessoas, empresa)
     marcar_repetidos(pessoas)
     pessoas.sort(key=lambda p: (p["pagar"], (p["nome"] or "").lower(), p["card_id"]))
     a_pagar = [p for p in pessoas if p["pagar"] and p["valor"] > 0 and not p["gerada"]]
@@ -724,10 +731,10 @@ def agrupar(pessoas, campo: str) -> list:
                                pendente=lambda p: p["impossivel"] or not p["conta"])
 
 
-def linhas_a_pagar(calculado: dict | None = None) -> list:
+def linhas_a_pagar(calculado: dict | None = None, empresa: str = "") -> list:
     """As linhas marcadas, no formato da geração (`folha_pagamento.gerar`), com a
     natureza (o tipo de despesa) e a carteira do BeeVale de cada uma."""
-    calculado = calcular() if calculado is None else calculado
+    calculado = calcular(empresa=empresa) if calculado is None else calculado
     return [{"cpf": p["cpf"], "nome": p["nome"], "obra": p["obra"], "conta": p["conta"],
              "verba": VERBA, "valor": p["valor"],
              "dias": int(p["quantidade"] or 0), "origem": "dc",

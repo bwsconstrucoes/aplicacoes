@@ -27,7 +27,7 @@
 {% block filtros %}
 {% if pronto and resultado %}
 {% set url_tela = url_for('analisesps.tela_folha_auxilio') %}
-{% set base_qs = '?tipo=' ~ tipo ~ '&ano=' ~ ano ~ '&mes=' ~ mes %}
+{% set base_qs = '?tipo=' ~ tipo ~ '&ano=' ~ ano ~ '&mes=' ~ mes ~ ('&empresa=' ~ resultado.empresa if resultado and resultado.empresa else '') %}
 {# A LATERAL NO PADRÃO DA FOLHA DA CONTABILIDADE (01/10/2026): pagamento,
    pendências, filtros de caixinha. Ele: *"o botão de gerar folha deveria ser no
    side bar"* (29/09) e que as outras folhas herdem o que a da contabilidade
@@ -62,7 +62,7 @@
     <div class="lat-acoes">
       {% if pode_gerar %}
         {% set gd_origem = tipo %}
-        {% set gd_dados = {'ano': ano, 'mes': mes} %}
+        {% set gd_dados = {'ano': ano, 'mes': mes, 'empresa': (resultado.empresa if resultado else '') or ''} %}
         {% set gd_destino = '' %}
         {% set gd_pagamento = 'pagamento-do-auxilio' %}
         {% include "_gerar_direto.html" %}
@@ -151,6 +151,7 @@
   <input type="hidden" name="tipo" value="{{ tipo }}">
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
+  {% if resultado and resultado.empresa %}<input type="hidden" name="empresa" value="{{ resultado.empresa }}">{% endif %}
   {# O agrupamento escolhido sobrevive ao filtro. #}
   {% if 'agrupar' in request.args %}<input type="hidden" name="agrupar" value="{{ agrupamento }}">{% endif %}
   <div class="filtros-cab">
@@ -183,7 +184,7 @@
 <nav class="abas-folha" aria-label="Verba">
   {% for chave, rotulo in tipos %}
     <a class="aba-folha {% if tipo == chave %}ativa{% endif %}"
-       href="{{ url_for('analisesps.tela_folha_auxilio', tipo=chave, ano=ano, mes=mes) }}"
+       href="{{ url_for('analisesps.tela_folha_auxilio', tipo=chave, ano=ano, mes=mes, **({'empresa': resultado.empresa} if resultado and resultado.empresa else {})) }}"
        {% if tipo == chave %}aria-current="page"{% endif %}>{{ rotulo }}</a>
   {% endfor %}
 </nav>
@@ -209,6 +210,8 @@
       {% endfor %}
     </select>
   </label>
+  {% set emp_opcoes, emp_atual = (resultado.empresas if resultado else []), (resultado.empresa if resultado else '') %}
+  {% include "_empresa_da_folha.html" %}
   <button class="btn secundario" type="submit">Consultar</button>
   {% if resultado %}
     {# ⚠️ AS DUAS DATAS JUNTAS, porque ele paga o auxílio no mês SEGUINTE ao

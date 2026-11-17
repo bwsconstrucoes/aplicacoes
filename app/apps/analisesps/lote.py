@@ -153,6 +153,60 @@ def juntar_no_grupo_whatsapp(texto_atual: str, ids) -> tuple[str, list[str]]:
     return (bloco + ("\n\n" + corpo if corpo.strip() else "")), entraram
 
 
+# ⚠️ UM GRUPO NOVO A CADA ENVIO PELO ROBÔ, E A SP PODE REPETIR (12/11/2026). O dono:
+# *"mesmo que elas já estejam no lote, elas integrem o lote que está sendo criado.
+# Elas podem ficar repetidas. (…) se enviar uma lista de SPs agora, e enviar outra
+# lista mais tarde, quero que seja criado um novo lote. Daí fica WhatsApp1,
+# WhatsApp2. Assim consigo me organizar melhor."* Até ali era UM grupo "WhatsApp"
+# que somava tudo, e a SP que já estava em qualquer grupo era pulada
+# (`juntar_no_grupo_whatsapp`, que fica só para quem ainda a chama).
+PADRAO_GRUPO_WHATSAPP = re.compile(r"^whatsapp\s*(\d*)$", re.IGNORECASE)
+
+
+def proximo_grupo_whatsapp(texto_atual: str) -> str:
+    """O título do próximo grupo do robô: "WhatsApp" + (o maior número já usado + 1).
+    O "WhatsApp" antigo, sem número, conta como zero."""
+    maior = 0
+    for g in separar_grupos(texto_atual):
+        achado = PADRAO_GRUPO_WHATSAPP.match(str(g.get("titulo") or "").strip())
+        if achado:
+            maior = max(maior, int(achado.group(1) or 0))
+    return f"{GRUPO_WHATSAPP}{maior + 1}"
+
+
+def juntar_num_grupo(texto_atual: str, ids, titulo: str) -> tuple[str, list[str]]:
+    """Acrescenta as SPs ao grupo `titulo` e o põe NO TOPO (cria se não existe).
+
+    A SP que já está em OUTRO grupo entra assim mesmo (fica repetida, a pedido do
+    dono); dentro do MESMO grupo não se repete. O resto do texto fica como estava.
+    Devolve o texto novo e as SPs que entraram."""
+    linhas = str(texto_atual or "").split("\n")
+    alvo = str(titulo).strip().lower()
+    no_grupo: list[str] = []
+    resto: list[str] = []
+    dentro = False
+    for bruta in linhas:
+        limpa = bruta.strip()
+        if limpa and not _e_linha_de_ids(limpa):
+            dentro = limpa.lower() == alvo
+            if dentro:
+                continue
+        if dentro:
+            if limpa:
+                no_grupo.extend(p for p in SEPARADORES.split(limpa) if p)
+            continue
+        resto.append(bruta)
+    entraram: list[str] = []
+    for sp in ids or []:
+        sp = str(sp).strip()
+        if sp and sp not in no_grupo and sp not in entraram:
+            entraram.append(sp)
+    todos = list(dict.fromkeys(no_grupo + entraram))
+    bloco = titulo + ("\n" + "\n".join(todos) if todos else "")
+    corpo = "\n".join(resto).strip("\n")
+    return (bloco + ("\n\n" + corpo if corpo.strip() else "")), entraram
+
+
 def _limpar(texto: str, sai) -> tuple[str, int]:
     """A limpeza do lote, com a regra de quem sai vindo de fora.
 

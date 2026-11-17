@@ -612,3 +612,10 @@ input.campo-data-texto[maxlength="7"] { width: 8em; }
 .seletor-atalhos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
   border-top: 1px solid var(--borda); padding-top: 8px; }
 .seletor-atalhos button { padding: 4px 10px; border: 1px solid var(--borda); }
+
+/* A árvore das regras de rateio (11/11/2026): a setinha de abrir o grupo —
+   o `display:flex` do summary esconde a nativa. */
+details.arvore-grupo > summary { list-style: none; }
+details.arvore-grupo > summary::-webkit-details-marker { display: none; }
+details.arvore-grupo > summary::before { content: "▸"; width: 12px; color: var(--tinta-suave); }
+details.arvore-grupo[open] > summary::before { content: "▾"; }

@@ -83,7 +83,7 @@ def test_as_PISTAS_do_PONTO_e_dos_APOIOS_nao_seguram_as_SPs(app, monkeypatch):
     for modo, pista in (("notas_receita", "apoios"), ("apoios", "apoios"),
                         ("faturamento", "apoios"), ("ponto", "ponto"),
                         ("ponto_diario", "ponto"), ("sincronizar", "geral"),
-                        ("comprovantes", "geral")):
+                        ("comprovantes", "comprovantes")):
         assert tarefas.pista_do(modo) == pista, modo
     with conexao() as conn:
         conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
@@ -101,6 +101,18 @@ def test_as_PISTAS_do_PONTO_e_dos_APOIOS_nao_seguram_as_SPs(app, monkeypatch):
             conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, visto_em) "
                          " VALUES ('notas_receita', 'manual', now())")
             conn.commit()
+    # A BAIXA DOS COMPROVANTES corre junto da sincronização (migração 056, 11/11/2026).
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                     " VALUES ('comprovantes', 'manual', 'dando baixa nos comprovantes', now())")
+        conn.commit()
+    assert tarefas.estado("comprovantes")["detalhe"]["tipo"] == "comprovantes"
+    assert tarefas.estado()["detalhe"]["tipo"] == "sincronizar", "a geral não vê a baixa"
+    with pytest.raises(Exception):
+        with conexao() as conn:      # uma baixa viva por vez
+            conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, visto_em) "
+                         " VALUES ('comprovantes', 'manual', now())")
+            conn.commit()
 
 
 def test_os_APOIOS_saem_sozinhos_de_hora_em_hora_na_pista_deles(app, monkeypatch):
@@ -113,3 +125,26 @@ def test_os_APOIOS_saem_sozinhos_de_hora_em_hora_na_pista_deles(app, monkeypatch
     assert disparos == [("apoios", "tela aberta")]
     monkeypatch.setattr(tarefas, "_apoios_recentes", lambda: True)
     assert not tarefas.apoios_se_preciso("tela aberta")["disparou"]
+
+
+def test_o_RELOGIO_bate_o_ponto_mesmo_com_o_trabalho_parado(app):
+    """13/11/2026: a baixa dos comprovantes ficava minutos dentro do robô sem anotar
+    etapa; com 3 minutos sem batimento era dada por morta e outra começava por cima."""
+    import time
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao, consultar_um
+    with conexao() as conn:
+        cur = conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                           " VALUES ('comprovantes', 'manual', 'dando baixa', "
+                           "         now() - interval '10 minutes') RETURNING id")
+        execucao = cur.fetchone()[0]
+        conn.commit()
+    assert not tarefas.estado("comprovantes")["rodando"], "sem batimento há 10 min: morta"
+    parar = tarefas.manter_viva(execucao, a_cada=0.05)
+    try:
+        time.sleep(0.4)
+        assert tarefas.estado("comprovantes")["rodando"], "o relógio a mantém viva"
+        assert consultar_um("SELECT etapa FROM analisesps.execucoes WHERE id = ?",
+                            (execucao,))[0] == "dando baixa", "não mexe na etapa"
+    finally:
+        parar()

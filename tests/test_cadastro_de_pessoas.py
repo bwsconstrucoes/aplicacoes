@@ -63,7 +63,12 @@ def test_as_listas_de_opcoes_saem_prontas_para_a_tela():
     o = svc.opcoes()
     assert {x["valor"] for x in o["vinculos"]} == {"CTPS", "PRESTADOR"}
     assert len(o["tipos_contrato"]) == 9           # as 9 do pipe
-    assert len(o["categorias_transporte"]) == 9    # as 9 do pipe, com "Cartão"
+    # ⚑ DEZ desde 15/11/2026: "Mês" entrou para o transporte ter o mesmo
+    # vocabulário da alimentação. Sem ele não havia como pagar um valor CHEIO
+    # de transporte — quem quisesse escolhia "Mensal" e o valor saía
+    # multiplicado pelos dias do mês. Nove eram as do Pipe (com "Cartão", que
+    # saiu de uso e continua na lista para explicar ficha antiga).
+    assert len(o["categorias_transporte"]) == 10
     assert any(x["valor"] == "CARTAO" and "não paga" in x["rotulo"]
                for x in o["categorias_transporte"])
     assert len(o["ufs"]) == 27
@@ -448,13 +453,26 @@ def test_a_ficha_diz_quais_papeis_faltam_no_arquivo(sessao_real, dono):
     do formulário. No ERP o cadastro salva sem os papéis — senão ninguém
     consegue começar — e a ficha diz, em letras, o que falta. Pedido do dono em
     05/11/2026: *"todo documento, anexo, pdf, imagem (…) salvar no Google
-    Drive"* — é o Arquivo quem guarda, e é dele que esta lista lê."""
+    Drive"* — é o Arquivo quem guarda, e é dele que esta lista lê.
+
+    ⚑ A LISTA ENCOLHEU EM 10/11/2026, por decisão dele, e o teste guarda as
+    três saídas para ninguém recolocá-las achando que foi descuido:
+
+      · **ASO** — *"esse seria o correto, mas não. Não vamos colocar ele como
+        obrigatório ainda."*
+      · **carteira de trabalho** — *"para quem não é prestador não fica mais
+        obrigatório."*
+      · **foto do colaborador** — ela vem do PONTO, sozinha. Cobrar um papel
+        que o sistema busca é cobrar trabalho que não existe.
+    """
     from app.apps.erp.core.cadastros import pessoas as svc
     c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Quem Falta Papel"}, dono)
     falta = svc.documentos_que_faltam(sessao_real, c.id, "CTPS")
     assert "comprovante de endereço" in falta
-    assert "foto do colaborador" in falta
-    assert "carteira de trabalho" in falta
+    assert "documento de identificação (RG, CNH ou CPF)" in falta
+    assert "foto do colaborador" not in falta
+    assert "carteira de trabalho" not in falta
+    assert not [x for x in falta if "ASO" in x]
 
 
 @banco_
@@ -467,6 +485,9 @@ def test_prestador_nao_e_cobrado_de_ctps_nem_no_papel(sessao_real, dono):
     falta = svc.documentos_que_faltam(sessao_real, c.id, "PRESTADOR")
     assert "carteira de trabalho" not in falta
     assert "comprovante de endereço" in falta
+    # E continua não sendo cobrada de ninguém, desde 10/11/2026.
+    assert "carteira de trabalho" not in svc.documentos_que_faltam(
+        sessao_real, c.id, "CTPS")
 
 
 @banco_
@@ -485,14 +506,14 @@ def test_papel_arquivado_sai_da_lista_e_papel_excluido_volta_para_ela(
               mime_type="image/jpeg", hash_sha256="a" * 64, tamanho_bytes=10)
     sessao_real.add(a)
     sessao_real.flush()
-    d = Documento(tipo_codigo="FOTO-COLABORADOR", anexo_id=a.id,
-                  nome_padronizado="foto do colaborador", colaborador_id=c.id)
+    d = Documento(tipo_codigo="COMPROVANTE-ENDERECO-PESSOA", anexo_id=a.id,
+                  nome_padronizado="comprovante de endereço", colaborador_id=c.id)
     sessao_real.add(d)
     sessao_real.flush()
-    assert "foto do colaborador" not in svc.documentos_que_faltam(sessao_real, c.id)
+    assert "comprovante de endereço" not in svc.documentos_que_faltam(sessao_real, c.id)
     sessao_real.delete(d)
     sessao_real.flush()
-    assert "foto do colaborador" in svc.documentos_que_faltam(sessao_real, c.id)
+    assert "comprovante de endereço" in svc.documentos_que_faltam(sessao_real, c.id)
 
 
 # ---------------------------------------------------------------------------
@@ -540,21 +561,34 @@ def test_a_leitura_para_a_folha_traz_todos_os_campos_que_ela_le(sessao_real, don
     assert eu["cargo"] == "PEDREIRO"
     assert eu["obra_codigo"] == "FOLHA-01"
     assert eu["tipo_contrato"] == "CLT (tempo indeterminado)"
-    assert eu["modo_alimentacao"] == "Segunda à sexta"
+    # ⚠️ A PALAVRA É A DA PLANILHA, não o rótulo da tela (17/11/2026): a folha
+    # compara TEXTO, e o rótulo "Segunda à sexta" (minúsculo) só casa porque a
+    # comparação tira a caixa — mas "Vale-transporte" NÃO casava com "Vale
+    # Transporte", e era um auxílio não calculado. Ver
+    # `CATEGORIA_TRANSPORTE_PARA_FOLHA` e `tests/test_erp_espelha_a_folha.py`.
+    assert eu["modo_alimentacao"] == "Segunda à Sexta"
     assert eu["valor_transporte"] == 180.0
     assert eu["pagamento"] == "MENSALISTA"
     assert eu["fase"] == "ATIVO" and eu["ativo"] is True
 
 
 @banco_
-def test_a_palavra_cartao_chega_inteira_na_folha(sessao_real, dono):
+def test_a_palavra_cartao_chega_na_folha_COMO_A_FOLHA_A_LE(sessao_real, dono):
     """"Cartão" no transporte quer dizer que NÃO se paga em dinheiro. Foi a
-    origem de pagamento em dobro — a folha precisa da palavra, não do código."""
+    origem de pagamento em dobro — a folha precisa reconhecer a palavra.
+
+    ⚑ MUDOU EM 17/11/2026, e o teste antigo travava o DEFEITO: ele exigia que
+    fosse o rótulo da tela, "Cartão (não paga em dinheiro)". A folha compara
+    texto e espera só "Cartão" — com a explicação colada, ela não reconhecia
+    nada, e a proteção contra o pagamento em dobro não valia. Agora o teste
+    pergunta ao próprio `folha_auxilio` se ele entende o que o ERP manda.
+    """
+    from app.apps.analisesps import folha_auxilio as fa
     from app.apps.erp.core.cadastros import pessoas as svc
     svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Recebe No Cartao",
                              "categoria_transporte": "CARTAO"}, dono)
     eu = next(x for x in svc.para_folha(sessao_real) if x["cpf"] == CPF_A)
-    assert "não paga em dinheiro" in eu["modo_transporte"]
+    assert fa._sem_acento(eu["modo_transporte"]) == fa.MODO_CARTAO
 
 
 @banco_

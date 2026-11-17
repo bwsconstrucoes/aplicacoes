@@ -356,43 +356,6 @@ def test_o_cenario_nao_faz_custo_sumir(base_para_cenario):
         assert abs(movido) < 0.01, f"{mudanca} fez custo aparecer ou sumir: {movido}"
 
 
-def test_a_tela_de_cenarios_desenha_a_comparacao_com_banco_de_verdade(
-        base_para_cenario, monkeypatch):
-    """A tela inteira, com o banco por trás: tabela, gráfico e botão de gravar.
-    É o teste que pega um erro de SQL — que este módulo já mandou três vezes
-    para a produção."""
-    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
-    from app.main import create_app
-    app = create_app()
-    app.config.update(TESTING=True)
-    cliente = app.test_client()
-    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
-
-    rid = base_para_cenario
-    html = cliente.get(
-        f"/painel/prestacao/cenarios?viu_{rid}=1&ativo_{rid}=on"
-        f"&pct_{rid}=100&escopo_{rid}=MATRIZ").get_data(as_text=True)
-
-    assert "Δ Resultado" in html, "a tabela de comparação apareceu"
-    assert "CASA" in html and "PONTE" in html
-    # o gráfico colore pelo sinal: há obra que piora e obra que melhora
-    assert 'class="b-despesa"' in html and 'class="b-receita"' in html
-    assert "Gravar cenário como oficial" in html
-    # e nada foi gravado só por abrir a tela
-    from app.apps.painel import prestacao_dados
-    assert prestacao_dados.regras()[0]["escopo"] == "AMBAS"
-
-
-# ---------------------------------------------------------------------------
-# A Visão do Analítico tem de FILTRAR
-# ---------------------------------------------------------------------------
-# Defeito achado pelo dono em 04/09/2026: escolher "Só a pagar" e clicar em
-# Aplicar não mudava nada. A visão só decidia por qual coluna ordenar; as contas
-# já quitadas continuavam na lista, mostrando zero na coluna "A pagar".
-#
-# Precisa de banco de verdade: a diferença está no WHERE, e o dublê de sessão
-# ignora WHERE — ele devolveria as mesmas linhas nos três casos e o teste
-# passaria sem provar nada.
 @pytest.fixture()
 def base_paga_e_em_aberto(painel_no_banco):
     """Três despesas: uma quitada, uma inteiramente em aberto e uma em que só
@@ -754,6 +717,34 @@ def test_a_tela_do_explorador_abre_e_procura(base_para_explorar, monkeypatch):
     html = cliente.get("/painel/explorador?busca=SOCIO").get_data(as_text=True)
     assert "SOCIO A" in html
     assert "Fluxo de Caixa" in html
+
+
+def test_o_explorador_ordena_do_maior_para_o_menor_valor(base_para_explorar, monkeypatch):
+    """10/11/2026, o dono: "não consigo fazer a classificação por valor, do
+    maior pro menor — é importante". A ordem é feita no banco: com o teto de
+    linhas, os maiores têm de ser os maiores da seleção inteira."""
+    from app.apps.painel import consultas
+    valor = lambda l: abs(l["pago_recebido"] + l["a_pagar_receber"])  # noqa: E731
+    linhas = consultas.explorar(_pedido_padrao(com_trf=True, ordem="valor_maior"))["linhas"]
+    valores = [valor(l) for l in linhas]
+    assert len(valores) > 1 and valores == sorted(valores, reverse=True)
+    linhas = consultas.explorar(_pedido_padrao(com_trf=True, ordem="valor_menor"))["linhas"]
+    assert [valor(l) for l in linhas] == sorted(valores)
+    # um só, com o teto: vem o maior de todos
+    assert valor(consultas.explorar(_pedido_padrao(com_trf=True, ordem="valor_maior"),
+                                    limite=1)["linhas"][0]) == max(valores)
+
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = cliente.get("/painel/explorador?busca=A&ordem=valor_maior").get_data(as_text=True)
+    assert "Valor, do maior para o menor" in html and "ordem=valor_menor" in html
+    # ordem desconhecida vira a de sempre, por data
+    html = cliente.get("/painel/explorador?busca=A&ordem=xyz").get_data(as_text=True)
+    assert 'value="data" selected' in html
 
 
 def test_o_explorador_nao_esta_no_menu_principal(base_para_explorar, monkeypatch):

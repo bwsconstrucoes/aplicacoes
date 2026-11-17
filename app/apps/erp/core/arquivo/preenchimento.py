@@ -42,7 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
-from app.apps.erp.db.models.cadastros import (Colaborador, Funcao, Obra,
+from app.apps.erp.db.models.cadastros import (Cargo, Colaborador, Obra,
                                               ObraAditivo, Usuario)
 
 logger = logging.getLogger(__name__)
@@ -249,7 +249,7 @@ CAMPOS_PESSOA: dict[str, tuple[str, str, str]] = {
     "matricula": ("Matrícula", "texto", "matrícula ou registro do empregado"),
     "admissao": ("Admissão", "data", "data de admissão"),
     "demissao": ("Demissão", "data", "data de desligamento"),
-    "funcao_nome": ("Função", "texto", "cargo ou função exercida"),
+    "funcao_nome": ("Cargo", "texto", "cargo exercido"),
     "telefone": ("Telefone", "documento", "telefone de contato, só dígitos"),
     "regime": ("Regime", "texto", "regime de contratação: CLT, DIARISTA ou PJ"),
     "banco": ("Banco", "texto", "nome ou código do banco"),
@@ -865,7 +865,7 @@ def obras_parecidas(s: Session, *, cno: Any = None, contrato: Any = None,
 # ---------------------------------------------------------------------------
 # O lado das pessoas
 # ---------------------------------------------------------------------------
-def _funcao_por_nome(s: Session, nome: str) -> Optional[Funcao]:
+def _funcao_por_nome(s: Session, nome: str) -> Optional[Cargo]:
     """A função pelo nome, sem acento e sem caixa. NÃO cria a que não existe.
 
     Criar função a partir de uma leitura multiplicaria "PEDREIRO", "Pedreiro"
@@ -875,7 +875,7 @@ def _funcao_por_nome(s: Session, nome: str) -> Optional[Funcao]:
     alvo = _limpo_para_comparar(nome)
     if not alvo:
         return None
-    for f in s.query(Funcao).all():
+    for f in s.query(Cargo).all():
         if _limpo_para_comparar(f.nome) == alvo:
             return f
     return None
@@ -920,14 +920,14 @@ def sugerir_para_colaborador(s: Session, colaborador_id: int, tipo_codigo: str,
             f = _funcao_por_nome(s, novo)
             if f is None:
                 avisos.append(
-                    f"A função “{novo}” não está cadastrada. Cadastre-a em "
+                    f"O cargo “{novo}” não está cadastrado. Cadastre-o em "
                     f"Pessoal antes, para a diária de referência valer.")
                 continue
-            atual = s.get(Funcao, c.funcao_id) if c.funcao_id else None
+            atual = s.get(Cargo, c.cargo_id) if c.cargo_id else None
             vazio = atual is None
             if not vazio and atual.id == f.id:
                 continue
-            campos.append({"campo": "funcao_id", "rotulo": rotulo, "feitio": "texto",
+            campos.append({"campo": "cargo_id", "rotulo": rotulo, "feitio": "texto",
                            "valor": f.nome, "valor_id": f.id,
                            "valor_atual": (atual.nome if atual else ""),
                            "conflito": not vazio, "marcar": vazio})
@@ -990,7 +990,7 @@ def sugerir_para_nova_pessoa(s: Session, tipo_codigo: str,
             f = _funcao_por_nome(s, novo_valor)
             if f is None:
                 continue
-            campos.append({"campo": "funcao_id", "rotulo": rotulo,
+            campos.append({"campo": "cargo_id", "rotulo": rotulo,
                            "feitio": "texto", "valor": f.nome, "valor_id": f.id,
                            "valor_atual": "", "conflito": False, "marcar": True})
             continue
@@ -1045,9 +1045,10 @@ def aplicar_no_colaborador(s: Session, colaborador_id: int, escolhas: dict[str, 
         raise ErroValidacao("Colaborador não encontrado.")
     codigo = (tipo_codigo or "").strip().upper()
     permitidos = set(POR_TIPO_PESSOA.get(codigo, ()))
-    # `funcao_nome` vira `funcao_id` na hora de gravar.
+    # `funcao_nome` (o que o documento diz) vira `cargo_id` na hora de gravar.
+    # O nome do campo do DOCUMENTO não muda: é o que o leitor devolve.
     if "funcao_nome" in permitidos:
-        permitidos.add("funcao_id")
+        permitidos.add("cargo_id")
 
     mudancas: list[str] = []
     for campo, bruto in (escolhas or {}).items():
@@ -1060,15 +1061,15 @@ def aplicar_no_colaborador(s: Session, colaborador_id: int, escolhas: dict[str, 
             raise ErroValidacao(
                 f"O documento do tipo {codigo} não preenche “{campo}”.")
 
-        if campo == "funcao_id":
-            f = s.get(Funcao, int(bruto)) if str(bruto).isdigit() else None
+        if campo == "cargo_id":
+            f = s.get(Cargo, int(bruto)) if str(bruto).isdigit() else None
             if f is None:
-                raise ErroValidacao("Função não encontrada.")
-            if c.funcao_id == f.id:
+                raise ErroValidacao("Cargo não encontrado.")
+            if c.cargo_id == f.id:
                 continue
-            antiga = s.get(Funcao, c.funcao_id) if c.funcao_id else None
-            c.funcao_id = f.id
-            mudancas.append(f"Função: {getattr(antiga, 'nome', '(vazio)')} → {f.nome}")
+            antiga = s.get(Cargo, c.cargo_id) if c.cargo_id else None
+            c.cargo_id = f.id
+            mudancas.append(f"Cargo: {getattr(antiga, 'nome', '(vazio)')} → {f.nome}")
             continue
 
         rotulo, feitio, _ = CAMPOS_PESSOA[campo]

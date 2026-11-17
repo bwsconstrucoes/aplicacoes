@@ -203,6 +203,13 @@ const LEMBRAR = {
   const barra = document.getElementById("barra-acoes");
   if (!barra) return;
 
+  // DEPOIS DE AGIR, A TELA SE REFAZ. Quase sempre é recarregar; a tela que é
+  // resultado de um formulário (a conferência do Bradesco, 11/11/2026) define
+  // `window.recarregarTela` — recarregar ali faria o navegador perguntar se
+  // reenvia o formulário.
+  const recarregar = () => (typeof window.recarregarTela === "function"
+      ? window.recarregarTela() : location.reload());
+
   const marcas = () => Array.from(document.querySelectorAll("input.marca"));
 
   // O que identifica a linha para a memoria da marcacao. No Lote e a chave da
@@ -357,13 +364,13 @@ const LEMBRAR = {
                                   valor: valor, acao: rotulo})});
           const d2 = await r2.json();
           if (!d2.ok) { alert("Não deu certo: " + (d2.erro || "erro desconhecido")); return; }
-          location.reload();
+          recarregar();
         }); return; }
         if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
         if (d.aviso) alert("Alterado aqui, mas o envio para a planilha ficou na fila:\n" + d.aviso);
         const falhou = resumoDoComplemento(d.complemento);
         if (falhou) alert(falhou);
-        location.reload();
+        recarregar();
       } catch (e) {
         alert("Falhou a comunicação com o servidor: " + e);
       } finally {
@@ -557,7 +564,7 @@ const LEMBRAR = {
 
     document.getElementById("omie-fechar").addEventListener("click", () => {
       dlgOmie.close();
-      if (mudouAlgo) location.reload();
+      if (mudouAlgo) recarregar();
     });
 
     // As linhas da consulta, por SP. Quando o Omie pede uma pausa, as que
@@ -778,7 +785,7 @@ const LEMBRAR = {
       });
       const d = await r.json();
       if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
-      location.reload();
+      recarregar();
     } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
     finally { btnValidar.disabled = false; }
   });

@@ -363,6 +363,40 @@
   <small>{{ folha.competencia }} · {{ folha.rotulo_do_tipo }}</small>
 </h2>
 
+{# A FOLHA JÁ PAGA (10/11/2026): a correção sai pela Complementar, que paga só a
+   diferença — refechar e gerar de novo está travado (pagaria tudo outra vez). #}
+{% set folha_paga = pagamentos_feitos|selectattr('verba', 'equalto', 'folha')|list %}
+{# A FAIXA aparece sempre (11/11/2026): "Centros de custo" vale para qualquer
+   folha; "Complementar", só para a já paga. #}
+<nav class="faixa-folha">
+  <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}" class="ativa">Folha</a>
+  {% if folha_paga %}<a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}">Complementar</a>{% endif %}
+  <a href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id) }}">Centros de custo</a>
+</nav>
+{% if folha_paga %}
+<div class="aviso ok">
+  <b>Esta folha já foi paga</b> em {{ folha_paga[0].criado_em|momento_br }}{% if folha_paga[0].criado_por %}
+  por {{ folha_paga[0].criado_por }}{% endif %} ({{ folha_paga[0].total|moeda }}){% if pagamentos_feitos|length > 1 %},
+  com {{ pagamentos_feitos|length - 1 }} complementar(es) depois{% endif %}.
+  Se a contabilidade mandou a folha corrigida, importe-a e abra a
+  <a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}"><b>Complementar</b></a>:
+  ela compara com o que foi pago e gera o arquivo só da diferença.
+</div>
+{% endif %}
+{% if a_descontar %}
+<div class="aviso atencao">
+  <b>{{ a_descontar|length }} pessoa(s) a descontar</b> por pagamento a mais em folhas anteriores
+  ({{ a_descontar|map(attribute='nome')|join(', ')|truncate(160) }}). A lista, com os valores,
+  fica na <a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}">Complementar</a>.
+</div>
+{% endif %}
+<style>
+  .faixa-folha { display:flex; gap:6px; margin:4px 0 14px; }
+  .faixa-folha a { padding:7px 14px; border-radius:8px; border:1px solid var(--borda); background:#fff;
+    font-weight:700; font-size:13px; color:var(--tinta-suave); text-decoration:none; }
+  .faixa-folha a.ativa { background:var(--azul); color:#fff; border-color:var(--azul); }
+</style>
+
 {# A TROCA DE COMPETÊNCIA, compacta. Não é `.barra-acoes` (grade de 3 colunas, que
    estica campo de ponta a ponta) — é a `.barra-mes` das outras telas da folha. #}
 <form class="barra-mes" method="get" onchange="this.submit()"
@@ -426,7 +460,10 @@
       {{ m.sairam|length }} saíram. Total: de {{ m.total_antes|moeda }} para
       <b>{{ m.total_depois|moeda }}</b>. As definições anteriores (inclusão, obra,
       divisão) foram mantidas.
-      {% if m.fechada_antes %}<br><b class="ruim">A apropriação estava fechada antes
+      {% if folha_paga %}<br><b class="ruim">Esta folha já tinha sido paga</b> — a
+        correção sai pela <a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}">Complementar</a>,
+        que paga só a diferença.
+      {% elif m.fechada_antes %}<br><b class="ruim">A apropriação estava fechada antes
         desta reimportação</b> — refaça o fechamento para que o arquivo de pagamento
         reflita os novos valores.{% endif %}
       {% if analitica %}<br>A folha analítica corresponde à versão anterior; caso

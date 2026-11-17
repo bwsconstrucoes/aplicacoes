@@ -50,6 +50,7 @@ MODOS = {
     "periodo": "Atualizar um período — um dia ou um mês: relê os pagamentos dele e refaz os números (rápido, para testar)",
     "pagamentos": "Reler os pagamentos do OMIE de um ano, de alguns ou de todos — para baixa lançada com data de mais de 6 meses (todos: demorado)",
     "titulos": "Reler todos os títulos do OMIE — traz de novo categoria (inclusive a dividida entre duas), obra e valores de cada título. Demorado; pode parar e continuar",
+    "obras_cc": "Ler as obras dos lançamentos de conta — pergunta ao OMIE a obra de TODOS os lançamentos feitos direto na conta corrente que ainda não têm (todos os anos, inclusive os que falharam antes) e refaz os números. Só lê do OMIE; pode parar e continuar",
     "observacoes": "Buscar as observações dos títulos no OMIE (bloco a bloco, pode parar e continuar)",
     "carga_inicial": "Primeira carga — baixa toda a base do OMIE (demorado)",
 }
@@ -63,6 +64,7 @@ ROTULOS = {
     "periodo": "Atualizar um período",
     "pagamentos": "Reler os pagamentos",
     "titulos": "Reler todos os títulos",
+    "obras_cc": "Ler as obras dos lançamentos de conta",
     "observacoes": "Buscar as observações",
     "carga_inicial": "Primeira carga",
 }
@@ -250,7 +252,8 @@ def _releitura_pendente(execucao_id: int) -> bool:
         return False
 
 
-def _ler_apropriacoes(modo: str, anotar, de=None, ate=None, sem_teto=False) -> str:
+def _ler_apropriacoes(modo: str, anotar, de=None, ate=None, sem_teto=False,
+                     retentar=False) -> str:
     """Pergunta ao OMIE as obras dos lançamentos de conta corrente que ainda
     não têm. Devolve o aviso para a tela, ou "" quando correu bem.
 
@@ -268,7 +271,8 @@ def _ler_apropriacoes(modo: str, anotar, de=None, ate=None, sem_teto=False) -> s
                 limite=None if (sem_teto or modo == "periodo")
                 else apropriacao_cc.LIMITE_POR_RODADA,
                 progresso=lambda f, t: anotar(andamento.APROPRIACAO_CC,
-                                              f"{f} de {t} lançamentos"))
+                                              f"{f} de {t} lançamentos"),
+                retentar=retentar)
     except Exception as e:  # noqa: BLE001 — extra, não pode custar o recálculo
         logger.exception("Painel: apropriação dos lançamentos de conta corrente falhou")
         return f"a apropriação dos lançamentos de conta corrente não foi lida ({e})"
@@ -309,6 +313,11 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
     def _etapa(etapa: str, detalhe: str = "") -> None:
         """Mudança de etapa: vai na hora, sem esperar o intervalo."""
+        # o sinal de vida das chamadas ao OMIE repete a ÚLTIMA etapa que a
+        # leitura anunciou; sem trocar aqui, a etapa nova aparecia na tela com
+        # o texto da anterior (11/11/2026: "obras dos lançamentos" mostrando
+        # "2021: página 324 de 378")
+        espelho._ultimo_andamento[:] = [etapa, detalhe]
         ultimo[0] = time.time()
         etapa_gravada[0] = etapa
         _carimbar(execucao_id, etapa, detalhe)
@@ -347,6 +356,17 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     "observações dos títulos a pagar",
                     f"{f} de {t} — {g} com observação"))
             observacoes_achadas = (n_r or 0) + (n_p or 0)
+        elif modo == "obras_cc":
+            # 10/11/2026: um lançamento de 2020 "(não apropriado)" no painel e
+            # apropriado no OMIE. As atualizações comuns perguntam no máximo
+            # 600 por vez, do mais recente para trás, e deixam de perguntar
+            # quem falhou 3 vezes: os anos antigos podiam nunca chegar. Este
+            # pergunta TODOS, de todos os anos. Retomar é seguro: o que já foi
+            # respondido fica guardado e não é perguntado de novo.
+            _etapa(andamento.APROPRIACAO_CC)
+            aviso = _ler_apropriacoes(modo, _anotar, sem_teto=True, retentar=True)
+            if aviso:
+                falha_parcial = aviso
         elif modo == "titulos":
             # Todos os títulos, de novo (09/10/2026): a categoria dividida e
             # tudo do título só chegam relendo-o. Retoma de onde parou.

@@ -3,11 +3,137 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 16/11/2026 — quem não bate ponto passa a sair do TIPO DE CONTRATO (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi em `core/cadastros.py` vindo de outra área.** Está escrito aqui porque
+é mudança de comportamento do ponto, e quem pegar esta área precisa saber.
+
+**O buraco.** Usando o **cadastro do ERP** como base de pessoas (`pessoas.fonte
+= ERP`), `nao_bate` era `NULL::text`: **ninguém ficava de fora**. A regra
+existia só no caminho da planilha (`registro.nao_bate_sql`, lendo a coluna
+"tipo" do Registro de Colaboradores).
+
+Isso não incomodava enquanto a base era a planilha — mas o dono decidiu em
+16/11/2026 **cortar o vínculo com ela** assim que terminar as importações do
+Pipefy e das fichas do Fortes (ver `CONTEXTO.md`, mesma data). No dia da
+virada, **PJ e pró-labore passariam a bater ponto** — e ponto de PJ é
+exatamente o registro que não se quer ter, porque parece vínculo de emprego. O
+defeito só apareceria depois, numa manhã, com batida de quem não devia bater.
+
+**A regra, ditada por ele:**
+
+> *"Quando é prestador de serviço, quem é que bate ponto? É o autônomo RPA e o
+> autônomo mensalista. Os demais não batem ponto (…) PJ não bate ponto,
+> pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz bate
+> ponto."*
+
+| Batem ponto | Não batem |
+|---|---|
+| CLT (determinado e indeterminado), Temporário, Autônomo RPA, Autônomo mensalista, Jovem aprendiz, Estágio | **PJ, Pró-labore** |
+
+Mais a obra **ESCRUSSAS**, como já era pela planilha. A **exceção do DP**
+(migração 025) continua passando por cima de tudo — a regra automática não
+tira a decisão de ninguém.
+
+**Detalhes que não são óbvios:**
+
+- **Sem `tipo_contrato` preenchido, a pessoa BATE.** Cadastro pela metade não
+  barra ninguém: o erro caro aqui é gente parada no portão, não uma batida a
+  mais que depois se confere.
+- **Banco sem a coluna não derruba o ponto** — a coluna é conferida antes
+  (`_tem_tipo_contrato`), e sem ela ninguém fica de fora.
+- Nada disso muda enquanto a base for a planilha. É preparo para a virada.
+
+**Teste:** `tests/test_ponto_nao_bate_pelo_contrato_banco.py` (banco de
+verdade — isto vive num `CASE`, que o dublê da suíte não enxerga).
+
+### ⚠️ E uma correção sobre o telefone, que estava escrita errada
+
+Eu havia dito ao dono que quem ficasse sem telefone no cadastro não bateria
+ponto. **Está errado**, e ele corrigiu: *"uma coisa é não ter telefone, outra
+coisa é não conseguir acessar (…) não é para ser impeditivo o telefone. É
+impeditivo para ele verificar o ponto dele."* Quem bate é a obra, no aparelho
+da obra. O telefone serve para a pessoa **conferir** o ponto dela e para bater
+pelo próprio celular, que é permissão de poucos.
+
+---
+
+## 15/11/2026 — o atestado que passa de 15 dias abre o afastamento sozinho (feito pelo chat do ERP/DP)
+
+⚠️ **Mudança feita por outro chat.** O assunto nasceu no chat do DP, num pedido
+longo do dono sobre os formulários de solicitação, e ele escolheu entre três
+caminhos: *"Acima de 15 dias, o sistema abre sozinho."*
+
+**A razão dos 15:** os primeiros 15 dias de atestado são da EMPRESA — ela paga
+e abona as faltas. Do 16º em diante o benefício é do INSS, e aí deixa de ser
+abono de falta e passa a ser AFASTAMENTO (perícia, documento, outro tratamento
+na folha). A mesma conta vale com atestados PICADOS: a lei soma os dias da
+mesma doença dentro de 60 dias, e quatro atestados de cinco dias não chamam
+atenção nenhum — juntos passam do limite. Por isso não ficou manual: ninguém do
+DP vai somar à mão os atestados de 575 pessoas.
+
+**O que foi mexido, e é pouco de propósito:**
+
+- `core/afastamento_longo.py` — **arquivo novo**, com a conta e a decisão.
+- `core/ocorrencias.py::_aplicar` — **um `elif`**, dentro de um `try`: defeito
+  na regra nova não pode desfazer a aprovação do atestado, que já está certa e
+  a pessoa precisa dela abonada hoje.
+- `tests/test_ponto_atestado_longo_banco.py` — oito testes com banco de
+  verdade.
+
+**Nenhuma migração, nenhuma coluna nova, nenhuma tela mexida.**
+
+**⚑ O AFASTAMENTO NASCE `AGUARDANDO_DP`, NÃO APROVADO.** Afastamento aprovado
+muda o que a folha paga, e a soma legal vale para a MESMA doença — coisa que só
+quem lê o CID sabe. Aberto como pedido, com a conta escrita na descrição, o
+pior caso é o DP negar. A descrição começa com "ABERTO PELO SISTEMA" e diz
+quantos dias somaram, em quantos atestados e em que janela.
+
+**O que ficou de fora:** a declaração de comparecimento não entra na soma (é
+consulta de horas, não dia de doença); o módulo não agenda perícia, não abona
+nada por conta própria e não mexe no atestado que o disparou. E a data de
+início do afastamento é um ponto de partida, não a verdade — com atestados
+picados o DP ajusta, e é para isso que o pedido nasce aberto.
+
+**Não testado em produção.** Rodou na suíte com Postgres local.
+
+---
+
+## 14/11/2026 — a ficha única ganhou a aba "Telegram e mensagens" (feito pelo chat da Mensageria)
+
+Pedido do dono: o Telegram de cada pessoa e as mensagens que ela recebeu dentro do cadastro dela. Na janela da
+pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, só para quem tem `ver_mensagens`
+(Administrador, Diretor financeiro, DP). O conteúdo é o bloco `mensagensDaPessoa` do `erp_base.html` — o mesmo
+da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
+`app/apps/mensageria/HISTORICO.md`.
+
+## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
+
+⚠️ **Mexi num arquivo desta área sem ser o chat dela, e por isso fica anotado
+aqui.** Foi só no teste (`tests/test_ponto_fechamento_banco.py`), nada do ponto
+em si — mas a suíte inteira estava vermelha e isso trava todo mundo.
+
+`test_o_fechamento_separa_o_inteiro_do_quebrado` escolhe os dias a partir de
+HOJE. O dia principal já era escolhido pulando feriado (conserto de
+03/11/2026). **O dia da "extra pequena" não**: ele era `dia - 7` na marra, e em
+11/11/2026 isso caiu em **02/11, Finados**. Em feriado a extra vira 100% e a
+regra de desconsiderar não vale igual, então o teste falhava.
+
+Agora os dois dias saem do mesmo filtro (`_dia_do_corrente`, que pula feriado
+nacional). **É o mesmo defeito do conserto anterior, no outro dia que o teste
+usa** — vale a pena olhar se há mais alguma data calculada por subtração neste
+arquivo.
+
 ## Pendente AGORA
 
-0w. **O TERMO DO PONTO NO CELULAR — feito no ramo, NÃO publicado (07/11/2026, migração 028).** Ver a seção de
-   07/11/2026 abaixo. Ao publicar: apertar "Aplicar atualizações do ponto" no mesmo momento. O INPI ficou para
-   depois, por decisão do dono — quando ele pedir, passar os dados preenchidos (titular, autores, SHA-512 do código).
+0v. **PUBLICADO em 13/11/2026: o Ponto separado de Pessoal no menu, a ordem nova das telas, a FICHA ÚNICA da pessoa
+   e o "Completar o período pela escala".** Sem migração. O dono aprovou a ordem e mandou fazer a ficha única por aqui, e **publicar só quando
+   tudo estiver pronto** (junto com o "Completar o período pela escala"). Ver a seção de 13/11/2026 abaixo. Mexe na
+   área do ERP (`erp/routes.py`, `erp_colaboradores.html`) — registrado no `erp/HISTORICO.md` e avisado ao chat do ERP.
+
+0w. **O TERMO DO PONTO NO CELULAR — PUBLICADO em 07/11/2026 (migração 028).** Ver a seção de 07/11/2026 abaixo.
+   Conferir com o dono se apertou "Aplicar atualizações do ponto". O INPI ficou para depois, por decisão do dono —
+   quando ele pedir, passar os dados preenchidos (titular, autores, SHA-512 do código).
 
 0x. **MODELOS JURÍDICOS DO REP-P, PARA O DONO E O ADVOGADO VEREM (07/11/2026).**
    Pedido do dono: *"utilize seus conhecimentos jurídicos e contábeis pra
@@ -526,6 +652,143 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 13/11/2026 (sexta, noite) — Alertas com função, dia da semana e feriado; intervalo curto abaixo de 50 min; a compensação incompleta
+
+O dono, num pedido só: *"em alerta mostrar função do colaborador; o alerta de intervalo curto somente se inferior a
+50 min; na tela de alerta, exibir o dia da semana e informar se for feriado"* — e *"veja esse pedido de compensação,
+to achando que não ta gravando direito"* (a folga de 03/11, terça, paga pelo sábado 07/11).
+- **A compensação gravava certo.** A regra é a de 29/10 (decisão dele: "automático"): a folga fica paga no que o dia
+  trabalhado RENDEU. O sábado rendeu 8h01 (06:50–15:52, com 1h01 de almoço); a terça pedia 9h00 — faltam 0h59, que
+  ficam como falta parcial. O que enganava era o texto: "compensação não cumprida — a folga virou falta", para quem
+  pagou quase tudo. Agora são dois avisos (`espelho.py`): **COMPENSACAO_INCOMPLETA** — "Compensação incompleta —
+  07/11 cobriu 8h01 das 9h00; faltam 0h59" — quando cobriu parte; **COMPENSACAO_NAO_CUMPRIDA** ("nada coberto")
+  só quando não cobriu nada. E o dia coberto em parte deixou de levar a etiqueta "falta" (que fazia nascer também o
+  alerta "Falta sem justificativa") — fica "Falta parcial" com a compensação incompleta dizendo quanto faltou.
+  Oferecido a ele, não feito: a regra "dia por dia" (trabalhou o dia, a folga fica paga
+  inteira, sem contar horas) — é decisão dele.
+- **Intervalo curto** (`apuracao.py`, `INTERVALO_CURTO_AVISO_MIN = 50`): na jornada de mais de 6 h, o aviso acende
+  abaixo de 50 min (era 60). Dito a ele: a lei pede 60 (CLT art. 71) e o tempo que faltou é devido com 50% (§4º) —
+  o aviso só deixou de acender entre 50 e 59. Na jornada de 4 a 6 h, continua abaixo de 15 min.
+- **Alertas** (`alertas._funcao_dia_e_feriado`): cada linha traz a função da pessoa (da mesma base do ponto —
+  `cadastros.funcoes_de`), o dia da semana e, se for feriado na obra do alerta, "🎉 feriado: <nome>" (o mesmo
+  calendário do espelho).
+- Testes: `test_ponto_tipos_ausencia_banco.py` (a incompleta com o texto), `test_ponto_apuracao.py` (58 min não
+  acende, 49 acende), `test_ponto_alertas_pagina_banco.py` (dia da semana, feriado e função na linha). E a tela de
+  Alertas no navegador (o feriado de Finados aparecendo).
+
+## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
+
+O dono: *"o ideal seria rodar apenas na madrugada"*. A busca (`core/feriados_busca.py`) era acordada pelas planilhas
+de apoio do Análise de SPs (de hora em hora, com a tela deles aberta) e pela leitura da C. Diários. Agora:
+- **Roda das 2h às 5h** (Fortaleza), pelo **relógio das rondas** (`rondas._volta_do_relogio`), que roda sozinho no
+  serviço o tempo todo. Dentro da janela, confere no máximo uma vez por hora e só vai à internet quando há ano ou
+  lugar novo — como antes.
+- **A trava mora em `buscar_se_preciso`** (`na_madrugada`): as chamadas antigas (Análise de SPs, C. Diários)
+  continuam no código e, fora da janela, não fazem nada — sem mexer na regra da área do Análise de SPs. O botão
+  **"Buscar agora"** (Análise de SPs › Folha › Calendário) chama `buscar` direto e vale a qualquer hora; o texto
+  daquela tela passou a dizer "só de madrugada".
+- **Preço**: obra nova em cidade nova ganha os feriados na madrugada seguinte (antes, em até uma hora).
+- Teste: `test_ponto_feriados_busca_banco.py::test_a_busca_automatica_so_roda_de_madrugada`.
+**Publicado em 13/11/2026** (com o "pode" do dono, junto com a obra no "Completar o período"; suíte inteira: 11.001
+passaram). Sem migração.
+
+## 13/11/2026 (sexta) — Completar o período de uma pessoa pela escala; a proposta de divisão do menu e da ficha única
+
+O dono: *"quando o DP vai incluir uma batida, só dá para pedir um a um (…) quero botar o dia de início, o dia de fim e
+bater a batida padrão da escala, com uma tacada só (…) e corrigir todos os pontos da pessoa numa semana: um dia não
+bateu, outro esqueceu uma batida (…) o sistema tem que ter o cuidado de confirmar, e não bater por cima das batidas que
+já existem."*
+- **Na janela da pessoa, o botão "📅 Completar o período pela escala"** (para quem trata o ponto). Escolhe De e Até
+  (até 31 dias; padrão: os 7 dias até ontem) e vê a PRÉVIA, dia a dia: o que já tem, o que vai entrar e por quê.
+  · dia sem nenhuma batida → o dia inteiro da escala;
+  · dia com batida → só as da escala que faltam (em amarelo, com ⚠️); **as que existem nunca são tocadas**, e o
+    horário que já tem pedido esperando também não entra de novo;
+  · o resto não entra, com o porquê: completo, descanso, abonado, compensado, sem escala, **mês fechado**.
+  Cada dia tem a caixinha (todos marcados); o motivo é obrigatório (vai em cada batida); **com algum dia amarelo
+  marcado, pede "Conferi os dias que já têm batida"** — é a confirmação que ele pediu para o ponto intercalado.
+- **A OBRA é escolhida antes de incluir** (13/11/2026, depois de publicado — o dono: *"precisa definir a obra antes de
+  incluir também"*): campo obrigatório na janela, já marcado com a obra em que a pessoa mais bateu nos últimos dias
+  (ou a do cadastro); só as obras de quem lança. A prévia mostra a obra das batidas que já existem. Antes, a batida
+  ia para a obra da batida do dia ou a do cadastro, sem perguntar.
+- **O caminho é o do lote do Quadro** (`quadro._ajuste_em_lote`): um ajuste da gestão por batida, aprovado na hora,
+  marcado "em lote" — não conta contra a pessoa na qualidade — e com as travas de sempre. Cada DIA na sua transação: ou
+  entram todas as batidas daquele dia, ou nenhuma; um dia recusado não desfaz os outros, e a tela diz qual e por quê.
+- `core/quadro.py` (`previa_do_periodo`, `completar_periodo`); rota `/erp/api/ponto/pessoas/<id>/completar` (GET a
+  prévia, POST a inclusão; `tratar_ponto`; fora do alcance, 404). Teste: `test_ponto_completar_periodo_banco.py`.
+  E a janela no navegador.
+
+**O menu e a ordem das telas** (aprovados pelo dono no mesmo dia): o Ponto volta a ser um módulo, logo depois de
+Pessoal (`erp/routes.py`, `_ponto_ao_lado_de_pessoal`), com as telas pelo uso — Quadro · Hoje · Painel · Qualidade
+(acompanhar) · Validações · Alertas · Espelho · Banco de horas (tratar) · Mosaico · Fotos de cadastro · Rondas
+(conferir) · Pessoas no ponto · Relatórios · Configuração (`gestao.ABAS`).
+
+**A FICHA ÚNICA DA PESSOA.** O dono: *"eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
+pessoa eu tenho acesso — seja ponto, configurações, liberação de aparelhos, tudo."* Havia duas janelas: a de
+Colaboradores (cadastro, pagamentos, documentos e um "Ponto e espelho" pobre) e a do ponto (`dlg-pessoa`). Agora:
+- **A janela do ponto é a ficha única.** Abas: **Cadastro** (novo — identificação, vínculo e pagamento, dependentes,
+  o que falta para admitir, lidos do ERP: `/erp/api/colaboradores/<id>/historico` e `/ficha`), Dia, Espelho do mês,
+  Pedidos, **Pagamentos** (novo — por verba e o histórico, do mesmo `/historico`), Aparelhos, **Configuração do
+  ponto** (era "Cadastro"; a chave continua `cadastro`) e Conferência do rosto. Quem não tem `ver_pessoal` /
+  `editar_colaboradores` não vê as abas do ERP (a trava de verdade é a rota do ERP).
+- **Ela abre sozinha** em `/erp/ponto/pessoa/<id>` (aba `ponto_ficha`, fora do menu; sem o topo do ERP) — e a tela
+  de **Colaboradores mostra essa página num quadro** ao clicar na pessoa. Quem não enxerga o ponto continua na
+  ficha antiga do ERP.
+- **Editar o cadastro e os documentos (ler e arquivar) continuam no formulário do ERP** — nada de regra duplicada:
+  dentro de Colaboradores, a janela pede à tela (mensagem `bws-ficha`) e ela abre o formulário; aberta numa tela do
+  ponto, abre `/erp/colaboradores?editar=<id>` (ou `?documentos=`) em outra aba.
+- Testes: `test_ponto_ficha_unica_banco.py`; os do menu ajustados (`test_caixa_e_portal.py`, `test_ponto_fase2.py`,
+  `test_ponto_consolidacao_banco.py`). Suíte inteira: 11.000 passaram. E no navegador: o menu, a lista de
+  Colaboradores abrindo a ficha única, a aba Configuração do ponto, e o "Editar" abrindo o formulário do ERP.
+
+## 11/11/2026 (quarta) — O Painel do ponto: gráficos e a comparação de dois períodos
+
+O dono (pedido feito primeiro no chat de outra área, que mandou para cá): *"não tem um dashboard para eu visualizar
+dentro do mês: a quantidade de batidas, quantos funcionários estão batendo ponto, as batidas corretas, as corrigidas,
+os atestados, as batidas faltando, dentro de um gráfico (…) poder comparar um período com outro: esta quinzena com a
+anterior, um mês com o outro (…) se uma obra estava num patamar e piorou, se manteve."*
+- **Tela nova "Painel"** no menu do Ponto (antes de Qualidade), `/erp/ponto/painel`. Na barra: os atalhos "Este mês
+  × o anterior", "Esta quinzena × a anterior", "Mês passado × o de antes", "Quinzena passada × a de antes"; as datas do
+  período e as do período de comparação (pode desligar a comparação); a obra.
+- **Os cartões**: funcionários batendo, batidas, corretas, corrigidas por ajuste (e o %), dias com batida faltando,
+  faltas, atestados (e os dias de atestado e as declarações à parte), ajustes pedidos, ponto em dia (%) e a nota.
+  Cada um com a diferença para o período de comparação e "melhor"/"pior" (bolinha verde/vermelha + a palavra).
+  **Quando os períodos têm tamanhos diferentes**, as quantidades comparam a MÉDIA POR DIA (e dizem "por dia"); %,
+  nota e funcionários batendo comparam direto.
+- **Os gráficos**: batidas por dia (corretas em azul, corrigidas em laranja, o período de comparação numa linha
+  tracejada, dia a dia; passando o mouse, o dia; "ver em tabela" embaixo); os dias de trabalho em barras de 100% (em
+  dia, com batida corrigida, batida faltando, falta — com ícone e palavra, não só cor); e as obras numa tabela com a
+  régua da nota (cinza = antes, azul = agora), a diferença e **melhorou / manteve / piorou**, as que pioraram primeiro.
+- **De onde vêm os números** (`core/indicadores.py`): as contas são as da Qualidade (`qualidade.avaliar`) — nada
+  novo inventado; batidas por dia e funcionários batendo, contados das batidas; atestados, dos aprovados que tocam o
+  período. O período vai até ONTEM. Até 62 dias por período. **"Manteve" = a nota mexeu até 3 pontos** (`PATAMAR`) —
+  1 ou 2 pontos de um mês para o outro é ruído. Quem conta: quem bate ponto hoje no alcance E quem bateu no período (o
+  desligado depois continua no mês em que trabalhou); com obra, quem bateu nela.
+- A conta é a pesada da Qualidade (o espelho de cada pessoa), guardada 10 minutos e uma de cada vez: se outra estiver
+  rodando, a tela tenta de novo sozinha a cada 6 s (até 10 vezes).
+- Testes: `test_ponto_painel_banco.py` (tendência, período desvirado e cortado em ontem, período longo, comparação das
+  obras; o painel com batidas de verdade, a comparação, a obra, o alcance do supervisor). E a tela no navegador com
+  dois meses de batidas.
+**Publicado em 11/11/2026** (com o "pode" do dono; suíte inteira na versão publicada: 10.922 passaram). Sem migração.
+
+## 10/11/2026 (terça) — Alertas com período, obra, pessoa e páginas
+
+O dono: *"está exibindo 500 por página, só que não tem paginação, não posso mudar de página, não posso filtrar por
+data, período (…) eu quero visualizar só coisa do mês anterior, para tratar. Está tudo misturado."* A lista parava
+calada em 500 (o teto da consulta), sem dizer que havia mais.
+- **Na barra**: "Período (o dia do alerta)" com os atalhos Este mês / Mês anterior / 7 dias / Tudo e as datas De e
+  Até; **Obra** (com quantos há em cada uma); **Pessoa** (nome ou CPF); **Ordem** (os mais recentes ou os mais antigos
+  primeiro — para tratar do mais velho); **Por página** (50, 100 ou 200).
+- **As páginas**: "‹ Anterior · Página X de Y · Próxima ›", em cima e embaixo, com "101–200 de 348". O título diz o total
+  do recorte e o período. Mudar um filtro volta à página 1; resolver ou dispensar um alerta recarrega a MESMA página.
+- **O período é o DIA do alerta** (`data_referencia`). Com período escolhido, o alerta sem dia (aparelho esperando
+  aprovação) não entra. As contagens de tipo e de obra seguem os outros filtros.
+- **Um lugar só monta o filtro** (`alertas._onde`): a lista, o total, a contagem por tipo e a por obra usam o mesmo
+  recorte — não há como o número da barra e a lista divergirem.
+- "Marcar todos do grupo" marca os da página aberta.
+- Testes: `test_ponto_alertas_pagina_banco.py` (páginas, página além do fim, por página, período, datas trocadas, data
+  inválida, obra, pessoa, ordem). E a tela no navegador com 148 alertas.
+**Publicado em 10/11/2026** (com o "pode" do dono; suíte inteira na versão publicada: 10.327 passaram). Sem migração.
+
 ## 07/11/2026 (sábado) — O termo do ponto assinado no celular (migração 028)
 
 O dono: *"para fechar a formalização do aplicativo em relação aos funcionários (…) coletar a assinatura deles (…) das
@@ -564,6 +827,8 @@ passo os dados preenchidos quando ele quiser dar entrada.
   assina duas vezes; quem conduz: a lista, a recusa, sem PIN pede a foto, assinado com foto, não conduz o próprio; ERP:
   ficha, histórico, PDF, coluna; texto mudado volta a faltar; o PDF e o lacre). E as telas no navegador (celular
   simulado: o aviso, o termo, o PIN e o dedo; o operador com a foto; o ERP com o filtro e a ficha).
+**Publicado em 07/11/2026** (com o "pode" do dono; suíte inteira na versão publicada: 10.230 passaram) — **COM A
+MIGRAÇÃO 028** (apertar "Aplicar atualizações do ponto").
 
 ## 06/11/2026 (sexta, quarta parte) — A assinatura da folha na tela (migração 027)
 
@@ -592,7 +857,7 @@ WhatsApp, por enquanto não**.
 - Testes: `test_ponto_assinatura_folha_banco.py` (mês aberto recusa; PIN errado recusa; assinada; o PDF abre no ERP; a
   recusa; reaberto e mudado, substituída e de volta à lista; a pendência por obra; o PDF e o lacre). E a tela no
   navegador, do menu até "✅ assinou".
-**COM A MIGRAÇÃO 027** — ao publicar, apertar "Aplicar atualizações do ponto".
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com a tolerância de 10 min e o AFD/AEJ) — **COM A MIGRAÇÃO 027** (apertar "Aplicar atualizações do ponto").
 
 ## 06/11/2026 (sexta, terceira parte) — A revisão da Portaria 671: a tolerância de 10 min, o AFD e o AEJ
 
@@ -621,6 +886,7 @@ gerar o AFD e o AEJ; a assinatura da folha na tela (abaixo, quando feita).
   responsabilidade são com o advogado/contabilidade: sem o número do INPI, o sistema não gera os arquivos.
 - Teste `test_ponto_arquivos_fiscais_banco.py` (o CRC do exemplo da Portaria; o tamanho de cada campo; a corrente do
   hash; o trailer; a assinatura; no AEJ, E/S/D e as contagens).
+**Publicado em 06/11/2026** (com o "pode" do dono). Pendente: o nº do INPI e o .p7s.
 
 ## 06/11/2026 (sexta, segunda parte) — O alerta com o que é preciso para decidir ali mesmo
 
@@ -641,6 +907,7 @@ para facilitar a tomada de decisão"*.
 - De passagem: a barra "0 alertas marcados" aparecia sem nada marcado (o CSS vencia o `hidden`).
 - Teste `test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`; tela conferida no navegador (a foto escura na
   linha; o pedido de ajuste abrindo com 11:00 já preenchido).
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (sexta) — A ronda depois da saída; as faltas seguidas que ainda repetiam; a obra no resumo
 
@@ -660,6 +927,7 @@ para facilitar a tomada de decisão"*.
 - **A obra no resumo do WhatsApp.** *"Tem o nome da pessoa, mas não tem a obra."* Cada urgente termina com "— obra
   CÓDIGO — Nome": a obra em que a pessoa mais bateu nos últimos 30 dias (sem batida, a do alerta).
 - Testes: `test_a_ronda_nao_sai_depois_da_hora_de_sair`, `test_os_repetidos_que_ja_estavam_abertos_saem_e_o_resumo_diz_a_obra`.
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (quinta) — Vários alertas de uma vez
 
@@ -670,6 +938,7 @@ ganhou a caixa de marcar; a do cabeçalho marca o grupo (Urgente, Atenção, Par
 de uma vez. Por trás, `alertas.tratar_varios` (a mesma regra do `tratar`; o que estiver fora das obras de quem
 trata fica de fora, contado), rota `/erp/api/ponto/alertas/tratar-varios` (`tratar_ponto`), até 2000 por vez.
 Teste `test_varios_alertas_resolvidos_ou_dispensados_de_uma_vez`; tela conferida no navegador.
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (quarta) — Alertas: as fotos na linha, o filtro por tipo, a câmera travada e o alerta que crescia
 
@@ -705,6 +974,7 @@ Quatro pedidos do dono, em sequência, todos na tela de Alertas:
 - Testes: `test_a_mesma_imagem_para_pessoas_diferentes_no_mesmo_aparelho_e_camera_travada`,
   `test_as_faltas_seguidas_ficam_num_alerta_so_o_mais_atual`, `test_a_foto_que_virou_a_de_cadastro_e_depois_foi_trocada_diz_isso`;
   e as duas telas abertas no navegador com dado de teste (o filtro por tipo, as fotos na linha, a janela na aba do rosto).
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com o "Liberar obras no aplicativo") — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (terceira) — A compensação de HORAS; e a crítica da hora extra de quem está devendo
 
@@ -740,6 +1010,7 @@ pode, não deve pagar horas extras quando a pessoa está devendo."*
   continua extra; o futuro "a compensar"; longe demais, recusada; a crítica no fechamento e no relatório, que some
   depois de lançada; a turma pelo Quadro). Telas renderizadas e o JavaScript conferido; **não** abri o diálogo no
   navegador.
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (segunda) — O manual do vigia; e as horas a mais num dia compensadas no outro
 
@@ -757,6 +1028,7 @@ pode, não deve pagar horas extras quando a pessoa está devendo."*
   **"Compensação não cumprida — 3h30 cobertas"**, que soa como erro numa compensação de meio dia combinada; (2) a
   saída às 20h30 e a volta às 7h dão **10h30 de descanso, abaixo das 11 h da lei** (aviso de interjornada curta —
   independe da compensação). Também: a compensação é lançada uma pessoa por vez; não há em lote.
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com a compensação de horas) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 — O panorama do vigia (mensagem para o WhatsApp) e as lacunas que ele mostrou
 
@@ -791,6 +1063,7 @@ mensagem foi escrita a partir do código. **Lacunas achadas, levadas ao dono:**
   PDF de duas pessoas saiu com duas páginas, uma por pessoa (conferido gerando o PDF no navegador).
 - **Não verificado:** um PDF de 40 folhas num celular de verdade (o navegador do celular pode demorar para montar o
   arquivo).
+**Publicado em 05/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 05/11/2026 (segunda) — "Baixar o espelho" de um colaborador no ponto da obra dava "pessoa não encontrada"
 
@@ -811,6 +1084,7 @@ mensagem foi escrita a partir do código. **Lacunas achadas, levadas ao dono:**
 - **Não verificado:** a abertura no celular de verdade (no navegador instalado como aplicativo, ela abre na mesma
   janela; fora dele, numa aba nova). Uma chamada a mais antes de abrir a aba pode fazer o bloqueador de janelas do
   navegador barrar a aba — nesse caso o aplicativo já cai para abrir na mesma janela, como antes.
+**Publicado em 05/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Falta o Weverton confirmar no celular.
 
 ## 05/11/2026 — O ajuste do plantão dobrado pergunta "entrada ou saída"; as rondas falsas; o aparelho que volta sozinho
 
@@ -851,6 +1125,17 @@ mensagem foi escrita a partir do código. **Lacunas achadas, levadas ao dono:**
 - Publicados SEM a janela "Liberar obras no aplicativo" (04/11, quarta), que segue no ramo esperando a decisão do
   dono — ele tinha pedido só para saber onde se libera.
 **Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+## 04/11/2026 (quarta) — "Liberar obras no aplicativo": uma janela só para isso
+
+O dono: *"ela está como não bate ponto (…) eu não quero nem que ela bata ponto, quero só que ela consiga visualizar as
+pessoas de algumas obras (…) fazer ajuste de ponto de duas obras específicas. Não sei como configura. Está confuso."*
+A liberação de obras já existia (31/10, migração 023), mas no meio do "Acesso no aplicativo" — junto com celular,
+pedidos, administrativo e ronda —, com as obras DIGITADAS por código. Agora a ficha › Cadastro tem o botão
+**"🏗️ Liberar obras no aplicativo…"** (e o "Entra no aplicativo?" de quem não bate aponta para ele): as obras numa
+lista para marcar, com busca, "Todas as obras" à parte, e o que a pessoa passa a fazer escrito em cima (consulta e faz
+ajustes e pedidos pelas pessoas das obras; quem não bate continua sem bater). Diz também se a pessoa já tem PIN
+(a ficha ganhou `tem_pin`). Salvar manda só as obras — o resto do acesso fica como está.
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com os alertas) — SEM MIGRAÇÃO.
 
 ## 04/11/2026 (terceira) — O plantão dobrado do vigia; e o celular "bloqueado" que ninguém entendia
 

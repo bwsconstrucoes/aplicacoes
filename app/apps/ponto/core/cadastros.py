@@ -47,10 +47,92 @@ _SQL_COLABORADOR = """
 """
 # O cadastro do ERP puro. Com o Registro de Colaboradores como base (registro.py),
 # os mesmos campos vêm de lá quando a pessoa está nele.
+# ⚑ O INÍCIO DO CONTRATO É A MENOR DAS DUAS DATAS, e isto alinha o caminho do
+# ERP com o do Registro de Colaboradores, que já fazia assim (`registro.py`,
+# linha do `LEAST`). O diarista COMEÇA A TRABALHAR antes de a carteira ser
+# assinada: `data_inicio` é o primeiro dia na obra, `admissao` é o dia do
+# registro, e elas podem ser semanas diferentes.
+#
+# POR QUE ISSO IMPORTA AGORA (10/11/2026). O dono: *"eu não quero que a
+# conferência impacte no ponto, porque eu quero que a pessoa cadastre e a
+# partir daquele dia já consiga bater ponto no ato do cadastro (…) quem diz
+# que é para admitir ou não é a obra. A obra pediu, libera."*
+#
+# Sem o LEAST, bastava o DP ajustar a data de admissão para a frente — que é
+# justamente a ponderação dele, *"se o dia da assinatura vai ser aquele mesmo
+# ou um pouquinho mais na frente"* — para alguém que vinha batendo ponto
+# PARAR DE BATER, sem ninguém entender por quê. O trabalho já aconteceu; mudar
+# a data do papel não pode apagar o direito de registrar o dia.
+#
+# `LEAST` ignora vazio no Postgres: só uma data preenchida continua valendo, e
+# nenhuma das duas não trava nada.
+# ---------------------------------------------------------------------------
+# QUEM NÃO BATE PONTO, PELO TIPO DE CONTRATO — 16/11/2026
+#
+# Até aqui, usando o cadastro do ERP como base, `nao_bate` era NULL: NINGUÉM
+# ficava de fora. A regra existia só no caminho da planilha
+# (`registro.nao_bate_sql`), lendo a coluna "tipo" do Registro de
+# Colaboradores. Resultado prático: o dia em que a base virasse ERP, PJ e
+# pró-labore passariam a bater ponto — e ponto de PJ é exatamente o registro
+# que não se quer ter, porque parece vínculo de emprego.
+#
+# O dono ditou a regra em 16/11/2026, ao decidir cortar o vínculo com a
+# planilha: *"quando é prestador de serviço, quem é que bate ponto? É o
+# autônomo RPA e o autônomo mensalista. Os demais não batem ponto (…) PJ não
+# bate ponto, pró-labore não bate ponto, estagiário bate ponto, jovem aprendiz
+# bate ponto."*
+#
+# A lista inteira dos nove tipos do cadastro, para não sobrar dúvida:
+#
+#   BATEM      CLT (determinado e indeterminado), Temporário, Autônomo RPA,
+#              Autônomo mensalista, Jovem aprendiz, Estágio
+#   NÃO BATEM  PJ, Pró-labore
+#
+# ⚑ E A OBRA ESCRUSSAS CONTINUA FORA, como no caminho da planilha: é obra que
+# não bate ponto, independentemente do contrato de quem está nela.
+#
+# ⚑ A EXCEÇÃO DO DP CONTINUA VALENDO POR CIMA DISTO (migração 025): quem for
+# marcado como exceção bate, mesmo sendo PJ. Era assim com a planilha e
+# continua sendo — a regra automática não tira a decisão de ninguém.
+TIPOS_CONTRATO_SEM_PONTO = ("PJ", "PRO_LABORE")
+
+
+def _nao_bate_do_erp() -> str:
+    """O motivo de a pessoa não bater ponto, lido do cadastro do ERP."""
+    tipos = ", ".join(repr(t) for t in TIPOS_CONTRATO_SEM_PONTO)
+    obras = ", ".join(repr(o.upper()) for o in _OBRAS_SEM_PONTO)
+    return (
+        "CASE"
+        f" WHEN upper(btrim(COALESCE(c.tipo_contrato, ''))) IN ({tipos})"
+        "  THEN 'o tipo de contrato no cadastro é “' || btrim(c.tipo_contrato) ||"
+        "       '” — PJ e pró-labore não batem ponto'"
+        f" WHEN upper(btrim(COALESCE(o.codigo, ''))) IN ({obras})"
+        "  THEN 'a obra no cadastro é “' || btrim(o.codigo) ||"
+        "       '” — quem está nela não bate ponto'"
+        " ELSE NULL END")
+
+
+_OBRAS_SEM_PONTO = ("ESCRUSSAS",)
+
+
+def _tem_tipo_contrato(conn: Connection) -> bool:
+    """A coluna existe em `public.colaboradores`?
+
+    `db.tem_coluna` olha o esquema do ponto; esta olha o do ERP. Existe para
+    um banco atrás da migração não derrubar o ponto inteiro: sem a coluna,
+    ninguém fica de fora e o ponto segue — que é o desfecho seguro, porque o
+    erro aqui é alguém bater quando não devia, não alguém ficar impedido.
+    """
+    return db.um(conn, """SELECT 1 AS x FROM information_schema.columns
+                           WHERE table_schema = 'public'
+                             AND table_name = 'colaboradores'
+                             AND column_name = 'tipo_contrato'""") is not None
+
 _DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
-           "admissao": "c.admissao", "demissao": "c.demissao", "telefone": "c.telefone",
+           "admissao": "LEAST(c.data_inicio, c.admissao)",
+           "demissao": "c.demissao", "telefone": "c.telefone",
            "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": "",
-           "nao_bate": "NULL::text", "tipo_cadastro": "NULL::text"}
+           "nao_bate": None, "tipo_cadastro": "c.tipo_contrato"}
 _SEM_EXCECAO = ("FALSE AS bate_por_excecao, NULL::text AS excecao_motivo, NULL::text AS excecao_por, "
                 "NULL::timestamptz AS excecao_em")
 
@@ -58,6 +140,12 @@ _SEM_EXCECAO = ("FALSE AS bate_por_excecao, NULL::text AS excecao_motivo, NULL::
 def _trechos_colaborador(conn: Connection) -> dict:
     from . import registro
     trechos = dict(registro.trechos_sql(conn) or _DO_ERP)
+    # Base ERP: a regra de quem não bate sai do tipo de contrato do cadastro.
+    # Só é montada aqui porque depende de a coluna existir no banco — um banco
+    # atrás da migração não pode derrubar o ponto inteiro.
+    if trechos.get("nao_bate") is None:
+        trechos["nao_bate"] = (_nao_bate_do_erp() if _tem_tipo_contrato(conn)
+                               else "NULL::text")
     # A pessoa de teste (modo de teste, ensaio.py) bate como ativa mesmo fora
     # do Registro de Colaboradores.
     if db.tem_coluna(conn, "colaborador_config", "ensaio"):
@@ -170,6 +258,15 @@ def obras_da_pessoa(conn: Connection, colaborador_id: int) -> set[int]:
     if p and p.get("obra_id"):
         obras.add(int(p["obra_id"]))
     return obras
+
+
+def funcoes_de(conn: Connection, ids: list[int]) -> dict[int, str]:
+    """{pessoa: função} — da mesma base do resto do ponto (o ERP ou o Registro de Colaboradores)."""
+    if not ids:
+        return {}
+    linhas = db.todos(conn, _sql_colaborador(conn) + " WHERE c.id = ANY(:ids)", ids=[int(i) for i in ids],
+                      jornada_padrao=JORNADA_PADRAO)
+    return {int(l["id"]): l["funcao"] for l in linhas if l.get("funcao")}
 
 
 def listar_colaboradores(conn: Connection, *, so_ativos: bool = True,

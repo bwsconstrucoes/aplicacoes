@@ -12244,6 +12244,429 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 270 — Pagamento via SP: a chave Pix do cadastro vai marcada, não "Aleatória" (16/11/2026)
+
+- *"Está sendo marcado todos como aleatória e colocado atualizar PIX, sendo que já está
+  puxando do cadastro a chave PIX, que é CNPJ ou CPF (…) Aí eu estou tendo que alterar
+  todas as SPs geradas, uma por uma."*
+- Causa: a SP de cada pessoa seguia o padrão das SPs de folha (que pagam o banco, não a
+  pessoa): "tipo" = Aleatória e chave = "Atualizar Chave", com a chave de verdade só na
+  descrição.
+- Agora (`folha_cards.campos_da_chave`): o "tipo" ("Selecione a chave PIX a ser
+  utilizada") recebe a OPÇÃO do próprio pipe que casa com o tipo do cadastro (CPF, CNPJ,
+  e-mail, telefone, aleatória), e a chave vai no campo daquele tipo — `chave_pix_cpf`,
+  `cnpj_1`, `chave_pix_de_email`, `chave_pix_telefone`, `chave_pix_aleat_ria` (os mesmos
+  que a importação do ERP lê). CPF e CNPJ vão formatados.
+- Volta "Aleatória / Atualizar Chave" (e a etiqueta "Atualizar Pix") só quando o cadastro
+  não tem chave, o pipe não tem a opção ou não tem o campo daquela chave — para o card não
+  sair com o tipo marcado e a chave em lugar nenhum.
+- ⚠️ NÃO CONFERIDO no Pipefy de verdade: as opções e os campos de chave do pipe de SP vêm
+  da importação do ERP e da leitura do pipe no lançamento, não de um card criado. As SPs
+  já geradas com "Aleatória" continuam como estão (corrigir no Pipefy é escrever em
+  sistema de terceiro — só com o dono pedindo).
+- Testes: `test_analisesps_folha_cards.py` (a chave por tipo e as voltas ao padrão) e
+  `test_analisesps_gratificados.py`.
+- **Publicado em 16/11/2026** (sem migração).
+
+#### Leva 269 — Relatório completo do lote: os anexos entram otimizados (16/11/2026)
+
+- *"Existe anexos muito grandes em tamanho. Preciso dar uma otimizada neles antes de gerar
+  o relatório completo."*
+- O peso é foto e digitalização. Agora cada anexo é reduzido ao embutir: foto vai a no
+  máximo 2000 px e JPEG qualidade 70 (`_otimizar_foto`, também desvira foto de celular);
+  imagem dentro de PDF acima de 160 dpi vai a 130 dpi, JPEG 70 (`_otimizar_pdf`, pelo
+  `rewrite_images` do PyMuPDF — em versão sem ele, segue sem otimizar). Texto e desenho
+  de PDF gerado por sistema (NF-e, boleto) não são imagem e não mudam. O PDF final sai
+  com compressão máxima.
+- Medido: nota digitalizada a 300 dpi, 26 MB → 0,35 MB no relatório, texto de 8 pt
+  nítido; três anexos pesados somando 37 MB → relatório de 1,1 MB.
+- Com isso os tetos subiram (valem para o arquivo como chega, que é o que ocupa memória):
+  40 MB por anexo (era 20) e 150 MB somados (era 90).
+- **Publicado em 16/11/2026** (sem migração). Não conferido com anexos reais.
+
+#### Leva 268 — Relatório completo do lote, para a parceria (15/11/2026)
+
+- *"A gente vai lá nas solicitações, filtra, faz um print da tela, cola no WhatsApp, depois
+  baixa todos os anexos (…) e cola também (…) Eu gostaria de um relatório do lote (…) bonito,
+  organizado, com os agrupamentos (…) resumida, analítica, detalhada (…) e embutir todos os
+  anexos (…) a data, quem decide sou eu na hora de gerar."* E pediu para ver o visual antes
+  de fechar.
+- `lote_relatorio_completo.py`: um PDF só — capa (total, números, pontos de atenção,
+  agrupamentos por obra, tipo de despesa, forma e conta de pagamento, maiores credores
+  quando há mais de 5), relação analítica SEPARADA POR OBRA (linha clicável),
+  e uma página por SP seguida dos ANEXOS embutidos, cada página com uma faixa "PAGAMENTO n ·
+  SP · credor · anexo k · página i de N" e "voltar à relação". Sumário lateral (marcadores).
+- **Anexo da folha** (pedido no mesmo dia): SP sem anexo usa o "Relatório (PDF): <link>" da
+  descrição. Os outros links da descrição (planilha de pagamento, cadastro de colaboradores,
+  planilha de análise) NÃO vão para o parceiro: no texto impresso viram "(link interno, não
+  incluído)" — são planilhas com dado bancário/pessoal. Decisão minha, a confirmar com ele.
+- Link do Drive baixa pela conta de serviço (`drive.baixar_arquivo`); os outros com teto
+  de 20 MB por anexo e 90 MB por relatório; até 60 páginas por anexo. Imagem vira página;
+  planilha/Word/página de login ficam listadas com o motivo, sem derrubar o relatório.
+- **Gera FORA do pedido** (linha própria, até 2 ao mesmo tempo; a tela acompanha a cada
+  2 s e baixa) — baixar dezenas de anexos seguraria uma das 4 linhas do serviço. Fica na
+  memória do processo e numa pasta temporária por 2 h: renovação do serviço no meio perde o
+  trabalho (a tela diz para gerar de novo).
+- Tela do Lote: botão "Relatório completo (para a parceria)" (também no celular, com
+  "Compartilhar" direto para o WhatsApp onde o navegador permite) e "Relatório completo do
+  grupo" em cada grupo. Janela: data do pagamento (sugere amanhã), para quem, título, "só
+  estas obras" (quando há mais de uma) e "embutir os documentos".
+- **Por obra, e não pelos grupos do lote** (dono, vendo a prévia): *"tem um pagar amanhã,
+  aí tem outro (…) folha e locação. Eu não entendi essa divisão, sendo que a gente tá
+  relacionando os pagamentos de um determinado evento."* Os títulos do lote organizam o
+  trabalho aqui dentro e não dizem nada à parceria; saíram do relatório (inclusive o
+  quadro "por grupo do lote"). A mesma SP em dois grupos entra uma vez.
+- As três rotas novas entraram em `auth.TELA_DA_ROTA` com a tela "lote" — sem isso, quem
+  entra com usuário próprio ficava barrado (a suíte acusou antes de publicar).
+- **Publicado em 15/11/2026** (sem migração). Não conferido com anexos reais do Dropbox,
+  Drive e Pipefy: o primeiro lote de verdade é o teste.
+- Testes: `test_analisesps_lote_relatorio_completo.py`.
+
+#### Leva 267 — Pagamento avulso: o relatório conta a pessoa do rateio UMA vez e mostra o rateio (13/11/2026)
+
+- *"Quando tem rateio, o relatório não tá saindo direito. Diverge na qtd de pessoas no
+  próprio relatório, tem qtds diferentes e não relata nada sobre o rateio."*
+- Causa: `montado_do_relatorio` mandava ao relatório comum (`folha_relatorio`) UMA LINHA
+  POR LINHA COLADA. O relatório conta "pessoas a pagar" pela lista, mas os quadros por
+  obra e por conta contam CPF distinto — a mesma pessoa em 2 obras dava 2 num lugar e 1
+  no outro, e o "de quantas" contava linhas.
+- Agora as linhas do mesmo CPF viram UMA pessoa: as obras ficam dentro (`por_obra`), o
+  valor é a soma, a obra aparece "A R$ x + B R$ y" e a situação "Rateio em N obras"
+  (ou "Mesma pessoa N vezes (soma num pagamento)" quando é repetição sem rateio).
+- PDF e Excel ganham, só quando há rateio: uma frase no alto ("N pessoa(s) com rateio
+  entre obras: sai somado numa transferência; cada obra fica com a sua parte") e o
+  quadro/aba **"Rateio entre obras"** (pessoa, obra, valor na obra, total). No recorte
+  por conta, sem o "(0)" de dias depois da obra.
+- Vale também para o relatório anexado na geração (`folha_pagamento._relatorio_por_conta`
+  usa o mesmo montado).
+- Teste: `test_o_RELATORIO_conta_a_pessoa_do_rateio_UMA_vez_e_diz_que_e_rateio`.
+- **Publicado em 13/11/2026** (sem migração).
+
+#### Leva 266 — Pagamento avulso: a mesma pessoa em obras diferentes é RATEIO (13/11/2026)
+
+- *"Eu quero lançar um CPF, valores diferentes para obras diferentes. E isso seria para
+  efeito de rateio. Mas na hora de consolidar o arquivo, ele vai somar os valores. E
+  agora isso tem que ser alertado (…) para a gente não, sem querer, lançar errado."*
+- Desde 17/10 toda repetição era tratada como provável erro (só a 1ª marcada, aviso
+  vermelho). Agora (`pagamento_avulso._repetidos_em_obras_diferentes`): quando TODAS
+  as linhas da pessoa têm obra DITA por quem colou (colada ou trocada na linha — obra
+  do ponto/cadastro é palpite e não conta) e as obras são todas diferentes, é
+  **rateio**: todas vêm MARCADAS, selo "RATEIO n/N", aviso amarelo próprio no alto
+  ("no arquivo, as linhas da mesma conta viram UM pagamento, somando; na SP, rateado
+  por obra"). Mesma obra repetida, ou obra vinda do ponto/cadastro: como antes.
+- A janela de gerar avisa por CONTA (`criticas_de_repetidos`): "RATEIO — fulano em 2
+  obras: nesta conta, A R$ x + B R$ y = R$ z num pagamento só", e continua pedindo
+  "gerar com aviso" — o alerta que ele pediu antes de o arquivo sair.
+- Testes: `test_analisesps_pagamento_avulso.py`.
+
+#### Leva 265 — As tarefas em processo separado batem o ponto por relógio (13/11/2026)
+
+- O dono, com a baixa dos comprovantes "leva 3 de 5, desde 09:30" (mais de 40 min) e
+  o "Retomar a fila" recusado. A causa da lentidão é o robô do BaixaBradesco (cada
+  baixa baixa a SPsBD inteira; disputa com o Make — tarefa sugerida para o chat dele).
+  Mas havia uma falha NOSSA que piorava: a execução só batia ponto (`visto_em`) quando
+  o trabalho anotava uma etapa. Uma leva parada minutos no robô = 3 min sem batimento
+  = execução dada por morta → outra baixa podia começar por cima, e o
+  `destravar_parados` devolvia à fila o lote que a primeira ainda processava.
+- **Agora** `executar_sync.main` liga um relógio (`tarefas.manter_viva`, de 60 em 60 s,
+  numa linha à parte, só `visto_em`, só enquanto `fim IS NULL`) durante a execução
+  inteira. Processo morto (publicação, reinício) = relógio morto junto = execução dada
+  por morta como antes.
+- **Limite que fica:** uma execução VIVA mas presa (o robô sem responder) agora segura a
+  pista dela indefinidamente — antes ela "morria" sozinha em 3 min. Não há botão para
+  encerrar; se acontecer, o reinício do serviço resolve.
+- Teste: `test_analisesps_fila_colaboradores_banco.py` (o relógio mantém viva sem mexer
+  na etapa).
+
+#### Leva 264 — Telegram: um grupo novo a cada envio (WhatsApp1, WhatsApp2…), com repetidas (12/11/2026)
+
+- *"Mesmo que elas já estejam no lote, elas integrem o lote que está sendo criado. Elas
+  podem ficar repetidas. (…) se enviar uma lista de SPs agora, e enviar outra lista
+  mais tarde, quero que seja criado um novo lote. Daí fica WhatsApp1, WhatsApp2."*
+- Era UM grupo "WhatsApp" que somava tudo, e a SP que já estava em qualquer grupo era
+  pulada. Agora (`lote.proximo_grupo_whatsapp`, `lote.juntar_num_grupo`,
+  `telegram_lote.grupo_do_envio`): cada envio cria "WhatsApp" + (maior número + 1) no
+  TOPO do lote (o "WhatsApp" antigo, sem número, conta zero); a SP que está em outro
+  grupo entra assim mesmo (repetida); dentro do mesmo grupo não repete.
+- ⚠️ **O mesmo envio cortado em várias mensagens:** o Telegram corta colagem longa;
+  o que chega até 2 minutos depois da mensagem anterior (`JANELA_DO_MESMO_ENVIO_S`)
+  vai para o MESMO grupo — a memória é `analisesps.meta` ›
+  `telegram_lote.ultimo_grupo.<pessoa>`.
+- A proteção da tela aberta (`manter_chegadas`) devolve o que sumiu ao grupo do
+  último envio. Limite: uma SP que chegou pelo robô e TAMBÉM está em outro grupo não
+  é devolvida se o salvar apagar só o grupo dela (a base não guarda o grupo de cada
+  chegada).
+- Testes: `test_analisesps_lote_whatsapp.py`, `test_analisesps_telegram_lote_banco.py`.
+
+#### Leva 263 — Gerar e lançar no Pipefy numa tacada só (11/11/2026)
+
+- *"Primeiro a gente gera o arquivo e depois lança no Pipefy. Eu queria poder ter a
+  opção de gerar e lançar ao mesmo tempo, numa tacada só. Poder somente gerar e ficar
+  lá guardado, ou então gerar tudo uma vez."*
+- A janela "Gerar arquivos" (`_gerar_direto.html`, todas as telas da folha) ganhou o
+  botão **"Gerar e lançar no Pipefy"**, ao lado de "Gerar definitivo" (que continua
+  só gerando). Ele faz o mesmo "Gerar definitivo" e, em seguida, o mesmo "Lançar no
+  Pipefy" de Arquivos gerados (`folha_cards.lancar`, todas as contas), com as mesmas
+  travas da prévia. Pede confirmação (card no Pipefy não se apaga por aqui).
+- **Se o lançamento travar** (obra sem Código Omie, tipo de despesa sem Record ID…), a
+  GERAÇÃO VALE: os arquivos ficam, a tela diz por que não lançou e abre Arquivos
+  gerados para lançar depois (`web._lancar_depois_de_gerar`, nunca levanta).
+- Testes: `test_analisesps_gerar_e_lancar.py`.
+
+#### Leva 262 — Centros de custo da contabilidade × o ponto (11/11/2026)
+
+- *"A folha da contabilidade tem determinado centro de custo, só que na nomenclatura
+  diferente da nossa (…) na aba C. Diários eu adicionei a última coluna, a coluna AN,
+  o centro de custo da contabilidade (…) gerar um relatório onde o funcionário está
+  trabalhando no ponto (…) comparar a folha da contabilidade e entender se aqueles
+  cadastros estão ok ou se precisa haver remanejo (…) esse relatório eu vou passar
+  para a contabilidade."* Particularidade: AFASTADO INSS e DESATIVAR sem ponto estão
+  coerentes; com ponto, crítica.
+- **Onde:** dentro da folha da contabilidade, faixa "Folha | Complementar | Centros de
+  custo" (`/folha/<id>/centros-de-custo`; a faixa agora aparece SEMPRE na folha
+  aberta). Planilha para a contabilidade em `.xlsx` (abas "Remanejos" e
+  "Conferência").
+- **Como** (`centros_de_custo.py`): o centro na folha é o setor da Folha Sintética
+  (`folha_linha.setor_codigo/nome`, "001.07 - …"); a obra é a de MAIS DIAS no ponto do
+  MÊS INTEIRO da competência (`obra_do_dia`); o esperado é a coluna AN da C. Diários
+  da planilha "Bases de Dados Pipefy", lida pelo leitor do ponto
+  (`base_obras.ler_planilha`, guardada 5 min; pelo nome — "Centro de Custo
+  Contabilidade" e variações — ou, sem o nome, a posição AN, com aviso). Compara pelo
+  CÓDIGO ("140.01"; o nível de cima "140" também casa). Situações: ok, coerente,
+  remanejar (de X para Y), conferir (mais de uma obra e a folha numa que não é a
+  principal; afastado/desativar com ponto; sem ponto; obra sem AN; ID Fortes sem CPF).
+- **A pergunta do dono (folha ou complementar?):** a importação da complementar
+  SUBSTITUI a folha da mesma competência e tipo — a guardada já é a mais nova. Entre
+  quinzena e fim de mês, vale qualquer uma; a tela aponta a outra do mesmo mês e diz
+  que a de fim de mês é a completa.
+- **Não verificado com dado real:** o nome exato da coluna AN e o formato do texto dela
+  (o exemplo do dono: "001.07 - CONSTRUTORA/ESCRITORIO NORDESTE"); o código da obra que
+  o ponto escreve casar com a C. Diários (código primário, coluna A ou nome).
+- Testes: `test_analisesps_centros_de_custo.py`.
+
+#### Leva 261 — Bradesco: agendamento, seleção, KPIs e totais por conta (11/11/2026)
+
+- *"Na parte do Bradesco, não aparece o status do agendamento de cada registro.
+  Deveria (…) os registros serem selecionados e poder alterar esses status, ter mais
+  gestão sobre eles."* E logo depois: *"não tem KPIs, totalizados, somatórios, por
+  conta também. Tudo isso facilita a aprovação."*
+- **Coluna "Agendamento"** nas duas tabelas (boletos e Pix), logo depois da SP, com o
+  selo de cor das outras telas. O dado já vinha na linha (`Status Agend`); faltava
+  na lista de colunas.
+- **Seleção + a barra de ações das Solicitações** (`analisesps_barra_acoes.html`,
+  `origem='bradesco'`, com Marcar Pago/Pagar): cada operação que achou a SP tem
+  caixinha; Agendar/Agendado/Falha Agendar/Desagendar com as MESMAS travas do
+  servidor (não validada, Pix "Atualizar Chave", sem obra), total marcado e por conta.
+  Depois de agir, a conferência é REFEITA com o mesmo texto colado
+  (`window.recarregarTela` — recarregar pediria para reenviar o formulário; a barra em
+  `analisesps.js` agora chama `recarregar()`, que usa o gancho quando a tela o define).
+- **Os números** (`bradesco.resumo`, do valor do banco): operações (boletos/Pix) e
+  total, com SP, sem SP, "pedem conferência" (`pede_conferencia`: sem SP, validação
+  fora de OK ou alerta ⚠️ — a frase que só explica o acerto não conta), por status de
+  agendamento (a já paga conta como "Pago") e a tabela por conta de débito.
+- **O aviso do Firefox** (*"por que aparece isso toda hora na tela Bradesco? (…) o
+  Firefox precisa enviar informações que repetirão qualquer ação"*): a conferência
+  era a RESPOSTA do formulário — qualquer recarga (a tela se atualiza quando uma
+  sincronização termina; a barra depois de agir; o F5) pedia para reenviar. Agora o
+  "Conferir" guarda o texto (`analisesps.meta`, `bradesco.colado.<código>`, por 3
+  dias) e redireciona para `/bradesco?c=<código>`; recarregar refaz a conferência com
+  os status de agora. O gancho `window.recarregarTela` saiu da tela (fica no
+  `analisesps.js`, sem uso). Sem banco para guardar, confere na hora, como antes.
+- **Códigos de pagamento (QR / boleto)**, no mesmo dia: *"não é exibido o status do
+  agendamento do registro. Coloca."* Cada SP mostra o selo do agendamento (ou "sem
+  agendamento") e o do status de pagamento, ao lado do valor e do vencimento.
+- Testes: `test_analisesps_telas.py` (`-k "bradesco or codigos"`).
+
+#### Leva 260 — A baixa dos comprovantes em pista própria (migração 056, 11/11/2026)
+
+- *"Já existe uma atualização em andamento (dando baixa nos comprovantes —
+  Bradesco_11112026_081401.PDF: leva 2 de 2, desde 08:31). Espere ela terminar. (…)
+  esse comprovante tão sempre demorando muito."*
+- A baixa (o robô do BaixaBradesco, leva de 10 páginas por vez: leitura, Omie,
+  planilha, Pipefy) corria na pista GERAL, a mesma da sincronização e da fila de envio
+  para a planilha — um segurava o outro. Ela não escreve em `analisesps.sps`, só na
+  planilha (pelo robô, que já roda pelo Make junto com a sincronização). Agora tem a
+  pista `comprovantes` (`tarefas.MODOS_DOS_COMPROVANTES`, índice
+  `ux_execucao_viva_por_pista6`): roda junto da sincronização, uma baixa por vez.
+- A tela de Comprovantes acompanha a pista dela; ao fim de uma baixa, o que chegou de
+  comprovante enquanto ela rodava começa sozinho (`encadear_comprovantes`).
+- **A demora do robô em si NÃO mudou** — ela é do BaixaBradesco (outra área). O que
+  mudou é que ela não trava mais o resto.
+- ⚠️ **Migração 056: apertar "Aplicar atualizações do banco" no MESMO momento da
+  publicação.** Sem ela, a baixa continua na geral como antes (o pedido recusado
+  pede o botão; o lote fica esperando e entra depois).
+
+#### Leva 259 — Sincronização: linhas mudadas em faixas contínuas (11/11/2026)
+
+- *"Alterado aqui, mas o envio para a planilha ficou na fila: Já existe uma
+  atualização em andamento (trazendo as SPs alteradas — 28200 de 52350, desde 08:04)
+  (…) ela trava toda a operação. Já tem 24 minutos. Não tem sentido."*
+- **Causa da demora:** quando quase a planilha inteira aparece como alterada (52.350
+  linhas — carimbo novo em tudo, provavelmente um script que reescreveu a SPsBD), o
+  delta pedia UMA FAIXA POR LINHA, 200 por ida: ~20 linhas/s, quase uma hora com a
+  pista das SPs ocupada — e a fila de envio para a planilha esperando atrás.
+- **Agora:** linhas vizinhas viram uma faixa só (`faixas_continuas`, `lotes_de_faixas`),
+  até 5.000 linhas por ida, como a carga inicial. O caso "tudo mudou" passa a custar o
+  mesmo que uma carga (minutos). O log diz POR QUE as linhas vieram (novas na base,
+  carimbo novo desde X, conteúdo sem carimbo) — para achar o script que carimba tudo.
+- **E a LÓGICA estava errada** (o dono, logo depois: *"1000 de 52363, desde 08:42 (…)
+  tem algo bem errado na lógica dessa atualização"* — a rodada recomeçou trazendo a
+  planilha inteira de novo). A linha vinha quando o carimbo era "maior que a marca
+  d'água" — comparação de TEXTO, com a marca gravada só no FIM da rodada. Com carimbo
+  num formato que não ordena como texto (dd/mm/aaaa), ou com uma rodada que morre
+  antes do fim, a planilha inteira voltava como alterada, rodada após rodada. **Agora
+  a linha vem quando o carimbo da planilha é DIFERENTE do guardado na base** (cada SP
+  guarda o seu). Rodada interrompida não refaz o que já trouxe; o formato deixa de
+  importar. O segundo da borda da marca d'água continua relido (`_na_borda`, só com
+  datas aaaa-mm-dd). A conferência do `status_pgt` (linha sem carimbo) não mudou.
+- A alteração feita pela tela fica na fila e desce na próxima sincronização — não se
+  perde.
+- Testes: `test_analisesps_banco.py` (faixas contínuas; 1.200 linhas = 1 ida).
+
+#### Leva 258 — Complementar das diárias (11/11/2026)
+
+- *"Fizemos o pagamento (…) da última quinzena. Só que aí o pessoal precisou corrigir
+  ponto (…) a gente precisaria pagar a diferença (…) peguei o relatório anterior, gerei
+  um novo (…) joguei na IA para fazer o confronto (…) queria que a gente pudesse fazer
+  isso dentro do sistema (…) como na folha da contabilidade a gente tem aquele
+  complemento."*
+- **Onde:** Diaristas › faixa "Diaristas | Complementar" (rota
+  `/folha/diaristas/complementar`, mesma competência/período/empresa da tela). A tela
+  dos Diaristas avisa quando o período já foi pago, e a janela "Gerar arquivos" (já
+  gerado) aponta para a Complementar.
+- **Como** (`diaristas_complementar.py`, sobre a parte comum de `folha_complementar`:
+  `comparar`, `finalizar`, `fechar`, `linhas_a_pagar`, "a descontar", relatório):
+  - PAGO = soma por CPF do fechamento de cada geração de diárias do período: `diaria`,
+    `diaria.<cnpj>` e as complementares (`diaria_c1`, `diaria_c2`… com ou sem empresa).
+  - NOVO = a conta de hoje da tela dos Diaristas (ponto corrigido), de quem tem diária
+    a receber; quem está desmarcado na tela vem em "não pago antes", desmarcado.
+  - Os grupos, a seleção e o arquivo são os da folha; verba própria `diaria_cN`
+    (rótulo "Diárias complementar N", natureza/carteira/grupo do Pipefy da diária,
+    título da SP " - Complementar N"; `folha_geracao.verba_base`).
+  - Com empresa escolhida, só as pessoas dela (o pago é recortado pelo CNPJ).
+  - Pago a mais vai para a mesma lista "a descontar", com a competência "Diárias
+    MM/AAAA período" (chave `diaria-AAAA-MM-tipo`, separada da folha).
+- A tela da Complementar da folha virou um corpo compartilhado
+  (`_complementar_corpo.html` + `_complementar_fim.html`), usado pelas duas.
+- Testes: `test_analisesps_diaristas_complementar.py` (paga → corrige o ponto →
+  complementar só da diferença → a seguinte já soma; não pago; pago a mais).
+
+#### Leva 257 — Empresa (CNPJ de admissão) recorta Alimentação/Transporte, Diaristas e DC (10/11/2026)
+
+- *"Na C. Diários (…) Dados Documentos (…) a coluna BT, CNPJ admissão. Eu preciso
+  diferenciar as empresas. (…) gerar a folha de diaristas, mas exibir somente os que
+  estão cadastrados para uma empresa (…) antes de gerar qualquer informação. (…)
+  alimentação e transporte, diaristas, despesa com colaboradores."*
+- **Leitura:** a coluna BT entra na carga do cadastro (`COLUNAS_DO_PAGAMENTO
+  ["cnpj_admissao"]`, nome "CNPJ Admissão" ou, sem o nome, a posição 72 conferindo a
+  palavra "cnpj"), no JSON `documentos` — sem migração. **Só aparece depois de um
+  "Atualizar cadastro"**; até lá todo mundo está "sem CNPJ de admissão".
+- **Na tela** (`empresa_da_folha.py`, include `_empresa_da_folha.html`): um seletor
+  "Empresa (CNPJ de admissão)" na barra do mês das três telas. O recorte é feito DENTRO
+  do cálculo (`calcular(..., empresa)`), antes dos totais: KPIs, obras, lista,
+  relatório, divisão e GERAÇÃO saem só com aquela empresa. "Sem CNPJ de admissão" é
+  uma opção, para ninguém sumir sem ser visto. O nome vem do cadastro de Empresas do
+  ERP pelo CNPJ; sem ele, o CNPJ formatado.
+- **Geração: junto OU por empresa** (o dono, no mesmo dia: *"acho que devemos fechar
+  por empresa"* e *"quero poder fazer junto ou por empresa"*). A empresa entra no NOME
+  DA VERBA do fechamento e da geração: `diaria` = todas juntas (como sempre);
+  `diaria.00079526000109` = só aquela empresa (`empresa_da_folha.verba_da_empresa`).
+  Cada empresa tem fechamento, arquivo e SP próprios; rótulo ("Diárias — BWS"),
+  natureza, carteira e grupo do Pipefy olham a verba base (título da SP ganha
+  " - BWS"). Na DC funciona naturalmente (o gerado sai da tela).
+  - ⚠️ **Junto × por empresa não se misturam no mesmo período**
+    (`empresa_da_folha.conflita`): depois de gerar todas juntas, gerar uma empresa
+    (ou o contrário) é recusado SEMPRE, mesmo com "gerar mesmo assim" — pagaria duas
+    vezes. Empresas diferentes entre si não conflitam. Repetir a mesma geração segue a
+    regra antiga (recusa; "gerar mesmo assim" passa).
+- **O rótulo da empresa** (correção do dono no mesmo dia): a BT vem escrita
+  "00.079.526/0001-09 - BWS". O filtro mostrava o nome do cadastro de Empresas do ERP;
+  agora mostra o texto da coluna (`ler_coluna`: o CNPJ separa, o nome depois do traço
+  é o que se lê; o ERP só completa CNPJ sem nome na planilha).
+- Testes: `test_analisesps_empresa_da_folha.py`.
+
+#### Leva 256 — Diaristas: filtro de obra lento (10/11/2026)
+
+- *"Clico nas obras pra filtrar mas leva uma eternidade."* Cada pessoa lia os
+  acréscimos de diária do ERP DUAS vezes (4 consultas cada) — ~3.200 idas ao banco
+  numa quinzena de 400 diaristas, a cada clique. Agora uma leitura por cálculo
+  (`calcular_pessoa(..., acrescimos=)`), e a TELA guarda a conta por 90 s
+  (`folha_diaristas.calcular_guardado`), jogada fora em qualquer gravação do módulo e
+  no fim de toda leitura do ponto. Medido no banco de teste com 400 pessoas: 1,8 s →
+  0,5 s para calcular; o clique de filtro, 0,2 s. Quem grava (seleção, fechar, gerar)
+  continua calculando na hora.
+
+#### Leva 255 — Agenda: os feriados vêm do cadastro do ponto (10/11/2026)
+
+- A pergunta que estava aberta desde 04/11: a aba "Feriados" da planilha de credenciais
+  (a que move o vencimento das contas da Agenda para dia útil) vinha à mão. O dono: *"os
+  feriados devem vir do cadastro do app ponto"*.
+- **Agora:** `agenda.feriados_do_ponto()` lê `ponto.feriados`. Valem os NACIONAIS e os
+  ESTADUAIS/MUNICIPAIS da **cidade da sede** (escolhida na própria tela da Agenda, guardada
+  em `analisesps.meta` › `agenda.sede`); os de OBRA nunca. Motivo: a agenda é de contas e
+  impostos da empresa — o feriado municipal da cidade de uma obra não muda o vencimento do
+  FGTS, e postergar por causa dele faria pagar atrasado. Os nacionais calculados (Páscoa
+  etc.) continuam somados, como rede de segurança.
+- A aba "Feriados" deixou de ser lida na sincronização (`sincronizar_agenda`) e
+  `agenda.gravar_feriados` saiu; a tabela `analisesps.feriados` ficou sem uso (sem
+  migração para apagá-la).
+- **Pendente com o dono:** a cidade da sede. Enquanto ninguém escolher, só os nacionais
+  movem as datas (antes, o que estivesse na aba também movia).
+- Testes: `test_analisesps_agenda_feriados_ponto.py` (regra pura + no banco, com o ponto).
+
+#### Leva 254 — A folha complementar: pagar só a diferença de uma folha já paga (10/11/2026)
+
+> **Publicado em 10/11/2026.** Pendente AGORA: a primeira complementar real — conferir
+> com calma quem aparece "sem CPF" antes de gerar.
+
+- **Depois (10/11/2026, publicado no mesmo dia):** *"basta eu colar os novos arquivos estando em folha e o sistema
+  já entende que é complementar?"* — importar a folha de um mês JÁ PAGO leva direto à
+  Complementar (a resposta da importação traz `ir`); mês não pago vai para a folha. E a
+  Complementar não tem a barra lateral de propósito: não há filtros nela, e as ações
+  (PDF, Excel, Gerar) ficam no cabeçalho da lista.
+
+- *"Encerrada a folha, feitos os pagamentos, foram detectados ajustes de ponto (…) eu
+  preciso importar a nova folha e, a partir dela, gerar um arquivo de pagamento com a
+  diferença (…) quem foi a mais, quem foi a menos (o a menos só ilustrativo) (…) quem
+  não foi pago, exibir desmarcado."* Discutido antes; exemplo em tela aprovado
+  (*"pode construir"*), com as sugestões aceitas: pago a mais vai para "a descontar";
+  obra da diferença = a da folha nova; mesmo caminho de arquivo/SP; tela dentro da
+  Folha da contabilidade.
+- **O risco que existia:** refechar uma folha já paga APAGAVA o registro do que foi
+  pago (o fechamento é um só por competência/verba) e o "gerar mesmo assim" pagaria a
+  folha inteira de novo. **Agora:** `folha_gestao.fechar` recusa folha com geração no
+  log (o "Gerar arquivos" da folha diz "já foi paga — use a Complementar"); o caminho
+  limpo para uma geração que não valeu continua sendo excluí-la em Arquivos gerados.
+- **Como funciona** (`folha_complementar.py`, tela `/folha/<id>/complementar`):
+  - O PAGO é o fechamento de cada verba GERADA da competência — a `folha` e as
+    complementares já feitas (`complementar1`, `complementar2`…), somadas por CPF.
+  - A FOLHA NOVA é a folha importada agora, apropriada com a mesma conta da tela, mas
+    sem o "fora" (quem ficou fora precisa de obra se for pago agora).
+  - Grupos: a receber (marcado, paga a diferença), não pago antes (desmarcado, diz por
+    que ficou fora), pago a mais (informativo; inclui quem saiu da folha) e sem mudança.
+  - A diferença é dividida nas obras na proporção da folha nova (centavo na última).
+  - Gerar = `gerar_direto` com origem "complementar": grava um FECHAMENTO com verba
+    própria (`complementarN`, rótulo "Folha complementar N", natureza da folha) e gera
+    o arquivo dele; depois guarda o pago a mais em "a descontar" e zera a seleção.
+  - "A descontar" (`analisesps.meta` › `folha.a_descontar`): lista com "já descontado";
+    aparece na Complementar e um aviso na folha. O sistema não desconta sozinho.
+  - Relatório PDF (paisagem) e Excel com todos os grupos (`detalhe_todos` no relatório
+    compartilhado).
+- Sem migração (usa as tabelas de fechamento e `meta`).
+- Conferido: ciclo completo no banco de teste (pagou a folha → complementar com
+  512,80 → a seguinte já vê esse pagamento); tela no navegador (marcar, salvar, janela
+  de gerar com só a diferença). Testes: `test_analisesps_folha_complementar.py`.
+- **Não verificado com folha de verdade:** o casamento de CPF depende do cadastro (quem
+  não casa aparece "sem CPF — não dá para pagar").
+- **Depois (10/11/2026) — "Lançar no Pipefy" recusava a complementar** ("o cenário do
+  Make não possui grupo para ela"). Não dependia do Make: era a tabela de grupos copiada
+  dele (`folha_cards.GRUPOS`), que só conhecia "folha". O dono: *"isso é igual ao Folha da
+  Contabilidade, mas na descrição pode pôr Complementar"*. Agora `complementarN` lança
+  com o grupo, o tipo de despesa (Salários e Ordenados) e a categoria da folha
+  (`verba_do_grupo`); o TÍTULO da SP ganha " - Complementar N" (para não se confundir
+  com a SP da folha do mesmo mês) e a descrição já dizia "Folha complementar N —
+  competência…". Teste ponta a ponta no banco (gerar → prévia → lançar).
+
 #### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
 
 > **Publicado em 06/11/2026.**

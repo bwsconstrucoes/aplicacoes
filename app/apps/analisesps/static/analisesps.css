@@ -1027,7 +1027,19 @@ a.cal-dia.nao-util:hover { background: #E8EEF9; }
 .sps td.texto-longo {
   font-size: 11.5px; line-height: 1.3; color: var(--tinta-suave);
   max-width: 340px; min-width: 160px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  overflow: hidden; white-space: normal;
+}
+/* DUAS LINHAS (10/11/2026): a mesma largura de antes, e a descrição quebra em até
+   duas linhas, com "…" no fim do que não coube. O texto inteiro segue no title. */
+.sps td.texto-longo .duas-linhas {
+  /* ⚠️ A LARGURA VEM DAQUI: o texto pede a largura dele inteiro, até 340 — a mesma
+     coluna de antes. Sem isto, podendo quebrar, o navegador encolhia a coluna
+     para o mínimo (160) quando a tabela não cabe na tela, e duas linhas estreitas
+     mostravam MENOS do que a linha larga de antes. */
+  width: max-content; max-width: 340px;
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere;
 }
 
 /* O botao de esconder/mostrar a descricao, ao lado da lista de colunas */

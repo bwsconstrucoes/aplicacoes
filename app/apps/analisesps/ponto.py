@@ -602,6 +602,25 @@ def _linha_do_dia(carga_id: int, cpf: str, nome: str, dia,
             json.dumps(dia, ensure_ascii=False, default=str)[:8000])
 
 
+def _esquece_os_diaristas_no_fim(funcao):
+    """Ao terminar (bem ou mal) uma leitura que muda o ponto, a conta guardada da tela
+    dos diaristas é jogada fora — ver `folha_diaristas.calcular_guardado`."""
+    import functools
+
+    @functools.wraps(funcao)
+    def envolvida(*args, **kwargs):
+        try:
+            return funcao(*args, **kwargs)
+        finally:
+            try:
+                from . import folha_diaristas
+                folha_diaristas.esquecer_o_guardado()
+            except Exception:  # noqa: BLE001 — esquecer é conforto
+                logger.exception("Análise de SPs: falhou esquecer os diaristas guardados")
+    return envolvida
+
+
+@_esquece_os_diaristas_no_fim
 def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
     """Traz o ponto do mês e guarda. É o que o botão e o automático chamam.
 
@@ -941,6 +960,7 @@ def _pagina_chutada(carga: dict, cpf: str) -> tuple:
     return min(total, posicao // por_pagina + 1), nome
 
 
+@_esquece_os_diaristas_no_fim
 def atualizar_pessoa(ano: int, mes: int, cpf: str, nome: str = "",
                      anotar=None) -> dict:
     """Traz de novo do Mobponto só a página em que a pessoa está. Ver acima.
@@ -1438,6 +1458,7 @@ def _obra_do_dia(lido) -> dict:
     return obra_do_dia(lido["marcacoes"], lido["presenca"], lido["falta"])
 
 
+@_esquece_os_diaristas_no_fim
 def aplicar_batidas_na_copia(ano: int, mes: int, cpf: str, nome: str, data,
                              novas) -> bool:
     """Põe na CÓPIA BAIXADA as batidas que acabaram de ser lançadas no Mobponto.

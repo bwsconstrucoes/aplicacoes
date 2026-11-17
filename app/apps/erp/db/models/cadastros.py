@@ -458,6 +458,18 @@ class Obra(Base):
     uf: Mapped[Optional[str]] = mapped_column(Text)
     endereco: Mapped[Optional[str]] = mapped_column(Text)
     codigo_omie_depto: Mapped[Optional[str]] = mapped_column(Text, unique=True)
+    # ⚑ COMO A CONTABILIDADE CHAMA ESTA OBRA (migração 104, 16/11/2026). Ele:
+    # *"nós vamos continuar com a nossa nomenclatura e a contabilidade tem a
+    # dela também, que também é importante. A gente manter as duas."*
+    #
+    # O ERP chama a obra de "094"; a contabilidade, de "164.01". A ficha de
+    # registro do Fortes traz o número DELES, e é por esta coluna que a
+    # importação das fichas acha de que obra a ficha fala.
+    #
+    # NÃO é única de propósito: planilha em construção tem repetição e branco.
+    # A importação avisa quando dois se repetem; recusar tudo por isso seria
+    # trocar um problema de cadastro por um de importação.
+    centro_custo_contabil: Mapped[Optional[str]] = mapped_column(Text)
     ref_sheets: Mapped[Optional[str]] = mapped_column(Text)
     objeto: Mapped[Optional[str]] = mapped_column(Text)
     cliente: Mapped[Optional[str]] = mapped_column(Text)
@@ -469,6 +481,18 @@ class Obra(Base):
     data_inicio: Mapped[Optional[date]] = mapped_column(Date)
     data_termino: Mapped[Optional[date]] = mapped_column(Date)
     orgao_resumido: Mapped[Optional[str]] = mapped_column(Text)
+    # O CONTRATANTE NO PAPEL DO DIÁRIO — migração 093. A unidade é a linha
+    # abaixo do nome do órgão ("SECRETARIA DE OBRAS E DEFESA CIVIL"), e a logo
+    # é a do órgão, que entra no cabeçalho junto com a da empresa. Ficam na
+    # obra e não num cadastro de órgãos porque o modelo é cláusula DO
+    # CONTRATO: a mesma prefeitura pode exigir papéis diferentes em dois
+    # contratos.
+    contratante_unidade: Mapped[Optional[str]] = mapped_column(Text)
+    contratante_logo: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    contratante_logo_mime: Mapped[Optional[str]] = mapped_column(Text)
+    # Qual dos modelos de diário este contrato exige (ver core/diario.py).
+    # Nulo = o nosso, o mais amplo.
+    diario_modelo: Mapped[Optional[str]] = mapped_column(Text)
     ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
     # endereço completo (serve de local de entrega nas compras)
     cep: Mapped[Optional[str]] = mapped_column(Text)
@@ -1190,14 +1214,19 @@ class RecebimentoItem(Base):
     quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
 
 
-class Funcao(Base):
-    """Função na obra, com a diária de referência."""
-    __tablename__ = "funcoes"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    nome: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    valor_diaria: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
-    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+# ⚑ A `Funcao` DEIXOU DE EXISTIR na migração 105 (16/11/2026), e isto fica
+# escrito porque a palavra continua aparecendo no banco e em consultas antigas.
+#
+# Havia DUAS tabelas respondendo "o que a pessoa faz": `funcoes` (nome +
+# diária) e `cargos` (nome + CBO, riscos, EPIs, convenção). Dava para alguém
+# ser "Pedreiro" na função e "Servente" no cargo sem ninguém notar. O dono
+# fechou: *"vamos chamar só de cargo e acabou."*
+#
+# O `Cargo` abaixo ganhou `valor_diaria`, que era a única coisa que só a
+# função tinha. No banco, `funcoes` virou uma VISÃO sobre `cargos` e
+# `colaboradores.funcao_id` virou cópia automática de `cargo_id` — assim as
+# quatro consultas do ponto e a do portal continuam valendo palavra por
+# palavra, sem ninguém precisar mexer em aparelho homologado.
 
 
 # ---------------------------------------------------------------------------
@@ -1217,6 +1246,8 @@ class Cargo(Base):
     descricao: Mapped[Optional[str]] = mapped_column(Text)
     riscos: Mapped[Optional[str]] = mapped_column(Text)
     epis: Mapped[Optional[str]] = mapped_column(Text)
+    # A diária de referência, que era da antiga `Funcao` (migração 105).
+    valor_diaria: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -1279,8 +1310,20 @@ class Colaborador(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nome: Mapped[str] = mapped_column(Text, nullable=False)
     cpf: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # O OPERADOR DO ERP QUE É ESTA PESSOA (migração 096). Nulo é o normal:
+    # a maioria de quem trabalha não entra no sistema. Quando existe,
+    # desligar o colaborador desliga o acesso dele — que era justamente o que
+    # ninguém lembrava de fazer à mão.
+    usuario_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
     matricula: Mapped[Optional[str]] = mapped_column(Text)
-    funcao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("funcoes.id"))
+    # ⚑ `funcao_id` SAIU DO MODELO na migração 105 (16/11/2026). Decisão do
+    # dono: *"em relação a cargo e função, vamos chamar só de cargo e
+    # acabou."* No banco a coluna continua existindo como CÓPIA AUTOMÁTICA de
+    # `cargo_id`, só para as consultas antigas do ponto e do portal
+    # continuarem valendo. Mapeá-la aqui faria o ORM tentar escrever numa
+    # coluna gerada — e o banco recusa, com razão. Quem quer saber o que a
+    # pessoa faz usa `cargo_id`.
     obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
     admissao: Mapped[Optional[date]] = mapped_column(Date)
     demissao: Mapped[Optional[date]] = mapped_column(Date)
@@ -1367,8 +1410,11 @@ class Colaborador(Base):
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
-    funcao: Mapped[Optional[Funcao]] = relationship()
     obra: Mapped[Optional[Obra]] = relationship()
+    # ⚑ ENTRA NA MIGRAÇÃO 105, no lugar da antiga `funcao`: cargo e função
+    # viraram a mesma coisa, e é daqui que sai o nome do que a pessoa faz e a
+    # diária de referência dela.
+    cargo: Mapped[Optional[Cargo]] = relationship()
 
 
 # ---------------------------------------------------------------------------

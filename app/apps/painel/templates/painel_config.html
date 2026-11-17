@@ -167,6 +167,7 @@
           {% elif chave == 'pagamentos' %}Reler os pagamentos
           {% elif chave == 'periodo' %}Atualizar um período
           {% elif chave == 'titulos' %}Reler todos os títulos
+          {% elif chave == 'obras_cc' %}Ler as obras dos lançamentos de conta
           {% else %}Primeira carga{% endif %}
         </button>
         <p class="cartao-dica">{{ descricao }}</p>
@@ -269,8 +270,13 @@
         style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
     <input type="text" name="codigo" inputmode="numeric" placeholder="ex.: 11309733447"
            data-sem-mascara style="max-width:220px">
-    <button type="submit" class="btn">⬇ Baixar</button>
+    <button type="submit" class="btn">⬇ Baixar do OMIE</button>
+    {# o mesmo número, do lado do painel: por que ele está sem obra (10/11/2026) #}
+    <button type="submit" class="btn secundario"
+            formaction="{{ url_for('painel.conferir_lancamento_cc_no_painel') }}">⬇ O que o painel tem dele</button>
   </form>
+  <p class="dica">“O que o painel tem dele” não chama o OMIE: mostra o que foi
+    guardado e diz, numa frase, por que o lançamento está com ou sem obra.</p>
 </div>
 
 <!-- ============ O QUE ACONTECEU NAS ATUALIZAÇÕES — dono, 06/10/2026 ============ -->
@@ -1135,8 +1141,9 @@
     <b>{{ brl(fora.valor) }}</b> andaram na conta corrente <b>sem título por
     trás</b> — entraram {{ brl(fora.entrou) }} e saíram {{ brl(fora.saiu) }}.
     <b>Desde 07/10/2026 eles entram no painel</b> (DRE, fluxo, Analítico, aportes),
-    rateados nas obras pela apropriação do OMIE; sem apropriação, ficam em
-    "(não apropriado)". No Analítico aparecem com
+    rateados nas obras pela apropriação do OMIE; se o OMIE responde que não
+    tem obra, ficam em "(não apropriado)"; se o painel ainda não perguntou,
+    em "(obra ainda não lida do OMIE)". No Analítico aparecem com
     “[lançamento de conta corrente]” na observação. Ficam de fora só as
     previsões e o que repete uma baixa de título na mesma conta, dia e valor.
   </div>
@@ -1148,9 +1155,30 @@
   <p class="cartao-dica">
     O painel é montado a partir dos <b>títulos</b> (contas a pagar e a receber)
     e, desde 07/10/2026, também dos <b>lançamentos feitos direto na conta
-    corrente</b>. A apropriação deles só é guardada a partir da primeira leitura
-    depois dessa data: os de antes ficam "(não apropriado)" até o período ser
-    relido (botão "Atualizar um período" ou "Reler os pagamentos").
+    corrente</b>. A obra de cada um é perguntada ao OMIE, um por um; as
+    atualizações comuns perguntam até 600 por vez, dos mais recentes para
+    trás. O lançamento guardado sem número (lido antes de 07/10/2026) só
+    ganha obra quando o período é relido ("Atualizar um período" ou "Reler
+    os pagamentos").
+    {% if obras_cc and obras_cc.existe %}
+    <br><br><b>A obra desses lançamentos, hoje</b> ({{ '{:,}'.format(obras_cc.total).replace(',', '.') }}
+    com número do OMIE):
+    <b>{{ '{:,}'.format(obras_cc.com_obra).replace(',', '.') }}</b> com obra lida do OMIE ·
+    <b>{{ '{:,}'.format(obras_cc.sem_obra).replace(',', '.') }}</b> que o OMIE respondeu sem obra
+    (estes são “(não apropriado)” de verdade) ·
+    <b {% if obras_cc.pendentes %}style="color:var(--vermelho)"{% endif %}>{{ '{:,}'.format(obras_cc.pendentes).replace(',', '.') }}</b> ainda não perguntados ·
+    <b {% if obras_cc.desistidos %}style="color:var(--vermelho)"{% endif %}>{{ '{:,}'.format(obras_cc.desistidos).replace(',', '.') }}</b> que o OMIE recusou três vezes
+    {% if obras_cc.sem_numero %}· <b>{{ '{:,}'.format(obras_cc.sem_numero).replace(',', '.') }}</b>
+      guardados sem o número (só voltam relendo os pagamentos do período){% endif %}.
+    {% if obras_cc.pendentes or obras_cc.desistidos %}
+    <br>Os não perguntados e os recusados aparecem como
+    <b>“(obra ainda não lida do OMIE)”</b> — não como “(não apropriado)”.
+    Para ler todos de uma vez: botão <b>“Ler as obras dos lançamentos de conta”</b>, acima.
+    {% if obras_cc.pendentes_por_ano %}Por ano:
+      {% for ano, n in obras_cc.pendentes_por_ano.items() %}{{ ano }}: {{ n }}{% if not loop.last %} · {% endif %}{% endfor %}.
+    {% endif %}
+    {% endif %}
+    {% endif %}
     {% if fora.orfaos %}
     <br><br><b>Além desses</b>, há
     {{ '{:,}'.format(fora.orfaos).replace(',', '.') }} movimentos

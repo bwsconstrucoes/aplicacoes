@@ -1,0 +1,13 @@
+-- A regra de período ganha FIM (12/11/2026).
+--
+-- O dono, usando a tela: "nas regras de período não tem ATÉ (…) eu botei
+-- 1/2020, aí o próximo é a partir de 1/2021 — era melhor a gente definir o
+-- período de tanto a tanto, não só a partir de. (…) Essa parte do até era
+-- importante ter: ou você botava o período exato, ou então até determinada
+-- data."
+--
+-- `ate` é o último mês em que a linha vale (AAAA-MM); vazio = sem fim, que é
+-- o "a partir de" de antes. A linha que só tem fim ("até 12/2020") é gravada
+-- com `desde` = '0001-01', para não brigar com a regra de sempre da conta
+-- ('1900-01') na chave da tabela.
+ALTER TABLE painel.cenario_peso_periodo ADD COLUMN IF NOT EXISTS ate TEXT NOT NULL DEFAULT '';

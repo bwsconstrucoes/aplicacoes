@@ -68,23 +68,69 @@
     </div>
   </div>
 
-  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
-  <div class="campo"><label>Cargo</label><select id="f-cargo"></select></div>
-  <div class="campo"><label>Convenção</label><select id="f-convencao"></select></div>
-  <div class="campo"><label>Pagamento</label>
-    <select id="f-pagamento">
-      <option value="">todos</option>
-      <option value="MENSALISTA">mensalista</option>
-      <option value="DIARISTA">diarista</option>
-    </select></div>
+  {# ⚑ OBRA, CARGO E CONVENÇÃO VIRARAM BLOCOS, como no Análise de SPs
+     (17/11/2026). Ele: *"esse tipo de filtro aqui de obra e cargo tá feio. Vê
+     como é que tá em análise de SPs também na parte de solicitações para
+     ficar parecido."*
+
+     O que muda além do visual, e é o que importa: dava para escolher UMA obra
+     só. Agora marca-se quantas quiser, o bloco abre e fecha, mostra quantas
+     estão marcadas, e ganha uma procura quando a lista passa de doze — que é
+     a mesma régua de lá, pelo mesmo motivo: doze se acham com o olho, oitenta
+     obras não. #}
+  <div class="filtro" id="bl-obra">
+    <button class="filtro-cab" type="button"><span>Obra</span>
+      <span class="filtro-badge oculto"></span><span class="seta">▾</span></button>
+    <div class="filtro-cont"></div>
+  </div>
+  <div class="filtro" id="bl-cargo">
+    <button class="filtro-cab" type="button"><span>Cargo</span>
+      <span class="filtro-badge oculto"></span><span class="seta">▾</span></button>
+    <div class="filtro-cont"></div>
+  </div>
+  <div class="filtro" id="bl-convencao">
+    <button class="filtro-cab" type="button"><span>Convenção</span>
+      <span class="filtro-badge oculto"></span><span class="seta">▾</span></button>
+    <div class="filtro-cont"></div>
+  </div>
+  <div class="filtro">
+    <button class="filtro-cab" type="button"><span>Pagamento</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="pag" value="" checked>
+        <span class="rotulo">Todos</span></label>
+      <label class="opcao"><input type="radio" name="pag" value="MENSALISTA">
+        <span class="rotulo">Mensalista</span></label>
+      <label class="opcao"><input type="radio" name="pag" value="DIARISTA">
+        <span class="rotulo">Diarista</span></label>
+    </div>
+  </div>
 
   <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:12px">
     + Colaborador</button>
-  <button class="btn secundario" id="btn-funcao" style="width:100%; margin-top:6px">
-    + Função</button>
+  {# ⚑ O BOTÃO "+ CARGO" SAIU DA BARRA em 17/11/2026, por pedido dele com
+     todas as letras: *"eu não quero um botão mais cargo. Isso que não tem
+     sentido. Cargo é para estar. Quando a gente for cadastrar, aqui eu ter a
+     relação de cargos e daqui DENTRO do cadastro eu poder criar um novo
+     cargo, criar uma nova convenção."*
+
+     É a regra "um cadastro, uma porta" (CLAUDE.md, 17/09/2026) aplicada à
+     caixinha: quem está preenchendo a ficha não sai dela para cadastrar o que
+     falta na lista. O "+ novo" agora vive ao lado dos campos Cargo e
+     Convenção, dentro do formulário — ver `ligarCriacaoDeLista`.
+
+     Obra NÃO ganha isso, e ele disse por quê: *"eu não posso criar obra,
+     porque obra se cria no outro canto."* #}
   {% if pode.configurar %}
   <button class="btn secundario" id="btn-importar" style="width:100%; margin-top:6px">
-    Importar do Pipefy</button>
+    Importar pessoas de planilha</button>
+  {# ⚑ A FICHA DO FORTES, DIRETO DO PDF (16/11/2026). Ele: *"como eu já tenho
+     as fichas aqui, eu quero trabalhar com as fichas mesmo."* Botão separado
+     porque o que entra é OUTRA COISA: a planilha diz QUEM existe; a ficha diz
+     o que o Fortes sabe sobre quem já existe (PIS, CTPS, admissão, salário,
+     demissão). #}
+  <button class="btn secundario" id="btn-fichas" style="width:100%; margin-top:6px">
+    Importar fichas do Fortes (PDF)</button>
   {% endif %}
 {% endblock %}
 
@@ -102,21 +148,58 @@
    de nada — o valor está em poder ir de "12 sem papel" para as 12 pessoas. #}
 <div class="kpis" id="pendencias" style="margin-bottom:14px"></div>
 
+{# ⚑ O QUADRO (KANBAN) — pedido dele em 17/11/2026, e com o motivo:
+
+   *"Para mudar a pessoa de etapa, eu tenho que clicar, buscar a pessoa,
+   clicar na pessoa, editar o cadastro em histórico e mudar a etapa. Isso é
+   burrice. (…) a movimentação das pessoas de etapa tem que ser simples. (…)
+   Tem uma visão Kanban também aqui. (…) aí você exibe na caixinha da pessoa o
+   nome, CPF, o cargo, o tipo de vínculo, a obra."*
+
+   Arrastar é o gesto que ele já tem na mão, do Pipefy. A lista continua ao
+   lado porque ela é melhor para procurar e conferir — o quadro é para MOVER.
+
+   ⚠️ O QUE APARECE NA CAIXINHA É ESCOLHA DELE: *"eu queria até poder definir o
+   que é exibido nesse…"* — as marcações ficam guardadas no próprio navegador,
+   porque é preferência de quem olha, não dado do sistema. #}
 <div class="tabela-wrap">
   <div class="tabela-barra">
     <span id="resumo-lista" class="desc"></span>
     <span class="espaco"></span>
+    <div style="display:flex; gap:4px">
+      <button class="btn secundario" id="ver-lista">Lista</button>
+      <button class="btn" id="ver-quadro">Quadro</button>
+    </div>
+    <span class="espaco"></span>
     <span id="exportar" style="display:flex; gap:6px"></span>
   </div>
-  <div class="tabela-rolagem">
-  <table><thead><tr><th>Nome</th><th>CPF</th><th>Cargo</th><th>Obra</th>
+  <div id="quadro-opcoes" class="oculto"
+       style="padding:8px 10px; border-bottom:1px solid var(--borda);
+              display:flex; gap:14px; flex-wrap:wrap; align-items:center">
+    <span class="desc">Mostrar na caixinha:</span>
+  </div>
+  <div id="quadro" class="oculto" style="overflow-x:auto; padding:10px">
+  </div>
+  <div class="tabela-rolagem" id="area-lista">
+  {# ⚑ A EMPRESA NA LISTA (13/11/2026). Ele: *"aqui em colaboradores, essa
+     questão sempre vai ser um dado importante. Para a gente visualizar fácil,
+     a empresa."* #}
+  <table><thead><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Cargo</th><th>Obra</th>
     <th>Vínculo</th><th>Etapa</th><th>Pendências</th>
     <th class="direita">Salário/diária</th><th>Situação</th></tr></thead>
     <tbody id="corpo"></tbody></table>
 </div><div class="vazio oculto" id="vazio"></div></div>
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
-  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  {# "Fechar" volta UMA tela quando veio da ficha da pessoa — ver
+     `VOLTAR_PARA_FICHA`. #}
+  <button class="topo-btn" style="margin-left:auto"
+          onclick="fecharFormulario()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{# A FICHA ÚNICA DA PESSOA (13/11/2026): a mesma janela que abre clicando no nome em qualquer tela do ponto — o
+   cadastro, os pagamentos, o ponto, os aparelhos, a configuração do ponto e o rosto. Ela mora no módulo do ponto
+   (/erp/ponto/pessoa/<id>) e aparece aqui inteira; editar o cadastro e os documentos voltam para o formulário daqui. #}
+<dialog id="dlg-unica" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
+  <iframe id="unica-quadro" title="Ficha da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -133,6 +216,7 @@ const PODE_IMPORTAR = {{ 'true' if pode.configurar else 'false' }};
    módulo do ponto registra as ações dele no menu do ERP, então `pode.ver_ponto`
    chega aqui como qualquer outra. #}
 const PODE_VER_PONTO = {{ 'true' if pode.ver_ponto else 'false' }};
+const PODE_VER_MENSAGENS = {{ 'true' if pode.ver_mensagens else 'false' }};
 let COL = [], OBRAS = [], FUNCOES = [], ETAPAS = [], CARGOS = [], CONVENCOES = [];
 
 // O PAINEL ESCOLHIDO recorta a lista. Vazio = a lista inteira.
@@ -159,13 +243,55 @@ async function carregar(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+{# A partir de quantas opções o bloco ganha procura. É a mesma régua do
+   Análise de SPs, e pelo mesmo motivo: doze se acham com o olho; oitenta
+   obras, não — e rolar a lista procurando "creche" é coisa que se faz vinte
+   vezes por dia. #}
+const PROCURA_A_PARTIR_DE = 12;
+
+function montarBloco(id, nome, itens, rotulo){
+  const bloco = els(id);
+  if (!bloco) return;
+  const cont = bloco.querySelector(".filtro-cont");
+  cont.innerHTML =
+    (itens.length >= PROCURA_A_PARTIR_DE
+      ? `<input type="search" class="procura-opcao" autocomplete="off"
+           placeholder="Procurar…" aria-label="Procurar">` : "")
+    + `<div class="filtro-opcoes">` + itens.map(x =>
+        `<label class="opcao"><input type="checkbox" name="${nome}"
+           value="${x.id}"><span class="rotulo"
+           title="${escapar(rotulo(x))}">${escapar(rotulo(x))}</span></label>`
+      ).join("") + `</div>`;
+  cont.querySelectorAll(`input[name=${nome}]`).forEach(i =>
+    i.addEventListener("change", () => { pintarBadge(bloco, nome); desenhar(); }));
+  const procura = cont.querySelector(".procura-opcao");
+  if (procura) procura.addEventListener("input", () => {
+    const q = procura.value.trim().toLowerCase();
+    cont.querySelectorAll(".opcao").forEach(o =>
+      o.classList.toggle("oculto",
+        !!q && !o.textContent.toLowerCase().includes(q)));
+  });
+}
+
+function pintarBadge(bloco, nome){
+  const n = bloco.querySelectorAll(`input[name=${nome}]:checked`).length;
+  const badge = bloco.querySelector(".filtro-badge");
+  if (!badge) return;
+  badge.textContent = n;
+  badge.classList.toggle("oculto", !n);
+}
+
+function marcadosDe(id, nome){
+  const bloco = els(id);
+  if (!bloco) return [];
+  return [...bloco.querySelectorAll(`input[name=${nome}]:checked`)]
+    .map(i => i.value);
+}
+
 function montarFiltros(){
-  els("f-obra").innerHTML = `<option value="">todas</option>` +
-    OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("");
-  els("f-cargo").innerHTML = `<option value="">todos</option>` +
-    CARGOS.map(c=>`<option value="${c.id}">${escapar(c.nome)}</option>`).join("");
-  els("f-convencao").innerHTML = `<option value="">todas</option>` +
-    CONVENCOES.map(c=>`<option value="${c.id}">${escapar(c.nome)}</option>`).join("");
+  montarBloco("bl-obra", "fobra", OBRAS, rotuloObra);
+  montarBloco("bl-cargo", "fcargo", CARGOS, c => c.nome);
+  montarBloco("bl-convencao", "fconvencao", CONVENCOES, c => c.nome);
   // AS ETAPAS COM A CONTA DE CADA UMA: é o quadro do Pipefy virado filtro.
   els("f-etapas").innerHTML =
     `<label class="opcao"><input type="radio" name="etapa" value="" checked>
@@ -219,27 +345,203 @@ function pintarPendencias(base){
     }));
 }
 
+{# ===========================================================================
+   O QUADRO — ver o comentário no HTML, acima da área `#quadro`
+   =========================================================================== #}
+const CAIXINHA = [
+  {chave: "cpf",      rotulo: "CPF",      padrao: true},
+  {chave: "cargo",    rotulo: "Cargo",    padrao: true},
+  {chave: "vinculo",  rotulo: "Vínculo",  padrao: true},
+  {chave: "obra",     rotulo: "Obra",     padrao: true},
+  {chave: "empresa",  rotulo: "Empresa",  padrao: false},
+  {chave: "pendencias", rotulo: "Pendências", padrao: true},
+  {chave: "dias",     rotulo: "Dias parado", padrao: false},
+];
+{# A preferência de quem olha mora no navegador DELE: não é dado do sistema, e
+   guardá-la no banco obrigaria todo mundo a ver o mesmo. #}
+function mostraNaCaixinha(){
+  try {
+    const salvo = JSON.parse(localStorage.getItem("erp-caixinha") || "null");
+    if (Array.isArray(salvo)) return new Set(salvo);
+  } catch(e){ /* navegador sem localStorage: vale o padrão */ }
+  return new Set(CAIXINHA.filter(x => x.padrao).map(x => x.chave));
+}
+let CAMPOS_CAIXINHA = mostraNaCaixinha();
+let MODO = "lista";
+
+function montarOpcoesDoQuadro(){
+  const onde = els("quadro-opcoes");
+  if (!onde || onde.dataset.pronto) return;
+  onde.innerHTML = `<span class="desc">Mostrar na caixinha:</span>` +
+    CAIXINHA.map(x => `<label class="opcao" style="margin:0">
+      <input type="checkbox" data-caixinha="${x.chave}"
+        ${CAMPOS_CAIXINHA.has(x.chave) ? "checked" : ""}>
+      <span class="rotulo">${escapar(x.rotulo)}</span></label>`).join("");
+  onde.querySelectorAll("[data-caixinha]").forEach(i =>
+    i.addEventListener("change", () => {
+      i.checked ? CAMPOS_CAIXINHA.add(i.dataset.caixinha)
+                : CAMPOS_CAIXINHA.delete(i.dataset.caixinha);
+      try {
+        localStorage.setItem("erp-caixinha",
+                             JSON.stringify([...CAMPOS_CAIXINHA]));
+      } catch(e){ /* sem localStorage, vale só nesta visita */ }
+      desenhar();
+    }));
+  onde.dataset.pronto = "1";
+}
+
+function trocarModo(novo){
+  MODO = novo;
+  const quadro = novo === "quadro";
+  els("quadro").classList.toggle("oculto", !quadro);
+  els("quadro-opcoes").classList.toggle("oculto", !quadro);
+  els("area-lista").classList.toggle("oculto", quadro);
+  els("ver-quadro").className = quadro ? "btn" : "btn secundario";
+  els("ver-lista").className = quadro ? "btn secundario" : "btn";
+  if (quadro) montarOpcoesDoQuadro();
+  try { localStorage.setItem("erp-modo-colaboradores", novo); } catch(e){}
+  desenhar();
+}
+
+function caixinhaDaPessoa(c){
+  const linhas = [];
+  if (CAMPOS_CAIXINHA.has("cpf")) linhas.push(documento(c.cpf));
+  if (CAMPOS_CAIXINHA.has("cargo")) linhas.push(escapar(c.cargo || c.funcao || "sem cargo"));
+  if (CAMPOS_CAIXINHA.has("vinculo"))
+    linhas.push(escapar((c.vinculo === "PRESTADOR" ? "Prestador" : "CTPS")
+      + (c.tipo_contrato_rotulo ? ` · ${c.tipo_contrato_rotulo}` : "")));
+  if (CAMPOS_CAIXINHA.has("obra")) linhas.push(escapar(c.obra || "sem obra"));
+  if (CAMPOS_CAIXINHA.has("empresa")) linhas.push(escapar(c.empresa || "—"));
+  if (CAMPOS_CAIXINHA.has("dias") && c.dias_parado != null)
+    linhas.push(`parado há ${c.dias_parado} dia(s)`);
+  const pend = CAMPOS_CAIXINHA.has("pendencias") ? pendenciasDaLinha(c) : "";
+  return `<div class="cartao-kanban" draggable="true" data-id="${c.id}"
+      onclick="abrirFichaCompleta(${c.id})"
+      style="background:var(--fundo); border:1px solid var(--borda);
+             border-radius:8px; padding:8px 10px; margin-bottom:8px;
+             cursor:grab">
+      <b>${escapar(c.nome)}</b>
+      ${linhas.length ? `<div class="desc" style="font-size:12px; line-height:1.5">
+        ${linhas.join("<br>")}</div>` : ""}
+      ${pend ? `<div style="margin-top:4px">${pend}</div>` : ""}
+    </div>`;
+}
+
+{# ⚠️ ETAPA QUE NÃO É COLUNA CAI NA PRIMEIRA, e isto não é detalhe: entre
+   publicar o código e alguém apertar "Aplicar atualizações do banco", existe
+   gente gravada na etapa antiga ("EM_CONFERENCIA"). Sem esta linha, essas
+   pessoas não apareceriam em coluna nenhuma — desapareceriam do quadro, sem
+   erro, até o botão ser apertado. Some calado é o pior jeito de errar. #}
+const COLUNAS_DO_QUADRO = ETAPAS.map(e => e.valor);
+function colunaDe(c){
+  const e = c.etapa || "CONCLUIDO";
+  return COLUNAS_DO_QUADRO.includes(e) ? e : COLUNAS_DO_QUADRO[0];
+}
+
+function desenharQuadro(lista){
+  const onde = els("quadro");
+  onde.innerHTML = `<div style="display:flex; gap:10px; align-items:flex-start;
+      min-width:max-content">` +
+    ETAPAS.map(e => {
+      const dela = lista.filter(c => colunaDe(c) === e.valor);
+      return `<div class="coluna-kanban" data-etapa="${e.valor}"
+        style="width:250px; flex:0 0 250px; background:var(--fundo-2);
+               border:1px solid var(--borda); border-radius:10px; padding:8px">
+        <div style="font-weight:600; margin-bottom:6px">
+          ${escapar(e.rotulo)} <span class="desc">· ${dela.length}</span></div>
+        <div class="desc" style="font-size:11px; margin-bottom:8px">
+          ${escapar(e.o_que_fazer || "")}</div>
+        <div class="solta-aqui" data-etapa="${e.valor}"
+             style="min-height:60px">${dela.map(caixinhaDaPessoa).join("")}</div>
+      </div>`;
+    }).join("") + `</div>`;
+  ligarArrastar();
+}
+
+{# Arrastar e soltar sem biblioteca: são três eventos, e trazer uma
+   dependência para isso seria pagar caro por pouco. #}
+function ligarArrastar(){
+  let pegou = null;
+  els("quadro").querySelectorAll(".cartao-kanban").forEach(cartao => {
+    cartao.addEventListener("dragstart", ev => {
+      pegou = cartao.dataset.id;
+      cartao.style.opacity = "0.4";
+      ev.dataTransfer.effectAllowed = "move";
+    });
+    cartao.addEventListener("dragend", () => {
+      pegou = null; cartao.style.opacity = "";
+    });
+  });
+  els("quadro").querySelectorAll(".solta-aqui").forEach(area => {
+    area.addEventListener("dragover", ev => {
+      ev.preventDefault();
+      area.style.background = "var(--realce)";
+    });
+    area.addEventListener("dragleave", () => { area.style.background = ""; });
+    area.addEventListener("drop", async ev => {
+      ev.preventDefault();
+      area.style.background = "";
+      const id = pegou; pegou = null;
+      if (!id) return;
+      const pessoa = COL.find(c => String(c.id) === String(id));
+      const destino = area.dataset.etapa;
+      if (!pessoa || (pessoa.etapa||"CONCLUIDO") === destino) return;
+      if (!PODE_EDITAR) {
+        aviso("mensagem", "Você não tem permissão para mover cadastro.", "erro");
+        return;
+      }
+      {# A mudança vai para o banco ANTES de a tela mostrar: se falhar, o
+         cartão não pode ter "andado" aos olhos de quem arrastou. #}
+      try {
+        await api(`/erp/api/colaboradores/${id}/etapa`,
+                  {metodo: "POST", corpo: {etapa: destino,
+                                           motivo: "movido no quadro"}});
+        pessoa.etapa = destino;
+        const rot = (ETAPAS.find(x => x.valor === destino) || {}).rotulo || destino;
+        aviso("mensagem", `${pessoa.nome} → ${rot}.`, "ok");
+        desenhar();
+      } catch(e){
+        aviso("mensagem", e.message, "erro");
+        desenhar();
+      }
+    });
+  });
+}
+
 function desenhar(){
   const b = (els("f-busca").value||"").trim().toLowerCase();
   const sit = (document.querySelector("input[name=sit]:checked") || {}).value;
   const vinc = (document.querySelector("input[name=vinc]:checked") || {}).value;
   const etapa = (document.querySelector("input[name=etapa]:checked") || {}).value;
+  const pag = (document.querySelector("input[name=pag]:checked") || {}).value;
+  const obras = marcadosDe("bl-obra", "fobra");
+  const cargos = marcadosDe("bl-cargo", "fcargo");
+  const convs = marcadosDe("bl-convencao", "fconvencao");
 
   // A BASE dos painéis é a lista depois dos filtros de recorte (obra, cargo,
   // situação), mas ANTES do painel escolhido — senão clicar num painel zeraria
   // a conta dos outros, e o DP perderia a visão do todo.
-  const base = COL.filter(c => {
-    if (b && !`${c.nome} ${c.cpf} ${documento(c.cpf)} ${c.matricula||""}`
+  {# ⚑ A CONTA DE CADA ETAPA NÃO PODE SUMIR AO ESCOLHER UMA (17/11/2026).
+
+     Ele: *"gostei do numerador das etapas, quantas pessoas tem em cada etapa,
+     mas tem um problema. Se eu botar em todas, aparece. Se eu clicar numa
+     etapa inicial, aí some das outras. É para continuar aparecendo."*
+
+     A causa: a base dos contadores já tinha o filtro de ETAPA aplicado, então
+     escolher "Inicial" zerava todas as outras contas — e o DP perdia
+     justamente a visão que o quadro do Pipefy dava de graça.
+
+     Agora são DUAS bases: `semEtapa` (tudo menos a etapa escolhida) alimenta
+     os contadores; `base` (com ela) alimenta a lista. #}
+  const passaNosOutros = c => {
+    if (b && !`${c.nome} ${c.cpf} ${documento(c.cpf)} ${c.empresa||""}`
               .toLowerCase().includes(b)) return false;
     if (sit === "DESLIGADO" && (c.situacao||"") === "ATIVO") return false;
     if (sit === "ATIVO" && (c.situacao||"") !== "ATIVO") return false;
     if (vinc && (c.vinculo||"CTPS") !== vinc) return false;
-    if (etapa && (c.etapa||"CONCLUIDO") !== etapa) return false;
-    if (els("f-obra").value && String(c.obra_id||"") !== els("f-obra").value) return false;
-    if (els("f-cargo").value && String(c.cargo_id||"") !== els("f-cargo").value) return false;
-    if (els("f-convencao").value
-        && String(c.convencao_id||"") !== els("f-convencao").value) return false;
-    const pag = els("f-pagamento").value;
+    if (obras.length && !obras.includes(String(c.obra_id||""))) return false;
+    if (cargos.length && !cargos.includes(String(c.cargo_id||""))) return false;
+    if (convs.length && !convs.includes(String(c.convencao_id||""))) return false;
     if (pag === "MENSALISTA" && !c.salario) return false;
     if (pag === "DIARISTA" && !c.valor_diaria) return false;
     if (els("f-falta-dado").checked && !(c.falta||[]).length) return false;
@@ -249,12 +551,18 @@ function desenhar(){
     if (els("f-sem-obra").checked && (c.obra_id || c.situacao !== "ATIVO")) return false;
     if (els("f-sem-pagamento").checked && c.tem_pagamento) return false;
     return true;
-  });
+  };
+  const semEtapa = COL.filter(passaNosOutros);
+  const base = etapa
+    ? semEtapa.filter(c => (c.etapa||"CONCLUIDO") === etapa)
+    : semEtapa;
   pintarPendencias(base);
-  // A conta de cada etapa, dentro do filtro lateral.
+  // A conta de cada etapa — sobre `semEtapa`, para que escolher uma não zere
+  // as outras. Ver o comentário acima.
   els("f-etapas").querySelectorAll("[data-conta-etapa]").forEach(s => {
-    const n = base.filter(c => (c.etapa||"CONCLUIDO") === s.dataset.contaEtapa).length;
-    s.textContent = n ? ` · ${n}` : "";
+    const n = semEtapa.filter(
+      c => colunaDe(c) === s.dataset.contaEtapa).length;
+    s.textContent = ` · ${n}`;
   });
 
   const l = base.filter(c => {
@@ -269,16 +577,51 @@ function desenhar(){
   els("resumo-lista").textContent = l.length === COL.length
     ? `${l.length} pessoa(s)`
     : `${l.length} de ${COL.length} pessoa(s)`;
-  els("vazio").classList.toggle("oculto", l.length>0);
+  els("vazio").classList.toggle("oculto", l.length>0 || MODO === "quadro");
   if (!l.length) els("vazio").innerHTML =
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
+  {# ⚠️ NO QUADRO, O FILTRO DE ETAPA NÃO SE APLICA: escolher "Inicial" e ver um
+     quadro com uma coluna só seria o contrário do que o quadro serve. Ele usa
+     `semEtapa`, que é a mesma base dos contadores. #}
+  if (MODO === "quadro") {
+    desenharQuadro(semEtapa.filter(c => {
+      if (PENDENCIA === "etapa") return ehEmAndamento(c);
+      if (PENDENCIA === "dado") return (c.falta||[]).length;
+      if (PENDENCIA === "papel") return (c.falta_documento||[]).length;
+      if (PENDENCIA === "pedido") return c.pedidos_abertos;
+      if (PENDENCIA === "devolucao") return c.devolucoes_abertas;
+      return true;
+    }));
+    return;
+  }
   els("corpo").innerHTML = l.map(c=>`<tr style="cursor:pointer" data-c="${c.id}">
-    <td><b>${escapar(c.nome)}</b>${c.matricula?`<small>mat. ${escapar(c.matricula)}</small>`:""}</td>
+    {# A matrícula saiu do nome em 13/11/2026: ele não usa mais ("a gente vai
+       usar o ID Fortes, o CPF"). O lugar dela virou a EMPRESA, que ele pediu
+       para enxergar fácil. #}
+    <td><b>${escapar(c.nome)}</b></td>
     <td class="dados">${documento(c.cpf)}</td>
+    <td>${escapar(c.empresa || "—")}</td>
     <td>${escapar(c.cargo || c.funcao || "—")}</td>
     <td class="dados">${escapar(c.obra||"—")}</td>
-    <td>${c.vinculo === "PRESTADOR" ? "Prestador" : "CTPS"}
-      ${c.salario ? "<small>mensalista</small>" : c.valor_diaria ? "<small>diarista</small>" : ""}</td>
+    {# ⚑ O VÍNCULO MOSTRA O TIPO DE CONTRATO, NÃO A FORMA DE PAGAMENTO
+       (17/11/2026). Ele: *"aí tem CTPS diarista. Eu não sei de onde é que
+       você está tirando isso aqui. Como é que a pessoa é CTPS diarista? Não
+       compreendi. (…) Aqui é para ser o vínculo: CTPS, que é carteira
+       assinada, ou prestador de serviço. Aí tem que ter, para identificar
+       melhor, o tipo de contrato — se é PJ, se é o quê."*
+
+       Ele estava certo e a leitura era confusa de verdade: embaixo do vínculo
+       eu escrevia "mensalista" ou "diarista", que é COMO A PESSOA É PAGA — e
+       colado em "CTPS" virava uma categoria que não existe. Quem tem carteira
+       pode ser pago por dia (ele mesmo decidiu isso em 10/11), mas isso não é
+       o vínculo dela.
+
+       Agora embaixo vem o TIPO DE CONTRATO (CLT, jovem aprendiz, PJ, RPA…),
+       que é o que distingue de verdade. A forma de pagamento já está na
+       coluna do valor, que é onde ela significa algo. #}
+    <td>${c.vinculo === "PRESTADOR" ? "Prestador de serviço" : "CTPS"}
+      ${c.tipo_contrato_rotulo
+        ? `<br><small>${escapar(c.tipo_contrato_rotulo)}</small>` : ""}</td>
     <td>${etiquetaDaEtapa(c)}</td>
     <td>${pendenciasDaLinha(c)}</td>
     <td class="direita dados">${c.salario ? numero(c.salario)
@@ -286,7 +629,7 @@ function desenhar(){
     <td><span class="selo ${c.situacao==="ATIVO"?"aprovado":"outro"}">${rotulo(c.situacao)}</span></td>
   </tr>`).join("");
   document.querySelectorAll("[data-c]").forEach(tr=>tr.addEventListener("click",
-    ()=>ficha(+tr.dataset.c)));
+    ()=>abrirFichaUnica(+tr.dataset.c)));
 }
 
 function etiquetaDaEtapa(c){
@@ -333,22 +676,43 @@ function pendenciasDaLinha(c){
 // ---------------------------------------------------------------------------
 let ABA_FICHA_PESSOA = "resumo", FICHA_ID = null, FICHA_H = null;
 
-async function ficha(id){
+// A FICHA ÚNICA (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
+// pessoa eu tenho acesso — seja ponto, configurações, liberação de aparelhos, tudo"). Quem enxerga o ponto abre a
+// janela do ponto, que agora traz o cadastro e os pagamentos daqui; quem não enxerga, a ficha de sempre (abaixo).
+function abrirFichaUnica(id){
+  if (!PODE_VER_PONTO) return ficha(id);
+  els("unica-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
+  els("dlg-unica").showModal();
+}
+els("dlg-unica").addEventListener("close", () => { els("unica-quadro").src = "about:blank"; });
+// o que a janela pede: fechar, ou abrir aqui o formulário (editar) ou os documentos (ler e arquivar)
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (ev.origin !== location.origin || d.tipo !== "bws-ficha") return;
+  if (els("dlg-unica").open) els("dlg-unica").close();
+  if (d.acao === "editar" && d.id) abrirFichaCompleta(Number(d.id));
+  else if (d.acao === "documentos" && d.id) ficha(Number(d.id), "documentos");
+});
+
+async function ficha(id, aba){
   try {
     const {historico: h} = await api(`/erp/api/colaboradores/${id}/historico`);
-    FICHA_ID = id; FICHA_H = h; ABA_FICHA_PESSOA = "resumo";
+    FICHA_ID = id; FICHA_H = h; ABA_FICHA_PESSOA = aba || "resumo";
     const c = h.colaborador;
     els("dlg-titulo").textContent = `${c.nome} — ${documento(c.cpf)}`;
     const dalista = COL.find(x => x.id === id) || {};
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
       ${cabecaDaFicha(c, dalista)}
       <div class="subabas" id="fp-abas">
-        <button class="subaba ativa" data-fp="resumo">Resumo</button>
+        <button class="subaba" data-fp="resumo">Resumo</button>
         ${PODE_VER_PONTO ? `<button class="subaba" data-fp="ponto">Ponto e espelho</button>` : ""}
         <button class="subaba" data-fp="pagamentos">Pagamentos</button>
         <button class="subaba" data-fp="documentos">Documentos</button>
+        ${PODE_VER_MENSAGENS ? `<button class="subaba" data-fp="mensagens">Telegram e mensagens</button>` : ""}
       </div>
       <div id="fp-painel"></div>`;
+    els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
+      b.classList.toggle("ativa", b.dataset.fp === ABA_FICHA_PESSOA));
     els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
       b.addEventListener("click", () => {
         els("fp-abas").querySelectorAll(".subaba").forEach(x =>
@@ -368,7 +732,18 @@ function cabecaDaFicha(c, d){
   const etapa = ETAPAS.find(x => x.valor === (d.etapa || c.etapa)) || {};
   return `
     <div class="kpis">
-      <div class="kpi estatico"><div class="kpi-rotulo">Etapa</div>
+      {# ⚑ A ETAPA VIROU BOTÃO em 17/11/2026, e isto é conserto. Ele: *"Como
+         mudo uma pessoa de fase/etapa?"* e, logo depois: *"as fases do Pipefy
+         é para o DP saber o que fazer; aqui ele fica perdido."*
+
+         A regra de para onde dá para ir existia desde 05/11 e a tela não a
+         conhecia: a etapa era um rótulo que ninguém conseguia mexer. No
+         Pipefy o DP arrastava o card; aqui não havia equivalente, e a fila de
+         trabalho ficava congelada no que a importação tinha posto. #}
+      <div class="kpi estatico" ${PODE_EDITAR ? `style="cursor:pointer"
+        title="clique para mover este cadastro de etapa"
+        onclick="abrirMudancaDeEtapa()"` : ""}>
+        <div class="kpi-rotulo">Etapa ${PODE_EDITAR ? "· mudar" : ""}</div>
         <div class="kpi-valor" style="font-size:15px">${escapar(etapa.rotulo || "—")}</div>
         <div class="kpi-sub">${escapar(etapa.o_que_fazer || "")}</div></div>
       <div class="kpi estatico"><div class="kpi-rotulo">Vínculo e obra</div>
@@ -399,6 +774,7 @@ function painelDaPessoa(){
   if (ABA_FICHA_PESSOA === "resumo") return pintarResumoDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "ponto") return pintarPontoDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "pagamentos") return pintarPagamentosDaPessoa(alvo);
+  if (ABA_FICHA_PESSOA === "mensagens") return mensagensDaPessoa(alvo, FICHA_ID);
   return pintarDocumentosDaPessoa(alvo);
 }
 
@@ -418,7 +794,17 @@ function pintarResumoDaPessoa(alvo){
       <button class="btn secundario" id="ir-editar">Abrir o cadastro completo</button>
       ${PODE_VER_PONTO ? `<button class="btn secundario" id="ir-ponto">Ver o ponto do mês</button>` : ""}
     </div>`;
+  {# ⚑ ABRIR O CADASTRO COMPLETO NÃO PODE PERDER O CAMINHO DE VOLTA
+     (17/11/2026). Ele: *"quando eu clico em editar o cadastro completo, eu
+     saio daquela tela inicial. (…) se eu fechar, salvar o cadastro, ele era
+     para voltar para aquela primeira tela do colaborador. Aí não, ele fecha
+     total. Não tá legal assim."*
+
+     Tinha razão: as telas se abrem uma sobre a outra, então fechar tem de
+     VOLTAR uma, não fechar todas. `VOLTAR_PARA_FICHA` guarda de quem a pessoa
+     veio; quem fecha o formulário reabre a ficha dela. #}
   els("ir-editar").addEventListener("click", () => {
+    VOLTAR_PARA_FICHA = FICHA_ID;
     els("dlg").close();
     formulario(COL.find(x => x.id === FICHA_ID));
   });
@@ -666,6 +1052,35 @@ function aplicarLeituraNaPessoaNova(r){
     </div>`;
 }
 
+async function listarDocumentosDaPessoa(id){
+  const onde = els("pdoc-lista");
+  if (!onde) return;
+  try {
+    const d = await api(`/erp/api/arquivo?colaborador_id=${id}`);
+    const docs = d.documentos || [];
+    if (!docs.length) {
+      onde.innerHTML = `<div class="cartao-dica">Nenhum documento arquivado
+        para esta pessoa ainda.</div>`;
+      return;
+    }
+    onde.innerHTML = `<h4 style="margin-bottom:6px">Documentos desta pessoa
+      (${docs.length})</h4>
+      <div class="tabela-rolagem" style="max-height:320px"><table>
+      <thead><tr><th>Documento</th><th>Arquivo</th><th>Validade</th>
+        <th>Guardado em</th></tr></thead>
+      <tbody>${docs.map(x => `<tr>
+        <td><b>${escapar(x.tipo_nome)}</b></td>
+        <td class="desc"><a href="/erp/anexo/${x.anexo_id}" target="_blank"
+            class="mono" style="font-size:12px">${escapar(x.nome)}</a></td>
+        <td>${x.validade ? dataBR(x.validade) : "—"}</td>
+        <td class="dados">${escapar(x.em || "")}</td></tr>`).join("")}
+      </tbody></table></div>`;
+  } catch(e){
+    onde.innerHTML = `<div class="aviso erro">Não deu para listar os
+      documentos: ${escapar(e.message)}</div>`;
+  }
+}
+
 function pintarDocumentosDaPessoa(alvo){
   alvo.innerHTML = PODE_ARQUIVAR ? `
     <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
@@ -683,10 +1098,19 @@ function pintarDocumentosDaPessoa(alvo){
       </div>
       <div id="pdoc-leitura"></div>
     </div>
+    {# ⚑ A LISTA DO QUE A PESSOA JÁ TEM (16/11/2026). Esta aba só OFERECIA
+       anexar: não mostrava documento nenhum. O dono importou uma pessoa do
+       Pipefy e disse: *"eu falei que o documento não estava aparecendo no
+       cadastro dele, mas quando eu vim aqui na administração arquivo,
+       apareceu."* O documento estava certo o tempo todo — a ficha é que
+       nunca listou. Sem isto, quem confere um cadastro não tem como saber o
+       que já chegou e o que falta sem trocar de tela. #}
+    <div id="pdoc-lista" style="margin-top:12px">carregando os documentos…</div>
     <div style="margin-top:10px"><a class="btn secundario" target="_blank"
        href="/erp/arquivo">Abrir o Arquivo</a>
-       <small class="desc">— lá dá para filtrar por pessoa.</small></div>`
+       <small class="desc">— lá dá para ver os de todo mundo.</small></div>`
     : `<div class="cartao-dica">Você não tem acesso aos documentos de pessoas.</div>`;
+  if (els("pdoc-lista")) listarDocumentosDaPessoa(FICHA_ID);
   if (els("btn-pdoc-ler")) {
     PDOC = null;
     els("btn-pdoc-ler").addEventListener("click", () => lerDocumentoDaPessoa(FICHA_ID));
@@ -893,6 +1317,10 @@ function sim_nao(rotuloTexto, id, valor){
     <option value="0" ${valor === false ? "selected" : ""}>Não</option></select></div>`;
 }
 
+{# De qual ficha o formulário foi aberto — ver o comentário em "ir-editar".
+   `null` quer dizer que ele veio da lista, e aí fechar é fechar mesmo. #}
+let VOLTAR_PARA_FICHA = null;
+
 async function formulario(c){
   c = c || {};
   FICHA = c;
@@ -946,12 +1374,96 @@ function pintarOQueFalta(){
     : "");
 }
 
+// ---------------------------------------------------------------------------
+// O ACESSO DESTA PESSOA AO SISTEMA (09/11/2026)
+//
+// Ele: *"nosso cadastro tem o cadastro de colaboradores, tem o cadastro de
+// usuários do sistema. É para haver uma correlação entre isso aí (…) quando
+// uma pessoa for desativada do cadastro, for demitido, sair da empresa, a
+// gente precisaria automaticamente bloquear o acesso dela. Ao mesmo tempo,
+// facilitar o acesso da pessoa. E facilitar o primeiro acesso."*
+//
+// Fica na aba do ENDEREÇO porque é onde está o e-mail — e é o e-mail que vira
+// o login. Separar as duas coisas faria digitar o mesmo endereço duas vezes.
+// ---------------------------------------------------------------------------
+function blocoDoAcessoAoSistema(c){
+  const tem = !!c.usuario_id;
+  return `
+    <div class="cartao" style="margin-top:12px">
+      <h4 style="margin-top:0">Acesso ao ERP</h4>
+      <div id="ac-situacao" class="desc">${tem
+        ? `Esta pessoa <b>entra no sistema</b> com ${escapar(c.usuario_email || c.email || "—")}.`
+          + (c.usuario_ativo ? "" : ` <span class="etiqueta ambar">acesso bloqueado</span>`)
+        : `Esta pessoa <b>não entra no sistema</b> — é só cadastro de quem trabalha.`}</div>
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+        ${tem
+          ? `<button class="btn secundario" type="button" id="ac-tirar">Desligar o acesso</button>`
+          : `<button class="btn secundario" type="button" id="ac-liberar">Liberar acesso e convidar</button>`}
+      </div>
+      <div class="dica">Ao liberar, a pessoa recebe um e-mail para <b>escolher a
+        própria senha</b> — ninguém mais vai saber qual é. E quando ela for
+        <b>desligada</b>, o acesso cai sozinho, sem ninguém precisar lembrar.</div>
+      <div id="ac-msg"></div>
+    </div>`;
+}
+
+function ligarAcessoAoSistema(c){
+  const liberar = els("ac-liberar");
+  if (liberar) liberar.addEventListener("click", async () => {
+    const email = (els("c-email") ? els("c-email").value : "") || c.email || "";
+    if (!email.includes("@")) {
+      aviso("ac-msg", "Preencha o e-mail da pessoa antes — é por ele que ela "
+            + "entra e recebe o convite.", "erro");
+      return;
+    }
+    liberar.disabled = true;
+    try {
+      const r = await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({email})});
+      const cv = r.convite || {};
+      aviso("ac-msg", cv.enviado
+        ? `Acesso liberado. Convite enviado para ${escapar(email)}.`
+        : `Acesso liberado, mas o e-mail NÃO saiu: ${escapar(cv.erro || "motivo não informado")}.`
+          + (cv.link ? `<br>Enquanto isso, o link é: <code>${escapar(cv.link)}</code>` : ""),
+        cv.enviado ? "ok" : "erro");
+      ficha(c.id);
+    } catch(e){ aviso("ac-msg", e.message, "erro"); liberar.disabled = false; }
+  });
+  const tirar = els("ac-tirar");
+  if (tirar) tirar.addEventListener("click", async () => {
+    if (!await perguntar({titulo: "Desligar o acesso",
+      aviso: "O login da pessoa continua existindo, com tudo o que ela lançou. "
+           + "O que se desfaz é a ligação com este cadastro — e, com ela, o "
+           + "bloqueio automático no desligamento.",
+      campos: [], textoOk: "Desligar o acesso"})) return;
+    try {
+      await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"DELETE"});
+      aviso("ac-msg", "Ligação desfeita.", "ok");
+      ficha(c.id);
+    } catch(e){ aviso("ac-msg", e.message, "erro"); }
+  });
+}
+
 function painelDaFicha(){
   const c = FICHA || {}, o = OPCOES || {};
   const alvo = els("c-painel");
   if (ABA_FICHA === 0) {
     alvo.innerHTML = `
       ${!c.id && PODE_ARQUIVAR ? blocoDeDocumentoDaPessoaNova() : ""}
+      {# A FOTO VEM DO PONTO, e ninguém a anexa (10/11/2026). Ele: *"a foto vai
+         ser alimentada pelo ponto (…) a primeira foto do ponto que ele começar
+         a usar, ele coloca como cadastro."* Quando não há batida com foto, o
+         quadro simplesmente não aparece — moldura vazia com "sem foto" é ruído
+         numa ficha que já tem muita coisa. #}
+      ${c.tem_foto ? `<div style="display:flex; gap:12px; align-items:flex-start;
+           margin-bottom:12px">
+        <img src="/erp/api/colaboradores/${c.id}/foto" alt="foto de ${escapar(c.nome || "")}"
+             style="width:92px; height:92px; object-fit:cover; border-radius:10px;
+                    border:1px solid var(--borda)">
+        <div class="cartao-dica" style="margin:0">Esta foto <b>vem do ponto</b> —
+          ninguém precisa anexar. Para trocar, é no ponto, em
+          <b>“Fotos de cadastro”</b>.</div></div>` : ""}
       <div class="form-grade">
         <div class="campo" style="grid-column:span 3"><label>Nome completo *</label>
           <input id="c-nome" value="${escapar(c.nome || "")}"></div>
@@ -997,20 +1509,98 @@ function painelDaFicha(){
       ${campoTexto("Município", "c-municipio", c.municipio, 'style="grid-column:span 2"')}
       <div class="campo"><label>UF</label>${lista("c-uf", o.ufs, c.uf)}</div>
       ${campoTexto("Telefone", "c-telefone", c.telefone)}
-      ${campoTexto("E-mail", "c-email", c.email, 'style="grid-column:span 2"')}
-    </div>`;
+      {# O id vai ESCRITO aqui, e não montado dentro do ajudante: o bloco do
+         acesso logo abaixo lê este campo com `els("c-email")`, e a trava das
+         telas confere que todo `els` tem um `id=` em algum lugar da página —
+         id montado dentro de função some da conferência. #}
+      <div class="campo" style="grid-column:span 2"><label for="c-email">E-mail</label>
+        <input id="c-email" value="${escapar(c.email || "")}"></div>
+    </div>
+    ${c.id ? blocoDoAcessoAoSistema(c) : ""}`;
+    if (c.id) ligarAcessoAoSistema(c);
   } else if (ABA_FICHA === 2) {
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Vínculo *</label>${lista("c-vinculo", o.vinculos, c.vinculo, "")}</div>
-      <div class="campo"><label>Tipo de contrato</label>${lista("c-contrato", o.tipos_contrato, c.tipo_contrato)}</div>
-      <div class="campo"><label>Empresa do grupo</label>${lista("c-empresa",
-        (o.empresas || []).map(e => ({valor: e.id, rotulo: e.razao_social})), c.empresa_id)}</div>
-      ${campoTexto("CNPJ de admissão", "c-cnpjadm", c.cnpj_admissao, 'name="cnpj"')}
-      <div class="campo"><label>Cargo</label>${lista("c-cargo",
-        (o.cargos || []).map(x => ({valor: x.id, rotulo: x.cbo ? `${x.nome} (${x.cbo})` : x.nome})),
-        c.cargo_id)}</div>
-      <div class="campo"><label>Convenção coletiva</label>${lista("c-convencao",
-        (o.convencoes || []).map(x => ({valor: x.id, rotulo: x.nome})), c.convencao_id)}</div>
+      {# ⚑ TIPO DE CONTRATO SÓ PARA PRESTADOR (15/11/2026).
+
+         Ele: *"CTPS não abre tipo de contrato, porque já é CLT. Então não tem
+         CTPS pró-labore, PJ. Está errado. Tem que ocultar o campo. Abre o
+         campo só se for prestador de serviço."*
+
+         O defeito era pior que feio: dava para gravar alguém de CARTEIRA com
+         tipo de contrato "PJ", e aí a ficha dizia duas coisas que se
+         contradizem sobre o mesmo vínculo — e quem fosse ler depois (a folha,
+         a contabilidade, um relatório) não teria como saber qual valia.
+
+         A lista também encurtou: são os SEIS de prestador
+         (`tipos_contrato_prestador`), e não os nove. As duas opções de CLT
+         continuam existindo para LER ficha antiga, só não se escolhem mais.
+
+         Trocar para CTPS LIMPA o campo, de propósito: carteira não tem tipo
+         de contrato, e deixar "PJ" guardado numa pessoa que passou a ter
+         carteira é justamente a contradição que isto resolve. #}
+      {# ⚑ O CAMPO VOLTA PARA CTPS em 17/11/2026, e a lista muda com o
+         vínculo. Ele viu a consequência que eu não tinha visto: *"se Jovem
+         Aprendiz é CTPS, precisamos poder selecionar o tipo de contrato
+         entre CLT (tempo indeterminado), CLT (tempo determinado) e Jovem
+         Aprendiz."* A correção dele de 15/11 (*"CTPS não abre tipo de
+         contrato, porque já é CLT"*) valia para o que se sabia então —
+         aprendizagem é contrato formal, com carteira, e não é CLT. #}
+      {# NASCE COM AS DUAS LISTAS e `ligarTipoDeContrato` corta a metade que
+         não é do vínculo. Se nascesse só com a metade, abrir a ficha de quem
+         tem carteira mostraria o campo VAZIO — o valor gravado não estaria
+         entre as opções, e a caixinha descartaria o que o banco tem. #}
+      <div class="campo oculto" id="c-contrato-caixa"><label>Tipo de contrato</label>${
+        lista("c-contrato", o.tipos_contrato, c.tipo_contrato)}
+        <small class="ajuda" id="c-contrato-ajuda">&nbsp;</small></div>
+      {# ⚑ UM CAMPO SÓ. Ele, em 11/11/2026: *"empresa para registro e CNPJ
+         para admissão é campo duplicado. É a mesma informação."* Tinha razão,
+         e era pior: um era caixinha do cadastro de Empresas e o outro era
+         TEXTO LIVRE — dava para escolher a MATRIZ na caixinha e digitar o
+         CNPJ da INFRADENDE ao lado, e o sistema guardava os dois. O próprio
+         código já tratava os dois como a mesma coisa (`empresa_id or
+         cnpj_admissao`, em `core/contabilidade.py`).
+
+         Agora se escolhe a EMPRESA, e o CNPJ aparece ao lado só para
+         conferir. Quem já tem só o CNPJ gravado (importação antiga, pedido
+         vindo da obra) continua vendo o que está lá — escolher a empresa é
+         que o substitui. #}
+      <div class="campo"><label>Empresa de registro</label>${lista("c-empresa",
+        (o.empresas || []).map(e => ({valor: e.id,
+          // ⚑ `documento()`, e não o CNPJ cru: a varredura de formato pegou
+          // isto no mesmo dia em que foi escrito. O cadastro guarda com ou
+          // sem pontuação (os dois existem na base), e o ajudante do
+          // `erp_base.html` é quem sabe pintar os dois igual.
+          // ⚑ SEM CNPJ, A LISTA DIZ QUE ESTÁ SEM (15/11/2026). Antes a
+          // empresa sem CNPJ aparecia só com o nome, e ninguém sabia que
+          // havia cadastro a arrumar — e era justamente por causa dela que a
+          // caixinha do pedido mostrava três de quatro.
+          rotulo: e.cnpj ? `${e.razao_social} — ${documento(e.cnpj)}`
+                         : `${e.razao_social} — sem CNPJ no cadastro`})),
+        c.empresa_id)}
+        <small class="ajuda" id="c-cnpjadm-recado">${
+          c.empresa_id ? "o CNPJ vem do cadastro da empresa"
+          : c.cnpj_admissao
+            ? `hoje está gravado só o CNPJ <b>${escapar(c.cnpj_admissao)}</b> —
+               escolha a empresa para ligar ao cadastro`
+            : "é por esta empresa que a pessoa é registrada na folha"}</small>
+      </div>
+      {# ⚑ A LISTA TRAZ O "+ NOVO" DENTRO DELA (17/11/2026) — ver o comentário
+         onde o botão da barra saiu. Cargo e convenção são cadastro do DP, e
+         esta tela É a área dele: faltar um nome na caixinha não pode obrigar
+         ninguém a abandonar a ficha pela metade. #}
+      <div class="campo"><label>Cargo
+        ${PODE_EDITAR ? `<a href="#" id="c-cargo-novo"
+          style="float:right; font-weight:400">+ novo cargo</a>` : ""}</label>${
+        lista("c-cargo",
+          (o.cargos || []).map(x => ({valor: x.id, rotulo: x.cbo ? `${x.nome} (${x.cbo})` : x.nome})),
+          c.cargo_id)}</div>
+      <div class="campo"><label>Convenção coletiva
+        ${PODE_EDITAR ? `<a href="#" id="c-convencao-nova"
+          style="float:right; font-weight:400">+ nova convenção</a>` : ""}</label>${
+        lista("c-convencao",
+          (o.convencoes || []).map(x => ({valor: x.id, rotulo: x.nome})),
+          c.convencao_id)}</div>
       <div class="campo"><label>Obra</label><select id="c-obra"><option value="">—</option>
         ${OBRAS.map(x => `<option value="${x.id}" ${String(c.obra_id) === String(x.id)
           ? "selected" : ""}>${rotuloObra(x)}</option>`).join("")}</select></div>
@@ -1020,7 +1610,17 @@ function painelDaFicha(){
       ${campoData("Data de admissão", "c-admissao", c.admissao)}
       ${campoTexto("Salário", "c-salario", c.salario ? numero(c.salario) : "")}
       ${sim_nao("Mensalista?", "c-mensalista", c.mensalista)}
-      ${campoTexto("Valor da diária", "c-diaria", c.valor_diaria ? numero(c.valor_diaria) : "")}
+      {# O VALOR DA DIÁRIA FICA À VISTA PARA TODO MUNDO, e não só para quem é
+         diarista — decisão dele em 10/11/2026: *"o valor de diária do CTPS
+         pode deixar à vista."* Quem é CTPS às vezes trabalha no fim de semana
+         e recebe diária por esse dia (hoje a empresa prefere hora extra, mas
+         o caso existe). Esconder o campo obrigaria a trocar o tipo da pessoa
+         para preenchê-lo. #}
+      <div class="campo"><label for="c-diaria">Valor da diária</label>
+        <input id="c-diaria" value="${c.valor_diaria ? numero(c.valor_diaria) : ""}">
+        <div class="dica">Do diarista, e também de quem é CTPS e trabalha em
+          dia de fim de semana. Os acréscimos de feriado e fim de semana estão
+          em Configurações › Diárias.</div></div>
       <div class="campo"><label>Situação</label><select id="c-sit">
         ${["ATIVO", "AFASTADO", "DESLIGADO"].map(x =>
           `<option ${c.situacao === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
@@ -1032,8 +1632,11 @@ function painelDaFicha(){
       ${campoTexto("CNPJ (PJ)", "c-cnpjpj", c.cnpj_pj, 'name="cnpj"')}
       ${campoTexto("ID Fortes", "c-fortes", c.id_fortes)}
     </div>
-    <div class="cartao-dica"><b>Vínculo</b> diz se há carteira assinada; <b>tipo de
-      contrato</b> diz qual é o regime. Prestador não precisa de PIS nem de CTPS.</div>`;
+    <div class="cartao-dica"><b>Vínculo</b> diz se há carteira assinada. Quem tem
+      carteira é sempre CLT, então o <b>tipo de contrato</b> só aparece para
+      prestador — é lá que se diz PJ, RPA, aprendiz ou estágio. Prestador não
+      precisa de PIS nem de CTPS.</div>`;
+    ligarTipoDeContrato();
   } else if (ABA_FICHA === 3) {
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Categoria do auxílio-alimentação</label>${lista(
@@ -1112,16 +1715,33 @@ function painelDaFicha(){
       </tbody></table>
       ${PODE_EDITAR ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
         <button class="btn secundario" id="c-alteracao">Registrar alteração</button>
+        {# ⚑ "CONFERÊNCIA CONCLUÍDA" TEM BOTÃO PRÓPRIO (17/11/2026), e não é
+           uma das opções de "mudar etapa", porque quem decide o destino é a
+           REGRA e não a pessoa: prestador morre no DP e vai para concluído,
+           PJ vai para o contrato a assinar, CTPS vai para a contabilidade.
+
+           Ele: *"as fases do Pipefy é para o DP saber o que fazer; aqui ele
+           fica perdido."* No Pipefy, deixar escolher à mão foi o que fez
+           prestador cair na fila da contabilidade esperando um e-mail que
+           nunca saía. #}
+        ${["CADASTRO_INICIAL", "EM_CONFERENCIA"].includes(c.etapa || "")
+          ? `<button class="btn verde" id="c-conferido">Conferência concluída</button>`
+          : ""}
+        <button class="btn secundario" id="c-etapa">Mudar a etapa</button>
         ${c.situacao === "DESLIGADO"
           ? `<button class="btn" id="c-readmitir">Readmitir</button>`
           : `<button class="btn secundario" id="c-trocar">Trocar o vínculo</button>
              <button class="btn vermelho" id="c-desligar">Desligar</button>`}
       </div>` : ""}`;
+    if (els("c-etapa")) els("c-etapa").addEventListener("click", abrirMudancaDeEtapa);
+    if (els("c-conferido"))
+      els("c-conferido").addEventListener("click", concluirAConferencia);
     if (els("c-alteracao")) els("c-alteracao").addEventListener("click", abrirAlteracao);
     if (els("c-readmitir")) els("c-readmitir").addEventListener("click", abrirReadmissao);
     if (els("c-trocar")) els("c-trocar").addEventListener("click", abrirTrocaDeVinculo);
     if (els("c-desligar")) els("c-desligar").addEventListener("click", abrirDesligamento);
   }
+  ligarCriacaoDeLista();
   aplicarMascaras(alvo);
   els("c-rodape").innerHTML = ABA_FICHA <= 3
     ? `<button class="btn" id="c-salvar">Salvar cadastro</button>`
@@ -1157,6 +1777,129 @@ function conferirCpfDigitando(){
 
 function valorDe(id){ const e = els(id); return e ? e.value : undefined; }
 
+{# ---------------------------------------------------------------------------
+   O TIPO DE CONTRATO SÓ EXISTE PARA PRESTADOR (15/11/2026)
+
+   Ele: *"CTPS não abre tipo de contrato, porque já é CLT."*
+
+   ⚑ TROCAR PARA CARTEIRA LIMPA O CAMPO, e isso é de propósito: deixar "PJ"
+   guardado numa pessoa que passou a ter carteira é exatamente a contradição
+   que esta regra existe para acabar. O campo continua no formulário (só
+   escondido), porque o salvamento só manda o que está na tela — removê-lo
+   deixaria o valor antigo intacto no banco.
+   --------------------------------------------------------------------------- #}
+{# ---------------------------------------------------------------------------
+   CRIAR CARGO E CONVENÇÃO DE DENTRO DA FICHA (17/11/2026)
+
+   Ele: *"eu não quero um botão mais cargo. (…) daqui DENTRO do cadastro eu
+   poder criar um novo cargo, criar uma nova convenção. Eu não posso criar
+   obra, porque obra se cria no outro canto, mas isso aqui é área exclusiva do
+   DP."*
+
+   O que o nasce já vem ESCOLHIDO na caixinha: criar e ter de procurar na lista
+   em seguida seria metade do conserto. E o que foi digitado no resto da ficha
+   não se perde — o diálogo é por cima, a ficha continua aberta atrás.
+   --------------------------------------------------------------------------- #}
+async function ligarCriacaoDeLista(){
+  const criar = async (alvo, titulo, rota, campos, chaveId, recarregar) => {
+    const link = els(alvo + "-gatilho");
+    if (!link) return;
+    link.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      const r = await perguntar({titulo, campos, textoOk: "Cadastrar"});
+      if (!r || !(r.nome || "").trim()) return;
+      try {
+        const d = await api(rota, {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(r)});
+        await recarregar();
+        // Nasce já escolhido: criar e ter de procurar na lista em seguida
+        // seria metade do conserto.
+        const caixa = els(alvo);
+        if (caixa && d[chaveId]) caixa.value = String(d[chaveId]);
+        aviso("mensagem", d.ja_existia
+          ? `“${r.nome}” já existia — escolhido na caixinha.`
+          : `“${r.nome}” cadastrado e escolhido.`, "ok");
+      } catch(e){ aviso("mensagem", e.message, "erro"); }
+    });
+  };
+
+  {# O id do link é o do campo + "-gatilho", para a função servir aos dois sem
+     saber o nome de nenhum. #}
+  const linkCargo = els("c-cargo-novo");
+  if (linkCargo) linkCargo.id = "c-cargo-gatilho";
+  const linkConv = els("c-convencao-nova");
+  if (linkConv) linkConv.id = "c-convencao-gatilho";
+
+  await criar("c-cargo", "Novo cargo", "/erp/api/funcoes",
+    [{nome: "nome", rotulo: "Nome do cargo", obrigatorio: true, largura: 2,
+      exemplo: "Pedreiro"},
+     {nome: "valor_diaria", rotulo: "Diária de referência", largura: 1,
+      exemplo: "180,00",
+      dica: "Opcional — é o valor que a obra usa como base para esse cargo."}],
+    "cargo_id",
+    async () => {
+      const nova = await api("/erp/api/funcoes");
+      FUNCOES = nova.funcoes; CARGOS = nova.cargos || nova.funcoes;
+      const caixa = els("c-cargo");
+      if (caixa) {
+        const antes = caixa.value;
+        caixa.innerHTML = `<option value="">—</option>` + CARGOS.map(x =>
+          `<option value="${x.id}">${escapar(x.nome)}</option>`).join("");
+        caixa.value = antes;
+      }
+      montarFiltros();
+    });
+
+  await criar("c-convencao", "Nova convenção coletiva", "/erp/api/convencoes",
+    [{nome: "nome", rotulo: "Nome da convenção", obrigatorio: true, largura: 2,
+      exemplo: "CE-Fortaleza",
+      dica: "Como ela é chamada na planilha do DP — o mesmo nome evita duas "
+          + "linhas para o mesmo acordo."},
+     {nome: "uf", rotulo: "UF", largura: 1, exemplo: "CE"}],
+    "convencao_id",
+    async () => {
+      const nova = await api("/erp/api/convencoes");
+      const caixa = els("c-convencao");
+      if (caixa) {
+        const antes = caixa.value;
+        caixa.innerHTML = `<option value="">—</option>` + (nova.convencoes || []).map(
+          x => `<option value="${x.id}">${escapar(x.nome)}</option>`).join("");
+        caixa.value = antes;
+      }
+    });
+}
+
+function ligarTipoDeContrato(){
+  const vinc = els("c-vinculo"), caixa = els("c-contrato-caixa");
+  if (!vinc || !caixa) return;
+  const sel = els("c-contrato"), ajuda = els("c-contrato-ajuda");
+  // A lista depende do vínculo: carteira tem as duas CLT e o aprendiz;
+  // prestador tem PJ, RPA, mensalista, estágio e pró-labore. Oferecer os dois
+  // lados juntos é o que permitia gravar alguém de carteira como "PJ".
+  const opcoes = {
+    CTPS: OPCOES.tipos_contrato_ctps || [],
+    PRESTADOR: OPCOES.tipos_contrato_prestador || [],
+  };
+  const aplicar = () => {
+    const v = vinc.value;
+    const lista = opcoes[v] || [];
+    caixa.classList.toggle("oculto", !v || !lista.length);
+    if (ajuda) ajuda.textContent = v === "CTPS"
+      ? "Carteira assinada: CLT, ou contrato de aprendizagem."
+      : "PJ, RPA, mensalista, estágio ou pró-labore.";
+    if (!sel) return;
+    const antes = sel.value;
+    sel.innerHTML = `<option value=""></option>` + lista.map(
+      x => `<option value="${x.valor}">${escapar(x.rotulo)}</option>`).join("");
+    // Trocar de vínculo LIMPA o campo quando o contrato de antes não cabe no
+    // vínculo novo — é a contradição que a separação existe para impedir.
+    sel.value = lista.some(x => x.valor === antes) ? antes : "";
+  };
+  vinc.addEventListener("change", aplicar);
+  aplicar();
+}
+
 function corpoDoCadastro(){
   const c = FICHA || {};
   const d = {nome: valorDe("c-nome"), cpf: valorDe("c-cpf") || c.cpf};
@@ -1172,7 +1915,10 @@ function corpoDoCadastro(){
     "c-compl": "complemento", "c-bairro": "bairro", "c-municipio": "municipio",
     "c-uf": "uf", "c-telefone": "telefone", "c-email": "email",
     "c-vinculo": "vinculo", "c-contrato": "tipo_contrato", "c-empresa": "empresa_id",
-    "c-cnpjadm": "cnpj_admissao", "c-cargo": "cargo_id", "c-convencao": "convencao_id",
+    // "c-cnpjadm" SAIU: o CNPJ não é mais digitado, ele vem da empresa
+    // escolhida (ver `pessoas.salvar`). Mandá-lo daqui faria os dois voltarem
+    // a poder divergir, que é o defeito que acabou de ser consertado.
+    "c-cargo": "cargo_id", "c-convencao": "convencao_id",
     "c-obra": "obra_id", "c-mat": "matricula", "c-exper": "contrato_experiencia",
     "c-admissao": "admissao", "c-salario": "salario", "c-mensalista": "mensalista",
     "c-diaria": "valor_diaria", "c-sit": "situacao", "c-pixtipo": "pix_tipo",
@@ -1212,6 +1958,15 @@ async function salvarCadastro(){
     els("c-abas").querySelectorAll("[data-aba]").forEach(x => x.disabled = false);
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   b.disabled = false;
+}
+
+{# Fechar o formulário: volta para a ficha da pessoa se foi de lá que ele
+   veio, em vez de jogar de volta para a lista. #}
+function fecharFormulario(){
+  const volta = VOLTAR_PARA_FICHA;
+  VOLTAR_PARA_FICHA = null;
+  els("dlg").close();
+  if (volta) ficha(volta, "resumo");
 }
 
 async function abrirFichaCompleta(id){
@@ -1292,12 +2047,106 @@ async function abrirReadmissao(){
     campos: [
       {nome: "admissao", rotulo: "Data de admissão", tipo: "date", obrigatorio: true},
       {nome: "vinculo", rotulo: "Vínculo", tipo: "select", opcoes: (o.vinculos || [])},
+      // ⚑ A LISTA SEGUE O VÍNCULO (17/11/2026): carteira tem as duas CLT e o
+      // aprendiz; prestador tem PJ, RPA, mensalista, estágio e pró-labore.
+      // São dois campos com o MESMO nome, cada um visível para um vínculo —
+      // o coletor do `perguntar()` só lê o que está na tela.
       {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato || [])},
+       largura: 4, opcoes: (o.tipos_contrato_ctps || []),
+       mostrar_se: v => v.vinculo === "CTPS"},
+      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
+       largura: 4, opcoes: (o.tipos_contrato_prestador || []),
+       mostrar_se: v => v.vinculo === "PRESTADOR"},
       {nome: "salario", rotulo: "Salário", exemplo: "2.230,00"},
       {nome: "matricula", rotulo: "Matrícula nova"},
     ]});
   if (r) acaoDoVinculo("readmitir", r);
+}
+
+{# ---------------------------------------------------------------------------
+   MOVER O CADASTRO DE ETAPA — o que o DP fazia arrastando o card no Pipefy
+
+   ⚑ 17/11/2026. Ele: *"Como mudo uma pessoa de fase/etapa?"* e, em seguida:
+   *"as fases do Pipefy é para o DP saber o que fazer; aqui ele fica perdido."*
+
+   O servidor já recusava o salto indevido (cadastro saindo de "Inicial" direto
+   para "Concluído" sem ninguém conferir documento). O que faltava era a tela
+   OFERECER os caminhos legais — e só eles: oferecer todos e deixar o servidor
+   recusar seria ensinar a errar e depois dar bronca.
+
+   O MOTIVO é pedido junto, e vai para o histórico de etapas. "Por que esta
+   pessoa voltou para conferência?" é pergunta de auditoria, e sem o motivo a
+   resposta é "alguém clicou".
+   --------------------------------------------------------------------------- #}
+{# A conferência do DP terminou: o SISTEMA escolhe o destino pelo vínculo.
+   É regra, não escolha — ver o comentário no botão. #}
+async function concluirAConferencia(){
+  if (!PODE_EDITAR || !FICHA || !FICHA.id) return;
+  if (!confirm(`Conferência de ${FICHA.nome} concluída?\n\n`
+             + "O sistema escolhe para onde o cadastro vai, pelo vínculo: "
+             + "prestador vai direto para concluído, PJ vai para o contrato a "
+             + "assinar, carteira assinada vai para a contabilidade.")) return;
+  try {
+    const r = await api(`/erp/api/colaboradores/${FICHA.id}/etapa`,
+                        {metodo: "POST", corpo: {acao: "conferido"}});
+    aviso("mensagem", r.rotulo ? `Foi para “${r.rotulo}”.` : "Conferência concluída.",
+          "ok");
+    await abrirFichaCompleta(FICHA.id);
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function abrirMudancaDeEtapa(){
+  if (!PODE_EDITAR || !FICHA || !FICHA.id) return;
+  const o = OPCOES || {};
+  const atual = (FICHA.etapa || "CONCLUIDO").toUpperCase();
+  const daqui = ((o.etapas_seguintes || {})[atual] || []);
+  const comoEsta = (ETAPAS.find(x => x.valor === atual) || {});
+
+  if (!daqui.length) {
+    aviso("mensagem", `De “${comoEsta.rotulo || atual}” não há para onde ir.`,
+          "info");
+    return;
+  }
+  {# A conferência do DP tem botão PRÓPRIO porque quem decide o destino é a
+     REGRA, não a pessoa: prestador morre no DP, PJ vai para o contrato, CTPS
+     vai para a contabilidade. Deixar escolher à mão foi o que, no Pipefy, fez
+     prestador cair na fila da contabilidade esperando um e-mail que nunca
+     saía. #}
+  const ehConferencia = atual === "EM_CONFERENCIA";
+  const r = await perguntar({
+    titulo: `Mover ${FICHA.nome} de etapa`,
+    aviso: `Hoje está em “${comoEsta.rotulo || atual}”. `
+         + (comoEsta.o_que_fazer || "")
+         + (ehConferencia
+            ? " Se a conferência terminou, use “Conferência concluída”: o"
+              + " sistema escolhe o destino pelo vínculo, que é regra e não"
+              + " escolha."
+            : ""),
+    textoOk: "Mover",
+    campos: [
+      {nome: "etapa", rotulo: "Mover para", tipo: "select", obrigatorio: true,
+       largura: 6,
+       opcoes: daqui.map(v => {
+         const e = ETAPAS.find(x => x.valor === v) || {};
+         return {valor: v, rotulo: e.rotulo || v};
+       }),
+       dica_de: v => {
+         const e = ETAPAS.find(x => x.valor === v.etapa) || {};
+         return e.o_que_fazer || "";
+       }},
+      {nome: "motivo", rotulo: "Por quê", largura: 6,
+       exemplo: "voltou do INSS; contrato assinado; saiu da empresa",
+       dica: "Vai para o histórico — é o que responde “por que mudou” depois."},
+    ]});
+  if (!r) return;
+  try {
+    await api(`/erp/api/colaboradores/${FICHA.id}/etapa`,
+              {metodo: "POST", corpo: {etapa: r.etapa, motivo: r.motivo || ""}});
+    aviso("mensagem", "Etapa mudada.", "ok");
+    await abrirFichaCompleta(FICHA.id);
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 async function abrirTrocaDeVinculo(){
@@ -1315,7 +2164,11 @@ async function abrirTrocaDeVinculo(){
        opcoes: (o.vinculos || [])},
       {nome: "admissao", rotulo: "A partir de", tipo: "date", obrigatorio: true},
       {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato || [])},
+       largura: 4, opcoes: (o.tipos_contrato_ctps || []),
+       mostrar_se: v => v.vinculo === "CTPS"},
+      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
+       largura: 4, opcoes: (o.tipos_contrato_prestador || []),
+       mostrar_se: v => v.vinculo === "PRESTADOR"},
       {nome: "salario", rotulo: "Salário", exemplo: "2.230,00"},
     ]});
   if (r) acaoDoVinculo("trocar-vinculo", r);
@@ -1340,19 +2193,169 @@ async function abrirAlteracao(){
 }
 
 // ---------------------------------------------------------------------------
+// IMPORTAR AS FICHAS DE REGISTRO DO FORTES (16/11/2026)
+//
+// Ele: *"como eu já tenho as fichas aqui, eu quero trabalhar com as fichas
+// mesmo."*
+//
+// ⚑ É OUTRA COISA que a importação de planilha: a planilha diz QUEM existe; a
+// ficha diz o que o FORTES sabe sobre quem já existe. Por isso são dois
+// botões, e não um com duas opções escondidas.
+//
+// Quem manda em quê, decisão dele no mesmo dia:
+//   · a ficha manda em PIS, CTPS, admissão, salário, demissão e no código do
+//     Fortes — é o sistema que paga;
+//   · o ERP manda no nome da pessoa, do pai e da mãe, e a ficha é lida assim
+//     mesmo: a diferença vira pergunta na fila ("às vezes o pessoal pode
+//     errar");
+//   · telefone e cargo NÃO entram ("o telefone não é o da contabilidade";
+//     "o cargo a gente vai utilizar a nossa nomenclatura").
+// ---------------------------------------------------------------------------
+function abrirImportacaoDeFichas(){
+  els("dlg-titulo").textContent = "Importar fichas do Fortes";
+  els("dlg-corpo").innerHTML = `
+    <div class="cartao-dica"><b>É o PDF "Registro de Empregado" do Fortes</b> —
+      pode ser o arquivo com todas as fichas, uma por página.
+      <br><br>O sistema lê o <b>texto do PDF</b>, não a imagem: o número entra
+      exato, sem leitura por IA. Ficha <b>digitalizada</b> (só foto) não tem
+      esse texto — ela é listada como ilegível, com o número da página, para
+      alguém abrir na mão.
+      <br><br><b>O que a ficha manda:</b> PIS, nº e série da CTPS, admissão,
+      salário e demissão, mais o código do Fortes.
+      <b>Nome, nome do pai e da mãe e nascimento:</b> se o cadastro estiver
+      VAZIO, a ficha preenche; se estiver preenchido e diferente, <b>nada
+      muda</b> e a diferença vira pergunta na fila do cadastro — quem manda
+      nesses é o ERP. <b>O que ela nem lê:</b> telefone e cargo.
+      <br><br>A obra sai do <b>Setor</b> da ficha, casado com o
+      <i>centro de custo da contabilidade</i> da obra (vem da planilha
+      C. Diários).</div>
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 3"><label>Fichas (.pdf)</label>
+        <input type="file" id="fic-arq" accept=".pdf"></div>
+      <div class="campo"><label class="opcao"><input type="checkbox" id="fic-criar">
+        <span class="rotulo">Criar quem o ERP não tem</span></label>
+        <div class="dica">A ficha não traz cargo, telefone nem chave Pix —
+          quem nascer por aqui fica incompleto.</div></div>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px">
+      <button class="btn secundario" id="fic-conferir">Conferir sem gravar</button>
+      <button class="btn" id="fic-gravar" disabled>Gravar</button>
+    </div>
+    <div id="fic-msg" style="margin-top:10px"></div>
+    <div id="fic-rel"></div>`;
+  els("fic-conferir").addEventListener("click", () => importarFichas(false));
+  els("fic-gravar").addEventListener("click", () => importarFichas(true));
+  if (!els("dlg").open) els("dlg").showModal();
+}
+
+async function importarFichas(gravar){
+  const arq = els("fic-arq").files[0];
+  if (!arq) { aviso("fic-msg", "Escolha o PDF das fichas.", "erro"); return; }
+  const b = els(gravar ? "fic-gravar" : "fic-conferir");
+  b.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("gravar", gravar ? "1" : "0");
+    fd.append("criar_novos", els("fic-criar").checked ? "1" : "0");
+    const {relatorio: r} = await api("/erp/api/colaboradores/importar-fichas",
+                                     {method: "POST", body: fd});
+    els("fic-rel").innerHTML = `
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi estatico"><div class="kpi-rotulo">Fichas lidas</div>
+          <div class="kpi-valor">${r.fichas_lidas}</div>
+          <div class="kpi-sub">de ${r.paginas} página(s)</div></div>
+        <div class="kpi estatico verde"><div class="kpi-rotulo">${
+          gravar ? "Atualizadas" : "Mudam"}</div>
+          <div class="kpi-valor">${r.atualizadas.length}</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">${
+          gravar ? "Criadas" : "Criam"}</div>
+          <div class="kpi-valor">${r.criadas.length}</div>
+          <div class="kpi-sub">${r.sem_cadastro.length} ficha(s) sem cadastro</div></div>
+        <div class="kpi estatico ${r.divergencias.length ? "ambar" : ""}">
+          <div class="kpi-rotulo">Discordam</div>
+          <div class="kpi-valor">${r.divergencias.length}</div>
+          <div class="kpi-sub">viram pergunta</div></div>
+        <div class="kpi estatico ${r.ilegiveis.length ? "vermelho" : ""}">
+          <div class="kpi-rotulo">Ilegíveis</div>
+          <div class="kpi-valor">${r.ilegiveis.length}</div></div>
+      </div>
+      ${r.atualizadas.length ? `<div style="margin-top:10px"><b>O que a ficha
+        muda (${r.atualizadas.length})</b>
+        <div class="tabela-rolagem" style="max-height:260px"><table>
+        <thead><tr><th>Quem</th><th>Campo</th><th>No ERP</th><th>Na ficha</th></tr></thead>
+        <tbody>${r.atualizadas.flatMap(p => p.mudancas.map(m => `<tr>
+          <td>${escapar(p.nome)}</td><td>${escapar(m.rotulo)}</td>
+          <td class="desc">${escapar(m.de) || "—"}</td>
+          <td class="dados">${escapar(m.para)}</td></tr>`)).join("")}
+        </tbody></table></div></div>` : ""}
+      ${r.divergencias.length ? `<div style="margin-top:10px"><b>O ERP e a ficha discordam (${r.divergencias.length})</b> — nada foi mudado;
+        ${gravar ? "virou pergunta na fila do cadastro" : "vira pergunta ao gravar"}:
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <thead><tr><th>Quem</th><th>Campo</th><th>No ERP</th><th>Na ficha</th></tr></thead>
+        <tbody>${r.divergencias.map(d => `<tr><td>${escapar(d.nome)}</td>
+          <td>${escapar(d.rotulo)}</td>
+          <td class="desc">${escapar(d.no_cadastro) || "—"}</td>
+          <td class="dados">${escapar(d.na_ficha)}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      ${(r.recusadas || []).length ? `<div class="aviso erro" style="margin-top:10px">
+        <b>Fichas que o cadastro recusou (${r.recusadas.length})</b> — o número
+        não passou na conferência, e nada dessas pessoas foi mudado:
+        <div class="tabela-rolagem" style="max-height:180px"><table>
+        <thead><tr><th>Página</th><th>Quem</th><th>Por quê</th></tr></thead>
+        <tbody>${r.recusadas.map(x => `<tr><td class="dados">${x.pagina}</td>
+          <td>${escapar(x.nome || x.cpf)}</td>
+          <td class="desc">${escapar(x.motivo)}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      ${r.sem_obra.length ? `<div class="aviso alerta" style="margin-top:10px">
+        <b>Centro de custo sem obra no ERP (${r.sem_obra.length})</b> — a
+        pessoa entra sem obra. Arrume na planilha C. Diários, coluna
+        <i>Centro de Custo da Contabilidade</i>:<br>
+        ${[...new Set(r.sem_obra.map(x => x.centro_custo + " — " + x.setor))]
+          .map(escapar).join("<br>")}</div>` : ""}
+      ${r.mudou_de_obra.length ? `<div class="aviso" style="margin-top:10px">
+        <b>A contabilidade diz outra obra (${r.mudou_de_obra.length})</b> —
+        <b>nada foi mudado</b>, é só para você saber que os dois sistemas
+        discordam:
+        <div class="tabela-rolagem" style="max-height:180px"><table>
+        <thead><tr><th>Quem</th><th>No ERP</th><th>Na contabilidade</th></tr></thead>
+        <tbody>${r.mudou_de_obra.map(x => `<tr><td>${escapar(x.nome)}</td>
+          <td class="dados">${escapar(x.no_erp) || "—"}</td>
+          <td class="dados">${escapar(x.na_contabilidade)}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      ${r.ilegiveis.length ? `<div class="aviso erro" style="margin-top:10px">
+        <b>Páginas que não deu para ler (${r.ilegiveis.length})</b> — abra
+        estas na mão:<br>
+        ${r.ilegiveis.map(x => `página ${x.pagina}: ${escapar(x.motivo)}`)
+          .join("<br>")}</div>` : ""}`;
+    aviso("fic-msg", gravar
+      ? `Pronto: ${r.atualizadas.length} atualizada(s), ${r.criadas.length} criada(s).`
+      : "Isto é só a conferência — nada foi gravado.", "ok");
+    els("fic-gravar").disabled = gravar;
+  } catch(e){ aviso("fic-msg", e.message, "erro"); }
+  finally { b.disabled = false; }
+}
+
+// ---------------------------------------------------------------------------
 // IMPORTAR AS PESSOAS DO PIPEFY / DA PLANILHA DO DP
 // Decisão do dono (04/11/2026): só os ATIVOS entram; os ~2.960 desligados ficam
 // na planilha como base morta. Quem já está no ERP NÃO é sobrescrito — a
 // planilha mostra o que divergiu e a decisão fica com quem olha.
 // ---------------------------------------------------------------------------
 function abrirImportacaoDePessoas(){
-  els("dlg-titulo").textContent = "Importar as pessoas do Pipefy";
+  els("dlg-titulo").textContent = "Importar pessoas de uma planilha";
   els("dlg-corpo").innerHTML = `
-    <div class="cartao-dica">Serve o relatório exportado do pipe <b>CADASTRO
-      COLABORADORES</b> ou a planilha do DP — o sistema reconhece as colunas pelo
-      nome, dos dois jeitos, e diz quais não reconheceu. <b>Só entram os ativos.</b>
-      Quem já está no ERP não é sobrescrito: a conferência lista o que está
-      diferente e você decide.</div>
+    <div class="cartao-dica"><b>Serve a planilha do DP que você já usa.</b> No
+      Google Planilhas: <i>Arquivo › Fazer download › Microsoft Excel (.xlsx)</i>
+      — e jogue o arquivo aqui. Também serve o relatório exportado do pipe
+      CADASTRO COLABORADORES, ou um CSV.
+      <br><br>O sistema reconhece as colunas <b>pelo nome do cabeçalho</b>, nos
+      três formatos, e <b>diz quais não reconheceu</b> — por isso vale sempre
+      apertar "Conferir sem gravar" primeiro: ele mostra o relatório inteiro
+      sem tocar no banco.
+      <br><br><b>Só entram os ativos.</b> Quem já está no ERP <b>não é
+      sobrescrito</b>: a conferência lista o que está diferente e você
+      decide.</div>
     <div class="form-grade">
       <div class="campo" style="grid-column:span 3"><label>Planilha (.xlsx ou .csv)</label>
         <input type="file" id="imp-arq" accept=".xlsx,.csv"></div>
@@ -1472,29 +2475,29 @@ async function importarPessoas(gravar){
 
 els("btn-novo").addEventListener("click", ()=>formulario(null));
 if (els("btn-importar")) els("btn-importar").addEventListener("click", abrirImportacaoDePessoas);
-els("btn-funcao").addEventListener("click", async () => {
-  const r = await perguntar({titulo:"Nova função",
-    campos:[{nome:"nome", rotulo:"Nome da função", obrigatorio:true, largura:2,
-             exemplo:"Pedreiro"},
-            {nome:"diaria", rotulo:"Diária de referência", largura:1, exemplo:"180,00"}],
-    textoOk:"Cadastrar"});
-  if (!r) return;
-  const {nome, diaria} = r;
-  try {
-    await api("/erp/api/funcoes", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({nome, valor_diaria: diaria})});
-    FUNCOES = (await api("/erp/api/funcoes")).funcoes;
-    aviso("mensagem", `Função ${nome} cadastrada.`, "ok");
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-});
+if (els("btn-fichas")) els("btn-fichas").addEventListener("click", abrirImportacaoDeFichas);
+{# O ouvinte do botão "+ Cargo" saiu junto com o botão (17/11/2026): criar
+   cargo e convenção agora é um link DENTRO da ficha — ver
+   `ligarCriacaoDeLista`. #}
 // O filtro de situação é o único que volta ao banco (a API devolve só os ativos
 // por padrão). Todos os outros recortam em memória — a lista inteira já está
 // aqui, e ir ao banco por filtro faria a tela piscar a cada clique.
+if (els("ver-quadro")) els("ver-quadro").addEventListener(
+  "click", () => trocarModo("quadro"));
+if (els("ver-lista")) els("ver-lista").addEventListener(
+  "click", () => trocarModo("lista"));
+{# Volta no modo em que ele estava: trocar de tela e perder o quadro a cada
+   visita seria obrigá-lo a reescolher sempre. #}
+try {
+  if (localStorage.getItem("erp-modo-colaboradores") === "quadro")
+    setTimeout(() => trocarModo("quadro"), 0);
+} catch(e){ /* sem localStorage: começa na lista */ }
+
 els("f-busca").addEventListener("input", desenhar);
 document.querySelectorAll("input[name=sit]").forEach(i =>
   i.addEventListener("change", carregar));
-["f-obra", "f-cargo", "f-convencao", "f-pagamento"].forEach(i =>
-  els(i).addEventListener("change", desenhar));
+document.querySelectorAll("input[name=pag]").forEach(i =>
+  i.addEventListener("change", desenhar));
 ["f-falta-dado", "f-falta-papel", "f-pedido", "f-devolucao", "f-sem-obra",
  "f-sem-pagamento"].forEach(i => els(i).addEventListener("change", desenhar));
 document.querySelectorAll("input[name=vinc]").forEach(i =>
@@ -1502,7 +2505,18 @@ document.querySelectorAll("input[name=vinc]").forEach(i =>
 
 els("btn-limpar").addEventListener("click", () => {
   els("f-busca").value = "";
-  ["f-obra", "f-cargo", "f-convencao", "f-pagamento"].forEach(i => els(i).value = "");
+  ["bl-obra", "bl-cargo", "bl-convencao"].forEach(id => {
+    const bloco = els(id);
+    if (!bloco) return;
+    bloco.querySelectorAll("input[type=checkbox]").forEach(i => i.checked = false);
+    const badge = bloco.querySelector(".filtro-badge");
+    if (badge) badge.classList.add("oculto");
+    const procura = bloco.querySelector(".procura-opcao");
+    if (procura) procura.value = "";
+    bloco.querySelectorAll(".opcao").forEach(o => o.classList.remove("oculto"));
+  });
+  const semPag = document.querySelector("input[name=pag][value='']");
+  if (semPag) semPag.checked = true;
   ["f-falta-dado", "f-falta-papel", "f-pedido", "f-devolucao", "f-sem-obra",
    "f-sem-pagamento"].forEach(i => els(i).checked = false);
   document.querySelector("input[name=sit][value=ATIVO]").checked = true;
@@ -1517,7 +2531,16 @@ els("btn-limpar").addEventListener("click", () => {
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
 
-carregar();
+// O atalho de outra tela (13/11/2026): a ficha única, aberta fora daqui, manda editar (?editar=) ou os documentos
+// (?documentos=) para cá; ?pessoa= abre a própria ficha única.
+function abrirPeloEndereco(){
+  const q = new URLSearchParams(location.search);
+  const n = k => /^\d+$/.test(q.get(k) || "") ? Number(q.get(k)) : null;
+  if (n("editar")) abrirFichaCompleta(n("editar"));
+  else if (n("documentos")) ficha(n("documentos"), "documentos");
+  else if (n("pessoa")) abrirFichaUnica(n("pessoa"));
+}
+carregar().then(abrirPeloEndereco);
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

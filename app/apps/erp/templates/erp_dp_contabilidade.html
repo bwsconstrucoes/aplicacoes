@@ -412,7 +412,7 @@ function pintarAgente(){
         ? `<select data-rotina="${r.chave}">${MODOS.map(m =>
             `<option value="${m}" ${m === r.modo ? "selected" : ""}>${m}</option>`).join("")}</select>`
         : escapar(r.modo)}</td>
-      <td>${r.rodou_em ? dataBR(r.rodou_em) : "—"}</td></tr>`).join("")}
+      <td>${r.rodou_em ? momentoBR(r.rodou_em) : "—"}</td></tr>`).join("")}
     </tbody></table></div></div>`;
   els("painel-agente").querySelectorAll("[data-rotina]").forEach(sel =>
     sel.addEventListener("change", () => trocarModo(sel.dataset.rotina, sel.value)));
@@ -435,7 +435,7 @@ function pintarSugestoes(){
       <table><thead><tr><th>Quando</th><th>Rotina</th><th>O que ele faria</th>
         <th></th></tr></thead><tbody>
       ${SUGESTOES.map(g => `<tr>
-        <td style="white-space:nowrap">${dataBR(g.criado_em)}</td>
+        <td style="white-space:nowrap">${momentoBR(g.criado_em)}</td>
         <td>${escapar(g.rotina_nome)}</td>
         <td class="desc">${escapar(g.explicacao)}
           ${(g.dados && g.dados.o_que_fazer)
@@ -666,7 +666,7 @@ function pintarCaixa(){
       <thead><tr><th>Quando</th><th>De</th><th>Assunto</th><th>Anexos</th>
         <th>Situação</th><th>Observação</th></tr></thead><tbody>
       ${CAIXA.mensagens.map(m => `<tr>
-        <td style="white-space:nowrap">${dataBR(m.processado_em)}</td>
+        <td style="white-space:nowrap">${momentoBR(m.processado_em)}</td>
         <td class="desc">${escapar(m.de || "—")}</td>
         <td class="desc">${escapar(m.assunto || "—")}</td>
         <td class="direita">${m.arquivados}/${m.anexos}</td>

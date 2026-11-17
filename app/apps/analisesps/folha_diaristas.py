@@ -188,9 +188,55 @@ def periodo_sugerido(hoje) -> tuple:
     return hoje.year, hoje.month, "quinzena"
 VERBA = "diaria"
 
+# ⚑ OS ACRÉSCIMOS AGORA SÃO CONFIGURAÇÃO, NO ERP (10/11/2026). O dono:
+# *"esses números ainda valem atualmente, mas isso é algo que deva ficar
+# dentro de uma configuração, o acréscimo da diária."*
+#
+# Os valores abaixo continuam sendo os PADRÕES — e é de propósito que sejam
+# exatamente os de antes: quem nunca abrir a tela de configuração continua
+# com a conta que a empresa já faz. Configuração que muda o resultado no
+# primeiro dia é armadilha.
+#
+# A configuração mora no ERP (`app.apps.erp.core.diarias`) porque o cadastro
+# mora lá, a folha está indo para lá, e os dois módulos rodam no MESMO
+# processo e no MESMO banco — ler de lá não custa uma volta de rede.
 ADICIONAL_FERIADO = Decimal("20.00")
 ADICIONAL_SABADO = Decimal("10.00")
 ADICIONAL_DOMINGO = Decimal("20.00")
+
+
+def acrescimos_configurados(sessao=None) -> dict:
+    """Os acréscimos que o ERP tem gravados, ou os padrões daqui.
+
+    `sessao` é opcional e existe para quem JÁ TEM uma sessão do ERP aberta —
+    o teste, e qualquer chamada que venha de dentro de uma transação. Abrir
+    uma segunda sessão nesse caso não enxergaria o que ainda não foi gravado.
+
+    ⚠️ **NUNCA LEVANTA.** A folha de diaristas não pode parar porque a tabela
+    de parâmetros do ERP não respondeu: sem resposta, valem os padrões — que
+    são os números em vigor — e fica o aviso no log.
+    """
+    try:
+        from app.apps.erp.core import diarias
+        if sessao is not None:
+            c = diarias.configuracao(sessao)
+            return {"feriado": Decimal(str(c["feriado"])),
+                    "sabado": Decimal(str(c["sabado"])),
+                    "domingo": Decimal(str(c["domingo"])),
+                    "sem_diaria": [str(f).upper() for f in c["sem_diaria"]]}
+        from app.apps.erp.db.database import get_session
+        with get_session() as s:
+            c = diarias.configuracao(s)
+        return {"feriado": Decimal(str(c["feriado"])),
+                "sabado": Decimal(str(c["sabado"])),
+                "domingo": Decimal(str(c["domingo"])),
+                "sem_diaria": [str(f).upper() for f in c["sem_diaria"]]}
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("analisesps/diaristas: acréscimos do ERP indisponíveis "
+                       "(%s) — valendo os padrões", e)
+        return {"feriado": ADICIONAL_FERIADO, "sabado": ADICIONAL_SABADO,
+                "domingo": ADICIONAL_DOMINGO,
+                "sem_diaria": ["VIGIA"]}
 
 
 def periodo(ano: int, mes: int, qual: str) -> tuple:
@@ -206,10 +252,16 @@ def _sem_acento(texto) -> str:
                     .lower().split())
 
 
-def e_vigia(ficha: dict) -> bool:
-    """A função é VIGIA? Igualdade, como a planilha (`W != 'VIGIA'`) — "VIGIA
-    NOTURNO" é outra função e recebe diária."""
-    return _sem_acento(ficha.get("cargo")) == "vigia"
+def e_vigia(ficha: dict, sem_diaria: list = None) -> bool:
+    """A função NÃO recebe diária? Igualdade, como a planilha (`W != 'VIGIA'`)
+    — "VIGIA NOTURNO" é outra função e recebe diária.
+
+    A lista vem da configuração do ERP (10/11/2026); sem ela, o VIGIA de
+    sempre. O nome da função ficou `e_vigia` para não quebrar quem chama —
+    o que ela responde é "está na lista de quem não recebe".
+    """
+    lista = sem_diaria if sem_diaria is not None else ["VIGIA"]
+    return _sem_acento(ficha.get("cargo")) in {_sem_acento(f) for f in lista}
 
 
 # ===========================================================================
@@ -398,20 +450,37 @@ def _e_feriado(data, obra: str, feriados, codigo_por_nome: dict) -> bool:
     return bool(feriados and feriados.feriado(data, obra))
 
 
-def adicional_do_dia(data, e_feriado: bool) -> tuple:
+def adicional_do_dia(data, e_feriado: bool, acrescimos: dict = None) -> tuple:
+    """Quanto se soma à diária NESTE dia, e por quê.
+
+    ⚑ FERIADO VENCE O DIA DA SEMANA, e não soma com ele: feriado que cai no
+    sábado paga o acréscimo de feriado, e só. Somar seria pagar duas vezes
+    pela mesma condição.
+
+    `acrescimos` vem de `acrescimos_configurados()`. Sem ele, valem os
+    padrões — assim nenhuma chamada antiga quebra.
+    """
+    a = acrescimos or {"feriado": ADICIONAL_FERIADO, "sabado": ADICIONAL_SABADO,
+                       "domingo": ADICIONAL_DOMINGO}
     if e_feriado:
-        return ADICIONAL_FERIADO, "feriado"
+        return a["feriado"], "feriado"
     if data.weekday() == 5:
-        return ADICIONAL_SABADO, "sábado"
+        return a["sabado"], "sábado"
     if data.weekday() == 6:
-        return ADICIONAL_DOMINGO, "domingo"
+        return a["domingo"], "domingo"
     return Decimal("0.00"), ""
 
 
 def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
                     valor_diaria, feriados: list, codigo_por_nome: dict,
-                    obra_do_cadastro: str = "", ajuste: dict | None = None) -> dict:
-    """A diária de uma pessoa no período, dia a dia. Devolve o caminho inteiro."""
+                    obra_do_cadastro: str = "", ajuste: dict | None = None,
+                    acrescimos: dict | None = None) -> dict:
+    """A diária de uma pessoa no período, dia a dia. Devolve o caminho inteiro.
+
+    `acrescimos`: os de `acrescimos_configurados()`, lidos UMA VEZ por quem chama
+    (`calcular`). ⚠️ Lê-los aqui, por pessoa, eram 4 consultas ao ERP × 2 por
+    pessoa — ~3.200 idas ao banco numa quinzena de 400 diaristas, e a tela levava
+    uma eternidade a cada clique de filtro (dono, 10/11/2026)."""
     from . import folha_apropriacao
     from .folha_auxilio import _decidir
 
@@ -434,10 +503,17 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
         "valor": Decimal("0.00"), "por_obra": [], "obra": "",
         "dias_de_ctps": 0, "dias_sem_decidir": 0,
         "motivos": [], "pagar": True, "impossivel": False,
-        "desligado": False, "vigia": e_vigia(ficha), "sem_diaria": False,
+        "desligado": False,
+        "vigia": None,
+        "sem_diaria": False,
         "ajuste_pagar": ajuste.get("pagar"),
     }
     por_obra: dict = {}
+    # UMA LEITURA SÓ, antes do laço: os acréscimos não mudam no meio do mês, e
+    # consultá-los por dia seria uma ida ao banco por dia de ponto de cada
+    # pessoa — ~500 pessoas × 15 dias numa instância de 2 GB.
+    acrescimos = acrescimos or acrescimos_configurados()
+    saida["vigia"] = e_vigia(ficha, acrescimos["sem_diaria"])
     for lido in sorted(dias_lidos or [], key=lambda d: d.get("data") or dt.date.min):
         data = lido.get("data")
         if not isinstance(data, dt.date) or not (inicio <= data <= fim):
@@ -461,7 +537,8 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
             motivo = "; ".join(x for x in (
                 motivo, "obra não informada no ponto: atribuída à obra do cadastro") if x)
         feriado = _e_feriado(data, obra, feriados, codigo_por_nome)
-        adicional, porque = adicional_do_dia(data, feriado) if qtd else (Decimal("0.00"), "")
+        adicional, porque = (adicional_do_dia(data, feriado, acrescimos)
+                             if qtd else (Decimal("0.00"), ""))
         valor = ((qtd * valor_diaria + adicional).quantize(CENTAVO)
                  if valor_diaria is not None and qtd else Decimal("0.00"))
         saida["dias"].append({
@@ -547,14 +624,18 @@ def _tipo_do_ajuste(qual: str) -> str:
     return f"{VERBA}_{qual}"
 
 
-def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
-    """Os diaristas do período, com o valor de cada um e os totais."""
+def calcular(ano: int, mes: int, qual: str = "quinzena", empresa: str = "") -> dict:
+    """Os diaristas do período, com o valor de cada um e os totais.
+
+    `empresa`: o CNPJ de admissão (`empresa_da_folha`) — recorta a lista ANTES dos
+    totais; vazio = todas."""
     from . import folha_auxilio
     if qual not in PERIODOS:
         qual = "quinzena"
     ano, mes = int(ano), int(mes)
     inicio, fim = periodo(ano, mes, qual)
-    base = {"ano": ano, "mes": mes, "qual": qual, "rotulo_periodo": PERIODOS[qual],
+    base = {"empresa": "", "empresas": [],
+            "ano": ano, "mes": mes, "qual": qual, "rotulo_periodo": PERIODOS[qual],
             "competencia": f"{mes:02d}/{ano}", "inicio": inicio, "fim": fim,
             "tem_ponto": False, "tem_coluna_da_diaria": colaboradores.tem_valor_diaria(),
             "pessoas": [], "sem_cadastro": [], "total": Decimal("0.00"),
@@ -578,6 +659,7 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
     ajustes = folha_auxilio.ajustes_do_mes(_tipo_do_ajuste(qual), ano, mes)
     from . import folha_rateio
     regras = folha_rateio.regras_ativas_por_cpf()
+    acrescimos = acrescimos_configurados()      # uma leitura para a quinzena toda
 
     pessoas, sem_cadastro = [], []
     for cpf, dias in dias_por_cpf.items():
@@ -592,12 +674,19 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
         p = calcular_pessoa(
             ficha, no_periodo, inicio, fim, valores.get(cpf), feriados,
             codigo_por_nome, colaboradores.resolver_obra(ficha, codigo_por_nome),
-            ajustes.get(cpf))
+            ajustes.get(cpf), acrescimos)
         if not p["dias"] and not p["dias_sem_decidir"]:
             continue          # só dias de CTPS: não é diarista neste período
         if regras.get(cpf):
             aplicar_regra_de_rateio(p, regras[cpf])
         pessoas.append(p)
+
+    from . import empresa_da_folha
+    base["empresa"] = empresa_da_folha.normalizar(empresa)
+    pessoas, base["empresas"] = empresa_da_folha.preparar(pessoas, empresa)
+    if base["empresa"]:
+        # Sem cadastro não há CNPJ: só aparecem no recorte "sem CNPJ".
+        sem_cadastro = sem_cadastro if base["empresa"] == empresa_da_folha.SEM_CNPJ else []
 
     if sem_cadastro:
         # O nome como veio do ponto: é o que permite achar a pessoa no Mobponto.
@@ -633,9 +722,38 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
         "quantos": len(pessoas), "quantos_a_pagar": len(a_pagar),
         "total": sum((p["valor"] for p in a_pagar), Decimal("0.00")),
         "por_obra": sorted(por_obra.values(), key=lambda o: -o["total"]),
-        "fechamento": _fechamento(ano, mes, qual),
+        "fechamento": _fechamento(ano, mes, qual, base["empresa"]),
     })
     return base
+
+
+# ⚠️ O CÁLCULO GUARDADO ENTRE UM CLIQUE DE FILTRO E OUTRO (10/11/2026). O dono:
+# *"clico nas obras pra filtrar mas leva uma eternidade"*. Cada caixinha marcada
+# recarrega a tela, e cada recarga refazia a quinzena inteira (ponto de todos,
+# cadastro, rateio) só para RECORTAR a lista. Agora a TELA usa a conta feita por
+# `VALIDADE_DO_GUARDADO_S`, jogada fora em qualquer gravação do Análise de SPs
+# (`web._esquecer_os_diaristas`) e no fim de toda leitura do ponto
+# (`ponto.carregar`, `ponto.atualizar_pessoa`). Quem GRAVA (salvar seleção,
+# fechar) continua chamando `calcular` direto, nunca o guardado.
+VALIDADE_DO_GUARDADO_S = 90
+_guardados: dict = {}
+
+
+def calcular_guardado(ano: int, mes: int, qual: str = "quinzena", empresa: str = "") -> dict:
+    import time
+    chave = (int(ano), int(mes), str(qual), str(empresa or ""))
+    guardado = _guardados.get(chave)
+    if guardado and time.monotonic() - guardado[0] < VALIDADE_DO_GUARDADO_S:
+        return guardado[1]
+    resultado = calcular(ano, mes, qual, empresa)
+    if len(_guardados) > 6:
+        _guardados.clear()
+    _guardados[chave] = (time.monotonic(), resultado)
+    return resultado
+
+
+def esquecer_o_guardado() -> None:
+    _guardados.clear()
 
 
 def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
@@ -659,10 +777,11 @@ def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
     return p
 
 
-def _fechamento(ano: int, mes: int, qual: str):
-    from . import folha_apropriacao_guardada as guardada
+def _fechamento(ano: int, mes: int, qual: str, empresa: str = ""):
+    from . import empresa_da_folha, folha_apropriacao_guardada as guardada
     try:
-        return guardada.fechamento(ano, mes, TIPO_DO_FECHAMENTO[qual], VERBA)
+        return guardada.fechamento(ano, mes, TIPO_DO_FECHAMENTO[qual],
+                                   empresa_da_folha.verba_da_empresa(VERBA, empresa))
     except Exception:  # noqa: BLE001
         logger.exception("Diaristas: não consegui ler o fechamento")
         return None
@@ -735,10 +854,11 @@ def apropriado(calculado: dict) -> dict:
             "total_apropriado": total, "fecha": True}
 
 
-def fechar(ano: int, mes: int, qual: str, quem: str = "") -> dict:
-    """Congela a diária do período, para o arquivo poder sair."""
+def fechar(ano: int, mes: int, qual: str, quem: str = "", empresa: str = "") -> dict:
+    """Congela a diária do período, para o arquivo poder sair. `empresa`: só as
+    pessoas daquele CNPJ de admissão (`empresa_da_folha`)."""
     from . import folha_apropriacao_guardada as guardada
-    calculado = calcular(ano, mes, qual)
+    calculado = calcular(ano, mes, qual, empresa)
     if not calculado["tem_ponto"]:
         raise guardada.ErroDaApropriacao(
             "o ponto desta competência ainda não foi importado — não há diária para fechar.")
@@ -750,8 +870,10 @@ def fechar(ano: int, mes: int, qual: str, quem: str = "") -> dict:
         raise guardada.ErroDaApropriacao(
             "há diária sem obra (sem marcação no ponto e sem obra no cadastro): "
             + ", ".join(sem_obra[:5]) + ". Sem obra não há conta de pagamento.")
+    from . import empresa_da_folha
     novo = guardada.fechar(ano, mes, TIPO_DO_FECHAMENTO[calculado["qual"]],
-                           apropriado(calculado), verba=VERBA, quem=quem)
+                           apropriado(calculado),
+                           verba=empresa_da_folha.verba_da_empresa(VERBA, empresa), quem=quem)
     return {"id": novo, "pessoas": calculado["quantos_a_pagar"],
             "total": calculado["total"],
             "tipo": TIPO_DO_FECHAMENTO[calculado["qual"]]}

@@ -34,6 +34,7 @@ Para esse caso existe a retomada por etapas.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 
@@ -81,6 +82,23 @@ def _configurar_log() -> None:
     )
 
 
+# PRIORIDADE MENOR QUE A DAS TELAS (11/11/2026, o dono: "tô achando o painel
+# muito lento hoje", com a releitura de todos os pagamentos rodando). A
+# atualização roda no MESMO servidor que atende as telas (e o ERP, que divide o
+# processo): sem isto as duas disputam o processador de igual para igual.
+# Com prioridade baixa, quem está usando a tela passa na frente; a atualização
+# só demora um pouco mais. Não muda nada no banco — se a lentidão vier de lá,
+# isto não resolve.
+PRIORIDADE_DA_ATUALIZACAO = 10
+
+
+def _ceder_a_vez(log) -> None:
+    try:
+        os.nice(PRIORIDADE_DA_ATUALIZACAO)
+    except (AttributeError, OSError):      # Windows, ou sem permissão: segue
+        log.info("Não consegui baixar a prioridade da atualização; segue normal.")
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) != 2:
@@ -91,6 +109,7 @@ def main(argv=None) -> int:
 
     _configurar_log()
     log = logging.getLogger("painel.executar")
+    _ceder_a_vez(log)
     log.info("Iniciando a atualização '%s' (execução %d) em processo separado.",
              modo, execucao_id)
 

@@ -24,7 +24,115 @@ automatizado**. Esta sessão começou por aí — primeiro escrever o que a apli
 faz, depois cobrir com teste as três peças onde um erro custa dinheiro sem dar
 sinal: os dois leitores de comprovante e o casador de pagamentos.
 
+### ⚑ 14/11/2026 — um teste da fila tardia vencia sozinho (conserto de outra área)
+
+Quem mexeu: o chat do **ERP**, que não toca nesta área — e por isso o registro
+fica aqui. A suíte inteira quebrou em 14/11/2026 **sem ninguém ter mexido em
+código nenhum**: `tests/test_baixabradesco_fila_tardia.py` criava o comprovante
+adiado com a data escrita à mão, `'12/11/2026 09:00:00'`.
+
+Como `IDADE_MAXIMA_DIAS = 2`, no dia 14 aquele adiado passou a ser
+**descartado por idade** — e o teste que espera processamento deixou de ver
+chamada nenhuma. **Não era defeito do sistema: era a data vencendo.**
+
+O conserto é só de teste: a data agora é relativa a agora (`_agora_menos()`), e
+os dois testes que conferiam o texto do resumo passaram a comparar com a mesma
+data em vez de com o dia 12. O vizinho
+(`test_adiado_antigo_e_descartado_sem_gastar_processamento`) já fazia assim.
+
+**A regra que fica, e vale para qualquer área:** teste que escreve data à mão
+num fluxo que tem prazo (idade máxima, vencimento, validade) é bomba-relógio —
+ele passa hoje e quebra num dia qualquer, dando a impressão de que alguém
+estragou alguma coisa.
+
 ### O que está pendente AGORA
+
+**17/11/2026 — o Make não espera mais a resposta, e o trabalho repetido virou
+lote.** Em ramo, aguardando o "pode" do dono. Sem migração de banco.
+
+O problema, relatado por ele em 16/11: *"o módulo do Make que chama a baixa
+constantemente dá erro: This module timed out. E suspeito ainda que quando ele
+tenta reexecutar, ele manda o comprovante todo novamente (…) tem um módulo
+break no cenário e ele repete a operação."* Os registros do Render daquela
+noite confirmaram os dois pontos: a rota levou 162 s, 194 s, 246 s, 460 s,
+522 s e 602 s, e às 20:28 apareceram DUAS execuções do mesmo arquivo lado a
+lado ("há 477 s" e "há 114 s"), ocupando duas das quatro linhas de atendimento.
+
+Era um ciclo que se alimentava: lote grande → estoura o tempo do Make → o break
+remanda → duas execuções → o dobro de cota do Google e do Omie → mais lento →
+mais estouro.
+
+**A decisão foi dele, e mudou o contrato com o Make:**
+
+> *"no Make eu não preciso de resposta para cada baixa. A gente não está
+> utilizando isso. O cenário manda e acabou-se. (…) Basta dizer: ó, tá
+> processando. (…) O que precisa ser garantido é que, uma vez feita a chamada,
+> a baixa aconteça. (…) O retorno ao final de tudo você me manda no Telegram."*
+
+O que mudou, então:
+
+1. **A rota responde na hora** (`recebido: true`) e a baixa continua no
+   servidor. O Make nunca mais vê timeout, nunca mais dispara o break. Só a
+   ROTA se comporta assim: quem chama a função por dentro (a tela do Análise de
+   SPs, a fila de adiados) continua recebendo o resultado completo, porque as
+   duas precisam dele — e nenhuma das duas ocupa linha de atendimento.
+2. **O lote vai para o disco antes da resposta** e só sai de lá quando a baixa
+   termina. É o que sustenta a garantia que ele pediu.
+3. **Lote repetido é recusado na porta.** Mesma impressão digital já rodando =
+   responde na hora, sem refazer nada. Defesa contra o reenvio que escapar.
+4. **O relatório de cada comprovante vai para o Telegram** — o que antes ia
+   para o Make. Telegram e não WhatsApp por escolha dele: *"preferencialmente
+   no Telegram, para não ter problema"*, e o motivo é concreto (o Z-API bloqueia
+   quando o volume sobe, e já deixou aviso sem entregar em 13/09/2026). O aviso
+   do que NÃO baixou continua indo para o financeiro pelo WhatsApp, como era.
+
+**E a segunda metade do pedido dele, no mesmo dia:** *"é uma série de tarefas
+repetidas, né? (…) um único comando para atualizar a planilha (…) um único
+comando pra atualizar o pipefy, fazendo uma mutation e atualizar vários cards
+ao mesmo tempo."* A execução passou a ser por FASE, e não por comprovante:
+
+| Etapa | Antes | Agora |
+|---|---|---|
+| Planilha | 3 idas ao Google por comprovante | 3 para o lote inteiro |
+| Pipefy | 1 mutation por card | 1 mutation para 5 cards |
+| Impressões digitais | 1 gravação por comprovante | 1 para o lote |
+| Omie | 2 a 3 chamadas por título | **igual** — a API baixa um título por chamada |
+
+Num lote de trinta comprovantes isso sai de ~120 idas à internet para ~70, e a
+parte que sobra é quase toda Omie.
+
+**O que NÃO foi feito, e por quê:**
+
+- **Omie em paralelo.** Seria o maior ganho que resta (ele responde em 1 a 3 s e
+  são duas chamadas por título). Não foi feito porque o Omie limita pedidos por
+  segundo por chave, e uma recusa dele é o único ponto desta rotina onde o
+  engano custa dinheiro. Com o Make não esperando mais, a pressa deixou de ser
+  urgente. Fica como próximo passo, se ele quiser, com medição antes.
+- **Confirmar na documentação do Omie se existe baixa em lote.** A sessão não
+  alcança `developer.omie.com.br` (fora da lista de domínios liberados). O que
+  está escrito acima vem do código em produção, não da documentação.
+- **Upload do Dropbox em paralelo.** Ganho pequeno perto do Omie; não compensou
+  mexer agora.
+
+**Os limites desta garantia, escritos para não virarem promessa:**
+
+- A pasta é a `/tmp`. **Uma publicação apaga o container inteiro**, e um lote em
+  andamento se perde — o Make já recebeu "ok" e não reenvia. A garantia cobre a
+  renovação do trabalhador do gunicorn (o caso comum), não publicação no meio
+  de uma baixa.
+- **O resgate do que morreu no meio depende do disparo periódico estar ligado**
+  (`/api/baixabradesco/processar-fila-tardia` no cron-job.org). Ele estava
+  desligado em 16/11.
+- Lote acima de 25 MB não cabe na `/tmp` e roda sem a rede de proteção; a
+  resposta diz isso em `guardado_em_disco: false`.
+- No máximo 6 lotes ao mesmo tempo; acima disso a rota pede para reenviar daqui
+  a alguns minutos (memória é 2 GB e cada lote carrega os PDFs inteiros).
+
+**O que conferir na primeira baixa real:** se o relatório chega no Telegram com
+uma linha por comprovante; se `/api/baixabradesco/fila-resumo` mostra
+`baixas_em_andamento` enquanto um lote roda; e se o tempo da rota caiu para
+menos de um segundo nos registros do Render.
+
 
 **Publicado em 11/09/2026** (junção `1a21605`), com o "pode" do dono: os **dois
 caminhos da Somapay** funcionando — o depósito pago direto na Somapay e a
@@ -1664,3 +1772,373 @@ neste ambiente, aplicação subindo com os 18 blueprints.
 **Não verificado:** nenhum comprovante real passou pelo caminho novo. O primeiro
 comprovante Bradesco → Somapay que chegar vai baixar na conta do Bradesco — é o
 que foi pedido, e vale conferir na primeira vez.
+
+---
+
+### 12/11/2026 — a fila tardia ganha como ver e como limpar
+
+Duas perguntas do dono: *"onde fica gravado a fila tardia?"* e, em seguida,
+*"consigo limpar ela?"*. A resposta era **não** nas duas pontas, e isso era uma
+lacuna de verdade:
+
+- ela fica em **arquivo dentro do servidor** (`/tmp/baixabradesco_fila_tardia`),
+  não na planilha;
+- **não havia como ver** o que estava nela sem mandar processar;
+- **não havia como limpá-la**, a não ser reiniciando o serviço — que é o que uma
+  publicação faz, de raspão, sem ninguém escolher.
+
+Entraram `GET /api/baixabradesco/fila-tardia` (só mostra) e
+`POST /api/baixabradesco/limpar-fila-tardia` (descarta, com `confirmar: true`).
+
+**A decisão que mais importa aqui é de segurança, e vale escrita:** o arquivo
+guarda o **pedido inteiro do Make**, e dentro dele vêm a **chave e o segredo da
+API do Omie** e os tokens do Z-API — é assim que essas credenciais chegam hoje.
+Uma rota de diagnóstico que devolvesse o payload cru estaria publicando as
+credenciais da empresa para quem soubesse o endereço. Então a listagem devolve
+**só** nome de arquivo, data, tentativas, tamanho e o erro original; há teste
+afirmando que o segredo não aparece em lugar nenhum da resposta, nem na da
+limpeza.
+
+**Por que limpar exige confirmação:** descartar ali joga fora comprovante que
+ainda **não foi baixado**. Sem `confirmar: true` a rota só mostra o que sairia, e
+o relatório lista item por item — é essa lista que diz quais comprovantes
+precisam ser reenviados pelo Make. Um "limpar" que roda sem confirmar é uma
+forma elaborada de perder trabalho. Só POST, pelo mesmo motivo do
+`zerar-fila-antiga`.
+
+**O risco que ficou de pé, e é decisão do dono:** a fila tardia continua morrendo
+a cada publicação. Eu ofereci guardá-la também na planilha, para sobreviver — e
+apontei o custo: ela nasce justamente quando o Google já está recusando pedidos
+por excesso, então escrever na planilha naquele instante é o pior momento
+possível. Dá para contornar (arquivo primeiro, registro no disparo seguinte), mas
+é trabalho de verdade. Ofereci também só **medir** antes: contar quantos
+comprovantes passam por ali e quantos se perdem em reinício, para a decisão ficar
+fácil. Ele não respondeu nenhuma das duas ainda.
+
+**⚠️ Nota de ambiente, para a próxima sessão não perder tempo:** o contêiner
+desta sessão foi reconstruído e veio sem as bibliotecas do projeto. O `pip` do
+sistema é do Python 3.13 e o `python` é o 3.11 — instalar com `pip install`
+instala no lugar errado e nada aparece. O que funcionou foi
+`python -m pip install --ignore-installed <pacote>`; o `--ignore-installed` é
+necessário porque vários pacotes do Debian não deixam desinstalar.
+
+**Verificado:** 11 testes novos, área inteira passando (284 testes), aplicação
+subindo com os 18 blueprints e as duas rotas novas registradas. Suíte completa
+rodada: 2 falhas, as duas por biblioteca ausente **neste ambiente**
+(`erpbrasil.transmissao` e `s3transfer`), nenhuma na área e nenhuma relacionada
+a esta mudança — o GitHub Actions roda a suíte inteira em ambiente limpo a cada
+envio, e é ele que vale como prova.
+**Não verificado:** as duas rotas nunca rodaram em produção. A de ver é inócua;
+a de limpar só age com confirmação.
+
+---
+
+### 12/11/2026 — a fila tardia estava travando o serviço, e o dono achou antes de mim
+
+Ele descreveu o sintoma com precisão, e estava certo em tudo:
+
+> *"Essa fila tardia, eu acho que ela está trabalhando meio que em duplicidade.
+> Às vezes a gente manda um comprovante, aí manda de novo, aí não acontece, aí
+> manda de novo, fica na fila tardia, aí aquilo ali vai comendo processamento.
+> A gente tem quatro threads e essa baixa Bradesco normalmente leva muito tempo.
+> Tá ocupando as linhas todas, aí chegou outra requisição, aí como ela demora
+> muito, acaba bloqueando. (…) E eu tô achando que vem tentando fazer baixa de
+> coisa que nem precisaria mais."*
+
+**Eram três defeitos somados, e cada um multiplicava o outro:**
+
+1. **O laço não tinha limite nenhum.** `processar_fila_tardia` reprocessava
+   **todos** os adiados numa requisição só, e cada um custa a carga inteira da
+   SPsBD (`A:AK`, ~52 mil linhas, 150–250 MB) mais BaseBancos, SPsAgendar e as
+   impressões digitais. Dez adiados = dez cargas pesadas, numa requisição.
+2. **Nada impedia duas passadas ao mesmo tempo.** O cron dispara de 5 em 5
+   minutos. Se a passada demora mais que isso — e com o laço sem limite ela
+   demorava —, a seguinte começava com a anterior ainda rodando, lendo os mesmos
+   arquivos e refazendo o mesmo trabalho. Com `--threads 4`, duas ou três
+   passadas sobrepostas tomam o serviço inteiro. **É exatamente o travamento que
+   ele sentiu**, e explica por que piorava justamente quando havia mais coisa na
+   fila.
+3. **O mesmo comprovante reenviado entrava várias vezes.** Reenviar durante a
+   crise de cota criava um arquivo novo a cada envio, e todos eram processados
+   depois, um a um, com a carga pesada cada um.
+
+**Por que a trava de duplicidade que já existia não salvava:** ela funciona —
+mas decide **depois** da carga da planilha. O trabalho inútil era pago antes de
+ser reconhecido como inútil. Essa é a parte do diagnóstico dele que eu não teria
+achado olhando só o resultado: o sistema *fazia* a coisa certa e *gastava* como
+se fizesse a errada.
+
+**O que ficou:**
+
+- **2 adiados por disparo.** Com o cron de 5 em 5 minutos são ~24 por hora, e a
+  requisição termina rápido em vez de segurar uma das quatro linhas.
+- **Uma passada por vez**, com marca de execução que expira em 15 minutos — se o
+  serviço reiniciar no meio, a passada seguinte assume em vez de a fila ficar
+  presa para sempre. A marca é solta mesmo quando a passada dá erro.
+- **Impressão digital do pedido na entrada**, calculada só com o que já está na
+  mão (nome, tamanho e resumo do conteúdo dos anexos) — nenhuma leitura de
+  planilha. Mesmo arquivo reenviado reconhece o primeiro e não entra de novo;
+  mesmo NOME com conteúdo diferente entra normalmente, porque duas rescisões
+  chegam com o mesmo nome de arquivo.
+- **Descarte acima de 2 dias.** Adiado de dias atrás já foi reenviado ou
+  resolvido na mão — é o "fazer de novo uma coisa que já foi feita", e custa a
+  carga inteira para descobrir isso.
+
+**O que NÃO foi feito, e é a causa de fundo:** cada processamento carrega a
+SPsBD inteira (`A:AK`). Enquanto isso for assim, baixa de comprovante continua
+cara, e os limites acima são contenção, não cura. Reduzir a carga é trabalho
+próprio e de risco (a leitura alimenta casamento, escopo e validação); ficou
+anotado, não feito.
+
+**Verificado:** 20 testes na fila tardia (9 novos sobre estes três limites), área
+inteira passando, aplicação subindo. Suíte completa: 2 falhas, as duas por
+biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
+**Não verificado:** nada disso rodou em produção. O sinal de que funcionou é o
+serviço parar de engasgar quando há comprovante na fila — e `pendentes` caindo
+de 2 em 2 por disparo, em vez de tudo de uma vez.
+
+---
+
+### 13/11/2026 — limitar a quantidade não bastou: o teto que faltava era de TEMPO
+
+O dono mandou os registros do servidor, e eles mostram o problema sem margem:
+
+```
+AS 4 LINHAS OCUPADAS: POST /api/baixabradesco/processar-fila-tardia há 283 s;
+                      POST /api/baixabradesco/executar há 162 s;
+                      POST /api/atualizaspbotao/executar há 61 s;
+                      POST /telegram/enviar há 0 s
+LENTA: POST /api/atualizaspbotao/executar — 138,3 s
+LENTA: POST /api/processarnovasp/executar — 167,3 s
+```
+
+E, em seguida: *"essa fila tardia tá fudendo tudo."*
+
+**Por que o limite de quantidade (entregue em 12/11) não resolveu:** ele limitou
+os *adiados*, mas a passada faz muito mais que isso. Ela também zera o atraso,
+dispensa aviso vencido e drena a fila de falhas em quatro etapas — cerca de
+**seis leituras da aba de controle** e **dezenas de chamadas de rede**, tudo
+dentro de **uma** requisição. Cada pedaço é pequeno; a soma é que segurava a
+linha. Eu tinha contado os itens e não o relógio.
+
+**O que ficou:**
+
+- **Teto de tempo de 40 s para a requisição inteira** (`ORCAMENTO_SEG`). Cada
+  etapa e cada item olham o relógio; o que não couber fica para o disparo
+  seguinte, cinco minutos depois. A fila existe exatamente para isso.
+- **O prazo é passado adiante** para a drenagem: parar *entre* etapas não basta,
+  porque uma etapa sozinha pode levar minutos.
+- **1 adiado por disparo** (era 2): cada um carrega a SPsBD inteira, e dois já
+  estouram o orçamento.
+- **Limites da drenagem de 15/15/15/10 para 8/8/8/5.**
+- **Chave geral `BAIXABRADESCO_CARONA=0`**, no Render: desliga a carona sem
+  publicar nada e sem mexer no cron. Existe porque ele precisava de um
+  interruptor NA HORA, e publicar é uma ida e volta.
+- **`BAIXABRADESCO_ORCAMENTO_SEG`** aperta o teto pelo ambiente; `0` numa chamada
+  à mão desliga (para drenar tudo de uma vez quando alguém está olhando).
+
+**⚠️ O que esta entrega NÃO resolve, e é importante não vender como resolvido:**
+
+1. **`/api/baixabradesco/executar` levou 162 s** — é o processamento do
+   comprovante em si, não a fila tardia. O custo é a carga da SPsBD (`A:AK`,
+   ~52 mil linhas) a cada chamada. É a causa de fundo, já anotada em 12/11, e
+   continua de pé.
+2. **`atualizaspbotao` (138 s) e `processarnovasp` (167 s) NÃO são desta área.**
+   Nos registros dele, metade das linhas ocupadas é desses dois. Mesmo com a
+   fila tardia comportada, eles seguem tomando o serviço. O `[omie]
+   AlterarContaPagar falhou com Client-103` dos registros também é do
+   `atualizaspbotao`. Isso precisa de outro chat.
+
+**Verificado:** 24 testes de cron (9 novos sobre o teto de tempo e a chave
+geral), área inteira passando, aplicação subindo. Suíte completa: 2 falhas, as
+duas por biblioteca ausente neste ambiente.
+**Não verificado:** o efeito em produção. O sinal é a linha
+`processar-fila-tardia` sumir dos registros de requisições lentas.
+
+---
+
+### 14/11/2026 — a SPsBD inteira deixou de ser o caminho normal (ideia do dono)
+
+Ele perguntou por que o robô baixava a planilha completa. Expliquei: o Google
+Sheets **não tem filtro** — não existe pedir "só as linhas em que Status Pgt é
+Pagar". A API entrega faixa de células, não resultado de consulta; `A:AK` limita
+as colunas, nunca as linhas. Então, para filtrar, era obrigatório trazer tudo e
+filtrar em memória: **52 mil linhas baixadas para usar umas 50.**
+
+Ofereci dois caminhos (ler só o fim da planilha; ou confiar na SPsAgendar).
+**Ele trouxe um terceiro, melhor que os dois:**
+
+> *"Vamos para o caminho C. A probabilidade do registro que a aplicação procura
+> estar em SPsAgendar é perto de 100%. Todavia nela não ficam todas as
+> informações. Criei a aba 'baixabradesco'. Nela sim estão os mesmos registros
+> de SPsAgendar só que com as mesmas informações de SPsBD. Então, primeiro
+> procure nela. Se não achar, só então você vai pra SPsBD."*
+
+E, em seguida: *"a coluna AC de baixabradesco é a linha onde está o registro em
+SPsBD."*
+
+**O que ficou:**
+
+- **A aba `baixabradesco` é o caminho normal.** Mesmas colunas da SPsBD, então o
+  mesmo filtro e o mesmo leitor servem.
+- **A SPsBD inteira virou plano B**, lida no máximo **uma vez por lote**, e só
+  em dois casos: (1) a SP não apareceu na aba enxuta; (2) um reenvio precisa
+  saber se a baixa anterior ficou pela metade — isso mora nas SPs já marcadas
+  "Pago", que não estão na aba enxuta.
+- **A coluna AC eliminou a SEGUNDA leitura gigante**, a da gravação, que varria
+  a coluna A inteira só para achar onde escrever.
+- **O retorno traz `fonte_das_sps`** (`aba_enxuta` ou `spsbd_completa`). Era o
+  que faltava para medir em vez de supor: se aparecer `spsbd_completa` com
+  frequência, algo não está espelhando.
+
+**A decisão de segurança que sustenta a coluna AC, e ela não é opcional:** a aba
+é um **espelho**, e espelho pode estar velho. Gravar numa linha errada marcaria
+**a SP errada como paga**, e isso ninguém percebe olhando a tela. Então a linha é
+tratada como **pista**: lê **uma célula** para confirmar que o ID esperado está
+ali e, se não estiver — ou se a leitura falhar —, cai na varredura de sempre.
+Linha sem AC, ou com lixo, fica sem número e a gravação busca pelo ID. **Número
+chutado seria pior que número nenhum.** O dono conferiu esse desenho com todas as
+letras: *"você vê qual a linha e antes de gravar confirma, do contrário, busca,
+né isso?"* — é isso.
+
+**Aba renomeada ou apagada não para a baixa:** o leitor devolve lista vazia e o
+robô volta ao comportamento antigo. Baixa devagar vale mais que baixa parada.
+
+**Um defeito meu, achado de raspão:** um teste da fila tardia dependia de data
+fixa (`12/11/2026`) e quebrou sozinho dois dias depois, por causa do descarte por
+idade. Teste que depende do calendário mente sobre o código. A data agora nasce
+de hoje.
+
+**Verificado:** 18 testes novos na aba enxuta e na coluna AC, área inteira
+passando (328 testes), aplicação subindo. Suíte completa: 2 falhas, as duas por
+biblioteca ausente neste ambiente (`erpbrasil.transmissao`, `s3transfer`).
+**Não verificado:** nada disso tocou a planilha de verdade. O sinal de que
+funcionou é `/api/baixabradesco/executar` sair dos registros de requisições
+lentas, e `fonte_das_sps` vir `aba_enxuta` na maioria dos lotes.
+
+### 14/11/2026 (continuação) — a frequência do reenvio desfez uma decisão minha
+
+Uma hora depois, ele acrescentou:
+
+> *"Reenvio é algo que acontece com alguma frequência, pq às vezes mandamos um
+> arquivo com alguns comprovantes e de repente algum já havia sido baixado."*
+
+Isso derrubou uma escolha que eu tinha acabado de fazer. Na entrega acima, a
+decisão "a baixa anterior ficou pela metade?" consultava a aba enxuta e, **se a
+SP não estivesse lá, mandava ler a SPsBD inteira** — meu raciocínio era que
+ausência na aba não prova que a baixa acabou.
+
+**Mas comprovante já baixado tem a SP em "Pago", e SP paga não está na aba
+enxuta** (ela espelha as abertas). Ou seja: na prática, **quase todo lote com um
+repetido disparava a leitura das 52 mil linhas** — o caso mais comum anularia a
+otimização inteira. Eu tinha otimizado o caminho raro e deixado o frequente
+pagando a conta.
+
+**Como ficou:** a aba enxuta decide sozinha. SP nela = baixa pela metade, o
+reenvio passa e conclui. SP fora dela = baixa completa, o reenvio é barrado.
+
+**O que se perde, dito sem rodeio:** se a aba deixar de espelhar uma SP ainda
+aberta, o reenvio é recusado como repetido e a SP continua "Pagar". **Não é
+perda de dinheiro** — é uma baixa que não acontece e que alguém precisa ver.
+Por isso o número da SP passou a ir no motivo, junto com o pedido de avisar caso
+ela ainda esteja como "Pagar". É o inverso do defeito de 13/09 (quando o reenvio
+era barrado em silêncio): agora é barrado dizendo qual SP conferir.
+
+**A lição:** a frequência de cada caminho é informação de negócio, e eu não
+tinha. Otimizar sem saber qual caminho é o comum é apostar.
+
+### 14/11/2026 — o dono fechou a regra, e ela torna o "não localizei" acionável
+
+> *"Se a gente só baixa o que está no status agendar, agendado ou falha
+> agendado, então tudo que está nesses três status vai aparecer na aba
+> baixabradesco. Se não tiver, ou vai estar pago, ou vai estar no status pagar.
+> Mas o combinado é que só baixe naqueles outros três. Ou seja, comprovante
+> rodou, a SP não foi encontrada. Por que o registro não foi encontrado? Porque
+> não está no status que deveria. Concorda?"*
+
+**Concordo, com uma precisão:** o filtro exige **os dois** — `Status Pgt =
+Pagar` **e** `Agendado` em {agendar, agendado, falha agendar}. Ele descreveu a
+segunda coluna; a primeira é o que faz o comprovante repetido ser reconhecido
+como repetido (SP paga sai do conjunto). O efeito é o que ele disse.
+
+**A consequência que importa, e ela é de mensagem, não de código:** "não
+localizei" quase nunca é problema de leitura do comprovante — é a SP estar fora
+do status em que a baixa acontece. O motivo passou a dizer isso e o que fazer:
+*"confira o status dela: se já estiver paga, a baixa talvez já tenha acontecido;
+se estiver em 'pagar' sem agendamento, falta agendar."* Transforma o aviso de
+"deu errado" em uma ação.
+
+**A outra consequência, anotada para quem for mexer:** se a aba enxuta espelha
+exatamente o conjunto filtrado, então o plano B — reler a SPsBD inteira com o
+MESMO filtro — não pode achar nada novo. Ele continua ali por dois motivos
+legítimos, e só esses dois:
+
+1. **`omie_pendente`**: SPs já marcadas "Pago" com o Omie pendente. Por
+   definição não estão na aba enxuta, e é o que faz um reenvio concluir baixa
+   pela metade (defeito de 13/09/2026).
+2. **atraso do espelho**: se a aba for alimentada por rotina e não por fórmula
+   viva, existe uma janela em que a SP já está no status certo e ainda não
+   apareceu ali.
+
+**Se o `fonte_das_sps` vier `spsbd_completa` com frequência**, é um destes dois —
+e vale descobrir qual antes de mexer em mais nada. Pergunta aberta ao dono: a
+aba é fórmula viva ou rotina?
+
+### 14/11/2026 — a aba é fórmula viva, e isso tirou uma leitura grande do caminho
+
+Resposta dele à pergunta da entrada anterior:
+
+> *"A aba é alimentada via fórmula, então é instantânea."*
+
+Isso fechou o raciocínio e permitiu enxugar o desenho: **fórmula viva + mesmo
+conjunto filtrado = reler a SPsBD com o MESMO filtro não pode achar nada novo.**
+Era baixar 52 mil linhas para confirmar o que a aba já havia dito. Esse pedaço
+saiu.
+
+O que sobrou do plano B, e é legítimo: quando o comprovante **não casa com
+nada**, a SP ainda pode estar **já marcada "Pago" com o Omie pendente**. Essas,
+por definição, não estão na aba enxuta, e é o que permite um reenvio concluir
+baixa pela metade (defeito de 13/09/2026). Então a leitura grande passou a
+servir **só** para montar esse índice, uma vez por lote.
+
+Junto saiu outra bobagem que eu tinha deixado: depois de ler a SPsBD, o código
+**repetia o mesmo casamento**. Com a aba sendo o mesmo conjunto, o segundo
+casamento daria exatamente o mesmo resultado. Agora vai direto ao índice das
+pagas.
+
+**Os rótulos de `fonte_das_sps` ficaram mais honestos**, porque cada um indica um
+problema diferente:
+
+| Valor | O que significa |
+|---|---|
+| `aba_enxuta` | caminho rápido, o esperado |
+| `spsbd_omie_pendente` | algum comprovante não casou e foi preciso procurar entre as pagas |
+| `spsbd_completa_aba_indisponivel` | a aba não respondeu (renomeada, apagada, fórmula com erro) |
+
+**Verificado:** área inteira passando (337 testes), suíte completa com 2 falhas
+por biblioteca ausente neste ambiente, aplicação subindo.
+
+### 14/11/2026 — "Fórmula Query", e o risco que esse detalhe trouxe
+
+Ele precisou: *"Fórmula Query"*.
+
+Parece detalhe e não é. **QUERY devolve `#N/A` em dois casos que chegam com a
+mesma cara: fórmula quebrada e nenhum resultado.** Se o robô tratasse isso como
+"a aba respondeu, e está vazia", **toda** baixa passaria a não encontrar SP — e,
+com o plano B enxugado na entrada anterior (que já não reconstrói o índice
+operacional), ele nem iria procurar na SPsBD. **Uma fórmula quebrada pararia as
+baixas em silêncio.**
+
+Conferi: a proteção já existe, e por construção, não por sorte. O sinal de "a
+aba respondeu" é o **índice ter conteúdo** (`leu_da_aba_enxuta = bool(sps_index)`),
+não a leitura ter devolvido algo — `[['#N/A']]` devolve algo e não serve para
+nada. Índice vazio cai no caminho `spsbd_completa_aba_indisponivel`, que lê a
+SPsBD e reconstrói os dois índices.
+
+**Fórmula quebrada deixa a baixa LENTA, nunca CEGA.** Travado com teste para os
+seis casos que produzem índice vazio (`#N/A`, `#REF!`, `#VALUE!`, `#ERROR!`, só
+cabeçalho, aba vazia), porque é exatamente o tipo de proteção que alguém remove
+sem perceber ao "simplificar".
+
+**Verificado:** 345 testes da área passando, suíte completa com as 2 falhas de
+biblioteca ausente neste ambiente, aplicação subindo.

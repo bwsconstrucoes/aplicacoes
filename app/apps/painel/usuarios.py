@@ -46,10 +46,30 @@ TELAS = {
     "obras": "Resultado por Obra",
     "execucao": "Comprometido × Executado",
     "caixa": "Necessidade de Caixa",
-    "prestacao": "Prestação de Contas",
     "extrato": "Extrato de Conta Corrente",
     "calendario": "Calendário",
+    # A PRESTAÇÃO, SÓ PARA VER (11/11/2026, o dono: "compartilhar prestação de
+    # conta com um determinado usuário: ele vai poder visualizar parâmetros
+    # etc., mas não pode mexer em nada"). De manhã ela tinha saído desta lista
+    # por abrir a empresa inteira; volta como decisão consciente dele, e só
+    # como LEITURA — quem grava continua sendo só o administrador. O rótulo
+    # diz o que a caixinha entrega, porque ela não respeita as obras marcadas.
+    #
+    # A CHAVE É NOVA DE PROPÓSITO ("prestacao_leitura", não "prestacao"): quem
+    # tinha a prestação ANTIGA marcada no cadastro continua com "prestacao"
+    # gravado no banco. Reaproveitar a chave daria a essas pessoas, sem ninguém
+    # decidir, a empresa inteira e a parte de cada sócio. Com a chave nova, só
+    # entra quem o dono marcar a partir de agora.
+    # 13/11/2026: quem tem esta tela também cria os PRÓPRIOS cenários, a
+    # partir de um que já existe — "cada usuário que tem acesso à prestação
+    # possa fazer suas edições". Continua sem alterar o cenário do
+    # administrador e sem mexer nos cadastros.
+    "prestacao_leitura": ("Prestação de Contas — vê tudo e monta os próprios cenários, sem alterar "
+                          "os seus (mostra a empresa inteira e a parte de cada sócio)"),
 }
+
+# A chave da tela acima, para quem confere o acesso.
+TELA_DA_PRESTACAO = "prestacao_leitura"
 
 # O que o dono pediu para liberar de saida. O resto fica pronto para quando ele
 # quiser, que foi o pedido dele: "se de repente entender que seja necessario

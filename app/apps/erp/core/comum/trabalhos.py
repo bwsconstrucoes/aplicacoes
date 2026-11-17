@@ -82,6 +82,78 @@ def importar_pipefy(s: Session, parametros: dict[str, Any], andamento) -> dict[s
 
 
 # ---------------------------------------------------------------------------
+# Trazer do Pipefy o cadastro das pessoas
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# OS DADOS, DIRETO DA PLANILHA — sem card (17/11/2026)
+#
+# Ele: *"mas por que rodar com o card dela se quero que puxe da planilha?"*
+# O card servia para achar a pessoa e baixar os documentos; a planilha tem o
+# CPF e acha sozinha. Duas portas: DADOS vêm daqui, DOCUMENTOS vêm do Pipefy.
+#
+# Vai para a fila porque a planilha tem 3.600 linhas e a leitura vai ao
+# Google: num clique, seguraria uma das quatro linhas de atendimento.
+# ---------------------------------------------------------------------------
+def importar_cadastro_planilha(s: Session, parametros: dict[str, Any],
+                               andamento) -> dict[str, Any]:
+    from app.apps.erp.core.importadores import planilha_dp as svc
+
+    gravar = bool(parametros.get("gravar"))
+    andamento(0, 1, "Lendo a planilha “Dados Documentos”…")
+    rel = svc.importar(s, _usuario(s, parametros), gravar=gravar,
+                       cpfs=parametros.get("cpfs"),
+                       criar=bool(parametros.get("criar")),
+                       so_estes=bool(parametros.get("so_estes")))
+    if gravar:
+        s.commit()
+    andamento(1, 1, "Terminado.")
+    erro = (rel.get("planilha") or {}).get("erro")
+    if erro:
+        resumo = f"NÃO consegui ler a planilha: {erro[:160]}"
+    else:
+        verbo = "atualizadas" if gravar else "mudariam"
+        verbo_novo = "cadastradas" if gravar else "nasceriam"
+        resumo = (f"{rel['pessoas_na_planilha']} pessoa(s) na planilha · "
+                  f"{len(rel['atualizadas'])} {verbo} · "
+                  f"{len(rel.get('criadas') or [])} {verbo_novo} · "
+                  f"{len(rel['sem_cadastro'])} de fora · "
+                  + (f"{len(rel.get('apagadas') or [])} "
+                     + ("apagada(s)" if gravar else "seriam apagadas") + " · "
+                     if rel.get("limpou") else "")
+                  + f"{len(rel['nao_entendi'])} pendência(s).")
+    return {"relatorio": rel, "resumo": resumo}
+
+
+def importar_cadastro_pipefy(s: Session, parametros: dict[str, Any],
+                             andamento) -> dict[str, Any]:
+    """Os documentos das pessoas que ficaram no Pipefy.
+
+    Vai para a fila pelo mesmo motivo da importação de cards: são dezenas de
+    pessoas, cada uma com até oito arquivos para baixar. Num clique, isso
+    seguraria uma das quatro linhas de atendimento do serviço por minutos — e
+    todo mundo sentiria o sistema pesado sem saber por quê.
+    """
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+
+    simular = bool(parametros.get("simular", True))
+    andamento(0, 1, "Lendo os cards no Pipefy…")
+    rel = imp.importar(s, _usuario(s, parametros), simular=simular,
+                       cards=parametros.get("cards"),
+                       regravar=bool(parametros.get("regravar")))
+    if not simular:
+        s.commit()
+    andamento(1, 1, "Terminado.")
+    verbo = "entrariam" if simular else "guardados"
+    return {
+        "relatorio": rel,
+        "resumo": (f"{rel['pessoas_lidas']} pessoa(s) lida(s), "
+                   f"{rel['documentos_guardados']} documento(s) {verbo}, "
+                   f"{rel['campos_preenchidos']} campo(s) preenchido(s), "
+                   f"{rel['documentos_que_falharam']} não veio(vieram)."),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Sincronizar a agenda
 # ---------------------------------------------------------------------------
 def sincronizar_agenda(s: Session, parametros: dict[str, Any], andamento) -> dict[str, Any]:
@@ -298,6 +370,8 @@ def equalizar_fornecedores(s: Session, parametros: dict[str, Any],
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
     tarefas.registrar("importar_pipefy", importar_pipefy)
+    tarefas.registrar("importar_cadastro_pipefy", importar_cadastro_pipefy)
+    tarefas.registrar("importar_cadastro_planilha", importar_cadastro_planilha)
     tarefas.registrar("sincronizar_agenda", sincronizar_agenda)
     tarefas.registrar("emitir_nota", emitir_nota)
     tarefas.registrar("texto_dos_documentos", texto_dos_documentos)

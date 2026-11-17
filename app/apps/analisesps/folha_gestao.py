@@ -962,6 +962,15 @@ def fechar(folha_id: int, quem: str = "") -> dict:
     folha = folha_arquivo.abrir(folha_id)
     if folha is None:
         raise ErroDaGestao("folha não encontrada.")
+    # ⚠️ FOLHA JÁ PAGA NÃO SE REFECHA (10/11/2026). Refechar apagava o registro do que
+    # foi pago e o arquivo seguinte pagaria a folha INTEIRA de novo. A correção de
+    # uma folha paga é a COMPLEMENTAR (só a diferença) — ver `folha_complementar`.
+    from . import folha_complementar
+    if folha_complementar.ja_paga(folha["ano"], folha["mes"], folha["tipo"]):
+        raise ErroDaGestao(
+            "esta folha já foi paga (há arquivo gerado). Para pagar a correção, use a "
+            "aba Complementar — ela paga só a diferença. Se a geração anterior não valeu, "
+            "exclua-a em Arquivos gerados antes de gerar de novo.")
     apropriado = apropriar_a_folha(folha)["apropriado"]
 
     novo = guardada.fechar(folha["ano"], folha["mes"], folha["tipo"],

@@ -216,14 +216,66 @@ def receber(chat_id, texto: str) -> str | None:
     return _acrescentar(pessoa, ids)
 
 
+# ⚠️ CADA ENVIO É UM GRUPO NOVO — WhatsApp1, WhatsApp2… (12/11/2026; ver
+# `lote.juntar_num_grupo`). Mas o Telegram CORTA uma colagem longa em várias
+# mensagens, que chegam juntas: o que chega até `JANELA_DO_MESMO_ENVIO_S` depois
+# da mensagem anterior vai para o MESMO grupo, senão uma lista viraria três.
+JANELA_DO_MESMO_ENVIO_S = 120
+CHAVE_DO_ULTIMO_GRUPO = "telegram_lote.ultimo_grupo.{pessoa}"
+
+
+def _ultimo_grupo(chave: str) -> dict:
+    import json
+    from .db import consultar_um
+    try:
+        linha = consultar_um("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                             (CHAVE_DO_ULTIMO_GRUPO.format(pessoa=chave),))
+        dado = json.loads(linha[0]) if linha and linha[0] else {}
+        return dado if isinstance(dado, dict) else {}
+    except Exception:  # noqa: BLE001 — sem a memória, abre grupo novo
+        return {}
+
+
+def _lembrar_grupo(chave: str, titulo: str) -> None:
+    import json
+    from .db import conexao
+    from .horario import agora
+    from .sincronizacao import _meta_gravar
+    with conexao() as conn:
+        _meta_gravar(conn, CHAVE_DO_ULTIMO_GRUPO.format(pessoa=chave),
+                     json.dumps({"grupo": titulo, "em": agora().isoformat()}))
+
+
+def grupo_do_envio(chave: str, texto_atual: str) -> str:
+    """O grupo desta mensagem: o da mensagem anterior, se ela chegou há pouco e o
+    grupo ainda está no lote; senão, um novo (`lote.proximo_grupo_whatsapp`)."""
+    import datetime as _dt
+    from . import lote
+    from .horario import agora
+    ultimo = _ultimo_grupo(chave)
+    titulos = {str(g.get("titulo") or "").strip().lower()
+               for g in lote.separar_grupos(texto_atual)}
+    try:
+        quando = _dt.datetime.fromisoformat(ultimo.get("em") or "")
+        recente = (agora() - quando).total_seconds() <= JANELA_DO_MESMO_ENVIO_S
+    except (TypeError, ValueError):
+        recente = False
+    if recente and str(ultimo.get("grupo") or "").strip().lower() in titulos:
+        return ultimo["grupo"]
+    return lote.proximo_grupo_whatsapp(texto_atual)
+
+
 def _acrescentar(pessoa: dict, ids: list[str]) -> str:
     from . import lote
     from .db import conexao, consultar
     chave = _pessoa_do_lote(pessoa)
     nome = pessoa.get("nome") or pessoa["usuario"]
     atual = lote.ler(chave)["conteudo"]
-    novo, entraram = lote.juntar_no_grupo_whatsapp(atual, ids)
+    ja_no_lote = {sp for g in lote.separar_grupos(atual) for sp in g["ids"]}
+    titulo = grupo_do_envio(chave, atual)
+    novo, entraram = lote.juntar_num_grupo(atual, ids, titulo)
     if entraram:
+        _lembrar_grupo(chave, titulo)
         lote.salvar(novo, f"{nome} (Telegram)", chave)
         # A chegada leva a MESMA hora do lote salvo: a tela que abrir depois
         # carrega essa hora e, no "Salvar", não acha nada "chegado depois" —
@@ -245,12 +297,15 @@ def _acrescentar(pessoa: dict, ids: list[str]) -> str:
 
     linhas = []
     if entraram:
-        linhas.append(f"{len(entraram)} SP(s) entraram no grupo WhatsApp do seu lote:")
+        linhas.append(f"{len(entraram)} SP(s) entraram no grupo {titulo} do seu lote:")
         linhas += [f"• {sp}" for sp in entraram]
-    repetidas = [sp for sp in ids if sp not in entraram]
+    repetidas = [sp for sp in entraram if sp in ja_no_lote]
     if repetidas:
-        linhas.append(f"{len(repetidas)} já estava(m) no seu lote: "
-                      + ", ".join(repetidas))
+        linhas.append(f"{len(repetidas)} já estava(m) em outro grupo do seu lote e "
+                      "entrou(aram) mesmo assim (fica repetida): " + ", ".join(repetidas))
+    no_mesmo = [sp for sp in dict.fromkeys(ids) if sp not in entraram]
+    if no_mesmo:
+        linhas.append(f"{len(no_mesmo)} já estava(m) no grupo {titulo}: " + ", ".join(no_mesmo))
     fora = [sp for sp in ids if sp not in na_base]
     if fora:
         linhas.append("Não achei na base (a sincronização pode estar atrasada; "
@@ -294,5 +349,10 @@ def manter_chegadas(conteudo: str, chave: str, desde) -> tuple[str, list[str]]:
     faltam = [sp for sp in chegadas if sp not in presentes]
     if not faltam:
         return conteudo, []
-    novo, entraram = lote.juntar_no_grupo_whatsapp(conteudo, faltam)
+    # Voltam para o grupo do último envio (ou um novo, se ele não está mais no texto).
+    titulo = (_ultimo_grupo(chave).get("grupo") or "").strip()
+    titulos = {str(g.get("titulo") or "").strip().lower() for g in lote.separar_grupos(conteudo)}
+    if not titulo or titulo.lower() not in titulos:
+        titulo = titulo or lote.proximo_grupo_whatsapp(conteudo)
+    novo, entraram = lote.juntar_num_grupo(conteudo, faltam, titulo)
     return novo, entraram

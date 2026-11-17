@@ -64,7 +64,10 @@ def _consultar_lembrando(cliente, codigo, tipo) -> dict:
     guardado = _CADASTROS_RECENTES.get(chave)
     if guardado and agora - guardado[0] < VALIDADE_DO_CADASTRO:
         return guardado[1]
-    cadastro = cliente.consultar_titulo(codigo, tipo)
+    if tipo == TIPO_LANC_CC:
+        cadastro = cliente.consultar_lancamento_cc(codigo)
+    else:
+        cadastro = cliente.consultar_titulo(codigo, tipo)
     # limpa o que venceu, para o dicionário não crescer para sempre
     for k, (quando, _c) in list(_CADASTROS_RECENTES.items()):
         if agora - quando >= VALIDADE_DO_CADASTRO:
@@ -105,6 +108,33 @@ def rateio_do_titulo(codigo: int) -> list[str]:
         (int(codigo),))]
 
 
+# O LANÇAMENTO FEITO DIRETO NA CONTA (tarifa, IOF, aporte) NÃO É TÍTULO.
+#
+# 10/11/2026: o dono filtrou "Taxas, Tarifas Bancárias e IOF" (~600 linhas),
+# trocou a obra de uma e o OMIE respondeu "Lançamento não cadastrado para o
+# Código [11266605823]". O painel perguntava por ela no endereço dos títulos.
+# Ela é reconhecida pela marca que o fato põe na observação, e vai pelo
+# endereço dos lançamentos de conta (`omie_escrita.preparar_alteracao_cc`).
+TIPO_LANC_CC = "cc"
+
+
+def _marca_cc() -> str:
+    from .sync.fato import MARCA_LANCAMENTO_CC
+    return MARCA_LANCAMENTO_CC
+
+
+def _obras_do_lancamento_cc(codigo: int) -> list[str]:
+    """Em quantas obras o lançamento de conta está dividido, pelo fato (é lá
+    que a apropriação lida do OMIE vira linha)."""
+    from .sync.fato import NAO_APROP, OBRA_NAO_LIDA, TRANSFERENCIA_ENTRE_CONTAS
+    return [d for (d,) in consultar(
+        "SELECT DISTINCT departamento FROM fato"
+        " WHERE codigo_lancamento = ? AND observacao = ?"
+        "   AND COALESCE(TRIM(departamento),'') NOT IN ('', ?, ?, ?)",
+        (int(codigo), _marca_cc(), NAO_APROP, OBRA_NAO_LIDA,
+         TRANSFERENCIA_ENTRE_CONTAS))]
+
+
 def titulos_para_alterar(codigos) -> list[dict]:
     """Os dados que a tela precisa mostrar antes de alterar: o que o título é
     hoje e se ele tem rateio em mais de uma obra."""
@@ -112,18 +142,24 @@ def titulos_para_alterar(codigos) -> list[dict]:
     if not codigos:
         return []
     marcas = ",".join(["?"] * len(codigos))
+    # o título vem antes do lançamento de conta (FALSE < TRUE): se um dia o
+    # mesmo número existir nos dois, vale o título, que é o caminho de sempre
     linhas = consultar(
         "SELECT DISTINCT ON (codigo_lancamento) codigo_lancamento, tipo, "
         "       numero_documento, categoria, codigo_categoria, departamento, "
-        "       razao_social "
+        "       razao_social, COALESCE(observacao = ?, FALSE) "
         f"  FROM fato WHERE codigo_lancamento IN ({marcas}) "
-        " ORDER BY codigo_lancamento", codigos)
+        " ORDER BY codigo_lancamento, COALESCE(observacao = ?, FALSE)",
+        [_marca_cc(), *codigos, _marca_cc()])
     campos = ("codigo", "tipo", "documento", "categoria", "codigo_categoria",
-              "departamento", "razao_social")
+              "departamento", "razao_social", "lancamento_cc")
     saida = []
     for bruta in linhas:
         titulo = dict(zip(campos, bruta))
-        titulo["rateado_em"] = rateio_do_titulo(titulo["codigo"])
+        titulo["lancamento_cc"] = bool(titulo["lancamento_cc"])
+        titulo["rateado_em"] = (_obras_do_lancamento_cc(titulo["codigo"])
+                                if titulo["lancamento_cc"]
+                                else rateio_do_titulo(titulo["codigo"]))
         titulo["tem_rateio_multiplo"] = len(titulo["rateado_em"]) > 1
         saida.append(titulo)
     return saida
@@ -154,12 +190,14 @@ def titulos_para_excluir(codigos) -> list[dict]:
         "       f.data, f.situacao, f.pago_recebido, f.a_pagar_receber,"
         "       EXISTS (SELECT 1 FROM movimentos m"
         "                WHERE m.ncodtitulo = f.codigo_lancamento"
-        "                  AND UPPER(COALESCE(m.cliquidado,'')) = 'S')"
+        "                  AND UPPER(COALESCE(m.cliquidado,'')) = 'S'),"
+        "       COALESCE(f.observacao = ?, FALSE)"
         f"  FROM fato f WHERE f.codigo_lancamento IN ({marcas})"
-        " ORDER BY f.codigo_lancamento", codigos)
+        " ORDER BY f.codigo_lancamento, COALESCE(f.observacao = ?, FALSE)",
+        [_marca_cc(), *codigos, _marca_cc()])
     campos = ("codigo", "tipo", "documento", "categoria", "departamento",
               "razao_social", "data", "situacao", "pago_recebido",
-              "a_pagar_receber", "tem_baixa")
+              "a_pagar_receber", "tem_baixa", "lancamento_cc")
     saida = []
     for bruta in linhas:
         titulo = dict(zip(campos, bruta))
@@ -226,6 +264,15 @@ def excluir(codigos, *, simulacao: bool = True, cliente=None) -> dict:
 
         if bloqueio is not None:
             linha["resultado"] = "NÃO TENTADO: o OMIE bloqueou as chamadas."
+            resultados.append(linha)
+            continue
+
+        # o número de um lançamento de conta, mandado ao endereço dos títulos,
+        # no melhor caso dá erro; no pior, apaga o título que tiver o mesmo
+        # número. Excluir lançamento de conta não é desta tela.
+        if titulo.get("lancamento_cc"):
+            linha["resultado"] = ("RECUSADO: é um lançamento feito direto na "
+                                  "conta corrente, não um título. Exclua no OMIE.")
             resultados.append(linha)
             continue
 
@@ -380,12 +427,14 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
     # esta punindo. Melhor parar, dizer quanto falta esperar, e listar o que
     # nao chegou a ser tentado.
     bloqueio = None
+    refletidos = []
 
     for titulo in titulos:
         # cada título carrega o SEU destino: na edição linha a linha, um vai
         # para uma categoria e o outro para outra, no mesmo envio
         categoria_do_titulo, departamento_do_titulo = pedido[titulo["codigo"]]
-        tipo = omie_escrita.tipo_do_titulo(titulo["tipo"])
+        tipo = (TIPO_LANC_CC if titulo["lancamento_cc"]
+                else omie_escrita.tipo_do_titulo(titulo["tipo"]))
         titulo["tipo_omie"] = tipo
         linha = {**titulo, "tipo_omie": tipo, "mudancas": [], "ok": False,
                  "resultado": "",
@@ -400,7 +449,8 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
         # a trava do rateio: recusar ANTES de consultar o OMIE
         if departamento_do_titulo and titulo["tem_rateio_multiplo"] and not aceita_desfazer_rateio:
             linha["resultado"] = (
-                "RECUSADO: este título está rateado entre "
+                "RECUSADO: " + ("este lançamento" if titulo["lancamento_cc"]
+                                else "este título") + " está rateado entre "
                 + ", ".join(titulo["rateado_em"])
                 + ". Trocar o departamento apagaria esse rateio.")
             resultados.append(linha)
@@ -408,9 +458,14 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
 
         try:
             cadastro = _consultar_lembrando(cliente, titulo["codigo"], tipo)
-            novo, mudancas = omie_escrita.preparar_alteracao(
-                cadastro, categoria_do_titulo or None,
-                departamento_do_titulo or None)
+            if tipo == TIPO_LANC_CC:
+                novo, mudancas = omie_escrita.preparar_alteracao_cc(
+                    cadastro, titulo["codigo"], categoria_do_titulo or None,
+                    departamento_do_titulo or None)
+            else:
+                novo, mudancas = omie_escrita.preparar_alteracao(
+                    cadastro, categoria_do_titulo or None,
+                    departamento_do_titulo or None)
             linha["mudancas"] = mudancas
             if not mudancas:
                 linha["resultado"] = "Nada a mudar: já está assim."
@@ -419,11 +474,16 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
                 linha["resultado"] = "Ensaio: nada foi enviado."
                 linha["ok"] = True
             else:
-                retorno = cliente.alterar_titulo(novo, tipo)
+                if tipo == TIPO_LANC_CC:
+                    retorno = cliente.alterar_lancamento_cc(novo)
+                else:
+                    retorno = cliente.alterar_titulo(novo, tipo)
                 # o cadastro guardado já não descreve o título: fora com ele
                 _CADASTROS_RECENTES.pop((int(titulo["codigo"]), tipo), None)
                 linha["resultado"] = "Alterado no OMIE."
                 linha["ok"] = True
+                refletidos.append((titulo, categoria_do_titulo,
+                                   departamento_do_titulo, novo))
                 registrar(titulo, False, categoria_do_titulo,
                           departamento_do_titulo, mudancas, True,
                           str(retorno)[:500])
@@ -439,10 +499,92 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
                           departamento_do_titulo, linha["mudancas"], False, str(e))
         resultados.append(linha)
 
+    if refletidos:
+        refletir_no_painel(refletidos)
+
     enviados = sum(1 for r in resultados if r["ok"] and r["mudancas"])
     return {"ok": True, "simulacao": simulacao, "linhas": resultados,
             "quantos": len(resultados), "alterados": enviados,
             "bloqueio": str(bloqueio) if bloqueio else "",
             "bloqueio_segundos": bloqueio.segundos if bloqueio else 0,
             "recusados": sum(1 for r in resultados
-                             if r["resultado"].startswith("RECUSADO"))}
+                             if r["resultado"].startswith("RECUSADO")),
+            "titulos_alterados": sum(1 for t, *_ in refletidos
+                                     if not t["lancamento_cc"])}
+
+
+def refletir_no_painel(alterados) -> None:
+    """Põe no painel, NA HORA, o que o OMIE acabou de aceitar.
+
+    10/11/2026, o dono: *"depois que eu altero, qual é a atualização que eu tenho
+    que fazer para ele aparecer no painel?"*. Para o lançamento de conta a
+    resposta era pior que "uma atualização": NENHUMA trazia — a apropriação
+    guardada (migração 022) não é perguntada de novo, e a categoria só voltava
+    quando o pagamento daquele dia fosse relido.
+
+    O que muda aqui, e por quê:
+    - nas linhas do fato: a obra (e o projeto dela) e a categoria — é o que as
+      telas leem. A lista do Explorador já volta mostrando a obra nova, e o
+      próximo lote não manda de novo o que já foi;
+    - no lançamento de conta, também o espelho: a apropriação guardada passa a
+      ser o lançamento COMO FOI ENVIADO (sem consultar de novo — duas consultas
+      iguais em segundos são o que o OMIE pune como "consumo redundante"), e a
+      categoria do movimento. Assim refazer os números não desfaz nada;
+    - no título, o espelho fica: a "Atualização do dia" relê o título alterado
+      no OMIE e confirma.
+
+    Falhar aqui NÃO desfaz o que foi para o OMIE: fica no log, e a atualização
+    seguinte traz de lá."""
+    import json
+    marca = _marca_cc()
+    try:
+        with conexao() as conn:
+            from .sync.fato import carregar_catalogos
+            from .sync.apropriacao_cc import tabela_existe
+            from .sync.espelho import _mst_guarda_bruto
+            cat, _cli, proj_map, _cc = carregar_catalogos(conn)
+            tem_apropriacao = tabela_existe(conn)
+            mst_com_bruto = _mst_guarda_bruto(conn)
+            nomes = {c: n for c, n in conn.execute(
+                "SELECT ccoddep, MAX(cdesdep) FROM rateio"
+                " WHERE COALESCE(ccoddep,'') <> '' GROUP BY 1").fetchall()}
+            for titulo, categoria, departamento, enviado in alterados:
+                codigo = int(titulo["codigo"])
+                do_cc = bool(titulo["lancamento_cc"])
+                filtro = ("observacao = ?" if do_cc
+                          else "observacao IS DISTINCT FROM ?")
+                if departamento:
+                    conn.execute(
+                        f"UPDATE fato SET departamento = ?, projeto = ?"
+                        f" WHERE codigo_lancamento = ? AND {filtro}",
+                        (nomes.get(departamento) or departamento,
+                         proj_map.get(departamento, ""), codigo, marca))
+                if categoria and str(categoria) in cat:
+                    desc, grupo, analise = cat[str(categoria)]
+                    conn.execute(
+                        f"UPDATE fato SET categoria = ?, codigo_categoria = ?,"
+                        f"       grupo = ?, analise = COALESCE(?, analise)"
+                        f" WHERE codigo_lancamento = ? AND {filtro}",
+                        (desc, str(categoria), grupo, analise, codigo, marca))
+                if not do_cc:
+                    continue
+                if tem_apropriacao:
+                    conn.execute(
+                        "INSERT INTO apropriacao_lancamentos_cc"
+                        " (ncodmovcc, bruto, erro, tentativas, lido_em)"
+                        " VALUES (?, ?, NULL, 1, now())"
+                        " ON CONFLICT (ncodmovcc) DO UPDATE SET"
+                        "   bruto = EXCLUDED.bruto, erro = NULL, lido_em = now()",
+                        (codigo, json.dumps(enviado, ensure_ascii=False, default=str)))
+                if categoria and mst_com_bruto:
+                    conn.execute(
+                        "UPDATE movimentos_sem_titulo SET ccodcateg = ?"
+                        " WHERE COALESCE(bruto::json->'detalhes'->>'nCodMovCC',"
+                        "                bruto::json->'detalhes'->>'nCodLanc') = ?",
+                        (str(categoria), str(codigo)))
+            conn.commit()
+        from . import consultas
+        consultas.esquecer_listas()
+    except Exception:  # noqa: BLE001
+        logger.exception("Painel: alterei no OMIE mas não consegui pôr no painel "
+                         "os lançamentos %s", [t["codigo"] for t, *_ in alterados])

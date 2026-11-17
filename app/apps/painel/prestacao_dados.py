@@ -22,11 +22,33 @@ def config() -> dict:
     return dict(consultar("SELECT chave, valor FROM config"))
 
 
+# A POSIÇÃO DE CADA SÓCIO na lista e nas colunas (11/11/2026, o dono: "não
+# consigo (…) mudar a posição"). Fica na `config` — os números de cadastro, na
+# ordem escolhida — e não numa coluna nova: assim não pede atualização do banco.
+CHAVE_ORDEM_DOS_SOCIOS = "ordem_dos_socios"
+
+
+def ordem_dos_socios(config_lida: dict | None = None) -> list[int]:
+    dados = config_lida if config_lida is not None else config()
+    return [int(x) for x in (dados.get(CHAVE_ORDEM_DOS_SOCIOS) or "").split(",")
+            if x.strip().isdigit()]
+
+
+def posicao_do_socio(ordem=None):
+    """Chave de ordenação: quem tem posição escolhida vem primeiro, na ordem
+    dela; os outros, depois, por nome. Serve para qualquer lista de sócios —
+    recebe (id, nome)."""
+    lugar = {i: n for n, i in enumerate(ordem if ordem is not None else ordem_dos_socios())}
+    return lambda socio_id, nome="": (lugar.get(socio_id, len(lugar)), (nome or "").lower())
+
+
 def socios(apenas_ativos: bool = False) -> list[dict]:
     extra = " WHERE ativo = 1" if apenas_ativos else ""
-    return [{"id": i, "nome": n, "tipo": t, "ativo": bool(a)}
-            for i, n, t, a in consultar(
-                f"SELECT id, nome, tipo, ativo FROM socios{extra} ORDER BY nome")]
+    lista = [{"id": i, "nome": n, "tipo": t, "ativo": bool(a)}
+             for i, n, t, a in consultar(
+                 f"SELECT id, nome, tipo, ativo FROM socios{extra} ORDER BY nome")]
+    chave = posicao_do_socio()
+    return sorted(lista, key=lambda s: chave(s["id"], s["nome"]))
 
 
 def participacoes() -> list[dict]:
@@ -173,6 +195,18 @@ def tirar_da_analise(itens) -> list[str]:
     return atual
 
 
+def gravar_fora(itens) -> list[str]:
+    """A lista inteira de uma vez — é como a tela grava desde 11/11/2026
+    (fora totalmente, ou só até um mês; ver `prestacao.ler_item_fora`)."""
+    limpos = []
+    for item in itens or ():
+        item = (item or "").strip()
+        if item and item not in limpos:
+            limpos.append(item)
+    salvar_config(CHAVE_FORA_DA_ANALISE, ";".join(limpos))
+    return limpos
+
+
 def voltar_para_analise(item: str) -> list[str]:
     """Traz de volta o que tinha sido tirado."""
     atual = [i for i in fora_da_analise() if i != (item or "").strip()]
@@ -181,8 +215,15 @@ def voltar_para_analise(item: str) -> list[str]:
 
 
 def salvar_socio(nome: str, tipo: str = "Interno", socio_id=None) -> None:
+    nome = (nome or "").strip()
+    if not nome:
+        raise ValueError("O nome do sócio não pode ficar vazio.")
     with conexao() as conn:
         if socio_id:
+            outro = conn.execute("SELECT 1 FROM socios WHERE nome = ? AND id <> ?",
+                                 (nome, int(socio_id))).fetchone()
+            if outro:
+                raise ValueError(f"Já existe um sócio chamado {nome}.")
             conn.execute("UPDATE socios SET nome=?, tipo=? WHERE id=?",
                          (nome.strip(), tipo, int(socio_id)))
         else:
@@ -190,6 +231,56 @@ def salvar_socio(nome: str, tipo: str = "Interno", socio_id=None) -> None:
                          "ON CONFLICT (nome) DO UPDATE SET tipo = excluded.tipo",
                          (nome.strip(), tipo))
         conn.commit()
+
+
+def salvar_socios_em_lista(linhas) -> dict:
+    """A lista de sócios inteira de uma vez: `[(id ou "", nome, tipo), ...]`.
+
+    Com id, renomeia/troca o tipo; sem id e com nome, cadastra. Linha sem nome
+    é ignorada (as linhas em branco da tela). Confere TUDO antes de gravar —
+    nome repetido, na lista ou contra quem já existe, não grava nada."""
+    limpas, vistos = [], set()
+    for socio_id, nome, tipo in linhas or ():
+        nome = (nome or "").strip()
+        if not nome:
+            if str(socio_id or "").strip():
+                raise ValueError("O nome de um sócio que já existe não pode ficar vazio.")
+            continue
+        if nome.lower() in vistos:
+            raise ValueError(f"O nome {nome} aparece duas vezes na lista.")
+        vistos.add(nome.lower())
+        limpas.append((int(socio_id) if str(socio_id or "").strip() else None, nome,
+                       "Externo" if tipo == "Externo" else "Interno"))
+    novos = alterados = 0
+    with conexao() as conn:
+        atuais = {i: (n, t) for i, n, t in conn.execute(
+            "SELECT id, nome, tipo FROM socios").fetchall()}
+        ids_da_lista = {i for i, _n, _t in limpas if i}
+        for socio_id, nome, _tipo in limpas:
+            # nome já usado por um sócio que NÃO está nesta lista (ou por
+            # outro id): seria dois cadastros com o mesmo nome
+            for outro, (n, _t) in atuais.items():
+                if n.strip().lower() == nome.lower() and outro != socio_id and (
+                        outro not in ids_da_lista or socio_id is None):
+                    raise ValueError(f"Já existe um sócio chamado {nome}.")
+        ordem = []
+        for socio_id, nome, tipo in limpas:
+            if socio_id is None:
+                conn.execute("INSERT INTO socios (nome, tipo) VALUES (?,?)", (nome, tipo))
+                socio_id = conn.execute("SELECT id FROM socios WHERE nome = ?",
+                                        (nome,)).fetchone()[0]
+                novos += 1
+            elif atuais.get(socio_id) != (nome, tipo):
+                conn.execute("UPDATE socios SET nome=?, tipo=? WHERE id=?",
+                             (nome, tipo, socio_id))
+                alterados += 1
+            ordem.append(int(socio_id))
+        # a ordem da tela é a posição de cada um, em toda lista e coluna
+        conn.execute("INSERT INTO config (chave, valor) VALUES (?,?) "
+                     "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+                     (CHAVE_ORDEM_DOS_SOCIOS, ",".join(str(i) for i in ordem)))
+        conn.commit()
+    return {"novos": novos, "alterados": alterados}
 
 
 def desativar_socio(socio_id: int) -> None:
@@ -200,13 +291,89 @@ def desativar_socio(socio_id: int) -> None:
         conn.commit()
 
 
+def reativar_socio(socio_id: int) -> None:
+    """O desativado volta (11/11/2026): desativar por engano não tinha volta."""
+    with conexao() as conn:
+        conn.execute("UPDATE socios SET ativo = 1 WHERE id = ?", (int(socio_id),))
+        conn.commit()
+
+
+def excluir_socio(socio_id: int) -> str:
+    """Apaga o sócio de vez (11/11/2026, o dono: "não tem onde editar ou
+    excluir os sócios" — só havia "Desativar", e nome cadastrado errado ficava
+    na lista para sempre). Os percentuais dele, em todos os cenários, vão
+    junto. Devolve o nome apagado.
+
+    Quem tem AJUSTE lançado não é apagado: ajuste é dinheiro registrado
+    (aporte, retirada), e sumir com ele mudaria o saldo dos outros sem
+    ninguém ver. Para esse, o caminho é desativar — ou apagar os ajustes
+    antes, de propósito."""
+    with conexao() as conn:
+        linha = conn.execute("SELECT nome FROM socios WHERE id = ?",
+                             (int(socio_id),)).fetchone()
+        if not linha:
+            raise ValueError("Esse sócio não existe mais.")
+        ajustes = conn.execute("SELECT COUNT(*) FROM ajustes WHERE socio_id = ?",
+                               (int(socio_id),)).fetchone()[0]
+        if ajustes:
+            raise ValueError(
+                f"{linha[0]} tem {ajustes} ajuste(s) lançado(s) e por isso não pode "
+                "ser excluído — o dinheiro registrado sumiria junto. Desative-o, "
+                "ou apague antes os ajustes dele (aba Ajustes).")
+        conn.execute("DELETE FROM socios WHERE id = ?", (int(socio_id),))
+        conn.commit()
+    return linha[0]
+
+
+def _percentual(valor) -> float:
+    """Percentual digitado por gente: "33,33" vale. Fora de 0–100 é recusado
+    — participação de 150% é engano, não configuração."""
+    v = float(str(valor).replace(",", ".").strip())
+    if not 0 <= v <= 100:
+        raise ValueError("O percentual tem de ficar entre 0 e 100.")
+    return v
+
+
 def salvar_participacao(projeto: str, socio_id: int, pct: float) -> None:
+    pct = _percentual(pct)
     with conexao() as conn:
         conn.execute(
             "INSERT INTO participacoes (projeto, socio_id, pct) VALUES (?,?,?) "
             "ON CONFLICT (projeto, socio_id) DO UPDATE SET pct = excluded.pct",
             (projeto.strip(), int(socio_id), float(pct)))
         conn.commit()
+
+
+def gravar_participacoes_em_grade(celulas: dict) -> int:
+    """Grava a grade inteira de uma vez: `{(projeto, socio_id): "50"}`.
+
+    11/11/2026, o dono: *"tá muito difícil e lento de configurar as
+    participações"* — era uma participação por envio, escolhendo projeto,
+    sócio e percentual em três campos. Agora a tela é uma grade (projeto ×
+    sócio) e um Salvar só. Célula vazia = sem participação (apaga a que
+    havia). Confere TUDO antes de gravar: um percentual errado não deixa a
+    grade gravada pela metade. Devolve quantas células têm percentual."""
+    limpas = {}
+    for (projeto, socio_id), valor in celulas.items():
+        texto = str(valor or "").strip()
+        try:
+            limpas[(projeto.strip(), int(socio_id))] = (
+                _percentual(texto) if texto else None)
+        except ValueError:
+            raise ValueError(f"Percentual inválido em {projeto}: \"{texto}\" "
+                             f"(use um número de 0 a 100).") from None
+    with conexao() as conn:
+        for (projeto, socio_id), pct in limpas.items():
+            if pct is None:
+                conn.execute("DELETE FROM participacoes WHERE projeto = ? AND socio_id = ?",
+                             (projeto, socio_id))
+            else:
+                conn.execute(
+                    "INSERT INTO participacoes (projeto, socio_id, pct) VALUES (?,?,?) "
+                    "ON CONFLICT (projeto, socio_id) DO UPDATE SET pct = excluded.pct",
+                    (projeto, socio_id, pct))
+        conn.commit()
+    return sum(1 for v in limpas.values() if v is not None)
 
 
 def apagar_participacao(participacao_id: int) -> None:
@@ -273,8 +440,23 @@ def apagar_regra(regra_id: int) -> None:
 
 
 def salvar_ajuste(socio_id: int, tipo: str, valor: float, data: str = "",
-                  projeto: str = "", descricao: str = "") -> None:
+                  projeto: str = "", descricao: str = "", ajuste_id=None) -> None:
+    """Lança um ajuste — ou, com `ajuste_id`, corrige o que já existe
+    (11/11/2026: antes era apagar e lançar de novo)."""
+    try:
+        valor = float(str(valor).replace(".", "").replace(",", ".")
+                      if "," in str(valor) else valor)
+    except (TypeError, ValueError):
+        raise ValueError("O valor do ajuste não é um número.") from None
     with conexao() as conn:
+        if ajuste_id:
+            conn.execute(
+                "UPDATE ajustes SET socio_id=?, projeto=?, data=?, tipo=?, valor=?,"
+                " descricao=? WHERE id=?",
+                (int(socio_id), projeto.strip(), data.strip(), tipo, valor,
+                 descricao.strip(), int(ajuste_id)))
+            conn.commit()
+            return
         conn.execute(
             "INSERT INTO ajustes (socio_id, projeto, data, tipo, valor, descricao) "
             "VALUES (?,?,?,?,?,?)",

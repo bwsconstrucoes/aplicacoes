@@ -31,7 +31,7 @@
   <div class="lat-acoes">
     {% if pode_operar and pode_gerar and resultado.pronto %}
       {% set gd_origem = 'dc' %}
-      {% set gd_dados = {} %}
+      {% set gd_dados = {'empresa': (resultado.empresa if resultado else '') or ''} %}
       {% set gd_destino = '' %}
       {% set gd_pagamento = '' %}
       {% include "_gerar_direto.html" %}
@@ -82,6 +82,7 @@
   {% if mostrar_geradas %}<input type="hidden" name="geradas" value="1">{% endif %}
   {# O agrupamento escolhido sobrevive ao filtro. #}
   {% if 'agrupar' in request.args %}<input type="hidden" name="agrupar" value="{{ agrupamento }}">{% endif %}
+  {% if resultado and resultado.empresa %}<input type="hidden" name="empresa" value="{{ resultado.empresa }}">{% endif %}
   <div class="filtros-cab">
     <h2>Filtros</h2>
     <a class="link-btn" href="{{ url_tela }}">Limpar</a>
@@ -107,15 +108,21 @@
 
 <h2>Despesas com colaboradores</h2>
 
+{% set emp_kw = {'empresa': resultado.empresa} if resultado and resultado.empresa else {} %}
 <div class="barra-mes">
-  <a class="btn secundario" style="text-decoration:none" href="{{ url_for('analisesps.tela_folha_dc', recarregar=1) }}"
+  <form method="get" action="{{ url_for('analisesps.tela_folha_dc') }}" style="display:contents">
+    {% if mostrar_geradas %}<input type="hidden" name="geradas" value="1">{% endif %}
+    {% set emp_opcoes, emp_atual = (resultado.empresas if resultado else []), (resultado.empresa if resultado else '') %}
+    {% include "_empresa_da_folha.html" %}
+  </form>
+  <a class="btn secundario" style="text-decoration:none" href="{{ url_for('analisesps.tela_folha_dc', recarregar=1, **emp_kw) }}"
      title="Ler de novo a aba Data da planilha">Atualizar da planilha</a>
   <a class="btn secundario" style="text-decoration:none" href="https://docs.google.com/spreadsheets/d/{{ planilha_dc }}"
      target="_blank" rel="noopener">Abrir a planilha</a>
   {% if mostrar_geradas %}
-    <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc') }}">esconder as já geradas</a>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc', **emp_kw) }}">esconder as já geradas</a>
   {% elif resultado and resultado.geradas %}
-    <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc', geradas=1) }}">mostrar as {{ resultado.geradas }} já geradas</a>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc', geradas=1, **emp_kw) }}">mostrar as {{ resultado.geradas }} já geradas</a>
   {% endif %}
   {# QUANDO FOI LIDA (05/10/2026): *"qual é o momento que essa planilha é
      atualizada? (…) seria interessante ter a informação (…) data e hora"*. #}

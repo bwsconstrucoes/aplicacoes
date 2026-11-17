@@ -77,10 +77,23 @@ def test_de_toda_etapa_da_para_sair():
         assert svc.ETAPAS_SEGUINTES.get(e), f"etapa {e} não tem para onde ir"
 
 
-def test_nao_da_para_ir_do_inicial_direto_para_concluido():
-    """É o salto que o quadro do Pipefy permitia arrastando o card: cadastro
-    saindo de "inicial" para "concluído" sem ninguém conferir documento."""
-    assert "CONCLUIDO" not in svc.ETAPAS_SEGUINTES["CADASTRO_INICIAL"]
+def test_o_mapa_de_caminhos_SUGERE_e_nao_proibe_mais():
+    """⚑ MUDOU EM 17/11/2026, por decisão dele. O teste antigo exigia que
+    "Inicial → Concluído" fosse PROIBIDO, para ninguém pular a conferência.
+
+    Ele pediu o quadro arrastável e a movimentação simples: *"a movimentação
+    das pessoas de etapa tem que ser simples. (…) E tem que ter Kanban para
+    poder a gente movimentar."* Num quadro que se arrasta, um "não pode" a
+    cada gesto ensina a contornar, não a respeitar.
+
+    O mapa continua existindo para a tela SUGERIR o caminho natural; o que
+    protege agora é o histórico, que guarda quem moveu, de onde e por quê.
+    """
+    # Toda etapa tem para onde ir — senão o cartão fica preso no quadro.
+    for etapa in svc.ETAPAS:
+        assert svc.ETAPAS_SEGUINTES.get(etapa), etapa
+    # E o caminho natural do começo leva ao fim.
+    assert "CONCLUIDO" in svc.ETAPAS_SEGUINTES["CADASTRO_INICIAL"]
 
 
 # ---------------------------------------------------------------------------
@@ -170,19 +183,30 @@ def test_conferir_duas_vezes_e_recusado_com_a_etapa_de_agora(sessao_real, dono):
                                  "vinculo": "CTPS"}, dono)
     svc.concluir_conferencia(sessao_real, c.id, dono)
     from app.apps.erp.core.comum.auditoria import ErroValidacao
-    with pytest.raises(ErroValidacao, match="Na contabilidade"):
+    # "Na contabilidade" virou "Solicitações" em 17/11/2026 (migração 107).
+    with pytest.raises(ErroValidacao, match="Solicitações"):
         svc.concluir_conferencia(sessao_real, c.id, dono)
 
 
 @banco_
-def test_o_salto_proibido_e_recusado_dizendo_os_caminhos(sessao_real, dono):
-    from app.apps.erp.core.comum.auditoria import ErroValidacao
-    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Quer Pular Etapa"}, dono)
-    with pytest.raises(ErroValidacao) as e:
-        svc.mover_etapa(sessao_real, c.id, "CONCLUIDO", dono)
-    assert "não dá para ir direto" in str(e.value)
-    assert "Em conferência do DP" in str(e.value), \
-        "a recusa tem de DIZER por onde dá para ir"
+def test_mover_para_qualquer_etapa_FUNCIONA_e_fica_no_historico(sessao_real, dono):
+    """⚑ MUDOU EM 17/11/2026 — ver `test_o_mapa_de_caminhos_SUGERE_e_nao_proibe_mais`.
+
+    O que substituiu a recusa é o REGISTRO: a mudança passa, e o histórico
+    guarda de onde veio, para onde foi e por quê.
+    """
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import ColaboradorEtapa
+
+    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Vai Direto Pro Fim"}, dono)
+    svc.mover_etapa(sessao_real, c.id, "CONCLUIDO", dono,
+                    motivo="movido no quadro")
+    sessao_real.flush()
+    assert c.etapa == "CONCLUIDO"
+    trilha = sessao_real.scalars(select(ColaboradorEtapa).where(
+        ColaboradorEtapa.colaborador_id == c.id)).all()
+    ultima = trilha[-1]
+    assert ultima.para == "CONCLUIDO" and ultima.motivo == "movido no quadro"
 
 
 @banco_

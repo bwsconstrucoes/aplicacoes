@@ -1,0 +1,81 @@
+{# A lista "a descontar", o estilo e o script das complementares — ver _complementar_corpo.html. #}
+{% if a_descontar %}
+<h3 style="margin-top:24px">A descontar na próxima folha <small>{{ a_descontar|length }}</small></h3>
+<p class="cartao-dica">Pago a mais em folhas anteriores. O sistema não desconta sozinho: peça o
+  desconto à contabilidade e marque aqui quando estiver feito.</p>
+<div class="tabela-wrap"><div class="tabela-rolagem livre"><table class="sps" id="tabela-a-descontar">
+  <thead><tr><th>Colaborador</th><th>Competência</th><th class="num">Valor</th><th>Motivo</th><th></th></tr></thead>
+  <tbody>
+  {% for x in a_descontar %}
+    <tr data-cpf="{{ x.cpf }}" data-competencia="{{ x.competencia_chave }}">
+      <td><b>{{ x.nome }}</b><br><span class="cartao-dica">{{ x.cpf_bonito or x.cpf }}</span></td>
+      <td>{{ x.competencia }}</td><td class="num">{{ x.valor|moeda }}</td><td>{{ x.motivo }}</td>
+      <td>{% if pode_operar %}<button type="button" class="link-btn marcar-descontado">já descontado</button>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div></div>
+{% endif %}
+
+<style>
+  .faixa-folha { display:flex; gap:6px; margin:4px 0 14px; }
+  .faixa-folha a { padding:7px 14px; border-radius:8px; border:1px solid var(--borda); background:#fff;
+    font-weight:700; font-size:13px; color:var(--tinta-suave); text-decoration:none; }
+  .faixa-folha a.ativa { background:var(--azul); color:#fff; border-color:var(--azul); }
+  #tabela-complementar .dif-mais { color:#166534; font-weight:700; }
+  #tabela-complementar .dif-menos { color:#b91c1c; font-weight:700; }
+  #tabela-complementar tr.pago-a-mais td { background:#FEF2F2; }
+  #tabela-complementar tr.sem-mudanca td { color:var(--tinta-suave); }
+  #tabela-complementar .grupo-cab td { background:#F3F6FA; }
+</style>
+
+<script>
+(function () {
+  async function postar(url, corpo) {
+    const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                                body: JSON.stringify(corpo)});
+    return r.json();
+  }
+  const brl = n => n.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const caixas = [...document.querySelectorAll("#tabela-complementar .marca-pessoa")];
+  function somar() {
+    let n = 0, total = 0;
+    caixas.forEach(c => {
+      const tr = c.closest("tr");
+      tr.classList.toggle("nao-vai", !c.checked);
+      tr.querySelector(".paga-agora").innerHTML = c.checked
+        ? "<b>" + brl(parseFloat(tr.dataset.diferenca)) + "</b>" : "—";
+      if (c.checked) { n++; total += parseFloat(tr.dataset.diferenca); }
+    });
+    const q = document.getElementById("quantos-marcados"), t = document.getElementById("total-marcado");
+    if (q) q.textContent = n;
+    if (t) t.textContent = brl(total);
+    const salvarBtn = document.getElementById("btn-salvar-selecao");
+    if (salvarBtn) salvarBtn.disabled = !caixas.some(c => c.checked !== c.defaultChecked);
+  }
+  caixas.forEach(c => c.addEventListener("change", somar));
+  const salvar = document.getElementById("btn-salvar-selecao");
+  if (salvar) salvar.addEventListener("click", async () => {
+    salvar.disabled = true;
+    document.getElementById("recado-selecao").textContent = "Salvando…";
+    const d = await postar({{ comp_url_selecao|tojson }}, Object.assign({}, {{ comp_corpo|tojson }}, {
+      decisoes: caixas.filter(c => !c.disabled).map(c => ({cpf: c.closest("tr").dataset.cpf, pagar: c.checked}))}));
+    if (!d.ok) { alert(d.erro); salvar.disabled = false; return; }
+    location.reload();
+  });
+  const guardar = document.getElementById("btn-a-descontar");
+  if (guardar) guardar.addEventListener("click", async () => {
+    guardar.disabled = true;
+    const d = await postar({{ comp_url_a_descontar|tojson }}, {{ comp_corpo|tojson }});
+    if (!d.ok) { alert(d.erro); guardar.disabled = false; return; }
+    location.reload();
+  });
+  document.querySelectorAll(".marcar-descontado").forEach(b => b.addEventListener("click", async () => {
+    const tr = b.closest("tr");
+    if (!confirm("Marcar o desconto de " + tr.querySelector("b").textContent + " como feito?")) return;
+    const d = await postar({{ url_for('analisesps.folha_a_descontar_descontado')|tojson }},
+                           {cpf: tr.dataset.cpf, competencia_chave: tr.dataset.competencia});
+    if (!d.ok) { alert(d.erro); return; }
+    tr.remove();
+  }));
+})();
+</script>

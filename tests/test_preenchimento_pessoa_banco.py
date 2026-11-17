@@ -15,7 +15,7 @@ O que se prova:
      a ser de quem é o documento, não de um campo.
   3. Cada tipo só preenche o que prova. ASO e certificado de NR não alimentam
      cadastro nenhum: eles valem pela validade, que já vira aviso na agenda.
-  4. Função só entra se estiver cadastrada. Criar função a partir de leitura
+  4. Cargo só entra se estiver cadastrado. Criar cargo a partir de leitura
      multiplicaria "PEDREIRO", "Pedreiro" e "Pedreiro(a)" em um mês — e a
      diária de referência, que mora na função, viraria três.
   5. Termo de rescisão que traz demissão fecha a situação junto: cadastro com
@@ -34,7 +34,7 @@ import pytest
 from app.apps.erp.core.arquivo import catalogo, preenchimento
 from app.apps.erp.core.auth.service import gerar_hash
 from app.apps.erp.core.comum.auditoria import ErroValidacao
-from app.apps.erp.db.models.cadastros import (Colaborador, Funcao, Obra,
+from app.apps.erp.db.models.cadastros import (Cargo, Colaborador, Obra,
                                               PerfilUsuario as P, Usuario,
                                               UsuarioObra)
 from app.apps.erp.db.models.financeiro import Documento
@@ -53,7 +53,9 @@ def cenario(sessao_real):
     admin = Usuario(nome="Admin do pessoal", email="pes.doc@teste.local", ativo=True,
                     senha_hash=gerar_hash("senha-de-teste-123"), perfil=P.ADMIN)
     obra = Obra(codigo="ESCPLANALTO", nome="Escola Planalto", fase="EM_EXECUCAO")
-    pedreiro = Funcao(nome="Pedreiro", ativo=True)
+    # ⚑ `Cargo` e não `Funcao` desde a migração 105 (16/11/2026): as duas
+    # viraram uma coisa só, por decisão do dono.
+    pedreiro = Cargo(nome="Pedreiro", ativo=True)
     s.add_all([admin, obra, pedreiro])
     s.flush()
     c = Colaborador(nome="João da Silva", cpf=CPF, obra_id=obra.id, situacao="ATIVO")
@@ -155,28 +157,28 @@ def test_funcao_cadastrada_entra_pelo_nome_sem_acento_nem_caixa(cenario):
     r = preenchimento.sugerir_para_colaborador(
         cenario["s"], cenario["colaborador"].id, "CTPS",
         _leitura("CTPS", {"funcao_nome": "PEDREIRO"}))
-    campo = next(c for c in r["campos"] if c["campo"] == "funcao_id")
+    campo = next(c for c in r["campos"] if c["campo"] == "cargo_id")
     assert campo["valor"] == "Pedreiro"
     assert campo["valor_id"] == cenario["funcao"].id
 
 
 def test_funcao_que_nao_existe_nao_e_criada_sozinha(cenario):
-    """Criar função a partir de leitura multiplicaria 'PEDREIRO', 'Pedreiro' e
+    """Criar cargo a partir de leitura multiplicaria 'PEDREIRO', 'Pedreiro' e
     'Pedreiro(a)' em um mês — e a diária de referência viraria três."""
     s = cenario["s"]
-    antes = s.query(Funcao).count()
+    antes = s.query(Cargo).count()
     r = preenchimento.sugerir_para_colaborador(
         s, cenario["colaborador"].id, "CTPS",
         _leitura("CTPS", {"funcao_nome": "Servente de obras"}))
-    assert not any(c["campo"] == "funcao_id" for c in r["campos"])
-    assert any("não está cadastrada" in a for a in r["avisos"])
-    assert s.query(Funcao).count() == antes
+    assert not any(c["campo"] == "cargo_id" for c in r["campos"])
+    assert any("não está cadastrado" in a for a in r["avisos"])
+    assert s.query(Cargo).count() == antes
 
 
 def test_funcao_inexistente_na_gravacao_e_recusada(cenario):
     with pytest.raises(ErroValidacao):
         preenchimento.aplicar_no_colaborador(
-            cenario["s"], cenario["colaborador"].id, {"funcao_id": "99999"},
+            cenario["s"], cenario["colaborador"].id, {"cargo_id": "99999"},
             tipo_codigo="CTPS", usuario=cenario["admin"])
 
 

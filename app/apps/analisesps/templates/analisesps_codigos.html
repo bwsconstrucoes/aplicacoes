@@ -32,7 +32,8 @@
                    data-valor="{{ b.sp.valor_num or 0 }}"
                    data-card="{{ b.sp.card_link or '' }}"
                    data-anexos='{{ (b.sp.anexo_link|links_celula|map("baixar")|list)|tojson }}' 
-                   data-forma="{{ b.sp.forma_pagamento or '' }}">
+                   data-forma="{{ b.sp.forma_pagamento or '' }}"
+                   data-conta="{{ b.sp.conta or '' }}">
           </label>
           {# O número abre a ficha NO MODAL. Abrir em tela cheia fazia sumir
              os códigos recém-gerados, e voltar obrigava a refazer tudo só
@@ -44,7 +45,14 @@
         {% else %}{{ b.id }}{% endif %}
       </h3>
       <small>
-        {% if b.sp %}{{ b.sp.valor_num|moeda }} · vence {{ b.sp.vencimento_d|data_br }}{% endif %}
+        {% if b.sp %}{{ b.sp.valor_num|moeda }} · vence {{ b.sp.vencimento_d|data_br }}
+          {# 11/11/2026, pedido do dono: o status do agendamento (e o de pagamento)
+             de cada SP, com o selo de cor das outras telas. #}
+          {% set ag = (b.sp.status_agend or '')|lower %}
+          · {% if ag %}<span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}">{{ b.sp.status_agend }}</span>
+          {% else %}<span class="cartao-dica">sem agendamento</span>{% endif %}
+          {% if b.sp.status_pgt %}· <span class="selo {{ 'pago' if (b.sp.status_pgt|lower).startswith('pago') else 'pagar' }}">{{ b.sp.status_pgt }}</span>{% endif %}
+        {% endif %}
       </small>
       {# 08/10/2026, pedido do dono: a categoria e a descrição junto do credor,
          para conferir o que se está pagando sem abrir a ficha. #}

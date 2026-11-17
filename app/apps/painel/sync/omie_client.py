@@ -223,14 +223,26 @@ class OmieBloqueada(Exception):
     E diferente de erro: nao ha o que consertar, so esperar. Quem chamou deve
     PARAR o lote — insistir em outro titulo cai no mesmo bloqueio e o prolonga."""
 
-    def __init__(self, segundos, faultstring=""):
+    def __init__(self, segundos, faultstring="", antes=""):
         self.segundos = int(segundos)
         self.faultstring = faultstring
+        # O QUE O OMIE TINHA RESPONDIDO ANTES DE BLOQUEAR (11/11/2026). O dono
+        # tentou trocar a obra de uma tarifa e leu só "bloqueou por consumo
+        # excessivo, 59 segundos". Esse bloqueio curto é a punição por REPETIR
+        # a mesma chamada — e a chamada foi repetida porque a primeira voltou
+        # com um erro que o painel tratou como passageiro. O erro de verdade
+        # ficava só no log do servidor. Agora vai junto.
+        self.antes = (antes or "").strip()
         minutos = max(1, round(self.segundos / 60))
-        super().__init__(
-            f"A Omie bloqueou as chamadas por consumo excessivo e pediu "
-            f"{self.segundos} segundos (~{minutos} min). Nada foi alterado. "
-            f"Tente de novo depois desse tempo.")
+        texto = (f"A Omie bloqueou as chamadas por consumo excessivo e pediu "
+                 f"{self.segundos} segundos (~{minutos} min). Nada foi alterado. "
+                 f"Tente de novo depois desse tempo.")
+        if (faultstring or "").strip():
+            texto += f" O OMIE disse: “{faultstring.strip()[:300]}”."
+        if self.antes:
+            texto += (f" ANTES do bloqueio, a primeira resposta do OMIE tinha sido: "
+                      f"“{self.antes[:400]}” — é provável que seja esse o motivo de verdade.")
+        super().__init__(texto)
 
 
 class OmieAPIError(Exception):
@@ -303,7 +315,11 @@ class OmieClient:
     # ------------------------------------------------------------------ 
     # Chamada bruta com retry/backoff
     # ------------------------------------------------------------------ 
-    def _call(self, url, call, param):
+    def _call(self, url, call, param, uma_vez=False):
+        """Chama o OMIE. `uma_vez=True` é para o que GRAVA (alterar, excluir):
+        a chamada não é repetida. Repetir uma gravação que voltou com erro não
+        a faz dar certo — só leva o OMIE a bloquear por "consumo redundante" e
+        esconde o motivo de verdade (11/11/2026, a tarifa do Bradesco)."""
         corpo = {
             "call": call,
             "app_key": self.app_key,
@@ -311,11 +327,16 @@ class OmieClient:
             "param": [param],
         }
         ultimo_erro = None
+        primeira_recusa = ""      # o que o OMIE disse antes de qualquer repetição
         for tentativa in range(1, self.max_tentativas + 1):
             _sinal_de_vida()
             try:
                 resp = self.sessao.post(url, data=json.dumps(corpo), timeout=self.timeout)
             except requests.RequestException as e:
+                if uma_vez:
+                    raise OmieAPIError(
+                        "REDE", f"A chamada {call} não teve resposta ({e}). Não dá para "
+                                "saber se o OMIE gravou: confira lá antes de tentar de novo.")
                 ultimo_erro = e
                 espera = self._espera(tentativa, None)
                 log.warning("Rede falhou em %s (tent. %d/%d): %s. Aguardando %.1fs.",
@@ -340,10 +361,18 @@ class OmieClient:
                 m = _SEGUNDOS_PEDIDOS.search(fs)
                 if m:
                     espera = max(espera, float(m.group(1)) + 2.0)
+                elif not primeira_recusa:
+                    primeira_recusa = fs
+                if uma_vez:
+                    # gravação: o OMIE mandou esperar -> bloqueio; qualquer
+                    # outra recusa é o erro de verdade, mostrado como veio
+                    if m or self._texto_e_rate_limit(fs):
+                        raise OmieBloqueada(int(espera), fs, primeira_recusa)
+                    raise OmieAPIError(resp.status_code, fs or (resp.text or "")[:300])
                 # Pedido longo demais: nao adianta insistir, e esperar aqui
                 # prenderia uma das 4 threads do servico. Para e diz por quanto.
                 if espera > self.teto_de_espera:
-                    raise OmieBloqueada(int(espera), fs)
+                    raise OmieBloqueada(int(espera), fs, primeira_recusa)
                 log.warning("HTTP %s em %s (tent. %d/%d): %s. Aguardando %.1fs.",
                             resp.status_code, call, tentativa, self.max_tentativas,
                             fs[:120], espera)
@@ -372,8 +401,8 @@ class OmieClient:
                     m = _SEGUNDOS_PEDIDOS.search(fs)
                     if m:
                         espera = max(espera, float(m.group(1)) + 2.0)
-                    if espera > self.teto_de_espera:
-                        raise OmieBloqueada(int(espera), fs)
+                    if uma_vez or espera > self.teto_de_espera:
+                        raise OmieBloqueada(int(espera), fs, primeira_recusa)
                     log.warning("Rate limit (faultstring) em %s. Aguardando %.1fs.", call, espera)
                     _esperar(espera, "limite de consultas")
                     continue

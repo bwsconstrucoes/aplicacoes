@@ -149,7 +149,9 @@ def test_o_lancamento_da_sicredi_entra_nas_duas_obras(base):
             " WHERE observacao = ?",
             (fato.MARCA_LANCAMENTO_CC,)).fetchall()
     # ordenado aqui, não no banco: a ordem do "(" muda com o idioma do servidor
-    assert sorted(linhas) == [("(não apropriado)", -23972.14, "TRF"),
+    # a transferência entre contas não é "não apropriado": não é para ter obra
+    # (dono, 10/11/2026)
+    assert sorted(linhas) == [("(transferência entre contas)", -23972.14, "TRF"),
                       ("CRECHESUAPE", -50000.0, "DRE"),
                       ("ESCPE18", -50000.01, "DRE")]
 
@@ -250,3 +252,96 @@ def test_reler_um_ano_le_as_obras_de_todos_os_lancamentos_dele(monkeypatch):
                                          "movimentos": 0})
     assert tarefas.executar_trabalho("pagamentos", 2)
     assert pedidos == [(None, None, False)]
+
+
+# ===========================================================================
+# 10/11/2026 — "situação gravíssima": um lançamento de 28/12/2020 aparecia
+# "(não apropriado)" no painel e estava apropriado no OMIE
+# ===========================================================================
+@pytest.mark.banco
+def test_quem_desistiu_volta_a_ser_perguntado_quando_se_pede(base):
+    import copy
+
+    from app.apps.painel.sync import apropriacao_cc, espelho
+    antigo = copy.deepcopy(SICREDI)
+    antigo["detalhes"].update(nCodMovCC=709793529, dDtPagamento="28/12/2020")
+    with base.conexao() as conn:
+        espelho.gravar_movimentos(conn, [SICREDI, antigo])
+        conn.execute("INSERT INTO apropriacao_lancamentos_cc (ncodmovcc, erro,"
+                     " tentativas, lido_em) VALUES (709793529, 'fora do ar', ?, now())",
+                     (apropriacao_cc.TENTATIVAS_POR_LANCAMENTO,))
+        conn.commit()
+        # a atualização comum deixou de perguntar por ele...
+        assert apropriacao_cc.pendentes(conn) == [11309733447]
+        # ...e "Ler as obras dos lançamentos de conta" pergunta — depois dos
+        # nunca perguntados
+        assert apropriacao_cc.pendentes(conn, retentar=True) == [11309733447, 709793529]
+        omie = _Omie()
+        r = apropriacao_cc.buscar(conn, omie, limite=None, retentar=True)
+        assert (r["lidos"], r["falhas"]) == (2, 0)
+        assert apropriacao_cc.pendentes(conn, retentar=True) == []
+
+
+@pytest.mark.banco
+def test_nunca_perguntado_nao_e_nao_apropriado(base):
+    """Sem perguntar ao OMIE, o painel não sabe se tem obra — e diz isso."""
+    import copy
+
+    from app.apps.painel.sync import apropriacao_cc, espelho
+    respondido_sem_obra = copy.deepcopy(SICREDI)
+    respondido_sem_obra["detalhes"].update(nCodMovCC=2, nCodLanc=2)
+    with base.conexao() as conn:
+        espelho.gravar_movimentos(conn, [SICREDI, respondido_sem_obra])
+        conn.execute("INSERT INTO apropriacao_lancamentos_cc (ncodmovcc, bruto,"
+                     " tentativas, lido_em) VALUES (2, '{\"cabecalho\": {}}', 1, now())")
+        conn.commit()
+        fato.reconstruir_fato(conn)
+        obras = dict(conn.execute(
+            "SELECT codigo_lancamento, departamento FROM fato WHERE observacao = ?",
+            (fato.MARCA_LANCAMENTO_CC,)).fetchall())
+        situacao = apropriacao_cc.situacao(conn)
+    assert obras[2] == fato.NAO_APROP
+    assert next(d for c, d in obras.items() if c != 2) == fato.OBRA_NAO_LIDA
+    assert (situacao["total"], situacao["com_obra"], situacao["sem_obra"],
+            situacao["pendentes"], situacao["desistidos"]) == (2, 0, 1, 1, 0)
+    assert situacao["pendentes_por_ano"] == {"2026": 1}
+
+
+@pytest.mark.banco
+def test_a_resposta_e_achada_pelo_numero_perguntado(base):
+    """A resposta é guardada pelo nCodMovCC; a linha do painel leva o nCodLanc.
+    Se um dia forem números diferentes, a obra não pode sumir em silêncio."""
+    import copy
+
+    from app.apps.painel.sync import apropriacao_cc, espelho
+    diferente = copy.deepcopy(SICREDI)
+    diferente["detalhes"].update(nCodMovCC=111, nCodLanc=222)
+    with base.conexao() as conn:
+        espelho.gravar_movimentos(conn, [diferente])
+        apropriacao_cc.buscar(conn, _Omie())
+        fato.reconstruir_fato(conn)
+        obras = sorted(d for (d,) in conn.execute(
+            "SELECT departamento FROM fato WHERE codigo_lancamento = 222").fetchall())
+    assert obras == ["CRECHESUAPE", "ESCPE18"]
+
+
+@pytest.mark.banco
+def test_o_diagnostico_diz_por_que_esta_sem_obra(base):
+    from app.apps.painel.sync import apropriacao_cc, espelho
+    with base.conexao() as conn:
+        espelho.gravar_movimentos(conn, [SICREDI])
+        fato.reconstruir_fato(conn)
+        antes = apropriacao_cc.diagnostico(conn, 11309733447)
+        assert "NÃO foi perguntada" in antes["diagnostico"]
+        assert antes["movimentos"] and antes["apropriacao_guardada"] is None
+        apropriacao_cc.buscar(conn, _Omie(falhar=True))
+        recusado = apropriacao_cc.diagnostico(conn, 11309733447)
+        assert "recusou" in recusado["diagnostico"]
+        assert "não cadastrado" in recusado["diagnostico"]
+
+
+def test_ler_as_obras_e_um_modo_com_os_passos_dele():
+    from app.apps.painel import andamento, tarefas
+    assert "obras_cc" in tarefas.MODOS and "obras_cc" in tarefas.ROTULOS
+    assert andamento.PASSOS_POR_MODO["obras_cc"] == [andamento.APROPRIACAO_CC,
+                                                     andamento.RECALCULO]

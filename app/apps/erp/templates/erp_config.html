@@ -22,6 +22,10 @@
   {# Cargos e convenções, pelo mesmo motivo de Empresas (05/11/2026): tabela que
      se mexe quando sai dissídio, não trabalho de todo dia. #}
   <a class="subaba" href="{{ url_for('erp.pagina_cargos') }}">Cargos e convenções</a>
+  {# A CONTA DE E-MAIL DO SISTEMA (09/11/2026). Fica em Configurações e não em
+     Empresas porque ela não é de CNPJ nenhum: quem fala por ela é o SISTEMA. #}
+  <a class="subaba" href="#emailsistema" data-ir="emailsistema">E-mail do sistema</a>
+  <a class="subaba" href="#diarias" data-ir="diarias">Diárias</a>
   <a class="subaba" href="#documentos" data-ir="documentos">Tipos de documento</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
   <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
@@ -104,6 +108,93 @@
    Documento arquivado antes de 12/09/2026 pode não ter o texto de dentro
    guardado — e sem o texto ele não aparece na busca e não dá para perguntar
    sobre ele. Isto extrai o texto do próprio PDF: não gasta IA nenhuma. #}
+{# ===========================================================================
+   OS ACRÉSCIMOS DA DIÁRIA (10/11/2026)
+
+   Ele: *"esses números ainda valem atualmente, mas isso é algo que deva ficar
+   dentro de uma configuração, o acréscimo da diária."* Eles estavam escritos
+   no código do Análise de SPs: mudar um número de negócio exigia programador
+   e deploy.
+   =========================================================================== #}
+<div class="cartao" data-secao="diarias">
+  <div class="cartao-cab"><h3>Acréscimos da diária</h3>
+    <small>quanto se soma ao valor do dia em feriado e fim de semana</small></div>
+  <div class="cartao-dica">Vale para quem é pago <b>por diária</b>. O acréscimo
+    entra <b>por dia trabalhado</b>, somado ao valor da diária da pessoa.
+    <b>Feriado não soma com fim de semana:</b> feriado que cai no sábado paga o
+    acréscimo de feriado, e só.</div>
+  <div id="di-situacao" class="desc" style="margin:8px 0">carregando…</div>
+  <div class="form-grade">
+    <div class="campo"><label for="di-feriado">Feriado (R$)</label>
+      <input id="di-feriado" inputmode="decimal" placeholder="20,00"></div>
+    <div class="campo"><label for="di-sabado">Sábado (R$)</label>
+      <input id="di-sabado" inputmode="decimal" placeholder="10,00"></div>
+    <div class="campo"><label for="di-domingo">Domingo (R$)</label>
+      <input id="di-domingo" inputmode="decimal" placeholder="20,00"></div>
+    <div class="campo" style="grid-column:span 2">
+      <label for="di-sem">Funções que NÃO recebem diária</label>
+      <input id="di-sem" placeholder="VIGIA">
+      <div class="dica">Separadas por vírgula. O nome tem de ser
+        <b>igual</b> ao da função: “VIGIA NOTURNO” é outra função e
+        <b>recebe</b> diária.</div></div>
+  </div>
+  <div style="margin-top:12px"><button class="btn" id="di-salvar">Salvar</button></div>
+  <div id="di-msg"></div>
+</div>
+
+{# ===========================================================================
+   A CONTA DE E-MAIL DO SISTEMA (09/11/2026)
+
+   Ele: *"a gente vai ter e-mail do DP, e-mail do compras, e-mail do sistema.
+   Então isso aí precisaria estar configurado também."*
+
+   ⚑ POR QUE ELA NÃO É A DE UMA EMPRESA: as contas das empresas falam em nome
+   de um CNPJ — a cotação sai de compras@, o pedido à contabilidade sai da
+   empresa que registra a pessoa. O convite de acesso não é nenhuma das duas:
+   quem fala é o SISTEMA. Sair por compras@ faria a pessoa achar que compras
+   mandou, e responder para lá.
+   =========================================================================== #}
+<div class="cartao" data-secao="emailsistema">
+  <div class="cartao-cab"><h3>E-mail do sistema</h3>
+    <small>por onde saem o convite de acesso e os avisos do próprio sistema</small></div>
+  <div class="cartao-dica">É uma conta <b>à parte</b> da do DP e da de compras.
+    Use um endereço do tipo <b>sistema@</b> ou <b>naoresponda@</b>: dele saem o
+    convite para a pessoa definir a senha e os avisos automáticos. Os pedidos à
+    contabilidade e as cotações continuam saindo pela conta <b>da empresa</b>,
+    em Empresas.</div>
+  <div id="es-situacao" class="desc" style="margin:8px 0">carregando…</div>
+  <div class="form-grade">
+    <div class="campo"><label for="es-servidor">Servidor de saída (SMTP)</label>
+      <input id="es-servidor" placeholder="smtp.gmail.com"></div>
+    <div class="campo"><label for="es-porta">Porta</label>
+      <input id="es-porta" placeholder="587"></div>
+    <div class="campo"><label for="es-seguranca">Segurança</label>
+      <select id="es-seguranca">
+        <option value="STARTTLS">STARTTLS (porta 587)</option>
+        <option value="SSL">SSL (porta 465)</option>
+        <option value="NENHUMA">Nenhuma</option>
+      </select></div>
+    <div class="campo"><label for="es-usuario">Usuário (o endereço)</label>
+      <input id="es-usuario" placeholder="sistema@bwsconstrucoes.com.br"></div>
+    <div class="campo"><label for="es-senha">Senha</label>
+      <input id="es-senha" type="password" placeholder="deixe vazio para manter">
+      <div class="dica">No Gmail e no Google Workspace com verificação em duas
+        etapas, aqui vai uma <b>senha de aplicativo</b>, não a senha de entrar
+        no e-mail.</div></div>
+    <div class="campo"><label for="es-remetente">Como aparece para quem recebe</label>
+      <input id="es-remetente" placeholder="ERP BWS &lt;sistema@bwsconstrucoes.com.br&gt;"></div>
+    <div class="campo"><label for="es-responder">Responder para</label>
+      <input id="es-responder" placeholder="dp@bwsconstrucoes.com.br">
+      <div class="dica">Para onde vai a resposta de quem responder ao
+        convite. Vazio = a própria conta do sistema.</div></div>
+  </div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn" id="es-salvar">Salvar</button>
+    <button class="btn secundario" id="es-testar">Mandar um teste para mim</button>
+  </div>
+  <div id="es-msg"></div>
+</div>
+
 <div class="cartao" data-secao="documentos">
   <div class="cartao-cab"><h3>Documentos legíveis para perguntas</h3>
     <small>o texto de dentro dos documentos que já estão no Arquivo</small></div>
@@ -498,8 +589,96 @@ function mostrarSecao(chave){
 
 window.addEventListener("hashchange", () =>
   mostrarSecao((location.hash || "").replace("#", "")));
-document.addEventListener("DOMContentLoaded", () =>
-  mostrarSecao((location.hash || "").replace("#", "") || SECAO_PADRAO));
+document.addEventListener("DOMContentLoaded", () => {
+  mostrarSecao((location.hash || "").replace("#", "") || SECAO_PADRAO);
+  carregarEmailDoSistema();
+});
+
+// ---------------------------------------------------------------------------
+// A CONTA DE E-MAIL DO SISTEMA
+// ---------------------------------------------------------------------------
+async function carregarEmailDoSistema(){
+  try {
+    const d = await api("/erp/api/email-sistema");
+    const c = d.config || {};
+    els("es-servidor").value = c.servidor || "";
+    els("es-porta").value = c.porta || 587;
+    els("es-seguranca").value = c.seguranca || "STARTTLS";
+    els("es-usuario").value = c.usuario || "";
+    els("es-remetente").value = c.remetente || "";
+    els("es-responder").value = c.responder_para || "";
+    els("es-senha").placeholder = c.tem_senha
+      ? "já tem senha — deixe vazio para manter" : "obrigatória";
+    els("es-situacao").innerHTML = c.usavel
+      ? `<span class="etiqueta verde">pronta para enviar</span>`
+      : `<span class="etiqueta ambar">não dá para enviar ainda</span>
+         <small>${escapar(d.falta || "")}</small>`;
+  } catch(e){ els("es-situacao").textContent = "não foi possível ler: " + e.message; }
+}
+
+function ligarEmailDoSistema(){
+  if (!els("es-salvar")) return;
+  els("es-salvar").addEventListener("click", async () => {
+    const corpo = {servidor: els("es-servidor").value, porta: els("es-porta").value,
+      seguranca: els("es-seguranca").value, usuario: els("es-usuario").value,
+      remetente: els("es-remetente").value, responder_para: els("es-responder").value};
+    if (els("es-senha").value) corpo.senha = els("es-senha").value;
+    try {
+      await api("/erp/api/email-sistema", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      els("es-senha").value = "";
+      aviso("es-msg", "Conta do sistema salva.", "ok");
+      carregarEmailDoSistema();
+    } catch(e){ aviso("es-msg", e.message, "erro"); }
+  });
+  els("es-testar").addEventListener("click", async () => {
+    const b = els("es-testar"); b.disabled = true;
+    try {
+      const r = await api("/erp/api/email-sistema/testar", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: "{}"});
+      if (r.ok) aviso("es-msg", `Teste enviado para ${escapar(r.para)}. Confira a caixa.`, "ok");
+      else aviso("es-msg", `O teste NÃO saiu: ${escapar(r.erro || "motivo não informado")}`, "erro");
+    } catch(e){ aviso("es-msg", e.message, "erro"); }
+    b.disabled = false;
+  });
+}
+document.addEventListener("DOMContentLoaded", ligarEmailDoSistema);
+
+// ---------------------------------------------------------------------------
+// OS ACRÉSCIMOS DA DIÁRIA
+// ---------------------------------------------------------------------------
+async function carregarDiarias(){
+  try {
+    const d = await api("/erp/api/diarias");
+    const c = d.config || {};
+    els("di-feriado").value = numero(c.feriado);
+    els("di-sabado").value = numero(c.sabado);
+    els("di-domingo").value = numero(c.domingo);
+    els("di-sem").value = (c.sem_diaria || []).join(", ");
+    els("di-situacao").innerHTML = c.no_padrao
+      ? `<span class="etiqueta">nos valores combinados</span>
+         <small>feriado R$ 20, sábado R$ 10, domingo R$ 20, vigia fora</small>`
+      : `<span class="etiqueta ambar">alterado</span>
+         <small>diferente dos valores que vinham de antes</small>`;
+  } catch(e){ els("di-situacao").textContent = "não foi possível ler: " + e.message; }
+}
+
+function ligarDiarias(){
+  if (!els("di-salvar")) return;
+  els("di-salvar").addEventListener("click", async () => {
+    try {
+      await api("/erp/api/diarias", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({feriado: els("di-feriado").value,
+          sabado: els("di-sabado").value, domingo: els("di-domingo").value,
+          sem_diaria: els("di-sem").value})});
+      aviso("di-msg", "Acréscimos salvos. Eles valem da próxima conta em diante.", "ok");
+      carregarDiarias();
+    } catch(e){ aviso("di-msg", e.message, "erro"); }
+  });
+  carregarDiarias();
+}
+document.addEventListener("DOMContentLoaded", ligarDiarias);
 
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 let OPCOES_CAT = "";
@@ -684,6 +863,30 @@ function formOperador(u){
         <div class="dica">Diz <b>o que</b> esta pessoa faz. Cria-se e edita-se em
           <b>Perfis de acesso</b>, na faixa acima. Sem perfil escolhido, vale o
           cargo antigo — o campo de baixo.</div></div>
+      {# MAIS DE UM PERFIL NA MESMA PESSOA (migração 095). Pedido dele em
+         09/11/2026: *"pode ser que eu queira que uma pessoa utilize mais de
+         um perfil de acesso. Digamos que uma pessoa é do financeiro, mas eu
+         quero que ele acesse diário de obras."*
+
+         ⚑ A TELA PRECISA DIZER QUE PERFIL SÓ SOMA. Sem essa frase, alguém um
+         dia marca um perfil pequeno achando que ele RESTRINGE a pessoa — e
+         estaria dando acesso, não tirando. #}
+      <div class="campo" id="op-perfis-extras-bloco"><label>Também com o acesso de</label>
+        <div id="op-perfis-extras" class="filtro-opcoes"
+             style="max-height:150px; border:1px solid var(--borda);
+                    border-radius:8px; padding:6px">
+          ${PERFIS_CADASTRADOS.filter(p=>p.id!==u.perfil_id).map(p=>`
+            <label class="opcao"><input type="checkbox" class="op-perfil-extra"
+              value="${p.id}" ${(u.perfis_extras||[]).includes(p.id)?"checked":""}>
+              <span class="rotulo">${escapar(p.nome)}</span></label>`).join("")
+            || `<small class="desc">Nenhum outro perfil cadastrado.</small>`}
+        </div>
+        <div class="dica">Para quem faz duas coisas — alguém do Financeiro que
+          também lança o diário de obra. <b>Perfil só SOMA acesso, nunca
+          tira:</b> marcar aqui só acrescenta telas. Para TIRAR alguma coisa,
+          use as caixinhas de <b>ajuste fino</b>, lá no fim deste cadastro.
+          As <b>obras</b> continuam sendo as marcadas aqui embaixo, iguais
+          para todos os perfis dela.</div></div>
       <div class="campo"><label>Obras que esta pessoa enxerga</label>
         <select id="op-todas-obras">
           <option value="0" ${u.ve_todas_as_obras?"":"selected"}>Só as obras marcadas abaixo</option>
@@ -786,7 +989,7 @@ function formOperador(u){
             ${PROJETOS_CAD.length ? PROJETOS_CAD.map(p=>`<label class="opcao">
               <input type="checkbox" class="op-projeto" value="${p.id}"
                 ${(u.projetos||[]).includes(p.id)?"checked":""}>
-              <span class="rotulo">${escapar(p.codigo)} · ${escapar(p.nome)}
+              <span class="rotulo">${escapar(rotuloObra(p))}
                 <small>(${p.quantas_obras} obra(s))</small></span></label>`).join("")
               : `<small>Nenhum projeto cadastrado. Crie em Obras › ▦ Projetos.</small>`}
           </div></div>
@@ -798,7 +1001,7 @@ function formOperador(u){
       <div class="filtro-opcoes" style="max-height:220px; border:1px solid var(--borda); border-radius:8px; padding:6px">
         ${DADOS.obras.map(o=>`<div style="display:flex; align-items:center; gap:10px">
           <label class="opcao" style="flex:1"><input type="checkbox" class="op-obra" value="${o.id}"
-            ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>
+            ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${escapar(rotuloObra(o))}</span></label>
           <label class="opcao" title="Recebe a conferência mensal dos equipamentos desta obra"
                  style="white-space:nowrap"><input type="checkbox" class="op-resp" value="${o.id}"
             ${(u.obras_responsavel||[]).includes(o.id)?"checked":""}
@@ -812,7 +1015,25 @@ function formOperador(u){
         uma pessoa por obra — todas recebem. A mesma marca aparece no cadastro
         da obra, e é a mesma informação.</div>
     </div>
-    ${novo ? "" : `
+    ${novo ? `
+    <div class="aviso info" style="margin-top:12px">Deixe a <b>senha em
+      branco</b>: ao salvar, a pessoa recebe um e-mail para escolher a senha
+      dela. <b>Ninguém mais vai saber qual é</b> — nem você. Se preferir
+      definir uma senha aqui, o convite não é enviado.</div>` : `
+    {# O CONVITE DE PRIMEIRO ACESSO, na ficha de quem já existe. Serve para
+       reenviar ("não chegou", "caiu no spam") e para quem foi cadastrado
+       antes de isto existir. Reenviar invalida o link anterior. #}
+    <div class="campo" style="margin-top:12px">
+      <label>Acesso da pessoa</label>
+      <div id="op-convite" class="desc">—</div>
+      <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap">
+        <button class="btn secundario" type="button" id="op-convidar">
+          Enviar convite para definir a senha</button>
+      </div>
+      <div class="dica">A pessoa recebe um link e escolhe a própria senha. O
+        link vale 7 dias, serve uma vez só, e <b>enviar de novo cancela o
+        anterior</b>.</div>
+    </div>
     <div class="campo" style="margin-top:12px">
       <label>O que esta pessoa pode fazer</label>
       <div class="filtro-opcoes" id="op-perms"
@@ -977,6 +1198,18 @@ function formOperador(u){
       + `É sugestão — desmarque o que não quiser antes de salvar.`, "ok");
   }
   els("op-perfil").addEventListener("change", aplicarPresetDoPerfil);
+  // Trocar o perfil PRINCIPAL tira ele da lista de acréscimos na hora: ver o
+  // mesmo perfil marcado nos dois lugares faria qualquer um duvidar de qual
+  // está valendo.
+  els("op-perfil-cad").addEventListener("change", () => {
+    const principal = +els("op-perfil-cad").value || 0;
+    document.querySelectorAll(".op-perfil-extra").forEach(i => {
+      const mesmo = +i.value === principal;
+      i.disabled = mesmo;
+      if (mesmo) i.checked = false;
+      i.closest(".opcao").style.opacity = mesmo ? ".45" : "";
+    });
+  });
 
   montarContasDoPlano(u.categorias || []);
   // Cadastro novo já nasce com a receita do perfil escolhido; ao EDITAR
@@ -999,11 +1232,37 @@ function formOperador(u){
     } catch(e){ els("op-perms").innerHTML = `<small>não foi possível carregar: ${e.message}</small>`; }
   }
   if (!novo) carregarPermissoes();
+  if (!novo) carregarConvite();
+
+  async function carregarConvite(){
+    try {
+      const d = await api(`/erp/api/usuarios/${u.id}/convite/situacao`);
+      const c = d.convite || {};
+      els("op-convite").innerHTML = !c.tem
+        ? "Nunca foi enviado convite para esta pessoa."
+        : c.usado ? `Senha definida pela própria pessoa em ${escapar(c.usado_em)}.`
+        : c.vencido ? `<b style="color:var(--vermelho)">Convite vencido</b> (valia até ${dataBR(c.expira_dia)}). Envie outro.`
+        : `Convite aberto, enviado para ${escapar(c.enviado_para||"—")} — vale até ${dataBR(c.expira_dia)}.`;
+    } catch(e){ els("op-convite").textContent = "não foi possível ler: " + e.message; }
+  }
+
+  if (!novo) els("op-convidar").addEventListener("click", async () => {
+    const b = els("op-convidar"); b.disabled = true;
+    try {
+      const r = await api(`/erp/api/usuarios/${u.id}/convite`, {method:"POST"});
+      if (r.enviado) aviso("dlg-msg", `Convite enviado para ${escapar(r.para)}.`, "ok");
+      else aviso("dlg-msg", `O e-mail NÃO saiu: ${escapar(r.erro||"motivo não informado")}.`
+        + (r.link ? ` Enquanto isso, o link é: <br><code>${escapar(r.link)}</code>` : ""), "erro");
+      carregarConvite();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    b.disabled = false;
+  });
 
   els("op-salvar").addEventListener("click", async () => {
     const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
       perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
       perfil_id: els("op-perfil-cad").value || null,
+      perfis_extras: [...document.querySelectorAll(".op-perfil-extra:checked")].map(i=>+i.value),
       ve_todas_as_obras: els("op-todas-obras").value === "1",
       escopo_visao: els("op-escopo").value,
       ff_autorizado: els("op-ff").value === "1",
@@ -1265,9 +1524,15 @@ function desenhar(){
     <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
       <td>${u.nome}</td><td>${u.email}</td>
       <td class="dados">${u.cpf||"—"}</td><td class="dados">${u.telefone||"—"}</td>
+      {# O perfil principal e, embaixo, os ACRESCENTADOS (migração 095). Sem
+         mostrar aqui, uma pessoa com dois perfis pareceria ter só um — e
+         quem confere a lista não veria o acesso a mais. #}
       <td>${u.perfil_id
         ? escapar((PERFIS_CADASTRADOS.find(p=>p.id===u.perfil_id)||{}).nome || u.perfil_rotulo)
-        : `<span style="color:var(--tinta-suave)">${u.perfil_rotulo} <small>(cargo)</small></span>`}</td>
+        : `<span style="color:var(--tinta-suave)">${u.perfil_rotulo} <small>(cargo)</small></span>`}
+        ${(u.perfis_extras||[]).length ? `<br><small class="desc">+ ${
+          u.perfis_extras.map(x=>escapar((PERFIS_CADASTRADOS.find(p=>p.id===x)||{}).nome || x))
+            .join(" · ")}</small>` : ""}</td>
       <td><small>${u.ff_autorizado
         ? `até ${u.ff_teto_item?moeda(u.ff_teto_item):"—"} / despesa`
         : `<span style="color:var(--tinta-suave)">não usa</span>`}</small></td>

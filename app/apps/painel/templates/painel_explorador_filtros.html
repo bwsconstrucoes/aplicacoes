@@ -37,6 +37,15 @@
           <option value="receber" {% if pedido.tipo == 'receber' %}selected{% endif %}>Só a receber</option>
         </select>
       </div>
+      {# a ordem da lista — do maior para o menor valor, por exemplo (10/11/2026) #}
+      <div class="campo">
+        <label for="ordem">Ordenar por</label>
+        <select id="ordem" name="ordem">
+          {% for chave, (rotulo, _sql) in (ordens or {}).items() %}
+            <option value="{{ chave }}" {% if pedido.ordem == chave %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="campo">
         <label for="de">Data — de</label>
         <input id="de" name="de" type="date" value="{{ pedido.de }}">

@@ -45,8 +45,67 @@
 - [x] De-para do plano antigo → novo, com fila de pendências — `ab50e9a`
 - [x] Lançamento categoria-first + crítica de duplicidade na entrada — `03a0faa`
 
+- [x] **DP — os formulários que se ajustam ao caso (15/11/2026).** Desligamento
+      virou UM tipo só (os campos saem do vínculo da pessoa); readmissão
+      deixou de ser tipo (o CPF do cadastro a detecta e oferece);
+      vale-transporte virou opção da ajuda de custo; o cadastro ganhou
+      condicionais (CTPS esconde pagamento e valor do mês; prestador pede o
+      tipo de contrato) e telefone, chave Pix e valor da diária passaram a ser
+      obrigatórios; cada categoria de auxílio explica a própria conta. Mais a
+      trava do desligado que continua como prestador, e o atestado de mais de
+      15 dias abrindo o afastamento para o DP. **Cinco defeitos consertados no
+      caminho**, entre eles a caixinha de obra vazia que impedia abrir pedido
+      de cadastro desde 10/11, e a caixinha que vinha com a primeira opção já
+      escolhida. Ver `HISTORICO.md`, 15/11/2026.
+
+- [x] **IMPORTAR AS FICHAS DE REGISTRO DO FORTES (16/11/2026).** Migração 104.
+      As fichas em PDF que a contabilidade manda entram por leitura direta do
+      arquivo — **sem IA, sem custo e sem chute**: PIS, CTPS (número, série e
+      UF), data de admissão, data de demissão e o último salário do histórico
+      vão para o cadastro de quem já existe no ERP, casando pelo CPF. Nome,
+      nome do pai, nome da mãe e data de nascimento NÃO sobrescrevem nada:
+      quando diferem, viram pergunta na fila de divergências, porque o que
+      vale é o nosso cadastro. Cargo ficou de fora por decisão do dono (a
+      nomenclatura é nossa); o setor da contabilidade entrou como **centro de
+      custo da contabilidade** no cadastro da obra, ao lado do nosso código,
+      e vem também da coluna nova da planilha C. Diários. Tem "conferir sem
+      gravar" antes de qualquer gravação, e página sem camada de texto é
+      relatada como ilegível em vez de adivinhada. Criar gente nova a partir
+      da ficha existe mas vem desligado — a ficha não traz cargo, telefone
+      nem chave Pix. **O histórico de salário e de admissões NÃO vem, e está
+      decidido:** o ERP guarda o quadro de hoje e o que a contabilidade precisa
+      receber; a história fica no Fortes, que é o sistema de folha. Ver
+      `HISTORICO.md`, 16/11/2026.
+
 ## Em andamento
 
+- [ ] **DIÁRIO DE OBRA** — migrações 092, 093, **097, 098 e 099**. **Pronto:** o dia que
+      abre já preenchido (efetivo do ponto com nome e função, material de
+      Suprimentos, tempo, horário da semana), o calendário de pendências por
+      obra, a observação que só a fiscalização escreve, os três modelos de
+      papel (BWS, completo e o do órgão) numa página cada, a **lista de
+      equipamento com quantidade**, vinda do cadastro de insumos locáveis e
+      repetindo do dia anterior por botão, a **busca pelo que foi
+      relatado**, a **importação dos 1.427 diários já escritos** (em Importar,
+      com conferência antes de gravar) e a **revisão do texto por IA** —
+      nunca a observação da fiscalização. Em 13/11/2026 entraram ainda: o
+      **mês com setas ◀ ▶** no lugar do filtro de dia, as **cores do
+      calendário** com legenda (verde = escrito, vermelho = falta — o âmbar
+      saiu porque era lido como "falta dado" sem faltar nada), a **impressão
+      por período** e a **importação do cadastro das obras pela C. Diários**,
+      que é o que enche o cabeçalho do diário. Em 14/11/2026: a **ordem da
+      tela** (o que se digita em cima, o que o sistema sabe embaixo), **quem
+      assina** preenchível a partir do diário, **repetir um dia em vários** e
+      as **fotos do dia** (teto de 6, no Google Drive, com folha de anexo no
+      papel depois da folha do dia). **Falta:** a medição de chuva da estação
+      (`clima_medido` existe e está vazia), e o conceito de PARADA — sem os
+      dois não dá para responder "quantos dias de prazo posso pedir por
+      chuva". Ele também vai mandar os modelos de diário que as prefeituras
+      exigem, para conferir contra o que foi desenhado. **E o cabeçalho ainda
+      fica incompleto:** responsável técnico, CREA, ART, ordem de serviço e as
+      datas de início e término não existem em NENHUMA planilha — são digitados
+      no cadastro da obra, e sem a data de início o diário não mostra o prazo.
+      O **endereço da obra** continua sem fonte nenhuma.
 - [ ] **O CADASTRO DE PESSOAS DENTRO DO ERP** — migrações 085 a 090, não
       publicadas. Desenho em `CADASTRO_DE_PESSOAS.md`; o agente de DP em
       `AGENTE_DP.md`. **Pronto:** cargo e convenção com piso em histórico, o
