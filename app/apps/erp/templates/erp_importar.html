@@ -133,9 +133,43 @@
    A tela diz ANTES o que vai acontecer e para quantas pessoas. Importação é a
    operação em que o engano custa mais caro para desfazer, então conferir sem
    gravar é o caminho normal, não o cuidadoso. #}
+{# ⚑ DUAS PORTAS, CADA UMA COM O SEU TRABALHO — 17/11/2026.
+
+   Ele, olhando a tela que pedia o número do card para trazer dados que estão
+   na planilha: *"mas por que rodar com o card dela se quero que puxe da
+   planilha?"* Tinha razão: o card servia para achar a pessoa e baixar os
+   documentos, e a planilha tem o CPF — ela acha sozinha.
+
+   DADOS      → desta porta, pela planilha, sem card nenhum.
+   DOCUMENTOS → pela porta de baixo, com os cards (é o que a planilha não tem). #}
 <div class="cartao">
-  <div class="cartao-cab"><h3>Cadastro das pessoas (Pipefy)</h3>
-    <small>traz os documentos e preenche o que está vazio — nunca troca o que já está aqui</small></div>
+  <div class="cartao-cab"><h3>Cadastro das pessoas (planilha)</h3>
+    <small>os dados saem da aba “Dados Documentos” — sem precisar de card</small></div>
+  <div class="cartao-dica">Lê a planilha <b>Registro de Colaboradores</b>, aba
+    <b>Dados Documentos</b>, <b>ao vivo</b>: o que você editar lá vale nesta
+    mesma importação. Casa pelo <b>CPF</b> e preenche o cadastro de quem já
+    existe no ERP — <b>nunca cria gente</b>.
+    <br><br>O que a planilha manda: <b>vínculo, pagamento, tipo de contrato,
+    cargo, convenção, obra, salário, diária, auxílios, endereço, RG, nome do
+    pai e da mãe, nascimento, chave Pix</b> e o resto do cadastro.
+    <b>Nome e CPF nunca são trocados.</b></div>
+  <div class="campo" style="margin-top:10px">
+    <label for="plc-cpfs">CPF de quem você quer trazer <small>(opcional)</small></label>
+    <textarea id="plc-cpfs" rows="2" placeholder="096.767.494-86"></textarea>
+    <div class="dica">Um por linha ou separados por vírgula. <b>Comece com uma
+      ou duas pessoas</b> e confira a ficha antes de soltar o resto. Em branco,
+      vai a planilha inteira.</div>
+  </div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-conferir-plc">Conferir sem gravar</button>
+    <button class="btn" id="btn-gravar-plc" disabled>Trazer da planilha</button>
+  </div>
+  <div id="resultado-plc"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Documentos das pessoas (Pipefy)</h3>
+    <small>o que a planilha NÃO tem: os arquivos anexados ao card</small></div>
   <div id="pipefy-cadastro-situacao" class="cartao-dica">olhando…</div>
   {# ⚑ QUEM DIZ QUAIS CARDS É ELE. A primeira versão varria o pipe inteiro e
      casava pelo CPF — e trazia card CANCELADO e card REPETIDO. Ele, em
@@ -913,6 +947,127 @@ function pintarRelatorioPC(rel){
         </tr>`).join("")}</tbody></table>`);
   return linhas.join("");
 }
+
+// ⚑ A PORTA DOS DADOS — sem card (17/11/2026). Ele: *"mas por que rodar com
+// o card dela se quero que puxe da planilha?"*
+let PLC_CONFERIDO = false;
+
+function pintarRelatorioPLC(rel){
+  if (!rel) return "";
+  const pl = rel.planilha || {};
+  const L = [];
+  if (pl.erro)
+    L.push(`<div class="aviso erro"><b>NÃO consegui ler a planilha — por isso
+      nada entrou.</b><br>Planilha:
+      <span class="mono">${escapar(pl.planilha || "—")}</span> · aba
+      <b>${escapar(pl.aba || "—")}</b><br>
+      <b>O que o Google respondeu:</b> ${escapar(pl.erro)}</div>`);
+  else
+    L.push(`<div class="cartao-dica"><b>${rel.pessoas_na_planilha} pessoa(s) na
+      planilha</b>, aba <b>${escapar(pl.aba || "Dados Documentos")}</b>${
+        pl.colunas ? ` · ${pl.colunas} colunas` : ""} ·
+      <b>${(rel.atualizadas||[]).length}</b> ${rel.gravou ? "atualizada(s)" : "mudariam"}
+      · <b>${(rel.sem_cadastro||[]).length}</b> sem cadastro no ERP.
+      ${rel.gravou ? "" : "<b>Nada foi gravado.</b>"}</div>`);
+
+  if ((rel.nao_entendi || []).length)
+    L.push(`<h4>⚠️ Valores da planilha que eu não reconheci (${
+      rel.nao_entendi.length})</h4>
+      <div class="cartao-dica"><b>É aqui que o cadastro fica incompleto.</b>
+        Corrija na planilha, ou me mostre esta lista e eu acerto a
+        correlação.</div>
+      <div class="tabela-rolagem" style="max-height:280px"><table>
+      <thead><tr><th>Pessoa</th><th>Coluna</th><th>Está escrito</th>
+        <th>Campo</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.nao_entendi.map(x => `<tr><td>${escapar(x.nome || "")}</td>
+        <td class="dados">${escapar(x.coluna)}</td>
+        <td class="dados"><b>${escapar(x.valor)}</b></td>
+        <td>${escapar(x.campo)}</td>
+        <td class="desc">${escapar(x.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.atualizadas || []).length)
+    L.push(`<h4>O que ${rel.gravou ? "entrou" : "entraria"} (${
+      rel.atualizadas.length})</h4>
+      <div class="tabela-rolagem" style="max-height:360px"><table>
+      <thead><tr><th>Pessoa</th><th>Campo</th><th>Valor da planilha</th></tr></thead>
+      <tbody>${rel.atualizadas.flatMap(p => Object.entries(p.campos).map(
+        ([k, v]) => `<tr><td>${escapar(p.nome)}</td>
+          <td>${escapar((rel.rotulos||{})[k] || k)}</td>
+          <td class="dados">${escapar(v)}</td></tr>`)).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.sem_cadastro || []).length)
+    L.push(`<h4>Na planilha e sem cadastro no ERP (${rel.sem_cadastro.length})</h4>
+      <div class="cartao-dica">A importação <b>nunca cria gente</b>. Cadastre
+        em Pessoal e rode de novo.</div>
+      <div class="tabela-rolagem" style="max-height:220px"><table>
+      <thead><tr><th>Pessoa</th><th>CPF</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.sem_cadastro.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+        <td class="dados">${documento(x.cpf)}</td>
+        <td class="desc">${escapar(x.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.recusadas || []).length)
+    L.push(`<div class="aviso erro" style="margin-top:10px">
+      <b>Recusadas pela conferência do cadastro (${rel.recusadas.length})</b>
+      <div class="tabela-rolagem" style="max-height:180px"><table>
+      <thead><tr><th>Pessoa</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.recusadas.map(x => `<tr><td>${escapar(x.nome)}</td>
+        <td class="desc">${escapar(x.motivo)}</td></tr>`).join("")}
+      </tbody></table></div></div>`);
+  return L.join("");
+}
+
+async function mandarCadastroPlanilha(gravar){
+  const onde = els("resultado-plc");
+  const corpo = {gravar: !!gravar, cpfs: els("plc-cpfs").value};
+  ["btn-conferir-plc", "btn-gravar-plc"].forEach(b => {
+    if (els(b)) els(b).disabled = true; });
+  onde.innerHTML = `<div class="cartao-dica">Na fila — a leitura da planilha
+    leva alguns segundos.</div><div id="andamento-plc"></div>`;
+  try {
+    const d = await api("/erp/api/importar/planilha-cadastro",
+                        {method:"POST", body: JSON.stringify(corpo),
+                         headers: {"Content-Type":"application/json"}});
+    const fim = await acompanharTarefa(d.tarefa.id,
+                                       {alvo: "andamento-plc", intervalo: 2000});
+    if (!fim) {
+      aviso("mensagem", "O trabalho continua rodando — veja o andamento em "
+          + "Configurações.", "info");
+      return;
+    }
+    if (fim.situacao !== "CONCLUIDA") {
+      PLC_CONFERIDO = false;
+      aviso("mensagem", "Não terminou: " + (fim.erro || "motivo não informado"),
+            "erro");
+      return;
+    }
+    const rel = (fim.resultado || {}).relatorio;
+    onde.innerHTML = pintarRelatorioPLC(rel);
+    PLC_CONFERIDO = !gravar;
+    aviso("mensagem", (fim.resultado || {}).resumo || "Terminado.",
+          gravar ? "ok" : "info");
+  } catch(e){
+    PLC_CONFERIDO = false;
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  } finally {
+    if (els("btn-conferir-plc")) els("btn-conferir-plc").disabled = false;
+    // Gravar só depois de conferir: é a mesma trava da importação de cards.
+    if (els("btn-gravar-plc")) els("btn-gravar-plc").disabled = !PLC_CONFERIDO;
+  }
+}
+
+if (els("btn-conferir-plc"))
+  els("btn-conferir-plc").addEventListener("click", () => mandarCadastroPlanilha(false));
+if (els("btn-gravar-plc"))
+  els("btn-gravar-plc").addEventListener("click", () => mandarCadastroPlanilha(true));
+if (els("plc-cpfs"))
+  els("plc-cpfs").addEventListener("input", () => {
+    PLC_CONFERIDO = false;
+    if (els("btn-gravar-plc")) els("btn-gravar-plc").disabled = true;
+  });
 
 async function mandarCadastroPipefy(gravar){
   const onde = els("resultado-pc");

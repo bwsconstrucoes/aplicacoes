@@ -167,3 +167,111 @@ def test_valor_que_eu_NAO_conheco_e_RELATADO_e_nao_chutado():
     d = _linha(**{"Tipo de Contrato": "Alguma Coisa Nova Que Inventaram"})
     assert "tipo_contrato" not in d
     assert any("Alguma Coisa Nova" in x["valor"] for x in d["_nao_entendi"])
+
+
+# ---------------------------------------------------------------------------
+# IMPORTAR DIRETO DA PLANILHA — sem card (17/11/2026)
+#
+# Ele: *"mas por que rodar com o card dela se quero que puxe da planilha?"*
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def mundo(sessao_real):
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.db.models.cadastros import (Cargo, Convencao, Obra,
+                                                  PerfilUsuario as P, Usuario)
+    dp = Usuario(nome="dp-planilha", email="dp@planilha.teste", ativo=True,
+                 senha_hash=gerar_hash("senha-de-teste-123"),
+                 perfil=P.DEPARTAMENTO_PESSOAL, telefone="5585900000011")
+    obra = Obra(codigo="GOIANAFLEX", nome="Obra da planilha", status="ATIVA")
+    sessao_real.add_all([dp, obra, Cargo(nome="ENGENHEIRO CIVIL", ativo=True),
+                         Convencao(nome="Sem Convenção")])
+    sessao_real.flush()
+    pessoa = svc.salvar(sessao_real, {
+        "cpf": "09676749486", "nome": "Amanda Marques da Silva",
+        "vinculo": "CTPS"}, dp)
+    sessao_real.flush()
+    return {"s": sessao_real, "dp": dp, "obra": obra, "pessoa": pessoa}
+
+
+def _aba(**campos):
+    """Uma planilha de mentira com as COLUNAS E VALORES de verdade."""
+    base = {"CPF (Cadastro de Pessoa Física)": "096.767.494-86",
+            "Nome Completo": "AMANDA MARQUES DA SILVA",
+            "Tipo de Cadastro Radio horizontal": "Prestador de Serviço",
+            "Tipo de Contrato": "PJ",
+            "Cargo [ ]": "ENGENHEIRO CIVIL",
+            "Convenção": "Sem Convenção",
+            "Código da Obra": "GOIANAFLEX",
+            "Salário": "4.000,00", "Valor Diária": "100,00",
+            "Município": "RECIFE", "UF (Endereço)": "PE"}
+    base.update(campos)
+    cab = pl.cabecalho_de(list(base))
+    lido = pl.ler_linha(cab, list(base.values()))
+    return lambda: {"pessoas": {pl._digitos(base["CPF (Cadastro de Pessoa Física)"]): lido},
+                    "erro": "", "planilha": "(teste)", "aba": "Dados Documentos",
+                    "linhas": 1, "colunas": len(base)}
+
+
+@pytest.mark.banco
+def test_a_planilha_enche_o_cadastro_SEM_card_nenhum(mundo):
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True, ler=_aba())
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert mundo["pessoa"].vinculo == "PRESTADOR"
+    assert mundo["pessoa"].tipo_contrato == "PJ"
+    assert str(mundo["pessoa"].salario) == "4000.00"
+    assert mundo["pessoa"].obra_id == mundo["obra"].id
+    assert mundo["pessoa"].cargo_id is not None
+    assert mundo["pessoa"].convencao_id is not None
+    assert r["atualizadas"] and not r["nao_entendi"]
+
+
+@pytest.mark.banco
+def test_conferir_sem_gravar_nao_toca_no_cadastro(mundo):
+    antes = mundo["pessoa"].vinculo
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=False, ler=_aba())
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert mundo["pessoa"].vinculo == antes
+    # …mas o relatório já diz o que mudaria.
+    assert any("vinculo" in p["campos"] for p in r["atualizadas"])
+
+
+@pytest.mark.banco
+def test_a_importacao_NUNCA_cria_gente(mundo):
+    """Criar cadastro em massa a partir de planilha é o tipo de engano que se
+    descobre depois de 3.000 linhas."""
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
+                                "Nome Completo": "NINGUEM CONHECIDO"}))
+    assert [x["cpf"] for x in r["sem_cadastro"]] == ["11144477735"]
+    assert not r["atualizadas"]
+
+
+@pytest.mark.banco
+def test_cargo_e_obra_que_nao_existem_aqui_sao_RELATADOS(mundo):
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=_aba(**{"Cargo [ ]": "CARGO QUE NAO EXISTE",
+                                "Código da Obra": "OBRANENHUMA"}))
+    escritos = " | ".join(x["valor"] for x in r["nao_entendi"])
+    assert "CARGO QUE NAO EXISTE" in escritos and "OBRANENHUMA" in escritos
+
+
+@pytest.mark.banco
+def test_so_os_CPFs_pedidos_entram(mundo):
+    """É como se começa: duas ou três pessoas, não 3.600."""
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=False,
+                    cpfs=["000.000.000-00"], ler=_aba())
+    assert not r["atualizadas"]
+    assert any(x["motivo"] == "não está na planilha" for x in r["sem_cadastro"])
+
+
+@pytest.mark.banco
+def test_falha_ao_ler_a_planilha_VOLTA_ESCRITA(mundo):
+    """Silêncio não é resultado: o erro do Google vai para a tela."""
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=lambda: {"pessoas": {}, "erro": "credencial faltando",
+                                 "planilha": "x", "aba": "Dados Documentos",
+                                 "linhas": 0, "colunas": 0})
+    assert r["planilha"]["erro"] == "credencial faltando"
+    assert not r["atualizadas"]
