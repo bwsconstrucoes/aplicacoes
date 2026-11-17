@@ -126,7 +126,7 @@ def test_so_confere_coluna_de_texto(google):
 def test_a_gravacao_nao_roda_mais_em_thread_solta():
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core._gravar_planilha)
+    fonte = inspect.getsource(core._gravar_planilha_em_lote)
     assert 'Thread' not in fonte, 'gravação em thread solta morre com o trabalhador'
     assert 'execute_spsbd_updates' in fonte
 
@@ -134,8 +134,8 @@ def test_a_gravacao_nao_roda_mais_em_thread_solta():
 def test_o_fluxo_grava_de_forma_confirmada():
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
-    assert '_gravar_planilha(plan, payload)' in fonte
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
+    assert '_gravar_planilha_em_lote(' in fonte
     assert '_executar_sheets_async' not in fonte
 
 
@@ -143,7 +143,7 @@ def test_tenta_duas_vezes_antes_de_desistir(google, monkeypatch):
     monkeypatch.setattr('app.apps.baixabradesco.core.time.sleep', lambda s: None)
     aba = google(_AbaFalsa(['7001'], gravar_de_verdade=False))
 
-    from app.apps.baixabradesco.core import _gravar_planilha
+    from app.apps.baixabradesco.core import _gravar_planilha_em_lote
     from app.apps.baixabradesco.models import ExecutionPlan, ExtractedReceipt, MatchResult
 
     plano = ExecutionPlan(receipt=ExtractedReceipt(filename='x.pdf'),
@@ -152,9 +152,9 @@ def test_tenta_duas_vezes_antes_de_desistir(google, monkeypatch):
     monkeypatch.setattr('app.apps.baixabradesco.core.enqueue_failure',
                         lambda *a, **k: {'ok': True})
 
-    r = _gravar_planilha(plano, {})
+    r = _gravar_planilha_em_lote([plano], {})
     assert r['ok'] is False
-    assert r['tentativas'] == 2
+    assert plano.responses['sheets']['tentativas'] == 2
     assert aba.gravacoes == 2
 
 
@@ -163,7 +163,7 @@ def test_falha_na_gravacao_vai_para_a_fila(google, monkeypatch):
     google(_AbaFalsa(['7001'], gravar_de_verdade=False))
     enfileirados = []
 
-    from app.apps.baixabradesco.core import _gravar_planilha
+    from app.apps.baixabradesco.core import _gravar_planilha_em_lote
     from app.apps.baixabradesco.models import ExecutionPlan, ExtractedReceipt, MatchResult
     monkeypatch.setattr('app.apps.baixabradesco.core.enqueue_failure',
                         lambda plan, etapa, tipo, msg, payload: enfileirados.append(etapa) or {'ok': True})
@@ -171,7 +171,7 @@ def test_falha_na_gravacao_vai_para_a_fila(google, monkeypatch):
     plano = ExecutionPlan(receipt=ExtractedReceipt(filename='x.pdf'),
                           match=MatchResult(status='localizado', id='7001'))
     plano.sheets_updates = updates('7001')
-    _gravar_planilha(plano, {})
+    _gravar_planilha_em_lote([plano], {})
 
     assert enfileirados == ['sheets']
     assert plano.responses['fila_sheets']['ok'] is True
@@ -179,13 +179,13 @@ def test_falha_na_gravacao_vai_para_a_fila(google, monkeypatch):
 
 def test_o_resultado_da_gravacao_entra_na_resposta(google):
     google(_AbaFalsa(['7001']))
-    from app.apps.baixabradesco.core import _gravar_planilha
+    from app.apps.baixabradesco.core import _gravar_planilha_em_lote
     from app.apps.baixabradesco.models import ExecutionPlan, ExtractedReceipt, MatchResult
 
     plano = ExecutionPlan(receipt=ExtractedReceipt(filename='x.pdf'),
                           match=MatchResult(status='localizado', id='7001'))
     plano.sheets_updates = updates('7001')
-    _gravar_planilha(plano, {})
+    _gravar_planilha_em_lote([plano], {})
     assert plano.responses['sheets']['ok'] is True
 
 
@@ -195,7 +195,7 @@ def test_a_fila_e_drenada_junto_com_o_lote():
     """Antes ela só andava se alguém chamasse a rota à mão."""
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
     assert "_drenar_fila(payload)" in fonte
 
 

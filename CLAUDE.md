@@ -22,6 +22,51 @@ Isso muda a resposta, não o cuidado com o código.
   verificado são decisão de negócio — e a decisão é dele. Não esconder atrás de
   "está pronto".
 
+## NÃO FAZER sem pedir é regra. NÃO FALAR não é.
+
+Pedido do dono em 17/11/2026, com todas as letras: **"não deixe de me
+questionar visando a otimização."**
+
+Veio depois de ele mesmo apontar o óbvio que estava na cara e passou meses sem
+ninguém dizer: a baixa de comprovantes gastava **três idas ao Google por
+comprovante** (noventa num lote de trinta) e **uma chamada ao Pipefy por card**.
+A cobrança dele foi justa: *"por que você não já sugeriu esse tipo de coisa? É
+muita ineficiência de algo óbvio."*
+
+**Por que aconteceu, para não repetir:** cada sessão foi atrás do que estava na
+frente — "a fila tem 2.270 linhas", "a fila tardia está travando tudo", "por que
+ler a planilha inteira". Todos consertos de verdade. Mas ninguém parou para
+fazer a conta mais simples que existe: **quantas idas à internet custa UMA
+operação, e quantas custa um lote dela?** O número já estava escrito num
+comentário do próprio código. Faltou multiplicar em voz alta.
+
+**A confusão que causou isso, e é ela que a regra corrige:** "não fazer o que
+não foi pedido" (regra certa, ele já cobrou) foi tratada como se fosse "não
+falar o que não foi perguntado" (regra que não existe). São coisas diferentes:
+
+- **Fazer** sem pedir custa trabalho refeito e mexe no sistema dele.
+- **Falar** custa três linhas de leitura, e a decisão continua sendo dele.
+
+**O que fazer, então:**
+
+1. Ao mexer numa área, **contar o custo da operação inteira antes** — quantas
+   chamadas de rede, quantas leituras de planilha, quantas por item e quantas
+   por lote — e dizer o que a conta mostrou, **mesmo que não vá mexer naquilo**.
+   Relatório, não obra.
+2. Ineficiência óbvia encontrada de passagem **se relata na resposta**, em duas
+   ou três linhas, com o número. Não se conserta por conta própria e não se
+   guarda em silêncio.
+3. Vale para os três custos que ele sente: **tempo de resposta**, **cota do
+   Google** (dividida por todas as áreas) e **as quatro linhas de atendimento**
+   do serviço.
+
+**E a outra metade, que é dele:** as maiores otimizações desta base vieram de
+informação que só o dono tinha — "a SP está em SPsAgendar em quase 100% dos
+casos" (cortou 52 mil linhas de leitura), "a coluna AC é a linha na SPsBD", "a
+resposta do Make eu não uso para nada" (derrubou a espera inteira). O código se
+lê; o negócio, não. **Na dúvida sobre como algo é usado na prática, perguntar
+sai mais barato que supor.**
+
 ## VÁRIAS TAREFAS NUM PEDIDO SÓ: vá até o fim, sem voltar no meio
 
 **Esta é a regra que mais foi quebrada, e o dono já a pediu mais de uma vez.**

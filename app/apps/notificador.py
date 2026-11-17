@@ -69,6 +69,7 @@ from app.apps.telegram.telegram_bot import (
     _lookup_chat_id,
     _tg_enviar,
     _tg_enviar_arquivo,
+    motivo_da_ultima_falha as _motivo_tg,
 )
 
 # ---------------------------------------------------------------------------
@@ -190,7 +191,7 @@ def _tg_notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
 
     ok = _tg_enviar(chat_id, mensagem)
     return {"ok": ok, "chat_id": chat_id,
-            "detalhe": "ok" if ok else "falha no envio"}
+            "detalhe": "ok" if ok else (_motivo_tg() or "falha no envio")}
 
 
 # ---------------------------------------------------------------------------

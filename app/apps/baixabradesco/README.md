@@ -31,6 +31,56 @@ substituiu esse cenário.
 Ninguém abre tela aqui: **não existe interface**. A aplicação só responde a
 chamadas de máquina.
 
+### ⚠️ O Make NÃO espera a baixa terminar — 17/11/2026
+
+`POST /executar` responde **na hora**, com `recebido: true`, e a baixa continua
+rodando no servidor. Quem quiser o resultado olha o **Telegram**: ao terminar,
+o robô manda uma linha por comprovante (arquivo, página, valor, SP, o que
+aconteceu).
+
+Foi decisão do dono, e o motivo era concreto: a baixa de um lote grande leva
+minutos, o módulo HTTP do Make desiste em 300 segundos e o cenário tem um
+"break" que **remanda o lote inteiro** — o que fazia duas execuções do mesmo
+arquivo rodarem juntas, ocupando duas das quatro linhas de atendimento do
+serviço. Ele foi claro: *"no Make eu não preciso de resposta para cada baixa.
+O cenário manda e acabou-se."*
+
+Três coisas sustentam isso:
+
+- **O lote é gravado em disco antes da resposta** e só sai quando a baixa
+  termina. Se o trabalhador do gunicorn renovar no meio, o arquivo continua lá
+  e o disparo periódico termina o serviço. ⚠️ Uma **publicação** apaga a `/tmp`
+  inteira — contra isso não há proteção, e o Make não reenvia porque já recebeu
+  "ok".
+- **Lote repetido é recusado na porta** (`ja_em_andamento: true`), pela
+  impressão digital dos arquivos. Nada é refeito.
+- **No máximo 6 lotes ao mesmo tempo.** Acima disso a rota responde
+  `recusado_por_lotacao` e pede para reenviar em alguns minutos.
+
+**Isto vale SÓ para a rota.** Quem chama a função por dentro do serviço — a
+tela do Análise de SPs e a fila de adiados — continua recebendo o resultado
+completo, porque as duas dependem dele (uma para mostrar "baixado", a outra
+para decidir se apaga o adiado). Nenhuma das duas ocupa linha de atendimento,
+então nenhuma tem o problema que isto resolve.
+
+Para acompanhar um lote em andamento: `GET /api/baixabradesco/fila-resumo`
+traz `baixas_em_andamento` com os arquivos e há quantos segundos cada um roda.
+
+### A execução é por fase, não por comprovante
+
+Também de 17/11/2026, e pelo mesmo motivo (tempo): cada etapa trata o lote
+inteiro de uma vez.
+
+| Etapa | Custo por lote de 30 comprovantes |
+|---|---|
+| Planilha SPsBD | **3 idas ao Google** (eram 3 por comprovante = 90) |
+| Pipefy | **6 mutations**, de 5 cards cada (eram 30) |
+| Impressões digitais | **1 gravação** (eram 30) |
+| Omie | **60 a 90 chamadas** — a API baixa um título por chamada, não dá para agrupar |
+
+O que falha vai para a fila **sozinho**: um comprovante que o Pipefy recusou
+não leva os outros quatro do mesmo pedaço junto.
+
 ### Senha de entrada
 
 Todas as rotas conferem a senha `BAIXABRADESCO_SECRET`, que vem no corpo do

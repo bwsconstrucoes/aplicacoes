@@ -36,6 +36,14 @@ no próprio código.
 
 ---
 
+## 17/11/2026 — "Falhou" passa a dizer POR QUÊ
+
+O dono viu dois avisos da baixa Bradesco como "Falhou" no Telegram (13/11 e 16/11) e perguntou o motivo. A tela não
+sabia: o robô recebia a resposta do Telegram, escrevia só no log do servidor e mandava "falha no envio" ao registro.
+Agora `_tg_enviar` guarda a recusa traduzida (bloqueou o robô, conta apagada, conversa que não existe mais, excesso de
+mensagens) e o notificador a anota na coluna de detalhe. Recusa definitiva (403, chat não encontrado) não é mais
+repetida três vezes. "Sem destinatário" continua sendo outra coisa: a pessoa não tem cadastro.
+
 ## 14/11/2026 (tarde) — REGRA RÍGIDA, FIM DAS PLANILHAS, PAINEL E A FICHA DA PESSOA
 
 O dono perguntou se o número do Telegram era conferido com o do cadastro. Era,

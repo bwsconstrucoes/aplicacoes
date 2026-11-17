@@ -32,7 +32,10 @@ def executar():
         if not _authorized(payload):
             return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
 
-        result = processar_baixabradesco(payload)
+        # `em_segundo_plano=True`: esta rota é a porta do Make, e ele não espera
+        # mais a resposta — decisão do dono em 17/11/2026. A baixa continua no
+        # servidor e o relatório de cada comprovante chega no Telegram.
+        result = processar_baixabradesco(payload, em_segundo_plano=True)
         return jsonify(result)
 
     except ValueError as e:
@@ -111,7 +114,16 @@ def fila_resumo_route():
             if segredo and request.args.get('secret') != segredo \
                     and request.headers.get('X-BaixaBradesco-Secret') != segredo:
                 return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
-        return jsonify(resumo_fila())
+        resumo = resumo_fila()
+        # O que está sendo baixado NESTE momento. É por aqui que se vê, do
+        # celular, se um lote ainda está rodando — já que o Make não espera
+        # mais a resposta.
+        try:
+            from .core import lotes_em_andamento
+            resumo['baixas_em_andamento'] = lotes_em_andamento()
+        except Exception as e:
+            resumo['baixas_em_andamento'] = {'erro': str(e)[:200]}
+        return jsonify(resumo)
     except Exception as e:
         return jsonify({
             'ok': False,
