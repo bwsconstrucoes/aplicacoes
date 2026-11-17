@@ -351,3 +351,43 @@ def test_a_ficha_do_colaborador_tem_a_aba_de_mensagens():
     assert "async function mensagensDaPessoa(" in (raiz / "erp/templates/erp_base.html").read_text(encoding="utf-8")
     assert "mensagensDaPessoa(alvo, FICHA_ID)" in (raiz / "erp/templates/erp_colaboradores.html").read_text(encoding="utf-8")
     assert "mensagensDaPessoa(els(\"dp-mensagens\"), p.id)" in (raiz / "ponto/templates/ponto/gestao.html").read_text(encoding="utf-8")
+
+
+
+# ---------------------------------------------------------------------------
+# O motivo da falha chega ao registro (17/11/2026: "essas mensagens, por que
+# será que falharam?" — a tela só dizia "Falhou")
+# ---------------------------------------------------------------------------
+class _Resp:
+    def __init__(self, status, texto):
+        self.status_code, self.text = status, texto
+
+    def json(self):
+        return {}
+
+
+@pytest.mark.parametrize("status, texto, parte", [
+    (403, '{"description":"Forbidden: bot was blocked by the user"}', "bloqueou o robô"),
+    (403, '{"description":"Forbidden: user is deactivated"}', "foi apagada"),
+    (400, '{"description":"Bad Request: chat not found"}', "não acha esta conversa"),
+    (500, "erro interno", "HTTP 500"),
+])
+def test_a_recusa_do_telegram_vira_motivo_em_portugues(monkeypatch, status, texto, parte):
+    from app.apps.telegram import telegram_bot as tb
+    chamadas = []
+    monkeypatch.setattr(tb.requests, "post", lambda *a, **k: chamadas.append(1) or _Resp(status, texto))
+    monkeypatch.setattr(tb.time, "sleep", lambda s: None)
+    assert tb._tg_enviar(123, "oi") is False
+    assert parte in tb.motivo_da_ultima_falha()
+    if status in (400, 403):
+        assert len(chamadas) == 1          # recusa definitiva: não insiste
+
+
+def test_o_notificador_anota_o_motivo_e_nao_falha_no_envio(monkeypatch):
+    from app.apps.telegram import telegram_bot as tb
+    monkeypatch.setattr(tb.requests, "post",
+                        lambda *a, **k: _Resp(403, '{"description":"Forbidden: bot was blocked by the user"}'))
+    monkeypatch.setattr(notificador, "_tg_enviar", tb._tg_enviar)
+    r = notificador._tg_notificar(chat_id=55, mensagem="BaixaBradesco: 1 comprovante NÃO foi baixado")
+    assert r["ok"] is False and "bloqueou o robô" in r["detalhe"]
+    assert notificador._status_tg(r) == "FALHOU"
