@@ -8586,10 +8586,12 @@ def tela_comprovantes():
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
 
+    # A LISTA COM FILTROS (18/11/2026) substitui a tabela de páginas dentro de cada
+    # envio: eram 15 consultas (uma por envio) a cada abertura da tela; agora são 3.
+    filtros = comprovantes.filtros_da_tela(request.args)
     try:
         historico = comprovantes.historico()
-        for lote in historico:
-            lote["itens"] = comprovantes.itens_do_lote(lote["id"])
+        lista = comprovantes.listar(filtros)
     except Exception as e:  # noqa: BLE001 — migração 006 ainda não aplicada
         logger.exception("Análise de SPs: falhou ler o histórico de comprovantes")
         historico = []
@@ -8609,6 +8611,7 @@ def tela_comprovantes():
     return render_template(
         "analisesps_comprovantes.html", aba="comprovantes", base=base,
         historico=historico, andamento=tarefas.estado("comprovantes"),
+        lista=lista, filtros=filtros, dias_padrao=comprovantes.DIAS_PADRAO,
         por_leva=comprovantes.POR_LEVA,
         maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
         maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
@@ -8616,6 +8619,26 @@ def tela_comprovantes():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/comprovantes/<int:lote_id>/pagina/<int:pagina>")
+@exige_consulta
+def pagina_do_comprovante(lote_id: int, pagina: int):
+    """Uma página do PDF de um envio, enquanto ele ainda está no servidor (18/11/2026)."""
+    from flask import Response
+
+    from . import comprovantes
+    try:
+        conteudo = comprovantes.pagina_do_servidor(lote_id, pagina)
+    except comprovantes.ErroDeComprovante as e:
+        return render_template("analisesps_erro.html", titulo="Página não encontrada",
+                               mensagem=str(e)), 404
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Comprovantes: falhou abrir a página %s do lote %s", pagina, lote_id)
+        return render_template("analisesps_erro.html", titulo="Não consegui abrir a página",
+                               mensagem=str(e)), 500
+    return Response(conteudo, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="comprovante-{lote_id}-pag-{pagina}.pdf"'})
 
 
 @bp.route("/comprovantes/enviar", methods=["POST"])

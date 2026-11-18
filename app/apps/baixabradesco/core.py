@@ -312,6 +312,7 @@ def _processar_lote(payload: Dict[str, Any]) -> Dict[str, Any]:
     plans: List[ExecutionPlan] = []
     card_ids_para_get: List[str] = []
     recusados: List[Dict[str, Any]] = []   # páginas que o banco não efetivou
+    sem_pagamento: List[Dict[str, Any]] = []  # rodapé, continuação, página em branco
     duplicados: List[Dict[str, Any]] = []  # páginas que já haviam sido baixadas
     completados: List[Dict[str, Any]] = []  # reenvios aceitos para concluir baixa pela metade
 
@@ -327,6 +328,17 @@ def _processar_lote(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         for page_num, text in pages:
             if not as_string(text):
+                # ⚠️ ANTES ISTO SAÍA EM SILÊNCIO ABSOLUTO, e silêncio aqui é
+                # perigoso: página sem texto nenhum é, quase sempre, comprovante
+                # FOTOGRAFADO ou escaneado — e o robô não lê imagem (não há OCR).
+                # O comprovante não virava baixa e ninguém ficava sabendo.
+                sem_pagamento.append({
+                    'arquivo': att.filename,
+                    'pagina': page_num,
+                    'motivo': ('Página sem texto nenhum — provavelmente foto ou '
+                               'documento escaneado. O robô não lê imagem: '
+                               'reenvie o comprovante em PDF do banco.'),
+                })
                 continue
 
             # Cada banco escreve de um jeito. O Sicredi, por exemplo, põe o
@@ -349,6 +361,17 @@ def _processar_lote(payload: Dict[str, Any]) -> Dict[str, Any]:
                     'arquivo': att.filename,
                     'pagina': page_num,
                     'motivo': 'O banco não efetivou a operação (comprovante recusado).',
+                })
+                continue
+
+            # Página que não é comprovante: rodapé do banco, continuação,
+            # folha de condições. Sai AQUI, antes de custar qualquer coisa.
+            if _pagina_sem_pagamento(rec, text):
+                sem_pagamento.append({
+                    'arquivo': att.filename,
+                    'pagina': page_num,
+                    'motivo': ('Página sem nenhum dado de pagamento — rodapé ou '
+                               'continuação do comprovante. Não foi tentada.'),
                 })
                 continue
 
@@ -548,12 +571,14 @@ def _processar_lote(payload: Dict[str, Any]) -> Dict[str, Any]:
             'nao_localizados': sum(1 for p in plans if p.match.status == 'nao_localizado'),
             'pendentes_validacao': sum(1 for p in plans if p.match.status == 'pendente_validacao'),
             'recusados_nao_efetivados': len(recusados),
+            'paginas_sem_pagamento': len(sem_pagamento),
             'duplicados_ja_baixados': len(duplicados),
             'baixas_concluidas': len(completados),
             'google_error': google_error,
         },
         'fases': fases,
         'recusados': recusados,
+        'paginas_sem_pagamento': sem_pagamento,
         'duplicados': duplicados,
         'completados': completados,
         'planos': [p.to_dict() for p in plans],
@@ -929,6 +954,48 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
 # a resposta ao Make tem 300 segundos de teto e o comprovante deste lote é a
 # prioridade — a fila é sobre lotes passados.
 LIMITES_LOTE = {'omie': 3, 'sheets': 3, 'pipefy': 2, 'zapi': 2}
+
+
+# Quanto texto uma página precisa ter para ser levada a sério como comprovante.
+# A segunda página do boleto do Sicredi tem 106 caracteres ("SAC 0800 … Ouvidoria
+# 0800 …"); um comprovante de verdade tem centenas.
+TEXTO_MINIMO_DE_COMPROVANTE = 400
+
+
+def _pagina_sem_pagamento(rec, texto: str) -> bool:
+    """A página traz algum dado de pagamento, ou é rodapé/continuação?
+
+    ⚠️ ESTA FUNÇÃO DECIDE NÃO TENTAR UMA PÁGINA, então ela só responde "sim"
+    quando NADA que identifique um pagamento foi lido: nem valor, nem data, nem
+    número da SP, nem autenticação, nem código de barras, nem conta de origem,
+    nem chave PIX, nem documento de quem recebeu. Faltando todos esses, aquela
+    página não poderia virar baixa de jeito nenhum — o próprio
+    `_decidir_execucao` a barraria por "campos mínimos ausentes".
+
+    O caso que motivou, relatado pelo dono em 18/11/2026 com o arquivo na mão:
+    *"alguns comprovantes como esse saem em duas páginas e o sistema tenta a
+    segunda página."* O boleto pago pelo Sicredi sai em duas folhas, e a segunda
+    tem só os telefones de SAC e ouvidoria. O estrago era duplo:
+
+    1. Virava uma linha "NÃO localizado" no relatório, para todo comprovante
+       desses — barulho que escondia o que importa.
+    2. E, PIOR: por ser "não localizada", mandava o robô ler as **52 mil linhas
+       da SPsBD** à procura de uma SP já paga com Omie pendente. Uma página de
+       rodapé disparava a leitura mais cara que este sistema tem.
+
+    O teto de tamanho é a segunda trava, e é ela que protege o caso contrário:
+    página CHEIA de texto que o leitor não entendeu continua indo ao relatório
+    como "não baixou", porque ali pode haver pagamento de verdade precisando de
+    olho humano.
+    """
+    if (as_string(rec.valor_pago) or as_string(rec.data_pagamento)
+            or as_string(rec.id_pipefy) or as_string(rec.identificador)
+            or as_string(rec.codigo_barras) or as_string(rec.conta_origem)
+            or as_string(rec.chave_pix_destino)
+            or as_string(rec.documento_recebedor)):
+        return False
+    limpo = ' '.join(as_string(texto).split())
+    return len(limpo) <= TEXTO_MINIMO_DE_COMPROVANTE
 
 
 def _executar_em_fases(plans: List[ExecutionPlan], card_data: dict, payload: dict, gc,
