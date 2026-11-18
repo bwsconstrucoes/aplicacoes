@@ -747,6 +747,49 @@ def gerar_via_sp(calculado: dict, quem: str = "", forcar: bool = False) -> dict:
             "resumo": {"pessoas": pessoas, "total": total}}
 
 
+def montado_do_lote(lote: dict, sp_por_cpf: dict, conta: str) -> dict:
+    """O relatório de UMA conta do pagamento via SP refeito a partir do LOTE da
+    geração (o que foi pago, e não a conta de hoje), com o NÚMERO DA SP de cada
+    pessoa ao lado do nome (dono, 18/11/2026: *"dentro do relatório em PDF é
+    interessante que seja embutido o número da SP (…) às vezes a gente abre o
+    relatório e vê"*)."""
+    via = lote.get("via") or SP
+    ano, mes, periodo = int(lote["ano"]), int(lote["mes"]), lote.get("periodo") or ""
+    linhas = []
+    for p in lote.get("pessoas") or []:
+        if " ".join(str(p.get("conta") or "").split()) != conta:
+            continue
+        rateio = p.get("rateio") or []
+        sp = sp_por_cpf.get(str(p.get("cpf") or ""))
+        ajuste = Decimal(str(p.get("ajuste") or 0))
+        linhas.append({
+            "entra": True, "cpf": p["cpf"],
+            "nome_na_tela": (p.get("nome") or cpf_bonito(p["cpf"]))
+                            + (f" · SP {sp}" if sp else ""),
+            "cargo": "", "fase": "",
+            "por_obra": [{"obra": x["obra"], "dias": 0, "valor": x["valor"]} for x in rateio]
+                        or [{"obra": "", "dias": 0, "valor": p["valor"]}],
+            "por_dia": [], "dias_no_ponto": 0, "valor": p["valor"], "valor_por_dia": None,
+            "obras_resumo": " / ".join(f"{x['obra']} {formatos.moeda(x.get('percentual'))}%"
+                                       for x in rateio) or "-",
+            "obra_do_cadastro": "", "conta_sp": p.get("conta") or "",
+            "contas": sorted({x["conta"] for x in rateio if x.get("conta")}),
+            "situacao_rotulo": ((f"SP {sp} · " if sp else "")
+                                + f"{p.get('tipo_contrato') or '—'} · mês "
+                                f"{formatos.moeda(p.get('valor_mes'))}"
+                                + (f" · ajuste {formatos.moeda(ajuste)}"
+                                   + (f" ({p['ajuste_motivo']})" if p.get("ajuste_motivo") else "")
+                                   if ajuste else ""))})
+    rotulo = ROTULO_DA_VIA.get(via, ROTULO_DA_VIA[SP])
+    competencia = f"{mes:02d}/{ano}"
+    return {"titulo": f"{rotulo} {competencia} — conta {conta or 'sem conta'}",
+            "prefixo_arquivo": rotulo,
+            "folha": {"competencia": competencia,
+                      "rotulo_do_tipo": ROTULO_DO_PERIODO.get(periodo, periodo)},
+            "pessoas": linhas, "filtros_texto": [], "filtros": {},
+            "totais": {"pessoas": len(linhas)}, "fechamento": None}
+
+
 # ---------------------------------------------------------------------------
 # O RELATÓRIO — o mesmo das outras folhas, com o rateio de cada pessoa
 # ---------------------------------------------------------------------------

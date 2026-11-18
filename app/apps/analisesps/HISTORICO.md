@@ -12244,6 +12244,55 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 272 — Arquivos gerados: todas as SPs, uma por linha, filtros, e o nº da SP no PDF do via SP (18/11/2026)
+
+- O dono, olhando o pagamento via SP: *"na parte das SPs, não estão sendo exibidas todas
+  as SPs. Só uma parte (…) o sistema está ocultando algumas (…) dentro do relatório em PDF
+  é interessante que seja embutido o número da SP (…) coloca uma quebra de linha para cada
+  SP (…) não consegue fazer filtro nessa tela (…) por tipo, por data, a competência, o tipo
+  da verba."*
+- **Causa das SPs sumidas:** o registro do arquivo (`folha_arquivo_gerado.card_pipefy`)
+  guardava os números até 60 caracteres — CINCO SPs (`_ids_que_cabem` e `registrar_card`).
+  No via SP uma conta tem dezenas. A coluna é TEXT; o teto foi a 4000. As gerações antigas,
+  já cortadas, são lidas do ANDAMENTO do lançamento (`folha_cards.sps_dos_arquivos`, uma
+  consulta para a tela inteira), que sempre teve a lista inteira. O nome de quem recebe vai
+  junto (gravado no andamento a partir de agora; nas antigas, do lote da geração).
+- **Uma SP por linha** na coluna Pipefy, com o nome, e "conta X · N SPs" embaixo.
+- **Filtros**: competência, pagamento (quinzena, fim de mês, DC, avulso), verba e "gerado
+  de/até". Com competência escolhida, lê só aquele mês (sem o teto de 400 arquivos do log
+  pesar sobre os meses antigos). Opções lidas do registro (2 consultas).
+- **`folha_cards.rodada` lê só a competência da análise** — com o teto de 400, uma geração
+  antiga passaria a "arquivo não encontrado" ao lançar.
+- **O nº da SP no relatório em PDF do via SP**: depois de lançar (inclusive no "Gerar e
+  lançar"), o PDF de cada conta é refeito a partir do LOTE da geração, com "Fulano · SP n"
+  e a SP na situação, e gravado POR CIMA no Drive (o link não muda) — o mesmo caminho que a
+  DC já tinha (`_relatorios_via_sp_com_sp`, `gratificados.montado_do_lote`). Refaz quando as
+  SPs da conta mudam. SEM BOTÃO (dono: *"não quero botão pôr as SPs no relatório. Quero
+  que o relatório já saia com elas"*): acontece sozinho no lançamento. As gerações lançadas
+  antes de 18/11/2026 ficam com o PDF sem o número (se o Drive recusar a regravação, o
+  "lançar" de novo termina — `so_terminar`).
+- Custo: a tela ganhou 1 consulta (andamentos) + 2 (opções do filtro); refazer o relatório
+  é 1 envio ao Drive por conta, uma vez por lançamento.
+- Testes: `test_analisesps_gratificados.py` (via SP ponta a ponta: o PDF regravado traz
+  cada SP; a tela lista todas com o nome), `test_analisesps_telas.py` (filtros; teto).
+
+#### Leva 271 — A carga diária do Mobponto deixa de pedir o mês que já é todo do ponto eletrônico (17/11/2026)
+
+- O dono recebeu no Telegram: *"⚠️ Ponto do Mobponto: a carga PAROU. Motivo: ponto que
+  NÃO entrou — 11/2026: o Mobponto não retornou colaboradores para 11/2026"*, e disse:
+  *"acho que é de uma rotina daqui que não está sendo mais necessária, visto que mudamos
+  o sistema de ponto."*
+- Era a carga automática (`tarefas`, etapa `ponto_diario`): pedia ao Mobponto o mês
+  corrente todo dia. Desde a base mista (21/10/2026, corte 16/10), do corte em diante a
+  folha lê o ponto eletrônico — novembro não tem nada no Mobponto, e a "parada" virava
+  aviso.
+- Agora `ponto.o_que_fazer_no_automatico` devolve "ponto_novo" para o mês que começa no
+  corte ou depois (`mes_todo_no_ponto_novo`), e a carga só anota "vem do ponto
+  eletrônico". Outubro (misto) e os meses antes continuam indo ao Mobponto. Com a chave da
+  base mista DESLIGADA, nada muda — e o aviso voltaria.
+- Não mexi no botão manual de Folha PGT › Ponto nem nos outros usos do Mobponto (lançar
+  ponto, apoios). Teste: `test_mes_todo_no_ponto_eletronico_nao_vai_ao_mobponto_nem_avisa`.
+
 #### Leva 270 — Pagamento via SP: a chave Pix do cadastro vai marcada, não "Aleatória" (16/11/2026)
 
 - *"Está sendo marcado todos como aleatória e colocado atualizar PIX, sendo que já está
