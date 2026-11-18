@@ -334,15 +334,31 @@ async function carregarFilaDoPortal(){
     <div class="cartao" style="border-left:4px solid var(--azul)">
       <h3 style="margin:0 0 4px">🖥 ${FILA_PORTAL.length} ${FILA_PORTAL.length === 1
         ? "pessoa pediu" : "pessoas pediram"} acesso ao portal</h3>
-      <div class="cartao-dica" style="margin:0 0 10px">Pediram pelo aplicativo do ponto e
-        informaram o e-mail. Liberar cria o acesso como <b>administrativo de obra</b>
-        (abre pedidos da obra; não vê salário nem documento de ninguém), liga a obra
-        em que a pessoa bate ponto e manda o convite para ela criar a senha dela.</div>
+      {# ⚑ O TEXTO COBRE AS DUAS ORIGENS desde 18/11/2026. Ele dizia só "pelo
+         aplicativo do ponto", e virou meia verdade no dia em que a pessoa
+         passou a poder criar o acesso pelo próprio portal. Texto de tela que
+         descreve o sistema errado é pior que texto nenhum. #}
+      <div class="cartao-dica" style="margin:0 0 10px">Pediram pelo
+        <b>portal</b> (criando o próprio acesso) ou pelo <b>aplicativo do
+        ponto</b>, e informaram o e-mail. Liberar cria o acesso como
+        <b>administrativo de obra</b> (abre pedidos da obra; não vê salário nem
+        documento de ninguém), liga a obra da pessoa e manda o convite para ela
+        criar a senha dela.
+        <br><b>“✓ identidade confirmada”</b> quer dizer que ela provou quem é:
+        digitou o código que foi para o WhatsApp do telefone <b>do cadastro</b>.
+        Sem essa marca, confira quem é antes de liberar.</div>
       <table class="tabela"><thead><tr>
-        <th>Pessoa</th><th>E-mail informado</th><th>Obra (pelo ponto)</th><th></th>
+        <th>Pessoa</th><th>E-mail informado</th><th>Obra</th><th></th>
       </tr></thead><tbody>${FILA_PORTAL.map(p => `
         <tr>
           <td><b>${escapar(p.nome || "—")}</b>
+            ${p.identidade_confirmada
+              ? `<br><span class="etiqueta verde" title="Ela provou quem é: o
+                   código foi conferido no WhatsApp do telefone do cadastro">
+                   ✓ identidade confirmada</span>`
+              : `<br><span class="etiqueta" title="Pedido aberto sem o código
+                   de confirmação — confira quem é antes de liberar">sem
+                   confirmação</span>`}
             ${p.situacao && p.situacao !== "ATIVO"
               ? `<br><span class="etiqueta ambar">${escapar(p.situacao)}</span>` : ""}</td>
           <td class="mono">${escapar(p.email)}</td>

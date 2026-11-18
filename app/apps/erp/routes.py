@@ -9585,6 +9585,98 @@ def api_usuario_convite_situacao(usuario_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ===========================================================================
+# PRIMEIRO ACESSO PELO PRÓPRIO PORTAL (18/11/2026)
+#
+# Ele, ao tentar orientar a equipe e esbarrar no absurdo: *"então tá errado
+# esse acesso ser liberado pelo aplicativo de ponto. Qual o sentido que tem de
+# uma pessoa que vai lançar um diário ter que ir lá no aplicativo do ponto?
+# (…) O cara tem que ir pro portal e criar o acesso dele por lá."*
+#
+# ⚑ AS DUAS ROTAS SÃO PÚBLICAS, e têm de ser: quem não tem acesso não pode
+# entrar para pedir acesso. O que as segura é o teto por IP e o código no
+# telefone DO CADASTRO — não a sessão.
+#
+# ⚑ E NENHUMA DELAS CRIA ACESSO. A segunda só põe o pedido na fila de sempre,
+# com a identidade marcada como confirmada. Quem cria é quem aprova, pelo
+# botão que já existe — decisão dele no mesmo dia: *"ainda assim precisa ser
+# validado por alguém no sistema. (…) aí aumenta o nível de segurança."*
+# ===========================================================================
+def _dentro_do_teto(tipo: str, por_hora: int) -> bool:
+    """Teto por IP para as rotas públicas do primeiro acesso.
+
+    ⚑ REUSA O CONTADOR DO PONTO, que já faz exatamente isto e está em
+    produção. Escrever um segundo contador aqui seria duas regras para a mesma
+    coisa, e a segunda envelheceria sozinha.
+
+    ⚠️ O TETO POR IP É FOLGADO DE PROPÓSITO: atrás de um proxy, a obra inteira
+    sai pelo mesmo endereço, e um teto apertado trancaria todo mundo porque um
+    colega tentou. A trava fina é por PESSOA, no banco (três códigos por hora)
+    e nas cinco tentativas de cada código.
+    """
+    try:
+        from app.apps.ponto import auth as auth_ponto
+        return auth_ponto.dentro_do_limite(
+            tipo, request.remote_addr or "sem-ip", por_hora)
+    except Exception:                                       # noqa: BLE001
+        # O contador é defesa extra, não a trava. Se ele falhar, o código no
+        # telefone do cadastro continua sendo o que segura a porta.
+        logger.warning("ERP: contador de tentativas indisponível")
+        return True
+
+
+@bp.route("/erp/primeiro-acesso")
+@permissao_publica("tela de primeiro acesso — quem ainda não tem conta não "
+                   "tem como entrar para pedir uma")
+def pagina_primeiro_acesso_portal():
+    return render_template("erp_primeiro_acesso_portal.html")
+
+
+@bp.route("/erp/api/primeiro-acesso/codigo", methods=["POST"])
+@permissao_publica("pedir o código por WhatsApp; a resposta é a mesma exista "
+                   "o CPF ou não")
+def api_primeiro_acesso_codigo():
+    from app.apps.erp.core.auth import primeiro_acesso_portal as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            if not _dentro_do_teto("codigo-portal", 12):
+                return jsonify({"ok": False, "erro":
+                                "Muitos pedidos deste lugar. Tente mais "
+                                "tarde."}), 429
+            r = svc.pedir_codigo(s, d.get("cpf"), d.get("telefone"),
+                                 ip=request.remote_addr or "")
+            s.commit()
+            return jsonify(r), (200 if r.get("ok") else 400)
+    except Exception as e:
+        logger.exception("ERP: falha ao pedir o código de primeiro acesso")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/primeiro-acesso/concluir", methods=["POST"])
+@permissao_publica("conferir o código e abrir o pedido de acesso na fila")
+def api_primeiro_acesso_concluir():
+    from app.apps.erp.core.auth import primeiro_acesso_portal as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            if not _dentro_do_teto("concluir-portal", 20):
+                return jsonify({"ok": False, "erro":
+                                "Muitas tentativas deste lugar. Tente mais "
+                                "tarde."}), 429
+            r = svc.concluir(s, d.get("cpf"), d.get("codigo"), d.get("email"),
+                             ip=request.remote_addr or "")
+            s.commit()
+            return jsonify(r)
+    except svc.CodigoRecusado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao concluir o primeiro acesso")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/esqueci-a-senha", methods=["GET", "POST"])
 @permissao_publica("pedir o link de nova senha — quem esqueceu a senha não "
                    "tem como entrar para pedir")
