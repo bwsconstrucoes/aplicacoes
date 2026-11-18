@@ -134,6 +134,21 @@ RECUSADAS: dict[tuple[str, str, str], str] = {
         "idem para o autônomo RPA (1 em 207)",
     ("tipo_contrato", "AUTONOMO_RPA", "categoria_alimentacao"):
         "idem para o autônomo RPA (3 em 207)",
+    # ⚠️ ESTAS DUAS NÃO FORAM RECUSADAS AGORA — elas aplicam uma decisão que
+    # ele JÁ tomou em 10/11/2026: *"quem tem carteira pode ser pago por dia"*.
+    # Esconder a diária de quem é CTPS contrariaria aquilo, e a medição não tem
+    # como saber: a diária está vazia em 100% dos CTPS da amostra porque é raro,
+    # não porque é proibido — o mesmo caso do "valor do mês".
+    #
+    # Registradas aqui para a tela não ficar oferecendo o oposto de uma decisão
+    # dele. Se eu li errado, é tirar estas duas linhas.
+    ("vinculo", "CTPS", "valor_diaria"):
+        "ele decidiu em 10/11/2026 que quem tem carteira PODE ser pago por dia "
+        "— esconder a diária do CTPS contrariaria isso",
+    ("tipo_contrato", "CLT_DETERMINADO", "valor_diaria"):
+        "o mesmo caso: CLT pago por dia existe, por decisão dele de 10/11/2026",
+    ("tipo_contrato", "CLT_INDETERMINADO", "valor_diaria"):
+        "o mesmo caso: CLT pago por dia existe, por decisão dele de 10/11/2026",
 }
 
 
@@ -334,10 +349,41 @@ def comparar_com_o_formulario(s: Session, medido: Optional[dict] = None
     valem, e a parte útil se perderia no meio.
     """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sol
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 
     medido = medido or medir(s)
-    # O que o pedido de CADASTRO já exige por vínculo, no motor do formulário.
+
+    # ===================================================================
+    # ⚑ AS TRÊS FONTES, e a falta da primeira era o defeito (18/11/2026)
+    #
+    # Ele: *"quando eu coloco medir de novo, as regras anteriormente
+    # definidas não deveriam sumir?"*
+    #
+    # Deveriam. Esta função olhava SÓ o formulário do portal — então as
+    # regras que ele adotou e eu implementei na tabela do cadastro
+    # (`OBRIGATORIOS_*`) e nas regras de visibilidade (`CAMPOS_SO_SE`)
+    # continuavam aparecendo como "ainda não faz". A tela pedia de novo o
+    # que ele já tinha respondido, que é a irritação que o CLAUDE.md
+    # descreve.
+    #
+    # ⚠️ TRÊS LUGARES PODEM IMPLEMENTAR UMA REGRA, e a comparação tem de
+    # conhecer os três: o que o cadastro EXIGE (a tabela), o que a tela
+    # ESCONDE (a visibilidade) e o que o pedido do portal exige.
+    # ===================================================================
     ja_exige: set[tuple[str, str]] = set()
+
+    # 1. A TABELA DO CADASTRO — "o que falta para admitir"
+    for campo, _ in svc_pessoas.OBRIGATORIOS_SEMPRE:
+        ja_exige.add(("*", campo))
+    for valor, campos in svc_pessoas.OBRIGATORIOS_POR_VINCULO.items():
+        for campo, _ in campos:
+            ja_exige.add((str(valor).upper(), campo))
+    for valor, campos in svc_pessoas.OBRIGATORIOS_POR_CONTRATO.items():
+        for campo, _ in campos:
+            ja_exige.add((str(valor).upper(), campo))
+
+    # 2. O PEDIDO DO PORTAL (os nomes de campo dele diferem de alguns da
+    #    coluna — ver `_DE_PARA_FORMULARIO`)
     regra = svc_sol.TIPOS.get("CADASTRO", {})
     for campo in regra.get("obrigatorios", ()):
         ja_exige.add(("*", campo))
@@ -354,9 +400,33 @@ def comparar_com_o_formulario(s: Session, medido: Optional[dict] = None
             continue
         # O nome do campo no formulário do pedido não é sempre o da coluna.
         alvo = _campo_no_formulario(p["campo"])
-        batida = (p["valor"], alvo) in ja_exige or ("*", alvo) in ja_exige
-        (confirmadas if batida and p["proposta"] == "OBRIGATORIO"
-         else novas).append(p)
+        if p["proposta"] in ("OBRIGATORIO", "OBRIGATORIO_SEMPRE"):
+            # ⚠️ A IMPLICAÇÃO VALE AQUI TAMBÉM, e sem ela a MESMA regra
+            # aparecia duas vezes (18/11/2026, achado dirigindo a tela).
+            #
+            # A tabela declara "PIS é de quem tem CTPS" — por VÍNCULO. A
+            # medição pergunta também por CONTRATO: "PIS para CLT tempo
+            # determinado?". São a mesma coisa (CLT determinado é CTPS), mas a
+            # comparação por chave não via, e ele veria cinco linhas pendentes
+            # de decisões que ele já tomou.
+            valores = {p["valor"]}
+            if p["chave"] == "tipo_contrato":
+                implicado = svc_pessoas.vinculo_pelo_contrato(p["valor"])
+                if implicado:
+                    valores.add(implicado)
+            feita = any(
+                (v, nome) in ja_exige or ("*", nome) in ja_exige
+                for v in valores for nome in (alvo, p["campo"]))
+        else:
+            # 3. A VISIBILIDADE: "não exibir X quando a chave vale V" já está
+            #    feito se a tela só mostra X para OUTROS valores. Pergunta-se
+            #    ao próprio mecanismo da tela, para a resposta não divergir
+            #    dele — e ele já trata a implicação contrato → vínculo.
+            feita = not svc_pessoas.campo_aparece(
+                p["campo"],
+                vinculo=p["valor"] if p["chave"] == "vinculo" else "",
+                tipo_contrato=p["valor"] if p["chave"] == "tipo_contrato" else "")
+        (confirmadas if feita else novas).append(p)
     return {**medido, "ja_no_formulario": confirmadas, "a_decidir": novas,
             "recusadas_por_ele": recusadas}
 

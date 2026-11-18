@@ -330,6 +330,11 @@ def opcoes(s: Optional[Session] = None) -> dict[str, Any]:
             )).mappings().all()]
     return {
         "empresas": empresas,
+        # ⚑ AS REGRAS DE VISIBILIDADE VÃO PARA A TELA (18/11/2026), em vez de
+        # escritas à mão lá dentro: uma declaração, três leitores. Ver
+        # `CAMPOS_SO_SE`.
+        "campos_so_se": {campo: {k: list(v) for k, v in regra.items()}
+                         for campo, regra in CAMPOS_SO_SE.items()},
         "vinculos": par(VINCULOS, VINCULO_ROTULOS),
         "tipos_contrato": par(TIPOS_CONTRATO, TIPO_CONTRATO_ROTULOS),
         # ⚑ A LISTA QUE A TELA OFERECE: só os de prestador. A de cima fica
@@ -1459,6 +1464,67 @@ OBRIGATORIOS_POR_CONTRATO = {
     ),
 }
 
+# ===========================================================================
+# ⚑ CAMPO QUE SÓ APARECE EM ALGUNS CASOS — adotado da medição em 18/11/2026
+#
+# Ele perguntou o que fez esta declaração existir:
+#
+#   *"Quando eu coloco medir de novo, as regras anteriormente definidas não
+#    deveriam sumir?"*
+#
+# Deveriam, e não sumiam — **por culpa de um desenho meu**. Eu havia adotado as
+# regras de "obrigatório" numa tabela aqui e as de "não exibir" escrevendo à mão
+# dentro da tela, e a comparação da medição olhava só o formulário do PORTAL.
+# Três lugares guardando a mesma decisão, e a tela de regras continuava
+# oferecendo o que já estava feito.
+#
+# Agora há UMA declaração por tipo de regra, e TRÊS leitores:
+#   · `o_que_falta` (os obrigatórios) e o formulário (os ocultos);
+#   · a tela do cadastro, que esconde o campo;
+#   · `regras_pelos_dados.comparar_com_o_formulario`, que tira da lista dele o
+#     que já está implementado.
+#
+# ⚠️ CAMPO OCULTO NÃO É CAMPO REMOVIDO: ele continua no documento, só não
+# aparece. A gravação manda só o que está na tela, e remover deixaria o valor
+# antigo intacto no banco quando a pessoa mudasse de vínculo.
+# ===========================================================================
+CAMPOS_SO_SE: dict[str, dict[str, tuple[str, ...]]] = {
+    # Decisão dele, com todas as letras: *"os campos abaixo são apenas para o
+    # Contrato PJ: CNPJ (PJ), Razão social (PJ)"*. A medição viu 10 PJ em 660 —
+    # abaixo do mínimo —, então quem respondeu foi ele.
+    "razao_social_pj": {"tipo_contrato": ("PJ",)},
+    "cnpj_pj": {"tipo_contrato": ("PJ",)},
+    # Medidos e adotados: nos 222 prestadores o salário está vazio em 97,3% e o
+    # contrato de experiência em 97,7%. Prestador recebe por diária ou por mês,
+    # e não tem período de experiência.
+    "salario": {"vinculo": ("CTPS",)},
+    "contrato_experiencia": {"vinculo": ("CTPS",)},
+}
+
+
+def campo_aparece(campo: str, *, vinculo: Any = "", tipo_contrato: Any = "") -> bool:
+    """Este campo faz sentido para esta pessoa?
+
+    ⚠️ O TIPO DE CONTRATO IMPLICA O VÍNCULO (`vinculo_pelo_contrato`), e sem
+    isso uma regra escrita em vínculo não alcançaria a pergunta feita em
+    contrato — "salário aparece para autônomo RPA?" tem de responder não, mesmo
+    a regra dizendo apenas "salário é de quem tem CTPS".
+    """
+    regra = CAMPOS_SO_SE.get(campo)
+    if not regra:
+        return True
+    v = str(vinculo or "").strip().upper() or vinculo_pelo_contrato(tipo_contrato)
+    ct = str(tipo_contrato or "").strip().upper()
+    atual = {"vinculo": v, "tipo_contrato": ct}
+    for chave, permitidos in regra.items():
+        valor = atual.get(chave, "")
+        # Enquanto ninguém respondeu a chave, o campo fica ESCONDIDO: era o
+        # defeito do "PJ" aparecendo antes de alguém dizer o vínculo.
+        if valor not in permitidos:
+            return False
+    return True
+
+
 # O que NÃO se cobra, e por quê. Separado dos obrigatórios de propósito: a
 # ausência de uma linha aqui seria "esqueci", e uma linha é "decidi".
 NAO_SE_COBRA = {
@@ -1598,6 +1664,10 @@ def o_que_falta(c: Colaborador) -> list[str]:
     falta = []
     for campo, rotulo in exigidos:
         if (contrato, campo) in NAO_SE_COBRA:
+            continue
+        # Campo que a tela não mostra para esta pessoa não pode ser cobrado
+        # dela — seria pendência impossível de resolver.
+        if not campo_aparece(campo, vinculo=vinculo, tipo_contrato=contrato):
             continue
         if not getattr(c, campo, None):
             falta.append(rotulo)

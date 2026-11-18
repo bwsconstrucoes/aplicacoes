@@ -128,12 +128,27 @@ def enviar(s: Session, usuario_id: int, *, link_base: str,
 
     pessoa = s.get(Usuario, usuario_id)
     conta = email_sistema.conta(s)
-    if conta is None:
-        return {"enviado": False, "erro": email_sistema.o_que_falta(s),
-                "link": ""}
 
+    # ⚑ O CONVITE NASCE ANTES DE TENTAR O E-MAIL — conserto de 18/11/2026.
+    #
+    # Antes, sem conta de e-mail configurada, esta função devolvia cedo com
+    # `link: ""`. O efeito na prática era o pior possível: a liberação de
+    # acesso ACONTECIA (o operador era criado, a tela dizia que deu certo) e
+    # **ninguém tinha como entrar** — nem a pessoa, que não recebeu nada, nem
+    # quem liberou, que não tinha link para entregar.
+    #
+    # Dez linhas abaixo o código já fazia a coisa certa para o outro caso
+    # (servidor fora do ar): devolvia o link para entregar de outro jeito. A
+    # falta de conta configurada merecia o mesmo tratamento, e merece mais:
+    # é o estado em que o sistema está ANTES de alguém configurar o e-mail —
+    # ou seja, justamente quando a primeira liberação acontece.
     convite_id, token = criar(s, usuario_id, tipo=tipo, autor=autor)
     link = f"{link_base.rstrip('/')}/{token}"
+    if conta is None:
+        s.flush()
+        return {"enviado": False, "erro": email_sistema.o_que_falta(s),
+                "link": link, "para": pessoa.email if pessoa else ""}
+
     primeiro = tipo == "PRIMEIRO_ACESSO"
     assunto = ("Seu acesso ao ERP da BWS" if primeiro
                else "Nova senha do seu acesso ao ERP da BWS")

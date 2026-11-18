@@ -252,11 +252,17 @@ ACOES_NA_TELA = (
                  # no servidor (`pessoal._sem_remuneracao`) — isto aqui é para
                  # a tela não desenhar coluna que vai vir vazia.
                  "ver_remuneracao",
-                 # ⚑ GERIR USUÁRIOS (17/11/2026): decide se a tela de Pessoal
-                 # mostra a fila de quem pediu acesso ao portal pelo ponto.
-                 # Quem não libera acesso não precisa ver fila que não pode
-                 # resolver.
+                 # ⚑ GERIR USUÁRIOS (17/11/2026): decide se a ficha da pessoa
+                 # mostra os botões de liberar e desligar o acesso dela ao ERP.
+                 # Quem não tem a ação continua VENDO se a pessoa entra no
+                 # sistema e com qual e-mail — o que ele não ganha é um botão
+                 # que responderia 403.
                  "gerir_usuarios",
+                 # ⚑ LIBERAR ACESSO AO PORTAL (18/11/2026, "libera o DP
+                 # também"): decide se a tela de Pessoal mostra a fila de quem
+                 # pediu acesso pelo ponto. É ação PRÓPRIA, mais estreita que
+                 # `gerir_usuarios` — ver o comentário dela em `permissoes.py`.
+                 "liberar_acesso_portal",
                  # ⚑ CONFIGURAR MENSAGENS (17/11/2026): o bloco "Mensagens" da
                  # ficha da pessoa mora no `erp_base.html` (é o mesmo na ficha
                  # do Pessoal e na do ponto) e oferece "Mandar um teste agora".
@@ -9418,7 +9424,7 @@ def api_colaborador_acesso(colaborador_id: int):
 # ===========================================================================
 @bp.route("/erp/api/portal/pedidos-de-acesso")
 @login_obrigatorio
-@permissao("gerir_usuarios")
+@permissao("liberar_acesso_portal")
 def api_pedidos_de_acesso():
     from app.apps.erp.core.auth import pedidos_de_portal as fila
     try:
@@ -9437,7 +9443,7 @@ def api_pedidos_de_acesso():
 @bp.route("/erp/api/portal/pedidos-de-acesso/<int:pedido_id>",
           methods=["POST"])
 @login_obrigatorio
-@permissao("gerir_usuarios")
+@permissao("liberar_acesso_portal")
 def api_pedido_de_acesso_decidir(pedido_id: int):
     """LIBERAR ou RECUSAR um pedido.
 
@@ -9448,6 +9454,7 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
     sai da fila, ou nada acontece.
     """
     from app.apps.erp.core.auth import pedidos_de_portal as fila
+    from app.apps.erp.core.auth.permissoes import pode_com_banco
     from app.apps.erp.db.models.cadastros import Colaborador
     d = request.get_json(silent=True) or {}
     acao = (d.get("acao") or "").strip().upper()
@@ -9480,6 +9487,13 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
             c = s.get(Colaborador, p["colaborador_id"])
             if c is None:
                 raise ErroNaoEncontrado("O cadastro desta pessoa não existe mais.")
+            # ⚠️ O PERFIL NÃO VEM DO NAVEGADOR quando quem decide não gere
+            # operadores (18/11/2026, ao liberar a fila para o DP). Sem esta
+            # trava, o DP mandaria "perfil: ADMIN" na mão e criaria um
+            # administrador do sistema por uma fila de acesso de obra. Quem
+            # tem `gerir_usuarios` continua podendo escolher — essa pessoa já
+            # cria operador com qualquer perfil pela tela de operadores.
+            escolhe_perfil = pode_com_banco(s, atual, "gerir_usuarios") if atual else False
             r = _liberar_acesso(
                 s, c, autor=atual, email=d.get("email") or p["email"],
                 # ⚑ O PADRÃO É ADMINISTRATIVO DE OBRA, e é escolha explícita:
@@ -9487,9 +9501,10 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
                 # nem documento de ninguém (`ver_remuneracao`, `ver_arquivo`).
                 # CONSULTA, o padrão da ficha, não deixaria ela pedir nada —
                 # o acesso nasceria inútil e ela voltaria a pedir.
-                perfil=d.get("perfil") or "ADMINISTRATIVO_OBRA",
-                perfil_id=d.get("perfil_id"), obra_id=p["obra_id"],
-                convidar=True)
+                perfil=(d.get("perfil") if escolhe_perfil else None)
+                       or "ADMINISTRATIVO_OBRA",
+                perfil_id=d.get("perfil_id") if escolhe_perfil else None,
+                obra_id=p["obra_id"], convidar=True)
             if not r["ok"]:
                 return jsonify(r), 400
             fila.decidir(conn, pedido_id, status=fila.LIBERADO,

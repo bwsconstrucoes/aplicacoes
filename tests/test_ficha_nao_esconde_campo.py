@@ -52,15 +52,14 @@ SEM_CAMPO_DE_PROPOSITO = {
     "ref_pipefy": "número do card de origem; o Pipefy vai ser desligado",
     "requerente": "quem pediu o cadastro, gravado pelo pedido",
     "responsavel_id": "definido pela obra, não digitado na ficha",
-    # ⚠️ ESTAS DUAS SÃO DÚVIDA ABERTA, não decisão fechada — ver o HISTORICO
-    # de 17/11/2026. Ficam aqui para o teste não travar, com o aviso de que
-    # alguém precisa decidir se somem ou ganham campo.
+    # ⚠️ DÚVIDA ABERTA, não decisão fechada — ver o HISTORICO de 17/11/2026.
+    # (`convencao_categoria` SAIU desta lista em 18/11/2026: ganhou campo
+    # quando ele explicou a base de cargo × convenção. Eu havia proposto tirar
+    # a coluna, e estava errado — ela é a categoria que VALEU para a pessoa, e
+    # a base muda com o dissídio.)
     "regime": "parece ser o VÍNCULO com outro nome (nasce 'CLT'); acrescentar "
               "campo seria dar duas maneiras de dizer a mesma coisa — "
               "PENDENTE de decisão do dono",
-    "convencao_categoria": "a categoria vem da convenção do cargo "
-                           "(`cargo_convencao.categoria`); aqui parece cópia "
-                           "da importação — PENDENTE de decisão do dono",
 }
 
 

@@ -21,6 +21,165 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 18/11/2026 — LIBERAÇÃO DE ACESSO AO PORTAL: falta UMA decisão dele (quem libera)
+
+Ele perguntou: *"a liberação para o acesso ao portal já tá tudo ok? me orienta
+como é."* O fluxo está de pé e foi conferido no código de ponta a ponta. Duas
+coisas travam o uso, e a primeira é decisão DELE:
+
+1. **Só ADMIN libera.** `"gerir_usuarios": {P.ADMIN}` em `permissoes.py`. O DP
+   enxerga a fila? Não: o cartão da fila só aparece para quem tem
+   `gerir_usuarios`. Resultado prático: **hoje só ele próprio consegue
+   liberar acesso ao portal**. A pergunta em aberto é se `DEPARTAMENTO_PESSOAL`
+   deve ganhar essa alçada — e isto não se muda sem o "pode" dele, porque
+   liberar acesso é criar operador do sistema.
+2. **O convite precisa da conta de e-mail do sistema** (Configurações ›
+   E-mail do sistema). Sem ela, o convite não sai por e-mail — mas o LINK
+   agora sempre volta na tela, para entregar por WhatsApp (conserto do mesmo
+   dia, abaixo).
+
+**O caminho, para quem nunca viu:** a pessoa, no celular DELA (nunca no
+aparelho da obra), entra no ponto com CPF e PIN → menu → "Pedir acesso ao
+portal" → informa o e-mail dela. O pedido cai na fila
+(`portal_pedidos_de_acesso`, migração 108). Na tela ERP › Pessoal, um cartão
+azul no topo lista quem pediu → "Liberar e convidar" cria o acesso como
+**administrativo de obra** (abre pedidos da obra; não vê salário nem documento
+de ninguém), liga a obra em que a pessoa bate ponto, e manda o convite para ela
+escolher a própria senha. "Recusar" pede o motivo, e o motivo volta para o
+celular dela.
+
+⚠️ **Migração 108 precisa estar aplicada.** Sem ela o ponto não quebra (mostra
+"ainda não disponível"), mas a fila não existe.
+
+### ⚑ 18/11/2026 — o convite que liberava acesso e não deixava ninguém entrar (CONSERTADO)
+
+Achado conferindo o fluxo acima. Sem conta de e-mail configurada,
+`convites.enviar` devolvia cedo com `link: ""`. Efeito: a liberação
+**acontecia** (operador criado, tela dizia que deu certo) e **ninguém tinha
+como entrar** — nem a pessoa, que não recebia nada, nem quem liberou, que não
+tinha link para entregar. O mesmo código já fazia a coisa certa dez linhas
+abaixo, para o caso do servidor de e-mail fora do ar.
+
+Agora o convite nasce ANTES de tentar o envio, o link sempre volta com o motivo
+do não-envio escrito, e a fila do portal mostra o link (a ficha da pessoa já
+mostrava). Dois casos com banco de verdade em
+`tests/test_pedido_de_acesso_ao_portal_banco.py`: o link volta, e ele funciona
+de verdade (serve uma vez, não serve duas).
+
+### ⚑ 18/11/2026 — "AS REGRAS JÁ DEFINIDAS NÃO DEVERIAM SUMIR?" — deveriam, e a culpa era de um desenho meu
+
+Ele, depois de adotar as regras e medir de novo:
+
+> *"Quando eu coloco medir de novo, as regras anteriormente definidas não
+> deveriam sumir?"*
+
+**Deveriam.** A tela continuava oferecendo o que ele já tinha respondido — que é
+a irritação que este arquivo descreve em três lugares.
+
+#### A causa: a MESMA decisão guardada em três lugares
+
+| Onde eu havia implementado | O que a comparação olhava |
+|---|---|
+| `OBRIGATORIOS_*`, no cadastro | ❌ não olhava |
+| as regras de "não exibir", escritas à mão DENTRO da tela | ❌ não olhava |
+| `obrigatorios_se` do formulário do portal | ✅ só este |
+
+Ou seja: eu adotava a regra num lugar e a medição conferia em outro. **Não era
+um esquecimento — era um desenho que garantia a divergência.**
+
+#### O conserto: uma declaração por tipo de regra, três leitores
+
+- **`CAMPOS_SO_SE`** (novo) declara "este campo só aparece quando…". Dela leem:
+  `o_que_falta` (não cobra campo que a tela não mostra), a tela do cadastro
+  (esconde), e a comparação da medição (tira da lista dele).
+- A tela **deixou de ter a regra escrita à mão**: ela recebe o mapa do servidor
+  e aplica para todo campo declarado. Acrescentar a próxima regra é **uma linha**
+  em `pessoas.py`, não três edições espalhadas.
+
+⚠️ **Campo oculto não é campo removido:** continua no documento, só não aparece.
+A gravação manda o que está na tela, e remover deixaria o valor antigo intacto
+no banco quando a pessoa mudasse de vínculo.
+
+#### ⚠️ Duas assimetrias que só apareceram dirigindo a tela
+
+1. **A mesma regra, perguntada por dois nomes.** A tabela declara "PIS é de
+   quem tem CTPS" (por VÍNCULO) e a medição também pergunta por CONTRATO ("PIS
+   para CLT tempo determinado?"). São a mesma coisa, mas a comparação por chave
+   não via — e ele veria **cinco linhas pendentes de decisões já tomadas**.
+   Resolvido com `vinculo_pelo_contrato`, nos dois ramos (obrigatório e não
+   exibir).
+2. **A medição propôs o oposto de uma decisão dele.** "Não exibir Valor da
+   diária para CTPS" — e ele decidiu em **10/11/2026** que *"quem tem carteira
+   pode ser pago por dia"*. A diária está vazia em 100% dos CTPS porque é rara,
+   não porque é proibida: é o mesmo caso do "valor do mês" que ele recusou.
+   **Registrei em `RECUSADAS` citando a decisão dele**, para a tela não oferecer
+   o contrário do que ele já disse. ⚠️ Se eu li errado, é tirar as três linhas.
+
+#### O efeito, medido na tela
+
+Com 90 cadastros de amostra: **de 40 propostas misturadas para 7 a decidir**, 35
+em "já faz" e 2 em "já decididas por você". As 7 que sobraram são de uma família
+só — PIS e CTPS não se aplicam a prestador, e a diária é obrigatória para ele.
+
+
+### ⚑ 18/11/2026 — CARGO + CONVENÇÃO PREENCHE CATEGORIA, PISO E CBO
+
+Ele: *"No Pipefy eu tenho uma base de dados onde vinculo cargo, convenção,
+categoria e salário. Qual sua sugestão pra fazermos aqui também? Preciso de
+algo simples de construir. A ideia é que uma vez que o DP preencher a
+convenção, o salário e a categoria já ficariam preenchidos, e o CBO."*
+
+#### ⚠️ A BASE JÁ EXISTIA — e é a planilha DELE, importada
+
+Antes de sugerir qualquer coisa, procurei. `cargo_convencao` é exatamente a
+tabela "Cargo e Convenção" do Pipefy, importada em 05/11/2026: **63 cargos, 13
+convenções, 135 cruzamentos**, com categoria, piso, CBO e **histórico de
+dissídio**. A tela existe em Configurações › Cargos e convenções, com importação
+que simula antes de gravar.
+
+**Faltava um pedaço só: a tela de cadastro não olhava a base.** Terceira vez na
+semana que o diagnóstico é "está construído e inalcançável" — ver a nota de
+17/11 sobre procurar antes de concluir que falta.
+
+#### O que foi feito
+
+Escolhido o cargo e a convenção, a ficha mostra **categoria, CBO, piso e
+diária** daquela combinação, e preenche o salário e a categoria. Combinação que
+não está na base diz isso, com o caminho para cadastrá-la — e o cadastro segue.
+
+**Custo:** a base chega **UMA vez** quando o formulário abre (135 linhas) e fica
+em memória. Trocar de cargo ou de convenção não custa ida nenhuma ao banco.
+Pedir por combinação custaria uma chamada por clique.
+
+⚠️ **A rota é `/erp/api/cargos` e não a de opções**, de propósito: a de opções é
+aberta a quem tem `ver_pessoal` (supervisor de obra, parceiro) e vem SEM o piso.
+Mandar a tabela salarial da empresa por ali seria vazá-la — e há teste disso.
+
+#### ⚠️ SALÁRIO E CATEGORIA SE COMPORTAM DIFERENTE, e isso só apareceu na tela
+
+- **Salário é NEGOCIADO.** Ganhar mais que o piso é normal e legítimo. Então ele
+  é preenchido quando está vazio e **nunca sobrescrito**: havendo valor
+  diferente, a tela mostra os dois e oferece "usar o piso". Trocar em silêncio
+  um salário digitado é dinheiro mudando sem ninguém ver, e *"por que ela ganha
+  mais que o piso"* é pergunta de auditoria e de sindicato.
+- **Categoria NÃO é negociada.** É o que a convenção diz sobre aquele cargo.
+  Dirigindo a tela vi que trocar a convenção deixava "PROFISSIONAL" numa
+  combinação cuja categoria é "OPERARIO QUALIFICADO" — respeitar o que estava
+  ali era guardar dado errado. Ela acompanha o par, e a tela diz que mudou.
+
+#### ⚠️ EU ESTAVA ERRADO SOBRE `convencao_categoria`
+
+Em 17/11 propus **tirar** essa coluna, por achar que era cópia da importação.
+Era eu que não sabia para que servia. Ela ganhou campo agora, e fica gravada na
+pessoa **de propósito**: a base muda (dissídio, reenquadramento), e a categoria
+que valeu quando a pessoa foi admitida é a que a folha daquele mês usou. Ler da
+base hoje reescreveria o passado — é o mesmo motivo de o histórico de piso
+existir.
+
+**Sobra uma só das duas que eu propus tirar: `regime`**, que continua parecendo
+o vínculo com outro nome. Essa pergunta segue aberta.
+
+
 ### ⚑ 18/11/2026 — A TRILHA DO CADASTRO, A JANELA QUE NÃO FECHA MAIS, E AS CONDICIONAIS DECIDIDAS
 
 #### 1. ⚠️ "Alterei um campo e não aconteceu" — a trilha estava furada

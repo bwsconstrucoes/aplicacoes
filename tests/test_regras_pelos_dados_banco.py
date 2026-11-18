@@ -172,7 +172,11 @@ def test_separa_o_que_o_formulario_JA_FAZ_do_que_falta(sessao_real, cena):
     dele."""
     r = svc.comparar_com_o_formulario(sessao_real)
     assert "ja_no_formulario" in r and "a_decidir" in r
-    assert len(r["ja_no_formulario"]) + len(r["a_decidir"]) == len(r["propostas"])
+    # ⚠️ TRÊS baldes desde 18/11/2026: o terceiro é o que ele já recusou, e
+    # toda proposta tem de cair em exatamente um deles — proposta que não cai
+    # em nenhum desaparece da tela sem ninguém notar.
+    assert (len(r["ja_no_formulario"]) + len(r["a_decidir"])
+            + len(r["recusadas_por_ele"])) == len(r["propostas"])
     # o PIS para CTPS já é obrigatório no formulário desde 17/11 — então ele
     # NÃO pode aparecer na lista de decidir
     nomes = [(p["valor"], p["campo"]) for p in r["a_decidir"]]
@@ -323,3 +327,95 @@ def test_toda_recusa_tem_motivo_escrito():
     """Lista de recusas sem motivo é lista que ninguém sabe se ainda vale."""
     for chave, motivo in svc.RECUSADAS.items():
         assert motivo and len(motivo) > 25, f"{chave}: recusa sem motivo"
+
+
+# ---------------------------------------------------------------------------
+# ⚑ REGRA JÁ IMPLEMENTADA SAI DA LISTA DELE (18/11/2026)
+#
+# Ele: *"quando eu coloco medir de novo, as regras anteriormente definidas não
+# deveriam sumir?"*
+#
+# Deveriam, e não sumiam — por um desenho meu: eu guardava a mesma decisão em
+# TRÊS lugares (a tabela de obrigatórios do cadastro, as regras de visibilidade
+# da tela, e o formulário do portal) e a comparação olhava só o último. A tela
+# pedia de novo o que ele já tinha respondido.
+#
+# Agora há uma declaração por tipo de regra e a comparação conhece as três.
+# Estes testes prendem isso pelos dois lados: o que está feito SAI, e o que não
+# está CONTINUA aparecendo (senão a lista mentiria para o outro lado).
+# ---------------------------------------------------------------------------
+def test_obrigatorio_que_a_tabela_do_cadastro_ja_exige_sai_da_lista(sessao_real, cena):
+    """"Série da CTPS obrigatória para CTPS" foi adotada por ele em 18/11 e
+    está em `OBRIGATORIOS_POR_VINCULO`. Não pode voltar a ser perguntada."""
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    assert any(campo == "ctps_serie"
+               for campo, _ in svc_pessoas.OBRIGATORIOS_POR_VINCULO["CTPS"]), \
+        "a regra saiu da tabela — este teste perdeu o sentido"
+
+    s = sessao_real
+    s.execute(text("UPDATE colaboradores SET ctps_serie = '0001-CE' "
+                   "WHERE vinculo = 'CTPS'"))
+    s.flush()
+
+    r = svc.comparar_com_o_formulario(s)
+    a_decidir = [(p["chave"], p["valor"], p["campo"]) for p in r["a_decidir"]]
+    ja_faz = [(p["chave"], p["valor"], p["campo"]) for p in r["ja_no_formulario"]]
+    assert ("vinculo", "CTPS", "ctps_serie") not in a_decidir
+    assert ("vinculo", "CTPS", "ctps_serie") in ja_faz
+
+
+def test_nao_exibir_que_a_tela_JA_esconde_sai_da_lista(sessao_real, cena):
+    """"Não exibir Salário para prestador" foi adotada e está em
+    `CAMPOS_SO_SE`. A comparação pergunta ao próprio mecanismo da tela, para a
+    resposta não divergir dele."""
+    s = sessao_real
+    s.execute(text("UPDATE colaboradores SET salario = NULL "
+                   "WHERE vinculo = 'PRESTADOR'"))
+    s.execute(text("UPDATE colaboradores SET salario = '2000' "
+                   "WHERE vinculo = 'CTPS'"))
+    s.flush()
+
+    r = svc.comparar_com_o_formulario(s)
+    a_decidir = [(p["chave"], p["valor"], p["campo"]) for p in r["a_decidir"]]
+    ja_faz = [(p["chave"], p["valor"], p["campo"]) for p in r["ja_no_formulario"]]
+    assert ("vinculo", "PRESTADOR", "salario") not in a_decidir
+    assert ("vinculo", "PRESTADOR", "salario") in ja_faz
+
+
+def test_a_implicacao_contrato_vinculo_vale_na_comparacao(sessao_real, cena):
+    """⚠️ A regra está escrita em VÍNCULO ("salário é de quem tem CTPS") e a
+    medição pergunta por CONTRATO ("salário para autônomo RPA?"). Sem a
+    implicação, a mesma regra apareceria como pendente pelo outro nome — e ele
+    veria duas linhas para uma decisão."""
+    s = sessao_real
+    s.execute(text("UPDATE colaboradores SET salario = NULL "
+                   "WHERE tipo_contrato = 'AUTONOMO_RPA'"))
+    s.execute(text("UPDATE colaboradores SET salario = '2000' "
+                   "WHERE vinculo = 'CTPS'"))
+    s.flush()
+
+    r = svc.comparar_com_o_formulario(s)
+    a_decidir = [(p["chave"], p["valor"], p["campo"]) for p in r["a_decidir"]]
+    assert ("tipo_contrato", "AUTONOMO_RPA", "salario") not in a_decidir
+
+
+def test_o_que_NAO_esta_feito_continua_aparecendo(sessao_real, cena):
+    """O outro lado da moeda: se a comparação passasse a dizer "já faz" para
+    tudo, a lista dele ficaria vazia e inútil. "Nº da CTPS obrigatório para
+    CTPS" está feito; invento um campo que NÃO está e exijo que apareça."""
+    s = sessao_real
+    # "matrícula" não está em nenhuma das três fontes
+    s.execute(text("UPDATE colaboradores SET matricula = '12345' "
+                   "WHERE vinculo = 'CTPS'"))
+    s.execute(text("UPDATE colaboradores SET matricula = NULL "
+                   "WHERE vinculo = 'PRESTADOR'"))
+    s.flush()
+
+    r = svc.medir(s)
+    p = _achar(r, "vinculo", "CTPS", "matricula")
+    if p:            # só se a medição teve base para propor
+        comparado = svc.comparar_com_o_formulario(s, r)
+        chaves = [(x["chave"], x["valor"], x["campo"]) for x in comparado["a_decidir"]]
+        assert ("vinculo", "CTPS", "matricula") in chaves, (
+            "a comparação está dizendo 'já faz' para o que não está feito — "
+            "a lista dele ficaria vazia e inútil")
