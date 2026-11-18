@@ -280,6 +280,15 @@ const rotulo = s => {
   return ACENTOS[limpo] || limpo.replace(/^./, c => c.toUpperCase());
 };
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
+{# A data de hoje no formato que o <input type="date"> entende. Fica aqui, e
+   não dentro de uma tela, porque é a terceira vez que uma tela escreveria a
+   mesma linha — e `toISOString()` sozinho devolve UTC, que no Brasil vira o
+   dia seguinte depois das 21h. #}
+const hoje = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+           .toISOString().slice(0, 10);
+};
 // Dia E HORA, para o que precisa de carimbo: "corrigido em 06/09/2026 12:11".
 // `dataBR` sozinho embaralharia o "2026-09-06T12:11:00" inteiro.
 const momentoBR = iso => {
