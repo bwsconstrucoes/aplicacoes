@@ -1364,17 +1364,24 @@ async function pintarDemandasDaPessoa(alvo, c){
   try {
     // DUAS chamadas, e é o mínimo: são duas filas diferentes (o que a obra
     // pediu ao DP, e o que o DP pediu à contabilidade). Em paralelo.
-    const [sol, ped] = await Promise.all([
+    {# ⚑ TRÊS chamadas desde 18/11/2026, e a conta é dele (CLAUDE.md: contar o
+       custo da operação). Em PARALELO, então a tela não espera três vezes: é
+       uma ida de rede, não três em fila. A terceira é o afastamento — abrir a
+       aba Demandas de quem NÃO está afastado custa uma consulta que volta
+       vazia, e era isso ou um segundo clique para descobrir que não há nada. #}
+    const [sol, ped, afast] = await Promise.all([
       api(`/erp/api/dp/solicitacoes?colaborador_id=${c.id}`).catch(e => ({erro: e.message})),
       api(`/erp/api/dp/pedidos?colaborador_id=${c.id}`).catch(e => ({erro: e.message})),
+      api(`/erp/api/colaboradores/${c.id}/afastamento`).catch(e => ({erro: e.message})),
     ]);
-    desenharDemandas(c, sol, ped);
+    desenharDemandas(c, sol, ped, afast);
   } catch(e){
     els("dem-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
   }
 }
 
-function desenharDemandas(c, sol, ped){
+function desenharDemandas(c, sol, ped, afast){
+  AFASTAMENTO = afast || {};
   const pedidos = (ped && ped.pedidos) || [];
   const solicitacoes = (sol && sol.solicitacoes) || [];
   // ⚠️ POR PESSOA, não guardada entre pessoas: `falta` é dela.
@@ -1384,6 +1391,7 @@ function desenharDemandas(c, sol, ped){
   els("dem-corpo").innerHTML = `
     ${sol && sol.erro ? `<div class="aviso alerta">Pedidos do DP: ${escapar(sol.erro)}</div>` : ""}
     ${ped && ped.erro ? `<div class="aviso alerta">Contabilidade: ${escapar(ped.erro)}</div>` : ""}
+    ${blocoDoAfastamento(c)}
 
     <h4 style="margin:4px 0 6px">Pedidos à contabilidade</h4>
     <div class="cartao-dica">O que o DP pediu formalmente, com prazo e com o
@@ -1435,6 +1443,179 @@ function desenharDemandas(c, sol, ped){
     b.addEventListener("click", () => abrirPedidoDaContabilidade(+b.dataset.ctAbrir, c)));
   if (els("dem-novo"))
     els("dem-novo").addEventListener("click", () => mandarParaAContabilidade(c));
+  if (els("af-afastar"))
+    els("af-afastar").addEventListener("click", () => afastar(c));
+  if (els("af-voltar"))
+    els("af-voltar").addEventListener("click", () => registrarRetorno(c));
+}
+
+
+// ---------------------------------------------------------------------------
+// AFASTAMENTO E RETORNO (18/11/2026)
+//
+// Pergunta dele: *"Colaborador estava afastado e vai retornar ao trabalho. O
+// que deve ser exigido dele e o que o sistema deve pedir pra travar o simples
+// retorno?"*
+//
+// ⚑ A TELA NÃO É A TRAVA. Quem recusa é o servidor (`afastamentos.retornar` e
+// `pessoas.mover_etapa`), porque o quadro arrasta cartão direto para
+// "Afastado" e trava que vive na tela é trava que o arrasto contorna. O que a
+// tela faz é MOSTRAR o que falta antes de alguém tentar — recusa depois de
+// preencher é o que o Pipefy fazia.
+//
+// ⚑ E AS TRÊS LISTAS FICAM SEPARADAS: o que IMPEDE, o que apenas AVISA e o que
+// a volta ACARRETA. Misturar faria o DP tratar "falta o exame" e "o treinamento
+// de altura venceu" com o mesmo peso — e o segundo não impede a volta, impede
+// a pessoa subir no andaime.
+// ---------------------------------------------------------------------------
+let AFASTAMENTO = {};
+
+function blocoDoAfastamento(c){
+  const a = AFASTAMENTO.aberto, r = AFASTAMENTO.retorno || {},
+        est = AFASTAMENTO.estabilidade, hist = AFASTAMENTO.historico || [];
+  if (AFASTAMENTO.erro)
+    return `<div class="aviso alerta">Afastamento: ${escapar(AFASTAMENTO.erro)}</div>`;
+
+  // ESTABILIDADE aparece mesmo sem afastamento em curso — é justamente DEPOIS
+  // da volta que ela corre, e é na hora de desligar que ela importa.
+  const selo = est ? `<div class="aviso alerta" style="margin-bottom:10px">
+      <b>⚖️ Estabilidade no emprego até ${dataBR(est.ate)}</b> (${est.dias} dia(s)).
+      ${escapar(est.motivo)}<br><small>${escapar(est.aviso)}</small></div>` : "";
+
+  if (!a) {
+    const anteriores = hist.length ? `<div class="cartao-dica">Afastamentos
+      anteriores: ${hist.map(h => `${escapar(h.tipo_rotulo)} —
+        ${dataBR(h.data_inicio)}${h.data_retorno ? ` a ${dataBR(h.data_retorno)}` : ""}
+        (${h.dias} dia(s))`).join(" · ")}</div>` : "";
+    return selo + `<div class="cartao" style="margin-bottom:14px">
+      <h4 style="margin:0 0 4px">Afastamento</h4>
+      <div class="cartao-dica">Esta pessoa não está afastada. Afastar pede o
+        <b>tipo</b> e a <b>data de início</b> — é o tipo que decide o que a
+        volta vai exigir (exame de retorno, estabilidade, férias).</div>
+      ${anteriores}
+      ${PODE_EDITAR ? `<div style="margin-top:8px">
+        <button class="btn secundario" id="af-afastar">🏥 Afastar…</button></div>` : ""}
+    </div>`;
+  }
+
+  const lista = (itens, classe) => itens.length
+    ? `<ul class="${classe}" style="margin:6px 0 0 18px">`
+      + itens.map(x => `<li>${escapar(x)}</li>`).join("") + `</ul>` : "";
+
+  return selo + `<div class="cartao" style="margin-bottom:14px;
+      border-left:4px solid var(--${r.pode_voltar ? "verde" : "ambar"})">
+    <h4 style="margin:0 0 4px">🏥 Afastada desde ${dataBR(a.data_inicio)}
+      — ${a.dias} dia(s)</h4>
+    <div class="desc"><b>${escapar(a.tipo_rotulo)}</b>${a.previsao_retorno
+      ? ` · volta prevista para ${dataBR(a.previsao_retorno)}` : ""}</div>
+    ${a.explicacao ? `<div class="cartao-dica">${escapar(a.explicacao)}</div>` : ""}
+    ${a.motivo ? `<div class="desc"><small>${escapar(a.motivo)}</small></div>` : ""}
+
+    ${(r.impede || []).length ? `<div class="aviso erro" style="margin-top:10px">
+      <b>Falta para ela poder voltar:</b>${lista(r.impede, "")}</div>` : ""}
+    ${(r.avisos || []).length ? `<div class="aviso alerta" style="margin-top:10px">
+      <b>Atenção, mas não impede a volta:</b>${lista(r.avisos, "")}</div>` : ""}
+    ${(r.acarreta || []).length ? `<div class="aviso info" style="margin-top:10px">
+      <b>A volta acarreta:</b>${lista(r.acarreta, "")}</div>` : ""}
+
+    ${PODE_EDITAR ? `<div style="margin-top:10px">
+      <button class="btn" id="af-voltar">↩️ Registrar o retorno…</button>
+      <small class="desc"> — o sistema confere o que falta e devolve a pessoa à ativa</small>
+    </div>` : `<div class="cartao-dica" style="margin-top:8px">Registrar o
+      retorno é do DP.</div>`}
+  </div>`;
+}
+
+async function afastar(c){
+  const tipos = AFASTAMENTO.tipos || [];
+  const r = await perguntar({
+    titulo: `Afastar — ${c.nome}`,
+    textoOk: "Afastar",
+    aviso: "A pessoa sai da ativa e <b>deixa de bater ponto</b> enquanto estiver "
+         + "afastada. O tipo decide o que a volta vai exigir — escolha com "
+         + "cuidado, e ele pode ser corrigido na hora do retorno.",
+    campos: [
+      {nome: "tipo", rotulo: "Tipo do afastamento", tipo: "select",
+       obrigatorio: true, largura: 6,
+       opcoes: tipos.map(x => ({valor: x.valor, rotulo: x.rotulo})),
+       dica_de: v => {
+         const x = tipos.find(y => y.valor === v.tipo);
+         if (!x) return "";
+         {# A explicação do tipo JÁ DIZ quanto é a estabilidade — repetir
+            "Gera 12 meses de estabilidade" logo depois foi o que a tela
+            mostrou no primeiro teste no navegador, e ficou bobo. #}
+         return escapar(x.explicacao)
+           + (x.base_legal ? ` <small>(${escapar(x.base_legal)})</small>` : "");
+       }},
+      {nome: "data_inicio", rotulo: "Começou em", tipo: "date",
+       obrigatorio: true, largura: 3, valor: hoje()},
+      {nome: "previsao_retorno", rotulo: "Volta prevista (opcional)",
+       tipo: "date", largura: 3,
+       dica: "serve para o exame de retorno ser marcado antes de ela aparecer"},
+      {nome: "motivo", rotulo: "Motivo / observação (opcional)", largura: 6},
+    ]});
+  if (!r) return;
+  try {
+    await api(`/erp/api/colaboradores/${c.id}/afastamento`,
+              {method: "POST", body: JSON.stringify(r)});
+    c.etapa = "AFASTADO"; c.situacao = "AFASTADO";
+    await pintarDemandasDaPessoa(els("c-painel"), c);
+    aviso("dem-msg", `${escapar(c.nome)} afastada. Ela deixa de bater ponto `
+          + `a partir de agora.`, "ok");
+    GRAVOU_NO_FORMULARIO = true;
+  } catch(e){ aviso("dem-msg", e.message, "erro"); }
+}
+
+async function registrarRetorno(c){
+  const a = AFASTAMENTO.aberto || {}, r0 = AFASTAMENTO.retorno || {};
+  const tipos = AFASTAMENTO.tipos || [];
+  // ⚑ O QUE FALTA VAI NO DIÁLOGO, não só no cartão atrás dele: quem clica em
+  // "registrar o retorno" está decidido a registrar, e descobrir a pendência
+  // só na recusa é o atrito que ele cobrou mais de uma vez.
+  const pendencia = (r0.impede || []).length
+    ? `<div class="aviso erro" style="margin:0 0 8px"><b>O sistema vai recusar
+         enquanto faltar:</b><ul style="margin:6px 0 0 18px">`
+      + r0.impede.map(x => `<li>${escapar(x)}</li>`).join("") + `</ul></div>`
+    : "";
+  const r = await perguntar({
+    titulo: `Retorno do afastamento — ${c.nome}`,
+    textoOk: "Registrar o retorno",
+    aviso: pendencia
+         + `Afastada desde <b>${dataBR(a.data_inicio)}</b> por `
+         + `<b>${escapar(a.tipo_rotulo || "")}</b>.`
+         + (a.tipo_desconhecido
+             ? " ⚠️ Este afastamento é antigo e a natureza dele não foi"
+               + " registrada na época. Diga o tipo abaixo."
+             : ""),
+    campos: [
+      ...(a.tipo_desconhecido || (r0.impede || []).some(x => x.indexOf("tipo") >= 0)
+          ? [{nome: "tipo", rotulo: "Qual era o tipo?", tipo: "select",
+              obrigatorio: true, largura: 6,
+              opcoes: tipos.map(x => ({valor: x.valor, rotulo: x.rotulo}))}]
+          : []),
+      {nome: "data_retorno", rotulo: "Voltou em", tipo: "date",
+       obrigatorio: true, largura: 3, valor: hoje(),
+       dica: "é esta data que define onde o ponto para de abonar"},
+      {nome: "observacao", rotulo: "Observação (opcional)", largura: 6,
+       dica: "ex.: ASO veio apto COM RESTRIÇÃO — não pode carregar peso"},
+    ]});
+  if (!r) return;
+  try {
+    const d = await api(`/erp/api/colaboradores/${c.id}/afastamento/retorno`,
+                        {method: "POST", body: JSON.stringify(r)});
+    c.etapa = "CONCLUIDO"; c.situacao = "ATIVO";
+    await pintarDemandasDaPessoa(els("c-painel"), c);
+    aviso("dem-msg",
+      `${escapar(c.nome)} voltou em ${dataBR(d.data_retorno)} `
+      + `(${d.dias} dia(s) afastada). Ela volta a bater ponto.`
+      + (d.estabilidade_ate ? `<br><b>⚖️ Estabilidade até `
+          + `${dataBR(d.estabilidade_ate)}</b> — não cabe demissão sem justa `
+          + `causa neste prazo.` : "")
+      + ((d.avisos || []).length ? `<br><br><b>Atenção:</b><br>`
+          + d.avisos.map(escapar).join("<br>") : ""),
+      d.estabilidade_ate || (d.avisos || []).length ? "alerta" : "ok");
+    GRAVOU_NO_FORMULARIO = true;
+  } catch(e){ aviso("dem-msg", e.message, "erro"); }
 }
 
 let TEMPLATES_CT = [];
@@ -2891,8 +3072,30 @@ async function acaoDoVinculo(caminho, corpo){
 
 async function abrirDesligamento(){
   const o = OPCOES || {};
+  // ⚑ A ESTABILIDADE APARECE AQUI (18/11/2026), e é aqui que ela importa.
+  //
+  // Quem voltou de acidente de trabalho tem 12 meses em que não cabe demissão
+  // sem justa causa; quem voltou de licença-maternidade, até 5 meses depois do
+  // parto. Antes disso o sistema não guardava a informação em lugar nenhum, e
+  // quem fosse desligar não tinha como saber.
+  //
+  // ⚠️ É AVISO, NÃO TRAVA, e é decisão dele: *"a contabilidade conta, mas é
+  // interessante termos a informação também."* Há desligamento que cabe mesmo
+  // na estabilidade (pedido da própria pessoa, justa causa) — travar prenderia
+  // gente num limbo. O que não pode é ninguém SABER.
+  let estabilidade = null;
+  try {
+    estabilidade = (await api(`/erp/api/colaboradores/${FICHA.id}/afastamento`)).estabilidade;
+  } catch(e){ /* a consulta falhar não pode impedir um desligamento */ }
   const r = await perguntar({titulo: `Desligar ${FICHA.nome}`,
-    aviso: "O vínculo é FECHADO, não apagado: a passagem dela pela empresa continua "
+    aviso: (estabilidade ? `<div class="aviso erro" style="margin:0 0 8px">
+        <b>⚖️ Esta pessoa está com ESTABILIDADE no emprego até
+        ${dataBR(estabilidade.ate)}</b> (${estabilidade.dias} dia(s)).
+        ${escapar(estabilidade.motivo)}<br>
+        Neste prazo não cabe demissão sem justa causa. Confirme com a
+        contabilidade antes de seguir — o sistema não vai impedir, só avisar.
+        </div>` : "")
+         + "O vínculo é FECHADO, não apagado: a passagem dela pela empresa continua "
          + "no histórico, com tudo que foi pago.",
     textoOk: "Desligar",
     campos: [

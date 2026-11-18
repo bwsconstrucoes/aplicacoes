@@ -146,12 +146,19 @@ def test_prestador_que_nao_e_PJ_conclui_direto(sessao_real, dono):
 
 def test_mover_entre_as_outras_etapas_continua_LIVRE(sessao_real, dono):
     """⚠️ A trava é só sobre "concluído". Ele pediu que mover fosse simples, e
-    arrastar no quadro não pode virar um "não pode" a cada gesto."""
+    arrastar no quadro não pode virar um "não pode" a cada gesto.
+
+    ⚠️ "AFASTADO" SAIU DA LISTA EM 18/11/2026 e ganhou trava própria: afastar
+    pede o tipo e a data, porque é o tipo que decide o que a volta vai exigir
+    (`cadastros/afastamentos.py`). São DUAS travas diferentes e nenhuma é "a
+    ordem das etapas": uma protege a afirmação "este cadastro está pronto"; a
+    outra, a afirmação "esta pessoa está afastada" — que sem tipo não diz nada.
+    """
     c = _pessoa(sessao_real, dono, CPF_CLT, "Pessoa Com Carteira",
                 vinculo="CTPS", tipo_contrato="CLT_INDETERMINADO")
 
     for destino in ("CADASTRO_INICIAL", "CONTRATO_A_ASSINAR",
-                    "NA_CONTABILIDADE", "AFASTADO", "DESLIGADO", "CANCELADO"):
+                    "NA_CONTABILIDADE", "DESLIGADO", "CANCELADO"):
         svc.mover_etapa(sessao_real, c.id, destino, dono)
         assert (c.etapa or "").upper() == destino
 

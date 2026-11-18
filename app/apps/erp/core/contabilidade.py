@@ -421,11 +421,32 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
             "Não há e-mail da contabilidade cadastrado. Preencha em "
             "Pessoal › Contabilidade, no bloco “Para onde vão os pedidos”, "
             "antes de enviar.")
-    empresa = (s.get(Empresa, p["empresa_id"]) if p["empresa_id"]
-               else svc_email.conta_de_envio(s, None))
+    # ⚑ O PEDIDO SAI PELA CONTA DO DP (18/11/2026), não mais pela conta da
+    # empresa. Ele, ao perguntar como isto estava sendo tratado:
+    #
+    #   *"O que eu vou encaminhar a partir do DP é uma coisa, é um e-mail. O
+    #    que eu vou encaminhar a partir do suprimento é outro e-mail. (…) o DP,
+    #    por enquanto, eu quero um e-mail geral."*
+    #
+    # Antes disto, o pedido à contabilidade e a COTAÇÃO AO FORNECEDOR saíam do
+    # mesmo endereço (a conta da empresa) e a resposta dos dois voltava para a
+    # mesma caixa — e é a caixa do DP que o agente lê, para casar resposta com
+    # pedido. Resposta de fornecedor caindo lá era ruído garantido.
+    #
+    # ⚑ A VOLTA PARA A CONTA DA EMPRESA FICA, e é o que impede isto de parar o
+    # DP: enquanto a conta do DP não estiver configurada, o pedido continua
+    # saindo como saía. Sem essa volta, publicar isto deixaria o DP sem
+    # conseguir enviar até alguém preencher uma tela nova — e ninguém avisaria.
+    from app.apps.erp.core.comum import email_sistema
+    empresa = email_sistema.conta(s, "DP")
+    if empresa is None:
+        empresa = (s.get(Empresa, p["empresa_id"]) if p["empresa_id"]
+                   else svc_email.conta_de_envio(s, None))
     if empresa is None:
         raise ErroValidacao(
-            "Nenhuma empresa com conta de e-mail configurada para enviar.")
+            "Não há conta de e-mail para enviar o pedido. Configure o e-mail "
+            "do DP em Pessoal › Contabilidade, ou a conta da empresa no "
+            "cadastro de Empresas.")
 
     regra = TEMPLATES[p["template"]]
     registro = svc_email.enviar(
@@ -548,10 +569,19 @@ def cobrar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
         s.flush()
         return {"cobrou": False, "escalou": True}
 
-    empresa = (s.get(Empresa, p["empresa_id"]) if p["empresa_id"]
-               else svc_email.conta_de_envio(s, None))
+    # A COBRANÇA SAI PELA MESMA CONTA DO ENVIO (a do DP, com volta para a da
+    # empresa). Cobrar de um endereço diferente do que mandou o pedido quebra a
+    # thread do outro lado — e quebra também o casamento da resposta aqui, que
+    # é feito pelo `In-Reply-To`.
+    from app.apps.erp.core.comum import email_sistema
+    empresa = email_sistema.conta(s, "DP")
     if empresa is None:
-        raise ErroValidacao("Nenhuma empresa com conta de e-mail configurada.")
+        empresa = (s.get(Empresa, p["empresa_id"]) if p["empresa_id"]
+                   else svc_email.conta_de_envio(s, None))
+    if empresa is None:
+        raise ErroValidacao(
+            "Não há conta de e-mail para cobrar. Configure o e-mail do DP em "
+            "Pessoal › Contabilidade.")
     vez = p["cobrancas"] + 1
     corpo = (
         f"Prezados,\n\n"

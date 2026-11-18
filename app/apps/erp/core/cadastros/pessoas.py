@@ -2171,6 +2171,46 @@ def mover_etapa(s: Session, colaborador_id: int, para: str,
     #
     # ⚠️ ESTA É A ÚNICA TRAVA, de propósito. Ela não protege "a ordem das
     # etapas": protege UMA afirmação — "este cadastro está pronto".
+    # ⚑ A TRAVA DO AFASTAMENTO (18/11/2026) — pergunta dele: *"Colaborador
+    # estava afastado e vai retornar ao trabalho. O que deve ser exigido dele e
+    # o que o sistema deve pedir pra travar o simples retorno?"*
+    #
+    # Antes, "Afastado" era etapa e nada mais, e voltar era arrastar o cartão.
+    # As duas pontas passam a ter porta:
+    #
+    #   · ENTRAR em "Afastado" exige o afastamento registrado (tipo e datas),
+    #     porque é o TIPO que decide o que a volta vai exigir. Quem registra é
+    #     `afastamentos.abrir`, que mexe na etapa por aqui com
+    #     `automatico=True` — então o arrasto no quadro cai nesta recusa, com
+    #     a frase que manda a pessoa para o lugar certo.
+    #   · SAIR de "Afastado" exige o retorno tratado: `afastamentos.retornar`
+    #     confere o exame, guarda a estabilidade e encerra. Arrastar para
+    #     qualquer etapa com afastamento em curso cai aqui.
+    #
+    # ⚑ DESLIGAR CONTINUA LIVRE, e é escolha: quem está afastado pode ser
+    # desligado (pedido da própria pessoa, fim de contrato, justa causa).
+    # Travar isso prenderia gente num limbo — e a estabilidade, que é o que
+    # pesa de verdade, é AVISO na tela do desligamento, não trava.
+    if not automatico:
+        from app.apps.erp.core.cadastros import afastamentos as svc_afast
+        if para == "AFASTADO":
+            raise ErroValidacao(
+                "Para afastar alguém, registre o afastamento: o tipo (atestado, "
+                "INSS, acidente de trabalho, maternidade) e a data em que "
+                "começou. É o tipo que decide o que a volta vai exigir. Abra a "
+                "ficha da pessoa e use “Afastar”.")
+        if de == "AFASTADO" and para not in ("DESLIGADO", "CANCELADO"):
+            if svc_afast.aberto(s, c.id) is not None:
+                raise ErroValidacao(
+                    f"{c.nome} está com afastamento em curso. A volta não é "
+                    "mudança de etapa: abra a ficha e use “Registrar o "
+                    "retorno” — o sistema confere o exame de retorno, guarda a "
+                    "estabilidade e devolve a pessoa à ativa.")
+    # ⚠️ A TRAVA DE CONCLUIR VEM DEPOIS DA DO AFASTAMENTO, e a ordem foi
+    # achada por um teste: quem está afastado e é de carteira caía primeiro na
+    # recusa do registro formal ("falta o pedido de Assinatura de CTPS") — uma
+    # frase verdadeira e inútil, porque o caminho dessa pessoa não é concluir,
+    # é registrar o retorno. A recusa que ensina o caminho tem de vir primeiro.
     if para == "CONCLUIDO" and not automatico:
         falta = _o_que_impede_concluir(s, c)
         if falta:
