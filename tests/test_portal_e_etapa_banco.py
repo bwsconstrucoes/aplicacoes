@@ -89,10 +89,15 @@ def test_quem_decide_o_filtro_e_a_REGRA_e_nao_a_tela(cena):
 # ---------------------------------------------------------------------------
 # 2. A situação vem da etapa
 # ---------------------------------------------------------------------------
+# ⚠️ "AFASTADO" SAIU DESTA LISTA EM 18/11/2026, e não porque a regra mudou: a
+# situação continua vindo da etapa. O que mudou é que **mover para "Afastado" à
+# mão passou a ser recusado** — afastar pede o tipo e a data, porque é o tipo
+# que decide o que a volta vai exigir (`cadastros/afastamentos.py`). O par
+# etapa→situação do afastamento é conferido no teste logo abaixo, pelo caminho
+# que existe.
 @pytest.mark.parametrize("etapa, situacao", [
     ("DESLIGADO", "DESLIGADO"),
     ("CANCELADO", "DESLIGADO"),
-    ("AFASTADO", "AFASTADO"),
     ("CONCLUIDO", "ATIVO"),
     ("CADASTRO_INICIAL", "ATIVO"),
     ("CONTRATO_A_ASSINAR", "ATIVO"),
@@ -106,6 +111,31 @@ def test_mover_a_etapa_define_a_situacao(cena, etapa, situacao):
     assert c.situacao == situacao, (
         f"etapa {etapa} tem de deixar a situação em {situacao} — é a situação "
         f"que o ponto lê para decidir quem bate")
+
+
+def test_afastar_deixa_a_situacao_AFASTADO_e_o_quadro_nao_afasta(cena):
+    """As duas pontas da mesma regra, num caso só:
+
+    · afastar pelo caminho certo deixa a situação AFASTADO (e é ela que o ponto
+      lê para não deixar a pessoa bater);
+    · arrastar o cartão no quadro é RECUSADO, com a frase que diz onde afastar.
+    """
+    import datetime as dt
+
+    from app.apps.erp.core.cadastros import afastamentos as svc_afast
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+    c = cena["CTPS"]
+
+    with pytest.raises(ErroValidacao) as e:
+        svc.mover_etapa(cena["s"], c.id, "AFASTADO", cena["usuario"])
+    assert "tipo" in str(e.value).lower()
+    assert c.situacao == "ATIVO", "a recusa não pode ter mexido em nada"
+
+    svc_afast.abrir(cena["s"], c.id,
+                    {"tipo": "INSS", "data_inicio": dt.date.today().isoformat()},
+                    cena["usuario"])
+
+    assert c.etapa == "AFASTADO" and c.situacao == "AFASTADO"
 
 
 def test_desligar_pelo_quadro_tira_a_pessoa_do_ponto(cena):

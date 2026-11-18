@@ -21,81 +21,125 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### ⚑ 18/11/2026 — DUAS PERGUNTAS DELE AINDA SEM RESPOSTA DELE (não comece a área sem ler)
+### ⚑ 18/11/2026 — AFASTAMENTO COM TIPO E RETORNO CONFERIDO (ENTREGUE)
 
-Ele fez as duas no mesmo dia, como PERGUNTA — e as duas foram respondidas com
-diagnóstico, sem obra. **Nada foi construído, de propósito.** Quem pegar a área
-precisa saber o que já foi apurado, para não apurar de novo nem sair fazendo.
+Pergunta dele: *"Colaborador estava afastado e vai retornar ao trabalho. O que
+deve ser exigido dele e o que o sistema deve pedir pra travar o simples
+retorno?"* — e, no mesmo dia, as respostas que fecharam o desenho.
 
-#### 1. "Colaborador estava afastado e vai retornar. O que deve ser exigido?"
+**O QUE EXISTIA ANTES:** "Afastado" era uma etapa do quadro e NADA MAIS — sem
+tipo, sem data de início, sem previsão de volta, sem documento. Voltar era
+arrastar o cartão para "Concluído": a situação voltava para ATIVO sozinha, a
+pessoa voltava a bater ponto, e nenhuma pergunta era feita. Ficar 10 dias por
+atestado e 8 meses por acidente de trabalho eram indistinguíveis.
 
-**O que o sistema faz hoje:** nada. "Afastado" é uma etapa do quadro **sem
-tipo, sem data de início, sem previsão de retorno e sem documento**. Voltar é
-arrastar o cartão para "Concluído"; a situação volta para ATIVO sozinha
-(`SITUACAO_DA_ETAPA`) e a pessoa volta a bater ponto. A trava de concluir
-(`_o_que_impede_concluir`) não pega nada neste caso: a CTPS dessa pessoa já foi
-assinada há tempos.
+**AS DECISÕES DELE, que estão no código e não se perguntam de novo:**
 
-**O que está desligado e ninguém percebe:**
-- o afastamento do PONTO (ocorrência `AFASTAMENTO`, com início e fim, aprovada
-  pelo DP) **não** move a etapa do ERP, e a etapa do ERP não cria ocorrência
-  no ponto. São dois mundos sobre a mesma pessoa.
-- **não existe template de contabilidade de retorno** (são sete, nenhum de
-  afastamento ou volta). O eSocial tem evento e prazo para isso.
-- **`CERTIFICADO-NR` e `ASO` já têm validade no catálogo do Arquivo** e
-  `arquivo.service.vencendo()` já sabe listar o que vence — nada disso é
-  consultado na volta.
-- ⚠️ **A rotina `vigia` ANUNCIA na tela que analisa "ASO e NR vencendo" e o
-  código NÃO faz isso.** Ler `agente_dp.ROTINAS["vigia"]["analisa"]` e comparar
-  com `agente_dp.vigia()`. É promessa na tela sem código atrás — consertar é
-  ligar o `vencendo()` que já existe.
-- não existe nenhuma noção de **estabilidade** (acidente de trabalho,
-  maternidade) em lugar nenhum do repositório. É o item que custa dinheiro: a
-  tela de desligamento não tem como avisar.
+| Pergunta | Resposta dele |
+|---|---|
+| quais afastamentos acontecem na BWS | atestado longo, auxílio-doença do INSS, acidente de trabalho e licença-maternidade — *"sim, temos esses"* |
+| há acidente de trabalho em aberto | *"sim, mas a contabilidade conta, mas é interessante termos a informação também"* → o sistema GUARDA e MOSTRA; não se arvora a ser a fonte oficial |
+| ASO de retorno trava ou avisa | ***"acho que tem que travar."*** ⚠️ É DIFERENTE da decisão de 10/11 sobre o ASO de ADMISSÃO (*"não vamos colocar ele como obrigatório ainda"*), e **não é contradição**: no retorno o exame é exigido por lei ANTES de a pessoa trabalhar, e pode voltar "apto com restrição" |
+| quem move o cartão | *"o DP vai fazer isso depois que alimentar com as informações pertinentes para o retorno"* |
 
-**O que ficou proposto a ele, por ordem de risco:** (1) tipo do afastamento e
-data de retorno como exigência de verdade, porque sem a data o ponto não sabe
-onde para o abono; (2) ASO de retorno **avisando, não travando** — coerente com
-a decisão dele de 10/11 ("não vamos colocar ele como obrigatório ainda"), com
-quem concluir assinando pela escolha; (3) NR vencida e estabilidade como aviso,
-a estabilidade aparecendo no DESLIGAMENTO, que é onde ela custa; (4) template de
-contabilidade de retorno.
+**COMO FICOU:** migração 111 (`colaborador_afastamentos`, um aberto por pessoa
+por índice único parcial) + `core/cadastros/afastamentos.py` com os tipos em
+CÓDIGO (as regras de cada um são LEI, não preferência da empresa — ao contrário
+das licenças do ponto, que são tabela porque a convenção pode dar mais dias).
 
-**Decisões que são dele e travam o desenho:** quais afastamentos acontecem de
-fato na BWS (é a lista de tipos); se o ASO de retorno trava ou só avisa; se
-quer o template de retorno; e quem move o cartão hoje na prática.
+A trava mora em `pessoas.mover_etapa`, **não na tela**, porque o quadro arrasta
+cartão direto e trava de tela o arrasto contorna: entrar em "Afastado" exige o
+afastamento registrado; sair exige o retorno tratado. **Desligar continua
+livre** — há desligamento que cabe na estabilidade (pedido da pessoa, justa
+causa), e a estabilidade é AVISO no diálogo de desligar.
 
-#### 2. "O e-mail da empresa não diferencia as áreas. Como está sendo tratado?"
+⚠️ **A ORDEM DAS DUAS TRAVAS FOI ACHADA POR UM TESTE:** a do afastamento vem
+ANTES da de concluir. Quem está afastado e é de carteira caía primeiro em
+"falta o pedido de Assinatura de CTPS" — frase verdadeira e inútil, porque o
+caminho dessa pessoa não é concluir, é registrar o retorno.
 
-**Ele está certo, e não é hipótese — está em produção.** O sistema tem DOIS
-eixos de conta de e-mail, e **nenhum deles é a área**:
+**O exame que vale é NOVO:** o ASO aceito é o emitido (ou arquivado) a partir
+do início do afastamento. O da admissão está arquivado desde sempre, e aceitá-lo
+faria a trava passar sem ninguém examinar ninguém.
 
-| Eixo | Onde fica | Quem usa |
+**O passado não ficou preso:** quem já estava em "Afastado" entrou com tipo
+`NAO_INFORMADO` (o único que não exige exame) e a data da última mudança de
+etapa. O DP diz a natureza na hora do retorno, e só então a trava tem o que
+conferir.
+
+**Achado de passagem, e consertado:** a rotina `vigia` do agente **ANUNCIAVA na
+tela** que analisava "ASO e NR vencendo" e o código não consultava nem um nem
+outro. O `arquivo.service.vencendo()` que resolve já existia; faltava chamar.
+Agora o vigia também avisa da volta que está chegando sem o exame — e há teste
+comparando a FRASE da rotina com o CÓDIGO dela, para não voltar a mentir.
+
+**Exercitado no navegador de ponta a ponta** (é o que achou todo defeito
+silencioso desta base): afastar, a recusa do arrasto no quadro, a volta recusada
+sem ASO, a volta aceita com ASO novo, a estabilidade no cartão e o aviso dela no
+diálogo de desligar.
+
+**O que NÃO foi feito, e está em `PERGUNTAS.md`:** o resultado do ASO ("apto" /
+"apto com restrição") não é campo — ⚠️ **é a falta mais séria, porque em obra é
+segurança**; a data de cessação do benefício do INSS não é guardada; o
+afastamento do PONTO continua não conversando com a etapa do ERP; e não existe
+template de contabilidade de retorno (o eSocial tem evento e prazo).
+
+---
+
+### ⚑ 18/11/2026 — UMA CONTA DE E-MAIL POR ÁREA DA EMPRESA (ENTREGUE)
+
+Pergunta dele: *"A empresa tem áreas diferentes. O que eu vou encaminhar a
+partir do DP é uma coisa, é um e-mail. O que eu vou encaminhar a partir do
+suprimento é outro e-mail. E a parte de sistema (…) é outro e-mail. E eu acho
+que a gente não está tendo essa diferenciação."*
+
+**ELE ESTAVA CERTO, e não era hipótese — estava em produção.** Os eixos eram
+EMPRESA (CNPJ) e SISTEMA, e a ÁREA não era eixo nenhum: **a cotação ao
+fornecedor e o pedido à contabilidade saíam do mesmo endereço**, e a resposta
+dos dois voltava para a mesma caixa — a caixa que o agente do DP lê para casar
+resposta com pedido.
+
+**O DESENHO, com as palavras dele:**
+
+| Área | Conta | Mudou? |
 |---|---|---|
-| uma conta por **EMPRESA** (CNPJ), com empréstimo entre empresas (migração 067) | cadastro de Empresas | **o DP** (pedido à contabilidade, `contabilidade.py`) **e o Suprimentos** (cotação e cobrança, `suprimentos/envio.py` e `cobranca.py`) — a MESMA conta |
-| uma conta **do sistema**, fora de CNPJ | Configurações › E-mail do sistema (`email_sistema.py`) | só o convite de primeiro acesso |
+| **Suprimento** | uma **por empresa** (CNPJ), no cadastro de Empresas | **nada** — *"suprimento é um e-mail por empresa"*, e era o que já havia. A cotação é documento comercial de um CNPJ |
+| **DP** | **uma só**, geral, com a caixa de entrada ao lado | **novo** — *"o DP, por enquanto, eu quero um e-mail geral"*; *"eu tenho que associar a caixa própria, configurar isso no próprio DP"* |
+| **Sistema** | **uma só**, geral | nada — *"sistema um e-mail geral"*, e era o que já havia |
 
-Ou seja: **a cotação para o fornecedor e o pedido à contabilidade saem do mesmo
-endereço**, e a resposta dos dois volta para a mesma caixa. A caixa de entrada
-do agente (`email_entrada.py`) também é **UMA**, global, em `parametros` — ela
-casa resposta com `dp_pedidos`; resposta de fornecedor vai cair nela.
+⚠️ **ELE CORRIGIU UMA LEITURA MINHA:** eu havia proposto "suprimento por área E
+por empresa" como se fossem dois eixos. Ele: *"Suprimento é uma área. Uma área
+da empresa."* O desenho é o mesmo; a explicação estava errada.
 
-O que já está certo: a conta do sistema. Ele disse *"as coisas de sistema a
-gente pode considerar um e-mail só"*, e é exatamente o que existe.
+**COMO FICOU:** `core/comum/email_sistema.py` deixou de ser "o e-mail do
+sistema" e passou a servir **uma conta por área** (`AREAS`), reusando o que já
+fazia para uma: `parametros`, senha cifrada, e um objeto que o `email.py` manda
+sem saber a diferença. **Área nova é uma linha, não um módulo.**
 
-**O que foi proposto, sem construir:** o eixo que falta é o **propósito**
-(DP / Suprimentos / Sistema), e a conta passa a ser identificada por
-**(propósito, empresa — a empresa podendo ficar em branco)**. Empresa em branco
-= serve a todas naquele propósito. Isso cobre os três casos dele com uma regra
-só: Sistema e DP ficam sem empresa (ele: *"o DP, por enquanto, a gente não está
-precisando ainda diferenciar por empresa"*), e o Suprimentos continua
-precisando da empresa, porque a cotação é documento comercial de um CNPJ.
-⚠️ E a caixa de ENTRADA precisa do mesmo eixo, senão a separação na saída não
-se sustenta na volta.
+⚑ **AS CHAVES DO SISTEMA CONTINUAM `email_sistema_*`** — nada a migrar, e a
+conta que já está configurada em produção continua valendo. Trocar o prefixo
+por elegância faria o ERP esquecer a conta e o convite parar de sair sem
+ninguém relacionar. Há teste disso.
 
-**Decisão dele que falta:** se o Suprimentos é por área E por empresa (acho que
-sim, pelo CNPJ da cotação) ou só por área; e se cada propósito ganha caixa de
-entrada própria.
+⚑ **A VOLTA PARA A CONTA DA EMPRESA FICOU:** enquanto a conta do DP não
+estiver configurada, o pedido à contabilidade sai como saía. Sem isso, publicar
+deixaria o DP sem conseguir enviar até alguém preencher uma tela nova — e
+ninguém avisaria. A tela diz isso em letras.
+
+**Rota própria, e não um `area` na rota do sistema:** a conta do SISTEMA é do
+administrador (`configurar`); a do DP é de quem opera o DP
+(`pedir_contabilidade`). Uma rota com duas alçadas por dentro faria a
+declaração de permissão mentir — regra do `CLAUDE.md`. A **caixa de entrada**
+também passou de `configurar` para `pedir_contabilidade`: ela já era a caixa do
+DP na prática, e o DP dependia do administrador para configurá-la.
+
+**A conta de saída e a caixa de entrada ficam LADO A LADO** na mesma tela
+(Pessoal › Contabilidade › Caixa de entrada), e a de saída avisa para usar o
+mesmo endereço: mandar de um e esperar resposta em outro é o jeito de a
+resposta nunca casar com o pedido.
+
+**O que falta decidir com ele:** se cada área ganha caixa de entrada própria
+(hoje só o DP tem caixa; o suprimento manda e não lê resposta automática).
 
 ### ⚑ 18/11/2026 — LIBERAÇÃO DE ACESSO AO PORTAL: falta UMA decisão dele (quem libera)
 

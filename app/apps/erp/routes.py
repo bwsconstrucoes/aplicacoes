@@ -9820,6 +9820,66 @@ def api_email_sistema_testar():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ===========================================================================
+# O E-MAIL DO DP (18/11/2026)
+#
+# Ele: *"O que eu vou encaminhar a partir do DP é uma coisa, é um e-mail. O que
+# eu vou encaminhar a partir do suprimento é outro e-mail. (…) o DP, por
+# enquanto, eu quero um e-mail geral. (…) Eu tenho que configurar isso no
+# próprio DP."*
+#
+# ⚑ ROTA PRÓPRIA, E NÃO UM `area` NO CORPO DA ROTA DO SISTEMA, e a razão é
+# regra do CLAUDE.md: a ação declarada tem de decidir sozinha quem entra. A
+# conta do SISTEMA é do administrador (`configurar`); a do DP é de quem opera o
+# DP (`pedir_contabilidade`). Uma rota só, com duas alçadas por dentro, faria a
+# declaração mentir — e a homologação com banco de verdade acusa isso.
+# ===========================================================================
+@bp.route("/erp/api/dp/email", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="pedir_contabilidade")
+def api_email_do_dp():
+    """A conta por onde o DP manda (e por onde a resposta volta). Senha nunca sai."""
+    from app.apps.erp.core.comum import email_sistema as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, "config": svc.configuracao(s, "DP"),
+                                "falta": svc.o_que_falta(s, "DP")})
+            r = svc.configurar(s, request.get_json(silent=True) or {},
+                               _usuario_logado(s), area="DP")
+            s.commit()
+            return jsonify({"ok": True, "config": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na conta de e-mail do DP")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/email/testar", methods=["POST"])
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_email_do_dp_testar():
+    from app.apps.erp.core.comum import email_sistema as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            para = ((request.get_json(silent=True) or {}).get("para")
+                    or (atual.email if atual else "")).strip()
+            if not para:
+                return jsonify({"ok": False,
+                                "erro": "Para qual endereço mando o teste?"}), 400
+            registro = svc.testar(s, para, atual, area="DP")
+            s.commit()
+            return jsonify({"ok": registro.situacao == "ENVIADO",
+                            "erro": registro.erro, "para": para})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no teste do e-mail do DP")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/usuarios/<int:usuario_id>/permissoes", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="gerir_usuarios", POST="gerir_usuarios")
@@ -13155,9 +13215,17 @@ def api_dp_devolucao_cobrar(devolucao_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ⚑ QUEM CONFIGURA A CAIXA É O DP (18/11/2026), não só o administrador. Ele:
+# *"como a gente vai monitorar a caixa de mensagens, eu tenho que associar a
+# caixa própria. Eu tenho que configurar isso no próprio DP."*
+#
+# Ela JÁ ERA a caixa do DP na prática (é ela que o agente lê para casar resposta
+# com pedido da contabilidade) — o que faltava era quem a configura ser quem a
+# usa. `configurar` é ADMIN; isso deixava o DP dependendo dele para uma caixa
+# que é do DP.
 @bp.route("/erp/api/dp/caixa", methods=["GET", "POST"])
 @login_obrigatorio
-@permissao(GET="ver_pessoal", POST="configurar")
+@permissao(GET="ver_pessoal", POST="pedir_contabilidade")
 def api_dp_caixa():
     """A caixa de entrada que o agente lê. A SENHA nunca sai na resposta."""
     from app.apps.erp.core.comum import email_entrada
@@ -13570,6 +13638,92 @@ def api_colaborador_etapa(colaborador_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao mover a etapa do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# AFASTAMENTO E RETORNO (18/11/2026)
+#
+# Pergunta dele: *"Colaborador estava afastado e vai retornar ao trabalho. O que
+# deve ser exigido dele e o que o sistema deve pedir pra travar o simples
+# retorno?"* — e, sobre quem faz: *"o DP vai fazer isso depois que alimentar com
+# as informações pertinentes para o retorno."*
+#
+# ⚑ AS DUAS ROTAS DE ESCRITA SÃO A ÚNICA PORTA de entrar e sair de "Afastado".
+# Mover a etapa pelo quadro recusa, com a frase que manda para cá — a trava
+# está em `pessoas.mover_etapa`, não na tela, porque o arrasto contornaria.
+# ===========================================================================
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/afastamento")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_afastamento(colaborador_id: int):
+    """O afastamento em curso, o histórico, e o que a volta vai exigir."""
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import afastamentos as svc_afast
+    try:
+        with get_session() as s:
+            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
+            return jsonify({
+                "ok": True,
+                "tipos": svc_afast.opcoes(),
+                "aberto": svc_afast.aberto(s, colaborador_id),
+                "historico": svc_afast.historico(s, colaborador_id),
+                "estabilidade": svc_afast.estabilidade(s, colaborador_id),
+                "retorno": svc_afast.o_que_falta_para_voltar(s, colaborador_id)})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o afastamento de %s", colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/afastamento",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_afastar(colaborador_id: int):
+    """Afasta: registra o tipo e as datas, e leva a etapa para “Afastado”."""
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import afastamentos as svc_afast
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            r = svc_afast.abrir(s, colaborador_id, d, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao afastar %s", colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/afastamento/retorno",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_retorno_de_afastamento(colaborador_id: int):
+    """Registra a volta: confere o exame, guarda a estabilidade, devolve à ativa."""
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import afastamentos as svc_afast
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            r = svc_afast.retornar(s, colaborador_id, d, usuario)
+            s.commit()
+            return jsonify(r)
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao registrar o retorno de %s", colaborador_id)
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

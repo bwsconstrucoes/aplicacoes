@@ -133,13 +133,22 @@ ROTINAS: dict[str, dict[str, Any]] = {
     "vigia": {
         "nome": "Vigia das pendências",
         "quando": "todo dia",
+        # ⚠️ ESTA FRASE ESTAVA MENTINDO ATÉ 18/11/2026, e a mentira aparecia
+        # na TELA do agente: ela anunciava "ASO e NR vencendo" e o código não
+        # consultava nem um nem outro. Achado conferindo a pergunta dele sobre
+        # o retorno de afastamento. Agora a frase e o código dizem o mesmo —
+        # e a regra é: ao mexer aqui, mexer nos dois.
         "analisa": "cadastro parado além do prazo, papel que falta para "
-                   "admitir, ASO e NR vencendo, admissão sem ficha de volta, "
-                   "desligamento sem documentação rescisória, ativo sem obra",
+                   "admitir, ASO e certificado de NR vencidos ou vencendo, "
+                   "volta de afastamento chegando sem o exame de retorno, "
+                   "afastamento antigo sem natureza registrada, admissão sem "
+                   "ficha de volta, desligamento sem documentação rescisória, "
+                   "ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
         "usa_ia": False,
-        "padrao": {"dias_parado": 3},
+        "padrao": {"dias_parado": 3, "dias_antes_da_volta": 7,
+                   "dias_para_vencer": 30},
     },
     "relatorio": {
         "nome": "Relator",
@@ -535,7 +544,8 @@ def rodar_cobranca(s: Session, usuario: Optional[Usuario] = None,
 # ===========================================================================
 # R6 · VIGIA — a lista do que envelheceu. Não cobra ninguém.
 # ===========================================================================
-def vigia(s: Session, *, hoje: Optional[date] = None) -> list[dict[str, Any]]:
+def vigia(s: Session, *, hoje: Optional[date] = None,
+          usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
     """O que está envelhecendo no cadastro. CONSULTA — não muda nada.
 
     Roda com a rotina desligada também, porque é leitura: desligar o vigia
@@ -613,6 +623,79 @@ def vigia(s: Session, *, hoje: Optional[date] = None) -> list[dict[str, Any]]:
                       "além do prazo"),
             "o_que_fazer": "cobrar a obra pelo WhatsApp"})
 
+    # ⚑ ASO E NR VENCENDO (18/11/2026) — a rotina PROMETIA isto na tela e não
+    # fazia. O que resolve já existia: `arquivo.service.vencendo()`. Faltava
+    # chamar.
+    #
+    # ⚑ O SIGILO É O MESMO DO ARQUIVO, e é por isso que `usuario` chegou até
+    # aqui: ASO e certificado de NR são documentos PESSOAIS, e quem não pode
+    # vê-los no Arquivo não pode vê-los por uma lista de pendências. Reusar
+    # `vencendo()` é reusar essa regra — escrever a consulta aqui seria
+    # escrever uma segunda regra de sigilo, e as duas divergiriam.
+    #
+    # Sem usuário (o agente rodando sozinho), `sigilos_visiveis` devolve só
+    # ABERTO e estes dois não entram. É o certo: o alerta aparece para a pessoa
+    # do DP que roda o agente, que é quem resolve.
+    try:
+        from app.apps.erp.core.arquivo import service as svc_arquivo
+        for d in svc_arquivo.vencendo(
+                s, dias=int(par.get("dias_para_vencer") or 30),
+                usuario=usuario):
+            if (d.get("tipo") or "") not in ("ASO", "CERTIFICADO-NR"):
+                continue
+            if not d.get("colaborador_id"):
+                continue
+            venc = d.get("validade")
+            quantos = ((date.fromisoformat(venc) - dia).days if venc else None)
+            achados.append({
+                "tipo": "documento_de_pessoa_vencendo",
+                "colaborador_id": int(d["colaborador_id"]),
+                "quem": d.get("dono") or "—",
+                "o_que": (f"{d.get('tipo_nome') or d.get('tipo')} "
+                          + ("VENCIDO" if (quantos is not None and quantos < 0)
+                             else f"vence em {quantos} dia(s)")),
+                "o_que_fazer": "marcar o exame ou o treinamento"})
+    except Exception:
+        # Vigia é leitura: uma falha aqui não pode calar as outras pendências.
+        logger.exception("Agente DP: falha ao olhar documento vencendo")
+
+    # ⚑ A VOLTA DE AFASTAMENTO CHEGANDO (18/11/2026). Pergunta dele: *"o que o
+    # sistema deve pedir pra travar o simples retorno?"*
+    #
+    # O exame de retorno tem de estar pronto ANTES de a pessoa aparecer na
+    # obra — descobrir no dia é descobrir tarde: ou ela trabalha sem exame
+    # (ilegal, e é o caso em que um acidente custa caro) ou volta para casa.
+    # Por isso o vigia olha a PREVISÃO, não a volta.
+    try:
+        from app.apps.erp.core.cadastros import afastamentos as svc_afast
+        antes = int(par.get("dias_antes_da_volta") or 7)
+        for linha in s.execute(text("""
+            SELECT a.colaborador_id, a.tipo, a.data_inicio, a.previsao_retorno,
+                   c.nome
+              FROM colaborador_afastamentos a
+              JOIN colaboradores c ON c.id = a.colaborador_id
+             WHERE a.data_retorno IS NULL
+             LIMIT 300""")).mappings().all():
+            falta = svc_afast.o_que_falta_para_voltar(s, linha["colaborador_id"])
+            if not falta.get("impede"):
+                continue
+            prev = linha["previsao_retorno"]
+            perto = prev is not None and (prev - dia).days <= antes
+            # Sem previsão, o alerta sai do mesmo jeito: afastamento sem
+            # previsão de volta é o que some da vista por mais tempo.
+            if prev is not None and not perto:
+                continue
+            quando = (f"volta prevista para {prev:%d/%m/%Y}" if prev
+                      else "sem previsão de volta registrada")
+            achados.append({
+                "tipo": "volta_de_afastamento_sem_o_que_falta",
+                "colaborador_id": int(linha["colaborador_id"]),
+                "quem": linha["nome"],
+                "o_que": f"{quando}; falta: " + " ".join(falta["impede"]),
+                "o_que_fazer": "resolver antes de a pessoa aparecer na obra"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar as voltas de afastamento")
+
     # Pessoa ativa sem obra: não entra em rateio nem em lista de obra nenhuma.
     for linha in s.execute(text("""
         SELECT id, nome FROM colaboradores
@@ -629,13 +712,14 @@ def vigia(s: Session, *, hoje: Optional[date] = None) -> list[dict[str, Any]]:
 # ===========================================================================
 # R7 · RELATOR
 # ===========================================================================
-def relatorio(s: Session, *, dias: int = 1) -> dict[str, Any]:
+def relatorio(s: Session, *, dias: int = 1,
+              usuario: Optional[Usuario] = None) -> dict[str, Any]:
     """O resumo em português. Cada linha diz o que fazer, não um número solto."""
     pedidos = svc_ct.listar(s, situacao="ABERTOS")
     atrasados = [p for p in pedidos if p["atrasado"]]
     divergentes = [p for p in pedidos if p["situacao"] == "DIVERGENTE"]
     fila = svc_pessoas.fila_do_cadastro(s)
-    pendencias = vigia(s)
+    pendencias = vigia(s, usuario=usuario)
     linhas = []
     if atrasados:
         linhas.append(
@@ -677,7 +761,7 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
     feito["caixa"] = rodar_caixa(s, usuario)
     feito["cobranca"] = rodar_cobranca(s, usuario)
     if modo(s, "vigia") != "DESLIGADA":
-        achados = vigia(s)
+        achados = vigia(s, usuario=usuario)
         quantos = 0
         for a in achados:
             if sugerir(s, rotina="vigia", alvo_tipo="colaborador",
@@ -688,7 +772,7 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
         _carimbar(s, "vigia")
         feito["vigia"] = {"achou": len(achados), "avisou": quantos}
     if modo(s, "relatorio") != "DESLIGADA":
-        feito["relatorio"] = relatorio(s)
+        feito["relatorio"] = relatorio(s, usuario=usuario)
         _carimbar(s, "relatorio")
     ligadas = [c for c in ROTINAS if modo(s, c) != "DESLIGADA"]
     feito["rotinas_ligadas"] = ligadas

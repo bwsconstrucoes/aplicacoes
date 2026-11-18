@@ -2479,6 +2479,69 @@ acesso" sem dizer a qual é a resposta que ele não tem como conferir.
   escolhido.
 - **"Quem liberou o acesso do fulano?"** — fica em `decidido_por` no pedido, e
   na trilha do operador criado.
+
+---
+
+## Afastamento e retorno (18/11/2026)
+
+Nasceu da pergunta dele: *"Colaborador estava afastado e vai retornar ao
+trabalho. O que deve ser exigido dele e o que o sistema deve pedir pra travar o
+simples retorno?"*
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"afastado"** | ① a ETAPA do quadro (o cartão está na coluna Afastado); ② a SITUAÇÃO que o ponto lê para não deixar bater; ③ a ocorrência de **AFASTAMENTO do PONTO**, que tem data de início e fim e é aprovada pelo DP. ⚠️ **As três não conversam entre si** — ver `HISTORICO.md`. Resposta que misture está errada |
+| **"quanto tempo afastada"** | do início do afastamento até HOJE (se em curso) ou até a VOLTA (se encerrado). São números diferentes |
+| **"estável"** | estabilidade no emprego por acidente de trabalho (12 meses da volta) ou por maternidade (5 meses do parto). ⚠️ **O sistema não é a fonte oficial** — ele: *"a contabilidade conta, mas é interessante termos a informação também"* |
+| **"atestado"** | ① o tipo de afastamento de até 15 dias; ② o documento; ③ a ocorrência do ponto. Pergunta sobre "atestados do mês" quase sempre é ③ |
+| **"exame"** | o **ASO de retorno** (que trava a volta) ou o ASO admissional (que **não** trava a admissão, decisão dele de 10/11) |
+
+### Perguntas que o sistema responde
+
+- **"Quem está afastado hoje?"** / **"desde quando?"** / **"por quê?"** — a
+  tabela de afastamentos, com tipo, início e previsão de volta.
+- **"Quem volta de afastamento esta semana?"** — pela previsão de retorno.
+- **"Quem está para voltar e ainda não tem o exame de retorno?"** — é a
+  pergunta que o vigia do agente responde todo dia, e a que evita a pessoa
+  aparecer na obra e não poder trabalhar.
+- **"Falta algo para o fulano voltar?"** — três listas separadas: o que
+  IMPEDE, o que apenas AVISA e o que a volta ACARRETA.
+- **"Quem está com estabilidade no emprego, e até quando?"** — ⚠️ a resposta
+  tem de dizer que quem calcula o prazo oficial é a contabilidade.
+- **"Dá para desligar o fulano?"** — ⚠️ **a resposta nunca é só "sim"**: se há
+  estabilidade, ela entra na resposta. O sistema não impede o desligamento (há
+  caso em que cabe: pedido da pessoa, justa causa), mas não pode deixar de
+  avisar.
+- **"Quantos dias de afastamento tivemos este ano?"** / **"por tipo?"** /
+  **"por obra?"** — soma dos afastamentos encerrados mais os em curso. ⚠️ diga
+  qual dos dois está contando.
+- **"Quem já se afastou mais de uma vez?"** — o histórico guarda todos.
+- **"O afastamento do fulano passou de 6 meses?"** — importa porque o período
+  de férias dela recomeça.
+- **"Quem está afastado com NR vencida?"** — quem ficou meses fora pode ter
+  voltado com treinamento vencido, e ninguém olhava.
+- **"Quem foi afastado sem o tipo registrado?"** — são os afastamentos que já
+  existiam quando o tipo passou a ser pedido (migração 111).
+
+### Perguntas que o sistema AINDA NÃO responde, e o que falta
+
+- **"A pessoa voltou apto ou apto COM RESTRIÇÃO?"** — ⚠️ **a mais importante
+  desta lista, e em obra ela é segurança.** O ASO é arquivado como documento;
+  o resultado dele não é um campo. Hoje só se sabe pela observação que alguém
+  escreveu à mão. **Falta** ler o resultado do ASO (ou um campo "apto / apto
+  com restrição / inapto" no retorno) e mostrar a restrição para quem escala a
+  pessoa.
+- **"O benefício do INSS dela já cessou?"** — o sistema não conversa com o
+  INSS e não guarda a data de cessação. **Falta** registrar a alta.
+- **"Quantas pessoas estão afastadas pelo PONTO e não pelo cadastro?"** —
+  responderia a incoerência entre os dois mundos, mas eles não conversam.
+  **Falta** ligar a ocorrência do ponto à etapa do ERP.
+- **"A contabilidade foi avisada do retorno?"** — não existe modelo de pedido
+  de retorno de afastamento (são sete, nenhum é este). **Falta** o modelo.
+- **"Quanto custou o afastamento?"** — o ERP não registra o que o INSS pagou
+  nem o que a empresa pagou nos 15 primeiros dias.
 - **"Quem tem acesso e nunca entrou?"** — convite não usado + nenhum evento.
 - **"De qual obra o fulano está cuidando?"** — ⚠️ **a resposta vem do PONTO**
   (onde ele mais bateu nos últimos 60 dias), não do cadastro. O cadastro
