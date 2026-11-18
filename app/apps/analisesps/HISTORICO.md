@@ -12244,6 +12244,37 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 273 — Comprovantes: lista com filtros, o comprovante de cada página e o que não baixou no Drive (18/11/2026) — MIGRAÇÃO 057
+
+- *"Eu queria poder, no sidebar, fazer filtragem das informações (…) aparece uma série de
+  coisas que deu erro. Aí eu quero entender o que é que deu erro (…) se tem o número da SP,
+  nós gravamos o comprovante (…) conseguir visualizar esse comprovante. Os comprovantes que
+  não foram baixados (…) deveriam ficar salvos no Google Drive (…) para eu entender por que
+  ele não baixou, se há alguma regra que não existe ainda."*
+- **O que já se guardava** (desde 006/013): por envio (arquivo, quem, quando, situação) e
+  por PÁGINA (situação, SP, valor, quem recebeu, motivo, a conversa com o Omie). O PDF do
+  envio só no disco do servidor (7 dias; some a cada publicação). O comprovante que BAIXOU
+  o robô arquiva no Dropbox e grava o link na coluna Comprovante da SP.
+- **Lista "comprovante a comprovante"** (`comprovantes.listar`): uma linha por página, de
+  todos os envios, com a SP (abre a ficha), o motivo, a conversa com o Omie e o link do
+  comprovante — o arquivado na SP (baixado/duplicado), a cópia no Drive, ou a página ainda
+  no servidor (rota nova `/comprovantes/<lote>/pagina/<n>`). Números por situação no alto
+  (clicáveis). Teto de 300 linhas; padrão, os últimos 30 dias.
+- **Barra lateral** (`analisesps_comprovantes_filtros.html`): busca (SP, quem recebeu,
+  valor, arquivo, motivo), enviado de/até, situação (com a contagem) e enviado por.
+- **"Os envios"** continua (erro do envio, parado, "Processar de novo"), mas sem a tabela de
+  páginas dentro de cada um — um link "ver as páginas deste envio" filtra a lista. A tela
+  fazia 1 consulta por envio (15) a cada abertura; agora são 3.
+- **O que não baixou vai para o Drive** (`guardar_paginas_no_drive`, no fim do
+  processamento, inclusive do que falhou no meio): cada página que pede nova tentativa é
+  recortada e sobe para a subpasta "Comprovantes não baixados" da pasta do Drive da folha;
+  o link fica no ENVIO, por página (migração 057, `paginas_no_drive`), para "Processar de
+  novo" não perder nem reenviar. Custo: 3 chamadas ao Drive por página que não baixou + 1
+  busca da subpasta por envio. Falha no Drive nunca derruba a baixa.
+- ⚠️ Os envios ANTERIORES a esta publicação não vão sozinhos para o Drive (a cópia nasce
+  no fim do processamento); os que ainda tiverem o PDF no servidor mostram "ver a página".
+- Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+
 #### Leva 272 — Arquivos gerados: todas as SPs, uma por linha, filtros, e o nº da SP no PDF do via SP (18/11/2026)
 
 - O dono, olhando o pagamento via SP: *"na parte das SPs, não estão sendo exibidas todas

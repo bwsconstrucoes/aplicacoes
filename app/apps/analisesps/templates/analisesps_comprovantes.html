@@ -13,6 +13,8 @@
    *"se eu sair da tela e voltar, a informação vai ser me dada ainda?"*. Vai: o
    resultado mora no banco, não nesta página.
 --------------------------------------------------------------------------- #}
+{% block filtros %}{% if lista %}{% include "analisesps_comprovantes_filtros.html" %}{% endif %}{% endblock %}
+
 {% block conteudo %}
 
 {# O endereço e o "tem coisa andando" vêm do SERVIDOR, não são adivinhados
@@ -85,8 +87,71 @@
   </div>
 {% endif %}
 
+{# ---------------------------------------------------------------------------
+   OS COMPROVANTES, UM POR LINHA (18/11/2026) — de todos os envios, no filtro da
+   barra lateral. O dono: *"aparece uma série de coisas que deu erro. Aí eu quero
+   entender o que é que deu erro (…) se tem o número da SP, nós gravamos o
+   comprovante (…) a partir daqui, conseguir visualizar esse comprovante."*
+--------------------------------------------------------------------------- #}
+{% if lista %}
 <div class="cartao">
-  <h2>O que aconteceu</h2>
+  <h2>Comprovante a comprovante
+    <small>{{ lista.total }} no filtro{% if filtros.lote %} · só o envio {{ filtros.lote }}
+      (<a href="{{ url_for('analisesps.tela_comprovantes') }}">todos</a>){% endif %}</small></h2>
+  <div class="kpis kpis-comprovantes">
+    {% for chave, rotulo, quantos in lista.contagem %}
+      {% set ativo = chave in filtros.situacoes %}
+      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO') and quantos else '' }} {{ 'ativo' if ativo }}"
+         href="{{ url_for('analisesps.tela_comprovantes', f=1, situacao=('' if ativo else chave), busca=filtros.busca or None,
+                          de=filtros.de or None, ate=filtros.ate or None, lote=filtros.lote or None) }}"
+         title="Mostrar só: {{ rotulo }}">
+        <div class="kpi-rotulo">{{ rotulo }}</div><div class="kpi-valor">{{ quantos }}</div></a>
+    {% endfor %}
+  </div>
+  <div class="tabela-wrap"><div class="tabela-rolagem livre">
+  <table class="sps" id="tabela-comprovantes">
+    <thead><tr><th>Enviado</th><th>Arquivo · pág.</th><th>Situação</th><th>SP</th>
+      <th>Valor</th><th>Quem recebeu</th><th>Comprovante</th><th>Por quê</th></tr></thead>
+    <tbody>
+    {% for i in lista.itens %}
+      <tr class="{{ 'com-risco' if i.pede_acao }}">
+        <td>{{ i.recebido_em|momento_br }}<br><span class="cartao-dica">{{ i.quem or '—' }}</span></td>
+        <td><a href="{{ url_for('analisesps.tela_comprovantes', f=1, lote=i.lote_id, de='') }}"
+               title="Ver só as páginas deste envio">{{ i.arquivo }}</a>
+          <span class="cartao-dica">pág. {{ i.pagina or '—' }}</span></td>
+        <td><span class="etiqueta {{ 'ruim' if i.pede_acao else 'boa' }}">{{ i.rotulo }}</span></td>
+        <td class="id">{% if i.sp_id %}<a href="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}"
+              data-ficha="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}" data-id="{{ i.sp_id }}"
+              title="Abre a SP aqui">{{ i.sp_id }}</a>{% else %}—{% endif %}</td>
+        <td>{{ i.valor or '—' }}</td>
+        <td>{{ i.recebedor or '—' }}</td>
+        <td class="sem-quebra">
+          {% if i.link_arquivado %}<a href="{{ i.link_arquivado }}" target="_blank" rel="noopener"
+              title="O comprovante arquivado na SP">ver comprovante</a>
+          {% elif i.link_drive %}<a href="{{ i.link_drive }}" target="_blank" rel="noopener"
+              title="Cópia desta página no Drive (pasta Comprovantes não baixados)">ver no Drive</a>
+          {% elif i.no_servidor %}<a href="{{ url_for('analisesps.pagina_do_comprovante', lote_id=i.lote_id, pagina=i.pagina) }}"
+              target="_blank" rel="noopener" title="A página, enquanto o PDF ainda está no servidor">ver a página</a>
+          {% else %}<span class="cartao-dica">—</span>{% endif %}</td>
+        <td>{% if i.motivo_explicado %}{{ i.motivo_explicado }}
+            <details><summary class="cartao-dica">Detalhe técnico</summary><small>{{ i.motivo }}</small></details>
+          {% else %}{{ i.motivo or '' }}{% endif %}
+          {% if i.conversa_omie %}<details class="conversa-omie">
+            <summary>o que o Omie respondeu, passo a passo</summary><pre>{{ i.conversa_omie }}</pre></details>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="cartao-dica">Nenhum comprovante neste filtro.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+  {% if lista.mais %}<p class="cartao-dica">Mostrando os {{ lista.itens|length }} mais recentes —
+    estreite o filtro para ver o resto.</p>{% endif %}
+</div>
+{% endif %}
+
+<div class="cartao">
+  <h2>Os envios</h2>
   {% if not historico %}
     <p class="cartao-dica">Nenhum comprovante foi enviado por aqui ainda.</p>
   {% else %}
@@ -121,47 +186,9 @@
           </div>
         {% endif %}
 
-        {% set itens = lote.itens %}
-        {% if itens %}
-          <table class="sps">
-            <thead><tr>
-              <th>Pág.</th><th>Situação</th><th>SP</th><th>Valor</th>
-              <th>Quem recebeu</th><th>Por quê</th>
-            </tr></thead>
-            <tbody>
-              {% for i in itens %}
-                <tr class="{{ 'com-risco' if i.situacao not in ('BAIXADO', 'DUPLICADO') }}">
-                  <td>{{ i.pagina or '—' }}</td>
-                  <td>{{ i.rotulo }}</td>
-                  <td class="id">{{ i.sp_id or '—' }}</td>
-                  <td>{{ i.valor or '—' }}</td>
-                  <td>{{ i.recebedor or '—' }}</td>
-                  <td>{% if i.motivo_explicado %}{{ i.motivo_explicado }}
-                    <details><summary class="cartao-dica">Detalhe técnico</summary>
-                      <small>{{ i.motivo }}</small></details>
-                    {% else %}{{ i.motivo or '' }}{% endif %}
-                    {# ⚠️ A CONVERSA COM O OMIE, a um clique.
-
-                       *"A causa raiz é saber POR QUE não está baixando no
-                       Omie, porque se eu estou mandando pra baixar é pra
-                       baixar."* — e o Omie sempre respondeu por quê. A frase
-                       dele vai no motivo; aqui fica a sequência inteira
-                       (consultar → alterar → baixar), para o caso em que a
-                       frase não basta.
-
-                       Fechado por padrão: não é leitura do dia a dia. Mas
-                       quando faz falta, não pode estar noutro lugar. #}
-                    {% if i.conversa_omie %}
-                      <details class="conversa-omie">
-                        <summary>o que o Omie respondeu, passo a passo</summary>
-                        <pre>{{ i.conversa_omie }}</pre>
-                      </details>
-                    {% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        {% if lote.contagem %}
+          <p style="margin:6px 0"><a href="{{ url_for('analisesps.tela_comprovantes', f=1, lote=lote.id, de='') }}"
+            >ver as {{ lote.paginas }} página(s) deste envio, com o comprovante e o motivo de cada uma</a></p>
         {% elif lote.situacao in ('ESPERANDO', 'RODANDO') %}
           {# ⚠️ NÃO DIZER "ainda processando" PARA O QUE ESTÁ PARADO. A tela
              dizia isso para um lote parado desde as 7h47 da manhã — quem lê
@@ -238,4 +265,15 @@
   {% endif %}
 </div>
 
+<style>
+  .kpis-comprovantes a.kpi { text-decoration:none; color:inherit; }
+  .kpis-comprovantes a.kpi.ativo { outline:2px solid var(--azul); }
+  #tabela-comprovantes td.sem-quebra { white-space:nowrap; }
+  .filtro-opcoes .contagem { margin-left:auto; color:var(--tinta-suave); font-size:12px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{# O número da SP abre a ficha aqui, como nas outras telas. #}
+{% include "analisesps_ficha_modal.html" %}
 {% endblock %}

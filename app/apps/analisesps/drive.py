@@ -200,6 +200,37 @@ def subir_arquivo(conteudo: bytes, nome: str, pasta_id: str,
             "link": f"https://drive.google.com/uc?export=download&id={arquivo_id}"}
 
 
+MIME_PASTA = "application/vnd.google-apps.folder"
+
+
+def pasta_filha(pasta_id: str, nome: str) -> str:
+    """O identificador da subpasta `nome` dentro de `pasta_id` — criada se não
+    existir. Uma busca, e uma criação na primeira vez. Levanta `ErroDoDrive`."""
+    pasta_id = str(pasta_id or "").strip()
+    if not pasta_id:
+        raise ErroDoDrive("A pasta do Drive não está configurada.")
+    sessao = _sessao()
+    todos = {"supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}
+    nome_seguro = str(nome).replace("\\", "").replace("'", "\\'")
+    resposta = sessao.get(
+        "https://www.googleapis.com/drive/v3/files",
+        params={**todos, "fields": "files(id)", "pageSize": 1,
+                "q": (f"name = '{nome_seguro}' and '{pasta_id}' in parents and "
+                      f"mimeType = '{MIME_PASTA}' and trashed = false")},
+        timeout=60)
+    if resposta.status_code >= 300:
+        raise ErroDoDrive("Não consegui procurar a pasta no Drive. " + _explicar(resposta))
+    achadas = (resposta.json() or {}).get("files") or []
+    if achadas:
+        return achadas[0]["id"]
+    resposta = sessao.post(
+        "https://www.googleapis.com/drive/v3/files", params={"supportsAllDrives": "true"},
+        json={"name": nome, "parents": [pasta_id], "mimeType": MIME_PASTA}, timeout=60)
+    if resposta.status_code >= 300:
+        raise ErroDoDrive("Não consegui criar a pasta no Drive. " + _explicar(resposta))
+    return (resposta.json() or {}).get("id") or ""
+
+
 def substituir_conteudo(arquivo_id: str, conteudo: bytes, mime: str) -> None:
     """Troca o CONTEÚDO de um arquivo que este módulo subiu, mantendo o arquivo:
     o mesmo identificador, o mesmo link e a mesma permissão. É o que deixa o

@@ -1,0 +1,80 @@
+{# ---------------------------------------------------------------------------
+   A BARRA LATERAL DOS COMPROVANTES (18/11/2026: *"eu queria poder, no sidebar,
+   fazer filtragem das informações"*). Mesmo jeito da do Faturamento: aplica
+   sozinha meio segundo depois do último clique.
+--------------------------------------------------------------------------- #}
+<form method="get" id="form-filtros-comp" action="{{ url_for('analisesps.tela_comprovantes') }}">
+  <input type="hidden" name="f" value="1">
+  {% if filtros.lote %}<input type="hidden" name="lote" value="{{ filtros.lote }}">{% endif %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <span class="filtros-estado" id="filtros-estado-comp" hidden>atualizando…</span>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_comprovantes') }}">Limpar</a>
+  </div>
+
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="busca" value="{{ filtros.busca }}"
+           placeholder="nº da SP, quem recebeu, valor, arquivo, motivo…">
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Enviado em</span><span class="seta">▾</span></div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label><input type="date" name="de" value="{{ filtros.de or '' }}"></div>
+        <div><label>Até</label><input type="date" name="ate" value="{{ filtros.ate or '' }}"></div>
+      </div>
+      <p class="cartao-dica" style="margin:6px 2px 0">Sem filtro: os últimos {{ dias_padrao }} dias.
+        Apague as duas datas para ver tudo.</p>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação</span>
+      {% if filtros.situacoes %}<span class="filtro-badge">{{ filtros.situacoes|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for chave, rotulo, quantos in lista.contagem %}
+        <label class="opcao"><input type="checkbox" name="situacao" value="{{ chave }}"
+               {% if chave in filtros.situacoes %}checked{% endif %}><span class="rotulo">{{ rotulo }}</span>
+          <span class="contagem">{{ quantos }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+
+  {% if lista.quem %}
+  <div class="filtro {% if filtros.quem %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Enviado por</span>
+      {% if filtros.quem %}<span class="filtro-badge">{{ filtros.quem|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for q in lista.quem %}
+        <label class="opcao"><input type="checkbox" name="quem" value="{{ q }}"
+               {% if q in filtros.quem %}checked{% endif %}><span class="rotulo" title="{{ q }}">{{ q }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+  {% endif %}
+</form>
+<script>
+(() => {
+  const form = document.getElementById("form-filtros-comp");
+  if (!form) return;
+  const estado = document.getElementById("filtros-estado-comp");
+  let relogio = null;
+  const agendar = espera => {
+    if (relogio) clearTimeout(relogio);
+    if (estado) estado.hidden = false;
+    relogio = setTimeout(() => form.submit(), espera);
+  };
+  form.addEventListener("change", e => {
+    if (e.target.matches("input[type=checkbox], input[type=date]")) agendar(500);
+  });
+  form.addEventListener("input", e => { if (e.target.matches("input[name=busca]")) agendar(900); });
+  form.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); agendar(0); } });
+})();
+</script>
