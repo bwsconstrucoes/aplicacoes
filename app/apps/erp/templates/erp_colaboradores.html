@@ -319,7 +319,92 @@ async function carregar(){
 // servidor, as duas passam por `_liberar_acesso`. Não existe um segundo jeito
 // de criar acesso, de propósito.
 // ===========================================================================
-let FILA_PORTAL = [];
+let FILA_PORTAL = [], FILA_OPCOES = {};
+
+// ===========================================================================
+// QUE ACESSO A PESSOA VAI TER — os campos que valem nas DUAS portas
+//
+// ⚑ 18/11/2026. Ele, fechando o ciclo da liberação: *"o administrador vai
+// liberar a pessoa, mas tem que definir o acesso dele, o perfil, as obras,
+// etc e tal."*
+//
+// Mora aqui, e não dentro de cada diálogo, por causa da regra dele de
+// 17/11: liberar pela fila e liberar pela ficha são a MESMA coisa, e tinham
+// de perguntar a mesma coisa. Com o bloco repetido, um dia um dos dois
+// ganharia campo novo e o outro não — e aí haveria duas portas com
+// comportamentos diferentes, que é justamente o que ele não quer.
+//
+// ⚑ CONTINUA SENDO UM CLIQUE para o caso comum: já vem marcado o que o
+// sistema faria sozinho (administrativo de obra, a obra do cadastro). Quem
+// não quer mudar nada só confirma.
+//
+// Quem NÃO gere operadores não vê campo nenhum: o servidor nem manda as
+// opções, e para essa pessoa o diálogo é o de antes.
+// ===========================================================================
+async function opcoesDeAcesso(){
+  // Custo de rede: ZERO na fila (as opções vêm junto da listagem de pedidos,
+  // que a tela já busca). Pela ficha é UMA ida, e só no clique de liberar —
+  // não no abrir da tela. Depois disso fica guardada na página.
+  if (FILA_OPCOES.escolhe_acesso !== undefined) return FILA_OPCOES;
+  try { FILA_OPCOES = await api("/erp/api/portal/pedidos-de-acesso"); }
+  catch(e){ FILA_OPCOES = {escolhe_acesso: false}; }
+  return FILA_OPCOES;
+}
+
+async function camposDeAcesso(obraId){
+  const o = await opcoesDeAcesso();
+  if (!o.escolhe_acesso) return [];
+  // ⚠️ UMA LISTA SÓ, e isto é a regra "um cadastro, uma porta" aplicada
+  // aqui: os perfis cadastrados (tela de Perfis de acesso) REPETEM, com os
+  // mesmos nomes, os cargos antigos. Oferecer os dois juntos dava 23 opções
+  // com "Administrador" aparecendo duas vezes — e ninguém tem como saber
+  // qual das duas escolher.
+  //
+  // Vale o perfil cadastrado, que é onde a alçada se edita hoje. O cargo
+  // antigo só aparece se ainda não houver perfil cadastrado nenhum (base
+  // nova, antes de alguém abrir aquela tela) — senão ficaria sem opção.
+  const perfis = (o.perfis || []).map(x => ({valor: "P:" + x.id, rotulo: x.nome}));
+  const cargos = (o.cargos || []).map(c => ({valor: "C:" + c.valor, rotulo: c.rotulo}));
+  const lista = perfis.length ? perfis : cargos;
+  if (!lista.length) return [];
+  const padrao = (lista.find(x => /administrativo de obra/i.test(x.rotulo))
+                  || lista[0]).valor;
+  return [
+    {nome: "acesso", rotulo: "Que acesso esta pessoa terá",
+     tipo: "select", largura: 6, valor: padrao, opcoes: lista,
+     dica: "O padrão é <b>Administrativo de obra</b>: abre pedidos ao DP e "
+         + "lança o diário das obras dela, e não vê salário nem documento "
+         + "de ninguém. O que cada perfil alcança se edita em Configurações "
+         + "› Perfis de acesso."},
+    // AS OBRAS, no plural: marca quantas quiser. Uma caixa de escolha
+    // devolveria uma só, e quem responde por três sairia enxergando uma.
+    {nome: "obras", rotulo: "Obras que ela enxerga",
+     tipo: "caixas", largura: 6,
+     valor: obraId ? [String(obraId)] : [],
+     opcoes: [{valor: "TODAS", rotulo: "<b>Todas as obras</b> "
+                 + "(inclusive as que forem abertas depois)"}].concat(
+       (OBRAS || []).map(x => ({valor: String(x.id), rotulo: rotuloObra(x)}))),
+     dica: "Sem nada marcado, ela entra sem enxergar obra nenhuma e alguém "
+         + "terá de marcar depois, no cadastro de operadores."},
+  ];
+}
+
+// O que o diálogo respondeu, traduzido para o corpo que o servidor espera.
+function acessoEscolhido(r){
+  const corpo = {};
+  if (r.acesso) {
+    // "P:12" é perfil cadastrado; "C:ADMIN" é o cargo de sempre. Um campo
+    // só, porque para quem escolhe são a mesma pergunta — "que acesso ela
+    // tem?" — e dois fariam escolher duas vezes.
+    if (r.acesso.indexOf("P:") === 0) corpo.perfil_id = +r.acesso.slice(2);
+    else corpo.perfil = r.acesso.slice(2);
+  }
+  if (r.obras) {
+    if (r.obras.indexOf("TODAS") >= 0) corpo.todas_as_obras = true;
+    else corpo.obra_ids = r.obras.map(Number);
+  }
+  return corpo;
+}
 
 async function carregarFilaDoPortal(){
   const caixa = els("fila-portal");
@@ -327,6 +412,7 @@ async function carregarFilaDoPortal(){
   try {
     const d = await api("/erp/api/portal/pedidos-de-acesso");
     FILA_PORTAL = d.pedidos || [];
+    FILA_OPCOES = d;
   } catch(e){ return; }          // fila não é o assunto da tela: falha calada
   if (!FILA_PORTAL.length) { caixa.classList.add("oculto"); caixa.innerHTML = ""; return; }
   caixa.classList.remove("oculto");
@@ -390,13 +476,30 @@ async function decidirPedidoDePortal(id, acao){
     if (!r) return;
     corpo.motivo = r.motivo || "";
   } else {
+    // ⚑ LIBERAR VIROU CONFIGURAR O ACESSO (18/11/2026). Ele, fechando o
+    // ciclo: *"o administrador vai liberar a pessoa, mas tem que definir o
+    // acesso dele, o perfil, as obras, etc e tal. Eu acho que assim fecha
+    // essa parte de liberação e forma um ciclo perfeito."*
+    //
+    // ⚑ MAS CONTINUA SENDO UM CLIQUE PARA O CASO COMUM: os campos já vêm
+    // preenchidos com o que o sistema usaria sozinho (administrativo de obra
+    // e a obra do cadastro). Quem não quer mudar nada só confirma.
+    //
+    // Quem não gere operadores não vê esses campos — o servidor nem manda as
+    // opções. Para essa pessoa o diálogo é o de antes.
+    const campos = [{nome: "email", rotulo: "E-mail (confira)",
+                     valor: p.email, largura: 6}];
+    campos.push(...(await camposDeAcesso(p.obra_id)));
     const r = await perguntar({titulo: "Liberar o acesso ao portal",
       aviso: `${escapar(p.nome)} vai receber um convite em <b>${escapar(p.email)}</b> para criar a senha dela.`
-           + (p.obra ? ` O acesso nasce enxergando a obra ${escapar(p.obra)}.` : ""),
-      campos: [{nome: "email", rotulo: "E-mail (confira)", valor: p.email, largura: 6}],
-      textoOk: "Liberar e convidar"});
+           + (p.identidade_confirmada
+               ? ` <b>Ela já provou quem é</b> — o código foi conferido no WhatsApp do telefone do cadastro.`
+               : ` ⚠️ <b>Este pedido veio sem confirmação de identidade.</b> Confira quem é antes de liberar.`)
+           + (p.obra ? ` A obra do cadastro é ${escapar(p.obra)}.` : ""),
+      campos, textoOk: "Liberar e convidar"});
     if (!r) return;
     corpo.email = r.email || p.email;
+    Object.assign(corpo, acessoEscolhido(r));
   }
   try {
     const d = await api(`/erp/api/portal/pedidos-de-acesso/${id}`,
@@ -2135,11 +2238,26 @@ function ligarAcessoAoSistema(c){
             + "entra e recebe o convite.", "erro");
       return;
     }
+    // ⚑ A FICHA PERGUNTA O MESMO QUE A FILA (18/11/2026). Antes, liberar
+    // por aqui criava um acesso de CONSULTA preso à obra do cadastro — e
+    // quem liberasse pela ficha teria de ir à tela de operadores logo em
+    // seguida para arrumar. Duas portas para a mesma coisa, perguntando
+    // coisas diferentes, é o que ele cobrou em 17/11.
+    const campos = await camposDeAcesso(c.obra_id);
+    let escolha = {};
+    if (campos.length) {
+      const r0 = await perguntar({titulo: "Liberar o acesso ao sistema",
+        aviso: `${escapar(c.nome)} vai receber um convite em <b>${escapar(email)}</b> `
+             + `para criar a senha dela.`,
+        campos, textoOk: "Liberar e convidar"});
+      if (!r0) return;
+      escolha = acessoEscolhido(r0);
+    }
     liberar.disabled = true;
     try {
       const r = await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({email})});
+        body: JSON.stringify({email, ...escolha})});
       const cv = r.convite || {};
       aviso("ac-msg", cv.enviado
         ? `Acesso liberado. Convite enviado para ${escapar(email)}.`

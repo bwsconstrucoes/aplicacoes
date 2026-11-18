@@ -181,7 +181,13 @@ def test_todo_tipo_do_catalogo_tem_nome_modulo_e_politica_valida():
 # aviso que não chega é pior que aviso nenhum — ele cria a impressão de que a
 # obra foi avisada. Os outros avisos do ERP vão para quem opera o escritório, e
 # continuam no Telegram.
-DO_ERP_NO_WHATSAPP = {"erp.dp_devolucao", "erp.dp_pedido"}
+#
+# ⚑ 18/11/2026 — o CÓDIGO DE PRIMEIRO ACESSO entrou na mesma lista, e pelo
+# motivo mais forte de todos: quem está criando o primeiro acesso ao portal
+# AINDA NÃO TEM ACESSO NENHUM. Se tivesse Telegram ligado ao cadastro, já
+# estaria dentro do sistema. O código só serve se chegar no WhatsApp do
+# telefone que está na ficha dela.
+DO_ERP_NO_WHATSAPP = {"erp.dp_devolucao", "erp.dp_pedido", "erp.codigo_portal"}
 
 
 def test_ponto_nasce_liberado_no_whatsapp_e_o_resto_so_telegram():

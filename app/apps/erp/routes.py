@@ -9274,7 +9274,8 @@ def api_colaborador_foto(colaborador_id: int):
 
 
 def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
-                    obra_id=None, convidar=True) -> dict:
+                    obra_id=None, obra_ids=None, todas_as_obras=False,
+                    convidar=True) -> dict:
     """CRIA O ACESSO de um colaborador — a ÚNICA implementação disto.
 
     ⚑ POR QUE É UMA FUNÇÃO E NÃO SÓ A ROTA (17/11/2026): a fila de pedidos
@@ -9337,19 +9338,40 @@ def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
     # trabalha em obra: sem isto o acesso nasce sem enxergar nada e alguém
     # teria de ir marcar na outra tela. `obra_id` de fora (a obra em que ela
     # bate ponto) tem preferência sobre a do cadastro, que envelhece.
-    alvo = int(obra_id) if obra_id else (int(c.obra_id) if c.obra_id else None)
-    if alvo and not getattr(operador, "ve_todas_as_obras", False):
-        ja = s.scalars(sa_select(UsuarioObra).where(
-            UsuarioObra.usuario_id == operador.id,
-            UsuarioObra.obra_id == alvo)).first()
-        if ja is None:
-            s.add(UsuarioObra(usuario_id=operador.id, obra_id=alvo))
+    # ⚑ VÁRIAS OBRAS DESDE 18/11/2026. Ele, fechando o ciclo da liberação:
+    # *"o administrador vai liberar a pessoa, mas tem que definir o acesso
+    # dele, o perfil, as obras, etc e tal."*
+    #
+    # Antes era UMA obra — a do cadastro — e quem respondia por três ficava
+    # vendo uma. `obra_ids` vazio mantém o de sempre (a obra do cadastro), e é
+    # o que faz a liberação continuar sendo um clique para o caso comum.
+    if todas_as_obras:
+        operador.ve_todas_as_obras = True
+    # ⚠️ LISTA VAZIA É ESCOLHA, não omissão: quem desmarcou tudo na tela quis
+    # liberar o acesso sem obra nenhuma (um acesso de escritório, por
+    # exemplo). Por isso a diferença entre `None` (ninguém disse nada — vale o
+    # padrão de sempre) e `[]` (disseram "nenhuma").
+    if obra_ids is None:
+        escolhidas = [int(obra_id)] if obra_id else (
+            [int(c.obra_id)] if c.obra_id else [])
+    else:
+        escolhidas = [int(x) for x in obra_ids if x]
+    alvo = escolhidas[0] if escolhidas else None
+    if not getattr(operador, "ve_todas_as_obras", False):
+        for uma in escolhidas:
+            ja = s.scalars(sa_select(UsuarioObra).where(
+                UsuarioObra.usuario_id == operador.id,
+                UsuarioObra.obra_id == uma)).first()
+            if ja is None:
+                s.add(UsuarioObra(usuario_id=operador.id, obra_id=uma))
     convite = {"enviado": False, "erro": "", "link": ""}
     if convidar:
         convite = svc_convites.enviar(
             s, operador.id, link_base=_link_do_convite(), autor=autor)
     return {"ok": True, "usuario_id": operador.id, "email": email,
-            "obra_id": alvo, "convite": convite}
+            "obra_id": alvo, "obra_ids": escolhidas,
+            "todas_as_obras": bool(getattr(operador, "ve_todas_as_obras", False)),
+            "convite": convite}
 
 
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/acesso",
@@ -9393,6 +9415,11 @@ def api_colaborador_acesso(colaborador_id: int):
                                 perfil=d.get("perfil"),
                                 perfil_id=d.get("perfil_id"),
                                 obra_id=d.get("obra_id"),
+                                # A rota inteira já exige `gerir_usuarios`,
+                                # então quem chega aqui pode escolher obra e
+                                # alcance — não há o que filtrar de novo.
+                                obra_ids=d.get("obra_ids"),
+                                todas_as_obras=bool(d.get("todas_as_obras")),
                                 convidar=d.get("convidar", True))
             if not r["ok"]:
                 return jsonify(r), 400
@@ -9431,9 +9458,36 @@ def api_pedidos_de_acesso():
         with get_session() as s:
             conn = s.connection()
             status = (request.args.get("status") or "PENDENTE").upper()
+            # ⚑ AS OPÇÕES DE ACESSO VÃO JUNTO (18/11/2026). Ele, fechando o
+            # ciclo: *"o administrador vai liberar a pessoa, mas tem que
+            # definir o acesso dele, o perfil, as obras, etc e tal."*
+            #
+            # Vão nesta resposta, e não numa chamada à parte, por conta de ida
+            # de rede: abrir o diálogo de liberar custaria uma segunda ida só
+            # para desenhar a lista de perfis. São poucas linhas, e esta
+            # resposta já é buscada uma vez por abertura da tela de Pessoal.
+            #
+            # ⚠️ SÓ PARA QUEM GERE OPERADORES. Quem apenas resolve a fila não
+            # escolhe perfil nem alcance — o acesso nasce preso à obra do
+            # cadastro —, e a lista de perfis é informação de administração.
+            from app.apps.erp.core.auth.permissoes import pode_com_banco
+            atual = _usuario_logado(s)
+            opcoes: dict = {}
+            if atual is not None and pode_com_banco(s, atual, "gerir_usuarios"):
+                from app.apps.erp.core.auth import perfis as svc_perfis
+                from app.apps.erp.db.models.cadastros import PerfilUsuario
+                from app.apps.erp.core.auth.permissoes import ROTULOS
+                opcoes = {
+                    "perfis": [{"id": x["id"], "nome": x["nome"]}
+                               for x in svc_perfis.listar(s)],
+                    "cargos": [{"valor": x.name,
+                                "rotulo": ROTULOS.get(x, x.name)}
+                               for x in PerfilUsuario],
+                }
             return jsonify({"ok": True,
                             "pedidos": fila.listar(conn, status=status),
                             "pendentes": fila.quantos_pendentes(conn),
+                            "escolhe_acesso": bool(opcoes), **opcoes,
                             "disponivel": fila.tabela_existe(conn)})
     except Exception as e:
         logger.exception("ERP: falha ao listar os pedidos de acesso ao portal")
@@ -9504,6 +9558,11 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
                 perfil=(d.get("perfil") if escolhe_perfil else None)
                        or "ADMINISTRATIVO_OBRA",
                 perfil_id=d.get("perfil_id") if escolhe_perfil else None,
+                # As OBRAS também só vêm do navegador para quem gere
+                # operadores: para o DP fica a obra do cadastro, de sempre.
+                obra_ids=(d.get("obra_ids") if escolhe_perfil else None),
+                todas_as_obras=bool(d.get("todas_as_obras")) if escolhe_perfil
+                               else False,
                 obra_id=p["obra_id"], convidar=True)
             if not r["ok"]:
                 return jsonify(r), 400
