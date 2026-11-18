@@ -76,6 +76,26 @@ def _saude_comecou():
             tarefas.acordar()
         except Exception:
             logger.warning("ERP/tarefas: não deu para iniciar a fila", exc_info=True)
+    # ⚑ A VIRADA DO DIA DOS DESLIGAMENTOS (17/11/2026). Ele: *"o ideal é cortar
+    # tudo, porque aí corre o risco de a gente esquecer."*
+    #
+    # Quem tem data de saída vencida e ainda está ativo é desligado aqui, e o
+    # login dela cai junto. Ver `core/cadastros/desligamentos_do_dia.py`.
+    #
+    # ⚠️ ESTÁ NESTE GANCHO, E NÃO EM OUTRO, DE PROPÓSITO: ele roda ANTES da
+    # guarda de permissão (que vem mais abaixo neste arquivo). Então, mesmo que
+    # a primeira pessoa a tocar o ERP no dia seja justamente quem saiu, a
+    # própria requisição dela desliga o cadastro e a guarda a recusa em
+    # seguida. Pendurado depois da guarda, ela entraria uma última vez.
+    #
+    # Depois da primeira vez do dia é a comparação de uma variável.
+    try:
+        from app.apps.erp.core.cadastros import desligamentos_do_dia
+        if desligamentos_do_dia.precisa_rodar():
+            with get_session() as s:
+                desligamentos_do_dia.aplicar_se_preciso(s)
+    except Exception:                               # noqa: BLE001
+        logger.warning("ERP/desligamentos: a virada do dia não rodou", exc_info=True)
 
 
 _FILA_ACORDADA = False
@@ -168,6 +188,11 @@ MODULOS = [
             ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
             ("dp_contabilidade", "Contabilidade e agente",
              "erp.pagina_dp_contabilidade"),
+            # ⚑ AS CONDICIONAIS QUE O PIPEFY NÃO EXPORTA (17/11/2026). Ele:
+            # *"o pipe não exporta condicionais, por isso minha pergunta sobre
+            # mais ajuda na construção."* Esta tela MEDE a regra nos cadastros
+            # em vez de perguntá-la — ver core/cadastros/regras_pelos_dados.py.
+            ("dp_regras", "Regras do cadastro", "erp.pagina_dp_regras"),
         ],
     },
     {
@@ -412,6 +437,29 @@ def _perfil_bruto(s) -> str:
     return linha[0] if linha else ""
 
 
+def _acesso_desativado(s) -> bool:
+    """O acesso desta sessão foi desativado DEPOIS de ela ter sido aberta?
+
+    ⚑ 17/11/2026. Até aqui `usuarios.ativo` era conferido SÓ no login: quem já
+    estava com a tela aberta continuava trabalhando mesmo depois de o acesso
+    ser desligado — e isso vale para o desligamento (a virada do dia, que corta
+    o login de quem saiu, por decisão dele) e para o bloqueio feito à mão pelo
+    DP. Agora a sessão cai no clique seguinte.
+
+    ⚠️ A CONSULTA É A MESMA de `_perfil_bruto`, por SQL direto e sem o ORM, e
+    sem coluna que dependa de migração nova: esta função roda antes de TODA
+    rota, inclusive da tela que aplica as migrações. Carregar o `Usuario` aqui
+    é o impasse circular que derrubou o ERP em 02/09/2026.
+    """
+    from sqlalchemy import text as _text
+    uid = session.get("erp_usuario_id")
+    if not uid:
+        return False
+    linha = s.execute(_text("SELECT ativo FROM usuarios WHERE id = :i"),
+                      {"i": uid}).first()
+    return bool(linha) and linha[0] is False
+
+
 def login_obrigatorio(fn):
     @wraps(fn)
     def _wrap(*a, **kw):
@@ -564,6 +612,18 @@ def _guarda_permissao():
     # modelo, ainda não criada), quebraria aqui, e o botão que conserta o banco
     # ficaria inalcançável: o impasse circular que derrubou o ERP em 2026-09-02.
     with get_session() as s:
+        # ⚑ ACESSO DESATIVADO DERRUBA A SESSÃO ABERTA (17/11/2026) — ver
+        # `_acesso_desativado`. Vem ANTES de tudo: quem teve o acesso cortado
+        # não tem perfil que valha.
+        if _acesso_desativado(s):
+            uid = session.get("erp_usuario_id")
+            session.clear()
+            logger.info("ERP/permissao: sessão do usuário %s encerrada — "
+                        "acesso desativado", uid)
+            if request.path.startswith("/erp/api/"):
+                return jsonify({"ok": False, "erro":
+                                "Seu acesso foi encerrado. Procure o DP."}), 401
+            return redirect(url_for("erp.pagina_login"))
         perfil = _perfil_bruto(s)
         excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
         # O PERFIL CADASTRADO (migração 065) decide, quando existe. Devolve
@@ -13147,6 +13207,36 @@ def pagina_dp_contabilidade():
                            **_contexto("dp_contabilidade"))
 
 
+@bp.route("/erp/dp/regras")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def pagina_dp_regras():
+    return render_template("erp_dp_regras.html", **_contexto("dp_regras"))
+
+
+@bp.route("/erp/api/dp/regras")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_dp_regras():
+    """AS CONDICIONAIS MEDIDAS NOS CADASTROS — só leitura, não muda nada.
+
+    ⚠️ CUSTO, porque vale dizer antes de alguém apertar: é UMA consulta que
+    lê todos os cadastros não cancelados (hoje ~2.600 linhas, 20 colunas) e
+    cruza 2 campos-chave × 18 campos na memória. Não vai ao banco por pessoa
+    nem por campo. O resultado NÃO é guardado: a resposta muda com o cadastro,
+    e cache aqui faria ele decidir por número velho.
+    """
+    from app.apps.erp.core.cadastros import regras_pelos_dados as svc
+    try:
+        with get_session() as s:
+            minimo = request.args.get("minimo", type=int)
+            return jsonify({"ok": True, **svc.comparar_com_o_formulario(
+                s, svc.medir(s, minimo=minimo) if minimo else None)})
+    except Exception as e:
+        logger.exception("ERP/DP: falha ao medir as regras do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/dp/pedidos", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_pessoal", POST="pedir_contabilidade")
@@ -13163,14 +13253,29 @@ def api_dp_pedidos():
             usuario = _usuario_logado(s)
             if request.method == "GET":
                 permitidas = obras_do_usuario(s, usuario)
+                alvo = request.args.get("colaborador_id", type=int)
+                templates = svc_ct.templates_para_tela()
+                # ⚑ COM UMA PESSOA NA MÃO, CADA MODELO JÁ DIZ O QUE FALTA NELA
+                # (17/11/2026). Sem isto a tela só descobre a falta DEPOIS de
+                # a pessoa escolher o modelo e o servidor recusar — que é
+                # exatamente o que o Pipefy fazia, e o que a aba Demandas
+                # existe para não repetir. Vem na MESMA resposta: a tela já
+                # pedia esta lista, e perguntar por modelo seriam sete idas.
+                if alvo:
+                    from app.apps.erp.db.models.cadastros import Colaborador
+                    c = s.get(Colaborador, alvo)
+                    if c is not None:
+                        for t in templates:
+                            t["falta"] = svc_ct.o_que_falta_para_pedir(s, t["chave"], c)
+                            t["avisos"] = svc_ct.avisos_do_pedido(s, t["chave"], c)
                 return jsonify({
                     "ok": True,
                     "pedidos": svc_ct.listar(
                         s, situacao=request.args.get("situacao", ""),
                         atrasados=request.args.get("atrasados") == "1",
-                        colaborador_id=request.args.get("colaborador_id", type=int),
+                        colaborador_id=alvo,
                         obra_ids=list(permitidas) if permitidas is not None else None),
-                    "templates": svc_ct.templates_para_tela(),
+                    "templates": templates,
                     "emails": svc_ct.endereco_padrao(s)})
             r = svc_ct.abrir(s, request.get_json(silent=True) or {}, usuario)
             s.commit()

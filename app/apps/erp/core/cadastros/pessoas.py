@@ -1760,6 +1760,63 @@ SITUACAO_DA_ETAPA = {
 }
 
 
+# ⚑ O QUE IMPEDE DIZER "CONCLUÍDO" — ver a trava em `mover_etapa`.
+#
+# A pergunta que esta função responde é estreita de propósito: *este cadastro
+# pode ser afirmado como pronto?* Ela NÃO responde "o cadastro está completo"
+# (isso é `o_que_falta`, que o DP vê e resolve sem travar nada) nem "a ordem
+# das etapas foi respeitada".
+#
+# ⚠️ E ELA DIZ O QUE DESTRAVA. Trava que só recusa ensina a contornar; trava
+# que nomeia o próximo passo ensina o caminho — foi por isso que a lista de
+# saltos proibidos antiga não serviu.
+def _o_que_impede_concluir(s: Session, c: Colaborador) -> str:
+    """Devolve o recado, ou "" quando dá para concluir."""
+    vinculo = (c.vinculo or "CTPS").upper()
+
+    # 1. PEDIDO À CONTABILIDADE EM ABERTO: vale para qualquer vínculo. Concluir
+    #    com pedido de pé é perder o rastro do que a contabilidade ainda deve.
+    abertos = s.execute(text("""
+        SELECT numero, template FROM dp_pedidos
+         WHERE colaborador_id = :c
+           AND situacao IN ('RASCUNHO', 'ENVIADO', 'COBRADO', 'RESPONDIDO',
+                            'DIVERGENTE')
+         ORDER BY id"""), {"c": c.id}).mappings().all()
+    if abertos:
+        quais = ", ".join(a["numero"] for a in abertos)
+        return (f"Este cadastro tem {len(abertos)} pedido(s) à contabilidade em "
+                f"aberto ({quais}). Conclua ou cancele o pedido antes — é na "
+                f"aba Demandas do cadastro, ou em DP › Contabilidade.")
+
+    # 2. CARTEIRA ASSINADA PRECISA DO REGISTRO FORMAL. É o caso que ele
+    #    descreveu: cadastro de CLT concluído sem a contabilidade ter
+    #    registrado no eSocial é cadastro que afirma o que não aconteceu.
+    if vinculo == "CTPS":
+        houve = s.execute(text("""
+            SELECT 1 FROM dp_pedidos
+             WHERE colaborador_id = :c AND template = 'ASSINATURA_CTPS'
+               AND situacao = 'CONCLUIDO' LIMIT 1"""), {"c": c.id}).first()
+        if not houve:
+            return ("Carteira assinada se conclui depois do registro formal: "
+                    "falta o pedido de Assinatura de CTPS concluído com a "
+                    "contabilidade. Abra em Demandas › “Mandar para a "
+                    "contabilidade”. Se o registro foi feito fora do sistema, "
+                    "abra o pedido e conclua-o com o motivo — fica registrado "
+                    "que foi por fora.")
+
+    # 3. PRESTADOR PJ PRECISA DO CONTRATO ASSINADO E ARQUIVADO.
+    if vinculo == "PRESTADOR" and (c.tipo_contrato or "") in CONTRATOS_QUE_EXIGEM_ASSINATURA:
+        tem = s.execute(text("""
+            SELECT 1 FROM documentos
+             WHERE colaborador_id = :c
+               AND tipo_codigo IN ('CONTRATO-TRABALHO', 'CONTRATO-FORNECEDOR')
+             LIMIT 1"""), {"c": c.id}).first()
+        if not tem:
+            return ("Prestador PJ se conclui com o contrato assinado "
+                    "arquivado. Jogue o contrato na aba Arquivos do cadastro.")
+    return ""
+
+
 def mover_etapa(s: Session, colaborador_id: int, para: str,
                 usuario: Optional[Usuario], *, motivo: str = "",
                 automatico: bool = False) -> Colaborador:
@@ -1777,6 +1834,27 @@ def mover_etapa(s: Session, colaborador_id: int, para: str,
     de = (c.etapa or "CONCLUIDO").upper()
     if para == de:
         return c
+    # ⚑ A TRAVA DE CONCLUIR (17/11/2026) — pedido dele, com o exemplo pronto:
+    #
+    #   *"Imagina, eu recebo um cadastro para ser enviado à contabilidade. Aí
+    #    eu pego aquele cadastro, eu simplesmente concluo ele, jogo para
+    #    concluído. Se for uma pessoa que é CLT, fica errado, né? Eu não
+    #    completei. E aí, tem trava para isso?"*
+    #
+    # Não tinha, e a culpa é de uma leitura minha: em 17/11 ele pediu que mover
+    # de etapa fosse SIMPLES e ganhasse quadro ("isso é burrice", "tem que ser
+    # simples"), e eu tirei a lista de saltos proibidos INTEIRA. Simples não
+    # quer dizer sem trava — quer dizer sem atrito onde o atrito não protege
+    # nada. Mover do Inicial para Solicitações é gesto livre; dizer "concluído"
+    # sobre uma carteira que a contabilidade não registrou é afirmar um fato
+    # falso, e o cadastro passa a mentir para a folha e para o eSocial.
+    #
+    # ⚠️ ESTA É A ÚNICA TRAVA, de propósito. Ela não protege "a ordem das
+    # etapas": protege UMA afirmação — "este cadastro está pronto".
+    if para == "CONCLUIDO" and not automatico:
+        falta = _o_que_impede_concluir(s, c)
+        if falta:
+            raise ErroValidacao(falta)
     # ⚑ NÃO RECUSA MAIS O SALTO (17/11/2026) — ver `ETAPAS_SEGUINTES`. Num
     # quadro que se arrasta, "não pode" a cada gesto ensina a contornar, não a
     # respeitar. O que fica é o registro: quem moveu, de onde, para onde e por

@@ -2655,6 +2655,81 @@ que a rescisão usa.
 
 ---
 
+## 3z-terdecies. QUEM SAIU HOJE, E O QUE CAIU COM ELE (17/11/2026)
+
+A virada do dia dos desligamentos torna estas perguntas possíveis — e a
+primeira delas é a que o DP vai querer todo dia.
+
+### O que dá para perguntar
+
+- **"Quem saiu hoje?"** — quem a virada do dia desligou nesta data. ⚠️ A
+  resposta vem da **trilha** de cada pessoa (ação "Desligado", com o motivo
+  "a virada do dia: a data de saída chegou"), **não de uma tela** — hoje não
+  existe um painel "saíram hoje", e fazer um é trabalho novo.
+- **"Quem perdeu o acesso ao sistema por ter saído?"** — a trilha do usuário
+  registra "Acesso bloqueado" com o motivo.
+- **"Tem alguém com data de saída vencida e ainda ativo?"** — **a resposta
+  certa é zero**, e se não for, a virada do dia não está rodando. É a pergunta
+  que vigia o mecanismo.
+- **"Quem foi reativado depois de ter sido desligado pela data?"** — as duas
+  marcas estão na trilha, em ordem.
+
+### A palavra ambígua desta parte
+
+| Palavra | As duas leituras |
+|---|---|
+| **"cortar o acesso"** | ① o **ponto** (bater, Meu ponto, PIN, QR, celular) — cai pela data, sozinho; ② o **login no ERP e no portal** — cai na virada do dia. São mecanismos diferentes, e uma resposta que os misture está errada |
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quantos dias a pessoa ficou com acesso depois de ter saído?"** — a conta
+  dá (a data de saída e o carimbo do bloqueio existem), mas não está escrita. É
+  a pergunta que mediria se a virada do dia está atrasando.
+- **"O DP foi avisado de que estas pessoas saíram hoje?"** — **não há aviso
+  nenhum.** A virada desliga em silêncio, e isso é escolha dele ("corta tudo"),
+  não esquecimento. Se um dia ele quiser o aviso, é trabalho novo.
+
+---
+
+## 3z-quaterdecies. AS DEMANDAS EM VOLTA DE UMA PESSOA (17/11/2026)
+
+A aba Demandas, dentro do cadastro, torna estas perguntas possíveis — e elas
+são as que o DP faz todo dia, sobre uma pessoa específica.
+
+### O que dá para perguntar
+
+- **"O que está pendente com a contabilidade desta pessoa?"** — os pedidos em
+  aberto, com prazo e com o documento que fecha cada um.
+- **"Este pedido está atrasado?"** — o prazo é em dias ÚTEIS a partir do envio.
+- **"O que já foi pedido à contabilidade sobre esta pessoa, e quando?"** — a
+  trilha de cada pedido, com o texto que foi mandado (guardado, não
+  recalculado: o pedido de março mostra o que foi pedido em março).
+- **"Por que não consigo concluir este cadastro?"** — a trava responde com o
+  motivo e o caminho.
+- **"Que pedidos a obra fez sobre esta pessoa?"** — e em que pé estão.
+- **"Quais pedidos à contabilidade eu POSSO abrir para esta pessoa agora?"** —
+  a lista já exclui os que não podem sair, dizendo o que falta em cada um.
+
+### As palavras ambíguas desta parte, e são três
+
+| Palavra | As leituras |
+|---|---|
+| **"pedido"** | ① o que a obra pede ao DP (`dp_solicitacoes`, nº DP-…); ② o que o DP pede à contabilidade (`dp_pedidos`, nº CT-…). **São filas diferentes** e uma resposta que as some está errada |
+| **"pendente"** | esperando a contabilidade? esperando o DP? esperando documento da pessoa? |
+| **"concluído"** | ① o PEDIDO concluído; ② o CADASTRO na etapa Concluído. O segundo depende do primeiro, mas não são a mesma coisa |
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quanto tempo a contabilidade leva, em média, por tipo de pedido?"** — os
+  carimbos existem (aberto, enviado, respondido, concluído); a conta não está
+  escrita. É a pergunta que diria se o prazo de 2 ou 3 dias úteis é realista.
+- **"Que cadastros estão travados, e por quê?"** — a trava responde um por um,
+  quando alguém tenta. Não há lista de "os travados e o motivo".
+- **"Atender o pedido do DP aqui dentro"** — a aba mostra e leva para a tela de
+  Solicitações. Atender ainda é lá.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

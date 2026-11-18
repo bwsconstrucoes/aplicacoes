@@ -21,6 +21,288 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 17/11/2026 — O MÉTODO: por que ele estava corrigindo minúcia a minúcia
+
+**A pergunta dele, e é a mais importante do dia:**
+
+> *"Talvez eu não esteja utilizando a melhor estratégia (…) a gente está
+> ficando muitos vazios. (…) Eu quero um agente. Eu precisaria de algo pensante
+> também, não para ficar cada mínimo detalhe para eu decidir ou corrigir. Eu
+> estou tendo que corrigir minúcia a minúcia, porque nada está ficando 100%. E
+> está muito desgastante, cansativo e demorado. Eu estou fazendo errado do jeito
+> que a gente está fazendo aqui. Tem um método melhor?"*
+
+**A causa, medida e não opinada.** A especificação do Pipefy existe neste
+repositório desde 04/11/2026 — `DE_PARA_PIPEFY_DP.md`, a exportação dos dois
+pipes pelo GraphQL, com os campos e as fases. O ERP tem 13 dos tipos de pedido.
+**E nada, em lugar nenhum, comparava os dois.**
+
+Consequência exata: **o único detector de vão era ele abrir uma tela e sentir
+falta.** Um por um, operando, na pior hora. Não era falta de análise nem de
+chat — era falta de um *placar*.
+
+#### O que foi feito: `PLACAR_DO_DP.md` + `tests/test_placar_do_dp.py`
+
+Uma linha por coisa que o Pipefy faz, e **um veredito** em cada:
+✅ está no ERP · 🔀 está em OUTRO lugar do ERP (de propósito) · ❌ falta ·
+⚰️ morre com o Pipefy · ❓ precisa da resposta dele.
+
+**O primeiro placar, medido hoje — 51 itens:**
+
+| | |
+|---|---|
+| ✅ no ERP | 26 |
+| 🔀 em outro lugar (ponto, contabilidade, DC) | 11 |
+| ❌ faltam | 6 |
+| ⚰️ morrem com o Pipefy | 2 |
+| ❓ esperando resposta dele | 7 |
+
+Os **6 que faltam** são de uma família só: 2ª via de cartão (Somapay e vale
+transporte) e crachá — cada um aparecendo duas vezes no Pipe, com dois nomes.
+
+O teste recusa **três silêncios**: item do de-para sem linha no placar, linha
+sem veredito, e placar dizendo ❌ para o que o ERP já tem. E imprime a conta em
+cada rodada da suíte, para o vão deixar de ser sensação e passar a ser número.
+
+⚠️ **O placar não exige que tudo esteja pronto** — ❌ e ⚰️ são vereditos
+legítimos. O que ele proíbe é o vão que ninguém mapeou.
+
+#### O que o placar AINDA não mede, e como fechar
+
+A exportação de 04/11 trouxe **campos e fases**, não **automações**. Então
+ninguém conferiu: os disparos de e-mail por fase, as condicionais de campo, as
+transições automáticas, as 20 opções de "Motivo" do ajuste de ponto e quem era
+responsável por cada fase.
+
+**O caminho é o mesmo que já funcionou:** pedir ao Pipefy a exportação das
+automações, como foi feito com os campos. É uma coisa que ele faz uma vez e que
+cala dezenas de perguntas — e é a diferença entre a próxima sessão trabalhar
+sozinha ou devolver minúcia para ele decidir.
+
+#### A mudança de método, escrita para valer nas próximas sessões
+
+1. **Antes de concluir que algo não existe neste ERP, PROCURE.** A chance de
+   estar construído e inalcançável é maior que a de não existir. Aconteceu duas
+   vezes hoje: a etapa com regra desde 05/11 e sem botão até 17/11, e os
+   pedidos à contabilidade inteiros numa tela que ele não achou.
+2. **Entregar o PROCEDIMENTO, não a peça nomeada.** Ao mexer em X, perguntar:
+   o que alguém faz antes e depois de X, e isso está alcançável? Era o que
+   faltava quando a situação saiu do cadastro sem a etapa fechar o laço.
+3. **Juntar as decisões dele em UMA passada**, com recomendação em cada, em vez
+   de uma pergunta por detalhe. O placar é o formato disso.
+4. **Tela se confere no navegador.** Os três defeitos silenciosos de hoje
+   (contadores zerados, movimentação morta, recado atrás da janela) não
+   apareceram em teste nenhum — apareceram dirigindo a tela.
+
+
+### ⚑ 17/11/2026 (noite) — O AMBIENTE DA PESSOA, AS DEMANDAS DENTRO DELE, E A TRAVA DE CONCLUIR
+
+**Esta entrada começa com a cobrança dele, porque ela é o conteúdo:**
+
+> *"Embora eu já tenha discutido muito, você não está absorvendo por completo
+> as informações e não está visualizando dessa forma como a coisa tem que ser
+> feita. Está ficando sempre de forma muito superficial e eu estou tendo que
+> fazer muita complementação. Desde manhã cedo nisso aqui, a gente avançou, na
+> minha opinião, muito pouco."*
+
+E a pergunta dele que revelou o problema de verdade:
+
+> *"Nós temos lá os templates de requisições que a gente vai fazer à
+> contabilidade. E como é que a gente vai disparar isso? Porque eu não vi nada,
+> nenhum botão, nenhuma função que me permita fazer isso. Estou com um cadastro
+> novo, já olhei, está tudo ok, vou mandar para admissão na contabilidade. E
+> aí? Eu faço o que para isso acontecer?"*
+
+#### ⚠️ A DESCOBERTA QUE MUDA O DIAGNÓSTICO: o motor existia inteiro
+
+Antes de responder, li o código de ponta a ponta. **Tudo o que ele descreveu
+como ausente estava construído e alcançável:**
+
+| O que ele pediu | Onde já estava |
+|---|---|
+| modelos de requisição à contabilidade | `core/contabilidade.py`: 7 modelos (CTPS, alteração de cargo, férias, dependente, cônjuge, desligamento, cancelamento) |
+| campos obrigatórios por modelo | `o_que_falta_para_pedir` — o pedido não sai sem o que o outro lado precisa |
+| disparo de e-mail | `enviar`, pela conta da empresa, com o texto GUARDADO (não recalculado) |
+| prazo e cobrança | prazo em dias úteis, nº de cobranças, intervalo, escalada |
+| conferir o retorno | `receber` + `_comparar` campo a campo contra o cadastro; divergência não fecha |
+| as demandas da obra ao DP | `core/pessoal_solicitacoes.py`: 13 tipos, e `atender` faz o efeito no cadastro NA MESMA TRANSAÇÃO |
+| a bifurcação do cadastro | `caminho_depois_da_conferencia`: CTPS → contabilidade, PJ → contrato, prestador → concluído |
+| as telas | `ERP › DP › Solicitações` e `ERP › DP › Contabilidade`, com "+ Pedido", enviar, cobrar, receber, concluir |
+
+**Então o diagnóstico não é "falta funcionalidade" — é "falta no lugar onde ele
+olha".** Estava tudo numa tela à parte, onde se escolhe a pessoa de novo. De
+dentro do cadastro dela, não havia caminho nenhum. Ele disse melhor do que eu:
+*"às vezes eu estou olhando uma determinada pessoa e eu não preciso sair para
+ir para outra tela, para pesquisar o nome dela de novo. Dentro do ambiente dela
+eu já vejo tudo."*
+
+⚠️ **Para a próxima sessão, isto é o que importa:** antes de concluir que algo
+não existe neste ERP, PROCURE. A chance de estar construído e inalcançável é
+maior que a de não existir. Foi o mesmo padrão da etapa sem botão (05/11 → 17/11).
+
+#### O que foi entregue
+
+**1. O AMBIENTE DA PESSOA — três áreas** (desenho dele). A ficha única tinha
+NOVE abas numa fileira, com "Cadastro" e "Configuração do ponto" lado a lado
+sendo coisas de mundos diferentes. Agora a fileira de cima diz o ASSUNTO —
+**👤 Cadastro pessoal · 🕐 Ponto · 💬 Mensagens** — e a de baixo, o que ver
+dentro dele. Nenhum painel mudou, nenhuma permissão mudou: mudou o agrupamento.
+Vive em `ponto/templates/ponto/gestao.html` (a ficha única é de lá).
+
+**2. ARQUIVOS VIROU ABA do cadastro** (*"era melhor que tivesse uma outra aba
+dessas, arquivos, aí você clicar e uma tabelinha listando toda a documentação
+que já foi feito o upload"*). Mesma lista e mesma área de jogar documento que
+já existiam — estavam em outra janela, atrás de um botão.
+
+**3. DEMANDAS VIROU ABA do cadastro** — e é a resposta à cobrança dele:
+   · os **pedidos à contabilidade** desta pessoa, com situação, prazo, atraso e
+     o documento que fecha cada um;
+   · os **pedidos que a obra fez ao DP** sobre ela;
+   · **"📨 Mandar para a contabilidade…"**, que lista só os modelos que PODEM
+     sair com o cadastro como está, e mostra os outros com o que falta em cada
+     um — antes de escolher, não depois de recusar;
+   · dentro do pedido: o **texto que vai** para a contabilidade, a trilha, e os
+     botões que a situação permite (enviar · cobrar · recebi · concluir ·
+     aceitar divergência · cancelar).
+   Chama as MESMAS rotas da tela de Contabilidade. Não é um segundo jeito de
+   pedir, e a tela antiga continua servindo ao que ela é boa: a fila do dia
+   inteiro, de todo mundo, com os atrasados em cima.
+
+**4. ⚠️ A TRAVA DE CONCLUIR — e eu causei a falta dela hoje de manhã.**
+
+Ele: *"eu pego aquele cadastro, eu simplesmente concluo ele, jogo para
+concluído. Se for uma pessoa que é CLT, fica errado. E aí, tem trava para
+isso?"*
+
+Não tinha, e o motivo é meu: de manhã ele pediu que mover de etapa fosse
+simples e ganhasse quadro, e **eu tirei a lista de saltos proibidos INTEIRA.**
+Li "simples" como "sem trava", e não é a mesma coisa.
+
+A correção não é devolver a lista antiga (ela travava gesto que não precisa de
+trava, e isso ensina a contornar). É **uma trava, estreita**: ela não protege a
+ordem das etapas, protege a frase **"este cadastro está pronto"**. Recusa
+concluir quando:
+  · há **pedido à contabilidade em aberto** (qualquer vínculo) — concluir com
+    pedido de pé é perder o rastro do que a contabilidade ainda deve;
+  · é **CTPS sem o pedido de Assinatura de CTPS concluído** — o caso dele;
+  · é **prestador PJ sem o contrato arquivado**.
+
+E **ela diz o que destrava**, com o caminho ("é na aba Demandas do cadastro").
+Trava que só recusa ensina a contornar. Se o registro foi feito por fora do
+sistema, o caminho é abrir o pedido e concluí-lo com o motivo — fica registrado
+que foi por fora, em vez de o cadastro mentir.
+
+Mover entre as outras etapas continua **livre**, como ele pediu de manhã.
+
+#### Três defeitos achados dirigindo a tela (nenhum apareceu em teste)
+
+1. **Recado atrás da janela.** A trava recusava certo, com o recado certo — e
+   **o recado não aparecia**: ia para `#mensagem`, que fica na lista, atrás da
+   janela do cadastro (e no cadastro aberto dentro do ponto a lista nem é
+   desenhada). Para quem usa é o pior desfecho: aperta o botão, nada acontece,
+   nenhum erro. Virou o ajudante `recado()` e um teste de varredura.
+2. **Campo só de leitura quebrava o diálogo.** O `perguntar()` ganhou campo de
+   leitura (para MOSTRAR o texto do e-mail antes de perguntar), e a coleta dos
+   campos fazia `els(...).value` num campo que não tem input → a janela ficava
+   aberta e o botão não fazia nada, sem erro na tela.
+3. **Minha própria promessa no comentário.** Eu havia escrito que a tela
+   mostraria o que falta ANTES de escolher o modelo — e o código não fazia. O
+   servidor recusava depois. Hoje os modelos já chegam com o que falta nesta
+   pessoa, na mesma resposta que a tela já pedia.
+
+#### As abas do cadastro passaram a ter NOME, não número
+
+Eram `0,1,2,3,4,else`, e o botão Salvar aparecia com `ABA_FICHA <= 3`.
+Acrescentar aba no meio **renumerava todas em silêncio**. Com duas abas novas
+entrando, era defeito marcado para acontecer.
+
+#### O que NÃO foi feito, e fica para ele decidir
+
+- **As demandas do DP ainda abrem na tela de Solicitações** (em outra aba), não
+  dentro da aba Demandas. Atender um pedido é um formulário com os campos do
+  tipo, e trazê-lo para dentro é trabalho próprio.
+- **As etapas por tipo de demanda** que ele descreveu (*"encaminhar para
+  coletar assinatura"*, *"aguardando retorno da documentação"*) existem HOJE
+  como situação do PEDIDO (rascunho → enviado → cobrado → respondido →
+  divergente → concluído), não como etapas do cadastro. Pode ser que ele queira
+  as duas coisas; é decisão dele.
+- **A saúde do código** está medida na resposta a ele (ver abaixo), com números.
+
+
+### ⚑ 17/11/2026 — NO DIA DA SAÍDA, TUDO CAI SOZINHO (a outra metade do aviso prévio)
+
+Depois de o conserto do aviso prévio (logo abaixo) parar de desligar na hora
+quem tem saída marcada para o futuro, ficou a pergunta: **quem corta no dia?**
+Perguntei a ele, com as duas opções, e a resposta foi:
+
+> *"Não, o ideal é cortar tudo, porque aí corre o risco de a gente esquecer.
+> Então, se ela precisar de um contracheque, alguma coisa, ela solicita ao DP e
+> o DP manda."*
+
+**O que faltava:** o PONTO se resolvia sozinho (compara a data com hoje), mas
+três coisas leem a CAIXINHA `situacao`, e nada a virava quando o dia chegava —
+o **login no ERP e no portal**, as **mensagens da empresa** e as **listas do
+Pessoal**.
+
+#### A virada do dia (`core/cadastros/desligamentos_do_dia.py`)
+
+Uma vez por dia, na **primeira requisição do ERP**: quem tem data de saída
+anterior a hoje e ainda está ativo passa a DESLIGADO, a etapa vai para
+"Desligado" e **o login da pessoa é desativado**. Com isso **todo leitor acerta
+— inclusive os que ninguém lembrou de conferir**, porque o dado gravado volta a
+dizer a verdade em vez de cada tela ter de recalcular.
+
+Não há cron neste serviço, e não ter dependência externa é vantagem: nada para
+configurar, nada para quebrar em silêncio. É o mesmo desenho da rotina do dia
+do ponto. Depois da primeira vez do dia, é a comparação de uma variável — **sem
+nenhuma ida ao banco**, que é por que `precisa_rodar()` existe.
+
+**⚠️ A ORDEM DO GANCHO É PARTE DO CONSERTO.** Ele está pendurado ANTES da
+guarda de permissão. Então, mesmo que a primeira pessoa a tocar o ERP no dia
+seja justamente quem saiu, **a própria requisição dela desliga o cadastro e a
+guarda a recusa em seguida** — nenhuma última entrada. Pendurado depois da
+guarda, ela entraria uma vez. Tem teste prendendo isso.
+
+**⚠️ ISTO NÃO É O AGENTE DE DP DESLIGANDO NINGUÉM.** A regra nº 1 do agente
+(`AGENTE_DP.md` §5) é "não desliga". Aqui não há decisão: **uma pessoa do DP já
+registrou o desligamento, com data.** A rotina cumpre, no dia, o que foi
+autorizado antes — como um boleto agendado não é o banco decidindo pagar.
+
+#### Dois consertos que vieram com isso
+
+- **A sessão aberta agora cai.** `usuarios.ativo` era conferido **só no
+  login**: quem já estava com a tela aberta continuava trabalhando depois de o
+  acesso ser cortado. Vale para o desligamento E para o bloqueio feito à mão
+  pelo DP. A conferência é a MESMA consulta por SQL direto de `_perfil_bruto`,
+  sem ORM e sem coluna de migração nova — essa função roda antes de toda rota,
+  e carregar o `Usuario` ali é o impasse circular de 02/09/2026.
+- **A janela da manhã, na mensageria.** O resumo por WhatsApp é disparado pela
+  **rotina do ponto** (primeira batida depois das 6h), quase sempre ANTES de
+  alguém do escritório abrir o ERP — e nessa janela a caixinha ainda diz ATIVO.
+  Então `desligado_da_empresa` passou a barrar também por **data de saída
+  vencida**. Registrado em `mensageria/HISTORICO.md`.
+
+#### O que NÃO desliga, e ele perguntou exatamente isto
+
+**"Último dia trabalhado" e "aviso prévio" não cortam nada.** São informação
+para a rescisão (vão para o pedido na contabilidade e para a conferência da
+folha). **Quem decide é a DATA DE SAÍDA, e só ela.** Tem teste com esse nome.
+
+Cadastro com etapa "Cancelado" também não é tocado: é cadastro que nunca virou
+gente na empresa.
+
+#### O que fica de pé para ele decidir
+
+Reativar quem foi desligado pela virada é **um clique do DP** no cadastro. Não
+há aviso automático para o DP de "estas pessoas saíram hoje" — a lista está na
+trilha de cada pessoa (ação DESLIGADO, com `por` = "a virada do dia"), não numa
+tela. Se ele quiser esse aviso, é trabalho novo.
+
+**Teste:** `tests/test_virada_do_dia_dos_desligamentos_banco.py`, com Postgres
+de verdade — os cinco casos, a trilha, a idempotência, a ordem do gancho, a
+sessão que cai e a janela da manhã.
+
+
 ### ⚠️ 17/11/2026 — AVISO PRÉVIO VIRAVA DESLIGAMENTO: o pior defeito do dia
 
 **Ele achou na tela, horas depois de ligar o cadastro do ERP como base do

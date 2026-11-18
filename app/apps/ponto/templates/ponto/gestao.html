@@ -433,6 +433,16 @@
   .barra-acoes { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
   /* A janela da pessoa e as etiquetas (21/10/2026). */
   dialog.dlg-pessoa { width:min(1120px, 96vw); }
+  /* ⚑ A FILEIRA DE ÁREAS (17/11/2026): o assunto em que a pessoa está.
+     Maior e mais marcada que as sub-abas de propósito — quem olha precisa ver
+     num relance que são dois níveis, não nove abas em duas linhas. */
+  .areas-da-pessoa { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 0;
+                     border-bottom:2px solid var(--borda); padding-bottom:0 }
+  .areas-da-pessoa button { background:none; border:0; border-bottom:3px solid transparent;
+                            padding:8px 14px; font-size:14.5px; font-weight:600;
+                            color:var(--texto-suave); cursor:pointer; border-radius:8px 8px 0 0 }
+  .areas-da-pessoa button:hover { background:var(--fundo) }
+  .areas-da-pessoa button.ativa { color:var(--azul); border-bottom-color:var(--azul) }
   .etq { display:inline-block; font-size:11.5px; font-weight:600; border-radius:6px; padding:1px 7px;
          margin:2px 4px 0 0; white-space:nowrap; background:#E7EDF7; color:var(--azul); }
   .etq.verde { background:#E3F4E8; color:#1E7B3A; } .etq.vermelho { background:#FDECEA; color:var(--vermelho); }
@@ -1692,13 +1702,46 @@ function desenharPainel() {
   // A FICHA ÚNICA (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
   // pessoa eu tenho acesso"): o cadastro e os pagamentos do ERP entram como abas; "Cadastro" do ponto virou
   // "Configuração do ponto" (a chave continua "cadastro" — os atalhos das outras telas abrem nela).
-  const abas = [...(PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? [["pessoa", "Cadastro"]] : []),
-                ["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
-                ...(PODE_VER_PESSOAL ? [["pagamentos", "Pagamentos"]] : []),
-                ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Configuração do ponto"],
-                ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`],
-                ...(PODE_VER_MENSAGENS ? [["mensagens", "Telegram e mensagens"]] : [])];
-  if (!abas.some(([k]) => k === PAINEL_ABA)) PAINEL_ABA = "dia";
+  // ⚑ AS NOVE ABAS VIRARAM TRÊS ÁREAS (17/11/2026) — desenho dele:
+  //
+  //   *"Imagina que eu cliquei no colaborador. Lá em cima fica o nome dela e
+  //    ali tem uma espécie de botão que direciona para a parte do ponto. Tipo
+  //    assim, tem o cadastro pessoal, aí tem a outra, aí eu clico ponto. Aí
+  //    quando eu clico ponto, abre toda a parte do ponto, as configurações,
+  //    como se fosse a tela abrindo lá do ponto. E quando eu clico de novo no
+  //    cadastro pessoal, abre as telas relacionadas ao cadastro. (…) A parte
+  //    de mensagens a gente tem como colocar dentro também. Ou seja, a gente
+  //    conseguir visualizar com facilidade as informações que circulam em
+  //    volta daquele cadastro. Porque às vezes eu estou olhando uma
+  //    determinada pessoa e eu não preciso sair para ir para outra tela, para
+  //    pesquisar o nome dela de novo."*
+  //
+  // Nove abas numa fileira só não dizem o que pertence a quê: "Cadastro" e
+  // "Configuração do ponto" ficavam lado a lado sendo coisas de mundos
+  // diferentes. Agora a fileira de cima diz EM QUE ASSUNTO você está, e a de
+  // baixo, o que ver dentro dele.
+  //
+  // ⚠️ NÃO MUDOU NADA do que cada painel faz nem de permissão: a mesma aba
+  // continua aparecendo para quem já a enxergava. O que muda é o agrupamento.
+  const AREAS = [
+    {chave: "pessoal", rotulo: "👤 Cadastro pessoal", abas: [
+      ...(PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? [["pessoa", "Cadastro"]] : []),
+      ...(PODE_VER_PESSOAL ? [["pagamentos", "Pagamentos"]] : []),
+    ]},
+    {chave: "ponto", rotulo: "🕐 Ponto", abas: [
+      ["dia", "Dia"], ["mes", "Espelho do mês"],
+      ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
+      ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`],
+      ["cadastro", "Configuração do ponto"],
+      ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`],
+    ]},
+    ...(PODE_VER_MENSAGENS ? [{chave: "mensagens", rotulo: "💬 Mensagens", abas: [
+      ["mensagens", "Telegram e mensagens"],
+    ]}] : []),
+  ].filter(a => a.abas.length);
+  const abas = AREAS.flatMap(a => a.abas);
+  if (!abas.some(([k]) => k === PAINEL_ABA)) PAINEL_ABA = (abas[0] || ["dia"])[0];
+  const areaAtual = AREAS.find(a => a.abas.some(([k]) => k === PAINEL_ABA)) || AREAS[0];
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
@@ -1721,7 +1764,11 @@ function desenharPainel() {
       ${PODE_DP ? `<button class="btn secundario" type="button" id="dp-afastamento">Lançar afastamento</button>` : ""}
       <a class="btn secundario" style="text-decoration:none" target="_blank"
          href="/erp/ponto/espelho/${p.id}/imprimir?competencia=${P.mes.competencia}">Imprimir o espelho</a></div>` : ""}
-    <div class="sub-abas">${abas.map(([k, r]) => `<button type="button" data-dp-aba="${k}" class="${k === PAINEL_ABA ? "ativa" : ""}">${escapar(r)}</button>`).join("")}</div>
+    ${AREAS.length > 1 ? `<div class="areas-da-pessoa">${AREAS.map(a =>
+      `<button type="button" data-dp-area="${a.chave}" class="${a === areaAtual ? "ativa" : ""}"
+        >${escapar(a.rotulo)}</button>`).join("")}</div>` : ""}
+    <div class="sub-abas">${(areaAtual ? areaAtual.abas : abas).map(([k, r]) =>
+      `<button type="button" data-dp-aba="${k}" class="${k === PAINEL_ABA ? "ativa" : ""}">${escapar(r)}</button>`).join("")}</div>
     <div id="dp-msg"></div>
     <div id="dp-conteudo">${({dia: painelDia, mes: painelMes, pedidos: painelPedidos, aparelhos: painelAparelhos,
                               cadastro: painelCadastro, rosto: painelRosto, pessoa: painelPessoaErp,
@@ -1731,6 +1778,11 @@ function desenharPainel() {
   if (PAINEL_ABA === "mensagens") mensagensDaPessoa(els("dp-mensagens"), p.id);  // bloco da Mensageria (erp_base)
   els("dp-corpo").querySelectorAll("[data-dp-aba]").forEach(b => b.addEventListener("click", () => {
     PAINEL_ABA = b.dataset.dpAba; desenharPainel(); }));
+  // Trocar de ÁREA cai na primeira aba dela — e não numa aba vazia.
+  els("dp-corpo").querySelectorAll("[data-dp-area]").forEach(b => b.addEventListener("click", () => {
+    const a = AREAS.find(x => x.chave === b.dataset.dpArea);
+    if (a && a.abas.length) { PAINEL_ABA = a.abas[0][0]; desenharPainel(); }
+  }));
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
