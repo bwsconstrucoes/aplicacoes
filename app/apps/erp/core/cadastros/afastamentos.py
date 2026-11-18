@@ -547,14 +547,34 @@ def retornar(s: Session, colaborador_id: int, dados: dict[str, Any],
                       "retorno": volta.isoformat(), "dias": situacao["dias"],
                       "estabilidade_ate": ate.isoformat() if ate else None},
                      usuario.id if usuario else None)
+    # ⚑ PARA ONDE A PESSOA VOLTA, e não é sempre "Concluído".
+    #
+    # Se houver pedido à contabilidade em aberto, ela volta para
+    # "Solicitações" — porque é lá que o cadastro espera a contabilidade, e é
+    # a mesma regra da trava de concluir (`pessoas._o_que_impede_concluir`).
+    # Mandá-la para "Concluído" com pedido aberto faria o cadastro afirmar o
+    # que não aconteceu, e por um caminho que a trava não vê (o retorno move a
+    # etapa com `automatico=True`, de propósito: a conferência do retorno é
+    # outra, e exigir o registro da CTPS de quem JÁ trabalhava seria cobrar
+    # duas vezes o mesmo papel).
+    tem_pedido = s.execute(text("""
+        SELECT 1 FROM dp_pedidos
+         WHERE colaborador_id = :c
+           AND situacao IN ('RASCUNHO', 'ENVIADO', 'COBRADO', 'RESPONDIDO',
+                            'DIVERGENTE')
+         LIMIT 1"""), {"c": c.id}).first()
+    destino = "NA_CONTABILIDADE" if tem_pedido else "CONCLUIDO"
     svc_pessoas.mover_etapa(
-        s, c.id, "CONCLUIDO", usuario, automatico=True,
+        s, c.id, destino, usuario, automatico=True,
         motivo=(f"voltou do afastamento ({t.get('nome', af['tipo'])}) em "
-                f"{volta:%d/%m/%Y}, {situacao['dias']} dias afastada"))
+                f"{volta:%d/%m/%Y}, {situacao['dias']} dias afastada"
+                + (" — segue em Solicitações, há pedido à contabilidade em "
+                   "aberto" if tem_pedido else "")))
     s.flush()
     logger.info("ERP: %s voltou do afastamento em %s (%s dias)",
                 c.nome, volta, situacao["dias"])
     return {"ok": True, "data_retorno": volta.isoformat(),
+            "etapa": destino,
             "dias": situacao["dias"],
             "estabilidade_ate": ate.isoformat() if ate else None,
             "estabilidade_motivo": motivo_est or "",

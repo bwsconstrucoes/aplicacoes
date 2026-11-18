@@ -2537,7 +2537,9 @@ simples retorno?"*
   INSS e não guarda a data de cessação. **Falta** registrar a alta.
 - **"Quantas pessoas estão afastadas pelo PONTO e não pelo cadastro?"** —
   responderia a incoerência entre os dois mundos, mas eles não conversam.
-  **Falta** ligar a ocorrência do ponto à etapa do ERP.
+  ⚠️ E o ponto JÁ detecta: `ponto/core/afastamento_longo.py` abre sozinho um
+  pedido de afastamento quando os atestados somam mais de 15 dias em 60.
+  **Falta** só a ligação: aprovar lá abrir o afastamento aqui.
 - **"A contabilidade foi avisada do retorno?"** — não existe modelo de pedido
   de retorno de afastamento (são sete, nenhum é este). **Falta** o modelo.
 - **"Quanto custou o afastamento?"** — o ERP não registra o que o INSS pagou

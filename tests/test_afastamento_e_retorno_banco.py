@@ -407,3 +407,47 @@ def test_a_frase_do_vigia_na_tela_nao_promete_o_que_o_codigo_nao_faz():
     if "afastamento" in frase:
         assert "colaborador_afastamentos" in codigo, (
             "a frase do vigia promete olhar afastamento e o código não olha")
+
+
+def test_quem_volta_com_pedido_aberto_vai_para_SOLICITACOES(sessao_real, pessoa):
+    """⚑ A volta não é sempre "Concluído".
+
+    O retorno move a etapa com `automatico=True` (a conferência do retorno é
+    outra, e exigir o registro da CTPS de quem JÁ trabalhava seria cobrar duas
+    vezes o mesmo papel). Mas isso pulava a regra do pedido aberto — e o
+    cadastro ia para "Concluído" afirmando o que não aconteceu.
+    """
+    import datetime as dt
+
+    inicio = HOJE - dt.timedelta(days=60)
+    svc.abrir(sessao_real, pessoa.id,
+              {"tipo": "INSS", "data_inicio": inicio.isoformat()}, None)
+    _aso(sessao_real, pessoa.id, HOJE)
+    sessao_real.execute(text("""
+        INSERT INTO dp_pedidos (numero, colaborador_id, template, situacao,
+                                assunto, corpo)
+        VALUES ('CT-99999', :c, 'FERIAS', 'ENVIADO', 'Férias', 'corpo')"""),
+        {"c": pessoa.id})
+    sessao_real.flush()
+
+    r = svc.retornar(sessao_real, pessoa.id,
+                     {"data_retorno": HOJE.isoformat()}, None)
+
+    assert r["etapa"] == "NA_CONTABILIDADE"
+    assert sessao_real.get(Colaborador, pessoa.id).etapa == "NA_CONTABILIDADE"
+    # … e a situação volta para ATIVO de todo jeito: ela está trabalhando.
+    assert sessao_real.get(Colaborador, pessoa.id).situacao == "ATIVO"
+
+
+def test_quem_volta_sem_pedido_aberto_vai_para_CONCLUIDO(sessao_real, pessoa):
+    import datetime as dt
+
+    inicio = HOJE - dt.timedelta(days=60)
+    svc.abrir(sessao_real, pessoa.id,
+              {"tipo": "INSS", "data_inicio": inicio.isoformat()}, None)
+    _aso(sessao_real, pessoa.id, HOJE)
+
+    r = svc.retornar(sessao_real, pessoa.id,
+                     {"data_retorno": HOJE.isoformat()}, None)
+
+    assert r["etapa"] == "CONCLUIDO"

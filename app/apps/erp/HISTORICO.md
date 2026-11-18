@@ -1,5 +1,24 @@
 # ERP — onde o trabalho está, decisões, incidentes e o que falta
 
+> ## ⚑ 18/11/2026 — ESTE ARQUIVO VIROU O ARQUIVO DO PASSADO
+>
+> O dono dividiu o chat do ERP em **quatro áreas** (ver `CLAUDE.md`). A partir
+> daqui:
+>
+> | O que você quer | Onde |
+> |---|---|
+> | **procurar o passado** de qualquer área do ERP | **aqui** — são 12 mil linhas e elas continuam íntegras |
+> | **escrever** o que a sua sessão fez | `HISTORICO_PESSOAL.md`, `HISTORICO_SUPRIMENTOS.md`, `HISTORICO_FINANCEIRO.md` ou `HISTORICO_OBRAS.md` |
+> | registrar mudança que atravessa DUAS áreas do ERP (permissões, `erp_base.html`, migração em tabela de outra área) | **aqui, além** do histórico da área |
+>
+> **Este arquivo não foi quebrado, e é decisão com motivo:** repartir doze mil
+> linhas de memória por adivinhação perderia contexto, e perder memória é o
+> pior estrago possível neste repositório. Vale mais um arquivo grande e
+> íntegro que quatro pequenos e mutilados.
+>
+> ⚠️ Na prática, quase todo o conteúdo daqui é de **Pessoal e DP** — foi onde
+> esteve o trabalho de outubro e novembro de 2026.
+
 Este arquivo existe para uma sessão nova (ou uma pessoa nova) pegar o ERP sem
 repetir o que já foi discutido e sem repetir o que já deu errado.
 
@@ -80,9 +99,26 @@ diálogo de desligar.
 
 **O que NÃO foi feito, e está em `PERGUNTAS.md`:** o resultado do ASO ("apto" /
 "apto com restrição") não é campo — ⚠️ **é a falta mais séria, porque em obra é
-segurança**; a data de cessação do benefício do INSS não é guardada; o
-afastamento do PONTO continua não conversando com a etapa do ERP; e não existe
-template de contabilidade de retorno (o eSocial tem evento e prazo).
+segurança**; a data de cessação do benefício do INSS não é guardada; e não
+existe template de contabilidade de retorno (o eSocial tem evento e prazo).
+
+⚑ **E A PONTE MAIS BARATA, achada ao conferir o ponto e NÃO construída:** o
+ponto já tem `core/afastamento_longo.py` — desde 15/11/2026, atestados que
+somam mais de 15 dias em 60 **abrem sozinhos um pedido de AFASTAMENTO esperando
+o DP** (decisão dele: *"acima de 15 dias, o sistema abre sozinho"*, porque
+*"é justamente aí que escapa"*). Ou seja: o ponto já DETECTA o afastamento do
+INSS e já põe na mão do DP.
+
+O que falta é uma linha de ligação: quando o DP aprova essa ocorrência no
+ponto, abrir o afastamento no ERP com tipo INSS e as datas que o ponto já tem.
+Hoje o DP aprova no ponto e tem de registrar de novo no ERP — duas digitações
+do mesmo fato, e a segunda é a que alguém esquece.
+
+⚠️ **Não foi feito porque é obra em DUAS áreas** (ponto e ERP), e as áreas
+passaram a ser chats diferentes em 18/11. Quem for fazer: a ligação é no
+sentido PONTO → ERP, chamando `afastamentos.abrir`, e tem de ser idempotente
+(aprovar duas vezes não pode abrir dois afastamentos — o índice único parcial
+já recusaria, então o cuidado é na mensagem).
 
 ---
 
