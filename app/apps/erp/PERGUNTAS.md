@@ -2466,6 +2466,19 @@ acesso" sem dizer a qual é a resposta que ele não tem como conferir.
   096) existe exatamente para isso.
 - **"O fulano já criou a senha dele?"** — o convite tem `usado_em`; sem ele, o
   convite foi enviado e a pessoa não entrou ainda.
+- **"O convite do fulano saiu mesmo?"** / **"por que ele não recebeu?"** — o
+  envio fica registrado, e desde 18/11/2026 o LINK do convite sempre existe:
+  quando o e-mail não sai (conta do sistema não configurada, servidor fora do
+  ar), a tela mostra o link para entregar por WhatsApp. "Liberado" e "recebeu"
+  são duas coisas, e a resposta precisa dizer qual das duas.
+- **"Quem pode liberar acesso ao portal?"** — desde 18/11/2026, quem tem a ação
+  `liberar_acesso_portal`: ADMIN e DEPARTAMENTO_PESSOAL por padrão, mais quem
+  tiver a seção "Pessoal › Acesso ao portal" marcada no cadastro. ⚠️ **não
+  confundir com `gerir_usuarios`**, que é a tela de operadores inteira e
+  continua só do ADMIN — quem resolve a fila não cria operador com perfil
+  escolhido.
+- **"Quem liberou o acesso do fulano?"** — fica em `decidido_por` no pedido, e
+  na trilha do operador criado.
 - **"Quem tem acesso e nunca entrou?"** — convite não usado + nenhum evento.
 - **"De qual obra o fulano está cuidando?"** — ⚠️ **a resposta vem do PONTO**
   (onde ele mais bateu nos últimos 60 dias), não do cadastro. O cadastro

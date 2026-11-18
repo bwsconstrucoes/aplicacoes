@@ -208,6 +208,17 @@ SECOES: list[dict[str, Any]] = [
      "explicacao": "pedidos formais à contabilidade, cobrança de prazo e as "
                    "rotinas do agente de DP",
      "ler": ["ver_pessoal"], "editar": ["pedir_contabilidade"]},
+    # ⚑ ACESSO AO PORTAL (18/11/2026). Ele: *"libera o DP também."*
+    #
+    # Seção PRÓPRIA, e não um pedaço de "Operadores e perfis": quem resolve
+    # esta fila não ganha a tela de operadores — não cria operador com perfil
+    # escolhido, não mexe na alçada de ninguém. O acesso que nasce daqui é
+    # sempre administrativo de obra, preso à obra em que a pessoa bate ponto.
+    {"chave": "pes_acesso_portal", "area": "Pessoal",
+     "nome": "Acesso ao portal",
+     "explicacao": "liberar ou recusar quem pediu acesso ao portal pelo "
+                   "aplicativo do ponto",
+     "ler": [], "editar": ["liberar_acesso_portal"]},
     # --------------------------------------------------------- Suprimentos
     {"chave": "sup_solicitar", "area": "Suprimentos", "nome": "Solicitações de material",
      "explicacao": "pedir material para a obra",

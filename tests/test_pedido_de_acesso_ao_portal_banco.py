@@ -315,3 +315,86 @@ def test_o_convite_do_link_sem_email_FUNCIONA_de_verdade(sessao_real, dp):
     # e o link não serve duas vezes
     with pytest.raises(Exception):
         convites.conferir(sessao_real, token)
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O DP RESOLVE A FILA — decisão dele em 18/11/2026: *"libera o DP também."*
+#
+# A pergunta que estes dois casos respondem não é "o DP consegue?" (consegue,
+# é uma linha na tabela de permissões). É a que vem junto: **o DP ganhou
+# SÓ isso?** Liberar acesso cria operador do sistema. Se a rota aceitasse o
+# perfil que vem do navegador, o DP mandaria "ADMIN" na mão e criaria um
+# administrador por uma fila de acesso de obra — alçada de ADMIN conquistada
+# por um botão de obra, sem ninguém notar.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def pessoal(sessao_real):
+    """Alguém do DP: tem a fila, NÃO tem a tela de operadores."""
+    from app.apps.erp.core.auth.service import gerar_hash
+    u = Usuario(nome="DP de verdade", email="dp.pessoal@teste.com",
+                senha_hash=gerar_hash("x" * 12), ativo=True,
+                perfil=PerfilUsuario.DEPARTAMENTO_PESSOAL)
+    sessao_real.add(u)
+    sessao_real.flush()
+    return u
+
+
+def test_o_dp_enxerga_e_resolve_a_fila_do_portal(app_real, sessao_real,
+                                                 pessoa, pessoal):
+    from tests.conftest import como                      # type: ignore
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="maria@gmail.com")
+
+    c = como(app_real, pessoal.id)
+
+    r = c.get("/erp/api/portal/pedidos-de-acesso")
+    assert r.status_code == 200
+    assert [p["id"] for p in r.get_json()["pedidos"]] == [pedido["id"]]
+
+    r = c.post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+               json={"acao": "LIBERAR"})
+    assert r.status_code == 200, r.get_json()
+    assert fila.listar(_conn(sessao_real)) == []
+
+
+def test_o_dp_NAO_escolhe_o_perfil_do_acesso_que_libera(app_real, sessao_real,
+                                                        pessoa, pessoal):
+    """A trava contra a escalada: o DP pede ADMIN e leva administrativo de obra."""
+    from tests.conftest import como                      # type: ignore
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="maria@gmail.com")
+
+    r = como(app_real, pessoal.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR", "perfil": "ADMIN"})
+    assert r.status_code == 200, r.get_json()
+
+    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
+    assert novo
+    assert (sessao_real.get(Usuario, novo).perfil
+            == PerfilUsuario.ADMINISTRATIVO_OBRA)
+
+
+def test_a_fila_do_portal_NAO_da_ao_dp_a_tela_de_operadores(app_real, pessoal):
+    """O DP ganhou uma fila, não a administração do sistema."""
+    from tests.conftest import como                      # type: ignore
+    c = como(app_real, pessoal.id)
+
+    assert c.get("/erp/api/usuarios").status_code == 403
+    assert c.post("/erp/api/usuarios", json={"nome": "Eu mesmo",
+                                             "email": "eu@teste.com",
+                                             "perfil": "ADMIN"}).status_code == 403
+
+
+def test_quem_gere_operadores_continua_enxergando_a_fila(app_real, sessao_real,
+                                                         pessoa, dp):
+    """A implicação: ADMIN não perdeu a fila ao ela virar ação própria."""
+    from tests.conftest import como                      # type: ignore
+    fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                   cpf=pessoa.cpf, nome=pessoa.nome, email="maria@gmail.com")
+
+    r = como(app_real, dp.id).get("/erp/api/portal/pedidos-de-acesso")
+    assert r.status_code == 200
+    assert len(r.get_json()["pedidos"]) == 1

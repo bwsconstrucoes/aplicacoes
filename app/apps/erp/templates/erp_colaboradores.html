@@ -253,6 +253,9 @@ const PODE_EDITAR = {{ 'true' if pode.editar_colaboradores else 'false' }};
    colaboradores."* #}
 const VE_REMUNERACAO = {{ 'true' if pode.ver_remuneracao else 'false' }};
 const LIBERA_ACESSO = {{ 'true' if pode.gerir_usuarios else 'false' }};
+{# A FILA DO PORTAL tem ação própria desde 18/11/2026 ("libera o DP
+   também"): o DP resolve a fila sem ganhar a tela de operadores. #}
+const RESOLVE_FILA_PORTAL = {{ 'true' if pode.liberar_acesso_portal else 'false' }};
 const PODE_IMPORTAR = {{ 'true' if pode.configurar else 'false' }};
 {# A aba do PONTO dentro da ficha só aparece para quem enxerga o ponto. O
    módulo do ponto registra as ações dele no menu do ERP, então `pode.ver_ponto`
@@ -320,7 +323,7 @@ let FILA_PORTAL = [];
 
 async function carregarFilaDoPortal(){
   const caixa = els("fila-portal");
-  if (!caixa || !LIBERA_ACESSO) return;
+  if (!caixa || !RESOLVE_FILA_PORTAL) return;
   try {
     const d = await api("/erp/api/portal/pedidos-de-acesso");
     FILA_PORTAL = d.pedidos || [];
@@ -1914,11 +1917,11 @@ function blocoDoAcessoAoSistema(c){
         ? `Esta pessoa <b>entra no sistema</b> com ${escapar(c.usuario_email || c.email || "—")}.`
           + (c.usuario_ativo ? "" : ` <span class="etiqueta ambar">acesso bloqueado</span>`)
         : `Esta pessoa <b>não entra no sistema</b> — é só cadastro de quem trabalha.`}</div>
-      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+      ${LIBERA_ACESSO ? `<div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
         ${tem
           ? `<button class="btn secundario" type="button" id="ac-tirar">Desligar o acesso</button>`
           : `<button class="btn secundario" type="button" id="ac-liberar">Liberar acesso e convidar</button>`}
-      </div>
+      </div>` : ""}
       <div class="dica">Ao liberar, a pessoa recebe um e-mail para <b>escolher a
         própria senha</b> — ninguém mais vai saber qual é. E quando ela for
         <b>desligada</b>, o acesso cai sozinho, sem ninguém precisar lembrar.</div>
