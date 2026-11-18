@@ -12267,8 +12267,10 @@ somente Solicitações de uma conta especifica"*.
   lançar"), o PDF de cada conta é refeito a partir do LOTE da geração, com "Fulano · SP n"
   e a SP na situação, e gravado POR CIMA no Drive (o link não muda) — o mesmo caminho que a
   DC já tinha (`_relatorios_via_sp_com_sp`, `gratificados.montado_do_lote`). Refaz quando as
-  SPs da conta mudam. Gerações já lançadas ganham o botão "Pôr o nº das SPs no relatório"
-  (reusa o "lançar", que com tudo lançado só termina o que faltou — não cria SP).
+  SPs da conta mudam. SEM BOTÃO (dono: *"não quero botão pôr as SPs no relatório. Quero
+  que o relatório já saia com elas"*): acontece sozinho no lançamento. As gerações lançadas
+  antes de 18/11/2026 ficam com o PDF sem o número (se o Drive recusar a regravação, o
+  "lançar" de novo termina — `so_terminar`).
 - Custo: a tela ganhou 1 consulta (andamentos) + 2 (opções do filtro); refazer o relatório
   é 1 envio ao Drive por conta, uma vez por lançamento.
 - Testes: `test_analisesps_gratificados.py` (via SP ponta a ponta: o PDF regravado traz

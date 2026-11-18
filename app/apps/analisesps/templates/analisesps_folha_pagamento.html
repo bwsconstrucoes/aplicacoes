@@ -164,10 +164,6 @@
                   <div class="cartao-dica sp-da-conta">conta {{ a.conta }}{% if (a.sps or [])|length > 1 %} · {{ a.sps|length }} SPs{% endif %}</div>
                 {% else %}<span class="cartao-dica">conta {{ a.conta }}: não lançada</span>{% endif %}
               {% endfor %}
-              {% if r.relatorio_sem_sp and pode_operar %}
-                <div><button type="button" class="btn secundario btn-pequeno" data-relatorio-sp="{{ r.analise.id }}"
-                  title="Refaz o relatório em PDF de cada conta com o número da SP de cada pessoa (o link não muda). Não cria SP.">Pôr o nº das SPs no relatório</button></div>
-              {% endif %}
             {% elif r.lancavel %}<span class="cartao-dica">não lançado</span>
             {% else %}<span class="cartao-dica">—</span>{% endif %}
           </td>
@@ -373,25 +369,6 @@ if (botaoLote) botaoLote.addEventListener("click", () => {
   form.querySelector("[name=grupos]").value = JSON.stringify(grupos);
   form.submit();
 });
-
-// --- o número das SPs no relatório em PDF (18/11/2026) ---------------------------
-// Para geração já lançada: o mesmo "lançar" de sempre, que, com tudo lançado, só
-// termina o que faltou — aqui, refazer o PDF com o número de cada SP.
-document.querySelectorAll("[data-relatorio-sp]").forEach(b => b.addEventListener("click", async () => {
-  b.disabled = true;
-  const antes = b.textContent;
-  b.textContent = "Refazendo o relatório…";
-  try {
-    const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({analise: b.dataset.relatorioSp})});
-    const d = await r.json();
-    if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
-    alert((d.avisos && d.avisos.length) ? d.avisos.join("\n")
-          : "Pronto: o relatório em PDF já traz o número das SPs.");
-    location.reload();
-  } catch (e) { alert("Não foi possível: " + e.message); b.disabled = false; b.textContent = antes; }
-}));
 
 // --- excluir ------------------------------------------------------------------
 if (botaoExcluir) botaoExcluir.addEventListener("click", async () => {

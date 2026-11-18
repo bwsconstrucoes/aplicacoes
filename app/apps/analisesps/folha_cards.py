@@ -1497,10 +1497,6 @@ def sps_dos_arquivos(rodadas_: list) -> dict:
         andamento = meta.get(CHAVE_DO_ANDAMENTO.format(int(r["analise"]["id"]))) or {}
         if not andamento:
             continue
-        # Já lançada, mas o relatório em PDF ainda sem o número das SPs (gerações de
-        # antes de 18/11/2026, ou um Drive que recusou): a tela oferece terminar.
-        r["relatorio_sem_sp"] = bool(r.get("lancado") and (
-            _relatorio_via_sp_pendente(andamento) or _relatorio_da_dc_pendente(andamento)))
         lote = meta.get(gm.CHAVE_DO_LOTE.format(int(r["analise"]["id"]))) or {}
         nomes = {str(p.get("cpf") or ""): p.get("nome") or ""
                  for p in lote.get("pessoas") or []}
