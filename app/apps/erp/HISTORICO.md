@@ -21,6 +21,51 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 18/11/2026 — LIBERAÇÃO DE ACESSO AO PORTAL: falta UMA decisão dele (quem libera)
+
+Ele perguntou: *"a liberação para o acesso ao portal já tá tudo ok? me orienta
+como é."* O fluxo está de pé e foi conferido no código de ponta a ponta. Duas
+coisas travam o uso, e a primeira é decisão DELE:
+
+1. **Só ADMIN libera.** `"gerir_usuarios": {P.ADMIN}` em `permissoes.py`. O DP
+   enxerga a fila? Não: o cartão da fila só aparece para quem tem
+   `gerir_usuarios`. Resultado prático: **hoje só ele próprio consegue
+   liberar acesso ao portal**. A pergunta em aberto é se `DEPARTAMENTO_PESSOAL`
+   deve ganhar essa alçada — e isto não se muda sem o "pode" dele, porque
+   liberar acesso é criar operador do sistema.
+2. **O convite precisa da conta de e-mail do sistema** (Configurações ›
+   E-mail do sistema). Sem ela, o convite não sai por e-mail — mas o LINK
+   agora sempre volta na tela, para entregar por WhatsApp (conserto do mesmo
+   dia, abaixo).
+
+**O caminho, para quem nunca viu:** a pessoa, no celular DELA (nunca no
+aparelho da obra), entra no ponto com CPF e PIN → menu → "Pedir acesso ao
+portal" → informa o e-mail dela. O pedido cai na fila
+(`portal_pedidos_de_acesso`, migração 108). Na tela ERP › Pessoal, um cartão
+azul no topo lista quem pediu → "Liberar e convidar" cria o acesso como
+**administrativo de obra** (abre pedidos da obra; não vê salário nem documento
+de ninguém), liga a obra em que a pessoa bate ponto, e manda o convite para ela
+escolher a própria senha. "Recusar" pede o motivo, e o motivo volta para o
+celular dela.
+
+⚠️ **Migração 108 precisa estar aplicada.** Sem ela o ponto não quebra (mostra
+"ainda não disponível"), mas a fila não existe.
+
+### ⚑ 18/11/2026 — o convite que liberava acesso e não deixava ninguém entrar (CONSERTADO)
+
+Achado conferindo o fluxo acima. Sem conta de e-mail configurada,
+`convites.enviar` devolvia cedo com `link: ""`. Efeito: a liberação
+**acontecia** (operador criado, tela dizia que deu certo) e **ninguém tinha
+como entrar** — nem a pessoa, que não recebia nada, nem quem liberou, que não
+tinha link para entregar. O mesmo código já fazia a coisa certa dez linhas
+abaixo, para o caso do servidor de e-mail fora do ar.
+
+Agora o convite nasce ANTES de tentar o envio, o link sempre volta com o motivo
+do não-envio escrito, e a fila do portal mostra o link (a ficha da pessoa já
+mostrava). Dois casos com banco de verdade em
+`tests/test_pedido_de_acesso_ao_portal_banco.py`: o link volta, e ele funciona
+de verdade (serve uma vez, não serve duas).
+
 ### ⚑ 18/11/2026 — "AS REGRAS JÁ DEFINIDAS NÃO DEVERIAM SUMIR?" — deveriam, e a culpa era de um desenho meu
 
 Ele, depois de adotar as regras e medir de novo:
