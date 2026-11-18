@@ -21,6 +21,101 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 18/11/2026 — A TRILHA DO CADASTRO, A JANELA QUE NÃO FECHA MAIS, E AS CONDICIONAIS DECIDIDAS
+
+#### 1. ⚠️ "Alterei um campo e não aconteceu" — a trilha estava furada
+
+Ele: *"Combinamos de toda alteração no cadastro ser registrada. Alterei um
+campo e não aconteceu. TUDO precisa estar registrado no histórico. Houve uma
+mudança no campo nome, precisa registrar quem e quando e o valor de antes e o
+atual."*
+
+**Eram DUAS falhas somadas, e é por isso que ninguém tinha notado:**
+
+1. **O que se gravava era quase nada.** O evento "ALTERADO" guardava o nome
+   NOVO e um retrato de **três** campos (cargo, salário, obra) — numa tabela de
+   oitenta colunas. Trocar o nome gravava o nome novo e **nenhum valor de
+   antes**: o registro existia e não respondia à pergunta dele.
+2. **E não havia onde ver.** A aba "Histórico" da ficha mostra vínculos e
+   alterações salariais, que são outra coisa. O evento não aparecia em tela
+   nenhuma.
+
+**Agora:** retrato de TODAS as colunas antes, retrato depois, e a diferença vai
+para a trilha **campo por campo**, com rótulo em português, quem e quando. A
+ficha mostra numa tabela em "Histórico › Alterações no cadastro".
+
+⚠️ **Por que o retrato é de todas as colunas:** lista escolhida à mão foi
+exatamente o que falhou. Há teste exigindo que toda coluna do cadastro tenha
+rótulo em português — sem ele a trilha diria "aux_alimentacao".
+
+⚠️ **O que a trilha NÃO faz:** gravação sem mudança nenhuma não vira linha
+(abrir e fechar o formulário encheria o histórico de "alterado" sem nada
+alterado), e os carimbos do banco ficam fora. E as alterações **anteriores a
+18/11/2026** aparecem dizendo que o sistema ainda não guardava campo por campo
+— melhor que linha vazia, porque quem procura entende por que não acha.
+
+#### 2. ⚠️ A janela de trás fechava — e eu havia consertado o caminho ERRADO
+
+Ele, **pela segunda vez**: *"Já havia combinado que eu não estou conseguindo
+navegar no cadastro do colaborador. Se eu entro na tela principal do cadastro e
+clico no botão Editar o cadastro completo, a tela principal fecha e não consigo
+voltar pra ela. Não pode fechar a tela principal pra abrir o modal seguinte."*
+
+Em 17/11 ele disse o mesmo e eu resolvi **a ficha do ERP** (`VOLTAR_PARA_FICHA`,
+que reabre a ficha ao fechar o formulário). Mas o caminho que ele usa é **a
+janela da pessoa que vem do ponto** (`dlg-unica`), e o código a **fechava de
+propósito** antes de abrir o formulário. Fechada, ela não volta por nada — o
+`VOLTAR_PARA_FICHA` não a conhece.
+
+**A lição, e ela vale além deste caso:** quando ele repete uma reclamação,
+a primeira coisa a conferir é se o conserto anterior pegou o caminho que ELE
+percorre. Dois caminhos levam à mesma tela, e eu consertei o que eu usava para
+testar.
+
+Agora as duas janelas **empilham**: o formulário nasce por cima, e fechá-lo
+revela a pessoa ainda aberta. Se algo foi gravado, a de trás recarrega — senão
+mostraria o cadastro velho, que é pior que fechar: ninguém desconfia de uma
+tela que está ali. Virou varredura em `test_telas_javascript.py`.
+
+#### 3. As condicionais que o Pipefy não exporta — medidas e DECIDIDAS
+
+Ele rodou a medição nos **660 cadastros** e revisou a lista inteira. O detalhe
+de cada regra adotada e recusada está em `PLACAR_DO_DP.md` §5. O que importa
+aqui:
+
+- **A tabela de "o que falta para admitir" deixou de ser lista única** e passou
+  a ser `OBRIGATORIOS_SEMPRE` + `OBRIGATORIOS_POR_VINCULO` +
+  `OBRIGATORIOS_POR_CONTRATO` + `NAO_SE_COBRA`. Lista única não tem onde
+  guardar "este campo é só de quem é PJ".
+- **O salário passou a ser só de quem tem CTPS** (vazio em 97,3% dos 222
+  prestadores). Antes o sistema dizia "falta salário" para todo prestador.
+- **Razão social (PJ) e CNPJ (PJ) só aparecem no contrato PJ** — decisão DELE,
+  porque a medição viu 10 PJ em 660 e ficou calada. É o caso que mostra para
+  que serve o ❓ do placar.
+
+**⚠️ A LIÇÃO QUE MUDA A MEDIÇÃO: "quase nunca" não é "nunca".** Ele recusou
+seis propostas de esconder campo, e nas duas famílias pelo mesmo motivo: o
+campo é **raro**, não inaplicável. Mensalista de carteira existe (4 em 413);
+prestador com ajuda de alimentação existe (1 a 3). Esconder tiraria da tela o
+único jeito de registrar esses casos. As recusas estão em `RECUSADAS`, e a tela
+**não volta a oferecê-las**.
+
+#### 4. Um defeito meu na própria tela de regras
+
+Ela dizia **"409 discordante(s)"** e listava **4 nomes**. Eu contava sempre os
+vazios; numa proposta de "não exibir", o discordante é quem TEM o campo. Ele
+leu o número errado e teve de entender sozinho. **Número errado numa tela que
+existe para ele confiar em números é o pior lugar possível para um descuido.**
+Preso em teste que compara a conta com a lista.
+
+#### ⚠️ O que a medição achou e NÃO é regra: cadastros incompletos em produção
+
+Os discordantes se repetem: **cinco pessoas aparecem em quatro listas
+diferentes** e **oito a dez estão sem convenção**. Não são exceções — são
+cadastros pela metade, hoje. Convenção faltando é o que a conferência da folha
+usa. Os nomes estão na tela, não aqui: é dado pessoal.
+
+
 ### ⚑ 17/11/2026 — O MÉTODO: por que ele estava corrigindo minúcia a minúcia
 
 **A pergunta dele, e é a mais importante do dia:**

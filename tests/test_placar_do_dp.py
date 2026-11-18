@@ -52,24 +52,35 @@ def _itens_do_pipefy() -> list[str]:
     return [l[4:].strip() for l in texto.splitlines() if l.startswith("### ")]
 
 
+_CABECALHOS_DE_ITEM = ("O que o Pipefy tem", "Fase no Pipefy")
+
+
 def _linhas_do_placar() -> list[tuple[str, str]]:
-    """(o que o Pipefy tem, o veredito) de cada linha de tabela do placar."""
-    saida = []
+    """(o que o Pipefy tem, o veredito) de cada linha das tabelas do de-para.
+
+    ⚠️ SÓ AS TABELAS DO DE-PARA CONTAM, e isto virou necessário em 18/11/2026:
+    o placar passou a ter outras tabelas (as condicionais adotadas, as recusadas
+    por ele), e um parser que lê TODA tabela contava aquelas linhas como itens
+    do Pipefy — inflando a conta e deixando o teste passar por motivo errado.
+
+    Em Markdown a tabela é cabeçalho, linha de tracinhos, linhas. Então quem
+    diz se a tabela é do de-para é a linha ANTERIOR à dos tracinhos.
+    """
+    saida: list[tuple[str, str]] = []
+    dentro = False
+    anterior: list[str] = []
     for linha in PLACAR.read_text(encoding="utf-8").splitlines():
-        if not linha.startswith("|") or linha.startswith("| ---"):
+        if not linha.startswith("|"):
+            dentro = False
+            anterior = []
             continue
-        partes = [p.strip() for p in linha.strip("|").split("|")]
-        if len(partes) != 2:
+        partes = [c.strip() for c in linha.strip("|").split("|")]
+        if all(set(c) <= set("-: ") and c for c in partes):   # os tracinhos
+            dentro = bool(anterior) and anterior[0] in _CABECALHOS_DE_ITEM
             continue
-        esquerda, direita = partes
-        # o cabeçalho de cada tabela e a legenda não são itens
-        if esquerda in ("O que o Pipefy tem", "Fase no Pipefy", "Marca") \
-                or set(esquerda) <= set("-: "):
-            continue
-        # a LEGENDA tem o veredito do lado esquerdo — não é item
-        if esquerda in VEREDITOS:
-            continue
-        saida.append((esquerda, direita))
+        if dentro and len(partes) == 2:
+            saida.append((partes[0], partes[1]))
+        anterior = partes
     return saida
 
 

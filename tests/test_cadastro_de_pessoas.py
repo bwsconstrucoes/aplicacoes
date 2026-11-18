@@ -106,13 +106,21 @@ def dono(sessao_real):
 def test_o_cadastro_grava_os_campos_que_a_folha_le(sessao_real, dono):
     """As colunas vêm do mapa das 74 que o Make escrevia na aba do Pipefy."""
     from app.apps.erp.core.cadastros import cargos as svc_cargos
-    from app.apps.erp.db.models.cadastros import Obra
+    from app.apps.erp.db.models.cadastros import Convencao, Empresa, Obra
     cargo = svc_cargos.achar_ou_criar_cargo(sessao_real, "PEDREIRO", cbo="7152-10")
     obra = Obra(codigo="CAD-01", nome="Obra do cadastro", status="ATIVA")
-    sessao_real.add(obra)
+    # ⚑ EMPRESA, CONVENÇÃO E DATA DE INÍCIO entraram em "o que falta para
+    # admitir" em 18/11/2026, quando ele revisou a medição dos 660 cadastros —
+    # ver `OBRIGATORIOS_SEMPRE` e `OBRIGATORIOS_POR_VINCULO`. Um cadastro sem
+    # eles não é mais "completo", e o teste tem de dizer o mesmo que a tela.
+    empresa = Empresa(razao_social="BWS Teste LTDA", cnpj="00079526000109")
+    convencao = Convencao(nome="SINDUSCON Teste")
+    sessao_real.add_all([obra, empresa, convencao])
     sessao_real.flush()
     c = svc.salvar(sessao_real, {
         "cargo_id": cargo.id, "obra_id": obra.id,
+        "empresa_id": empresa.id, "convencao_id": convencao.id,
+        "data_inicio": "2026-01-05",
         "cpf": CPF_A, "nome": "José da Silva Teste",
         "data_nascimento": "1990-05-17", "sexo": "M", "nome_mae": "Maria da Silva",
         "nome_pai": "João da Silva", "estado_civil": "CASADO",

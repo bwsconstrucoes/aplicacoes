@@ -562,6 +562,110 @@ def saida_agendada(demissao: Optional[date], *, hoje: Optional[date] = None) -> 
     return demissao is not None and not ja_saiu(demissao, hoje=hoje)
 
 
+# ===========================================================================
+# ⚑ TODA ALTERAÇÃO DO CADASTRO FICA REGISTRADA — conserto de 18/11/2026
+#
+# Ele, depois de trocar o nome de alguém e não achar o registro:
+#
+#   *"Combinamos de toda alteração no cadastro ser registrada. Alterei um campo
+#    e não aconteceu. TUDO precisa estar registrado no histórico. Houve uma
+#    mudança no campo nome, precisa registrar quem e quando e o valor de antes
+#    e o atual."*
+#
+# Ele tinha razão, e a falha era de duas naturezas ao mesmo tempo:
+#
+#   1. **O que se gravava era quase nada.** O evento "ALTERADO" guardava o nome
+#      NOVO e um retrato de TRÊS campos (cargo, salário e obra). Trocar o nome
+#      gravava o nome novo e nenhum "de" — ou seja, o registro existia e não
+#      respondia a pergunta que ele fez: *qual era antes?*
+#   2. **E não havia onde ver.** A aba "Histórico" da ficha mostra vínculos e
+#      alterações salariais, que são outra coisa. O evento nunca aparecia em
+#      tela nenhuma.
+#
+# Agora: retrato ANTES, retrato DEPOIS, e a diferença vai para a trilha campo
+# por campo, com rótulo em português. A ficha mostra numa tabela.
+#
+# ⚠️ POR QUE O RETRATO É DE TODAS AS COLUNAS, e não de uma lista escolhida:
+# lista escolhida à mão é exatamente o que falhou — ela tinha três campos e o
+# cadastro tem oitenta. Toda coluna que o cadastro guarda entra, menos as
+# técnicas (carimbos, foto, a própria trilha), que não são informação da
+# pessoa.
+# ===========================================================================
+_FORA_DA_TRILHA = frozenset({
+    "id", "criado_em", "atualizado_em", "foto", "foto_mime", "foto_nome",
+})
+
+# O rótulo que ele lê na tela. Sem isto a trilha diz "nome_mae" e
+# "aux_alimentacao", que é linguagem de banco, não de gente.
+CAMPO_ROTULOS = {
+    "nome": "Nome", "cpf": "CPF", "matricula": "Matrícula",
+    "data_nascimento": "Data de nascimento", "sexo": "Sexo",
+    "estado_civil": "Estado civil", "escolaridade": "Escolaridade",
+    "nome_mae": "Nome da mãe", "nome_pai": "Nome do pai",
+    "naturalidade": "Naturalidade", "naturalidade_uf": "UF de naturalidade",
+    "rg": "RG", "rg_orgao": "Órgão do RG", "rg_uf": "UF do RG",
+    "rg_emissao": "Emissão do RG", "pis": "Nº do PIS",
+    "ctps_numero": "Nº da CTPS", "ctps_serie": "Série da CTPS",
+    "ctps_uf": "UF da CTPS", "ctps_emissao": "Emissão da CTPS",
+    "ctps_digital": "CTPS digital", "primeiro_emprego": "Primeiro emprego",
+    "cep": "CEP", "logradouro": "Logradouro", "numero_endereco": "Número",
+    "complemento": "Complemento", "bairro": "Bairro", "municipio": "Município",
+    "uf": "UF", "telefone": "Telefone", "email": "E-mail",
+    "vinculo": "Vínculo", "tipo_contrato": "Tipo de contrato",
+    "empresa_id": "Empresa de registro", "cnpj_admissao": "CNPJ de admissão",
+    "cargo_id": "Cargo", "convencao_id": "Convenção", "obra_id": "Obra",
+    "situacao": "Situação", "etapa": "Etapa", "regime": "Regime",
+    "contrato_experiencia": "Contrato de experiência",
+    "data_inicio": "Data de início", "admissao": "Data de admissão",
+    "aviso_previo": "Data do aviso prévio", "ultimo_dia": "Último dia trabalhado",
+    "demissao": "Data de saída", "salario": "Salário",
+    "valor_diaria": "Valor da diária", "valor_mes": "Valor do mês",
+    "mensalista": "Mensalista", "pix_tipo": "Tipo da chave Pix",
+    "pix_chave": "Chave Pix", "banco": "Banco", "agencia": "Agência",
+    "conta": "Conta", "observacoes": "Observações",
+    "razao_social_pj": "Razão social (PJ)", "cnpj_pj": "CNPJ (PJ)",
+    "id_fortes": "Código no Fortes",
+    "categoria_alimentacao": "Ajuda com alimentação",
+    "aux_alimentacao": "Valor da alimentação",
+    "categoria_transporte": "Ajuda com transporte",
+    "aux_transporte": "Valor do transporte",
+    "meio_transporte": "Meio de transporte",
+    "recebe_gratificacao": "Recebe gratificação",
+    "valor_gratificacao": "Valor da gratificação",
+    "parcela_unica": "Parcela única", "recebe_via_sp": "Recebe via SP",
+    "cesta_basica_extra": "Cesta básica extra",
+    "vale_refeicao": "Vale refeição",
+    "adicional_transferencia": "Adicional de transferência",
+    "solicitar_salario_familia": "Solicitar salário-família",
+    "observacao_auxilio": "Observação do auxílio",
+    "convencao_categoria": "Categoria da convenção",
+    "usuario_id": "Acesso ao sistema", "responsavel_id": "Responsável",
+    "requerente": "Quem pediu o cadastro", "ref_pipefy": "Card do Pipefy",
+}
+
+
+def rotulo_do_campo(campo: str) -> str:
+    """Em português, sempre. Campo sem rótulo aparece com o nome técnico — e é
+    de propósito que isso seja feio: é o aviso de que falta um rótulo."""
+    return CAMPO_ROTULOS.get(campo, campo)
+
+
+def _retrato(c: Colaborador) -> dict[str, str]:
+    """O cadastro inteiro como texto, para comparar antes × depois."""
+    return {col.name: ("" if getattr(c, col.name, None) is None
+                       else str(getattr(c, col.name)))
+            for col in Colaborador.__table__.columns
+            if col.name not in _FORA_DA_TRILHA}
+
+
+def _diferenca(antes: dict[str, str], depois: dict[str, str]) -> list[dict[str, str]]:
+    """Campo por campo, o que mudou — com rótulo, de e para."""
+    return [{"campo": campo, "rotulo": rotulo_do_campo(campo),
+             "de": antes.get(campo, ""), "para": depois.get(campo, "")}
+            for campo in depois
+            if antes.get(campo, "") != depois.get(campo, "")]
+
+
 def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
     """Cria ou atualiza o cadastro. O CPF é a identidade e não se troca."""
     from app.apps.erp.core.cadastros.validadores import cpf_valido
@@ -578,8 +682,9 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
     if novo:
         c = Colaborador(cpf=cpf, nome=nome)
         s.add(c)
-    antes = {} if novo else {
-        "cargo_id": c.cargo_id, "salario": str(c.salario or ""), "obra_id": c.obra_id}
+    # O RETRATO VEM ANTES DE QUALQUER MUDANÇA, inclusive do nome — era aqui que
+    # a troca de nome se perdia: `c.nome = nome` já tinha rodado.
+    antes = {} if novo else _retrato(c)
     c.nome = nome
 
     if "pis" in dados and _digitos(dados["pis"]) and not pis_valido(dados["pis"]):
@@ -745,9 +850,18 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
             usuario_id=usuario.id if usuario else None, automatico=True))
         s.flush()
 
-    registrar_evento(s, "colaborador", c.id, "CRIADO" if novo else "ALTERADO",
-                     {"nome": c.nome, "cpf": c.cpf, "antes": antes},
-                     usuario.id if usuario else None)
+    # ⚠️ O `flush` TEM DE VIR ANTES DO RETRATO DE DEPOIS: valor convertido pelo
+    # banco (data, numérico) só fica igual ao que ficou gravado depois dele, e
+    # sem isso a trilha mostraria diferença onde não houve.
+    s.flush()
+    mudou = [] if novo else _diferenca(antes, _retrato(c))
+    # Gravar sem mudança nenhuma não vira linha na trilha: abrir e fechar o
+    # formulário encheria o histórico de "alterado" sem nada alterado, e aí
+    # ninguém mais acha a alteração de verdade no meio.
+    if novo or mudou:
+        registrar_evento(s, "colaborador", c.id, "CRIADO" if novo else "ALTERADO",
+                         {"nome": c.nome, "cpf": c.cpf, "mudou": mudou},
+                         usuario.id if usuario else None)
     return c
 
 
@@ -1140,6 +1254,63 @@ def registrar_alteracao(s: Session, colaborador_id: int, dados: dict[str, Any],
 # ---------------------------------------------------------------------------
 # Ler a ficha
 # ---------------------------------------------------------------------------
+# Quantas alterações a ficha mostra. Teto porque um cadastro muito mexido
+# traria centenas de linhas para uma aba — e quem procura "quando mudou o
+# nome" quer as últimas, não todas.
+TETO_DE_ALTERACOES = 200
+
+
+def alteracoes_do_cadastro(s: Session, colaborador_id: int) -> list[dict[str, Any]]:
+    """Quem mudou o quê, quando, de que valor para qual.
+
+    Sai da trilha de eventos (`eventos`), que é onde `salvar` grava. Mostra uma
+    LINHA POR CAMPO: uma gravação que mudou três campos aparece como três
+    linhas, porque a pergunta que isto responde é sempre sobre UM campo
+    ("quando mudou o nome?"), não sobre a gravação.
+    """
+    linhas = s.execute(text("""
+        SELECT e.criado_em, e.acao, e.detalhe, u.nome AS quem
+          FROM eventos e
+          LEFT JOIN usuarios u ON u.id = e.usuario_id
+         WHERE e.entidade_tipo = 'colaborador' AND e.entidade_id = :c
+           AND e.acao IN ('CRIADO', 'ALTERADO', 'PREENCHIDO_POR_DOCUMENTO')
+         ORDER BY e.criado_em DESC, e.id DESC
+         LIMIT :teto"""), {"c": colaborador_id, "teto": TETO_DE_ALTERACOES}
+    ).mappings().all()
+
+    saida: list[dict[str, Any]] = []
+    for l in linhas:
+        detalhe = l["detalhe"] or {}
+        quando = l["criado_em"].isoformat() if l["criado_em"] else ""
+        quem = l["quem"] or "o sistema"
+        if l["acao"] == "CRIADO":
+            saida.append({"quando": quando, "quem": quem, "rotulo": "Cadastro criado",
+                          "campo": "", "de": "", "para": "", "criacao": True})
+            continue
+        mudou = detalhe.get("mudou") or []
+        if not mudou:
+            # ⚠️ As gravações ANTERIORES a 18/11/2026 não têm o campo a campo —
+            # o que se guardava era um retrato de três colunas. Dizer isso é
+            # melhor que mostrar linha vazia: quem procura entende por que não
+            # acha, em vez de achar que o sistema perdeu.
+            saida.append({
+                "quando": quando, "quem": quem,
+                "rotulo": "Cadastro alterado",
+                "campo": "", "de": "", "para": "",
+                "sem_detalhe": "alteração registrada antes de 18/11/2026, quando "
+                               "o sistema ainda não guardava campo por campo"})
+            continue
+        for m in mudou:
+            saida.append({
+                "quando": quando, "quem": quem,
+                "campo": m.get("campo", ""),
+                "rotulo": m.get("rotulo") or rotulo_do_campo(m.get("campo", "")),
+                "de": m.get("de", ""), "para": m.get("para", ""),
+                "por_documento": l["acao"] == "PREENCHIDO_POR_DOCUMENTO",
+            })
+    return saida
+
+
 def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     c = s.get(Colaborador, colaborador_id)
     if c is None:
@@ -1192,6 +1363,10 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     } for a in s.scalars(select(ColaboradorAlteracao).where(
         ColaboradorAlteracao.colaborador_id == c.id).order_by(
         ColaboradorAlteracao.vigencia.desc())).all()]
+    # ⚑ A TRILHA DE ALTERAÇÕES DO CADASTRO (18/11/2026). Ele: *"tudo PRECISA
+    # estar registrado no histórico (…) quem e quando e o valor de antes e o
+    # atual."* Registrar sem mostrar não serve — ver `salvar`.
+    dados["mudancas"] = alteracoes_do_cadastro(s, c.id)
     # O QUE FALTA PARA ADMITIR: a lista que o DP persegue, calculada aqui para a
     # tela e a Agenda dizerem a mesma coisa.
     dados["falta"] = o_que_falta(c)
@@ -1218,14 +1393,84 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     return dados
 
 
-CAMPOS_OBRIGATORIOS_CTPS = (
+# ===========================================================================
+# ⚑ O QUE FALTA PARA ADMITIR — A TABELA, decidida por ele em 18/11/2026
+#
+# Era uma lista única de 15 campos com UMA exceção escrita à mão ("prestador
+# não precisa de PIS nem de CTPS"). Virou tabela porque ele revisou a medição
+# dos 660 cadastros (`ERP › Pessoal › Regras do cadastro`) e decidiu regra por
+# regra — e lista única não tem onde guardar "este campo é só de quem é PJ".
+#
+# ⚠️ "OBRIGATÓRIO" AQUI NÃO BLOQUEIA GRAVAR, e isso é decisão antiga que
+# continua valendo: o cadastro chega pela metade e vai sendo completado. O que
+# esta tabela faz é dizer, em letras, **o que falta para a pessoa ser admitida
+# de verdade** — e é essa lista que a ficha mostra e que a trava de concluir
+# usa. Travar a gravação faria o DP preencher campo com "0" para a tela
+# deixar salvar, que é exatamente o que o Pipefy causava.
+#
+# A FONTE DE CADA LINHA: ou já valia antes, ou foi medida nos cadastros e
+# confirmada por ele. Onde a medição não alcançou, está dito.
+# ===========================================================================
+OBRIGATORIOS_SEMPRE = (
     ("data_nascimento", "data de nascimento"), ("nome_mae", "nome da mãe"),
     ("rg", "nº da identidade"), ("rg_orgao", "órgão emissor"),
-    ("pis", "nº do PIS"), ("ctps_numero", "nº da CTPS"),
     ("logradouro", "endereço"), ("municipio", "município"), ("uf", "UF"),
     ("cep", "CEP"), ("telefone", "telefone"), ("cargo_id", "cargo"),
-    ("obra_id", "obra"), ("admissao", "data de admissão"), ("salario", "salário"),
+    ("obra_id", "obra"),
+    # ⚑ Adotados em 18/11/2026 — medidos em "quase todos os cadastros, com
+    # vínculo ou sem", e por isso NÃO são condicionais.
+    ("data_inicio", "data de início"),
+    ("empresa_id", "empresa de registro"),
+    # Já valia para todos antes da medição, e nada mandou mudar.
+    ("admissao", "data de admissão"),
 )
+
+OBRIGATORIOS_POR_VINCULO = {
+    # ⚑ Medidos e confirmados por ele em 18/11/2026, nos 413 CTPS:
+    #   PIS e CTPS já valiam; a SÉRIE da CTPS (98,8%), o CONTRATO DE
+    #   EXPERIÊNCIA (98,3%) e a CONVENÇÃO (97,6%) entraram agora.
+    #   O SALÁRIO saiu do "sempre" e passou a ser só daqui: nos 222
+    #   prestadores ele está vazio em 97,3%, e quem é prestador recebe por
+    #   diária ou por mês, não por salário.
+    "CTPS": (
+        ("pis", "nº do PIS"), ("ctps_numero", "nº da CTPS"),
+        ("ctps_serie", "série da CTPS"),
+        ("contrato_experiencia", "contrato de experiência"),
+        ("convencao_id", "convenção"),
+        ("salario", "salário"),
+    ),
+    # ⚑ A convenção também é do prestador: medida em 207 de 207 autônomos RPA.
+    # ⚠️ SUPOSIÇÃO MINHA, e ele precisa saber: estendi ao prestador em geral,
+    # mas os 10 PJ ficaram abaixo do mínimo da medição e PJ não tem convenção
+    # coletiva — por isso PJ está de fora, logo abaixo.
+    "PRESTADOR": (
+        ("convencao_id", "convenção"),
+    ),
+}
+
+OBRIGATORIOS_POR_CONTRATO = {
+    # ⚑ Decisão dele, com todas as letras, em 18/11/2026: *"os campos abaixo
+    # são apenas para o Contrato PJ: CNPJ (PJ), Razão social (PJ)"*. A medição
+    # só viu 10 PJ em 660 cadastros — abaixo do mínimo —, então quem respondeu
+    # foi ele, não o número.
+    "PJ": (
+        ("razao_social_pj", "razão social (PJ)"),
+        ("cnpj_pj", "CNPJ (PJ)"),
+    ),
+}
+
+# O que NÃO se cobra, e por quê. Separado dos obrigatórios de propósito: a
+# ausência de uma linha aqui seria "esqueci", e uma linha é "decidi".
+NAO_SE_COBRA = {
+    # PJ não tem convenção coletiva, e os 10 PJ do cadastro não deram base
+    # para medir. Se estiver errado, é tirar esta linha.
+    ("PJ", "convencao_id"): "PJ não entra em convenção coletiva",
+}
+
+# Mantido só para não quebrar quem importa o nome antigo. Não use em código
+# novo: a tabela acima é a resposta.
+CAMPOS_OBRIGATORIOS_CTPS = tuple(
+    OBRIGATORIOS_SEMPRE + OBRIGATORIOS_POR_VINCULO["CTPS"])
 
 
 # OS SEIS PAPÉIS QUE O PIPE EXIGIA PARA ADMITIR, com o tipo do catálogo do
@@ -1346,13 +1591,18 @@ def o_que_falta(c: Colaborador) -> list[str]:
     salvar.
     """
     vinculo = (c.vinculo or "CTPS").upper()
+    contrato = (c.tipo_contrato or "").upper()
+    exigidos: list[tuple[str, str]] = list(OBRIGATORIOS_SEMPRE)
+    exigidos += list(OBRIGATORIOS_POR_VINCULO.get(vinculo, ()))
+    exigidos += list(OBRIGATORIOS_POR_CONTRATO.get(contrato, ()))
     falta = []
-    for campo, rotulo in CAMPOS_OBRIGATORIOS_CTPS:
-        if vinculo == "PRESTADOR" and campo in ("pis", "ctps_numero"):
+    for campo, rotulo in exigidos:
+        if (contrato, campo) in NAO_SE_COBRA:
             continue
         if not getattr(c, campo, None):
             falta.append(rotulo)
-    return falta
+    # Sem repetir: um campo pode entrar por dois caminhos (vínculo e contrato).
+    return list(dict.fromkeys(falta))
 
 
 # ---------------------------------------------------------------------------
