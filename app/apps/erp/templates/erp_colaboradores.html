@@ -382,11 +382,19 @@ async function decidirPedidoDePortal(id, acao){
   try {
     const d = await api(`/erp/api/portal/pedidos-de-acesso/${id}`,
                         {method:"POST", body: JSON.stringify(corpo)});
+    const cv = d.convite || {};
+    // ⚠️ O LINK APARECE AQUI TAMBÉM (18/11/2026). Antes esta tela dizia só
+    // "reenvie pela ficha da pessoa" — e se o e-mail do sistema não estiver
+    // configurado, reenviar não vai sair também. Sem o link, a liberação
+    // acontecia e ninguém tinha como entrar. A ficha já mostrava; a fila, não.
     aviso("mensagem", acao === "LIBERAR"
       ? `Acesso liberado para ${escapar(p.nome)}.`
-        + (d.convite && d.convite.enviado ? " O convite foi enviado."
-           : " ⚠️ O convite NÃO saiu — reenvie pela ficha da pessoa.")
-      : `Pedido de ${escapar(p.nome)} recusado.`, "ok");
+        + (cv.enviado ? " O convite foi enviado."
+           : ` ⚠️ O convite NÃO saiu: ${escapar(cv.erro || "motivo não informado")}.`
+             + (cv.link ? `<br>Entregue este link para ela (vale uma vez): `
+                        + `<code>${escapar(cv.link)}</code>` : ""))
+      : `Pedido de ${escapar(p.nome)} recusado.`,
+      acao === "LIBERAR" && !cv.enviado ? "alerta" : "ok");
     await carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }

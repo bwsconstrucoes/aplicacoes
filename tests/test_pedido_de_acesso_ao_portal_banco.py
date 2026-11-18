@@ -245,3 +245,73 @@ def test_apagar_o_cadastro_leva_o_pedido_junto(sessao_real, pessoa):
     conn.execute(text("DELETE FROM colaboradores WHERE id = :i"), {"i": pessoa.id})
 
     assert fila.listar(conn, status="TODOS") == []
+
+
+# ---------------------------------------------------------------------------
+# ⚑ SEM CONTA DE E-MAIL, O LINK AINDA SAI (18/11/2026)
+#
+# Ele perguntou se a liberação de acesso ao portal estava pronta, e ao conferir
+# achei isto: sem a conta de e-mail do sistema configurada, a liberação
+# ACONTECIA (o operador era criado, a tela dizia que deu certo) e **ninguém
+# tinha como entrar** — nem a pessoa, que não recebia nada, nem quem liberou,
+# que não tinha link para entregar.
+#
+# O código já fazia a coisa certa para o outro caso (servidor fora do ar):
+# devolvia o link para entregar de outro jeito. A falta de conta merecia o
+# mesmo tratamento, e merece MAIS: é o estado do sistema ANTES de alguém
+# configurar o e-mail — ou seja, exatamente quando a primeira liberação
+# acontece.
+# ---------------------------------------------------------------------------
+def test_sem_conta_de_email_o_convite_devolve_o_LINK(sessao_real, dp):
+    from app.apps.erp.core.auth import convites
+    from app.apps.erp.core.comum import email_sistema
+    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
+    from app.apps.erp.core.auth.service import gerar_hash
+
+    # garante que NÃO há conta de e-mail do sistema usável
+    assert email_sistema.conta(sessao_real) is None, (
+        "este teste precisa do sistema SEM conta de e-mail configurada")
+
+    pessoa = Usuario(nome="Quem Vai Entrar", email="quem@entrar.teste",
+                     ativo=True, senha_hash=gerar_hash("provisoria-123456"),
+                     perfil=PerfilUsuario.ADMINISTRATIVO_OBRA)
+    sessao_real.add(pessoa)
+    sessao_real.flush()
+
+    r = convites.enviar(sessao_real, pessoa.id,
+                        link_base="https://exemplo/erp/primeiro-acesso",
+                        autor=dp)
+
+    assert r["enviado"] is False
+    assert "e-mail do sistema" in r["erro"].lower()
+    # ⚠️ O QUE IMPORTA: o link existe, e é por ele que a pessoa entra.
+    assert r["link"] and "/erp/primeiro-acesso/" in r["link"]
+    assert r["para"] == "quem@entrar.teste"
+
+
+def test_o_convite_do_link_sem_email_FUNCIONA_de_verdade(sessao_real, dp):
+    """Link que volta e não funciona seria pior que link nenhum — daria a
+    impressão de saída onde não há."""
+    from app.apps.erp.core.auth import convites
+    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
+    from app.apps.erp.core.auth.service import gerar_hash
+
+    pessoa = Usuario(nome="Quem Vai Entrar", email="quem2@entrar.teste",
+                     ativo=True, senha_hash=gerar_hash("provisoria-123456"),
+                     perfil=PerfilUsuario.ADMINISTRATIVO_OBRA)
+    sessao_real.add(pessoa)
+    sessao_real.flush()
+
+    r = convites.enviar(sessao_real, pessoa.id,
+                        link_base="https://exemplo/erp/primeiro-acesso",
+                        autor=dp)
+    token = r["link"].rsplit("/", 1)[-1]
+
+    achado = convites.conferir(sessao_real, token)
+    assert achado["usuario_id"] == pessoa.id
+
+    convites.usar(sessao_real, token, "senha-escolhida-por-ela-1")
+    sessao_real.flush()
+    # e o link não serve duas vezes
+    with pytest.raises(Exception):
+        convites.conferir(sessao_real, token)
