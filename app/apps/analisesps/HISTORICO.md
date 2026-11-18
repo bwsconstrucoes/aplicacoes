@@ -12274,6 +12274,7 @@ somente Solicitações de uma conta especifica"*.
 - ⚠️ Os envios ANTERIORES a esta publicação não vão sozinhos para o Drive (a cópia nasce
   no fim do processamento); os que ainda tiverem o PDF no servidor mostram "ver a página".
 - Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+- **Publicado em 18/11/2026.** Falta o dono apertar "Aplicar atualizações do banco" (057).
 
 #### Leva 272 — Arquivos gerados: todas as SPs, uma por linha, filtros, e o nº da SP no PDF do via SP (18/11/2026)
 
