@@ -21,6 +21,82 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 18/11/2026 — DUAS PERGUNTAS DELE AINDA SEM RESPOSTA DELE (não comece a área sem ler)
+
+Ele fez as duas no mesmo dia, como PERGUNTA — e as duas foram respondidas com
+diagnóstico, sem obra. **Nada foi construído, de propósito.** Quem pegar a área
+precisa saber o que já foi apurado, para não apurar de novo nem sair fazendo.
+
+#### 1. "Colaborador estava afastado e vai retornar. O que deve ser exigido?"
+
+**O que o sistema faz hoje:** nada. "Afastado" é uma etapa do quadro **sem
+tipo, sem data de início, sem previsão de retorno e sem documento**. Voltar é
+arrastar o cartão para "Concluído"; a situação volta para ATIVO sozinha
+(`SITUACAO_DA_ETAPA`) e a pessoa volta a bater ponto. A trava de concluir
+(`_o_que_impede_concluir`) não pega nada neste caso: a CTPS dessa pessoa já foi
+assinada há tempos.
+
+**O que está desligado e ninguém percebe:**
+- o afastamento do PONTO (ocorrência `AFASTAMENTO`, com início e fim, aprovada
+  pelo DP) **não** move a etapa do ERP, e a etapa do ERP não cria ocorrência
+  no ponto. São dois mundos sobre a mesma pessoa.
+- **não existe template de contabilidade de retorno** (são sete, nenhum de
+  afastamento ou volta). O eSocial tem evento e prazo para isso.
+- **`CERTIFICADO-NR` e `ASO` já têm validade no catálogo do Arquivo** e
+  `arquivo.service.vencendo()` já sabe listar o que vence — nada disso é
+  consultado na volta.
+- ⚠️ **A rotina `vigia` ANUNCIA na tela que analisa "ASO e NR vencendo" e o
+  código NÃO faz isso.** Ler `agente_dp.ROTINAS["vigia"]["analisa"]` e comparar
+  com `agente_dp.vigia()`. É promessa na tela sem código atrás — consertar é
+  ligar o `vencendo()` que já existe.
+- não existe nenhuma noção de **estabilidade** (acidente de trabalho,
+  maternidade) em lugar nenhum do repositório. É o item que custa dinheiro: a
+  tela de desligamento não tem como avisar.
+
+**O que ficou proposto a ele, por ordem de risco:** (1) tipo do afastamento e
+data de retorno como exigência de verdade, porque sem a data o ponto não sabe
+onde para o abono; (2) ASO de retorno **avisando, não travando** — coerente com
+a decisão dele de 10/11 ("não vamos colocar ele como obrigatório ainda"), com
+quem concluir assinando pela escolha; (3) NR vencida e estabilidade como aviso,
+a estabilidade aparecendo no DESLIGAMENTO, que é onde ela custa; (4) template de
+contabilidade de retorno.
+
+**Decisões que são dele e travam o desenho:** quais afastamentos acontecem de
+fato na BWS (é a lista de tipos); se o ASO de retorno trava ou só avisa; se
+quer o template de retorno; e quem move o cartão hoje na prática.
+
+#### 2. "O e-mail da empresa não diferencia as áreas. Como está sendo tratado?"
+
+**Ele está certo, e não é hipótese — está em produção.** O sistema tem DOIS
+eixos de conta de e-mail, e **nenhum deles é a área**:
+
+| Eixo | Onde fica | Quem usa |
+|---|---|---|
+| uma conta por **EMPRESA** (CNPJ), com empréstimo entre empresas (migração 067) | cadastro de Empresas | **o DP** (pedido à contabilidade, `contabilidade.py`) **e o Suprimentos** (cotação e cobrança, `suprimentos/envio.py` e `cobranca.py`) — a MESMA conta |
+| uma conta **do sistema**, fora de CNPJ | Configurações › E-mail do sistema (`email_sistema.py`) | só o convite de primeiro acesso |
+
+Ou seja: **a cotação para o fornecedor e o pedido à contabilidade saem do mesmo
+endereço**, e a resposta dos dois volta para a mesma caixa. A caixa de entrada
+do agente (`email_entrada.py`) também é **UMA**, global, em `parametros` — ela
+casa resposta com `dp_pedidos`; resposta de fornecedor vai cair nela.
+
+O que já está certo: a conta do sistema. Ele disse *"as coisas de sistema a
+gente pode considerar um e-mail só"*, e é exatamente o que existe.
+
+**O que foi proposto, sem construir:** o eixo que falta é o **propósito**
+(DP / Suprimentos / Sistema), e a conta passa a ser identificada por
+**(propósito, empresa — a empresa podendo ficar em branco)**. Empresa em branco
+= serve a todas naquele propósito. Isso cobre os três casos dele com uma regra
+só: Sistema e DP ficam sem empresa (ele: *"o DP, por enquanto, a gente não está
+precisando ainda diferenciar por empresa"*), e o Suprimentos continua
+precisando da empresa, porque a cotação é documento comercial de um CNPJ.
+⚠️ E a caixa de ENTRADA precisa do mesmo eixo, senão a separação na saída não
+se sustenta na volta.
+
+**Decisão dele que falta:** se o Suprimentos é por área E por empresa (acho que
+sim, pelo CNPJ da cotação) ou só por área; e se cada propósito ganha caixa de
+entrada própria.
+
 ### ⚑ 18/11/2026 — LIBERAÇÃO DE ACESSO AO PORTAL: falta UMA decisão dele (quem libera)
 
 Ele perguntou: *"a liberação para o acesso ao portal já tá tudo ok? me orienta
