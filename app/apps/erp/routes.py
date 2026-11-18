@@ -188,6 +188,11 @@ MODULOS = [
             ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
             ("dp_contabilidade", "Contabilidade e agente",
              "erp.pagina_dp_contabilidade"),
+            # ⚑ AS CONDICIONAIS QUE O PIPEFY NÃO EXPORTA (17/11/2026). Ele:
+            # *"o pipe não exporta condicionais, por isso minha pergunta sobre
+            # mais ajuda na construção."* Esta tela MEDE a regra nos cadastros
+            # em vez de perguntá-la — ver core/cadastros/regras_pelos_dados.py.
+            ("dp_regras", "Regras do cadastro", "erp.pagina_dp_regras"),
         ],
     },
     {
@@ -13200,6 +13205,36 @@ def api_dp_caixa_acao(acao: str):
 def pagina_dp_contabilidade():
     return render_template("erp_dp_contabilidade.html",
                            **_contexto("dp_contabilidade"))
+
+
+@bp.route("/erp/dp/regras")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def pagina_dp_regras():
+    return render_template("erp_dp_regras.html", **_contexto("dp_regras"))
+
+
+@bp.route("/erp/api/dp/regras")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_dp_regras():
+    """AS CONDICIONAIS MEDIDAS NOS CADASTROS — só leitura, não muda nada.
+
+    ⚠️ CUSTO, porque vale dizer antes de alguém apertar: é UMA consulta que
+    lê todos os cadastros não cancelados (hoje ~2.600 linhas, 20 colunas) e
+    cruza 2 campos-chave × 18 campos na memória. Não vai ao banco por pessoa
+    nem por campo. O resultado NÃO é guardado: a resposta muda com o cadastro,
+    e cache aqui faria ele decidir por número velho.
+    """
+    from app.apps.erp.core.cadastros import regras_pelos_dados as svc
+    try:
+        with get_session() as s:
+            minimo = request.args.get("minimo", type=int)
+            return jsonify({"ok": True, **svc.comparar_com_o_formulario(
+                s, svc.medir(s, minimo=minimo) if minimo else None)})
+    except Exception as e:
+        logger.exception("ERP/DP: falha ao medir as regras do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/api/dp/pedidos", methods=["GET", "POST"])
