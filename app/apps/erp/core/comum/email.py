@@ -189,8 +189,26 @@ def _entregar(empresa: Empresa, msg: EmailMessage, destinos: list[str]) -> None:
             "Workspace com verificação em duas etapas, a senha aqui tem de "
             "ser uma SENHA DE APLICATIVO, não a senha de entrar no e-mail.")
     except smtplib.SMTPRecipientsRefused as e:
-        recusados = ", ".join(sorted((e.recipients or {}).keys()))
-        raise ErroDeEnvio(f"O servidor recusou o(s) endereço(s): {recusados}.")
+        # ⚑ O MOTIVO DO SERVIDOR ENTRA NA FRASE (18/11/2026). Antes dizíamos só
+        # "recusou o endereço X" — e o dono ficou parado com isso na tela, sem
+        # ter como saber por quê. A informação ESTAVA aqui: `e.recipients` é um
+        # dicionário {endereço: (código, motivo)}, e nós jogávamos o motivo
+        # fora. Erro que esconde a causa custa uma ida e volta inteira.
+        partes = []
+        for endereco, resposta in sorted((e.recipients or {}).items()):
+            try:
+                codigo, texto_ = resposta
+                motivo = (texto_.decode(errors="replace")
+                          if isinstance(texto_, bytes) else str(texto_))
+                partes.append(f"{endereco} — {codigo} {motivo.strip()}")
+            except Exception:                           # noqa: BLE001
+                partes.append(str(endereco))
+        raise ErroDeEnvio(
+            "O servidor recusou o destinatário: " + "; ".join(partes)
+            + ". Isto quase nunca é o endereço estar errado: é o provedor "
+            "não deixar esta conta mandar para fora (relay). Confira se o "
+            "endereço que entrou é o mesmo que aparece como remetente, e se "
+            "a conta tem permissão de enviar para endereços externos.")
     except smtplib.SMTPSenderRefused:
         raise ErroDeEnvio(
             f"O servidor recusou o remetente. Normalmente ele tem de ser a "
