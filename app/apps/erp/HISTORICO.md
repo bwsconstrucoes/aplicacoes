@@ -10920,6 +10920,32 @@ e escolha sempre explícitos. Ver o topo do `CLAUDE.md`.
 
 ## Incidentes
 
+- **18/11/2026 — o e-mail não saía, e o sintoma acusava o inocente.** Ao
+  configurar a conta do sistema e a do DP, as duas recusaram com *"o servidor
+  recusou o(s) endereço(s): <endereço de destino>"*. A suspeita natural — e a
+  minha — foi o provedor não liberar envio externo. **Ele desmontou com um
+  dado que só ele tinha:** *"esses e-mails usamos há muito tempo e não [há]
+  restrição nenhuma."*
+
+  **A causa era nossa, e eram dois erros somados.** A tela pede *"como aparece
+  para quem recebe"* e a dica do diálogo da conta do DP dizia *"ex.: DP — BWS
+  Construções"* — então quem lê escreve um NOME. E `remetente_de` devolvia esse
+  texto cru para o cabeçalho `From`. Um `From` sem `@` não é endereço: o
+  `smtplib` tira dele o remetente do envelope, manda um envelope torto, e o
+  servidor recusa o **DESTINATÁRIO**. Por isso a frase falava do endereço de
+  destino, que estava certo o tempo todo.
+
+  **A lição, que vale além deste caso:** campo de tela que convida a escrever
+  uma coisa e código que espera outra é defeito, mesmo que cada metade pareça
+  razoável sozinha. E quando o erro de um sistema de fora acusa um valor que a
+  gente controla, desconfiar primeiro do que a gente mandou.
+
+  **Consertado:** `remetente_de` sempre devolve algo com endereço dentro (nome
+  puro ganha o endereço da conta; nome com endereço é respeitado), e a recusa
+  de destinatário passou a trazer o código e o texto do servidor em vez de só
+  o endereço — a informação estava na exceção e era jogada fora.
+  Testes: `tests/test_remetente_sempre_tem_endereco.py`.
+
 - **02/09/2026 — ERP fora do ar por banco atrasado.** Ver regra 1. Causa:
   outro chat juntou o ramo na `main` sem apertar o botão. Corrigido no mesmo
   dia; a tela "banco desatualizado" (503) substitui a página branca.
