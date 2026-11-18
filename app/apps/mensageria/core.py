@@ -174,6 +174,33 @@ def whatsapp_ligado(conn) -> bool:
     return ler_parametro(conn, WHATSAPP_LIGADO, "") == "1"
 
 
+# ---------------------------------------------------------------------------
+# NÃO MANDAR MENSAGEM PARA QUEM FOI DESLIGADO (17/11/2026)
+#
+# Decisão dele, dita com todas as letras: *"essa correlação entre o ERP e as
+# pessoas é fundamental, tendo em vista a questão do bloqueio de envio de
+# mensagens para as pessoas desligadas. Por isso que tem que estar tudo
+# correlacionado."*
+#
+# ⚑ NASCE LIGADO. Não é configuração que se descobre depois: ele pediu o
+# bloqueio, então o padrão é bloquear. A chave existe para o caso contrário —
+# se um dia ele precisar avisar alguém que já saiu, desliga pela tela em vez de
+# esperar código novo.
+#
+# ⚑ O QUE ISTO BLOQUEIA, E O QUE NÃO: bloqueia o que a EMPRESA MANDA (passa
+# pelo `notificador.notificar`). NÃO bloqueia o robô RESPONDENDO a quem pede —
+# o contracheque pelo Telegram sai por outro caminho (`telegram_bot._tg_enviar`)
+# e continua funcionando, porque quem acabou de sair costuma precisar do último
+# contracheque. A separação é o que faz o bloqueio não virar um problema novo.
+# ---------------------------------------------------------------------------
+BLOQUEAR_DESLIGADOS = "bloquear_desligados"
+BARRADO_DESLIGADO = "DESLIGADO_DA_EMPRESA"
+
+
+def bloqueia_desligados(conn) -> bool:
+    return ler_parametro(conn, BLOQUEAR_DESLIGADOS, "1") == "1"
+
+
 def tetos(conn) -> tuple[int, int]:
     return (_inteiro(ler_parametro(conn, POR_HORA, ""), PADRAO_POR_HORA),
             _inteiro(ler_parametro(conn, POR_DIA, ""), PADRAO_POR_DIA))

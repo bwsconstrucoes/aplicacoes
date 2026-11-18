@@ -21,6 +21,1293 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 18/11/2026 — DUAS PERGUNTAS DELE AINDA SEM RESPOSTA DELE (não comece a área sem ler)
+
+Ele fez as duas no mesmo dia, como PERGUNTA — e as duas foram respondidas com
+diagnóstico, sem obra. **Nada foi construído, de propósito.** Quem pegar a área
+precisa saber o que já foi apurado, para não apurar de novo nem sair fazendo.
+
+#### 1. "Colaborador estava afastado e vai retornar. O que deve ser exigido?"
+
+**O que o sistema faz hoje:** nada. "Afastado" é uma etapa do quadro **sem
+tipo, sem data de início, sem previsão de retorno e sem documento**. Voltar é
+arrastar o cartão para "Concluído"; a situação volta para ATIVO sozinha
+(`SITUACAO_DA_ETAPA`) e a pessoa volta a bater ponto. A trava de concluir
+(`_o_que_impede_concluir`) não pega nada neste caso: a CTPS dessa pessoa já foi
+assinada há tempos.
+
+**O que está desligado e ninguém percebe:**
+- o afastamento do PONTO (ocorrência `AFASTAMENTO`, com início e fim, aprovada
+  pelo DP) **não** move a etapa do ERP, e a etapa do ERP não cria ocorrência
+  no ponto. São dois mundos sobre a mesma pessoa.
+- **não existe template de contabilidade de retorno** (são sete, nenhum de
+  afastamento ou volta). O eSocial tem evento e prazo para isso.
+- **`CERTIFICADO-NR` e `ASO` já têm validade no catálogo do Arquivo** e
+  `arquivo.service.vencendo()` já sabe listar o que vence — nada disso é
+  consultado na volta.
+- ⚠️ **A rotina `vigia` ANUNCIA na tela que analisa "ASO e NR vencendo" e o
+  código NÃO faz isso.** Ler `agente_dp.ROTINAS["vigia"]["analisa"]` e comparar
+  com `agente_dp.vigia()`. É promessa na tela sem código atrás — consertar é
+  ligar o `vencendo()` que já existe.
+- não existe nenhuma noção de **estabilidade** (acidente de trabalho,
+  maternidade) em lugar nenhum do repositório. É o item que custa dinheiro: a
+  tela de desligamento não tem como avisar.
+
+**O que ficou proposto a ele, por ordem de risco:** (1) tipo do afastamento e
+data de retorno como exigência de verdade, porque sem a data o ponto não sabe
+onde para o abono; (2) ASO de retorno **avisando, não travando** — coerente com
+a decisão dele de 10/11 ("não vamos colocar ele como obrigatório ainda"), com
+quem concluir assinando pela escolha; (3) NR vencida e estabilidade como aviso,
+a estabilidade aparecendo no DESLIGAMENTO, que é onde ela custa; (4) template de
+contabilidade de retorno.
+
+**Decisões que são dele e travam o desenho:** quais afastamentos acontecem de
+fato na BWS (é a lista de tipos); se o ASO de retorno trava ou só avisa; se
+quer o template de retorno; e quem move o cartão hoje na prática.
+
+#### 2. "O e-mail da empresa não diferencia as áreas. Como está sendo tratado?"
+
+**Ele está certo, e não é hipótese — está em produção.** O sistema tem DOIS
+eixos de conta de e-mail, e **nenhum deles é a área**:
+
+| Eixo | Onde fica | Quem usa |
+|---|---|---|
+| uma conta por **EMPRESA** (CNPJ), com empréstimo entre empresas (migração 067) | cadastro de Empresas | **o DP** (pedido à contabilidade, `contabilidade.py`) **e o Suprimentos** (cotação e cobrança, `suprimentos/envio.py` e `cobranca.py`) — a MESMA conta |
+| uma conta **do sistema**, fora de CNPJ | Configurações › E-mail do sistema (`email_sistema.py`) | só o convite de primeiro acesso |
+
+Ou seja: **a cotação para o fornecedor e o pedido à contabilidade saem do mesmo
+endereço**, e a resposta dos dois volta para a mesma caixa. A caixa de entrada
+do agente (`email_entrada.py`) também é **UMA**, global, em `parametros` — ela
+casa resposta com `dp_pedidos`; resposta de fornecedor vai cair nela.
+
+O que já está certo: a conta do sistema. Ele disse *"as coisas de sistema a
+gente pode considerar um e-mail só"*, e é exatamente o que existe.
+
+**O que foi proposto, sem construir:** o eixo que falta é o **propósito**
+(DP / Suprimentos / Sistema), e a conta passa a ser identificada por
+**(propósito, empresa — a empresa podendo ficar em branco)**. Empresa em branco
+= serve a todas naquele propósito. Isso cobre os três casos dele com uma regra
+só: Sistema e DP ficam sem empresa (ele: *"o DP, por enquanto, a gente não está
+precisando ainda diferenciar por empresa"*), e o Suprimentos continua
+precisando da empresa, porque a cotação é documento comercial de um CNPJ.
+⚠️ E a caixa de ENTRADA precisa do mesmo eixo, senão a separação na saída não
+se sustenta na volta.
+
+**Decisão dele que falta:** se o Suprimentos é por área E por empresa (acho que
+sim, pelo CNPJ da cotação) ou só por área; e se cada propósito ganha caixa de
+entrada própria.
+
+### ⚑ 18/11/2026 — LIBERAÇÃO DE ACESSO AO PORTAL: falta UMA decisão dele (quem libera)
+
+Ele perguntou: *"a liberação para o acesso ao portal já tá tudo ok? me orienta
+como é."* O fluxo está de pé e foi conferido no código de ponta a ponta. Duas
+coisas travam o uso, e a primeira é decisão DELE:
+
+1. **Só ADMIN libera.** `"gerir_usuarios": {P.ADMIN}` em `permissoes.py`. O DP
+   enxerga a fila? Não: o cartão da fila só aparece para quem tem
+   `gerir_usuarios`. Resultado prático: **hoje só ele próprio consegue
+   liberar acesso ao portal**. A pergunta em aberto é se `DEPARTAMENTO_PESSOAL`
+   deve ganhar essa alçada — e isto não se muda sem o "pode" dele, porque
+   liberar acesso é criar operador do sistema.
+2. **O convite precisa da conta de e-mail do sistema** (Configurações ›
+   E-mail do sistema). Sem ela, o convite não sai por e-mail — mas o LINK
+   agora sempre volta na tela, para entregar por WhatsApp (conserto do mesmo
+   dia, abaixo).
+
+**O caminho, para quem nunca viu:** a pessoa, no celular DELA (nunca no
+aparelho da obra), entra no ponto com CPF e PIN → menu → "Pedir acesso ao
+portal" → informa o e-mail dela. O pedido cai na fila
+(`portal_pedidos_de_acesso`, migração 108). Na tela ERP › Pessoal, um cartão
+azul no topo lista quem pediu → "Liberar e convidar" cria o acesso como
+**administrativo de obra** (abre pedidos da obra; não vê salário nem documento
+de ninguém), liga a obra em que a pessoa bate ponto, e manda o convite para ela
+escolher a própria senha. "Recusar" pede o motivo, e o motivo volta para o
+celular dela.
+
+⚠️ **Migração 108 precisa estar aplicada.** Sem ela o ponto não quebra (mostra
+"ainda não disponível"), mas a fila não existe.
+
+### ⚑ 18/11/2026 — o convite que liberava acesso e não deixava ninguém entrar (CONSERTADO)
+
+Achado conferindo o fluxo acima. Sem conta de e-mail configurada,
+`convites.enviar` devolvia cedo com `link: ""`. Efeito: a liberação
+**acontecia** (operador criado, tela dizia que deu certo) e **ninguém tinha
+como entrar** — nem a pessoa, que não recebia nada, nem quem liberou, que não
+tinha link para entregar. O mesmo código já fazia a coisa certa dez linhas
+abaixo, para o caso do servidor de e-mail fora do ar.
+
+Agora o convite nasce ANTES de tentar o envio, o link sempre volta com o motivo
+do não-envio escrito, e a fila do portal mostra o link (a ficha da pessoa já
+mostrava). Dois casos com banco de verdade em
+`tests/test_pedido_de_acesso_ao_portal_banco.py`: o link volta, e ele funciona
+de verdade (serve uma vez, não serve duas).
+
+### ⚑ 18/11/2026 — "AS REGRAS JÁ DEFINIDAS NÃO DEVERIAM SUMIR?" — deveriam, e a culpa era de um desenho meu
+
+Ele, depois de adotar as regras e medir de novo:
+
+> *"Quando eu coloco medir de novo, as regras anteriormente definidas não
+> deveriam sumir?"*
+
+**Deveriam.** A tela continuava oferecendo o que ele já tinha respondido — que é
+a irritação que este arquivo descreve em três lugares.
+
+#### A causa: a MESMA decisão guardada em três lugares
+
+| Onde eu havia implementado | O que a comparação olhava |
+|---|---|
+| `OBRIGATORIOS_*`, no cadastro | ❌ não olhava |
+| as regras de "não exibir", escritas à mão DENTRO da tela | ❌ não olhava |
+| `obrigatorios_se` do formulário do portal | ✅ só este |
+
+Ou seja: eu adotava a regra num lugar e a medição conferia em outro. **Não era
+um esquecimento — era um desenho que garantia a divergência.**
+
+#### O conserto: uma declaração por tipo de regra, três leitores
+
+- **`CAMPOS_SO_SE`** (novo) declara "este campo só aparece quando…". Dela leem:
+  `o_que_falta` (não cobra campo que a tela não mostra), a tela do cadastro
+  (esconde), e a comparação da medição (tira da lista dele).
+- A tela **deixou de ter a regra escrita à mão**: ela recebe o mapa do servidor
+  e aplica para todo campo declarado. Acrescentar a próxima regra é **uma linha**
+  em `pessoas.py`, não três edições espalhadas.
+
+⚠️ **Campo oculto não é campo removido:** continua no documento, só não aparece.
+A gravação manda o que está na tela, e remover deixaria o valor antigo intacto
+no banco quando a pessoa mudasse de vínculo.
+
+#### ⚠️ Duas assimetrias que só apareceram dirigindo a tela
+
+1. **A mesma regra, perguntada por dois nomes.** A tabela declara "PIS é de
+   quem tem CTPS" (por VÍNCULO) e a medição também pergunta por CONTRATO ("PIS
+   para CLT tempo determinado?"). São a mesma coisa, mas a comparação por chave
+   não via — e ele veria **cinco linhas pendentes de decisões já tomadas**.
+   Resolvido com `vinculo_pelo_contrato`, nos dois ramos (obrigatório e não
+   exibir).
+2. **A medição propôs o oposto de uma decisão dele.** "Não exibir Valor da
+   diária para CTPS" — e ele decidiu em **10/11/2026** que *"quem tem carteira
+   pode ser pago por dia"*. A diária está vazia em 100% dos CTPS porque é rara,
+   não porque é proibida: é o mesmo caso do "valor do mês" que ele recusou.
+   **Registrei em `RECUSADAS` citando a decisão dele**, para a tela não oferecer
+   o contrário do que ele já disse. ⚠️ Se eu li errado, é tirar as três linhas.
+
+#### O efeito, medido na tela
+
+Com 90 cadastros de amostra: **de 40 propostas misturadas para 7 a decidir**, 35
+em "já faz" e 2 em "já decididas por você". As 7 que sobraram são de uma família
+só — PIS e CTPS não se aplicam a prestador, e a diária é obrigatória para ele.
+
+
+### ⚑ 18/11/2026 — CARGO + CONVENÇÃO PREENCHE CATEGORIA, PISO E CBO
+
+Ele: *"No Pipefy eu tenho uma base de dados onde vinculo cargo, convenção,
+categoria e salário. Qual sua sugestão pra fazermos aqui também? Preciso de
+algo simples de construir. A ideia é que uma vez que o DP preencher a
+convenção, o salário e a categoria já ficariam preenchidos, e o CBO."*
+
+#### ⚠️ A BASE JÁ EXISTIA — e é a planilha DELE, importada
+
+Antes de sugerir qualquer coisa, procurei. `cargo_convencao` é exatamente a
+tabela "Cargo e Convenção" do Pipefy, importada em 05/11/2026: **63 cargos, 13
+convenções, 135 cruzamentos**, com categoria, piso, CBO e **histórico de
+dissídio**. A tela existe em Configurações › Cargos e convenções, com importação
+que simula antes de gravar.
+
+**Faltava um pedaço só: a tela de cadastro não olhava a base.** Terceira vez na
+semana que o diagnóstico é "está construído e inalcançável" — ver a nota de
+17/11 sobre procurar antes de concluir que falta.
+
+#### O que foi feito
+
+Escolhido o cargo e a convenção, a ficha mostra **categoria, CBO, piso e
+diária** daquela combinação, e preenche o salário e a categoria. Combinação que
+não está na base diz isso, com o caminho para cadastrá-la — e o cadastro segue.
+
+**Custo:** a base chega **UMA vez** quando o formulário abre (135 linhas) e fica
+em memória. Trocar de cargo ou de convenção não custa ida nenhuma ao banco.
+Pedir por combinação custaria uma chamada por clique.
+
+⚠️ **A rota é `/erp/api/cargos` e não a de opções**, de propósito: a de opções é
+aberta a quem tem `ver_pessoal` (supervisor de obra, parceiro) e vem SEM o piso.
+Mandar a tabela salarial da empresa por ali seria vazá-la — e há teste disso.
+
+#### ⚠️ SALÁRIO E CATEGORIA SE COMPORTAM DIFERENTE, e isso só apareceu na tela
+
+- **Salário é NEGOCIADO.** Ganhar mais que o piso é normal e legítimo. Então ele
+  é preenchido quando está vazio e **nunca sobrescrito**: havendo valor
+  diferente, a tela mostra os dois e oferece "usar o piso". Trocar em silêncio
+  um salário digitado é dinheiro mudando sem ninguém ver, e *"por que ela ganha
+  mais que o piso"* é pergunta de auditoria e de sindicato.
+- **Categoria NÃO é negociada.** É o que a convenção diz sobre aquele cargo.
+  Dirigindo a tela vi que trocar a convenção deixava "PROFISSIONAL" numa
+  combinação cuja categoria é "OPERARIO QUALIFICADO" — respeitar o que estava
+  ali era guardar dado errado. Ela acompanha o par, e a tela diz que mudou.
+
+#### ⚠️ EU ESTAVA ERRADO SOBRE `convencao_categoria`
+
+Em 17/11 propus **tirar** essa coluna, por achar que era cópia da importação.
+Era eu que não sabia para que servia. Ela ganhou campo agora, e fica gravada na
+pessoa **de propósito**: a base muda (dissídio, reenquadramento), e a categoria
+que valeu quando a pessoa foi admitida é a que a folha daquele mês usou. Ler da
+base hoje reescreveria o passado — é o mesmo motivo de o histórico de piso
+existir.
+
+**Sobra uma só das duas que eu propus tirar: `regime`**, que continua parecendo
+o vínculo com outro nome. Essa pergunta segue aberta.
+
+
+### ⚑ 18/11/2026 — A TRILHA DO CADASTRO, A JANELA QUE NÃO FECHA MAIS, E AS CONDICIONAIS DECIDIDAS
+
+#### 1. ⚠️ "Alterei um campo e não aconteceu" — a trilha estava furada
+
+Ele: *"Combinamos de toda alteração no cadastro ser registrada. Alterei um
+campo e não aconteceu. TUDO precisa estar registrado no histórico. Houve uma
+mudança no campo nome, precisa registrar quem e quando e o valor de antes e o
+atual."*
+
+**Eram DUAS falhas somadas, e é por isso que ninguém tinha notado:**
+
+1. **O que se gravava era quase nada.** O evento "ALTERADO" guardava o nome
+   NOVO e um retrato de **três** campos (cargo, salário, obra) — numa tabela de
+   oitenta colunas. Trocar o nome gravava o nome novo e **nenhum valor de
+   antes**: o registro existia e não respondia à pergunta dele.
+2. **E não havia onde ver.** A aba "Histórico" da ficha mostra vínculos e
+   alterações salariais, que são outra coisa. O evento não aparecia em tela
+   nenhuma.
+
+**Agora:** retrato de TODAS as colunas antes, retrato depois, e a diferença vai
+para a trilha **campo por campo**, com rótulo em português, quem e quando. A
+ficha mostra numa tabela em "Histórico › Alterações no cadastro".
+
+⚠️ **Por que o retrato é de todas as colunas:** lista escolhida à mão foi
+exatamente o que falhou. Há teste exigindo que toda coluna do cadastro tenha
+rótulo em português — sem ele a trilha diria "aux_alimentacao".
+
+⚠️ **O que a trilha NÃO faz:** gravação sem mudança nenhuma não vira linha
+(abrir e fechar o formulário encheria o histórico de "alterado" sem nada
+alterado), e os carimbos do banco ficam fora. E as alterações **anteriores a
+18/11/2026** aparecem dizendo que o sistema ainda não guardava campo por campo
+— melhor que linha vazia, porque quem procura entende por que não acha.
+
+#### 2. ⚠️ A janela de trás fechava — e eu havia consertado o caminho ERRADO
+
+Ele, **pela segunda vez**: *"Já havia combinado que eu não estou conseguindo
+navegar no cadastro do colaborador. Se eu entro na tela principal do cadastro e
+clico no botão Editar o cadastro completo, a tela principal fecha e não consigo
+voltar pra ela. Não pode fechar a tela principal pra abrir o modal seguinte."*
+
+Em 17/11 ele disse o mesmo e eu resolvi **a ficha do ERP** (`VOLTAR_PARA_FICHA`,
+que reabre a ficha ao fechar o formulário). Mas o caminho que ele usa é **a
+janela da pessoa que vem do ponto** (`dlg-unica`), e o código a **fechava de
+propósito** antes de abrir o formulário. Fechada, ela não volta por nada — o
+`VOLTAR_PARA_FICHA` não a conhece.
+
+**A lição, e ela vale além deste caso:** quando ele repete uma reclamação,
+a primeira coisa a conferir é se o conserto anterior pegou o caminho que ELE
+percorre. Dois caminhos levam à mesma tela, e eu consertei o que eu usava para
+testar.
+
+Agora as duas janelas **empilham**: o formulário nasce por cima, e fechá-lo
+revela a pessoa ainda aberta. Se algo foi gravado, a de trás recarrega — senão
+mostraria o cadastro velho, que é pior que fechar: ninguém desconfia de uma
+tela que está ali. Virou varredura em `test_telas_javascript.py`.
+
+#### 3. As condicionais que o Pipefy não exporta — medidas e DECIDIDAS
+
+Ele rodou a medição nos **660 cadastros** e revisou a lista inteira. O detalhe
+de cada regra adotada e recusada está em `PLACAR_DO_DP.md` §5. O que importa
+aqui:
+
+- **A tabela de "o que falta para admitir" deixou de ser lista única** e passou
+  a ser `OBRIGATORIOS_SEMPRE` + `OBRIGATORIOS_POR_VINCULO` +
+  `OBRIGATORIOS_POR_CONTRATO` + `NAO_SE_COBRA`. Lista única não tem onde
+  guardar "este campo é só de quem é PJ".
+- **O salário passou a ser só de quem tem CTPS** (vazio em 97,3% dos 222
+  prestadores). Antes o sistema dizia "falta salário" para todo prestador.
+- **Razão social (PJ) e CNPJ (PJ) só aparecem no contrato PJ** — decisão DELE,
+  porque a medição viu 10 PJ em 660 e ficou calada. É o caso que mostra para
+  que serve o ❓ do placar.
+
+**⚠️ A LIÇÃO QUE MUDA A MEDIÇÃO: "quase nunca" não é "nunca".** Ele recusou
+seis propostas de esconder campo, e nas duas famílias pelo mesmo motivo: o
+campo é **raro**, não inaplicável. Mensalista de carteira existe (4 em 413);
+prestador com ajuda de alimentação existe (1 a 3). Esconder tiraria da tela o
+único jeito de registrar esses casos. As recusas estão em `RECUSADAS`, e a tela
+**não volta a oferecê-las**.
+
+#### 4. Um defeito meu na própria tela de regras
+
+Ela dizia **"409 discordante(s)"** e listava **4 nomes**. Eu contava sempre os
+vazios; numa proposta de "não exibir", o discordante é quem TEM o campo. Ele
+leu o número errado e teve de entender sozinho. **Número errado numa tela que
+existe para ele confiar em números é o pior lugar possível para um descuido.**
+Preso em teste que compara a conta com a lista.
+
+#### ⚠️ O que a medição achou e NÃO é regra: cadastros incompletos em produção
+
+Os discordantes se repetem: **cinco pessoas aparecem em quatro listas
+diferentes** e **oito a dez estão sem convenção**. Não são exceções — são
+cadastros pela metade, hoje. Convenção faltando é o que a conferência da folha
+usa. Os nomes estão na tela, não aqui: é dado pessoal.
+
+
+### ⚑ 17/11/2026 — O MÉTODO: por que ele estava corrigindo minúcia a minúcia
+
+**A pergunta dele, e é a mais importante do dia:**
+
+> *"Talvez eu não esteja utilizando a melhor estratégia (…) a gente está
+> ficando muitos vazios. (…) Eu quero um agente. Eu precisaria de algo pensante
+> também, não para ficar cada mínimo detalhe para eu decidir ou corrigir. Eu
+> estou tendo que corrigir minúcia a minúcia, porque nada está ficando 100%. E
+> está muito desgastante, cansativo e demorado. Eu estou fazendo errado do jeito
+> que a gente está fazendo aqui. Tem um método melhor?"*
+
+**A causa, medida e não opinada.** A especificação do Pipefy existe neste
+repositório desde 04/11/2026 — `DE_PARA_PIPEFY_DP.md`, a exportação dos dois
+pipes pelo GraphQL, com os campos e as fases. O ERP tem 13 dos tipos de pedido.
+**E nada, em lugar nenhum, comparava os dois.**
+
+Consequência exata: **o único detector de vão era ele abrir uma tela e sentir
+falta.** Um por um, operando, na pior hora. Não era falta de análise nem de
+chat — era falta de um *placar*.
+
+#### O que foi feito: `PLACAR_DO_DP.md` + `tests/test_placar_do_dp.py`
+
+Uma linha por coisa que o Pipefy faz, e **um veredito** em cada:
+✅ está no ERP · 🔀 está em OUTRO lugar do ERP (de propósito) · ❌ falta ·
+⚰️ morre com o Pipefy · ❓ precisa da resposta dele.
+
+**O primeiro placar, medido hoje — 51 itens:**
+
+| | |
+|---|---|
+| ✅ no ERP | 26 |
+| 🔀 em outro lugar (ponto, contabilidade, DC) | 11 |
+| ❌ faltam | 6 |
+| ⚰️ morrem com o Pipefy | 2 |
+| ❓ esperando resposta dele | 7 |
+
+Os **6 que faltam** são de uma família só: 2ª via de cartão (Somapay e vale
+transporte) e crachá — cada um aparecendo duas vezes no Pipe, com dois nomes.
+
+O teste recusa **três silêncios**: item do de-para sem linha no placar, linha
+sem veredito, e placar dizendo ❌ para o que o ERP já tem. E imprime a conta em
+cada rodada da suíte, para o vão deixar de ser sensação e passar a ser número.
+
+⚠️ **O placar não exige que tudo esteja pronto** — ❌ e ⚰️ são vereditos
+legítimos. O que ele proíbe é o vão que ninguém mapeou.
+
+#### O que o placar AINDA não mede, e como fechar
+
+A exportação de 04/11 trouxe **campos e fases**, não **automações**. Então
+ninguém conferiu: os disparos de e-mail por fase, as condicionais de campo, as
+transições automáticas, as 20 opções de "Motivo" do ajuste de ponto e quem era
+responsável por cada fase.
+
+**O caminho é o mesmo que já funcionou:** pedir ao Pipefy a exportação das
+automações, como foi feito com os campos. É uma coisa que ele faz uma vez e que
+cala dezenas de perguntas — e é a diferença entre a próxima sessão trabalhar
+sozinha ou devolver minúcia para ele decidir.
+
+#### A mudança de método, escrita para valer nas próximas sessões
+
+1. **Antes de concluir que algo não existe neste ERP, PROCURE.** A chance de
+   estar construído e inalcançável é maior que a de não existir. Aconteceu duas
+   vezes hoje: a etapa com regra desde 05/11 e sem botão até 17/11, e os
+   pedidos à contabilidade inteiros numa tela que ele não achou.
+2. **Entregar o PROCEDIMENTO, não a peça nomeada.** Ao mexer em X, perguntar:
+   o que alguém faz antes e depois de X, e isso está alcançável? Era o que
+   faltava quando a situação saiu do cadastro sem a etapa fechar o laço.
+3. **Juntar as decisões dele em UMA passada**, com recomendação em cada, em vez
+   de uma pergunta por detalhe. O placar é o formato disso.
+4. **Tela se confere no navegador.** Os três defeitos silenciosos de hoje
+   (contadores zerados, movimentação morta, recado atrás da janela) não
+   apareceram em teste nenhum — apareceram dirigindo a tela.
+
+
+### ⚑ 17/11/2026 (noite) — O AMBIENTE DA PESSOA, AS DEMANDAS DENTRO DELE, E A TRAVA DE CONCLUIR
+
+**Esta entrada começa com a cobrança dele, porque ela é o conteúdo:**
+
+> *"Embora eu já tenha discutido muito, você não está absorvendo por completo
+> as informações e não está visualizando dessa forma como a coisa tem que ser
+> feita. Está ficando sempre de forma muito superficial e eu estou tendo que
+> fazer muita complementação. Desde manhã cedo nisso aqui, a gente avançou, na
+> minha opinião, muito pouco."*
+
+E a pergunta dele que revelou o problema de verdade:
+
+> *"Nós temos lá os templates de requisições que a gente vai fazer à
+> contabilidade. E como é que a gente vai disparar isso? Porque eu não vi nada,
+> nenhum botão, nenhuma função que me permita fazer isso. Estou com um cadastro
+> novo, já olhei, está tudo ok, vou mandar para admissão na contabilidade. E
+> aí? Eu faço o que para isso acontecer?"*
+
+#### ⚠️ A DESCOBERTA QUE MUDA O DIAGNÓSTICO: o motor existia inteiro
+
+Antes de responder, li o código de ponta a ponta. **Tudo o que ele descreveu
+como ausente estava construído e alcançável:**
+
+| O que ele pediu | Onde já estava |
+|---|---|
+| modelos de requisição à contabilidade | `core/contabilidade.py`: 7 modelos (CTPS, alteração de cargo, férias, dependente, cônjuge, desligamento, cancelamento) |
+| campos obrigatórios por modelo | `o_que_falta_para_pedir` — o pedido não sai sem o que o outro lado precisa |
+| disparo de e-mail | `enviar`, pela conta da empresa, com o texto GUARDADO (não recalculado) |
+| prazo e cobrança | prazo em dias úteis, nº de cobranças, intervalo, escalada |
+| conferir o retorno | `receber` + `_comparar` campo a campo contra o cadastro; divergência não fecha |
+| as demandas da obra ao DP | `core/pessoal_solicitacoes.py`: 13 tipos, e `atender` faz o efeito no cadastro NA MESMA TRANSAÇÃO |
+| a bifurcação do cadastro | `caminho_depois_da_conferencia`: CTPS → contabilidade, PJ → contrato, prestador → concluído |
+| as telas | `ERP › DP › Solicitações` e `ERP › DP › Contabilidade`, com "+ Pedido", enviar, cobrar, receber, concluir |
+
+**Então o diagnóstico não é "falta funcionalidade" — é "falta no lugar onde ele
+olha".** Estava tudo numa tela à parte, onde se escolhe a pessoa de novo. De
+dentro do cadastro dela, não havia caminho nenhum. Ele disse melhor do que eu:
+*"às vezes eu estou olhando uma determinada pessoa e eu não preciso sair para
+ir para outra tela, para pesquisar o nome dela de novo. Dentro do ambiente dela
+eu já vejo tudo."*
+
+⚠️ **Para a próxima sessão, isto é o que importa:** antes de concluir que algo
+não existe neste ERP, PROCURE. A chance de estar construído e inalcançável é
+maior que a de não existir. Foi o mesmo padrão da etapa sem botão (05/11 → 17/11).
+
+#### O que foi entregue
+
+**1. O AMBIENTE DA PESSOA — três áreas** (desenho dele). A ficha única tinha
+NOVE abas numa fileira, com "Cadastro" e "Configuração do ponto" lado a lado
+sendo coisas de mundos diferentes. Agora a fileira de cima diz o ASSUNTO —
+**👤 Cadastro pessoal · 🕐 Ponto · 💬 Mensagens** — e a de baixo, o que ver
+dentro dele. Nenhum painel mudou, nenhuma permissão mudou: mudou o agrupamento.
+Vive em `ponto/templates/ponto/gestao.html` (a ficha única é de lá).
+
+**2. ARQUIVOS VIROU ABA do cadastro** (*"era melhor que tivesse uma outra aba
+dessas, arquivos, aí você clicar e uma tabelinha listando toda a documentação
+que já foi feito o upload"*). Mesma lista e mesma área de jogar documento que
+já existiam — estavam em outra janela, atrás de um botão.
+
+**3. DEMANDAS VIROU ABA do cadastro** — e é a resposta à cobrança dele:
+   · os **pedidos à contabilidade** desta pessoa, com situação, prazo, atraso e
+     o documento que fecha cada um;
+   · os **pedidos que a obra fez ao DP** sobre ela;
+   · **"📨 Mandar para a contabilidade…"**, que lista só os modelos que PODEM
+     sair com o cadastro como está, e mostra os outros com o que falta em cada
+     um — antes de escolher, não depois de recusar;
+   · dentro do pedido: o **texto que vai** para a contabilidade, a trilha, e os
+     botões que a situação permite (enviar · cobrar · recebi · concluir ·
+     aceitar divergência · cancelar).
+   Chama as MESMAS rotas da tela de Contabilidade. Não é um segundo jeito de
+   pedir, e a tela antiga continua servindo ao que ela é boa: a fila do dia
+   inteiro, de todo mundo, com os atrasados em cima.
+
+**4. ⚠️ A TRAVA DE CONCLUIR — e eu causei a falta dela hoje de manhã.**
+
+Ele: *"eu pego aquele cadastro, eu simplesmente concluo ele, jogo para
+concluído. Se for uma pessoa que é CLT, fica errado. E aí, tem trava para
+isso?"*
+
+Não tinha, e o motivo é meu: de manhã ele pediu que mover de etapa fosse
+simples e ganhasse quadro, e **eu tirei a lista de saltos proibidos INTEIRA.**
+Li "simples" como "sem trava", e não é a mesma coisa.
+
+A correção não é devolver a lista antiga (ela travava gesto que não precisa de
+trava, e isso ensina a contornar). É **uma trava, estreita**: ela não protege a
+ordem das etapas, protege a frase **"este cadastro está pronto"**. Recusa
+concluir quando:
+  · há **pedido à contabilidade em aberto** (qualquer vínculo) — concluir com
+    pedido de pé é perder o rastro do que a contabilidade ainda deve;
+  · é **CTPS sem o pedido de Assinatura de CTPS concluído** — o caso dele;
+  · é **prestador PJ sem o contrato arquivado**.
+
+E **ela diz o que destrava**, com o caminho ("é na aba Demandas do cadastro").
+Trava que só recusa ensina a contornar. Se o registro foi feito por fora do
+sistema, o caminho é abrir o pedido e concluí-lo com o motivo — fica registrado
+que foi por fora, em vez de o cadastro mentir.
+
+Mover entre as outras etapas continua **livre**, como ele pediu de manhã.
+
+#### Três defeitos achados dirigindo a tela (nenhum apareceu em teste)
+
+1. **Recado atrás da janela.** A trava recusava certo, com o recado certo — e
+   **o recado não aparecia**: ia para `#mensagem`, que fica na lista, atrás da
+   janela do cadastro (e no cadastro aberto dentro do ponto a lista nem é
+   desenhada). Para quem usa é o pior desfecho: aperta o botão, nada acontece,
+   nenhum erro. Virou o ajudante `recado()` e um teste de varredura.
+2. **Campo só de leitura quebrava o diálogo.** O `perguntar()` ganhou campo de
+   leitura (para MOSTRAR o texto do e-mail antes de perguntar), e a coleta dos
+   campos fazia `els(...).value` num campo que não tem input → a janela ficava
+   aberta e o botão não fazia nada, sem erro na tela.
+3. **Minha própria promessa no comentário.** Eu havia escrito que a tela
+   mostraria o que falta ANTES de escolher o modelo — e o código não fazia. O
+   servidor recusava depois. Hoje os modelos já chegam com o que falta nesta
+   pessoa, na mesma resposta que a tela já pedia.
+
+#### As abas do cadastro passaram a ter NOME, não número
+
+Eram `0,1,2,3,4,else`, e o botão Salvar aparecia com `ABA_FICHA <= 3`.
+Acrescentar aba no meio **renumerava todas em silêncio**. Com duas abas novas
+entrando, era defeito marcado para acontecer.
+
+#### O que NÃO foi feito, e fica para ele decidir
+
+- **As demandas do DP ainda abrem na tela de Solicitações** (em outra aba), não
+  dentro da aba Demandas. Atender um pedido é um formulário com os campos do
+  tipo, e trazê-lo para dentro é trabalho próprio.
+- **As etapas por tipo de demanda** que ele descreveu (*"encaminhar para
+  coletar assinatura"*, *"aguardando retorno da documentação"*) existem HOJE
+  como situação do PEDIDO (rascunho → enviado → cobrado → respondido →
+  divergente → concluído), não como etapas do cadastro. Pode ser que ele queira
+  as duas coisas; é decisão dele.
+- **A saúde do código** está medida na resposta a ele (ver abaixo), com números.
+
+
+### ⚑ 17/11/2026 — NO DIA DA SAÍDA, TUDO CAI SOZINHO (a outra metade do aviso prévio)
+
+Depois de o conserto do aviso prévio (logo abaixo) parar de desligar na hora
+quem tem saída marcada para o futuro, ficou a pergunta: **quem corta no dia?**
+Perguntei a ele, com as duas opções, e a resposta foi:
+
+> *"Não, o ideal é cortar tudo, porque aí corre o risco de a gente esquecer.
+> Então, se ela precisar de um contracheque, alguma coisa, ela solicita ao DP e
+> o DP manda."*
+
+**O que faltava:** o PONTO se resolvia sozinho (compara a data com hoje), mas
+três coisas leem a CAIXINHA `situacao`, e nada a virava quando o dia chegava —
+o **login no ERP e no portal**, as **mensagens da empresa** e as **listas do
+Pessoal**.
+
+#### A virada do dia (`core/cadastros/desligamentos_do_dia.py`)
+
+Uma vez por dia, na **primeira requisição do ERP**: quem tem data de saída
+anterior a hoje e ainda está ativo passa a DESLIGADO, a etapa vai para
+"Desligado" e **o login da pessoa é desativado**. Com isso **todo leitor acerta
+— inclusive os que ninguém lembrou de conferir**, porque o dado gravado volta a
+dizer a verdade em vez de cada tela ter de recalcular.
+
+Não há cron neste serviço, e não ter dependência externa é vantagem: nada para
+configurar, nada para quebrar em silêncio. É o mesmo desenho da rotina do dia
+do ponto. Depois da primeira vez do dia, é a comparação de uma variável — **sem
+nenhuma ida ao banco**, que é por que `precisa_rodar()` existe.
+
+**⚠️ A ORDEM DO GANCHO É PARTE DO CONSERTO.** Ele está pendurado ANTES da
+guarda de permissão. Então, mesmo que a primeira pessoa a tocar o ERP no dia
+seja justamente quem saiu, **a própria requisição dela desliga o cadastro e a
+guarda a recusa em seguida** — nenhuma última entrada. Pendurado depois da
+guarda, ela entraria uma vez. Tem teste prendendo isso.
+
+**⚠️ ISTO NÃO É O AGENTE DE DP DESLIGANDO NINGUÉM.** A regra nº 1 do agente
+(`AGENTE_DP.md` §5) é "não desliga". Aqui não há decisão: **uma pessoa do DP já
+registrou o desligamento, com data.** A rotina cumpre, no dia, o que foi
+autorizado antes — como um boleto agendado não é o banco decidindo pagar.
+
+#### Dois consertos que vieram com isso
+
+- **A sessão aberta agora cai.** `usuarios.ativo` era conferido **só no
+  login**: quem já estava com a tela aberta continuava trabalhando depois de o
+  acesso ser cortado. Vale para o desligamento E para o bloqueio feito à mão
+  pelo DP. A conferência é a MESMA consulta por SQL direto de `_perfil_bruto`,
+  sem ORM e sem coluna de migração nova — essa função roda antes de toda rota,
+  e carregar o `Usuario` ali é o impasse circular de 02/09/2026.
+- **A janela da manhã, na mensageria.** O resumo por WhatsApp é disparado pela
+  **rotina do ponto** (primeira batida depois das 6h), quase sempre ANTES de
+  alguém do escritório abrir o ERP — e nessa janela a caixinha ainda diz ATIVO.
+  Então `desligado_da_empresa` passou a barrar também por **data de saída
+  vencida**. Registrado em `mensageria/HISTORICO.md`.
+
+#### O que NÃO desliga, e ele perguntou exatamente isto
+
+**"Último dia trabalhado" e "aviso prévio" não cortam nada.** São informação
+para a rescisão (vão para o pedido na contabilidade e para a conferência da
+folha). **Quem decide é a DATA DE SAÍDA, e só ela.** Tem teste com esse nome.
+
+Cadastro com etapa "Cancelado" também não é tocado: é cadastro que nunca virou
+gente na empresa.
+
+#### O que fica de pé para ele decidir
+
+Reativar quem foi desligado pela virada é **um clique do DP** no cadastro. Não
+há aviso automático para o DP de "estas pessoas saíram hoje" — a lista está na
+trilha de cada pessoa (ação DESLIGADO, com `por` = "a virada do dia"), não numa
+tela. Se ele quiser esse aviso, é trabalho novo.
+
+**Teste:** `tests/test_virada_do_dia_dos_desligamentos_banco.py`, com Postgres
+de verdade — os cinco casos, a trilha, a idempotência, a ordem do gancho, a
+sessão que cai e a janela da manhã.
+
+
+### ⚠️ 17/11/2026 — AVISO PRÉVIO VIRAVA DESLIGAMENTO: o pior defeito do dia
+
+**Ele achou na tela, horas depois de ligar o cadastro do ERP como base do
+ponto:** *"pessoas que estavam com último dia trabalhado mesmo depois de hoje e
+estavam na fase Solicitações DP, quando ativei o cadastro do ERP foram
+considerados desligados. Não sei se todos, mas aconteceu."*
+
+**O estrago é o pior que este sistema sabe fazer: gente cumprindo aviso prévio
+parou de conseguir bater ponto.** Quem cumpre aviso prévio trabalha, e a
+jornada dela é **registro legal do REP-P** — dia sem batida é buraco na prova
+da jornada, e não se conserta depois. Pelo mesmo erro essa gente também **saía
+da folha** (`para_folha` descartava quem tinha data de saída, mesmo futura) e
+**perdia o acesso ao sistema** no ato.
+
+#### A causa, e ela estava escrita em quatro lugares
+
+Cada um escrevia "DESLIGADO" ao ver que **EXISTIA** uma data de saída, **sem
+olhar se ela já tinha chegado**. Uma saída marcada para a semana que vem valia
+como saída de ontem:
+
+| Onde | O que fazia |
+|---|---|
+| `importadores/planilha_dp.py` | fase ≠ "Cadastro Concluído" + data de saída → `situacao = DESLIGADO`. **Foi por aqui que a maioria passou** |
+| `cadastros/pessoas.py` › `salvar` | `if c.demissao and situacao == ATIVO: DESLIGADO` |
+| `pessoal.py` › `salvar_colaborador` | a mesma linha |
+| `arquivo/preenchimento.py` | a mesma linha, ao ler o termo de rescisão |
+| `cadastros/pessoas.py` › `desligar` | desligava na hora, com data futura ou não |
+
+E uma quinta régua, diferente das outras: o `cpf` que procura readmissão
+comparava `<= hoje`. **Cinco lugares, três réguas.**
+
+#### Por que só apareceu quando a base do ponto virou o ERP
+
+Porque o ponto tinha duas respostas para a mesma pergunta:
+
+| Base do ponto | Como ele decidia "está desligado?" |
+|---|---|
+| Planilha (Registro de Colaboradores) | **perguntava a data**: `r.data_saida < hoje` |
+| Cadastro do ERP | **acreditava na caixinha**: `c.situacao` |
+
+A caixinha estava errada desde a importação. Trocar a base não causou o
+defeito — **tornou visível** um dado errado que já estava gravado.
+
+#### O conserto, em três camadas (e nenhuma precisa dele)
+
+1. **Uma régua só:** `pessoas.ja_saiu(demissao)` — e ela é a MESMA do ponto:
+   `<` hoje, porque **a pessoa trabalha o último dia**. Saída marcada para hoje
+   bate ponto hoje. Os cinco lugares passaram a usá-la.
+2. **O ponto pergunta a data nas DUAS bases** (`ponto/core/cadastros.py`,
+   `_SITUACAO_DO_ERP`). Isto tem três efeitos que valem mais que o conserto:
+   quem está em aviso prévio **volta a bater hoje, sem mexer em dado nenhum**;
+   no dia da saída a pessoa sai do ponto **sozinha**, sem ninguém apertar nada
+   e sem depender de rotina rodando na hora certa; e o bloqueio automático do
+   celular passa a cair no dia certo.
+3. **Migração 109** arruma a coluna de quem já estava marcado errado — porque o
+   ERP também lê `situacao` nas listas do Pessoal e na folha, e lá não há CASE
+   nenhum. Devolve à ativa quem tem saída marcada para hoje ou depois, tira
+   quem está trabalhando da coluna "Desligado" do quadro (vai para
+   "Solicitações", que é o trabalho pendente que ela é), e **deixa rastro de
+   cada pessoa** em `eventos`, ação `SITUACAO_CORRIGIDA`.
+
+**`desligar` com data futura passou a AGENDAR:** grava as datas, mantém a
+pessoa ativa, não move a etapa (o cadastro dela é trabalho pendente do DP) e
+**não corta o acesso** — quem cumpre aviso prévio ainda precisa do portal e do
+"Meu ponto".
+
+#### ⚠️ O que a migração pode trazer de volta sem dever, e ele precisa saber
+
+Alguém que **realmente saiu** e cuja data de saída foi **digitada errada**
+(2027 em vez de 2026) volta para a ativa. Isso é erro de cadastro, e aqui ele
+passa de invisível a visível: a pessoa reaparece nas listas e no ponto. O
+rastro de cada mudança está em `eventos`. Não há como eu contar daqui quantos
+são — a conta tem de ser feita no banco de verdade.
+
+#### Dois defeitos achados de passagem, junto
+
+- **Voltar para a ativa jogava a pessoa numa etapa que a tela não mostra.** Era
+  `EM_CONFERENCIA`, e essa etapa saiu de circulação hoje (migração 107,
+  "Conferência" fundida na "Inicial"): não tem coluna no quadro. Quem voltasse
+  à ativa **desaparecia da fila do DP**. Agora vai para "Inicial".
+- **A regra da data não valia para cadastro NOVO.** `(c.situacao or "")` em vez
+  de `(c.situacao or "ATIVO")`: num cadastro novo a situação ainda é nula em
+  memória, a comparação dava falso, e alguém já desligado entrava pela
+  importação com a caixinha em ATIVO.
+
+**Presos em teste:** `tests/test_saida_agendada_nao_desliga.py` (a régua, a
+folha, o `desligar`, a etapa viva, a importação, e uma guarda que recusa o
+sexto lugar comparando data à mão) e
+`tests/test_aviso_previo_no_ponto_banco.py` (o ponto com Postgres de verdade,
+com a caixinha errada de propósito, mais a migração 109 e o rastro dela).
+
+
+### ⚑ 17/11/2026 — OS CAMPOS QUE FALTAVAM, O CADASTRO QUE ABRE DENTRO DO PONTO, E UM DEFEITO QUE ESCONDIA AS TRÊS ABAS
+
+Pedido dele, em três partes: *"no cadastro, não vi campo referente à Data de
+Aviso Prévio, Saída e Último dia Trabalhado. Faça uma varredura e veja se ainda
+tem campo omisso. Outra coisa, quando estou vendo o pessoal pelo ponto e coloco
+pra abrir o cadastro ele remete pra página de pessoal, quando deveria apenas
+abrir o modal correspondente sem necessidade de ir pra outro lado. Os dados de
+cada um tem que estar de fácil acesso e todos correlacionados."*
+
+#### 1. A varredura: onze colunas sem campo, e a pior não era nenhuma das três
+
+Comparei coluna por coluna o que a tabela `colaboradores` guarda (82 colunas)
+com o que a ficha manda ao gravar. **Onze** não tinham campo. As três que ele
+citou estavam entre elas — mas a mais perigosa era outra:
+
+| Coluna | Por que faltava doer |
+|---|---|
+| **`data_inicio`** | a folha compara **início × admissão** para decidir se o dia é DIÁRIA ou CTPS (`analisesps/folha_vinculo.py`). O período em que a pessoa trabalhou **antes de ser registrada** era ilegível e inalterável pela tela |
+| `banco`, `agencia`, `conta` | há quem receba por depósito, e a ficha não respondia "por onde esta pessoa recebe?" |
+| `aviso_previo`, `ultimo_dia`, `demissao` | entravam só pelo pedido de desligamento; corrigir uma data errada exigia abrir outro desligamento |
+| `observacoes` | campo de texto livre que a importação preenchia e ninguém via |
+
+Todos ganharam campo em "Vínculo e pagamento", com um recado curto na tela: as
+três datas de saída **vêm do desligamento** e aqui se corrigem; a **data de
+saída** é o que tira a pessoa do ponto e da folha; e mexer nela **não desliga**
+ninguém — quem desliga é a etapa.
+
+**Nove colunas continuam sem campo de propósito**, e cada uma com o motivo
+escrito no teste novo (`tests/test_ficha_nao_esconde_campo.py`), que **falha se
+alguém acrescentar coluna sem campo nem motivo**. Sete são decisão fechada
+(chave da linha, carimbos do banco, foto, `cnpj_admissao` que vem da empresa,
+`etapa` e `situacao` que vêm da etapa, `ref_pipefy`, `requerente`,
+`responsavel_id`). **Duas são DÚVIDA ABERTA, e ficam para ele decidir:**
+
+- **`regime`** — nasce com "CLT" e parece ser o VÍNCULO com outro nome. Dar
+  campo a ela seria criar duas maneiras de dizer a mesma coisa (é a armadilha
+  que o campo "Situação" acabou de custar). **Não acrescentei campo e não
+  apaguei a coluna**: proponho tirá-la, e a decisão é dele.
+- **`convencao_categoria`** — vai para a folha, mas a categoria já vem da
+  convenção do cargo (`cargo_convencao.categoria`). Aqui parece cópia da
+  importação do Pipefy. Mesma proposta, mesma espera.
+
+#### 2. ⚠️ O DEFEITO QUE A TELA REVELOU: gravar fora da primeira aba não gravava NADA
+
+Achado dirigindo a tela no navegador, e **não era defeito novo** — estava em
+produção:
+
+> **Gravar o cadastro em qualquer aba que não fosse "Identificação" respondia
+> "Informe o nome completo" e não gravava nada.** Endereço, Vínculo e
+> pagamento, Benefícios: três abas inteiras.
+
+**A causa são duas regras certas que se atropelam.** As abas do formulário se
+desenham **uma por vez**, então os campos da aba fechada não existem na tela; e
+a gravação manda **só o que está na tela** (regra certa, que existe para não
+apagar o que a aba fechada guardava). Mas gravar é *"cria ou atualiza pelo
+CPF"*, e o servidor exige nome e CPF **em toda** gravação. O CPF já tinha volta
+por cima; o **nome não tinha**.
+
+Isso importa duas vezes: além do estrago em si, os campos que ele pediu hoje
+**moram na terceira aba** — sem este conserto, teriam sido decoração.
+
+Virou teste no mesmo arquivo: o que o servidor exige sempre tem de ter de onde
+vir quando o campo não está na aba aberta.
+
+#### 3. O cadastro abre DENTRO do ponto, sem trocar de tela
+
+O caminho inverso já existia desde 13/11 (a tela de Pessoal mostra a ficha do
+ponto dentro dela). Faltava a volta: pelo ponto, "Editar o cadastro completo"
+abria **outra aba** na tela de Pessoal.
+
+Agora abre uma janela **em cima** da ficha do ponto, com o **mesmo** formulário
+do ERP — não há um segundo cadastro. Gravou, a ficha do ponto se atualiza
+sozinha; fechou por dentro, a janela de fora fecha.
+
+**Como foi feito, porque muda o custo:** o ERP ganhou um **modo embutido**
+(`erp_base.html`) — a tela chega sem cabeçalho, sem filtro lateral e **sem
+carregar a lista**. Abrir o cadastro assim custa **3 chamadas** (obras, funções
+e opções do cadastro) contra as **5** da tela inteira, e nenhuma delas traz as
+mais de mil pessoas da lista. O caminho antigo (abrir em outra aba) **continua
+de pé para os DOCUMENTOS**, porque ler e arquivar papel é trabalho da tela de
+Pessoal e aquela janela ainda não sabe aparecer sozinha.
+
+**O que ficou de fora e ele precisa saber:** o modo embutido é um segundo jeito
+de dizer o que a ficha do ponto já dizia com estilo próprio dentro dela (desde
+13/11). **Não unifiquei os dois** — mexer naquela tela não estava no pedido. A
+nota está no código, nos dois lugares.
+
+
+### ⚑ 17/11/2026 — A FILA DO PORTAL: dois defeitos silenciosos e os campos que ele pediu
+
+**Ele mandou uma fila de doze ajustes** sobre o pedido de cadastro do portal, a
+tela de Pessoal e o quadro. Dois itens eram DEFEITO, e os dois do mesmo tipo:
+**escrever em português uma coisa que a plataforma lê em inglês, ou comparar
+código com rótulo.** Nenhum dos dois dá erro — a tela só não funciona.
+
+**1. "No quadro, não consigo movimentar os cadastros para outras etapas."**
+
+Eu havia escrito `{metodo: "POST", corpo: {...}}`. Esses nomes não existem no
+`fetch`: são `method` e `body`. O navegador ignora opção que não conhece,
+mandou um **GET sem corpo**, a rota só aceita POST, e a tela dizia "Falha na
+operação". Pegou as **três** chamadas: arrastar no quadro, mudar etapa pelo
+diálogo e concluir a conferência — ou seja, a movimentação de etapa estava
+**inteiramente morta**, e é justamente a funcionalidade que ele mais pediu.
+
+Virou teste: `tests/test_telas_opcoes_do_fetch.py` varre as telas por opção de
+fetch com nome em português (`metodo`, `corpo`, `cabecalhos`, `sinal`).
+
+**2. "O campo Tipo de contrato não está exibindo as opções corretamente."**
+
+Pior do que ele viu: com **CTPS não aparecia opção nenhuma**, e com Prestador
+só "PJ". A tela traduzia a lista permitida para CÓDIGO e comparava com o valor
+da caixinha, que é **RÓTULO** — e "PJ" era o único cujo rótulo é igual ao
+código. **O comentário do código afirmava o contrário do que o código fazia**, e
+foi ele que escondeu o defeito. O mesmo erro de alfabeto escondia o **Valor da
+Diária**, que não aparecia em caso nenhum.
+
+**O que mudou nos campos, tudo a pedido dele:**
+
+| Antes | Agora |
+|---|---|
+| "Tipo de Documentação para Cadastro" | **"Vínculo"** |
+| "Como paga a alimentação / o transporte" | **"Ajuda com Alimentação / Transporte"**, e **obrigatórias** |
+| (não havia) | opção **"Não recebe"** nas duas |
+| "Meio de Transporte para chegar à Obra?" | **eliminado** |
+| Valor da Diária sempre | só **CLT e Autônomo (RPA)** |
+| PJ sem os dados da empresa | abre **Razão social (PJ)** e **CNPJ (PJ)** |
+| Situação como campo em "Vínculo e pagamento" | **vem da etapa** |
+
+**⚑ "Não recebe" só foi possível junto com "obrigatório".** Antes, exigir a
+categoria forçaria a inventar uma para quem não recebe nada. Com a opção
+explícita, o campo em branco volta a significar **uma** coisa: falta responder.
+
+**⚠️ E ELA VAI VAZIA PARA A FOLHA**, não com a palavra "Não recebe": a folha
+calcula pelo MODO, e "não recebe" não é um modo — é a ausência de auxílio. Mais
+que isso: `para_folha` **zera o valor** quando a categoria é essa, senão um
+cadastro que tinha valor e passou a "não recebe" mandaria o número velho, e do
+outro lado não há nada que o barre.
+
+### ⚑ 17/11/2026 — A SITUAÇÃO VEM DA ETAPA, e o laço que faltava fechar
+
+Ele: *"dentro de vínculo e pagamento, a situação é um reflexo das etapas. Não
+precisa ter mais esse campo."* Tinha razão — eram duas maneiras de dizer a
+mesma coisa, e elas discordavam: arrastar alguém para "Desligado" no quadro
+deixava a situação em ATIVO.
+
+**⚠️ MAS TIRAR O CAMPO, SOZINHO, TERIA SIDO GRAVE.** Até 17/11 `mover_etapa`
+**não mexia na situação**. Sem fechar esse laço, o sistema ficaria sem jeito
+nenhum de desligar alguém — e `colaboradores.situacao` é o que o **PONTO** lê
+para decidir quem bate, e o que a **mensageria** lê para não mandar aviso a
+quem saiu. A pessoa movida para "Desligado" no quadro continuaria batendo ponto
+e recebendo aviso da empresa.
+
+Então a ordem foi: **primeiro a etapa passou a definir a situação**
+(`SITUACAO_DA_ETAPA`), **depois** o campo saiu. A situação continua aparecendo
+na ficha e na lista; o que saiu foi o jeito de digitá-la por fora da etapa.
+
+### ⚑ 17/11/2026 — O VÍNCULO: a resposta sobre o impacto no pagamento
+
+Ele pediu: *"renomear Tipo de Documentação para Cadastro = Vínculo. Observar o
+impacto disso, pois as nomenclaturas estão diferentes, o ideal é ficar CTPS e
+Prestador de Serviço. (…) Ve o impacto disso na parte de pagamento dos
+colaboradores de analisesps."*
+
+**A resposta curta: renomear NÃO afeta o pagamento.** São duas listas
+separadas, e só uma chega à folha:
+
+| Lista | Para que serve |
+|---|---|
+| `VINCULO_ROTULOS` | o que a pessoa LÊ na tela — era "Carteira assinada (CTPS)" e "Prestador de serviço" |
+| `VINCULO_PLANILHA` | o que VIAJA para a folha — "CTPS" e "Prestador de Serviço" |
+
+Mexi só na primeira, e agora **as duas são a mesma palavra** (fim das três
+grafias para dois valores). A segunda tem teste prendendo cada palavra dela
+contra o que a folha compara.
+
+**⚠️ MAS OLHANDO O IMPACTO APARECEU COISA PIOR, e esta é a parte que importa.**
+
+`para_folha` devolvia **"CTPS" para qualquer vínculo fora do mapa — inclusive o
+VAZIO**. E a folha decide a diária com `tipo == "Prestador de Serviço"` **E**
+`contrato == "Autônomo (RPA)"`. Logo: **um autônomo RPA com o vínculo em branco
+era pago como CTPS**, sem erro em lugar nenhum. É exatamente o *"pagar
+funcionário de forma equivocada"* que ele teme, e acontecia calado.
+
+Agora, faltando o vínculo, **quem responde é o tipo de contrato** — que diz
+isso sem ambiguidade (PJ, RPA, autônomo mensalista, estágio e pró-labore são
+prestador; as CLTs e o aprendiz, não). Só quando os **dois** estão vazios sobra
+o "CTPS", e aí **fica no log**, porque aí é chute.
+
+**⚑ "EQUALIZAR" ERA OUTRA COISA, e ele esclareceu mostrando os dois campos
+lado a lado:**
+
+> *"Quando eu falo em equalizar falo em relação aos dois campos abaixo:
+> **Vínculo** — Carteira Assinada (CTPS) / Prestador de Serviço;
+> **Tipo de Documentação para Cadastro** — Prestador de Serviço / CTPS."*
+
+Não era dado: eram **as OPÇÕES dos dois campos**, que mostravam palavras
+diferentes e em ordem invertida para a MESMA coisa. E são a mesma coisa de
+verdade — o "Tipo de Documentação" do pedido **vira** o `vinculo` da pessoa
+quando o DP atende.
+
+**A causa: duas listas escritas à mão, em dois arquivos.** Uma dizia "Carteira
+Assinada (CTPS)", a outra "CTPS", e a ordem não combinava.
+
+**O conserto não foi acertar as duas — foi passar a ter UMA.** As opções do
+pedido agora saem do cadastro de pessoas (`VINCULOS` + `VINCULO_ROTULOS`), que
+é onde o valor fica gravado. Vale também para "Tipo de Readmissão", que é a
+mesma pergunta ("volta como o quê?"). Acertar as duas à mão resolveria hoje e
+divergiria de novo no próximo rótulo que alguém mudasse num lado só — tem teste
+prendendo a FONTE, não a palavra.
+
+**Sobre "equalizar os já cadastrados" (o que eu havia entendido antes):** a coluna só aceita CTPS ou PRESTADOR —
+o cadastro pela tela recusa outro valor e a importação traduz o texto da
+planilha para o código. O que pode existir é o vínculo **vazio**, e é
+justamente esse caso que o conserto acima resolve sem precisar mexer em dado.
+**Não escrevi migração de dados**: não há como eu contar daqui quantos estão
+vazios, e reescrever coluna que decide pagamento sem ver o número antes é o
+oposto do cuidado que ele pediu.
+
+### ⚑ 17/11/2026 — A CHAVE DE SEGREDOS: o erro estava certo e era inútil
+
+**O que ele viu:** *"fui gravar o email no cadastro da empresa e apareceu: A
+chave em ERP_CHAVE_SEGREDOS não tem o formato esperado. Ela é gerada uma única
+vez com Fernet.generate_key() — ver o cabeçalho de core/comum/segredos.py."*
+
+**O recado era verdadeiro e, mesmo assim, inútil — por duas razões:**
+
+1. **A tela não avisava ANTES.** `ha_chave()` perguntava só *"a variável
+   existe?"*. Com uma chave PRESENTE mas torta, a tela de Empresas não mostrava
+   aviso nenhum: ele preencheu a conta inteira, digitou a senha, clicou em
+   Salvar, e só então levou o recado. O aviso existia — e estava amarrado à
+   pergunta errada.
+2. **Mandava rodar um comando de programador.** `Fernet.generate_key()` e "ver
+   o cabeçalho de um arquivo .py" são instruções para quem tem terminal. Quem
+   opera este sistema não tem — na prática a mensagem dizia "chame alguém".
+
+**O que mudou:**
+
+- **`ha_chave()` agora pergunta "a chave SERVE?"**, não "existe?". Com isso o
+  aviso aparece antes de alguém digitar senha que não vai ser guardada.
+- **O diagnóstico diz O QUE há de errado**: quantos caracteres tem, quantos
+  faltam ou sobram, ou "tem o tamanho certo mas não é uma chave gerada pelo
+  sistema". ⚠️ **Nunca mostra a chave**, nem um pedaço — tem teste para isso,
+  porque esse recado vai para a tela e para o log, e segredo em log deixa de
+  ser segredo.
+- **O ERP gera a chave.** Configurações › **Chave de segredos**: um botão
+  sorteia uma válida, mostra na tela para copiar para a Environment do Render,
+  e avisa quantas senhas a troca invalidaria. ⚠️ **O ERP não guarda a chave** —
+  guardá-la no banco desfaria a razão de ela existir.
+- **As três telas que guardam segredo** (conta de e-mail da empresa, token de
+  emissão, certificado A1) passaram a usar o mesmo recado, com o motivo real e
+  um link para onde se resolve. Antes as três diziam "falta a chave" **mesmo
+  quando ela existia** — mandando procurar o que já estava lá.
+
+**⚑ DESCOBERTO AO ESCREVER O TESTE, e vale saber:** aspas em volta da chave e
+texto colado no fim **não a derrubam** — a decodificação ignora o que não é do
+alfabeto e para no `=` final. A primeira versão do diagnóstico dizia "tire as
+aspas que resolve" para chaves que já funcionavam. Sobrou o que de fato
+derruba: **tamanho errado** (cortada ao copiar) e **chave inventada**.
+
+**Então, para a chave que está hoje no Render:** ela não é nem "com aspas" nem
+"com lixo no fim" — é cortada ou não foi gerada pelo sistema. A tela nova diz
+qual dos dois.
+
+### ⚑ 17/11/2026 — OS CONTADORES ZERADOS: a armadilha da constante que lê dado que ainda não chegou
+
+**O que ele viu, olhando a tela de Pessoal:** *"eu clico em inicial, o contador
+está tudo zerado. Do inicial, do assinar, concluir, está tudo zerado. Eu clico
+em quadro, também não está trazendo nada."*
+
+**A causa, em uma linha de código:**
+
+```
+const COLUNAS_DO_QUADRO = ETAPAS.map(e => e.valor);
+```
+
+`ETAPAS` só é preenchida quando o servidor responde. Essa linha roda ANTES —
+quando o arquivo carrega — e nessa hora a lista é `[]`. A constante congelou o
+vazio para sempre. Resultado: a função que diz em que coluna cada pessoa está
+devolvia "nenhuma" para todo mundo, os sete contadores davam zero e o quadro
+desenhava as colunas sem nenhuma caixinha dentro.
+
+**⚠️ POR QUE ISTO É PIOR QUE UM ERRO:** nada quebra. Nenhum aviso no navegador,
+o servidor responde 200, o HTML está correto, a suíte inteira passava. A tela
+só mostra zero — e quem descobre é quem olha. O defeito foi publicado e ficou
+no ar até ele abrir a tela.
+
+**O conserto** foi trocar a constante por uma função (lê na hora de usar) e, o
+que importa mais, **prender a classe inteira do defeito num teste**:
+`tests/test_telas_constante_de_dado_que_chega_depois.py` varre as 55 telas do
+ERP e recusa qualquer `const` de TOPO calculada sobre uma variável que a tela
+preenche depois. Conferido: com a linha velha de volta, o teste acusa.
+
+**Duas coisas de tela, no mesmo olhar dele:**
+
+1. **A configuração da caixinha saiu do meio da tela.** Ele: *"esse mostrar na
+   caixinha, aqui tá foda. Tu bota no meio da tela essa configuração, isso tem
+   que ser no outro canto. Isso tem que ser uma configuração mais escondida."*
+   Era uma faixa de sete caixinhas atravessando a tela para uma escolha que se
+   faz uma vez. Virou uma engrenagem ao lado de "Quadro", com um painelzinho
+   que abre por cima e fecha ao clicar fora.
+2. **O filtro "Etapa do cadastro" não fecha mais.** Ele: *"acho que é para
+   estar sempre ativo. Porque ele está oculto, aí a situação fica aberta."*
+   Fechado por acidente, somem com ele os contadores de cada etapa — que são a
+   visão que o quadro do Pipefy dava de graça. Virou rótulo sem botão.
+
+### ⚑ 17/11/2026 — TRÊS LOGINS, E AGORA ELES SE ENXERGAM (ponto · portal · ERP)
+
+**A pergunta dele, que abriu isto:** *"nós temos ponto, nós temos portal e
+temos ERP. Para o ERP ou portal, onde é o login? Como é que eu migro de uma
+tela para outra? Como é que eu sei que eu estou no portal e do portal vou para
+o ERP ou vice-versa? Eu não recordo como é que tá."*
+
+**Ele não recordava porque não havia o que recordar.** O mapa era este, e
+estava certo em cada parte e errado no conjunto:
+
+| Tela | Endereço | Como entra | Para quem |
+|---|---|---|---|
+| Meu ponto | `/ponto/app` | **CPF + PIN de 6 dígitos** (código por WhatsApp) | gente de obra |
+| Portal | `/erp/portal` | **e-mail + senha** (o MESMO login do ERP) | quem pede e acompanha |
+| ERP | `/erp` | **e-mail + senha** | quem opera o sistema |
+
+O portal e o ERP são a MESMA porta — quem entra num entra no outro. Só que
+não havia link nenhum nos dois sentidos, e a tela do portal não dizia onde a
+pessoa estava: o portal é o ERP sem o menu, então parecia o ERP quebrado.
+
+**O que mudou (três coisas pequenas e uma grande):**
+
+1. **O portal diz que é o portal.** O cabeçalho virou "Portal da obra".
+2. **Link do portal para o ERP** — só para quem tem mais que o portal. Para o
+   administrativo de obra que só pede, um botão que abre um menu de 18 telas é
+   convite a se perder.
+3. **Botão "Portal" no cabeçalho do ERP**, o caminho de volta.
+4. **A GRANDE: a pessoa pede o acesso pelo ponto.** Desenho dele: *"que tal a
+   partir do ponto eu requerer a liberação do acesso ao portal? Ela já tem o
+   cadastro no ponto, e lá pelo ponto ela vai informar o e-mail dela."*
+
+**Por que a 4ª resolve um problema real, e não é enfeite:** o acesso ao ERP só
+nasce com e-mail, e **o e-mail da gente de obra o sistema não tem** — ninguém
+pede e-mail para contratar peão. O DP não tem como adivinhar, então o acesso
+simplesmente não nascia. Quem sabe o e-mail é a pessoa, e ela já está
+autenticada no ponto todo dia, com CPF e PIN (que tem bloqueio por tentativa).
+
+**O caminho, ponta a ponta:** no menu do "Meu ponto" aparece "Pedir acesso ao
+portal"; ela informa o e-mail; o pedido entra numa fila; o ERP mostra a fila na
+tela de Colaboradores; quem libera cria o acesso como **administrativo de
+obra**, com a obra **em que ela bate ponto**, e manda o convite de primeira
+senha. Recusar guarda o motivo, e **o motivo volta para o celular dela** — sem
+isso ela pede de novo amanhã e ninguém sai do lugar.
+
+**⚑ NÃO É UMA PORTA NOVA DE LIBERAR ACESSO, e isso foi decisão explícita.** A
+porta é uma só e já existia: "Liberar acesso e convidar", na ficha da pessoa.
+O miolo dela saiu da rota e virou a função `_liberar_acesso` — a fila chama
+**exatamente a mesma**. Era a cobrança dele do mesmo dia (*"três botões para
+importar pessoas (…) às vezes não compreendo a lógica de complicar"*): pedido
+novo vira coisa a ACRESCENTAR em vez de alimentar o que já existe. Duas
+implementações do mesmo ato divergem — uma manda convite, a outra esquece.
+
+**⚠️ O QUE FALTA DECIDIR, E É DELE:** **quem libera é ADMIN, não o DP.** A ação
+`gerir_usuarios` já era de administrador antes desta fila existir, com o motivo
+escrito ("criar acesso ao sistema é ato de administrador, não de quem opera o
+DP"). A fila respeitou a regra que já havia — mas o efeito prático é que **o DP
+vê a fila e não resolve**, e quem opera o DP todo dia não é o ADMIN. Se ele
+quiser que o DP libere, é uma linha em `permissoes.py` (acrescentar
+`DEPARTAMENTO_PESSOAL` a `gerir_usuarios`) — e aí o DP passa a poder criar
+acesso para qualquer um, inclusive para si. Não mexi: é alçada, decisão dele.
+
+**A obra também virou sugestão no pedido do portal.** Ele: *"quando eu falei em
+geolocalização, na verdade eu quis dizer mais onde é que a pessoa (…) de qual
+obra ela está cuidando."* A caixinha de obra já vem escolhida com a obra em que
+a pessoa mais bateu ponto nos últimos 60 dias, com a frase "escolhemos X porque
+é onde você vem batendo ponto. Pode trocar". **Sugestão, nunca trava**: quem
+cobre colega em outro canteiro abre pedido para a outra obra. O cadastro
+envelhece; a batida, não.
+
+**MIGRAÇÃO 108** (`portal_pedidos_de_acesso`) — precisa do botão "Aplicar
+atualizações do banco". Até o botão ser apertado, o botão do celular
+**simplesmente não aparece** (o código pergunta se a tabela existe) — ninguém vê
+erro, só não vê o recurso.
+
+### ⚑ 17/11/2026 — APAGAR CADASTRO: TEM PONTO, DESLIGA. NÃO TEM, EXCLUI.
+
+**A regra, nas palavras dele:** *"Tem Ponto, Desligado. Não tem ponto,
+Excluir. É o único impeditivo."*
+
+**Como se chegou nela, porque o caminho é a lição.** Eu publiquei um
+apagamento que recusava quem tivesse QUALQUER coisa pendurada — e ele
+respondeu, olhando a recusa de uma pessoa que nunca tinha tocado no ERP:
+
+> *"Como se nunca fiz nada no ERP?"*
+> *"Quero excluir, já disse. Só quero minha lista."*
+> *"Não quero descobrir, quero EXCLUIR."*
+
+**Ele tinha razão duas vezes.** A primeira: o que "segurava" essas pessoas era
+**o documento que a própria importação anexou** e a linha que o ponto criou —
+chamar isso de "movimento no sistema" é chamar de trabalho o rastro da carga
+que ele quer desfazer. A segunda: depois de ele mandar três vezes, insistir em
+recusar não é cuidado, **é desobedecer**.
+
+**O que vale agora:**
+
+| Situação | O que acontece |
+|---|---|
+| Tem batida de ponto | **DESLIGADA**, não apagada. A batida fica |
+| Não tem | **APAGADA**, levando junto documento, pedido do DP, título, divergência |
+
+**Por que a exceção do ponto é a certa, e não só a vontade dele:** batida é
+**registro legal do REP-P**. Quem bateu ponto trabalhou de verdade — apagar a
+marcação destruiria a prova da jornada. Desligar tira a pessoa da operação
+(sai da folha, do ponto e das listas) e preserva o que a lei manda guardar.
+
+**Duas decisões de construção, com o motivo:**
+
+1. **As tabelas que apontam para a pessoa são DESCOBERTAS no banco**
+   (`pg_constraint`), não escritas numa lista. Lista esquece a tabela criada
+   no mês seguinte, e aí o apagamento volta a falhar com um erro que ninguém
+   entende.
+2. **No lugar da recusa ficou o RELATÓRIO.** `levou_junto` diz, por tabela,
+   quanta coisa foi apagada. Se vier número de título ou de despesa, foi
+   lançamento contábil junto — e ele vê isso **escrito na tela**, em vez de
+   descobrir depois. A auditoria grava o mesmo, antes do apagamento (depois
+   não há mais id para registrar).
+
+**A porta estreita continua existindo:** sem `levar_junto`, o banco recusa
+como antes. Apagar levando tudo é escolha explícita de quem chama, não padrão.
+
+---
+
+### ⚑⚑⚑ 17/11/2026 — A CONFERÊNCIA QUE AUTORIZA DESLIGAR A PLANILHA
+
+> *"Precisamos fazer de uma forma infalível essa desativação da planilha e a
+> leitura do Análise de SPs pela base do ERP. **A gravidade disso é pagar
+> funcionários de forma equivocada.**"*
+
+**O roteiro inteiro está em `DESLIGAR_A_PLANILHA.md`, nesta pasta.** Leia-o
+antes de mexer em qualquer coisa que toque a folha.
+
+**A decisão de desenho, e ela é a coisa a entender:** "infalível" não se
+consegue raciocinando sobre o código — nem com mais um relatório meu dizendo
+que está tudo certo. Consegue-se **calculando as duas coisas e comparando**, e
+virando a chave só quando a diferença for zero.
+
+Então existe agora uma tela (**ERP › Importar**, primeiro cartão) que compara,
+pessoa por pessoa, o que a folha decidiria lendo a PLANILHA com o que ela
+decidiria lendo o ERP. Ela é só leitura.
+
+**O item mais grave dela não é um campo: é uma pergunta.** *"Esta pessoa pode
+receber?"* — e ela é respondida pela **mesma função do Análise de SPs**
+(`situacao_no_pagamento`), alimentada uma vez com cada ficha. Reimplementar
+essa regra aqui seria o pior caminho possível: a cópia divergiria da original e
+a conferência passaria a comparar o ERP com uma regra que não é a que paga.
+
+A tela dá **um veredicto em uma linha**, e ele só fica verde quando não há
+divergência de pagamento, não há gente só na planilha e não há divergência que
+mexa em dinheiro.
+
+**⚠️ O que o verde NÃO prova, e está escrito na tela e no roteiro:** que as duas
+bases *dizem* o mesmo. Ele não gera folha. O passo que fecha isso é **gerar a
+mesma folha duas vezes no Análise de SPs** — uma lendo a planilha, outra lendo
+o ERP — e comparar os totais, antes de pagar. Quem tratar o verde como "pode
+pagar" pulou um passo.
+
+**Uma carga pesada que a conferência expôs e que vale saber:** a folha lê o
+campo `fase` esperando o nome da fase do Pipefy ("Colaboradores Desligados"), e
+o ERP manda a SITUAÇÃO ("DESLIGADO"). Funciona — a regra procura os pedaços
+"desligad" e "afastad", que estão nas duas formas. Mas é coincidência de
+vocabulário, não desenho: se alguém trocar a situação do ERP para "INATIVO", a
+folha passa a pagar quem saiu, **em silêncio**. Há teste travando isso
+(`test_conferencia_folha.py`).
+
+---
+
+### ⚑⚑ 17/11/2026 — O ERP ESPELHA A FOLHA DO ANÁLISE DE SPs? CONFERIDO, E ACHOU DEFEITO
+
+> *"Toda aquela parte de folha de pagamento do Análise de SPs faz a leitura de
+> uma série de colunas para determinar se o pagamento é de diarista, de
+> alimentação, de transporte, de gratificado ou mensalista. (…) você tem que
+> fazer essa análise e saber se o ERP está correspondente. (…) E aí não pode
+> ter falha nenhuma."*
+
+**Por que ele pediu agora:** o objetivo dele é desligar a planilha "Registro
+de Colaboradores" e fazer o Análise de SPs ler o ERP. Para isso o ERP tem de
+entregar os mesmos campos **com as mesmas palavras** — porque a folha decide
+por TEXTO.
+
+**O que a conferência achou — e era defeito de verdade, em silêncio:**
+
+| O ERP mandava | A folha espera | Efeito |
+|---|---|---|
+| `Vale-transporte` | `Vale Transporte` | **um hífen**, e o auxílio diário não era calculado |
+| `Diário e vale-transporte` | `Diário e Vale Transporte` | o mesmo |
+| `Cartão (não paga em dinheiro)` | `Cartão` | a proteção contra pagamento em DOBRO não valia |
+
+A causa: `para_folha` mandava o **rótulo da tela**, e rótulo é para pessoa ler.
+A folha compara texto depois de tirar acento e caixa — hífen e explicação
+colada não passam. **O erro não dava erro**: a pessoa caía em "modalidade não
+informada", saía com zero, e — nas palavras do próprio Análise de SPs —
+*"ninguém repara num pagamento a menos tão rápido quanto num a mais"*.
+
+Agora existe um mapa próprio (`CATEGORIA_*_PARA_FOLHA`), separado do rótulo da
+tela, com a palavra da PLANILHA. Quando a planilha sair, esse mapa é o contrato
+entre o ERP e a folha.
+
+**O que já estava certo, e é bom saber que foi conferido:** os 27 campos que a
+folha importa da planilha (de `CPF` a `Valor da Diária`), o vínculo
+(`Prestador de Serviço`) e o contrato (`Autônomo (RPA)`, as duas CLTs) que
+decidem diarista × CTPS dia a dia, e o `"Sim"` que decide gratificados e
+pagamento via SP. Todos batem, palavra por palavra.
+
+### ⚠️ DUAS PENDÊNCIAS QUE SÓ ELE DECIDE — e elas travam o desligamento
+
+**1. Quatro categorias de transporte que a folha NÃO entende, nem hoje:**
+`Segunda e Sexta` (9 pessoas), `Motocicleta` (9), `Veículo` e `Bicicleta`.
+
+Isto **não** é defeito do ERP: a planilha escreve exatamente essas palavras e a
+folha também não as reconhece — **essas pessoas já ficam sem cálculo de
+transporte hoje**. A folha só sabe `Mês`, `Mensal`, `Segunda à Sexta`,
+`Segunda à Quinta`, `Diário`, `Vale Transporte`, `Diário e Vale Transporte` e
+`Cartão`.
+
+Atenção a uma confusão fácil: **"Segunda e Sexta" não é "Segunda à Sexta"**. A
+primeira é só a ida e a volta da semana, de quem fica alojado na obra; a
+segunda é os cinco dias. A folha conhece a segunda e não a primeira.
+
+Ou a folha aprende as quatro, ou essas pessoas têm outra categoria. É decisão
+de negócio.
+
+**2. `Paga por BeeVale`** — a coluna existe na planilha, o Análise de SPs a
+importa e guarda, e **nenhuma conta da folha a usa**. O ERP não tem essa
+coluna. Se ela vai servir para algo, o ERP precisa do campo; se não, a coluna
+morre com a planilha.
+
+**Travado por teste:** `tests/test_erp_espelha_a_folha.py` lê os DOIS lados de
+verdade — o `folha_auxilio` do Análise de SPs e o cadastro do ERP — e falha se
+divergirem. Não há valor copiado lá dentro: quem mudar um dos lados cai nele.
+Dois testes antigos **travavam o defeito** (exigiam o rótulo da tela na folha)
+e foram corrigidos.
+
+---
+
+### ⚑ 17/11/2026 — "TEM MAIS GENTE NO ERP DO QUE EU COLOQUEI PRA IMPORTAR"
+
+> *"Tem mais gente no ERP do que eu coloquei pra importar. Só quero os que eu
+> coloquei pra importar."*
+
+**Duas causas, e as duas eram minhas:**
+
+1. **Cadastrar quem falta era PADRÃO.** Eu havia ligado isso de manhã, quando
+   ele perguntou *"pq não cadastrou a partir da planilha?"* — e deixei ligado
+   por padrão. Errado: **criar gente é a única coisa que esta importação faz
+   que não se desfaz rodando de novo.** Campo preenchido errado se corrige na
+   importação seguinte; pessoa criada por engano fica. Coisa que não se desfaz
+   não pode ser padrão. Virou opção, **desmarcada**.
+2. **A rota caía na PLANILHA INTEIRA quando não entendia o CPF digitado**, e
+   em silêncio. Campo em branco quer dizer "a planilha inteira", e CPF com um
+   dígito faltando virava campo em branco: *"importe estas três"* virava
+   *"importe as 700"*, sem uma linha de aviso. Agora, **escreveu e eu não
+   entendi ⇒ recusa**, dizendo o que fazer. A diferença entre "não pedi
+   ninguém" e "pedi e você não entendeu" ficou explícita.
+
+**O conserto do estrago — cartão "Cadastros criados recentemente", em
+Importar.** Lista quem NASCEU no cadastro nas últimas horas (lido da
+auditoria, não da tabela: é ela que sabe quando cada um nasceu e por quem),
+com caixinha para marcar e apagar. Sem isso, a única saída seria apagar gente
+no banco à mão.
+
+**Duas decisões dentro dele, com o motivo:**
+
+- **Apaga, não inativa.** Cadastro criado por engano é **lixo, não história**:
+  inativá-lo deixaria no sistema alguém que nunca trabalhou aqui, aparecendo
+  em busca, em lista e em conferência para sempre.
+- **Quem tem movimento não é apagada, e quem decide é o BANCO.** A conferência
+  não é uma lista de tabelas escrita no código — é a tentativa de apagar, e a
+  recusa das chaves que ligam as tabelas, capturada e traduzida para
+  português. Lista escrita à mão esqueceria a tabela criada no mês seguinte;
+  o banco não esquece. Quem tem título, documento, pedido do DP ou ponto volta
+  na lista de recusadas com o motivo, e o lote segue.
+
+**O rastro fica:** antes de apagar, a auditoria grava `CADASTRO_REMOVIDO` com
+nome, CPF e quem apagou — depois do apagamento não há mais id para registrar,
+e sem o rastro isto não se defenderia numa conferência.
+
+---
+
 ### ⚑ 17/11/2026 — DECIDIDO: AS OITO ETAPAS FICAM, porque o Pipefy sai
 
 Ele perguntou se duas delas eram necessárias — *"Precisa dessas abaixo?

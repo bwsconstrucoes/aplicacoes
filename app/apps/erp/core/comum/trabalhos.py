@@ -102,7 +102,8 @@ def importar_cadastro_planilha(s: Session, parametros: dict[str, Any],
     andamento(0, 1, "Lendo a planilha “Dados Documentos”…")
     rel = svc.importar(s, _usuario(s, parametros), gravar=gravar,
                        cpfs=parametros.get("cpfs"),
-                       criar=parametros.get("criar", True) is not False)
+                       criar=bool(parametros.get("criar")),
+                       so_estes=bool(parametros.get("so_estes")))
     if gravar:
         s.commit()
     andamento(1, 1, "Terminado.")
@@ -116,7 +117,10 @@ def importar_cadastro_planilha(s: Session, parametros: dict[str, Any],
                   f"{len(rel['atualizadas'])} {verbo} · "
                   f"{len(rel.get('criadas') or [])} {verbo_novo} · "
                   f"{len(rel['sem_cadastro'])} de fora · "
-                  f"{len(rel['nao_entendi'])} pendência(s).")
+                  + (f"{len(rel.get('apagadas') or [])} "
+                     + ("apagada(s)" if gravar else "seriam apagadas") + " · "
+                     if rel.get("limpou") else "")
+                  + f"{len(rel['nao_entendi'])} pendência(s).")
     return {"relatorio": rel, "resumo": resumo}
 
 

@@ -195,7 +195,13 @@ def _ativos_sql(col: set) -> str:
 def retrato(conn: Connection) -> dict:
     e = estado(conn, fresco=True)
     if not e["disponivel"]:
-        return {"disponivel": False, "fonte": e["fonte"], "usando": False}
+        # ⚑ AS CONTAS DO ERP VÃO AQUI TAMBÉM, e isto foi achado por teste: sem a
+        # cópia da planilha neste banco, a base É o cadastro do ERP — então
+        # estes são justamente os únicos números que importam. Devolvê-los só
+        # no caminho de baixo deixava a tela com "?" exatamente quando ela era
+        # a única fonte de informação.
+        return {"disponivel": False, "fonte": e["fonte"], "usando": False,
+                **pelo_erp(conn)}
     col = e["colunas"]
     ativos = _ativos_sql(col)
     linha = db.um(conn, f"""
@@ -227,7 +233,83 @@ def retrato(conn: Connection) -> dict:
             "afastados": int(linha["afastados"]), "faltam_no_erp": int(linha["faltam_no_erp"]),
             "nao_batem_pela_planilha": int(linha["nao_batem"]),
             "so_no_erp": int(so_erp), "ativos_sem_obra_reconhecida": int(sem_obra),
-            "atualizado_em": horario.texto(linha["atualizado_em"])}
+            "atualizado_em": horario.texto(linha["atualizado_em"]),
+            **pelo_erp(conn)}
+
+
+# ---------------------------------------------------------------------------
+# AS TRÊS CONTAS DO LADO DO ERP (17/11/2026)
+#
+# ⚑ POR QUE ISTO EXISTE, e vale ler antes de mexer. Em 17/11 o dono trocou a
+# base do ponto para o cadastro do ERP e perguntou, olhando os números da tela:
+# *"esses são os KPIs, tudo certo né?"*
+#
+# Não estava. Os seis números do cartão são todos calculados sobre a PLANILHA:
+# eles descrevem a base que se está DEIXANDO, não a que se está PEGANDO. O mais
+# importante deles — "não batem pela planilha: 20" (PJ, pró-labore, ESCRUSSAS) —
+# é regra DA PLANILHA. Passando para o ERP, quem não bate sai do TIPO DE
+# CONTRATO do cadastro (ver HISTORICO.md do ponto, 16/11/2026), e **a tela não
+# mostrava o número equivalente**. Se o tipo de contrato estiver em branco ou
+# errado, PJ e pró-labore começam a bater ponto — e batida é registro legal do
+# REP-P, encadeado por hash: não se apaga como se corrige um cadastro.
+#
+# Então a troca de base era feita no escuro. Estas três contas são a luz:
+#
+#   1. `nao_batem_pelo_erp` — para comparar com os 20 da planilha. Se der muito
+#      menos, falta tipo de contrato em alguém que não devia bater.
+#   2. `ativos_sem_obra_no_erp` — "faltam no ERP = 0" garante que a PESSOA
+#      existe, não que ela tem OBRA. Sem obra, a batida acontece e cai em
+#      conferência, sem cerca.
+#   3. `ativos_no_registro_desligados_no_erp` — quem está ativo na planilha e
+#      DESLIGADO no ERP **para de conseguir bater** no dia da virada. Nenhum dos
+#      seis números antigos contava este caso.
+#
+# ⚑ REUSA `cadastros._nao_bate_do_erp()`, não reimplementa: é a MESMA regra que
+# decide a batida de verdade. Duas cópias divergiriam, e aí a tela diria "pode
+# virar" sobre uma conta diferente da que vale.
+# ---------------------------------------------------------------------------
+def pelo_erp(conn: Connection) -> dict:
+    """As três contas sobre o CADASTRO DO ERP. Nunca levanta: número que falta
+    aparece como `None` e a tela diz "não foi possível contar" — melhor que um
+    zero que parece tranquilidade."""
+    from . import cadastros
+    vazio = {"nao_batem_pelo_erp": None, "ativos_sem_obra_no_erp": None,
+             "ativos_no_registro_desligados_no_erp": None}
+    try:
+        # `db.tem_coluna` olha o schema `ponto`; esta coluna é do `public`,
+        # então a pergunta é feita aqui. Sem a coluna (banco atrás da migração),
+        # a conta não inventa: devolve zero com a regra desligada.
+        tem_tipo = _tem_coluna_publica(conn, "tipo_contrato")
+        nao_bate = cadastros._nao_bate_do_erp() if tem_tipo else "NULL::text"
+        linha = db.um(conn, f"""
+            SELECT count(*) FILTER (WHERE ({nao_bate}) IS NOT NULL) AS nao_batem,
+                   count(*) FILTER (WHERE c.obra_id IS NULL)        AS sem_obra
+              FROM public.colaboradores c
+              LEFT JOIN public.obras o ON o.id = c.obra_id
+             WHERE coalesce(c.situacao, '') <> 'DESLIGADO'""")
+        e = estado(conn, fresco=False)
+        desligados = None
+        if e.get("disponivel"):
+            ativos = _ativos_sql(e["colunas"])
+            desligados = db.um(conn, f"""
+                SELECT count(*) AS n
+                  FROM analisesps.colaborador r
+                  JOIN public.colaboradores c
+                    ON regexp_replace(c.cpf, '\\D', '', 'g') = r.cpf
+                 WHERE {ativos} AND coalesce(c.situacao, '') = 'DESLIGADO'""")["n"]
+        return {"nao_batem_pelo_erp": int(linha["nao_batem"]),
+                "ativos_sem_obra_no_erp": int(linha["sem_obra"]),
+                "ativos_no_registro_desligados_no_erp":
+                    int(desligados) if desligados is not None else None}
+    except Exception:  # noqa: BLE001
+        logger.exception("Ponto: não consegui contar a base pelo cadastro do ERP")
+        return vazio
+
+
+def _tem_coluna_publica(conn: Connection, coluna: str) -> bool:
+    return db.um(conn, """SELECT 1 AS x FROM information_schema.columns
+                           WHERE table_schema = 'public' AND table_name = 'colaboradores'
+                             AND column_name = :c""", c=coluna) is not None
 
 
 def faltam_no_erp(conn: Connection, limite: int = 5000) -> list[dict]:

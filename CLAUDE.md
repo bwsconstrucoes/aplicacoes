@@ -178,7 +178,7 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 
 | Área | Pasta | Leia ANTES de mexer | Registre o estado em |
 |---|---|---|---|
-| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
+| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `DESLIGAR_A_PLANILHA.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
 | Painel OMIE | `app/apps/painel/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |

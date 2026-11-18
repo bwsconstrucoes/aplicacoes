@@ -3,6 +3,220 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## ⚑ 17/11/2026 — A FICHA ÚNICA VIROU "AMBIENTE DA PESSOA", COM TRÊS ÁREAS (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi nesta tela vindo de outra área.** Um arquivo: `gestao.html` — a
+fileira de abas da ficha da pessoa e o estilo dela.
+
+**O desenho é dele, e vale ler nas palavras dele:**
+
+> *"Imagina que eu cliquei no colaborador. Lá em cima fica o nome dela e ali
+> tem uma espécie de botão que direciona para a parte do ponto. Tipo assim, tem
+> o cadastro pessoal, aí tem a outra, aí eu clico ponto. Aí quando eu clico
+> ponto, abre toda a parte do ponto, as configurações, como se fosse a tela
+> abrindo lá do ponto. E quando eu clico de novo no cadastro pessoal, abre as
+> telas relacionadas ao cadastro. (…) A parte de mensagens a gente tem como
+> colocar dentro também. (…) Porque às vezes eu estou olhando uma determinada
+> pessoa e eu não preciso sair para ir para outra tela, para pesquisar o nome
+> dela de novo."*
+
+**O problema que isso resolve:** a ficha tinha **nove abas numa fileira só**, e
+elas não diziam o que pertencia a quê — "Cadastro" e "Configuração do ponto"
+ficavam lado a lado sendo coisas de mundos diferentes.
+
+**Agora são dois níveis:** a fileira de cima diz o ASSUNTO —
+**👤 Cadastro pessoal · 🕐 Ponto · 💬 Mensagens** — e a de baixo, o que ver
+dentro dele:
+
+| Área | Abas |
+|---|---|
+| 👤 Cadastro pessoal | Cadastro · Pagamentos |
+| 🕐 Ponto | Dia · Espelho do mês · Pedidos · Aparelhos · Configuração do ponto · Conferência do rosto |
+| 💬 Mensagens | Telegram e mensagens |
+
+**⚠️ NADA MUDOU do que cada painel faz nem de permissão.** A mesma aba continua
+aparecendo para quem já a enxergava, e área sem aba nenhuma não aparece (quem
+não vê pessoal não ganha uma área vazia). Trocar de área cai na primeira aba
+dela. O que mudou é o agrupamento.
+
+Conferido no navegador: as três áreas, a troca entre elas e a volta, sem erro
+de JavaScript.
+
+---
+
+## ⚠️ 17/11/2026 — QUEM CUMPRE AVISO PRÉVIO VOLTOU A BATER PONTO (feito pelo chat do ERP/DP)
+
+**Leia isto se a base de pessoas do ponto estiver no cadastro do ERP.**
+
+Horas depois de a base virar o ERP, ele viu: *"pessoas que estavam com último
+dia trabalhado mesmo depois de hoje e estavam na fase Solicitações DP, quando
+ativei o cadastro do ERP foram considerados desligados."*
+
+**Gente cumprindo aviso prévio parou de conseguir bater ponto** — e a jornada
+dela é registro legal do REP-P, que não pode ter buraco.
+
+**A parte que era DESTE módulo:** o ponto tinha duas respostas para a mesma
+pergunta. Com a planilha como base ele **perguntava a data**
+(`r.data_saida < hoje`, em `registro.trechos_sql`); com o cadastro do ERP ele
+apenas **lia `c.situacao`**. O ERP havia gravado "DESLIGADO" ao ver que existia
+data de saída, sem olhar se ela tinha chegado (consertado lá, em
+`erp/core/cadastros/pessoas.py` › `ja_saiu`), e o ponto acreditou.
+
+**O que mudou aqui:** `_SITUACAO_DO_ERP`, em `core/cadastros.py` — a base ERP
+passa a perguntar a data, igual à planilha. Três efeitos:
+
+- quem está em aviso prévio **volta a bater hoje, sem mexer em dado nenhum**;
+- no dia da saída a pessoa sai do ponto **sozinha** — ninguém aperta nada, e
+  nenhuma rotina precisa rodar na hora certa;
+- o bloqueio automático do celular (`desligamentos.py`) passa a cair no dia
+  certo, nem antes nem depois. A régua é a MESMA das duas bases: `<` hoje,
+  porque **a pessoa trabalha o último dia**.
+
+⚠️ **O CASE também desfaz a caixinha errada na leitura:** quem está marcado
+DESLIGADO mas tem data de saída de hoje ou depois é lido como ATIVO. Isso
+existe porque o dado errado está gravado em produção; a migração 109 do ERP
+arruma a coluna. As duas coisas são necessárias — o ERP lê a mesma coluna nas
+listas do Pessoal e na folha, e lá não há CASE nenhum.
+
+**Teste com Postgres de verdade:** `tests/test_aviso_previo_no_ponto_banco.py`
+— quatro casos (aviso prévio, último dia hoje, saiu ontem, sem data), com a
+caixinha errada de propósito.
+
+---
+
+## ⚑ 17/11/2026 — O CADASTRO DO ERP ABRE DENTRO DA FICHA DO PONTO (feito pelo chat do ERP/DP)
+
+**O que mudou nesta tela:** na ficha da pessoa, aba **Cadastro**, o botão
+"✏️ Editar o cadastro completo" **não abre mais outra aba** na tela de Pessoal.
+Abre uma janela em cima desta, com o **mesmo** formulário do ERP.
+
+Pedido do dono: *"quando estou vendo o pessoal pelo ponto e coloco pra abrir o
+cadastro ele remete pra página de pessoal, quando deveria apenas abrir o modal
+correspondente sem necessidade de ir pra outro lado. Os dados de cada um tem
+que estar de fácil acesso e todos correlacionados."*
+
+**Como funciona, e o que NÃO mudou:**
+
+- A janela mostra `/erp/colaboradores/cadastro/<id>` — rota nova no ERP que
+  serve a tela de Colaboradores em **modo embutido**: sem cabeçalho, sem filtro
+  lateral e **sem carregar a lista**. São **3** chamadas de rede (obras, funções
+  e opções do cadastro) contra as 5 da tela inteira.
+- **Gravou lá dentro, a ficha do ponto se atualiza sozinha** (só o painel da
+  pessoa, não a tela toda). Fechou por dentro, a janela de fora fecha.
+- **Dentro da tela de Colaboradores nada mudou:** quando a ficha do ponto está
+  aparecendo DENTRO dela (iframe), o botão continua pedindo a ELA que abra o
+  formulário — ela é a dona do formulário. Caminho antigo, intacto.
+- **Os DOCUMENTOS continuam abrindo em outra aba.** Ler e arquivar papel é
+  trabalho da tela de Pessoal, e aquela janela ainda não sabe aparecer sozinha.
+  Quando souber, cai no mesmo caminho.
+- Fora do alcance de quem abre, a janela responde **"Esta pessoa não está entre
+  as que você acompanha"** — em português, não o JSON técnico que uma API
+  devolveria.
+
+**⚠️ Dívida anotada, não paga:** esta tela já tinha o próprio jeito de aparecer
+"embutida" (o estilo de `.corpo.embutido`, de 13/11), e o ERP ganhou agora um
+segundo (`body.embutido`, em `erp_base.html`). São dois jeitos de dizer a mesma
+coisa. **Não unifiquei** — mexer nesta tela além do pedido não estava
+autorizado. A nota está nos dois lugares do código.
+
+---
+
+## ⚑ 17/11/2026 — TROCAR A BASE DO PONTO ERA DECISÃO NO ESCURO (feito pelo chat do ERP/DP)
+
+**O dono trocou a base do ponto para o cadastro do ERP** (Ponto › Configuração ›
+Geral › "Base de pessoas do ponto") e perguntou, olhando os números do cartão:
+
+> *"Esses são os KPIs, tudo certo né?"*
+
+Com estes números na tela: 616 ativos de 3.667 linhas · 11 afastados · **20 não
+batem pela planilha** · **0 faltam no ERP** · 0 só no ERP · **40 sem obra
+reconhecida**.
+
+**NÃO ESTAVA TUDO CERTO, e a causa é de desenho:** os seis números do cartão são
+**todos calculados sobre a PLANILHA**. Eles descrevem a base que se está
+DEIXANDO, não a que se está PEGANDO. Quem troca a chave olhando só para eles
+troca no escuro.
+
+**O número que mais importa era justamente o enganoso.** "Não batem pela
+planilha: 20" (PJ, pró-labore e a obra ESCRUSSAS) é regra **da planilha**.
+Passando para o ERP, quem não bate sai do **tipo de contrato do cadastro** — a
+mudança de 16/11, logo abaixo nesta memória. **A tela não mostrava o número
+equivalente.** Se o tipo de contrato estiver em branco ou errado, PJ e
+pró-labore **começam a bater ponto**; e batida é registro legal do REP-P,
+encadeada por hash, que não se apaga como se corrige um cadastro.
+
+**E havia um caso que NENHUM dos seis contava:** quem está **ativo na planilha e
+DESLIGADO no ERP**. Essa pessoa simplesmente **para de conseguir bater** no dia
+da virada, e ninguém saberia antes de ela reclamar.
+
+### As três contas que o cartão passou a mostrar (`registro.pelo_erp`)
+
+| Conta | Para que serve |
+|---|---|
+| **Não batem pelo ERP** | comparar com o número da planilha. Vem **menor**? falta tipo de contrato em quem não devia bater. A tela mostra os dois lado a lado e avisa em vermelho quando diferem |
+| **Ativos sem obra no ERP** | "faltam no ERP = 0" garante que a PESSOA existe, não que ela tem OBRA. Sem obra, a batida acontece e cai em conferência, sem cerca |
+| **Ativos na planilha, desligados no ERP** | estes param de bater se a base for o ERP |
+
+**⚑ REUSA `cadastros._nao_bate_do_erp()`, não reimplementa.** É a MESMA regra que
+decide a batida de verdade. Duas cópias divergiriam, e aí a tela diria "pode
+virar" sobre uma conta diferente da que vale na hora de bater.
+
+**Achado por teste, e vale saber:** quando a cópia da planilha não existe no
+banco, `retrato()` devolvia antes de calcular — então as contas do ERP ficavam
+de fora **exatamente quando são a única fonte de informação** (sem cópia, a base
+É o ERP). Agora vão nos dois caminhos. E a terceira conta devolve `None`, não
+zero, sem a planilha para comparar: zero afirmaria "não há ninguém nessa
+situação", o que não se pode dizer sem ter com o que comparar.
+
+**⚠️ Pendente do dono:** ele trocou a base para o ERP **durante a manhã, com o
+pessoal batendo**. Recomendei voltar para a planilha até conferir as três contas
+— a troca é um clique, e a cópia da planilha estava fresca (12:02 do mesmo dia).
+Quem pegar esta área: conferir em que base o ponto está antes de qualquer coisa.
+
+## 17/11/2026 — PEDIR ACESSO AO PORTAL pelo "Meu ponto" (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi no ponto vindo de outra área.** Arquivos novos/tocados:
+`core/portal_do_erp.py` (novo), `app_colaborador.py` (rota
+`POST /ponto/app/api/portal/pedir` e o estado em `/app/api/eu`),
+`app_obra.py` (o estado em `/app/api/inicio`) e `templates/ponto/app.html`
+(a opção do menu e o diálogo do e-mail).
+
+**Desenho do dono:** *"que tal a partir do ponto eu requerer a liberação do
+acesso ao portal? (…) Ela já tem o cadastro no ponto, e lá pelo ponto ela vai
+informar o e-mail dela, na hora que ela pediu acesso ao portal."*
+
+**O problema.** O acesso ao ERP/portal só nasce com e-mail, e o e-mail da
+gente de obra o sistema **não tem** — ninguém pede e-mail para contratar. O DP
+não tem como adivinhar, então o acesso não nascia. Quem sabe o e-mail é a
+pessoa; e o ponto é o único lugar onde ela já está autenticada de verdade (CPF
++ PIN, com bloqueio por tentativa).
+
+**O que o ponto faz, e o que NÃO faz.** Faz: mostra "Pedir acesso ao portal"
+no menu do celular, pede o e-mail e coloca o pedido na fila, com a obra em que
+a pessoa **bate ponto** (`cadastros.obra_pelo_ponto`, 60 dias; na falta, a do
+cadastro). Mostra o andamento ("esperando a liberação", ou o motivo da recusa),
+e, quando liberado, o atalho para `/erp/portal`. **NÃO faz:** criar usuário do
+ERP, escolher perfil ou mandar convite. A decisão é do ERP, por quem tem
+`gerir_usuarios`, pela porta que já existia.
+
+**⚑ Só no CELULAR DA PESSOA, nunca no aparelho da obra.** No tablet quem está
+na frente da tela é qualquer um da equipe: e-mail digitado ali é e-mail que não
+se sabe de quem.
+
+**A fila mora no ERP** (`public.portal_pedidos_de_acesso`, migração **108 do
+ERP**) e a regra dela em `app/apps/erp/core/auth/pedidos_de_portal.py`. Aqui
+não há SQL dessa tabela, de propósito — duas cópias da mesma regra divergem.
+
+**⚠️ DEPENDE DO BOTÃO DO ERP, não do do ponto.** Enquanto a migração 108 não
+for aplicada ("Aplicar atualizações do banco", nas Configurações do ERP), o
+estado vem `disponivel: false` e **a opção nem aparece no menu**. Ninguém vê
+erro — só não vê o recurso. Foi escolha: errar para o lado de esconder.
+
+**Testes:** `tests/test_ponto_pede_acesso_ao_portal_banco.py` (8 casos, banco
+de verdade) — cobre o pedido pelo celular, a obra vir do ponto e não do
+cadastro, o andamento na tela, o DP ver e não liberar, sem PIN não pedir, e a
+obra sugerida no pedido do portal.
+
 ## 16/11/2026 — quem não bate ponto passa a sair do TIPO DE CONTRATO (feito pelo chat do ERP/DP)
 
 ⚠️ **Mexi em `core/cadastros.py` vindo de outra área.** Está escrito aqui porque
@@ -652,6 +866,29 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+
+## 17/11/2026 (terça) — A ronda sem foto: a localização basta, com um alerta
+
+O dono: *"o vigia (…) num determinado telefone, aquele problema de memória cheia: tenta bater e não consegue enviar a
+foto. O mais importante é a geolocalização (…) quando não desse, enviar sem a foto, da mesma forma que chega o ponto
+sem foto, e talvez um alerta, para a pessoa não perder a ronda."*
+- **No aplicativo** (ronda surpresa): se a foto não sai (a câmera não salvou, a imagem não abriu, o celular sem
+  memória quebrou a redução) — ou se ela não chegou ao servidor (sem rede, servidor fora) —, aparece "📍 Registrar só
+  com a localização (sem foto)", com a explicação "pode ser a memória do celular cheia". A página não tem como saber
+  se foi memória ou se a pessoa desistiu. **Ajustado no mesmo dia** (o dono: *"não gostei, pois induz a pessoa a tirar
+  sem a foto"*): o caminho sem foto só aparece depois de **3 tentativas** que não deram certo (`TENTATIVAS_ANTES_DE_SEM_FOTO`),
+  como um link discreto — "Tentou 3 vezes e a foto não sai? Só nesse caso, registre sem foto: o escritório recebe um
+  aviso" —, e o motivo gravado diz "depois de 3 tentativas". O botão grande continua sendo o da foto.
+  Depois de registrar, o aviso "foi sem foto — apague fotos ou vídeos antigos".
+- **No servidor** (`rondas.registrar`, `sem_foto=`): a LOCALIZAÇÃO continua obrigatória (é ela que prova a
+  presença). Sem foto, só com o motivo que o aplicativo manda; a foto que chega estragada também não derruba a
+  ronda — entra sem ela ("a foto chegou estragada"). A ronda fica FEITA (ou ATRASADA) com o motivo gravado
+  ("registrada sem foto: …").
+- **O alerta "Ronda registrada sem foto"** (`RONDA_SEM_FOTO`, um por ronda): diz o vigia, a ronda, a hora e o motivo,
+  e "confira o celular (memória cheia, câmera)". Nas telas Rondas e Quadro › Rondas, o chip diz "· sem foto".
+- Teste: `test_ponto_rondas_banco.py::test_a_ronda_sem_foto_entra_com_a_localizacao_e_um_alerta` (sem localização
+  não entra; sem foto com motivo entra; foto estragada entra sem ela; os dois alertas). E no celular simulado: a foto
+  falhando, o botão aparecendo e a ronda entrando sem foto.
 ## 13/11/2026 (sexta, noite) — Alertas com função, dia da semana e feriado; intervalo curto abaixo de 50 min; a compensação incompleta
 
 O dono, num pedido só: *"em alerta mostrar função do colaborador; o alerta de intervalo curto somente se inferior a
@@ -675,6 +912,7 @@ to achando que não ta gravando direito"* (a folga de 03/11, terça, paga pelo s
 - Testes: `test_ponto_tipos_ausencia_banco.py` (a incompleta com o texto), `test_ponto_apuracao.py` (58 min não
   acende, 49 acende), `test_ponto_alertas_pagina_banco.py` (dia da semana, feriado e função na linha). E a tela de
   Alertas no navegador (o feriado de Finados aparecendo).
+**Publicado em 13/11/2026** (com o "pode" do dono; suíte inteira: 11.009 passaram). Sem migração.
 
 ## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
 

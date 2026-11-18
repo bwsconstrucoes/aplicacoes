@@ -349,6 +349,9 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 "chave": k, "area": area, "nome": d["nome"],
                 "explicacao": d["explicacao"],
                 "exige_pessoa": d["exige_pessoa"],
+                # ⚑ O vínculo que este tipo aceita, quando ele aceita só um
+                # (17/11/2026): a busca de pessoa filtra por ele.
+                "so_vinculo": d.get("so_vinculo") or "",
                 "campos": campos,
                 # ⚑ O ASTERISCO E OS PAPÉIS VÊM DA REGRA, que os tirou do
                 # Pipe. A tela não decide nem um nem outro — se decidisse,
@@ -901,9 +904,26 @@ def _cpf_do_fim(cpf: Any) -> str:
     return ("…" + so_digito[-3:]) if len(so_digito) >= 3 else ""
 
 
+def vinculo_do_tipo(chave: str) -> str:
+    """O vínculo que este tipo de pedido aceita, ou "" para todos.
+
+    ⚑ QUEM DECIDE É A REGRA, não a tela: a tela manda a chave do tipo e o
+    servidor olha em `TIPOS`. Se a tela mandasse o vínculo direto, bastaria
+    trocá-lo no navegador para a busca voltar a oferecer todo mundo.
+    """
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    regra = svc_sp.TIPOS.get(str(chave or "").strip().upper()) or {}
+    return str(regra.get("so_vinculo") or "")
+
+
 def procurar_pessoas(s: Session, usuario: Optional[Usuario],
-                     termo: str) -> list[dict[str, Any]]:
-    """Quem bate com o que foi digitado, dentro do alcance de quem procura."""
+                     termo: str, *, so_vinculo: str = "") -> list[dict[str, Any]]:
+    """Quem bate com o que foi digitado, dentro do alcance de quem procura.
+
+    `so_vinculo`: restringe ao vínculo pedido pelo TIPO de solicitação — ver
+    `so_vinculo` em `pessoal_solicitacoes.TIPOS`. É o caso da admissão de
+    prestador, que só pode ser feita para quem É prestador (17/11/2026).
+    """
     procurado = str(termo or "").strip()
     so_digito = "".join(c for c in procurado if c.isdigit())
     if len(procurado) < MINIMO_DA_BUSCA_DE_PESSOA and len(so_digito) < 3:
@@ -913,6 +933,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
         # Quem só pede por si não procura ninguém: devolve a si mesmo.
         return [x for x in pessoas_ao_alcance(s, usuario)
                 if procurado.lower() in str(x["nome"]).lower()]
+    alvo = (so_vinculo or "").strip().upper()
     obras = obras_que_alcanca(s, eu)
     if obras is not None and not obras:
         return []
@@ -934,6 +955,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
           LEFT JOIN funcoes f ON f.id = c.funcao_id
          WHERE (:todas OR c.obra_id = ANY(:obras))
            AND c.situacao = 'ATIVO'
+           AND (:vinculo = '' OR upper(COALESCE(c.vinculo, 'CTPS')) = :vinculo)
            AND (translate(lower(c.nome),
                           'áàâãäéèêëíìîïóòôõöúùûüç',
                           'aaaaaeeeeiiiiooooouuuuc') LIKE :nome
@@ -946,6 +968,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
          # `unaccent` (que não está instalada): quem digita "jose" acha
          # "José", que é como se digita no celular, com pressa.
          "nome": "%" + _sem_acento(procurado) + "%", "digitos": so_digito,
+         "vinculo": alvo,
          "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
              "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
@@ -976,6 +999,47 @@ def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str
     from app.apps.erp.core.comum.rotulos import rotulo_da_obra
     return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"],
              "rotulo": rotulo_da_obra(l["codigo"], l["nome"])} for l in linhas]
+
+
+def obra_sugerida(s: Session, usuario: Optional[Usuario]) -> Optional[int]:
+    """A obra que já vem escolhida no pedido — SUGESTÃO, nunca trava.
+
+    Ele, em 17/11/2026: *"quando eu falei em geolocalização, na verdade eu quis
+    dizer mais onde é que a pessoa (…) de qual obra ela está cuidando."* Quem
+    sabe responder isso é o PONTO: é o único lugar onde a presença fica
+    registrada todo dia. O cadastro envelhece — a pessoa muda de obra e ninguém
+    vai atualizar a ficha —, e a batida não.
+
+    A ordem é: a obra onde ela mais bateu ponto nos últimos 60 dias; na falta
+    de batida, a obra do cadastro dela; na falta das duas, nenhuma, e a pessoa
+    escolhe na lista.
+
+    ⚑ É SUGESTÃO, E A CAIXINHA CONTINUA ABERTA. Travar a obra pelo ponto
+    quebraria quem abre pedido para outra obra — e o administrativo faz isso
+    (cobre férias de colega em outro canteiro). Sugerir poupa um toque; travar
+    cria um impedimento que ninguém consegue contornar pela tela.
+
+    Nunca levanta: ponto fora do ar, sem migração ou sem colaborador ligado ao
+    operador devolve `None` e o pedido abre como antes.
+    """
+    if usuario is None:
+        return None
+    try:
+        linha = s.execute(text(
+            "SELECT id, obra_id FROM colaboradores WHERE usuario_id = :u "
+            " LIMIT 1"), {"u": int(usuario.id)}).mappings().first()
+        if linha is None:
+            return None
+        from app.apps.ponto import db as ponto_db
+        from app.apps.ponto.core import cadastros as ponto_cadastros
+        with ponto_db.conexao() as conn:
+            obra = ponto_cadastros.obra_pelo_ponto(conn, int(linha["id"]))
+        if obra:
+            return int(obra["id"])
+        return int(linha["obra_id"]) if linha["obra_id"] else None
+    except Exception:  # noqa: BLE001
+        logger.exception("Portal: falha ao sugerir a obra pelo ponto")
+        return None
 
 
 # ---------------------------------------------------------------------------

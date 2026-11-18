@@ -271,12 +271,248 @@ def test_sem_marcar_a_confirmacao_nada_e_enviado(cenario):
     assert "dps" not in enviados
 
 
-def test_substituir_pela_tela_explica_o_caminho_do_portal(cenario):
-    """Deixou de funcionar com o modelo novo; a tela tem de dizer o que fazer em
-    vez de deixar tentar e falhar."""
+def test_substituir_pergunta_o_que_fazer_no_portal_antes_de_emitir(cenario):
+    """Desde 17/11/2026 a tela não explica caminhos: ela PERGUNTA uma vez o que
+    fazer no portal (cancelar ou substituir) e cuida do resto. Nada é enviado à
+    prefeitura antes dessa confirmação."""
     cliente, enviados = cenario
     corpo = _emitir(cliente, ensaio="on", nota_substituida="3070").get_data(as_text=True)
-    assert "portal" in corpo and "recuperar" in corpo
+    assert "value='cancelar'" in corpo and "value='substituir'" in corpo
+    assert "eu cancelo na prefeitura" in corpo
+    assert "dps" not in enviados, "nada pode ser enviado antes da confirmação"
+
+
+def test_cancelamento_confirmado_emite_a_nota_nova_e_tira_a_antiga(cenario, monkeypatch):
+    """⚠️ O fluxo que o dono pediu em 17/11/2026, de ponta a ponta.
+
+    Ele confirma que cancelou no portal; daí para frente é tudo do sistema: a nota
+    nova é EMITIDA aqui, a antiga sai do slot, da planilha e do título do Omie, e
+    as retenções do título são REGRAVADAS pela medição integral — porque, sem
+    outra nota válida, a nova passa a ser a primeira da medição.
+
+    Antes, a substituição trocava só o NÚMERO no título e deixava as retenções da
+    nota que saiu. Numa correção de valor isso é retenção errada parada no Omie.
+    """
+    cliente, enviados = cenario
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    feito = {}
+
+    monkeypatch.setattr(servindo._concluir, "concluir",
+                        lambda *a, **k: feito.update(numero=a[1],
+                                                     sub=k.get("nota_substituida")))
+    monkeypatch.setattr(servindo._sub, "cancelar_no_card",
+                        lambda card, num, token, novo_numero=None:
+                            feito.update(slot=num) or {"ok": True, "slot": "A",
+                                                       "msg": "slot A cancelado"})
+    monkeypatch.setattr(servindo._sub, "cancelar_na_planilha",
+                        lambda ws, num, novo_numero=None, motivo="":
+                            feito.update(planilha=num) or {"ok": True, "linha": 2,
+                                                           "msg": "linha 2 marcada"})
+    monkeypatch.setattr(servindo._worker, "abrir_aba", lambda planilha, abas: object())
+
+    def falso_alterar_retencoes(creds, integracao, r, numero, remover=""):
+        feito["retencoes"] = (str(r.valor_total), numero, remover)
+        return {}, f"{numero}"
+
+    monkeypatch.setattr(servindo.omie, "alterar_retencoes", falso_alterar_retencoes)
+    monkeypatch.setattr(servindo.omie, "substituir_numero",
+                        lambda *a, **k: feito.update(trocou_so_numero=True) or ({}, ""))
+
+    # o card tem a nota antiga num slot, válida
+    import pipefy_update as pfu
+    f = pfu.CAMPOS_SLOT["A"]
+    base = servindo._worker.preparar(CARD)
+    base["card"]["campos_por_id"] = {f["status"]: "Válida", f["numero"]: "3070",
+                                     f["valor"]: "98.720,04"}
+    base["card"]["omie_integracao"] = "CREPEEXU-10"
+    monkeypatch.setattr(servindo._worker, "preparar", lambda *a, **k: dict(base))
+    monkeypatch.setattr(servindo, "_so_o_card",
+                        lambda cid: (base["card"], {"PIPEFY_TOKEN": "t"}))
+
+    corpo = _emitir(cliente, nota_substituida="3070",
+                    ja_fiz_no_portal="on",
+                    acao_portal="cancelado_a_mao").get_data(as_text=True)
+
+    assert enviados.get("dps"), "a nota nova TEM de ser emitida aqui no caminho do cancelamento"
+    assert feito.get("sub") == "3070", "o concluir precisa saber que há nota saindo de cena"
+    assert feito.get("slot") == "3070" and feito.get("planilha") == "3070"
+    assert "retencoes" in feito, "sem outra nota válida, as retenções são REGRAVADAS"
+    assert feito["retencoes"][2] == "3070", "o nº antigo sai no MESMO AlterarContaReceber"
+    assert "trocou_so_numero" not in feito, "duas escritas no título batem na trava do Omie"
+    assert "Cancelada" in corpo or "cancelada" in corpo
+
+
+def test_com_outra_nota_valida_as_retencoes_do_titulo_ficam(cenario, monkeypatch):
+    """Medição faturada em partes: a primeira nota já gravou as retenções da
+    medição INTEGRAL. Regravar aqui dobraria o valor."""
+    cliente, enviados = cenario
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    feito = {}
+
+    monkeypatch.setattr(servindo._concluir, "concluir", lambda *a, **k: None)
+    monkeypatch.setattr(servindo._sub, "cancelar_no_card",
+                        lambda *a, **k: {"ok": True, "slot": "A", "msg": "ok"})
+    monkeypatch.setattr(servindo._sub, "cancelar_na_planilha",
+                        lambda *a, **k: {"ok": True, "linha": 2, "msg": "ok"})
+    monkeypatch.setattr(servindo._worker, "abrir_aba", lambda planilha, abas: object())
+    monkeypatch.setattr(servindo.omie, "alterar_retencoes",
+                        lambda *a, **k: feito.update(regravou=True) or ({}, ""))
+    monkeypatch.setattr(servindo.omie, "substituir_numero",
+                        lambda *a, **k: feito.update(trocou_so_numero=True) or ({}, "3070/3084"))
+
+    import pipefy_update as pfu
+    fa, fb = pfu.CAMPOS_SLOT["A"], pfu.CAMPOS_SLOT["B"]
+    base = servindo._worker.preparar(CARD)
+    base["card"]["campos_por_id"] = {
+        fa["status"]: "Válida", fa["numero"]: "3070", fa["valor"]: "40.000,00",
+        fb["status"]: "Válida", fb["numero"]: "3075", fb["valor"]: "20.000,00"}
+    base["card"]["omie_integracao"] = "CREPEEXU-10"
+    base["r"] = _calculo(valor="40000.00")      # a nota nova, do tamanho da que sai
+    monkeypatch.setattr(servindo._worker, "preparar", lambda *a, **k: dict(base))
+    monkeypatch.setattr(servindo, "_so_o_card",
+                        lambda cid: (base["card"], {"PIPEFY_TOKEN": "t"}))
+
+    _emitir(cliente, nota_substituida="3070",
+            ja_fiz_no_portal="on", acao_portal="cancelado_a_mao")
+    assert feito.get("trocou_so_numero") is True
+    assert "regravou" not in feito, "a 3075 ainda é válida e já carrega as retenções"
+
+
+def test_o_sistema_cancela_na_prefeitura_antes_de_emitir(cenario, monkeypatch):
+    """⚠️ O caminho completo: o sistema cancela a nota antiga NA PREFEITURA e só
+    então emite a nova. A ordem não é estética — se o cancelamento for recusado,
+    emitir criaria duas notas válidas do mesmo serviço."""
+    cliente, enviados = cenario
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    ordem = []
+
+    monkeypatch.setattr(servindo._edps, "chave_da_nota",
+                        lambda *a, **k: "2" * 50)
+    monkeypatch.setattr(servindo._edps, "cancelar_nota",
+                        lambda ctx, chave, token, prod, cod, txt:
+                            ordem.append(("cancelou", chave, cod, txt)) or {"ok": True})
+    monkeypatch.setattr(servindo._concluir, "concluir",
+                        lambda *a, **k: ordem.append(("concluiu", a[1])))
+    monkeypatch.setattr(servindo, "_efeitos_substituicao",
+                        lambda *a, **k: ordem.append(("marcou",)) or None)
+
+    import pipefy_update as pfu
+    f = pfu.CAMPOS_SLOT["A"]
+    base = servindo._worker.preparar(CARD)
+    base["card"]["campos_por_id"] = {f["status"]: "Válida", f["numero"]: "3070",
+                                     f["valor"]: "98.720,04"}
+    monkeypatch.setattr(servindo._worker, "preparar", lambda *a, **k: dict(base))
+    monkeypatch.setattr(servindo, "_so_o_card",
+                        lambda cid: (base["card"], {"PIPEFY_TOKEN": "t"}))
+
+    _emitir(cliente, nota_substituida="3070", ja_fiz_no_portal="on",
+            acao_portal="cancelar", confirmo_cancelamento="on",
+            motivo_codigo="1", motivo_texto="Valor da medicao corrigido no card")
+
+    assert ordem and ordem[0][0] == "cancelou", "o cancelamento vem ANTES da emissão"
+    assert ordem[0][2] == "1" and "Valor da medicao" in ordem[0][3]
+    assert enviados.get("dps"), "a nota nova é emitida depois do cancelamento"
+    assert [p[0] for p in ordem] == ["cancelou", "concluiu", "marcou"]
+
+
+def test_substituicao_vai_dentro_da_declaracao_da_nota_nova(cenario, monkeypatch):
+    """⚠️ O grupo `subst` SEMPRE existiu no padrão nacional, e a tela dizia o
+    contrário desde 07/10/2026 — erro meu, que custou semanas de substituição à
+    mão. Com ele dentro da declaração, a plataforma cancela a nota antiga por
+    conta dela: nem evento depois, nem portal.
+
+    O dono cobrou em 17/11/2026: "tem alguma limitação que eu não estou
+    entendendo?" Não tinha.
+    """
+    cliente, enviados = cenario
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    chamou_evento = []
+
+    monkeypatch.setattr(servindo._edps, "chave_da_nota", lambda *a, **k: "7" * 50)
+    monkeypatch.setattr(servindo._edps, "cancelar_nota",
+                        lambda *a, **k: chamou_evento.append(1))
+    monkeypatch.setattr(servindo._concluir, "concluir", lambda *a, **k: None)
+    monkeypatch.setattr(servindo, "_efeitos_substituicao", lambda *a, **k: None)
+
+    import pipefy_update as pfu
+    f = pfu.CAMPOS_SLOT["A"]
+    base = servindo._worker.preparar(CARD)
+    base["card"]["campos_por_id"] = {f["status"]: "Válida", f["numero"]: "3070",
+                                     f["valor"]: "50.000,00"}
+    monkeypatch.setattr(servindo._worker, "preparar", lambda *a, **k: dict(base))
+    monkeypatch.setattr(servindo, "_so_o_card",
+                        lambda cid: (base["card"], {"PIPEFY_TOKEN": "t"}))
+
+    _emitir(cliente, nota_substituida="3070", ja_fiz_no_portal="on",
+            acao_portal="substituir", confirmo_cancelamento="on",
+            motivo_codigo="99", motivo_texto="Valor da medicao corrigido no card")
+
+    dps = enviados.get("dps") or ""
+    assert "<subst>" in dps, "a declaração tem de carregar o grupo de substituição"
+    assert "<chSubstda>" + "7" * 50 + "</chSubstda>" in dps
+    assert "<cMotivo>99</cMotivo>" in dps
+    assert chamou_evento == [], \
+        "na substituição não se manda evento: a plataforma cancela pela declaração"
+
+
+def test_a_declaracao_comum_nao_leva_grupo_de_substituicao(cenario):
+    """Emissão normal não pode carregar `subst` — ela não substitui nada."""
+    cliente, enviados = cenario
+    _emitir(cliente)
+    assert "<subst>" not in (enviados.get("dps") or "")
+
+
+def test_cancelamento_recusado_nao_emite_a_nota_nova(cenario, monkeypatch):
+    """Duas notas válidas do mesmo serviço é o pior desfecho possível."""
+    cliente, enviados = cenario
+    servindo = sys.modules["app.apps.emissaonf.web"]
+
+    def recusa(*a, **k):
+        raise servindo._edps.CancelamentoRecusado(["E123 - fora do prazo de cancelamento"])
+
+    monkeypatch.setattr(servindo._edps, "chave_da_nota", lambda *a, **k: "2" * 50)
+    monkeypatch.setattr(servindo._edps, "cancelar_nota", recusa)
+
+    import pipefy_update as pfu
+    f = pfu.CAMPOS_SLOT["A"]
+    base = servindo._worker.preparar(CARD)
+    base["card"]["campos_por_id"] = {f["status"]: "Válida", f["numero"]: "3070",
+                                     f["valor"]: "98.720,04"}
+    monkeypatch.setattr(servindo._worker, "preparar", lambda *a, **k: dict(base))
+    monkeypatch.setattr(servindo, "_so_o_card",
+                        lambda cid: (base["card"], {"PIPEFY_TOKEN": "t"}))
+
+    corpo = _emitir(cliente, nota_substituida="3070", ja_fiz_no_portal="on",
+                    acao_portal="cancelar", confirmo_cancelamento="on",
+                    motivo_codigo="1",
+                    motivo_texto="Valor da medicao corrigido no card").get_data(as_text=True)
+    assert "RECUSOU o cancelamento" in corpo
+    assert "continua válida" in corpo
+    assert "dps" not in enviados, "não pode emitir com a nota antiga ainda válida"
+
+
+def test_sem_a_chave_da_nota_antiga_nada_acontece(cenario, monkeypatch):
+    """Sem a chave a prefeitura não sabe qual nota cancelar — e cancelar a errada
+    não tem volta."""
+    cliente, enviados = cenario
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo._edps, "chave_da_nota", lambda *a, **k: "")
+
+    import pipefy_update as pfu
+    f = pfu.CAMPOS_SLOT["A"]
+    base = servindo._worker.preparar(CARD)
+    base["card"]["campos_por_id"] = {f["status"]: "Válida", f["numero"]: "3070",
+                                     f["valor"]: "98.720,04"}
+    monkeypatch.setattr(servindo._worker, "preparar", lambda *a, **k: dict(base))
+    monkeypatch.setattr(servindo, "_so_o_card",
+                        lambda cid: (base["card"], {"PIPEFY_TOKEN": "t"}))
+
+    corpo = _emitir(cliente, nota_substituida="3070", ja_fiz_no_portal="on",
+                    acao_portal="cancelar", confirmo_cancelamento="on",
+                    motivo_codigo="1",
+                    motivo_texto="Valor da medicao corrigido no card").get_data(as_text=True)
+    assert "chave de acesso" in corpo
+    assert "nada foi cancelado nem emitido" in corpo
     assert "dps" not in enviados
 
 

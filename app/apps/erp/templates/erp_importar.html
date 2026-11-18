@@ -148,8 +148,7 @@
   <div class="cartao-dica">Lê a planilha <b>Registro de Colaboradores</b>, aba
     <b>Dados Documentos</b>, <b>ao vivo</b>: o que você editar lá vale nesta
     mesma importação. Casa pelo <b>CPF</b>, preenche o cadastro de quem já
-    existe e <b>cadastra quem falta</b> — só quem a planilha mostra como
-    <b>ativo</b>, porque as ~2.960 pessoas desligadas são base morta.
+    existe. <b>Não cria gente</b>, a menos que você marque a opção abaixo.
     <br><br>O que a planilha manda: <b>vínculo, pagamento, tipo de contrato,
     cargo, convenção, obra, salário, diária, auxílios, endereço, RG, nome do
     pai e da mãe, nascimento, chave Pix</b> e o resto do cadastro.
@@ -158,14 +157,112 @@
     <label for="plc-cpfs">CPF de quem você quer trazer <small>(opcional)</small></label>
     <textarea id="plc-cpfs" rows="2" placeholder="096.767.494-86"></textarea>
     <div class="dica">Um por linha ou separados por vírgula. <b>Comece com uma
-      ou duas pessoas</b> e confira a ficha antes de soltar o resto. Em branco,
-      vai a planilha inteira.</div>
+      ou duas pessoas</b> e confira a ficha antes de soltar o resto.
+      <b>Em branco, vai a planilha inteira</b> — e se você escrever algo que eu
+      não entender, eu paro e aviso, em vez de trazer todo mundo.</div>
   </div>
+  {# ⚑ CADASTRAR QUEM FALTA É ESCOLHA, E NASCE DESMARCADA (17/11/2026).
+
+     Ele: *"tem mais gente no ERP do que eu coloquei para importar. Só quero os
+     que eu coloquei para importar."*
+
+     Criar gente é a única coisa que esta importação faz que não se desfaz com
+     outra importação — atualizar campo errado se corrige rodando de novo;
+     pessoa criada por engano fica. Coisa que não se desfaz não pode ser
+     padrão. #}
+  <label class="opcao" style="margin-top:10px">
+    <input type="checkbox" id="plc-criar">
+    <span class="rotulo"><b>Cadastrar também quem não existe no ERP</b>
+      (só os ativos). Desmarcado — o normal — só preenche o cadastro de quem
+      já está aqui, e lista os outros sem criar nada.</span></label>
+  {# ⚑ LIMPAR A BASE (17/11/2026). Ele: *"eu já tinha cadastrado o pessoal que
+     tava vindo lá da análise SPs (…) mas eu não quero mais. Eu quero que
+     esteja só o pessoal que eu quero importar. O CPF que não tiver dentro da
+     minha lista de importação, eu quero que seja excluído dessa base."*
+
+     Só aparece como opção, e só funciona COM a lista de CPFs: campo em branco
+     quer dizer "a planilha inteira", e isso somado a isto apagaria o cadastro
+     todo. O servidor recusa sem a lista, não é só a tela que esconde. #}
+  <label class="opcao" style="margin-top:6px">
+    <input type="checkbox" id="plc-soestes">
+    <span class="rotulo" style="color:var(--vermelho)"><b>Deixar SÓ a minha
+      lista: apagar do ERP quem não está nela.</b> Exige a lista de CPFs
+      acima. O que estiver pendurado na pessoa (documento, pedido do DP,
+      título) <b>vai junto</b>. <b>A única exceção é quem bateu ponto</b>:
+      batida é registro legal, então essa pessoa é <b>desligada</b> em vez de
+      apagada. Aperte “Conferir sem gravar” primeiro: ele conta quantas
+      sairiam, sem apagar nada.</span></label>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-plc">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-plc" disabled>Trazer da planilha</button>
   </div>
   <div id="resultado-plc"></div>
+</div>
+
+{# ===========================================================================
+   A CONFERÊNCIA QUE AUTORIZA DESLIGAR A PLANILHA (17/11/2026)
+
+   Ele: *"precisamos fazer de uma forma infalível essa desativação da planilha
+   e a leitura do Análise de SPs pela base do ERP. A GRAVIDADE DISSO É PAGAR
+   FUNCIONÁRIOS DE FORMA EQUIVOCADA."*
+
+   "Infalível" não se consegue raciocinando sobre o código — consegue-se
+   calculando as duas coisas e comparando. Fica em primeiro lugar na tela, e
+   não no fim, porque é a decisão mais cara que se toma aqui.
+   =========================================================================== #}
+<div class="cartao" style="border-color:var(--ambar)">
+  <div class="cartao-cab"><h3>Conferência: o ERP paga igual à planilha?</h3>
+    <small>responder “sim” para todo mundo é o que autoriza desligar a planilha</small></div>
+  <div class="cartao-dica">Pessoa por pessoa, compara o que a folha do
+    <b>Análise de SPs</b> decidiria lendo a <b>planilha</b> com o que ela
+    decidiria lendo o <b>ERP</b>.
+    <br><br>O primeiro item é o que importa: <b>“esta pessoa pode receber?”</b>
+    — respondido pela <b>mesma regra</b> do Análise de SPs, alimentada pelos
+    dois lados. Divergência ali quer dizer alguém recebendo que não devia, ou
+    deixando de receber.
+    <br><br><b>Nada é alterado.</b> Esta tela só lê.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="max-width:220px">
+      <label for="cf-ate">Pagando até (último dia do período)</label>
+      <input type="date" id="cf-ate"></div>
+    <button class="btn" id="btn-conferencia">Comparar agora</button>
+  </div>
+  <div id="resultado-cf"></div>
+</div>
+
+{# ⚑ DESFAZER O QUE A IMPORTAÇÃO CRIOU (17/11/2026).
+
+   Ele, depois de uma importação: *"tem mais gente no ERP do que eu coloquei
+   para importar. Só quero os que eu coloquei para importar."*
+
+   A causa foi consertada em dois lugares — a rota recusa CPF que não entendeu
+   em vez de cair na planilha inteira, e cadastrar quem falta virou opção
+   desmarcada. Mas sem este cartão a única saída para o estrago já feito seria
+   apagar gente no banco à mão, que é a pior coisa que existe. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cadastros criados recentemente</h3>
+    <small>para tirar quem entrou sem você pedir</small></div>
+  <div class="cartao-dica">Quem <b>nasceu</b> no cadastro nas últimas horas,
+    por importação ou à mão. <b>Só aparece aqui quem foi criado</b> — quem já
+    existia e só teve campos preenchidos não entra nesta lista.
+    <br><br>Apagar é <b>definitivo</b>, e de propósito: cadastro criado por
+    engano é lixo, não história — inativá-lo deixaria no sistema alguém que
+    nunca trabalhou aqui, aparecendo em busca e em lista para sempre.
+    O que estiver pendurado na pessoa (documento, pedido do DP, título)
+    <b>vai junto</b>. <b>A única exceção é quem bateu ponto</b>: batida é
+    registro legal, então essa pessoa é <b>desligada</b> em vez de apagada.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="max-width:200px"><label for="rm-horas">Criados nas últimas</label>
+      <select id="rm-horas">
+        <option value="6">6 horas</option>
+        <option value="24">24 horas</option>
+        <option value="48" selected>48 horas</option>
+        <option value="168">7 dias</option>
+      </select></div>
+    <button class="btn secundario" id="btn-listar-rm">Ver quem foi criado</button>
+    <button class="btn vermelho" id="btn-apagar-rm" disabled>Apagar os marcados</button>
+  </div>
+  <div id="resultado-rm"></div>
 </div>
 
 <div class="cartao">
@@ -1006,6 +1103,51 @@ function pintarRelatorioPLC(rel){
      por que tal campo ficou vazio, e de fora as duas causas são idênticas: a
      coluna está vazia na planilha, ou a coluna existe e eu não a reconheço.
      Isto responde qual das duas é, sem custar uma rodada dele. #}
+  {# A LIMPEZA DA BASE vem PRIMEIRO no relatório, antes de tudo: é a parte
+     que não se desfaz, e tem de ser a primeira coisa que ele lê. #}
+  if (rel.limpou)
+    L.push(`<div class="aviso ${rel.gravou ? "erro" : "ambar"}">
+      <b>${rel.gravou ? "Apagadas" : "Seriam apagadas"}:
+      ${(rel.apagadas||[]).length} pessoa(s)</b> que estão no ERP e não na sua
+      lista${(rel.desligadas||[]).length
+        ? ` · <b>${rel.desligadas.length} desligada(s)</b> em vez de apagada(s),
+            por terem batido ponto` : ""}.${
+        rel.gravou ? "" : " <b>Nada foi apagado ainda.</b>"}
+      ${(rel.apagadas||[]).length ? `
+        <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table><thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+        <tbody>${rel.apagadas.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}</div>`);
+
+  {# ⚑ TEM PONTO ⇒ DESLIGADA, não apagada. Regra dele em 17/11/2026: *"tem
+     ponto, desligado. Não tem ponto, excluir. É o único impeditivo."* Batida
+     é registro legal do REP-P: apagá-la destruiria a prova da jornada de quem
+     trabalhou de verdade. #}
+  if ((rel.desligadas || []).length)
+    L.push(`<h4>Desligadas em vez de apagadas (${rel.desligadas.length})</h4>
+      <div class="cartao-dica">Estas <b>bateram ponto</b> — e batida é registro
+        legal, que não se apaga. Foram <b>desligadas</b>: saem da folha, do
+        ponto e das listas, e a jornada registrada continua guardada.</div>
+      <div class="tabela-rolagem" style="max-height:240px"><table>
+      <thead><tr><th>Pessoa</th><th>CPF</th><th class="direita">Batidas</th></tr></thead>
+      <tbody>${rel.desligadas.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+        <td class="dados">${documento(x.cpf)}</td>
+        <td class="direita dados">${x.batidas || 0}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
+  if ((rel.nao_deu_para_apagar || []).length)
+    L.push(`<h4>Não deu para apagar (${rel.nao_deu_para_apagar.length})</h4>
+      <div class="cartao-dica">Estas têm movimento no sistema — não são engano
+        de carga. Se não deviam estar aqui, <b>desligue</b> em vez de
+        apagar.</div>
+      <div class="tabela-rolagem" style="max-height:220px"><table>
+      <thead><tr><th>Pessoa</th><th>Por quê</th></tr></thead>
+      <tbody>${rel.nao_deu_para_apagar.map(x => `<tr>
+        <td>${escapar(x.nome || "—")}</td>
+        <td class="desc">${escapar(x.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div>`);
+
   if ((rel.colunas_que_eu_nao_uso || []).length)
     L.push(`<details style="margin-top:12px"><summary><b>Colunas da planilha
       que eu não leio (${rel.colunas_que_eu_nao_uso.length})</b> — abra se
@@ -1071,7 +1213,18 @@ function pintarRelatorioPLC(rel){
 
 async function mandarCadastroPlanilha(gravar){
   const onde = els("resultado-plc");
-  const corpo = {gravar: !!gravar, cpfs: els("plc-cpfs").value};
+  const corpo = {gravar: !!gravar, cpfs: els("plc-cpfs").value,
+                 criar: !!(els("plc-criar") || {}).checked,
+                 so_estes: !!(els("plc-soestes") || {}).checked};
+  {# Apagar gente não acontece por clique distraído: a confirmação diz o que
+     vai acontecer, e só aparece na hora de gravar. #}
+  if (gravar && corpo.so_estes
+      && !confirm("Isto vai APAGAR do ERP todo mundo que não está na sua "
+                + "lista de CPFs.\n\nNão tem volta. Quem já tem movimento "
+                + "tem esses registros apagados junto. Quem bateu ponto é "
+                + "DESLIGADA em vez de apagada.\n\nVocê conferiu a lista de "
+                + "quem sairia?"))
+    return;
   ["btn-conferir-plc", "btn-gravar-plc"].forEach(b => {
     if (els(b)) els(b).disabled = true; });
   onde.innerHTML = `<div class="cartao-dica">Na fila — a leitura da planilha
@@ -1108,6 +1261,203 @@ async function mandarCadastroPlanilha(gravar){
     if (els("btn-gravar-plc")) els("btn-gravar-plc").disabled = !PLC_CONFERIDO;
   }
 }
+
+{# ---------------------------------------------------------------------------
+   OS CADASTROS CRIADOS RECENTEMENTE, e como tirar quem não foi pedido
+   --------------------------------------------------------------------------- #}
+async function listarCriadosRecentemente(){
+  const onde = els("resultado-rm");
+  const horas = (els("rm-horas") || {}).value || "48";
+  onde.innerHTML = `<div class="cartao-dica">Procurando…</div>`;
+  if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = true;
+  try {
+    const r = await api(`/erp/api/colaboradores/criados-recentemente?horas=${horas}`);
+    const gente = r.pessoas || [];
+    if (!gente.length) {
+      onde.innerHTML = `<div class="cartao-dica">Ninguém foi criado nesse
+        período.</div>`;
+      return;
+    }
+    onde.innerHTML = `<h4>${gente.length} cadastro(s) criado(s)</h4>
+      <div class="tabela-rolagem" style="max-height:360px"><table>
+      <thead><tr><th style="width:36px"></th><th>Pessoa</th><th>CPF</th>
+        <th>Situação</th><th>Criado em</th><th>Por quem</th></tr></thead>
+      <tbody>${gente.map(p => `<tr>
+        <td><input type="checkbox" class="rm-um" value="${p.id}"></td>
+        <td>${escapar(p.nome)}</td>
+        <td class="dados">${documento(p.cpf)}</td>
+        <td>${escapar(p.situacao)}</td>
+        <td class="dados">${escapar((p.criado_em || "").replace("T", " ").slice(0, 16))}</td>
+        <td class="desc">${escapar(p.por_quem)}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="dica" style="margin-top:8px">Marque <b>quem você NÃO pediu
+        para importar</b> e aperte “Apagar os marcados”.</div>`;
+    onde.querySelectorAll(".rm-um").forEach(c =>
+      c.addEventListener("change", () => {
+        const algum = onde.querySelectorAll(".rm-um:checked").length > 0;
+        if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = !algum;
+      }));
+  } catch(e){
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  }
+}
+
+async function apagarCriadosMarcados(){
+  const onde = els("resultado-rm");
+  const ids = Array.from(onde.querySelectorAll(".rm-um:checked")).map(c => c.value);
+  if (!ids.length) return;
+  {# Apagar gente é definitivo: a confirmação diz QUANTAS e que não volta. #}
+  if (!confirm(`Apagar ${ids.length} cadastro(s)?\n\n`
+             + "Isto NÃO tem volta. Quem já tem título, documento, pedido do "
+             + "DP tem esses registros APAGADOS JUNTO. Quem bateu ponto é "
+             + "DESLIGADA em vez de apagada — batida é registro legal.")) return;
+  if (els("btn-apagar-rm")) els("btn-apagar-rm").disabled = true;
+  try {
+    const r = await api("/erp/api/colaboradores/remover",
+                        {method: "POST", body: JSON.stringify({ids}),
+                         headers: {"Content-Type": "application/json"}});
+    const fora = (r.apagadas || []).length;
+    const desl = (r.desligadas || []).length;
+    const ficou = (r.recusadas || []);
+    aviso("mensagem",
+          `${fora} apagada(s)`
+          + (desl ? `, ${desl} desligada(s) por terem batido ponto` : "")
+          + (ficou.length ? `, ${ficou.length} recusada(s)` : "."),
+          ficou.length ? "info" : "ok");
+    if (ficou.length)
+      onde.innerHTML = `<div class="aviso erro"><b>Não deu para apagar
+        (${ficou.length})</b><ul>${ficou.map(x =>
+          `<li>${escapar(x.motivo)}</li>`).join("")}</ul></div>` + onde.innerHTML;
+    else
+      await listarCriadosRecentemente();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+{# ---------------------------------------------------------------------------
+   A CONFERÊNCIA ERP × PLANILHA — ver o cartão acima
+   --------------------------------------------------------------------------- #}
+async function rodarConferenciaDaFolha(){
+  const onde = els("resultado-cf");
+  const ate = (els("cf-ate") || {}).value || "";
+  onde.innerHTML = `<div class="cartao-dica">Comparando as duas bases, pessoa
+    por pessoa…</div>`;
+  if (els("btn-conferencia")) els("btn-conferencia").disabled = true;
+  try {
+    const r = await api("/erp/api/conferencia-folha" + (ate ? `?ate=${ate}` : ""));
+    if (!r.ok) {
+      onde.innerHTML = `<div class="aviso erro"><b>Não deu para comparar:</b>
+        ${escapar(r.erro || "motivo não informado")}</div>`;
+      return;
+    }
+    const L = [];
+    {# O VEREDICTO PRIMEIRO, em uma linha, porque é a única coisa que ele
+       precisa ler para saber se pode desligar a planilha. #}
+    L.push(`<div class="aviso ${r.pronto_para_desligar ? "ok" : "erro"}"
+      style="font-size:15px">
+      <b>${r.pronto_para_desligar
+        ? "✔ As duas bases pagariam igual — dá para desligar a planilha."
+        : "✖ AINDA NÃO dá para desligar a planilha."}</b><br>
+      ${r.total_erp} pessoa(s) no ERP · ${r.total_planilha} na planilha ·
+      <b>${r.iguais}</b> idênticas${r.quando
+        ? ` · planilha atualizada em ${escapar(r.quando.replace("T", " ").slice(0, 16))}`
+        : ""}</div>`);
+
+    if ((r.trava_diferente || []).length)
+      L.push(`<h4 style="color:var(--vermelho)">⚠️ PAGAMENTO: as duas bases
+        discordam sobre quem pode receber (${r.trava_diferente.length})</h4>
+        <div class="cartao-dica">É o item mais grave. <b>Resolva estes
+          antes de qualquer outra coisa.</b></div>
+        <div class="tabela-rolagem" style="max-height:320px"><table>
+        <thead><tr><th>Pessoa</th><th>CPF</th><th>Pela planilha</th>
+          <th>Pelo ERP</th><th>Por quê</th></tr></thead>
+        <tbody>${r.trava_diferente.map(x => `<tr>
+          <td><b>${escapar(x.nome)}</b></td>
+          <td class="dados">${documento(x.cpf)}</td>
+          <td>${x.planilha_paga ? "PAGA" : "não paga"}
+            <small>(${escapar(x.planilha)})</small></td>
+          <td>${x.erp_paga ? "PAGA" : "não paga"}
+            <small>(${escapar(x.erp)})</small></td>
+          <td class="desc">${escapar(x.motivo_erp || x.motivo_planilha || "")}</td>
+          </tr>`).join("")}</tbody></table></div>`);
+
+    if ((r.so_na_planilha || []).length)
+      L.push(`<h4>Na planilha e NÃO no ERP (${r.so_na_planilha.length})</h4>
+        <div class="cartao-dica">Enquanto houver gente aqui, desligar a
+          planilha <b>faz essas pessoas desaparecerem da folha</b>.</div>
+        <div class="tabela-rolagem" style="max-height:240px"><table>
+        <thead><tr><th>Pessoa</th><th>CPF</th></tr></thead>
+        <tbody>${r.so_na_planilha.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div>`);
+
+    if ((r.divergentes || []).length) {
+      const dinheiro = r.divergentes.filter(d => d.pesa_dinheiro);
+      L.push(`<h4>Campos que não batem (${r.divergentes.length} pessoa(s),
+        ${dinheiro.length} com efeito em dinheiro)</h4>
+        <div class="tabela-rolagem" style="max-height:420px"><table>
+        <thead><tr><th>Pessoa</th><th>O quê</th><th>Na planilha</th>
+          <th>No ERP</th></tr></thead>
+        <tbody>${r.divergentes.flatMap(p => p.campos.map((c, i) => `<tr>
+          <td>${i === 0 ? `<b>${escapar(p.nome)}</b>` : ""}</td>
+          <td>${c.peso === "dinheiro" ? "💰 " : ""}${escapar(c.rotulo)}</td>
+          <td class="dados">${escapar(c.planilha)}</td>
+          <td class="dados">${escapar(c.erp)}</td></tr>`)).join("")}
+        </tbody></table></div>`);
+    }
+
+    const porCampo = Object.entries(r.por_campo || {}).sort((a, b) => b[1] - a[1]);
+    if (porCampo.length)
+      L.push(`<h4>Onde a diferença se concentra</h4>
+        <div class="tabela-rolagem" style="max-height:240px"><table>
+        <thead><tr><th>Campo</th><th class="direita">Pessoas</th></tr></thead>
+        <tbody>${porCampo.map(([campo, n]) => `<tr><td>${escapar(campo)}</td>
+          <td class="direita dados">${n}</td></tr>`).join("")}
+        </tbody></table></div>
+        <div class="dica">Um campo com muita gente costuma ser UMA causa só —
+          uma coluna que eu não leio, ou uma palavra escrita diferente. Me
+          mande esta lista.</div>`);
+
+    if ((r.so_no_erp || []).length)
+      L.push(`<details style="margin-top:12px"><summary>No ERP e não na
+        planilha (${r.so_no_erp.length})</summary>
+        <div class="cartao-dica">Não impede o desligamento: é gente que já está
+          só aqui. Mas confira se não é cadastro criado por engano — o cartão
+          abaixo apaga esses.</div>
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <tbody>${r.so_no_erp.map(x => `<tr><td>${escapar(x.nome || "—")}</td>
+          <td class="dados">${documento(x.cpf)}</td></tr>`).join("")}
+        </tbody></table></div></details>`);
+
+    if ((r.nomes_diferentes || []).length)
+      L.push(`<details style="margin-top:8px"><summary>Nomes diferentes no
+        mesmo CPF (${r.nomes_diferentes.length})</summary>
+        <div class="cartao-dica">Não muda um centavo, então não trava o
+          desligamento — mas costuma ser cadastro duplicado em algum
+          lugar.</div>
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <thead><tr><th>CPF</th><th>Na planilha</th><th>No ERP</th></tr></thead>
+        <tbody>${r.nomes_diferentes.map(x => `<tr>
+          <td class="dados">${documento(x.cpf)}</td>
+          <td>${escapar(x.planilha)}</td><td>${escapar(x.erp)}</td>
+          </tr>`).join("")}</tbody></table></div></details>`);
+
+    onde.innerHTML = L.join("");
+  } catch(e){
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  } finally {
+    if (els("btn-conferencia")) els("btn-conferencia").disabled = false;
+  }
+}
+
+if (els("btn-conferencia"))
+  els("btn-conferencia").addEventListener("click", rodarConferenciaDaFolha);
+
+if (els("btn-listar-rm"))
+  els("btn-listar-rm").addEventListener("click", listarCriadosRecentemente);
+if (els("btn-apagar-rm"))
+  els("btn-apagar-rm").addEventListener("click", apagarCriadosMarcados);
 
 if (els("btn-conferir-plc"))
   els("btn-conferir-plc").addEventListener("click", () => mandarCadastroPlanilha(false));

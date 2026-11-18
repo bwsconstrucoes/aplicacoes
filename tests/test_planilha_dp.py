@@ -264,7 +264,7 @@ def test_conferir_sem_gravar_nao_toca_no_cadastro(mundo):
 def test_quem_esta_ATIVO_na_planilha_e_CADASTRADO(mundo):
     """Ele, em 17/11/2026, vendo uma pessoa listada como "não existe no ERP":
     *"Pq não cadastrou a partir da planilha?"*"""
-    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True, criar=True,
                     ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
                                 "Nome Completo": "NINGUEM CONHECIDO"}))
     assert [x["cpf"] for x in r["criadas"]] == ["11144477735"]
@@ -281,7 +281,7 @@ def test_quem_esta_ATIVO_na_planilha_e_CADASTRADO(mundo):
 def test_quem_esta_DESLIGADO_na_planilha_NAO_e_cadastrado(mundo):
     """São ~2.960 das 3.667 linhas. Trazer essa base morta encheria lista de
     obra, folha e relatório — e a decisão dele, de 04/11/2026, é só os ativos."""
-    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True, criar=True,
                     ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
                                 "Nome Completo": "JA SAIU DA EMPRESA",
                                 "Data de Saída": "10/03/2025"}))
@@ -533,13 +533,14 @@ def test_o_PIS_que_nao_fecha_vira_PENDENCIA_e_a_pessoa_entra():
     ("Colaboradores Desligados", "DESLIGADO",        "DESLIGADO"),
     ("Cadastro Concluído",       "CONCLUIDO",        "ATIVO"),
     ("Colaboradores Afastados",  "AFASTADO",         "AFASTADO"),
-    ("Cadastros Adicionais",     "EM_CONFERENCIA",   "ATIVO"),
+    ("Cadastros Adicionais",     "CADASTRO_INICIAL", "ATIVO"),
     ("Cadastro Inicial",         "CADASTRO_INICIAL", "ATIVO"),
     ("Cadastro Cancelado",       "CANCELADO",        "DESLIGADO"),
-    # Esta é a que não tinha par, e ele apontou: *"Não existe = Solicitações
-    # DP."* Vai para Inicial, que é o que a etapa quer dizer — "o DP ainda não
-    # olhou".
-    ("Solicitações DP",          "CADASTRO_INICIAL", "ATIVO"),
+    # Esta não tinha par, e ele apontou: *"Não existe = Solicitações DP."*
+    # Eu a mandei para Inicial; ele corrigiu no mesmo dia, com o motivo:
+    # *"correlacione com a etapa Na contabilidade, porque senão eu vou perder
+    # meu controle."* É o dono do processo dizendo o que a fase significa.
+    ("Solicitações DP",          "NA_CONTABILIDADE", "ATIVO"),
 ])
 def test_a_fase_da_planilha_vira_a_etapa_do_ERP(fase, etapa, situacao):
     lido = _linha(**{"Fase Atual": fase})
@@ -568,7 +569,7 @@ def test_a_data_de_saida_manda_mais_que_a_fase():
     o cadastro finalizado."*"""
     lido = _linha(**{"Fase Atual": "Solicitações DP",
                      "Data de Saída": "10/03/2025"})
-    assert lido["etapa"] == "CADASTRO_INICIAL"
+    assert lido["etapa"] == "NA_CONTABILIDADE"
     assert lido["situacao"] == "DESLIGADO"
 
 
@@ -631,3 +632,139 @@ def test_a_lista_de_colunas_que_eu_leio_cobre_as_que_ele_ditou():
                    "Nº CTPS", "Série (CTPS)", "UF (CTPS)",
                    "Data de Emissão (CTPS)"):
         assert pl._cru(coluna) in uso, coluna
+
+
+# ---------------------------------------------------------------------------
+# "SÓ QUERO OS QUE EU COLOQUEI PRA IMPORTAR" (17/11/2026)
+#
+# Ele, depois de uma importação: *"tem mais gente no ERP do que eu coloquei
+# para importar."*
+#
+# Duas causas, as duas consertadas, e as duas aqui:
+#   1. cadastrar quem falta era PADRÃO. Criar gente é a única coisa que esta
+#      importação faz que não se desfaz rodando de novo — não pode ser padrão;
+#   2. a rota caía na PLANILHA INTEIRA quando não entendia o CPF digitado.
+#      Campo em branco quer dizer "tudo", e CPF com um dígito faltando virava
+#      campo em branco: "importe estas três" virava "importe as 700", calado.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_por_padrao_a_importacao_NAO_cria_gente(mundo):
+    """Sem pedir, ninguém nasce."""
+    r = pl.importar(mundo["s"], mundo["dp"], gravar=True,
+                    ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
+                                "Nome Completo": "NINGUEM CONHECIDO"}))
+    assert not r["criadas"]
+    assert [x["cpf"] for x in r["sem_cadastro"]] == ["11144477735"]
+
+
+@pytest.mark.banco
+def test_cadastro_criado_por_engano_pode_ser_apagado(mundo):
+    """Cadastro criado por engano é lixo, não história: inativá-lo deixaria no
+    sistema alguém que nunca trabalhou aqui, aparecendo em busca para sempre."""
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    pl.importar(mundo["s"], mundo["dp"], gravar=True, criar=True,
+                ler=_aba(**{"CPF (Cadastro de Pessoa Física)": "111.444.777-35",
+                            "Nome Completo": "ENTROU SEM SER PEDIDO"}))
+    mundo["s"].flush()
+    nova = mundo["s"].scalars(
+        select(Colaborador).where(Colaborador.cpf == "11144477735")).first()
+    assert nova is not None
+
+    # Ela aparece na lista de "criados recentemente", que é como ele a acha.
+    recentes = svc.criados_recentemente(mundo["s"], horas=48)
+    assert any(p["cpf"] == "11144477735" for p in recentes)
+
+    svc.remover_cadastro(mundo["s"], nova.id, mundo["dp"])
+    mundo["s"].flush()
+    assert mundo["s"].scalars(
+        select(Colaborador).where(Colaborador.cpf == "11144477735")).first() is None
+
+
+@pytest.mark.banco
+def test_o_que_esta_pendurado_na_pessoa_VAI_JUNTO(mundo):
+    """Ele, em 17/11/2026, vendo a recusa de alguém que ele nunca tocou:
+    *"Como se nunca fiz nada no ERP?"* — e depois *"não quero descobrir,
+    quero EXCLUIR."*
+
+    O que "segurava" essas pessoas era o documento que a PRÓPRIA importação
+    anexou e a linha que o ponto criou. Chamar isso de "movimento no sistema"
+    é chamar de trabalho o rastro da carga que ele quer desfazer.
+    """
+    from sqlalchemy import select, text
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    mundo["s"].execute(text(
+        "INSERT INTO dp_pedidos (numero, template, colaborador_id)"
+        " VALUES ('TESTE-1', 'CADASTRO', :c)"),
+        {"c": mundo["pessoa"].id})
+    mundo["s"].flush()
+
+    r = svc.remover_cadastro(mundo["s"], mundo["pessoa"].id, mundo["dp"],
+                             levar_junto=True)
+    mundo["s"].flush()
+    assert mundo["s"].scalars(select(Colaborador).where(
+        Colaborador.cpf == "09676749486")).first() is None
+    # E o relatório DIZ o que foi junto — é o que substitui a recusa.
+    assert r["levou_junto"].get("public.dp_pedidos") == 1
+
+
+@pytest.mark.banco
+def test_sem_levar_junto_o_banco_ainda_recusa(mundo):
+    """A porta estreita continua existindo para quem chamar sem autorização
+    explícita: apagar levando tudo é escolha de quem chama, não padrão."""
+    from sqlalchemy import text
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    mundo["s"].execute(text(
+        "INSERT INTO dp_pedidos (numero, template, colaborador_id)"
+        " VALUES ('TESTE-2', 'CADASTRO', :c)"),
+        {"c": mundo["pessoa"].id})
+    mundo["s"].flush()
+    with pytest.raises(ErroValidacao):
+        svc.remover_cadastro(mundo["s"], mundo["pessoa"].id, mundo["dp"])
+
+
+@pytest.mark.banco
+def test_quem_bateu_ponto_e_DESLIGADA_e_nao_apagada(mundo):
+    """Regra dele, em 17/11/2026: *"tem ponto, desligado. Não tem ponto,
+    excluir. É o único impeditivo."*
+
+    E ele está certo pelo motivo mais forte que existe aqui: batida de ponto é
+    REGISTRO LEGAL do REP-P. Quem bateu ponto trabalhou de verdade — apagar a
+    marcação destruiria a prova da jornada. Desligar tira a pessoa da operação
+    e preserva o que a lei manda guardar.
+
+    ⚠️ O teste só vale com o schema do ponto no banco; sem ele, não há o que
+    conferir e ele é pulado — em vez de passar por engano.
+    """
+    from sqlalchemy import select, text
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    s = mundo["s"]
+    try:
+        with s.begin_nested():
+            s.execute(text("SELECT 1 FROM ponto.marcacoes LIMIT 1"))
+    except Exception:                              # noqa: BLE001
+        pytest.skip("o schema do ponto não existe neste banco")
+
+    s.execute(text(
+        "INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id,"
+        " data_referencia, origem, hash_encadeado)"
+        " VALUES (999001, :c, :o, CURRENT_DATE, 'PWA', 'teste')"),
+        {"c": mundo["pessoa"].id, "o": mundo["obra"].id})
+    s.flush()
+
+    r = svc.remover_cadastro(s, mundo["pessoa"].id, mundo["dp"],
+                             levar_junto=True)
+    s.flush()
+    assert r["desligada"] is True and r["batidas"] == 1
+    # A pessoa CONTINUA no cadastro, e a batida também.
+    viva = s.scalars(select(Colaborador).where(
+        Colaborador.cpf == "09676749486")).first()
+    assert viva is not None
+    assert viva.situacao == "DESLIGADO" and viva.etapa == "DESLIGADO"
+    assert s.execute(text("SELECT COUNT(*) FROM ponto.marcacoes"
+                          " WHERE colaborador_id = :c"),
+                     {"c": viva.id}).scalar() == 1

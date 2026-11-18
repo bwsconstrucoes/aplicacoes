@@ -407,6 +407,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Que batidas faltam ao Fulano entre tal e tal dia, pela escala? 🔒 (janela da pessoa › "📅 Completar o período pela escala" › "Ver o que vai entrar": a prévia dia a dia, sem gravar nada; até 31 dias; só quem trata o ponto; desde 13/11/2026)
 - Quantas batidas a gestão incluiu em lote para o Fulano? (ajustes com o motivo "incluída em lote pela gestão" — no espelho e nos pedidos da pessoa; ❌ ainda não há um relatório só dessas)
 - O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
+- Que rondas foram feitas sem foto, e de quem? (Alertas › Tipo "Ronda registrada sem foto", um por ronda, com o motivo; e nas telas Rondas / Quadro › Rondas o chip "· sem foto"; desde 17/11/2026; a localização sempre foi gravada)
 - Quais alertas do mês passado ainda estão abertos? (Alertas › Período "Mês anterior", Situação "Abertos"; "mês passado" = o DIA do alerta no mês anterior, não o dia em que o alerta foi criado; desde 10/11/2026)
 - Quantos alertas a obra X tem abertos? (Alertas › filtro "Obra", com a contagem de cada; muda com o período, o tipo e a gravidade escolhidos, e com as obras de quem pergunta)
 - Quantos alertas de cada tipo estão abertos? (Alertas › filtro "Tipo de alerta", com a contagem de cada; muda com a situação e a gravidade escolhidas, e com as obras de quem pergunta)
@@ -2430,6 +2431,315 @@ Fortes, o ERP guarda o quadro de hoje" — não "não sei".
   comparar CID).
 - **"Qual a jornada contratual do fulano?"** — está na ficha e não é lida; a
   escala de verdade é a do ponto.
+
+## 3z-octies. QUEM ENTRA EM QUE TELA, E QUEM PEDIU ACESSO (17/11/2026)
+
+Nasceu da pergunta dele: *"nós temos ponto, nós temos portal e temos ERP. Para
+o ERP ou portal, onde é o login? Como é que eu migro de uma tela para outra?"*
+— e do que veio em seguida: a pessoa pede o acesso ao portal pelo celular do
+ponto, informando o e-mail dela.
+
+**⚠️ PALAVRA AMBÍGUA NOVA: "ACESSO".** São três coisas diferentes, e misturá-las
+dá número errado:
+
+| Se ele disser | Quer dizer | Onde mora |
+|---|---|---|
+| "acesso ao ponto" | CPF + PIN de 6 dígitos, no celular | `ponto.colaborador_acesso` |
+| "acesso ao sistema" / "ao portal" / "ao ERP" | e-mail + senha (é O MESMO para portal e ERP) | `usuarios`, ligado por `colaboradores.usuario_id` |
+| "pedido de acesso" | a fila de quem pediu e ainda não foi liberado | `portal_pedidos_de_acesso` |
+
+**Na dúvida, a resposta diz qual dos três está contando.** "14 pessoas têm
+acesso" sem dizer a qual é a resposta que ele não tem como conferir.
+
+### Perguntas que o sistema responde
+
+- **"Quem pediu acesso ao portal e ainda não foi liberado?"** — a fila, com
+  nome, e-mail informado e a obra em que a pessoa bate ponto.
+- **"Faz quanto tempo que o fulano está esperando acesso?"** — `criado_em` do
+  pedido.
+- **"Quantas pessoas pediram acesso neste mês?"** / **"quantas foram
+  recusadas, e por quê?"** — o motivo fica gravado.
+- **"Quem tem acesso ao sistema?"** / **"quem é colaborador E tem login?"** —
+  `colaboradores.usuario_id` preenchido e `usuarios.ativo`.
+- **"Quem tem login e já foi desligado?"** — é a pergunta que mais importa:
+  acesso de quem saiu da empresa. A ligação do cadastro ao login (migração
+  096) existe exatamente para isso.
+- **"O fulano já criou a senha dele?"** — o convite tem `usado_em`; sem ele, o
+  convite foi enviado e a pessoa não entrou ainda.
+- **"O convite do fulano saiu mesmo?"** / **"por que ele não recebeu?"** — o
+  envio fica registrado, e desde 18/11/2026 o LINK do convite sempre existe:
+  quando o e-mail não sai (conta do sistema não configurada, servidor fora do
+  ar), a tela mostra o link para entregar por WhatsApp. "Liberado" e "recebeu"
+  são duas coisas, e a resposta precisa dizer qual das duas.
+- **"Quem pode liberar acesso ao portal?"** — desde 18/11/2026, quem tem a ação
+  `liberar_acesso_portal`: ADMIN e DEPARTAMENTO_PESSOAL por padrão, mais quem
+  tiver a seção "Pessoal › Acesso ao portal" marcada no cadastro. ⚠️ **não
+  confundir com `gerir_usuarios`**, que é a tela de operadores inteira e
+  continua só do ADMIN — quem resolve a fila não cria operador com perfil
+  escolhido.
+- **"Quem liberou o acesso do fulano?"** — fica em `decidido_por` no pedido, e
+  na trilha do operador criado.
+- **"Quem tem acesso e nunca entrou?"** — convite não usado + nenhum evento.
+- **"De qual obra o fulano está cuidando?"** — ⚠️ **a resposta vem do PONTO**
+  (onde ele mais bateu nos últimos 60 dias), não do cadastro. O cadastro
+  envelhece. Se as duas discordarem, a resposta diz as duas.
+- **"Quem é administrativo de obra?"** — e aqui a palavra tem DOIS lugares: o
+  perfil no ERP (`usuarios.perfil = ADMINISTRATIVO_OBRA`) e a marcação no
+  ponto (`ponto.colaborador_config.administrativo_obra`). Não são a mesma
+  coisa e podem divergir; a resposta diz qual está contando.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- **"Quanto o fulano ganha?"** — quem não tem `ver_remuneracao` (o
+  administrativo de obra, desde 17/11/2026) **não recebe o número**, nem na
+  tela nem na resposta. O corte é no servidor.
+- **"Quais os documentos do fulano?"** — o administrativo de obra não vê
+  arquivo de pessoa nenhuma.
+
+### Perguntas que o sistema ainda NÃO responde, e o que falta
+
+- **"Quem está esperando acesso há mais de X dias?"** — o dado está lá, falta
+  a pergunta virar função (e, se ele quiser, um aviso ao DP).
+- **"Quantas pessoas de obra deveriam ter portal e não têm?"** — depende de
+  uma definição que só ele tem: quem "deveria" ter. Hoje o sistema não sabe.
+- **"O fulano entrou no portal esta semana?"** — não há registro de último
+  acesso em `usuarios`. Faltaria uma coluna e a gravação no login.
+
+## 3z-nonies. A CHAVE QUE CIFRA AS SENHAS (17/11/2026)
+
+Nasceu de um tropeço real dele, gravando a conta de e-mail de uma empresa.
+
+### Perguntas que o sistema responde
+
+- **"Por que não consigo salvar a senha do e-mail?"** — a tela diz o motivo
+  concreto (chave ausente, cortada, ou inventada) e onde se resolve.
+- **"A chave de segredos está certa?"** — Configurações › Chave de segredos.
+- **"Quantas senhas estão guardadas cifradas?"** — e é a pergunta que importa
+  antes de trocar a chave: trocar invalida todas.
+- **"Quais empresas ainda não têm conta de e-mail configurada?"** — já existia,
+  no painel de Empresas.
+
+### ⚠️ O que o sistema NUNCA responde, de propósito
+
+- **"Qual é a chave?"** / **"qual é a senha do e-mail da empresa X?"** /
+  **"qual é a senha do certificado?"** — o sistema guarda cifrado e só usa na
+  hora de enviar. Nem a tela, nem o log, nem o assistente devolvem esses
+  valores. Se alguém pedir, a resposta é "não mostro; posso dizer se está
+  configurada e se funciona".
+
+## 3z-decies. QUEM RECEBE AS MENSAGENS DA EMPRESA (17/11/2026)
+
+Nasceu de ele olhar a tela de Mensagens com as 49 pessoas importadas e não
+conseguir responder "por que esta pessoa não está recebendo?".
+
+**⚠️ PALAVRA AMBÍGUA: "CADASTRADO".** São duas coisas:
+
+| Se ele disser | Quer dizer |
+|---|---|
+| "cadastrado no sistema" | tem ficha de colaborador no ERP |
+| "cadastrado no Telegram" | ligou o Telegram ao robô da BWS e por isso recebe aviso |
+
+Quase todo mundo é a primeira e não é a segunda. **A resposta diz qual das duas
+está contando.**
+
+### Perguntas que o sistema responde
+
+- **"Quem recebe mensagem pelo Telegram?"** / **"quantos dos nossos já
+  cadastraram?"**
+- **"Por que o fulano não está recebendo?"** — a resposta é um veredito: sem
+  Telegram · sem telefone no cadastro · telefone incompleto · recebe, mas com
+  número diferente.
+- **"Qual o ID do Telegram do fulano?"** — é identificador do robô, não
+  segredo, e serve exatamente para conferir quando algo dá errado.
+- **"Quem está com problema?"** — todo mundo cujo veredito não é "Recebe".
+- **"Quem perdeu mensagem nos últimos 30 dias, e quantas?"**
+- **"Quem foi convidado e não se cadastrou?"** / **"quem abriu o link e parou
+  no meio?"**
+- **"Quais colaboradores não têm telefone no cadastro?"** — é a pergunta que
+  destrava todas as outras, porque sem telefone não há convite possível.
+- **"Quem da obra X não recebe?"** — a obra e o cargo vêm do cadastro do ERP.
+- **"Quem tem Telegram ligado e não é mais da empresa?"** — "Cadastros a
+  conferir". ⚠️ O sistema **não desliga sozinho**: quem saiu ainda costuma
+  precisar do último contracheque pelo robô.
+
+### Perguntas que o sistema ainda NÃO responde, e o que falta
+
+- **"Esta pessoa leu a mensagem?"** — nem o Telegram nem o Z-API devolvem
+  leitura para o sistema. O registro sabe que **saiu**, não que foi lida, e
+  essa diferença tem de aparecer na resposta.
+- **"Quanto tempo o fulano levou para se cadastrar depois do convite?"** — os
+  dois carimbos existem (convite e cadastro); falta a conta.
+- **"Quem nunca recebeu NADA desde que entrou na empresa?"** — dá para
+  deduzir, mas não há pergunta pronta.
+
+---
+
+## 3z-undecies. AS DATAS DA SAÍDA, O INÍCIO ANTES DO REGISTRO E A CONTA BANCÁRIA (17/11/2026)
+
+Os campos que a varredura de 17/11 trouxe para a ficha tornam estas perguntas
+possíveis — e **antes dela nenhuma tinha resposta pela tela**, porque o dado
+existia no banco e não aparecia em lugar nenhum.
+
+### O que dá para perguntar agora
+
+- **"Quem está em aviso prévio hoje?"** — as pessoas com `aviso_previo`
+  preenchido e sem data de saída ainda.
+- **"Quando foi o último dia trabalhado do fulano?"** — e ⚠️ ele é **diferente
+  da data de saída**: o último dia é o que a pessoa de fato trabalhou; a data
+  de saída é a que tira do ponto e da folha. Toda resposta que misturar os dois
+  está errada.
+- **"Quem saiu neste mês?"** — por `demissao` (data de saída).
+- **"Quem começou a trabalhar antes de ser registrado, e por quantos dias?"** —
+  a diferença entre **data de início** e **data de admissão**. ⚠️ É a pergunta
+  que mais vale a pena conferir: **é esse intervalo que a folha usa para decidir
+  se o dia é pago como DIÁRIA ou como CTPS** (`analisesps/folha_vinculo.py`).
+  Resposta errada aqui é pagamento errado.
+- **"Quem recebe por depósito e não por Pix?"** — quem tem banco, agência e
+  conta e não tem chave Pix.
+- **"Que gente tem dados bancários pela metade?"** — banco sem agência, agência
+  sem conta. ⚠️ Vale perguntar porque **nada no sistema barra isso**.
+
+### As palavras ambíguas desta parte
+
+| Palavra | As duas leituras |
+|---|---|
+| **"saiu"** | pela **data de saída** (`demissao`) ou pela **etapa Desligado**? Desde 17/11 a etapa define a situação, mas a DATA é digitada à parte — e as duas podem discordar |
+| **"último dia"** | último dia **trabalhado** ou último dia **de vínculo**? São campos diferentes |
+| **"entrou na empresa"** | **data de início** (começou a trabalhar) ou **admissão** (foi registrado)? |
+
+### O que o sistema ainda NÃO responde
+
+- **"Em quantos casos a data de saída e a etapa discordam?"** — a conta dá, mas
+  não há pergunta pronta, e é justamente onde um erro de digitação se esconde:
+  alguém com data de saída preenchida e etapa ainda em Concluído **continua
+  batendo ponto**.
+- **"Esta pessoa recebeu tudo o que devia na saída?"** — o sistema não tem a
+  rescisão; ela mora no Fortes.
+
+---
+
+## 3z-duodecies. AVISO PRÉVIO: quem está saindo mas ainda trabalha (17/11/2026)
+
+Esta parte nasceu de um defeito, e as perguntas abaixo existem para que ele não
+volte sem ninguém notar. O defeito: **data de saída marcada para o futuro
+valia como saída de ontem** — e quem cumpria aviso prévio parava de bater ponto
+e saía da folha.
+
+### A palavra que precisava de definição, e é a mais perigosa daqui
+
+| Palavra | As leituras possíveis |
+|---|---|
+| **"desligado"** | ① a caixinha `situacao` diz DESLIGADO; ② a **data de saída já passou**; ③ a etapa do cadastro é "Desligado". **As três podem discordar**, e discordavam |
+
+**A régua do sistema, decidida em 17/11/2026 e igual em todo lugar:** desligado
+é quem tem **data de saída ANTERIOR a hoje**. Saída marcada para hoje ainda é
+gente ativa hoje — **a pessoa trabalha o último dia**, e a batida desse dia é o
+que a rescisão usa.
+
+### O que dá para perguntar
+
+- **"Quem está cumprindo aviso prévio?"** — tem data de saída marcada que ainda
+  não chegou. ⚠️ Essa gente **está ativa**: bate ponto, entra na folha e tem
+  acesso ao sistema.
+- **"Quem sai nos próximos 15 dias?"** — a lista que o DP precisa para preparar
+  rescisão.
+- **"Quantos saíram de verdade neste mês?"** — só os de data já passada.
+- **"Tem alguém marcado como desligado que ainda está trabalhando?"** — a
+  pergunta que acha o defeito de novo: situação DESLIGADO com data de saída de
+  hoje ou depois. **Hoje a resposta certa é zero.**
+- **"Tem alguém na coluna Desligado do quadro com a situação ativa?"** — a
+  mesma incoerência, pelo outro lado.
+
+### Perguntas que mudam de resposta conforme quem pergunta
+
+- **"Quantas pessoas a obra X tem hoje?"** — quem está em aviso prévio **conta**:
+  está trabalhando. Resposta que a exclui está errada.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quantas pessoas têm data de saída digitada errada?"** — não dá. Uma data
+  no futuro distante (2027 em vez de 2026) é indistinguível de um aviso prévio
+  longo. O sinal possível seria "saída marcada para mais de 90 dias", que não
+  existe como pergunta nem como alerta.
+- **"Quem perdeu batida de ponto no período em que foi marcado desligado por
+  engano?"** — esta é a conta do estrago, e ela importa: dia sem batida é
+  buraco na prova da jornada. Os dados existem (as marcações e as datas), mas
+  a conta não está escrita.
+
+---
+
+## 3z-terdecies. QUEM SAIU HOJE, E O QUE CAIU COM ELE (17/11/2026)
+
+A virada do dia dos desligamentos torna estas perguntas possíveis — e a
+primeira delas é a que o DP vai querer todo dia.
+
+### O que dá para perguntar
+
+- **"Quem saiu hoje?"** — quem a virada do dia desligou nesta data. ⚠️ A
+  resposta vem da **trilha** de cada pessoa (ação "Desligado", com o motivo
+  "a virada do dia: a data de saída chegou"), **não de uma tela** — hoje não
+  existe um painel "saíram hoje", e fazer um é trabalho novo.
+- **"Quem perdeu o acesso ao sistema por ter saído?"** — a trilha do usuário
+  registra "Acesso bloqueado" com o motivo.
+- **"Tem alguém com data de saída vencida e ainda ativo?"** — **a resposta
+  certa é zero**, e se não for, a virada do dia não está rodando. É a pergunta
+  que vigia o mecanismo.
+- **"Quem foi reativado depois de ter sido desligado pela data?"** — as duas
+  marcas estão na trilha, em ordem.
+
+### A palavra ambígua desta parte
+
+| Palavra | As duas leituras |
+|---|---|
+| **"cortar o acesso"** | ① o **ponto** (bater, Meu ponto, PIN, QR, celular) — cai pela data, sozinho; ② o **login no ERP e no portal** — cai na virada do dia. São mecanismos diferentes, e uma resposta que os misture está errada |
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quantos dias a pessoa ficou com acesso depois de ter saído?"** — a conta
+  dá (a data de saída e o carimbo do bloqueio existem), mas não está escrita. É
+  a pergunta que mediria se a virada do dia está atrasando.
+- **"O DP foi avisado de que estas pessoas saíram hoje?"** — **não há aviso
+  nenhum.** A virada desliga em silêncio, e isso é escolha dele ("corta tudo"),
+  não esquecimento. Se um dia ele quiser o aviso, é trabalho novo.
+
+---
+
+## 3z-quaterdecies. AS DEMANDAS EM VOLTA DE UMA PESSOA (17/11/2026)
+
+A aba Demandas, dentro do cadastro, torna estas perguntas possíveis — e elas
+são as que o DP faz todo dia, sobre uma pessoa específica.
+
+### O que dá para perguntar
+
+- **"O que está pendente com a contabilidade desta pessoa?"** — os pedidos em
+  aberto, com prazo e com o documento que fecha cada um.
+- **"Este pedido está atrasado?"** — o prazo é em dias ÚTEIS a partir do envio.
+- **"O que já foi pedido à contabilidade sobre esta pessoa, e quando?"** — a
+  trilha de cada pedido, com o texto que foi mandado (guardado, não
+  recalculado: o pedido de março mostra o que foi pedido em março).
+- **"Por que não consigo concluir este cadastro?"** — a trava responde com o
+  motivo e o caminho.
+- **"Que pedidos a obra fez sobre esta pessoa?"** — e em que pé estão.
+- **"Quais pedidos à contabilidade eu POSSO abrir para esta pessoa agora?"** —
+  a lista já exclui os que não podem sair, dizendo o que falta em cada um.
+
+### As palavras ambíguas desta parte, e são três
+
+| Palavra | As leituras |
+|---|---|
+| **"pedido"** | ① o que a obra pede ao DP (`dp_solicitacoes`, nº DP-…); ② o que o DP pede à contabilidade (`dp_pedidos`, nº CT-…). **São filas diferentes** e uma resposta que as some está errada |
+| **"pendente"** | esperando a contabilidade? esperando o DP? esperando documento da pessoa? |
+| **"concluído"** | ① o PEDIDO concluído; ② o CADASTRO na etapa Concluído. O segundo depende do primeiro, mas não são a mesma coisa |
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quanto tempo a contabilidade leva, em média, por tipo de pedido?"** — os
+  carimbos existem (aberto, enviado, respondido, concluído); a conta não está
+  escrita. É a pergunta que diria se o prazo de 2 ou 3 dias úteis é realista.
+- **"Que cadastros estão travados, e por quê?"** — a trava responde um por um,
+  quando alguém tenta. Não há lista de "os travados e o motivo".
+- **"Atender o pedido do DP aqui dentro"** — a aba mostra e leva para a tela de
+  Solicitações. Atender ainda é lá.
 
 ---
 

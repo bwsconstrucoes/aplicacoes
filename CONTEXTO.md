@@ -802,6 +802,51 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 17/11/2026 — Os três logins passam a se enxergar, e a pessoa pede o acesso pelo ponto (atravessa ERP e ponto)
+
+**A pergunta que abriu isto:** *"nós temos ponto, nós temos portal e temos ERP.
+Para o ERP ou portal, onde é o login? Como é que eu migro de uma tela para
+outra? Como é que eu sei que eu estou no portal?"*
+
+**O mapa, que estava certo em cada parte e errado no conjunto:**
+
+| Tela | Endereço | Entra com | Autenticação |
+|---|---|---|---|
+| Meu ponto | `/ponto/app` | CPF + **PIN de 6 dígitos** | própria, código por WhatsApp |
+| Portal | `/erp/portal` | **e-mail + senha** | sessão do ERP (`ver_erp`) |
+| ERP | `/erp` | **e-mail + senha** | sessão do ERP |
+
+Portal e ERP são a MESMA porta. Faltava dizer isso na tela e ligar os dois —
+agora o portal se identifica ("Portal da obra"), tem link para `/erp` (só para
+quem tem mais que o portal) e o ERP tem o botão "Portal" de volta.
+
+**A decisão de arquitetura:** **o pedido de acesso nasce no ponto, a decisão
+continua no ERP.** Motivo: o acesso ao ERP só nasce com e-mail, e o e-mail da
+gente de obra o sistema não tem — ninguém pede e-mail para contratar. O DP não
+adivinha. A pessoa sabe, e já está autenticada no ponto todo dia.
+
+- **A fila é `public.portal_pedidos_de_acesso`** (migração **108 do ERP**), não
+  uma tabela do schema `ponto`. Quem decide é o ERP e o resultado da decisão é
+  uma linha em `usuarios` — tabela do ERP. Pôr a fila no ponto obrigaria a
+  apertar DOIS botões de migração para uma coisa só funcionar.
+- **A regra mora num lugar só**: `app/apps/erp/core/auth/pedidos_de_portal.py`.
+  O ponto chama essa função (`app/apps/ponto/core/portal_do_erp.py`) e não tem
+  SQL da tabela — duas cópias da mesma regra divergem.
+- **`ON DELETE CASCADE` no colaborador, de propósito:** pedido de acesso não é
+  movimento da pessoa no sistema, então não pode entrar na lista do que impede
+  apagar um cadastro (a regra de 17/11: tem ponto, desliga; não tem, exclui).
+- **Criar acesso tem UMA implementação**, `routes._liberar_acesso`. A ficha da
+  pessoa e a fila do portal chamam a mesma. Era a cobrança dele do mesmo dia
+  sobre os três botões de importar: caminho novo que faz "quase a mesma coisa"
+  divergindo em silêncio.
+- **Funciona antes do botão da migração.** O ponto pergunta se a tabela existe;
+  sem ela, a opção não aparece no menu. Errar para o lado de esconder.
+
+⚠️ **Em aberto, e é alçada dele:** quem libera é **ADMIN** (`gerir_usuarios`),
+não o DP. A regra já era essa antes da fila. O efeito prático é que o DP vê a
+fila e não resolve — mudar é uma linha em `permissoes.py`, com a consequência de
+o DP passar a poder criar acesso para qualquer um, inclusive para si.
+
 ### 17/11/2026 — A chamada do Make não espera mais a baixa; e "questionar visando a otimização" virou regra (atravessa áreas)
 
 **A parte do BaixaBradesco** (detalhe em `app/apps/baixabradesco/HISTORICO.md`):

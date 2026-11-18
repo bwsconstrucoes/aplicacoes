@@ -89,6 +89,25 @@ def _data(v: Any) -> Optional[str]:
     return None
 
 
+def _ja_passou(iso: Any) -> bool:
+    """A data (em ISO, como `_data` devolve) já passou?
+
+    ⚑ Existe por causa do estrago de 17/11/2026: a importação lia "tem data de
+    saída" como "a pessoa saiu", e marcou DESLIGADO quem tinha saída marcada
+    para depois de hoje — gente cumprindo aviso prévio, que trabalha e bate
+    ponto. A régua (`<` hoje) é a mesma do ponto: a pessoa trabalha o último
+    dia. Data que não dá para ler NÃO é tratada como passada — na dúvida, a
+    pessoa continua ativa, que é o lado seguro.
+    """
+    bruto = _texto(iso)[:10]
+    if not bruto:
+        return False
+    try:
+        return datetime.strptime(bruto, "%Y-%m-%d").date() < datetime.now().date()
+    except ValueError:
+        return False
+
+
 def _dinheiro(v: Any) -> Optional[Decimal]:
     """"1.995,20" → 1995.20. Zero vira None: a planilha usa 0,00 para "nada"."""
     bruto = _texto(v).replace("R$", "").strip()
@@ -503,10 +522,27 @@ def ler_linha(cabecalho: dict[str, int], linha: list[str]) -> dict[str, Any]:
                 "motivo": ("não entrou: a fase é “Cadastro Concluído”, que é "
                            "gente trabalhando — a data de saída está errada e "
                            "precisa ser apagada na planilha")})
-        else:
+        elif _ja_passou(saida.get("demissao")):
             # Nas outras fases a data manda: a pessoa saiu, o cadastro é que
             # não foi finalizado (o caso de "Solicitações DP").
             saida["situacao"] = "DESLIGADO"
+        else:
+            # ⚑ SAÍDA AINDA NÃO CHEGOU = AVISO PRÉVIO (17/11/2026). Ele:
+            # *"pessoas que estavam com último dia trabalhado mesmo depois de
+            # hoje e estavam na fase Solicitações DP (…) foram considerados
+            # desligados."*
+            #
+            # Era este `else` que fazia isso: a data existia, então a pessoa
+            # "saiu" — mesmo marcada para a semana seguinte. Quem cumpre aviso
+            # prévio trabalha, e parou de conseguir bater ponto quando a base
+            # do ponto virou o ERP. A data continua entrando; a SITUAÇÃO é que
+            # não se antecipa.
+            nao_entendi.append({
+                "coluna": "Data de Saída", "campo": "situacao",
+                "valor": str(saida.get("demissao")),
+                "motivo": ("a data de saída ainda não chegou: a pessoa fica "
+                           "ATIVA (aviso prévio) e a data foi gravada — ela "
+                           "sai do ponto e da folha sozinha no dia")})
 
     nomes_saida = {chave: crua(nomes) for chave, nomes in NOMES.items()}
     # "00.079.526/0001-09 - BWS" → só o CNPJ.
@@ -622,7 +658,8 @@ def carregar_por_cpf(planilha_id: str = "") -> dict[str, dict[str, Any]]:
 # ===========================================================================
 def importar(s, usuario=None, *, gravar: bool = False,
              cpfs: Optional[list[str]] = None,
-             criar: bool = True,
+             criar: bool = False,
+             so_estes: bool = False,
              ler=None) -> dict[str, Any]:
     """Enche o cadastro de quem está na planilha, e cadastra quem falta.
 
@@ -642,6 +679,29 @@ def importar(s, usuario=None, *, gravar: bool = False,
 
     Quem a planilha mostra como desligado continua fora, e é dito no relatório
     com esse motivo — não com "não existe no ERP", que não explicava nada.
+
+    ⚑ `so_estes` LIMPA A BASE, e é a coisa mais perigosa deste arquivo.
+
+    Ele pediu em 17/11/2026, depois de achar no ERP gente que havia entrado
+    numa carga antiga (a do Análise de SPs, que alimentava o ponto):
+
+        *"Eu já tinha cadastrado o pessoal que tava vindo lá da análise SPs
+         (…) mas eu não quero mais. Eu quero que esteja só o pessoal que eu
+         quero importar. (…) o CPF que não tiver dentro da minha lista de
+         importação, eu quero que seja excluído dessa base de dados aqui."*
+
+    Então, com `so_estes`, quem está no ERP e NÃO está na lista de CPFs é
+    APAGADO. Três travas, e nenhuma é opcional:
+
+      1. **Sem lista de CPFs, não faz nada.** Lista vazia quer dizer "a
+         planilha inteira", e isto somado àquilo apagaria o cadastro todo.
+         É o erro que não se desfaz, então ele é impedido aqui, não avisado.
+      2. **Quem tem movimento não é apagada** — a recusa vem do banco, pelas
+         chaves (ver `pessoas.remover_cadastro`), e volta no relatório com o
+         nome e o motivo. Gente com título, documento, pedido ou ponto não é
+         engano de carga.
+      3. **`gravar=False` só CONTA**, sem apagar nada: é como ele vê o tamanho
+         do estrago antes de autorizar.
     """
     from app.apps.erp.core.cadastros import pessoas as svc
     from app.apps.erp.core.comum.auditoria import ErroValidacao
@@ -658,6 +718,8 @@ def importar(s, usuario=None, *, gravar: bool = False,
         "atualizadas": [], "criadas": [], "sem_cadastro": [], "recusadas": [],
         "nao_entendi": [], "cadastros_criados": [],
         "criou": bool(criar),
+        "limpou": bool(so_estes), "apagadas": [], "desligadas": [],
+        "nao_deu_para_apagar": [],
         # As colunas que a planilha tem e este de-para não lê. É a resposta
         # para "por que este campo está vazio?" sem precisar perguntar.
         "colunas_que_eu_nao_uso": sorted(
@@ -836,4 +898,42 @@ def importar(s, usuario=None, *, gravar: bool = False,
         rel["atualizadas"].append(
             {"cpf": cpf, "nome": pessoa.nome,
              "campos": {k: str(v) for k, v in sorted(mudou.items())}})
+
+    # =======================================================================
+    # "SÓ QUERO O PESSOAL QUE EU COLOQUEI PRA IMPORTAR" — ver a docstring.
+    # =======================================================================
+    if so_estes:
+        if not alvo:
+            rel["nao_entendi"].append({
+                "coluna": "—", "campo": "Limpar a base", "valor": "",
+                "motivo": ("não fiz nada: limpar a base exige a lista de CPFs. "
+                           "Sem ela, isto apagaria o cadastro inteiro")})
+            return rel
+        for digitos, pessoa in sorted(por_cpf.items(),
+                                      key=lambda x: x[1].nome or ""):
+            if digitos in alvo:
+                continue
+            if not gravar:
+                rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome})
+                continue
+            try:
+                # ⚑ LEVA JUNTO o que está pendurado na pessoa (documento da
+                # própria importação, linha do ponto, pedido do DP). Ele, em
+                # 17/11/2026, vendo a recusa: *"como se nunca fiz nada no
+                # ERP?"* e *"não quero descobrir, quero EXCLUIR."*
+                r = svc.remover_cadastro(s, pessoa.id, usuario, levar_junto=True)
+                # ⚑ TEM PONTO ⇒ DESLIGADA, não apagada. Regra dele em
+                # 17/11/2026: *"tem ponto, desligado. Não tem ponto, excluir.
+                # É o único impeditivo."* Batida é registro legal do REP-P.
+                if r.get("desligada"):
+                    rel["desligadas"].append({
+                        "cpf": digitos, "nome": pessoa.nome,
+                        "batidas": r.get("batidas") or 0,
+                        "motivo": r.get("motivo") or ""})
+                else:
+                    rel["apagadas"].append({"cpf": digitos, "nome": pessoa.nome,
+                                            "levou_junto": r.get("levou_junto") or {}})
+            except ErroValidacao as e:
+                rel["nao_deu_para_apagar"].append({
+                    "cpf": digitos, "nome": pessoa.nome, "motivo": str(e)[:300]})
     return rel

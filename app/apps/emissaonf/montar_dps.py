@@ -106,12 +106,19 @@ def _grupo_obra(obra, c_trib_nac: str):
 
 
 def montar(card: dict, obra, r, dados_rps, numero_nota, ibge_obra,
-           data_emissao: str, producao: bool) -> nac.DadosDPS:
+           data_emissao: str, producao: bool,
+           subst_chave: str = "", subst_motivo: str = "99",
+           subst_motivo_texto: str = "") -> nac.DadosDPS:
     """Traduz a nota já calculada para a declaração nacional.
 
     `numero_nota` é o número ESPERADO, usado para compor a identificação da
     declaração. O número de verdade da nota é o que a prefeitura devolve depois
     — e pode divergir.
+
+    `subst_chave` faz desta declaração uma SUBSTITUIÇÃO: a chave de acesso da
+    nota que sai de cena vai dentro da declaração, e a plataforma nacional
+    cancela a antiga sozinha (evento `e105102`). Não é preciso mandar evento
+    nenhum depois, nem mexer no portal.
     """
     ano = int(str(data_emissao)[:4])
     mes = int(str(data_emissao)[5:7])
@@ -199,6 +206,9 @@ def montar(card: dict, obra, r, dados_rps, numero_nota, ibge_obra,
     grupo_obra = _grupo_obra(obra, c_trib_nac)
 
     return nac.DadosDPS(
+        subst_chave=subst_chave,
+        subst_motivo=subst_motivo,
+        subst_motivo_texto=subst_motivo_texto,
         serie=1,
         n_dps=numero_dps(numero_nota, ano),
         dh_emi=agora.isoformat(),

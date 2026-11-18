@@ -70,6 +70,18 @@ def aplicar_pendentes() -> dict[str, Any]:
             erro = {"migracao": nome, "erro": texto[:800], "dica": dica}
             logger.exception("ERP: falha na migração %s", nome)
             break
+    # O QUE FOI GUARDADO SOBRE O BANCO DEIXA DE VALER. Há código que pergunta
+    # uma vez se uma tabela/coluna existe e guarda a resposta, para não repetir
+    # a consulta em toda chamada. Depois do botão, essas respostas estão
+    # velhas — e sem esquecê-las o recurso novo só ligaria no minuto seguinte,
+    # ou nunca (o "sim" vale para sempre). Mesmo cuidado que o ponto já tem em
+    # `migracoes_runner.py`.
+    if aplicadas:
+        try:
+            from app.apps.erp.core.auth import pedidos_de_portal
+            pedidos_de_portal.esquecer()
+        except Exception:  # noqa: BLE001 — esquecer é conforto, não pode falhar o botão
+            logger.exception("ERP: falha ao esquecer o que se sabia do banco")
     catalogo = _catalogo_de_documentos() if not erro else {}
     return {"aplicadas": aplicadas, "erro": erro,
             "tipos_de_documento": catalogo,
