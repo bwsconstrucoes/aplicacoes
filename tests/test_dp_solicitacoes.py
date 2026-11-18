@@ -143,7 +143,20 @@ def test_os_rotulos_sao_os_do_pipe_e_nao_os_meus():
     assert "Admissão de Prestador de Serviço" in nomes
     assert "Prestador que passa a ter carteira" not in nomes   # inventado
     assert "Desligamento de Prestador de Serviço" in nomes
-    assert svc.ROTULOS["categoria_alimentacao"] == "Categoria Auxílio Alimentação"
+    # ⚑ ESTE RÓTULO SAIU DO PIPE EM 17/11/2026, e foi O DONO quem mandou:
+    # *"renomear campos (…) Como paga o transporte = Ajuda com Transporte, que
+    # alimenta Categoria do auxílio-transporte; Como paga a alimentação = Ajuda
+    # com Alimentação."*
+    #
+    # A regra "use o termo do Pipe" continua valendo para o resto: ela existe
+    # porque a equipe já está acostumada com aquelas palavras. Quando é ELE que
+    # pede outra palavra, a palavra dele ganha — e aí o teste muda junto, em vez
+    # de travar a tela no nome antigo.
+    assert svc.ROTULOS["categoria_alimentacao"] == "Ajuda com Alimentação"
+    assert svc.ROTULOS["categoria_transporte"] == "Ajuda com Transporte"
+    # ⚑ E "VÍNCULO", no lugar de "Tipo de Documentação para Cadastro" (mesma
+    # data, mesmo motivo): é a palavra que a ficha da pessoa já usa.
+    assert svc.ROTULOS["tipo_documentacao"] == "Vínculo"
     # ⚑ AS OPÇÕES DESTE CAMPO MUDARAM DE FONTE em 15/11/2026, e isto NÃO é
     # voltar a inventar a roda: elas passaram a vir do CADASTRO DE PESSOAS, que
     # é onde o valor fica gravado. Havia duas listas para o mesmo campo — o
@@ -246,6 +259,10 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
         # Obrigatórios desde 15/11/2026 — ver `_cadastro`, abaixo.
         "telefone": "85988887777", "pix_tipo": "CPF", "pix_chave": CPF_B,
         "valor_diaria": "150,00", "tipo_contrato": "PJ",
+        # ⚑ Desde 17/11/2026: PJ declara a empresa dele, e as duas ajudas são
+        # obrigatórias (com "Não recebe" disponível para quem não recebe).
+        "razao_social_pj": "MARIA NOVA SERVICOS LTDA", "cnpj_pj": "71000004000180",
+        "categoria_alimentacao": "NAO_RECEBE", "categoria_transporte": "NAO_RECEBE",
         # Mensalista declara o valor do mês; diarista não tem valor de mês.
         "valor_mes": "3.300,00",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
@@ -597,6 +614,14 @@ def _cadastro(mundo, **extra):
             "valor_diaria": "120,00",
             # Prestador declara QUE tipo de prestador é (CTPS não: é sempre CLT).
             "tipo_contrato": "Autônomo (RPA)",
+            # ⚑ AS DUAS AJUDAS SÃO OBRIGATÓRIAS DESDE 17/11/2026, por decisão
+            # dele: *"renomear campos e torná-los obrigatórios."* Só dá para
+            # exigir porque a lista ganhou "Não recebe" — antes, obrigar
+            # forçaria a inventar uma categoria para quem não recebe nada. O
+            # cadastro de teste usa "Não recebe" justamente para provar que a
+            # resposta existe para esse caso.
+            "categoria_alimentacao": "NAO_RECEBE",
+            "categoria_transporte": "NAO_RECEBE",
             "data_inicio": "2026-05-01"}
     base.update(extra)
     return base
@@ -1033,3 +1058,77 @@ def test_o_cadastro_sem_a_empresa_e_recusado(mundo):
                            "COMPROVANTE-ENDERECO-PESSOA", "CTPS-FOTO",
                            "CTPS-INFORMACOES"]}, mundo["encarregado"])
     assert "Empresa para registro" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# TIPO DE CONTRATO: DUAS LISTAS, UM CAMPO SÓ (17/11/2026)
+#
+# Ele: *"Se Jovem Aprendiz é CTPS, precisamos poder selecionar o tipo de
+# contrato entre: CLT (tempo indeterminado), CLT (tempo determinado), Jovem
+# Aprendiz."*
+#
+# Em 15/11 o campo tinha sido FECHADO para CTPS, com o motivo "CTPS é sempre
+# CLT". A premissa caiu: contrato de aprendizagem tem carteira e não é CLT.
+# Agora o campo abre dos dois lados, com listas diferentes — e estes testes
+# existem para que nunca mais um lado ofereça o contrato do outro, que é o
+# defeito que deixava gravar alguém de carteira como "PJ".
+# ---------------------------------------------------------------------------
+def _admissao():
+    return svc.TIPOS["CADASTRO"]
+
+
+def test_o_tipo_de_contrato_tem_uma_lista_para_cada_documentacao():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    assert set(mapa["CTPS"]) == {"CLT (tempo indeterminado)",
+                                 "CLT (tempo determinado)", "Jovem aprendiz"}
+    assert "PJ" in mapa["PRESTADOR"]
+    # Nenhum contrato aparece nos dois lados: é isso que impede a contradição.
+    assert not set(mapa["CTPS"]) & set(mapa["PRESTADOR"])
+
+
+def test_carteira_NAO_oferece_contrato_de_prestador():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    for proibido in ("PJ", "Autônomo (RPA)", "Autônomo mensalista",
+                     "Pró-labore", "Estágio"):
+        assert proibido not in mapa["CTPS"]
+
+
+def test_prestador_NAO_oferece_contrato_de_carteira():
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    for proibido in ("CLT (tempo indeterminado)", "CLT (tempo determinado)",
+                     "Jovem aprendiz"):
+        assert proibido not in mapa["PRESTADOR"]
+
+
+def test_o_campo_so_abre_depois_de_escolhida_a_documentacao():
+    """Nem antes (alguém responderia "PJ" sem dizer que é CTPS), nem só para
+    um dos lados (era o defeito que este conserto desfaz)."""
+    assert (_admissao()["visiveis_se"]["tipo_contrato"]["tipo_documentacao"]
+            == ("*",))
+
+
+def test_toda_opcao_das_duas_listas_tem_traducao_para_o_codigo():
+    """A tela manda o rótulo; a coluna guarda o código. Opção sem tradução
+    gravaria o texto da caixinha no banco — e nenhum relatório o entende."""
+    mapa = _admissao()["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    traduz = svc.DO_PIPE_PARA_O_CODIGO["tipo_contrato"]
+    for lista in mapa.values():
+        for rotulo in lista:
+            assert rotulo in traduz, f"{rotulo} não tem código"
+
+
+def test_carteira_tambem_EXIGE_o_tipo_de_contrato():
+    """Jovem aprendiz e CLT mudam a folha e a guia — deixar em branco empurra
+    a dúvida para o DP adivinhar depois."""
+    exige = _admissao()["obrigatorios_se"]["tipo_documentacao"]
+    assert "tipo_contrato" in exige["CTPS"]
+    assert "tipo_contrato" in exige["PRESTADOR"]
+
+
+def test_o_formulario_que_a_tela_recebe_leva_as_duas_listas(mundo):
+    """Sem isto a tela mostraria a lista cheia, com os dois lados juntos."""
+    tipos = svc.tipos_para_tela(mundo["s"])
+    cadastro = next(t for t in tipos if t["valor"] == "CADASTRO")
+    mapa = cadastro["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    assert "Jovem aprendiz" in mapa["CTPS"]
+    assert "PJ" in mapa["PRESTADOR"]

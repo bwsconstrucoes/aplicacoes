@@ -521,7 +521,7 @@ def relatorio_vazio(motivo: str) -> dict[str, Any]:
             "campos_preenchidos": 0, "cards_sem_resposta": [], "falhas": [],
             "cargos_sem_par": [], "fases_sem_etapa": [],
             "planilha_nao_entendi": [],
-            "fora_da_planilha": [], "planilha_lida": 0,
+            "fora_da_planilha": [], "planilha_lida": 0, "planilha": {},
             "rotulos": dict(ROTULO_DO_CAMPO),
             "por_pessoa": [], "de_fora": dict(PAPEIS_DE_FORA),
             "cards_pedidos": 0, "cards_sem_pessoa": []}
@@ -940,6 +940,7 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "planilha_nao_entendi": [],
         "fora_da_planilha": [],
         "planilha_lida": 0,
+        "planilha": {},
         # Para a tela falar "Cargo" e não "cargo_id" com quem confere cadastro.
         "rotulos": dict(ROTULO_DO_CAMPO),
         "por_pessoa": [],
@@ -988,8 +989,16 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     # Ao vivo, e não da cópia no banco: a cópia tem 30 das 79 colunas e fica
     # velha entre uma atualização e outra — ele atualizou a planilha, importou,
     # e nada mudou, porque a cópia era de antes.
-    da_planilha = (ler_planilha or _svc_planilha().carregar_por_cpf)()
+    lido = (ler_planilha or _svc_planilha().carregar)()
+    # O diagnóstico vem junto: quantas pessoas, qual aba e o ERRO por extenso
+    # quando a leitura falha — era o que faltava para ele ver o que acontece.
+    if "pessoas" not in lido:                 # leitor antigo, ou teste simples
+        lido = {"pessoas": lido, "erro": "", "planilha": "", "aba": "",
+                "linhas": len(lido), "colunas": 0}
+    da_planilha = lido.get("pessoas") or {}
     relatorio["planilha_lida"] = len(da_planilha)
+    relatorio["planilha"] = {k: lido.get(k) for k in
+                             ("erro", "planilha", "aba", "linhas", "colunas")}
 
     for pessoa in pessoas:
         card = str(pessoa["card"])
@@ -1033,6 +1042,7 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         # dele: os dados do card já estão em "Dados Documentos", e lá os nomes
         # das colunas são legíveis — não se adivinha apelido de campo. Foi por
         # adivinhação que VÍNCULO e PAGAMENTO nunca entraram.
+        do_planilha: dict[str, Any] = {}
         espelho = dict(da_planilha.get(_so_digitos(pessoa.get("cpf") or "")) or {})
         nomes_do_espelho = espelho.pop("_nomes", {}) if espelho else {}
         nao_entendi = espelho.pop("_nao_entendi", []) if espelho else []
@@ -1049,6 +1059,8 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
             ligacoes = _ligacoes_do_espelho(s, nomes_do_espelho)
             achados.update(espelho)
             achados.update(ligacoes)
+            do_planilha.update(espelho)
+            do_planilha.update(ligacoes)
             linha["do_espelho"] = sorted(espelho) + sorted(ligacoes)
             # Nome que a planilha traz e que não existe como cadastro aqui.
             for chave, campo, rotulo in (("cargo", "cargo_id", "Cargo"),
@@ -1070,7 +1082,25 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
             linha["cargo_sem_par"] = cargo_nome
             relatorio["cargos_sem_par"].append(
                 {"nome": pessoa["nome"], "card": card, "cargo": cargo_nome})
-        preencher = achados if regravar else _vazios(s, pessoa["id"], achados)
+        # ⚑ O QUE VEM DA PLANILHA NÃO PASSA PELO FILTRO DE "SÓ O QUE ESTÁ
+        # VAZIO" — conserto de 17/11/2026, e era esta a causa de ele ver
+        # *"parte dos dados vem, mas vínculo e pagamento continua em branco"*.
+        #
+        # `vinculo` NUNCA está vazio: todo cadastro nasce com "CTPS" (ver
+        # `pessoas.salvar`). Então o filtro o considerava "já preenchido" e
+        # pulava — para sempre, em toda importação. `mensalista` idem.
+        #
+        # E o filtro não faz sentido para esta fonte: a planilha É o cadastro
+        # que a empresa mantém, não um palpite. Ele já tinha dito, sobre o
+        # card: *"eu quero que o que vier do pipe preencha o ERP. Não adianta
+        # eu ter que já ter uma base e ter que preencher de novo."* A planilha
+        # é o espelho desse card.
+        #
+        # O filtro continua valendo para o que vem do CARD e do DOCUMENTO.
+        do_card = {k: v for k, v in achados.items() if k not in do_planilha}
+        preencher = dict(do_planilha)
+        preencher.update(do_card if regravar
+                         else _vazios(s, pessoa["id"], do_card))
         # ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ — conserto de 16/11/2026. Ele
         # olhou o relatório, viu um campo só e disse: *"a verdade é que me
         # parece que não tá puxando é nada."* E ele não tinha como saber: o

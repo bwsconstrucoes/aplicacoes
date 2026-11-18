@@ -519,7 +519,36 @@ def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
 # Envio de mensagens ao Telegram (retry + checagem de status)
 # ---------------------------------------------------------------------------
 
+# O MOTIVO da última recusa do Telegram, para o registro da tela Mensagens
+# (17/11/2026). Antes ele só ia para o log do servidor, e a tela dizia "Falhou"
+# sem dizer por quê — o dono perguntou e não havia como responder pela tela.
+_ULTIMA_FALHA = threading.local()
+
+
+def _traduzir_falha_tg(status, texto):
+    t = (texto or "").lower()
+    if status == 403 and "blocked" in t:
+        return "a pessoa bloqueou o robô da BWS no Telegram (ela precisa desbloquear e tocar em Iniciar)"
+    if status == 403 and "deactivated" in t:
+        return "a conta do Telegram da pessoa foi apagada"
+    if status == 403:
+        return f"o Telegram recusou a entrega (HTTP 403): {texto[:160]}"
+    if status == 400 and "chat not found" in t:
+        return "o Telegram não acha esta conversa: o cadastro aponta para um chat que não existe mais"
+    if status == 400 and "too long" in t:
+        return "mensagem longa demais para o Telegram"
+    if status == 429:
+        return "o Telegram pediu para esperar (excesso de mensagens)"
+    return f"o Telegram respondeu HTTP {status}: {(texto or '')[:160]}"
+
+
+def motivo_da_ultima_falha():
+    """O motivo da última falha de envio NESTA linha de execução, ou ""."""
+    return getattr(_ULTIMA_FALHA, "motivo", "")
+
+
 def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
+    _ULTIMA_FALHA.motivo = ""
     payload = {
         "chat_id": chat_id,
         "text": texto,
@@ -544,6 +573,9 @@ def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
                 return True
             print(f"[telegram_bot] sendMessage HTTP {r.status_code}: "
                   f"{r.text[:300]}")
+            _ULTIMA_FALHA.motivo = _traduzir_falha_tg(r.status_code, r.text)
+            if r.status_code == 403 or (r.status_code == 400 and "chat not found" in r.text.lower()):
+                return False      # recusa definitiva: insistir não muda nada
             if (r.status_code == 400 and payload.get("parse_mode")
                     and "parse" in r.text.lower()):
                 # Markdown desbalanceado na mensagem (ex.: * ou [ sem par):
@@ -557,6 +589,7 @@ def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
                 time.sleep(1 + tentativa)
         except requests.RequestException as e:
             print(f"[telegram_bot] Erro de rede sendMessage: {e}")
+            _ULTIMA_FALHA.motivo = f"erro de rede ao falar com o Telegram: {str(e)[:120]}"
             time.sleep(1 + tentativa)
     return False
 
@@ -1411,7 +1444,7 @@ def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
                 time.sleep(espera)
             elif 400 <= r.status_code < 500:
                 # erro definitivo (ex.: chat bloqueou o bot, formato inválido)
-                return False, r.text[:300]
+                return False, _traduzir_falha_tg(r.status_code, r.text)
             else:
                 time.sleep(1 + tentativa)
         except requests.RequestException as e:

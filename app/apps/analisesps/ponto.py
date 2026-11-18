@@ -1157,6 +1157,15 @@ def o_que_fazer_no_automatico(ano: int, mes: int, hoje=None) -> str:
     """
     from .horario import agora, para_brasilia
     hoje = hoje or agora().date()
+    # ⚠️ MÊS INTEIRO NO PONTO ELETRÔNICO NÃO VAI AO MOBPONTO (17/11/2026). O dono,
+    # recebendo no Telegram "Ponto do Mobponto: a carga PAROU (…) o Mobponto não
+    # retornou colaboradores para 11/2026": *"acho que é de uma rotina daqui que
+    # não está sendo mais necessária, visto que mudamos o sistema de ponto."* Desde a
+    # base mista (21/10/2026), do corte em diante a folha lê o ponto eletrônico; um
+    # mês que começa no corte ou depois não tem nada no Mobponto, e pedir dava a
+    # "parada" e o aviso todo dia. Com a chave da base mista desligada, nada muda.
+    if mes_todo_no_ponto_novo(ano, mes):
+        return "ponto_novo"
     parada = carga_em_andamento(ano, mes)
     if parada and parada.get("paginas_lidas", 0) > 0 and _recente(parada):
         return "retomar"
@@ -1262,6 +1271,13 @@ def corte_do_ponto_novo(ano: int, mes: int):
         logger.warning("Análise de SPs: o ponto eletrônico não respondeu (base mista)", exc_info=True)
         return None
     return corte if _limites_do_mes(ano, mes)[1] >= corte else None
+
+
+def mes_todo_no_ponto_novo(ano: int, mes: int) -> bool:
+    """O mês inteiro está do corte em diante: a folha o lê todo do ponto eletrônico
+    e o Mobponto não tem o que trazer."""
+    corte = corte_do_ponto_novo(ano, mes)
+    return corte is not None and corte <= _limites_do_mes(ano, mes)[0]
 
 
 def _ponto_novo(ano: int, mes: int, cpfs=None) -> tuple:

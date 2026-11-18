@@ -44,6 +44,14 @@ instalada e foi removida.
                                      ainda assim fica no registro como "sem_tipo"
 ```
 
+**⚑ ANTES DAS DUAS CAMADAS, A TRAVA DE QUEM SAIU** (17/11/2026): se o
+destinatário é um colaborador **DESLIGADO** e não está ativo em lugar nenhum, a
+mensagem **não sai** — fica no registro como `BARRADO`, com o nome e a data da
+saída. Mora em `notificador.notificar` e nos dois atalhos, nasce ligada e se
+desliga em Mensagens › Tipos e canais. **Não barra o robô RESPONDENDO** a quem
+pede o contracheque (`telegram_bot._tg_enviar` não passa pelo notificador), e é
+essa linha que faz a trava não deixar ninguém sem o último contracheque.
+
 **Duas camadas de liga/desliga, e a ordem importa:**
 
 1. **A tela ERP › Mensagens** (mensageria): quando o chamador diz o **tipo**
@@ -58,9 +66,22 @@ instalada e foi removida.
 
 ## A tela ERP › Mensagens
 
-Duas abas. Quem vê: `ver_mensagens` (Administrador, Diretor financeiro,
-Departamento pessoal). Quem mexe: `configurar_mensagens` (Administrador).
-Seção `adm_mensagens` no cadastro de perfis.
+Cinco abas: **Painel**, **Tipos e canais**, **Enviadas**, **Cadastro do
+Telegram** e **Convite e migração**. Quem vê: `ver_mensagens` (Administrador,
+Diretor financeiro, Departamento pessoal). Quem mexe: `configurar_mensagens`
+(Administrador). Seção `adm_mensagens` no cadastro de perfis.
+
+**Cadastro do Telegram** é a GESTÃO: uma linha por colaborador não desligado e
+por operador ativo — com ou sem telefone —, com obra, cargo, ID do Telegram e
+uma coluna **"Recebe?"** que conclui, em português, se a pessoa recebe e, se
+não, por que e o que fazer. Filtros: situação (8 recortes, cada um com a
+contagem), obra, cargo e quem é. Abaixo da lista, a fila do DP (tentaram se
+cadastrar e o número não bateu) e os cadastros a conferir (Telegram ligado que
+não bate com ninguém do ERP — em geral quem saiu da empresa; **o sistema não
+desliga sozinho**, ver o `HISTORICO.md` de 17/11/2026).
+
+**Convite e migração** é o que se ajusta uma vez: o texto e o ritmo do convite
+por WhatsApp e a migração do cadastro da planilha.
 
 **Tipos e canais**
 
@@ -72,8 +93,11 @@ Seção `adm_mensagens` no cadastro de perfis.
   política: **Só Telegram** · **Telegram; WhatsApp para quem não tem
   Telegram** · **Só WhatsApp** · **Desligado**. Tipo novo que o código
   declarar aparece sozinho, nascendo "Só Telegram".
-- **Mandar uma mensagem de teste** — telefone e canal; passa pela chave geral
-  e pelo teto; fica no registro como `mensageria.teste`.
+- **Mandar uma mensagem de teste** — canal e **telefone OU ID do Telegram**
+  (17/11/2026). Um campo só: o servidor procura o valor entre os IDs
+  cadastrados — achou, é ID; não achou, é telefone — e a resposta diz qual dos
+  dois usou. No WhatsApp o ID não vale. Passa pela chave geral e pelo teto;
+  fica no registro como `mensageria.teste`.
 
 **Enviadas** — o registro dos últimos 90 dias, com filtros por período, canal,
 situação (enviada, falhou, sem destinatário, tipo desligado, teto), tipo e
@@ -86,11 +110,11 @@ quebrar.
 
 | Método | Rota | Ação |
 |---|---|---|
-| GET | `/erp/mensagens` · `/erp/mensagens/enviadas` | `ver_mensagens` |
+| GET | `/erp/mensagens` · `/erp/mensagens/enviadas` · `/erp/mensagens/telegram` · `/erp/mensagens/convite` | `ver_mensagens` |
 | GET | `/erp/api/mensagens/tipos` · `/erp/api/mensagens/enviadas` | `ver_mensagens` |
 | POST | `/erp/api/mensagens/politica` `{chave, politica}` | `configurar_mensagens` |
 | POST | `/erp/api/mensagens/parametros` `{whatsapp_ligado, por_hora, por_dia}` | `configurar_mensagens` |
-| POST | `/erp/api/mensagens/teste` `{telefone, canal}` | `configurar_mensagens` |
+| POST | `/erp/api/mensagens/teste` `{destino, canal}` — `destino` é telefone ou ID do Telegram; `telefone` continua aceito | `configurar_mensagens` |
 
 ---
 

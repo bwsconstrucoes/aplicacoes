@@ -590,6 +590,10 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     # agendador chamar de hora em hora sem martelar o Mobponto.
                     # Ver `ponto.o_que_fazer_no_automatico`.
                     decisao = _ponto.o_que_fazer_no_automatico(ano, mes)
+                    if decisao == "ponto_novo":
+                        recados.append(f"{mes:02d}/{ano}: vem do ponto eletrônico — "
+                                       "o Mobponto não é consultado")
+                        continue
                     if decisao == "pular":
                         recados.append(f"{mes:02d}/{ano}: já entrou hoje")
                         continue

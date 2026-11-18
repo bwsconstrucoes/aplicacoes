@@ -64,8 +64,15 @@ def slots_preenchidos(card: dict, ignorar_numero=None) -> list[dict]:
     """Slots A–E já preenchidos no card, com status/número/valor e flag 'valida'.
     Lê pelos field_id verificados em pipefy_update.CAMPOS_SLOT.
     Se 'ignorar_numero' for passado, esse nº (nota em substituição) não conta como válido."""
+    # ⚠️ A nota a ignorar casa pelo SEQUENCIAL, não pelo texto. No padrão nacional
+    # o slot guarda os 13 dígitos (ano + sequencial, ex.: 2600000003377) e quem
+    # digita o número costuma ter o curto na mão (3377). Comparando texto, o curto
+    # nunca batia: a nota substituída continuava contando no teto e a emissão era
+    # barrada por "a soma das válidas excede o Valor da Medição" — com o dono sem
+    # ter como adivinhar que o problema era o formato do número.
+    import substituicao as _sub
     por_id = card.get("campos_por_id", {}) or {}
-    ign = str(ignorar_numero).strip() if ignorar_numero else None
+    ign = _sub._chave_numero(ignorar_numero) if ignorar_numero else None
     out = []
     for s in "ABCDE":
         f = pf.CAMPOS_SLOT[s]
@@ -74,7 +81,7 @@ def slots_preenchidos(card: dict, ignorar_numero=None) -> list[dict]:
             continue
         numero = (por_id.get(f["numero"]) or "").strip()
         valida = _norm(status).startswith("VALID")   # 'Válida'
-        if ign and numero == ign:
+        if ign and _sub._chave_numero(numero) == ign:
             valida = False                            # nota em substituição: não conta no teto
         out.append({
             "slot": s,
@@ -123,6 +130,21 @@ def checar(card: dict, r, ignorar_numero=None) -> dict:
             bloqueios.append("'Tipo de Medição' é obrigatório e está vazio.")
     if not _norm(card.get("banco")) and not eh_substituicao:
         bloqueios.append("'Banco para Recebimento' é obrigatório e está vazio.")
+
+    # ---- os campos que a conclusão LIMPA, numa REEMISSÃO ----
+    # ⚠️ Card que já teve nota tem doze campos de entrada apagados pela conclusão.
+    # Dois deles BARRAM a emissão e a pessoa vê o motivo (Tipo de Medição, Banco).
+    # O 'Valor BDI Diferenciado' é o perigoso: vazio ele não barra nada — só faz as
+    # bases de INSS e ISS saírem MAIORES, e as retenções vão a mais em silêncio.
+    # Foi o que custou R$ 85 mil de retenção errada em 09/11/2026, por outro
+    # caminho. Aqui o aviso é barato; a conta errada não é.
+    if slots and _dec_norm(card.get("bdi")) <= 0:
+        avisos.append(
+            "Este card JÁ TEVE nota, e a conclusão anterior apagou o 'Valor BDI "
+            "Diferenciado'. Se esta medição tem BDI diferenciado, preencha no card "
+            "antes de emitir: sem ele as bases de INSS e ISS saem MAIORES e as "
+            "retenções vão a mais. Se esta medição não tem BDI diferenciado, ignore "
+            "este aviso.")
 
     # ---- coerência do período da medição ----
     p_ini = _parse_data_br(card.get("periodo_ini"))

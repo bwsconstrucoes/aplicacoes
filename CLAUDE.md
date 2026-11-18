@@ -178,7 +178,7 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 
 | Área | Pasta | Leia ANTES de mexer | Registre o estado em |
 |---|---|---|---|
-| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
+| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `DESLIGAR_A_PLANILHA.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
 | Painel OMIE | `app/apps/painel/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |
@@ -535,6 +535,92 @@ A regra, para todo cadastro novo:
 Já vale em: obra (contrato, matrícula CNO, ART, OS), colaborador e empresa
 (Cartão CNPJ — `abrirCadastroDeEmpresa`, no `erp_base.html`, usada pela tela de
 Empresas e pela criação de obra).
+
+## ⚠️ O ERP VAI SUBSTITUIR A PLANILHA, O PIPEFY E O OMIE
+
+**Ele teve de dizer isto duas vezes no mesmo dia, 17/11/2026** — a primeira
+depois de eu oferecer "continuar controlando no Pipefy" como se fosse uma
+opção viva:
+
+> *"Não vai ter Pipefy mais. Preciso dizer de novo?"*
+
+> *"O ERP vai substituir planilha e Pipefy e Omie."*
+
+Não precisava repetir. A informação estava na conversa e não no repositório —
+e chat novo nasce sem saber. **Esta é a frase mais importante deste arquivo
+para entender PARA QUE o ERP está sendo construído**, e ela vale para as nove
+áreas, não só para o ERP:
+
+| Sai | O que ele faz hoje | Quem assume |
+|---|---|---|
+| **Pipefy** | cadastro de colaboradores, SPs, fluxos do DP | ERP |
+| **Planilhas** (Registro de Colaboradores, C. Diários, SPsBD) | a base que o Make alimenta e que meio sistema lê | ERP |
+| **OMIE** | financeiro — títulos, contas a pagar e a receber | ERP |
+
+**O ERP não é um espelho desses três, nem um relatório sobre eles: é o lugar
+onde o dado passa a viver.** Ele já havia dito, em 16/11: *"assim que eu
+conseguir importar tudo do Pipefy e das fichas, quero cortar o vínculo com a
+planilha."*
+
+**O que isso decide, e não precisa ser perguntado de novo:**
+
+| Coisa | O que vale |
+|---|---|
+| Importação pelo Pipefy, pela planilha e do OMIE | **ferramenta de mudança, não de operação.** Serve para trazer o que já existe. Não desenhe funcionalidade que dependa dela para sempre |
+| Integração de ida (o ERP ESCREVENDO em OMIE/planilha) | caminho que vai morrer. Antes de criar mais uma, pergunte se não é o ERP que deveria ser a fonte |
+| As ETAPAS do cadastro (Inicial, Conferência, Contrato a assinar, Na contabilidade, Concluído, Afastado, Desligado, Cancelado) | **ficam, e ganham importância.** Eram "a fase do card"; passam a ser a única fila de trabalho do DP. Ele: *"as fases do Pipefy é para o DP saber o que fazer; aqui ele fica perdido"* |
+| Toda etapa precisa ser ALCANÇÁVEL pela tela | se o DP não consegue mover alguém, a fila congela. Isto já falhou: a regra de transição existia desde 05/11 e a tela não tinha botão até 17/11 |
+| Entrada de cadastro novo | o formulário do ERP (portal da obra → pedido do DP), **não** o card |
+| "Está no Pipefy" | **nunca é resposta** para onde um dado deve morar, nem justificativa para o ERP não ter algo |
+
+**A pergunta que substitui "como está no Pipefy / na planilha / no OMIE?":**
+se os três fossem desligados amanhã, isto que estou entregando deixaria a
+equipe conseguir trabalhar? Se a resposta for não, falta coisa — e falta no
+ERP.
+
+⚠️ **Isto NÃO é autorização para desligar nada, nem para apagar integração
+que está de pé.** A ordem dos desligamentos, e quando, é decisão dele —
+ver a regra "o que ela SUBSTITUI?" logo abaixo. Hoje o OMIE, o Pipefy e as
+planilhas estão em produção e a empresa depende deles.
+
+---
+
+## Funcionalidade nova pergunta: o que ela SUBSTITUI?
+
+Cobrança dele em 17/11/2026, e ela é a continuação direta da regra "um
+cadastro, uma porta" logo acima:
+
+> *"Às vezes não compreendo a lógica de complicar. As pessoas já estão todas
+> no sistema (…) era só para equalizar e complementar os dados."*
+
+O que ele encontrou: **três** botões para importar pessoas — um por arquivo
+`.xlsx` (09/11), um por PDF do Fortes (16/11) e um pela planilha do Google ao
+vivo (17/11). Cada um nasceu respondendo ao que ele pediu naquele dia, e cada
+um estava certo sozinho. Juntos viraram um cardápio, e ele teve de perguntar
+duas vezes qual era o certo.
+
+**A causa, dita sem rodeio: pedido novo é tratado como coisa a ACRESCENTAR.**
+Acrescentar é barato para quem escreve — um botão novo não exige entender nem
+desmontar o que já existe. O custo não cai em quem escreve: cai nele, toda vez
+que abre a tela e precisa escolher entre caminhos sem saber a diferença.
+
+**A pergunta obrigatória, antes de entregar qualquer caminho novo:**
+
+> Isto é uma porta NOVA ou é a porta CERTA para algo que já tem porta?
+> Se é a certa, a antiga sai — ou, no mínimo, a resposta diz que ela ficou e
+> por quê.
+
+E quando a antiga fica, a tela tem de dizer **para que serve cada uma**, em
+português, sem obrigar ninguém a descobrir pela tentativa.
+
+**⚠️ Mas "a antiga sai" NÃO é autorização para apagar.** No mesmo dia, ao ver
+que eu ia tirar o botão antigo, ele cortou: *"eu não pedi pra tirar."* Tirar
+funcionalidade é mudança com risco — pode ser o caminho que alguém usa, ou o
+único que faz algo que o novo não faz. Então: **proponha, explique o que o
+novo cobre e o que se perde, e espere o "pode".** O que não se faz é entregar
+a terceira porta calado e deixá-lo descobrir sozinho que há três.
+
+---
 
 ## Padrões que já existem — reusar, não recriar
 

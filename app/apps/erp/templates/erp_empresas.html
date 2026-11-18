@@ -134,13 +134,23 @@ function desenhar(){
       desenhar();
     }));
 
+  {# ⚑ O AVISO PASSA A DIZER O MOTIVO E O CAMINHO (17/11/2026). Ele:
+     *"fui gravar o email no cadastro da empresa e apareceu: A chave em
+     ERP_CHAVE_SEGREDOS não tem o formato esperado."*
+
+     Duas coisas estavam erradas aqui: (1) a tela só sabia perguntar "a
+     variável existe?", então com uma chave torta ela não avisava NADA e o
+     recado só vinha depois de ele preencher tudo e clicar em Salvar; (2) o
+     que ela mandava fazer era ler um arquivo de código. #}
   if (!D.tem_chave_de_segredos) {
+    const c = D.chave_de_segredos || {};
     els("mensagem").innerHTML = `<div class="aviso info">
-      <b>A senha do e-mail ainda não pode ser guardada.</b> Falta a variável
-      <b>ERP_CHAVE_SEGREDOS</b> na Environment do Render — é ela que cifra a
-      senha no banco. Sem ela, o resto do cadastro salva normalmente; só a
-      senha fica de fora. Como gerar a chave está escrito em
-      <code>core/comum/segredos.py</code>.</div>`;
+      <b>A senha do e-mail ainda não pode ser guardada.</b>
+      ${escapar(c.problema || "a chave de segredos do ERP não está configurada")}.
+      É ela que cifra a senha no banco — sem ela, o resto do cadastro salva
+      normalmente e só a senha fica de fora.
+      <a href="/erp/configuracoes#chavesegredos">Resolver em Configurações ›
+      Chave de segredos</a>.</div>`;
   }
 
   const l = visiveis();
@@ -319,9 +329,11 @@ async function carregarCertificado(id){
   const c = d.certificado;
 
   alvo.innerHTML = `
-    ${!c.ha_chave ? `<div class="aviso alerta">A chave de segredos do ERP não
-      está configurada, então o certificado não pode ser guardado com segurança.
-      Defina <b>ERP_CHAVE_SEGREDOS</b> na Environment do Render.</div>` : ""}
+    ${!c.ha_chave ? `<div class="aviso alerta">O certificado não pode ser
+      guardado com segurança: ${escapar(c.problema_da_chave
+        || "a chave de segredos do ERP não está configurada")}.
+      <a href="/erp/configuracoes#chavesegredos">Resolver em Configurações ›
+      Chave de segredos</a>.</div>` : ""}
 
     ${c.tem
       ? `<div class="aviso ${c.vencido ? "erro" : c.vencendo ? "alerta" : "ok"}">
@@ -487,8 +499,10 @@ function painel(i, id){
         <b>responde para ela</b> — por isso o endereço tem de ser um que a
         equipe de compras acompanhe, não uma caixa de sistema.</div>
       ${D.tem_chave_de_segredos ? "" : `<div class="aviso info">
-        A senha não pode ser guardada agora: falta ERP_CHAVE_SEGREDOS na
-        Environment do Render. Os demais campos salvam normalmente.</div>`}
+        A senha não pode ser guardada agora:
+        ${escapar((D.chave_de_segredos || {}).problema || "falta a chave de segredos do ERP")}.
+        Os demais campos salvam normalmente.
+        <a href="/erp/configuracoes#chavesegredos">Resolver</a>.</div>`}
 
       {# UMA CONTA SERVINDO VÁRIAS EMPRESAS (14/09/2026). Pedido do dono: manter
          um e-mail principal e mandar em nome das outras. O que o sistema faz é

@@ -25,9 +25,42 @@
    unidade é a geração (os arquivos de pagamento de uma vez + o de análise):
    é ela que vira card e é ela que se seleciona.
    ====================================================================== #}
+{# OS FILTROS (dono, 18/11/2026: *"não consegue fazer filtro nessa tela. A gente
+   deveria poder filtrar por tipo, por data (…) a competência, o tipo da verba (…)
+   à medida que vai aumentando a quantidade de arquivos, a tela vai compridando"*). #}
+<form class="barra-mes filtros-gerados" method="get" action="{{ url_for('analisesps.tela_folha_pagamento') }}">
+  <label class="campo-mes"><span>Competência</span>
+    <select name="competencia" aria-label="Competência">
+      <option value="">todas</option>
+      {% for c in filtro_opcoes.competencias %}
+        <option value="{{ c }}" {% if filtro.competencia == c %}selected{% endif %}>{{ c[5:] }}/{{ c[:4] }}</option>
+      {% endfor %}
+    </select></label>
+  <label class="campo-mes"><span>Pagamento</span>
+    <select name="tipo" aria-label="Pagamento">
+      <option value="">todos</option>
+      {% for valor, rotulo in filtro_opcoes.tipos %}
+        <option value="{{ valor }}" {% if filtro.tipo == valor %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select></label>
+  <label class="campo-mes"><span>Verba</span>
+    <select name="verba" aria-label="Verba">
+      <option value="">todas</option>
+      {% for v in filtro_opcoes.verbas %}
+        <option value="{{ v }}" {% if filtro.verba == v %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select></label>
+  <label class="campo-mes"><span>Gerado de</span>
+    <input type="date" name="de" value="{{ filtro.de }}" aria-label="Gerado de"></label>
+  <label class="campo-mes"><span>até</span>
+    <input type="date" name="ate" value="{{ filtro.ate }}" aria-label="Gerado até"></label>
+  <button class="btn secundario" type="submit">Filtrar</button>
+  {% if filtro.algum %}<a class="link-btn" href="{{ url_for('analisesps.tela_folha_pagamento') }}">limpar</a>{% endif %}
+</form>
 <p class="cartao-dica" id="arquivos-gerados" style="margin:0 0 10px">
-  {{ rodadas|length }} geração(ões), da mais recente para a mais antiga. Cada linha
-  reúne os arquivos de pagamento (um por conta) e o arquivo de análise de uma geração.
+  {{ rodadas|length }} geração(ões){% if filtro.algum %} no filtro{% endif %}, da mais
+  recente para a mais antiga. Cada linha reúne os arquivos de pagamento (um por conta) e
+  o arquivo de análise de uma geração.
 </p>
 {% if pode_operar and rodadas %}
 <div class="barra-acoes-lista">
@@ -102,6 +135,10 @@
                 {% if a.card_pipefy %}
                   {# A SITUAÇÃO DE CADA SP, lida da base (07/10/2026). #}
                   {% for sp in a.sps or [] %}
+                    {# UMA SP POR LINHA, com o nome de quem recebe (dono, 18/11/2026:
+                       *"coloca uma quebra de linha para cada SP (…) senão fica meio
+                       bagunçado"*). #}
+                    <div class="sp-linha">
                     {# ABRE NO SISTEMA (10/10/2026 — *"se eu quisesse abrir aquela
                        informação dentro do sistema (…) o modal, para marcar
                        agendar, ver detalhe"*). O card do Pipefy fica no ↗. #}
@@ -118,11 +155,13 @@
                       {% if ag %}<span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}"
                         >{{ sp.status_agend }}</span>{% endif %}
                     {% endif %}
+                    {% if sp.nome %}<span class="cartao-dica">{{ sp.nome }}</span>{% endif %}
+                    </div>
                   {% else %}
                     {% if a.link_card %}<a href="{{ a.link_card }}" target="_blank" rel="noopener"
                       >SP {{ a.card_pipefy }}</a>{% else %}SP {{ a.card_pipefy }}{% endif %}
                   {% endfor %}
-                  <span class="cartao-dica">conta {{ a.conta }}</span>
+                  <div class="cartao-dica sp-da-conta">conta {{ a.conta }}{% if (a.sps or [])|length > 1 %} · {{ a.sps|length }} SPs{% endif %}</div>
                 {% else %}<span class="cartao-dica">conta {{ a.conta }}: não lançada</span>{% endif %}
               {% endfor %}
             {% elif r.lancavel %}<span class="cartao-dica">não lançado</span>
@@ -152,7 +191,8 @@
   <p class="cartao-dica" style="margin:4px 0 8px">
     Cria <b>uma Solicitação de Pagamento para cada conta de origem</b>, com
     <b>rateio múltiplo</b> por obra (código do OMIE da aba "C. Diários"), Pix com
-    chave aleatória "Atualizar Chave", e a descrição com a competência, o valor por
+    chave aleatória "Atualizar Chave" (no pagamento via SP, uma SP por pessoa, com a
+    chave Pix do cadastro dela), e a descrição com a competência, o valor por
     obra e os links dos arquivos. O card de Despesa com Colaboradores não é mais
     criado. Selecione as contas na lista e clique
     em "Lançar no Pipefy"; a prévia é exibida antes da criação. ⚠️ <b>Card criado no Pipefy não

@@ -433,6 +433,16 @@
   .barra-acoes { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
   /* A janela da pessoa e as etiquetas (21/10/2026). */
   dialog.dlg-pessoa { width:min(1120px, 96vw); }
+  /* ⚑ A FILEIRA DE ÁREAS (17/11/2026): o assunto em que a pessoa está.
+     Maior e mais marcada que as sub-abas de propósito — quem olha precisa ver
+     num relance que são dois níveis, não nove abas em duas linhas. */
+  .areas-da-pessoa { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 0;
+                     border-bottom:2px solid var(--borda); padding-bottom:0 }
+  .areas-da-pessoa button { background:none; border:0; border-bottom:3px solid transparent;
+                            padding:8px 14px; font-size:14.5px; font-weight:600;
+                            color:var(--texto-suave); cursor:pointer; border-radius:8px 8px 0 0 }
+  .areas-da-pessoa button:hover { background:var(--fundo) }
+  .areas-da-pessoa button.ativa { color:var(--azul); border-bottom-color:var(--azul) }
   .etq { display:inline-block; font-size:11.5px; font-weight:600; border-radius:6px; padding:1px 7px;
          margin:2px 4px 0 0; white-space:nowrap; background:#E7EDF7; color:var(--azul); }
   .etq.verde { background:#E3F4E8; color:#1E7B3A; } .etq.vermelho { background:#FDECEA; color:var(--vermelho); }
@@ -642,6 +652,10 @@
 <dialog id="dlg-completar" class="dlg-pessoa"><div class="dlg-topo"><h3 id="cp-titulo">Completar o período pela escala</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-completar').close()">Fechar</button></div>
   <div class="dlg-corpo" id="cp-corpo">carregando…</div></dialog>
+{# O CADASTRO DO ERP DENTRO DO PONTO (17/11/2026) — ver `abrirCadastroNoErp`. É o MESMO formulário da tela de
+   Colaboradores, servido sem cabeçalho nem lista; aqui ele só aparece. Não há um segundo cadastro. #}
+<dialog id="dlg-cadastro" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
+  <iframe id="cad-quadro" title="Cadastro da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 <dialog id="dlg-mapa" class="dlg-pessoa"><div class="dlg-topo"><h3 id="mp-titulo">Onde a batida foi feita</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-mapa').close()">Fechar</button></div>
   <div class="dlg-corpo" id="mp-corpo">carregando…</div></dialog>
@@ -1688,13 +1702,46 @@ function desenharPainel() {
   // A FICHA ÚNICA (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
   // pessoa eu tenho acesso"): o cadastro e os pagamentos do ERP entram como abas; "Cadastro" do ponto virou
   // "Configuração do ponto" (a chave continua "cadastro" — os atalhos das outras telas abrem nela).
-  const abas = [...(PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? [["pessoa", "Cadastro"]] : []),
-                ["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
-                ...(PODE_VER_PESSOAL ? [["pagamentos", "Pagamentos"]] : []),
-                ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Configuração do ponto"],
-                ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`],
-                ...(PODE_VER_MENSAGENS ? [["mensagens", "Telegram e mensagens"]] : [])];
-  if (!abas.some(([k]) => k === PAINEL_ABA)) PAINEL_ABA = "dia";
+  // ⚑ AS NOVE ABAS VIRARAM TRÊS ÁREAS (17/11/2026) — desenho dele:
+  //
+  //   *"Imagina que eu cliquei no colaborador. Lá em cima fica o nome dela e
+  //    ali tem uma espécie de botão que direciona para a parte do ponto. Tipo
+  //    assim, tem o cadastro pessoal, aí tem a outra, aí eu clico ponto. Aí
+  //    quando eu clico ponto, abre toda a parte do ponto, as configurações,
+  //    como se fosse a tela abrindo lá do ponto. E quando eu clico de novo no
+  //    cadastro pessoal, abre as telas relacionadas ao cadastro. (…) A parte
+  //    de mensagens a gente tem como colocar dentro também. Ou seja, a gente
+  //    conseguir visualizar com facilidade as informações que circulam em
+  //    volta daquele cadastro. Porque às vezes eu estou olhando uma
+  //    determinada pessoa e eu não preciso sair para ir para outra tela, para
+  //    pesquisar o nome dela de novo."*
+  //
+  // Nove abas numa fileira só não dizem o que pertence a quê: "Cadastro" e
+  // "Configuração do ponto" ficavam lado a lado sendo coisas de mundos
+  // diferentes. Agora a fileira de cima diz EM QUE ASSUNTO você está, e a de
+  // baixo, o que ver dentro dele.
+  //
+  // ⚠️ NÃO MUDOU NADA do que cada painel faz nem de permissão: a mesma aba
+  // continua aparecendo para quem já a enxergava. O que muda é o agrupamento.
+  const AREAS = [
+    {chave: "pessoal", rotulo: "👤 Cadastro pessoal", abas: [
+      ...(PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? [["pessoa", "Cadastro"]] : []),
+      ...(PODE_VER_PESSOAL ? [["pagamentos", "Pagamentos"]] : []),
+    ]},
+    {chave: "ponto", rotulo: "🕐 Ponto", abas: [
+      ["dia", "Dia"], ["mes", "Espelho do mês"],
+      ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
+      ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`],
+      ["cadastro", "Configuração do ponto"],
+      ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`],
+    ]},
+    ...(PODE_VER_MENSAGENS ? [{chave: "mensagens", rotulo: "💬 Mensagens", abas: [
+      ["mensagens", "Telegram e mensagens"],
+    ]}] : []),
+  ].filter(a => a.abas.length);
+  const abas = AREAS.flatMap(a => a.abas);
+  if (!abas.some(([k]) => k === PAINEL_ABA)) PAINEL_ABA = (abas[0] || ["dia"])[0];
+  const areaAtual = AREAS.find(a => a.abas.some(([k]) => k === PAINEL_ABA)) || AREAS[0];
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
@@ -1717,7 +1764,11 @@ function desenharPainel() {
       ${PODE_DP ? `<button class="btn secundario" type="button" id="dp-afastamento">Lançar afastamento</button>` : ""}
       <a class="btn secundario" style="text-decoration:none" target="_blank"
          href="/erp/ponto/espelho/${p.id}/imprimir?competencia=${P.mes.competencia}">Imprimir o espelho</a></div>` : ""}
-    <div class="sub-abas">${abas.map(([k, r]) => `<button type="button" data-dp-aba="${k}" class="${k === PAINEL_ABA ? "ativa" : ""}">${escapar(r)}</button>`).join("")}</div>
+    ${AREAS.length > 1 ? `<div class="areas-da-pessoa">${AREAS.map(a =>
+      `<button type="button" data-dp-area="${a.chave}" class="${a === areaAtual ? "ativa" : ""}"
+        >${escapar(a.rotulo)}</button>`).join("")}</div>` : ""}
+    <div class="sub-abas">${(areaAtual ? areaAtual.abas : abas).map(([k, r]) =>
+      `<button type="button" data-dp-aba="${k}" class="${k === PAINEL_ABA ? "ativa" : ""}">${escapar(r)}</button>`).join("")}</div>
     <div id="dp-msg"></div>
     <div id="dp-conteudo">${({dia: painelDia, mes: painelMes, pedidos: painelPedidos, aparelhos: painelAparelhos,
                               cadastro: painelCadastro, rosto: painelRosto, pessoa: painelPessoaErp,
@@ -1727,6 +1778,11 @@ function desenharPainel() {
   if (PAINEL_ABA === "mensagens") mensagensDaPessoa(els("dp-mensagens"), p.id);  // bloco da Mensageria (erp_base)
   els("dp-corpo").querySelectorAll("[data-dp-aba]").forEach(b => b.addEventListener("click", () => {
     PAINEL_ABA = b.dataset.dpAba; desenharPainel(); }));
+  // Trocar de ÁREA cai na primeira aba dela — e não numa aba vazia.
+  els("dp-corpo").querySelectorAll("[data-dp-area]").forEach(b => b.addEventListener("click", () => {
+    const a = AREAS.find(x => x.chave === b.dataset.dpArea);
+    if (a && a.abas.length) { PAINEL_ABA = a.abas[0][0]; desenharPainel(); }
+  }));
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
@@ -2122,9 +2178,25 @@ function avisarQuemMostra(acao, id) {
   try { if (window.parent !== window) window.parent.postMessage({tipo: "bws-ficha", acao, id}, location.origin); }
   catch (e) { /* sem a tela de fora, nada a avisar */ }
 }
+// ⚑ O CADASTRO ABRE AQUI, EM CIMA, SEM SAIR DA TELA (17/11/2026). Ele: *"quando estou vendo o pessoal pelo ponto e
+// coloco pra abrir o cadastro, ele remete pra página de pessoal, quando deveria apenas abrir o modal correspondente
+// sem necessidade de ir pra outro lado. Os dados de cada um tem que estar de fácil acesso e todos correlacionados."*
+//
+// São três situações, e cada uma tem o caminho mais curto:
+//  · dentro da tela de Colaboradores (ela nos mostra): pede a ELA que abra o formulário — é o dono do formulário;
+//  · aqui, no ponto, e é o CADASTRO: abre o mesmo formulário do ERP numa janela em cima desta
+//    (`/erp/colaboradores/cadastro/<id>`), que vem sem cabeçalho, sem filtro e sem lista;
+//  · os DOCUMENTOS: continuam na tela de Colaboradores, em outra aba — ler e arquivar papel é trabalho de lá, e a
+//    janela de documentos ainda não sabe aparecer sozinha. Quando souber, cai no mesmo caminho do cadastro.
 function abrirCadastroNoErp(id, oque) {
   if (window.parent !== window) return avisarQuemMostra(oque, id);
+  if (oque === "editar") return abrirCadastroEmCima(id);
   window.open(`/erp/colaboradores?${oque}=${encodeURIComponent(id)}`, "_blank", "noopener");
+}
+
+function abrirCadastroEmCima(id) {
+  els("cad-quadro").src = `/erp/colaboradores/cadastro/${encodeURIComponent(id)}`;
+  els("dlg-cadastro").showModal();
 }
 async function carregarErpDaPessoa(id) {
   if (ERP_DA_PESSOA && ERP_DA_PESSOA.id === id) return pintarErpDaPessoa();
@@ -3703,6 +3775,16 @@ async function bloquearAparelho(a, depois) {
 // mostra (Colaboradores), que fecha o quadro dela.
 const FICHA_ID = {{ ficha_id|int }};
 els("dlg-pessoa").addEventListener("close", () => avisarQuemMostra("fechar"));
+
+// O formulário do ERP, de dentro da janela, avisa quando fecha e quando grava. Gravou: o que está na tela do ponto
+// (nome, obra, situação) pode ter mudado, então se recarrega a ficha da pessoa — não a tela inteira.
+els("dlg-cadastro").addEventListener("close", () => { els("cad-quadro").src = "about:blank"; });
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (ev.origin !== location.origin || d.tipo !== "bws-cadastro") return;
+  if (d.acao === "fechou") els("dlg-cadastro").close();
+  if (d.acao === "gravou") { ERP_DA_PESSOA = null; if (PAINEL && PAINEL.pessoa) carregarErpDaPessoa(PAINEL.pessoa.id); }
+});
 abrirPessoaPainel(FICHA_ID, null, PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia");
 {% elif aba_ponto == "ponto_hoje" %}
 // ===========================================================================
@@ -4077,7 +4159,7 @@ async function qdRondas() {
       <th>Rondas (${d.por_turno} por turno)</th></tr></thead><tbody>${d.turnos.map(t => `<tr>
       <td>${eloPessoa(t.colaborador_id, t.nome, t.noite)}</td><td class="dados">${diaCurto(t.noite)}</td><td class="dados">${escapar(t.obra || "")}</td>
       <td class="dados">${escapar(t.entrada || "—")}</td><td class="dados">${escapar(t.saida || "—")}</td>
-      <td>${t.rondas.map(r => `<span class="etq ${COR_RONDA[r.status] || "outro"}" title="${escapar(r.motivo || "")}">${r.numero}ª ${escapar(r.rotulo)}${r.feita ? ` ${escapar(r.feita)}` : r.hora ? ` ${escapar(r.hora)}` : ""}</span>
+      <td>${t.rondas.map(r => `<span class="etq ${COR_RONDA[r.status] || "outro"}" title="${escapar(r.motivo || "")}">${r.numero}ª ${escapar(r.rotulo)}${r.feita ? ` ${escapar(r.feita)}` : r.hora ? ` ${escapar(r.hora)}` : ""}${(r.status === "FEITA" || r.status === "ATRASADA") && !r.foto_id ? " · sem foto" : ""}</span>
         ${r.foto_id ? `<button class="link-btn" type="button" data-foto="r${r.id}" data-foto-url="/erp/api/ponto/rondas/${r.id}/foto" data-legenda="${escapar(`${t.nome} — ${r.numero}ª ronda`)}">📷</button>` : ""}`).join(" ")
         || `<span class="suave">nenhuma ronda</span>`}</td></tr>`).join("")}</tbody></table>`
     : `<div class="vazio"><b>Nenhum turno de vigia</b>neste período, com estes filtros. Para ver só os vigias, marque “Vigia” em Tipo de pessoa.</div>`;
@@ -7166,7 +7248,9 @@ function chipRonda(r, comFoto) {
   const dica = `${r.numero}ª ronda — ${r.rotulo}${r.hora ? `, saiu às ${r.hora}` : ""}${r.feita ? `, feita às ${r.feita}` : ""}${onde}${r.motivo ? ` (${r.motivo})` : ""}`;
   const cor = r.status === "PERDIDA" ? "color:var(--vermelho); font-weight:700"
             : (r.status === "FEITA" || r.status === "ATRASADA") && r.dentro_da_cerca === false ? "color:var(--laranja, #b45309); font-weight:700" : "";
-  const texto = `${ICONE_RONDA[r.status] || ""} ${r.feita || r.hora || r.rotulo}`;
+  // a ronda registrada sem foto (17/11/2026): diz, no próprio chip
+  const semFoto = (r.status === "FEITA" || r.status === "ATRASADA") && !r.foto_id;
+  const texto = `${ICONE_RONDA[r.status] || ""} ${r.feita || r.hora || r.rotulo}${semFoto ? " · sem foto" : ""}`;
   return comFoto && r.foto_id
     ? `<button class="chip" type="button" data-foto-ronda="${r.id}" title="${escapar(dica)}" style="${cor}">${escapar(texto)}</button>`
     : `<span class="chip" title="${escapar(dica)}" style="${cor}">${escapar(texto)}</span>`;
@@ -8166,6 +8250,63 @@ async function ligarRegistroAutomatico(ev) {
   caixa.disabled = false;
 }
 
+{# ===========================================================================
+   AS TRÊS CONTAS DO LADO DO ERP (17/11/2026)
+
+   Ele trocou a base para o cadastro do ERP e perguntou, olhando os números:
+   *"esses são os KPIs, tudo certo né?"*
+
+   Não estava: os seis números de cima são TODOS calculados sobre a PLANILHA.
+   Descrevem a base que se está deixando, não a que se está pegando. Trocar a
+   base olhando só para eles é trocar no escuro — e o escuro aqui custa caro,
+   porque batida é registro legal do REP-P e não se apaga.
+
+   Estes três são sobre o ERP, e é o que falta para a decisão:
+     · "Não batem pelo ERP" se compara com "Não batem pela planilha". Muito
+       menos quer dizer tipo de contrato em branco em quem não devia bater.
+     · "Sem obra no ERP": "faltam no ERP = 0" garante que a PESSOA existe, não
+       que ela tem OBRA.
+     · "Ativos na planilha e desligados no ERP": param de bater no dia da
+       virada. Nenhum dos seis contava este caso.
+   =========================================================================== #}
+function blocoPeloErp(d) {
+  const n = v => (v === null || v === undefined) ? null : v;
+  const naoBatem = n(d.nao_batem_pelo_erp), semObra = n(d.ativos_sem_obra_no_erp),
+        desligados = n(d.ativos_no_registro_desligados_no_erp);
+  if (naoBatem === null && semObra === null && desligados === null) {
+    return `<div class="cartao-dica" style="margin-top:12px">Não foi possível contar a
+      base pelo cadastro do ERP agora. O detalhe está no log do servidor.</div>`;
+  }
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor">${valor === null ? "?" : valor}</div><div class="kpi-sub">${sub}</div></div>`;
+  {# A COMPARAÇÃO É O PONTO. Dizer "20 na planilha, 3 no ERP" é o que faz a
+     pessoa parar antes de virar a chave; dois números em cartões diferentes
+     ela não cruza. #}
+  const daPlanilha = d.nao_batem_pela_planilha;
+  const diferenca = (naoBatem !== null && daPlanilha !== null && naoBatem !== daPlanilha);
+  return `<div class="suave" style="font-size:13px; margin-top:16px"><b>E pelo cadastro do ERP</b>
+      — é esta a base que vale quando a escolha abaixo é “Cadastro do ERP”:</div>
+    <div class="kpis" style="margin-top:8px">
+      ${kpi("Não batem pelo ERP", naoBatem, diferenca ? "vermelho" : "",
+            `pelo tipo de contrato · a planilha diz ${daPlanilha}`)}
+      ${kpi("Ativos sem obra no ERP", semObra, semObra ? "ambar" : "",
+            "a batida acontece, mas cai em conferência, sem cerca")}
+      ${kpi("Ativos na planilha, desligados no ERP", desligados, desligados ? "vermelho" : "",
+            "estes PARAM de bater se a base for o ERP")}
+    </div>
+    ${diferenca ? `<div class="aviso alerta" style="margin-top:8px">
+      <b>Os dois números de “não batem” estão diferentes:</b> ${daPlanilha} pela planilha e
+      ${naoBatem} pelo ERP. Pela planilha a regra lê a coluna de tipo; pelo ERP, o
+      <b>tipo de contrato do cadastro</b>. Se o do ERP for menor, falta tipo de contrato em
+      alguém que <b>não devia bater ponto</b> — e ponto de PJ é registro legal que não se
+      apaga. Confira em <a class="elo" href="/erp/colaboradores">Pessoal › Colaboradores</a>
+      antes de usar o cadastro do ERP como base.</div>` : ""}
+    ${desligados ? `<div class="aviso erro" style="margin-top:8px">
+      <b>${desligados} pessoa(s) ativa(s) na planilha estão DESLIGADAS no ERP.</b> Com a base no
+      ERP, elas não conseguem bater. Acerte a situação no cadastro ou mantenha a planilha como
+      base.</div>` : ""}`;
+}
+
 function desenharRegistro(d) {
   const alvo = els("c-registro");
   const emUso = d.usando ? "REGISTRO" : "ERP";
@@ -8176,7 +8317,7 @@ function desenharRegistro(d) {
   if (!d.disponivel) {
     alvo.innerHTML = `<div><b>Em uso:</b> ${ROTULO_FONTE.ERP}</div>
       <div class="cartao-dica">A cópia do Registro de Colaboradores não está neste banco; o ponto usa o
-        cadastro do ERP.</div>${blocoAutomatico(d)}<div id="c-registro-msg"></div>`;
+        cadastro do ERP.</div>${blocoPeloErp(d)}${blocoAutomatico(d)}<div id="c-registro-msg"></div>`;
     if (PODE_CONFIGURAR) els("c-registro-auto").addEventListener("change", ligarRegistroAutomatico);
     return;
   }
@@ -8198,6 +8339,7 @@ function desenharRegistro(d) {
       ${kpi("Sem obra reconhecida", d.ativos_sem_obra_reconhecida, d.ativos_sem_obra_reconhecida ? "ambar" : "",
             "código da obra do Registro que não existe no ERP")}
     </div>
+    ${blocoPeloErp(d)}
     ${escolha}
     ${d.faltam_no_erp ? `<div style="margin-top:12px"><b>Faltam no ERP</b>${exemplos.length ? ` — por exemplo:` : ""}
         ${exemplos.length ? `<div class="suave" style="font-size:13px">${exemplos.map(x =>

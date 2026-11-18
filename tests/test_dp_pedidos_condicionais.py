@@ -161,12 +161,22 @@ def test_o_desconto_do_vt_so_e_exigido_quando_ha_vale_transporte():
 
 def test_cadastro_de_carteira_nao_pergunta_pagamento_nem_valor_do_mes():
     """*"Quando é CTPS, o valor é o da convenção."* Dois valores para o mesmo
-    salário é o que esta regra evita."""
+    salário é o que esta regra evita.
+
+    ⚑ O TIPO DE CONTRATO SAIU DESTA LISTA em 17/11/2026, e isso é correção de
+    premissa. Ele tinha mandado fechá-lo para CTPS em 15/11 ("já é CLT"), e
+    depois viu a consequência: *"Se Jovem Aprendiz é CTPS, precisamos poder
+    selecionar o tipo de contrato."* Aprendizagem é contrato formal, com
+    carteira, e não é CLT — então carteira TEM tipo de contrato, só que com
+    outra lista. O que continua proibido é o pagamento e o valor do mês, que
+    é o ponto deste teste.
+    """
     exige = svc.exigencias("CADASTRO", {"tipo_documentacao": "CTPS"})["campos"]
-    for proibido in ("pagamento", "valor_mes", "tipo_contrato"):
+    for proibido in ("pagamento", "valor_mes"):
         assert proibido not in exige, f"{proibido} continua exigido em CTPS"
-    # Mas a carteira e o PIS passam a ser exigidos.
+    # Mas a carteira, o PIS e o tipo de contrato passam a ser exigidos.
     assert "num_ctps" in exige and "num_pis" in exige
+    assert "tipo_contrato" in exige
 
 
 def test_cadastro_de_prestador_pergunta_o_tipo_de_contrato():
@@ -175,17 +185,33 @@ def test_cadastro_de_prestador_pergunta_o_tipo_de_contrato():
     assert "num_ctps" not in exige
 
 
-def test_o_tipo_de_contrato_do_prestador_tem_as_seis_opcoes_dele():
-    """*"PJ, autônomo RPA, autônomo mensalista, jovem aprendiz, estagiário,
-    pró-labore."* As duas de CLT existem no cadastro e NÃO entram aqui: em
-    carteira o tipo não se escolhe."""
+def test_cada_documentacao_tem_a_sua_lista_de_tipo_de_contrato():
+    """17/11/2026 — o jovem aprendiz mudou esta regra, e vale contar por quê.
+
+    Em 15/11 a lista era UMA, com seis opções, e o jovem aprendiz estava entre
+    elas como se fosse prestador. Ele corrigiu: *"CTPS e jovem aprendiz na
+    verdade estão corretos (…) não é CLT mas é Jovem aprendiz."* Contrato de
+    aprendizagem tem carteira assinada — então ele pertence ao lado CTPS, e o
+    lado CTPS deixou de ser vazio.
+
+    Agora são duas listas sem interseção nenhuma. É a interseção que permitia
+    gravar alguém de carteira como "PJ", e é por isso que o teste confere
+    justamente ela.
+    """
     from app.apps.erp.core.cadastros.pessoas import TIPOS_CONTRATO
-    codigos = [svc.DO_PIPE_PARA_O_CODIGO["tipo_contrato"][o]
-               for o in svc.CATEGORIAS["tipo_contrato"]]
-    assert codigos == ["PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA",
-                       "JOVEM_APRENDIZ", "ESTAGIO", "PRO_LABORE"]
+    mapa = svc.TIPOS["CADASTRO"]["opcoes_se"]["tipo_contrato"]["tipo_documentacao"]
+    codigo = svc.DO_PIPE_PARA_O_CODIGO["tipo_contrato"]
+
+    carteira = [codigo[o] for o in mapa["CTPS"]]
+    prestador = [codigo[o] for o in mapa["PRESTADOR"]]
+
+    assert carteira == ["CLT_INDETERMINADO", "CLT_DETERMINADO", "JOVEM_APRENDIZ"]
+    assert prestador == ["PJ", "AUTONOMO_RPA", "AUTONOMO_MENSALISTA",
+                         "ESTAGIO", "PRO_LABORE"]
+    assert not set(carteira) & set(prestador)
+
     # Todo código tem de existir no cadastro, senão gravar quebra na hora.
-    for c in codigos:
+    for c in carteira + prestador:
         assert c in TIPOS_CONTRATO, f"{c} não existe no cadastro da pessoa"
 
 
@@ -209,9 +235,30 @@ def test_telefone_pix_e_diaria_sao_obrigatorios_em_todo_cadastro():
     """
     for forma in ("CTPS", "PRESTADOR"):
         exige = svc.exigencias("CADASTRO", {"tipo_documentacao": forma})["campos"]
-        for campo in ("telefone", "pix_tipo", "pix_chave", "valor_diaria",
-                      "empresa_id"):
+        for campo in ("telefone", "pix_tipo", "pix_chave", "empresa_id"):
             assert campo in exige, f"{campo} não é obrigatório em {forma}"
+
+    # ⚑ A DIÁRIA MUDOU DE REGRA EM 17/11/2026, e foi ele quem mudou: *"Valor da
+    # Diária → exibir campo para CLT e se for Prestador de Serviço (Autônomo
+    # (RPA)); demais, não exibir."*
+    #
+    # Ela era obrigatória SEMPRE — inclusive para PJ e pró-labore, que não têm
+    # diária. Campo que não se aplica e é exigido é pedido que não sai, e a
+    # pessoa não tem como resolver. Agora a exigência segue o TIPO DE CONTRATO,
+    # e só onde o campo aparece.
+    for contrato in ("CLT_INDETERMINADO", "CLT_DETERMINADO", "AUTONOMO_RPA"):
+        exige = svc.exigencias("CADASTRO", {"tipo_contrato": contrato})["campos"]
+        assert "valor_diaria" in exige, f"a diária é obrigatória em {contrato}"
+    for contrato in ("PJ", "PRO_LABORE", "ESTAGIO", "JOVEM_APRENDIZ"):
+        exige = svc.exigencias("CADASTRO", {"tipo_contrato": contrato})["campos"]
+        assert "valor_diaria" not in exige, (
+            f"{contrato} não tem diária — exigi-la trava o pedido sem saída")
+
+    # ⚑ E O PJ PASSOU A PEDIR OS DADOS DA EMPRESA DELE (mesma data): *"quando
+    # for pessoa PJ, abrir campos Razão social (PJ) e CNPJ (PJ)."* Sem eles o
+    # DP recebe um PJ e vai pedir a nota fiscal sem saber em nome de quem sai.
+    pj = svc.exigencias("CADASTRO", {"tipo_contrato": "PJ"})["campos"]
+    assert "razao_social_pj" in pj and "cnpj_pj" in pj
 
 
 def test_toda_opcao_de_categoria_tem_a_conta_escrita():
@@ -365,6 +412,16 @@ def _cad(mundo, **extra):
             "cargo_pleiteado_id": mundo["cargo_id"],
             "empresa_id": mundo["empresa_id"],
             "telefone": "85988881111", "pix_tipo": "CPF", "pix_chave": CPF_C,
+            # ⚑ PJ PEDE OS DADOS DA EMPRESA DELE desde 17/11/2026 (ele: *"quando
+            # for pessoa PJ, abrir campos Razão social (PJ) e CNPJ (PJ)"*) — e
+            # as duas ajudas passaram a ser obrigatórias na mesma data.
+            "razao_social_pj": "GENTE NOVA SERVICOS LTDA",
+            "cnpj_pj": "71000003000106",
+            "categoria_alimentacao": "NAO_RECEBE",
+            "categoria_transporte": "NAO_RECEBE",
+            # A diária NÃO é mais exigida de PJ (ele: *"exibir para CLT e
+            # Autônomo (RPA); demais, não exibir"*), mas informá-la aqui não
+            # atrapalha: o que o teste prova é o resto do pedido.
             "valor_diaria": "130,00", "data_inicio": "2026-06-01",
             "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
                            "COMPROVANTE-ENDERECO-PESSOA"]}
@@ -763,3 +820,64 @@ def test_todo_tipo_que_exige_papel_existe_no_PORTAL():
         assert chave in svc_portal.TIPOS_DO_PORTAL, (
             f"{chave} exige papel, a tela do DP manda para o portal, e o "
             f"portal não oferece este tipo")
+
+
+# ===========================================================================
+# ⚑ O VÍNCULO TEM UMA FONTE SÓ (17/11/2026)
+#
+# Ele cobrou a equalização mostrando os dois campos lado a lado:
+#
+#   *"Quando eu falo em equalizar falo em relação aos dois campos abaixo:
+#    Vínculo — Carteira Assinada (CTPS) / Prestador de Serviço;
+#    Tipo de Documentação para Cadastro — Prestador de Serviço / CTPS."*
+#
+# São o MESMO dado com dois nomes: o "Tipo de Documentação" do pedido VIRA o
+# `vinculo` da pessoa quando o DP atende. Enquanto as listas eram escritas à
+# mão em dois arquivos, divergiram na palavra E na ordem.
+#
+# ⚠️ O QUE ESTE TESTE PRENDE não é a palavra de hoje — é a FONTE. Acertar as
+# duas listas à mão resolveria hoje e divergiria de novo no próximo rótulo que
+# alguém mudar num lado só.
+# ===========================================================================
+def test_o_vinculo_do_pedido_e_o_da_ficha_sao_A_MESMA_LISTA():
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    da_ficha = [p.VINCULO_ROTULOS[v] for v in p.VINCULOS]
+
+    assert list(svc.CATEGORIAS["tipo_documentacao"]) == da_ficha
+    # "Tipo de Readmissão" é a mesma pergunta ("volta como o quê?").
+    assert list(svc.CATEGORIAS["tipo_readmissao"]) == da_ficha
+
+
+def test_o_rotulo_escolhido_volta_a_ser_o_CODIGO_que_a_coluna_guarda():
+    """A tela mostra português; a coluna `vinculo` guarda CTPS/PRESTADOR. Se a
+    tradução não cobrir um rótulo, o pedido grava o rótulo na coluna — e aí a
+    folha deixa de reconhecer a pessoa como prestador."""
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    for campo in ("tipo_documentacao", "tipo_readmissao"):
+        mapa = svc.DO_PIPE_PARA_O_CODIGO[campo]
+        for rotulo in svc.CATEGORIAS[campo]:
+            assert rotulo in mapa, f"{campo}: “{rotulo}” sem tradução"
+            assert mapa[rotulo] in p.VINCULOS
+
+
+def test_toda_opcao_de_vinculo_tem_a_explicacao_na_tela():
+    """A dica de cada opção é indexada pelo RÓTULO. Rótulo que muda num lado só
+    faz a explicação desaparecer da tela, sem erro."""
+    mapa = svc.EXPLICACAO_DA_OPCAO["tipo_documentacao"]
+    for rotulo in svc.CATEGORIAS["tipo_documentacao"]:
+        assert mapa.get(rotulo), f"“{rotulo}” está sem explicação"
+
+
+def test_a_palavra_do_vinculo_e_a_mesma_que_a_folha_compara():
+    """Fecha o círculo: a palavra que a pessoa escolhe no pedido é a mesma que
+    a folha usa para decidir diária × CTPS."""
+    from app.apps.analisesps import folha_vinculo as fv
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    escolhido = svc.CATEGORIAS["tipo_documentacao"][1]        # Prestador
+    codigo = svc.DO_PIPE_PARA_O_CODIGO["tipo_documentacao"][escolhido]
+
+    assert codigo == "PRESTADOR"
+    assert fv._igual(p.VINCULO_PLANILHA[codigo], fv.PRESTADOR)

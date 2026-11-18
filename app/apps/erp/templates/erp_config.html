@@ -25,6 +25,10 @@
   {# A CONTA DE E-MAIL DO SISTEMA (09/11/2026). Fica em Configurações e não em
      Empresas porque ela não é de CNPJ nenhum: quem fala por ela é o SISTEMA. #}
   <a class="subaba" href="#emailsistema" data-ir="emailsistema">E-mail do sistema</a>
+  {# ⚑ A CHAVE DE SEGREDOS (17/11/2026). Fica ao lado do E-mail do sistema
+     porque é lá que ela morde: sem chave válida, nenhuma senha de e-mail é
+     guardada — e até hoje isso só aparecia no momento de salvar. #}
+  <a class="subaba" href="#chavesegredos" data-ir="chavesegredos">Chave de segredos</a>
   <a class="subaba" href="#diarias" data-ir="diarias">Diárias</a>
   <a class="subaba" href="#documentos" data-ir="documentos">Tipos de documento</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
@@ -154,6 +158,37 @@
    quem fala é o SISTEMA. Sair por compras@ faria a pessoa achar que compras
    mandou, e responder para lá.
    =========================================================================== #}
+{# ===========================================================================
+   A CHAVE QUE CIFRA AS SENHAS (17/11/2026)
+
+   Ele, tentando gravar a conta de e-mail de uma empresa: *"fui gravar o email
+   no cadastro da empresa e apareceu: A chave em ERP_CHAVE_SEGREDOS não tem o
+   formato esperado."*
+
+   O recado estava certo e era inútil: mandava rodar `Fernet.generate_key()`,
+   que é comando de programador. Quem opera este sistema não roda comando — na
+   prática a mensagem dizia "chame alguém".
+
+   Agora o próprio ERP sorteia a chave. O que ele NÃO faz é guardá-la: ela vai
+   à mão para a Environment do Render, porque guardá-la no banco desfaria a
+   razão de ela existir.
+   =========================================================================== #}
+<div class="cartao" data-secao="chavesegredos">
+  <div class="cartao-cab"><h3>Chave de segredos</h3>
+    <small>é ela que cifra as senhas de e-mail e o certificado da nota</small></div>
+  <div class="cartao-dica">As senhas das contas de e-mail e a senha do
+    certificado digital não ficam legíveis no banco: são cifradas com uma
+    chave que mora <b>fora</b> dele, na Environment do Render. Sem ela, o
+    sistema se recusa a guardar essas senhas — guardar em claro "só desta vez"
+    é como uma senha vaza sem ninguém perceber.</div>
+  <div id="cs-situacao" class="desc" style="margin:8px 0">carregando…</div>
+  <div id="cs-nova"></div>
+  <div style="margin-top:12px">
+    <button class="btn secundario" id="cs-gerar">Gerar uma chave nova</button>
+  </div>
+  <div id="cs-msg"></div>
+</div>
+
 <div class="cartao" data-secao="emailsistema">
   <div class="cartao-cab"><h3>E-mail do sistema</h3>
     <small>por onde saem o convite de acesso e os avisos do próprio sistema</small></div>
@@ -592,7 +627,75 @@ window.addEventListener("hashchange", () =>
 document.addEventListener("DOMContentLoaded", () => {
   mostrarSecao((location.hash || "").replace("#", "") || SECAO_PADRAO);
   carregarEmailDoSistema();
+  carregarChaveDeSegredos();
 });
+
+// ---------------------------------------------------------------------------
+// A CHAVE QUE CIFRA AS SENHAS — ver o comentário no HTML, acima do cartão
+//
+// ⚠️ A CHAVE EXISTENTE NUNCA DESCE PARA A TELA. O servidor diz se ela serve e,
+// quando não serve, o que há de errado (tamanho, aspas) — nunca o valor. Só a
+// chave RECÉM-GERADA aparece, porque é a única que ainda não é segredo de
+// nada.
+// ---------------------------------------------------------------------------
+async function carregarChaveDeSegredos(){
+  const onde = els("cs-situacao");
+  if (!onde) return;
+  try {
+    const d = await api("/erp/api/chave-de-segredos");
+    const guardados = d.segredos_guardados || 0;
+    onde.innerHTML = d.serve
+      ? `<span class="etiqueta verde">a chave está configurada e funciona</span>`
+        + (guardados ? ` <small>${guardados} senha(s) guardada(s) com ela —
+             trocar a chave obriga a digitar todas de novo</small>` : "")
+      : `<span class="etiqueta ambar">${d.tem ? "a chave não serve" : "a chave não existe"}</span>
+         <small>${escapar(d.problema || "")}. Enquanto isso, o sistema recusa
+         guardar senha de e-mail e do certificado — o resto do cadastro salva
+         normalmente.</small>`;
+  } catch(e){ onde.textContent = "não foi possível olhar a chave: " + e.message; }
+}
+
+function ligarChaveDeSegredos(){
+  if (!els("cs-gerar")) return;
+  els("cs-gerar").addEventListener("click", async () => {
+    const d = await api("/erp/api/chave-de-segredos").catch(() => ({}));
+    if (d.serve) {
+      const ok = await perguntar({titulo: "Gerar uma chave nova?",
+        aviso: `A chave de hoje <b>funciona</b>. Trocar por uma nova
+          <b>apaga na prática</b> ${d.segredos_guardados || 0} senha(s) já
+          guardada(s): o que foi cifrado com a chave antiga não abre com a
+          nova, e cada senha terá de ser digitada de novo.`,
+        campos: [], textoOk: "Gerar assim mesmo"});
+      if (!ok) return;
+    }
+    try {
+      const r = await api("/erp/api/chave-de-segredos/gerar", {method: "POST"});
+      els("cs-nova").innerHTML = `
+        <div class="aviso info" style="margin-top:10px">
+          <b>Copie isto para a Environment do Render</b>, numa variável chamada
+          <b class="mono">${escapar(r.variavel)}</b>, e salve. O serviço
+          reinicia sozinho; depois disso o sistema volta a guardar senha.
+          <div style="display:flex; gap:8px; margin-top:8px; align-items:center">
+            <input id="cs-valor" class="mono" readonly
+                   style="flex:1; min-width:0" value="${escapar(r.chave)}">
+            <button class="btn secundario" type="button" id="cs-copiar">Copiar</button>
+          </div>
+          <small>⚠️ Esta chave não fica guardada em lugar nenhum do sistema:
+            saindo desta tela, ela some. Se perder, gere outra — mas aí as
+            senhas já cifradas terão de ser digitadas de novo.
+            <b>Sem aspas em volta</b>, e sem espaço antes ou depois.</small>
+        </div>`;
+      els("cs-copiar").addEventListener("click", async () => {
+        els("cs-valor").select();
+        try { await navigator.clipboard.writeText(r.chave);
+              aviso("cs-msg", "Copiada. Cole no Render e salve.", "ok"); }
+        catch(e){ aviso("cs-msg", "Seu navegador não deixou copiar sozinho — "
+                                  + "selecione o texto e copie à mão.", "info"); }
+      });
+    } catch(e){ aviso("cs-msg", e.message, "erro"); }
+  });
+}
+ligarChaveDeSegredos();
 
 // ---------------------------------------------------------------------------
 // A CONTA DE E-MAIL DO SISTEMA

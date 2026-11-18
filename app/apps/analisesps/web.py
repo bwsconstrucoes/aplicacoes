@@ -6072,8 +6072,11 @@ def tela_folha_pagamento():
 
     pronto = fpg._pronto()
     registro, erro = [], None
+    filtro = fpg.filtro_das_rodadas(request.args)
+    opcoes = fpg.opcoes_do_filtro()
     try:
-        registro = fpg.rodadas(teto=400)
+        registro = fpg.filtrar_rodadas(fpg.rodadas(teto=400, competencia=filtro["competencia"]),
+                                       filtro)
         fpg.situacao_das_sps(registro)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui montar a tela de pagamento")
@@ -6082,6 +6085,7 @@ def tela_folha_pagamento():
     return render_template(
         "analisesps_folha_pagamento.html", aba="folha", subaba="pagamento",
         grupos=subtelas_agrupadas(), pronto=pronto, rodadas=registro,
+        filtro=filtro, filtro_opcoes=opcoes,
         destaque=request.args.get("rodada") or "",
         erro=erro,
         pode_operar=auth.e_mestre(),   # ver é da folha; agir é do mestre (07/10/2026)

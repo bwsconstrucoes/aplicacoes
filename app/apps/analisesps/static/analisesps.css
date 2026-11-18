@@ -2698,6 +2698,11 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
   margin: 0 0 10px; }
 #tabela-rodadas tr.destaque td { background: var(--destaque-fundo, #fff8e1); }
 .gd-destino { width: 100%; margin: 6px 0; }
+/* 18/11/2026: uma SP por linha na coluna Pipefy, e os filtros da tela. */
+#tabela-rodadas .sp-linha { white-space: nowrap; padding: 2px 0; }
+#tabela-rodadas .sp-linha + .sp-linha { border-top: 1px dashed var(--borda); }
+#tabela-rodadas .sp-da-conta { margin: 2px 0 8px; }
+.filtros-gerados { flex-wrap: wrap; margin-bottom: 10px; }
 
 /* Tela do Ponto (02/10/2026): importação e competências na lateral. */
 .importar-ponto { display: flex; gap: 6px; margin: 6px 0; }

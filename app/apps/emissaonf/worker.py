@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import datetime
+from decimal import Decimal
 
 from credenciais import cliente_gspread, ler_credenciais
 from pipefy import get_card, extrair_card
@@ -136,6 +137,51 @@ def proximo_numero(gc, card_id=None) -> tuple[int, int]:
     return prox, ultimo
 
 
+def valor_base_substituicao(card: dict, nota_substituida):
+    """O valor-base da nota NOVA numa substituição, e o ajuste que houve.
+
+    Devolve `(valor_texto_ou_None, ajuste_ou_None)`.
+
+    O default é o valor da **nota antiga** — é o que a substituição quer dizer, e
+    é a única fonte confiável quando a nota antiga era parcial (o campo 'Valor
+    Parcial' é um dos doze que a conclusão limpa do card).
+
+    ⚠️ **Mas o teto do card manda, e isso veio de um impasse real em 17/11/2026.**
+    Uma nota saiu por R$ 13.053,64 quando devia ser R$ 13.053,54. O dono corrigiu
+    o Valor da Medição no card, atualizou o título, e foi substituir — e a tela
+    travou dizendo que *"o valor desta nota é MAIOR que o Valor da Medição"*. Ela
+    mesma tinha escolhido esse valor: o default era o da nota antiga, cego ao
+    card. A tela propunha um valor e, no passo seguinte, se recusava a emiti-lo.
+
+    O card é onde o dono corrige as coisas, e o **Valor da Medição não é um dos
+    campos que a conclusão limpa** — ele sobrevive e é confiável. Então, quando a
+    medição comporta menos do que a nota antiga, o card ganha. Quando comporta o
+    mesmo ou mais (o caso de toda substituição normal), nada muda.
+
+    O que cabe é o Valor da Medição menos as OUTRAS notas válidas — a que está
+    sendo substituída não conta, porque vai sair de cena.
+    """
+    import validacao as _v
+    import substituicao as _sub
+    alvo = _sub._chave_numero(nota_substituida)
+    antiga, outras = None, Decimal("0")
+    for slot in _v.slots_preenchidos(card):
+        # casa pelo SEQUENCIAL: o slot tem os 13 dígitos do padrão nacional e
+        # quem digita o número costuma ter o curto na mão
+        if _sub._chave_numero(slot["numero"]) == alvo:
+            antiga = Decimal(str(slot["valor"]))
+        elif slot["valida"]:
+            outras += Decimal(str(slot["valor"]))
+    if antiga is None:
+        return None, None                 # nota não está nos slots: sem default
+    cabe = _v._dec_norm(card.get("valor_medicao")) - outras
+    usado = min(antiga, cabe) if cabe > 0 else antiga
+    ajuste = None
+    if usado != antiga:
+        ajuste = {"antiga": antiga, "usado": usado, "cabe": cabe, "outras": outras}
+    return f"{usado:.2f}", ajuste
+
+
 def preparar(card_id: str, tipo_medicao_override=None, valor_override=None,
              nota_substituida=None) -> dict:
     """Roda todo o pipeline até o XML assinado e devolve o contexto (sem efeitos).
@@ -157,14 +203,15 @@ def preparar(card_id: str, tipo_medicao_override=None, valor_override=None,
     # override de tipo de medição (substituição): entra antes do cálculo de retenções
     if tipo_medicao_override:
         card["tipo_medicao"] = tipo_medicao_override
-    # substituição sem valor explícito: o valor-base default é o da nota antiga
+    # substituição sem valor explícito: a regra está em `valor_base_substituicao`
+    valor_ajustado = None
     if valor_override is None and nota_substituida:
-        import validacao as _v
-        _alvo = "".join(c for c in str(nota_substituida) if c.isdigit())
-        for _s in _v.slots_preenchidos(card):
-            if "".join(c for c in str(_s["numero"]) if c.isdigit()) == _alvo:
-                valor_override = f"{_s['valor']:.2f}"
-                break
+        valor_override, valor_ajustado = valor_base_substituicao(card, nota_substituida)
+        if valor_ajustado:
+            print(f"  >> VALOR AJUSTADO PELO CARD: a nota antiga era "
+                  f"{brl(valor_ajustado['antiga'])} e o Valor da Medição do card "
+                  f"comporta {brl(valor_ajustado['cabe'])} — esta nota sai por "
+                  f"{brl(valor_ajustado['usado'])}.")
     print(f"Obra: {card['codigo_obra']} | Medição {card['numero_medicao']} | "
           f"Valor {brl(card['valor_medicao'])} | BDI {brl(card['bdi'])}")
 
@@ -222,6 +269,7 @@ def preparar(card_id: str, tipo_medicao_override=None, valor_override=None,
     xml = gerar_xml_preview(dados_rps, chave_pem, cert_pem)
 
     return {"card": card, "obra": obra, "r": r, "ibge": ibge, "prox": prox, "ultimo": ultimo,
+            "valor_ajustado": valor_ajustado,
             "dados_rps": dados_rps, "avisos": avisos, "end_tom": end_tom, "xml": xml,
             "assinado": bool(chave_pem and cert_pem), "chave_pem": chave_pem, "cert_pem": cert_pem,
             "senha_cert": senha_cert, "gc": gc, "cred": cred}
