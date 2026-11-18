@@ -21,6 +21,62 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 18/11/2026 — "AS REGRAS JÁ DEFINIDAS NÃO DEVERIAM SUMIR?" — deveriam, e a culpa era de um desenho meu
+
+Ele, depois de adotar as regras e medir de novo:
+
+> *"Quando eu coloco medir de novo, as regras anteriormente definidas não
+> deveriam sumir?"*
+
+**Deveriam.** A tela continuava oferecendo o que ele já tinha respondido — que é
+a irritação que este arquivo descreve em três lugares.
+
+#### A causa: a MESMA decisão guardada em três lugares
+
+| Onde eu havia implementado | O que a comparação olhava |
+|---|---|
+| `OBRIGATORIOS_*`, no cadastro | ❌ não olhava |
+| as regras de "não exibir", escritas à mão DENTRO da tela | ❌ não olhava |
+| `obrigatorios_se` do formulário do portal | ✅ só este |
+
+Ou seja: eu adotava a regra num lugar e a medição conferia em outro. **Não era
+um esquecimento — era um desenho que garantia a divergência.**
+
+#### O conserto: uma declaração por tipo de regra, três leitores
+
+- **`CAMPOS_SO_SE`** (novo) declara "este campo só aparece quando…". Dela leem:
+  `o_que_falta` (não cobra campo que a tela não mostra), a tela do cadastro
+  (esconde), e a comparação da medição (tira da lista dele).
+- A tela **deixou de ter a regra escrita à mão**: ela recebe o mapa do servidor
+  e aplica para todo campo declarado. Acrescentar a próxima regra é **uma linha**
+  em `pessoas.py`, não três edições espalhadas.
+
+⚠️ **Campo oculto não é campo removido:** continua no documento, só não aparece.
+A gravação manda o que está na tela, e remover deixaria o valor antigo intacto
+no banco quando a pessoa mudasse de vínculo.
+
+#### ⚠️ Duas assimetrias que só apareceram dirigindo a tela
+
+1. **A mesma regra, perguntada por dois nomes.** A tabela declara "PIS é de
+   quem tem CTPS" (por VÍNCULO) e a medição também pergunta por CONTRATO ("PIS
+   para CLT tempo determinado?"). São a mesma coisa, mas a comparação por chave
+   não via — e ele veria **cinco linhas pendentes de decisões já tomadas**.
+   Resolvido com `vinculo_pelo_contrato`, nos dois ramos (obrigatório e não
+   exibir).
+2. **A medição propôs o oposto de uma decisão dele.** "Não exibir Valor da
+   diária para CTPS" — e ele decidiu em **10/11/2026** que *"quem tem carteira
+   pode ser pago por dia"*. A diária está vazia em 100% dos CTPS porque é rara,
+   não porque é proibida: é o mesmo caso do "valor do mês" que ele recusou.
+   **Registrei em `RECUSADAS` citando a decisão dele**, para a tela não oferecer
+   o contrário do que ele já disse. ⚠️ Se eu li errado, é tirar as três linhas.
+
+#### O efeito, medido na tela
+
+Com 90 cadastros de amostra: **de 40 propostas misturadas para 7 a decidir**, 35
+em "já faz" e 2 em "já decididas por você". As 7 que sobraram são de uma família
+só — PIS e CTPS não se aplicam a prestador, e a diária é obrigatória para ele.
+
+
 ### ⚑ 18/11/2026 — CARGO + CONVENÇÃO PREENCHE CATEGORIA, PISO E CBO
 
 Ele: *"No Pipefy eu tenho uma base de dados onde vinculo cargo, convenção,

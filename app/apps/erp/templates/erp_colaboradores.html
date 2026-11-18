@@ -2250,10 +2250,8 @@ function painelDaFicha(){
          ⚠️ Ficam no documento, apenas ESCONDIDOS: a gravação só manda o que
          está na tela, e remover o campo deixaria o valor antigo intacto no
          banco quando alguém deixasse de ser PJ. #}
-      <div id="c-pj-caixa" class="oculto" style="display:contents">
       ${campoTexto("Razão social (PJ)", "c-razao", c.razao_social_pj, 'style="grid-column:span 2"')}
       ${campoTexto("CNPJ (PJ)", "c-cnpjpj", c.cnpj_pj, 'name="cnpj"')}
-      </div>
       ${campoTexto("ID Fortes", "c-fortes", c.id_fortes)}
     </div>
     <div class="cartao-dica"><b>Vínculo</b> diz se há carteira assinada. Quem tem
@@ -2680,21 +2678,57 @@ function ligarTipoDeContrato(){
     // vínculo novo — é a contradição que a separação existe para impedir.
     sel.value = lista.some(x => x.valor === antes) ? antes : "";
   };
-  // ⚑ E OS DOIS CAMPOS DE PJ seguem o TIPO DE CONTRATO, não o vínculo — por
-  // isso o ouvinte é do `c-contrato` também. `display:contents` na caixa faz
-  // os dois campos continuarem alinhados na grade do formulário; um `<div>`
-  // normal os tiraria da grade e eles ficariam tortos.
-  const pj = els("c-pj-caixa");
-  const aplicarPJ = () => {
-    if (!pj) return;
-    const ehPJ = sel && sel.value === "PJ";
-    pj.classList.toggle("oculto", !ehPJ);
-    pj.style.display = ehPJ ? "contents" : "none";
-  };
-  vinc.addEventListener("change", () => { aplicar(); aplicarPJ(); });
-  if (sel) sel.addEventListener("change", aplicarPJ);
+  vinc.addEventListener("change", () => { aplicar(); esconderOQueNaoCabe(); });
+  if (sel) sel.addEventListener("change", esconderOQueNaoCabe);
   aplicar();
-  aplicarPJ();
+  esconderOQueNaoCabe();
+}
+
+// ===========================================================================
+// ⚑ CAMPO QUE NÃO CABE NESTE VÍNCULO SOME DA TELA (18/11/2026)
+//
+// Ele perguntou o que fez isto existir: *"quando eu coloco medir de novo, as
+// regras anteriormente definidas não deveriam sumir?"*
+//
+// Deveriam, e não sumiam porque eu guardava a mesma decisão em três lugares:
+// os obrigatórios numa tabela do servidor, os "não exibir" escritos à mão aqui
+// na tela, e a comparação da medição olhando só o formulário do portal.
+//
+// Agora a regra vem do servidor (`pessoas.CAMPOS_SO_SE`, em `o.campos_so_se`)
+// e esta função a aplica para TODO campo declarado — acrescentar a próxima
+// regra é uma linha lá, e não três edições espalhadas.
+//
+// ⚠️ ESCONDE, NÃO REMOVE: a gravação manda só o que está na tela, e remover o
+// campo deixaria o valor antigo intacto no banco quando a pessoa mudasse de
+// vínculo. Escondido, ele some da vista e continua sendo mandado — o que é
+// certo, porque o valor dele ainda é o que estava gravado.
+// ===========================================================================
+const CAMPO_NA_TELA = {
+  razao_social_pj: "c-razao", cnpj_pj: "c-cnpjpj",
+  salario: "c-salario", contrato_experiencia: "c-exper",
+};
+
+function esconderOQueNaoCabe(){
+  const regras = (OPCOES || {}).campos_so_se || {};
+  const vinculo = (els("c-vinculo") || {}).value || "";
+  const contrato = (els("c-contrato") || {}).value || "";
+  // O tipo de contrato IMPLICA o vínculo: escolher "PJ" já diz prestador, e a
+  // regra escrita em vínculo tem de valer antes de alguém mexer na caixinha
+  // do vínculo.
+  const doContrato = (OPCOES.tipos_contrato_prestador || []).some(x => x.valor === contrato)
+    ? "PRESTADOR"
+    : (OPCOES.tipos_contrato_ctps || []).some(x => x.valor === contrato) ? "CTPS" : "";
+  const agora = {vinculo: vinculo || doContrato, tipo_contrato: contrato};
+
+  for (const [campo, regra] of Object.entries(regras)) {
+    const id = CAMPO_NA_TELA[campo];
+    const campoNaTela = id && els(id);
+    if (!campoNaTela) continue;
+    const cabe = Object.entries(regra).every(
+      ([chave, permitidos]) => permitidos.includes(agora[chave] || ""));
+    const caixa = campoNaTela.closest(".campo");
+    if (caixa) caixa.classList.toggle("oculto", !cabe);
+  }
 }
 
 function corpoDoCadastro(){
