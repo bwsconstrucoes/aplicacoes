@@ -59,12 +59,35 @@ def endereco_valido(endereco: str) -> bool:
 
 
 def remetente_de(empresa: Empresa) -> str:
-    """Como o destinatário vê quem mandou."""
-    escrito = _texto(getattr(empresa, "smtp_remetente", ""))
-    if escrito:
-        return escrito
+    """Como o destinatário vê quem mandou — SEMPRE com um endereço dentro.
+
+    ⚑ CONSERTO DE 18/11/2026, e o defeito era meu. O dono configurou a conta
+    do DP e a do sistema e as duas recusaram o envio com "o servidor recusou o
+    endereço", nas contas que a empresa usa há anos sem restrição nenhuma.
+
+    A CAUSA: este campo era devolvido CRU. A tela pede "como aparece para quem
+    recebe", e quem lê isso escreve um NOME — "DP — BWS Construções". Esse
+    texto virava o `From` da mensagem, e um `From` sem `@` não é endereço: o
+    `smtplib` tira dele o remetente do envelope, manda um envelope vazio ou
+    torto, e aí o servidor recusa o DESTINATÁRIO (é nessa hora que a recusa
+    aparece, o que jogava a suspeita para o lado errado — o endereço de
+    destino, que estava certo o tempo todo).
+
+    A REGRA AGORA: se o que está escrito já tem endereço (`fulano@x` ou
+    `Nome <fulano@x>`), vale como está. Se é só um nome, ele vira o NOME e o
+    endereço da conta entra junto. Assim a tela pode continuar pedindo "como
+    aparece", que é o que a pessoa entende, sem produzir mensagem inválida.
+    """
     conta = _texto(getattr(empresa, "smtp_usuario", "")) or \
         _texto(getattr(empresa, "email", ""))
+    escrito = _texto(getattr(empresa, "smtp_remetente", ""))
+    if escrito:
+        # ⚠️ A CONTA DO "@" É NO TEXTO INTEIRO, e não no que o `parseaddr`
+        # devolve: para "ERP BWS" ele responde ("", "ERP"), engolindo metade
+        # do nome. Sem arroba em lugar nenhum, o que está escrito é um NOME.
+        if "@" in escrito:
+            return escrito
+        return formataddr((escrito, conta)) if conta else escrito
     nome = _texto(getattr(empresa, "nome_fantasia", "")) or \
         _texto(getattr(empresa, "razao_social", ""))
     return formataddr((nome, conta)) if conta else nome
