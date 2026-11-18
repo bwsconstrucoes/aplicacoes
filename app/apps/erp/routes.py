@@ -13451,6 +13451,41 @@ def api_dp_pedido_acao(pedido_id: int, acao: str):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ===========================================================================
+# OS CHECKLISTS DO DP (18/11/2026)
+#
+# Ele: *"vi que você importou checklist do Pipefy, só que eles estão todos
+# desatualizados. Precisa de uma tela pra configurar eles de forma fácil."*
+#
+# ⚑ LER É DE QUEM VÊ PESSOAL; ESCREVER É DE QUEM ATENDE. Mudar o checklist muda
+# a rotina de trabalho do DP inteiro — é mais que marcar um item, e por isso não
+# cabe em `ver_pessoal`.
+# ===========================================================================
+@bp.route("/erp/api/dp/checklists", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="atender_dp")
+def api_dp_checklists():
+    """Os passos de cada tipo de solicitação, e a gravação deles."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "checklists": svc.checklists_para_a_tela(s)})
+            d = request.get_json(silent=True) or {}
+            r = svc.gravar_checklist(
+                s, str(d.get("tipo") or "").strip().upper(),
+                list(d.get("itens") or []),
+                vinculo=d.get("vinculo"), usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha nos checklists do DP")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/dp/agente", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_pessoal", POST="pedir_contabilidade")
