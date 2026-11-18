@@ -12275,6 +12275,7 @@ somente Solicitações de uma conta especifica"*.
   é 1 envio ao Drive por conta, uma vez por lançamento.
 - Testes: `test_analisesps_gratificados.py` (via SP ponta a ponta: o PDF regravado traz
   cada SP; a tela lista todas com o nome), `test_analisesps_telas.py` (filtros; teto).
+- **Publicado em 18/11/2026** (sem migração).
 
 #### Leva 271 — A carga diária do Mobponto deixa de pedir o mês que já é todo do ponto eletrônico (17/11/2026)
 
@@ -12292,6 +12293,7 @@ somente Solicitações de uma conta especifica"*.
   base mista DESLIGADA, nada muda — e o aviso voltaria.
 - Não mexi no botão manual de Folha PGT › Ponto nem nos outros usos do Mobponto (lançar
   ponto, apoios). Teste: `test_mes_todo_no_ponto_eletronico_nao_vai_ao_mobponto_nem_avisa`.
+- **Publicado em 18/11/2026** (sem migração).
 
 #### Leva 270 — Pagamento via SP: a chave Pix do cadastro vai marcada, não "Aleatória" (16/11/2026)
 
