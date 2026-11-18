@@ -12244,6 +12244,36 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 272 — Arquivos gerados: todas as SPs, uma por linha, filtros, e o nº da SP no PDF do via SP (18/11/2026)
+
+- O dono, olhando o pagamento via SP: *"na parte das SPs, não estão sendo exibidas todas
+  as SPs. Só uma parte (…) o sistema está ocultando algumas (…) dentro do relatório em PDF
+  é interessante que seja embutido o número da SP (…) coloca uma quebra de linha para cada
+  SP (…) não consegue fazer filtro nessa tela (…) por tipo, por data, a competência, o tipo
+  da verba."*
+- **Causa das SPs sumidas:** o registro do arquivo (`folha_arquivo_gerado.card_pipefy`)
+  guardava os números até 60 caracteres — CINCO SPs (`_ids_que_cabem` e `registrar_card`).
+  No via SP uma conta tem dezenas. A coluna é TEXT; o teto foi a 4000. As gerações antigas,
+  já cortadas, são lidas do ANDAMENTO do lançamento (`folha_cards.sps_dos_arquivos`, uma
+  consulta para a tela inteira), que sempre teve a lista inteira. O nome de quem recebe vai
+  junto (gravado no andamento a partir de agora; nas antigas, do lote da geração).
+- **Uma SP por linha** na coluna Pipefy, com o nome, e "conta X · N SPs" embaixo.
+- **Filtros**: competência, pagamento (quinzena, fim de mês, DC, avulso), verba e "gerado
+  de/até". Com competência escolhida, lê só aquele mês (sem o teto de 400 arquivos do log
+  pesar sobre os meses antigos). Opções lidas do registro (2 consultas).
+- **`folha_cards.rodada` lê só a competência da análise** — com o teto de 400, uma geração
+  antiga passaria a "arquivo não encontrado" ao lançar.
+- **O nº da SP no relatório em PDF do via SP**: depois de lançar (inclusive no "Gerar e
+  lançar"), o PDF de cada conta é refeito a partir do LOTE da geração, com "Fulano · SP n"
+  e a SP na situação, e gravado POR CIMA no Drive (o link não muda) — o mesmo caminho que a
+  DC já tinha (`_relatorios_via_sp_com_sp`, `gratificados.montado_do_lote`). Refaz quando as
+  SPs da conta mudam. Gerações já lançadas ganham o botão "Pôr o nº das SPs no relatório"
+  (reusa o "lançar", que com tudo lançado só termina o que faltou — não cria SP).
+- Custo: a tela ganhou 1 consulta (andamentos) + 2 (opções do filtro); refazer o relatório
+  é 1 envio ao Drive por conta, uma vez por lançamento.
+- Testes: `test_analisesps_gratificados.py` (via SP ponta a ponta: o PDF regravado traz
+  cada SP; a tela lista todas com o nome), `test_analisesps_telas.py` (filtros; teto).
+
 #### Leva 271 — A carga diária do Mobponto deixa de pedir o mês que já é todo do ponto eletrônico (17/11/2026)
 
 - O dono recebeu no Telegram: *"⚠️ Ponto do Mobponto: a carga PAROU. Motivo: ponto que

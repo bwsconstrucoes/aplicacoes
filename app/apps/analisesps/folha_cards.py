@@ -281,7 +281,14 @@ def rodada(analise_id: int) -> dict:
     é tudo o que entrou no log, da mesma competência e pagamento, entre a análise
     anterior e esta."""
     from . import folha_pagamento as fpg
-    todos = fpg.log(teto=400)
+    from .db import consultar_um
+    # SÓ A COMPETÊNCIA DA ANÁLISE (18/11/2026): era o log inteiro com teto de 400
+    # arquivos — com o tempo, uma geração antiga saía do teto e passava a "não
+    # encontrado".
+    onde = consultar_um("SELECT ano, mes FROM analisesps.folha_arquivo_gerado "
+                        " WHERE id = ?", (int(analise_id),)) if fpg._pronto() else None
+    todos = (fpg.log(teto=2000, ano=onde[0], mes=onde[1]) if onde
+             else fpg.log(teto=400))
     analise = next((a for a in todos if a["id"] == int(analise_id)), None)
     if not analise:
         raise ErroDosCards("arquivo não encontrado no log de arquivos gerados.")
@@ -559,7 +566,8 @@ def previa(analise_id: int, contas=None) -> dict:
     # Pipefy recusou, ou pôr o número da SP no relatório. A tela libera o botão
     # só para isso — `lancar` não cria SP nenhuma nesse caminho.
     vista["so_terminar"] = bool(vista["ja_lancado"] and (
-        _cards_da_dc_a_mover(vista) or _relatorio_da_dc_pendente(vista["andamento"])))
+        _cards_da_dc_a_mover(vista) or _relatorio_da_dc_pendente(vista["andamento"])
+        or _relatorio_via_sp_pendente(vista["andamento"])))
     return vista
 
 
@@ -1335,7 +1343,8 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     if vista["bloqueios"]:
         raise ErroDosCards("nenhum card foi criado: " + " ".join(vista["bloqueios"]))
     if vista["ja_lancado"] and (_cards_da_dc_a_mover(vista)
-                                or _relatorio_da_dc_pendente(vista["andamento"])):
+                                or _relatorio_da_dc_pendente(vista["andamento"])
+                                or _relatorio_via_sp_pendente(vista["andamento"])):
         # A SP já existe e só falta mover os cards de origem (o Pipefy recusou
         # da outra vez) ou pôr o número dela no relatório: apertar de novo
         # termina isso, sem criar nada.
@@ -1345,7 +1354,8 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
                                + "; ".join(movidos["falhas"]) + ".")
         return {"ok": True, "competencia": vista["competencia"], "despesas": [],
                 "sps": [], "criados": [], "cards_movidos": movidos["movidos"],
-                "avisos": _relatorios_da_dc_com_sp(analise_id, vista["andamento"])}
+                "avisos": _relatorios_da_dc_com_sp(analise_id, vista["andamento"])
+                          + _relatorios_via_sp_com_sp(analise_id, vista["andamento"])}
     if vista["ja_lancado"]:
         raise ErroDosCards(
             "este pagamento já foi lançado no Pipefy. Para relançar, cancele os cards "
@@ -1372,7 +1382,10 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
                     na_criacao, depois = _separar(valores, sp_pipe["inicio"])
                     card = pipefy.criar_card(PIPE_SP, sp.get("titulo") or grupo["grupo"],
                                              na_criacao)
+                    # O NOME vai junto (18/11/2026): a tela de Arquivos gerados diz
+                    # de quem é cada SP do pagamento via SP.
                     feito = {"id": card["id"], "link": card["link"], "depois": depois,
+                             "nome": sp.get("nome") or "",
                              "conta": sp["conta"]}
                     estado["sps"][chave_sp] = feito
                     _guardar_andamento(analise_id, andamento)
@@ -1394,14 +1407,7 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
 
     # Amarra no log: cada arquivo de conta à(s) SP(s) dele; a análise a todas.
     for arquivo in r["arquivos"]:
-        sps = []
-        for v in (arquivo["verbas"] or "").split("+"):
-            lancadas_v = contas_lancadas(andamento, v)
-            if v == VERBA_VIA_SP:
-                sps += [s for k, s in sorted(lancadas_v.items())
-                        if k.split("|")[0] == " ".join(str(arquivo["conta"] or "").split())]
-            elif lancadas_v.get(arquivo["conta"]):
-                sps.append(lancadas_v[arquivo["conta"]])
+        sps = _sps_do_arquivo(andamento, arquivo)
         if sps:
             fpg.registrar_card(arquivo["id"], _ids_que_cabem(sps), sps[0]["link"])
     todas = [sp for v in r["verbas"] for sp in contas_lancadas(andamento, v).values()]
@@ -1413,7 +1419,8 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     # A DC: com a SP criada, os cards de origem vão para a fase de processados.
     # Uma recusa aqui NÃO desfaz a SP — vai como aviso, e lançar de novo termina.
     movidos = _mover_cards_da_dc(analise_id, vista["grupos"], andamento)
-    avisos_relatorio = _relatorios_da_dc_com_sp(analise_id, andamento)
+    avisos_relatorio = (_relatorios_da_dc_com_sp(analise_id, andamento)
+                        + _relatorios_via_sp_com_sp(analise_id, andamento))
     return {"ok": True, "competencia": vista["competencia"], "despesas": [],
             "cards_movidos": movidos["movidos"],
             "avisos": ([f"SP criada, mas o Pipefy recusou mover {'; '.join(movidos['falhas'])}. "
@@ -1426,16 +1433,85 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
             "criados": criados}
 
 
-def _ids_que_cabem(sps, teto: int = 60) -> str:
-    """Os números das SPs, separados por vírgula, até caber no registro do
-    arquivo (60 caracteres). No via SP uma conta pode ter dezenas de SPs; a lista
-    inteira fica no andamento do lançamento."""
+def _ids_que_cabem(sps, teto: int = 4000) -> str:
+    """Os números das SPs, separados por vírgula, no registro do arquivo.
+
+    ⚠️ O TETO ERA DE 60 CARACTERES — CINCO SPs (dono, 18/11/2026: *"na parte das
+    SPs, não estão sendo exibidas todas as SPs. Só uma parte (…) tem alguma coisa
+    ocultando"*). No via SP uma conta tem dezenas de SPs, e a tela de Arquivos
+    gerados lia daqui: mostrava as cinco primeiras e escondia o resto. A coluna é
+    TEXT; o teto agora só protege de um absurdo. As já gravadas cortadas são lidas
+    do andamento do lançamento (`sps_dos_arquivos`)."""
     saida = ""
     for s in sps:
         proximo = (saida + "," if saida else "") + str(s["id"])
         if len(proximo) > teto:
             break
         saida = proximo
+    return saida
+
+
+def _sps_do_arquivo(andamento: dict, arquivo: dict) -> list:
+    """As SPs lançadas de UM arquivo de conta — a mesma regra que amarra o log."""
+    sps = []
+    conta = " ".join(str(arquivo.get("conta") or "").split())
+    for v in (arquivo.get("verbas") or "").split("+"):
+        lancadas_v = contas_lancadas(andamento, v)
+        if v == VERBA_VIA_SP:
+            sps += [dict(s, _chave=k) for k, s in sorted(lancadas_v.items())
+                    if k.split("|")[0] == conta]
+        elif lancadas_v.get(arquivo.get("conta")):
+            sps.append(lancadas_v[arquivo.get("conta")])
+    return sps
+
+
+def sps_dos_arquivos(rodadas_: list) -> dict:
+    """`{id do arquivo de conta: [{"id", "nome"}]}` — TODAS as SPs de cada arquivo,
+    lidas do andamento do lançamento (e não do registro do arquivo, que até
+    18/11/2026 guardava só as cinco primeiras). Uma consulta só, para a tela inteira.
+    O nome de quem recebe vem do andamento ou, nas SPs antigas do pagamento via SP,
+    do lote da geração."""
+    from . import gratificados as gm
+    from .db import consultar
+    analises = [r["analise"]["id"] for r in rodadas_ or [] if r.get("analise")]
+    if not analises:
+        return {}
+    chaves = ([CHAVE_DO_ANDAMENTO.format(int(i)) for i in analises]
+              + [gm.CHAVE_DO_LOTE.format(int(i)) for i in analises])
+    try:
+        linhas = consultar("SELECT chave, valor FROM analisesps.meta WHERE chave IN ("
+                           + ", ".join("?" for _ in chaves) + ")", tuple(chaves))
+    except Exception:  # noqa: BLE001 — a tela segue com o que o registro tem
+        logger.exception("Folha: não consegui ler o andamento dos lançamentos")
+        return {}
+    meta = {}
+    for chave, valor in linhas:
+        try:
+            meta[chave] = json.loads(valor) if valor else {}
+        except ValueError:
+            meta[chave] = {}
+    saida = {}
+    for r in rodadas_ or []:
+        if not r.get("analise"):
+            continue
+        andamento = meta.get(CHAVE_DO_ANDAMENTO.format(int(r["analise"]["id"]))) or {}
+        if not andamento:
+            continue
+        # Já lançada, mas o relatório em PDF ainda sem o número das SPs (gerações de
+        # antes de 18/11/2026, ou um Drive que recusou): a tela oferece terminar.
+        r["relatorio_sem_sp"] = bool(r.get("lancado") and (
+            _relatorio_via_sp_pendente(andamento) or _relatorio_da_dc_pendente(andamento)))
+        lote = meta.get(gm.CHAVE_DO_LOTE.format(int(r["analise"]["id"]))) or {}
+        nomes = {str(p.get("cpf") or ""): p.get("nome") or ""
+                 for p in lote.get("pessoas") or []}
+        for a in r.get("pagamentos") or []:
+            sps = _sps_do_arquivo(andamento, a)
+            if sps:
+                saida[a["id"]] = [
+                    {"id": str(s["id"]),
+                     "nome": s.get("nome") or nomes.get(
+                         str(s.get("_chave") or "").partition("|")[2], "")}
+                    for s in sps]
     return saida
 
 
@@ -1496,6 +1572,63 @@ def _relatorios_da_dc_com_sp(analise_id: int, andamento: dict) -> list:
             continue
         feitos.add(conta)
         andamento["_dc_relatorio_sp"] = sorted(feitos)
+        _guardar_andamento(analise_id, andamento)
+    return avisos
+
+
+def _sps_via_sp_por_conta(andamento: dict) -> dict:
+    """`{conta: {cpf: id da SP}}` das SPs do pagamento via SP já completas."""
+    saida: dict = {}
+    for chave, sp in contas_lancadas(andamento, VERBA_VIA_SP).items():
+        if not sp.get("completa"):
+            continue
+        conta, _, cpf = chave.partition("|")
+        saida.setdefault(conta, {})[cpf] = str(sp["id"])
+    return saida
+
+
+def _relatorio_via_sp_pendente(andamento: dict) -> bool:
+    feitos = andamento.get("_viasp_relatorio_sp") or {}
+    return any(sorted(ids.values()) != feitos.get(conta)
+               for conta, ids in _sps_via_sp_por_conta(andamento).items())
+
+
+def _relatorios_via_sp_com_sp(analise_id: int, andamento: dict) -> list:
+    """Refaz o PDF do relatório de cada conta do pagamento via SP com o NÚMERO DA SP
+    de cada pessoa e grava POR CIMA do arquivo no Drive (o link não muda). O mesmo
+    caminho do da DC (`_relatorios_da_dc_com_sp`): o PDF nasce na geração, antes de
+    a SP existir. Refeito quando as SPs da conta mudam (conta lançada aos poucos).
+    Nunca derruba o lançamento: devolve os avisos."""
+    from . import drive, folha_pagamento as fpg, folha_relatorio as fr
+    from . import gratificados as gm
+    por_conta = _sps_via_sp_por_conta(andamento)
+    feitos = dict(andamento.get("_viasp_relatorio_sp") or {})
+    pendentes = {c: ids for c, ids in por_conta.items() if sorted(ids.values()) != feitos.get(c)}
+    if not pendentes:
+        return []
+    try:
+        r = rodada(analise_id)
+        lote = gm.lote_da_analise(analise_id)
+        contas = fpg.conta_por_obra()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Via SP: não consegui preparar o relatório com as SPs")
+        return [f"o relatório em PDF não foi atualizado com o número das SPs ({e})."]
+    avisos = []
+    for conta, ids in sorted(pendentes.items()):
+        arquivo = (r.get("relatorios") or {}).get(conta) or {}
+        if arquivo.get("drive_id") and lote:
+            try:
+                dados = fr.montar(gm.montado_do_lote(lote, ids, conta), contas, "")
+                drive.substituir_conteudo(arquivo["drive_id"], fr.pdf(dados),
+                                          "application/pdf")
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Via SP: falhou refazer o relatório da conta %s", conta)
+                avisos.append(f"o relatório em PDF da conta {conta} não foi atualizado "
+                              f"com o número das SPs ({e}).")
+                continue
+        # Sem PDF (geração que não o teve): nada a refazer — fica anotada.
+        feitos[conta] = sorted(ids.values())
+        andamento["_viasp_relatorio_sp"] = feitos
         _guardar_andamento(analise_id, andamento)
     return avisos
 

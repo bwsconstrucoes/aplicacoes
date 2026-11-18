@@ -8664,3 +8664,45 @@ def test_o_botao_ATUALIZAR_C_DIARIOS_rele_so_a_aba(app, monkeypatch):
         "contas": 0, "obras": 0, "avisos": ['não achei a aba "C. Diários"']})
     r = cliente.post("/analisesps/api/c-diarios/atualizar").get_json()
     assert not r["ok"] and "C. Diários" in r["erro"]
+
+
+def test_ARQUIVOS_GERADOS_filtram_por_pagamento_verba_e_data(app, monkeypatch):
+    """18/11/2026: *"não consegue fazer filtro nessa tela (…) por tipo, por data (…)
+    a competência, o tipo da verba"*."""
+    import datetime as dt
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_pagamento as fpg
+
+    def arquivo(i, tipo, verbas, rotulo, dia, destino):
+        return {"id": i, "ano": 2026, "mes": 11, "tipo": tipo, "destino": destino,
+                "rotulo_destino": destino, "verbas": verbas, "rotulo_verbas": rotulo,
+                "conta": "" if destino == "analise" else "50024", "nome": f"{i}.xlsx",
+                "pessoas": 1, "total": D("10.00"), "link": "", "card_pipefy": "",
+                "link_card": "", "avisos": "", "criado_por": "M", "drive_id": "",
+                "criado_em": dt.datetime(2026, 11, dia, 12, tzinfo=dt.timezone.utc),
+                "competencia": "11/2026"}
+    _preparar_pagamento(monkeypatch, log=[
+        arquivo(4, "fim_de_mes", "viasp", "Pagamento via SP", 17, "analise"),
+        arquivo(3, "fim_de_mes", "viasp", "Pagamento via SP", 17, "viasp"),
+        arquivo(2, "quinzena", "diaria", "Diárias", 10, "analise"),
+        arquivo(1, "quinzena", "diaria", "Diárias", 10, "beevale")])
+    monkeypatch.setattr(fpg, "opcoes_do_filtro", lambda: {
+        "competencias": ["2026-11"], "tipos": fpg.ROTULO_DO_PAGAMENTO,
+        "verbas": ["Diárias", "Pagamento via SP"]})
+    cliente = _como_mestre(app)
+    tudo = cliente.get("/analisesps/folha/pagamento").get_data(as_text=True)
+    assert "2 geração(ões)" in tudo and 'name="verba"' in tudo
+    so_sp = cliente.get("/analisesps/folha/pagamento?verba=Pagamento+via+SP").get_data(as_text=True)
+    assert "1 geração(ões) no filtro" in so_sp
+    quinzena = cliente.get("/analisesps/folha/pagamento?tipo=quinzena&de=2026-11-09&ate=2026-11-10")
+    assert "1 geração(ões) no filtro" in quinzena.get_data(as_text=True)
+    nada = cliente.get("/analisesps/folha/pagamento?de=2026-11-18").get_data(as_text=True)
+    assert "0 geração(ões) no filtro" in nada
+
+
+def test_o_registro_do_arquivo_guarda_TODAS_as_SPs_e_nao_so_cinco():
+    """18/11/2026: *"não estão sendo exibidas todas as SPs. Só uma parte"* — o
+    registro cortava em 60 caracteres (cinco números)."""
+    from app.apps.analisesps import folha_cards as fcd
+    sps = [{"id": str(1400000000 + i)} for i in range(30)]
+    assert fcd._ids_que_cabem(sps).split(",") == [s["id"] for s in sps]
