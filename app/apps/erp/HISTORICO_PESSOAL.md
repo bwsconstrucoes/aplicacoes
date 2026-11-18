@@ -77,41 +77,53 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
-### 18/11/2026 — Liberar o acesso passou a CONFIGURAR o acesso
+### 18/11/2026 — Liberar o acesso leva direto para configurar o acesso
 
-**O pedido, com as palavras dele:** *"o administrador vai liberar a pessoa, mas
-tem que definir o acesso dele, o perfil, as obras, etc e tal. Eu acho que assim
-fecha essa parte de liberação e forma um ciclo perfeito."*
+**O pedido, com as palavras dele:** *"no ato da liberação já abrir a tela de
+configurações do cadastro da pessoa. No caso é o administrador que vai ter
+poderes para isso. Aí lá será designado o perfil dela, obras de acesso e etc.
+E pronto."*
 
-**O que mudou para quem usa:** ao liberar alguém — tanto pela fila de pedidos
-quanto pela ficha da pessoa — o sistema pergunta **que acesso ela terá** e
-**quais obras ela enxerga** (várias, ou todas, inclusive as futuras). Antes a
-fila criava sempre "administrativo de obra" preso à obra do cadastro, e a ficha
-criava "consulta"; quem precisasse de outra coisa tinha de ir à tela de
-operadores logo em seguida.
+**O que acontece agora:** quem administra operadores confirma a liberação e
+**cai direto em Configurações › Usuários, com o cadastro da pessoa aberto** —
+perfil de acesso, perfis acrescentados, obras, cargo, fundo fixo e situação.
+O resultado da liberação (inclusive o link do convite, quando o e-mail não
+sai) aparece **dentro** dessa janela. Vale para as duas portas: a fila de
+pedidos do portal e a ficha da pessoa.
 
-**Continua sendo um clique no caso comum:** os campos já vêm preenchidos com o
-que o sistema faria sozinho. Quem não quer mudar nada só confirma.
+Quem resolve a fila mas **não** administra operadores (o DP) não sai da tela
+de Pessoal: libera, vê o aviso ali mesmo, e o acesso nasce com o padrão
+seguro — administrativo de obra, preso à obra do cadastro.
 
-**O que ficou travado, de propósito:** quem resolve a fila mas **não** gere
-operadores (o DP) não vê esses campos, e o servidor nem manda as opções. Sem
-isso, o DP poderia mandar "perfil: ADMIN" na mão e criar um administrador do
-sistema por uma fila de acesso de obra.
+**⚠️ O CAMINHO ERRADO QUE FOI DESFEITO NO MESMO DIA, e o motivo vale guardar:**
+a primeira entrega foi uma **janelinha** na tela de Pessoal perguntando perfil
+e obras. Estava certa no pedido anterior dele (*"tem que definir o acesso dele,
+o perfil, as obras"*) e errada no desenho: virou **uma segunda tela com metade
+dos campos** da tela de operadores que já existe. É exatamente a terceira porta
+de que ele reclamou em 17/11 (*"era só para equalizar e complementar os
+dados"*) — e um dia as duas divergiriam.
 
-**Duas decisões de tela que vieram junto:**
+**A regra que isso confirma:** quando a resposta a "onde isso se configura?" já
+existe numa tela, **leve a pessoa até ela**. Não recrie um pedaço dela onde a
+ação começou.
 
-1. **Uma lista só de acesso.** Os perfis cadastrados repetem, com os mesmos
-   nomes, os cargos antigos — oferecer os dois dava 23 opções com
-   "Administrador" aparecendo duas vezes. Vale o perfil cadastrado; o cargo
-   antigo só aparece se ainda não houver perfil nenhum. É a regra "um
-   cadastro, uma porta" aplicada aqui.
-2. **Lista de obras vazia é escolha, não esquecimento.** Quem desmarcar tudo
-   libera um acesso sem obra (o caso do escritório). O servidor distingue
-   "ninguém disse nada" de "disseram nenhuma".
+**O que veio junto, e fica:**
+
+1. **A resposta da fila emagreceu.** Ela mandava a lista de perfis e de cargos
+   para desenhar aquela janelinha — uma consulta por abertura da tela de
+   Pessoal, para uma lista que acabou morando em outro lugar. Agora manda só
+   se a pessoa administra o acesso ou não.
+2. **A trava do DP continua no servidor.** Nenhuma tela manda perfil ou obra,
+   mas a rota segue recusando esses campos de quem não administra operadores —
+   quem souber montar o pedido na mão não passa. Há teste.
+3. **O recado não viaja escrito na URL.** Só uma marca conhecida e o link; o
+   texto é montado na tela de destino, porque o aviso escreve HTML na página
+   de quem administra o sistema.
 
 **Mexeu em arquivo compartilhado** (importa para quem roda outro chat do ERP):
-`routes.py` e `templates/erp_base.html` — este último ganhou um tipo de campo
-novo no diálogo, uma lista de caixas de marcar, que qualquer tela pode usar.
+`routes.py`, `templates/erp_base.html` (ganhou um tipo de campo novo no
+diálogo, uma lista de caixas de marcar — nasceu para a janelinha desfeita, mas
+é genérico e qualquer tela pode usar) e `templates/erp_config.html`.
 
 ---
 

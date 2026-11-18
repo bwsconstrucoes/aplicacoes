@@ -9458,36 +9458,28 @@ def api_pedidos_de_acesso():
         with get_session() as s:
             conn = s.connection()
             status = (request.args.get("status") or "PENDENTE").upper()
-            # ⚑ AS OPÇÕES DE ACESSO VÃO JUNTO (18/11/2026). Ele, fechando o
-            # ciclo: *"o administrador vai liberar a pessoa, mas tem que
-            # definir o acesso dele, o perfil, as obras, etc e tal."*
+            # ⚑ QUEM ADMINISTRA O ACESSO VAI DIRETO CONFIGURAR (18/11/2026).
+            # Ele, fechando o ciclo: *"no ato da liberação já abrir a tela de
+            # configurações do cadastro da pessoa (…) lá será designado o
+            # perfil dela, obras de acesso e etc."*
             #
-            # Vão nesta resposta, e não numa chamada à parte, por conta de ida
-            # de rede: abrir o diálogo de liberar custaria uma segunda ida só
-            # para desenhar a lista de perfis. São poucas linhas, e esta
-            # resposta já é buscada uma vez por abertura da tela de Pessoal.
+            # A resposta diz só SE esta pessoa administra operadores. A tela
+            # usa isso para mandar quem libera direto para Configurações ›
+            # Usuários, com o operador aberto. A lista de perfis NÃO vem aqui:
+            # ela já existe lá, e mandá-la nesta resposta era uma consulta por
+            # abertura da tela de Pessoal para desenhar uma lista que acabou
+            # morando em outro lugar.
             #
-            # ⚠️ SÓ PARA QUEM GERE OPERADORES. Quem apenas resolve a fila não
-            # escolhe perfil nem alcance — o acesso nasce preso à obra do
-            # cadastro —, e a lista de perfis é informação de administração.
+            # Quem apenas resolve a fila (o DP) não administra: para ele o
+            # acesso nasce preso à obra do cadastro e a tela não muda.
             from app.apps.erp.core.auth.permissoes import pode_com_banco
             atual = _usuario_logado(s)
-            opcoes: dict = {}
-            if atual is not None and pode_com_banco(s, atual, "gerir_usuarios"):
-                from app.apps.erp.core.auth import perfis as svc_perfis
-                from app.apps.erp.db.models.cadastros import PerfilUsuario
-                from app.apps.erp.core.auth.permissoes import ROTULOS
-                opcoes = {
-                    "perfis": [{"id": x["id"], "nome": x["nome"]}
-                               for x in svc_perfis.listar(s)],
-                    "cargos": [{"valor": x.name,
-                                "rotulo": ROTULOS.get(x, x.name)}
-                               for x in PerfilUsuario],
-                }
+            administra = bool(atual is not None
+                              and pode_com_banco(s, atual, "gerir_usuarios"))
             return jsonify({"ok": True,
                             "pedidos": fila.listar(conn, status=status),
                             "pendentes": fila.quantos_pendentes(conn),
-                            "escolhe_acesso": bool(opcoes), **opcoes,
+                            "administra_acesso": administra,
                             "disponivel": fila.tabela_existe(conn)})
     except Exception as e:
         logger.exception("ERP: falha ao listar os pedidos de acesso ao portal")
@@ -9547,7 +9539,7 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
             # administrador do sistema por uma fila de acesso de obra. Quem
             # tem `gerir_usuarios` continua podendo escolher — essa pessoa já
             # cria operador com qualquer perfil pela tela de operadores.
-            escolhe_perfil = pode_com_banco(s, atual, "gerir_usuarios") if atual else False
+            administra = pode_com_banco(s, atual, "gerir_usuarios") if atual else False
             r = _liberar_acesso(
                 s, c, autor=atual, email=d.get("email") or p["email"],
                 # ⚑ O PADRÃO É ADMINISTRATIVO DE OBRA, e é escolha explícita:
@@ -9555,13 +9547,13 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
                 # nem documento de ninguém (`ver_remuneracao`, `ver_arquivo`).
                 # CONSULTA, o padrão da ficha, não deixaria ela pedir nada —
                 # o acesso nasceria inútil e ela voltaria a pedir.
-                perfil=(d.get("perfil") if escolhe_perfil else None)
+                perfil=(d.get("perfil") if administra else None)
                        or "ADMINISTRATIVO_OBRA",
-                perfil_id=d.get("perfil_id") if escolhe_perfil else None,
+                perfil_id=d.get("perfil_id") if administra else None,
                 # As OBRAS também só vêm do navegador para quem gere
                 # operadores: para o DP fica a obra do cadastro, de sempre.
-                obra_ids=(d.get("obra_ids") if escolhe_perfil else None),
-                todas_as_obras=bool(d.get("todas_as_obras")) if escolhe_perfil
+                obra_ids=(d.get("obra_ids") if administra else None),
+                todas_as_obras=bool(d.get("todas_as_obras")) if administra
                                else False,
                 obra_id=p["obra_id"], convidar=True)
             if not r["ok"]:

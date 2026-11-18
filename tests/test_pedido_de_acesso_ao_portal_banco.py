@@ -453,7 +453,13 @@ def test_quem_administra_pode_dar_todas_as_obras(app_real, sessao_real,
 def test_o_dp_nao_escolhe_obra_nem_alcance(app_real, sessao_real, pessoa,
                                            pessoal, obra):
     """A trava completa: o DP pediu outra obra e todas as obras, e levou a
-    obra do cadastro, como sempre."""
+    obra do cadastro, como sempre.
+
+    ⚑ DESDE 18/11/2026 NENHUMA TELA MANDA ESSES CAMPOS — quem administra é
+    levado para Configurações › Usuários e configura lá. A trava continua
+    valendo, e este teste continua existindo, porque a rota segue aceitando
+    os campos: quem souber montar o pedido na mão não passa por ela.
+    """
     from tests.conftest import como                      # type: ignore
     outra = Obra(codigo="OBR3L", nome="Obra Que Ele Pediu", status="ATIVA")
     sessao_real.add(outra)
@@ -477,10 +483,10 @@ def test_o_dp_nao_escolhe_obra_nem_alcance(app_real, sessao_real, pessoa,
     assert alcance == {obra.id}, "o DP leva a obra do cadastro, e só"
 
 
-def test_a_fila_so_manda_as_opcoes_para_quem_escolhe(app_real, sessao_real,
-                                                     pessoa, dp, pessoal):
-    """A lista de perfis é informação de administração — não vai para quem
-    não pode usá-la."""
+def test_a_fila_diz_quem_administra_o_acesso(app_real, sessao_real,
+                                            pessoa, dp, pessoal):
+    """A tela usa isto para mandar quem administra direto para a configuração
+    do operador, depois de liberar. Quem só resolve a fila fica onde está."""
     from tests.conftest import como                      # type: ignore
     fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
                    cpf=pessoa.cpf, nome=pessoa.nome, email="maria@gmail.com")
@@ -490,9 +496,11 @@ def test_a_fila_so_manda_as_opcoes_para_quem_escolhe(app_real, sessao_real,
     do_dp = como(app_real, pessoal.id).get(
         "/erp/api/portal/pedidos-de-acesso").get_json()
 
-    assert do_admin["escolhe_acesso"] is True and do_admin["cargos"]
-    assert do_dp["escolhe_acesso"] is False
-    assert "perfis" not in do_dp and "cargos" not in do_dp
+    assert do_admin["administra_acesso"] is True
+    assert do_dp["administra_acesso"] is False
+    # A lista de perfis NÃO viaja mais nesta resposta: ela mora na tela de
+    # Configurações, que é para onde quem administra é levado.
+    assert "perfis" not in do_admin and "cargos" not in do_admin
 
 
 def test_quem_administra_pode_liberar_mais_de_uma_obra(app_real, sessao_real,

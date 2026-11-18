@@ -2810,10 +2810,11 @@ são as que o DP faz todo dia, sobre uma pessoa específica.
 
 ## 3z-quindecies. QUEM TEM ACESSO AO SISTEMA, COM QUE PERFIL E EM QUE OBRAS (18/11/2026)
 
-Nasceu de quando liberar o acesso passou a **configurar** o acesso: o
-administrador escolhe o perfil e marca as obras na hora de liberar. Antes essa
-informação só existia na tela de operadores, e ninguém perguntava — porque a
-resposta era sempre a mesma ("administrativo de obra, a obra do cadastro").
+Nasceu de quando a liberação passou a levar quem administra **direto para a
+tela de configuração do operador**, onde o perfil e as obras são designados.
+Antes a resposta era sempre a mesma ("administrativo de obra, a obra do
+cadastro") e ninguém perguntava; agora cada pessoa liberada pode ter um
+desenho próprio de acesso — e aí vale perguntar qual é.
 
 ### As palavras ambíguas desta parte
 
