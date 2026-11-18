@@ -13,7 +13,34 @@
    *"se eu sair da tela e voltar, a informação vai ser me dada ainda?"*. Vai: o
    resultado mora no banco, não nesta página.
 --------------------------------------------------------------------------- #}
-{% block filtros %}{% if lista %}{% include "analisesps_comprovantes_filtros.html" %}{% endif %}{% endblock %}
+{% block filtros %}
+{# O CAMPO DE SOLTAR OS COMPROVANTES, NA LATERAL (dono, 18/11/2026: *"coloque o campo
+   para jogar os comprovantes no sidebar"*): fica à mão sem ocupar o alto da lista. #}
+<div class="lateral-comprovantes">
+  <div class="filtros-cab"><h2>Mandar para a baixa</h2></div>
+  {% if pode_operar %}
+    <form id="form-comprovantes" method="post" enctype="multipart/form-data"
+          action="{{ url_for('analisesps.enviar_comprovantes') }}">
+      <label id="area-solta" class="solta" for="campo-comprovantes">
+        <span class="solta-titulo">Solte os comprovantes aqui</span>
+        <span class="solta-dica">ou clique para escolher — PDF, até
+          {{ maximo_mb }} MB cada, {{ maximo_arquivos }} por vez. Cada página é um
+          comprovante, em levas de {{ por_leva }}; pode fechar a tela.</span>
+        <input type="file" id="campo-comprovantes" name="arquivos"
+               accept="application/pdf" multiple hidden>
+      </label>
+      <div id="escolhidos" class="cartao-dica" hidden></div>
+      <div style="display:flex; gap:8px; margin-top:12px">
+        <button class="btn" type="submit" id="btn-enviar" disabled>
+          Mandar para a baixa</button>
+      </div>
+    </form>
+  {% else %}
+    <p class="cartao-dica">O perfil Consulta vê o resultado, mas não envia.</p>
+  {% endif %}
+</div>
+{% if lista %}{% include "analisesps_comprovantes_filtros.html" %}{% endif %}
+{% endblock %}
 
 {% block conteudo %}
 
@@ -28,35 +55,6 @@
      data-trabalhando="{{ '1' if trabalhando else '' }}"></div>
 
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
-
-<div class="cartao">
-  <h2>Comprovantes</h2>
-  <p class="cartao-dica">
-    Arraste os comprovantes aqui. Cada <b>página</b> do PDF é um comprovante, e
-    eles são processados em levas de {{ por_leva }} — do mesmo jeito que o seu
-    script já faz hoje pelo e-mail. Você pode fechar esta tela: o trabalho
-    continua, e o resultado fica guardado.
-  </p>
-
-  {% if pode_operar %}
-    <form id="form-comprovantes" method="post" enctype="multipart/form-data"
-          action="{{ url_for('analisesps.enviar_comprovantes') }}">
-      <label id="area-solta" class="solta" for="campo-comprovantes">
-        <span class="solta-titulo">Solte os comprovantes aqui</span>
-        <span class="solta-dica">ou clique para escolher — PDF, até
-          {{ maximo_mb }} MB cada, {{ maximo_arquivos }} por vez</span>
-        <input type="file" id="campo-comprovantes" name="arquivos"
-               accept="application/pdf" multiple hidden>
-      </label>
-      <div id="escolhidos" class="cartao-dica" hidden></div>
-      <div style="display:flex; gap:8px; margin-top:12px">
-        <button class="btn" type="submit" id="btn-enviar" disabled>
-          Mandar para a baixa</button>
-      </div>
-    </form>
-  {% else %}
-    <p class="cartao-dica">O perfil Consulta vê o resultado, mas não envia.</p>
-  {% endif %}
 
   {# ⚠️ O BOTÃO QUE A MENSAGEM PROMETIA. A tela dizia "ainda processando" para
      lotes parados havia horas, e não oferecia nada para destravar. Um lote fica
@@ -76,7 +74,7 @@
         Omie é reconhecido e marcado como duplicado.</small>
     </div>
   {% endif %}
-</div>
+
 
 {% if andamento.rodando %}
   <div class="aviso atencao" id="aviso-rodando">
@@ -269,6 +267,9 @@
   .kpis-comprovantes a.kpi { text-decoration:none; color:inherit; }
   .kpis-comprovantes a.kpi.ativo { outline:2px solid var(--azul); }
   #tabela-comprovantes td.sem-quebra { white-space:nowrap; }
+  .lateral-comprovantes { padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid var(--borda); }
+  .lateral-comprovantes .solta { padding:18px 10px; text-align:center; }
+  .lateral-comprovantes #btn-enviar { width:100%; }
   .filtro-opcoes .contagem { margin-left:auto; color:var(--tinta-suave); font-size:12px; }
 </style>
 {% endblock %}
