@@ -871,11 +871,50 @@ function abrirFichaUnica(id){
   els("dlg-unica").showModal();
 }
 els("dlg-unica").addEventListener("close", () => { els("unica-quadro").src = "about:blank"; });
+
+// ===========================================================================
+// ⚑ A TELA DE TRÁS NÃO FECHA MAIS PARA ABRIR A DA FRENTE (18/11/2026)
+//
+// Ele, pela segunda vez:
+//
+//   *"Já havia combinado que eu não estou conseguindo navegar no cadastro do
+//    colaborador. Se eu entro na tela principal do cadastro e clico no botão
+//    Editar o cadastro completo, a tela principal fecha e não consigo voltar
+//    pra ela. Só eu clicar novamente na lista dos colaboradores. Não pode
+//    fechar a tela principal pra abrir o modal seguinte."*
+//
+// ⚠️ EU HAVIA CONSERTADO O CAMINHO ERRADO. Em 17/11 ele disse a mesma coisa, e
+// eu resolvi só o caminho da ficha do ERP (`VOLTAR_PARA_FICHA`, que reabre a
+// ficha ao fechar o formulário). Mas o caminho que ele usa é OUTRO: a janela
+// da pessoa que vem do ponto (`dlg-unica`), e esta linha a FECHAVA de
+// propósito antes de abrir o formulário. Fechada, ela não volta por nada — o
+// `VOLTAR_PARA_FICHA` não a conhece.
+//
+// Agora ela fica aberta ATRÁS. Duas janelas modais empilham: a do formulário
+// nasce por cima, e fechá-la revela a de trás, com a pessoa ainda aberta.
+//
+// ⚠️ E SE ALGO FOI GRAVADO, a janela de trás é recarregada ao fechar o
+// formulário — senão ela mostraria o cadastro velho, que é pior que fechar:
+// ninguém desconfia de uma tela que está ali.
+// ===========================================================================
+let GRAVOU_NO_FORMULARIO = false;
+
+els("dlg").addEventListener("close", () => {
+  if (!els("dlg-unica").open) return;
+  if (GRAVOU_NO_FORMULARIO) {
+    GRAVOU_NO_FORMULARIO = false;
+    const q = els("unica-quadro");
+    if (q && q.src && q.src !== "about:blank") q.src = q.src;   // recarrega
+  }
+});
+
 // o que a janela pede: fechar, ou abrir aqui o formulário (editar) ou os documentos (ler e arquivar)
 window.addEventListener("message", ev => {
   const d = ev.data || {};
   if (ev.origin !== location.origin || d.tipo !== "bws-ficha") return;
-  if (els("dlg-unica").open) els("dlg-unica").close();
+  // "fechar" é a janela dizendo que ELA fechou; as outras ações abrem algo em
+  // cima dela e ela FICA.
+  if (d.acao === "fechar") { if (els("dlg-unica").open) els("dlg-unica").close(); return; }
   if (d.acao === "editar" && d.id) abrirFichaCompleta(Number(d.id));
   else if (d.acao === "documentos" && d.id) ficha(Number(d.id), "documentos");
 });
@@ -2165,8 +2204,21 @@ function painelDaFicha(){
       ${campoTexto("Banco", "c-banco", c.banco)}
       ${campoTexto("Agência", "c-agencia", c.agencia)}
       ${campoTexto("Conta", "c-conta", c.conta)}
+      {# ⚑ OS DOIS CAMPOS DE PJ SÓ APARECEM PARA PJ — decisão dele em
+         18/11/2026, com todas as letras: *"os campos abaixo são apenas para o
+         Contrato PJ: CNPJ (PJ), Razão social (PJ)"*.
+
+         Ele respondeu porque a MEDIÇÃO não teve como: são 10 PJ em 660
+         cadastros, abaixo do mínimo de casos, então o número ficou calado.
+         É o caso que mostra para que serve o ❓ do placar.
+
+         ⚠️ Ficam no documento, apenas ESCONDIDOS: a gravação só manda o que
+         está na tela, e remover o campo deixaria o valor antigo intacto no
+         banco quando alguém deixasse de ser PJ. #}
+      <div id="c-pj-caixa" class="oculto" style="display:contents">
       ${campoTexto("Razão social (PJ)", "c-razao", c.razao_social_pj, 'style="grid-column:span 2"')}
       ${campoTexto("CNPJ (PJ)", "c-cnpjpj", c.cnpj_pj, 'name="cnpj"')}
+      </div>
       ${campoTexto("ID Fortes", "c-fortes", c.id_fortes)}
     </div>
     <div class="cartao-dica"><b>Vínculo</b> diz se há carteira assinada. Quem tem
@@ -2253,6 +2305,37 @@ function painelDaFicha(){
         <td><small>${escapar(x.forma_rotulo || x.motivo || "")}</small></td>
       </tr>`).join("") || `<tr><td colspan="7" class="cartao-dica">Nenhum vínculo registrado.</td></tr>`}
       </tbody></table>
+      {# ⚑ TODA ALTERAÇÃO DO CADASTRO, CAMPO POR CAMPO (18/11/2026). Ele:
+         *"Combinamos de toda alteração no cadastro ser registrada. Alterei um
+         campo e não aconteceu. TUDO precisa estar registrado no histórico.
+         Houve uma mudança no campo nome, precisa registrar quem e quando e o
+         valor de antes e o atual."*
+
+         Eram DOIS problemas somados: o que se gravava era um retrato de três
+         campos (então trocar o nome não deixava rastro do valor antigo), e
+         esta aba mostrava só vínculos e alterações salariais — a trilha de
+         eventos não aparecia em tela nenhuma. #}
+      <h4 style="margin-top:16px">Alterações no cadastro</h4>
+      <div class="cartao-dica">Quem mexeu, quando, e o valor de antes e o de
+        agora — campo por campo. É a trilha do cadastro: ela não se apaga e
+        não se edita.</div>
+      <div class="tabela-rolagem" style="max-height:340px">
+      <table><thead><tr><th>Quando</th><th>Quem</th><th>Campo</th>
+        <th>De</th><th>Para</th></tr></thead>
+      <tbody>${(c.mudancas || []).map(m => `<tr>
+        <td class="dados">${momentoBR(m.quando)}</td>
+        <td class="desc">${escapar(m.quem || "")}</td>
+        <td><b>${escapar(m.rotulo || "—")}</b>${m.por_documento
+            ? `<br><small>lido de um documento</small>` : ""}</td>
+        ${m.criacao || m.sem_detalhe
+          ? `<td colspan="2" class="desc"><small>${escapar(
+              m.sem_detalhe || "o cadastro nasceu aqui")}</small></td>`
+          : `<td class="desc">${m.de ? escapar(m.de) : "<i>(vazio)</i>"}</td>
+             <td class="desc"><b>${m.para ? escapar(m.para) : "<i>(vazio)</i>"}</b></td>`}
+      </tr>`).join("") || `<tr><td colspan="5" class="cartao-dica">
+        Nenhuma alteração registrada ainda.</td></tr>`}
+      </tbody></table></div>
+
       <h4 style="margin-top:16px">Alterações de salário e cargo</h4>
       <table><thead><tr><th>Vigência</th><th>O que mudou</th><th>De</th><th>Para</th>
         <th>Motivo</th><th>Justificativa</th></tr></thead>
@@ -2447,8 +2530,21 @@ function ligarTipoDeContrato(){
     // vínculo novo — é a contradição que a separação existe para impedir.
     sel.value = lista.some(x => x.valor === antes) ? antes : "";
   };
-  vinc.addEventListener("change", aplicar);
+  // ⚑ E OS DOIS CAMPOS DE PJ seguem o TIPO DE CONTRATO, não o vínculo — por
+  // isso o ouvinte é do `c-contrato` também. `display:contents` na caixa faz
+  // os dois campos continuarem alinhados na grade do formulário; um `<div>`
+  // normal os tiraria da grade e eles ficariam tortos.
+  const pj = els("c-pj-caixa");
+  const aplicarPJ = () => {
+    if (!pj) return;
+    const ehPJ = sel && sel.value === "PJ";
+    pj.classList.toggle("oculto", !ehPJ);
+    pj.style.display = ehPJ ? "contents" : "none";
+  };
+  vinc.addEventListener("change", () => { aplicar(); aplicarPJ(); });
+  if (sel) sel.addEventListener("change", aplicarPJ);
   aplicar();
+  aplicarPJ();
 }
 
 function corpoDoCadastro(){
@@ -2524,6 +2620,7 @@ async function salvarCadastro(){
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(corpoDoCadastro())});
     FICHA = r.colaborador;
+    GRAVOU_NO_FORMULARIO = true;      // a janela de trás precisa recarregar
     aviso("dlg-msg", "Cadastro salvo.", "ok");
     pintarOQueFalta();
     // Embutida não há lista para atualizar: avisa a tela de fora, que tem.

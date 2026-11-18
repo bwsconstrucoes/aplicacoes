@@ -100,6 +100,47 @@ CORTE_NUNCA = 0.03
 TETO_DE_EXCECOES = 8
 
 
+# ===========================================================================
+# ⚑ O QUE ELE JÁ DECIDIU — para a tela não perguntar duas vezes (18/11/2026)
+#
+# Ele revisou a medição dos 660 cadastros e recusou SEIS propostas. Sem
+# registrar isso, a próxima medição ofereceria as mesmas seis de novo — e
+# perguntar de novo o que ele já respondeu é a mesma irritação da pausa no meio
+# da fila, que o `CLAUDE.md` descreve.
+#
+# ⚠️ O MOTIVO DELE IMPORTA MAIS QUE O "NÃO", e é por isso que ele está escrito:
+# nos dois casos o número estava certo e a conclusão errada, pela mesma razão —
+# **o campo é raro, não é inaplicável.** Mensalista de carteira existe (4 em
+# 413) e prestador com ajuda de alimentação existe (3 em 222). Esconder o campo
+# tiraria da tela a única forma de registrar esses casos, e eles voltariam a
+# ser resolvidos por fora do sistema.
+#
+# A lição para a medição: **"quase nunca" não é "nunca".** O corte de 97% acha
+# o campo que não se aplica, mas não distingue dele o campo que se aplica
+# pouco. Só quem conhece o negócio distingue — foi o que ele fez aqui.
+# ===========================================================================
+RECUSADAS: dict[tuple[str, str, str], str] = {
+    ("vinculo", "CTPS", "valor_mes"):
+        "mensalista de carteira existe (4 em 413) — o campo é raro, não "
+        "inaplicável; esconder tiraria o único jeito de registrar esses casos",
+    ("tipo_contrato", "CLT_DETERMINADO", "valor_mes"):
+        "o mesmo caso do vínculo CTPS: mensalista de carteira existe",
+    ("vinculo", "PRESTADOR", "aux_alimentacao"):
+        "prestador com ajuda de alimentação existe (1 em 222) — raro, não "
+        "inaplicável",
+    ("vinculo", "PRESTADOR", "categoria_alimentacao"):
+        "idem: 3 prestadores têm a categoria preenchida",
+    ("tipo_contrato", "AUTONOMO_RPA", "aux_alimentacao"):
+        "idem para o autônomo RPA (1 em 207)",
+    ("tipo_contrato", "AUTONOMO_RPA", "categoria_alimentacao"):
+        "idem para o autônomo RPA (3 em 207)",
+}
+
+
+def _recusada(p: dict[str, Any]) -> Optional[str]:
+    return RECUSADAS.get((p["chave"], p["valor"], p["campo"]))
+
+
 def _vazio(v: Any) -> bool:
     if v is None:
         return True
@@ -305,14 +346,19 @@ def comparar_com_o_formulario(s: Session, medido: Optional[dict] = None
             for campo in campos:
                 ja_exige.add((str(valor).upper(), campo))
 
-    novas, confirmadas = [], []
+    novas, confirmadas, recusadas = [], [], []
     for p in medido["propostas"]:
+        porque = _recusada(p)
+        if porque:
+            recusadas.append({**p, "porque_recusada": porque})
+            continue
         # O nome do campo no formulário do pedido não é sempre o da coluna.
         alvo = _campo_no_formulario(p["campo"])
         batida = (p["valor"], alvo) in ja_exige or ("*", alvo) in ja_exige
         (confirmadas if batida and p["proposta"] == "OBRIGATORIO"
          else novas).append(p)
-    return {**medido, "ja_no_formulario": confirmadas, "a_decidir": novas}
+    return {**medido, "ja_no_formulario": confirmadas, "a_decidir": novas,
+            "recusadas_por_ele": recusadas}
 
 
 # A coluna do cadastro × o nome do campo no formulário do pedido. Só os que

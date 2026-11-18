@@ -128,6 +128,58 @@ dezenas de perguntas.
 
 ---
 
+## 5. AS CONDICIONAIS — medidas e decididas por ele em 18/11/2026
+
+O Pipefy **não exporta condicionais** (ele avisou: *"o pipe não exporta
+condicionais, por isso minha pergunta sobre mais ajuda na construção e na
+ideia"*). Então elas foram **medidas nos 660 cadastros** e ele revisou a lista
+inteira. Isto fecha boa parte do item 2 da §4.
+
+### Adotadas
+
+| Regra | Medida em |
+|---|---|
+| Cargo, Data de início e Empresa de registro obrigatórios **para todos** | quase 100% de todos os cadastros, com vínculo ou sem |
+| CTPS: Série da CTPS obrigatória | 408 de 413 (98,8%) |
+| CTPS: Contrato de experiência obrigatório | 406 de 413 (98,3%) |
+| CTPS: Convenção obrigatória | 403 de 413 (97,6%) |
+| CTPS: Data de admissão obrigatória | 413 de 413 |
+| Prestador: Convenção obrigatória | 207 de 207 autônomos RPA |
+| **Salário passou a ser só de quem tem CTPS** | vazio em 97,3% dos 222 prestadores — prestador recebe por diária ou por mês |
+| Prestador: Contrato de experiência não se aplica | vazio em 97,7% |
+| **Razão social (PJ) e CNPJ (PJ) só aparecem no contrato PJ** | ⚠️ **decisão DELE** — a medição viu só 10 PJ em 660, abaixo do mínimo, e ficou calada |
+
+### Recusadas por ele, com o motivo — e o motivo vale mais que o "não"
+
+| Proposta recusada | Por quê |
+|---|---|
+| Não exibir "Valor do mês" para CTPS e para CLT determinado | **mensalista de carteira existe** (4 em 413) |
+| Não exibir "Ajuda/Valor da alimentação" para prestador e para RPA | **prestador com ajuda de alimentação existe** (1 a 3 casos) |
+
+⚠️ **A lição, e ela muda a medição de agora em diante: "quase nunca" não é
+"nunca".** O corte de 97% acha o campo que não se aplica, mas não o distingue
+do campo que se aplica POUCO. Esconder o segundo tiraria da tela o único jeito
+de registrar esses casos, e eles voltariam a ser resolvidos por fora do
+sistema. Só quem conhece o negócio distingue — foi o que ele fez.
+
+As seis recusas estão em `RECUSADAS`, em `core/cadastros/regras_pelos_dados.py`,
+e a tela **não volta a oferecê-las**: elas aparecem numa lista própria, "Já
+decididas por você".
+
+### ⚠️ O que a medição mostrou e não é regra: cadastros incompletos
+
+Os discordantes se repetem. **Cinco pessoas aparecem em quatro listas
+diferentes** (sem série da CTPS, sem contrato de experiência, uma sem empresa de
+registro), e **oito a dez pessoas estão sem convenção**. Não são exceções à
+regra: são cadastros pela metade, hoje, em produção — e convenção faltando é o
+que a conferência da folha usa.
+
+⚠️ Os nomes e CPFs **não entram neste arquivo**: é dado pessoal, e o
+repositório é lido por quem não precisa dele. Estão na tela
+(`ERP › Pessoal › Regras do cadastro`), com link para cada ficha.
+
+---
+
 ## Como este arquivo se mantém vivo
 
 - **A fonte da verdade do Pipefy** é `DE_PARA_PIPEFY_DP.md` (exportação).

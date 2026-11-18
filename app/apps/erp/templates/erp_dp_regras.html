@@ -74,6 +74,25 @@ function desenhar(){
     ${bloco("O que o formulário JÁ faz", d.ja_no_formulario,
             "Aqui o dado confirma o que a tela já exige. Nada a fazer — está "
             + "aqui só para você ver que bate.")}
+    {# ⚑ O QUE ELE JÁ DECIDIU NÃO VOLTA A PERGUNTAR (18/11/2026). Ele recusou
+       seis propostas; sem este bloco, a próxima medição ofereceria as mesmas
+       seis, e perguntar de novo o que ele já respondeu é a irritação que o
+       CLAUDE.md descreve. Fica visível para ele poder MUDAR de ideia — o que
+       não pode é a lista de decisões se apresentar como lista de pendências. #}
+    ${(d.recusadas_por_ele || []).length ? `
+      <h3 style="margin-top:20px">Já decididas por você
+        <small>(${d.recusadas_por_ele.length})</small></h3>
+      <div class="cartao-dica">Você olhou e disse não. Estão aqui para
+        consulta — se mudar de ideia, me diga.</div>
+      ${d.recusadas_por_ele.map(p => `
+        <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+             border-left:4px solid var(--borda-forte); margin-top:8px; opacity:.85">
+          <span class="selo outro">recusada</span>
+          <b>${escapar(p.frase)}</b>
+          <div class="cartao-dica" style="margin-top:6px">
+            <b>Seu motivo:</b> ${escapar(p.porque_recusada)}</div>
+        </div>`).join("")}` : ""}
+
     {# ⚑ O TERCEIRO ACHADO, e ele não é condicional nenhuma (17/11/2026).
 
        Campo vazio em TODO MUNDO não é "campo que não se aplica": é campo que
@@ -116,7 +135,18 @@ function bloco(titulo, lista, dica){
         </div>
         ${(p.excecoes || []).length ? `
           <div class="cartao-dica" style="margin-top:8px">
-            <b>${p.casos - p.preenchidos === 0 ? p.preenchidos : p.casos - p.preenchidos}
+            {# ⚠️ QUEM SÃO OS DISCORDANTES DEPENDE DA PROPOSTA, e eu errei
+               isto na primeira versão (18/11/2026). A tela dizia "409
+               discordante(s)" e listava 4 nomes, porque eu contava sempre os
+               VAZIOS. Numa proposta de "não exibir", o discordante é quem TEM
+               o campo preenchido — os 4 —, não os 409 que estão vazios.
+
+               Ele leu "409 discordantes" com 4 nomes embaixo e teve de
+               entender sozinho que a conta estava errada. Número errado numa
+               tela que existe para ele CONFIAR em números é o pior lugar
+               possível para um descuido meu. #}
+            <b>${p.proposta === "NAO_SE_APLICA"
+                 ? p.preenchidos : p.casos - p.preenchidos}
                discordante(s)</b> — ${escapar(p.o_que_sao_as_excecoes)}:
             <ul style="margin:6px 0 0 18px">
               ${p.excecoes.map(e => `<li><a href="/erp/colaboradores?pessoa=${e.id}"

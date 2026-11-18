@@ -503,3 +503,44 @@ def test_recado_de_quem_roda_com_a_janela_aberta_vai_para_dentro_dela():
         "\n  ".join(ruins)
         + "\n  Use `recado(texto, tipo)`: com a janela aberta o recado vai "
         "para dentro dela; sem janela, vai para a lista.")
+
+
+# ---------------------------------------------------------------------------
+# ⚑ A TELA DE TRÁS NÃO FECHA PARA ABRIR A DA FRENTE (18/11/2026)
+#
+# Ele reclamou DUAS VEZES:
+#
+#   *"Já havia combinado que eu não estou conseguindo navegar no cadastro do
+#    colaborador. Se eu entro na tela principal do cadastro e clico no botão
+#    Editar o cadastro completo, a tela principal fecha e não consigo voltar
+#    pra ela. Não pode fechar a tela principal pra abrir o modal seguinte."*
+#
+# Na primeira vez eu consertei o caminho ERRADO (a ficha do ERP, com
+# `VOLTAR_PARA_FICHA`). O caminho que ele usa é a janela da pessoa que vem do
+# ponto, e o código a FECHAVA de propósito antes de abrir o formulário —
+# fechada, ela não volta por nada.
+#
+# Duas janelas modais empilham: a nova nasce por cima e fechá-la revela a de
+# trás. Esta varredura recusa o `close()` voltar.
+# ---------------------------------------------------------------------------
+def test_a_janela_da_pessoa_nao_e_fechada_para_abrir_o_formulario():
+    import re
+    from pathlib import Path
+
+    tela = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp"
+            / "templates" / "erp_colaboradores.html").read_text(encoding="utf-8")
+
+    # o ouvinte das mensagens da janela da pessoa
+    m = re.search(r'd\.tipo !== "bws-ficha".*?\n\}\);', tela, re.S)
+    assert m, "o ouvinte de 'bws-ficha' sumiu — renomeado?"
+    corpo = m.group(0)
+
+    # fechar a janela de trás só é permitido quando ELA pediu ("fechar")
+    fechamentos = re.findall(r'els\("dlg-unica"\)\.close\(\)', corpo)
+    assert len(fechamentos) <= 1, (
+        "mais de um ponto fecha a janela da pessoa dentro do ouvinte")
+    if fechamentos:
+        assert 'd.acao === "fechar"' in corpo, (
+            'a janela da pessoa está sendo fechada sem ser a pedido dela. '
+            'Abrir o formulário NÃO pode fechá-la: ele reclamou disso duas '
+            'vezes, e fechada ela não volta por nada.')

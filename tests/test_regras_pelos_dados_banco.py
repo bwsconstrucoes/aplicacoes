@@ -245,3 +245,81 @@ def test_a_condicional_DE_VERDADE_continua_sendo_achada(sessao_real, cena):
 
     pis = _achar(r, "vinculo", "CTPS", "pis")
     assert pis and pis["proposta"] == "OBRIGATORIO"
+
+
+def test_a_conta_de_discordantes_da_tela_bate_com_a_lista(sessao_real, cena):
+    """⚠️ A TELA DIZIA 409 E LISTAVA 4 (18/11/2026).
+
+    Ele mandou a medição real e lá estava: *"409 discordante(s) — estes TÊM o
+    campo preenchido"* seguido de quatro nomes. A tela contava sempre os
+    VAZIOS; numa proposta de "não exibir" o discordante é quem TEM o campo.
+
+    Número errado numa tela que existe para ele CONFIAR em números é o pior
+    lugar para um descuido. Este teste prende a conta na FONTE: para cada
+    proposta, quantos discordantes existem é derivável dos números que a API
+    manda, e a tela só pode usar esse.
+    """
+    r = svc.medir(sessao_real)
+    for p in r["propostas"]:
+        quantos = (p["preenchidos"] if p["proposta"] == "NAO_SE_APLICA"
+                   else p["casos"] - p["preenchidos"])
+        # a lista vem com teto, então ela é no máximo o número — nunca MAIOR,
+        # que é como o erro aparecia
+        assert len(p["excecoes"]) <= quantos, (
+            f"{p['frase']}: {len(p['excecoes'])} nomes para {quantos} "
+            f"discordante(s) — a conta e a lista discordam")
+        if quantos <= svc.TETO_DE_EXCECOES:
+            assert len(p["excecoes"]) == quantos, (
+                f"{p['frase']}: {quantos} discordante(s) e "
+                f"{len(p['excecoes'])} nome(s) na lista")
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O QUE ELE JÁ DECIDIU NÃO VOLTA A SER PERGUNTADO (18/11/2026)
+#
+# Ele revisou a medição dos 660 cadastros e recusou seis propostas, com motivo.
+# Sem registrar isso, a próxima medição ofereceria as mesmas seis — e perguntar
+# de novo o que ele já respondeu é a irritação que o CLAUDE.md descreve.
+# ---------------------------------------------------------------------------
+def test_regra_recusada_por_ele_sai_da_lista_de_decidir(sessao_real, cena):
+    s = sessao_real
+    # reproduz o caso real dele: "valor do mês" vazio nos CTPS e preenchido
+    # nos prestadores (é assim que o PJ recebe) — tem CONTRASTE, então a
+    # medição propõe "não exibir para CTPS", que é o que ele recusou
+    s.execute(text("UPDATE colaboradores SET valor_mes = NULL "
+                   "WHERE vinculo = 'CTPS'"))
+    s.execute(text("UPDATE colaboradores SET valor_mes = '9000' "
+                   "WHERE vinculo = 'PRESTADOR'"))
+    s.flush()
+
+    r = svc.comparar_com_o_formulario(s)
+    chaves = [(p["chave"], p["valor"], p["campo"]) for p in r["a_decidir"]]
+    assert ("vinculo", "CTPS", "valor_mes") not in chaves
+
+    recusadas = [(p["chave"], p["valor"], p["campo"]) for p in r["recusadas_por_ele"]]
+    assert ("vinculo", "CTPS", "valor_mes") in recusadas
+
+
+def test_a_recusa_carrega_o_MOTIVO_dele(sessao_real, cena):
+    """⚠️ O motivo importa mais que o "não": nos dois casos o número estava
+    certo e a conclusão errada, pela mesma razão — o campo é RARO, não
+    inaplicável. Sem o motivo escrito, alguém reabre o assunto achando que foi
+    capricho."""
+    s = sessao_real
+    s.execute(text("UPDATE colaboradores SET valor_mes = NULL "
+                   "WHERE vinculo = 'CTPS'"))
+    s.execute(text("UPDATE colaboradores SET valor_mes = '9000' "
+                   "WHERE vinculo = 'PRESTADOR'"))
+    s.flush()
+
+    r = svc.comparar_com_o_formulario(s)
+    p = next(x for x in r["recusadas_por_ele"]
+             if (x["chave"], x["valor"], x["campo"]) == ("vinculo", "CTPS", "valor_mes"))
+    assert "mensalista" in p["porque_recusada"]
+    assert "raro" in p["porque_recusada"]
+
+
+def test_toda_recusa_tem_motivo_escrito():
+    """Lista de recusas sem motivo é lista que ninguém sabe se ainda vale."""
+    for chave, motivo in svc.RECUSADAS.items():
+        assert motivo and len(motivo) > 25, f"{chave}: recusa sem motivo"
