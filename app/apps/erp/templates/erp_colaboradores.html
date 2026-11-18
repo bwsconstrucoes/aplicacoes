@@ -2112,6 +2112,41 @@ function painelDaFicha(){
         lista("c-convencao",
           (o.convencoes || []).map(x => ({valor: x.id, rotulo: x.nome})),
           c.convencao_id)}</div>
+      {# ⚑ O PISO, A CATEGORIA E O CBO APARECEM SOZINHOS (18/11/2026).
+
+         Ele: *"no Pipefy eu tenho uma base de dados onde vinculo cargo,
+         convenção, categoria e salário. A ideia é que uma vez que o DP
+         preencher a convenção, o salário e a categoria já ficariam
+         preenchidos, e o CBO."*
+
+         ⚠️ A BASE JÁ EXISTIA — é o cruzamento cargo × convenção
+         (`cargo_convencao`), importado da planilha "Cargo e Convenção" do
+         Pipefy em 05/11/2026: 63 cargos, 13 convenções, 135 cruzamentos, com
+         categoria, piso, CBO e histórico de dissídio. O que faltava era ESTE
+         pedaço: a tela não olhava a base.
+
+         ⚠️ E O SALÁRIO NÃO É SOBRESCRITO SEM AVISO. Preenche quando está
+         vazio; quando já tem valor diferente do piso, a tela DIZ os dois e
+         oferece o botão. Trocar um salário digitado por outro em silêncio é
+         dinheiro mudando sem ninguém ver — e "por que ela ganha mais que o
+         piso" é pergunta de auditoria e de sindicato. #}
+      {# ⚑ A CATEGORIA DA CONVENÇÃO GANHOU CAMPO (18/11/2026) — e eu estava
+         errado sobre ela.
+
+         Em 17/11 eu propus TIRAR esta coluna, por achar que era cópia da
+         importação do Pipefy. Era eu que não sabia para que servia. Ele
+         explicou a base: *"vinculo cargo, convenção, categoria e salário"* —
+         e a categoria é o que a convenção diz sobre aquele cargo
+         (PROFISSIONAL, OPERÁRIO QUALIFICADO, SEM CATEGORIA).
+
+         ⚠️ POR QUE ELA FICA GRAVADA NA PESSOA e não é só lida da base: a base
+         MUDA (dissídio, reenquadramento). A categoria que valeu para esta
+         pessoa quando ela foi admitida é o que a folha daquele mês usou — e
+         ler da base hoje reescreveria o passado. É o mesmo motivo do histórico
+         de piso existir. #}
+      ${campoTexto("Categoria na convenção", "c-convcategoria", c.convencao_categoria,
+                   'style="grid-column:span 2"')}
+      <div class="campo" style="grid-column:span 3" id="c-piso-caixa"></div>
       <div class="campo"><label>Obra</label><select id="c-obra"><option value="">—</option>
         ${OBRAS.map(x => `<option value="${x.id}" ${String(c.obra_id) === String(x.id)
           ? "selected" : ""}>${rotuloObra(x)}</option>`).join("")}</select></div>
@@ -2226,6 +2261,7 @@ function painelDaFicha(){
       prestador — é lá que se diz PJ, RPA, aprendiz ou estágio. Prestador não
       precisa de PIS nem de CTPS.</div>`;
     ligarTipoDeContrato();
+    ligarPisoDaConvencao();
   } else if (ABA_FICHA === "beneficios") {
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Categoria do auxílio-alimentação</label>${lista(
@@ -2504,6 +2540,120 @@ async function ligarCriacaoDeLista(){
     });
 }
 
+// ===========================================================================
+// ⚑ CARGO + CONVENÇÃO = CATEGORIA, PISO E CBO (18/11/2026)
+//
+// A base é o cruzamento `cargo_convencao`, que veio da planilha "Cargo e
+// Convenção" do Pipefy. Ela chega de UMA vez quando o formulário abre
+// (`/erp/api/cargos`, 135 linhas) e fica em memória: trocar de cargo ou de
+// convenção não custa ida nenhuma ao banco. Pedir por combinação custaria uma
+// chamada por clique numa caixinha que a pessoa mexe várias vezes.
+//
+// ⚠️ A ROTA É `/erp/api/cargos` E NÃO A DE OPÇÕES, de propósito: a de opções é
+// aberta a quem tem `ver_pessoal` (supervisor de obra, parceiro) e por isso
+// vem SEM o piso — mandar a tabela salarial da empresa para quem só escolhe um
+// cargo numa lista seria vazá-la. Esta tela é `editar_colaboradores`.
+// ===========================================================================
+let CRUZAMENTOS = null;
+
+async function cruzamentosDeCargo(){
+  if (CRUZAMENTOS) return CRUZAMENTOS;
+  try { CRUZAMENTOS = (await api("/erp/api/cargos")).cruzamentos || []; }
+  catch(e){ CRUZAMENTOS = []; }      // sem a base, a tela só não ajuda
+  return CRUZAMENTOS;
+}
+
+async function ligarPisoDaConvencao(){
+  const cargo = els("c-cargo"), conv = els("c-convencao"), caixa = els("c-piso-caixa");
+  if (!cargo || !conv || !caixa) return;
+  const base = await cruzamentosDeCargo();
+
+  const achar = () => base.find(x =>
+    String(x.cargo_id) === String(cargo.value) &&
+    String(x.convencao_id) === String(conv.value));
+
+  const pintar = () => {
+    const cc = achar();
+    if (!cargo.value || !conv.value) {
+      caixa.innerHTML = `<div class="cartao-dica" style="margin:0">Escolha o
+        <b>cargo</b> e a <b>convenção</b> — a categoria, o piso e o CBO vêm da
+        base de Cargos e convenções.</div>`;
+      return;
+    }
+    if (!cc) {
+      caixa.innerHTML = `<div class="aviso alerta" style="margin:0">
+        Esta combinação de cargo e convenção <b>não está na base</b>. Cadastre-a
+        em <b>Configurações › Cargos e convenções</b> para o piso e a categoria
+        virem sozinhos — o cadastro pode seguir sem isso.</div>`;
+      return;
+    }
+    const campo = els("c-salario");
+    const atual = campo ? (campo.value || "").trim() : "";
+    const piso = cc.salario_piso;
+    // ⚠️ Comparação por CENTAVOS, não por texto: "2230" e "2.230,00" são o
+    // mesmo salário, e comparar as duas cadeias diria que mudou.
+    const emCentavos = t => Math.round(parseFloat(
+      String(t).replace(/\./g, "").replace(",", ".")) * 100) || 0;
+    const igual = piso != null && atual && emCentavos(atual) === Math.round(piso * 100);
+    const cat = els("c-convcategoria");
+    const trocada = cat && cat.dataset ? (cat.dataset.trocada || "") : "";
+    caixa.innerHTML = `<div class="cartao-dica" style="margin:0">
+      <b>Da base:</b> categoria <b>${escapar(cc.categoria || "sem categoria")}</b>
+      ${trocada ? `<small> (era ${escapar(trocada)}, mudou com a convenção)</small>` : ""}
+      · CBO <span class="dados">${escapar(cc.cbo || "—")}</span>
+      ${piso != null ? ` · piso <b>${numero(piso)}</b>` : " · sem piso cadastrado"}
+      ${cc.valor_diaria != null ? ` · diária ${numero(cc.valor_diaria)}` : ""}
+      ${piso != null && atual && !igual ? `
+        <br><span style="color:var(--vermelho)">Este cadastro está com
+        <b>${escapar(atual)}</b>, diferente do piso.</span>
+        <button class="btn secundario" type="button" id="c-usar-piso"
+                style="margin-left:6px; padding:3px 8px; font-size:12px">usar o piso</button>
+        <br><small>Ganhar mais que o piso é normal e fica registrado; o que não
+        pode é a diferença ser sem querer.</small>` : ""}
+    </div>`;
+    if (els("c-usar-piso"))
+      els("c-usar-piso").addEventListener("click", () => {
+        if (campo) { campo.value = numero(piso); pintar(); }
+      });
+  };
+
+  const preencher = () => {
+    const cc = achar();
+    if (!cc) return pintar();
+    // ⚠️ O SALÁRIO e a CATEGORIA se comportam DIFERENTE, e a diferença não é
+    // capricho:
+    //
+    //   · SALÁRIO é NEGOCIADO. Ganhar mais que o piso é normal e legítimo, e
+    //     trocar por cima o valor que alguém digitou é dinheiro mudando sem
+    //     ninguém ver. Então: preenche o vazio, e quando há valor diferente a
+    //     tela mostra os dois e oferece o botão.
+    //
+    //   · CATEGORIA NÃO é negociada. Ela é o que a convenção diz sobre aquele
+    //     cargo (PROFISSIONAL, OPERÁRIO QUALIFICADO…). Trocar a convenção e
+    //     deixar a categoria da anterior não é "respeitar o que foi digitado"
+    //     — é guardar dado errado. Então ela ACOMPANHA o par, e a tela diz
+    //     quando mudou.
+    //
+    // Achado dirigindo a tela: trocar de convenção deixava "PROFISSIONAL" numa
+    // combinação cuja categoria é "OPERARIO QUALIFICADO".
+    const campo = els("c-salario");
+    if (campo && !(campo.value || "").trim() && cc.salario_piso != null)
+      campo.value = numero(cc.salario_piso);
+    const cat = els("c-convcategoria");
+    if (cat) {
+      const antes = (cat.value || "").trim();
+      const agora = cc.categoria || "";
+      cat.value = agora;
+      cat.dataset.trocada = (antes && agora && antes !== agora) ? antes : "";
+    }
+    pintar();
+  };
+
+  cargo.addEventListener("change", preencher);
+  conv.addEventListener("change", preencher);
+  pintar();        // ao abrir, só MOSTRA — não mexe em cadastro que já existe
+}
+
 function ligarTipoDeContrato(){
   const vinc = els("c-vinculo"), caixa = els("c-contrato-caixa");
   if (!vinc || !caixa) return;
@@ -2582,6 +2732,7 @@ function corpoDoCadastro(){
     // escolhida (ver `pessoas.salvar`). Mandá-lo daqui faria os dois voltarem
     // a poder divergir, que é o defeito que acabou de ser consertado.
     "c-cargo": "cargo_id", "c-convencao": "convencao_id",
+    "c-convcategoria": "convencao_categoria",
     "c-obra": "obra_id", "c-mat": "matricula", "c-exper": "contrato_experiencia",
     "c-datainicio": "data_inicio",
     "c-admissao": "admissao", "c-salario": "salario", "c-mensalista": "mensalista",

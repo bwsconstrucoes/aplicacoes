@@ -21,6 +21,64 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 18/11/2026 — CARGO + CONVENÇÃO PREENCHE CATEGORIA, PISO E CBO
+
+Ele: *"No Pipefy eu tenho uma base de dados onde vinculo cargo, convenção,
+categoria e salário. Qual sua sugestão pra fazermos aqui também? Preciso de
+algo simples de construir. A ideia é que uma vez que o DP preencher a
+convenção, o salário e a categoria já ficariam preenchidos, e o CBO."*
+
+#### ⚠️ A BASE JÁ EXISTIA — e é a planilha DELE, importada
+
+Antes de sugerir qualquer coisa, procurei. `cargo_convencao` é exatamente a
+tabela "Cargo e Convenção" do Pipefy, importada em 05/11/2026: **63 cargos, 13
+convenções, 135 cruzamentos**, com categoria, piso, CBO e **histórico de
+dissídio**. A tela existe em Configurações › Cargos e convenções, com importação
+que simula antes de gravar.
+
+**Faltava um pedaço só: a tela de cadastro não olhava a base.** Terceira vez na
+semana que o diagnóstico é "está construído e inalcançável" — ver a nota de
+17/11 sobre procurar antes de concluir que falta.
+
+#### O que foi feito
+
+Escolhido o cargo e a convenção, a ficha mostra **categoria, CBO, piso e
+diária** daquela combinação, e preenche o salário e a categoria. Combinação que
+não está na base diz isso, com o caminho para cadastrá-la — e o cadastro segue.
+
+**Custo:** a base chega **UMA vez** quando o formulário abre (135 linhas) e fica
+em memória. Trocar de cargo ou de convenção não custa ida nenhuma ao banco.
+Pedir por combinação custaria uma chamada por clique.
+
+⚠️ **A rota é `/erp/api/cargos` e não a de opções**, de propósito: a de opções é
+aberta a quem tem `ver_pessoal` (supervisor de obra, parceiro) e vem SEM o piso.
+Mandar a tabela salarial da empresa por ali seria vazá-la — e há teste disso.
+
+#### ⚠️ SALÁRIO E CATEGORIA SE COMPORTAM DIFERENTE, e isso só apareceu na tela
+
+- **Salário é NEGOCIADO.** Ganhar mais que o piso é normal e legítimo. Então ele
+  é preenchido quando está vazio e **nunca sobrescrito**: havendo valor
+  diferente, a tela mostra os dois e oferece "usar o piso". Trocar em silêncio
+  um salário digitado é dinheiro mudando sem ninguém ver, e *"por que ela ganha
+  mais que o piso"* é pergunta de auditoria e de sindicato.
+- **Categoria NÃO é negociada.** É o que a convenção diz sobre aquele cargo.
+  Dirigindo a tela vi que trocar a convenção deixava "PROFISSIONAL" numa
+  combinação cuja categoria é "OPERARIO QUALIFICADO" — respeitar o que estava
+  ali era guardar dado errado. Ela acompanha o par, e a tela diz que mudou.
+
+#### ⚠️ EU ESTAVA ERRADO SOBRE `convencao_categoria`
+
+Em 17/11 propus **tirar** essa coluna, por achar que era cópia da importação.
+Era eu que não sabia para que servia. Ela ganhou campo agora, e fica gravada na
+pessoa **de propósito**: a base muda (dissídio, reenquadramento), e a categoria
+que valeu quando a pessoa foi admitida é a que a folha daquele mês usou. Ler da
+base hoje reescreveria o passado — é o mesmo motivo de o histórico de piso
+existir.
+
+**Sobra uma só das duas que eu propus tirar: `regime`**, que continua parecendo
+o vínculo com outro nome. Essa pergunta segue aberta.
+
+
 ### ⚑ 18/11/2026 — A TRILHA DO CADASTRO, A JANELA QUE NÃO FECHA MAIS, E AS CONDICIONAIS DECIDIDAS
 
 #### 1. ⚠️ "Alterei um campo e não aconteceu" — a trilha estava furada
