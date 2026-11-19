@@ -143,7 +143,9 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "volta de afastamento chegando sem o exame de retorno, "
                    "afastamento antigo sem natureza registrada, admissão sem "
                    "ficha de volta, desligamento sem documentação rescisória, "
-                   "ativo sem obra",
+                   "desligamento em andamento parado ou atrasado, saída da "
+                   "carteira sem a confirmação de que a pessoa continua como "
+                   "prestador, ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
         "usa_ia": False,
@@ -695,6 +697,49 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
                 "o_que_fazer": "resolver antes de a pessoa aparecer na obra"})
     except Exception:
         logger.exception("Agente DP: falha ao olhar as voltas de afastamento")
+
+    # ⚑ O DESLIGAMENTO EM ANDAMENTO (19/11/2026). Ele: *"pensando em agente
+    # de IA, a gente tem que reestruturar todo esse comando para ele
+    # funcionar do início ao fim e nada dessas ações se perderem."*
+    #
+    # Duas coisas viram aviso, e a primeira é a mais séria: a CONTINUIDADE
+    # NÃO CONFIRMADA. Enquanto o DP não confirma, a pessoa segue de carteira
+    # no cadastro — a folha e a contabilidade enxergam um CTPS que já saiu.
+    # A segunda é o processo parado: passo atrasado (a contabilidade passou
+    # do prazo) ou nada andando há `dias_parado` dias.
+    try:
+        from app.apps.erp.core import desligamento_processo as svc_proc
+        for d in svc_proc.em_andamento(s):
+            if d["continuidade_a_confirmar"]:
+                achados.append({
+                    "tipo": "continuidade_a_confirmar",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: o último dia de carteira já "
+                              "passou e ninguém confirmou se a pessoa continua "
+                              "como prestador — o cadastro segue dizendo CTPS"),
+                    "o_que_fazer": "confirmar a continuidade no pedido"})
+            elif d["atrasado"] or ((d["dias"] or 0) >= limite
+                                   and not d["pode_encerrar"]
+                                   and d["cumpridos"] <= 1):
+                achados.append({
+                    "tipo": "desligamento_parado",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: {d['cumpridos']}/{d['total']} "
+                              f"passos; próximo: {d['proximo']}"
+                              + (" (atrasado)" if d["atrasado"] else "")),
+                    "o_que_fazer": "andar com o desligamento"})
+            elif d["pode_encerrar"]:
+                achados.append({
+                    "tipo": "desligamento_pronto",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: todos os passos cumpridos e o "
+                              "pedido ainda aberto"),
+                    "o_que_fazer": "encerrar o desligamento"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar os desligamentos em andamento")
 
     # Pessoa ativa sem obra: não entra em rateio nem em lista de obra nenhuma.
     for linha in s.execute(text("""

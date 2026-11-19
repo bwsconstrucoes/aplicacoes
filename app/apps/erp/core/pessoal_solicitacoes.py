@@ -34,6 +34,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core import desligamento_processo as svc_processo
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import Colaborador, Usuario
@@ -794,8 +795,8 @@ EXPLICACAO_DA_OPCAO: dict[str, dict[str, str]] = {
         "Não, está saindo da empresa":
             "o acesso ao ponto cai na data de saída e não volta",
         "Sim, continua como prestador de serviço":
-            "o acesso ao ponto cai na saída, então a readmissão como prestador "
-            "tem de ser feita no mesmo dia — o sistema vai cobrar isso do DP",
+            "a pessoa continua ativa e batendo ponto; depois do último dia de "
+            "carteira o DP confirma, e o cadastro passa a prestador",
     },
     # ⚑ AS CHAVES SEGUEM O RÓTULO, que agora vem do cadastro de pessoas: se
     # alguém trocar a palavra lá e esquecer aqui, a dica some da tela. Tem
@@ -954,14 +955,18 @@ def campos_do_dp_do_tipo(tipo: str,
     return tuple(regra.get("campos_do_dp", ()))
 
 
-# ⚑ OS PASSOS QUE A RESPOSTA ACRESCENTA. Hoje é um só, e é o que fecha o
-# buraco do desligamento que continua como prestador: o acesso ao ponto cai na
-# saída, e se ninguém readmitir a pessoa não consegue bater no dia seguinte.
+# ⚑ OS PASSOS QUE A RESPOSTA ACRESCENTA ao checklist.
+#
+# ⚠️ ATÉ 19/11/2026 havia aqui "Abrir a readmissão como prestador": quem
+# continuava era desligado e readmitido. Desde então a pessoa NÃO é desligada —
+# o DP confirma a continuidade depois do último dia e o cadastro passa a
+# prestador (`desligamento_processo.confirmar_continuidade`). A confirmação é
+# um PASSO do processo, que trava o encerramento; repeti-la no checklist seria
+# a mesma tarefa em dois lugares, um que trava e outro que não.
 PASSOS_A_MAIS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
     "DESLIGAMENTO": {"continua_prestador": {"1": (
-        "Abrir a readmissão como prestador — SEM ela o ponto não aceita a "
-        "pessoa no dia seguinte",
-        "Conferir que a pessoa voltou a bater o ponto")}},
+        "Conferir, no dia seguinte ao último dia, que a pessoa continua "
+        "batendo o ponto como prestador",)}},
 }
 
 
@@ -1385,8 +1390,15 @@ ROTULOS_DO_DP: dict[str, str] = {
 #     à contabilidade cobra o retorno dela. Pedido solto não era rastreio, era
 #     lembrete.
 
-SITUACOES = ("ABERTA", "EM_ANALISE", "ATENDIDA", "RECUSADA", "CANCELADA")
-ABERTAS = ("ABERTA", "EM_ANALISE")
+SITUACOES = ("ABERTA", "EM_ANALISE", "EM_ANDAMENTO", "ATENDIDA", "RECUSADA",
+             "CANCELADA")
+# ⚑ "EM ANDAMENTO" (19/11/2026) é do desligamento de carteira: o DP já
+# registrou a saída, e o processo segue até a rescisão e a multa pagas — ver
+# `core/desligamento_processo.py`. O pedido continua ABERTO na fila (é
+# trabalho de alguém), mas já NÃO se atende, recusa nem cancela: a saída foi
+# gravada, e desfazê-la é outro pedido ("Cancelar desligamento").
+ABERTAS = ("ABERTA", "EM_ANALISE", "EM_ANDAMENTO")
+A_ATENDER = ("ABERTA", "EM_ANALISE")
 
 
 def _opcoes(s: Optional[Session], campo: str) -> list[str]:
@@ -1869,7 +1881,7 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
     atendido pela metade.
     """
     p = ler(s, solicitacao_id)
-    if p["situacao"] not in ABERTAS:
+    if p["situacao"] not in A_ATENDER:
         raise ErroValidacao(
             f"{p['numero']} já está {p['situacao_rotulo'].lower()} — não dá para atender de novo.")
     regra = TIPOS[p["tipo"]]
@@ -1898,7 +1910,21 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                 "vinculo": pedido.get("tipo_documentacao") or None}, usuario)
             efeito["readmitiu"] = True
         elif executa == "desligar":
-            svc_pessoas.desligar(s, alvo, pedido, usuario)
+            # ⚑ O DESLIGAMENTO DE CARTEIRA VIRA PROCESSO (19/11/2026) — ver
+            # `core/desligamento_processo.py`. E quem CONTINUA como prestador
+            # não é desligado: a saída da carteira fica agendada, e o DP
+            # confirma depois do último dia.
+            vinculo_alvo = vinculo_da_pessoa(s, alvo)
+            if svc_processo.e_processo(p["tipo"], vinculo_alvo):
+                efeito["processo"] = True
+                pedido["processo_desligamento"] = "1"
+                if svc_processo.continua(pedido):
+                    svc_pessoas.agendar_saida_da_carteira(s, alvo, pedido, usuario)
+                    efeito["continua_a_confirmar"] = True
+                else:
+                    svc_pessoas.desligar(s, alvo, pedido, usuario)
+            else:
+                svc_pessoas.desligar(s, alvo, pedido, usuario)
         elif executa == "readmitir":
             svc_pessoas.readmitir(s, alvo, pedido, usuario)
         elif executa == "trocar_vinculo":
@@ -1934,15 +1960,19 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
         s.execute(text("UPDATE dp_solicitacoes SET colaborador_id = :c WHERE id = :s"),
                   {"c": c.id, "s": solicitacao_id})
         efeito["colaborador_id"] = c.id
+    # O desligamento de carteira não fecha aqui: abre o processo.
+    nova = svc_processo.EM_ANDAMENTO if efeito.get("processo") else "ATENDIDA"
     s.execute(text("""UPDATE dp_solicitacoes
-                         SET situacao = 'ATENDIDA', atendido_por = :u,
+                         SET situacao = :nova, atendido_por = :u,
                              atendido_em = now(), resposta = :r, atualizado_em = now(),
                              dados = CAST(:d AS jsonb)
                        WHERE id = :s"""),
-              {"u": usuario.id if usuario else None, "s": solicitacao_id,
+              {"nova": nova, "u": usuario.id if usuario else None,
+               "s": solicitacao_id,
                "r": (str(dados.get("resposta") or "").strip() or None),
                "d": __import__("json").dumps(pedido, ensure_ascii=False, default=str)})
-    _evento(s, solicitacao_id, "ATENDIDA",
+    _evento(s, solicitacao_id,
+            "DESLIGAMENTO_REGISTRADO" if efeito.get("processo") else "ATENDIDA",
             {"resposta": dados.get("resposta"), **efeito}, usuario)
     logger.info("ERP/DP: solicitação %s atendida por %s (%s)", p["numero"],
                 usuario.nome if usuario else "?", efeito.get("executou") or "sem efeito")
@@ -1952,7 +1982,7 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
 def recusar(s: Session, solicitacao_id: int, dados: dict[str, Any],
             usuario: Usuario) -> dict[str, Any]:
     p = ler(s, solicitacao_id)
-    if p["situacao"] not in ABERTAS:
+    if p["situacao"] not in A_ATENDER:
         raise ErroValidacao(f"{p['numero']} já está {p['situacao_rotulo'].lower()}.")
     motivo = str(dados.get("resposta") or dados.get("motivo") or "").strip()
     if len(motivo) < 5:
@@ -1978,9 +2008,12 @@ def cancelar(s: Session, solicitacao_id: int, dados: dict[str, Any],
     resposta.
     """
     p = ler(s, solicitacao_id)
-    if p["situacao"] not in ABERTAS:
+    if p["situacao"] not in A_ATENDER:
         raise ErroValidacao(
-            f"{p['numero']} já está {p['situacao_rotulo'].lower()} — não dá para cancelar.")
+            f"{p['numero']} já está {p['situacao_rotulo'].lower()} — não dá para cancelar."
+            + (" A saída já foi registrada: para desfazê-la, abra um pedido de "
+               "cancelamento de desligamento." if p["situacao"] == "EM_ANDAMENTO"
+               else ""))
     motivo = str(dados.get("motivo") or "").strip()
     if len(motivo) < 5:
         raise ErroValidacao("Diga por que está cancelando.")
@@ -2018,6 +2051,7 @@ def marcar_item(s: Session, solicitacao_id: int, item_id: int, feito: bool,
 # Ler
 # ---------------------------------------------------------------------------
 SITUACAO_ROTULOS = {"ABERTA": "Aberta", "EM_ANALISE": "Em análise",
+                    "EM_ANDAMENTO": "Em andamento",
                     "ATENDIDA": "Atendida", "RECUSADA": "Recusada",
                     "CANCELADA": "Cancelada"}
 
@@ -2088,6 +2122,13 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         "motivo_cancelamento": d["motivo_cancelamento"] or "",
         "criado_em": d["criado_em"].isoformat(),
         "aberta": d["situacao"] in ABERTAS,
+        # Atender/recusar/cancelar: só antes de a saída ser registrada.
+        "a_atender": d["situacao"] in A_ATENDER,
+        "processo": (svc_processo.passos(s, {**d, "dados": d["dados"] or {}})
+                     if d["tipo"] == "DESLIGAMENTO"
+                     and (d["situacao"] == svc_processo.EM_ANDAMENTO
+                          or (d["dados"] or {}).get("processo_desligamento"))
+                     else None),
         "itens": [{"id": i["id"], "descricao": i["descricao"], "feito": i["feito"],
                    "por": i["por"] or "",
                    "em": i["feito_em"].isoformat() if i["feito_em"] else None}
@@ -2110,7 +2151,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
     """
     onde, params = ["1 = 1"], {"limite": limite, "eu": usuario_id}
     if situacao == "ABERTAS":
-        onde.append("d.situacao IN ('ABERTA', 'EM_ANALISE')")
+        onde.append("d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')")
     elif situacao:
         onde.append("d.situacao = :situacao")
         params["situacao"] = situacao
@@ -2145,7 +2186,8 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
           LEFT JOIN obras o ON o.id = d.obra_id
           LEFT JOIN usuarios u ON u.id = d.solicitante_id
          WHERE {' AND '.join(onde)}
-         ORDER BY (d.situacao IN ('ABERTA', 'EM_ANALISE')) DESC, d.criado_em DESC
+         ORDER BY (d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')) DESC,
+                  d.criado_em DESC
          LIMIT :limite"""), params).mappings().all()
     fila = [{
         "id": l["id"], "numero": l["numero"], "tipo": l["tipo"],
@@ -2177,7 +2219,15 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         # um CNPJ, e não a lista vir do lugar errado.
         "empresas": empresas_para_escolher(s),
         # Quem foi desligado dizendo que continua, e não foi readmitido: o
-        # ponto não aceita essa pessoa amanhã (15/11/2026).
+        # ponto não aceita essa pessoa amanhã (15/11/2026). Só pega os pedidos
+        # atendidos ANTES de 19/11/2026 — os de agora não desligam quem
+        # continua (ver `desligamento_processo`).
         "readmissoes_pendentes": readmissoes_esquecidas(s),
+        # ⚑ Os desligamentos em andamento, com o próximo passo de cada um.
+        # Recortado pelo que esta pessoa enxerga na fila: quem é preso a obra
+        # não vê o desligamento da obra dos outros por aqui.
+        "desligamentos_em_andamento": [
+            x for x in svc_processo.em_andamento(s)
+            if obra_ids is None or x["id"] in {f["id"] for f in fila}],
         "situacoes": [{"valor": c, "rotulo": r} for c, r in SITUACAO_ROTULOS.items()],
     }

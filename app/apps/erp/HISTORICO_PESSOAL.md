@@ -38,6 +38,34 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**Falta publicar (19/11/2026) — ramo `claude/busy-shannon-w5pp5o`.** Ele
+CONTÉM o ramo `claude/oi-vjvrn8` inteiro (abaixo), juntado de propósito: os
+dois mexem em `pessoal_solicitacoes.py`, `erp_dp_solicitacoes.html` e
+`erp_colaboradores.html`, e publicar um sem o outro daria conflito. **Publicar
+este publica os dois.** São **três** atualizações de banco: 112, 113 e **114**
+(o processo do desligamento). Apertar "Aplicar atualizações do banco" no mesmo
+momento da junção.
+
+O que é deste ramo (ver "Decisões", 19/11/2026):
+
+- a faixa do afastamento na janela da pessoa e a data de início corrigível no
+  retorno do afastamento antigo;
+- o desligamento de carteira como PROCESSO, que só se encerra com a rescisão e
+  a multa pagas (migração 114);
+- o "sim, continua como prestador" que não desliga mais: o DP confirma depois
+  do último dia, e o cadastro vira prestador.
+
+**Perguntas abertas deste ramo, para ele:**
+
+- a marcação "a documentação voltou assinada" deve **exigir o arquivo**
+  assinado jogado no cadastro, ou basta marcar? (hoje basta marcar);
+- o desligamento de **prestador** continua fechando no atendimento, sem
+  processo. Ele tem algum passo depois (pagamento final, por exemplo) que deva
+  travar o encerramento?
+- os desligamentos que já foram **atendidos antes de 19/11** fecharam do jeito
+  antigo, sem os passos. Ficam assim (recomendação), ou ele quer reabrir os do
+  mês para acompanhar a multa?
+
 **Falta publicar (18/11/2026).** Está tudo no ramo `claude/oi-vjvrn8`, testado,
 e **espera o "pode" dele**:
 
@@ -76,6 +104,112 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 19/11/2026 — O desligamento de carteira vira processo; quem continua não é mais desligado
+
+**O pedido, com as palavras dele:** *"É feita a solicitação, o DP analisa, o
+DP encaminha o pedido para contabilidade (…) A contabilidade retorna a
+documentação rescisória, aí o DP vai encaminhar para quem solicitou, essa
+pessoa (…) vai apresentar para o colaborador a documentação, colher assinaturas
+e devolver para o DP. E o DP (…) gera o lançamento financeiro (…) da rescisão,
+como também (…) a multa rescisória. Vai ser feito esses dois lançamentos pagos,
+e só então a solicitação se encerra."*
+
+**O que acontecia:** "Atender" gravava as datas e **fechava** o pedido na
+hora. O resto vivia num checklist que ninguém era obrigado a marcar.
+
+**O que acontece agora** (`core/desligamento_processo.py`, migração 114):
+atender o desligamento de CTPS abre o processo — situação **"Em andamento"** —
+e o pedido só se encerra com os passos cumpridos. O servidor recusa encerrar
+antes. Os passos, e de onde vem a prova de cada um:
+
+| Passo | Como se cumpre |
+|---|---|
+| O DP registrou a saída | ao atender |
+| Confirmar se continua como prestador (só quando o pedido disse "sim") | o DP confirma, depois do último dia |
+| Rescisão pedida à contabilidade | **lido**: o pedido ligado (ou o da pessoa aberto depois) foi enviado |
+| Documentação rescisória de volta | **lido**: o pedido voltou (respondido/concluído) |
+| DP mandou a documentação para quem pediu | marcado pelo DP |
+| Voltou assinada | marcado pelo DP |
+| Rescisão (TRCT) paga | o DP informa a SP; cumpre-se quando o lançamento estiver **pago** |
+| Multa do FGTS paga | idem; **não se aplica** sozinho no pedido de demissão e no fim de experiência |
+
+**Decisões tomadas por mim, e que ele pode trocar:**
+
+1. **O sistema lê a prova antes de pedir marcação.** Passo lido pelo sistema
+   só se marca à mão com o motivo escrito ("mandei pelo e-mail pessoal") —
+   para nada travar quando algo for feito por fora, sem a marcação virar
+   formalidade.
+2. **O checklist continua**, e é outra coisa: o checklist é a lista de
+   tarefas configurável do DP (migração 112); os passos são o portão do
+   encerramento. A única mudança no checklist: saiu "abrir a readmissão como
+   prestador".
+3. **Uma SP não paga dois passos.** Rescisão e multa são dois lançamentos.
+4. **Prestador continua fechando no atendimento** — não tem contabilidade,
+   rescisão nem multa. Pergunta aberta (acima).
+5. **Em andamento não se cancela pelo próprio pedido**: a saída já foi gravada;
+   desfazer é o pedido de "cancelamento de desligamento".
+
+**O "sim, continua" — e isto SUBSTITUI a decisão de 15/11/2026** ("continua
+desligando e readmitindo — dois pedidos"). Ele: *"Quando eu coloco sim (…) O
+ponto dele continua ativo, ele continua ativo. Mas o DP precisa validar (…) o
+contrato de trabalho da pessoa precisa mudar (…) A data de saída dele vai ser
+apagada (…) As outras informações têm que estar registradas, mas no
+histórico."*
+
+- **Ao atender:** a data de saída **não vai para o cadastro** — é ela que corta
+  o ponto, o acesso e a folha. Fica no pedido. Último dia e aviso vão (não
+  cortam nada).
+- **Confirmar "sim"** (só a partir do dia seguinte ao último dia): o vínculo de
+  carteira fecha **no histórico** com saída, aviso, forma e salário; abre o de
+  prestador; o cadastro fica sem data de saída, sem salário de carteira, com o
+  tipo de contrato e a diária/valor do mês informados. A trilha "Alterações no
+  cadastro" mostra cada campo.
+- **Confirmar "não"** (a qualquer momento — *"no meio do caminho decidiu-se
+  que ele não continua mais"*): vira desligamento comum, com a data do pedido.
+- **Sem confirmação, a pessoa segue ativa como CTPS.** É o risco que sobra, e
+  está à vista em três lugares: no alto de Solicitações, no vigia do agente e
+  no relatório.
+
+**O primeiro dia como prestador é o dia seguinte ao ÚLTIMO DIA trabalhado, não
+à data de saída** — no aviso indenizado a saída é projetada um mês à frente, e
+quem continua trabalha no dia seguinte ao último dia. A tela mostra e o DP pode
+trocar.
+
+**Dois defeitos achados de passagem, e consertados:**
+
+1. **Concluir o pedido de rescisão na contabilidade movia o cadastro para
+   "Desligado" mesmo com a saída no futuro** — o mesmo defeito do aviso prévio
+   de 17/11, por outra porta: a rescisão que volta antes do último dia tirava
+   do ponto quem ainda trabalha. Agora só move se a data já passou.
+2. **Achado DIRIGINDO A TELA:** depois de confirmar "continua", o pedido de
+   rescisão à contabilidade era recusado ("falta o último dia") e sairia com a
+   admissão do PRESTADOR. A rescisão agora lê a carteira que fechou
+   (`contabilidade.carteira_que_saiu`).
+
+**O agente:** o vigia passou a avisar a continuidade não confirmada, o
+desligamento parado ou atrasado e o pronto para encerrar.
+
+**Exercitado no navegador** com banco local: fila, processo, confirmação da
+continuidade, montar o pedido à contabilidade, faixa do afastamento e retorno.
+
+### 19/11/2026 — A faixa do afastamento na janela da pessoa
+
+Ele procurou como voltar um afastado para "Concluído" e não achou: *"não existe
+a aba demandas"*. Existia, dentro do cadastro completo, dois cliques abaixo de
+uma janela que não dizia que a pessoa estava afastada. Agora a janela da pessoa
+(a do ponto e a ficha do ERP) mostra no alto "Afastado desde…", o que falta e
+o botão **Registrar o retorno**, que abre direto o diálogo.
+
+E o **afastamento antigo** (migração 111) tinha a data de início **estimada** —
+para quem veio pela importação, a admissão. Com ela, o sistema cobrava ASO de
+quem ficou uma semana fora. No retorno, a data passa a ser corrigível — **só no
+afastamento antigo**; o novo teve a data informada na hora. Fica rastro
+(`AFASTAMENTO_INICIO_CORRIGIDO`).
+
+**Mexeu em arquivo compartilhado:** `routes.py` (só a rota de ações da
+solicitação do DP ganhou três ações). Nada em `erp_base.html`, `permissoes.py`
+ou `conftest.py`.
 
 ### 18/11/2026 — Liberar o acesso leva direto para configurar o acesso
 

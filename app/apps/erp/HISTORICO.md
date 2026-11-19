@@ -40,6 +40,16 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 19/11/2026 — nota para o FINANCEIRO, vinda do DP (registro entre áreas)
+
+A migração **114** (`dp_desligamento_passos`) é do DP, mas **aponta para
+`titulos`**: o processo do desligamento liga a SP da rescisão e a da multa do
+FGTS ao pedido, e se cumpre quando o lançamento fica **PAGO**. O DP só LÊ o
+lançamento (número da SP e situação) — não cria, não aprova, não paga.
+Consequência para quem mexe no Financeiro: um lançamento ESTORNADO ou
+CANCELADO faz o passo voltar a pedir SP; e o status `PAGO` passou a ter um
+leitor a mais. Detalhe em `HISTORICO_PESSOAL.md`, 19/11/2026.
+
 ### ⚑ 18/11/2026 — AFASTAMENTO COM TIPO E RETORNO CONFERIDO (ENTREGUE)
 
 Pergunta dele: *"Colaborador estava afastado e vai retornar ao trabalho. O que

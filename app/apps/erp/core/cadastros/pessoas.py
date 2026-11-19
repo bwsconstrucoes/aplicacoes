@@ -1196,6 +1196,185 @@ def trocar_vinculo(s: Session, colaborador_id: int, dados: dict[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# ⚑ SAI DA CARTEIRA E CONTINUA COMO PRESTADOR (19/11/2026)
+#
+# Ele, sobre o "sim, continua" do pedido de desligamento:
+#
+#   *"Quando eu coloco sim, o colaborador vai continuar, o que é que acontece?
+#    O ponto dele continua ativo, ele continua ativo. Mas o DP precisa validar
+#    aquela informação. (…) Porque se o DP não confirmar (…) quem é que vai
+#    saber se aquilo aconteceu ou não? E mais, o contrato de trabalho da pessoa
+#    precisa mudar. Ele precisa mudar de CLT para prestador de serviço. A data
+#    de saída dele vai ser apagada (…) As outras informações, elas têm que
+#    estar registradas, mas no histórico."*
+#
+# E o porquê da confirmação, que vale mais que o resto: *"o cara pode dizer que
+# não, ele vai continuar como prestador, mas de repente no meio do caminho
+# decidiu-se que ele não continua mais."*
+#
+# ⚠️ ISTO SUBSTITUI A DECISÃO DE 15/11/2026 ("continua desligando e
+# readmitindo — dois pedidos"). Aquela trava cobrava a readmissão esquecida;
+# esta tira o esquecimento do caminho: a pessoa nunca chega a ser desligada,
+# então o ponto não a recusa na manhã seguinte.
+#
+# São DUAS funções, porque são dois momentos:
+#   1. `agendar_saida_da_carteira` — no atendimento do pedido. Grava as datas
+#      da rescisão e NÃO desliga: a pessoa segue ativa e batendo ponto.
+#   2. `passar_a_prestador` — quando o DP CONFIRMA, depois do último dia. Fecha
+#      o vínculo de carteira no histórico e abre o de prestador; o cadastro
+#      fica limpo para a "vida nova", nas palavras dele.
+# Se a confirmação for "não continua", quem age é o `desligar` de sempre.
+# ---------------------------------------------------------------------------
+def agendar_saida_da_carteira(s: Session, colaborador_id: int,
+                              dados: dict[str, Any],
+                              usuario: Optional[Usuario]) -> Colaborador:
+    """Grava a saída da carteira de quem CONTINUA trabalhando — sem desligar.
+
+    ⚠️ A DATA DE SAÍDA NÃO VAI PARA O CADASTRO, e é isso que mantém a pessoa
+    trabalhando: o ponto, a virada do dia e a folha olham `demissao`, e com ela
+    preenchida a pessoa seria cortada no dia seguinte à saída — o mesmo defeito
+    da readmissão esquecida, por outro caminho. A data mora no pedido de
+    desligamento (que é de onde a contabilidade a lê) e vai para o vínculo de
+    carteira quando o DP confirmar.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    saida = _data(dados.get("data_saida") or dados.get("demissao"), "data de saída")
+    if saida is None:
+        raise ErroValidacao(
+            "Informe a data de saída da carteira — é a data que vai para a "
+            "rescisão, mesmo a pessoa continuando como prestador.")
+    forma = _da_lista(dados.get("forma_desligamento"), FORMAS_DESLIGAMENTO,
+                      "forma de desligamento")
+    aviso = _data(dados.get("aviso_previo"), "aviso prévio")
+    ultimo = _data(dados.get("ultimo_dia"), "último dia")
+    # Último dia e aviso prévio vão para o cadastro: são informação da rescisão
+    # e NÃO cortam nada (a régua é só `demissao`, ver `ja_saiu`).
+    c.aviso_previo = aviso or c.aviso_previo
+    c.ultimo_dia = ultimo or c.ultimo_dia
+    v = vinculo_aberto(s, c.id)
+    if v is not None:
+        v.forma_desligamento = forma or v.forma_desligamento
+        v.aviso_previo, v.ultimo_dia = c.aviso_previo, c.ultimo_dia
+    s.flush()
+    registrar_evento(s, "colaborador", c.id, "SAIDA_DA_CARTEIRA_AGENDADA",
+                     {"data_saida": str(saida), "forma": forma,
+                      "ultimo_dia": str(c.ultimo_dia) if c.ultimo_dia else None,
+                      "continua_como_prestador": "a confirmar pelo DP"},
+                     usuario.id if usuario else None)
+    return c
+
+
+def passar_a_prestador(s: Session, colaborador_id: int, dados: dict[str, Any],
+                       usuario: Optional[Usuario]) -> Colaborador:
+    """O DP confirmou: a pessoa saiu da carteira e segue como prestador.
+
+    `dados`: `data_saida` (fim da carteira, a da rescisão), `inicio` (primeiro
+    dia como prestador), `tipo_contrato` (do prestador) e, se houver,
+    `valor_diaria` / `valor_mes`.
+
+    ⚑ O QUE FICA NO HISTÓRICO, e não no cadastro: a data de saída, o aviso
+    prévio, o último dia, a forma do desligamento e o salário da carteira —
+    tudo no vínculo de carteira, que fecha aqui. E a trilha "Alterações no
+    cadastro" ganha o de→para de cada campo que mudou.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    if (c.vinculo or "CTPS").upper() != "CTPS":
+        raise ErroValidacao(f"{c.nome} já não está como CTPS.")
+    if ja_saiu(c.demissao):
+        raise ErroValidacao(
+            f"{c.nome} já está desligado. Para trazer de volta como prestador, "
+            "use a readmissão.")
+    saida = _data(dados.get("data_saida"), "data de saída da carteira")
+    if saida is None:
+        raise ErroValidacao("Falta a data de saída da carteira.")
+    inicio = _data(dados.get("inicio") or dados.get("admissao"),
+                   "início como prestador")
+    if inicio is None:
+        raise ErroValidacao("Informe o primeiro dia como prestador.")
+    if inicio > date.today():
+        raise ErroValidacao(
+            f"O início como prestador ({inicio:%d/%m/%Y}) ainda não chegou. "
+            "Confirme a partir desse dia — até lá a pessoa continua de carteira.")
+    tipo = _da_lista(dados.get("tipo_contrato"), TIPOS_CONTRATO,
+                     "tipo de contrato")
+    if tipo not in TIPOS_CONTRATO_PRESTADOR:
+        raise ErroValidacao(
+            "Escolha o tipo de contrato do prestador ("
+            + ", ".join(TIPO_CONTRATO_ROTULOS[t] for t in TIPOS_CONTRATO_PRESTADOR)
+            + ").")
+
+    antes = _retrato(c)
+    v = vinculo_aberto(s, c.id)
+    if v is None:
+        # Quem veio pela importação pode não ter o vínculo registrado. Ele
+        # nasce aqui, já fechado — senão a passagem de carteira sumiria do
+        # histórico justamente de quem mais precisa dela.
+        v = ColaboradorVinculo(
+            colaborador_id=c.id, vinculo="CTPS", tipo_contrato=c.tipo_contrato,
+            empresa_id=c.empresa_id, cnpj_admissao=c.cnpj_admissao,
+            cargo_id=c.cargo_id, convencao_id=c.convencao_id, obra_id=c.obra_id,
+            salario=c.salario, matricula=c.matricula,
+            admissao=c.admissao or c.data_inicio or saida,
+            usuario_id=usuario.id if usuario else None)
+        s.add(v)
+        s.flush()
+    if inicio <= v.admissao:
+        raise ErroValidacao(
+            f"A carteira começou em {v.admissao:%d/%m/%Y}. O início como "
+            "prestador precisa ser depois disso.")
+    if saida < v.admissao:
+        raise ErroValidacao("A saída da carteira é antes da admissão.")
+    v.demissao = saida
+    v.aviso_previo = c.aviso_previo or v.aviso_previo
+    v.ultimo_dia = c.ultimo_dia or v.ultimo_dia
+    v.forma_desligamento = (_da_lista(dados.get("forma_desligamento"),
+                                      FORMAS_DESLIGAMENTO, "forma de desligamento")
+                            or v.forma_desligamento)
+    v.motivo = "saiu da carteira e continuou como prestador de serviço"
+    novo = ColaboradorVinculo(
+        colaborador_id=c.id, vinculo="PRESTADOR", tipo_contrato=tipo,
+        empresa_id=v.empresa_id, cnpj_admissao=v.cnpj_admissao,
+        cargo_id=v.cargo_id, convencao_id=v.convencao_id, obra_id=v.obra_id,
+        salario=None, matricula=v.matricula, admissao=inicio,
+        vinculo_anterior_id=v.id, usuario_id=usuario.id if usuario else None)
+    s.add(novo)
+
+    # A VIDA NOVA: o cadastro passa a dizer o que vale HOJE.
+    c.vinculo, c.tipo_contrato = "PRESTADOR", tipo
+    c.admissao = c.data_inicio = inicio
+    c.demissao = c.aviso_previo = c.ultimo_dia = None
+    c.situacao = "ATIVO"
+    # Salário e contrato de experiência são da carteira (`CAMPOS_SO_SE`): ficam
+    # no vínculo que fechou, e saem do cadastro para não aparecerem como se
+    # valessem para o prestador.
+    c.salario = None
+    c.contrato_experiencia = None
+    diaria = _dec(dados.get("valor_diaria"), "valor da diária")
+    mes = _dec(dados.get("valor_mes"), "valor do mês")
+    if diaria is not None:
+        c.valor_diaria = diaria
+    if mes is not None:
+        c.valor_mes = mes
+    s.flush()
+    mudou = _diferenca(antes, _retrato(c))
+    if mudou:
+        registrar_evento(s, "colaborador", c.id, "ALTERADO",
+                         {"nome": c.nome, "cpf": c.cpf, "mudou": mudou,
+                          "por": "saída da carteira, continua como prestador"},
+                         usuario.id if usuario else None)
+    registrar_evento(s, "colaborador", c.id, "VINCULO_TROCADO",
+                     {"de": "CTPS", "para": "PRESTADOR",
+                      "desde": str(inicio), "saida_da_carteira": str(saida),
+                      "tipo_contrato": tipo},
+                     usuario.id if usuario else None)
+    return c
+
+
+# ---------------------------------------------------------------------------
 # Alteração de salário, cargo e obra — com motivo
 # ---------------------------------------------------------------------------
 def registrar_alteracao(s: Session, colaborador_id: int, dados: dict[str, Any],

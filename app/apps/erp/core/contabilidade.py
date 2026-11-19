@@ -165,6 +165,28 @@ _ROTULOS_EXIGIDOS = {
 }
 
 
+def carteira_que_saiu(s: Session, c: Colaborador):
+    """O vínculo de CARTEIRA que fechou, quando a pessoa saiu dela e continua
+    como prestador — ou None.
+
+    ⚑ ACHADO DIRIGINDO A TELA (19/11/2026): confirmada a continuidade, o
+    cadastro passa a dizer o que vale HOJE — prestador, sem último dia, com a
+    admissão do prestador. E a rescisão pedida DEPOIS disso (o caso comum: a
+    contabilidade é chamada depois do último dia) saía com a admissão errada,
+    e nem saía: faltava o "último dia". Para a rescisão, o que vale é a
+    carteira que fechou, e ela está no histórico de vínculos.
+    """
+    from app.apps.erp.db.models.cadastros import ColaboradorVinculo
+    from sqlalchemy import select as _select
+    if (c.vinculo or "CTPS").upper() == "CTPS":
+        return None      # ainda de carteira, ou desligamento comum: o cadastro diz tudo
+    return s.scalars(_select(ColaboradorVinculo).where(
+        ColaboradorVinculo.colaborador_id == c.id,
+        ColaboradorVinculo.vinculo == "CTPS",
+        ColaboradorVinculo.demissao.is_not(None)).order_by(
+        ColaboradorVinculo.demissao.desc())).first()
+
+
 def o_que_falta_para_pedir(s: Session, template: str,
                            c: Colaborador) -> list[str]:
     """PURA o bastante para a tela avisar ANTES de alguém apertar enviar."""
@@ -172,7 +194,12 @@ def o_que_falta_para_pedir(s: Session, template: str,
     if regra is None:
         raise ErroValidacao("Tipo de pedido desconhecido.")
     falta = []
+    saiu = carteira_que_saiu(s, c) if template == "DESLIGAMENTO" else None
     for campo in regra["exige"]:
+        if saiu is not None and campo in ("admissao", "ultimo_dia"):
+            if not (getattr(saiu, campo, None) or saiu.demissao):
+                falta.append(_ROTULOS_EXIGIDOS.get(campo, campo))
+            continue
         if campo == "cargo":
             tem = c.cargo_id
         elif campo == "empresa":
@@ -250,6 +277,15 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
     def dia(v) -> str:
         return v.strftime("%d/%m/%Y") if v else ""
 
+    # Na rescisão de quem saiu da carteira e continua como prestador, a
+    # admissão, o salário e as datas são os da CARTEIRA (ver `carteira_que_saiu`).
+    saiu = carteira_que_saiu(s, c) if template == "DESLIGAMENTO" else None
+    admissao = saiu.admissao if saiu is not None else c.admissao
+    salario = saiu.salario if saiu is not None else c.salario
+    aviso = (saiu.aviso_previo if saiu is not None else None) or c.aviso_previo
+    ultimo = (saiu.ultimo_dia if saiu is not None else None) or c.ultimo_dia
+    saida = (saiu.demissao if saiu is not None else None) or c.demissao
+
     cabeca = [
         _linha("Nome", c.nome),
         _linha("CPF", c.cpf),
@@ -260,9 +296,9 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
         _linha("Obra", f"{obra.codigo} — {obra.nome}" if obra else ""),
         _linha("Cargo", cargo.nome if cargo else ""),
         _linha("Convenção", conv.nome if conv else ""),
-        _linha("Salário", f"R$ {c.salario:,.2f}".replace(",", "X").replace(".", ",")
-               .replace("X", ".") if c.salario is not None else ""),
-        _linha("Admissão", dia(c.admissao)),
+        _linha("Salário", f"R$ {salario:,.2f}".replace(",", "X").replace(".", ",")
+               .replace("X", ".") if salario is not None else ""),
+        _linha("Admissão", dia(admissao)),
     ]
     miolo: list[str] = []
     if template == "ASSINATURA_CTPS":
@@ -304,9 +340,17 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
                         svc_pessoas.FORMA_DESLIGAMENTO_ROTULOS.get(
                             d.get("forma_desligamento") or "",
                             d.get("forma_desligamento") or "")),
-                 _linha("Aviso prévio", dia(c.aviso_previo)),
-                 _linha("Último dia trabalhado", dia(c.ultimo_dia)),
-                 _linha("Data de saída", dia(c.demissao)),
+                 _linha("Aviso prévio", dia(aviso)),
+                 _linha("Último dia trabalhado", dia(ultimo)),
+                 # ⚑ QUEM CONTINUA COMO PRESTADOR não tem data de saída no
+                 # cadastro (ela cortaria o ponto — ver
+                 # `pessoas.agendar_saida_da_carteira`): a data da rescisão
+                 # vem do pedido de desligamento.
+                 _linha("Data de saída", dia(saida) or dia(
+                     svc_pessoas._data(d.get("data_saida"), "data de saída"))),
+                 _linha("Continua trabalhando como prestador de serviço",
+                        "sim" if (str(d.get("continua_prestador") or "") == "1"
+                                  or saiu is not None) else ""),
                  _linha("Faltas a descontar", d.get("faltas"))]
     elif template == "CANCELAMENTO_DESLIGAMENTO":
         miolo = ["Solicitamos o CANCELAMENTO do desligamento comunicado "
@@ -636,6 +680,7 @@ def _comparar(s: Session, p: dict[str, Any], c: Colaborador,
 
     regra = TEMPLATES[p["template"]]
     cargo = s.get(Cargo, c.cargo_id) if c.cargo_id else None
+    saiu = carteira_que_saiu(s, c) if p["template"] == "DESLIGAMENTO" else None
 
     def no_erp(campo: str) -> str:
         if campo == "cargo":
@@ -644,6 +689,11 @@ def _comparar(s: Session, p: dict[str, Any], c: Colaborador,
             return f"{c.salario:.2f}" if c.salario is not None else ""
         if campo in ("admissao", "data_saida"):
             v = c.admissao if campo == "admissao" else c.demissao
+            if p["template"] == "DESLIGAMENTO" and saiu is not None:
+                v = saiu.admissao if campo == "admissao" else saiu.demissao
+            if v is None and campo == "data_saida":
+                # Quem continua como prestador: a data está no pedido.
+                return str((p.get("dados") or {}).get("data_saida") or "")
             return v.isoformat() if v else ""
         return str(getattr(c, campo, "") or "")
 
@@ -749,6 +799,19 @@ def concluir(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
 
     etapa = regra.get("etapa_ao_concluir") or ""
     moveu = ""
+    if etapa == "DESLIGADO":
+        # ⚑ A RESCISÃO VOLTAR NÃO DESLIGA QUEM AINDA NÃO SAIU (19/11/2026).
+        # Quem decide a saída é a DATA (`pessoas.ja_saiu`), e a virada do dia
+        # cumpre. Mover para "Desligado" aqui tiraria do ponto quem cumpre
+        # aviso prévio — e quem saiu da carteira e CONTINUA como prestador,
+        # que nem data de saída tem no cadastro.
+        c = s.get(Colaborador, p["colaborador_id"])
+        if c is None or not svc_pessoas.ja_saiu(c.demissao):
+            _evento(s, pedido_id, "AVISO",
+                    "pedido concluído; o cadastro não foi para Desligado porque "
+                    "a data de saída ainda não passou (ou a pessoa continua "
+                    "como prestador)", {}, usuario, pelo_agente)
+            etapa = ""
     if etapa:
         c = s.get(Colaborador, p["colaborador_id"])
         if c is not None and (c.etapa or "").upper() != etapa:

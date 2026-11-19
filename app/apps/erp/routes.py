@@ -12377,7 +12377,10 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
         with get_session() as s:
             usuario = _usuario_logado(s)
             exigir_solicitacao_dp_no_escopo(s, usuario, solicitacao_id)
-            if acao in ("atender", "recusar", "item") and not pode(usuario, "atender_dp"):
+            # ⚑ OS PASSOS DO DESLIGAMENTO (19/11/2026) são do DP, como atender:
+            # marcar o passo, confirmar a continuidade e encerrar o processo.
+            if acao in ("atender", "recusar", "item", "passo", "continuidade",
+                        "encerrar") and not pode(usuario, "atender_dp"):
                 return jsonify({"ok": False, "erro":
                                 "Só o DP atende solicitação. Você pode abrir e "
                                 "acompanhar o que abriu."}), 403
@@ -12390,6 +12393,20 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             elif acao == "item":
                 p = svc.marcar_item(s, solicitacao_id, int(d.get("item_id") or 0),
                                     bool(d.get("feito")), usuario)
+            elif acao in ("passo", "continuidade", "encerrar"):
+                from app.apps.erp.core import desligamento_processo as svc_proc
+                atual = svc.ler(s, solicitacao_id)
+                if acao == "passo":
+                    feito = svc_proc.marcar(s, atual, d, usuario)
+                elif acao == "continuidade":
+                    feito = svc_proc.confirmar_continuidade(s, atual, d, usuario)
+                else:
+                    svc_proc.encerrar(s, atual, usuario)
+                    feito = {}
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                if (feito or {}).get("aviso"):
+                    p["aviso"] = feito["aviso"]
             else:
                 raise ErroNaoEncontrado(f"Ação desconhecida: {acao}")
             s.commit()

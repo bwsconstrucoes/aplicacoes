@@ -2570,6 +2570,69 @@ simples retorno?"*
 - **"O fulano entrou no portal esta semana?"** — não há registro de último
   acesso em `usuarios`. Faltaria uma coluna e a gravação no login.
 
+## O desligamento como processo, e quem sai da carteira e continua (19/11/2026)
+
+Nasceu do pedido dele: *"É feita a solicitação, o DP analisa, o DP encaminha o
+pedido para contabilidade (…) a contabilidade retorna a documentação rescisória
+(…) colher assinaturas e devolver para o DP (…) o lançamento financeiro da
+rescisão, como também (…) a multa rescisória. Vai ser feito esses dois
+lançamentos pagos, e só então a solicitação se encerra."* E do "sim, continua":
+*"o DP precisa validar aquela informação (…) o contrato de trabalho da pessoa
+precisa mudar (…) de CLT para prestador de serviço."*
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"desligado"** | ① o CADASTRO desligado (a data de saída passou — é o que corta o ponto e o acesso); ② o PEDIDO de desligamento encerrado (rescisão e multa pagas). ⚠️ **Desde 19/11 são coisas diferentes:** a pessoa fica desligada no dia seguinte à saída, e o pedido continua "em andamento" até o último pagamento. Resposta que misture está errada |
+| **"atendido"** | para o desligamento de carteira, **"atendido" agora quer dizer "encerrado"** — tudo cumprido. O DP ter registrado a saída é "em andamento" |
+| **"em andamento"** | ① a SITUAÇÃO do pedido de desligamento em processo; ② o número do alto da tela que conta checklist pela metade (que passou a se chamar "Checklist pela metade" por isso) |
+| **"saiu"** (de quem continua) | saiu da CARTEIRA — continua trabalhando como prestador. ⚠️ Não está desligado e não deve aparecer em lista de desligados |
+| **"data de admissão"** (de quem continua) | a da CARTEIRA (no histórico de vínculos) ou a do PRESTADOR (a do cadastro hoje). Para rescisão, FGTS e eSocial é a da carteira |
+| **"a multa"** | a multa de 40% do FGTS da demissão sem justa causa. ⚠️ Não existe no pedido de demissão nem no fim de experiência — ali o passo aparece "não se aplica" |
+
+### Perguntas que o sistema responde
+
+- **"Quais desligamentos estão em andamento?"** / **"em que pé está o do
+  fulano?"** — a lista no alto de Solicitações ao DP: passos cumpridos, total e
+  o próximo passo de cada um.
+- **"Quais estão esperando a contabilidade?"** — passo "documentação
+  rescisória" em AGUARDANDO; e **"quais estão atrasados?"** — o prazo do pedido
+  à contabilidade venceu.
+- **"A rescisão do fulano foi paga?"** / **"e a multa?"** — o passo diz o
+  número da SP e se ela está paga (o sistema lê do próprio lançamento).
+- **"Qual SP pagou a rescisão do fulano?"** — o número ligado ao passo.
+- **"Quem mandou a documentação para a obra, e quando?"** / **"já voltou
+  assinada?"** — os dois passos marcados à mão, com quem e quando.
+- **"Quem saiu da carteira e ainda não teve a continuidade confirmada?"** — ⚠️
+  a mais importante: enquanto não confirma, o cadastro segue dizendo CTPS.
+  Está no alto da tela, no vigia do agente e no relatório.
+- **"Quem passou de CTPS para prestador este mês?"** — o histórico de vínculos
+  (CTPS fechado + PRESTADOR aberto no dia seguinte) e o evento VINCULO_TROCADO.
+- **"Até quando o fulano foi CTPS?"** — a data de saída no vínculo de carteira
+  fechado.
+- **"Por que este passo não se aplica?"** — o motivo é obrigatório e fica
+  escrito no passo.
+
+### Perguntas que o sistema AINDA NÃO responde, e o que falta
+
+- **"A documentação assinada está arquivada?"** — o passo é marcado à mão; o
+  sistema não exige o arquivo assinado. **Falta** decidir se a marcação passa a
+  exigir o documento (decisão dele).
+- **"Quanto custou o desligamento?"** — o sistema sabe as SPs ligadas, mas não
+  soma rescisão + multa + verbas num número. **Falta** a conta.
+- **"Quanto falta pagar de rescisões?"** — os lançamentos ligados e não pagos
+  dão a lista; o total por mês ainda não é uma consulta.
+- **Desligamentos atendidos ANTES de 19/11/2026** — fecharam no atendimento,
+  sem os passos. Para eles não há como responder "a multa foi paga?" pelo
+  pedido; só procurando o lançamento.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- **"Em que pé está o desligamento?"** — quem é preso a obra vê só os da obra
+  dele (a lista é recortada pela fila que ele já enxerga). Marcar passo,
+  confirmar a continuidade e encerrar são do DP (`atender_dp`).
+
 ## 3z-nonies. A CHAVE QUE CIFRA AS SENHAS (17/11/2026)
 
 Nasceu de um tropeço real dele, gravando a conta de e-mail de uma empresa.

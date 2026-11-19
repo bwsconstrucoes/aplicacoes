@@ -275,9 +275,22 @@ def test_retorno_sem_nada_lido_fica_sem_conferencia_e_a_tela_sabe(sessao_real,
 @banco_
 def test_concluir_o_desligamento_move_a_etapa(sessao_real, dono, pessoa):
     """O template manda, e é o retorno da contabilidade que fecha o ciclo."""
+    import datetime as _dt
     from app.apps.erp.core.cadastros import pessoas as svc
-    svc.desligar(sessao_real, pessoa.id, {"data_saida": "2026-11-30",
-                                          "ultimo_dia": "2026-11-30",
+    # DATA RELATIVA A HOJE: era "2026-11-30" fixa, e deixou de ser passado.
+    saiu = (_dt.date.today() - _dt.timedelta(days=2)).isoformat()
+    # a pessoa da fixture foi admitida HOJE; para ter saído há dois dias, a
+    # admissão tem de ser antes disso.
+    from sqlalchemy import text as _text
+    antes = _dt.date.today() - _dt.timedelta(days=60)
+    sessao_real.execute(_text("UPDATE colaborador_vinculos SET admissao = :a "
+                              " WHERE colaborador_id = :c"),
+                        {"a": antes, "c": pessoa.id})
+    pessoa.admissao = antes
+    sessao_real.flush()
+    sessao_real.expire_all()
+    svc.desligar(sessao_real, pessoa.id, {"data_saida": saiu,
+                                          "ultimo_dia": saiu,
                                           "forma_desligamento": "AVISO_TRABALHADO"}, dono)
     r = ct.abrir(sessao_real, {"template": "DESLIGAMENTO",
                                "colaborador_id": pessoa.id,
@@ -287,6 +300,27 @@ def test_concluir_o_desligamento_move_a_etapa(sessao_real, dono, pessoa):
     fim = ct.concluir(sessao_real, r["id"], dono)
     assert pessoa.etapa == "DESLIGADO"
     assert fim["concluido"] is True
+
+
+@banco_
+def test_concluir_o_desligamento_NAO_desliga_quem_cumpre_aviso(sessao_real,
+                                                               dono, pessoa):
+    """⚑ 19/11/2026. A rescisão pode voltar antes do último dia. Mover a etapa
+    para "Desligado" aí tiraria do ponto quem ainda trabalha o aviso prévio —
+    o mesmo defeito de 17/11, por outra porta. Quem desliga é a DATA."""
+    import datetime as _dt
+    from app.apps.erp.core.cadastros import pessoas as svc
+    sai = (_dt.date.today() + _dt.timedelta(days=10)).isoformat()
+    svc.desligar(sessao_real, pessoa.id, {"data_saida": sai, "ultimo_dia": sai,
+                                          "forma_desligamento": "AVISO_TRABALHADO"}, dono)
+    r = ct.abrir(sessao_real, {"template": "DESLIGAMENTO",
+                               "colaborador_id": pessoa.id,
+                               "dados": {"forma_desligamento": "AVISO_TRABALHADO"}},
+                 dono)
+    ct.receber(sessao_real, r["id"], dono, lido={"cpf": CPF_A})
+    fim = ct.concluir(sessao_real, r["id"], dono)
+    assert fim["concluido"] is True
+    assert pessoa.etapa != "DESLIGADO" and pessoa.situacao == "ATIVO"
 
 
 @banco_

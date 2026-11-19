@@ -85,14 +85,17 @@ def test_o_desligamento_de_carteira_PERGUNTA_se_a_pessoa_continua():
 
 
 def test_dizer_que_continua_acrescenta_os_passos_no_checklist():
-    """O DP não pode fechar o pedido sem ter aberto a readmissão."""
+    """Desde 19/11/2026 quem continua NÃO é readmitido: o DP confirma a
+    continuidade (passo do processo, que trava o encerramento) e o cadastro
+    passa a prestador. O checklist só ganha a conferência do ponto — e não
+    pode mais mandar abrir readmissão, que duplicaria a pessoa."""
     sem = svc.checklist_do_tipo("DESLIGAMENTO", "CTPS",
                                 pedido={"continua_prestador": "0"})
     com = svc.checklist_do_tipo("DESLIGAMENTO", "CTPS",
                                 pedido={"continua_prestador": "1"})
-    assert len(com) == len(sem) + 2
-    assert any("readmissão" in x for x in com)
-    assert any("ponto" in x for x in com[-2:])
+    assert len(com) == len(sem) + 1
+    assert not any("readmissão" in x for x in com)
+    assert "ponto" in com[-1]
 
 
 def test_desligamento_de_prestador_pede_so_a_data_de_saida():
@@ -556,18 +559,17 @@ def test_o_cadastro_novo_nasce_com_a_obra_do_pedido(mundo):
 
 
 @pytest.mark.banco
-def test_a_readmissao_esquecida_aparece_e_sai_quando_e_feita(mundo):
-    """⚑ A LISTA QUE AVISA ANTES DAS SETE DA MANHÃ.
+def test_quem_continua_NAO_e_desligado_e_nao_vira_readmissao_esquecida(mundo):
+    """⚑ 19/11/2026 — A DECISÃO DE 15/11 FOI SUBSTITUÍDA.
 
-    Desligar corta o acesso ao aparelho da obra na data de saída. Quando o
-    desligamento diz "continua como prestador" e a readmissão é esquecida, a
-    pessoa aparece para trabalhar e não consegue bater — e quem descobre é a
-    obra, sem saber o motivo.
+    Até então, "continua como prestador" desligava a pessoa e o sistema cobrava
+    a readmissão esquecida. Ele: *"Quando eu coloco sim, o colaborador vai
+    continuar (…) O ponto dele continua ativo, ele continua ativo. Mas o DP
+    precisa validar aquela informação."*
 
-    A conta tem três condições, e todas têm de valer: o pedido disse que
-    continua, a pessoa está desligada, e não há vínculo aberto. Feita a
-    readmissão, a pendência desaparece sozinha — ninguém precisa "dar baixa"
-    nela, que é o tipo de lista que ninguém mantém.
+    Agora a pessoa NÃO é desligada no atendimento: segue ativa, sem data de
+    saída no cadastro (é ela que corta o ponto), e o DP confirma depois do
+    último dia. Sem desligamento, não há readmissão a esquecer.
     """
     p = svc.abrir(mundo["s"], {
         "tipo": "DESLIGAMENTO", "colaborador_id": mundo["carteira"].id,
@@ -575,25 +577,14 @@ def test_a_readmissao_esquecida_aparece_e_sai_quando_e_feita(mundo):
         "aviso_previo": "2026-06-01",
         "continua_prestador": "Sim, continua como prestador de serviço"},
         mundo["obra_user"])
+    r = svc.atender(mundo["s"], p["id"], {"dados": {"data_saida": "2026-06-30"}},
+                    mundo["dp"])
     mundo["s"].flush()
-    # Antes de atender ninguém está desligado, então nada pende.
+    assert r["situacao"] == "EM_ANDAMENTO"
+    c = mundo["s"].get(svc_pessoas.Colaborador, mundo["carteira"].id)
+    assert c.situacao == "ATIVO" and c.demissao is None
     assert svc.readmissoes_esquecidas(mundo["s"]) == []
-
-    svc.atender(mundo["s"], p["id"], {"dados": {"data_saida": "2026-06-30"}},
-                mundo["dp"])
-    mundo["s"].flush()
-    pend = svc.readmissoes_esquecidas(mundo["s"])
-    assert len(pend) == 1
-    assert pend[0]["pessoa"] == "Carteira Da Silva"
-    assert pend[0]["numero"] == p["numero"]
-
-    # Feita a readmissão (pelo cadastro, que se converte), a pendência sai.
-    r = svc.abrir(mundo["s"], _cad(mundo, cpf=CPF_A, pix_chave=CPF_A,
-                                   data_inicio="2026-07-01"),
-                  mundo["obra_user"])
-    svc.atender(mundo["s"], r["id"], {}, mundo["dp"])
-    mundo["s"].flush()
-    assert svc.readmissoes_esquecidas(mundo["s"]) == []
+    assert any(x["codigo"] == "CONTINUIDADE" for x in r["processo"]["passos"])
 
 
 @pytest.mark.banco
