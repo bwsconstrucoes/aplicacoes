@@ -1616,8 +1616,10 @@ OBRIGATORIOS_POR_VINCULO = {
     #   O SALÁRIO saiu do "sempre" e passou a ser só daqui: nos 222
     #   prestadores ele está vazio em 97,3%, e quem é prestador recebe por
     #   diária ou por mês, não por salário.
+    # ⚑ O PIS SAIU EM 19/11/2026. Ele: *"não tornar item obrigatório, porque o
+    # cadastro social é feito com o CPF."* O campo continua no cadastro.
     "CTPS": (
-        ("pis", "nº do PIS"), ("ctps_numero", "nº da CTPS"),
+        ("ctps_numero", "nº da CTPS"),
         ("ctps_serie", "série da CTPS"),
         ("contrato_experiencia", "contrato de experiência"),
         ("convencao_id", "convenção"),

@@ -172,7 +172,9 @@ def test_pedido_nao_sai_pela_metade(sessao_real, dono):
     with pytest.raises(ErroValidacao) as e:
         ct.abrir(sessao_real, {"template": "ASSINATURA_CTPS",
                                "colaborador_id": c.id}, dono)
-    assert "nº do PIS" in str(e.value) and "cargo" in str(e.value)
+    assert "cargo" in str(e.value)
+    # o PIS deixou de ser exigido em 19/11/2026: o eSocial é feito com o CPF
+    assert "PIS" not in str(e.value)
 
 
 @banco_
@@ -200,7 +202,12 @@ def test_o_que_falta_para_pedir_e_consultavel_antes_de_tentar(sessao_real, dono,
     outro = sessao_real.get(Colaborador, pessoa.id)
     outro.pis = None
     sessao_real.flush()
-    assert "nº do PIS" in ct.o_que_falta_para_pedir(
+    # sem o PIS o pedido sai (19/11/2026: o eSocial é feito com o CPF) …
+    assert ct.o_que_falta_para_pedir(sessao_real, "ASSINATURA_CTPS", outro) == []
+    # … e sem o cargo, não
+    outro.cargo_id = None
+    sessao_real.flush()
+    assert "cargo" in ct.o_que_falta_para_pedir(
         sessao_real, "ASSINATURA_CTPS", outro)
 
 

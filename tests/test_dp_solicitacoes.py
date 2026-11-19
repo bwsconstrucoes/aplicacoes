@@ -670,9 +670,10 @@ def test_faltando_UM_papel_o_recado_diz_qual(mundo):
     assert "documento de identificação" not in recado
 
 
-def test_escolher_CTPS_passa_a_exigir_a_carteira_e_o_PIS(mundo):
-    """Ele: *"se for CTPS, os dados da carteira são obrigatórios, PIS
-    também."* Prestador de serviço não tem carteira, e não se pede."""
+def test_escolher_CTPS_passa_a_exigir_a_carteira_mas_NAO_o_PIS(mundo):
+    """Ele, em 10/11: *"se for CTPS, os dados da carteira são obrigatórios"*.
+    E em 19/11/2026 o PIS saiu: *"não tornar item obrigatório, porque o
+    cadastro social é feito com o CPF."* Prestador não tem carteira."""
     exige_prestador = svc.exigencias(
         "CADASTRO", {"tipo_documentacao": "Prestador de Serviço"})
     assert "num_ctps" not in exige_prestador["campos"]
@@ -680,7 +681,8 @@ def test_escolher_CTPS_passa_a_exigir_a_carteira_e_o_PIS(mundo):
                    for d in exige_prestador["documentos"])
 
     exige_ctps = svc.exigencias("CADASTRO", {"tipo_documentacao": "CTPS"})
-    assert "num_ctps" in exige_ctps["campos"] and "num_pis" in exige_ctps["campos"]
+    assert "num_ctps" in exige_ctps["campos"]
+    assert "num_pis" not in exige_ctps["campos"]
     assert {"CTPS-FOTO", "CTPS-INFORMACOES"} <= {
         d["codigo"] for d in exige_ctps["documentos"]}
 
@@ -951,9 +953,11 @@ def test_quem_NAO_tem_no_cadastro_continua_sendo_perguntado(sessao_real, mundo):
 
 def test_so_metade_no_cadastro_pergunta_so_a_outra_metade(sessao_real, mundo):
     sessao_real.execute(text(
-        "UPDATE colaboradores SET ctps_numero = '554433', pis = NULL"
+        "UPDATE colaboradores SET ctps_numero = NULL, pis = '12345678901'"
         " WHERE id = :i"), {"i": mundo["pessoa"].id})
     sessao_real.flush()
+    # (o PIS deixou de ser obrigatório em 19/11/2026; a metade que falta aqui
+    # é a CTPS)
     with pytest.raises(ErroValidacao) as e:
         svc.abrir(sessao_real, {
             "tipo": "ADMISSAO_PRESTADOR", "colaborador_id": mundo["pessoa"].id,
@@ -961,7 +965,7 @@ def test_so_metade_no_cadastro_pergunta_so_a_outra_metade(sessao_real, mundo):
             "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]},
             mundo["encarregado"])
     recado = str(e.value)
-    assert "Nº PIS" in recado and "Nº CTPS" not in recado
+    assert "Nº CTPS" in recado and "Nº PIS" not in recado
 
 
 def test_a_consulta_ao_cadastro_so_vale_onde_foi_declarada():

@@ -177,8 +177,9 @@ def test_cadastro_de_carteira_nao_pergunta_pagamento_nem_valor_do_mes():
     exige = svc.exigencias("CADASTRO", {"tipo_documentacao": "CTPS"})["campos"]
     for proibido in ("pagamento", "valor_mes"):
         assert proibido not in exige, f"{proibido} continua exigido em CTPS"
-    # Mas a carteira, o PIS e o tipo de contrato passam a ser exigidos.
-    assert "num_ctps" in exige and "num_pis" in exige
+    # Mas a carteira e o tipo de contrato passam a ser exigidos. O PIS não,
+    # desde 19/11/2026: *"o cadastro social é feito com o CPF."*
+    assert "num_ctps" in exige and "num_pis" not in exige
     assert "tipo_contrato" in exige
 
 

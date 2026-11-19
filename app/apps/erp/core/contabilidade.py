@@ -61,7 +61,8 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "ASSINATURA_CTPS": {
         "nome": "Assinatura de CTPS (admissão)",
         "explicacao": "o registro formal no eSocial de quem foi admitido",
-        "exige": ("nome", "cpf", "data_nascimento", "pis", "cargo", "salario",
+        # ⚑ Sem o PIS desde 19/11/2026: o eSocial é feito com o CPF (ele).
+        "exige": ("nome", "cpf", "data_nascimento", "cargo", "salario",
                   "admissao", "empresa"),
         "espera": "FICHA-REGISTRO",
         "prazo": 2, "cobrancas": 3, "intervalo": 3,

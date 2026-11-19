@@ -149,6 +149,15 @@ RECUSADAS: dict[tuple[str, str, str], str] = {
         "o mesmo caso: CLT pago por dia existe, por decisão dele de 10/11/2026",
     ("tipo_contrato", "CLT_INDETERMINADO", "valor_diaria"):
         "o mesmo caso: CLT pago por dia existe, por decisão dele de 10/11/2026",
+    # ⚑ 19/11/2026, decisão dele: *"não tornar item obrigatório, porque o
+    # cadastro social é feito com o CPF."* A medição não volta a propor.
+    ("vinculo", "CTPS", "pis"):
+        "o PIS não é obrigatório: o eSocial é feito com o CPF (decisão dele, "
+        "19/11/2026)",
+    ("tipo_contrato", "CLT_INDETERMINADO", "pis"):
+        "idem: PIS não é obrigatório",
+    ("tipo_contrato", "CLT_DETERMINADO", "pis"):
+        "idem: PIS não é obrigatório",
 }
 
 

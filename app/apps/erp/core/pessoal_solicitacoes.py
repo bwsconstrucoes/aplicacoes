@@ -310,7 +310,11 @@ TIPOS: dict[str, dict[str, Any]] = {
         # já tem ficha: o que ela tiver não se pergunta; só o que faltar.
         "campos": ("num_ctps", "num_pis") + CAMPOS_DA_PESSOA + (
                    "salario_familia", "observacao"),
-        "obrigatorios": ("num_ctps", "num_pis") + OBRIGATORIOS_DA_PESSOA + (
+        # ⚑ O PIS NÃO É OBRIGATÓRIO (19/11/2026). Ele: *"pode fazer a leitura,
+        # se encontrar, mas não tornar item obrigatório, porque o cadastro
+        # social é feito com o CPF."* O campo fica; a leitura preenche quando
+        # acha.
+        "obrigatorios": ("num_ctps",) + OBRIGATORIOS_DA_PESSOA + (
                          "salario_familia",),
         "rotulos_proprios": {"data_nascimento": "Data de Nascimento"},
         "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis",
@@ -404,6 +408,11 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "categoria_transporte", "aux_transporte",
                    "descontar_vt", "observacao"),
         "obrigatorios": ("solicitacao",),
+        # "Não recebe" esconde o valor — a mesma regra da admissão (19/11/2026).
+        "ocultos_se": {
+            "categoria_alimentacao": {"NAO_RECEBE": ("aux_alimentacao",)},
+            "categoria_transporte": {"NAO_RECEBE": ("aux_transporte",
+                                                    "descontar_vt")}},
         # Só se pergunta o desconto quando há vale-transporte para descontar,
         # e o VALOR só depois de escolhida a categoria — antes disso, "valor
         # da alimentação" não quer dizer nada.
@@ -575,7 +584,8 @@ TIPOS: dict[str, dict[str, Any]] = {
         # (Autônomo (RPA)); demais, não exibir."* Então ela é obrigatória
         # nesses três casos, e nos outros não existe.
         "obrigatorios_se": {"tipo_documentacao": {
-            "CTPS": ("num_ctps", "num_pis", "tipo_contrato"),
+            # ⚑ PIS saiu em 19/11/2026: o eSocial é feito com o CPF.
+            "CTPS": ("num_ctps", "tipo_contrato"),
             "PRESTADOR": ("tipo_contrato", "pagamento")},
             "tipo_contrato": {
                 "CLT_INDETERMINADO": ("valor_diaria",),
@@ -595,7 +605,15 @@ TIPOS: dict[str, dict[str, Any]] = {
         #
         # VALOR DO MÊS também só aparece para mensalista — diarista não tem
         # valor de mês, tem diária.
-        "ocultos_se": {"tipo_documentacao": {
+        # ⚑ "NÃO RECEBE" ESCONDE O VALOR (19/11/2026). Ele: *"quando coloca
+        # ajuda com alimentação, ajuda com transporte, não recebe, oculta o
+        # campo valor."* Valor de ajuda que não existe é campo que alguém
+        # preenche por engano.
+        "ocultos_se": {
+            "categoria_alimentacao": {"NAO_RECEBE": ("aux_alimentacao",)},
+            "categoria_transporte": {"NAO_RECEBE": ("aux_transporte",
+                                                    "descontar_vt")},
+            "tipo_documentacao": {
             "CTPS": ("pagamento", "valor_mes")},
             "pagamento": {"DIARISTA": ("valor_mes",)}},
         # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre DEPOIS de escolhida a

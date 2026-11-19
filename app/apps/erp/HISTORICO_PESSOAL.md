@@ -98,6 +98,18 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 19/11/2026 (noite) — "Não recebe" esconde o valor; o PIS deixa de ser obrigatório
+
+- *"Quando coloca ajuda com alimentação, ajuda com transporte, não recebe,
+  oculta o campo valor."* Feito na admissão e no pedido de ajuda de custo
+  (`ocultos_se`); o desconto do VT some junto.
+- *"O PIS (…) pode fazer a leitura, se encontrar, mas não tornar item
+  obrigatório, porque o cadastro social é feito com o CPF."* Saiu de TODOS os
+  lugares que o exigiam: a admissão (CTPS), a admissão de prestador, o "falta
+  para admitir" da ficha, e o pedido de Assinatura de CTPS à contabilidade. A
+  medição de regras não volta a propor (`RECUSADAS`). O campo continua, e a
+  leitura dos documentos o preenche quando acha.
+
 ### 19/11/2026 (tarde) — "Cadastro de Colaborador" vira ADMISSÃO DE COLABORADOR
 
 **O pedido, com as palavras dele:** *"eu quero trocar por admissão de
