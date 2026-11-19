@@ -57,6 +57,14 @@
 
   <button class="btn amarelo" id="btn-nova" style="width:100%; margin-top:12px">
     + Solicitação</button>
+  {# ⚑ CONFIGURAR OS PASSOS (18/11/2026). Ele: *"vi que você importou checklist
+     do Pipefy, só que eles estão todos desatualizados. Precisa de uma tela pra
+     configurar eles de forma fácil."*
+
+     Fica no filtro lateral, embaixo, e não como aba: não é um jeito de olhar a
+     lista, é uma configuração — mexe uma vez e passa meses sem abrir. #}
+  <button class="btn secundario" id="btn-checklists"
+          style="width:100%; margin-top:8px">⚙️ Passos de cada tipo</button>
 {% endblock %}
 
 {% block conteudo %}
@@ -90,6 +98,115 @@
 const PODE_ATENDER = {{ 'true' if pode.atender_dp else 'false' }};
 let DADOS = {solicitacoes: [], tipos: [], indicadores: {}};
 let ABERTA = null;
+
+// ===========================================================================
+// OS PASSOS DE CADA TIPO (18/11/2026)
+//
+// Ele: *"vi que você importou checklist do Pipefy, só que eles estão todos
+// desatualizados. Precisa de uma tela pra configurar eles de forma fácil."*
+//
+// ⚑ UM TEXTO POR LINHA, e não uma linha por caixinha com botão de somar e
+// tirar. Reordenar onze passos clicando em setinha é pior que recortar e colar
+// num texto — e todo mundo já sabe mexer num texto. A ordem é a ordem das
+// linhas; linha vazia some sozinha.
+//
+// ⚠️ A TELA DIZ, ANTES de alguém gravar, que isto NÃO mexe no que já está
+// aberto. É a pergunta que a pessoa faria, e descobrir a resposta depois de
+// mudar onze passos seria tarde.
+// ===========================================================================
+let CHECKLISTS = [];
+
+async function abrirChecklists(){
+  try { CHECKLISTS = (await api("/erp/api/dp/checklists")).checklists || []; }
+  catch(e){ return aviso("mensagem", e.message, "erro"); }
+  desenharChecklists();
+}
+
+function desenharChecklists(){
+  // ⚑ ELA MESMA ABRE A JANELA, e não quem a chama — foi o que um teste
+  // cobrou, com razão: função que preenche o corpo da janela e depende de
+  // outra para abri-la vira botão que não faz nada no dia em que alguém a
+  // chamar de outro lugar, e sem erro nenhum no console.
+  // `showModal()` numa janela já aberta levanta erro, então a conta é feita.
+  if (!els("dlg").open) els("dlg").showModal();
+  els("dlg-titulo").textContent = "Passos de cada tipo de solicitação";
+  const mudados = CHECKLISTS.filter(c => c.configurado).length;
+  els("dlg-corpo").innerHTML = `
+    <div id="ck-msg"></div>
+    <div class="cartao-dica">Estes são os passos que o DP marca ao atender cada
+      tipo de pedido. Vieram do Pipefy e podem ser trocados aqui, sem esperar
+      publicação.
+      <br><b>⚠️ Mudar aqui não mexe nas solicitações já abertas.</b> Os passos
+      são copiados para o pedido na hora em que ele é aberto — se mudassem no
+      meio, o DP perderia o que já marcou e o histórico diria que conferiu algo
+      que nunca esteve na lista.
+      ${mudados ? `<br>${mudados} tipo(s) já foram ajustados aqui.` : ""}</div>
+    ${CHECKLISTS.map((c, i) => `
+      <div class="cartao" style="margin-top:10px">
+        <h4 style="margin:0 0 2px">${escapar(c.tipo_rotulo)}
+          ${c.vinculo ? `<span class="etiqueta">${escapar(c.vinculo_rotulo)}</span>` : ""}
+          ${c.mudou ? `<span class="etiqueta ambar">ajustado</span>` : ""}</h4>
+        <div class="cartao-dica">${c.itens.length} passo(s). Um por linha, na
+          ordem em que o DP faz.</div>
+        <textarea id="ck-${i}" rows="${Math.max(4, c.itens.length + 1)}"
+          style="width:100%; font-size:13px">${escapar(c.itens.join("\n"))}</textarea>
+        ${PODE_ATENDER ? `<div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap">
+          <button class="btn" data-ck-gravar="${i}">Gravar</button>
+          ${c.configurado ? `<button class="btn secundario" data-ck-padrao="${i}">
+            Voltar ao padrão</button>` : ""}
+          ${c.mudou ? `<button class="link-btn" data-ck-ver="${i}">ver o original</button>` : ""}
+        </div>` : `<div class="cartao-dica">Mudar os passos é de quem atende o DP.</div>`}
+      </div>`).join("")}`;
+  const corpo = els("dlg-corpo");
+  corpo.querySelectorAll("[data-ck-gravar]").forEach(b =>
+    b.addEventListener("click", () => gravarChecklist(+b.dataset.ckGravar)));
+  corpo.querySelectorAll("[data-ck-padrao]").forEach(b =>
+    b.addEventListener("click", () => voltarAoPadrao(+b.dataset.ckPadrao)));
+  corpo.querySelectorAll("[data-ck-ver]").forEach(b =>
+    b.addEventListener("click", () => verOriginal(+b.dataset.ckVer)));
+}
+
+async function gravarChecklist(i){
+  const c = CHECKLISTS[i];
+  const itens = (els(`ck-${i}`).value || "").split("\n")
+                  .map(x => x.trim()).filter(Boolean);
+  if (!itens.length)
+    return aviso("ck-msg", "Sem nenhum passo, use “Voltar ao padrão” — assim "
+      + "fica claro que é o padrão, e não uma lista que alguém esvaziou.", "alerta");
+  try {
+    await api("/erp/api/dp/checklists", {method: "POST",
+      body: JSON.stringify({tipo: c.tipo, vinculo: c.vinculo, itens})});
+    aviso("mensagem", `Passos de “${escapar(c.tipo_rotulo)}” gravados. `
+      + `Valem para os pedidos abertos de agora em diante.`, "ok");
+    await abrirChecklists();
+  } catch(e){ aviso("ck-msg", e.message, "erro"); }
+}
+
+async function voltarAoPadrao(i){
+  const c = CHECKLISTS[i];
+  const r = await perguntar({titulo: `Voltar ao padrão — ${c.tipo_rotulo}`,
+    aviso: `Os passos voltam aos ${c.padrao.length} originais, os que vieram do `
+         + `Pipefy. O que você escreveu aqui se perde.`,
+    campos: [{nome: "lista", rotulo: "Volta a ser", tipo: "leitura",
+              largura: 6, valor: c.padrao.map((x, n) => `${n + 1}. ${x}`).join("\n")}],
+    textoOk: "Voltar ao padrão"});
+  if (!r) return;
+  try {
+    await api("/erp/api/dp/checklists", {method: "POST",
+      body: JSON.stringify({tipo: c.tipo, vinculo: c.vinculo, itens: []})});
+    aviso("mensagem", `“${escapar(c.tipo_rotulo)}” voltou ao padrão.`, "ok");
+    await abrirChecklists();
+  } catch(e){ aviso("ck-msg", e.message, "erro"); }
+}
+
+async function verOriginal(i){
+  const c = CHECKLISTS[i];
+  await perguntar({titulo: `O original de ${c.tipo_rotulo}`,
+    aviso: "É o que veio do Pipefy. Serve para comparar — nada é gravado aqui.",
+    campos: [{nome: "lista", rotulo: "Passos originais", tipo: "leitura",
+              largura: 6, valor: c.padrao.map((x, n) => `${n + 1}. ${x}`).join("\n")}],
+    semOk: true, textoOk: "Fechar"});
+}
 
 // A SITUAÇÃO é o único filtro que volta ao banco (a API recorta por ela). Todos
 // os outros recortam em memória: a lista já está aqui, e ir ao banco a cada
@@ -883,6 +1000,7 @@ async function novaSolicitacao(){
 }
 
 els("btn-nova").addEventListener("click", novaSolicitacao);
+els("btn-checklists").addEventListener("click", abrirChecklists);
 els("f-busca").addEventListener("input", desenhar);
 document.querySelectorAll("input[name=sit]").forEach(i =>
   i.addEventListener("change", carregar));

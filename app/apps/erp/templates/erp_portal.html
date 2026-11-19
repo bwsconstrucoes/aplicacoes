@@ -394,13 +394,23 @@ function pintarFormulario(){
   const tipos = DADOS.tipos || [];
   // QUEM SÓ OLHA NÃO GANHA FORMULÁRIO. O parceiro (gente de fora, ligada a uma
   // obra) acompanha e não pede — decisão do dono em 07/11/2026. A tela não
-  // julga isso: o servidor responde `pode_pedir`, calculado pela mesma regra
-  // de permissão do resto do ERP. Esconder o botão não é a segurança — a rota
-  // recusa igual; é só não oferecer o que vai ser negado.
-  if (!DADOS.pode_pedir) {
+  // julga isso: o servidor responde quais ÁREAS esta pessoa tem, calculadas
+  // pela mesma regra de permissão do resto do ERP. Esconder não é a segurança
+  // — a rota recusa igual; é só não oferecer o que vai ser negado.
+  //
+  // ⚑ CONSERTO DE 18/11/2026, numa pergunta dele: *"e para quem vai preencher
+  // diário de obra mas não vai acessar DP, como faz?"*
+  //
+  // Antes isto olhava `pode_pedir` (que é `solicitar_dp`) e escondia o BLOCO
+  // INTEIRO. Quem tivesse o diário e não o DP perdia o botão do DIÁRIO junto —
+  // e o diário não tem nada a ver com pedir ao DP. Agora quem manda é a lista
+  // de áreas: o servidor já devolve só as que a pessoa alcança, e o bloco some
+  // apenas quando não sobra nenhuma.
+  if (!(DADOS.areas || []).length) {
     els("bloco-pedir").style.display = "none";
     return;
   }
+  els("bloco-pedir").style.display = "";
   pintarAreas();
 }
 
@@ -409,7 +419,14 @@ let AREA = null;
 
 function pintarAreas(){
   const areas = DADOS.areas || [];
-  els("pedir-ajuda").textContent = "Escolha a área do que você precisa.";
+  // Quem só alcança o diário não está "abrindo uma solicitação" — e chamar
+  // assim faria a pessoa achar que está no lugar errado.
+  const soTela = areas.length && areas.every(a => a.so_tela);
+  const cab = els("bloco-pedir").querySelector("h3");
+  if (cab) cab.textContent = soTela ? "Diário de obra" : "Abrir uma solicitação";
+  els("pedir-ajuda").textContent = soTela
+    ? "Lance aqui o que aconteceu na obra no dia."
+    : "Escolha a área do que você precisa.";
   els("form-pedido").innerHTML = "";
   els("areas").innerHTML = areas.map(a => `
     <button class="area ${a.pronta ? "" : "fechada"}" type="button"

@@ -307,6 +307,42 @@ def test_liberar_acesso_pela_ficha_cria_o_operador_e_liga(app_real, sessao_real,
 
 
 @banco_
+def test_liberar_pela_ficha_tambem_define_perfil_e_obras(app_real, sessao_real,
+                                                         admin):
+    """18/11/2026 — a ficha passou a perguntar o MESMO que a fila do portal.
+
+    Ele, fechando o ciclo: *"o administrador vai liberar a pessoa, mas tem que
+    definir o acesso dele, o perfil, as obras, etc e tal."* Sem isto, liberar
+    pela ficha criava um acesso de CONSULTA sem obra e alguém teria de ir à
+    tela de operadores logo em seguida — duas portas para a mesma coisa,
+    perguntando coisas diferentes.
+    """
+    from tests.conftest import como
+    from app.apps.erp.db.models.cadastros import (
+        Colaborador, Obra, UsuarioObra,
+    )
+    uma = Obra(codigo="FCH01", nome="Obra da Ficha", status="ATIVA")
+    outra = Obra(codigo="FCH02", nome="Outra da Ficha", status="ATIVA")
+    sessao_real.add_all([uma, outra])
+    sessao_real.flush()
+    c = Colaborador(nome="Joana da Ficha", cpf="52998224725", situacao="ATIVO",
+                    vinculo="CTPS", admissao=date(2026, 3, 1))
+    sessao_real.add(c)
+    sessao_real.flush()
+
+    r = como(app_real, admin.id).post(
+        f"/erp/api/colaboradores/{c.id}/acesso",
+        json={"email": "joana.ficha@teste", "perfil": "GESTOR_OBRA",
+              "obra_ids": [uma.id, outra.id]})
+    assert r.status_code == 200, r.data[:300]
+    sessao_real.flush()
+
+    alcance = {x.obra_id for x in sessao_real.query(UsuarioObra)
+               .filter(UsuarioObra.usuario_id == c.usuario_id).all()}
+    assert alcance == {uma.id, outra.id}
+
+
+@banco_
 def test_nao_se_libera_acesso_para_quem_ja_saiu(app_real, sessao_real, admin):
     from tests.conftest import como
     from app.apps.erp.db.models.cadastros import Colaborador

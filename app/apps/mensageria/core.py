@@ -64,6 +64,13 @@ CATALOGO: list[dict] = [
     {"chave": "ponto.codigo_acesso", "nome": "Código de acesso do Meu ponto", "modulo": "Ponto",
      "politica": WHATSAPP,
      "descricao": "O código de 6 dígitos para a pessoa criar o PIN e entrar no Meu ponto pelo celular."},
+    # ⚑ O CÓDIGO DO PORTAL (18/11/2026). Mesma mecânica do código do ponto, e
+    # por isso WHATSAPP e não Telegram: quem está criando o primeiro acesso
+    # não tem Telegram ligado ao cadastro — se tivesse, já estaria no sistema.
+    {"chave": "erp.codigo_portal", "nome": "Código de primeiro acesso ao portal",
+     "modulo": "ERP", "politica": WHATSAPP,
+     "descricao": "O código de 6 dígitos para a pessoa criar o acesso dela ao "
+                  "portal, sem depender do escritório para começar."},
     {"chave": "ponto.mosaico", "nome": "Mosaico de fotos da obra", "modulo": "Ponto", "politica": WHATSAPP,
      "descricao": "O link do mosaico de fotos do dia para o responsável pela obra conferir."},
     {"chave": "ponto.aviso_foto", "nome": "Aviso de batida sem foto", "modulo": "Ponto",

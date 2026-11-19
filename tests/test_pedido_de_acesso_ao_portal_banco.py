@@ -398,3 +398,151 @@ def test_quem_gere_operadores_continua_enxergando_a_fila(app_real, sessao_real,
     r = como(app_real, dp.id).get("/erp/api/portal/pedidos-de-acesso")
     assert r.status_code == 200
     assert len(r.get_json()["pedidos"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# ⚑ LIBERAR É CONFIGURAR O ACESSO (18/11/2026)
+#
+# Ele, fechando o ciclo: *"o administrador vai liberar a pessoa, mas tem que
+# definir o acesso dele, o perfil, as obras, etc e tal. Eu acho que assim fecha
+# essa parte de liberação e forma um ciclo perfeito."*
+#
+# O que estes casos prendem é o equilíbrio: quem gere operadores ESCOLHE, quem
+# só resolve a fila NÃO — nem perfil, nem alcance. Deixar escolher obra sem
+# poder escolher perfil seria meia porta.
+# ---------------------------------------------------------------------------
+def test_quem_administra_escolhe_o_perfil_e_as_obras(app_real, sessao_real,
+                                                     pessoa, dp, obra):
+    from tests.conftest import como                      # type: ignore
+    outra = Obra(codigo="OBR2L", nome="Segunda Obra", status="ATIVA")
+    sessao_real.add(outra)
+    sessao_real.flush()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="maria@gmail.com", obra_id=obra.id)
+
+    r = como(app_real, dp.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR", "perfil": "GESTOR_OBRA",
+              "obra_ids": [outra.id]})
+    assert r.status_code == 200, r.get_json()
+
+    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
+    assert sessao_real.get(Usuario, novo).perfil == PerfilUsuario.GESTOR_OBRA
+    alcance = {u.obra_id for u in sessao_real.query(UsuarioObra)
+               .filter(UsuarioObra.usuario_id == novo).all()}
+    assert outra.id in alcance, "a obra escolhida tem de valer"
+
+
+def test_quem_administra_pode_dar_todas_as_obras(app_real, sessao_real,
+                                                 pessoa, dp):
+    from tests.conftest import como                      # type: ignore
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="maria@gmail.com")
+
+    r = como(app_real, dp.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR", "todas_as_obras": True})
+    assert r.status_code == 200, r.get_json()
+
+    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
+    assert sessao_real.get(Usuario, novo).ve_todas_as_obras is True
+
+
+def test_o_dp_nao_escolhe_obra_nem_alcance(app_real, sessao_real, pessoa,
+                                           pessoal, obra):
+    """A trava completa: o DP pediu outra obra e todas as obras, e levou a
+    obra do cadastro, como sempre.
+
+    ⚑ DESDE 18/11/2026 NENHUMA TELA MANDA ESSES CAMPOS — quem administra é
+    levado para Configurações › Usuários e configura lá. A trava continua
+    valendo, e este teste continua existindo, porque a rota segue aceitando
+    os campos: quem souber montar o pedido na mão não passa por ela.
+    """
+    from tests.conftest import como                      # type: ignore
+    outra = Obra(codigo="OBR3L", nome="Obra Que Ele Pediu", status="ATIVA")
+    sessao_real.add(outra)
+    sessao_real.flush()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="maria@gmail.com", obra_id=obra.id)
+
+    r = como(app_real, pessoal.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR", "perfil": "ADMIN",
+              "obra_ids": [outra.id], "todas_as_obras": True})
+    assert r.status_code == 200, r.get_json()
+
+    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
+    u = sessao_real.get(Usuario, novo)
+    assert u.perfil == PerfilUsuario.ADMINISTRATIVO_OBRA
+    assert not u.ve_todas_as_obras
+    alcance = {x.obra_id for x in sessao_real.query(UsuarioObra)
+               .filter(UsuarioObra.usuario_id == novo).all()}
+    assert alcance == {obra.id}, "o DP leva a obra do cadastro, e só"
+
+
+def test_a_fila_diz_quem_administra_o_acesso(app_real, sessao_real,
+                                            pessoa, dp, pessoal):
+    """A tela usa isto para mandar quem administra direto para a configuração
+    do operador, depois de liberar. Quem só resolve a fila fica onde está."""
+    from tests.conftest import como                      # type: ignore
+    fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                   cpf=pessoa.cpf, nome=pessoa.nome, email="maria@gmail.com")
+
+    do_admin = como(app_real, dp.id).get(
+        "/erp/api/portal/pedidos-de-acesso").get_json()
+    do_dp = como(app_real, pessoal.id).get(
+        "/erp/api/portal/pedidos-de-acesso").get_json()
+
+    assert do_admin["administra_acesso"] is True
+    assert do_dp["administra_acesso"] is False
+    # A lista de perfis NÃO viaja mais nesta resposta: ela mora na tela de
+    # Configurações, que é para onde quem administra é levado.
+    assert "perfis" not in do_admin and "cargos" not in do_admin
+
+
+def test_quem_administra_pode_liberar_mais_de_uma_obra(app_real, sessao_real,
+                                                       pessoa, dp, obra):
+    """*"o administrador (…) tem que definir o acesso dele, o perfil, as
+    obras"* — AS obras. Quem responde por três não sai daqui com uma."""
+    from tests.conftest import como                      # type: ignore
+    segunda = Obra(codigo="OBR4L", nome="Segunda Obra Dela", status="ATIVA")
+    terceira = Obra(codigo="OBR5L", nome="Terceira Obra Dela", status="ATIVA")
+    sessao_real.add_all([segunda, terceira])
+    sessao_real.flush()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="maria@gmail.com", obra_id=obra.id)
+
+    r = como(app_real, dp.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR", "obra_ids": [segunda.id, terceira.id]})
+    assert r.status_code == 200, r.get_json()
+
+    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
+    alcance = {x.obra_id for x in sessao_real.query(UsuarioObra)
+               .filter(UsuarioObra.usuario_id == novo).all()}
+    assert alcance == {segunda.id, terceira.id}
+
+
+def test_lista_de_obras_vazia_e_escolha_nao_esquecimento(app_real, sessao_real,
+                                                         pessoa, dp, obra):
+    """Desmarcar tudo libera um acesso sem obra (o caso do escritório). Antes
+    isto caía no padrão e a pessoa saía enxergando a obra do cadastro — o
+    contrário do que quem decidiu marcou na tela."""
+    from tests.conftest import como                      # type: ignore
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="maria@gmail.com", obra_id=obra.id)
+
+    r = como(app_real, dp.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR", "obra_ids": []})
+    assert r.status_code == 200, r.get_json()
+
+    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
+    alcance = [x.obra_id for x in sessao_real.query(UsuarioObra)
+               .filter(UsuarioObra.usuario_id == novo).all()]
+    assert alcance == []

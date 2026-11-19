@@ -9274,7 +9274,8 @@ def api_colaborador_foto(colaborador_id: int):
 
 
 def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
-                    obra_id=None, convidar=True) -> dict:
+                    obra_id=None, obra_ids=None, todas_as_obras=False,
+                    convidar=True) -> dict:
     """CRIA O ACESSO de um colaborador — a ÚNICA implementação disto.
 
     ⚑ POR QUE É UMA FUNÇÃO E NÃO SÓ A ROTA (17/11/2026): a fila de pedidos
@@ -9337,19 +9338,40 @@ def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
     # trabalha em obra: sem isto o acesso nasce sem enxergar nada e alguém
     # teria de ir marcar na outra tela. `obra_id` de fora (a obra em que ela
     # bate ponto) tem preferência sobre a do cadastro, que envelhece.
-    alvo = int(obra_id) if obra_id else (int(c.obra_id) if c.obra_id else None)
-    if alvo and not getattr(operador, "ve_todas_as_obras", False):
-        ja = s.scalars(sa_select(UsuarioObra).where(
-            UsuarioObra.usuario_id == operador.id,
-            UsuarioObra.obra_id == alvo)).first()
-        if ja is None:
-            s.add(UsuarioObra(usuario_id=operador.id, obra_id=alvo))
+    # ⚑ VÁRIAS OBRAS DESDE 18/11/2026. Ele, fechando o ciclo da liberação:
+    # *"o administrador vai liberar a pessoa, mas tem que definir o acesso
+    # dele, o perfil, as obras, etc e tal."*
+    #
+    # Antes era UMA obra — a do cadastro — e quem respondia por três ficava
+    # vendo uma. `obra_ids` vazio mantém o de sempre (a obra do cadastro), e é
+    # o que faz a liberação continuar sendo um clique para o caso comum.
+    if todas_as_obras:
+        operador.ve_todas_as_obras = True
+    # ⚠️ LISTA VAZIA É ESCOLHA, não omissão: quem desmarcou tudo na tela quis
+    # liberar o acesso sem obra nenhuma (um acesso de escritório, por
+    # exemplo). Por isso a diferença entre `None` (ninguém disse nada — vale o
+    # padrão de sempre) e `[]` (disseram "nenhuma").
+    if obra_ids is None:
+        escolhidas = [int(obra_id)] if obra_id else (
+            [int(c.obra_id)] if c.obra_id else [])
+    else:
+        escolhidas = [int(x) for x in obra_ids if x]
+    alvo = escolhidas[0] if escolhidas else None
+    if not getattr(operador, "ve_todas_as_obras", False):
+        for uma in escolhidas:
+            ja = s.scalars(sa_select(UsuarioObra).where(
+                UsuarioObra.usuario_id == operador.id,
+                UsuarioObra.obra_id == uma)).first()
+            if ja is None:
+                s.add(UsuarioObra(usuario_id=operador.id, obra_id=uma))
     convite = {"enviado": False, "erro": "", "link": ""}
     if convidar:
         convite = svc_convites.enviar(
             s, operador.id, link_base=_link_do_convite(), autor=autor)
     return {"ok": True, "usuario_id": operador.id, "email": email,
-            "obra_id": alvo, "convite": convite}
+            "obra_id": alvo, "obra_ids": escolhidas,
+            "todas_as_obras": bool(getattr(operador, "ve_todas_as_obras", False)),
+            "convite": convite}
 
 
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/acesso",
@@ -9393,6 +9415,11 @@ def api_colaborador_acesso(colaborador_id: int):
                                 perfil=d.get("perfil"),
                                 perfil_id=d.get("perfil_id"),
                                 obra_id=d.get("obra_id"),
+                                # A rota inteira já exige `gerir_usuarios`,
+                                # então quem chega aqui pode escolher obra e
+                                # alcance — não há o que filtrar de novo.
+                                obra_ids=d.get("obra_ids"),
+                                todas_as_obras=bool(d.get("todas_as_obras")),
                                 convidar=d.get("convidar", True))
             if not r["ok"]:
                 return jsonify(r), 400
@@ -9431,9 +9458,28 @@ def api_pedidos_de_acesso():
         with get_session() as s:
             conn = s.connection()
             status = (request.args.get("status") or "PENDENTE").upper()
+            # ⚑ QUEM ADMINISTRA O ACESSO VAI DIRETO CONFIGURAR (18/11/2026).
+            # Ele, fechando o ciclo: *"no ato da liberação já abrir a tela de
+            # configurações do cadastro da pessoa (…) lá será designado o
+            # perfil dela, obras de acesso e etc."*
+            #
+            # A resposta diz só SE esta pessoa administra operadores. A tela
+            # usa isso para mandar quem libera direto para Configurações ›
+            # Usuários, com o operador aberto. A lista de perfis NÃO vem aqui:
+            # ela já existe lá, e mandá-la nesta resposta era uma consulta por
+            # abertura da tela de Pessoal para desenhar uma lista que acabou
+            # morando em outro lugar.
+            #
+            # Quem apenas resolve a fila (o DP) não administra: para ele o
+            # acesso nasce preso à obra do cadastro e a tela não muda.
+            from app.apps.erp.core.auth.permissoes import pode_com_banco
+            atual = _usuario_logado(s)
+            administra = bool(atual is not None
+                              and pode_com_banco(s, atual, "gerir_usuarios"))
             return jsonify({"ok": True,
                             "pedidos": fila.listar(conn, status=status),
                             "pendentes": fila.quantos_pendentes(conn),
+                            "administra_acesso": administra,
                             "disponivel": fila.tabela_existe(conn)})
     except Exception as e:
         logger.exception("ERP: falha ao listar os pedidos de acesso ao portal")
@@ -9493,7 +9539,7 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
             # administrador do sistema por uma fila de acesso de obra. Quem
             # tem `gerir_usuarios` continua podendo escolher — essa pessoa já
             # cria operador com qualquer perfil pela tela de operadores.
-            escolhe_perfil = pode_com_banco(s, atual, "gerir_usuarios") if atual else False
+            administra = pode_com_banco(s, atual, "gerir_usuarios") if atual else False
             r = _liberar_acesso(
                 s, c, autor=atual, email=d.get("email") or p["email"],
                 # ⚑ O PADRÃO É ADMINISTRATIVO DE OBRA, e é escolha explícita:
@@ -9501,9 +9547,14 @@ def api_pedido_de_acesso_decidir(pedido_id: int):
                 # nem documento de ninguém (`ver_remuneracao`, `ver_arquivo`).
                 # CONSULTA, o padrão da ficha, não deixaria ela pedir nada —
                 # o acesso nasceria inútil e ela voltaria a pedir.
-                perfil=(d.get("perfil") if escolhe_perfil else None)
+                perfil=(d.get("perfil") if administra else None)
                        or "ADMINISTRATIVO_OBRA",
-                perfil_id=d.get("perfil_id") if escolhe_perfil else None,
+                perfil_id=d.get("perfil_id") if administra else None,
+                # As OBRAS também só vêm do navegador para quem gere
+                # operadores: para o DP fica a obra do cadastro, de sempre.
+                obra_ids=(d.get("obra_ids") if administra else None),
+                todas_as_obras=bool(d.get("todas_as_obras")) if administra
+                               else False,
                 obra_id=p["obra_id"], convidar=True)
             if not r["ok"]:
                 return jsonify(r), 400
@@ -9582,6 +9633,98 @@ def api_usuario_convite_situacao(usuario_id: int):
             return jsonify({"ok": True, "convite": svc.situacao(s, usuario_id)})
     except Exception as e:
         logger.exception("ERP: falha ao ler a situação do convite")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# PRIMEIRO ACESSO PELO PRÓPRIO PORTAL (18/11/2026)
+#
+# Ele, ao tentar orientar a equipe e esbarrar no absurdo: *"então tá errado
+# esse acesso ser liberado pelo aplicativo de ponto. Qual o sentido que tem de
+# uma pessoa que vai lançar um diário ter que ir lá no aplicativo do ponto?
+# (…) O cara tem que ir pro portal e criar o acesso dele por lá."*
+#
+# ⚑ AS DUAS ROTAS SÃO PÚBLICAS, e têm de ser: quem não tem acesso não pode
+# entrar para pedir acesso. O que as segura é o teto por IP e o código no
+# telefone DO CADASTRO — não a sessão.
+#
+# ⚑ E NENHUMA DELAS CRIA ACESSO. A segunda só põe o pedido na fila de sempre,
+# com a identidade marcada como confirmada. Quem cria é quem aprova, pelo
+# botão que já existe — decisão dele no mesmo dia: *"ainda assim precisa ser
+# validado por alguém no sistema. (…) aí aumenta o nível de segurança."*
+# ===========================================================================
+def _dentro_do_teto(tipo: str, por_hora: int) -> bool:
+    """Teto por IP para as rotas públicas do primeiro acesso.
+
+    ⚑ REUSA O CONTADOR DO PONTO, que já faz exatamente isto e está em
+    produção. Escrever um segundo contador aqui seria duas regras para a mesma
+    coisa, e a segunda envelheceria sozinha.
+
+    ⚠️ O TETO POR IP É FOLGADO DE PROPÓSITO: atrás de um proxy, a obra inteira
+    sai pelo mesmo endereço, e um teto apertado trancaria todo mundo porque um
+    colega tentou. A trava fina é por PESSOA, no banco (três códigos por hora)
+    e nas cinco tentativas de cada código.
+    """
+    try:
+        from app.apps.ponto import auth as auth_ponto
+        return auth_ponto.dentro_do_limite(
+            tipo, request.remote_addr or "sem-ip", por_hora)
+    except Exception:                                       # noqa: BLE001
+        # O contador é defesa extra, não a trava. Se ele falhar, o código no
+        # telefone do cadastro continua sendo o que segura a porta.
+        logger.warning("ERP: contador de tentativas indisponível")
+        return True
+
+
+@bp.route("/erp/primeiro-acesso")
+@permissao_publica("tela de primeiro acesso — quem ainda não tem conta não "
+                   "tem como entrar para pedir uma")
+def pagina_primeiro_acesso_portal():
+    return render_template("erp_primeiro_acesso_portal.html")
+
+
+@bp.route("/erp/api/primeiro-acesso/codigo", methods=["POST"])
+@permissao_publica("pedir o código por WhatsApp; a resposta é a mesma exista "
+                   "o CPF ou não")
+def api_primeiro_acesso_codigo():
+    from app.apps.erp.core.auth import primeiro_acesso_portal as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            if not _dentro_do_teto("codigo-portal", 12):
+                return jsonify({"ok": False, "erro":
+                                "Muitos pedidos deste lugar. Tente mais "
+                                "tarde."}), 429
+            r = svc.pedir_codigo(s, d.get("cpf"), d.get("telefone"),
+                                 ip=request.remote_addr or "")
+            s.commit()
+            return jsonify(r), (200 if r.get("ok") else 400)
+    except Exception as e:
+        logger.exception("ERP: falha ao pedir o código de primeiro acesso")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/primeiro-acesso/concluir", methods=["POST"])
+@permissao_publica("conferir o código e abrir o pedido de acesso na fila")
+def api_primeiro_acesso_concluir():
+    from app.apps.erp.core.auth import primeiro_acesso_portal as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            if not _dentro_do_teto("concluir-portal", 20):
+                return jsonify({"ok": False, "erro":
+                                "Muitas tentativas deste lugar. Tente mais "
+                                "tarde."}), 429
+            r = svc.concluir(s, d.get("cpf"), d.get("codigo"), d.get("email"),
+                             ip=request.remote_addr or "")
+            s.commit()
+            return jsonify(r)
+    except svc.CodigoRecusado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao concluir o primeiro acesso")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -13448,6 +13591,41 @@ def api_dp_pedido_acao(pedido_id: int, acao: str):
         raise
     except Exception as e:
         logger.exception("ERP: falha na ação do pedido à contabilidade")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# OS CHECKLISTS DO DP (18/11/2026)
+#
+# Ele: *"vi que você importou checklist do Pipefy, só que eles estão todos
+# desatualizados. Precisa de uma tela pra configurar eles de forma fácil."*
+#
+# ⚑ LER É DE QUEM VÊ PESSOAL; ESCREVER É DE QUEM ATENDE. Mudar o checklist muda
+# a rotina de trabalho do DP inteiro — é mais que marcar um item, e por isso não
+# cabe em `ver_pessoal`.
+# ===========================================================================
+@bp.route("/erp/api/dp/checklists", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="atender_dp")
+def api_dp_checklists():
+    """Os passos de cada tipo de solicitação, e a gravação deles."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "checklists": svc.checklists_para_a_tela(s)})
+            d = request.get_json(silent=True) or {}
+            r = svc.gravar_checklist(
+                s, str(d.get("tipo") or "").strip().upper(),
+                list(d.get("itens") or []),
+                vinculo=d.get("vinculo"), usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha nos checklists do DP")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

@@ -109,6 +109,9 @@ AREAS: tuple[dict[str, Any], ...] = (
                       "carteira, cargo, dados da pessoa, dependente e ajuda "
                       "de custo",
         "pronta": True,
+        # ⚑ A AÇÃO QUE ESTA ÁREA EXIGE (18/11/2026) — ver o comentário de
+        # `areas()`. Quem não a tem não vê a área, em vez de ver e esbarrar.
+        "acao": "solicitar_dp",
     },
     {
         "chave": "suprimentos",
@@ -139,6 +142,11 @@ AREAS: tuple[dict[str, Any], ...] = (
         "pronta": True,
         "so_tela": True,
         "tela": "/erp/obras/diario",
+        # ⚑ O DIÁRIO NÃO PEDE `solicitar_dp`, e é o conserto de 18/11/2026.
+        # Ele: *"e para quem vai preencher diário de obra mas não vai acessar
+        # DP, como faz?"* — e a resposta de então era ruim: a pessoa perdia o
+        # diário junto. Ver `areas()`.
+        "acao": "ver_diario",
     },
 )
 
@@ -172,15 +180,35 @@ TIPOS_DO_PORTAL = tuple(
 
 
 def areas(s: Session, eu: dict[str, Any]) -> list[dict[str, Any]]:
-    """As áreas, com quantos tipos cada uma oferece A ESTA PESSOA.
+    """As áreas que ESTA PESSOA pode usar, com quantos tipos cada uma oferece.
 
     A área que ainda não abriu vem com `pronta: False` e a frase do que fazer
     enquanto isso. A tela não decide nada disso: ela desenha o que vem daqui.
+
+    ⚑ FILTRA PELA PESSOA DESDE 18/11/2026, e a docstring já prometia isso
+    antes de o código fazer — `eu` chegava aqui e não era usado.
+
+    O defeito apareceu numa pergunta dele: *"e para quem vai preencher diário
+    de obra mas não vai acessar DP, como faz?"* A resposta de então era ruim.
+    Tirar "Solicitar ao DP" da pessoa no cadastro fazia a tela esconder o
+    BLOCO INTEIRO de abrir — e ela perdia o **diário** junto, que não tem nada
+    a ver com o DP. Quem só lança diário ficava sem o botão do diário.
+
+    Agora cada área diz a ação que exige (`acao`) e quem não a tem simplesmente
+    não vê aquela área. ⚠️ Não vê — e não vê "fechada": `pronta: False` quer
+    dizer "ainda não construímos isso", que é outra conversa. Marcar de fechado
+    o que existe e a pessoa é que não alcança seria mentir na porta, o defeito
+    que o comentário de "férias" acima descreve.
     """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    from app.apps.erp.core.auth.permissoes import pode
 
+    quem = eu.get("usuario") if isinstance(eu, dict) else None
     saida = []
     for a in AREAS:
+        acao = a.get("acao")
+        if acao and quem is not None and not pode(quem, acao):
+            continue
         chaves = TIPOS_POR_AREA.get(a["chave"], ())
         quantos = len([k for k in chaves if k in svc_sp.TIPOS])
         saida.append({**a, "tipos": quantos,
