@@ -12874,8 +12874,13 @@ def api_diario_quadro():
         mes = request.args.get("mes", type=int) or hoje.month
         with get_session() as s:
             minhas = obras_do_usuario(s, _usuario_logado(s))
+            # ⚑ ?todas=1 traz também as obras em fase de conclusão. A tela
+            # inicial NÃO manda isso: ele, em 19/11/2026, *"a tela inicial
+            # exibe só as obras ativas. As obras concluídas ficam ocultas. Aí
+            # eu altero o filtro e visualizo todas, se eu quiser."*
             return jsonify({"ok": True, **svc.quadro_do_mes(
-                s, ano, mes, obra_ids=minhas)})
+                s, ano, mes, obra_ids=minhas,
+                incluir_encerradas=request.args.get("todas") == "1")})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
@@ -13075,7 +13080,8 @@ def api_diario_pendencias():
         with get_session() as s:
             permitidas = obras_do_usuario(s, _usuario_logado(s))
             return jsonify({"ok": True, "obras": svc.pendencias_por_obra(
-                s, obra_ids=list(permitidas) if permitidas is not None else None)})
+                s, obra_ids=list(permitidas) if permitidas is not None else None,
+                incluir_encerradas=request.args.get("todas") == "1")})
     except Exception as e:
         logger.exception("ERP: falha nas pendências de diário")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
