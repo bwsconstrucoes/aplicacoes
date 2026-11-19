@@ -437,9 +437,11 @@ const ROTULO_CAMPO = {
 function pintarPedido(){
   const p = ABERTA;
   els("dlg-titulo").textContent = `${p.numero} — ${p.tipo_rotulo}`;
-  const linhas = Object.entries(p.dados || {})
-    .map(([k, v]) => `<tr><td>${escapar(ROTULO_CAMPO[k] || k)}</td>
-      <td class="dados">${escapar(String(v))}</td></tr>`).join("");
+  {# ⚑ O PEDIDO COMO SE LÊ (19/11/2026): rótulo em português e valor
+     formatado pelo servidor (`dados_legiveis`) — nome do cargo e da empresa,
+     data dd/mm/aaaa, CPF/CNPJ/CEP/telefone pontuados. Antes era o JSON cru. #}
+  const linhas = (p.dados_legiveis || []).map(x => `<tr><td>${escapar(x.rotulo)}</td>
+      <td>${escapar(x.valor)}</td></tr>`).join("");
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div class="kpis">
       <div class="kpi estatico"><div class="kpi-rotulo">Situação</div>
@@ -472,11 +474,14 @@ function pintarPedido(){
       ? `<h4>Documentos enviados (${(p.papeis || []).length})</h4>
          <table><tbody>${(p.papeis || []).map(d => `<tr>
            <td>${escapar(d.tipo)}</td>
-           <td><a class="link-btn" href="/erp/anexo/${d.anexo_id}" target="_blank">${escapar(d.nome || "abrir")}</a></td>
+           <td><button type="button" class="link-btn" data-ver-papel="${d.anexo_id}"
+                 data-nome="${escapar(d.nome || "documento")}">${escapar(d.nome || "ver")}</button></td>
          </tr>`).join("") || `<tr><td class="cartao-dica">Nenhum arquivo veio com
            este pedido${p.readmissao ? " — é readmissão, os papéis antigos estão no cadastro" : ""}.</td></tr>`}
          </tbody></table>` : ""}
-    <h4>O que foi pedido</h4>
+    <h4 style="display:flex; align-items:center; gap:10px">O que foi pedido
+      ${PODE_ATENDER && p.a_atender ? `<button class="btn secundario" id="s-corrigir"
+        type="button">✏️ Corrigir os dados</button>` : ""}</h4>
     <table><tbody>${linhas || `<tr><td colspan="2" class="cartao-dica">Sem detalhe.</td></tr>`}</tbody></table>
     ${(p.itens || []).length ? `<h4>Checklist do atendimento (${p.feitos}/${p.total_itens})</h4>
       <div class="cartao-dica">São os passos que o DP faz, na ordem. Serve para mais de
@@ -498,6 +503,9 @@ function pintarPedido(){
       <button class="link-btn" id="s-cancelar">Cancelar o pedido</button>
     </div>` : ""}`;
   ligarBotoesDoProcesso(p);
+  els("dlg-corpo").querySelectorAll("[data-ver-papel]").forEach(b =>
+    b.addEventListener("click", () => verPapel(b.dataset.verPapel, b.dataset.nome)));
+  if (els("s-corrigir")) els("s-corrigir").addEventListener("click", () => corrigirPedido(p));
   els("dlg-corpo").querySelectorAll("[data-item]").forEach(c =>
     c.addEventListener("change", () => acao("item",
       {item_id: +c.dataset.item, feito: c.checked})));
@@ -712,6 +720,81 @@ async function montarPedidoDeRescisao(p){
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
+// ===========================================================================
+// ⚑ VER O DOCUMENTO SEM SAIR DA TELA (19/11/2026). Ele: *"quando for abrir um
+// documento, é interessante que abra num modal que seja fácil também de fazer
+// o download. É melhor do que fazer o download direto, porque às vezes a gente
+// (…) quer só visualizar rapidamente e voltar para o cadastro e ajustar."*
+// A janela abre POR CIMA do pedido; fechar volta exatamente onde estava.
+// ===========================================================================
+function verPapel(anexoId, nome){
+  let dlg = els("dlg-papel");
+  if (!dlg) {
+    dlg = document.createElement("dialog");
+    dlg.id = "dlg-papel";
+    dlg.style.cssText = "width:94vw; max-width:1100px; height:90vh; padding:0; overflow:hidden";
+    document.body.appendChild(dlg);
+  }
+  const url = `/erp/anexo/${encodeURIComponent(anexoId)}`;
+  dlg.innerHTML = `<div style="display:flex; flex-direction:column; height:100%">
+    <div class="dlg-topo" style="display:flex; gap:8px; align-items:center; padding:10px 14px">
+      <b style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapar(nome || "documento")}</b>
+      <a class="btn secundario" href="${url}" download="${escapar(nome || "documento")}">⬇ Baixar</a>
+      <a class="btn secundario" href="${url}" target="_blank">abrir em outra aba</a>
+      <button class="btn" type="button" id="dlg-papel-fechar">Fechar</button></div>
+    <iframe src="${url}" title="documento" style="flex:1; border:0; width:100%; background:#fff"></iframe>
+  </div>`;
+  els("dlg-papel-fechar").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("close", () => { dlg.innerHTML = ""; }, {once: true});
+  dlg.showModal();
+}
+
+// ===========================================================================
+// ⚑ CORRIGIR O PEDIDO NA TELA DO ATENDIMENTO (19/11/2026). Ele: *"esses campos
+// deveriam ser todos editáveis, porque se quando eu for analisar o documento
+// eu identificar que tem alguma coisa a mudar, eu posso mudar nessa tela e
+// salvar para poder atender o pedido."* Os campos são os MESMOS da abertura
+// (`camposDoTipo`), já preenchidos. No pré-cadastro, a correção vai para o
+// cadastro junto.
+// ===========================================================================
+async function corrigirPedido(p){
+  const regra = (DADOS.tipos || []).find(t => t.valor === p.tipo);
+  if (!regra) return;
+  const o = await api("/erp/api/colaboradores/opcoes");
+  const campos = camposDoTipo(regra, o, true);
+  // A caixinha guarda o RÓTULO em algumas listas e o CÓDIGO em outras; o
+  // pedido guarda o código. Preenche com o que a caixinha reconhece.
+  const deCodigo = c => {
+    const mapa = (regra.traducoes || {})[c] || {};
+    const inverso = {};
+    Object.entries(mapa).forEach(([rot, cod]) => { inverso[cod] = rot; });
+    return inverso;
+  };
+  // A obra mora numa coluna do pedido, não nos dados.
+  const valores = {...(p.dados || {}), obra_id: p.obra_id};
+  campos.forEach(cp => {
+    if (!cp.nome) return;
+    const v = valores[cp.nome];
+    if (v === undefined || v === null) return;
+    const valor = String(v);
+    if (cp.tipo === "select" && cp.opcoes) {
+      // A caixinha compara pelo valor EXATO (número é número): usa o da
+      // própria opção.
+      const achar = alvo => cp.opcoes.find(x => String(x.valor) === String(alvo));
+      const op = achar(valor) || achar(deCodigo(cp.nome)[valor]);
+      if (op) cp.valor = op.valor;
+    } else cp.valor = valor;
+  });
+  const r = await perguntar({titulo: `Corrigir ${p.numero}`,
+    aviso: (p.pre_cadastro
+      ? "A correção vale para o pedido <b>e para o pré-cadastro</b> da pessoa. "
+      : "") + "Confira com os documentos — o que você mudar fica registrado no "
+      + "histórico do pedido, com o antes e o depois.",
+    textoOk: "Salvar a correção", campos});
+  if (!r) return;
+  acao("corrigir", {dados: r});
+}
+
 async function acao(caminho, corpo){
   try {
     const r = await api(`/erp/api/dp/solicitacoes/${ABERTA.id}/${caminho}`,
@@ -772,7 +855,7 @@ async function atender(){
   const doDP = (ABERTA.campos_do_dp || tipo.campos_do_dp || [])
     .filter(c => CAMPO_PEDIDO[c] !== false);
   const campos = doDP.map(c => {
-    const rot = (tipo.rotulos_do_dp || {})[c] || c.replace(/_/g, " ");
+    const rot = (tipo.rotulos_do_dp || {})[c] || ROTULO_CAMPO[c] || c.replace(/_/g, " ");
     const opcoes = (tipo.opcoes_do_dp || {})[c];
     if (opcoes)
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
@@ -824,6 +907,7 @@ async function cancelarPedido(){
 // aparecem.
 // ---------------------------------------------------------------------------
 const CAMPO_PEDIDO = {
+  rg_emissao: {tipo: "date"},
   data_saida: {tipo: "date"}, aviso_previo: {tipo: "date"}, ultimo_dia: {tipo: "date"},
   admissao: {tipo: "date"}, vigencia: {tipo: "date"}, data_nascimento: {tipo: "date"},
   data_inicio: {tipo: "date"}, primeira_competencia: {tipo: "month"},
@@ -848,6 +932,8 @@ const ROTULO_PAPEL_DP = {
 };
 
 const LISTA_DO_CAMPO = {
+  // os da admissão (19/11/2026): órgão e estado do RG são lista no cadastro
+  rg_orgao: "orgaos_rg", rg_uf: "ufs",
   forma_desligamento: "formas_desligamento", vinculo: "vinculos",
   // ⚑ `tipo_contrato` SAIU DAQUI em 17/11/2026, e o motivo é que ele tem DUAS
   // listas, não uma: quem é CTPS escolhe entre as duas CLTs e jovem aprendiz;
@@ -981,63 +1067,17 @@ function dicaDaOpcao(regra, c, dicaFixa){
   };
 }
 
-async function novaSolicitacao(){
-  const o = await api("/erp/api/colaboradores/opcoes");
-  const escolha = await perguntar({titulo: "Nova solicitação ao DP",
-    textoOk: "Continuar",
-    campos: [{nome: "tipo", rotulo: "O que você precisa?", tipo: "select",
-              obrigatorio: true, largura: 6,
-              opcoes: DADOS.tipos.map(t => ({valor: t.valor, rotulo: t.rotulo}))}]});
-  if (!escolha) return;
-  const regra = DADOS.tipos.find(t => t.valor === escolha.tipo);
-
-  {# ⚑ TRÊS TIPOS NÃO SAÍAM DESTA TELA, E ELA NÃO DIZIA ISSO (15/11/2026).
-
-     Achado respondendo a uma pergunta dele: *"o nome e CPF são preenchidos a
-     partir dos documentos anexados?"* São — e a conferência mostrou que esta
-     tela **não tem campo para anexar nada**. Resultado: Cadastro de
-     Colaborador, Admissão de Prestador e Cadastro de Dependente exigem papel,
-     e aqui a pessoa preenchia DOZE campos, confirmava, e levava "Falta
-     anexar: documento de identificação, CPF, comprovante de endereço" — sobre
-     papéis que a janela nunca ofereceu onde pôr. Beco sem saída, e estava em
-     produção.
-
-     ⚑ POR QUE NÃO CONSTRUÍ O ANEXO AQUI: o portal já tem isso pronto, com
-     foto pelo celular e leitura do documento preenchendo os campos — e é no
-     celular, na obra, que o papel está na mão. Fazer uma segunda versão disso
-     aqui seria manter dois caminhos para o mesmo trabalho; e o DP, para
-     cadastrar direto, tem a ficha completa em Colaboradores, que já lê
-     documento.
-
-     O que esta tela precisa é PARAR DE PROMETER o que não entrega — e dizer
-     para onde ir. #}
-  if ((regra.documentos || []).length) {
-    const papeis = (regra.documentos || [])
-      .map(c => ROTULO_PAPEL_DP[c] || c);
-    const r = await perguntar({
-      titulo: regra.rotulo,
-      aviso: `Este pedido só sai <b>com os papéis anexados</b>: ${
-        papeis.map(escapar).join(", ")}. Esta tela não anexa arquivo — quem
-        anexa é o <b>portal da obra</b>, pelo celular, onde a foto do
-        documento ainda <b>preenche os campos sozinha</b>.`
-        + (regra.valor === "CADASTRO"
-           ? ` <br><br>Se você mesmo vai cadastrar a pessoa agora, o caminho é
-               <b>Pessoal › Colaboradores › + Colaborador</b>: lá está a ficha
-               completa, e ela também lê documento.`
-           : ""),
-      textoOk: "Abrir o portal da obra",
-      campos: []});
-    if (r) location.href = "/erp/portal";
-    return;
-  }
-
+// ⚑ OS CAMPOS DE UM TIPO, montados num lugar só (19/11/2026): a mesma montagem
+// serve para ABRIR um pedido e para o DP CORRIGIR um pedido aberto — duas
+// montagens divergiriam no primeiro campo novo.
+function camposDoTipo(regra, o, semPessoa){
   const listas = {...o, sim_nao: [{valor: "1", rotulo: "Sim"}, {valor: "", rotulo: "Não"}],
     cartoes: [{valor: "PAGAMENTO", rotulo: "Cartão de pagamento"},
               {valor: "VALE_TRANSPORTE", rotulo: "Cartão de vale-transporte"}],
     documentacoes: [{valor: "ADMISSAO", rotulo: "Documentação de admissão"},
                     {valor: "RESCISAO", rotulo: "Documentação de rescisão"}]};
   const campos = [];
-  if (regra.exige_pessoa) {
+  if (regra.exige_pessoa && !semPessoa) {
     {# A PESSOA SE BUSCA, NÃO SE ESCOLHE NUMA LISTA (10/11/2026).
 
        Antes isto carregava `/erp/api/colaboradores` inteiro num <select>:
@@ -1234,6 +1274,60 @@ async function novaSolicitacao(){
     }
   });
 
+  return campos;
+}
+
+async function novaSolicitacao(){
+  const o = await api("/erp/api/colaboradores/opcoes");
+  const escolha = await perguntar({titulo: "Nova solicitação ao DP",
+    textoOk: "Continuar",
+    campos: [{nome: "tipo", rotulo: "O que você precisa?", tipo: "select",
+              obrigatorio: true, largura: 6,
+              opcoes: DADOS.tipos.map(t => ({valor: t.valor, rotulo: t.rotulo}))}]});
+  if (!escolha) return;
+  const regra = DADOS.tipos.find(t => t.valor === escolha.tipo);
+
+  {# ⚑ TRÊS TIPOS NÃO SAÍAM DESTA TELA, E ELA NÃO DIZIA ISSO (15/11/2026).
+
+     Achado respondendo a uma pergunta dele: *"o nome e CPF são preenchidos a
+     partir dos documentos anexados?"* São — e a conferência mostrou que esta
+     tela **não tem campo para anexar nada**. Resultado: Cadastro de
+     Colaborador, Admissão de Prestador e Cadastro de Dependente exigem papel,
+     e aqui a pessoa preenchia DOZE campos, confirmava, e levava "Falta
+     anexar: documento de identificação, CPF, comprovante de endereço" — sobre
+     papéis que a janela nunca ofereceu onde pôr. Beco sem saída, e estava em
+     produção.
+
+     ⚑ POR QUE NÃO CONSTRUÍ O ANEXO AQUI: o portal já tem isso pronto, com
+     foto pelo celular e leitura do documento preenchendo os campos — e é no
+     celular, na obra, que o papel está na mão. Fazer uma segunda versão disso
+     aqui seria manter dois caminhos para o mesmo trabalho; e o DP, para
+     cadastrar direto, tem a ficha completa em Colaboradores, que já lê
+     documento.
+
+     O que esta tela precisa é PARAR DE PROMETER o que não entrega — e dizer
+     para onde ir. #}
+  if ((regra.documentos || []).length) {
+    const papeis = (regra.documentos || [])
+      .map(c => ROTULO_PAPEL_DP[c] || c);
+    const r = await perguntar({
+      titulo: regra.rotulo,
+      aviso: `Este pedido só sai <b>com os papéis anexados</b>: ${
+        papeis.map(escapar).join(", ")}. Esta tela não anexa arquivo — quem
+        anexa é o <b>portal da obra</b>, pelo celular, onde a foto do
+        documento ainda <b>preenche os campos sozinha</b>.`
+        + (regra.valor === "CADASTRO"
+           ? ` <br><br>Se você mesmo vai cadastrar a pessoa agora, o caminho é
+               <b>Pessoal › Colaboradores › + Colaborador</b>: lá está a ficha
+               completa, e ela também lê documento.`
+           : ""),
+      textoOk: "Abrir o portal da obra",
+      campos: []});
+    if (r) location.href = "/erp/portal";
+    return;
+  }
+
+  const campos = camposDoTipo(regra, o, false);
   const r = await perguntar({titulo: regra.rotulo,
     aviso: `${regra.explicacao}. O pedido vai para o DP.`,
     textoOk: "Abrir a solicitação", campos});

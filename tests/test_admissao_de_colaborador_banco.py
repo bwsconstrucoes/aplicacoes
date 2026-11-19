@@ -199,7 +199,7 @@ def test_o_desligado_escolhido_volta_sem_papel_e_so_completa_o_que_falta(mundo):
     assert c.situacao == "ATIVO"
     assert c.rg == "9988776655", "o dado novo atualiza o cadastro"
     assert c.nome_mae == "Ana Antiga", "o que não veio fica como estava"
-    assert c.matricula == CPF_VOLTA, "quem entra de novo ganha matrícula = CPF"
+    assert c.matricula == "M-ANTIGA", "a matrícula que já existia fica"
     vinculos = s.execute(text("SELECT count(*) FROM colaborador_vinculos "
                               " WHERE colaborador_id = :c"), {"c": c.id}).scalar()
     assert vinculos >= 2, "o histórico da primeira passagem fica"
@@ -247,3 +247,47 @@ def test_prestador_esconde_ctps_e_pis():
     assert "num_ctps" not in exige and "num_pis" not in exige
     ocultos = svc.TIPOS["CADASTRO"]["ocultos_se"]["tipo_documentacao"]["PRESTADOR"]
     assert "num_ctps" in ocultos and "num_pis" in ocultos
+
+
+@pytestmark_banco
+def test_o_pedido_aparece_em_linguagem_de_gente(mundo):
+    """Ele: *"cargo hífen pleiteado hífen ID, aí está a numeração de sistema
+    (…) não recebe todo maiúsculo com hífen (…) data no padrão americano."*"""
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    leg = {x["campo"]: (x["rotulo"], x["valor"]) for x in p["dados_legiveis"]}
+    assert leg["cargo_pleiteado_id"][1] == "Servente adm"
+    assert leg["categoria_alimentacao"][1] == "Não recebe"
+    assert leg["data_inicio"][1] == "20/11/2026"
+    assert leg["cep"][1] == "60000-000"
+    assert leg["empresa_id"][1] == "ADM"
+    assert "pre_cadastro" not in leg, "marca interna não aparece"
+
+
+@pytestmark_banco
+def test_o_dp_corrige_o_pedido_e_o_pre_cadastro_junto(mundo):
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    r = svc.corrigir(s, p["id"], {"dados": {"nome_mae": "Mãe Corrigida",
+                                            "rg": "1112223334"}}, mundo["dp"])
+    assert r["dados"]["nome_mae"] == "MAE CORRIGIDA"
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    assert c.nome_mae == "MAE CORRIGIDA" and c.rg == "1112223334"
+    assert any(e["acao"] == "CORRIGIDO_PELO_DP" for e in r["eventos"])
+
+
+@pytestmark_banco
+def test_readmissao_mantem_a_matricula_que_ja_existia(mundo):
+    """Ele: *"se for uma readmissão e o campo estiver em branco, bota o CPF.
+    Se (…) o campo já existia, deixa o que já estava."*"""
+    s = mundo["s"]
+    volta = mundo["volta"]
+    pedido = _admissao(mundo, cpf=CPF_VOLTA, nome="Jose Que Volta",
+                       documentos=[])
+    p = svc.abrir(s, pedido, mundo["obra_user"])
+    svc.atender(s, p["id"], {}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, volta.id)
+    assert c.matricula == "M-ANTIGA"
+    assert c.etapa == "CONCLUIDO", "prestador readmitido volta direto a Concluído"
+    assert c.demissao is None, "a saída anterior vai para o histórico"

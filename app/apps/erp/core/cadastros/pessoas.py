@@ -1115,14 +1115,25 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
     if novo.matricula:
         c.matricula = novo.matricula
     s.flush()
-    # READMISSÃO VOLTA PARA A CONFERÊNCIA, não direto para concluído: o endereço
-    # muda, o documento vence, a convenção da obra nova pode ser outra. Era
-    # exatamente isto que o "Checklist Readmissão" do Pipefy cobrava à mão.
+    # ⚑ PARA ONDE A READMISSÃO VAI (19/11/2026). Ele: *"na hora que eu atender
+    # essa readmissão de um prestador, aí a pessoa já vai para a etapa
+    # concluído, porque aí nesse caso ele automaticamente já é ativado no
+    # ponto e a questão do sistema de pagamento não é necessário."*
+    #   · PRESTADOR → Concluído: não há registro a fazer em lugar nenhum;
+    #   · CTPS      → Inicial: a carteira ainda tem de ser registrada pela
+    #                 contabilidade, e é a fila do DP que leva até lá.
+    # ⚠️ Antes ia para "EM_CONFERENCIA" — etapa que SAIU DE CIRCULAÇÃO em
+    # 17/11/2026 (migração 107) e não tem coluna no quadro: quem era
+    # readmitido sumia da fila do DP.
     de = (c.etapa or "").upper()
-    c.etapa = "EM_CONFERENCIA"
+    destino = "CONCLUIDO" if (novo.vinculo or "").upper() == "PRESTADOR" \
+        else "CADASTRO_INICIAL"
+    c.etapa = destino
     s.add(ColaboradorEtapa(
-        colaborador_id=c.id, de=de or None, para="EM_CONFERENCIA",
-        motivo="readmissão: conferir o cadastro antes de concluir",
+        colaborador_id=c.id, de=de or None, para=destino,
+        motivo=("readmissão de prestador: volta direto à ativa"
+                if destino == "CONCLUIDO"
+                else "readmissão em carteira: falta o registro da CTPS"),
         automatico=True, usuario_id=usuario.id if usuario else None))
     s.flush()
     registrar_evento(s, "colaborador", c.id, "READMITIDO",

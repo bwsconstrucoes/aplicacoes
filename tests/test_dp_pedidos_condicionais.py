@@ -518,7 +518,9 @@ def test_cadastro_com_CPF_de_desligado_vira_readmissao(mundo):
     # O nome do PEDIDO não vence o do cadastro — a pessoa é a que já existe.
     assert p["pessoa"] == "Prestador De Souza"
     # E o checklist é o da readmissão, não o do cadastro novo.
-    assert any("saída anterior" in i["descricao"] for i in p["itens"])
+    # o checklist da readmissão, enxugado por ele em 19/11/2026
+    assert [i["descricao"] for i in p["itens"]] == [
+        "Conferir os dados e os documentos"]
 
 
 @pytest.mark.banco

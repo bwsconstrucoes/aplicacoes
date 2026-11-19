@@ -98,6 +98,29 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 19/11/2026 (noite, 2) — Readmissão enxuta; a tela do atendimento legível e editável
+
+Testando a readmissão, ele foi item por item:
+- **Checklist da readmissão:** de sete itens para um ("Conferir os dados e os
+  documentos"). Saída anterior, admissão, obra, cargo, convenção, matrícula,
+  ponto e pagamento — tudo já resolvido pelo sistema ou inaplicável.
+  ⚠️ Pedido JÁ ABERTO guarda o checklist antigo (é copiado na abertura); vale
+  para os próximos.
+- **Readmissão de prestador vai para Concluído** ao atender (o ponto reativa
+  sozinho). De carteira vai para Inicial (falta o registro da CTPS). ⚠️ Antes
+  ia para "EM_CONFERENCIA", etapa fora de circulação — a pessoa sumia da fila.
+  A saída anterior sai do cadastro (fica no histórico de vínculos).
+- **Matrícula na readmissão:** só vira o CPF se estiver em branco; a que já
+  existia fica.
+- **O pedido em linguagem de gente** (`dados_legiveis`): nome do cargo, da
+  empresa e da obra; rótulo da opção; dd/mm/aaaa; CPF, CNPJ, CEP e telefone
+  pontuados.
+- **"Corrigir os dados"** na tela do atendimento: os mesmos campos da
+  abertura, preenchidos; no pré-cadastro a correção vai para o cadastro junto;
+  rastro de/para no histórico do pedido.
+- **Documento abre numa janela** por cima do pedido, com Baixar e "abrir em
+  outra aba".
+
 ### 19/11/2026 (noite) — A admissão nasce com PRÉ-CADASTRO; documentos à vista; caixa alta
 
 Ele testou a admissão publicada e cobrou: *"eu pensei que a pessoa já

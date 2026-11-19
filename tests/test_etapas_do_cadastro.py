@@ -250,15 +250,30 @@ def test_desligar_move_a_etapa_e_a_pessoa_sai_da_fila(sessao_real, dono):
 
 
 @banco_
-def test_readmissao_volta_para_a_conferencia(sessao_real, dono):
-    """O endereço muda, o documento vence, a convenção da obra nova pode ser
-    outra. Era isto que o "Checklist Readmissão" do Pipefy cobrava à mão."""
+def test_readmissao_vai_para_a_etapa_certa_e_limpa_a_saida(sessao_real, dono):
+    """19/11/2026, ele: *"na hora que eu atender essa readmissão de um
+    prestador, aí a pessoa já vai para a etapa concluído."* Carteira vai para
+    Inicial (falta o registro da CTPS). Antes ia para "EM_CONFERENCIA", etapa
+    fora de circulação, e a pessoa sumia da fila. E a saída anterior sai do
+    cadastro — senão o ponto a bloquearia."""
     c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Vai Voltar Depois",
-                                 "etapa": "CONCLUIDO", "admissao": "2025-01-05"}, dono)
+                                 "etapa": "CONCLUIDO", "admissao": "2025-01-05",
+                                 "vinculo": "PRESTADOR"}, dono)
     svc.desligar(sessao_real, c.id, {"data_saida": "2025-12-31",
                                      "forma_desligamento": "PEDIDO_COLABORADOR"}, dono)
-    svc.readmitir(sessao_real, c.id, {"admissao": "2026-06-01"}, dono)
-    assert c.etapa == "EM_CONFERENCIA"
+    svc.readmitir(sessao_real, c.id, {"admissao": "2026-06-01",
+                                      "vinculo": "PRESTADOR"}, dono)
+    assert c.etapa == "CONCLUIDO" and c.demissao is None
+    assert c.situacao == "ATIVO"
+
+    d = svc.salvar(sessao_real, {"cpf": CPF_B, "nome": "Volta De Carteira",
+                                 "etapa": "CONCLUIDO", "admissao": "2025-01-05",
+                                 "vinculo": "CTPS"}, dono)
+    svc.desligar(sessao_real, d.id, {"data_saida": "2025-12-31",
+                                     "forma_desligamento": "PEDIDO_COLABORADOR"}, dono)
+    svc.readmitir(sessao_real, d.id, {"admissao": "2026-06-01",
+                                      "vinculo": "CTPS"}, dono)
+    assert d.etapa == "CADASTRO_INICIAL"
 
 
 @banco_

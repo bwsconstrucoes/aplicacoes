@@ -725,12 +725,13 @@ TIPOS: dict[str, dict[str, Any]] = {
         # DP é outro: não há cadastro para criar, há vínculo para reabrir.
         # Este é o checklist que o tipo READMISSAO tinha, e que vem para cá
         # junto com ele (15/11/2026).
+        # ⚑ ENXUGADO EM 19/11/2026, item por item, por ele: a saída anterior
+        # vai sozinha para o histórico; a admissão, a obra e o cargo vêm do
+        # pedido; a matrícula é o CPF (ou a que já existia); prestador não tem
+        # convenção; o ponto reativa sozinho; o sistema de pagamento não se
+        # mexe. O que sobra é conferir o que veio.
         "checklist_readmissao": (
-            "Conferir se a saída anterior está fechada",
-            "Atualizar a data de admissão", "Conferir cargo e convenção",
-            "Conferir a obra", "Atualizar a matrícula",
-            "Reativar no sistema de pagamento",
-            "Reativar no sistema de ponto"),
+            "Conferir os dados e os documentos",),
     },
     "DIVERSOS": {
         "nome": "Solicitações Diversas",
@@ -2111,6 +2112,172 @@ def guardar_papeis(s: Session, solicitacao_id: int,
     return feitos
 
 
+# ---------------------------------------------------------------------------
+# ⚑ O PEDIDO EM LINGUAGEM DE GENTE (19/11/2026)
+#
+# Ele, olhando a tela do atendimento: *"a nomenclatura ela não está amigável
+# (…) cargo hífen pleiteado hífen ID, aí está a numeração de sistema do cargo
+# (…) não recebe todo maiúsculo com hífen (…) CEP não está no padrão do CEP,
+# CNPJ (…) sem pontuação. Data (…) no padrão americano (…) Empresa hífen ID,
+# aí está o número da empresa e não o nome."*
+#
+# A tela mostrava o JSON do pedido cru. Agora o servidor devolve cada campo
+# com o rótulo em português e o valor como se lê: nome do cargo, da empresa e
+# da obra; o rótulo da opção; data dd/mm/aaaa; CPF, CNPJ, CEP e telefone com
+# a pontuação. As marcas internas (pré-cadastro, processo…) não aparecem.
+# ---------------------------------------------------------------------------
+_MARCAS_INTERNAS = {"pre_cadastro", "readmissao", "processo_desligamento",
+                    "continuidade_revista", "documentos", "lidos_do_documento"}
+
+
+def _formatar(campo: str, valor: Any, s: Session) -> str:
+    import re as _re
+    from datetime import date as _date
+    if valor in (None, ""):
+        return ""
+    if isinstance(valor, list):
+        return f"{len(valor)} item(ns)"
+    texto_ = str(valor).strip()
+    so = "".join(c for c in texto_ if c.isdigit())
+    # nomes de cadastro no lugar do número
+    tabelas = {"cargo_pleiteado_id": ("cargos", "nome"),
+               "cargo_id": ("cargos", "nome"),
+               "convencao_id": ("convencoes", "nome"),
+               "empresa_id": ("empresas", "COALESCE(nome_fantasia, razao_social)"),
+               "obra_id": ("obras", "codigo || ' — ' || nome")}
+    if campo in tabelas and so:
+        tabela, coluna = tabelas[campo]
+        nome = s.execute(text(f"SELECT {coluna} FROM {tabela} WHERE id = :i"),
+                         {"i": int(so)}).scalar()
+        return str(nome or texto_)
+    if campo in ("cpf", "pix_chave") and len(so) == 11 and len(texto_) <= 14:
+        return f"{so[:3]}.{so[3:6]}.{so[6:9]}-{so[9:]}"
+    if campo in ("cnpj_admissao", "cnpj_pj") and len(so) == 14:
+        return f"{so[:2]}.{so[2:5]}.{so[5:8]}/{so[8:12]}-{so[12:]}"
+    if campo == "cep" and len(so) == 8:
+        return f"{so[:5]}-{so[5:]}"
+    if campo == "telefone" and len(so) in (10, 11):
+        meio = 7 if len(so) == 11 else 6
+        return f"({so[:2]}) {so[2:meio]}-{so[meio:]}"
+    if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", texto_):
+        a, m, d = texto_.split("-")
+        return f"{d}/{m}/{a}"
+    # o rótulo da opção, no lugar do código
+    rotulos = {
+        "categoria_alimentacao": svc_pessoas.CATEGORIA_ALIMENTACAO_ROTULOS,
+        "categoria_transporte": svc_pessoas.CATEGORIA_TRANSPORTE_ROTULOS,
+        "tipo_contrato": svc_pessoas.TIPO_CONTRATO_ROTULOS,
+        "tipo_documentacao": svc_pessoas.VINCULO_ROTULOS,
+        "vinculo": svc_pessoas.VINCULO_ROTULOS,
+        "forma_desligamento": svc_pessoas.FORMA_DESLIGAMENTO_ROTULOS,
+        "sexo": svc_pessoas.SEXO_ROTULOS,
+        "estado_civil": svc_pessoas.ESTADO_CIVIL_ROTULOS,
+        "parentesco": svc_pessoas.PARENTESCO_ROTULOS,
+    }.get(campo)
+    if rotulos and texto_ in rotulos:
+        r = rotulos[texto_]
+        return r if isinstance(r, str) else str(r)
+    inverso = {v: k for k, v in (DO_PIPE_PARA_O_CODIGO.get(campo) or {}).items()}
+    if texto_ in inverso:
+        return inverso[texto_]
+    if texto_ in ("1", "0") and campo in SIM_NAO_DOS_CAMPOS:
+        return "Sim" if texto_ == "1" else "Não"
+    return texto_
+
+
+SIM_NAO_DOS_CAMPOS = {"continua_prestador", "salario_familia", "conceder",
+                      "descontar_vt", "dependente_ir"}
+
+
+def dados_legiveis(s: Session, tipo: str, dados: dict[str, Any]
+                   ) -> list[dict[str, str]]:
+    """O pedido como se lê: [{campo, rotulo, valor}] na ordem dos campos do
+    tipo (e o que sobrar, depois)."""
+    regra = TIPOS.get(tipo) or {}
+    proprios = regra.get("rotulos_proprios") or {}
+    ordem = list(regra.get("campos") or ()) + list(regra.get("campos_do_dp") or ())
+    ordem += [c for c in dados if c not in ordem]
+    saida = []
+    for c in dict.fromkeys(ordem):
+        if c in _MARCAS_INTERNAS or c not in dados:
+            continue
+        try:
+            valor = _formatar(c, dados.get(c), s)
+        except Exception:                                # noqa: BLE001
+            valor = str(dados.get(c))
+        if not valor:
+            continue
+        rotulo = (proprios.get(c) or ROTULOS.get(c)
+                  or svc_pessoas.CAMPO_ROTULOS.get(c) or c.replace("_", " "))
+        saida.append({"campo": c, "rotulo": rotulo, "valor": valor})
+    return saida
+
+
+def corrigir(s: Session, solicitacao_id: int, dados: dict[str, Any],
+             usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O DP corrige o pedido na tela do atendimento — e, havendo cadastro
+    ligado (pré-cadastro), o cadastro junto.
+
+    ⚑ Ele: *"se eu precisar editar, esses campos deveriam ser todos
+    editáveis (…) se eu entender que a obra não era para ser essa, se eu
+    entender que o cargo não era para ser esse, então aqui é o local e momento
+    de a gente corrigir."*
+
+    Só campos do tipo; vazio APAGA o campo do pedido (é correção, a pessoa viu
+    o campo e o limpou). Fica rastro de/para.
+    """
+    import json
+    p = ler(s, solicitacao_id)
+    if p["situacao"] not in A_ATENDER:
+        raise ErroValidacao(f"{p['numero']} já está {p['situacao_rotulo'].lower()} "
+                            "— não dá mais para corrigir.")
+    tipo = p["tipo"]
+    permitidos = set(campos_do_tipo(tipo, p.get("pessoa_vinculo") or None)) \
+        | set(campos_do_dp_do_tipo(tipo, p.get("pessoa_vinculo") or None)) \
+        | {"obra_id"}
+    novos = traduzir_do_pipe({k: v for k, v in (dados.get("dados") or {}).items()
+                              if k in permitidos})
+    if tipo in ("CADASTRO", "ADMISSAO_PRESTADOR"):
+        from app.apps.erp.core.documentos_de_pessoa import CAMPOS_DE_TEXTO, caixa_alta
+        for c in CAMPOS_DE_TEXTO:
+            if str(novos.get(c) or "").strip():
+                novos[c] = caixa_alta(novos[c])
+        if novos.get("telefone"):
+            novos["telefone"] = "".join(x for x in str(novos["telefone"]) if x.isdigit())
+    antes = dict(p["dados"] or {})
+    depois = dict(antes)
+    mudou = []
+    for k, v in novos.items():
+        v = "" if v is None else v
+        if str(antes.get(k) or "") != str(v):
+            mudou.append({"campo": k, "de": antes.get(k), "para": v})
+            if str(v).strip():
+                depois[k] = v
+            else:
+                depois.pop(k, None)
+    if not mudou:
+        return p
+    nova_obra = depois.get("obra_id")
+    s.execute(text("""UPDATE dp_solicitacoes
+                         SET dados = CAST(:d AS jsonb), atualizado_em = now(),
+                             obra_id = COALESCE(:o, obra_id)
+                       WHERE id = :s"""),
+              {"d": json.dumps(depois, ensure_ascii=False, default=str),
+               "o": int(nova_obra) if str(nova_obra or "").isdigit() else None,
+               "s": solicitacao_id})
+    _evento(s, solicitacao_id, "CORRIGIDO_PELO_DP", {"mudou": mudou}, usuario)
+    # O pré-cadastro acompanha: é a mesma pessoa, e o DP corrigiu olhando o
+    # documento. A readmissão aplica as correções no atendimento.
+    if (antes.get("pre_cadastro") and p.get("colaborador_id")):
+        c = s.get(Colaborador, int(p["colaborador_id"]))
+        alterados = {m["campo"]: depois.get(m["campo"], "") for m in mudou}
+        svc_pessoas.salvar(s, {**para_o_cadastro(alterados),
+                               "cpf": c.cpf, "nome": depois.get("nome") or c.nome},
+                           usuario)
+    s.flush()
+    return ler(s, solicitacao_id)
+
+
 def papeis_do_pedido(s: Session, solicitacao_id: int, numero: str,
                      colaborador_id: Optional[int]) -> list[dict[str, Any]]:
     """Os arquivos que vieram com este pedido — onde quer que estejam agora
@@ -2179,10 +2346,19 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
     # ENTRA daqui em diante — admissão e readmissão —; ele decidiu não mexer
     # nas matrículas de quem já está cadastrado. O DP ainda pode digitar outra
     # no atendimento: o que ele digitar vence.
+    # ⚑ E NA READMISSÃO (19/11/2026, ele): *"se for uma readmissão e o campo
+    # estiver em branco, bota o CPF. Se (…) o campo já existia, deixa o que já
+    # estava."*
     if executa == "criar_cadastro":
         from app.apps.erp.core.cadastros.validadores import somente_digitos
         cpf_do_pedido = somente_digitos(pedido.get("cpf") or p.get("pessoa_cpf") or "")
-        if cpf_do_pedido and not str(pedido.get("matricula") or "").strip():
+        ja_tinha = ""
+        if p.get("colaborador_id"):
+            ja_tinha = str(s.execute(text(
+                "SELECT matricula FROM colaboradores WHERE id = :i"),
+                {"i": p["colaborador_id"]}).scalar() or "").strip()
+        if cpf_do_pedido and not ja_tinha \
+                and not str(pedido.get("matricula") or "").strip():
             pedido["matricula"] = cpf_do_pedido
     if executa and p["colaborador_id"]:
         alvo = p["colaborador_id"]
@@ -2457,6 +2633,7 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         # consegue visualizar ela."*
         "papeis": papeis_do_pedido(s, d["id"], d["numero"], d["colaborador_id"]),
         "pre_cadastro": bool((d["dados"] or {}).get("pre_cadastro")),
+        "dados_legiveis": dados_legiveis(s, d["tipo"], d["dados"] or {}),
         # Atender/recusar/cancelar: só antes de a saída ser registrada.
         "a_atender": d["situacao"] in A_ATENDER,
         "processo": (svc_processo.passos(s, {**d, "dados": d["dados"] or {}})

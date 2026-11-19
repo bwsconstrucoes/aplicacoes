@@ -12380,7 +12380,7 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             # ⚑ OS PASSOS DO DESLIGAMENTO (19/11/2026) são do DP, como atender:
             # marcar o passo, confirmar a continuidade e encerrar o processo.
             if acao in ("atender", "recusar", "item", "passo", "continuidade",
-                        "encerrar", "assinar", "assinada") \
+                        "encerrar", "assinar", "assinada", "corrigir") \
                     and not pode(usuario, "atender_dp"):
                 return jsonify({"ok": False, "erro":
                                 "Só o DP atende solicitação. Você pode abrir e "
@@ -12394,6 +12394,10 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             elif acao == "item":
                 p = svc.marcar_item(s, solicitacao_id, int(d.get("item_id") or 0),
                                     bool(d.get("feito")), usuario)
+            elif acao == "corrigir":
+                # ⚑ 19/11/2026: o DP corrige o pedido (e o pré-cadastro) na
+                # própria tela do atendimento, olhando o documento.
+                p = svc.corrigir(s, solicitacao_id, d, usuario)
             elif acao in ("passo", "continuidade", "encerrar", "assinar",
                           "assinada"):
                 from app.apps.erp.core import desligamento_processo as svc_proc
