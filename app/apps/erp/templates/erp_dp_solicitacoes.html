@@ -93,6 +93,8 @@
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
   <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{# A janela que mostra o documento (19/11/2026) — abre por cima do pedido. #}
+<dialog id="dlg-papel" style="width:94vw; max-width:1100px; height:90vh; padding:0; overflow:hidden"></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -729,13 +731,7 @@ async function montarPedidoDeRescisao(p){
 // A janela abre POR CIMA do pedido; fechar volta exatamente onde estava.
 // ===========================================================================
 function verPapel(anexoId, nome){
-  let dlg = els("dlg-papel");
-  if (!dlg) {
-    dlg = document.createElement("dialog");
-    dlg.id = "dlg-papel";
-    dlg.style.cssText = "width:94vw; max-width:1100px; height:90vh; padding:0; overflow:hidden";
-    document.body.appendChild(dlg);
-  }
+  const dlg = els("dlg-papel");
   const url = `/erp/anexo/${encodeURIComponent(anexoId)}`;
   dlg.innerHTML = `<div style="display:flex; flex-direction:column; height:100%">
     <div class="dlg-topo" style="display:flex; gap:8px; align-items:center; padding:10px 14px">
@@ -747,7 +743,7 @@ function verPapel(anexoId, nome){
   </div>`;
   els("dlg-papel-fechar").addEventListener("click", () => dlg.close());
   dlg.addEventListener("close", () => { dlg.innerHTML = ""; }, {once: true});
-  dlg.showModal();
+  els("dlg-papel").showModal();
 }
 
 // ===========================================================================
