@@ -2150,6 +2150,15 @@ def _formatar(campo: str, valor: Any, s: Session) -> str:
         nome = s.execute(text(f"SELECT {coluna} FROM {tabela} WHERE id = :i"),
                          {"i": int(so)}).scalar()
         return str(nome or texto_)
+    # ⚑ DINHEIRO NO PADRÃO DO BRASIL (19/11/2026): R$ 1.234,56.
+    if campo in CAMPOS_DE_DINHEIRO:
+        try:
+            v = _dec(texto_, campo)
+        except ErroValidacao:
+            v = None
+        if v is not None:
+            inteiro, cent = f"{v:,.2f}".split(".")
+            return "R$ " + inteiro.replace(",", ".") + "," + cent
     if campo in ("cpf", "pix_chave") and len(so) == 11 and len(texto_) <= 14:
         return f"{so[:3]}.{so[3:6]}.{so[6:9]}-{so[9:]}"
     if campo in ("cnpj_admissao", "cnpj_pj") and len(so) == 14:
@@ -2185,6 +2194,9 @@ def _formatar(campo: str, valor: Any, s: Session) -> str:
     return texto_
 
 
+CAMPOS_DE_DINHEIRO = {"valor_diaria", "valor_mes", "aux_alimentacao",
+                      "aux_transporte", "salario", "valor_total", "valor",
+                      "valor_parcela", "valor_gratificacao"}
 SIM_NAO_DOS_CAMPOS = {"continua_prestador", "salario_familia", "conceder",
                       "descontar_vt", "dependente_ir"}
 
@@ -2574,9 +2586,11 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
     linha = s.execute(text("""
         SELECT d.*, c.nome AS pessoa, c.cpf AS pessoa_cpf, c.vinculo AS pessoa_vinculo,
                o.codigo AS obra,
-               u.nome AS solicitante, a.nome AS atendente
+               COALESCE(u.nome, sc.nome, d.requerente) AS solicitante,
+               a.nome AS atendente
           FROM dp_solicitacoes d
           LEFT JOIN colaboradores c ON c.id = d.colaborador_id
+          LEFT JOIN colaboradores sc ON sc.id = d.solicitante_colaborador_id
           LEFT JOIN obras o ON o.id = d.obra_id
           LEFT JOIN usuarios u ON u.id = d.solicitante_id
           LEFT JOIN usuarios a ON a.id = d.atendido_por
@@ -2688,13 +2702,22 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         SELECT d.id, d.numero, d.tipo, d.situacao, d.colaborador_id, d.obra_id,
                d.data_referencia, d.valor, d.criado_em, d.atendido_em,
                COALESCE(c.nome, d.nome_informado) AS pessoa,
-               o.codigo AS obra, u.nome AS solicitante,
+               COALESCE(c.cpf, d.cpf_informado) AS pessoa_cpf,
+               COALESCE(gc.nome, gp.nome) AS cargo,
+               o.codigo AS obra,
+               -- ⚑ QUEM PEDIU (19/11/2026): pelo portal o autor é o
+               -- COLABORADOR (o usuário ficava vazio), e a coluna saía em
+               -- branco para quem olhava — inclusive o DP.
+               COALESCE(u.nome, sc.nome, d.requerente) AS solicitante,
                (SELECT count(*) FROM dp_solicitacao_itens i
                  WHERE i.solicitacao_id = d.id) AS total_itens,
                (SELECT count(*) FROM dp_solicitacao_itens i
                  WHERE i.solicitacao_id = d.id AND i.feito) AS feitos
           FROM dp_solicitacoes d
           LEFT JOIN colaboradores c ON c.id = d.colaborador_id
+          LEFT JOIN colaboradores sc ON sc.id = d.solicitante_colaborador_id
+          LEFT JOIN cargos gc ON gc.id = c.cargo_id
+          LEFT JOIN cargos gp ON gp.id::text = (d.dados ->> 'cargo_pleiteado_id')
           LEFT JOIN obras o ON o.id = d.obra_id
           LEFT JOIN usuarios u ON u.id = d.solicitante_id
          WHERE {' AND '.join(onde)}
@@ -2707,6 +2730,8 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         "situacao": l["situacao"],
         "situacao_rotulo": SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
         "pessoa": l["pessoa"] or "", "obra": l["obra"] or "",
+        "pessoa_cpf": _formatar("cpf", l["pessoa_cpf"], s) if l["pessoa_cpf"] else "",
+        "cargo": l["cargo"] or "",
         "solicitante": l["solicitante"] or "",
         "data_referencia": l["data_referencia"].isoformat() if l["data_referencia"] else None,
         "valor": float(l["valor"]) if l["valor"] is not None else None,

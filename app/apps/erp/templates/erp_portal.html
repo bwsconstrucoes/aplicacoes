@@ -1579,6 +1579,31 @@ function formatarTelefone(v){
   if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
+// ⚑ DINHEIRO NO PADRÃO DO BRASIL enquanto se digita (19/11/2026). Ele: *"os
+// campos que remetem a valor (…) exibir vírgula e pontuação de milhar conforme
+// padrão português Brasil."* Digita-se só os números: 123456 → 1.234,56. O
+// servidor já lê vírgula e ponto (`_dec`).
+function formatarDinheiro(v){
+  const d = String(v || "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (!d) return "";
+  const cent = d.padStart(3, "0");
+  const inteiro = cent.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return inteiro + "," + cent.slice(-2);
+}
+function ligarMascaraDeDinheiro(){
+  document.querySelectorAll("#p-campos input").forEach(campo => {
+    const nome = campo.name || (campo.id || "").replace(/^p-/, "");
+    if (!/^(valor|valor_|salario|aux_alimentacao|aux_transporte)/.test(nome)
+        || campo.dataset.dinheiro) return;
+    campo.dataset.dinheiro = "1";
+    campo.setAttribute("inputmode", "numeric");
+    campo.setAttribute("placeholder", "0,00");
+    campo.addEventListener("input", () => {
+      campo.value = formatarDinheiro(campo.value);
+    });
+  });
+}
+
 function ligarMascaraDeTelefone(){
   const campo = els("p-telefone");
   if (!campo || campo.dataset.mascara) return;
@@ -1592,6 +1617,7 @@ function ligarMascaraDeTelefone(){
 
 function ligarPapeis(t){
   ligarMascaraDeTelefone();
+  ligarMascaraDeDinheiro();
   ligarAreaSolta(t);
   ligarReadmissao(t);
   pintarPapeis(t);
@@ -1677,7 +1703,9 @@ function pintarMeus(){
     <div class="linha">
       <div class="cresce">
         <b>${esc(p.tipo)}</b> <small>${esc(p.numero)}</small><br>
-        <small>${esc(p.pessoa || "")} · ${dataBR(p.quando)}</small>
+        <small>${esc(p.pessoa || "—")}${p.cpf ? " · CPF " + esc(p.cpf) : ""}</small><br>
+        <small>${[p.obra ? "obra " + p.obra : "", p.cargo || "", dataBR(p.quando)]
+          .filter(Boolean).map(esc).join(" · ")}</small>
         ${p.resposta ? `<br><small><b>DP:</b> ${esc(p.resposta)}</small>` : ""}
       </div>
       <span class="etiqueta ${p.situacao === "ATENDIDA" ? "verde"

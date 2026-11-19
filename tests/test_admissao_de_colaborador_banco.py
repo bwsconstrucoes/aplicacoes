@@ -291,3 +291,19 @@ def test_readmissao_mantem_a_matricula_que_ja_existia(mundo):
     assert c.matricula == "M-ANTIGA"
     assert c.etapa == "CONCLUIDO", "prestador readmitido volta direto a Concluído"
     assert c.demissao is None, "a saída anterior vai para o histórico"
+
+
+@pytestmark_banco
+def test_a_fila_do_dp_individualiza_a_pessoa_e_diz_quem_pediu(mundo, monkeypatch):
+    """Ele: *"o ideal é que tenha o nome, a obra, CPF e o cargo"* — e a coluna
+    de quem pediu vinha vazia para o DP."""
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    fila = svc.listar(s)["solicitacoes"]
+    meu = next(x for x in fila if x["id"] == p["id"])
+    assert meu["pessoa"] == "GENTE NOVA"
+    assert meu["pessoa_cpf"] == "390.533.447-05"
+    assert meu["cargo"] == "Servente adm"
+    assert meu["solicitante"] == "obra-adm"
+    leg = {x["campo"]: x["valor"] for x in p["dados_legiveis"]}
+    assert leg["valor_diaria"] == "R$ 120,00"

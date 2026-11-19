@@ -98,6 +98,19 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 19/11/2026 (noite, 3) — Dinheiro no padrão do Brasil; a pessoa do pedido individualizada; "quem pediu"
+
+- **Valor com vírgula e milhar** enquanto se digita no portal (123456 →
+  1.234,56) e "R$ 1.234,56" na tela do atendimento.
+- **"O que você já pediu" (portal) e a fila do DP mostram nome, CPF, obra e
+  cargo.** ⚠️ O nome vinha só do cadastro: a admissão sem cadastro ligado
+  ficava em branco, mesmo com o nome no pedido.
+- **"Pediu" virou "Quem pediu"** e ⚠️ vinha VAZIO para o DP em pedido aberto
+  pelo portal: o autor era guardado como colaborador e a coluna lia só o
+  usuário. Agora lê os dois, e o portal grava também o usuário. Pedidos
+  antigos de quem não tem ficha de colaborador continuam sem autor (não havia
+  o dado para recuperar).
+
 ### 19/11/2026 (noite, 2) — Readmissão enxuta; a tela do atendimento legível e editável
 
 Testando a readmissão, ele foi item por item:

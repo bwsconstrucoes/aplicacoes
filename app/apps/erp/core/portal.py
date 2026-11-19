@@ -591,9 +591,10 @@ def abrir(s: Session, dados: dict[str, Any],
     # coluna, o pedido do portal ficaria sem autor — e autor é o que permite a
     # pessoa acompanhar o que ela mesma abriu.
     s.execute(text("""UPDATE dp_solicitacoes
-                         SET solicitante_colaborador_id = :c
+                         SET solicitante_colaborador_id = :c,
+                             solicitante_id = COALESCE(solicitante_id, :u)
                        WHERE id = :s"""),
-              {"c": eu["colaborador_id"], "s": r["id"]})
+              {"c": eu["colaborador_id"], "u": eu["usuario_id"], "s": r["id"]})
     # Quem entra no portal sem ficha de colaborador (gente de escritório) não
     # tem onde pendurar o evento — e o evento sem dono derrubava o pedido
     # inteiro (achado em 19/11/2026, abrindo a admissão como administrador).
@@ -611,14 +612,27 @@ def abrir(s: Session, dados: dict[str, Any],
 def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """O que EU abri, e em que pé está. Sem salário, sem dado de ninguém."""
     eu = quem_esta(s, usuario)
+    # ⚑ A PESSOA DO PEDIDO, INDIVIDUALIZADA (19/11/2026). Ele: *"uma admissão
+    # de colaborador que não existia no sistema ficou sem nome (…) Para
+    # individualizar a pessoa, o ideal é que tenha o nome, a obra, CPF e o
+    # cargo."* O nome vinha só do cadastro; pedido sem cadastro ligado ficava
+    # em branco, mesmo com o nome escrito no pedido.
+    # E "o que EU abri" passa a valer também para quem entra sem ficha de
+    # colaborador (gente de escritório): pelo usuário.
     linhas = s.execute(text("""
         SELECT sol.id, sol.numero, sol.tipo, sol.situacao, sol.criado_em,
-               sol.resposta, c.nome AS pessoa
+               sol.resposta, COALESCE(c.nome, sol.nome_informado) AS pessoa,
+               COALESCE(c.cpf, sol.cpf_informado) AS cpf,
+               o.codigo AS obra, COALESCE(gc.nome, gp.nome) AS cargo
           FROM dp_solicitacoes sol
           LEFT JOIN colaboradores c ON c.id = sol.colaborador_id
-         WHERE sol.solicitante_colaborador_id = :eu
+          LEFT JOIN obras o ON o.id = sol.obra_id
+          LEFT JOIN cargos gc ON gc.id = c.cargo_id
+          LEFT JOIN cargos gp ON gp.id::text = (sol.dados ->> 'cargo_pleiteado_id')
+         WHERE (sol.solicitante_colaborador_id = :eu
+                OR (:u IS NOT NULL AND sol.solicitante_id = :u))
          ORDER BY sol.id DESC LIMIT 100"""),
-        {"eu": eu["colaborador_id"]}).mappings().all()
+        {"eu": eu["colaborador_id"], "u": eu["usuario_id"]}).mappings().all()
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     return [{
         "numero": l["numero"],
@@ -628,6 +642,8 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
         # MESMO que o DP vê na tela dele — a mesma palavra nos dois lados.
         "situacao": svc_sp.SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
         "pessoa": l["pessoa"] or "",
+        "cpf": _cpf_inteiro(l["cpf"]) if l["cpf"] else "",
+        "obra": l["obra"] or "", "cargo": l["cargo"] or "",
         "quando": str(l["criado_em"]), "resposta": l["resposta"] or "",
     } for l in linhas]
 

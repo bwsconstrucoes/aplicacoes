@@ -84,8 +84,8 @@
     <span id="exportar" style="display:flex; gap:6px"></span>
   </div>
   <div class="tabela-rolagem">
-  <table><thead><tr><th>Nº</th><th>Tipo</th><th>Pessoa</th><th>Obra</th>
-    <th>Pediu</th><th>Quando</th><th>Parada</th><th>Checklist</th>
+  <table><thead><tr><th>Nº</th><th>Tipo</th><th>Pessoa</th><th>CPF</th><th>Obra</th>
+    <th>Quem pediu</th><th>Quando</th><th>Parada</th><th>Checklist</th>
     <th>Situação</th></tr></thead>
     <tbody id="corpo"></tbody></table>
 </div><div class="vazio oculto" id="vazio"></div></div>
@@ -376,9 +376,10 @@ function desenhar(){
   els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
     <td class="dados">${escapar(x.numero)}</td>
     <td><b>${escapar(x.tipo_rotulo)}</b></td>
-    <td>${escapar(x.pessoa || "—")}</td>
+    <td>${escapar(x.pessoa || "—")}${x.cargo ? `<br><small class="desc">${escapar(x.cargo)}</small>` : ""}</td>
+    <td class="dados" style="white-space:nowrap">${escapar(x.pessoa_cpf || "—")}</td>
     <td class="dados">${escapar(x.obra || "—")}</td>
-    <td><small>${escapar(x.solicitante)}</small></td>
+    <td><small>${escapar(x.solicitante || "—")}</small></td>
     <td class="dados">${dataBR(x.criado_em.slice(0, 10))}</td>
     <td class="dados">${["ABERTA","EM_ANALISE"].includes(x.situacao)
       ? (diasAberta(x) > 3 ? `<b class="aviso-texto">${diasAberta(x)} dias</b>`
@@ -450,7 +451,7 @@ function pintarPedido(){
       <div class="kpi estatico"><div class="kpi-rotulo">Pessoa</div>
         <div class="kpi-valor" style="font-size:15px">${escapar(p.pessoa || "—")}</div>
         <div class="kpi-sub">${p.pessoa_cpf ? documento(p.pessoa_cpf) : ""}</div></div>
-      <div class="kpi estatico"><div class="kpi-rotulo">Pediu</div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Quem pediu</div>
         <div class="kpi-valor" style="font-size:15px">${escapar(p.solicitante || "—")}</div>
         <div class="kpi-sub">${p.obra ? "obra " + escapar(p.obra) : ""}</div></div>
     </div>
