@@ -60,7 +60,9 @@ def test_a_leitura_so_aceita_dado_com_forma_de_dado():
     assert c["cpf"] == CPF_NOVO and c["data_nascimento"] == "1990-03-15"
     assert "rg_emissao" not in c and "rg_uf" not in c
     assert c["uf"] == "CE" and c["cep"] == "60000000"
-    assert c["rg"] == "2001234567" and c["nome_mae"] == "Maria Da Silva"
+    assert c["rg"] == "2001234567"
+    # caixa alta e sem acento (decisão dele, 19/11/2026)
+    assert c["nome_mae"] == "MARIA DA SILVA"
 
 
 def test_a_busca_de_pessoa_nao_traz_o_dado_pessoal_so_a_marca():
@@ -158,7 +160,7 @@ def test_a_matricula_e_o_cpf_e_os_papeis_passam_para_a_pessoa(mundo):
     c = s.get(svc_pessoas.Colaborador, r["colaborador_id"])
     assert c.matricula == CPF_NOVO
     assert c.rg == "2001234567" and c.rg_orgao == "SSP" and c.rg_uf == "CE"
-    assert c.nome_mae == "Maria Da Silva"
+    assert c.nome_mae == "MARIA DA SILVA", "caixa alta, sem acento"
     papeis = s.execute(text("""
         SELECT tipo_codigo FROM documentos WHERE colaborador_id = :c
          ORDER BY id"""), {"c": c.id}).scalars().all()
@@ -219,3 +221,29 @@ def test_a_busca_acha_o_desligado_so_quando_pedida_e_sem_o_dado_pessoal(mundo,
     cadastro = achados[0]["cadastro"]
     assert cadastro.get("nome_mae") == svc.MARCA_TEM, "só a marca, nunca o valor"
     assert "Ana" not in str(achados[0])
+
+
+@pytestmark_banco
+def test_o_que_a_leitura_achou_alem_do_formulario_chega_a_ficha(mundo):
+    """Ele: *"outros dados que a leitura da IA conseguir coletar, mesmo que não
+    sejam obrigatórios, inclusive o PIS, nome do pai (…) pode preencher."*"""
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo, telefone="(85) 98888-1111",
+                               lidos_do_documento={
+                                   "nome_pai": "José Ávila", "sexo": "M",
+                                   "estado_civil": "casado",
+                                   "naturalidade": "Crato",
+                                   "naturalidade_uf": "ce"}),
+                  mundo["obra_user"])
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    assert c.nome_pai == "JOSE AVILA" and c.sexo == "M"
+    assert c.estado_civil == "CASADO" and c.naturalidade_uf == "CE"
+    assert c.telefone == "85988881111", "o número, sem a máscara da tela"
+
+
+def test_prestador_esconde_ctps_e_pis():
+    exige = svc.exigencias("CADASTRO",
+                           {"tipo_documentacao": "Prestador de Serviço"})["campos"]
+    assert "num_ctps" not in exige and "num_pis" not in exige
+    ocultos = svc.TIPOS["CADASTRO"]["ocultos_se"]["tipo_documentacao"]["PRESTADOR"]
+    assert "num_ctps" in ocultos and "num_pis" in ocultos

@@ -978,6 +978,9 @@ let ARQUIVOS = [];        // [{arquivo, nome, tipos, documento, aviso, lendo}]
 // ⚑ A READMISSÃO (19/11/2026): a pessoa que já teve cadastro. `tem` são os
 // NOMES dos campos que o cadastro dela já tem — os valores não descem.
 let READMITIDO = null;    // {id, nome, tem: [campos]}
+// Tudo o que a leitura achou — inclusive o que não tem campo na tela (pai,
+// sexo, estado civil, naturalidade, série da CTPS). Vai junto no pedido.
+let LIDOS = {};
 
 // O papel principal de um arquivo: o primeiro que a leitura reconheceu e que
 // não é "outro". É com ele que o arquivo é guardado no cadastro.
@@ -995,7 +998,7 @@ function recalcularPapeis(){
 }
 
 function blocoDosPapeis(t){
-  PAPEIS = {}; ARQUIVOS = []; READMITIDO = null;
+  PAPEIS = {}; ARQUIVOS = []; READMITIDO = null; LIDOS = {};
   if (!(t.documentos || []).length) return "";
   {# ⚑ "JÁ TRABALHOU CONOSCO?" vem ANTES dos documentos (19/11/2026). Ele:
      *"se não tiver documento, eu queria poder pesquisar o nome da pessoa (…)
@@ -1163,6 +1166,9 @@ async function receberArquivos(t, novos){
       // O que os documentos disseram entra nos campos VAZIOS — nunca por
       // cima do que a pessoa já escreveu. E fica marcado como LIDO, para ela
       // conferir.
+      Object.assign(LIDOS, d.campos || {});
+      // ⚑ PREENCHE ATÉ O CAMPO OCULTO (19/11/2026): o PIS e a CTPS de quem é
+      // prestador ficam escondidos, mas o que a leitura achou é guardado.
       Object.entries(d.campos || {}).forEach(([k, v]) => {
         const alvo = els("p-" + k);
         if (alvo && !alvo.value && v) {
@@ -1229,6 +1235,7 @@ function escolherQuemVoltou(t, p){
      cadastro dele já existia em sistema (…) e a gente vai dar prosseguimento
      à admissão (…) e os dados novos vão estar atualizados."* #}
   caixa.innerHTML = `<b>${esc(p.nome)}</b>
+    <small>CPF <b>${esc(p.cpf || "—")}</b></small>
     <small>Já teve cadastro conosco e está desligado. A admissão segue como
       <b>readmissão</b>: o histórico dele fica guardado, e o que você mandar
       agora (documento ou dado) atualiza o cadastro.</small>
@@ -1560,7 +1567,31 @@ function conferirOQueFalta(t){
   }
 }
 
+// ⚑ O TELEFONE NO PADRÃO DO BRASIL enquanto se digita (19/11/2026). Ele: *"o
+// campo telefone, eu gostaria que ele já tivesse no padrão convencional de DDD
+// e com o hífen (…) Você digita só a numeração, mas ele não se atualiza."* O
+// portal é página solta — não herda a máscara do ERP — então ela mora aqui.
+// O servidor guarda só os dígitos, como sempre.
+function formatarTelefone(v){
+  const d = String(v || "").replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d ? "(" + d : "";
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+function ligarMascaraDeTelefone(){
+  const campo = els("p-telefone");
+  if (!campo || campo.dataset.mascara) return;
+  campo.dataset.mascara = "1";
+  campo.setAttribute("inputmode", "tel");
+  campo.setAttribute("placeholder", "(85) 98888-7777");
+  campo.addEventListener("input", () => {
+    campo.value = formatarTelefone(campo.value);
+  });
+}
+
 function ligarPapeis(t){
+  ligarMascaraDeTelefone();
   ligarAreaSolta(t);
   ligarReadmissao(t);
   pintarPapeis(t);
@@ -1607,6 +1638,7 @@ async function enviarPedido(){
   // mas quem mexe no navegador contorna a tela.
   corpo.documentos = Object.keys(PAPEIS);
   if (READMITIDO) corpo.colaborador_id = READMITIDO.id;
+  if (Object.keys(LIDOS).length) corpo.lidos_do_documento = LIDOS;
   // ⚑ Vários de uma vez (hoje só o dependente). O servidor confere cada um e
   // diz QUAL está incompleto — "falta a data de nascimento" não ajudaria
   // ninguém com três na tela.

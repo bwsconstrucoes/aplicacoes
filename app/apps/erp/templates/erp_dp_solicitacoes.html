@@ -421,6 +421,17 @@ const ROTULO_CAMPO = {
   primeira_competencia: "Primeira competência", qual_cartao: "Qual cartão",
   data_inicio: "Data de início", qual_documentacao: "Qual documentação",
   descricao: "Descrição",
+  // os da admissão (19/11/2026)
+  nome_mae: "Nome da mãe", nome_pai: "Nome do pai", rg: "Nº do RG",
+  rg_emissao: "Emissão do RG", rg_orgao: "Órgão emissor", rg_uf: "Estado do RG",
+  complemento: "Complemento", cargo_pleiteado_id: "Cargo pleiteado (nº)",
+  empresa_id: "Empresa de registro (nº)", cnpj_admissao: "CNPJ de registro",
+  tipo_documentacao: "Vínculo", num_ctps: "Nº da CTPS", num_pis: "Nº do PIS",
+  pagamento: "Pagamento", valor_diaria: "Valor da diária",
+  sexo: "Sexo", estado_civil: "Estado civil", naturalidade: "Naturalidade",
+  naturalidade_uf: "Estado de nascimento", ctps_serie: "Série da CTPS",
+  ctps_uf: "Estado da CTPS", ctps_emissao: "Emissão da CTPS",
+  pre_cadastro: "Pré-cadastro criado", readmissao: "Readmissão",
 };
 
 function pintarPedido(){
@@ -448,6 +459,23 @@ function pintarPedido(){
       <b>Cancelado:</b> ${escapar(p.motivo_cancelamento)}</div>` : ""}
     ${p.aviso ? `<div class="aviso alerta" style="margin-top:10px">${escapar(p.aviso)}</div>` : ""}
     ${blocoDoProcesso(p)}
+    {# ⚑ OS DOCUMENTOS E O CADASTRO, À VISTA (19/11/2026). Ele: *"conferir se
+       a documentação veio completa, mas cadê a documentação? A gente não
+       consegue visualizar ela (…) não existe um cadastro ou pré-cadastro
+       dessa pessoa já."* #}
+    ${p.colaborador_id ? `<div class="cartao-dica" style="margin-top:10px">
+      ${p.pre_cadastro ? "O <b>pré-cadastro</b> desta pessoa já existe, na etapa <b>Inicial</b>."
+                       : "Esta pessoa tem cadastro."}
+      <a class="link-btn" href="/erp/colaboradores?editar=${p.colaborador_id}"
+         target="_blank">abrir o cadastro</a></div>` : ""}
+    ${(p.papeis || []).length || ["CADASTRO", "ADMISSAO_PRESTADOR"].includes(p.tipo)
+      ? `<h4>Documentos enviados (${(p.papeis || []).length})</h4>
+         <table><tbody>${(p.papeis || []).map(d => `<tr>
+           <td>${escapar(d.tipo)}</td>
+           <td><a class="link-btn" href="/erp/anexo/${d.anexo_id}" target="_blank">${escapar(d.nome || "abrir")}</a></td>
+         </tr>`).join("") || `<tr><td class="cartao-dica">Nenhum arquivo veio com
+           este pedido${p.readmissao ? " — é readmissão, os papéis antigos estão no cadastro" : ""}.</td></tr>`}
+         </tbody></table>` : ""}
     <h4>O que foi pedido</h4>
     <table><tbody>${linhas || `<tr><td colspan="2" class="cartao-dica">Sem detalhe.</td></tr>`}</tbody></table>
     ${(p.itens || []).length ? `<h4>Checklist do atendimento (${p.feitos}/${p.total_itens})</h4>
@@ -720,6 +748,9 @@ async function atender(){
     CADASTRO: ABERTA.readmissao
       ? "READMITE a pessoa: o cadastro dela volta a ativo, com vínculo novo "
         + "(o anterior fica no histórico)"
+      : ABERTA.pre_cadastro
+      ? "completa o pré-cadastro (que já está na etapa Inicial) com o que é do "
+        + "DP — matrícula, convenção, cargo e salário — e fecha o pedido"
       : "CRIA o cadastro da pessoa no ERP",
   }[ABERTA.tipo];
   // ⚑ OS CAMPOS DO DP ENTRAM AQUI, e não no formulário de quem pede.

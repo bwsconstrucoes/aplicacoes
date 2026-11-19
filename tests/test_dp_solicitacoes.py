@@ -275,14 +275,33 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
         "valor_mes": "3.300,00",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01", **DADOS_DA_PESSOA}, mundo["encarregado"])
-    assert p["colaborador_id"] is None          # a pessoa ainda não existe
+    # ⚑ DESDE 19/11/2026 A PESSOA NASCE NO PEDIDO, como PRÉ-CADASTRO na etapa
+    # Inicial. Ele: *"eu pensei que a pessoa já apareceria na fase inicial (…)
+    # Se eu atender (…) ele gera o cadastro inicial? Não tem sentido."*
+    assert p["colaborador_id"] is not None and p["pre_cadastro"]
+    f = svc_pessoas.ficha(mundo["s"], p["colaborador_id"])
+    # caixa alta e sem acento (19/11/2026); vínculo, cargo e matrícula = CPF
+    assert f["nome"] == "MARIA NOVA DE TESTE" and f["cpf"] == CPF_B
+    assert f["etapa"] == "CADASTRO_INICIAL"
+    assert f["vinculo"] == "PRESTADOR", "o vínculo do pedido chega à ficha"
+    assert f["matricula"] == CPF_B
 
-    r = svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    # atender completa o que é do DP, sem criar segunda ficha
+    r = svc.atender(mundo["s"], p["id"], {"dados": {"matricula": "M-77"}},
+                    mundo["dp"])
     mundo["s"].flush()
+    assert r["colaborador_id"] == p["colaborador_id"]
+    assert svc_pessoas.ficha(mundo["s"], r["colaborador_id"])["matricula"] == "M-77"
 
-    assert r["colaborador_id"] is not None
-    f = svc_pessoas.ficha(mundo["s"], r["colaborador_id"])
-    assert f["nome"] == "Maria Nova De Teste" and f["cpf"] == CPF_B
+
+def test_admissao_recusada_leva_o_pre_cadastro_para_cancelado(mundo):
+    p = svc.abrir(mundo["s"], _cadastro(mundo, documentos=[
+        "DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"]),
+        mundo["encarregado"])
+    svc.recusar(mundo["s"], p["id"], {"resposta": "documento ilegível"},
+                mundo["dp"])
+    mundo["s"].flush()
+    assert svc_pessoas.ficha(mundo["s"], p["colaborador_id"])["etapa"] == "CANCELADO"
 
 
 def test_atender_dependente_CADASTRA_o_dependente(mundo):

@@ -934,6 +934,11 @@ def _sem_acento(texto: Any) -> str:
     return "".join(c for c in cru if _u.category(c) != "Mn")
 
 
+def _cpf_inteiro(cpf: Any) -> str:
+    d = "".join(c for c in str(cpf or "") if c.isdigit())
+    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}" if len(d) == 11 else d
+
+
 def _cpf_do_fim(cpf: Any) -> str:
     """"…901" — o bastante para conferir que é a pessoa certa, e só isso.
 
@@ -1024,7 +1029,12 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
          "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
              "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
-             "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"]),
+             "obra_id": l["obra_id"],
+             # ⚑ NA READMISSÃO, O CPF INTEIRO (19/11/2026). Ele: *"o que
+             # individualiza a pessoa é o CPF. Tem que aparecer o CPF também
+             # para a gente saber se é a mesma pessoa."* Nome repete; CPF não.
+             "cpf": (_cpf_inteiro(l["cpf"]) if desligados
+                     else _cpf_do_fim(l["cpf"])),
              # Só o que ESTÁ preenchido: campo vazio aqui viraria "já no
              # cadastro" na tela, e a pessoa não preencheria o que falta.
              "cadastro": {c: (svc_sp.MARCA_TEM if c in svc_sp.SO_A_MARCA

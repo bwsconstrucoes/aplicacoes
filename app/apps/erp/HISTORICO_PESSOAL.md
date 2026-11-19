@@ -98,6 +98,42 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 19/11/2026 (noite) — A admissão nasce com PRÉ-CADASTRO; documentos à vista; caixa alta
+
+Ele testou a admissão publicada e cobrou: *"eu pensei que a pessoa já
+apareceria na fase inicial (…) Se eu atender (…) gera o cadastro inicial? Não
+tem sentido. (…) conferir se a documentação veio completa, mas cadê a
+documentação? (…) não existe um cadastro ou pré-cadastro dessa pessoa já."*
+
+- **A pessoa nova nasce no cadastro NA HORA DO PEDIDO**, etapa **Inicial**, com
+  os dados e os papéis. Atender passa a ser completar o que é do DP
+  (matrícula, convenção, cargo, salário); recusado ou cancelado, o
+  pré-cadastro vai para **Cancelado**. A readmissão continua como era: volta à
+  ativa só quando o DP atende.
+- **A tela do pedido mostra os documentos enviados** (com link para abrir) e o
+  link para o cadastro.
+- ⚠️ **Defeito achado:** o atendimento passava o pedido ao cadastro com quatro
+  nomes diferentes — vínculo, cargo, CTPS e PIS se perdiam (o prestador nascia
+  CTPS e sem cargo). `para_o_cadastro` traduz.
+- **Caixa alta e sem acento** em nome, mãe, pai, órgão, endereço e
+  naturalidade — lido ou digitado. Ele: *"tudo caixa alta, que na leitura da
+  IA fosse removido a acentuação."*
+- **Busca de quem volta mostra o CPF inteiro.** Ele: *"o que individualiza a
+  pessoa é o CPF."* (As outras buscas do portal continuam com o fim do CPF.)
+- **Telefone com máscara** (85) 98888-7777 no portal; o banco guarda só os
+  números.
+- **Prestador esconde CTPS e PIS**; o que a leitura achar continua sendo
+  guardado.
+- **A leitura grava o que achar além do formulário** — pai, sexo, estado civil,
+  naturalidade, série/UF/emissão da CTPS, PIS (`EXTRAS_DA_LEITURA`). Órgão
+  emissor fora da lista do cadastro não é gravado (fica para escolher).
+- **Um PIS inválido não trava a admissão**: fica no pedido e não entra no
+  cadastro.
+
+⚠️ **O pedido que ele já abriu antes desta versão** não tem pré-cadastro: ao
+atender, o cadastro nasce do jeito antigo (agora com o vínculo e o cargo
+certos), e os papéis passam para a pessoa.
+
 ### 19/11/2026 (noite) — "Não recebe" esconde o valor; o PIS deixa de ser obrigatório
 
 - *"Quando coloca ajuda com alimentação, ajuda com transporte, não recebe,

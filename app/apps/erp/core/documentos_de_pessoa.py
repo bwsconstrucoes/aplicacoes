@@ -211,7 +211,11 @@ Devolva SOMENTE um JSON:
     "rg_uf": "sigla do estado que emitiu o RG",
     "cep": "só dígitos", "logradouro": "rua/avenida", "numero_endereco": "",
     "complemento": "", "bairro": "", "municipio": "", "uf": "sigla",
-    "num_ctps": "", "num_pis": "só dígitos"
+    "num_ctps": "", "num_pis": "só dígitos",
+    "nome_pai": "", "sexo": "M ou F", "estado_civil": "SOLTEIRO, CASADO,
+    DIVORCIADO, VIUVO ou UNIAO_ESTAVEL", "naturalidade": "cidade onde nasceu",
+    "naturalidade_uf": "sigla", "ctps_serie": "", "ctps_uf": "sigla",
+    "ctps_emissao": "AAAA-MM-DD"
   }}
 }}
 
@@ -237,20 +241,60 @@ def _uf(v: Any) -> str:
     return t if len(t) == 2 else ""
 
 
+# ⚑ CAIXA ALTA E SEM ACENTO (19/11/2026). Ele: *"eu queria padronizar a
+# nomenclatura das informações. Eu queria tudo caixa alta, que na leitura da IA
+# fosse removido a acentuação e ficasse tudo caixa alta."* Vale para os campos
+# de TEXTO da pessoa — nome, mãe, órgão, endereço. Número, data e sigla já têm
+# forma própria.
+CAMPOS_DE_TEXTO = ("nome", "nome_mae", "rg_orgao", "logradouro",
+                   "numero_endereco", "complemento", "bairro", "municipio",
+                   "nome_pai", "naturalidade")
+# ⚑ O QUE A LEITURA ACHAR ALÉM DO OBRIGATÓRIO TAMBÉM ENTRA (19/11/2026). Ele:
+# *"outros dados que a leitura da IA conseguir coletar, mesmo que não sejam
+# obrigatórios, inclusive o PIS, nome do pai e qualquer outra coisa a mais que
+# tenha no nosso cadastro, pode preencher nos campos, mesmo que estejam
+# ocultos."* Estes não têm campo no formulário: vão no pedido como "lido do
+# documento" e chegam à ficha da pessoa.
+EXTRAS_DA_LEITURA = ("nome_pai", "sexo", "estado_civil", "naturalidade",
+                     "naturalidade_uf", "ctps_serie", "ctps_uf", "ctps_emissao")
+_ORGAOS = ("SSP", "DETRAN", "MTE", "ME")
+
+
+def caixa_alta(texto: Any) -> str:
+    """"José da Conceição" → "JOSE DA CONCEICAO"."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", " ".join(str(texto or "").split()))
+    return "".join(c for c in t if not unicodedata.combining(c)).upper()
+
+
 def normalizar_campos(lido: dict[str, Any]) -> dict[str, str]:
     """O que a IA devolveu, no formato que o formulário guarda — e só o que
     passou na conferência de forma (CPF com 11 dígitos, data de verdade,
     UF com duas letras, CEP com oito)."""
     campos: dict[str, str] = {}
-    for chave in ("nome", "nome_mae", "rg_orgao", "logradouro",
-                  "numero_endereco", "complemento", "bairro", "municipio"):
-        v = " ".join(str(lido.get(chave) or "").split())
+    for chave in CAMPOS_DE_TEXTO:
+        v = caixa_alta(lido.get(chave))
         if v:
             campos[chave] = v
     cpf = _so_digitos(lido.get("cpf"))
     if len(cpf) == 11:
         campos["cpf"] = cpf
-    for chave in ("data_nascimento", "rg_emissao"):
+    # Órgão emissor é LISTA no cadastro: fora dela, fica para a pessoa
+    # escolher (gravar "SSP/CE" quebraria a ficha).
+    if campos.get("rg_orgao") and campos["rg_orgao"].split("/")[0].strip() in _ORGAOS:
+        campos["rg_orgao"] = campos["rg_orgao"].split("/")[0].strip()
+    else:
+        campos.pop("rg_orgao", None)
+    sexo = str(lido.get("sexo") or "").strip().upper()[:1]
+    if sexo in ("M", "F"):
+        campos["sexo"] = sexo
+    civil = caixa_alta(lido.get("estado_civil")).replace(" ", "_")
+    if civil in ("SOLTEIRO", "CASADO", "DIVORCIADO", "VIUVO", "UNIAO_ESTAVEL"):
+        campos["estado_civil"] = civil
+    serie = "".join(c for c in str(lido.get("ctps_serie") or "") if c.isalnum())
+    if serie:
+        campos["ctps_serie"] = serie.upper()
+    for chave in ("data_nascimento", "rg_emissao", "ctps_emissao"):
         d = _data(lido.get(chave))
         if d:
             campos[chave] = d
@@ -258,7 +302,7 @@ def normalizar_campos(lido: dict[str, Any]) -> dict[str, str]:
                  if c.isalnum())
     if len(rg) >= 5:
         campos["rg"] = rg
-    for chave in ("rg_uf", "uf"):
+    for chave in ("rg_uf", "uf", "naturalidade_uf", "ctps_uf"):
         u = _uf(lido.get(chave))
         if u:
             campos[chave] = u

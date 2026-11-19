@@ -614,7 +614,12 @@ TIPOS: dict[str, dict[str, Any]] = {
             "categoria_transporte": {"NAO_RECEBE": ("aux_transporte",
                                                     "descontar_vt")},
             "tipo_documentacao": {
-            "CTPS": ("pagamento", "valor_mes")},
+            "CTPS": ("pagamento", "valor_mes"),
+            # ⚑ 19/11/2026, ele: *"quando a gente colocar o vínculo prestador
+            # de serviço, oculta o número da CTPS e oculta o número do PIS,
+            # porque essa informação não precisa."* A leitura ainda os grava,
+            # se achar — oculto não é apagado.
+            "PRESTADOR": ("num_ctps", "num_pis")},
             "pagamento": {"DIARISTA": ("valor_mes",)}},
         # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre DEPOIS de escolhida a
         # documentação — e aí abre para as DUAS, com listas diferentes.
@@ -1823,6 +1828,26 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     pedido = traduzir_do_pipe(
         {c: dados.get(c) for c in campos_do_tipo(tipo, vinculo)
          if dados.get(c) not in (None, "")})
+    if tipo in ("CADASTRO", "ADMISSAO_PRESTADOR"):
+        # ⚑ CAIXA ALTA E SEM ACENTO (19/11/2026), digitado ou lido — ver
+        # `documentos_de_pessoa.caixa_alta`.
+        from app.apps.erp.core.documentos_de_pessoa import (
+            CAMPOS_DE_TEXTO, EXTRAS_DA_LEITURA, caixa_alta, normalizar_campos)
+        # O que a leitura achou além do formulário (pai, sexo, estado civil,
+        # naturalidade, série da CTPS…) — passado de novo pela conferência de
+        # forma, porque vem do navegador.
+        # O telefone chega formatado da tela ("(85) 98888-7777"); guarda-se
+        # só o número, como o resto do sistema (WhatsApp, ponto) espera.
+        if pedido.get("telefone"):
+            pedido["telefone"] = "".join(c for c in str(pedido["telefone"])
+                                         if c.isdigit())
+        lidos = normalizar_campos(dados.get("lidos_do_documento") or {})
+        for c in EXTRAS_DA_LEITURA:
+            if lidos.get(c) and not pedido.get(c):
+                pedido[c] = lidos[c]
+        for c in CAMPOS_DE_TEXTO:
+            if str(pedido.get(c) or "").strip():
+                pedido[c] = caixa_alta(pedido[c])
     if readmissao:
         # Fica GRAVADO no pedido, e não só deduzido depois: é o que faz a
         # tela do DP e o histórico dizerem "readmissão" em vez de "cadastro".
@@ -1941,6 +1966,33 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
                       or pedido.get("aux_transporte"), "valor"),
     })
     solicitacao_id = int(linha.scalar())
+    # -----------------------------------------------------------------------
+    # ⚑ A ADMISSÃO NASCE COM O PRÉ-CADASTRO (19/11/2026)
+    #
+    # Ele: *"eu fiz uma admissão de colaborador e eu pensei que a pessoa já
+    # apareceria na fase inicial (…) Se eu atender (…) ele gera o cadastro
+    # inicial, é isso? Não tem sentido. (…) não existe um cadastro ou
+    # pré-cadastro dessa pessoa já."*
+    #
+    # Agora a pessoa nova nasce no cadastro na hora do pedido, na etapa
+    # INICIAL, com os dados e os papéis — é lá que o DP confere. Atender o
+    # pedido passa a ser completar o que é do DP (matrícula, convenção,
+    # cargo, salário). Recusado ou cancelado, o pré-cadastro vai para
+    # "Cancelado". A readmissão continua como era: a pessoa já existe, e só
+    # volta à ativa quando o DP atende.
+    # -----------------------------------------------------------------------
+    if tipo == "CADASTRO" and not readmissao and not colaborador_id:
+        novo = svc_pessoas.salvar(s, {
+            **para_o_cadastro(pedido), "obra_id": obra_do_pedido,
+            "etapa": "CADASTRO_INICIAL"}, usuario)
+        colaborador_id = novo.id
+        pedido["pre_cadastro"] = "1"
+        s.execute(text("""UPDATE dp_solicitacoes
+                             SET colaborador_id = :c, dados = CAST(:d AS jsonb)
+                           WHERE id = :s"""),
+                  {"c": novo.id, "s": solicitacao_id,
+                   "d": __import__("json").dumps(pedido, ensure_ascii=False,
+                                                 default=str)})
     for i, item in enumerate(checklist_do_tipo(tipo, vinculo,
                                                readmissao=readmissao,
                                                pedido=pedido, s=s)):
@@ -1980,6 +2032,39 @@ def _evento(s: Session, solicitacao_id: int, acao: str, detalhe: dict,
 # transação: pessoa que já existe (readmissão) recebe o papel direto no
 # cadastro; pessoa nova recebe quando o DP atende (`transferir_papeis`).
 # ---------------------------------------------------------------------------
+def para_o_cadastro(pedido: dict[str, Any]) -> dict[str, Any]:
+    """O pedido de admissão no vocabulário da FICHA da pessoa.
+
+    ⚠️ ACHADO EM 19/11/2026: o atendimento passava o pedido direto para o
+    cadastro, e quatro campos tinham NOME DIFERENTE lá — o vínculo
+    (`tipo_documentacao` × `vinculo`), o cargo (`cargo_pleiteado_id` ×
+    `cargo_id`), a CTPS e o PIS. Os quatro se perdiam calados: o prestador
+    nascia como CTPS, sem cargo e sem os números da carteira.
+    """
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    d = dict(pedido)
+    if d.get("tipo_documentacao"):
+        d["vinculo"] = d["tipo_documentacao"]
+    if d.get("cargo_pleiteado_id"):
+        d["cargo_id"] = d["cargo_pleiteado_id"]
+    if d.get("num_ctps"):
+        d["ctps_numero"] = d["num_ctps"]
+    # O PIS não é obrigatório (19/11/2026); um PIS que não passa na conta dos
+    # dígitos (leitura torta, digitação) não pode travar a admissão — ele
+    # fica no pedido para o DP ver, e não entra no cadastro.
+    if d.get("num_pis") and svc_pessoas.pis_valido(d["num_pis"]):
+        d["pis"] = d["num_pis"]
+    if d.get("data_inicio"):
+        d.setdefault("admissao", d["data_inicio"])
+    if str(d.get("pagamento") or "").upper() in ("MENSALISTA", "DIARISTA"):
+        d["mensalista"] = str(d["pagamento"]).upper() == "MENSALISTA"
+    # A MATRÍCULA É O CPF (19/11/2026), desde o nascimento do cadastro.
+    cpf = somente_digitos(d.get("cpf") or "")
+    if cpf and not str(d.get("matricula") or "").strip():
+        d["matricula"] = cpf
+    return d
+
+
 def guardar_papeis(s: Session, solicitacao_id: int,
                    colaborador_id: Optional[int],
                    arquivos: list[dict[str, Any]],
@@ -2024,6 +2109,27 @@ def guardar_papeis(s: Session, solicitacao_id: int,
         feitos += 1
     s.flush()
     return feitos
+
+
+def papeis_do_pedido(s: Session, solicitacao_id: int, numero: str,
+                     colaborador_id: Optional[int]) -> list[dict[str, Any]]:
+    """Os arquivos que vieram com este pedido — onde quer que estejam agora
+    (ainda no pedido, ou já no cadastro da pessoa, marcados com o número)."""
+    linhas = s.execute(text("""
+        SELECT d.id, d.anexo_id, d.tipo_codigo, d.nome_original,
+               d.nome_padronizado, t.nome AS tipo_nome
+          FROM documentos d
+          LEFT JOIN documento_tipos t ON t.codigo = d.tipo_codigo
+         WHERE d.dp_solicitacao_id = :s
+            OR (:c IS NOT NULL AND d.colaborador_id = :c
+                AND d.referencia LIKE :ref)
+         ORDER BY d.id"""),
+        {"s": solicitacao_id, "c": colaborador_id,
+         "ref": f"{numero} %"}).mappings().all()
+    return [{"id": l["id"], "anexo_id": l["anexo_id"],
+             "tipo": l["tipo_nome"] or l["tipo_codigo"],
+             "nome": l["nome_original"] or l["nome_padronizado"]}
+            for l in linhas]
 
 
 def transferir_papeis(s: Session, solicitacao_id: int, colaborador_id: int) -> int:
@@ -2085,7 +2191,20 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
         # preenchido entrava aqui, não casava com nenhum ramo, e o pedido era
         # marcado como ATENDIDO sem nada ter acontecido. Atendimento que não
         # faz nada e diz que fez é pior que erro — ninguém vai conferir.
-        if executa == "criar_cadastro":
+        if executa == "criar_cadastro" and pedido.get("pre_cadastro"):
+            # O pré-cadastro já existe desde o pedido: atender é completar o
+            # que é do DP. Só o que veio preenchido entra — vazio não apaga.
+            c_atual = s.get(Colaborador, alvo)
+            do_dp = {k: pedido[k] for k in campos_do_dp_do_tipo("CADASTRO")
+                     if str(pedido.get(k) or "").strip()}
+            if do_dp:
+                svc_pessoas.salvar(s, {**do_dp, "cpf": c_atual.cpf,
+                                       "nome": c_atual.nome}, usuario)
+            efeito["completou_pre_cadastro"] = True
+            # Papel que tenha ficado no pedido (pedido aberto antes do
+            # pré-cadastro existir) passa para a pessoa agora.
+            efeito["papeis"] = transferir_papeis(s, solicitacao_id, alvo)
+        elif executa == "criar_cadastro":
             svc_pessoas.readmitir(s, alvo, {
                 **pedido, "admissao": pedido.get("data_inicio"),
                 "vinculo": pedido.get("tipo_documentacao") or None}, usuario)
@@ -2148,7 +2267,7 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                                    "nome": novo_nome or c.nome}, usuario)
         efeito["executou"] = executa
     elif executa == "criar_cadastro":
-        c = svc_pessoas.salvar(s, {**pedido, "admissao": pedido.get("data_inicio")}, usuario)
+        c = svc_pessoas.salvar(s, para_o_cadastro(pedido), usuario)
         s.execute(text("UPDATE dp_solicitacoes SET colaborador_id = :c WHERE id = :s"),
                   {"c": c.id, "s": solicitacao_id})
         efeito["colaborador_id"] = c.id
@@ -2190,7 +2309,22 @@ def recusar(s: Session, solicitacao_id: int, dados: dict[str, Any],
                        WHERE id = :s"""),
               {"u": usuario.id if usuario else None, "s": solicitacao_id, "r": motivo})
     _evento(s, solicitacao_id, "RECUSADA", {"motivo": motivo}, usuario)
+    _cancelar_pre_cadastro(s, p, f"pedido {p['numero']} recusado: {motivo}", usuario)
     return ler(s, solicitacao_id)
+
+
+def _cancelar_pre_cadastro(s: Session, p: dict[str, Any], motivo: str,
+                           usuario: Optional[Usuario]) -> None:
+    """O pré-cadastro de um pedido que não vai adiante vai para "Cancelado" —
+    o cadastro que nunca virou gente na empresa (`pessoas.ETAPAS`)."""
+    if not (p.get("dados") or {}).get("pre_cadastro") or not p.get("colaborador_id"):
+        return
+    try:
+        svc_pessoas.mover_etapa(s, int(p["colaborador_id"]), "CANCELADO",
+                                usuario, automatico=True, motivo=motivo[:300])
+    except ErroValidacao as e:
+        _evento(s, p["id"], "AVISO",
+                {"texto": f"o pré-cadastro não foi para Cancelado: {e}"}, usuario)
 
 
 def cancelar(s: Session, solicitacao_id: int, dados: dict[str, Any],
@@ -2219,6 +2353,7 @@ def cancelar(s: Session, solicitacao_id: int, dados: dict[str, Any],
                        WHERE id = :s"""),
               {"u": usuario.id if usuario else None, "s": solicitacao_id, "m": motivo})
     _evento(s, solicitacao_id, "CANCELADA", {"motivo": motivo}, usuario)
+    _cancelar_pre_cadastro(s, p, f"pedido {p['numero']} cancelado: {motivo}", usuario)
     return ler(s, solicitacao_id)
 
 
@@ -2317,6 +2452,11 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         "motivo_cancelamento": d["motivo_cancelamento"] or "",
         "criado_em": d["criado_em"].isoformat(),
         "aberta": d["situacao"] in ABERTAS,
+        # ⚑ OS PAPÉIS QUE VIERAM COM O PEDIDO (19/11/2026). Ele: *"conferir se
+        # a documentação veio completa, mas cadê a documentação? A gente não
+        # consegue visualizar ela."*
+        "papeis": papeis_do_pedido(s, d["id"], d["numero"], d["colaborador_id"]),
+        "pre_cadastro": bool((d["dados"] or {}).get("pre_cadastro")),
         # Atender/recusar/cancelar: só antes de a saída ser registrada.
         "a_atender": d["situacao"] in A_ATENDER,
         "processo": (svc_processo.passos(s, {**d, "dados": d["dados"] or {}})
