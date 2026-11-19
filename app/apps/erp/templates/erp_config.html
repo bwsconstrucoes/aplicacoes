@@ -2259,12 +2259,63 @@ els("btn-pix-salvar") && els("btn-pix-salvar").addEventListener("click", async (
 
 // ENCADEAMENTO: ?conta=N#plano abre a conta do plano direto, vinda do
 // título que a usa. Quem chega aqui já sabe qual conta quer ver.
-carregar().then(() => {
-  const pedida = new URLSearchParams(location.search).get("conta");
-  if (!pedida) return;
-  const id = +pedida;
-  if (DADOS.categorias.some(c => c.id === id)) editarCategoria(id);
-  else aviso("mensagem", "Esta conta do plano não existe mais.", "erro");
+//
+// ⚑ ?operador=N#usuarios faz o mesmo, vindo da LIBERAÇÃO DE ACESSO
+// (18/11/2026). Ele: *"no ato da liberação já abrir a tela de configurações
+// do cadastro da pessoa (…) lá será designado o perfil dela, obras de acesso
+// e etc."*
+//
+// É aqui, e não numa janelinha dentro da tela de Pessoal, porque esta tela
+// JÁ é o lugar onde o acesso se configura — com perfil, perfis acrescentados,
+// obras, fundo fixo e situação. Uma segunda tela com metade dos campos seria
+// a terceira porta de que ele reclamou em 17/11.
+carregar().then(async () => {
+  const busca = new URLSearchParams(location.search);
+  const pedida = busca.get("conta");
+  if (pedida) {
+    const id = +pedida;
+    if (DADOS.categorias.some(c => c.id === id)) editarCategoria(id);
+    else aviso("mensagem", "Esta conta do plano não existe mais.", "erro");
+  }
+  const operador = busca.get("operador");
+  if (operador) {
+    // ⚠️ A LISTA DE OPERADORES TEM CARGA PRÓPRIA, separada da desta tela.
+    // Sem esperar por ela, a pessoa recém-liberada "não existe" — foi
+    // exatamente o que aconteceu na primeira vez que isto foi dirigido no
+    // navegador: a tela abria dizendo que o operador não existe mais.
+    if (!OPERADORES.length) await carregarOperadores();
+    const u = OPERADORES.find(x => x.id === +operador);
+    if (!u) { aviso("mensagem", "Este operador não existe mais.", "erro"); return; }
+    mostrarSecao("usuarios");
+    // O RESULTADO DA LIBERAÇÃO VEM JUNTO, porque ela aconteceu na tela
+    // anterior e quem chega aqui não viu como terminou: sem isto, ninguém
+    // fica sabendo que o convite não saiu — nem recebe o link para entregar
+    // na mão.
+    //
+    // ⚠️ O TEXTO É MONTADO AQUI, não vem escrito na URL. O aviso escreve
+    // HTML na tela; um endereço com texto dentro viraria caminho para
+    // injetar marcação na página de quem administra o sistema. Da URL só
+    // vêm uma marca conhecida e o link, e o link vai escapado.
+    formOperador(u);
+    // ⚠️ O RECADO VAI DENTRO DA JANELA, não na página atrás dela — foi o que
+    // apareceu ao dirigir a tela: o aviso ficava escondido debaixo do
+    // formulário, e com ele o link do convite, que é justamente o que
+    // alguém precisa entregar na mão quando o e-mail não sai.
+    const convite = busca.get("convite");
+    if (convite === "ok") {
+      aviso("dlg-msg", `Acesso liberado e convite enviado para `
+            + `<b>${escapar(u.email)}</b>. Agora defina o <b>perfil</b> e as `
+            + `<b>obras</b> dela aqui, e salve.`, "ok");
+    } else if (convite === "falhou") {
+      const link = busca.get("link") || "";
+      aviso("dlg-msg", `Acesso liberado, mas o convite <b>NÃO saiu por `
+            + `e-mail</b>.`
+            + (link ? ` Entregue este link para ela (vale uma vez):<br>`
+                      + `<code>${escapar(link)}</code>` : "")
+            + `<br>Defina o <b>perfil</b> e as <b>obras</b> dela aqui, e `
+            + `salve.`, "alerta");
+    }
+  }
 });
 carregarIA();
 carregarAnexos();

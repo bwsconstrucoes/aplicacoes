@@ -2808,6 +2808,106 @@ são as que o DP faz todo dia, sobre uma pessoa específica.
 
 ---
 
+## 3z-quindecies. QUEM TEM ACESSO AO SISTEMA, COM QUE PERFIL E EM QUE OBRAS (18/11/2026)
+
+Nasceu de quando a liberação passou a levar quem administra **direto para a
+tela de configuração do operador**, onde o perfil e as obras são designados.
+Antes a resposta era sempre a mesma ("administrativo de obra, a obra do
+cadastro") e ninguém perguntava; agora cada pessoa liberada pode ter um
+desenho próprio de acesso — e aí vale perguntar qual é.
+
+### As palavras ambíguas desta parte
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"tem acesso"** | ① existe operador ligado ao cadastro; ② o operador está **ativo**; ③ a pessoa já **criou a senha** (o convite pode nunca ter sido aberto). As três são diferentes, e a terceira é a que diz se ela consegue entrar de fato |
+| **"perfil"** | ① o perfil **cadastrado** (tela de Perfis de acesso, é onde a alçada se edita hoje); ② o **cargo** antigo, que ainda existe na ficha do operador. Quem tem perfil cadastrado, é ele que manda |
+| **"vê a obra"** | ① está marcada na lista de obras dela; ② ela vê **todas** (a marca "todas as obras" ignora a lista); ③ o perfil dela nem alcança a tela onde a obra apareceria |
+| **"liberou"** | ① quem apertou o botão; ② quem **aprovou** o pedido na fila. Hoje são a mesma pessoa, mas o pedido pode ter vindo do portal dias antes |
+
+### O que dá para perguntar
+
+- **"Quem tem acesso ao sistema hoje?"**
+- **"Quem foi liberado esta semana, e por quem?"** — a liberação fica na
+  trilha de auditoria.
+- **"Com que perfil fulano entra?"**
+- **"Que obras fulano enxerga?"** / **"Fulano vê todas as obras?"**
+- **"Quem enxerga todas as obras?"** — a pergunta de segurança, e ela é a mais
+  importante daqui: é a lista de quem não tem recorte nenhum.
+- **"Quem foi liberado sem obra nenhuma?"** — desde 18/11 isso é uma escolha
+  possível (o acesso de escritório), então vira pergunta legítima.
+- **"Quem pediu acesso pelo portal e ainda não foi liberado?"**
+- **"Que pedidos de acesso vieram COM identidade confirmada?"** — quem acertou
+  o código no WhatsApp do telefone do cadastro.
+- **"Quem foi liberado SEM confirmação de identidade?"** — a liberação feita na
+  mão, sem o código. É a pergunta de auditoria do caminho novo.
+- **"Quem recebeu convite e nunca criou a senha?"**
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+Todas, e aqui a regra é mais dura que no resto do ERP: **a lista de quem tem
+acesso e com que perfil é informação de administração.** Quem não gere
+operadores não deve receber essa resposta — nem sobre si mesmo, além do próprio
+perfil. Se o assistente responder isso para um perfil de obra, ele entrega o
+mapa do sistema a quem não precisa dele.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quem tem acesso e não trabalha mais aqui?"** — o desligamento já derruba o
+  acesso sozinho; a lista de conferência não está escrita.
+- **"Quem nunca entrou desde que foi liberado?"** — falta guardar a data da
+  última entrada de cada operador.
+- **"Esse perfil dá acesso a quê, em português?"** — a tabela de permissões
+  existe e tem rótulo por ação, mas não há resposta pronta que descreva um
+  perfil inteiro em uma frase.
+
+---
+
+## 3z-sexdecies. EM QUE PÉ ESTÁ CADA OBRA, E QUEM DEVE DIÁRIO (19/11/2026)
+
+Nasceu do filtro do diário. Até aqui a pergunta "quais obras estão ativas?"
+tinha uma resposta só, e ela estava errada: valia o campo `status`, que quase
+nunca muda, enquanto a **fase** é o que a empresa de fato acompanha.
+
+### ⚠️ A palavra ambígua desta parte, e ela é a mais perigosa do módulo de obras
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"obra ativa"** | ① `status = 'ATIVA'` — o cadastro não foi encerrado. Quase toda obra da base é assim, inclusive as que acabaram há anos; ② **fase em andamento** — criação/cadastro, aguardando ordem de serviço, em execução ou paralisada. É o que ele quer dizer quando fala "ativa", e é a régua do diário desde 19/11/2026; ③ "tem gente trabalhando nela esta semana" — nenhuma das duas responde isso: é o ponto que sabe |
+| **"obra concluída"** | as SEIS fases de conclusão (concluída, concluída com dívida, recebimento provisório, recebimento definitivo, acervo técnico, distratada), e não só a primeira. Uma resposta que olhe só "CONCLUIDA" erra nas outras cinco |
+| **"deve diário"** | obra em fase de andamento que ficou sem diário em dia útil. Obra concluída **não** deve nada — cobrar dela é cobrança falsa |
+
+### O que dá para perguntar
+
+- **"Quais obras estão em andamento?"** — as quatro fases iniciais.
+- **"Quais obras já acabaram?"** / **"Quantas obras estão em cada fase?"**
+- **"Que obras estão paralisadas?"** — a fase que mais vale vigiar: a obra
+  não acabou, mas também não anda.
+- **"Quem está devendo diário, e quantos dias?"** — já responde, e desde
+  19/11 **sem** contar obra concluída.
+- **"Quantos dias de diário faltam neste mês?"** — o número do quadro.
+- **"Qual foi o último diário da obra X?"**
+- **"Tem obra concluída com diário sendo lançado ainda?"** — não é erro: a
+  tela permite, de propósito, para quem lança atrasado. Mas é coisa de olhar.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+Todas as de lista: quem é preso a obras só deve receber as obras dele. A
+régua de escopo é a mesma da tela — não se escreve escopo novo.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Há quanto tempo esta obra está nesta fase?"** — a data da troca de fase
+  é guardada (`fase_desde` e a tabela de fases), mas a conta não está escrita.
+  É a pergunta que acharia obra "em execução" há dois anos sem diário nenhum.
+- **"Quais obras deveriam estar concluídas e ninguém marcou?"** — hoje
+  ninguém avisa. Um sinal possível: obra sem diário nem gasto há N meses,
+  ainda em fase de andamento.
+- **"Quanto tempo leva, em média, da ordem de serviço à conclusão?"** — os
+  carimbos existem; a conta não.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

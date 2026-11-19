@@ -1216,6 +1216,24 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto,
                     `<option value="${o.valor}" ${o.valor === c.valor ? "selected" : ""}>${o.rotulo}</option>`).join("")}</select>`
                 : c.tipo === "arquivo"
                 ? `<input id="pg-${i}" type="file" ${c.aceita ? `accept="${c.aceita}"` : ""}>`
+                {# ⚑ VÁRIAS ESCOLHAS DE UMA VEZ (18/11/2026). Nasceu da
+                   liberação de acesso ao portal: ele, fechando o ciclo,
+                   *"o administrador vai liberar a pessoa, mas tem que definir
+                   o acesso dele, o perfil, as obras"* — AS obras, no plural.
+                   Uma caixa de escolha devolve uma só, e quem responde por
+                   três obras sairia da liberação enxergando uma.
+                   Mora aqui, e não na tela do DP, pelo mesmo motivo da
+                   máscara de CNPJ: a próxima tela que precisar disso não vai
+                   reinventar. Devolve LISTA, nunca texto. #}
+                : c.tipo === "caixas"
+                ? `<div id="pg-${i}" class="dados" style="max-height:${c.altura || 180}px;
+                     overflow:auto; border:1px solid var(--borda); border-radius:8px;
+                     padding:6px 10px">${(c.opcoes || []).map((o, j) =>
+                     `<label style="display:flex; gap:8px; align-items:center;
+                        padding:3px 0; font-weight:400; cursor:pointer">
+                        <input type="checkbox" value="${o.valor}" style="width:auto; margin:0"
+                          ${(c.valor || []).map(String).indexOf(String(o.valor)) >= 0
+                            ? "checked" : ""}>${o.rotulo}</label>`).join("")}</div>`
                 {# CAMPO DE PESSOA (10/11/2026). Ele, abrindo uma solicitação:
                    *"vamos buscar a pessoa na nossa base de dados, digitando
                    algum dado, um CPF (…) talvez pela LGPD a gente não possa
@@ -1289,6 +1307,9 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto,
         const e = els(`pg-${i}`);
         if (!e || !c.nome) return;
         if (c.tipo === "pessoa") { v[c.nome] = (els(`pg-${i}-id`) || {}).value || ""; }
+        else if (c.tipo === "caixas") {
+          v[c.nome] = Array.from(e.querySelectorAll("input:checked")).map(x => x.value);
+        }
         else if (c.tipo === "arquivo") { v[c.nome] = (e.files || [])[0] || null; }
         else { v[c.nome] = e.value || ""; }
       });
@@ -1352,6 +1373,18 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto,
             return null;
           }
           saida[campos[i].nome] = escolhido;
+          continue;
+        }
+        // VÁRIAS ESCOLHAS devolvem lista. Vazia não é texto vazio: quem
+        // marcar nada manda [], e o chamador decide o que isso significa.
+        if (campos[i].tipo === "caixas") {
+          const marcadas = Array.from(
+            els(`pg-${i}`).querySelectorAll("input:checked")).map(x => x.value);
+          if (campos[i].obrigatorio && !marcadas.length) {
+            aviso("pg-erro", `Marque ${campos[i].rotulo.toLowerCase()}.`, "erro");
+            return null;
+          }
+          saida[campos[i].nome] = marcadas;
           continue;
         }
         const valor = (els(`pg-${i}`).value || "").trim();

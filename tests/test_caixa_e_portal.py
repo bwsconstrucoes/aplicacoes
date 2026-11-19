@@ -914,3 +914,63 @@ def test_nenhuma_tela_pergunta_a_empresa_duas_vezes():
     assert '"c-cnpjadm": "cnpj_admissao"' not in ficha, (
         "a ficha voltou a mandar o CNPJ junto com a empresa, e os dois podem "
         "divergir de novo")
+
+
+# ---------------------------------------------------------------------------
+# ⚑ QUEM LANÇA DIÁRIO E NÃO PEDE AO DP (18/11/2026)
+#
+# Pergunta dele: *"e para quem vai preencher diário de obra mas não vai acessar
+# DP, como faz?"*
+#
+# A resposta de então era ruim, e estes casos prendem o conserto: tirar
+# "Solicitar ao DP" da pessoa escondia o BLOCO INTEIRO de abrir, e ela perdia o
+# botão do DIÁRIO junto — que não tem nada a ver com pedir ao DP.
+# ---------------------------------------------------------------------------
+def test_quem_so_lanca_diario_ainda_ve_a_area_do_diario():
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
+
+    class Fingindo(Usuario):
+        pass
+
+    # ADMINISTRATIVO_OBRA tem as duas; tiramos `solicitar_dp` por exceção,
+    # que é exatamente o que o cadastro permite marcar pessoa a pessoa.
+    u = Usuario(nome="Só diário", email="diario@teste.com",
+                perfil=PerfilUsuario.ADMINISTRATIVO_OBRA, ativo=True)
+    u.permissoes_extras = {"solicitar_dp": False}
+
+    achadas = {a["chave"] for a in svc_portal.areas(None, {"usuario": u})}
+
+    assert "obra" in achadas, (
+        "quem lança diário tem de continuar vendo a área do diário")
+    assert "pessoal" not in achadas, (
+        "quem não pede ao DP não deve ver a área do DP")
+
+
+def test_quem_pede_ao_dp_e_nao_ve_diario_nao_ve_a_area_do_diario():
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
+
+    u = Usuario(nome="Só DP", email="sodp@teste.com",
+                perfil=PerfilUsuario.ADMINISTRATIVO_OBRA, ativo=True)
+    u.permissoes_extras = {"ver_diario": False}
+
+    achadas = {a["chave"] for a in svc_portal.areas(None, {"usuario": u})}
+
+    assert "pessoal" in achadas and "obra" not in achadas
+
+
+def test_area_que_a_pessoa_nao_alcanca_NAO_aparece_como_fechada():
+    """"Fechada" quer dizer "ainda não construímos isso". Marcar de fechado o
+    que existe e a pessoa é que não alcança seria mentir na porta."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
+
+    u = Usuario(nome="Só diário", email="diario2@teste.com",
+                perfil=PerfilUsuario.ADMINISTRATIVO_OBRA, ativo=True)
+    u.permissoes_extras = {"solicitar_dp": False}
+
+    for a in svc_portal.areas(None, {"usuario": u}):
+        assert a["chave"] != "pessoal", (
+            "a área do DP tem de SUMIR para quem não a alcança, não aparecer "
+            "marcada como fechada")

@@ -319,7 +319,32 @@ async function carregar(){
 // servidor, as duas passam por `_liberar_acesso`. Não existe um segundo jeito
 // de criar acesso, de propósito.
 // ===========================================================================
-let FILA_PORTAL = [];
+let FILA_PORTAL = [], FILA_OPCOES = {};
+
+// ===========================================================================
+// QUEM ADMINISTRA VAI DIRETO CONFIGURAR O ACESSO (18/11/2026)
+//
+// Ele, fechando o ciclo da liberação: *"no ato da liberação já abrir a tela
+// de configurações do cadastro da pessoa (…) lá será designado o perfil dela,
+// obras de acesso e etc. E pronto."*
+//
+// ⚑ POR QUE NÃO UMA JANELINHA AQUI: a tela de Configurações › Usuários JÁ é
+// o lugar onde o acesso se configura — perfil, perfis acrescentados, obras,
+// fundo fixo, situação. Uma segunda tela com metade desses campos seria a
+// terceira porta de que ele reclamou em 17/11 ("era só para equalizar e
+// complementar os dados"), e um dia as duas divergiriam.
+//
+// Quem NÃO administra operadores (o DP) não vai a lugar nenhum: libera, vê o
+// aviso aqui mesmo, e o acesso nasce com o padrão seguro — administrativo de
+// obra, preso à obra do cadastro.
+function irConfigurarOAcesso(usuarioId, convite){
+  const p = new URLSearchParams({operador: String(usuarioId)});
+  // Só marcas conhecidas viajam na URL. O texto do aviso é montado lá,
+  // porque o aviso escreve HTML na tela de quem administra o sistema.
+  p.set("convite", convite && convite.enviado ? "ok" : "falhou");
+  if (convite && !convite.enviado && convite.link) p.set("link", convite.link);
+  location.href = "/erp/configuracoes?" + p.toString() + "#usuarios";
+}
 
 async function carregarFilaDoPortal(){
   const caixa = els("fila-portal");
@@ -327,6 +352,7 @@ async function carregarFilaDoPortal(){
   try {
     const d = await api("/erp/api/portal/pedidos-de-acesso");
     FILA_PORTAL = d.pedidos || [];
+    FILA_OPCOES = d;
   } catch(e){ return; }          // fila não é o assunto da tela: falha calada
   if (!FILA_PORTAL.length) { caixa.classList.add("oculto"); caixa.innerHTML = ""; return; }
   caixa.classList.remove("oculto");
@@ -334,15 +360,31 @@ async function carregarFilaDoPortal(){
     <div class="cartao" style="border-left:4px solid var(--azul)">
       <h3 style="margin:0 0 4px">🖥 ${FILA_PORTAL.length} ${FILA_PORTAL.length === 1
         ? "pessoa pediu" : "pessoas pediram"} acesso ao portal</h3>
-      <div class="cartao-dica" style="margin:0 0 10px">Pediram pelo aplicativo do ponto e
-        informaram o e-mail. Liberar cria o acesso como <b>administrativo de obra</b>
-        (abre pedidos da obra; não vê salário nem documento de ninguém), liga a obra
-        em que a pessoa bate ponto e manda o convite para ela criar a senha dela.</div>
+      {# ⚑ O TEXTO COBRE AS DUAS ORIGENS desde 18/11/2026. Ele dizia só "pelo
+         aplicativo do ponto", e virou meia verdade no dia em que a pessoa
+         passou a poder criar o acesso pelo próprio portal. Texto de tela que
+         descreve o sistema errado é pior que texto nenhum. #}
+      <div class="cartao-dica" style="margin:0 0 10px">Pediram pelo
+        <b>portal</b> (criando o próprio acesso) ou pelo <b>aplicativo do
+        ponto</b>, e informaram o e-mail. Liberar cria o acesso como
+        <b>administrativo de obra</b> (abre pedidos da obra; não vê salário nem
+        documento de ninguém), liga a obra da pessoa e manda o convite para ela
+        criar a senha dela.
+        <br><b>“✓ identidade confirmada”</b> quer dizer que ela provou quem é:
+        digitou o código que foi para o WhatsApp do telefone <b>do cadastro</b>.
+        Sem essa marca, confira quem é antes de liberar.</div>
       <table class="tabela"><thead><tr>
-        <th>Pessoa</th><th>E-mail informado</th><th>Obra (pelo ponto)</th><th></th>
+        <th>Pessoa</th><th>E-mail informado</th><th>Obra</th><th></th>
       </tr></thead><tbody>${FILA_PORTAL.map(p => `
         <tr>
           <td><b>${escapar(p.nome || "—")}</b>
+            ${p.identidade_confirmada
+              ? `<br><span class="etiqueta verde" title="Ela provou quem é: o
+                   código foi conferido no WhatsApp do telefone do cadastro">
+                   ✓ identidade confirmada</span>`
+              : `<br><span class="etiqueta" title="Pedido aberto sem o código
+                   de confirmação — confira quem é antes de liberar">sem
+                   confirmação</span>`}
             ${p.situacao && p.situacao !== "ATIVO"
               ? `<br><span class="etiqueta ambar">${escapar(p.situacao)}</span>` : ""}</td>
           <td class="mono">${escapar(p.email)}</td>
@@ -374,11 +416,21 @@ async function decidirPedidoDePortal(id, acao){
     if (!r) return;
     corpo.motivo = r.motivo || "";
   } else {
+    // O diálogo pergunta UMA coisa só: o e-mail, que é o login dela e para
+    // onde vai o convite. Perfil e obras não se escolhem aqui — quem
+    // administra cai na tela de configuração logo depois de confirmar.
+    const campos = [{nome: "email", rotulo: "E-mail (confira)",
+                     valor: p.email, largura: 6}];
     const r = await perguntar({titulo: "Liberar o acesso ao portal",
       aviso: `${escapar(p.nome)} vai receber um convite em <b>${escapar(p.email)}</b> para criar a senha dela.`
-           + (p.obra ? ` O acesso nasce enxergando a obra ${escapar(p.obra)}.` : ""),
-      campos: [{nome: "email", rotulo: "E-mail (confira)", valor: p.email, largura: 6}],
-      textoOk: "Liberar e convidar"});
+           + (p.identidade_confirmada
+               ? ` <b>Ela já provou quem é</b> — o código foi conferido no WhatsApp do telefone do cadastro.`
+               : ` ⚠️ <b>Este pedido veio sem confirmação de identidade.</b> Confira quem é antes de liberar.`)
+           + (p.obra ? ` A obra do cadastro é ${escapar(p.obra)}.` : "")
+           + (FILA_OPCOES.administra_acesso
+               ? ` Ao confirmar, você vai para a tela onde define <b>o perfil e as obras</b> dela.`
+               : ""),
+      campos, textoOk: "Liberar e convidar"});
     if (!r) return;
     corpo.email = r.email || p.email;
   }
@@ -386,6 +438,13 @@ async function decidirPedidoDePortal(id, acao){
     const d = await api(`/erp/api/portal/pedidos-de-acesso/${id}`,
                         {method:"POST", body: JSON.stringify(corpo)});
     const cv = d.convite || {};
+    // ⚑ QUEM ADMINISTRA SEGUE DIRETO PARA CONFIGURAR (18/11/2026), levando o
+    // resultado do convite junto — inclusive o link, quando o e-mail não sai.
+    // Sai desta tela, então o aviso de baixo não chega a ser lido.
+    if (acao === "LIBERAR" && d.usuario_id && FILA_OPCOES.administra_acesso) {
+      irConfigurarOAcesso(d.usuario_id, cv);
+      return;
+    }
     // ⚠️ O LINK APARECE AQUI TAMBÉM (18/11/2026). Antes esta tela dizia só
     // "reenvie pela ficha da pessoa" — e se o e-mail do sistema não estiver
     // configurado, reenviar não vai sair também. Sem o link, a liberação
@@ -2119,12 +2178,21 @@ function ligarAcessoAoSistema(c){
             + "entra e recebe o convite.", "erro");
       return;
     }
+    // ⚑ A FICHA TERMINA ONDE A FILA TERMINA (18/11/2026): quem libera por
+    // aqui também cai na tela de configuração do acesso. Antes, liberar pela
+    // ficha criava um acesso de CONSULTA preso à obra do cadastro e ninguém
+    // era levado a arrumar. Duas portas para a mesma coisa, acabando em
+    // lugares diferentes, é o que ele cobrou em 17/11.
+    //
+    // Só quem tem o botão chega aqui, e o botão já exige administrar
+    // operadores — então o caminho vale sempre.
     liberar.disabled = true;
     try {
       const r = await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({email})});
       const cv = r.convite || {};
+      if (r.usuario_id) { irConfigurarOAcesso(r.usuario_id, cv); return; }
       aviso("ac-msg", cv.enviado
         ? `Acesso liberado. Convite enviado para ${escapar(email)}.`
         : `Acesso liberado, mas o e-mail NÃO saiu: ${escapar(cv.erro || "motivo não informado")}.`

@@ -965,12 +965,80 @@ PASSOS_A_MAIS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
 }
 
 
+# ===========================================================================
+# ⚑ OS CHECKLISTS PASSARAM A SER CONFIGURÁVEIS (18/11/2026)
+#
+# Ele: *"vi que você importou checklist do Pipefy, só que eles estão todos
+# desatualizados. Precisa de uma tela pra configurar eles de forma fácil."*
+#
+# Antes, mudar um passo era mexer no código e publicar — o DP dependia de uma
+# publicação para corrigir a própria rotina de trabalho.
+#
+# ⚑ O PADRÃO DO CÓDIGO CONTINUA SENDO A BASE, e é o que torna isto seguro: a
+# tabela `dp_checklists` guarda EXCEÇÃO, não a lista inteira. Tipo que ninguém
+# configurou usa a lista daqui, que é a do pipe. Voltar ao padrão é apagar as
+# linhas de lá, não redigitar onze itens.
+# ===========================================================================
+def checklist_configurado(s: Session, tipo: str,
+                          vinculo: Optional[str] = None) -> tuple[str, ...]:
+    """O que foi configurado na tela para este tipo, ou vazio.
+
+    Procura primeiro o do VÍNCULO (mais específico) e, não achando, o que vale
+    para todos. Mesma ordem de especificidade do código.
+    """
+    if not _tem_tabela(s):
+        return ()
+    v = (vinculo or "").strip().upper() or None
+    for alvo in ([v] if v else []) + [None]:
+        linhas = s.execute(text("""
+            SELECT descricao FROM dp_checklists
+             WHERE tipo = :t AND vinculo IS NOT DISTINCT FROM :v
+             ORDER BY ordem"""), {"t": tipo, "v": alvo}).scalars().all()
+        if linhas:
+            return tuple(linhas)
+    return ()
+
+
+_TEM_TABELA: Optional[bool] = None
+
+
+def _tem_tabela(s: Session) -> bool:
+    """⚑ A RESPOSTA FICA GUARDADA. Esta função é chamada na abertura de TODA
+    solicitação e na leitura de cada uma; sem memória seria uma consulta ao
+    catálogo do banco toda vez, para perguntar algo que só muda quando alguém
+    aperta o botão da migração.
+
+    O "não" não fica guardado: assim o recurso liga sozinho logo depois do
+    botão, sem reiniciar o serviço.
+    """
+    global _TEM_TABELA
+    if _TEM_TABELA:
+        return True
+    achou = s.execute(text(
+        "SELECT 1 FROM information_schema.tables "
+        " WHERE table_schema = 'public' AND table_name = 'dp_checklists'"
+    )).first() is not None
+    if achou:
+        _TEM_TABELA = True
+    return achou
+
+
 def checklist_do_tipo(tipo: str, vinculo: Optional[str] = None, *,
                       readmissao: bool = False,
-                      pedido: Optional[dict[str, Any]] = None) -> tuple[str, ...]:
-    """Os passos que o DP faz — do vínculo certo, e não de um caso médio."""
+                      pedido: Optional[dict[str, Any]] = None,
+                      s: Optional[Session] = None) -> tuple[str, ...]:
+    """Os passos que o DP faz — do vínculo certo, e não de um caso médio.
+
+    Com a sessão, o que estiver configurado na tela manda sobre o padrão.
+    Sem ela, vale o padrão — é o caso de quem só quer saber o que o código traz
+    (a tela de configuração, para mostrar o original ao lado do atual).
+    """
     regra = TIPOS[tipo]
-    if readmissao and regra.get("checklist_readmissao"):
+    configurado = (checklist_configurado(s, tipo, vinculo) if s is not None
+                   else ())
+    if configurado:
+        base = configurado
+    elif readmissao and regra.get("checklist_readmissao"):
         base = tuple(regra["checklist_readmissao"])
     else:
         ramo = _ramo(tipo, vinculo)
@@ -980,6 +1048,91 @@ def checklist_do_tipo(tipo: str, vinculo: Optional[str] = None, *,
         valor = str((pedido or {}).get(campo) or "")
         base += tuple(mapa.get(valor, ()))
     return base
+
+
+def checklists_para_a_tela(s: Session) -> list[dict[str, Any]]:
+    """Todos os tipos, com o checklist de hoje e o original do pipe ao lado.
+
+    ⚑ O ORIGINAL VAI JUNTO de propósito: sem ele, quem mexeu não tem como
+    saber o que mudou nem como voltar. "Voltar ao padrão" só é uma promessa
+    confiável se o padrão estiver à vista.
+    """
+    saida: list[dict[str, Any]] = []
+    for tipo, regra in TIPOS.items():
+        if regra.get("oculto"):
+            # Tipo fora de uso não entra na tela de configurar: configurar o
+            # que ninguém pode mais abrir é trabalho jogado fora.
+            continue
+        ramos: list[tuple[Optional[str], str]] = [(None, "todos os vínculos")]
+        for v in (regra.get("por_vinculo") or {}):
+            ramos.append((v, "carteira assinada" if v == "CTPS" else "prestador"))
+        for vinculo, rotulo_ramo in ramos:
+            padrao = checklist_do_tipo(tipo, vinculo)
+            atual = checklist_configurado(s, tipo, vinculo)
+            saida.append({
+                "tipo": tipo,
+                "tipo_rotulo": regra.get("nome") or tipo,
+                "vinculo": vinculo, "vinculo_rotulo": rotulo_ramo,
+                "itens": list(atual or padrao),
+                "padrao": list(padrao),
+                "configurado": bool(atual),
+                "mudou": bool(atual) and list(atual) != list(padrao),
+            })
+    return saida
+
+
+def gravar_checklist(s: Session, tipo: str, itens: list[str], *,
+                     vinculo: Optional[str] = None,
+                     usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    """Grava os passos deste tipo. Lista vazia = volta ao padrão do código.
+
+    ⚠️ NÃO MEXE NO QUE JÁ ESTÁ ABERTO: os itens são copiados para a
+    solicitação na hora em que ela é aberta. Trocar os passos de um pedido em
+    andamento faria o DP perder o que já marcou e o histórico mentir sobre o
+    que foi conferido.
+    """
+    if tipo not in TIPOS:
+        raise ErroValidacao(f"Tipo de solicitação desconhecido: {tipo}.")
+    v = (vinculo or "").strip().upper() or None
+    if v and v not in ("CTPS", "PRESTADOR"):
+        raise ErroValidacao("O vínculo tem de ser CTPS ou PRESTADOR.")
+
+    limpos: list[str] = []
+    for bruto in itens or []:
+        texto_ = " ".join(str(bruto or "").split())[:300]
+        if not texto_:
+            continue
+        if texto_ in limpos:
+            # Item repetido vira duas caixinhas iguais, e aí ninguém sabe qual
+            # já marcou. Recusar seria atrito; tirar a repetição, não.
+            continue
+        limpos.append(texto_)
+    if len(limpos) > 40:
+        raise ErroValidacao(
+            "São mais de 40 passos. Um checklist que não cabe numa tela "
+            "deixa de ser conferido — quebre em etapas ou tire o que virou "
+            "rotina.")
+
+    s.execute(text("DELETE FROM dp_checklists WHERE tipo = :t "
+                   "  AND vinculo IS NOT DISTINCT FROM :v"),
+              {"t": tipo, "v": v})
+    for i, item in enumerate(limpos):
+        s.execute(text("""
+            INSERT INTO dp_checklists (tipo, vinculo, ordem, descricao, criado_por)
+            VALUES (:t, :v, :o, :d, :u)"""),
+            {"t": tipo, "v": v, "o": i, "d": item,
+             "u": usuario.id if usuario else None})
+    registrar_evento(s, "dp_checklist", 0,
+                     "CHECKLIST_VOLTOU_AO_PADRAO" if not limpos
+                     else "CHECKLIST_ALTERADO",
+                     {"tipo": tipo, "vinculo": v, "itens": limpos},
+                     usuario.id if usuario else None)
+    s.flush()
+    logger.info("ERP/DP: checklist de %s (%s) gravado com %s item(ns) por %s",
+                tipo, v or "todos", len(limpos), usuario.nome if usuario else "?")
+    return {"tipo": tipo, "vinculo": v, "itens": limpos,
+            "voltou_ao_padrao": not limpos,
+            "padrao": list(checklist_do_tipo(tipo, v))}
 
 
 def vinculo_da_pessoa(s: Session, colaborador_id: Optional[int]) -> Optional[str]:
@@ -1675,7 +1828,7 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     solicitacao_id = int(linha.scalar())
     for i, item in enumerate(checklist_do_tipo(tipo, vinculo,
                                                readmissao=readmissao,
-                                               pedido=pedido)):
+                                               pedido=pedido, s=s)):
         s.execute(text("""INSERT INTO dp_solicitacao_itens (solicitacao_id, ordem, descricao)
                           VALUES (:s, :o, :d)"""),
                   {"s": solicitacao_id, "o": i, "d": item})

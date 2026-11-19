@@ -198,13 +198,34 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     e com prazo de sete dias. Ela não lista nada, não aceita e-mail como
     entrada e não diz se um token existe: o erro é o mesmo para inexistente,
     usado e vencido.
+
+    **AS TRÊS ÚLTIMAS ENTRARAM EM 18/11/2026: criar o próprio acesso.** Ele
+    encontrou o buraco tentando orientar a equipe — quem recebia o link do
+    portal sem ter conta batia na tela de entrada sem saída, e a alternativa
+    era pedir pelo aplicativo do PONTO: *"qual o sentido que tem de uma pessoa
+    que vai lançar um diário ter que ir lá no aplicativo do ponto?"*
+
+    Elas são públicas pelo mesmo motivo das outras: quem não tem conta não
+    pode entrar para pedir uma. O que as protege, em quatro camadas:
+
+      · o código vai para o telefone **do cadastro**, nunca para o digitado —
+        o que a pessoa digita é prova, não endereço;
+      · a resposta é **idêntica** exista o CPF ou não, bata o telefone ou não,
+        então a tela não serve para descobrir quem está na base;
+      · teto de três códigos por hora **por pessoa** e cinco tentativas por
+        código, para seis dígitos não caírem na força bruta;
+      · e, no fim, **elas não criam acesso nenhum**: só põem o pedido na fila,
+        onde gente aprova. Decisão dele no mesmo dia: *"ainda assim precisa
+        ser validado por alguém no sistema."*
     """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
         "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
         "erp.pagina_primeiro_acesso", "erp.pagina_esqueci_a_senha",
         "erp.api_portal_pessoas", "erp.api_portal_ler_documento",
-        "erp.api_portal_conferir_cpf"}
+        "erp.api_portal_conferir_cpf",
+        "erp.pagina_primeiro_acesso_portal",
+        "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir"}
 
 
 def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):
