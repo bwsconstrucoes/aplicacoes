@@ -426,6 +426,13 @@ def _cad(mundo, **extra):
             # Autônomo (RPA); demais, não exibir"*), mas informá-la aqui não
             # atrapalha: o que o teste prova é o resto do pedido.
             "valor_diaria": "130,00", "data_inicio": "2026-06-01",
+            # ⚑ Os dados do eSocial e do SomaPay, obrigatórios desde
+            # 19/11/2026 (ver `CAMPOS_DA_PESSOA`).
+            "nome_mae": "Maria Da Silva", "data_nascimento": "1990-03-15",
+            "rg": "2001234567", "rg_emissao": "2010-05-20", "rg_orgao": "SSP",
+            "rg_uf": "CE", "cep": "60000000", "logradouro": "Rua Um",
+            "numero_endereco": "10", "bairro": "Centro",
+            "municipio": "Fortaleza", "uf": "CE",
             "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
                            "COMPROVANTE-ENDERECO-PESSOA"]}
     base.update(extra)

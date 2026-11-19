@@ -106,6 +106,13 @@
                cursor: pointer; }
   .papel.tem .btn-papel { background: #5A6B85; }
   .oculto { display: none; }
+  .area-solta { margin-top: 8px; padding: 16px 10px; border: 2px dashed #9DB2D3;
+                border-radius: 10px; text-align: center; background: #F6F9FE; }
+  .area-solta.em-cima { border-color: #0B2C5C; background: #E7EFFB; }
+  .area-solta > b { display: block; font-size: 14px; }
+  .area-solta > small { display: block; color: #5A6B85; margin: 4px 0; }
+  .area-botoes { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .tipo-arquivo { margin-top: 4px; font-size: 12.5px; max-width: 100%; }
 
   .area { display: block; width: 100%; text-align: left; margin-bottom: 8px;
          background: #fff; border: 1px solid #C9D3E4; border-left: 4px solid #0B2C5C;
@@ -289,6 +296,9 @@ async function devolver(id, botao){
 // é regra de negócio e vive no `pessoal_solicitacoes.py`. Duplicar aqui faria
 // o portal e a tela do DP divergirem no primeiro ajuste.
 const ROTULO = {
+  nome_mae: "Nome da mãe", rg: "Nº do RG", rg_emissao: "Data de emissão do RG",
+  rg_orgao: "Órgão emissor do RG", rg_uf: "Estado que emitiu o RG",
+  complemento: "Complemento",
   nome: "Nome completo", cpf: "CPF", obra_id: "Obra", cargo_id: "Cargo",
   vinculo: "Tipo de vínculo", data_inicio: "Data de início", telefone: "Telefone",
   data_saida: "Data de saída", aviso_previo: "Data do aviso prévio",
@@ -381,6 +391,7 @@ const SIM_NAO = {
 const TIPO_CAMPO = {
   data_inicio: "date", data_saida: "date", aviso_previo: "date", ultimo_dia: "date",
   vigencia: "date", dependente_nascimento: "date", data_nascimento: "date",
+  rg_emissao: "date",
   admissao: "date", primeira_competencia: "month",
   email: "email",
   observacao: "textarea", descricao: "textarea", justificativa: "textarea",
@@ -710,10 +721,15 @@ function ligarCriticaDoCPF(t){
             + "não precisa cadastrar de novo. Fale com o DP.";
           recado.className = "do-papel pede";
         } else if (r.situacao === "desligado") {
-          recado.textContent = `${r.nome} já teve cadastro aqui, hoje `
-            + "desligado: este pedido vai como READMISSÃO, e o cadastro volta "
-            + "sem redigitar nada.";
+          {# ⚑ O AVISO DELE (19/11/2026): o cadastro já existia, a admissão
+             segue, o histórico fica, e o que vier agora atualiza. #}
+          recado.textContent = `${r.nome} já teve cadastro conosco e está `
+            + "desligado. A admissão segue como READMISSÃO: o histórico fica "
+            + "guardado, os documentos ficam opcionais e o que você mandar "
+            + "agora atualiza o cadastro. Complete só o que faltar.";
           recado.className = "do-papel ok";
+          marcarOQueOCadastroTem(t, r.tem || []);
+          pintarPapeis(t);
         } else {
           recado.textContent = "não existe cadastro com este CPF — segue o "
             + "cadastro novo";
@@ -914,10 +930,16 @@ function escolherPessoa(d){
 function preencherOQueOCadastroTem(t, pessoa){
   const mapa = t.ja_no_cadastro || {};
   const tem = (pessoa && pessoa.cadastro) || {};
+  // ⚑ DADO PESSOAL CHEGA SÓ COMO "TEM" (19/11/2026): o RG, a mãe e o
+  // endereço não descem para o celular. Esses campos somem dizendo "já está
+  // no cadastro"; os outros (CTPS, PIS) vêm preenchidos para conferir.
+  marcarOQueOCadastroTem(t, Object.entries(mapa)
+    .filter(([, coluna]) => tem[coluna] === "__tem__").map(([campo]) => campo));
   Object.entries(mapa).forEach(([campo, coluna]) => {
     const caixa = els("p-" + campo);
     if (!caixa) return;
-    const valor = tem[coluna];
+    const valor = tem[coluna] === "__tem__" ? "" : tem[coluna];
+    if (tem[coluna] === "__tem__") return;
     if (!valor) {
       // Pessoa sem o dado: o campo volta a ser pergunta. (Trocar de pessoa
       // depois de ter escolhido outra acontece, e o número da anterior não
@@ -951,22 +973,75 @@ const ROTULO_VINCULO = {CTPS: "carteira assinada",
 // clique e vai se marcando sozinha conforme a pessoa anexa. Ninguém preenche
 // vinte campos para descobrir no final que faltava um papel.
 // ---------------------------------------------------------------------------
-let PAPEIS = {};          // código do documento -> {arquivo, lido}
+let PAPEIS = {};          // código do papel exigido -> {nome} (quem o cobre)
+let ARQUIVOS = [];        // [{arquivo, nome, tipos, documento, aviso, lendo}]
+// ⚑ A READMISSÃO (19/11/2026): a pessoa que já teve cadastro. `tem` são os
+// NOMES dos campos que o cadastro dela já tem — os valores não descem.
+let READMITIDO = null;    // {id, nome, tem: [campos]}
+
+// O papel principal de um arquivo: o primeiro que a leitura reconheceu e que
+// não é "outro". É com ele que o arquivo é guardado no cadastro.
+function tipoPrincipal(a){
+  return (a.tipos || []).find(x => x !== "OUTRO") || "DOC-IDENTIDADE";
+}
+
+// Quem cobre cada papel exigido sai da lista de arquivos — uma CNH cobre a
+// identificação E o CPF, porque o CPF está nela.
+function recalcularPapeis(){
+  PAPEIS = {};
+  ARQUIVOS.forEach(a => (a.tipos || []).forEach(t => {
+    if (t !== "OUTRO" && !PAPEIS[t]) PAPEIS[t] = {nome: a.nome};
+  }));
+}
 
 function blocoDosPapeis(t){
-  PAPEIS = {};
-  const papeis = papeisExigidos(t);
-  if (!papeis.length) return "";
-  return `<div class="papeis" id="p-papeis">
-    <b>1. Comece pelos documentos</b>
-    <p class="ajuda">Fotografe estes papéis e o sistema <b>lê e preenche os
-      campos abaixo</b> — nome, CPF e os números da carteira. Fotografe
-      direito, de frente e sem sombra. Sem eles o pedido não sai: é o que o DP
-      precisa para cadastrar e para a pessoa entrar no sistema de pagamento.</p>
+  PAPEIS = {}; ARQUIVOS = []; READMITIDO = null;
+  if (!(t.documentos || []).length) return "";
+  {# ⚑ "JÁ TRABALHOU CONOSCO?" vem ANTES dos documentos (19/11/2026). Ele:
+     *"se não tiver documento, eu queria poder pesquisar o nome da pessoa (…)
+     e só selecionar sem ter a necessidade de incluir de novos documentos."*
+     Só na admissão: é o único pedido que cria (ou recria) a ficha. #}
+  const readmissao = t.chave === "CADASTRO" ? `
+    <div class="papeis" id="p-voltou">
+      <b>Já trabalhou conosco?</b>
+      <p class="ajuda">Procure pelo nome ou pelo CPF. Achando, é só escolher: o
+        cadastro dele já existe, os documentos não precisam ser mandados de
+        novo, e você só completa o que faltar.</p>
+      <input id="p-voltou-busca" type="search" autocomplete="off"
+             placeholder="nome ou CPF de quem já trabalhou aqui">
+      <div id="p-voltou-achados" class="achados-pessoa"></div>
+      <div id="p-voltou-escolhido" class="pessoa-escolhida oculto"></div>
+    </div>` : "";
+  {# ⚑ UMA ÁREA SÓ, DE ARRASTAR VÁRIOS ARQUIVOS (19/11/2026). Ele: *"esse
+     campo deveria ser um campo onde você pode jogar o documento dentro (…) e
+     eu preciso poder colocar mais de um documento. (…) a pessoa coloca o RG e
+     o RG é uma imagem da frente e uma imagem do verso."* Antes era um botão
+     por tipo de papel, um arquivo por botão. #}
+  return readmissao + `<div class="papeis" id="p-papeis">
+    <b>1. Os documentos da pessoa</b>
+    <p class="ajuda">Jogue aqui <b>todos de uma vez</b> — RG (frente e verso),
+      CNH, CPF, comprovante de endereço e, se for carteira assinada, a CTPS.
+      O sistema lê tudo junto e <b>preenche os campos abaixo</b>. Confira o
+      que ele leu: o que não der para ler fica para você digitar.</p>
+    <div id="p-solta" class="area-solta" tabindex="0">
+      <b>Arraste os arquivos para cá</b>
+      <small>ou</small>
+      <div class="area-botoes">
+        <button type="button" class="btn-papel" id="p-foto">📷 Tirar foto</button>
+        <button type="button" class="btn-papel" id="p-escolher">📎 Escolher arquivos</button>
+      </div>
+      <input type="file" id="pf-foto" accept="image/*" capture="environment" class="oculto">
+      <input type="file" id="pf-varios" accept="image/*,.pdf" multiple class="oculto">
+    </div>
+    <div id="p-arquivos"></div>
     <div id="p-papeis-lista"></div></div>`;
 }
 
 function papeisExigidos(t){
+  // ⚑ NA READMISSÃO NÃO SE EXIGE PAPEL — a mesma regra do servidor. Os
+  // papéis da primeira passagem estão no cadastro dela.
+  if (READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado"))
+    return [];
   const base = (t.documentos || []).slice();
   // ⚑ Escolher CTPS acrescenta a carteira NA HORA — a mesma regra do
   // servidor (`documentos_se`), para a tela não prometer menos do que ele vai
@@ -980,69 +1055,219 @@ function papeisExigidos(t){
 }
 
 const ROTULO_PAPEL = {
-  "DOC-IDENTIDADE": "Documento de identificação (RG, CNH ou CTPS)",
-  "CPF-DOC": "CPF",
+  "DOC-IDENTIDADE": "Documento de identificação (RG ou CNH)",
+  "CPF-DOC": "CPF (vale o que está na CNH ou no RG novo)",
   "COMPROVANTE-ENDERECO-PESSOA": "Comprovante de endereço",
   "CTPS-FOTO": "CTPS — página com a foto",
   "CTPS-INFORMACOES": "CTPS — página com as informações",
   "DOC-DEPENDENTE": "Documento do dependente (certidão ou RG)",
+  "OUTRO": "Outro documento",
 };
 
 function pintarPapeis(t){
+  const lista = els("p-arquivos");
+  if (lista) {
+    lista.innerHTML = ARQUIVOS.map((a, i) => `
+      <div class="papel tem">
+        <span class="marca">${a.lendo ? "…" : "✓"}</span>
+        <div class="papel-corpo">
+          <b>${esc(a.nome)}</b>
+          <small>${a.lendo ? "lendo…"
+            : esc(a.documento || "não reconhecido — diga o que é")}${
+            a.aviso ? " · " + esc(a.aviso) : ""}</small>
+          ${a.lendo ? "" : `<select data-arq-tipo="${i}" class="tipo-arquivo">
+            ${(a.tipos || []).some(x => x !== "OUTRO") ? ""
+              : `<option value="" selected>diga o que é este arquivo…</option>`}
+            ${Object.entries(ROTULO_PAPEL).filter(([c]) => c !== "DOC-DEPENDENTE")
+              .map(([c, r]) => `<option value="${c}"
+                ${(a.tipos || []).some(x => x !== "OUTRO") && tipoPrincipal(a) === c ? "selected" : ""}
+                >${esc(r)}</option>`).join("")}
+          </select>`}
+        </div>
+        <button type="button" class="link-tirar" data-arq-tirar="${i}">tirar</button>
+      </div>`).join("");
+    lista.querySelectorAll("[data-arq-tipo]").forEach(sel =>
+      sel.addEventListener("change", () => {
+        // Corrigido à mão, o arquivo passa a valer só pelo que a pessoa disse.
+        ARQUIVOS[+sel.dataset.arqTipo].tipos = sel.value ? [sel.value] : ["OUTRO"];
+        recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+      }));
+    lista.querySelectorAll("[data-arq-tirar]").forEach(b =>
+      b.addEventListener("click", () => {
+        ARQUIVOS.splice(+b.dataset.arqTirar, 1);
+        recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+      }));
+  }
   const onde = els("p-papeis-lista");
   if (!onde) return;
-  onde.innerHTML = papeisExigidos(t).map(c => {
+  const exigidos = papeisExigidos(t);
+  onde.innerHTML = exigidos.length ? `<small class="ajuda">O que precisa
+      estar entre eles:</small>` + exigidos.map(c => {
     const tem = PAPEIS[c];
     return `<div class="papel ${tem ? "tem" : ""}">
       <span class="marca">${tem ? "✓" : "○"}</span>
-      <div class="papel-corpo">
-        <b>${esc(ROTULO_PAPEL[c] || c)}</b>
-        ${tem ? `<small>${esc(tem.nome)}${
-                   tem.lido ? " · " + esc(tem.lido) : ""}</small>`
-              : `<small>ainda não anexado</small>`}
-      </div>
-      <input type="file" id="pf-${c}" accept="image/*,.pdf" capture="environment"
-             class="oculto">
-      <button type="button" class="btn-papel" data-papel="${c}">${
-        tem ? "trocar" : "anexar"}</button>
+      <div class="papel-corpo"><b>${esc(ROTULO_PAPEL[c] || c)}</b>
+        <small>${tem ? "em " + esc(tem.nome) : "ainda não veio"}</small></div>
     </div>`;
-  }).join("");
-  onde.querySelectorAll("[data-papel]").forEach(b =>
-    b.addEventListener("click", () => els("pf-" + b.dataset.papel).click()));
-  papeisExigidos(t).forEach(c => {
-    const campo = els("pf-" + c);
-    if (campo) campo.addEventListener("change", () => anexarPapel(t, c, campo));
+  }).join("")
+    : (READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado")
+       ? `<small class="ajuda">Como a pessoa já tem cadastro, os documentos
+           são opcionais — mande só se algo mudou (o que vier atualiza o
+           cadastro).</small>` : "");
+}
+
+function ligarAreaSolta(t){
+  const area = els("p-solta");
+  if (!area) return;
+  const foto = els("pf-foto"), varios = els("pf-varios");
+  els("p-foto").addEventListener("click", () => foto.click());
+  els("p-escolher").addEventListener("click", () => varios.click());
+  [foto, varios].forEach(campo => campo.addEventListener("change", () => {
+    receberArquivos(t, Array.from(campo.files || []));
+    campo.value = "";
+  }));
+  ["dragenter", "dragover"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.add("em-cima");
+  }));
+  ["dragleave", "drop"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.remove("em-cima");
+  }));
+  area.addEventListener("drop", e =>
+    receberArquivos(t, Array.from((e.dataTransfer || {}).files || [])));
+}
+
+// ⚑ UMA LEITURA POR LOTE, não por arquivo: o que chegou junto é lido junto (a
+// frente e o verso do RG se completam). Custa uma chamada de IA por lote.
+async function receberArquivos(t, novos){
+  novos = novos.filter(f => f && f.size);
+  if (!novos.length) return;
+  const vagas = 8 - ARQUIVOS.length;
+  if (vagas <= 0) { recado("São no máximo 8 arquivos por pedido.", "erro"); return; }
+  novos = novos.slice(0, vagas);
+  const lote = novos.map(f => ({arquivo: f, nome: f.name || "foto",
+                                tipos: [], documento: "", aviso: "", lendo: true}));
+  ARQUIVOS = ARQUIVOS.concat(lote);
+  pintarPapeis(t); conferirOQueFalta(t);
+  try {
+    const fd = new FormData();
+    lote.forEach(a => fd.append("arquivos", a.arquivo, a.nome));
+    const r = await fetch("/erp/portal/api/ler-documentos", {method: "POST", body: fd});
+    const d = await r.json();
+    if (d && d.ok) {
+      (d.arquivos || []).forEach(x => {
+        const a = lote[x.indice];
+        if (!a) return;
+        a.tipos = x.tipos || ["OUTRO"]; a.documento = x.documento || "";
+        a.aviso = x.aviso || "";
+      });
+      // O que os documentos disseram entra nos campos VAZIOS — nunca por
+      // cima do que a pessoa já escreveu. E fica marcado como LIDO, para ela
+      // conferir.
+      Object.entries(d.campos || {}).forEach(([k, v]) => {
+        const alvo = els("p-" + k);
+        if (alvo && !alvo.value && v) {
+          alvo.value = v; alvo.dataset.lido = "1";
+          alvo.dispatchEvent(new Event("input", {bubbles: true}));
+        }
+      });
+    } else {
+      lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
+    }
+  } catch(e) {
+    lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
+  }
+  lote.forEach(a => { a.lendo = false; });
+  recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+}
+
+// ---------------------------------------------------------------------------
+// "JÁ TRABALHOU CONOSCO?" — procurar o desligado e escolher
+// ---------------------------------------------------------------------------
+function ligarReadmissao(t){
+  const caixa = els("p-voltou-busca");
+  if (!caixa) return;
+  let timer = null, pedido = 0;
+  caixa.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const termo = caixa.value.trim(), onde = els("p-voltou-achados");
+      if (termo.length < 3) { onde.innerHTML = ""; return; }
+      const meu = ++pedido;
+      let d;
+      try {
+        const r = await fetch("/erp/portal/api/pessoas?desligados=1&tipo=CADASTRO&q="
+                              + encodeURIComponent(termo));
+        d = await r.json();
+      } catch(e) { return; }
+      if (meu !== pedido) return;
+      const achados = (d && d.pessoas) || [];
+      onde.innerHTML = achados.length ? achados.map(p => `
+        <button type="button" class="achado-pessoa" data-voltou="${p.id}">
+          <b>${esc(p.nome)}</b>
+          <small>${esc(p.cargo || "sem cargo")}${p.cpf ? " · CPF " + esc(p.cpf) : ""}
+            · já saiu</small></button>`).join("")
+        : `<div class="ajuda">Ninguém desligado com esse nome ou CPF. Se a
+            pessoa nunca trabalhou aqui, siga com os documentos abaixo.</div>`;
+      const porId = {};
+      achados.forEach(p => { porId[String(p.id)] = p; });
+      onde.querySelectorAll("[data-voltou]").forEach(b =>
+        b.addEventListener("click", () => escolherQuemVoltou(t, porId[b.dataset.voltou])));
+    }, 350);
   });
 }
 
-async function anexarPapel(t, codigo, campo){
-  const arq = campo.files && campo.files[0];
-  if (!arq) return;
-  PAPEIS[codigo] = {nome: arq.name, arquivo: arq, lido: "lendo…"};
+function escolherQuemVoltou(t, p){
+  if (!p) return;
+  // Nome e CPF saem do cadastro dele: o CPF nem desce inteiro para cá.
+  READMITIDO = {id: p.id, nome: p.nome,
+                tem: Object.keys(p.cadastro || {}).concat(["cpf"])};
+  els("p-voltou-achados").innerHTML = "";
+  els("p-voltou-busca").value = "";
+  const caixa = els("p-voltou-escolhido");
+  caixa.className = "pessoa-escolhida";
+  {# ⚑ O AVISO QUE ELE PEDIU (19/11/2026): *"informar que esse colaborador, o
+     cadastro dele já existia em sistema (…) e a gente vai dar prosseguimento
+     à admissão (…) e os dados novos vão estar atualizados."* #}
+  caixa.innerHTML = `<b>${esc(p.nome)}</b>
+    <small>Já teve cadastro conosco e está desligado. A admissão segue como
+      <b>readmissão</b>: o histórico dele fica guardado, e o que você mandar
+      agora (documento ou dado) atualiza o cadastro.</small>
+    <button type="button" class="link-tirar" id="p-voltou-tirar">não é esta pessoa</button>`;
+  els("p-voltou-tirar").addEventListener("click", () => {
+    READMITIDO = null; caixa.className = "pessoa-escolhida oculto";
+    marcarOQueOCadastroTem(t, []); pintarPapeis(t); conferirOQueFalta(t);
+  });
+  const nome = els("p-nome");
+  if (nome && !nome.value) nome.value = p.nome;
+  marcarOQueOCadastroTem(t, READMITIDO.tem);
   pintarPapeis(t); conferirOQueFalta(t);
-  // ⚑ A LEITURA AVISA, NÃO BARRA. A IA erra, e um aviso que impede o envio
-  // vira parede quando ela erra. O único bloqueio é "não anexou nada".
-  try {
-    const fd = new FormData();
-    fd.append("arquivo", arq); fd.append("tipo", codigo);
-    const r = await fetch("/erp/portal/api/ler-documento", {method: "POST", body: fd});
-    const d = await r.json();
-    if (d && d.ok) {
-      PAPEIS[codigo].lido = d.resumo || "lido";
-      // O que o documento disse entra nos campos VAZIOS — nunca por cima do
-      // que a pessoa já escreveu.
-      Object.entries(d.campos || {}).forEach(([k, v]) => {
-        const alvo = els("p-" + k);
-        if (alvo && !alvo.value && v) alvo.value = v;
-      });
-      if (d.aviso) recado(d.aviso, "erro");
-    } else {
-      PAPEIS[codigo].lido = "anexado (não consegui ler)";
+}
+
+// O que o cadastro antigo já tem não é perguntado: o campo some e diz isso.
+// Só os NOMES dos campos chegam aqui — o valor fica no servidor, que o junta
+// ao pedido.
+function marcarOQueOCadastroTem(t, tem){
+  const conjunto = new Set(tem || []);
+  (t.campos || []).forEach(c => {
+    const campo = els("p-" + c);
+    if (!campo) return;
+    const rotulo = campo.closest("label");
+    let nota = els("pt-" + c);
+    if (conjunto.has(c) && !campo.value) {
+      campo.dataset.noCadastro = "1";
+      campo.classList.add("oculto");
+      if (!nota && rotulo) {
+        nota = document.createElement("small");
+        nota.id = "pt-" + c; nota.className = "do-papel ok";
+        rotulo.appendChild(nota);
+      }
+      if (nota) nota.textContent = "✓ já está no cadastro — não precisa digitar";
+    } else if (campo.dataset.noCadastro) {
+      delete campo.dataset.noCadastro;
+      campo.classList.remove("oculto");
+      if (nota) nota.remove();
     }
-  } catch(e) {
-    PAPEIS[codigo].lido = "anexado";
-  }
-  pintarPapeis(t); conferirOQueFalta(t);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1058,6 +1283,16 @@ function recadoDosCamposDePapel(t){
     const campo = els("p-" + c), dica = els("pd-" + c);
     if (!campo || !dica) return;
     const anexado = !!(papel && PAPEIS[papel]);
+    const voltou = READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado");
+    // Na readmissão o campo que o cadastro já tem tem a sua própria nota
+    // ("já está no cadastro"), e o que falta não depende de papel.
+    if (campo.dataset.noCadastro) { dica.textContent = ""; return; }
+    if (voltou && !campo.value) {
+      dica.textContent = "o cadastro antigo não tem este dado — digite, ou "
+        + "mande o documento ali em cima";
+      dica.className = "do-papel pede";
+      return;
+    }
     // ⚑ "PREENCHIDO À MÃO" SERIA MENTIRA quando o número veio do cadastro, e
     // mentira de recado é pior que recado nenhum: quem lê para de conferir.
     if (campo.value && campo.dataset.doCadastro) {
@@ -1292,6 +1527,11 @@ function conferirOQueFalta(t){
     // campo que a pessoa não tem como ver.
     const caixa = campo && campo.closest("label");
     if (caixa && caixa.classList.contains("oculto")) return;
+    // O que o cadastro antigo já tem (readmissão) não se cobra: o servidor
+    // junta o valor ao pedido.
+    if (campo && campo.dataset.noCadastro) return;
+    // Quem voltou foi escolhido pela busca: o CPF sai do cadastro dele.
+    if (c === "cpf" && READMITIDO) return;
     if (campo && !campo.value) falta.push((ROTULO[c] || c).toLowerCase());
   });
   if (t.repete)
@@ -1321,6 +1561,8 @@ function conferirOQueFalta(t){
 }
 
 function ligarPapeis(t){
+  ligarAreaSolta(t);
+  ligarReadmissao(t);
   pintarPapeis(t);
   // Qualquer mudança reconfere — inclusive a do vínculo, que muda a LISTA de
   // papéis exigidos.
@@ -1364,14 +1606,33 @@ async function enviarPedido(){
   // ⚑ Os papéis vão junto, e o servidor confere de novo: a tela já barrou,
   // mas quem mexe no navegador contorna a tela.
   corpo.documentos = Object.keys(PAPEIS);
+  if (READMITIDO) corpo.colaborador_id = READMITIDO.id;
   // ⚑ Vários de uma vez (hoje só o dependente). O servidor confere cada um e
   // diz QUAL está incompleto — "falta a data de nascimento" não ajudaria
   // ninguém com três na tela.
   if (t.repete && REPETIDOS.length) corpo.dependentes = REPETIDOS;
   els("p-enviar").disabled = true;
   try {
-    const d = await chamar("/erp/portal/api/pedidos",
-                           {method: "POST", body: JSON.stringify(corpo)});
+    let d;
+    if (ARQUIVOS.length) {
+      {# ⚑ OS ARQUIVOS VÃO JUNTO COM O PEDIDO (19/11/2026). Antes só ia o
+         TIPO ("anexei o RG") e o arquivo ficava no celular — o DP recebia a
+         admissão sem papel nenhum. Agora pedido e papéis são gravados na
+         mesma transação. #}
+      const fd = new FormData();
+      fd.append("pedido", JSON.stringify(corpo));
+      ARQUIVOS.forEach(a => {
+        fd.append("papeis", a.arquivo, a.nome);
+        fd.append("tipos", tipoPrincipal(a));
+      });
+      const r = await fetch("/erp/portal/api/pedidos", {method: "POST", body: fd});
+      d = await r.json().catch(() => ({}));
+      if (r.status === 401) { semAcesso(d.erro); throw new Error(d.erro || "entre no sistema"); }
+      if (!r.ok || d.ok === false) throw new Error(d.erro || "deu problema aqui");
+    } else {
+      d = await chamar("/erp/portal/api/pedidos",
+                       {method: "POST", body: JSON.stringify(corpo)});
+    }
     recado(`Pedido ${d.numero} enviado ao DP.`, "ok");
     carregar();
   } catch(e){ recado(e.message, "erro"); }

@@ -754,8 +754,10 @@ def test_o_tipo_leva_para_a_tela_de_onde_cada_campo_vem():
         regra = svc_sp.TIPOS[t["chave"]]
         assert t["ja_no_cadastro"] == dict(regra.get("ja_no_cadastro") or {})
     prestador = next(t for t in lista if t["chave"] == "ADMISSAO_PRESTADOR")
-    assert prestador["ja_no_cadastro"] == {"num_ctps": "ctps_numero",
-                                           "num_pis": "pis"}
+    assert prestador["ja_no_cadastro"]["num_ctps"] == "ctps_numero"
+    assert prestador["ja_no_cadastro"]["num_pis"] == "pis"
+    # desde 19/11/2026, os dados da pessoa também (eSocial e SomaPay)
+    assert prestador["ja_no_cadastro"]["rg"] == "rg"
 
 
 def test_todo_campo_consultado_no_cadastro_e_campo_do_proprio_tipo():
@@ -804,7 +806,7 @@ def test_o_pedido_nasce_com_o_que_o_cadastro_tem_e_nao_exige_de_novo(
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     ja = svc_sp.o_que_o_cadastro_ja_tem(sessao_real, "ADMISSAO_PRESTADOR",
                                         pessoa.id)
-    assert ja == {"num_pis": PIS_A}
+    assert ja["num_pis"] == PIS_A and "num_ctps" not in ja
     exige = svc_sp.exigencias("ADMISSAO_PRESTADOR", {}, ja)
     assert "num_pis" not in exige["campos"]
     # O que o cadastro NÃO tem continua sendo perguntado.

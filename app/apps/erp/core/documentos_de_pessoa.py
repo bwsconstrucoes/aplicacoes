@@ -158,3 +158,173 @@ def ler(conteudo: bytes, nome_do_arquivo: str, tipo: str) -> dict[str, Any]:
                  + ". Vale tirar outra foto, com a página inteira e sem "
                    "sombra — o DP vai precisar ler isto.")
     return {"campos": campos, "resumo": resumo, "aviso": aviso}
+
+
+# ===========================================================================
+# ⚑ VÁRIOS PAPÉIS DE UMA VEZ, NUMA LEITURA SÓ (19/11/2026)
+#
+# Ele: *"esse campo deveria ser um campo onde você pode jogar o documento
+# dentro (…) e eu preciso poder colocar mais de um documento. (…) a pessoa
+# coloca o RG e o RG é uma imagem da frente e uma imagem do verso. (…) eu
+# quero jogar o RG, jogar a CNH, o comprovante de endereço, o CPF, e o sistema
+# fazer a leitura de todas essas informações, preenchendo os dados da pessoa."*
+#
+# ⚑ CUSTO: UMA chamada de IA por lote, não uma por arquivo. A frente e o verso
+# do RG vão juntos — e é assim que a IA junta o número (na frente) com a
+# emissão e o órgão (no verso). Cinco fotos custam uma leitura.
+#
+# ⚑ A IA DIZ O QUE CADA ARQUIVO É, e um arquivo pode valer por mais de um
+# papel: a CNH é identificação E traz o CPF. A tela marca os papéis exigidos
+# pelo que a leitura reconheceu, e a pessoa pode corrigir o tipo à mão.
+# ===========================================================================
+TIPOS_RECONHECIDOS = ("DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA",
+                      "CTPS-FOTO", "CTPS-INFORMACOES", "OUTRO")
+TETO_DE_ARQUIVOS = 8
+CAMPOS_DO_LOTE = ("nome", "cpf", "nome_mae", "data_nascimento", "rg",
+                  "rg_emissao", "rg_orgao", "rg_uf", "cep", "logradouro",
+                  "numero_endereco", "complemento", "bairro", "municipio", "uf",
+                  "num_ctps", "num_pis")
+
+_INSTRUCAO_LOTE = """Você recebe {n} arquivo(s), na ordem 0, 1, 2…, com os
+documentos de UM trabalhador brasileiro, fotografados com celular em canteiro
+de obra (torto, com sombra, às vezes frente e verso em fotos separadas).
+
+Devolva SOMENTE um JSON:
+
+{{
+  "arquivos": [
+    {{"indice": 0,
+      "documento": "o que é (RG frente, RG verso, CNH, CPF, comprovante de
+                    endereço, CTPS página da foto, CTPS página de informações,
+                    outro)",
+      "tipos": ["um ou mais entre: DOC-IDENTIDADE, CPF-DOC,
+                 COMPROVANTE-ENDERECO-PESSOA, CTPS-FOTO, CTPS-INFORMACOES,
+                 OUTRO — a CNH e o RG novo trazem o CPF, então valem por
+                 DOC-IDENTIDADE e CPF-DOC"],
+      "legivel": true ou false,
+      "problema": "o que atrapalha a leitura, ou \\"\\""}}
+  ],
+  "campos": {{
+    "nome": "", "cpf": "só os 11 dígitos", "nome_mae": "",
+    "data_nascimento": "AAAA-MM-DD", "rg": "número do RG",
+    "rg_emissao": "AAAA-MM-DD", "rg_orgao": "sigla do órgão (SSP, DETRAN…)",
+    "rg_uf": "sigla do estado que emitiu o RG",
+    "cep": "só dígitos", "logradouro": "rua/avenida", "numero_endereco": "",
+    "complemento": "", "bairro": "", "municipio": "", "uf": "sigla",
+    "num_ctps": "", "num_pis": "só dígitos"
+  }}
+}}
+
+⚠️ NUNCA INVENTE. Campo que não estiver visível com certeza fica "". Um CPF
+ou um RG errado impede a pessoa de receber. Preferir "" a chutar. O endereço
+vem do comprovante de endereço; o RG, a emissão e o órgão vêm do RG (ou da
+CNH, no campo de documento de identidade)."""
+
+
+def _mime(nome: str) -> str:
+    n = (nome or "").lower()
+    if n.endswith(".pdf"):
+        return "application/pdf"
+    if n.endswith(".png"):
+        return "image/png"
+    if n.endswith(".webp"):
+        return "image/webp"
+    return "image/jpeg"
+
+
+def _uf(v: Any) -> str:
+    t = "".join(c for c in str(v or "").upper() if c.isalpha())
+    return t if len(t) == 2 else ""
+
+
+def normalizar_campos(lido: dict[str, Any]) -> dict[str, str]:
+    """O que a IA devolveu, no formato que o formulário guarda — e só o que
+    passou na conferência de forma (CPF com 11 dígitos, data de verdade,
+    UF com duas letras, CEP com oito)."""
+    campos: dict[str, str] = {}
+    for chave in ("nome", "nome_mae", "rg_orgao", "logradouro",
+                  "numero_endereco", "complemento", "bairro", "municipio"):
+        v = " ".join(str(lido.get(chave) or "").split())
+        if v:
+            campos[chave] = v
+    cpf = _so_digitos(lido.get("cpf"))
+    if len(cpf) == 11:
+        campos["cpf"] = cpf
+    for chave in ("data_nascimento", "rg_emissao"):
+        d = _data(lido.get(chave))
+        if d:
+            campos[chave] = d
+    rg = "".join(c for c in str(lido.get("rg") or "").upper()
+                 if c.isalnum())
+    if len(rg) >= 5:
+        campos["rg"] = rg
+    for chave in ("rg_uf", "uf"):
+        u = _uf(lido.get(chave))
+        if u:
+            campos[chave] = u
+    cep = _so_digitos(lido.get("cep"))
+    if len(cep) == 8:
+        campos["cep"] = cep
+    for chave in ("num_ctps", "num_pis"):
+        d = _so_digitos(lido.get(chave))
+        if d:
+            campos[chave] = d
+    return campos
+
+
+def ler_varios(arquivos: list[tuple[bytes, str]]) -> dict[str, Any]:
+    """Lê o lote inteiro numa chamada. `arquivos`: [(conteudo, nome)].
+
+    Devolve `{"arquivos": [{indice, nome, documento, tipos, aviso}],
+    "campos": {...}}`. Nunca levanta por causa da leitura: falhou, volta
+    vazio, e a tela pede para digitar.
+    """
+    arquivos = list(arquivos)[:TETO_DE_ARQUIVOS]
+    vazio = {"arquivos": [{"indice": i, "nome": n, "documento": "",
+                           "tipos": [], "aviso": "não consegui ler"}
+                          for i, (_c, n) in enumerate(arquivos)],
+             "campos": {}}
+    if not arquivos:
+        return {"arquivos": [], "campos": {}}
+    try:
+        from app.apps.erp.core.documentos.leitor import _cliente, _extrair_json
+        import base64 as _b64
+        import os as _os
+        cliente = _cliente()
+        modelo = _os.getenv("ERP_MODELO_IA_VISAO", "gpt-4o")
+        partes: list[dict[str, Any]] = [
+            {"type": "text", "text": _INSTRUCAO_LOTE.format(n=len(arquivos))}]
+        for i, (conteudo, nome) in enumerate(arquivos):
+            partes.append({"type": "text", "text": f"Arquivo {i}: {nome}"})
+            partes.append({"type": "image_url", "image_url": {
+                "url": f"data:{_mime(nome)};base64,"
+                       + _b64.b64encode(conteudo).decode()}})
+        resp = cliente.chat.completions.create(
+            model=modelo, temperature=0, max_tokens=1500,
+            messages=[{"role": "user", "content": partes}])
+        lido = _extrair_json(resp.choices[0].message.content or "") or {}
+    except Exception as e:                                # noqa: BLE001
+        logger.warning("ERP/portal: não consegui ler o lote (%s)", e)
+        return vazio
+
+    por_indice = {}
+    for a in (lido.get("arquivos") or []):
+        try:
+            por_indice[int(a.get("indice"))] = a
+        except (TypeError, ValueError):
+            continue
+    saida = []
+    for i, (_c, nome) in enumerate(arquivos):
+        a = por_indice.get(i) or {}
+        tipos = [str(x).strip().upper() for x in (a.get("tipos") or [])]
+        tipos = [x for x in tipos if x in TIPOS_RECONHECIDOS]
+        aviso = ""
+        if a.get("legivel") is False:
+            problema = str(a.get("problema") or "").strip()
+            aviso = ("difícil de ler" + (f" ({problema})" if problema else "")
+                     + " — vale fotografar de novo")
+        saida.append({"indice": i, "nome": nome,
+                      "documento": str(a.get("documento") or "").strip(),
+                      "tipos": tipos or ["OUTRO"], "aviso": aviso})
+    return {"arquivos": saida,
+            "campos": normalizar_campos(lido.get("campos") or {})}

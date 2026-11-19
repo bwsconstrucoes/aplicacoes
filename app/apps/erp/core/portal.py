@@ -574,7 +574,16 @@ def abrir(s: Session, dados: dict[str, Any],
     if tipo not in TIPOS_DO_PORTAL:
         raise ErroValidacao(
             "Este tipo de pedido não é aberto pela obra — fale com o DP.")
-    _pode_pela_pessoa(s, eu, dados.get("colaborador_id"))
+    # ⚑ A READMISSÃO DE QUEM SAIU DE OUTRA OBRA (19/11/2026). O desligado
+    # escolhido na busca da admissão pode ter trabalhado em qualquer obra — é
+    # justamente quem volta. Para ele o alcance por obra não vale; para todo
+    # o resto, vale como sempre.
+    alvo = s.get(Colaborador, int(dados["colaborador_id"])) \
+        if dados.get("colaborador_id") else None
+    if not (tipo == "CADASTRO" and alvo is not None
+            and (alvo.situacao or "").upper() == "DESLIGADO"
+            and pode_pedir_por_outros(s, eu)):
+        _pode_pela_pessoa(s, eu, dados.get("colaborador_id"))
 
     r = svc_sp.abrir(s, {**dados, "tipo": tipo,
                          "requerente": eu["nome"]}, usuario=None)
@@ -585,9 +594,13 @@ def abrir(s: Session, dados: dict[str, Any],
                          SET solicitante_colaborador_id = :c
                        WHERE id = :s"""),
               {"c": eu["colaborador_id"], "s": r["id"]})
-    registrar_evento(s, "colaborador", eu["colaborador_id"],
-                     "PEDIDO_PELO_PORTAL",
-                     {"numero": r.get("numero"), "tipo": tipo}, None)
+    # Quem entra no portal sem ficha de colaborador (gente de escritório) não
+    # tem onde pendurar o evento — e o evento sem dono derrubava o pedido
+    # inteiro (achado em 19/11/2026, abrindo a admissão como administrador).
+    if eu["colaborador_id"]:
+        registrar_evento(s, "colaborador", eu["colaborador_id"],
+                         "PEDIDO_PELO_PORTAL",
+                         {"numero": r.get("numero"), "tipo": tipo}, None)
     s.flush()
     return {**r, "aberto_por": eu["nome"]}
 
@@ -945,7 +958,8 @@ def vinculo_do_tipo(chave: str) -> str:
 
 
 def procurar_pessoas(s: Session, usuario: Optional[Usuario],
-                     termo: str, *, so_vinculo: str = "") -> list[dict[str, Any]]:
+                     termo: str, *, so_vinculo: str = "",
+                     desligados: bool = False) -> list[dict[str, Any]]:
     """Quem bate com o que foi digitado, dentro do alcance de quem procura.
 
     `so_vinculo`: restringe ao vínculo pedido pelo TIPO de solicitação — ver
@@ -963,7 +977,15 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
                 if procurado.lower() in str(x["nome"]).lower()]
     alvo = (so_vinculo or "").strip().upper()
     obras = obras_que_alcanca(s, eu)
-    if obras is not None and not obras:
+    # ⚑ OS DESLIGADOS, PARA A ADMISSÃO (19/11/2026). Ele: *"se não tiver
+    # documento, eu queria poder pesquisar o nome da pessoa (…) ou pelo CPF,
+    # ou pelo nome, e mostrar lá a pessoa, e você só selecionar."* Quem volta
+    # pode ter trabalhado em qualquer obra, então a obra não recorta — e por
+    # isso a busca devolve só nome, cargo e o fim do CPF; o que o cadastro tem
+    # de dado pessoal vai como "tem / não tem" (`MARCA_TEM`).
+    if desligados:
+        obras = None
+    elif obras is not None and not obras:
         return []
     # ⚑ AS COLUNAS QUE OS TIPOS CONSULTAM vêm JUNTO com a pessoa, e não numa
     # segunda chamada depois do clique: no celular, na obra, cada ida ao
@@ -971,7 +993,8 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
     # (`COLUNAS_JA_NO_CADASTRO`), não escrita aqui — tipo novo que consulte
     # outra coluna passa a trazê-la sozinho.
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
-    extras = svc_sp.COLUNAS_JA_NO_CADASTRO
+    extras = tuple(dict.fromkeys(svc_sp.COLUNAS_JA_NO_CADASTRO
+                                 + svc_sp.CAMPOS_DA_PESSOA))
     colunas_extras = "".join(f", c.{c} AS ja_{c}" for c in extras)
     linhas = s.execute(text(f"""
         SELECT c.id, c.nome, c.cpf, c.vinculo{colunas_extras},
@@ -982,7 +1005,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
           LEFT JOIN cargos  g ON g.id = c.cargo_id
           LEFT JOIN funcoes f ON f.id = c.funcao_id
          WHERE (:todas OR c.obra_id = ANY(:obras))
-           AND c.situacao = 'ATIVO'
+           AND c.situacao = :situacao
            AND (:vinculo = '' OR upper(COALESCE(c.vinculo, 'CTPS')) = :vinculo)
            AND (translate(lower(c.nome),
                           'áàâãäéèêëíìîïóòôõöúùûüç',
@@ -997,15 +1020,19 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
          # "José", que é como se digita no celular, com pressa.
          "nome": "%" + _sem_acento(procurado) + "%", "digitos": so_digito,
          "vinculo": alvo,
+         "situacao": "DESLIGADO" if desligados else "ATIVO",
          "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
              "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
              "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"]),
              # Só o que ESTÁ preenchido: campo vazio aqui viraria "já no
              # cadastro" na tela, e a pessoa não preencheria o que falta.
-             "cadastro": {c: str(l[f"ja_{c}"]).strip() for c in extras
+             "cadastro": {c: (svc_sp.MARCA_TEM if c in svc_sp.SO_A_MARCA
+                              else str(l[f"ja_{c}"]).strip())
+                          for c in extras
                           if l[f"ja_{c}"] is not None
-                          and str(l[f"ja_{c}"]).strip()}}
+                          and str(l[f"ja_{c}"]).strip()},
+             "desligado": desligados}
             for l in linhas]
 
 

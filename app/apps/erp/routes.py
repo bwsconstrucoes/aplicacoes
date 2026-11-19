@@ -13197,6 +13197,9 @@ def api_portal_pessoas():
             svc_portal.quem_esta(s, usuario)            # 401 se não entrou
             achados = svc_portal.procurar_pessoas(
                 s, usuario, request.args.get("q", ""),
+                # A admissão procura também quem JÁ SAIU — é a readmissão.
+                desligados=(request.args.get("desligados") == "1"
+                            and request.args.get("tipo", "") == "CADASTRO"),
                 # O tipo de pedido pode valer só para um vínculo — a admissão
                 # de prestador, por exemplo. A tela diz qual; o servidor
                 # confere contra a regra, para a tela não poder alargar.
@@ -13236,11 +13239,20 @@ def api_portal_conferir_cpf():
             usuario = _usuario_logado(s)
             svc_portal.quem_esta(s, usuario)            # 401 se não entrou
             achado = svc_pessoas.conferir_cpf(s, request.args.get("cpf", ""))
+            # ⚑ NA READMISSÃO, O QUE O CADASTRO JÁ TEM (19/11/2026) — só os
+            # NOMES dos campos preenchidos, nunca os valores: quem digitou o
+            # CPF está com a pessoa ao lado, mas o RG e o endereço antigos não
+            # descem para o celular. A tela deixa de exigir o que já existe.
+            tem: list[str] = []
+            if achado["situacao"] == "desligado" and achado.get("colaborador_id"):
+                from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+                tem = sorted(svc_sp.o_que_o_cadastro_ja_tem(
+                    s, "CADASTRO", int(achado["colaborador_id"])))
         # O recado completo do cadastro traz "abra a ficha dela" — coisa que
         # quem está na obra não pode fazer. A frase daqui é a do portal.
         return jsonify({"ok": True, "situacao": achado["situacao"],
                         "nome": achado.get("nome", ""),
-                        "aviso": achado.get("aviso", "")})
+                        "aviso": achado.get("aviso", ""), "tem": tem})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
     except Exception as e:
@@ -13291,15 +13303,69 @@ def api_portal_ler_documento():
         return jsonify({"ok": False, "erro": recado_de_falha(e)})
 
 
+@bp.route("/erp/portal/api/ler-documentos", methods=["POST"])
+@permissao_publica("o portal tem autenticação própria, do ponto — ver "
+                   "core/portal.quem_esta")
+def api_portal_ler_documentos():
+    """Lê VÁRIOS papéis numa leitura só e devolve o que cada um é e os campos.
+
+    ⚑ 19/11/2026 — ele: *"eu quero jogar o RG, jogar a CNH, o comprovante de
+    endereço, o CPF, e o sistema fazer a leitura de todas essas informações."*
+    Uma chamada de IA por lote, não por arquivo (`documentos_de_pessoa`).
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import documentos_de_pessoa as svc_doc
+    try:
+        with get_session() as s:
+            svc_portal.quem_esta(s, _usuario_logado(s))     # 401 se não entrou
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    arquivos = [(f.read(), f.filename or "documento")
+                for f in request.files.getlist("arquivos")][:svc_doc.TETO_DE_ARQUIVOS]
+    if not arquivos:
+        return jsonify({"ok": False, "erro": "Nenhum arquivo."}), 400
+    _exigir_saldo_de_ia()
+    try:
+        from app.apps.erp.core.comum.ia_custo import contexto
+        with contexto(operacao="leitura_documentos_admissao"):
+            r = svc_doc.ler_varios(arquivos)
+        return jsonify({"ok": True, **r})
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao ler o lote de documentos")
+        # 200: a tela trata como "anexado, não consegui ler" e pede digitação.
+        return jsonify({"ok": False, "erro": recado_de_falha(e)})
+
+
 @bp.route("/erp/portal/api/pedidos", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
 def api_portal_abrir():
+    """Abre o pedido. Com papéis, vem como formulário (`pedido` em JSON e os
+    arquivos em `papeis`, com o tipo de cada um em `tipos`, na mesma ordem) —
+    e o pedido e os papéis são gravados na MESMA transação: ou os dois, ou
+    nenhum. Pedido de admissão sem os papéis é o que não pode existir."""
+    import json as _json
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     from app.apps.erp.core import portal as svc_portal
     try:
+        if request.files:
+            dados = _json.loads(request.form.get("pedido") or "{}")
+            tipos_dos_papeis = request.form.getlist("tipos")
+            arquivos = [{"conteudo": f.read(), "nome": f.filename or "documento",
+                         "tipo": (tipos_dos_papeis[i] if i < len(tipos_dos_papeis)
+                                  else "")}
+                        for i, f in enumerate(request.files.getlist("papeis"))]
+        else:
+            dados = request.get_json(silent=True) or {}
+            arquivos = []
         with get_session() as s:
-            r = svc_portal.abrir(s, request.get_json(silent=True) or {},
-                                 _usuario_logado(s))
+            r = svc_portal.abrir(s, dados, _usuario_logado(s))
+            if arquivos:
+                from sqlalchemy import text as _text
+                cid = s.execute(_text("SELECT colaborador_id FROM dp_solicitacoes "
+                                      " WHERE id = :i"), {"i": r["id"]}).scalar()
+                r["papeis_guardados"] = svc_sp.guardar_papeis(
+                    s, r["id"], cid, arquivos)
             s.commit()
             return jsonify({"ok": True, **r})
     except svc_portal.SemAcesso as e:

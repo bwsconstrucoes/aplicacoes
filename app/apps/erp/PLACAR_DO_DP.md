@@ -42,7 +42,8 @@ quanto ✅ — o que não pode existir é vão que ninguém mapeou.
 | O que o Pipefy tem | Onde está no ERP |
 |---|---|
 | Admissão de Prestador de Serviço | ✅ `ADMISSAO_PRESTADOR` |
-| Cadastro de Colaborador | ✅ `CADASTRO` |
+| Cadastro de Colaborador | ✅ `CADASTRO` — no ERP chama-se **Admissão de Colaborador** desde 19/11/2026 |
+| Admissão de Colaborador | ✅ `CADASTRO` — o nome que ele pediu em 19/11/2026: cobre quem nunca trabalhou conosco e quem volta (readmissão) |
 | Readmissão de Colaborador | ✅ `READMISSAO` |
 | Desligamento de Colaborador | ✅ `DESLIGAMENTO` |
 | Desligamento de Prestador de Serviço | ✅ `DESLIGAMENTO_PRESTADOR` |

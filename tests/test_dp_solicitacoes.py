@@ -21,6 +21,14 @@ from app.apps.erp.core.comum.auditoria import ErroValidacao
 pytestmark = pytest.mark.banco
 
 CPF_A = "52998224725"
+# ⚑ Os dados do eSocial e do SomaPay que a admissão exige desde 19/11/2026
+# (`pessoal_solicitacoes.CAMPOS_DA_PESSOA`).
+DADOS_DA_PESSOA = {
+    "nome_mae": "Maria Da Silva", "data_nascimento": "1990-03-15",
+    "rg": "2001234567", "rg_emissao": "2010-05-20", "rg_orgao": "SSP",
+    "rg_uf": "CE", "cep": "60000000", "logradouro": "Rua Um",
+    "numero_endereco": "10", "bairro": "Centro", "municipio": "Fortaleza",
+    "uf": "CE"}
 CPF_B = "11144477735"
 
 
@@ -266,7 +274,7 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
         # Mensalista declara o valor do mês; diarista não tem valor de mês.
         "valor_mes": "3.300,00",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
-        "data_inicio": "2026-04-01"}, mundo["encarregado"])
+        "data_inicio": "2026-04-01", **DADOS_DA_PESSOA}, mundo["encarregado"])
     assert p["colaborador_id"] is None          # a pessoa ainda não existe
 
     r = svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
@@ -622,6 +630,13 @@ def _cadastro(mundo, **extra):
             # resposta existe para esse caso.
             "categoria_alimentacao": "NAO_RECEBE",
             "categoria_transporte": "NAO_RECEBE",
+            # ⚑ OS DADOS DO eSOCIAL E DO SOMAPAY, obrigatórios desde
+            # 19/11/2026 (ver `CAMPOS_DA_PESSOA`).
+            "nome_mae": "Maria Da Silva", "data_nascimento": "1990-03-15",
+            "rg": "2001234567", "rg_emissao": "2010-05-20", "rg_orgao": "SSP",
+            "rg_uf": "CE", "cep": "60000000", "logradouro": "Rua Um",
+            "numero_endereco": "10", "bairro": "Centro",
+            "municipio": "Fortaleza", "uf": "CE",
             "data_inicio": "2026-05-01"}
     base.update(extra)
     return base
@@ -901,7 +916,7 @@ def test_nao_se_pede_a_CTPS_de_quem_ja_tem_no_cadastro(sessao_real, mundo):
     sessao_real.flush()
     ja = svc.o_que_o_cadastro_ja_tem(sessao_real, "ADMISSAO_PRESTADOR",
                                      mundo["pessoa"].id)
-    assert ja == {"num_ctps": "998877", "num_pis": "12345678901"}
+    assert ja["num_ctps"] == "998877" and ja["num_pis"] == "12345678901"
     # Com os dois no cadastro, o pedido não os exige mais.
     exige = svc.exigencias("ADMISSAO_PRESTADOR", {}, ja)
     assert "num_ctps" not in exige["campos"] and "num_pis" not in exige["campos"]
@@ -909,6 +924,9 @@ def test_nao_se_pede_a_CTPS_de_quem_ja_tem_no_cadastro(sessao_real, mundo):
     p = svc.abrir(sessao_real, {
         "tipo": "ADMISSAO_PRESTADOR", "colaborador_id": mundo["pessoa"].id,
         "obra_id": mundo["obra"].id, "salario_familia": "Não",
+        # desde 19/11/2026 virar CTPS pede os dados do eSocial/SomaPay; o
+        # que o cadastro não tem, a obra informa
+        **DADOS_DA_PESSOA,
         "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]}, mundo["encarregado"])
     # ⚑ E O NÚMERO ENTRA NO PEDIDO: o DP vê sem abrir a ficha ao lado.
     assert p["dados"]["num_ctps"] == "998877"

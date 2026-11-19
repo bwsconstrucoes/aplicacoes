@@ -3006,3 +3006,34 @@ primeira resposta errada derruba a confiança em todas as outras.
 Quando uma pergunta imprevista aparecer e for boa, ela entra neste arquivo e
 vira função na sessão seguinte. É assim que a cobertura cresce e o caminho da
 consulta inventada vai sendo usado cada vez menos.
+
+
+## Admissão de colaborador (19/11/2026)
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"admissão"** | o PEDIDO "Admissão de Colaborador" (que cobre gente nova E readmissão) ou a ADMISSÃO da carteira (a data). O pedido de prestador virando CTPS é outro: "Admissão de Prestador" |
+| **"matrícula"** | desde 19/11/2026, para quem entra, é o CPF. Quem já estava antes mantém a antiga — "a matrícula do fulano" pode ser um número antigo |
+| **"cadastro completo"** | completo para o eSocial/SomaPay (a lista de `CAMPOS_DA_PESSOA`) ou para o DP concluir (`o_que_falta`)? São listas diferentes |
+
+### Perguntas que o sistema responde
+
+- **"Quem foi admitido este mês?"** / **"quantos eram readmissão?"** — os
+  pedidos de admissão atendidos; o pedido guarda se foi readmissão.
+- **"Quem está sem RG, emissão ou órgão no cadastro?"** — é o que o SomaPay
+  recusa; consulta direta nas colunas.
+- **"Quem entrou com matrícula diferente do CPF?"** — quem entrou antes de
+  19/11/2026, ou quem o DP digitou outra.
+- **"Os documentos da admissão do fulano chegaram?"** — sim desde 19/11/2026:
+  ficam no cadastro dele, com a origem PORTAL e o número do pedido.
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- **"Os documentos de admissões ANTERIORES a 19/11/2026 estão no sistema?"** —
+  ⚠️ **Não estão.** O portal lia e não guardava. O que existe deles está no
+  celular de quem mandou, ou no Pipefy.
+- **"A leitura acertou?"** — o sistema guarda o que foi enviado no pedido, mas
+  não separa o que veio da leitura do que foi digitado. Falta guardar a origem
+  de cada campo.

@@ -70,6 +70,33 @@ logger = logging.getLogger(__name__)
 #   · `campos_do_dp`  — o que o DP preenche ao atender, na tela dele.
 # Campo de DP que aparecesse no formulário da obra é defeito, e há teste.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ⚑ OS DADOS DA PESSOA QUE A ADMISSÃO EXIGE (19/11/2026)
+#
+# Ele, com a lista na mão: *"E-Social precisa de nome, nome da mãe, data de
+# nascimento, CPF. SomaPay, a gente precisa agregar RG, data de emissão, o
+# órgão emissor, o estado de emissão e a data de início e o telefone e o tipo
+# de contrato. (…) Além disso, a gente precisa internamente do endereço da
+# pessoa."*
+#
+# Os nomes são os das COLUNAS do cadastro: o pedido grava, o atendimento
+# copia para a ficha sem tradução, e o "já está no cadastro" da readmissão
+# lê a mesma coluna. Nome e CPF ficam fora porque já estavam no formulário.
+# ---------------------------------------------------------------------------
+CAMPOS_DA_PESSOA = ("nome_mae", "data_nascimento",
+                    "rg", "rg_emissao", "rg_orgao", "rg_uf",
+                    "cep", "logradouro", "numero_endereco", "complemento",
+                    "bairro", "municipio", "uf")
+# O complemento é o único opcional: muita casa não tem.
+OBRIGATORIOS_DA_PESSOA = tuple(c for c in CAMPOS_DA_PESSOA if c != "complemento")
+# De qual papel cada um sai. A leitura preenche; o que ela não achar vira
+# pergunta, e a pessoa digita.
+DA_IDENTIDADE = ("nome", "cpf", "nome_mae", "data_nascimento",
+                 "rg", "rg_emissao", "rg_orgao", "rg_uf")
+DO_COMPROVANTE = ("cep", "logradouro", "numero_endereco", "complemento",
+                  "bairro", "municipio", "uf")
+
+
 TIPOS: dict[str, dict[str, Any]] = {
     "DESLIGAMENTO": {
         # Pipe: "Desligamento de Colaborador".
@@ -278,15 +305,24 @@ TIPOS: dict[str, dict[str, Any]] = {
         # cadastro dela pode já ter os dois números. `ja_no_cadastro` diz de
         # qual coluna cada campo vem; quando ela está preenchida, o campo sai
         # da exigência e aparece só para conferir.
-        "campos": ("num_ctps", "num_pis", "salario_familia", "observacao"),
-        "obrigatorios": ("num_ctps", "num_pis", "salario_familia"),
-        "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis"},
+        # ⚑ 19/11/2026: virar CTPS é ENTRAR no eSocial e no SomaPay — então
+        # os mesmos dados da admissão (`OBRIGATORIOS_DA_PESSOA`). O prestador
+        # já tem ficha: o que ela tiver não se pergunta; só o que faltar.
+        "campos": ("num_ctps", "num_pis") + CAMPOS_DA_PESSOA + (
+                   "salario_familia", "observacao"),
+        "obrigatorios": ("num_ctps", "num_pis") + OBRIGATORIOS_DA_PESSOA + (
+                         "salario_familia",),
+        "rotulos_proprios": {"data_nascimento": "Data de Nascimento"},
+        "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis",
+                           **{c: c for c in CAMPOS_DA_PESSOA}},
         "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
         "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
         # Mesma regra do cadastro: o número sai da foto da carteira que este
         # pedido JÁ exige. Ninguém transcreve onze dígitos à mão.
         "vem_do_documento": {"num_ctps": "CTPS-INFORMACOES",
                              "num_pis": "CTPS-INFORMACOES"},
+        # Os dados da pessoa NÃO têm papel exigido aqui: a carteira não traz o
+        # RG nem o endereço. Faltando no cadastro, a obra digita.
         "checklist": ("Conferir a documentação de admissão",
                       "Registrar na carteira", "Cadastro no sistema de pagamento"),
     },
@@ -428,8 +464,15 @@ TIPOS: dict[str, dict[str, Any]] = {
     # as outras solicitações."* Por isso o cadastro é um TIPO desta fila, e
     # não uma tela à parte.
     "CADASTRO": {
-        "nome": "Cadastro de Colaborador",
-        "explicacao": "a obra abre com os dados E os documentos; o DP confere",
+        # ⚑ "ADMISSÃO DE COLABORADOR" desde 19/11/2026. Ele: *"eu quero trocar
+        # por admissão de colaborador. Porque dessa forma, eu tanto atendo quem
+        # não tem cadastro conosco, quem já teve cadastro conosco."* O CÓDIGO
+        # continua CADASTRO: há pedidos gravados com ele, e o que muda é a
+        # palavra que a pessoa lê.
+        "nome": "Admissão de Colaborador",
+        "explicacao": ("quem nunca trabalhou conosco e quem já trabalhou: a "
+                       "obra manda os documentos, a leitura preenche, o DP "
+                       "confere"),
         "exige_pessoa": False, "executa": "criar_cadastro",
         # Os rótulos vêm do pipe CADASTRO COLABORADORES. "Tipo de Documentação
         # para Cadastro" é o nome certo do que eu chamava de "tipo de
@@ -471,7 +514,8 @@ TIPOS: dict[str, dict[str, Any]] = {
         # Ele: *"quando for pessoa PJ, abrir campos Razão social (PJ) e CNPJ
         # (PJ)."* Sem eles o DP recebia um PJ e ia pedir a nota fiscal sem
         # saber em nome de quem ela sai.
-        "campos": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
+        "campos": ("nome", "cpf") + CAMPOS_DA_PESSOA + (
+                   "telefone", "pix_tipo", "pix_chave",
                    "tipo_documentacao", "tipo_contrato",
                    "razao_social_pj", "cnpj_pj", "empresa_id",
                    "num_ctps", "num_pis",
@@ -492,10 +536,21 @@ TIPOS: dict[str, dict[str, Any]] = {
         # e autônomo (RPA), e campo que não aparece não pode ser exigido — o
         # envio travaria sem a pessoa ter como resolver. Virou
         # `obrigatorios_se`, abaixo.
-        "obrigatorios": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
-                         "tipo_documentacao", "empresa_id",
+        # ⚑ 19/11/2026: os dados do eSocial e do SomaPay (`OBRIGATORIOS_DA_
+        # PESSOA`) e o TIPO DE CONTRATO, que o SomaPay exige de todos.
+        "obrigatorios": ("nome", "cpf") + OBRIGATORIOS_DA_PESSOA + (
+                         "telefone", "pix_tipo", "pix_chave",
+                         "tipo_documentacao", "tipo_contrato", "empresa_id",
                          "data_inicio", "cargo_pleiteado_id",
                          "categoria_alimentacao", "categoria_transporte"),
+        "rotulos_proprios": {"data_nascimento": "Data de Nascimento"},
+        # ⚑ NA READMISSÃO, o que o cadastro antigo já tem não se pede de novo
+        # (19/11/2026). Ele: *"se for um colaborador desligado, nós já temos os
+        # dados dele"* — e, sobre o que faltar: a obra digita na hora.
+        # ⚠️ CADASTRO não exige pessoa, então este mapa NÃO entra na busca de
+        # pessoa do portal (`COLUNAS_JA_NO_CADASTRO`): ninguém lê o RG ou a
+        # mãe de outra pessoa procurando pelo nome.
+        "ja_no_cadastro": {c: c for c in CAMPOS_DA_PESSOA},
         # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
         # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
         # PIS também."*
@@ -601,8 +656,8 @@ TIPOS: dict[str, dict[str, Any]] = {
         "vem_do_documento": {
             "num_ctps": "CTPS-INFORMACOES",
             "num_pis": "CTPS-INFORMACOES",
-            "nome": "DOC-IDENTIDADE",
-            "cpf": "DOC-IDENTIDADE",
+            **{c: "DOC-IDENTIDADE" for c in DA_IDENTIDADE},
+            **{c: "COMPROVANTE-ENDERECO-PESSOA" for c in DO_COMPROVANTE},
         },
         # ⚑ Matrícula e convenção são do DP — estão em FASE no Pipe, não no
         # formulário. Os VALORES dos auxílios também; a CATEGORIA deles subiu
@@ -1171,9 +1226,17 @@ def _condicionais(regra: dict[str, Any], chave: str,
 # do módulo, e não em produção.
 COLUNAS_JA_NO_CADASTRO: tuple[str, ...] = tuple(sorted({
     coluna
-    for regra in TIPOS.values()
+    for regra in TIPOS.values() if regra.get("exige_pessoa")
     for coluna in (regra.get("ja_no_cadastro") or {}).values()
 }))
+# ⚑ DADO PESSOAL VIAJA COMO "TEM", NUNCA COMO VALOR (19/11/2026). A busca de
+# pessoa do portal traz o que o cadastro já sabe, para não se perguntar de
+# novo — mas o RG, a mãe e o endereço de alguém não podem descer para o
+# celular de quem só procurou um nome. A tela recebe a marca e esconde o
+# campo dizendo "já está no cadastro"; o valor fica no servidor, que o junta
+# ao pedido (`o_que_o_cadastro_ja_tem`).
+SO_A_MARCA = frozenset(CAMPOS_DA_PESSOA)
+MARCA_TEM = "__tem__"
 for _c in COLUNAS_JA_NO_CADASTRO:
     if not re.fullmatch(r"[a-z][a-z0-9_]*", _c):
         raise ValueError(
@@ -1283,6 +1346,12 @@ def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
 # nome de campo à mão.
 ROTULOS: dict[str, str] = {
     "obra_id": "Código da Obra",
+    "nome_mae": "Nome da Mãe",
+    "rg": "Nº do RG",
+    "rg_emissao": "Data de Emissão do RG",
+    "rg_orgao": "Órgão Emissor do RG",
+    "rg_uf": "Estado de Emissão do RG",
+    "complemento": "Complemento",
     "forma_desligamento": "Forma de Desligamento",
     "aviso_previo": "Data do Aviso Prévio",
     "data_saida": "Data de Saída",
@@ -1700,6 +1769,15 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
 
     if tipo == "CADASTRO":
         from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
+        # ⚑ O DESLIGADO ESCOLHIDO PELA BUSCA (19/11/2026). Ele: *"se não tiver
+        # documento, eu queria poder pesquisar o nome da pessoa (…) e só
+        # selecionar sem ter a necessidade de incluir de novos documentos."*
+        # A busca devolve a pessoa, não o CPF inteiro (o portal não expõe
+        # CPF); o CPF sai do cadastro, e a regra abaixo decide como sempre.
+        if pessoa is not None and not somente_digitos(dados.get("cpf") or ""):
+            dados = {**dados, "cpf": pessoa.cpf}
+        if pessoa is not None and not str(dados.get("nome") or "").strip():
+            dados = {**dados, "nome": pessoa.nome}
         cpf = somente_digitos(dados.get("cpf") or "")
         if not cpf_valido(cpf):
             raise ErroValidacao("CPF inválido.")
@@ -1769,7 +1847,8 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
                     + ", ".join(falta) + ".")
         faltando = []
     else:
-        faltando = [ROTULOS.get(c, c) for c in exige["campos"]
+        proprios = regra.get("rotulos_proprios") or {}
+        faltando = [proprios.get(c) or ROTULOS.get(c, c) for c in exige["campos"]
                     if c != "dependentes" and not pedido.get(c)]
     # ⚑ A OBRA SAI DESTA CONTA, e tem conferência PRÓPRIA logo abaixo: ela
     # pode vir do pedido OU do cadastro da pessoa, e exigi-la aqui recusaria
@@ -1779,11 +1858,17 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     if faltando:
         raise ErroValidacao("Falta preencher: " + ", ".join(faltando) + ".")
 
-    # ⚑ E OS PAPÉIS. `documentos` vem da tela: os códigos dos tipos que já
-    # foram anexados ao pedido (o arquivo em si já subiu e está esperando).
+    # ⚑ E OS PAPÉIS. `documentos` são os tipos dos arquivos que vieram JUNTO
+    # com o pedido (a rota do portal os guarda na mesma transação — ver
+    # `guardar_papeis`).
+    #
+    # ⚑ NA READMISSÃO NÃO SE EXIGE PAPEL (19/11/2026). Ele: *"já que é uma
+    # pessoa que a gente já tem cadastro, né? Então a gente não precisaria."*
+    # Os papéis da primeira passagem estão no cadastro dela; o que faltar de
+    # DADO a obra digita (acima, pela mesma conta de sempre).
     anexados = {str(x).strip().upper() for x in (dados.get("documentos") or [])}
-    sem_papel = [d["rotulo"] for d in exige["documentos"]
-                 if d["codigo"] not in anexados]
+    sem_papel = [] if readmissao else [
+        d["rotulo"] for d in exige["documentos"] if d["codigo"] not in anexados]
     if sem_papel:
         porque = (" Sem esses papéis o cadastro não se faz e a pessoa não "
                   "entra no sistema de pagamento — por isso o pedido não sai "
@@ -1865,6 +1950,73 @@ def _evento(s: Session, solicitacao_id: int, acao: str, detalhe: dict,
 
 
 # ---------------------------------------------------------------------------
+# ⚑ OS PAPÉIS DO PEDIDO (19/11/2026)
+#
+# ⚠️ DEFEITO ACHADO NESTE TRABALHO, e grave: o portal LIA os documentos
+# anexados e mandava ao servidor só os TIPOS ("anexei o RG") — o arquivo nunca
+# subia. O comentário daqui dizia "o arquivo já subiu e está esperando", e a
+# coluna `documentos.dp_solicitacao_id` (migração 100) existia sem ninguém
+# escrever nela. Ou seja: o DP recebia o pedido de admissão sem papel nenhum.
+#
+# Agora os arquivos vêm NA MESMA requisição do pedido e são guardados na mesma
+# transação: pessoa que já existe (readmissão) recebe o papel direto no
+# cadastro; pessoa nova recebe quando o DP atende (`transferir_papeis`).
+# ---------------------------------------------------------------------------
+def guardar_papeis(s: Session, solicitacao_id: int,
+                   colaborador_id: Optional[int],
+                   arquivos: list[dict[str, Any]],
+                   usuario: Optional[Usuario] = None) -> int:
+    """Guarda os arquivos do pedido. `arquivos`: [{conteudo, nome, tipo}]."""
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.documentos.armazenamento import salvar
+
+    numero = s.execute(text("SELECT numero FROM dp_solicitacoes WHERE id = :i"),
+                       {"i": solicitacao_id}).scalar() or ""
+    feitos = 0
+    for a in arquivos:
+        tipo = str(a.get("tipo") or "").strip().upper() or "DOC-IDENTIDADE"
+        nome = str(a.get("nome") or "documento")
+        conteudo = a.get("conteudo") or b""
+        if not conteudo:
+            continue
+        if colaborador_id:
+            svc_arq.arquivar(s, conteudo, nome, tipo_codigo=tipo,
+                             colaborador_id=colaborador_id,
+                             referencia=f"{numero} — enviado pela obra",
+                             origem="PORTAL", usuario=usuario)
+        else:
+            anexo = salvar(s, conteudo, f"{tipo} {numero} {nome}",
+                           entidade_tipo="dp_solicitacao",
+                           entidade_id=solicitacao_id, categoria="OUTRO",
+                           descricao=tipo, usuario=usuario)
+            texto_ = ""
+            try:
+                from app.apps.erp.core.arquivo import texto as svc_texto
+                texto_ = svc_texto.extrair(conteudo, nome) or ""
+            except Exception:                            # noqa: BLE001
+                texto_ = ""
+            s.execute(text("""
+                INSERT INTO documentos (tipo_codigo, anexo_id, nome_padronizado,
+                                        nome_original, dp_solicitacao_id,
+                                        referencia, origem, texto)
+                VALUES (:t, :a, :n, :o, :s, :r, 'PORTAL', NULLIF(:x, ''))"""),
+                {"t": tipo, "a": anexo.id, "n": f"{tipo} — {numero} — {nome}"[:200],
+                 "o": nome[:200], "s": solicitacao_id,
+                 "r": f"{numero} — enviado pela obra", "x": texto_})
+        feitos += 1
+    s.flush()
+    return feitos
+
+
+def transferir_papeis(s: Session, solicitacao_id: int, colaborador_id: int) -> int:
+    """Os papéis do pedido passam a ser da pessoa (dono único: `ck_documento_um_dono`)."""
+    r = s.execute(text("""
+        UPDATE documentos SET colaborador_id = :c, dp_solicitacao_id = NULL
+         WHERE dp_solicitacao_id = :s"""), {"c": colaborador_id, "s": solicitacao_id})
+    return r.rowcount or 0
+
+
+# ---------------------------------------------------------------------------
 # Atender — e EXECUTAR
 # ---------------------------------------------------------------------------
 def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
@@ -1897,6 +2049,17 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
     # a enxergaria.
     if p.get("obra_id"):
         pedido.setdefault("obra_id", p["obra_id"])
+    # ⚑ A MATRÍCULA É O CPF (19/11/2026). Ele: *"toda vida que a gente
+    # cadastrar um funcionário, a gente vai utilizar a matrícula e a matrícula
+    # dele vai ser o CPF dele."* O SomaPay exige matrícula. Vale para quem
+    # ENTRA daqui em diante — admissão e readmissão —; ele decidiu não mexer
+    # nas matrículas de quem já está cadastrado. O DP ainda pode digitar outra
+    # no atendimento: o que ele digitar vence.
+    if executa == "criar_cadastro":
+        from app.apps.erp.core.cadastros.validadores import somente_digitos
+        cpf_do_pedido = somente_digitos(pedido.get("cpf") or p.get("pessoa_cpf") or "")
+        if cpf_do_pedido and not str(pedido.get("matricula") or "").strip():
+            pedido["matricula"] = cpf_do_pedido
     if executa and p["colaborador_id"]:
         alvo = p["colaborador_id"]
         # ⚑ CADASTRO COM PESSOA LIGADA É READMISSÃO, e precisa estar ANTES dos
@@ -1908,6 +2071,17 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
             svc_pessoas.readmitir(s, alvo, {
                 **pedido, "admissao": pedido.get("data_inicio"),
                 "vinculo": pedido.get("tipo_documentacao") or None}, usuario)
+            # ⚑ OS DADOS NOVOS ATUALIZAM O CADASTRO ANTIGO (19/11/2026). Ele:
+            # *"os dados novos vão estar atualizados, a gente vai estar
+            # atualizando os dados, se tiver colocado algum documento."* Só o
+            # que o pedido TROUXE — campo vazio no pedido não apaga o que o
+            # cadastro tinha. A trilha campo a campo registra o de→para.
+            novos = {c: pedido[c] for c in CAMPOS_DA_PESSOA + ("telefone",)
+                     if str(pedido.get(c) or "").strip()}
+            if novos:
+                c_atual = s.get(Colaborador, alvo)
+                svc_pessoas.salvar(s, {**novos, "cpf": c_atual.cpf,
+                                       "nome": c_atual.nome}, usuario)
             efeito["readmitiu"] = True
         elif executa == "desligar":
             # ⚑ O DESLIGAMENTO DE CARTEIRA VIRA PROCESSO (19/11/2026) — ver
@@ -1960,6 +2134,9 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
         s.execute(text("UPDATE dp_solicitacoes SET colaborador_id = :c WHERE id = :s"),
                   {"c": c.id, "s": solicitacao_id})
         efeito["colaborador_id"] = c.id
+        # ⚑ OS PAPÉIS DO PEDIDO PASSAM PARA A PESSOA que acabou de nascer, na
+        # mesma transação (migração 100: "o papel nunca fica órfão").
+        efeito["papeis"] = transferir_papeis(s, solicitacao_id, c.id)
     # O desligamento de carteira não fecha aqui: abre o processo.
     nova = svc_processo.EM_ANDAMENTO if efeito.get("processo") else "ATENDIDA"
     s.execute(text("""UPDATE dp_solicitacoes

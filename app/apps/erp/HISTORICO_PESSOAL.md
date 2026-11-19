@@ -38,6 +38,10 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**Falta publicar (19/11/2026, tarde) — ramo `claude/busy-shannon-w5pp5o`:**
+a Admissão de Colaborador (ver "Decisões", 19/11 tarde). **Sem migração.**
+Espera o "pode" dele.
+
 **Publicado em 19/11/2026** (ramo `claude/busy-shannon-w5pp5o`, migração
 **114**): o processo do desligamento, a continuidade como prestador, a faixa do
 afastamento e a ida e volta da documentação assinada. As migrações 112 e 113,
@@ -92,6 +96,85 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 19/11/2026 (tarde) — "Cadastro de Colaborador" vira ADMISSÃO DE COLABORADOR
+
+**O pedido, com as palavras dele:** *"eu quero trocar por admissão de
+colaborador. Porque dessa forma, eu tanto atendo quem não tem cadastro conosco,
+quem já teve cadastro conosco. A gente precisa atender no cadastro as
+exigências do E-Social e os dados mínimos para o SomaPay."*
+
+**Os campos obrigatórios, a lista é dele:**
+
+| Para quê | Campos |
+|---|---|
+| eSocial | nome, nome da mãe, data de nascimento, CPF |
+| SomaPay | RG, data de emissão, órgão emissor, estado de emissão, data de início, telefone, tipo de contrato, **matrícula = CPF** |
+| Interno | endereço (CEP, rua, número, bairro, cidade, estado; complemento opcional) |
+
+Moram em `pessoal_solicitacoes.CAMPOS_DA_PESSOA`, com o nome das COLUNAS do
+cadastro (o atendimento copia sem tradução). Valem também na **Admissão de
+Prestador** (virar CTPS é entrar no eSocial e no SomaPay) — lá, o que a ficha
+já tem não se pergunta.
+
+**Matrícula = CPF:** só para quem entra daqui em diante (admissão e
+readmissão). Decisão dele: *"Não mudar os antigos."* O DP pode digitar outra
+no atendimento; a dele vence.
+
+**Os documentos: uma área só, vários arquivos, uma leitura.** Ele: *"esse
+campo deveria ser um campo onde você pode jogar o documento dentro (…) a
+pessoa coloca o RG e o RG é uma imagem da frente e uma imagem do verso."*
+Arrasta (ou tira foto, ou escolhe vários); o lote vai numa **única chamada de
+IA** (`documentos_de_pessoa.ler_varios`), que diz o que cada arquivo é e
+preenche os campos vazios. Um arquivo pode cobrir dois papéis (a CNH é
+identificação E CPF). O que a leitura não reconhecer, a pessoa diz numa
+caixinha. Todos os campos ficam à vista para conferir; o que não foi lido
+fica para digitar, e o pedido não sai sem.
+
+**Quem já teve cadastro:** ele: *"se tratar-se de um funcionário que já tenha
+cadastro, o sistema precisa cruzar também e informar."*
+- Pelo CPF digitado (como já era) **ou** pela busca nova "Já trabalhou
+  conosco?", que procura só desligados, em qualquer obra.
+- Aviso na tela: o cadastro já existia, segue como readmissão, o histórico
+  fica, e o que vier agora atualiza o cadastro.
+- **Documento opcional** na readmissão (decisão dele); o que o cadastro antigo
+  já tem some da tela ("já está no cadastro"), e só o que falta é pedido —
+  *"a obra digita na hora? Sim!"*.
+- No atendimento, os dados novos atualizam o cadastro antigo (só o que veio;
+  vazio não apaga), com o de→para na trilha.
+
+⚠️ **Dado pessoal não desce para o celular.** A busca de pessoa devolve o RG,
+a mãe e o endereço só como a marca "tem" (`SO_A_MARCA`, `MARCA_TEM`): quem
+procura um nome não lê o documento de outra pessoa. O valor fica no servidor,
+que o junta ao pedido.
+
+#### ⚠️ O DEFEITO MAIS GRAVE ACHADO NO CAMINHO: os papéis nunca eram guardados
+
+O portal **lia** cada documento anexado e mandava ao servidor só a **lista de
+tipos** ("anexei o RG"). O arquivo ficava no celular. A coluna para isso
+(`documentos.dp_solicitacao_id`, migração 100, de 10/11/2026) existia e
+ninguém escrevia nela. Ou seja: **desde o começo, o DP recebia o pedido de
+cadastro sem papel nenhum** — e a regra "não sai sem os documentos" conferia
+uma lista de nomes, não arquivos.
+
+Agora o pedido e os arquivos vão **na mesma requisição** e são gravados na
+mesma transação: pessoa que já existe recebe o papel direto no cadastro;
+pessoa nova recebe quando o DP atende (`transferir_papeis`).
+
+**De passagem:** abrir pedido no portal com um login SEM ficha de colaborador
+(gente de escritório, o próprio administrador) dava erro de sistema — o evento
+de auditoria ficava sem dono. Consertado.
+
+**Custo, contado:** a leitura é **1 chamada de IA por lote** de até 8 arquivos
+(antes: 1 por arquivo). O envio é 1 requisição com tudo. Guardar cada arquivo
+é 1 gravação no banco por arquivo.
+
+**Exercitado no navegador** (banco local, sem chave de IA — então a leitura
+caiu no "não consegui ler" e o fluxo de digitar à mão foi o que se testou): a
+área de arrastar, a lista de arquivos com o tipo a escolher, a busca do
+desligado, o "já está no cadastro", e o envio com arquivo chegando ao cadastro.
+⚠️ **A leitura por IA em si não foi testada aqui** — precisa ser vista em
+produção com documento de verdade.
 
 ### 19/11/2026 — O desligamento de carteira vira processo; quem continua não é mais desligado
 
