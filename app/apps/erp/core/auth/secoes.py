@@ -185,7 +185,7 @@ SECOES: list[dict[str, Any]] = [
     # LER = abrir pedido e acompanhar o que abriu; EDITAR = atender e recusar.
     # É a divisão que o pipe fazia na mão, com um checklist chamado "você não
     # possui autorização para esta solicitação".
-    {"chave": "pes_solicitacoes", "area": "Pessoal", "nome": "Solicitações ao DP",
+    {"chave": "pes_solicitacoes", "area": "Pessoal", "nome": "Solicitações",
      # ⚑ A FRASE MUDOU EM 15/11/2026, junto com os tipos: readmissão agora
      # acontece DENTRO do cadastro (o CPF a detecta) e o vale-transporte
      # dentro da ajuda de custo. Prometer na explicação um tipo que não está

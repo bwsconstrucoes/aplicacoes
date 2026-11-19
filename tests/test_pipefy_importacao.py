@@ -998,7 +998,9 @@ def test_as_SETE_etapas_que_ele_ditou_e_nesta_ordem():
     """
     from app.apps.erp.core.cadastros.pessoas import ETAPAS, ETAPA_ROTULOS
     assert [ETAPA_ROTULOS[e] for e in ETAPAS] == [
-        "Inicial", "Assinar", "Concluído", "Solicitações",
+        # 19/11/2026: "Solicitações" virou "Contabilidade" e foi para antes
+        # de "Concluído" (decisão dele).
+        "Inicial", "Assinar", "Contabilidade", "Concluído",
         "Afastado", "Desligado", "Cancelado"]
     # "Conferência" saiu de circulação, mas o rótulo fica para o histórico e a
     # ficha antiga não aparecerem com o código cru.

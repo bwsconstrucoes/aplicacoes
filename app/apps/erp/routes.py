@@ -185,7 +185,7 @@ MODULOS = [
             # Configuracoes > Cargos e convencoes.
             # A fila de pedidos administrativos (05/11/2026): o segundo pipe do
             # Pipefy. Os pedidos de PONTO já vivem no módulo do ponto.
-            ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
+            ("dp_solicitacoes", "Solicitações", "erp.pagina_dp_solicitacoes"),
             ("dp_contabilidade", "Contabilidade e agente",
              "erp.pagina_dp_contabilidade"),
             # ⚑ AS CONDICIONAIS QUE O PIPEFY NÃO EXPORTA (17/11/2026). Ele:

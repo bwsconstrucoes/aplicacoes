@@ -191,8 +191,8 @@ def test_conferir_duas_vezes_e_recusado_com_a_etapa_de_agora(sessao_real, dono):
                                  "vinculo": "CTPS"}, dono)
     svc.concluir_conferencia(sessao_real, c.id, dono)
     from app.apps.erp.core.comum.auditoria import ErroValidacao
-    # "Na contabilidade" virou "Solicitações" em 17/11/2026 (migração 107).
-    with pytest.raises(ErroValidacao, match="Solicitações"):
+    # O rótulo é "Contabilidade" desde 19/11/2026 (antes "Solicitações").
+    with pytest.raises(ErroValidacao, match="Contabilidade"):
         svc.concluir_conferencia(sessao_real, c.id, dono)
 
 

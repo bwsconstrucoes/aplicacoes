@@ -2064,8 +2064,13 @@ def para_folha(s: Session, *, so_ativos: bool = True,
 # errado até entender o fluxo dele: é a fase onde está quem JÁ SAIU e tem
 # cadastro por finalizar, mais o que a contabilidade está tratando. Não é um
 # passo antes de concluir — é trabalho que sobra depois.
-ETAPAS = ("CADASTRO_INICIAL", "CONTRATO_A_ASSINAR", "CONCLUIDO",
-          "NA_CONTABILIDADE", "AFASTADO", "DESLIGADO", "CANCELADO")
+# ⚑ 19/11/2026 — "CONTABILIDADE" PASSOU PARA ANTES DE "CONCLUÍDO", e o
+# rótulo deixou de ser "Solicitações". Ele: *"a etapa solicitações, ela perde
+# sentido (…) vamos renomear ela para contabilidade e alterar a posição
+# dela."* O nome brigava com a tela "Solicitações", e a posição contava a
+# história ao contrário: o registro da carteira vem ANTES de concluir.
+ETAPAS = ("CADASTRO_INICIAL", "CONTRATO_A_ASSINAR", "NA_CONTABILIDADE",
+          "CONCLUIDO", "AFASTADO", "DESLIGADO", "CANCELADO")
 # ⚑ OS NOMES PERDERAM A PALAVRA "CADASTRO" em 16/11/2026, por pedido dele:
 # *"por exemplo, cadastro inicial. Aí tem cadastro concluído. Mas as outras
 # você não utilizou cadastro. Enfim, eu acho que esse nome cadastro pode ser
@@ -2093,7 +2098,7 @@ ETAPA_ROTULOS = {
     # colaborador e em toda linha do histórico, e renomeá-lo custaria migração
     # para ganhar zero — ninguém vê o código, só o rótulo. Quem ler
     # "NA_CONTABILIDADE" no banco está lendo "Solicitações".
-    "NA_CONTABILIDADE": "Solicitações",
+    "NA_CONTABILIDADE": "Contabilidade",
     "AFASTADO": "Afastado",
     "DESLIGADO": "Desligado",
     "CANCELADO": "Cancelado",

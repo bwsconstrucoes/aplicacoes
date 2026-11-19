@@ -594,7 +594,7 @@ def retornar(s: Session, colaborador_id: int, dados: dict[str, Any],
         s, c.id, destino, usuario, automatico=True,
         motivo=(f"voltou do afastamento ({t.get('nome', af['tipo'])}) em "
                 f"{volta:%d/%m/%Y}, {situacao['dias']} dias afastada"
-                + (" — segue em Solicitações, há pedido à contabilidade em "
+                + (" — segue em Contabilidade, há pedido à contabilidade em "
                    "aberto" if tem_pedido else "")))
     s.flush()
     logger.info("ERP: %s voltou do afastamento em %s (%s dias)",

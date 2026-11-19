@@ -1,5 +1,5 @@
 {% extends "erp_base.html" %}
-{% block titulo %}Solicitações ao DP — ERP BWS{% endblock %}
+{% block titulo %}Solicitações — ERP BWS{% endblock %}
 
 {# FILTRO LATERAL, o padrão do ERP. Entrou em 06/11/2026, depois de ele cobrar
    de novo: *"elas não têm filtragem no sidebar. Ou seja, a gente tem que,
@@ -70,7 +70,8 @@
 {% endblock %}
 
 {% block conteudo %}
-<h2>Solicitações ao DP <small>o que a obra pede e o DP resolve</small></h2>
+{# "Solicitações", sem "ao DP", desde 19/11/2026 — pedido dele. #}
+<h2>Solicitações <small>o que a obra pede e o DP resolve</small></h2>
 <div id="mensagem"></div>
 <div id="readmissoes"></div>
 <div id="desligamentos"></div>
