@@ -38,9 +38,10 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (19/11/2026, tarde) — ramo `claude/busy-shannon-w5pp5o`:**
-a Admissão de Colaborador (ver "Decisões", 19/11 tarde). **Sem migração.**
-Espera o "pode" dele.
+**Publicado (19/11/2026, tarde):** a Admissão de Colaborador (ver "Decisões",
+19/11 tarde). Sem migração. ⚠️ **Pendente:** acompanhar a primeira admissão de
+verdade — a leitura por IA dos documentos não pôde ser testada aqui (sem
+chave de IA no ambiente de teste).
 
 **Publicado em 19/11/2026** (ramo `claude/busy-shannon-w5pp5o`, migração
 **114**): o processo do desligamento, a continuidade como prestador, a faixa do
