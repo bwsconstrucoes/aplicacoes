@@ -2926,6 +2926,51 @@ mapa do sistema a quem não precisa dele.
 
 ---
 
+## 3z-sexdecies. EM QUE PÉ ESTÁ CADA OBRA, E QUEM DEVE DIÁRIO (19/11/2026)
+
+Nasceu do filtro do diário. Até aqui a pergunta "quais obras estão ativas?"
+tinha uma resposta só, e ela estava errada: valia o campo `status`, que quase
+nunca muda, enquanto a **fase** é o que a empresa de fato acompanha.
+
+### ⚠️ A palavra ambígua desta parte, e ela é a mais perigosa do módulo de obras
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"obra ativa"** | ① `status = 'ATIVA'` — o cadastro não foi encerrado. Quase toda obra da base é assim, inclusive as que acabaram há anos; ② **fase em andamento** — criação/cadastro, aguardando ordem de serviço, em execução ou paralisada. É o que ele quer dizer quando fala "ativa", e é a régua do diário desde 19/11/2026; ③ "tem gente trabalhando nela esta semana" — nenhuma das duas responde isso: é o ponto que sabe |
+| **"obra concluída"** | as SEIS fases de conclusão (concluída, concluída com dívida, recebimento provisório, recebimento definitivo, acervo técnico, distratada), e não só a primeira. Uma resposta que olhe só "CONCLUIDA" erra nas outras cinco |
+| **"deve diário"** | obra em fase de andamento que ficou sem diário em dia útil. Obra concluída **não** deve nada — cobrar dela é cobrança falsa |
+
+### O que dá para perguntar
+
+- **"Quais obras estão em andamento?"** — as quatro fases iniciais.
+- **"Quais obras já acabaram?"** / **"Quantas obras estão em cada fase?"**
+- **"Que obras estão paralisadas?"** — a fase que mais vale vigiar: a obra
+  não acabou, mas também não anda.
+- **"Quem está devendo diário, e quantos dias?"** — já responde, e desde
+  19/11 **sem** contar obra concluída.
+- **"Quantos dias de diário faltam neste mês?"** — o número do quadro.
+- **"Qual foi o último diário da obra X?"**
+- **"Tem obra concluída com diário sendo lançado ainda?"** — não é erro: a
+  tela permite, de propósito, para quem lança atrasado. Mas é coisa de olhar.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+Todas as de lista: quem é preso a obras só deve receber as obras dele. A
+régua de escopo é a mesma da tela — não se escreve escopo novo.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Há quanto tempo esta obra está nesta fase?"** — a data da troca de fase
+  é guardada (`fase_desde` e a tabela de fases), mas a conta não está escrita.
+  É a pergunta que acharia obra "em execução" há dois anos sem diário nenhum.
+- **"Quais obras deveriam estar concluídas e ninguém marcou?"** — hoje
+  ninguém avisa. Um sinal possível: obra sem diário nem gasto há N meses,
+  ainda em fase de andamento.
+- **"Quanto tempo leva, em média, da ordem de serviço à conclusão?"** — os
+  carimbos existem; a conta não.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

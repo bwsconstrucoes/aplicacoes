@@ -41,6 +41,32 @@
     <select id="f-obra" data-sem-busca style="display:none"></select>
     <div id="obra-escolhida" class="desc" style="margin-top:6px"></div>
   </div>
+  {# ⚑ OBRA CONCLUÍDA SAI DA FRENTE (19/11/2026).
+
+     Ele: *"não tem sentido eu fazer diário de uma obra que está concluída,
+     uma obra que está concluída com dívida, que está só aguardando
+     recebimento provisório ou recebimento definitivo, ou que está apenas
+     tratando de acervo técnico, ou que foi destratado. (…) Eu não digo nem
+     que proíba a confecção do diário, mas que pelo menos a exibição não
+     fique na tela inicial. (…) Senão fica aquela lista imensa de obras que
+     deveriam estar concluídas."*
+
+     ESCONDE, não proíbe — e é por isso que é um filtro e não uma trava: quem
+     precisa lançar o diário atrasado de uma obra que já acabou troca aqui e
+     continua conseguindo.
+
+     As fases que CONTINUAM aparecendo são as quatro em que a obra ainda
+     anda: criação/cadastro, aguardando ordem de serviço, em execução e
+     paralisada. A lista de verdade mora em `core/cadastros/obras.py`
+     (`FASES_ENCERRADAS`), num lugar só, porque o assistente responde pela
+     mesma régua. #}
+  <div class="campo">
+    <label for="f-fase">Quais obras</label>
+    <select id="f-fase" data-sem-busca>
+      <option value="">Só as obras em andamento</option>
+      <option value="1">Todas, inclusive as concluídas</option>
+    </select>
+  </div>
   {# O MÊS, COM SETAS — e o dia se escolhe no calendário (13/11/2026).
 
      Ele: *"tem aqui um filtro de dia, sendo que embaixo a gente tem um mês
@@ -209,9 +235,7 @@ async function iniciar(){
      selecionada."* A primeira opção é vazia e fica escolhida: o `<select>`
      existe para o resto da tela ler, mas ninguém entra num diário por
      acidente. #}
-  els("f-obra").innerHTML = `<option value=""></option>` + OBRAS.map(o =>
-    `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
-  els("f-obra").value = "";
+  montarListaDeObras();
   els("f-obra").addEventListener("change", () => {
     mostrarObraEscolhida();
     carregar();
@@ -222,6 +246,16 @@ async function iniciar(){
   els("f-mes-nome").addEventListener("change", trocouOMes);
   els("f-ano").addEventListener("change", trocouOMes);
   els("btn-pendencias").addEventListener("click", voltarAoQuadro);
+  els("f-fase").addEventListener("change", () => {
+    // Trocar o filtro redesenha a lista de obras E o quadro. Se a obra que
+    // estava escolhida saiu da lista, a tela volta ao quadro — ficar com uma
+    // obra escolhida que não está mais na caixinha é o tipo de estado que
+    // ninguém entende depois.
+    const antes = els("f-obra").value;
+    montarListaDeObras(antes);
+    if (els("f-obra").value) { mostrarObraEscolhida(); carregar(); }
+    else { mostrarObraEscolhida(); pintarQuadro(); }
+  });
   ligarBusca();
   ligarBuscaDeObra();
   els("btn-papel").addEventListener("click", imprimir);
@@ -230,6 +264,42 @@ async function iniciar(){
     return;
   }
   pintarQuadro();          // a porta da tela é o quadro do mês
+}
+
+// ---------------------------------------------------------------------------
+// AS OBRAS QUE APARECEM — e o filtro de 19/11/2026
+//
+// `FASES_FORA` repete, na tela, as fases que o servidor chama de encerradas.
+// Repetir não é bom, mas a alternativa seria uma ida ao servidor só para
+// saber quais são — e a lista de obras já veio com a fase de cada uma dentro.
+// Se um dia a lista do servidor mudar, esta precisa mudar junto; por isso o
+// nome é o mesmo dos dois lados.
+// ---------------------------------------------------------------------------
+const FASES_FORA = ["CONCLUIDA", "CONCLUIDA_COM_DIVIDA",
+                    "RECEBIMENTO_PROVISORIO", "RECEBIMENTO_DEFINITIVO",
+                    "ACERVO_TECNICO", "DISTRATADA"];
+
+function mostrarTodasAsFases(){
+  const f = els("f-fase");
+  return !!(f && f.value === "1");
+}
+
+function obrasVisiveis(){
+  if (mostrarTodasAsFases()) return OBRAS;
+  // Obra SEM fase preenchida continua aparecendo: não dá para concluir que
+  // ela acabou só porque ninguém marcou a fase.
+  return OBRAS.filter(o => FASES_FORA.indexOf(o.fase || "") < 0);
+}
+
+// `manter` é a obra que estava escolhida — ela só continua escolhida se o
+// filtro novo ainda a mostra.
+function montarListaDeObras(manter){
+  const lista = obrasVisiveis();
+  els("f-obra").innerHTML = `<option value=""></option>` + lista.map(o =>
+    `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+  els("f-obra").value =
+    (manter && lista.some(o => String(o.id) === String(manter))) ? manter : "";
+  els("obras-achadas").innerHTML = "";
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +337,7 @@ function ligarBuscaDeObra(){
   const pintar = () => {
     const q = _semAcento(campo.value.trim());
     if (!q) { alvo.innerHTML = ""; return; }
-    const achadas = OBRAS.filter(o =>
+    const achadas = obrasVisiveis().filter(o =>
       _semAcento(rotuloObra(o)).includes(q)).slice(0, 12);
     alvo.innerHTML = achadas.length
       ? achadas.map(o => `<button type="button" class="achado"
@@ -1350,12 +1420,16 @@ async function pintarQuadro(){
     <p class="cartao-dica">Carregando…</p></div>`;
   let q;
   try {
-    q = await api(`/erp/api/diario/quadro?ano=${ano}&mes=${mes}`);
+    q = await api(`/erp/api/diario/quadro?ano=${ano}&mes=${mes}`
+                  + (mostrarTodasAsFases() ? "&todas=1" : ""));
   } catch(e){ aviso("mensagem", e.message, "erro"); return; }
 
   if (!q.obras.length) {
     els("painel").innerHTML = `<div class="cartao"><h3>Quadro do mês</h3>
-      <div class="vazio">Nenhuma obra em andamento.</div></div>`;
+      <div class="vazio">Nenhuma obra em andamento.${mostrarTodasAsFases()
+        ? "" : `<br><small>Se a obra que você procura já foi concluída, troque
+          <b>“Quais obras”</b> para <b>“Todas”</b>, na coluna ao lado.</small>`}
+      </div></div>`;
     return;
   }
   const cab = q.dias.map(d => `<th class="${d.semana >= 5 ? "fds" : ""}"
@@ -1381,9 +1455,15 @@ async function pintarQuadro(){
           ? `<span class="etiqueta vermelha">${q.faltam} dia(s) sem diário</span>`
           : `<span class="etiqueta verde">tudo em dia</span>`}
       </div>
+      {# O conselho de "encerre o cadastro da obra" saiu em 19/11/2026: ele
+         mandava fechar a obra no cadastro para tirá-la daqui, o que é uma
+         decisão grande para resolver uma poluição de tela. Agora quem decide
+         é a FASE, e a própria tela diz como ver as escondidas. #}
       <p class="cartao-dica">Cada coluna é um dia. <b>Clique no quadrado
-        vermelho</b> para abrir e preencher aquele dia. Obra concluída não
-        aparece aqui — se alguma sobrar, encerre o cadastro dela em Obras.</p>
+        vermelho</b> para abrir e preencher aquele dia. ${mostrarTodasAsFases()
+          ? `Aparecem <b>todas as obras</b>, inclusive as concluídas.`
+          : `Obra em fase de conclusão não aparece aqui — para vê-las, troque
+             <b>“Quais obras”</b> na coluna ao lado.`}</p>
       <div class="quadro-rolagem">
         <table class="quadro-mes">
           <thead><tr><th class="obra-col">Obra</th>${cab}</tr></thead>
@@ -1487,7 +1567,8 @@ async function abrirPendencias(){
   els("dlg-corpo").innerHTML = `<div class="cartao-dica">Carregando…</div>`;
   els("dlg").showModal();
   try {
-    const r = await api("/erp/api/diario/pendencias");
+    const r = await api("/erp/api/diario/pendencias"
+                        + (mostrarTodasAsFases() ? "?todas=1" : ""));
     els("dlg-corpo").innerHTML = `
       <p class="cartao-dica">Os últimos 30 dias, sem contar fim de semana.</p>
       <div class="tabela-wrap"><table>
