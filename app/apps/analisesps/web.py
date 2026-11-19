@@ -8690,6 +8690,36 @@ def enviar_comprovantes():
     return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
 
 
+@bp.route("/comprovantes/reenviar", methods=["POST"])
+@exige_operador
+def reenviar_comprovantes():
+    """Manda de novo para a baixa as páginas marcadas (ou a de um botão), num envio
+    novo (19/11/2026) — ver `comprovantes.reenviar`."""
+    from . import comprovantes, tarefas
+
+    marcadas = [request.form["so"]] if request.form.get("so") else request.form.getlist("pagina")
+    pares = []
+    for valor in marcadas:
+        lote, _, pagina = str(valor).partition(":")
+        if lote.isdigit() and pagina.isdigit():
+            pares.append((int(lote), int(pagina)))
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = comprovantes.reenviar(pares, auth.pessoa_atual(), quem)
+    except comprovantes.ErroDeComprovante as e:
+        return redirect(url_for("analisesps.tela_comprovantes", aviso=str(e)))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Comprovantes: falhou mandar de novo")
+        return redirect(url_for("analisesps.tela_comprovantes",
+                                aviso=f"Não consegui mandar de novo: {e}"))
+    tarefas.disparar("comprovantes", disparo=quem or "reenviar")
+    aviso = (f"{feito['paginas']} comprovante(s) mandado(s) de novo para a baixa, no envio "
+             f"{feito['lote']}. O resultado aparece aqui; pode fechar a tela.")
+    if feito["faltaram"]:
+        aviso += " Ficaram de fora: " + "; ".join(feito["faltaram"]) + "."
+    return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
+
+
 @bp.route("/comprovantes/reprocessar", methods=["POST"])
 @exige_operador
 def reprocessar_comprovante():

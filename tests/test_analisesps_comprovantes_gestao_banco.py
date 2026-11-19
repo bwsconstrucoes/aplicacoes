@@ -132,3 +132,65 @@ def test_a_tela_mostra_a_lista_os_filtros_e_o_link(lotes, app):  # noqa: F811
     um, _ = lotes
     pagina = cliente.get(f"/analisesps/comprovantes/{um}/pagina/2")
     assert pagina.status_code == 200 and pagina.get_data().startswith(b"%PDF")
+
+
+# --- baixar de novo (19/11/2026) ----------------------------------------------
+def test_baixar_de_novo_manda_as_paginas_num_envio_novo_e_tira_da_conta(lotes):
+    from app.apps.analisesps import comprovantes as cp
+    from app.apps.analisesps.db import consultar_um
+    um, _ = lotes
+    por = {(i["lote_id"], i["pagina"]): i for i in cp.listar(_filtro())["itens"]}
+    assert por[(um, 2)]["pode_reenviar"] and por[(um, 3)]["pode_reenviar"]
+    assert not por[(um, 1)]["pode_reenviar"], "o que baixou não se reenvia"
+    feito = cp.reenviar([(um, 2), (um, 3)], "marcelo", "MARCELO")
+    assert feito["paginas"] == 2 and feito["faltaram"] == []
+    novo = consultar_um("SELECT arquivo, paginas, situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (feito["lote"],))
+    assert novo == ("Reenvio - 2 comprovantes.pdf", 2, "ESPERANDO")
+    lista = cp.listar(_filtro())
+    contagem = {s: q for s, _, q in lista["contagem"]}
+    assert contagem[cp.REENVIADO] == 2 and contagem[cp.ERRO] == 0
+    antigo = {i["pagina"]: i for i in lista["itens"] if i["lote_id"] == um}
+    assert antigo[2]["rotulo"] == "Mandado de novo" and not antigo[2]["pede_acao"]
+    assert f"envio {feito['lote']}" in antigo[2]["motivo"]
+
+
+def test_sem_o_PDF_no_servidor_a_pagina_vem_do_Drive(lotes, monkeypatch):
+    from app.apps.analisesps import beevale, comprovantes as cp, drive
+    um, _ = lotes
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "tela"))
+    monkeypatch.setattr(drive, "pasta_filha", lambda pasta, nome: "SUB")
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k: {
+        "id": "x", "link": f"https://drive.google.com/uc?export=download&id=ARQ{nome.split('pág ')[1][0]}"})
+    cp.guardar_paginas_no_drive(um)
+    os.remove(os.path.join(cp.PASTA, f"lote-{um}.pdf"))
+    pedidos = []
+    monkeypatch.setattr(drive, "baixar_arquivo",
+                        lambda arquivo_id: pedidos.append(arquivo_id) or pdf_com(1))
+    assert {i["pagina"] for i in cp.listar(_filtro())["itens"]
+            if i["lote_id"] == um and i["pode_reenviar"]} == {2, 3}
+    feito = cp.reenviar([(um, 3)], "marcelo", "MARCELO")
+    assert pedidos == ["ARQ3"] and feito["paginas"] == 1
+
+
+def test_sem_servidor_e_sem_Drive_nao_ha_o_que_reenviar(lotes):
+    from app.apps.analisesps import comprovantes as cp
+    um, _ = lotes
+    os.remove(os.path.join(cp.PASTA, f"lote-{um}.pdf"))
+    assert not any(i["pode_reenviar"] for i in cp.listar(_filtro())["itens"])
+    with pytest.raises(cp.ErroDeComprovante):
+        cp.reenviar([(um, 2)], "marcelo", "MARCELO")
+
+
+def test_o_botao_da_tela_manda_de_novo(lotes, app, monkeypatch):  # noqa: F811
+    from app.apps.analisesps import tarefas
+    from tests.test_analisesps_telas import _como_mestre
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, **k: disparos.append(modo) or {})
+    cliente = _como_mestre(app)
+    um, _ = lotes
+    html = cliente.get("/analisesps/comprovantes?f=1").get_data(as_text=True)
+    assert f'name="so" value="{um}:2"' in html and "Baixar de novo os marcados" in html
+    r = cliente.post("/analisesps/comprovantes/reenviar", data={"so": f"{um}:2"})
+    assert r.status_code == 302 and "mandado" in r.headers["Location"]
+    assert disparos == ["comprovantes"]

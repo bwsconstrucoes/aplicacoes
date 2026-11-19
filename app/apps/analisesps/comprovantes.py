@@ -29,6 +29,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 
 logger = logging.getLogger("analisesps.comprovantes")
 
@@ -196,6 +197,9 @@ NAO_LOCALIZADO = "NAO_LOCALIZADO"
 PENDENTE_VALIDACAO = "PENDENTE_VALIDACAO"
 RECUSADO = "RECUSADO"
 ERRO = "ERRO"
+# A página mandada de novo pela tela (19/11/2026): o resultado está no envio novo.
+# Sai das contas do que "pede ação" — senão o mesmo comprovante contaria duas vezes.
+REENVIADO = "REENVIADO"
 
 ROTULOS = {
     BAIXADO: "Baixado",
@@ -204,12 +208,13 @@ ROTULOS = {
     PENDENTE_VALIDACAO: "Falta liberar antes de baixar",
     RECUSADO: "Pagamento não efetivado",
     ERRO: "Deu erro",
+    REENVIADO: "Mandado de novo",
 }
 
 # A ordem em que a tela mostra: primeiro o que pede ação, por último o que
 # deu certo. Quem abre a tela quer saber o que ficou de fora — o que baixou é
 # o esperado.
-ORDEM = [ERRO, NAO_LOCALIZADO, PENDENTE_VALIDACAO, RECUSADO, DUPLICADO, BAIXADO]
+ORDEM = [ERRO, NAO_LOCALIZADO, PENDENTE_VALIDACAO, RECUSADO, DUPLICADO, BAIXADO, REENVIADO]
 
 
 def _texto(v) -> str:
@@ -1296,7 +1301,9 @@ def listar(f: dict) -> dict:
             "rotulo": ROTULOS.get(l[2], l[2]), "sp_id": l[3], "valor": l[4],
             "recebedor": l[5], "motivo": l[6], "motivo_explicado": explicar_erro(l[6]),
             "conversa_omie": l[7], "arquivo": l[8], "quem": l[9], "recebido_em": l[10],
-            "pede_acao": l[2] not in (BAIXADO, DUPLICADO),
+            "pede_acao": l[2] not in (BAIXADO, DUPLICADO, REENVIADO),
+            "pode_reenviar": l[2] in PEDEM_NOVA_TENTATIVA and bool(
+                l[1] and (no_disco[l[0]] or drive_.get(str(l[1])))),
             # O comprovante, na ordem do que vale mais: o arquivado na SP pelo robô;
             # a cópia no Drive; a página ainda no servidor.
             "link_arquivado": arquivado if l[2] in (BAIXADO, DUPLICADO) else "",
@@ -1306,6 +1313,95 @@ def listar(f: dict) -> dict:
     return {"itens": itens, "mais": len(linhas) > TETO_DA_LISTA,
             "contagem": [(s, ROTULOS[s], int(contagem.get(s, 0))) for s in ORDEM],
             "total": sum(int(v) for v in contagem.values()), "quem": quem}
+
+
+# ---------------------------------------------------------------------------
+# BAIXAR DE NOVO UMA PÁGINA (19/11/2026)
+#
+# O dono: *"nos que não foram baixados, eu queria algum botão para baixar
+# novamente. Utilizar aquele mesmo arquivo e encaminhar novamente para a baixa.
+# Porque às vezes a gente esquece de alterar o status e acaba não encontrando."*
+#
+# É o "Processar de novo" de UMA página (ou das marcadas), sem refazer o envio
+# inteiro e sem precisar do PDF original: a página vem do servidor, enquanto ele
+# ainda a tem, ou da cópia no Drive (`guardar_paginas_no_drive`). As escolhidas
+# viram UM envio novo, com a fila e o robô de sempre — o que já foi baixado não
+# baixa duas vezes. A linha antiga vira "Mandado de novo", com o número do envio
+# novo, e sai da conta do que pede ação.
+# ---------------------------------------------------------------------------
+MAXIMO_NO_REENVIO = 50
+_ID_DO_DRIVE = re.compile(r"[?&]id=([\w-]+)|/d/([\w-]+)")
+
+
+def _bytes_da_pagina(lote_id: int, pagina: int, no_drive: dict) -> bytes:
+    caminho = os.path.join(PASTA, f"lote-{int(lote_id)}.pdf")
+    if os.path.exists(caminho):
+        with open(caminho, "rb") as arquivo:
+            return recortar_pagina(arquivo.read(), int(pagina))
+    link = no_drive.get(int(pagina))
+    achado = _ID_DO_DRIVE.search(link or "")
+    if not achado:
+        raise ErroDeComprovante("a página não está mais no servidor nem no Drive")
+    from . import drive
+    return drive.baixar_arquivo(next(g for g in achado.groups() if g))
+
+
+def reenviar(paginas, pessoa: str, quem: str) -> dict:
+    """Manda de novo para a baixa as páginas `[(lote, página)]`, num envio novo.
+    Devolve `{"lote": id, "paginas": n, "faltaram": [...]}`; levanta
+    `ErroDeComprovante` quando nenhuma página pôde ser lida."""
+    from pypdf import PdfReader, PdfWriter
+
+    from .db import conexao, consultar
+    pedidas = list(dict.fromkeys((int(l), int(p)) for l, p in paginas or []))
+    if not pedidas:
+        raise ErroDeComprovante("Nenhum comprovante marcado.")
+    if len(pedidas) > MAXIMO_NO_REENVIO:
+        raise ErroDeComprovante(f"São no máximo {MAXIMO_NO_REENVIO} comprovantes de cada vez.")
+    lotes = sorted({l for l, _ in pedidas})
+    nomes = dict(consultar("SELECT id, arquivo FROM analisesps.comprovantes_lote WHERE id IN ("
+                           + ",".join("?" for _ in lotes) + ")", tuple(lotes)))
+    escritor, entraram, faltaram = PdfWriter(), [], []
+    drive_por_lote: dict = {}
+    for lote_id, pagina in pedidas:
+        if lote_id not in nomes:
+            faltaram.append(f"envio {lote_id}: não existe mais")
+            continue
+        if lote_id not in drive_por_lote:
+            drive_por_lote[lote_id] = paginas_no_drive(lote_id)
+        try:
+            pedaco = _bytes_da_pagina(lote_id, pagina, drive_por_lote[lote_id])
+            for folha in PdfReader(io.BytesIO(pedaco)).pages:
+                escritor.add_page(folha)
+            entraram.append((lote_id, pagina))
+        except Exception as e:  # noqa: BLE001 — uma página que falta não barra as outras
+            logger.warning("Comprovantes: não consegui reler a página %s do envio %s (%s)",
+                           pagina, lote_id, e)
+            faltaram.append(f"{nomes[lote_id]} pág. {pagina}: {e}")
+    if not entraram:
+        raise ErroDeComprovante("Nenhuma das páginas pôde ser lida de novo — "
+                                + "; ".join(faltaram))
+    saida = io.BytesIO()
+    escritor.write(saida)
+    if len(entraram) == 1:
+        l, p = entraram[0]
+        nome = f"Reenvio - {os.path.splitext(nomes[l])[0]} - pág {p}.pdf"
+    else:
+        nome = f"Reenvio - {len(entraram)} comprovantes.pdf"
+    novo = guardar(saida.getvalue(), nome[:200], pessoa, quem)
+    with conexao() as conn:
+        for l, p in entraram:
+            conn.execute(
+                "UPDATE analisesps.comprovantes_item SET situacao = ?, "
+                "       motivo = motivo || ? "
+                " WHERE lote_id = ? AND pagina = ? AND situacao IN ("
+                + ",".join("?" for _ in PEDEM_NOVA_TENTATIVA) + ")",
+                (REENVIADO, f" · Mandado de novo no envio {novo}.", l, p,
+                 *sorted(PEDEM_NOVA_TENTATIVA)))
+        conn.commit()
+    logger.info("Comprovantes: %d página(s) mandada(s) de novo por %s — envio %d.",
+                len(entraram), quem or "?", novo)
+    return {"lote": novo, "paginas": len(entraram), "faltaram": faltaram}
 
 
 def pagina_do_servidor(lote_id: int, pagina: int) -> bytes:
@@ -1383,7 +1479,7 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
                          for s in ORDEM if contagem.get(s)],
             "resolvidos": contagem.get(BAIXADO, 0) + contagem.get(DUPLICADO, 0),
             "pendencias": sum(q for s, q in contagem.items()
-                              if s not in (BAIXADO, DUPLICADO)),
+                              if s not in (BAIXADO, DUPLICADO, REENVIADO)),
         })
     return saida
 
