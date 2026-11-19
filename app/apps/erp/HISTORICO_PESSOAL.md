@@ -38,33 +38,21 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (19/11/2026) — ramo `claude/busy-shannon-w5pp5o`.** Ele
-CONTÉM o ramo `claude/oi-vjvrn8` inteiro (abaixo), juntado de propósito: os
-dois mexem em `pessoal_solicitacoes.py`, `erp_dp_solicitacoes.html` e
-`erp_colaboradores.html`, e publicar um sem o outro daria conflito. **Publicar
-este publica os dois.** São **três** atualizações de banco: 112, 113 e **114**
-(o processo do desligamento). Apertar "Aplicar atualizações do banco" no mesmo
-momento da junção.
+**Publicado em 19/11/2026** (ramo `claude/busy-shannon-w5pp5o`, migração
+**114**): o processo do desligamento, a continuidade como prestador, a faixa do
+afastamento e a ida e volta da documentação assinada. As migrações 112 e 113,
+do ramo `claude/oi-vjvrn8`, já tinham sido publicadas por outro chat antes.
+⚠️ Confirmar com ele que apertou "Aplicar atualizações do banco".
 
-O que é deste ramo (ver "Decisões", 19/11/2026):
+**Respostas dele, 19/11/2026, que fecham as perguntas deste trabalho:**
 
-- a faixa do afastamento na janela da pessoa e a data de início corrigível no
-  retorno do afastamento antigo;
-- o desligamento de carteira como PROCESSO, que só se encerra com a rescisão e
-  a multa pagas (migração 114);
-- o "sim, continua como prestador" que não desliga mais: o DP confirma depois
-  do último dia, e o cadastro vira prestador.
-
-**Perguntas abertas deste ramo, para ele:**
-
-- a marcação "a documentação voltou assinada" deve **exigir o arquivo**
-  assinado jogado no cadastro, ou basta marcar? (hoje basta marcar);
-- o desligamento de **prestador** continua fechando no atendimento, sem
-  processo. Ele tem algum passo depois (pagamento final, por exemplo) que deva
-  travar o encerramento?
-- os desligamentos que já foram **atendidos antes de 19/11** fecharam do jeito
-  antigo, sem os passos. Ficam assim (recomendação), ou ele quer reabrir os do
-  mês para acompanhar a multa?
+- *"O arquivo precisa ser cobrado pelo Agente e recebido. Imagino que o ideal
+  é enviar via solicitação DP, o agente analisa e o DP valida o recebimento."*
+  → feito: ver "Decisões", 19/11 (a ida e a volta da assinatura).
+- *"Desligamento de prestador acho não precisa. Ele vai receber o pgt baseado
+  no ponto nas quinzenas e pronto."* → continua fechando no atendimento.
+- *"Os desligamentos antes de hoje já estão em Desligados, não vamos
+  exigir."* → ficam como estão; o processo vale do dia 19/11 em diante.
 
 **Falta publicar (18/11/2026).** Está tudo no ramo `claude/oi-vjvrn8`, testado,
 e **espera o "pode" dele**:
@@ -192,6 +180,37 @@ desligamento parado ou atrasado e o pronto para encerrar.
 
 **Exercitado no navegador** com banco local: fila, processo, confirmação da
 continuidade, montar o pedido à contabilidade, faixa do afastamento e retorno.
+
+### 19/11/2026 — A documentação assinada vai e volta pelo sistema
+
+**O pedido, com as palavras dele:** *"O arquivo precisa ser cobrado pelo
+Agente e recebido. Imagino que o ideal é enviar via solicitação DP, o agente
+analisa e o DP valida o recebimento da documentação."*
+
+**Não precisou de peça nova para a ida e a volta: ela já existia e ninguém
+ligava ao desligamento.** É a DEVOLUÇÃO do portal (migração 091): o DP manda
+um documento para a obra, com prazo; a obra baixa no portal, devolve assinado
+pelo portal, e o arquivo cai no cadastro da pessoa. E a rotina de cobrança do
+agente JÁ cobrava devolução atrasada por WhatsApp.
+
+O que entrou:
+
+1. **"Mandar para a obra assinar"** dentro do desligamento: abre a devolução
+   ligada ao pedido de rescisão, levando o arquivo que a contabilidade
+   devolveu. Sem o arquivo, recusa — salvo se o DP disser que o papel vai por
+   outro caminho.
+2. **O agente confere o que volta — sem IA, sem custo de rede:** o arquivo
+   chegou, não é minúsculo, o CPF da pessoa está no texto, a palavra
+   "rescisão" aparece, e se o arquivo tem exatamente o tamanho do que foi
+   enviado (sinal de que voltou sem assinatura). ⚠️ **E diz o limite: ele não
+   enxerga assinatura.** Escaneado sem texto aparece como "não deu para ler —
+   confira à mão".
+3. **O DP valida ou recusa.** Recusar devolve a pendência à obra com o motivo
+   e prazo novo. O passo só se cumpre com a validação.
+4. Tipo de documento novo: **"Documentação rescisória assinada"**
+   (`RESCISAO-ASSINADA`, sigilo pessoal), para o termo assinado não se
+   confundir com o que a contabilidade mandou.
+5. O vigia avisa a documentação assinada que chegou e espera validação.
 
 ### 19/11/2026 — A faixa do afastamento na janela da pessoa
 

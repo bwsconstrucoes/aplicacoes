@@ -53,3 +53,18 @@ CREATE TABLE IF NOT EXISTS dp_desligamento_passos (
 
 CREATE INDEX IF NOT EXISTS ix_dp_deslig_passo_titulo
     ON dp_desligamento_passos (titulo_id) WHERE titulo_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- A DOCUMENTAÇÃO RESCISÓRIA ASSINADA tem tipo próprio (19/11/2026).
+--
+-- Ele: *"o arquivo precisa ser cobrado pelo Agente e recebido (…) o agente
+-- analisa e o DP valida o recebimento da documentação."* A obra devolve pelo
+-- portal, e o tipo é o que separa o termo que a contabilidade mandou (RESCISAO)
+-- do mesmo termo depois de assinado — sem isso, os dois ficariam no cadastro
+-- com o mesmo nome e ninguém saberia qual tem assinatura. Sigilo PESSOAL:
+-- rescisão traz salário e verbas.
+-- ---------------------------------------------------------------------------
+INSERT INTO documento_tipos (codigo, nome, grupo, dono, sigilo)
+VALUES ('RESCISAO-ASSINADA', 'Documentação rescisória assinada', 'FISCAL',
+        'PESSOA', 'PESSOAL')
+ON CONFLICT (codigo) DO NOTHING;

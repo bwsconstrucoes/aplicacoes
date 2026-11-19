@@ -80,10 +80,16 @@ PASSOS: tuple[dict[str, Any], ...] = (
      "rotulo": "Rescisão pedida à contabilidade"},
     {"codigo": "DOCUMENTACAO", "como": "lido", "quem": "Contabilidade",
      "rotulo": "A contabilidade devolveu a documentação rescisória"},
-    {"codigo": "ENCAMINHADA", "como": "marcar", "quem": "DP",
-     "rotulo": "O DP mandou a documentação para quem pediu"},
-    {"codigo": "ASSINADA", "como": "marcar", "quem": "quem pediu",
-     "rotulo": "A documentação voltou ao DP assinada pelo colaborador"},
+    # ⚑ A IDA E A VOLTA DA ASSINATURA SÃO PELO SISTEMA (19/11/2026). Ele: *"o
+    # arquivo precisa ser cobrado pelo Agente e recebido. Imagino que o ideal é
+    # enviar via solicitação DP, o agente analisa e o DP valida o recebimento
+    # da documentação."* A ida é uma DEVOLUÇÃO para a obra (a mesma pendência
+    # do portal, com prazo, que o agente já cobra por WhatsApp); a volta chega
+    # pelo portal, o agente confere o arquivo, e o DP valida.
+    {"codigo": "ENCAMINHADA", "como": "lido", "quem": "DP",
+     "rotulo": "A documentação foi para a obra colher a assinatura"},
+    {"codigo": "ASSINADA", "como": "lido", "quem": "obra, e o DP valida",
+     "rotulo": "A documentação voltou assinada e o DP validou"},
     {"codigo": "RESCISAO_PAGA", "como": "titulo", "quem": "DP e Financeiro",
      "rotulo": "Rescisão (TRCT) lançada e paga"},
     {"codigo": "MULTA_PAGA", "como": "titulo", "quem": "DP e Financeiro",
@@ -189,6 +195,95 @@ def _pedido_a_contabilidade(s: Session, sol: dict[str, Any]
     return dict(linha) if linha else None
 
 
+def _devolucao(s: Session, sol: dict[str, Any],
+               pedido: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """A pendência que levou a documentação para a obra assinar.
+
+    Ligada ao pedido de rescisão (quando nasceu daqui) ou, sem ele, a última
+    devolução de documentação rescisória desta pessoa aberta depois do pedido
+    de desligamento. Cancelada não conta.
+    """
+    if not sol.get("colaborador_id"):
+        return None
+    linha = s.execute(text("""
+        SELECT d.id, d.numero, d.situacao, d.prazo, d.cobrancas,
+               d.documento_id, d.documento_enviado_id, d.devolvido_em,
+               o.codigo AS obra, doc.anexo_id
+          FROM dp_devolucoes d
+          LEFT JOIN obras o ON o.id = d.obra_id
+          LEFT JOIN documentos doc ON doc.id = d.documento_id
+         WHERE d.situacao <> 'CANCELADA'
+           AND ((:ped IS NOT NULL AND d.pedido_id = :ped)
+                OR (d.colaborador_id = :c AND d.documento_esperado = :tipo
+                    AND d.criado_em >= :desde))
+         ORDER BY d.criado_em DESC, d.id DESC LIMIT 1"""),
+        {"ped": pedido["id"] if pedido else None, "c": sol["colaborador_id"],
+         "tipo": DOC_ASSINADA, "desde": sol["criado_em"]}).mappings().first()
+    return dict(linha) if linha else None
+
+
+# O tipo do documento que volta assinado (migração 114).
+DOC_ASSINADA = "RESCISAO-ASSINADA"
+
+
+def analisar_devolucao(s: Session, dev: dict[str, Any]) -> list[dict[str, Any]]:
+    """O que o agente confere no arquivo que voltou da obra — SEM IA.
+
+    ⚑ O LIMITE, DITO SEM RODEIO: o agente NÃO enxerga assinatura. Ele confere
+    o que dá para conferir com o que o sistema já tem — o texto do PDF (tirado
+    na hora do arquivamento, sem custo) e o tamanho — e diz quando não deu
+    para ler. Quem confirma que está assinado é o DP, olhando o arquivo; por
+    isso o passo só se cumpre com a validação dele.
+
+    ⚑ CUSTO: zero idas à internet. O texto e o tamanho já estão no banco.
+    """
+    if not dev.get("documento_id"):
+        return [{"ok": False, "texto": "o arquivo não está ligado à pendência"}]
+    doc = s.execute(text("""
+        SELECT d.texto, d.colaborador_id, a.tamanho_bytes, a.mime_type,
+               c.nome, c.cpf
+          FROM documentos d
+          JOIN anexos a ON a.id = d.anexo_id
+          LEFT JOIN colaboradores c ON c.id = d.colaborador_id
+         WHERE d.id = :i"""), {"i": dev["documento_id"]}).mappings().first()
+    if doc is None:
+        return [{"ok": False, "texto": "o arquivo não foi achado no Arquivo"}]
+    achados: list[dict[str, Any]] = [
+        {"ok": True, "texto": "o arquivo chegou pelo portal e foi guardado no "
+                              "cadastro da pessoa"}]
+    if (doc["tamanho_bytes"] or 0) < 2000:
+        achados.append({"ok": False, "texto": "o arquivo é muito pequeno — "
+                                              "pode estar vazio ou cortado"})
+    texto_ = " ".join(str(doc["texto"] or "").split())
+    if not texto_:
+        achados.append({"ok": None, "texto": "é imagem ou escaneado: não deu "
+                                             "para ler o conteúdo — confira à mão"})
+    else:
+        import re as _re
+        digitos = _re.sub(r"\D", "", texto_)
+        cpf = _re.sub(r"\D", "", str(doc["cpf"] or ""))
+        if cpf and cpf in digitos:
+            achados.append({"ok": True, "texto": "o CPF da pessoa está no documento"})
+        elif cpf:
+            achados.append({"ok": False, "texto": "o CPF da pessoa NÃO aparece no "
+                                                  "documento — confira se é dela"})
+        if "rescis" not in texto_.lower():
+            achados.append({"ok": None, "texto": "não achei a palavra "
+                                                 "“rescisão” no texto"})
+    if dev.get("documento_enviado_id"):
+        foi = s.execute(text("""
+            SELECT a.tamanho_bytes FROM documentos d
+              JOIN anexos a ON a.id = d.anexo_id WHERE d.id = :i"""),
+            {"i": dev["documento_enviado_id"]}).scalar()
+        if foi and doc["tamanho_bytes"] and doc["tamanho_bytes"] == foi:
+            achados.append({"ok": False, "texto": "o arquivo tem exatamente o "
+                            "tamanho do que foi enviado — pode ter voltado SEM "
+                            "assinatura"})
+    achados.append({"ok": None, "texto": "a assinatura o agente não enxerga: "
+                                         "abra o arquivo e confira"})
+    return achados
+
+
 def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
     """Os passos deste desligamento, cada um com estado e o que fazer.
 
@@ -202,6 +297,7 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
     marcas = _marcas(s, int(sol["id"]))
     registrado = sol.get("situacao") in (EM_ANDAMENTO, "ATENDIDA")
     pedido = _pedido_a_contabilidade(s, sol)
+    dev = _devolucao(s, sol, pedido)
     forma = str(dados.get("forma_desligamento") or "")
     hoje = date.today()
     saida = []
@@ -223,7 +319,9 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
 
         # Marca explícita do DP vale por cima do que o sistema lê — inclusive
         # "não se aplica", que só existe com motivo escrito.
-        if m and m["situacao"] in ("FEITO", "NAO_SE_APLICA") and cod != "CONTINUIDADE":
+        if (m and m["situacao"] in ("FEITO", "NAO_SE_APLICA")
+                and cod != "CONTINUIDADE"
+                and not (cod == "ASSINADA" and (m.get("detalhe") or {}).get("validada"))):
             item["estado"] = m["situacao"]
             item["detalhe"] = ("marcado à mão" if m["situacao"] == "FEITO"
                                else "dispensado")
@@ -291,10 +389,42 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                                    + (f", prazo {prazo:%d/%m/%Y}" if prazo else ""))
                 item["atrasado"] = bool(prazo and prazo < hoje)
 
-        elif cod in ("ENCAMINHADA", "ASSINADA"):
-            item["detalhe"] = ("marque quando acontecer"
-                               if cod == "ENCAMINHADA" else
-                               "marque quando a documentação assinada chegar")
+        elif cod == "ENCAMINHADA":
+            if dev is None:
+                item["detalhe"] = ("mande para a obra assinar — vai junto a "
+                                   "documentação que a contabilidade devolveu")
+            else:
+                item["estado"] = "FEITO"
+                item["detalhe"] = (f"{dev['numero']} aberto para a obra "
+                                   f"{dev.get('obra') or ''}".strip())
+            item["devolucao"] = dev and {
+                "id": dev["id"], "numero": dev["numero"],
+                "situacao": dev["situacao"], "cobrancas": dev["cobrancas"],
+                "prazo": dev["prazo"].isoformat() if dev.get("prazo") else None}
+
+        elif cod == "ASSINADA":
+            if m and m["situacao"] == "FEITO":
+                item["estado"] = "FEITO"
+                item["detalhe"] = "validada pelo DP"
+            elif dev is None:
+                item["detalhe"] = "depois de mandar para a obra"
+            elif dev["situacao"] in ("ABERTA", "COBRADA"):
+                prazo = dev.get("prazo")
+                item["estado"] = "AGUARDANDO"
+                item["detalhe"] = (
+                    f"com a obra ({dev['numero']})"
+                    + (f", prazo {prazo:%d/%m/%Y}" if prazo else "")
+                    + (f", cobrada {dev['cobrancas']} vez(es)"
+                       if dev["cobrancas"] else "")
+                    + " — o agente cobra a obra quando o prazo vence")
+                item["atrasado"] = bool(prazo and prazo < hoje)
+            elif dev["situacao"] == "DEVOLVIDA":
+                item["detalhe"] = ("chegou pelo portal — confira a análise e "
+                                   "valide o recebimento")
+                item["a_validar"] = True
+                item["analise"] = analisar_devolucao(s, dev)
+                item["documento_id"] = dev.get("documento_id")
+                item["anexo_id"] = dev.get("anexo_id")
 
         elif cod in ("RESCISAO_PAGA", "MULTA_PAGA"):
             if m and m["situacao"] == "LANCADO" and m.get("titulo_id"):
@@ -458,6 +588,87 @@ def marcar(s: Session, sol: dict[str, Any], dados: dict[str, Any],
     raise ErroValidacao("Ação desconhecida para o passo.")
 
 
+def mandar_para_assinar(s: Session, sol: dict[str, Any], dados: dict[str, Any],
+                        usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Abre a pendência para a obra: a documentação vai, e tem de voltar
+    assinada pelo portal. O agente cobra quando o prazo vence (rotina de
+    cobrança, que já cobra as devoluções atrasadas por WhatsApp).
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.pessoal_solicitacoes import _evento
+
+    _exigir_em_andamento(sol)
+    pedido = _pedido_a_contabilidade(s, sol)
+    if _devolucao(s, sol, pedido) is not None:
+        raise ErroValidacao("A documentação já foi mandada para a obra.")
+    enviado = None
+    if pedido:
+        enviado = s.execute(text("SELECT documento_id FROM dp_pedidos WHERE id = :i"),
+                            {"i": pedido["id"]}).scalar()
+    if not enviado and not str(dados.get("sem_arquivo") or ""):
+        raise ErroValidacao(
+            "A documentação rescisória ainda não voltou da contabilidade com o "
+            "arquivo. Espere o retorno — ou confirme que vai mandar o papel por "
+            "outro caminho.")
+    r = svc_portal.abrir_devolucao(s, {
+        "colaborador_id": sol["colaborador_id"],
+        "obra_id": sol.get("obra_id"),
+        "pedido_id": pedido["id"] if pedido else None,
+        "documento_enviado_id": enviado,
+        "documento_esperado": DOC_ASSINADA,
+        "dias": dados.get("dias") or 5,
+        "o_que": (str(dados.get("o_que") or "").strip()
+                  or "Imprimir a documentação rescisória, apresentar ao "
+                     "colaborador, colher as assinaturas e devolver pelo "
+                     "portal.")}, usuario)
+    _evento(s, sol["id"], "MANDADA_PARA_ASSINAR",
+            {"devolucao": r["numero"], "com_arquivo": bool(enviado)}, usuario)
+    return r
+
+
+def validar_assinada(s: Session, sol: dict[str, Any], dados: dict[str, Any],
+                     usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O DP valida — ou recusa — a documentação que voltou da obra.
+
+    Recusar devolve a pendência para a obra, com o motivo e prazo novo: o
+    arquivo errado continua guardado no cadastro (é história), mas não fecha
+    o passo.
+    """
+    from app.apps.erp.core.pessoal_solicitacoes import _evento
+
+    _exigir_tabela(s)
+    _exigir_em_andamento(sol)
+    dev = _devolucao(s, sol, _pedido_a_contabilidade(s, sol))
+    if dev is None or dev["situacao"] != "DEVOLVIDA":
+        raise ErroValidacao("A documentação assinada ainda não voltou da obra.")
+    acao = str(dados.get("acao") or "").strip().lower()
+    if acao == "validar":
+        _gravar(s, sol["id"], "ASSINADA", "FEITO", usuario,
+                observacao=str(dados.get("observacao") or ""),
+                detalhe={"validada": True, "devolucao": dev["numero"],
+                         "documento_id": dev["documento_id"]})
+        _evento(s, sol["id"], "ASSINADA_VALIDADA",
+                {"devolucao": dev["numero"]}, usuario)
+        return {"validada": True}
+    if acao == "recusar":
+        motivo = str(dados.get("motivo") or "").strip()
+        if len(motivo) < 5:
+            raise ErroValidacao("Diga o que está errado — a obra precisa saber "
+                                "o que corrigir.")
+        s.execute(text("""
+            UPDATE dp_devolucoes
+               SET situacao = 'ABERTA', documento_id = NULL, devolvido_em = NULL,
+                   prazo = :p,
+                   o_que = o_que || ' — DEVOLVIDO PELO DP: ' || :m
+             WHERE id = :d"""),
+            {"p": date.today() + timedelta(days=int(dados.get("dias") or 3)),
+             "m": motivo[:500], "d": dev["id"]})
+        _evento(s, sol["id"], "ASSINADA_RECUSADA",
+                {"devolucao": dev["numero"], "motivo": motivo}, usuario)
+        return {"validada": False}
+    raise ErroValidacao("Diga se valida ou recusa.")
+
+
 def confirmar_continuidade(s: Session, sol: dict[str, Any],
                            dados: dict[str, Any],
                            usuario: Optional[Usuario]) -> dict[str, Any]:
@@ -586,12 +797,14 @@ def em_andamento(s: Session, *, limite: int = 200) -> list[dict[str, Any]]:
         atrasado = any(p.get("atrasado") for p in estado["passos"])
         continuidade = next((p for p in estado["passos"]
                              if p["codigo"] == "CONTINUIDADE"), None)
+        a_validar = any(p.get("a_validar") for p in estado["passos"])
         saida.append({
             "id": l["id"], "numero": l["numero"], "pessoa": l["pessoa"] or "",
             "colaborador_id": l["colaborador_id"], "obra": l["obra"] or "",
             "cumpridos": estado["cumpridos"], "total": estado["total"],
             "proximo": estado["proximo"], "pode_encerrar": estado["pode_encerrar"],
             "atrasado": atrasado,
+            "assinada_a_validar": a_validar,
             "continuidade_a_confirmar": bool(
                 continuidade and continuidade["estado"] == "PENDENTE"),
             "dias": ((date.today() - l["atendido_em"].date()).days

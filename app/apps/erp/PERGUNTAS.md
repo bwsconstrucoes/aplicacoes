@@ -2603,7 +2603,8 @@ precisa mudar (…) de CLT para prestador de serviço."*
   número da SP e se ela está paga (o sistema lê do próprio lançamento).
 - **"Qual SP pagou a rescisão do fulano?"** — o número ligado ao passo.
 - **"Quem mandou a documentação para a obra, e quando?"** / **"já voltou
-  assinada?"** — os dois passos marcados à mão, com quem e quando.
+  assinada?"** / **"está atrasada?"** — a devolução ligada ao desligamento
+  (número DV, prazo, quantas cobranças) e a validação do DP.
 - **"Quem saiu da carteira e ainda não teve a continuidade confirmada?"** — ⚠️
   a mais importante: enquanto não confirma, o cadastro segue dizendo CTPS.
   Está no alto da tela, no vigia do agente e no relatório.
@@ -2616,9 +2617,10 @@ precisa mudar (…) de CLT para prestador de serviço."*
 
 ### Perguntas que o sistema AINDA NÃO responde, e o que falta
 
-- **"A documentação assinada está arquivada?"** — o passo é marcado à mão; o
-  sistema não exige o arquivo assinado. **Falta** decidir se a marcação passa a
-  exigir o documento (decisão dele).
+- **"A documentação assinada está assinada mesmo?"** — o agente confere o
+  arquivo (CPF no texto, tamanho, se não voltou igual ao enviado), mas **não
+  enxerga assinatura**. Quem responde é o DP, na validação; o sistema só
+  responde "validado por fulano em tal dia".
 - **"Quanto custou o desligamento?"** — o sistema sabe as SPs ligadas, mas não
   soma rescisão + multa + verbas num número. **Falta** a conta.
 - **"Quanto falta pagar de rescisões?"** — os lançamentos ligados e não pagos

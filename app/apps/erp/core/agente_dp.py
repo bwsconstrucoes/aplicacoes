@@ -145,7 +145,8 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "ficha de volta, desligamento sem documentação rescisória, "
                    "desligamento em andamento parado ou atrasado, saída da "
                    "carteira sem a confirmação de que a pessoa continua como "
-                   "prestador, ativo sem obra",
+                   "prestador, documentação rescisória assinada esperando o "
+                   "DP validar, ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
         "usa_ia": False,
@@ -710,6 +711,15 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
     try:
         from app.apps.erp.core import desligamento_processo as svc_proc
         for d in svc_proc.em_andamento(s):
+            if d.get("assinada_a_validar"):
+                achados.append({
+                    "tipo": "assinada_a_validar",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: a documentação rescisória "
+                              "voltou assinada pela obra e espera o DP "
+                              "validar o recebimento"),
+                    "o_que_fazer": "abrir o pedido e validar"})
             if d["continuidade_a_confirmar"]:
                 achados.append({
                     "tipo": "continuidade_a_confirmar",

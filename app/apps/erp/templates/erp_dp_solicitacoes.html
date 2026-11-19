@@ -353,7 +353,9 @@ function desenhar(){
         · <b>${x.pode_encerrar ? "pronto para encerrar"
                : "próximo: " + escapar(x.proximo)}</b>
         ${x.atrasado || x.continuidade_a_confirmar
-          ? ` <span class="etiqueta ambar">atrasado</span>` : ""}</li>`).join("")}</ul>
+          ? ` <span class="etiqueta ambar">atrasado</span>` : ""}
+        ${x.assinada_a_validar
+          ? ` <span class="etiqueta ambar">assinada chegou — validar</span>` : ""}</li>`).join("")}</ul>
     </div>` : "";
   els("desligamentos").querySelectorAll("[data-desl]").forEach(a =>
     a.addEventListener("click", ev => { ev.preventDefault();
@@ -509,6 +511,14 @@ function blocoDoProcesso(p){
     if (x.pedido)
       b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
         ${escapar(x.pedido.numero)} em Contabilidade</a>`);
+    if (x.codigo === "ENCAMINHADA" && x.estado === "PENDENTE")
+      b.push(`<button class="btn" data-pr-assinar="1">Mandar para a obra assinar…</button>`);
+    if (x.a_validar) {
+      if (x.anexo_id)
+        b.push(`<a class="link-btn" href="/erp/anexo/${x.anexo_id}" target="_blank">abrir o arquivo</a>`);
+      b.push(`<button class="btn" data-pr-validar="1">Validar</button>
+        <button class="btn secundario" data-pr-recusar-ass="1">Recusar…</button>`);
+    }
     if (x.como === "marcar" && x.estado === "PENDENTE")
       b.push(`<button class="btn secundario" data-pr-feito="${x.codigo}">Marcar feito</button>`);
     if (x.como === "titulo" && x.estado !== "FEITO")
@@ -533,6 +543,8 @@ function blocoDoProcesso(p){
       <td style="width:28px; text-align:center" title="${escapar(x.estado)}">${ICONE_DO_PASSO[x.estado] || ""}</td>
       <td><b>${escapar(x.rotulo)}</b><br><small class="desc">${escapar(x.quem)}</small></td>
       <td><small>${escapar(x.detalhe)}${x.atrasado ? ` <span class="etiqueta ambar">atrasado</span>` : ""}
+        ${(x.analise || []).length ? `<br><b>O agente conferiu:</b>` + x.analise.map(a =>
+          `<br>${a.ok === true ? "✔" : a.ok === false ? "⚠️" : "•"} ${escapar(a.texto)}`).join("") : ""}
         ${x.observacao ? `<br><i>${escapar(x.observacao)}</i>` : ""}
         ${x.por ? `<br>${escapar(x.por)}${x.em ? " · " + dataBR(x.em.slice(0, 10)) : ""}` : ""}</small></td>
       <td style="white-space:nowrap">${botoes(x)}</td></tr>`).join("")}</tbody></table>
@@ -548,6 +560,40 @@ function ligarBotoesDoProcesso(p){
     b.addEventListener("click", () => fn(b)));
   um("[data-pr-cont]", () => confirmarContinuidade(p));
   um("[data-pr-ct]", () => montarPedidoDeRescisao(p));
+  {# ⚑ A ASSINATURA VAI E VOLTA PELO SISTEMA (19/11/2026). Ele: *"o arquivo
+     precisa ser cobrado pelo Agente e recebido (…) o agente analisa e o DP
+     valida o recebimento."* A ida é a pendência do portal (com prazo, que o
+     agente cobra por WhatsApp); a volta chega pelo portal; o DP valida. #}
+  um("[data-pr-assinar]", async () => {
+    const r = await perguntar({titulo: "Mandar para a obra assinar",
+      aviso: "A obra recebe a documentação rescisória no portal, apresenta ao "
+           + "colaborador, colhe as assinaturas e devolve pelo portal. Vencido o "
+           + "prazo, o agente cobra a obra pelo WhatsApp.",
+      textoOk: "Mandar",
+      campos: [
+        {nome: "dias", rotulo: "Prazo (dias)", largura: 2, valor: "5"},
+        {nome: "o_que", rotulo: "Recado para a obra (opcional)", tipo: "textarea",
+         largura: 6, linhas: 2},
+        {nome: "sem_arquivo", rotulo: "Se a contabilidade ainda não mandou o arquivo",
+         tipo: "select", largura: 4,
+         opcoes: [{valor: "", rotulo: "esperar o arquivo"},
+                  {valor: "1", rotulo: "mandar assim mesmo (o papel vai por outro caminho)"}]},
+      ]});
+    if (r) acao("assinar", r);
+  });
+  um("[data-pr-validar]", () => {
+    if (confirm("Você abriu o arquivo e confere que está assinado?"))
+      acao("assinada", {acao: "validar"});
+  });
+  um("[data-pr-recusar-ass]", async () => {
+    const r = await perguntar({titulo: "Recusar a documentação devolvida",
+      aviso: "A pendência volta para a obra, com o seu motivo e prazo novo.",
+      textoOk: "Recusar",
+      campos: [{nome: "motivo", rotulo: "O que está errado", tipo: "textarea",
+                obrigatorio: true, largura: 6, linhas: 2},
+               {nome: "dias", rotulo: "Prazo novo (dias)", largura: 2, valor: "3"}]});
+    if (r) acao("assinada", {acao: "recusar", ...r});
+  });
   um("[data-pr-feito]", b => acao("passo", {passo: b.dataset.prFeito, acao: "feito"}));
   um("[data-pr-desfaz]", b => {
     if (confirm("Desfazer este passo?"))

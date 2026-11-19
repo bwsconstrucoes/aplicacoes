@@ -110,6 +110,33 @@ def _titulo(mundo, sp, status="APROVADO"):
     return t
 
 
+def _documento(mundo, tipo, texto_, tamanho=50000):
+    import uuid
+    s = mundo["s"]
+    anexo = s.execute(text("""
+        INSERT INTO anexos (entidade_tipo, entidade_id, nome_arquivo,
+                            hash_sha256, tamanho_bytes, mime_type, conteudo)
+        VALUES ('colaborador', 1, 'doc.pdf', :h, :t, 'application/pdf',
+                '\\x00'::bytea) RETURNING id"""),
+        {"h": uuid.uuid4().hex, "t": tamanho}).scalar_one()
+    return s.execute(text("""
+        INSERT INTO documentos (tipo_codigo, anexo_id, nome_padronizado,
+                                colaborador_id, origem, texto)
+        VALUES (:t, :a, :n, :c, 'TESTE', :x) RETURNING id"""),
+        {"t": tipo, "a": anexo, "n": f"{tipo} {uuid.uuid4().hex[:6]}",
+         "c": mundo["carteira"].id, "x": texto_}).scalar_one()
+
+
+def _devolve(mundo, devolucao_id, texto_, tamanho=60000):
+    """O que `portal.devolver` faz, sem o Drive: arquiva e marca DEVOLVIDA."""
+    doc = _documento(mundo, "RESCISAO-ASSINADA", texto_, tamanho)
+    mundo["s"].execute(text("""
+        UPDATE dp_devolucoes SET situacao = 'DEVOLVIDA', documento_id = :d,
+               devolvido_em = now() WHERE id = :i"""),
+        {"d": doc, "i": devolucao_id})
+    mundo["s"].flush()
+
+
 def _pagar(mundo, t):
     mundo["s"].execute(text("UPDATE titulos SET status = 'PAGO' WHERE id = :i"),
                        {"i": t.id})
@@ -196,11 +223,24 @@ def test_a_cadeia_inteira_ate_encerrar(mundo):
               {"i": ped["id"]})
     assert _estado(_ler(mundo, sid), "DOCUMENTACAO") == "FEITO"
 
-    # o que acontece fora do sistema: o DP marca
-    proc.marcar(s, _ler(mundo, sid), {"passo": "ENCAMINHADA", "acao": "feito"},
-                mundo["dp"])
-    proc.marcar(s, _ler(mundo, sid), {"passo": "ASSINADA", "acao": "feito"},
-                mundo["dp"])
+    # a assinatura vai e volta pelo sistema: a pendência para a obra…
+    doc_ct = _documento(mundo, "RESCISAO", "termo de rescisao CPF 52998224725")
+    s.execute(text("UPDATE dp_pedidos SET documento_id = :d WHERE id = :i"),
+              {"d": doc_ct, "i": ped["id"]})
+    dv = proc.mandar_para_assinar(s, _ler(mundo, sid), {}, mundo["dp"])
+    sol = _ler(mundo, sid)
+    assert _estado(sol, "ENCAMINHADA") == "FEITO"
+    assert _estado(sol, "ASSINADA") == "AGUARDANDO"
+    # …a obra devolve pelo portal, o agente confere, e o DP valida
+    _devolve(mundo, dv["id"], "rescisao assinada 529.982.247-25")
+    sol = _ler(mundo, sid)
+    passo = next(p for p in sol["processo"]["passos"] if p["codigo"] == "ASSINADA")
+    assert passo["estado"] == "PENDENTE" and passo["a_validar"]
+    assert any(a["ok"] and "CPF" in a["texto"] for a in passo["analise"])
+    assert any("assinatura" in a["texto"] for a in passo["analise"]), \
+        "o agente tem de dizer que NÃO enxerga assinatura"
+    proc.validar_assinada(s, sol, {"acao": "validar"}, mundo["dp"])
+    assert _estado(_ler(mundo, sid), "ASSINADA") == "FEITO"
 
     # os dois lançamentos: lançado ainda não é pago
     trct = _titulo(mundo, "SP-DESL-1")
@@ -427,3 +467,29 @@ def test_a_rescisao_pedida_DEPOIS_de_virar_prestador_usa_a_carteira(mundo):
     assert f"Data de saída: {ultimo:%d/%m/%Y}" in corpo
     assert "Salário: R$ 1.800,00" in corpo
     assert "Continua trabalhando como prestador de serviço: sim" in corpo
+
+
+def test_assinada_recusada_volta_para_a_obra(mundo):
+    s = mundo["s"]
+    r = _desligamento(mundo)
+    dv = proc.mandar_para_assinar(s, r, {"sem_arquivo": "1"}, mundo["dp"])
+    # sem texto legível: o agente diz que não deu para ler
+    _devolve(mundo, dv["id"], "", tamanho=900)
+    passo = next(p for p in _ler(mundo, r["id"])["processo"]["passos"]
+                 if p["codigo"] == "ASSINADA")
+    assert any(a["ok"] is False and "pequeno" in a["texto"] for a in passo["analise"])
+    assert any("escaneado" in a["texto"] for a in passo["analise"])
+    with pytest.raises(ErroValidacao):
+        proc.validar_assinada(s, _ler(mundo, r["id"]), {"acao": "recusar"},
+                              mundo["dp"])
+    proc.validar_assinada(s, _ler(mundo, r["id"]),
+                          {"acao": "recusar", "motivo": "faltou a assinatura"},
+                          mundo["dp"])
+    assert _estado(_ler(mundo, r["id"]), "ASSINADA") == "AGUARDANDO"
+
+
+def test_mandar_para_assinar_sem_o_arquivo_da_contabilidade_pede_confirmacao(mundo):
+    r = _desligamento(mundo)
+    with pytest.raises(ErroValidacao) as e:
+        proc.mandar_para_assinar(mundo["s"], r, {}, mundo["dp"])
+    assert "ainda não voltou" in str(e.value)
