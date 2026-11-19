@@ -12259,6 +12259,7 @@ somente Solicitações de uma conta especifica"*.
   envio novo) e sai da conta do que pede ação — senão o mesmo comprovante contaria duas
   vezes. O resultado está no envio novo. Sem migração.
 - Sem servidor nem Drive (envio antigo, anterior à 273), não há botão: arrastar de novo.
+- **Publicado em 19/11/2026** (sem migração).
 - Testes: `test_analisesps_comprovantes_gestao_banco.py`.
 
 #### Leva 273 — Comprovantes: lista com filtros, o comprovante de cada página e o que não baixou no Drive (18/11/2026) — MIGRAÇÃO 057
