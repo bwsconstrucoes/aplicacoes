@@ -98,6 +98,36 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 19/11/2026 (noite, 4) — A admissão caminha dentro da Solicitação; "Assinar" sai do caminho do PJ
+
+Ele: *"as solicitações, elas devem ser tratadas em solicitações. O passo a
+passo (…) ela vai avançando dentro da parte de solicitações, até a conclusão
+(…) Quando uma admissão for concluída (…) é o momento dela sumir."* E as
+respostas que fecharam o desenho: fecha **sozinha** quando o cadastro chega a
+Concluído; os pedidos já atendidos e não concluídos **voltam à fila**; o passo
+do PJ é **anexar o contrato de prestação**, *"não tem nada a ver com assinar"*.
+
+- `core/admissao_processo.py`: atender a admissão só fecha o pedido se o
+  cadastro já puder ser concluído (prestador comum conclui na hora). Senão,
+  **Em andamento**, com os passos: CTPS → pedido de Assinatura de CTPS →
+  registro de volta; PJ → contrato anexado; e "Cadastro concluído".
+- **Fecha sozinho:** `pessoas.mover_etapa` chama `fechar_concluidas` quando a
+  etapa vira Concluído — por qualquer caminho (retorno da contabilidade, DP
+  concluindo na ficha).
+- **O quadro acompanha:** abrir o pedido de Assinatura de CTPS leva o cartão
+  de Inicial para Contabilidade.
+- **PJ não vai mais para "Assinar":** vai para Concluído, e a trava de
+  concluir exige o contrato anexado (sem ele, fica na Inicial com o recado). A
+  etapa "Assinar" continua existindo para quem já está nela.
+- **Migração 115:** pedidos de admissão "Atendida" cujo cadastro está em
+  Inicial, Assinar ou Contabilidade voltam a "Em andamento", com um evento
+  dizendo por quê. Ele perguntou de onde saem: é exatamente essa consulta.
+- **Nomes:** a tela virou "Solicitações"; a etapa "Solicitações" virou
+  "Contabilidade" e foi para antes de "Concluído".
+
+**Próximo passo combinado:** quando as pendências antigas do Pipefy acabarem,
+"Assinar" e "Contabilidade" saem do quadro (só com o "pode" dele).
+
 ### 19/11/2026 (noite, 3) — Dinheiro no padrão do Brasil; a pessoa do pedido individualizada; "quem pediu"
 
 - **Valor com vírgula e milhar** enquanto se digita no portal (123456 →

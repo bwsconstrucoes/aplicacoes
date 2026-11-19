@@ -307,3 +307,65 @@ def test_a_fila_do_dp_individualiza_a_pessoa_e_diz_quem_pediu(mundo, monkeypatch
     assert meu["solicitante"] == "obra-adm"
     leg = {x["campo"]: x["valor"] for x in p["dados_legiveis"]}
     assert leg["valor_diaria"] == "R$ 120,00"
+
+
+# ---------------------------------------------------------------------------
+# A admissão caminha dentro da solicitação (19/11/2026)
+# ---------------------------------------------------------------------------
+@pytestmark_banco
+def test_admissao_de_autonomo_conclui_e_fecha_no_atendimento(mundo):
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    r = svc.atender(s, p["id"], {}, mundo["dp"])
+    s.flush()
+    assert r["situacao"] == "ATENDIDA"
+    assert s.get(svc_pessoas.Colaborador, p["colaborador_id"]).etapa == "CONCLUIDO"
+
+
+@pytestmark_banco
+def test_admissao_de_pj_espera_o_contrato_anexado(mundo):
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo, tipo_contrato="PJ",
+                               razao_social_pj="GENTE NOVA SERVICOS LTDA",
+                               cnpj_pj="71000003000106"), mundo["obra_user"])
+    r = svc.atender(s, p["id"], {}, mundo["dp"])
+    s.flush()
+    assert r["situacao"] == "EM_ANDAMENTO", "sem contrato, segue na fila"
+    passo = next(x for x in r["processo"]["passos"] if x["codigo"] == "CONTRATO")
+    assert passo["estado"] == "PENDENTE"
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    assert c.etapa == "CADASTRO_INICIAL", "não passa mais por 'Assinar'"
+    # anexado o contrato, o DP conclui na ficha e o pedido fecha sozinho
+    svc.guardar_papeis(s, p["id"], c.id, [{
+        "conteudo": b"%PDF contrato" * 100, "nome": "contrato.pdf",
+        "tipo": "CONTRATO-TRABALHO"}])
+    svc_pessoas.mover_etapa(s, c.id, "CONCLUIDO", mundo["dp"])
+    s.flush()
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_admissao_ctps_vai_para_contabilidade_e_fecha_com_o_registro(mundo):
+    from app.apps.erp.core import contabilidade as svc_ct
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo, tipo_documentacao="CTPS",
+                               tipo_contrato="CLT (tempo indeterminado)",
+                               num_ctps="1234567",
+                               documentos=["DOC-IDENTIDADE", "CPF-DOC",
+                                           "COMPROVANTE-ENDERECO-PESSOA",
+                                           "CTPS-FOTO", "CTPS-INFORMACOES"]),
+                  mundo["obra_user"])
+    r = svc.atender(s, p["id"], {"dados": {"salario": "2000"}}, mundo["dp"])
+    s.flush()
+    assert r["situacao"] == "EM_ANDAMENTO"
+    ped = svc_ct.abrir(s, {"template": "ASSINATURA_CTPS",
+                           "colaborador_id": p["colaborador_id"],
+                           "solicitacao_id": p["id"]}, mundo["dp"])
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    assert c.etapa == "NA_CONTABILIDADE", "o quadro acompanha o pedido"
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'RESPONDIDO' WHERE id = :i"),
+              {"i": ped["id"]})
+    svc_ct.concluir(s, ped["id"], mundo["dp"])
+    s.flush()
+    assert c.etapa == "CONCLUIDO"
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA", "fechou sozinho"

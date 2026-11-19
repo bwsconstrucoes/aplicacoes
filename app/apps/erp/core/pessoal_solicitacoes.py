@@ -34,6 +34,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core import admissao_processo as svc_admissao
 from app.apps.erp.core import desligamento_processo as svc_processo
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -2127,6 +2128,7 @@ def guardar_papeis(s: Session, solicitacao_id: int,
 # a pontuação. As marcas internas (pré-cadastro, processo…) não aparecem.
 # ---------------------------------------------------------------------------
 _MARCAS_INTERNAS = {"pre_cadastro", "readmissao", "processo_desligamento",
+                    "processo_admissao",
                     "continuidade_revista", "documentos", "lidos_do_documento"}
 
 
@@ -2462,6 +2464,16 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
         # ⚑ OS PAPÉIS DO PEDIDO PASSAM PARA A PESSOA que acabou de nascer, na
         # mesma transação (migração 100: "o papel nunca fica órfão").
         efeito["papeis"] = transferir_papeis(s, solicitacao_id, c.id)
+    # ⚑ A ADMISSÃO SÓ FECHA COM O CADASTRO CONCLUÍDO (19/11/2026) — ver
+    # `admissao_processo`. O prestador que já pode, conclui agora; o resto
+    # fica Em andamento e fecha sozinho quando o cadastro chegar lá.
+    if svc_admissao.e_processo(p["tipo"]):
+        pessoa_id = efeito.get("colaborador_id") or p.get("colaborador_id")
+        pedido["processo_admissao"] = "1"
+        if pessoa_id and not svc_admissao.avancar_no_atendimento(
+                s, int(pessoa_id), usuario):
+            efeito["processo"] = True
+            efeito["falta"] = "o cadastro ainda não está concluído"
     # O desligamento de carteira não fecha aqui: abre o processo.
     nova = svc_processo.EM_ANDAMENTO if efeito.get("processo") else "ATENDIDA"
     s.execute(text("""UPDATE dp_solicitacoes
@@ -2474,7 +2486,8 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                "r": (str(dados.get("resposta") or "").strip() or None),
                "d": __import__("json").dumps(pedido, ensure_ascii=False, default=str)})
     _evento(s, solicitacao_id,
-            "DESLIGAMENTO_REGISTRADO" if efeito.get("processo") else "ATENDIDA",
+            ("DESLIGAMENTO_REGISTRADO" if p["tipo"] == "DESLIGAMENTO"
+             else "ATENDIDA_EM_ANDAMENTO") if efeito.get("processo") else "ATENDIDA",
             {"resposta": dados.get("resposta"), **efeito}, usuario)
     logger.info("ERP/DP: solicitação %s atendida por %s (%s)", p["numero"],
                 usuario.nome if usuario else "?", efeito.get("executou") or "sem efeito")
@@ -2654,6 +2667,10 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
                      if d["tipo"] == "DESLIGAMENTO"
                      and (d["situacao"] == svc_processo.EM_ANDAMENTO
                           or (d["dados"] or {}).get("processo_desligamento"))
+                     else svc_admissao.passos(s, {**d, "dados": d["dados"] or {}})
+                     if d["tipo"] == "CADASTRO"
+                     and (d["situacao"] == svc_admissao.EM_ANDAMENTO
+                          or (d["dados"] or {}).get("processo_admissao"))
                      else None),
         "itens": [{"id": i["id"], "descricao": i["descricao"], "feito": i["feito"],
                    "por": i["por"] or "",

@@ -41,7 +41,9 @@ class PessoaFalsa:
 @pytest.mark.parametrize("vinculo, contrato, esperado", [
     ("CTPS", "CLT_INDETERMINADO", "NA_CONTABILIDADE"),
     ("CTPS", None, "NA_CONTABILIDADE"),
-    ("PRESTADOR", "PJ", "CONTRATO_A_ASSINAR"),
+    # 19/11/2026: o PJ não passa mais por "Assinar" — vai para Concluído, e a
+    # trava de concluir exige o contrato de prestação anexado.
+    ("PRESTADOR", "PJ", "CONCLUIDO"),
     ("PRESTADOR", "AUTONOMO_RPA", "CONCLUIDO"),
     ("PRESTADOR", "AUTONOMO_MENSALISTA", "CONCLUIDO"),
     ("PRESTADOR", None, "CONCLUIDO"),
@@ -166,11 +168,15 @@ def test_a_conferencia_conclui_o_prestador_que_nao_e_pj(sessao_real, dono):
 
 
 @banco_
-def test_o_prestador_pj_para_no_contrato_a_assinar(sessao_real, dono):
+def test_o_prestador_pj_so_conclui_com_o_contrato_anexado(sessao_real, dono):
+    """19/11/2026, ele: *"o passo é a anexação do contrato de prestação de
+    serviço (…) não tem nada a ver com assinar."*"""
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
     c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Prestador Pj Ltda",
                                  "vinculo": "PRESTADOR", "tipo_contrato": "PJ"}, dono)
-    r = svc.concluir_conferencia(sessao_real, c.id, dono)
-    assert r["etapa"] == "CONTRATO_A_ASSINAR"
+    with pytest.raises(ErroValidacao, match="contrato de prestação"):
+        svc.concluir_conferencia(sessao_real, c.id, dono)
+    assert c.etapa == "CADASTRO_INICIAL"
 
 
 @banco_

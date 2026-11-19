@@ -438,6 +438,17 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
     avisos = avisos_do_pedido(s, template, c)
     for a in avisos:
         _evento(s, linha.id, "AVISO", a, {}, usuario, pelo_agente)
+    # ⚑ O QUADRO ACOMPANHA O PEDIDO (19/11/2026): pedido o registro da
+    # carteira, o cartão sai da Inicial e vai para "Contabilidade" — a etapa
+    # mostra onde a pessoa está sem ninguém ter de arrastar.
+    if template == "ASSINATURA_CTPS" and (c.etapa or "").upper() == "CADASTRO_INICIAL":
+        try:
+            svc_pessoas.mover_etapa(s, c.id, "NA_CONTABILIDADE", usuario,
+                                    automatico=True,
+                                    motivo=f"registro da carteira pedido ({numero})")
+        except ErroValidacao as e:
+            _evento(s, linha.id, "AVISO", f"a etapa não mudou: {e}", {}, usuario,
+                    pelo_agente)
     s.flush()
     return {"id": linha.id, "numero": linha.numero, "assunto": assunto,
             "corpo": corpo, "avisos": avisos}

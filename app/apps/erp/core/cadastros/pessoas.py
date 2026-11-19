@@ -2245,10 +2245,10 @@ def caminho_depois_da_conferencia(c: Colaborador) -> tuple[str, str]:
     """
     vinculo = (c.vinculo or "CTPS").upper()
     if vinculo == "PRESTADOR":
-        if (c.tipo_contrato or "") in CONTRATOS_QUE_EXIGEM_ASSINATURA:
-            return ("CONTRATO_A_ASSINAR",
-                    "prestador PJ: precisa de contrato assinado antes de "
-                    "concluir")
+        # ⚑ O PJ NÃO PASSA MAIS POR "ASSINAR" (19/11/2026). Ele: *"o passo é
+        # a anexação do contrato de prestação de serviço (…) não tem nada a
+        # ver com assinar."* Vai para Concluído, e a trava de concluir exige o
+        # contrato anexado — sem ele, fica na Inicial com o recado.
         return ("CONCLUIDO",
                 "prestador que não é PJ: o vínculo se resolve dentro do DP, "
                 "sem contabilidade")
@@ -2329,8 +2329,9 @@ def _o_que_impede_concluir(s: Session, c: Colaborador) -> str:
                AND tipo_codigo IN ('CONTRATO-TRABALHO', 'CONTRATO-FORNECEDOR')
              LIMIT 1"""), {"c": c.id}).first()
         if not tem:
-            return ("Prestador PJ se conclui com o contrato assinado "
-                    "arquivado. Jogue o contrato na aba Arquivos do cadastro.")
+            return ("Prestador PJ se conclui com o contrato de prestação de "
+                    "serviço anexado. Jogue o contrato na aba Arquivos do "
+                    "cadastro.")
     return ""
 
 
@@ -2443,6 +2444,12 @@ def mover_etapa(s: Session, colaborador_id: int, para: str,
                       "automatico": automatico},
                      usuario.id if usuario else None)
     s.flush()
+    # ⚑ CHEGOU A CONCLUÍDO: a admissão em andamento desta pessoa está
+    # completamente atendida e sai da fila de Solicitações (19/11/2026, ele:
+    # *"quando o cadastro chega em concluído, eu acho que pode ir sozinho"*).
+    if para == "CONCLUIDO":
+        from app.apps.erp.core import admissao_processo
+        admissao_processo.fechar_concluidas(s, c.id, usuario)
     return c
 
 
@@ -2466,6 +2473,12 @@ def concluir_conferencia(s: Session, colaborador_id: int,
             "Este cadastro não está na fila do DP — está em "
             f"“{ETAPA_ROTULOS.get(c.etapa or '', c.etapa or '')}”.")
     para, porque = caminho_depois_da_conferencia(c)
+    if para == "CONCLUIDO":
+        # A conferência move "automático", e o automático pula a trava — que é
+        # justamente onde mora a exigência do contrato do PJ.
+        falta = _o_que_impede_concluir(s, c)
+        if falta:
+            raise ErroValidacao(falta)
     mover_etapa(s, c.id, para, usuario, motivo=porque, automatico=True)
     return {"etapa": para, "rotulo": ETAPA_ROTULOS[para], "porque": porque,
             "falta": o_que_falta(c),

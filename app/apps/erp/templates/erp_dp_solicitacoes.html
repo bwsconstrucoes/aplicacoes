@@ -541,9 +541,22 @@ function blocoDoProcesso(p){
   const pr = p.processo;
   if (!pr) return "";
   const vivo = p.situacao === "EM_ANDAMENTO" && PODE_ATENDER;
+  const deslig = p.tipo === "DESLIGAMENTO";
   const botoes = x => {
     if (!vivo) return "";
     const b = [];
+    {# ⚑ OS BOTÕES DA ADMISSÃO (19/11/2026) — ver `admissao_processo`. #}
+    if (!deslig) {
+      if (x.codigo === "CONTABILIDADE" && !x.pedido)
+        b.push(`<button class="btn" data-ad-ctps="1">Montar o pedido de Assinatura de CTPS</button>`);
+      if (x.pedido)
+        b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
+          ${escapar(x.pedido.numero)} em Contabilidade</a>`);
+      if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
+        b.push(`<a class="btn secundario" href="/erp/colaboradores?editar=${p.colaborador_id}"
+          target="_blank">abrir o cadastro para anexar</a>`);
+      return b.join(" ");
+    }
     if (x.codigo === "CONTINUIDADE" && x.estado !== "FEITO")
       b.push(`<button class="btn" data-pr-cont="1">Confirmar…</button>`);
     if (x.codigo === "CONTABILIDADE" && x.estado !== "FEITO" && !x.pedido)
@@ -573,10 +586,13 @@ function blocoDoProcesso(p){
       b.push(`<button class="link-btn" data-pr-desfaz="${x.codigo}">desfazer</button>`);
     return b.join(" ");
   };
-  return `<h4>O desligamento, do início ao fim (${pr.cumpridos}/${pr.total})</h4>
-    <div class="cartao-dica">O pedido só se encerra com todos os passos
-      cumpridos. O que o sistema enxerga sozinho — o pedido à contabilidade, a
-      documentação de volta, o lançamento pago — se marca sozinho.</div>
+  return `<h4>${deslig ? "O desligamento" : "A admissão"}, do início ao fim (${pr.cumpridos}/${pr.total})</h4>
+    <div class="cartao-dica">${deslig
+      ? `O pedido só se encerra com todos os passos cumpridos. O que o sistema
+         enxerga sozinho — o pedido à contabilidade, a documentação de volta, o
+         lançamento pago — se marca sozinho.`
+      : `O pedido fica na fila até o cadastro chegar a <b>Concluído</b> — e aí
+         fecha sozinho. Os passos se marcam com o que o sistema enxerga.`}</div>
     ${pr.marcacoes_disponiveis ? "" : `<div class="aviso alerta">Falta aplicar a
       atualização do banco (Configurações) para marcar os passos.</div>`}
     <table><tbody>${pr.passos.map(x => `<tr>
@@ -588,7 +604,9 @@ function blocoDoProcesso(p){
         ${x.observacao ? `<br><i>${escapar(x.observacao)}</i>` : ""}
         ${x.por ? `<br>${escapar(x.por)}${x.em ? " · " + dataBR(x.em.slice(0, 10)) : ""}` : ""}</small></td>
       <td style="white-space:nowrap">${botoes(x)}</td></tr>`).join("")}</tbody></table>
-    ${vivo ? `<div style="margin-top:10px">${pr.pode_encerrar
+    ${vivo && pr.fecha_sozinho ? `<div style="margin-top:10px"><small class="desc">Falta:
+      <b>${escapar(pr.proximo)}</b>.</small></div>` : ""}
+    ${vivo && !pr.fecha_sozinho ? `<div style="margin-top:10px">${pr.pode_encerrar
       ? `<button class="btn amarelo" id="pr-encerrar">Encerrar o desligamento</button>`
       : `<small class="desc">Falta: <b>${escapar(pr.proximo)}</b>${
           pr.total - pr.cumpridos > 1 ? " e mais " + (pr.total - pr.cumpridos - 1) : ""}.</small>`}</div>` : ""}`;
@@ -600,6 +618,17 @@ function ligarBotoesDoProcesso(p){
     b.addEventListener("click", () => fn(b)));
   um("[data-pr-cont]", () => confirmarContinuidade(p));
   um("[data-pr-ct]", () => montarPedidoDeRescisao(p));
+  um("[data-ad-ctps]", async () => {
+    try {
+      const r = await api("/erp/api/dp/pedidos", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({template: "ASSINATURA_CTPS",
+          colaborador_id: p.colaborador_id, solicitacao_id: p.id})});
+      await abrirPedido(p.id);
+      aviso("dlg-msg", `Pedido ${escapar(r.numero)} montado. Confira o texto e
+        envie em <a href="/erp/dp/contabilidade" target="_blank">Contabilidade</a>.`, "ok");
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
   {# ⚑ A ASSINATURA VAI E VOLTA PELO SISTEMA (19/11/2026). Ele: *"o arquivo
      precisa ser cobrado pelo Agente e recebido (…) o agente analisa e o DP
      valida o recebimento."* A ida é a pendência do portal (com prazo, que o
