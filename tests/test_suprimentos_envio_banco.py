@@ -51,7 +51,10 @@ def correio_mudo(monkeypatch):
                         lambda empresa, msg, destinos: saidas.append(
                             {"de": msg["From"], "para": destinos,
                              "assunto": msg["Subject"],
-                             "corpo": msg.get_content()}))
+                             # com anexo (o PDF do pedido, desde 20/11/2026)
+                             # a mensagem é multipart: o texto é a parte "plain"
+                             "corpo": msg.get_body(
+                                 preferencelist=("plain",)).get_content()}))
     return saidas
 
 

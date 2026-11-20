@@ -819,3 +819,53 @@ def test_o_email_do_pedido_leva_o_pdf_anexo(base, monkeypatch):
     anexos = [p for p in saidas[0].iter_attachments()]
     assert [a.get_filename() for a in anexos] == [f"Pedido-{pedido.numero}.pdf"]
     assert anexos[0].get_content_type() == "application/pdf"
+
+
+# ---------------------------------------------------------------------------
+# A cobrança da cotação por WhatsApp — só para quem o cadastro diz que é por lá
+# ---------------------------------------------------------------------------
+def _pronto_para_cobrar(base, monkeypatch):
+    from app.apps.erp.core.comum import email as correio
+    from app.apps.erp.core.suprimentos import cobranca
+    monkeypatch.setattr(correio, "_entregar", lambda empresa, msg, destinos: None)
+    zaps = []
+    monkeypatch.setattr(cobranca, "_mandar_whatsapp",
+                        lambda telefone, texto: (zaps.append((telefone, texto)) or (True, "")))
+    svc_emp.definir_conta_de_email(base["s"], base["empresa"].id, {
+        "smtp_servidor": "smtp.exemplo.com", "smtp_porta": 587,
+        "smtp_usuario": "compras@bws.exemplo", "smtp_senha": "senha-de-aplicativo"},
+        base["u"])
+    base["s"].flush()
+    return cobranca, zaps
+
+
+def test_fornecedor_de_email_nao_recebe_whatsapp(base, monkeypatch):
+    cobranca, zaps = _pronto_para_cobrar(base, monkeypatch)
+    base["forn"].telefone = "(85) 99999-1234"
+    r = cobranca.cobrar(base["s"], [base["coluna"].id], base["u"])
+    assert len(r["enviados"]) == 1 and r["enviados"][0]["canais"] == ["e-mail"]
+    assert zaps == []
+
+
+def test_fornecedor_de_whatsapp_recebe_pelos_dois_canais(base, monkeypatch):
+    cobranca, zaps = _pronto_para_cobrar(base, monkeypatch)
+    base["forn"].canais_cotacao = ["EMAIL", "WHATSAPP"]
+    base["forn"].telefone = "(85) 99999-1234"
+    base["s"].flush()
+    r = cobranca.cobrar(base["s"], [base["coluna"].id], base["u"])
+    assert r["enviados"][0]["canais"] == ["e-mail", "WhatsApp"]
+    assert [z[0] for z in zaps] == ["5585999991234"]
+    assert base["cot"].numero in zaps[0][1]
+    assert "também por WhatsApp" in r["recado"]
+    assert base["coluna"].cobrancas == 1
+
+
+def test_so_whatsapp_sem_email_tambem_e_cobrado(base, monkeypatch):
+    cobranca, zaps = _pronto_para_cobrar(base, monkeypatch)
+    base["forn"].canais_cotacao = ["WHATSAPP"]
+    base["forn"].telefone = "85 3333-4444"
+    base["forn"].email = None
+    base["s"].flush()
+    r = cobranca.cobrar(base["s"], [base["coluna"].id], base["u"])
+    assert r["enviados"][0]["canais"] == ["WhatsApp"] and r["sem_endereco"] == []
+    assert zaps[0][0] == "558533334444"
