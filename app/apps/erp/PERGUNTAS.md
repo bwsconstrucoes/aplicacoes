@@ -3104,3 +3104,37 @@ consulta inventada vai sendo usado cada vez menos.
 - **"As férias já estão lançadas no ponto?"** — a programação e o ponto não
   conversam; o lançamento no ponto é à mão.
 
+## O aviso assinado, a análise do agente e as férias vencendo (20/11/2026, noite)
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"aviso"** | o aviso PRÉVIO (do desligamento, que a pessoa assina) ou o aviso de FÉRIAS (da contabilidade) |
+| **"assinado"** | assinado no celular com PIN (vale sozinho), no papel (vale depois que o DP olha) ou recusa com testemunhas |
+| **"férias vencidas"** | período cujo prazo de gozo já passou (em dobro) ou período completo ainda não gozado (no prazo). O sistema chama o primeiro de "vencida" e o segundo de "em aberto" |
+| **"cancelado"** | cancelado aqui (nada tinha ido à contabilidade) ou "em cancelamento" (esperando a ciência dela) |
+
+### Perguntas que o sistema responde
+
+- **"O aviso prévio do fulano já foi assinado?"** — o passo do desligamento e
+  o documento TA-… no cadastro dele.
+- **"Quais documentos estão na obra esperando assinatura?"** — muda conforme
+  quem pergunta (a obra vê só os dela).
+- **"Quem tem férias vencendo nos próximos 3 meses?"** / **"quem já está com
+  férias vencidas?"** — tela Férias › Períodos (depende do "quitadas até"
+  informado).
+- **"De quem o sistema não sabe as férias?"** — "sem informação".
+- **"Quem termina a experiência nos próximos 10 dias?"** — alerta do agente.
+- **"Tem pedido corrigido ou cancelado que a contabilidade ainda não
+  confirmou?"** — alerta do agente / passos do pedido.
+- **"Esta demissão cai na data-base?"** — a análise do pedido (precisa do mês
+  da data-base na convenção).
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- **"Quanto vai custar esta rescisão?"** — o cálculo é da contabilidade; a
+  análise só confere datas e regras.
+- **"Quem está grávida / é da CIPA?"** — o sistema não sabe; a análise lembra.
+- **"O salário-família ainda cabe no salário dele?"** — falta o teto do ano.
+

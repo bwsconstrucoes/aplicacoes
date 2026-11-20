@@ -221,11 +221,18 @@ def _conferir_pin(cpf: str, pin: str) -> None:
     não basta quem conduz estar logado."""
     from app.apps.ponto import db as ponto_db
     from app.apps.ponto.core import acesso
+    from app.apps.ponto.erros import ErroDeValidacao, NaoAutenticado, Recusada
     try:
         with ponto_db.conexao() as conn:
             acesso.entrar(conn, cpf, pin)
-    except Exception as e:  # noqa: BLE001 — a frase do ponto já é a certa
+    except (NaoAutenticado, ErroDeValidacao, Recusada) as e:
+        # A frase do ponto já é a certa ("CPF ou PIN incorreto", "ainda não
+        # criou o seu PIN", o bloqueio por tentativas).
         raise ErroValidacao(f"PIN não confere: {e}") from e
+    except Exception as e:  # noqa: BLE001 — erro de sistema não vai para a obra
+        logger.exception("ERP/termos: não consegui conferir o PIN no ponto")
+        raise ErroValidacao("Não consegui conferir o PIN agora. Tente de novo "
+                            "em instantes — ou assine no papel e envie a foto.") from e
 
 
 def _arquivar(s: Session, t: dict[str, Any], pdf: bytes, observacao: str):

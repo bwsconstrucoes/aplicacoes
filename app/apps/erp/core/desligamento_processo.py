@@ -372,10 +372,10 @@ def texto_do_aviso(s: Session, sol: dict[str, Any]) -> tuple[str, str, str]:
     cpf_f = f"{cpf[0:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}" if len(cpf) == 11 else cpf
     quem = (f"{c['nome']}, CPF {cpf_f}, {c['cargo'] or 'colaborador(a)'}, "
             f"admitido(a) em {br(c['admissao'])}")
-    empresa = f"{c['empresa'] or 'a empresa'}" + (f" (CNPJ {c['cnpj']})" if c["cnpj"] else "")
+    empresa = f"{c['empresa'] or 'A empresa'}" + (f" (CNPJ {c['cnpj']})" if c["cnpj"] else "")
     if forma == "PEDIDO_COLABORADOR":
         titulo = "Pedido de demissão"
-        texto_ = (f"Eu, {quem}, comunico a {empresa} o meu pedido de demissão "
+        texto_ = (f"Eu, {quem}, comunico a {c['empresa'] or 'empresa'} o meu pedido de demissão "
                   f"nesta data, {br(aviso)}.\n\n"
                   + (f"Cumprirei o aviso prévio de 30 dias, trabalhando até "
                      f"{br(ultimo)}." if cumpre else

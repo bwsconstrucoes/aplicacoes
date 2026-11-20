@@ -42,7 +42,8 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 dentro da Solicitação (migração **115**), os nomes novos das telas e o lote de
 20/11 (alteração, dependente, férias e cancelamento pela contabilidade). ⚠️
 Uma atualização de banco: apertar "Aplicar atualizações do banco" no mesmo
-momento da junção. **E a 116 (programação de férias), do lote da tarde.**
+momento da junção. **E a 116 (programação de férias) e a 117 (aviso assinado,
+controle de férias, agente ligado).** Três atualizações de banco no total.
 
 **Publicado (19/11/2026, tarde):** a Admissão de Colaborador (ver "Decisões",
 19/11 tarde). Sem migração. ⚠️ **Pendente:** acompanhar a primeira admissão de
@@ -103,6 +104,81 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 20/11/2026 (noite) — A contabilidade como ponte; o aviso assinado; corrigir e cancelar com ciência; o agente ligado
+
+O que ele explicou, e que muda o desenho de tudo (vale para os próximos chats):
+
+> *"O que a contabilidade faz? Ela faz toda a gestão junto ao eSocial e cálculo
+> da folha (…) hora extra, aplicação das faltas, cálculo das DSR (…) admissão,
+> demissões (…) baseado nas informações que nós alimentamos. Na gestão do
+> carteira assinada, nosso sistema funciona como uma ponte, mas tudo é fechado
+> lá (…) E a gente requer sempre o retorno de tudo. Quem não é CLT, aí tudo se
+> resolve internamente (…) ajuda de custo, de alimentação, de transporte também
+> é conosco."*
+
+> *"O DP serve para intermediar o que as obras demandam e a contabilidade (…)
+> pode ser que venha um pedido incoerente (…) a ideia de futuro é que o DP
+> apenas olhe e dê o ok (…) o agente junto com a contabilidade resolva tudo."*
+
+**Regra que sai disso:** pedido de quem é CLT que muda o que a contabilidade
+informa ao eSocial ou calcula na folha **vai a ela e espera retorno**; o resto
+(prestador, ajuda de custo, telefone, Pix) se resolve aqui.
+
+- **Atualização cadastral** (nome ou endereço) e **desconto em folha** de CLT
+  passaram a ir à contabilidade (`contabil_processo`). Telefone e Pix não.
+- **Desconto em folha** exige a **autorização assinada** pela pessoa (CLT art.
+  462) antes de ir à contabilidade.
+- **Aviso prévio assinado** (`core/termos.py`, migração 117): o DP analisa e
+  atende → o aviso (ou o pedido de demissão) é gerado com as datas aprovadas →
+  vai para o portal da obra → a pessoa **assina com o dedo e o PIN dela** (o do
+  ponto), como a folha de ponto; sem PIN, foto do papel; recusa, com duas
+  testemunhas → o DP valida o papel/a recusa → **só então a rescisão vai à
+  contabilidade, com o aviso anexo no e-mail**. Encerramento de experiência não
+  tem aviso. Ele: *"o DP só confere e libera para a obra."*
+- **Análise do agente em todo pedido** (`core/dp_analise.py`, regra escrita,
+  sem IA): experiência (encerrar no prazo × romper antes, art. 479), aviso
+  proporcional (Lei 12.506), último dia e data de saída com a projeção (Súmula
+  380, OJ 82), a **data-base da convenção** (indenização adicional — Lei
+  7.238/84; é o "paga em dobro" dele), afastamento e estabilidade; férias
+  (período aquisitivo, início antes do descanso, fracionamento, 30 dias de
+  aviso, prazo de concessão); redução de salário, piso, vigência retroativa;
+  admissão no prazo do eSocial e menor de idade; peso da parcela do desconto.
+- **Corrigir e cancelar depois de atendido** (`contabil_processo`): o pedido à
+  contabilidade em rascunho é refeito; já enviado, nasce um pedido de
+  **Correção** ou de **Cancelamento** a ela, e a solicitação **só fecha com a
+  ciência**. A obra pode **pedir** para cancelar ou corrigir pelo portal; o DP
+  faz. Desligamento continua desfeito pelo cancelamento de desligamento.
+- **Controle de férias** (migração 117): até quando as férias de cada pessoa
+  estão quitadas. As de antes do sistema o DP informa uma vez (tela Férias ›
+  Períodos); as confirmadas no sistema quitam os períodos sozinhas. O agente
+  avisa 90 dias antes do vencimento (férias vencidas = em dobro, art. 137).
+- **O agente** (ele: *"Vamos botar para funcionar"*): análise, despacho,
+  vigia e relatório ligados em SUGERE; **rodada diária sozinha** (fila de
+  trabalhos, `trabalhos.agente_dp_dia`); vigia novo: fim da experiência em 10
+  dias, férias vencendo/vencidas, documento parado na obra, pedido de mudança
+  da obra parado, correção sem ciência, **afastamento aprovado no ponto que não
+  chegou ao cadastro** (a ponte que ele aprovou, como alerta). A
+  **conferência** saiu de "promessa": não liga até existir.
+- **Defeito do lote da tarde corrigido:** o e-mail de alteração e de
+  cancelamento de férias saía sem dizer o que se pedia (só os dados da pessoa).
+
+⚠️ **Não verificado e a confirmar:**
+- A assinatura com PIN não pôde ser testada de ponta a ponta aqui (o banco de
+  teste local não tem o ponto); a conferência do PIN é a mesma função do ponto.
+- **A validade jurídica** da assinatura no celular (Lei 14.063/2020) é a mesma
+  base da folha de ponto — falta o advogado confirmar, como lá.
+- A cobrança e a leitura da caixa do agente **continuam desligadas** até ele
+  decidir (mandam e-mail/WhatsApp).
+- O texto do aviso usa a razão social do cadastro da empresa; pessoa sem
+  empresa sai "A empresa".
+
+**Procedimentos que faltam** (levantados a pedido dele, ainda não construídos —
+ver a resposta do dia): prorrogação/efetivação da experiência com termo
+assinado; advertência e suspensão; transferência de obra; ASO demissional no
+processo de desligamento; fechamento mensal do ponto para a folha (área do
+ponto); afastamento formal com a contabilidade (a ponte do ponto); 13º salário
+(1ª parcela até 30/11); pensão alimentícia por ofício.
 
 ### 20/11/2026 (tarde) — Programação de férias; alterar e cancelar férias; o cancelamento de desligamento sempre avisa a contabilidade
 
