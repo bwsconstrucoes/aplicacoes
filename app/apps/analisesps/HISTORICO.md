@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 274 — Comprovantes: "Baixar de novo" na página que não baixou (19/11/2026)
+
+- *"Nos que não foram baixados, eu queria que tivesse algum botão (…) para eu baixar
+  novamente. Utilizar aquele mesmo arquivo e encaminhar novamente (…) às vezes a gente
+  esquece de alterar o status e acaba não encontrando."*
+- Na lista "comprovante a comprovante", a linha que não baixou (não achei a SP, falta
+  liberar, não efetivado, erro) ganha "Baixar de novo", e caixas para marcar várias
+  ("Baixar de novo os marcados", até 50). `comprovantes.reenviar`: a mesma página vem do
+  servidor (enquanto o PDF está lá) ou da cópia no Drive (leva 273), as escolhidas viram
+  UM envio novo ("Reenvio - …") na fila de sempre, e o robô baixa — o que já baixou não
+  baixa duas vezes.
+- A linha antiga vira **"Mandado de novo"** (situação `REENVIADO`, motivo com o número do
+  envio novo) e sai da conta do que pede ação — senão o mesmo comprovante contaria duas
+  vezes. O resultado está no envio novo. Sem migração.
+- Sem servidor nem Drive (envio antigo, anterior à 273), não há botão: arrastar de novo.
+- Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+
 #### Leva 273 — Comprovantes: lista com filtros, o comprovante de cada página e o que não baixou no Drive (18/11/2026) — MIGRAÇÃO 057
 
 - *"Eu queria poder, no sidebar, fazer filtragem das informações (…) aparece uma série de
