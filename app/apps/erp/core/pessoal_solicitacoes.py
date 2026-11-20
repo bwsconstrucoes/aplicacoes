@@ -789,6 +789,37 @@ TIPOS: dict[str, dict[str, Any]] = {
         "campos_do_dp": (),
         "checklist": (),
     },
+    # ⚑ O AFASTAMENTO PASSA PELO DP E PELA CONTABILIDADE (20/11/2026). Ele:
+    # *"se o que lançar no ponto demandar ações do DP junto à contabilidade
+    # (…) automaticamente gera uma solicitação do DP para ser dado o devido
+    # tratamento junto à contabilidade (…) acidente de trabalho também (…)
+    # Mesma coisa para maternidade."* Nasce sozinho do ponto
+    # (`ponte_do_ponto.py`) ou é aberto pela obra/DP. A natureza (INSS,
+    # acidente, maternidade) quem confirma é o DP ao atender — o ponto não a
+    # registra. O controle do benefício e das férias é da contabilidade
+    # (Fortes), decisão dele.
+    "AFASTAMENTO": {
+        "nome": "Comunicação de Afastamento",
+        "explicacao": ("atestado acima de 15 dias, INSS, acidente de trabalho, "
+                       "maternidade — o DP comunica à contabilidade"),
+        "exige_pessoa": True, "executa": "registrar_afastamento",
+        "so_vinculo": "CTPS",
+        "campos": ("afastamento_natureza", "afast_inicio", "afast_previsao",
+                   "observacao"),
+        "obrigatorios": ("afast_inicio",),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o atestado, o laudo ou a CAT",),
+    },
+    "RETORNO_AFASTAMENTO": {
+        "nome": "Retorno de Afastamento",
+        "explicacao": "a pessoa voltou — o DP registra e comunica à contabilidade",
+        "exige_pessoa": True, "executa": "registrar_retorno",
+        "so_vinculo": "CTPS",
+        "campos": ("retorno_data", "observacao"),
+        "obrigatorios": ("retorno_data",),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o exame de retorno (ASO)",),
+    },
     "DIVERSOS": {
         "nome": "Solicitações Diversas",
         "explicacao": "o que não cabe nos tipos acima",
@@ -882,6 +913,10 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
     "adiantamento_13": ("Sim", "Não"),
     "reducao_jornada": ("2 horas a menos por dia", "7 dias corridos de folga no fim",
                         "A pessoa escolhe na hora"),
+    "afastamento_natureza": ("Auxílio-doença do INSS (atestado acima de 15 dias)",
+                             "Acidente de trabalho ou doença ocupacional",
+                             "Licença-maternidade",
+                             "Atestado médico (até 15 dias)"),
     "cumpre_aviso": ("Sim, trabalha os 30 dias", "Não, pede dispensa do aviso"),
 }
 
@@ -982,6 +1017,11 @@ DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
     "descontar_vt": {"Sim, descontar em folha": "1", "Não, a empresa absorve": "0"},
     "continua_prestador": {"Não, está saindo da empresa": "0",
                            "Sim, continua como prestador de serviço": "1"},
+    "afastamento_natureza": {
+        "Auxílio-doença do INSS (atestado acima de 15 dias)": "INSS",
+        "Acidente de trabalho ou doença ocupacional": "ACIDENTE",
+        "Licença-maternidade": "MATERNIDADE",
+        "Atestado médico (até 15 dias)": "ATESTADO"},
     "reducao_jornada": {"2 horas a menos por dia": "DUAS_HORAS",
                         "7 dias corridos de folga no fim": "SETE_DIAS",
                         "A pessoa escolhe na hora": "ESCOLHE"},
@@ -1534,6 +1574,10 @@ ROTULOS_DO_DP: dict[str, str] = {
     "ultimo_dia": "Último dia trabalhado",
     "faltas_a_descontar": "Faltas a descontar",
     "reducao_jornada": "Redução da jornada no aviso trabalhado (CLT art. 488)",
+    "afastamento_natureza": "Natureza do afastamento",
+    "afast_inicio": "Início do afastamento",
+    "afast_previsao": "Previsão de retorno",
+    "retorno_data": "Data em que voltou ao trabalho",
     "cumpre_aviso": "No pedido de demissão, a pessoa cumpre o aviso?",
     "matricula": "Matrícula",
     "convencao_id": "Convenção",
@@ -2218,6 +2262,69 @@ def cancelar_desligamento(s: Session, colaborador_id: int, p: dict[str, Any],
     return efeito
 
 
+def _registrar_afastamento(s: Session, colaborador_id: int, pedido: dict[str, Any],
+                           p: dict[str, Any], usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Atender a comunicação de afastamento: o afastamento entra na ficha (se
+    ainda não estiver) e o pedido segue para a contabilidade."""
+    from app.apps.erp.core.cadastros import afastamentos
+    natureza = str(pedido.get("afastamento_natureza") or "").upper()
+    if natureza not in ("INSS", "ACIDENTE", "MATERNIDADE", "ATESTADO"):
+        raise ErroValidacao("Escolha a natureza do afastamento (INSS, acidente, "
+                            "maternidade) — é o que a contabilidade informa ao "
+                            "eSocial.")
+    if afastamentos.aberto(s, colaborador_id) is not None:
+        return {"afastamento": "já estava na ficha"}
+    afastamentos.abrir(s, colaborador_id, {
+        "tipo": natureza, "data_inicio": pedido.get("afast_inicio"),
+        "previsao_retorno": pedido.get("afast_previsao") or "",
+        "motivo": f"{p.get('numero')}: " + str(pedido.get("observacao") or "")[:400]},
+        usuario)
+    return {"afastamento": "registrado na ficha"}
+
+
+def _registrar_retorno(s: Session, colaborador_id: int, pedido: dict[str, Any],
+                       p: dict[str, Any], usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Atender o retorno: a volta é registrada na ficha (com as travas dela —
+    o exame de retorno), salvo se o DP já registrou por lá."""
+    from app.apps.erp.core.cadastros import afastamentos
+    if afastamentos.aberto(s, colaborador_id) is None:
+        return {"retorno": "já registrado na ficha"}
+    afastamentos.retornar(s, colaborador_id, {
+        "data_retorno": pedido.get("retorno_data"),
+        "observacao": f"{p.get('numero')}: " + str(pedido.get("observacao") or "")[:400]},
+        usuario)
+    return {"retorno": "registrado na ficha"}
+
+
+def comunicar_pela_ficha(s: Session, colaborador_id: int, tipo: str,
+                         dados: dict[str, Any], usuario: Optional[Usuario]) -> Optional[str]:
+    """O DP afastou (ou registrou a volta) direto na ficha: nasce a
+    solicitação, para a contabilidade ficar sabendo pelo mesmo caminho de
+    todo o resto (20/11/2026). Só de carteira, e só se não houver uma aberta
+    para a mesma pessoa. Devolve o número, ou None."""
+    if (vinculo_da_pessoa(s, colaborador_id) or "CTPS").upper() != "CTPS":
+        return None
+    ja = s.execute(text("""SELECT numero FROM dp_solicitacoes
+                            WHERE colaborador_id = :c AND tipo = :t
+                              AND situacao IN ('ABERTA', 'EM_ANALISE')"""),
+                   {"c": colaborador_id, "t": tipo}).scalar()
+    if ja:
+        return None
+    if tipo == "AFASTAMENTO":
+        corpo = {"afastamento_natureza": str(dados.get("tipo") or "").upper(),
+                 "afast_inicio": dados.get("data_inicio"),
+                 "afast_previsao": dados.get("previsao_retorno") or "",
+                 "observacao": "registrado pelo DP na ficha. "
+                               + str(dados.get("motivo") or "")}
+    else:
+        corpo = {"retorno_data": dados.get("data_retorno"),
+                 "observacao": "registrado pelo DP na ficha. "
+                               + str(dados.get("observacao") or "")}
+    p = abrir(s, {"tipo": tipo, "colaborador_id": colaborador_id,
+                  **{k: v for k, v in corpo.items() if v}}, usuario)
+    return p["numero"]
+
+
 def para_o_cadastro(pedido: dict[str, Any]) -> dict[str, Any]:
     """O pedido de admissão no vocabulário da FICHA da pessoa.
 
@@ -2719,6 +2826,10 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                 "justificativa": pedido.get("justificativa")}, usuario)
         elif executa == "cancelar_desligamento":
             efeito.update(cancelar_desligamento(s, alvo, p, usuario))
+        elif executa == "registrar_afastamento":
+            efeito.update(_registrar_afastamento(s, alvo, pedido, p, usuario))
+        elif executa == "registrar_retorno":
+            efeito.update(_registrar_retorno(s, alvo, pedido, p, usuario))
         elif executa == "programar_ferias":
             efeito.update(svc_ferias.programar(s, p, pedido, usuario))
         elif executa in ("alterar_ferias", "cancelar_ferias"):

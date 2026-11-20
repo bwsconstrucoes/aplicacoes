@@ -3153,3 +3153,12 @@ consulta inventada vai sendo usado cada vez menos.
 - **"De quem acaba a experiência nos próximos dias?"** — portal da obra e
   agente (10 dias). Muda conforme quem pergunta.
 
+## O afastamento como solicitação (20/11/2026, noite)
+
+- **"Quem está afastado e a contabilidade já confirmou?"** — as Comunicações de
+  Afastamento atendidas; em andamento = esperando a contabilidade.
+- **"Teve acidente de trabalho este mês? A CAT saiu?"** — afastamentos de
+  natureza acidente e o pedido à contabilidade de cada um.
+- **AINDA NÃO:** "quanto o INSS está pagando" e "quando as férias de quem
+  ficou afastado reiniciam" — é a contabilidade (Fortes), por decisão dele.
+

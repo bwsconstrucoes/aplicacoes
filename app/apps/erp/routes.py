@@ -12340,6 +12340,11 @@ def api_dp_solicitacoes():
         with get_session() as s:
             usuario = _usuario_logado(s)
             if request.method == "GET":
+                # ⚑ O que o ponto lançou e precisa da contabilidade entra na
+                # fila sozinho (20/11/2026) — `core/ponte_do_ponto.py`.
+                from app.apps.erp.core import ponte_do_ponto
+                if ponte_do_ponto.trazer(s).get("abertas"):
+                    s.commit()
                 return jsonify({"ok": True, **svc.listar(
                     s, situacao=request.args.get("situacao", ""),
                     tipo=request.args.get("tipo", ""),
@@ -14170,8 +14175,12 @@ def api_afastar(colaborador_id: int):
             usuario = _usuario_logado(s)
             exigir_colaborador_no_escopo(s, usuario, colaborador_id)
             r = svc_afast.abrir(s, colaborador_id, d, usuario)
+            # ⚑ 20/11/2026: a contabilidade fica sabendo pela solicitação.
+            from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+            numero = svc_sp.comunicar_pela_ficha(s, colaborador_id, "AFASTAMENTO",
+                                                 d, usuario)
             s.commit()
-            return jsonify({"ok": True, **r})
+            return jsonify({"ok": True, **r, "solicitacao": numero})
     except ErroNaoEncontrado as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
     except ErroValidacao as e:
@@ -14195,7 +14204,12 @@ def api_retorno_de_afastamento(colaborador_id: int):
             usuario = _usuario_logado(s)
             exigir_colaborador_no_escopo(s, usuario, colaborador_id)
             r = svc_afast.retornar(s, colaborador_id, d, usuario)
+            from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+            numero = svc_sp.comunicar_pela_ficha(s, colaborador_id,
+                                                 "RETORNO_AFASTAMENTO", d, usuario)
             s.commit()
+            if isinstance(r, dict):
+                r = {**r, "solicitacao": numero}
             return jsonify(r)
     except ErroNaoEncontrado as e:
         return jsonify({"ok": False, "erro": str(e)}), 404

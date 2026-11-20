@@ -175,7 +175,10 @@ TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
         # obra (…) Ele vai fazer o pedido (…) em cima daquela solicitação de
         # desligamento."*).
         "FERIAS", "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
-        "CANCELAR_DESLIGAMENTO", "DIVERSOS",
+        "CANCELAR_DESLIGAMENTO",
+        # 20/11/2026: a obra comunica o afastamento (o acidente não espera o
+        # ponto) e o retorno.
+        "AFASTAMENTO", "RETORNO_AFASTAMENTO", "DIVERSOS",
     ),
 }
 

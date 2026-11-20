@@ -1022,3 +1022,100 @@ def test_o_fim_da_experiencia_aparece_para_a_obra_e_para_o_dp(mundo):
            if x["colaborador_id"] == c.id]
     assert x["faltam_dias"] == 4 and "PRORROGA" in x["o_que_acontece"]
     assert pessoal_experiencia.terminando(s, [-1]) == []
+
+
+# ===========================================================================
+# 20/11/2026: o que o ponto lança e precisa da contabilidade vira solicitação
+# ===========================================================================
+def _ocorrencia_ponto(mundo, colaborador_id, *, status="AGUARDANDO_DP",
+                      por="sistema (atestado nº 1)", dias=20):
+    import datetime as dt
+    s = mundo["s"]
+    ini = dt.date.today() - dt.timedelta(days=2)
+    return s.execute(text("""
+        INSERT INTO ponto.ocorrencias (colaborador_id, tipo, data_inicio, data_fim,
+                                       obra_id, descricao, status, origem, solicitado_por)
+        VALUES (:c, 'AFASTAMENTO', :i, :f, :o, 'atestados somam 20 dias', :st,
+                'GESTAO', :por) RETURNING id"""),
+        {"c": colaborador_id, "i": ini, "f": ini + dt.timedelta(days=dias),
+         "o": mundo["obra"].id, "st": status, "por": por}).scalar()
+
+
+@pytestmark_banco
+def test_o_afastamento_do_ponto_vira_solicitacao_e_vai_a_contabilidade(_schema_ponto, mundo):
+    """Ele: *"automaticamente gera uma solicitação do DP para ser dado o devido
+    tratamento junto à contabilidade."*"""
+    from app.apps.erp.core import ponte_do_ponto
+    from app.apps.erp.core.cadastros import afastamentos
+    s = mundo["s"]
+    c = _carteira(mundo)
+    oc = _ocorrencia_ponto(mundo, c.id)
+    assert ponte_do_ponto.trazer(s)["abertas"] >= 1
+    assert ponte_do_ponto.trazer(s)["abertas"] == 0, "não abre duas vezes"
+    sid = s.execute(text("SELECT id FROM dp_solicitacoes WHERE tipo = 'AFASTAMENTO' "
+                         "AND colaborador_id = :c"), {"c": c.id}).scalar()
+    p = svc.ler(s, sid)
+    assert p["dados"]["ocorrencia_ponto"] == str(oc)
+    assert p["dados"]["afastamento_natureza"] == "INSS"
+    r = svc.atender(s, p["id"], {}, mundo["dp"])
+    assert r["situacao"] == "EM_ANDAMENTO"
+    assert afastamentos.aberto(s, c.id) is not None, "o afastamento entra na ficha"
+    _devolve_e_conclui(mundo, p["id"])
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_afastamento_negado_no_ponto_cancela_a_solicitacao(_schema_ponto, mundo):
+    from app.apps.erp.core import ponte_do_ponto
+    s = mundo["s"]
+    c = _carteira(mundo)
+    oc = _ocorrencia_ponto(mundo, c.id, por="dp")
+    ponte_do_ponto.trazer(s)
+    s.execute(text("UPDATE ponto.ocorrencias SET status = 'NEGADA' WHERE id = :i"),
+              {"i": oc})
+    assert ponte_do_ponto.trazer(s)["canceladas"] == 1
+    assert s.execute(text("SELECT situacao FROM dp_solicitacoes WHERE tipo = "
+                          "'AFASTAMENTO' AND colaborador_id = :c"),
+                     {"c": c.id}).scalar() == "CANCELADA"
+
+
+@pytestmark_banco
+def test_afastamento_sem_natureza_nao_e_atendido(mundo):
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = svc.abrir(s, {"tipo": "AFASTAMENTO", "colaborador_id": c.id,
+                      "afast_inicio": _dia(-1)}, mundo["obra_user"])
+    with pytest.raises(ErroValidacao, match="natureza"):
+        svc.atender(s, p["id"], {}, mundo["dp"])
+    r = svc.atender(s, p["id"], {"dados": {"afastamento_natureza":
+                                           "Acidente de trabalho ou doença ocupacional"}},
+                    mundo["dp"])
+    assert r["situacao"] == "EM_ANDAMENTO"
+
+
+@pytestmark_banco
+def test_acidente_sem_pedido_a_contabilidade_o_agente_cobra(mundo):
+    from app.apps.erp.core import agente_dp
+    s = mundo["s"]
+    c = _carteira(mundo)
+    svc.abrir(s, {"tipo": "AFASTAMENTO", "colaborador_id": c.id,
+                  "afast_inicio": _dia(0),
+                  "afastamento_natureza": "Acidente de trabalho ou doença ocupacional"},
+              mundo["obra_user"])
+    assert any(a["tipo"] == "acidente_sem_cat" and a["colaborador_id"] == c.id
+               for a in agente_dp.vigia(s))
+
+
+@pytestmark_banco
+def test_afastar_pela_ficha_tambem_abre_a_solicitacao(mundo):
+    from app.apps.erp.core.cadastros import afastamentos
+    s = mundo["s"]
+    c = _carteira(mundo)
+    d = {"tipo": "MATERNIDADE", "data_inicio": _dia(0), "previsao_retorno": _dia(119)}
+    afastamentos.abrir(s, c.id, d, mundo["dp"])
+    numero = svc.comunicar_pela_ficha(s, c.id, "AFASTAMENTO", d, mundo["dp"])
+    assert numero
+    sid = s.execute(text("SELECT id FROM dp_solicitacoes WHERE numero = :n"),
+                    {"n": numero}).scalar()
+    r = svc.atender(s, sid, {}, mundo["dp"])
+    assert r["situacao"] == "EM_ANDAMENTO", "já estava na ficha: só vai à contabilidade"

@@ -380,9 +380,12 @@ def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str
     # onde a pessoa está batendo ponto de verdade.
     obra = obra_atual.atualizar(s)
     s.commit()
+    from app.apps.erp.core import ponte_do_ponto
+    ponte = ponte_do_ponto.trazer(s)
+    s.commit()
     feito = agente_dp.rodar(s, None)
     s.commit()
-    return {"obra_atual": obra, "vigia": feito.get("vigia"),
+    return {"obra_atual": obra, "ponte_do_ponto": ponte, "vigia": feito.get("vigia"),
             "ligadas": feito.get("rotinas_ligadas")}
 
 

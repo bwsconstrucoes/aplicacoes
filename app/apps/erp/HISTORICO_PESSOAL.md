@@ -38,8 +38,9 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (20/11/2026, noite, 3):** experiência avisada à obra e obra
-atual pelo ponto — migração **118** (apertar "Aplicar atualizações do banco").
+**Falta publicar (20/11/2026, noite, 3 e 4):** experiência avisada à obra,
+obra atual pelo ponto — migração **118** (apertar "Aplicar atualizações do
+banco") — e o afastamento do ponto virando solicitação (sem migração).
 
 **PUBLICADO em 20/11/2026 (noite)** — ele: *"Vamos ficar com esses
 procedimentos por enquanto, pode publicar."* ⚠️ Confirmar com ele que apertou
@@ -114,6 +115,32 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 20/11/2026 (noite, 4) — O afastamento do ponto vira solicitação ao DP, e vai à contabilidade
+
+Ele, sobre o alerta "afastamento aprovado no ponto que não chegou ao
+cadastro": *"Não é para ser (…) um lançamento via ponto que gera um
+afastamento. Eu acho que ele automaticamente gera uma solicitação do DP para
+ser dado o devido tratamento junto à contabilidade (…) acidente de trabalho
+também (…) Mesma coisa para maternidade (…) tudo que demandar ação do DP e
+contabilidade no mesmo modelo."* E: *"afastamento e férias (…) pode deixar
+que a contabilidade tenha o controle (…) eles utilizam o Fortes."*
+
+- Tipos novos: **Comunicação de Afastamento** e **Retorno de Afastamento**
+  (só carteira). Atender registra na ficha (se ainda não estiver) e vai à
+  contabilidade, fechando com o retorno dela. A natureza (INSS, acidente,
+  maternidade) o DP confirma ao atender — o ponto não a registra; a soma de
+  atestados acima de 15 dias (que o ponto já abre sozinho) chega marcada INSS.
+- **Ponte do ponto** (`core/ponte_do_ponto.py`): afastamento lançado no ponto
+  desde 20/11/2026 vira a solicitação sozinho (ao abrir a fila do DP e na
+  rodada diária); negado ou cancelado no ponto, a solicitação que não andou
+  cai. Só LÊ o ponto.
+- **Pela ficha também:** afastar ou registrar a volta direto no cadastro abre
+  a solicitação, para nada ir à contabilidade por fora.
+- **Acidente:** o e-mail pede a CAT (1 dia útil) e o agente cobra todo dia até
+  o pedido sair. O alerta antigo "afastamento só no ponto" saiu (virou a ponte).
+- **Não feito, de propósito (ele):** zerar férias por afastamento longo e
+  contar benefício — é a contabilidade, no Fortes.
 
 ### 20/11/2026 (noite, 3) — Fim da experiência avisado à obra; obra atual pelo ponto
 

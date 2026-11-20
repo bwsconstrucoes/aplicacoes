@@ -107,6 +107,26 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "conferir": ("nome", "cpf"),
         "etapa_ao_concluir": "",
     },
+    # ⚑ 20/11/2026: o afastamento e o retorno vão à contabilidade (eSocial).
+    "AFASTAMENTO": {
+        "nome": "Afastamento",
+        "explicacao": "INSS, acidente de trabalho ou maternidade, para o eSocial",
+        "exige": ("nome", "cpf"),
+        "espera": "ALTERACAO-CONTRATO",
+        # Acidente de trabalho: a CAT tem prazo de 1 dia útil.
+        "prazo": 1, "cobrancas": 3, "intervalo": 1,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
+    "RETORNO_AFASTAMENTO": {
+        "nome": "Retorno de afastamento",
+        "explicacao": "a volta ao trabalho, para o eSocial",
+        "exige": ("nome", "cpf"),
+        "espera": "ALTERACAO-CONTRATO",
+        "prazo": 2, "cobrancas": 2, "intervalo": 2,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
     "DESCONTO_FOLHA": {
         "nome": "Desconto em folha",
         "explicacao": "o desconto autorizado pelo colaborador, na folha",
@@ -429,6 +449,22 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
                  _linha("Dias", d.get("dias_anteriores")),
                  _linha("Motivo", d.get("motivo")),
                  "", "Por favor, confirme a ciência respondendo este e-mail."]
+    elif template == "AFASTAMENTO":
+        miolo = ["Comunicamos o AFASTAMENTO do colaborador abaixo, para as "
+                 "providências no eSocial e na folha.", "",
+                 _linha("Natureza", d.get("natureza")),
+                 _linha("Início", d.get("inicio")),
+                 _linha("Previsão de retorno", d.get("previsao")),
+                 _linha("O que aconteceu", d.get("motivo"))]
+        if d.get("acidente"):
+            miolo += ["", "ACIDENTE DE TRABALHO: por favor, emitam a CAT — o "
+                          "prazo é de 1 dia útil (Lei 8.213/91, art. 22)."]
+        miolo += ["", "Por favor, confirmem o recebimento e o que for registrado."]
+    elif template == "RETORNO_AFASTAMENTO":
+        miolo = ["Comunicamos o RETORNO ao trabalho do colaborador abaixo.", "",
+                 _linha("Voltou em", d.get("retorno")),
+                 _linha("Observação", d.get("motivo")),
+                 "", "Por favor, confirmem o recebimento."]
     elif template == "DESCONTO_FOLHA":
         miolo = ["Solicitamos o lançamento do desconto em folha abaixo. A "
                  "autorização assinada pelo colaborador segue anexa.", "",

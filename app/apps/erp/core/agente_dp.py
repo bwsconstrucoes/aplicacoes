@@ -173,7 +173,8 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "informado), documento parado na obra sem a assinatura da "
                    "pessoa, pedido de cancelamento ou correção da obra que o "
                    "DP ainda não fez, correção sem a ciência da contabilidade, "
-                   "afastamento aprovado no ponto que não chegou ao cadastro, "
+                   "acidente de trabalho sem a contabilidade avisada (CAT em "
+                   "1 dia útil), "
                    "pessoa batendo ponto há uma semana numa obra que não é a "
                    "do cadastro (transferência não registrada), "
                    "ativo sem obra",
@@ -1029,39 +1030,26 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
                           + ("ainda não foi enviado" if e["situacao"] == "RASCUNHO"
                              else "sem a confirmação da contabilidade")),
                 "o_que_fazer": "enviar e cobrar a ciência"})
-        # 6. O AFASTAMENTO LANÇADO NO PONTO QUE NÃO CHEGOU AO DP. A ponte que
-        #    ele aprovou: afastamento é informação da contabilidade (eSocial),
-        #    e atestado acima de 15 dias vai para o INSS. Só LEITURA do ponto.
-        tem_ponto = s.execute(text(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'ponto' "
-            "AND table_name = 'ocorrencias'")).first() is not None
-        if tem_ponto:
-            for o in s.execute(text("""
-                SELECT o.colaborador_id, c.nome, o.tipo, o.data_inicio, o.data_fim
-                  FROM ponto.ocorrencias o
-                  JOIN colaboradores c ON c.id = o.colaborador_id
-                 WHERE o.status = 'APROVADA'
-                   AND UPPER(COALESCE(c.vinculo, 'CTPS')) = 'CTPS'
-                   AND o.data_inicio >= :desde
-                   AND (o.tipo IN ('AFASTAMENTO', 'LICENCA')
-                        OR (o.tipo = 'ATESTADO' AND o.data_fim - o.data_inicio >= 15))
-                   AND NOT EXISTS (
-                       SELECT 1 FROM colaborador_afastamentos a
-                        WHERE a.colaborador_id = o.colaborador_id
-                          AND a.data_inicio <= o.data_fim
-                          AND COALESCE(a.data_retorno, o.data_fim) >= o.data_inicio)
-                 ORDER BY o.data_inicio"""),
-                    {"desde": dia - _dt.timedelta(days=90)}).mappings().all():
-                achados.append({
-                    "tipo": "afastamento_so_no_ponto",
-                    "colaborador_id": o["colaborador_id"], "quem": o["nome"],
-                    "o_que": (f"{o['tipo'].lower()} de {o['data_inicio']:%d/%m/%Y} a "
-                              f"{o['data_fim']:%d/%m/%Y} aprovado no ponto e sem "
-                              "afastamento no cadastro — a contabilidade não sabe"
-                              + (" (atestado acima de 15 dias vai para o INSS)"
-                                 if o["tipo"] == "ATESTADO" else "")),
-                    "o_que_fazer": "lançar o afastamento no cadastro e informar "
-                                   "a contabilidade"})
+        # 6. O ACIDENTE DE TRABALHO SEM A CONTABILIDADE AVISADA. A CAT tem
+        #    prazo de 1 dia útil (Lei 8.213/91, art. 22). (O afastamento do
+        #    ponto não é mais alerta: vira solicitação sozinho —
+        #    `ponte_do_ponto`.)
+        for a_ in s.execute(text("""
+            SELECT d.numero, d.colaborador_id, c.nome, d.criado_em
+              FROM dp_solicitacoes d JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.tipo = 'AFASTAMENTO'
+               AND d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')
+               AND d.dados ->> 'afastamento_natureza' = 'ACIDENTE'
+               AND NOT EXISTS (SELECT 1 FROM dp_pedidos p
+                                WHERE p.solicitacao_id = d.id
+                                  AND p.situacao NOT IN ('RASCUNHO', 'CANCELADO'))
+            """)).mappings().all():
+            achados.append({
+                "tipo": "acidente_sem_cat", "colaborador_id": a_["colaborador_id"],
+                "quem": a_["nome"],
+                "o_que": (f"{a_['numero']}: acidente de trabalho e a contabilidade "
+                          "ainda não recebeu o pedido — a CAT tem prazo de 1 dia útil"),
+                "o_que_fazer": "atender e enviar hoje"})
     except Exception:
         logger.exception("Agente DP: falha no vigia do coordenador")
 

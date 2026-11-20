@@ -55,6 +55,8 @@ TEMPLATE_DO_TIPO = {
     # como uma ponte, mas tudo é fechado lá (…) E a gente requer sempre o
     # retorno de tudo. Quem não é CLT, aí tudo se resolve internamente."*
     "DESCONTO_EM_FOLHA": "DESCONTO_FOLHA",
+    "AFASTAMENTO": "AFASTAMENTO",
+    "RETORNO_AFASTAMENTO": "RETORNO_AFASTAMENTO",
     # A admissão usa o mesmo botão para o registro da carteira.
     "CADASTRO": "ASSINATURA_CTPS",
     "ADMISSAO_PRESTADOR": "ASSINATURA_CTPS",
@@ -64,7 +66,8 @@ TEMPLATE_DO_TIPO = {
 def e_processo(tipo: str) -> bool:
     return tipo in ("ALTERACAO_CARGO", "DEPENDENTE", "FERIAS",
                     "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
-                    "CANCELAR_DESLIGAMENTO", "DESCONTO_EM_FOLHA")
+                    "CANCELAR_DESLIGAMENTO", "DESCONTO_EM_FOLHA",
+                    "AFASTAMENTO", "RETORNO_AFASTAMENTO")
 
 
 # ⚑ A ATUALIZAÇÃO CADASTRAL (nome, endereço) NÃO VAI À CONTABILIDADE — decisão
@@ -85,7 +88,7 @@ def aplica(s: Session, tipo: str, colaborador_id: Optional[int],
     vinculo = _vinculo(s, colaborador_id)
     if tipo in ("ALTERACAO_CARGO", "FERIAS", "ALTERACAO_FERIAS",
                 "CANCELAMENTO_FERIAS", "CANCELAR_DESLIGAMENTO",
-                "DESCONTO_EM_FOLHA"):
+                "DESCONTO_EM_FOLHA", "AFASTAMENTO", "RETORNO_AFASTAMENTO"):
         return vinculo == "CTPS"
     if tipo == "DEPENDENTE":
         marcou = lambda v: str(v or "") == "1"
@@ -252,6 +255,15 @@ def _dados_do_pedido(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
     if tipo == "CANCELAR_DESLIGAMENTO":
         return {"comunicado_em": d.get("desligamento_comunicado_em"),
                 "motivo": d.get("observacao")}
+    if tipo == "AFASTAMENTO":
+        from app.apps.erp.core.cadastros import afastamentos
+        nat = str(d.get("afastamento_natureza") or "").upper()
+        return {"natureza": afastamentos.TIPOS.get(nat, {}).get("nome", nat),
+                "inicio": d.get("afast_inicio"), "previsao": d.get("afast_previsao"),
+                "acidente": "sim" if nat == "ACIDENTE" else "",
+                "motivo": d.get("observacao")}
+    if tipo == "RETORNO_AFASTAMENTO":
+        return {"retorno": d.get("retorno_data"), "motivo": d.get("observacao")}
     if tipo == "DESCONTO_EM_FOLHA":
         return {"valor_total": d.get("valor_total"), "parcelas": d.get("parcelas"),
                 "valor_parcela": d.get("valor_parcela"),

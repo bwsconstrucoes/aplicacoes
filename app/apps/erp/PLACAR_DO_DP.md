@@ -59,7 +59,8 @@ quanto ✅ — o que não pode existir é vão que ninguém mapeou.
 | Ajuste de Ponto e Faltas | 🔀 ponto › **Ajustar o dia** + **Pedir abono**. ⚠️ O campo *Motivo* do Pipe tem **20 opções** (falta não justificada manhã/tarde, doação de sangue, justiça eleitoral, banco de horas…). **Conferir se o ponto tem todas** — ver §4 |
 | Ajuste de Pontos e Faltas | 🔀 o mesmo de cima — **o Pipe tem o pedido escrito de duas formas** (singular e plural), e no ERP é um caminho só |
 | Encaminhamento de Atestado Médico | 🔀 ponto › ficha da pessoa › **Atestado ou licença** |
-| Pedido de Afastamento ou Licença | 🔀 ponto › ficha da pessoa › **Lançar afastamento** |
+| Pedido de Afastamento ou Licença | ✅ `AFASTAMENTO` (Comunicação de Afastamento) — desde 20/11/2026 o afastamento lançado no ponto vira esta solicitação sozinho (`ponte_do_ponto`), e a obra também abre pelo portal; o DP classifica (INSS, acidente, maternidade) e vai à contabilidade. Licenças curtas da lei continuam só no ponto |
+| Retorno de Afastamento | ✅ `RETORNO_AFASTAMENTO` — novo (20/11/2026); também nasce quando o DP registra a volta na ficha |
 | Documentação Admissão | 🔀 ERP › DP › Contabilidade, modelo **Assinatura de CTPS** (espera a ficha de registro) |
 | Documentação Rescisão | 🔀 ERP › DP › Contabilidade, modelo **Desligamento** |
 | Solicitação de Férias | ✅ `FERIAS` — desde 20/11/2026 a obra pede pelo portal; o DP manda à contabilidade (modelo **Férias**) e o pedido fecha quando ela devolve. As férias ficam na tela **Férias** (aguardando → confirmada) |
