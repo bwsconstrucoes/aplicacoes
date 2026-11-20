@@ -2271,10 +2271,27 @@ def pagina_suprimentos_receber():
 @login_obrigatorio
 @permissao("receber_material")
 def api_recebimentos_da_obra():
-    """O que está para chegar nas obras da pessoa, e o que chegou sem nota."""
+    """O que está para chegar nas obras da pessoa, o que chegou sem nota e —
+    para ela acompanhar — o que ainda está sendo cotado ou autorizado."""
+    from app.apps.erp.core.suprimentos import acompanhamento as svc_acomp
     from app.apps.erp.core.suprimentos import recebimento as svc
     with get_session() as s:
-        return jsonify({"ok": True, **svc.a_receber(s, _usuario_logado(s))})
+        usuario = _usuario_logado(s)
+        antes = [i for i in svc_acomp.planejamento(s, usuario)["itens"]
+                 if i["etapa"] in ("SEM_COTACAO", "EM_COTACAO", "A_AUTORIZAR")]
+        return jsonify({"ok": True, **svc.a_receber(s, usuario),
+                        "em_andamento": antes,
+                        "pode_lancar": pode(usuario, "lancar")})
+
+
+@bp.route("/erp/portal/material")
+@login_obrigatorio
+@permissao("receber_material")
+def pagina_portal_material():
+    """O MATERIAL DA OBRA, NO PORTAL (20/11/2026) — a tela enxuta, de celular,
+    por onde a obra recebe. Usa as mesmas rotas de "Receber material" do ERP:
+    são duas portas para a mesma regra, e não duas regras."""
+    return render_template("erp_portal_material.html")
 
 
 # ⚑ O POST DEIXOU DE SER `ver_suprimentos` em 20/11/2026. Quem só VÊ suprimentos
@@ -11753,9 +11770,13 @@ def api_pedido_para_lancar(pedido_id: int):
     from app.apps.erp.core.suprimentos import lancamento as svc
     try:
         with get_session() as s:
+            from app.apps.erp.core.suprimentos.recebimento import (
+                exigir_pedido_no_escopo)
+            usuario = _usuario_logado(s)
+            exigir_pedido_no_escopo(s, usuario, pedido_id)
             rec = (request.args.get("recebimento") or "").strip()
             return jsonify({"ok": True, "pedido": svc.preparar(
-                s, _usuario_logado(s), pedido_id,
+                s, usuario, pedido_id,
                 recebimento_id=int(rec) if rec.isdigit() else None)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
