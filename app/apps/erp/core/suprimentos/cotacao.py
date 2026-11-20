@@ -371,6 +371,9 @@ def montar_mapa(s: Session, cotacao_id: int) -> dict[str, Any]:
             "status": (item.status.value if item is not None and item.status
                        else None),
             "status_rotulo": _rotulo_do_status(item),
+            # A solicitação de origem, como na planilha ("Nº SS"): é por ela
+            # que o comprador reconhece de quem veio o pedido.
+            "solicitacao": getattr(getattr(item, "solicitacao", None), "numero", None),
             # O comprador corrige a linha do próprio mapa: é aqui que ele
             # descobre que a obra pediu em saco o que só vem em bag.
             "correcoes": correcoes.get(getattr(item, "id", 0), 0),

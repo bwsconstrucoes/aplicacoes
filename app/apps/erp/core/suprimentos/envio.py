@@ -565,7 +565,8 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     if not linhas:
         raise ErroValidacao("Este pedido não tem item nenhum.")
 
-    corpo = [f"PEDIDO DE COMPRA {pedido.numero}", ""]
+    corpo = [f"PEDIDO DE COMPRA {pedido.numero}",
+             "(o mesmo pedido segue em PDF, anexo a este e-mail)", ""]
     doc_forn = _cnpj_por_extenso(getattr(forn, "cnpj_cpf", None))
     corpo.append(f"Fornecedor: {_texto(getattr(forn, 'razao_social', ''))}"
                  f"{f' — CNPJ/CPF {doc_forn}' if doc_forn else ''}")
@@ -773,9 +774,23 @@ def disparar_pedido(s: Session, pedido_id: int, dados: dict[str, Any],
             f"pedido por outro canal.")
 
     mensagem = montar_pedido(s, pedido_id, empresa)
+    # ⚑ O PEDIDO VAI EM PDF, ANEXO (20/11/2026). Ele: "o pedido em PDF, sim (…)
+    # a gente vai encaminhar por e-mail." O texto continua no corpo — é o que o
+    # fornecedor lê no celular sem abrir nada, e o que sobra se o anexo for
+    # barrado por um filtro. Falha ao gerar o PDF NÃO segura o pedido: sai o
+    # texto, e o registro diz que foi sem anexo.
+    anexos = []
+    try:
+        from app.apps.erp.core.suprimentos import pedido_pdf
+        anexos.append({"nome": f"Pedido-{pedido.numero}.pdf",
+                       "mime": "application/pdf",
+                       "conteudo": pedido_pdf.gerar(s, pedido_id, empresa, usuario)})
+    except Exception:
+        logger.exception("ERP/suprimentos: não consegui gerar o PDF do pedido %s",
+                         pedido.numero)
     registro = correio.enviar(
         s, empresa=empresa, para=destinos,
-        assunto=mensagem["assunto"], corpo=mensagem["corpo"],
+        assunto=mensagem["assunto"], corpo=mensagem["corpo"], anexos=anexos,
         entidade_tipo="pedido_compra", entidade_id=pedido_id,
         destinatario_tipo="fornecedor", destinatario_id=pedido.fornecedor_id,
         usuario=usuario)
@@ -793,5 +808,8 @@ def disparar_pedido(s: Session, pedido_id: int, dados: dict[str, Any],
     return {"ok": True, "para": destinos,
             "empresa": empresa.razao_social,
             "remetente": correio.remetente_de(empresa),
+            "com_pdf": bool(anexos),
             "resumo": f"Pedido {pedido.numero} enviado para "
-                      f"{', '.join(destinos)}."}
+                      f"{', '.join(destinos)}"
+                      + (", com o PDF anexo." if anexos
+                         else ". ATENÇÃO: o PDF não pôde ser gerado; foi só o texto.")}

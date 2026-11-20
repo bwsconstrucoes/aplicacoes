@@ -362,9 +362,13 @@ async function verRelatorio(id){
         <input id="env-assunto" value="${escapar(e.assunto)}" readonly></div>
       <textarea id="env-corpo" rows="${Math.min(24, (e.corpo.split("\n").length + 2))}"
         style="width:100%; font-family:monospace" readonly>${escapar(e.corpo)}</textarea>
-      <div style="margin-top:10px">
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
         <button class="btn" id="env-mandar" ${impedimentos.length ? "disabled" : ""}
-          >✉ Mandar ao fornecedor</button></div>`;
+          >✉ Mandar ao fornecedor</button>
+        ${e.empresa ? `<a class="btn secundario" target="_blank" rel="noopener"
+          href="/erp/suprimentos/pedidos/${id}/pdf?empresa=${e.empresa.id}"
+          >&#10515; Ver o PDF que vai anexo</a>` : ""}
+        <span class="sub">O e-mail leva este texto e o pedido em PDF, anexo.</span></div>`;
 
     if (!impedimentos.length) {
       els("env-mandar").addEventListener("click", () => mandarPedido(id));

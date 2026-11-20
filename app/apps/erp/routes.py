@@ -17,7 +17,8 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
-    Blueprint, g, jsonify, redirect, render_template, request, session, url_for,
+    Blueprint, g, jsonify, make_response, redirect, render_template, request,
+    session, url_for,
 )
 
 from sqlalchemy.exc import IntegrityError, ProgrammingError
@@ -2108,6 +2109,33 @@ def api_ler_proposta(coluna_id: int):
         raise
     except Exception as e:
         logger.exception("ERP/suprimentos: falha ao ler a proposta")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/proposta", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_jogar_proposta_no_mapa(cotacao_id: int):
+    """A proposta jogada no mapa, sem dizer de quem é: o sistema lê uma vez,
+    reconhece o fornecedor pelo CNPJ ou pelo nome e devolve os preços casados
+    com as linhas. Não grava preço — devolve sugestão para conferir."""
+    from app.apps.erp.core.suprimentos import proposta
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Jogue o arquivo da proposta."}), 400
+    try:
+        with get_session() as s:
+            leitura = proposta.ler_no_mapa(
+                s, cotacao_id, conteudo=arquivo.read(),
+                nome_arquivo=arquivo.filename or "", usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "leitura": leitura})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao ler a proposta jogada no mapa")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -11759,6 +11787,34 @@ def api_preparar_fechamento(cotacao_id: int):
     from app.apps.erp.core.suprimentos import pedido as svc
     with get_session() as s:
         return jsonify({"ok": True, **svc.preparar_fechamento(s, cotacao_id)})
+
+
+@bp.route("/erp/suprimentos/pedidos/<int:pedido_id>/pdf")
+@login_obrigatorio
+@permissao("ver_pedidos_compra")
+def pdf_do_pedido(pedido_id: int):
+    """O pedido de compra em PDF, exatamente como vai anexo ao e-mail do
+    fornecedor. Serve para conferir antes de mandar — e para baixar."""
+    from app.apps.erp.core.suprimentos import envio, pedido_pdf
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            possiveis = envio.empresa_do_pedido(s, pedido_id)
+            pedida = (request.args.get("empresa") or "").strip()
+            empresa_id = int(pedida) if pedida.isdigit() else possiveis["sugerida"]
+            empresa = s.get(Empresa, empresa_id) if empresa_id else None
+            if empresa is None:
+                return ("Não há empresa definida para este pedido. Ligue a obra "
+                        "a uma empresa em Configurações › Empresas."), 400
+            conteudo = pedido_pdf.gerar(s, pedido_id, empresa, usuario)
+            numero = pedido_pdf.dados(s, pedido_id, empresa)["numero"]
+    except ErroValidacao as e:
+        return str(e), 400
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "application/pdf"
+    resposta.headers["Content-Disposition"] = f'inline; filename="Pedido-{numero}.pdf"'
+    return resposta
 
 
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/para-lancar")

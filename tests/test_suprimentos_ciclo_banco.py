@@ -737,3 +737,85 @@ def test_a_obra_nao_lanca_conta_de_pedido_de_outra_obra(base):
     da_a = _da_obra(base, base["obra_a"], "adm.a9@teste.bws.local")
     with pytest.raises(ErroNaoEncontrado):
         svc_lanc.preparar(base["s"], da_a, so_b.id)
+
+
+# ---------------------------------------------------------------------------
+# Jogar a proposta no mapa: o sistema descobre de quem é — ou pergunta
+# ---------------------------------------------------------------------------
+from app.apps.erp.core.suprimentos import proposta as svc_prop  # noqa: E402
+
+
+def _leitura_falsa(monkeypatch, lido):
+    from app.apps.erp.core.documentos import armazenamento, leitor
+    monkeypatch.setattr(leitor, "ler_documento", lambda *a, **k: lido)
+
+    class _Anexo:
+        id = None
+    monkeypatch.setattr(armazenamento, "salvar", lambda *a, **k: _Anexo())
+
+
+def test_a_proposta_e_reconhecida_pelo_cnpj_mesmo_vindo_da_filial(base):
+    coluna, como = svc_prop.reconhecer_fornecedor(
+        base["s"], base["cot"].id, {"emitente_documento": "71.000.005/0002-31",
+                                    "emitente_nome": "qualquer coisa"})
+    assert coluna == base["coluna"].id and "CNPJ" in como
+
+
+def test_sem_cnpj_a_proposta_e_reconhecida_pelo_nome(base):
+    coluna, como = svc_prop.reconhecer_fornecedor(
+        base["s"], base["cot"].id, {"emitente_nome": "Granitos do Teste"})
+    assert coluna == base["coluna"].id and "nome" in como
+
+
+def test_proposta_de_quem_nao_esta_no_mapa_nao_e_chutada(base):
+    coluna, como = svc_prop.reconhecer_fornecedor(
+        base["s"], base["cot"].id, {"emitente_documento": "11222333000181",
+                                    "emitente_nome": "Marmoraria Desconhecida"})
+    assert coluna is None and "não traz" in como
+
+
+def test_jogar_a_proposta_preenche_a_coluna_do_fornecedor_certo(base, monkeypatch):
+    _leitura_falsa(monkeypatch, {
+        "emitente_documento": "71000005000150", "emitente_nome": "GRANITOS DO TESTE",
+        "itens": [{"descricao": "Bancada de granito", "valor_unitario": "95,00"},
+                  {"descricao": "Pia de inox", "valor_unitario": "300,00"}]})
+    l = svc_prop.ler_no_mapa(base["s"], base["cot"].id, conteudo=b"%PDF",
+                             nome_arquivo="proposta.pdf", usuario=base["u"])
+    assert l["coluna_id"] == base["coluna"].id
+    assert l["fornecedor"] == "GRANITOS DO TESTE LTDA"
+    assert [x["cotacao_item_id"] for x in l["sugestoes"]] == [base["linha_a"].id]
+    assert [x["descricao"] for x in l["nao_casados"]] == ["Pia de inox"]
+
+
+# ---------------------------------------------------------------------------
+# O pedido em PDF
+# ---------------------------------------------------------------------------
+def test_o_pdf_do_pedido_tem_um_bloco_por_local_e_as_parcelas(base):
+    from app.apps.erp.core.suprimentos import pedido_pdf
+    pedido = _fechar(base, locais_entrega=[
+        {"obra_id": base["obra_b"].id, "tipo": "SEDE"}])
+    d = pedido_pdf.dados(base["s"], pedido.id, base["empresa"], base["u"])
+    assert [b["na_obra"] for b in d["blocos"]] == [True, False]
+    assert d["blocos"][0]["subtotal"] == Decimal("1000") and d["total"] == Decimal("2000.00")
+    assert [p["valor"] for p in d["parcelas"]] == [Decimal("1000.00"), Decimal("1000.00")]
+    assert d["empresa"]["cnpj"] == "71.000.001/0001-84"
+    assert d["blocos"][0]["itens"][0]["solicitacao"] == "SS-CICLO-1"
+    conteudo = pedido_pdf.gerar(base["s"], pedido.id, base["empresa"], base["u"])
+    assert conteudo[:5] == b"%PDF-" and len(conteudo) > 1500
+
+
+def test_o_email_do_pedido_leva_o_pdf_anexo(base, monkeypatch):
+    from app.apps.erp.core.comum import email as correio
+    saidas = []
+    monkeypatch.setattr(correio, "_entregar", lambda empresa, msg, destinos: saidas.append(msg))
+    svc_emp.definir_conta_de_email(base["s"], base["empresa"].id, {
+        "smtp_servidor": "smtp.exemplo.com", "smtp_porta": 587,
+        "smtp_usuario": "compras@bws.exemplo", "smtp_senha": "senha-de-aplicativo"},
+        base["u"])
+    base["s"].flush()
+    pedido = _fechar(base)
+    r = svc_envio.disparar_pedido(base["s"], pedido.id, {}, base["u"])
+    assert r["ok"] and r["com_pdf"] is True
+    anexos = [p for p in saidas[0].iter_attachments()]
+    assert [a.get_filename() for a in anexos] == [f"Pedido-{pedido.numero}.pdf"]
+    assert anexos[0].get_content_type() == "application/pdf"

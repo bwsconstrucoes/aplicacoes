@@ -103,7 +103,15 @@ def ler(s: Session, cotacao_fornecedor_id: int, *, conteudo: Optional[bytes] = N
         anexo_id = anexo.id
         coluna.anexo_id = anexo_id
 
-    linhas_mapa = _linhas_do_mapa(s, coluna.cotacao_id)
+    return _resultado(s, coluna.cotacao_id, lido, anexo_id)
+
+
+def _resultado(s: Session, cotacao_id: int, lido: dict[str, Any],
+               anexo_id: Optional[int]) -> dict[str, Any]:
+    """Casa o que foi lido com as linhas do mapa. Não depende do fornecedor —
+    é por isso que a proposta pode ser jogada no mapa antes de se saber de
+    quem ela é."""
+    linhas_mapa = _linhas_do_mapa(s, cotacao_id)
     sugestoes, nao_casados = [], []
     for bruto in (lido.get("itens") or []):
         descricao = (bruto.get("descricao") or "").strip()
@@ -328,3 +336,109 @@ def _resumo_condicoes(c: dict[str, Any]) -> str:
     if c["validade"]:
         partes.append(f"preço vale até {c['validade']}")
     return " · ".join(partes) or "a proposta não diz as condições"
+
+
+# ---------------------------------------------------------------------------
+# JOGAR A PROPOSTA NO MAPA, sem dizer antes de quem ela é (20/11/2026)
+#
+# O dono: "eu estou num determinado mapa, eu jogo o arquivo, aí o sistema faz
+# a leitura e tenta preencher o mapa, de forma a facilitar o trabalho do
+# comprador" — e "detectar automaticamente".
+#
+# A leitura é UMA só. O fornecedor é reconhecido pelo CNPJ que está na
+# proposta; sem CNPJ, pelo nome. Se nenhum dos fornecedores do mapa bater, o
+# sistema NÃO CHUTA: devolve os preços lidos e pergunta de quem é — preço na
+# coluna errada é o erro mais caro que esta tela pode cometer.
+# ---------------------------------------------------------------------------
+NOME_PARECIDO = 0.72
+
+
+def _digitos(v: Any) -> str:
+    return "".join(c for c in str(v or "") if c.isdigit())
+
+
+def reconhecer_fornecedor(s: Session, cotacao_id: int,
+                          lido: dict[str, Any]) -> tuple[Optional[int], str]:
+    """(coluna do mapa, como foi reconhecido) — ou (None, motivo)."""
+    from app.apps.erp.db.models.cadastros import Fornecedor
+    colunas = [c for c in s.scalars(select(CotacaoFornecedor).where(
+        CotacaoFornecedor.cotacao_id == cotacao_id)).all()
+        if c.cotacao_id == cotacao_id]
+    if not colunas:
+        return None, "o mapa ainda não tem fornecedor"
+    fornecedores = {c.id: s.get(Fornecedor, c.fornecedor_id) for c in colunas}
+
+    documento = _digitos(lido.get("emitente_documento"))
+    if documento:
+        for coluna_id, forn in fornecedores.items():
+            cadastrado = _digitos(getattr(forn, "cnpj_cpf", ""))
+            # Filial e matriz têm os 8 primeiros dígitos iguais: a proposta
+            # costuma vir de uma e o cadastro ser da outra.
+            if cadastrado and (cadastrado == documento
+                               or (len(documento) == 14 and len(cadastrado) == 14
+                                   and cadastrado[:8] == documento[:8])):
+                return coluna_id, "pelo CNPJ da proposta"
+
+    nome = " ".join(str(lido.get("emitente_nome") or "").upper().split())
+    if nome:
+        melhor, escore = None, 0.0
+        for coluna_id, forn in fornecedores.items():
+            for candidato in (getattr(forn, "razao_social", ""),
+                              getattr(forn, "nome_fantasia", "")):
+                candidato = " ".join(str(candidato or "").upper().split())
+                if not candidato:
+                    continue
+                r = SequenceMatcher(None, nome, candidato).ratio()
+                if candidato in nome or nome in candidato:
+                    r = max(r, 0.9)
+                if r > escore:
+                    melhor, escore = coluna_id, r
+        if melhor is not None and escore >= NOME_PARECIDO:
+            return melhor, "pelo nome na proposta"
+    return None, ("a proposta não traz CNPJ nem nome que bata com um fornecedor "
+                  "deste mapa")
+
+
+def ler_no_mapa(s: Session, cotacao_id: int, *, conteudo: bytes, nome_arquivo: str = "",
+                usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    """Lê a proposta jogada no mapa e descobre de qual fornecedor ela é."""
+    from app.apps.erp.core.comum.ia_custo import contexto
+    from app.apps.erp.core.documentos import armazenamento
+    from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
+    from app.apps.erp.db.models.cadastros import Cotacao, Fornecedor
+
+    if s.get(Cotacao, cotacao_id) is None:
+        raise ErroNaoEncontrado("Cotação não encontrada.")
+    if not conteudo:
+        raise ErroValidacao("Jogue o arquivo da proposta.")
+    try:
+        with contexto(operacao="proposta_cotacao"):
+            lido = ler_documento(conteudo, nome_arquivo, dica_usuario=DICA)
+    except ErroLeitura as e:
+        raise ErroValidacao(f"Não consegui ler a proposta: {e}")
+    except Exception as e:                       # pragma: no cover - rede/serviço
+        logger.exception("ERP/suprimentos: falha ao ler a proposta")
+        raise ErroValidacao(f"Não consegui ler a proposta: {e}")
+
+    coluna_id, como = reconhecer_fornecedor(s, cotacao_id, lido)
+    coluna = s.get(CotacaoFornecedor, coluna_id) if coluna_id else None
+    # O arquivo fica guardado de qualquer jeito: na coluna do fornecedor
+    # quando ele foi reconhecido, no mapa quando não foi.
+    anexo = armazenamento.salvar(
+        s, conteudo, nome_arquivo or "proposta",
+        entidade_tipo="cotacao_fornecedor" if coluna else "cotacao",
+        entidade_id=coluna.id if coluna else cotacao_id,
+        categoria="PROPOSTA", usuario=usuario, descricao="Proposta do fornecedor")
+    if coluna is not None:
+        coluna.anexo_id = anexo.id
+
+    saida = _resultado(s, cotacao_id, lido, anexo.id)
+    forn = s.get(Fornecedor, coluna.fornecedor_id) if coluna else None
+    saida.update({
+        "arquivo": nome_arquivo,
+        "coluna_id": coluna_id,
+        "fornecedor": getattr(forn, "razao_social", None),
+        "reconhecido": como,
+        "emitente_lido": (lido.get("emitente_nome") or "").strip() or None,
+    })
+    return saida
