@@ -38,9 +38,10 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (20/11/2026, noite, 3 e 4):** experiência avisada à obra,
-obra atual pelo ponto — migração **118** (apertar "Aplicar atualizações do
-banco") — e o afastamento do ponto virando solicitação (sem migração).
+**PUBLICADO (20/11/2026, noite, 3 a 5):** experiência avisada à obra, obra
+atual pelo ponto (migração **118**), afastamento do ponto virando solicitação
+e transferência de obra. ⚠️ Confirmar com ele que apertou "Aplicar
+atualizações do banco" (118).
 
 **PUBLICADO em 20/11/2026 (noite)** — ele: *"Vamos ficar com esses
 procedimentos por enquanto, pode publicar."* ⚠️ Confirmar com ele que apertou
