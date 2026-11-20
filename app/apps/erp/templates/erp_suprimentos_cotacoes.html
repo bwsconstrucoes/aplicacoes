@@ -198,7 +198,10 @@ function desenharMapa(){
         title="O mapa inteiro em PDF, deitado quando tem muitos fornecedores"
         >&#10515; Mapa em PDF</button>
       <span class="espaco" style="flex:1"></span>
-      <button class="btn" id="btn-disparar">✉ Disparar a cotação</button>
+      <button class="btn secundario" id="btn-disparar">✉ Disparar a cotação</button>
+      {% if pode.comprar %}<button class="btn" id="btn-fechar-pedido"
+        title="Escolher o fornecedor e os itens, e mandar o pedido para autorização"
+        >✔ Fechar pedido</button>{% endif %}
     </div>
     <div class="cartao-dica" style="margin-top:8px">A célula em verde é o menor
       preço da linha. "Herdado" quer dizer que o preço veio de outra cotação —
@@ -211,6 +214,8 @@ function desenharMapa(){
   els("btn-relatorios").addEventListener("click", () => abrirRelatorios("POR_ITEM"));
   els("btn-mapa-pdf").addEventListener("click", exportarMapa);
   els("btn-disparar").addEventListener("click", abrirDisparo);
+  if (els("btn-fechar-pedido"))
+    els("btn-fechar-pedido").addEventListener("click", () => abrirFechamento());
   document.querySelectorAll("[data-proposta]").forEach(b =>
     b.addEventListener("click", () => lerProposta(+b.dataset.proposta)));
   document.querySelectorAll("[data-corrigir]").forEach(b =>
@@ -810,6 +815,199 @@ async function novaCotacao(){
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
   els("dlg").showModal();
+}
+
+// ---------------------------------------------------------------------------
+// FECHAR O PEDIDO — a decisão de compra (20/11/2026)
+//
+// ⚑ ESTE BOTÃO NÃO EXISTIA. A regra de fechar pedido a partir do mapa estava
+// escrita e testada desde 05/09/2026, e a tela nunca ganhou a porta: dava para
+// cotar, comparar e mandar e-mail — e não dava para COMPRAR. O roteiro de
+// homologação mandava "no mapa, feche o pedido com um fornecedor"; quem
+// seguisse o roteiro parava ali. (É o mesmo formato da etapa do DP que tinha
+// regra e não tinha botão.)
+//
+// O diálogo responde, numa tela só, às perguntas do fechamento: de QUEM, O
+// QUÊ, em que CONDIÇÃO, para QUANDO e ONDE DESCE. A última é pedido dele do
+// mesmo dia: "precisamos prever quando a entrega não for na obra, por exemplo
+// na sede. Isso pode ser definido no fechamento. A princípio a entrega é na
+// obra."
+// ---------------------------------------------------------------------------
+let FECH = null;
+
+async function abrirFechamento(colunaId){
+  try {
+    FECH = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/fechamento`);
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  const comLivre = FECH.fornecedores.filter(f => f.livres > 0);
+  if (!comLivre.length) {
+    aviso("mensagem", FECH.fornecedores.length
+      ? "Não há o que fechar: ou ninguém tem preço lançado, ou todos os itens "
+        + "cotados já estão em pedido."
+      : "Acrescente um fornecedor e lance os preços antes de fechar.", "alerta");
+    return;
+  }
+  // Abre no fornecedor com mais itens no MENOR preço — é o palpite mais útil.
+  const melhor = colunaId || comLivre.slice().sort((a, b) =>
+    b.itens.filter(i => i.livre && i.menor).length -
+    a.itens.filter(i => i.livre && i.menor).length)[0].cotacao_fornecedor_id;
+
+  els("dlg-titulo").textContent = `Fechar pedido — ${MAPA.numero}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="cartao-dica" style="margin-bottom:10px">Um pedido é de <b>um
+      fornecedor</b>. Se a compra vai ser dividida, feche um pedido para cada
+      um — os itens que ficarem de fora continuam livres no mapa. O pedido
+      nasce <b>aguardando autorização</b>.</div>
+    <div class="campo"><label>De quem comprar</label>
+      <select id="fp-forn">${FECH.fornecedores.map(f => `<option
+        value="${f.cotacao_fornecedor_id}" ${f.livres ? "" : "disabled"}
+        ${f.cotacao_fornecedor_id === melhor ? "selected" : ""}>${escapar(f.fornecedor)}
+        — ${f.livres} item(ns) livre(s)</option>`).join("")}</select></div>
+    <div id="fp-itens"></div>
+    <div class="grade" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-top:10px">
+      <div class="campo"><label>Condição de pagamento</label>
+        <select id="fp-cond"><option value="">— escolha —</option>${BASE.condicoes
+          .filter(c => c.ativo !== false).map(c => `<option value="${c.id}">${escapar(c.nome)}</option>`).join("")}
+        </select></div>
+      <div class="campo"><label>Material em obra até</label>
+        <input type="date" id="fp-previsao"></div>
+      <div class="campo"><label>Frete por conta de quem</label>
+        <select id="fp-entrega"><option value="">—</option>
+          <option value="ENTREGA">Fornecedor entrega (CIF)</option>
+          <option value="COLETA">Nós coletamos (FOB)</option></select></div>
+      <div class="campo"><label>Frete (R$)</label>
+        <input id="fp-frete" inputmode="decimal" data-sem-mascara></div>
+      <div class="campo"><label>Desconto (R$)</label>
+        <input id="fp-desconto" inputmode="decimal" data-sem-mascara></div>
+    </div>
+    <label class="opcao" style="margin-top:8px"><input type="checkbox" id="fp-antecipado">
+      <span class="rotulo">Pagamento antecipado (paga antes de o material chegar)</span></label>
+    <h4 style="margin-top:14px">Onde o material desce</h4>
+    <div id="fp-locais"></div>
+    <div class="campo" style="margin-top:10px"><label>Observações para o fornecedor</label>
+      <textarea id="fp-obs" rows="2" placeholder="ex.: descarga só até as 16h; ligar antes para o encarregado"></textarea></div>
+    <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
+      <button class="btn" id="fp-salvar">Fechar e mandar para autorização</button>
+      <span id="fp-total" class="dados" style="font-weight:700"></span>
+    </div>`;
+  els("fp-forn").addEventListener("change", desenharFechamento);
+  els("fp-salvar").addEventListener("click", confirmarFechamento);
+  ["fp-frete", "fp-desconto"].forEach(id => els(id).addEventListener("input", totalDoFechamento));
+  desenharFechamento();
+  els("dlg").showModal();
+}
+
+function fornecedorDoFechamento(){
+  return FECH.fornecedores.find(f => f.cotacao_fornecedor_id === +els("fp-forn").value);
+}
+
+function desenharFechamento(){
+  const f = fornecedorDoFechamento();
+  // As condições do cabeçalho vêm do que o fornecedor respondeu no mapa — e
+  // continuam editáveis, porque a negociação final muda frete e desconto.
+  els("fp-cond").value = f.condicao_pagamento_id || "";
+  els("fp-entrega").value = f.entrega || "";
+  els("fp-frete").value = Number(f.frete) > 0 ? String(f.frete).replace(".", ",") : "";
+  els("fp-desconto").value = Number(f.desconto) > 0 ? String(f.desconto).replace(".", ",") : "";
+  els("fp-itens").innerHTML = `<table style="margin-top:8px"><thead><tr><th></th>
+      <th>Item</th><th>Obra</th><th class="direita">Qtd</th>
+      <th class="direita">Unitário</th><th class="direita">Total</th></tr></thead><tbody>
+    ${f.itens.map(i => `<tr ${i.livre ? "" : `style="opacity:.55"`}>
+      <td><input type="checkbox" class="fp-item" value="${i.cotacao_item_id}"
+        data-total="${i.total}" data-obra="${i.obra_id}"
+        ${i.livre ? (i.menor ? "checked" : "") : "disabled"}></td>
+      <td>${escapar(i.insumo)}${i.especificacao ? `<br><small>${escapar(i.especificacao)}</small>` : ""}
+        ${i.livre ? (i.menor ? `<br><small style="color:var(--verde)">menor preço do mapa</small>` : "")
+                  : `<br><small>${escapar(i.motivo || "")}</small>`}</td>
+      <td class="dados">${escapar(i.obra || "")}</td>
+      <td class="direita dados">${quantidadeBR(i.quantidade)} ${escapar(i.unidade)}</td>
+      <td class="direita dados">${numero(i.preco_unitario)}</td>
+      <td class="direita dados">${numero(i.total)}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="cartao-dica" style="margin-top:6px">Vêm marcados os itens em que
+      este fornecedor tem o menor preço. Marque os outros se a compra for
+      fechada toda com ele.</div>`;
+  document.querySelectorAll(".fp-item").forEach(i => i.addEventListener("change", () => {
+    locaisDoFechamento(); totalDoFechamento(); }));
+  locaisDoFechamento();
+  totalDoFechamento();
+}
+
+// Um bloco por OBRA presente nos itens marcados. A regra é a obra; a sede e o
+// "outro endereço" são a exceção, escolhida aqui.
+function locaisDoFechamento(){
+  const marcadas = new Set([...document.querySelectorAll(".fp-item:checked")]
+    .map(i => +i.dataset.obra));
+  const anteriores = {};
+  document.querySelectorAll(".fp-local").forEach(b => anteriores[b.dataset.obra] = {
+    tipo: b.querySelector(".fp-tipo").value,
+    rotulo: b.querySelector(".fp-rotulo").value,
+    endereco: b.querySelector(".fp-endereco").value});
+  els("fp-locais").innerHTML = FECH.obras.filter(o => marcadas.has(o.id)).map(o => {
+    const a = anteriores[o.id] || {tipo: "OBRA", rotulo: "", endereco: ""};
+    return `<div class="fp-local" data-obra="${o.id}" style="border:1px solid var(--borda,#DCE0E7);
+        border-radius:8px; padding:8px 10px; margin-bottom:6px">
+      <b>${escapar(o.rotulo)}</b>
+      <select class="fp-tipo" data-sem-busca style="display:block; width:100%; margin-top:4px">
+        <option value="OBRA" ${a.tipo === "OBRA" ? "selected" : ""}>Na obra — ${escapar(o.endereco)}</option>
+        <option value="SEDE" ${a.tipo === "SEDE" ? "selected" : ""} ${o.sede.tem ? "" : "disabled"}
+          >${escapar(o.sede.rotulo)} — ${escapar(o.sede.tem ? o.sede.endereco : "empresa sem endereço no cadastro")}</option>
+        <option value="OUTRO" ${a.tipo === "OUTRO" ? "selected" : ""}>Outro endereço…</option>
+      </select>
+      <div class="fp-outro" style="display:${a.tipo === "OUTRO" ? "block" : "none"}; margin-top:6px">
+        <input class="fp-rotulo" placeholder="nome do local (ex.: Depósito central)"
+          value="${escapar(a.rotulo)}" style="margin-bottom:4px">
+        <input class="fp-endereco" placeholder="endereço completo, com cidade e CEP"
+          value="${escapar(a.endereco)}">
+      </div>
+      ${o.endereco === "Endereço não informado" ? `<div class="aviso alerta" style="margin:6px 0 0">
+        Esta obra está sem endereço no cadastro — o pedido sairia dizendo
+        "Endereço não informado".</div>` : ""}
+    </div>`;
+  }).join("") || `<div class="cartao-dica">marque ao menos um item</div>`;
+  document.querySelectorAll(".fp-tipo").forEach(sel => sel.addEventListener("change", () => {
+    sel.closest(".fp-local").querySelector(".fp-outro").style.display =
+      sel.value === "OUTRO" ? "block" : "none"; }));
+}
+
+function totalDoFechamento(){
+  const br = v => Number(String(v || "0").replace(/\./g, "").replace(",", ".")) || 0;
+  const itens = [...document.querySelectorAll(".fp-item:checked")]
+    .reduce((s, i) => s + Number(i.dataset.total), 0);
+  const total = Math.max(itens + br(els("fp-frete").value) - br(els("fp-desconto").value), 0);
+  els("fp-total").textContent = `Total do pedido: ${moeda(total)}`;
+}
+
+async function confirmarFechamento(){
+  const br = v => String(v || "").trim() ? String(v).replace(/\./g, "").replace(",", ".") : "0";
+  const itens = [...document.querySelectorAll(".fp-item:checked")].map(i => +i.value);
+  if (!itens.length) { aviso("dlg-msg", "Marque os itens que vão neste pedido.", "erro"); return; }
+  if (!els("fp-cond").value) {
+    aviso("dlg-msg", "Escolha a condição de pagamento — é ela que diz ao financeiro "
+      + "quando esta compra vai ser paga.", "erro"); return; }
+  if (!els("fp-previsao").value) {
+    aviso("dlg-msg", "Informe até quando o material tem de estar na obra — sem a data, "
+      + "o sistema não tem como avisar do atraso nem projetar o pagamento.", "erro"); return; }
+  const locais = [...document.querySelectorAll(".fp-local")].map(b => ({
+    obra_id: +b.dataset.obra, tipo: b.querySelector(".fp-tipo").value,
+    rotulo: b.querySelector(".fp-rotulo").value,
+    endereco: b.querySelector(".fp-endereco").value}));
+  els("fp-salvar").disabled = true;
+  try {
+    const r = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/fechar`, {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({cotacao_fornecedor_id: +els("fp-forn").value, itens,
+        condicao_pagamento_id: +els("fp-cond").value,
+        previsao_entrega: els("fp-previsao").value,
+        entrega: els("fp-entrega").value || null,
+        frete: br(els("fp-frete").value), desconto: br(els("fp-desconto").value),
+        antecipado: els("fp-antecipado").checked,
+        observacoes: els("fp-obs").value, locais_entrega: locais})});
+    els("dlg").close();
+    aviso("mensagem", `Pedido ${r.numero} fechado e aguardando autorização. `
+      + `<a href="/erp/suprimentos/pedidos?pedido=${r.id}">abrir o pedido</a>`, "ok");
+    abrirMapa(MAPA.id);
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); els("fp-salvar").disabled = false; }
 }
 
 els("btn-nova-cot").addEventListener("click", () => novaCotacao().catch(

@@ -40,6 +40,18 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 20/11/2026 — nota para as OUTRAS ÁREAS, vinda de Suprimentos (registro entre áreas)
+
+A **migração 120** (`pedido_entregas` + índices) é de Suprimentos, mas cria um
+índice em `titulos (documento_fiscal_id)`. Ação nova **`receber_material`** em
+`permissoes.py` (obra + quem compra), posta dentro da seção `sup_solicitar`
+em `secoes.py` (quem pede material é quem recebe — nenhum perfil gravado muda).
+Três abas novas no menu de Suprimentos (`routes.py`). Para o **Financeiro**:
+existe agora **Suprimentos › Projeção de pagamentos**, que mostra o que as
+compras ainda vão virar de conta a pagar — ela LÊ `titulos`, `parcelas` e
+`documentos_fiscais`, não grava nada. Um título lançado com a nota vinculada
+a um pedido passa a ter mais um leitor. Detalhe em `HISTORICO_SUPRIMENTOS.md`.
+
 ### ⚑ 19/11/2026 — nota para o FINANCEIRO, vinda do DP (registro entre áreas)
 
 A migração **114** (`dp_desligamento_passos`) é do DP, mas **aponta para

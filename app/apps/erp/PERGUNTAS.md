@@ -3162,3 +3162,37 @@ consulta inventada vai sendo usado cada vez menos.
 - **AINDA NÃO:** "quanto o INSS está pagando" e "quando as férias de quem
   ficou afastado reiniciam" — é a contabilidade (Fortes), por decisão dele.
 
+
+
+## 3aa. O CICLO DA COMPRA: entrega, nota e pagamento cruzados (20/11/2026)
+
+Nasceram com o painel **Acompanhar compras**, a **Projeção de pagamentos** e a
+tela **Receber material**. As respostas saem de `core/suprimentos/acompanhamento.py`
+e `core/suprimentos/projecao.py` — ainda **sem pergunta escrita no assistente**;
+hoje se responde pela tela.
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Quais pedidos estão com a entrega atrasada? | `acompanhamento.painel`, ciclo `ENTREGA_ATRASADA` | depende de o pedido ter previsão de entrega |
+| O que chegou incompleto e está pendente com o fornecedor? | `painel` → `pendentes` | só conta pedido com ao menos um recebimento |
+| Quanto de material já chegou e ainda não tem nota lançada? | `painel` → `destaques.recebido_sem_nota` | ⚠ "nota lançada" = nota VINCULADA ao pedido em Financeiro › Notas, não o número digitado no recebimento |
+| Esse pedido já foi pago? | `painel` → `pagamento` | o caminho é pedido → nota vinculada → título com aquela nota; título lançado sem a nota não é enxergado |
+| Quais pedidos já fecharam o ciclo? | ciclo `FECHADO` | fechado = entregue inteiro + nota + pago |
+| Quanto as compras vão custar em dezembro? | `projecao.projetar` → `meses` | ⚠ palavra ambígua: **"vão custar"** tem três graus (comprado, a autorizar, em cotação) — dizer qual; e NÃO inclui o que já virou título |
+| O que já deveria ter virado conta a pagar e não virou? | `projetar` → `vencido_sem_conta` | parcela prevista com data vencida e sem título |
+| O que tem para chegar na minha obra? | `recebimento.a_receber` | **muda conforme quem pergunta** (obras da pessoa) |
+
+**Mudam conforme quem pergunta** (recorte por obra, `obras_de_registro_sem_autor`):
+todas as desta seção.
+
+**O que o sistema AINDA NÃO responde, e o que falta:**
+
+- *"Quanto tempo leva entre pedir e receber?"* — as datas existem (solicitação,
+  pedido, recebimento); falta a soma escrita.
+- *"O fornecedor X costuma entregar incompleto?"* — o dado nasce agora com os
+  recebimentos parciais; `desempenho.py` ainda não o lê.
+- *"Esta nota confere com o pedido item a item?"* — o cruzamento é por valor
+  total; não há conferência item a item da nota.
+- *"Quanto está previsto para pagar no total (compras + o resto)?"* — a
+  projeção de compras e o contas a pagar são telas separadas; falta a visão
+  somada no Financeiro.

@@ -216,6 +216,16 @@ MODULOS = [
             ("sup_planejar", "Planejar cotações", "erp.pagina_suprimentos_planejar"),
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
             ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
+            # ⚑ AS DUAS VISÕES QUE FALTAVAM (20/11/2026). "Acompanhar" é a do
+            # coordenador de suprimentos: cada compra do pedido ao pagamento,
+            # e o que falta para fechar o ciclo. "Projeção" é a do financeiro:
+            # o que as compras ainda vão custar, e quando — antes de a nota
+            # chegar. Ele: *"o financeiro não pode ficar no escuro em relação
+            # ao planejamento do compras."*
+            # A porta da OBRA: conferir e registrar o que desceu do caminhão.
+            ("sup_receber", "Receber material", "erp.pagina_suprimentos_receber"),
+            ("sup_acompanhar", "Acompanhar compras", "erp.pagina_suprimentos_acompanhar"),
+            ("sup_projecao", "Projeção de pagamentos", "erp.pagina_suprimentos_projecao"),
             ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("sup_compras", "Compras", "erp.pagina_compras"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
@@ -250,7 +260,11 @@ ACOES_NA_TELA = (
                  # Pedir à contabilidade: decide se a tela mostra o botão de
                  # enviar, cobrar e conferir o retorno.
                  "pedir_contabilidade","administrar_insumos", "administrar_fornecedores", "comprar",
-                 "autorizar_pedido", "solicitar_suprimento", "configurar",
+                 "autorizar_pedido", "solicitar_suprimento", "receber_material",
+                 # Decide se "Receber material" oferece o atalho para lançar a
+                 # nota e o boleto logo depois do recebimento.
+                 "lancar",
+                 "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
                  "tratar_agenda", "aprovar",
                  # O DIÁRIO DE OBRA (08/11/2026): decide se a tela mostra o
@@ -2240,15 +2254,38 @@ def api_decidir_pedido(pedido_id: int, acao: str):
 # --- Recebimento na obra ----------------------------------------------------
 # Quem confere é a obra: a rota exige apenas "ver_suprimentos", e o escopo por
 # obra já limita o que cada pessoa enxerga.
+@bp.route("/erp/suprimentos/receber")
+@login_obrigatorio
+@permissao("receber_material")
+def pagina_suprimentos_receber():
+    return render_template("erp_suprimentos_receber.html",
+                           **_contexto("sup_receber"))
+
+
+@bp.route("/erp/api/suprimentos/recebimentos")
+@login_obrigatorio
+@permissao("receber_material")
+def api_recebimentos_da_obra():
+    """O que está para chegar nas obras da pessoa, e o que chegou sem nota."""
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.a_receber(s, _usuario_logado(s))})
+
+
+# ⚑ O POST DEIXOU DE SER `ver_suprimentos` em 20/11/2026. Quem só VÊ suprimentos
+# (o perfil de consulta, o parceiro de fora da empresa) registrava recebimento
+# — e sem recorte de obra. Agora é ação própria, e o pedido tem de ter item
+# numa obra da pessoa.
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/recebimento",
           methods=["GET", "POST"])
 @login_obrigatorio
-@permissao("ver_suprimentos")
+@permissao(GET="ver_suprimentos", POST="receber_material")
 def api_recebimento(pedido_id: int):
     from app.apps.erp.core.suprimentos import recebimento as svc
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
+            svc.exigir_pedido_no_escopo(s, atual, pedido_id)
             if request.method == "GET":
                 return jsonify({"ok": True, "situacao": svc.situacao(s, pedido_id)})
             svc.registrar(s, pedido_id, request.get_json(silent=True) or {}, atual)
@@ -11608,6 +11645,86 @@ def api_locacao_acao(contrato_id: int, acao: str):
 def pagina_compras():
     return render_template("erp_suprimentos_compras.html",
                            **_contexto("sup_compras"))
+
+
+# ---------------------------------------------------------------------------
+# O PAINEL DO COORDENADOR E A PROJEÇÃO DO FINANCEIRO (20/11/2026)
+#
+# As duas telas só LEEM, e leem o cruzamento de coisas que outras telas
+# gravam: o recebimento da obra, a nota vinculada ao pedido, o título que
+# nasceu da nota. Por isso `ver_suprimentos` basta — a mesma ação que já abre
+# a tela de Compras, e que o perfil do financeiro já tem.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/suprimentos/acompanhar")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_acompanhar():
+    return render_template("erp_suprimentos_acompanhar.html",
+                           **_contexto("sup_acompanhar"))
+
+
+@bp.route("/erp/api/suprimentos/acompanhamento")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_acompanhamento():
+    """Cada pedido de pé, cruzado: entrega × nota × pagamento."""
+    from app.apps.erp.core.suprimentos import acompanhamento as svc
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.painel(
+            s, _usuario_logado(s),
+            incluir_fechados=request.args.get("fechados") == "1")})
+
+
+@bp.route("/erp/suprimentos/projecao")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_projecao():
+    return render_template("erp_suprimentos_projecao.html",
+                           **_contexto("sup_projecao"))
+
+
+@bp.route("/erp/api/suprimentos/projecao")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_projecao():
+    """O que as compras ainda vão custar e quando, antes de virar título."""
+    from app.apps.erp.core.suprimentos import projecao as svc
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.projetar(s, _usuario_logado(s))})
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/fechamento")
+@login_obrigatorio
+@permissao("comprar")
+def api_preparar_fechamento(cotacao_id: int):
+    """O que a tela precisa para fechar um pedido a partir do mapa: o que cada
+    fornecedor cotou, o que ainda está livre e onde o material pode descer."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.preparar_fechamento(s, cotacao_id)})
+
+
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/entrega", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_redefinir_entrega(pedido_id: int):
+    """Troca onde o material desce (obra, sede ou outro endereço) — enquanto
+    nada chegou."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc.redefinir_entrega(s, pedido_id, d.get("locais_entrega") or [],
+                                  _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao redefinir a entrega")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/api/suprimentos/compras")

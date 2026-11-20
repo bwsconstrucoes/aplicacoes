@@ -1,0 +1,293 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Acompanhar compras — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="pedido, fornecedor, obra, insumo pendente…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Em que ponto está</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-ciclo"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Obra</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-obra"><option value="">todas</option></select></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Fornecedor</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-fornecedor"><option value="">todos</option></select></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>O que mostrar</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-fechados">
+        <span class="rotulo">Incluir os de ciclo fechado</span></label>
+      <div class="cartao-dica">Ciclo fechado = material entregue por inteiro,
+        nota lançada e conta paga. Fica de fora porque já não pede ação de
+        ninguém.</div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Acompanhar compras
+  <small>cada pedido, da autorização ao pagamento — e o que falta para fechar</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <div class="resumo" id="resumo"></div>
+    <div class="espaco"></div>
+    <span id="exportar"></span>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Pedido</th><th>Fornecedor</th><th>Obra</th>
+      <th class="direita">Total</th>
+      <th>Entrega</th><th>Nota</th><th>Pagamento</th>
+      <th>Falta</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+</div>
+<div class="cartao-dica" style="margin-top:10px">
+  <b>De onde vem cada coluna — nada aqui é digitado nesta tela.</b>
+  <b>Entrega</b>: do recebimento que a obra registra em Pedidos.
+  <b>Nota</b>: das notas vinculadas ao pedido em Financeiro › Notas.
+  <b>Pagamento</b>: da conta a pagar lançada com aquela nota. Se uma coluna
+  está parada, é porque o passo dela não foi feito por quem devia.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---------------------------------------------------------------------------
+// ACOMPANHAR COMPRAS — a tela do coordenador de suprimentos
+//
+// O dono, em 20/11/2026: "o coordenador precisa fechar todo o ciclo do pedido
+// à entrega e poder acompanhar o pagamento. É necessária visão geral e
+// cruzada das informações."
+//
+// UMA LINHA POR PEDIDO, três colunas que são três perguntas — chegou? tem
+// nota? foi pago? — e uma quarta que diz O QUE FALTA e de quem depende. A
+// linha abre para mostrar os itens com saldo: é a lista que o coordenador
+// leva para o fornecedor.
+// ---------------------------------------------------------------------------
+let DADOS = null;
+const CICLOS = new Set();
+const ABERTOS = new Set();
+let SO = "";          // filtro rápido vindo dos quadrinhos do topo
+
+const COR = {AGUARDANDO_AUTORIZACAO: "outro", AGUARDANDO_ENTREGA: "aguardando",
+  ENTREGA_ATRASADA: "bloqueado", ENTREGA_PARCIAL: "bloqueado",
+  ENTREGUE_SEM_NOTA: "bloqueado", ENTREGUE_A_PAGAR: "pago", FECHADO: "aprovado"};
+const QUEM = {diretoria: "depende da diretoria", fornecedor: "depende do fornecedor",
+  obra: "depende da obra", financeiro: "depende do financeiro"};
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregar(){
+  try {
+    DADOS = await api("/erp/api/suprimentos/acompanhamento"
+      + (els("f-fechados").checked ? "?fechados=1" : ""));
+    montarFiltros();
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function montarFiltros(){
+  els("opcoes-ciclo").innerHTML = DADOS.resumo
+    .filter(r => r.pedidos && (r.chave !== "FECHADO" || els("f-fechados").checked))
+    .map(r => `<label class="opcao"><input type="checkbox" data-ciclo="${r.chave}"
+        ${CICLOS.has(r.chave) ? "checked" : ""}>
+      <span class="rotulo">${escapar(r.rotulo)}</span>
+      <span class="qtd">${r.pedidos}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhum pedido de pé</div>`;
+  document.querySelectorAll("[data-ciclo]").forEach(i =>
+    i.addEventListener("change", ev => {
+      ev.target.checked ? CICLOS.add(ev.target.dataset.ciclo)
+                        : CICLOS.delete(ev.target.dataset.ciclo);
+      desenhar();
+    }));
+
+  // As listas saem dos próprios pedidos: só aparece obra e fornecedor que TEM
+  // compra de pé, e não o cadastro inteiro.
+  const obras = new Map(), forns = new Map();
+  DADOS.pedidos.forEach(p => {
+    p.obras.forEach(o => obras.set(o, o));
+    forns.set(p.fornecedor_id, p.fornecedor);
+  });
+  const manter = (id, mapa, vazio) => {
+    const atual = els(id).value;
+    els(id).innerHTML = `<option value="">${vazio}</option>` +
+      [...mapa.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+        .map(([v, r]) => `<option value="${escapar(String(v))}">${escapar(r)}</option>`).join("");
+    els(id).value = atual;
+  };
+  manter("f-obra", obras, "todas");
+  manter("f-fornecedor", forns, "todos");
+}
+
+function filtrados(){
+  const q = (els("f-busca").value || "").toLowerCase().trim();
+  const obra = els("f-obra").value, forn = els("f-fornecedor").value;
+  return DADOS.pedidos.filter(p => {
+    if (CICLOS.size && !CICLOS.has(p.ciclo)) return false;
+    if (obra && !p.obras.includes(obra)) return false;
+    if (forn && String(p.fornecedor_id) !== forn) return false;
+    if (SO === "pendencia" && !(p.pendentes.length && p.entrega.chegadas)) return false;
+    if (SO === "sem_nota" && !(p.nota.recebido_sem_nota > 0)) return false;
+    if (SO === "atraso" && !p.entrega.dias_de_atraso) return false;
+    if (SO === "a_pagar" && !(p.pagamento.a_pagar > 0)) return false;
+    if (q) {
+      const texto = [p.numero, p.fornecedor, p.obras.join(" "),
+        p.pendentes.map(i => i.insumo + " " + i.especificacao).join(" ")]
+        .join(" ").toLowerCase();
+      if (!q.split(/\s+/).every(t => texto.includes(t))) return false;
+    }
+    return true;
+  });
+}
+
+function kpi(chave, cor, rotulo, valor, sub){
+  return `<button class="kpi ${cor} ${SO === chave ? "ativo" : ""}" data-so="${chave}">
+    <div class="kpi-rotulo">${rotulo}</div><div class="kpi-valor">${valor}</div>
+    <div class="kpi-sub">${sub}</div></button>`;
+}
+
+function desenhar(){
+  const d = DADOS.destaques;
+  els("kpis").innerHTML =
+    kpi("atraso", "vermelho", "Entrega atrasada", d.atrasados,
+        "pedido(s) com a data de entrega vencida") +
+    kpi("pendencia", "roxo", "Chegou incompleto", d.itens_pendentes,
+        "item(ns) com saldo a resolver com o fornecedor") +
+    kpi("sem_nota", "ambar", "Recebido sem nota", moeda(d.recebido_sem_nota),
+        `${d.pedidos_sem_nota} pedido(s) — o financeiro não enxerga`) +
+    kpi("a_pagar", "ciano", "Lançado, a pagar", moeda(d.a_pagar),
+        "já é conta a pagar no financeiro") +
+    `<div class="kpi estatico verde"><div class="kpi-rotulo">Ciclo fechado</div>
+      <div class="kpi-valor">${d.fechados}</div>
+      <div class="kpi-sub">entregue, com nota e pago</div></div>`;
+  document.querySelectorAll("[data-so]").forEach(b =>
+    b.addEventListener("click", () => { SO = SO === b.dataset.so ? "" : b.dataset.so; desenhar(); }));
+
+  const lista = filtrados();
+  const total = lista.reduce((s, p) => s + p.total, 0);
+  els("resumo").innerHTML = `<b>${lista.length}</b> pedido(s) · <b>${moeda(total)}</b>`;
+
+  if (!lista.length) {
+    els("corpo").innerHTML = `<tr><td colspan="8" class="cartao-dica">
+      <b>Nenhum pedido com estes filtros.</b> ${DADOS.pedidos.length ? "" :
+      "Ainda não há pedido de compra de pé — eles nascem ao fechar um mapa de cotação."}
+      </td></tr>`;
+    return;
+  }
+
+  els("corpo").innerHTML = lista.map(p => {
+    const e = p.entrega, n = p.nota, g = p.pagamento;
+    const aberto = ABERTOS.has(p.id);
+    const graves = p.alertas.filter(a => a.grave).length;
+    const entrega = p.status !== "AUTORIZADO" ? `<span class="sub">—</span>` :
+      `<b>${e.percentual}%</b> <span class="sub">${e.completos}/${e.itens} itens</span>
+       ${e.dias_de_atraso ? `<span class="sub" style="color:var(--vermelho)">
+          ${e.dias_de_atraso} dia(s) de atraso</span>`
+         : p.previsao_entrega && !e.completa
+           ? `<span class="sub">previsto ${dataBR(p.previsao_entrega)}</span>`
+           : e.ultima_chegada ? `<span class="sub">chegou ${dataBR(e.ultima_chegada)}</span>` : ""}`;
+    const nota = p.status !== "AUTORIZADO" ? `<span class="sub">—</span>` :
+      n.quantidade ? `<b>${moeda(n.valor)}</b> <span class="sub">${n.quantidade} nota(s)</span>
+          ${n.recebido_sem_nota > 0 ? `<span class="sub" style="color:var(--vermelho)">
+            falta ${moeda(n.recebido_sem_nota)}</span>` : ""}`
+        : n.recebido_sem_nota > 0
+          ? `<b style="color:var(--vermelho)">sem nota</b>
+             <span class="sub">há ${n.dias_sem_nota} dia(s)</span>`
+          : `<span class="sub">nenhuma ainda</span>`;
+    const pagamento = p.status !== "AUTORIZADO" ? `<span class="sub">—</span>` :
+      g.em_titulo > 0
+        ? `<b>${moeda(g.pago)}</b> <span class="sub">pago de ${moeda(g.em_titulo)}</span>
+           ${g.proximo_vencimento ? `<span class="sub">próximo ${dataBR(g.proximo_vencimento)}</span>` : ""}`
+        : `<span class="sub">previsto ${moeda(g.previsto)}</span>
+           <span class="sub">sem conta lançada</span>`;
+    const detalhe = !aberto ? "" : `<tr class="filho"><td colspan="8" style="padding:10px 14px 14px 28px">
+        ${p.alertas.length ? p.alertas.map(a => `<div class="aviso ${a.grave ? "erro" : "alerta"}"
+          style="margin:0 0 6px">${escapar(a.texto)}</div>`).join("")
+          : `<div class="cartao-dica">Nada pendente neste pedido além do passo atual.</div>`}
+        ${p.pendentes.length ? `<table style="margin-top:8px"><thead><tr>
+            <th>Item que falta chegar</th><th>Obra</th><th>Solicitação</th>
+            <th class="direita">Pedido</th><th class="direita">Chegou</th>
+            <th class="direita">Falta</th></tr></thead><tbody>
+          ${p.pendentes.map(i => `<tr><td>${escapar(i.insumo)}${i.especificacao
+              ? `<br><small>${escapar(i.especificacao)}</small>` : ""}</td>
+            <td class="dados">${escapar(i.obra)}</td>
+            <td class="dados">${escapar(i.solicitacao)}</td>
+            <td class="direita dados">${quantidadeBR(i.pedido)} ${escapar(i.unidade)}</td>
+            <td class="direita dados">${quantidadeBR(i.recebido)}</td>
+            <td class="direita dados"><b>${quantidadeBR(i.saldo)}</b></td></tr>`).join("")}
+          </tbody></table>` : ""}
+        <div class="sub" style="margin-top:8px">
+          ${p.autorizado_dia ? `Autorizado em ${dataBR(p.autorizado_dia)}` : `Fechado em ${dataBR(p.fechado_dia)}`}
+          ${p.antecipado ? " · pagamento antecipado" : ""}
+          ${p.fora_da_obra.length ? ` · entrega fora da obra: ${escapar(p.fora_da_obra.join(", "))}` : ""}
+          ${g.titulos.length ? ` · conta(s) a pagar: ${escapar(g.titulos.join(", "))}` : ""}
+          · <a href="/erp/suprimentos/pedidos?pedido=${p.id}">abrir o pedido</a>
+        </div></td></tr>`;
+    return `<tr data-pedido="${p.id}" style="cursor:pointer">
+        <td><b>${aberto ? "▾" : "▸"} ${escapar(p.numero)}</b></td>
+        <td>${escapar(p.fornecedor)}</td>
+        <td class="dados" style="font-size:11.5px">${escapar(p.obras.join(", "))}</td>
+        <td class="direita dados">${moeda(p.total)}</td>
+        <td>${entrega}</td><td>${nota}</td><td>${pagamento}</td>
+        <td><span class="selo ${COR[p.ciclo]}">${escapar(p.ciclo_rotulo)}</span>
+          ${p.de_quem ? `<span class="sub">${QUEM[p.de_quem]}</span>` : ""}
+          ${graves ? `<span class="sub" style="color:var(--vermelho)">${graves} alerta(s)</span>` : ""}</td>
+      </tr>${detalhe}`;
+  }).join("");
+
+  document.querySelectorAll("[data-pedido]").forEach(tr =>
+    tr.addEventListener("click", ev => {
+      if (ev.target.closest("a")) return;
+      const id = +tr.dataset.pedido;
+      ABERTOS.has(id) ? ABERTOS.delete(id) : ABERTOS.add(id);
+      desenhar();
+    }));
+}
+
+["f-obra", "f-fornecedor"].forEach(id => els(id).addEventListener("change", desenhar));
+els("f-fechados").addEventListener("change", carregar);
+els("f-busca").addEventListener("input", () => { clearTimeout(window.__t);
+  window.__t = setTimeout(desenhar, 200); });
+els("btn-limpar").addEventListener("click", () => {
+  ["f-obra", "f-fornecedor", "f-busca"].forEach(id => els(id).value = "");
+  CICLOS.clear(); SO = ""; montarFiltros(); desenhar();
+});
+
+carregar();
+
+botoesDeExportar("exportar", () => ({
+  titulo: "Acompanhamento de compras",
+  subtitulo: DADOS ? `${filtrados().length} pedido(s)` : "",
+  colunas: [
+    {rotulo: "Pedido"}, {rotulo: "Fornecedor"}, {rotulo: "Obra"},
+    {rotulo: "Total", tipo: "dinheiro"}, {rotulo: "Previsão de entrega"},
+    {rotulo: "% entregue", tipo: "numero"}, {rotulo: "Itens com saldo", tipo: "numero"},
+    {rotulo: "Em nota", tipo: "dinheiro"}, {rotulo: "Recebido sem nota", tipo: "dinheiro"},
+    {rotulo: "Em conta a pagar", tipo: "dinheiro"}, {rotulo: "Pago", tipo: "dinheiro"},
+    {rotulo: "Situação"},
+  ],
+  linhas: (DADOS ? filtrados() : []).map(p => [
+    p.numero, p.fornecedor, p.obras.join(", "), p.total, dataBR(p.previsao_entrega),
+    p.entrega.percentual, p.entrega.com_saldo, p.nota.valor,
+    p.nota.recebido_sem_nota, p.pagamento.em_titulo, p.pagamento.pago, p.ciclo_rotulo,
+  ]),
+  filtros: filtrosDaTela(),
+}));
+</script>
+{% endblock %}

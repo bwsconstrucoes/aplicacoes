@@ -158,6 +158,32 @@ os itens.
 
 ---
 
+## 4b. O ciclo completo — acrescentado em 20/11/2026 (migração 120)
+
+> ⚠️ O passo 11 acima ("no mapa, feche o pedido") **não tinha botão** até
+> 20/11/2026. Agora tem: **Suprimentos › Cotações › ✔ Fechar pedido**.
+
+15a. No fechamento, troque o local de entrega de UMA obra para **Sede**.
+    - *Tem de acontecer:* em "Ver e mandar o pedido", o bloco daquela obra sai
+      com o endereço da sede e o aviso "a entrega NÃO é no canteiro".
+    - *Confira:* o endereço da empresa em Configurações › Empresas. Sem ele,
+      a opção Sede fica desligada.
+15b. Entre com um usuário **da obra** e abra **Suprimentos › Receber material**.
+    - *Tem de acontecer:* só aparecem os itens das obras dele, sem preço.
+    - Registre metade de um item. *Tem de acontecer:* aviso de recebimento
+      parcial, e o pedido aparece no quadro vermelho "recebido e nota não lançada".
+15c. Como comprador, abra **Suprimentos › Acompanhar compras**.
+    - *Tem de acontecer:* o pedido em "Chegou em parte", com o item e a
+      quantidade que falta ao abrir a linha, e o valor em "Recebido sem nota".
+15d. Abra **Suprimentos › Projeção de pagamentos** (é a tela do financeiro).
+    - *Confira as datas das parcelas* contra a condição de pagamento e a data
+      de entrega combinadas. *Este é o número que o financeiro vai usar.*
+15e. Vincule uma nota ao pedido em Financeiro › Notas e lance a conta.
+    - *Tem de acontecer:* o valor sai da projeção e a linha do pedido passa a
+      "Entregue, a pagar"; depois de pago, some da lista (ciclo fechado).
+
+---
+
 ## 5. O banco de preços (10 minutos)
 
 **Suprimentos › Banco de preços.**

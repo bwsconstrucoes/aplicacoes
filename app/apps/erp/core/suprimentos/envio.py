@@ -560,7 +560,13 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
         raise ErroValidacao("Este pedido não tem item nenhum.")
 
     corpo = [f"PEDIDO DE COMPRA {pedido.numero}", ""]
-    corpo.append(f"Fornecedor: {_texto(getattr(forn, 'razao_social', ''))}")
+    doc_forn = _cnpj_por_extenso(getattr(forn, "cnpj_cpf", None))
+    corpo.append(f"Fornecedor: {_texto(getattr(forn, 'razao_social', ''))}"
+                 f"{f' — CNPJ/CPF {doc_forn}' if doc_forn else ''}")
+    # PARA QUEM FATURAR vem no topo, como no modelo que a equipe usava: nota
+    # emitida contra o CNPJ errado da BWS é a devolução mais comum.
+    corpo.append(f"Faturar para: {_texto(empresa.razao_social)} — "
+                 f"CNPJ {_cnpj_por_extenso(empresa.cnpj)}")
     corpo.append("")
     corpo.append("Prezados,")
     corpo.append("")
@@ -570,13 +576,24 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
 
     # Agrupado por endereço: é o motorista que lê, e um mesmo pedido leva
     # material para obras diferentes.
+    #
+    # O LOCAL pode não ser a obra (migração 120): quem fecha o pedido pode
+    # mandar o material de uma obra para a sede. Aí o bloco diz as duas
+    # coisas — onde desce e de qual obra é —, porque a nota continua sendo
+    # da obra mesmo com o caminhão indo para outro endereço.
+    from app.apps.erp.core.suprimentos.entrega import (
+        desvios_do_pedido, local_de_entrega)
+    from app.apps.erp.db.models.cadastros import SuprimentoSolicitacao
+    desvios = desvios_do_pedido(s, pedido_id)
     blocos: dict[str, dict[str, Any]] = {}
     for linha in linhas:
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
         insumo = s.get(Insumo, item.insumo_id) if item is not None else None
         obra = s.get(Obra, item.obra_id) if item is not None and item.obra_id else None
-        endereco = endereco_da_obra(obra)
-        bloco = blocos.setdefault(endereco, {"obras": [], "itens": []})
+        local = local_de_entrega(obra, desvios.get(getattr(item, "obra_id", None)))
+        bloco = blocos.setdefault(local["endereco"], {
+            "obras": [], "itens": [], "na_obra": local["na_obra"],
+            "local": local["rotulo"], "mapa": local["mapa"]})
         rotulo = rotulo_da_obra(obra)
         if rotulo and rotulo not in bloco["obras"]:
             bloco["obras"].append(rotulo)
@@ -586,8 +603,14 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     soma = Decimal("0")
     for endereco, bloco in blocos.items():
         corpo.append(f"ENTREGAR EM: {endereco}")
+        if not bloco["na_obra"]:
+            corpo.append(f"Local: {bloco['local']} — ATENÇÃO: a entrega NÃO é "
+                         f"no canteiro da obra.")
         if bloco["obras"]:
-            corpo.append(f"Obra(s): {' · '.join(bloco['obras'])}")
+            corpo.append(("Material da(s) obra(s): " if not bloco["na_obra"]
+                          else "Obra(s): ") + " · ".join(bloco["obras"]))
+        if bloco["mapa"]:
+            corpo.append(f"Localização no mapa: {bloco['mapa']}")
         for linha, item, insumo in bloco["itens"]:
             numero_do_item += 1
             quantidade = Decimal(str(linha.quantidade or 0))
@@ -602,10 +625,16 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
             corpo.append(
                 f"{numero_do_item:>3}. {descricao}"
                 f"{f' — {especificacao}' if especificacao else ''}")
+            # A solicitação de origem vai na linha: é por ela que a obra
+            # reconhece o que pediu quando o caminhão chega.
+            sol = (s.get(SuprimentoSolicitacao, item.solicitacao_id)
+                   if item is not None else None)
+            origem = _texto(getattr(sol, "numero", ""))
             corpo.append(
                 f"     {_quantidade(linha.quantidade)} "
                 f"{_texto(getattr(item, 'unidade', ''))} x "
-                f"R$ {_dinheiro(unitario)}  =  R$ {_dinheiro(total_linha)}")
+                f"R$ {_dinheiro(unitario)}  =  R$ {_dinheiro(total_linha)}"
+                f"{f'   (solicitação {origem})' if origem else ''}")
         corpo.append("")
 
     corpo.append(f"Subtotal dos itens: R$ {_dinheiro(soma)}")
@@ -636,7 +665,16 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     if _texto(pedido.observacoes):
         corpo += ["", _texto(pedido.observacoes)]
 
+    # AS TRÊS INSTRUÇÕES DA NOTA, do modelo que a equipe já mandava. São elas
+    # que permitem casar a nota com o pedido quando ela chegar — sozinha, por
+    # e-mail ou capturada da SEFAZ.
     corpo += ["",
+              "PARA A NOTA FISCAL:",
+              f"  - Informar nas observações da nota: Pedido BWS {pedido.numero}.",
+              "  - Informar nas observações da nota o endereço de destino do "
+              "material, conforme acima.",
+              "  - Faturar apenas os itens listados neste pedido.",
+              "",
               f"Referência deste pedido: {pedido.numero}. Favor citá-la na "
               f"nota fiscal e em qualquer contato sobre esta compra.",
               "", "Atenciosamente,"] + _assinatura(empresa)
