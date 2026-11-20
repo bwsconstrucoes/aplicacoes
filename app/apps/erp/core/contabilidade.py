@@ -118,6 +118,15 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "conferir": ("nome", "cpf"),
         "etapa_ao_concluir": "",
     },
+    "TRANSFERENCIA_OBRA": {
+        "nome": "Transferência de obra",
+        "explicacao": "a pessoa mudou de obra — muda a lotação das guias de FGTS e tributos",
+        "exige": ("nome", "cpf"),
+        "espera": "ALTERACAO-CONTRATO",
+        "prazo": 3, "cobrancas": 2, "intervalo": 3,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
     "RETORNO_AFASTAMENTO": {
         "nome": "Retorno de afastamento",
         "explicacao": "a volta ao trabalho, para o eSocial",
@@ -460,6 +469,14 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
             miolo += ["", "ACIDENTE DE TRABALHO: por favor, emitam a CAT — o "
                           "prazo é de 1 dia útil (Lei 8.213/91, art. 22)."]
         miolo += ["", "Por favor, confirmem o recebimento e o que for registrado."]
+    elif template == "TRANSFERENCIA_OBRA":
+        miolo = ["Comunicamos a TRANSFERÊNCIA DE OBRA do colaborador abaixo — "
+                 "muda a lotação para as guias de FGTS e tributos.", "",
+                 _linha("Obra de origem", d.get("obra_de")),
+                 _linha("Obra de destino", d.get("obra_para")),
+                 _linha("A partir de", d.get("a_partir_de")),
+                 _linha("Observação", d.get("motivo")),
+                 "", "Por favor, confirmem o recebimento e a alteração."]
     elif template == "RETORNO_AFASTAMENTO":
         miolo = ["Comunicamos o RETORNO ao trabalho do colaborador abaixo.", "",
                  _linha("Voltou em", d.get("retorno")),

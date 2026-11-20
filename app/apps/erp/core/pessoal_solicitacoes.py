@@ -820,6 +820,21 @@ TIPOS: dict[str, dict[str, Any]] = {
         "campos_do_dp": (),
         "checklist": ("Conferir o exame de retorno (ASO)",),
     },
+    # ⚑ A TRANSFERÊNCIA DE OBRA (20/11/2026). Ele: *"A transferência será
+    # informada também à contabilidade, pois impacta diretamente na geração
+    # das guias de FGTS e tributos."* A obra do pedido (`obra_id`) é a obra
+    # de DESTINO. Nasce sozinha quando o ponto mostra a pessoa uma semana
+    # noutra obra (`obra_atual.abrir_transferencias`), ou a obra/DP abre.
+    "TRANSFERENCIA_OBRA": {
+        "nome": "Transferência de Obra",
+        "explicacao": "a pessoa passa a trabalhar em outra obra (de carteira, "
+                      "o DP comunica à contabilidade)",
+        "exige_pessoa": True, "executa": "transferir_obra",
+        "campos": ("obra_id", "transferencia_data", "observacao"),
+        "obrigatorios": ("obra_id", "transferencia_data"),
+        "campos_do_dp": (),
+        "checklist": (),
+    },
     "DIVERSOS": {
         "nome": "Solicitações Diversas",
         "explicacao": "o que não cabe nos tipos acima",
@@ -1578,6 +1593,7 @@ ROTULOS_DO_DP: dict[str, str] = {
     "afast_inicio": "Início do afastamento",
     "afast_previsao": "Previsão de retorno",
     "retorno_data": "Data em que voltou ao trabalho",
+    "transferencia_data": "A partir de quando (na obra nova)",
     "cumpre_aviso": "No pedido de demissão, a pessoa cumpre o aviso?",
     "matricula": "Matrícula",
     "convencao_id": "Convenção",
@@ -2262,6 +2278,29 @@ def cancelar_desligamento(s: Session, colaborador_id: int, p: dict[str, Any],
     return efeito
 
 
+def _transferir_obra(s: Session, colaborador_id: int, p: dict[str, Any],
+                     pedido: dict[str, Any], usuario: Optional[Usuario]) -> dict[str, Any]:
+    """A obra de CADASTRO passa a ser a de destino. A de antes fica na trilha
+    e no pedido — é o "de" que a contabilidade precisa para as guias."""
+    destino = pedido.get("obra_id") or p.get("obra_id")
+    if not str(destino or "").isdigit():
+        raise ErroValidacao("Escolha a obra de destino.")
+    c = s.get(Colaborador, colaborador_id)
+    de = c.obra_id
+    if de == int(destino):
+        return {"transferencia": "a obra de cadastro já era esta"}
+    c.obra_id = int(destino)
+    s.flush()
+    s.execute(text("UPDATE dp_solicitacoes SET dados = dados || CAST(:j AS jsonb) "
+                   "WHERE id = :i"),
+              {"i": p["id"], "j": __import__("json").dumps({"obra_origem_id": str(de or "")})})
+    registrar_evento(s, "colaborador", c.id, "TRANSFERENCIA_DE_OBRA",
+                     {"de": de, "para": int(destino), "pedido": p.get("numero"),
+                      "a_partir_de": pedido.get("transferencia_data")},
+                     usuario.id if usuario else None)
+    return {"transferencia": f"obra {de} → {destino}"}
+
+
 def _registrar_afastamento(s: Session, colaborador_id: int, pedido: dict[str, Any],
                            p: dict[str, Any], usuario: Optional[Usuario]) -> dict[str, Any]:
     """Atender a comunicação de afastamento: o afastamento entra na ficha (se
@@ -2826,6 +2865,8 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                 "justificativa": pedido.get("justificativa")}, usuario)
         elif executa == "cancelar_desligamento":
             efeito.update(cancelar_desligamento(s, alvo, p, usuario))
+        elif executa == "transferir_obra":
+            efeito.update(_transferir_obra(s, alvo, p, pedido, usuario))
         elif executa == "registrar_afastamento":
             efeito.update(_registrar_afastamento(s, alvo, pedido, p, usuario))
         elif executa == "registrar_retorno":

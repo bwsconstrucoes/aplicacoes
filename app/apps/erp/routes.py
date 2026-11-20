@@ -12343,7 +12343,9 @@ def api_dp_solicitacoes():
                 # ⚑ O que o ponto lançou e precisa da contabilidade entra na
                 # fila sozinho (20/11/2026) — `core/ponte_do_ponto.py`.
                 from app.apps.erp.core import ponte_do_ponto
-                if ponte_do_ponto.trazer(s).get("abertas"):
+                from app.apps.erp.core import obra_atual
+                if ponte_do_ponto.trazer(s).get("abertas") | \
+                        obra_atual.abrir_transferencias(s):
                     s.commit()
                 return jsonify({"ok": True, **svc.listar(
                     s, situacao=request.args.get("situacao", ""),

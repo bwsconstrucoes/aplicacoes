@@ -379,6 +379,7 @@ def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str
     # os avisos do portal (férias, experiência) chegam a quem cuida da obra
     # onde a pessoa está batendo ponto de verdade.
     obra = obra_atual.atualizar(s)
+    obra["transferencias_abertas"] = obra_atual.abrir_transferencias(s)
     s.commit()
     from app.apps.erp.core import ponte_do_ponto
     ponte = ponte_do_ponto.trazer(s)

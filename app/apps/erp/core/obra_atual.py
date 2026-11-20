@@ -129,3 +129,41 @@ def obras_da_pessoa_sql(alias: str = "c") -> str:
     return (f"({alias}.obra_id = ANY(:obras) OR EXISTS (SELECT 1 FROM "
             f"colaborador_obra_atual oa_ WHERE oa_.colaborador_id = {alias}.id "
             f"AND oa_.obra_id = ANY(:obras)))")
+
+
+def abrir_transferencias(s: Session, *, hoje: Optional[date] = None) -> int:
+    """A divergência de uma semana vira a solicitação de Transferência de Obra
+    (20/11/2026) — o DP confirma (ou recusa, se for só um apoio) e, de
+    carteira, comunica à contabilidade. Uma por episódio: se já houve pedido
+    para esta obra desde que a pessoa começou a bater lá, não abre outro.
+    Nunca levanta."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    abertas = 0
+    try:
+        with s.begin_nested():
+            for d in divergentes(s, hoje=hoje):
+                atual = da_pessoa(s, d["colaborador_id"]) or {}
+                obra = atual.get("obra_id")
+                if not obra:
+                    continue
+                ja = s.execute(text("""
+                    SELECT 1 FROM dp_solicitacoes
+                     WHERE tipo = 'TRANSFERENCIA_OBRA' AND colaborador_id = :c
+                       AND obra_id = :o AND criado_em::date >= :desde LIMIT 1"""),
+                    {"c": d["colaborador_id"], "o": obra, "desde": d["desde"]}).first()
+                if ja:
+                    continue
+                p = svc.abrir(s, {
+                    "tipo": "TRANSFERENCIA_OBRA", "colaborador_id": d["colaborador_id"],
+                    "obra_id": obra, "transferencia_data": d["desde"].isoformat(),
+                    "observacao": (f"O ponto mostra {d['nome']} batendo na obra "
+                                   f"{d['obra_atual']} desde {d['desde']:%d/%m/%Y}; o "
+                                   f"cadastro diz {d['obra_cadastro'] or 'sem obra'}. "
+                                   "Se for só um apoio temporário, recuse.")}, None)
+                s.execute(text("UPDATE dp_solicitacoes SET requerente = 'Ponto (obra atual)' "
+                               "WHERE id = :i"), {"i": p["id"]})
+                abertas += 1
+    except Exception:  # noqa: BLE001
+        logger.exception("ERP/obra atual: não abri as transferências")
+    return abertas
+

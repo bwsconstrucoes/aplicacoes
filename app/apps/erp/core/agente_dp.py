@@ -175,8 +175,7 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "DP ainda não fez, correção sem a ciência da contabilidade, "
                    "acidente de trabalho sem a contabilidade avisada (CAT em "
                    "1 dia útil), "
-                   "pessoa batendo ponto há uma semana numa obra que não é a "
-                   "do cadastro (transferência não registrada), "
+
                    "ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
@@ -955,19 +954,8 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
                               f"{falta} dia(s)); sem decisão, {vira}"),
                     "o_que_fazer": "decidir com a obra: efetivar, prorrogar "
                                    "ou encerrar no prazo"})
-        # 1b. A TRANSFERÊNCIA QUE NINGUÉM REGISTROU (20/11/2026). Ele:
-        #     *"teremos a obra de cadastro e a obra atual. Para a obra atual,
-        #     vamos buscar a informação do ponto."*
-        from app.apps.erp.core import obra_atual
-        for d in obra_atual.divergentes(s, hoje=dia):
-            achados.append({
-                "tipo": "obra_diferente_do_cadastro",
-                "colaborador_id": d["colaborador_id"], "quem": d["nome"],
-                "o_que": (f"bate ponto na obra {d['obra_atual'] or '?'} desde "
-                          f"{d['desde']:%d/%m/%Y}, e o cadastro diz "
-                          f"{d['obra_cadastro'] or 'sem obra'}"),
-                "o_que_fazer": "confirmar a transferência e atualizar a obra "
-                               "do cadastro"})
+        # 1b. A transferência não é mais alerta: vira solicitação sozinha
+        #     (`obra_atual.abrir_transferencias`, 20/11/2026).
         # 2. AS FÉRIAS VENCENDO OU VENCIDAS (em dobro — CLT art. 137).
         from app.apps.erp.core import ferias as svc_ferias
         if svc_ferias._tem_controle(s):

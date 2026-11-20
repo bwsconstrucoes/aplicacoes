@@ -1930,6 +1930,10 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             ColaboradorDependente.salario_familia.is_(True))).all():
         dependentes[d.colaborador_id] = dependentes.get(d.colaborador_id, 0) + 1
 
+    from app.apps.erp.core import obra_atual
+    atuais: dict[int, int] = ({r[0]: r[1] for r in s.execute(text(
+        "SELECT colaborador_id, obra_id FROM colaborador_obra_atual")).all()}
+        if obra_atual.tem_tabela(s) else {})
     saida = []
     for c in s.scalars(select(Colaborador)).all():
         # ⚠️ "ATIVO" AQUI É DINHEIRO: quem cai fora desta lista não entra na
@@ -1942,6 +1946,12 @@ def para_folha(s: Session, *, so_ativos: bool = True,
         if obra_id and c.obra_id != obra_id:
             continue
         codigo_obra, nome_obra = obras.get(c.obra_id or 0, ("", ""))
+        # ⚑ A OBRA ATUAL É A DO PONTO (20/11/2026). Ele: *"Obra atual em
+        # análisesps alimenta obra atual do colaborador (…) isso altera custo
+        # de obra."* `obra_codigo` = onde a pessoa está batendo; a de cadastro
+        # segue em `obra_cadastro`. Sem batida recente, as duas são iguais.
+        codigo_atual, nome_atual = obras.get(atuais.get(c.id) or c.obra_id or 0,
+                                             (codigo_obra, nome_obra))
         saida.append({
             "cpf": c.cpf, "nome": c.nome,
             "matricula": c.matricula or "", "celular": c.telefone or "",
@@ -1958,8 +1968,8 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "cargo": cargos.get(c.cargo_id or 0, ""),
             "convencao": convencoes.get(c.convencao_id or 0, ""),
             "convencao_categoria": c.convencao_categoria or "",
-            "obra_codigo": codigo_obra, "obra_cadastro": codigo_obra,
-            "obra_nome": nome_obra,
+            "obra_codigo": codigo_atual, "obra_cadastro": codigo_obra,
+            "obra_nome": nome_atual,
             # "Tipo" é o vínculo, e só tem dois valores. A subvariação é o
             # tipo de contrato, logo abaixo.
             # ⚠️ VÍNCULO EM BRANCO NÃO VIRA "CTPS" NO ESCURO (17/11/2026).

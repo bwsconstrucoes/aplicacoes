@@ -998,11 +998,26 @@ def test_a_obra_atual_vem_do_ponto_e_a_transferencia_e_avisada(_schema_ponto, mu
     # a ficha mostra as duas
     ficha = svc_pessoas.ficha(s, c.id)
     assert ficha["obra_id"] == mundo["obra"].id and ficha["obra_atual"]["codigo"] == "ADM-02"
-    # uma semana na obra diferente: o agente avisa
+    # a folha recebe a obra atual; a de cadastro segue à parte
+    linha = next(x for x in svc_pessoas.para_folha(s) if x["cpf"] == c.cpf)
+    assert (linha["obra_codigo"], linha["obra_cadastro"]) == ("ADM-02", "ADM-01")
+    # uma semana na obra diferente: nasce a Transferência de Obra (uma só)
     s.execute(text("UPDATE colaborador_obra_atual SET desde = :d WHERE colaborador_id = :c"),
               {"d": hoje - dt.timedelta(days=8), "c": c.id})
-    assert any(a["tipo"] == "obra_diferente_do_cadastro" and a["colaborador_id"] == c.id
-               for a in agente_dp.vigia(s))
+    assert obra_atual.abrir_transferencias(s) == 1
+    assert obra_atual.abrir_transferencias(s) == 0, "uma por episódio"
+    sid = s.execute(text("SELECT id FROM dp_solicitacoes WHERE tipo = "
+                         "'TRANSFERENCIA_OBRA' AND colaborador_id = :c"), {"c": c.id}).scalar()
+    r = svc.atender(s, sid, {}, mundo["dp"])
+    assert r["situacao"] == "EM_ANDAMENTO", "de carteira: vai à contabilidade"
+    s.flush()
+    assert s.get(svc_pessoas.Colaborador, c.id).obra_id == outra.id
+    passo = next(x for x in svc.ler(s, sid)["processo"]["passos"]
+                 if x["codigo"] == "CONTABILIDADE")
+    corpo = s.execute(text("SELECT corpo FROM dp_pedidos WHERE id = :i"),
+                      {"i": passo["pedido"]["id"]}).scalar()
+    assert "ADM-01" in corpo and "ADM-02" in corpo and "FGTS" in corpo
+    _ = agente_dp
 
 
 @pytestmark_banco

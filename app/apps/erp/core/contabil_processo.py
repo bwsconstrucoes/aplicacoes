@@ -57,6 +57,7 @@ TEMPLATE_DO_TIPO = {
     "DESCONTO_EM_FOLHA": "DESCONTO_FOLHA",
     "AFASTAMENTO": "AFASTAMENTO",
     "RETORNO_AFASTAMENTO": "RETORNO_AFASTAMENTO",
+    "TRANSFERENCIA_OBRA": "TRANSFERENCIA_OBRA",
     # A admissão usa o mesmo botão para o registro da carteira.
     "CADASTRO": "ASSINATURA_CTPS",
     "ADMISSAO_PRESTADOR": "ASSINATURA_CTPS",
@@ -67,7 +68,7 @@ def e_processo(tipo: str) -> bool:
     return tipo in ("ALTERACAO_CARGO", "DEPENDENTE", "FERIAS",
                     "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
                     "CANCELAR_DESLIGAMENTO", "DESCONTO_EM_FOLHA",
-                    "AFASTAMENTO", "RETORNO_AFASTAMENTO")
+                    "AFASTAMENTO", "RETORNO_AFASTAMENTO", "TRANSFERENCIA_OBRA")
 
 
 # ⚑ A ATUALIZAÇÃO CADASTRAL (nome, endereço) NÃO VAI À CONTABILIDADE — decisão
@@ -88,7 +89,8 @@ def aplica(s: Session, tipo: str, colaborador_id: Optional[int],
     vinculo = _vinculo(s, colaborador_id)
     if tipo in ("ALTERACAO_CARGO", "FERIAS", "ALTERACAO_FERIAS",
                 "CANCELAMENTO_FERIAS", "CANCELAR_DESLIGAMENTO",
-                "DESCONTO_EM_FOLHA", "AFASTAMENTO", "RETORNO_AFASTAMENTO"):
+                "DESCONTO_EM_FOLHA", "AFASTAMENTO", "RETORNO_AFASTAMENTO",
+                "TRANSFERENCIA_OBRA"):
         return vinculo == "CTPS"
     if tipo == "DEPENDENTE":
         marcou = lambda v: str(v or "") == "1"
@@ -262,6 +264,20 @@ def _dados_do_pedido(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                 "inicio": d.get("afast_inicio"), "previsao": d.get("afast_previsao"),
                 "acidente": "sim" if nat == "ACIDENTE" else "",
                 "motivo": d.get("observacao")}
+    if tipo == "TRANSFERENCIA_OBRA":
+        def obra(i):
+            if not str(i or "").isdigit():
+                return {}
+            r = s.execute(text("SELECT codigo, nome, cno, municipio, uf FROM obras "
+                               "WHERE id = :i"), {"i": int(i)}).mappings().first()
+            return dict(r) if r else {}
+        de, para = obra(d.get("obra_origem_id")), obra(sol.get("obra_id") or d.get("obra_id"))
+        rot = lambda o: (f"{o.get('codigo')} — {o.get('nome')}"
+                         + (f" (CNO {o['cno']})" if o.get("cno") else " (sem CNO no cadastro)")
+                         + (f", {o.get('municipio')}/{o.get('uf')}" if o.get("municipio") else "")
+                         if o else "")
+        return {"obra_de": rot(de), "obra_para": rot(para),
+                "a_partir_de": d.get("transferencia_data"), "motivo": d.get("observacao")}
     if tipo == "RETORNO_AFASTAMENTO":
         return {"retorno": d.get("retorno_data"), "motivo": d.get("observacao")}
     if tipo == "DESCONTO_EM_FOLHA":

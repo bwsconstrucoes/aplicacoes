@@ -116,6 +116,34 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 20/11/2026 (noite, 5) — Transferência de obra vai à contabilidade; a folha recebe a obra atual
+
+Ele: *"O fechamento do ponto quem faz somos nós e enviamos à contabilidade
+para receber de volta a folha. O que falta é criarmos os relatórios de
+fechamento de folha ainda. Obra atual em análisesps alimenta obra atual do
+colaborador (…) isso altera custo de obra, mas ainda vamos migrar toda a parte
+de pagamento de colaboradores de analisesps pra dentro do ERP. A transferência
+será informada também à contabilidade, pois impacta diretamente na geração
+das guias de FGTS e tributos. Demanda outro relatório a ser criado também."*
+
+- **Transferência de Obra** (tipo novo): nasce sozinha quando o ponto mostra a
+  pessoa uma semana noutra obra (`obra_atual.abrir_transferencias`, uma por
+  episódio), ou a obra/DP abre. Atender troca a obra de CADASTRO; de carteira,
+  vai à contabilidade com obra de origem e de destino (código, CNO, município)
+  e fecha com o retorno. Apoio temporário: o DP recusa. O alerta de "obra
+  diferente do cadastro" virou esta solicitação.
+- **A folha** (`pessoas.para_folha`, o contrato que o Análise de SPs vai ler):
+  `obra_codigo` passa a ser a obra ATUAL (do ponto); `obra_cadastro`, a de
+  cadastro.
+
+**PENDENTE, dito por ele, ainda sem construir:**
+- os **relatórios de fechamento da folha** (nós fechamos o ponto, mandamos à
+  contabilidade, ela devolve a folha) — o ponto já gera planilha e arquivos
+  `.ps`; falta o relatório que ele quer e o pedido com retorno;
+- o **relatório de transferências** para a contabilidade (guias de FGTS e
+  tributos por obra);
+- a **migração do pagamento de colaboradores** do Análise de SPs para o ERP.
+
 ### 20/11/2026 (noite, 4) — O afastamento do ponto vira solicitação ao DP, e vai à contabilidade
 
 Ele, sobre o alerta "afastamento aprovado no ponto que não chegou ao
