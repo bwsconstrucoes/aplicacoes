@@ -1769,8 +1769,10 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
         # 10/11/2026: *"Pipe, todo campo obrigatório, ele tem um asterisco,
         # facilita. Aqui não, ninguém sabe o que é obrigatório, o que é que
         # não é."* A lista é a do Pipe, tipo por tipo.
+        # A transferência é a exceção: a obra que ela pergunta é a de DESTINO,
+        # que a ficha não tem (20/11/2026).
         obrigatorios = ([x for x in d.get("obrigatorios", ()) if x != "obra_id"]
-                        if d["exige_pessoa"]
+                        if d["exige_pessoa"] and c != "TRANSFERENCIA_OBRA"
                         else ["obra_id"] + [x for x in d.get("obrigatorios", ())
                                             if x != "obra_id"])
         proprios = d.get("rotulos_proprios") or {}
@@ -2072,6 +2074,8 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # sem obra: pedido sem obra é pedido que ninguém sabe de onde veio, e
     # quem for atendê-lo vai perguntar por WhatsApp — que é o trabalho que
     # esta fila existe para acabar.
+    if tipo == "TRANSFERENCIA_OBRA" and not str(dados.get("obra_id") or "").isdigit():
+        raise ErroValidacao("Escolha a obra para onde a pessoa vai.")
     obra_do_pedido = (int(dados["obra_id"]) if dados.get("obra_id")
                       else (pessoa.obra_id if pessoa else None))
     if not obra_do_pedido:
