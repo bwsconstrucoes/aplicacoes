@@ -1033,7 +1033,7 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
            AND (translate(lower(c.nome),
                           'áàâãäéèêëíìîïóòôõöúùûüç',
                           'aaaaaeeeeiiiiooooouuuuc') LIKE :nome
-                OR (:digitos <> '' AND regexp_replace(c.cpf, '\D', '', 'g')
+                OR (:digitos <> '' AND regexp_replace(c.cpf, '\\D', '', 'g')
                     LIKE :digitos || '%'))
          ORDER BY c.nome
          LIMIT :teto"""),
