@@ -41,10 +41,10 @@ flowchart TD
 | 5 | Retorno e mapa | comprador | Cotações | `proposta.py`, `cotacao.py`, `precos.py` | pronto |
 | 6 | Fechar pedido | comprador | Cotações › Fechar pedido | `pedido.py`, `entrega.py` | **feito em 20/11** — não havia botão |
 | 7 | Autorização | diretoria | Pedidos | `pedido.autorizar` | pronto |
-| 8 | Envio ao fornecedor | comprador | Pedidos › Ver e mandar | `envio.montar_pedido` | pronto (texto; PDF proposto) |
-| 9 | Recebimento | obra | Receber material | `recebimento.py` | **feito em 20/11** — a obra não tinha tela |
+| 8 | Envio ao fornecedor | comprador | Pedidos › Ver e mandar | `envio.montar_pedido`, `pedido_pdf.py` | pronto — texto + PDF anexo (20/11) |
+| 9 | Recebimento | obra | Portal › Material da obra, ou Receber material | `recebimento.py` | **feito em 20/11** — a obra não tinha tela |
 | 10 | Nota × pedido | obra / comprador | Financeiro › Notas | `core/notas/cruzamento.py` | pronto, manual |
-| 11 | Conta a pagar | obra lança, financeiro analisa | Financeiro › Lançar | `core/titulos/` | pronto, manual |
+| 11 | Conta a pagar | obra lança, financeiro analisa | Financeiro › Lançar (pré-preenchido pelo pedido) | `lancamento.py`, `core/titulos/` | **feito em 20/11** — nasce do recebimento |
 | 12 | Pagamento e fechamento | financeiro / coordenador | Acompanhar compras | `acompanhamento.py` | **feito em 20/11** |
 
 **As visões cruzadas:** Painel (`acompanhamento.planejamento` — o item da obra
@@ -65,10 +65,12 @@ pagamentos (`projecao.py`), Compras (`compras.py`), Banco de preços (`precos.py
 | a nota do pedido | `documentos_fiscais.pedido_compra_id` |
 | a conta a pagar daquela nota | `titulos.documento_fiscal_id` → `parcelas` |
 
-⚠️ **O elo fraco:** o pedido chega ao financeiro por **pedido → nota vinculada →
-título lançado com a nota**. Se alguém lançar a conta sem vincular a nota ao
-pedido, o painel continua dizendo "falta lançar a nota" e a projeção continua
-contando o valor. `previsoes_pagamento.titulo_id` existe e ninguém o preenche.
+**Como o pedido chega ao financeiro (desde 20/11/2026, migração 121):** a obra
+recebe e lança a nota e o boleto pela tela de Lançar, que abre pré-preenchida
+pelo pedido; o título nasce pelo caminho de sempre e fica ligado ao pedido em
+`pedido_titulos`, e a previsão coberta ganha `titulo_id`. O caminho antigo
+(nota vinculada na tela de Notas → título com aquela nota) continua valendo e
+os dois são somados sem contar duas vezes.
 
 ## Os dois modelos que ele mandou, e o que o ERP tem
 
@@ -91,9 +93,7 @@ faturamento, CEP, link do mapa, solicitação por item e as instruções da nota
 Falta: o PDF em si, a assinatura do comprador (nome, cargo, telefone, imagem) e
 a "forma de pagamento" separada da "condição" (Pix × boleto × faturado).
 
-**Proposta de pedido melhor que o modelo** (esperando o "sim" dele): PDF anexo
-com a logo da empresa da obra; um bloco por local de entrega, com subtotal por
-bloco; quando o local não é a obra, o destaque e a obra de origem; parcelas
-com data e valor (o modelo só diz "30 dias"); contato de quem recebe na obra;
-e um código do pedido para o fornecedor citar na nota — é por ele que a nota
-capturada da SEFAZ vai casar sozinha com o pedido.
+**O pedido em PDF e o mapa em PDF foram construídos em 20/11/2026**
+(`pedido_pdf.py`, `mapa_pdf.py`), partindo dos dois modelos acima. Do modelo do
+pedido falta só a imagem da assinatura do comprador e a "forma de pagamento"
+(Pix × boleto) separada da condição.

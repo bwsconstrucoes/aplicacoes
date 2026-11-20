@@ -184,6 +184,27 @@ os itens.
 
 ---
 
+## 4c. O que mudou na 3ª rodada de 20/11/2026 (migração 121)
+
+15f. **No mapa**, clique em **Tela cheia** e jogue o PDF de uma proposta de
+    verdade na faixa tracejada.
+    - *Tem de acontecer:* o sistema diz de qual fornecedor reconheceu e
+      contorna os preços lidos. **Se puser preço na coluna errada, me avise —
+      é o erro mais caro desta tela.**
+15g. **Mapa em PDF**: confira contra a planilha de vocês. É o documento da gestão.
+15h. Em Pedidos, **Ver o PDF que vai anexo** antes de mandar ao fornecedor.
+15i. **No celular, como pessoa da obra**: Portal › Material da obra. Receba um
+    pedido e clique em **Lançar a nota e o boleto agora**.
+    - *Tem de acontecer:* a tela de Lançar abre com credor, valor, rateio por
+      obra e parcelas já preenchidos. *Confira os valores contra a nota.*
+    - Depois de enviar: em Acompanhar compras o pedido passa a "Entregue, a
+      pagar" com o número da conta, e o valor some da Projeção.
+15j. Fornecedor com **WhatsApp** marcado como canal: cobre a cotação dele.
+    - *Tem de acontecer:* o recado diz "também por WhatsApp". **Teste primeiro
+      com um número seu no cadastro de um fornecedor de teste.**
+
+---
+
 ## 5. O banco de preços (10 minutos)
 
 **Suprimentos › Banco de preços.**

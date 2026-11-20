@@ -3209,3 +3209,16 @@ todas as desta seção.
 
 **Ainda NÃO responde:** *"vai dar tempo de comprar isto?"* — falta o prazo de
 entrega típico por tipo de insumo, que o sistema não tem.
+
+**Acrescentadas em 20/11/2026 (3ª rodada):**
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Esse pedido já tem conta a pagar lançada? Qual? | `acompanhamento.painel` → `pagamento.titulos` | agora enxerga o título lançado a partir do recebimento (`pedido_titulos`), além do que veio pela nota vinculada |
+| Quanto falta lançar deste pedido? | `lancamento.preparar` → `valor` | é o valor do que CHEGOU e ainda não virou conta — não o saldo do pedido |
+| De qual pedido de compra é esta conta a pagar? | `pedido_titulos` | só para título lançado pelo caminho do recebimento |
+| O que tem para chegar na minha obra? E o que ainda está em cotação? | `recebimento.a_receber` + `acompanhamento.planejamento` | muda conforme quem pergunta |
+| Para quem a cobrança da cotação foi mandada, e por qual canal? | retorno de `cobranca.cobrar` (`canais`) | ⚠ o WhatsApp NÃO fica registrado em `envios_email`; só o e-mail guarda o texto |
+
+**Ainda NÃO responde:** *"quais propostas chegaram e ninguém leu?"* — o sistema
+não lê a caixa de e-mail; a proposta só existe para ele depois de jogada no mapa.

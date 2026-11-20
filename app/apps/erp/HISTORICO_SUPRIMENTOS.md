@@ -44,36 +44,140 @@ publicação) e mexe em arquivos compartilhados: `routes.py`,
 `core/auth/permissoes.py`, `core/auth/secoes.py`, `db/models/cadastros.py`,
 `core/manutencao/limpeza.py`.
 
-**Aprovado por ele e AINDA NÃO FEITO** ("as melhorias acho que podemos
-implementar"), em ordem sugerida:
+**Traz também a migração 121** (`pedido_titulos`) — as duas, 120 e 121, no
+mesmo aperto do botão. E, desde a 3ª rodada, mexe em arquivos de OUTRAS áreas:
+`templates/erp_lancar.html` e a rota `api_criar_titulo` (Financeiro),
+`core/portal.py` (portal), `static/erp.css`.
+
+**Aprovado por ele e AINDA NÃO FEITO**, em ordem sugerida:
 
 1. **Aviso de preço fora da curva** no mapa. Cuidado: o preço digitado no mapa
    já entra no banco de preços como COTADO — a referência tem de ser o último
    COMPRADO de ANTES desta cotação, senão o preço se compara com ele mesmo.
 2. **Melhor fornecedor por categoria** (hoje só por insumo).
 3. **Correção pela inflação (INCC)** ao comparar preço antigo com novo.
-4. **Cobrança ao fornecedor por WhatsApp** — encosta na área da Mensageria.
-5. **Fila única de propostas para ler** — ele não tinha entendido o nome; foi
-   explicada em 20/11 e espera o "sim" dele.
 
-**Proposto e esperando a resposta dele:**
+**Falta, e ele ainda não pediu com todas as letras:**
 
-- **Pedido de compra em PDF** (logo, tabela, assinatura do comprador), no lugar
-  do texto no corpo do e-mail. O modelo dele está descrito em
-  `CADEIA_DE_COMPRAS.md`.
 - **Tela do pedido direto, sem cotação** — a regra existe
   (`pedido.fechar_direto`), a tela não.
-- **Anexar a nota na hora do recebimento** e ela já nascer vinculada ao pedido.
-- **Avisar o coordenador por Telegram** quando chega incompleto ou a entrega atrasa.
+- **Pedir material pelo portal** — o portal recebe e acompanha; pedir ainda é
+  pela tela de Solicitações.
+- **A imagem da assinatura do comprador** no PDF do pedido (hoje sai nome,
+  e-mail e telefone de quem manda).
+- **Avisar o coordenador por Telegram** quando chega incompleto ou atrasa.
+- **Ler a caixa de e-mail sozinho** (as propostas hoje são JOGADAS no mapa;
+  ninguém lê a caixa). É o item 2 de `ENTRADAS.md`.
+- **Anexar a nota já no recebimento**: hoje a nota e o boleto são jogados na
+  tela de Lançar, um clique depois.
+- `exportarMapa` em `erp_suprimentos_cotacoes.html` ficou sem uso (o PDF do
+  mapa passou a ser feito no servidor) — pode sair.
 
-**Perguntas abertas com ele:** (a) o parceiro de fora e o perfil de consulta
-devem ver "Acompanhar compras" e a "Projeção"? Hoje veem, porque as duas usam
-`ver_suprimentos`, como a tela de Compras. (b) O histórico de preços da
-planilha já foi importado? (c) Alguém já usa o módulo de verdade?
+**Perguntas abertas com ele:** (a) o histórico de preços da planilha já foi
+importado? (b) alguém já usa o módulo de verdade? (c) a obra deve lançar a nota
+pelo celular numa tela enxuta, ou a tela de Lançar do ERP serve?
+
+**Decidido por ele em 20/11 (não perguntar de novo):** parceiro de fora e
+perfil de consulta PODEM ver Painel, Acompanhar e Projeção ("ok, pode ver
+essas telas"); o pedido vai em PDF por e-mail; cobrança por WhatsApp para quem
+tem WhatsApp como canal no cadastro; a lentidão era para consertar.
 
 ---
 
 ## Decisões desta área
+
+### ⚑ 20/11/2026 (3ª rodada) — O FINANCEIRO NASCE DO RECEBIMENTO, O PORTAL RECEBE, O MAPA VIRA PLANILHA
+
+Ele leu a primeira entrega e corrigiu o rumo em sete pontos. Os três que mudam
+o desenho:
+
+**1. "EU QUERO GERAR O FINANCEIRO A PARTIR DO RECEBIMENTO."** Eu havia escrito
+como "ponto fraco" que o pagamento só era visto se a nota fosse vinculada ao
+pedido na tela de Notas. Resposta dele: *"na verdade, eu quero gerar o
+financeiro a partir do recebimento, como eu já falei previamente, que
+atualmente é assim que funciona. A pessoa vai receber o pedido e lança nota,
+lança boleto, lança tudo e gera a obrigação financeira. Ou confirma uma
+previsão que já existe."*
+
+Como ficou (`core/suprimentos/lancamento.py`, migração 121):
+
+- depois de receber, a obra clica em "Lançar a nota e o boleto" e cai na tela
+  de **Lançar** com `?pedido_compra=N&recebimento=M`. A tela abre com credor,
+  valor DO QUE CHEGOU (não do pedido inteiro), rateio por obra com a conta do
+  plano de cada insumo, e as parcelas da previsão;
+- o título nasce em `titulos.service.criar_titulo`, pelo caminho de sempre —
+  **este módulo não cria título**. Depois de criado, `vincular` grava
+  `pedido_titulos` e marca as previsões cobertas (`titulo_id`, que existia e
+  ninguém preenchia). É a "previsão que já existe" sendo confirmada;
+- o painel e a projeção passaram a enxergar esse título direto. Lançado assim,
+  conta também como "tem nota" — a nota é jogada na própria tela de Lançar.
+
+⚠️ **Decisão minha, dita a ele:** não fiz uma tela de lançamento própria do
+suprimento. Duas telas de lançar divergiriam nas críticas fiscais e de
+duplicidade, e `SUPRIMENTOS.md` §8.2 já dizia para não contornar o financeiro
+por dentro. O custo: a obra sai do portal (celular) e cai na tela de Lançar do
+ERP, que é de computador. Se isso incomodar, o caminho é uma tela enxuta de
+lançar que chame as MESMAS rotas — não uma regra nova.
+
+**2. "O RECEBIMENTO VAI SER PRINCIPALMENTE PELO PORTAL."** *"O pessoal
+administrativo de obra tem uma visão mais limitada do sistema. Semelhante ao
+que a gente faz com o DP."* A área "Material da obra" do portal abriu
+(`/erp/portal/material`, `erp_portal_material.html`), com três abas: para
+receber, em andamento (o que ainda está em cotação ou autorização — só
+acompanhar) e falta a nota. Usa as MESMAS rotas de Suprimentos › Receber
+material: duas portas, uma regra. A frase da área no portal NÃO promete "pedir
+material", porque isso ainda não existe lá.
+
+**3. O MAPA.** Três queixas e um pedido:
+
+- *"o modal se torna pequeno (…) tem que ter um modal que expanda na tela"* —
+  botão **Tela cheia** no mapa; os diálogos da tela (relatórios, fechar
+  pedido) passaram a ocupar quase a tela inteira (`dialog.largo`);
+- *"é uma planilha que a gente consegue visualizar bastante informação"* — o
+  mapa foi refeito no formato do relatório que ele mandou (9228): condições de
+  cada fornecedor em LINHAS, unitário e subtotal lado a lado, Nº SS e número
+  do item, colunas da esquerda presas na rolagem, e no rodapé melhor
+  fornecedor e melhor compra, sem e com frete;
+- *"eu jogo o arquivo, aí o sistema faz a leitura e tenta preencher o mapa"* —
+  já existia "ler proposta" por coluna; agora há uma área no mapa onde se joga
+  o arquivo (vários de uma vez) e o sistema **descobre de quem é** pelo CNPJ
+  (matriz e filial contam) ou pelo nome. Não reconheceu, PERGUNTA — não chuta;
+- *"quero ver como fica o mapa para a gestão"* — o "Mapa em PDF" era a
+  exportação genérica (só preço unitário). Virou `mapa_pdf.py`, no servidor:
+  o mapa no formato da planilha + os quatro resumos + linha de aprovação.
+
+**Defeito achado e consertado:** confirmar as condições lidas de uma proposta
+recarregava o mapa e APAGAVA os preços que a IA tinha acabado de preencher e
+ainda não estavam salvos (`recarregarMantendoDigitado`).
+
+**Os outros quatro pontos:**
+
+- **Pedido em PDF** (`pedido_pdf.py`): anexo ao e-mail; o texto continua no
+  corpo. Um bloco por local de entrega com subtotal, parcelas com data e
+  valor, instruções da nota. Falha ao gerar o PDF não segura o envio.
+- **Cobrança por WhatsApp** (`cobranca.telefones_de_whatsapp`): só para
+  fornecedor com WHATSAPP em `canais_cotacao`; número do contato escolhido no
+  disparo, senão o do fornecedor. O e-mail continua saindo junto.
+  ⚠️ Usa `notificar(canais=("whatsapp",))` SEM `finalidade` — não passa pela
+  política da tela Mensagens. Se a Mensageria quiser governar isso, é criar a
+  finalidade lá. ⚠️ E a cotação ainda exige a conta de e-mail da empresa
+  configurada mesmo para quem só tem WhatsApp.
+- **Lentidão**: `pedido.listar` caiu de 2 leituras da tabela inteira POR
+  PEDIDO para 3 consultas no total; `montar_mapa`, envio, recebimento e
+  proposta ganharam `.where`. O `if` em Python ficou ao lado, de propósito: a
+  sessão dublada dos testes ignora `WHERE`. Sobram dezenas de leituras de
+  tabela inteira em cadastro/planejamento/cobrança/desempenho — são de tabela
+  pequena ou de tela pouco aberta; não foram tocadas.
+- **"As propostas que chegaram" — ele perguntou se era o e-mail.** Não é:
+  ninguém lê a caixa. A "fila única" que propus perdeu o sentido com o
+  arquivo jogado no mapa, e saiu da lista.
+
+**Conferido:** 55 testes em `tests/test_suprimentos_ciclo_banco.py`; o caminho
+portal → receber → Lançar pré-preenchido percorrido num navegador em tamanho
+de celular; o mapa em tela cheia e os dois PDFs abertos e lidos.
+**Não conferido:** leitura de proposta de verdade pela IA (não há chave aqui —
+o reconhecimento do fornecedor foi testado com a leitura simulada); envio real
+de e-mail e de WhatsApp.
 
 ### ⚑ 20/11/2026 (2ª rodada) — O PAINEL DO COORDENADOR E O REGISTRO COMPLETO DOS PEDIDOS
 

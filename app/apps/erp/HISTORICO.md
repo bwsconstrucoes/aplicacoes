@@ -40,6 +40,22 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 20/11/2026 (noite) — SUPRIMENTOS MEXEU NO FINANCEIRO E NO PORTAL (registro entre áreas)
+
+Pedido do dono: a conta a pagar da compra nasce do RECEBIMENTO. Para isso:
+
+- **`templates/erp_lancar.html`** ganhou `?pedido_compra=N&recebimento=M`: a
+  tela abre pré-preenchida pelo pedido (`preencherDoPedido`). Sem o parâmetro,
+  nada muda. Com ele, a leitura do documento não sobrescreve o rateio por obra.
+- **`api_criar_titulo`** (routes.py): se o corpo traz `pedido_compra_id`, depois
+  de `criar_titulo` chama `suprimentos.lancamento.vincular` na MESMA transação.
+- **Migração 121** — tabela `pedido_titulos` (título × pedido de compra).
+- **`core/portal.py`**: a área "suprimentos" abriu como tela
+  (`/erp/portal/material`), exigindo `receber_material`.
+- **`static/erp.css`**: bloco novo no fim (mapa em planilha, `dialog.largo`).
+
+Detalhe e motivos em `HISTORICO_SUPRIMENTOS.md`, 3ª rodada.
+
 ### ⚑ 20/11/2026 — nota para as OUTRAS ÁREAS, vinda de Suprimentos (registro entre áreas)
 
 A **migração 120** (`pedido_entregas` + índices) é de Suprimentos, mas cria um
