@@ -75,6 +75,54 @@ planilha já foi importado? (c) Alguém já usa o módulo de verdade?
 
 ## Decisões desta área
 
+### ⚑ 20/11/2026 (2ª rodada) — O PAINEL DO COORDENADOR E O REGISTRO COMPLETO DOS PEDIDOS
+
+Depois de ver a primeira entrega, ele pediu o que tinha "no método antigo":
+
+> *"Uma tela onde eu listo todos os registros dos pedidos fechados (…) o
+> status, se já foi entregue, se já tem lançamento financeiro, se já tem nota
+> fiscal, se já foi pago, previsão de entrega — tudo isso pesquisável.
+> Lembrando que a gente sempre está usando o sidebar de forma completa (…)
+> busca por fornecedor, por tipo de insumo, por obra. Tem que ter um painel do
+> coordenador, para ele bater o olho e compreender a coisa (…) o que é
+> prioritário, o que não é, o que está atrasando, o que atrasou, o que deveria
+> ter chegado e não chegou."*
+
+**REGRA QUE FICA, e vale para toda tela de lista do ERP:** a barra lateral é
+COMPLETA — um filtro para cada pergunta que a pessoa faz, com a contagem do
+que sobraria em cada opção. Eu tinha entregue "Acompanhar compras" com dois
+filtros e ele notou na hora.
+
+**Não nasceu tela nova de pedidos: "Acompanhar compras" VIROU o registro.**
+Ganhou filtros de entrega, nota fiscal, lançamento financeiro, pagamento, obra,
+tipo de insumo, fornecedor e período da previsão; a busca acha o pedido por
+qualquer material comprado; a linha aberta mostra todos os itens e leva ao
+pedido e à cotação; e "incluir fechados" + "incluir recusados e cancelados"
+fazem dela o registro de tudo.
+
+**Tela nova, e é a primeira aba: Suprimentos › Painel**
+(`acompanhamento.planejamento`). A linha é o ITEM que a obra pediu — é ele que
+tem a data em que a obra precisa, e existe antes de haver cotação. Compara
+três datas (precisa até × previsto pelo fornecedor × hoje) e classifica:
+já deveria ter chegado · fornecedor estourou a data dele · vai chegar depois
+do que a obra precisa · em risco · no prazo · sem data. **A lista vem
+ordenada pelo pior prazo e, dentro dele, pela prioridade.** Os quadros de
+baixo são as compras fechadas e levam ao registro já filtrado.
+
+⚠️ **"Baseado em tempo de entrega" — ele perguntou se temos, e NÃO TEMOS.** A
+tabela de prazos por insumo da planilha não foi migrada (decisão dele de
+04/09). "Em risco" usa régua fixa: faltam 7 dias ou menos e não há pedido
+autorizado (`FOLGA_DIAS`). O caminho certo, quando houver uso: medir o prazo
+real de cada categoria pelos próprios pedidos (autorização → recebimento).
+
+**Defeito achado de passagem e consertado:** o contador "Prazo estourado" da
+tela de Solicitações contava material já recebido ou cancelado — olhava só a
+data. Número vermelho que nunca zera ensina a ignorar o vermelho.
+
+**Sobreposição que fica, dita:** a tela de Solicitações continua existindo e
+é onde se TRABALHA o item (corrigir, selecionar para cotar); o Painel é onde
+se ENXERGA a fila inteira até a chegada. As duas listam itens.
+
 ### ⚑ 20/11/2026 — A CADEIA REVISADA DE PONTA A PONTA: três quebras, duas visões
 
 **O pedido dele**, depois de mandar o modelo do mapa (nº 9228) e o do pedido

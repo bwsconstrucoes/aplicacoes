@@ -46,7 +46,9 @@ from sqlalchemy.orm import Session
 
 from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
 from app.apps.erp.db.models.cadastros import (
-    Fornecedor, Insumo, Obra, PedidoCompra, PedidoEntrega, PedidoItem,
+    Cotacao, CotacaoItem, Fornecedor, Insumo, InsumoCategoria, Obra, PedidoCompra,
+    PedidoEntrega, PedidoItem, PedidoItemReserva, StatusCotacao,
+    StatusItemSuprimento,
     PrevisaoPagamento, Recebimento, RecebimentoItem, StatusPedidoCompra,
     SuprimentoItem, SuprimentoSolicitacao, Usuario,
 )
@@ -70,6 +72,9 @@ CICLO = {
     "ENTREGUE_SEM_NOTA":      ("Entregue, falta lançar a nota", "obra"),
     "ENTREGUE_A_PAGAR":       ("Entregue, a pagar", "financeiro"),
     "FECHADO":                ("Ciclo fechado", None),
+    # Recusado ou cancelado: não é compra. Só aparece quando alguém pede para
+    # ver TODOS os registros — o histórico não pode sumir.
+    "SEM_EFEITO":             ("Recusado ou cancelado", None),
 }
 ORDEM_DO_CICLO = list(CICLO)
 
@@ -139,6 +144,7 @@ def carregar(s: Session, pedidos: list[PedidoCompra]) -> dict[str, Any]:
             .group_by(RecebimentoItem.pedido_item_id)).all():
         recebido_por_linha[linha_id] = _d(soma)
 
+    categorias = {c.id: c.nome for c in s.scalars(select(InsumoCategoria)).all()}
     for linha, sup, insumo, obra, sol in s.execute(
             select(PedidoItem, SuprimentoItem, Insumo, Obra, SuprimentoSolicitacao)
             .join(SuprimentoItem, SuprimentoItem.id == PedidoItem.suprimento_item_id)
@@ -154,6 +160,8 @@ def carregar(s: Session, pedidos: list[PedidoCompra]) -> dict[str, Any]:
         itens[linha.pedido_id].append({
             "pedido_item_id": linha.id, "numero": linha.numero,
             "insumo": insumo.descricao, "especificacao": sup.especificacao or "",
+            "categoria_id": insumo.categoria_insumo_id,
+            "categoria": categorias.get(insumo.categoria_insumo_id, "Sem categoria"),
             "unidade": sup.unidade, "obra_id": obra.id, "obra": obra.codigo,
             "solicitacao": sol.numero, "solicitacao_previsao": sol.previsao_entrega,
             "quantidade": quantidade, "recebido": recebido,
@@ -199,7 +207,11 @@ def carregar(s: Session, pedidos: list[PedidoCompra]) -> dict[str, Any]:
             PedidoEntrega.pedido_id.in_(ids))).all():
         desvios[desvio.pedido_id].append(desvio)
 
+    cotacoes = {c.id: c.numero for c in s.scalars(select(Cotacao).where(
+        Cotacao.id.in_({p.cotacao_id for p in pedidos if p.cotacao_id} or {0}))).all()}
+
     return {"itens": itens, "chegadas": chegadas, "previsoes": previsoes,
+            "cotacoes": cotacoes,
             "notas": notas, "titulos_por_nota": titulos_por_nota,
             "parcelas": parcelas, "fornecedores": fornecedores,
             "desvios": desvios}
@@ -268,7 +280,10 @@ def retrato(pedido: PedidoCompra, base: dict[str, Any], hoje: date) -> dict[str,
         dias_sem_nota = max((hoje - referencia).days, 0)
 
     autorizado = pedido.status is StatusPedidoCompra.AUTORIZADO
-    if not autorizado:
+    if pedido.status in (StatusPedidoCompra.RECUSADO, StatusPedidoCompra.CANCELADO):
+        ciclo = "SEM_EFEITO"
+        atraso, sem_nota, dias_sem_nota = 0, _ZERO, 0
+    elif not autorizado:
         ciclo = "AGUARDANDO_AUTORIZACAO"
     elif not entregue:
         ciclo = ("ENTREGA_ATRASADA" if atraso else
@@ -281,6 +296,8 @@ def retrato(pedido: PedidoCompra, base: dict[str, Any], hoje: date) -> dict[str,
         ciclo = "FECHADO"
 
     alertas = []
+    if ciclo == "SEM_EFEITO":
+        com_saldo = []
     if atraso:
         alertas.append({"tipo": "ENTREGA_ATRASADA", "grave": atraso > 7,
                         "texto": f"Entrega prevista para "
@@ -323,7 +340,22 @@ def retrato(pedido: PedidoCompra, base: dict[str, Any], hoje: date) -> dict[str,
         "fornecedor_id": pedido.fornecedor_id,
         "fornecedor": base["fornecedores"].get(pedido.fornecedor_id, ""),
         "obras": obras, "obra_ids": sorted({i["obra_id"] for i in itens}),
-        "cotacao_id": pedido.cotacao_id, "antecipado": bool(pedido.antecipado),
+        "cotacao_id": pedido.cotacao_id,
+        "cotacao": base.get("cotacoes", {}).get(pedido.cotacao_id),
+        "motivo": pedido.motivo,
+        "antecipado": bool(pedido.antecipado),
+        "categoria_ids": sorted({i["categoria_id"] for i in itens if i["categoria_id"]}),
+        "categorias": sorted({i["categoria"] for i in itens}),
+        # Todos os itens, para a busca achar o pedido pelo material comprado —
+        # e não só pelos que estão pendentes.
+        "itens": [{"insumo": i["insumo"], "especificacao": i["especificacao"],
+                   "unidade": i["unidade"], "obra": i["obra"],
+                   "solicitacao": i["solicitacao"],
+                   "pedido": float(i["quantidade"]),
+                   "recebido": float(i["recebido"]),
+                   "saldo": float(i["saldo"]),
+                   "preco_unitario": float(i["preco_unitario"]),
+                   "valor": float(i["valor"])} for i in itens],
         "fechado_dia": pedido.criado_em.date().isoformat() if pedido.criado_em else None,
         "autorizado_dia": (pedido.autorizado_em.date().isoformat()
                           if pedido.autorizado_em else None),
@@ -370,15 +402,19 @@ def _br(valor: Decimal) -> str:
 
 
 def painel(s: Session, usuario: Optional[Usuario] = None, *,
-           incluir_fechados: bool = False, hoje: Optional[date] = None) -> dict[str, Any]:
+           incluir_fechados: bool = False, incluir_sem_efeito: bool = False,
+           hoje: Optional[date] = None) -> dict[str, Any]:
     """A tela inteira: uma linha por pedido de pé, e o resumo por situação.
 
     Ciclo fechado fica de fora por padrão — é o que já não pede ação de
     ninguém. Quem quiser conferir o passado marca "incluir fechados".
     """
     hoje = hoje or date.today()
-    pedidos = pedidos_no_escopo(s, usuario, (StatusPedidoCompra.AUTORIZADO,
-                                             StatusPedidoCompra.AGUARDANDO_AUTORIZACAO))
+    situacoes = [StatusPedidoCompra.AUTORIZADO,
+                 StatusPedidoCompra.AGUARDANDO_AUTORIZACAO]
+    if incluir_sem_efeito:
+        situacoes += [StatusPedidoCompra.RECUSADO, StatusPedidoCompra.CANCELADO]
+    pedidos = pedidos_no_escopo(s, usuario, tuple(situacoes))
     base = carregar(s, pedidos)
     linhas = [retrato(p, base, hoje) for p in pedidos]
 
@@ -390,10 +426,12 @@ def painel(s: Session, usuario: Optional[Usuario] = None, *,
         resumo[linha["ciclo"]]["valor"] = round(
             resumo[linha["ciclo"]]["valor"] + linha["total"], 2)
 
-    abertos = [l for l in linhas if l["ciclo"] != "FECHADO"]
+    abertos = [l for l in linhas if l["ciclo"] not in ("FECHADO", "SEM_EFEITO")]
     return {
         "hoje": hoje.isoformat(),
-        "pedidos": linhas if incluir_fechados else abertos,
+        "pedidos": [l for l in linhas
+                    if (incluir_fechados or l["ciclo"] != "FECHADO")
+                    and (incluir_sem_efeito or l["ciclo"] != "SEM_EFEITO")],
         "resumo": [resumo[c] for c in ORDEM_DO_CICLO],
         "destaques": {
             # Os dois números que respondem aos dois problemas que ele frisou.
@@ -408,3 +446,171 @@ def painel(s: Session, usuario: Optional[Usuario] = None, *,
             "fechados": resumo["FECHADO"]["pedidos"],
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# O PLANEJAMENTO DO COORDENADOR — item a item, do pedido da obra à chegada
+#
+# O dono, em 20/11/2026: "o coordenador precisa entender, de acordo com os
+# pedidos, previsão de entrega, dentro do planejamento do suprimento, como é
+# que está o planejamento dele: o que é prioritário, o que não é (…) o que
+# está atrasando, o que atrasou, o que deveria ter chegado e não chegou."
+#
+# A unidade aqui é o ITEM que a obra pediu, e não o pedido de compra: é o item
+# que tem a data em que a obra PRECISA do material, e ele existe desde antes
+# de haver cotação. Três datas contam a história:
+#
+#   precisa até     a data que a obra informou na solicitação
+#   previsto        a data que o fornecedor deu, no pedido de compra
+#   hoje
+#
+# e a comparação entre elas é a situação do prazo — que é o que ordena a fila.
+#
+# ⚠ O QUE NÃO EXISTE: prazo de entrega típico por insumo. A tabela de prazos
+# da planilha antiga NÃO foi migrada (decisão dele de 04/09/2026), então "vai
+# dar tempo?" antes de haver pedido é respondido por uma régua simples: sem
+# pedido autorizado e faltando `FOLGA_DIAS` ou menos, o item está EM RISCO.
+# ---------------------------------------------------------------------------
+FOLGA_DIAS = 7
+
+PRAZOS = {
+    "ATRASADO":     "Já deveria ter chegado",
+    "FORNECEDOR":   "Fornecedor estourou a data dele",
+    "VAI_ATRASAR":  "Vai chegar depois do que a obra precisa",
+    "EM_RISCO":     "Em risco: prazo curto e ainda sem pedido",
+    "NO_PRAZO":     "No prazo",
+    "SEM_DATA":     "Sem data informada pela obra",
+}
+ORDEM_DOS_PRAZOS = list(PRAZOS)
+
+ETAPAS = {
+    "SEM_COTACAO":  "Sem cotação",
+    "EM_COTACAO":   "Em cotação",
+    "A_AUTORIZAR":  "Pedido aguardando autorização",
+    "A_CAMINHO":    "Comprado, aguardando entrega",
+    "EM_PARTE":     "Chegou em parte",
+}
+ORDEM_DAS_ETAPAS = list(ETAPAS)
+_PESO_PRIORIDADE = {"ALTA": 0, "MEDIA": 1, "NORMAL": 2}
+
+
+def situacao_do_prazo(hoje: date, precisa_ate: Optional[date],
+                      previsto: Optional[date], comprado: bool) -> tuple[str, int, str]:
+    """(chave, dias, frase). `dias` é o tamanho do problema, para ordenar."""
+    if precisa_ate is not None and hoje > precisa_ate:
+        dias = (hoje - precisa_ate).days
+        return "ATRASADO", dias, f"a obra precisava em {precisa_ate:%d/%m} — {dias} dia(s) de atraso"
+    if comprado and previsto is not None and previsto < hoje:
+        dias = (hoje - previsto).days
+        return "FORNECEDOR", dias, f"o fornecedor prometeu para {previsto:%d/%m} — {dias} dia(s) atrás"
+    if precisa_ate is None:
+        return "SEM_DATA", 0, "a obra não informou para quando precisa"
+    if previsto is not None and previsto > precisa_ate:
+        dias = (previsto - precisa_ate).days
+        return "VAI_ATRASAR", dias, (f"previsto para {previsto:%d/%m}, "
+                                     f"{dias} dia(s) depois do que a obra precisa")
+    faltam = (precisa_ate - hoje).days
+    if not comprado and faltam <= FOLGA_DIAS:
+        return "EM_RISCO", FOLGA_DIAS - faltam, (
+            f"faltam {faltam} dia(s) e ainda não há pedido autorizado")
+    return "NO_PRAZO", 0, f"faltam {faltam} dia(s)"
+
+
+def planejamento(s: Session, usuario: Optional[Usuario] = None, *,
+                 hoje: Optional[date] = None) -> dict[str, Any]:
+    """Tudo que a obra pediu e ainda não chegou por inteiro, na ordem em que
+    o coordenador deve olhar. Cinco consultas, com qualquer volume."""
+    hoje = hoje or date.today()
+    encerrados = (StatusItemSuprimento.RECEBIDO, StatusItemSuprimento.CANCELADO,
+                  StatusItemSuprimento.ALMOXARIFADO)
+    stmt = (select(SuprimentoItem, SuprimentoSolicitacao, Insumo, Obra)
+            .join(SuprimentoSolicitacao,
+                  SuprimentoSolicitacao.id == SuprimentoItem.solicitacao_id)
+            .join(Insumo, Insumo.id == SuprimentoItem.insumo_id)
+            .join(Obra, Obra.id == SuprimentoItem.obra_id)
+            .where(SuprimentoItem.status.notin_(encerrados)))
+    permitidas = obras_de_registro_sem_autor(s, usuario) if usuario is not None else None
+    if permitidas is not None:
+        stmt = stmt.where(SuprimentoItem.obra_id.in_(permitidas or [0]))
+    linhas = s.execute(stmt).all()
+    ids = [sup.id for sup, _, _, _ in linhas] or [0]
+
+    categorias = {c.id: c.nome for c in s.scalars(select(InsumoCategoria)).all()}
+    pedido_de: dict[int, PedidoCompra] = {}
+    for item_id, pedido in s.execute(
+            select(PedidoItemReserva.suprimento_item_id, PedidoCompra)
+            .join(PedidoCompra, PedidoCompra.id == PedidoItemReserva.pedido_id)
+            .where(PedidoItemReserva.suprimento_item_id.in_(ids))).all():
+        pedido_de[item_id] = pedido
+    cotacao_de: dict[int, Cotacao] = {}
+    for item_id, cotacao in s.execute(
+            select(CotacaoItem.suprimento_item_id, Cotacao)
+            .join(Cotacao, Cotacao.id == CotacaoItem.cotacao_id)
+            .where(CotacaoItem.suprimento_item_id.in_(ids),
+                   Cotacao.status == StatusCotacao.ABERTA)
+            .order_by(Cotacao.id)).all():
+        cotacao_de[item_id] = cotacao
+    fornecedores = {f.id: f.razao_social for f in s.scalars(select(Fornecedor).where(
+        Fornecedor.id.in_({p.fornecedor_id for p in pedido_de.values()} or {0}))).all()}
+
+    saida = []
+    for sup, sol, insumo, obra in linhas:
+        pedido = pedido_de.get(sup.id)
+        cotacao = cotacao_de.get(sup.id)
+        comprado = (pedido is not None
+                    and pedido.status is StatusPedidoCompra.AUTORIZADO)
+        recebido = _d(sup.quantidade_recebida)
+        if comprado:
+            etapa = "EM_PARTE" if recebido > 0 else "A_CAMINHO"
+        elif pedido is not None:
+            etapa = "A_AUTORIZAR"
+        elif cotacao is not None:
+            etapa = "EM_COTACAO"
+        else:
+            etapa = "SEM_COTACAO"
+        previsto = pedido.previsao_entrega if pedido is not None else None
+        prazo, dias, frase = situacao_do_prazo(hoje, sol.previsao_entrega,
+                                               previsto, comprado)
+        prioridade = sol.prioridade.value if sol.prioridade else "NORMAL"
+        saida.append({
+            "id": sup.id, "insumo": insumo.descricao,
+            "especificacao": sup.especificacao or "",
+            "categoria_id": insumo.categoria_insumo_id,
+            "categoria": categorias.get(insumo.categoria_insumo_id, "Sem categoria"),
+            "quantidade": float(sup.quantidade), "recebido": float(recebido),
+            "saldo": float(_d(sup.quantidade) - recebido), "unidade": sup.unidade,
+            "obra_id": obra.id, "obra": obra.codigo,
+            "solicitacao_id": sol.id, "solicitacao": sol.numero,
+            "titulo": sol.titulo, "prioridade": prioridade,
+            "pedido_em": sol.criado_em.date().isoformat() if sol.criado_em else None,
+            "precisa_ate": (sol.previsao_entrega.isoformat()
+                            if sol.previsao_entrega else None),
+            "previsto": previsto.isoformat() if previsto else None,
+            "etapa": etapa, "etapa_rotulo": ETAPAS[etapa],
+            "situacao": sup.status.value,
+            "prazo": prazo, "prazo_rotulo": PRAZOS[prazo], "prazo_dias": dias,
+            "prazo_frase": frase,
+            "cotacao_id": cotacao.id if cotacao else None,
+            "cotacao": cotacao.numero if cotacao else None,
+            "pedido_id": pedido.id if pedido else None,
+            "pedido": pedido.numero if pedido else None,
+            "fornecedor": (fornecedores.get(pedido.fornecedor_id, "")
+                           if pedido else ""),
+        })
+
+    # A ORDEM É A RESPOSTA: primeiro o pior prazo; dentro dele, a prioridade
+    # que a obra deu; depois o maior atraso; depois a data mais próxima.
+    saida.sort(key=lambda i: (ORDEM_DOS_PRAZOS.index(i["prazo"]),
+                              _PESO_PRIORIDADE.get(i["prioridade"], 2),
+                              -i["prazo_dias"], i["precisa_ate"] or "9999"))
+
+    def contar(chave: str, ordem: list[str], rotulos: dict[str, str]):
+        return [{"chave": c, "rotulo": rotulos[c],
+                 "itens": sum(1 for i in saida if i[chave] == c),
+                 "alta": sum(1 for i in saida
+                             if i[chave] == c and i["prioridade"] == "ALTA")}
+                for c in ordem]
+
+    return {"hoje": hoje.isoformat(), "folga_dias": FOLGA_DIAS, "itens": saida,
+            "prazos": contar("prazo", ORDEM_DOS_PRAZOS, PRAZOS),
+            "etapas": contar("etapa", ORDEM_DAS_ETAPAS, ETAPAS)}

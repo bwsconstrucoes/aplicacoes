@@ -47,7 +47,9 @@ flowchart TD
 | 11 | Conta a pagar | obra lança, financeiro analisa | Financeiro › Lançar | `core/titulos/` | pronto, manual |
 | 12 | Pagamento e fechamento | financeiro / coordenador | Acompanhar compras | `acompanhamento.py` | **feito em 20/11** |
 
-**As visões cruzadas:** Acompanhar compras (`acompanhamento.py`), Projeção de
+**As visões cruzadas:** Painel (`acompanhamento.planejamento` — o item da obra
+e o prazo dele), Acompanhar compras (`acompanhamento.painel` — o registro de
+todos os pedidos), Projeção de
 pagamentos (`projecao.py`), Compras (`compras.py`), Banco de preços (`precos.py`).
 
 ## Onde cada informação fica guardada

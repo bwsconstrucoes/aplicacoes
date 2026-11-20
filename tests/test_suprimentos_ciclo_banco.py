@@ -510,3 +510,118 @@ def test_quem_recebeu_ve_que_ainda_deve_a_nota(base):
     assert [(n["numero"], n["dias"]) for n in d["sem_nota"]] == [(pedido.numero, 5)]
     _nota(base, pedido, "1000.00")
     assert svc_rec.a_receber(base["s"], da_a)["sem_nota"] == []
+
+
+# ---------------------------------------------------------------------------
+# O planejamento do coordenador: a ordem é a resposta
+# ---------------------------------------------------------------------------
+def _item_solto(base, numero, *, precisa_em, prioridade="NORMAL", descricao=None):
+    """Uma solicitação nova, de um item só, ainda sem cotação."""
+    from app.apps.erp.db.models.cadastros import PrioridadeSolicitacao
+    s = base["s"]
+    sol = SuprimentoSolicitacao(
+        numero=f"SS-PLAN-{numero}", titulo=descricao or f"plano {numero}",
+        solicitante_id=base["u"].id, prioridade=PrioridadeSolicitacao(prioridade),
+        previsao_entrega=(None if precisa_em is None
+                          else hoje() + timedelta(days=precisa_em)))
+    s.add(sol); s.flush()
+    insumo = s.scalars(select(Insumo).order_by(Insumo.id)).first()
+    item = SuprimentoItem(solicitacao_id=sol.id, numero=1, insumo_id=insumo.id,
+                          quantidade=Decimal("3"), unidade="M2",
+                          obra_id=base["obra_a"].id)
+    s.add(item); s.flush()
+    return item
+
+
+def _do_plano(base, item, **kw):
+    d = svc_acomp.planejamento(base["s"], base["u"], **kw)
+    return next(i for i in d["itens"] if i["id"] == item.id), d
+
+
+def test_a_regua_do_prazo_em_cada_situacao():
+    h = hoje()
+    f = svc_acomp.situacao_do_prazo
+    assert f(h, h - timedelta(days=4), None, False)[:2] == ("ATRASADO", 4)
+    # o fornecedor estourou a data DELE, mas a obra ainda não precisava
+    assert f(h, h + timedelta(days=9), h - timedelta(days=2), True)[:2] == ("FORNECEDOR", 2)
+    assert f(h, h + timedelta(days=5), h + timedelta(days=8), True)[:2] == ("VAI_ATRASAR", 3)
+    assert f(h, h + timedelta(days=3), None, False)[0] == "EM_RISCO"
+    assert f(h, h + timedelta(days=3), h + timedelta(days=2), True)[0] == "NO_PRAZO"
+    assert f(h, h + timedelta(days=30), None, False)[0] == "NO_PRAZO"
+    assert f(h, None, None, False)[0] == "SEM_DATA"
+
+
+def test_o_item_anda_pelas_etapas_e_some_quando_chega(base):
+    item = base["item_a"]
+    linha, _ = _do_plano(base, item)
+    assert linha["etapa"] == "EM_COTACAO" and linha["cotacao"] == base["cot"].numero
+
+    pedido = _fechar(base, linhas=[base["linha_a"]], autorizar=False)
+    linha, _ = _do_plano(base, item)
+    assert linha["etapa"] == "A_AUTORIZAR" and linha["pedido"] == pedido.numero
+
+    svc_ped.autorizar(base["s"], pedido.id, base["u"]); base["s"].flush()
+    linha, _ = _do_plano(base, item)
+    assert linha["etapa"] == "A_CAMINHO"
+    assert linha["fornecedor"] == "GRANITOS DO TESTE LTDA"
+    assert linha["previsto"] == (hoje() + timedelta(days=10)).isoformat()
+
+    _receber(base, pedido, [(item, 4)])
+    linha, _ = _do_plano(base, item)
+    assert linha["etapa"] == "EM_PARTE" and linha["saldo"] == 6.0
+
+    _receber(base, pedido, [(item, 6)])
+    ids = [i["id"] for i in svc_acomp.planejamento(base["s"], base["u"])["itens"]]
+    assert item.id not in ids          # chegou tudo: sai da fila do coordenador
+
+
+def test_a_fila_vem_ordenada_pelo_pior_prazo_e_depois_pela_prioridade(base):
+    no_prazo = _item_solto(base, 1, precisa_em=40)
+    risco = _item_solto(base, 2, precisa_em=3)
+    atrasado_normal = _item_solto(base, 3, precisa_em=-2)
+    atrasado_alta = _item_solto(base, 4, precisa_em=-1, prioridade="ALTA")
+    sem_data = _item_solto(base, 5, precisa_em=None)
+
+    d = svc_acomp.planejamento(base["s"], base["u"])
+    ordem = [i["id"] for i in d["itens"]]
+    posicao = {x.id: ordem.index(x.id) for x in
+               (no_prazo, risco, atrasado_normal, atrasado_alta, sem_data)}
+    # dentro de "atrasado", a prioridade alta passa na frente do atraso maior
+    assert posicao[atrasado_alta.id] < posicao[atrasado_normal.id] < posicao[risco.id] \
+        < posicao[no_prazo.id] < posicao[sem_data.id]
+
+    prazos = {p["chave"]: p for p in d["prazos"]}
+    assert prazos["ATRASADO"]["itens"] == 2 and prazos["ATRASADO"]["alta"] == 1
+    assert prazos["EM_RISCO"]["itens"] == 1 and prazos["SEM_DATA"]["itens"] == 1
+    assert {e["chave"]: e["itens"] for e in d["etapas"]}["SEM_COTACAO"] == 5
+
+
+def test_comprado_com_data_do_fornecedor_depois_do_que_a_obra_precisa(base):
+    """A obra precisa em 20 dias; o fornecedor prometeu para 26."""
+    pedido = _fechar(base, linhas=[base["linha_a"]],
+                     previsao=hoje() + timedelta(days=26))
+    linha, _ = _do_plano(base, base["item_a"])
+    assert pedido.id == linha["pedido_id"]
+    assert linha["prazo"] == "VAI_ATRASAR" and linha["prazo_dias"] == 6
+
+
+def test_o_registro_completo_inclui_recusado_so_quando_pedido(base):
+    pedido = _fechar(base, linhas=[base["linha_a"]], autorizar=False)
+    svc_ped.recusar(base["s"], pedido.id, "preço acima do combinado", base["u"])
+    base["s"].flush()
+    s, u = base["s"], base["u"]
+    assert pedido.id not in [p["id"] for p in svc_acomp.painel(s, u)["pedidos"]]
+    todos = svc_acomp.painel(s, u, incluir_fechados=True, incluir_sem_efeito=True)
+    linha = next(p for p in todos["pedidos"] if p["id"] == pedido.id)
+    assert linha["ciclo"] == "SEM_EFEITO" and linha["alertas"] == []
+    assert linha["motivo"] == "preço acima do combinado"
+
+
+def test_a_linha_do_pedido_traz_cotacao_tipo_de_insumo_e_todos_os_itens(base):
+    pedido = _fechar(base)
+    linha, _ = _linha(base, pedido)
+    assert linha["cotacao"] == base["cot"].numero
+    assert linha["categorias"] == ["Pedras"]
+    assert [i["insumo"] for i in linha["itens"]] == ["Bancada de granito",
+                                                     "Peitoril de granito"]
+    assert linha["itens"][0]["valor"] == 1000.0

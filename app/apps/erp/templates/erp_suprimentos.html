@@ -151,6 +151,15 @@ const PODE_PEDIR_INSUMO = {{ 'true' if pode.solicitar_suprimento else 'false' }}
 
 const ROTULO_PRIORIDADE = {ALTA: "Alta", MEDIA: "Média", NORMAL: "Normal"};
 // Situação a partir da qual o item já saiu da fila de cotar.
+// ⚑ "PRAZO ESTOURADO" CONTAVA O QUE JÁ CHEGOU (consertado em 20/11/2026): a
+// conta olhava só a data, e material recebido — ou cancelado — com data
+// passada continuava no número vermelho para sempre. Estourou é: a data que a
+// obra pediu passou E o material ainda não chegou por inteiro.
+const ENCERRADOS = new Set(["RECEBIDO", "CANCELADO", "ALMOXARIFADO"]);
+function estourou(i){
+  return !!i.previsao_entrega && !ENCERRADOS.has(i.status)
+    && i.previsao_entrega < hoje();
+}
 const JA_COTADOS = new Set(["COTACAO", "MAPA", "PEDIDO", "AGUARDANDO_AUTORIZACAO",
                             "AUTORIZADO", "PEDIDO_ENVIADO", "EM_TRANSITO",
                             "RECEBIDO_PARCIAL", "RECEBIDO", "CANCELADO"]);
@@ -237,8 +246,7 @@ function visiveis(){
     if (F.obra.size && !F.obra.has(String(i.obra_id))) return false;
     if (F.categoria.size && !F.categoria.has(String(i.categoria_insumo_id))) return false;
     if (els("f-alta").checked && i.prioridade !== "ALTA") return false;
-    if (els("f-atrasado").checked &&
-        !(i.previsao_entrega && i.previsao_entrega < hoje)) return false;
+    if (els("f-atrasado").checked && !estourou(i)) return false;
     if (els("f-a-cotar").checked && JA_COTADOS.has(i.status)) return false;
     if (b && !`${i.solicitacao} ${i.titulo} ${i.insumo} ${i.especificacao || ""}`
               .toLowerCase().includes(b)) return false;
@@ -293,8 +301,8 @@ function desenhar(){
       <div class="kpi-sub">se atrasar, para a obra</div></button>
     <button class="kpi vermelho ${els("f-atrasado").checked ? "ativo" : ""}" data-pendencia="f-atrasado">
       <div class="kpi-rotulo">Prazo estourado</div>
-      <div class="kpi-valor">${l.filter(i => i.previsao_entrega && i.previsao_entrega < hoje).length}</div>
-      <div class="kpi-sub">previsão de entrega já passou</div></button>
+      <div class="kpi-valor">${l.filter(estourou).length}</div>
+      <div class="kpi-sub">a data passou e o material não chegou</div></button>
     <div class="kpi estatico ciano"><div class="kpi-rotulo">Selecionados</div>
       <div class="kpi-valor">${MARCADOS.size}</div>
       <div class="kpi-sub">entram na próxima cotação</div></div>`;

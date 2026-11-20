@@ -1,0 +1,239 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Painel de suprimentos — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="material, solicitação, pedido, fornecedor…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Como está o prazo</span>
+      <span class="filtro-badge" id="badge-prazo">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-prazo"></div></div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Em que etapa está</span>
+      <span class="filtro-badge" id="badge-etapa">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-etapa"></div></div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Prioridade</span>
+      <span class="filtro-badge" id="badge-prioridade">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-prioridade"></div></div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Obra</span>
+      <span class="filtro-badge" id="badge-obra">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-obra"></div></div>
+  </div>
+  <div class="filtro">
+    <button class="filtro-cab" type="button"><span>Tipo de insumo</span>
+      <span class="filtro-badge" id="badge-categoria">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-categoria"></div></div>
+  </div>
+  <div class="filtro">
+    <button class="filtro-cab" type="button"><span>Fornecedor</span>
+      <span class="filtro-badge" id="badge-fornecedor">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-fornecedor"></div></div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Painel de suprimentos
+  <small>o que a obra pediu e ainda não chegou — na ordem em que precisa ser olhado</small></h2>
+<div id="mensagem"></div>
+
+<h4 style="margin:4px 0 6px">O prazo do que está em aberto</h4>
+<div class="kpis" id="kpis-prazo"></div>
+<h4 style="margin:14px 0 6px">As compras fechadas, do pedido ao pagamento</h4>
+<div class="kpis" id="kpis-compras"></div>
+
+<div class="tabela-wrap" style="margin-top:14px">
+  <div class="tabela-barra">
+    <div class="resumo" id="resumo"></div>
+    <div class="espaco"></div>
+    <span id="exportar"></span>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Material</th><th>Obra</th><th>Prioridade</th>
+      <th>Precisa até</th><th>Previsto</th><th>Etapa</th>
+      <th>Prazo</th><th>Onde está</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+</div>
+<div class="cartao-dica" style="margin-top:10px" id="rodape"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---------------------------------------------------------------------------
+// PAINEL DE SUPRIMENTOS — o planejamento do coordenador (20/11/2026)
+//
+// O dono: "tem que ter um painel do coordenador, para ele poder bater o olho e
+// compreender a coisa (…) o que é prioritário, o que não é, o que está
+// atrasando, o que atrasou, o que deveria ter chegado e não chegou."
+//
+// A LINHA É O ITEM que a obra pediu, não o pedido de compra: é o item que
+// carrega a data em que a obra precisa do material, e ele existe desde antes
+// de haver cotação. A lista já vem ORDENADA pelo servidor — o pior prazo
+// primeiro, e dentro dele a prioridade — porque a ordem é a resposta.
+//
+// Os quadros de baixo são as compras já fechadas e levam para "Acompanhar
+// compras", que é o registro pedido a pedido.
+// ---------------------------------------------------------------------------
+let DADOS = null;
+const F = {prazo: new Set(), etapa: new Set(), prioridade: new Set(),
+           obra: new Set(), categoria: new Set(), fornecedor: new Set()};
+const COR_PRAZO = {ATRASADO: "vermelho", FORNECEDOR: "vermelho", VAI_ATRASAR: "ambar",
+                   EM_RISCO: "ambar", NO_PRAZO: "verde", SEM_DATA: ""};
+const SELO_PRAZO = {ATRASADO: "bloqueado", FORNECEDOR: "bloqueado", VAI_ATRASAR: "aguardando",
+                    EM_RISCO: "aguardando", NO_PRAZO: "aprovado", SEM_DATA: "outro"};
+const NOME_PRIORIDADE = {ALTA: "Alta", MEDIA: "Média", NORMAL: "Normal"};
+const CAMPO = {prazo: i => i.prazo, etapa: i => i.etapa, prioridade: i => i.prioridade,
+               obra: i => i.obra, categoria: i => i.categoria,
+               fornecedor: i => i.fornecedor || "(sem pedido)"};
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregar(){
+  try {
+    DADOS = await api("/erp/api/suprimentos/painel");
+    // Vindo de outro lugar com o filtro no endereço (#atrasado, por exemplo).
+    const q = new URLSearchParams(location.search);
+    if (q.get("prazo")) F.prazo.add(q.get("prazo"));
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function passa(i, menos){
+  for (const chave of Object.keys(F)) {
+    if (chave === menos || !F[chave].size) continue;
+    if (!F[chave].has(CAMPO[chave](i))) return false;
+  }
+  const q = (els("f-busca").value || "").toLowerCase().trim();
+  if (q) {
+    const texto = [i.insumo, i.especificacao, i.solicitacao, i.titulo, i.pedido,
+                   i.cotacao, i.fornecedor, i.obra, i.categoria].join(" ").toLowerCase();
+    if (!q.split(/\s+/).every(t => texto.includes(t))) return false;
+  }
+  return true;
+}
+
+// Cada filtro mostra a contagem do que sobraria SE ele fosse marcado, com os
+// outros filtros já aplicados — é o que deixa escolher sem tentativa e erro.
+function opcoes(chave, rotulo, ordem){
+  const contagem = new Map();
+  DADOS.itens.filter(i => passa(i, chave)).forEach(i => {
+    const v = CAMPO[chave](i); contagem.set(v, (contagem.get(v) || 0) + 1); });
+  F[chave].forEach(v => { if (!contagem.has(v)) contagem.set(v, 0); });
+  const valores = ordem ? ordem.filter(v => contagem.has(v))
+                        : [...contagem.keys()].sort((a, b) => String(a).localeCompare(String(b)));
+  els(`opcoes-${chave}`).innerHTML = valores.map(v => `<label class="opcao">
+      <input type="checkbox" data-f="${chave}" value="${escapar(String(v))}"
+        ${F[chave].has(v) ? "checked" : ""}>
+      <span class="rotulo">${escapar(rotulo ? rotulo(v) : String(v))}</span>
+      <span class="qtd">${contagem.get(v)}</span></label>`).join("")
+    || `<div class="cartao-dica">nada</div>`;
+  els(`badge-${chave}`).textContent = F[chave].size;
+}
+
+function desenhar(){
+  const rotPrazo = Object.fromEntries(DADOS.prazos.map(p => [p.chave, p.rotulo]));
+  const rotEtapa = Object.fromEntries(DADOS.etapas.map(p => [p.chave, p.rotulo]));
+  opcoes("prazo", v => rotPrazo[v], DADOS.prazos.map(p => p.chave));
+  opcoes("etapa", v => rotEtapa[v], DADOS.etapas.map(p => p.chave));
+  opcoes("prioridade", v => NOME_PRIORIDADE[v] || v, ["ALTA", "MEDIA", "NORMAL"]);
+  opcoes("obra"); opcoes("categoria"); opcoes("fornecedor");
+  document.querySelectorAll("[data-f]").forEach(c => c.addEventListener("change", () => {
+    c.checked ? F[c.dataset.f].add(c.value) : F[c.dataset.f].delete(c.value); desenhar(); }));
+
+  els("kpis-prazo").innerHTML = DADOS.prazos.map(p => `
+    <button class="kpi ${COR_PRAZO[p.chave]} ${F.prazo.has(p.chave) ? "ativo" : ""}" data-prazo="${p.chave}">
+      <div class="kpi-rotulo">${escapar(p.rotulo)}</div>
+      <div class="kpi-valor">${p.itens}</div>
+      <div class="kpi-sub">${p.alta ? `<b>${p.alta}</b> de prioridade alta` : "item(ns)"}</div></button>`).join("");
+  document.querySelectorAll("[data-prazo]").forEach(b => b.addEventListener("click", () => {
+    const v = b.dataset.prazo; F.prazo.has(v) ? F.prazo.delete(v) : F.prazo.add(v); desenhar(); }));
+
+  const c = DADOS.compras, d = c.destaques;
+  const de = chave => c.resumo.find(r => r.chave === chave) || {pedidos: 0, valor: 0};
+  const quadro = (cor, rotulo, valor, sub, destino) => `<a class="kpi ${cor}"
+      href="/erp/suprimentos/acompanhar${destino}" style="text-decoration:none; color:inherit">
+      <div class="kpi-rotulo">${rotulo}</div>
+      <div class="kpi-valor" style="font-size:19px; white-space:nowrap">${valor}</div>
+      <div class="kpi-sub">${sub}</div></a>`;
+  els("kpis-compras").innerHTML =
+    quadro("", "Aguardando autorização", de("AGUARDANDO_AUTORIZACAO").pedidos,
+           moeda(de("AGUARDANDO_AUTORIZACAO").valor), "?ciclo=AGUARDANDO_AUTORIZACAO") +
+    quadro("ciano", "Aguardando entrega", de("AGUARDANDO_ENTREGA").pedidos,
+           moeda(de("AGUARDANDO_ENTREGA").valor), "?ciclo=AGUARDANDO_ENTREGA") +
+    quadro("vermelho", "Entrega atrasada", d.atrasados, "pedido(s) com a data vencida", "?so=atraso") +
+    quadro("roxo", "Chegou incompleto", d.itens_pendentes, "item(ns) a resolver com o fornecedor", "?so=pendencia") +
+    quadro("ambar", "Recebido sem nota", moeda(d.recebido_sem_nota),
+           `${d.pedidos_sem_nota} pedido(s) — o financeiro não enxerga`, "?so=sem_nota") +
+    quadro("ciano", "Lançado, a pagar", moeda(d.a_pagar), "já é conta a pagar", "?so=a_pagar") +
+    quadro("verde", "Ciclo fechado", d.fechados, "entregue, com nota e pago", "?fechados=1&ciclo=FECHADO");
+
+  const lista = DADOS.itens.filter(i => passa(i));
+  els("resumo").innerHTML = `<b>${lista.length}</b> item(ns) em aberto
+    de ${DADOS.itens.length} · ordenado pelo pior prazo e pela prioridade`;
+  els("corpo").innerHTML = lista.map(i => `<tr>
+      <td><b>${escapar(i.insumo)}</b>${i.especificacao ? `<br><small>${escapar(i.especificacao)}</small>` : ""}
+        <br><small>${quantidadeBR(i.quantidade)} ${escapar(i.unidade)}${
+          i.recebido > 0 ? ` · chegou ${quantidadeBR(i.recebido)}, falta <b>${quantidadeBR(i.saldo)}</b>` : ""}
+          · ${escapar(i.categoria)}</small></td>
+      <td class="dados" style="font-size:11.5px">${escapar(i.obra)}</td>
+      <td>${i.prioridade === "ALTA" ? `<span class="selo bloqueado">Alta</span>`
+           : i.prioridade === "MEDIA" ? `<span class="selo aguardando">Média</span>`
+           : `<span class="selo outro">Normal</span>`}</td>
+      <td class="dados">${i.precisa_ate ? dataBR(i.precisa_ate) : "—"}</td>
+      <td class="dados">${i.previsto ? dataBR(i.previsto) : "—"}</td>
+      <td>${escapar(i.etapa_rotulo)}</td>
+      <td><span class="selo ${SELO_PRAZO[i.prazo]}">${escapar(i.prazo_rotulo)}</span>
+        <br><small>${escapar(i.prazo_frase)}</small></td>
+      <td style="font-size:12px">
+        <a href="/erp/suprimentos?solicitacao=${encodeURIComponent(i.solicitacao)}">${escapar(i.solicitacao)}</a>
+        <small>${escapar(i.titulo)}</small>
+        ${i.cotacao ? `<br><a href="/erp/suprimentos/cotacoes?cotacao=${i.cotacao_id}">${escapar(i.cotacao)}</a>` : ""}
+        ${i.pedido ? `<br>{% if pode.ver_pedidos_compra %}<a href="/erp/suprimentos/pedidos?pedido=${i.pedido_id}">${escapar(i.pedido)}</a>{% else %}${escapar(i.pedido)}{% endif %}
+          <small>${escapar(i.fornecedor)}</small>` : ""}</td></tr>`).join("")
+    || `<tr><td colspan="8" class="cartao-dica"><b>Nada em aberto com estes filtros.</b>
+        Aqui aparece o que a obra pediu e ainda não chegou por inteiro.</td></tr>`;
+
+  els("rodape").innerHTML = `<b>Como o prazo é lido.</b> "Precisa até" é a data que a
+    obra informou na solicitação; "Previsto" é a data que o fornecedor deu no pedido de
+    compra. <b>Em risco</b> = faltam ${DADOS.folga_dias} dias ou menos e ainda não há
+    pedido autorizado. O sistema ainda não conhece o prazo de entrega típico de cada
+    material — por isso a régua é fixa.`;
+}
+
+els("f-busca").addEventListener("input", () => { clearTimeout(window.__t);
+  window.__t = setTimeout(desenhar, 200); });
+els("btn-limpar").addEventListener("click", () => {
+  Object.values(F).forEach(c => c.clear()); els("f-busca").value = ""; desenhar(); });
+
+carregar();
+
+botoesDeExportar("exportar", () => ({
+  titulo: "Painel de suprimentos — itens em aberto",
+  subtitulo: DADOS ? `${DADOS.itens.filter(i => passa(i)).length} item(ns)` : "",
+  colunas: [
+    {rotulo: "Material"}, {rotulo: "Especificação"}, {rotulo: "Tipo de insumo"},
+    {rotulo: "Qtd", tipo: "numero"}, {rotulo: "Falta", tipo: "numero"}, {rotulo: "Unid."},
+    {rotulo: "Obra"}, {rotulo: "Prioridade"}, {rotulo: "Precisa até"}, {rotulo: "Previsto"},
+    {rotulo: "Etapa"}, {rotulo: "Prazo"}, {rotulo: "Detalhe do prazo"},
+    {rotulo: "Solicitação"}, {rotulo: "Cotação"}, {rotulo: "Pedido"}, {rotulo: "Fornecedor"},
+  ],
+  linhas: (DADOS ? DADOS.itens.filter(i => passa(i)) : []).map(i => [
+    i.insumo, i.especificacao, i.categoria, i.quantidade, i.saldo, i.unidade, i.obra,
+    NOME_PRIORIDADE[i.prioridade] || i.prioridade, dataBR(i.precisa_ate), dataBR(i.previsto),
+    i.etapa_rotulo, i.prazo_rotulo, i.prazo_frase, i.solicitacao, i.cotacao || "",
+    i.pedido || "", i.fornecedor,
+  ]),
+  filtros: filtrosDaTela(),
+}));
+</script>
+{% endblock %}

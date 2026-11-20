@@ -212,6 +212,11 @@ MODULOS = [
         "descricao": "Insumos, fornecedores, cotação e pedidos de compra",
         "cor": "var(--ambar)",
         "abas": [
+            # ⚑ O PAINEL VEM PRIMEIRO (20/11/2026). Ele: *"tem que ter um
+            # painel do coordenador, para ele poder bater o olho e compreender
+            # a coisa (…) o que é prioritário, o que está atrasando, o que
+            # deveria ter chegado e não chegou."*
+            ("sup_painel", "Painel", "erp.pagina_suprimentos_painel"),
             ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
             ("sup_planejar", "Planejar cotações", "erp.pagina_suprimentos_planejar"),
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
@@ -11655,6 +11660,30 @@ def pagina_compras():
 # nasceu da nota. Por isso `ver_suprimentos` basta — a mesma ação que já abre
 # a tela de Compras, e que o perfil do financeiro já tem.
 # ---------------------------------------------------------------------------
+@bp.route("/erp/suprimentos/painel")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_painel():
+    return render_template("erp_suprimentos_painel.html",
+                           **_contexto("sup_painel"))
+
+
+@bp.route("/erp/api/suprimentos/painel")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_painel():
+    """O planejamento do coordenador: cada item pedido pela obra que ainda não
+    chegou por inteiro, na ordem em que deve ser olhado — mais o resumo dos
+    pedidos de compra (entrega, nota, pagamento) para os quadros do topo."""
+    from app.apps.erp.core.suprimentos import acompanhamento as svc
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        compras = svc.painel(s, usuario)
+        return jsonify({"ok": True, **svc.planejamento(s, usuario),
+                        "compras": {"resumo": compras["resumo"],
+                                    "destaques": compras["destaques"]}})
+
+
 @bp.route("/erp/suprimentos/acompanhar")
 @login_obrigatorio
 @permissao("ver_suprimentos")
@@ -11672,7 +11701,8 @@ def api_suprimentos_acompanhamento():
     with get_session() as s:
         return jsonify({"ok": True, **svc.painel(
             s, _usuario_logado(s),
-            incluir_fechados=request.args.get("fechados") == "1")})
+            incluir_fechados=request.args.get("fechados") == "1",
+            incluir_sem_efeito=request.args.get("todos") == "1")})
 
 
 @bp.route("/erp/suprimentos/projecao")

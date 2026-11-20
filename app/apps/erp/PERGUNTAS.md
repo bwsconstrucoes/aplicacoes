@@ -3196,3 +3196,16 @@ todas as desta seção.
 - *"Quanto está previsto para pagar no total (compras + o resto)?"* — a
   projeção de compras e o contas a pagar são telas separadas; falta a visão
   somada no Financeiro.
+
+**Acrescentadas em 20/11/2026 (2ª rodada), com o Painel de suprimentos**
+(`acompanhamento.planejamento`):
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| O que já deveria ter chegado e não chegou? | prazo `ATRASADO` | ⚠ **"atrasado"** tem dois sentidos: a data que a OBRA pediu passou (`ATRASADO`) ou a data que o FORNECEDOR prometeu passou (`FORNECEDOR`). Dizer qual |
+| O que é prioridade alta e está em risco? | filtro prioridade + prazo | "em risco" = faltam 7 dias ou menos e sem pedido autorizado |
+| O que vai chegar depois do que a obra precisa? | prazo `VAI_ATRASAR` | compara a data do pedido de compra com a da solicitação |
+| O que ainda está sem cotação? | etapa `SEM_COTACAO` | muda conforme quem pergunta (obras da pessoa) |
+
+**Ainda NÃO responde:** *"vai dar tempo de comprar isto?"* — falta o prazo de
+entrega típico por tipo de insumo, que o sistema não tem.
