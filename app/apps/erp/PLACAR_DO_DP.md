@@ -60,6 +60,7 @@ quanto ✅ — o que não pode existir é vão que ninguém mapeou.
 | Ajuste de Pontos e Faltas | 🔀 o mesmo de cima — **o Pipe tem o pedido escrito de duas formas** (singular e plural), e no ERP é um caminho só |
 | Encaminhamento de Atestado Médico | 🔀 ponto › ficha da pessoa › **Atestado ou licença** |
 | Pedido de Afastamento ou Licença | ✅ `AFASTAMENTO` (Comunicação de Afastamento) — desde 20/11/2026 o afastamento lançado no ponto vira esta solicitação sozinho (`ponte_do_ponto`), e a obra também abre pelo portal; o DP classifica (INSS, acidente, maternidade) e vai à contabilidade. Licenças curtas da lei continuam só no ponto |
+| Comunicação de Afastamento | ✅ `AFASTAMENTO` — ver a linha acima |
 | Retorno de Afastamento | ✅ `RETORNO_AFASTAMENTO` — novo (20/11/2026); também nasce quando o DP registra a volta na ficha |
 | Documentação Admissão | 🔀 ERP › DP › Contabilidade, modelo **Assinatura de CTPS** (espera a ficha de registro) |
 | Documentação Rescisão | 🔀 ERP › DP › Contabilidade, modelo **Desligamento** |
