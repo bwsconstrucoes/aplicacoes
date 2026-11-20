@@ -133,15 +133,29 @@ def pessoa(sessao_real, dono):
 
 
 @banco_
-def test_o_agente_nasce_desligado(sessao_real, banco):
-    """Pedido dele com todas as letras: *"a gente não vai começar com ele
-    ativo."* A migração semeia as sete rotinas DESLIGADAS."""
-    for r in ag.configuracao(sessao_real):
-        assert r["modo"] == "DESLIGADA", f"a rotina {r['chave']} nasceu ligada"
+def test_o_agente_liga_so_o_que_nao_fala_com_ninguem_de_fora(sessao_real, banco):
+    """Ele começou com tudo desligado (*"a gente não vai começar com ele
+    ativo"*, migração 090) e, em 20/11/2026, mandou ligar: *"Vamos botar para
+    funcionar."* A migração 117 liga, em SUGERE, só as rotinas que não mandam
+    nada para fora; a cobrança (e-mail à contabilidade, WhatsApp à obra) e a
+    caixa continuam como ele deixou."""
+    modos = {r["chave"]: r["modo"] for r in ag.configuracao(sessao_real)}
+    for chave in ("triagem", "despacho", "vigia", "relatorio"):
+        assert modos[chave] == "SUGERE", chave
+    for chave in ("cobranca", "caixa", "leitura", "conferencia"):
+        assert modos.get(chave, "DESLIGADA") == "DESLIGADA", chave
+
+
+@banco_
+def test_a_conferencia_nao_liga_porque_nao_existe(sessao_real, dono):
+    with pytest.raises(ErroValidacao, match="ainda não existe"):
+        ag.definir(sessao_real, "conferencia", modo_novo="SUGERE", usuario=dono)
 
 
 @banco_
 def test_rodar_com_tudo_desligado_nao_faz_nada_e_diz_isso(sessao_real, dono):
+    for r in ag.configuracao(sessao_real):
+        ag.definir(sessao_real, r["chave"], modo_novo="DESLIGADA", usuario=dono)
     r = ag.rodar(sessao_real, dono)
     assert r["rotinas_ligadas"] == []
     assert "não fez" in r["aviso"]
@@ -480,7 +494,7 @@ def test_a_triagem_nao_julga_merito(sessao_real, dono, pessoa):
     p = sp.abrir(sessao_real, {"tipo": "ALTERACAO_CARGO",
                                "colaborador_id": pessoa.id,
                                "cargo_pleiteado_id": pessoa.cargo_id,
-                               "data_inicio": "2026-06-01",
+                               "data_inicio": (date.today() + timedelta(days=10)).isoformat(),
                                "justificativa": "merece"}, dono)
     r = ag.triagem(sessao_real, p["id"],
                    {"cargo_id": pessoa.cargo_id, "salario": "90.000,00"})

@@ -696,3 +696,196 @@ def test_o_portal_oferece_ferias_e_cancelamentos():
               "CANCELAR_DESLIGAMENTO"):
         assert t in svc_portal.TIPOS_DO_PORTAL
 
+
+
+# ===========================================================================
+# 20/11/2026 (noite): a contabilidade como ponte, corrigir e cancelar o que
+# já foi, a análise do agente, os períodos de férias e a experiência
+# ===========================================================================
+@pytestmark_banco
+def test_o_despacho_monta_o_pedido_a_contabilidade_no_atendimento(mundo):
+    """Ele: *"a ideia de futuro é que o DP apenas olhe e dê o ok."*"""
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = _ferias_atendidas(mundo, c, _dia(45))
+    passo = next(x for x in svc.ler(s, p["id"])["processo"]["passos"]
+                 if x["codigo"] == "CONTABILIDADE")
+    assert passo.get("pedido"), "o agente devia ter montado o rascunho"
+    assert "montado" in passo["detalhe"]
+
+
+@pytestmark_banco
+def test_atualizacao_de_endereco_de_carteira_vai_a_contabilidade(mundo):
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = svc.abrir(s, {"tipo": "ATUALIZACAO_DADOS", "colaborador_id": c.id,
+                      "descricao": "mudou de casa", "cep": "60000000",
+                      "logradouro": "RUA NOVA", "numero_endereco": "10",
+                      "bairro": "CENTRO", "municipio": "FORTALEZA", "uf": "CE"},
+                  mundo["obra_user"])
+    assert svc.atender(s, p["id"], {}, mundo["dp"])["situacao"] == "EM_ANDAMENTO"
+    p2 = svc.abrir(s, {"tipo": "ATUALIZACAO_DADOS", "colaborador_id": c.id,
+                       "descricao": "telefone novo", "telefone": "85999990000"},
+                   mundo["obra_user"])
+    assert svc.atender(s, p2["id"], {}, mundo["dp"])["situacao"] == "ATENDIDA", \
+        "telefone é nosso: não vai à contabilidade"
+
+
+@pytestmark_banco
+def test_desconto_em_folha_pede_a_autorizacao_assinada_antes_da_contabilidade(mundo):
+    from app.apps.erp.core import contabil_processo, termos
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = svc.abrir(s, {"tipo": "DESCONTO_EM_FOLHA", "colaborador_id": c.id,
+                      "valor_total": "300", "parcelas": "3",
+                      "observacao": "ferramenta perdida"}, mundo["obra_user"])
+    r = svc.atender(s, p["id"], {}, mundo["dp"])
+    assert r["situacao"] == "EM_ANDAMENTO"
+    t_ = termos.do_pedido(s, p["id"])
+    assert t_["tipo"] == "AUTORIZACAO-DESCONTO" and "AUTORIZO" in t_["texto"]
+    with pytest.raises(ErroValidacao, match="autorização"):
+        contabil_processo.montar_pedido(s, svc.ler(s, p["id"]), mundo["dp"])
+    s.execute(text("UPDATE dp_termos SET situacao = 'ASSINADO', forma = 'NA_TELA' "
+                   "WHERE id = :i"), {"i": t_["id"]})
+    svc.termo_voltou(s, t_["id"], mundo["dp"])
+    _devolve_e_conclui(mundo, p["id"])
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_corrigir_o_que_ja_foi_a_contabilidade_pede_a_ciencia_dela(mundo):
+    """Ele: *"se eu já tiver encaminhado alguma coisa para a contabilidade?
+    (…) Preciso comunicar a correção, preciso ter confirmar que há a ciência
+    daquela alteração."*"""
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core import ferias as svc_ferias
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = _ferias_atendidas(mundo, c, _dia(45))
+    passo = next(x for x in svc.ler(s, p["id"])["processo"]["passos"]
+                 if x["codigo"] == "CONTABILIDADE")
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'ENVIADO' WHERE id = :i"),
+              {"i": passo["pedido"]["id"]})
+    svc.corrigir(s, p["id"], {"dados": {"ferias_inicio": _dia(50)}}, mundo["dp"])
+    sol = svc.ler(s, p["id"])
+    extra = [x for x in sol["processo"]["passos"] if x["codigo"].startswith("EXTRA_")]
+    assert extra and "Correção comunicada" in extra[0]["rotulo"]
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    assert f["inicio"] == _dia(50), "a programação ainda pedida acompanha a correção"
+    # a contabilidade devolve o pedido principal: ainda falta a ciência da correção
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'RESPONDIDO' WHERE id = :i"),
+              {"i": passo["pedido"]["id"]})
+    svc_ct.concluir(s, passo["pedido"]["id"], mundo["dp"])
+    assert svc.ler(s, p["id"])["situacao"] == "EM_ANDAMENTO"
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'RESPONDIDO' WHERE id = :i"),
+              {"i": extra[0]["pedido"]["id"]})
+    svc_ct.concluir(s, extra[0]["pedido"]["id"], mundo["dp"])
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_cancelar_depois_de_atendido_espera_a_contabilidade(mundo):
+    from app.apps.erp.core import contabil_processo
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core import ferias as svc_ferias
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = _ferias_atendidas(mundo, c, _dia(45))
+    ped = next(x for x in svc.ler(s, p["id"])["processo"]["passos"]
+               if x["codigo"] == "CONTABILIDADE")["pedido"]
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'ENVIADO' WHERE id = :i"),
+              {"i": ped["id"]})
+    # a obra pede; o DP faz
+    svc.pedir_mudanca(s, p["id"], {"o_que": "cancelar", "texto": "a pessoa desistiu"},
+                      mundo["obra_user"])
+    assert svc.ler(s, p["id"])["mudanca_pedida"]["o_que"] == "cancelar"
+    r = contabil_processo.cancelar_em_andamento(s, svc.ler(s, p["id"]),
+                                                "a pessoa desistiu", mundo["dp"])
+    assert r["cancelamento"]
+    assert svc.ler(s, p["id"])["situacao"] == "EM_ANDAMENTO", "falta a ciência"
+    extra = next(x for x in svc.ler(s, p["id"])["processo"]["passos"]
+                 if x["codigo"].startswith("EXTRA_"))
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'RESPONDIDO' WHERE id = :i"),
+              {"i": extra["pedido"]["id"]})
+    svc_ct.concluir(s, extra["pedido"]["id"], mundo["dp"])
+    assert svc.ler(s, p["id"])["situacao"] == "CANCELADA"
+    assert svc_ferias.listar(s, colaborador_id=c.id) == []
+
+
+@pytestmark_banco
+def test_cancelar_antes_de_enviar_cancela_na_hora(mundo):
+    from app.apps.erp.core import contabil_processo
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = _ferias_atendidas(mundo, c, _dia(45))
+    r = contabil_processo.cancelar_em_andamento(s, svc.ler(s, p["id"]),
+                                                "pedido em dobro", mundo["dp"])
+    assert r == {"cancelada": True}
+    assert svc.ler(s, p["id"])["situacao"] == "CANCELADA"
+
+
+@pytestmark_banco
+def test_a_analise_aponta_experiencia_no_pedido_de_demissao_com_aviso(mundo):
+    """Ele: *"ela pediu uma demissão, mas é um encerramento de contrato de
+    experiência (…) aí não precisa de aviso."*"""
+    import datetime as dt
+    s = mundo["s"]
+    c = svc_pessoas.salvar(s, {"cpf": "12345678909", "nome": "Novato Exp",
+                               "admissao": (dt.date.today() - dt.timedelta(days=20)).isoformat(),
+                               "obra_id": mundo["obra"].id, "vinculo": "CTPS",
+                               "salario": "2000", "cargo_id": mundo["cargo_id"],
+                               "contrato_experiencia": "45+45 dias",
+                               "etapa": "CONCLUIDO"}, mundo["dp"])
+    s.flush()
+    p = svc.abrir(s, {"tipo": "DESLIGAMENTO", "colaborador_id": c.id,
+                      "forma_desligamento": "Demissão com Aviso Indenizado",
+                      "aviso_previo": _dia(0),
+                      "continua_prestador": "Não, está saindo da empresa"},
+                  mundo["obra_user"])
+    a = svc.ler(s, p["id"])["analise"]
+    assert any(x["ok"] is False and "experiência" in x["texto"] for x in a)
+    assert any("aviso de 30 dias" in x["texto"] for x in a)
+
+
+@pytestmark_banco
+def test_o_vigia_avisa_do_fim_da_experiencia(mundo):
+    import datetime as dt
+    from app.apps.erp.core import agente_dp
+    s = mundo["s"]
+    c = svc_pessoas.salvar(s, {"cpf": "98765432100", "nome": "Quase Efetivo",
+                               "admissao": (dt.date.today() - dt.timedelta(days=40)).isoformat(),
+                               "obra_id": mundo["obra"].id, "vinculo": "CTPS",
+                               "contrato_experiencia": "45+45 dias",
+                               "etapa": "CONCLUIDO"}, mundo["dp"])
+    s.flush()
+    assert any(a["tipo"] == "experiencia_vencendo" and a["colaborador_id"] == c.id
+               for a in agente_dp.vigia(s))
+
+
+@pytestmark_banco
+def test_ferias_vencendo_aparecem_e_o_controle_informado_vale(mundo):
+    """Admitido há ~2 anos e meio, com o 1º período quitado: o 2º período
+    (completo) vence em poucos meses."""
+    import datetime as dt
+    from app.apps.erp.core import agente_dp
+    from app.apps.erp.core import ferias as svc_ferias
+    s = mundo["s"]
+    hoje = dt.date.today()
+    adm = hoje.replace(year=hoje.year - 2) - dt.timedelta(days=300)
+    c = svc_pessoas.salvar(s, {"cpf": "45612378955", "nome": "Ferias Vencendo",
+                               "admissao": adm.isoformat(), "obra_id": mundo["obra"].id,
+                               "vinculo": "CTPS", "etapa": "CONCLUIDO"}, mundo["dp"])
+    s.flush()
+    est = {x["colaborador_id"]: x for x in svc_ferias.situacao_dos_periodos(s)}
+    assert est[c.id]["estado"] == "nao_informado"
+    svc_ferias.informar_quitado(s, c.id, (adm.replace(year=adm.year + 1)
+                                          - dt.timedelta(days=1)).isoformat(), mundo["dp"])
+    est = {x["colaborador_id"]: x for x in svc_ferias.situacao_dos_periodos(s)}
+    assert est[c.id]["estado"] == "vencendo", est[c.id]
+    assert any(a["tipo"] == "ferias_vencendo" and a["colaborador_id"] == c.id
+               for a in agente_dp.vigia(s))
+    # programar as férias do período tira o alerta
+    p = _ferias_atendidas(mundo, c, _dia(40))
+    _devolve_e_conclui(mundo, p["id"])
+    est = {x["colaborador_id"]: x for x in svc_ferias.situacao_dos_periodos(s)}
+    assert est[c.id]["estado"] == "em_dia", est[c.id]

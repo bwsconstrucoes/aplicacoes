@@ -163,6 +163,21 @@
   {# A DEVOLUÇÃO VEM PRIMEIRO, e não é ordem alfabética: é o que tem prazo e o
      que o DP está esperando. Pedido novo pode esperar o fim da rolagem; o
      documento que está na mesa de alguém, não. #}
+  {# ⚑ O DOCUMENTO QUE A PESSOA ASSINA NO CELULAR (20/11/2026, noite). Ele:
+     *"o administrativo de obra já coletar o aviso prévio das pessoas,
+     formalizar e coletar a assinatura de forma legal, parecido com a forma
+     que a gente está coletando a assinatura do ponto."* Quem conduz mostra o
+     texto; a pessoa assina com o dedo e digita o PIN DELA (o do ponto). #}
+  <div class="bloco" id="bloco-termos" style="display:none">
+    <h3>Para o colaborador assinar</h3>
+    <p class="ajuda">O DP analisou e liberou. Mostre o documento à pessoa,
+      ela lê, assina com o dedo e digita o PIN dela (o mesmo do ponto). Se ela
+      não tiver PIN, assine no papel e envie a foto; se ela se recusar, registre
+      com duas testemunhas.</p>
+    <div id="termos"></div>
+    <div id="termo-aberto"></div>
+  </div>
+
   <div class="bloco" id="bloco-devolver" style="display:none">
     <h3>Documentos a devolver</h3>
     <p class="ajuda">O DP mandou estes documentos para a obra. Depois de colher
@@ -248,9 +263,148 @@ async function carregar(){
   els("quem").innerHTML = `${esc(DADOS.nome)}<br>${
     DADOS.administrativo ? "administrativo de obra" : "colaborador"}`;
   pintarDevolucoes();
+  pintarTermos();
   pintarFerias();
   pintarFormulario();
   pintarMeus();
+}
+
+function pintarTermos(){
+  const l = DADOS.termos || [];
+  els("bloco-termos").style.display = l.length ? "" : "none";
+  els("termos").innerHTML = l.map(x => `
+    <div class="linha">
+      <div class="cresce">
+        <b>${esc(x.titulo)}</b> <small>${esc(x.numero)}</small><br>
+        <small>${esc(x.pessoa)}${x.obra ? " · obra " + esc(x.obra) : ""}</small><br>
+        <span class="etiqueta ${x.atrasado ? "vermelha" : ""}">${
+          x.prazo ? (x.atrasado ? "venceu em " : "até ") + dataBR(x.prazo) : "sem prazo"}</span>
+      </div>
+      <button class="btn-portal" data-termo="${x.id}">Abrir para assinar</button>
+    </div>`).join("");
+  els("termos").querySelectorAll("[data-termo]").forEach(b =>
+    b.addEventListener("click", () => abrirTermo(+b.dataset.termo)));
+}
+
+let TRACO = null;
+async function abrirTermo(id){
+  let d;
+  try { d = (await chamar(`/erp/portal/api/termos/${id}`)).termo; }
+  catch(e){ recado(e.message, "erro"); return; }
+  const caixa = els("termo-aberto");
+  caixa.innerHTML = `
+    <div style="border:2px solid #31507F; border-radius:12px; padding:12px; margin-top:10px">
+      <h4 style="margin:0 0 6px">${esc(d.titulo)} <small>${esc(d.numero)}</small></h4>
+      <div style="white-space:pre-wrap; font-size:14px; line-height:1.45; max-height:320px;
+                  overflow:auto; background:#F7F9FC; padding:10px; border-radius:8px">${esc(d.texto)}</div>
+      <p class="ajuda" style="margin-top:10px">${esc(d.termo_de_ciencia)}</p>
+      <b style="font-size:13px">${esc(d.pessoa)} assina aqui, com o dedo:</b>
+      <canvas id="quadro" width="600" height="200"
+        style="width:100%; height:160px; border:1px dashed #8FA3C2; border-radius:8px;
+               background:#fff; touch-action:none; margin-top:4px"></canvas>
+      <button class="voltar" type="button" id="t-limpar">limpar a assinatura</button>
+      <label class="campo-portal">PIN de ${esc(d.pessoa.split(" ")[0])} (o do ponto, 6 dígitos)
+        <input id="t-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off"></label>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn-portal" id="t-assinar">Assinar</button>
+        <button class="btn-portal secundario" id="t-fechar">Fechar</button>
+      </div>
+      <details style="margin-top:14px"><summary style="cursor:pointer; color:#31507F">
+        A pessoa não tem PIN — assinou no papel</summary>
+        <p class="ajuda">Imprima, colha a assinatura e envie a foto. O DP confere.</p>
+        <label class="escolher" for="t-papel" id="t-papel-rot">Escolher arquivo ou tirar foto</label>
+        <input type="file" id="t-papel" accept=".pdf,.png,.jpg,.jpeg,image/*"
+               capture="environment" style="display:none">
+        <button class="btn-portal" id="t-enviar-papel" style="margin-top:8px">Enviar a foto</button>
+      </details>
+      <details style="margin-top:10px"><summary style="cursor:pointer; color:#A32020">
+        A pessoa se recusou a assinar</summary>
+        <p class="ajuda">Leia o documento para ela na frente de duas testemunhas e
+          registre aqui. O DP confere.</p>
+        <label class="campo-portal">O que aconteceu<textarea id="t-motivo" rows="2"></textarea></label>
+        <label class="campo-portal">Testemunha 1 (nome completo)<input id="t-tst1"></label>
+        <label class="campo-portal">Testemunha 2 (nome completo)<input id="t-tst2"></label>
+        <button class="btn-portal" id="t-recusa" style="margin-top:8px">Registrar a recusa</button>
+      </details>
+    </div>`;
+  ligarQuadro(els("quadro"));
+  els("t-limpar").addEventListener("click", () => ligarQuadro(els("quadro")));
+  els("t-fechar").addEventListener("click", () => { caixa.innerHTML = ""; });
+  els("t-papel").addEventListener("change", () => {
+    const f = els("t-papel").files[0];
+    els("t-papel-rot").textContent = f ? f.name : "Escolher arquivo ou tirar foto";
+  });
+  els("t-assinar").addEventListener("click", () => assinarTermo(d.id));
+  els("t-enviar-papel").addEventListener("click", () => papelDoTermo(d.id));
+  els("t-recusa").addEventListener("click", () => recusaDoTermo(d.id));
+  caixa.scrollIntoView({behavior: "smooth"});
+}
+
+function ligarQuadro(cv){
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#10233F";
+  TRACO = {riscou: false};
+  let desenhando = false;
+  const ponto = e => {
+    const r = cv.getBoundingClientRect();
+    return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
+  };
+  cv.onpointerdown = e => { desenhando = true; const [x, y] = ponto(e);
+    ctx.beginPath(); ctx.moveTo(x, y); cv.setPointerCapture(e.pointerId); };
+  cv.onpointermove = e => { if (!desenhando) return; const [x, y] = ponto(e);
+    ctx.lineTo(x, y); ctx.stroke(); TRACO.riscou = true; };
+  cv.onpointerup = () => { desenhando = false; };
+}
+
+function ondeEstou(){
+  return new Promise(res => {
+    if (!navigator.geolocation) return res({});
+    navigator.geolocation.getCurrentPosition(
+      p => res({latitude: p.coords.latitude, longitude: p.coords.longitude}),
+      () => res({}), {timeout: 4000, maximumAge: 600000});
+  });
+}
+
+async function assinarTermo(id){
+  if (!TRACO || !TRACO.riscou) { recado("Falta a assinatura no quadro.", "erro"); return; }
+  const pin = els("t-pin").value.replace(/\D/g, "");
+  if (pin.length !== 6) { recado("O PIN tem 6 dígitos.", "erro"); return; }
+  els("t-assinar").disabled = true;
+  try {
+    const onde = await ondeEstou();
+    const r = await chamar(`/erp/portal/api/termos/${id}`, {method: "POST",
+      body: JSON.stringify({pin, assinatura: els("quadro").toDataURL("image/png"), ...onde})});
+    recado(`${r.numero} assinado. O DP já está vendo.`, "ok");
+    els("termo-aberto").innerHTML = "";
+    carregar();
+  } catch(e){ recado(e.message, "erro"); els("t-assinar").disabled = false; }
+}
+
+async function papelDoTermo(id){
+  const f = els("t-papel").files[0];
+  if (!f) { recado("Escolha a foto do papel assinado.", "erro"); return; }
+  try {
+    const fd = new FormData(); fd.append("arquivo", f);
+    const r = await fetch(`/erp/portal/api/termos/${id}`, {method: "POST", body: fd});
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) return semAcesso(d.erro);
+    if (!r.ok || d.ok === false) throw new Error(d.erro || "não consegui enviar");
+    recado(`Foto de ${d.numero} enviada. O DP confere.`, "ok");
+    els("termo-aberto").innerHTML = "";
+    carregar();
+  } catch(e){ recado(e.message, "erro"); }
+}
+
+async function recusaDoTermo(id){
+  try {
+    const r = await chamar(`/erp/portal/api/termos/${id}`, {method: "POST",
+      body: JSON.stringify({acao: "recusa", motivo: els("t-motivo").value,
+        testemunhas: [{nome: els("t-tst1").value}, {nome: els("t-tst2").value}]})});
+    recado(`Recusa registrada em ${r.numero}. O DP confere.`, "ok");
+    els("termo-aberto").innerHTML = "";
+    carregar();
+  } catch(e){ recado(e.message, "erro"); }
 }
 
 function pintarFerias(){
@@ -1741,6 +1895,11 @@ function pintarMeus(){
         <small>${[p.obra ? "obra " + p.obra : "", p.cargo || "", dataBR(p.quando)]
           .filter(Boolean).map(esc).join(" · ")}</small>
         ${p.resposta ? `<br><small><b>DP:</b> ${esc(p.resposta)}</small>` : ""}
+        ${p.tipo_codigo !== "DESLIGAMENTO" && p.id
+          && ["Em andamento", "Atendida"].includes(p.situacao)
+          ? `<br><button class="voltar" type="button" data-mudar="${i}"
+               style="margin-top:4px">Pedir para cancelar ou corrigir</button>` : ""}
+        ${p.mudanca_pedida ? `<br><small><b>Você pediu:</b> ${esc(p.mudanca_pedida)}</small>` : ""}
         ${p.tipo_codigo === "DESLIGAMENTO" && p.colaborador_id
           && ["Aberta", "Em análise", "Em andamento"].includes(p.situacao)
           ? `<br><button class="voltar" type="button" data-cancel-desl="${i}"
@@ -1753,6 +1912,32 @@ function pintarMeus(){
     : `<p class="ajuda">Você ainda não abriu nenhum pedido.</p>`;
   els("meus").querySelectorAll("[data-cancel-desl]").forEach(b =>
     b.addEventListener("click", () => pedirCancelamento(l[+b.dataset.cancelDesl])));
+  els("meus").querySelectorAll("[data-mudar]").forEach(b =>
+    b.addEventListener("click", () => pedirMudanca(l[+b.dataset.mudar], b)));
+}
+
+{# ⚑ CANCELAR OU CORRIGIR O QUE JÁ ESTÁ ANDANDO (20/11/2026, noite). Ele:
+   *"praticamente tudo que se pede pode vir a ser necessário ser cancelado
+   (…) ou alterado alguma coisa."* A obra AVISA; o DP faz — e, se a
+   contabilidade já recebeu, comunica a ela e espera a ciência. #}
+function pedirMudanca(p, botao){
+  const caixa = document.createElement("div");
+  caixa.innerHTML = `
+    <label class="campo-portal">O que você quer
+      <select id="m-oque"><option value="cancelar">Cancelar este pedido</option>
+        <option value="corrigir">Corrigir alguma coisa</option></select></label>
+    <label class="campo-portal">Explique<textarea id="m-texto" rows="2"></textarea></label>
+    <button class="btn-portal" id="m-enviar" style="margin-top:8px">Avisar o DP</button>`;
+  botao.replaceWith(caixa);
+  caixa.querySelector("#m-enviar").addEventListener("click", async () => {
+    try {
+      await chamar(`/erp/api/dp/solicitacoes/${p.id}/pedir_mudanca`, {method: "POST",
+        body: JSON.stringify({o_que: caixa.querySelector("#m-oque").value,
+                              texto: caixa.querySelector("#m-texto").value})});
+      recado("O DP foi avisado. Se a contabilidade já recebeu, ele comunica a ela.", "ok");
+      carregar();
+    } catch(e){ recado(e.message, "erro"); }
+  });
 }
 
 {# ⚑ O CANCELAMENTO NASCE EM CIMA DO DESLIGAMENTO (20/11/2026). Ele: *"pode

@@ -37,6 +37,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.comum.auditoria import ErroValidacao
 from app.apps.erp.db.models.cadastros import Usuario
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,12 @@ TEMPLATE_DO_TIPO = {
     "ALTERACAO_FERIAS": "ALTERACAO_FERIAS",
     "CANCELAMENTO_FERIAS": "CANCELAMENTO_FERIAS",
     "CANCELAR_DESLIGAMENTO": "CANCELAMENTO_DESLIGAMENTO",
+    # ⚑ 20/11/2026 (noite): de carteira, o que a contabilidade precisa saber
+    # vai a ela. Ele: *"Na gestão do carteira assinada, nosso sistema funciona
+    # como uma ponte, mas tudo é fechado lá (…) E a gente requer sempre o
+    # retorno de tudo. Quem não é CLT, aí tudo se resolve internamente."*
+    "ATUALIZACAO_DADOS": "ALTERACAO_CADASTRAL",
+    "DESCONTO_EM_FOLHA": "DESCONTO_FOLHA",
     # A admissão usa o mesmo botão para o registro da carteira.
     "CADASTRO": "ASSINATURA_CTPS",
     "ADMISSAO_PRESTADOR": "ASSINATURA_CTPS",
@@ -58,7 +65,14 @@ TEMPLATE_DO_TIPO = {
 def e_processo(tipo: str) -> bool:
     return tipo in ("ALTERACAO_CARGO", "DEPENDENTE", "FERIAS",
                     "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
-                    "CANCELAR_DESLIGAMENTO")
+                    "CANCELAR_DESLIGAMENTO", "ATUALIZACAO_DADOS",
+                    "DESCONTO_EM_FOLHA")
+
+
+# O que, na atualização cadastral, a contabilidade informa ao eSocial. Telefone
+# e Pix são nossos (o pagamento é nosso); nome e endereço são dela.
+CADASTRAIS_DO_ESOCIAL = ("nome_novo", "cep", "logradouro", "numero_endereco",
+                         "bairro", "municipio", "uf")
 
 
 def _vinculo(s: Session, colaborador_id: Optional[int]) -> str:
@@ -73,8 +87,12 @@ def aplica(s: Session, tipo: str, colaborador_id: Optional[int],
     """Este pedido precisa passar pela contabilidade?"""
     vinculo = _vinculo(s, colaborador_id)
     if tipo in ("ALTERACAO_CARGO", "FERIAS", "ALTERACAO_FERIAS",
-                "CANCELAMENTO_FERIAS", "CANCELAR_DESLIGAMENTO"):
+                "CANCELAMENTO_FERIAS", "CANCELAR_DESLIGAMENTO",
+                "DESCONTO_EM_FOLHA"):
         return vinculo == "CTPS"
+    if tipo == "ATUALIZACAO_DADOS":
+        return vinculo == "CTPS" and any(
+            str(pedido.get(k) or "").strip() for k in CADASTRAIS_DO_ESOCIAL)
     if tipo == "DEPENDENTE":
         marcou = lambda v: str(v or "") == "1"
         varios = pedido.get("dependentes")
@@ -117,6 +135,33 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
     item("ATENDIDO", "O DP analisou e registrou", "DP",
          "FEITO" if atendido else "PENDENTE",
          "atendido" if atendido else "atenda o pedido")
+    # ⚑ O DESCONTO EM FOLHA PRECISA DA AUTORIZAÇÃO ASSINADA (CLT art. 462),
+    # colhida pela obra como o aviso prévio (`termos.py`), antes de ir à
+    # contabilidade.
+    if sol["tipo"] == "DESCONTO_EM_FOLHA":
+        from app.apps.erp.core import termos
+        tm = termos.do_pedido(s, int(sol["id"]))
+        if tm is None:
+            item("AUTORIZACAO", "Autorização de desconto assinada pela pessoa",
+                 "obra colhe, DP confere", "PENDENTE",
+                 "gere o documento para a obra colher a assinatura",
+                 gerar_termo=True)
+        elif termos.concluido(tm):
+            item("AUTORIZACAO", "Autorização de desconto assinada pela pessoa",
+                 "obra colhe, DP confere", "FEITO",
+                 f"{tm['numero']}: " + termos.FORMA_ROTULOS.get(tm.get("forma") or "", ""),
+                 termo={"id": tm["id"], "numero": tm["numero"],
+                        "anexo_id": tm.get("anexo_id")})
+        else:
+            item("AUTORIZACAO", "Autorização de desconto assinada pela pessoa",
+                 "obra colhe, DP confere",
+                 "AGUARDANDO" if tm["situacao"] == "ABERTO" else "PENDENTE",
+                 (f"{tm['numero']} com a obra para colher a assinatura"
+                  if tm["situacao"] == "ABERTO" else
+                  f"{tm['numero']} voltou — abra e valide"),
+                 termo={"id": tm["id"], "numero": tm["numero"],
+                        "anexo_id": tm.get("anexo_id")},
+                 termo_a_validar=tm["situacao"] != "ABERTO")
     if ped is None:
         item("CONTABILIDADE", f"Pedido à contabilidade: {nome}", "DP", "PENDENTE",
              "monte o pedido — ele sai preenchido com o que a solicitação tem")
@@ -185,6 +230,13 @@ def _dados_do_pedido(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
     if tipo == "CANCELAR_DESLIGAMENTO":
         return {"comunicado_em": d.get("desligamento_comunicado_em"),
                 "motivo": d.get("observacao")}
+    if tipo == "ATUALIZACAO_DADOS":
+        return {k: d.get(k) for k in CADASTRAIS_DO_ESOCIAL + ("descricao",)}
+    if tipo == "DESCONTO_EM_FOLHA":
+        return {"valor_total": d.get("valor_total"), "parcelas": d.get("parcelas"),
+                "valor_parcela": d.get("valor_parcela"),
+                "primeira_competencia": d.get("primeira_competencia"),
+                "motivo": d.get("observacao")}
     return {}
 
 
@@ -198,6 +250,12 @@ def montar_pedido(s: Session, sol: dict[str, Any],
     template = TEMPLATE_DO_TIPO.get(sol["tipo"])
     if not template:
         raise ErroValidacao("Este pedido não passa pela contabilidade.")
+    if sol["tipo"] == "DESCONTO_EM_FOLHA":
+        from app.apps.erp.core import termos
+        if termos.tem_tabela(s) and not termos.concluido(
+                termos.do_pedido(s, int(sol["id"]))):
+            raise ErroValidacao("A autorização de desconto ainda não voltou "
+                                "assinada pela pessoa (CLT art. 462).")
     if not sol.get("colaborador_id"):
         raise ErroValidacao("O pedido não tem pessoa ligada.")
     if _pedido_ligado(s, sol, template) is not None:
@@ -218,6 +276,8 @@ def fechar_pelo_pedido(s: Session, pedido: dict[str, Any],
     andamento que esperavam por ele estão completamente atendidas."""
     from app.apps.erp.core.pessoal_solicitacoes import _evento
 
+    if pedido.get("template") in EXTRAS:
+        return fechar_extra(s, pedido, usuario)
     tipos = [t for t, tpl in TEMPLATE_DO_TIPO.items()
              if tpl == pedido["template"] and e_processo(t)]
     if not tipos:
@@ -231,6 +291,7 @@ def fechar_pelo_pedido(s: Session, pedido: dict[str, Any],
                 OR (CAST(:sid AS INTEGER) IS NULL AND colaborador_id = :c))"""),
         {"sit": EM_ANDAMENTO, "t": tipos, "sid": pedido.get("solicitacao_id"),
          "c": pedido.get("colaborador_id")}).mappings().all()
+    sols = [x for x in sols if not extras_abertos(s, int(x["id"]))]
     for sol in sols:
         # A programação de férias só muda AQUI, com o retorno — ver
         # `core/ferias.py`.
@@ -270,3 +331,211 @@ def em_andamento(s: Session, *, limite: int = 300) -> list[dict[str, Any]]:
                       "dias": ((hoje - l["atendido_em"].date()).days
                                if l["atendido_em"] else None)})
     return saida
+
+
+# ===========================================================================
+# CORRIGIR E CANCELAR O QUE JÁ FOI PARA A CONTABILIDADE (20/11/2026, noite)
+#
+# Ele: *"praticamente tudo que se pede pode vir a ser necessário ser
+# cancelado, aquele pleito, ou de repente alterado alguma coisa (…) se eu já
+# tiver encaminhado alguma coisa para a contabilidade? Então eu vou precisar
+# fazer aquela correção. Preciso comunicar a correção, preciso ter confirmar
+# que há a ciência daquela alteração."*
+#
+# A REGRA, a mesma para todo pedido:
+#   · o pedido à contabilidade ainda em RASCUNHO: é só refazer — ele é
+#     cancelado e montado de novo com o dado certo;
+#   · já ENVIADO: nasce um pedido de CORREÇÃO (ou de CANCELAMENTO) à
+#     contabilidade, e a solicitação NÃO FECHA enquanto ela não confirmar a
+#     ciência. O passo aparece na lista, e o agente cobra.
+#   · nada foi à contabilidade: corrige ou cancela aqui, e pronto.
+# ===========================================================================
+EXTRAS = ("RETIFICACAO", "CANCELAMENTO_SOLICITACAO")
+
+
+def _pedidos(s: Session, solicitacao_id: int) -> list[dict[str, Any]]:
+    return [dict(l) for l in s.execute(text("""
+        SELECT id, numero, template, situacao, dados FROM dp_pedidos
+         WHERE solicitacao_id = :s AND situacao <> 'CANCELADO'
+         ORDER BY id"""), {"s": solicitacao_id}).mappings().all()]
+
+
+def extras_abertos(s: Session, solicitacao_id: int) -> list[dict[str, Any]]:
+    return [p for p in _pedidos(s, solicitacao_id)
+            if p["template"] in EXTRAS and p["situacao"] != "CONCLUIDO"]
+
+
+def passos_extras(s: Session, solicitacao_id: int) -> list[dict[str, Any]]:
+    """Os passos da correção / do cancelamento comunicados à contabilidade."""
+    saida = []
+    for p in _pedidos(s, solicitacao_id):
+        if p["template"] not in EXTRAS:
+            continue
+        cancel = p["template"] == "CANCELAMENTO_SOLICITACAO"
+        rotulo = ("Cancelamento comunicado à contabilidade, com a ciência dela"
+                  if cancel else
+                  "Correção comunicada à contabilidade, com a ciência dela")
+        if p["situacao"] == "CONCLUIDO":
+            estado, det = "FEITO", f"{p['numero']}: a contabilidade confirmou"
+        elif p["situacao"] == "RASCUNHO":
+            estado, det = "PENDENTE", f"{p['numero']} montado e ainda não enviado"
+        else:
+            estado, det = "AGUARDANDO", f"{p['numero']} enviado — esperando a ciência"
+        saida.append({"codigo": f"EXTRA_{p['id']}", "rotulo": rotulo,
+                      "quem": "DP e contabilidade", "como": "lido",
+                      "estado": estado, "detalhe": det, "por": "", "em": None,
+                      "observacao": "", "pedido": {"id": p["id"],
+                                                   "numero": p["numero"]}})
+    return saida
+
+
+def _o_que_mudou(mudou: list[dict[str, Any]]) -> str:
+    from app.apps.erp.core.pessoal_solicitacoes import ROTULOS
+    return "; ".join(f"{ROTULOS.get(m['campo'], m['campo'])}: "
+                     f"{m.get('de') or '(vazio)'} → {m.get('para') or '(vazio)'}"
+                     for m in mudou)
+
+
+def comunicar_correcao(s: Session, sol: dict[str, Any], mudou: list[dict[str, Any]],
+                       usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O DP corrigiu um pedido que já tinha andado. Devolve o que fez."""
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.pessoal_solicitacoes import _evento
+    principais = [p for p in _pedidos(s, int(sol["id"]))
+                  if p["template"] not in EXTRAS]
+    feito: dict[str, Any] = {}
+    for p in principais:
+        if p["situacao"] == "RASCUNHO":
+            svc_ct.cancelar(s, p["id"], usuario,
+                            motivo="o DP corrigiu a solicitação: montar de novo")
+            feito.setdefault("refazer", []).append(p["numero"])
+    enviados = [p for p in principais if p["situacao"] not in ("RASCUNHO",)]
+    if enviados and sol.get("colaborador_id"):
+        r = svc_ct.abrir(s, {"template": "RETIFICACAO",
+                             "colaborador_id": sol["colaborador_id"],
+                             "solicitacao_id": sol["id"],
+                             "dados": {"pedido_original": ", ".join(
+                                 p["numero"] for p in enviados),
+                                 "o_que_mudou": _o_que_mudou(mudou)}}, usuario)
+        feito["retificacao"] = r["numero"]
+        if sol.get("situacao") == "ATENDIDA":
+            s.execute(text("UPDATE dp_solicitacoes SET situacao = 'EM_ANDAMENTO', "
+                           "atualizado_em = now() WHERE id = :i"), {"i": sol["id"]})
+        _evento(s, sol["id"], "CORRECAO_A_CONTABILIDADE",
+                {"numero": r["numero"], "texto": _o_que_mudou(mudou)}, usuario)
+    return feito
+
+
+def cancelar_em_andamento(s: Session, sol: dict[str, Any], motivo: str,
+                          usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Cancelar um pedido que o DP já atendeu. O que foi à contabilidade é
+    desfeito com ela: a solicitação só vira Cancelada com a ciência."""
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.pessoal_solicitacoes import _evento
+    if len((motivo or "").strip()) < 5:
+        raise ErroValidacao("Diga por que está cancelando — vai junto para a "
+                            "contabilidade e para quem pediu.")
+    if sol["tipo"] in ("DESLIGAMENTO", "DESLIGAMENTO_PRESTADOR"):
+        raise ErroValidacao("Desligamento se desfaz pelo pedido de cancelamento "
+                            "de desligamento — ele apaga a saída e segura a "
+                            "virada do dia.")
+    if sol.get("situacao") not in (EM_ANDAMENTO, "ATENDIDA"):
+        raise ErroValidacao("Este pedido não está em andamento.")
+    if extras_abertos(s, int(sol["id"])):
+        raise ErroValidacao("Já há uma correção ou um cancelamento esperando a "
+                            "contabilidade neste pedido.")
+    principais = [p for p in _pedidos(s, int(sol["id"]))
+                  if p["template"] not in EXTRAS]
+    for p in principais:
+        if p["situacao"] == "RASCUNHO":
+            svc_ct.cancelar(s, p["id"], usuario, motivo=f"pedido cancelado: {motivo}")
+    enviados = [p for p in principais if p["situacao"] != "RASCUNHO"]
+    import json
+    s.execute(text("UPDATE dp_solicitacoes SET dados = dados || CAST(:j AS jsonb) "
+                   "WHERE id = :i"),
+              {"i": sol["id"], "j": json.dumps({"cancelando": {
+                  "motivo": motivo.strip(), "em": date.today().isoformat()}})})
+    if enviados and sol.get("colaborador_id"):
+        r = svc_ct.abrir(s, {"template": "CANCELAMENTO_SOLICITACAO",
+                             "colaborador_id": sol["colaborador_id"],
+                             "solicitacao_id": sol["id"],
+                             "dados": {"pedido_original": ", ".join(
+                                 p["numero"] for p in enviados),
+                                 "motivo": motivo.strip()}}, usuario)
+        if sol.get("situacao") == "ATENDIDA":
+            s.execute(text("UPDATE dp_solicitacoes SET situacao = 'EM_ANDAMENTO', "
+                           "atualizado_em = now() WHERE id = :i"), {"i": sol["id"]})
+        _evento(s, sol["id"], "CANCELAMENTO_A_CONTABILIDADE",
+                {"numero": r["numero"], "motivo": motivo}, usuario)
+        return {"cancelamento": r["numero"], "falta": "a ciência da contabilidade"}
+    _finalizar_cancelamento(s, sol, motivo, usuario)
+    return {"cancelada": True}
+
+
+def _finalizar_cancelamento(s: Session, sol: dict[str, Any], motivo: str,
+                            usuario: Optional[Usuario]) -> None:
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.pessoal_solicitacoes import _cancelar_pre_cadastro, _evento
+    s.execute(text("""UPDATE dp_solicitacoes
+                         SET situacao = 'CANCELADA', cancelado_por = :u,
+                             cancelado_em = now(), atualizado_em = now(),
+                             motivo_cancelamento = :m, resposta = :m
+                       WHERE id = :i"""),
+              {"u": usuario.id if usuario else None, "i": sol["id"],
+               "m": f"cancelado: {motivo}"[:500]})
+    _evento(s, sol["id"], "CANCELADA", {"motivo": motivo}, usuario)
+    # O que o atendimento tinha feito e se desfaz sozinho.
+    if sol["tipo"] == "FERIAS" and svc_ferias.tem_tabela(s):
+        s.execute(text("UPDATE ferias_programadas SET situacao = 'CANCELADA', "
+                       "cancelada_em = now() WHERE solicitacao_id = :s "
+                       "AND situacao <> 'CANCELADA'"), {"s": sol["id"]})
+    if sol["tipo"] in ("CADASTRO", "ADMISSAO_PRESTADOR") and sol.get("colaborador_id"):
+        etapa = s.execute(text("SELECT etapa FROM colaboradores WHERE id = :c"),
+                          {"c": sol["colaborador_id"]}).scalar()
+        if (etapa or "").upper() in ("CADASTRO_INICIAL", "NA_CONTABILIDADE",
+                                     "CONTRATO_A_ASSINAR"):
+            _cancelar_pre_cadastro(s, {**sol, "dados": {**(sol.get("dados") or {}),
+                                                        "pre_cadastro": "1"}},
+                                   f"admissão cancelada: {motivo}", usuario)
+    if sol["tipo"] not in ("FERIAS", "CADASTRO", "ADMISSAO_PRESTADOR"):
+        _evento(s, sol["id"], "AVISO", {"texto": "o que o atendimento gravou no "
+                                        "cadastro NÃO foi desfeito sozinho — "
+                                        "confira a ficha da pessoa"}, usuario)
+
+
+def fechar_extra(s: Session, pedido: dict[str, Any],
+                 usuario: Optional[Usuario]) -> int:
+    """A contabilidade confirmou a correção ou o cancelamento."""
+    from app.apps.erp.core.pessoal_solicitacoes import _evento
+    sid = pedido.get("solicitacao_id")
+    if not sid:
+        return 0
+    sol = s.execute(text("SELECT * FROM dp_solicitacoes WHERE id = :i"),
+                    {"i": sid}).mappings().first()
+    if sol is None:
+        return 0
+    sol = dict(sol)
+    if pedido["template"] == "CANCELAMENTO_SOLICITACAO":
+        if sol["tipo"] == "FERIAS":
+            from app.apps.erp.core import ferias as svc_ferias
+            if svc_ferias.tem_tabela(s):
+                s.execute(text("UPDATE ferias_programadas SET situacao = 'CANCELADA', "
+                               "cancelada_em = now() WHERE solicitacao_id = :s "
+                               "AND situacao <> 'CANCELADA'"), {"s": sid})
+        motivo = ((sol.get("dados") or {}).get("cancelando") or {}).get("motivo") or ""
+        _finalizar_cancelamento(s, sol, f"{motivo} — confirmado pela "
+                                        f"contabilidade ({pedido.get('numero')})",
+                                usuario)
+        return 1
+    _evento(s, sid, "CONTABILIDADE_CONFIRMOU_CORRECAO",
+            {"texto": f"{pedido.get('numero')} concluído"}, usuario)
+    # A correção era a última coisa que faltava? Então o pedido fecha.
+    principais = [p for p in _pedidos(s, sid) if p["template"] not in EXTRAS]
+    if sol["situacao"] == EM_ANDAMENTO and e_processo(sol["tipo"]) \
+            and principais and all(p["situacao"] == "CONCLUIDO" for p in principais) \
+            and not extras_abertos(s, sid):
+        s.execute(text("UPDATE dp_solicitacoes SET situacao = 'ATENDIDA', "
+                       "atualizado_em = now() WHERE id = :i"), {"i": sid})
+        _evento(s, sid, "ATENDIDA", {"texto": "a correção foi confirmada"}, usuario)
+    return 1
+

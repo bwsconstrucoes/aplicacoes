@@ -367,8 +367,22 @@ def equalizar_fornecedores(s: Session, parametros: dict[str, Any],
     }
 
 
+# ---------------------------------------------------------------------------
+# A rodada diária do agente de DP (20/11/2026)
+# ---------------------------------------------------------------------------
+def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str, Any]:
+    """Roda o que está ligado no agente de DP — o mesmo que o botão da tela.
+    Fora da requisição: a leitura da caixa de e-mail pode demorar, e quem
+    abriu o ERP de manhã não pode esperar por ela."""
+    from app.apps.erp.core import agente_dp
+    feito = agente_dp.rodar(s, None)
+    s.commit()
+    return {"vigia": feito.get("vigia"), "ligadas": feito.get("rotinas_ligadas")}
+
+
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
+    tarefas.registrar("agente_dp_dia", agente_dp_dia)
     tarefas.registrar("importar_pipefy", importar_pipefy)
     tarefas.registrar("importar_cadastro_pipefy", importar_cadastro_pipefy)
     tarefas.registrar("importar_cadastro_planilha", importar_cadastro_planilha)

@@ -63,12 +63,20 @@ MODOS = ("DESLIGADA", "SUGERE", "FAZ")
 # ---------------------------------------------------------------------------
 ROTINAS: dict[str, dict[str, Any]] = {
     "triagem": {
-        "nome": "Triagem da requisição que chega da obra",
-        "quando": "quando uma solicitação é aberta na fila do DP",
-        "analisa": "campos obrigatórios do tipo, CPF válido, pessoa existe, e "
-                   "coerência (desligar quem já saiu, férias de quem tem menos "
-                   "de 12 meses, salário abaixo do piso, obra que não é a de "
-                   "quem pediu)",
+        "nome": "Análise do pedido que chega da obra",
+        # ⚑ 20/11/2026 (noite): a análise aparece SOZINHA no pedido, na tela
+        # do DP ("O agente conferiu") — `core/dp_analise.py`.
+        "quando": "sempre que o pedido é aberto na tela do DP",
+        "analisa": "as regras trabalhistas do pedido: no desligamento, o "
+                   "contrato de experiência, o aviso proporcional (Lei "
+                   "12.506), o último dia e a data de saída, a data-base da "
+                   "convenção (indenização adicional), afastamento e "
+                   "estabilidade; nas férias, o período aquisitivo, o início "
+                   "antes do descanso, o fracionamento, os 30 dias de aviso e "
+                   "o prazo para não pagar em dobro; na alteração, redução de "
+                   "salário, piso e vigência retroativa; na admissão, o prazo "
+                   "do eSocial e o menor de idade; no desconto, a autorização "
+                   "e o peso da parcela",
         "nao_analisa": "mérito. Se vale a pena contratar, se o salário é justo, "
                        "se o desligamento é certo — isso é decisão de gente",
         "usa_ia": False,
@@ -87,9 +95,12 @@ ROTINAS: dict[str, dict[str, Any]] = {
     },
     "despacho": {
         "nome": "Despachante da contabilidade",
-        "quando": "quando o cadastro entra na etapa Na contabilidade",
-        "analisa": "se o pedido tem tudo o que a contabilidade precisa para "
-                   "fazer o ato",
+        # ⚑ 20/11/2026 (noite): agora existe de verdade.
+        "quando": "quando o DP atende o pedido (e, no desligamento e no "
+                  "desconto, quando o documento assinado volta)",
+        "analisa": "monta o pedido à contabilidade já preenchido, em rascunho "
+                   "— o DP confere o texto e envia; o que falta no cadastro "
+                   "para montar vira recado no pedido",
         "nao_analisa": "se o ato deve ser feito — quem decide admitir, demitir "
                        "ou alterar é gente",
         "usa_ia": False,
@@ -121,7 +132,11 @@ ROTINAS: dict[str, dict[str, Any]] = {
         "padrao": {"teto_por_rodada": 40},
     },
     "conferencia": {
-        "nome": "Conferente do retorno da contabilidade",
+        # ⚠️ AINDA NÃO CONSTRUÍDA (20/11/2026). Ela aparecia na tela como se
+        # funcionasse; o retorno fica "respondido" e o DP confere à mão. Ligar
+        # é recusado (`definir`) até ela existir.
+        "construida": False,
+        "nome": "Conferente do retorno da contabilidade (ainda não construída)",
         "quando": "quando um documento é anexado a um pedido",
         "analisa": "se o documento é o esperado, e se nome, CPF, cargo, salário "
                    "e datas batem com o cadastro",
@@ -153,6 +168,12 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "contabilidade ou sem ela), alteração e cancelamento de "
                    "férias sem retorno, cancelamento de desligamento esperando "
                    "o DP ou a contabilidade, rescisão não paga em 10 dias, "
+                   "contrato de experiência terminando em 10 dias, férias "
+                   "vencendo ou vencidas (e quem está sem o controle de férias "
+                   "informado), documento parado na obra sem a assinatura da "
+                   "pessoa, pedido de cancelamento ou correção da obra que o "
+                   "DP ainda não fez, correção sem a ciência da contabilidade, "
+                   "afastamento aprovado no ponto que não chegou ao cadastro, "
                    "ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
@@ -189,7 +210,7 @@ def configuracao(s: Session) -> list[dict[str, Any]]:
         saida.append({
             "chave": chave, "nome": meta["nome"], "quando": meta["quando"],
             "analisa": meta["analisa"], "nao_analisa": meta["nao_analisa"],
-            "usa_ia": meta["usa_ia"],
+            "usa_ia": meta["usa_ia"], "construida": meta.get("construida", True),
             "modo": (linha.get("modo") or "DESLIGADA"),
             "parametros": params,
             "rodou_em": str(linha["rodou_em"]) if linha.get("rodou_em") else None,
@@ -219,6 +240,9 @@ def definir(s: Session, chave: str, *, modo_novo: str,
     m = (modo_novo or "").strip().upper()
     if m not in MODOS:
         raise ErroValidacao("Modo deve ser DESLIGADA, SUGERE ou FAZ.")
+    if m != "DESLIGADA" and ROTINAS[chave].get("construida") is False:
+        raise ErroValidacao(f"{ROTINAS[chave]['nome']}: ainda não existe — "
+                            "ligar não faria nada.")
     atual = parametros(s, chave)
     atual.update(params or {})
     s.execute(text("""
@@ -391,9 +415,6 @@ def triagem(s: Session, solicitacao_id: int,
                 f"{c.nome} já está desligado"
                 + (f" desde {c.demissao:%d/%m/%Y}" if c.demissao else "")
                 + " — este pedido não tem o que desligar")
-    if p["tipo"] == "READMISSAO" and c is not None:
-        if (c.situacao or "").upper() == "ATIVO" and not c.demissao:
-            incoerencias.append(f"{c.nome} está ATIVO — não há o que readmitir")
     if p["tipo"] == "ALTERACAO_CARGO" and dados.get("cargo_id"):
         from app.apps.erp.db.models.cadastros import Cargo
         if s.get(Cargo, int(dados["cargo_id"])) is None:
@@ -407,10 +428,12 @@ def triagem(s: Session, solicitacao_id: int,
         abaixo = _abaixo_do_piso(s, c, novo_salario)
         if abaixo:
             incoerencias.append(abaixo)
-    # FÉRIAS NÃO É TIPO DA FILA DO DP: ela entra pelo ponto (afastamento) e, do
-    # lado formal, pelo pedido à contabilidade. A conferência do período
-    # aquisitivo vive lá, em `contabilidade.avisos_do_pedido` — aqui ela seria
-    # código morto, e código morto mente para quem lê.
+    # ⚑ AS REGRAS TRABALHISTAS (20/11/2026, noite) — `dp_analise`. O que ela
+    # aponta como atenção entra como incoerência.
+    from app.apps.erp.core import dp_analise
+    for item in dp_analise.analisar(s, {**p, "dados": dados}):
+        if item["ok"] is False:
+            incoerencias.append(item["texto"])
 
     resumo = ("nada a apontar" if not falta and not incoerencias else
               "; ".join(([f"falta: {', '.join(falta)}"] if falta else [])
@@ -890,6 +913,143 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
     except Exception:
         logger.exception("Agente DP: falha ao olhar férias e cancelamentos")
 
+    # ⚑ 20/11/2026 (noite) — O QUE UM COORDENADOR DE DP VIGIA. Ele: *"o
+    # coordenador de departamento pessoal tem que estar atento a tudo isso
+    # (…) essa demanda ela pode ser mal feita, esquecida, feita de forma
+    # equivocada, no tempo errado."*
+    try:
+        import datetime as _dt
+        from app.apps.erp.core import pessoal_experiencia as svc_exp
+        # 1. O FIM DO CONTRATO DE EXPERIÊNCIA. *"de repente você quer encerrar
+        #    o contrato (…) e por causa de um dia acaba tendo que fazer a
+        #    rescisão contratual, dar o aviso."* Sem decisão até o fim, ele se
+        #    prorroga sozinho (ou vira indeterminado, no fim da prorrogação).
+        for c in s.execute(text("""
+            SELECT id, nome, admissao, contrato_experiencia FROM colaboradores
+             WHERE UPPER(COALESCE(vinculo, 'CTPS')) = 'CTPS'
+               AND UPPER(COALESCE(situacao, 'ATIVO')) = 'ATIVO'
+               AND demissao IS NULL AND admissao IS NOT NULL
+               AND admissao >= :desde
+               AND COALESCE(contrato_experiencia, '') <> ''"""),
+                {"desde": dia - _dt.timedelta(days=100)}).mappings().all():
+            exp = svc_exp.situacao(c["admissao"], c["contrato_experiencia"], dia)
+            if not exp["tem"] or exp["ja_acabou"]:
+                continue
+            falta = exp["dias_para_o_fim"]
+            if falta is not None and falta <= 10:
+                fim = (exp["fim_primeira"] if exp["fase"] == "primeira"
+                       else exp["fim_total"])
+                vira = ("se prorroga sozinho até " + _dt.date.fromisoformat(
+                        exp["fim_total"]).strftime("%d/%m/%Y")
+                        if exp["fase"] == "primeira" and exp["prorrogavel"]
+                        else "vira prazo indeterminado — aí sair custa aviso "
+                             "prévio e multa de 40%")
+                achados.append({
+                    "tipo": "experiencia_vencendo", "colaborador_id": c["id"],
+                    "quem": c["nome"],
+                    "o_que": (f"o contrato de experiência termina em "
+                              f"{_dt.date.fromisoformat(fim):%d/%m/%Y} (faltam "
+                              f"{falta} dia(s)); sem decisão, {vira}"),
+                    "o_que_fazer": "decidir com a obra: efetivar, prorrogar "
+                                   "ou encerrar no prazo"})
+        # 2. AS FÉRIAS VENCENDO OU VENCIDAS (em dobro — CLT art. 137).
+        from app.apps.erp.core import ferias as svc_ferias
+        if svc_ferias._tem_controle(s):
+            sem_info = 0
+            for f in svc_ferias.situacao_dos_periodos(s, hoje=dia):
+                if f["estado"] in ("vencendo", "vencida"):
+                    achados.append({
+                        "tipo": f"ferias_{f['estado']}",
+                        "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                        "o_que": f["detalhe"] + (" — o que passar é pago em "
+                                                 "dobro" if f["estado"] == "vencendo"
+                                                 else " — já em dobro"),
+                        "o_que_fazer": "programar as férias (tela Férias)"})
+                elif f["estado"] == "nao_informado":
+                    sem_info += 1
+            if sem_info:
+                achados.append({
+                    "tipo": "ferias_sem_controle", "colaborador_id": 0,
+                    "quem": f"{sem_info} pessoa(s) de carteira",
+                    "o_que": ("sem a informação de até quando as férias estão "
+                              "quitadas — o sistema não consegue dizer se vencem"),
+                    "o_que_fazer": "informar na tela Férias › Períodos (ou pedir "
+                                   "a lista à contabilidade)"})
+        # 3. O DOCUMENTO QUE A PESSOA TEM DE ASSINAR, parado na obra.
+        from app.apps.erp.core import termos
+        for tm in termos.pendentes(s, None):
+            if tm["atrasado"]:
+                achados.append({
+                    "tipo": "termo_sem_assinatura", "colaborador_id": 0,
+                    "quem": tm["pessoa"],
+                    "o_que": (f"{tm['numero']} ({tm['titulo']}) está com a obra "
+                              f"{tm['obra']} e o prazo venceu em "
+                              f"{_dt.date.fromisoformat(tm['prazo']):%d/%m/%Y}"),
+                    "o_que_fazer": "cobrar a obra"})
+        # 4. A OBRA PEDIU PARA CANCELAR OU CORRIGIR, e o DP ainda não fez.
+        for m in s.execute(text("""
+            SELECT d.numero, d.colaborador_id, COALESCE(c.nome, d.nome_informado) AS nome,
+                   d.dados -> 'mudanca_pedida' AS m
+              FROM dp_solicitacoes d LEFT JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.dados ? 'mudanca_pedida'
+               AND d.situacao IN ('EM_ANDAMENTO', 'ATENDIDA')""")).mappings().all():
+            achados.append({
+                "tipo": "mudanca_pedida", "colaborador_id": m["colaborador_id"] or 0,
+                "quem": m["nome"] or "",
+                "o_que": (f"{m['numero']}: quem pediu quer "
+                          f"{(m['m'] or {}).get('o_que', 'mudar')} — "
+                          f"{(m['m'] or {}).get('texto', '')}"),
+                "o_que_fazer": "corrigir ou cancelar o pedido (e avisar a "
+                               "contabilidade, se ela já recebeu)"})
+        # 5. CORREÇÃO OU CANCELAMENTO SEM A CIÊNCIA DA CONTABILIDADE.
+        for e in s.execute(text("""
+            SELECT p.numero, p.template, p.situacao, p.colaborador_id, c.nome
+              FROM dp_pedidos p LEFT JOIN colaboradores c ON c.id = p.colaborador_id
+             WHERE p.template IN ('RETIFICACAO', 'CANCELAMENTO_SOLICITACAO')
+               AND p.situacao NOT IN ('CONCLUIDO', 'CANCELADO')""")).mappings().all():
+            achados.append({
+                "tipo": "correcao_sem_ciencia", "colaborador_id": e["colaborador_id"] or 0,
+                "quem": e["nome"] or "",
+                "o_que": (f"{e['numero']} ({'cancelamento' if e['template'] == 'CANCELAMENTO_SOLICITACAO' else 'correção'}) "
+                          + ("ainda não foi enviado" if e["situacao"] == "RASCUNHO"
+                             else "sem a confirmação da contabilidade")),
+                "o_que_fazer": "enviar e cobrar a ciência"})
+        # 6. O AFASTAMENTO LANÇADO NO PONTO QUE NÃO CHEGOU AO DP. A ponte que
+        #    ele aprovou: afastamento é informação da contabilidade (eSocial),
+        #    e atestado acima de 15 dias vai para o INSS. Só LEITURA do ponto.
+        tem_ponto = s.execute(text(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'ponto' "
+            "AND table_name = 'ocorrencias'")).first() is not None
+        if tem_ponto:
+            for o in s.execute(text("""
+                SELECT o.colaborador_id, c.nome, o.tipo, o.data_inicio, o.data_fim
+                  FROM ponto.ocorrencias o
+                  JOIN colaboradores c ON c.id = o.colaborador_id
+                 WHERE o.status = 'APROVADA'
+                   AND UPPER(COALESCE(c.vinculo, 'CTPS')) = 'CTPS'
+                   AND o.data_inicio >= :desde
+                   AND (o.tipo IN ('AFASTAMENTO', 'LICENCA')
+                        OR (o.tipo = 'ATESTADO' AND o.data_fim - o.data_inicio >= 15))
+                   AND NOT EXISTS (
+                       SELECT 1 FROM colaborador_afastamentos a
+                        WHERE a.colaborador_id = o.colaborador_id
+                          AND a.data_inicio <= o.data_fim
+                          AND COALESCE(a.data_retorno, o.data_fim) >= o.data_inicio)
+                 ORDER BY o.data_inicio"""),
+                    {"desde": dia - _dt.timedelta(days=90)}).mappings().all():
+                achados.append({
+                    "tipo": "afastamento_so_no_ponto",
+                    "colaborador_id": o["colaborador_id"], "quem": o["nome"],
+                    "o_que": (f"{o['tipo'].lower()} de {o['data_inicio']:%d/%m/%Y} a "
+                              f"{o['data_fim']:%d/%m/%Y} aprovado no ponto e sem "
+                              "afastamento no cadastro — a contabilidade não sabe"
+                              + (" (atestado acima de 15 dias vai para o INSS)"
+                                 if o["tipo"] == "ATESTADO" else "")),
+                    "o_que_fazer": "lançar o afastamento no cadastro e informar "
+                                   "a contabilidade"})
+    except Exception:
+        logger.exception("Agente DP: falha no vigia do coordenador")
+
     # A rescisão paga em até 10 dias da saída (CLT art. 477).
     try:
         from app.apps.erp.core import desligamento_processo as svc_desl
@@ -1003,6 +1163,46 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
         feito["aviso"] = ("Nenhuma rotina do agente está ligada — ele não fez "
                           "nada, e é assim que ele nasce.")
     return feito
+
+
+# ---------------------------------------------------------------------------
+# A RODADA DIÁRIA, SOZINHA (20/11/2026). Ele: *"Vamos botar para funcionar."*
+# O mesmo desenho da virada do dia dos desligamentos: na primeira requisição
+# do ERP de cada dia, a rodada vai para a FILA de trabalhos (não roda dentro
+# da requisição de ninguém). Roda só o que está ligado na tela do agente.
+# ---------------------------------------------------------------------------
+_PARAMETRO_DA_RODADA = "agente_dp.rodada_em"
+_rodada: dict[str, Optional[str]] = {"dia": None}
+
+
+def precisa_da_rodada() -> bool:
+    return _rodada["dia"] != date.today().isoformat()
+
+
+def rodada_do_dia_se_preciso(s: Session) -> bool:
+    """Enfileira a rodada do dia, uma vez. Nunca levanta. Devolve se enfileirou."""
+    hoje = date.today().isoformat()
+    if _rodada["dia"] == hoje:
+        return False
+    try:
+        ja = s.execute(text("SELECT valor FROM parametros WHERE chave = :c"),
+                       {"c": _PARAMETRO_DA_RODADA}).scalar()
+        _rodada["dia"] = hoje
+        if str(ja or "") == hoje:
+            return False
+        s.execute(text("""
+            INSERT INTO parametros (chave, valor) VALUES (:c, :v)
+            ON CONFLICT (chave) DO UPDATE SET valor = :v, atualizado_em = now()"""),
+            {"c": _PARAMETRO_DA_RODADA, "v": hoje})
+        from app.apps.erp.core.comum import tarefas
+        tarefas.enfileirar_unico(s, "agente_dp_dia", {},
+                                 rotulo="Rodada diária do agente de DP",
+                                 frescor_minutos=60 * 12)
+        s.commit()
+        return True
+    except Exception:  # noqa: BLE001 — rotina de fundo não derruba a tela
+        logger.warning("Agente DP: a rodada do dia não foi enfileirada", exc_info=True)
+        return False
 
 
 def _carimbar(s: Session, chave: str) -> None:

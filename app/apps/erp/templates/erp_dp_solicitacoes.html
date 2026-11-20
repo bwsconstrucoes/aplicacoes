@@ -464,6 +464,13 @@ function pintarPedido(){
     ${p.motivo_cancelamento ? `<div class="aviso alerta" style="margin-top:10px">
       <b>Cancelado:</b> ${escapar(p.motivo_cancelamento)}</div>` : ""}
     ${p.aviso ? `<div class="aviso alerta" style="margin-top:10px">${escapar(p.aviso)}</div>` : ""}
+    ${p.mudanca_pedida ? `<div class="aviso alerta" style="margin-top:10px"><b>Quem pediu
+      quer ${p.mudanca_pedida.o_que === "cancelar" ? "CANCELAR" : "CORRIGIR"}:</b>
+      ${escapar(p.mudanca_pedida.texto)} <small>(${escapar(p.mudanca_pedida.por || "")},
+      ${dataBR(p.mudanca_pedida.em)})</small></div>` : ""}
+    ${p.cancelando ? `<div class="aviso alerta" style="margin-top:10px"><b>Em cancelamento:</b>
+      ${escapar(p.cancelando.motivo)} — fecha quando a contabilidade confirmar.</div>` : ""}
+    ${blocoDaAnalise(p)}
     ${blocoDoProcesso(p)}
     {# ⚑ OS DOCUMENTOS E O CADASTRO, À VISTA (19/11/2026). Ele: *"conferir se
        a documentação veio completa, mas cadê a documentação? A gente não
@@ -484,8 +491,12 @@ function pintarPedido(){
            este pedido${p.readmissao ? " — é readmissão, os papéis antigos estão no cadastro" : ""}.</td></tr>`}
          </tbody></table>` : ""}
     <h4 style="display:flex; align-items:center; gap:10px">O que foi pedido
-      ${PODE_ATENDER && p.a_atender ? `<button class="btn secundario" id="s-corrigir"
-        type="button">✏️ Corrigir os dados</button>` : ""}</h4>
+      ${PODE_ATENDER && (p.a_atender || ["EM_ANDAMENTO", "ATENDIDA"].includes(p.situacao))
+        ? `<button class="btn secundario" id="s-corrigir"
+        type="button">✏️ Corrigir os dados</button>` : ""}
+      ${PODE_ATENDER && ["EM_ANDAMENTO", "ATENDIDA"].includes(p.situacao)
+        && !["DESLIGAMENTO", "DESLIGAMENTO_PRESTADOR"].includes(p.tipo) && !p.cancelando
+        ? `<button class="link-btn" id="s-cancelar-andamento" type="button">cancelar este pedido…</button>` : ""}</h4>
     <table><tbody>${linhas || `<tr><td colspan="2" class="cartao-dica">Sem detalhe.</td></tr>`}</tbody></table>
     ${(p.itens || []).length ? `<h4>Checklist do atendimento (${p.feitos}/${p.total_itens})</h4>
       <div class="cartao-dica">São os passos que o DP faz, na ordem. Serve para mais de
@@ -510,6 +521,16 @@ function pintarPedido(){
   els("dlg-corpo").querySelectorAll("[data-ver-papel]").forEach(b =>
     b.addEventListener("click", () => verPapel(b.dataset.verPapel, b.dataset.nome)));
   if (els("s-corrigir")) els("s-corrigir").addEventListener("click", () => corrigirPedido(p));
+  if (els("s-cancelar-andamento")) els("s-cancelar-andamento").addEventListener("click", async () => {
+    const r = await perguntar({titulo: `Cancelar ${p.numero}`,
+      aviso: "O DP já atendeu este pedido. Se a contabilidade já recebeu, vai um "
+           + "pedido de cancelamento a ela, e este só vira Cancelado quando ela confirmar. "
+           + "O que o atendimento gravou no cadastro (fora férias e admissão) você confere à mão.",
+      textoOk: "Cancelar o pedido",
+      campos: [{nome: "motivo", rotulo: "Por que cancelar", tipo: "textarea",
+                obrigatorio: true, largura: 6, linhas: 2}]});
+    if (r) acao("cancelar_andamento", r);
+  });
   els("dlg-corpo").querySelectorAll("[data-item]").forEach(c =>
     c.addEventListener("change", () => acao("item",
       {item_id: +c.dataset.item, feito: c.checked})));
@@ -537,6 +558,22 @@ function pintarPedido(){
 const ICONE_DO_PASSO = {FEITO: "✔", NAO_SE_APLICA: "—", AGUARDANDO: "⏳",
                         PENDENTE: "○"};
 
+{# ⚑ A ANÁLISE DO AGENTE (20/11/2026, noite) — as regras trabalhistas lidas
+   no pedido como ele está: aviso proporcional, experiência, data-base da
+   convenção, férias, redução de salário. Ele: *"a ideia de futuro é que o DP
+   apenas olhe e dê o ok."* O agente aponta; quem decide é o DP. #}
+function blocoDaAnalise(p){
+  const a = p.analise || [];
+  if (!a.length) return "";
+  const atencao = a.filter(x => x.ok === false).length;
+  return `<h4>O agente conferiu ${atencao ? `<span class="etiqueta ambar">${atencao}
+      ponto(s) de atenção</span>` : `<span class="etiqueta verde">nada contra</span>`}</h4>
+    <table><tbody>${a.map(x => `<tr>
+      <td style="width:28px; text-align:center">${x.ok === true ? "✔" : x.ok === false ? "⚠️" : "•"}</td>
+      <td>${escapar(x.texto)}${x.regra ? `<br><small class="desc">${escapar(x.regra)}</small>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
 function blocoDoProcesso(p){
   const pr = p.processo;
   if (!pr) return "";
@@ -545,6 +582,18 @@ function blocoDoProcesso(p){
   const botoes = x => {
     if (!vivo) return "";
     const b = [];
+    {# ⚑ O DOCUMENTO PARA A PESSOA ASSINAR (20/11/2026, noite): o aviso
+       prévio e a autorização de desconto. #}
+    if (x.gerar_termo)
+      b.push(`<button class="btn" data-pr-termo="1">Gerar o documento para a obra</button>`);
+    if (x.termo && x.termo.anexo_id)
+      b.push(`<button type="button" class="link-btn" data-ver-papel="${x.termo.anexo_id}"
+        data-nome="${escapar(x.termo.numero)}">abrir ${escapar(x.termo.numero)}</button>`);
+    if (x.termo_a_validar)
+      b.push(`<button class="btn" data-pr-termo-ok="${x.termo.id}">Validar</button>
+        <button class="btn secundario" data-pr-termo-nao="${x.termo.id}">Devolver à obra…</button>`);
+    if (x.termo && x.estado === "AGUARDANDO")
+      b.push(`<button class="link-btn" data-pr-termo="1">gerar de novo</button>`);
     {# ⚑ OS BOTÕES DA ADMISSÃO (19/11/2026) — ver `admissao_processo`. #}
     if (!deslig) {
       if (x.codigo === "CONTABILIDADE" && !x.pedido)
@@ -656,6 +705,17 @@ function ligarBotoesDoProcesso(p){
      (20/11/2026): o servidor sabe o modelo de cada tipo e monta o pedido já
      preenchido (`contabil_processo.montar_pedido`). #}
   um("[data-pr-contab]", () => acao("contabilidade", {}));
+  um("[data-pr-termo]", () => acao("termo", {}));
+  um("[data-pr-termo-ok]", b => {
+    if (confirm("Você abriu o documento e confere que está certo e assinado?"))
+      acao("termo_validar", {termo_id: +b.dataset.prTermoOk, aceitar: true});
+  });
+  um("[data-pr-termo-nao]", async b => {
+    const r = await perguntar({titulo: "Devolver o documento à obra",
+      textoOk: "Devolver", campos: [{nome: "motivo", rotulo: "O que está errado",
+        tipo: "textarea", obrigatorio: true, largura: 6, linhas: 2}]});
+    if (r) acao("termo_validar", {termo_id: +b.dataset.prTermoNao, aceitar: false, ...r});
+  });
   const pc = els("pr-pedir-cancel");
   if (pc) pc.addEventListener("click", () => pedirCancelamentoDoDesligamento(p));
   {# ⚑ A ASSINATURA VAI E VOLTA PELO SISTEMA (19/11/2026). Ele: *"o arquivo

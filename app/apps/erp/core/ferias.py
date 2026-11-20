@@ -163,8 +163,9 @@ def programar(s: Session, sol: dict[str, Any], dados: dict[str, Any],
             f"Já há férias programadas de {choque[0]:%d/%m/%Y} a "
             f"{choque[1]:%d/%m/%Y} para esta pessoa. Para mudar a data, o "
             "pedido é de alteração de férias.")
-    obra = s.execute(text("SELECT obra_id FROM colaboradores WHERE id = :c"),
-                     {"c": colaborador_id}).scalar()
+    obra, admissao = s.execute(text(
+        "SELECT obra_id, admissao FROM colaboradores WHERE id = :c"),
+        {"c": colaborador_id}).one()
     novo = s.execute(text("""
         INSERT INTO ferias_programadas (colaborador_id, obra_id, inicio, dias, fim,
                                         abono_pecuniario, adiantamento_13,
@@ -176,6 +177,13 @@ def programar(s: Session, sol: dict[str, Any], dados: dict[str, Any],
          "ab": _sim(dados.get("abono_pecuniario")),
          "ad": _sim(dados.get("adiantamento_13")), "s": sol["id"],
          "obs": (str(dados.get("observacao") or "").strip() or None)}).scalar()
+    # A que período aquisitivo estas férias pertencem: o mais antigo em
+    # aberto. É o que faz o controle de vencimento andar sozinho.
+    if _tem_controle(s):
+        aberto = periodo_em_aberto(s, colaborador_id, admissao)
+        if aberto:
+            s.execute(text("UPDATE ferias_programadas SET periodo_aquisitivo_inicio "
+                           "= :p WHERE id = :i"), {"p": aberto["inicio"], "i": novo})
     return {"ferias_id": int(novo), "inicio": str(inicio), "dias": dias}
 
 
@@ -358,3 +366,167 @@ def chegando(s: Session, *, obras: Optional[list[int]] = None,
     return [f for f in listar(s, obras=obras, desde=hoje,
                               ate=hoje + timedelta(days=dias))
             if f["momento"] in ("chegando", "em_ferias")]
+
+
+# ===========================================================================
+# OS PERÍODOS — para as férias não vencerem (migração 117, 20/11/2026)
+#
+# Ele: *"o agente tem que acompanhar aí se tem alguém que o período aquisitivo
+# de férias vai se vencer, e está alertando o DP."* Férias não gozadas até o
+# fim do período concessivo (12 meses depois do aquisitivo) são pagas em DOBRO
+# (CLT art. 137).
+#
+# ⚠️ O QUE O SISTEMA NÃO SABE SOZINHO: as férias de antes de 20/11/2026. Para
+# cada pessoa, o DP (ou a contabilidade) informa UMA VEZ "quitadas até" — o
+# fim do último período já concedido. Daí em diante, as férias confirmadas no
+# sistema vão quitando os períodos. Sem a informação, quem tem mais de dois
+# anos de casa aparece como "controle não informado" — e não como vencida,
+# porque afirmar vencida sem saber seria o número errado com cara de certo.
+# ===========================================================================
+DIAS_DO_PERIODO = 30
+AVISAR_VENCIMENTO_COM_DIAS = 90
+
+
+def _tem_controle(s: Session) -> bool:
+    return s.execute(text(
+        "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' "
+        "AND table_name = 'ferias_programadas' "
+        "AND column_name = 'periodo_aquisitivo_inicio'")).first() is not None
+
+
+def quitado_ate(s: Session, colaborador_id: int) -> tuple[bool, Optional[date]]:
+    """(informado?, data). Informado com data nula = nenhum período quitado."""
+    if not _tem_controle(s):
+        return False, None
+    linha = s.execute(text("SELECT quitado_ate FROM ferias_controle "
+                           "WHERE colaborador_id = :c"), {"c": colaborador_id}).first()
+    return (linha is not None), (linha[0] if linha else None)
+
+
+def _creditos(s: Session, colaborador_id: int) -> dict[date, float]:
+    """Dias de férias por período aquisitivo. Quem vende 1/3 goza 20 e quita
+    30: o abono conta como a metade dos dias gozados."""
+    if not _tem_controle(s):
+        return {}
+    saida: dict[date, float] = {}
+    for l in s.execute(text("""
+        SELECT periodo_aquisitivo_inicio AS p, dias, abono_pecuniario
+          FROM ferias_programadas
+         WHERE colaborador_id = :c AND situacao <> 'CANCELADA'
+           AND periodo_aquisitivo_inicio IS NOT NULL"""),
+            {"c": colaborador_id}).mappings().all():
+        dias = l["dias"] * (1.5 if l["abono_pecuniario"] else 1)
+        saida[l["p"]] = saida.get(l["p"], 0) + dias
+    return saida
+
+
+def periodos(s: Session, colaborador_id: int, admissao: Optional[date],
+             hoje: Optional[date] = None) -> list[dict[str, Any]]:
+    """Os períodos aquisitivos da pessoa, cada um com o que já foi programado."""
+    from app.apps.erp.core.dp_analise import periodos_de_ferias
+    hoje = hoje or date.today()
+    if not admissao:
+        return []
+    informado, quitado = quitado_ate(s, colaborador_id)
+    creditos = _creditos(s, colaborador_id)
+    saida = []
+    for p in periodos_de_ferias(admissao, hoje):
+        dias = min(DIAS_DO_PERIODO, creditos.get(p["inicio"], 0))
+        quitado_antes = bool(quitado and p["fim"] <= quitado)
+        saida.append({**p, "dias_programados": dias,
+                      "quitado": quitado_antes or dias >= DIAS_DO_PERIODO,
+                      "completo": p["fim"] < hoje,
+                      "sabido": informado or p["inicio"] >= date(2026, 11, 20)
+                      or quitado_antes})
+    return saida
+
+
+def periodo_em_aberto(s: Session, colaborador_id: int, admissao: Optional[date],
+                      hoje: Optional[date] = None) -> Optional[dict[str, Any]]:
+    """O período mais antigo já completo e ainda não quitado — é a ele que as
+    próximas férias pertencem. Nenhum completo em aberto: None."""
+    for p in periodos(s, colaborador_id, admissao, hoje):
+        if p["completo"] and not p["quitado"]:
+            return p
+    return None
+
+
+def situacao_dos_periodos(s: Session, *, obras: Optional[list[int]] = None,
+                          hoje: Optional[date] = None,
+                          limite: int = 2000) -> list[dict[str, Any]]:
+    """Cada pessoa de carteira ativa e o estado das férias dela."""
+    hoje = hoje or date.today()
+    if obras is not None and not obras:
+        return []
+    linhas = s.execute(text("""
+        SELECT c.id, c.nome, c.admissao, o.codigo AS obra
+          FROM colaboradores c LEFT JOIN obras o ON o.id = c.obra_id
+         WHERE UPPER(COALESCE(c.vinculo, 'CTPS')) = 'CTPS'
+           AND UPPER(COALESCE(c.situacao, 'ATIVO')) = 'ATIVO'
+           AND c.admissao IS NOT NULL
+           AND (:todas OR c.obra_id = ANY(:obras))
+         ORDER BY c.nome LIMIT :l"""),
+        {"todas": obras is None, "obras": obras or [], "l": limite}).mappings().all()
+    saida = []
+    for l in linhas:
+        informado, quitado = quitado_ate(s, l["id"])
+        ps = periodos(s, l["id"], l["admissao"], hoje)
+        abertos = [p for p in ps if p["completo"] and not p["quitado"]]
+        vencidos = [p for p in abertos if p["limite"] < hoje]
+        estado, detalhe = "em_dia", "nenhum período vencendo"
+        if not informado and any(not p["sabido"] for p in abertos):
+            estado = "nao_informado"
+            detalhe = ("as férias de antes do sistema não foram informadas — "
+                       "informe até quando estão quitadas")
+        elif vencidos:
+            estado = "vencida"
+            detalhe = (f"{len(vencidos)} período(s) vencido(s) — o mais antigo "
+                       f"tinha de ser gozado até {vencidos[0]['limite']:%d/%m/%Y}")
+        elif abertos and (abertos[0]["limite"] - hoje).days <= AVISAR_VENCIMENTO_COM_DIAS:
+            estado = "vencendo"
+            detalhe = (f"período {abertos[0]['inicio']:%d/%m/%Y}–"
+                       f"{abertos[0]['fim']:%d/%m/%Y}: gozar até "
+                       f"{abertos[0]['limite']:%d/%m/%Y} "
+                       f"(faltam {(abertos[0]['limite'] - hoje).days} dias; "
+                       f"{int(abertos[0]['dias_programados'])} de 30 dias programados)")
+        elif abertos:
+            detalhe = (f"período aberto {abertos[0]['inicio']:%d/%m/%Y}–"
+                       f"{abertos[0]['fim']:%d/%m/%Y}: gozar até "
+                       f"{abertos[0]['limite']:%d/%m/%Y}")
+        saida.append({"colaborador_id": l["id"], "pessoa": l["nome"],
+                      "obra": l["obra"] or "", "admissao": str(l["admissao"]),
+                      "quitado_ate": str(quitado) if quitado else None,
+                      "informado": informado, "estado": estado,
+                      "detalhe": detalhe,
+                      "aberto": ({"inicio": str(abertos[0]["inicio"]),
+                                  "fim": str(abertos[0]["fim"]),
+                                  "limite": str(abertos[0]["limite"]),
+                                  "dias_programados": abertos[0]["dias_programados"]}
+                                 if abertos else None)})
+    return saida
+
+
+def informar_quitado(s: Session, colaborador_id: int, quitado: Any,
+                     usuario: Optional[Usuario], origem: str = "DP") -> None:
+    """O DP informa até quando as férias da pessoa estão quitadas (o fim do
+    último período aquisitivo já concedido). Vazio = nenhum quitado."""
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    if not _tem_controle(s):
+        raise ErroValidacao("Falta aplicar a atualização do banco (117).")
+    data = _data(quitado) if str(quitado or "").strip() else None
+    if str(quitado or "").strip() and data is None:
+        raise ErroValidacao("Data inválida.")
+    if data and data > date.today():
+        raise ErroValidacao("A data de quitação não pode ser no futuro.")
+    s.execute(text("""
+        INSERT INTO ferias_controle (colaborador_id, quitado_ate, origem,
+                                     informado_por, informado_em)
+        VALUES (:c, :q, :o, :u, now())
+        ON CONFLICT (colaborador_id) DO UPDATE
+           SET quitado_ate = :q, origem = :o, informado_por = :u,
+               informado_em = now()"""),
+        {"c": colaborador_id, "q": data, "o": origem,
+         "u": usuario.id if usuario else None})
+    registrar_evento(s, "colaborador", colaborador_id, "FERIAS_QUITADAS_ATE",
+                     {"quitado_ate": str(data) if data else None},
+                     usuario.id if usuario else None)

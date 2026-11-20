@@ -176,6 +176,8 @@ def fechar_concluidas(s: Session, colaborador_id: int,
            AND tipo IN ('CADASTRO', 'ADMISSAO_PRESTADOR')
            AND situacao = :sit"""),
         {"c": colaborador_id, "sit": EM_ANDAMENTO}).scalars().all()
+    from app.apps.erp.core import contabil_processo
+    ids = [i for i in ids if not contabil_processo.extras_abertos(s, int(i))]
     for i in ids:
         s.execute(text("""UPDATE dp_solicitacoes SET situacao = 'ATENDIDA',
                                  atualizado_em = now() WHERE id = :i"""), {"i": i})

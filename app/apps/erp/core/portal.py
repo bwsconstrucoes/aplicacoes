@@ -627,7 +627,7 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
     # colaborador (gente de escritório): pelo usuário.
     linhas = s.execute(text("""
         SELECT sol.id, sol.numero, sol.tipo, sol.situacao, sol.criado_em,
-               sol.colaborador_id,
+               sol.colaborador_id, sol.dados,
                sol.resposta, COALESCE(c.nome, sol.nome_informado) AS pessoa,
                COALESCE(c.cpf, sol.cpf_informado) AS cpf,
                o.codigo AS obra, COALESCE(gc.nome, gp.nome) AS cargo
@@ -646,6 +646,8 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
         # O código e a pessoa: é o que o botão "Pedir o cancelamento" do
         # desligamento usa para abrir o pedido já com a pessoa escolhida.
         "tipo_codigo": l["tipo"], "colaborador_id": l["colaborador_id"],
+        "id": l["id"],
+        "mudanca_pedida": ((l["dados"] or {}).get("mudanca_pedida") or {}).get("texto", ""),
         "tipo": svc_sp.TIPOS.get(l["tipo"], {}).get("nome", l["tipo"]),
         # O RÓTULO EM PORTUGUÊS, NÃO O CÓDIGO. Quem olha está na obra, no
         # celular: "EM_ANALISE" na tela é defeito, não detalhe. E o rótulo é o
@@ -681,6 +683,19 @@ def ferias_da_equipe(s: Session, usuario: Optional[Usuario]) -> list[dict[str, A
               "retorno", "dias", "situacao_rotulo", "faltam_dias", "momento")
     return [{**{k: f[k] for k in campos},
              "mudanca": (f["mudanca"] or {}).get("rotulo", "")} for f in lista]
+
+
+def termos_para_assinar(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
+    """Os documentos que a obra tem de levar para a pessoa assinar (20/11/2026).
+    Para quem alcança a obra — o administrativo, que conduz a assinatura."""
+    from app.apps.erp.core import termos
+    try:
+        eu = quem_esta(s, usuario)
+        if not pode_pedir_por_outros(s, eu):
+            return []
+        return termos.pendentes(s, obras_que_alcanca(s, eu))
+    except SemAcesso:
+        return []
 
 
 # ---------------------------------------------------------------------------

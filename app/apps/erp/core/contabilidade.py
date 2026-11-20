@@ -107,6 +107,45 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "conferir": ("nome", "cpf"),
         "etapa_ao_concluir": "",
     },
+    "ALTERACAO_CADASTRAL": {
+        "nome": "Atualização cadastral",
+        "explicacao": "nome ou endereço novos, para o eSocial",
+        "exige": ("nome", "cpf"),
+        "espera": "ALTERACAO-CONTRATO",
+        "prazo": 3, "cobrancas": 2, "intervalo": 3,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
+    "DESCONTO_FOLHA": {
+        "nome": "Desconto em folha",
+        "explicacao": "o desconto autorizado pelo colaborador, na folha",
+        "exige": ("nome", "cpf"),
+        "espera": "ALTERACAO-CONTRATO",
+        "prazo": 3, "cobrancas": 2, "intervalo": 3,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
+    # ⚑ A CORREÇÃO E O CANCELAMENTO DO QUE JÁ FOI (20/11/2026, noite) — ver
+    # `contabil_processo.comunicar_correcao`. Ele: *"Preciso comunicar a
+    # correção, preciso ter confirmar que há a ciência daquela alteração."*
+    "RETIFICACAO": {
+        "nome": "Correção de informação já enviada",
+        "explicacao": "o que mudou num pedido que a contabilidade já recebeu",
+        "exige": ("nome", "cpf"),
+        "espera": "ALTERACAO-CONTRATO",
+        "prazo": 1, "cobrancas": 3, "intervalo": 1,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
+    "CANCELAMENTO_SOLICITACAO": {
+        "nome": "Cancelamento de pedido já enviado",
+        "explicacao": "desfazer um pedido que a contabilidade já recebeu",
+        "exige": ("nome", "cpf"),
+        "espera": "ALTERACAO-CONTRATO",
+        "prazo": 1, "cobrancas": 3, "intervalo": 1,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
     "DEPENDENTE": {
         "nome": "Cadastro de dependente",
         "explicacao": "incluir dependente para salário-família e imposto de renda",
@@ -375,9 +414,63 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
                  _linha("Faltas a descontar", d.get("faltas"))]
     elif template == "CANCELAMENTO_DESLIGAMENTO":
         miolo = ["Solicitamos o CANCELAMENTO do desligamento comunicado "
-                 "anteriormente para o colaborador abaixo.", "",
+                 "anteriormente para o colaborador abaixo. Ele CONTINUA "
+                 "trabalhando: nenhuma rescisão deve ser processada.", "",
                  _linha("Desligamento comunicado em", d.get("comunicado_em")),
-                 _linha("Motivo do cancelamento", d.get("motivo"))]
+                 _linha("Motivo do cancelamento", d.get("motivo")),
+                 "", "Por favor, confirme a ciência respondendo este e-mail."]
+    # ⚑ 20/11/2026 (noite): os modelos que faltavam texto — sem isto a
+    # alteração e o cancelamento de férias saíam só com os dados da pessoa,
+    # sem dizer o que se pedia.
+    elif template == "ALTERACAO_FERIAS":
+        miolo = ["Solicitamos a ALTERAÇÃO das férias do colaborador abaixo.", "",
+                 _linha("Férias como estavam (início)", d.get("inicio_anterior")),
+                 _linha("Dias como estavam", d.get("dias_anteriores")),
+                 _linha("Novo início", d.get("inicio")),
+                 _linha("Novos dias", d.get("dias")),
+                 _linha("Abono pecuniário", d.get("abono")),
+                 _linha("Adiantamento do 13º", d.get("adiantamento_13")),
+                 _linha("Motivo", d.get("motivo")),
+                 "", "Por favor, devolva o aviso de férias refeito."]
+    elif template == "CANCELAMENTO_FERIAS":
+        miolo = ["Solicitamos o CANCELAMENTO das férias do colaborador abaixo.", "",
+                 _linha("Início das férias canceladas", d.get("inicio_anterior")),
+                 _linha("Dias", d.get("dias_anteriores")),
+                 _linha("Motivo", d.get("motivo")),
+                 "", "Por favor, confirme a ciência respondendo este e-mail."]
+    elif template == "ALTERACAO_CADASTRAL":
+        miolo = ["Solicitamos a atualização cadastral abaixo (eSocial).", "",
+                 _linha("Nome novo", d.get("nome_novo")),
+                 _linha("CEP", d.get("cep")),
+                 _linha("Logradouro", d.get("logradouro")),
+                 _linha("Número", d.get("numero_endereco")),
+                 _linha("Bairro", d.get("bairro")),
+                 _linha("Município", d.get("municipio")),
+                 _linha("UF", d.get("uf")),
+                 _linha("O que mudou, nas palavras de quem pediu", d.get("descricao"))]
+    elif template == "DESCONTO_FOLHA":
+        miolo = ["Solicitamos o lançamento do desconto em folha abaixo. A "
+                 "autorização assinada pelo colaborador segue anexa.", "",
+                 _linha("Valor total", d.get("valor_total")),
+                 _linha("Parcelas", d.get("parcelas")),
+                 _linha("Valor da parcela", d.get("valor_parcela")),
+                 _linha("A partir da competência", d.get("primeira_competencia")),
+                 _linha("Referente a", d.get("motivo"))]
+    elif template == "RETIFICACAO":
+        miolo = ["Pedimos a CORREÇÃO de uma informação já enviada a vocês.", "",
+                 _linha("Pedido corrigido", d.get("pedido_original")),
+                 _linha("O que mudou (de → para)", d.get("o_que_mudou")),
+                 "", "Por favor, confirme a ciência e o que for refeito "
+                     "respondendo este e-mail."]
+    elif template == "CANCELAMENTO_SOLICITACAO":
+        miolo = ["Pedimos o CANCELAMENTO de um pedido já enviado a vocês: "
+                 "nada dele deve ser processado.", "",
+                 _linha("Pedido cancelado", d.get("pedido_original")),
+                 _linha("Motivo", d.get("motivo")),
+                 "", "Por favor, confirme a ciência respondendo este e-mail."]
+    if template == "DESLIGAMENTO" and d.get("aviso_assinado"):
+        miolo.append(_linha("Aviso prévio assinado", d.get("aviso_assinado")
+                            + " (segue anexo)"))
 
     corpo = "\n".join([x for x in miolo if x is not None]
                       + ["", "--- Dados do colaborador ---"]
@@ -426,6 +519,18 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
     if c is None:
         raise ErroValidacao("Escolha a pessoa do pedido.")
 
+    # ⚑ A RESCISÃO VAI COM O AVISO ASSINADO (20/11/2026). Ele: *"O DP
+    # verifica e manda para frente, para a contabilidade. Já com o aviso
+    # assinado, datado."*
+    if template == "DESLIGAMENTO" and dados.get("solicitacao_id"):
+        from app.apps.erp.core import desligamento_processo as svc_desl
+        motivo_ = svc_desl.aviso_pendente(s, int(dados["solicitacao_id"]))
+        if motivo_:
+            raise ErroValidacao(motivo_)
+        assinado = svc_desl.aviso_assinado(s, int(dados["solicitacao_id"]))
+        if assinado:
+            dados = {**dados, "dados": {**(dados.get("dados") or {}),
+                                        "aviso_assinado": assinado}}
     falta = o_que_falta_para_pedir(s, template, c)
     if falta:
         # RECUSA ANTES DE SAIR PELA METADE. É a economia da rotina R3 do
@@ -472,6 +577,35 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
     s.flush()
     return {"id": linha.id, "numero": linha.numero, "assunto": assunto,
             "corpo": corpo, "avisos": avisos}
+
+
+def _documentos_assinados(s: Session, p: dict[str, Any]) -> list[dict[str, Any]]:
+    """O que a pessoa assinou nesta solicitação (o aviso prévio, a autorização
+    de desconto) vai anexo ao e-mail. Uma leitura do arquivo por documento —
+    no Drive, uma ida ao Google cada; costuma ser um só."""
+    sid = p.get("solicitacao_id")
+    if not sid:
+        return []
+    try:
+        from app.apps.erp.core import termos
+        from app.apps.erp.core.documentos.armazenamento import conteudo_de, obter
+        if not termos.tem_tabela(s):
+            return []
+        saida = []
+        for l in s.execute(text("""
+            SELECT t.numero, t.tipo, d.anexo_id FROM dp_termos t
+              JOIN documentos d ON d.id = t.documento_id
+             WHERE t.solicitacao_id = :s AND t.situacao IN ('ASSINADO', 'RECUSADO')
+             ORDER BY t.id"""), {"s": sid}).mappings().all():
+            a = obter(s, int(l["anexo_id"]))
+            saida.append({"nome": f"{l['tipo'].lower()}_{l['numero']}.pdf"
+                          if (a.mime_type or "").endswith("pdf") else a.nome_arquivo,
+                          "mime": a.mime_type or "application/pdf",
+                          "conteudo": conteudo_de(s, a)})
+        return saida
+    except Exception:  # noqa: BLE001 — sem o anexo o e-mail sai e o corpo avisa
+        logger.exception("ERP/contabilidade: não anexei o documento assinado")
+        return []
 
 
 def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
@@ -528,7 +662,8 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
     registro = svc_email.enviar(
         s, empresa=empresa, para=destinos, assunto=p["assunto"],
         corpo=p["corpo"], entidade_tipo="dp_pedido", entidade_id=pedido_id,
-        usuario=usuario, destinatario_tipo="contabilidade")
+        usuario=usuario, destinatario_tipo="contabilidade",
+        anexos=_documentos_assinados(s, p))
     deu = (registro.situacao == "ENVIADO")
     if deu:
         prazo = dias_uteis_depois(date.today(), regra["prazo"])

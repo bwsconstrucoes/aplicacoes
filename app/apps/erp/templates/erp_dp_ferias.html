@@ -45,6 +45,33 @@
   </table>
   </div>
 </div>
+
+{# ⚑ OS PERÍODOS (20/11/2026, noite). Ele: *"o agente tem que acompanhar aí
+   se tem alguém que o período aquisitivo de férias vai se vencer, e está
+   alertando o DP."* Férias não gozadas no prazo são pagas em dobro (CLT art.
+   137). As de antes do sistema, o DP informa uma vez por pessoa. #}
+<h3 style="margin-top:22px">Períodos — para as férias não vencerem</h3>
+<div class="cartao-dica">Cada pessoa de carteira, o período mais antigo em aberto e
+  até quando ele tem de ser gozado. <b>As férias de antes do sistema o DP informa
+  uma vez</b> ("quitadas até" = o fim do último período já concedido); daí em
+  diante as férias confirmadas aqui vão quitando os períodos sozinhas.</div>
+<div class="tabela-wrap" style="margin-top:8px">
+  <div class="tabela-barra">
+    <select id="f-estado" style="width:auto">
+      <option value="">todos</option>
+      <option value="vencida">vencidas</option>
+      <option value="vencendo">vencendo</option>
+      <option value="nao_informado">sem informação</option>
+      <option value="em_dia">em dia</option>
+    </select>
+    <span class="espaco"></span><span id="resumo-p" class="desc"></span>
+  </div>
+  <div class="tabela-rolagem">
+  <table><thead><tr><th>Pessoa</th><th>Obra</th><th>Admissão</th><th>Quitadas até</th>
+    <th>Situação</th><th></th></tr></thead>
+    <tbody id="linhas-p"><tr><td colspan="6" class="desc">carregando…</td></tr></tbody></table>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -162,7 +189,56 @@ async function carregar(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+let PERIODOS = [];
+const ESTADO_ROTULO = {vencida: ["vencida", "#A32020"], vencendo: ["vencendo", "#C2410C"],
+  nao_informado: ["sem informação", "#8A5B00"], em_dia: ["em dia", "#15803D"]};
+
+function desenharPeriodos(){
+  const filtro = els("f-estado").value;
+  const l = PERIODOS.filter(x => !filtro || x.estado === filtro);
+  const conta = e => PERIODOS.filter(x => x.estado === e).length;
+  els("resumo-p").textContent = `${conta("vencida")} vencida(s) · ${conta("vencendo")} vencendo · `
+    + `${conta("nao_informado")} sem informação`;
+  els("linhas-p").innerHTML = l.map((x, i) => {
+    const [r, cor] = ESTADO_ROTULO[x.estado] || [x.estado, ""];
+    return `<tr><td><b>${escapar(x.pessoa)}</b></td><td>${escapar(x.obra)}</td>
+      <td>${br(x.admissao)}</td><td>${x.quitado_ate ? br(x.quitado_ate) : (x.informado ? "nenhum período" : "—")}</td>
+      <td><b style="color:${cor}">${r}</b><div class="desc">${escapar(x.detalhe)}</div></td>
+      <td><button class="btn secundario" data-quitado="${x.colaborador_id}">Informar quitadas até…</button></td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="desc">Ninguém neste filtro.</td></tr>`;
+  els("linhas-p").querySelectorAll("[data-quitado]").forEach(b =>
+    b.addEventListener("click", () => informarQuitado(PERIODOS.find(
+      x => x.colaborador_id === +b.dataset.quitado))));
+}
+
+async function informarQuitado(x){
+  const r = await perguntar({titulo: `Férias de ${x.pessoa}: quitadas até`,
+    aviso: `Admitido em ${br(x.admissao)}. Informe o FIM do último período aquisitivo cujas `
+         + "férias já foram concedidas (ex.: admitido em 10/03/2023 e férias de 2023–2024 "
+         + "já gozadas → 09/03/2024). Em branco = nenhum período quitado.",
+    textoOk: "Gravar",
+    campos: [{nome: "quitado_ate", rotulo: "Quitadas até", tipo: "date",
+              valor: x.quitado_ate || "", largura: 3}]});
+  if (!r) return;
+  try {
+    await api(`/erp/api/dp/ferias/controle/${x.colaborador_id}`, {method: "POST",
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Gravado.", "ok");
+    carregarPeriodos();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function carregarPeriodos(){
+  try {
+    const d = await api("/erp/api/dp/ferias/periodos");
+    PERIODOS = d.periodos;
+    desenharPeriodos();
+  } catch(e){ els("linhas-p").innerHTML = `<tr><td colspan="6">${escapar(e.message)}</td></tr>`; }
+}
+
 els("ver-passadas").addEventListener("change", carregar);
+els("f-estado").addEventListener("change", desenharPeriodos);
 carregar();
+carregarPeriodos();
 </script>
 {% endblock %}
