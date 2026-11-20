@@ -3137,4 +3137,6 @@ consulta inventada vai sendo usado cada vez menos.
   análise só confere datas e regras.
 - **"Quem está grávida / é da CIPA?"** — o sistema não sabe; a análise lembra.
 - **"O salário-família ainda cabe no salário dele?"** — falta o teto do ano.
+- **"O fulano já assinou o aviso de férias?"** — o último passo do pedido de
+  férias (desde 20/11/2026, noite); o pedido só fecha com ele.
 

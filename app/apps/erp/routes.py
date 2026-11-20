@@ -12425,6 +12425,9 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
                 atual = svc.ler(s, solicitacao_id)
                 if atual["tipo"] == "DESCONTO_EM_FOLHA":
                     svc.gerar_autorizacao_de_desconto(s, atual, usuario)
+                elif atual["tipo"] in ("FERIAS", "ALTERACAO_FERIAS"):
+                    from app.apps.erp.core import ferias as svc_ferias
+                    svc_ferias.gerar_aviso(s, atual, usuario)
                 else:
                     svc_proc.gerar_termo(s, atual, usuario)
                 s.flush()

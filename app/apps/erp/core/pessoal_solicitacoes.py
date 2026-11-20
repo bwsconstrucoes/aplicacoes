@@ -2864,6 +2864,17 @@ def termo_voltou(s: Session, termo_id: int, usuario: Optional[Usuario]) -> None:
     _evento(s, t_["solicitacao_id"], "DOCUMENTO_ASSINADO",
             {"numero": t_["numero"],
              "texto": termos.FORMA_ROTULOS.get(t_.get("forma") or "", "")}, usuario)
+    sol = s.execute(text("SELECT id, tipo, situacao FROM dp_solicitacoes "
+                         "WHERE id = :i"), {"i": t_["solicitacao_id"]}).mappings().first()
+    # O aviso de férias assinado é o último passo: o pedido de férias fecha.
+    if termos.concluido(t_) and sol and sol["tipo"] in svc_ferias.TIPOS_COM_AVISO:
+        if sol["situacao"] == "EM_ANDAMENTO" and \
+                not svc_contabil.extras_abertos(s, int(sol["id"])):
+            s.execute(text("UPDATE dp_solicitacoes SET situacao = 'ATENDIDA', "
+                           "atualizado_em = now() WHERE id = :i"), {"i": sol["id"]})
+            _evento(s, sol["id"], "ATENDIDA",
+                    {"texto": "a pessoa assinou o aviso de férias"}, usuario)
+        return
     if termos.concluido(t_) and agente_dp.modo(s, "despacho") != "DESLIGADA":
         despachar(s, int(t_["solicitacao_id"]), usuario)
 

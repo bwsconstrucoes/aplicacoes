@@ -54,7 +54,6 @@ TEMPLATE_DO_TIPO = {
     # vai a ela. Ele: *"Na gestão do carteira assinada, nosso sistema funciona
     # como uma ponte, mas tudo é fechado lá (…) E a gente requer sempre o
     # retorno de tudo. Quem não é CLT, aí tudo se resolve internamente."*
-    "ATUALIZACAO_DADOS": "ALTERACAO_CADASTRAL",
     "DESCONTO_EM_FOLHA": "DESCONTO_FOLHA",
     # A admissão usa o mesmo botão para o registro da carteira.
     "CADASTRO": "ASSINATURA_CTPS",
@@ -65,14 +64,12 @@ TEMPLATE_DO_TIPO = {
 def e_processo(tipo: str) -> bool:
     return tipo in ("ALTERACAO_CARGO", "DEPENDENTE", "FERIAS",
                     "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
-                    "CANCELAR_DESLIGAMENTO", "ATUALIZACAO_DADOS",
-                    "DESCONTO_EM_FOLHA")
+                    "CANCELAR_DESLIGAMENTO", "DESCONTO_EM_FOLHA")
 
 
-# O que, na atualização cadastral, a contabilidade informa ao eSocial. Telefone
-# e Pix são nossos (o pagamento é nosso); nome e endereço são dela.
-CADASTRAIS_DO_ESOCIAL = ("nome_novo", "cep", "logradouro", "numero_endereco",
-                         "bairro", "municipio", "uf")
+# ⚑ A ATUALIZAÇÃO CADASTRAL (nome, endereço) NÃO VAI À CONTABILIDADE — decisão
+# dele, 20/11/2026: *"Troca de nome e endereço não mandar pra contabilidade."*
+# Ela se resolve no cadastro, como o telefone e o Pix.
 
 
 def _vinculo(s: Session, colaborador_id: Optional[int]) -> str:
@@ -90,9 +87,6 @@ def aplica(s: Session, tipo: str, colaborador_id: Optional[int],
                 "CANCELAMENTO_FERIAS", "CANCELAR_DESLIGAMENTO",
                 "DESCONTO_EM_FOLHA"):
         return vinculo == "CTPS"
-    if tipo == "ATUALIZACAO_DADOS":
-        return vinculo == "CTPS" and any(
-            str(pedido.get(k) or "").strip() for k in CADASTRAIS_DO_ESOCIAL)
     if tipo == "DEPENDENTE":
         marcou = lambda v: str(v or "") == "1"
         varios = pedido.get("dependentes")
@@ -178,6 +172,34 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                                  and ped["situacao"] != "RASCUNHO" else "PENDENTE"),
          "concluído — o pedido fecha sozinho" if voltou else
          ("esperando a contabilidade" if ped is not None else "depois do pedido"))
+    # ⚑ O AVISO DE FÉRIAS ASSINADO NA TELA (20/11/2026, noite). Ele: *"Aviso
+    # de férias em tela."* Depois do retorno, a pessoa dá ciência no celular.
+    from app.apps.erp.core import ferias as svc_ferias
+    if sol["tipo"] in svc_ferias.TIPOS_COM_AVISO:
+        from app.apps.erp.core import termos
+        tm = termos.do_pedido(s, int(sol["id"]))
+        rot = "Aviso de férias assinado pela pessoa"
+        quem_ = "obra colhe, DP confere"
+        if not voltou:
+            item("AVISO_FERIAS", rot, quem_, "PENDENTE",
+                 "depois do retorno da contabilidade, vai para a obra")
+        elif tm is None:
+            item("AVISO_FERIAS", rot, quem_, "PENDENTE",
+                 "gere o aviso para a obra colher a assinatura", gerar_termo=True)
+        elif termos.concluido(tm):
+            item("AVISO_FERIAS", rot, quem_, "FEITO",
+                 f"{tm['numero']}: " + termos.FORMA_ROTULOS.get(tm.get("forma") or "", ""),
+                 termo={"id": tm["id"], "numero": tm["numero"],
+                        "anexo_id": tm.get("anexo_id")})
+        else:
+            item("AVISO_FERIAS", rot, quem_,
+                 "AGUARDANDO" if tm["situacao"] == "ABERTO" else "PENDENTE",
+                 (f"{tm['numero']} com a obra para colher a assinatura"
+                  if tm["situacao"] == "ABERTO" else
+                  f"{tm['numero']} voltou — abra e valide"),
+                 termo={"id": tm["id"], "numero": tm["numero"],
+                        "anexo_id": tm.get("anexo_id")},
+                 termo_a_validar=tm["situacao"] != "ABERTO")
     cumpridos = sum(1 for x in saida if x["estado"] == "FEITO")
     proximo = next((x for x in saida if x["estado"] != "FEITO"), None)
     return {"passos": saida, "cumpridos": cumpridos, "total": len(saida),
@@ -230,8 +252,6 @@ def _dados_do_pedido(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
     if tipo == "CANCELAR_DESLIGAMENTO":
         return {"comunicado_em": d.get("desligamento_comunicado_em"),
                 "motivo": d.get("observacao")}
-    if tipo == "ATUALIZACAO_DADOS":
-        return {k: d.get(k) for k in CADASTRAIS_DO_ESOCIAL + ("descricao",)}
     if tipo == "DESCONTO_EM_FOLHA":
         return {"valor_total": d.get("valor_total"), "parcelas": d.get("parcelas"),
                 "valor_parcela": d.get("valor_parcela"),
@@ -291,11 +311,28 @@ def fechar_pelo_pedido(s: Session, pedido: dict[str, Any],
                 OR (CAST(:sid AS INTEGER) IS NULL AND colaborador_id = :c))"""),
         {"sit": EM_ANDAMENTO, "t": tipos, "sid": pedido.get("solicitacao_id"),
          "c": pedido.get("colaborador_id")}).mappings().all()
-    sols = [x for x in sols if not extras_abertos(s, int(x["id"]))]
     for sol in sols:
         # A programação de férias só muda AQUI, com o retorno — ver
         # `core/ferias.py`.
         feito = svc_ferias.contabilidade_devolveu(s, dict(sol), pedido)
+        # As férias ainda esperam a pessoa assinar o aviso: o pedido segue.
+        if sol["tipo"] in svc_ferias.TIPOS_COM_AVISO:
+            aviso = svc_ferias.gerar_aviso(s, {**dict(sol), "obra_id": None}, usuario)
+            if aviso is not None:
+                _evento(s, sol["id"], "CONTABILIDADE_DEVOLVEU",
+                        {"texto": f"{pedido.get('numero')} concluído"
+                                  + (f"; {feito}" if feito else "")
+                                  + f" — aviso {aviso['numero']} foi para a obra "
+                                    "colher a assinatura"}, usuario)
+                continue
+        # Com correção ou cancelamento esperando a ciência, o pedido não fecha
+        # aqui — fecha quando ela confirmar (`fechar_extra`).
+        if extras_abertos(s, int(sol["id"])):
+            _evento(s, sol["id"], "CONTABILIDADE_DEVOLVEU",
+                    {"texto": f"{pedido.get('numero')} concluído"
+                              + (f"; {feito}" if feito else "")
+                              + " — falta a ciência da correção"}, usuario)
+            continue
         s.execute(text("UPDATE dp_solicitacoes SET situacao = 'ATENDIDA', "
                        "atualizado_em = now() WHERE id = :i"), {"i": sol["id"]})
         _evento(s, sol["id"], "CONTABILIDADE_DEVOLVEU",
@@ -531,6 +568,10 @@ def fechar_extra(s: Session, pedido: dict[str, Any],
             {"texto": f"{pedido.get('numero')} concluído"}, usuario)
     # A correção era a última coisa que faltava? Então o pedido fecha.
     principais = [p for p in _pedidos(s, sid) if p["template"] not in EXTRAS]
+    from app.apps.erp.core import ferias as svc_ferias, termos
+    if sol["tipo"] in svc_ferias.TIPOS_COM_AVISO and \
+            not termos.concluido(termos.do_pedido(s, sid)):
+        return 1        # ainda falta a pessoa assinar o aviso de férias
     if sol["situacao"] == EM_ANDAMENTO and e_processo(sol["tipo"]) \
             and principais and all(p["situacao"] == "CONCLUIDO" for p in principais) \
             and not extras_abertos(s, sid):

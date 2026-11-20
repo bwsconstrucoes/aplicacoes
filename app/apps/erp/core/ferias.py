@@ -281,7 +281,8 @@ def contabilidade_devolveu(s: Session, sol: dict[str, Any],
             return f"férias registradas: {inicio:%d/%m/%Y}, {dias} dias"
         m = linha["mudanca_pendente"] or {}
         inicio, dias = _data(m.get("inicio")), int(m.get("dias") or linha["dias"])
-        hist = list(linha["historico"] or []) + [_registro(dict(linha), "alterada")]
+        hist = list(linha["historico"] or []) + [
+            {**_registro(dict(linha), "alterada"), "solicitacao_id": int(sol["id"])}]
         s.execute(text("""
             UPDATE ferias_programadas
                SET inicio = :i, dias = :d, fim = :f, abono_pecuniario = :ab,
@@ -558,3 +559,75 @@ def informar_quitado(s: Session, colaborador_id: int, quitado: Any,
     registrar_evento(s, "colaborador", colaborador_id, "FERIAS_QUITADAS_ATE",
                      {"quitado_ate": str(data) if data else None},
                      usuario.id if usuario else None)
+
+
+# ===========================================================================
+# O AVISO DE FÉRIAS ASSINADO NA TELA (20/11/2026, noite)
+#
+# Ele: *"Aviso de férias em tela."* A CLT pede o aviso por escrito, com 30
+# dias de antecedência, e a pessoa dá ciência com recibo (art. 135). Depois que
+# a contabilidade confirma, o aviso vai para a obra e a pessoa assina no
+# celular, com o PIN dela — o mesmo caminho do aviso prévio (`termos.py`).
+# ===========================================================================
+TIPOS_COM_AVISO = ("FERIAS", "ALTERACAO_FERIAS")
+
+
+def linha_da_solicitacao(s: Session, sol: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """A programação que esta solicitação de férias criou ou alterou."""
+    if not tem_tabela(s):
+        return None
+    import json
+    linha = s.execute(text("""
+        SELECT * FROM ferias_programadas
+         WHERE solicitacao_id = :s
+            OR historico @> CAST(:h AS jsonb)
+         ORDER BY (solicitacao_id = :s) DESC, id DESC LIMIT 1"""),
+        {"s": sol["id"],
+         "h": json.dumps([{"solicitacao_id": int(sol["id"])}])}).mappings().first()
+    if linha is None and sol.get("colaborador_id"):
+        return vigente(s, int(sol["colaborador_id"]))
+    return dict(linha) if linha else None
+
+
+def gerar_aviso(s: Session, sol: dict[str, Any],
+                usuario: Optional[Usuario]) -> Optional[dict[str, Any]]:
+    """Gera o aviso de férias para a pessoa assinar, com as datas confirmadas."""
+    from app.apps.erp.core import termos
+    from app.apps.erp.core.dp_analise import _br
+    if not termos.tem_tabela(s) or not sol.get("colaborador_id"):
+        return None
+    f = linha_da_solicitacao(s, sol)
+    if f is None or f["situacao"] == "CANCELADA":
+        return None
+    vivo = termos.do_pedido(s, int(sol["id"]))
+    if vivo is not None and vivo["situacao"] == "ABERTO":
+        termos.cancelar(s, vivo["id"], "gerado de novo", usuario)
+    elif vivo is not None and termos.concluido(vivo):
+        return None
+    c = s.execute(text("""
+        SELECT c.nome, c.cpf, COALESCE(e.razao_social, e.nome_fantasia) AS empresa
+          FROM colaboradores c LEFT JOIN empresas e ON e.id = c.empresa_id
+         WHERE c.id = :i"""), {"i": sol["colaborador_id"]}).mappings().first()
+    periodo = ""
+    if f.get("periodo_aquisitivo_inicio"):
+        from app.apps.erp.core.dp_analise import _mais_anos
+        ini = f["periodo_aquisitivo_inicio"]
+        periodo = (f", referentes ao período aquisitivo de {_br(ini)} a "
+                   f"{_br(_mais_anos(ini, 1) - timedelta(days=1))}")
+    texto_ = (f"{c['empresa'] or 'A empresa'} comunica a {c['nome']}, CPF "
+              f"{c['cpf']}, que as suas férias{periodo} serão gozadas de "
+              f"{_br(f['inicio'])} a {_br(f['fim'])} ({f['dias']} dias). O "
+              f"retorno ao trabalho é em {_br(f['fim'] + timedelta(days=1))}.")
+    if f["abono_pecuniario"]:
+        texto_ += " A pessoa converteu 1/3 das férias em abono pecuniário."
+    if f["adiantamento_13"]:
+        texto_ += " Junto com as férias será paga a 1ª parcela do 13º salário."
+    texto_ += ("\n\nO pagamento das férias é feito até 2 dias antes do início "
+               "(CLT art. 145). Este aviso é dado com antecedência de, no mínimo, "
+               "30 dias (CLT art. 135).")
+    r = termos.abrir(s, colaborador_id=int(sol["colaborador_id"]),
+                     tipo="AVISO-FERIAS", titulo="Aviso de férias",
+                     texto_=texto_, solicitacao_id=int(sol["id"]),
+                     obra_id=sol.get("obra_id"), dias=3, usuario=usuario)
+    return r
+

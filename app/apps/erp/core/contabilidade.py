@@ -107,15 +107,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "conferir": ("nome", "cpf"),
         "etapa_ao_concluir": "",
     },
-    "ALTERACAO_CADASTRAL": {
-        "nome": "Atualização cadastral",
-        "explicacao": "nome ou endereço novos, para o eSocial",
-        "exige": ("nome", "cpf"),
-        "espera": "ALTERACAO-CONTRATO",
-        "prazo": 3, "cobrancas": 2, "intervalo": 3,
-        "conferir": ("nome", "cpf"),
-        "etapa_ao_concluir": "",
-    },
     "DESCONTO_FOLHA": {
         "nome": "Desconto em folha",
         "explicacao": "o desconto autorizado pelo colaborador, na folha",
@@ -438,16 +429,6 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
                  _linha("Dias", d.get("dias_anteriores")),
                  _linha("Motivo", d.get("motivo")),
                  "", "Por favor, confirme a ciência respondendo este e-mail."]
-    elif template == "ALTERACAO_CADASTRAL":
-        miolo = ["Solicitamos a atualização cadastral abaixo (eSocial).", "",
-                 _linha("Nome novo", d.get("nome_novo")),
-                 _linha("CEP", d.get("cep")),
-                 _linha("Logradouro", d.get("logradouro")),
-                 _linha("Número", d.get("numero_endereco")),
-                 _linha("Bairro", d.get("bairro")),
-                 _linha("Município", d.get("municipio")),
-                 _linha("UF", d.get("uf")),
-                 _linha("O que mudou, nas palavras de quem pediu", d.get("descricao"))]
     elif template == "DESCONTO_FOLHA":
         miolo = ["Solicitamos o lançamento do desconto em folha abaixo. A "
                  "autorização assinada pelo colaborador segue anexa.", "",

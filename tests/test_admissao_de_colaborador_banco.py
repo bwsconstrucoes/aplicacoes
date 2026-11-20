@@ -415,6 +415,7 @@ def test_ferias_passa_pela_contabilidade_e_fecha_com_o_retorno(mundo):
     r = svc.atender(s, p["id"], {}, mundo["dp"])
     assert r["situacao"] == "EM_ANDAMENTO"
     _devolve_e_conclui(mundo, p["id"])
+    _assina_termo(mundo, p["id"])
     assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
 
 
@@ -531,6 +532,18 @@ def test_o_vigia_avisa_do_registro_da_carteira_perto_do_inicio(mundo):
 # ===========================================================================
 # A PROGRAMAÇÃO DE FÉRIAS (20/11/2026) — `core/ferias.py`, migração 116
 # ===========================================================================
+def _assina_termo(mundo, sid):
+    """O que a obra faz no celular: o documento aberto da solicitação passa a
+    assinado na tela — e o pedido segue como se tivesse vindo do portal."""
+    from app.apps.erp.core import termos
+    s = mundo["s"]
+    t_ = termos.do_pedido(s, sid)
+    s.execute(text("UPDATE dp_termos SET situacao = 'ASSINADO', forma = 'NA_TELA' "
+                   "WHERE id = :i"), {"i": t_["id"]})
+    svc.termo_voltou(s, t_["id"], None)
+    s.flush()
+
+
 def _dia(n):
     import datetime as dt
     return (dt.date.today() + dt.timedelta(days=n)).isoformat()
@@ -592,6 +605,7 @@ def test_a_alteracao_so_muda_a_data_quando_a_contabilidade_devolve(mundo):
     [f] = svc_ferias.listar(s, colaborador_id=c.id)
     assert (f["inicio"], f["dias"], f["situacao"]) == (_dia(60), 20, "CONFIRMADA")
     assert f["mudanca"] is None and f["historico"][0]["inicio"] == _dia(40)
+    _assina_termo(mundo, alt["id"])
     assert svc.ler(s, alt["id"])["situacao"] == "ATENDIDA"
 
 
@@ -715,7 +729,9 @@ def test_o_despacho_monta_o_pedido_a_contabilidade_no_atendimento(mundo):
 
 
 @pytestmark_banco
-def test_atualizacao_de_endereco_de_carteira_vai_a_contabilidade(mundo):
+def test_atualizacao_de_nome_e_endereco_nao_vai_a_contabilidade(mundo):
+    """Ele, 20/11/2026: *"Troca de nome e endereço não mandar pra
+    contabilidade."*"""
     s = mundo["s"]
     c = _carteira(mundo)
     p = svc.abrir(s, {"tipo": "ATUALIZACAO_DADOS", "colaborador_id": c.id,
@@ -723,12 +739,7 @@ def test_atualizacao_de_endereco_de_carteira_vai_a_contabilidade(mundo):
                       "logradouro": "RUA NOVA", "numero_endereco": "10",
                       "bairro": "CENTRO", "municipio": "FORTALEZA", "uf": "CE"},
                   mundo["obra_user"])
-    assert svc.atender(s, p["id"], {}, mundo["dp"])["situacao"] == "EM_ANDAMENTO"
-    p2 = svc.abrir(s, {"tipo": "ATUALIZACAO_DADOS", "colaborador_id": c.id,
-                       "descricao": "telefone novo", "telefone": "85999990000"},
-                   mundo["obra_user"])
-    assert svc.atender(s, p2["id"], {}, mundo["dp"])["situacao"] == "ATENDIDA", \
-        "telefone é nosso: não vai à contabilidade"
+    assert svc.atender(s, p["id"], {}, mundo["dp"])["situacao"] == "ATENDIDA"
 
 
 @pytestmark_banco
@@ -780,6 +791,8 @@ def test_corrigir_o_que_ja_foi_a_contabilidade_pede_a_ciencia_dela(mundo):
     s.execute(text("UPDATE dp_pedidos SET situacao = 'RESPONDIDO' WHERE id = :i"),
               {"i": extra[0]["pedido"]["id"]})
     svc_ct.concluir(s, extra[0]["pedido"]["id"], mundo["dp"])
+    assert svc.ler(s, p["id"])["situacao"] == "EM_ANDAMENTO", "falta o aviso assinado"
+    _assina_termo(mundo, p["id"])
     assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
 
 
@@ -889,3 +902,44 @@ def test_ferias_vencendo_aparecem_e_o_controle_informado_vale(mundo):
     _devolve_e_conclui(mundo, p["id"])
     est = {x["colaborador_id"]: x for x in svc_ferias.situacao_dos_periodos(s)}
     assert est[c.id]["estado"] == "em_dia", est[c.id]
+
+
+@pytestmark_banco
+def test_o_aviso_de_ferias_vai_para_a_obra_assinar_e_so_entao_fecha(mundo):
+    """Ele, 20/11/2026: *"Aviso de férias em tela."*"""
+    from app.apps.erp.core import termos
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = _ferias_atendidas(mundo, c, _dia(40), "20")
+    _devolve_e_conclui(mundo, p["id"])
+    sol = svc.ler(s, p["id"])
+    assert sol["situacao"] == "EM_ANDAMENTO", "falta a pessoa assinar o aviso"
+    t_ = termos.do_pedido(s, p["id"])
+    assert t_["tipo"] == "AVISO-FERIAS" and "20 dias" in t_["texto"]
+    assert next(x for x in sol["processo"]["passos"]
+                if x["codigo"] == "AVISO_FERIAS")["estado"] == "AGUARDANDO"
+    s.execute(text("UPDATE dp_termos SET situacao = 'ASSINADO', forma = 'NA_TELA' "
+                   "WHERE id = :i"), {"i": t_["id"]})
+    svc.termo_voltou(s, t_["id"], None)
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_a_alteracao_de_ferias_tambem_gera_aviso_com_a_data_nova(mundo):
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core import termos
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = _ferias_atendidas(mundo, c, _dia(40))
+    _devolve_e_conclui(mundo, p["id"])
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    alt = svc.abrir(s, {"tipo": "ALTERACAO_FERIAS", "colaborador_id": c.id,
+                        "ferias_id": f["id"], "ferias_inicio": _dia(70),
+                        "ferias_dias": "30", "observacao": "obra pediu adiar"},
+                    mundo["obra_user"])
+    svc.atender(s, alt["id"], {}, mundo["dp"])
+    _devolve_e_conclui(mundo, alt["id"])
+    t_ = termos.do_pedido(s, alt["id"])
+    import datetime as dt
+    nova = dt.date.fromisoformat(_dia(70)).strftime("%d/%m/%Y")
+    assert t_ is not None and nova in t_["texto"]

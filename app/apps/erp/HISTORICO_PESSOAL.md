@@ -105,6 +105,25 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 20/11/2026 (noite, 2) — Nome e endereço não vão à contabilidade; aviso de férias assinado na tela
+
+Ele: *"Troca de nome e endereço não mandar pra contabilidade. Aviso de férias
+em tela."*
+
+- **Atualização cadastral** voltou a se resolver só no cadastro (desfeito o
+  envio à contabilidade do lote anterior; o modelo "Atualização cadastral"
+  saiu).
+- **Aviso de férias na tela** (entendido como: a pessoa assina o aviso no
+  celular, como o aviso prévio — se era outra coisa, ajustar): quando a
+  contabilidade devolve as férias (ou a alteração), o sistema gera o **Aviso de
+  férias** com as datas confirmadas e manda para a obra colher a assinatura
+  (PIN da pessoa; ou foto do papel — inclusive do aviso que a contabilidade
+  mandou). O pedido de férias **só fecha com o aviso assinado** (CLT art. 135:
+  ciência por escrito, 30 dias antes).
+- Conserto achado no caminho: com uma correção esperando a ciência da
+  contabilidade, o retorno dela deixava de confirmar as férias. Agora confirma
+  sempre; só o FECHAR espera a ciência.
+
 ### 20/11/2026 (noite) — A contabilidade como ponte; o aviso assinado; corrigir e cancelar com ciência; o agente ligado
 
 O que ele explicou, e que muda o desenho de tudo (vale para os próximos chats):
@@ -125,8 +144,9 @@ O que ele explicou, e que muda o desenho de tudo (vale para os próximos chats):
 informa ao eSocial ou calcula na folha **vai a ela e espera retorno**; o resto
 (prestador, ajuda de custo, telefone, Pix) se resolve aqui.
 
-- **Atualização cadastral** (nome ou endereço) e **desconto em folha** de CLT
-  passaram a ir à contabilidade (`contabil_processo`). Telefone e Pix não.
+- **Desconto em folha** de CLT passou a ir à contabilidade
+  (`contabil_processo`). (A atualização cadastral também foi, e ele desfez no
+  mesmo dia — ver a entrada seguinte.)
 - **Desconto em folha** exige a **autorização assinada** pela pessoa (CLT art.
   462) antes de ir à contabilidade.
 - **Aviso prévio assinado** (`core/termos.py`, migração 117): o DP analisa e
