@@ -826,6 +826,10 @@ TIPOS: dict[str, dict[str, Any]] = {
     # de DESTINO. Nasce sozinha quando o ponto mostra a pessoa uma semana
     # noutra obra (`obra_atual.abrir_transferencias`), ou a obra/DP abre.
     "TRANSFERENCIA_OBRA": {
+        # ⚑ SAIU DA CAIXINHA NO MESMO DIA (20/11/2026): a obra muda sozinha,
+        # pelo mês trabalhado (`obra_do_mes`). Fica aqui só para os pedidos
+        # já gravados continuarem legíveis.
+        "oculto": True,
         "nome": "Transferência de Obra",
         "explicacao": "a pessoa passa a trabalhar em outra obra (de carteira, "
                       "o DP comunica à contabilidade)",

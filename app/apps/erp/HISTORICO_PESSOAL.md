@@ -117,6 +117,31 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 20/11/2026 (noite, 6) — A transferência vira AUTOMÁTICA: a obra do mês
+
+Ele, desfazendo a Transferência de Obra como pedido (publicada horas antes):
+*"Isso é um trabalho a mais para o DP (…) não quero que o DP tenha trabalho
+numa coisa que o sistema pode detectar automaticamente (…) a gente vai
+considerar um mês trabalhado (…) na obra que ela mais trabalhou. Porque isso,
+em relação a cálculo de FGTS, INSS, é o que deve ser levado em consideração
+(…) trabalhou 15 dias numa obra, 5 dias na outra (…) a obra que ela trabalhou
+os 15 dias. E todo mês isso a gente faz essa alteração. Não vamos botar nada
+para o DP."*
+
+- `core/obra_do_mes.py` + migração **119**: conta DIAS trabalhados por obra no
+  mês (dia com batida válida), vence a de mais dias (empate: a do dia mais
+  recente). No começo do mês a rodada diária calcula o mês que acabou e troca a
+  **obra de cadastro sozinha**; cada mês fica guardado com os dias de cada obra
+  e a obra de antes — a base do relatório de lotação para a contabilidade
+  (ainda por fazer). Uma vez por mês.
+- **Escolha minha, a confirmar:** o mês é o do CALENDÁRIO (competência das
+  guias). Se for o período do fechamento (26 a 25), troca-se num lugar só.
+- A Transferência de Obra saiu da caixinha (tipo oculto) e parou de nascer do
+  ponto; a migração 119 **cancela as que o sistema abriu sozinho** e ninguém
+  atendeu.
+- A obra ATUAL (últimos 15 dias, migração 118) continua: é onde a pessoa está
+  agora — para onde vão os avisos do portal e o documento para assinar.
+
 ### 20/11/2026 (noite, 5) — Transferência de obra vai à contabilidade; a folha recebe a obra atual
 
 Ele: *"O fechamento do ponto quem faz somos nós e enviamos à contabilidade

@@ -61,7 +61,7 @@ quanto ✅ — o que não pode existir é vão que ninguém mapeou.
 | Encaminhamento de Atestado Médico | 🔀 ponto › ficha da pessoa › **Atestado ou licença** |
 | Pedido de Afastamento ou Licença | ✅ `AFASTAMENTO` (Comunicação de Afastamento) — desde 20/11/2026 o afastamento lançado no ponto vira esta solicitação sozinho (`ponte_do_ponto`), e a obra também abre pelo portal; o DP classifica (INSS, acidente, maternidade) e vai à contabilidade. Licenças curtas da lei continuam só no ponto |
 | Comunicação de Afastamento | ✅ `AFASTAMENTO` — ver a linha acima |
-| Transferência de Obra | ✅ `TRANSFERENCIA_OBRA` — novo (20/11/2026); nasce sozinho quando o ponto mostra a pessoa uma semana noutra obra; de carteira, vai à contabilidade (guias de FGTS e tributos) |
+| Transferência de Obra | 🔀 automática, sem pedido — desde 20/11/2026 a obra de cadastro muda sozinha todo mês para a obra em que a pessoa mais trabalhou (`obra_do_mes`); o tipo `TRANSFERENCIA_OBRA` ficou oculto |
 | Retorno de Afastamento | ✅ `RETORNO_AFASTAMENTO` — novo (20/11/2026); também nasce quando o DP registra a volta na ficha |
 | Documentação Admissão | 🔀 ERP › DP › Contabilidade, modelo **Assinatura de CTPS** (espera a ficha de registro) |
 | Documentação Rescisão | 🔀 ERP › DP › Contabilidade, modelo **Desligamento** |

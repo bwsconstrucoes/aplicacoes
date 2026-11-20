@@ -379,7 +379,10 @@ def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str
     # os avisos do portal (férias, experiência) chegam a quem cuida da obra
     # onde a pessoa está batendo ponto de verdade.
     obra = obra_atual.atualizar(s)
-    obra["transferencias_abertas"] = obra_atual.abrir_transferencias(s)
+    # A OBRA DO MÊS (20/11/2026): no começo do mês, a obra de cadastro passa
+    # sozinha a ser a obra em que a pessoa mais trabalhou no mês que acabou.
+    from app.apps.erp.core import obra_do_mes
+    obra["obra_do_mes"] = obra_do_mes.se_preciso(s)
     s.commit()
     from app.apps.erp.core import ponte_do_ponto
     ponte = ponte_do_ponto.trazer(s)

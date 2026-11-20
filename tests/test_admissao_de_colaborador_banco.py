@@ -1001,22 +1001,6 @@ def test_a_obra_atual_vem_do_ponto_e_a_transferencia_e_avisada(_schema_ponto, mu
     # a folha recebe a obra atual; a de cadastro segue à parte
     linha = next(x for x in svc_pessoas.para_folha(s) if x["cpf"] == c.cpf)
     assert (linha["obra_codigo"], linha["obra_cadastro"]) == ("ADM-02", "ADM-01")
-    # uma semana na obra diferente: nasce a Transferência de Obra (uma só)
-    s.execute(text("UPDATE colaborador_obra_atual SET desde = :d WHERE colaborador_id = :c"),
-              {"d": hoje - dt.timedelta(days=8), "c": c.id})
-    assert obra_atual.abrir_transferencias(s) == 1
-    assert obra_atual.abrir_transferencias(s) == 0, "uma por episódio"
-    sid = s.execute(text("SELECT id FROM dp_solicitacoes WHERE tipo = "
-                         "'TRANSFERENCIA_OBRA' AND colaborador_id = :c"), {"c": c.id}).scalar()
-    r = svc.atender(s, sid, {}, mundo["dp"])
-    assert r["situacao"] == "EM_ANDAMENTO", "de carteira: vai à contabilidade"
-    s.flush()
-    assert s.get(svc_pessoas.Colaborador, c.id).obra_id == outra.id
-    passo = next(x for x in svc.ler(s, sid)["processo"]["passos"]
-                 if x["codigo"] == "CONTABILIDADE")
-    corpo = s.execute(text("SELECT corpo FROM dp_pedidos WHERE id = :i"),
-                      {"i": passo["pedido"]["id"]}).scalar()
-    assert "ADM-01" in corpo and "ADM-02" in corpo and "FGTS" in corpo
     _ = agente_dp
 
 
@@ -1134,3 +1118,37 @@ def test_afastar_pela_ficha_tambem_abre_a_solicitacao(mundo):
                     {"n": numero}).scalar()
     r = svc.atender(s, sid, {}, mundo["dp"])
     assert r["situacao"] == "EM_ANDAMENTO", "já estava na ficha: só vai à contabilidade"
+
+
+@pytestmark_banco
+def test_a_obra_de_cadastro_muda_sozinha_para_a_obra_do_mes(_schema_ponto, mundo):
+    """Ele: *"trabalhou 15 dias numa obra, 5 dias na outra (…) a obra que ela
+    trabalhou os 15 dias. E todo mês isso a gente faz essa alteração. Não
+    vamos botar nada para o DP."*"""
+    import datetime as dt
+    from app.apps.erp.core import obra_do_mes
+    from app.apps.erp.db.models.cadastros import Obra
+    s = mundo["s"]
+    c = _carteira(mundo)                              # cadastro: ADM-01
+    outra = Obra(codigo="ADM-03", nome="Obra do mes", status="ATIVA")
+    s.add(outra)
+    s.flush()
+    comp = dt.date(2026, 10, 1)
+    for d in range(1, 6):                             # 5 dias na de cadastro
+        _bate(mundo, c.id, mundo["obra"].id, comp.replace(day=d))
+    for d in range(6, 21):                            # 15 dias na outra
+        _bate(mundo, c.id, outra.id, comp.replace(day=d))
+        _bate(mundo, c.id, outra.id, comp.replace(day=d))   # 2 batidas = 1 dia
+    r = obra_do_mes.se_preciso(s, hoje=dt.date(2026, 11, 2))
+    assert r and r["mudaram"] >= 1
+    s.expire_all()
+    assert s.get(svc_pessoas.Colaborador, c.id).obra_id == outra.id
+    [linha] = [x for x in obra_do_mes.do_mes(s, comp) if x["colaborador_id"] == c.id]
+    assert linha["dias"] == 15 and linha["mudou"] and linha["obra_anterior"] == "ADM-01"
+    assert linha["dias_por_obra"][str(mundo["obra"].id)] == 5
+    # uma vez por mês: rodar de novo não mexe
+    assert obra_do_mes.se_preciso(s, hoje=dt.date(2026, 11, 3)) is None
+    # nenhum pedido ao DP
+    assert s.execute(text("SELECT count(*) FROM dp_solicitacoes WHERE colaborador_id = :c "
+                          "AND tipo = 'TRANSFERENCIA_OBRA'"), {"c": c.id}).scalar() == 0
+

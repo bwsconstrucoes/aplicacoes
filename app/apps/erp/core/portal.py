@@ -178,7 +178,7 @@ TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
         "CANCELAR_DESLIGAMENTO",
         # 20/11/2026: a obra comunica o afastamento (o acidente não espera o
         # ponto) e o retorno.
-        "AFASTAMENTO", "RETORNO_AFASTAMENTO", "TRANSFERENCIA_OBRA", "DIVERSOS",
+        "AFASTAMENTO", "RETORNO_AFASTAMENTO", "DIVERSOS",
     ),
 }
 
