@@ -12380,7 +12380,8 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             # ⚑ OS PASSOS DO DESLIGAMENTO (19/11/2026) são do DP, como atender:
             # marcar o passo, confirmar a continuidade e encerrar o processo.
             if acao in ("atender", "recusar", "item", "passo", "continuidade",
-                        "encerrar", "assinar", "assinada", "corrigir") \
+                        "encerrar", "assinar", "assinada", "corrigir",
+                        "contabilidade") \
                     and not pode(usuario, "atender_dp"):
                 return jsonify({"ok": False, "erro":
                                 "Só o DP atende solicitação. Você pode abrir e "
@@ -12394,6 +12395,17 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             elif acao == "item":
                 p = svc.marcar_item(s, solicitacao_id, int(d.get("item_id") or 0),
                                     bool(d.get("feito")), usuario)
+            elif acao == "contabilidade":
+                # ⚑ 20/11/2026: monta o pedido à contabilidade desta
+                # solicitação, já preenchido (admissão, alteração de cargo,
+                # dependente, férias, cancelamento de desligamento).
+                from app.apps.erp.core import contabil_processo as svc_contab
+                atual = svc.ler(s, solicitacao_id)
+                r = svc_contab.montar_pedido(s, atual, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                p["aviso"] = (f"Pedido {r['numero']} montado. Confira o texto e "
+                              "envie em Contabilidade.")
             elif acao == "corrigir":
                 # ⚑ 19/11/2026: o DP corrige o pedido (e o pré-cadastro) na
                 # própria tela do atendimento, olhando o documento.

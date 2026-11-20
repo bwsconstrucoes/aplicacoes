@@ -38,6 +38,12 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**Falta publicar (20/11/2026), ramo `claude/busy-shannon-w5pp5o`:** a admissão
+dentro da Solicitação (migração **115**), os nomes novos das telas e o lote de
+20/11 (alteração, dependente, férias e cancelamento pela contabilidade). ⚠️
+Uma atualização de banco: apertar "Aplicar atualizações do banco" no mesmo
+momento da junção.
+
 **Publicado (19/11/2026, tarde):** a Admissão de Colaborador (ver "Decisões",
 19/11 tarde). Sem migração. ⚠️ **Pendente:** acompanhar a primeira admissão de
 verdade — a leitura por IA dos documentos não pôde ser testada aqui (sem
@@ -97,6 +103,47 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 20/11/2026 — Alteração de cargo, dependente, férias e cancelamento passam pela contabilidade; admissão de prestador também
+
+Ele: *"A alteração de cargo (…) tem todo o procedimento de encaminhamento
+para contabilidade, acompanhamento, retorno, o agente tem que acompanhar. A
+mesma coisa vale para o dependente (…) salário de família (…) E a mesma coisa
+serve para as férias. Se as férias não estão em solicitações, tem que entrar
+também, porque o administrativo de obra pode pedir as férias. E o DP tem que
+fazer a mesma coisa, solicitar a contabilidade, aguardar retorno e etc. Para
+então finalizar."*
+
+- `core/contabil_processo.py` (novo): o mesmo desenho da admissão. Atender
+  **não fecha**: o pedido fica **Em andamento** com três passos — DP atendeu →
+  pedido à contabilidade montado (botão "Montar o pedido à contabilidade", que
+  já preenche com o que veio da obra) → contabilidade devolveu. **Fecha
+  sozinho** quando o pedido à contabilidade é concluído
+  (`contabilidade.concluir` chama `fechar_pelo_pedido`).
+- Vale para: **Alteração de cargo/salário**, **Dependente** (só quando marca
+  salário-família ou dependente de IR — dependente só para o plano não vai à
+  contabilidade), **Férias** e **Cancelar desligamento** (este só quando já
+  havia pedido de rescisão enviado; rascunho é só cancelado).
+- **Férias virou tipo de solicitação** (`FERIAS`), aberto pelo portal da obra
+  e pelo DP: início, quantos dias, vender 1/3, adiantar o 13º, observação. Só
+  para carteira.
+- **Alteração de cargo não alterava o cargo** (defeito encontrado na revisão):
+  os nomes dos campos do pedido não batiam com os da ficha. Corrigido; cargo
+  deferido vale sobre o pleiteado.
+- **Cancelar desligamento passou a fazer algo:** limpa demissão, aviso e
+  último dia do cadastro e do vínculo, cancela o desligamento em aberto e
+  recusa se a pessoa já saiu (aí é readmissão).
+- **Admissão de prestador (prestador → CTPS):** o cadastro volta para Inicial
+  e o pedido fica em andamento até o registro da carteira voltar da
+  contabilidade, igual à admissão comum. Antes fechava no atendimento sem
+  registro nenhum.
+- **O agente vigia, com os prazos da lei:** registro sem pedido à
+  contabilidade a 2 dias do início (eSocial exige antes do 1º dia); férias sem
+  aviso a 30 dias do início; pedido em andamento parado; rescisão sem retorno
+  depois de 10 dias da saída (prazo de pagamento).
+
+**Não feito, e é decisão dele:** o pagamento das férias como passo (o "e etc."
+dele) — hoje o processo termina no retorno da contabilidade.
 
 ### 19/11/2026 (noite, 4) — A admissão caminha dentro da Solicitação; "Assinar" sai do caminho do PJ
 

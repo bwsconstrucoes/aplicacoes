@@ -62,7 +62,7 @@ quanto ✅ — o que não pode existir é vão que ninguém mapeou.
 | Pedido de Afastamento ou Licença | 🔀 ponto › ficha da pessoa › **Lançar afastamento** |
 | Documentação Admissão | 🔀 ERP › DP › Contabilidade, modelo **Assinatura de CTPS** (espera a ficha de registro) |
 | Documentação Rescisão | 🔀 ERP › DP › Contabilidade, modelo **Desligamento** |
-| Solicitação de Férias | 🔀 ERP › DP › Contabilidade, modelo **Férias**. ❓ **Mas a OBRA não tem como PEDIR férias pelo portal** — hoje só o DP abre o pedido à contabilidade. É assim que você quer? |
+| Solicitação de Férias | ✅ `FERIAS` — desde 20/11/2026 a obra pede pelo portal; o DP manda à contabilidade (modelo **Férias**) e o pedido fecha quando ela devolve |
 | Relatório de DCs | 🔀 ERP › **DC** (tela própria de despesas em lote) |
 | Atualizar Chave Pix | ❓ O Pix é campo do cadastro, e `ATUALIZACAO_DADOS` o alcança. Quer um **tipo próprio** (como no Pipe) ou basta o de dados cadastrais? |
 | Atualização de Telefone | ❓ Mesma pergunta do Pix |

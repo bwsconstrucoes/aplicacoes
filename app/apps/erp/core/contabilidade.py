@@ -842,6 +842,10 @@ def concluir(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
     registrar_evento(s, "dp_pedido", pedido_id, "CONCLUIDO",
                      {"numero": p["numero"], "etapa": moveu},
                      usuario.id if usuario else None)
+    # ⚑ A SOLICITAÇÃO QUE ESPERAVA POR ESTE RETORNO FECHA (20/11/2026) —
+    # alteração de cargo, dependente, férias, cancelamento de desligamento.
+    from app.apps.erp.core import contabil_processo
+    contabil_processo.fechar_pelo_pedido(s, p, usuario)
     s.flush()
     return {"concluido": True, "etapa": moveu}
 

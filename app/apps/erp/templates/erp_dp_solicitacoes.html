@@ -548,7 +548,7 @@ function blocoDoProcesso(p){
     {# ⚑ OS BOTÕES DA ADMISSÃO (19/11/2026) — ver `admissao_processo`. #}
     if (!deslig) {
       if (x.codigo === "CONTABILIDADE" && !x.pedido)
-        b.push(`<button class="btn" data-ad-ctps="1">Montar o pedido de Assinatura de CTPS</button>`);
+        b.push(`<button class="btn" data-pr-contab="1">Montar o pedido à contabilidade</button>`);
       if (x.pedido)
         b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
           ${escapar(x.pedido.numero)} em Contabilidade</a>`);
@@ -618,17 +618,10 @@ function ligarBotoesDoProcesso(p){
     b.addEventListener("click", () => fn(b)));
   um("[data-pr-cont]", () => confirmarContinuidade(p));
   um("[data-pr-ct]", () => montarPedidoDeRescisao(p));
-  um("[data-ad-ctps]", async () => {
-    try {
-      const r = await api("/erp/api/dp/pedidos", {method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({template: "ASSINATURA_CTPS",
-          colaborador_id: p.colaborador_id, solicitacao_id: p.id})});
-      await abrirPedido(p.id);
-      aviso("dlg-msg", `Pedido ${escapar(r.numero)} montado. Confira o texto e
-        envie em <a href="/erp/dp/contabilidade" target="_blank">Contabilidade</a>.`, "ok");
-    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
-  });
+  {# ⚑ UM BOTÃO SÓ PARA TODOS OS PEDIDOS QUE PASSAM PELA CONTABILIDADE
+     (20/11/2026): o servidor sabe o modelo de cada tipo e monta o pedido já
+     preenchido (`contabil_processo.montar_pedido`). #}
+  um("[data-pr-contab]", () => acao("contabilidade", {}));
   {# ⚑ A ASSINATURA VAI E VOLTA PELO SISTEMA (19/11/2026). Ele: *"o arquivo
      precisa ser cobrado pelo Agente e recebido (…) o agente analisa e o DP
      valida o recebimento."* A ida é a pendência do portal (com prazo, que o
@@ -850,9 +843,17 @@ async function atender(){
            + "rescisão e a multa serem pagas"),
     READMISSAO: "traz a pessoa de volta a ativa, com vínculo novo (o anterior fica no histórico)",
     ADMISSAO_PRESTADOR: "fecha o vínculo de prestador e abre o de carteira no dia seguinte",
-    ALTERACAO_CARGO: "grava a alteração de cargo/salário com o de→para",
+    ALTERACAO_CARGO: "grava a alteração de cargo/salário com o de→para e, para "
+      + "quem tem carteira, o pedido segue Em andamento até a contabilidade "
+      + "devolver a alteração",
+    FERIAS: "abre o processo: você monta o pedido de férias à contabilidade "
+      + "e o pedido fecha quando ela devolver o aviso",
+    CANCELAR_DESLIGAMENTO: "apaga a saída agendada e cancela o desligamento; "
+      + "se a rescisão já tinha ido à contabilidade, o cancelamento vai também "
+      + "e o pedido fica Em andamento até ela devolver",
     ATUALIZACAO_DADOS: "atualiza o cadastro da pessoa",
-    DEPENDENTE: "cadastra o dependente",
+    DEPENDENTE: "cadastra o dependente e, com salário-família ou IR, o "
+      + "pedido segue até a contabilidade devolver",
     AJUDA_DE_CUSTO: "atualiza os benefícios no cadastro",
     VALE_TRANSPORTE: "atualiza o transporte no cadastro",
     CADASTRO: ABERTA.readmissao

@@ -55,7 +55,9 @@ CONTRATOS_DO_PJ = ("CONTRATO-TRABALHO", "CONTRATO-FORNECEDOR")
 
 
 def e_processo(tipo: str) -> bool:
-    return tipo == "CADASTRO"
+    # ⚑ A ADMISSÃO DE PRESTADOR (prestador → CTPS) entrou em 20/11/2026: ela
+    # também só termina com o registro da carteira.
+    return tipo in ("CADASTRO", "ADMISSAO_PRESTADOR")
 
 
 def _pessoa(s: Session, colaborador_id: Optional[int]) -> Optional[dict]:
@@ -170,7 +172,8 @@ def fechar_concluidas(s: Session, colaborador_id: int,
 
     ids = s.execute(text("""
         SELECT id FROM dp_solicitacoes
-         WHERE colaborador_id = :c AND tipo = 'CADASTRO'
+         WHERE colaborador_id = :c
+           AND tipo IN ('CADASTRO', 'ADMISSAO_PRESTADOR')
            AND situacao = :sit"""),
         {"c": colaborador_id, "sit": EM_ANDAMENTO}).scalars().all()
     for i in ids:

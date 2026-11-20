@@ -169,7 +169,9 @@ TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
     "pessoal": (
         "CADASTRO", "DESLIGAMENTO", "ADMISSAO_PRESTADOR",
         "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
-        "DIVERSOS",
+        # 20/11/2026: a obra pede férias (ele: *"o administrativo de obra pode
+        # pedir as férias"*).
+        "FERIAS", "DIVERSOS",
     ),
 }
 

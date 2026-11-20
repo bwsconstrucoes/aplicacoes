@@ -3037,3 +3037,36 @@ consulta inventada vai sendo usado cada vez menos.
 - **"A leitura acertou?"** — o sistema guarda o que foi enviado no pedido, mas
   não separa o que veio da leitura do que foi digitado. Falta guardar a origem
   de cada campo.
+
+## O que passa pela contabilidade: alteração, dependente, férias (20/11/2026)
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"atendida"** | o DP atendeu (o pedido pode estar **Em andamento**, esperando a contabilidade) ou o pedido terminou (situação Atendida). Para "o que falta", usar Em andamento |
+| **"férias marcadas"** | o pedido de férias aberto, o aviso pedido à contabilidade, ou o retorno dela. São três momentos |
+| **"dependente"** | dependente para salário-família/IR (vai à contabilidade) ou só para plano (não vai) |
+
+### Perguntas que o sistema responde
+
+- **"Quem tem férias pedidas para o mês que vem?"** — pedidos `FERIAS` pelo
+  início das férias. Muda conforme quem pergunta (a obra vê só as dela).
+- **"Quais pedidos estão esperando a contabilidade?"** — os Em andamento cujo
+  próximo passo é "a contabilidade devolveu".
+- **"A alteração de cargo do fulano já voltou da contabilidade?"** — o passo
+  de retorno do pedido dele.
+- **"Quem vai sair de férias sem aviso pedido?"** — é o alerta do agente (30
+  dias antes do início).
+- **"Algum registro de carteira está atrasado para o eSocial?"** — alerta do
+  agente: início em até 2 dias sem pedido à contabilidade.
+- **"Quais rescisões passaram do prazo de pagamento?"** — alerta do agente:
+  mais de 10 dias da saída sem retorno.
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- **"As férias do fulano foram pagas?"** — o processo termina no retorno da
+  contabilidade; o pagamento não é um passo. Falta decidir se entra.
+- **"Quantos dias de férias o fulano ainda tem?"** — o sistema não calcula o
+  período aquisitivo. Falta o controle de períodos.
+

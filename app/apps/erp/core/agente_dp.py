@@ -146,7 +146,11 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "desligamento em andamento parado ou atrasado, saída da "
                    "carteira sem a confirmação de que a pessoa continua como "
                    "prestador, documentação rescisória assinada esperando o "
-                   "DP validar, ativo sem obra",
+                   "DP validar, admissão, alteração de cargo, dependente e "
+                   "férias em andamento parados, registro da carteira ainda "
+                   "não pedido perto do início (eSocial), férias sem aviso a "
+                   "menos de 30 dias, rescisão não paga em 10 dias, ativo sem "
+                   "obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
         "usa_ia": False,
@@ -750,6 +754,89 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
                     "o_que_fazer": "encerrar o desligamento"})
     except Exception:
         logger.exception("Agente DP: falha ao olhar os desligamentos em andamento")
+
+    # ⚑ OS PEDIDOS QUE PASSAM PELA CONTABILIDADE (20/11/2026) — admissão,
+    # alteração de cargo, dependente, férias, cancelamento. Ele: *"o agente
+    # tem que acompanhar."* E os PRAZOS DA LEI, que não perdoam esquecimento:
+    #   · eSocial: o registro de quem entra de carteira sai ANTES do 1º dia;
+    #   · férias: o aviso à pessoa é com 30 dias de antecedência (CLT art. 135);
+    #   · rescisão: paga em até 10 dias da saída (CLT art. 477).
+    try:
+        from app.apps.erp.core import contabil_processo as svc_contab
+        import datetime as _dt
+        for d in svc_contab.em_andamento(s):
+            dados = d["dados"] or {}
+
+            def _dia(chave):
+                try:
+                    return _dt.date.fromisoformat(str(dados.get(chave) or "")[:10])
+                except ValueError:
+                    return None
+            sem_pedido = d["proximo"].startswith("Registro da carteira") or \
+                d["proximo"].startswith("Pedido à contabilidade")
+            inicio = _dia("data_inicio")
+            if d["tipo"] in ("CADASTRO", "ADMISSAO_PRESTADOR") and sem_pedido \
+                    and inicio and (inicio - dia).days <= 2:
+                achados.append({
+                    "tipo": "registro_antes_do_inicio",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: começa em {inicio:%d/%m/%Y} e o "
+                              "registro da carteira ainda não foi pedido — o "
+                              "eSocial exige antes do primeiro dia"),
+                    "o_que_fazer": "montar e enviar o pedido de Assinatura de CTPS"})
+                continue
+            ferias = _dia("ferias_inicio")
+            if d["tipo"] == "FERIAS" and sem_pedido and ferias \
+                    and (ferias - dia).days <= 30:
+                achados.append({
+                    "tipo": "ferias_sem_aviso",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: férias em {ferias:%d/%m/%Y} e o "
+                              "pedido à contabilidade não saiu — o aviso é com "
+                              "30 dias de antecedência"),
+                    "o_que_fazer": "montar e enviar o pedido de férias"})
+                continue
+            if (d["dias"] or 0) >= limite:
+                achados.append({
+                    "tipo": "pedido_em_andamento_parado",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']} em andamento há {d['dias']} dias; "
+                              f"próximo: {d['proximo']}"),
+                    "o_que_fazer": "andar com o pedido"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar os pedidos em andamento")
+
+    # A rescisão paga em até 10 dias da saída (CLT art. 477).
+    try:
+        from app.apps.erp.core import desligamento_processo as svc_desl
+        import datetime as _dt
+        for d in svc_desl.em_andamento(s):
+            sol = s.execute(text("SELECT id, numero, situacao, colaborador_id, "
+                                 "dados, criado_em FROM dp_solicitacoes "
+                                 "WHERE id = :i"), {"i": d["id"]}).mappings().first()
+            dados = (sol["dados"] or {}) if sol else {}
+            try:
+                saida = _dt.date.fromisoformat(str(dados.get("data_saida") or "")[:10])
+            except ValueError:
+                continue
+            if (dia - saida).days <= 10:
+                continue
+            passos = svc_desl.passos(s, dict(sol))["passos"]
+            paga = next((p for p in passos if p["codigo"] == "RESCISAO_PAGA"), None)
+            if paga and paga["estado"] not in ("FEITO", "NAO_SE_APLICA"):
+                achados.append({
+                    "tipo": "rescisao_atrasada",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: saiu em {saida:%d/%m/%Y} e a "
+                              "rescisão não está paga — o prazo da lei é de 10 "
+                              "dias"),
+                    "o_que_fazer": "lançar e pagar a rescisão"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar o prazo das rescisões")
 
     # Pessoa ativa sem obra: não entra em rateio nem em lista de obra nenhuma.
     for linha in s.execute(text("""

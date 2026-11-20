@@ -369,3 +369,152 @@ def test_admissao_ctps_vai_para_contabilidade_e_fecha_com_o_registro(mundo):
     s.flush()
     assert c.etapa == "CONCLUIDO"
     assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA", "fechou sozinho"
+
+
+# ---------------------------------------------------------------------------
+# 20/11/2026 — os pedidos que passam pela contabilidade
+# ---------------------------------------------------------------------------
+def _carteira(mundo, nome="Carteira Ativa", cpf="11144477735"):
+    s = mundo["s"]
+    c = svc_pessoas.salvar(s, {"cpf": cpf, "nome": nome,
+                               "admissao": "2025-01-10", "obra_id": mundo["obra"].id,
+                               "vinculo": "CTPS", "salario": "2000",
+                               "cargo_id": mundo["cargo_id"],
+                               "data_nascimento": "1990-01-01",
+                               "empresa_id": mundo["empresa_id"],
+                               "etapa": "CONCLUIDO"}, mundo["dp"])
+    s.flush()
+    return c
+
+
+def _devolve_e_conclui(mundo, sol_id):
+    from app.apps.erp.core import contabilidade as svc_ct
+    s = mundo["s"]
+    r = svc.ler(s, sol_id)
+    passo = next(x for x in r["processo"]["passos"] if x["codigo"] == "CONTABILIDADE")
+    if not passo.get("pedido"):
+        svc.ler(s, sol_id)
+        from app.apps.erp.core import contabil_processo
+        contabil_processo.montar_pedido(s, svc.ler(s, sol_id), mundo["dp"])
+        passo = next(x for x in svc.ler(s, sol_id)["processo"]["passos"]
+                     if x["codigo"] == "CONTABILIDADE")
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'RESPONDIDO' WHERE id = :i"),
+              {"i": passo["pedido"]["id"]})
+    svc_ct.concluir(s, passo["pedido"]["id"], mundo["dp"])
+    s.flush()
+
+
+@pytestmark_banco
+def test_ferias_passa_pela_contabilidade_e_fecha_com_o_retorno(mundo):
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = svc.abrir(s, {"tipo": "FERIAS", "colaborador_id": c.id,
+                      "ferias_inicio": "2026-12-15", "ferias_dias": "30",
+                      "abono_pecuniario": "0", "adiantamento_13": "1"},
+                  mundo["obra_user"])
+    r = svc.atender(s, p["id"], {}, mundo["dp"])
+    assert r["situacao"] == "EM_ANDAMENTO"
+    _devolve_e_conclui(mundo, p["id"])
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_alteracao_de_cargo_muda_o_cargo_e_espera_a_contabilidade(mundo):
+    s = mundo["s"]
+    c = _carteira(mundo)
+    novo = s.execute(text("INSERT INTO cargos (nome, ativo) VALUES "
+                          "('Pedreiro adm', TRUE) RETURNING id")).scalar()
+    p = svc.abrir(s, {"tipo": "ALTERACAO_CARGO", "colaborador_id": c.id,
+                      "data_inicio": "2026-12-01", "cargo_pleiteado_id": novo,
+                      "justificativa": "promovido na obra"}, mundo["obra_user"])
+    r = svc.atender(s, p["id"], {"dados": {"salario": "2500"}}, mundo["dp"])
+    s.flush()
+    assert s.get(svc_pessoas.Colaborador, c.id).cargo_id == novo, \
+        "o cargo pedido tem de chegar ao cadastro"
+    assert r["situacao"] == "EM_ANDAMENTO"
+    _devolve_e_conclui(mundo, p["id"])
+    assert svc.ler(s, p["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_dependente_sem_salario_familia_fecha_no_atendimento(mundo):
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = svc.abrir(s, {"tipo": "DEPENDENTE", "colaborador_id": c.id,
+                      "nome": "Filho Teste", "parentesco": "FILHO",
+                      "data_nascimento": "2020-01-01",
+                      "documentos": ["DOC-DEPENDENTE"]}, mundo["obra_user"])
+    r = svc.atender(s, p["id"], {}, mundo["dp"])
+    assert r["situacao"] == "ATENDIDA"
+    p2 = svc.abrir(s, {"tipo": "DEPENDENTE", "colaborador_id": c.id,
+                       "nome": "Filha Teste", "parentesco": "FILHO",
+                       "data_nascimento": "2021-01-01",
+                       "documentos": ["DOC-DEPENDENTE"]}, mundo["obra_user"])
+    r2 = svc.atender(s, p2["id"], {"dados": {"salario_familia": "1"}}, mundo["dp"])
+    assert r2["situacao"] == "EM_ANDAMENTO", "salário-família passa pela contabilidade"
+
+
+@pytestmark_banco
+def test_cancelar_desligamento_apaga_a_saida_e_cancela_o_processo(mundo):
+    import datetime as dt
+    s = mundo["s"]
+    c = _carteira(mundo)
+    d = svc.abrir(s, {"tipo": "DESLIGAMENTO", "colaborador_id": c.id,
+                      "forma_desligamento": "Demissão com Aviso Trabalhado",
+                      "aviso_previo": "2026-11-01",
+                      "continua_prestador": "Não, está saindo da empresa"},
+                  mundo["obra_user"])
+    saida = (dt.date.today() + dt.timedelta(days=10)).isoformat()
+    svc.atender(s, d["id"], {"dados": {"data_saida": saida,
+                                       "ultimo_dia": saida}}, mundo["dp"])
+    s.flush()
+    assert s.get(svc_pessoas.Colaborador, c.id).demissao is not None
+    canc = svc.abrir(s, {"tipo": "CANCELAR_DESLIGAMENTO", "colaborador_id": c.id,
+                         "observacao": "a obra desistiu"}, mundo["dp"])
+    r = svc.atender(s, canc["id"], {}, mundo["dp"])
+    s.flush()
+    pessoa = s.get(svc_pessoas.Colaborador, c.id)
+    assert pessoa.demissao is None and pessoa.ultimo_dia is None
+    assert svc.ler(s, d["id"])["situacao"] == "CANCELADA"
+    assert r["situacao"] == "ATENDIDA", "a rescisão não tinha ido: fecha na hora"
+
+
+@pytestmark_banco
+def test_admissao_de_prestador_volta_para_inicial_e_espera_o_registro(mundo):
+    s = mundo["s"]
+    prest = svc_pessoas.salvar(s, {"cpf": "11144477735", "nome": "Prestador Vira CTPS",
+                                   "admissao": "2025-01-10", "obra_id": mundo["obra"].id,
+                                   "vinculo": "PRESTADOR", "etapa": "CONCLUIDO",
+                                   **PESSOA}, mundo["dp"])
+    s.flush()
+    p = svc.abrir(s, {"tipo": "ADMISSAO_PRESTADOR", "colaborador_id": prest.id,
+                      "num_ctps": "1234567", "salario_familia": "Não",
+                      "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]},
+                  mundo["obra_user"])
+    r = svc.atender(s, p["id"], {}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, prest.id)
+    assert c.vinculo == "CTPS" and c.etapa == "CADASTRO_INICIAL"
+    assert c.ctps_numero == "1234567"
+    assert r["situacao"] == "EM_ANDAMENTO"
+
+
+@pytestmark_banco
+def test_o_vigia_avisa_do_registro_da_carteira_perto_do_inicio(mundo):
+    """eSocial: o registro de quem entra de carteira sai ANTES do 1º dia."""
+    import datetime as dt
+    from app.apps.erp.core import agente_dp
+    s = mundo["s"]
+    amanha = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    p = svc.abrir(s, _admissao(mundo, tipo_documentacao="CTPS",
+                               tipo_contrato="CLT (tempo indeterminado)",
+                               num_ctps="1234567", data_inicio=amanha,
+                               documentos=["DOC-IDENTIDADE", "CPF-DOC",
+                                           "COMPROVANTE-ENDERECO-PESSOA",
+                                           "CTPS-FOTO", "CTPS-INFORMACOES"]),
+                  mundo["obra_user"])
+    svc.atender(s, p["id"], {"dados": {"salario": "2000"}}, mundo["dp"])
+    s.flush()
+    achados = agente_dp.vigia(s)
+    assert any(a["tipo"] == "registro_antes_do_inicio"
+               and a["colaborador_id"] == p["colaborador_id"] for a in achados)
