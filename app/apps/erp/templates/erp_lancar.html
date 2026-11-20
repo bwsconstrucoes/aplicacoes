@@ -5,6 +5,7 @@
 {% block conteudo %}
 <h2>Nova solicitação de pagamento <small>anexe o documento e confira o que o sistema leu</small></h2>
 <div id="mensagem"></div>
+<div id="faixa-pedido"></div>
 
 <!-- 1. DOCUMENTO -->
 {# 1 · DOCUMENTOS, no plural. Antes era um só, e ele nem ficava guardado:
@@ -179,6 +180,54 @@
 <script>
 let D = {fornecedores: [], obras: [], categorias: []}, LIDO = null;
 let RET = [], PARC = [{}], RAT = [{}];
+
+// ⚑ LANÇAR A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA (20/11/2026).
+//
+// O dono: "eu quero gerar o financeiro a partir do recebimento (…) a pessoa
+// vai receber o pedido e lança nota, lança boleto, lança tudo e gera a
+// obrigação financeira. Ou confirma uma previsão que já existe."
+//
+// Chegando com ?pedido_compra=N (é para onde "Receber material" manda), a tela
+// já abre com o que o pedido sabe: credor, valor do que chegou, rateio por
+// obra e as parcelas da previsão. A pessoa joga a nota e o boleto e CONFERE —
+// o que a nota disser vale mais que o pedido, menos o rateio por obra, que só
+// o pedido conhece. O título nasce pelo caminho de sempre e sai ligado ao
+// pedido; nada do que esta tela critica deixa de ser criticado.
+let DO_PEDIDO = null;
+
+async function preencherDoPedido(){
+  const q = new URLSearchParams(location.search);
+  const id = q.get("pedido_compra");
+  if (!id || !/^\d+$/.test(id)) return;
+  try {
+    const rec = q.get("recebimento");
+    const d = await api(`/erp/api/suprimentos/pedidos/${id}/para-lancar`
+      + (rec && /^\d+$/.test(rec) ? `?recebimento=${rec}` : ""));
+    const p = DO_PEDIDO = d.pedido;
+    const br = v => String(v || "").replace(".", ",");
+    els("f-credor").value = p.fornecedor_id;
+    els("f-descricao").value = p.descricao || "";
+    els("f-valor").value = br(p.valor);
+    if (p.documento_numero) els("f-doc-numero").value = p.documento_numero;
+    if (p.categoria_id) els("f-categoria").value = p.categoria_id;
+    if (p.rateios.length) RAT = p.rateios.map(r => ({obra_id: r.obra_id,
+      valor: br(r.valor), categoria_id: r.categoria_id || ""}));
+    if (p.parcelas.length) PARC = p.parcelas.map(x => ({vencimento: x.vencimento,
+      valor: br(x.valor)}));
+    desenharLinhas(); atualizarCredor();
+    els("faixa-pedido").innerHTML = `<div class="aviso info">
+      <b>Lançando a conta do pedido ${escapar(p.numero)} — ${escapar(p.fornecedor)}.</b>
+      Credor, valor, rateio por obra e parcelas já vieram do pedido
+      (total do pedido ${fmt(+p.total_do_pedido)}${+p.ja_lancado > 0
+        ? `, já lançado ${fmt(+p.ja_lancado)}` : ""}).
+      Junte a <b>nota e o boleto</b> abaixo e confira os campos: o que a nota
+      disser vale mais que o pedido.
+      ${p.avisos.map(a => `<br>• ${escapar(a)}`).join("")}
+      <br><button class="link-btn" id="btn-soltar-pedido">não é deste pedido — desvincular</button></div>`;
+    els("btn-soltar-pedido").addEventListener("click", () => {
+      DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; });
+  } catch(e){ aviso("mensagem", `Não consegui trazer os dados do pedido: ${e.message}`, "erro"); }
+}
 
 const dec = v => {
   const s = String(v||"").replace(/[R$\s]/g,"").replace(/\./g,"").replace(",",".");
@@ -474,7 +523,7 @@ function aplicarLeitura(x, primeira = true){
        ${x.categoria_sugerida.codigo} · ${x.categoria_sugerida.descricao} —
        ${x.categoria_sugerida.motivo}. <b>Confirme se está certo.</b>`;
   }
-  if (x.obra_sugerida) RAT = [{obra_id: x.obra_sugerida.obra_id,
+  if (x.obra_sugerida && !DO_PEDIDO) RAT = [{obra_id: x.obra_sugerida.obra_id,
                               valor: String(x.valor_total||"").replace(".",",")}];
   if (x.fornecedor_id && (primeira || !els("f-credor").value)) els("f-credor").value = x.fornecedor_id;
   avisarCredorNaoCadastrado(x);
@@ -499,7 +548,7 @@ function aplicarLeitura(x, primeira = true){
   // Documento que não trouxe parcela nenhuma: a primeira parcela nasce com o
   // líquido inteiro, que é o pedido do dono — em vez de zero para digitar.
   distribuirParcelas();
-  if (x.obra_id) RAT = [{obra_id: x.obra_id, valor: String(x.valor_total||"").replace(".",",")}];
+  if (x.obra_id && !DO_PEDIDO) RAT = [{obra_id: x.obra_id, valor: String(x.valor_total||"").replace(".",",")}];
   els("form-bloco").classList.remove("oculto");
   desenharLinhas(); atualizarCredor();
   els("form-bloco").scrollIntoView({behavior:"smooth", block:"start"});
@@ -790,6 +839,8 @@ function montar(){
     rateios: RAT.filter(r=>r.obra_id).map(r=>({obra_id:+r.obra_id, valor:String(dec(r.valor)),
       categoria_id: r.categoria_id ? +r.categoria_id : null,
       descricao: r.descricao || null})),
+    pedido_compra_id: DO_PEDIDO ? DO_PEDIDO.pedido_id : null,
+    recebimento_id: DO_PEDIDO ? DO_PEDIDO.recebimento_id : null,
     interessados: [...document.querySelectorAll(".interessado:checked")].map(i=>+i.value),
     colaborador_id: els("f-colaborador") && els("f-colaborador").value
       ? +els("f-colaborador").value : null,
@@ -865,6 +916,7 @@ els("btn-enviar").addEventListener("click", async () => {
       + (falhas.length ? `<br><b>Não consegui anexar:</b> ${falhas.map(escapar).join("; ")}
            — anexe pela ficha do título ${escapar(t.numero_sp)}.` : ""),
       falhas.length ? "info" : (t.status === "BLOQUEADO" ? "info" : "ok"));
+    DO_PEDIDO = null; els("faixa-pedido").innerHTML = "";
     RET = []; PARC = [{}]; RAT = [{}]; LIDO = null; DOCS = [];
     ["f-descricao","f-valor","f-doc-numero","f-emissao"].forEach(i=>els(i).value="");
     els("leitura").innerHTML = ""; els("bloco-critica").innerHTML = "";
@@ -883,7 +935,7 @@ els("btn-enviar").addEventListener("click", async () => {
   b.disabled = false; b.textContent = "Enviar solicitação";
 });
 
-carregar();
+carregar().then(preencherDoPedido);
 carregarInteressados();
 </script>
 {% endblock %}

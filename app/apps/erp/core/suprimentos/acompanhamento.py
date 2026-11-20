@@ -47,7 +47,7 @@ from sqlalchemy.orm import Session
 from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
 from app.apps.erp.db.models.cadastros import (
     Cotacao, CotacaoItem, Fornecedor, Insumo, InsumoCategoria, Obra, PedidoCompra,
-    PedidoEntrega, PedidoItem, PedidoItemReserva, StatusCotacao,
+    PedidoEntrega, PedidoItem, PedidoItemReserva, PedidoTitulo, StatusCotacao,
     StatusItemSuprimento,
     PrevisaoPagamento, Recebimento, RecebimentoItem, StatusPedidoCompra,
     SuprimentoItem, SuprimentoSolicitacao, Usuario,
@@ -192,6 +192,20 @@ def carregar(s: Session, pedidos: list[PedidoCompra]) -> dict[str, Any]:
             Titulo.status.notin_(_TITULO_MORTO))).all():
         titulos_por_nota[titulo.documento_fiscal_id].append(titulo)
         todos_titulos.append(titulo)
+    # O TÍTULO LANÇADO A PARTIR DO RECEBIMENTO (migração 121): vínculo direto,
+    # sem depender de alguém cruzar a nota na tela de Notas. É o caminho que a
+    # obra usa — "recebe, lança nota e boleto, e gera a obrigação".
+    titulos_diretos: dict[int, list[Titulo]] = defaultdict(list)
+    ja = {t.id for t in todos_titulos}
+    for vinculo, titulo in s.execute(
+            select(PedidoTitulo, Titulo)
+            .join(Titulo, Titulo.id == PedidoTitulo.titulo_id)
+            .where(PedidoTitulo.pedido_id.in_(ids),
+                   Titulo.status.notin_(_TITULO_MORTO))).all():
+        if titulo.id in ja:
+            continue          # já contado pela nota: não soma duas vezes
+        titulos_diretos[vinculo.pedido_id].append(titulo)
+        todos_titulos.append(titulo)
     parcelas: dict[int, list[Parcela]] = defaultdict(list)
     if todos_titulos:
         for parcela in s.scalars(select(Parcela).where(
@@ -213,6 +227,7 @@ def carregar(s: Session, pedidos: list[PedidoCompra]) -> dict[str, Any]:
     return {"itens": itens, "chegadas": chegadas, "previsoes": previsoes,
             "cotacoes": cotacoes,
             "notas": notas, "titulos_por_nota": titulos_por_nota,
+            "titulos_diretos": titulos_diretos,
             "parcelas": parcelas, "fornecedores": fornecedores,
             "desvios": desvios}
 
@@ -231,19 +246,29 @@ def financeiro_do_pedido(pedido: PedidoCompra, base: dict[str, Any]) -> dict[str
     notas_sem_titulo = 0
     proximo: Optional[date] = None
     numeros = []
+    def somar(titulo: Titulo) -> None:
+        nonlocal em_titulo, pago, proximo
+        numeros.append(titulo.numero_sp)
+        em_titulo += _d(titulo.valor_liquido)
+        for parcela in base["parcelas"].get(titulo.id, []):
+            if parcela.status is StatusParcela.PAGA:
+                pago += _d(parcela.valor)
+            elif proximo is None or parcela.vencimento < proximo:
+                proximo = parcela.vencimento
+
     for nota in notas:
         titulos = base["titulos_por_nota"].get(nota.id, [])
         if not titulos:
             notas_sem_titulo += 1
         for titulo in titulos:
-            numeros.append(titulo.numero_sp)
-            em_titulo += _d(titulo.valor_liquido)
-            for parcela in base["parcelas"].get(titulo.id, []):
-                if parcela.status is StatusParcela.PAGA:
-                    pago += _d(parcela.valor)
-                elif proximo is None or parcela.vencimento < proximo:
-                    proximo = parcela.vencimento
-    return {"notas": len(notas), "em_nota": em_nota.quantize(_CENT),
+            somar(titulo)
+    # Lançado direto do recebimento: o lançamento JÁ CARREGA a nota (ela é
+    # jogada na tela de Lançar), então conta também como "tem nota".
+    diretos = base.get("titulos_diretos", {}).get(pedido.id, [])
+    for titulo in diretos:
+        somar(titulo)
+        em_nota += _d(titulo.valor_bruto)
+    return {"notas": len(notas) + len(diretos), "em_nota": em_nota.quantize(_CENT),
             "notas_sem_titulo": notas_sem_titulo,
             "em_titulo": em_titulo.quantize(_CENT), "pago": pago.quantize(_CENT),
             "proximo_vencimento": proximo, "titulos": numeros}

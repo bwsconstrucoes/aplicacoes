@@ -65,9 +65,9 @@ function desenhar(){
     Enquanto a nota e o boleto não forem lançados, o financeiro não enxerga esta conta.
     <ul style="margin:6px 0 0 18px">${DADOS.sem_nota.map(n => `<li>
       <b>${escapar(n.numero)}</b> · ${escapar(n.fornecedor)} · chegou em
-      ${dataBR(n.chegou_em)} — há <b>${n.dias}</b> dia(s)</li>`).join("")}</ul>
-    {% if pode.lancar %}<div style="margin-top:8px"><a class="btn secundario"
-      href="{{ url_for('erp.pagina_lancar') }}">Lançar a nota e o boleto</a></div>{% endif %}
+      ${dataBR(n.chegou_em)} — há <b>${n.dias}</b> dia(s)
+      {% if pode.lancar %} · <a href="/erp/lancar?pedido_compra=${n.pedido_id}">lançar a nota e o boleto</a>{% endif %}
+      </li>`).join("")}</ul>
   </div>`;
 
   const q = (els("f-busca").value || "").toLowerCase().trim();
@@ -155,7 +155,7 @@ async function registrar(pedidoId){
         aviso: "O recebimento fica gravado, mas a nota continua pendente — e o "
           + "financeiro só enxerga a conta depois que ela for lançada."})) return;
   try {
-    await api(`/erp/api/suprimentos/pedidos/${pedidoId}/recebimento`, {method: "POST",
+    const feito = await api(`/erp/api/suprimentos/pedidos/${pedidoId}/recebimento`, {method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         data: cartao.querySelector(".rc-data").value,
@@ -165,7 +165,10 @@ async function registrar(pedidoId){
     aviso("mensagem", (parcial
       ? "Recebimento PARCIAL registrado. O que faltou ficou como pendência e já aparece para o suprimento em Acompanhar compras. "
       : "Recebimento registrado — pedido entregue por inteiro. ")
-      + "Agora falta lançar a nota e o boleto, para o financeiro enxergar a conta.", "ok");
+      + `Agora falta lançar a nota e o boleto, para o financeiro enxergar a conta.
+         {% if pode.lancar %}<br><a class="btn" style="margin-top:8px; display:inline-block"
+           href="/erp/lancar?pedido_compra=${pedidoId}&recebimento=${feito.recebimento_id || ""}"
+           >Lançar a nota e o boleto agora</a>{% endif %}`, "info");
     window.scrollTo({top: 0, behavior: "smooth"});
     carregar();
   } catch(e){ mostrar(escapar(e.message), "erro"); }

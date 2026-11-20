@@ -2293,9 +2293,10 @@ def api_recebimento(pedido_id: int):
             svc.exigir_pedido_no_escopo(s, atual, pedido_id)
             if request.method == "GET":
                 return jsonify({"ok": True, "situacao": svc.situacao(s, pedido_id)})
-            svc.registrar(s, pedido_id, request.get_json(silent=True) or {}, atual)
+            rec = svc.registrar(s, pedido_id, request.get_json(silent=True) or {}, atual)
+            saida = {"ok": True, "recebimento_id": rec.id}
             s.commit()
-            return jsonify({"ok": True})
+            return jsonify(saida)
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
@@ -5592,6 +5593,15 @@ def api_criar_titulo():
                         f"Lançamento sem documento fiscal vinculado — "
                         f"registrado por {usuario.email}.")
             titulo = svc.criar_titulo(s, d, usuario)
+            # ⚑ LANÇADO A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA
+            # (20/11/2026): o título nasce pelo caminho de sempre, e SÓ ENTÃO
+            # é ligado ao pedido — a previsão de pagamento do pedido é baixada
+            # e o coordenador passa a ver a conta. Erro aqui desfaz o título
+            # inteiro (mesma transação): vínculo pela metade seria pior.
+            if d.get("pedido_compra_id"):
+                from app.apps.erp.core.suprimentos import lancamento as svc_lanc
+                svc_lanc.vincular(s, titulo, int(d["pedido_compra_id"]), usuario,
+                                  recebimento_id=d.get("recebimento_id") or None)
             if d.get("chave_acesso"):
                 titulo.chave_acesso_nfe = str(d["chave_acesso"])[:44] or None
             if d.get("cno_documento"):
@@ -11732,6 +11742,23 @@ def api_preparar_fechamento(cotacao_id: int):
     from app.apps.erp.core.suprimentos import pedido as svc
     with get_session() as s:
         return jsonify({"ok": True, **svc.preparar_fechamento(s, cotacao_id)})
+
+
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/para-lancar")
+@login_obrigatorio
+@permissao("lancar")
+def api_pedido_para_lancar(pedido_id: int):
+    """O lançamento financeiro já preenchido com o que o pedido sabe: credor,
+    valor do que chegou, rateio por obra e as parcelas da previsão."""
+    from app.apps.erp.core.suprimentos import lancamento as svc
+    try:
+        with get_session() as s:
+            rec = (request.args.get("recebimento") or "").strip()
+            return jsonify({"ok": True, "pedido": svc.preparar(
+                s, _usuario_logado(s), pedido_id,
+                recebimento_id=int(rec) if rec.isdigit() else None)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/entrega", methods=["POST"])

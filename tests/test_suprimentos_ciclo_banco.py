@@ -625,3 +625,115 @@ def test_a_linha_do_pedido_traz_cotacao_tipo_de_insumo_e_todos_os_itens(base):
     assert [i["insumo"] for i in linha["itens"]] == ["Bancada de granito",
                                                      "Peitoril de granito"]
     assert linha["itens"][0]["valor"] == 1000.0
+
+
+# ---------------------------------------------------------------------------
+# A conta a pagar nasce do recebimento (migração 121)
+# ---------------------------------------------------------------------------
+from app.apps.erp.core.suprimentos import lancamento as svc_lanc  # noqa: E402
+
+
+def _titulo_solto(base, valor, sp):
+    """Um título como a tela de Lançar criaria — sem nota vinculada."""
+    s = base["s"]
+    cat = s.scalars(select(Categoria)).first()
+    if cat is None:
+        cat = Categoria(codigo="2.1.98", descricao="Material")
+        s.add(cat); s.flush()
+    t = Titulo(numero_sp=sp, tipo=TipoTitulo.T1_MATERIAL_NFE,
+               fornecedor_id=base["forn"].id, descricao="granitos",
+               valor_bruto=Decimal(valor), valor_liquido=Decimal(valor),
+               competencia=hoje().replace(day=1), categoria_id=cat.id,
+               forma_pagamento=FormaPagamento.BOLETO, status=StatusTitulo.APROVADO,
+               solicitante_id=base["u"].id)
+    s.add(t); s.flush()
+    s.add(Parcela(titulo_id=t.id, numero=1, valor=Decimal(valor),
+                  vencimento=hoje() + timedelta(days=30), status=StatusParcela.ABERTA))
+    s.flush()
+    return t
+
+
+def test_o_lancamento_vem_preenchido_com_o_que_chegou(base):
+    """Chegou só a obra A (R$ 1.000 de R$ 2.000): o lançamento sugere 1.000,
+    rateado na obra A, nas duas parcelas da previsão."""
+    pedido = _fechar(base)
+    _receber(base, pedido, [(base["item_a"], 10)])
+    p = svc_lanc.preparar(base["s"], base["u"], pedido.id)
+    assert p["fornecedor_id"] == base["forn"].id
+    assert p["valor"] == "1000.00" and p["entregue"] is False
+    assert p["rateios"] == [{"obra_id": base["obra_a"].id, "categoria_id": None,
+                             "valor": "1000.00"}]
+    assert [x["valor"] for x in p["parcelas"]] == ["500.00", "500.00"]
+    assert p["parcelas"][0]["vencimento"] == (hoje() + timedelta(days=40)).isoformat()
+    assert pedido.numero in p["descricao"] and "Bancada de granito" in p["descricao"]
+    assert any("não chegou por inteiro" in a for a in p["avisos"])
+
+
+def test_sem_recebimento_o_lancamento_avisa_e_nao_sugere_valor(base):
+    pedido = _fechar(base)
+    p = svc_lanc.preparar(base["s"], base["u"], pedido.id)
+    assert p["valor"] == "0.00" and p["rateios"] == []
+    assert any("não há recebimento" in a for a in p["avisos"])
+
+
+def test_o_titulo_lancado_do_recebimento_aparece_para_o_coordenador(base):
+    """O ponto fraco que ele apontou: antes, só se via o pagamento se alguém
+    vinculasse a nota ao pedido na tela de Notas."""
+    s = base["s"]
+    pedido = _fechar(base)
+    _receber(base, pedido, [(base["item_a"], 10), (base["item_b"], 20)])
+    linha, _ = _linha(base, pedido)
+    assert linha["ciclo"] == "ENTREGUE_SEM_NOTA"
+
+    titulo = _titulo_solto(base, "2000.00", "SP-REC-1")
+    svc_lanc.vincular(s, titulo, pedido.id, base["u"])
+    linha, _ = _linha(base, pedido)
+    assert linha["ciclo"] == "ENTREGUE_A_PAGAR"
+    assert linha["pagamento"]["em_titulo"] == 2000.0
+    assert linha["nota"]["recebido_sem_nota"] == 0.0     # o lançamento carrega a nota
+    assert linha["pagamento"]["titulos"] == ["SP-REC-1"]
+    # a previsão foi confirmada: sai da projeção, e o pedido diz qual título
+    assert svc_proj.projetar(s, base["u"])["totais"]["FIRME"] == 0.0
+    previsoes = svc_ped.detalhar(s, pedido.id)["previsoes"]
+    assert all(p["titulo_id"] == titulo.id for p in previsoes)
+    # e nada mais a lançar
+    assert svc_lanc.preparar(s, base["u"], pedido.id)["valor"] == "0.00"
+
+
+def test_lancamento_parcial_baixa_so_a_previsao_que_cobre(base):
+    s = base["s"]
+    pedido = _fechar(base)
+    _receber(base, pedido, [(base["item_a"], 10)])
+    titulo = _titulo_solto(base, "1000.00", "SP-REC-2")
+    svc_lanc.vincular(s, titulo, pedido.id, base["u"])
+    previsoes = svc_ped.detalhar(s, pedido.id)["previsoes"]
+    assert [bool(p["titulo_id"]) for p in previsoes] == [True, False]
+    assert svc_proj.projetar(s, base["u"])["totais"]["FIRME"] == 1000.0
+    # chega o resto: o que falta lançar é o resto
+    _receber(base, pedido, [(base["item_b"], 20)])
+    p = svc_lanc.preparar(s, base["u"], pedido.id)
+    assert p["valor"] == "1000.00" and p["entregue"] is True
+    assert p["rateios"][0]["obra_id"] in (base["obra_a"].id, base["obra_b"].id)
+
+
+def test_titulo_de_outro_credor_nao_se_liga_ao_pedido(base):
+    s = base["s"]
+    pedido = _fechar(base)
+    outro = Fornecedor(tipo_pessoa=TipoPessoa.PJ, cnpj_cpf="71000009000137",
+                       razao_social="OUTRO CREDOR LTDA",
+                       regime_tributario=RegimeTributario.NAO_INFORMADO,
+                       canais_cotacao=[], regioes_atuacao=[])
+    s.add(outro); s.flush()
+    titulo = _titulo_solto(base, "500.00", "SP-REC-3")
+    titulo.fornecedor_id = outro.id
+    s.flush()
+    with pytest.raises(ErroValidacao, match="não é o fornecedor do pedido"):
+        svc_lanc.vincular(s, titulo, pedido.id, base["u"])
+
+
+def test_a_obra_nao_lanca_conta_de_pedido_de_outra_obra(base):
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    so_b = _fechar(base, linhas=[base["linha_b"]])
+    da_a = _da_obra(base, base["obra_a"], "adm.a9@teste.bws.local")
+    with pytest.raises(ErroNaoEncontrado):
+        svc_lanc.preparar(base["s"], da_a, so_b.id)
