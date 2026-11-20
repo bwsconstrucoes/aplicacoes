@@ -143,7 +143,8 @@ def ler(s: Session, cotacao_fornecedor_id: int, *, conteudo: Optional[bytes] = N
 
 def _linhas_do_mapa(s: Session, cotacao_id: int) -> list[dict[str, Any]]:
     saida = []
-    for linha in s.scalars(select(CotacaoItem)).all():
+    for linha in s.scalars(select(CotacaoItem).where(
+            CotacaoItem.cotacao_id == cotacao_id)).all():
         if linha.cotacao_id != cotacao_id:
             continue
         item = s.get(SuprimentoItem, linha.suprimento_item_id)

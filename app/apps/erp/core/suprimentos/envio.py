@@ -77,7 +77,8 @@ def empresas_possiveis(s: Session, cotacao_id: int) -> dict[str, Any]:
     escolhe — porque a decisão "por qual CNPJ esta compra corre" é dele, não
     do sistema.
     """
-    itens = [x for x in s.scalars(select(CotacaoItem)).all()
+    itens = [x for x in s.scalars(select(CotacaoItem).where(
+                 CotacaoItem.cotacao_id == cotacao_id)).all()
              if x.cotacao_id == cotacao_id]
     obras_ids = set()
     for linha in itens:
@@ -166,7 +167,8 @@ def montar_mensagem(s: Session, cotacao_id: int, empresa: Empresa,
     if cot is None:
         raise ErroNaoEncontrado("Cotação não encontrada.")
 
-    linhas = sorted([x for x in s.scalars(select(CotacaoItem)).all()
+    linhas = sorted([x for x in s.scalars(select(CotacaoItem).where(
+                         CotacaoItem.cotacao_id == cotacao_id)).all()
                      if x.cotacao_id == cotacao_id],
                     key=lambda x: x.numero or 0)
     if not linhas:
@@ -314,7 +316,8 @@ def preparar(s: Session, cotacao_id: int) -> dict[str, Any]:
     if possiveis["sugerida"]:
         empresa = s.get(Empresa, possiveis["sugerida"])
 
-    colunas = sorted([x for x in s.scalars(select(CotacaoFornecedor)).all()
+    colunas = sorted([x for x in s.scalars(select(CotacaoFornecedor).where(
+                          CotacaoFornecedor.cotacao_id == cotacao_id)).all()
                       if x.cotacao_id == cotacao_id],
                      key=lambda x: (x.ordem or 0, x.id or 0))
     # O histórico vem do mais novo para o mais velho, então o primeiro que
@@ -382,7 +385,8 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
         raise ErroValidacao(falta)
 
     escolhidas = [int(x) for x in (dados.get("colunas") or [])]
-    colunas = [c for c in s.scalars(select(CotacaoFornecedor)).all()
+    colunas = [c for c in s.scalars(select(CotacaoFornecedor).where(
+                   CotacaoFornecedor.cotacao_id == cotacao_id)).all()
                if c.cotacao_id == cotacao_id
                and (not escolhidas or c.id in escolhidas)]
 
@@ -481,7 +485,8 @@ def empresa_do_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
     if s.get(PedidoCompra, pedido_id) is None:
         raise ErroNaoEncontrado("Pedido não encontrado.")
     obras_ids = set()
-    for linha in s.scalars(select(PedidoItem)).all():
+    for linha in s.scalars(select(PedidoItem).where(
+            PedidoItem.pedido_id == pedido_id)).all():
         if linha.pedido_id != pedido_id:
             continue
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
@@ -554,7 +559,8 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     cond = (s.get(CondicaoPagamento, pedido.condicao_pagamento_id)
             if pedido.condicao_pagamento_id else None)
 
-    linhas = sorted([x for x in s.scalars(select(PedidoItem)).all()
+    linhas = sorted([x for x in s.scalars(select(PedidoItem).where(
+                         PedidoItem.pedido_id == pedido_id)).all()
                      if x.pedido_id == pedido_id], key=lambda x: x.numero or 0)
     if not linhas:
         raise ErroValidacao("Este pedido não tem item nenhum.")

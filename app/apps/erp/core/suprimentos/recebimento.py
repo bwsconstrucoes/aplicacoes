@@ -68,7 +68,8 @@ def registrar(s: Session, pedido_id: int, dados: dict[str, Any],
     if data_recebimento > date.today():
         raise ErroValidacao("Não dá para receber material no futuro.")
 
-    linhas_do_pedido = {i.id: i for i in s.scalars(select(PedidoItem)).all()
+    linhas_do_pedido = {i.id: i for i in s.scalars(select(PedidoItem).where(
+                            PedidoItem.pedido_id == pedido.id)).all()
                         if i.pedido_id == pedido.id}
     # Quem está preso a obra só recebe material DAS OBRAS DELE. None = vê tudo.
     obras_da_pessoa = _obras_de_quem_recebe(s, usuario)
@@ -140,7 +141,8 @@ def situacao(s: Session, pedido_id: int) -> dict[str, Any]:
 
     itens = []
     tudo_recebido = True
-    for linha in sorted([i for i in s.scalars(select(PedidoItem)).all()
+    for linha in sorted([i for i in s.scalars(select(PedidoItem).where(
+                             PedidoItem.pedido_id == pedido_id)).all()
                          if i.pedido_id == pedido_id], key=lambda x: x.numero or 0):
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
         insumo = s.get(Insumo, item.insumo_id) if item is not None else None
@@ -158,7 +160,8 @@ def situacao(s: Session, pedido_id: int) -> dict[str, Any]:
             "status": item.status.value if item is not None and item.status else None,
         })
 
-    previsoes = sorted([p for p in s.scalars(select(PrevisaoPagamento)).all()
+    previsoes = sorted([p for p in s.scalars(select(PrevisaoPagamento).where(
+                            PrevisaoPagamento.pedido_id == pedido_id)).all()
                         if p.pedido_id == pedido_id], key=lambda x: x.numero or 0)
     sem_titulo = [p for p in previsoes if not p.titulo_id]
     vencidas_sem_material = [

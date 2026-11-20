@@ -85,7 +85,8 @@ def fechar_do_mapa(s: Session, cotacao_id: int, cotacao_fornecedor_id: int,
         raise ErroValidacao("Escolha os itens que vão neste pedido.")
 
     precos = {(p.cotacao_fornecedor_id, p.cotacao_item_id): p
-              for p in s.scalars(select(CotacaoPreco)).all()}
+              for p in s.scalars(select(CotacaoPreco).where(
+                  CotacaoPreco.cotacao_fornecedor_id == coluna.id)).all()}
     linhas = []
     for linha_id in cotacao_itens:
         linha = s.get(CotacaoItem, int(linha_id))
@@ -141,7 +142,10 @@ def _criar(s: Session, *, fornecedor_id: int, linhas: list[tuple[SuprimentoItem,
     if forn is None:
         raise ErroValidacao("Fornecedor não encontrado.")
 
-    reservados = {r.suprimento_item_id for r in s.scalars(select(PedidoItemReserva)).all()}
+    ids_das_linhas = [i.id for i, _ in linhas]
+    reservados = {r.suprimento_item_id for r in s.scalars(
+        select(PedidoItemReserva).where(
+            PedidoItemReserva.suprimento_item_id.in_(ids_das_linhas or [0]))).all()}
     repetidos = [i.id for i, _ in linhas if i.id in reservados]
     if repetidos:
         raise ErroValidacao(
@@ -450,7 +454,8 @@ def _devolver_itens(s: Session, pedido: PedidoCompra) -> None:
 
 
 def _liberar_reserva(s: Session, suprimento_item_id: int) -> None:
-    for r in s.scalars(select(PedidoItemReserva)).all():
+    for r in s.scalars(select(PedidoItemReserva).where(
+            PedidoItemReserva.suprimento_item_id == suprimento_item_id)).all():
         if r.suprimento_item_id == suprimento_item_id:
             s.delete(r)
 
@@ -467,12 +472,17 @@ def _pedido_pendente(s: Session, pedido_id: int) -> PedidoCompra:
 
 
 def _itens(s: Session, pedido_id: int) -> list[PedidoItem]:
-    return sorted([i for i in s.scalars(select(PedidoItem)).all()
+    # O `.where` é o que o banco usa; o `if` fica para a sessão dublada dos
+    # testes, que ignora `WHERE`. Sem o `.where`, cada chamada lia a tabela
+    # inteira — e a lista de pedidos chamava isto duas vezes POR PEDIDO.
+    return sorted([i for i in s.scalars(select(PedidoItem).where(
+                       PedidoItem.pedido_id == pedido_id)).all()
                    if i.pedido_id == pedido_id], key=lambda x: x.numero or 0)
 
 
 def _previsoes(s: Session, pedido_id: int) -> list[PrevisaoPagamento]:
-    return [p for p in s.scalars(select(PrevisaoPagamento)).all()
+    return [p for p in s.scalars(select(PrevisaoPagamento).where(
+                PrevisaoPagamento.pedido_id == pedido_id)).all()
             if p.pedido_id == pedido_id]
 
 
@@ -622,19 +632,39 @@ def _endereco(obra) -> str:
 
 
 def listar(s: Session, *, status: Optional[str] = None) -> list[dict[str, Any]]:
-    pedidos = list(s.scalars(select(PedidoCompra)).all())
-    if status:
-        alvo = status.strip().upper()
-        pedidos = [p for p in pedidos if p.status and p.status.value == alvo]
+    """A fila de pedidos. TRÊS consultas, com dez pedidos ou com vinte mil.
+
+    Até 20/11/2026 eram duas leituras da tabela de itens INTEIRA para cada
+    pedido da lista, mais uma ida ao banco por fornecedor. A numeração antiga
+    da empresa passa de 19 mil pedidos.
+    """
+    stmt = select(PedidoCompra)
+    alvo = status.strip().upper() if status else None
+    if alvo and alvo in {x.value for x in StatusPedidoCompra}:
+        stmt = stmt.where(PedidoCompra.status == StatusPedidoCompra(alvo))
+    pedidos = [p for p in s.scalars(stmt).all()
+               if not alvo or (p.status and p.status.value == alvo)]
+    ids = [p.id for p in pedidos]
+    por_pedido: dict[int, list[PedidoItem]] = {}
+    for item in s.scalars(select(PedidoItem).where(
+            PedidoItem.pedido_id.in_(ids or [0]))).all():
+        por_pedido.setdefault(item.pedido_id, []).append(item)
+    nomes = {f.id: f.razao_social for f in s.scalars(select(Fornecedor).where(
+        Fornecedor.id.in_({p.fornecedor_id for p in pedidos} or {0}))).all()}
     saida = []
     for p in sorted(pedidos, key=lambda x: x.id or 0, reverse=True):
-        forn = s.get(Fornecedor, p.fornecedor_id)
+        itens = por_pedido.get(p.id, [])
+        soma = sum((Decimal(str(i.quantidade)) * Decimal(str(i.preco_unitario))
+                    for i in itens), Decimal("0"))
+        soma += Decimal(str(p.frete or 0)) - Decimal(str(p.desconto or 0))
         saida.append({
             "id": p.id, "numero": p.numero,
-            "fornecedor": getattr(forn, "razao_social", ""),
+            "fornecedor": nomes.get(p.fornecedor_id, ""),
             "status": p.status.value if p.status else None,
-            "total": str(total(s, p)), "antecipado": bool(p.antecipado),
-            "itens": len(_itens(s, p.id)),
+            "total": str(max(soma, Decimal("0")).quantize(
+                CENTAVO, rounding=ROUND_HALF_UP)),
+            "antecipado": bool(p.antecipado),
+            "itens": len(itens),
             "cotacao_id": p.cotacao_id,
             "criado_em": p.criado_em.isoformat() if p.criado_em else None,
         })
