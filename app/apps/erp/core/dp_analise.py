@@ -457,6 +457,17 @@ def _admissao(s, sol, dados, p, hoje) -> list[dict[str, Any]]:
             itens.append(atencao(f"{idade} anos: menor de 18 não pode trabalho "
                                  "insalubre, perigoso nem noturno — na obra, "
                                  "confira a função", "CLT art. 405; CF art. 7º XXXIII"))
+    # ⚑ READMISSÃO EM ATÉ 1 ANO: SEM EXPERIÊNCIA (regra dele, 20/11/2026; a
+    # lei, CLT art. 452, fala em 6 meses — a empresa usa 1 ano).
+    if p and p.get("id"):
+        from app.apps.erp.core.cadastros import pessoas as svc_p
+        saida = svc_p.readmissao_sem_experiencia(s, p["id"], ini or hoje)
+        if saida:
+            itens.append(lembrete(
+                f"readmissão: saiu em {_br(saida)}, volta em menos de 1 ano — o "
+                "contrato entra por prazo INDETERMINADO, sem experiência (o "
+                "sistema grava assim sozinho)", "CLT art. 452; regra da empresa"))
+            return itens
     if not str(dados.get("contrato_experiencia") or (p or {}).get("contrato_experiencia") or "").strip():
         itens.append(lembrete("sem contrato de experiência escolhido: a pessoa "
                               "entra direto por prazo indeterminado",

@@ -117,6 +117,30 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 20/11/2026 (noite, 7) — As regras dele na tela de Regras do cadastro
+
+Comentários dele sobre a medição:
+- *"Autônomo não tem convenção. Apenas se define o valor da diária."* → a
+  convenção SAIU do obrigatório do prestador (tinha entrado por suposição
+  minha em 18/11, sustentada só pelos 207 de 207 preenchidos — sobra do
+  Pipefy); a convenção só aparece para CTPS; o autônomo RPA passa a exigir a
+  diária. A medição registra a proposta antiga como recusada, com o motivo.
+- *"CNPJ PJ e Razão Social PJ são obrigatórios para o Tipo de Contrato PJ"* →
+  já valia no formulário; a medição parou de listá-los como "campos que
+  ninguém preenche" (são poucos PJ, abaixo do mínimo da medição).
+- *"se o colaborador sair e retornar num prazo de um ano, na readmissão o
+  contrato tem que ser indeterminado (…) não entra em período de experiência"*
+  → `pessoas.readmitir`: carteira → carteira em até 365 dias grava CLT por
+  prazo indeterminado e "Sem contrato de experiência", com evento; a análise
+  do pedido avisa; a medição não conta essas pessoas como discordantes.
+  ⚠️ **A lei (CLT art. 452) fala em 6 meses**, não 1 ano; a regra da empresa é
+  mais protetora e está dentro da lei. Dito a ele.
+
+**Proposto, não feito (muda centenas de cadastros):** passar sozinho de "CLT
+(tempo determinado)" para "CLT (tempo indeterminado)" quando a experiência
+acaba — é o que ele descreveu ("passado o período de experiência ele vira
+indeterminado").
+
 ### 20/11/2026 (noite, 6) — A transferência vira AUTOMÁTICA: a obra do mês
 
 Ele, desfazendo a Transferência de Obra como pedido (publicada horas antes):

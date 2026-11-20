@@ -1059,6 +1059,26 @@ def ligar_ao_operador(s: Session, colaborador_id: int, usuario_id: Optional[int]
     return c
 
 
+# A regra da empresa (20/11/2026): voltou em até 1 ano, sem experiência.
+DIAS_READMISSAO_SEM_EXPERIENCIA = 365
+SEM_EXPERIENCIA = "Sem contrato de experiência"
+
+
+def readmissao_sem_experiencia(s: Session, colaborador_id: int,
+                               admissao: Optional[date] = None) -> Optional[date]:
+    """A saída anterior de carteira, se a pessoa está voltando em até 1 ano
+    (e por isso entra sem experiência); senão None."""
+    admissao = admissao or date.today()
+    saida = s.execute(text("""
+        SELECT max(demissao) FROM colaborador_vinculos
+         WHERE colaborador_id = :c AND demissao IS NOT NULL
+           AND UPPER(COALESCE(vinculo, 'CTPS')) = 'CTPS'
+           AND demissao < :a"""), {"c": colaborador_id, "a": admissao}).scalar()
+    if saida and (admissao - saida).days <= DIAS_READMISSAO_SEM_EXPERIENCIA:
+        return saida
+    return None
+
+
 def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
               usuario: Usuario) -> Colaborador:
     """Traz a pessoa de volta SEM apagar a passagem anterior.
@@ -1103,6 +1123,19 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
         matricula=(str(dados.get("matricula") or "").strip() or None),
         admissao=admissao, vinculo_anterior_id=anterior.id if anterior else None,
         usuario_id=usuario.id if usuario else None)
+    # ⚑ READMISSÃO EM ATÉ UM ANO NÃO TEM EXPERIÊNCIA (20/11/2026). Ele: *"se
+    # o colaborador sair e retornar num prazo de um ano, na readmissão o
+    # contrato tem que ser indeterminado, ou seja, não entra em período de
+    # experiência mais."* A lei (CLT art. 452) fala em 6 meses entre contratos
+    # por prazo determinado; a regra da empresa é mais protetora (1 ano) e
+    # está dentro da lei. Vale para quem volta de CARTEIRA a CARTEIRA.
+    sem_experiencia = (
+        (vinculo or "").upper() == "CTPS" and anterior is not None
+        and (anterior.vinculo or "CTPS").upper() == "CTPS"
+        and anterior.demissao is not None
+        and (admissao - anterior.demissao).days <= DIAS_READMISSAO_SEM_EXPERIENCIA)
+    if sem_experiencia:
+        novo.tipo_contrato = "CLT_INDETERMINADO"
     s.add(novo)
     # O cadastro passa a refletir o vínculo de hoje.
     c.situacao, c.demissao = "ATIVO", None
@@ -1114,6 +1147,14 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
     c.salario = novo.salario
     if novo.matricula:
         c.matricula = novo.matricula
+    if sem_experiencia:
+        c.contrato_experiencia = SEM_EXPERIENCIA
+        registrar_evento(s, "colaborador", c.id, "READMISSAO_SEM_EXPERIENCIA",
+                         {"saida_anterior": str(anterior.demissao),
+                          "readmissao": str(admissao),
+                          "motivo": "voltou em até 1 ano: contrato por prazo "
+                                    "indeterminado, sem experiência"},
+                         usuario.id if usuario else None)
     s.flush()
     # ⚑ PARA ONDE A READMISSÃO VAI (19/11/2026). Ele: *"na hora que eu atender
     # essa readmissão de um prestador, aí a pessoa já vai para a etapa
@@ -1645,13 +1686,11 @@ OBRIGATORIOS_POR_VINCULO = {
         ("convencao_id", "convenção"),
         ("salario", "salário"),
     ),
-    # ⚑ A convenção também é do prestador: medida em 207 de 207 autônomos RPA.
-    # ⚠️ SUPOSIÇÃO MINHA, e ele precisa saber: estendi ao prestador em geral,
-    # mas os 10 PJ ficaram abaixo do mínimo da medição e PJ não tem convenção
-    # coletiva — por isso PJ está de fora, logo abaixo.
-    "PRESTADOR": (
-        ("convencao_id", "convenção"),
-    ),
+    # ⚑ A CONVENÇÃO SAIU DO PRESTADOR EM 20/11/2026. Ela tinha entrado por
+    # suposição minha (207 de 207 autônomos com o campo preenchido), e ele
+    # corrigiu: *"Autônomo não tem convenção. Apenas se define o valor da
+    # diária."* O campo preenchido era sobra do Pipefy, não regra.
+    "PRESTADOR": (),
 }
 
 OBRIGATORIOS_POR_CONTRATO = {
@@ -1662,6 +1701,10 @@ OBRIGATORIOS_POR_CONTRATO = {
     "PJ": (
         ("razao_social_pj", "razão social (PJ)"),
         ("cnpj_pj", "CNPJ (PJ)"),
+    ),
+    # ⚑ 20/11/2026, ele: *"Autônomo (…) apenas se define o valor da diária."*
+    "AUTONOMO_RPA": (
+        ("valor_diaria", "valor da diária"),
     ),
 }
 
@@ -1700,6 +1743,9 @@ CAMPOS_SO_SE: dict[str, dict[str, tuple[str, ...]]] = {
     # e não tem período de experiência.
     "salario": {"vinculo": ("CTPS",)},
     "contrato_experiencia": {"vinculo": ("CTPS",)},
+    # ⚑ 20/11/2026: convenção coletiva é de quem tem carteira. Ele:
+    # *"Autônomo não tem convenção."*
+    "convencao_id": {"vinculo": ("CTPS",)},
 }
 
 

@@ -1152,3 +1152,40 @@ def test_a_obra_de_cadastro_muda_sozinha_para_a_obra_do_mes(_schema_ponto, mundo
     assert s.execute(text("SELECT count(*) FROM dp_solicitacoes WHERE colaborador_id = :c "
                           "AND tipo = 'TRANSFERENCIA_OBRA'"), {"c": c.id}).scalar() == 0
 
+
+
+# ===========================================================================
+# 20/11/2026: as regras que ele ditou sobre o cadastro
+# ===========================================================================
+@pytestmark_banco
+def test_readmissao_em_ate_um_ano_entra_sem_experiencia(mundo):
+    """Ele: *"se o colaborador sair e retornar num prazo de um ano, na
+    readmissão o contrato tem que ser indeterminado (…) não entra em período
+    de experiência mais."*"""
+    import datetime as dt
+    s = mundo["s"]
+    c = _carteira(mundo)
+    s.execute(text("UPDATE colaborador_vinculos SET admissao = '2025-01-10' "
+                   "WHERE colaborador_id = :c"), {"c": c.id})
+    saida = dt.date.today() - dt.timedelta(days=90)
+    svc_pessoas.desligar(s, c.id, {"data_saida": saida.isoformat()}, mundo["dp"])
+    s.flush()
+    svc_pessoas.readmitir(s, c.id, {"admissao": dt.date.today().isoformat(),
+                                    "tipo_contrato": "CLT_DETERMINADO"}, mundo["dp"])
+    s.flush()
+    volta = s.get(svc_pessoas.Colaborador, c.id)
+    assert volta.tipo_contrato == "CLT_INDETERMINADO"
+    assert volta.contrato_experiencia == svc_pessoas.SEM_EXPERIENCIA
+
+
+@pytestmark_banco
+def test_autonomo_nao_tem_convencao_e_precisa_da_diaria():
+    """Ele: *"Autônomo não tem convenção. Apenas se define o valor da
+    diária."*"""
+    from app.apps.erp.db.models.cadastros import Colaborador
+    assert not svc_pessoas.campo_aparece("convencao_id", vinculo="PRESTADOR",
+                                         tipo_contrato="AUTONOMO_RPA")
+    rpa = Colaborador(nome="X", cpf="1", vinculo="PRESTADOR",
+                      tipo_contrato="AUTONOMO_RPA", cargo_id=1)
+    falta = svc_pessoas.o_que_falta(rpa)
+    assert "valor da diária" in falta and "convenção" not in falta
