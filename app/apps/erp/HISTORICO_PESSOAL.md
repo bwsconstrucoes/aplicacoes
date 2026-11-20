@@ -38,7 +38,14 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (20/11/2026), ramo `claude/busy-shannon-w5pp5o`:** a admissão
+**PUBLICADO em 20/11/2026 (noite)** — ele: *"Vamos ficar com esses
+procedimentos por enquanto, pode publicar."* ⚠️ Confirmar com ele que apertou
+"Aplicar atualizações do banco" (115, 116 e 117). Os procedimentos que faltam
+(13º, ASO demissional, prorrogação da experiência, advertência, transferência,
+fechamento do ponto, afastamento formal, pensão) ficaram para depois, por
+decisão dele. A cobrança e a caixa do agente seguem desligadas.
+
+**(Histórico do que estava para publicar)** a admissão
 dentro da Solicitação (migração **115**), os nomes novos das telas e o lote de
 20/11 (alteração, dependente, férias e cancelamento pela contabilidade). ⚠️
 Uma atualização de banco: apertar "Aplicar atualizações do banco" no mesmo
