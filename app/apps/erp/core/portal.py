@@ -685,6 +685,20 @@ def ferias_da_equipe(s: Session, usuario: Optional[Usuario]) -> list[dict[str, A
              "mudanca": (f["mudanca"] or {}).get("rotulo", "")} for f in lista]
 
 
+def experiencias_da_equipe(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
+    """Contratos de experiência da equipe que terminam nos próximos dias
+    (20/11/2026). Para quem cuida da obra — o administrativo decide com o DP
+    se efetiva, prorroga ou encerra."""
+    from app.apps.erp.core import pessoal_experiencia
+    try:
+        eu = quem_esta(s, usuario)
+        if not pode_pedir_por_outros(s, eu):
+            return []
+        return pessoal_experiencia.terminando(s, obras_que_alcanca(s, eu))
+    except SemAcesso:
+        return []
+
+
 def termos_para_assinar(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """Os documentos que a obra tem de levar para a pessoa assinar (20/11/2026).
     Para quem alcança a obra — o administrativo, que conduz a assinatura."""

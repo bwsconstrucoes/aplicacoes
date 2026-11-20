@@ -202,6 +202,16 @@
     <div id="ferias"></div>
   </div>
 
+  {# ⚑ A EXPERIÊNCIA TERMINANDO (20/11/2026). Ele: *"DP e o administrativo de
+     obra devam ser alertados sobre o acontecimento. Poucos dias antes."* #}
+  <div class="bloco" id="bloco-experiencia" style="display:none">
+    <h3>Contratos de experiência terminando</h3>
+    <p class="ajuda">Decida com o DP <b>antes da data</b>: efetivar (não precisa
+      fazer nada), ou encerrar no prazo (peça o desligamento). Depois do fim da
+      prorrogação, sair custa aviso prévio e multa.</p>
+    <div id="experiencias"></div>
+  </div>
+
   <div class="bloco" id="bloco-pedir">
     <h3>Abrir uma solicitação</h3>
     <p class="ajuda" id="pedir-ajuda">Escolha a área do que você precisa.</p>
@@ -265,6 +275,7 @@ async function carregar(){
   pintarDevolucoes();
   pintarTermos();
   pintarFerias();
+  pintarExperiencias();
   pintarFormulario();
   pintarMeus();
 }
@@ -405,6 +416,21 @@ async function recusaDoTermo(id){
     els("termo-aberto").innerHTML = "";
     carregar();
   } catch(e){ recado(e.message, "erro"); }
+}
+
+function pintarExperiencias(){
+  const l = DADOS.experiencias || [];
+  els("bloco-experiencia").style.display = l.length ? "" : "none";
+  els("experiencias").innerHTML = l.map(x => `
+    <div class="linha">
+      <div class="cresce">
+        <b>${esc(x.pessoa)}</b> <small>${esc(x.cargo)}${x.obra ? " · obra " + esc(x.obra) : ""}</small><br>
+        <small>${esc(x.o_que_acontece)}</small><br>
+        <small class="ajuda">${esc(x.para_encerrar)}</small>
+      </div>
+      <span class="etiqueta ${x.faltam_dias <= 3 ? "vermelha" : ""}">${
+        x.faltam_dias === 0 ? "termina hoje" : `termina em ${x.faltam_dias} dia(s)`}</span>
+    </div>`).join("");
 }
 
 function pintarFerias(){

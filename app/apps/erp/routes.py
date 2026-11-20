@@ -13250,6 +13250,8 @@ def api_portal_inicio():
                 "ferias": svc_portal.ferias_da_equipe(s, usuario),
                 # Os documentos para a pessoa assinar (20/11/2026, noite).
                 "termos": svc_portal.termos_para_assinar(s, usuario),
+                # Experiência terminando (20/11/2026): o aviso para a obra.
+                "experiencias": svc_portal.experiencias_da_equipe(s, usuario),
                 "devolucoes": svc_portal.minhas_devolucoes(s, usuario)})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401

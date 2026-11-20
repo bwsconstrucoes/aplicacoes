@@ -93,7 +93,11 @@ def abrir(s: Session, *, colaborador_id: int, tipo: str, titulo: str,
                   {"i": colaborador_id}).mappings().first()
     if c is None:
         raise ErroValidacao("Colaborador não encontrado.")
-    obra = obra_id or c["obra_id"]
+    # Quem colhe a assinatura é a obra onde a pessoa está batendo ponto (a
+    # obra ATUAL, migração 118); sem ela, a do cadastro.
+    from app.apps.erp.core import obra_atual
+    atual = obra_atual.da_pessoa(s, colaborador_id)
+    obra = obra_id or (atual or {}).get("obra_id") or c["obra_id"]
     if not obra:
         raise ErroValidacao("Sem obra não há quem colha a assinatura — "
                             "informe a obra no cadastro da pessoa.")

@@ -943,3 +943,82 @@ def test_a_alteracao_de_ferias_tambem_gera_aviso_com_a_data_nova(mundo):
     import datetime as dt
     nova = dt.date.fromisoformat(_dia(70)).strftime("%d/%m/%Y")
     assert t_ is not None and nova in t_["texto"]
+
+
+# ===========================================================================
+# 20/11/2026: a obra atual pelo ponto e o fim da experiência para a obra
+# ===========================================================================
+@pytest.fixture(scope="session")
+def _schema_ponto(banco):
+    """O schema `ponto` pela migração de verdade (o mesmo de
+    `test_diario_efetivo_do_ponto_banco.py`; não derruba no fim)."""
+    from app.apps.ponto import migracoes_runner
+    resultado = migracoes_runner.aplicar_pendentes()
+    assert not resultado["erro"], resultado
+    return True
+
+
+def _bate(mundo, colaborador_id, obra_id, dia):
+    import datetime as dt
+    s = mundo["s"]
+    nsr = s.execute(text("SELECT COALESCE(MAX(nsr), 0) + 1 FROM ponto.marcacoes")).scalar()
+    s.execute(text("""
+        INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id, timestamp_servidor,
+                                     data_referencia, origem, status, hash_encadeado)
+        VALUES (:n, :c, :o, :t, :d, 'PWA', 'VALIDA', 'hash-teste-' || :n)"""),
+        {"n": nsr, "c": colaborador_id, "o": obra_id,
+         "t": dt.datetime.combine(dia, dt.time(11), tzinfo=dt.timezone.utc), "d": dia})
+
+
+@pytestmark_banco
+def test_a_obra_atual_vem_do_ponto_e_a_transferencia_e_avisada(_schema_ponto, mundo):
+    """Ele: *"teremos a obra de cadastro e a obra atual. Para a obra atual,
+    vamos buscar a informação do ponto. Uma rotina que atualize."*"""
+    import datetime as dt
+    from app.apps.erp.core import agente_dp, obra_atual
+    from app.apps.erp.db.models.cadastros import Obra
+    s = mundo["s"]
+    c = _carteira(mundo)
+    outra = Obra(codigo="ADM-02", nome="Outra obra", status="ATIVA")
+    s.add(outra)
+    s.flush()
+    hoje = dt.date.today()
+    for n in range(1, 4):
+        _bate(mundo, c.id, mundo["obra"].id, hoje - dt.timedelta(days=20 + n))
+    obra_atual.atualizar(s, hoje=hoje - dt.timedelta(days=12))
+    assert obra_atual.da_pessoa(s, c.id)["obra_id"] == mundo["obra"].id
+    for n in range(1, 6):
+        _bate(mundo, c.id, outra.id, hoje - dt.timedelta(days=n))
+    r = obra_atual.atualizar(s, hoje=hoje - dt.timedelta(days=8))
+    r = obra_atual.atualizar(s, hoje=hoje)
+    atual = obra_atual.da_pessoa(s, c.id)
+    assert atual["obra_id"] == outra.id
+    assert s.execute(text("SELECT count(*) FROM colaborador_obra_mudancas "
+                          "WHERE colaborador_id = :c"), {"c": c.id}).scalar() == 1
+    # a ficha mostra as duas
+    ficha = svc_pessoas.ficha(s, c.id)
+    assert ficha["obra_id"] == mundo["obra"].id and ficha["obra_atual"]["codigo"] == "ADM-02"
+    # uma semana na obra diferente: o agente avisa
+    s.execute(text("UPDATE colaborador_obra_atual SET desde = :d WHERE colaborador_id = :c"),
+              {"d": hoje - dt.timedelta(days=8), "c": c.id})
+    assert any(a["tipo"] == "obra_diferente_do_cadastro" and a["colaborador_id"] == c.id
+               for a in agente_dp.vigia(s))
+
+
+@pytestmark_banco
+def test_o_fim_da_experiencia_aparece_para_a_obra_e_para_o_dp(mundo):
+    """Ele: *"DP e o administrativo de obra devam ser alertados sobre o
+    acontecimento. Poucos dias antes."*"""
+    import datetime as dt
+    from app.apps.erp.core import pessoal_experiencia
+    s = mundo["s"]
+    c = svc_pessoas.salvar(s, {"cpf": "98765432100", "nome": "Experiencia Acabando",
+                               "admissao": (dt.date.today() - dt.timedelta(days=40)).isoformat(),
+                               "obra_id": mundo["obra"].id, "vinculo": "CTPS",
+                               "contrato_experiencia": "45+45 dias",
+                               "etapa": "CONCLUIDO"}, mundo["dp"])
+    s.flush()
+    [x] = [x for x in pessoal_experiencia.terminando(s, [mundo["obra"].id])
+           if x["colaborador_id"] == c.id]
+    assert x["faltam_dias"] == 4 and "PRORROGA" in x["o_que_acontece"]
+    assert pessoal_experiencia.terminando(s, [-1]) == []

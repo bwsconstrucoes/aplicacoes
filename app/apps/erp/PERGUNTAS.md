@@ -3140,3 +3140,16 @@ consulta inventada vai sendo usado cada vez menos.
 - **"O fulano já assinou o aviso de férias?"** — o último passo do pedido de
   férias (desde 20/11/2026, noite); o pedido só fecha com ele.
 
+## A obra atual e o fim da experiência (20/11/2026, noite)
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"a obra do fulano"** | a obra de CADASTRO (o DP muda) ou a obra ATUAL (onde ele mais bateu ponto nos últimos 15 dias). Para custo e rateio, hoje vale a de cadastro |
+
+- **"Quem está trabalhando numa obra diferente da do cadastro?"** — alerta do
+  agente (uma semana ou mais) e a ficha.
+- **"Quem foi transferido este mês?"** — as mudanças de obra que o ponto
+  mostrou (`colaborador_obra_mudancas`), desde 20/11/2026.
+- **"De quem acaba a experiência nos próximos dias?"** — portal da obra e
+  agente (10 dias). Muda conforme quem pergunta.
+

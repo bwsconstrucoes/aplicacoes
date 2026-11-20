@@ -38,6 +38,9 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**Falta publicar (20/11/2026, noite, 3):** experiência avisada à obra e obra
+atual pelo ponto — migração **118** (apertar "Aplicar atualizações do banco").
+
 **PUBLICADO em 20/11/2026 (noite)** — ele: *"Vamos ficar com esses
 procedimentos por enquanto, pode publicar."* ⚠️ Confirmar com ele que apertou
 "Aplicar atualizações do banco" (115, 116 e 117). Os procedimentos que faltam
@@ -111,6 +114,30 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 20/11/2026 (noite, 3) — Fim da experiência avisado à obra; obra atual pelo ponto
+
+Ele: *"Prorrogação da experiência. Entendo que DP e o administrativo de obra
+devam ser alertados (…) Poucos dias antes. Transferência de obra (…) teremos a
+obra de cadastro e a obra atual. Para a obra atual, vamos buscar a informação
+do ponto. Uma rotina que atualize essa informação."*
+
+- **Experiência terminando** (`pessoal_experiencia.terminando`): 10 dias antes
+  do fim da 1ª parte (que se prorroga sozinha) e da prorrogação (que vira
+  indeterminado). O DP já recebia pelo agente; a obra passa a ver no portal
+  ("Contratos de experiência terminando"), com o que acontece se ninguém fizer
+  nada e como encerrar no prazo.
+- **Obra atual** (migração 118, `core/obra_atual.py`): onde a pessoa mais
+  bateu ponto nos últimos 15 dias; recalculada todo dia antes da rodada do
+  agente (uma consulta só). A obra de cadastro continua sendo do DP. A ficha
+  mostra as duas; cada mudança fica registrada (`colaborador_obra_mudancas`);
+  uma semana numa obra diferente da do cadastro vira alerta de transferência
+  no agente. Os avisos do portal (férias, experiência) e o documento para
+  assinar vão para a obra ATUAL.
+- ⚠️ **Não mexido, decisão dele:** a folha do Análise de SPs tem os campos
+  "obra" e "obra do cadastro" (`pessoas.para_folha`), e hoje os dois recebem
+  a obra do cadastro. Pôr a obra atual no primeiro muda o rateio do custo.
+  Também em aberto: a transferência de quem é de carteira vai à contabilidade?
 
 ### 20/11/2026 (noite, 2) — Nome e endereço não vão à contabilidade; aviso de férias assinado na tela
 

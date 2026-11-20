@@ -339,6 +339,12 @@ def listar(s: Session, *, obras: Optional[list[int]] = None,
     if (obras is not None and not obras) or not tem_tabela(s):
         return []
     hoje = date.today()
+    # ⚑ A OBRA ATUAL (pelo ponto, migração 118) também alcança: quem cuida do
+    # ponto onde a pessoa bate de verdade precisa saber das férias dela.
+    from app.apps.erp.core import obra_atual
+    atual = (" OR EXISTS (SELECT 1 FROM colaborador_obra_atual oa_ WHERE "
+             "oa_.colaborador_id = c.id AND oa_.obra_id = ANY(:obras))"
+             if obra_atual.tem_tabela(s) else "")
     linhas = s.execute(text("""
         SELECT f.*, c.nome AS pessoa, g.nome AS cargo, o.codigo AS obra,
                d.numero
@@ -347,11 +353,11 @@ def listar(s: Session, *, obras: Optional[list[int]] = None,
           LEFT JOIN cargos g ON g.id = c.cargo_id
           LEFT JOIN obras o ON o.id = COALESCE(c.obra_id, f.obra_id)
           LEFT JOIN dp_solicitacoes d ON d.id = f.solicitacao_id
-         WHERE (:todas OR COALESCE(c.obra_id, f.obra_id) = ANY(:obras))
+         WHERE (:todas OR COALESCE(c.obra_id, f.obra_id) = ANY(:obras){atual})
            AND f.fim >= :desde AND f.inicio <= :ate
            AND (:canc OR f.situacao <> 'CANCELADA')
            AND (CAST(:pessoa AS INTEGER) IS NULL OR f.colaborador_id = :pessoa)
-         ORDER BY f.inicio, c.nome LIMIT :l"""),
+         ORDER BY f.inicio, c.nome LIMIT :l""".replace("{atual}", atual)),
         {"todas": obras is None, "obras": obras or [],
          "desde": desde or (hoje - timedelta(days=60)),
          "ate": ate or (hoje + timedelta(days=400)), "canc": com_canceladas,

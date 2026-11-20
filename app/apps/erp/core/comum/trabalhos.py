@@ -374,10 +374,16 @@ def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str
     """Roda o que está ligado no agente de DP — o mesmo que o botão da tela.
     Fora da requisição: a leitura da caixa de e-mail pode demorar, e quem
     abriu o ERP de manhã não pode esperar por ela."""
-    from app.apps.erp.core import agente_dp
+    from app.apps.erp.core import agente_dp, obra_atual
+    # A obra atual vem ANTES: o vigia usa ela para avisar da transferência, e
+    # os avisos do portal (férias, experiência) chegam a quem cuida da obra
+    # onde a pessoa está batendo ponto de verdade.
+    obra = obra_atual.atualizar(s)
+    s.commit()
     feito = agente_dp.rodar(s, None)
     s.commit()
-    return {"vigia": feito.get("vigia"), "ligadas": feito.get("rotinas_ligadas")}
+    return {"obra_atual": obra, "vigia": feito.get("vigia"),
+            "ligadas": feito.get("rotinas_ligadas")}
 
 
 def registrar_todos() -> None:

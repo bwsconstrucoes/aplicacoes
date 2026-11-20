@@ -1585,6 +1585,15 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     else:
         dados["usuario_email"] = ""
         dados["usuario_ativo"] = False
+    # ⚑ A OBRA ATUAL, PELO PONTO (20/11/2026, migração 118): ao lado da obra
+    # de cadastro, para o DP ver a transferência que ninguém registrou.
+    from app.apps.erp.core import obra_atual
+    atual = obra_atual.da_pessoa(s, colaborador_id)
+    dados["obra_atual"] = ({"codigo": atual.get("codigo") or "",
+                            "nome": atual.get("nome") or "",
+                            "obra_id": atual.get("obra_id"),
+                            "desde": atual["desde"].isoformat() if atual.get("desde") else None}
+                           if atual else None)
     return dados
 
 

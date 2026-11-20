@@ -2501,9 +2501,13 @@ function painelDaFicha(){
       ${campoTexto("Categoria na convenção", "c-convcategoria", c.convencao_categoria,
                    'style="grid-column:span 2"')}
       <div class="campo" style="grid-column:span 3" id="c-piso-caixa"></div>
-      <div class="campo"><label>Obra</label><select id="c-obra"><option value="">—</option>
+      <div class="campo"><label>Obra de cadastro</label><select id="c-obra"><option value="">—</option>
         ${OBRAS.map(x => `<option value="${x.id}" ${String(c.obra_id) === String(x.id)
-          ? "selected" : ""}>${rotuloObra(x)}</option>`).join("")}</select></div>
+          ? "selected" : ""}>${rotuloObra(x)}</option>`).join("")}</select>
+        ${c.obra_atual ? `<small class="desc">Obra atual (pelo ponto): <b>${escapar(c.obra_atual.codigo)}</b>${
+          c.obra_atual.desde ? " desde " + dataBR(c.obra_atual.desde) : ""}${
+          String(c.obra_atual.obra_id) !== String(c.obra_id || "")
+            ? ` <span class="etiqueta ambar">diferente do cadastro</span>` : ""}</small>` : ""}</div>
       ${campoTexto("Matrícula", "c-mat", c.matricula)}
       <div class="campo"><label>Contrato de experiência</label>${lista("c-exper",
         o.contratos_experiencia, c.contrato_experiencia)}</div>
