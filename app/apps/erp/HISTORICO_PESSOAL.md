@@ -38,6 +38,10 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**PUBLICADO (20/11/2026, noite, 8):** o contrato que vira indeterminado
+sozinho ao fim da experiência (sem migração; a primeira rodada diária depois
+da publicação alcança o estoque).
+
 **PUBLICADO (20/11/2026, noite, 6 e 7):** a obra do mês automática (migração
 **119**, que também cancela as transferências abertas sozinhas) e as regras do
 cadastro (autônomo sem convenção, readmissão sem experiência). ⚠️ Confirmar
