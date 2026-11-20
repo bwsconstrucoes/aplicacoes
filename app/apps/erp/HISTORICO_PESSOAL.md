@@ -42,7 +42,7 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 dentro da Solicitação (migração **115**), os nomes novos das telas e o lote de
 20/11 (alteração, dependente, férias e cancelamento pela contabilidade). ⚠️
 Uma atualização de banco: apertar "Aplicar atualizações do banco" no mesmo
-momento da junção.
+momento da junção. **E a 116 (programação de férias), do lote da tarde.**
 
 **Publicado (19/11/2026, tarde):** a Admissão de Colaborador (ver "Decisões",
 19/11 tarde). Sem migração. ⚠️ **Pendente:** acompanhar a primeira admissão de
@@ -103,6 +103,45 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 20/11/2026 (tarde) — Programação de férias; alterar e cancelar férias; o cancelamento de desligamento sempre avisa a contabilidade
+
+Ele: *"o sistema precisa ter a programação dessas férias (…) a gente pede à
+contabilidade, confirma o que foi registrado. O sistema registra. Lembrando
+que tem que pensar na possibilidade de alteração e cancelamento."* E do
+cancelamento de desligamento: *"Imagina desligar uma pessoa que vai continuar
+trabalhando. É uma falha grave (…) todo mundo envolvido tem que estar
+avisado."*
+
+- **Migração 116 + `core/ferias.py`:** a programação de férias. Atender o
+  pedido de férias cria a linha "aguardando a contabilidade"; o retorno da
+  contabilidade a confirma. Tela nova **Pessoal › Férias**.
+- **Alteração e Cancelamento de Férias** viraram tipos de pedido (portal e
+  tela Férias). Passam pela contabilidade; **a data só muda com o retorno**
+  — até lá a linha mostra a mudança pedida ao lado da data que vale.
+  Férias marcadas antes do sistema (sem linha) não travam a alteração: a
+  linha nasce no retorno.
+- **Avisos de férias chegando:** no portal, "Férias da equipe" para quem
+  alcança a obra (15 dias antes e durante); no agente, férias chegando (7
+  dias), sem confirmação a 30 dias, mudança sem retorno, pedido de férias
+  ainda não atendido.
+- **Cancelamento de desligamento:** de carteira, **sempre** vai à
+  contabilidade (antes, só se a rescisão já tinha sido enviada). Pode ser
+  pedido em cima do desligamento — botão no portal ("O que você já pediu") e
+  na tela de Solicitações. Quem pediu o desligamento lê no portal que ele foi
+  cancelado. **A virada do dia segura** quem tem cancelamento pedido e não
+  atendido, e o DP pode atender depois da data se o pedido foi aberto antes
+  dela. O agente cobra todo dia até a contabilidade confirmar.
+
+⚠️ **O que ficou de fora, e é decisão dele:**
+- **O ponto corta o acesso pela data de saída**, sozinho (é do app do ponto,
+  outra área). A trava da virada protege o ERP; o ponto, não. O agente avisa
+  "atender hoje".
+- **Férias confirmadas não viram lançamento de férias no ponto.** Hoje o DP
+  lança à mão no ponto; o agente lembra 7 dias antes. Ligar os dois é mexer
+  no ponto.
+- Aviso por WhatsApp/Telegram das férias chegando: hoje o aviso é na tela
+  (portal e agente).
 
 ### 20/11/2026 — Alteração de cargo, dependente, férias e cancelamento passam pela contabilidade; admissão de prestador também
 

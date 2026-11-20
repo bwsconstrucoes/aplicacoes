@@ -149,8 +149,11 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "DP validar, admissão, alteração de cargo, dependente e "
                    "férias em andamento parados, registro da carteira ainda "
                    "não pedido perto do início (eSocial), férias sem aviso a "
-                   "menos de 30 dias, rescisão não paga em 10 dias, ativo sem "
-                   "obra",
+                   "menos de 30 dias, férias chegando (com a confirmação da "
+                   "contabilidade ou sem ela), alteração e cancelamento de "
+                   "férias sem retorno, cancelamento de desligamento esperando "
+                   "o DP ou a contabilidade, rescisão não paga em 10 dias, "
+                   "ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
         "usa_ia": False,
@@ -786,17 +789,10 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
                               "eSocial exige antes do primeiro dia"),
                     "o_que_fazer": "montar e enviar o pedido de Assinatura de CTPS"})
                 continue
-            ferias = _dia("ferias_inicio")
-            if d["tipo"] == "FERIAS" and sem_pedido and ferias \
-                    and (ferias - dia).days <= 30:
-                achados.append({
-                    "tipo": "ferias_sem_aviso",
-                    "colaborador_id": d["colaborador_id"] or 0,
-                    "quem": d["pessoa"],
-                    "o_que": (f"{d['numero']}: férias em {ferias:%d/%m/%Y} e o "
-                              "pedido à contabilidade não saiu — o aviso é com "
-                              "30 dias de antecedência"),
-                    "o_que_fazer": "montar e enviar o pedido de férias"})
+            # As férias em andamento são vigiadas pela PROGRAMAÇÃO, logo
+            # abaixo (`ferias_sem_confirmacao`) — aqui sairiam em dobro.
+            # O cancelamento de desligamento tem vigia próprio, diário.
+            if d["tipo"] in ("FERIAS", "CANCELAR_DESLIGAMENTO"):
                 continue
             if (d["dias"] or 0) >= limite:
                 achados.append({
@@ -808,6 +804,91 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
                     "o_que_fazer": "andar com o pedido"})
     except Exception:
         logger.exception("Agente DP: falha ao olhar os pedidos em andamento")
+
+    # ⚑ O CANCELAMENTO DE DESLIGAMENTO E AS FÉRIAS (20/11/2026). Ele:
+    # *"Imagina desligar uma pessoa que vai continuar trabalhando. É uma falha
+    # grave (…) todo mundo envolvido tem que estar avisado."* E das férias:
+    # *"o agente de IA no meio acompanhando isso e acompanhando todos."*
+    # Estes não esperam "dias parado": aparecem TODO DIA até se resolverem.
+    try:
+        import datetime as _dt
+        for c in s.execute(text("""
+            SELECT d.id, d.numero, d.situacao, d.colaborador_id, d.dados,
+                   c.nome, c.demissao
+              FROM dp_solicitacoes d
+              JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.tipo = 'CANCELAR_DESLIGAMENTO'
+               AND d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')
+             ORDER BY d.id""")).mappings().all():
+            if c["situacao"] == "EM_ANDAMENTO":
+                o_que = (f"{c['numero']}: o desligamento foi desfeito no "
+                         "sistema e a contabilidade ainda não confirmou o "
+                         "cancelamento — sem o retorno dela, a rescisão pode "
+                         "seguir")
+                fazer = "enviar o pedido à contabilidade e cobrar o retorno"
+            else:
+                saida = (f" a saída está marcada para {c['demissao']:%d/%m/%Y};"
+                         if c["demissao"] else "")
+                o_que = (f"{c['numero']}: pediram o cancelamento do "
+                         f"desligamento e o DP ainda não atendeu —{saida} a "
+                         "virada do dia está segurando, mas o ponto corta o "
+                         "acesso na data")
+                fazer = "atender o cancelamento hoje"
+            achados.append({"tipo": "cancelamento_de_desligamento",
+                            "colaborador_id": c["colaborador_id"],
+                            "quem": c["nome"], "o_que": o_que,
+                            "o_que_fazer": fazer})
+        # Pedido de férias que o DP ainda não atendeu, perto da data.
+        for f in s.execute(text("""
+            SELECT d.numero, d.colaborador_id, c.nome,
+                   d.dados ->> 'ferias_inicio' AS inicio
+              FROM dp_solicitacoes d
+              JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.tipo IN ('FERIAS', 'ALTERACAO_FERIAS', 'CANCELAMENTO_FERIAS')
+               AND d.situacao IN ('ABERTA', 'EM_ANALISE')""")).mappings().all():
+            try:
+                ini = _dt.date.fromisoformat(str(f["inicio"] or "")[:10])
+            except ValueError:
+                ini = None
+            if ini is None or (ini - dia).days <= 30:
+                achados.append({"tipo": "ferias_sem_aviso",
+                                "colaborador_id": f["colaborador_id"],
+                                "quem": f["nome"],
+                                "o_que": (f"{f['numero']}: pedido de férias "
+                                          "ainda não atendido"
+                                          + (f" — começa em {ini:%d/%m/%Y}"
+                                             if ini else "")),
+                                "o_que_fazer": "atender e pedir à contabilidade"})
+        # A programação: férias chegando, e mudança sem retorno.
+        from app.apps.erp.core import ferias as svc_ferias
+        for f in svc_ferias.listar(s, desde=dia,
+                                   ate=dia + _dt.timedelta(days=30)):
+            if f["mudanca"]:
+                achados.append({
+                    "tipo": "ferias_mudanca_sem_retorno",
+                    "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                    "o_que": (f"férias de {f['inicio'][8:10]}/{f['inicio'][5:7]}: "
+                              f"{f['mudanca']['rotulo']} (pedido "
+                              f"{f['mudanca'].get('numero') or '?'})"),
+                    "o_que_fazer": "cobrar a contabilidade"})
+            elif f["situacao"] == "PEDIDA" and f["faltam_dias"] <= 30:
+                achados.append({
+                    "tipo": "ferias_sem_confirmacao",
+                    "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                    "o_que": (f"férias em {f['inicio'][8:10]}/{f['inicio'][5:7]} "
+                              "sem a confirmação da contabilidade — o aviso é "
+                              "com 30 dias"),
+                    "o_que_fazer": "enviar o pedido e cobrar o retorno"})
+            elif f["momento"] == "chegando" and f["faltam_dias"] <= 7:
+                achados.append({
+                    "tipo": "ferias_chegando",
+                    "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                    "o_que": (f"sai de férias em {f['inicio'][8:10]}/"
+                              f"{f['inicio'][5:7]} ({f['dias']} dias, volta "
+                              f"{f['retorno'][8:10]}/{f['retorno'][5:7]})"),
+                    "o_que_fazer": "lançar as férias no ponto e avisar a obra"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar férias e cancelamentos")
 
     # A rescisão paga em até 10 dias da saída (CLT art. 477).
     try:

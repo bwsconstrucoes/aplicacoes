@@ -170,8 +170,12 @@ TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
         "CADASTRO", "DESLIGAMENTO", "ADMISSAO_PRESTADOR",
         "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
         # 20/11/2026: a obra pede férias (ele: *"o administrativo de obra pode
-        # pedir as férias"*).
-        "FERIAS", "DIVERSOS",
+        # pedir as férias"*) — e também altera e cancela, e pede o
+        # cancelamento de um desligamento (ele: *"pode ser que seja a própria
+        # obra (…) Ele vai fazer o pedido (…) em cima daquela solicitação de
+        # desligamento."*).
+        "FERIAS", "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
+        "CANCELAR_DESLIGAMENTO", "DIVERSOS",
     ),
 }
 
@@ -623,6 +627,7 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
     # colaborador (gente de escritório): pelo usuário.
     linhas = s.execute(text("""
         SELECT sol.id, sol.numero, sol.tipo, sol.situacao, sol.criado_em,
+               sol.colaborador_id,
                sol.resposta, COALESCE(c.nome, sol.nome_informado) AS pessoa,
                COALESCE(c.cpf, sol.cpf_informado) AS cpf,
                o.codigo AS obra, COALESCE(gc.nome, gp.nome) AS cargo
@@ -638,6 +643,9 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     return [{
         "numero": l["numero"],
+        # O código e a pessoa: é o que o botão "Pedir o cancelamento" do
+        # desligamento usa para abrir o pedido já com a pessoa escolhida.
+        "tipo_codigo": l["tipo"], "colaborador_id": l["colaborador_id"],
         "tipo": svc_sp.TIPOS.get(l["tipo"], {}).get("nome", l["tipo"]),
         # O RÓTULO EM PORTUGUÊS, NÃO O CÓDIGO. Quem olha está na obra, no
         # celular: "EM_ANALISE" na tela é defeito, não detalhe. E o rótulo é o
@@ -648,6 +656,31 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
         "obra": l["obra"] or "", "cargo": l["cargo"] or "",
         "quando": str(l["criado_em"]), "resposta": l["resposta"] or "",
     } for l in linhas]
+
+
+def ferias_da_equipe(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
+    """As férias chegando e em curso de quem esta pessoa cuida (20/11/2026).
+
+    Ele: *"quando estiver se aproximando as férias (…) tanto o DP quanto a
+    pessoa que bate o ponto desse colaborador tem que estar ciente."* Quem
+    cuida do ponto na obra é quem a alcança — o administrativo de obra, pela
+    mesma regra de alcance do resto do portal. Quem pede só por si vê as
+    próprias férias.
+    """
+    from app.apps.erp.core import ferias as svc_ferias
+    eu = quem_esta(s, usuario)
+    if pode_pedir_por_outros(s, eu):
+        lista = svc_ferias.chegando(s, obras=obras_que_alcanca(s, eu))
+    elif eu.get("colaborador_id"):
+        lista = [f for f in svc_ferias.chegando(s)
+                 if f["colaborador_id"] == eu["colaborador_id"]]
+    else:
+        lista = []
+    # Sem o histórico e sem número de pedido do DP: é aviso, não ficha.
+    campos = ("colaborador_id", "pessoa", "cargo", "obra", "inicio", "fim",
+              "retorno", "dias", "situacao_rotulo", "faltam_dias", "momento")
+    return [{**{k: f[k] for k in campos},
+             "mudanca": (f["mudanca"] or {}).get("rotulo", "")} for f in lista]
 
 
 # ---------------------------------------------------------------------------

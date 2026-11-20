@@ -176,6 +176,17 @@
      o dela. E a área que ainda não abriu APARECE, marcada: esconder o que
      falta faz achar que o sistema só serve para DP — e aí o material continua
      sendo pedido por WhatsApp, que é o que se quer acabar. #}
+  {# ⚑ AS FÉRIAS DA EQUIPE (20/11/2026). Ele: *"quando estiver se aproximando
+     as férias (…) tanto o DP quanto a pessoa que bate o ponto desse
+     colaborador tem que estar ciente."* Quem cuida da obra vê aqui quem sai e
+     quem está fora, nos próximos dias — e se a contabilidade já confirmou. #}
+  <div class="bloco" id="bloco-ferias" style="display:none">
+    <h3>Férias da equipe</h3>
+    <p class="ajuda">Quem sai de férias nos próximos dias e quem está de férias
+      agora. Programe a obra sem essas pessoas e não conte falta no ponto.</p>
+    <div id="ferias"></div>
+  </div>
+
   <div class="bloco" id="bloco-pedir">
     <h3>Abrir uma solicitação</h3>
     <p class="ajuda" id="pedir-ajuda">Escolha a área do que você precisa.</p>
@@ -237,8 +248,27 @@ async function carregar(){
   els("quem").innerHTML = `${esc(DADOS.nome)}<br>${
     DADOS.administrativo ? "administrativo de obra" : "colaborador"}`;
   pintarDevolucoes();
+  pintarFerias();
   pintarFormulario();
   pintarMeus();
+}
+
+function pintarFerias(){
+  const l = DADOS.ferias || [];
+  els("bloco-ferias").style.display = l.length ? "" : "none";
+  els("ferias").innerHTML = l.map(f => {
+    const quando = f.momento === "em_ferias" ? `de férias até ${dataBR(f.fim)}`
+      : f.faltam_dias === 0 ? "começa hoje"
+      : f.faltam_dias === 1 ? "começa amanhã" : `começa em ${f.faltam_dias} dias`;
+    return `<div class="linha">
+      <div class="cresce">
+        <b>${esc(f.pessoa)}</b> <small>${esc(f.cargo || "")}${f.obra ? " · obra " + esc(f.obra) : ""}</small><br>
+        <small>${dataBR(f.inicio)} a ${dataBR(f.fim)} (${f.dias} dias) · volta ${dataBR(f.retorno)}</small><br>
+        <small>${esc(f.situacao_rotulo)}${f.mudanca ? " · " + esc(f.mudanca) : ""}</small>
+      </div>
+      <span class="etiqueta ${f.momento === "em_ferias" ? "verde" : ""}">${esc(quando)}</span>
+    </div>`;
+  }).join("");
 }
 
 function pintarDevolucoes(){
@@ -1703,7 +1733,7 @@ async function enviarPedido(){
 
 function pintarMeus(){
   const l = DADOS.pedidos || [];
-  els("meus").innerHTML = l.length ? l.map(p => `
+  els("meus").innerHTML = l.length ? l.map((p, i) => `
     <div class="linha">
       <div class="cresce">
         <b>${esc(p.tipo)}</b> <small>${esc(p.numero)}</small><br>
@@ -1711,12 +1741,33 @@ function pintarMeus(){
         <small>${[p.obra ? "obra " + p.obra : "", p.cargo || "", dataBR(p.quando)]
           .filter(Boolean).map(esc).join(" · ")}</small>
         ${p.resposta ? `<br><small><b>DP:</b> ${esc(p.resposta)}</small>` : ""}
+        ${p.tipo_codigo === "DESLIGAMENTO" && p.colaborador_id
+          && ["Aberta", "Em análise", "Em andamento"].includes(p.situacao)
+          ? `<br><button class="voltar" type="button" data-cancel-desl="${i}"
+               style="margin-top:4px">Pedir o cancelamento deste desligamento</button>` : ""}
       </div>
-      <span class="etiqueta ${p.situacao === "ATENDIDA" ? "verde"
-        : ["RECUSADA","CANCELADA"].includes(p.situacao) ? "vermelha" : ""}">
+      <span class="etiqueta ${p.situacao === "Atendida" ? "verde"
+        : ["Recusada", "Cancelada"].includes(p.situacao) ? "vermelha" : ""}">
         ${esc(p.situacao)}</span>
     </div>`).join("")
     : `<p class="ajuda">Você ainda não abriu nenhum pedido.</p>`;
+  els("meus").querySelectorAll("[data-cancel-desl]").forEach(b =>
+    b.addEventListener("click", () => pedirCancelamento(l[+b.dataset.cancelDesl])));
+}
+
+{# ⚑ O CANCELAMENTO NASCE EM CIMA DO DESLIGAMENTO (20/11/2026). Ele: *"pode
+   ser que seja a própria obra (…) Ele vai fazer o pedido (…) em cima daquela
+   solicitação de desligamento. E pedir o cancelamento."* O botão abre o
+   formulário já com o tipo e a pessoa escolhidos: falta só o motivo. #}
+function pedirCancelamento(p){
+  if (!p) return;
+  const area = (DADOS.tipos || []).find(t => t.chave === "CANCELAR_DESLIGAMENTO");
+  if (!area) { recado("O cancelamento de desligamento não está disponível para você.", "erro"); return; }
+  escolherArea(area.area);
+  els("p-tipo").value = "CANCELAR_DESLIGAMENTO";
+  pintarCamposDoTipo();
+  if (els("p-pessoa")) escolherPessoa({id: p.colaborador_id, nome: p.pessoa, cargo: p.cargo});
+  els("bloco-pedir").scrollIntoView({behavior: "smooth"});
 }
 
 carregar();

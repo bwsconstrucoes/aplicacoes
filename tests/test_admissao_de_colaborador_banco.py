@@ -475,8 +475,16 @@ def test_cancelar_desligamento_apaga_a_saida_e_cancela_o_processo(mundo):
     s.flush()
     pessoa = s.get(svc_pessoas.Colaborador, c.id)
     assert pessoa.demissao is None and pessoa.ultimo_dia is None
-    assert svc.ler(s, d["id"])["situacao"] == "CANCELADA"
-    assert r["situacao"] == "ATENDIDA", "a rescisão não tinha ido: fecha na hora"
+    desl = svc.ler(s, d["id"])
+    assert desl["situacao"] == "CANCELADA"
+    assert "continua trabalhando" in (desl["resposta"] or ""), \
+        "quem pediu o desligamento precisa ler no portal que ele foi cancelado"
+    # ⚑ 20/11/2026: de carteira, o cancelamento SEMPRE vai à contabilidade —
+    # mesmo sem a rescisão ter sido pedida. Ele: *"esse cancelamento tem que
+    # ser avisado à contabilidade, ela tem que estar ciente."*
+    assert r["situacao"] == "EM_ANDAMENTO"
+    _devolve_e_conclui(mundo, canc["id"])
+    assert svc.ler(s, canc["id"])["situacao"] == "ATENDIDA"
 
 
 @pytestmark_banco
@@ -518,3 +526,173 @@ def test_o_vigia_avisa_do_registro_da_carteira_perto_do_inicio(mundo):
     achados = agente_dp.vigia(s)
     assert any(a["tipo"] == "registro_antes_do_inicio"
                and a["colaborador_id"] == p["colaborador_id"] for a in achados)
+
+
+# ===========================================================================
+# A PROGRAMAÇÃO DE FÉRIAS (20/11/2026) — `core/ferias.py`, migração 116
+# ===========================================================================
+def _dia(n):
+    import datetime as dt
+    return (dt.date.today() + dt.timedelta(days=n)).isoformat()
+
+
+def _ferias_atendidas(mundo, c, inicio, dias="30"):
+    s = mundo["s"]
+    p = svc.abrir(s, {"tipo": "FERIAS", "colaborador_id": c.id,
+                      "ferias_inicio": inicio, "ferias_dias": dias},
+                  mundo["obra_user"])
+    svc.atender(s, p["id"], {}, mundo["dp"])
+    s.flush()
+    return p
+
+
+@pytestmark_banco
+def test_ferias_so_ficam_confirmadas_com_o_retorno_da_contabilidade(mundo):
+    from app.apps.erp.core import ferias as svc_ferias
+    s = mundo["s"]
+    c = _carteira(mundo)
+    p = _ferias_atendidas(mundo, c, _dia(40))
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    assert f["situacao"] == "PEDIDA" and f["dias"] == 30
+    assert f["fim"] == _dia(69) and f["retorno"] == _dia(70)
+    _devolve_e_conclui(mundo, p["id"])
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    assert f["situacao"] == "CONFIRMADA"
+
+
+@pytestmark_banco
+def test_ferias_que_batem_com_outras_sao_recusadas(mundo):
+    s = mundo["s"]
+    c = _carteira(mundo)
+    _ferias_atendidas(mundo, c, _dia(40))
+    p = svc.abrir(s, {"tipo": "FERIAS", "colaborador_id": c.id,
+                      "ferias_inicio": _dia(50), "ferias_dias": "10"},
+                  mundo["obra_user"])
+    with pytest.raises(ErroValidacao, match="alteração de férias"):
+        svc.atender(s, p["id"], {}, mundo["dp"])
+
+
+@pytestmark_banco
+def test_a_alteracao_so_muda_a_data_quando_a_contabilidade_devolve(mundo):
+    from app.apps.erp.core import ferias as svc_ferias
+    s = mundo["s"]
+    c = _carteira(mundo)
+    _devolve_e_conclui(mundo, _ferias_atendidas(mundo, c, _dia(40))["id"])
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    alt = svc.abrir(s, {"tipo": "ALTERACAO_FERIAS", "colaborador_id": c.id,
+                        "ferias_id": f["id"], "ferias_inicio": _dia(60),
+                        "ferias_dias": "20", "observacao": "obra pediu adiar"},
+                    mundo["obra_user"])
+    r = svc.atender(s, alt["id"], {}, mundo["dp"])
+    assert r["situacao"] == "EM_ANDAMENTO"
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    assert f["inicio"] == _dia(40), "sem o retorno, a data confirmada continua valendo"
+    assert f["mudanca"]["tipo"] == "ALTERACAO"
+    _devolve_e_conclui(mundo, alt["id"])
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    assert (f["inicio"], f["dias"], f["situacao"]) == (_dia(60), 20, "CONFIRMADA")
+    assert f["mudanca"] is None and f["historico"][0]["inicio"] == _dia(40)
+    assert svc.ler(s, alt["id"])["situacao"] == "ATENDIDA"
+
+
+@pytestmark_banco
+def test_o_cancelamento_de_ferias_passa_pela_contabilidade(mundo):
+    from app.apps.erp.core import ferias as svc_ferias
+    s = mundo["s"]
+    c = _carteira(mundo)
+    _devolve_e_conclui(mundo, _ferias_atendidas(mundo, c, _dia(40))["id"])
+    canc = svc.abrir(s, {"tipo": "CANCELAMENTO_FERIAS", "colaborador_id": c.id,
+                         "observacao": "a pessoa desistiu"}, mundo["obra_user"])
+    svc.atender(s, canc["id"], {}, mundo["dp"])
+    s.flush()
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    assert f["situacao"] == "CONFIRMADA" and f["mudanca"]["tipo"] == "CANCELAMENTO"
+    _devolve_e_conclui(mundo, canc["id"])
+    assert svc_ferias.listar(s, colaborador_id=c.id) == []
+    [f] = svc_ferias.listar(s, colaborador_id=c.id, com_canceladas=True)
+    assert f["situacao"] == "CANCELADA"
+
+
+@pytestmark_banco
+def test_alteracao_de_ferias_de_antes_do_sistema_nasce_no_retorno(mundo):
+    """Férias marcadas no Pipefy não têm linha: a alteração não trava o DP."""
+    from app.apps.erp.core import ferias as svc_ferias
+    s = mundo["s"]
+    c = _carteira(mundo)
+    alt = svc.abrir(s, {"tipo": "ALTERACAO_FERIAS", "colaborador_id": c.id,
+                        "ferias_inicio": _dia(30), "ferias_dias": "15",
+                        "observacao": "marcadas no Pipefy"}, mundo["obra_user"])
+    svc.atender(s, alt["id"], {}, mundo["dp"])
+    _devolve_e_conclui(mundo, alt["id"])
+    [f] = svc_ferias.listar(s, colaborador_id=c.id)
+    assert (f["inicio"], f["dias"], f["situacao"]) == (_dia(30), 15, "CONFIRMADA")
+
+
+@pytestmark_banco
+def test_ferias_chegando_aparecem_para_a_obra_e_para_o_agente(mundo):
+    from app.apps.erp.core import agente_dp, portal as svc_portal
+    s = mundo["s"]
+    c = _carteira(mundo)
+    _devolve_e_conclui(mundo, _ferias_atendidas(mundo, c, _dia(5), "10")["id"])
+    achados = [a for a in agente_dp.vigia(s) if a["colaborador_id"] == c.id]
+    assert any(a["tipo"] == "ferias_chegando" for a in achados)
+    # O DP alcança a base inteira; quem é preso a obra, só as dele (a mesma
+    # regra de alcance do portal — `obras_que_alcanca`).
+    lista = svc_portal.ferias_da_equipe(s, mundo["dp"])
+    assert [f["pessoa"] for f in lista] == [c.nome]
+    assert lista[0]["faltam_dias"] == 5
+
+
+@pytestmark_banco
+def test_ferias_sem_confirmacao_perto_da_data_o_agente_cobra(mundo):
+    from app.apps.erp.core import agente_dp
+    s = mundo["s"]
+    c = _carteira(mundo)
+    _ferias_atendidas(mundo, c, _dia(20))
+    tipos = {a["tipo"] for a in agente_dp.vigia(s) if a["colaborador_id"] == c.id}
+    assert "ferias_sem_confirmacao" in tipos
+
+
+@pytestmark_banco
+def test_cancelamento_pedido_segura_a_virada_do_dia(mundo):
+    """⚑ Ele: *"Imagina desligar uma pessoa que vai continuar trabalhando. É
+    uma falha grave."* A saída chegou, o cancelamento está pedido e o DP ainda
+    não atendeu: a virada NÃO desliga; o agente cobra; e o DP atende depois da
+    data sem a pessoa cair na readmissão."""
+    import datetime as dt
+    from app.apps.erp.core import agente_dp
+    from app.apps.erp.core.cadastros import desligamentos_do_dia
+    s = mundo["s"]
+    c = _carteira(mundo)
+    saida = dt.date.today() + dt.timedelta(days=2)
+    d = svc.abrir(s, {"tipo": "DESLIGAMENTO", "colaborador_id": c.id,
+                      "forma_desligamento": "Demissão com Aviso Trabalhado",
+                      "aviso_previo": "2026-11-01",
+                      "continua_prestador": "Não, está saindo da empresa"},
+                  mundo["obra_user"])
+    svc.atender(s, d["id"], {"dados": {"data_saida": saida.isoformat(),
+                                       "ultimo_dia": saida.isoformat()}}, mundo["dp"])
+    canc = svc.abrir(s, {"tipo": "CANCELAR_DESLIGAMENTO", "colaborador_id": c.id,
+                         "observacao": "vai continuar"}, mundo["obra_user"])
+    s.flush()
+    assert any(a["tipo"] == "cancelamento_de_desligamento" and a["colaborador_id"] == c.id
+               for a in agente_dp.vigia(s))
+    r = desligamentos_do_dia.aplicar(s, hoje=saida + dt.timedelta(days=3))
+    assert c.id not in [q["id"] for q in r["quem"]], "a virada não pode desligar"
+    s.expire_all()
+    assert s.get(svc_pessoas.Colaborador, c.id).situacao == "ATIVO"
+    # O DP atende depois da data: vale, porque foi pedido a tempo.
+    import unittest.mock as um
+    with um.patch.object(svc_pessoas, "ja_saiu", return_value=True):
+        res = svc.atender(s, canc["id"], {}, mundo["dp"])
+    assert res["situacao"] == "EM_ANDAMENTO"
+    assert s.get(svc_pessoas.Colaborador, c.id).demissao is None
+
+
+@pytestmark_banco
+def test_o_portal_oferece_ferias_e_cancelamentos():
+    from app.apps.erp.core import portal as svc_portal
+    for t in ("FERIAS", "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
+              "CANCELAR_DESLIGAMENTO"):
+        assert t in svc_portal.TIPOS_DO_PORTAL
+

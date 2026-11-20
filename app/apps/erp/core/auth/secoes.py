@@ -191,7 +191,7 @@ SECOES: list[dict[str, Any]] = [
      # dentro da ajuda de custo. Prometer na explicação um tipo que não está
      # mais na lista é o defeito que esta classe de frase já causou uma vez,
      # com férias no portal.
-     "explicacao": "cadastro, desligamento, cargo, dependente e ajuda de custo",
+     "explicacao": "cadastro, desligamento, cargo, dependente, férias e ajuda de custo",
      # ⚑ `conferir_cpf_colaborador` MORA AQUI (15/11/2026): quem abre pedido
      # precisa saber se o CPF já tem cadastro — é o que faz o pedido de
      # cadastro se converter em readmissão em vez de criar a segunda ficha da

@@ -22,8 +22,8 @@ Quando se aplica, e por quê (decisões minhas, escritas para ele trocar):
 |---|---|---|
 | Alteração de cargo | a pessoa é CTPS (prestador não tem registro a alterar) | ALTERACAO_CARGO |
 | Dependente | CTPS e com salário-família ou dependente de IR marcado | DEPENDENTE |
-| Férias | sempre (só existe para CTPS) | FERIAS |
-| Cancelar desligamento | a rescisão JÁ tinha sido pedida à contabilidade | CANCELAMENTO_DESLIGAMENTO |
+| Férias, alteração e cancelamento de férias | sempre (só existem para CTPS) | FERIAS, ALTERACAO_FERIAS, CANCELAMENTO_FERIAS |
+| Cancelar desligamento | sempre, para CTPS (20/11/2026: *"esse cancelamento tem que ser avisado à contabilidade"*) | CANCELAMENTO_DESLIGAMENTO |
 
 O pedido à contabilidade sai MONTADO com o que a solicitação já tem — o DP
 confere o texto e envia; não redigita.
@@ -46,6 +46,8 @@ TEMPLATE_DO_TIPO = {
     "ALTERACAO_CARGO": "ALTERACAO_CARGO",
     "DEPENDENTE": "DEPENDENTE",
     "FERIAS": "FERIAS",
+    "ALTERACAO_FERIAS": "ALTERACAO_FERIAS",
+    "CANCELAMENTO_FERIAS": "CANCELAMENTO_FERIAS",
     "CANCELAR_DESLIGAMENTO": "CANCELAMENTO_DESLIGAMENTO",
     # A admissão usa o mesmo botão para o registro da carteira.
     "CADASTRO": "ASSINATURA_CTPS",
@@ -55,6 +57,7 @@ TEMPLATE_DO_TIPO = {
 
 def e_processo(tipo: str) -> bool:
     return tipo in ("ALTERACAO_CARGO", "DEPENDENTE", "FERIAS",
+                    "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
                     "CANCELAR_DESLIGAMENTO")
 
 
@@ -69,7 +72,8 @@ def aplica(s: Session, tipo: str, colaborador_id: Optional[int],
            pedido: dict[str, Any]) -> bool:
     """Este pedido precisa passar pela contabilidade?"""
     vinculo = _vinculo(s, colaborador_id)
-    if tipo in ("ALTERACAO_CARGO", "FERIAS"):
+    if tipo in ("ALTERACAO_CARGO", "FERIAS", "ALTERACAO_FERIAS",
+                "CANCELAMENTO_FERIAS", "CANCELAR_DESLIGAMENTO"):
         return vinculo == "CTPS"
     if tipo == "DEPENDENTE":
         marcou = lambda v: str(v or "") == "1"
@@ -163,6 +167,21 @@ def _dados_do_pedido(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                 "abono": "sim" if str(d.get("abono_pecuniario")) == "1" else "não",
                 "adiantamento_13": "sim" if str(d.get("adiantamento_13")) == "1"
                 else "não", "observacao": d.get("observacao")}
+    if tipo in ("ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS"):
+        from app.apps.erp.core import ferias as svc_ferias
+        atual = svc_ferias._da_solicitacao(s, sol)
+        saida = {"motivo": d.get("observacao")}
+        if atual:
+            saida.update({"inicio_anterior": str(atual["inicio"]),
+                          "dias_anteriores": atual["dias"]})
+        if tipo == "ALTERACAO_FERIAS":
+            saida.update({"inicio": d.get("ferias_inicio"),
+                          "dias": d.get("ferias_dias"),
+                          "abono": "sim" if str(d.get("abono_pecuniario")) == "1"
+                          else "não",
+                          "adiantamento_13": "sim" if str(d.get("adiantamento_13"))
+                          == "1" else "não"})
+        return saida
     if tipo == "CANCELAR_DESLIGAMENTO":
         return {"comunicado_em": d.get("desligamento_comunicado_em"),
                 "motivo": d.get("observacao")}
@@ -203,19 +222,26 @@ def fechar_pelo_pedido(s: Session, pedido: dict[str, Any],
              if tpl == pedido["template"] and e_processo(t)]
     if not tipos:
         return 0
-    ids = s.execute(text("""
-        SELECT id FROM dp_solicitacoes
+    from app.apps.erp.core import ferias as svc_ferias
+
+    sols = s.execute(text("""
+        SELECT id, numero, tipo, colaborador_id, dados FROM dp_solicitacoes
          WHERE situacao = :sit AND tipo = ANY(:t)
-           AND (id = :sid OR (:sid IS NULL AND colaborador_id = :c))"""),
+           AND (id = CAST(:sid AS INTEGER)
+                OR (CAST(:sid AS INTEGER) IS NULL AND colaborador_id = :c))"""),
         {"sit": EM_ANDAMENTO, "t": tipos, "sid": pedido.get("solicitacao_id"),
-         "c": pedido.get("colaborador_id")}).scalars().all()
-    for i in ids:
+         "c": pedido.get("colaborador_id")}).mappings().all()
+    for sol in sols:
+        # A programação de férias só muda AQUI, com o retorno — ver
+        # `core/ferias.py`.
+        feito = svc_ferias.contabilidade_devolveu(s, dict(sol), pedido)
         s.execute(text("UPDATE dp_solicitacoes SET situacao = 'ATENDIDA', "
-                       "atualizado_em = now() WHERE id = :i"), {"i": i})
-        _evento(s, i, "CONTABILIDADE_DEVOLVEU",
-                {"texto": f"{pedido.get('numero')} concluído — pedido atendido"},
+                       "atualizado_em = now() WHERE id = :i"), {"i": sol["id"]})
+        _evento(s, sol["id"], "CONTABILIDADE_DEVOLVEU",
+                {"texto": f"{pedido.get('numero')} concluído — pedido atendido"
+                          + (f"; {feito}" if feito else "")},
                 usuario)
-    return len(ids)
+    return len(sols)
 
 
 def em_andamento(s: Session, *, limite: int = 300) -> list[dict[str, Any]]:

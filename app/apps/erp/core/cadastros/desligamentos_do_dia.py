@@ -87,6 +87,22 @@ def aplicar(s: Session, *, hoje: Optional[date] = None) -> dict[str, Any]:
            AND UPPER(COALESCE(c.situacao, 'ATIVO')) <> 'DESLIGADO'
            AND UPPER(COALESCE(c.etapa, 'CONCLUIDO')) <> 'CANCELADO'
          ORDER BY c.demissao, c.id"""), {"hoje": hoje}).mappings().all()
+    # ⚑ QUEM TEM CANCELAMENTO DE DESLIGAMENTO PEDIDO NÃO CAI (20/11/2026).
+    # Ele: *"Imagina desligar uma pessoa que vai continuar trabalhando. É uma
+    # falha grave, né? Não pode deixar isso acontecer."* Se a obra pediu o
+    # cancelamento e o DP ainda não atendeu, a data de saída continua gravada
+    # — e sem isto a virada desligaria a pessoa e cortaria o acesso dela no
+    # dia. Fica SEGURADA até o DP decidir; o agente cobra o DP todo dia.
+    segurados = set(s.execute(text("""
+        SELECT colaborador_id FROM dp_solicitacoes
+         WHERE tipo = 'CANCELAR_DESLIGAMENTO'
+           AND situacao IN ('ABERTA', 'EM_ANALISE')
+           AND colaborador_id IS NOT NULL""")).scalars().all())
+    if segurados:
+        logger.warning("ERP/desligamentos: %s pessoa(s) com data de saída "
+                       "vencida SEGURADA(S) por cancelamento pedido",
+                       sum(1 for p in pendentes if p["id"] in segurados))
+    pendentes = [p for p in pendentes if p["id"] not in segurados]
     if not pendentes:
         return {"pessoas": 0, "acessos": 0, "quem": []}
 

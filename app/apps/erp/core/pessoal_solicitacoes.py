@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.apps.erp.core import admissao_processo as svc_admissao
 from app.apps.erp.core import contabil_processo as svc_contabil
+from app.apps.erp.core import ferias as svc_ferias
 from app.apps.erp.core import desligamento_processo as svc_processo
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -242,7 +243,8 @@ TIPOS: dict[str, dict[str, Any]] = {
     },
     "CANCELAR_DESLIGAMENTO": {
         "nome": "Cancelar Solicitação de Desligamento",
-        "explicacao": "desfaz o pedido de desligamento antes de ele ser feito",
+        "explicacao": ("a pessoa vai continuar trabalhando: o DP desfaz a "
+                       "saída e avisa a contabilidade"),
         # ⚑ 20/11/2026: ATENDER NÃO FAZIA NADA — a saída continuava marcada e
         # a pessoa era desligada no dia mesmo assim. Agora desfaz de verdade
         # (`cancelar_desligamento`).
@@ -748,12 +750,39 @@ TIPOS: dict[str, dict[str, Any]] = {
     "FERIAS": {
         "nome": "Solicitação de Férias",
         "explicacao": "o período de férias; o DP pede o aviso à contabilidade",
-        "exige_pessoa": True, "executa": None, "so_vinculo": "CTPS",
+        # ⚑ 20/11/2026 (tarde): atender PROGRAMA as férias (`core/ferias.py`)
+        # — elas aparecem na tela Férias como "aguardando a contabilidade" e
+        # viram "confirmadas" quando ela devolve.
+        "exige_pessoa": True, "executa": "programar_ferias", "so_vinculo": "CTPS",
         "campos": ("ferias_inicio", "ferias_dias", "abono_pecuniario",
                    "adiantamento_13", "observacao"),
         "obrigatorios": ("ferias_inicio", "ferias_dias"),
         "campos_do_dp": (),
         "checklist": ("Conferir o período aquisitivo e o saldo de dias",),
+    },
+    # ⚑ ALTERAR E CANCELAR FÉRIAS (20/11/2026). Ele: *"tem que pensar na
+    # possibilidade de alteração e cancelamento. E aí tem que estar DP no
+    # meio, contabilidade no meio, o agente de IA no meio."* Dois pedidos
+    # próprios, com o mesmo caminho das férias: a obra (ou o DP) pede, o DP
+    # atende, a contabilidade devolve — e só então a data muda.
+    "ALTERACAO_FERIAS": {
+        "nome": "Alteração de Férias",
+        "explicacao": "mudar a data ou os dias de férias já marcadas",
+        "exige_pessoa": True, "executa": "alterar_ferias", "so_vinculo": "CTPS",
+        "campos": ("ferias_inicio", "ferias_dias", "abono_pecuniario",
+                   "adiantamento_13", "observacao"),
+        "obrigatorios": ("ferias_inicio", "ferias_dias", "observacao"),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o período aquisitivo e o saldo de dias",),
+    },
+    "CANCELAMENTO_FERIAS": {
+        "nome": "Cancelamento de Férias",
+        "explicacao": "desmarcar férias já marcadas",
+        "exige_pessoa": True, "executa": "cancelar_ferias", "so_vinculo": "CTPS",
+        "campos": ("observacao",),
+        "obrigatorios": ("observacao",),
+        "campos_do_dp": (),
+        "checklist": (),
     },
     "DIVERSOS": {
         "nome": "Solicitações Diversas",
@@ -1859,6 +1888,12 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     pedido = traduzir_do_pipe(
         {c: dados.get(c) for c in campos_do_tipo(tipo, vinculo)
          if dados.get(c) not in (None, "")})
+    # Qual programação de férias se altera ou cancela, quando o pedido sai da
+    # tela de Férias (o botão na linha). Pelo portal, sem ela, vale a próxima
+    # férias da pessoa (`ferias.vigente`).
+    if tipo in ("ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS") \
+            and str(dados.get("ferias_id") or "").isdigit():
+        pedido["ferias_id"] = str(dados["ferias_id"])
     if tipo in ("CADASTRO", "ADMISSAO_PRESTADOR"):
         # ⚑ CAIXA ALTA E SEM ACENTO (19/11/2026), digitado ou lido — ver
         # `documentos_de_pessoa.caixa_alta`.
@@ -2084,7 +2119,22 @@ def cancelar_desligamento(s: Session, colaborador_id: int, p: dict[str, Any],
     c = s.get(Colaborador, colaborador_id)
     if c is None:
         raise ErroValidacao("Colaborador não encontrado.")
-    if svc_pessoas.ja_saiu(c.demissao):
+    # ⚑ O CANCELAMENTO PEDIDO A TEMPO VALE MESMO DEPOIS DA DATA (20/11/2026).
+    # A virada do dia SEGURA quem tem cancelamento aberto
+    # (`desligamentos_do_dia`): se a obra pediu antes da saída e o DP atendeu
+    # um dia depois, a pessoa não foi desligada — e recusar aqui a jogaria na
+    # readmissão por demora nossa. Ele: *"Imagina desligar uma pessoa que vai
+    # continuar trabalhando. É uma falha grave."*
+    criado = p.get("criado_em")
+    try:
+        criado_dia = (criado.date() if hasattr(criado, "date")
+                      else date.fromisoformat(str(criado or "")[:10]))
+    except ValueError:
+        criado_dia = None
+    a_tempo = (c.demissao is not None and criado_dia is not None
+               and criado_dia <= c.demissao
+               and (c.situacao or "ATIVO").upper() != "DESLIGADO")
+    if svc_pessoas.ja_saiu(c.demissao) and not a_tempo:
         raise ErroValidacao(
             f"{c.nome} já saiu em {c.demissao:%d/%m/%Y}. Depois da saída não se "
             "cancela o desligamento — o caminho é a readmissão.")
@@ -2107,13 +2157,17 @@ def cancelar_desligamento(s: Session, colaborador_id: int, p: dict[str, Any],
                      {"pedido": p.get("numero"), "antes": antes},
                      usuario.id if usuario else None)
     if desl is not None:
+        # A RESPOSTA TAMBÉM: é ela que quem pediu o desligamento lê no portal
+        # ("O que você já pediu") — e ele pode não ser quem pediu o
+        # cancelamento. Todo mundo envolvido fica sabendo.
         s.execute(text("""UPDATE dp_solicitacoes
                              SET situacao = 'CANCELADA', cancelado_por = :u,
                                  cancelado_em = now(), atualizado_em = now(),
-                                 motivo_cancelamento = :m
+                                 motivo_cancelamento = :m, resposta = :m
                            WHERE id = :s"""),
                   {"u": usuario.id if usuario else None, "s": desl["id"],
-                   "m": f"cancelado pelo pedido {p.get('numero')}"})
+                   "m": f"desligamento cancelado pelo pedido {p.get('numero')} "
+                        "— a pessoa continua trabalhando"})
         _evento(s, desl["id"], "CANCELADA",
                 {"motivo": f"cancelado pelo pedido {p.get('numero')}"}, usuario)
         efeito["desligamento_cancelado"] = desl["numero"]
@@ -2128,15 +2182,24 @@ def cancelar_desligamento(s: Session, colaborador_id: int, p: dict[str, Any],
             svc_ct.cancelar(s, rescisao["id"], usuario,
                             motivo=f"desligamento cancelado ({p.get('numero')})")
         else:
-            # A contabilidade já recebeu a rescisão: o cancelamento passa por
-            # ela, e o pedido de cancelamento sai montado com a data.
-            efeito["precisa_contabilidade"] = True
+            # A contabilidade já recebeu a rescisão: o pedido de cancelamento
+            # sai montado com a data em que ela foi comunicada.
             s.execute(text("""UPDATE dp_solicitacoes
                                  SET dados = dados || CAST(:j AS jsonb)
                                WHERE id = :s"""),
                       {"s": p["id"], "j": __import__("json").dumps(
                           {"desligamento_comunicado_em":
                            rescisao["criado_em"].date().isoformat()})})
+    # ⚑ DE CARTEIRA, O CANCELAMENTO SEMPRE PASSA PELA CONTABILIDADE
+    # (20/11/2026). Antes, só quando a rescisão já tinha sido enviada. Ele:
+    # *"esse cancelamento tem que ser avisado à contabilidade, ela tem que
+    # estar ciente, tem que ser dado o retorno."* A contabilidade pode saber
+    # do desligamento por outro caminho (telefone, e-mail, o eSocial já
+    # agendado) — avisar quando ela não sabia custa um e-mail; não avisar
+    # quando ela sabia é rescisão de quem continua trabalhando.
+    # O prestador não tem registro na contabilidade: fecha no atendimento.
+    if (vinculo_da_pessoa(s, c.id) or "CTPS").upper() == "CTPS":
+        efeito["precisa_contabilidade"] = True
     return efeito
 
 
@@ -2235,7 +2298,8 @@ def guardar_papeis(s: Session, solicitacao_id: int,
 # ---------------------------------------------------------------------------
 _MARCAS_INTERNAS = {"pre_cadastro", "readmissao", "processo_desligamento",
                     "processo_admissao", "processo_contabil",
-                    "continuidade_revista", "documentos", "lidos_do_documento"}
+                    "continuidade_revista", "documentos", "lidos_do_documento",
+                    "ferias_id"}
 
 
 def _formatar(campo: str, valor: Any, s: Session) -> str:
@@ -2576,6 +2640,12 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                 "justificativa": pedido.get("justificativa")}, usuario)
         elif executa == "cancelar_desligamento":
             efeito.update(cancelar_desligamento(s, alvo, p, usuario))
+        elif executa == "programar_ferias":
+            efeito.update(svc_ferias.programar(s, p, pedido, usuario))
+        elif executa in ("alterar_ferias", "cancelar_ferias"):
+            efeito.update(svc_ferias.pedir_mudanca(
+                s, p, pedido, "ALTERACAO" if executa == "alterar_ferias"
+                else "CANCELAMENTO", usuario))
         elif executa == "dependente":
             # ⚑ VÁRIOS DE UMA VEZ. Ele, em 10/11/2026: *"dependente tem que
             # ser um a um, não posso adicionar outro, não, para pedir mais de

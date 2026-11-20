@@ -87,6 +87,26 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "conferir": ("nome", "cpf"),
         "etapa_ao_concluir": "",
     },
+    # ⚑ 20/11/2026: alterar e cancelar férias também passam por ela — é ela
+    # quem refaz (ou desfaz) o aviso e o registro no eSocial.
+    "ALTERACAO_FERIAS": {
+        "nome": "Alteração de férias",
+        "explicacao": "nova data ou novos dias para férias já comunicadas",
+        "exige": ("nome", "cpf"),
+        "espera": "AVISO-FERIAS",
+        "prazo": 2, "cobrancas": 3, "intervalo": 2,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
+    "CANCELAMENTO_FERIAS": {
+        "nome": "Cancelamento de férias",
+        "explicacao": "desfazer férias já comunicadas",
+        "exige": ("nome", "cpf"),
+        "espera": "AVISO-FERIAS",
+        "prazo": 1, "cobrancas": 3, "intervalo": 1,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
     "DEPENDENTE": {
         "nome": "Cadastro de dependente",
         "explicacao": "incluir dependente para salário-família e imposto de renda",

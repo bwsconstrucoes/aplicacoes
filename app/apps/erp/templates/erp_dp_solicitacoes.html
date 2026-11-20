@@ -586,13 +586,28 @@ function blocoDoProcesso(p){
       b.push(`<button class="link-btn" data-pr-desfaz="${x.codigo}">desfazer</button>`);
     return b.join(" ");
   };
-  return `<h4>${deslig ? "O desligamento" : "A admissão"}, do início ao fim (${pr.cumpridos}/${pr.total})</h4>
+  const admissao = ["CADASTRO", "ADMISSAO_PRESTADOR"].includes(p.tipo);
+  {# ⚑ CANCELAR O DESLIGAMENTO A PARTIR DELE (20/11/2026). Ele: *"pode ser que
+     seja a própria obra (…) ou o próprio DP fazer o pedido, né? Em cima
+     daquela solicitação de desligamento."* Qualquer um que veja o pedido pode
+     pedir; quem atende é o DP, e a contabilidade é avisada. #}
+  const pedirCancel = deslig && p.situacao === "EM_ANDAMENTO"
+    ? `<div style="margin:6px 0 10px"><button class="btn secundario" id="pr-pedir-cancel">
+        Pedir o cancelamento deste desligamento…</button>
+        <small class="desc">a pessoa vai continuar trabalhando — o DP atende e a
+        contabilidade é avisada</small></div>` : "";
+  return `<h4>${deslig ? "O desligamento" : admissao ? "A admissão"
+      : escapar(p.tipo_rotulo || "O pedido")}, do início ao fim (${pr.cumpridos}/${pr.total})</h4>
+    ${pedirCancel}
     <div class="cartao-dica">${deslig
       ? `O pedido só se encerra com todos os passos cumpridos. O que o sistema
          enxerga sozinho — o pedido à contabilidade, a documentação de volta, o
          lançamento pago — se marca sozinho.`
-      : `O pedido fica na fila até o cadastro chegar a <b>Concluído</b> — e aí
-         fecha sozinho. Os passos se marcam com o que o sistema enxerga.`}</div>
+      : admissao
+      ? `O pedido fica na fila até o cadastro chegar a <b>Concluído</b> — e aí
+         fecha sozinho. Os passos se marcam com o que o sistema enxerga.`
+      : `O pedido fica na fila até a <b>contabilidade devolver</b> — e aí fecha
+         sozinho. O agente acompanha e cobra se parar.`}</div>
     ${pr.marcacoes_disponiveis ? "" : `<div class="aviso alerta">Falta aplicar a
       atualização do banco (Configurações) para marcar os passos.</div>`}
     <table><tbody>${pr.passos.map(x => `<tr>
@@ -612,6 +627,25 @@ function blocoDoProcesso(p){
           pr.total - pr.cumpridos > 1 ? " e mais " + (pr.total - pr.cumpridos - 1) : ""}.</small>`}</div>` : ""}`;
 }
 
+async function pedirCancelamentoDoDesligamento(p){
+  const r = await perguntar({titulo: `Cancelar o desligamento de ${p.pessoa_nome || p.pessoa || ""}`,
+    aviso: "Abre um pedido de cancelamento. Enquanto o DP não atende, a virada do "
+         + "dia não desliga a pessoa; ao atender, a saída é apagada e a "
+         + "contabilidade é avisada.",
+    textoOk: "Pedir o cancelamento",
+    campos: [{nome: "observacao", rotulo: "Por que cancelar", tipo: "textarea",
+              obrigatorio: true, largura: 6, linhas: 2}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
+      body: JSON.stringify({tipo: "CANCELAR_DESLIGAMENTO",
+                            colaborador_id: p.colaborador_id, ...r})});
+    els("dlg").close();
+    aviso("mensagem", `Pedido ${d.solicitacao.numero} aberto: cancelamento do desligamento.`, "ok");
+    if (typeof carregar === "function") carregar();
+  } catch(e){ alert(e.message); }
+}
+
 function ligarBotoesDoProcesso(p){
   const corpo = els("dlg-corpo");
   const um = (sel, fn) => corpo.querySelectorAll(sel).forEach(b =>
@@ -622,6 +656,8 @@ function ligarBotoesDoProcesso(p){
      (20/11/2026): o servidor sabe o modelo de cada tipo e monta o pedido já
      preenchido (`contabil_processo.montar_pedido`). #}
   um("[data-pr-contab]", () => acao("contabilidade", {}));
+  const pc = els("pr-pedir-cancel");
+  if (pc) pc.addEventListener("click", () => pedirCancelamentoDoDesligamento(p));
   {# ⚑ A ASSINATURA VAI E VOLTA PELO SISTEMA (19/11/2026). Ele: *"o arquivo
      precisa ser cobrado pelo Agente e recebido (…) o agente analisa e o DP
      valida o recebimento."* A ida é a pendência do portal (com prazo, que o
@@ -846,11 +882,17 @@ async function atender(){
     ALTERACAO_CARGO: "grava a alteração de cargo/salário com o de→para e, para "
       + "quem tem carteira, o pedido segue Em andamento até a contabilidade "
       + "devolver a alteração",
-    FERIAS: "abre o processo: você monta o pedido de férias à contabilidade "
-      + "e o pedido fecha quando ela devolver o aviso",
-    CANCELAR_DESLIGAMENTO: "apaga a saída agendada e cancela o desligamento; "
-      + "se a rescisão já tinha ido à contabilidade, o cancelamento vai também "
-      + "e o pedido fica Em andamento até ela devolver",
+    FERIAS: "programa as férias (tela Férias, como aguardando a contabilidade) "
+      + "e abre o processo: você monta o pedido à contabilidade e, quando ela "
+      + "devolver, as férias ficam confirmadas e o pedido fecha",
+    ALTERACAO_FERIAS: "marca a alteração como pedida — a data atual continua "
+      + "valendo até a contabilidade devolver; aí a nova vale e o pedido fecha",
+    CANCELAMENTO_FERIAS: "marca o cancelamento como pedido — as férias saem da "
+      + "programação quando a contabilidade devolver",
+    CANCELAR_DESLIGAMENTO: "apaga a saída agendada e cancela o desligamento "
+      + "(quem pediu o desligamento vê isso no portal); de carteira, o "
+      + "cancelamento vai à contabilidade e o pedido fica Em andamento até ela "
+      + "confirmar",
     ATUALIZACAO_DADOS: "atualiza o cadastro da pessoa",
     DEPENDENTE: "cadastra o dependente e, com salário-família ou IR, o "
       + "pedido segue até a contabilidade devolver",

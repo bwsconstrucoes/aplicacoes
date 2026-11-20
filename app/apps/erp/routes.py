@@ -186,6 +186,9 @@ MODULOS = [
             # A fila de pedidos administrativos (05/11/2026): o segundo pipe do
             # Pipefy. Os pedidos de PONTO já vivem no módulo do ponto.
             ("dp_solicitacoes", "Solicitações", "erp.pagina_dp_solicitacoes"),
+            # A programação de férias (20/11/2026): o que a contabilidade
+            # confirmou, o que está chegando e o que está para mudar.
+            ("dp_ferias", "Férias", "erp.pagina_dp_ferias"),
             ("dp_contabilidade", "Contabilidade e agente",
              "erp.pagina_dp_contabilidade"),
             # ⚑ AS CONDICIONAIS QUE O PIPEFY NÃO EXPORTA (17/11/2026). Ele:
@@ -13190,6 +13193,7 @@ def api_portal_inicio():
                 "obra_sugerida": svc_portal.obra_sugerida(s, usuario),
                 "listas": svc_portal.listas_fechadas(s),
                 "pedidos": svc_portal.meus_pedidos(s, usuario),
+                "ferias": svc_portal.ferias_da_equipe(s, usuario),
                 "devolucoes": svc_portal.minhas_devolucoes(s, usuario)})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
@@ -13542,6 +13546,41 @@ def api_dp_caixa_acao(acao: str):
 def pagina_dp_contabilidade():
     return render_template("erp_dp_contabilidade.html",
                            **_contexto("dp_contabilidade"))
+
+
+# ---------------------------------------------------------------------------
+# A PROGRAMAÇÃO DE FÉRIAS (migração 116, 20/11/2026) — `core/ferias.py`.
+# Quem abre pedido ao DP vê as férias das obras que alcança (o administrativo
+# de obra, que cuida do ponto); o DP vê todas.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/dp/ferias")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def pagina_dp_ferias():
+    return render_template("erp_dp_ferias.html", **_contexto("dp_ferias"))
+
+
+@bp.route("/erp/api/dp/ferias")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_dp_ferias():
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            obras = obras_do_usuario(s, usuario)
+            passadas = request.args.get("passadas") == "1"
+            hoje = date.today()
+            lista = svc_ferias.listar(
+                s, obras=obras, com_canceladas=passadas,
+                desde=hoje - timedelta(days=365 if passadas else 0))
+            return jsonify({"ok": True, "ferias": lista,
+                            "avisar_com_dias": svc_ferias.AVISAR_COM_DIAS,
+                            "tabela": svc_ferias.tem_tabela(s)})
+    except Exception as e:
+        logger.exception("ERP/DP: falha na programação de férias")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/dp/regras")

@@ -3070,3 +3070,37 @@ consulta inventada vai sendo usado cada vez menos.
 - **"Quantos dias de férias o fulano ainda tem?"** — o sistema não calcula o
   período aquisitivo. Falta o controle de períodos.
 
+## A programação de férias e o cancelamento de desligamento (20/11/2026, tarde)
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"férias marcadas"** | programadas no sistema (aguardando a contabilidade) ou **confirmadas** por ela. A tela Férias mostra as duas, com a situação |
+| **"data das férias"** | a que vale (confirmada) ou a pedida numa alteração ainda sem retorno. A que vale é a confirmada |
+| **"cancelado"** (desligamento) | o pedido de desligamento cancelado (situação Cancelada, com o motivo) ou o cancelamento ainda pedido e não atendido (a saída continua gravada, segurada pela virada) |
+
+### Perguntas que o sistema responde
+
+- **"Quem está de férias agora?"** / **"quem sai de férias nas próximas duas
+  semanas?"** — a programação (tela Férias; no portal, "Férias da equipe").
+  Muda conforme quem pergunta: a obra vê só as dela.
+- **"As férias do fulano foram confirmadas pela contabilidade?"** — a
+  situação da linha.
+- **"Tem alteração ou cancelamento de férias esperando a contabilidade?"** —
+  linhas com mudança pendente.
+- **"Quando o fulano volta?"** — o dia seguinte ao fim.
+- **"Algum desligamento foi cancelado e a contabilidade ainda não
+  confirmou?"** — pedidos de cancelamento Em andamento (o agente lista).
+- **"Tem pessoa com saída vencida segurada por cancelamento?"** — pedido de
+  cancelamento aberto com data de saída já passada.
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- **"Quantos dias de férias o fulano ainda tem?"** — não há controle de
+  período aquisitivo.
+- **"As férias de antes do sistema?"** — só as pedidas a partir de
+  20/11/2026 (ou alteradas depois disso) estão na programação.
+- **"As férias já estão lançadas no ponto?"** — a programação e o ponto não
+  conversam; o lançamento no ponto é à mão.
+
