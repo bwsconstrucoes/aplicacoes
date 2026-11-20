@@ -387,11 +387,17 @@ DIAS_DO_PERIODO = 30
 AVISAR_VENCIMENTO_COM_DIAS = 90
 
 
+_controle: dict[str, bool] = {"existe": False}
+
+
 def _tem_controle(s: Session) -> bool:
-    return s.execute(text(
+    if _controle["existe"]:
+        return True
+    _controle["existe"] = s.execute(text(
         "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' "
         "AND table_name = 'ferias_programadas' "
         "AND column_name = 'periodo_aquisitivo_inicio'")).first() is not None
+    return _controle["existe"]
 
 
 def quitado_ate(s: Session, colaborador_id: int) -> tuple[bool, Optional[date]]:
@@ -421,14 +427,19 @@ def _creditos(s: Session, colaborador_id: int) -> dict[date, float]:
 
 
 def periodos(s: Session, colaborador_id: int, admissao: Optional[date],
-             hoje: Optional[date] = None) -> list[dict[str, Any]]:
-    """Os períodos aquisitivos da pessoa, cada um com o que já foi programado."""
+             hoje: Optional[date] = None, *,
+             _pronto: Optional[tuple] = None) -> list[dict[str, Any]]:
+    """Os períodos aquisitivos da pessoa, cada um com o que já foi programado.
+    `_pronto` = (informado, quitado, creditos) já lidos em lote."""
     from app.apps.erp.core.dp_analise import periodos_de_ferias
     hoje = hoje or date.today()
     if not admissao:
         return []
-    informado, quitado = quitado_ate(s, colaborador_id)
-    creditos = _creditos(s, colaborador_id)
+    if _pronto is not None:
+        informado, quitado, creditos = _pronto
+    else:
+        informado, quitado = quitado_ate(s, colaborador_id)
+        creditos = _creditos(s, colaborador_id)
     saida = []
     for p in periodos_de_ferias(admissao, hoje):
         dias = min(DIAS_DO_PERIODO, creditos.get(p["inicio"], 0))
@@ -456,7 +467,7 @@ def situacao_dos_periodos(s: Session, *, obras: Optional[list[int]] = None,
                           limite: int = 2000) -> list[dict[str, Any]]:
     """Cada pessoa de carteira ativa e o estado das férias dela."""
     hoje = hoje or date.today()
-    if obras is not None and not obras:
+    if (obras is not None and not obras) or not _tem_controle(s):
         return []
     linhas = s.execute(text("""
         SELECT c.id, c.nome, c.admissao, o.codigo AS obra
@@ -467,10 +478,27 @@ def situacao_dos_periodos(s: Session, *, obras: Optional[list[int]] = None,
            AND (:todas OR c.obra_id = ANY(:obras))
          ORDER BY c.nome LIMIT :l"""),
         {"todas": obras is None, "obras": obras or [], "l": limite}).mappings().all()
+    # ⚑ EM LOTE: duas consultas para todos, não três por pessoa (eram ~900
+    # para 300 pessoas, a cada abertura da tela e a cada rodada do vigia).
+    ids = [l["id"] for l in linhas]
+    controle = {r[0]: r[1] for r in s.execute(text(
+        "SELECT colaborador_id, quitado_ate FROM ferias_controle "
+        "WHERE colaborador_id = ANY(:i)"), {"i": ids}).all()} if ids else {}
+    creditos: dict[int, dict[date, float]] = {}
+    for r in (s.execute(text("""
+        SELECT colaborador_id, periodo_aquisitivo_inicio AS p, dias, abono_pecuniario
+          FROM ferias_programadas
+         WHERE colaborador_id = ANY(:i) AND situacao <> 'CANCELADA'
+           AND periodo_aquisitivo_inicio IS NOT NULL"""), {"i": ids}).mappings().all()
+              if ids else []):
+        por = creditos.setdefault(r["colaborador_id"], {})
+        por[r["p"]] = por.get(r["p"], 0) + r["dias"] * (1.5 if r["abono_pecuniario"] else 1)
     saida = []
     for l in linhas:
-        informado, quitado = quitado_ate(s, l["id"])
-        ps = periodos(s, l["id"], l["admissao"], hoje)
+        informado = l["id"] in controle
+        quitado = controle.get(l["id"])
+        ps = periodos(s, l["id"], l["admissao"], hoje,
+                      _pronto=(informado, quitado, creditos.get(l["id"], {})))
         abertos = [p for p in ps if p["completo"] and not p["quitado"]]
         vencidos = [p for p in abertos if p["limite"] < hoje]
         estado, detalhe = "em_dia", "nenhum período vencendo"
