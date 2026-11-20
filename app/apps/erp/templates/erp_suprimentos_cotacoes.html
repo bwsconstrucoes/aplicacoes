@@ -233,7 +233,7 @@ function desenharMapa(){
       <button class="btn secundario" id="btn-herdar">Puxar preços anteriores</button>
       <button class="btn secundario" id="btn-relatorios">📊 Relatórios do mapa</button>
       <button class="btn secundario" id="btn-mapa-pdf"
-        title="O mapa inteiro em PDF, deitado quando tem muitos fornecedores"
+        title="O mapa no formato da planilha, com as condições de cada fornecedor e os quatro resumos — para a gestão analisar"
         >&#10515; Mapa em PDF</button>
       <span class="espaco" style="flex:1"></span>
       <button class="btn secundario" id="btn-disparar">✉ Disparar a cotação</button>
@@ -262,7 +262,11 @@ function desenharMapa(){
   els("btn-add-forn").addEventListener("click", abrirFornecedor);
   els("btn-herdar").addEventListener("click", herdarPrecos);
   els("btn-relatorios").addEventListener("click", () => abrirRelatorios("POR_ITEM"));
-  els("btn-mapa-pdf").addEventListener("click", exportarMapa);
+  // ⚑ O PDF DO MAPA É FEITO NO SERVIDOR desde 20/11/2026, no formato da
+  // planilha (condições de cada fornecedor, unitário e subtotal, resumos). A
+  // exportação genérica que havia aqui trazia só o preço unitário.
+  els("btn-mapa-pdf").addEventListener("click", () =>
+    window.open(`/erp/suprimentos/cotacoes/${MAPA.id}/pdf`, "_blank", "noopener"));
   els("btn-disparar").addEventListener("click", abrirDisparo);
   if (els("btn-fechar-pedido"))
     els("btn-fechar-pedido").addEventListener("click", () => abrirFechamento());

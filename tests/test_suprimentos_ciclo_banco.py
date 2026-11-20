@@ -869,3 +869,11 @@ def test_so_whatsapp_sem_email_tambem_e_cobrado(base, monkeypatch):
     r = cobranca.cobrar(base["s"], [base["coluna"].id], base["u"])
     assert r["enviados"][0]["canais"] == ["WhatsApp"] and r["sem_endereco"] == []
     assert zaps[0][0] == "558533334444"
+
+
+def test_o_pdf_do_mapa_sai_com_o_mapa_e_os_resumos(base):
+    from app.apps.erp.core.suprimentos import mapa_pdf
+    conteudo = mapa_pdf.gerar(base["s"], base["cot"].id, empresa_nome="BWS",
+                              quem="Coordenador")
+    assert conteudo[:5] == b"%PDF-"
+    assert conteudo.count(b"/Type /Page\n") + conteudo.count(b"/Type /Page ") >= 1

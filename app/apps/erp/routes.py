@@ -11789,6 +11789,28 @@ def api_preparar_fechamento(cotacao_id: int):
         return jsonify({"ok": True, **svc.preparar_fechamento(s, cotacao_id)})
 
 
+@bp.route("/erp/suprimentos/cotacoes/<int:cotacao_id>/pdf")
+@login_obrigatorio
+@permissao("ver_pedidos_compra")
+def pdf_do_mapa(cotacao_id: int):
+    """O mapa de cotação em PDF, no formato da planilha: o mapa inteiro com as
+    condições de cada fornecedor e os resumos. É o que vai para a gestão."""
+    from app.apps.erp.core.cadastros import empresas as svc_empresas
+    from app.apps.erp.core.suprimentos import mapa_pdf
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        padrao = svc_empresas.padrao(s)
+        conteudo = mapa_pdf.gerar(
+            s, cotacao_id, quem=usuario.nome or "",
+            empresa_nome=(getattr(padrao, "nome_fantasia", None)
+                          or getattr(padrao, "razao_social", "") or ""))
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "application/pdf"
+    resposta.headers["Content-Disposition"] = (
+        f'inline; filename="Mapa-de-cotacao-{cotacao_id}.pdf"')
+    return resposta
+
+
 @bp.route("/erp/suprimentos/pedidos/<int:pedido_id>/pdf")
 @login_obrigatorio
 @permissao("ver_pedidos_compra")
