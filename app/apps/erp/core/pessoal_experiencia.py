@@ -256,3 +256,56 @@ def terminando(s, obras=None, hoje: Optional[date] = None,
         })
     return saida
 
+
+# ---------------------------------------------------------------------------
+# PASSADA A EXPERIÊNCIA, O CONTRATO VIRA INDETERMINADO — SOZINHO (20/11/2026)
+#
+# Ele: *"Via de regra assinamos CLT com contrato determinado. Passado o
+# período de experiência ele vira indeterminado."* E, perguntado se o sistema
+# deveria trocar sozinho: *"quero que altere sozinho o contrato."*
+#
+# Roda na rodada diária. Troca "CLT (tempo determinado)" por "CLT (tempo
+# indeterminado)" no cadastro e no vínculo aberto de quem tem carteira e já
+# passou do fim da experiência (prorrogação incluída). Quem está como
+# "determinado" SEM contrato de experiência legível fica como está: não dá
+# para saber quando acabou — a tela de Regras mostra esses.
+#
+# ⚑ CUSTO: uma consulta por dia e uma gravação por pessoa que virou.
+# ---------------------------------------------------------------------------
+def virar_indeterminado(s, hoje: Optional[date] = None) -> dict[str, Any]:
+    """Nunca levanta. Devolve quantos viraram."""
+    import logging
+    from sqlalchemy import text
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    hoje = hoje or date.today()
+    feito = {"viraram": 0, "sem_data": 0}
+    try:
+        with s.begin_nested():
+            for l in s.execute(text("""
+                SELECT id, admissao, contrato_experiencia FROM colaboradores
+                 WHERE UPPER(COALESCE(vinculo, 'CTPS')) = 'CTPS'
+                   AND tipo_contrato = 'CLT_DETERMINADO'
+                   AND UPPER(COALESCE(situacao, 'ATIVO')) = 'ATIVO'""")).mappings().all():
+                sit = situacao(l["admissao"], l["contrato_experiencia"], hoje)
+                if not sit["tem"]:
+                    feito["sem_data"] += 1
+                    continue
+                if not sit["ja_acabou"]:
+                    continue
+                s.execute(text("UPDATE colaboradores SET tipo_contrato = 'CLT_INDETERMINADO' "
+                               "WHERE id = :i"), {"i": l["id"]})
+                s.execute(text("""UPDATE colaborador_vinculos
+                                     SET tipo_contrato = 'CLT_INDETERMINADO'
+                                   WHERE colaborador_id = :i AND demissao IS NULL
+                                     AND tipo_contrato = 'CLT_DETERMINADO'"""),
+                          {"i": l["id"]})
+                registrar_evento(s, "colaborador", int(l["id"]), "VIROU_INDETERMINADO",
+                                 {"fim_da_experiencia": sit["fim_total"],
+                                  "por": "a rotina diária: a experiência acabou"}, None)
+                feito["viraram"] += 1
+        if feito["viraram"]:
+            logging.getLogger(__name__).info("ERP/experiência: %s", feito)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("ERP/experiência: a virada falhou")
+    return feito
+

@@ -141,10 +141,14 @@ Comentários dele sobre a medição:
   ⚠️ **A lei (CLT art. 452) fala em 6 meses**, não 1 ano; a regra da empresa é
   mais protetora e está dentro da lei. Dito a ele.
 
-**Proposto, não feito (muda centenas de cadastros):** passar sozinho de "CLT
-(tempo determinado)" para "CLT (tempo indeterminado)" quando a experiência
-acaba — é o que ele descreveu ("passado o período de experiência ele vira
-indeterminado").
+**Feito a pedido dele (*"quero que altere sozinho o contrato"*):** a rodada
+diária troca "CLT (tempo determinado)" por "CLT (tempo indeterminado)" — no
+cadastro e no vínculo aberto, com evento — de quem já passou do fim da
+experiência (`pessoal_experiencia.virar_indeterminado`). Na primeira rodada
+alcança o estoque (havia 353 "determinado"). Quem está "determinado" sem
+contrato de experiência legível fica como está. O Análise de SPs trata os dois
+CLT igual: não muda pagamento. Não vai à contabilidade (a experiência que
+acaba vira indeterminado sozinha também no eSocial).
 
 ### 20/11/2026 (noite, 6) — A transferência vira AUTOMÁTICA: a obra do mês
 

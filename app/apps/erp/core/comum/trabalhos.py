@@ -383,6 +383,9 @@ def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str
     # sozinha a ser a obra em que a pessoa mais trabalhou no mês que acabou.
     from app.apps.erp.core import obra_do_mes
     obra["obra_do_mes"] = obra_do_mes.se_preciso(s)
+    # Passada a experiência, o contrato vira indeterminado sozinho (20/11/2026).
+    from app.apps.erp.core import pessoal_experiencia
+    obra["contratos_indeterminados"] = pessoal_experiencia.virar_indeterminado(s)
     s.commit()
     from app.apps.erp.core import ponte_do_ponto
     ponte = ponte_do_ponto.trazer(s)

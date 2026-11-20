@@ -1189,3 +1189,32 @@ def test_autonomo_nao_tem_convencao_e_precisa_da_diaria():
                       tipo_contrato="AUTONOMO_RPA", cargo_id=1)
     falta = svc_pessoas.o_que_falta(rpa)
     assert "valor da diária" in falta and "convenção" not in falta
+
+
+@pytestmark_banco
+def test_passada_a_experiencia_o_contrato_vira_indeterminado_sozinho(mundo):
+    """Ele: *"Passado o período de experiência ele vira indeterminado (…)
+    quero que altere sozinho o contrato."*"""
+    import datetime as dt
+    from app.apps.erp.core import pessoal_experiencia
+    s = mundo["s"]
+    hoje = dt.date.today()
+    velho = svc_pessoas.salvar(s, {"cpf": "12345678909", "nome": "Experiencia Acabou",
+                                   "admissao": (hoje - dt.timedelta(days=120)).isoformat(),
+                                   "obra_id": mundo["obra"].id, "vinculo": "CTPS",
+                                   "tipo_contrato": "CLT_DETERMINADO",
+                                   "contrato_experiencia": "45+45 dias",
+                                   "etapa": "CONCLUIDO"}, mundo["dp"])
+    novo = svc_pessoas.salvar(s, {"cpf": "98765432100", "nome": "Ainda Em Experiencia",
+                                  "admissao": (hoje - dt.timedelta(days=30)).isoformat(),
+                                  "obra_id": mundo["obra"].id, "vinculo": "CTPS",
+                                  "tipo_contrato": "CLT_DETERMINADO",
+                                  "contrato_experiencia": "45+45 dias",
+                                  "etapa": "CONCLUIDO"}, mundo["dp"])
+    s.flush()
+    r = pessoal_experiencia.virar_indeterminado(s, hoje)
+    assert r["viraram"] >= 1
+    s.expire_all()
+    assert s.get(svc_pessoas.Colaborador, velho.id).tipo_contrato == "CLT_INDETERMINADO"
+    assert s.get(svc_pessoas.Colaborador, novo.id).tipo_contrato == "CLT_DETERMINADO"
+    assert pessoal_experiencia.virar_indeterminado(s, hoje)["viraram"] == 0
