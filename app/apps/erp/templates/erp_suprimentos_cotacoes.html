@@ -538,10 +538,12 @@ async function abrirDisparo(){
 
     <div class="cartao">
       <div class="cartao-cab"><h3>O que vai ser mandado</h3>
-        <small>é este texto, exatamente</small></div>
-      <div class="dados" style="white-space:pre-wrap; font-size:12.5px;
-           max-height:240px; overflow:auto; background:#F7F9FC; padding:10px;
-           border-radius:8px">${(p.corpo || "").replace(/</g, "&lt;")}</div>
+        <small>o e-mail é o aviso padrão; a cotação completa vai em PDF, anexo</small></div>
+      <div style="white-space:pre-wrap; font-size:13px; background:#F7F9FC;
+           padding:10px; border-radius:8px">${escapar(p.corpo_do_email || p.corpo || "")}</div>
+      <div style="margin-top:8px"><a class="btn secundario" target="_blank" rel="noopener"
+        href="/erp/suprimentos/cotacoes/${MAPA.id}/solicitacao.pdf${
+          p.empresa ? `?empresa=${p.empresa.id}` : ""}">&#10515; Ver o PDF que vai anexo</a></div>
     </div>
 
     <div class="cartao-dica">${p.aviso}</div>

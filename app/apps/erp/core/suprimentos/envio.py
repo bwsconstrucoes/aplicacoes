@@ -213,6 +213,44 @@ def montar_mensagem(s: Session, cotacao_id: int, empresa: Empresa,
             "corpo": "\n".join(corpo)}
 
 
+# ---------------------------------------------------------------------------
+# O CORPO PADRÃO DO E-MAIL (21/11/2026)
+#
+# O dono: "tem que ter um corpo de e-mail padrão, avisando o fornecedor. E no
+# anexo, o relatório completo." O e-mail é curto e sempre igual; o conteúdo vai
+# no PDF. O texto por extenso (`montar_mensagem`, `montar_pedido`) continua
+# existindo: é o que fica no REGISTRO do envio e o que a tela mostra na prévia.
+# ---------------------------------------------------------------------------
+def corpo_padrao_da_cotacao(cot, empresa: Empresa, prazo: Optional[str] = None) -> str:
+    fantasia = _texto(empresa.nome_fantasia) or _texto(empresa.razao_social)
+    linhas = ["Prezados,", "",
+              f"Segue em anexo a nossa solicitação de cotação {cot.numero} — "
+              f"{_texto(cot.titulo)}.", "",
+              "O PDF traz os itens, as quantidades e o endereço de entrega. "
+              "Pedimos que a proposta informe preço unitário, prazo de entrega, "
+              "condição de pagamento e frete."]
+    if prazo:
+        linhas += ["", f"Aguardamos o retorno até {prazo}."]
+    linhas += ["", "A resposta pode vir neste mesmo e-mail. Por favor, mantenha a "
+               f"referência {cot.numero}.", "", "Atenciosamente,", "Suprimentos — " + fantasia]
+    return "\n".join(linhas)
+
+
+def corpo_padrao_do_pedido(pedido, empresa: Empresa, total: Any) -> str:
+    fantasia = _texto(empresa.nome_fantasia) or _texto(empresa.razao_social)
+    linhas = ["Prezados,", "",
+              f"Confirmamos a compra. Segue em anexo o pedido de compra {pedido.numero}, "
+              f"no valor de R$ {_dinheiro(total)}.", "",
+              "O PDF traz os itens, os preços, o endereço de entrega, a condição de "
+              "pagamento e as instruções para a nota fiscal."]
+    if pedido.previsao_entrega:
+        linhas += ["", "Precisamos do material no local de entrega até "
+                   f"{pedido.previsao_entrega.strftime('%d/%m/%Y')}."]
+    linhas += ["", f"Por favor, confirme o recebimento deste pedido e cite {pedido.numero} "
+               "na nota fiscal.", "", "Atenciosamente,", "Suprimentos — " + fantasia]
+    return "\n".join(linhas)
+
+
 def _cnpj_por_extenso(cnpj: Any) -> str:
     """71000001000184 → 71.000.001/0001-84. O fornecedor confere este número
     contra o cadastro dele; sem pontuação, ninguém lê catorze dígitos seguidos.
@@ -362,6 +400,8 @@ def preparar(s: Session, cotacao_id: int) -> dict[str, Any]:
         "conta_pronta": pode_empresa, "o_que_falta": falta,
         "destinatarios": destinatarios,
         "assunto": mensagem["assunto"], "corpo": mensagem["corpo"],
+        "corpo_do_email": (corpo_padrao_da_cotacao(s.get(Cotacao, cotacao_id), empresa)
+                           if empresa else ""),
         "aviso": ("O sistema registra que a mensagem foi ACEITA pelo servidor "
                   "de saída, com data, hora e o texto exato. Isso não é o "
                   "mesmo que entregue, e muito menos lido."),
@@ -406,9 +446,22 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
             "Nenhum fornecedor escolhido. Acrescente fornecedores ao mapa antes "
             "de disparar.")
 
-    mensagem = montar_mensagem(s, cotacao_id, empresa,
-                               prazo=_texto(dados.get("prazo")) or None,
+    prazo = _texto(dados.get("prazo")) or None
+    mensagem = montar_mensagem(s, cotacao_id, empresa, prazo=prazo,
                                observacao=dados.get("observacao") or "")
+    # O e-mail é o aviso; o conteúdo vai no PDF. Se o PDF não puder ser gerado,
+    # sai o texto completo no corpo, como era — a cotação não fica parada.
+    corpo_do_email, anexos = mensagem["corpo"], []
+    try:
+        from app.apps.erp.core.suprimentos import cotacao_pdf
+        anexos = [{"nome": f"Cotacao-{cot.numero}.pdf", "mime": "application/pdf",
+                   "conteudo": cotacao_pdf.gerar(
+                       s, cotacao_id, empresa, prazo=prazo,
+                       observacao=dados.get("observacao") or "", usuario=usuario)}]
+        corpo_do_email = corpo_padrao_da_cotacao(cot, empresa, prazo)
+    except Exception:
+        logger.exception("ERP/suprimentos: não consegui gerar o PDF da cotação %s",
+                         cot.numero)
 
     enviados, falhas, sem_endereco = [], [], []
     for coluna in sorted(colunas, key=lambda c: (c.ordem or 0, c.id or 0)):
@@ -422,7 +475,8 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
             continue
         registro = correio.enviar(
             s, empresa=empresa, para=destinos,
-            assunto=mensagem["assunto"], corpo=mensagem["corpo"],
+            assunto=mensagem["assunto"], corpo=corpo_do_email, anexos=anexos,
+            corpo_registrado=mensagem["corpo"],
             entidade_tipo="cotacao", entidade_id=cotacao_id,
             destinatario_tipo="cotacao_fornecedor", destinatario_id=coluna.id,
             usuario=usuario)
@@ -565,8 +619,7 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     if not linhas:
         raise ErroValidacao("Este pedido não tem item nenhum.")
 
-    corpo = [f"PEDIDO DE COMPRA {pedido.numero}",
-             "(o mesmo pedido segue em PDF, anexo a este e-mail)", ""]
+    corpo = [f"PEDIDO DE COMPRA {pedido.numero}", ""]
     doc_forn = _cnpj_por_extenso(getattr(forn, "cnpj_cpf", None))
     corpo.append(f"Fornecedor: {_texto(getattr(forn, 'razao_social', ''))}"
                  f"{f' — CNPJ/CPF {doc_forn}' if doc_forn else ''}")
@@ -691,6 +744,11 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
             "corpo": "\n".join(corpo)}
 
 
+def svc_total(s: Session, pedido) -> Any:
+    from app.apps.erp.core.suprimentos import pedido as _svc
+    return _svc.total(s, pedido)
+
+
 def preparar_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
     """O que a tela mostra ANTES de mandar o pedido: para quem vai, de qual
     empresa sai, o texto exato e o que já foi enviado antes."""
@@ -726,6 +784,9 @@ def preparar_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
         "obras_sem_empresa": possiveis["obras_sem_empresa"],
         "conta_pronta": pode_empresa, "o_que_falta": falta,
         "assunto": mensagem["assunto"], "corpo": mensagem["corpo"],
+        # o que vai NO E-MAIL (curto); `corpo` é o conteúdo do PDF por extenso
+        "corpo_do_email": (corpo_padrao_do_pedido(
+            pedido, empresa, svc_total(s, pedido)) if empresa else ""),
         "envios": envios,
         "aviso": ("O sistema registra que a mensagem foi ACEITA pelo servidor "
                   "de saída, com data, hora e o texto exato. Isso não é o "
@@ -788,9 +849,14 @@ def disparar_pedido(s: Session, pedido_id: int, dados: dict[str, Any],
     except Exception:
         logger.exception("ERP/suprimentos: não consegui gerar o PDF do pedido %s",
                          pedido.numero)
+    from app.apps.erp.core.suprimentos import pedido as _svc_pedido
     registro = correio.enviar(
         s, empresa=empresa, para=destinos,
-        assunto=mensagem["assunto"], corpo=mensagem["corpo"], anexos=anexos,
+        assunto=mensagem["assunto"],
+        # com o PDF anexo, o corpo é o aviso padrão; sem ele, o texto completo
+        corpo=(corpo_padrao_do_pedido(pedido, empresa, _svc_pedido.total(s, pedido))
+               if anexos else mensagem["corpo"]),
+        anexos=anexos, corpo_registrado=mensagem["corpo"],
         entidade_tipo="pedido_compra", entidade_id=pedido_id,
         destinatario_tipo="fornecedor", destinatario_id=pedido.fornecedor_id,
         usuario=usuario)

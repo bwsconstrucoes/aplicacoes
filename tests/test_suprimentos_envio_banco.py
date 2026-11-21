@@ -53,9 +53,25 @@ def correio_mudo(monkeypatch):
                              "assunto": msg["Subject"],
                              # com anexo (o PDF do pedido, desde 20/11/2026)
                              # a mensagem é multipart: o texto é a parte "plain"
-                             "corpo": msg.get_body(
-                                 preferencelist=("plain",)).get_content()}))
+                             "corpo": _tudo_que_o_fornecedor_le(msg)}))
     return saidas
+
+
+def _tudo_que_o_fornecedor_le(msg) -> str:
+    """O aviso do e-mail MAIS o texto do PDF anexo (21/11/2026).
+
+    Desde que o dono pediu "corpo padrão, e no anexo o relatório completo", o
+    conteúdo — itens, endereço, especificação — mora no PDF. O que estes testes
+    protegem continua o mesmo: o que chega ao fornecedor. Só mudou de lugar.
+    """
+    import io
+    from PyPDF2 import PdfReader
+    partes = [msg.get_body(preferencelist=("plain",)).get_content()]
+    for anexo in msg.iter_attachments():
+        if anexo.get_content_type() == "application/pdf":
+            leitor = PdfReader(io.BytesIO(anexo.get_payload(decode=True)))
+            partes += [pagina.extract_text() or "" for pagina in leitor.pages]
+    return "\n".join(partes)
 
 
 def _usuario(s, email="comprador@teste.bws.local"):
@@ -269,7 +285,10 @@ def test_o_corpo_traz_os_itens_e_nao_traz_preco_de_ninguem(sessao_real, chave,
     corpo = correio_mudo[0]["corpo"]
     assert "Cimento CP-II 50kg" in corpo
     assert "conforme projeto" in corpo
-    assert "14 SC" in corpo, "quantidade legível: 14, não 14.000"
+    # No PDF a quantidade e a unidade são colunas separadas da tabela.
+    import re
+    assert re.search(r"\b14\b", corpo) and "SC" in corpo and "14.000" not in corpo, \
+        "quantidade legível: 14, não 14.000"
     assert cot.numero in corpo, "a referência volta na resposta do fornecedor"
     assert "10/09/2026" in corpo
     assert "R$" not in corpo, "nenhum preço vai no pedido de cotação"
@@ -290,10 +309,13 @@ def test_o_registro_guarda_o_texto_exato(sessao_real, chave, correio_mudo):
     assert len(registros) == 1
     assert registros[0]["situacao"] == "ENVIADO"
     assert registros[0]["para"] == ["um@f.exemplo"]
-    # `.strip()` porque o formato de e-mail acrescenta uma quebra de linha no
-    # fim da mensagem; o texto em si tem de ser o mesmo.
-    assert registros[0]["corpo"].strip() == correio_mudo[0]["corpo"].strip(), \
+    # Desde 21/11/2026 o e-mail é o aviso padrão e o conteúdo vai no PDF. O
+    # REGISTRO guarda o conteúdo por extenso — "segue em anexo" não responderia
+    # nada seis meses depois — e o nome do arquivo que foi junto.
+    assert "Cimento CP-II 50kg" in registros[0]["corpo"] and "[14 SC]" in registros[0]["corpo"], \
         "seis meses depois, 'o que foi que a gente pediu' tem de ter resposta"
+    assert [x["nome"] for x in registros[0]["anexos"]] == [f"Cotacao-{cot.numero}.pdf"]
+    assert "Segue em anexo" in correio_mudo[0]["corpo"]
 
 
 def test_a_tela_de_disparo_mostra_quem_recebe_antes_de_mandar(sessao_real, chave):

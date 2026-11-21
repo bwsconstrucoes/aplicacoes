@@ -11879,6 +11879,34 @@ def api_preparar_fechamento(cotacao_id: int):
         return jsonify({"ok": True, **svc.preparar_fechamento(s, cotacao_id)})
 
 
+@bp.route("/erp/suprimentos/cotacoes/<int:cotacao_id>/solicitacao.pdf")
+@login_obrigatorio
+@permissao("ver_pedidos_compra")
+def pdf_da_solicitacao_de_cotacao(cotacao_id: int):
+    """A solicitação de cotação em PDF — o anexo que o fornecedor recebe."""
+    from app.apps.erp.core.suprimentos import cotacao_pdf, envio
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            pedida = (request.args.get("empresa") or "").strip()
+            empresa = (s.get(Empresa, int(pedida)) if pedida.isdigit()
+                       else envio._empresa_do_disparo(s, cotacao_id, None))
+            if empresa is None:
+                return "Não há empresa definida para esta cotação.", 400
+            conteudo = cotacao_pdf.gerar(
+                s, cotacao_id, empresa, usuario=usuario,
+                prazo=(request.args.get("prazo") or "").strip() or None,
+                observacao=request.args.get("observacao") or "")
+    except ErroValidacao as e:
+        return str(e), 400
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "application/pdf"
+    resposta.headers["Content-Disposition"] = (
+        f'inline; filename="Cotacao-{cotacao_id}.pdf"')
+    return resposta
+
+
 @bp.route("/erp/suprimentos/cotacoes/<int:cotacao_id>/pdf")
 @login_obrigatorio
 @permissao("ver_pedidos_compra")

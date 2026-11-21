@@ -253,7 +253,8 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
            responder_para: Optional[str] = None,
            anexos: Optional[list[dict[str, Any]]] = None,
            destinatario_tipo: Optional[str] = None,
-           destinatario_id: Optional[int] = None) -> EnvioEmail:
+           destinatario_id: Optional[int] = None,
+           corpo_registrado: Optional[str] = None) -> EnvioEmail:
     """Manda, e registra o que aconteceu — deu certo ou não.
 
     Nunca levanta por falha de envio: devolve o registro com situação FALHOU e
@@ -286,7 +287,11 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
         entidade_id=entidade_id, destinatario_tipo=destinatario_tipo,
         destinatario_id=destinatario_id, para=para, copia=copia,
         responder_para=_texto(responder_para) or None,
-        assunto=_texto(assunto), corpo=corpo,
+        # `corpo_registrado` (21/11/2026): quando o conteúdo vai num PDF anexo
+        # e o corpo do e-mail é só o aviso, o REGISTRO guarda o conteúdo por
+        # extenso. O registro existe para provar o que foi mandado — e um
+        # "segue em anexo" não prova nada.
+        assunto=_texto(assunto), corpo=corpo_registrado or corpo,
         anexos=[{"nome": a.get("nome"), "mime": a.get("mime"),
                  "bytes": len(a.get("conteudo") or b"")} for a in anexos],
         enviado_por=usuario.id if usuario else None, situacao="ENVIADO")
