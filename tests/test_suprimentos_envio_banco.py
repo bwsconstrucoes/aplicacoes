@@ -286,8 +286,8 @@ def test_o_corpo_traz_os_itens_e_nao_traz_preco_de_ninguem(sessao_real, chave,
     assert "Cimento CP-II 50kg" in corpo
     assert "conforme projeto" in corpo
     # No PDF a quantidade e a unidade são colunas separadas da tabela.
-    import re
-    assert re.search(r"\b14\b", corpo) and "SC" in corpo and "14.000" not in corpo, \
+    assert "14" in corpo and "SC" in corpo and "14.000" not in corpo \
+        and "14,000" not in corpo, \
         "quantidade legível: 14, não 14.000"
     assert cot.numero in corpo, "a referência volta na resposta do fornecedor"
     assert "10/09/2026" in corpo
