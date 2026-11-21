@@ -468,6 +468,17 @@ def _admissao(s, sol, dados, p, hoje) -> list[dict[str, Any]]:
                 "contrato entra por prazo INDETERMINADO, sem experiência (o "
                 "sistema grava assim sozinho)", "CLT art. 452; regra da empresa"))
             return itens
+    # ⚑ O ASO ADMISSIONAL (21/11/2026): opcional por enquanto, decisão dele;
+    # o agente lembra o que a norma pede.
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    papeis = svc_sp.papeis_do_pedido(s, sol["id"], sol.get("numero") or "",
+                                     sol.get("colaborador_id")) if sol.get("id") else []
+    if any("saúde ocupacional" in str(x.get("tipo") or "").lower()
+           or str(x.get("tipo") or "").upper() == "ASO" for x in papeis):
+        itens.append(ok("o ASO admissional veio com os documentos", "NR-7"))
+    else:
+        itens.append(lembrete("o ASO admissional não veio (opcional por enquanto) "
+                              "— a norma pede o exame antes do primeiro dia", "NR-7"))
     if not str(dados.get("contrato_experiencia") or (p or {}).get("contrato_experiencia") or "").strip():
         itens.append(lembrete("sem contrato de experiência escolhido: a pessoa "
                               "entra direto por prazo indeterminado",

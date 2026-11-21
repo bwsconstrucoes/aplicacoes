@@ -126,6 +126,25 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 21/11/2026 — O ASO entra sem travar; folha e 13º para depois
+
+Ele, sobre os buracos do mapa (artefato "Mapa do Pessoal"): *"fechamento de
+folha (…) ainda vai integrar a parte do ponto com os pagamentos, então não vou
+mexer ainda (…) 13º salário é uma vez por ano, também não precisa. Exame
+admissional e demissional: a gente pode deixar preparar para receber ele junto
+com os demais documentos (…) por enquanto sem travar. O demissional já pode
+ficar como cobrança do retorno junto com a documentação assinada rescisória,
+mas por enquanto não é obrigatório."*
+
+- **ASO admissional:** a leitura por IA reconhece o ASO entre os documentos da
+  admissão; o portal mostra "ASO admissional — opcional por enquanto"; a
+  análise do pedido lembra quando não veio. Nada trava.
+- **ASO demissional:** ao mandar a documentação rescisória para a obra
+  assinar, abre-se junto uma pendência "Exame demissional (ASO)", devolvida
+  pelo portal e cobrada como as outras. Passo próprio no desligamento, marcado
+  opcional: não entra no "falta" nem segura o encerramento.
+- **Fechamento da folha e 13º:** ficam para depois, por decisão dele.
+
 ### 20/11/2026 (noite, 7) — As regras dele na tela de Regras do cadastro
 
 Comentários dele sobre a medição:

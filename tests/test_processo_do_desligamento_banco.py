@@ -613,3 +613,20 @@ def test_fim_de_experiencia_nao_tem_aviso(mundo):
                         assinar_aviso=False)["id"]
     assert _estado(_ler(mundo, sid), "AVISO") == "NAO_SE_APLICA"
 
+
+
+def test_o_aso_demissional_vai_junto_e_nao_trava(mundo):
+    """Ele (21/11/2026): *"O demissional já pode ficar como cobrança do
+    retorno junto com a documentação assinada rescisória, mas por enquanto não
+    é obrigatório."*"""
+    s = mundo["s"]
+    sid = _desligamento(mundo, ultimo=HOJE + dt.timedelta(days=5))["id"]
+    proc.mandar_para_assinar(s, _ler(mundo, sid), {"sem_arquivo": "1"}, mundo["dp"])
+    sol = _ler(mundo, sid)
+    aso = next(p for p in sol["processo"]["passos"] if p["codigo"] == "ASO_DEMISSIONAL")
+    assert aso["estado"] == "AGUARDANDO" and aso["opcional"]
+    assert sol["processo"]["proximo"] != aso["rotulo"], "opcional não vira o 'falta'"
+    n = s.execute(text("SELECT count(*) FROM dp_devolucoes WHERE colaborador_id = :c "
+                       "AND documento_esperado = 'ASO'"),
+                  {"c": mundo["carteira"].id}).scalar()
+    assert n == 1

@@ -52,6 +52,11 @@ O_QUE_ESPERO = {
                          ("CTPS", "CARTEIRA")),
     "DOC-DEPENDENTE": ("a certidão ou o RG do dependente",
                        ("CERTIDAO", "NASCIMENTO", "RG", "IDENTIDADE")),
+    # ⚑ 21/11/2026: o exame admissional vem junto, sem travar (ele: *"deixar
+    # preparar para receber ele junto com os demais documentos (…) por
+    # enquanto sem travar"*).
+    "ASO": ("o ASO (atestado de saúde ocupacional)",
+            ("ASO", "SAUDE OCUPACIONAL", "APTO", "EXAME")),
 }
 
 _INSTRUCAO = """Você lê documentos de identificação de trabalhadores
@@ -178,7 +183,7 @@ def ler(conteudo: bytes, nome_do_arquivo: str, tipo: str) -> dict[str, Any]:
 # pelo que a leitura reconheceu, e a pessoa pode corrigir o tipo à mão.
 # ===========================================================================
 TIPOS_RECONHECIDOS = ("DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA",
-                      "CTPS-FOTO", "CTPS-INFORMACOES", "OUTRO")
+                      "CTPS-FOTO", "CTPS-INFORMACOES", "ASO", "OUTRO")
 TETO_DE_ARQUIVOS = 8
 CAMPOS_DO_LOTE = ("nome", "cpf", "nome_mae", "data_nascimento", "rg",
                   "rg_emissao", "rg_orgao", "rg_uf", "cep", "logradouro",
@@ -199,6 +204,7 @@ Devolva SOMENTE um JSON:
                     outro)",
       "tipos": ["um ou mais entre: DOC-IDENTIDADE, CPF-DOC,
                  COMPROVANTE-ENDERECO-PESSOA, CTPS-FOTO, CTPS-INFORMACOES,
+                 ASO (atestado de saúde ocupacional, o exame admissional),
                  OUTRO — a CNH e o RG novo trazem o CPF, então valem por
                  DOC-IDENTIDADE e CPF-DOC"],
       "legivel": true ou false,
