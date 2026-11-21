@@ -2307,9 +2307,19 @@ def api_recebimentos_da_obra():
         usuario = _usuario_logado(s)
         antes = [i for i in svc_acomp.planejamento(s, usuario)["itens"]
                  if i["etapa"] in ("SEM_COTACAO", "EM_COTACAO", "A_AUTORIZAR")]
+        # Para PEDIR material pelo portal: as obras da pessoa e as unidades.
+        from sqlalchemy import select
+        from app.apps.erp.core import portal as svc_portal
+        from app.apps.erp.db.models.cadastros import UnidadeCompra
         return jsonify({"ok": True, **svc.a_receber(s, usuario),
                         "em_andamento": antes,
-                        "pode_lancar": pode(usuario, "lancar")})
+                        "pode_lancar": pode(usuario, "lancar"),
+                        "pode_pedir": pode(usuario, "solicitar_suprimento"),
+                        "obras": svc_portal.obras_para_escolher(s, usuario),
+                        "obra_sugerida": svc_portal.obra_sugerida(s, usuario),
+                        "unidades": [u.codigo for u in s.scalars(
+                            select(UnidadeCompra).order_by(UnidadeCompra.codigo)).all()
+                            if getattr(u, "ativo", True) is not False]})
 
 
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/receber-e-lancar",
@@ -11866,6 +11876,18 @@ def api_suprimentos_projecao():
     from app.apps.erp.core.suprimentos import projecao as svc
     with get_session() as s:
         return jsonify({"ok": True, **svc.projetar(s, _usuario_logado(s))})
+
+
+@bp.route("/erp/api/suprimentos/entrega/locais")
+@login_obrigatorio
+@permissao("comprar")
+def api_locais_de_entrega():
+    """O endereço de cada obra e a sede que pode recebê-la — para o pedido
+    direto (sem cotação) oferecer "onde desce" como o fechamento do mapa."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    ids = [int(x) for x in (request.args.get("obras") or "").split(",") if x.isdigit()]
+    with get_session() as s:
+        return jsonify({"ok": True, "obras": svc.locais_possiveis(s, ids)})
 
 
 @bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/fechamento")

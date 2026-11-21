@@ -126,8 +126,8 @@ AREAS: tuple[dict[str, Any], ...] = (
         # A frase NÃO promete "pedir material": o pedido de material pelo
         # portal ainda não existe (é pela tela de Solicitações), e porta que
         # anuncia o que não tem é o defeito que esta lista já teve com férias.
-        "explicacao": "ver o que está para chegar, receber o material e "
-                      "lançar a nota e o boleto",
+        "explicacao": "pedir material, ver o que está para chegar, receber "
+                      "e lançar a nota e o boleto",
         "pronta": True,
         "so_tela": True,
         "tela": "/erp/portal/material",

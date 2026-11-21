@@ -239,6 +239,23 @@ def redefinir_entrega(s: Session, pedido_id: int, locais: list[dict[str, Any]],
     return pedido
 
 
+def locais_possiveis(s: Session, obras_ids: list[int]) -> list[dict[str, Any]]:
+    """Para cada obra: o endereço do canteiro e a sede que pode recebê-lo no
+    lugar. É o que o fechamento — do mapa ou direto — oferece em "onde desce"."""
+    from app.apps.erp.core.suprimentos.entrega import (
+        endereco_da_obra, rotulo_da_obra, sede_da_obra)
+    from app.apps.erp.db.models.cadastros import Obra
+    saida = []
+    for obra_id in sorted({int(x) for x in obras_ids if x}):
+        obra = s.get(Obra, obra_id)
+        if obra is None:
+            continue
+        saida.append({"id": obra_id, "rotulo": rotulo_da_obra(obra),
+                      "endereco": endereco_da_obra(obra),
+                      "sede": sede_da_obra(s, obra)})
+    return saida
+
+
 def preparar_fechamento(s: Session, cotacao_id: int) -> dict[str, Any]:
     """O que a tela precisa para FECHAR um pedido a partir do mapa.
 

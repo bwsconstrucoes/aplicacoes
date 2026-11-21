@@ -116,6 +116,7 @@
     <button class="aba ativa" data-aba="chegar"><span id="n-chegar">–</span>Para receber</button>
     <button class="aba" data-aba="andamento"><span id="n-andamento">–</span>Em andamento</button>
     <button class="aba" data-aba="nota"><span id="n-nota">–</span>Falta lançar</button>
+    <button class="aba" data-aba="pedir" id="aba-pedir" hidden><span>＋</span>Pedir</button>
   </div>
   <div id="conteudo"><div class="vazio">carregando…</div></div>
 </div>
@@ -159,6 +160,7 @@ async function carregar(){
     el("n-chegar").textContent = DADOS.esperando.length;
     el("n-andamento").textContent = DADOS.em_andamento.length;
     el("n-nota").textContent = DADOS.sem_nota.length;
+    el("aba-pedir").hidden = !DADOS.pode_pedir;
     desenhar();
   } catch(e){ recado(esc(e.message), "erro"); }
 }
@@ -168,7 +170,141 @@ function desenhar(){
     b.classList.toggle("ativa", b.dataset.aba === ABA));
   if (ABA === "chegar") return desenharChegar();
   if (ABA === "andamento") return desenharAndamento();
+  if (ABA === "pedir") return desenharPedir();
   desenharNota();
+}
+
+// ---------------------------------------------------------------------------
+// PEDIR MATERIAL PELO PORTAL (21/11/2026)
+//
+// O dono: "tem que ter a tela de pedido de material também no portal."
+// É a MESMA solicitação da tela de Suprimentos › Solicitações, pela mesma
+// rota — só a porta é que é enxuta. O material é escolhido do catálogo, por
+// busca; o detalhe (bitola, cor, marca) vai na especificação, que é o que
+// impede o catálogo de virar uma lista de variações.
+// ---------------------------------------------------------------------------
+let INSUMOS = null;
+const PEDIDO = {titulo: "", precisa: "", prioridade: "NORMAL", obra: "", obs: "", itens: []};
+
+function guardarPedido(){
+  const v = id => { const c = el(id); return c ? c.value : undefined; };
+  if (v("pm-titulo") === undefined) return;
+  PEDIDO.titulo = v("pm-titulo"); PEDIDO.precisa = v("pm-precisa");
+  PEDIDO.prioridade = v("pm-prioridade"); PEDIDO.obra = v("pm-obra"); PEDIDO.obs = v("pm-obs");
+  document.querySelectorAll("[data-item-pedido]").forEach(b => {
+    const i = PEDIDO.itens[+b.dataset.itemPedido];
+    i.quantidade = b.querySelector(".pm-qtd").value;
+    i.unidade = b.querySelector(".pm-un").value;
+    i.especificacao = b.querySelector(".pm-esp").value;
+  });
+}
+
+async function desenharPedir(){
+  if (INSUMOS === null) {
+    el("conteudo").innerHTML = `<div class="bloco vazio">carregando o catálogo de materiais…</div>`;
+    try { INSUMOS = (await api("/erp/api/insumos")).insumos; }
+    catch(e){ INSUMOS = null; recado(esc(e.message), "erro"); return; }
+    if (ABA !== "pedir") return;
+  }
+  if (!PEDIDO.obra) PEDIDO.obra = String(DADOS.obra_sugerida || (DADOS.obras.length === 1 ? DADOS.obras[0].id : ""));
+  el("conteudo").innerHTML = `<div class="bloco">
+      <h3>Pedir material</h3>
+      <div class="sub">O suprimento recebe o pedido, cota e compra. Você acompanha em "Em andamento".</div>
+      <label class="campo">Para que é? (título do pedido)
+        <input id="pm-titulo" value="${esc(PEDIDO.titulo)}" placeholder="ex.: armadura da fundação do bloco B"></label>
+      <label class="campo">Obra
+        <select id="pm-obra" style="width:100%; padding:10px; margin-top:4px; border:1px solid #C9D3E4; border-radius:10px; font-size:16px">
+          <option value="">— escolher —</option>${DADOS.obras.map(o => `<option value="${o.id}"
+            ${String(o.id) === String(PEDIDO.obra) ? "selected" : ""}>${esc(o.rotulo)}</option>`).join("")}</select></label>
+      <div class="duas">
+        <label class="campo">Precisa até
+          <input type="date" id="pm-precisa" value="${esc(PEDIDO.precisa)}" min="${DADOS.hoje}"></label>
+        <label class="campo">Prioridade
+          <select id="pm-prioridade" style="width:100%; padding:10px; margin-top:4px; border:1px solid #C9D3E4; border-radius:10px; font-size:16px">
+            ${[["NORMAL", "Normal"], ["MEDIA", "Média"], ["ALTA", "Alta — se atrasar, para a obra"]]
+              .map(([v, r]) => `<option value="${v}" ${PEDIDO.prioridade === v ? "selected" : ""}>${r}</option>`).join("")}
+          </select></label>
+      </div>
+      <div class="anexos">
+        <b>Materiais${PEDIDO.itens.length ? ` (${PEDIDO.itens.length})` : ""}</b>
+        ${PEDIDO.itens.map((i, n) => `<div class="parcela" data-item-pedido="${n}">
+            <div class="topo"><span>${esc(i.descricao)}</span>
+              <button class="tira" data-tira-item="${n}" aria-label="tirar o material">✕</button></div>
+            <div class="duas">
+              <label class="campo">Quantidade
+                <input class="pm-qtd pc-valor" inputmode="decimal" value="${esc(i.quantidade || "")}"></label>
+              <label class="campo">Unidade
+                <select class="pm-un" style="width:100%; padding:10px; margin-top:4px; border:1px solid #C9D3E4; border-radius:10px; font-size:16px">
+                  ${DADOS.unidades.map(u => `<option ${u === i.unidade ? "selected" : ""}>${esc(u)}</option>`).join("")}</select></label>
+            </div>
+            <label class="campo">Especificação (medida, cor, marca…)
+              <input class="pm-esp pc-valor" value="${esc(i.especificacao || "")}" placeholder="ex.: 12,5 mm · cinza · Tekbond"></label>
+          </div>`).join("")}
+        <label class="campo">Acrescentar material
+          <input id="pm-busca" type="search" placeholder="digite o nome: cimento, disco de corte…" autocomplete="off"></label>
+        <div id="pm-achados"></div>
+      </div>
+      <label class="campo">Observação para o suprimento
+        <input id="pm-obs" value="${esc(PEDIDO.obs)}" placeholder="opcional"></label>
+      <button class="btn-portal" id="pm-enviar">Enviar o pedido de material</button>
+    </div>`;
+
+  const semAcento = t => String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  el("pm-busca").addEventListener("input", () => {
+    const termos = semAcento(el("pm-busca").value).split(/\s+/).filter(Boolean);
+    if (!termos.length) { el("pm-achados").innerHTML = ""; return; }
+    const achados = INSUMOS.filter(i => termos.every(x => semAcento(i.descricao).includes(x))).slice(0, 25);
+    el("pm-achados").innerHTML = achados.map(i => `<button class="cab-pedido" data-insumo="${i.id}"
+        style="padding:10px 6px; border-top:1px solid #E6EAF2"><span class="cresce">${esc(i.descricao)}
+        <small>${esc(i.unidade || "")}</small></span><span class="seta">＋</span></button>`).join("")
+      + `<button class="btn-portal secundario" id="pm-nao-achei">Não achei o material — pedir o cadastro dele</button>`;
+    document.querySelectorAll("[data-insumo]").forEach(b => b.addEventListener("click", () => {
+      guardarPedido();
+      const i = INSUMOS.find(x => x.id === +b.dataset.insumo);
+      PEDIDO.itens.push({insumo_id: i.id, descricao: i.descricao, quantidade: "",
+        unidade: DADOS.unidades.includes(i.unidade) ? i.unidade : (DADOS.unidades[0] || ""),
+        especificacao: ""});
+      desenharPedir();
+    }));
+    el("pm-nao-achei").addEventListener("click", async () => {
+      const nome = el("pm-busca").value.trim();
+      if (nome.length < 3) return recado("Escreva o nome do material na busca.", "erro");
+      try {
+        await api("/erp/api/suprimentos/insumos/solicitacoes", {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({descricao: nome, obra_id: el("pm-obra").value || null,
+            justificativa: "Pedido pelo portal da obra"})});
+        recado(`Pedi ao suprimento o cadastro de <b>${esc(nome)}</b>. Assim que ele entrar no
+          catálogo, você inclui no pedido. Os outros materiais podem seguir agora.`, "ok");
+        scrollTo(0, 0);
+      } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); }
+    });
+  });
+  document.querySelectorAll("[data-tira-item]").forEach(b => b.addEventListener("click", () => {
+    guardarPedido(); PEDIDO.itens.splice(+b.dataset.tiraItem, 1); desenharPedir(); }));
+  el("pm-enviar").addEventListener("click", async () => {
+    guardarPedido();
+    const falta = [];
+    if (PEDIDO.titulo.trim().length < 3) falta.push("dizer para que é");
+    if (!PEDIDO.obra) falta.push("escolher a obra");
+    if (!PEDIDO.precisa) falta.push("dizer até quando precisa");
+    if (!PEDIDO.itens.length) falta.push("acrescentar ao menos um material");
+    if (PEDIDO.itens.some(i => !(numero(i.quantidade) > 0))) falta.push("a quantidade de cada material");
+    if (falta.length) { recado(`Falta ${falta.join("; ")}.`, "erro"); scrollTo(0, 0); return; }
+    el("pm-enviar").disabled = true;
+    try {
+      const r = await api("/erp/api/suprimentos/solicitacoes", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({titulo: PEDIDO.titulo, previsao_entrega: PEDIDO.precisa,
+          prioridade: PEDIDO.prioridade, observacoes: PEDIDO.obs,
+          itens: PEDIDO.itens.map(i => ({insumo_id: i.insumo_id, obra_id: +PEDIDO.obra,
+            quantidade: String(numero(i.quantidade)), unidade: i.unidade,
+            especificacao: i.especificacao}))})});
+      Object.assign(PEDIDO, {titulo: "", precisa: "", prioridade: "NORMAL", obs: "", itens: []});
+      recado(`<b>Pedido ${esc(r.numero || "")} enviado ao suprimento.</b> Acompanhe em "Em andamento".`, "ok");
+      scrollTo(0, 0); ABA = "andamento"; carregar();
+    } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); el("pm-enviar").disabled = false; }
+  });
 }
 
 function guardarDigitado(){
@@ -585,7 +721,7 @@ async function registrar(pedidoId, botao){
 }
 
 document.querySelectorAll(".aba").forEach(b => b.addEventListener("click", () => {
-  guardarDigitado(); ABA = b.dataset.aba; recado(""); desenhar(); }));
+  guardarDigitado(); guardarPedido(); ABA = b.dataset.aba; recado(""); desenhar(); }));
 carregar();
 </script>
 </body>
