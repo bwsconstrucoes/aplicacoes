@@ -133,7 +133,7 @@ def pessoa(sessao_real, dono):
 
 
 @banco_
-def test_o_agente_liga_so_o_que_nao_fala_com_ninguem_de_fora(sessao_real, banco):
+def test_o_agente_nasce_ligado_como_ele_decidiu(sessao_real, banco):
     """Ele começou com tudo desligado (*"a gente não vai começar com ele
     ativo"*, migração 090) e, em 20/11/2026, mandou ligar: *"Vamos botar para
     funcionar."* A migração 117 liga, em SUGERE, só as rotinas que não mandam
@@ -142,7 +142,11 @@ def test_o_agente_liga_so_o_que_nao_fala_com_ninguem_de_fora(sessao_real, banco)
     modos = {r["chave"]: r["modo"] for r in ag.configuracao(sessao_real)}
     for chave in ("triagem", "despacho", "vigia", "relatorio"):
         assert modos[chave] == "SUGERE", chave
-    for chave in ("cobranca", "caixa", "leitura", "conferencia"):
+    # 21/11/2026 (migração 120), ele: *"sim, vamos deixar as rotinas
+    # automáticas"* — a cobrança e a leitura do e-mail passam a FAZER.
+    for chave in ("cobranca", "caixa"):
+        assert modos[chave] == "FAZ", chave
+    for chave in ("leitura", "conferencia"):
         assert modos.get(chave, "DESLIGADA") == "DESLIGADA", chave
 
 
@@ -371,6 +375,8 @@ def test_cancelar_exige_motivo(sessao_real, dono, pessoa):
 # ---------------------------------------------------------------------------
 @banco_
 def test_a_cobranca_desligada_nao_faz_nada(sessao_real, dono):
+    # Desde a migração 120 ela nasce ligada; aqui se confere o "desligada".
+    ag.definir(sessao_real, "cobranca", modo_novo="DESLIGADA", usuario=dono)
     r = ag.rodar_cobranca(sessao_real, dono)
     assert r == {"modo": "DESLIGADA", "olhou": 0, "cobrou": 0, "sugeriu": 0}
 

@@ -477,8 +477,10 @@ def _admissao(s, sol, dados, p, hoje) -> list[dict[str, Any]]:
            or str(x.get("tipo") or "").upper() == "ASO" for x in papeis):
         itens.append(ok("o ASO admissional veio com os documentos", "NR-7"))
     else:
-        itens.append(lembrete("o ASO admissional não veio (opcional por enquanto) "
-                              "— a norma pede o exame antes do primeiro dia", "NR-7"))
+        # ⚑ 21/11/2026, ele: *"vamos alertar, só não vai ser obrigatório por
+        # enquanto."* Atenção (⚠️), não trava.
+        itens.append(atencao("o ASO admissional não veio — não trava (por enquanto), "
+                             "mas a norma pede o exame antes do primeiro dia", "NR-7"))
     if not str(dados.get("contrato_experiencia") or (p or {}).get("contrato_experiencia") or "").strip():
         itens.append(lembrete("sem contrato de experiência escolhido: a pessoa "
                               "entra direto por prazo indeterminado",

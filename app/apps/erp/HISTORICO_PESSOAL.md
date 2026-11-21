@@ -126,6 +126,24 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 21/11/2026 (2) — O agente cobra e lê o e-mail sozinho; o ASO alerta
+
+Ele, depois de entender as duas rotinas: *"sim, vamos deixar as rotinas
+automáticas. E quanto ao ASO, vamos alertar, só não vai ser obrigatório por
+enquanto."*
+
+- **Migração 120:** cobrança e leitura do e-mail em **FAZ**. A cobrança manda
+  e-mail à contabilidade quando o pedido vence (até o teto; depois escala para
+  o DP) e WhatsApp à obra pela devolução vencida; não cobra no fim de semana.
+  A leitura liga a resposta ao pedido, arquiva o anexo e marca respondido — não
+  conclui. Rodam uma vez por dia. ⚠️ A leitura depende da conta de e-mail do
+  DP configurada no ERP — não verificado daqui.
+- **ASO admissional:** a análise do pedido passou de lembrete a ATENÇÃO (⚠️)
+  quando não veio; a lista de pendências avisa quando a admissão começa em até
+  2 dias sem ASO. Continua sem travar.
+- O mapa (artefato "Mapa do Pessoal") trocou "vigia" por "lista de
+  pendências", que é o que ele entende.
+
 ### 21/11/2026 — O ASO entra sem travar; folha e 13º para depois
 
 Ele, sobre os buracos do mapa (artefato "Mapa do Pessoal"): *"fechamento de
