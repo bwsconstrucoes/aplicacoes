@@ -2312,6 +2312,64 @@ def api_recebimentos_da_obra():
                         "pode_lancar": pode(usuario, "lancar")})
 
 
+@bp.route("/erp/api/suprimentos/recebimentos/<int:recebimento_id>/documentos",
+          methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("receber_material")
+def api_documentos_do_recebimento(recebimento_id: int):
+    """Nota, boleto e o que mais vier junto do material — vários por recebimento."""
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rec = svc._recebimento_no_escopo(s, usuario, recebimento_id)
+            svc.exigir_pedido_no_escopo(s, usuario, rec.pedido_id)
+            if request.method == "GET":
+                return jsonify({"ok": True, "documentos": svc.documentos_do_pedido(
+                    s, rec.pedido_id, recebimento_id=rec.id)})
+            arquivo = request.files.get("arquivo")
+            if arquivo is None:
+                return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+            doc = svc.anexar(s, usuario, rec.id, arquivo.read(), arquivo.filename or "",
+                             request.form.get("categoria") or "OUTRO")
+            s.commit()
+            return jsonify({"ok": True, "documento": doc})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/suprimentos/recebimentos/documento/<int:anexo_id>")
+@login_obrigatorio
+@permissao(GET="ver_suprimentos")
+def baixar_documento_do_recebimento(anexo_id: int):
+    """O arquivo anexado num recebimento. O recorte por obra é conferido pelo
+    pedido a que o recebimento pertence."""
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        svc.exigir_pedido_no_escopo(s, usuario, svc.pedido_do_documento(s, anexo_id))
+        conteudo, nome, mime = svc.conteudo_do_documento(s, usuario, anexo_id)
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = mime
+    resposta.headers["Content-Disposition"] = f'inline; filename="{nome}"'
+    return resposta
+
+
+@bp.route("/erp/api/suprimentos/pedidos/a-lancar")
+@login_obrigatorio
+@permissao("lancar")
+def api_pedidos_a_lancar():
+    """Os pedidos de compra de um fornecedor que ainda têm conta a lançar —
+    para a tela de Lançar perguntar "é deste pedido?"."""
+    from app.apps.erp.core.suprimentos import lancamento as svc
+    bruto = (request.args.get("fornecedor_id") or "").strip()
+    if not bruto.isdigit():
+        return jsonify({"ok": True, "pedidos": []})
+    with get_session() as s:
+        return jsonify({"ok": True, "pedidos": svc.pedidos_do_fornecedor_a_lancar(
+            s, _usuario_logado(s), int(bruto))})
+
+
 @bp.route("/erp/portal/material")
 @login_obrigatorio
 @permissao("receber_material")

@@ -295,6 +295,8 @@ def a_receber(s: Session, usuario: Usuario, *,
             "pedido_id": pedido.id, "numero": pedido.numero,
             "fornecedor": retrato["fornecedor"],
             "previsao_entrega": retrato["previsao_entrega"],
+            "total_de_itens": len(linhas),
+            "itens_a_receber": len(com_saldo),
             "dias_de_atraso": retrato["entrega"]["dias_de_atraso"],
             "ja_chegou_parte": retrato["entrega"]["chegadas"] > 0,
             "observacoes": pedido.observacoes,
@@ -305,3 +307,80 @@ def a_receber(s: Session, usuario: Usuario, *,
                                   p["previsao_entrega"] or "9999"))
     sem_nota.sort(key=lambda p: -p["dias"])
     return {"hoje": hoje.isoformat(), "esperando": esperando, "sem_nota": sem_nota}
+
+
+# ---------------------------------------------------------------------------
+# OS DOCUMENTOS DO RECEBIMENTO — nota, boleto e o que mais vier (21/11/2026)
+#
+# O dono, ao ver o portal: "eu não vi nenhum campo de anexar nota fiscal,
+# boleto, etc. A gente tem que prever já isso. E da mesma forma que no DP, a
+# gente precisa poder anexar vários documentos."
+#
+# Os arquivos ficam presos AO RECEBIMENTO — é ali que a nota chega, junto do
+# caminhão. Quando a conta a pagar é lançada a partir desse recebimento, a
+# tela de Lançar já os traz, para ler e anexar ao título sem ninguém ter de
+# escolher o arquivo de novo.
+# ---------------------------------------------------------------------------
+ENTIDADE_DO_ANEXO = "recebimento"
+
+
+def _recebimento_no_escopo(s: Session, usuario: Usuario, recebimento_id: int) -> Recebimento:
+    rec = s.get(Recebimento, int(recebimento_id))
+    if rec is None:
+        raise ErroNaoEncontrado("Recebimento não encontrado.")
+    exigir_pedido_no_escopo(s, usuario, rec.pedido_id)
+    return rec
+
+
+def anexar(s: Session, usuario: Usuario, recebimento_id: int, conteudo: bytes,
+           nome_arquivo: str, categoria: str = "OUTRO") -> dict[str, Any]:
+    """Guarda um documento (nota, boleto, canhoto, foto) no recebimento."""
+    from app.apps.erp.core.documentos import armazenamento
+    rec = _recebimento_no_escopo(s, usuario, recebimento_id)
+    anexo = armazenamento.salvar(
+        s, conteudo, nome_arquivo or "documento", entidade_tipo=ENTIDADE_DO_ANEXO,
+        entidade_id=rec.id, categoria=categoria, usuario=usuario,
+        descricao="Anexado no recebimento do material")
+    if rec.anexo_id is None and (anexo.categoria_anexo or "") == "NOTA":
+        rec.anexo_id = anexo.id            # a nota do recebimento, para o atalho
+    return {"id": anexo.id, "nome": anexo.nome_arquivo,
+            "categoria": anexo.categoria_anexo, "recebimento_id": rec.id}
+
+
+def documentos_do_pedido(s: Session, pedido_id: int, *,
+                         recebimento_id: Optional[int] = None) -> list[dict[str, Any]]:
+    """Os documentos anexados nos recebimentos de um pedido (ou de um só)."""
+    from app.apps.erp.db.models.financeiro import Anexo
+    recs = [r.id for r in s.scalars(select(Recebimento).where(
+        Recebimento.pedido_id == pedido_id)).all()
+        if r.pedido_id == pedido_id and (not recebimento_id or r.id == recebimento_id)]
+    if not recs:
+        return []
+    return [{"id": a.id, "nome": a.nome_arquivo, "categoria": a.categoria_anexo or "OUTRO",
+             "recebimento_id": a.entidade_id, "mime": a.mime_type}
+            for a in s.scalars(select(Anexo).where(
+                Anexo.entidade_tipo == ENTIDADE_DO_ANEXO,
+                Anexo.entidade_id.in_(recs)).order_by(Anexo.id)).all()]
+
+
+def pedido_do_documento(s: Session, anexo_id: int) -> int:
+    """De qual pedido é o recebimento em que este documento foi anexado."""
+    from app.apps.erp.db.models.financeiro import Anexo
+    anexo = s.get(Anexo, int(anexo_id))
+    rec = (s.get(Recebimento, anexo.entidade_id)
+           if anexo is not None and anexo.entidade_tipo == ENTIDADE_DO_ANEXO else None)
+    if rec is None:
+        raise ErroNaoEncontrado("Documento não encontrado.")
+    return rec.pedido_id
+
+
+def conteudo_do_documento(s: Session, usuario: Usuario, anexo_id: int):
+    """(bytes, nome, mime) de um documento de recebimento, com o recorte de obra."""
+    from app.apps.erp.core.documentos import armazenamento
+    from app.apps.erp.db.models.financeiro import Anexo
+    anexo = s.get(Anexo, int(anexo_id))
+    if anexo is None or anexo.entidade_tipo != ENTIDADE_DO_ANEXO:
+        raise ErroNaoEncontrado("Documento não encontrado.")
+    _recebimento_no_escopo(s, usuario, anexo.entidade_id)
+    return (armazenamento.conteudo_de(s, anexo), anexo.nome_arquivo,
+            anexo.mime_type or "application/octet-stream")

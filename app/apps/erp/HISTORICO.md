@@ -54,7 +54,11 @@ Pedido do dono: a conta a pagar da compra nasce do RECEBIMENTO. Para isso:
   (`/erp/portal/material`), exigindo `receber_material`.
 - **`static/erp.css`**: bloco novo no fim (mapa em planilha, `dialog.largo`).
 
-Detalhe e motivos em `HISTORICO_SUPRIMENTOS.md`, 3ª rodada.
+- **21/11:** a tela de Lançar também pergunta "é deste pedido?" ao escolher um
+  credor que tem pedido de compra com conta a lançar (não bloqueia), e traz
+  sozinha os documentos anexados no recebimento.
+
+Detalhe e motivos em `HISTORICO_SUPRIMENTOS.md`, 3ª rodada e 21/11.
 
 ### ⚑ 20/11/2026 — nota para as OUTRAS ÁREAS, vinda de Suprimentos (registro entre áreas)
 

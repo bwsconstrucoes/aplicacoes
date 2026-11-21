@@ -877,3 +877,59 @@ def test_o_pdf_do_mapa_sai_com_o_mapa_e_os_resumos(base):
                               quem="Coordenador")
     assert conteudo[:5] == b"%PDF-"
     assert conteudo.count(b"/Type /Page\n") + conteudo.count(b"/Type /Page ") >= 1
+
+
+# ---------------------------------------------------------------------------
+# Os documentos do recebimento (nota, boleto…) e o "é deste pedido?"
+# ---------------------------------------------------------------------------
+def _ultimo_recebimento(base, pedido):
+    from app.apps.erp.db.models.cadastros import Recebimento
+    return base["s"].scalars(select(Recebimento).where(
+        Recebimento.pedido_id == pedido.id).order_by(Recebimento.id.desc())).first()
+
+
+def test_varios_documentos_ficam_no_recebimento_e_chegam_ao_lancamento(base):
+    s, u = base["s"], base["u"]
+    pedido = _fechar(base)
+    _receber(base, pedido, [(base["item_a"], 10)])
+    rec = _ultimo_recebimento(base, pedido)
+    svc_rec.anexar(s, u, rec.id, b"%PDF-1.4 nota da compra", "nf-1234.pdf", "NOTA")
+    svc_rec.anexar(s, u, rec.id, b"%PDF-1.4 boleto da compra", "boleto.pdf", "BOLETO")
+    s.flush()
+    docs = svc_rec.documentos_do_pedido(s, pedido.id)
+    assert [(d["nome"], d["categoria"]) for d in docs] == [("nf-1234.pdf", "NOTA"),
+                                                           ("boleto.pdf", "BOLETO")]
+    assert rec.anexo_id == docs[0]["id"]            # a nota vira o atalho do recebimento
+    p = svc_lanc.preparar(s, u, pedido.id, recebimento_id=rec.id)
+    assert [d["nome"] for d in p["documentos"]] == ["nf-1234.pdf", "boleto.pdf"]
+    conteudo, nome, _ = svc_rec.conteudo_do_documento(s, u, docs[0]["id"])
+    assert nome == "nf-1234.pdf" and conteudo.startswith(b"%PDF")
+
+
+def test_documento_de_recebimento_de_outra_obra_nao_abre(base):
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    s = base["s"]
+    so_b = _fechar(base, linhas=[base["linha_b"]])
+    _receber(base, so_b, [(base["item_b"], 20)])
+    rec = _ultimo_recebimento(base, so_b)
+    doc = svc_rec.anexar(s, base["u"], rec.id, b"%PDF-1.4 nota", "nf.pdf", "NOTA")
+    s.flush()
+    da_a = _da_obra(base, base["obra_a"], "adm.a11@teste.bws.local")
+    with pytest.raises(ErroNaoEncontrado):
+        svc_rec.conteudo_do_documento(s, da_a, doc["id"])
+    with pytest.raises(ErroNaoEncontrado):
+        svc_rec.anexar(s, da_a, rec.id, b"%PDF-1.4 x", "x.pdf", "OUTRO")
+
+
+def test_ao_lancar_nota_do_fornecedor_o_sistema_oferece_os_pedidos_dele(base):
+    s, u = base["s"], base["u"]
+    assert svc_lanc.pedidos_do_fornecedor_a_lancar(s, u, base["forn"].id) == []
+    pedido = _fechar(base)
+    achados = svc_lanc.pedidos_do_fornecedor_a_lancar(s, u, base["forn"].id)
+    assert [(a["numero"], a["a_lancar"], a["chegou"]) for a in achados] == [
+        (pedido.numero, "2000.00", False)]
+    _receber(base, pedido, [(base["item_a"], 10), (base["item_b"], 20)])
+    titulo = _titulo_solto(base, "2000.00", "SP-REC-9")
+    svc_lanc.vincular(s, titulo, pedido.id, u)
+    # tudo lançado: não há mais o que oferecer
+    assert svc_lanc.pedidos_do_fornecedor_a_lancar(s, u, base["forn"].id) == []

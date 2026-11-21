@@ -68,8 +68,10 @@ mesmo aperto do botão. E, desde a 3ª rodada, mexe em arquivos de OUTRAS áreas
 - **Avisar o coordenador por Telegram** quando chega incompleto ou atrasa.
 - **Ler a caixa de e-mail sozinho** (as propostas hoje são JOGADAS no mapa;
   ninguém lê a caixa). É o item 2 de `ENTRADAS.md`.
-- **Anexar a nota já no recebimento**: hoje a nota e o boleto são jogados na
-  tela de Lançar, um clique depois.
+- **Anexar documento também pela tela do ERP** (Suprimentos › Receber
+  material); hoje só o portal anexa.
+- **A ciência e a autorização da compra feita fora do processo** — proposta
+  feita em 21/11, espera três respostas dele (ver a entrada de 21/11).
 - `exportarMapa` em `erp_suprimentos_cotacoes.html` ficou sem uso (o PDF do
   mapa passou a ser feito no servidor) — pode sair.
 
@@ -85,6 +87,59 @@ tem WhatsApp como canal no cadastro; a lentidão era para consertar.
 ---
 
 ## Decisões desta área
+
+### ⚑ 21/11/2026 — O PORTAL EM LISTA, OS DOCUMENTOS NO RECEBIMENTO, E A COMPRA POR FORA
+
+Três coisas que ele viu na imagem do portal:
+
+**1. Lista que abre.** *"Tem três pedidos a serem recebidos — o ideal é a lista
+e você clicar e abrir, porque pode ser um pedido grande com muitos insumos."*
+Eu tinha entregue os três pedidos abertos, um embaixo do outro. Agora cada
+pedido é uma linha (fornecedor, número, quantos itens faltam, previsão ou
+atraso) e abre ao tocar — um por vez; o que foi digitado fica guardado ao
+trocar de pedido.
+
+**2. Anexar nota, boleto e mais.** *"Eu não vi nenhum campo de anexar nota
+fiscal, boleto. A gente tem que prever já isso. E da mesma forma que no DP, a
+gente precisa poder anexar vários documentos."* Os arquivos ficam presos AO
+RECEBIMENTO (`anexos`, entidade `recebimento`), com tipo (nota, boleto, foto,
+outro — palpite pelo nome, corrigível). Sobem depois do recebimento gravado;
+falha em anexar não desfaz o recebimento. **A tela de Lançar os traz
+sozinha** quando abre por aquele recebimento: ninguém escolhe o mesmo arquivo
+duas vezes. Rotas próprias, com o recorte pela obra do pedido — a rota
+genérica de anexos não conhece "recebimento" e não foi mexida.
+⚠️ Só o PORTAL anexa. A tela Suprimentos › Receber material (ERP) ainda não
+tem o campo.
+
+**3. A compra que não passou pelo suprimento.** *"A gente tem que tentar
+inibir a possibilidade de uma compra sem ter seguido o processo do suprimento.
+Imagina um engenheiro da obra que foi lá e comprou um material (…) quando
+fosse anexar uma nota e identificar que não identificou um pedido — por que
+estão lançando isso? Aí tem que pensar na forma de dar ciência e alguém
+autorizar."*
+
+**Feita a metade que IDENTIFICA**, e ela não bloqueia nada: na tela de Lançar,
+escolhido o credor, o sistema procura os pedidos de compra dele com conta a
+lançar e pergunta "é deste pedido?" (`lancamento.pedidos_do_fornecedor_a_lancar`).
+Um clique liga o lançamento ao pedido, mesmo depois de a nota já ter sido lida.
+
+**NÃO FEITA a metade que dá ciência e exige autorização — de propósito, e a
+razão é o dia de hoje:** nenhuma compra da empresa passa pelo ERP ainda. Ligar
+essa trava agora marcaria 100% dos lançamentos de material como "compra por
+fora" e pararia o financeiro. Proposta entregue a ele em 21/11, esperando três
+respostas: (a) quem autoriza; (b) trava o pagamento ou só avisa; (c) a partir
+de quando, e para quais obras. Desenho proposto: lançamento de MATERIAL sem
+pedido exige o motivo escrito, nasce marcado "compra fora do processo", avisa
+o coordenador de suprimentos e — se ele quiser a trava — fica bloqueado até a
+ciência de quem autoriza, pela crítica do motor de análise do Financeiro
+(`core/titulos/analise.py`), que é onde título bloqueado já mora. Com chave de
+ligar em Configurações e data de início.
+
+**Lição desta rodada (minha):** reescrevi a tela do portal recortando o
+arquivo por marcadores de texto, um marcador casou no lugar errado e o código
+ficou fora de ordem — a suíte passou, porque a página do portal não está no
+teste de sintaxe das telas. Só o navegador pegou. Tela reescrita se grava
+INTEIRA, e se abre no navegador antes de dizer que está pronta.
 
 ### ⚑ 20/11/2026 (3ª rodada) — O FINANCEIRO NASCE DO RECEBIMENTO, O PORTAL RECEBE, O MAPA VIRA PLANILHA
 

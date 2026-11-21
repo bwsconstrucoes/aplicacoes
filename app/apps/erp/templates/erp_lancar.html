@@ -195,25 +195,69 @@ let RET = [], PARC = [{}], RAT = [{}];
 // pedido; nada do que esta tela critica deixa de ser criticado.
 let DO_PEDIDO = null;
 
-async function preencherDoPedido(){
-  const q = new URLSearchParams(location.search);
-  const id = q.get("pedido_compra");
-  if (!id || !/^\d+$/.test(id)) return;
+// ⚑ "É DESTE PEDIDO?" (21/11/2026). O dono: "a gente tem que tentar inibir a
+// possibilidade de uma compra sem ter seguido o processo do suprimento (…)
+// quando fosse anexar uma nota e identificar que não identificou um pedido…"
+//
+// Esta é a metade que IDENTIFICA: escolhido o credor, o sistema procura os
+// pedidos de compra dele que ainda têm conta a lançar e oferece o vínculo com
+// um clique. Não bloqueia nada — a parte de dar ciência e autorizar a compra
+// feita por fora ainda espera a decisão dele (ver HISTORICO_SUPRIMENTOS.md).
+async function procurarPedidosDoCredor(){
+  if (DO_PEDIDO) return;
+  const alvo = els("faixa-pedido");
+  const credor = els("f-credor").value;
+  if (!credor) { alvo.innerHTML = ""; return; }
   try {
-    const rec = q.get("recebimento");
+    const d = await api(`/erp/api/suprimentos/pedidos/a-lancar?fornecedor_id=${credor}`);
+    if (DO_PEDIDO || els("f-credor").value !== credor) return;
+    if (!d.pedidos.length) { alvo.innerHTML = ""; return; }
+    alvo.innerHTML = `<div class="aviso alerta"><b>Este credor tem ${d.pedidos.length}
+      pedido(s) de compra com conta a lançar.</b> Se esta nota é de um deles,
+      clique nele: o lançamento fica ligado ao pedido e o suprimento passa a
+      ver o pagamento.<br>${d.pedidos.map(p => `<button class="btn secundario"
+        data-do-pedido="${p.pedido_id}" style="margin:6px 6px 0 0">${escapar(p.numero)}
+        · a lançar ${fmt(+p.a_lancar)} · ${escapar(p.obras.join(", "))}${
+          p.chegou ? "" : " · material ainda não recebido"}</button>`).join("")}</div>`;
+    document.querySelectorAll("[data-do-pedido]").forEach(b =>
+      b.addEventListener("click", () => preencherDoPedido(b.dataset.doPedido)));
+  } catch(_) { /* o suprimento pode não estar em uso; o lançamento segue */ }
+}
+
+async function preencherDoPedido(escolhido){
+  const q = new URLSearchParams(location.search);
+  const id = escolhido || q.get("pedido_compra");
+  if (!id || !/^\d+$/.test(String(id))) return;
+  try {
+    const rec = escolhido ? null : q.get("recebimento");
     const d = await api(`/erp/api/suprimentos/pedidos/${id}/para-lancar`
       + (rec && /^\d+$/.test(rec) ? `?recebimento=${rec}` : ""));
     const p = DO_PEDIDO = d.pedido;
     const br = v => String(v || "").replace(".", ",");
+    // Vínculo feito DEPOIS de a nota ter sido lida (o botão "é deste
+    // pedido?"): o que a nota já preencheu fica — valor, número, parcelas do
+    // boleto. Do pedido entra só o que a nota não sabe: o rateio por obra.
+    const jaLido = !!escolhido && dec(els("f-valor").value) > 0;
     els("f-credor").value = p.fornecedor_id;
-    els("f-descricao").value = p.descricao || "";
-    els("f-valor").value = br(p.valor);
-    if (p.documento_numero) els("f-doc-numero").value = p.documento_numero;
-    if (p.categoria_id) els("f-categoria").value = p.categoria_id;
-    if (p.rateios.length) RAT = p.rateios.map(r => ({obra_id: r.obra_id,
-      valor: br(r.valor), categoria_id: r.categoria_id || ""}));
-    if (p.parcelas.length) PARC = p.parcelas.map(x => ({vencimento: x.vencimento,
-      valor: br(x.valor)}));
+    if (!jaLido) {
+      els("f-descricao").value = p.descricao || "";
+      els("f-valor").value = br(p.valor);
+      if (p.documento_numero) els("f-doc-numero").value = p.documento_numero;
+      if (p.parcelas.length) PARC = p.parcelas.map(x => ({vencimento: x.vencimento,
+        valor: br(x.valor)}));
+    } else if (!els("f-descricao").value.trim()) {
+      els("f-descricao").value = p.descricao || "";
+    }
+    if (p.categoria_id && !els("f-categoria").value) els("f-categoria").value = p.categoria_id;
+    if (p.rateios.length === 1 && jaLido) {
+      RAT = [{obra_id: p.rateios[0].obra_id, valor: els("f-valor").value,
+              categoria_id: p.rateios[0].categoria_id || ""}];
+    } else if (p.rateios.length) {
+      RAT = p.rateios.map(r => ({obra_id: r.obra_id,
+        valor: br(r.valor), categoria_id: r.categoria_id || ""}));
+      if (jaLido) p.avisos.push("O rateio por obra veio do pedido e pode não somar "
+        + "o valor da nota — confira as linhas do rateio.");
+    }
     desenharLinhas(); atualizarCredor();
     els("faixa-pedido").innerHTML = `<div class="aviso info">
       <b>Lançando a conta do pedido ${escapar(p.numero)} — ${escapar(p.fornecedor)}.</b>
@@ -226,6 +270,27 @@ async function preencherDoPedido(){
       <br><button class="link-btn" id="btn-soltar-pedido">não é deste pedido — desvincular</button></div>`;
     els("btn-soltar-pedido").addEventListener("click", () => {
       DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; });
+    // A NOTA E O BOLETO ANEXADOS NO RECEBIMENTO já entram aqui, como se a
+    // pessoa os tivesse escolhido: é só mandar ler. Assim ninguém procura o
+    // mesmo arquivo duas vezes — uma no canteiro, outra no lançamento.
+    let trazidos = 0;
+    for (const doc of (p.documentos || [])) {
+      try {
+        const r = await fetch(`/erp/suprimentos/recebimentos/documento/${doc.id}`);
+        if (!r.ok) continue;
+        const arquivo = new File([await r.blob()], doc.nome, {type: doc.mime || ""});
+        if (!DOCS.some(d => d.arquivo.name === arquivo.name && d.arquivo.size === arquivo.size)) {
+          DOCS.push({arquivo, lido: false, categoria: doc.categoria || "OUTRO"});
+          trazidos++;
+        }
+      } catch(_) { /* o documento continua no recebimento; dá para juntar à mão */ }
+    }
+    if (trazidos) {
+      desenharDocumentos();
+      els("faixa-pedido").firstElementChild.insertAdjacentHTML("beforeend",
+        `<br><b>${trazidos} documento(s) anexado(s) no recebimento já estão aqui embaixo</b>
+         — clique em "Ler" para o sistema conferir os campos pela nota.`);
+    }
   } catch(e){ aviso("mensagem", `Não consegui trazer os dados do pedido: ${e.message}`, "erro"); }
 }
 
@@ -583,6 +648,7 @@ els("btn-manual").addEventListener("click", () => {
 });
 
 function atualizarCredor(){
+  procurarPedidosDoCredor();
   const f = D.fornecedores.find(x => String(x.id) === els("f-credor").value);
   const forma = els("f-forma").value;
   const precisa = ["PIX","TED"].includes(forma);

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Material da obra — BWS</title>
-{# O MATERIAL DA OBRA, NO PORTAL (20/11/2026).
+{# O MATERIAL DA OBRA, NO PORTAL (20 e 21/11/2026).
 
    O dono: "a gente precisa disponibilizar o recebimento via portal, porque na
    verdade esse recebimento vai ser principalmente por lá — o pessoal
@@ -13,9 +13,9 @@
 
    Página própria, sem o `erp_base.html`, pelo mesmo motivo do portal: celular,
    uma mão, no canteiro. Três perguntas, três abas:
-     · o que está para chegar (e é aqui que se recebe);
+     · o que está para chegar (e é aqui que se recebe e se anexa a nota);
      · o que ainda está sendo cotado ou autorizado (só acompanhar);
-     · o que chegou e ainda está sem nota (lançar).
+     · o que chegou e ainda está sem conta lançada.
 
    Usa as MESMAS rotas de Suprimentos › Receber material. São duas portas para
    a mesma regra — o recorte por obra, a recusa de receber a mais e a
@@ -36,9 +36,19 @@
   .aba.ativa { background: #0B2C5C; color: #fff; }
   .aba span { display: block; font-size: 18px; }
   .bloco { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,35,63,.12);
-         padding: 14px; margin-bottom: 12px; }
+         padding: 14px; margin-bottom: 10px; }
   .bloco h3 { margin: 0; font-size: 15px; }
   .bloco .sub { font-size: 12.5px; color: #5A6B85; margin: 2px 0 8px; }
+  .bloco.fechado { padding: 0; }
+  .cab-pedido { display: flex; width: 100%; box-sizing: border-box; gap: 10px;
+         align-items: center; text-align: left; background: none; border: 0;
+         padding: 14px; font: inherit; color: inherit; cursor: pointer; }
+  .bloco:not(.fechado) .cab-pedido { padding: 0 0 10px; }
+  .cab-pedido b { font-size: 15px; display: block; }
+  .cab-pedido small { color: #5A6B85; font-size: 12.5px; }
+  .cab-pedido .cresce { flex: 1 1 auto; min-width: 0; }
+  .cab-pedido .lado { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .cab-pedido .seta { color: #31507F; font-size: 16px; }
   .item { border-top: 1px solid #E6EAF2; padding: 10px 0; display: flex; gap: 10px;
          align-items: center; }
   .item .cresce { flex: 1 1 auto; min-width: 0; }
@@ -47,7 +57,7 @@
   .item input { width: 84px; padding: 10px 8px; font-size: 16px; text-align: right;
          border: 1px solid #C9D3E4; border-radius: 10px; }
   .etiqueta { display: inline-block; font-size: 11.5px; padding: 2px 8px;
-         border-radius: 999px; background: #EEF2FA; color: #31507F; }
+         border-radius: 999px; background: #EEF2FA; color: #31507F; white-space: nowrap; }
   .etiqueta.vermelha { background: #FDECEC; color: #A32020; }
   .etiqueta.ambar { background: #FFF6E5; color: #8A5B00; }
   .etiqueta.verde { background: #E8F6EE; color: #1C6B3C; }
@@ -55,11 +65,21 @@
          color: #31507F; }
   label.campo input { width: 100%; box-sizing: border-box; padding: 10px; margin-top: 4px;
          border: 1px solid #C9D3E4; border-radius: 10px; font-size: 16px; }
+  .anexos { margin-top: 14px; padding: 12px; background: #F4F6FA; border-radius: 10px; }
+  .anexos b { font-size: 13.5px; }
+  .anexos small { display: block; color: #5A6B85; font-size: 12px; }
+  .arq { display: flex; gap: 6px; align-items: center; background: #fff; border-radius: 8px;
+         padding: 6px 8px; margin-top: 6px; font-size: 13px; }
+  .arq .cresce { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+         white-space: nowrap; }
+  .arq select { padding: 6px; border: 1px solid #C9D3E4; border-radius: 8px; font-size: 13px; }
+  .arq .tira { border: 0; background: none; color: #A32020; font-size: 16px; cursor: pointer;
+         padding: 4px 6px; }
   .btn-portal { display: block; width: 100%; box-sizing: border-box; text-align: center;
          background: #F4B942; border: 0; border-radius: 10px; padding: 13px 16px;
          font-size: 15px; font-weight: 700; color: #10233F; cursor: pointer;
          margin-top: 12px; text-decoration: none; }
-  .btn-portal.secundario { background: #EEF2FA; color: #31507F; }
+  .btn-portal.secundario { background: #E3E9F3; color: #31507F; }
   .btn-portal[disabled] { opacity: .5; }
   .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
   .recado.erro { background: #FDECEC; color: #A32020; }
@@ -79,13 +99,21 @@
   <div class="abas">
     <button class="aba ativa" data-aba="chegar"><span id="n-chegar">–</span>Para receber</button>
     <button class="aba" data-aba="andamento"><span id="n-andamento">–</span>Em andamento</button>
-    <button class="aba" data-aba="nota"><span id="n-nota">–</span>Falta a nota</button>
+    <button class="aba" data-aba="nota"><span id="n-nota">–</span>Falta lançar</button>
   </div>
   <div id="conteudo"><div class="vazio">carregando…</div></div>
 </div>
 
 <script>
 let DADOS = null, ABA = "chegar";
+// ⚑ LISTA QUE ABRE, E NÃO TUDO ABERTO (21/11/2026). Ele, ao ver a primeira
+// versão: "tem três pedidos a serem recebidos — o ideal é a lista, e você
+// clicar e abrir, porque pode ser um pedido grande com muitos insumos."
+// Fechado, o pedido é uma linha: de quem, quando, quantos itens. Um só aberto
+// por vez; o que foi digitado num pedido fica guardado se a pessoa abrir outro.
+let ABERTO = null;
+const DIGITADO = {};           // pedido → {itens, data, nota, obs, arquivos}
+
 const el = id => document.getElementById(id);
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
   ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -97,11 +125,17 @@ async function api(url, opcoes){
   const r = await fetch(url, opcoes);
   let d = null;
   try { d = await r.json(); } catch(_) {}
-  if (r.status === 401) { location.href = "/erp/entrar?proximo=" + encodeURIComponent(location.pathname); throw new Error("Entre no sistema."); }
-  if (!r.ok || !d || d.ok === false) throw new Error((d && d.erro) || "Não foi possível concluir. Tente de novo.");
+  if (r.status === 401) {
+    location.href = "/erp/entrar?proximo=" + encodeURIComponent(location.pathname);
+    throw new Error("Entre no sistema.");
+  }
+  if (!r.ok || !d || d.ok === false)
+    throw new Error((d && d.erro) || "Não foi possível concluir. Tente de novo.");
   return d;
 }
-function recado(texto, tipo){ el("recado").innerHTML = texto ? `<div class="recado ${tipo}">${texto}</div>` : ""; }
+function recado(texto, tipo){
+  el("recado").innerHTML = texto ? `<div class="recado ${tipo}">${texto}</div>` : "";
+}
 
 async function carregar(){
   try {
@@ -114,42 +148,123 @@ async function carregar(){
 }
 
 function desenhar(){
-  document.querySelectorAll(".aba").forEach(b => b.classList.toggle("ativa", b.dataset.aba === ABA));
+  document.querySelectorAll(".aba").forEach(b =>
+    b.classList.toggle("ativa", b.dataset.aba === ABA));
   if (ABA === "chegar") return desenharChegar();
   if (ABA === "andamento") return desenharAndamento();
   desenharNota();
 }
 
+function guardarDigitado(){
+  const cartao = document.querySelector("[data-aberto]");
+  if (!cartao) return;
+  const id = cartao.dataset.aberto;
+  DIGITADO[id] = {
+    itens: Object.fromEntries([...cartao.querySelectorAll(".rc-qtd")]
+      .map(i => [i.dataset.item, i.value])),
+    data: cartao.querySelector(".rc-data").value,
+    nota: cartao.querySelector(".rc-nota").value,
+    obs: cartao.querySelector(".rc-obs").value,
+    arquivos: (DIGITADO[id] || {}).arquivos || []};
+}
+
+// O tipo do documento é um PALPITE pelo nome do arquivo, e a pessoa corrige
+// na caixinha ao lado. Foto de celular não tem nome que diga o que é.
+function palpiteDaCategoria(nome){
+  const n = nome.toLowerCase();
+  if (/bolet/.test(n)) return "BOLETO";
+  if (/\bnf|nota|danfe|\.xml$/.test(n)) return "NOTA";
+  if (/foto|img|canhoto|\.jpe?g$|\.png$|\.webp$/.test(n)) return "FOTO";
+  return "OUTRO";
+}
+
 function desenharChegar(){
-  el("conteudo").innerHTML = DADOS.esperando.map(p => `<div class="bloco" data-pedido="${p.pedido_id}">
-      <h3>${esc(p.fornecedor)}</h3>
-      <div class="sub">pedido ${esc(p.numero)} ·
-        ${p.dias_de_atraso ? `<span class="etiqueta vermelha">atrasado ${p.dias_de_atraso} dia(s)</span> era para ${dia(p.previsao_entrega)}`
-          : p.previsao_entrega ? `previsto para <b>${dia(p.previsao_entrega)}</b>` : "sem data prevista"}
-        ${p.ja_chegou_parte ? ` · <span class="etiqueta ambar">já chegou uma parte</span>` : ""}</div>
+  if (!DADOS.esperando.length) {
+    el("conteudo").innerHTML =
+      `<div class="bloco vazio">Nenhum material a caminho para as suas obras.</div>`;
+    return;
+  }
+  el("conteudo").innerHTML = DADOS.esperando.map(p => {
+    const situacao = p.dias_de_atraso
+      ? `<span class="etiqueta vermelha">atrasado ${p.dias_de_atraso} dia(s)</span>`
+      : p.previsao_entrega ? `<span class="etiqueta">previsto ${dia(p.previsao_entrega)}</span>`
+      : `<span class="etiqueta">sem data</span>`;
+    const cab = `<button class="cab-pedido" data-abrir="${p.pedido_id}">
+        <span class="cresce"><b>${esc(p.fornecedor)}</b>
+          <small>pedido ${esc(p.numero)} · ${p.itens_a_receber} de ${p.total_de_itens} item(ns) a receber</small></span>
+        <span class="lado">${situacao}${p.ja_chegou_parte
+            ? `<span class="etiqueta ambar">chegou parte</span>` : ""}
+          <span class="seta">${ABERTO === p.pedido_id ? "▾" : "▸"}</span></span></button>`;
+    if (ABERTO !== p.pedido_id) return `<div class="bloco fechado">${cab}</div>`;
+    const g = DIGITADO[p.pedido_id] || {itens: {}, arquivos: []};
+    return `<div class="bloco" data-aberto="${p.pedido_id}">${cab}
       ${p.observacoes ? `<div class="sub">${esc(p.observacoes)}</div>` : ""}
       ${p.itens.map(i => `<div class="item" ${i.saldo > 0 ? "" : `style="opacity:.5"`}>
           <div class="cresce"><b>${esc(i.insumo)}</b>
             ${i.especificacao ? `<small>${esc(i.especificacao)}</small>` : ""}
-            <small>pedido ${qtd(i.pedido)} ${esc(i.unidade)}${i.recebido > 0 ? ` · já chegou ${qtd(i.recebido)}` : ""}
+            <small>pedido ${qtd(i.pedido)} ${esc(i.unidade)}${
+              i.recebido > 0 ? ` · já chegou ${qtd(i.recebido)}` : ""}
               · <b>falta ${qtd(i.saldo)}</b></small>
-            <small>${esc(i.obra)}${i.fora_da_obra ? ` · <b style="color:#A32020">desce fora da obra:</b> ${esc(i.entrega_em)}` : ""}</small></div>
+            <small>${esc(i.obra)}${i.fora_da_obra
+              ? ` · <b style="color:#A32020">desce fora da obra:</b> ${esc(i.entrega_em)}` : ""}</small></div>
           ${i.saldo > 0 ? `<input class="rc-qtd" inputmode="decimal" data-item="${i.pedido_item_id}"
-              data-saldo="${i.saldo}" value="${String(i.saldo).replace(".", ",")}" aria-label="quanto chegou">`
+              data-saldo="${i.saldo}" aria-label="quanto chegou"
+              value="${esc(g.itens[i.pedido_item_id] ?? String(i.saldo).replace(".", ","))}">`
             : `<span class="etiqueta verde">completo</span>`}
         </div>`).join("")}
       <label class="campo">Chegou em
-        <input type="date" class="rc-data" value="${DADOS.hoje}" max="${DADOS.hoje}"></label>
+        <input type="date" class="rc-data" value="${g.data || DADOS.hoje}" max="${DADOS.hoje}"></label>
       <label class="campo">Número da nota fiscal
-        <input class="rc-nota" placeholder="como está na nota"></label>
+        <input class="rc-nota" placeholder="como está na nota" value="${esc(g.nota || "")}"></label>
       <label class="campo">Observação
-        <input class="rc-obs" placeholder="ex.: 2 caixas avariadas"></label>
+        <input class="rc-obs" placeholder="ex.: 2 caixas avariadas" value="${esc(g.obs || "")}"></label>
+      <div class="anexos">
+        <b>Nota fiscal, boleto e outros documentos</b>
+        <small>Pode juntar vários: foto do celular, PDF ou XML. Eles ficam guardados
+          no recebimento e já vão para o lançamento da conta.</small>
+        <div class="lista-arq">${g.arquivos.map((a, n) => `<div class="arq">
+            <span class="cresce">${esc(a.arquivo.name)}</span>
+            <select data-cat="${n}" aria-label="tipo do documento">
+              ${[["NOTA", "Nota fiscal"], ["BOLETO", "Boleto"], ["FOTO", "Foto / canhoto"], ["OUTRO", "Outro"]]
+                .map(([v, r]) => `<option value="${v}" ${a.categoria === v ? "selected" : ""}>${r}</option>`).join("")}
+            </select>
+            <button class="tira" data-tira="${n}" aria-label="tirar este arquivo">✕</button></div>`).join("")}</div>
+        <label class="btn-portal secundario" style="margin-top:8px">+ Juntar documento
+          <input type="file" class="rc-arq" hidden multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.xml"></label>
+      </div>
       <button class="btn-portal" data-receber="${p.pedido_id}">Registrar o que chegou</button>
       <div class="sub" style="margin-top:8px">Chegou menos? Corrija o número ao lado do
         material. O que faltar fica como pendência para o suprimento cobrar do fornecedor.</div>
-    </div>`).join("") || `<div class="bloco vazio">Nenhum material a caminho para as suas obras.</div>`;
+    </div>`;
+  }).join("");
+
+  document.querySelectorAll("[data-abrir]").forEach(b => b.addEventListener("click", () => {
+    guardarDigitado();
+    const id = +b.dataset.abrir;
+    ABERTO = ABERTO === id ? null : id;
+    desenhar();
+    const aberto = document.querySelector("[data-aberto]");
+    if (aberto) aberto.scrollIntoView({behavior: "smooth", block: "start"});
+  }));
   document.querySelectorAll("[data-receber]").forEach(b =>
     b.addEventListener("click", () => registrar(+b.dataset.receber, b)));
+  const campo = document.querySelector(".rc-arq");
+  if (campo) campo.addEventListener("change", () => {
+    guardarDigitado();
+    const g = DIGITADO[ABERTO];
+    [...campo.files].forEach(f => {
+      if (!g.arquivos.some(a => a.arquivo.name === f.name && a.arquivo.size === f.size))
+        g.arquivos.push({arquivo: f, categoria: palpiteDaCategoria(f.name)});
+    });
+    desenhar();
+  });
+  document.querySelectorAll("[data-cat]").forEach(sel => sel.addEventListener("change", () => {
+    guardarDigitado();
+    DIGITADO[ABERTO].arquivos[+sel.dataset.cat].categoria = sel.value; }));
+  document.querySelectorAll("[data-tira]").forEach(b => b.addEventListener("click", () => {
+    guardarDigitado();
+    DIGITADO[ABERTO].arquivos.splice(+b.dataset.tira, 1);
+    desenhar(); }));
 }
 
 function desenharAndamento(){
@@ -171,28 +286,35 @@ function desenharAndamento(){
 
 function desenharNota(){
   el("conteudo").innerHTML = (DADOS.sem_nota.length ? `<div class="recado aviso">
-      Enquanto a nota e o boleto não forem lançados, o financeiro não enxerga a conta.</div>`
+      Enquanto a conta não for lançada, o financeiro não enxerga o que chegou.</div>`
     + DADOS.sem_nota.map(n => `<div class="bloco">
       <h3>${esc(n.fornecedor)}</h3>
       <div class="sub">pedido ${esc(n.numero)} · chegou em ${dia(n.chegou_em)} —
         <b>há ${n.dias} dia(s)</b></div>
       ${DADOS.pode_lancar ? `<a class="btn-portal" href="/erp/lancar?pedido_compra=${n.pedido_id}">
-        Lançar a nota e o boleto</a>` : `<div class="sub">Peça a quem lança os pagamentos da obra.</div>`}
+        Lançar a conta a pagar</a>` : `<div class="sub">Peça a quem lança os pagamentos da obra.</div>`}
     </div>`).join("")
-    : `<div class="bloco vazio">Tudo o que chegou já tem nota lançada.</div>`);
+    : `<div class="bloco vazio">Tudo o que chegou já tem conta lançada.</div>`);
 }
 
 async function registrar(pedidoId, botao){
-  const cartao = document.querySelector(`[data-pedido="${pedidoId}"]`);
+  guardarDigitado();
+  const cartao = document.querySelector(`[data-aberto="${pedidoId}"]`);
   const campos = [...cartao.querySelectorAll(".rc-qtd")];
+  const arquivos = (DIGITADO[pedidoId] || {}).arquivos || [];
   const itens = campos.map(i => ({pedido_item_id: +i.dataset.item,
     quantidade: numero(i.value), saldo: +i.dataset.saldo})).filter(i => i.quantidade > 0);
-  if (!itens.length) { recado("Informe a quantidade que chegou em ao menos um material.", "erro"); scrollTo(0, 0); return; }
+  if (!itens.length) {
+    recado("Informe a quantidade que chegou em ao menos um material.", "erro");
+    scrollTo(0, 0); return;
+  }
   if (itens.some(i => i.quantidade > i.saldo + 1e-9)) {
     recado("Há material com quantidade MAIOR do que falta chegar. Se veio a mais, registre só "
-      + "o que foi pedido e escreva a sobra na observação.", "erro"); scrollTo(0, 0); return; }
+      + "o que foi pedido e escreva a sobra na observação.", "erro");
+    scrollTo(0, 0); return;
+  }
   const parcial = itens.length < campos.length || itens.some(i => i.quantidade < i.saldo - 1e-9);
-  botao.disabled = true;
+  botao.disabled = true; botao.textContent = "Registrando…";
   try {
     const r = await api(`/erp/api/suprimentos/pedidos/${pedidoId}/recebimento`, {method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -201,18 +323,40 @@ async function registrar(pedidoId, botao){
         nota_numero: cartao.querySelector(".rc-nota").value,
         observacoes: cartao.querySelector(".rc-obs").value,
         itens: itens.map(i => ({pedido_item_id: i.pedido_item_id, quantidade: String(i.quantidade)}))})});
-    recado((parcial ? "<b>Recebimento parcial registrado.</b> O que faltou ficou como pendência para o suprimento. "
-                    : "<b>Recebimento registrado.</b> Chegou tudo o que faltava deste pedido para a sua obra. ")
-      + "Agora falta a nota e o boleto."
-      + (DADOS.pode_lancar ? `<a class="btn-portal" href="/erp/lancar?pedido_compra=${pedidoId}&recebimento=${r.recebimento_id || ""}">
-          Lançar a nota e o boleto agora</a>` : ""), "ok");
+    // Os documentos sobem DEPOIS, porque só agora existe recebimento a que
+    // prendê-los. Falha em anexar não desfaz o recebimento: o material chegou
+    // de qualquer jeito. O que ela faz é DIZER quais ficaram de fora.
+    const falhas = [];
+    for (const a of arquivos) {
+      const fd = new FormData();
+      fd.append("arquivo", a.arquivo); fd.append("categoria", a.categoria);
+      try {
+        await api(`/erp/api/suprimentos/recebimentos/${r.recebimento_id}/documentos`,
+                  {method: "POST", body: fd});
+      } catch(e) { falhas.push(`${a.arquivo.name} (${e.message})`); }
+    }
+    const subiram = arquivos.length - falhas.length;
+    delete DIGITADO[pedidoId]; ABERTO = null;
+    recado((parcial
+        ? "<b>Recebimento parcial registrado.</b> O que faltou ficou como pendência para o suprimento. "
+        : "<b>Recebimento registrado.</b> Chegou tudo o que faltava deste pedido para a sua obra. ")
+      + (subiram ? `${subiram} documento(s) guardado(s). ` : "")
+      + (falhas.length ? `<br><b>Não consegui guardar:</b> ${falhas.map(esc).join("; ")}. ` : "")
+      + (subiram ? "Falta só lançar a conta." : "Agora falta a nota e o boleto.")
+      + (DADOS.pode_lancar
+          ? `<a class="btn-portal" href="/erp/lancar?pedido_compra=${pedidoId}&recebimento=${r.recebimento_id || ""}">${
+              subiram ? "Lançar a conta a pagar agora" : "Lançar a nota e o boleto agora"}</a>` : ""),
+      falhas.length ? "aviso" : "ok");
     scrollTo(0, 0);
     carregar();
-  } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); botao.disabled = false; }
+  } catch(e){
+    recado(esc(e.message), "erro"); scrollTo(0, 0);
+    botao.disabled = false; botao.textContent = "Registrar o que chegou";
+  }
 }
 
 document.querySelectorAll(".aba").forEach(b => b.addEventListener("click", () => {
-  ABA = b.dataset.aba; recado(""); desenhar(); }));
+  guardarDigitado(); ABA = b.dataset.aba; recado(""); desenhar(); }));
 carregar();
 </script>
 </body>

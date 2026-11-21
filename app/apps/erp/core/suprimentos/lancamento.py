@@ -174,7 +174,55 @@ def preparar(s: Session, usuario: Usuario, pedido_id: int, *,
         "rateios": rateios, "parcelas": parcelas,
         "total_do_pedido": str(total), "ja_lancado": str(fin["em_titulo"]),
         "entregue": entregue, "avisos": avisos,
+        # A nota e o boleto anexados na hora do recebimento: a tela de Lançar
+        # os traz prontos para ler e anexar ao título.
+        "documentos": _documentos(s, pedido.id, recebimento),
     }
+
+
+def _documentos(s: Session, pedido_id: int, recebimento) -> list[dict[str, Any]]:
+    from app.apps.erp.core.suprimentos.recebimento import documentos_do_pedido
+    if recebimento is not None:
+        return documentos_do_pedido(s, pedido_id, recebimento_id=recebimento.id)
+    # Sem recebimento indicado: os dos recebimentos que ainda não viraram conta.
+    lancados = {v.recebimento_id for v in s.scalars(select(PedidoTitulo).where(
+        PedidoTitulo.pedido_id == pedido_id)).all() if v.recebimento_id}
+    return [d for d in documentos_do_pedido(s, pedido_id)
+            if d["recebimento_id"] not in lancados]
+
+
+def pedidos_do_fornecedor_a_lancar(s: Session, usuario: Usuario,
+                                   fornecedor_id: int) -> list[dict[str, Any]]:
+    """Pedidos de compra deste fornecedor com material recebido e ainda sem
+    conta lançada — os candidatos quando alguém lança uma nota dele.
+
+    É a metade "identificar" do pedido do dono (21/11/2026): "quando fosse
+    anexar uma nota e identificar que não identificou um pedido…". A tela de
+    Lançar pergunta "é deste pedido?" antes de deixar a nota entrar solta.
+    """
+    pedidos = [p for p in acomp.pedidos_no_escopo(
+        s, usuario, (StatusPedidoCompra.AUTORIZADO,))
+        if p.fornecedor_id == int(fornecedor_id)]
+    base = acomp.carregar(s, pedidos)
+    saida = []
+    for pedido in pedidos:
+        itens = base["itens"].get(pedido.id, [])
+        fin = acomp.financeiro_do_pedido(pedido, base)
+        total = acomp.total_do_pedido(pedido, itens)
+        falta = total - fin["em_titulo"]
+        if falta <= acomp.tolerancia(total):
+            continue
+        recebido = sum((i["valor_recebido"] for i in itens), _ZERO)
+        obras = []
+        for i in itens:
+            if i["obra"] not in obras:
+                obras.append(i["obra"])
+        saida.append({"pedido_id": pedido.id, "numero": pedido.numero,
+                      "total": str(total), "a_lancar": str(falta.quantize(_CENT)),
+                      "recebido": str(recebido.quantize(_CENT)), "obras": obras,
+                      "chegou": recebido > 0})
+    saida.sort(key=lambda p: (not p["chegou"], p["numero"]))
+    return saida
 
 
 def vincular(s: Session, titulo, pedido_id: int, usuario: Usuario, *,
