@@ -50,18 +50,40 @@ class PrecisaDoMotivo(ErroValidacao):
     """O lançamento é de material sem pedido e ainda não veio com o motivo."""
 
 
-def ligado_desde(s: Session) -> Optional[date]:
+# ⚑ DOIS MODOS (21/11/2026, noite). Ele: "o que não seguir o processo poderemos
+# por enquanto avisar, sem travar. Depois a gente trava, quando tiver tudo
+# rodando já."
+#   AVISAR  o lançamento entra normalmente; fica registrado e aparece no Painel
+#           para o coordenador tomar ciência. Não pede motivo, não bloqueia.
+#   TRAVAR  pede o motivo e bloqueia até alguém com alçada autorizar.
+MODOS = ("AVISAR", "TRAVAR")
+
+
+def estado(s: Session) -> tuple[Optional[str], Optional[date]]:
+    """(modo, desde quando) — ou (None, None) com a regra desligada."""
     linha = s.get(Parametro, CHAVE)
+    valor = (linha.valor or "").strip() if linha else ""
+    if not valor:
+        return None, None
+    modo, _, quando = valor.partition(":") if ":" in valor else ("TRAVAR", "", valor)
     try:
-        return date.fromisoformat((linha.valor or "").strip()) if linha else None
+        return (modo if modo in MODOS else "TRAVAR"), date.fromisoformat(quando)
     except ValueError:
-        return None
+        return None, None
 
 
-def ligar(s: Session, usuario: Usuario, ligar: bool) -> Optional[date]:
+def ligado_desde(s: Session) -> Optional[date]:
+    return estado(s)[1]
+
+
+def ligar(s: Session, usuario: Usuario, ligar: Any) -> Optional[date]:
+    """`ligar` é o modo ("AVISAR" ou "TRAVAR"), ou falso para desligar.
+    `True` continua valendo TRAVAR, como era."""
+    modo = ("TRAVAR" if ligar is True else str(ligar or "").strip().upper())
+    modo = modo if modo in MODOS else ""
     # Confere que a tabela existe ANTES de ligar: com a chave ligada e o banco
     # desatualizado, todo lançamento de material quebraria.
-    if ligar:
+    if modo:
         try:
             s.execute(text("SELECT 1 FROM compras_fora_do_fluxo LIMIT 1"))
         except Exception:
@@ -69,16 +91,17 @@ def ligar(s: Session, usuario: Usuario, ligar: bool) -> Optional[date]:
             raise ErroValidacao(
                 "O banco está desatualizado. Aperte \"Aplicar atualizações do banco\" "
                 "em Configurações e ligue de novo.")
-    valor = date.today().isoformat() if ligar else ""
+    valor = f"{modo}:{date.today().isoformat()}" if modo else ""
     linha = s.get(Parametro, CHAVE)
     if linha is None:
         s.add(Parametro(chave=CHAVE, valor=valor, atualizado_por=usuario.id))
     else:
         linha.valor = valor
         linha.atualizado_por = usuario.id
+    s.flush()
     registrar_evento(s, "parametro", 0, "EXIGIR_PEDIDO_DE_COMPRA",
-                     {"ligado": bool(ligar)}, usuario.id)
-    return ligado_desde(s) if ligar else None
+                     {"modo": modo or "DESLIGADO"}, usuario.id)
+    return ligado_desde(s)
 
 
 def conferir(s: Session, titulo, dados: dict[str, Any], usuario: Usuario) -> bool:
@@ -91,6 +114,16 @@ def conferir(s: Session, titulo, dados: dict[str, Any], usuario: Usuario) -> boo
     if tem_pedido is not None:
         return False
     motivo = " ".join(str(dados.get("motivo_sem_pedido") or "").split())
+    if estado(s)[0] == "AVISAR":
+        # Só avisa: o lançamento segue o caminho normal do financeiro, e fica
+        # registrado para o coordenador de suprimentos tomar ciência no Painel.
+        s.execute(text(
+            "INSERT INTO compras_fora_do_fluxo (titulo_id, motivo, lancado_por) "
+            "VALUES (:t, :m, :u)"),
+            {"t": titulo.id, "m": motivo or "(motivo não informado)", "u": usuario.id})
+        registrar_evento(s, "titulo", titulo.id, "COMPRA_FORA_DO_FLUXO",
+                         {"motivo": motivo or None, "modo": "AVISAR"}, usuario.id)
+        return True
     if len(motivo) < 10:
         raise PrecisaDoMotivo(
             "Este material não está ligado a nenhum pedido de compra. Explique por "
@@ -111,8 +144,8 @@ def conferir(s: Session, titulo, dados: dict[str, Any], usuario: Usuario) -> boo
 def pendente(s: Session, titulo_id: int) -> Optional[str]:
     """O motivo, se este título está esperando autorização por ter sido
     lançado sem pedido de compra. É o que o motor de análise pergunta."""
-    if ligado_desde(s) is None:
-        return None
+    if estado(s)[0] != "TRAVAR":
+        return None          # desligada, ou só avisando: não bloqueia ninguém
     linha = s.execute(text(
         "SELECT motivo FROM compras_fora_do_fluxo "
         "WHERE titulo_id = :t AND autorizado_em IS NULL"), {"t": titulo_id}).first()

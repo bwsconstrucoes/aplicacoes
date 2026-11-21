@@ -229,19 +229,27 @@ async function carregarForaDoFluxo(){
   let d;
   try { d = await api("/erp/api/suprimentos/fora-do-fluxo"); } catch(_) { return; }
   const alvo = els("fora-do-fluxo");
-  if (!d.ligado_desde) {
+  const trava = d.modo === "TRAVAR";
+  // ⚑ TRÊS ESTADOS (21/11/2026). Ele: "por enquanto avisar, sem travar. Depois
+  // a gente trava, quando tiver tudo rodando já."
+  const chaves = d.pode_configurar ? `<span class="sub" style="display:block; margin-top:4px">
+      Material lançado sem pedido de compra:
+      ${[["", "não acompanhar"], ["AVISAR", "só avisar aqui"], ["TRAVAR", "travar até autorizar"]]
+        .map(([m, r]) => (d.modo || "") === m ? `<b>${r}</b>`
+          : `<button class="link-btn" data-modo="${m}">${r}</button>`).join(" · ")}</span>` : "";
+  if (!d.modo) {
     alvo.innerHTML = d.pode_configurar ? `<div class="cartao-dica" style="margin-bottom:12px">
-        <b>Material lançado sem pedido de compra:</b> a exigência de autorização está
-        <b>desligada</b>. Ligada, todo lançamento de material que não vier de um pedido
-        de compra pede o motivo e fica bloqueado até alguém autorizar.
-        <b>Ligue só quando as compras já estiverem passando pelo ERP</b> — antes disso,
-        todo lançamento de material seria retido.
-        <button class="link-btn" id="ff-ligar">ligar agora</button></div>` : "";
+        <b>Compras feitas sem passar pelo suprimento não estão sendo acompanhadas.</b>
+        "Só avisar" registra aqui todo material lançado sem pedido de compra, sem
+        segurar nada no financeiro. "Travar" pede o motivo e bloqueia até alguém autorizar.
+        ${chaves}</div>` : "";
   } else {
-    alvo.innerHTML = `<div class="${d.pendentes.length ? "aviso erro" : "cartao-dica"}" style="margin-bottom:12px">
-        <b>Material lançado sem pedido de compra: ${d.pendentes.length} esperando autorização.</b>
-        <span class="sub">Regra ligada desde ${dataBR(d.ligado_desde)}.
-          ${d.pode_configurar ? `<button class="link-btn" id="ff-desligar">desligar</button>` : ""}</span>
+    alvo.innerHTML = `<div class="${d.pendentes.length ? (trava ? "aviso erro" : "aviso alerta") : "cartao-dica"}" style="margin-bottom:12px">
+        <b>Material lançado sem pedido de compra: ${d.pendentes.length}
+          ${trava ? "esperando autorização" : "para tomar ciência"}.</b>
+        <span class="sub">${trava ? "O lançamento fica bloqueado até alguém autorizar."
+          : "Só aviso: o lançamento segue normal no financeiro."}
+          Desde ${dataBR(d.ligado_desde)}.</span>${chaves}
         ${d.pendentes.length ? `<table style="margin-top:8px; background:#fff"><thead><tr>
             <th>Lançamento</th><th>Fornecedor</th><th>Obra</th><th class="direita">Valor</th>
             <th>Quem lançou</th><th>Por que não passou pelo suprimento</th><th></th></tr></thead><tbody>
@@ -252,36 +260,40 @@ async function carregarForaDoFluxo(){
             <td class="direita dados">${moeda(x.valor)}</td>
             <td>${escapar(x.lancado_por)}</td><td>${escapar(x.motivo)}</td>
             <td>${d.pode_autorizar && x.lancado_por_id !== d.eu
-              ? `<button class="btn" data-autorizar="${x.titulo_id}">Autorizar</button>`
-              : d.pode_autorizar ? `<small>quem lançou não autoriza</small>` : ""}</td></tr>`).join("")}
+              ? `<button class="btn" data-autorizar="${x.titulo_id}">${trava ? "Autorizar" : "Ciente"}</button>`
+              : d.pode_autorizar ? `<small>quem lançou não ${trava ? "autoriza" : "dá a ciência"}</small>` : ""}</td></tr>`).join("")}
           </tbody></table>` : ""}</div>`;
   }
-  const chave = async ligar => {
-    const r = await perguntar({titulo: ligar ? "Ligar a exigência de pedido de compra?" : "Desligar a exigência?",
-      aviso: ligar ? "A partir de agora, todo lançamento de MATERIAL sem pedido de compra vai pedir "
-          + "o motivo e ficar bloqueado até alguém autorizar. Vale para o financeiro inteiro."
-        : "Os lançamentos de material voltam a entrar sem autorização do suprimento. "
-          + "O que está retido é liberado na próxima reanálise.",
-      campos: [], textoOk: ligar ? "Ligar" : "Desligar"});
+  const textoDoModo = {"": ["Parar de acompanhar?", "Os lançamentos de material sem pedido deixam de ser registrados aqui."],
+    AVISAR: ["Só avisar, sem travar?", "Todo lançamento de MATERIAL sem pedido de compra passa a aparecer aqui, "
+      + "para ciência. Nada é bloqueado no financeiro e ninguém precisa escrever motivo."],
+    TRAVAR: ["Travar até autorizar?", "Todo lançamento de MATERIAL sem pedido de compra vai pedir o motivo e "
+      + "ficar bloqueado até alguém com alçada autorizar. Vale para o financeiro inteiro — "
+      + "ligue só quando as compras já estiverem passando pelo ERP."]};
+  document.querySelectorAll("[data-modo]").forEach(b => b.addEventListener("click", async () => {
+    const modo = b.dataset.modo;
+    const r = await perguntar({titulo: textoDoModo[modo][0], aviso: textoDoModo[modo][1],
+                               campos: [], textoOk: "Confirmar"});
     if (!r) return;
     try { await api("/erp/api/suprimentos/fora-do-fluxo", {method: "POST",
-            headers: {"Content-Type": "application/json"}, body: JSON.stringify({ligar})});
+            headers: {"Content-Type": "application/json"}, body: JSON.stringify({modo})});
           carregarForaDoFluxo();
     } catch(e){ aviso("mensagem", e.message, "erro"); }
-  };
-  if (els("ff-ligar")) els("ff-ligar").addEventListener("click", () => chave(true));
-  if (els("ff-desligar")) els("ff-desligar").addEventListener("click", () => chave(false));
+  }));
   document.querySelectorAll("[data-autorizar]").forEach(b => b.addEventListener("click", async () => {
-    const r = await perguntar({titulo: "Autorizar o lançamento sem pedido de compra",
-      aviso: "Você está dando ciência de que esta compra não passou pelo suprimento e "
-        + "liberando o lançamento para a aprovação do financeiro. Fica registrado no seu nome.",
+    const r = await perguntar({titulo: trava ? "Autorizar o lançamento sem pedido de compra"
+                                             : "Tomar ciência da compra sem pedido",
+      aviso: trava ? "Você está dando ciência de que esta compra não passou pelo suprimento e "
+          + "liberando o lançamento para a aprovação do financeiro. Fica registrado no seu nome."
+        : "Fica registrado no seu nome que você tomou ciência. O lançamento não muda.",
       campos: [{nome: "observacao", rotulo: "Observação (opcional)", tipo: "textarea", linhas: 2}],
-      textoOk: "Autorizar"});
+      textoOk: trava ? "Autorizar" : "Ciente"});
     if (!r) return;
     try { await api(`/erp/api/suprimentos/fora-do-fluxo/${b.dataset.autorizar}/autorizar`,
             {method: "POST", headers: {"Content-Type": "application/json"},
              body: JSON.stringify({observacao: r.observacao || ""})});
-          aviso("mensagem", "Lançamento autorizado — segue para a aprovação do financeiro.", "ok");
+          aviso("mensagem", trava ? "Lançamento autorizado — segue para a aprovação do financeiro."
+                                  : "Ciência registrada.", "ok");
           carregarForaDoFluxo();
     } catch(e){ aviso("mensagem", e.message, "erro"); }
   }));

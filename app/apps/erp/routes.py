@@ -5768,7 +5768,8 @@ def api_criar_titulo():
             return jsonify({"ok": True, "titulo": {
                 "id": titulo.id, "numero_sp": titulo.numero_sp,
                 "status": titulo.status.value, "risco": titulo.score_risco,
-                "fora_do_fluxo": bool(retido)}})
+                "fora_do_fluxo": bool(retido),
+                "fora_do_fluxo_trava": bool(retido) and fora_do_fluxo.estado(s)[0] == "TRAVAR"}})
     except ErroValidacao as e:
         from app.apps.erp.core.suprimentos.fora_do_fluxo import PrecisaDoMotivo
         if isinstance(e, PrecisaDoMotivo):
@@ -11899,10 +11900,10 @@ def api_fora_do_fluxo():
         with get_session() as s:
             usuario = _usuario_logado(s)
             if request.method == "POST":
-                svc.ligar(s, usuario, bool((request.get_json(silent=True) or {}).get("ligar")))
+                svc.ligar(s, usuario, (request.get_json(silent=True) or {}).get("modo") or "")
                 s.commit()
-            desde = svc.ligado_desde(s)
-            return jsonify({"ok": True,
+            modo, desde = svc.estado(s)
+            return jsonify({"ok": True, "modo": modo,
                             "ligado_desde": desde.isoformat() if desde else None,
                             "pendentes": svc.listar(s, usuario) if desde else [],
                             "pode_autorizar": pode(usuario, "autorizar_compra_fora_do_fluxo"),

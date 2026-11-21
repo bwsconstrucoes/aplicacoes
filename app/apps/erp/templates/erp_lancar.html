@@ -979,9 +979,12 @@ els("btn-enviar").addEventListener("click", async () => {
       } catch(err){ falhas.push(`${doc.arquivo.name} (${err.message})`); }
     }
     const quantos = DOCS.length - falhas.length;
-    aviso("mensagem", (t.fora_do_fluxo
+    aviso("mensagem", (t.fora_do_fluxo_trava
       ? `Solicitação <b>${t.numero_sp}</b> registrada como <b>material sem pedido de compra</b>.
          Ela fica bloqueada até alguém com alçada autorizar, em Suprimentos › Painel.`
+      : t.fora_do_fluxo
+      ? `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).
+         <b>Este material não tem pedido de compra</b> — o suprimento foi avisado.`
       : t.status === "BLOQUEADO"
       ? `Solicitação <b>${t.numero_sp}</b> registrada e <b>bloqueada</b> pela análise (risco ${t.risco}). Veja em Títulos.`
       : `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).`)

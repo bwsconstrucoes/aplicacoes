@@ -85,6 +85,29 @@ assinatura fica com a pessoa, desenhada na tela ou escaneada.
 
 ## Decisões desta área
 
+### ⚑ 21/11/2026 (3ª rodada) — COMPRA POR FORA: PRIMEIRO SÓ AVISA, DEPOIS TRAVA
+
+Decisão dele: *"O que não seguir o processo poderemos por enquanto avisar, sem
+travar. Depois a gente trava, quando tiver tudo rodando já."*
+
+A regra do material lançado sem pedido de compra passou a ter **três posições**,
+escolhidas no Painel de suprimentos por quem pode configurar:
+
+| Posição | O que acontece no lançamento |
+|---|---|
+| não acompanhar (como nasce) | nada |
+| **só avisar** — a que ele escolheu para começar | o lançamento segue normal no financeiro, sem pedir motivo; fica listado no Painel até alguém dar "Ciente" |
+| travar até autorizar | pede o motivo e bloqueia até alguém com alçada autorizar (como era) |
+
+- A chave (`suprimentos_exigir_pedido_desde`) guarda `MODO:data`. Valor antigo,
+  só com a data, é lido como TRAVAR.
+- **Continua desligada até alguém clicar** "só avisar aqui" no Painel — e isso
+  exige a migração 122 aplicada. Lembrar o dono na publicação.
+- Passar para TRAVAR é decisão dele, "quando tiver tudo rodando". Não ligar por
+  conta própria.
+- Na mesma conversa ele perguntou se precisava ESCOLHER entre os relatórios:
+  não. Os oito existem juntos (quatro na aba Relatórios, quatro dentro do mapa).
+
 ### ⚑ 21/11/2026 (2ª rodada) — RECEBER E LANÇAR JUNTOS, E-MAIL PADRÃO COM PDF, E MAIS CINCO
 
 Ele respondeu à entrega anterior ponto a ponto. O que cada resposta virou:

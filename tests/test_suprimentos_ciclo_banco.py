@@ -1216,3 +1216,24 @@ def test_o_que_nao_e_material_nao_passa_pelo_suprimento(base):
     titulo = _titulo_solto(base, "300.00", "SP-FORA-3")
     titulo.tipo = TipoTitulo.T2_SERVICO_NFSE
     assert svc_fora.conferir(s, titulo, {}, u) is False
+
+
+def test_so_avisar_registra_e_nao_trava_nem_pede_motivo(base):
+    """O modo que ele escolheu para começar: "por enquanto avisar, sem travar"."""
+    s, u = base["s"], base["u"]
+    svc_fora.ligar(s, u, "AVISAR")
+    assert svc_fora.estado(s)[0] == "AVISAR"
+    titulo = _titulo_solto(base, "500.00", "SP-AVISO-1")
+    s.add(Rateio(titulo_id=titulo.id, obra_id=base["obra_a"].id, valor=Decimal("500.00")))
+    s.flush()
+    assert svc_fora.conferir(s, titulo, {}, u) is True          # sem motivo, sem recusa
+    assert titulo.status is StatusTitulo.APROVADO               # nada foi bloqueado
+    assert svc_fora.pendente(s, titulo.id) is None              # a análise não enxerga trava
+    assert [x["numero_sp"] for x in svc_fora.listar(s, u)] == ["SP-AVISO-1"]
+    svc_fora.autorizar(s, titulo.id, _outro_que_autoriza(base), "ciente")
+    assert svc_fora.listar(s, u) == [] and titulo.status is StatusTitulo.APROVADO
+    # e passar para TRAVAR depois é só trocar a chave
+    svc_fora.ligar(s, u, "TRAVAR")
+    assert svc_fora.estado(s)[0] == "TRAVAR"
+    svc_fora.ligar(s, u, "")
+    assert svc_fora.estado(s) == (None, None)
