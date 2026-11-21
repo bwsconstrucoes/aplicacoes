@@ -321,6 +321,16 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 21/11/2026 — mais dois testes que dependiam do dia de hoje (só teste; publicado no mesmo dia)
+
+Avisados pelo chat do Análise de SPs: falhavam na `main` sem mudança de ninguém. Nada do ponto em si.
+- `test_ponto_qr_banco.py` (alerta de batida faltando com foto escura): "ontem" caiu em **20/11, Consciência
+  Negra**. Agora "ontem" pula fim de semana e feriado.
+- `test_ponto_compensacao_horas_banco.py`: os dois dias ficavam a 34 dias um do outro, acima da regra dos
+  31 dias. Agora o dia trabalhado é recente.
+
+**Publicado em 21/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Suíte inteira: 12.434 passando.
+
 ## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
 
 ⚠️ **Mexi num arquivo desta área sem ser o chat dela, e por isso fica anotado
