@@ -1467,3 +1467,19 @@ def test_quem_fechou_nao_autoriza_e_sem_cotacao_pede_justificativa(base):
                                    "só este fornecedor tem a peça na região"}, u)
     assert "só este fornecedor" in svc_ped.detalhar(s, p2.id)["justificativa_sem_cotacao"]
     assert "só este fornecedor" not in (p2.observacoes or "")     # não vai ao fornecedor
+
+
+def test_a_obra_so_pede_material_para_as_obras_dela(base):
+    """ "Quanto às obras, vamos oferecer só as obras da pessoa." """
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s = base["s"]
+    adm = _administrativo_da_obra(base)                    # ligado só à obra A
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    assert svc_sol.obras_para_pedir(s, adm) == {base["obra_a"].id}
+    assert svc_sol.obras_para_pedir(s, base["u"]) is None  # quem vê tudo pede para todas
+    linha = {"insumo_id": insumo, "quantidade": "1", "unidade": "M2"}
+    with pytest.raises(ErroValidacao):
+        svc_sol.criar(s, {"titulo": "Para a obra do vizinho",
+                          "itens": [{**linha, "obra_id": base["obra_b"].id}]}, adm)
+    svc_sol.criar(s, {"titulo": "Para a minha obra",
+                      "itens": [{**linha, "obra_id": base["obra_a"].id}]}, adm)

@@ -261,8 +261,8 @@ async function carregarForaDoFluxo(){
   if (!d.modo) {
     alvo.innerHTML = d.pode_configurar ? `<div class="cartao-dica" style="margin-bottom:12px">
         <b>Compras feitas sem passar pelo suprimento não estão sendo acompanhadas.</b>
-        "Só avisar" registra aqui todo material lançado sem pedido de compra, sem
-        segurar nada no financeiro. "Travar" pede o motivo e bloqueia até alguém autorizar.
+        <b>"Travar até autorizar"</b> é o combinado: o lançamento pede o motivo e o financeiro
+        não paga enquanto o gestor não der a ciência. "Só avisar" apenas registra aqui, sem segurar nada.
         ${chaves}</div>` : "";
   } else {
     alvo.innerHTML = `<div class="${d.pendentes.length ? (trava ? "aviso erro" : "aviso alerta") : "cartao-dica"}" style="margin-bottom:12px">

@@ -151,8 +151,13 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario, *,
 
     from app.apps.erp.core.auth.permissoes import pode
     libera = pode(usuario, "liberar_solicitacao")
+    permitidas = None if dispensa_liberacao else obras_para_pedir(s, usuario)
     for i, bruto in enumerate(itens, start=1):
         item = _montar_item(s, sol, i, bruto)
+        if permitidas is not None and item.obra_id not in permitidas:
+            raise ErroValidacao(
+                f"Item {i}: você só pede material para as suas obras. Se esta "
+                "obra deveria ser sua, peça ao administrador para ligar você a ela.")
         if not dispensa_liberacao:
             item.liberacao = "LIBERADO" if libera else "PENDENTE"
             if libera:
@@ -252,6 +257,33 @@ def _itens_visiveis(s: Session, usuario: Usuario) -> list[SuprimentoItem]:
         return [i for i in itens
                 if i.obra_id in permitidas or _pediu(s, i, usuario)]
     return [i for i in itens if _pediu(s, i, usuario)]
+
+
+def obras_para_pedir(s: Session, usuario: Usuario) -> Optional[set[int]]:
+    """Para quais obras esta pessoa pode pedir material. `None` = todas.
+
+    ⚑ 22/11/2026 — o dono: "quanto às obras, vamos oferecer só as obras da
+    pessoa (...) isso aí ele pode puxar pelo ponto."
+
+    São as obras ligadas a ela no cadastro MAIS a obra onde ela vem batendo
+    ponto — o cadastro envelhece, a batida não. Antes, o administrativo de obra
+    via TODAS na caixinha (o recorte dele é por autoria, e para autoria a lista
+    de obras vinha vazia, que a tela lia como "sem filtro"), e o servidor
+    aceitava a que viesse.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    designadas = obras_de_registro_sem_autor(s, usuario)
+    if designadas is None:
+        return None
+    permitidas = set(designadas)
+    try:
+        from app.apps.erp.core.portal import obra_sugerida
+        pelo_ponto = obra_sugerida(s, usuario)
+        if pelo_ponto:
+            permitidas.add(int(pelo_ponto))
+    except Exception:                 # ponto fora do ar: valem as do cadastro
+        logger.exception("ERP/suprimentos: não consegui ler a obra pelo ponto")
+    return permitidas
 
 
 def enxerga_item(s: Session, usuario: Usuario, item_id: int) -> bool:

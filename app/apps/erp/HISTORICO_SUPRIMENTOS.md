@@ -58,8 +58,22 @@ compartilhados: `routes.py`, `core/auth/permissoes.py`, `core/auth/secoes.py`,
 - **Compra sem cotação pede justificativa escrita.** Feito.
 - A lentidão ao mover item: "pode ajustar". Feito.
 
-**Ainda aberto:** o servidor não confere se quem pede material tem alcance na
-obra do pedido (a tela só oferece as dele). Ele não respondeu.
+- **Só se pede material para as próprias obras** (22/11, 3ª conversa): "vamos
+  oferecer só as obras da pessoa (...) pode puxar pelo ponto". Feito:
+  `solicitacao.obras_para_pedir` = obras ligadas no cadastro + a obra onde a
+  pessoa bate ponto. A caixinha do portal e o servidor usam a mesma lista.
+  ⚠ Quem não tem obra ligada nem ponto batido NÃO consegue pedir — é para
+  ligar a pessoa à obra em Configurações.
+- **A compra tardia NÃO libera o financeiro antes da ciência** — ele repetiu
+  pela terceira vez, com o motivo: *"se fizer assim, o cara lança tardio, cobra
+  o financeiro para pagar, o financeiro vai pagar, e a ciência acaba sendo
+  ignorada, fica esquecida. Quem trava mesmo é o financeiro (...) aí ele vai
+  ter que pedir para o gestor dele, dar uma explicação (...) pode inclusive
+  ser chamado a atenção."* **É a posição TRAVAR, que já existe e bloqueia o
+  título na análise. NÃO PERGUNTAR DE NOVO SE É PARA TRAVAR.** O que falta é
+  só o clique dele no Painel depois de publicar (a chave nasce desligada e eu
+  não tenho como ligar em produção). "Só avisar" ficou como opção na tela,
+  mas não é mais a escolha dele.
 
 **✔ PUBLICADO em 21/11/2026 (noite)**, com o "pode publicar" dele — tudo o que
 está abaixo, das rodadas de 20 e 21/11, está na `main` (commit `40db52e`).

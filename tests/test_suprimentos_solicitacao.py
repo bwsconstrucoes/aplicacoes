@@ -38,7 +38,11 @@ OBRA_B = Obra(id=2, codigo="IGARASSU", nome="Igarassu")
 
 
 def _base(*extras):
-    return SessaoFalsa(UN, M, INSUMO, OBRA_A, OBRA_B, *extras)
+    # A pessoa 5 é ligada às duas obras: desde 22/11/2026 só se pede material
+    # para as obras de quem pede.
+    return SessaoFalsa(UN, M, INSUMO, OBRA_A, OBRA_B,
+                       UsuarioObra(id=901, usuario_id=5, obra_id=1),
+                       UsuarioObra(id=902, usuario_id=5, obra_id=2), *extras)
 
 
 def _item_bom(**troca):
