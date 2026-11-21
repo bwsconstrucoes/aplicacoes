@@ -687,7 +687,9 @@ def test_o_ponto_da_minha_equipe_e_o_resumo_das_obras(app, mundo, carlos, monkey
     que está em erro porque está faltando uma batida (…) para orientar as pessoas a corrigir". O administrativo, de
     dentro da cerca da obra A, vê a obra A com quem está em dia e quem tem problema; quem não consulta, não vê."""
     _papeis(app, mundo, carlos, administrativo_obra=True)
-    _bater(CPF_MARIA, "PG-A", 30)                                 # a Maria bateu só uma vez na obra A este mês
+    # a Maria bateu só uma vez na obra A, ONTEM: o resumo vai "do dia 1 até ontem" (no dia 1º, o mês passado
+    # inteiro), e a batida de hoje fica de fora dele no dia 1º — o teste quebrava todo começo de mês.
+    _bater(CPF_MARIA, "PG-A", 24 * 60)
     c = _entrar_no_app(app, CPF_CARLOS, monkeypatch)
     r = c.get(f"/ponto/app/api/equipe/resumo?{NA_OBRA_A}")
     assert r.status_code == 200, r.get_json()
