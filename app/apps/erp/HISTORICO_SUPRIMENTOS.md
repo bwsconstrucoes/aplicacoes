@@ -38,7 +38,16 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Ramo `claude/admiring-brahmagupta-ac2tfg` — NÃO PUBLICADO em 20/11/2026.**
+**✔ PUBLICADO em 21/11/2026 (noite)**, com o "pode publicar" dele — tudo o que
+está abaixo, das rodadas de 20 e 21/11, está na `main` (commit `40db52e`).
+**A CONFERIR COM ELE no próximo chat:** (1) se apertou "Aplicar atualizações do
+banco" — são as migrações 120, 121 e 122, e sem elas Painel, Receber material,
+Projeção e o portal de material dão erro; (2) se clicou "só avisar aqui" no
+Painel — a regra da compra por fora nasce DESLIGADA.
+
+O que segue é o retrato de antes da publicação, mantido pelo contexto:
+
+**Ramo `claude/admiring-brahmagupta-ac2tfg` — não publicado em 20/11/2026.**
 Traz a **migração 120** (apertar "Aplicar atualizações do banco" junto com a
 publicação) e mexe em arquivos compartilhados: `routes.py`,
 `core/auth/permissoes.py`, `core/auth/secoes.py`, `db/models/cadastros.py`,
