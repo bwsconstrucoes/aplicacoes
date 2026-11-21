@@ -32,7 +32,7 @@
 
 <div id="painel-mapa"></div>
 
-<dialog id="dlg">
+<dialog id="dlg" class="largo">
   <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
     <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div>
@@ -110,25 +110,44 @@ function desenharMapa(){
     return;
   }
 
-  // O cabeçalho de cada fornecedor: tudo o que decide a compra, junto, em
-  // linhas curtas. Espalhado, seis fornecedores não cabem na tela.
-  const cab = colunas.map(c => `<th style="min-width:104px">
-      <div style="font-weight:700; font-size:11px">${escapar(c.fornecedor)}</div>
-      <span class="sub">${escapar(c.condicao || "sem condição")} ·
-        ${c.entrega ? (c.entrega === "COLETA" ? "coleta" : "entrega") : "—"}</span>
-      ${Number(c.frete) > 0 || Number(c.desconto) > 0 ? `<span class="sub">${
-        [Number(c.frete) > 0 ? `frete ${numero(c.frete)}` : "",
-         Number(c.desconto) > 0 ? `desc. ${numero(c.desconto)}` : ""]
-        .filter(Boolean).join(" · ")}</span>` : ""}
-      <span class="sub">${c.itens_cotados}/${c.itens_no_mapa} itens · ${situacaoDoEnvio(c.id)}</span>
-      <button class="link-btn" data-proposta="${c.id}" style="font-size:10.5px">ler proposta</button>
-    </th>`).join("");
+  // ⚑ O MAPA NO FORMATO DA PLANILHA (20/11/2026). Ele mandou o relatório do
+  // mapa 9228 — "é meio que um print da tela da planilha que a gente trabalha;
+  // é uma planilha que a gente consegue visualizar bastante informação" — e
+  // pediu "uma visão mais ampla, para conseguir colocar mais informações na
+  // tela". O que a planilha tem e o mapa não tinha:
+  //   · o cabeçalho de cada fornecedor em LINHAS (pagamento, entrega, frete,
+  //     desconto, total geral), e não espremido em uma célula;
+  //   · preço unitário E subtotal lado a lado, por fornecedor;
+  //   · o número da solicitação e o número do item em cada linha;
+  //   · no rodapé, melhor fornecedor e melhor compra, sem e com frete.
+  // As colunas da esquerda ficam presas na rolagem: com seis fornecedores, é
+  // o que mantém o nome do material à vista enquanto se digita o preço.
+  const FIXAS = 7;
+  const linhaCab = (rotulo, celula, classe = "") => `<tr class="cab-forn ${classe}">
+      <th colspan="${FIXAS}" class="rot">${rotulo}</th>
+      ${colunas.map(c => `<th colspan="2">${celula(c)}</th>`).join("")}</tr>`;
+  const cab =
+    linhaCab("Fornecedor", c => `<div class="nome-forn" title="${escapar(c.fornecedor)}">${escapar(c.fornecedor)}</div>
+        <span class="sub">${c.itens_cotados}/${c.itens_no_mapa} itens · ${situacaoDoEnvio(c.id)}</span>
+        <button class="link-btn" data-proposta="${c.id}" style="font-size:10.5px">ler proposta</button>`) +
+    linhaCab("Pagamento", c => escapar(c.condicao || "—")) +
+    linhaCab("Entrega", c => c.entrega ? (c.entrega === "COLETA" ? "Coleta (FOB)" : "Frete CIF") : "—") +
+    linhaCab("Frete · Desconto", c => `${Number(c.frete) > 0 ? numero(c.frete) : "—"} · ${
+        Number(c.desconto) > 0 ? numero(c.desconto) : "—"}${
+        Number(c.acrescimo_percentual) ? ` · ${numero(c.acrescimo_percentual)}%` : ""}`) +
+    linhaCab("Total geral", c => `<b>${numero(c.total)}</b>${
+        c.itens_cotados < c.itens_no_mapa ? ` <span class="sub">não cotou tudo</span>`
+        : (MAPA.melhor_fornecedor_unico === c.id
+            ? ` <span class="sub" style="color:var(--verde); font-weight:700">melhor no total</span>` : "")}`,
+      "total");
 
   // Uma linha por item, com a SITUAÇÃO ao lado do insumo: quem abre um mapa de
   // duas semanas atrás vê na hora o que já virou pedido, o que já chegou e o
   // que ainda está em cotação, sem sair da tela.
-  const linhas = MAPA.itens.map(i => `<tr>
-      <td class="insumo"><b>${escapar(i.insumo)}</b>
+  const linhas = MAPA.itens.map((i, n) => `<tr>
+      <td class="dados fixa" style="font-size:10.5px">${escapar(i.solicitacao || "")}</td>
+      <td class="dados fixa direita">${n + 1}</td>
+      <td class="insumo fixa"><b>${escapar(i.insumo)}</b>
         ${i.corrigivel ? `<button class="lapis" data-corrigir="${i.suprimento_item_id}"
           title="Corrigir o que a obra pediu — exige motivo e fica registrado"
           aria-label="corrigir">✎</button>` : ""}
@@ -136,30 +155,22 @@ function desenharMapa(){
         ${i.correcoes ? `<small class="corrigido">corrigido ${i.correcoes}×</small>` : ""}</td>
       <td>${selo(i.status, i.status_rotulo)}</td>
       <td class="dados" style="font-size:11px">${escapar(i.obra || "—")}</td>
-      <td class="direita dados" style="white-space:nowrap">${
-        quantidadeBR(i.quantidade)} <small>${escapar(i.unidade)}</small></td>
+      <td class="direita dados" style="white-space:nowrap">${quantidadeBR(i.quantidade)}</td>
+      <td class="dados"><small>${escapar(i.unidade)}</small></td>
       ${colunas.map(c => {
         const cel = i.precos[c.id];
-        if (!cel) return `<td class="direita"><input class="cel" data-col="${c.id}"
-            data-lin="${i.id}" placeholder="—"></td>`;
+        if (!cel) return `<td class="direita sem-preco"><input class="cel" data-col="${c.id}"
+            data-lin="${i.id}" placeholder="—"></td><td class="direita dados subtotal">—</td>`;
         const melhor = i.menor_preco_de === c.id;
         return `<td class="direita ${melhor ? "menor-preco" : ""}">
           <input class="cel" data-col="${c.id}" data-lin="${i.id}"
-                 value="${cel.preco_unitario}">
-          <span class="sub">${numero(cel.total)}${
-            cel.origem === "HERDADO" ? ` · <span style="color:var(--ambar)"
-              title="preço de outra cotação">herdado</span>` : ""}${
-            cel.origem === "IA" ? ` · <span style="color:var(--ciano)">lido</span>` : ""}</span>
-        </td>`;
+                 value="${Number(cel.preco_unitario).toLocaleString("pt-BR",
+                   {minimumFractionDigits: 2, maximumFractionDigits: 4})}"${
+            cel.origem === "HERDADO" ? ` title="preço herdado de outra cotação" style="color:var(--ambar)"` : ""}${
+            cel.origem === "IA" ? ` title="lido da proposta" style="color:var(--ciano)"` : ""}></td>
+          <td class="direita dados subtotal ${melhor ? "menor-preco" : ""}">${numero(cel.total)}</td>`;
       }).join("")}
     </tr>`).join("");
-
-  const totais = colunas.map(c => `<td class="direita dados"><b>${numero(c.total)}</b>
-      ${c.itens_cotados < c.itens_no_mapa
-        ? `<span class="sub">não cotou tudo</span>`
-        : (MAPA.melhor_fornecedor_unico === c.id
-            ? `<span class="sub" style="color:var(--verde); font-weight:700"
-                 >melhor no total</span>` : "")}</td>`).join("");
 
   // Quantos itens em cada situação — o resumo que a planilha dá pela cor.
   const porSituacao = {};
@@ -171,46 +182,94 @@ function desenharMapa(){
   const resumoSituacoes = Object.entries(porSituacao)
     .map(([chave, x]) => `${selo(chave, `${x.rotulo}: ${x.n}`)}`).join(" ");
 
-  els("painel-mapa").innerHTML = `<div class="cartao">
+  // O RODAPÉ DA PLANILHA: as quatro contas que decidem a compra.
+  const porId = Object.fromEntries(colunas.map(c => [c.id, c]));
+  const vencedores = new Set(MAPA.itens.map(i => i.menor_preco_de).filter(Boolean));
+  const encargos = [...vencedores].reduce((s, id) =>
+    s + Number(porId[id].frete || 0) - Number(porId[id].desconto || 0), 0);
+  const unico = porId[MAPA.melhor_fornecedor_unico];
+  const semCotacao = MAPA.itens.filter(i => !i.menor_preco_de).length;
+  const rodape = `<div class="rodape-mapa">
+      <div><span>Melhor fornecedor (sem frete)</span><b>${unico ? numero(unico.soma_itens) : "—"}</b>
+        <small>${unico ? escapar(unico.fornecedor) : "ninguém cotou todos os itens"}</small></div>
+      <div><span>Melhor fornecedor (com frete)</span><b>${unico ? numero(unico.total) : "—"}</b>
+        <small>comprando tudo de um só</small></div>
+      <div><span>Melhor compra (sem frete)</span><b>${numero(MAPA.total_pulverizado)}</b>
+        <small>cada item de quem tem o menor preço · ${vencedores.size} fornecedor(es)</small></div>
+      <div><span>Melhor compra (com frete)</span><b>${numero(Number(MAPA.total_pulverizado) + encargos)}</b>
+        <small>somando o frete de cada fornecedor envolvido</small></div>
+      ${semCotacao ? `<div class="alerta"><span>Sem preço de ninguém</span><b>${semCotacao}</b>
+        <small>item(ns) fora das contas acima</small></div>` : ""}
+    </div>`;
+
+  els("painel-mapa").innerHTML = `<div class="cartao" id="cartao-mapa">
     <div class="cartao-cab"><h3>${escapar(MAPA.numero)} · ${escapar(MAPA.titulo)}</h3>
-      <small>o total já inclui frete, desconto e acréscimo — comparar só o
-        preço unitário engana</small></div>
+      <small>${MAPA.itens.length} item(ns) · ${colunas.length} fornecedor(es) ·
+        o total geral já inclui frete, desconto e acréscimo</small>
+      <button class="btn secundario" id="btn-cheio" style="margin-left:auto"
+        title="Abrir o mapa na tela inteira, para trabalhar com muitos itens e fornecedores"
+        >⛶ Tela cheia</button></div>
+    <div class="solta-proposta" id="solta-proposta">
+      <b>Jogue aqui a proposta do fornecedor</b> (PDF, foto ou XML) — ou
+      <label class="link-btn" style="cursor:pointer">escolha o arquivo
+        <input type="file" id="arq-proposta" hidden multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.xml"></label>.
+      <small>O sistema lê, descobre de qual fornecedor é e preenche a coluna dele
+        para você conferir. Nada é gravado antes de "Salvar preços".</small></div>
     ${resumoSituacoes ? `<div style="margin:0 0 8px; display:flex; gap:4px;
       flex-wrap:wrap">${resumoSituacoes}</div>` : ""}
-    <div style="overflow-x:auto">
-      <table class="mapa"><thead><tr>
-        <th>Insumo</th><th>Situação</th><th>Obra</th><th class="direita">Qtd</th>${cab}
-      </tr></thead>
-        <tbody>${linhas}</tbody>
-        <tfoot><tr><td colspan="4"><b>Total</b></td>${totais}</tr>
-          <tr><td colspan="4"><span class="sub">comprando cada item de quem tem o
-            menor preço</span></td>
-            <td colspan="${colunas.length}" class="direita dados">
-              ${numero(MAPA.total_pulverizado)} <span class="sub">(sem frete)</span></td></tr>
-        </tfoot></table>
+    <div class="rolagem-mapa">
+      <table class="mapa planilha"><thead>${cab}
+        <tr class="cab-itens"><th class="fixa">Nº SS</th><th class="fixa">#</th>
+          <th class="fixa">Descrição</th><th>Situação</th><th>Obra</th>
+          <th class="direita">Qtd</th><th>Und</th>
+          ${colunas.map(() => `<th class="direita">Preço unit.</th><th class="direita">Subtotal</th>`).join("")}
+        </tr></thead>
+        <tbody>${linhas}</tbody></table>
     </div>
-    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    ${rodape}
+    <div class="barra-mapa">
       <button class="btn" id="btn-salvar-precos">Salvar preços</button>
       <button class="btn secundario" id="btn-add-forn">Acrescentar fornecedor</button>
       <button class="btn secundario" id="btn-herdar">Puxar preços anteriores</button>
       <button class="btn secundario" id="btn-relatorios">📊 Relatórios do mapa</button>
       <button class="btn secundario" id="btn-mapa-pdf"
-        title="O mapa inteiro em PDF, deitado quando tem muitos fornecedores"
+        title="O mapa no formato da planilha, com as condições de cada fornecedor e os quatro resumos — para a gestão analisar"
         >&#10515; Mapa em PDF</button>
       <span class="espaco" style="flex:1"></span>
-      <button class="btn" id="btn-disparar">✉ Disparar a cotação</button>
+      <button class="btn secundario" id="btn-disparar">✉ Disparar a cotação</button>
+      {% if pode.comprar %}<button class="btn" id="btn-fechar-pedido"
+        title="Escolher o fornecedor e os itens, e mandar o pedido para autorização"
+        >✔ Fechar pedido</button>{% endif %}
     </div>
     <div class="cartao-dica" style="margin-top:8px">A célula em verde é o menor
-      preço da linha. "Herdado" quer dizer que o preço veio de outra cotação —
-      confira a data antes de fechar com ele.</div>
+      preço da linha. Preço em âmbar veio de outra cotação (herdado); em azul,
+      foi lido de uma proposta — confira antes de fechar com ele.</div>
   </div>`;
+
+  if (CHEIO) els("cartao-mapa").classList.add("cheio");
+  els("btn-cheio").textContent = CHEIO ? "✕ Sair da tela cheia" : "⛶ Tela cheia";
+  els("btn-cheio").addEventListener("click", () => { CHEIO = !CHEIO;
+    document.body.classList.toggle("com-mapa-cheio", CHEIO); desenharMapa(); });
+  const zona = els("solta-proposta");
+  ["dragenter", "dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("sobre"); }));
+  ["dragleave", "drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("sobre"); }));
+  zona.addEventListener("drop", e => jogarPropostas([...e.dataTransfer.files]));
+  els("arq-proposta").addEventListener("change", e => jogarPropostas([...e.target.files]));
 
   els("btn-salvar-precos").addEventListener("click", salvarPrecos);
   els("btn-add-forn").addEventListener("click", abrirFornecedor);
   els("btn-herdar").addEventListener("click", herdarPrecos);
   els("btn-relatorios").addEventListener("click", () => abrirRelatorios("POR_ITEM"));
-  els("btn-mapa-pdf").addEventListener("click", exportarMapa);
+  // ⚑ O PDF DO MAPA É FEITO NO SERVIDOR desde 20/11/2026, no formato da
+  // planilha (condições de cada fornecedor, unitário e subtotal, resumos). A
+  // exportação genérica que havia aqui trazia só o preço unitário.
+  els("btn-mapa-pdf").addEventListener("click", () =>
+    window.open(`/erp/suprimentos/cotacoes/${MAPA.id}/pdf`, "_blank", "noopener"));
   els("btn-disparar").addEventListener("click", abrirDisparo);
+  if (els("btn-fechar-pedido"))
+    els("btn-fechar-pedido").addEventListener("click", () => abrirFechamento());
   document.querySelectorAll("[data-proposta]").forEach(b =>
     b.addEventListener("click", () => lerProposta(+b.dataset.proposta)));
   document.querySelectorAll("[data-corrigir]").forEach(b =>
@@ -479,10 +538,12 @@ async function abrirDisparo(){
 
     <div class="cartao">
       <div class="cartao-cab"><h3>O que vai ser mandado</h3>
-        <small>é este texto, exatamente</small></div>
-      <div class="dados" style="white-space:pre-wrap; font-size:12.5px;
-           max-height:240px; overflow:auto; background:#F7F9FC; padding:10px;
-           border-radius:8px">${(p.corpo || "").replace(/</g, "&lt;")}</div>
+        <small>o e-mail é o aviso padrão; a cotação completa vai em PDF, anexo</small></div>
+      <div style="white-space:pre-wrap; font-size:13px; background:#F7F9FC;
+           padding:10px; border-radius:8px">${escapar(p.corpo_do_email || p.corpo || "")}</div>
+      <div style="margin-top:8px"><a class="btn secundario" target="_blank" rel="noopener"
+        href="/erp/suprimentos/cotacoes/${MAPA.id}/solicitacao.pdf${
+          p.empresa ? `?empresa=${p.empresa.id}` : ""}">&#10515; Ver o PDF que vai anexo</a></div>
     </div>
 
     <div class="cartao-dica">${p.aviso}</div>
@@ -586,6 +647,69 @@ async function abrirDisparo(){
 // A proposta chega como PDF, foto do WhatsApp ou texto colado. A IA casa o que
 // veio com os itens QUE JÁ ESTÃO NO MAPA — problema bem mais fácil do que
 // adivinhar material do zero. O que ela não casar volta escrito na tela.
+// ---------------------------------------------------------------------------
+// JOGAR A PROPOSTA NO MAPA (20/11/2026)
+//
+// O dono: "eu estou num determinado mapa, eu jogo o arquivo, aí o sistema faz
+// a leitura e tenta preencher o mapa, de forma a facilitar o trabalho do
+// comprador. Isso é algo importante."
+//
+// Já existia "ler proposta" na coluna de cada fornecedor — mas pedia para
+// escolher o fornecedor ANTES. Aqui o arquivo é jogado no mapa e o sistema
+// descobre de quem é (pelo CNPJ da proposta, ou pelo nome). Vários arquivos de
+// uma vez são lidos um a um. Quando não reconhece, PERGUNTA — preço na coluna
+// errada é o erro mais caro desta tela.
+// ---------------------------------------------------------------------------
+let CHEIO = false;
+
+async function jogarPropostas(arquivos){
+  if (!arquivos.length || !MAPA) return;
+  const relato = [];
+  for (const arquivo of arquivos) {
+    aviso("mensagem", `Lendo ${escapar(arquivo.name)}…`, "info");
+    try {
+      const forma = new FormData();
+      forma.append("arquivo", arquivo);
+      const d = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/proposta`,
+        {method: "POST", body: forma});
+      const l = d.leitura;
+      let coluna = l.coluna_id;
+      if (!coluna) {
+        const r = await perguntar({
+          titulo: "De qual fornecedor é esta proposta?",
+          aviso: `Li "${arquivo.name}"${l.emitente_lido ? ` (emitida por ${l.emitente_lido})` : ""}, `
+            + `mas ${l.reconhecido}. ${l.sugestoes.length} preço(s) lidos. Escolha a coluna `
+            + `— ou cancele, acrescente o fornecedor ao mapa e jogue o arquivo de novo.`,
+          campos: [{nome: "coluna", rotulo: "Fornecedor", tipo: "select",
+            opcoes: MAPA.fornecedores.map(f => ({valor: String(f.id), rotulo: f.fornecedor}))}],
+          textoOk: "É deste"});
+        if (!r || !r.coluna) { relato.push(`${arquivo.name}: não aplicada`); continue; }
+        coluna = +r.coluna;
+      }
+      await aplicarProposta(coluna, l);
+      const nome = (MAPA.fornecedores.find(f => f.id === coluna) || {}).fornecedor || "";
+      relato.push(`<b>${escapar(nome)}</b>${l.coluna_id ? ` (reconhecido ${l.reconhecido})` : ""}: ${l.resumo}`
+        + (l.nao_casados.length ? ` Não casou: ${l.nao_casados.map(x => escapar(x.descricao)).join(" · ")}.` : ""));
+    } catch(e){ relato.push(`${escapar(arquivo.name)}: ${escapar(e.message)}`); }
+  }
+  aviso("mensagem", relato.join("<br>") + "<br>Confira os campos contornados e clique em <b>Salvar preços</b>.", "alerta");
+}
+
+// Recarrega o mapa SEM PERDER o que está digitado e ainda não foi salvo.
+// ⚑ Defeito consertado em 20/11/2026: confirmar as condições lidas na
+// proposta recarregava o mapa — e os preços que a IA tinha acabado de
+// preencher, ainda não salvos, sumiam sem aviso.
+async function recarregarMantendoDigitado(){
+  const digitado = [...document.querySelectorAll(".cel")].map(i => ({
+    col: i.dataset.col, lin: i.dataset.lin, valor: i.value,
+    contorno: i.style.outline, dica: i.title}));
+  await abrirMapa(MAPA.id);
+  digitado.forEach(d => {
+    const campo = document.querySelector(`.cel[data-col="${d.col}"][data-lin="${d.lin}"]`);
+    if (campo && d.contorno) { campo.value = d.valor; campo.style.outline = d.contorno; campo.title = d.dica; }
+  });
+}
+
 async function lerProposta(colunaId){
   // O ARQUIVO vem junto do texto colado, e não em outro botão: a resposta do
   // fornecedor chega em PDF, em foto do WhatsApp e em e-mail colado, e obrigar
@@ -627,7 +751,7 @@ async function lerProposta(colunaId){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
-function aplicarProposta(colunaId, leitura){
+async function aplicarProposta(colunaId, leitura){
   leitura.sugestoes.forEach(sug => {
     const campo = document.querySelector(
       `.cel[data-col="${colunaId}"][data-lin="${sug.cotacao_item_id}"]`);
@@ -650,7 +774,7 @@ function aplicarProposta(colunaId, leitura){
   partes.push("Confira e clique em Salvar preços.");
   aviso("mensagem", partes.join(" "),
         leitura.nao_casados.length ? "alerta" : "ok");
-  if (leitura.condicoes) confirmarCondicoes(colunaId, leitura.condicoes);
+  if (leitura.condicoes) await confirmarCondicoes(colunaId, leitura.condicoes);
 }
 
 // AS CONDIÇÕES NÃO SE GRAVAM SOZINHAS, e o motivo é aritmético: frete e forma
@@ -692,7 +816,7 @@ async function confirmarCondicoes(colunaId, c){
       {method: "POST", headers: {"Content-Type": "application/json"},
        body: JSON.stringify(r)});
     aviso("mensagem", d.recado, "ok");
-    abrirMapa(MAPA.id);
+    await recarregarMantendoDigitado();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
@@ -810,6 +934,199 @@ async function novaCotacao(){
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
   els("dlg").showModal();
+}
+
+// ---------------------------------------------------------------------------
+// FECHAR O PEDIDO — a decisão de compra (20/11/2026)
+//
+// ⚑ ESTE BOTÃO NÃO EXISTIA. A regra de fechar pedido a partir do mapa estava
+// escrita e testada desde 05/09/2026, e a tela nunca ganhou a porta: dava para
+// cotar, comparar e mandar e-mail — e não dava para COMPRAR. O roteiro de
+// homologação mandava "no mapa, feche o pedido com um fornecedor"; quem
+// seguisse o roteiro parava ali. (É o mesmo formato da etapa do DP que tinha
+// regra e não tinha botão.)
+//
+// O diálogo responde, numa tela só, às perguntas do fechamento: de QUEM, O
+// QUÊ, em que CONDIÇÃO, para QUANDO e ONDE DESCE. A última é pedido dele do
+// mesmo dia: "precisamos prever quando a entrega não for na obra, por exemplo
+// na sede. Isso pode ser definido no fechamento. A princípio a entrega é na
+// obra."
+// ---------------------------------------------------------------------------
+let FECH = null;
+
+async function abrirFechamento(colunaId){
+  try {
+    FECH = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/fechamento`);
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  const comLivre = FECH.fornecedores.filter(f => f.livres > 0);
+  if (!comLivre.length) {
+    aviso("mensagem", FECH.fornecedores.length
+      ? "Não há o que fechar: ou ninguém tem preço lançado, ou todos os itens "
+        + "cotados já estão em pedido."
+      : "Acrescente um fornecedor e lance os preços antes de fechar.", "alerta");
+    return;
+  }
+  // Abre no fornecedor com mais itens no MENOR preço — é o palpite mais útil.
+  const melhor = colunaId || comLivre.slice().sort((a, b) =>
+    b.itens.filter(i => i.livre && i.menor).length -
+    a.itens.filter(i => i.livre && i.menor).length)[0].cotacao_fornecedor_id;
+
+  els("dlg-titulo").textContent = `Fechar pedido — ${MAPA.numero}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="cartao-dica" style="margin-bottom:10px">Um pedido é de <b>um
+      fornecedor</b>. Se a compra vai ser dividida, feche um pedido para cada
+      um — os itens que ficarem de fora continuam livres no mapa. O pedido
+      nasce <b>aguardando autorização</b>.</div>
+    <div class="campo"><label>De quem comprar</label>
+      <select id="fp-forn">${FECH.fornecedores.map(f => `<option
+        value="${f.cotacao_fornecedor_id}" ${f.livres ? "" : "disabled"}
+        ${f.cotacao_fornecedor_id === melhor ? "selected" : ""}>${escapar(f.fornecedor)}
+        — ${f.livres} item(ns) livre(s)</option>`).join("")}</select></div>
+    <div id="fp-itens"></div>
+    <div class="grade" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-top:10px">
+      <div class="campo"><label>Condição de pagamento</label>
+        <select id="fp-cond"><option value="">— escolha —</option>${BASE.condicoes
+          .filter(c => c.ativo !== false).map(c => `<option value="${c.id}">${escapar(c.nome)}</option>`).join("")}
+        </select></div>
+      <div class="campo"><label>Material em obra até</label>
+        <input type="date" id="fp-previsao"></div>
+      <div class="campo"><label>Frete por conta de quem</label>
+        <select id="fp-entrega"><option value="">—</option>
+          <option value="ENTREGA">Fornecedor entrega (CIF)</option>
+          <option value="COLETA">Nós coletamos (FOB)</option></select></div>
+      <div class="campo"><label>Frete (R$)</label>
+        <input id="fp-frete" inputmode="decimal" data-sem-mascara></div>
+      <div class="campo"><label>Desconto (R$)</label>
+        <input id="fp-desconto" inputmode="decimal" data-sem-mascara></div>
+    </div>
+    <label class="opcao" style="margin-top:8px"><input type="checkbox" id="fp-antecipado">
+      <span class="rotulo">Pagamento antecipado (paga antes de o material chegar)</span></label>
+    <h4 style="margin-top:14px">Onde o material desce</h4>
+    <div id="fp-locais"></div>
+    <div class="campo" style="margin-top:10px"><label>Observações para o fornecedor</label>
+      <textarea id="fp-obs" rows="2" placeholder="ex.: descarga só até as 16h; ligar antes para o encarregado"></textarea></div>
+    <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
+      <button class="btn" id="fp-salvar">Fechar e mandar para autorização</button>
+      <span id="fp-total" class="dados" style="font-weight:700"></span>
+    </div>`;
+  els("fp-forn").addEventListener("change", desenharFechamento);
+  els("fp-salvar").addEventListener("click", confirmarFechamento);
+  ["fp-frete", "fp-desconto"].forEach(id => els(id).addEventListener("input", totalDoFechamento));
+  desenharFechamento();
+  els("dlg").showModal();
+}
+
+function fornecedorDoFechamento(){
+  return FECH.fornecedores.find(f => f.cotacao_fornecedor_id === +els("fp-forn").value);
+}
+
+function desenharFechamento(){
+  const f = fornecedorDoFechamento();
+  // As condições do cabeçalho vêm do que o fornecedor respondeu no mapa — e
+  // continuam editáveis, porque a negociação final muda frete e desconto.
+  els("fp-cond").value = f.condicao_pagamento_id || "";
+  els("fp-entrega").value = f.entrega || "";
+  els("fp-frete").value = Number(f.frete) > 0 ? String(f.frete).replace(".", ",") : "";
+  els("fp-desconto").value = Number(f.desconto) > 0 ? String(f.desconto).replace(".", ",") : "";
+  els("fp-itens").innerHTML = `<table style="margin-top:8px"><thead><tr><th></th>
+      <th>Item</th><th>Obra</th><th class="direita">Qtd</th>
+      <th class="direita">Unitário</th><th class="direita">Total</th></tr></thead><tbody>
+    ${f.itens.map(i => `<tr ${i.livre ? "" : `style="opacity:.55"`}>
+      <td><input type="checkbox" class="fp-item" value="${i.cotacao_item_id}"
+        data-total="${i.total}" data-obra="${i.obra_id}"
+        ${i.livre ? (i.menor ? "checked" : "") : "disabled"}></td>
+      <td>${escapar(i.insumo)}${i.especificacao ? `<br><small>${escapar(i.especificacao)}</small>` : ""}
+        ${i.livre ? (i.menor ? `<br><small style="color:var(--verde)">menor preço do mapa</small>` : "")
+                  : `<br><small>${escapar(i.motivo || "")}</small>`}</td>
+      <td class="dados">${escapar(i.obra || "")}</td>
+      <td class="direita dados">${quantidadeBR(i.quantidade)} ${escapar(i.unidade)}</td>
+      <td class="direita dados">${numero(i.preco_unitario)}</td>
+      <td class="direita dados">${numero(i.total)}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="cartao-dica" style="margin-top:6px">Vêm marcados os itens em que
+      este fornecedor tem o menor preço. Marque os outros se a compra for
+      fechada toda com ele.</div>`;
+  document.querySelectorAll(".fp-item").forEach(i => i.addEventListener("change", () => {
+    locaisDoFechamento(); totalDoFechamento(); }));
+  locaisDoFechamento();
+  totalDoFechamento();
+}
+
+// Um bloco por OBRA presente nos itens marcados. A regra é a obra; a sede e o
+// "outro endereço" são a exceção, escolhida aqui.
+function locaisDoFechamento(){
+  const marcadas = new Set([...document.querySelectorAll(".fp-item:checked")]
+    .map(i => +i.dataset.obra));
+  const anteriores = {};
+  document.querySelectorAll(".fp-local").forEach(b => anteriores[b.dataset.obra] = {
+    tipo: b.querySelector(".fp-tipo").value,
+    rotulo: b.querySelector(".fp-rotulo").value,
+    endereco: b.querySelector(".fp-endereco").value});
+  els("fp-locais").innerHTML = FECH.obras.filter(o => marcadas.has(o.id)).map(o => {
+    const a = anteriores[o.id] || {tipo: "OBRA", rotulo: "", endereco: ""};
+    return `<div class="fp-local" data-obra="${o.id}" style="border:1px solid var(--borda,#DCE0E7);
+        border-radius:8px; padding:8px 10px; margin-bottom:6px">
+      <b>${escapar(o.rotulo)}</b>
+      <select class="fp-tipo" data-sem-busca style="display:block; width:100%; margin-top:4px">
+        <option value="OBRA" ${a.tipo === "OBRA" ? "selected" : ""}>Na obra — ${escapar(o.endereco)}</option>
+        <option value="SEDE" ${a.tipo === "SEDE" ? "selected" : ""} ${o.sede.tem ? "" : "disabled"}
+          >${escapar(o.sede.rotulo)} — ${escapar(o.sede.tem ? o.sede.endereco : "empresa sem endereço no cadastro")}</option>
+        <option value="OUTRO" ${a.tipo === "OUTRO" ? "selected" : ""}>Outro endereço…</option>
+      </select>
+      <div class="fp-outro" style="display:${a.tipo === "OUTRO" ? "block" : "none"}; margin-top:6px">
+        <input class="fp-rotulo" placeholder="nome do local (ex.: Depósito central)"
+          value="${escapar(a.rotulo)}" style="margin-bottom:4px">
+        <input class="fp-endereco" placeholder="endereço completo, com cidade e CEP"
+          value="${escapar(a.endereco)}">
+      </div>
+      ${o.endereco === "Endereço não informado" ? `<div class="aviso alerta" style="margin:6px 0 0">
+        Esta obra está sem endereço no cadastro — o pedido sairia dizendo
+        "Endereço não informado".</div>` : ""}
+    </div>`;
+  }).join("") || `<div class="cartao-dica">marque ao menos um item</div>`;
+  document.querySelectorAll(".fp-tipo").forEach(sel => sel.addEventListener("change", () => {
+    sel.closest(".fp-local").querySelector(".fp-outro").style.display =
+      sel.value === "OUTRO" ? "block" : "none"; }));
+}
+
+function totalDoFechamento(){
+  const br = v => Number(String(v || "0").replace(/\./g, "").replace(",", ".")) || 0;
+  const itens = [...document.querySelectorAll(".fp-item:checked")]
+    .reduce((s, i) => s + Number(i.dataset.total), 0);
+  const total = Math.max(itens + br(els("fp-frete").value) - br(els("fp-desconto").value), 0);
+  els("fp-total").textContent = `Total do pedido: ${moeda(total)}`;
+}
+
+async function confirmarFechamento(){
+  const br = v => String(v || "").trim() ? String(v).replace(/\./g, "").replace(",", ".") : "0";
+  const itens = [...document.querySelectorAll(".fp-item:checked")].map(i => +i.value);
+  if (!itens.length) { aviso("dlg-msg", "Marque os itens que vão neste pedido.", "erro"); return; }
+  if (!els("fp-cond").value) {
+    aviso("dlg-msg", "Escolha a condição de pagamento — é ela que diz ao financeiro "
+      + "quando esta compra vai ser paga.", "erro"); return; }
+  if (!els("fp-previsao").value) {
+    aviso("dlg-msg", "Informe até quando o material tem de estar na obra — sem a data, "
+      + "o sistema não tem como avisar do atraso nem projetar o pagamento.", "erro"); return; }
+  const locais = [...document.querySelectorAll(".fp-local")].map(b => ({
+    obra_id: +b.dataset.obra, tipo: b.querySelector(".fp-tipo").value,
+    rotulo: b.querySelector(".fp-rotulo").value,
+    endereco: b.querySelector(".fp-endereco").value}));
+  els("fp-salvar").disabled = true;
+  try {
+    const r = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/fechar`, {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({cotacao_fornecedor_id: +els("fp-forn").value, itens,
+        condicao_pagamento_id: +els("fp-cond").value,
+        previsao_entrega: els("fp-previsao").value,
+        entrega: els("fp-entrega").value || null,
+        frete: br(els("fp-frete").value), desconto: br(els("fp-desconto").value),
+        antecipado: els("fp-antecipado").checked,
+        observacoes: els("fp-obs").value, locais_entrega: locais})});
+    els("dlg").close();
+    aviso("mensagem", `Pedido ${r.numero} fechado e aguardando autorização. `
+      + `<a href="/erp/suprimentos/pedidos?pedido=${r.id}">abrir o pedido</a>`, "ok");
+    abrirMapa(MAPA.id);
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); els("fp-salvar").disabled = false; }
 }
 
 els("btn-nova-cot").addEventListener("click", () => novaCotacao().catch(

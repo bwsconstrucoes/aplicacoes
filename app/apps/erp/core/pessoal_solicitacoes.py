@@ -1068,6 +1068,7 @@ ROTULOS_DE_DOCUMENTO = {
     "CTPS-FOTO": "CTPS (página com a foto)",
     "CTPS-INFORMACOES": "CTPS (página com as informações)",
     "DOC-DEPENDENTE": "documento do dependente (certidão ou RG)",
+    "ASO": "ASO (exame médico)",
 }
 
 

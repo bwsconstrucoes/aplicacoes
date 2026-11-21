@@ -54,6 +54,9 @@
     <span id="exportar" style="display:flex; gap:6px"></span>
     <span id="acoes-lote" class="oculto" style="display:flex; gap:8px; align-items:center">
       <button class="btn" id="btn-cotar">Gerar cotação com os selecionados</button>
+      {% if pode.comprar %}<button class="btn secundario" id="btn-direto"
+        title="Fechar o pedido de compra direto com um fornecedor, sem mapa de cotação"
+        >Comprar direto (sem cotação)</button>{% endif %}
     </span>
     <button class="btn secundario" id="btn-pedir-insumo">Pedir cadastro de insumo</button>
     <button class="btn" id="btn-nova">+ Novo pedido de material</button>
@@ -151,6 +154,15 @@ const PODE_PEDIR_INSUMO = {{ 'true' if pode.solicitar_suprimento else 'false' }}
 
 const ROTULO_PRIORIDADE = {ALTA: "Alta", MEDIA: "Média", NORMAL: "Normal"};
 // Situação a partir da qual o item já saiu da fila de cotar.
+// ⚑ "PRAZO ESTOURADO" CONTAVA O QUE JÁ CHEGOU (consertado em 20/11/2026): a
+// conta olhava só a data, e material recebido — ou cancelado — com data
+// passada continuava no número vermelho para sempre. Estourou é: a data que a
+// obra pediu passou E o material ainda não chegou por inteiro.
+const ENCERRADOS = new Set(["RECEBIDO", "CANCELADO", "ALMOXARIFADO"]);
+function estourou(i){
+  return !!i.previsao_entrega && !ENCERRADOS.has(i.status)
+    && i.previsao_entrega < hoje();
+}
 const JA_COTADOS = new Set(["COTACAO", "MAPA", "PEDIDO", "AGUARDANDO_AUTORIZACAO",
                             "AUTORIZADO", "PEDIDO_ENVIADO", "EM_TRANSITO",
                             "RECEBIDO_PARCIAL", "RECEBIDO", "CANCELADO"]);
@@ -237,8 +249,7 @@ function visiveis(){
     if (F.obra.size && !F.obra.has(String(i.obra_id))) return false;
     if (F.categoria.size && !F.categoria.has(String(i.categoria_insumo_id))) return false;
     if (els("f-alta").checked && i.prioridade !== "ALTA") return false;
-    if (els("f-atrasado").checked &&
-        !(i.previsao_entrega && i.previsao_entrega < hoje)) return false;
+    if (els("f-atrasado").checked && !estourou(i)) return false;
     if (els("f-a-cotar").checked && JA_COTADOS.has(i.status)) return false;
     if (b && !`${i.solicitacao} ${i.titulo} ${i.insumo} ${i.especificacao || ""}`
               .toLowerCase().includes(b)) return false;
@@ -293,8 +304,8 @@ function desenhar(){
       <div class="kpi-sub">se atrasar, para a obra</div></button>
     <button class="kpi vermelho ${els("f-atrasado").checked ? "ativo" : ""}" data-pendencia="f-atrasado">
       <div class="kpi-rotulo">Prazo estourado</div>
-      <div class="kpi-valor">${l.filter(i => i.previsao_entrega && i.previsao_entrega < hoje).length}</div>
-      <div class="kpi-sub">previsão de entrega já passou</div></button>
+      <div class="kpi-valor">${l.filter(estourou).length}</div>
+      <div class="kpi-sub">a data passou e o material não chegou</div></button>
     <div class="kpi estatico ciano"><div class="kpi-rotulo">Selecionados</div>
       <div class="kpi-valor">${MARCADOS.size}</div>
       <div class="kpi-sub">entram na próxima cotação</div></div>`;
@@ -802,6 +813,129 @@ async function pedirCadastroDeInsumo(){
 
 els("btn-nova").addEventListener("click", abrirNovo);
 els("btn-cotar").addEventListener("click", gerarCotacao);
+
+// ---------------------------------------------------------------------------
+// COMPRAR DIRETO, SEM COTAÇÃO (21/11/2026)
+//
+// O dono: "pedido sem cotação, isso é essencial, porque acontece eventualmente
+// comprar sem cotação." A regra existia desde setembro (`pedido.fechar_direto`)
+// e a tela nunca teve a porta — o mesmo formato do botão de fechar no mapa.
+//
+// O pedido direto vai para a MESMA fila de autorização, marcado "sem mapa":
+// quem autoriza sabe que não houve comparação de preço. Por isso o último
+// preço conhecido de cada item aparece ao lado do campo — é a única régua.
+// ---------------------------------------------------------------------------
+async function comprarDireto(){
+  const escolhidos = ITENS.filter(i => MARCADOS.has(i.id));
+  if (!escolhidos.length) return aviso("mensagem", "Marque os itens que vão no pedido.", "erro");
+  let cad, locais;
+  try {
+    cad = await api("/erp/api/suprimentos/cadastros");
+    locais = (await api("/erp/api/suprimentos/entrega/locais?obras="
+      + [...new Set(escolhidos.map(i => i.obra_id))].join(","))).obras;
+  } catch(e){ return aviso("mensagem", e.message, "erro"); }
+  const brn = v => Number(String(v || "0").replace(/\./g, "").replace(",", ".")) || 0;
+  els("dlg-titulo").textContent = "Pedido de compra direto — sem cotação";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="aviso alerta">Este pedido <b>não passou por comparação de preços</b>.
+      Ele vai para autorização marcado como "sem mapa" — quem autoriza vê isso.</div>
+    <div class="campo"><label>Fornecedor</label>
+      <select id="pd-forn"><option value="">— escolher —</option>${cad.fornecedores
+        .map(f => `<option value="${f.id}">${escapar(f.nome)}</option>`).join("")}</select></div>
+    <table style="margin-top:8px"><thead><tr><th>Item</th><th>Obra</th>
+      <th class="direita">Qtd</th><th class="direita">Preço unitário (R$)</th>
+      <th class="direita">Total</th></tr></thead><tbody>
+      ${escolhidos.map(i => `<tr><td>${escapar(i.insumo)}${i.especificacao
+          ? `<br><small>${escapar(i.especificacao)}</small>` : ""}
+          ${i.preco_referencia && i.preco_referencia.ultimo
+            ? `<br><small>último preço: ${numero(i.preco_referencia.ultimo)}${
+                i.preco_referencia.ultimo_de ? ` · ${escapar(i.preco_referencia.ultimo_de)}` : ""}</small>`
+            : `<br><small>sem preço anterior no sistema</small>`}</td>
+        <td class="dados">${escapar(i.obra)}</td>
+        <td class="direita dados">${quantidadeBR(i.quantidade)} ${escapar(i.unidade)}</td>
+        <td class="direita"><input class="pd-preco" data-item="${i.id}" data-qtd="${i.quantidade}"
+          inputmode="decimal" data-sem-mascara style="width:110px; text-align:right"></td>
+        <td class="direita dados pd-total">—</td></tr>`).join("")}</tbody></table>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-top:10px">
+      <div class="campo"><label>Condição de pagamento</label>
+        <select id="pd-cond"><option value="">— escolha —</option>${cad.condicoes
+          .filter(c => c.ativo !== false).map(c => `<option value="${c.id}">${escapar(c.nome)}</option>`).join("")}
+        </select></div>
+      <div class="campo"><label>Material em obra até</label><input type="date" id="pd-previsao"></div>
+      <div class="campo"><label>Frete por conta de quem</label>
+        <select id="pd-entrega"><option value="">—</option>
+          <option value="ENTREGA">Fornecedor entrega (CIF)</option>
+          <option value="COLETA">Nós coletamos (FOB)</option></select></div>
+      <div class="campo"><label>Frete (R$)</label><input id="pd-frete" inputmode="decimal" data-sem-mascara></div>
+      <div class="campo"><label>Desconto (R$)</label><input id="pd-desconto" inputmode="decimal" data-sem-mascara></div>
+    </div>
+    <label class="opcao" style="margin-top:8px"><input type="checkbox" id="pd-antecipado">
+      <span class="rotulo">Pagamento antecipado (paga antes de o material chegar)</span></label>
+    <h4 style="margin-top:14px">Onde o material desce</h4>
+    ${locais.map(o => `<div class="pd-local" data-obra="${o.id}" style="border:1px solid var(--borda);
+        border-radius:8px; padding:8px 10px; margin-bottom:6px"><b>${escapar(o.rotulo)}</b>
+      <select class="pd-tipo" data-sem-busca style="display:block; width:100%; margin-top:4px">
+        <option value="OBRA">Na obra — ${escapar(o.endereco)}</option>
+        <option value="SEDE" ${o.sede.tem ? "" : "disabled"}>${escapar(o.sede.rotulo)} — ${
+          escapar(o.sede.tem ? o.sede.endereco : "empresa sem endereço no cadastro")}</option>
+        <option value="OUTRO">Outro endereço…</option></select>
+      <div class="pd-outro" style="display:none; margin-top:6px">
+        <input class="pd-rotulo" placeholder="nome do local" style="margin-bottom:4px">
+        <input class="pd-endereco" placeholder="endereço completo, com cidade e CEP"></div></div>`).join("")}
+    <div class="campo" style="margin-top:10px"><label>Por que sem cotação? E observações para o fornecedor</label>
+      <textarea id="pd-obs" rows="2" placeholder="ex.: fornecedor único na região; compra de urgência"></textarea></div>
+    <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
+      <button class="btn" id="pd-salvar">Fechar e mandar para autorização</button>
+      <span id="pd-soma" class="dados" style="font-weight:700"></span></div>`;
+  comBusca("pd-forn", "buscar fornecedor…");
+  const somar = () => {
+    let soma = 0;
+    document.querySelectorAll(".pd-preco").forEach(c => {
+      const total = brn(c.value) * Number(c.dataset.qtd);
+      c.closest("tr").querySelector(".pd-total").textContent = total ? numero(total) : "—";
+      soma += total; });
+    soma = Math.max(soma + brn(els("pd-frete").value) - brn(els("pd-desconto").value), 0);
+    els("pd-soma").textContent = `Total do pedido: ${moeda(soma)}`;
+  };
+  document.querySelectorAll(".pd-preco, #pd-frete, #pd-desconto").forEach(c =>
+    c.addEventListener("input", somar));
+  document.querySelectorAll(".pd-tipo").forEach(sel => sel.addEventListener("change", () => {
+    sel.closest(".pd-local").querySelector(".pd-outro").style.display =
+      sel.value === "OUTRO" ? "block" : "none"; }));
+  els("pd-salvar").addEventListener("click", async () => {
+    const itens = [...document.querySelectorAll(".pd-preco")].map(c => ({
+      suprimento_item_id: +c.dataset.item, preco_unitario: c.value.trim()}));
+    const falta = [];
+    if (!els("pd-forn").value) falta.push("o fornecedor");
+    if (itens.some(i => !(brn(i.preco_unitario) > 0))) falta.push("o preço de cada item");
+    if (!els("pd-cond").value) falta.push("a condição de pagamento");
+    if (!els("pd-previsao").value) falta.push("a data em que o material tem de chegar");
+    if ((els("pd-obs").value || "").trim().length < 5) falta.push("o motivo de comprar sem cotação");
+    if (falta.length) return aviso("dlg-msg", `Falta ${falta.join(", ")}.`, "erro");
+    els("pd-salvar").disabled = true;
+    try {
+      const r = await api("/erp/api/suprimentos/pedidos", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({fornecedor_id: +els("pd-forn").value, itens,
+          condicao_pagamento_id: +els("pd-cond").value,
+          previsao_entrega: els("pd-previsao").value,
+          entrega: els("pd-entrega").value || null,
+          frete: String(brn(els("pd-frete").value)), desconto: String(brn(els("pd-desconto").value)),
+          antecipado: els("pd-antecipado").checked, observacoes: els("pd-obs").value,
+          locais_entrega: [...document.querySelectorAll(".pd-local")].map(b => ({
+            obra_id: +b.dataset.obra, tipo: b.querySelector(".pd-tipo").value,
+            rotulo: b.querySelector(".pd-rotulo").value,
+            endereco: b.querySelector(".pd-endereco").value}))})});
+      els("dlg").close();
+      MARCADOS.clear();
+      aviso("mensagem", `Pedido ${r.numero} fechado e aguardando autorização. `
+        + `<a href="/erp/suprimentos/pedidos?pedido=${r.id}">abrir o pedido</a>`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); els("pd-salvar").disabled = false; }
+  });
+  els("dlg").showModal();
+}
+if (els("btn-direto")) els("btn-direto").addEventListener("click", comprarDireto);
 els("btn-pedir-insumo").addEventListener("click", pedirCadastroDeInsumo);
 if (!PODE_PEDIR_INSUMO) els("btn-pedir-insumo").style.display = "none";
 ["f-busca", "f-alta", "f-atrasado", "f-a-cotar"].forEach(id =>

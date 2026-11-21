@@ -85,7 +85,8 @@ def fechar_do_mapa(s: Session, cotacao_id: int, cotacao_fornecedor_id: int,
         raise ErroValidacao("Escolha os itens que vão neste pedido.")
 
     precos = {(p.cotacao_fornecedor_id, p.cotacao_item_id): p
-              for p in s.scalars(select(CotacaoPreco)).all()}
+              for p in s.scalars(select(CotacaoPreco).where(
+                  CotacaoPreco.cotacao_fornecedor_id == coluna.id)).all()}
     linhas = []
     for linha_id in cotacao_itens:
         linha = s.get(CotacaoItem, int(linha_id))
@@ -141,7 +142,10 @@ def _criar(s: Session, *, fornecedor_id: int, linhas: list[tuple[SuprimentoItem,
     if forn is None:
         raise ErroValidacao("Fornecedor não encontrado.")
 
-    reservados = {r.suprimento_item_id for r in s.scalars(select(PedidoItemReserva)).all()}
+    ids_das_linhas = [i.id for i, _ in linhas]
+    reservados = {r.suprimento_item_id for r in s.scalars(
+        select(PedidoItemReserva).where(
+            PedidoItemReserva.suprimento_item_id.in_(ids_das_linhas or [0]))).all()}
     repetidos = [i.id for i, _ in linhas if i.id in reservados]
     if repetidos:
         raise ErroValidacao(
@@ -187,12 +191,136 @@ def _criar(s: Session, *, fornecedor_id: int, linhas: list[tuple[SuprimentoItem,
         item.status = StatusItemSuprimento.AUTORIZACAO
     s.flush()
 
+    # ONDE DESCE (migração 120). A regra é a obra; o desvio — a sede, um
+    # depósito — é decidido aqui, por quem fecha, e por obra dentro do pedido.
+    from app.apps.erp.core.suprimentos.entrega import definir_locais
+    locais = definir_locais(s, pedido, dados.get("locais_entrega"),
+                            {i.obra_id for i, _ in linhas}, usuario)
+
     registrar_evento(s, "pedido_compra", pedido.id, "FECHADO",
                      {"numero": pedido.numero, "fornecedor_id": forn.id,
                       "itens": len(linhas), "total": str(total(s, pedido)),
-                      "cotacao_id": cotacao_id, "antecipado": antecipado},
+                      "cotacao_id": cotacao_id, "antecipado": antecipado,
+                      "entrega_fora_da_obra": locais},
                      usuario.id)
     return pedido
+
+
+def redefinir_entrega(s: Session, pedido_id: int, locais: list[dict[str, Any]],
+                      usuario: Usuario) -> PedidoCompra:
+    """Troca o local de entrega depois do fechamento.
+
+    Vale enquanto o pedido está de pé e NADA chegou: depois do primeiro
+    recebimento o material já desceu em algum lugar, e trocar o endereço no
+    papel faria o pedido contar uma história que não aconteceu.
+    """
+    from app.apps.erp.core.suprimentos.entrega import definir_locais
+    from app.apps.erp.db.models.cadastros import Recebimento
+
+    pedido = s.get(PedidoCompra, pedido_id, with_for_update=True, populate_existing=True)
+    if pedido is None:
+        raise ErroNaoEncontrado("Pedido não encontrado.")
+    if pedido.status not in VIVOS:
+        raise ErroValidacao(f"O pedido {pedido.numero} já está "
+                            f"{pedido.status.value.lower().replace('_', ' ')}.")
+    if any(r.pedido_id == pedido.id for r in s.scalars(
+            select(Recebimento).where(Recebimento.pedido_id == pedido.id)).all()):
+        raise ErroValidacao(
+            "Já chegou material deste pedido. O local de entrega não muda mais "
+            "— o que falta resolver vai na observação do recebimento.")
+    obras = set()
+    for linha in _itens(s, pedido.id):
+        item = s.get(SuprimentoItem, linha.suprimento_item_id)
+        if item is not None:
+            obras.add(item.obra_id)
+    gravados = definir_locais(s, pedido, locais, obras, usuario)
+    registrar_evento(s, "pedido_compra", pedido.id, "ENTREGA_REDEFINIDA",
+                     {"entrega_fora_da_obra": gravados}, usuario.id)
+    return pedido
+
+
+def locais_possiveis(s: Session, obras_ids: list[int]) -> list[dict[str, Any]]:
+    """Para cada obra: o endereço do canteiro e a sede que pode recebê-lo no
+    lugar. É o que o fechamento — do mapa ou direto — oferece em "onde desce"."""
+    from app.apps.erp.core.suprimentos.entrega import (
+        endereco_da_obra, rotulo_da_obra, sede_da_obra)
+    from app.apps.erp.db.models.cadastros import Obra
+    saida = []
+    for obra_id in sorted({int(x) for x in obras_ids if x}):
+        obra = s.get(Obra, obra_id)
+        if obra is None:
+            continue
+        saida.append({"id": obra_id, "rotulo": rotulo_da_obra(obra),
+                      "endereco": endereco_da_obra(obra),
+                      "sede": sede_da_obra(s, obra)})
+    return saida
+
+
+def preparar_fechamento(s: Session, cotacao_id: int) -> dict[str, Any]:
+    """O que a tela precisa para FECHAR um pedido a partir do mapa.
+
+    Por fornecedor: o que ele cotou, a que preço, e o que ainda está livre
+    (item que já entrou em outro pedido não pode ser fechado de novo). Por
+    obra: o endereço do canteiro e a sede que pode recebê-lo no lugar.
+    """
+    from app.apps.erp.core.suprimentos.cotacao import montar_mapa
+    from app.apps.erp.core.suprimentos.entrega import (
+        endereco_da_obra, rotulo_da_obra, sede_da_obra)
+    from app.apps.erp.db.models.cadastros import Obra
+
+    mapa = montar_mapa(s, cotacao_id)
+    ids_itens = [i["suprimento_item_id"] for i in mapa["itens"]]
+    reservados = {r.suprimento_item_id: r.pedido_id for r in s.scalars(
+        select(PedidoItemReserva).where(
+            PedidoItemReserva.suprimento_item_id.in_(ids_itens or [0]))).all()
+        if r.suprimento_item_id in ids_itens}
+    numeros = {}
+    for pedido_id in set(reservados.values()):
+        p = s.get(PedidoCompra, pedido_id)
+        numeros[pedido_id] = getattr(p, "numero", "")
+
+    obras: dict[int, dict[str, Any]] = {}
+    fornecedores = []
+    for coluna in mapa["fornecedores"]:
+        bruta = s.get(CotacaoFornecedor, coluna["id"])
+        itens = []
+        for i in mapa["itens"]:
+            celula = (i.get("precos") or {}).get(coluna["id"])
+            if not celula:
+                continue
+            item = s.get(SuprimentoItem, i["suprimento_item_id"])
+            obra_id = getattr(item, "obra_id", None)
+            if obra_id and obra_id not in obras:
+                obra = s.get(Obra, obra_id)
+                obras[obra_id] = {"id": obra_id, "rotulo": rotulo_da_obra(obra),
+                                  "endereco": endereco_da_obra(obra),
+                                  "sede": sede_da_obra(s, obra)}
+            preso = reservados.get(i["suprimento_item_id"])
+            itens.append({
+                "cotacao_item_id": i["id"], "insumo": i["insumo"],
+                "especificacao": i.get("especificacao"),
+                "quantidade": i["quantidade"], "unidade": i["unidade"],
+                "obra_id": obra_id, "obra": i.get("obra"),
+                "preco_unitario": celula["preco_unitario"], "total": celula["total"],
+                "menor": i.get("menor_preco_de") == coluna["id"],
+                "livre": preso is None,
+                "motivo": (None if preso is None
+                           else f"já está no pedido {numeros.get(preso, '')}".strip()),
+            })
+        fornecedores.append({
+            "cotacao_fornecedor_id": coluna["id"], "fornecedor": coluna["fornecedor"],
+            "fornecedor_id": getattr(bruta, "fornecedor_id", None),
+            "condicao_pagamento_id": getattr(bruta, "condicao_pagamento_id", None),
+            "condicao": coluna.get("condicao"),
+            "entrega": coluna.get("entrega"),
+            "frete": str(getattr(bruta, "frete", 0) or 0),
+            "desconto": str(getattr(bruta, "desconto", 0) or 0),
+            "itens": itens,
+            "livres": sum(1 for x in itens if x["livre"]),
+        })
+    return {"cotacao_id": cotacao_id, "numero": mapa["numero"],
+            "titulo": mapa["titulo"], "fornecedores": fornecedores,
+            "obras": list(obras.values())}
 
 
 def _tem_dados_de_pagamento(s: Session, fornecedor: Fornecedor) -> bool:
@@ -343,7 +471,8 @@ def _devolver_itens(s: Session, pedido: PedidoCompra) -> None:
 
 
 def _liberar_reserva(s: Session, suprimento_item_id: int) -> None:
-    for r in s.scalars(select(PedidoItemReserva)).all():
+    for r in s.scalars(select(PedidoItemReserva).where(
+            PedidoItemReserva.suprimento_item_id == suprimento_item_id)).all():
         if r.suprimento_item_id == suprimento_item_id:
             s.delete(r)
 
@@ -360,12 +489,17 @@ def _pedido_pendente(s: Session, pedido_id: int) -> PedidoCompra:
 
 
 def _itens(s: Session, pedido_id: int) -> list[PedidoItem]:
-    return sorted([i for i in s.scalars(select(PedidoItem)).all()
+    # O `.where` é o que o banco usa; o `if` fica para a sessão dublada dos
+    # testes, que ignora `WHERE`. Sem o `.where`, cada chamada lia a tabela
+    # inteira — e a lista de pedidos chamava isto duas vezes POR PEDIDO.
+    return sorted([i for i in s.scalars(select(PedidoItem).where(
+                       PedidoItem.pedido_id == pedido_id)).all()
                    if i.pedido_id == pedido_id], key=lambda x: x.numero or 0)
 
 
 def _previsoes(s: Session, pedido_id: int) -> list[PrevisaoPagamento]:
-    return [p for p in s.scalars(select(PrevisaoPagamento)).all()
+    return [p for p in s.scalars(select(PrevisaoPagamento).where(
+                PrevisaoPagamento.pedido_id == pedido_id)).all()
             if p.pedido_id == pedido_id]
 
 
@@ -394,6 +528,10 @@ def detalhar(s: Session, pedido_id: int) -> dict[str, Any]:
     cond = (s.get(CondicaoPagamento, pedido.condicao_pagamento_id)
             if pedido.condicao_pagamento_id else None)
 
+    from app.apps.erp.core.suprimentos.entrega import (
+        desvios_do_pedido, local_de_entrega)
+    desvios = desvios_do_pedido(s, pedido.id)
+
     itens = []
     for linha in _itens(s, pedido.id):
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
@@ -408,6 +546,8 @@ def detalhar(s: Session, pedido_id: int) -> dict[str, Any]:
             "total": str((Decimal(str(linha.quantidade)) *
                           Decimal(str(linha.preco_unitario))).quantize(CENTAVO)),
             "obra": getattr(obra, "codigo", ""), "obra_id": getattr(item, "obra_id", None),
+            "entrega_em": local_de_entrega(
+                obra, desvios.get(getattr(item, "obra_id", None))),
         })
 
     return {
@@ -457,14 +597,22 @@ def relatorio_para_o_fornecedor(s: Session, pedido_id: int) -> dict[str, Any]:
     cond = (s.get(CondicaoPagamento, pedido.condicao_pagamento_id)
             if pedido.condicao_pagamento_id else None)
 
+    from app.apps.erp.core.suprimentos.entrega import (
+        desvios_do_pedido, local_de_entrega)
+    desvios = desvios_do_pedido(s, pedido.id)
+
     blocos: dict[str, dict[str, Any]] = {}
     for linha in _itens(s, pedido.id):
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
         obra = s.get(Obra, item.obra_id) if item is not None else None
         insumo = s.get(Insumo, item.insumo_id) if item is not None else None
-        endereco = _endereco(obra)
+        local = local_de_entrega(obra, desvios.get(getattr(item, "obra_id", None)))
+        endereco = local["endereco"]
         bloco = blocos.setdefault(endereco, {"endereco": endereco, "obras": [],
-                                             "itens": []})
+                                             "itens": [],
+                                             "na_obra": local["na_obra"],
+                                             "local": local["rotulo"],
+                                             "mapa": local["mapa"]})
         rotulo_obra = f"{getattr(obra, 'codigo', '')} · {getattr(obra, 'nome', '')}".strip(" ·")
         if rotulo_obra and rotulo_obra not in bloco["obras"]:
             bloco["obras"].append(rotulo_obra)
@@ -501,19 +649,39 @@ def _endereco(obra) -> str:
 
 
 def listar(s: Session, *, status: Optional[str] = None) -> list[dict[str, Any]]:
-    pedidos = list(s.scalars(select(PedidoCompra)).all())
-    if status:
-        alvo = status.strip().upper()
-        pedidos = [p for p in pedidos if p.status and p.status.value == alvo]
+    """A fila de pedidos. TRÊS consultas, com dez pedidos ou com vinte mil.
+
+    Até 20/11/2026 eram duas leituras da tabela de itens INTEIRA para cada
+    pedido da lista, mais uma ida ao banco por fornecedor. A numeração antiga
+    da empresa passa de 19 mil pedidos.
+    """
+    stmt = select(PedidoCompra)
+    alvo = status.strip().upper() if status else None
+    if alvo and alvo in {x.value for x in StatusPedidoCompra}:
+        stmt = stmt.where(PedidoCompra.status == StatusPedidoCompra(alvo))
+    pedidos = [p for p in s.scalars(stmt).all()
+               if not alvo or (p.status and p.status.value == alvo)]
+    ids = [p.id for p in pedidos]
+    por_pedido: dict[int, list[PedidoItem]] = {}
+    for item in s.scalars(select(PedidoItem).where(
+            PedidoItem.pedido_id.in_(ids or [0]))).all():
+        por_pedido.setdefault(item.pedido_id, []).append(item)
+    nomes = {f.id: f.razao_social for f in s.scalars(select(Fornecedor).where(
+        Fornecedor.id.in_({p.fornecedor_id for p in pedidos} or {0}))).all()}
     saida = []
     for p in sorted(pedidos, key=lambda x: x.id or 0, reverse=True):
-        forn = s.get(Fornecedor, p.fornecedor_id)
+        itens = por_pedido.get(p.id, [])
+        soma = sum((Decimal(str(i.quantidade)) * Decimal(str(i.preco_unitario))
+                    for i in itens), Decimal("0"))
+        soma += Decimal(str(p.frete or 0)) - Decimal(str(p.desconto or 0))
         saida.append({
             "id": p.id, "numero": p.numero,
-            "fornecedor": getattr(forn, "razao_social", ""),
+            "fornecedor": nomes.get(p.fornecedor_id, ""),
             "status": p.status.value if p.status else None,
-            "total": str(total(s, p)), "antecipado": bool(p.antecipado),
-            "itens": len(_itens(s, p.id)),
+            "total": str(max(soma, Decimal("0")).quantize(
+                CENTAVO, rounding=ROUND_HALF_UP)),
+            "antecipado": bool(p.antecipado),
+            "itens": len(itens),
             "cotacao_id": p.cotacao_id,
             "criado_em": p.criado_em.isoformat() if p.criado_em else None,
         })

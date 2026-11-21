@@ -317,7 +317,8 @@ def obter(s: Session, solicitacao_id: int, usuario: Usuario) -> dict[str, Any]:
     if sol is None:
         raise ErroNaoEncontrado("Solicitação não encontrada.")
     visiveis = {i.id for i in _itens_visiveis(s, usuario)}
-    itens = [i for i in s.scalars(select(SuprimentoItem)).all()
+    itens = [i for i in s.scalars(select(SuprimentoItem).where(
+                 SuprimentoItem.solicitacao_id == solicitacao_id)).all()
              if i.solicitacao_id == solicitacao_id]
     if not any(i.id in visiveis for i in itens):
         raise ErroNaoEncontrado("Solicitação não encontrada.")
@@ -490,12 +491,14 @@ def _apagar_precos_do_mapa(s: Session, item_id: int) -> int:
     )
     abertas = {c.id for c in s.scalars(select(Cotacao)).all()
                if c.status is StatusCotacao.ABERTA}
-    linhas = {ci.id for ci in s.scalars(select(CotacaoItem)).all()
+    linhas = {ci.id for ci in s.scalars(select(CotacaoItem).where(
+                  CotacaoItem.suprimento_item_id == item_id)).all()
               if ci.suprimento_item_id == item_id and ci.cotacao_id in abertas}
     if not linhas:
         return 0
     apagados = 0
-    for preco in list(s.scalars(select(CotacaoPreco)).all()):
+    for preco in list(s.scalars(select(CotacaoPreco).where(
+            CotacaoPreco.cotacao_item_id.in_(list(linhas) or [0]))).all()):
         if preco.cotacao_item_id in linhas:
             s.delete(preco)
             apagados += 1

@@ -174,7 +174,7 @@ ROTINAS: dict[str, dict[str, Any]] = {
                    "pessoa, pedido de cancelamento ou correção da obra que o "
                    "DP ainda não fez, correção sem a ciência da contabilidade, "
                    "acidente de trabalho sem a contabilidade avisada (CAT em "
-                   "1 dia útil), "
+                   "1 dia útil), ASO admissional que não veio perto do início, "
 
                    "ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
@@ -956,6 +956,29 @@ def vigia(s: Session, *, hoje: Optional[date] = None,
                                    "ou encerrar no prazo"})
         # 1b. A transferência não é mais alerta: vira solicitação sozinha
         #     (`obra_atual.abrir_transferencias`, 20/11/2026).
+        # 1c. O ASO ADMISSIONAL QUE NÃO VEIO (21/11/2026). Ele: *"vamos
+        #     alertar, só não vai ser obrigatório por enquanto."* Admissão em
+        #     andamento cujo início está a 2 dias ou já passou, sem ASO.
+        for a_ in s.execute(text("""
+            SELECT d.numero, d.colaborador_id, c.nome, d.dados ->> 'data_inicio' AS ini
+              FROM dp_solicitacoes d JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.tipo IN ('CADASTRO', 'ADMISSAO_PRESTADOR')
+               AND d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')
+               AND UPPER(COALESCE(c.vinculo, 'CTPS')) = 'CTPS'
+               AND NOT EXISTS (SELECT 1 FROM documentos x
+                                WHERE x.colaborador_id = d.colaborador_id
+                                  AND x.tipo_codigo = 'ASO')""")).mappings().all():
+            try:
+                ini = _dt.date.fromisoformat(str(a_["ini"] or "")[:10])
+            except ValueError:
+                continue
+            if (ini - dia).days <= 2:
+                achados.append({
+                    "tipo": "aso_admissional_faltando",
+                    "colaborador_id": a_["colaborador_id"], "quem": a_["nome"],
+                    "o_que": (f"{a_['numero']}: começa em {ini:%d/%m/%Y} e o ASO "
+                              "admissional não veio (não trava, por enquanto)"),
+                    "o_que_fazer": "pedir o exame à obra"})
         # 2. AS FÉRIAS VENCENDO OU VENCIDAS (em dobro — CLT art. 137).
         from app.apps.erp.core import ferias as svc_ferias
         if svc_ferias._tem_controle(s):

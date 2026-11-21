@@ -1242,7 +1242,8 @@ function blocoDosPapeis(t){
   return readmissao + `<div class="papeis" id="p-papeis">
     <b>1. Os documentos da pessoa</b>
     <p class="ajuda">Jogue aqui <b>todos de uma vez</b> — RG (frente e verso),
-      CNH, CPF, comprovante de endereço e, se for carteira assinada, a CTPS.
+      CNH, CPF, comprovante de endereço, se for carteira assinada a CTPS, e o
+      ASO (exame admissional), se já tiver.
       O sistema lê tudo junto e <b>preenche os campos abaixo</b>. Confira o
       que ele leu: o que não der para ler fica para você digitar.</p>
     <div id="p-solta" class="area-solta" tabindex="0">
@@ -1283,6 +1284,7 @@ const ROTULO_PAPEL = {
   "CTPS-FOTO": "CTPS — página com a foto",
   "CTPS-INFORMACOES": "CTPS — página com as informações",
   "DOC-DEPENDENTE": "Documento do dependente (certidão ou RG)",
+  "ASO": "ASO admissional (exame médico)",
   "OUTRO": "Outro documento",
 };
 
@@ -1323,6 +1325,15 @@ function pintarPapeis(t){
   const onde = els("p-papeis-lista");
   if (!onde) return;
   const exigidos = papeisExigidos(t);
+  {# ⚑ O ASO ADMISSIONAL É OPCIONAL POR ENQUANTO (21/11/2026): aparece na
+     lista para lembrar, mas não segura o envio. #}
+  const aso = (t.chave === "CADASTRO" || t.chave === "ADMISSAO_PRESTADOR") ? `
+    <div class="papel ${PAPEIS["ASO"] ? "tem" : ""}">
+      <span class="marca">${PAPEIS["ASO"] ? "✓" : "○"}</span>
+      <div class="papel-corpo"><b>${esc(ROTULO_PAPEL["ASO"])}</b>
+        <small>${PAPEIS["ASO"] ? "em " + esc(PAPEIS["ASO"].nome)
+          : "opcional por enquanto — se já tiver, mande junto"}</small></div>
+    </div>` : "";
   onde.innerHTML = exigidos.length ? `<small class="ajuda">O que precisa
       estar entre eles:</small>` + exigidos.map(c => {
     const tem = PAPEIS[c];
@@ -1331,7 +1342,7 @@ function pintarPapeis(t){
       <div class="papel-corpo"><b>${esc(ROTULO_PAPEL[c] || c)}</b>
         <small>${tem ? "em " + esc(tem.nome) : "ainda não veio"}</small></div>
     </div>`;
-  }).join("")
+  }).join("") + aso
     : (READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado")
        ? `<small class="ajuda">Como a pessoa já tem cadastro, os documentos
            são opcionais — mande só se algo mudou (o que vier atualiza o

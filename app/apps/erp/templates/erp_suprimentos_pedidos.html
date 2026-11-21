@@ -180,6 +180,19 @@ async function abrir(id){
         ${p.previsao_entrega ? ` · entrega prevista ${dataBR(p.previsao_entrega)}` : ""}
         ${p.antecipado ? ` · <b>pagamento antecipado</b>` : ""}
       </div>
+      ${(() => {
+        // ONDE DESCE: um por endereço. Fora da obra vem em destaque, porque é
+        // a exceção — e é o que a obra precisa saber para não esperar o caminhão.
+        const locais = new Map();
+        p.itens.forEach(i => { const e = i.entrega_em; if (!e) return;
+          const chave = e.endereco;
+          if (!locais.has(chave)) locais.set(chave, {...e, obras: new Set()});
+          locais.get(chave).obras.add(i.obra); });
+        return [...locais.values()].map(e => `<div class="cartao-dica" style="margin-top:6px">
+          <b>Entrega${e.na_obra ? "" : " FORA DA OBRA"}:</b> ${e.na_obra ? "" :
+            `<b>${escapar(e.rotulo)}</b> — `}${escapar(e.endereco)}
+          <span class="sub">material de ${escapar([...e.obras].join(", "))}</span></div>`).join("");
+      })()}
       <table style="margin-top:10px"><thead><tr>
         ${p.status === "AGUARDANDO_AUTORIZACAO" ? "<th></th>" : ""}
         <th>Item</th><th>Obra</th><th class="direita">Qtd</th>
@@ -265,47 +278,21 @@ async function mostrarRecebimento(id){
       ${sit.avisos.map(a => `<div class="aviso alerta" style="margin-top:10px">${a}</div>`).join("")}
       <h4 style="margin-top:14px">Recebimento na obra</h4>
       <table><thead><tr><th>Item</th><th class="direita">Pedido</th>
-        <th class="direita">Já recebido</th><th class="direita">Falta</th>
-        <th class="direita">Chegou agora</th></tr></thead>
+        <th class="direita">Já recebido</th><th class="direita">Falta</th></tr></thead>
         <tbody>${sit.itens.map(i => `<tr>
           <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
           <td class="direita dados">${i.pedido} ${i.unidade}</td>
           <td class="direita dados">${i.recebido}</td>
           <td class="direita dados">${quantidadeBR(i.saldo)}</td>
-          <td class="direita">${Number(i.saldo) > 0
-            ? `<input class="rec-qtd" data-item="${i.pedido_item_id}"
-                 style="width:80px; text-align:right" inputmode="decimal"
-                 placeholder="0">` : "<small>completo</small>"}</td></tr>`).join("")}
+</tr>`).join("")}
         </tbody></table>
       ${sit.tudo_recebido ? `<div class="cartao-dica" style="margin-top:8px">
         Tudo recebido.</div>` : `
-        <div class="form-grade" style="margin-top:10px">
-          <div class="campo"><label>Nota fiscal</label><input id="rec-nota"></div>
-          <div class="campo"><label>Data</label>
-            <input id="rec-data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-        </div>
-        <div style="margin-top:10px"><button class="btn" id="btn-receber">
-          Registrar o que chegou</button></div>`}`;
-    if (!sit.tudo_recebido)
-      els("btn-receber").addEventListener("click", () => registrarRecebimento(id));
+        <div style="margin-top:10px"><a class="btn" href="/erp/portal/material?pedido=${id}">
+          Receber e lançar a nota</a>
+          <span class="sub">O que chegou, a nota e o boleto são registrados juntos.</span></div>`}`;
   } catch(e){ els("area-recebimento").innerHTML =
     `<div class="aviso erro" style="margin-top:10px">${e.message}</div>`; }
-}
-
-async function registrarRecebimento(id){
-  const itens = [...document.querySelectorAll(".rec-qtd")]
-    .filter(i => i.value.trim())
-    .map(i => ({pedido_item_id: +i.dataset.item, quantidade: i.value.trim()}));
-  if (!itens.length) { aviso("dlg-msg", "Diga quanto chegou de cada item.", "erro"); return; }
-  try {
-    await api(`/erp/api/suprimentos/pedidos/${id}/recebimento`, {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({itens, nota_numero: els("rec-nota").value,
-                            data: els("rec-data").value})});
-    aviso("dlg-msg", "Recebimento registrado.", "ok");
-    mostrarRecebimento(id);
-    carregar();
-  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
 // O DOCUMENTO QUE FIRMA A COMPRA.
@@ -347,11 +334,17 @@ async function verRelatorio(id){
         </div>` : ""}
       <div class="campo" style="margin-top:10px"><label>Assunto</label>
         <input id="env-assunto" value="${escapar(e.assunto)}" readonly></div>
-      <textarea id="env-corpo" rows="${Math.min(24, (e.corpo.split("\n").length + 2))}"
-        style="width:100%; font-family:monospace" readonly>${escapar(e.corpo)}</textarea>
-      <div style="margin-top:10px">
+      <div class="campo"><label>Texto do e-mail (padrão) — o pedido completo vai em PDF, anexo</label>
+      <textarea id="env-corpo" rows="${Math.min(14, ((e.corpo_do_email || e.corpo).split("\n").length + 1))}"
+        style="width:100%" readonly>${escapar(e.corpo_do_email || e.corpo)}</textarea></div>
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
         <button class="btn" id="env-mandar" ${impedimentos.length ? "disabled" : ""}
-          >✉ Mandar ao fornecedor</button></div>`;
+          >✉ Mandar ao fornecedor</button>
+        ${e.empresa ? `<a class="btn secundario" target="_blank" rel="noopener"
+          href="/erp/suprimentos/pedidos/${id}/pdf?empresa=${e.empresa.id}"
+          >&#10515; Ver o PDF que vai anexo</a>` : ""}
+        <span class="sub">O e-mail leva o texto acima e este PDF, anexo.
+          <a href="/erp/assinatura">Cadastrar ou trocar a minha assinatura</a> — ela sai no PDF.</span></div>`;
 
     if (!impedimentos.length) {
       els("env-mandar").addEventListener("click", () => mandarPedido(id));

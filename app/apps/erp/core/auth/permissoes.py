@@ -214,6 +214,17 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                              P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # ⚑ AUTORIZAR MATERIAL COMPRADO SEM PEDIDO (21/11/2026). Ação própria: é a
+    # ciência de que uma compra não passou pelo suprimento, e libera o
+    # lançamento para o financeiro. Quem autoriza pedido ganha de graça.
+    "autorizar_compra_fora_do_fluxo": {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # ⚑ RECEBER MATERIAL (20/11/2026). Quem confere o que desceu do caminhão é
+    # a OBRA — e até aqui o recebimento morava dentro da tela de Pedidos, que
+    # só comprador e diretor abrem. A regra existia; a obra não tinha porta.
+    # Ação própria, e não `ver_suprimentos`: registrar recebimento muda o saldo
+    # do pedido e é o que diz ao financeiro que há conta a caminho.
+    "receber_material":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "administrar_insumos": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "administrar_fornecedores": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     # A fila de pedidos serve a DOIS papéis: quem compra acompanha o que fechou,
@@ -359,6 +370,10 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
 # verdade sobre quem entra.
 ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "ver_pedidos_compra": ("comprar", "autorizar_pedido"),
+    # O comprador também registra recebimento: é ele quem fecha o ciclo quando
+    # a obra não lançou.
+    "receber_material": ("comprar",),
+    "autorizar_compra_fora_do_fluxo": ("autorizar_pedido",),
     # Quem compra enxerga as notas e cruza: é ele que sabe de que pedido cada
     # nota é, e o dono deixou em aberto quem confere — a resposta prática é
     # "os dois, na mesma tela", porque a nota tem uma ponta em cada mundo.
@@ -427,6 +442,8 @@ ACAO_ROTULOS = {
     "solicitar_suprimento": "Pedir material para a obra",
     "comprar":              "Cotar e fechar pedido de compra",
     "autorizar_pedido":     "Autorizar pedido de compra",
+    "receber_material":     "Registrar o material que chegou na obra",
+    "autorizar_compra_fora_do_fluxo": "Autorizar material comprado sem pedido de compra",
     "administrar_insumos":  "Cadastrar e corrigir insumos",
     "administrar_fornecedores": "Cadastrar e corrigir fornecedores",
     "ver_pedidos_compra":   "Ver a fila de pedidos de compra",

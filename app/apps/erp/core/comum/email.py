@@ -157,7 +157,8 @@ def conta_configurada(empresa: Optional[Empresa],
 # ---------------------------------------------------------------------------
 def _montar(empresa: Empresa, para: list[str], assunto: str, corpo: str,
             copia: list[str], responder_para: Optional[str],
-            anexos: list[dict[str, Any]]) -> EmailMessage:
+            anexos: list[dict[str, Any]],
+            corpo_html: Optional[str] = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = remetente_de(empresa)
     msg["To"] = ", ".join(para)
@@ -177,6 +178,12 @@ def _montar(empresa: Empresa, para: list[str], assunto: str, corpo: str,
     msg["Message-ID"] = make_msgid(domain=(parseaddr(msg["From"])[1]
                                            .split("@")[-1] or None))
     msg.set_content(corpo)
+    # ⚑ VERSÃO FORMATADA, OPCIONAL (21/11/2026). O dono: "quando o texto fica
+    # simples demais dá a impressão de que não é nem uma coisa de verdade".
+    # O texto puro CONTINUA indo junto, como alternativa: é o que aparece em
+    # leitor que não abre formatação, e o que pesa a favor nos filtros de spam.
+    if corpo_html:
+        msg.add_alternative(corpo_html, subtype="html")
     for anexo in anexos or []:
         conteudo = anexo.get("conteudo")
         if not conteudo:
@@ -253,7 +260,9 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
            responder_para: Optional[str] = None,
            anexos: Optional[list[dict[str, Any]]] = None,
            destinatario_tipo: Optional[str] = None,
-           destinatario_id: Optional[int] = None) -> EnvioEmail:
+           destinatario_id: Optional[int] = None,
+           corpo_registrado: Optional[str] = None,
+           corpo_html: Optional[str] = None) -> EnvioEmail:
     """Manda, e registra o que aconteceu — deu certo ou não.
 
     Nunca levanta por falha de envio: devolve o registro com situação FALHOU e
@@ -286,14 +295,18 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
         entidade_id=entidade_id, destinatario_tipo=destinatario_tipo,
         destinatario_id=destinatario_id, para=para, copia=copia,
         responder_para=_texto(responder_para) or None,
-        assunto=_texto(assunto), corpo=corpo,
+        # `corpo_registrado` (21/11/2026): quando o conteúdo vai num PDF anexo
+        # e o corpo do e-mail é só o aviso, o REGISTRO guarda o conteúdo por
+        # extenso. O registro existe para provar o que foi mandado — e um
+        # "segue em anexo" não prova nada.
+        assunto=_texto(assunto), corpo=corpo_registrado or corpo,
         anexos=[{"nome": a.get("nome"), "mime": a.get("mime"),
                  "bytes": len(a.get("conteudo") or b"")} for a in anexos],
         enviado_por=usuario.id if usuario else None, situacao="ENVIADO")
 
     try:
         msg = _montar(empresa, para, _texto(assunto), corpo, copia,
-                      responder_para, anexos)
+                      responder_para, anexos, corpo_html)
         # Guardado no registro para quem chamou poder casar a resposta depois.
         registro.message_id = msg["Message-ID"]
         _entregar(dona, msg, para + copia)

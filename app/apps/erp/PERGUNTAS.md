@@ -3165,3 +3165,102 @@ consulta inventada vai sendo usado cada vez menos.
 - **AINDA NÃO:** "quanto o INSS está pagando" e "quando as férias de quem
   ficou afastado reiniciam" — é a contabilidade (Fortes), por decisão dele.
 
+
+
+## 3ab. COMPRA POR FORA REGISTRADA E PREVISÃO DO QUE NEM FOI COTADO (21/11/2026)
+
+Ainda **sem pergunta escrita no assistente**; hoje se responde pela tela
+(Suprimentos › Painel e Suprimentos › Projeção de pagamentos).
+
+- "Quanto a obra X comprou por fora do suprimento este mês?" — ⚠ muda conforme
+  quem pergunta (escopo por obra). ⚠ "este mês": do lançamento, não da compra.
+  Sai de `compras_fora_do_fluxo` + rateio do título.
+- "Quais compras por fora ainda estão sem o material registrado?" — as linhas
+  com `pedido_id` vazio. "E sem ciência?" — `autorizado_em` vazio.
+- "O que o engenheiro comprou naquela nota?" — depois do registro tardio, os
+  itens estão no pedido de regularização ligado ao título.
+- "Quanto vou gastar com material nos próximos meses?" — ⚠ PALAVRA AMBÍGUA:
+  "vou gastar" soma quatro certezas diferentes (comprado, a autorizar, em
+  cotação, solicitado). A resposta tem de dizer cada parcela, nunca um número só.
+- "Quanto vale o que a obra pediu e ainda não foi cotado?" — o grau
+  SOLICITADO, pelo último preço conhecido.
+- **AINDA NÃO RESPONDE:** o valor do que foi solicitado e **nunca foi comprado
+  antes** (sem preço anterior). Falta: importar o histórico de preços da
+  planilha, ou um preço de referência no cadastro do insumo. O assistente deve
+  dizer quantos itens ficaram de fora — a Projeção já conta.
+- "De qual pedido é a nota tal?" — `pedido_titulos`. Nota declarada como "não
+  é de nenhum pedido" tem o evento `NOTA_DECLARADA_SEM_PEDIDO` no título.
+
+## 3aa. O CICLO DA COMPRA: entrega, nota e pagamento cruzados (20/11/2026)
+
+Nasceram com o painel **Acompanhar compras**, a **Projeção de pagamentos** e a
+tela **Receber material**. As respostas saem de `core/suprimentos/acompanhamento.py`
+e `core/suprimentos/projecao.py` — ainda **sem pergunta escrita no assistente**;
+hoje se responde pela tela.
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Quais pedidos estão com a entrega atrasada? | `acompanhamento.painel`, ciclo `ENTREGA_ATRASADA` | depende de o pedido ter previsão de entrega |
+| O que chegou incompleto e está pendente com o fornecedor? | `painel` → `pendentes` | só conta pedido com ao menos um recebimento |
+| Quanto de material já chegou e ainda não tem nota lançada? | `painel` → `destaques.recebido_sem_nota` | ⚠ "nota lançada" = nota VINCULADA ao pedido em Financeiro › Notas, não o número digitado no recebimento |
+| Esse pedido já foi pago? | `painel` → `pagamento` | o caminho é pedido → nota vinculada → título com aquela nota; título lançado sem a nota não é enxergado |
+| Quais pedidos já fecharam o ciclo? | ciclo `FECHADO` | fechado = entregue inteiro + nota + pago |
+| Quanto as compras vão custar em dezembro? | `projecao.projetar` → `meses` | ⚠ palavra ambígua: **"vão custar"** tem três graus (comprado, a autorizar, em cotação) — dizer qual; e NÃO inclui o que já virou título |
+| O que já deveria ter virado conta a pagar e não virou? | `projetar` → `vencido_sem_conta` | parcela prevista com data vencida e sem título |
+| O que tem para chegar na minha obra? | `recebimento.a_receber` | **muda conforme quem pergunta** (obras da pessoa) |
+
+**Mudam conforme quem pergunta** (recorte por obra, `obras_de_registro_sem_autor`):
+todas as desta seção.
+
+**O que o sistema AINDA NÃO responde, e o que falta:**
+
+- *"Quanto tempo leva entre pedir e receber?"* — as datas existem (solicitação,
+  pedido, recebimento); falta a soma escrita.
+- *"O fornecedor X costuma entregar incompleto?"* — o dado nasce agora com os
+  recebimentos parciais; `desempenho.py` ainda não o lê.
+- *"Esta nota confere com o pedido item a item?"* — o cruzamento é por valor
+  total; não há conferência item a item da nota.
+- *"Quanto está previsto para pagar no total (compras + o resto)?"* — a
+  projeção de compras e o contas a pagar são telas separadas; falta a visão
+  somada no Financeiro.
+
+**Acrescentadas em 20/11/2026 (2ª rodada), com o Painel de suprimentos**
+(`acompanhamento.planejamento`):
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| O que já deveria ter chegado e não chegou? | prazo `ATRASADO` | ⚠ **"atrasado"** tem dois sentidos: a data que a OBRA pediu passou (`ATRASADO`) ou a data que o FORNECEDOR prometeu passou (`FORNECEDOR`). Dizer qual |
+| O que é prioridade alta e está em risco? | filtro prioridade + prazo | "em risco" = faltam 7 dias ou menos e sem pedido autorizado |
+| O que vai chegar depois do que a obra precisa? | prazo `VAI_ATRASAR` | compara a data do pedido de compra com a da solicitação |
+| O que ainda está sem cotação? | etapa `SEM_COTACAO` | muda conforme quem pergunta (obras da pessoa) |
+
+**Ainda NÃO responde:** *"vai dar tempo de comprar isto?"* — falta o prazo de
+entrega típico por tipo de insumo, que o sistema não tem.
+
+**Acrescentadas em 20/11/2026 (3ª rodada):**
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Esse pedido já tem conta a pagar lançada? Qual? | `acompanhamento.painel` → `pagamento.titulos` | agora enxerga o título lançado a partir do recebimento (`pedido_titulos`), além do que veio pela nota vinculada |
+| Quanto falta lançar deste pedido? | `lancamento.preparar` → `valor` | é o valor do que CHEGOU e ainda não virou conta — não o saldo do pedido |
+| De qual pedido de compra é esta conta a pagar? | `pedido_titulos` | só para título lançado pelo caminho do recebimento |
+| O que tem para chegar na minha obra? E o que ainda está em cotação? | `recebimento.a_receber` + `acompanhamento.planejamento` | muda conforme quem pergunta |
+| Para quem a cobrança da cotação foi mandada, e por qual canal? | retorno de `cobranca.cobrar` (`canais`) | ⚠ o WhatsApp NÃO fica registrado em `envios_email`; só o e-mail guarda o texto |
+
+**Ainda NÃO responde:** *"quais propostas chegaram e ninguém leu?"* — o sistema
+não lê a caixa de e-mail; a proposta só existe para ele depois de jogada no mapa.
+
+**Acrescentadas em 21/11/2026:**
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Quanto a gente economizou cotando? | `relatorios.gerar("ECONOMIA")` | ⚠ **"economia"** = contra a MÉDIA do mapa (há também contra o maior preço). Só itens; sem frete |
+| Esse material subiu de preço? | `relatorios.gerar("HISTORICO")` | compara o mesmo INSUMO, sem olhar especificação nem inflação |
+| Qual fornecedor mais atrasa? Quem entrega incompleto? | `relatorios.gerar("FORNECEDOR")` | o atraso é medido pelo recebimento que a OBRA registra |
+| Quantos dias leva do pedido da obra até chegar? | `relatorios.gerar("CICLO")` | só o que já chegou por inteiro |
+| Tem compra feita sem pedido esperando autorização? | `fora_do_fluxo.listar` | só existe com a regra ligada |
+| Quem autorizou essa compra por fora, e por quê? | `compras_fora_do_fluxo` + evento `COMPRA_FORA_DO_FLUXO_AUTORIZADA` | |
+| Por que esse recebimento não teve conta lançada? | `recebimentos.observacoes` ("SEM LANÇAMENTO NO RECEBIMENTO: …") | |
+
+**Ainda NÃO responde:** *"a obra gastou mais do que o previsto em material?"* —
+não há orçamento de material por obra no ERP.
