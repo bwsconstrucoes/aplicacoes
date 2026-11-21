@@ -106,6 +106,13 @@
                cursor: pointer; }
   .papel.tem .btn-papel { background: #5A6B85; }
   .oculto { display: none; }
+  .area-solta { margin-top: 8px; padding: 16px 10px; border: 2px dashed #9DB2D3;
+                border-radius: 10px; text-align: center; background: #F6F9FE; }
+  .area-solta.em-cima { border-color: #0B2C5C; background: #E7EFFB; }
+  .area-solta > b { display: block; font-size: 14px; }
+  .area-solta > small { display: block; color: #5A6B85; margin: 4px 0; }
+  .area-botoes { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .tipo-arquivo { margin-top: 4px; font-size: 12.5px; max-width: 100%; }
 
   .area { display: block; width: 100%; text-align: left; margin-bottom: 8px;
          background: #fff; border: 1px solid #C9D3E4; border-left: 4px solid #0B2C5C;
@@ -156,6 +163,21 @@
   {# A DEVOLUÇÃO VEM PRIMEIRO, e não é ordem alfabética: é o que tem prazo e o
      que o DP está esperando. Pedido novo pode esperar o fim da rolagem; o
      documento que está na mesa de alguém, não. #}
+  {# ⚑ O DOCUMENTO QUE A PESSOA ASSINA NO CELULAR (20/11/2026, noite). Ele:
+     *"o administrativo de obra já coletar o aviso prévio das pessoas,
+     formalizar e coletar a assinatura de forma legal, parecido com a forma
+     que a gente está coletando a assinatura do ponto."* Quem conduz mostra o
+     texto; a pessoa assina com o dedo e digita o PIN DELA (o do ponto). #}
+  <div class="bloco" id="bloco-termos" style="display:none">
+    <h3>Para o colaborador assinar</h3>
+    <p class="ajuda">O DP analisou e liberou. Mostre o documento à pessoa,
+      ela lê, assina com o dedo e digita o PIN dela (o mesmo do ponto). Se ela
+      não tiver PIN, assine no papel e envie a foto; se ela se recusar, registre
+      com duas testemunhas.</p>
+    <div id="termos"></div>
+    <div id="termo-aberto"></div>
+  </div>
+
   <div class="bloco" id="bloco-devolver" style="display:none">
     <h3>Documentos a devolver</h3>
     <p class="ajuda">O DP mandou estes documentos para a obra. Depois de colher
@@ -169,6 +191,27 @@
      o dela. E a área que ainda não abriu APARECE, marcada: esconder o que
      falta faz achar que o sistema só serve para DP — e aí o material continua
      sendo pedido por WhatsApp, que é o que se quer acabar. #}
+  {# ⚑ AS FÉRIAS DA EQUIPE (20/11/2026). Ele: *"quando estiver se aproximando
+     as férias (…) tanto o DP quanto a pessoa que bate o ponto desse
+     colaborador tem que estar ciente."* Quem cuida da obra vê aqui quem sai e
+     quem está fora, nos próximos dias — e se a contabilidade já confirmou. #}
+  <div class="bloco" id="bloco-ferias" style="display:none">
+    <h3>Férias da equipe</h3>
+    <p class="ajuda">Quem sai de férias nos próximos dias e quem está de férias
+      agora. Programe a obra sem essas pessoas e não conte falta no ponto.</p>
+    <div id="ferias"></div>
+  </div>
+
+  {# ⚑ A EXPERIÊNCIA TERMINANDO (20/11/2026). Ele: *"DP e o administrativo de
+     obra devam ser alertados sobre o acontecimento. Poucos dias antes."* #}
+  <div class="bloco" id="bloco-experiencia" style="display:none">
+    <h3>Contratos de experiência terminando</h3>
+    <p class="ajuda">Decida com o DP <b>antes da data</b>: efetivar (não precisa
+      fazer nada), ou encerrar no prazo (peça o desligamento). Depois do fim da
+      prorrogação, sair custa aviso prévio e multa.</p>
+    <div id="experiencias"></div>
+  </div>
+
   <div class="bloco" id="bloco-pedir">
     <h3>Abrir uma solicitação</h3>
     <p class="ajuda" id="pedir-ajuda">Escolha a área do que você precisa.</p>
@@ -230,8 +273,182 @@ async function carregar(){
   els("quem").innerHTML = `${esc(DADOS.nome)}<br>${
     DADOS.administrativo ? "administrativo de obra" : "colaborador"}`;
   pintarDevolucoes();
+  pintarTermos();
+  pintarFerias();
+  pintarExperiencias();
   pintarFormulario();
   pintarMeus();
+}
+
+function pintarTermos(){
+  const l = DADOS.termos || [];
+  els("bloco-termos").style.display = l.length ? "" : "none";
+  els("termos").innerHTML = l.map(x => `
+    <div class="linha">
+      <div class="cresce">
+        <b>${esc(x.titulo)}</b> <small>${esc(x.numero)}</small><br>
+        <small>${esc(x.pessoa)}${x.obra ? " · obra " + esc(x.obra) : ""}</small><br>
+        <span class="etiqueta ${x.atrasado ? "vermelha" : ""}">${
+          x.prazo ? (x.atrasado ? "venceu em " : "até ") + dataBR(x.prazo) : "sem prazo"}</span>
+      </div>
+      <button class="btn-portal" data-termo="${x.id}">Abrir para assinar</button>
+    </div>`).join("");
+  els("termos").querySelectorAll("[data-termo]").forEach(b =>
+    b.addEventListener("click", () => abrirTermo(+b.dataset.termo)));
+}
+
+let TRACO = null;
+async function abrirTermo(id){
+  let d;
+  try { d = (await chamar(`/erp/portal/api/termos/${id}`)).termo; }
+  catch(e){ recado(e.message, "erro"); return; }
+  const caixa = els("termo-aberto");
+  caixa.innerHTML = `
+    <div style="border:2px solid #31507F; border-radius:12px; padding:12px; margin-top:10px">
+      <h4 style="margin:0 0 6px">${esc(d.titulo)} <small>${esc(d.numero)}</small></h4>
+      <div style="white-space:pre-wrap; font-size:14px; line-height:1.45; max-height:320px;
+                  overflow:auto; background:#F7F9FC; padding:10px; border-radius:8px">${esc(d.texto)}</div>
+      <p class="ajuda" style="margin-top:10px">${esc(d.termo_de_ciencia)}</p>
+      <b style="font-size:13px">${esc(d.pessoa)} assina aqui, com o dedo:</b>
+      <canvas id="quadro" width="600" height="200"
+        style="width:100%; height:160px; border:1px dashed #8FA3C2; border-radius:8px;
+               background:#fff; touch-action:none; margin-top:4px"></canvas>
+      <button class="voltar" type="button" id="t-limpar">limpar a assinatura</button>
+      <label class="campo-portal">PIN de ${esc(d.pessoa.split(" ")[0])} (o do ponto, 6 dígitos)
+        <input id="t-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off"></label>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn-portal" id="t-assinar">Assinar</button>
+        <button class="btn-portal secundario" id="t-fechar">Fechar</button>
+      </div>
+      <details style="margin-top:14px"><summary style="cursor:pointer; color:#31507F">
+        A pessoa não tem PIN — assinou no papel</summary>
+        <p class="ajuda">Imprima, colha a assinatura e envie a foto. O DP confere.</p>
+        <label class="escolher" for="t-papel" id="t-papel-rot">Escolher arquivo ou tirar foto</label>
+        <input type="file" id="t-papel" accept=".pdf,.png,.jpg,.jpeg,image/*"
+               capture="environment" style="display:none">
+        <button class="btn-portal" id="t-enviar-papel" style="margin-top:8px">Enviar a foto</button>
+      </details>
+      <details style="margin-top:10px"><summary style="cursor:pointer; color:#A32020">
+        A pessoa se recusou a assinar</summary>
+        <p class="ajuda">Leia o documento para ela na frente de duas testemunhas e
+          registre aqui. O DP confere.</p>
+        <label class="campo-portal">O que aconteceu<textarea id="t-motivo" rows="2"></textarea></label>
+        <label class="campo-portal">Testemunha 1 (nome completo)<input id="t-tst1"></label>
+        <label class="campo-portal">Testemunha 2 (nome completo)<input id="t-tst2"></label>
+        <button class="btn-portal" id="t-recusa" style="margin-top:8px">Registrar a recusa</button>
+      </details>
+    </div>`;
+  ligarQuadro(els("quadro"));
+  els("t-limpar").addEventListener("click", () => ligarQuadro(els("quadro")));
+  els("t-fechar").addEventListener("click", () => { caixa.innerHTML = ""; });
+  els("t-papel").addEventListener("change", () => {
+    const f = els("t-papel").files[0];
+    els("t-papel-rot").textContent = f ? f.name : "Escolher arquivo ou tirar foto";
+  });
+  els("t-assinar").addEventListener("click", () => assinarTermo(d.id));
+  els("t-enviar-papel").addEventListener("click", () => papelDoTermo(d.id));
+  els("t-recusa").addEventListener("click", () => recusaDoTermo(d.id));
+  caixa.scrollIntoView({behavior: "smooth"});
+}
+
+function ligarQuadro(cv){
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#10233F";
+  TRACO = {riscou: false};
+  let desenhando = false;
+  const ponto = e => {
+    const r = cv.getBoundingClientRect();
+    return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
+  };
+  cv.onpointerdown = e => { desenhando = true; const [x, y] = ponto(e);
+    ctx.beginPath(); ctx.moveTo(x, y); cv.setPointerCapture(e.pointerId); };
+  cv.onpointermove = e => { if (!desenhando) return; const [x, y] = ponto(e);
+    ctx.lineTo(x, y); ctx.stroke(); TRACO.riscou = true; };
+  cv.onpointerup = () => { desenhando = false; };
+}
+
+function ondeEstou(){
+  return new Promise(res => {
+    if (!navigator.geolocation) return res({});
+    navigator.geolocation.getCurrentPosition(
+      p => res({latitude: p.coords.latitude, longitude: p.coords.longitude}),
+      () => res({}), {timeout: 4000, maximumAge: 600000});
+  });
+}
+
+async function assinarTermo(id){
+  if (!TRACO || !TRACO.riscou) { recado("Falta a assinatura no quadro.", "erro"); return; }
+  const pin = els("t-pin").value.replace(/\D/g, "");
+  if (pin.length !== 6) { recado("O PIN tem 6 dígitos.", "erro"); return; }
+  els("t-assinar").disabled = true;
+  try {
+    const onde = await ondeEstou();
+    const r = await chamar(`/erp/portal/api/termos/${id}`, {method: "POST",
+      body: JSON.stringify({pin, assinatura: els("quadro").toDataURL("image/png"), ...onde})});
+    recado(`${r.numero} assinado. O DP já está vendo.`, "ok");
+    els("termo-aberto").innerHTML = "";
+    carregar();
+  } catch(e){ recado(e.message, "erro"); els("t-assinar").disabled = false; }
+}
+
+async function papelDoTermo(id){
+  const f = els("t-papel").files[0];
+  if (!f) { recado("Escolha a foto do papel assinado.", "erro"); return; }
+  try {
+    const fd = new FormData(); fd.append("arquivo", f);
+    const r = await fetch(`/erp/portal/api/termos/${id}`, {method: "POST", body: fd});
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) return semAcesso(d.erro);
+    if (!r.ok || d.ok === false) throw new Error(d.erro || "não consegui enviar");
+    recado(`Foto de ${d.numero} enviada. O DP confere.`, "ok");
+    els("termo-aberto").innerHTML = "";
+    carregar();
+  } catch(e){ recado(e.message, "erro"); }
+}
+
+async function recusaDoTermo(id){
+  try {
+    const r = await chamar(`/erp/portal/api/termos/${id}`, {method: "POST",
+      body: JSON.stringify({acao: "recusa", motivo: els("t-motivo").value,
+        testemunhas: [{nome: els("t-tst1").value}, {nome: els("t-tst2").value}]})});
+    recado(`Recusa registrada em ${r.numero}. O DP confere.`, "ok");
+    els("termo-aberto").innerHTML = "";
+    carregar();
+  } catch(e){ recado(e.message, "erro"); }
+}
+
+function pintarExperiencias(){
+  const l = DADOS.experiencias || [];
+  els("bloco-experiencia").style.display = l.length ? "" : "none";
+  els("experiencias").innerHTML = l.map(x => `
+    <div class="linha">
+      <div class="cresce">
+        <b>${esc(x.pessoa)}</b> <small>${esc(x.cargo)}${x.obra ? " · obra " + esc(x.obra) : ""}</small><br>
+        <small>${esc(x.o_que_acontece)}</small><br>
+        <small class="ajuda">${esc(x.para_encerrar)}</small>
+      </div>
+      <span class="etiqueta ${x.faltam_dias <= 3 ? "vermelha" : ""}">${
+        x.faltam_dias === 0 ? "termina hoje" : `termina em ${x.faltam_dias} dia(s)`}</span>
+    </div>`).join("");
+}
+
+function pintarFerias(){
+  const l = DADOS.ferias || [];
+  els("bloco-ferias").style.display = l.length ? "" : "none";
+  els("ferias").innerHTML = l.map(f => {
+    const quando = f.momento === "em_ferias" ? `de férias até ${dataBR(f.fim)}`
+      : f.faltam_dias === 0 ? "começa hoje"
+      : f.faltam_dias === 1 ? "começa amanhã" : `começa em ${f.faltam_dias} dias`;
+    return `<div class="linha">
+      <div class="cresce">
+        <b>${esc(f.pessoa)}</b> <small>${esc(f.cargo || "")}${f.obra ? " · obra " + esc(f.obra) : ""}</small><br>
+        <small>${dataBR(f.inicio)} a ${dataBR(f.fim)} (${f.dias} dias) · volta ${dataBR(f.retorno)}</small><br>
+        <small>${esc(f.situacao_rotulo)}${f.mudanca ? " · " + esc(f.mudanca) : ""}</small>
+      </div>
+      <span class="etiqueta ${f.momento === "em_ferias" ? "verde" : ""}">${esc(quando)}</span>
+    </div>`;
+  }).join("");
 }
 
 function pintarDevolucoes(){
@@ -289,6 +506,14 @@ async function devolver(id, botao){
 // é regra de negócio e vive no `pessoal_solicitacoes.py`. Duplicar aqui faria
 // o portal e a tela do DP divergirem no primeiro ajuste.
 const ROTULO = {
+  nome_mae: "Nome da mãe", rg: "Nº do RG", rg_emissao: "Data de emissão do RG",
+  rg_orgao: "Órgão emissor do RG", rg_uf: "Estado que emitiu o RG",
+  complemento: "Complemento",
+  ferias_inicio: "Início das férias", ferias_dias: "Quantos dias",
+  abono_pecuniario: "Vender 1/3 das férias?", adiantamento_13: "Adiantar o 13º?",
+  afastamento_natureza: "O que aconteceu", afast_inicio: "Início do afastamento",
+  afast_previsao: "Previsão de retorno", retorno_data: "Voltou ao trabalho em",
+  transferencia_data: "A partir de quando (na obra nova)",
   nome: "Nome completo", cpf: "CPF", obra_id: "Obra", cargo_id: "Cargo",
   vinculo: "Tipo de vínculo", data_inicio: "Data de início", telefone: "Telefone",
   data_saida: "Data de saída", aviso_previo: "Data do aviso prévio",
@@ -308,9 +533,14 @@ const ROTULO = {
   municipio: "Cidade", uf: "Estado", data_nascimento: "Data de nascimento",
   salario_familia: "Pedir salário-família?",
   dependente_ir: "Conta no imposto de renda?",
-  categoria_alimentacao: "Como paga a alimentação",
+  // ⚑ RENOMEADOS EM 17/11/2026, a pedido dele: *"Como paga o transporte =
+  // Ajuda com Transporte, que alimenta Categoria do auxílio-transporte; Como
+  // paga a alimentação = Ajuda com Alimentação."* O nome antigo descrevia o
+  // JEITO de pagar; o novo diz O QUE É — e é assim que o dado se chama na
+  // ficha da pessoa, o que acaba com duas palavras para o mesmo campo.
+  categoria_alimentacao: "Ajuda com Alimentação",
   aux_alimentacao: "Valor da alimentação (R$)",
-  categoria_transporte: "Como paga o transporte",
+  categoria_transporte: "Ajuda com Transporte",
   aux_transporte: "Valor do transporte (R$)",
   conceder: "Conceder ou cancelar?", meio_transporte: "Meio de transporte",
   // ⚑ OS RÓTULOS DO PIPE (10/11/2026). Ele: *"por que não está usando o
@@ -320,13 +550,22 @@ const ROTULO = {
   // Campo que o BLOCO REPETIDO cuida: nunca sai como caixinha solta, mas
   // precisa de rótulo para o teste que varre os campos do portal.
   dependentes: "Dependentes",
-  tipo_documentacao: "Tipo de Documentação para Cadastro",
+  // ⚑ "VÍNCULO", e não "Tipo de Documentação para Cadastro" (17/11/2026).
+  // Ele: *"renomear Tipo de Documentação para Cadastro = Vínculo (…) o ideal é
+  // ficar CTPS e Prestador de Serviço."* É a mesma palavra que a ficha da
+  // pessoa e a lista de Colaboradores já usam para o mesmo dado — o nome
+  // antigo vinha do Pipefy e descrevia a PAPELADA, não o vínculo.
+  tipo_documentacao: "Vínculo",
   num_ctps: "Nº CTPS",
   num_pis: "Nº PIS",
   cargo_pleiteado_id: "Cargo Pleiteado",
   cargo_deferido_id: "Cargo Deferido",
   pagamento: "Pagamento",
   valor_diaria: "Valor da Diária",
+  // ⚑ Os dados da empresa do PJ (17/11/2026): aparecem só quando o tipo de
+  // contrato é PJ. Mesmos nomes da ficha da pessoa.
+  razao_social_pj: "Razão social (PJ)",
+  cnpj_pj: "CNPJ (PJ)",
   valor_mes: "Valor do Mês",
   tipo_readmissao: "Tipo de Readmissão",
   // ⚑ "Empresa para registro", e não "CNPJ para Admissão" (15/11/2026): o
@@ -359,6 +598,8 @@ const SIM_NAO = {
   // saída, e readmissão esquecida deixa a pessoa sem conseguir bater no dia
   // seguinte. O "não" vem em segundo porque é a resposta neutra.
   descontar_vt: ["Sim, descontar em folha", "Não, a empresa absorve"],
+  abono_pecuniario: ["Sim, vender 1/3", "Não"],
+  adiantamento_13: ["Sim, adiantar", "Não"],
   continua_prestador: ["Sim, continua como prestador de serviço",
                        "Não, está saindo da empresa"],
 };
@@ -367,6 +608,9 @@ const SIM_NAO = {
 const TIPO_CAMPO = {
   data_inicio: "date", data_saida: "date", aviso_previo: "date", ultimo_dia: "date",
   vigencia: "date", dependente_nascimento: "date", data_nascimento: "date",
+  rg_emissao: "date", ferias_inicio: "date",
+  afast_inicio: "date", afast_previsao: "date", retorno_data: "date",
+  transferencia_data: "date",
   admissao: "date", primeira_competencia: "month",
   email: "email",
   observacao: "textarea", descricao: "textarea", justificativa: "textarea",
@@ -380,13 +624,23 @@ function pintarFormulario(){
   const tipos = DADOS.tipos || [];
   // QUEM SÓ OLHA NÃO GANHA FORMULÁRIO. O parceiro (gente de fora, ligada a uma
   // obra) acompanha e não pede — decisão do dono em 07/11/2026. A tela não
-  // julga isso: o servidor responde `pode_pedir`, calculado pela mesma regra
-  // de permissão do resto do ERP. Esconder o botão não é a segurança — a rota
-  // recusa igual; é só não oferecer o que vai ser negado.
-  if (!DADOS.pode_pedir) {
+  // julga isso: o servidor responde quais ÁREAS esta pessoa tem, calculadas
+  // pela mesma regra de permissão do resto do ERP. Esconder não é a segurança
+  // — a rota recusa igual; é só não oferecer o que vai ser negado.
+  //
+  // ⚑ CONSERTO DE 18/11/2026, numa pergunta dele: *"e para quem vai preencher
+  // diário de obra mas não vai acessar DP, como faz?"*
+  //
+  // Antes isto olhava `pode_pedir` (que é `solicitar_dp`) e escondia o BLOCO
+  // INTEIRO. Quem tivesse o diário e não o DP perdia o botão do DIÁRIO junto —
+  // e o diário não tem nada a ver com pedir ao DP. Agora quem manda é a lista
+  // de áreas: o servidor já devolve só as que a pessoa alcança, e o bloco some
+  // apenas quando não sobra nenhuma.
+  if (!(DADOS.areas || []).length) {
     els("bloco-pedir").style.display = "none";
     return;
   }
+  els("bloco-pedir").style.display = "";
   pintarAreas();
 }
 
@@ -395,7 +649,14 @@ let AREA = null;
 
 function pintarAreas(){
   const areas = DADOS.areas || [];
-  els("pedir-ajuda").textContent = "Escolha a área do que você precisa.";
+  // Quem só alcança o diário não está "abrindo uma solicitação" — e chamar
+  // assim faria a pessoa achar que está no lugar errado.
+  const soTela = areas.length && areas.every(a => a.so_tela);
+  const cab = els("bloco-pedir").querySelector("h3");
+  if (cab) cab.textContent = soTela ? "Diário de obra" : "Abrir uma solicitação";
+  els("pedir-ajuda").textContent = soTela
+    ? "Lance aqui o que aconteceu na obra no dia."
+    : "Escolha a área do que você precisa.";
   els("form-pedido").innerHTML = "";
   els("areas").innerHTML = areas.map(a => `
     <button class="area ${a.pronta ? "" : "fechada"}" type="button"
@@ -496,9 +757,17 @@ function pintarCamposDoTipo(){
         // ⚑ O ASTERISCO. Ele: *"Pipe, todo campo obrigatório, ele tem um
         // asterisco, facilita. Aqui não, ninguém sabe o que é obrigatório."*
         // A lista vem da regra, que a tirou do Pipe — não é escrita aqui.
-        const rot = (ROTULO[c] || c.replace(/_/g, " ")) + (obrig.has(c) ? " *" : "");
+        //
+        // ⚑ E ELE PODE MUDAR DE LUGAR ENQUANTO SE PREENCHE (17/11/2026):
+        // escolher CTPS passa a exigir o PIS e o tipo de contrato; escolher PJ
+        // passa a exigir a razão social e o CNPJ. Por isso o asterisco vive
+        // num <span> próprio, repintado por `pintarAsteriscos`, e não colado
+        // no rótulo de uma vez — era por isso que o campo ficava obrigatório
+        // no servidor e sem marca nenhuma na tela.
+        const rot = esc(ROTULO[c] || c.replace(/_/g, " "))
+          + `<span class="obrig" data-obrig="${esc(c)}">${obrig.has(c) ? " *" : ""}</span>`;
         if (tipo === "textarea")
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <textarea id="p-${c}" name="${c}" rows="3"></textarea></label>`;
         {# A OBRA É OBRIGATÓRIA desde 10/11/2026 — ver `pessoal_solicitacoes`.
            Quando a obra que alcança é UMA só (o caso do administrativo de uma
@@ -518,7 +787,7 @@ function pintarCamposDoTipo(){
             ? DADOS.obra_sugerida : "";
           const ja = obras.length === 1 ? obras[0].id : sugerida;
           const nome = (obras.find(o => String(o.id) === String(ja)) || {});
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             ${obras.length > 6 ? `<input type="search" id="p-obra-filtro"
                placeholder="digite para filtrar a obra" autocomplete="off">` : ""}
             <select id="p-${c}" name="${c}">
@@ -536,7 +805,7 @@ function pintarCamposDoTipo(){
         // digitaria "acordo", "mandado embora" e "pediu pra sair" para a mesma
         // coisa, e o DP passaria a traduzir à mão o que o sistema já sabe.
         if (SIM_NAO[c])
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <select id="p-${c}" name="${c}">
               <option value="">escolha…</option>
               <option value="1">${esc(SIM_NAO[c][0])}</option>
@@ -544,7 +813,7 @@ function pintarCamposDoTipo(){
             </select></label>`;
         const lista = (DADOS.listas || {})[c];
         if (lista)
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <select id="p-${c}" name="${c}">
               <option value="">escolha…</option>
               ${lista.map(o => `<option value="${esc(o.valor)}">${esc(o.rotulo)}</option>`).join("")}
@@ -562,7 +831,7 @@ function pintarCamposDoTipo(){
         // com a linha do recado — senão não teria onde dizer "já está no
         // cadastro".
         if (!dePapel && (t.ja_no_cadastro || {})[c])
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <input id="p-${c}" name="${c}" type="${tipo}"
               ${modo ? `inputmode="${modo}"` : ""}>
             <small class="do-papel" id="pd-${c}">escolha o colaborador acima;
@@ -570,7 +839,7 @@ function pintarCamposDoTipo(){
           </label>`;
         if (dePapel)
           return `<label class="campo-portal" id="pw-${c}" data-de-papel="${c}">
-            ${esc(rot)}
+            ${rot}
             <input id="p-${c}" name="${c}" type="${tipo}"
               ${modo ? `inputmode="${modo}"` : ""}>
             {# ⚑ O TEXTO ERA INCOMPREENSÍVEL, e ele falou isso com todas as
@@ -586,7 +855,7 @@ function pintarCamposDoTipo(){
               ${esc(ROTULO_PAPEL[dePapel] || dePapel)} ali em cima e este
               campo se preenche sozinho</small>
           </label>`;
-        return `<label class="campo-portal">${esc(rot)}
+        return `<label class="campo-portal">${rot}
           <input id="p-${c}" name="${c}" type="${tipo}"
             ${modo ? `inputmode="${modo}"` : ""}></label>`;
       }).join("");
@@ -671,10 +940,15 @@ function ligarCriticaDoCPF(t){
             + "não precisa cadastrar de novo. Fale com o DP.";
           recado.className = "do-papel pede";
         } else if (r.situacao === "desligado") {
-          recado.textContent = `${r.nome} já teve cadastro aqui, hoje `
-            + "desligado: este pedido vai como READMISSÃO, e o cadastro volta "
-            + "sem redigitar nada.";
+          {# ⚑ O AVISO DELE (19/11/2026): o cadastro já existia, a admissão
+             segue, o histórico fica, e o que vier agora atualiza. #}
+          recado.textContent = `${r.nome} já teve cadastro conosco e está `
+            + "desligado. A admissão segue como READMISSÃO: o histórico fica "
+            + "guardado, os documentos ficam opcionais e o que você mandar "
+            + "agora atualiza o cadastro. Complete só o que faltar.";
           recado.className = "do-papel ok";
+          marcarOQueOCadastroTem(t, r.tem || []);
+          pintarPapeis(t);
         } else {
           recado.textContent = "não existe cadastro com este CPF — segue o "
             + "cadastro novo";
@@ -731,14 +1005,14 @@ function pintarRepetidos(t){
         const rot = (ROTULO[c] || c.replace(/_/g, " ")) + " *";
         const lista = (DADOS.listas || {})[c];
         if (lista)
-          return `<label class="campo-portal">${esc(rot)}
+          return `<label class="campo-portal">${rot}
             <select data-rep="${i}" data-campo="${c}">
               <option value="">escolha…</option>
               ${lista.map(o => `<option value="${esc(o.valor)}"
                 ${item[c] === o.valor ? "selected" : ""}
                 >${esc(o.rotulo)}</option>`).join("")}
             </select></label>`;
-        return `<label class="campo-portal">${esc(rot)}
+        return `<label class="campo-portal">${rot}
           <input data-rep="${i}" data-campo="${c}"
                  type="${TIPO_CAMPO[c] || "text"}"
                  value="${esc(item[c] || "")}"></label>`;
@@ -797,14 +1071,29 @@ async function procurarPessoa(termo){
   const meu = ++BUSCA_PEDIDO;
   let d;
   try {
-    const r = await fetch("/erp/portal/api/pessoas?q=" + encodeURIComponent(termo));
+    {# ⚑ O TIPO VAI JUNTO (17/11/2026). Ele: *"na admissão de prestador, na
+       busca aparecer somente os que são Prestador de Serviço."* Quem filtra é
+       o SERVIDOR, pelo `so_vinculo` da regra — a tela só diz de que pedido se
+       trata. Mandar o vínculo direto daqui deixaria trocá-lo no navegador. #}
+    const tipoAgora = (els("p-tipo") || {}).value || "";
+    const r = await fetch("/erp/portal/api/pessoas?q=" + encodeURIComponent(termo)
+                          + "&tipo=" + encodeURIComponent(tipoAgora));
     d = await r.json();
   } catch(e) { return; }
   if (meu !== BUSCA_PEDIDO) return;        // chegou fora de ordem: descarta
   const achados = (d && d.pessoas) || [];
   if (!achados.length) {
+    {# O recado diz POR QUE não achou, quando o tipo filtra: "ninguém com esse
+       nome" sobre uma busca que só mostra prestador manda a pessoa procurar de
+       novo o que não está lá. #}
+    const soVinculo = ((DADOS.tipos || []).find(
+      x => x.chave === ((els("p-tipo") || {}).value || "")) || {}).so_vinculo;
     onde.innerHTML = `<div class="ajuda">Ninguém com esse nome ou CPF nas
-      suas obras.</div>`;
+      suas obras${soVinculo === "PRESTADOR"
+        ? " <b>entre os prestadores de serviço</b> — este pedido é só para quem"
+          + " ainda não tem carteira assinada"
+        : soVinculo === "CTPS"
+        ? " <b>entre quem tem carteira assinada</b>" : ""}.</div>`;
     return;
   }
   // ⚑ A PESSOA INTEIRA fica guardada, não só os pedacinhos que cabem num
@@ -860,10 +1149,16 @@ function escolherPessoa(d){
 function preencherOQueOCadastroTem(t, pessoa){
   const mapa = t.ja_no_cadastro || {};
   const tem = (pessoa && pessoa.cadastro) || {};
+  // ⚑ DADO PESSOAL CHEGA SÓ COMO "TEM" (19/11/2026): o RG, a mãe e o
+  // endereço não descem para o celular. Esses campos somem dizendo "já está
+  // no cadastro"; os outros (CTPS, PIS) vêm preenchidos para conferir.
+  marcarOQueOCadastroTem(t, Object.entries(mapa)
+    .filter(([, coluna]) => tem[coluna] === "__tem__").map(([campo]) => campo));
   Object.entries(mapa).forEach(([campo, coluna]) => {
     const caixa = els("p-" + campo);
     if (!caixa) return;
-    const valor = tem[coluna];
+    const valor = tem[coluna] === "__tem__" ? "" : tem[coluna];
+    if (tem[coluna] === "__tem__") return;
     if (!valor) {
       // Pessoa sem o dado: o campo volta a ser pergunta. (Trocar de pessoa
       // depois de ter escolhido outra acontece, e o número da anterior não
@@ -897,22 +1192,78 @@ const ROTULO_VINCULO = {CTPS: "carteira assinada",
 // clique e vai se marcando sozinha conforme a pessoa anexa. Ninguém preenche
 // vinte campos para descobrir no final que faltava um papel.
 // ---------------------------------------------------------------------------
-let PAPEIS = {};          // código do documento -> {arquivo, lido}
+let PAPEIS = {};          // código do papel exigido -> {nome} (quem o cobre)
+let ARQUIVOS = [];        // [{arquivo, nome, tipos, documento, aviso, lendo}]
+// ⚑ A READMISSÃO (19/11/2026): a pessoa que já teve cadastro. `tem` são os
+// NOMES dos campos que o cadastro dela já tem — os valores não descem.
+let READMITIDO = null;    // {id, nome, tem: [campos]}
+// Tudo o que a leitura achou — inclusive o que não tem campo na tela (pai,
+// sexo, estado civil, naturalidade, série da CTPS). Vai junto no pedido.
+let LIDOS = {};
+
+// O papel principal de um arquivo: o primeiro que a leitura reconheceu e que
+// não é "outro". É com ele que o arquivo é guardado no cadastro.
+function tipoPrincipal(a){
+  return (a.tipos || []).find(x => x !== "OUTRO") || "DOC-IDENTIDADE";
+}
+
+// Quem cobre cada papel exigido sai da lista de arquivos — uma CNH cobre a
+// identificação E o CPF, porque o CPF está nela.
+function recalcularPapeis(){
+  PAPEIS = {};
+  ARQUIVOS.forEach(a => (a.tipos || []).forEach(t => {
+    if (t !== "OUTRO" && !PAPEIS[t]) PAPEIS[t] = {nome: a.nome};
+  }));
+}
 
 function blocoDosPapeis(t){
-  PAPEIS = {};
-  const papeis = papeisExigidos(t);
-  if (!papeis.length) return "";
-  return `<div class="papeis" id="p-papeis">
-    <b>1. Comece pelos documentos</b>
-    <p class="ajuda">Fotografe estes papéis e o sistema <b>lê e preenche os
-      campos abaixo</b> — nome, CPF e os números da carteira. Fotografe
-      direito, de frente e sem sombra. Sem eles o pedido não sai: é o que o DP
-      precisa para cadastrar e para a pessoa entrar no sistema de pagamento.</p>
+  PAPEIS = {}; ARQUIVOS = []; READMITIDO = null; LIDOS = {};
+  if (!(t.documentos || []).length) return "";
+  {# ⚑ "JÁ TRABALHOU CONOSCO?" vem ANTES dos documentos (19/11/2026). Ele:
+     *"se não tiver documento, eu queria poder pesquisar o nome da pessoa (…)
+     e só selecionar sem ter a necessidade de incluir de novos documentos."*
+     Só na admissão: é o único pedido que cria (ou recria) a ficha. #}
+  const readmissao = t.chave === "CADASTRO" ? `
+    <div class="papeis" id="p-voltou">
+      <b>Já trabalhou conosco?</b>
+      <p class="ajuda">Procure pelo nome ou pelo CPF. Achando, é só escolher: o
+        cadastro dele já existe, os documentos não precisam ser mandados de
+        novo, e você só completa o que faltar.</p>
+      <input id="p-voltou-busca" type="search" autocomplete="off"
+             placeholder="nome ou CPF de quem já trabalhou aqui">
+      <div id="p-voltou-achados" class="achados-pessoa"></div>
+      <div id="p-voltou-escolhido" class="pessoa-escolhida oculto"></div>
+    </div>` : "";
+  {# ⚑ UMA ÁREA SÓ, DE ARRASTAR VÁRIOS ARQUIVOS (19/11/2026). Ele: *"esse
+     campo deveria ser um campo onde você pode jogar o documento dentro (…) e
+     eu preciso poder colocar mais de um documento. (…) a pessoa coloca o RG e
+     o RG é uma imagem da frente e uma imagem do verso."* Antes era um botão
+     por tipo de papel, um arquivo por botão. #}
+  return readmissao + `<div class="papeis" id="p-papeis">
+    <b>1. Os documentos da pessoa</b>
+    <p class="ajuda">Jogue aqui <b>todos de uma vez</b> — RG (frente e verso),
+      CNH, CPF, comprovante de endereço e, se for carteira assinada, a CTPS.
+      O sistema lê tudo junto e <b>preenche os campos abaixo</b>. Confira o
+      que ele leu: o que não der para ler fica para você digitar.</p>
+    <div id="p-solta" class="area-solta" tabindex="0">
+      <b>Arraste os arquivos para cá</b>
+      <small>ou</small>
+      <div class="area-botoes">
+        <button type="button" class="btn-papel" id="p-foto">📷 Tirar foto</button>
+        <button type="button" class="btn-papel" id="p-escolher">📎 Escolher arquivos</button>
+      </div>
+      <input type="file" id="pf-foto" accept="image/*" capture="environment" class="oculto">
+      <input type="file" id="pf-varios" accept="image/*,.pdf" multiple class="oculto">
+    </div>
+    <div id="p-arquivos"></div>
     <div id="p-papeis-lista"></div></div>`;
 }
 
 function papeisExigidos(t){
+  // ⚑ NA READMISSÃO NÃO SE EXIGE PAPEL — a mesma regra do servidor. Os
+  // papéis da primeira passagem estão no cadastro dela.
+  if (READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado"))
+    return [];
   const base = (t.documentos || []).slice();
   // ⚑ Escolher CTPS acrescenta a carteira NA HORA — a mesma regra do
   // servidor (`documentos_se`), para a tela não prometer menos do que ele vai
@@ -926,69 +1277,223 @@ function papeisExigidos(t){
 }
 
 const ROTULO_PAPEL = {
-  "DOC-IDENTIDADE": "Documento de identificação (RG, CNH ou CTPS)",
-  "CPF-DOC": "CPF",
+  "DOC-IDENTIDADE": "Documento de identificação (RG ou CNH)",
+  "CPF-DOC": "CPF (vale o que está na CNH ou no RG novo)",
   "COMPROVANTE-ENDERECO-PESSOA": "Comprovante de endereço",
   "CTPS-FOTO": "CTPS — página com a foto",
   "CTPS-INFORMACOES": "CTPS — página com as informações",
   "DOC-DEPENDENTE": "Documento do dependente (certidão ou RG)",
+  "OUTRO": "Outro documento",
 };
 
 function pintarPapeis(t){
+  const lista = els("p-arquivos");
+  if (lista) {
+    lista.innerHTML = ARQUIVOS.map((a, i) => `
+      <div class="papel tem">
+        <span class="marca">${a.lendo ? "…" : "✓"}</span>
+        <div class="papel-corpo">
+          <b>${esc(a.nome)}</b>
+          <small>${a.lendo ? "lendo…"
+            : esc(a.documento || "não reconhecido — diga o que é")}${
+            a.aviso ? " · " + esc(a.aviso) : ""}</small>
+          ${a.lendo ? "" : `<select data-arq-tipo="${i}" class="tipo-arquivo">
+            ${(a.tipos || []).some(x => x !== "OUTRO") ? ""
+              : `<option value="" selected>diga o que é este arquivo…</option>`}
+            ${Object.entries(ROTULO_PAPEL).filter(([c]) => c !== "DOC-DEPENDENTE")
+              .map(([c, r]) => `<option value="${c}"
+                ${(a.tipos || []).some(x => x !== "OUTRO") && tipoPrincipal(a) === c ? "selected" : ""}
+                >${esc(r)}</option>`).join("")}
+          </select>`}
+        </div>
+        <button type="button" class="link-tirar" data-arq-tirar="${i}">tirar</button>
+      </div>`).join("");
+    lista.querySelectorAll("[data-arq-tipo]").forEach(sel =>
+      sel.addEventListener("change", () => {
+        // Corrigido à mão, o arquivo passa a valer só pelo que a pessoa disse.
+        ARQUIVOS[+sel.dataset.arqTipo].tipos = sel.value ? [sel.value] : ["OUTRO"];
+        recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+      }));
+    lista.querySelectorAll("[data-arq-tirar]").forEach(b =>
+      b.addEventListener("click", () => {
+        ARQUIVOS.splice(+b.dataset.arqTirar, 1);
+        recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+      }));
+  }
   const onde = els("p-papeis-lista");
   if (!onde) return;
-  onde.innerHTML = papeisExigidos(t).map(c => {
+  const exigidos = papeisExigidos(t);
+  onde.innerHTML = exigidos.length ? `<small class="ajuda">O que precisa
+      estar entre eles:</small>` + exigidos.map(c => {
     const tem = PAPEIS[c];
     return `<div class="papel ${tem ? "tem" : ""}">
       <span class="marca">${tem ? "✓" : "○"}</span>
-      <div class="papel-corpo">
-        <b>${esc(ROTULO_PAPEL[c] || c)}</b>
-        ${tem ? `<small>${esc(tem.nome)}${
-                   tem.lido ? " · " + esc(tem.lido) : ""}</small>`
-              : `<small>ainda não anexado</small>`}
-      </div>
-      <input type="file" id="pf-${c}" accept="image/*,.pdf" capture="environment"
-             class="oculto">
-      <button type="button" class="btn-papel" data-papel="${c}">${
-        tem ? "trocar" : "anexar"}</button>
+      <div class="papel-corpo"><b>${esc(ROTULO_PAPEL[c] || c)}</b>
+        <small>${tem ? "em " + esc(tem.nome) : "ainda não veio"}</small></div>
     </div>`;
-  }).join("");
-  onde.querySelectorAll("[data-papel]").forEach(b =>
-    b.addEventListener("click", () => els("pf-" + b.dataset.papel).click()));
-  papeisExigidos(t).forEach(c => {
-    const campo = els("pf-" + c);
-    if (campo) campo.addEventListener("change", () => anexarPapel(t, c, campo));
+  }).join("")
+    : (READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado")
+       ? `<small class="ajuda">Como a pessoa já tem cadastro, os documentos
+           são opcionais — mande só se algo mudou (o que vier atualiza o
+           cadastro).</small>` : "");
+}
+
+function ligarAreaSolta(t){
+  const area = els("p-solta");
+  if (!area) return;
+  const foto = els("pf-foto"), varios = els("pf-varios");
+  els("p-foto").addEventListener("click", () => foto.click());
+  els("p-escolher").addEventListener("click", () => varios.click());
+  [foto, varios].forEach(campo => campo.addEventListener("change", () => {
+    receberArquivos(t, Array.from(campo.files || []));
+    campo.value = "";
+  }));
+  ["dragenter", "dragover"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.add("em-cima");
+  }));
+  ["dragleave", "drop"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.remove("em-cima");
+  }));
+  area.addEventListener("drop", e =>
+    receberArquivos(t, Array.from((e.dataTransfer || {}).files || [])));
+}
+
+// ⚑ UMA LEITURA POR LOTE, não por arquivo: o que chegou junto é lido junto (a
+// frente e o verso do RG se completam). Custa uma chamada de IA por lote.
+async function receberArquivos(t, novos){
+  novos = novos.filter(f => f && f.size);
+  if (!novos.length) return;
+  const vagas = 8 - ARQUIVOS.length;
+  if (vagas <= 0) { recado("São no máximo 8 arquivos por pedido.", "erro"); return; }
+  novos = novos.slice(0, vagas);
+  const lote = novos.map(f => ({arquivo: f, nome: f.name || "foto",
+                                tipos: [], documento: "", aviso: "", lendo: true}));
+  ARQUIVOS = ARQUIVOS.concat(lote);
+  pintarPapeis(t); conferirOQueFalta(t);
+  try {
+    const fd = new FormData();
+    lote.forEach(a => fd.append("arquivos", a.arquivo, a.nome));
+    const r = await fetch("/erp/portal/api/ler-documentos", {method: "POST", body: fd});
+    const d = await r.json();
+    if (d && d.ok) {
+      (d.arquivos || []).forEach(x => {
+        const a = lote[x.indice];
+        if (!a) return;
+        a.tipos = x.tipos || ["OUTRO"]; a.documento = x.documento || "";
+        a.aviso = x.aviso || "";
+      });
+      // O que os documentos disseram entra nos campos VAZIOS — nunca por
+      // cima do que a pessoa já escreveu. E fica marcado como LIDO, para ela
+      // conferir.
+      Object.assign(LIDOS, d.campos || {});
+      // ⚑ PREENCHE ATÉ O CAMPO OCULTO (19/11/2026): o PIS e a CTPS de quem é
+      // prestador ficam escondidos, mas o que a leitura achou é guardado.
+      Object.entries(d.campos || {}).forEach(([k, v]) => {
+        const alvo = els("p-" + k);
+        if (alvo && !alvo.value && v) {
+          alvo.value = v; alvo.dataset.lido = "1";
+          alvo.dispatchEvent(new Event("input", {bubbles: true}));
+        }
+      });
+    } else {
+      lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
+    }
+  } catch(e) {
+    lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
+  }
+  lote.forEach(a => { a.lendo = false; });
+  recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+}
+
+// ---------------------------------------------------------------------------
+// "JÁ TRABALHOU CONOSCO?" — procurar o desligado e escolher
+// ---------------------------------------------------------------------------
+function ligarReadmissao(t){
+  const caixa = els("p-voltou-busca");
+  if (!caixa) return;
+  let timer = null, pedido = 0;
+  caixa.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const termo = caixa.value.trim(), onde = els("p-voltou-achados");
+      if (termo.length < 3) { onde.innerHTML = ""; return; }
+      const meu = ++pedido;
+      let d;
+      try {
+        const r = await fetch("/erp/portal/api/pessoas?desligados=1&tipo=CADASTRO&q="
+                              + encodeURIComponent(termo));
+        d = await r.json();
+      } catch(e) { return; }
+      if (meu !== pedido) return;
+      const achados = (d && d.pessoas) || [];
+      onde.innerHTML = achados.length ? achados.map(p => `
+        <button type="button" class="achado-pessoa" data-voltou="${p.id}">
+          <b>${esc(p.nome)}</b>
+          <small>${esc(p.cargo || "sem cargo")}${p.cpf ? " · CPF " + esc(p.cpf) : ""}
+            · já saiu</small></button>`).join("")
+        : `<div class="ajuda">Ninguém desligado com esse nome ou CPF. Se a
+            pessoa nunca trabalhou aqui, siga com os documentos abaixo.</div>`;
+      const porId = {};
+      achados.forEach(p => { porId[String(p.id)] = p; });
+      onde.querySelectorAll("[data-voltou]").forEach(b =>
+        b.addEventListener("click", () => escolherQuemVoltou(t, porId[b.dataset.voltou])));
+    }, 350);
   });
 }
 
-async function anexarPapel(t, codigo, campo){
-  const arq = campo.files && campo.files[0];
-  if (!arq) return;
-  PAPEIS[codigo] = {nome: arq.name, arquivo: arq, lido: "lendo…"};
+function escolherQuemVoltou(t, p){
+  if (!p) return;
+  // Nome e CPF saem do cadastro dele: o CPF nem desce inteiro para cá.
+  READMITIDO = {id: p.id, nome: p.nome,
+                tem: Object.keys(p.cadastro || {}).concat(["cpf"])};
+  els("p-voltou-achados").innerHTML = "";
+  els("p-voltou-busca").value = "";
+  const caixa = els("p-voltou-escolhido");
+  caixa.className = "pessoa-escolhida";
+  {# ⚑ O AVISO QUE ELE PEDIU (19/11/2026): *"informar que esse colaborador, o
+     cadastro dele já existia em sistema (…) e a gente vai dar prosseguimento
+     à admissão (…) e os dados novos vão estar atualizados."* #}
+  caixa.innerHTML = `<b>${esc(p.nome)}</b>
+    <small>CPF <b>${esc(p.cpf || "—")}</b></small>
+    <small>Já teve cadastro conosco e está desligado. A admissão segue como
+      <b>readmissão</b>: o histórico dele fica guardado, e o que você mandar
+      agora (documento ou dado) atualiza o cadastro.</small>
+    <button type="button" class="link-tirar" id="p-voltou-tirar">não é esta pessoa</button>`;
+  els("p-voltou-tirar").addEventListener("click", () => {
+    READMITIDO = null; caixa.className = "pessoa-escolhida oculto";
+    marcarOQueOCadastroTem(t, []); pintarPapeis(t); conferirOQueFalta(t);
+  });
+  const nome = els("p-nome");
+  if (nome && !nome.value) nome.value = p.nome;
+  marcarOQueOCadastroTem(t, READMITIDO.tem);
   pintarPapeis(t); conferirOQueFalta(t);
-  // ⚑ A LEITURA AVISA, NÃO BARRA. A IA erra, e um aviso que impede o envio
-  // vira parede quando ela erra. O único bloqueio é "não anexou nada".
-  try {
-    const fd = new FormData();
-    fd.append("arquivo", arq); fd.append("tipo", codigo);
-    const r = await fetch("/erp/portal/api/ler-documento", {method: "POST", body: fd});
-    const d = await r.json();
-    if (d && d.ok) {
-      PAPEIS[codigo].lido = d.resumo || "lido";
-      // O que o documento disse entra nos campos VAZIOS — nunca por cima do
-      // que a pessoa já escreveu.
-      Object.entries(d.campos || {}).forEach(([k, v]) => {
-        const alvo = els("p-" + k);
-        if (alvo && !alvo.value && v) alvo.value = v;
-      });
-      if (d.aviso) recado(d.aviso, "erro");
-    } else {
-      PAPEIS[codigo].lido = "anexado (não consegui ler)";
+}
+
+// O que o cadastro antigo já tem não é perguntado: o campo some e diz isso.
+// Só os NOMES dos campos chegam aqui — o valor fica no servidor, que o junta
+// ao pedido.
+function marcarOQueOCadastroTem(t, tem){
+  const conjunto = new Set(tem || []);
+  (t.campos || []).forEach(c => {
+    const campo = els("p-" + c);
+    if (!campo) return;
+    const rotulo = campo.closest("label");
+    let nota = els("pt-" + c);
+    if (conjunto.has(c) && !campo.value) {
+      campo.dataset.noCadastro = "1";
+      campo.classList.add("oculto");
+      if (!nota && rotulo) {
+        nota = document.createElement("small");
+        nota.id = "pt-" + c; nota.className = "do-papel ok";
+        rotulo.appendChild(nota);
+      }
+      if (nota) nota.textContent = "✓ já está no cadastro — não precisa digitar";
+    } else if (campo.dataset.noCadastro) {
+      delete campo.dataset.noCadastro;
+      campo.classList.remove("oculto");
+      if (nota) nota.remove();
     }
-  } catch(e) {
-    PAPEIS[codigo].lido = "anexado";
-  }
-  pintarPapeis(t); conferirOQueFalta(t);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1004,6 +1509,16 @@ function recadoDosCamposDePapel(t){
     const campo = els("p-" + c), dica = els("pd-" + c);
     if (!campo || !dica) return;
     const anexado = !!(papel && PAPEIS[papel]);
+    const voltou = READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado");
+    // Na readmissão o campo que o cadastro já tem tem a sua própria nota
+    // ("já está no cadastro"), e o que falta não depende de papel.
+    if (campo.dataset.noCadastro) { dica.textContent = ""; return; }
+    if (voltou && !campo.value) {
+      dica.textContent = "o cadastro antigo não tem este dado — digite, ou "
+        + "mande o documento ali em cima";
+      dica.className = "do-papel pede";
+      return;
+    }
     // ⚑ "PREENCHIDO À MÃO" SERIA MENTIRA quando o número veio do cadastro, e
     // mentira de recado é pior que recado nenhum: quem lê para de conferir.
     if (campo.value && campo.dataset.doCadastro) {
@@ -1045,6 +1560,44 @@ function recadoDosCamposDePapel(t){
    dele é o defeito que trava o pedido sem explicação: o botão diria "falta a
    data do aviso prévio" sobre um campo que a pessoa não tem como ver.
    --------------------------------------------------------------------------- #}
+{# ⚑ O QUE É OBRIGATÓRIO AGORA (17/11/2026).
+
+   A regra tem DUAS listas: `obrigatorios` (sempre) e `obrigatorios_se` (depende
+   de outra resposta). O portal só lia a primeira — então "se for CTPS, o PIS e
+   o tipo de contrato são obrigatórios" valia no servidor e não aparecia na
+   tela: sem asterisco, e o botão de enviar deixava passar.
+
+   Ele pediu os dois em 17/11: *"se Tipo de Documentação para Cadastro = CTPS,
+   obrigatório Nº PIS, Tipo de contrato"* e *"renomear campos e torná-los
+   obrigatórios"*.
+
+   ⚠️ A COMPARAÇÃO ACEITA OS DOIS ALFABETOS (rótulo e código) pela mesma razão
+   do `opcoes_se`: a caixinha de lista fechada guarda o RÓTULO, e as chaves da
+   regra são o CÓDIGO. Comparar um com o outro é o defeito que deixou o campo
+   "Tipo de contrato" sem opção nenhuma. #}
+function obrigatoriosAgora(t){
+  const v = respostasAgora(t);
+  const traduz = (campo, valor) =>
+    ((t.traducoes || {})[campo] || {})[valor] || valor || "";
+  const ramo = camposDesteVinculo(t);
+  const lista = new Set(ramo ? ramo.obrigatorios : (t.obrigatorios || []));
+  Object.entries(t.obrigatorios_se || {}).forEach(([gatilho, mapa]) => {
+    const resposta = v[gatilho] || "";
+    Object.entries(mapa).forEach(([valor, campos]) => {
+      if (resposta === valor || traduz(gatilho, resposta) === valor)
+        (campos || []).forEach(c => lista.add(c));
+    });
+  });
+  return lista;
+}
+
+function pintarAsteriscos(t){
+  const obrigatorios = obrigatoriosAgora(t);
+  document.querySelectorAll("[data-obrig]").forEach(span => {
+    span.textContent = obrigatorios.has(span.dataset.obrig) ? " *" : "";
+  });
+}
+
 function camposDesteVinculo(t){
   const vinculos = t.por_vinculo || {};
   if (!Object.keys(vinculos).length) return null;
@@ -1116,12 +1669,18 @@ function aplicarVinculo(t){
       });
     });
     // 3) ele só nasce quando outro campo responde
+    {# ⚑ OS DOIS ALFABETOS (17/11/2026), mesma razão do `opcoes_se` logo abaixo:
+       a caixinha guarda o RÓTULO ("CLT (tempo indeterminado)") e a regra pode
+       estar escrita em CÓDIGO ("CLT_INDETERMINADO"). Comparar só um dos dois
+       escondia o campo que devia aparecer — foi o que aconteceu com o Valor da
+       Diária, que não apareceu em caso nenhum. #}
     Object.entries((t.visiveis_se || {})[c] || {}).forEach(
       ([gatilho, aceitos]) => {
         const resposta = v[gatilho] || "";
-        if ((aceitos || []).includes("*")) { if (!resposta) some = true; }
-        else if (!(aceitos || []).includes(traduz(gatilho, resposta)))
-          some = true;
+        const lista = aceitos || [];
+        if (lista.includes("*")) { if (!resposta) some = true; }
+        else if (!lista.includes(resposta)
+                 && !lista.includes(traduz(gatilho, resposta))) some = true;
       });
     {# ⚑ 4) A LISTA DO CAMPO MUDA COM OUTRA RESPOSTA (17/11/2026).
 
@@ -1137,22 +1696,40 @@ function aplicarVinculo(t){
        o DP um registro em carteira com contrato de PJ, que é o defeito mais
        caro que uma caixinha pode produzir.
 
-       O servidor manda a lista em RÓTULO (é o que a tela do DP mostra); aqui
-       a caixinha guarda o CÓDIGO, então a tradução que já viaja junto
-       converte um no outro. #}
+       ⚑ CONSERTO DE 17/11/2026, e o comentário acima estava ERRADO — era ele
+       que escondia o defeito. Eu escrevi que "a caixinha guarda o CÓDIGO".
+       Ela guarda o RÓTULO: as opções de lista fechada nascem com
+       `value="CLT (tempo indeterminado)"`, não `value="CLT_INDETERMINADO"`.
+
+       Então eu traduzia a lista permitida para CÓDIGO e comparava com um
+       valor em RÓTULO. Nada casava:
+
+         · CTPS → NENHUMA opção aparecia (as três têm rótulo ≠ código);
+         · Prestador → só "PJ", porque é o único cujo rótulo é igual ao
+           código.
+
+       Foi exatamente o que ele relatou: *"o campo Tipo de contrato não está
+       exibindo as opções conforme Tipo de Documentação para Cadastro
+       corretamente."*
+
+       Agora a comparação aceita OS DOIS alfabetos, nos dois lados. Fixar um
+       só seria trocar este defeito por outro no dia em que uma tela passar a
+       guardar código — e o teste do navegador não cobre tela que ninguém
+       abriu. #}
     const porResposta = (t.opcoes_se || {})[c];
     if (porResposta && !some) {
-      const codigos = new Set();
+      const aceitos = new Set();
       Object.entries(porResposta).forEach(([gatilho, mapa]) => {
         const escolhido = traduz(gatilho, v[gatilho] || "");
-        (mapa[escolhido] || []).forEach(r => codigos.add(traduz(c, r)));
+        (mapa[escolhido] || []).forEach(r => { aceitos.add(r); aceitos.add(traduz(c, r)); });
       });
+      const cabeNaLista = valor => aceitos.has(valor) || aceitos.has(traduz(c, valor));
       Array.from(caixa.options).forEach(o => {
-        const cabe = !o.value || codigos.has(o.value);
+        const cabe = !o.value || cabeNaLista(o.value);
         o.hidden = !cabe;
         o.disabled = !cabe;
       });
-      if (caixa.value && !codigos.has(caixa.value)) caixa.value = "";
+      if (caixa.value && !cabeNaLista(caixa.value)) caixa.value = "";
     }
     rotulo.classList.toggle("oculto", some);
   });
@@ -1162,13 +1739,13 @@ function conferirOQueFalta(t){
   if (!t) return;
   recadoDosCamposDePapel(t);
   aplicarVinculo(t);
-  const ramo = camposDesteVinculo(t);
+  pintarAsteriscos(t);
   const falta = [];
   if (t.exige_pessoa && !(els("p-pessoa") && els("p-pessoa").value))
     falta.push("o colaborador");
   // Sabido o vínculo, a cobrança é a DELE: campo do outro vínculo está
   // escondido, e cobrar o que não aparece trava o pedido sem explicação.
-  (ramo ? ramo.obrigatorios : (t.obrigatorios || [])).forEach(c => {
+  obrigatoriosAgora(t).forEach(c => {
     if (t.repete && CAMPOS_REPETIDOS.includes(c)) return;   // cuidado abaixo
     const campo = els("p-" + c);
     // ⚑ CAMPO ESCONDIDO NÃO É COBRADO: cobrar o que não aparece trava o
@@ -1176,6 +1753,11 @@ function conferirOQueFalta(t){
     // campo que a pessoa não tem como ver.
     const caixa = campo && campo.closest("label");
     if (caixa && caixa.classList.contains("oculto")) return;
+    // O que o cadastro antigo já tem (readmissão) não se cobra: o servidor
+    // junta o valor ao pedido.
+    if (campo && campo.dataset.noCadastro) return;
+    // Quem voltou foi escolhido pela busca: o CPF sai do cadastro dele.
+    if (c === "cpf" && READMITIDO) return;
     if (campo && !campo.value) falta.push((ROTULO[c] || c).toLowerCase());
   });
   if (t.repete)
@@ -1204,7 +1786,59 @@ function conferirOQueFalta(t){
   }
 }
 
+// ⚑ O TELEFONE NO PADRÃO DO BRASIL enquanto se digita (19/11/2026). Ele: *"o
+// campo telefone, eu gostaria que ele já tivesse no padrão convencional de DDD
+// e com o hífen (…) Você digita só a numeração, mas ele não se atualiza."* O
+// portal é página solta — não herda a máscara do ERP — então ela mora aqui.
+// O servidor guarda só os dígitos, como sempre.
+function formatarTelefone(v){
+  const d = String(v || "").replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d ? "(" + d : "";
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+// ⚑ DINHEIRO NO PADRÃO DO BRASIL enquanto se digita (19/11/2026). Ele: *"os
+// campos que remetem a valor (…) exibir vírgula e pontuação de milhar conforme
+// padrão português Brasil."* Digita-se só os números: 123456 → 1.234,56. O
+// servidor já lê vírgula e ponto (`_dec`).
+function formatarDinheiro(v){
+  const d = String(v || "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (!d) return "";
+  const cent = d.padStart(3, "0");
+  const inteiro = cent.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return inteiro + "," + cent.slice(-2);
+}
+function ligarMascaraDeDinheiro(){
+  document.querySelectorAll("#p-campos input").forEach(campo => {
+    const nome = campo.name || (campo.id || "").replace(/^p-/, "");
+    if (!/^(valor|valor_|salario|aux_alimentacao|aux_transporte)/.test(nome)
+        || campo.dataset.dinheiro) return;
+    campo.dataset.dinheiro = "1";
+    campo.setAttribute("inputmode", "numeric");
+    campo.setAttribute("placeholder", "0,00");
+    campo.addEventListener("input", () => {
+      campo.value = formatarDinheiro(campo.value);
+    });
+  });
+}
+
+function ligarMascaraDeTelefone(){
+  const campo = els("p-telefone");
+  if (!campo || campo.dataset.mascara) return;
+  campo.dataset.mascara = "1";
+  campo.setAttribute("inputmode", "tel");
+  campo.setAttribute("placeholder", "(85) 98888-7777");
+  campo.addEventListener("input", () => {
+    campo.value = formatarTelefone(campo.value);
+  });
+}
+
 function ligarPapeis(t){
+  ligarMascaraDeTelefone();
+  ligarMascaraDeDinheiro();
+  ligarAreaSolta(t);
+  ligarReadmissao(t);
   pintarPapeis(t);
   // Qualquer mudança reconfere — inclusive a do vínculo, que muda a LISTA de
   // papéis exigidos.
@@ -1248,14 +1882,34 @@ async function enviarPedido(){
   // ⚑ Os papéis vão junto, e o servidor confere de novo: a tela já barrou,
   // mas quem mexe no navegador contorna a tela.
   corpo.documentos = Object.keys(PAPEIS);
+  if (READMITIDO) corpo.colaborador_id = READMITIDO.id;
+  if (Object.keys(LIDOS).length) corpo.lidos_do_documento = LIDOS;
   // ⚑ Vários de uma vez (hoje só o dependente). O servidor confere cada um e
   // diz QUAL está incompleto — "falta a data de nascimento" não ajudaria
   // ninguém com três na tela.
   if (t.repete && REPETIDOS.length) corpo.dependentes = REPETIDOS;
   els("p-enviar").disabled = true;
   try {
-    const d = await chamar("/erp/portal/api/pedidos",
-                           {method: "POST", body: JSON.stringify(corpo)});
+    let d;
+    if (ARQUIVOS.length) {
+      {# ⚑ OS ARQUIVOS VÃO JUNTO COM O PEDIDO (19/11/2026). Antes só ia o
+         TIPO ("anexei o RG") e o arquivo ficava no celular — o DP recebia a
+         admissão sem papel nenhum. Agora pedido e papéis são gravados na
+         mesma transação. #}
+      const fd = new FormData();
+      fd.append("pedido", JSON.stringify(corpo));
+      ARQUIVOS.forEach(a => {
+        fd.append("papeis", a.arquivo, a.nome);
+        fd.append("tipos", tipoPrincipal(a));
+      });
+      const r = await fetch("/erp/portal/api/pedidos", {method: "POST", body: fd});
+      d = await r.json().catch(() => ({}));
+      if (r.status === 401) { semAcesso(d.erro); throw new Error(d.erro || "entre no sistema"); }
+      if (!r.ok || d.ok === false) throw new Error(d.erro || "deu problema aqui");
+    } else {
+      d = await chamar("/erp/portal/api/pedidos",
+                       {method: "POST", body: JSON.stringify(corpo)});
+    }
     recado(`Pedido ${d.numero} enviado ao DP.`, "ok");
     carregar();
   } catch(e){ recado(e.message, "erro"); }
@@ -1264,18 +1918,72 @@ async function enviarPedido(){
 
 function pintarMeus(){
   const l = DADOS.pedidos || [];
-  els("meus").innerHTML = l.length ? l.map(p => `
+  els("meus").innerHTML = l.length ? l.map((p, i) => `
     <div class="linha">
       <div class="cresce">
         <b>${esc(p.tipo)}</b> <small>${esc(p.numero)}</small><br>
-        <small>${esc(p.pessoa || "")} · ${dataBR(p.quando)}</small>
+        <small>${esc(p.pessoa || "—")}${p.cpf ? " · CPF " + esc(p.cpf) : ""}</small><br>
+        <small>${[p.obra ? "obra " + p.obra : "", p.cargo || "", dataBR(p.quando)]
+          .filter(Boolean).map(esc).join(" · ")}</small>
         ${p.resposta ? `<br><small><b>DP:</b> ${esc(p.resposta)}</small>` : ""}
+        ${p.tipo_codigo !== "DESLIGAMENTO" && p.id
+          && ["Em andamento", "Atendida"].includes(p.situacao)
+          ? `<br><button class="voltar" type="button" data-mudar="${i}"
+               style="margin-top:4px">Pedir para cancelar ou corrigir</button>` : ""}
+        ${p.mudanca_pedida ? `<br><small><b>Você pediu:</b> ${esc(p.mudanca_pedida)}</small>` : ""}
+        ${p.tipo_codigo === "DESLIGAMENTO" && p.colaborador_id
+          && ["Aberta", "Em análise", "Em andamento"].includes(p.situacao)
+          ? `<br><button class="voltar" type="button" data-cancel-desl="${i}"
+               style="margin-top:4px">Pedir o cancelamento deste desligamento</button>` : ""}
       </div>
-      <span class="etiqueta ${p.situacao === "ATENDIDA" ? "verde"
-        : ["RECUSADA","CANCELADA"].includes(p.situacao) ? "vermelha" : ""}">
+      <span class="etiqueta ${p.situacao === "Atendida" ? "verde"
+        : ["Recusada", "Cancelada"].includes(p.situacao) ? "vermelha" : ""}">
         ${esc(p.situacao)}</span>
     </div>`).join("")
     : `<p class="ajuda">Você ainda não abriu nenhum pedido.</p>`;
+  els("meus").querySelectorAll("[data-cancel-desl]").forEach(b =>
+    b.addEventListener("click", () => pedirCancelamento(l[+b.dataset.cancelDesl])));
+  els("meus").querySelectorAll("[data-mudar]").forEach(b =>
+    b.addEventListener("click", () => pedirMudanca(l[+b.dataset.mudar], b)));
+}
+
+{# ⚑ CANCELAR OU CORRIGIR O QUE JÁ ESTÁ ANDANDO (20/11/2026, noite). Ele:
+   *"praticamente tudo que se pede pode vir a ser necessário ser cancelado
+   (…) ou alterado alguma coisa."* A obra AVISA; o DP faz — e, se a
+   contabilidade já recebeu, comunica a ela e espera a ciência. #}
+function pedirMudanca(p, botao){
+  const caixa = document.createElement("div");
+  caixa.innerHTML = `
+    <label class="campo-portal">O que você quer
+      <select id="m-oque"><option value="cancelar">Cancelar este pedido</option>
+        <option value="corrigir">Corrigir alguma coisa</option></select></label>
+    <label class="campo-portal">Explique<textarea id="m-texto" rows="2"></textarea></label>
+    <button class="btn-portal" id="m-enviar" style="margin-top:8px">Avisar o DP</button>`;
+  botao.replaceWith(caixa);
+  caixa.querySelector("#m-enviar").addEventListener("click", async () => {
+    try {
+      await chamar(`/erp/api/dp/solicitacoes/${p.id}/pedir_mudanca`, {method: "POST",
+        body: JSON.stringify({o_que: caixa.querySelector("#m-oque").value,
+                              texto: caixa.querySelector("#m-texto").value})});
+      recado("O DP foi avisado. Se a contabilidade já recebeu, ele comunica a ela.", "ok");
+      carregar();
+    } catch(e){ recado(e.message, "erro"); }
+  });
+}
+
+{# ⚑ O CANCELAMENTO NASCE EM CIMA DO DESLIGAMENTO (20/11/2026). Ele: *"pode
+   ser que seja a própria obra (…) Ele vai fazer o pedido (…) em cima daquela
+   solicitação de desligamento. E pedir o cancelamento."* O botão abre o
+   formulário já com o tipo e a pessoa escolhidos: falta só o motivo. #}
+function pedirCancelamento(p){
+  if (!p) return;
+  const area = (DADOS.tipos || []).find(t => t.chave === "CANCELAR_DESLIGAMENTO");
+  if (!area) { recado("O cancelamento de desligamento não está disponível para você.", "erro"); return; }
+  escolherArea(area.area);
+  els("p-tipo").value = "CANCELAR_DESLIGAMENTO";
+  pintarCamposDoTipo();
+  if (els("p-pessoa")) escolherPessoa({id: p.colaborador_id, nome: p.pessoa, cargo: p.cargo});
+  els("bloco-pedir").scrollIntoView({behavior: "smooth"});
 }
 
 carregar();

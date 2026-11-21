@@ -63,12 +63,20 @@ MODOS = ("DESLIGADA", "SUGERE", "FAZ")
 # ---------------------------------------------------------------------------
 ROTINAS: dict[str, dict[str, Any]] = {
     "triagem": {
-        "nome": "Triagem da requisição que chega da obra",
-        "quando": "quando uma solicitação é aberta na fila do DP",
-        "analisa": "campos obrigatórios do tipo, CPF válido, pessoa existe, e "
-                   "coerência (desligar quem já saiu, férias de quem tem menos "
-                   "de 12 meses, salário abaixo do piso, obra que não é a de "
-                   "quem pediu)",
+        "nome": "Análise do pedido que chega da obra",
+        # ⚑ 20/11/2026 (noite): a análise aparece SOZINHA no pedido, na tela
+        # do DP ("O agente conferiu") — `core/dp_analise.py`.
+        "quando": "sempre que o pedido é aberto na tela do DP",
+        "analisa": "as regras trabalhistas do pedido: no desligamento, o "
+                   "contrato de experiência, o aviso proporcional (Lei "
+                   "12.506), o último dia e a data de saída, a data-base da "
+                   "convenção (indenização adicional), afastamento e "
+                   "estabilidade; nas férias, o período aquisitivo, o início "
+                   "antes do descanso, o fracionamento, os 30 dias de aviso e "
+                   "o prazo para não pagar em dobro; na alteração, redução de "
+                   "salário, piso e vigência retroativa; na admissão, o prazo "
+                   "do eSocial e o menor de idade; no desconto, a autorização "
+                   "e o peso da parcela",
         "nao_analisa": "mérito. Se vale a pena contratar, se o salário é justo, "
                        "se o desligamento é certo — isso é decisão de gente",
         "usa_ia": False,
@@ -87,9 +95,12 @@ ROTINAS: dict[str, dict[str, Any]] = {
     },
     "despacho": {
         "nome": "Despachante da contabilidade",
-        "quando": "quando o cadastro entra na etapa Na contabilidade",
-        "analisa": "se o pedido tem tudo o que a contabilidade precisa para "
-                   "fazer o ato",
+        # ⚑ 20/11/2026 (noite): agora existe de verdade.
+        "quando": "quando o DP atende o pedido (e, no desligamento e no "
+                  "desconto, quando o documento assinado volta)",
+        "analisa": "monta o pedido à contabilidade já preenchido, em rascunho "
+                   "— o DP confere o texto e envia; o que falta no cadastro "
+                   "para montar vira recado no pedido",
         "nao_analisa": "se o ato deve ser feito — quem decide admitir, demitir "
                        "ou alterar é gente",
         "usa_ia": False,
@@ -121,7 +132,11 @@ ROTINAS: dict[str, dict[str, Any]] = {
         "padrao": {"teto_por_rodada": 40},
     },
     "conferencia": {
-        "nome": "Conferente do retorno da contabilidade",
+        # ⚠️ AINDA NÃO CONSTRUÍDA (20/11/2026). Ela aparecia na tela como se
+        # funcionasse; o retorno fica "respondido" e o DP confere à mão. Ligar
+        # é recusado (`definir`) até ela existir.
+        "construida": False,
+        "nome": "Conferente do retorno da contabilidade (ainda não construída)",
         "quando": "quando um documento é anexado a um pedido",
         "analisa": "se o documento é o esperado, e se nome, CPF, cargo, salário "
                    "e datas batem com o cadastro",
@@ -133,13 +148,40 @@ ROTINAS: dict[str, dict[str, Any]] = {
     "vigia": {
         "nome": "Vigia das pendências",
         "quando": "todo dia",
+        # ⚠️ ESTA FRASE ESTAVA MENTINDO ATÉ 18/11/2026, e a mentira aparecia
+        # na TELA do agente: ela anunciava "ASO e NR vencendo" e o código não
+        # consultava nem um nem outro. Achado conferindo a pergunta dele sobre
+        # o retorno de afastamento. Agora a frase e o código dizem o mesmo —
+        # e a regra é: ao mexer aqui, mexer nos dois.
         "analisa": "cadastro parado além do prazo, papel que falta para "
-                   "admitir, ASO e NR vencendo, admissão sem ficha de volta, "
-                   "desligamento sem documentação rescisória, ativo sem obra",
+                   "admitir, ASO e certificado de NR vencidos ou vencendo, "
+                   "volta de afastamento chegando sem o exame de retorno, "
+                   "afastamento antigo sem natureza registrada, admissão sem "
+                   "ficha de volta, desligamento sem documentação rescisória, "
+                   "desligamento em andamento parado ou atrasado, saída da "
+                   "carteira sem a confirmação de que a pessoa continua como "
+                   "prestador, documentação rescisória assinada esperando o "
+                   "DP validar, admissão, alteração de cargo, dependente e "
+                   "férias em andamento parados, registro da carteira ainda "
+                   "não pedido perto do início (eSocial), férias sem aviso a "
+                   "menos de 30 dias, férias chegando (com a confirmação da "
+                   "contabilidade ou sem ela), alteração e cancelamento de "
+                   "férias sem retorno, cancelamento de desligamento esperando "
+                   "o DP ou a contabilidade, rescisão não paga em 10 dias, "
+                   "contrato de experiência terminando em 10 dias, férias "
+                   "vencendo ou vencidas (e quem está sem o controle de férias "
+                   "informado), documento parado na obra sem a assinatura da "
+                   "pessoa, pedido de cancelamento ou correção da obra que o "
+                   "DP ainda não fez, correção sem a ciência da contabilidade, "
+                   "acidente de trabalho sem a contabilidade avisada (CAT em "
+                   "1 dia útil), "
+
+                   "ativo sem obra",
         "nao_analisa": "não cobra ninguém — quem cobra é o cobrador, e só o "
                        "que tem pedido aberto",
         "usa_ia": False,
-        "padrao": {"dias_parado": 3},
+        "padrao": {"dias_parado": 3, "dias_antes_da_volta": 7,
+                   "dias_para_vencer": 30},
     },
     "relatorio": {
         "nome": "Relator",
@@ -170,7 +212,7 @@ def configuracao(s: Session) -> list[dict[str, Any]]:
         saida.append({
             "chave": chave, "nome": meta["nome"], "quando": meta["quando"],
             "analisa": meta["analisa"], "nao_analisa": meta["nao_analisa"],
-            "usa_ia": meta["usa_ia"],
+            "usa_ia": meta["usa_ia"], "construida": meta.get("construida", True),
             "modo": (linha.get("modo") or "DESLIGADA"),
             "parametros": params,
             "rodou_em": str(linha["rodou_em"]) if linha.get("rodou_em") else None,
@@ -200,6 +242,9 @@ def definir(s: Session, chave: str, *, modo_novo: str,
     m = (modo_novo or "").strip().upper()
     if m not in MODOS:
         raise ErroValidacao("Modo deve ser DESLIGADA, SUGERE ou FAZ.")
+    if m != "DESLIGADA" and ROTINAS[chave].get("construida") is False:
+        raise ErroValidacao(f"{ROTINAS[chave]['nome']}: ainda não existe — "
+                            "ligar não faria nada.")
     atual = parametros(s, chave)
     atual.update(params or {})
     s.execute(text("""
@@ -372,9 +417,6 @@ def triagem(s: Session, solicitacao_id: int,
                 f"{c.nome} já está desligado"
                 + (f" desde {c.demissao:%d/%m/%Y}" if c.demissao else "")
                 + " — este pedido não tem o que desligar")
-    if p["tipo"] == "READMISSAO" and c is not None:
-        if (c.situacao or "").upper() == "ATIVO" and not c.demissao:
-            incoerencias.append(f"{c.nome} está ATIVO — não há o que readmitir")
     if p["tipo"] == "ALTERACAO_CARGO" and dados.get("cargo_id"):
         from app.apps.erp.db.models.cadastros import Cargo
         if s.get(Cargo, int(dados["cargo_id"])) is None:
@@ -388,10 +430,12 @@ def triagem(s: Session, solicitacao_id: int,
         abaixo = _abaixo_do_piso(s, c, novo_salario)
         if abaixo:
             incoerencias.append(abaixo)
-    # FÉRIAS NÃO É TIPO DA FILA DO DP: ela entra pelo ponto (afastamento) e, do
-    # lado formal, pelo pedido à contabilidade. A conferência do período
-    # aquisitivo vive lá, em `contabilidade.avisos_do_pedido` — aqui ela seria
-    # código morto, e código morto mente para quem lê.
+    # ⚑ AS REGRAS TRABALHISTAS (20/11/2026, noite) — `dp_analise`. O que ela
+    # aponta como atenção entra como incoerência.
+    from app.apps.erp.core import dp_analise
+    for item in dp_analise.analisar(s, {**p, "dados": dados}):
+        if item["ok"] is False:
+            incoerencias.append(item["texto"])
 
     resumo = ("nada a apontar" if not falta and not incoerencias else
               "; ".join(([f"falta: {', '.join(falta)}"] if falta else [])
@@ -535,7 +579,8 @@ def rodar_cobranca(s: Session, usuario: Optional[Usuario] = None,
 # ===========================================================================
 # R6 · VIGIA — a lista do que envelheceu. Não cobra ninguém.
 # ===========================================================================
-def vigia(s: Session, *, hoje: Optional[date] = None) -> list[dict[str, Any]]:
+def vigia(s: Session, *, hoje: Optional[date] = None,
+          usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
     """O que está envelhecendo no cadastro. CONSULTA — não muda nada.
 
     Roda com a rotina desligada também, porque é leitura: desligar o vigia
@@ -613,6 +658,418 @@ def vigia(s: Session, *, hoje: Optional[date] = None) -> list[dict[str, Any]]:
                       "além do prazo"),
             "o_que_fazer": "cobrar a obra pelo WhatsApp"})
 
+    # ⚑ ASO E NR VENCENDO (18/11/2026) — a rotina PROMETIA isto na tela e não
+    # fazia. O que resolve já existia: `arquivo.service.vencendo()`. Faltava
+    # chamar.
+    #
+    # ⚑ O SIGILO É O MESMO DO ARQUIVO, e é por isso que `usuario` chegou até
+    # aqui: ASO e certificado de NR são documentos PESSOAIS, e quem não pode
+    # vê-los no Arquivo não pode vê-los por uma lista de pendências. Reusar
+    # `vencendo()` é reusar essa regra — escrever a consulta aqui seria
+    # escrever uma segunda regra de sigilo, e as duas divergiriam.
+    #
+    # Sem usuário (o agente rodando sozinho), `sigilos_visiveis` devolve só
+    # ABERTO e estes dois não entram. É o certo: o alerta aparece para a pessoa
+    # do DP que roda o agente, que é quem resolve.
+    try:
+        from app.apps.erp.core.arquivo import service as svc_arquivo
+        for d in svc_arquivo.vencendo(
+                s, dias=int(par.get("dias_para_vencer") or 30),
+                usuario=usuario):
+            if (d.get("tipo") or "") not in ("ASO", "CERTIFICADO-NR"):
+                continue
+            if not d.get("colaborador_id"):
+                continue
+            venc = d.get("validade")
+            quantos = ((date.fromisoformat(venc) - dia).days if venc else None)
+            achados.append({
+                "tipo": "documento_de_pessoa_vencendo",
+                "colaborador_id": int(d["colaborador_id"]),
+                "quem": d.get("dono") or "—",
+                "o_que": (f"{d.get('tipo_nome') or d.get('tipo')} "
+                          + ("VENCIDO" if (quantos is not None and quantos < 0)
+                             else f"vence em {quantos} dia(s)")),
+                "o_que_fazer": "marcar o exame ou o treinamento"})
+    except Exception:
+        # Vigia é leitura: uma falha aqui não pode calar as outras pendências.
+        logger.exception("Agente DP: falha ao olhar documento vencendo")
+
+    # ⚑ A VOLTA DE AFASTAMENTO CHEGANDO (18/11/2026). Pergunta dele: *"o que o
+    # sistema deve pedir pra travar o simples retorno?"*
+    #
+    # O exame de retorno tem de estar pronto ANTES de a pessoa aparecer na
+    # obra — descobrir no dia é descobrir tarde: ou ela trabalha sem exame
+    # (ilegal, e é o caso em que um acidente custa caro) ou volta para casa.
+    # Por isso o vigia olha a PREVISÃO, não a volta.
+    try:
+        from app.apps.erp.core.cadastros import afastamentos as svc_afast
+        antes = int(par.get("dias_antes_da_volta") or 7)
+        for linha in s.execute(text("""
+            SELECT a.colaborador_id, a.tipo, a.data_inicio, a.previsao_retorno,
+                   c.nome
+              FROM colaborador_afastamentos a
+              JOIN colaboradores c ON c.id = a.colaborador_id
+             WHERE a.data_retorno IS NULL
+             LIMIT 300""")).mappings().all():
+            falta = svc_afast.o_que_falta_para_voltar(s, linha["colaborador_id"])
+            if not falta.get("impede"):
+                continue
+            prev = linha["previsao_retorno"]
+            perto = prev is not None and (prev - dia).days <= antes
+            # Sem previsão, o alerta sai do mesmo jeito: afastamento sem
+            # previsão de volta é o que some da vista por mais tempo.
+            if prev is not None and not perto:
+                continue
+            quando = (f"volta prevista para {prev:%d/%m/%Y}" if prev
+                      else "sem previsão de volta registrada")
+            achados.append({
+                "tipo": "volta_de_afastamento_sem_o_que_falta",
+                "colaborador_id": int(linha["colaborador_id"]),
+                "quem": linha["nome"],
+                "o_que": f"{quando}; falta: " + " ".join(falta["impede"]),
+                "o_que_fazer": "resolver antes de a pessoa aparecer na obra"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar as voltas de afastamento")
+
+    # ⚑ O DESLIGAMENTO EM ANDAMENTO (19/11/2026). Ele: *"pensando em agente
+    # de IA, a gente tem que reestruturar todo esse comando para ele
+    # funcionar do início ao fim e nada dessas ações se perderem."*
+    #
+    # Duas coisas viram aviso, e a primeira é a mais séria: a CONTINUIDADE
+    # NÃO CONFIRMADA. Enquanto o DP não confirma, a pessoa segue de carteira
+    # no cadastro — a folha e a contabilidade enxergam um CTPS que já saiu.
+    # A segunda é o processo parado: passo atrasado (a contabilidade passou
+    # do prazo) ou nada andando há `dias_parado` dias.
+    try:
+        from app.apps.erp.core import desligamento_processo as svc_proc
+        for d in svc_proc.em_andamento(s):
+            if d.get("assinada_a_validar"):
+                achados.append({
+                    "tipo": "assinada_a_validar",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: a documentação rescisória "
+                              "voltou assinada pela obra e espera o DP "
+                              "validar o recebimento"),
+                    "o_que_fazer": "abrir o pedido e validar"})
+            if d["continuidade_a_confirmar"]:
+                achados.append({
+                    "tipo": "continuidade_a_confirmar",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: o último dia de carteira já "
+                              "passou e ninguém confirmou se a pessoa continua "
+                              "como prestador — o cadastro segue dizendo CTPS"),
+                    "o_que_fazer": "confirmar a continuidade no pedido"})
+            elif d["atrasado"] or ((d["dias"] or 0) >= limite
+                                   and not d["pode_encerrar"]
+                                   and d["cumpridos"] <= 1):
+                achados.append({
+                    "tipo": "desligamento_parado",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: {d['cumpridos']}/{d['total']} "
+                              f"passos; próximo: {d['proximo']}"
+                              + (" (atrasado)" if d["atrasado"] else "")),
+                    "o_que_fazer": "andar com o desligamento"})
+            elif d["pode_encerrar"]:
+                achados.append({
+                    "tipo": "desligamento_pronto",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: todos os passos cumpridos e o "
+                              "pedido ainda aberto"),
+                    "o_que_fazer": "encerrar o desligamento"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar os desligamentos em andamento")
+
+    # ⚑ OS PEDIDOS QUE PASSAM PELA CONTABILIDADE (20/11/2026) — admissão,
+    # alteração de cargo, dependente, férias, cancelamento. Ele: *"o agente
+    # tem que acompanhar."* E os PRAZOS DA LEI, que não perdoam esquecimento:
+    #   · eSocial: o registro de quem entra de carteira sai ANTES do 1º dia;
+    #   · férias: o aviso à pessoa é com 30 dias de antecedência (CLT art. 135);
+    #   · rescisão: paga em até 10 dias da saída (CLT art. 477).
+    try:
+        from app.apps.erp.core import contabil_processo as svc_contab
+        import datetime as _dt
+        for d in svc_contab.em_andamento(s):
+            dados = d["dados"] or {}
+
+            def _dia(chave):
+                try:
+                    return _dt.date.fromisoformat(str(dados.get(chave) or "")[:10])
+                except ValueError:
+                    return None
+            sem_pedido = d["proximo"].startswith("Registro da carteira") or \
+                d["proximo"].startswith("Pedido à contabilidade")
+            inicio = _dia("data_inicio")
+            if d["tipo"] in ("CADASTRO", "ADMISSAO_PRESTADOR") and sem_pedido \
+                    and inicio and (inicio - dia).days <= 2:
+                achados.append({
+                    "tipo": "registro_antes_do_inicio",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: começa em {inicio:%d/%m/%Y} e o "
+                              "registro da carteira ainda não foi pedido — o "
+                              "eSocial exige antes do primeiro dia"),
+                    "o_que_fazer": "montar e enviar o pedido de Assinatura de CTPS"})
+                continue
+            # As férias em andamento são vigiadas pela PROGRAMAÇÃO, logo
+            # abaixo (`ferias_sem_confirmacao`) — aqui sairiam em dobro.
+            # O cancelamento de desligamento tem vigia próprio, diário.
+            if d["tipo"] in ("FERIAS", "CANCELAR_DESLIGAMENTO"):
+                continue
+            if (d["dias"] or 0) >= limite:
+                achados.append({
+                    "tipo": "pedido_em_andamento_parado",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']} em andamento há {d['dias']} dias; "
+                              f"próximo: {d['proximo']}"),
+                    "o_que_fazer": "andar com o pedido"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar os pedidos em andamento")
+
+    # ⚑ O CANCELAMENTO DE DESLIGAMENTO E AS FÉRIAS (20/11/2026). Ele:
+    # *"Imagina desligar uma pessoa que vai continuar trabalhando. É uma falha
+    # grave (…) todo mundo envolvido tem que estar avisado."* E das férias:
+    # *"o agente de IA no meio acompanhando isso e acompanhando todos."*
+    # Estes não esperam "dias parado": aparecem TODO DIA até se resolverem.
+    try:
+        import datetime as _dt
+        for c in s.execute(text("""
+            SELECT d.id, d.numero, d.situacao, d.colaborador_id, d.dados,
+                   c.nome, c.demissao
+              FROM dp_solicitacoes d
+              JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.tipo = 'CANCELAR_DESLIGAMENTO'
+               AND d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')
+             ORDER BY d.id""")).mappings().all():
+            if c["situacao"] == "EM_ANDAMENTO":
+                o_que = (f"{c['numero']}: o desligamento foi desfeito no "
+                         "sistema e a contabilidade ainda não confirmou o "
+                         "cancelamento — sem o retorno dela, a rescisão pode "
+                         "seguir")
+                fazer = "enviar o pedido à contabilidade e cobrar o retorno"
+            else:
+                saida = (f" a saída está marcada para {c['demissao']:%d/%m/%Y};"
+                         if c["demissao"] else "")
+                o_que = (f"{c['numero']}: pediram o cancelamento do "
+                         f"desligamento e o DP ainda não atendeu —{saida} a "
+                         "virada do dia está segurando, mas o ponto corta o "
+                         "acesso na data")
+                fazer = "atender o cancelamento hoje"
+            achados.append({"tipo": "cancelamento_de_desligamento",
+                            "colaborador_id": c["colaborador_id"],
+                            "quem": c["nome"], "o_que": o_que,
+                            "o_que_fazer": fazer})
+        # Pedido de férias que o DP ainda não atendeu, perto da data.
+        for f in s.execute(text("""
+            SELECT d.numero, d.colaborador_id, c.nome,
+                   d.dados ->> 'ferias_inicio' AS inicio
+              FROM dp_solicitacoes d
+              JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.tipo IN ('FERIAS', 'ALTERACAO_FERIAS', 'CANCELAMENTO_FERIAS')
+               AND d.situacao IN ('ABERTA', 'EM_ANALISE')""")).mappings().all():
+            try:
+                ini = _dt.date.fromisoformat(str(f["inicio"] or "")[:10])
+            except ValueError:
+                ini = None
+            if ini is None or (ini - dia).days <= 30:
+                achados.append({"tipo": "ferias_sem_aviso",
+                                "colaborador_id": f["colaborador_id"],
+                                "quem": f["nome"],
+                                "o_que": (f"{f['numero']}: pedido de férias "
+                                          "ainda não atendido"
+                                          + (f" — começa em {ini:%d/%m/%Y}"
+                                             if ini else "")),
+                                "o_que_fazer": "atender e pedir à contabilidade"})
+        # A programação: férias chegando, e mudança sem retorno.
+        from app.apps.erp.core import ferias as svc_ferias
+        for f in svc_ferias.listar(s, desde=dia,
+                                   ate=dia + _dt.timedelta(days=30)):
+            if f["mudanca"]:
+                achados.append({
+                    "tipo": "ferias_mudanca_sem_retorno",
+                    "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                    "o_que": (f"férias de {f['inicio'][8:10]}/{f['inicio'][5:7]}: "
+                              f"{f['mudanca']['rotulo']} (pedido "
+                              f"{f['mudanca'].get('numero') or '?'})"),
+                    "o_que_fazer": "cobrar a contabilidade"})
+            elif f["situacao"] == "PEDIDA" and f["faltam_dias"] <= 30:
+                achados.append({
+                    "tipo": "ferias_sem_confirmacao",
+                    "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                    "o_que": (f"férias em {f['inicio'][8:10]}/{f['inicio'][5:7]} "
+                              "sem a confirmação da contabilidade — o aviso é "
+                              "com 30 dias"),
+                    "o_que_fazer": "enviar o pedido e cobrar o retorno"})
+            elif f["momento"] == "chegando" and f["faltam_dias"] <= 7:
+                achados.append({
+                    "tipo": "ferias_chegando",
+                    "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                    "o_que": (f"sai de férias em {f['inicio'][8:10]}/"
+                              f"{f['inicio'][5:7]} ({f['dias']} dias, volta "
+                              f"{f['retorno'][8:10]}/{f['retorno'][5:7]})"),
+                    "o_que_fazer": "lançar as férias no ponto e avisar a obra"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar férias e cancelamentos")
+
+    # ⚑ 20/11/2026 (noite) — O QUE UM COORDENADOR DE DP VIGIA. Ele: *"o
+    # coordenador de departamento pessoal tem que estar atento a tudo isso
+    # (…) essa demanda ela pode ser mal feita, esquecida, feita de forma
+    # equivocada, no tempo errado."*
+    try:
+        import datetime as _dt
+        from app.apps.erp.core import pessoal_experiencia as svc_exp
+        # 1. O FIM DO CONTRATO DE EXPERIÊNCIA. *"de repente você quer encerrar
+        #    o contrato (…) e por causa de um dia acaba tendo que fazer a
+        #    rescisão contratual, dar o aviso."* Sem decisão até o fim, ele se
+        #    prorroga sozinho (ou vira indeterminado, no fim da prorrogação).
+        for c in s.execute(text("""
+            SELECT id, nome, admissao, contrato_experiencia FROM colaboradores
+             WHERE UPPER(COALESCE(vinculo, 'CTPS')) = 'CTPS'
+               AND UPPER(COALESCE(situacao, 'ATIVO')) = 'ATIVO'
+               AND demissao IS NULL AND admissao IS NOT NULL
+               AND admissao >= :desde
+               AND COALESCE(contrato_experiencia, '') <> ''"""),
+                {"desde": dia - _dt.timedelta(days=100)}).mappings().all():
+            exp = svc_exp.situacao(c["admissao"], c["contrato_experiencia"], dia)
+            if not exp["tem"] or exp["ja_acabou"]:
+                continue
+            falta = exp["dias_para_o_fim"]
+            if falta is not None and falta <= 10:
+                fim = (exp["fim_primeira"] if exp["fase"] == "primeira"
+                       else exp["fim_total"])
+                vira = ("se prorroga sozinho até " + _dt.date.fromisoformat(
+                        exp["fim_total"]).strftime("%d/%m/%Y")
+                        if exp["fase"] == "primeira" and exp["prorrogavel"]
+                        else "vira prazo indeterminado — aí sair custa aviso "
+                             "prévio e multa de 40%")
+                achados.append({
+                    "tipo": "experiencia_vencendo", "colaborador_id": c["id"],
+                    "quem": c["nome"],
+                    "o_que": (f"o contrato de experiência termina em "
+                              f"{_dt.date.fromisoformat(fim):%d/%m/%Y} (faltam "
+                              f"{falta} dia(s)); sem decisão, {vira}"),
+                    "o_que_fazer": "decidir com a obra: efetivar, prorrogar "
+                                   "ou encerrar no prazo"})
+        # 1b. A transferência não é mais alerta: vira solicitação sozinha
+        #     (`obra_atual.abrir_transferencias`, 20/11/2026).
+        # 2. AS FÉRIAS VENCENDO OU VENCIDAS (em dobro — CLT art. 137).
+        from app.apps.erp.core import ferias as svc_ferias
+        if svc_ferias._tem_controle(s):
+            sem_info = 0
+            for f in svc_ferias.situacao_dos_periodos(s, hoje=dia):
+                if f["estado"] in ("vencendo", "vencida"):
+                    achados.append({
+                        "tipo": f"ferias_{f['estado']}",
+                        "colaborador_id": f["colaborador_id"], "quem": f["pessoa"],
+                        "o_que": f["detalhe"] + (" — o que passar é pago em "
+                                                 "dobro" if f["estado"] == "vencendo"
+                                                 else " — já em dobro"),
+                        "o_que_fazer": "programar as férias (tela Férias)"})
+                elif f["estado"] == "nao_informado":
+                    sem_info += 1
+            if sem_info:
+                achados.append({
+                    "tipo": "ferias_sem_controle", "colaborador_id": 0,
+                    "quem": f"{sem_info} pessoa(s) de carteira",
+                    "o_que": ("sem a informação de até quando as férias estão "
+                              "quitadas — o sistema não consegue dizer se vencem"),
+                    "o_que_fazer": "informar na tela Férias › Períodos (ou pedir "
+                                   "a lista à contabilidade)"})
+        # 3. O DOCUMENTO QUE A PESSOA TEM DE ASSINAR, parado na obra.
+        from app.apps.erp.core import termos
+        for tm in termos.pendentes(s, None):
+            if tm["atrasado"]:
+                achados.append({
+                    "tipo": "termo_sem_assinatura", "colaborador_id": 0,
+                    "quem": tm["pessoa"],
+                    "o_que": (f"{tm['numero']} ({tm['titulo']}) está com a obra "
+                              f"{tm['obra']} e o prazo venceu em "
+                              f"{_dt.date.fromisoformat(tm['prazo']):%d/%m/%Y}"),
+                    "o_que_fazer": "cobrar a obra"})
+        # 4. A OBRA PEDIU PARA CANCELAR OU CORRIGIR, e o DP ainda não fez.
+        for m in s.execute(text("""
+            SELECT d.numero, d.colaborador_id, COALESCE(c.nome, d.nome_informado) AS nome,
+                   d.dados -> 'mudanca_pedida' AS m
+              FROM dp_solicitacoes d LEFT JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.dados ? 'mudanca_pedida'
+               AND d.situacao IN ('EM_ANDAMENTO', 'ATENDIDA')""")).mappings().all():
+            achados.append({
+                "tipo": "mudanca_pedida", "colaborador_id": m["colaborador_id"] or 0,
+                "quem": m["nome"] or "",
+                "o_que": (f"{m['numero']}: quem pediu quer "
+                          f"{(m['m'] or {}).get('o_que', 'mudar')} — "
+                          f"{(m['m'] or {}).get('texto', '')}"),
+                "o_que_fazer": "corrigir ou cancelar o pedido (e avisar a "
+                               "contabilidade, se ela já recebeu)"})
+        # 5. CORREÇÃO OU CANCELAMENTO SEM A CIÊNCIA DA CONTABILIDADE.
+        for e in s.execute(text("""
+            SELECT p.numero, p.template, p.situacao, p.colaborador_id, c.nome
+              FROM dp_pedidos p LEFT JOIN colaboradores c ON c.id = p.colaborador_id
+             WHERE p.template IN ('RETIFICACAO', 'CANCELAMENTO_SOLICITACAO')
+               AND p.situacao NOT IN ('CONCLUIDO', 'CANCELADO')""")).mappings().all():
+            achados.append({
+                "tipo": "correcao_sem_ciencia", "colaborador_id": e["colaborador_id"] or 0,
+                "quem": e["nome"] or "",
+                "o_que": (f"{e['numero']} ({'cancelamento' if e['template'] == 'CANCELAMENTO_SOLICITACAO' else 'correção'}) "
+                          + ("ainda não foi enviado" if e["situacao"] == "RASCUNHO"
+                             else "sem a confirmação da contabilidade")),
+                "o_que_fazer": "enviar e cobrar a ciência"})
+        # 6. O ACIDENTE DE TRABALHO SEM A CONTABILIDADE AVISADA. A CAT tem
+        #    prazo de 1 dia útil (Lei 8.213/91, art. 22). (O afastamento do
+        #    ponto não é mais alerta: vira solicitação sozinho —
+        #    `ponte_do_ponto`.)
+        for a_ in s.execute(text("""
+            SELECT d.numero, d.colaborador_id, c.nome, d.criado_em
+              FROM dp_solicitacoes d JOIN colaboradores c ON c.id = d.colaborador_id
+             WHERE d.tipo = 'AFASTAMENTO'
+               AND d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')
+               AND d.dados ->> 'afastamento_natureza' = 'ACIDENTE'
+               AND NOT EXISTS (SELECT 1 FROM dp_pedidos p
+                                WHERE p.solicitacao_id = d.id
+                                  AND p.situacao NOT IN ('RASCUNHO', 'CANCELADO'))
+            """)).mappings().all():
+            achados.append({
+                "tipo": "acidente_sem_cat", "colaborador_id": a_["colaborador_id"],
+                "quem": a_["nome"],
+                "o_que": (f"{a_['numero']}: acidente de trabalho e a contabilidade "
+                          "ainda não recebeu o pedido — a CAT tem prazo de 1 dia útil"),
+                "o_que_fazer": "atender e enviar hoje"})
+    except Exception:
+        logger.exception("Agente DP: falha no vigia do coordenador")
+
+    # A rescisão paga em até 10 dias da saída (CLT art. 477).
+    try:
+        from app.apps.erp.core import desligamento_processo as svc_desl
+        import datetime as _dt
+        for d in svc_desl.em_andamento(s):
+            sol = s.execute(text("SELECT id, numero, situacao, colaborador_id, "
+                                 "dados, criado_em FROM dp_solicitacoes "
+                                 "WHERE id = :i"), {"i": d["id"]}).mappings().first()
+            dados = (sol["dados"] or {}) if sol else {}
+            try:
+                saida = _dt.date.fromisoformat(str(dados.get("data_saida") or "")[:10])
+            except ValueError:
+                continue
+            if (dia - saida).days <= 10:
+                continue
+            passos = svc_desl.passos(s, dict(sol))["passos"]
+            paga = next((p for p in passos if p["codigo"] == "RESCISAO_PAGA"), None)
+            if paga and paga["estado"] not in ("FEITO", "NAO_SE_APLICA"):
+                achados.append({
+                    "tipo": "rescisao_atrasada",
+                    "colaborador_id": d["colaborador_id"] or 0,
+                    "quem": d["pessoa"],
+                    "o_que": (f"{d['numero']}: saiu em {saida:%d/%m/%Y} e a "
+                              "rescisão não está paga — o prazo da lei é de 10 "
+                              "dias"),
+                    "o_que_fazer": "lançar e pagar a rescisão"})
+    except Exception:
+        logger.exception("Agente DP: falha ao olhar o prazo das rescisões")
+
     # Pessoa ativa sem obra: não entra em rateio nem em lista de obra nenhuma.
     for linha in s.execute(text("""
         SELECT id, nome FROM colaboradores
@@ -629,13 +1086,14 @@ def vigia(s: Session, *, hoje: Optional[date] = None) -> list[dict[str, Any]]:
 # ===========================================================================
 # R7 · RELATOR
 # ===========================================================================
-def relatorio(s: Session, *, dias: int = 1) -> dict[str, Any]:
+def relatorio(s: Session, *, dias: int = 1,
+              usuario: Optional[Usuario] = None) -> dict[str, Any]:
     """O resumo em português. Cada linha diz o que fazer, não um número solto."""
     pedidos = svc_ct.listar(s, situacao="ABERTOS")
     atrasados = [p for p in pedidos if p["atrasado"]]
     divergentes = [p for p in pedidos if p["situacao"] == "DIVERGENTE"]
     fila = svc_pessoas.fila_do_cadastro(s)
-    pendencias = vigia(s)
+    pendencias = vigia(s, usuario=usuario)
     linhas = []
     if atrasados:
         linhas.append(
@@ -677,7 +1135,7 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
     feito["caixa"] = rodar_caixa(s, usuario)
     feito["cobranca"] = rodar_cobranca(s, usuario)
     if modo(s, "vigia") != "DESLIGADA":
-        achados = vigia(s)
+        achados = vigia(s, usuario=usuario)
         quantos = 0
         for a in achados:
             if sugerir(s, rotina="vigia", alvo_tipo="colaborador",
@@ -688,7 +1146,7 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
         _carimbar(s, "vigia")
         feito["vigia"] = {"achou": len(achados), "avisou": quantos}
     if modo(s, "relatorio") != "DESLIGADA":
-        feito["relatorio"] = relatorio(s)
+        feito["relatorio"] = relatorio(s, usuario=usuario)
         _carimbar(s, "relatorio")
     ligadas = [c for c in ROTINAS if modo(s, c) != "DESLIGADA"]
     feito["rotinas_ligadas"] = ligadas
@@ -696,6 +1154,46 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
         feito["aviso"] = ("Nenhuma rotina do agente está ligada — ele não fez "
                           "nada, e é assim que ele nasce.")
     return feito
+
+
+# ---------------------------------------------------------------------------
+# A RODADA DIÁRIA, SOZINHA (20/11/2026). Ele: *"Vamos botar para funcionar."*
+# O mesmo desenho da virada do dia dos desligamentos: na primeira requisição
+# do ERP de cada dia, a rodada vai para a FILA de trabalhos (não roda dentro
+# da requisição de ninguém). Roda só o que está ligado na tela do agente.
+# ---------------------------------------------------------------------------
+_PARAMETRO_DA_RODADA = "agente_dp.rodada_em"
+_rodada: dict[str, Optional[str]] = {"dia": None}
+
+
+def precisa_da_rodada() -> bool:
+    return _rodada["dia"] != date.today().isoformat()
+
+
+def rodada_do_dia_se_preciso(s: Session) -> bool:
+    """Enfileira a rodada do dia, uma vez. Nunca levanta. Devolve se enfileirou."""
+    hoje = date.today().isoformat()
+    if _rodada["dia"] == hoje:
+        return False
+    try:
+        ja = s.execute(text("SELECT valor FROM parametros WHERE chave = :c"),
+                       {"c": _PARAMETRO_DA_RODADA}).scalar()
+        _rodada["dia"] = hoje
+        if str(ja or "") == hoje:
+            return False
+        s.execute(text("""
+            INSERT INTO parametros (chave, valor) VALUES (:c, :v)
+            ON CONFLICT (chave) DO UPDATE SET valor = :v, atualizado_em = now()"""),
+            {"c": _PARAMETRO_DA_RODADA, "v": hoje})
+        from app.apps.erp.core.comum import tarefas
+        tarefas.enfileirar_unico(s, "agente_dp_dia", {},
+                                 rotulo="Rodada diária do agente de DP",
+                                 frescor_minutos=60 * 12)
+        s.commit()
+        return True
+    except Exception:  # noqa: BLE001 — rotina de fundo não derruba a tela
+        logger.warning("Agente DP: a rodada do dia não foi enfileirada", exc_info=True)
+        return False
 
 
 def _carimbar(s: Session, chave: str) -> None:

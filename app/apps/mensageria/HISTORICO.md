@@ -7,6 +7,39 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## ⚑ 17/11/2026 — O AVISO NÃO VAI MAIS PARA QUEM SAIU ONTEM (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi na mensageria vindo de outra área.** Um arquivo, uma consulta:
+`telegram_cadastro.py` › `desligado_da_empresa`.
+
+**O que mudou:** o bloqueio de mensagem para quem saiu passou a barrar também
+por **data de saída vencida**, não só pela caixinha `situacao` do cadastro.
+
+**Por que, e é uma janela de horas que ninguém veria:** no mesmo dia o ERP
+ganhou uma "virada do dia" que marca como desligado quem tem data de saída
+vencida (decisão dele: *"o ideal é cortar tudo, porque aí corre o risco de a
+gente esquecer"*). Ela roda na **primeira requisição do ERP** de cada dia. Mas
+o resumo da manhã por WhatsApp é disparado pela **rotina do ponto**, na
+primeira batida depois das 6h — **quase sempre ANTES de alguém do escritório
+abrir o ERP**. Nessa janela a caixinha ainda dizia ATIVO, e quem saiu ontem
+receberia o aviso da empresa.
+
+**⚠️ A régua é "anterior a hoje", igual à do resto do sistema:** quem sai HOJE
+ainda trabalha hoje e **continua recebendo** os avisos do dia. Não é detalhe —
+são justamente os avisos de que ela precisa no último dia.
+
+**O que NÃO mudou:** o robô **respondendo** a quem pede continua funcionando
+para quem saiu (o contracheque pelo Telegram sai por outro caminho,
+`telegram_bot._tg_enviar`). Essa separação é o que faz o bloqueio não virar um
+problema novo, e ela segue de pé — ele reforçou isso de novo hoje: *"se ela
+precisar de um contracheque, alguma coisa, ela solicita ao DP e o DP manda."*
+
+**Teste:** em `tests/test_virada_do_dia_dos_desligamentos_banco.py` (ficou lá
+porque a história é a mesma), dois casos: o aviso barrado para quem saiu ontem
+**com a caixinha ainda em ATIVO**, e o aviso seguindo para quem sai hoje.
+
+---
+
 ## ⚑ 17/11/2026 — A GESTÃO DOS CADASTROS, reconstruída (feito pelo chat do ERP/DP)
 
 ⚠️ **Mexi na mensageria vindo de outra área.** Arquivos tocados:

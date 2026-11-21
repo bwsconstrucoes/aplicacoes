@@ -89,6 +89,25 @@ def _data(v: Any) -> Optional[str]:
     return None
 
 
+def _ja_passou(iso: Any) -> bool:
+    """A data (em ISO, como `_data` devolve) já passou?
+
+    ⚑ Existe por causa do estrago de 17/11/2026: a importação lia "tem data de
+    saída" como "a pessoa saiu", e marcou DESLIGADO quem tinha saída marcada
+    para depois de hoje — gente cumprindo aviso prévio, que trabalha e bate
+    ponto. A régua (`<` hoje) é a mesma do ponto: a pessoa trabalha o último
+    dia. Data que não dá para ler NÃO é tratada como passada — na dúvida, a
+    pessoa continua ativa, que é o lado seguro.
+    """
+    bruto = _texto(iso)[:10]
+    if not bruto:
+        return False
+    try:
+        return datetime.strptime(bruto, "%Y-%m-%d").date() < datetime.now().date()
+    except ValueError:
+        return False
+
+
 def _dinheiro(v: Any) -> Optional[Decimal]:
     """"1.995,20" → 1995.20. Zero vira None: a planilha usa 0,00 para "nada"."""
     bruto = _texto(v).replace("R$", "").strip()
@@ -503,10 +522,27 @@ def ler_linha(cabecalho: dict[str, int], linha: list[str]) -> dict[str, Any]:
                 "motivo": ("não entrou: a fase é “Cadastro Concluído”, que é "
                            "gente trabalhando — a data de saída está errada e "
                            "precisa ser apagada na planilha")})
-        else:
+        elif _ja_passou(saida.get("demissao")):
             # Nas outras fases a data manda: a pessoa saiu, o cadastro é que
             # não foi finalizado (o caso de "Solicitações DP").
             saida["situacao"] = "DESLIGADO"
+        else:
+            # ⚑ SAÍDA AINDA NÃO CHEGOU = AVISO PRÉVIO (17/11/2026). Ele:
+            # *"pessoas que estavam com último dia trabalhado mesmo depois de
+            # hoje e estavam na fase Solicitações DP (…) foram considerados
+            # desligados."*
+            #
+            # Era este `else` que fazia isso: a data existia, então a pessoa
+            # "saiu" — mesmo marcada para a semana seguinte. Quem cumpre aviso
+            # prévio trabalha, e parou de conseguir bater ponto quando a base
+            # do ponto virou o ERP. A data continua entrando; a SITUAÇÃO é que
+            # não se antecipa.
+            nao_entendi.append({
+                "coluna": "Data de Saída", "campo": "situacao",
+                "valor": str(saida.get("demissao")),
+                "motivo": ("a data de saída ainda não chegou: a pessoa fica "
+                           "ATIVA (aviso prévio) e a data foi gravada — ela "
+                           "sai do ponto e da folha sozinha no dia")})
 
     nomes_saida = {chave: crua(nomes) for chave, nomes in NOMES.items()}
     # "00.079.526/0001-09 - BWS" → só o CNPJ.

@@ -12244,6 +12244,124 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 275 — Comprovantes: a página entra na lista no envio, "Aguardando a baixa" (21/11/2026)
+
+- *"Quando você anexa o comprovante e coloca mandar para a baixa (…) ele meio que some (…)
+  e desaparece qualquer informação. Aí depois (…) é que ele é listado na tabela (…) a gente
+  fica na dúvida, foi, não foi (…) o ideal era que na hora que mandasse para a baixa, ele
+  já alimentasse a tabela e ficasse aguardando a baixa."*
+- `comprovantes.guardar` cria uma linha por página com a situação `AGUARDANDO` ("Aguardando
+  a baixa"; na lista: "na fila" ou "baixando agora — leva x de y"). Quando a leva volta do
+  robô, as linhas daquelas páginas são TROCADAS pelo resultado (o que também acaba com a
+  linha dobrada quando um envio parado era retomado do começo).
+- Nada fica "aguardando" para sempre: página da leva que o robô não devolveu vira "Deu
+  erro — o robô não devolveu resultado"; envio que parou no meio deixa as que faltavam como
+  "Deu erro — o envio parou antes desta página: <motivo>"; sem o PDF no servidor, idem.
+  Todas podem ser baixadas de novo (leva 274). "Processar de novo" recria o aguardando.
+- A tela se recarrega a cada leva que volta (antes, só no fim do envio).
+- Sem migração. Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+
+#### Leva 274 — Comprovantes: "Baixar de novo" na página que não baixou (19/11/2026)
+
+- *"Nos que não foram baixados, eu queria que tivesse algum botão (…) para eu baixar
+  novamente. Utilizar aquele mesmo arquivo e encaminhar novamente (…) às vezes a gente
+  esquece de alterar o status e acaba não encontrando."*
+- Na lista "comprovante a comprovante", a linha que não baixou (não achei a SP, falta
+  liberar, não efetivado, erro) ganha "Baixar de novo", e caixas para marcar várias
+  ("Baixar de novo os marcados", até 50). `comprovantes.reenviar`: a mesma página vem do
+  servidor (enquanto o PDF está lá) ou da cópia no Drive (leva 273), as escolhidas viram
+  UM envio novo ("Reenvio - …") na fila de sempre, e o robô baixa — o que já baixou não
+  baixa duas vezes.
+- A linha antiga vira **"Mandado de novo"** (situação `REENVIADO`, motivo com o número do
+  envio novo) e sai da conta do que pede ação — senão o mesmo comprovante contaria duas
+  vezes. O resultado está no envio novo. Sem migração.
+- Sem servidor nem Drive (envio antigo, anterior à 273), não há botão: arrastar de novo.
+- **Publicado em 19/11/2026** (sem migração).
+- Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+
+#### Leva 273 — Comprovantes: lista com filtros, o comprovante de cada página e o que não baixou no Drive (18/11/2026) — MIGRAÇÃO 057
+
+- *"Eu queria poder, no sidebar, fazer filtragem das informações (…) aparece uma série de
+  coisas que deu erro. Aí eu quero entender o que é que deu erro (…) se tem o número da SP,
+  nós gravamos o comprovante (…) conseguir visualizar esse comprovante. Os comprovantes que
+  não foram baixados (…) deveriam ficar salvos no Google Drive (…) para eu entender por que
+  ele não baixou, se há alguma regra que não existe ainda."*
+- **O que já se guardava** (desde 006/013): por envio (arquivo, quem, quando, situação) e
+  por PÁGINA (situação, SP, valor, quem recebeu, motivo, a conversa com o Omie). O PDF do
+  envio só no disco do servidor (7 dias; some a cada publicação). O comprovante que BAIXOU
+  o robô arquiva no Dropbox e grava o link na coluna Comprovante da SP.
+- **Lista "comprovante a comprovante"** (`comprovantes.listar`): uma linha por página, de
+  todos os envios, com a SP (abre a ficha), o motivo, a conversa com o Omie e o link do
+  comprovante — o arquivado na SP (baixado/duplicado), a cópia no Drive, ou a página ainda
+  no servidor (rota nova `/comprovantes/<lote>/pagina/<n>`). Números por situação no alto
+  (clicáveis). Teto de 300 linhas; padrão, os últimos 30 dias.
+- **Barra lateral** (`analisesps_comprovantes_filtros.html`): busca (SP, quem recebeu,
+  valor, arquivo, motivo), enviado de/até, situação (com a contagem) e enviado por.
+- **"Os envios"** continua (erro do envio, parado, "Processar de novo"), mas sem a tabela de
+  páginas dentro de cada um — um link "ver as páginas deste envio" filtra a lista. A tela
+  fazia 1 consulta por envio (15) a cada abertura; agora são 3.
+- **O que não baixou vai para o Drive** (`guardar_paginas_no_drive`, no fim do
+  processamento, inclusive do que falhou no meio): cada página que pede nova tentativa é
+  recortada e sobe para a subpasta "Comprovantes não baixados" da pasta do Drive da folha;
+  o link fica no ENVIO, por página (migração 057, `paginas_no_drive`), para "Processar de
+  novo" não perder nem reenviar. Custo: 3 chamadas ao Drive por página que não baixou + 1
+  busca da subpasta por envio. Falha no Drive nunca derruba a baixa.
+- ⚠️ Os envios ANTERIORES a esta publicação não vão sozinhos para o Drive (a cópia nasce
+  no fim do processamento); os que ainda tiverem o PDF no servidor mostram "ver a página".
+- Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+- **Publicado em 18/11/2026.** Falta o dono apertar "Aplicar atualizações do banco" (057).
+
+#### Leva 272 — Arquivos gerados: todas as SPs, uma por linha, filtros, e o nº da SP no PDF do via SP (18/11/2026)
+
+- O dono, olhando o pagamento via SP: *"na parte das SPs, não estão sendo exibidas todas
+  as SPs. Só uma parte (…) o sistema está ocultando algumas (…) dentro do relatório em PDF
+  é interessante que seja embutido o número da SP (…) coloca uma quebra de linha para cada
+  SP (…) não consegue fazer filtro nessa tela (…) por tipo, por data, a competência, o tipo
+  da verba."*
+- **Causa das SPs sumidas:** o registro do arquivo (`folha_arquivo_gerado.card_pipefy`)
+  guardava os números até 60 caracteres — CINCO SPs (`_ids_que_cabem` e `registrar_card`).
+  No via SP uma conta tem dezenas. A coluna é TEXT; o teto foi a 4000. As gerações antigas,
+  já cortadas, são lidas do ANDAMENTO do lançamento (`folha_cards.sps_dos_arquivos`, uma
+  consulta para a tela inteira), que sempre teve a lista inteira. O nome de quem recebe vai
+  junto (gravado no andamento a partir de agora; nas antigas, do lote da geração).
+- **Uma SP por linha** na coluna Pipefy, com o nome, e "conta X · N SPs" embaixo.
+- **Filtros**: competência, pagamento (quinzena, fim de mês, DC, avulso), verba e "gerado
+  de/até". Com competência escolhida, lê só aquele mês (sem o teto de 400 arquivos do log
+  pesar sobre os meses antigos). Opções lidas do registro (2 consultas).
+- **`folha_cards.rodada` lê só a competência da análise** — com o teto de 400, uma geração
+  antiga passaria a "arquivo não encontrado" ao lançar.
+- **O nº da SP no relatório em PDF do via SP**: depois de lançar (inclusive no "Gerar e
+  lançar"), o PDF de cada conta é refeito a partir do LOTE da geração, com "Fulano · SP n"
+  e a SP na situação, e gravado POR CIMA no Drive (o link não muda) — o mesmo caminho que a
+  DC já tinha (`_relatorios_via_sp_com_sp`, `gratificados.montado_do_lote`). Refaz quando as
+  SPs da conta mudam. SEM BOTÃO (dono: *"não quero botão pôr as SPs no relatório. Quero
+  que o relatório já saia com elas"*): acontece sozinho no lançamento. As gerações lançadas
+  antes de 18/11/2026 ficam com o PDF sem o número (se o Drive recusar a regravação, o
+  "lançar" de novo termina — `so_terminar`).
+- Custo: a tela ganhou 1 consulta (andamentos) + 2 (opções do filtro); refazer o relatório
+  é 1 envio ao Drive por conta, uma vez por lançamento.
+- Testes: `test_analisesps_gratificados.py` (via SP ponta a ponta: o PDF regravado traz
+  cada SP; a tela lista todas com o nome), `test_analisesps_telas.py` (filtros; teto).
+- **Publicado em 18/11/2026** (sem migração).
+
+#### Leva 271 — A carga diária do Mobponto deixa de pedir o mês que já é todo do ponto eletrônico (17/11/2026)
+
+- O dono recebeu no Telegram: *"⚠️ Ponto do Mobponto: a carga PAROU. Motivo: ponto que
+  NÃO entrou — 11/2026: o Mobponto não retornou colaboradores para 11/2026"*, e disse:
+  *"acho que é de uma rotina daqui que não está sendo mais necessária, visto que mudamos
+  o sistema de ponto."*
+- Era a carga automática (`tarefas`, etapa `ponto_diario`): pedia ao Mobponto o mês
+  corrente todo dia. Desde a base mista (21/10/2026, corte 16/10), do corte em diante a
+  folha lê o ponto eletrônico — novembro não tem nada no Mobponto, e a "parada" virava
+  aviso.
+- Agora `ponto.o_que_fazer_no_automatico` devolve "ponto_novo" para o mês que começa no
+  corte ou depois (`mes_todo_no_ponto_novo`), e a carga só anota "vem do ponto
+  eletrônico". Outubro (misto) e os meses antes continuam indo ao Mobponto. Com a chave da
+  base mista DESLIGADA, nada muda — e o aviso voltaria.
+- Não mexi no botão manual de Folha PGT › Ponto nem nos outros usos do Mobponto (lançar
+  ponto, apoios). Teste: `test_mes_todo_no_ponto_eletronico_nao_vai_ao_mobponto_nem_avisa`.
+- **Publicado em 18/11/2026** (sem migração).
+
 #### Leva 270 — Pagamento via SP: a chave Pix do cadastro vai marcada, não "Aleatória" (16/11/2026)
 
 - *"Está sendo marcado todos como aleatória e colocado atualizar PIX, sendo que já está

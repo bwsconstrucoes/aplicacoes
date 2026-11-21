@@ -494,6 +494,8 @@ TELA_DA_ROTA = {
     "analisesps.lote_relatorio_completo_estado": ("lote",),
     "analisesps.lote_relatorio_completo_arquivo": ("lote",),
     "analisesps.tela_comprovantes": ("comprovantes",),
+    "analisesps.pagina_do_comprovante": ("comprovantes",),
+    "analisesps.reenviar_comprovantes": ("comprovantes",),
     "analisesps.enviar_comprovantes": ("comprovantes",),
     "analisesps.estado_comprovantes": ("comprovantes",),
     "analisesps.reprocessar_comprovante": ("comprovantes",),

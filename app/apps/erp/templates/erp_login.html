@@ -36,6 +36,21 @@
     <a href="{{ url_for('erp.pagina_esqueci_a_senha') }}"
        style="display:block; margin-top:12px; text-align:center;
               font-size:13px">Esqueci minha senha</a>
+    {# ⚑ PRIMEIRO ACESSO (18/11/2026). Ele encontrou o buraco tentando
+       orientar a equipe: quem recebia o link do portal sem ter conta batia
+       nesta tela e não tinha saída — "Esqueci minha senha" não serve para
+       quem nunca teve uma.
+
+       E a saída que existia era pior ainda: pedir pelo aplicativo do PONTO.
+       Ele: *"qual o sentido que tem de uma pessoa que vai lançar um diário
+       ter que ir lá no aplicativo do ponto? Não tem sentido nenhum."* #}
+    <div style="margin-top:14px; padding-top:12px;
+                border-top:1px solid var(--borda); text-align:center">
+      <p style="margin:0 0 6px; font-size:13px; color:var(--tinta-suave)">
+        Ainda não tem acesso ao sistema?</p>
+      <a class="btn secundario" style="display:inline-block; font-size:13px"
+         href="{{ url_for('erp.pagina_primeiro_acesso_portal') }}">Criar o meu acesso</a>
+    </div>
   </form>
 </main>
 </body>

@@ -6072,8 +6072,11 @@ def tela_folha_pagamento():
 
     pronto = fpg._pronto()
     registro, erro = [], None
+    filtro = fpg.filtro_das_rodadas(request.args)
+    opcoes = fpg.opcoes_do_filtro()
     try:
-        registro = fpg.rodadas(teto=400)
+        registro = fpg.filtrar_rodadas(fpg.rodadas(teto=400, competencia=filtro["competencia"]),
+                                       filtro)
         fpg.situacao_das_sps(registro)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui montar a tela de pagamento")
@@ -6082,6 +6085,7 @@ def tela_folha_pagamento():
     return render_template(
         "analisesps_folha_pagamento.html", aba="folha", subaba="pagamento",
         grupos=subtelas_agrupadas(), pronto=pronto, rodadas=registro,
+        filtro=filtro, filtro_opcoes=opcoes,
         destaque=request.args.get("rodada") or "",
         erro=erro,
         pode_operar=auth.e_mestre(),   # ver é da folha; agir é do mestre (07/10/2026)
@@ -8582,10 +8586,12 @@ def tela_comprovantes():
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
 
+    # A LISTA COM FILTROS (18/11/2026) substitui a tabela de páginas dentro de cada
+    # envio: eram 15 consultas (uma por envio) a cada abertura da tela; agora são 3.
+    filtros = comprovantes.filtros_da_tela(request.args)
     try:
         historico = comprovantes.historico()
-        for lote in historico:
-            lote["itens"] = comprovantes.itens_do_lote(lote["id"])
+        lista = comprovantes.listar(filtros)
     except Exception as e:  # noqa: BLE001 — migração 006 ainda não aplicada
         logger.exception("Análise de SPs: falhou ler o histórico de comprovantes")
         historico = []
@@ -8605,6 +8611,7 @@ def tela_comprovantes():
     return render_template(
         "analisesps_comprovantes.html", aba="comprovantes", base=base,
         historico=historico, andamento=tarefas.estado("comprovantes"),
+        lista=lista, filtros=filtros, dias_padrao=comprovantes.DIAS_PADRAO,
         por_leva=comprovantes.POR_LEVA,
         maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
         maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
@@ -8612,6 +8619,26 @@ def tela_comprovantes():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/comprovantes/<int:lote_id>/pagina/<int:pagina>")
+@exige_consulta
+def pagina_do_comprovante(lote_id: int, pagina: int):
+    """Uma página do PDF de um envio, enquanto ele ainda está no servidor (18/11/2026)."""
+    from flask import Response
+
+    from . import comprovantes
+    try:
+        conteudo = comprovantes.pagina_do_servidor(lote_id, pagina)
+    except comprovantes.ErroDeComprovante as e:
+        return render_template("analisesps_erro.html", titulo="Página não encontrada",
+                               mensagem=str(e)), 404
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Comprovantes: falhou abrir a página %s do lote %s", pagina, lote_id)
+        return render_template("analisesps_erro.html", titulo="Não consegui abrir a página",
+                               mensagem=str(e)), 500
+    return Response(conteudo, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="comprovante-{lote_id}-pag-{pagina}.pdf"'})
 
 
 @bp.route("/comprovantes/enviar", methods=["POST"])
@@ -8660,6 +8687,36 @@ def enviar_comprovantes():
              "pode fechar a tela." if aceitos else "")
     if recusados:
         aviso = (aviso + " " if aviso else "") + " ".join(recusados)
+    return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
+
+
+@bp.route("/comprovantes/reenviar", methods=["POST"])
+@exige_operador
+def reenviar_comprovantes():
+    """Manda de novo para a baixa as páginas marcadas (ou a de um botão), num envio
+    novo (19/11/2026) — ver `comprovantes.reenviar`."""
+    from . import comprovantes, tarefas
+
+    marcadas = [request.form["so"]] if request.form.get("so") else request.form.getlist("pagina")
+    pares = []
+    for valor in marcadas:
+        lote, _, pagina = str(valor).partition(":")
+        if lote.isdigit() and pagina.isdigit():
+            pares.append((int(lote), int(pagina)))
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = comprovantes.reenviar(pares, auth.pessoa_atual(), quem)
+    except comprovantes.ErroDeComprovante as e:
+        return redirect(url_for("analisesps.tela_comprovantes", aviso=str(e)))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Comprovantes: falhou mandar de novo")
+        return redirect(url_for("analisesps.tela_comprovantes",
+                                aviso=f"Não consegui mandar de novo: {e}"))
+    tarefas.disparar("comprovantes", disparo=quem or "reenviar")
+    aviso = (f"{feito['paginas']} comprovante(s) mandado(s) de novo para a baixa, no envio "
+             f"{feito['lote']}. O resultado aparece aqui; pode fechar a tela.")
+    if feito["faltaram"]:
+        aviso += " Ficaram de fora: " + "; ".join(feito["faltaram"]) + "."
     return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
 
 

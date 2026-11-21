@@ -134,7 +134,16 @@ def _apagar_operador(banco, uid):
         conn.commit()
 
 
-def test_o_dp_ve_a_fila_mas_quem_libera_e_admin(app, mundo, banco, monkeypatch):
+# ⚑ ESTE CASO VIROU O CONTRÁRIO EM 18/11/2026, por decisão dele: *"libera o DP
+# também."* Antes, só ADMIN liberava (`gerir_usuarios`) — e na prática só ele
+# próprio, enquanto o DP, que é quem trabalha a fila, não enxergava nem o
+# cartão dela.
+#
+# O caso ficou porque a pergunta dele continua valendo, só mudou de lado: o DP
+# ganhou a FILA, não a administração do sistema. Quem percorre o resto da
+# alçada (o perfil que ele NÃO escolhe, a tela de operadores que ele não abre)
+# é `tests/test_pedido_de_acesso_ao_portal_banco.py`.
+def test_o_dp_libera_a_fila_de_ponta_a_ponta(app, mundo, banco, monkeypatch):
     c = _entrar_no_app(app, CPF_JOAO, monkeypatch)
     c.post("/ponto/app/api/portal/pedir", json={"email": "joao@gmail.com"})
     [p] = _fila(banco)
@@ -142,7 +151,23 @@ def test_o_dp_ve_a_fila_mas_quem_libera_e_admin(app, mundo, banco, monkeypatch):
     r = como(app, mundo["dp"]).post(
         f"/erp/api/portal/pedidos-de-acesso/{p['id']}", json={"acao": "LIBERAR"})
 
-    assert r.status_code == 403
+    assert r.status_code == 200, r.get_json()
+    assert _fila(banco)[0]["status"] == "LIBERADO"
+    _apagar_operador(banco, r.get_json()["usuario_id"])
+
+
+def test_quem_so_trata_ponto_nao_libera_acesso_nenhum(app, mundo, banco,
+                                                      monkeypatch):
+    """A alçada nova é do DP, não de quem responde pela obra."""
+    c = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    c.post("/ponto/app/api/portal/pedir", json={"email": "joao@gmail.com"})
+    [p] = _fila(banco)
+
+    sup = como(app, mundo["sup"])
+
+    assert sup.get("/erp/api/portal/pedidos-de-acesso").status_code == 403
+    assert sup.post(f"/erp/api/portal/pedidos-de-acesso/{p['id']}",
+                    json={"acao": "LIBERAR"}).status_code == 403
     assert _fila(banco)[0]["status"] == "PENDENTE"
 
 

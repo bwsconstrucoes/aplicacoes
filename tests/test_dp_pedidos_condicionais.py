@@ -85,14 +85,17 @@ def test_o_desligamento_de_carteira_PERGUNTA_se_a_pessoa_continua():
 
 
 def test_dizer_que_continua_acrescenta_os_passos_no_checklist():
-    """O DP não pode fechar o pedido sem ter aberto a readmissão."""
+    """Desde 19/11/2026 quem continua NÃO é readmitido: o DP confirma a
+    continuidade (passo do processo, que trava o encerramento) e o cadastro
+    passa a prestador. O checklist só ganha a conferência do ponto — e não
+    pode mais mandar abrir readmissão, que duplicaria a pessoa."""
     sem = svc.checklist_do_tipo("DESLIGAMENTO", "CTPS",
                                 pedido={"continua_prestador": "0"})
     com = svc.checklist_do_tipo("DESLIGAMENTO", "CTPS",
                                 pedido={"continua_prestador": "1"})
-    assert len(com) == len(sem) + 2
-    assert any("readmissão" in x for x in com)
-    assert any("ponto" in x for x in com[-2:])
+    assert len(com) == len(sem) + 1
+    assert not any("readmissão" in x for x in com)
+    assert "ponto" in com[-1]
 
 
 def test_desligamento_de_prestador_pede_so_a_data_de_saida():
@@ -174,8 +177,9 @@ def test_cadastro_de_carteira_nao_pergunta_pagamento_nem_valor_do_mes():
     exige = svc.exigencias("CADASTRO", {"tipo_documentacao": "CTPS"})["campos"]
     for proibido in ("pagamento", "valor_mes"):
         assert proibido not in exige, f"{proibido} continua exigido em CTPS"
-    # Mas a carteira, o PIS e o tipo de contrato passam a ser exigidos.
-    assert "num_ctps" in exige and "num_pis" in exige
+    # Mas a carteira e o tipo de contrato passam a ser exigidos. O PIS não,
+    # desde 19/11/2026: *"o cadastro social é feito com o CPF."*
+    assert "num_ctps" in exige and "num_pis" not in exige
     assert "tipo_contrato" in exige
 
 
@@ -235,9 +239,30 @@ def test_telefone_pix_e_diaria_sao_obrigatorios_em_todo_cadastro():
     """
     for forma in ("CTPS", "PRESTADOR"):
         exige = svc.exigencias("CADASTRO", {"tipo_documentacao": forma})["campos"]
-        for campo in ("telefone", "pix_tipo", "pix_chave", "valor_diaria",
-                      "empresa_id"):
+        for campo in ("telefone", "pix_tipo", "pix_chave", "empresa_id"):
             assert campo in exige, f"{campo} não é obrigatório em {forma}"
+
+    # ⚑ A DIÁRIA MUDOU DE REGRA EM 17/11/2026, e foi ele quem mudou: *"Valor da
+    # Diária → exibir campo para CLT e se for Prestador de Serviço (Autônomo
+    # (RPA)); demais, não exibir."*
+    #
+    # Ela era obrigatória SEMPRE — inclusive para PJ e pró-labore, que não têm
+    # diária. Campo que não se aplica e é exigido é pedido que não sai, e a
+    # pessoa não tem como resolver. Agora a exigência segue o TIPO DE CONTRATO,
+    # e só onde o campo aparece.
+    for contrato in ("CLT_INDETERMINADO", "CLT_DETERMINADO", "AUTONOMO_RPA"):
+        exige = svc.exigencias("CADASTRO", {"tipo_contrato": contrato})["campos"]
+        assert "valor_diaria" in exige, f"a diária é obrigatória em {contrato}"
+    for contrato in ("PJ", "PRO_LABORE", "ESTAGIO", "JOVEM_APRENDIZ"):
+        exige = svc.exigencias("CADASTRO", {"tipo_contrato": contrato})["campos"]
+        assert "valor_diaria" not in exige, (
+            f"{contrato} não tem diária — exigi-la trava o pedido sem saída")
+
+    # ⚑ E O PJ PASSOU A PEDIR OS DADOS DA EMPRESA DELE (mesma data): *"quando
+    # for pessoa PJ, abrir campos Razão social (PJ) e CNPJ (PJ)."* Sem eles o
+    # DP recebe um PJ e vai pedir a nota fiscal sem saber em nome de quem sai.
+    pj = svc.exigencias("CADASTRO", {"tipo_contrato": "PJ"})["campos"]
+    assert "razao_social_pj" in pj and "cnpj_pj" in pj
 
 
 def test_toda_opcao_de_categoria_tem_a_conta_escrita():
@@ -391,7 +416,24 @@ def _cad(mundo, **extra):
             "cargo_pleiteado_id": mundo["cargo_id"],
             "empresa_id": mundo["empresa_id"],
             "telefone": "85988881111", "pix_tipo": "CPF", "pix_chave": CPF_C,
+            # ⚑ PJ PEDE OS DADOS DA EMPRESA DELE desde 17/11/2026 (ele: *"quando
+            # for pessoa PJ, abrir campos Razão social (PJ) e CNPJ (PJ)"*) — e
+            # as duas ajudas passaram a ser obrigatórias na mesma data.
+            "razao_social_pj": "GENTE NOVA SERVICOS LTDA",
+            "cnpj_pj": "71000003000106",
+            "categoria_alimentacao": "NAO_RECEBE",
+            "categoria_transporte": "NAO_RECEBE",
+            # A diária NÃO é mais exigida de PJ (ele: *"exibir para CLT e
+            # Autônomo (RPA); demais, não exibir"*), mas informá-la aqui não
+            # atrapalha: o que o teste prova é o resto do pedido.
             "valor_diaria": "130,00", "data_inicio": "2026-06-01",
+            # ⚑ Os dados do eSocial e do SomaPay, obrigatórios desde
+            # 19/11/2026 (ver `CAMPOS_DA_PESSOA`).
+            "nome_mae": "Maria Da Silva", "data_nascimento": "1990-03-15",
+            "rg": "2001234567", "rg_emissao": "2010-05-20", "rg_orgao": "SSP",
+            "rg_uf": "CE", "cep": "60000000", "logradouro": "Rua Um",
+            "numero_endereco": "10", "bairro": "Centro",
+            "municipio": "Fortaleza", "uf": "CE",
             "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
                            "COMPROVANTE-ENDERECO-PESSOA"]}
     base.update(extra)
@@ -476,7 +518,9 @@ def test_cadastro_com_CPF_de_desligado_vira_readmissao(mundo):
     # O nome do PEDIDO não vence o do cadastro — a pessoa é a que já existe.
     assert p["pessoa"] == "Prestador De Souza"
     # E o checklist é o da readmissão, não o do cadastro novo.
-    assert any("saída anterior" in i["descricao"] for i in p["itens"])
+    # o checklist da readmissão, enxugado por ele em 19/11/2026
+    assert [i["descricao"] for i in p["itens"]] == [
+        "Conferir os dados e os documentos"]
 
 
 @pytest.mark.banco
@@ -525,18 +569,17 @@ def test_o_cadastro_novo_nasce_com_a_obra_do_pedido(mundo):
 
 
 @pytest.mark.banco
-def test_a_readmissao_esquecida_aparece_e_sai_quando_e_feita(mundo):
-    """⚑ A LISTA QUE AVISA ANTES DAS SETE DA MANHÃ.
+def test_quem_continua_NAO_e_desligado_e_nao_vira_readmissao_esquecida(mundo):
+    """⚑ 19/11/2026 — A DECISÃO DE 15/11 FOI SUBSTITUÍDA.
 
-    Desligar corta o acesso ao aparelho da obra na data de saída. Quando o
-    desligamento diz "continua como prestador" e a readmissão é esquecida, a
-    pessoa aparece para trabalhar e não consegue bater — e quem descobre é a
-    obra, sem saber o motivo.
+    Até então, "continua como prestador" desligava a pessoa e o sistema cobrava
+    a readmissão esquecida. Ele: *"Quando eu coloco sim, o colaborador vai
+    continuar (…) O ponto dele continua ativo, ele continua ativo. Mas o DP
+    precisa validar aquela informação."*
 
-    A conta tem três condições, e todas têm de valer: o pedido disse que
-    continua, a pessoa está desligada, e não há vínculo aberto. Feita a
-    readmissão, a pendência desaparece sozinha — ninguém precisa "dar baixa"
-    nela, que é o tipo de lista que ninguém mantém.
+    Agora a pessoa NÃO é desligada no atendimento: segue ativa, sem data de
+    saída no cadastro (é ela que corta o ponto), e o DP confirma depois do
+    último dia. Sem desligamento, não há readmissão a esquecer.
     """
     p = svc.abrir(mundo["s"], {
         "tipo": "DESLIGAMENTO", "colaborador_id": mundo["carteira"].id,
@@ -544,25 +587,14 @@ def test_a_readmissao_esquecida_aparece_e_sai_quando_e_feita(mundo):
         "aviso_previo": "2026-06-01",
         "continua_prestador": "Sim, continua como prestador de serviço"},
         mundo["obra_user"])
+    r = svc.atender(mundo["s"], p["id"], {"dados": {"data_saida": "2026-06-30"}},
+                    mundo["dp"])
     mundo["s"].flush()
-    # Antes de atender ninguém está desligado, então nada pende.
+    assert r["situacao"] == "EM_ANDAMENTO"
+    c = mundo["s"].get(svc_pessoas.Colaborador, mundo["carteira"].id)
+    assert c.situacao == "ATIVO" and c.demissao is None
     assert svc.readmissoes_esquecidas(mundo["s"]) == []
-
-    svc.atender(mundo["s"], p["id"], {"dados": {"data_saida": "2026-06-30"}},
-                mundo["dp"])
-    mundo["s"].flush()
-    pend = svc.readmissoes_esquecidas(mundo["s"])
-    assert len(pend) == 1
-    assert pend[0]["pessoa"] == "Carteira Da Silva"
-    assert pend[0]["numero"] == p["numero"]
-
-    # Feita a readmissão (pelo cadastro, que se converte), a pendência sai.
-    r = svc.abrir(mundo["s"], _cad(mundo, cpf=CPF_A, pix_chave=CPF_A,
-                                   data_inicio="2026-07-01"),
-                  mundo["obra_user"])
-    svc.atender(mundo["s"], r["id"], {}, mundo["dp"])
-    mundo["s"].flush()
-    assert svc.readmissoes_esquecidas(mundo["s"]) == []
+    assert any(x["codigo"] == "CONTINUIDADE" for x in r["processo"]["passos"])
 
 
 @pytest.mark.banco
@@ -789,3 +821,64 @@ def test_todo_tipo_que_exige_papel_existe_no_PORTAL():
         assert chave in svc_portal.TIPOS_DO_PORTAL, (
             f"{chave} exige papel, a tela do DP manda para o portal, e o "
             f"portal não oferece este tipo")
+
+
+# ===========================================================================
+# ⚑ O VÍNCULO TEM UMA FONTE SÓ (17/11/2026)
+#
+# Ele cobrou a equalização mostrando os dois campos lado a lado:
+#
+#   *"Quando eu falo em equalizar falo em relação aos dois campos abaixo:
+#    Vínculo — Carteira Assinada (CTPS) / Prestador de Serviço;
+#    Tipo de Documentação para Cadastro — Prestador de Serviço / CTPS."*
+#
+# São o MESMO dado com dois nomes: o "Tipo de Documentação" do pedido VIRA o
+# `vinculo` da pessoa quando o DP atende. Enquanto as listas eram escritas à
+# mão em dois arquivos, divergiram na palavra E na ordem.
+#
+# ⚠️ O QUE ESTE TESTE PRENDE não é a palavra de hoje — é a FONTE. Acertar as
+# duas listas à mão resolveria hoje e divergiria de novo no próximo rótulo que
+# alguém mudar num lado só.
+# ===========================================================================
+def test_o_vinculo_do_pedido_e_o_da_ficha_sao_A_MESMA_LISTA():
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    da_ficha = [p.VINCULO_ROTULOS[v] for v in p.VINCULOS]
+
+    assert list(svc.CATEGORIAS["tipo_documentacao"]) == da_ficha
+    # "Tipo de Readmissão" é a mesma pergunta ("volta como o quê?").
+    assert list(svc.CATEGORIAS["tipo_readmissao"]) == da_ficha
+
+
+def test_o_rotulo_escolhido_volta_a_ser_o_CODIGO_que_a_coluna_guarda():
+    """A tela mostra português; a coluna `vinculo` guarda CTPS/PRESTADOR. Se a
+    tradução não cobrir um rótulo, o pedido grava o rótulo na coluna — e aí a
+    folha deixa de reconhecer a pessoa como prestador."""
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    for campo in ("tipo_documentacao", "tipo_readmissao"):
+        mapa = svc.DO_PIPE_PARA_O_CODIGO[campo]
+        for rotulo in svc.CATEGORIAS[campo]:
+            assert rotulo in mapa, f"{campo}: “{rotulo}” sem tradução"
+            assert mapa[rotulo] in p.VINCULOS
+
+
+def test_toda_opcao_de_vinculo_tem_a_explicacao_na_tela():
+    """A dica de cada opção é indexada pelo RÓTULO. Rótulo que muda num lado só
+    faz a explicação desaparecer da tela, sem erro."""
+    mapa = svc.EXPLICACAO_DA_OPCAO["tipo_documentacao"]
+    for rotulo in svc.CATEGORIAS["tipo_documentacao"]:
+        assert mapa.get(rotulo), f"“{rotulo}” está sem explicação"
+
+
+def test_a_palavra_do_vinculo_e_a_mesma_que_a_folha_compara():
+    """Fecha o círculo: a palavra que a pessoa escolhe no pedido é a mesma que
+    a folha usa para decidir diária × CTPS."""
+    from app.apps.analisesps import folha_vinculo as fv
+    from app.apps.erp.core.cadastros import pessoas as p
+
+    escolhido = svc.CATEGORIAS["tipo_documentacao"][1]        # Prestador
+    codigo = svc.DO_PIPE_PARA_O_CODIGO["tipo_documentacao"][escolhido]
+
+    assert codigo == "PRESTADOR"
+    assert fv._igual(p.VINCULO_PLANILHA[codigo], fv.PRESTADOR)

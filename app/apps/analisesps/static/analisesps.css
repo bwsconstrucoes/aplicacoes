@@ -191,6 +191,8 @@ a { color: var(--azul-claro); }
 .opcao .qtd { font-family: var(--fonte-dados); font-size: 11.5px; color: var(--tinta-suave); }
 .opcao.zerada { opacity: .45; }
 .faixa { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* Sem isto, o campo de data não encolhe e o "Até" sai cortado na lateral. */
+.faixa > div { min-width: 0; }
 .faixa label { font-size: 11.5px; color: var(--tinta-suave); display: block; margin-bottom: 3px; }
 .faixa input { width: 100%; padding: 7px 8px; border: 1px solid var(--borda-forte); border-radius: 6px; font-size: 13px; font-family: var(--fonte-dados); }
 
@@ -2698,6 +2700,11 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
   margin: 0 0 10px; }
 #tabela-rodadas tr.destaque td { background: var(--destaque-fundo, #fff8e1); }
 .gd-destino { width: 100%; margin: 6px 0; }
+/* 18/11/2026: uma SP por linha na coluna Pipefy, e os filtros da tela. */
+#tabela-rodadas .sp-linha { white-space: nowrap; padding: 2px 0; }
+#tabela-rodadas .sp-linha + .sp-linha { border-top: 1px dashed var(--borda); }
+#tabela-rodadas .sp-da-conta { margin: 2px 0 8px; }
+.filtros-gerados { flex-wrap: wrap; margin-bottom: 10px; }
 
 /* Tela do Ponto (02/10/2026): importação e competências na lateral. */
 .importar-ponto { display: flex; gap: 6px; margin: 6px 0; }

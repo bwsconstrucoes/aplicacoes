@@ -176,6 +176,7 @@ def listar(conn, *, status: str = PENDENTE, limite: int = 200) -> list[dict[str,
     linhas = conn.execute(text("""
         SELECT p.id, p.colaborador_id, p.cpf, p.nome, p.email, p.telefone,
                p.status, p.motivo, p.origem, p.criado_em, p.decidido_em,
+               p.identidade_confirmada_em,
                o.codigo AS obra_codigo, o.nome AS obra_nome, p.obra_id,
                c.nome AS nome_no_cadastro, c.situacao, c.etapa,
                c.usuario_id, u.email AS email_do_acesso, u.ativo AS acesso_ativo
@@ -200,6 +201,11 @@ def listar(conn, *, status: str = PENDENTE, limite: int = 200) -> list[dict[str,
             "situacao": l["situacao"] or "", "etapa": l["etapa"] or "",
             "status": l["status"], "motivo": l["motivo"] or "",
             "origem": l["origem"],
+            # ⚑ QUEM APROVA PRECISA SABER A DIFERENÇA (18/11/2026): um pedido
+            # que chegou com o código do WhatsApp conferido no número do
+            # cadastro vale mais que um aberto sem essa prova. Sem a marca, a
+            # fila trata os dois igual e a confirmação não serve a quem decide.
+            "identidade_confirmada": bool(l.get("identidade_confirmada_em")),
             "ja_tem_acesso": bool(l["usuario_id"] and l["acesso_ativo"]),
             "email_do_acesso": l["email_do_acesso"] or "",
             "criado_em": l["criado_em"].isoformat() if l["criado_em"] else None,

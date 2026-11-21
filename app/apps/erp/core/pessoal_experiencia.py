@@ -191,3 +191,121 @@ def sugestao_de_forma(situacao_exp: dict[str, Any]) -> str:
     if situacao_exp.get("tem") and not situacao_exp.get("ja_acabou"):
         return FORMA_EXPERIENCIA
     return ""
+
+
+# ---------------------------------------------------------------------------
+# QUEM ESTÁ PERTO DO FIM DA EXPERIÊNCIA (20/11/2026)
+#
+# Ele: *"Prorrogação da experiência. Entendo que DP e o administrativo de obra
+# devam ser alertados sobre o acontecimento. Poucos dias antes."* A
+# prorrogação acontece SOZINHA no fim da primeira parte (e o contrato vira
+# indeterminado no fim da segunda): sem aviso, a decisão de encerrar chega
+# depois do prazo — e aí custa aviso prévio e multa.
+# ---------------------------------------------------------------------------
+AVISAR_COM_DIAS = 10
+
+
+def terminando(s, obras=None, hoje: Optional[date] = None,
+               dias: int = AVISAR_COM_DIAS) -> list[dict[str, Any]]:
+    """Carteira ativa cuja experiência (1ª parte ou prorrogação) acaba em até
+    `dias`. `obras=None` é a base inteira; lista vazia, ninguém."""
+    from sqlalchemy import text
+    from app.apps.erp.core import obra_atual
+    hoje = hoje or date.today()
+    if obras is not None and not obras:
+        return []
+    filtro = ""
+    if obras is not None:
+        filtro = (" AND " + obra_atual.obras_da_pessoa_sql("c")
+                  if obra_atual.tem_tabela(s) else " AND c.obra_id = ANY(:obras)")
+    linhas = s.execute(text(f"""
+        SELECT c.id, c.nome, c.admissao, c.contrato_experiencia, o.codigo AS obra,
+               g.nome AS cargo
+          FROM colaboradores c
+          LEFT JOIN obras o ON o.id = c.obra_id
+          LEFT JOIN cargos g ON g.id = c.cargo_id
+         WHERE UPPER(COALESCE(c.vinculo, 'CTPS')) = 'CTPS'
+           AND UPPER(COALESCE(c.situacao, 'ATIVO')) = 'ATIVO'
+           AND c.demissao IS NULL AND c.admissao IS NOT NULL
+           AND c.admissao >= :desde
+           AND COALESCE(c.contrato_experiencia, '') <> ''{filtro}
+         ORDER BY c.nome"""),
+        {"desde": hoje - timedelta(days=TETO_LEGAL_DIAS + 5),
+         "obras": obras or []}).mappings().all()
+    saida = []
+    for l in linhas:
+        sit = situacao(l["admissao"], l["contrato_experiencia"], hoje)
+        if not sit["tem"] or sit["ja_acabou"]:
+            continue
+        falta = sit["dias_para_o_fim"]
+        if falta is None or falta > dias:
+            continue
+        primeira = sit["fase"] == "primeira" and sit["prorrogavel"]
+        fim = date.fromisoformat(sit["fim_primeira"] if sit["fase"] == "primeira"
+                                 else sit["fim_total"])
+        saida.append({
+            "colaborador_id": l["id"], "pessoa": l["nome"], "obra": l["obra"] or "",
+            "cargo": l["cargo"] or "", "fim": str(fim), "faltam_dias": falta,
+            "o_que_acontece": (
+                f"se ninguém fizer nada, o contrato se PRORROGA sozinho até "
+                f"{_br(date.fromisoformat(sit['fim_total']))}" if primeira else
+                "se ninguém fizer nada, vira contrato por prazo INDETERMINADO — "
+                "depois disso, sair custa aviso prévio e multa de 40%"),
+            "para_encerrar": (f"para encerrar no prazo, peça o desligamento "
+                              f"(encerramento de experiência) com saída em {_br(fim)}"),
+        })
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# PASSADA A EXPERIÊNCIA, O CONTRATO VIRA INDETERMINADO — SOZINHO (20/11/2026)
+#
+# Ele: *"Via de regra assinamos CLT com contrato determinado. Passado o
+# período de experiência ele vira indeterminado."* E, perguntado se o sistema
+# deveria trocar sozinho: *"quero que altere sozinho o contrato."*
+#
+# Roda na rodada diária. Troca "CLT (tempo determinado)" por "CLT (tempo
+# indeterminado)" no cadastro e no vínculo aberto de quem tem carteira e já
+# passou do fim da experiência (prorrogação incluída). Quem está como
+# "determinado" SEM contrato de experiência legível fica como está: não dá
+# para saber quando acabou — a tela de Regras mostra esses.
+#
+# ⚑ CUSTO: uma consulta por dia e uma gravação por pessoa que virou.
+# ---------------------------------------------------------------------------
+def virar_indeterminado(s, hoje: Optional[date] = None) -> dict[str, Any]:
+    """Nunca levanta. Devolve quantos viraram."""
+    import logging
+    from sqlalchemy import text
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    hoje = hoje or date.today()
+    feito = {"viraram": 0, "sem_data": 0}
+    try:
+        with s.begin_nested():
+            for l in s.execute(text("""
+                SELECT id, admissao, contrato_experiencia FROM colaboradores
+                 WHERE UPPER(COALESCE(vinculo, 'CTPS')) = 'CTPS'
+                   AND tipo_contrato = 'CLT_DETERMINADO'
+                   AND UPPER(COALESCE(situacao, 'ATIVO')) = 'ATIVO'""")).mappings().all():
+                sit = situacao(l["admissao"], l["contrato_experiencia"], hoje)
+                if not sit["tem"]:
+                    feito["sem_data"] += 1
+                    continue
+                if not sit["ja_acabou"]:
+                    continue
+                s.execute(text("UPDATE colaboradores SET tipo_contrato = 'CLT_INDETERMINADO' "
+                               "WHERE id = :i"), {"i": l["id"]})
+                s.execute(text("""UPDATE colaborador_vinculos
+                                     SET tipo_contrato = 'CLT_INDETERMINADO'
+                                   WHERE colaborador_id = :i AND demissao IS NULL
+                                     AND tipo_contrato = 'CLT_DETERMINADO'"""),
+                          {"i": l["id"]})
+                registrar_evento(s, "colaborador", int(l["id"]), "VIROU_INDETERMINADO",
+                                 {"fim_da_experiencia": sit["fim_total"],
+                                  "por": "a rotina diária: a experiência acabou"}, None)
+                feito["viraram"] += 1
+        if feito["viraram"]:
+            logging.getLogger(__name__).info("ERP/experiência: %s", feito)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("ERP/experiência: a virada falhou")
+    return feito
+

@@ -47,6 +47,55 @@ estragou alguma coisa.
 
 ### O que está pendente AGORA
 
+**18/11/2026 — comprovante de duas folhas: a segunda não é comprovante.** Em
+ramo, aguardando o "pode" do dono. Sem migração de banco.
+
+Ele mandou o arquivo: *"alguns comprovantes como esse saem em duas páginas e o
+sistema tenta a segunda página. Gostaria que isso fosse detectado pra não
+tentar baixar."* É o boleto pago pelo **Sicredi**: a folha 2 tem 106 caracteres
+e são só os telefones do banco ("SAC 0800 … Ouvidoria 0800 …").
+
+**O estrago era duplo, e o segundo ninguém tinha visto:**
+
+1. A folha de rodapé virava uma linha "NÃO localizado" no relatório, em todo
+   comprovante desses — barulho que esconde o que importa.
+2. **E disparava a leitura das 52 mil linhas da SPsBD.** Por ser "não
+   localizada", o robô ia procurar uma SP já paga com Omie pendente (o plano B
+   de 14/11). Ou seja: uma folha com dois telefones custava a leitura mais cara
+   que este sistema tem, em todo boleto do Sicredi.
+
+**A regra, e por que ela é conservadora:** a página só é descartada quando
+**NADA** que identifique um pagamento foi lido — nem valor, nem data, nem número
+da SP, nem autenticação, nem código de barras, nem conta de origem, nem chave
+PIX, nem documento de quem recebeu — **e** o texto é curto (até 400
+caracteres; a folha 2 tem 106). Faltando todos esses campos, aquela página não
+poderia virar baixa de jeito nenhum: o próprio `_decidir_execucao` a barraria
+por "campos mínimos ausentes". Página CHEIA de texto que o leitor não entendeu
+**continua** indo ao relatório como "não baixou" — ali pode haver dinheiro
+precisando de olho humano.
+
+**No mesmo lugar, um descarte silencioso que acabou:** página **sem texto
+nenhum** era pulada sem uma palavra. Isso é, quase sempre, comprovante
+**fotografado ou escaneado** — e a aplicação **não tem OCR**, não lê imagem.
+O pagamento não baixava e ninguém ficava sabendo. Agora aparece no relatório,
+com o que fazer: reenviar o PDF do banco.
+
+As duas situações viram linha no relatório do Telegram, **resumidas**: trinta
+boletos do Sicredi dariam trinta linhas de nada, então o rodapé entra como "N
+página(s) de rodapé ou continuação". A página escaneada ganha destaque, porque
+exige ação.
+
+**Um susto que não era real, registrado para ninguém repetir:** na primeira
+leitura do arquivo aqui, a folha 1 parecia não ler NADA (nem valor, nem SP) — o
+que seria um defeito gravíssimo. Era artefato do ambiente: faltava o
+`pdfminer.six` nesta máquina, o `pdfplumber` não carregou e o
+`extract_pdf_pages` caiu no `pypdf`, que devolve o texto do Sicredi em ordem
+invertida e grudado ("38.114,00Valor Pago (R$):"), formato que nenhum leitor
+entende. Com o `pdfplumber` funcionando — que é o que roda em produção — a
+folha 1 lê tudo: SP, valor, data, código de barras e conta. **Ao investigar
+leitura de PDF, conferir primeiro qual biblioteca está realmente sendo usada.**
+
+
 **17/11/2026 — o Make não espera mais a resposta, e o trabalho repetido virou
 lote.** Em ramo, aguardando o "pode" do dono. Sem migração de banco.
 

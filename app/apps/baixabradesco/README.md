@@ -66,6 +66,32 @@ então nenhuma tem o problema que isto resolve.
 Para acompanhar um lote em andamento: `GET /api/baixabradesco/fila-resumo`
 traz `baixas_em_andamento` com os arquivos e há quantos segundos cada um roda.
 
+### Página que não é comprovante — 18/11/2026
+
+Comprovante pode sair em mais de uma folha. O boleto pago pelo **Sicredi** sai
+em duas: a segunda tem só os telefones de SAC e ouvidoria do banco.
+
+Agora a página é descartada **antes de tentar qualquer coisa** quando nada que
+identifique um pagamento foi lido (valor, data, número da SP, autenticação,
+código de barras, conta de origem, chave PIX, documento de quem recebeu) **e** o
+texto é curto — até 400 caracteres. A folha 2 do Sicredi tem 106.
+
+Isso economiza mais do que parece: por ser "não localizada", aquela folha fazia
+o robô ler as **52 mil linhas da SPsBD** procurando uma SP paga com Omie
+pendente. Em todo boleto do Sicredi.
+
+⚠️ **A trava do tamanho existe para o caso contrário:** página cheia de texto
+que o leitor não entendeu continua aparecendo como "não baixou", porque ali pode
+haver pagamento de verdade.
+
+**Página sem texto nenhum** (comprovante fotografado ou escaneado) também
+aparece no relatório, com destaque: a aplicação **não tem OCR** e não lê imagem.
+Antes de 18/11/2026 ela era pulada em silêncio absoluto — o pagamento não
+baixava e ninguém ficava sabendo.
+
+As duas aparecem no relatório do Telegram em linha resumida (`N página(s) de
+rodapé ou continuação`), e na resposta em `paginas_sem_pagamento`.
+
 ### A execução é por fase, não por comprovante
 
 Também de 17/11/2026, e pelo mesmo motivo (tempo): cada etapa trata o lote

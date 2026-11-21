@@ -17,8 +17,40 @@
 <meta name="apple-mobile-web-app-title" content="ERP BWS">
 <link rel="apple-touch-icon" href="{{ url_for('erp.static', filename='icone-apple.png') }}">
 <link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
+
+{# ⚑ UMA TELA DO ERP DENTRO DE OUTRA — O MODO EMBUTIDO (17/11/2026)
+
+   Pedido dele: *"quando estou vendo o pessoal pelo ponto e coloco pra abrir o
+   cadastro, ele remete pra página de pessoal, quando deveria apenas abrir o
+   modal correspondente sem necessidade de ir pra outro lado. Os dados de cada
+   um tem que estar de fácil acesso e todos correlacionados."*
+
+   O caminho inverso já existia: a tela de Colaboradores mostra a ficha do
+   ponto dentro dela. Faltava a volta. Em `embutido`, a tela aparece SÓ com a
+   janela que ela foi chamada para abrir: sem o cabeçalho, sem os módulos, sem
+   o filtro lateral, sem a lista e sem o assistente — nada disso faz sentido
+   dentro de outra tela que já tem os seus.
+
+   A tela da ficha do ponto faz o mesmo desde 13/11/2026, com um estilo
+   próprio dentro dela (`gestao.html`, `.corpo.embutido`). São dois jeitos de
+   dizer a mesma coisa: quem mexer naquela tela pode passá-la para cá.
+
+   ⚠️ A janela (`<dialog>`) NÃO pode ser escondida junto: o que está em
+   `display:none` não abre, nem no topo da pilha. Por isso a regra esconde os
+   irmãos dela, não o pai. #}
+<style>
+  body.embutido > header.topo,
+  body.embutido > .aviso-migracoes,
+  body.embutido > .ia-botao,
+  body.embutido > .abrir-filtros,
+  body.embutido > .ia-painel,
+  body.embutido .corpo > .filtros { display: none !important; }
+  body.embutido .corpo { padding: 0; }
+  body.embutido .principal > :not(dialog) { display: none !important; }
+  body.embutido .principal { padding: 0; min-height: 0; }
+</style>
 </head>
-<body>
+<body{% if embutido %} class="embutido"{% endif %}>
 <header class="topo">
   <a class="topo-marca" href="{{ url_for('erp.pagina_inicio') }}"
      style="text-decoration:none; color:inherit" title="Trocar de módulo">
@@ -86,7 +118,7 @@
 </header>
 
 {% if migracoes_pendentes %}
-<div style="background:#B3261E; color:#fff; padding:10px 16px; font-size:13.5px;
+<div class="aviso-migracoes" style="background:#B3261E; color:#fff; padding:10px 16px; font-size:13.5px;
             display:flex; gap:12px; align-items:center; flex-wrap:wrap">
   <b>Banco desatualizado</b>
   <span>{{ migracoes_pendentes|length }} atualização(ões) pendente(s)
@@ -239,12 +271,24 @@ const ACENTOS = {
   "dedutivel": "Dedutível", "indedutivel": "Indedutível",
   "lucro real": "Lucro real", "lucro presumido": "Lucro presumido",
   "ret": "RET (patrimônio de afetação)", "desonerada": "Folha desonerada",
+  // Ações de trilha que aparecem na ficha da pessoa (17/11/2026).
+  "desligamento agendado": "Desligamento agendado (a pessoa ainda trabalha)",
+  "situacao corrigida": "Situação corrigida",
 };
 const rotulo = s => {
   const limpo = (s||"").replace(/_/g," ").toLowerCase();
   return ACENTOS[limpo] || limpo.replace(/^./, c => c.toUpperCase());
 };
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
+{# A data de hoje no formato que o <input type="date"> entende. Fica aqui, e
+   não dentro de uma tela, porque é a terceira vez que uma tela escreveria a
+   mesma linha — e `toISOString()` sozinho devolve UTC, que no Brasil vira o
+   dia seguinte depois das 21h. #}
+const hoje = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+           .toISOString().slice(0, 10);
+};
 // Dia E HORA, para o que precisa de carimbo: "corrigido em 06/09/2026 12:11".
 // `dataBR` sozinho embaralharia o "2026-09-06T12:11:00" inteiro.
 const momentoBR = iso => {
@@ -1116,7 +1160,8 @@ document.addEventListener("DOMContentLoaded", () => {
 // isso, todo diálogo montado por aqui — e são dezenas no ERP — ficava de fora
 // da formatação, que foi justamente a queixa do dono de que "todas as telas
 // têm algum detalhe assim".
-function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
+function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto,
+                   botoes, semOk}) {
   return new Promise(resolve => {
     {# ⚑ A JANELA NASCE NOVA A CADA PERGUNTA, e isto é CONSERTO de 15/11/2026.
 
@@ -1154,7 +1199,16 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
                  diálogo recebe RELATO DE OBRA (a sugestão de texto por IA),
                  que é texto livre de verdade. Um `<` no meio de "laje < 10cm"
                  fechava a caixa e comia o resto do relato. #}
-              ${c.tipo === "textarea"
+              {# ⚑ CAMPO SÓ DE LEITURA (17/11/2026). Serve ao diálogo que
+                 precisa MOSTRAR antes de perguntar: o texto que vai para a
+                 contabilidade e a trilha do pedido. Antes disso, a única saída
+                 era uma caixa de texto desabilitada — que parece editável e
+                 engana. Não viaja de volta: não tem `value`. #}
+              ${c.tipo === "leitura"
+                ? `<div class="dados" style="white-space:pre-wrap; max-height:${c.altura || 220}px;
+                     overflow:auto; background:var(--fundo); border:1px solid var(--borda);
+                     border-radius:8px; padding:8px 10px; font-size:12.5px">${escapar(c.valor || "")}</div>`
+                : c.tipo === "textarea"
                 ? `<textarea id="pg-${i}" rows="${c.linhas || 4}"
                      placeholder="${escapar(c.exemplo || "")}">${escapar(c.valor || "")}</textarea>`
                 : c.tipo === "select"
@@ -1162,6 +1216,24 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
                     `<option value="${o.valor}" ${o.valor === c.valor ? "selected" : ""}>${o.rotulo}</option>`).join("")}</select>`
                 : c.tipo === "arquivo"
                 ? `<input id="pg-${i}" type="file" ${c.aceita ? `accept="${c.aceita}"` : ""}>`
+                {# ⚑ VÁRIAS ESCOLHAS DE UMA VEZ (18/11/2026). Nasceu da
+                   liberação de acesso ao portal: ele, fechando o ciclo,
+                   *"o administrador vai liberar a pessoa, mas tem que definir
+                   o acesso dele, o perfil, as obras"* — AS obras, no plural.
+                   Uma caixa de escolha devolve uma só, e quem responde por
+                   três obras sairia da liberação enxergando uma.
+                   Mora aqui, e não na tela do DP, pelo mesmo motivo da
+                   máscara de CNPJ: a próxima tela que precisar disso não vai
+                   reinventar. Devolve LISTA, nunca texto. #}
+                : c.tipo === "caixas"
+                ? `<div id="pg-${i}" class="dados" style="max-height:${c.altura || 180}px;
+                     overflow:auto; border:1px solid var(--borda); border-radius:8px;
+                     padding:6px 10px">${(c.opcoes || []).map((o, j) =>
+                     `<label style="display:flex; gap:8px; align-items:center;
+                        padding:3px 0; font-weight:400; cursor:pointer">
+                        <input type="checkbox" value="${o.valor}" style="width:auto; margin:0"
+                          ${(c.valor || []).map(String).indexOf(String(o.valor)) >= 0
+                            ? "checked" : ""}>${o.rotulo}</label>`).join("")}</div>`
                 {# CAMPO DE PESSOA (10/11/2026). Ele, abrindo uma solicitação:
                    *"vamos buscar a pessoa na nossa base de dados, digitando
                    algum dado, um CPF (…) talvez pela LGPD a gente não possa
@@ -1186,8 +1258,15 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
             </div>`).join("")}
         </div>
         <div id="pg-erro"></div>
-        <div style="margin-top:14px; display:flex; gap:8px">
-          <button class="btn" data-ok>${textoOk}</button>
+        {# ⚑ BOTÕES DE AÇÃO (17/11/2026): o diálogo que mostra UM registro e
+           oferece o que dá para fazer com ele agora (enviar, cobrar, concluir,
+           cancelar). Quem clica num deles volta em `_botao`, com os campos
+           preenchidos junto. `data-ok` continua sendo o Confirmar de sempre —
+           quem não passa `botoes` não vê diferença nenhuma. #}
+        <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+          ${(botoes || []).map((b, j) =>
+            `<button class="${b.classe || "btn secundario"}" data-acao="${j}">${b.texto}</button>`).join("")}
+          ${semOk ? "" : `<button class="btn" data-ok>${textoOk}</button>`}
           <button class="btn secundario" data-cancelar>Cancelar</button>
         </div>
       </div>`;
@@ -1224,9 +1303,13 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
     function valoresAgora(){
       const v = {__pessoa: pessoaEscolhida};
       campos.forEach((c, i) => {
+        if (c.tipo === "leitura") return;          // só mostra; não viaja
         const e = els(`pg-${i}`);
         if (!e || !c.nome) return;
         if (c.tipo === "pessoa") { v[c.nome] = (els(`pg-${i}-id`) || {}).value || ""; }
+        else if (c.tipo === "caixas") {
+          v[c.nome] = Array.from(e.querySelectorAll("input:checked")).map(x => x.value);
+        }
         else if (c.tipo === "arquivo") { v[c.nome] = (e.files || [])[0] || null; }
         else { v[c.nome] = e.value || ""; }
       });
@@ -1252,11 +1335,19 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
     const fechar = valor => { dlg.close(); resolve(valor); };
     dlg.querySelectorAll("[data-cancelar]").forEach(b =>
       b.addEventListener("click", () => fechar(null)));
-    dlg.querySelector("[data-ok]").addEventListener("click", () => {
+    {# A conferência dos campos, usada pelo Confirmar E por cada botão de
+       ação: quem clica em "enviar" também preencheu o formulário. #}
+    const colher = () => {
       const saida = {};
       for (let i = 0; i < campos.length; i++) {
         // Campo escondido pelas condições não é exigido nem enviado.
         if (escondido(i)) continue;
+        // ⚠️ CAMPO SÓ DE LEITURA NÃO TEM INPUT, e por isso sai daqui ANTES de
+        // qualquer `els()`. Sem esta linha, `els("pg-0").value` estourava com
+        // "null is not an object" dentro do clique — e o efeito na tela era
+        // dos piores: a janela ficava aberta, o botão não fazia nada e NÃO
+        // aparecia erro nenhum. Achado dirigindo a tela, não por teste.
+        if (campos[i].tipo === "leitura") continue;
         // CAMPO DE ARQUIVO devolve o arquivo, não o texto: `.value` num input
         // de arquivo é um caminho falso ("C:\\fakepath\\nota.pdf") que não
         // serve para nada, e mandá-lo como se fosse o arquivo é o tipo de
@@ -1266,7 +1357,7 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           const arquivo = campo && campo.files && campo.files[0] ? campo.files[0] : null;
           if (campos[i].obrigatorio && !arquivo) {
             aviso("pg-erro", `Escolha ${campos[i].rotulo.toLowerCase()}.`, "erro");
-            return;
+            return null;
           }
           saida[campos[i].nome] = arquivo;
           continue;
@@ -1279,9 +1370,21 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           if (campos[i].obrigatorio && !escolhido) {
             aviso("pg-erro", "Escolha a pessoa na lista — digite parte do nome "
                   + "ou o CPF e clique no resultado.", "erro");
-            return;
+            return null;
           }
           saida[campos[i].nome] = escolhido;
+          continue;
+        }
+        // VÁRIAS ESCOLHAS devolvem lista. Vazia não é texto vazio: quem
+        // marcar nada manda [], e o chamador decide o que isso significa.
+        if (campos[i].tipo === "caixas") {
+          const marcadas = Array.from(
+            els(`pg-${i}`).querySelectorAll("input:checked")).map(x => x.value);
+          if (campos[i].obrigatorio && !marcadas.length) {
+            aviso("pg-erro", `Marque ${campos[i].rotulo.toLowerCase()}.`, "erro");
+            return null;
+          }
+          saida[campos[i].nome] = marcadas;
           continue;
         }
         const valor = (els(`pg-${i}`).value || "").trim();
@@ -1289,12 +1392,25 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           ? campos[i].obrigatorio_se(valoresAgora()) : campos[i].obrigatorio;
         if (exige && !valor) {
           aviso("pg-erro", `Preencha ${campos[i].rotulo.toLowerCase()}.`, "erro");
-          return;
+          return null;
         }
         saida[campos[i].nome] = valor;
       }
-      fechar(saida);
+      return saida;
+    };
+    const ok = dlg.querySelector("[data-ok]");
+    if (ok) ok.addEventListener("click", () => {
+      const saida = colher();
+      if (saida) fechar(saida);
     });
+    {# Cada botão de ação devolve o que foi preenchido MAIS `_botao`. Assim
+       quem chamou decide pelo nome da ação, sem decorar posição. #}
+    dlg.querySelectorAll("[data-acao]").forEach(b =>
+      b.addEventListener("click", () => {
+        const saida = colher();
+        if (!saida) return;
+        fechar({...saida, _botao: (botoes[+b.dataset.acao] || {}).valor});
+      }));
     campos.forEach((c, i) => { if (c.tipo === "pessoa") ligarBuscaDePessoa(i); });
     aplicarCondicoes();
     {# ⚑ UMA MUDANÇA EM QUALQUER CAMPO REDESENHA AS CONDIÇÕES. Um ouvinte só,

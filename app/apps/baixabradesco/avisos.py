@@ -360,7 +360,8 @@ def montar_relatorio(resultado: Dict[str, Any]) -> List[str]:
     planos = resultado.get('planos') or []
     duplicados = resultado.get('duplicados') or []
     recusados = resultado.get('recusados') or []
-    if not planos and not duplicados and not recusados:
+    if not planos and not duplicados and not recusados \
+            and not (resultado.get('paginas_sem_pagamento') or []):
         return []
 
     linhas = [_linha_do_plano(p) for p in planos]
@@ -376,11 +377,27 @@ def montar_relatorio(resultado: Dict[str, Any]) -> List[str]:
             f"⚠️ {as_string(r.get('arquivo')) or 'arquivo'} | pág. {r.get('pagina') or '?'}\n"
             f"    o banco não efetivou a operação — não virou baixa.")
 
+    # Rodapé e continuação NÃO viram uma linha cada: o boleto do Sicredi sai em
+    # duas folhas, então num lote de trinta seriam trinta linhas de nada. Uma
+    # linha resumida basta — mas EXISTE, para não ser descarte em silêncio.
+    sem_pagamento = resultado.get('paginas_sem_pagamento') or []
+    if sem_pagamento:
+        escaneadas = [s for s in sem_pagamento if 'sem texto' in as_string(s.get('motivo'))]
+        if escaneadas:
+            linhas.append(
+                f"⚠️ {len(escaneadas)} página(s) sem texto nenhum (foto ou documento "
+                f"escaneado).\n    O robô não lê imagem — reenvie em PDF do banco.")
+        rodape = len(sem_pagamento) - len(escaneadas)
+        if rodape:
+            linhas.append(
+                f"ℹ️ {rodape} página(s) de rodapé ou continuação do comprovante.\n"
+                f"    Sem dado de pagamento; não foram tentadas.")
+
     baixados = sum(1 for p in planos if _situacao_do_plano(p)[0] == '✅')
     parciais = sum(1 for p in planos if _situacao_do_plano(p)[0] == '⚠️')
     falhados = sum(1 for p in planos if _situacao_do_plano(p)[0] == '❌')
 
-    cabecalho = (f"BaixaBradesco — {len(linhas)} comprovante(s)\n"
+    cabecalho = (f"BaixaBradesco — {len(planos)} comprovante(s) lidos\n"
                  f"{baixados} baixado(s) · {falhados} sem baixar · "
                  f"{parciais} pela metade · {len(duplicados)} repetido(s) · "
                  f"{len(recusados)} recusado(s) pelo banco")

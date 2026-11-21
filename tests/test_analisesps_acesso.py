@@ -282,7 +282,9 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/credores/consultar"),
     ("POST", "/analisesps/credores/sps"),
     ("GET", "/analisesps/comprovantes"),
+    ("GET", "/analisesps/comprovantes/1/pagina/1"),
     ("POST", "/analisesps/comprovantes/enviar"),
+    ("POST", "/analisesps/comprovantes/reenviar"),
     ("GET", "/analisesps/api/comprovantes/estado"),
     ("GET", "/analisesps/agenda"),
     ("GET", "/analisesps/log"),
@@ -360,6 +362,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<formato>", "pdf")
                    .replace("<int:item_id>", "123")
                    .replace("<int:n>", "1")
+                   .replace("<int:lote_id>", "1").replace("<int:pagina>", "1")
                    .replace("<numero>", "123")
                    .replace("<path:numero>", "123")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))

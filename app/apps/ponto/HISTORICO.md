@@ -3,6 +3,124 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## ⚑ 17/11/2026 — A FICHA ÚNICA VIROU "AMBIENTE DA PESSOA", COM TRÊS ÁREAS (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi nesta tela vindo de outra área.** Um arquivo: `gestao.html` — a
+fileira de abas da ficha da pessoa e o estilo dela.
+
+**O desenho é dele, e vale ler nas palavras dele:**
+
+> *"Imagina que eu cliquei no colaborador. Lá em cima fica o nome dela e ali
+> tem uma espécie de botão que direciona para a parte do ponto. Tipo assim, tem
+> o cadastro pessoal, aí tem a outra, aí eu clico ponto. Aí quando eu clico
+> ponto, abre toda a parte do ponto, as configurações, como se fosse a tela
+> abrindo lá do ponto. E quando eu clico de novo no cadastro pessoal, abre as
+> telas relacionadas ao cadastro. (…) A parte de mensagens a gente tem como
+> colocar dentro também. (…) Porque às vezes eu estou olhando uma determinada
+> pessoa e eu não preciso sair para ir para outra tela, para pesquisar o nome
+> dela de novo."*
+
+**O problema que isso resolve:** a ficha tinha **nove abas numa fileira só**, e
+elas não diziam o que pertencia a quê — "Cadastro" e "Configuração do ponto"
+ficavam lado a lado sendo coisas de mundos diferentes.
+
+**Agora são dois níveis:** a fileira de cima diz o ASSUNTO —
+**👤 Cadastro pessoal · 🕐 Ponto · 💬 Mensagens** — e a de baixo, o que ver
+dentro dele:
+
+| Área | Abas |
+|---|---|
+| 👤 Cadastro pessoal | Cadastro · Pagamentos |
+| 🕐 Ponto | Dia · Espelho do mês · Pedidos · Aparelhos · Configuração do ponto · Conferência do rosto |
+| 💬 Mensagens | Telegram e mensagens |
+
+**⚠️ NADA MUDOU do que cada painel faz nem de permissão.** A mesma aba continua
+aparecendo para quem já a enxergava, e área sem aba nenhuma não aparece (quem
+não vê pessoal não ganha uma área vazia). Trocar de área cai na primeira aba
+dela. O que mudou é o agrupamento.
+
+Conferido no navegador: as três áreas, a troca entre elas e a volta, sem erro
+de JavaScript.
+
+---
+
+## ⚠️ 17/11/2026 — QUEM CUMPRE AVISO PRÉVIO VOLTOU A BATER PONTO (feito pelo chat do ERP/DP)
+
+**Leia isto se a base de pessoas do ponto estiver no cadastro do ERP.**
+
+Horas depois de a base virar o ERP, ele viu: *"pessoas que estavam com último
+dia trabalhado mesmo depois de hoje e estavam na fase Solicitações DP, quando
+ativei o cadastro do ERP foram considerados desligados."*
+
+**Gente cumprindo aviso prévio parou de conseguir bater ponto** — e a jornada
+dela é registro legal do REP-P, que não pode ter buraco.
+
+**A parte que era DESTE módulo:** o ponto tinha duas respostas para a mesma
+pergunta. Com a planilha como base ele **perguntava a data**
+(`r.data_saida < hoje`, em `registro.trechos_sql`); com o cadastro do ERP ele
+apenas **lia `c.situacao`**. O ERP havia gravado "DESLIGADO" ao ver que existia
+data de saída, sem olhar se ela tinha chegado (consertado lá, em
+`erp/core/cadastros/pessoas.py` › `ja_saiu`), e o ponto acreditou.
+
+**O que mudou aqui:** `_SITUACAO_DO_ERP`, em `core/cadastros.py` — a base ERP
+passa a perguntar a data, igual à planilha. Três efeitos:
+
+- quem está em aviso prévio **volta a bater hoje, sem mexer em dado nenhum**;
+- no dia da saída a pessoa sai do ponto **sozinha** — ninguém aperta nada, e
+  nenhuma rotina precisa rodar na hora certa;
+- o bloqueio automático do celular (`desligamentos.py`) passa a cair no dia
+  certo, nem antes nem depois. A régua é a MESMA das duas bases: `<` hoje,
+  porque **a pessoa trabalha o último dia**.
+
+⚠️ **O CASE também desfaz a caixinha errada na leitura:** quem está marcado
+DESLIGADO mas tem data de saída de hoje ou depois é lido como ATIVO. Isso
+existe porque o dado errado está gravado em produção; a migração 109 do ERP
+arruma a coluna. As duas coisas são necessárias — o ERP lê a mesma coluna nas
+listas do Pessoal e na folha, e lá não há CASE nenhum.
+
+**Teste com Postgres de verdade:** `tests/test_aviso_previo_no_ponto_banco.py`
+— quatro casos (aviso prévio, último dia hoje, saiu ontem, sem data), com a
+caixinha errada de propósito.
+
+---
+
+## ⚑ 17/11/2026 — O CADASTRO DO ERP ABRE DENTRO DA FICHA DO PONTO (feito pelo chat do ERP/DP)
+
+**O que mudou nesta tela:** na ficha da pessoa, aba **Cadastro**, o botão
+"✏️ Editar o cadastro completo" **não abre mais outra aba** na tela de Pessoal.
+Abre uma janela em cima desta, com o **mesmo** formulário do ERP.
+
+Pedido do dono: *"quando estou vendo o pessoal pelo ponto e coloco pra abrir o
+cadastro ele remete pra página de pessoal, quando deveria apenas abrir o modal
+correspondente sem necessidade de ir pra outro lado. Os dados de cada um tem
+que estar de fácil acesso e todos correlacionados."*
+
+**Como funciona, e o que NÃO mudou:**
+
+- A janela mostra `/erp/colaboradores/cadastro/<id>` — rota nova no ERP que
+  serve a tela de Colaboradores em **modo embutido**: sem cabeçalho, sem filtro
+  lateral e **sem carregar a lista**. São **3** chamadas de rede (obras, funções
+  e opções do cadastro) contra as 5 da tela inteira.
+- **Gravou lá dentro, a ficha do ponto se atualiza sozinha** (só o painel da
+  pessoa, não a tela toda). Fechou por dentro, a janela de fora fecha.
+- **Dentro da tela de Colaboradores nada mudou:** quando a ficha do ponto está
+  aparecendo DENTRO dela (iframe), o botão continua pedindo a ELA que abra o
+  formulário — ela é a dona do formulário. Caminho antigo, intacto.
+- **Os DOCUMENTOS continuam abrindo em outra aba.** Ler e arquivar papel é
+  trabalho da tela de Pessoal, e aquela janela ainda não sabe aparecer sozinha.
+  Quando souber, cai no mesmo caminho.
+- Fora do alcance de quem abre, a janela responde **"Esta pessoa não está entre
+  as que você acompanha"** — em português, não o JSON técnico que uma API
+  devolveria.
+
+**⚠️ Dívida anotada, não paga:** esta tela já tinha o próprio jeito de aparecer
+"embutida" (o estilo de `.corpo.embutido`, de 13/11), e o ERP ganhou agora um
+segundo (`body.embutido`, em `erp_base.html`). São dois jeitos de dizer a mesma
+coisa. **Não unifiquei** — mexer nesta tela além do pedido não estava
+autorizado. A nota está nos dois lugares do código.
+
+---
+
 ## ⚑ 17/11/2026 — TROCAR A BASE DO PONTO ERA DECISÃO NO ESCURO (feito pelo chat do ERP/DP)
 
 **O dono trocou a base do ponto para o cadastro do ERP** (Ponto › Configuração ›

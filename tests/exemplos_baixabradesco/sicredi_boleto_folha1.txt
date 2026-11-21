@@ -1,0 +1,38 @@
+Associado: EMPRESA EXEMPLO ENGENHARIA LTDA
+Cooperativa: 2205
+Conta Corrente: 99999-9
+Boletos
+Cooperativa Origem: 02205
+Conta Origem: 99999-9
+CPF/CNPJ Pagador Efetivo: 11.222.333/0001-44
+Instituição Emissora: BCO EXEMPLO S A
+Razão Social Beneficiário: FORNECEDOR EXEMPLO RECEBIVEIS LTDA
+Nome Fantasia Beneficiário: FORNECEDOR EXEMPLO RECEBIVEIS LTDA
+CPF/CNPJ Beneficiário: 55.666.777/0001-88
+Nome Pagador: EMPRESA EXEMPLO ENGENHARIA LTDA
+CPF/CNPJ Pagador: 11.222.333/0002-25
+Nome Sacador/Avalista: FORNECEDOR EXEMPLO CONCRETAGENS LTDA
+CPF/CNPJ Sacador/Avalista: 99.888.777/0001-66
+Número de Controle: 1110002223
+Código de Barras: 23790000044000034726659000699005116340000100000
+Data de Vencimento: 18/11/2026
+Data da Transação: 18/11/2026
+Hora da Transação: 10:47
+Data do Pagamento: 18/11/2026
+Valor do Título (R$): 1.000,00
+Valor do Desconto (R$): 0,00
+Valor do Juros/Mora (R$): 0,00
+Valor da Multa (R$): 0,00
+Valor do Abatimento (R$): 0,00
+Valor Pago (R$): 1.000,00
+Descrição do Pagamento: 9999991
+Autenticação Eletrônica: AAAA.1B2C.D3E4.F5A6.B7C8.99DD.E00.
+* A transação acima foi realizada via Aplicativo Sicredi conforme as condições especificadas neste
+comprovante.
+* Os dados digitados são de responsabilidade do usuário.
+* Os pagamentos realizados aos sábados, domingos e feriados serão processados com a data contábil do
+próximo dia útil.
+* Em caso de agendamento, a efetivação da transação ocorrerá mediante disponibilidade de limite, saldo e
+demais requisitos do serviço. Acompanhe sua conta e sempre confira a execução dos agendamentos na data
+programada.
+Serviços por telefone 0800 724 4770

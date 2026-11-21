@@ -52,7 +52,10 @@ def test_o_que_falta_nao_cobra_PIS_de_prestador():
     ctps = Colaborador(nome="Alguém", cpf="1", vinculo="CTPS")
     prest = Colaborador(nome="Alguém", cpf="2", vinculo="PRESTADOR")
 
-    assert "nº do PIS" in svc.o_que_falta(ctps)
+    # desde 19/11/2026 o PIS não é cobrado de ninguém: o eSocial é feito com
+    # o CPF (decisão dele). A CTPS continua sendo cobrada de quem tem carteira.
+    assert "nº do PIS" not in svc.o_que_falta(ctps)
+    assert "nº da CTPS" in svc.o_que_falta(ctps)
     assert "nº do PIS" not in svc.o_que_falta(prest)
     assert "nº da CTPS" not in svc.o_que_falta(prest)
     # o que vale para os dois continua cobrado
@@ -68,7 +71,13 @@ def test_as_listas_de_opcoes_saem_prontas_para_a_tela():
     # de transporte — quem quisesse escolhia "Mensal" e o valor saía
     # multiplicado pelos dias do mês. Nove eram as do Pipe (com "Cartão", que
     # saiu de uso e continua na lista para explicar ficha antiga).
-    assert len(o["categorias_transporte"]) == 10
+    # ⚑ ONZE desde 17/11/2026: "Não recebe" entrou nas duas listas, a pedido
+    # dele. É a opção que faz o campo em branco voltar a significar uma coisa
+    # só — antes, vazio era "ninguém preencheu" E "não recebe nada", e as duas
+    # pedem ação oposta do DP.
+    assert len(o["categorias_transporte"]) == 11
+    assert "NAO_RECEBE" in {x["valor"] for x in o["categorias_transporte"]}
+    assert "NAO_RECEBE" in {x["valor"] for x in o["categorias_alimentacao"]}
     assert any(x["valor"] == "CARTAO" and "não paga" in x["rotulo"]
                for x in o["categorias_transporte"])
     assert len(o["ufs"]) == 27
@@ -100,13 +109,21 @@ def dono(sessao_real):
 def test_o_cadastro_grava_os_campos_que_a_folha_le(sessao_real, dono):
     """As colunas vêm do mapa das 74 que o Make escrevia na aba do Pipefy."""
     from app.apps.erp.core.cadastros import cargos as svc_cargos
-    from app.apps.erp.db.models.cadastros import Obra
+    from app.apps.erp.db.models.cadastros import Convencao, Empresa, Obra
     cargo = svc_cargos.achar_ou_criar_cargo(sessao_real, "PEDREIRO", cbo="7152-10")
     obra = Obra(codigo="CAD-01", nome="Obra do cadastro", status="ATIVA")
-    sessao_real.add(obra)
+    # ⚑ EMPRESA, CONVENÇÃO E DATA DE INÍCIO entraram em "o que falta para
+    # admitir" em 18/11/2026, quando ele revisou a medição dos 660 cadastros —
+    # ver `OBRIGATORIOS_SEMPRE` e `OBRIGATORIOS_POR_VINCULO`. Um cadastro sem
+    # eles não é mais "completo", e o teste tem de dizer o mesmo que a tela.
+    empresa = Empresa(razao_social="BWS Teste LTDA", cnpj="00079526000109")
+    convencao = Convencao(nome="SINDUSCON Teste")
+    sessao_real.add_all([obra, empresa, convencao])
     sessao_real.flush()
     c = svc.salvar(sessao_real, {
         "cargo_id": cargo.id, "obra_id": obra.id,
+        "empresa_id": empresa.id, "convencao_id": convencao.id,
+        "data_inicio": "2026-01-05",
         "cpf": CPF_A, "nome": "José da Silva Teste",
         "data_nascimento": "1990-05-17", "sexo": "M", "nome_mae": "Maria da Silva",
         "nome_pai": "João da Silva", "estado_civil": "CASADO",
@@ -280,7 +297,12 @@ def test_prestador_que_vira_CTPS_mantem_o_periodo_de_prestador(sessao_real, dono
     assert novo["vinculo"] == "CTPS" and novo["aberto"]
     # o vínculo antigo fecha no dia ANTERIOR: sem buraco e sem sobreposição
     assert antigo["vinculo"] == "PRESTADOR" and antigo["demissao"] == "2026-01-31"
-    assert "carteira" in antigo["motivo"].lower()
+    # ⚑ A FRASE MUDOU EM 17/11/2026 junto com o rótulo: ele pediu *"o ideal é
+    # ficar CTPS e Prestador de Serviço"*, então "Carteira assinada (CTPS)"
+    # virou só "CTPS" — e a frase passou a ser "passou a ter vínculo CTPS",
+    # porque "passou a CTPS" não se lê.
+    assert "ctps" in antigo["motivo"].lower()
+    assert "vínculo" in antigo["motivo"].lower()
 
 
 @banco_

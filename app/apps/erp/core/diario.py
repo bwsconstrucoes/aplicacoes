@@ -55,6 +55,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.cadastros.obras import FASES_ENCERRADAS
 from app.apps.erp.core.comum.rotulos import rotulo_da_obra  # noqa: F401
 from app.apps.erp.core.comum.auditoria import (
     ErroNaoEncontrado, ErroValidacao, registrar_evento,
@@ -1322,17 +1323,37 @@ def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
 # que é exatamente o caminho de quem vai preencher.
 #
 # ⚑ OBRA CONCLUÍDA NÃO ENTRA: *"concluído, não tem mais diário, aí fica
-# poluída essa tela."* O filtro é `status <> 'ENCERRADA'`, o mesmo de sempre —
-# obra que continua aparecendo é obra que segue marcada como ATIVA no
-# cadastro, e isso se resolve lá, não aqui.
+# poluída essa tela."*
+#
+# ⚠️ ATÉ 19/11/2026 ISSO ERA MENTIRA PELA METADE, e ele achou: o filtro era só
+# `status <> 'ENCERRADA'`, e **a fase era ignorada**. Obra marcada "Concluída",
+# "Recebimento definitivo" ou "Distratada" continuava no quadro, porque o
+# status dela seguia ATIVA — ninguém encerra obra no cadastro no mesmo dia em
+# que ela acaba na prática.
+#
+# Ele, com as palavras dele: *"as fases iniciais da obra, que são as fases que
+# tem sentido você lançar diário (…) criação/cadastro, aguardando a ordem de
+# serviço, em execução, ou paralisada. Daí em diante, as demais fases são
+# todas fases associadas à conclusão da obra. (…) Eu não digo nem que proíba a
+# confecção do diário, mas que pelo menos a exibição não fique na tela
+# inicial."*
+#
+# Por isso ESCONDE, não proíbe: `incluir_encerradas=True` traz tudo de volta,
+# e a tela oferece isso num filtro. Quem precisa lançar o diário atrasado de
+# uma obra que já acabou continua conseguindo.
 #
 # ⚑ UMA CONSULTA POR COISA, NUNCA UMA POR DIA. Com 15 obras e 30 dias são 450
 # células: pedir o estado de cada uma ao banco seriam 450 idas, e a tela
 # demoraria mais que o mês inteiro de trabalho que ela mostra.
 # ---------------------------------------------------------------------------
 def quadro_do_mes(s: Session, ano: int, mes: int, *,
-                  obra_ids: Optional[list[int]] = None) -> dict[str, Any]:
-    """Todas as obras do mês, dia a dia, com o estado de cada dia."""
+                  obra_ids: Optional[list[int]] = None,
+                  incluir_encerradas: bool = False) -> dict[str, Any]:
+    """Todas as obras do mês, dia a dia, com o estado de cada dia.
+
+    `incluir_encerradas` traz também as obras em fase de conclusão — é o
+    "mostrar todas" do filtro da tela.
+    """
     import calendar as _cal
 
     if not 1 <= mes <= 12:
@@ -1345,9 +1366,12 @@ def quadro_do_mes(s: Session, ano: int, mes: int, *,
         SELECT id, codigo, nome, data_inicio, data_termino
           FROM obras
          WHERE status <> 'ENCERRADA'
+           AND (:todas_fases OR coalesce(fase, '') <> ALL(:encerradas))
            AND (:todas OR id = ANY(:obras))
          ORDER BY codigo"""),
-        {"obras": obra_ids or [], "todas": obra_ids is None}).mappings().all()
+        {"obras": obra_ids or [], "todas": obra_ids is None,
+         "todas_fases": incluir_encerradas,
+         "encerradas": list(FASES_ENCERRADAS)}).mappings().all()
     if not obras:
         return {"ano": ano, "mes": mes, "dias": [], "obras": [],
                 "faltam": 0, "hoje": str(hoje)}
@@ -1412,11 +1436,15 @@ def quadro_do_mes(s: Session, ano: int, mes: int, *,
 
 def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
                         obra_ids: Optional[list[int]] = None,
-                        dias: int = 30) -> list[dict[str, Any]]:
+                        dias: int = 30,
+                        incluir_encerradas: bool = False) -> list[dict[str, Any]]:
     """Quantos dias cada obra deve de diário nos últimos N dias.
 
     É a visão de quem olha TODAS as obras — o painel que diz onde correr. O
     calendário mostra uma obra por vez; este diz por onde começar.
+
+    Obra em fase de conclusão fica de fora, pelo mesmo motivo do quadro: ela
+    não deve diário nenhum, e cobrar isso é cobrança falsa.
     """
     ate = ate or date.today()
     de = ate - timedelta(days=dias)
@@ -1426,11 +1454,14 @@ def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
           FROM obras o
           LEFT JOIN diarios_obra d ON d.obra_id = o.id AND d.data BETWEEN :de AND :ate
          WHERE o.status <> 'ENCERRADA'
+           AND (:todas_fases OR coalesce(o.fase, '') <> ALL(:encerradas))
            AND (:todas OR o.id = ANY(:obras))
          GROUP BY o.id, o.codigo, o.nome
          ORDER BY o.codigo"""),
         {"de": de, "ate": ate,
-         "obras": obra_ids or [], "todas": obra_ids is None}).mappings().all()
+         "obras": obra_ids or [], "todas": obra_ids is None,
+         "todas_fases": incluir_encerradas,
+         "encerradas": list(FASES_ENCERRADAS)}).mappings().all()
 
     saida = []
     for l in linhas:

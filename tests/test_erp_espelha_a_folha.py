@@ -53,9 +53,23 @@ def _modos_que_a_folha_entende() -> set[str]:
 A_FOLHA_AINDA_NAO_ENTENDE = {"SEG_E_SEX", "VEICULO", "MOTOCICLETA", "BICICLETA"}
 
 
+# ⚑ "NÃO RECEBE" É A AUSÊNCIA DE AUXÍLIO, não um modo de calcular (17/11/2026).
+# Ele pediu a opção: *"adicionar para ambos os campos a opção Não recebe."*
+#
+# A folha calcula o auxílio pelo MODO (o texto). Não existe modo "não recebe" —
+# existe não ter auxílio. Então o ERP manda VAZIO, e o teste abaixo prova
+# justamente isso, em vez de exigir que a folha reconheça uma palavra que não
+# deveria chegar lá.
+def test_nao_recebe_vai_VAZIO_para_a_folha():
+    assert erp.CATEGORIA_ALIMENTACAO_PARA_FOLHA["NAO_RECEBE"] == ""
+    assert erp.CATEGORIA_TRANSPORTE_PARA_FOLHA["NAO_RECEBE"] == ""
+
+
 def test_folha_entende_toda_categoria_de_ALIMENTACAO_que_o_ERP_manda():
     entende = _modos_que_a_folha_entende()
     for codigo in erp.CATEGORIAS_ALIMENTACAO:
+        if codigo == "NAO_RECEBE":
+            continue              # ver o teste acima: vai vazio, de propósito
         palavra = erp.CATEGORIA_ALIMENTACAO_PARA_FOLHA[codigo]
         assert fa._sem_acento(palavra) in entende, (
             f"o ERP manda “{palavra}” para {codigo} e a folha não reconhece — "
@@ -65,6 +79,8 @@ def test_folha_entende_toda_categoria_de_ALIMENTACAO_que_o_ERP_manda():
 def test_folha_entende_as_categorias_de_TRANSPORTE_que_dao_para_entender():
     entende = _modos_que_a_folha_entende()
     for codigo in erp.CATEGORIAS_TRANSPORTE:
+        if codigo == "NAO_RECEBE":
+            continue              # ver `test_nao_recebe_vai_VAZIO_para_a_folha`
         palavra = erp.CATEGORIA_TRANSPORTE_PARA_FOLHA[codigo]
         reconhece = fa._sem_acento(palavra) in entende
         if codigo in A_FOLHA_AINDA_NAO_ENTENDE:
@@ -138,3 +154,73 @@ def test_o_ERP_entrega_todo_campo_que_a_folha_le_da_planilha():
     assert not faltando, (
         "a folha lê estes campos da planilha e o ERP não os entrega: "
         + ", ".join(faltando))
+
+
+# ===========================================================================
+# ⚠️ VÍNCULO EM BRANCO NÃO PODE VIRAR "CTPS" NO ESCURO (17/11/2026)
+#
+# Ele pediu a padronização das palavras — *"o ideal é ficar CTPS e Prestador de
+# Serviço. Observar o impacto disso"* — e, olhando o impacto, apareceu coisa
+# pior que nomenclatura: `para_folha` devolvia "CTPS" para QUALQUER vínculo que
+# não estivesse no mapa, inclusive o VAZIO.
+#
+# E a folha decide a diária com `tipo == "Prestador de Serviço" E contrato ==
+# "Autônomo (RPA)"` (`folha_vinculo.situacao_no_pagamento`). Logo: um autônomo
+# RPA com o vínculo em branco era pago como CTPS — sem erro em lugar nenhum.
+# É exatamente o "pagar funcionário de forma equivocada" que ele teme.
+# ===========================================================================
+class _Ficha:
+    """O mínimo que `_tipo_para_a_folha` lê. Não usa o banco de propósito: o que
+    se prova aqui é a DECISÃO, e ela é pura."""
+    def __init__(self, vinculo, tipo_contrato, id_=1):
+        self.vinculo, self.tipo_contrato, self.id = vinculo, tipo_contrato, id_
+
+
+@pytest.mark.parametrize("contrato", ["AUTONOMO_RPA", "PJ", "AUTONOMO_MENSALISTA",
+                                      "ESTAGIO", "PRO_LABORE"])
+def test_sem_vinculo_o_tipo_de_contrato_de_prestador_manda(contrato):
+    assert erp._tipo_para_a_folha(_Ficha("", contrato)) == "Prestador de Serviço"
+
+
+@pytest.mark.parametrize("contrato", ["CLT_INDETERMINADO", "CLT_DETERMINADO",
+                                      "JOVEM_APRENDIZ"])
+def test_sem_vinculo_o_contrato_de_carteira_manda(contrato):
+    assert erp._tipo_para_a_folha(_Ficha("", contrato)) == "CTPS"
+
+
+def test_o_vinculo_preenchido_continua_mandando():
+    """O conserto não pode passar por cima do que já está dito."""
+    assert erp._tipo_para_a_folha(_Ficha("PRESTADOR", "")) == "Prestador de Serviço"
+    assert erp._tipo_para_a_folha(_Ficha("CTPS", "")) == "CTPS"
+    # minúsculo e com espaço também valem: é dado vindo de importação
+    assert erp._tipo_para_a_folha(_Ficha(" prestador ", "")) == "Prestador de Serviço"
+
+
+def test_os_dois_em_branco_sobra_CTPS_e_FICA_NO_LOG(caplog):
+    """Sem vínculo e sem contrato não há o que deduzir. O que não pode é
+    acontecer calado — é o único caso em que o "CTPS" é chute."""
+    import logging
+    with caplog.at_level(logging.WARNING):
+        assert erp._tipo_para_a_folha(_Ficha("", "", id_=77)) == "CTPS"
+
+    assert any("sem vínculo" in r.getMessage() for r in caplog.records), (
+        "o chute tem de ficar registrado")
+
+
+def test_o_RPA_sem_vinculo_deixa_de_ser_pago_como_CTPS():
+    """O caso concreto que o conserto resolve, montado pela regra da folha: as
+    duas condições que ela exige para a diária passam a bater."""
+    tipo = erp._tipo_para_a_folha(_Ficha("", "AUTONOMO_RPA"))
+    contrato = erp.TIPO_CONTRATO_ROTULOS["AUTONOMO_RPA"]
+
+    assert fv._igual(tipo, fv.PRESTADOR) and fv._igual(contrato, fv.RPA), (
+        "as duas condições de `e_prestador_rpa` têm de bater — senão o dia "
+        "dessa pessoa é pago como CTPS em vez de diária")
+
+
+def test_as_palavras_que_a_tela_mostra_sao_as_que_a_folha_compara():
+    """Ele: *"o ideal é ficar CTPS e Prestador de Serviço."* Agora as duas
+    listas são a MESMA palavra — e é isso que acaba com "três grafias para dois
+    valores"."""
+    assert erp.VINCULO_ROTULOS == erp.VINCULO_PLANILHA
+    assert fv._igual(erp.VINCULO_ROTULOS["PRESTADOR"], fv.PRESTADOR)

@@ -21,6 +21,14 @@ from app.apps.erp.core.comum.auditoria import ErroValidacao
 pytestmark = pytest.mark.banco
 
 CPF_A = "52998224725"
+# ⚑ Os dados do eSocial e do SomaPay que a admissão exige desde 19/11/2026
+# (`pessoal_solicitacoes.CAMPOS_DA_PESSOA`).
+DADOS_DA_PESSOA = {
+    "nome_mae": "Maria Da Silva", "data_nascimento": "1990-03-15",
+    "rg": "2001234567", "rg_emissao": "2010-05-20", "rg_orgao": "SSP",
+    "rg_uf": "CE", "cep": "60000000", "logradouro": "Rua Um",
+    "numero_endereco": "10", "bairro": "Centro", "municipio": "Fortaleza",
+    "uf": "CE"}
 CPF_B = "11144477735"
 
 
@@ -143,7 +151,20 @@ def test_os_rotulos_sao_os_do_pipe_e_nao_os_meus():
     assert "Admissão de Prestador de Serviço" in nomes
     assert "Prestador que passa a ter carteira" not in nomes   # inventado
     assert "Desligamento de Prestador de Serviço" in nomes
-    assert svc.ROTULOS["categoria_alimentacao"] == "Categoria Auxílio Alimentação"
+    # ⚑ ESTE RÓTULO SAIU DO PIPE EM 17/11/2026, e foi O DONO quem mandou:
+    # *"renomear campos (…) Como paga o transporte = Ajuda com Transporte, que
+    # alimenta Categoria do auxílio-transporte; Como paga a alimentação = Ajuda
+    # com Alimentação."*
+    #
+    # A regra "use o termo do Pipe" continua valendo para o resto: ela existe
+    # porque a equipe já está acostumada com aquelas palavras. Quando é ELE que
+    # pede outra palavra, a palavra dele ganha — e aí o teste muda junto, em vez
+    # de travar a tela no nome antigo.
+    assert svc.ROTULOS["categoria_alimentacao"] == "Ajuda com Alimentação"
+    assert svc.ROTULOS["categoria_transporte"] == "Ajuda com Transporte"
+    # ⚑ E "VÍNCULO", no lugar de "Tipo de Documentação para Cadastro" (mesma
+    # data, mesmo motivo): é a palavra que a ficha da pessoa já usa.
+    assert svc.ROTULOS["tipo_documentacao"] == "Vínculo"
     # ⚑ AS OPÇÕES DESTE CAMPO MUDARAM DE FONTE em 15/11/2026, e isto NÃO é
     # voltar a inventar a roda: elas passaram a vir do CADASTRO DE PESSOAS, que
     # é onde o valor fica gravado. Havia duas listas para o mesmo campo — o
@@ -246,18 +267,41 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
         # Obrigatórios desde 15/11/2026 — ver `_cadastro`, abaixo.
         "telefone": "85988887777", "pix_tipo": "CPF", "pix_chave": CPF_B,
         "valor_diaria": "150,00", "tipo_contrato": "PJ",
+        # ⚑ Desde 17/11/2026: PJ declara a empresa dele, e as duas ajudas são
+        # obrigatórias (com "Não recebe" disponível para quem não recebe).
+        "razao_social_pj": "MARIA NOVA SERVICOS LTDA", "cnpj_pj": "71000004000180",
+        "categoria_alimentacao": "NAO_RECEBE", "categoria_transporte": "NAO_RECEBE",
         # Mensalista declara o valor do mês; diarista não tem valor de mês.
         "valor_mes": "3.300,00",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
-        "data_inicio": "2026-04-01"}, mundo["encarregado"])
-    assert p["colaborador_id"] is None          # a pessoa ainda não existe
+        "data_inicio": "2026-04-01", **DADOS_DA_PESSOA}, mundo["encarregado"])
+    # ⚑ DESDE 19/11/2026 A PESSOA NASCE NO PEDIDO, como PRÉ-CADASTRO na etapa
+    # Inicial. Ele: *"eu pensei que a pessoa já apareceria na fase inicial (…)
+    # Se eu atender (…) ele gera o cadastro inicial? Não tem sentido."*
+    assert p["colaborador_id"] is not None and p["pre_cadastro"]
+    f = svc_pessoas.ficha(mundo["s"], p["colaborador_id"])
+    # caixa alta e sem acento (19/11/2026); vínculo, cargo e matrícula = CPF
+    assert f["nome"] == "MARIA NOVA DE TESTE" and f["cpf"] == CPF_B
+    assert f["etapa"] == "CADASTRO_INICIAL"
+    assert f["vinculo"] == "PRESTADOR", "o vínculo do pedido chega à ficha"
+    assert f["matricula"] == CPF_B
 
-    r = svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    # atender completa o que é do DP, sem criar segunda ficha
+    r = svc.atender(mundo["s"], p["id"], {"dados": {"matricula": "M-77"}},
+                    mundo["dp"])
     mundo["s"].flush()
+    assert r["colaborador_id"] == p["colaborador_id"]
+    assert svc_pessoas.ficha(mundo["s"], r["colaborador_id"])["matricula"] == "M-77"
 
-    assert r["colaborador_id"] is not None
-    f = svc_pessoas.ficha(mundo["s"], r["colaborador_id"])
-    assert f["nome"] == "Maria Nova De Teste" and f["cpf"] == CPF_B
+
+def test_admissao_recusada_leva_o_pre_cadastro_para_cancelado(mundo):
+    p = svc.abrir(mundo["s"], _cadastro(mundo, documentos=[
+        "DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"]),
+        mundo["encarregado"])
+    svc.recusar(mundo["s"], p["id"], {"resposta": "documento ilegível"},
+                mundo["dp"])
+    mundo["s"].flush()
+    assert svc_pessoas.ficha(mundo["s"], p["colaborador_id"])["etapa"] == "CANCELADO"
 
 
 def test_atender_dependente_CADASTRA_o_dependente(mundo):
@@ -544,6 +588,11 @@ def test_a_obra_so_e_perguntada_quando_nao_ha_de_onde_tira_la():
     tipo — esquecer de copiá-la no tipo número doze seria o defeito garantido.
     """
     for t in svc.tipos_para_tela():
+        # ⚑ A exceção, de 20/11/2026: a transferência pergunta a obra de
+        # DESTINO — que a ficha não tem, justamente.
+        if t["valor"] == "TRANSFERENCIA_OBRA":
+            assert "obra_id" in t["campos"] and "obra_id" in t["obrigatorios"]
+            continue
         if t["exige_pessoa"]:
             assert "obra_id" not in t["campos"], (
                 f"{t['valor']} pergunta a obra, e a pessoa escolhida já tem uma "
@@ -597,6 +646,21 @@ def _cadastro(mundo, **extra):
             "valor_diaria": "120,00",
             # Prestador declara QUE tipo de prestador é (CTPS não: é sempre CLT).
             "tipo_contrato": "Autônomo (RPA)",
+            # ⚑ AS DUAS AJUDAS SÃO OBRIGATÓRIAS DESDE 17/11/2026, por decisão
+            # dele: *"renomear campos e torná-los obrigatórios."* Só dá para
+            # exigir porque a lista ganhou "Não recebe" — antes, obrigar
+            # forçaria a inventar uma categoria para quem não recebe nada. O
+            # cadastro de teste usa "Não recebe" justamente para provar que a
+            # resposta existe para esse caso.
+            "categoria_alimentacao": "NAO_RECEBE",
+            "categoria_transporte": "NAO_RECEBE",
+            # ⚑ OS DADOS DO eSOCIAL E DO SOMAPAY, obrigatórios desde
+            # 19/11/2026 (ver `CAMPOS_DA_PESSOA`).
+            "nome_mae": "Maria Da Silva", "data_nascimento": "1990-03-15",
+            "rg": "2001234567", "rg_emissao": "2010-05-20", "rg_orgao": "SSP",
+            "rg_uf": "CE", "cep": "60000000", "logradouro": "Rua Um",
+            "numero_endereco": "10", "bairro": "Centro",
+            "municipio": "Fortaleza", "uf": "CE",
             "data_inicio": "2026-05-01"}
     base.update(extra)
     return base
@@ -630,9 +694,10 @@ def test_faltando_UM_papel_o_recado_diz_qual(mundo):
     assert "documento de identificação" not in recado
 
 
-def test_escolher_CTPS_passa_a_exigir_a_carteira_e_o_PIS(mundo):
-    """Ele: *"se for CTPS, os dados da carteira são obrigatórios, PIS
-    também."* Prestador de serviço não tem carteira, e não se pede."""
+def test_escolher_CTPS_passa_a_exigir_a_carteira_mas_NAO_o_PIS(mundo):
+    """Ele, em 10/11: *"se for CTPS, os dados da carteira são obrigatórios"*.
+    E em 19/11/2026 o PIS saiu: *"não tornar item obrigatório, porque o
+    cadastro social é feito com o CPF."* Prestador não tem carteira."""
     exige_prestador = svc.exigencias(
         "CADASTRO", {"tipo_documentacao": "Prestador de Serviço"})
     assert "num_ctps" not in exige_prestador["campos"]
@@ -640,7 +705,8 @@ def test_escolher_CTPS_passa_a_exigir_a_carteira_e_o_PIS(mundo):
                    for d in exige_prestador["documentos"])
 
     exige_ctps = svc.exigencias("CADASTRO", {"tipo_documentacao": "CTPS"})
-    assert "num_ctps" in exige_ctps["campos"] and "num_pis" in exige_ctps["campos"]
+    assert "num_ctps" in exige_ctps["campos"]
+    assert "num_pis" not in exige_ctps["campos"]
     assert {"CTPS-FOTO", "CTPS-INFORMACOES"} <= {
         d["codigo"] for d in exige_ctps["documentos"]}
 
@@ -876,7 +942,7 @@ def test_nao_se_pede_a_CTPS_de_quem_ja_tem_no_cadastro(sessao_real, mundo):
     sessao_real.flush()
     ja = svc.o_que_o_cadastro_ja_tem(sessao_real, "ADMISSAO_PRESTADOR",
                                      mundo["pessoa"].id)
-    assert ja == {"num_ctps": "998877", "num_pis": "12345678901"}
+    assert ja["num_ctps"] == "998877" and ja["num_pis"] == "12345678901"
     # Com os dois no cadastro, o pedido não os exige mais.
     exige = svc.exigencias("ADMISSAO_PRESTADOR", {}, ja)
     assert "num_ctps" not in exige["campos"] and "num_pis" not in exige["campos"]
@@ -884,6 +950,9 @@ def test_nao_se_pede_a_CTPS_de_quem_ja_tem_no_cadastro(sessao_real, mundo):
     p = svc.abrir(sessao_real, {
         "tipo": "ADMISSAO_PRESTADOR", "colaborador_id": mundo["pessoa"].id,
         "obra_id": mundo["obra"].id, "salario_familia": "Não",
+        # desde 19/11/2026 virar CTPS pede os dados do eSocial/SomaPay; o
+        # que o cadastro não tem, a obra informa
+        **DADOS_DA_PESSOA,
         "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]}, mundo["encarregado"])
     # ⚑ E O NÚMERO ENTRA NO PEDIDO: o DP vê sem abrir a ficha ao lado.
     assert p["dados"]["num_ctps"] == "998877"
@@ -908,9 +977,11 @@ def test_quem_NAO_tem_no_cadastro_continua_sendo_perguntado(sessao_real, mundo):
 
 def test_so_metade_no_cadastro_pergunta_so_a_outra_metade(sessao_real, mundo):
     sessao_real.execute(text(
-        "UPDATE colaboradores SET ctps_numero = '554433', pis = NULL"
+        "UPDATE colaboradores SET ctps_numero = NULL, pis = '12345678901'"
         " WHERE id = :i"), {"i": mundo["pessoa"].id})
     sessao_real.flush()
+    # (o PIS deixou de ser obrigatório em 19/11/2026; a metade que falta aqui
+    # é a CTPS)
     with pytest.raises(ErroValidacao) as e:
         svc.abrir(sessao_real, {
             "tipo": "ADMISSAO_PRESTADOR", "colaborador_id": mundo["pessoa"].id,
@@ -918,7 +989,7 @@ def test_so_metade_no_cadastro_pergunta_so_a_outra_metade(sessao_real, mundo):
             "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]},
             mundo["encarregado"])
     recado = str(e.value)
-    assert "Nº PIS" in recado and "Nº CTPS" not in recado
+    assert "Nº CTPS" in recado and "Nº PIS" not in recado
 
 
 def test_a_consulta_ao_cadastro_so_vale_onde_foi_declarada():

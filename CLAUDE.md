@@ -178,7 +178,10 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 
 | Área | Pasta | Leia ANTES de mexer | Registre o estado em |
 |---|---|---|---|
-| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `DESLIGAR_A_PLANILHA.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
+| **ERP · Pessoal e DP** | `app/apps/erp/` | `HISTORICO_PESSOAL.md`, `HISTORICO.md` (o passado), `ROTEIRO.md`, `CADASTRO_DE_PESSOAS.md`, `MANUAL_DP.md`, `AGENTE_DP.md`, `PLACAR_DO_DP.md`, `DESLIGAR_A_PLANILHA.md`, `PERGUNTAS.md` | `HISTORICO_PESSOAL.md` e `ROTEIRO.md` |
+| **ERP · Suprimentos** | `app/apps/erp/` | `HISTORICO_SUPRIMENTOS.md`, `HISTORICO.md` (o passado), `SUPRIMENTOS.md`, `HOMOLOGACAO_SUPRIMENTOS.md`, `ENTRADAS.md` | `HISTORICO_SUPRIMENTOS.md` |
+| **ERP · Financeiro** | `app/apps/erp/` | `HISTORICO_FINANCEIRO.md`, `HISTORICO.md` (o passado), `ROTEIRO.md`, `MEDICOES_E_NOTAS.md`, `NOTAS_FISCAIS.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO_FINANCEIRO.md` |
+| **ERP · Obras e Arquivo** | `app/apps/erp/` | `HISTORICO_OBRAS.md`, `HISTORICO.md` (o passado), `GESTAO_DOCUMENTOS.md`, `ACOMPANHAMENTO.md`, `CRONOGRAMA.md` | `HISTORICO_OBRAS.md` |
 | Painel OMIE | `app/apps/painel/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |
@@ -191,6 +194,62 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 **Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a
 seção "Pendente AGORA" e **perguntar ao dono** se aquilo já aconteceu — o
 estado do mundo pode ter mudado desde que o arquivo foi escrito.
+
+### ⚑ O ERP VIROU QUATRO ÁREAS EM 18/11/2026 — e as outras oito não mudaram
+
+Pedido dele, com as palavras dele:
+
+> *"Talvez assim separar mais: a parte de pessoal eu trato no chat, a parte de
+> suprimento eu trato no outro chat, porque assim uma coisa que eu vejo numa
+> área eu jogo lá, e a outra coisa que eu vejo na outra área eu jogo no outro
+> chat. Eu acho que tem como evoluir mais rápido dessa forma."*
+
+**O QUE ELE ESTAVA SENTINDO, e os números dão razão a ele:** o "chat do ERP"
+cobria contas a pagar, pessoal, suprimentos, empreitas, locações, obras,
+arquivo, agenda, portal e o agente. O `routes.py` tem **14 mil linhas**; o
+`HISTORICO.md`, **12 mil**. Um chat que leu o suprimento para depois mexer no
+DP gastou memória em código que não vai usar — e isso é parte da
+superficialidade que ele cobrou em 18/11 de manhã.
+
+**O ganho maior é o que ele disse: ele para de ser o roteador.** Vê uma coisa do
+DP, joga no chat do DP. E as áreas andam ao mesmo tempo, em vez de uma esperar
+a outra.
+
+**O PONTO E A MENSAGERIA NÃO MUDARAM**, e nem as outras seis: são aplicações
+próprias, com pasta e memória próprias, já do tamanho certo. A divisão é só do
+ERP, que era um chat fazendo o trabalho de quatro.
+
+#### ⚠️ O RISCO DA DIVISÃO, e o que o compensa
+
+Quatro chats mexem nos **mesmos arquivos compartilhados**: `routes.py` (tem rota
+de todas as áreas), `templates/erp_base.html` (as máscaras de campo e os
+diálogos), `core/auth/permissoes.py`, `core/auth/secoes.py`, `tests/conftest.py`,
+e as migrações (a sequência é uma só). Dois chats editando o mesmo arquivo ao
+mesmo tempo dá conflito na junção e, no pior caso, um publica por cima do outro.
+
+**O que protege:**
+
+1. **Ao mexer num arquivo compartilhado, DIZER ISSO na resposta.** Não é
+   formalidade: é o que deixa o dono não rodar dois chats no mesmo arquivo na
+   mesma hora. A maioria do trabalho fica dentro da área e não encosta neles.
+2. **Migração nova: conferir o número mais alto no disco ANTES de criar.** Dois
+   chats criando `112_` no mesmo dia é o conflito mais provável de todos.
+3. **Publicar continua sendo um de cada vez**, trazendo a `main` antes e rodando
+   a suíte inteira. O GitHub Actions confere a cada envio, com banco de verdade.
+
+#### O histórico: o passado ficou junto, de propósito
+
+O `HISTORICO.md` **não foi quebrado**. Ele guarda o ERP inteiro até 18/11/2026 e
+continua sendo onde se PROCURA o passado de qualquer área. O que mudou é onde se
+ESCREVE: cada área escreve no `HISTORICO_<ÁREA>.md` dela.
+
+Repartir doze mil linhas por adivinhação perderia contexto, e perder memória é o
+pior estrago possível neste repositório — vale mais um arquivo grande e íntegro
+que quatro arquivos pequenos e mutilados.
+
+**Mudança que atravessa DUAS áreas do ERP** (a tabela de permissões, o
+`erp_base.html`, uma migração que mexe em tabela de outra área) é registrada no
+`HISTORICO.md` **além** do histórico da área.
 
 ### ⚠️ A emissão de NFS-e: a memória existe desde 21/09/2026 — e o risco continua
 
@@ -254,8 +313,10 @@ histórico **perdeu** o que aprendeu — o chat não é memória, o repositório
 
 **Mensagem de abertura** que o dono usa num chat novo (basta trocar a área):
 
-> Trabalhe na área **[ERP / Painel OMIE / Análise de SPs / BaixaBradesco /
-> Emissão de NFS-e / Ponto eletrônico / Mensageria / AtualizaSPBotão]** deste repositório.
+> Trabalhe na área **[ERP · Pessoal e DP / ERP · Suprimentos / ERP ·
+> Financeiro / ERP · Obras e Arquivo / Painel OMIE / Análise de SPs /
+> BaixaBradesco / Emissão de NFS-e / Ponto eletrônico / Mensageria /
+> ValidaSP / AtualizaSPBotão]** deste repositório.
 > Leia o `CLAUDE.md` e os arquivos da área indicados nele, me diga em que pé o
 > trabalho está e o que consta como pendente, e confirme comigo antes de
 > começar. Não mexa nas outras áreas. Trabalhe no seu ramo e me pergunte antes

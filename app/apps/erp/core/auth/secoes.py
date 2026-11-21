@@ -185,13 +185,13 @@ SECOES: list[dict[str, Any]] = [
     # LER = abrir pedido e acompanhar o que abriu; EDITAR = atender e recusar.
     # É a divisão que o pipe fazia na mão, com um checklist chamado "você não
     # possui autorização para esta solicitação".
-    {"chave": "pes_solicitacoes", "area": "Pessoal", "nome": "Solicitações ao DP",
+    {"chave": "pes_solicitacoes", "area": "Pessoal", "nome": "Solicitações",
      # ⚑ A FRASE MUDOU EM 15/11/2026, junto com os tipos: readmissão agora
      # acontece DENTRO do cadastro (o CPF a detecta) e o vale-transporte
      # dentro da ajuda de custo. Prometer na explicação um tipo que não está
      # mais na lista é o defeito que esta classe de frase já causou uma vez,
      # com férias no portal.
-     "explicacao": "cadastro, desligamento, cargo, dependente e ajuda de custo",
+     "explicacao": "cadastro, desligamento, cargo, dependente, férias e ajuda de custo",
      # ⚑ `conferir_cpf_colaborador` MORA AQUI (15/11/2026): quem abre pedido
      # precisa saber se o CPF já tem cadastro — é o que faz o pedido de
      # cadastro se converter em readmissão em vez de criar a segunda ficha da
@@ -208,6 +208,17 @@ SECOES: list[dict[str, Any]] = [
      "explicacao": "pedidos formais à contabilidade, cobrança de prazo e as "
                    "rotinas do agente de DP",
      "ler": ["ver_pessoal"], "editar": ["pedir_contabilidade"]},
+    # ⚑ ACESSO AO PORTAL (18/11/2026). Ele: *"libera o DP também."*
+    #
+    # Seção PRÓPRIA, e não um pedaço de "Operadores e perfis": quem resolve
+    # esta fila não ganha a tela de operadores — não cria operador com perfil
+    # escolhido, não mexe na alçada de ninguém. O acesso que nasce daqui é
+    # sempre administrativo de obra, preso à obra em que a pessoa bate ponto.
+    {"chave": "pes_acesso_portal", "area": "Pessoal",
+     "nome": "Acesso ao portal",
+     "explicacao": "liberar ou recusar quem pediu acesso ao portal pelo "
+                   "aplicativo do ponto",
+     "ler": [], "editar": ["liberar_acesso_portal"]},
     # --------------------------------------------------------- Suprimentos
     {"chave": "sup_solicitar", "area": "Suprimentos", "nome": "Solicitações de material",
      "explicacao": "pedir material para a obra",

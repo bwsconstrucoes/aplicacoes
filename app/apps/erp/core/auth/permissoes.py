@@ -119,6 +119,23 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                             P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.APROVADOR},
     "configurar":      {P.ADMIN},
     "gerir_usuarios":  {P.ADMIN},
+    # ⚑ LIBERAR O ACESSO AO PORTAL É AÇÃO PRÓPRIA desde 18/11/2026, por decisão
+    # dele: *"libera o DP também."*
+    #
+    # POR QUE NÃO DEI `gerir_usuarios` AO DP, que seria uma linha mais curta:
+    # essa ação abre a tela de operadores INTEIRA — criar operador com qualquer
+    # perfil, inclusive ADMIN, marcar exceção de alçada de qualquer um, mexer
+    # no acesso do financeiro. Ele pediu para o DP resolver UMA fila, não para
+    # o DP virar administrador do sistema.
+    #
+    # O que esta ação libera, e só isso: ver a fila de quem pediu acesso pelo
+    # ponto, liberar (o acesso nasce SEMPRE administrativo de obra, preso à
+    # obra em que a pessoa bate ponto) e recusar com motivo.
+    #
+    # ⚠️ A rota IGNORA o perfil que vier do navegador quando quem decide não
+    # tem `gerir_usuarios` — senão o DP poderia pedir "perfil ADMIN" na mão e
+    # criar um administrador por uma fila de obra. Há teste disso.
+    "liberar_acesso_portal": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
     # Uso do sistema por pessoa. DELIBERADAMENTE estreita: ver o que os OUTROS
     # fizeram é informação de gestão de gente, não de operação. Ver a PRÓPRIA
     # semana não passa por aqui — é `ver_erp`, e a rota nem aceita o número de
@@ -366,6 +383,9 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # Quem cadastra colaborador e quem abre pedido ao DP precisam da MESMA
     # resposta: "este CPF já existe?". Ver o comentário da ação, acima.
     "conferir_cpf_colaborador": ("editar_colaboradores", "solicitar_dp"),
+    # Quem gere operadores resolve a fila do portal — é o mesmo assunto, e sem
+    # esta linha quem administra o sistema perderia uma fila que já enxergava.
+    "liberar_acesso_portal": ("gerir_usuarios",),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -387,6 +407,7 @@ ACAO_ROTULOS = {
     "ver_dados_pagamento":  "Ver dados bancários e chave Pix",
     "configurar":           "Abrir Configurações",
     "gerir_usuarios":       "Cadastrar e editar operadores",
+    "liberar_acesso_portal": "Liberar acesso ao portal a quem pediu pelo ponto",
     "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
     "ver_titulos":          "Ver a lista de solicitações de pagamento",

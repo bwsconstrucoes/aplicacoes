@@ -1,0 +1,165 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Regras do cadastro — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Regras do cadastro <small>o que os 2.600 cadastros dizem que o formulário deveria exigir</small></h2>
+<div id="mensagem"></div>
+
+{# ⚑ POR QUE ESTA TELA EXISTE (17/11/2026). Ele:
+
+   *"O pipe não exporta condicionais, por isso minha pergunta sobre mais ajuda
+   na construção e na ideia."*
+
+   E, antes: *"estou tendo que corrigir minúcia a minúcia, porque nada está
+   ficando 100%. E está muito desgastante, cansativo e demorado."*
+
+   A exportação do Pipefy trouxe campos e fases. As CONDICIONAIS — "este campo
+   só aparece se aquele for tal", "este é obrigatório quando aquele for tal" —
+   não saem de lá. Perguntá-las uma por uma são dezenas de perguntas.
+
+   A saída: a regra deixou RASTRO NO DADO. Se o PIS era obrigatório para quem
+   tem carteira, entre os CTPS ele está preenchido em quase 100%. A regra se
+   MEDE, e ele CONFERE em vez de ditar. #}
+<div class="cartao" style="border-left:4px solid var(--azul)">
+  <b>O que esta tela faz</b>
+  <div class="cartao-dica">
+    O Pipefy não exporta as condicionais dos formulários — então em vez de
+    perguntar uma por uma, o sistema <b>mede nos cadastros que já existem</b>.
+    Cada proposta vem com o número que a sustenta e com <b>as exceções
+    nomeadas</b>: é olhando quem discorda que você descobre se é erro de
+    cadastro ou se a regra é outra.
+    <br><br>
+    ⚠️ <b>Nada aqui muda o formulário.</b> É leitura. Adotar uma regra é
+    decisão sua, e eu mexo no formulário depois que você disser.
+  </div>
+</div>
+
+<div class="tabela-barra" style="margin-top:12px">
+  <button class="btn" id="btn-medir">Medir agora</button>
+  <span class="espaco"></span>
+  <span id="resumo" class="desc"></span>
+</div>
+
+<div id="painel"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let DADOS = null;
+
+async function medir(){
+  const b = els("btn-medir");
+  b.disabled = true; b.textContent = "medindo…";
+  els("painel").innerHTML = `<div class="cartao-dica">Lendo os cadastros…</div>`;
+  try {
+    DADOS = await api("/erp/api/dp/regras");
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); els("painel").innerHTML = ""; }
+  b.disabled = false; b.textContent = "Medir de novo";
+}
+
+function desenhar(){
+  const d = DADOS;
+  els("resumo").textContent =
+    `${d.cadastros_medidos} cadastro(s) medido(s) · ${d.propostas.length} regra(s) `
+    + `com base suficiente · ${d.sem_base} cruzamento(s) sem base (menos de `
+    + `${d.minimo_de_casos} casos)`;
+
+  const vazios = d.campos_que_ninguem_preenche || [];
+  els("painel").innerHTML = `
+    ${bloco("O que o formulário AINDA NÃO faz", d.a_decidir,
+            "É esta a sua lista. Cada linha é uma decisão sua: adoto, não "
+            + "adoto, ou os discordantes é que estão errados.")}
+    ${bloco("O que o formulário JÁ faz", d.ja_no_formulario,
+            "Aqui o dado confirma o que a tela já exige. Nada a fazer — está "
+            + "aqui só para você ver que bate.")}
+    {# ⚑ O QUE ELE JÁ DECIDIU NÃO VOLTA A PERGUNTAR (18/11/2026). Ele recusou
+       seis propostas; sem este bloco, a próxima medição ofereceria as mesmas
+       seis, e perguntar de novo o que ele já respondeu é a irritação que o
+       CLAUDE.md descreve. Fica visível para ele poder MUDAR de ideia — o que
+       não pode é a lista de decisões se apresentar como lista de pendências. #}
+    ${(d.recusadas_por_ele || []).length ? `
+      <h3 style="margin-top:20px">Já decididas por você
+        <small>(${d.recusadas_por_ele.length})</small></h3>
+      <div class="cartao-dica">Você olhou e disse não. Estão aqui para
+        consulta — se mudar de ideia, me diga.</div>
+      ${d.recusadas_por_ele.map(p => `
+        <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+             border-left:4px solid var(--borda-forte); margin-top:8px; opacity:.85">
+          <span class="selo outro">recusada</span>
+          <b>${escapar(p.frase)}</b>
+          <div class="cartao-dica" style="margin-top:6px">
+            <b>Seu motivo:</b> ${escapar(p.porque_recusada)}</div>
+        </div>`).join("")}` : ""}
+
+    {# ⚑ O TERCEIRO ACHADO, e ele não é condicional nenhuma (17/11/2026).
+
+       Campo vazio em TODO MUNDO não é "campo que não se aplica": é campo que
+       ninguém preenche. Os dois dão 100% de vazio e querem dizer coisas
+       opostas — e esconder o segundo encobriria falta de dado. Então ele sai
+       numa lista própria, com o nome certo. #}
+    <h3 style="margin-top:20px">Campos que ninguém preenche
+      <small>(${vazios.length})</small></h3>
+    <div class="cartao-dica">Estes estão vazios em quase todos os cadastros, de
+      todos os vínculos. <b>Não são condicionais</b> — ou o campo não serve
+      para nada (e sai do formulário), ou falta esse dado em todo mundo (e
+      alguém tem de preencher). Esconder encobriria o segundo caso.</div>
+    ${vazios.length ? vazios.map(v => `
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+           border-left:4px solid var(--vermelho); margin-top:8px">
+        <b>${escapar(v.campo_rotulo)}</b> —
+        preenchido em ${v.preenchidos} de ${v.casos} cadastros.
+        <div class="cartao-dica" style="margin-top:6px">${escapar(v.frase)}</div>
+      </div>`).join("")
+      : `<div class="cartao-dica">Nenhum. Todo campo do cadastro é usado por
+         alguém.</div>`}`;
+}
+
+function bloco(titulo, lista, dica){
+  if (!lista || !lista.length)
+    return `<h3 style="margin-top:20px">${titulo}</h3>
+            <div class="cartao-dica">Nada nesta lista.</div>`;
+  return `<h3 style="margin-top:20px">${titulo} <small>(${lista.length})</small></h3>
+    <div class="cartao-dica">${dica}</div>
+    ${lista.map((p, i) => `
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+           border-left:4px solid ${p.proposta === "NAO_SE_APLICA" ? "var(--ambar)" : "var(--verde)"};
+           margin-top:8px">
+        <div style="display:flex; gap:8px; align-items:baseline; flex-wrap:wrap">
+          <span class="selo ${p.proposta === "NAO_SE_APLICA" ? "aguardando" : "aprovado"}">
+            ${p.proposta === "OBRIGATORIO" ? "obrigatório quando"
+              : p.proposta === "OBRIGATORIO_SEMPRE" ? "obrigatório sempre"
+              : "não exibir"}</span>
+          <b>${escapar(p.frase)}</b>
+        </div>
+        ${(p.excecoes || []).length ? `
+          <div class="cartao-dica" style="margin-top:8px">
+            {# ⚠️ QUEM SÃO OS DISCORDANTES DEPENDE DA PROPOSTA, e eu errei
+               isto na primeira versão (18/11/2026). A tela dizia "409
+               discordante(s)" e listava 4 nomes, porque eu contava sempre os
+               VAZIOS. Numa proposta de "não exibir", o discordante é quem TEM
+               o campo preenchido — os 4 —, não os 409 que estão vazios.
+
+               Ele leu "409 discordantes" com 4 nomes embaixo e teve de
+               entender sozinho que a conta estava errada. Número errado numa
+               tela que existe para ele CONFIAR em números é o pior lugar
+               possível para um descuido meu. #}
+            <b>${p.proposta === "NAO_SE_APLICA"
+                 ? p.preenchidos : p.casos - p.preenchidos}
+               discordante(s)</b> — ${escapar(p.o_que_sao_as_excecoes)}:
+            <ul style="margin:6px 0 0 18px">
+              ${p.excecoes.map(e => `<li><a href="/erp/colaboradores?pessoa=${e.id}"
+                 target="_blank">${escapar(e.nome)}</a>
+                 <span class="dados">${documento(e.cpf)}</span></li>`).join("")}
+            </ul>
+          </div>` : `<div class="cartao-dica" style="margin-top:8px">
+            Nenhum discordante: a regra vale em <b>todos</b> os ${p.casos} casos.</div>`}
+      </div>`).join("")}`;
+}
+
+els("btn-medir").addEventListener("click", medir);
+{# Não mede sozinho ao abrir: é uma leitura de 2.600 cadastros, e quem abre a
+   tela por engano não precisa pagar por ela. #}
+</script>
+{% endblock %}
