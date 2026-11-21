@@ -371,6 +371,9 @@ folha de dezembro já fechada, paga e assinada.
 relatório; as observações; a folha impressa; o pedido de vários dias recusado; o lacre antigo) e os 707 testes do
 ponto. **Não exercitado na tela de verdade.** Sem migração.
 
+**Publicado em 21/11/2026** (com o "pode" do dono, junto com a revisão dos testes abaixo) — SEM MIGRAÇÃO. Suíte
+inteira: 12.689 passando.
+
 ## 21/11/2026 (sábado) — REVISÃO: os testes do ponto rodados "em outras datas"
 
 **O pedido:** *"pode revisar os testes do ponto"*, depois de três consertos do mesmo tipo no mês.
