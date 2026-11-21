@@ -40,6 +40,67 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 21/11/2026 (noite) — SUPRIMENTOS: A NOTA NÃO ENTRA SOLTA, E O E-MAIL PODE SER FORMATADO (registro entre áreas)
+
+Detalhe em `HISTORICO_SUPRIMENTOS.md`, 21/11 (4ª rodada). O que encosta nas
+outras áreas:
+
+- **Financeiro — `api_criar_titulo` (`routes.py`) e `erp_lancar.html`.** Ao
+  lançar um título de fornecedor que tem **material recebido e ainda sem
+  conta**, o servidor responde **409 `escolher_pedido`** com a lista dos
+  pedidos; a tela pergunta de qual é. A pessoa escolhe, ou declara que não é de
+  nenhum (`nao_e_de_pedido: true` no envio; evento
+  `NOTA_DECLARADA_SEM_PEDIDO`). A procura roda dentro de um ponto de retorno:
+  se o suprimento não estiver em uso ou a consulta falhar, o lançamento segue
+  como sempre. **Quem chama a rota por fora da tela e bate nesse 409 precisa
+  mandar `pedido_compra_id` ou `nao_e_de_pedido`.**
+- **`core/comum/email.py`** — `enviar` e `_montar` aceitam `corpo_html`
+  (opcional). Sem ele, nada muda. Com ele, a mensagem leva texto puro E a
+  versão formatada. Qualquer área pode usar.
+- **Rota de recebimento sozinho** (`/pedidos/<id>/recebimento`, POST) passou a
+  recusar quem tem a ação `lancar` — esses recebem e lançam juntos.
+
+### ⚑ 20/11/2026 (noite) — SUPRIMENTOS MEXEU NO FINANCEIRO E NO PORTAL (registro entre áreas)
+
+Pedido do dono: a conta a pagar da compra nasce do RECEBIMENTO. Para isso:
+
+- **`templates/erp_lancar.html`** ganhou `?pedido_compra=N&recebimento=M`: a
+  tela abre pré-preenchida pelo pedido (`preencherDoPedido`). Sem o parâmetro,
+  nada muda. Com ele, a leitura do documento não sobrescreve o rateio por obra.
+- **`api_criar_titulo`** (routes.py): se o corpo traz `pedido_compra_id`, depois
+  de `criar_titulo` chama `suprimentos.lancamento.vincular` na MESMA transação.
+- **Migração 121** — tabela `pedido_titulos` (título × pedido de compra).
+- **`core/portal.py`**: a área "suprimentos" abriu como tela
+  (`/erp/portal/material`), exigindo `receber_material`.
+- **`static/erp.css`**: bloco novo no fim (mapa em planilha, `dialog.largo`).
+
+- **21/11:** a tela de Lançar também pergunta "é deste pedido?" ao escolher um
+  credor que tem pedido de compra com conta a lançar (não bloqueia), e traz
+  sozinha os documentos anexados no recebimento.
+
+- **21/11 (2ª rodada):** crítica nova **S1** em `core/titulos/analise.py`
+  (material sem pedido de compra) — só age com a chave ligada em Suprimentos ›
+  Painel, e nasce DESLIGADA. `api_criar_titulo` chama `fora_do_fluxo.conferir`
+  e responde 409 `precisa_motivo` quando falta o motivo. **Migração 122.**
+  `core/comum/email.py` ganhou `corpo_registrado` (opcional). Ação nova
+  `autorizar_compra_fora_do_fluxo`, dentro da seção `sup_autorizar`. A obra
+  passou a lançar título pelo portal (`/receber-e-lancar`), pelo mesmo
+  `criar_titulo`. Página nova `/erp/assinatura` (de qualquer operador).
+
+Detalhe e motivos em `HISTORICO_SUPRIMENTOS.md`, 3ª rodada e 21/11.
+
+### ⚑ 20/11/2026 — nota para as OUTRAS ÁREAS, vinda de Suprimentos (registro entre áreas)
+
+A **migração 120** (`pedido_entregas` + índices) é de Suprimentos, mas cria um
+índice em `titulos (documento_fiscal_id)`. Ação nova **`receber_material`** em
+`permissoes.py` (obra + quem compra), posta dentro da seção `sup_solicitar`
+em `secoes.py` (quem pede material é quem recebe — nenhum perfil gravado muda).
+Três abas novas no menu de Suprimentos (`routes.py`). Para o **Financeiro**:
+existe agora **Suprimentos › Projeção de pagamentos**, que mostra o que as
+compras ainda vão virar de conta a pagar — ela LÊ `titulos`, `parcelas` e
+`documentos_fiscais`, não grava nada. Um título lançado com a nota vinculada
+a um pedido passa a ter mais um leitor. Detalhe em `HISTORICO_SUPRIMENTOS.md`.
+
 ### ⚑ 19/11/2026 — nota para o FINANCEIRO, vinda do DP (registro entre áreas)
 
 A migração **114** (`dp_desligamento_passos`) é do DP, mas **aponta para

@@ -3,14 +3,15 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
-## 21/11/2026 — Teste do alerta de batida que quebrava no dia seguinte a feriado (feito pelo chat do ERP/DP, a pedido dele)
+## 21/11/2026 — Teste do alerta de batida que quebrava no dia seguinte a feriado
 
 `tests/test_ponto_qr_banco.py::test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`
 falhou em 21/11/2026 também na `main`: ele usava "ontem, dia de semana", e
 ontem foi 20/11 — Consciência Negra, feriado nacional na base. Em feriado a
-escala não prevê batida, e o alerta não diz "qual faltou". **Não era defeito
-do alerta, era do teste**: agora ele pula fim de semana E feriado cadastrado
-(`ponto.feriados`). Só o teste mudou.
+escala não prevê batida, e o alerta não diz "qual faltou". **Era defeito do
+teste, não do alerta.** Consertado em duas sessões ao mesmo tempo; ficou a
+versão que usa o calendário de feriados do próprio ponto (`feriados.Calendario`,
+por obra). Só o teste mudou.
 
 ## ⚑ 17/11/2026 — A FICHA ÚNICA VIROU "AMBIENTE DA PESSOA", COM TRÊS ÁREAS (feito pelo chat do ERP/DP)
 
@@ -888,6 +889,7 @@ sem foto, e talvez um alerta, para a pessoa não perder a ronda."*
   sem a foto"*): o caminho sem foto só aparece depois de **3 tentativas** que não deram certo (`TENTATIVAS_ANTES_DE_SEM_FOTO`),
   como um link discreto — "Tentou 3 vezes e a foto não sai? Só nesse caso, registre sem foto: o escritório recebe um
   aviso" —, e o motivo gravado diz "depois de 3 tentativas". O botão grande continua sendo o da foto.
+**Publicado em 17/11/2026** (com o "pode" do dono; suíte inteira: 11.822 passaram). Sem migração.
   Depois de registrar, o aviso "foi sem foto — apague fotos ou vídeos antigos".
 - **No servidor** (`rondas.registrar`, `sem_foto=`): a LOCALIZAÇÃO continua obrigatória (é ela que prova a
   presença). Sem foto, só com o motivo que o aplicativo manda; a foto que chega estragada também não derruba a

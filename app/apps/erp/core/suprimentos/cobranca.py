@@ -304,26 +304,48 @@ def cobrar(s: Session, colunas_ids: list[int], usuario: Usuario, *,
             forn = s.get(Fornecedor, coluna.fornecedor_id)
             nome = (getattr(forn, "nome_fantasia", "") or
                     getattr(forn, "razao_social", "") or "fornecedor")
+            escolhidos = list(getattr(coluna, "contatos_ids", None) or [])
             destinos = svc_envio.destinos_do_fornecedor(
-                s, coluna.fornecedor_id,
-                list(getattr(coluna, "contatos_ids", None) or []))
-            if not destinos:
+                s, coluna.fornecedor_id, escolhidos)
+            # ⚑ O WHATSAPP ENTRA QUANDO O CADASTRO DIZ QUE É POR LÁ (20/11/2026).
+            # Ele: "se o contato dele é via WhatsApp (…) sim, vamos adicionar."
+            # Vale o canal marcado no fornecedor; o e-mail continua saindo
+            # quando há e-mail — o lembrete por dois canais não atrapalha, e o
+            # e-mail é o que fica registrado com o texto.
+            telefones = telefones_de_whatsapp(s, forn, escolhidos)
+            if not destinos and not telefones:
                 sem_endereco.append(nome)
                 continue
             mensagem = _lembrete(cot, nome, observacao)
-            registro = correio.enviar(
-                s, empresa=empresa, para=destinos,
-                assunto=mensagem["assunto"], corpo=mensagem["corpo"],
-                entidade_tipo="cotacao", entidade_id=cotacao_id,
-                destinatario_tipo="cotacao_fornecedor", destinatario_id=coluna.id,
-                usuario=usuario)
-            if registro.situacao == "ENVIADO":
+            por_onde, motivos = [], []
+            if destinos:
+                registro = correio.enviar(
+                    s, empresa=empresa, para=destinos,
+                    assunto=mensagem["assunto"], corpo=mensagem["corpo"],
+                    entidade_tipo="cotacao", entidade_id=cotacao_id,
+                    destinatario_tipo="cotacao_fornecedor", destinatario_id=coluna.id,
+                    usuario=usuario)
+                if registro.situacao == "ENVIADO":
+                    por_onde.append("e-mail")
+                else:
+                    motivos.append(f"e-mail: {registro.erro}")
+            for telefone in telefones:
+                ok, detalhe = _mandar_whatsapp(telefone, mensagem["corpo"])
+                if ok:
+                    if "WhatsApp" not in por_onde:
+                        por_onde.append("WhatsApp")
+                else:
+                    motivos.append(f"WhatsApp {telefone}: {detalhe}")
+            if por_onde:
                 coluna.cobrado_em = datetime.now(timezone.utc)
                 coluna.cobrancas = int(getattr(coluna, "cobrancas", 0) or 0) + 1
-                enviados.append({"fornecedor": nome, "para": destinos})
+                enviados.append({"fornecedor": nome, "para": destinos,
+                                 "whatsapp": telefones if "WhatsApp" in por_onde else [],
+                                 "canais": por_onde,
+                                 "parcial": "; ".join(motivos) or None})
             else:
                 falhas.append({"coluna_id": coluna.id, "fornecedor": nome,
-                               "motivo": registro.erro})
+                               "motivo": "; ".join(motivos)})
         registrar_evento(s, "cotacao", cotacao_id, "COTACAO_COBRADA",
                          {"fornecedores": len(grupo)},
                          usuario.id if usuario else None)
@@ -332,10 +354,58 @@ def cobrar(s: Session, colunas_ids: list[int], usuario: Usuario, *,
     if falhas:
         partes.append(f"{len(falhas)} falharam")
     if sem_endereco:
-        partes.append(f"{len(sem_endereco)} sem e-mail cadastrado")
+        partes.append(f"{len(sem_endereco)} sem e-mail nem WhatsApp cadastrado")
+    pelo_zap = sum(1 for e in enviados if "WhatsApp" in e.get("canais", []))
+    if pelo_zap:
+        partes.append(f"{pelo_zap} também por WhatsApp")
     logger.info("ERP/suprimentos: cobrança de cotação — %s", "; ".join(partes))
     return {"enviados": enviados, "falhas": falhas, "sem_endereco": sem_endereco,
             "recado": ". ".join(partes) + "."}
+
+
+def telefones_de_whatsapp(s: Session, fornecedor, contatos_ids: list[int]) -> list[str]:
+    """Os números para onde o lembrete vai por WhatsApp — ou nenhum.
+
+    Só quando o fornecedor tem WHATSAPP marcado como canal de cotação no
+    cadastro. Os números são os dos contatos escolhidos no disparo; sem
+    escolha, o do próprio fornecedor. Nunca um número de fora do cadastro.
+    """
+    import re
+    from app.apps.erp.db.models.cadastros import FornecedorContato
+    if fornecedor is None:
+        return []
+    canais = {str(c).upper() for c in (getattr(fornecedor, "canais_cotacao", None) or [])}
+    if "WHATSAPP" not in canais:
+        return []
+    brutos = []
+    if contatos_ids:
+        for c in s.scalars(select(FornecedorContato).where(
+                FornecedorContato.id.in_([int(x) for x in contatos_ids]))).all():
+            if c.fornecedor_id == fornecedor.id and c.id in contatos_ids:
+                brutos.append(c.telefone)
+    if not brutos:
+        brutos.append(getattr(fornecedor, "telefone", None))
+    saida = []
+    for bruto in brutos:
+        numero = re.sub(r"\D", "", bruto or "")
+        if len(numero) in (10, 11):
+            numero = "55" + numero
+        if len(numero) >= 12 and numero not in saida:
+            saida.append(numero)
+    return saida
+
+
+def _mandar_whatsapp(telefone: str, texto: str) -> tuple[bool, str]:
+    """Um lembrete por WhatsApp, pelo mesmo notificador do resto do sistema."""
+    try:
+        from app.apps.notificador import notificar
+        resultado = notificar(telefone=telefone, mensagem=texto,
+                              canais=("whatsapp",), politica="fallback")
+        ok = bool((resultado or {}).get("whatsapp", {}).get("ok"))
+        return ok, "" if ok else str((resultado or {}).get("whatsapp", resultado))[:200]
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha no lembrete por WhatsApp")
+        return False, str(e)[:200]
 
 
 def _lembrete(cot: Cotacao, nome: str, observacao: str) -> dict[str, str]:

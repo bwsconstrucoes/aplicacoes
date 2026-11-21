@@ -158,6 +158,75 @@ os itens.
 
 ---
 
+## 4b. O ciclo completo — acrescentado em 20/11/2026 (migração 120)
+
+> ⚠️ O passo 11 acima ("no mapa, feche o pedido") **não tinha botão** até
+> 20/11/2026. Agora tem: **Suprimentos › Cotações › ✔ Fechar pedido**.
+
+15a. No fechamento, troque o local de entrega de UMA obra para **Sede**.
+    - *Tem de acontecer:* em "Ver e mandar o pedido", o bloco daquela obra sai
+      com o endereço da sede e o aviso "a entrega NÃO é no canteiro".
+    - *Confira:* o endereço da empresa em Configurações › Empresas. Sem ele,
+      a opção Sede fica desligada.
+15b. Entre com um usuário **da obra** e abra **Suprimentos › Receber material**.
+    - *Tem de acontecer:* só aparecem os itens das obras dele, sem preço.
+    - Registre metade de um item. *Tem de acontecer:* aviso de recebimento
+      parcial, e o pedido aparece no quadro vermelho "recebido e nota não lançada".
+15c. Como comprador, abra **Suprimentos › Acompanhar compras**.
+    - *Tem de acontecer:* o pedido em "Chegou em parte", com o item e a
+      quantidade que falta ao abrir a linha, e o valor em "Recebido sem nota".
+15d. Abra **Suprimentos › Projeção de pagamentos** (é a tela do financeiro).
+    - *Confira as datas das parcelas* contra a condição de pagamento e a data
+      de entrega combinadas. *Este é o número que o financeiro vai usar.*
+15e. Vincule uma nota ao pedido em Financeiro › Notas e lance a conta.
+    - *Tem de acontecer:* o valor sai da projeção e a linha do pedido passa a
+      "Entregue, a pagar"; depois de pago, some da lista (ciclo fechado).
+
+---
+
+## 4c. O que mudou na 3ª rodada de 20/11/2026 (migração 121)
+
+15f. **No mapa**, clique em **Tela cheia** e jogue o PDF de uma proposta de
+    verdade na faixa tracejada.
+    - *Tem de acontecer:* o sistema diz de qual fornecedor reconheceu e
+      contorna os preços lidos. **Se puser preço na coluna errada, me avise —
+      é o erro mais caro desta tela.**
+15g. **Mapa em PDF**: confira contra a planilha de vocês. É o documento da gestão.
+15h. Em Pedidos, **Ver o PDF que vai anexo** antes de mandar ao fornecedor.
+15i. **No celular, como pessoa da obra**: Portal › Material da obra. Receba um
+    pedido e clique em **Lançar a nota e o boleto agora**.
+    - *Tem de acontecer:* a tela de Lançar abre com credor, valor, rateio por
+      obra e parcelas já preenchidos. *Confira os valores contra a nota.*
+    - Depois de enviar: em Acompanhar compras o pedido passa a "Entregue, a
+      pagar" com o número da conta, e o valor some da Projeção.
+15j. Fornecedor com **WhatsApp** marcado como canal: cobre a cotação dele.
+    - *Tem de acontecer:* o recado diz "também por WhatsApp". **Teste primeiro
+      com um número seu no cadastro de um fornecedor de teste.**
+
+---
+
+## 4d. O que mudou em 21/11/2026 (migração 122)
+
+15k. **No celular, como pessoa da obra**: Portal › Material da obra › abra um
+    pedido. Junte a foto de uma NOTA e de um BOLETO de verdade.
+    - *Tem de acontecer:* o sistema lê e preenche número, data, valor,
+      vencimento e a linha digitável, contornados de verde.
+    - **Este é o teste que mais importa desta rodada**: se ele ler um valor ou
+      um vencimento errado, me diga qual documento era.
+    - Tente registrar sem a nota: *tem de recusar dizendo tudo o que falta.*
+    - Registre. *Tem de acontecer:* "Conta a pagar NNN lançada".
+15l. Aba **Pedir**: peça dois materiais. *Tem de aparecer* em "Em andamento".
+15m. Em **/erp/assinatura**, desenhe a sua. Abra o PDF de um pedido: ela está lá.
+15n. Em Solicitações, marque um item e use **Comprar direto (sem cotação)**.
+15o. Dispare uma cotação para um e-mail seu: confira o corpo e o PDF anexo.
+15p. **Relatórios**: abra os quatro. Os números só fazem sentido com compras
+    de verdade — com dado de exemplo, confira só se a tela abre.
+15q. **Só quando as compras já passarem pelo ERP:** no Painel, ligue a
+    exigência de pedido de compra; lance um material sem pedido em Financeiro ›
+    Lançar. *Tem de pedir o motivo e ficar bloqueado até OUTRA pessoa autorizar.*
+
+---
+
 ## 5. O banco de preços (10 minutos)
 
 **Suprimentos › Banco de preços.**

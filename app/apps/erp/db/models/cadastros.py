@@ -1162,6 +1162,48 @@ class PedidoItemReserva(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PedidoEntrega(Base):
+    """O material da obra X, NESTE pedido, desce em outro lugar (migração 120).
+
+    Uma linha aqui é a EXCEÇÃO — a sede, um depósito. Sem linha, vale a regra:
+    o endereço da obra. O endereço fica por extenso porque o pedido é documento
+    mandado ao fornecedor e não pode mudar sozinho depois.
+    """
+    __tablename__ = "pedido_entregas"
+
+    pedido_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pedidos_compra.id", ondelete="CASCADE"),
+        primary_key=True)
+    obra_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("obras.id"), primary_key=True)
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    rotulo: Mapped[str] = mapped_column(Text, nullable=False)
+    endereco: Mapped[str] = mapped_column(Text, nullable=False)
+    definido_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PedidoTitulo(Base):
+    """Este título é deste pedido de compra (migração 121).
+
+    Nasce quando a conta a pagar é lançada A PARTIR do recebimento do
+    material — o caminho que a obra usa. É o que deixa o coordenador ver o
+    pagamento sem depender de alguém vincular a nota na tela de Notas.
+    """
+    __tablename__ = "pedido_titulos"
+
+    titulo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("titulos.id", ondelete="CASCADE"), primary_key=True)
+    pedido_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pedidos_compra.id", ondelete="CASCADE"), nullable=False)
+    recebimento_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("recebimentos.id", ondelete="SET NULL"))
+    criado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PrevisaoPagamento(Base):
     """A obrigação que nasce com a autorização do pedido.
 

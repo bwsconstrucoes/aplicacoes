@@ -132,7 +132,7 @@ Ele, depois de entender as duas rotinas: *"sim, vamos deixar as rotinas
 automáticas. E quanto ao ASO, vamos alertar, só não vai ser obrigatório por
 enquanto."*
 
-- **Migração 120:** cobrança e leitura do e-mail em **FAZ**. A cobrança manda
+- **Migração 123** (era 120; renumerada porque o chat de Suprimentos usou 120–122 no mesmo dia): cobrança e leitura do e-mail em **FAZ**. A cobrança manda
   e-mail à contabilidade quando o pedido vence (até o teto; depois escala para
   o DP) e WhatsApp à obra pela devolução vencida; não cobra no fim de semana.
   A leitura liga a resposta ao pedido, arquiva o anexo e marca respondido — não

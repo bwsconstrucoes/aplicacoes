@@ -1,0 +1,239 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Projeção de pagamentos — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="pedido, cotação, fornecedor, obra…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Grau de certeza</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" class="f-grau" value="FIRME" checked>
+        <span class="rotulo">Comprado — pedido autorizado</span></label>
+      <label class="opcao"><input type="checkbox" class="f-grau" value="A_AUTORIZAR" checked>
+        <span class="rotulo">Fechado, aguardando autorização</span></label>
+      <label class="opcao"><input type="checkbox" class="f-grau" value="EM_COTACAO" checked>
+        <span class="rotulo">Em cotação — estimativa</span></label>
+      <label class="opcao"><input type="checkbox" class="f-grau" value="SOLICITADO" checked>
+        <span class="rotulo">Solicitado, sem cotação — pelo último preço</span></label>
+      <div class="cartao-dica">São quatro certezas diferentes. Desmarque as de
+        baixo para ver só o que já é compromisso assumido.</div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Obra</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-obra"><option value="">todas</option></select></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Fornecedor</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-fornecedor"><option value="">todos</option></select></div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Projeção de pagamentos das compras
+  <small>o que ainda vai virar conta a pagar, e quando — antes de a nota chegar</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="tabela-wrap" style="margin-bottom:14px">
+  <div class="tabela-barra"><div class="resumo"><b>Por mês</b> — clique no mês
+    para ver só as parcelas dele</div></div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Mês</th><th class="direita">Comprado</th>
+      <th class="direita">Aguardando autorização</th>
+      <th class="direita">Em cotação</th><th class="direita">Solicitado</th><th class="direita">Total</th>
+    </tr></thead><tbody id="meses"></tbody></table>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <div class="resumo" id="resumo"></div>
+    <div class="espaco"></div>
+    <span id="exportar"></span>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Vencimento</th><th>Origem</th><th>Fornecedor</th><th>Obra</th>
+      <th>Parcela</th><th>Material</th><th>Certeza</th><th class="direita">Valor</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+</div>
+<div class="cartao-dica" style="margin-top:10px" id="rodape"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---------------------------------------------------------------------------
+// PROJEÇÃO DE PAGAMENTOS — a tela que tira o financeiro do escuro
+//
+// O dono, em 20/11/2026: "o financeiro não pode ficar no escuro em relação ao
+// planejamento do compras. Precisamos poder fazer projeções futuras
+// associando mapas de cotação, previsão de entrega e forma de pagamento."
+//
+// O QUE NÃO ESTÁ AQUI, de propósito: o que já virou conta a pagar. Isso mora
+// em Financeiro › Pagamentos, e somar aqui contaria a mesma dívida duas vezes.
+// Esta tela é o que AINDA VAI nascer.
+// ---------------------------------------------------------------------------
+let DADOS = null, MES = "";
+const ROTULO = {FIRME: "comprado", A_AUTORIZAR: "a autorizar", EM_COTACAO: "estimativa", SOLICITADO: "pelo último preço"};
+const COR = {FIRME: "aprovado", A_AUTORIZAR: "aguardando", EM_COTACAO: "outro", SOLICITADO: "outro"};
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+function nomeDoMes(chave){
+  if (chave === "VENCIDO") return "Já venceu, sem conta lançada";
+  const [ano, mes] = chave.split("-");
+  return ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto",
+          "setembro","outubro","novembro","dezembro"][+mes - 1] + " de " + ano;
+}
+
+async function carregar(){
+  try {
+    DADOS = await api("/erp/api/suprimentos/projecao");
+    const obras = new Map(), forns = new Set();
+    DADOS.linhas.forEach(l => { obras.set(String(l.obra_id), l.obra); forns.add(l.fornecedor); });
+    els("f-obra").innerHTML = `<option value="">todas</option>` +
+      [...obras.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([id, r]) => `<option value="${id}">${escapar(r)}</option>`).join("");
+    els("f-fornecedor").innerHTML = `<option value="">todos</option>` +
+      [...forns].sort().map(f => `<option>${escapar(f)}</option>`).join("");
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function filtradas(semMes){
+  const graus = new Set([...document.querySelectorAll(".f-grau:checked")].map(i => i.value));
+  const obra = els("f-obra").value, forn = els("f-fornecedor").value;
+  const q = (els("f-busca").value || "").toLowerCase().trim();
+  return DADOS.linhas.filter(l => {
+    if (!graus.has(l.grau)) return false;
+    if (obra && String(l.obra_id) !== obra) return false;
+    if (forn && l.fornecedor !== forn) return false;
+    if (!semMes && MES && (l.vencida ? "VENCIDO" : l.vencimento.slice(0, 7)) !== MES) return false;
+    if (q) {
+      const texto = `${l.referencia} ${l.fornecedor} ${l.obra}`.toLowerCase();
+      if (!q.split(/\s+/).every(t => texto.includes(t))) return false;
+    }
+    return true;
+  });
+}
+
+function desenhar(){
+  const todas = filtradas(true);
+  const soma = g => todas.filter(l => l.grau === g).reduce((s, l) => s + l.valor, 0);
+  const vencidas = todas.filter(l => l.vencida);
+  const hoje = new Date(DADOS.hoje + "T00:00:00");
+  const em30 = new Date(hoje); em30.setDate(em30.getDate() + 30);
+  const prox30 = todas.filter(l => !l.vencida && l.grau !== "EM_COTACAO" && l.grau !== "SOLICITADO"
+    && new Date(l.vencimento + "T00:00:00") <= em30).reduce((s, l) => s + l.valor, 0);
+
+  els("kpis").innerHTML = `
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Já venceu, sem conta lançada</div>
+      <div class="kpi-valor">${moeda(vencidas.reduce((s, l) => s + l.valor, 0))}</div>
+      <div class="kpi-sub">${new Set(vencidas.map(l => l.origem_id)).size} pedido(s) —
+        a data combinada passou e a nota não foi lançada</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Próximos 30 dias</div>
+      <div class="kpi-valor">${moeda(prox30)}</div>
+      <div class="kpi-sub">comprado + aguardando autorização</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Comprado, a virar conta</div>
+      <div class="kpi-valor">${moeda(soma("FIRME"))}</div>
+      <div class="kpi-sub">pedidos autorizados, sem título ainda</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Aguardando autorização</div>
+      <div class="kpi-valor">${moeda(soma("A_AUTORIZAR"))}</div>
+      <div class="kpi-sub">pedido fechado, ainda não liberado</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Em cotação</div>
+      <div class="kpi-valor">${moeda(soma("EM_COTACAO"))}</div>
+      <div class="kpi-sub">estimativa pelo menor preço do mapa</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Solicitado, sem cotação</div>
+      <div class="kpi-valor">${moeda(soma("SOLICITADO"))}</div>
+      <div class="kpi-sub">pelo último preço conhecido de cada insumo</div></div>`;
+
+  // O quadro por mês é refeito com os filtros (menos o do próprio mês).
+  const meses = {};
+  todas.forEach(l => {
+    const chave = l.vencida ? "VENCIDO" : l.vencimento.slice(0, 7);
+    const m = meses[chave] = meses[chave] || {FIRME: 0, A_AUTORIZAR: 0, EM_COTACAO: 0, SOLICITADO: 0, total: 0};
+    m[l.grau] += l.valor; m.total += l.valor;
+  });
+  const chaves = Object.keys(meses).sort((a, b) =>
+    (a === "VENCIDO" ? "0" : "1" + a).localeCompare(b === "VENCIDO" ? "0" : "1" + b));
+  els("meses").innerHTML = chaves.map(c => `<tr data-mes="${c}" style="cursor:pointer;
+        ${MES === c ? "outline:2px solid var(--azul-claro)" : ""}
+        ${c === "VENCIDO" ? "color:var(--vermelho)" : ""}">
+      <td><b>${nomeDoMes(c)}</b></td>
+      <td class="direita dados">${meses[c].FIRME ? moeda(meses[c].FIRME) : "—"}</td>
+      <td class="direita dados">${meses[c].A_AUTORIZAR ? moeda(meses[c].A_AUTORIZAR) : "—"}</td>
+      <td class="direita dados">${meses[c].EM_COTACAO ? moeda(meses[c].EM_COTACAO) : "—"}</td>
+      <td class="direita dados">${meses[c].SOLICITADO ? moeda(meses[c].SOLICITADO) : "—"}</td>
+      <td class="direita dados"><b>${moeda(meses[c].total)}</b></td></tr>`).join("")
+    || `<tr><td colspan="6" class="cartao-dica"><b>Nada a projetar.</b> A projeção
+        nasce dos pedidos de compra e dos mapas de cotação com preço lançado.</td></tr>`;
+  document.querySelectorAll("[data-mes]").forEach(tr =>
+    tr.addEventListener("click", () => { MES = MES === tr.dataset.mes ? "" : tr.dataset.mes; desenhar(); }));
+
+  const lista = filtradas(false);
+  els("resumo").innerHTML = `<b>${lista.length}</b> parcela(s) · <b>${
+    moeda(lista.reduce((s, l) => s + l.valor, 0))}</b>${MES ? ` · ${nomeDoMes(MES)}` : ""}`;
+  els("corpo").innerHTML = lista.map(l => `<tr>
+      <td class="dados" ${l.vencida ? `style="color:var(--vermelho); font-weight:700"` : ""}>
+        ${dataBR(l.vencimento)}${l.vencida ? `<br><small>venceu</small>` : ""}</td>
+      <td><a href="${l.origem === "solicitacao" ? "/erp/suprimentos"
+          : "/erp/suprimentos/" + (l.origem === "pedido" ? "pedidos?pedido=" : "cotacoes?cotacao=") + l.origem_id}"
+        >${escapar(l.referencia)}</a></td>
+      <td>${escapar(l.fornecedor)}</td>
+      <td class="dados" style="font-size:11.5px">${escapar(l.obra)}</td>
+      <td class="dados">${l.parcela}</td>
+      <td>${l.material === "chegou" && l.grau === "FIRME"
+        ? `<b style="color:var(--vermelho)">chegou — falta a nota</b>` : escapar(l.material)}</td>
+      <td><span class="selo ${COR[l.grau]}">${ROTULO[l.grau]}</span></td>
+      <td class="direita dados">${moeda(l.valor)}</td></tr>`).join("")
+    || `<tr><td colspan="8" class="cartao-dica">nenhuma parcela com estes filtros</td></tr>`;
+
+  const f = DADOS.fora_da_conta;
+  els("rodape").innerHTML = `<b>O que NÃO está nesta conta.</b>
+    O que já virou conta a pagar — isso está em Financeiro › Pagamentos, e
+    somar aqui contaria a mesma dívida duas vezes.
+    ${f.itens_sem_preco ? ` <b>${f.itens_sem_preco}</b> item(ns) em cotação ainda sem preço de ninguém.` : ""}
+    ${f.solicitados_sem_cotacao ? ` <b>${f.solicitados_sem_cotacao}</b> item(ns)
+      solicitados sem cotação e <b>sem preço anterior conhecido</b> — esses não têm como ser estimados.` : ""}
+    A data de cada parcela vem da previsão de entrega e da condição de
+    pagamento do pedido; a do que está em cotação, da data em que a obra pediu
+    o material.`;
+}
+
+document.querySelectorAll(".f-grau").forEach(i => i.addEventListener("change", desenhar));
+["f-obra", "f-fornecedor"].forEach(id => els(id).addEventListener("change", desenhar));
+els("f-busca").addEventListener("input", () => { clearTimeout(window.__t);
+  window.__t = setTimeout(desenhar, 200); });
+els("btn-limpar").addEventListener("click", () => {
+  ["f-obra", "f-fornecedor", "f-busca"].forEach(id => els(id).value = "");
+  document.querySelectorAll(".f-grau").forEach(i => i.checked = true);
+  MES = ""; desenhar();
+});
+
+carregar();
+
+botoesDeExportar("exportar", () => ({
+  titulo: "Projeção de pagamentos das compras",
+  subtitulo: MES ? nomeDoMes(MES) : "",
+  colunas: [
+    {rotulo: "Vencimento"}, {rotulo: "Origem"}, {rotulo: "Fornecedor"},
+    {rotulo: "Obra"}, {rotulo: "Parcela"}, {rotulo: "Material"},
+    {rotulo: "Certeza"}, {rotulo: "Valor", tipo: "dinheiro"},
+  ],
+  linhas: (DADOS ? filtradas(false) : []).map(l => [
+    dataBR(l.vencimento), l.referencia, l.fornecedor, l.obra, l.parcela,
+    l.material, ROTULO[l.grau], l.valor,
+  ]),
+  filtros: filtrosDaTela(),
+}));
+</script>
+{% endblock %}

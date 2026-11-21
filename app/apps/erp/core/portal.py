@@ -115,10 +115,23 @@ AREAS: tuple[dict[str, Any], ...] = (
     },
     {
         "chave": "suprimentos",
-        "nome": "Material e compras",
-        "explicacao": "pedir material, ferramenta, locação",
-        "pronta": False,
-        "enquanto_isso": "Continue pedindo material como você pede hoje.",
+        "nome": "Material da obra",
+        # ⚑ ABERTA EM 20/11/2026, e só com o que existe. Ele: *"a gente
+        # precisa disponibilizar o recebimento via portal, porque na verdade
+        # esse recebimento vai ser principalmente por lá (…) eles poderiam ver
+        # uma lista dos insumos que tem a receber na obra, os pedidos que
+        # estão para chegar, inclusive acompanhar a movimentação (…) e a
+        # partir disso fazer o recebimento e fechar a parte financeira."*
+        #
+        # A frase NÃO promete "pedir material": o pedido de material pelo
+        # portal ainda não existe (é pela tela de Solicitações), e porta que
+        # anuncia o que não tem é o defeito que esta lista já teve com férias.
+        "explicacao": "pedir material, ver o que está para chegar, receber "
+                      "e lançar a nota e o boleto",
+        "pronta": True,
+        "so_tela": True,
+        "tela": "/erp/portal/material",
+        "acao": "receber_material",
     },
     {
         "chave": "financeiro",

@@ -1,0 +1,133 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Receber material — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="pedido, fornecedor, material…"></div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Obra</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-obra"><option value="">todas as minhas</option></select></div>
+  </div>
+  <div class="cartao-dica" style="margin-top:10px">Aqui aparece só o que foi
+    comprado para as obras em que você trabalha, e só o que ainda falta chegar.</div>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Receber material
+  <small>confira o que desceu do caminhão e registre — o que faltar vira pendência com o fornecedor</small></h2>
+<div id="mensagem"></div>
+<div id="sem-nota"></div>
+<div id="lista"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---------------------------------------------------------------------------
+// RECEBER MATERIAL — a porta da obra (20/11/2026)
+//
+// O dono: "o material precisa ser recebido pela obra pra poder anexar a nota
+// e lançar boletos", e "o recebimento deve identificar o que foi pedido e o
+// que foi efetivamente entregue para sabermos se ficou alguma pendência".
+//
+// ⚑ ESTA TELA NÃO EXISTIA. O recebimento morava dentro da tela de Pedidos,
+// que só comprador e diretor abrem — a obra não tinha por onde registrar.
+//
+// Sem preço, de propósito: quem recebe confere QUANTIDADE. E o campo já vem
+// preenchido com o que falta chegar — recebimento completo é um clique;
+// parcial é corrigir o número.
+// ---------------------------------------------------------------------------
+let DADOS = null;
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregar(){
+  try {
+    DADOS = await api("/erp/api/suprimentos/recebimentos");
+    const obras = new Map();
+    DADOS.esperando.forEach(p => p.itens.forEach(i => obras.set(String(i.obra_id), i.obra)));
+    const atual = els("f-obra").value;
+    els("f-obra").innerHTML = `<option value="">todas as minhas</option>` +
+      [...obras.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([id, r]) => `<option value="${id}">${escapar(r)}</option>`).join("");
+    els("f-obra").value = atual;
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  // O LEMBRETE vem primeiro: material que já chegou e continua sem nota é a
+  // conta que o financeiro não está vendo.
+  els("sem-nota").innerHTML = !DADOS.sem_nota.length ? "" : `<div class="aviso erro">
+    <b>Material recebido e nota ainda não lançada (${DADOS.sem_nota.length}).</b>
+    Enquanto a nota e o boleto não forem lançados, o financeiro não enxerga esta conta.
+    <ul style="margin:6px 0 0 18px">${DADOS.sem_nota.map(n => `<li>
+      <b>${escapar(n.numero)}</b> · ${escapar(n.fornecedor)} · chegou em
+      ${dataBR(n.chegou_em)} — há <b>${n.dias}</b> dia(s)
+      {% if pode.lancar %} · <a href="/erp/lancar?pedido_compra=${n.pedido_id}">lançar a nota e o boleto</a>{% endif %}
+      </li>`).join("")}</ul>
+  </div>`;
+
+  const q = (els("f-busca").value || "").toLowerCase().trim();
+  const obra = els("f-obra").value;
+  const lista = DADOS.esperando.filter(p => {
+    if (obra && !p.itens.some(i => String(i.obra_id) === obra)) return false;
+    if (!q) return true;
+    const texto = [p.numero, p.fornecedor, p.itens.map(i => i.insumo + " " + i.especificacao).join(" ")]
+      .join(" ").toLowerCase();
+    return q.split(/\s+/).every(t => texto.includes(t));
+  });
+
+  els("lista").innerHTML = lista.map(p => {
+    const itens = p.itens.filter(i => !obra || String(i.obra_id) === obra);
+    return `<div class="cartao" data-cartao="${p.pedido_id}" style="margin-bottom:14px">
+      <div class="cartao-cab"><h3>${escapar(p.numero)} · ${escapar(p.fornecedor)}</h3>
+        <small>${p.dias_de_atraso
+          ? `<b style="color:var(--vermelho)">atrasado ${p.dias_de_atraso} dia(s)</b> — era para ${dataBR(p.previsao_entrega)}`
+          : p.previsao_entrega ? `previsto para ${dataBR(p.previsao_entrega)}` : "sem data prevista"}
+          ${p.ja_chegou_parte ? " · já chegou uma parte" : ""}</small></div>
+      ${p.observacoes ? `<div class="cartao-dica">${escapar(p.observacoes)}</div>` : ""}
+      <div style="overflow-x:auto"><table><thead><tr>
+        <th>Material</th><th>Obra / onde desce</th>
+        <th class="direita">Pedido</th><th class="direita">Já chegou</th>
+        <th class="direita">Falta</th></tr></thead><tbody>
+        ${itens.map(i => `<tr ${i.saldo > 0 ? "" : `style="opacity:.55"`}>
+          <td><b>${escapar(i.insumo)}</b>${i.especificacao ? `<br><small>${escapar(i.especificacao)}</small>` : ""}
+            <br><small>solicitação ${escapar(i.solicitacao)}</small></td>
+          <td style="font-size:12px"><b>${escapar(i.obra)}</b><br>
+            ${i.fora_da_obra ? `<b style="color:var(--vermelho)">fora da obra:</b> ` : ""}${escapar(i.entrega_em)}</td>
+          <td class="direita dados">${quantidadeBR(i.pedido)} ${escapar(i.unidade)}</td>
+          <td class="direita dados">${quantidadeBR(i.recebido)}</td>
+          <td class="direita dados"><b>${quantidadeBR(i.saldo)}</b></td>
+</tr>`).join("")}
+      </tbody></table></div>
+      {# ⚑ NUNCA SÓ O RECEBIMENTO (21/11/2026, noite). O dono: "acho que nunca
+         pode ser feito só o recebimento. Isso é um problema e deixa um vácuo."
+         Esta tela registrava a chegada e DEPOIS oferecia lançar a nota — duas
+         etapas, e a segunda podia não acontecer. Agora ela mostra o que está
+         para chegar e manda para o procedimento único (o mesmo do portal):
+         o que chegou, a nota e o boleto, de uma vez. #}
+      <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+        <a class="btn" href="/erp/portal/material?pedido=${p.pedido_id}">Receber e lançar a nota</a>
+        <span class="sub">O que chegou, a nota e o boleto são registrados juntos —
+          no computador ou no celular.</span>
+      </div>
+    </div>`;
+  }).join("") || `<div class="cartao"><div class="cartao-dica"><b>Nenhum material
+      a caminho${q || obra ? " com estes filtros" : " para as suas obras"}.</b>
+      O que aparece aqui são os pedidos de compra já autorizados que ainda não
+      chegaram por inteiro.</div></div>`;
+
+}
+
+els("f-obra").addEventListener("change", desenhar);
+els("f-busca").addEventListener("input", () => { clearTimeout(window.__t);
+  window.__t = setTimeout(desenhar, 200); });
+els("btn-limpar").addEventListener("click", () => {
+  els("f-obra").value = ""; els("f-busca").value = ""; desenhar(); });
+
+carregar();
+</script>
+{% endblock %}

@@ -28,6 +28,8 @@ def lotes(banco_analisesps, tmp_path, monkeypatch):
     um = cp.guardar(pdf_com(3), "Bradesco_18112026.pdf", "marcelo", "MARCELO")
     dois = cp.guardar(pdf_com(1), "Sicredi.pdf", "ana", "ANA")
     with conexao() as conn:
+        # Os envios já processados: o "aguardando" do envio dá lugar ao resultado.
+        conn.execute("DELETE FROM analisesps.comprovantes_item WHERE situacao = 'AGUARDANDO'")
         cp._gravar_itens(conn, um, [
             {"pagina": 1, "situacao": cp.BAIXADO, "sp_id": "1400000001", "valor": "100,00",
              "recebedor": "FULANO", "motivo": "Baixa confirmada", "conversa_omie": ""},
@@ -194,3 +196,40 @@ def test_o_botao_da_tela_manda_de_novo(lotes, app, monkeypatch):  # noqa: F811
     r = cliente.post("/analisesps/comprovantes/reenviar", data={"so": f"{um}:2"})
     assert r.status_code == 302 and "mandado" in r.headers["Location"]
     assert disparos == ["comprovantes"]
+
+
+# --- a linha nasce no envio (21/11/2026) ---------------------------------------
+def test_ao_mandar_a_pagina_ja_aparece_aguardando_e_e_trocada_pelo_resultado(
+        banco_analisesps, tmp_path, monkeypatch):
+    """*"Na hora que mandasse para a baixa, ele já alimentasse a tabela e ficasse
+    aguardando a baixa."*"""
+    from app.apps.analisesps import comprovantes as cp
+    monkeypatch.setattr(cp, "PASTA", str(tmp_path))
+    monkeypatch.setattr(cp, "guardar_paginas_no_drive", lambda *a, **k: {})
+    lote = cp.guardar(pdf_com(12), "novo.pdf", "marcelo", "MARCELO")
+    itens = [i for i in cp.listar(_filtro())["itens"] if i["lote_id"] == lote]
+    assert len(itens) == 12
+    assert {(i["situacao"], i["andamento"]) for i in itens} == {(cp.AGUARDANDO, "na fila")}
+    assert not any(i["pede_acao"] or i["pode_reenviar"] for i in itens)
+
+    # A 1ª leva (págs. 1–10) volta só com a 1 baixada; a 2ª (11–12) cai.
+    respostas = iter([{"planos": [{"match": {"status": "localizado", "id": "1400000001"},
+                                   "pode_executar": True, "acao": "baixar_titulo",
+                                   "receipt": {"page": 1, "valor_pago": "10,00"},
+                                   "responses": {"omie": [{"step": "baixar",
+                                                           "response": {"ok": True}}]}}]}])
+
+    def robo(pedaco, nome, anotar, onde):
+        try:
+            return next(respostas)
+        except StopIteration:
+            raise RuntimeError("503 Service Unavailable")
+    monkeypatch.setattr(cp, "_mandar_com_paciencia", robo)
+    cp.processar_um(lote)
+    por = {i["pagina"]: i for i in cp.listar(_filtro())["itens"] if i["lote_id"] == lote}
+    assert len(por) == 12, "nenhuma página dobrada nem perdida"
+    assert por[1]["situacao"] == cp.BAIXADO
+    assert por[2]["situacao"] == cp.ERRO and "não devolveu" in por[2]["motivo"]
+    assert por[11]["situacao"] == cp.ERRO and "parou antes" in por[11]["motivo"]
+    assert por[11]["pode_reenviar"], "o que ficou para trás pode ser baixado de novo"
+    assert {s: q for s, _, q in cp.listar(_filtro())["contagem"]}[cp.AGUARDANDO] == 0
