@@ -1062,3 +1062,88 @@ def test_assinatura_vazia_ou_que_nao_e_imagem_e_recusada(base):
         assinatura.salvar(base["s"], base["u"], "data:image/png;base64,AAAA")
     with pytest.raises(ErroValidacao):
         assinatura.salvar(base["s"], base["u"], b"isto nao e uma imagem" * 40)
+
+
+# ---------------------------------------------------------------------------
+# Os relatórios de gestão
+# ---------------------------------------------------------------------------
+from app.apps.erp.core.suprimentos import relatorios as svc_rel  # noqa: E402
+
+
+def _segundo_fornecedor_mais_caro(base):
+    """Um concorrente no mapa: 120 na bancada (contra 100) e 70 no peitoril (contra 50)."""
+    s = base["s"]
+    caro = Fornecedor(tipo_pessoa=TipoPessoa.PJ, cnpj_cpf="71000007000131",
+                      razao_social="MARMORARIA CARA LTDA",
+                      regime_tributario=RegimeTributario.NAO_INFORMADO,
+                      canais_cotacao=["EMAIL"], regioes_atuacao=[])
+    s.add(caro); s.flush()
+    svc_cot.adicionar_fornecedor(s, base["cot"].id, {"fornecedor_id": caro.id}, base["u"])
+    s.flush()
+    coluna = s.scalars(select(CotacaoFornecedor).where(
+        CotacaoFornecedor.cotacao_id == base["cot"].id,
+        CotacaoFornecedor.fornecedor_id == caro.id)).one()
+    svc_cot.lancar_preco(s, coluna.id, base["linha_a"].id, "120,00", base["u"])
+    svc_cot.lancar_preco(s, coluna.id, base["linha_b"].id, "70,00", base["u"])
+    s.flush()
+    return caro
+
+
+def test_economia_da_cotacao_mede_contra_a_media_e_o_maior_preco(base):
+    _segundo_fornecedor_mais_caro(base)
+    pedido = _fechar(base)                      # paga 10×100 + 20×50 = 2.000
+    r = svc_rel.gerar(base["s"], "ECONOMIA", base["u"])
+    linha = next(l for l in r["linhas"] if l[1] == pedido.numero)
+    # pela média: 10×110 + 20×60 = 2.300 → economia 300; pelo maior: 2.600 → 600
+    assert linha[7] == 2000.0 and linha[8] == 2300.0 and linha[9] == 300.0
+    assert linha[11] == 600.0 and linha[6] == 2
+    resumo = {k["rotulo"]: k["valor"] for k in r["resumo"]}
+    assert resumo["Economia contra a média"] == 300.0
+
+
+def test_preco_contra_a_compra_anterior_nao_se_compara_consigo(base):
+    """O próprio pedido entra no histórico ao ser autorizado: sem o corte, a
+    variação seria sempre zero."""
+    s = base["s"]
+    pedido = _fechar(base, linhas=[base["linha_a"]])
+    r = svc_rel.gerar(s, "HISTORICO", base["u"])
+    linha = next(l for l in r["linhas"] if l[1] == pedido.numero)
+    assert linha[9] is None and linha[12] is None        # primeira compra: sem base
+    from app.apps.erp.db.models.cadastros import PrecoHistorico, TipoPreco
+    s.add(PrecoHistorico(insumo_id=base["item_a"].insumo_id, unidade="M2",
+                         preco_unitario=Decimal("80"), fornecedor_id=base["forn"].id,
+                         tipo=TipoPreco.COMPRADO, data=hoje() - timedelta(days=90)))
+    s.flush()
+    linha = next(l for l in svc_rel.gerar(s, "HISTORICO", base["u"])["linhas"]
+                 if l[1] == pedido.numero)
+    assert linha[9] == 80.0 and linha[12] == 25.0        # de 80 para 100: +25%
+
+
+def test_desempenho_do_fornecedor_conta_prazo_e_entrega_em_partes(base):
+    pedido = _fechar(base, previsao=hoje() - timedelta(days=5))
+    _receber(base, pedido, [(base["item_a"], 10)], dias_atras=3)
+    _receber(base, pedido, [(base["item_b"], 20)])       # completou hoje: 5 dias de atraso
+    r = svc_rel.gerar(base["s"], "FORNECEDOR", base["u"])
+    linha = next(l for l in r["linhas"] if l[0] == "GRANITOS DO TESTE LTDA")
+    assert linha[1] == 1 and linha[3] == 1               # 1 pedido, entregue
+    assert linha[4] == 0.0 and linha[5] == 5.0           # 0% no prazo, 5 dias de atraso
+    assert linha[6] == 1                                 # veio em partes
+    assert linha[8] == 1 and linha[9] == 100.0           # cotado uma vez, respondeu
+
+
+def test_tempo_do_ciclo_por_tipo_de_insumo_e_por_obra(base):
+    pedido = _fechar(base)
+    _receber(base, pedido, [(base["item_a"], 10), (base["item_b"], 20)])
+    r = svc_rel.gerar(base["s"], "CICLO", base["u"])
+    por_grupo = {(l[0], l[1]): l for l in r["linhas"]}
+    assert por_grupo[("Tipo de insumo", "Pedras")][2] == 2          # dois itens
+    assert por_grupo[("Tipo de insumo", "Pedras")][8] == 2          # os dois recebidos
+    assert por_grupo[("Obra", "CICLO-A")][6] == 0.0                 # tudo no mesmo dia
+    assert r["resumo"][0]["valor"] == 0.0
+
+
+def test_relatorio_respeita_o_recorte_de_obra(base):
+    so_b = _fechar(base, linhas=[base["linha_b"]])
+    da_a = _da_obra(base, base["obra_a"], "adm.a12@teste.bws.local")
+    r = svc_rel.gerar(base["s"], "ECONOMIA", da_a)
+    assert so_b.numero not in [l[1] for l in r["linhas"]]

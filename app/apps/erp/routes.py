@@ -235,6 +235,9 @@ MODULOS = [
             ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("sup_compras", "Compras", "erp.pagina_compras"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
+            # Os relatórios de GESTÃO (21/11/2026): economia da cotação, preço
+            # contra a compra anterior, desempenho do fornecedor, tempo do ciclo.
+            ("sup_relatorios", "Relatórios", "erp.pagina_suprimentos_relatorios"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_insumos"),
         ],
     },
@@ -11837,6 +11840,39 @@ def api_suprimentos_painel():
         return jsonify({"ok": True, **svc.planejamento(s, usuario),
                         "compras": {"resumo": compras["resumo"],
                                     "destaques": compras["destaques"]}})
+
+
+@bp.route("/erp/suprimentos/relatorios")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_relatorios():
+    return render_template("erp_suprimentos_relatorios.html",
+                           **_contexto("sup_relatorios"))
+
+
+@bp.route("/erp/api/suprimentos/relatorios")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_relatorios():
+    """Os relatórios de gestão das compras, no recorte de obra de quem pede."""
+    from datetime import date as _date
+    from app.apps.erp.core.suprimentos import relatorios as svc
+
+    def _data(nome):
+        try:
+            return _date.fromisoformat((request.args.get(nome) or "").strip())
+        except ValueError:
+            return None
+
+    def _numero(nome):
+        v = (request.args.get(nome) or "").strip()
+        return int(v) if v.isdigit() else None
+
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.gerar(
+            s, request.args.get("tipo") or "ECONOMIA", _usuario_logado(s),
+            de=_data("de"), ate=_data("ate"), obra_id=_numero("obra_id"),
+            fornecedor_id=_numero("fornecedor_id"))})
 
 
 @bp.route("/erp/suprimentos/acompanhar")
