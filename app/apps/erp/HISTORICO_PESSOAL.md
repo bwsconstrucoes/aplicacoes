@@ -38,6 +38,12 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**PUBLICADO (21/11/2026):** ASO sem travar (admissional reconhecido e com
+alerta; demissional pedido junto com a rescisão) e o agente cobrando e lendo o
+e-mail no automático — migração **123**. ⚠️ Confirmar com ele que apertou
+"Aplicar atualizações do banco" e se a conta de e-mail do DP está configurada
+(sem ela a leitura não faz nada).
+
 **PUBLICADO (20/11/2026, noite, 8):** o contrato que vira indeterminado
 sozinho ao fim da experiência (sem migração; a primeira rodada diária depois
 da publicação alcança o estoque).
