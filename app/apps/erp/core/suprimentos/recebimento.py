@@ -252,8 +252,12 @@ def a_receber(s: Session, usuario: Usuario, *,
         endereco_da_obra, rotulo_da_obra)
     from app.apps.erp.db.models.cadastros import Obra
 
+    from app.apps.erp.core.auth.permissoes import pode
+    from app.apps.erp.core.suprimentos import lancamento as svc_lanc
     hoje = hoje or date.today()
     obras = _obras_de_quem_recebe(s, usuario)
+    pode_lancar = (usuario is not None and getattr(usuario, "perfil", None) is not None
+                   and pode(usuario, "lancar"))
     pedidos = acomp.pedidos_no_escopo(s, usuario, (StatusPedidoCompra.AUTORIZADO,))
     base = acomp.carregar(s, pedidos)
 
@@ -292,6 +296,9 @@ def a_receber(s: Session, usuario: Usuario, *,
                 "fora_da_obra": desvio is not None,
             })
         esperando.append({
+            # O que a tela precisa para lançar a conta junto (só para quem lança).
+            "financeiro": (svc_lanc.dados_para_receber(s, pedido, base, obras)
+                           if pode_lancar else None),
             "pedido_id": pedido.id, "numero": pedido.numero,
             "fornecedor": retrato["fornecedor"],
             "previsao_entrega": retrato["previsao_entrega"],
@@ -334,9 +341,19 @@ def _recebimento_no_escopo(s: Session, usuario: Usuario, recebimento_id: int) ->
 
 def anexar(s: Session, usuario: Usuario, recebimento_id: int, conteudo: bytes,
            nome_arquivo: str, categoria: str = "OUTRO") -> dict[str, Any]:
-    """Guarda um documento (nota, boleto, canhoto, foto) no recebimento."""
+    """Guarda um documento (nota, boleto, canhoto, foto) no recebimento — e no
+    título, quando a conta foi lançada junto: o financeiro abre a nota pela
+    ficha do título, sem saber que existe um recebimento."""
     from app.apps.erp.core.documentos import armazenamento
+    from app.apps.erp.db.models.cadastros import PedidoTitulo
     rec = _recebimento_no_escopo(s, usuario, recebimento_id)
+    for vinculo in s.scalars(select(PedidoTitulo).where(
+            PedidoTitulo.recebimento_id == rec.id)).all():
+        if vinculo.recebimento_id == rec.id:
+            armazenamento.salvar(
+                s, conteudo, nome_arquivo or "documento", entidade_tipo="titulo",
+                entidade_id=vinculo.titulo_id, categoria=categoria, usuario=usuario,
+                descricao="Anexado no recebimento do material")
     anexo = armazenamento.salvar(
         s, conteudo, nome_arquivo or "documento", entidade_tipo=ENTIDADE_DO_ANEXO,
         entidade_id=rec.id, categoria=categoria, usuario=usuario,

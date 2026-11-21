@@ -2312,6 +2312,38 @@ def api_recebimentos_da_obra():
                         "pode_lancar": pode(usuario, "lancar")})
 
 
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/receber-e-lancar",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_receber_e_lancar(pedido_id: int):
+    """O procedimento único da obra: registra o que chegou E lança a conta a
+    pagar, numa transação só. Exige `lancar` — quem só recebe usa a rota de
+    recebimento, e a conta fica aparecendo como "falta lançar"."""
+    from app.apps.erp.core.suprimentos import lancamento as svc
+    from app.apps.erp.core.suprimentos.recebimento import exigir_pedido_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if not pode(usuario, "receber_material"):
+                return jsonify({"ok": False,
+                                "erro": "Você não registra recebimento de material."}), 403
+            exigir_pedido_no_escopo(s, usuario, pedido_id)
+            saida = svc.receber_e_lancar(s, usuario, pedido_id,
+                                         request.get_json(silent=True) or {})
+            s.commit()
+            return jsonify({"ok": True, **saida})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao receber e lançar")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/suprimentos/recebimentos/<int:recebimento_id>/documentos",
           methods=["GET", "POST"])
 @login_obrigatorio

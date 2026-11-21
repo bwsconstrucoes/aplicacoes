@@ -85,6 +85,22 @@
   .recado.erro { background: #FDECEC; color: #A32020; }
   .recado.ok { background: #E8F6EE; color: #1C6B3C; }
   .recado.aviso { background: #FFF6E5; color: #8A5B00; }
+  .financeiro { margin-top: 14px; padding: 12px; background: #FFF9EC; border-radius: 10px;
+         border: 1px solid #F1DDAE; }
+  .financeiro > b { font-size: 13.5px; }
+  .financeiro small { display: block; color: #5A6B85; font-size: 12px; }
+  .financeiro select, .parcela input { width: 100%; box-sizing: border-box; padding: 10px;
+         margin-top: 4px; border: 1px solid #C9D3E4; border-radius: 10px; font-size: 16px;
+         background: #fff; }
+  .duas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .parcela { background: #fff; border-radius: 8px; padding: 8px; margin-top: 8px; }
+  .parcela .topo { display: flex; justify-content: space-between; font-size: 12.5px;
+         font-weight: 700; color: #31507F; }
+  .lido { outline: 2px solid #1C6B3C; }
+  .marcar { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px;
+         font-size: 13.5px; }
+  .marcar input { width: 20px; height: 20px; margin: 0; flex: none; }
+  @media (min-width: 620px) { .tres { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; } }
   .vazio { text-align: center; color: #5A6B85; padding: 26px 10px; font-size: 14px; }
 </style>
 </head>
@@ -159,13 +175,118 @@ function guardarDigitado(){
   const cartao = document.querySelector("[data-aberto]");
   if (!cartao) return;
   const id = cartao.dataset.aberto;
+  const antes = DIGITADO[id] || {};
+  const v = seletor => { const c = cartao.querySelector(seletor); return c ? c.value : undefined; };
+  const marcado = seletor => { const c = cartao.querySelector(seletor); return c ? c.checked : false; };
   DIGITADO[id] = {
     itens: Object.fromEntries([...cartao.querySelectorAll(".rc-qtd")]
       .map(i => [i.dataset.item, i.value])),
-    data: cartao.querySelector(".rc-data").value,
-    nota: cartao.querySelector(".rc-nota").value,
-    obs: cartao.querySelector(".rc-obs").value,
-    arquivos: (DIGITADO[id] || {}).arquivos || []};
+    data: v(".rc-data"), nota: v(".rc-nota"), obs: v(".rc-obs"),
+    arquivos: antes.arquivos || [],
+    // o lançamento
+    emissao: v(".fn-emissao"), valor: v(".fn-valor"), forma: v(".fn-forma"),
+    conta: v(".fn-conta"), chave: antes.chave || null,
+    valorTocado: antes.valorTocado || false, parcelasTocadas: antes.parcelasTocadas || false,
+    lidos: antes.lidos || {},
+    sem: marcado(".fn-sem"), motivo: v(".fn-motivo"),
+    parcelas: [...cartao.querySelectorAll(".parcela")].map(x => ({
+      vencimento: x.querySelector(".pc-venc").value,
+      valor: x.querySelector(".pc-valor").value,
+      linha: (x.querySelector(".pc-linha") || {}).value || ""})),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// O LANÇAMENTO JUNTO DO RECEBIMENTO (21/11/2026)
+//
+// O dono: "fazer isso tudo no mesmo procedimento, receber e lançar notas e
+// boletos", e "se a IA detectar, preenche tudo. Se não detectar, a pessoa tem
+// que concluir o básico: número de nota, vencimento, código de barras, Pix".
+//
+// O credor, o rateio por obra e a conta do plano VÊM DO PEDIDO e não aparecem
+// aqui — a obra não tem como errá-los. O que a tela pede é o que só a nota e o
+// boleto sabem. O valor já vem sugerido pelo que foi marcado como recebido.
+// ---------------------------------------------------------------------------
+const brl = n => Number(n || 0).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+function valorSugerido(p, g){
+  const f = p.financeiro;
+  let soma = Number(f.recebido_sem_conta || 0), fecha = !f.outros_itens_em_aberto;
+  p.itens.forEach(i => {
+    if (!(i.saldo > 0)) return;
+    const digitado = g.itens[i.pedido_item_id];
+    const q = digitado === undefined ? i.saldo : numero(digitado);
+    soma += q * Number(f.precos[i.pedido_item_id] || 0);
+    if (q < i.saldo - 1e-9) fecha = false;
+  });
+  if (fecha) soma += Number(f.frete || 0) - Number(f.desconto || 0);
+  return Math.max(Math.round(soma * 100) / 100, 0);
+}
+
+function parcelasPadrao(p, valor){
+  const previstas = p.financeiro.parcelas_previstas || [];
+  if (!previstas.length) return [{vencimento: DADOS.hoje, valor: brl(valor), linha: ""}];
+  let resto = Math.round(valor * 100);
+  return previstas.map((x, n) => {
+    const centavos = n === previstas.length - 1 ? resto : Math.round(valor * 100 * x.parte);
+    resto -= centavos;
+    return {vencimento: x.vencimento < DADOS.hoje ? DADOS.hoje : x.vencimento,
+            valor: brl(centavos / 100), linha: ""};
+  });
+}
+
+function blocoFinanceiro(p, g){
+  const f = p.financeiro;
+  if (!f) return `<div class="sub" style="margin-top:10px">Você registra o recebimento;
+    a nota e o boleto são lançados por quem lança os pagamentos da obra.</div>`;
+  const valor = g.valorTocado && g.valor !== undefined ? numero(g.valor) : valorSugerido(p, g);
+  const forma = g.forma || "BOLETO";
+  const parcelas = (g.parcelasTocadas && g.parcelas && g.parcelas.length)
+    ? g.parcelas : parcelasPadrao(p, valor);
+  const lido = campo => (g.lidos || {})[campo] ? "lido" : "";
+  const contas = f.contas.filter(c => c.forma === forma);
+  return `<div class="financeiro">
+      <b>A conta a pagar desta entrega</b>
+      <small>O fornecedor, a obra e a conta do plano vêm do pedido. Junte a nota e o
+        boleto acima: o sistema lê e preenche; confira e complete o que faltar.</small>
+      <label class="marcar"><input type="checkbox" class="fn-sem" ${g.sem ? "checked" : ""}>
+        <span>A nota <b>não veio</b> com o material — vou registrar só o recebimento</span></label>
+      ${g.sem ? `<label class="campo">Por que a conta não está sendo lançada agora?
+          <input class="fn-motivo" value="${esc(g.motivo || "")}"
+            placeholder="ex.: motorista entregou sem a nota; fornecedor manda por e-mail"></label>
+          <small style="margin-top:6px">O suprimento e o financeiro vão ver este recebimento
+            como "falta lançar", com o seu motivo.</small>`
+      : `<div class="tres">
+          <label class="campo">Data da nota
+            <input type="date" class="fn-emissao ${lido("emissao")}" value="${esc(g.emissao || "")}" max="${DADOS.hoje}"></label>
+          <label class="campo">Valor da nota (R$)
+            <input class="fn-valor ${lido("valor")}" inputmode="decimal" value="${brl(valor)}"></label>
+          <label class="campo">Forma de pagamento
+            <select class="fn-forma">${f.formas.map(x => `<option value="${x.valor}"
+              ${x.valor === forma ? "selected" : ""}>${x.rotulo}</option>`).join("")}</select></label>
+        </div>
+        ${forma !== "BOLETO" ? (contas.length ? `<label class="campo">Conta do fornecedor
+            <select class="fn-conta">${contas.map(c => `<option value="${c.id}"
+              ${String(c.id) === String(g.conta) ? "selected" : ""}>${esc(c.rotulo)}${
+                c.homologada ? "" : " (aguardando conferência)"}</option>`).join("")}</select></label>`
+          : `<small style="margin-top:8px; color:#8A5B00">Este fornecedor não tem ${
+              forma === "PIX" ? "chave Pix" : "conta bancária"} no cadastro. A conta é lançada
+              e fica <b>bloqueada</b> até o financeiro cadastrar e conferir os dados dele.</small>`) : ""}
+        ${parcelas.map((x, n) => `<div class="parcela" data-parcela="${n}">
+            <div class="topo"><span>${parcelas.length > 1 ? `Parcela ${n + 1} de ${parcelas.length}` : "Pagamento"}</span>
+              ${parcelas.length > 1 ? `<button class="tira" data-tira-parcela="${n}" aria-label="tirar a parcela">✕</button>` : ""}</div>
+            <div class="duas">
+              <label class="campo">Vencimento
+                <input type="date" class="pc-venc ${lido("parcelas")}" value="${esc(x.vencimento || "")}"></label>
+              <label class="campo">Valor (R$)
+                <input class="pc-valor ${lido("parcelas")}" inputmode="decimal" value="${esc(x.valor || "")}"></label>
+            </div>
+            ${forma === "BOLETO" ? `<label class="campo">Linha digitável do boleto
+                <input class="pc-linha ${lido("parcelas")}" inputmode="numeric" value="${esc(x.linha || "")}"
+                  placeholder="os números do código de barras"></label>` : ""}
+          </div>`).join("")}
+        <button class="btn-portal secundario" data-mais-parcela style="margin-top:8px">+ Outra parcela</button>`}
+    </div>`;
 }
 
 // O tipo do documento é um PALPITE pelo nome do arquivo, e a pessoa corrige
@@ -215,7 +336,7 @@ function desenharChegar(){
       <label class="campo">Chegou em
         <input type="date" class="rc-data" value="${g.data || DADOS.hoje}" max="${DADOS.hoje}"></label>
       <label class="campo">Número da nota fiscal
-        <input class="rc-nota" placeholder="como está na nota" value="${esc(g.nota || "")}"></label>
+        <input class="rc-nota ${(g.lidos || {}).nota ? "lido" : ""}" placeholder="como está na nota" value="${esc(g.nota || "")}"></label>
       <label class="campo">Observação
         <input class="rc-obs" placeholder="ex.: 2 caixas avariadas" value="${esc(g.obs || "")}"></label>
       <div class="anexos">
@@ -229,10 +350,17 @@ function desenharChegar(){
                 .map(([v, r]) => `<option value="${v}" ${a.categoria === v ? "selected" : ""}>${r}</option>`).join("")}
             </select>
             <button class="tira" data-tira="${n}" aria-label="tirar este arquivo">✕</button></div>`).join("")}</div>
-        <label class="btn-portal secundario" style="margin-top:8px">+ Juntar documento
-          <input type="file" class="rc-arq" hidden multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.xml"></label>
+        <div class="duas">
+          <label class="btn-portal secundario" style="margin-top:8px">+ Nota, boleto…
+            <input type="file" class="rc-arq" hidden multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.xml"></label>
+          <label class="btn-portal secundario" style="margin-top:8px">📷 Foto do material
+            <input type="file" class="rc-foto" hidden multiple accept="image/*" capture="environment"></label>
+        </div>
+        <div class="leitura sub" style="margin:6px 0 0"></div>
       </div>
-      <button class="btn-portal" data-receber="${p.pedido_id}">Registrar o que chegou</button>
+      ${blocoFinanceiro(p, g)}
+      <button class="btn-portal" data-receber="${p.pedido_id}">${
+        p.financeiro ? "Registrar o recebimento e lançar a conta" : "Registrar o que chegou"}</button>
       <div class="sub" style="margin-top:8px">Chegou menos? Corrija o número ao lado do
         material. O que faltar fica como pendência para o suprimento cobrar do fornecedor.</div>
     </div>`;
@@ -248,16 +376,38 @@ function desenharChegar(){
   }));
   document.querySelectorAll("[data-receber]").forEach(b =>
     b.addEventListener("click", () => registrar(+b.dataset.receber, b)));
-  const campo = document.querySelector(".rc-arq");
-  if (campo) campo.addEventListener("change", () => {
-    guardarDigitado();
-    const g = DIGITADO[ABERTO];
-    [...campo.files].forEach(f => {
-      if (!g.arquivos.some(a => a.arquivo.name === f.name && a.arquivo.size === f.size))
-        g.arquivos.push({arquivo: f, categoria: palpiteDaCategoria(f.name)});
+  const juntar = (seletor, categoriaFixa) => {
+    const campo = document.querySelector(seletor);
+    if (!campo) return;
+    campo.addEventListener("change", () => {
+      guardarDigitado();
+      const g = DIGITADO[ABERTO], novos = [];
+      [...campo.files].forEach(f => {
+        if (!g.arquivos.some(a => a.arquivo.name === f.name && a.arquivo.size === f.size)) {
+          const doc = {arquivo: f, categoria: categoriaFixa || palpiteDaCategoria(f.name)};
+          g.arquivos.push(doc); novos.push(doc);
+        }
+      });
+      desenhar();
+      lerDocumentos(ABERTO, novos);
     });
-    desenhar();
-  });
+  };
+  juntar(".rc-arq"); juntar(".rc-foto", "FOTO");
+
+  // O lançamento: cada mexida guarda o que está na tela e redesenha, para o
+  // valor sugerido e as parcelas acompanharem a quantidade recebida.
+  const aoMudar = (seletor, antes) => document.querySelectorAll(seletor).forEach(c =>
+    c.addEventListener("change", () => { guardarDigitado(); if (antes) antes(DIGITADO[ABERTO]); desenhar(); }));
+  aoMudar(".rc-qtd"); aoMudar(".fn-sem"); aoMudar(".fn-forma");
+  aoMudar(".fn-valor", g => { g.valorTocado = true; });
+  aoMudar(".pc-venc, .pc-valor, .pc-linha", g => { g.parcelasTocadas = true; });
+  const mais = document.querySelector("[data-mais-parcela]");
+  if (mais) mais.addEventListener("click", () => {
+    guardarDigitado(); const g = DIGITADO[ABERTO];
+    g.parcelasTocadas = true; g.parcelas.push({vencimento: "", valor: "", linha: ""}); desenhar(); });
+  document.querySelectorAll("[data-tira-parcela]").forEach(b => b.addEventListener("click", () => {
+    guardarDigitado(); const g = DIGITADO[ABERTO];
+    g.parcelasTocadas = true; g.parcelas.splice(+b.dataset.tiraParcela, 1); desenhar(); }));
   document.querySelectorAll("[data-cat]").forEach(sel => sel.addEventListener("change", () => {
     guardarDigitado();
     DIGITADO[ABERTO].arquivos[+sel.dataset.cat].categoria = sel.value; }));
@@ -297,35 +447,112 @@ function desenharNota(){
     : `<div class="bloco vazio">Tudo o que chegou já tem conta lançada.</div>`);
 }
 
+// A IA LÊ A NOTA E O BOLETO assim que são juntados, e preenche o lançamento.
+// Campo lido fica contornado de verde — é o que pede conferência, não fé.
+// Foto do material não é lida: é só registro. Quem não lança não gasta leitura.
+async function lerDocumentos(pedidoId, docs){
+  const p = DADOS.esperando.find(x => x.pedido_id === pedidoId);
+  if (!p || !p.financeiro || !DADOS.pode_lancar) return;
+  const dizer = texto => { const a = document.querySelector("[data-aberto] .leitura");
+                           if (a) a.innerHTML = texto; };
+  for (const doc of docs.filter(d => d.categoria === "NOTA" || d.categoria === "BOLETO")) {
+    dizer(`Lendo ${esc(doc.arquivo.name)}…`);
+    try {
+      const fd = new FormData();
+      fd.append("arquivo", doc.arquivo);
+      fd.append("dica", `${doc.categoria === "BOLETO" ? "boleto" : "nota fiscal"} da compra de material, pedido ${p.numero}`);
+      const x = (await api("/erp/api/lancamento/ler-documento", {method: "POST", body: fd})).documento;
+      guardarDigitado();
+      const g = DIGITADO[pedidoId];
+      g.lidos = g.lidos || {};
+      const tipo = String(x.tipo_documento || "").toUpperCase();
+      const ehBoleto = tipo.includes("BOLETO") || doc.categoria === "BOLETO";
+      doc.categoria = ehBoleto ? "BOLETO" : (tipo.includes("NF") || tipo.includes("NOTA") ? "NOTA" : doc.categoria);
+      if (!ehBoleto) {
+        if (x.numero_documento) { g.nota = String(x.numero_documento); g.lidos.nota = true; }
+        if (x.data_emissao) { g.emissao = x.data_emissao; g.lidos.emissao = true; }
+        if (x.valor_total) { g.valor = brl(x.valor_total); g.valorTocado = true; g.lidos.valor = true; }
+        if (x.chave_acesso) g.chave = x.chave_acesso;
+      }
+      const lidas = (x.parcelas || []).filter(q => q.vencimento);
+      if (lidas.length && (ehBoleto || !g.parcelasTocadas)) {
+        g.parcelas = lidas.map(q => ({vencimento: q.vencimento,
+          valor: brl(q.valor || x.valor_total || 0), linha: q.linha_digitavel || ""}));
+        g.parcelasTocadas = true; g.lidos.parcelas = true;
+        if (lidas.some(q => q.linha_digitavel)) g.forma = "BOLETO";
+      }
+      if (ABERTO === pedidoId) desenhar();
+      const faltou = [];
+      if (!ehBoleto && !x.numero_documento) faltou.push("o número da nota");
+      if (!ehBoleto && !x.valor_total) faltou.push("o valor");
+      if (ehBoleto && !lidas.some(q => q.linha_digitavel)) faltou.push("a linha digitável");
+      dizer(`<b>${esc(doc.arquivo.name)}</b> lido. ` + (faltou.length
+        ? `Não consegui achar ${faltou.join(" nem ")} — complete à mão.`
+        : "Confira os campos contornados de verde."));
+    } catch(e){
+      dizer(`Não consegui ler <b>${esc(doc.arquivo.name)}</b> (${esc(e.message)}). `
+        + "O arquivo fica anexado; preencha os campos à mão.");
+    }
+  }
+}
+
 async function registrar(pedidoId, botao){
   guardarDigitado();
+  const p = DADOS.esperando.find(x => x.pedido_id === pedidoId);
+  const g = DIGITADO[pedidoId] || {};
   const cartao = document.querySelector(`[data-aberto="${pedidoId}"]`);
   const campos = [...cartao.querySelectorAll(".rc-qtd")];
-  const arquivos = (DIGITADO[pedidoId] || {}).arquivos || [];
+  const arquivos = g.arquivos || [];
+  const falha = texto => { recado(texto, "erro"); scrollTo(0, 0); };
   const itens = campos.map(i => ({pedido_item_id: +i.dataset.item,
     quantidade: numero(i.value), saldo: +i.dataset.saldo})).filter(i => i.quantidade > 0);
-  if (!itens.length) {
-    recado("Informe a quantidade que chegou em ao menos um material.", "erro");
-    scrollTo(0, 0); return;
-  }
-  if (itens.some(i => i.quantidade > i.saldo + 1e-9)) {
-    recado("Há material com quantidade MAIOR do que falta chegar. Se veio a mais, registre só "
-      + "o que foi pedido e escreva a sobra na observação.", "erro");
-    scrollTo(0, 0); return;
-  }
+  if (!itens.length) return falha("Informe a quantidade que chegou em ao menos um material.");
+  if (itens.some(i => i.quantidade > i.saldo + 1e-9))
+    return falha("Há material com quantidade MAIOR do que falta chegar. Se veio a mais, registre só "
+      + "o que foi pedido e escreva a sobra na observação.");
   const parcial = itens.length < campos.length || itens.some(i => i.quantidade < i.saldo - 1e-9);
+
+  const corpo = {data: g.data, nota_numero: g.nota, observacoes: g.obs,
+    itens: itens.map(i => ({pedido_item_id: i.pedido_item_id, quantidade: String(i.quantidade)}))};
+  let url = `/erp/api/suprimentos/pedidos/${pedidoId}/recebimento`;
+  const lanca = !!p.financeiro;
+  if (lanca) {
+    url = `/erp/api/suprimentos/pedidos/${pedidoId}/receber-e-lancar`;
+    if (g.sem) {
+      corpo.financeiro = {sem_lancamento: true, motivo: g.motivo || ""};
+    } else {
+      // Confere aqui o que o servidor vai conferir de novo: dizer TUDO o que
+      // falta de uma vez, e não um campo por tentativa.
+      const falta = [];
+      const valor = numero(g.valor);
+      if (!(g.nota || "").trim()) falta.push("o número da nota fiscal");
+      if (!(valor > 0)) falta.push("o valor da nota");
+      const parcelas = (g.parcelas || []).filter(x => x.vencimento || numero(x.valor) > 0);
+      if (!parcelas.length || parcelas.some(x => !x.vencimento)) falta.push("o vencimento");
+      if (g.forma === "BOLETO" && parcelas.some(x => !String(x.linha || "").trim()))
+        falta.push("a linha digitável do boleto");
+      const soma = parcelas.reduce((s, x) => s + numero(x.valor), 0);
+      if (parcelas.length && Math.abs(soma - valor) > 0.01)
+        falta.push(`as parcelas somarem o valor da nota (somam ${brl(soma)}, a nota é ${brl(valor)})`);
+      if (!arquivos.some(a => a.categoria === "NOTA")) falta.push("anexar a nota fiscal");
+      if (falta.length) return falha(`<b>Para lançar a conta falta:</b> ${falta.join("; ")}.
+        <br>Se a nota não veio com o material, marque essa opção no quadro amarelo.`);
+      corpo.financeiro = {documento_numero: g.nota, data_emissao: g.emissao || null,
+        valor: String(valor), forma_pagamento: g.forma || "BOLETO",
+        fornecedor_conta_id: g.forma !== "BOLETO" && g.conta ? +g.conta : null,
+        chave_acesso: g.chave || null,
+        parcelas: parcelas.map(x => ({vencimento: x.vencimento, valor: String(numero(x.valor)),
+          linha_digitavel: g.forma === "BOLETO" ? (x.linha || "") : ""}))};
+    }
+  }
+
+  const rotulo = botao.textContent;
   botao.disabled = true; botao.textContent = "Registrando…";
   try {
-    const r = await api(`/erp/api/suprimentos/pedidos/${pedidoId}/recebimento`, {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        data: cartao.querySelector(".rc-data").value,
-        nota_numero: cartao.querySelector(".rc-nota").value,
-        observacoes: cartao.querySelector(".rc-obs").value,
-        itens: itens.map(i => ({pedido_item_id: i.pedido_item_id, quantidade: String(i.quantidade)}))})});
-    // Os documentos sobem DEPOIS, porque só agora existe recebimento a que
-    // prendê-los. Falha em anexar não desfaz o recebimento: o material chegou
-    // de qualquer jeito. O que ela faz é DIZER quais ficaram de fora.
+    const r = await api(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                              body: JSON.stringify(corpo)});
+    // Os documentos sobem DEPOIS, porque só agora existe recebimento (e
+    // título) a que prendê-los. Falha em anexar não desfaz o que foi gravado.
     const falhas = [];
     for (const a of arquivos) {
       const fd = new FormData();
@@ -337,21 +564,23 @@ async function registrar(pedidoId, botao){
     }
     const subiram = arquivos.length - falhas.length;
     delete DIGITADO[pedidoId]; ABERTO = null;
+    const t = r.titulo;
     recado((parcial
         ? "<b>Recebimento parcial registrado.</b> O que faltou ficou como pendência para o suprimento. "
         : "<b>Recebimento registrado.</b> Chegou tudo o que faltava deste pedido para a sua obra. ")
-      + (subiram ? `${subiram} documento(s) guardado(s). ` : "")
-      + (falhas.length ? `<br><b>Não consegui guardar:</b> ${falhas.map(esc).join("; ")}. ` : "")
-      + (subiram ? "Falta só lançar a conta." : "Agora falta a nota e o boleto.")
-      + (DADOS.pode_lancar
-          ? `<a class="btn-portal" href="/erp/lancar?pedido_compra=${pedidoId}&recebimento=${r.recebimento_id || ""}">${
-              subiram ? "Lançar a conta a pagar agora" : "Lançar a nota e o boleto agora"}</a>` : ""),
+      + (t ? `<br><b>Conta a pagar ${esc(t.numero_sp)} lançada</b>${t.status === "BLOQUEADO"
+            ? " — ficou <b>bloqueada</b> pela análise do financeiro, que vai conferir." : " e enviada para autorização."}
+            ${(t.alertas || []).length ? `<br>Atenção: ${t.alertas.map(esc).join(" ")}` : ""}`
+           : lanca ? "<br>A conta <b>não</b> foi lançada — este recebimento fica em \"Falta lançar\"."
+           : " Agora falta a nota e o boleto.")
+      + (subiram ? `<br>${subiram} documento(s) guardado(s).` : "")
+      + (falhas.length ? `<br><b>Não consegui guardar:</b> ${falhas.map(esc).join("; ")}.` : ""),
       falhas.length ? "aviso" : "ok");
     scrollTo(0, 0);
     carregar();
   } catch(e){
     recado(esc(e.message), "erro"); scrollTo(0, 0);
-    botao.disabled = false; botao.textContent = "Registrar o que chegou";
+    botao.disabled = false; botao.textContent = rotulo;
   }
 }
 

@@ -269,3 +269,171 @@ def itens_do_recebimento(s: Session, recebimento_id: int) -> list[dict[str, Any]
     return [{"pedido_item_id": r.pedido_item_id, "quantidade": str(r.quantidade)}
             for r in s.scalars(select(RecebimentoItem).where(
                 RecebimentoItem.recebimento_id == recebimento_id)).all()]
+
+
+# ---------------------------------------------------------------------------
+# RECEBER E LANÇAR NUM PROCEDIMENTO SÓ (21/11/2026)
+#
+# O dono: "fazer isso tudo no mesmo procedimento, receber e lançar notas e
+# boletos (…) inclusive eu travo isso atualmente, a pessoa recebe e lança ao
+# mesmo tempo, porque senão as pessoas podem ignorar, podem fazer só o
+# lançamento financeiro, esquecer de fazer o recebimento e vice-versa."
+#
+# E sobre o preenchimento: "esse lançamento tem que preencher corretamente o
+# título financeiro. Se a IA detectar, preenche tudo. Se não detectar, a pessoa
+# tem que concluir o básico (…) número de nota, fornecedor, CNPJ, vencimento,
+# código de barras, PIX."
+#
+# UMA TRANSAÇÃO: o recebimento, o título e o vínculo nascem juntos ou não
+# nasce nenhum. O título continua saindo de `criar_titulo`, com a crítica de
+# duplicidade na frente — a mesma ordem da tela de Lançar. O que vem do PEDIDO
+# (credor, rateio por obra, conta do plano) não é digitado; o que vem da NOTA
+# (número, valor, vencimento, linha digitável) é lido pela IA ou digitado.
+#
+# A SAÍDA "a nota não veio": existe, exige o motivo por escrito e fica à vista
+# do coordenador e do financeiro. Sem ela, no dia em que o caminhão chegasse
+# sem o boleto, a obra não registraria nem o recebimento — e aí o sistema
+# perderia as duas informações em vez de uma.
+# ---------------------------------------------------------------------------
+FORMAS_DO_PORTAL = (("BOLETO", "Boleto"), ("PIX", "Pix"), ("TED", "Transferência (TED)"))
+
+
+def dados_para_receber(s: Session, pedido: PedidoCompra, base: dict[str, Any],
+                       obras: Optional[set[int]]) -> dict[str, Any]:
+    """O que a tela de recebimento precisa para montar o lançamento sozinha:
+    o preço de cada item, as parcelas previstas e as contas do fornecedor."""
+    from app.apps.erp.db.models.cadastros import FornecedorConta
+    itens = [i for i in base["itens"].get(pedido.id, [])
+             if obras is None or i["obra_id"] in obras]
+    todos = base["itens"].get(pedido.id, [])
+    fin = acomp.financeiro_do_pedido(pedido, base)
+    abertas = [p for p in base["previsoes"].get(pedido.id, []) if not p.titulo_id]
+    soma = sum((_d(p.valor) for p in abertas), _ZERO)
+    contas = [{"id": c.id, "forma": c.forma.value,
+               "rotulo": (f"Pix {c.pix_chave}" if c.pix_chave else
+                          f"Banco {c.banco_codigo or '?'} ag. {c.agencia or '?'} "
+                          f"conta {c.conta or '?'}"),
+               "homologada": getattr(c.status, "value", "") == "HOMOLOGADA"}
+              for c in s.scalars(select(FornecedorConta).where(
+                  FornecedorConta.fornecedor_id == pedido.fornecedor_id)).all()]
+    return {
+        "precos": {str(i["pedido_item_id"]): str(i["preco_unitario"]) for i in itens},
+        # Frete e desconto entram no valor quando ESTE recebimento fecha o pedido.
+        "frete": str(_d(pedido.frete)), "desconto": str(_d(pedido.desconto)),
+        "outros_itens_em_aberto": any(i["saldo"] > 0 for i in todos if i not in itens),
+        "ja_lancado": str(fin["em_titulo"]),
+        "recebido_sem_conta": str(max(
+            sum((i["valor_recebido"] for i in todos), _ZERO) - fin["em_titulo"], _ZERO)),
+        "parcelas_previstas": [
+            {"vencimento": p.vencimento.isoformat(),
+             "parte": float(_d(p.valor) / soma) if soma > 0 else 0} for p in abertas],
+        "contas": contas,
+        "formas": [{"valor": v, "rotulo": r} for v, r in FORMAS_DO_PORTAL],
+        "antecipado": bool(pedido.antecipado),
+    }
+
+
+def receber_e_lancar(s: Session, usuario: Usuario, pedido_id: int,
+                     dados: dict[str, Any]) -> dict[str, Any]:
+    """Registra o que chegou E lança a conta a pagar — juntos, ou nenhum."""
+    from app.apps.erp.core.suprimentos import recebimento as svc_rec
+    from app.apps.erp.core.suprimentos.projecao import repartir
+    from app.apps.erp.core.titulos import service as svc_titulos
+    from app.apps.erp.core.titulos.derivacao import derivar_por_contexto
+    from app.apps.erp.core.titulos.duplicidade import checar
+    from app.apps.erp.db.models.cadastros import Categoria
+
+    pedido = _pedido_autorizado(s, usuario, int(pedido_id))
+    fin = dados.get("financeiro") or {}
+    rec = svc_rec.registrar(s, pedido.id, dados, usuario)
+    s.flush()
+
+    if fin.get("sem_lancamento"):
+        motivo = " ".join(str(fin.get("motivo") or "").split())
+        if len(motivo) < 10:
+            raise ErroValidacao(
+                "Explique por que a conta não está sendo lançada junto com o "
+                "recebimento — o financeiro e o suprimento vão ler isto.")
+        rec.observacoes = ((rec.observacoes + " · ") if rec.observacoes else "") + (
+            f"SEM LANÇAMENTO NO RECEBIMENTO: {motivo}")
+        registrar_evento(s, "pedido_compra", pedido.id, "RECEBIDO_SEM_LANCAMENTO",
+                         {"recebimento_id": rec.id, "motivo": motivo}, usuario.id)
+        return {"recebimento_id": rec.id, "titulo": None}
+
+    sugerido = preparar(s, usuario, pedido.id, recebimento_id=rec.id)
+    faltando = []
+    numero_nota = " ".join(str(fin.get("documento_numero") or "").split())
+    if not numero_nota:
+        faltando.append("o número da nota fiscal")
+    try:
+        valor = _d(str(fin.get("valor") or "").replace(".", "").replace(",", ".")
+                   if "," in str(fin.get("valor") or "") else fin.get("valor"))
+    except Exception:
+        valor = _ZERO
+    if valor <= 0:
+        faltando.append("o valor da nota")
+    forma = str(fin.get("forma_pagamento") or "").strip().upper()
+    if forma not in {v for v, _ in FORMAS_DO_PORTAL}:
+        faltando.append("a forma de pagamento")
+    parcelas = [p for p in (fin.get("parcelas") or []) if p.get("vencimento")]
+    if not parcelas:
+        faltando.append("o vencimento")
+    if forma == "BOLETO" and any(not str(p.get("linha_digitavel") or "").strip()
+                                 for p in parcelas):
+        faltando.append("a linha digitável (código de barras) de cada boleto")
+    if faltando:
+        raise ErroValidacao("Para lançar a conta falta " + ", ".join(faltando) + ".")
+
+    pesos = {(r["obra_id"], r["categoria_id"]): _d(r["valor"])
+             for r in sugerido["rateios"]}
+    if not pesos:
+        raise ErroValidacao("Não há material recebido para ratear a conta.")
+    conta_do_plano = (fin.get("categoria_id") or sugerido["categoria_id"]
+                      or next((c for (_o, c) in pesos if c), None))
+    cat = s.get(Categoria, int(conta_do_plano)) if conta_do_plano else None
+    if cat is None:
+        raise ErroValidacao(
+            "O material deste pedido está sem conta do plano financeiro no "
+            "cadastro de insumos. Peça ao suprimento para acertar o cadastro — "
+            "sem a conta, o lançamento não tem onde cair.")
+
+    d = {
+        "fornecedor_id": pedido.fornecedor_id, "categoria_id": cat.id,
+        "descricao": (str(fin.get("descricao") or "").strip() or sugerido["descricao"]),
+        "valor_bruto": str(valor), "documento_numero": numero_nota,
+        "data_emissao_doc": fin.get("data_emissao") or None,
+        "forma_pagamento": forma,
+        "fornecedor_conta_id": fin.get("fornecedor_conta_id") or None,
+        "parcelas": [{"vencimento": p["vencimento"], "valor": str(p.get("valor") or valor),
+                      "linha_digitavel": str(p.get("linha_digitavel") or "").strip()}
+                     for p in parcelas],
+        "rateios": [{"obra_id": obra_id, "valor": str(parte),
+                     "categoria_id": conta or cat.id}
+                    for (obra_id, conta), parte in repartir(valor, pesos).items()
+                    if parte > 0],
+        "retencoes": [], "interessados": [],
+        "pedido_compra_id": pedido.id, "recebimento_id": rec.id,
+    }
+    critica = checar(s, {"fornecedor_id": d["fornecedor_id"], "valor": d["valor_bruto"],
+                         "parcelas": d["parcelas"], "descricao": d["descricao"],
+                         "categoria_id": d["categoria_id"],
+                         "documento_numero": d["documento_numero"]})
+    if critica["bloqueios"] and not fin.get("forcar"):
+        raise ErroValidacao("Esta nota parece já ter sido lançada: " + " ".join(
+            str(b.get("msg") or "") for b in critica["bloqueios"]))
+    d["tipo"] = derivar_por_contexto(cat, d).value
+    if d["tipo"] == "T14_EXCECAO_SEM_NOTA":
+        d["justificativa_excecao"] = (f"Lançado no recebimento do pedido {pedido.numero} "
+                                      f"por {usuario.email}.")
+    titulo = svc_titulos.criar_titulo(s, d, usuario)
+    if fin.get("chave_acesso"):
+        titulo.chave_acesso_nfe = str(fin["chave_acesso"])[:44] or None
+    vincular(s, titulo, pedido.id, usuario, recebimento_id=rec.id)
+    if critica["alertas"]:
+        registrar_evento(s, "titulo", titulo.id, "ALERTAS_DUPLICIDADE_ACEITOS",
+                         {"alertas": critica["alertas"],
+                          "confirmado_por": usuario.email}, usuario.id)
+    return {"recebimento_id": rec.id,
+            "titulo": {"id": titulo.id, "numero_sp": titulo.numero_sp,
+                       "status": titulo.status.value,
+                       "alertas": [a.get("msg") for a in critica["alertas"]]}}

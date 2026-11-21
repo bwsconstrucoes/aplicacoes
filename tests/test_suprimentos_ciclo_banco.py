@@ -933,3 +933,92 @@ def test_ao_lancar_nota_do_fornecedor_o_sistema_oferece_os_pedidos_dele(base):
     svc_lanc.vincular(s, titulo, pedido.id, u)
     # tudo lançado: não há mais o que oferecer
     assert svc_lanc.pedidos_do_fornecedor_a_lancar(s, u, base["forn"].id) == []
+
+
+# ---------------------------------------------------------------------------
+# Receber e lançar num procedimento só
+# ---------------------------------------------------------------------------
+def _com_conta_do_plano(base):
+    """Os insumos do cenário ganham conta do plano — sem ela não há onde lançar."""
+    s = base["s"]
+    cat = Categoria(codigo="2.1.77", descricao="Material de acabamento")
+    s.add(cat); s.flush()
+    for insumo in s.scalars(select(Insumo)).all():
+        insumo.categoria_id = cat.id
+    s.flush()
+    return cat
+
+
+def _pacote(base, pedido, quantidades, **financeiro):
+    s = base["s"]
+    linhas = {l.suprimento_item_id: l for l in s.scalars(select(PedidoItem).where(
+        PedidoItem.pedido_id == pedido.id)).all()}
+    return {"data": hoje().isoformat(), "nota_numero": financeiro.get("documento_numero"),
+            "itens": [{"pedido_item_id": linhas[i.id].id, "quantidade": str(q)}
+                      for i, q in quantidades],
+            "financeiro": financeiro}
+
+
+def test_receber_e_lancar_cria_o_recebimento_e_o_titulo_juntos(base):
+    s, u = base["s"], base["u"]
+    cat = _com_conta_do_plano(base)
+    pedido = _fechar(base)
+    r = svc_lanc.receber_e_lancar(s, u, pedido.id, _pacote(
+        base, pedido, [(base["item_a"], 10), (base["item_b"], 20)],
+        documento_numero="4455", valor="2000,00", forma_pagamento="PIX",
+        data_emissao=hoje().isoformat(),
+        parcelas=[{"vencimento": (hoje() + timedelta(days=30)).isoformat(),
+                   "valor": "2000.00"}]))
+    s.flush()
+    assert r["titulo"]["numero_sp"]
+    titulo = s.get(Titulo, r["titulo"]["id"])
+    assert titulo.fornecedor_id == base["forn"].id and titulo.valor_bruto == Decimal("2000.00")
+    assert titulo.categoria_id == cat.id
+    linha, _ = _linha(base, pedido)
+    assert linha["entrega"]["completa"] is True
+    assert linha["pagamento"]["em_titulo"] == 2000.0
+    assert linha["ciclo"] == "ENTREGUE_A_PAGAR"
+    assert svc_proj.projetar(s, u)["totais"]["FIRME"] == 0.0
+
+
+def test_sem_os_dados_basicos_da_nota_nada_e_gravado(base):
+    """A trava dele: não se recebe sem lançar. Faltando o básico, nem o
+    recebimento fica — a transação inteira é recusada."""
+    _com_conta_do_plano(base)
+    pedido = _fechar(base)
+    with pytest.raises(ErroValidacao) as erro:
+        svc_lanc.receber_e_lancar(base["s"], base["u"], pedido.id, _pacote(
+            base, pedido, [(base["item_a"], 10)], forma_pagamento="BOLETO",
+            valor="1000,00",
+            parcelas=[{"vencimento": (hoje() + timedelta(days=30)).isoformat(),
+                       "valor": "1000.00"}]))
+    assert "número da nota" in str(erro.value) and "linha digitável" in str(erro.value)
+
+
+def test_a_nota_nao_veio_exige_motivo_e_fica_a_vista(base):
+    pedido = _fechar(base)
+    with pytest.raises(ErroValidacao, match="Explique"):
+        svc_lanc.receber_e_lancar(base["s"], base["u"], pedido.id, _pacote(
+            base, pedido, [(base["item_a"], 10)], sem_lancamento=True, motivo="depois"))
+
+
+def test_a_nota_nao_veio_com_motivo_registra_so_o_recebimento(base):
+    pedido = _fechar(base)
+    r = svc_lanc.receber_e_lancar(base["s"], base["u"], pedido.id, _pacote(
+        base, pedido, [(base["item_a"], 10)], sem_lancamento=True,
+        motivo="o motorista entregou sem a nota; fornecedor manda por e-mail"))
+    base["s"].flush()
+    assert r["titulo"] is None
+    linha, d = _linha(base, pedido)
+    assert linha["nota"]["recebido_sem_nota"] == 1000.0
+    rec = _ultimo_recebimento(base, pedido)
+    assert "SEM LANÇAMENTO NO RECEBIMENTO" in rec.observacoes
+
+
+def test_insumo_sem_conta_do_plano_recusa_dizendo_o_que_fazer(base):
+    pedido = _fechar(base)
+    with pytest.raises(ErroValidacao, match="conta do plano"):
+        svc_lanc.receber_e_lancar(base["s"], base["u"], pedido.id, _pacote(
+            base, pedido, [(base["item_a"], 10)], documento_numero="1", valor="1000,00",
+            forma_pagamento="PIX",
+            parcelas=[{"vencimento": hoje().isoformat(), "valor": "1000.00"}]))
