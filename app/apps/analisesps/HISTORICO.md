@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 275 — Comprovantes: a página entra na lista no envio, "Aguardando a baixa" (21/11/2026)
+
+- *"Quando você anexa o comprovante e coloca mandar para a baixa (…) ele meio que some (…)
+  e desaparece qualquer informação. Aí depois (…) é que ele é listado na tabela (…) a gente
+  fica na dúvida, foi, não foi (…) o ideal era que na hora que mandasse para a baixa, ele
+  já alimentasse a tabela e ficasse aguardando a baixa."*
+- `comprovantes.guardar` cria uma linha por página com a situação `AGUARDANDO` ("Aguardando
+  a baixa"; na lista: "na fila" ou "baixando agora — leva x de y"). Quando a leva volta do
+  robô, as linhas daquelas páginas são TROCADAS pelo resultado (o que também acaba com a
+  linha dobrada quando um envio parado era retomado do começo).
+- Nada fica "aguardando" para sempre: página da leva que o robô não devolveu vira "Deu
+  erro — o robô não devolveu resultado"; envio que parou no meio deixa as que faltavam como
+  "Deu erro — o envio parou antes desta página: <motivo>"; sem o PDF no servidor, idem.
+  Todas podem ser baixadas de novo (leva 274). "Processar de novo" recria o aguardando.
+- A tela se recarrega a cada leva que volta (antes, só no fim do envio).
+- Sem migração. Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+
 #### Leva 274 — Comprovantes: "Baixar de novo" na página que não baixou (19/11/2026)
 
 - *"Nos que não foram baixados, eu queria que tivesse algum botão (…) para eu baixar

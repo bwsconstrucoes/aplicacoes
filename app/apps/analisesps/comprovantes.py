@@ -197,11 +197,15 @@ NAO_LOCALIZADO = "NAO_LOCALIZADO"
 PENDENTE_VALIDACAO = "PENDENTE_VALIDACAO"
 RECUSADO = "RECUSADO"
 ERRO = "ERRO"
+# A página que acabou de chegar e espera a vez (21/11/2026): a linha nasce no envio
+# e é trocada pelo resultado quando a leva dela volta do robô.
+AGUARDANDO = "AGUARDANDO"
 # A página mandada de novo pela tela (19/11/2026): o resultado está no envio novo.
 # Sai das contas do que "pede ação" — senão o mesmo comprovante contaria duas vezes.
 REENVIADO = "REENVIADO"
 
 ROTULOS = {
+    AGUARDANDO: "Aguardando a baixa",
     BAIXADO: "Baixado",
     DUPLICADO: "Já tinha sido baixado",
     NAO_LOCALIZADO: "Não achei a SP",
@@ -214,7 +218,8 @@ ROTULOS = {
 # A ordem em que a tela mostra: primeiro o que pede ação, por último o que
 # deu certo. Quem abre a tela quer saber o que ficou de fora — o que baixou é
 # o esperado.
-ORDEM = [ERRO, NAO_LOCALIZADO, PENDENTE_VALIDACAO, RECUSADO, DUPLICADO, BAIXADO, REENVIADO]
+ORDEM = [AGUARDANDO, ERRO, NAO_LOCALIZADO, PENDENTE_VALIDACAO, RECUSADO, DUPLICADO, BAIXADO,
+         REENVIADO]
 
 
 def _texto(v) -> str:
@@ -558,6 +563,7 @@ def guardar(conteudo: bytes, nome: str, pessoa: str, quem: str) -> int:
         conn.execute(
             "UPDATE analisesps.comprovantes_lote SET caminho = ? WHERE id = ?",
             (caminho, lote_id))
+        _aguardar(conn, lote_id, paginas)
         conn.commit()
 
     logger.info("Análise de SPs: comprovante %r recebido — lote %d, %d página(s), "
@@ -656,6 +662,43 @@ def _mandar_ao_robo(pedaco: bytes, nome: str) -> dict:
     return processar_baixabradesco(pedido) or {}
 
 
+# ---------------------------------------------------------------------------
+# A LINHA NASCE NO ENVIO (21/11/2026)
+#
+# O dono: *"quando você anexa o comprovante e coloca mandar para a baixa (…) ele
+# meio que some (…) e desaparece qualquer informação. Aí depois que é baixado ou
+# não é baixado, é que ele é listado na tabela (…) a gente fica na dúvida, foi,
+# não foi (…) o ideal era que na hora que mandasse para a baixa, ele já
+# alimentasse a tabela e ficasse aguardando a baixa."*
+#
+# Cada página entra na lista no momento do envio, como "Aguardando a baixa". Quando
+# a leva dela volta do robô, as linhas DAQUELAS páginas são trocadas pelo resultado
+# (o que também evita a linha dobrada quando um envio parado é retomado do
+# começo). Página que o robô não devolveu, ou que ficou para trás num envio que
+# parou, não fica "aguardando" para sempre: vira "Deu erro", dizendo por quê, e
+# pode ser baixada de novo.
+# ---------------------------------------------------------------------------
+def _aguardar(conn, lote_id: int, paginas: int) -> None:
+    for pagina in range(1, int(paginas or 0) + 1):
+        conn.execute("INSERT INTO analisesps.comprovantes_item "
+                     "  (lote_id, pagina, situacao, motivo) VALUES (?, ?, ?, ?)",
+                     (int(lote_id), pagina, AGUARDANDO, "Na fila para a baixa."))
+
+
+def _encerrar_aguardando(lote_id: int, motivo: str) -> int:
+    """As páginas que ficaram aguardando viram "Deu erro", com o motivo."""
+    from .db import conexao
+    with conexao() as conn:
+        cur = conn.execute(
+            "UPDATE analisesps.comprovantes_item SET situacao = ?, motivo = ? "
+            " WHERE lote_id = ? AND situacao = ?",
+            (ERRO, str(motivo or "")[:500], int(lote_id), AGUARDANDO))
+        n = cur.rowcount or 0
+        cur.close()
+        conn.commit()
+    return n
+
+
 def _gravar_itens(conn, lote_id: int, linhas: list) -> None:
     """Grava as linhas de uma leva.
 
@@ -738,6 +781,8 @@ def processar_um(lote_id: int, anotar=None) -> dict:
                  "sido baixado não baixa duas vezes.", lote_id))
             conn.commit()
         logger.warning("Análise de SPs: lote %d sem arquivo (%s).", lote_id, e)
+        _encerrar_aguardando(lote_id, "O arquivo não está mais no servidor (o serviço "
+                             "reiniciou antes de processar). Arraste o PDF de novo.")
         return {"ok": False, "erro": "arquivo sumiu"}
 
     feitas, contagem = 0, {}
@@ -748,7 +793,23 @@ def processar_um(lote_id: int, anotar=None) -> dict:
             resposta = _mandar_com_paciencia(pedaco, nome, anotar,
                                              f"{nome}: leva {feitas + 1} de {levas}")
             itens = ler_resposta(resposta, primeira)
+            ultima = min(primeira + POR_LEVA - 1, int(paginas or 0) or primeira)
             with conexao() as conn:
+                # As linhas destas páginas (o "aguardando", ou o resultado de uma
+                # rodada anterior que parou no meio) dão lugar ao resultado.
+                conn.execute("DELETE FROM analisesps.comprovantes_item "
+                             " WHERE lote_id = ? AND pagina BETWEEN ? AND ?",
+                             (lote_id, primeira, ultima))
+                # Página da leva que o robô não devolveu não some da lista: vira
+                # erro, dizendo isso (a não ser que ele tenha devolvido linhas sem
+                # o número da página, que então são elas).
+                devolvidas = {i["pagina"] for i in itens if i.get("pagina")}
+                sem_numero = sum(1 for i in itens if not i.get("pagina"))
+                faltam = [n for n in range(primeira, ultima + 1) if n not in devolvidas]
+                if len(faltam) > sem_numero:
+                    itens = itens + [{"pagina": n, "situacao": ERRO, "motivo": (
+                        "O robô não devolveu resultado para esta página. Use "
+                        "\"Baixar de novo\".")} for n in faltam]
                 _gravar_itens(conn, lote_id, itens)
                 feitas += 1
                 conn.execute(
@@ -766,6 +827,8 @@ def processar_um(lote_id: int, anotar=None) -> dict:
                 (str(e)[:1000], lote_id))
             conn.commit()
         # ⚠️ O PDF FICA: é este lote que vai precisar de "Processar de novo".
+        _encerrar_aguardando(lote_id, "O envio parou antes de chegar a esta página: "
+                             + (explicar_erro(str(e)) or str(e))[:300])
         guardar_paginas_no_drive(lote_id, conteudo)
         return {"ok": False, "erro": str(e), "levas_feitas": feitas}
 
@@ -774,6 +837,9 @@ def processar_um(lote_id: int, anotar=None) -> dict:
             "UPDATE analisesps.comprovantes_lote SET situacao = 'PRONTO', "
             "  terminado_em = now() WHERE id = ?", (lote_id,))
         conn.commit()
+    if _encerrar_aguardando(lote_id, "O robô não devolveu resultado para esta página. "
+                            "Use \"Baixar de novo\"."):
+        contagem[ERRO] = contagem.get(ERRO, 0) + 1
     # O que não baixou vai para o Drive ANTES de o PDF poder sair do disco.
     guardar_paginas_no_drive(lote_id, conteudo)
     # Só sai do disco quando não sobrou nada a refazer.
@@ -921,6 +987,9 @@ def reprocessar_lote(lote_id: int) -> dict:
         # instante com o lote "esperando" e as linhas velhas ainda ali.
         conn.execute("DELETE FROM analisesps.comprovantes_item "
                      " WHERE lote_id = ?", (int(lote_id),))
+        paginas_ = consultar_um("SELECT paginas FROM analisesps.comprovantes_lote "
+                                " WHERE id = ?", (int(lote_id),))
+        _aguardar(conn, int(lote_id), int((paginas_ or [0])[0] or 0))
         conn.execute(
             "UPDATE analisesps.comprovantes_lote "
             "   SET situacao = 'ESPERANDO', levas_feitas = 0, erro = '', "
@@ -1259,7 +1328,8 @@ def listar(f: dict) -> dict:
         linhas = consultar(
             "SELECT i.lote_id, i.pagina, i.situacao, i.sp_id, i.valor, i.recebedor, "
             "       i.motivo, i.conversa_omie, l.arquivo, l.quem, l.recebido_em, "
-            "       l.paginas_no_drive, coalesce(s.comprovante, '') "
+            "       l.paginas_no_drive, coalesce(s.comprovante, ''), "
+            "       l.situacao, l.levas, l.levas_feitas "
             "  FROM analisesps.comprovantes_item i "
             "  JOIN analisesps.comprovantes_lote l ON l.id = i.lote_id "
             "  LEFT JOIN analisesps.sps s ON s.id = i.sp_id AND i.sp_id <> '' "
@@ -1271,7 +1341,7 @@ def listar(f: dict) -> dict:
         linhas = [tuple(l[:11]) + ("{}",) + tuple(l[11:]) for l in consultar(
             "SELECT i.lote_id, i.pagina, i.situacao, i.sp_id, i.valor, i.recebedor, "
             "       i.motivo, i.conversa_omie, l.arquivo, l.quem, l.recebido_em, "
-            "       coalesce(s.comprovante, '') "
+            "       coalesce(s.comprovante, ''), l.situacao, l.levas, l.levas_feitas "
             "  FROM analisesps.comprovantes_item i "
             "  JOIN analisesps.comprovantes_lote l ON l.id = i.lote_id "
             "  LEFT JOIN analisesps.sps s ON s.id = i.sp_id AND i.sp_id <> '' "
@@ -1301,7 +1371,11 @@ def listar(f: dict) -> dict:
             "rotulo": ROTULOS.get(l[2], l[2]), "sp_id": l[3], "valor": l[4],
             "recebedor": l[5], "motivo": l[6], "motivo_explicado": explicar_erro(l[6]),
             "conversa_omie": l[7], "arquivo": l[8], "quem": l[9], "recebido_em": l[10],
-            "pede_acao": l[2] not in (BAIXADO, DUPLICADO, REENVIADO),
+            "pede_acao": l[2] not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO),
+            # Onde está a página que aguarda: na fila, ou a leva dela já está no robô.
+            "andamento": ("" if l[2] != AGUARDANDO else
+                          (f"baixando agora — leva {min((l[15] or 0) + 1, l[14] or 1)} de "
+                           f"{l[14] or 1}" if l[13] == "RODANDO" else "na fila")),
             "pode_reenviar": l[2] in PEDEM_NOVA_TENTATIVA and bool(
                 l[1] and (no_disco[l[0]] or drive_.get(str(l[1])))),
             # O comprovante, na ordem do que vale mais: o arquivado na SP pelo robô;
@@ -1479,7 +1553,7 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
                          for s in ORDEM if contagem.get(s)],
             "resolvidos": contagem.get(BAIXADO, 0) + contagem.get(DUPLICADO, 0),
             "pendencias": sum(q for s, q in contagem.items()
-                              if s not in (BAIXADO, DUPLICADO, REENVIADO)),
+                              if s not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO)),
         })
     return saida
 
