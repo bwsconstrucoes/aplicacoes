@@ -88,6 +88,8 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Cotacao:
     if faltando:
         raise ErroValidacao(f"Item {faltando[0]} não encontrado.")
 
+    from app.apps.erp.core.suprimentos.solicitacao import exigir_liberados
+    exigir_liberados(itens)
     ja_cotados = _itens_em_cotacao_aberta(s, ids)
     if ja_cotados:
         raise ErroValidacao(

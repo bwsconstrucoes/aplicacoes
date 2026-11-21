@@ -277,7 +277,8 @@ def test_a_lista_traz_o_saldo_e_os_proximos_passos():
     linha = svc.listar_itens(s, quem)[0]
 
     assert linha["saldo"] == "6"
-    assert "RECEBIDO" in linha["proximas"] and "PENDENCIA" in linha["proximas"]
+    # "Recebido" não é mais um passo manual (22/11/2026): só o recebimento fecha.
+    assert "RECEBIDO" not in linha["proximas"] and "PENDENCIA" in linha["proximas"]
     assert linha["status_rotulo"] == "Entregue"
 
 
@@ -297,7 +298,9 @@ def _cliente(sessao, monkeypatch, usuario_id):
     return c
 
 
-def test_mover_item_que_a_pessoa_nao_enxerga_responde_404(monkeypatch):
+def test_so_o_comprador_move_o_item_a_mao(monkeypatch):
+    """Desde 22/11/2026 mover o item é do comprador. A recusa é pela AÇÃO, e
+    vale para qualquer número — por isso 403 aqui não revela existência."""
     operador = novo_usuario(5, P.ADMINISTRATIVO_OBRA,
                             escopo_visao=EscopoVisao.PROPRIOS)
     sol, item = _com_item(solicitante=99)
@@ -306,7 +309,9 @@ def test_mover_item_que_a_pessoa_nao_enxerga_responde_404(monkeypatch):
 
     r = c.post("/erp/api/suprimentos/itens/7/situacao", json={"status": "COTACAO"})
 
-    assert r.status_code == 404, "403 num id que existe confirmaria a existência"
+    assert r.status_code == 403
+    assert c.post("/erp/api/suprimentos/itens/99999/situacao",
+                  json={"status": "COTACAO"}).status_code == 403
     assert item.status is ST.SOLICITACAO
 
 

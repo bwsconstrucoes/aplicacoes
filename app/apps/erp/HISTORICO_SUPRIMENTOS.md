@@ -38,6 +38,21 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**⚠ NO RAMO, NÃO PUBLICADO (22/11/2026): a 5ª rodada** — liberação da
+engenharia, "recebido" que não se marca à mão, autorização que dispara o
+pedido, compra tardia em dois tempos. Traz a **migração 124** (a 123 é do DP)
+e **coluna nova em `suprimento_itens`**: sem o botão apertado, TODA tela de
+suprimentos quebra. Publicar e apertar no mesmo minuto. Arquivos
+compartilhados: `routes.py`, `core/auth/permissoes.py`, `core/auth/secoes.py`,
+`db/models/cadastros.py`.
+
+**Perguntas abertas com ele (22/11):** (1) o que ele descreveu para a compra
+por fora ("não pode lançar e o financeiro pagar") é a posição TRAVAR — ele
+confirma que liga já, ou mantém "só avisar" como disse em 21/11? (2) quem
+fecha o pedido pode autorizar o próprio? (3) compra direta e compra fora do
+menor preço: exigir justificativa escrita? (4) o pedido do administrativo para
+obra fora do vínculo dele — o servidor não confere a obra na criação.
+
 **✔ PUBLICADO em 21/11/2026 (noite)**, com o "pode publicar" dele — tudo o que
 está abaixo, das rodadas de 20 e 21/11, está na `main` (commit `40db52e`).
 **A CONFERIR COM ELE no próximo chat:** (1) se apertou "Aplicar atualizações do
@@ -100,6 +115,67 @@ assinatura fica com a pessoa, desenhada na tela ou escaneada.
 ---
 
 ## Decisões desta área
+
+### ⚑ 22/11/2026 (5ª rodada) — A ENGENHARIA LIBERA, O RECEBIDO NÃO SE MARCA À MÃO, AUTORIZOU SAIU
+
+Ele pediu uma revisão de "todas as possibilidades de furar o procedimento".
+Levei sete furos; ele decidiu quatro na resposta seguinte. Feitos:
+
+**1. A liberação da engenharia** (migração 124, `solicitacao.liberar`). Ele:
+*"quando o administrativo de obra fizer esse pedido, alguém lá da parte da
+engenharia tem que dar um ok (...) ou um supervisor de obras (...) O compras
+tem que visualizar, mas não consegue gerar nem mapa de cotação, nem fazer
+pedido de compra."* O motivo, dele: sem isso a quantidade infla e passa batido
+um aditivo de contrato.
+- Ação nova `liberar_solicitacao`: admin, diretor, **gestor de obra e
+  supervisor de obra**. Seção nova `sup_liberar` nos perfis prontos.
+- Pedido de quem tem a ação nasce liberado, no nome dele. Pedido dos outros
+  (administrativo de obra) nasce `PENDENTE`.
+- Pendente: aparece para o comprador com o selo, mas `cotacao.criar`,
+  `pedido._criar` e `mudar_situacao` recusam. Recusar a liberação cancela o
+  item, com o motivo.
+- Libera-se na tela de Solicitações e no portal (aba Em andamento), no recorte
+  de obra de quem libera. `liberacao` vazio (itens antigos) vale como liberado.
+- **ESCOLHA MINHA:** "quem libera" é qualquer gestor/supervisor com alcance na
+  obra, não uma pessoa nomeada por obra. Ele falou "alguém da engenharia ou um
+  supervisor" — se quiser um responsável único por obra, é um campo na obra.
+- **Teto de quantidade: ADIADO POR ELE** — "depois, quando a gente trabalhar
+  melhor a parte da engenharia".
+
+**2. "Recebido" não se marca à mão.** A rota de mover item era
+`ver_suprimentos` (consulta e parceiro inclusive) e levava o item a recebido
+sem pedido nem nota. Agora é `comprar`, e RECEBIDO saiu das opções: só o
+recebimento fecha. O comprador ainda marca "entregue" (ele: *"a ideia é ele
+saber que o material chegou"*). **Almoxarifado fica como está** — ele: "depois
+a gente pensa melhor como finaliza a remessa do almoxarifado."
+⚠ Consequência: a obra não cancela mais o próprio item pela tela; pede ao
+comprador, ou a engenharia recusa a liberação.
+
+**3. Autorizou, saiu para o fornecedor.** Ele: *"na hora que ela autoriza, o
+pedido é disparado para o fornecedor."* A rota de autorizar grava a decisão e
+em seguida manda o e-mail com o PDF. Se o envio falha (fornecedor sem e-mail,
+conta de envio incompleta), **a autorização fica** e a tela diz por que não
+saiu; "Ver e mandar" continua em Pedidos. Vale igual para compra direta.
+
+**4. A compra tardia em dois tempos** (`fora_do_fluxo.regularizar` +
+`_concretizar`). Na 4ª rodada o registro criava o pedido já autorizado em nome
+de quem registrou — ele apontou o conflito. Agora: quem lançou INFORMA os
+materiais (ficam em `compras_fora_do_fluxo.itens`, à vista de quem autoriza);
+o pedido, o recebimento e o vínculo só nascem com a ciência, **no nome de quem
+a deu**. O próprio banco ajuda: `ck_pedido_autorizado` não aceita pedido
+autorizado sem o nome de quem autorizou.
+
+**Furos que levei e ele NÃO decidiu** — estão nas perguntas abertas, no alto.
+
+**Ineficiência vista de passagem, não consertada:** a rota de mover item
+carrega a lista inteira de itens visíveis (três leituras por item) só para
+conferir se a pessoa enxerga UM item. Com 2.000 itens são ~6.000 leituras por
+clique. Relatada a ele.
+
+**Não verificado:** o disparo de verdade na autorização (o banco de teste não
+tem conta de e-mail; vi a autorização ficar e o motivo aparecer); a liberação
+feita por um supervisor de verdade pelo celular (vi o selo no portal e a
+liberação pela tela do ERP).
 
 ### ⚑ 21/11/2026 (4ª rodada) — NUNCA SÓ RECEBER, A SOLICITAÇÃO TARDIA, E OS ACERTOS NOS PAPÉIS
 

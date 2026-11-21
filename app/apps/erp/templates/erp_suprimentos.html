@@ -150,6 +150,7 @@ let ITENS = [];
 let F = {status: new Set(), obra: new Set(), categoria: new Set()};
 let MARCADOS = new Set();
 const PODE_COTAR = {{ 'true' if pode.comprar else 'false' }};
+const PODE_LIBERAR = {{ 'true' if pode.liberar_solicitacao else 'false' }};
 const PODE_PEDIR_INSUMO = {{ 'true' if pode.solicitar_suprimento else 'false' }};
 
 const ROTULO_PRIORIDADE = {ALTA: "Alta", MEDIA: "Média", NORMAL: "Normal"};
@@ -337,12 +338,15 @@ function desenhar(){
       <td>${ROTULO_PRIORIDADE[i.prioridade] || i.prioridade}</td>
       <td class="dados ${i.previsao_entrega && i.previsao_entrega < hoje ? "atrasado" : ""}"
         >${dataBR(i.previsao_entrega)}</td>
-      <td>${selo(i.status, i.status_rotulo)}</td>
+      <td>${selo(i.status, i.status_rotulo)}${i.aguarda_liberacao
+        ? `<br><span class="selo aguardando" title="O comprador vê, mas não cota nem compra antes do ok da engenharia">aguarda liberação da engenharia</span>` : ""}</td>
       <td class="direita" style="white-space:nowrap">
+        ${PODE_LIBERAR && i.aguarda_liberacao ? `<button class="btn" data-liberar="${i.id}">Liberar</button>
+          <button class="link-btn" data-nao-liberar="${i.id}">não liberar</button><br>` : ""}
         ${PODE_COTAR && i.corrigivel ? `<button class="btn secundario" data-corrigir="${i.id}"
           title="Corrigir o que a obra pediu — exige motivo e fica registrado"
           style="padding:4px 8px; font-size:12px">corrigir</button>` : ""}
-        ${i.proximas.length ? `
+        ${PODE_COTAR && i.proximas.length ? `
         <select data-mover="${i.id}" style="min-width:150px">
           <option value="">mover para…</option>
           ${i.proximas.map(p => `<option value="${p}">${rotuloSituacao(p)}</option>`).join("")}
@@ -355,6 +359,24 @@ function desenhar(){
       ev.target.checked ? MARCADOS.add(id) : MARCADOS.delete(id);
       desenhar();
     }));
+
+  // ⚑ O OK DA ENGENHARIA (22/11/2026): sem ele o comprador não cota nem compra.
+  const decidirLiberacao = async (corpo, recado) => {
+    try {
+      await api("/erp/api/suprimentos/itens/liberar", {method: "POST",
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+      aviso("mensagem", recado, "ok"); carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  };
+  document.querySelectorAll("[data-liberar]").forEach(b => b.addEventListener("click", () =>
+    decidirLiberacao({itens: [+b.dataset.liberar]}, "Material liberado para compra.")));
+  document.querySelectorAll("[data-nao-liberar]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Não liberar este material",
+      aviso: "O item é cancelado e quem pediu vê o motivo.",
+      campos: [{nome: "motivo", rotulo: "Por quê?", tipo: "textarea", linhas: 2}], textoOk: "Não liberar"});
+    if (r) decidirLiberacao({itens: [+b.dataset.naoLiberar], recusar: true, motivo: r.motivo || ""},
+                            "Item não liberado — cancelado, com o motivo registrado.");
+  }));
 
   document.querySelectorAll("[data-mover]").forEach(sel =>
     sel.addEventListener("change", async () => {

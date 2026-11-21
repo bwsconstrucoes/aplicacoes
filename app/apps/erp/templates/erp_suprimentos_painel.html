@@ -278,9 +278,11 @@ async function carregarForaDoFluxo(){
             <td>${escapar(x.fornecedor)}<br><small>${escapar(x.descricao)}</small></td>
             <td class="dados">${escapar(x.obras.join(", "))}</td>
             <td class="direita dados">${moeda(x.valor)}</td>
-            <td>${escapar(x.lancado_por)}</td><td>${escapar(x.motivo)}</td>
+            <td>${escapar(x.lancado_por)}</td><td>${escapar(x.motivo)}${x.material_informado.length
+              ? `<br><small><b>Comprado:</b> ${x.material_informado.map(m =>
+                  `${escapar(m.insumo)} — ${escapar(m.quantidade)} ${escapar(m.unidade)} a ${moeda(+m.preco_unitario)}`).join("; ")}</small>` : ""}</td>
             <td style="white-space:nowrap">
-              ${x.regularizado ? `<small>material registrado</small>`
+              ${x.regularizado ? `<small>material informado${x.ciente ? "" : " — o pedido nasce com a ciência"}</small>`
                 : d.pode_regularizar ? `<button class="btn" data-regularizar="${x.titulo_id}">Registrar o que foi comprado</button>`
                 : `<small>falta registrar o que foi comprado</small>`}<br>
               ${x.ciente ? `<small>${trava ? "autorizado" : "ciência dada"}</small>`
@@ -310,9 +312,10 @@ async function carregarForaDoFluxo(){
   document.querySelectorAll("[data-autorizar]").forEach(b => b.addEventListener("click", async () => {
     const r = await perguntar({titulo: trava ? "Autorizar o lançamento sem pedido de compra"
                                              : "Tomar ciência da compra sem pedido",
-      aviso: trava ? "Você está dando ciência de que esta compra não passou pelo suprimento e "
+      aviso: (trava ? "Você está dando ciência de que esta compra não passou pelo suprimento e "
           + "liberando o lançamento para a aprovação do financeiro. Fica registrado no seu nome."
-        : "Fica registrado no seu nome que você tomou ciência. O lançamento não muda.",
+        : "Fica registrado no seu nome que você tomou ciência. O lançamento não muda.")
+        + " Se o material já foi informado, o pedido de compra tardio nasce agora, autorizado por você.",
       campos: [{nome: "observacao", rotulo: "Observação (opcional)", tipo: "textarea", linhas: 2}],
       textoOk: trava ? "Autorizar" : "Ciente"});
     if (!r) return;
@@ -408,8 +411,10 @@ els("reg-gravar").addEventListener("click", async () => {
     const r = await api(`/erp/api/suprimentos/fora-do-fluxo/${REG.titulo.titulo_id}/regularizar`,
       {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({itens})});
     els("dlg-regularizar").close();
-    aviso("mensagem", `Compra registrada: solicitação <b>${escapar(r.solicitacao)}</b> e pedido
-      <b>${escapar(r.pedido)}</b>, já recebidos e ligados ao lançamento.`, "ok");
+    aviso("mensagem", r.aguardando_ciencia
+      ? "Material informado. O pedido de compra nasce quando alguém com alçada der a ciência — até lá, fica aqui à vista."
+      : `Compra registrada: solicitação <b>${escapar(r.solicitacao)}</b> e pedido
+         <b>${escapar(r.pedido)}</b>, já recebidos e ligados ao lançamento.`, "ok");
     carregarForaDoFluxo();
   } catch(e){ aviso("reg-msg", e.message, "erro"); }
   finally { botao.disabled = false; }

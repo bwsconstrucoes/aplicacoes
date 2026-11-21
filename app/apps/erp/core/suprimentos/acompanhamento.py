@@ -599,6 +599,7 @@ def planejamento(s: Session, usuario: Optional[Usuario] = None, *,
         prioridade = sol.prioridade.value if sol.prioridade else "NORMAL"
         saida.append({
             "id": sup.id, "insumo": insumo.descricao,
+            "aguarda_liberacao": getattr(sup, "liberacao", None) == "PENDENTE",
             "especificacao": sup.especificacao or "",
             "categoria_id": insumo.categoria_insumo_id,
             "categoria": categorias.get(insumo.categoria_insumo_id, "Sem categoria"),

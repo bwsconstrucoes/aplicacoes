@@ -376,12 +376,19 @@ async function pedirMotivo(id, acao, titulo){
 
 async function decidir(id, acao, corpo){
   try {
-    await api(`/erp/api/suprimentos/pedidos/${id}/${acao}`, {method: "POST",
+    const feito = await api(`/erp/api/suprimentos/pedidos/${id}/${acao}`, {method: "POST",
       headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
     els("dlg").close();
-    aviso("mensagem", acao === "autorizar"
-      ? "Pedido autorizado. A previsão de pagamento já está no financeiro."
-      : `Pedido ${acao === "recusar" ? "recusado" : "cancelado"}.`, "ok");
+    // ⚑ AUTORIZOU, SAIU (22/11/2026): a autorização já manda o pedido ao
+    // fornecedor. Se o e-mail não saiu, a tela diz POR QUÊ — o pedido continua
+    // autorizado e dá para mandar de novo em "Ver e mandar".
+    const envio = feito.envio;
+    aviso("mensagem", acao !== "autorizar"
+      ? `Pedido ${acao === "recusar" ? "recusado" : "cancelado"}.`
+      : envio && envio.enviado
+      ? `Pedido autorizado e <b>enviado ao fornecedor</b> (${escapar(envio.para.join(", "))}), com o PDF anexo. A previsão de pagamento já está no financeiro.`
+      : `Pedido autorizado, mas <b>o e-mail ao fornecedor NÃO saiu</b>: ${escapar((envio && envio.motivo) || "motivo não informado")} Corrija e mande pelo botão "Ver e mandar" do pedido.`,
+      acao === "autorizar" && !(envio && envio.enviado) ? "erro" : "ok");
     carregar();
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }

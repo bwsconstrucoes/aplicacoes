@@ -40,6 +40,18 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 22/11/2026 — SUPRIMENTOS: AÇÃO E SEÇÃO NOVAS DE PERMISSÃO, E A ROTA DE MOVER ITEM (registro entre áreas)
+
+Detalhe em `HISTORICO_SUPRIMENTOS.md`, 22/11 (5ª rodada).
+- `core/auth/permissoes.py`: ação `liberar_solicitacao` (admin, diretor, gestor
+  e supervisor de obra). `core/auth/secoes.py`: seção `sup_liberar`. A
+  migração 124 a inclui nos quatro perfis prontos.
+- `db/models/cadastros.py`: `SuprimentoItem` ganhou `liberacao`,
+  `liberado_por`, `liberado_em`. **Coluna nova em modelo: sem a migração 124
+  aplicada, toda consulta a `suprimento_itens` falha.**
+- A rota `/erp/api/suprimentos/itens/<id>/situacao` passou de `ver_suprimentos`
+  para `comprar`.
+
 ### ⚑ 21/11/2026 (noite) — SUPRIMENTOS: A NOTA NÃO ENTRA SOLTA, E O E-MAIL PODE SER FORMATADO (registro entre áreas)
 
 Detalhe em `HISTORICO_SUPRIMENTOS.md`, 21/11 (4ª rodada). O que encosta nas

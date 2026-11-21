@@ -142,6 +142,8 @@ def _criar(s: Session, *, fornecedor_id: int, linhas: list[tuple[SuprimentoItem,
     if forn is None:
         raise ErroValidacao("Fornecedor não encontrado.")
 
+    from app.apps.erp.core.suprimentos.solicitacao import exigir_liberados
+    exigir_liberados([i for i, _ in linhas])
     ids_das_linhas = [i.id for i, _ in linhas]
     reservados = {r.suprimento_item_id for r in s.scalars(
         select(PedidoItemReserva).where(

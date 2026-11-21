@@ -1251,8 +1251,11 @@ def test_so_avisar_registra_e_nao_trava_nem_pede_motivo(base):
 # ---------------------------------------------------------------------------
 def test_a_solicitacao_tardia_cria_pedido_recebido_e_liga_ao_lancamento(base):
     """O dono: "é exigido o lançamento da solicitação, mesmo que tardia (...)
-    até para a gente ter o registro do que está sendo comprado"."""
+    até para a gente ter o registro do que está sendo comprado". E: "tem que ir
+    para autorização também, mesmo que tardio" — o pedido só nasce com a
+    ciência, no nome de quem a deu."""
     from sqlalchemy import text
+    from app.apps.erp.db.models.cadastros import PedidoCompra, StatusPedidoCompra
     s, u = base["s"], base["u"]
     svc_fora.ligar(s, u, "AVISAR")
     titulo = _titulo_solto(base, "500.00", "SP-TARDIA-1")
@@ -1260,27 +1263,30 @@ def test_a_solicitacao_tardia_cria_pedido_recebido_e_liga_ao_lancamento(base):
     s.flush()
     svc_fora.conferir(s, titulo, {}, u)
     insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    itens = {"itens": [{"insumo_id": insumo, "quantidade": "5", "unidade": "M2",
+                        "preco_unitario": "100,00"}]}
     with pytest.raises(ErroValidacao):
         svc_fora.regularizar(s, titulo.id, {"itens": []}, u)
-    r = svc_fora.regularizar(s, titulo.id, {"itens": [
-        {"insumo_id": insumo, "quantidade": "5", "unidade": "M2", "preco_unitario": "100,00"}]}, u)
-    assert r["total_dos_itens"] == 500.0
-    from app.apps.erp.db.models.cadastros import PedidoCompra, StatusPedidoCompra
-    pedido = s.get(PedidoCompra, r["pedido_id"])
-    assert pedido.status is StatusPedidoCompra.AUTORIZADO
-    assert pedido.fornecedor_id == base["forn"].id
-    # recebido por inteiro, e a conta é o lançamento que já existia
-    situacao = svc_rec.situacao(s, pedido.id)
-    assert situacao["tudo_recebido"] is True
-    assert s.execute(text("SELECT pedido_id FROM pedido_titulos WHERE titulo_id = :t"),
-                     {"t": titulo.id}).scalar() == pedido.id
-    # a linha continua no Painel só pela ciência, que é de outra pessoa
-    assert [(x["ciente"], x["regularizado"]) for x in svc_fora.listar(s, u)] == [(False, True)]
-    svc_fora.autorizar(s, titulo.id, _outro_que_autoriza(base), "ok")
-    assert svc_fora.listar(s, u) == []
+    # 1º tempo: quem lançou informa o material. Nenhum pedido nasce ainda.
+    r = svc_fora.regularizar(s, titulo.id, itens, u)
+    assert r["aguardando_ciencia"] is True and r["pedido"] is None
+    assert s.execute(text("SELECT count(*) FROM pedido_titulos WHERE titulo_id = :t"),
+                     {"t": titulo.id}).scalar() == 0
+    pendente = svc_fora.listar(s, u)
+    assert [(x["ciente"], x["regularizado"]) for x in pendente] == [(False, True)]
+    assert pendente[0]["material_informado"][0]["quantidade"] == "5"
     with pytest.raises(ErroValidacao):           # não registra duas vezes
-        svc_fora.regularizar(s, titulo.id, {"itens": [
-            {"insumo_id": insumo, "quantidade": "1", "unidade": "M2", "preco_unitario": "1"}]}, u)
+        svc_fora.regularizar(s, titulo.id, itens, u)
+    # 2º tempo: a ciência faz o pedido nascer, autorizado no nome de quem a deu
+    outro = _outro_que_autoriza(base)
+    svc_fora.autorizar(s, titulo.id, outro, "ok")
+    pedido_id = s.execute(text("SELECT pedido_id FROM pedido_titulos WHERE titulo_id = :t"),
+                          {"t": titulo.id}).scalar()
+    pedido = s.get(PedidoCompra, pedido_id)
+    assert pedido.status is StatusPedidoCompra.AUTORIZADO
+    assert pedido.autorizado_por == outro.id and pedido.fornecedor_id == base["forn"].id
+    assert svc_rec.situacao(s, pedido.id)["tudo_recebido"] is True
+    assert svc_fora.listar(s, u) == []
 
 
 def test_a_projecao_estima_o_solicitado_pelo_ultimo_preco(base):
@@ -1340,3 +1346,94 @@ def test_o_email_formatado_leva_o_texto_simples_junto(base):
                                    "Prezados,\n\nSegue o pedido <PC-1>.", [("Pedido", "PC-1")])
     assert "&lt;PC-1&gt;" in html and "<script" not in html
     assert (base["empresa"].nome_fantasia or base["empresa"].razao_social) in html
+
+
+# ---------------------------------------------------------------------------
+# 22/11/2026 — a liberação da engenharia e o "recebido" que não se marca à mão
+# ---------------------------------------------------------------------------
+from app.apps.erp.db.models.cadastros import StatusItemSuprimento  # noqa: E402
+
+
+def _administrativo_da_obra(base):
+    from app.apps.erp.db.models.cadastros import Usuario, UsuarioObra
+    s = base["s"]
+    adm = Usuario(nome="Administrativo da obra A", email="adm-obra-a@teste.bws.local",
+                  senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.ADMINISTRATIVO_OBRA)
+    s.add(adm); s.flush()
+    s.add(UsuarioObra(usuario_id=adm.id, obra_id=base["obra_a"].id)); s.flush()
+    return adm
+
+
+def test_pedido_do_administrativo_espera_o_ok_da_engenharia(base):
+    """ "O compras tem que visualizar, mas não consegue gerar nem mapa de
+    cotação, nem fazer pedido de compra." """
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    adm = _administrativo_da_obra(base)
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    sol = svc_sol.criar(s, {"titulo": "Complemento da fundação", "itens": [
+        {"insumo_id": insumo, "obra_id": base["obra_a"].id, "quantidade": "3", "unidade": "M2"}]}, adm)
+    item = s.scalars(select(SuprimentoItem).where(SuprimentoItem.solicitacao_id == sol.id)).one()
+    assert item.liberacao == "PENDENTE"
+    # o comprador ENXERGA...
+    assert any(i["id"] == item.id and i["aguarda_liberacao"] for i in svc_sol.listar_itens(s, u))
+    # ...mas não cota, não compra direto e não move o item
+    with pytest.raises(ErroValidacao):
+        svc_cot.criar(s, {"titulo": "Tentativa", "itens": [item.id]}, u)
+    with pytest.raises(ErroValidacao):
+        svc_ped.fechar_direto(s, {"fornecedor_id": base["forn"].id, "itens": [
+            {"suprimento_item_id": item.id, "preco_unitario": "10"}]}, u)
+    with pytest.raises(ErroValidacao):
+        svc_sol.mudar_situacao(s, item.id, "ALMOXARIFADO", u)
+    # quem pediu não libera o próprio pedido: ele nem tem a ação
+    from app.apps.erp.core.auth.permissoes import pode
+    assert not pode(adm, "liberar_solicitacao")
+    assert svc_sol.liberar(s, [item.id], u) == 1
+    assert item.liberacao == "LIBERADO" and item.liberado_por == u.id
+    svc_cot.criar(s, {"titulo": "Agora sim", "itens": [item.id]}, u)
+
+
+def test_pedido_da_engenharia_nasce_liberado_e_a_recusa_cancela(base):
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    linha = {"insumo_id": insumo, "obra_id": base["obra_a"].id, "quantidade": "1", "unidade": "M2"}
+    sol = svc_sol.criar(s, {"titulo": "Pedido da engenharia", "itens": [linha]}, u)
+    item = s.scalars(select(SuprimentoItem).where(SuprimentoItem.solicitacao_id == sol.id)).one()
+    assert item.liberacao == "LIBERADO"
+    adm = _administrativo_da_obra(base)
+    sol2 = svc_sol.criar(s, {"titulo": "Pedido do administrativo", "itens": [linha]}, adm)
+    item2 = s.scalars(select(SuprimentoItem).where(SuprimentoItem.solicitacao_id == sol2.id)).one()
+    with pytest.raises(ErroValidacao):
+        svc_sol.recusar_liberacao(s, [item2.id], "", u)
+    svc_sol.recusar_liberacao(s, [item2.id], "já tem no almoxarifado", u)
+    assert item2.status is StatusItemSuprimento.CANCELADO
+    assert "almoxarifado" in item2.observacoes
+
+
+def test_recebido_nao_se_marca_a_mao(base):
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    item = base["item_a"]
+    item.status = StatusItemSuprimento.ENTREGUE; s.flush()
+    with pytest.raises(ErroValidacao):
+        svc_sol.mudar_situacao(s, item.id, "RECEBIDO", u)
+    assert "RECEBIDO" not in next(i for i in svc_sol.listar_itens(s, u) if i["id"] == item.id)["proximas"]
+
+
+def test_a_compra_tardia_com_a_ciencia_ja_dada_nasce_na_hora(base):
+    from app.apps.erp.db.models.cadastros import PedidoCompra
+    s, u = base["s"], base["u"]
+    svc_fora.ligar(s, u, "TRAVAR")
+    titulo = _titulo_solto(base, "200.00", "SP-TARDIA-2")
+    s.add(Rateio(titulo_id=titulo.id, obra_id=base["obra_a"].id, valor=Decimal("200.00"))); s.flush()
+    svc_fora.conferir(s, titulo, {"motivo_sem_pedido": "urgência na concretagem de sábado"}, u)
+    outro = _outro_que_autoriza(base)
+    svc_fora.autorizar(s, titulo.id, outro, "ciente")
+    assert [(x["ciente"], x["regularizado"]) for x in svc_fora.listar(s, u)] == [(True, False)]
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    r = svc_fora.regularizar(s, titulo.id, {"itens": [
+        {"insumo_id": insumo, "quantidade": "2", "unidade": "M2", "preco_unitario": "100"}]}, u)
+    assert r["aguardando_ciencia"] is False
+    assert s.get(PedidoCompra, r["pedido_id"]).autorizado_por == outro.id
+    assert svc_fora.listar(s, u) == []

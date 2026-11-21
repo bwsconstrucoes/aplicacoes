@@ -214,6 +214,11 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                              P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # ⚑ LIBERAR A SOLICITAÇÃO PARA COMPRA (22/11/2026). O ok da engenharia:
+    # o pedido do administrativo de obra não chega ao comprador como
+    # comprável sem ele. O administrativo fica de fora DE PROPÓSITO.
+    "liberar_solicitacao": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA},
     # ⚑ AUTORIZAR MATERIAL COMPRADO SEM PEDIDO (21/11/2026). Ação própria: é a
     # ciência de que uma compra não passou pelo suprimento, e libera o
     # lançamento para o financeiro. Quem autoriza pedido ganha de graça.
@@ -442,6 +447,7 @@ ACAO_ROTULOS = {
     "solicitar_suprimento": "Pedir material para a obra",
     "comprar":              "Cotar e fechar pedido de compra",
     "autorizar_pedido":     "Autorizar pedido de compra",
+    "liberar_solicitacao":  "Liberar para compra o material pedido pela obra",
     "receber_material":     "Registrar o material que chegou na obra",
     "autorizar_compra_fora_do_fluxo": "Autorizar material comprado sem pedido de compra",
     "administrar_insumos":  "Cadastrar e corrigir insumos",

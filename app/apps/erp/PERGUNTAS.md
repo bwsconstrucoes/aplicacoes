@@ -3164,6 +3164,23 @@ consulta inventada vai sendo usado cada vez menos.
 
 
 
+## 3ac. O OK DA ENGENHARIA NO PEDIDO DA OBRA (22/11/2026)
+
+Sem pergunta escrita no assistente ainda; responde-se pela tela de Solicitações.
+
+- "O que está esperando liberação da engenharia?" — itens com `liberacao =
+  'PENDENTE'`. ⚠ muda conforme quem pergunta (recorte por obra).
+- "Quem liberou a compra do material tal, e quando?" — `liberado_por`,
+  `liberado_em` do item.
+- "O que a engenharia não liberou este mês, e por quê?" — itens cancelados com
+  o evento `LIBERACAO_RECUSADA`; o motivo está no evento e na observação.
+- "Há quanto tempo o pedido da obra X espera o ok?" — da criação do item até
+  hoje, enquanto pendente.
+- **AINDA NÃO RESPONDE:** "a obra está comprando mais do que o contrato
+  prevê?" Falta o quantitativo previsto de material por obra — adiado pelo
+  dono para quando a parte de engenharia for trabalhada. O assistente deve
+  dizer que não há previsto para comparar.
+
 ## 3ab. COMPRA POR FORA REGISTRADA E PREVISÃO DO QUE NEM FOI COTADO (21/11/2026)
 
 Ainda **sem pergunta escrita no assistente**; hoje se responde pela tela
