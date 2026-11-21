@@ -41,8 +41,9 @@ flowchart TD
 | 5 | Retorno e mapa | comprador | Cotações | `proposta.py`, `cotacao.py`, `precos.py` | pronto |
 | 6 | Fechar pedido | comprador | Cotações › Fechar pedido | `pedido.py`, `entrega.py` | **feito em 20/11** — não havia botão |
 | 7 | Autorização | diretoria | Pedidos | `pedido.autorizar` | pronto |
-| 8 | Envio ao fornecedor | comprador | Pedidos › Ver e mandar | `envio.montar_pedido`, `pedido_pdf.py` | pronto — texto + PDF anexo (20/11) |
-| 9 | Recebimento | obra | Portal › Material da obra, ou Receber material | `recebimento.py` | **feito em 20/11** — a obra não tinha tela |
+| 6b | Compra direta, sem cotação | comprador | Solicitações › Comprar direto | `pedido.fechar_direto` | **feito em 21/11** |
+| 8 | Envio ao fornecedor | comprador | Pedidos › Ver e mandar | `pedido_pdf.py`, `cotacao_pdf.py` | e-mail padrão + PDF anexo, com a assinatura de quem manda (21/11) |
+| 9 e 11 | Recebimento E conta a pagar, num procedimento só | obra | Portal › Material da obra | `lancamento.receber_e_lancar` | **feito em 21/11** — nota e boleto lidos pela IA, foto do material |
 | 10 | Nota × pedido | obra / comprador | Financeiro › Notas | `core/notas/cruzamento.py` | pronto, manual |
 | 11 | Conta a pagar | obra lança, financeiro analisa | Financeiro › Lançar (pré-preenchido pelo pedido) | `lancamento.py`, `core/titulos/` | **feito em 20/11** — nasce do recebimento |
 | 12 | Pagamento e fechamento | financeiro / coordenador | Acompanhar compras | `acompanhamento.py` | **feito em 20/11** |

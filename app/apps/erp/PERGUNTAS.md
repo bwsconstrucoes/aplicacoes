@@ -3222,3 +3222,18 @@ entrega típico por tipo de insumo, que o sistema não tem.
 
 **Ainda NÃO responde:** *"quais propostas chegaram e ninguém leu?"* — o sistema
 não lê a caixa de e-mail; a proposta só existe para ele depois de jogada no mapa.
+
+**Acrescentadas em 21/11/2026:**
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Quanto a gente economizou cotando? | `relatorios.gerar("ECONOMIA")` | ⚠ **"economia"** = contra a MÉDIA do mapa (há também contra o maior preço). Só itens; sem frete |
+| Esse material subiu de preço? | `relatorios.gerar("HISTORICO")` | compara o mesmo INSUMO, sem olhar especificação nem inflação |
+| Qual fornecedor mais atrasa? Quem entrega incompleto? | `relatorios.gerar("FORNECEDOR")` | o atraso é medido pelo recebimento que a OBRA registra |
+| Quantos dias leva do pedido da obra até chegar? | `relatorios.gerar("CICLO")` | só o que já chegou por inteiro |
+| Tem compra feita sem pedido esperando autorização? | `fora_do_fluxo.listar` | só existe com a regra ligada |
+| Quem autorizou essa compra por fora, e por quê? | `compras_fora_do_fluxo` + evento `COMPRA_FORA_DO_FLUXO_AUTORIZADA` | |
+| Por que esse recebimento não teve conta lançada? | `recebimentos.observacoes` ("SEM LANÇAMENTO NO RECEBIMENTO: …") | |
+
+**Ainda NÃO responde:** *"a obra gastou mais do que o previsto em material?"* —
+não há orçamento de material por obra no ERP.

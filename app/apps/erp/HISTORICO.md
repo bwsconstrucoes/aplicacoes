@@ -58,6 +58,15 @@ Pedido do dono: a conta a pagar da compra nasce do RECEBIMENTO. Para isso:
   credor que tem pedido de compra com conta a lançar (não bloqueia), e traz
   sozinha os documentos anexados no recebimento.
 
+- **21/11 (2ª rodada):** crítica nova **S1** em `core/titulos/analise.py`
+  (material sem pedido de compra) — só age com a chave ligada em Suprimentos ›
+  Painel, e nasce DESLIGADA. `api_criar_titulo` chama `fora_do_fluxo.conferir`
+  e responde 409 `precisa_motivo` quando falta o motivo. **Migração 122.**
+  `core/comum/email.py` ganhou `corpo_registrado` (opcional). Ação nova
+  `autorizar_compra_fora_do_fluxo`, dentro da seção `sup_autorizar`. A obra
+  passou a lançar título pelo portal (`/receber-e-lancar`), pelo mesmo
+  `criar_titulo`. Página nova `/erp/assinatura` (de qualquer operador).
+
 Detalhe e motivos em `HISTORICO_SUPRIMENTOS.md`, 3ª rodada e 21/11.
 
 ### ⚑ 20/11/2026 — nota para as OUTRAS ÁREAS, vinda de Suprimentos (registro entre áreas)

@@ -49,44 +49,134 @@ mesmo aperto do botão. E, desde a 3ª rodada, mexe em arquivos de OUTRAS áreas
 `templates/erp_lancar.html` e a rota `api_criar_titulo` (Financeiro),
 `core/portal.py` (portal), `static/erp.css`.
 
+**São TRÊS migrações no mesmo aperto do botão: 120, 121 e 122.**
+
 **Aprovado por ele e AINDA NÃO FEITO**, em ordem sugerida:
 
-1. **Aviso de preço fora da curva** no mapa. Cuidado: o preço digitado no mapa
-   já entra no banco de preços como COTADO — a referência tem de ser o último
-   COMPRADO de ANTES desta cotação, senão o preço se compara com ele mesmo.
-2. **Melhor fornecedor por categoria** (hoje só por insumo).
-3. **Correção pela inflação (INCC)** ao comparar preço antigo com novo.
-
-**Falta, e ele ainda não pediu com todas as letras:**
-
-- **Tela do pedido direto, sem cotação** — a regra existe
-  (`pedido.fechar_direto`), a tela não.
-- **Pedir material pelo portal** — o portal recebe e acompanha; pedir ainda é
-  pela tela de Solicitações.
-- **A imagem da assinatura do comprador** no PDF do pedido (hoje sai nome,
-  e-mail e telefone de quem manda).
-- **Avisar o coordenador por Telegram** quando chega incompleto ou atrasa.
-- **Ler a caixa de e-mail sozinho** (as propostas hoje são JOGADAS no mapa;
-  ninguém lê a caixa). É o item 2 de `ENTRADAS.md`.
-- **Anexar documento também pela tela do ERP** (Suprimentos › Receber
-  material); hoje só o portal anexa.
-- **A ciência e a autorização da compra feita fora do processo** — proposta
-  feita em 21/11, espera três respostas dele (ver a entrada de 21/11).
-- `exportarMapa` em `erp_suprimentos_cotacoes.html` ficou sem uso (o PDF do
-  mapa passou a ser feito no servidor) — pode sair.
+1. **Aviso de preço fora da curva** no mapa (o relatório "preço contra a compra
+   anterior" já existe; falta o aviso NA HORA de digitar). Cuidado: o preço do
+   mapa entra no banco de preços como COTADO — a referência é o último
+   COMPRADO de ANTES desta cotação.
+2. **Melhor fornecedor por categoria** e **correção pela inflação (INCC)**.
+3. **Ler a caixa de e-mail sozinho** — ele: *"depois a gente vai colocar a IA
+   para fazer a leitura da caixa de e-mail"*. É "depois", dito por ele.
+4. **Gasto da obra contra o previsto** — não há orçamento de material por obra
+   no ERP para comparar. Precisa ele dizer de onde vem o previsto.
+5. **Avisar o coordenador por Telegram** (chegou incompleto, entrega atrasada,
+   compra por fora esperando autorização). Hoje tudo aparece em tela.
+6. **O prazo típico por tipo de insumo** no Painel — o relatório de ciclo já
+   mede; falta o Painel usar no lugar da régua fixa de 7 dias.
+7. **Anexar documento e lançar junto também pela tela do ERP** (Suprimentos ›
+   Receber material). Só o PORTAL faz o procedimento único; ele funciona no
+   computador, e a tela antiga do ERP ficou só com o recebimento.
+8. `exportarMapa` em `erp_suprimentos_cotacoes.html` ficou sem uso — pode sair.
 
 **Perguntas abertas com ele:** (a) o histórico de preços da planilha já foi
-importado? (b) alguém já usa o módulo de verdade? (c) a obra deve lançar a nota
-pelo celular numa tela enxuta, ou a tela de Lançar do ERP serve?
+importado? (b) alguém já usa o módulo de verdade? (c) quando ligar a exigência
+de pedido de compra (a chave está no Painel, DESLIGADA).
 
-**Decidido por ele em 20/11 (não perguntar de novo):** parceiro de fora e
-perfil de consulta PODEM ver Painel, Acompanhar e Projeção ("ok, pode ver
-essas telas"); o pedido vai em PDF por e-mail; cobrança por WhatsApp para quem
-tem WhatsApp como canal no cadastro; a lentidão era para consertar.
+**Decidido por ele (não perguntar de novo):** parceiro e consulta PODEM ver
+Painel, Acompanhar e Projeção; pedido e cotação vão em PDF com corpo de e-mail
+padrão; WhatsApp para quem tem WhatsApp como canal; recebimento e lançamento
+são UM procedimento, no portal, que serve no celular e no computador; a
+assinatura fica com a pessoa, desenhada na tela ou escaneada.
 
 ---
 
 ## Decisões desta área
+
+### ⚑ 21/11/2026 (2ª rodada) — RECEBER E LANÇAR JUNTOS, E-MAIL PADRÃO COM PDF, E MAIS CINCO
+
+Ele respondeu à entrega anterior ponto a ponto. O que cada resposta virou:
+
+**1. "Fazer isso tudo no mesmo procedimento, receber e lançar notas e boletos."**
+E a razão, que é a regra: *"inclusive eu travo isso atualmente, a pessoa recebe
+e lança ao mesmo tempo, porque senão as pessoas podem ignorar, podem fazer só o
+lançamento financeiro, esquecer de fazer o recebimento e vice-versa."* E sobre o
+preenchimento: *"se a IA detectar, preenche tudo. Se não detectar, a pessoa tem
+que concluir o básico: número de nota, fornecedor, CNPJ, vencimento, código de
+barras, Pix."*
+
+⚠️ **Eu tinha feito o contrário:** a obra recebia no portal e era mandada para
+a tela de Lançar do ERP. Ele: *"não, eu quero que seja lançada a partir do
+portal (…) uma tela enxuta. Mas nada impede de estar utilizando o portal no
+computador também."*
+
+Como ficou (`lancamento.receber_e_lancar`, rota `/receber-e-lancar`):
+- UMA transação — recebimento, título e vínculo nascem juntos ou nenhum;
+- credor, rateio por obra e conta do plano VÊM DO PEDIDO e nem aparecem na
+  tela; o que a tela pede é o que só a nota e o boleto sabem;
+- o valor vem sugerido pelo que foi marcado como recebido (preço do pedido ×
+  quantidade, mais frete e menos desconto quando a entrega fecha o pedido);
+- a nota e o boleto são lidos pela IA assim que juntados (a MESMA rota de
+  leitura da tela de Lançar) e os campos lidos ficam contornados de verde;
+- travas: número da nota, valor, vencimento, linha digitável no boleto,
+  parcelas somando o valor, e a nota anexada;
+- foto do material: botão próprio, abre a câmera, não é lida pela IA.
+
+⚑ **A saída "a nota não veio" — decisão MINHA, e ele pode mandar tirar.** Ele
+disse que trava. Mantive UMA saída: marcar "a nota não veio com o material",
+com motivo obrigatório, registra só o recebimento e deixa o pedido em "Falta
+lançar", à vista do coordenador e do financeiro. Sem ela, no dia em que o
+caminhão chega sem o boleto, a obra não registraria nem o recebimento — e o
+sistema perderia as duas informações em vez de uma.
+
+⚑ **O título de PIX/TED sem conta conferida nasce BLOQUEADO** (crítica C2 do
+financeiro, que já existia) — a tela avisa antes. É o comportamento certo.
+
+⚑ **`receber_e_lancar` repete a ORQUESTRAÇÃO de `api_criar_titulo`** (checar
+duplicidade → derivar o tipo → `criar_titulo` → vincular). As REGRAS são as
+mesmas funções; a ordem é que está escrita duas vezes. Se a tela de Lançar
+ganhar um passo novo na criação, este lugar precisa ganhar também.
+
+**2. O e-mail.** *"O e-mail você colocou em TXT, mas ele tem que ser em PDF
+mesmo. Tem que ter um corpo de e-mail padrão, avisando o fornecedor. E no
+anexo, o relatório completo."* Cotação e pedido saem com um aviso curto e
+sempre igual, e o documento em PDF anexo (`cotacao_pdf.py` é novo: os itens por
+endereço, com colunas em branco de preço e prazo). O REGISTRO do envio guarda
+o conteúdo por extenso (`corpo_registrado`, parâmetro novo em
+`core/comum/email.py`) — "segue em anexo" não prova o que foi mandado. Se o
+PDF falhar, sai o texto completo no corpo, como era.
+
+**3. "Pedido sem cotação, isso é essencial."** Botão "Comprar direto (sem
+cotação)" na tela de Solicitações. Exige fornecedor, preço de cada item,
+condição, data e o MOTIVO de não cotar; mostra o último preço conhecido de
+cada item; vai para a mesma fila de autorização, marcado "sem mapa".
+
+**4. "Tem que ter a tela de pedido de material também no portal."** Aba
+"Pedir" em Material da obra: título, obra, data, prioridade, materiais por
+busca no catálogo, especificação. Mesma rota da tela de Solicitações. Não
+achou o material → pede o cadastro dele ao suprimento.
+
+**5. A assinatura.** *"Fica mais fácil de desenhar com o dedo."* Página
+`/erp/assinatura` (quadro de desenhar + mandar imagem escaneada), guardada
+como anexo DA PESSOA (`core/comum/assinatura.py`) — não é coluna em
+`usuarios`, de propósito. Sai no PDF do pedido e da cotação de quem manda.
+⚠️ "Zerar movimento › anexos" apagaria as assinaturas junto.
+
+**6. "Os relatórios todos, sugeridos todos."** Aba **Relatórios**
+(`relatorios.py`): economia da cotação, preço contra a compra anterior,
+desempenho do fornecedor, tempo do ciclo. Uma tela desenha qualquer um.
+Ficou de fora "gasto contra o previsto" — não há orçamento para comparar.
+Ele também notou que os quatro do mapa eram "tal qual o que eu mandei": são
+mesmo; o que acrescentei foi o que olha várias compras de uma vez.
+
+**7. A compra fora do fluxo.** Ele esclareceu: *"alguém autorizar esse
+lançamento para o financeiro de um material comprado que não seguiu o fluxo do
+suprimento."* Feito (`fora_do_fluxo.py`, migração 122, crítica **S1** em
+`core/titulos/analise.py`): lançamento de material (tipo T1) sem pedido exige
+o motivo, nasce BLOQUEADO, aparece no Painel, e só anda quando alguém com
+`autorizar_compra_fora_do_fluxo` — e que NÃO seja quem lançou — autoriza.
+**NASCE DESLIGADA.** A chave fica no Painel (quem tem `configurar`). Ligar
+antes de as compras passarem pelo ERP reteria todo lançamento de material.
+
+**Conferido:** 83 testes em `tests/test_suprimentos_ciclo_banco.py`; no
+navegador, em tamanho de celular: receber e lançar pelo portal (com a trava
+dizendo tudo o que falta de uma vez), pedir material, desenhar a assinatura;
+no computador: compra direta, os quatro relatórios, a caixa do Painel.
+**Não conferido:** a leitura da nota pela IA de verdade (sem chave aqui — a
+tela foi testada com a leitura falhando, e ela pede os campos à mão); boleto
+com linha digitável real; envio real de e-mail e de WhatsApp.
 
 ### ⚑ 21/11/2026 — O PORTAL EM LISTA, OS DOCUMENTOS NO RECEBIMENTO, E A COMPRA POR FORA
 

@@ -205,6 +205,28 @@ os itens.
 
 ---
 
+## 4d. O que mudou em 21/11/2026 (migração 122)
+
+15k. **No celular, como pessoa da obra**: Portal › Material da obra › abra um
+    pedido. Junte a foto de uma NOTA e de um BOLETO de verdade.
+    - *Tem de acontecer:* o sistema lê e preenche número, data, valor,
+      vencimento e a linha digitável, contornados de verde.
+    - **Este é o teste que mais importa desta rodada**: se ele ler um valor ou
+      um vencimento errado, me diga qual documento era.
+    - Tente registrar sem a nota: *tem de recusar dizendo tudo o que falta.*
+    - Registre. *Tem de acontecer:* "Conta a pagar NNN lançada".
+15l. Aba **Pedir**: peça dois materiais. *Tem de aparecer* em "Em andamento".
+15m. Em **/erp/assinatura**, desenhe a sua. Abra o PDF de um pedido: ela está lá.
+15n. Em Solicitações, marque um item e use **Comprar direto (sem cotação)**.
+15o. Dispare uma cotação para um e-mail seu: confira o corpo e o PDF anexo.
+15p. **Relatórios**: abra os quatro. Os números só fazem sentido com compras
+    de verdade — com dado de exemplo, confira só se a tela abre.
+15q. **Só quando as compras já passarem pelo ERP:** no Painel, ligue a
+    exigência de pedido de compra; lance um material sem pedido em Financeiro ›
+    Lançar. *Tem de pedir o motivo e ficar bloqueado até OUTRA pessoa autorizar.*
+
+---
+
 ## 5. O banco de preços (10 minutos)
 
 **Suprimentos › Banco de preços.**

@@ -12007,7 +12007,7 @@ def pagina_assinatura():
     return render_template("erp_assinatura.html")
 
 
-@bp.route("/erp/minha-assinatura.img")
+@bp.route("/erp/api/minha-assinatura/imagem")
 @login_obrigatorio
 @permissao("ver_erp")
 def imagem_da_minha_assinatura():

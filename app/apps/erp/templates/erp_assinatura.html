@@ -109,7 +109,7 @@ document.getElementById("arquivo").addEventListener("change", ev => {
   ev.target.value = "";
 });
 async function mostrarAtual(){
-  const r = await fetch("/erp/minha-assinatura.img?" + Date.now());
+  const r = await fetch("/erp/api/minha-assinatura/imagem?" + Date.now());
   if (!r.ok) return;
   document.getElementById("atual").src = URL.createObjectURL(await r.blob());
   document.getElementById("bloco-atual").hidden = false;
