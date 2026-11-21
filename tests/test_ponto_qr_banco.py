@@ -566,8 +566,14 @@ def test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura(app, mundo, banc
     from app.apps.ponto.core import alertas, marcacoes
     from tests.test_ponto_gestao_banco import bater_via_chave
     t, h, _ = _tablet(app, mundo)
+    # ⚠️ "ONTEM" TEM DE SER DIA DE TRABALHO, e não só dia de semana (21/11/2026):
+    # em 20/11 (Consciência Negra, feriado nacional na base) a escala não prevê
+    # batida, o alerta não tem "qual faltou" — e o teste quebrava todo ano no
+    # dia seguinte a um feriado. Pula fim de semana E feriado cadastrado.
+    with db.conexao() as conn:
+        feriados = {r["data"] for r in db.todos(conn, "SELECT data FROM ponto.feriados")}
     ontem = _hoje() - dt.timedelta(days=1)
-    while ontem.weekday() > 4:
+    while ontem.weekday() > 4 or ontem in feriados:
         ontem -= dt.timedelta(days=1)
     for hh in (7, 11, 12):
         bater_via_chave(app, CPF_JOAO, local(ontem, hh, 0))                  # faltou a saída

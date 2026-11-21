@@ -3,6 +3,15 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 21/11/2026 — Teste do alerta de batida que quebrava no dia seguinte a feriado (feito pelo chat do ERP/DP, a pedido dele)
+
+`tests/test_ponto_qr_banco.py::test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`
+falhou em 21/11/2026 também na `main`: ele usava "ontem, dia de semana", e
+ontem foi 20/11 — Consciência Negra, feriado nacional na base. Em feriado a
+escala não prevê batida, e o alerta não diz "qual faltou". **Não era defeito
+do alerta, era do teste**: agora ele pula fim de semana E feriado cadastrado
+(`ponto.feriados`). Só o teste mudou.
+
 ## ⚑ 17/11/2026 — A FICHA ÚNICA VIROU "AMBIENTE DA PESSOA", COM TRÊS ÁREAS (feito pelo chat do ERP/DP)
 
 ⚠️ **Mexi nesta tela vindo de outra área.** Um arquivo: `gestao.html` — a
