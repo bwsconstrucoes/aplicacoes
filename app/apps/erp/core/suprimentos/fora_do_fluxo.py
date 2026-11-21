@@ -156,9 +156,14 @@ def listar(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
     """O que está esperando autorização, no recorte de obra de quem olha."""
     from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
     from app.apps.erp.db.models.financeiro import Rateio, Titulo
+    # ⚑ DUAS PENDÊNCIAS, E A LINHA SÓ SAI QUANDO AS DUAS FECHAM (21/11/2026):
+    # alguém com alçada deu ciência, E alguém registrou o que foi comprado (a
+    # solicitação tardia). Uma não espera a outra — o pagamento não fica refém
+    # de digitação, e o registro do material não some por já ter sido pago.
     linhas = s.execute(text(
-        "SELECT titulo_id, motivo, lancado_por, criado_em FROM compras_fora_do_fluxo "
-        "WHERE autorizado_em IS NULL ORDER BY criado_em")).all()
+        "SELECT titulo_id, motivo, lancado_por, criado_em, autorizado_em, pedido_id "
+        "FROM compras_fora_do_fluxo "
+        "WHERE autorizado_em IS NULL OR pedido_id IS NULL ORDER BY criado_em")).all()
     if not linhas:
         return []
     ids = [l[0] for l in linhas]
@@ -174,7 +179,7 @@ def listar(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
         Usuario.id.in_({l[2] for l in linhas if l[2]} or {0}))).all()}
     permitidas = obras_de_registro_sem_autor(s, usuario)
     saida = []
-    for titulo_id, motivo, lancado_por, criado_em in linhas:
+    for titulo_id, motivo, lancado_por, criado_em, autorizado_em, pedido_id in linhas:
         t = titulos.get(titulo_id)
         if t is None or getattr(t.status, "value", "") in ("CANCELADO", "ESTORNADO"):
             continue
@@ -188,6 +193,10 @@ def listar(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
             "obras": sorted(nomes_obra.get(o, "") for o in obras),
             "motivo": motivo, "lancado_por": quem.get(lancado_por, ""),
             "lancado_por_id": lancado_por,
+            "ciente": autorizado_em is not None,
+            "regularizado": pedido_id is not None,
+            "fornecedor_id": t.fornecedor_id,
+            "obra_ids": sorted(obras),
             "dia": criado_em.date().isoformat() if criado_em else None})
     return saida
 
@@ -217,3 +226,114 @@ def autorizar(s: Session, titulo_id: int, usuario: Usuario, observacao: str = ""
         # volta para a análise: se não houver OUTRO motivo de bloqueio (conta
         # do credor sem conferência, por exemplo), segue para a aprovação.
         svc_titulos.reanalisar(s, titulo_id, usuario)
+
+
+# ---------------------------------------------------------------------------
+# A SOLICITAÇÃO TARDIA (21/11/2026, noite)
+#
+# O dono: "Como é que a gente tem feito aqui? É exigido o lançamento da
+# solicitação, mesmo que tardia. Porque pode acontecer: surgiu uma urgência,
+# foi comprado e não seguiu o procedimento normal. O engenheiro precisou
+# comprar. Aí, até para a gente ter o registro do que está sendo comprado, o
+# quantitativo de material que está sendo utilizado em obra, a gente precisa
+# lançar aquela solicitação de suprimento. Mesmo que a posterior, para poder
+# cobrir esse buraco."
+#
+# UM REGISTRO SÓ, E O SISTEMA FAZ O RESTO. A pessoa diz o que foi comprado
+# (insumo, quantidade, preço); daí nascem, na mesma transação:
+#   · a solicitação de suprimento, marcada como regularização;
+#   · o pedido de compra, já autorizado — a compra JÁ ACONTECEU, autorizar de
+#     novo seria teatro; a ciência de quem tem alçada é a do Painel;
+#   · o recebimento integral — o material já está na obra;
+#   · o vínculo com o lançamento que já existe.
+# Com isso a compra por fora entra no histórico de preços, no consumo da obra
+# e nos relatórios, igual às outras. NÃO cria conta a pagar: ela já existe.
+# ---------------------------------------------------------------------------
+def regularizar(s: Session, titulo_id: int, dados: dict[str, Any],
+                usuario: Usuario) -> dict[str, Any]:
+    from decimal import Decimal, InvalidOperation
+    from app.apps.erp.core.suprimentos import lancamento, pedido as svc_pedido
+    from app.apps.erp.core.suprimentos import recebimento, solicitacao
+    from app.apps.erp.core.titulos import service as svc_titulos
+    from app.apps.erp.db.models.cadastros import PedidoItem, SuprimentoItem
+    from app.apps.erp.db.models.financeiro import Rateio
+
+    linha = s.execute(text(
+        "SELECT motivo, pedido_id FROM compras_fora_do_fluxo WHERE titulo_id = :t"),
+        {"t": titulo_id}).first()
+    if linha is None:
+        raise ErroNaoEncontrado("Este lançamento não está marcado como compra sem pedido.")
+    if linha[1] is not None:
+        raise ErroValidacao("O que foi comprado neste lançamento já está registrado.")
+    titulo = svc_titulos.obter(s, titulo_id)
+    if not titulo.fornecedor_id:
+        raise ErroValidacao("O lançamento não tem fornecedor — não há de quem registrar a compra.")
+
+    rateios = [r for r in s.scalars(select(Rateio).where(
+        Rateio.titulo_id == titulo_id)).all() if r.titulo_id == titulo_id]
+    obra_padrao = max(rateios, key=lambda r: r.valor).obra_id if rateios else None
+
+    if obra_padrao is None and any(not b.get("obra_id") for b in (dados.get("itens") or [])):
+        raise ErroValidacao(
+            "O lançamento não está rateado em nenhuma obra, então não dá para saber "
+            "para onde foi o material. Acerte o rateio do lançamento e registre de novo.")
+
+    def numero(valor: Any, campo: str) -> Decimal:
+        bruto = str(valor or "").strip()
+        if "," in bruto:
+            bruto = bruto.replace(".", "").replace(",", ".")
+        try:
+            return Decimal(bruto)
+        except (InvalidOperation, ValueError):
+            raise ErroValidacao(f"{campo}: número inválido.")
+
+    brutos = dados.get("itens") or []
+    if not brutos:
+        raise ErroValidacao("Diga ao menos um material que foi comprado.")
+    itens, precos = [], []
+    for n, b in enumerate(brutos, start=1):
+        preco = numero(b.get("preco_unitario"), f"Item {n}: preço")
+        if preco <= 0:
+            raise ErroValidacao(f"Item {n}: o preço unitário tem de ser maior que zero.")
+        itens.append({"insumo_id": b.get("insumo_id"), "obra_id": b.get("obra_id") or obra_padrao,
+                      "quantidade": str(numero(b.get("quantidade"), f"Item {n}: quantidade")),
+                      "unidade": b.get("unidade"), "especificacao": b.get("especificacao"),
+                      "observacoes": "Compra feita fora do processo — registro tardio."})
+        precos.append(preco)
+
+    marca = f"REGULARIZAÇÃO da compra lançada em {titulo.numero_sp}"
+    sol = solicitacao.criar(s, {
+        "titulo": f"Regularização — {titulo.numero_sp}",
+        "observacoes": f"{marca}. Motivo informado: {linha[0]}", "itens": itens}, usuario)
+    do_pedido = sorted([i for i in s.scalars(select(SuprimentoItem).where(
+        SuprimentoItem.solicitacao_id == sol.id)).all() if i.solicitacao_id == sol.id],
+        key=lambda i: i.numero)
+    pedido = svc_pedido.fechar_direto(s, {
+        "fornecedor_id": titulo.fornecedor_id, "observacoes": marca + ".",
+        "itens": [{"suprimento_item_id": i.id, "preco_unitario": str(p)}
+                  for i, p in zip(do_pedido, precos)]}, usuario)
+    svc_pedido.autorizar(s, pedido.id, usuario)
+    linhas = [l for l in s.scalars(select(PedidoItem).where(
+        PedidoItem.pedido_id == pedido.id)).all() if l.pedido_id == pedido.id]
+    chegou = titulo.data_emissao_doc or date.today()
+    rec = recebimento.registrar(s, pedido.id, {
+        "data": min(chegou, date.today()).isoformat(),
+        "nota_numero": getattr(titulo, "documento_numero", None) or "",
+        "observacoes": marca + " — material já entregue quando foi registrado.",
+        "itens": [{"pedido_item_id": l.id, "quantidade": str(l.quantidade)}
+                  for l in linhas]}, usuario)
+    s.flush()
+    lancamento.vincular(s, titulo, pedido.id, usuario, recebimento_id=rec.id)
+    s.execute(text(
+        "UPDATE compras_fora_do_fluxo SET pedido_id = :p, regularizado_por = :u, "
+        "regularizado_em = :q WHERE titulo_id = :t"),
+        {"p": pedido.id, "u": usuario.id, "q": datetime.now(timezone.utc), "t": titulo_id})
+    total = svc_pedido.total(s, pedido)
+    registrar_evento(s, "titulo", titulo_id, "COMPRA_FORA_DO_FLUXO_REGULARIZADA",
+                     {"solicitacao": sol.numero, "pedido": pedido.numero,
+                      "total_dos_itens": str(total),
+                      "valor_do_lancamento": str(titulo.valor_liquido)}, usuario.id)
+    logger.info("ERP/suprimentos: compra sem pedido %s regularizada — %s / %s",
+                titulo.numero_sp, sol.numero, pedido.numero)
+    return {"solicitacao": sol.numero, "pedido": pedido.numero, "pedido_id": pedido.id,
+            "total_dos_itens": float(total), "valor_do_lancamento": float(titulo.valor_liquido)}

@@ -60,20 +60,27 @@ mesmo aperto do botão. E, desde a 3ª rodada, mexe em arquivos de OUTRAS áreas
 2. **Melhor fornecedor por categoria** e **correção pela inflação (INCC)**.
 3. **Ler a caixa de e-mail sozinho** — ele: *"depois a gente vai colocar a IA
    para fazer a leitura da caixa de e-mail"*. É "depois", dito por ele.
-4. **Gasto da obra contra o previsto** — não há orçamento de material por obra
-   no ERP para comparar. Precisa ele dizer de onde vem o previsto.
+4. ~~Gasto da obra contra o previsto~~ — **ESCLARECIDO em 21/11 (noite):** o
+   "previsto" que ele quer é a PROJEÇÃO das compras em andamento, não um
+   orçamento de obra. Já existe (Projeção de pagamentos) e ganhou o 4º grau.
 5. **Avisar o coordenador por Telegram** (chegou incompleto, entrega atrasada,
    compra por fora esperando autorização). Hoje tudo aparece em tela.
 6. **O prazo típico por tipo de insumo** no Painel — o relatório de ciclo já
    mede; falta o Painel usar no lugar da régua fixa de 7 dias.
-7. **Anexar documento e lançar junto também pela tela do ERP** (Suprimentos ›
-   Receber material). Só o PORTAL faz o procedimento único; ele funciona no
-   computador, e a tela antiga do ERP ficou só com o recebimento.
+7. ~~Lançar junto também pela tela do ERP~~ — **FEITO em 21/11 (noite):** as
+   telas do ERP não recebem mais sozinhas; mandam para o procedimento único.
 8. `exportarMapa` em `erp_suprimentos_cotacoes.html` ficou sem uso — pode sair.
 
-**Perguntas abertas com ele:** (a) o histórico de preços da planilha já foi
-importado? (b) alguém já usa o módulo de verdade? (c) quando ligar a exigência
-de pedido de compra (a chave está no Painel, DESLIGADA).
+**Respondido por ele em 21/11 (noite):** o histórico de preços da planilha
+**NÃO foi importado ainda**, e **ninguém usa o módulo de verdade ainda**. A
+saída "a nota não veio" **FICA** ("vamos manter, é um recurso"). Compra por
+fora: **começa só avisando**; travar é depois, decisão dele.
+
+**Consequência do histórico não importado:** a estimativa "solicitado, sem
+cotação" da Projeção e o relatório de preço contra a compra anterior só
+enxergam o que for comprado PELO ERP. Importar o histórico de preços da
+planilha é o que dá valor a essas duas telas desde o primeiro dia — ainda não
+foi pedido; oferecer.
 
 **Decidido por ele (não perguntar de novo):** parceiro e consulta PODEM ver
 Painel, Acompanhar e Projeção; pedido e cotação vão em PDF com corpo de e-mail
@@ -84,6 +91,68 @@ assinatura fica com a pessoa, desenhada na tela ou escaneada.
 ---
 
 ## Decisões desta área
+
+### ⚑ 21/11/2026 (4ª rodada) — NUNCA SÓ RECEBER, A SOLICITAÇÃO TARDIA, E OS ACERTOS NOS PAPÉIS
+
+Ele leu os PDFs e os e-mails de amostra e voltou com sete pontos. Todos feitos.
+
+**1. Solicitação de cotação (PDF).** Saiu "QUEM ESTÁ PEDINDO" (virou "EMPRESA");
+saiu a frase "os preços podem ser informados nas colunas em branco" **e as
+colunas em branco junto** — ele: *"É um PDF que dá para lançar o valor? Porque
+se não der, não adianta."* Saiu o apelido interno da cotação do cabeçalho, do
+e-mail e do assunto (ele viu "Utilitários 1" e não soube o que era). Entrou a
+**hora** da emissão (fuso de Fortaleza).
+
+**2. Pedido de compra (PDF).** Entrou o **CNO da obra** — ao lado do nome da
+obra em cada bloco de entrega e como instrução própria em "Para a nota fiscal".
+Vem de `obras.cno`. Obra sem CNO no cadastro: o pedido sai sem, calado.
+
+**3. E-mail com formatação.** Ele: *"quando o texto fica simples demais dá a
+impressão de que não é nem uma coisa de verdade."* `envio.corpo_em_html`: faixa
+com o nome da empresa, quadro com número/valor/prazo, texto, rodapé com razão
+social e CNPJ. Sem imagem, de propósito (leitor de e-mail bloqueia). O texto
+puro vai junto como alternativa. `core/comum/email.py` ganhou `corpo_html`
+(arquivo compartilhado — só acrescenta um parâmetro opcional).
+
+**4. "Nunca pode ser feito só o recebimento."** Três mudanças:
+- As telas do ERP (Receber material, e o recebimento dentro de Pedidos) **não
+  registram mais a chegada sozinhas**: mostram o que falta e mandam para o
+  procedimento único (`/erp/portal/material?pedido=N`).
+- A rota de recebimento sozinho **recusa quem pode lançar**. Fica só para quem
+  recebe e não lança — e aí grava o evento `RECEBIDO_SEM_LANCAMENTO`.
+- **A nota não entra solta**: ao lançar um título de fornecedor que tem
+  material recebido e sem conta, o servidor responde 409 e a tela pergunta "de
+  qual pedido é esta nota?". Ou escolhe, ou declara que não é de nenhum
+  (evento `NOTA_DECLARADA_SEM_PEDIDO`). Era a pergunta dele: *"como é que a
+  gente vai garantir que esse pedido seja vinculado depois?"*
+- A saída "a nota não veio" continua, com motivo escrito — decisão dele.
+
+**5. A solicitação tardia** (`fora_do_fluxo.regularizar`). Ele: *"é exigido o
+lançamento da solicitação, mesmo que tardia (...) até para a gente ter o
+registro do que está sendo comprado, o quantitativo de material que está sendo
+utilizado em obra."* No Painel, cada compra por fora ganhou "Registrar o que
+foi comprado": a pessoa informa material, quantidade e preço, e nascem na mesma
+transação a solicitação, o pedido (já autorizado), o recebimento integral e o
+vínculo com o lançamento. Não cria conta — ela já existe.
+- **A linha do Painel tem DUAS pendências independentes** — a ciência (de quem
+  tem alçada) e o registro do material — e só sai quando as duas fecham.
+  ESCOLHA MINHA, dita a ele: uma não espera a outra, para o pagamento não ficar
+  refém de digitação. Se ele quiser que a ciência só possa ser dada depois do
+  registro, é uma linha em `autorizar`.
+- Soma dos itens diferente do valor da nota **não bloqueia** (frete, desconto);
+  a diferença fica no evento.
+- Colunas novas (`pedido_id`, `regularizado_por`, `regularizado_em`) entraram
+  **dentro da migração 122**, que ainda não foi aplicada em produção.
+- O material tem de estar no cadastro de insumos. Se não está, a pessoa pede o
+  cadastro ao suprimento — não há cadastro de insumo por aqui.
+
+**6. A previsão financeira.** Ele descreveu o que queria e era a Projeção de
+pagamentos, que já existia. Entrou o **4º grau**: "solicitado, sem cotação",
+estimado pelo último preço conhecido do insumo, na data em que a obra precisa.
+Item sem preço anterior continua de fora, contado no rodapé.
+
+**Não verificado:** e-mail formatado aberto num Outlook/Gmail de verdade (vi só
+no navegador); o envio real por SMTP com as duas versões.
 
 ### ⚑ 21/11/2026 (3ª rodada) — COMPRA POR FORA: PRIMEIRO SÓ AVISA, DEPOIS TRAVA
 

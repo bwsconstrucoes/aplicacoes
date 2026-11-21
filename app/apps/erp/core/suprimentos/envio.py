@@ -209,7 +209,10 @@ def montar_mensagem(s: Session, cotacao_id: int, empresa: Empresa,
                  f"Favor mantê-la ao responder.")
     corpo += ["", "Atenciosamente,"] + _assinatura(empresa)
 
-    return {"assunto": f"Cotação {cot.numero} — {cot.titulo}",
+    # O assunto leva o nome da EMPRESA, não o apelido interno da cotação
+    # ("Utilitários 1" não diz nada ao fornecedor — 21/11/2026).
+    return {"assunto": f"Solicitação de cotação {cot.numero} — "
+                       f"{_texto(empresa.nome_fantasia) or _texto(empresa.razao_social)}",
             "corpo": "\n".join(corpo)}
 
 
@@ -224,8 +227,7 @@ def montar_mensagem(s: Session, cotacao_id: int, empresa: Empresa,
 def corpo_padrao_da_cotacao(cot, empresa: Empresa, prazo: Optional[str] = None) -> str:
     fantasia = _texto(empresa.nome_fantasia) or _texto(empresa.razao_social)
     linhas = ["Prezados,", "",
-              f"Segue em anexo a nossa solicitação de cotação {cot.numero} — "
-              f"{_texto(cot.titulo)}.", "",
+              f"Segue em anexo a nossa solicitação de cotação {cot.numero}.", "",
               "O PDF traz os itens, as quantidades e o endereço de entrega. "
               "Pedimos que a proposta informe preço unitário, prazo de entrega, "
               "condição de pagamento e frete."]
@@ -249,6 +251,55 @@ def corpo_padrao_do_pedido(pedido, empresa: Empresa, total: Any) -> str:
     linhas += ["", f"Por favor, confirme o recebimento deste pedido e cite {pedido.numero} "
                "na nota fiscal.", "", "Atenciosamente,", "Suprimentos — " + fantasia]
     return "\n".join(linhas)
+
+
+def corpo_em_html(empresa: Empresa, titulo: str, texto: str,
+                  destaques: Optional[list[tuple[str, str]]] = None) -> str:
+    """O mesmo aviso, com cara de documento da empresa.
+
+    ⚑ 21/11/2026 — o dono, ao ver o e-mail em texto puro: "quando o texto fica
+    simples demais dá a sensação de que às vezes não é nem uma coisa de
+    verdade (...) simples, mas com alguma formatação."
+
+    DE PROPÓSITO SIMPLES: uma faixa com o nome da empresa e o título, o texto,
+    um quadro com os dois ou três dados que importam e o rodapé com razão
+    social e CNPJ. Sem imagem (leitor de e-mail bloqueia imagem por padrão, e
+    o que sobra é um quadrado vazio) e só com tabela e estilo na própria
+    marca — é o que Outlook e Gmail mostram igual.
+    """
+    from html import escape
+    fantasia = _texto(empresa.nome_fantasia) or _texto(empresa.razao_social)
+    paragrafos = "".join(
+        f'<p style="margin:0 0 14px 0">{escape(bloco).replace(chr(10), "<br>")}</p>'
+        for bloco in (b.strip() for b in texto.split("\n\n")) if bloco)
+    quadro = ""
+    if destaques:
+        celulas = "".join(
+            f'<tr><td style="padding:4px 14px 4px 0;color:#5b6b85;font-size:13px">{escape(r)}</td>'
+            f'<td style="padding:4px 0;font-weight:bold;font-size:14px">{escape(v)}</td></tr>'
+            for r, v in destaques if v)
+        quadro = ('<table cellpadding="0" cellspacing="0" style="margin:4px 0 18px 0;'
+                  'background:#f2f5fa;border-left:4px solid #1f3a6e;padding:10px 16px">'
+                  f'{celulas}</table>')
+    rodape = " · ".join(x for x in (
+        _texto(empresa.razao_social),
+        ("CNPJ " + _cnpj_por_extenso(empresa.cnpj)) if _texto(empresa.cnpj) else "",
+        _texto(empresa.telefone), _texto(empresa.email)) if x)
+    return (
+        '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#eef1f6">'
+        '<table width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f6">'
+        '<tr><td align="center" style="padding:24px 12px">'
+        '<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;'
+        'width:100%;background:#ffffff;font-family:Arial,Helvetica,sans-serif;'
+        'color:#14233b;font-size:15px;line-height:1.5">'
+        '<tr><td style="background:#1f3a6e;padding:18px 28px;color:#ffffff">'
+        f'<div style="font-size:19px;font-weight:bold">{escape(fantasia)}</div>'
+        f'<div style="font-size:13px;margin-top:2px;color:#c9d6ee">{escape(titulo)}</div>'
+        '</td></tr>'
+        f'<tr><td style="padding:26px 28px 10px 28px">{quadro}{paragrafos}</td></tr>'
+        '<tr><td style="padding:14px 28px;border-top:1px solid #dfe5ef;'
+        f'color:#5b6b85;font-size:12px">{escape(rodape)}</td></tr>'
+        '</table></td></tr></table></body></html>')
 
 
 def _cnpj_por_extenso(cnpj: Any) -> str:
@@ -463,6 +514,10 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
         logger.exception("ERP/suprimentos: não consegui gerar o PDF da cotação %s",
                          cot.numero)
 
+    # a versão formatada só existe quando o corpo é o aviso padrão (com o PDF)
+    corpo_formatado = corpo_em_html(
+        empresa, "Solicitação de cotação", corpo_do_email,
+        [("Cotação", cot.numero), ("Retorno até", prazo or "")]) if anexos else None
     enviados, falhas, sem_endereco = [], [], []
     for coluna in sorted(colunas, key=lambda c: (c.ordem or 0, c.id or 0)):
         forn = s.get(Fornecedor, coluna.fornecedor_id)
@@ -476,7 +531,7 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
         registro = correio.enviar(
             s, empresa=empresa, para=destinos,
             assunto=mensagem["assunto"], corpo=corpo_do_email, anexos=anexos,
-            corpo_registrado=mensagem["corpo"],
+            corpo_registrado=mensagem["corpo"], corpo_html=corpo_formatado,
             entidade_tipo="cotacao", entidade_id=cotacao_id,
             destinatario_tipo="cotacao_fornecedor", destinatario_id=coluna.id,
             usuario=usuario)
@@ -851,12 +906,18 @@ def disparar_pedido(s: Session, pedido_id: int, dados: dict[str, Any],
         logger.exception("ERP/suprimentos: não consegui gerar o PDF do pedido %s",
                          pedido.numero)
     from app.apps.erp.core.suprimentos import pedido as _svc_pedido
+    total_do_pedido = _svc_pedido.total(s, pedido)
+    aviso_padrao = corpo_padrao_do_pedido(pedido, empresa, total_do_pedido)
     registro = correio.enviar(
         s, empresa=empresa, para=destinos,
         assunto=mensagem["assunto"],
         # com o PDF anexo, o corpo é o aviso padrão; sem ele, o texto completo
-        corpo=(corpo_padrao_do_pedido(pedido, empresa, _svc_pedido.total(s, pedido))
-               if anexos else mensagem["corpo"]),
+        corpo=aviso_padrao if anexos else mensagem["corpo"],
+        corpo_html=corpo_em_html(
+            empresa, "Pedido de compra", aviso_padrao,
+            [("Pedido", pedido.numero), ("Valor", f"R$ {_dinheiro(total_do_pedido)}"),
+             ("Entregar até", pedido.previsao_entrega.strftime("%d/%m/%Y")
+              if pedido.previsao_entrega else "")]) if anexos else None,
         anexos=anexos, corpo_registrado=mensagem["corpo"],
         entidade_tipo="pedido_compra", entidade_id=pedido_id,
         destinatario_tipo="fornecedor", destinatario_id=pedido.fornecedor_id,

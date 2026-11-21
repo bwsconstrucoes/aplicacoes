@@ -161,6 +161,12 @@ async function carregar(){
     el("n-andamento").textContent = DADOS.em_andamento.length;
     el("n-nota").textContent = DADOS.sem_nota.length;
     el("aba-pedir").hidden = !DADOS.pode_pedir;
+    // Chegando com ?pedido=N (é para onde as telas do ERP mandam), o pedido
+    // já abre — uma vez só, para não reabrir a cada recarga da lista.
+    const pedidoDaVez = +new URLSearchParams(location.search).get("pedido");
+    if (pedidoDaVez && !window.__abriuDaVez && DADOS.esperando.some(p => p.pedido_id === pedidoDaVez)) {
+      window.__abriuDaVez = true; ABA = "chegar"; ABERTO = pedidoDaVez;
+    }
     desenhar();
   } catch(e){ recado(esc(e.message), "erro"); }
 }

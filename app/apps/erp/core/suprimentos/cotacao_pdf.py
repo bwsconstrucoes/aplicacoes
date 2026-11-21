@@ -82,7 +82,15 @@ def gerar(s: Session, cotacao_id: int, empresa, *, prazo: Optional[str] = None,
     pdf.cell(largura - 70, 6, _latin(f"Nº {cot.numero}"), align="R")
     fonte("", 8.5, CINZA)
     pdf.set_xy(pdf.l_margin + 70, topo + 14)
-    pdf.cell(largura - 70, 4, _latin(f"{cot.titulo}  ·  {date.today():%d/%m/%Y}"), align="R")
+    # ⚑ SEM O NOME INTERNO DA COTAÇÃO, COM A HORA (21/11/2026). O dono viu
+    # "Utilitários 1" no cabeçalho e não soube o que era — é o apelido que o
+    # comprador dá à cotação, e não diz nada ao fornecedor. A hora entra
+    # porque o mesmo pedido pode sair de manhã e ser refeito à tarde.
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.apps.erp.core.comum.uso import FUSO
+    agora = datetime.now(ZoneInfo(FUSO))
+    pdf.cell(largura - 70, 4, _latin(f"Emitida em {agora:%d/%m/%Y} às {agora:%H:%M}"), align="R")
     pdf.set_y(topo + 21)
     pdf.set_draw_color(*AZUL)
     pdf.set_line_width(0.5)
@@ -90,7 +98,7 @@ def gerar(s: Session, cotacao_id: int, empresa, *, prazo: Optional[str] = None,
     pdf.ln(3)
 
     fonte("B", 7.5, CINZA)
-    linha("QUEM ESTÁ PEDINDO", 4)
+    linha("EMPRESA", 4)
     fonte("B", 9.5)
     linha(empresa.razao_social, 4.4)
     fonte("", 8.5)
@@ -101,12 +109,14 @@ def gerar(s: Session, cotacao_id: int, empresa, *, prazo: Optional[str] = None,
         linha(sede, 4.2)
     pdf.ln(2)
     fonte("", 9)
-    linha("Solicitamos proposta de preço para os itens abaixo. Os preços podem ser "
-          "informados nas colunas em branco deste documento ou em proposta própria.")
+    # ⚑ Saiu "os preços podem ser informados nas colunas em branco deste
+    # documento" (21/11/2026). Ele: "É um PDF que dá para lançar o valor?
+    # Porque se não der, não adianta." Não dá — e as colunas em branco saíram
+    # junto, para o papel não prometer o que não entrega.
+    linha("Solicitamos proposta de preço para os itens abaixo.")
     pdf.ln(2)
 
-    colunas = [("Nº", 8, "R"), ("Material", 0, "L"), ("Qtd", 18, "R"), ("Un.", 11, "C"),
-               ("Preço unit.", 26, "R"), ("Prazo", 22, "C")]
+    colunas = [("Nº", 8, "R"), ("Material", 0, "L"), ("Qtd", 18, "R"), ("Un.", 14, "C")]
     fixo = sum(c[1] for c in colunas)
     colunas = [(n, w or (largura - fixo), a) for n, w, a in colunas]
     numero = 0
@@ -146,7 +156,7 @@ def gerar(s: Session, cotacao_id: int, empresa, *, prazo: Optional[str] = None,
             fonte("", 8.5)
             x = pdf.l_margin
             valores = [str(numero), None, _qtd(getattr(item, "quantidade", 0)),
-                       getattr(item, "unidade", "") or "", "", ""]
+                       getattr(item, "unidade", "") or ""]
             pdf.set_draw_color(200, 207, 220)
             pdf.set_line_width(0.15)
             for (nome, w, a), valor in zip(colunas, valores):

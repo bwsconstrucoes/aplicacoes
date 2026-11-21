@@ -430,7 +430,11 @@ def test_parcela_prevista_que_venceu_sem_conta_lancada_aparece_como_vencida(base
 def test_a_projecao_diz_o_que_ficou_de_fora(base):
     s = base["s"]
     sol = s.scalars(select(SuprimentoSolicitacao)).first()
-    insumo = s.scalars(select(Insumo)).first()
+    # insumo SEM preço anterior: o que tem preço entra estimado (21/11/2026)
+    cat = s.scalars(select(Insumo)).first().categoria_insumo_id
+    insumo = Insumo(codigo="CIC-NOVO", descricao="Soleira nunca comprada",
+                    unidade="M2", categoria_insumo_id=cat)
+    s.add(insumo); s.flush()
     s.add(SuprimentoItem(solicitacao_id=sol.id, numero=3, insumo_id=insumo.id,
                          quantidade=Decimal("5"), unidade="M2",
                          obra_id=base["obra_a"].id))
@@ -1196,7 +1200,8 @@ def test_material_sem_pedido_exige_motivo_bloqueia_e_so_outro_autoriza(base):
     svc_fora.autorizar(s, titulo.id, _outro_que_autoriza(base), "ciente; conversar com a obra")
     s.flush()
     assert titulo.status is StatusTitulo.AGUARDANDO_APROVACAO
-    assert svc_fora.listar(s, u) == []
+    # a ciência foi dada; a linha continua, esperando o registro do material
+    assert [(x["ciente"], x["regularizado"]) for x in svc_fora.listar(s, u)] == [(True, False)]
 
 
 def test_lancamento_ligado_a_pedido_nao_e_compra_por_fora(base):
@@ -1231,9 +1236,107 @@ def test_so_avisar_registra_e_nao_trava_nem_pede_motivo(base):
     assert svc_fora.pendente(s, titulo.id) is None              # a análise não enxerga trava
     assert [x["numero_sp"] for x in svc_fora.listar(s, u)] == ["SP-AVISO-1"]
     svc_fora.autorizar(s, titulo.id, _outro_que_autoriza(base), "ciente")
-    assert svc_fora.listar(s, u) == [] and titulo.status is StatusTitulo.APROVADO
+    assert [x["ciente"] for x in svc_fora.listar(s, u)] == [True]
+    assert titulo.status is StatusTitulo.APROVADO
     # e passar para TRAVAR depois é só trocar a chave
     svc_fora.ligar(s, u, "TRAVAR")
     assert svc_fora.estado(s)[0] == "TRAVAR"
     svc_fora.ligar(s, u, "")
     assert svc_fora.estado(s) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# 21/11/2026 (noite) — a solicitação tardia, a previsão pelo último preço,
+# o CNO no pedido e o e-mail formatado
+# ---------------------------------------------------------------------------
+def test_a_solicitacao_tardia_cria_pedido_recebido_e_liga_ao_lancamento(base):
+    """O dono: "é exigido o lançamento da solicitação, mesmo que tardia (...)
+    até para a gente ter o registro do que está sendo comprado"."""
+    from sqlalchemy import text
+    s, u = base["s"], base["u"]
+    svc_fora.ligar(s, u, "AVISAR")
+    titulo = _titulo_solto(base, "500.00", "SP-TARDIA-1")
+    s.add(Rateio(titulo_id=titulo.id, obra_id=base["obra_a"].id, valor=Decimal("500.00")))
+    s.flush()
+    svc_fora.conferir(s, titulo, {}, u)
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    with pytest.raises(ErroValidacao):
+        svc_fora.regularizar(s, titulo.id, {"itens": []}, u)
+    r = svc_fora.regularizar(s, titulo.id, {"itens": [
+        {"insumo_id": insumo, "quantidade": "5", "unidade": "M2", "preco_unitario": "100,00"}]}, u)
+    assert r["total_dos_itens"] == 500.0
+    from app.apps.erp.db.models.cadastros import PedidoCompra, StatusPedidoCompra
+    pedido = s.get(PedidoCompra, r["pedido_id"])
+    assert pedido.status is StatusPedidoCompra.AUTORIZADO
+    assert pedido.fornecedor_id == base["forn"].id
+    # recebido por inteiro, e a conta é o lançamento que já existia
+    situacao = svc_rec.situacao(s, pedido.id)
+    assert situacao["tudo_recebido"] is True
+    assert s.execute(text("SELECT pedido_id FROM pedido_titulos WHERE titulo_id = :t"),
+                     {"t": titulo.id}).scalar() == pedido.id
+    # a linha continua no Painel só pela ciência, que é de outra pessoa
+    assert [(x["ciente"], x["regularizado"]) for x in svc_fora.listar(s, u)] == [(False, True)]
+    svc_fora.autorizar(s, titulo.id, _outro_que_autoriza(base), "ok")
+    assert svc_fora.listar(s, u) == []
+    with pytest.raises(ErroValidacao):           # não registra duas vezes
+        svc_fora.regularizar(s, titulo.id, {"itens": [
+            {"insumo_id": insumo, "quantidade": "1", "unidade": "M2", "preco_unitario": "1"}]}, u)
+
+
+def test_a_projecao_estima_o_solicitado_pelo_ultimo_preco(base):
+    """O dono: "se eu já tenho preços de insumos (...) eu já consigo extrair
+    algum valor, mesmo que a compra não tenha sido fechada"."""
+    from app.apps.erp.db.models.cadastros import PrecoHistorico, TipoPreco
+    s, u = base["s"], base["u"]
+    cat = s.scalars(select(Insumo)).first().categoria_insumo_id
+    material = Insumo(codigo="CIC-TARD", descricao="Rodapé de granito",
+                      unidade="M2", categoria_insumo_id=cat)
+    s.add(material); s.flush()
+    insumo = material.id
+    sol = s.get(SuprimentoSolicitacao, base["item_a"].solicitacao_id)
+    novo = SuprimentoItem(solicitacao_id=sol.id, numero=9, insumo_id=insumo,
+                          quantidade=Decimal("4"), unidade="M2", obra_id=base["obra_a"].id)
+    s.add(novo); s.flush()
+    antes = svc_proj.projetar(s, u, hoje=hoje())
+    assert antes["totais"]["SOLICITADO"] == 0.0
+    assert antes["fora_da_conta"]["solicitados_sem_cotacao"] == 1     # sem preço conhecido
+    s.add(PrecoHistorico(insumo_id=insumo, unidade="M2", preco_unitario=Decimal("90"),
+                         tipo=TipoPreco.COMPRADO, data=hoje()))
+    s.flush()
+    d = svc_proj.projetar(s, u, hoje=hoje())
+    assert d["totais"]["SOLICITADO"] == 360.0
+    assert d["fora_da_conta"]["solicitados_sem_cotacao"] == 0
+    linha = next(l for l in d["linhas"] if l["grau"] == "SOLICITADO")
+    assert linha["referencia"] == sol.numero and linha["obra"] == "CICLO-A"
+
+
+def test_o_pedido_leva_o_cno_da_obra(base):
+    """ "Tem que informar a CNO da obra (...) é fundamental." """
+    import io
+    from PyPDF2 import PdfReader
+    from app.apps.erp.core.suprimentos import pedido_pdf
+    base["obra_a"].cno = "90.012.34567/89"
+    base["s"].flush()
+    pedido = _fechar(base)
+    conteudo = pedido_pdf.gerar(base["s"], pedido.id, base["empresa"], base["u"])
+    texto = " ".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(conteudo)).pages)
+    assert texto.count("90.012.34567/89") >= 2       # no bloco da obra e nas instruções da nota
+
+
+def test_a_cotacao_em_pdf_nao_promete_preenchimento_e_traz_a_hora(base):
+    import io
+    import re
+    from PyPDF2 import PdfReader
+    from app.apps.erp.core.suprimentos import cotacao_pdf
+    conteudo = cotacao_pdf.gerar(base["s"], base["cot"].id, base["empresa"], usuario=base["u"])
+    texto = " ".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(conteudo)).pages)
+    assert "colunas em branco" not in texto and "QUEM ESTÁ PEDINDO" not in texto
+    assert "Granitos" not in texto                    # o apelido interno da cotação
+    assert re.search(r"Emitida em \d{2}/\d{2}/\d{4} às \d{2}:\d{2}", texto)
+
+
+def test_o_email_formatado_leva_o_texto_simples_junto(base):
+    html = svc_envio.corpo_em_html(base["empresa"], "Pedido de compra",
+                                   "Prezados,\n\nSegue o pedido <PC-1>.", [("Pedido", "PC-1")])
+    assert "&lt;PC-1&gt;" in html and "<script" not in html
+    assert (base["empresa"].nome_fantasia or base["empresa"].razao_social) in html

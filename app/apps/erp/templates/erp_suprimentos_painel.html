@@ -66,6 +66,27 @@
   </div>
 </div>
 <div class="cartao-dica" style="margin-top:10px" id="rodape"></div>
+
+<dialog id="dlg-regularizar" class="largo">
+  <h3>Registrar o que foi comprado sem pedido</h3>
+  <div class="sub" id="reg-cab"></div>
+  <div class="cartao-dica" style="margin:10px 0">Diga os materiais, as quantidades e
+    o preço de cada um, como estão na nota. O sistema cria a solicitação e o
+    pedido de compra, já como recebidos, e liga ao lançamento — assim o material
+    entra no controle da obra e no histórico de preços.</div>
+  <div id="reg-msg"></div>
+  <datalist id="reg-insumos"></datalist>
+  <div style="overflow-x:auto"><table><thead><tr>
+    <th>Material</th><th class="direita">Quantidade</th><th>Un.</th>
+    <th class="direita">Preço unitário</th><th></th></tr></thead>
+    <tbody id="reg-linhas"></tbody></table></div>
+  <div style="margin-top:8px"><button class="link-btn" id="reg-mais" type="button">+ outro material</button></div>
+  <div class="sub" id="reg-soma" style="margin-top:8px"></div>
+  <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end">
+    <button class="btn secundario" id="reg-fechar" type="button">Fechar</button>
+    <button class="btn" id="reg-gravar" type="button">Gravar</button>
+  </div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -245,8 +266,7 @@ async function carregarForaDoFluxo(){
         ${chaves}</div>` : "";
   } else {
     alvo.innerHTML = `<div class="${d.pendentes.length ? (trava ? "aviso erro" : "aviso alerta") : "cartao-dica"}" style="margin-bottom:12px">
-        <b>Material lançado sem pedido de compra: ${d.pendentes.length}
-          ${trava ? "esperando autorização" : "para tomar ciência"}.</b>
+        <b>Material lançado sem pedido de compra: ${d.pendentes.length} com pendência.</b>
         <span class="sub">${trava ? "O lançamento fica bloqueado até alguém autorizar."
           : "Só aviso: o lançamento segue normal no financeiro."}
           Desde ${dataBR(d.ligado_desde)}.</span>${chaves}
@@ -259,9 +279,14 @@ async function carregarForaDoFluxo(){
             <td class="dados">${escapar(x.obras.join(", "))}</td>
             <td class="direita dados">${moeda(x.valor)}</td>
             <td>${escapar(x.lancado_por)}</td><td>${escapar(x.motivo)}</td>
-            <td>${d.pode_autorizar && x.lancado_por_id !== d.eu
-              ? `<button class="btn" data-autorizar="${x.titulo_id}">${trava ? "Autorizar" : "Ciente"}</button>`
-              : d.pode_autorizar ? `<small>quem lançou não ${trava ? "autoriza" : "dá a ciência"}</small>` : ""}</td></tr>`).join("")}
+            <td style="white-space:nowrap">
+              ${x.regularizado ? `<small>material registrado</small>`
+                : d.pode_regularizar ? `<button class="btn" data-regularizar="${x.titulo_id}">Registrar o que foi comprado</button>`
+                : `<small>falta registrar o que foi comprado</small>`}<br>
+              ${x.ciente ? `<small>${trava ? "autorizado" : "ciência dada"}</small>`
+                : d.pode_autorizar && x.lancado_por_id !== d.eu
+                ? `<button class="btn secundario" data-autorizar="${x.titulo_id}" style="margin-top:4px">${trava ? "Autorizar" : "Ciente"}</button>`
+                : d.pode_autorizar ? `<small>quem lançou não ${trava ? "autoriza" : "dá a ciência"}</small>` : ""}</td></tr>`).join("")}
           </tbody></table>` : ""}</div>`;
   }
   const textoDoModo = {"": ["Parar de acompanhar?", "Os lançamentos de material sem pedido deixam de ser registrados aqui."],
@@ -280,6 +305,8 @@ async function carregarForaDoFluxo(){
           carregarForaDoFluxo();
     } catch(e){ aviso("mensagem", e.message, "erro"); }
   }));
+  document.querySelectorAll("[data-regularizar]").forEach(b => b.addEventListener("click", () =>
+    abrirRegularizacao(d.pendentes.find(x => x.titulo_id === +b.dataset.regularizar))));
   document.querySelectorAll("[data-autorizar]").forEach(b => b.addEventListener("click", async () => {
     const r = await perguntar({titulo: trava ? "Autorizar o lançamento sem pedido de compra"
                                              : "Tomar ciência da compra sem pedido",
@@ -299,6 +326,94 @@ async function carregarForaDoFluxo(){
   }));
 }
 carregarForaDoFluxo();
+
+// ---------------------------------------------------------------------------
+// ⚑ A SOLICITAÇÃO TARDIA (21/11/2026, noite). O dono: "é exigido o lançamento
+// da solicitação, mesmo que tardia (...) até para a gente ter o registro do
+// que está sendo comprado, o quantitativo de material que está sendo utilizado
+// em obra." A pessoa diz o que foi comprado; o sistema cria a solicitação, o
+// pedido e o recebimento, e liga tudo ao lançamento que já existe.
+// ---------------------------------------------------------------------------
+let REG = null, INSUMOS_REG = null;
+async function abrirRegularizacao(x){
+  if (!INSUMOS_REG) {
+    try { INSUMOS_REG = (await api("/erp/api/insumos")).insumos.filter(i => i.ativo !== false); }
+    catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  }
+  REG = {titulo: x, itens: [{}]};
+  els("reg-cab").innerHTML = `<b>${escapar(x.numero_sp)}</b> · ${escapar(x.fornecedor)} ·
+    ${escapar(x.obras.join(", "))} · lançamento de <b>${moeda(x.valor)}</b>`;
+  els("reg-insumos").innerHTML = INSUMOS_REG.map(i =>
+    `<option value="${escapar(i.descricao)}">`).join("");
+  els("reg-msg").innerHTML = "";
+  desenharRegularizacao();
+  els("dlg-regularizar").showModal();
+}
+function numeroBR(v){ return Number(String(v || "0").replace(/\./g, "").replace(",", ".")) || 0; }
+function guardarRegularizacao(){
+  document.querySelectorAll("#reg-linhas tr").forEach((tr, n) => {
+    const it = REG.itens[n]; if (!it) return;
+    ["insumo", "quantidade", "unidade", "preco"].forEach(c =>
+      it[c] = tr.querySelector(`[data-c="${c}"]`).value);
+  });
+}
+function desenharRegularizacao(){
+  els("reg-linhas").innerHTML = REG.itens.map((it, n) => `<tr>
+    <td><input data-c="insumo" list="reg-insumos" value="${escapar(it.insumo || "")}"
+      placeholder="comece a digitar o material" style="width:100%" data-sem-mascara></td>
+    <td><input data-c="quantidade" inputmode="decimal" value="${escapar(it.quantidade || "")}"
+      style="width:90px; text-align:right" data-sem-mascara></td>
+    <td><input data-c="unidade" value="${escapar(it.unidade || "")}" style="width:60px" data-sem-mascara></td>
+    <td><input data-c="preco" inputmode="decimal" value="${escapar(it.preco || "")}"
+      style="width:110px; text-align:right" data-sem-mascara></td>
+    <td>${REG.itens.length > 1 ? `<button class="link-btn" data-tira-reg="${n}">tirar</button>` : ""}</td></tr>`).join("");
+  document.querySelectorAll("[data-tira-reg]").forEach(b => b.addEventListener("click", () => {
+    guardarRegularizacao(); REG.itens.splice(+b.dataset.tiraReg, 1); desenharRegularizacao(); }));
+  document.querySelectorAll('#reg-linhas [data-c="insumo"]').forEach((campo, n) =>
+    campo.addEventListener("change", () => {
+      const achado = INSUMOS_REG.find(i => i.descricao === campo.value);
+      const un = campo.closest("tr").querySelector('[data-c="unidade"]');
+      if (achado && !un.value) un.value = achado.unidade || "";
+      somarRegularizacao();
+    }));
+  document.querySelectorAll("#reg-linhas input").forEach(i => i.addEventListener("input", somarRegularizacao));
+  somarRegularizacao();
+}
+function somarRegularizacao(){
+  let soma = 0;
+  document.querySelectorAll("#reg-linhas tr").forEach(tr => soma +=
+    numeroBR(tr.querySelector('[data-c="quantidade"]').value) * numeroBR(tr.querySelector('[data-c="preco"]').value));
+  const dif = Math.abs(soma - REG.titulo.valor);
+  els("reg-soma").innerHTML = `Soma dos itens: <b>${moeda(soma)}</b> · lançamento: <b>${moeda(REG.titulo.valor)}</b>` +
+    (soma > 0 && dif > 0.05 ? ` · <span style="color:var(--vermelho)">diferença de ${moeda(dif)}
+      (frete, desconto ou item faltando — pode gravar assim, a diferença fica registrada)</span>` : "");
+}
+els("reg-mais").addEventListener("click", () => { guardarRegularizacao(); REG.itens.push({}); desenharRegularizacao(); });
+els("reg-fechar").addEventListener("click", () => els("dlg-regularizar").close());
+els("reg-gravar").addEventListener("click", async () => {
+  guardarRegularizacao();
+  const itens = [];
+  for (const [n, it] of REG.itens.entries()) {
+    if (!(it.insumo || "").trim() && !it.quantidade && !it.preco) continue;
+    const achado = INSUMOS_REG.find(i => i.descricao === (it.insumo || "").trim());
+    if (!achado) { aviso("reg-msg", `Item ${n + 1}: escolha o material da lista. Se ele não existe no cadastro, `
+      + `peça ao suprimento para cadastrar o insumo.`, "erro"); return; }
+    itens.push({insumo_id: achado.id, quantidade: String(numeroBR(it.quantidade)),
+      unidade: (it.unidade || achado.unidade || "").trim().toUpperCase(), preco_unitario: String(numeroBR(it.preco)),
+      obra_id: REG.titulo.obra_ids[0] || null});
+  }
+  if (!itens.length) { aviso("reg-msg", "Diga ao menos um material que foi comprado.", "erro"); return; }
+  const botao = els("reg-gravar"); botao.disabled = true;
+  try {
+    const r = await api(`/erp/api/suprimentos/fora-do-fluxo/${REG.titulo.titulo_id}/regularizar`,
+      {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({itens})});
+    els("dlg-regularizar").close();
+    aviso("mensagem", `Compra registrada: solicitação <b>${escapar(r.solicitacao)}</b> e pedido
+      <b>${escapar(r.pedido)}</b>, já recebidos e ligados ao lançamento.`, "ok");
+    carregarForaDoFluxo();
+  } catch(e){ aviso("reg-msg", e.message, "erro"); }
+  finally { botao.disabled = false; }
+});
 
 botoesDeExportar("exportar", () => ({
   titulo: "Painel de suprimentos — itens em aberto",

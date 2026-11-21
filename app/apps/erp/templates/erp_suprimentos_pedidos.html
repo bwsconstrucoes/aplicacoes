@@ -278,47 +278,21 @@ async function mostrarRecebimento(id){
       ${sit.avisos.map(a => `<div class="aviso alerta" style="margin-top:10px">${a}</div>`).join("")}
       <h4 style="margin-top:14px">Recebimento na obra</h4>
       <table><thead><tr><th>Item</th><th class="direita">Pedido</th>
-        <th class="direita">Já recebido</th><th class="direita">Falta</th>
-        <th class="direita">Chegou agora</th></tr></thead>
+        <th class="direita">Já recebido</th><th class="direita">Falta</th></tr></thead>
         <tbody>${sit.itens.map(i => `<tr>
           <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
           <td class="direita dados">${i.pedido} ${i.unidade}</td>
           <td class="direita dados">${i.recebido}</td>
           <td class="direita dados">${quantidadeBR(i.saldo)}</td>
-          <td class="direita">${Number(i.saldo) > 0
-            ? `<input class="rec-qtd" data-item="${i.pedido_item_id}"
-                 style="width:80px; text-align:right" inputmode="decimal"
-                 placeholder="0">` : "<small>completo</small>"}</td></tr>`).join("")}
+</tr>`).join("")}
         </tbody></table>
       ${sit.tudo_recebido ? `<div class="cartao-dica" style="margin-top:8px">
         Tudo recebido.</div>` : `
-        <div class="form-grade" style="margin-top:10px">
-          <div class="campo"><label>Nota fiscal</label><input id="rec-nota"></div>
-          <div class="campo"><label>Data</label>
-            <input id="rec-data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-        </div>
-        <div style="margin-top:10px"><button class="btn" id="btn-receber">
-          Registrar o que chegou</button></div>`}`;
-    if (!sit.tudo_recebido)
-      els("btn-receber").addEventListener("click", () => registrarRecebimento(id));
+        <div style="margin-top:10px"><a class="btn" href="/erp/portal/material?pedido=${id}">
+          Receber e lançar a nota</a>
+          <span class="sub">O que chegou, a nota e o boleto são registrados juntos.</span></div>`}`;
   } catch(e){ els("area-recebimento").innerHTML =
     `<div class="aviso erro" style="margin-top:10px">${e.message}</div>`; }
-}
-
-async function registrarRecebimento(id){
-  const itens = [...document.querySelectorAll(".rec-qtd")]
-    .filter(i => i.value.trim())
-    .map(i => ({pedido_item_id: +i.dataset.item, quantidade: i.value.trim()}));
-  if (!itens.length) { aviso("dlg-msg", "Diga quanto chegou de cada item.", "erro"); return; }
-  try {
-    await api(`/erp/api/suprimentos/pedidos/${id}/recebimento`, {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({itens, nota_numero: els("rec-nota").value,
-                            data: els("rec-data").value})});
-    aviso("dlg-msg", "Recebimento registrado.", "ok");
-    mostrarRecebimento(id);
-    carregar();
-  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
 // O DOCUMENTO QUE FIRMA A COMPRA.

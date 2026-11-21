@@ -47,6 +47,8 @@ flowchart TD
 | 10 | Nota × pedido | obra / comprador | Financeiro › Notas | `core/notas/cruzamento.py` | pronto, manual |
 | 11 | Conta a pagar | obra lança, financeiro analisa | Financeiro › Lançar (pré-preenchido pelo pedido) | `lancamento.py`, `core/titulos/` | **feito em 20/11** — nasce do recebimento |
 | 12 | Pagamento e fechamento | financeiro / coordenador | Acompanhar compras | `acompanhamento.py` | **feito em 20/11** |
+| — | Compra feita por fora: aviso, ciência e **solicitação tardia** | quem lançou / coordenador | Suprimentos › Painel | `fora_do_fluxo.py` | **feito em 21/11** — registrar o que foi comprado cria solicitação, pedido e recebimento ligados ao lançamento |
+| — | Nota de fornecedor com material recebido e sem conta | quem lança | Financeiro › Lançar | `api_criar_titulo` | **feito em 21/11** — a tela exige dizer de qual pedido é |
 
 **As visões cruzadas:** Painel (`acompanhamento.planejamento` — o item da obra
 e o prazo dele), Acompanhar compras (`acompanhamento.painel` — o registro de

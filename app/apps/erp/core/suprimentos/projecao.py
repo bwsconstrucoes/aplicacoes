@@ -58,6 +58,11 @@ GRAUS = {
     "FIRME": "Comprado (pedido autorizado)",
     "A_AUTORIZAR": "Fechado, aguardando autorização",
     "EM_COTACAO": "Em cotação (estimativa pelo menor preço)",
+    # ⚑ 21/11/2026 — o dono: "se eu já tenho preços de insumos (...) eu já
+    # consigo extrair algum valor, mesmo que a compra não tenha sido fechada".
+    # O pedido da obra que ainda nem foi cotado entra pelo ÚLTIMO PREÇO
+    # conhecido do insumo. É o grau mais fraco dos quatro, e a tela o separa.
+    "SOLICITADO": "Solicitado, sem cotação (estimativa pelo último preço)",
 }
 
 
@@ -230,11 +235,46 @@ def _linhas_das_cotacoes(s: Session, usuario: Optional[Usuario],
 
     # O que nem cotação tem ainda: fora da conta, mas DITO — projeção que cala
     # sobre o que não sabe parece completa sem ser.
-    stmt = select(SuprimentoItem.id).where(SuprimentoItem.status.in_(
-        (StatusItemSuprimento.SOLICITACAO, StatusItemSuprimento.SALA_TECNICA)))
+    stmt = (select(SuprimentoItem, SuprimentoSolicitacao, Obra)
+            .join(SuprimentoSolicitacao,
+                  SuprimentoSolicitacao.id == SuprimentoItem.solicitacao_id)
+            .join(Obra, Obra.id == SuprimentoItem.obra_id)
+            .where(SuprimentoItem.status.in_(
+                (StatusItemSuprimento.SOLICITACAO, StatusItemSuprimento.SALA_TECNICA))))
     if permitidas is not None:
         stmt = stmt.where(SuprimentoItem.obra_id.in_(permitidas or [0]))
-    fora["solicitados_sem_cotacao"] = len(s.scalars(stmt).all())
+    pedidos_da_obra = s.execute(stmt).all()
+    # O último preço SÓ dos insumos que estão na fila — não a tabela inteira.
+    from app.apps.erp.db.models.cadastros import PrecoHistorico
+    ultimo: dict[int, Any] = {}
+    insumos = {sup.insumo_id for sup, _, _ in pedidos_da_obra if sup.insumo_id}
+    if insumos:
+        for r in s.scalars(select(PrecoHistorico).where(
+                PrecoHistorico.insumo_id.in_(insumos))).all():
+            atual = ultimo.get(r.insumo_id)
+            if atual is None or (r.data, r.id or 0) >= (atual.data, atual.id or 0):
+                ultimo[r.insumo_id] = r
+    estimado: dict[tuple, Decimal] = defaultdict(lambda: _ZERO)
+    for sup, sol, obra in pedidos_da_obra:
+        preco = ultimo.get(sup.insumo_id)
+        if preco is None or _d(preco.preco_unitario) <= 0:
+            fora["solicitados_sem_cotacao"] += 1
+            continue
+        quando = sol.previsao_entrega if (sol.previsao_entrega and
+                                          sol.previsao_entrega > hoje) else hoje
+        estimado[(sol.id, sol.numero, obra.id, obra.codigo, quando)] += (
+            _d(sup.quantidade) * _d(preco.preco_unitario)).quantize(_CENT)
+    for (sol_id, numero, obra_id, codigo, quando), valor in estimado.items():
+        # Sem fornecedor não há condição de pagamento: a estimativa cai inteira
+        # na data em que a obra precisa do material.
+        saida.append({
+            "grau": "SOLICITADO", "origem": "solicitacao", "origem_id": sol_id,
+            "referencia": numero, "fornecedor": "(ainda sem fornecedor)",
+            "obra_id": obra_id, "obra": codigo, "parcela": "1/1",
+            "vencimento": quando.isoformat(), "valor": float(valor),
+            "vencida": False, "material": "não cotado",
+            "previsao_entrega": quando.isoformat(),
+        })
     return saida, fora
 
 

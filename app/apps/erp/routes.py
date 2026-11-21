@@ -2441,7 +2441,23 @@ def api_recebimento(pedido_id: int):
             svc.exigir_pedido_no_escopo(s, atual, pedido_id)
             if request.method == "GET":
                 return jsonify({"ok": True, "situacao": svc.situacao(s, pedido_id)})
+            # ⚑ NUNCA SÓ O RECEBIMENTO, para quem pode lançar (21/11/2026). O
+            # dono: "nunca pode ser feito só o recebimento. Isso deixa um
+            # vácuo." Quem lança pagamento recebe pelo procedimento único
+            # (`receber-e-lancar`), que registra a chegada e a conta juntas —
+            # ou a saída "a nota não veio", com o motivo escrito. Esta rota
+            # fica só para quem NÃO lança: aí o recebimento entra, e fica
+            # registrado por que veio sem conta.
+            if pode(atual, "lancar"):
+                return jsonify({"ok": False, "erro":
+                    "O recebimento é registrado junto com a nota e o boleto. "
+                    "Abra Suprimentos › Receber material e use \"Receber e "
+                    "lançar a nota\"."}), 400
             rec = svc.registrar(s, pedido_id, request.get_json(silent=True) or {}, atual)
+            from app.apps.erp.core.comum.auditoria import registrar_evento
+            registrar_evento(s, "pedido_compra", pedido_id, "RECEBIDO_SEM_LANCAMENTO",
+                             {"recebimento_id": rec.id,
+                              "motivo": "quem recebeu não lança pagamentos"}, atual.id)
             saida = {"ok": True, "recebimento_id": rec.id}
             s.commit()
             return jsonify(saida)
@@ -5740,7 +5756,36 @@ def api_criar_titulo():
                     d["justificativa_excecao"] = (
                         f"Lançamento sem documento fiscal vinculado — "
                         f"registrado por {usuario.email}.")
+            # ⚑ A NOTA NÃO ENTRA SOLTA SE HÁ MATERIAL DESTE FORNECEDOR RECEBIDO
+            # E SEM CONTA (21/11/2026, noite). A pergunta do dono: "ficou o
+            # pedido recebido, pendente de lançamento de nota, e se alguém
+            # tentar lançar a nota sem o pedido, como é que a gente vai
+            # garantir que esse pedido seja vinculado depois?" Assim: a tela
+            # já oferecia o pedido; agora o servidor EXIGE a resposta — ou a
+            # pessoa escolhe o pedido, ou declara que a nota não é de nenhum
+            # deles (e a declaração fica registrada).
+            pedidos_sem_conta = []
+            if not d.get("pedido_compra_id") and d.get("fornecedor_id"):
+                try:
+                    with s.begin_nested():
+                        from app.apps.erp.core.suprimentos import lancamento as _lanc
+                        pedidos_sem_conta = [
+                            p for p in _lanc.pedidos_do_fornecedor_a_lancar(
+                                s, usuario, int(d["fornecedor_id"])) if p["chegou"]]
+                except Exception:      # suprimentos fora de uso: o lançamento segue
+                    logger.exception("ERP: não consegui procurar pedidos do credor")
+                    pedidos_sem_conta = []
+                if pedidos_sem_conta and not d.get("nao_e_de_pedido"):
+                    return jsonify({
+                        "ok": False, "escolher_pedido": True, "pedidos": pedidos_sem_conta,
+                        "erro": "Este fornecedor tem material recebido e ainda sem conta "
+                                "lançada. Diga de qual pedido é esta nota."}), 409
             titulo = svc.criar_titulo(s, d, usuario)
+            if pedidos_sem_conta:
+                from app.apps.erp.core.comum.auditoria import registrar_evento
+                registrar_evento(s, "titulo", titulo.id, "NOTA_DECLARADA_SEM_PEDIDO",
+                                 {"pedidos_recusados": [p["numero"] for p in pedidos_sem_conta],
+                                  "declarado_por": usuario.email}, usuario.id)
             # ⚑ LANÇADO A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA
             # (20/11/2026): o título nasce pelo caminho de sempre, e SÓ ENTÃO
             # é ligado ao pedido — a previsão de pagamento do pedido é baixada
@@ -11907,6 +11952,7 @@ def api_fora_do_fluxo():
                             "ligado_desde": desde.isoformat() if desde else None,
                             "pendentes": svc.listar(s, usuario) if desde else [],
                             "pode_autorizar": pode(usuario, "autorizar_compra_fora_do_fluxo"),
+                            "pode_regularizar": pode(usuario, "receber_material"),
                             "pode_configurar": pode(usuario, "configurar"),
                             "eu": usuario.id})
     except ErroValidacao as e:
@@ -11932,6 +11978,32 @@ def api_autorizar_fora_do_fluxo(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise
+
+
+@bp.route("/erp/api/suprimentos/fora-do-fluxo/<int:titulo_id>/regularizar", methods=["POST"])
+@login_obrigatorio
+@permissao("receber_material")
+def api_regularizar_fora_do_fluxo(titulo_id: int):
+    """A solicitação tardia: registra o que foi comprado por fora, e disso
+    nascem a solicitação, o pedido e o recebimento ligados ao lançamento."""
+    from app.apps.erp.core.suprimentos import fora_do_fluxo as svc
+    try:
+        with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            usuario = _usuario_logado(s)
+            exigir_titulo_no_escopo(s, usuario, titulo_id)
+            saida = svc.regularizar(s, titulo_id, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, **saida})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao regularizar compra sem pedido")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/suprimentos/acompanhar")

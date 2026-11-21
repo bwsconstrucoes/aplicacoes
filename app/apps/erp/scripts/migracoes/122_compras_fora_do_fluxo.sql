@@ -19,7 +19,15 @@ CREATE TABLE IF NOT EXISTS compras_fora_do_fluxo (
     criado_em     TIMESTAMPTZ NOT NULL DEFAULT now(),
     autorizado_por BIGINT REFERENCES usuarios(id),
     autorizado_em TIMESTAMPTZ,
-    observacao    TEXT
+    observacao    TEXT,
+    -- A SOLICITAÇÃO TARDIA (21/11/2026, noite). O dono: "é exigido o
+    -- lançamento da solicitação, mesmo que tardia (...) até para a gente ter o
+    -- registro do que está sendo comprado, o quantitativo de material que está
+    -- sendo utilizado em obra". Quando alguém registra o que foi comprado,
+    -- nasce um pedido de compra de regularização, e ele fica apontado aqui.
+    pedido_id       BIGINT REFERENCES pedidos_compra(id) ON DELETE SET NULL,
+    regularizado_por BIGINT REFERENCES usuarios(id),
+    regularizado_em TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS ix_compras_fora_do_fluxo_pendentes
-    ON compras_fora_do_fluxo (criado_em) WHERE autorizado_em IS NULL;
+    ON compras_fora_do_fluxo (criado_em) WHERE autorizado_em IS NULL OR pedido_id IS NULL;

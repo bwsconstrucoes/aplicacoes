@@ -97,6 +97,7 @@ def dados(s: Session, pedido_id: int, empresa, usuario=None) -> dict[str, Any]:
     blocos: dict[str, dict[str, Any]] = {}
     numero = 0
     soma = Decimal("0")
+    cnos: list[tuple[str, str]] = []
     for linha in linhas:
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
         insumo = s.get(Insumo, item.insumo_id) if item is not None else None
@@ -109,6 +110,14 @@ def dados(s: Session, pedido_id: int, empresa, usuario=None) -> dict[str, Any]:
             "local": local["rotulo"], "mapa": local["mapa"], "obras": [],
             "itens": [], "subtotal": Decimal("0")})
         rotulo = rotulo_da_obra(obra)
+        # ⚑ O CNO DA OBRA (21/11/2026): "é fundamental colocar essa informação".
+        # A nota de material de obra de construção civil cita o CNO; sem ele no
+        # pedido, o fornecedor emite sem e a nota volta.
+        cno = (getattr(obra, "cno", "") or "").strip()
+        if rotulo and cno:
+            if (getattr(obra, "codigo", ""), cno) not in cnos:
+                cnos.append((getattr(obra, "codigo", ""), cno))
+            rotulo = f"{rotulo} (CNO {cno})"
         if rotulo and rotulo not in bloco["obras"]:
             bloco["obras"].append(rotulo)
         numero += 1
@@ -129,6 +138,7 @@ def dados(s: Session, pedido_id: int, empresa, usuario=None) -> dict[str, Any]:
         key=lambda p: (p.vencimento, p.numero or 0))
     em_palavras = descrever(cond.entrada_percentual, cond.dias) if cond else ""
     return {
+        "cnos": cnos,
         "numero": pedido.numero,
         "emitido_em": (pedido.autorizado_em or pedido.criado_em).date()
                       if (pedido.autorizado_em or pedido.criado_em) else date.today(),
@@ -383,12 +393,16 @@ def desenhar(d: dict[str, Any]) -> bytes:
     pdf.multi_cell(largura, 5, _latin("PARA A NOTA FISCAL"), fill=True,
                    new_x="LMARGIN", new_y="NEXT")
     fonte("", 8.5)
-    for texto in (
-            f"1. Informar nas observações da nota: Pedido BWS {d['numero']}.",
-            "2. Informar nas observações da nota o endereço de destino do material, "
+    instrucoes = [
+            f"Informar nas observações da nota: Pedido BWS {d['numero']}.",
+            "Informar nas observações da nota o endereço de destino do material, "
             "conforme acima.",
-            "3. Faturar apenas os itens listados neste pedido, contra o CNPJ "
-            f"{d['empresa']['cnpj']}."):
+            "Faturar apenas os itens listados neste pedido, contra o CNPJ "
+            f"{d['empresa']['cnpj']}."]
+    if d.get("cnos"):
+        instrucoes.insert(1, "Informar na nota o CNO da obra: " + "; ".join(
+            f"{codigo} - CNO {cno}" for codigo, cno in d["cnos"]) + ".")
+    for texto in (f"{n}. {x}" for n, x in enumerate(instrucoes, 1)):
         pdf.multi_cell(largura, 4.6, _latin(texto), fill=True,
                        new_x="LMARGIN", new_y="NEXT")
     pdf.ln(6)

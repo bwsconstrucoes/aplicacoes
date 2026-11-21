@@ -92,7 +92,7 @@ function desenhar(){
       <div style="overflow-x:auto"><table><thead><tr>
         <th>Material</th><th>Obra / onde desce</th>
         <th class="direita">Pedido</th><th class="direita">Já chegou</th>
-        <th class="direita">Falta</th><th class="direita">Chegou agora</th></tr></thead><tbody>
+        <th class="direita">Falta</th></tr></thead><tbody>
         ${itens.map(i => `<tr ${i.saldo > 0 ? "" : `style="opacity:.55"`}>
           <td><b>${escapar(i.insumo)}</b>${i.especificacao ? `<br><small>${escapar(i.especificacao)}</small>` : ""}
             <br><small>solicitação ${escapar(i.solicitacao)}</small></td>
@@ -101,77 +101,25 @@ function desenhar(){
           <td class="direita dados">${quantidadeBR(i.pedido)} ${escapar(i.unidade)}</td>
           <td class="direita dados">${quantidadeBR(i.recebido)}</td>
           <td class="direita dados"><b>${quantidadeBR(i.saldo)}</b></td>
-          <td class="direita">${i.saldo > 0 ? `<input class="rc-qtd" data-item="${i.pedido_item_id}"
-            data-saldo="${i.saldo}" inputmode="decimal" data-sem-mascara
-            value="${String(i.saldo).replace(".", ",")}" style="width:90px; text-align:right">`
-            : `<small>completo</small>`}</td></tr>`).join("")}
+</tr>`).join("")}
       </tbody></table></div>
-      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">
-        <div class="campo"><label>Chegou em</label>
-          <input type="date" class="rc-data" value="${DADOS.hoje}" max="${DADOS.hoje}"></div>
-        <div class="campo"><label>Número da nota fiscal</label>
-          <input class="rc-nota" placeholder="como está na nota" data-sem-mascara></div>
-        <div class="campo" style="grid-column:span 2"><label>Observação</label>
-          <input class="rc-obs" placeholder="ex.: 2 caixas avariadas; veio marca diferente"></div>
-      </div>
+      {# ⚑ NUNCA SÓ O RECEBIMENTO (21/11/2026, noite). O dono: "acho que nunca
+         pode ser feito só o recebimento. Isso é um problema e deixa um vácuo."
+         Esta tela registrava a chegada e DEPOIS oferecia lançar a nota — duas
+         etapas, e a segunda podia não acontecer. Agora ela mostra o que está
+         para chegar e manda para o procedimento único (o mesmo do portal):
+         o que chegou, a nota e o boleto, de uma vez. #}
       <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-        <button class="btn" data-receber="${p.pedido_id}">Registrar o que chegou</button>
-        <button class="link-btn" data-zerar="${p.pedido_id}">nada disto chegou ainda — zerar os campos</button>
-        <span class="sub">Chegou menos do que o pedido? Corrija o número: a
-          diferença fica como pendência para o suprimento resolver com o fornecedor.</span>
+        <a class="btn" href="/erp/portal/material?pedido=${p.pedido_id}">Receber e lançar a nota</a>
+        <span class="sub">O que chegou, a nota e o boleto são registrados juntos —
+          no computador ou no celular.</span>
       </div>
-      <div class="rc-msg"></div>
     </div>`;
   }).join("") || `<div class="cartao"><div class="cartao-dica"><b>Nenhum material
       a caminho${q || obra ? " com estes filtros" : " para as suas obras"}.</b>
       O que aparece aqui são os pedidos de compra já autorizados que ainda não
       chegaram por inteiro.</div></div>`;
 
-  document.querySelectorAll("[data-receber]").forEach(b =>
-    b.addEventListener("click", () => registrar(+b.dataset.receber)));
-  document.querySelectorAll("[data-zerar]").forEach(b =>
-    b.addEventListener("click", () => document.querySelectorAll(
-      `[data-cartao="${b.dataset.zerar}"] .rc-qtd`).forEach(i => i.value = "0")));
-}
-
-async function registrar(pedidoId){
-  const cartao = document.querySelector(`[data-cartao="${pedidoId}"]`);
-  const msg = cartao.querySelector(".rc-msg");
-  const mostrar = (texto, tipo) => msg.innerHTML = `<div class="aviso ${tipo}" style="margin-top:8px">${texto}</div>`;
-  const br = v => Number(String(v || "0").replace(/\./g, "").replace(",", ".")) || 0;
-  const itens = [...cartao.querySelectorAll(".rc-qtd")]
-    .map(i => ({pedido_item_id: +i.dataset.item, quantidade: br(i.value), saldo: +i.dataset.saldo}))
-    .filter(i => i.quantidade > 0);
-  if (!itens.length) { mostrar("Informe a quantidade que chegou em ao menos um item.", "erro"); return; }
-  const demais = itens.find(i => i.quantidade > i.saldo + 1e-9);
-  if (demais) { mostrar("Há item com quantidade MAIOR do que falta chegar. Se veio "
-    + "mesmo a mais, registre só o que foi pedido e escreva a sobra na observação — "
-    + "o suprimento resolve com o fornecedor.", "erro"); return; }
-  const parcial = itens.length < cartao.querySelectorAll(".rc-qtd").length
-    || itens.some(i => i.quantidade < i.saldo - 1e-9);
-  if (!cartao.querySelector(".rc-nota").value.trim()
-      && !await perguntar({titulo: "Registrar sem o número da nota fiscal?", campos: [],
-        textoOk: "Registrar assim mesmo",
-        aviso: "O recebimento fica gravado, mas a nota continua pendente — e o "
-          + "financeiro só enxerga a conta depois que ela for lançada."})) return;
-  try {
-    const feito = await api(`/erp/api/suprimentos/pedidos/${pedidoId}/recebimento`, {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        data: cartao.querySelector(".rc-data").value,
-        nota_numero: cartao.querySelector(".rc-nota").value,
-        observacoes: cartao.querySelector(".rc-obs").value,
-        itens: itens.map(i => ({pedido_item_id: i.pedido_item_id, quantidade: String(i.quantidade)}))})});
-    aviso("mensagem", (parcial
-      ? "Recebimento PARCIAL registrado. O que faltou ficou como pendência e já aparece para o suprimento em Acompanhar compras. "
-      : "Recebimento registrado — pedido entregue por inteiro. ")
-      + `Agora falta lançar a nota e o boleto, para o financeiro enxergar a conta.
-         {% if pode.lancar %}<br><a class="btn" style="margin-top:8px; display:inline-block"
-           href="/erp/lancar?pedido_compra=${pedidoId}&recebimento=${feito.recebimento_id || ""}"
-           >Lançar a nota e o boleto agora</a>{% endif %}`, "info");
-    window.scrollTo({top: 0, behavior: "smooth"});
-    carregar();
-  } catch(e){ mostrar(escapar(e.message), "erro"); }
 }
 
 els("f-obra").addEventListener("change", desenhar);

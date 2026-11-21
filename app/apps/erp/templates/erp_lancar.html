@@ -197,6 +197,7 @@ let DO_PEDIDO = null;
 // Material sem pedido de compra, com a regra ligada: o servidor recusa e pede
 // o motivo; a tela pergunta e manda de novo. Ver `fora_do_fluxo.py`.
 let MOTIVO_SEM_PEDIDO = null;
+let NAO_E_DE_PEDIDO = false;   // a pessoa declarou que a nota não é de nenhum pedido recebido
 
 // ⚑ "É DESTE PEDIDO?" (21/11/2026). O dono: "a gente tem que tentar inibir a
 // possibilidade de uma compra sem ter seguido o processo do suprimento (…)
@@ -909,6 +910,7 @@ function montar(){
       categoria_id: r.categoria_id ? +r.categoria_id : null,
       descricao: r.descricao || null})),
     motivo_sem_pedido: MOTIVO_SEM_PEDIDO,
+    nao_e_de_pedido: NAO_E_DE_PEDIDO,
     pedido_compra_id: DO_PEDIDO ? DO_PEDIDO.pedido_id : null,
     recebimento_id: DO_PEDIDO ? DO_PEDIDO.recebimento_id : null,
     interessados: [...document.querySelectorAll(".interessado:checked")].map(i=>+i.value),
@@ -984,7 +986,9 @@ els("btn-enviar").addEventListener("click", async () => {
          Ela fica bloqueada até alguém com alçada autorizar, em Suprimentos › Painel.`
       : t.fora_do_fluxo
       ? `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).
-         <b>Este material não tem pedido de compra</b> — o suprimento foi avisado.`
+         <b>Este material não tem pedido de compra</b> — o suprimento foi avisado.
+         Falta <a href="/erp/suprimentos/painel">registrar o que foi comprado</a>
+         (a solicitação tardia), para o material entrar no controle da obra.`
       : t.status === "BLOQUEADO"
       ? `Solicitação <b>${t.numero_sp}</b> registrada e <b>bloqueada</b> pela análise (risco ${t.risco}). Veja em Títulos.`
       : `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).`)
@@ -992,7 +996,7 @@ els("btn-enviar").addEventListener("click", async () => {
       + (falhas.length ? `<br><b>Não consegui anexar:</b> ${falhas.map(escapar).join("; ")}
            — anexe pela ficha do título ${escapar(t.numero_sp)}.` : ""),
       falhas.length ? "info" : (t.status === "BLOQUEADO" ? "info" : "ok"));
-    DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; MOTIVO_SEM_PEDIDO = null;
+    DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; MOTIVO_SEM_PEDIDO = null; NAO_E_DE_PEDIDO = false;
     RET = []; PARC = [{}]; RAT = [{}]; LIDO = null; DOCS = [];
     ["f-descricao","f-valor","f-doc-numero","f-emissao"].forEach(i=>els(i).value="");
     els("leitura").innerHTML = ""; els("bloco-critica").innerHTML = "";
@@ -1000,6 +1004,28 @@ els("btn-enviar").addEventListener("click", async () => {
     desenharLinhas();
     window.scrollTo({top:0, behavior:"smooth"});
   } catch(e){
+    // ⚑ A NOTA NÃO ENTRA SOLTA (21/11/2026): o fornecedor tem material
+    // recebido e sem conta. Ou a pessoa diz de qual pedido é, ou declara que
+    // não é de nenhum — e a declaração fica registrada.
+    if (e.dados && e.dados.escolher_pedido) {
+      b.disabled = false; b.textContent = "Enviar solicitação";
+      const r = await perguntar({titulo: "De qual pedido de compra é esta nota?",
+        aviso: "Este fornecedor tem material que já chegou e ainda está sem conta lançada. "
+          + "Ligando a nota ao pedido, o suprimento e o financeiro passam a ver o pagamento.",
+        campos: [{nome: "pedido", rotulo: "Pedido", tipo: "select",
+          opcoes: e.dados.pedidos.map(p => ({valor: String(p.pedido_id),
+            rotulo: `${p.numero} · a lançar ${fmt(+p.a_lancar)} · ${p.obras.join(", ")}`}))
+            .concat([{valor: "nenhum", rotulo: "Não é de nenhum destes pedidos"}])}],
+        textoOk: "Continuar"});
+      if (!r) return;
+      if (r.pedido === "nenhum") { NAO_E_DE_PEDIDO = true; els("btn-enviar").click(); }
+      else {
+        await preencherDoPedido(r.pedido);
+        aviso("mensagem", "O lançamento foi ligado ao pedido. Confira os dados e envie de novo.", "info");
+        window.scrollTo({top: 0, behavior: "smooth"});
+      }
+      return;
+    }
     if (e.dados && e.dados.precisa_motivo) {
       b.disabled = false; b.textContent = "Enviar solicitação";
       const r = await perguntar({titulo: "Material sem pedido de compra",

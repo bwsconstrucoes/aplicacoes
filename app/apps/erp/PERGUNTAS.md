@@ -3164,6 +3164,30 @@ consulta inventada vai sendo usado cada vez menos.
 
 
 
+## 3ab. COMPRA POR FORA REGISTRADA E PREVISÃO DO QUE NEM FOI COTADO (21/11/2026)
+
+Ainda **sem pergunta escrita no assistente**; hoje se responde pela tela
+(Suprimentos › Painel e Suprimentos › Projeção de pagamentos).
+
+- "Quanto a obra X comprou por fora do suprimento este mês?" — ⚠ muda conforme
+  quem pergunta (escopo por obra). ⚠ "este mês": do lançamento, não da compra.
+  Sai de `compras_fora_do_fluxo` + rateio do título.
+- "Quais compras por fora ainda estão sem o material registrado?" — as linhas
+  com `pedido_id` vazio. "E sem ciência?" — `autorizado_em` vazio.
+- "O que o engenheiro comprou naquela nota?" — depois do registro tardio, os
+  itens estão no pedido de regularização ligado ao título.
+- "Quanto vou gastar com material nos próximos meses?" — ⚠ PALAVRA AMBÍGUA:
+  "vou gastar" soma quatro certezas diferentes (comprado, a autorizar, em
+  cotação, solicitado). A resposta tem de dizer cada parcela, nunca um número só.
+- "Quanto vale o que a obra pediu e ainda não foi cotado?" — o grau
+  SOLICITADO, pelo último preço conhecido.
+- **AINDA NÃO RESPONDE:** o valor do que foi solicitado e **nunca foi comprado
+  antes** (sem preço anterior). Falta: importar o histórico de preços da
+  planilha, ou um preço de referência no cadastro do insumo. O assistente deve
+  dizer quantos itens ficaram de fora — a Projeção já conta.
+- "De qual pedido é a nota tal?" — `pedido_titulos`. Nota declarada como "não
+  é de nenhum pedido" tem o evento `NOTA_DECLARADA_SEM_PEDIDO` no título.
+
 ## 3aa. O CICLO DA COMPRA: entrega, nota e pagamento cruzados (20/11/2026)
 
 Nasceram com o painel **Acompanhar compras**, a **Projeção de pagamentos** e a

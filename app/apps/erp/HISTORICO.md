@@ -40,6 +40,26 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 21/11/2026 (noite) — SUPRIMENTOS: A NOTA NÃO ENTRA SOLTA, E O E-MAIL PODE SER FORMATADO (registro entre áreas)
+
+Detalhe em `HISTORICO_SUPRIMENTOS.md`, 21/11 (4ª rodada). O que encosta nas
+outras áreas:
+
+- **Financeiro — `api_criar_titulo` (`routes.py`) e `erp_lancar.html`.** Ao
+  lançar um título de fornecedor que tem **material recebido e ainda sem
+  conta**, o servidor responde **409 `escolher_pedido`** com a lista dos
+  pedidos; a tela pergunta de qual é. A pessoa escolhe, ou declara que não é de
+  nenhum (`nao_e_de_pedido: true` no envio; evento
+  `NOTA_DECLARADA_SEM_PEDIDO`). A procura roda dentro de um ponto de retorno:
+  se o suprimento não estiver em uso ou a consulta falhar, o lançamento segue
+  como sempre. **Quem chama a rota por fora da tela e bate nesse 409 precisa
+  mandar `pedido_compra_id` ou `nao_e_de_pedido`.**
+- **`core/comum/email.py`** — `enviar` e `_montar` aceitam `corpo_html`
+  (opcional). Sem ele, nada muda. Com ele, a mensagem leva texto puro E a
+  versão formatada. Qualquer área pode usar.
+- **Rota de recebimento sozinho** (`/pedidos/<id>/recebimento`, POST) passou a
+  recusar quem tem a ação `lancar` — esses recebem e lançam juntos.
+
 ### ⚑ 20/11/2026 (noite) — SUPRIMENTOS MEXEU NO FINANCEIRO E NO PORTAL (registro entre áreas)
 
 Pedido do dono: a conta a pagar da compra nasce do RECEBIMENTO. Para isso:
