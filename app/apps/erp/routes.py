@@ -5750,6 +5750,11 @@ def api_criar_titulo():
                 from app.apps.erp.core.suprimentos import lancamento as svc_lanc
                 svc_lanc.vincular(s, titulo, int(d["pedido_compra_id"]), usuario,
                                   recebimento_id=d.get("recebimento_id") or None)
+            # ⚑ MATERIAL SEM PEDIDO DE COMPRA (21/11/2026): com a chave ligada
+            # em Suprimentos › Painel, o lançamento exige o motivo e nasce
+            # bloqueado até alguém com alçada autorizar. Desligada, não faz nada.
+            from app.apps.erp.core.suprimentos import fora_do_fluxo
+            retido = fora_do_fluxo.conferir(s, titulo, d, usuario)
             if d.get("chave_acesso"):
                 titulo.chave_acesso_nfe = str(d["chave_acesso"])[:44] or None
             if d.get("cno_documento"):
@@ -5762,8 +5767,13 @@ def api_criar_titulo():
             s.commit()
             return jsonify({"ok": True, "titulo": {
                 "id": titulo.id, "numero_sp": titulo.numero_sp,
-                "status": titulo.status.value, "risco": titulo.score_risco}})
+                "status": titulo.status.value, "risco": titulo.score_risco,
+                "fora_do_fluxo": bool(retido)}})
     except ErroValidacao as e:
+        from app.apps.erp.core.suprimentos.fora_do_fluxo import PrecisaDoMotivo
+        if isinstance(e, PrecisaDoMotivo):
+            # nada foi gravado: a tela pergunta o motivo e manda de novo
+            return jsonify({"ok": False, "erro": str(e), "precisa_motivo": True}), 409
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
@@ -11873,6 +11883,54 @@ def api_suprimentos_relatorios():
             s, request.args.get("tipo") or "ECONOMIA", _usuario_logado(s),
             de=_data("de"), ate=_data("ate"), obra_id=_numero("obra_id"),
             fornecedor_id=_numero("fornecedor_id"))})
+
+
+# ---------------------------------------------------------------------------
+# MATERIAL COMPRADO SEM PEDIDO DE COMPRA — ciência e autorização (21/11/2026)
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/suprimentos/fora-do-fluxo", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_suprimentos", POST="configurar")
+def api_fora_do_fluxo():
+    """GET: o que está esperando autorização e se a regra está ligada.
+    POST: liga ou desliga a regra (só quem configura o sistema)."""
+    from app.apps.erp.core.suprimentos import fora_do_fluxo as svc
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "POST":
+                svc.ligar(s, usuario, bool((request.get_json(silent=True) or {}).get("ligar")))
+                s.commit()
+            desde = svc.ligado_desde(s)
+            return jsonify({"ok": True,
+                            "ligado_desde": desde.isoformat() if desde else None,
+                            "pendentes": svc.listar(s, usuario) if desde else [],
+                            "pode_autorizar": pode(usuario, "autorizar_compra_fora_do_fluxo"),
+                            "pode_configurar": pode(usuario, "configurar"),
+                            "eu": usuario.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/suprimentos/fora-do-fluxo/<int:titulo_id>/autorizar", methods=["POST"])
+@login_obrigatorio
+@permissao("autorizar_compra_fora_do_fluxo")
+def api_autorizar_fora_do_fluxo(titulo_id: int):
+    """Dá ciência da compra feita sem pedido e libera o lançamento."""
+    from app.apps.erp.core.suprimentos import fora_do_fluxo as svc
+    try:
+        with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            usuario = _usuario_logado(s)
+            exigir_titulo_no_escopo(s, usuario, titulo_id)
+            svc.autorizar(s, titulo_id, usuario,
+                          (request.get_json(silent=True) or {}).get("observacao") or "")
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
 
 
 @bp.route("/erp/suprimentos/acompanhar")

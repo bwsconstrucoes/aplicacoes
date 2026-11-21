@@ -99,6 +99,18 @@ def analisar_titulo(s: Session, t: Titulo, *, criticas_extra: Optional[list[str]
                          "Conta homologada há menos de 7 dias — janela típica do golpe da "
                          "troca de conta; confirmar por canal independente.")
 
+    # ---- S1: material lançado sem pedido de compra (21/11/2026)
+    # Só existe com a chave ligada em Suprimentos › Painel. Enquanto ninguém
+    # com alçada autorizar, o título não sai do bloqueio — reanalisar não
+    # adianta, e é de propósito. Ver `core/suprimentos/fora_do_fluxo.py`.
+    from app.apps.erp.core.suprimentos import fora_do_fluxo
+    motivo_s1 = fora_do_fluxo.pendente(s, t.id) if t.id else None
+    if motivo_s1:
+        _critica(criticas, "S1", "BLOQUEIA",
+                 "Material lançado SEM pedido de compra — a compra não passou pelo "
+                 f"suprimento. Motivo informado: \"{motivo_s1}\". Aguarda a autorização "
+                 "de quem tem alçada, em Suprimentos › Painel.")
+
     # ---- D19: dedutibilidade
     if not t.dedutivel:
         custo = (Decimal(t.valor_liquido) * Decimal("0.34")).quantize(Decimal("0.01"))

@@ -194,6 +194,9 @@ let RET = [], PARC = [{}], RAT = [{}];
 // o pedido conhece. O título nasce pelo caminho de sempre e sai ligado ao
 // pedido; nada do que esta tela critica deixa de ser criticado.
 let DO_PEDIDO = null;
+// Material sem pedido de compra, com a regra ligada: o servidor recusa e pede
+// o motivo; a tela pergunta e manda de novo. Ver `fora_do_fluxo.py`.
+let MOTIVO_SEM_PEDIDO = null;
 
 // ⚑ "É DESTE PEDIDO?" (21/11/2026). O dono: "a gente tem que tentar inibir a
 // possibilidade de uma compra sem ter seguido o processo do suprimento (…)
@@ -905,6 +908,7 @@ function montar(){
     rateios: RAT.filter(r=>r.obra_id).map(r=>({obra_id:+r.obra_id, valor:String(dec(r.valor)),
       categoria_id: r.categoria_id ? +r.categoria_id : null,
       descricao: r.descricao || null})),
+    motivo_sem_pedido: MOTIVO_SEM_PEDIDO,
     pedido_compra_id: DO_PEDIDO ? DO_PEDIDO.pedido_id : null,
     recebimento_id: DO_PEDIDO ? DO_PEDIDO.recebimento_id : null,
     interessados: [...document.querySelectorAll(".interessado:checked")].map(i=>+i.value),
@@ -975,14 +979,17 @@ els("btn-enviar").addEventListener("click", async () => {
       } catch(err){ falhas.push(`${doc.arquivo.name} (${err.message})`); }
     }
     const quantos = DOCS.length - falhas.length;
-    aviso("mensagem", (t.status === "BLOQUEADO"
+    aviso("mensagem", (t.fora_do_fluxo
+      ? `Solicitação <b>${t.numero_sp}</b> registrada como <b>material sem pedido de compra</b>.
+         Ela fica bloqueada até alguém com alçada autorizar, em Suprimentos › Painel.`
+      : t.status === "BLOQUEADO"
       ? `Solicitação <b>${t.numero_sp}</b> registrada e <b>bloqueada</b> pela análise (risco ${t.risco}). Veja em Títulos.`
       : `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).`)
       + (quantos ? ` ${quantos} documento(s) anexado(s).` : "")
       + (falhas.length ? `<br><b>Não consegui anexar:</b> ${falhas.map(escapar).join("; ")}
            — anexe pela ficha do título ${escapar(t.numero_sp)}.` : ""),
       falhas.length ? "info" : (t.status === "BLOQUEADO" ? "info" : "ok"));
-    DO_PEDIDO = null; els("faixa-pedido").innerHTML = "";
+    DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; MOTIVO_SEM_PEDIDO = null;
     RET = []; PARC = [{}]; RAT = [{}]; LIDO = null; DOCS = [];
     ["f-descricao","f-valor","f-doc-numero","f-emissao"].forEach(i=>els(i).value="");
     els("leitura").innerHTML = ""; els("bloco-critica").innerHTML = "";
@@ -990,6 +997,22 @@ els("btn-enviar").addEventListener("click", async () => {
     desenharLinhas();
     window.scrollTo({top:0, behavior:"smooth"});
   } catch(e){
+    if (e.dados && e.dados.precisa_motivo) {
+      b.disabled = false; b.textContent = "Enviar solicitação";
+      const r = await perguntar({titulo: "Material sem pedido de compra",
+        aviso: e.message + " Se a nota é de um pedido, feche esta janela e clique "
+          + "no pedido que aparece no alto da tela.",
+        campos: [{nome: "motivo", rotulo: "Por que a compra não passou pelo suprimento?",
+                  tipo: "textarea", linhas: 3}],
+        textoOk: "Enviar para autorização"});
+      if (r && (r.motivo || "").trim().length >= 10) {
+        MOTIVO_SEM_PEDIDO = r.motivo.trim();
+        els("btn-enviar").click();
+      } else if (r) {
+        aviso("mensagem", "Escreva o motivo com um pouco mais de detalhe.", "erro");
+      }
+      return;
+    }
     if (e.message.includes("duplicidade")) {
       try { const r = await (await fetch("/erp/api/lancamento", {method:"POST",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify(montar())})).json();

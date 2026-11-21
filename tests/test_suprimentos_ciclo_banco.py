@@ -40,7 +40,7 @@ from app.apps.erp.db.models.cadastros import (
     UsuarioObra,
 )
 from app.apps.erp.db.models.financeiro import (
-    DocumentoFiscal, FormaPagamento, Parcela, SituacaoNota, StatusParcela,
+    DocumentoFiscal, FormaPagamento, Parcela, Rateio, SituacaoNota, StatusParcela,
     StatusTitulo, TipoDocFiscal, TipoTitulo, Titulo,
 )
 
@@ -1147,3 +1147,72 @@ def test_relatorio_respeita_o_recorte_de_obra(base):
     da_a = _da_obra(base, base["obra_a"], "adm.a12@teste.bws.local")
     r = svc_rel.gerar(base["s"], "ECONOMIA", da_a)
     assert so_b.numero not in [l[1] for l in r["linhas"]]
+
+
+# ---------------------------------------------------------------------------
+# Material comprado sem passar pelo suprimento
+# ---------------------------------------------------------------------------
+from app.apps.erp.core.suprimentos import fora_do_fluxo as svc_fora  # noqa: E402
+
+
+def _outro_que_autoriza(base):
+    s = base["s"]
+    u = Usuario(nome="Diretor", email="diretor@teste.bws.local",
+                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.DIRETOR_FINANCEIRO)
+    s.add(u); s.flush()
+    return u
+
+
+def test_com_a_regra_desligada_nada_muda(base):
+    titulo = _titulo_solto(base, "500.00", "SP-FORA-0")
+    assert svc_fora.ligado_desde(base["s"]) is None
+    assert svc_fora.conferir(base["s"], titulo, {}, base["u"]) is False
+    assert titulo.status is StatusTitulo.APROVADO
+
+
+def test_material_sem_pedido_exige_motivo_bloqueia_e_so_outro_autoriza(base):
+    s, u = base["s"], base["u"]
+    svc_fora.ligar(s, u, True); s.flush()
+    titulo = _titulo_solto(base, "500.00", "SP-FORA-1")
+    s.add(Rateio(titulo_id=titulo.id, obra_id=base["obra_a"].id, valor=Decimal("500.00")))
+    s.flush()
+
+    with pytest.raises(svc_fora.PrecisaDoMotivo):
+        svc_fora.conferir(s, titulo, {}, u)
+    assert svc_fora.conferir(s, titulo, {
+        "motivo_sem_pedido": "o engenheiro comprou direto na loja por urgência"}, u) is True
+    s.flush()
+    assert titulo.status is StatusTitulo.BLOQUEADO
+    pendentes = svc_fora.listar(s, u)
+    assert [(x["numero_sp"], x["obras"]) for x in pendentes] == [("SP-FORA-1", ["CICLO-A"])]
+
+    # reanalisar NÃO destrava: a crítica S1 continua de pé
+    from app.apps.erp.core.titulos import service as svc_titulos
+    svc_titulos.reanalisar(s, titulo.id, u); s.flush()
+    assert titulo.status is StatusTitulo.BLOQUEADO
+
+    with pytest.raises(ErroValidacao, match="não autoriza o próprio"):
+        svc_fora.autorizar(s, titulo.id, u)
+    svc_fora.autorizar(s, titulo.id, _outro_que_autoriza(base), "ciente; conversar com a obra")
+    s.flush()
+    assert titulo.status is StatusTitulo.AGUARDANDO_APROVACAO
+    assert svc_fora.listar(s, u) == []
+
+
+def test_lancamento_ligado_a_pedido_nao_e_compra_por_fora(base):
+    s, u = base["s"], base["u"]
+    svc_fora.ligar(s, u, True); s.flush()
+    pedido = _fechar(base)
+    _receber(base, pedido, [(base["item_a"], 10)])
+    titulo = _titulo_solto(base, "1000.00", "SP-FORA-2")
+    svc_lanc.vincular(s, titulo, pedido.id, u)
+    assert svc_fora.conferir(s, titulo, {}, u) is False
+    assert titulo.status is StatusTitulo.APROVADO
+
+
+def test_o_que_nao_e_material_nao_passa_pelo_suprimento(base):
+    s, u = base["s"], base["u"]
+    svc_fora.ligar(s, u, True); s.flush()
+    titulo = _titulo_solto(base, "300.00", "SP-FORA-3")
+    titulo.tipo = TipoTitulo.T2_SERVICO_NFSE
+    assert svc_fora.conferir(s, titulo, {}, u) is False
