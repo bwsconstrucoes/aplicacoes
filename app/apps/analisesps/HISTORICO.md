@@ -12260,6 +12260,7 @@ somente Solicitações de uma conta especifica"*.
   Todas podem ser baixadas de novo (leva 274). "Processar de novo" recria o aguardando.
 - A tela se recarrega a cada leva que volta (antes, só no fim do envio).
 - Sem migração. Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+- **Publicado em 21/11/2026.** Os testes antigos do processamento (`test_analisesps_banco.py`) foram ajustados à linha que nasce no envio.
 
 #### Leva 274 — Comprovantes: "Baixar de novo" na página que não baixou (19/11/2026)
 
