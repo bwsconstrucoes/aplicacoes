@@ -1,0 +1,244 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Férias — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Férias <small>o que está programado, o que está chegando e o que está para mudar</small></h2>
+<div id="mensagem"></div>
+
+{# ⚑ POR QUE ESTA TELA EXISTE (20/11/2026). Ele: *"o sistema precisa ter a
+   programação dessas férias (…) a gente pede à contabilidade, confirma o que
+   foi registrado. O sistema registra. Lembrando que tem que pensar na
+   possibilidade de alteração e cancelamento."* E: *"quando estiver se
+   aproximando as férias (…) tanto o DP quanto a pessoa que bate o ponto desse
+   colaborador tem que estar ciente."*
+
+   A data só muda com o retorno da contabilidade (`core/ferias.py`): enquanto
+   ela não confirma, a linha mostra a mudança PEDIDA ao lado da data que vale. #}
+<div class="cartao" style="border-left:4px solid var(--azul)">
+  <b>Como as férias entram aqui</b>
+  <div class="cartao-dica">
+    A obra (ou o DP) pede em <b>Solicitações</b> → o DP atende e a linha aparece
+    aqui como <b>aguardando a contabilidade</b> → o DP envia o pedido → quando a
+    contabilidade devolve, vira <b>confirmada</b>. Alterar ou cancelar segue o
+    mesmo caminho, pelos botões da linha: <b>a data só muda quando a
+    contabilidade confirmar</b>. Quem cuida da obra vê o aviso no portal
+    <span id="dias-aviso">15</span> dias antes.
+  </div>
+</div>
+
+<div class="tabela-wrap" style="margin-top:12px">
+  <div class="tabela-barra">
+    <label style="display:flex; gap:6px; align-items:center; font-weight:400">
+      <input type="checkbox" id="ver-passadas" style="width:auto; margin:0">
+      mostrar as que já passaram e as canceladas
+    </label>
+    <span class="espaco"></span>
+    <span id="resumo" class="desc"></span>
+  </div>
+  <div class="tabela-rolagem">
+  <table><thead><tr>
+    <th>Pessoa</th><th>Obra</th><th>Período</th><th>Volta</th>
+    <th>Situação</th><th>Quando</th><th></th>
+  </tr></thead>
+  <tbody id="linhas"><tr><td colspan="7" class="desc">carregando…</td></tr></tbody>
+  </table>
+  </div>
+</div>
+
+{# ⚑ OS PERÍODOS (20/11/2026, noite). Ele: *"o agente tem que acompanhar aí
+   se tem alguém que o período aquisitivo de férias vai se vencer, e está
+   alertando o DP."* Férias não gozadas no prazo são pagas em dobro (CLT art.
+   137). As de antes do sistema, o DP informa uma vez por pessoa. #}
+<h3 style="margin-top:22px">Períodos — para as férias não vencerem</h3>
+<div class="cartao-dica">Cada pessoa de carteira, o período mais antigo em aberto e
+  até quando ele tem de ser gozado. <b>As férias de antes do sistema o DP informa
+  uma vez</b> ("quitadas até" = o fim do último período já concedido); daí em
+  diante as férias confirmadas aqui vão quitando os períodos sozinhas.</div>
+<div class="tabela-wrap" style="margin-top:8px">
+  <div class="tabela-barra">
+    <select id="f-estado" style="width:auto">
+      <option value="">todos</option>
+      <option value="vencida">vencidas</option>
+      <option value="vencendo">vencendo</option>
+      <option value="nao_informado">sem informação</option>
+      <option value="em_dia">em dia</option>
+    </select>
+    <span class="espaco"></span><span id="resumo-p" class="desc"></span>
+  </div>
+  <div class="tabela-rolagem">
+  <table><thead><tr><th>Pessoa</th><th>Obra</th><th>Admissão</th><th>Quitadas até</th>
+    <th>Situação</th><th></th></tr></thead>
+    <tbody id="linhas-p"><tr><td colspan="6" class="desc">carregando…</td></tr></tbody></table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let FERIAS = [];
+
+function br(iso){ return iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : ""; }
+
+function quando(f){
+  if (f.momento === "cancelada") return "—";
+  if (f.momento === "em_ferias") return `<b>em férias</b>`;
+  if (f.momento === "passou") return "já passou";
+  if (f.faltam_dias === 0) return `<b>começa hoje</b>`;
+  if (f.faltam_dias === 1) return `<b>começa amanhã</b>`;
+  const txt = `em ${f.faltam_dias} dias`;
+  return f.momento === "chegando" ? `<b style="color:var(--laranja, #c2410c)">${txt}</b>` : txt;
+}
+
+function situacao(f){
+  const cor = f.situacao === "CONFIRMADA" ? "var(--verde, #15803d)"
+            : f.situacao === "CANCELADA" ? "var(--cinza, #6b7280)" : "var(--laranja, #c2410c)";
+  let h = `<span style="color:${cor}; font-weight:600">${escapar(f.situacao_rotulo)}</span>`;
+  if (f.mudanca) {
+    const m = f.mudanca;
+    h += `<div class="desc">${escapar(m.rotulo)}${m.tipo === "ALTERACAO"
+          ? ` — para ${br(m.inicio)}, ${m.dias} dias` : ""}${m.numero ? ` (${escapar(m.numero)})` : ""}</div>`;
+  }
+  return h;
+}
+
+function desenhar(){
+  const corpo = els("linhas");
+  if (!FERIAS.length) {
+    corpo.innerHTML = `<tr><td colspan="7" class="desc">Nenhuma férias programada.</td></tr>`;
+    els("resumo").textContent = "";
+    return;
+  }
+  const chegando = FERIAS.filter(f => f.momento === "chegando").length;
+  const emFerias = FERIAS.filter(f => f.momento === "em_ferias").length;
+  els("resumo").textContent = `${emFerias} em férias agora · ${chegando} chegando`;
+  corpo.innerHTML = FERIAS.map((f, i) => {
+    const mexe = f.situacao !== "CANCELADA" && f.momento !== "passou" && !f.mudanca;
+    return `<tr>
+      <td><b>${escapar(f.pessoa)}</b><div class="desc">${escapar(f.cargo)}</div></td>
+      <td>${escapar(f.obra)}</td>
+      <td>${br(f.inicio)} a ${br(f.fim)}<div class="desc">${f.dias} dias${
+        f.abono_pecuniario ? " · vende 1/3" : ""}${f.adiantamento_13 ? " · adianta o 13º" : ""}</div></td>
+      <td>${br(f.retorno)}</td>
+      <td>${situacao(f)}</td>
+      <td>${quando(f)}</td>
+      <td style="white-space:nowrap">${mexe ? `
+        <button class="btn secundario" data-alterar="${i}">Pedir alteração</button>
+        <button class="btn secundario" data-cancelar="${i}">Pedir cancelamento</button>` : ""}</td>
+    </tr>`;
+  }).join("");
+  corpo.querySelectorAll("[data-alterar]").forEach(b =>
+    b.addEventListener("click", () => alterar(FERIAS[+b.dataset.alterar])));
+  corpo.querySelectorAll("[data-cancelar]").forEach(b =>
+    b.addEventListener("click", () => cancelar(FERIAS[+b.dataset.cancelar])));
+}
+
+async function pedir(tipo, f, campos){
+  try {
+    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
+      body: JSON.stringify({tipo, colaborador_id: f.colaborador_id,
+                            ferias_id: f.id, ...campos})});
+    aviso("mensagem", `Pedido ${d.solicitacao.numero} aberto em Solicitações. `
+      + "A data só muda quando a contabilidade confirmar.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function alterar(f){
+  const r = await perguntar({titulo: `Alterar as férias de ${f.pessoa}`,
+    aviso: `Hoje: ${br(f.inicio)} a ${br(f.fim)} (${f.dias} dias). O pedido vai ao DP, `
+         + "que pede à contabilidade; a data nova vale quando ela devolver.",
+    textoOk: "Pedir a alteração",
+    campos: [
+      {nome: "ferias_inicio", rotulo: "Novo início", tipo: "date", obrigatorio: true,
+       valor: f.inicio, largura: 3},
+      {nome: "ferias_dias", rotulo: "Quantos dias", tipo: "number", obrigatorio: true,
+       valor: String(f.dias), largura: 3},
+      {nome: "abono_pecuniario", rotulo: "Vender 1/3 das férias?", tipo: "select", largura: 3,
+       valor: f.abono_pecuniario ? "1" : "0",
+       opcoes: [{valor: "0", rotulo: "Não"}, {valor: "1", rotulo: "Sim"}]},
+      {nome: "adiantamento_13", rotulo: "Adiantar o 13º?", tipo: "select", largura: 3,
+       valor: f.adiantamento_13 ? "1" : "0",
+       opcoes: [{valor: "0", rotulo: "Não"}, {valor: "1", rotulo: "Sim"}]},
+      {nome: "observacao", rotulo: "Por que mudar", tipo: "textarea", obrigatorio: true,
+       largura: 6, linhas: 2},
+    ]});
+  if (r) pedir("ALTERACAO_FERIAS", f, r);
+}
+
+async function cancelar(f){
+  const r = await perguntar({titulo: `Cancelar as férias de ${f.pessoa}`,
+    aviso: `${br(f.inicio)} a ${br(f.fim)} (${f.dias} dias). O pedido vai ao DP, que `
+         + "avisa a contabilidade; as férias só saem da programação quando ela confirmar.",
+    textoOk: "Pedir o cancelamento",
+    campos: [{nome: "observacao", rotulo: "Por que cancelar", tipo: "textarea",
+              obrigatorio: true, largura: 6, linhas: 2}]});
+  if (r) pedir("CANCELAMENTO_FERIAS", f, r);
+}
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/dp/ferias" + (els("ver-passadas").checked ? "?passadas=1" : ""));
+    els("dias-aviso").textContent = d.avisar_com_dias;
+    if (!d.tabela) {
+      aviso("mensagem", "A programação de férias ainda não está no banco: um administrador "
+        + "precisa apertar \"Aplicar atualizações do banco\" em Configurações.", "erro");
+    }
+    FERIAS = d.ferias;
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+let PERIODOS = [];
+const ESTADO_ROTULO = {vencida: ["vencida", "#A32020"], vencendo: ["vencendo", "#C2410C"],
+  nao_informado: ["sem informação", "#8A5B00"], em_dia: ["em dia", "#15803D"]};
+
+function desenharPeriodos(){
+  const filtro = els("f-estado").value;
+  const l = PERIODOS.filter(x => !filtro || x.estado === filtro);
+  const conta = e => PERIODOS.filter(x => x.estado === e).length;
+  els("resumo-p").textContent = `${conta("vencida")} vencida(s) · ${conta("vencendo")} vencendo · `
+    + `${conta("nao_informado")} sem informação`;
+  els("linhas-p").innerHTML = l.map((x, i) => {
+    const [r, cor] = ESTADO_ROTULO[x.estado] || [x.estado, ""];
+    return `<tr><td><b>${escapar(x.pessoa)}</b></td><td>${escapar(x.obra)}</td>
+      <td>${br(x.admissao)}</td><td>${x.quitado_ate ? br(x.quitado_ate) : (x.informado ? "nenhum período" : "—")}</td>
+      <td><b style="color:${cor}">${r}</b><div class="desc">${escapar(x.detalhe)}</div></td>
+      <td><button class="btn secundario" data-quitado="${x.colaborador_id}">Informar quitadas até…</button></td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="desc">Ninguém neste filtro.</td></tr>`;
+  els("linhas-p").querySelectorAll("[data-quitado]").forEach(b =>
+    b.addEventListener("click", () => informarQuitado(PERIODOS.find(
+      x => x.colaborador_id === +b.dataset.quitado))));
+}
+
+async function informarQuitado(x){
+  const r = await perguntar({titulo: `Férias de ${x.pessoa}: quitadas até`,
+    aviso: `Admitido em ${br(x.admissao)}. Informe o FIM do último período aquisitivo cujas `
+         + "férias já foram concedidas (ex.: admitido em 10/03/2023 e férias de 2023–2024 "
+         + "já gozadas → 09/03/2024). Em branco = nenhum período quitado.",
+    textoOk: "Gravar",
+    campos: [{nome: "quitado_ate", rotulo: "Quitadas até", tipo: "date",
+              valor: x.quitado_ate || "", largura: 3}]});
+  if (!r) return;
+  try {
+    await api(`/erp/api/dp/ferias/controle/${x.colaborador_id}`, {method: "POST",
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Gravado.", "ok");
+    carregarPeriodos();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function carregarPeriodos(){
+  try {
+    const d = await api("/erp/api/dp/ferias/periodos");
+    PERIODOS = d.periodos;
+    desenharPeriodos();
+  } catch(e){ els("linhas-p").innerHTML = `<tr><td colspan="6">${escapar(e.message)}</td></tr>`; }
+}
+
+els("ver-passadas").addEventListener("change", carregar);
+els("f-estado").addEventListener("change", desenharPeriodos);
+carregar();
+carregarPeriodos();
+</script>
+{% endblock %}

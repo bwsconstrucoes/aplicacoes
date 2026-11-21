@@ -79,7 +79,7 @@ def mundo(sessao_real):
 
 def _desligamento(mundo, *, forma="Demissão com Aviso Trabalhado",
                   continua="Não, está saindo da empresa",
-                  saida=None, ultimo=None):
+                  saida=None, ultimo=None, assinar_aviso=True):
     s = mundo["s"]
     p = svc.abrir(s, {
         "tipo": "DESLIGAMENTO", "colaborador_id": mundo["carteira"].id,
@@ -91,7 +91,20 @@ def _desligamento(mundo, *, forma="Demissão com Aviso Trabalhado",
         dados["ultimo_dia"] = ultimo.isoformat()
     r = svc.atender(s, p["id"], {"dados": dados}, mundo["dp"])
     s.flush()
+    if assinar_aviso:
+        _assina_aviso(mundo, r["id"])
     return r
+
+
+def _assina_aviso(mundo, sid):
+    """O que a obra faz no celular (`termos.assinar`), sem o PIN do ponto: o
+    aviso que o atendimento gerou passa a ASSINADO na tela."""
+    n = mundo["s"].execute(text("""
+        UPDATE dp_termos SET situacao = 'ASSINADO', forma = 'NA_TELA',
+               assinado_em = now()
+         WHERE solicitacao_id = :s AND situacao = 'ABERTO'"""), {"s": sid}).rowcount
+    mundo["s"].flush()
+    return n
 
 
 def _titulo(mundo, sp, status="APROVADO"):
@@ -493,3 +506,110 @@ def test_mandar_para_assinar_sem_o_arquivo_da_contabilidade_pede_confirmacao(mun
     with pytest.raises(ErroValidacao) as e:
         proc.mandar_para_assinar(mundo["s"], r, {}, mundo["dp"])
     assert "ainda não voltou" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# O AVISO PRÉVIO ASSINADO ANTES DA CONTABILIDADE (20/11/2026, noite)
+# ---------------------------------------------------------------------------
+def test_o_aviso_nasce_no_atendimento_e_trava_a_rescisao_ate_voltar(mundo):
+    """Ele: *"o DP analisou, concordou, aí aquele documento retorna para quem
+    pediu para ele coletar a assinatura do colaborador (…) O DP verifica e
+    manda para frente, para a contabilidade. Já com o aviso assinado."*"""
+    from app.apps.erp.core import termos
+    s = mundo["s"]
+    r = _desligamento(mundo, assinar_aviso=False, ultimo=HOJE + dt.timedelta(days=5))
+    sid = r["id"]
+    t_ = termos.do_pedido(s, sid)
+    assert t_ is not None and t_["situacao"] == "ABERTO"
+    assert t_["tipo"] == "AVISO-PREVIO" and "TRABALHADO" in t_["texto"]
+    assert _estado(_ler(mundo, sid), "AVISO") == "AGUARDANDO"
+    # a obra vê o documento para levar à pessoa
+    assert any(x["id"] == t_["id"] for x in termos.pendentes(s, None))
+    with pytest.raises(ErroValidacao, match="aviso prévio ainda não voltou"):
+        svc_ct.abrir(s, {"template": "DESLIGAMENTO",
+                         "colaborador_id": mundo["carteira"].id,
+                         "solicitacao_id": sid, "dados": {}}, mundo["dp"])
+    _assina_aviso(mundo, sid)
+    assert _estado(_ler(mundo, sid), "AVISO") == "FEITO"
+    ped = svc_ct.abrir(s, {"template": "DESLIGAMENTO",
+                           "colaborador_id": mundo["carteira"].id,
+                           "solicitacao_id": sid, "dados": {}}, mundo["dp"])
+    assert "Aviso prévio assinado" in ped["corpo"]
+
+
+def test_assinar_na_tela_pede_o_pin_da_pessoa_e_gera_o_pdf(mundo, monkeypatch):
+    from app.apps.erp.core import termos
+    from app.apps.erp.core.arquivo import service as svc_arq
+    s = mundo["s"]
+    sid = _desligamento(mundo, assinar_aviso=False)["id"]
+    t_ = termos.do_pedido(s, sid)
+    pins = []
+    monkeypatch.setattr(termos, "_conferir_pin", lambda cpf, pin: pins.append((cpf, pin)))
+    guardado = {}
+
+    class Doc:
+        id = None
+
+    def arquivar(s_, conteudo, nome, **kw):
+        guardado["pdf"] = conteudo
+        guardado["tipo"] = kw["tipo_codigo"]
+        d = Doc()
+        d.id = _documento(mundo, kw["tipo_codigo"], "aviso")
+        return d
+    monkeypatch.setattr(svc_arq, "arquivar", arquivar)
+    import base64
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    import os
+    Image.frombytes("RGB", (120, 60), os.urandom(120 * 60 * 3)).save(buf, format="PNG")
+    png = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    with pytest.raises(ErroValidacao):
+        termos.assinar(s, t_["id"], None, pin="123456", assinatura="lixo",
+                       conduzido_por={"colaborador_id": None, "nome": "Adm"})
+    r = termos.assinar(s, t_["id"], None, pin="123456", assinatura=png,
+                       conduzido_por={"colaborador_id": None, "nome": "Adm Obra"})
+    assert r["assinado"] and pins and pins[0][1] == "123456"
+    assert guardado["pdf"].startswith(b"%PDF") and guardado["tipo"] == "AVISO-PREVIO"
+    assert termos.concluido(termos.ler(s, t_["id"]))
+    # fora do alcance da obra: não encontrado
+    t2 = termos.abrir(s, colaborador_id=mundo["carteira"].id, tipo="AVISO-PREVIO",
+                      titulo="x", texto_="y", solicitacao_id=sid, usuario=mundo["dp"])
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    with pytest.raises(ErroNaoEncontrado):
+        termos.para_assinar(s, t2["id"], [-1])
+
+
+def test_recusa_de_assinatura_precisa_de_duas_testemunhas_e_do_dp(mundo, monkeypatch):
+    from app.apps.erp.core import termos
+    from app.apps.erp.core.arquivo import service as svc_arq
+    s = mundo["s"]
+    sid = _desligamento(mundo, assinar_aviso=False)["id"]
+    t_ = termos.do_pedido(s, sid)
+
+    class Doc:
+        id = None
+
+    def arquivar(s_, conteudo, nome, **kw):
+        d = Doc()
+        d.id = _documento(mundo, kw["tipo_codigo"], "recusa")
+        return d
+    monkeypatch.setattr(svc_arq, "arquivar", arquivar)
+    with pytest.raises(ErroValidacao, match="duas testemunhas"):
+        termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
+                                testemunhas=[{"nome": "Fulano de Tal"}],
+                                conduzido_por={"nome": "Adm"})
+    termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
+                            testemunhas=[{"nome": "Fulano de Tal"},
+                                         {"nome": "Beltrano Silva"}],
+                            conduzido_por={"nome": "Adm"})
+    assert _estado(_ler(mundo, sid), "AVISO") == "PENDENTE", "o DP ainda não validou"
+    termos.validar(s, t_["id"], mundo["dp"], aceitar=True)
+    assert _estado(_ler(mundo, sid), "AVISO") == "FEITO"
+
+
+def test_fim_de_experiencia_nao_tem_aviso(mundo):
+    sid = _desligamento(mundo, forma="Encerramento de Contrato de Experiência",
+                        assinar_aviso=False)["id"]
+    assert _estado(_ler(mundo, sid), "AVISO") == "NAO_SE_APLICA"
+

@@ -76,6 +76,14 @@ PASSOS: tuple[dict[str, Any], ...] = (
     {"codigo": "CONTINUIDADE", "como": "decidir", "quem": "DP",
      "rotulo": "Confirmar se a pessoa continua como prestador",
      "so_se_continua": True},
+    # ⚑ O AVISO ASSINADO VEM ANTES DA CONTABILIDADE (20/11/2026). Ele: *"Eu
+    # dou o aviso da pessoa, solicito o desligamento (…) a colaboradora vai
+    # assinar e dispara para o DP. O DP verifica e manda para frente, para a
+    # contabilidade. Já com o aviso assinado, datado."* E a ordem: o DP
+    # analisa ANTES de a obra apresentar o aviso — nasce no atendimento
+    # (`termos.py`). Encerramento de experiência não tem aviso: dispensado.
+    {"codigo": "AVISO", "como": "lido", "quem": "obra colhe, DP confere",
+     "rotulo": "Aviso prévio assinado pelo colaborador"},
     {"codigo": "CONTABILIDADE", "como": "lido", "quem": "DP",
      "rotulo": "Rescisão pedida à contabilidade"},
     {"codigo": "DOCUMENTACAO", "como": "lido", "quem": "Contabilidade",
@@ -284,6 +292,204 @@ def analisar_devolucao(s: Session, dev: dict[str, Any]) -> list[dict[str, Any]]:
     return achados
 
 
+# ---------------------------------------------------------------------------
+# O AVISO PRÉVIO PARA A PESSOA ASSINAR (20/11/2026)
+# ---------------------------------------------------------------------------
+TIPO_DO_TERMO = {"AVISO_TRABALHADO": "AVISO-PREVIO",
+                 "AVISO_INDENIZADO": "AVISO-PREVIO",
+                 "PEDIDO_COLABORADOR": "PEDIDO-DEMISSAO"}
+
+
+def precisa_de_aviso(forma: str) -> bool:
+    return str(forma or "").upper() in TIPO_DO_TERMO
+
+
+def _passo_do_aviso(s: Session, sol: dict[str, Any], forma: str,
+                    item: dict[str, Any]) -> None:
+    from app.apps.erp.core import termos
+    if not precisa_de_aviso(forma):
+        item["estado"] = "NAO_SE_APLICA"
+        item["detalhe"] = ("encerramento do contrato de experiência no prazo "
+                           "não tem aviso prévio" if forma == "FIM_EXPERIENCIA"
+                           else "esta forma não tem aviso para assinar")
+        return
+    if forma == "PEDIDO_COLABORADOR":
+        item["rotulo"] = "Pedido de demissão assinado pelo colaborador"
+    t = termos.do_pedido(s, int(sol["id"]))
+    if sol.get("situacao") not in (EM_ANDAMENTO, "ATENDIDA"):
+        item["detalhe"] = "o DP analisa e atende; aí o documento vai para a obra"
+        return
+    if t is None:
+        item["detalhe"] = ("gere o documento para a obra colher a assinatura"
+                           if termos.tem_tabela(s) else
+                           "falta aplicar a atualização do banco (117)")
+        item["gerar_termo"] = True
+        return
+    item["termo"] = {"id": t["id"], "numero": t["numero"],
+                     "situacao": t["situacao"], "forma": t.get("forma"),
+                     "anexo_id": t.get("anexo_id"),
+                     "prazo": str(t["prazo"]) if t.get("prazo") else None}
+    if termos.concluido(t):
+        item["estado"] = "FEITO"
+        item["detalhe"] = (f"{t['numero']}: "
+                           + termos.FORMA_ROTULOS.get(t.get("forma") or "", "assinado")
+                           + (f" em {t['assinado_em']:%d/%m/%Y}" if t.get("assinado_em") else ""))
+    elif t["situacao"] == "ABERTO":
+        item["estado"] = "AGUARDANDO"
+        prazo = t.get("prazo")
+        item["detalhe"] = (f"{t['numero']} com a obra {t.get('obra') or ''} para "
+                           "colher a assinatura"
+                           + (f", prazo {prazo:%d/%m/%Y}" if prazo else "")
+                           + (f" — {t['motivo_recusa']}" if t.get("motivo_recusa") else ""))
+        item["atrasado"] = bool(prazo and prazo < date.today())
+    else:
+        item["detalhe"] = (f"{t['numero']} voltou "
+                           + termos.FORMA_ROTULOS.get(t.get("forma") or "", "")
+                           + " — abra e valide")
+        item["termo_a_validar"] = True
+
+
+def texto_do_aviso(s: Session, sol: dict[str, Any]) -> tuple[str, str, str]:
+    """(tipo, título, texto) do documento que a pessoa assina, montado com o
+    que o DP aprovou. Linguagem simples e as datas por extenso de número —
+    é para ser lido na obra, no celular."""
+    from app.apps.erp.core import dp_analise
+    d = sol.get("dados") or {}
+    forma = str(d.get("forma_desligamento") or "").upper()
+    c = s.execute(text("""
+        SELECT c.nome, c.cpf, c.admissao, g.nome AS cargo,
+               COALESCE(e.razao_social, e.nome_fantasia) AS empresa, e.cnpj
+          FROM colaboradores c
+          LEFT JOIN cargos g ON g.id = c.cargo_id
+          LEFT JOIN empresas e ON e.id = c.empresa_id
+         WHERE c.id = :i"""), {"i": sol["colaborador_id"]}).mappings().first()
+    aviso = dp_analise._data(d.get("aviso_previo")) or date.today()
+    cumpre = str(d.get("cumpre_aviso") or "1") not in ("0",)
+    esp = dp_analise.datas_do_aviso(c["admissao"], aviso, forma, cumpre)
+    ultimo = dp_analise._data(d.get("ultimo_dia")) or esp["ultimo_dia"]
+    br = dp_analise._br
+    cpf = "".join(ch for ch in str(c["cpf"] or "") if ch.isdigit())
+    cpf_f = f"{cpf[0:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}" if len(cpf) == 11 else cpf
+    quem = (f"{c['nome']}, CPF {cpf_f}, {c['cargo'] or 'colaborador(a)'}, "
+            f"admitido(a) em {br(c['admissao'])}")
+    empresa = f"{c['empresa'] or 'A empresa'}" + (f" (CNPJ {c['cnpj']})" if c["cnpj"] else "")
+    if forma == "PEDIDO_COLABORADOR":
+        titulo = "Pedido de demissão"
+        texto_ = (f"Eu, {quem}, comunico a {c['empresa'] or 'empresa'} o meu pedido de demissão "
+                  f"nesta data, {br(aviso)}.\n\n"
+                  + (f"Cumprirei o aviso prévio de 30 dias, trabalhando até "
+                     f"{br(ultimo)}." if cumpre else
+                     "Peço a dispensa do cumprimento do aviso prévio. Sei que, "
+                     "se a empresa não dispensar, os dias não trabalhados podem "
+                     "ser descontados (CLT art. 487 §2º)."))
+        return "PEDIDO-DEMISSAO", titulo, texto_
+    titulo = "Aviso prévio do empregador"
+    if forma == "AVISO_INDENIZADO":
+        texto_ = (f"{empresa} comunica a {quem} que o seu contrato de trabalho "
+                  f"está sendo encerrado, sem justa causa, nesta data, "
+                  f"{br(aviso)}.\n\nO aviso prévio de {esp['dias']} dias será "
+                  f"INDENIZADO (pago sem trabalho). O último dia de trabalho é "
+                  f"{br(ultimo)}. A data de saída, com a projeção do aviso, é "
+                  f"{br(esp['data_saida'])}.\n\nAs verbas rescisórias serão "
+                  "pagas em até 10 dias (CLT art. 477 §6º).")
+    else:
+        reducao = str(d.get("reducao_jornada") or "").upper()
+        como = ("com a jornada reduzida em 2 horas por dia"
+                if reducao == "DUAS_HORAS" else
+                "com 7 dias corridos de folga no fim do aviso"
+                if reducao == "SETE_DIAS" else
+                "com a redução de jornada da lei (2 horas por dia ou 7 dias "
+                "corridos no fim), à sua escolha")
+        texto_ = (f"{empresa} comunica a {quem} que o seu contrato de trabalho "
+                  f"será encerrado, sem justa causa, e lhe concede nesta data, "
+                  f"{br(aviso)}, o aviso prévio.\n\nO aviso será TRABALHADO "
+                  f"por 30 dias, até {br(ultimo)}, {como} (CLT art. 488).")
+        if esp["indenizados"]:
+            texto_ += (f" Os outros {esp['indenizados']} dias do aviso "
+                       "proporcional (Lei 12.506/2011) serão indenizados; a "
+                       f"data de saída, com a projeção, é {br(esp['data_saida'])}.")
+    return "AVISO-PREVIO", titulo, texto_
+
+
+def gerar_termo(s: Session, sol: dict[str, Any], usuario: Optional[Usuario],
+                dias: int = 2) -> Optional[dict[str, Any]]:
+    """Gera o aviso (ou o pedido de demissão) para a obra colher a assinatura.
+    Chamado no atendimento; o DP também pode gerar de novo pela tela."""
+    from app.apps.erp.core import termos
+    from app.apps.erp.core.pessoal_solicitacoes import _evento
+    forma = str((sol.get("dados") or {}).get("forma_desligamento") or "").upper()
+    if not precisa_de_aviso(forma) or not sol.get("colaborador_id"):
+        return None
+    if not termos.tem_tabela(s):
+        return None
+    vivo = termos.do_pedido(s, int(sol["id"]))
+    if vivo is not None and vivo["situacao"] != "CANCELADO":
+        if vivo["situacao"] == "ABERTO":
+            termos.cancelar(s, vivo["id"], "gerado de novo pelo DP", usuario)
+        else:
+            raise ErroValidacao(f"{vivo['numero']} já voltou assinado.")
+    tipo, titulo, texto_ = texto_do_aviso(s, sol)
+    r = termos.abrir(s, colaborador_id=int(sol["colaborador_id"]), tipo=tipo,
+                     titulo=titulo, texto_=texto_, solicitacao_id=int(sol["id"]),
+                     obra_id=sol.get("obra_id"), dias=dias, usuario=usuario)
+    _evento(s, sol["id"], "AVISO_PARA_ASSINAR", {"numero": r["numero"],
+                                                 "titulo": titulo}, usuario)
+    return r
+
+
+def aviso_pendente(s: Session, solicitacao_id: int) -> str:
+    """O motivo de a rescisão ainda não poder ir à contabilidade, ou ""."""
+    sol = s.execute(text("SELECT id, tipo, situacao, colaborador_id, dados, "
+                         "criado_em, numero FROM dp_solicitacoes WHERE id = :i"),
+                    {"i": solicitacao_id}).mappings().first()
+    if sol is None or sol["tipo"] != "DESLIGAMENTO":
+        return ""
+    forma = str((sol["dados"] or {}).get("forma_desligamento") or "").upper()
+    if not precisa_de_aviso(forma):
+        return ""
+    marcas = _marcas(s, solicitacao_id)
+    m = marcas.get("AVISO")
+    if m and m["situacao"] in ("FEITO", "NAO_SE_APLICA"):
+        return ""
+    from app.apps.erp.core import termos
+    if not termos.tem_tabela(s):
+        return ""
+    if termos.concluido(termos.do_pedido(s, solicitacao_id)):
+        return ""
+    return ("O aviso prévio ainda não voltou assinado pelo colaborador (ou o DP "
+            "ainda não validou). A rescisão vai à contabilidade com o aviso "
+            "assinado — ou marque o passo como feito por fora do sistema.")
+
+
+def montar_rescisao(s: Session, sol: dict[str, Any],
+                    usuario: Optional[Usuario]) -> Optional[dict[str, Any]]:
+    """O pedido de rescisão à contabilidade, montado com o que o DP aprovou —
+    o mesmo que o botão da tela monta. Não monta duas vezes."""
+    from app.apps.erp.core import contabilidade as svc_ct
+    if _pedido_a_contabilidade(s, sol) is not None:
+        return None
+    d = sol.get("dados") or {}
+    return svc_ct.abrir(s, {
+        "template": "DESLIGAMENTO", "colaborador_id": sol["colaborador_id"],
+        "solicitacao_id": sol["id"],
+        "dados": {"forma_desligamento": d.get("forma_desligamento"),
+                  "data_saida": d.get("data_saida"),
+                  "faltas": d.get("faltas_a_descontar"),
+                  "continua_prestador": d.get("continua_prestador"),
+                  "observacao": d.get("observacao")}}, usuario)
+
+
+def aviso_assinado(s: Session, solicitacao_id: int) -> str:
+    """A linha que vai no e-mail da rescisão: qual aviso, quando, como."""
+    from app.apps.erp.core import termos
+    t = termos.do_pedido(s, solicitacao_id)
+    if not termos.concluido(t):
+        return ""
+    quando = t.get("assinado_em")
+    return (f"{t['numero']}, {termos.FORMA_ROTULOS.get(t.get('forma') or '', '')}"
+            + (f", em {quando:%d/%m/%Y}" if quando else ""))
+
+
 def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
     """Os passos deste desligamento, cada um com estado e o que fazer.
 
@@ -360,6 +566,9 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                     "continua — enquanto não confirmar, ela segue ativa como "
                     "CTPS" + (f" (há {atraso} dia(s))" if atraso else ""))
                 item["atrasado"] = atraso > 0
+
+        elif cod == "AVISO":
+            _passo_do_aviso(s, sol, forma, item)
 
         elif cod == "CONTABILIDADE":
             if pedido is None:
@@ -751,6 +960,10 @@ def encerrar(s: Session, sol: dict[str, Any],
     from app.apps.erp.core.pessoal_solicitacoes import _evento
 
     _exigir_em_andamento(sol)
+    from app.apps.erp.core import contabil_processo
+    if contabil_processo.extras_abertos(s, int(sol["id"])):
+        raise ErroValidacao("Há uma correção ou um cancelamento esperando a "
+                            "ciência da contabilidade neste desligamento.")
     estado = passos(s, sol)
     if not estado["pode_encerrar"]:
         falta = [p["rotulo"] for p in estado["passos"]

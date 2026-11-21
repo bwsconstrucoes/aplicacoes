@@ -588,6 +588,11 @@ def test_a_obra_so_e_perguntada_quando_nao_ha_de_onde_tira_la():
     tipo — esquecer de copiá-la no tipo número doze seria o defeito garantido.
     """
     for t in svc.tipos_para_tela():
+        # ⚑ A exceção, de 20/11/2026: a transferência pergunta a obra de
+        # DESTINO — que a ficha não tem, justamente.
+        if t["valor"] == "TRANSFERENCIA_OBRA":
+            assert "obra_id" in t["campos"] and "obra_id" in t["obrigatorios"]
+            continue
         if t["exige_pessoa"]:
             assert "obra_id" not in t["campos"], (
                 f"{t['valor']} pergunta a obra, e a pessoa escolhida já tem uma "

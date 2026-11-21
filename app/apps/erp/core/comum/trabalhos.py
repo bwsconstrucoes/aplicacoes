@@ -367,8 +367,38 @@ def equalizar_fornecedores(s: Session, parametros: dict[str, Any],
     }
 
 
+# ---------------------------------------------------------------------------
+# A rodada diária do agente de DP (20/11/2026)
+# ---------------------------------------------------------------------------
+def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str, Any]:
+    """Roda o que está ligado no agente de DP — o mesmo que o botão da tela.
+    Fora da requisição: a leitura da caixa de e-mail pode demorar, e quem
+    abriu o ERP de manhã não pode esperar por ela."""
+    from app.apps.erp.core import agente_dp, obra_atual
+    # A obra atual vem ANTES: o vigia usa ela para avisar da transferência, e
+    # os avisos do portal (férias, experiência) chegam a quem cuida da obra
+    # onde a pessoa está batendo ponto de verdade.
+    obra = obra_atual.atualizar(s)
+    # A OBRA DO MÊS (20/11/2026): no começo do mês, a obra de cadastro passa
+    # sozinha a ser a obra em que a pessoa mais trabalhou no mês que acabou.
+    from app.apps.erp.core import obra_do_mes
+    obra["obra_do_mes"] = obra_do_mes.se_preciso(s)
+    # Passada a experiência, o contrato vira indeterminado sozinho (20/11/2026).
+    from app.apps.erp.core import pessoal_experiencia
+    obra["contratos_indeterminados"] = pessoal_experiencia.virar_indeterminado(s)
+    s.commit()
+    from app.apps.erp.core import ponte_do_ponto
+    ponte = ponte_do_ponto.trazer(s)
+    s.commit()
+    feito = agente_dp.rodar(s, None)
+    s.commit()
+    return {"obra_atual": obra, "ponte_do_ponto": ponte, "vigia": feito.get("vigia"),
+            "ligadas": feito.get("rotinas_ligadas")}
+
+
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
+    tarefas.registrar("agente_dp_dia", agente_dp_dia)
     tarefas.registrar("importar_pipefy", importar_pipefy)
     tarefas.registrar("importar_cadastro_pipefy", importar_cadastro_pipefy)
     tarefas.registrar("importar_cadastro_planilha", importar_cadastro_planilha)

@@ -1059,6 +1059,26 @@ def ligar_ao_operador(s: Session, colaborador_id: int, usuario_id: Optional[int]
     return c
 
 
+# A regra da empresa (20/11/2026): voltou em até 1 ano, sem experiência.
+DIAS_READMISSAO_SEM_EXPERIENCIA = 365
+SEM_EXPERIENCIA = "Sem contrato de experiência"
+
+
+def readmissao_sem_experiencia(s: Session, colaborador_id: int,
+                               admissao: Optional[date] = None) -> Optional[date]:
+    """A saída anterior de carteira, se a pessoa está voltando em até 1 ano
+    (e por isso entra sem experiência); senão None."""
+    admissao = admissao or date.today()
+    saida = s.execute(text("""
+        SELECT max(demissao) FROM colaborador_vinculos
+         WHERE colaborador_id = :c AND demissao IS NOT NULL
+           AND UPPER(COALESCE(vinculo, 'CTPS')) = 'CTPS'
+           AND demissao < :a"""), {"c": colaborador_id, "a": admissao}).scalar()
+    if saida and (admissao - saida).days <= DIAS_READMISSAO_SEM_EXPERIENCIA:
+        return saida
+    return None
+
+
 def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
               usuario: Usuario) -> Colaborador:
     """Traz a pessoa de volta SEM apagar a passagem anterior.
@@ -1103,6 +1123,19 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
         matricula=(str(dados.get("matricula") or "").strip() or None),
         admissao=admissao, vinculo_anterior_id=anterior.id if anterior else None,
         usuario_id=usuario.id if usuario else None)
+    # ⚑ READMISSÃO EM ATÉ UM ANO NÃO TEM EXPERIÊNCIA (20/11/2026). Ele: *"se
+    # o colaborador sair e retornar num prazo de um ano, na readmissão o
+    # contrato tem que ser indeterminado, ou seja, não entra em período de
+    # experiência mais."* A lei (CLT art. 452) fala em 6 meses entre contratos
+    # por prazo determinado; a regra da empresa é mais protetora (1 ano) e
+    # está dentro da lei. Vale para quem volta de CARTEIRA a CARTEIRA.
+    sem_experiencia = (
+        (vinculo or "").upper() == "CTPS" and anterior is not None
+        and (anterior.vinculo or "CTPS").upper() == "CTPS"
+        and anterior.demissao is not None
+        and (admissao - anterior.demissao).days <= DIAS_READMISSAO_SEM_EXPERIENCIA)
+    if sem_experiencia:
+        novo.tipo_contrato = "CLT_INDETERMINADO"
     s.add(novo)
     # O cadastro passa a refletir o vínculo de hoje.
     c.situacao, c.demissao = "ATIVO", None
@@ -1114,6 +1147,14 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
     c.salario = novo.salario
     if novo.matricula:
         c.matricula = novo.matricula
+    if sem_experiencia:
+        c.contrato_experiencia = SEM_EXPERIENCIA
+        registrar_evento(s, "colaborador", c.id, "READMISSAO_SEM_EXPERIENCIA",
+                         {"saida_anterior": str(anterior.demissao),
+                          "readmissao": str(admissao),
+                          "motivo": "voltou em até 1 ano: contrato por prazo "
+                                    "indeterminado, sem experiência"},
+                         usuario.id if usuario else None)
     s.flush()
     # ⚑ PARA ONDE A READMISSÃO VAI (19/11/2026). Ele: *"na hora que eu atender
     # essa readmissão de um prestador, aí a pessoa já vai para a etapa
@@ -1585,6 +1626,15 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     else:
         dados["usuario_email"] = ""
         dados["usuario_ativo"] = False
+    # ⚑ A OBRA ATUAL, PELO PONTO (20/11/2026, migração 118): ao lado da obra
+    # de cadastro, para o DP ver a transferência que ninguém registrou.
+    from app.apps.erp.core import obra_atual
+    atual = obra_atual.da_pessoa(s, colaborador_id)
+    dados["obra_atual"] = ({"codigo": atual.get("codigo") or "",
+                            "nome": atual.get("nome") or "",
+                            "obra_id": atual.get("obra_id"),
+                            "desde": atual["desde"].isoformat() if atual.get("desde") else None}
+                           if atual else None)
     return dados
 
 
@@ -1636,13 +1686,11 @@ OBRIGATORIOS_POR_VINCULO = {
         ("convencao_id", "convenção"),
         ("salario", "salário"),
     ),
-    # ⚑ A convenção também é do prestador: medida em 207 de 207 autônomos RPA.
-    # ⚠️ SUPOSIÇÃO MINHA, e ele precisa saber: estendi ao prestador em geral,
-    # mas os 10 PJ ficaram abaixo do mínimo da medição e PJ não tem convenção
-    # coletiva — por isso PJ está de fora, logo abaixo.
-    "PRESTADOR": (
-        ("convencao_id", "convenção"),
-    ),
+    # ⚑ A CONVENÇÃO SAIU DO PRESTADOR EM 20/11/2026. Ela tinha entrado por
+    # suposição minha (207 de 207 autônomos com o campo preenchido), e ele
+    # corrigiu: *"Autônomo não tem convenção. Apenas se define o valor da
+    # diária."* O campo preenchido era sobra do Pipefy, não regra.
+    "PRESTADOR": (),
 }
 
 OBRIGATORIOS_POR_CONTRATO = {
@@ -1653,6 +1701,10 @@ OBRIGATORIOS_POR_CONTRATO = {
     "PJ": (
         ("razao_social_pj", "razão social (PJ)"),
         ("cnpj_pj", "CNPJ (PJ)"),
+    ),
+    # ⚑ 20/11/2026, ele: *"Autônomo (…) apenas se define o valor da diária."*
+    "AUTONOMO_RPA": (
+        ("valor_diaria", "valor da diária"),
     ),
 }
 
@@ -1691,6 +1743,9 @@ CAMPOS_SO_SE: dict[str, dict[str, tuple[str, ...]]] = {
     # e não tem período de experiência.
     "salario": {"vinculo": ("CTPS",)},
     "contrato_experiencia": {"vinculo": ("CTPS",)},
+    # ⚑ 20/11/2026: convenção coletiva é de quem tem carteira. Ele:
+    # *"Autônomo não tem convenção."*
+    "convencao_id": {"vinculo": ("CTPS",)},
 }
 
 
@@ -1921,6 +1976,10 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             ColaboradorDependente.salario_familia.is_(True))).all():
         dependentes[d.colaborador_id] = dependentes.get(d.colaborador_id, 0) + 1
 
+    from app.apps.erp.core import obra_atual
+    atuais: dict[int, int] = ({r[0]: r[1] for r in s.execute(text(
+        "SELECT colaborador_id, obra_id FROM colaborador_obra_atual")).all()}
+        if obra_atual.tem_tabela(s) else {})
     saida = []
     for c in s.scalars(select(Colaborador)).all():
         # ⚠️ "ATIVO" AQUI É DINHEIRO: quem cai fora desta lista não entra na
@@ -1933,6 +1992,12 @@ def para_folha(s: Session, *, so_ativos: bool = True,
         if obra_id and c.obra_id != obra_id:
             continue
         codigo_obra, nome_obra = obras.get(c.obra_id or 0, ("", ""))
+        # ⚑ A OBRA ATUAL É A DO PONTO (20/11/2026). Ele: *"Obra atual em
+        # análisesps alimenta obra atual do colaborador (…) isso altera custo
+        # de obra."* `obra_codigo` = onde a pessoa está batendo; a de cadastro
+        # segue em `obra_cadastro`. Sem batida recente, as duas são iguais.
+        codigo_atual, nome_atual = obras.get(atuais.get(c.id) or c.obra_id or 0,
+                                             (codigo_obra, nome_obra))
         saida.append({
             "cpf": c.cpf, "nome": c.nome,
             "matricula": c.matricula or "", "celular": c.telefone or "",
@@ -1949,8 +2014,8 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "cargo": cargos.get(c.cargo_id or 0, ""),
             "convencao": convencoes.get(c.convencao_id or 0, ""),
             "convencao_categoria": c.convencao_categoria or "",
-            "obra_codigo": codigo_obra, "obra_cadastro": codigo_obra,
-            "obra_nome": nome_obra,
+            "obra_codigo": codigo_atual, "obra_cadastro": codigo_obra,
+            "obra_nome": nome_atual,
             # "Tipo" é o vínculo, e só tem dois valores. A subvariação é o
             # tipo de contrato, logo abaixo.
             # ⚠️ VÍNCULO EM BRANCO NÃO VIRA "CTPS" NO ESCURO (17/11/2026).
@@ -2064,8 +2129,13 @@ def para_folha(s: Session, *, so_ativos: bool = True,
 # errado até entender o fluxo dele: é a fase onde está quem JÁ SAIU e tem
 # cadastro por finalizar, mais o que a contabilidade está tratando. Não é um
 # passo antes de concluir — é trabalho que sobra depois.
-ETAPAS = ("CADASTRO_INICIAL", "CONTRATO_A_ASSINAR", "CONCLUIDO",
-          "NA_CONTABILIDADE", "AFASTADO", "DESLIGADO", "CANCELADO")
+# ⚑ 19/11/2026 — "CONTABILIDADE" PASSOU PARA ANTES DE "CONCLUÍDO", e o
+# rótulo deixou de ser "Solicitações". Ele: *"a etapa solicitações, ela perde
+# sentido (…) vamos renomear ela para contabilidade e alterar a posição
+# dela."* O nome brigava com a tela "Solicitações", e a posição contava a
+# história ao contrário: o registro da carteira vem ANTES de concluir.
+ETAPAS = ("CADASTRO_INICIAL", "CONTRATO_A_ASSINAR", "NA_CONTABILIDADE",
+          "CONCLUIDO", "AFASTADO", "DESLIGADO", "CANCELADO")
 # ⚑ OS NOMES PERDERAM A PALAVRA "CADASTRO" em 16/11/2026, por pedido dele:
 # *"por exemplo, cadastro inicial. Aí tem cadastro concluído. Mas as outras
 # você não utilizou cadastro. Enfim, eu acho que esse nome cadastro pode ser
@@ -2093,7 +2163,7 @@ ETAPA_ROTULOS = {
     # colaborador e em toda linha do histórico, e renomeá-lo custaria migração
     # para ganhar zero — ninguém vê o código, só o rótulo. Quem ler
     # "NA_CONTABILIDADE" no banco está lendo "Solicitações".
-    "NA_CONTABILIDADE": "Solicitações",
+    "NA_CONTABILIDADE": "Contabilidade",
     "AFASTADO": "Afastado",
     "DESLIGADO": "Desligado",
     "CANCELADO": "Cancelado",
@@ -2240,10 +2310,10 @@ def caminho_depois_da_conferencia(c: Colaborador) -> tuple[str, str]:
     """
     vinculo = (c.vinculo or "CTPS").upper()
     if vinculo == "PRESTADOR":
-        if (c.tipo_contrato or "") in CONTRATOS_QUE_EXIGEM_ASSINATURA:
-            return ("CONTRATO_A_ASSINAR",
-                    "prestador PJ: precisa de contrato assinado antes de "
-                    "concluir")
+        # ⚑ O PJ NÃO PASSA MAIS POR "ASSINAR" (19/11/2026). Ele: *"o passo é
+        # a anexação do contrato de prestação de serviço (…) não tem nada a
+        # ver com assinar."* Vai para Concluído, e a trava de concluir exige o
+        # contrato anexado — sem ele, fica na Inicial com o recado.
         return ("CONCLUIDO",
                 "prestador que não é PJ: o vínculo se resolve dentro do DP, "
                 "sem contabilidade")
@@ -2324,8 +2394,9 @@ def _o_que_impede_concluir(s: Session, c: Colaborador) -> str:
                AND tipo_codigo IN ('CONTRATO-TRABALHO', 'CONTRATO-FORNECEDOR')
              LIMIT 1"""), {"c": c.id}).first()
         if not tem:
-            return ("Prestador PJ se conclui com o contrato assinado "
-                    "arquivado. Jogue o contrato na aba Arquivos do cadastro.")
+            return ("Prestador PJ se conclui com o contrato de prestação de "
+                    "serviço anexado. Jogue o contrato na aba Arquivos do "
+                    "cadastro.")
     return ""
 
 
@@ -2438,6 +2509,12 @@ def mover_etapa(s: Session, colaborador_id: int, para: str,
                       "automatico": automatico},
                      usuario.id if usuario else None)
     s.flush()
+    # ⚑ CHEGOU A CONCLUÍDO: a admissão em andamento desta pessoa está
+    # completamente atendida e sai da fila de Solicitações (19/11/2026, ele:
+    # *"quando o cadastro chega em concluído, eu acho que pode ir sozinho"*).
+    if para == "CONCLUIDO":
+        from app.apps.erp.core import admissao_processo
+        admissao_processo.fechar_concluidas(s, c.id, usuario)
     return c
 
 
@@ -2461,6 +2538,12 @@ def concluir_conferencia(s: Session, colaborador_id: int,
             "Este cadastro não está na fila do DP — está em "
             f"“{ETAPA_ROTULOS.get(c.etapa or '', c.etapa or '')}”.")
     para, porque = caminho_depois_da_conferencia(c)
+    if para == "CONCLUIDO":
+        # A conferência move "automático", e o automático pula a trava — que é
+        # justamente onde mora a exigência do contrato do PJ.
+        falta = _o_que_impede_concluir(s, c)
+        if falta:
+            raise ErroValidacao(falta)
     mover_etapa(s, c.id, para, usuario, motivo=porque, automatico=True)
     return {"etapa": para, "rotulo": ETAPA_ROTULOS[para], "porque": porque,
             "falta": o_que_falta(c),

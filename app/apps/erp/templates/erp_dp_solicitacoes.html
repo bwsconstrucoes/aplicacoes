@@ -1,5 +1,5 @@
 {% extends "erp_base.html" %}
-{% block titulo %}Solicitações ao DP — ERP BWS{% endblock %}
+{% block titulo %}Solicitações — ERP BWS{% endblock %}
 
 {# FILTRO LATERAL, o padrão do ERP. Entrou em 06/11/2026, depois de ele cobrar
    de novo: *"elas não têm filtragem no sidebar. Ou seja, a gente tem que,
@@ -70,7 +70,8 @@
 {% endblock %}
 
 {% block conteudo %}
-<h2>Solicitações ao DP <small>o que a obra pede e o DP resolve</small></h2>
+{# "Solicitações", sem "ao DP", desde 19/11/2026 — pedido dele. #}
+<h2>Solicitações <small>o que a obra pede e o DP resolve</small></h2>
 <div id="mensagem"></div>
 <div id="readmissoes"></div>
 <div id="desligamentos"></div>
@@ -463,6 +464,13 @@ function pintarPedido(){
     ${p.motivo_cancelamento ? `<div class="aviso alerta" style="margin-top:10px">
       <b>Cancelado:</b> ${escapar(p.motivo_cancelamento)}</div>` : ""}
     ${p.aviso ? `<div class="aviso alerta" style="margin-top:10px">${escapar(p.aviso)}</div>` : ""}
+    ${p.mudanca_pedida ? `<div class="aviso alerta" style="margin-top:10px"><b>Quem pediu
+      quer ${p.mudanca_pedida.o_que === "cancelar" ? "CANCELAR" : "CORRIGIR"}:</b>
+      ${escapar(p.mudanca_pedida.texto)} <small>(${escapar(p.mudanca_pedida.por || "")},
+      ${dataBR(p.mudanca_pedida.em)})</small></div>` : ""}
+    ${p.cancelando ? `<div class="aviso alerta" style="margin-top:10px"><b>Em cancelamento:</b>
+      ${escapar(p.cancelando.motivo)} — fecha quando a contabilidade confirmar.</div>` : ""}
+    ${blocoDaAnalise(p)}
     ${blocoDoProcesso(p)}
     {# ⚑ OS DOCUMENTOS E O CADASTRO, À VISTA (19/11/2026). Ele: *"conferir se
        a documentação veio completa, mas cadê a documentação? A gente não
@@ -483,8 +491,12 @@ function pintarPedido(){
            este pedido${p.readmissao ? " — é readmissão, os papéis antigos estão no cadastro" : ""}.</td></tr>`}
          </tbody></table>` : ""}
     <h4 style="display:flex; align-items:center; gap:10px">O que foi pedido
-      ${PODE_ATENDER && p.a_atender ? `<button class="btn secundario" id="s-corrigir"
-        type="button">✏️ Corrigir os dados</button>` : ""}</h4>
+      ${PODE_ATENDER && (p.a_atender || ["EM_ANDAMENTO", "ATENDIDA"].includes(p.situacao))
+        ? `<button class="btn secundario" id="s-corrigir"
+        type="button">✏️ Corrigir os dados</button>` : ""}
+      ${PODE_ATENDER && ["EM_ANDAMENTO", "ATENDIDA"].includes(p.situacao)
+        && !["DESLIGAMENTO", "DESLIGAMENTO_PRESTADOR"].includes(p.tipo) && !p.cancelando
+        ? `<button class="link-btn" id="s-cancelar-andamento" type="button">cancelar este pedido…</button>` : ""}</h4>
     <table><tbody>${linhas || `<tr><td colspan="2" class="cartao-dica">Sem detalhe.</td></tr>`}</tbody></table>
     ${(p.itens || []).length ? `<h4>Checklist do atendimento (${p.feitos}/${p.total_itens})</h4>
       <div class="cartao-dica">São os passos que o DP faz, na ordem. Serve para mais de
@@ -509,6 +521,16 @@ function pintarPedido(){
   els("dlg-corpo").querySelectorAll("[data-ver-papel]").forEach(b =>
     b.addEventListener("click", () => verPapel(b.dataset.verPapel, b.dataset.nome)));
   if (els("s-corrigir")) els("s-corrigir").addEventListener("click", () => corrigirPedido(p));
+  if (els("s-cancelar-andamento")) els("s-cancelar-andamento").addEventListener("click", async () => {
+    const r = await perguntar({titulo: `Cancelar ${p.numero}`,
+      aviso: "O DP já atendeu este pedido. Se a contabilidade já recebeu, vai um "
+           + "pedido de cancelamento a ela, e este só vira Cancelado quando ela confirmar. "
+           + "O que o atendimento gravou no cadastro (fora férias e admissão) você confere à mão.",
+      textoOk: "Cancelar o pedido",
+      campos: [{nome: "motivo", rotulo: "Por que cancelar", tipo: "textarea",
+                obrigatorio: true, largura: 6, linhas: 2}]});
+    if (r) acao("cancelar_andamento", r);
+  });
   els("dlg-corpo").querySelectorAll("[data-item]").forEach(c =>
     c.addEventListener("change", () => acao("item",
       {item_id: +c.dataset.item, feito: c.checked})));
@@ -536,13 +558,54 @@ function pintarPedido(){
 const ICONE_DO_PASSO = {FEITO: "✔", NAO_SE_APLICA: "—", AGUARDANDO: "⏳",
                         PENDENTE: "○"};
 
+{# ⚑ A ANÁLISE DO AGENTE (20/11/2026, noite) — as regras trabalhistas lidas
+   no pedido como ele está: aviso proporcional, experiência, data-base da
+   convenção, férias, redução de salário. Ele: *"a ideia de futuro é que o DP
+   apenas olhe e dê o ok."* O agente aponta; quem decide é o DP. #}
+function blocoDaAnalise(p){
+  const a = p.analise || [];
+  if (!a.length) return "";
+  const atencao = a.filter(x => x.ok === false).length;
+  return `<h4>O agente conferiu ${atencao ? `<span class="etiqueta ambar">${atencao}
+      ponto(s) de atenção</span>` : `<span class="etiqueta verde">nada contra</span>`}</h4>
+    <table><tbody>${a.map(x => `<tr>
+      <td style="width:28px; text-align:center">${x.ok === true ? "✔" : x.ok === false ? "⚠️" : "•"}</td>
+      <td>${escapar(x.texto)}${x.regra ? `<br><small class="desc">${escapar(x.regra)}</small>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
 function blocoDoProcesso(p){
   const pr = p.processo;
   if (!pr) return "";
   const vivo = p.situacao === "EM_ANDAMENTO" && PODE_ATENDER;
+  const deslig = p.tipo === "DESLIGAMENTO";
   const botoes = x => {
     if (!vivo) return "";
     const b = [];
+    {# ⚑ O DOCUMENTO PARA A PESSOA ASSINAR (20/11/2026, noite): o aviso
+       prévio e a autorização de desconto. #}
+    if (x.gerar_termo)
+      b.push(`<button class="btn" data-pr-termo="1">Gerar o documento para a obra</button>`);
+    if (x.termo && x.termo.anexo_id)
+      b.push(`<button type="button" class="link-btn" data-ver-papel="${x.termo.anexo_id}"
+        data-nome="${escapar(x.termo.numero)}">abrir ${escapar(x.termo.numero)}</button>`);
+    if (x.termo_a_validar)
+      b.push(`<button class="btn" data-pr-termo-ok="${x.termo.id}">Validar</button>
+        <button class="btn secundario" data-pr-termo-nao="${x.termo.id}">Devolver à obra…</button>`);
+    if (x.termo && x.estado === "AGUARDANDO")
+      b.push(`<button class="link-btn" data-pr-termo="1">gerar de novo</button>`);
+    {# ⚑ OS BOTÕES DA ADMISSÃO (19/11/2026) — ver `admissao_processo`. #}
+    if (!deslig) {
+      if (x.codigo === "CONTABILIDADE" && !x.pedido)
+        b.push(`<button class="btn" data-pr-contab="1">Montar o pedido à contabilidade</button>`);
+      if (x.pedido)
+        b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
+          ${escapar(x.pedido.numero)} em Contabilidade</a>`);
+      if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
+        b.push(`<a class="btn secundario" href="/erp/colaboradores?editar=${p.colaborador_id}"
+          target="_blank">abrir o cadastro para anexar</a>`);
+      return b.join(" ");
+    }
     if (x.codigo === "CONTINUIDADE" && x.estado !== "FEITO")
       b.push(`<button class="btn" data-pr-cont="1">Confirmar…</button>`);
     if (x.codigo === "CONTABILIDADE" && x.estado !== "FEITO" && !x.pedido)
@@ -572,10 +635,28 @@ function blocoDoProcesso(p){
       b.push(`<button class="link-btn" data-pr-desfaz="${x.codigo}">desfazer</button>`);
     return b.join(" ");
   };
-  return `<h4>O desligamento, do início ao fim (${pr.cumpridos}/${pr.total})</h4>
-    <div class="cartao-dica">O pedido só se encerra com todos os passos
-      cumpridos. O que o sistema enxerga sozinho — o pedido à contabilidade, a
-      documentação de volta, o lançamento pago — se marca sozinho.</div>
+  const admissao = ["CADASTRO", "ADMISSAO_PRESTADOR"].includes(p.tipo);
+  {# ⚑ CANCELAR O DESLIGAMENTO A PARTIR DELE (20/11/2026). Ele: *"pode ser que
+     seja a própria obra (…) ou o próprio DP fazer o pedido, né? Em cima
+     daquela solicitação de desligamento."* Qualquer um que veja o pedido pode
+     pedir; quem atende é o DP, e a contabilidade é avisada. #}
+  const pedirCancel = deslig && p.situacao === "EM_ANDAMENTO"
+    ? `<div style="margin:6px 0 10px"><button class="btn secundario" id="pr-pedir-cancel">
+        Pedir o cancelamento deste desligamento…</button>
+        <small class="desc">a pessoa vai continuar trabalhando — o DP atende e a
+        contabilidade é avisada</small></div>` : "";
+  return `<h4>${deslig ? "O desligamento" : admissao ? "A admissão"
+      : escapar(p.tipo_rotulo || "O pedido")}, do início ao fim (${pr.cumpridos}/${pr.total})</h4>
+    ${pedirCancel}
+    <div class="cartao-dica">${deslig
+      ? `O pedido só se encerra com todos os passos cumpridos. O que o sistema
+         enxerga sozinho — o pedido à contabilidade, a documentação de volta, o
+         lançamento pago — se marca sozinho.`
+      : admissao
+      ? `O pedido fica na fila até o cadastro chegar a <b>Concluído</b> — e aí
+         fecha sozinho. Os passos se marcam com o que o sistema enxerga.`
+      : `O pedido fica na fila até a <b>contabilidade devolver</b> — e aí fecha
+         sozinho. O agente acompanha e cobra se parar.`}</div>
     ${pr.marcacoes_disponiveis ? "" : `<div class="aviso alerta">Falta aplicar a
       atualização do banco (Configurações) para marcar os passos.</div>`}
     <table><tbody>${pr.passos.map(x => `<tr>
@@ -587,10 +668,31 @@ function blocoDoProcesso(p){
         ${x.observacao ? `<br><i>${escapar(x.observacao)}</i>` : ""}
         ${x.por ? `<br>${escapar(x.por)}${x.em ? " · " + dataBR(x.em.slice(0, 10)) : ""}` : ""}</small></td>
       <td style="white-space:nowrap">${botoes(x)}</td></tr>`).join("")}</tbody></table>
-    ${vivo ? `<div style="margin-top:10px">${pr.pode_encerrar
+    ${vivo && pr.fecha_sozinho ? `<div style="margin-top:10px"><small class="desc">Falta:
+      <b>${escapar(pr.proximo)}</b>.</small></div>` : ""}
+    ${vivo && !pr.fecha_sozinho ? `<div style="margin-top:10px">${pr.pode_encerrar
       ? `<button class="btn amarelo" id="pr-encerrar">Encerrar o desligamento</button>`
       : `<small class="desc">Falta: <b>${escapar(pr.proximo)}</b>${
           pr.total - pr.cumpridos > 1 ? " e mais " + (pr.total - pr.cumpridos - 1) : ""}.</small>`}</div>` : ""}`;
+}
+
+async function pedirCancelamentoDoDesligamento(p){
+  const r = await perguntar({titulo: `Cancelar o desligamento de ${p.pessoa_nome || p.pessoa || ""}`,
+    aviso: "Abre um pedido de cancelamento. Enquanto o DP não atende, a virada do "
+         + "dia não desliga a pessoa; ao atender, a saída é apagada e a "
+         + "contabilidade é avisada.",
+    textoOk: "Pedir o cancelamento",
+    campos: [{nome: "observacao", rotulo: "Por que cancelar", tipo: "textarea",
+              obrigatorio: true, largura: 6, linhas: 2}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
+      body: JSON.stringify({tipo: "CANCELAR_DESLIGAMENTO",
+                            colaborador_id: p.colaborador_id, ...r})});
+    els("dlg").close();
+    aviso("mensagem", `Pedido ${d.solicitacao.numero} aberto: cancelamento do desligamento.`, "ok");
+    if (typeof carregar === "function") carregar();
+  } catch(e){ alert(e.message); }
 }
 
 function ligarBotoesDoProcesso(p){
@@ -599,6 +701,23 @@ function ligarBotoesDoProcesso(p){
     b.addEventListener("click", () => fn(b)));
   um("[data-pr-cont]", () => confirmarContinuidade(p));
   um("[data-pr-ct]", () => montarPedidoDeRescisao(p));
+  {# ⚑ UM BOTÃO SÓ PARA TODOS OS PEDIDOS QUE PASSAM PELA CONTABILIDADE
+     (20/11/2026): o servidor sabe o modelo de cada tipo e monta o pedido já
+     preenchido (`contabil_processo.montar_pedido`). #}
+  um("[data-pr-contab]", () => acao("contabilidade", {}));
+  um("[data-pr-termo]", () => acao("termo", {}));
+  um("[data-pr-termo-ok]", b => {
+    if (confirm("Você abriu o documento e confere que está certo e assinado?"))
+      acao("termo_validar", {termo_id: +b.dataset.prTermoOk, aceitar: true});
+  });
+  um("[data-pr-termo-nao]", async b => {
+    const r = await perguntar({titulo: "Devolver o documento à obra",
+      textoOk: "Devolver", campos: [{nome: "motivo", rotulo: "O que está errado",
+        tipo: "textarea", obrigatorio: true, largura: 6, linhas: 2}]});
+    if (r) acao("termo_validar", {termo_id: +b.dataset.prTermoNao, aceitar: false, ...r});
+  });
+  const pc = els("pr-pedir-cancel");
+  if (pc) pc.addEventListener("click", () => pedirCancelamentoDoDesligamento(p));
   {# ⚑ A ASSINATURA VAI E VOLTA PELO SISTEMA (19/11/2026). Ele: *"o arquivo
      precisa ser cobrado pelo Agente e recebido (…) o agente analisa e o DP
      valida o recebimento."* A ida é a pendência do portal (com prazo, que o
@@ -820,9 +939,23 @@ async function atender(){
            + "rescisão e a multa serem pagas"),
     READMISSAO: "traz a pessoa de volta a ativa, com vínculo novo (o anterior fica no histórico)",
     ADMISSAO_PRESTADOR: "fecha o vínculo de prestador e abre o de carteira no dia seguinte",
-    ALTERACAO_CARGO: "grava a alteração de cargo/salário com o de→para",
+    ALTERACAO_CARGO: "grava a alteração de cargo/salário com o de→para e, para "
+      + "quem tem carteira, o pedido segue Em andamento até a contabilidade "
+      + "devolver a alteração",
+    FERIAS: "programa as férias (tela Férias, como aguardando a contabilidade) "
+      + "e abre o processo: você monta o pedido à contabilidade e, quando ela "
+      + "devolver, as férias ficam confirmadas e o pedido fecha",
+    ALTERACAO_FERIAS: "marca a alteração como pedida — a data atual continua "
+      + "valendo até a contabilidade devolver; aí a nova vale e o pedido fecha",
+    CANCELAMENTO_FERIAS: "marca o cancelamento como pedido — as férias saem da "
+      + "programação quando a contabilidade devolver",
+    CANCELAR_DESLIGAMENTO: "apaga a saída agendada e cancela o desligamento "
+      + "(quem pediu o desligamento vê isso no portal); de carteira, o "
+      + "cancelamento vai à contabilidade e o pedido fica Em andamento até ela "
+      + "confirmar",
     ATUALIZACAO_DADOS: "atualiza o cadastro da pessoa",
-    DEPENDENTE: "cadastra o dependente",
+    DEPENDENTE: "cadastra o dependente e, com salário-família ou IR, o "
+      + "pedido segue até a contabilidade devolver",
     AJUDA_DE_CUSTO: "atualiza os benefícios no cadastro",
     VALE_TRANSPORTE: "atualiza o transporte no cadastro",
     CADASTRO: ABERTA.readmissao

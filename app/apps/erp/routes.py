@@ -96,6 +96,15 @@ def _saude_comecou():
                 desligamentos_do_dia.aplicar_se_preciso(s)
     except Exception:                               # noqa: BLE001
         logger.warning("ERP/desligamentos: a virada do dia não rodou", exc_info=True)
+    # ⚑ A RODADA DIÁRIA DO AGENTE DE DP (20/11/2026) — vai para a fila de
+    # trabalhos, uma vez por dia. Ver `agente_dp.rodada_do_dia_se_preciso`.
+    try:
+        from app.apps.erp.core import agente_dp
+        if agente_dp.precisa_da_rodada():
+            with get_session() as s:
+                agente_dp.rodada_do_dia_se_preciso(s)
+    except Exception:                               # noqa: BLE001
+        logger.warning("ERP/agente: a rodada do dia não foi enfileirada", exc_info=True)
 
 
 _FILA_ACORDADA = False
@@ -185,7 +194,10 @@ MODULOS = [
             # Configuracoes > Cargos e convencoes.
             # A fila de pedidos administrativos (05/11/2026): o segundo pipe do
             # Pipefy. Os pedidos de PONTO já vivem no módulo do ponto.
-            ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
+            ("dp_solicitacoes", "Solicitações", "erp.pagina_dp_solicitacoes"),
+            # A programação de férias (20/11/2026): o que a contabilidade
+            # confirmou, o que está chegando e o que está para mudar.
+            ("dp_ferias", "Férias", "erp.pagina_dp_ferias"),
             ("dp_contabilidade", "Contabilidade e agente",
              "erp.pagina_dp_contabilidade"),
             # ⚑ AS CONDICIONAIS QUE O PIPEFY NÃO EXPORTA (17/11/2026). Ele:
@@ -12328,6 +12340,11 @@ def api_dp_solicitacoes():
         with get_session() as s:
             usuario = _usuario_logado(s)
             if request.method == "GET":
+                # ⚑ O que o ponto lançou e precisa da contabilidade entra na
+                # fila sozinho (20/11/2026) — `core/ponte_do_ponto.py`.
+                from app.apps.erp.core import ponte_do_ponto
+                if ponte_do_ponto.trazer(s).get("abertas"):
+                    s.commit()
                 return jsonify({"ok": True, **svc.listar(
                     s, situacao=request.args.get("situacao", ""),
                     tipo=request.args.get("tipo", ""),
@@ -12380,7 +12397,9 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             # ⚑ OS PASSOS DO DESLIGAMENTO (19/11/2026) são do DP, como atender:
             # marcar o passo, confirmar a continuidade e encerrar o processo.
             if acao in ("atender", "recusar", "item", "passo", "continuidade",
-                        "encerrar", "assinar", "assinada", "corrigir") \
+                        "encerrar", "assinar", "assinada", "corrigir",
+                        "contabilidade", "termo", "termo_validar",
+                        "cancelar_andamento", "despachar") \
                     and not pode(usuario, "atender_dp"):
                 return jsonify({"ok": False, "erro":
                                 "Só o DP atende solicitação. Você pode abrir e "
@@ -12394,6 +12413,61 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             elif acao == "item":
                 p = svc.marcar_item(s, solicitacao_id, int(d.get("item_id") or 0),
                                     bool(d.get("feito")), usuario)
+            elif acao == "contabilidade":
+                # ⚑ 20/11/2026: monta o pedido à contabilidade desta
+                # solicitação, já preenchido (admissão, alteração de cargo,
+                # dependente, férias, cancelamento de desligamento).
+                from app.apps.erp.core import contabil_processo as svc_contab
+                atual = svc.ler(s, solicitacao_id)
+                r = svc_contab.montar_pedido(s, atual, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                p["aviso"] = (f"Pedido {r['numero']} montado. Confira o texto e "
+                              "envie em Contabilidade.")
+            elif acao == "termo":
+                # Gera (de novo) o documento para a pessoa assinar.
+                from app.apps.erp.core import desligamento_processo as svc_proc
+                atual = svc.ler(s, solicitacao_id)
+                if atual["tipo"] == "DESCONTO_EM_FOLHA":
+                    svc.gerar_autorizacao_de_desconto(s, atual, usuario)
+                elif atual["tipo"] in ("FERIAS", "ALTERACAO_FERIAS"):
+                    from app.apps.erp.core import ferias as svc_ferias
+                    svc_ferias.gerar_aviso(s, atual, usuario)
+                else:
+                    svc_proc.gerar_termo(s, atual, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+            elif acao == "termo_validar":
+                from app.apps.erp.core import termos
+                tid = int(d.get("termo_id") or 0)
+                if termos.ler(s, tid).get("solicitacao_id") != solicitacao_id:
+                    raise ErroNaoEncontrado("Documento não encontrado.")
+                termos.validar(s, tid, usuario, aceitar=bool(d.get("aceitar")),
+                               motivo=str(d.get("motivo") or ""))
+                svc.termo_voltou(s, tid, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+            elif acao == "cancelar_andamento":
+                # ⚑ 20/11/2026: cancelar o que o DP já atendeu — com a
+                # contabilidade, se ela já tinha recebido.
+                from app.apps.erp.core import contabil_processo as svc_contab
+                r = svc_contab.cancelar_em_andamento(
+                    s, svc.ler(s, solicitacao_id), str(d.get("motivo") or ""), usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                if r.get("cancelamento"):
+                    p["aviso"] = (f"Pedido de cancelamento {r['cancelamento']} "
+                                  "montado: envie à contabilidade. O pedido fica "
+                                  "em andamento até ela confirmar.")
+            elif acao == "despachar":
+                numero = svc.despachar(s, solicitacao_id, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                if numero:
+                    p["aviso"] = f"Pedido {numero} montado. Confira e envie."
+            elif acao == "pedir_mudanca":
+                # Quem pediu avisa que quer cancelar ou mudar (não precisa ser DP).
+                p = svc.pedir_mudanca(s, solicitacao_id, d, usuario)
             elif acao == "corrigir":
                 # ⚑ 19/11/2026: o DP corrige o pedido (e o pré-cadastro) na
                 # própria tela do atendimento, olhando o documento.
@@ -13178,6 +13252,11 @@ def api_portal_inicio():
                 "obra_sugerida": svc_portal.obra_sugerida(s, usuario),
                 "listas": svc_portal.listas_fechadas(s),
                 "pedidos": svc_portal.meus_pedidos(s, usuario),
+                "ferias": svc_portal.ferias_da_equipe(s, usuario),
+                # Os documentos para a pessoa assinar (20/11/2026, noite).
+                "termos": svc_portal.termos_para_assinar(s, usuario),
+                # Experiência terminando (20/11/2026): o aviso para a obra.
+                "experiencias": svc_portal.experiencias_da_equipe(s, usuario),
                 "devolucoes": svc_portal.minhas_devolucoes(s, usuario)})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
@@ -13411,6 +13490,58 @@ def api_portal_devolver(devolucao_id: int):
 
 
 # ---------------------------------------------------------------------------
+# O DOCUMENTO QUE O COLABORADOR ASSINA (20/11/2026, noite) — `core/termos.py`.
+# Quem conduz é quem alcança a obra (o administrativo); a pessoa assina com o
+# PIN dela. Fora do alcance responde "não encontrado".
+# ---------------------------------------------------------------------------
+@bp.route("/erp/portal/api/termos/<int:termo_id>", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_portal_termo(termo_id: int):
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import termos
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            eu = svc_portal.quem_esta(s, usuario)
+            obras = svc_portal.obras_que_alcanca(s, eu)
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "termo": termos.para_assinar(s, termo_id, obras)})
+            conduz = {"colaborador_id": eu.get("colaborador_id"), "nome": eu["nome"]}
+            if request.files.get("arquivo") is not None:
+                arq = request.files["arquivo"]
+                r = termos.enviar_papel(s, termo_id, obras, conteudo=arq.read(),
+                                        nome_arquivo=arq.filename or "assinado",
+                                        conduzido_por=conduz)
+            else:
+                d = request.get_json(silent=True) or {}
+                if d.get("acao") == "recusa":
+                    r = termos.registrar_recusa(
+                        s, termo_id, obras, motivo=str(d.get("motivo") or ""),
+                        testemunhas=d.get("testemunhas") or [], conduzido_por=conduz)
+                else:
+                    r = termos.assinar(
+                        s, termo_id, obras, pin=str(d.get("pin") or ""),
+                        assinatura=d.get("assinatura"), conduzido_por=conduz,
+                        latitude=d.get("latitude"), longitude=d.get("longitude"),
+                        ip=request.headers.get("X-Forwarded-For", request.remote_addr or ""))
+            svc_sp.termo_voltou(s, termo_id, None)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no documento para assinar")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # O LADO DO DP: as devoluções e a caixa de entrada
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/dp/devolucoes", methods=["GET", "POST"])
@@ -13530,6 +13661,82 @@ def api_dp_caixa_acao(acao: str):
 def pagina_dp_contabilidade():
     return render_template("erp_dp_contabilidade.html",
                            **_contexto("dp_contabilidade"))
+
+
+# ---------------------------------------------------------------------------
+# A PROGRAMAÇÃO DE FÉRIAS (migração 116, 20/11/2026) — `core/ferias.py`.
+# Quem abre pedido ao DP vê as férias das obras que alcança (o administrativo
+# de obra, que cuida do ponto); o DP vê todas.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/dp/ferias")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def pagina_dp_ferias():
+    return render_template("erp_dp_ferias.html", **_contexto("dp_ferias"))
+
+
+@bp.route("/erp/api/dp/ferias")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_dp_ferias():
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            obras = obras_do_usuario(s, usuario)
+            passadas = request.args.get("passadas") == "1"
+            hoje = date.today()
+            lista = svc_ferias.listar(
+                s, obras=obras, com_canceladas=passadas,
+                desde=hoje - timedelta(days=365 if passadas else 0))
+            return jsonify({"ok": True, "ferias": lista,
+                            "avisar_com_dias": svc_ferias.AVISAR_COM_DIAS,
+                            "tabela": svc_ferias.tem_tabela(s)})
+    except Exception as e:
+        logger.exception("ERP/DP: falha na programação de férias")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/ferias/periodos")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_dp_ferias_periodos():
+    """Os períodos de férias de cada pessoa de carteira — para não vencerem."""
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if not svc_ferias._tem_controle(s):
+                return jsonify({"ok": True, "periodos": [], "tabela": False})
+            return jsonify({"ok": True, "tabela": True,
+                            "periodos": svc_ferias.situacao_dos_periodos(
+                                s, obras=obras_do_usuario(s, usuario))})
+    except Exception as e:
+        logger.exception("ERP/DP: falha nos períodos de férias")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/ferias/controle/<int:colaborador_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("atender_dp")
+def api_dp_ferias_controle(colaborador_id: int):
+    """O DP informa até quando as férias da pessoa estão quitadas."""
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            svc_ferias.informar_quitado(s, colaborador_id, d.get("quitado_ate"), usuario)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
 
 
 @bp.route("/erp/dp/regras")
@@ -13968,8 +14175,12 @@ def api_afastar(colaborador_id: int):
             usuario = _usuario_logado(s)
             exigir_colaborador_no_escopo(s, usuario, colaborador_id)
             r = svc_afast.abrir(s, colaborador_id, d, usuario)
+            # ⚑ 20/11/2026: a contabilidade fica sabendo pela solicitação.
+            from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+            numero = svc_sp.comunicar_pela_ficha(s, colaborador_id, "AFASTAMENTO",
+                                                 d, usuario)
             s.commit()
-            return jsonify({"ok": True, **r})
+            return jsonify({"ok": True, **r, "solicitacao": numero})
     except ErroNaoEncontrado as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
     except ErroValidacao as e:
@@ -13993,7 +14204,12 @@ def api_retorno_de_afastamento(colaborador_id: int):
             usuario = _usuario_logado(s)
             exigir_colaborador_no_escopo(s, usuario, colaborador_id)
             r = svc_afast.retornar(s, colaborador_id, d, usuario)
+            from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+            numero = svc_sp.comunicar_pela_ficha(s, colaborador_id,
+                                                 "RETORNO_AFASTAMENTO", d, usuario)
             s.commit()
+            if isinstance(r, dict):
+                r = {**r, "solicitacao": numero}
             return jsonify(r)
     except ErroNaoEncontrado as e:
         return jsonify({"ok": False, "erro": str(e)}), 404

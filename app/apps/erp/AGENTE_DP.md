@@ -69,6 +69,17 @@ e 5 são de gente; o 3 é do DP apertando um botão (ou do agente, quando ligado
 
 ## 3. AS OITO ROTINAS
 
+> **⚑ 20/11/2026 (noite) — o agente foi posto para funcionar.** Ele: *"Vamos
+> botar para funcionar."* A migração 117 liga em **SUGERE** a análise
+> (triagem), o despacho, o vigia e o relatório — as que não falam com ninguém
+> de fora. A **cobrança** e a **caixa** continuam como ele deixou (ligar é um
+> clique na tela). A **rodada diária** agora é sozinha: a primeira requisição do
+> dia a põe na fila de trabalhos. A **análise** aparece em todo pedido, na tela
+> do DP (`core/dp_analise.py`, regras trabalhistas escritas, sem IA). O
+> **despacho** monta o pedido à contabilidade no atendimento. A **conferência**
+> ainda não existe e não liga. O código manda; a descrição abaixo é o desenho
+> original.
+
 Cada uma liga e desliga **sozinha**, tem parâmetros próprios e **nasce
 desligada**. Cada uma tem três modos:
 

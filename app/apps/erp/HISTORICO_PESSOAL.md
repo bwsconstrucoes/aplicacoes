@@ -38,6 +38,34 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**PUBLICADO (20/11/2026, noite, 8):** o contrato que vira indeterminado
+sozinho ao fim da experiência (sem migração; a primeira rodada diária depois
+da publicação alcança o estoque).
+
+**PUBLICADO (20/11/2026, noite, 6 e 7):** a obra do mês automática (migração
+**119**, que também cancela as transferências abertas sozinhas) e as regras do
+cadastro (autônomo sem convenção, readmissão sem experiência). ⚠️ Confirmar
+que ele apertou "Aplicar atualizações do banco" (119).
+
+**PUBLICADO (20/11/2026, noite, 3 a 5):** experiência avisada à obra, obra
+atual pelo ponto (migração **118**), afastamento do ponto virando solicitação
+e transferência de obra. ⚠️ Confirmar com ele que apertou "Aplicar
+atualizações do banco" (118).
+
+**PUBLICADO em 20/11/2026 (noite)** — ele: *"Vamos ficar com esses
+procedimentos por enquanto, pode publicar."* ⚠️ Confirmar com ele que apertou
+"Aplicar atualizações do banco" (115, 116 e 117). Os procedimentos que faltam
+(13º, ASO demissional, prorrogação da experiência, advertência, transferência,
+fechamento do ponto, afastamento formal, pensão) ficaram para depois, por
+decisão dele. A cobrança e a caixa do agente seguem desligadas.
+
+**(Histórico do que estava para publicar)** a admissão
+dentro da Solicitação (migração **115**), os nomes novos das telas e o lote de
+20/11 (alteração, dependente, férias e cancelamento pela contabilidade). ⚠️
+Uma atualização de banco: apertar "Aplicar atualizações do banco" no mesmo
+momento da junção. **E a 116 (programação de férias) e a 117 (aviso assinado,
+controle de férias, agente ligado).** Três atualizações de banco no total.
+
 **Publicado (19/11/2026, tarde):** a Admissão de Colaborador (ver "Decisões",
 19/11 tarde). Sem migração. ⚠️ **Pendente:** acompanhar a primeira admissão de
 verdade — a leitura por IA dos documentos não pôde ser testada aqui (sem
@@ -97,6 +125,342 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 20/11/2026 (noite, 7) — As regras dele na tela de Regras do cadastro
+
+Comentários dele sobre a medição:
+- *"Autônomo não tem convenção. Apenas se define o valor da diária."* → a
+  convenção SAIU do obrigatório do prestador (tinha entrado por suposição
+  minha em 18/11, sustentada só pelos 207 de 207 preenchidos — sobra do
+  Pipefy); a convenção só aparece para CTPS; o autônomo RPA passa a exigir a
+  diária. A medição registra a proposta antiga como recusada, com o motivo.
+- *"CNPJ PJ e Razão Social PJ são obrigatórios para o Tipo de Contrato PJ"* →
+  já valia no formulário; a medição parou de listá-los como "campos que
+  ninguém preenche" (são poucos PJ, abaixo do mínimo da medição).
+- *"se o colaborador sair e retornar num prazo de um ano, na readmissão o
+  contrato tem que ser indeterminado (…) não entra em período de experiência"*
+  → `pessoas.readmitir`: carteira → carteira em até 365 dias grava CLT por
+  prazo indeterminado e "Sem contrato de experiência", com evento; a análise
+  do pedido avisa; a medição não conta essas pessoas como discordantes.
+  ⚠️ **A lei (CLT art. 452) fala em 6 meses**, não 1 ano; a regra da empresa é
+  mais protetora e está dentro da lei. Dito a ele.
+
+**Feito a pedido dele (*"quero que altere sozinho o contrato"*):** a rodada
+diária troca "CLT (tempo determinado)" por "CLT (tempo indeterminado)" — no
+cadastro e no vínculo aberto, com evento — de quem já passou do fim da
+experiência (`pessoal_experiencia.virar_indeterminado`). Na primeira rodada
+alcança o estoque (havia 353 "determinado"). Quem está "determinado" sem
+contrato de experiência legível fica como está. O Análise de SPs trata os dois
+CLT igual: não muda pagamento. Não vai à contabilidade (a experiência que
+acaba vira indeterminado sozinha também no eSocial).
+
+### 20/11/2026 (noite, 6) — A transferência vira AUTOMÁTICA: a obra do mês
+
+Ele, desfazendo a Transferência de Obra como pedido (publicada horas antes):
+*"Isso é um trabalho a mais para o DP (…) não quero que o DP tenha trabalho
+numa coisa que o sistema pode detectar automaticamente (…) a gente vai
+considerar um mês trabalhado (…) na obra que ela mais trabalhou. Porque isso,
+em relação a cálculo de FGTS, INSS, é o que deve ser levado em consideração
+(…) trabalhou 15 dias numa obra, 5 dias na outra (…) a obra que ela trabalhou
+os 15 dias. E todo mês isso a gente faz essa alteração. Não vamos botar nada
+para o DP."*
+
+- `core/obra_do_mes.py` + migração **119**: conta DIAS trabalhados por obra no
+  mês (dia com batida válida), vence a de mais dias (empate: a do dia mais
+  recente). No começo do mês a rodada diária calcula o mês que acabou e troca a
+  **obra de cadastro sozinha**; cada mês fica guardado com os dias de cada obra
+  e a obra de antes — a base do relatório de lotação para a contabilidade
+  (ainda por fazer). Uma vez por mês.
+- **Escolha minha, a confirmar:** o mês é o do CALENDÁRIO (competência das
+  guias). Se for o período do fechamento (26 a 25), troca-se num lugar só.
+- A Transferência de Obra saiu da caixinha (tipo oculto) e parou de nascer do
+  ponto; a migração 119 **cancela as que o sistema abriu sozinho** e ninguém
+  atendeu.
+- A obra ATUAL (últimos 15 dias, migração 118) continua: é onde a pessoa está
+  agora — para onde vão os avisos do portal e o documento para assinar.
+
+### 20/11/2026 (noite, 5) — Transferência de obra vai à contabilidade; a folha recebe a obra atual
+
+Ele: *"O fechamento do ponto quem faz somos nós e enviamos à contabilidade
+para receber de volta a folha. O que falta é criarmos os relatórios de
+fechamento de folha ainda. Obra atual em análisesps alimenta obra atual do
+colaborador (…) isso altera custo de obra, mas ainda vamos migrar toda a parte
+de pagamento de colaboradores de analisesps pra dentro do ERP. A transferência
+será informada também à contabilidade, pois impacta diretamente na geração
+das guias de FGTS e tributos. Demanda outro relatório a ser criado também."*
+
+- **Transferência de Obra** (tipo novo): nasce sozinha quando o ponto mostra a
+  pessoa uma semana noutra obra (`obra_atual.abrir_transferencias`, uma por
+  episódio), ou a obra/DP abre. Atender troca a obra de CADASTRO; de carteira,
+  vai à contabilidade com obra de origem e de destino (código, CNO, município)
+  e fecha com o retorno. Apoio temporário: o DP recusa. O alerta de "obra
+  diferente do cadastro" virou esta solicitação.
+- **A folha** (`pessoas.para_folha`, o contrato que o Análise de SPs vai ler):
+  `obra_codigo` passa a ser a obra ATUAL (do ponto); `obra_cadastro`, a de
+  cadastro.
+
+**PENDENTE, dito por ele, ainda sem construir:**
+- os **relatórios de fechamento da folha** (nós fechamos o ponto, mandamos à
+  contabilidade, ela devolve a folha) — o ponto já gera planilha e arquivos
+  `.ps`; falta o relatório que ele quer e o pedido com retorno;
+- o **relatório de transferências** para a contabilidade (guias de FGTS e
+  tributos por obra);
+- a **migração do pagamento de colaboradores** do Análise de SPs para o ERP.
+
+### 20/11/2026 (noite, 4) — O afastamento do ponto vira solicitação ao DP, e vai à contabilidade
+
+Ele, sobre o alerta "afastamento aprovado no ponto que não chegou ao
+cadastro": *"Não é para ser (…) um lançamento via ponto que gera um
+afastamento. Eu acho que ele automaticamente gera uma solicitação do DP para
+ser dado o devido tratamento junto à contabilidade (…) acidente de trabalho
+também (…) Mesma coisa para maternidade (…) tudo que demandar ação do DP e
+contabilidade no mesmo modelo."* E: *"afastamento e férias (…) pode deixar
+que a contabilidade tenha o controle (…) eles utilizam o Fortes."*
+
+- Tipos novos: **Comunicação de Afastamento** e **Retorno de Afastamento**
+  (só carteira). Atender registra na ficha (se ainda não estiver) e vai à
+  contabilidade, fechando com o retorno dela. A natureza (INSS, acidente,
+  maternidade) o DP confirma ao atender — o ponto não a registra; a soma de
+  atestados acima de 15 dias (que o ponto já abre sozinho) chega marcada INSS.
+- **Ponte do ponto** (`core/ponte_do_ponto.py`): afastamento lançado no ponto
+  desde 20/11/2026 vira a solicitação sozinho (ao abrir a fila do DP e na
+  rodada diária); negado ou cancelado no ponto, a solicitação que não andou
+  cai. Só LÊ o ponto.
+- **Pela ficha também:** afastar ou registrar a volta direto no cadastro abre
+  a solicitação, para nada ir à contabilidade por fora.
+- **Acidente:** o e-mail pede a CAT (1 dia útil) e o agente cobra todo dia até
+  o pedido sair. O alerta antigo "afastamento só no ponto" saiu (virou a ponte).
+- **Não feito, de propósito (ele):** zerar férias por afastamento longo e
+  contar benefício — é a contabilidade, no Fortes.
+
+### 20/11/2026 (noite, 3) — Fim da experiência avisado à obra; obra atual pelo ponto
+
+Ele: *"Prorrogação da experiência. Entendo que DP e o administrativo de obra
+devam ser alertados (…) Poucos dias antes. Transferência de obra (…) teremos a
+obra de cadastro e a obra atual. Para a obra atual, vamos buscar a informação
+do ponto. Uma rotina que atualize essa informação."*
+
+- **Experiência terminando** (`pessoal_experiencia.terminando`): 10 dias antes
+  do fim da 1ª parte (que se prorroga sozinha) e da prorrogação (que vira
+  indeterminado). O DP já recebia pelo agente; a obra passa a ver no portal
+  ("Contratos de experiência terminando"), com o que acontece se ninguém fizer
+  nada e como encerrar no prazo.
+- **Obra atual** (migração 118, `core/obra_atual.py`): onde a pessoa mais
+  bateu ponto nos últimos 15 dias; recalculada todo dia antes da rodada do
+  agente (uma consulta só). A obra de cadastro continua sendo do DP. A ficha
+  mostra as duas; cada mudança fica registrada (`colaborador_obra_mudancas`);
+  uma semana numa obra diferente da do cadastro vira alerta de transferência
+  no agente. Os avisos do portal (férias, experiência) e o documento para
+  assinar vão para a obra ATUAL.
+- ⚠️ **Não mexido, decisão dele:** a folha do Análise de SPs tem os campos
+  "obra" e "obra do cadastro" (`pessoas.para_folha`), e hoje os dois recebem
+  a obra do cadastro. Pôr a obra atual no primeiro muda o rateio do custo.
+  Também em aberto: a transferência de quem é de carteira vai à contabilidade?
+
+### 20/11/2026 (noite, 2) — Nome e endereço não vão à contabilidade; aviso de férias assinado na tela
+
+Ele: *"Troca de nome e endereço não mandar pra contabilidade. Aviso de férias
+em tela."*
+
+- **Atualização cadastral** voltou a se resolver só no cadastro (desfeito o
+  envio à contabilidade do lote anterior; o modelo "Atualização cadastral"
+  saiu).
+- **Aviso de férias na tela** (entendido como: a pessoa assina o aviso no
+  celular, como o aviso prévio — se era outra coisa, ajustar): quando a
+  contabilidade devolve as férias (ou a alteração), o sistema gera o **Aviso de
+  férias** com as datas confirmadas e manda para a obra colher a assinatura
+  (PIN da pessoa; ou foto do papel — inclusive do aviso que a contabilidade
+  mandou). O pedido de férias **só fecha com o aviso assinado** (CLT art. 135:
+  ciência por escrito, 30 dias antes).
+- Conserto achado no caminho: com uma correção esperando a ciência da
+  contabilidade, o retorno dela deixava de confirmar as férias. Agora confirma
+  sempre; só o FECHAR espera a ciência.
+
+### 20/11/2026 (noite) — A contabilidade como ponte; o aviso assinado; corrigir e cancelar com ciência; o agente ligado
+
+O que ele explicou, e que muda o desenho de tudo (vale para os próximos chats):
+
+> *"O que a contabilidade faz? Ela faz toda a gestão junto ao eSocial e cálculo
+> da folha (…) hora extra, aplicação das faltas, cálculo das DSR (…) admissão,
+> demissões (…) baseado nas informações que nós alimentamos. Na gestão do
+> carteira assinada, nosso sistema funciona como uma ponte, mas tudo é fechado
+> lá (…) E a gente requer sempre o retorno de tudo. Quem não é CLT, aí tudo se
+> resolve internamente (…) ajuda de custo, de alimentação, de transporte também
+> é conosco."*
+
+> *"O DP serve para intermediar o que as obras demandam e a contabilidade (…)
+> pode ser que venha um pedido incoerente (…) a ideia de futuro é que o DP
+> apenas olhe e dê o ok (…) o agente junto com a contabilidade resolva tudo."*
+
+**Regra que sai disso:** pedido de quem é CLT que muda o que a contabilidade
+informa ao eSocial ou calcula na folha **vai a ela e espera retorno**; o resto
+(prestador, ajuda de custo, telefone, Pix) se resolve aqui.
+
+- **Desconto em folha** de CLT passou a ir à contabilidade
+  (`contabil_processo`). (A atualização cadastral também foi, e ele desfez no
+  mesmo dia — ver a entrada seguinte.)
+- **Desconto em folha** exige a **autorização assinada** pela pessoa (CLT art.
+  462) antes de ir à contabilidade.
+- **Aviso prévio assinado** (`core/termos.py`, migração 117): o DP analisa e
+  atende → o aviso (ou o pedido de demissão) é gerado com as datas aprovadas →
+  vai para o portal da obra → a pessoa **assina com o dedo e o PIN dela** (o do
+  ponto), como a folha de ponto; sem PIN, foto do papel; recusa, com duas
+  testemunhas → o DP valida o papel/a recusa → **só então a rescisão vai à
+  contabilidade, com o aviso anexo no e-mail**. Encerramento de experiência não
+  tem aviso. Ele: *"o DP só confere e libera para a obra."*
+- **Análise do agente em todo pedido** (`core/dp_analise.py`, regra escrita,
+  sem IA): experiência (encerrar no prazo × romper antes, art. 479), aviso
+  proporcional (Lei 12.506), último dia e data de saída com a projeção (Súmula
+  380, OJ 82), a **data-base da convenção** (indenização adicional — Lei
+  7.238/84; é o "paga em dobro" dele), afastamento e estabilidade; férias
+  (período aquisitivo, início antes do descanso, fracionamento, 30 dias de
+  aviso, prazo de concessão); redução de salário, piso, vigência retroativa;
+  admissão no prazo do eSocial e menor de idade; peso da parcela do desconto.
+- **Corrigir e cancelar depois de atendido** (`contabil_processo`): o pedido à
+  contabilidade em rascunho é refeito; já enviado, nasce um pedido de
+  **Correção** ou de **Cancelamento** a ela, e a solicitação **só fecha com a
+  ciência**. A obra pode **pedir** para cancelar ou corrigir pelo portal; o DP
+  faz. Desligamento continua desfeito pelo cancelamento de desligamento.
+- **Controle de férias** (migração 117): até quando as férias de cada pessoa
+  estão quitadas. As de antes do sistema o DP informa uma vez (tela Férias ›
+  Períodos); as confirmadas no sistema quitam os períodos sozinhas. O agente
+  avisa 90 dias antes do vencimento (férias vencidas = em dobro, art. 137).
+- **O agente** (ele: *"Vamos botar para funcionar"*): análise, despacho,
+  vigia e relatório ligados em SUGERE; **rodada diária sozinha** (fila de
+  trabalhos, `trabalhos.agente_dp_dia`); vigia novo: fim da experiência em 10
+  dias, férias vencendo/vencidas, documento parado na obra, pedido de mudança
+  da obra parado, correção sem ciência, **afastamento aprovado no ponto que não
+  chegou ao cadastro** (a ponte que ele aprovou, como alerta). A
+  **conferência** saiu de "promessa": não liga até existir.
+- **Defeito do lote da tarde corrigido:** o e-mail de alteração e de
+  cancelamento de férias saía sem dizer o que se pedia (só os dados da pessoa).
+
+⚠️ **Não verificado e a confirmar:**
+- A assinatura com PIN não pôde ser testada de ponta a ponta aqui (o banco de
+  teste local não tem o ponto); a conferência do PIN é a mesma função do ponto.
+- **A validade jurídica** da assinatura no celular (Lei 14.063/2020) é a mesma
+  base da folha de ponto — falta o advogado confirmar, como lá.
+- A cobrança e a leitura da caixa do agente **continuam desligadas** até ele
+  decidir (mandam e-mail/WhatsApp).
+- O texto do aviso usa a razão social do cadastro da empresa; pessoa sem
+  empresa sai "A empresa".
+
+**Procedimentos que faltam** (levantados a pedido dele, ainda não construídos —
+ver a resposta do dia): prorrogação/efetivação da experiência com termo
+assinado; advertência e suspensão; transferência de obra; ASO demissional no
+processo de desligamento; fechamento mensal do ponto para a folha (área do
+ponto); afastamento formal com a contabilidade (a ponte do ponto); 13º salário
+(1ª parcela até 30/11); pensão alimentícia por ofício.
+
+### 20/11/2026 (tarde) — Programação de férias; alterar e cancelar férias; o cancelamento de desligamento sempre avisa a contabilidade
+
+Ele: *"o sistema precisa ter a programação dessas férias (…) a gente pede à
+contabilidade, confirma o que foi registrado. O sistema registra. Lembrando
+que tem que pensar na possibilidade de alteração e cancelamento."* E do
+cancelamento de desligamento: *"Imagina desligar uma pessoa que vai continuar
+trabalhando. É uma falha grave (…) todo mundo envolvido tem que estar
+avisado."*
+
+- **Migração 116 + `core/ferias.py`:** a programação de férias. Atender o
+  pedido de férias cria a linha "aguardando a contabilidade"; o retorno da
+  contabilidade a confirma. Tela nova **Pessoal › Férias**.
+- **Alteração e Cancelamento de Férias** viraram tipos de pedido (portal e
+  tela Férias). Passam pela contabilidade; **a data só muda com o retorno**
+  — até lá a linha mostra a mudança pedida ao lado da data que vale.
+  Férias marcadas antes do sistema (sem linha) não travam a alteração: a
+  linha nasce no retorno.
+- **Avisos de férias chegando:** no portal, "Férias da equipe" para quem
+  alcança a obra (15 dias antes e durante); no agente, férias chegando (7
+  dias), sem confirmação a 30 dias, mudança sem retorno, pedido de férias
+  ainda não atendido.
+- **Cancelamento de desligamento:** de carteira, **sempre** vai à
+  contabilidade (antes, só se a rescisão já tinha sido enviada). Pode ser
+  pedido em cima do desligamento — botão no portal ("O que você já pediu") e
+  na tela de Solicitações. Quem pediu o desligamento lê no portal que ele foi
+  cancelado. **A virada do dia segura** quem tem cancelamento pedido e não
+  atendido, e o DP pode atender depois da data se o pedido foi aberto antes
+  dela. O agente cobra todo dia até a contabilidade confirmar.
+
+⚠️ **O que ficou de fora, e é decisão dele:**
+- **O ponto corta o acesso pela data de saída**, sozinho (é do app do ponto,
+  outra área). A trava da virada protege o ERP; o ponto, não. O agente avisa
+  "atender hoje".
+- **Férias confirmadas não viram lançamento de férias no ponto.** Hoje o DP
+  lança à mão no ponto; o agente lembra 7 dias antes. Ligar os dois é mexer
+  no ponto.
+- Aviso por WhatsApp/Telegram das férias chegando: hoje o aviso é na tela
+  (portal e agente).
+
+### 20/11/2026 — Alteração de cargo, dependente, férias e cancelamento passam pela contabilidade; admissão de prestador também
+
+Ele: *"A alteração de cargo (…) tem todo o procedimento de encaminhamento
+para contabilidade, acompanhamento, retorno, o agente tem que acompanhar. A
+mesma coisa vale para o dependente (…) salário de família (…) E a mesma coisa
+serve para as férias. Se as férias não estão em solicitações, tem que entrar
+também, porque o administrativo de obra pode pedir as férias. E o DP tem que
+fazer a mesma coisa, solicitar a contabilidade, aguardar retorno e etc. Para
+então finalizar."*
+
+- `core/contabil_processo.py` (novo): o mesmo desenho da admissão. Atender
+  **não fecha**: o pedido fica **Em andamento** com três passos — DP atendeu →
+  pedido à contabilidade montado (botão "Montar o pedido à contabilidade", que
+  já preenche com o que veio da obra) → contabilidade devolveu. **Fecha
+  sozinho** quando o pedido à contabilidade é concluído
+  (`contabilidade.concluir` chama `fechar_pelo_pedido`).
+- Vale para: **Alteração de cargo/salário**, **Dependente** (só quando marca
+  salário-família ou dependente de IR — dependente só para o plano não vai à
+  contabilidade), **Férias** e **Cancelar desligamento** (este só quando já
+  havia pedido de rescisão enviado; rascunho é só cancelado).
+- **Férias virou tipo de solicitação** (`FERIAS`), aberto pelo portal da obra
+  e pelo DP: início, quantos dias, vender 1/3, adiantar o 13º, observação. Só
+  para carteira.
+- **Alteração de cargo não alterava o cargo** (defeito encontrado na revisão):
+  os nomes dos campos do pedido não batiam com os da ficha. Corrigido; cargo
+  deferido vale sobre o pleiteado.
+- **Cancelar desligamento passou a fazer algo:** limpa demissão, aviso e
+  último dia do cadastro e do vínculo, cancela o desligamento em aberto e
+  recusa se a pessoa já saiu (aí é readmissão).
+- **Admissão de prestador (prestador → CTPS):** o cadastro volta para Inicial
+  e o pedido fica em andamento até o registro da carteira voltar da
+  contabilidade, igual à admissão comum. Antes fechava no atendimento sem
+  registro nenhum.
+- **O agente vigia, com os prazos da lei:** registro sem pedido à
+  contabilidade a 2 dias do início (eSocial exige antes do 1º dia); férias sem
+  aviso a 30 dias do início; pedido em andamento parado; rescisão sem retorno
+  depois de 10 dias da saída (prazo de pagamento).
+
+**Não feito, e é decisão dele:** o pagamento das férias como passo (o "e etc."
+dele) — hoje o processo termina no retorno da contabilidade.
+
+### 19/11/2026 (noite, 4) — A admissão caminha dentro da Solicitação; "Assinar" sai do caminho do PJ
+
+Ele: *"as solicitações, elas devem ser tratadas em solicitações. O passo a
+passo (…) ela vai avançando dentro da parte de solicitações, até a conclusão
+(…) Quando uma admissão for concluída (…) é o momento dela sumir."* E as
+respostas que fecharam o desenho: fecha **sozinha** quando o cadastro chega a
+Concluído; os pedidos já atendidos e não concluídos **voltam à fila**; o passo
+do PJ é **anexar o contrato de prestação**, *"não tem nada a ver com assinar"*.
+
+- `core/admissao_processo.py`: atender a admissão só fecha o pedido se o
+  cadastro já puder ser concluído (prestador comum conclui na hora). Senão,
+  **Em andamento**, com os passos: CTPS → pedido de Assinatura de CTPS →
+  registro de volta; PJ → contrato anexado; e "Cadastro concluído".
+- **Fecha sozinho:** `pessoas.mover_etapa` chama `fechar_concluidas` quando a
+  etapa vira Concluído — por qualquer caminho (retorno da contabilidade, DP
+  concluindo na ficha).
+- **O quadro acompanha:** abrir o pedido de Assinatura de CTPS leva o cartão
+  de Inicial para Contabilidade.
+- **PJ não vai mais para "Assinar":** vai para Concluído, e a trava de
+  concluir exige o contrato anexado (sem ele, fica na Inicial com o recado). A
+  etapa "Assinar" continua existindo para quem já está nela.
+- **Migração 115:** pedidos de admissão "Atendida" cujo cadastro está em
+  Inicial, Assinar ou Contabilidade voltam a "Em andamento", com um evento
+  dizendo por quê. Ele perguntou de onde saem: é exatamente essa consulta.
+- **Nomes:** a tela virou "Solicitações"; a etapa "Solicitações" virou
+  "Contabilidade" e foi para antes de "Concluído".
+
+**Próximo passo combinado:** quando as pendências antigas do Pipefy acabarem,
+"Assinar" e "Contabilidade" saem do quadro (só com o "pode" dele).
 
 ### 19/11/2026 (noite, 3) — Dinheiro no padrão do Brasil; a pessoa do pedido individualizada; "quem pediu"
 

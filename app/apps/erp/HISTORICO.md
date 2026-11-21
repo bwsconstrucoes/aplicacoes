@@ -10327,6 +10327,22 @@ cadastrada em seguida já nasceu no grupo certo, na ordem certa.
 
 ---
 
+## 20/11/2026 — Mudança do ERP · Pessoal que encosta em arquivos comuns
+
+Registrada aqui porque atravessa áreas (o resto está em `HISTORICO_PESSOAL.md`):
+- `core/comum/trabalhos.py` ganhou o executor `agente_dp_dia` (a rodada diária
+  do agente de DP, enfileirada na primeira requisição do dia pelo gancho do
+  `routes.py`, ao lado da virada dos desligamentos).
+- `core/contabilidade.py`: o e-mail do pedido passa a levar ANEXO os documentos
+  assinados da solicitação (aviso prévio, autorização de desconto) — uma
+  leitura do arquivo por documento.
+- `core/cadastros/desligamentos_do_dia.py`: a virada SEGURA quem tem
+  cancelamento de desligamento pedido e não atendido.
+- Migrações **116** e **117** (`ferias_programadas`, `dp_termos`,
+  `ferias_controle`, rotinas do agente ligadas em SUGERE).
+- O ERP lê o **PIN do ponto** (`ponto.core.acesso.entrar`) para a assinatura
+  do aviso no portal — só leitura, a mesma função do app do ponto.
+
 ## O SISTEMA PARA ANTES DE MANDAR — e quem mandou isso foi o dono
 
 18/09/2026. Eu havia escrito que o passo seguinte do "sistema inteligente" era

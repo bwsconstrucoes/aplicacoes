@@ -3037,3 +3037,128 @@ consulta inventada vai sendo usado cada vez menos.
 - **"A leitura acertou?"** — o sistema guarda o que foi enviado no pedido, mas
   não separa o que veio da leitura do que foi digitado. Falta guardar a origem
   de cada campo.
+
+## O que passa pela contabilidade: alteração, dependente, férias (20/11/2026)
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"atendida"** | o DP atendeu (o pedido pode estar **Em andamento**, esperando a contabilidade) ou o pedido terminou (situação Atendida). Para "o que falta", usar Em andamento |
+| **"férias marcadas"** | o pedido de férias aberto, o aviso pedido à contabilidade, ou o retorno dela. São três momentos |
+| **"dependente"** | dependente para salário-família/IR (vai à contabilidade) ou só para plano (não vai) |
+
+### Perguntas que o sistema responde
+
+- **"Quem tem férias pedidas para o mês que vem?"** — pedidos `FERIAS` pelo
+  início das férias. Muda conforme quem pergunta (a obra vê só as dela).
+- **"Quais pedidos estão esperando a contabilidade?"** — os Em andamento cujo
+  próximo passo é "a contabilidade devolveu".
+- **"A alteração de cargo do fulano já voltou da contabilidade?"** — o passo
+  de retorno do pedido dele.
+- **"Quem vai sair de férias sem aviso pedido?"** — é o alerta do agente (30
+  dias antes do início).
+- **"Algum registro de carteira está atrasado para o eSocial?"** — alerta do
+  agente: início em até 2 dias sem pedido à contabilidade.
+- **"Quais rescisões passaram do prazo de pagamento?"** — alerta do agente:
+  mais de 10 dias da saída sem retorno.
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- **"As férias do fulano foram pagas?"** — o processo termina no retorno da
+  contabilidade; o pagamento não é um passo. Falta decidir se entra.
+- **"Quantos dias de férias o fulano ainda tem?"** — o sistema não calcula o
+  período aquisitivo. Falta o controle de períodos.
+
+## A programação de férias e o cancelamento de desligamento (20/11/2026, tarde)
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"férias marcadas"** | programadas no sistema (aguardando a contabilidade) ou **confirmadas** por ela. A tela Férias mostra as duas, com a situação |
+| **"data das férias"** | a que vale (confirmada) ou a pedida numa alteração ainda sem retorno. A que vale é a confirmada |
+| **"cancelado"** (desligamento) | o pedido de desligamento cancelado (situação Cancelada, com o motivo) ou o cancelamento ainda pedido e não atendido (a saída continua gravada, segurada pela virada) |
+
+### Perguntas que o sistema responde
+
+- **"Quem está de férias agora?"** / **"quem sai de férias nas próximas duas
+  semanas?"** — a programação (tela Férias; no portal, "Férias da equipe").
+  Muda conforme quem pergunta: a obra vê só as dela.
+- **"As férias do fulano foram confirmadas pela contabilidade?"** — a
+  situação da linha.
+- **"Tem alteração ou cancelamento de férias esperando a contabilidade?"** —
+  linhas com mudança pendente.
+- **"Quando o fulano volta?"** — o dia seguinte ao fim.
+- **"Algum desligamento foi cancelado e a contabilidade ainda não
+  confirmou?"** — pedidos de cancelamento Em andamento (o agente lista).
+- **"Tem pessoa com saída vencida segurada por cancelamento?"** — pedido de
+  cancelamento aberto com data de saída já passada.
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- **"Quantos dias de férias o fulano ainda tem?"** — não há controle de
+  período aquisitivo.
+- **"As férias de antes do sistema?"** — só as pedidas a partir de
+  20/11/2026 (ou alteradas depois disso) estão na programação.
+- **"As férias já estão lançadas no ponto?"** — a programação e o ponto não
+  conversam; o lançamento no ponto é à mão.
+
+## O aviso assinado, a análise do agente e as férias vencendo (20/11/2026, noite)
+
+### ⚠️ As palavras ambíguas desta área
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"aviso"** | o aviso PRÉVIO (do desligamento, que a pessoa assina) ou o aviso de FÉRIAS (da contabilidade) |
+| **"assinado"** | assinado no celular com PIN (vale sozinho), no papel (vale depois que o DP olha) ou recusa com testemunhas |
+| **"férias vencidas"** | período cujo prazo de gozo já passou (em dobro) ou período completo ainda não gozado (no prazo). O sistema chama o primeiro de "vencida" e o segundo de "em aberto" |
+| **"cancelado"** | cancelado aqui (nada tinha ido à contabilidade) ou "em cancelamento" (esperando a ciência dela) |
+
+### Perguntas que o sistema responde
+
+- **"O aviso prévio do fulano já foi assinado?"** — o passo do desligamento e
+  o documento TA-… no cadastro dele.
+- **"Quais documentos estão na obra esperando assinatura?"** — muda conforme
+  quem pergunta (a obra vê só os dela).
+- **"Quem tem férias vencendo nos próximos 3 meses?"** / **"quem já está com
+  férias vencidas?"** — tela Férias › Períodos (depende do "quitadas até"
+  informado).
+- **"De quem o sistema não sabe as férias?"** — "sem informação".
+- **"Quem termina a experiência nos próximos 10 dias?"** — alerta do agente.
+- **"Tem pedido corrigido ou cancelado que a contabilidade ainda não
+  confirmou?"** — alerta do agente / passos do pedido.
+- **"Esta demissão cai na data-base?"** — a análise do pedido (precisa do mês
+  da data-base na convenção).
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- **"Quanto vai custar esta rescisão?"** — o cálculo é da contabilidade; a
+  análise só confere datas e regras.
+- **"Quem está grávida / é da CIPA?"** — o sistema não sabe; a análise lembra.
+- **"O salário-família ainda cabe no salário dele?"** — falta o teto do ano.
+- **"O fulano já assinou o aviso de férias?"** — o último passo do pedido de
+  férias (desde 20/11/2026, noite); o pedido só fecha com ele.
+
+## A obra atual e o fim da experiência (20/11/2026, noite)
+
+| Palavra | O que pode querer dizer |
+|---|---|
+| **"a obra do fulano"** | a obra de CADASTRO (o DP muda) ou a obra ATUAL (onde ele mais bateu ponto nos últimos 15 dias). Para custo e rateio, hoje vale a de cadastro |
+
+- **"Quem está trabalhando numa obra diferente da do cadastro?"** — alerta do
+  agente (uma semana ou mais) e a ficha.
+- **"Quem foi transferido este mês?"** — as mudanças de obra que o ponto
+  mostrou (`colaborador_obra_mudancas`), desde 20/11/2026.
+- **"De quem acaba a experiência nos próximos dias?"** — portal da obra e
+  agente (10 dias). Muda conforme quem pergunta.
+
+## O afastamento como solicitação (20/11/2026, noite)
+
+- **"Quem está afastado e a contabilidade já confirmou?"** — as Comunicações de
+  Afastamento atendidas; em andamento = esperando a contabilidade.
+- **"Teve acidente de trabalho este mês? A CAT saiu?"** — afastamentos de
+  natureza acidente e o pedido à contabilidade de cada um.
+- **AINDA NÃO:** "quanto o INSS está pagando" e "quando as férias de quem
+  ficou afastado reiniciam" — é a contabilidade (Fortes), por decisão dele.
+
