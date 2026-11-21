@@ -87,8 +87,16 @@ def test_o_que_sobra_continua_hora_extra_e_o_dia_futuro_fica_a_compensar(app, mu
     assert d_qui["extra"] == 30                                # a meia hora que sobrou é hora extra
     assert d_sex["debito"] == 0 and "SAIDA_ANTECIPADA" not in d_sex["alertas"]
     # o dia das horas a mais ainda não chegou: a sexta continua devendo, "a compensar"
+    # um dia útil recente, para o dia das horas a mais (daqui a 5 dias) caber nos 31 dias da regra — em 21/11/2026,
+    # "a sexta de uma semana antes" caía em outubro, a 34 dias, e a regra recusava (com razão)
     futuro = dt.date.today() + dt.timedelta(days=5)
-    outra = sex - dt.timedelta(days=7)
+    from app.apps.ponto import db
+    from app.apps.ponto.core import feriados
+    outra = dt.date.today() - dt.timedelta(days=3)
+    with db.conexao() as conn:
+        cal = feriados.Calendario(conn, outra - dt.timedelta(days=20), outra)
+        while outra.weekday() > 3 or outra in (qui, sex) or cal.feriado(outra, mundo["obra_a"]):
+            outra -= dt.timedelta(days=1)
     _bater(app, outra, (7, 0), (11, 0))
     assert dp.post("/erp/api/ponto/ocorrencias", json={"tipo": "COMPENSACAO_HORAS", "colaborador_id": mundo["joao"],
                    "data_inicio": outra.isoformat(), "dia_trabalhado": futuro.isoformat(),
