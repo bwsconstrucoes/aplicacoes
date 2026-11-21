@@ -1022,3 +1022,43 @@ def test_insumo_sem_conta_do_plano_recusa_dizendo_o_que_fazer(base):
             base, pedido, [(base["item_a"], 10)], documento_numero="1", valor="1000,00",
             forma_pagamento="PIX",
             parcelas=[{"vencimento": hoje().isoformat(), "valor": "1000.00"}]))
+
+
+# ---------------------------------------------------------------------------
+# A assinatura de quem manda o pedido
+# ---------------------------------------------------------------------------
+def _png_de_assinatura():
+    import io
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (600, 200), "white")
+    ImageDraw.Draw(img).line([(40, 150), (200, 60), (330, 140), (560, 70)],
+                             fill=(16, 35, 63), width=6)
+    buf = io.BytesIO(); img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_a_assinatura_desenhada_fica_na_pessoa_e_sai_no_pdf_do_pedido(base):
+    import base64
+    from app.apps.erp.core.comum import assinatura
+    from app.apps.erp.core.suprimentos import pedido_pdf
+    s, u = base["s"], base["u"]
+    pedido = _fechar(base)
+    sem = pedido_pdf.gerar(s, pedido.id, base["empresa"], u)
+    assert assinatura.obter(s, u.id) is None
+    png = _png_de_assinatura()
+    assinatura.salvar(s, u, "data:image/png;base64," + base64.b64encode(png).decode())
+    s.flush()
+    assert assinatura.obter(s, u.id)
+    com = pedido_pdf.gerar(s, pedido.id, base["empresa"], u)
+    assert com[:5] == b"%PDF-" and len(com) > len(sem) + 500   # a imagem entrou
+    # a assinatura é da pessoa: outra pessoa manda o mesmo pedido sem ela
+    outro = _da_obra(base, base["obra_a"], "sem.assinatura@teste.bws.local")
+    assert len(pedido_pdf.gerar(s, pedido.id, base["empresa"], outro)) < len(com)
+
+
+def test_assinatura_vazia_ou_que_nao_e_imagem_e_recusada(base):
+    from app.apps.erp.core.comum import assinatura
+    with pytest.raises(ErroValidacao):
+        assinatura.salvar(base["s"], base["u"], "data:image/png;base64,AAAA")
+    with pytest.raises(ErroValidacao):
+        assinatura.salvar(base["s"], base["u"], b"isto nao e uma imagem" * 40)

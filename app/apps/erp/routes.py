@@ -11901,6 +11901,52 @@ def api_preparar_fechamento(cotacao_id: int):
         return jsonify({"ok": True, **svc.preparar_fechamento(s, cotacao_id)})
 
 
+# ---------------------------------------------------------------------------
+# A ASSINATURA DE QUEM ASSINA DOCUMENTO PELO SISTEMA (21/11/2026)
+# Cada um cadastra a SUA — por isso `ver_erp`, a ação mais baixa, e nenhum
+# número de pessoa na rota: a assinatura é sempre a de quem está logado.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/assinatura")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_assinatura():
+    return render_template("erp_assinatura.html")
+
+
+@bp.route("/erp/minha-assinatura.img")
+@login_obrigatorio
+@permissao("ver_erp")
+def imagem_da_minha_assinatura():
+    from app.apps.erp.core.comum import assinatura
+    with get_session() as s:
+        conteudo = assinatura.obter(s, _usuario_logado(s).id)
+    if not conteudo:
+        return "", 404
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "image/jpeg"
+    resposta.headers["Cache-Control"] = "no-store"
+    return resposta
+
+
+@bp.route("/erp/api/minha-assinatura", methods=["POST", "DELETE"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_minha_assinatura():
+    from app.apps.erp.core.comum import assinatura
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "DELETE":
+                assinatura.remover(s, usuario)
+            else:
+                assinatura.salvar(s, usuario,
+                                  (request.get_json(silent=True) or {}).get("imagem"))
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/suprimentos/cotacoes/<int:cotacao_id>/solicitacao.pdf")
 @login_obrigatorio
 @permissao("ver_pedidos_compra")

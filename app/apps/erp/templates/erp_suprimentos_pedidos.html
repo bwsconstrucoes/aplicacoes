@@ -369,7 +369,8 @@ async function verRelatorio(id){
         ${e.empresa ? `<a class="btn secundario" target="_blank" rel="noopener"
           href="/erp/suprimentos/pedidos/${id}/pdf?empresa=${e.empresa.id}"
           >&#10515; Ver o PDF que vai anexo</a>` : ""}
-        <span class="sub">O e-mail leva o texto acima e este PDF, anexo.</span></div>`;
+        <span class="sub">O e-mail leva o texto acima e este PDF, anexo.
+          <a href="/erp/assinatura">Cadastrar ou trocar a minha assinatura</a> — ela sai no PDF.</span></div>`;
 
     if (!impedimentos.length) {
       els("env-mandar").addEventListener("click", () => mandarPedido(id));

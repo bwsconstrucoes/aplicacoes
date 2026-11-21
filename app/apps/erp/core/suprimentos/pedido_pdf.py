@@ -156,10 +156,33 @@ def dados(s: Session, pedido_id: int, empresa, usuario=None) -> dict[str, Any]:
                     else "Entrega por conta do fornecedor (CIF)"),
         "previsao_entrega": pedido.previsao_entrega,
         "observacoes": (pedido.observacoes or "").strip(),
-        "comprador": {"nome": getattr(usuario, "nome", "") or "",
+        "comprador": {"assinatura": _assinatura_de(s, usuario),
+                      "nome": getattr(usuario, "nome", "") or "",
                       "email": getattr(usuario, "email", "") or "",
                       "telefone": getattr(usuario, "telefone", "") or ""},
     }
+
+
+def _assinatura_de(s: Session, usuario) -> Optional[bytes]:
+    """A assinatura que a pessoa cadastrou (desenhada ou escaneada), se houver."""
+    try:
+        from app.apps.erp.core.comum import assinatura
+        return assinatura.obter(s, getattr(usuario, "id", None))
+    except Exception:
+        return None
+
+
+def colocar_assinatura(pdf, imagem: Optional[bytes]) -> None:
+    """Desenha a assinatura acima do nome. Imagem que o PDF não lê é ignorada:
+    o pedido sai com o nome, e não deixa de sair."""
+    if not imagem:
+        return
+    try:
+        y = pdf.get_y()
+        pdf.image(io.BytesIO(imagem), x=pdf.l_margin, y=y, h=16)
+        pdf.set_y(y + 17)
+    except Exception:
+        logger.warning("ERP/suprimentos: a assinatura não coube no PDF")
 
 
 def gerar(s: Session, pedido_id: int, empresa, usuario=None) -> bytes:
@@ -377,6 +400,7 @@ def desenhar(d: dict[str, Any]) -> bytes:
     fonte("", 9)
     linha("Atenciosamente,")
     pdf.ln(2)
+    colocar_assinatura(pdf, comprador.get("assinatura"))
     if comprador["nome"]:
         fonte("B", 9.5)
         linha(comprador["nome"])

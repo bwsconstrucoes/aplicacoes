@@ -183,6 +183,8 @@ def gerar(s: Session, cotacao_id: int, empresa, *, prazo: Optional[str] = None,
     linha(f"Referência desta cotação: {cot.numero}. Favor mantê-la ao responder.")
     pdf.ln(4)
     linha("Atenciosamente,")
+    from app.apps.erp.core.suprimentos.pedido_pdf import _assinatura_de, colocar_assinatura
+    colocar_assinatura(pdf, _assinatura_de(s, usuario))
     if getattr(usuario, "nome", ""):
         fonte("B", 9.5)
         linha(usuario.nome)

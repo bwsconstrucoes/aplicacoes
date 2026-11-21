@@ -785,6 +785,7 @@ def preparar_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
         "conta_pronta": pode_empresa, "o_que_falta": falta,
         "assunto": mensagem["assunto"], "corpo": mensagem["corpo"],
         # o que vai NO E-MAIL (curto); `corpo` é o conteúdo do PDF por extenso
+        "tem_assinatura": None,     # preenchido pela rota, que sabe quem está logado
         "corpo_do_email": (corpo_padrao_do_pedido(
             pedido, empresa, svc_total(s, pedido)) if empresa else ""),
         "envios": envios,
