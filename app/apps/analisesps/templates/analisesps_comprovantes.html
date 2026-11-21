@@ -99,7 +99,7 @@
   <div class="kpis kpis-comprovantes">
     {% for chave, rotulo, quantos in lista.contagem %}
       {% set ativo = chave in filtros.situacoes %}
-      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO', 'REENVIADO') and quantos else '' }} {{ 'ativo' if ativo }}"
+      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'AGUARDANDO') and quantos else '' }} {{ 'ativo' if ativo }}"
          href="{{ url_for('analisesps.tela_comprovantes', f=1, situacao=('' if ativo else chave), busca=filtros.busca or None,
                           de=filtros.de or None, ate=filtros.ate or None, lote=filtros.lote or None) }}"
          title="Mostrar só: {{ rotulo }}">
@@ -132,7 +132,9 @@
         <td><a href="{{ url_for('analisesps.tela_comprovantes', f=1, lote=i.lote_id, de='') }}"
                title="Ver só as páginas deste envio">{{ i.arquivo }}</a>
           <span class="cartao-dica">pág. {{ i.pagina or '—' }}</span></td>
-        <td><span class="etiqueta {{ 'ruim' if i.pede_acao else 'boa' }}">{{ i.rotulo }}</span></td>
+        <td>{% if i.situacao == 'AGUARDANDO' %}<span class="etiqueta">{{ i.rotulo }}</span>
+            <br><span class="cartao-dica">{{ i.andamento }}</span>
+          {% else %}<span class="etiqueta {{ 'ruim' if i.pede_acao else 'boa' }}">{{ i.rotulo }}</span>{% endif %}</td>
         <td class="id">{% if i.sp_id %}<a href="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}"
               data-ficha="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}" data-id="{{ i.sp_id }}"
               title="Abre a SP aqui">{{ i.sp_id }}</a>{% else %}—{% endif %}</td>

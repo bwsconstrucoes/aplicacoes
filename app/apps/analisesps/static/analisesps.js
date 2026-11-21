@@ -1238,7 +1238,12 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         const parado = !dados.rodando && !(dados.lotes || []).some(
             l => l.situacao === "ESPERANDO" || l.situacao === "RODANDO");
         // Recarrega UMA vez quando tudo terminou, para mostrar as linhas.
-        if (parado) { clearInterval(relogio); location.reload(); }
+        if (parado) { clearInterval(relogio); location.reload(); return; }
+        // E a cada LEVA que volta do robo (21/11/2026): as paginas da lista saem de
+        // "Aguardando a baixa" para o resultado sem esperar o envio inteiro.
+        const marca = (dados.lotes || []).map(l => l.id + ":" + l.situacao + ":" + l.levas_feitas).join("|");
+        if (estado.dataset.marca === undefined) estado.dataset.marca = marca;
+        else if (marca !== estado.dataset.marca) { clearInterval(relogio); location.reload(); }
       } catch (e) { /* rede caiu: a proxima tentativa resolve */ }
     }, 5000);
   }
