@@ -218,8 +218,9 @@ async function abrir(id){
             <td class="direita dados">${numero(v.valor)}</td>
             <td>${v.titulo_id ? "virou título" : "previsto"}</td></tr>`).join("")}</tbody>
         </table>` : ""}
-      ${p.mapa ? blocoDoMapa(p.mapa) : `<div class="cartao-dica" style="margin-top:12px">
-        Pedido direto, sem cotação — não há mapa para comparar.</div>`}
+      ${p.mapa ? blocoDoMapa(p.mapa) : `<div class="aviso alerta" style="margin-top:12px">
+        <b>Pedido direto, sem cotação</b> — não há mapa para comparar.<br>
+        <b>Por quê:</b> ${escapar(p.justificativa_sem_cotacao || "não informado (pedido anterior à exigência)")}</div>`}
       ${p.motivo ? `<div class="aviso alerta" style="margin-top:10px">${p.motivo}</div>` : ""}
       <div style="margin-top:12px"><button class="btn secundario" id="btn-relatorio">
         Ver e mandar o pedido ao fornecedor</button></div>
@@ -228,8 +229,10 @@ async function abrir(id){
       ${p.status === "AGUARDANDO_AUTORIZACAO" ? `
         <div class="cartao-dica" style="margin-top:12px">Marque a caixinha dos itens
           que NÃO devem ser autorizados: eles saem do pedido e voltam para a fila.</div>
+        <div class="sub" style="margin-top:8px">Ao autorizar, o pedido é enviado por e-mail
+          ao fornecedor, com o PDF. Quem fechou o pedido não autoriza o próprio.</div>
         <div style="margin-top:10px; display:flex; gap:8px">
-          <button class="btn" id="btn-autorizar">Autorizar</button>
+          <button class="btn" id="btn-autorizar">Autorizar e enviar ao fornecedor</button>
           <button class="btn secundario" id="btn-recusar">Recusar o pedido</button>
         </div>` : p.status === "AUTORIZADO" ? `
         <div style="margin-top:12px"><button class="btn secundario"

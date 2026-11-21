@@ -2638,8 +2638,7 @@ def api_suprimento_situacao(item_id: int):
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
-            visiveis = {i["id"] for i in svc.listar_itens(s, atual)}
-            if item_id not in visiveis:
+            if not svc.enxerga_item(s, atual, item_id):
                 raise ErroNaoEncontrado("Item não encontrado.")
             svc.mudar_situacao(s, item_id, d.get("status") or "", atual,
                                d.get("observacao") or "")

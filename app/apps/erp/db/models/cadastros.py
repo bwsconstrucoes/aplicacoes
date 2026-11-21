@@ -1135,6 +1135,9 @@ class PedidoCompra(Base):
     criado_por: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     autorizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    # Por que foi comprado sem cotação (migração 124). Interno: quem autoriza
+    # lê; o fornecedor não.
+    justificativa_sem_cotacao: Mapped[Optional[str]] = mapped_column(Text)
     autorizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 

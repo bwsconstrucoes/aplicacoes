@@ -469,7 +469,8 @@ def _pedido_pronto(s, usuario, empresa, *, autorizar=True, condicao=True):
                                     usuario)
     s.flush()
     if autorizar:
-        svc_ped.autorizar(s, pedido.id, usuario)
+        # quem fecha não autoriza (22/11/2026)
+        svc_ped.autorizar(s, pedido.id, _usuario(s, "quem-autoriza@teste.bws.local"))
         s.flush()
     return pedido
 

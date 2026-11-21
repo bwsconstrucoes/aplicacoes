@@ -369,9 +369,10 @@ def _concretizar(s: Session, titulo_id: int, itens: list[dict[str, Any]],
         key=lambda i: i.numero)
     pedido = svc_pedido.fechar_direto(s, {
         "fornecedor_id": titulo.fornecedor_id, "observacoes": marca + ".",
+        "justificativa_sem_cotacao": f"Compra feita fora do processo, registrada depois. {motivo}",
         "itens": [{"suprimento_item_id": i.id, "preco_unitario": bruto["preco_unitario"]}
                   for i, bruto in zip(do_pedido, itens)]}, usuario)
-    svc_pedido.autorizar(s, pedido.id, quem_autorizou)
+    svc_pedido.autorizar(s, pedido.id, quem_autorizou, conferir_autoria=False)
     linhas = [l for l in s.scalars(select(PedidoItem).where(
         PedidoItem.pedido_id == pedido.id)).all() if l.pedido_id == pedido.id]
     chegou = titulo.data_emissao_doc or date.today()

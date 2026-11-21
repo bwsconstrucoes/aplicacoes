@@ -904,8 +904,10 @@ async function comprarDireto(){
       <div class="pd-outro" style="display:none; margin-top:6px">
         <input class="pd-rotulo" placeholder="nome do local" style="margin-bottom:4px">
         <input class="pd-endereco" placeholder="endereço completo, com cidade e CEP"></div></div>`).join("")}
-    <div class="campo" style="margin-top:10px"><label>Por que sem cotação? E observações para o fornecedor</label>
-      <textarea id="pd-obs" rows="2" placeholder="ex.: fornecedor único na região; compra de urgência"></textarea></div>
+    <div class="campo" style="margin-top:10px"><label>Por que sem cotação? <small>(quem autoriza lê; o fornecedor não)</small></label>
+      <textarea id="pd-justificativa" rows="2" placeholder="ex.: fornecedor único na região; compra de urgência"></textarea></div>
+    <div class="campo" style="margin-top:10px"><label>Observações para o fornecedor <small>(saem impressas no pedido)</small></label>
+      <textarea id="pd-obs" rows="2" placeholder="ex.: entregar pela manhã; descarregar no portão lateral"></textarea></div>
     <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
       <button class="btn" id="pd-salvar">Fechar e mandar para autorização</button>
       <span id="pd-soma" class="dados" style="font-weight:700"></span></div>`;
@@ -932,7 +934,7 @@ async function comprarDireto(){
     if (itens.some(i => !(brn(i.preco_unitario) > 0))) falta.push("o preço de cada item");
     if (!els("pd-cond").value) falta.push("a condição de pagamento");
     if (!els("pd-previsao").value) falta.push("a data em que o material tem de chegar");
-    if ((els("pd-obs").value || "").trim().length < 5) falta.push("o motivo de comprar sem cotação");
+    if ((els("pd-justificativa").value || "").trim().length < 10) falta.push("o motivo de comprar sem cotação");
     if (falta.length) return aviso("dlg-msg", `Falta ${falta.join(", ")}.`, "erro");
     els("pd-salvar").disabled = true;
     try {
@@ -944,6 +946,7 @@ async function comprarDireto(){
           entrega: els("pd-entrega").value || null,
           frete: String(brn(els("pd-frete").value)), desconto: String(brn(els("pd-desconto").value)),
           antecipado: els("pd-antecipado").checked, observacoes: els("pd-obs").value,
+          justificativa_sem_cotacao: els("pd-justificativa").value,
           locais_entrega: [...document.querySelectorAll(".pd-local")].map(b => ({
             obra_id: +b.dataset.obra, tipo: b.querySelector(".pd-tipo").value,
             rotulo: b.querySelector(".pd-rotulo").value,

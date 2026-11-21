@@ -254,6 +254,24 @@ def _itens_visiveis(s: Session, usuario: Usuario) -> list[SuprimentoItem]:
     return [i for i in itens if _pediu(s, i, usuario)]
 
 
+def enxerga_item(s: Session, usuario: Usuario, item_id: int) -> bool:
+    """A mesma regra de `_itens_visiveis`, para UM item — sem carregar a lista.
+
+    ⚑ 22/11/2026: a rota de mover item montava a lista inteira (três leituras
+    por item) só para conferir um. Com 2.000 itens eram ~6.000 leituras por
+    clique. O dono: "essa lentidão aí pode ajustar".
+    """
+    item = s.get(SuprimentoItem, item_id)
+    if item is None:
+        return False
+    obras = obras_do_usuario(s, usuario)
+    if obras is None and _ve_tudo(s, usuario):
+        return True
+    if obras is not None and item.obra_id in set(obras):
+        return True
+    return _pediu(s, item, usuario)
+
+
 def _ve_tudo(s: Session, usuario: Usuario) -> bool:
     from app.apps.erp.core.auth.permissoes import ve_todas_as_obras
     # Passou a perguntar ao CADASTRO da pessoa em 13/09/2026, e não ao cargo:

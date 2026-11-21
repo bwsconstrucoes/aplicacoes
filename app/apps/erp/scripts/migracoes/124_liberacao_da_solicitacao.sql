@@ -37,3 +37,9 @@ ON CONFLICT (perfil_id, secao) DO NOTHING;
 -- materiais; o pedido só nasce quando alguém com alçada dá a ciência, no nome
 -- dele. Os materiais informados esperam aqui.
 ALTER TABLE compras_fora_do_fluxo ADD COLUMN IF NOT EXISTS itens JSONB;
+
+-- POR QUE SEM COTAÇÃO (22/11/2026). O dono: "podemos colocar uma justificativa
+-- escrita da compra sem cotação, é interessante." Campo PRÓPRIO, e não as
+-- observações: as observações saem impressas no pedido que vai ao fornecedor,
+-- e "fornecedor único na região" não é coisa para ele ler.
+ALTER TABLE pedidos_compra ADD COLUMN IF NOT EXISTS justificativa_sem_cotacao TEXT;

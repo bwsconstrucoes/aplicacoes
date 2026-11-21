@@ -51,6 +51,8 @@ Detalhe em `HISTORICO_SUPRIMENTOS.md`, 22/11 (5ª rodada).
   aplicada, toda consulta a `suprimento_itens` falha.**
 - A rota `/erp/api/suprimentos/itens/<id>/situacao` passou de `ver_suprimentos`
   para `comprar`.
+- `autorizar_compra_fora_do_fluxo` passou a incluir gestor e supervisor de obra.
+- `PedidoCompra` ganhou `justificativa_sem_cotacao` (migração 124).
 
 ### ⚑ 21/11/2026 (noite) — SUPRIMENTOS: A NOTA NÃO ENTRA SOLTA, E O E-MAIL PODE SER FORMATADO (registro entre áreas)
 

@@ -46,12 +46,20 @@ suprimentos quebra. Publicar e apertar no mesmo minuto. Arquivos
 compartilhados: `routes.py`, `core/auth/permissoes.py`, `core/auth/secoes.py`,
 `db/models/cadastros.py`.
 
-**Perguntas abertas com ele (22/11):** (1) o que ele descreveu para a compra
-por fora ("não pode lançar e o financeiro pagar") é a posição TRAVAR — ele
-confirma que liga já, ou mantém "só avisar" como disse em 21/11? (2) quem
-fecha o pedido pode autorizar o próprio? (3) compra direta e compra fora do
-menor preço: exigir justificativa escrita? (4) o pedido do administrativo para
-obra fora do vínculo dele — o servidor não confere a obra na criação.
+**Respondido por ele em 22/11 (2ª conversa) — não perguntar de novo:**
+- **Compra por fora TRAVA** até alguém dar a ciência ("a engenharia tem que
+  estar ciente (...) por mais que a empresa já tenha uma obrigação financeira").
+  ⚠ **A CHAVE CONTINUA DESLIGADA, E NÃO FUI EU QUE LIGUEI, DE PROPÓSITO:** hoje
+  NENHUMA compra passa pelo ERP. Ligar "travar" agora bloqueia TODO lançamento
+  de material do financeiro até alguém autorizar um por um. A decisão dele é a
+  regra; a HORA de ligar é quando as compras já estiverem saindo do ERP. Dito a
+  ele; confirmar antes de ligar.
+- **Quem fecha o pedido NÃO autoriza o próprio.** Feito.
+- **Compra sem cotação pede justificativa escrita.** Feito.
+- A lentidão ao mover item: "pode ajustar". Feito.
+
+**Ainda aberto:** o servidor não confere se quem pede material tem alcance na
+obra do pedido (a tela só oferece as dele). Ele não respondeu.
 
 **✔ PUBLICADO em 21/11/2026 (noite)**, com o "pode publicar" dele — tudo o que
 está abaixo, das rodadas de 20 e 21/11, está na `main` (commit `40db52e`).
@@ -176,6 +184,31 @@ clique. Relatada a ele.
 tem conta de e-mail; vi a autorização ficar e o motivo aparecer); a liberação
 feita por um supervisor de verdade pelo celular (vi o selo no portal e a
 liberação pela tela do ERP).
+
+### ⚑ 22/11/2026 (6ª rodada) — QUEM FECHA NÃO AUTORIZA, JUSTIFICATIVA DA COMPRA DIRETA, A ENGENHARIA DÁ A CIÊNCIA
+
+- **Quem fechou o pedido não autoriza o próprio** (`pedido.autorizar`). Ele: *"o
+  comprador lança o pedido, ele cotou, ele lançou, e alguém da alçada superior
+  vai autorizar e disparar."* Comprar e autorizar estão nos mesmos dois perfis
+  (admin e diretor); sem a regra, uma pessoa fazia a compra inteira.
+  ⚠ **Consequência prática:** precisa haver DUAS pessoas com alçada. Se só o
+  dono compra e autoriza, ele não consegue autorizar o que ele mesmo fechou.
+- **Justificativa da compra sem cotação**, em campo PRÓPRIO
+  (`pedidos_compra.justificativa_sem_cotacao`, migração 124), mínimo de 10
+  letras. **Defeito encontrado e corrigido junto:** o motivo era digitado nas
+  observações, e as observações saem impressas no pedido que vai ao
+  fornecedor. Agora quem autoriza lê; o fornecedor não.
+- **A ciência da compra por fora passou a ser também de gestor e supervisor de
+  obra** (`autorizar_compra_fora_do_fluxo`, na seção `sup_liberar`). Ele: *"quem
+  é responsável pelo setor, a engenharia, tem que estar ciente."* Quem lançou
+  continua sem poder dar a ciência do próprio lançamento.
+- **Mover item** confere UM item (`solicitacao.enxerga_item`) em vez de montar
+  a lista inteira: de ~6.000 leituras por clique (com 2.000 itens) para 3.
+- **A pergunta dele: "quando a compra tardia é lançada, já está associada ao
+  financeiro?"** Sim, e é ao contrário do fluxo normal: ela COMEÇA no
+  financeiro. O que existe primeiro é a nota lançada sem pedido; depois vêm os
+  materiais informados e a ciência; o pedido tardio nasce por último e é
+  ligado àquela mesma conta. Não se cria conta nova.
 
 ### ⚑ 21/11/2026 (4ª rodada) — NUNCA SÓ RECEBER, A SOLICITAÇÃO TARDIA, E OS ACERTOS NOS PAPÉIS
 

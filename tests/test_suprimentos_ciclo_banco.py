@@ -127,7 +127,8 @@ def _fechar(b, *, linhas=None, autorizar=True, previsao=None, **dados):
          **dados}, b["u"])
     s.flush()
     if autorizar:
-        svc_ped.autorizar(s, pedido.id, b["u"])
+        # quem fecha não autoriza (22/11/2026): a autorização é de outra pessoa
+        svc_ped.autorizar(s, pedido.id, _outro_que_autoriza(b))
         s.flush()
     return pedido
 
@@ -278,7 +279,7 @@ def test_o_ciclo_anda_passo_a_passo_ate_fechar(base):
     linha, _ = _linha(base, pedido)
     assert linha["ciclo"] == "AGUARDANDO_AUTORIZACAO" and linha["de_quem"] == "diretoria"
 
-    svc_ped.autorizar(base["s"], pedido.id, base["u"]); base["s"].flush()
+    svc_ped.autorizar(base["s"], pedido.id, _outro_que_autoriza(base)); base["s"].flush()
     linha, _ = _linha(base, pedido)
     assert linha["ciclo"] == "AGUARDANDO_ENTREGA" and linha["total"] == 2000.0
     assert linha["pagamento"]["previsto"] == 2000.0
@@ -386,7 +387,7 @@ def test_pedido_fechado_sai_da_estimativa_e_vira_a_autorizar_depois_firme(base):
     assert d["totais"]["EM_COTACAO"] == 1000.0       # sobrou o da obra B
     assert d["totais"]["FIRME"] == 0.0
 
-    svc_ped.autorizar(s, pedido.id, base["u"]); s.flush()
+    svc_ped.autorizar(s, pedido.id, _outro_que_autoriza(base)); s.flush()
     d = svc_proj.projetar(s, base["u"])
     assert d["totais"]["FIRME"] == 1000.0 and d["totais"]["A_AUTORIZAR"] == 0.0
     firmes = [l for l in d["linhas"] if l["grau"] == "FIRME"]
@@ -564,7 +565,7 @@ def test_o_item_anda_pelas_etapas_e_some_quando_chega(base):
     linha, _ = _do_plano(base, item)
     assert linha["etapa"] == "A_AUTORIZAR" and linha["pedido"] == pedido.numero
 
-    svc_ped.autorizar(base["s"], pedido.id, base["u"]); base["s"].flush()
+    svc_ped.autorizar(base["s"], pedido.id, _outro_que_autoriza(base)); base["s"].flush()
     linha, _ = _do_plano(base, item)
     assert linha["etapa"] == "A_CAMINHO"
     assert linha["fornecedor"] == "GRANITOS DO TESTE LTDA"
@@ -1160,11 +1161,13 @@ from app.apps.erp.core.suprimentos import fora_do_fluxo as svc_fora  # noqa: E40
 
 
 def _outro_que_autoriza(base):
-    s = base["s"]
-    u = Usuario(nome="Diretor", email="diretor@teste.bws.local",
-                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.DIRETOR_FINANCEIRO)
-    s.add(u); s.flush()
-    return u
+    if "_diretor" not in base:
+        s = base["s"]
+        u = Usuario(nome="Diretor", email="diretor@teste.bws.local",
+                    senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.DIRETOR_FINANCEIRO)
+        s.add(u); s.flush()
+        base["_diretor"] = u
+    return base["_diretor"]
 
 
 def test_com_a_regra_desligada_nada_muda(base):
@@ -1382,7 +1385,8 @@ def test_pedido_do_administrativo_espera_o_ok_da_engenharia(base):
         svc_cot.criar(s, {"titulo": "Tentativa", "itens": [item.id]}, u)
     with pytest.raises(ErroValidacao):
         svc_ped.fechar_direto(s, {"fornecedor_id": base["forn"].id, "itens": [
-            {"suprimento_item_id": item.id, "preco_unitario": "10"}]}, u)
+            {"suprimento_item_id": item.id, "preco_unitario": "10"}],
+            "justificativa_sem_cotacao": "fornecedor único na região"}, u)
     with pytest.raises(ErroValidacao):
         svc_sol.mudar_situacao(s, item.id, "ALMOXARIFADO", u)
     # quem pediu não libera o próprio pedido: ele nem tem a ação
@@ -1437,3 +1441,29 @@ def test_a_compra_tardia_com_a_ciencia_ja_dada_nasce_na_hora(base):
     assert r["aguardando_ciencia"] is False
     assert s.get(PedidoCompra, r["pedido_id"]).autorizado_por == outro.id
     assert svc_fora.listar(s, u) == []
+
+
+def test_quem_fechou_nao_autoriza_e_sem_cotacao_pede_justificativa(base):
+    """ "O comprador lança o pedido (...) e alguém da alçada superior vai
+    autorizar e disparar." E: "podemos colocar uma justificativa escrita da
+    compra sem cotação." """
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    pedido = _fechar(base, autorizar=False)
+    with pytest.raises(ErroValidacao):
+        svc_ped.autorizar(s, pedido.id, u)                    # o próprio comprador
+    svc_ped.autorizar(s, pedido.id, _outro_que_autoriza(base))
+    assert pedido.autorizado_por != pedido.criado_por
+
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    sol = svc_sol.criar(s, {"titulo": "Peça de fornecedor único", "itens": [
+        {"insumo_id": insumo, "obra_id": base["obra_a"].id, "quantidade": "1", "unidade": "M2"}]}, u)
+    item = s.scalars(select(SuprimentoItem).where(SuprimentoItem.solicitacao_id == sol.id)).one()
+    direto = {"fornecedor_id": base["forn"].id,
+              "itens": [{"suprimento_item_id": item.id, "preco_unitario": "50"}]}
+    with pytest.raises(ErroValidacao):
+        svc_ped.fechar_direto(s, direto, u)                   # sem dizer por quê
+    p2 = svc_ped.fechar_direto(s, {**direto, "justificativa_sem_cotacao":
+                                   "só este fornecedor tem a peça na região"}, u)
+    assert "só este fornecedor" in svc_ped.detalhar(s, p2.id)["justificativa_sem_cotacao"]
+    assert "só este fornecedor" not in (p2.observacoes or "")     # não vai ao fornecedor
