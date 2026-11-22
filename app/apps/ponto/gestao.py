@@ -1861,6 +1861,24 @@ def ponto_api_quadro_compensar_horas():
                aprovadas=sum(1 for x in r if x.get("aprovado")))
 
 
+@bp.route("/erp/api/ponto/quadro/recesso", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_quadro_recesso():
+    """O recesso em lote (22/11/2026): as pessoas marcadas folgam nos dias de folga e pagam cada um num dia de
+    pagar (hora por hora). `simular` (padrão): só a prévia; `simular: false`: grava, um pedido aprovado por par."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    simular = d.get("simular", True) is not False
+    r = quadro.recesso_em_lote(quem, d.get("pessoas") or [], d.get("pares") or [], motivo=d.get("motivo") or "",
+                               simular=simular)
+    if not simular:
+        logger.info("Ponto: recesso em lote por %s — %d pessoas, %d folgas lançadas, %d de fora", quem.nome,
+                    len(r["pessoas"]), r["entram"], r["ficam_de_fora"])
+    return _ok(**r)
+
+
 @bp.route("/erp/api/ponto/vigencia", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_ponto", POST="configurar_ponto")

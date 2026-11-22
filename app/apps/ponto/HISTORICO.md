@@ -331,6 +331,43 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 22/11/2026 (domingo) — O RECESSO EM LOTE, no Quadro
+
+**O pedido:** *"pode criar uma tela para o DP lançar o recesso em lote."* (O número de sábados e de horas ele mandou
+ignorar: a tela pergunta na hora.)
+
+**Onde fica:** Ponto › Quadro. O DP monta o quadro (a obra, o filtro de sempre), marca as linhas — vale pelas
+**pessoas** marcadas, não pelos dias, como o "Definir a escala" — e aperta **"Recesso — folgas a compensar…"** (só
+quem aprova afastamento vê). A janela pede até 6 pares "dia de folga → pago com o trabalho em", mais o combinado
+(opcional).
+
+**A prévia antes de gravar**, pessoa por pessoa e par por par: ✓ "folga de 9h00; o dia de pagar precisa render
+9h00", ou ✗ com o porquê — não é dia de trabalho na escala dele, feriado, fora do contrato, mês fechado, já existe
+pedido naquele dia. Avisos (⚠) sem barrar: já há batida no dia da folga; o dia de pagar já é dia de trabalho dele
+(aí só conta o que passar da escala).
+
+**Gravar** = um pedido de compensação de UM dia por pessoa e por par, aprovado na hora com o nome de quem lançou, com
+a descrição "Recesso: <combinado> — folga em DD/MM/AAAA, paga com o trabalho em DD/MM/AAAA". É o mesmo pedido que
+o DP lançaria à mão, com tudo o que a folga paga depois já faz (a falta no sábado não cumprido, a observação na folha).
+Rodar de novo não duplica (o pedido existente barra).
+
+**Regras da janela:** cada dia de pagar serve a uma folga só (hora por hora: um sábado de 9h paga um dia de 9h);
+no máximo 10 pares; um dia não é folga e dia de pagar ao mesmo tempo. A tela manda de 40 em 40 pessoas.
+
+**A conta do custo** (a regra de 17/11): por pessoa e por par, a prévia faz ~12 consultas ao banco (o espelho do dia
+da folga, a escala, o mês fechado, o pedido existente) e a gravação, outras ~25 (a mesma conferência e o pedido com a
+aprovação). 40 pessoas × 4 folgas ≈ 2 mil consultas na prévia e 4 mil na gravação: segundos, não minutos. Nada vai
+ao Google nem ao Pipefy.
+
+**Como foi verificado:** `tests/test_ponto_recesso_lote_banco.py` (a prévia sem gravar, a gravação, o domingo de
+fora, rodar duas vezes sem duplicar, as recusas da janela, o supervisor barrado) e **no navegador de verdade**: o
+Quadro com 2 pessoas marcadas, a janela, a prévia (1 entra e 1 fica de fora para cada um) e a gravação — sem erro
+no console. Sem migração.
+
+**O termo de acordo de compensação** (o modelo que ele pediu "para dar uma olhadinha e pensar") está num documento
+à parte, fora do repositório. **Não está no sistema:** o sistema não guarda nem coleta esse acordo; decidir se ele é
+assinado no papel ou na tela, como o termo do ponto, é dele.
+
 ## 21/11/2026 (sábado, noite) — A FOLGA PAGA DEPOIS: a folga fica, a falta cai no sábado que não pagou
 
 **O pedido**, com o recesso de fim de ano em vista (folgar entre o Natal e o Ano Novo, pagar com sábados deste
