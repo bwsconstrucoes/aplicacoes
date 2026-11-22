@@ -38,7 +38,16 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**⚠ NO RAMO, NÃO PUBLICADO (22/11/2026): a 5ª rodada** — liberação da
+**✔ PUBLICADO em 22/11/2026**, com o "pode" dele: as rodadas 5 e 6 e a regra
+das obras. **A CONFERIR COM ELE no próximo chat:** (1) apertou "Aplicar
+atualizações do banco"? É a migração 124 — sem ela NENHUMA tela de suprimentos
+abre; (2) clicou "travar até autorizar" no Painel? É a escolha dele, e a chave
+nasce desligada; (3) há duas pessoas com alçada? Quem fecha o pedido não
+autoriza o próprio.
+
+O retrato de antes da publicação, mantido pelo contexto:
+
+**No ramo em 22/11/2026: a 5ª rodada** — liberação da
 engenharia, "recebido" que não se marca à mão, autorização que dispara o
 pedido, compra tardia em dois tempos. Traz a **migração 124** (a 123 é do DP)
 e **coluna nova em `suprimento_itens`**: sem o botão apertado, TODA tela de
