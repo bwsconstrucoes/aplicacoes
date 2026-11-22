@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
@@ -110,8 +110,16 @@ def proximo_numero(s: Session) -> str:
     return f"SS-{(max(numeros) + 1) if numeros else 1:04d}"
 
 
-def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> SuprimentoSolicitacao:
-    """Cria a solicitação com os itens. Sem item, não é solicitação nenhuma."""
+def criar(s: Session, dados: dict[str, Any], usuario: Usuario, *,
+          dispensa_liberacao: bool = False) -> SuprimentoSolicitacao:
+    """Cria a solicitação com os itens. Sem item, não é solicitação nenhuma.
+
+    ⚑ QUEM PEDE DECIDE SE PRECISA DE OK (22/11/2026). Pedido de quem pode
+    liberar (engenharia, supervisão, direção) nasce liberado, no nome dele.
+    Pedido de qualquer outra pessoa nasce PENDENTE: o comprador enxerga, mas
+    não cota nem compra. `dispensa_liberacao` é só para a regularização de
+    compra já feita — lá a ciência é dada no próprio registro da compra.
+    """
     titulo = " ".join((dados.get("titulo") or "").split())
     if len(titulo) < 3:
         raise ErroValidacao(
@@ -141,8 +149,21 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> SuprimentoSoli
     s.add(sol)
     s.flush()
 
+    from app.apps.erp.core.auth.permissoes import pode
+    libera = pode(usuario, "liberar_solicitacao")
+    permitidas = None if dispensa_liberacao else obras_para_pedir(s, usuario)
     for i, bruto in enumerate(itens, start=1):
-        s.add(_montar_item(s, sol, i, bruto))
+        item = _montar_item(s, sol, i, bruto)
+        if permitidas is not None and item.obra_id not in permitidas:
+            raise ErroValidacao(
+                f"Item {i}: você só pede material para as suas obras. Se esta "
+                "obra deveria ser sua, peça ao administrador para ligar você a ela.")
+        if not dispensa_liberacao:
+            item.liberacao = "LIBERADO" if libera else "PENDENTE"
+            if libera:
+                item.liberado_por = usuario.id
+                item.liberado_em = datetime.now(timezone.utc)
+        s.add(item)
     s.flush()
 
     registrar_evento(s, "suprimento_solicitacao", sol.id, "CRIADA",
@@ -196,6 +217,16 @@ def mudar_situacao(s: Session, item_id: int, novo: str, usuario: Usuario,
     atual = item.status
     if destino is atual:
         return item
+    # ⚑ "RECEBIDO" NÃO SE MARCA À MÃO (22/11/2026). O dono: "o recebido ele
+    # muda no ato do recebimento, que é todo aquele procedimento que a gente
+    # já combinou." Antes, qualquer um que enxergasse o item o levava a
+    # recebido sem pedido nem nota.
+    if destino is StatusItemSuprimento.RECEBIDO:
+        raise ErroValidacao(
+            "Recebido não se marca à mão: é o registro do recebimento, com a "
+            "nota, que fecha o item. Use Suprimentos › Receber material.")
+    if destino not in DE_QUALQUER_LUGAR:
+        exigir_liberados([item])
     permitidos = FLUXO.get(atual, ()) + DE_QUALQUER_LUGAR
     if destino not in permitidos:
         raise ErroValidacao(
@@ -226,6 +257,51 @@ def _itens_visiveis(s: Session, usuario: Usuario) -> list[SuprimentoItem]:
         return [i for i in itens
                 if i.obra_id in permitidas or _pediu(s, i, usuario)]
     return [i for i in itens if _pediu(s, i, usuario)]
+
+
+def obras_para_pedir(s: Session, usuario: Usuario) -> Optional[set[int]]:
+    """Para quais obras esta pessoa pode pedir material. `None` = todas.
+
+    ⚑ 22/11/2026 — o dono: "quanto às obras, vamos oferecer só as obras da
+    pessoa (...) isso aí ele pode puxar pelo ponto."
+
+    São as obras ligadas a ela no cadastro MAIS a obra onde ela vem batendo
+    ponto — o cadastro envelhece, a batida não. Antes, o administrativo de obra
+    via TODAS na caixinha (o recorte dele é por autoria, e para autoria a lista
+    de obras vinha vazia, que a tela lia como "sem filtro"), e o servidor
+    aceitava a que viesse.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    designadas = obras_de_registro_sem_autor(s, usuario)
+    if designadas is None:
+        return None
+    permitidas = set(designadas)
+    try:
+        from app.apps.erp.core.portal import obra_sugerida
+        pelo_ponto = obra_sugerida(s, usuario)
+        if pelo_ponto:
+            permitidas.add(int(pelo_ponto))
+    except Exception:                 # ponto fora do ar: valem as do cadastro
+        logger.exception("ERP/suprimentos: não consegui ler a obra pelo ponto")
+    return permitidas
+
+
+def enxerga_item(s: Session, usuario: Usuario, item_id: int) -> bool:
+    """A mesma regra de `_itens_visiveis`, para UM item — sem carregar a lista.
+
+    ⚑ 22/11/2026: a rota de mover item montava a lista inteira (três leituras
+    por item) só para conferir um. Com 2.000 itens eram ~6.000 leituras por
+    clique. O dono: "essa lentidão aí pode ajustar".
+    """
+    item = s.get(SuprimentoItem, item_id)
+    if item is None:
+        return False
+    obras = obras_do_usuario(s, usuario)
+    if obras is None and _ve_tudo(s, usuario):
+        return True
+    if obras is not None and item.obra_id in set(obras):
+        return True
+    return _pediu(s, item, usuario)
 
 
 def _ve_tudo(s: Session, usuario: Usuario) -> bool:
@@ -281,10 +357,13 @@ def listar_itens(s: Session, usuario: Usuario, *, status: Optional[str] = None,
             "saldo": str(i.saldo),
             "obra": getattr(obra, "codigo", ""), "obra_id": i.obra_id,
             "status": i.status.value, "status_rotulo": ROTULOS_STATUS[i.status],
-            "proximas": [x.value for x in FLUXO.get(i.status, ()) + DE_QUALQUER_LUGAR],
+            # "Recebido" fica fora: só o registro do recebimento fecha o item.
+            "proximas": [x.value for x in FLUXO.get(i.status, ()) + DE_QUALQUER_LUGAR
+                         if x is not StatusItemSuprimento.RECEBIDO],
             # Quantas vezes o comprador já corrigiu esta linha. A marca na tela
             # é o que evita a discussão de "eu não pedi isso".
             "correcoes": correcoes.get(i.id, 0),
+            "aguarda_liberacao": getattr(i, "liberacao", None) == "PENDENTE",
             "corrigivel": pode_corrigir(s, i),
         }
         if busca:
@@ -556,3 +635,69 @@ def pode_corrigir(s: Session, item: SuprimentoItem) -> bool:
     if (item.quantidade_recebida or Decimal(0)) > 0:
         return False
     return not _tem_pedido_vivo(s, item.id)
+
+
+# ---------------------------------------------------------------------------
+# A LIBERAÇÃO DA ENGENHARIA (22/11/2026)
+#
+# O dono: "quando o administrativo de obra fizer esse pedido, alguém lá da
+# parte da engenharia tem que dar um ok, para liberar aquele insumo para
+# compra (...) O compras tem que visualizar, mas não consegue gerar nem mapa
+# de cotação, nem fazer pedido de compra."
+#
+# E o motivo: "a engenharia tem que estar ciente do que está acontecendo (...)
+# isso pode insuflar a quantidade de material, pode passar batido uma
+# necessidade de aditivo ao contrato."
+# ---------------------------------------------------------------------------
+def exigir_liberados(itens: list) -> None:
+    """Recusa cotar, comprar ou mover item que ainda espera o ok da engenharia."""
+    presos = [i for i in itens if getattr(i, "liberacao", None) == "PENDENTE"]
+    if presos:
+        raise ErroValidacao(
+            f"{len(presos)} item(ns) ainda esperam a liberação da engenharia da "
+            "obra. Enquanto ela não der o ok, o material não pode ser cotado "
+            "nem comprado.")
+
+
+def _para_liberar(s: Session, ids: list, usuario: Usuario) -> list[SuprimentoItem]:
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    permitidas = obras_de_registro_sem_autor(s, usuario)
+    itens = []
+    for bruto in ids or []:
+        item = s.get(SuprimentoItem, int(bruto))
+        if item is None or (permitidas is not None and item.obra_id not in permitidas):
+            raise ErroNaoEncontrado("Item não encontrado.")
+        if getattr(item, "liberacao", None) != "PENDENTE":
+            raise ErroValidacao("Este item não está esperando liberação.")
+        itens.append(item)
+    if not itens:
+        raise ErroValidacao("Escolha ao menos um item.")
+    return itens
+
+
+def liberar(s: Session, ids: list, usuario: Usuario) -> int:
+    """O ok da engenharia: a partir daqui o comprador pode cotar e comprar."""
+    itens = _para_liberar(s, ids, usuario)
+    for item in itens:
+        item.liberacao = "LIBERADO"
+        item.liberado_por = usuario.id
+        item.liberado_em = datetime.now(timezone.utc)
+        registrar_evento(s, "suprimento_item", item.id, "LIBERADO_PARA_COMPRA",
+                         {"quantidade": str(item.quantidade)}, usuario.id)
+    s.flush()
+    return len(itens)
+
+
+def recusar_liberacao(s: Session, ids: list, motivo: str, usuario: Usuario) -> int:
+    """A engenharia diz não: o item é cancelado, com o motivo à vista de quem pediu."""
+    motivo = " ".join((motivo or "").split())
+    if len(motivo) < 5:
+        raise ErroValidacao("Escreva o motivo — quem pediu precisa saber.")
+    itens = _para_liberar(s, ids, usuario)
+    for item in itens:
+        item.status = StatusItemSuprimento.CANCELADO
+        item.observacoes = f"Não liberado pela engenharia: {motivo}"
+        registrar_evento(s, "suprimento_item", item.id, "LIBERACAO_RECUSADA",
+                         {"motivo": motivo}, usuario.id)
+    s.flush()
+    return len(itens)

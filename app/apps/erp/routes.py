@@ -270,6 +270,7 @@ ACOES_NA_TELA = (
                  # enviar, cobrar e conferir o retorno.
                  "pedir_contabilidade","administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "receber_material",
+                 "liberar_solicitacao",
                  # Decide se "Receber material" oferece o atalho para lançar a
                  # nota e o boleto logo depois do recebimento.
                  "lancar",
@@ -2267,9 +2268,33 @@ def api_decidir_pedido(pedido_id: int, acao: str):
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
+            envio_feito = None
             if acao == "autorizar":
                 svc.autorizar(s, pedido_id, atual,
                               [int(x) for x in (d.get("itens_recusados") or [])])
+                # ⚑ AUTORIZOU, SAIU PARA O FORNECEDOR (22/11/2026). O dono: "a
+                # pessoa designada a autorizar, na hora que ela autoriza, o
+                # pedido é disparado para o fornecedor. Aí é encaminhado o
+                # e-mail e o anexo." A autorização é gravada ANTES e não
+                # depende do envio: fornecedor sem e-mail ou conta de envio
+                # fora do ar não desfaz a decisão — a tela diz que não saiu e
+                # o botão de mandar continua em Pedidos.
+                s.commit()
+                try:
+                    from app.apps.erp.core.suprimentos import envio as svc_envio
+                    feito = svc_envio.disparar_pedido(s, pedido_id, {}, atual)
+                    s.commit()
+                    envio_feito = {"enviado": feito.get("situacao") == "ENVIADO",
+                                   "para": feito.get("para") or [],
+                                   "motivo": feito.get("erro")}
+                except ErroValidacao as e:
+                    s.rollback()
+                    envio_feito = {"enviado": False, "para": [], "motivo": str(e)}
+                except Exception as e:
+                    s.rollback()
+                    logger.exception("ERP/suprimentos: pedido autorizado, envio falhou")
+                    envio_feito = {"enviado": False, "para": [], "motivo": recado_de_falha(e)}
+                return jsonify({"ok": True, "envio": envio_feito})
             elif acao == "recusar":
                 svc.recusar(s, pedido_id, d.get("motivo") or "", atual)
             elif acao == "cancelar":
@@ -2314,11 +2339,16 @@ def api_recebimentos_da_obra():
         from sqlalchemy import select
         from app.apps.erp.core import portal as svc_portal
         from app.apps.erp.db.models.cadastros import UnidadeCompra
+        from app.apps.erp.core.suprimentos.solicitacao import obras_para_pedir
+        para_pedir = obras_para_pedir(s, usuario)
         return jsonify({"ok": True, **svc.a_receber(s, usuario),
                         "em_andamento": antes,
                         "pode_lancar": pode(usuario, "lancar"),
                         "pode_pedir": pode(usuario, "solicitar_suprimento"),
-                        "obras": svc_portal.obras_para_escolher(s, usuario),
+                        "pode_liberar": pode(usuario, "liberar_solicitacao"),
+                        # só as obras DELA (cadastro + onde bate ponto) — 22/11/2026
+                        "obras": [o for o in svc_portal.obras_para_escolher(s, usuario)
+                                  if para_pedir is None or o["id"] in para_pedir],
                         "obra_sugerida": svc_portal.obra_sugerida(s, usuario),
                         "unidades": [u.codigo for u in s.scalars(
                             select(UnidadeCompra).order_by(UnidadeCompra.codigo)).all()
@@ -2571,9 +2601,40 @@ def api_suprimento_solicitacao(solicitacao_id: int):
                         "solicitacao": svc.obter(s, solicitacao_id, _usuario_logado(s))})
 
 
+@bp.route("/erp/api/suprimentos/itens/liberar", methods=["POST"])
+@login_obrigatorio
+@permissao("liberar_solicitacao")
+def api_liberar_solicitacao():
+    """O ok da engenharia no material pedido pela obra — ou a recusa, com motivo.
+    O recorte por obra é conferido item a item, dentro do serviço."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if d.get("recusar"):
+                n = svc.recusar_liberacao(s, d.get("itens") or [], d.get("motivo") or "", atual)
+            else:
+                n = svc.liberar(s, d.get("itens") or [], atual)
+            s.commit()
+            return jsonify({"ok": True, "itens": n})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao liberar solicitação")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ⚑ SÓ O COMPRADOR MOVE O ITEM À MÃO (22/11/2026). Era `ver_suprimentos` — o
+# que deixava perfil de consulta e parceiro levar um item a "entregue" e
+# "recebido" sem pedido nem nota. O dono: "o compras até pode botar entregue,
+# porque a ideia é ele saber que o material chegou (...) daí em diante, a
+# pessoa que recebeu na obra vai fazer o recebimento."
 @bp.route("/erp/api/suprimentos/itens/<int:item_id>/situacao", methods=["POST"])
 @login_obrigatorio
-@permissao("ver_suprimentos")
+@permissao("comprar")
 def api_suprimento_situacao(item_id: int):
     """Move o item pelo fluxo. Só quem enxerga o item pode mexer nele."""
     from app.apps.erp.core.suprimentos import solicitacao as svc
@@ -2581,8 +2642,7 @@ def api_suprimento_situacao(item_id: int):
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
-            visiveis = {i["id"] for i in svc.listar_itens(s, atual)}
-            if item_id not in visiveis:
+            if not svc.enxerga_item(s, atual, item_id):
                 raise ErroNaoEncontrado("Item não encontrado.")
             svc.mudar_situacao(s, item_id, d.get("status") or "", atual,
                                d.get("observacao") or "")

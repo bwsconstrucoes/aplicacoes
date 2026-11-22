@@ -150,6 +150,7 @@ let ITENS = [];
 let F = {status: new Set(), obra: new Set(), categoria: new Set()};
 let MARCADOS = new Set();
 const PODE_COTAR = {{ 'true' if pode.comprar else 'false' }};
+const PODE_LIBERAR = {{ 'true' if pode.liberar_solicitacao else 'false' }};
 const PODE_PEDIR_INSUMO = {{ 'true' if pode.solicitar_suprimento else 'false' }};
 
 const ROTULO_PRIORIDADE = {ALTA: "Alta", MEDIA: "Média", NORMAL: "Normal"};
@@ -337,12 +338,15 @@ function desenhar(){
       <td>${ROTULO_PRIORIDADE[i.prioridade] || i.prioridade}</td>
       <td class="dados ${i.previsao_entrega && i.previsao_entrega < hoje ? "atrasado" : ""}"
         >${dataBR(i.previsao_entrega)}</td>
-      <td>${selo(i.status, i.status_rotulo)}</td>
+      <td>${selo(i.status, i.status_rotulo)}${i.aguarda_liberacao
+        ? `<br><span class="selo aguardando" title="O comprador vê, mas não cota nem compra antes do ok da engenharia">aguarda liberação da engenharia</span>` : ""}</td>
       <td class="direita" style="white-space:nowrap">
+        ${PODE_LIBERAR && i.aguarda_liberacao ? `<button class="btn" data-liberar="${i.id}">Liberar</button>
+          <button class="link-btn" data-nao-liberar="${i.id}">não liberar</button><br>` : ""}
         ${PODE_COTAR && i.corrigivel ? `<button class="btn secundario" data-corrigir="${i.id}"
           title="Corrigir o que a obra pediu — exige motivo e fica registrado"
           style="padding:4px 8px; font-size:12px">corrigir</button>` : ""}
-        ${i.proximas.length ? `
+        ${PODE_COTAR && i.proximas.length ? `
         <select data-mover="${i.id}" style="min-width:150px">
           <option value="">mover para…</option>
           ${i.proximas.map(p => `<option value="${p}">${rotuloSituacao(p)}</option>`).join("")}
@@ -355,6 +359,24 @@ function desenhar(){
       ev.target.checked ? MARCADOS.add(id) : MARCADOS.delete(id);
       desenhar();
     }));
+
+  // ⚑ O OK DA ENGENHARIA (22/11/2026): sem ele o comprador não cota nem compra.
+  const decidirLiberacao = async (corpo, recado) => {
+    try {
+      await api("/erp/api/suprimentos/itens/liberar", {method: "POST",
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+      aviso("mensagem", recado, "ok"); carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  };
+  document.querySelectorAll("[data-liberar]").forEach(b => b.addEventListener("click", () =>
+    decidirLiberacao({itens: [+b.dataset.liberar]}, "Material liberado para compra.")));
+  document.querySelectorAll("[data-nao-liberar]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Não liberar este material",
+      aviso: "O item é cancelado e quem pediu vê o motivo.",
+      campos: [{nome: "motivo", rotulo: "Por quê?", tipo: "textarea", linhas: 2}], textoOk: "Não liberar"});
+    if (r) decidirLiberacao({itens: [+b.dataset.naoLiberar], recusar: true, motivo: r.motivo || ""},
+                            "Item não liberado — cancelado, com o motivo registrado.");
+  }));
 
   document.querySelectorAll("[data-mover]").forEach(sel =>
     sel.addEventListener("change", async () => {
@@ -882,8 +904,10 @@ async function comprarDireto(){
       <div class="pd-outro" style="display:none; margin-top:6px">
         <input class="pd-rotulo" placeholder="nome do local" style="margin-bottom:4px">
         <input class="pd-endereco" placeholder="endereço completo, com cidade e CEP"></div></div>`).join("")}
-    <div class="campo" style="margin-top:10px"><label>Por que sem cotação? E observações para o fornecedor</label>
-      <textarea id="pd-obs" rows="2" placeholder="ex.: fornecedor único na região; compra de urgência"></textarea></div>
+    <div class="campo" style="margin-top:10px"><label>Por que sem cotação? <small>(quem autoriza lê; o fornecedor não)</small></label>
+      <textarea id="pd-justificativa" rows="2" placeholder="ex.: fornecedor único na região; compra de urgência"></textarea></div>
+    <div class="campo" style="margin-top:10px"><label>Observações para o fornecedor <small>(saem impressas no pedido)</small></label>
+      <textarea id="pd-obs" rows="2" placeholder="ex.: entregar pela manhã; descarregar no portão lateral"></textarea></div>
     <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
       <button class="btn" id="pd-salvar">Fechar e mandar para autorização</button>
       <span id="pd-soma" class="dados" style="font-weight:700"></span></div>`;
@@ -910,7 +934,7 @@ async function comprarDireto(){
     if (itens.some(i => !(brn(i.preco_unitario) > 0))) falta.push("o preço de cada item");
     if (!els("pd-cond").value) falta.push("a condição de pagamento");
     if (!els("pd-previsao").value) falta.push("a data em que o material tem de chegar");
-    if ((els("pd-obs").value || "").trim().length < 5) falta.push("o motivo de comprar sem cotação");
+    if ((els("pd-justificativa").value || "").trim().length < 10) falta.push("o motivo de comprar sem cotação");
     if (falta.length) return aviso("dlg-msg", `Falta ${falta.join(", ")}.`, "erro");
     els("pd-salvar").disabled = true;
     try {
@@ -922,6 +946,7 @@ async function comprarDireto(){
           entrega: els("pd-entrega").value || null,
           frete: String(brn(els("pd-frete").value)), desconto: String(brn(els("pd-desconto").value)),
           antecipado: els("pd-antecipado").checked, observacoes: els("pd-obs").value,
+          justificativa_sem_cotacao: els("pd-justificativa").value,
           locais_entrega: [...document.querySelectorAll(".pd-local")].map(b => ({
             obra_id: +b.dataset.obra, tipo: b.querySelector(".pd-tipo").value,
             rotulo: b.querySelector(".pd-rotulo").value,

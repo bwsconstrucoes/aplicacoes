@@ -570,11 +570,34 @@ function desenharAndamento(){
           ${i.especificacao ? `<small>${esc(i.especificacao)}</small>` : ""}
           <small>${qtd(i.quantidade)} ${esc(i.unidade)} · ${esc(i.obra)} · solicitação ${esc(i.solicitacao)}</small>
           <small>${i.precisa_ate ? `a obra precisa até ${dia(i.precisa_ate)}` : "sem data informada"}</small>
-          <span class="etiqueta">${esc(i.etapa_rotulo)}</span>
+          ${i.aguarda_liberacao ? `<span class="etiqueta ambar">aguarda o ok da engenharia</span>`
+            : `<span class="etiqueta">${esc(i.etapa_rotulo)}</span>`}
+          ${i.aguarda_liberacao && DADOS.pode_liberar ? `<div style="margin-top:6px">
+            <button class="btn-portal" data-liberar="${i.id}" style="display:inline-block; width:auto; padding:8px 14px">Liberar para compra</button>
+            <button class="link" data-nao-liberar="${i.id}" style="margin-left:10px">não liberar</button></div>` : ""}
           ${cor[i.prazo] ? `<span class="etiqueta ${cor[i.prazo]}">${esc(i.prazo_rotulo)}</span>` : ""}
         </div></div>`).join("")}</div>`
     : `<div class="bloco vazio">Nada em cotação ou aguardando autorização para as suas obras.</div>`);
 }
+
+// ⚑ O OK DA ENGENHARIA, PELO CELULAR (22/11/2026).
+async function decidirLiberacao(corpo, texto){
+  try {
+    await api("/erp/api/suprimentos/itens/liberar", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+    recado(texto, "ok"); carregar();
+  } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); }
+}
+document.addEventListener("click", ev => {
+  const sim = ev.target.closest("[data-liberar]"), nao = ev.target.closest("[data-nao-liberar]");
+  if (sim) decidirLiberacao({itens: [+sim.dataset.liberar]}, "Material liberado para compra.");
+  if (nao) {
+    const motivo = prompt("Por que este material não será liberado? (quem pediu vai ver)");
+    if (motivo && motivo.trim().length >= 5)
+      decidirLiberacao({itens: [+nao.dataset.naoLiberar], recusar: true, motivo}, "Item não liberado.");
+    else if (motivo !== null) { recado("Escreva o motivo com um pouco mais de detalhe.", "erro"); scrollTo(0, 0); }
+  }
+});
 
 function desenharNota(){
   el("conteudo").innerHTML = (DADOS.sem_nota.length ? `<div class="recado aviso">

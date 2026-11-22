@@ -924,6 +924,12 @@ class SuprimentoItem(Base):
         nullable=False, default=StatusItemSuprimento.SOLICITACAO)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # A LIBERAÇÃO DA ENGENHARIA (migração 124). Vazio = item antigo ou
+    # regularização: vale como liberado. PENDENTE = o comprador vê, mas não
+    # cota nem compra enquanto alguém da engenharia não der o ok.
+    liberacao: Mapped[Optional[str]] = mapped_column(Text)
+    liberado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    liberado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     solicitacao: Mapped[SuprimentoSolicitacao] = relationship(back_populates="itens")
 
@@ -1129,6 +1135,9 @@ class PedidoCompra(Base):
     criado_por: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     autorizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    # Por que foi comprado sem cotação (migração 124). Interno: quem autoriza
+    # lê; o fornecedor não.
+    justificativa_sem_cotacao: Mapped[Optional[str]] = mapped_column(Text)
     autorizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 

@@ -214,10 +214,19 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                              P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # ⚑ LIBERAR A SOLICITAÇÃO PARA COMPRA (22/11/2026). O ok da engenharia:
+    # o pedido do administrativo de obra não chega ao comprador como
+    # comprável sem ele. O administrativo fica de fora DE PROPÓSITO.
+    "liberar_solicitacao": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA},
     # ⚑ AUTORIZAR MATERIAL COMPRADO SEM PEDIDO (21/11/2026). Ação própria: é a
     # ciência de que uma compra não passou pelo suprimento, e libera o
     # lançamento para o financeiro. Quem autoriza pedido ganha de graça.
-    "autorizar_compra_fora_do_fluxo": {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # ⚑ 22/11/2026 — entraram gestor e supervisor de obra. O dono: "quem é
+    # responsável pelo setor, a engenharia, tem que estar ciente de que foi
+    # feita uma compra (...) tem que ser dado ciência por alguém."
+    "autorizar_compra_fora_do_fluxo": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                                       P.SUPERVISOR_OBRA},
     # ⚑ RECEBER MATERIAL (20/11/2026). Quem confere o que desceu do caminhão é
     # a OBRA — e até aqui o recebimento morava dentro da tela de Pedidos, que
     # só comprador e diretor abrem. A regra existia; a obra não tinha porta.
@@ -442,6 +451,7 @@ ACAO_ROTULOS = {
     "solicitar_suprimento": "Pedir material para a obra",
     "comprar":              "Cotar e fechar pedido de compra",
     "autorizar_pedido":     "Autorizar pedido de compra",
+    "liberar_solicitacao":  "Liberar para compra o material pedido pela obra",
     "receber_material":     "Registrar o material que chegou na obra",
     "autorizar_compra_fora_do_fluxo": "Autorizar material comprado sem pedido de compra",
     "administrar_insumos":  "Cadastrar e corrigir insumos",
