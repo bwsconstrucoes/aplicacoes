@@ -321,6 +321,11 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             colega, descricao = _conferir_permuta(conn, quem, pessoa, dados.get("colega_id") or dados.get("colega_cpf")
                                                   or dados.get("colega"), deixou=inicio, cobriu=dia_trabalhado,
                                                   texto=descricao, origem=origem)
+        if not horas and not permuta and dia_trabalhado > fim and fim > inicio:
+            # a folga paga depois (21/11/2026): o que o dia trabalhado não pagar vira falta NELE — um dia de folga
+            # por dia trabalhado, senão um sábado não cumprido seria "uma falta" valendo vários dias
+            raise ErroDeValidacao("folga que se paga depois: um pedido para cada dia de folga, cada um com o seu dia "
+                                  "trabalhado", campo="data_fim")
         if len(descricao) < 5:
             raise ErroDeValidacao("descreva a compensação", campo="descricao")
     elif tipo == "FOLGA_BANCO":

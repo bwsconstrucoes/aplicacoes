@@ -1582,7 +1582,7 @@ const listaDeTexto = t => String(t || "").split(/[,;\n]+/).map(s => s.trim()).fi
 const ROTULO_ALERTA_DIA = {
   FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
   HORA_EXTRA_NEGADA: "hora extra negada na conferência",
-  COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — a folga virou falta",
+  COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — virou falta",
   COMPENSACAO_INCOMPLETA: "compensação incompleta — faltou parte das horas",
   TRABALHOU_NA_FOLGA: "trabalhou no dia da folga compensatória (as horas contam)",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
@@ -5724,7 +5724,7 @@ function rlColunas() {
     : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Tipo", l => l.tipo || "Falta"],
        ["Escala", l => l.escala || ""], ["Batidas", l => (l.batidas || []).join(" "), "dados"],
        ["Previsto", l => hm(l.previsto), "num"], ["Faltou", l => hm(l.faltou ?? l.previsto), "num"],
-       ["Pedido esperando decisão", l => l.pendente || ""]];
+       ["Motivo", l => l.motivo || ""], ["Pedido esperando decisão", l => l.pendente || ""]];
   if (RL.tipo === "extras") return RL_VISAO === "pessoas"
     ? [...pessoa, ["Dias", l => l.dias, "num"], ["Em dia de trabalho", l => hmCelula(l.util), "num"],
        ["Em descanso", l => hmCelula(l.descanso), "num"], ["Em feriado", l => hmCelula(l.feriado), "num"],

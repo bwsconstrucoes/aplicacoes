@@ -331,6 +331,78 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 21/11/2026 (sábado, noite) — A FOLGA PAGA DEPOIS: a folga fica, a falta cai no sábado que não pagou
+
+**O pedido**, com o recesso de fim de ano em vista (folgar entre o Natal e o Ano Novo, pagar com sábados deste
+ano e do ano que vem): *"o dia que não foi trabalhado fica como folga, compensação a ser paga no futuro (…) na
+folha de ponto aparecer essa informação (…) quando aquele sábado não acontecer, o sistema lança uma falta
+automática dizendo o motivo (…) a de dezembro que o cara não trabalhou, com a informação que era para ser
+compensado, e a do mês posterior com a informação de que não foi compensado (…) e a pessoa assina também junto."*
+
+**Como era:** passado o dia trabalhado sem pagar, a FOLGA virava falta. Com o sábado em janeiro, isso reabria a
+folha de dezembro já fechada, paga e assinada.
+
+**Como ficou** (`core/espelho.py`, `paga_depois`): na compensação de dia em que o dia trabalhado vem DEPOIS da folga:
+- a folga fica **abonada para sempre** no mês dela, com "(a pagar com o trabalho em DD/MM/AAAA)" no dia;
+- passado o sábado, o que ele não pagou é **falta NO SÁBADO**: sem batida = falta do dia inteiro, com o previsto
+  da folga (9h); trabalhou parte = falta parcial do resto. O motivo vai no dia ("Compensação não cumprida — este
+  dia pagaria a folga de DD/MM/AAAA") e no relatório de faltas (coluna nova "Motivo");
+- **"Observações — compensações"** na folha de ponto (a impressa, a do PDF assinado e a tela de assinatura no
+  celular): no mês da folga, o combinado (que não muda depois); no mês do sábado, o que aconteceu. Entram no lacre
+  da folha só quando existem, e o lacre sem elas também vale — senão toda folha com compensação já assinada viraria
+  "substituída" sem nada ter mudado.
+- **Quando o dia trabalhado vem ANTES da folga, nada mudou** (a regra de 29/10). Os dois casos põem a falta no mais
+  tarde dos dois dias, que é o mês ainda aberto.
+- **Fiz sem perguntar, para ele trocar se quiser:** a folga paga depois passa a ser **um pedido por dia de folga**.
+  Antes aceitava "28 a 31/12 pagos pelo sábado X", e aí um sábado não cumprido seria uma falta valendo quatro dias.
+  Trocas e permutas de plantão ficaram de fora da regra nova.
+
+**O que ficou de fora — e é decisão dele:**
+1. **Não há "recesso em lote".** 40 pessoas × 4 dias = 160 pedidos à mão. Oferecido: escolher as pessoas, os dias e
+   os sábados, e o sistema monta os pares, mostra a prévia e grava tudo de uma vez.
+2. **A lei:** compensar fora do mês é banco de horas (CLT art. 59 §5º: acordo individual ESCRITO, até 6 meses; ou
+   convenção). A observação assinada na folha ajuda, mas não é o acordo. Oferecido: um modelo de termo.
+3. **O sábado trabalhado além do devido** (10h para pagar 9h) não vira extra — como já era.
+4. **Quem sai da empresa antes do sábado:** o sábado fica "fora do contrato" e a falta não é lançada. A rescisão
+   precisa olhar as compensações a cumprir (a Conferência do fechamento já lista).
+5. Não há prazo máximo entre a folga e o sábado.
+
+**Como foi verificado:** `tests/test_ponto_folga_paga_depois_banco.py` (o sábado sem batida, com 4h e com 9h; o
+relatório; as observações; a folha impressa; o pedido de vários dias recusado; o lacre antigo) e os 707 testes do
+ponto. **Não exercitado na tela de verdade.** Sem migração.
+
+## 21/11/2026 (sábado) — REVISÃO: os testes do ponto rodados "em outras datas"
+
+**O pedido:** *"pode revisar os testes do ponto"*, depois de três consertos do mesmo tipo no mês.
+
+**Como foi feito**, para quem quiser repetir: o `libfaketime` desloca o relógio do Python e do Postgres juntos (o
+Postgres sobe pelo `pg_ctl` com `LD_PRELOAD`, porque o `pg_ctlcluster` limpa o ambiente). O `time.sleep` do Python
+3.11 quebra com ele (`OSError 22`), então um `sitecustomize.py` troca o sleep por `select` só nessa rodada. 15 datas na
+primeira rodada (Natal, viradas de mês e ano, Carnaval, Sexta Santa, São José, domingo, 22h30 e 4h de Fortaleza) e
+14 na segunda (Tiradentes, 1º de maio, feriados de 2027). Nada disso ficou no repositório.
+
+**O que quebrava, e foi consertado (só teste):**
+- **trocas de plantão** (2 testes): o período não olhava o feriado da primeira semana. **Ia quebrar DE VERDADE de
+  23/11 a 06/12/2026** (20/11 no meio). E o teste se PULAVA quando o período atravessava o mês; agora recua uma
+  semana.
+- **resumo e folhas da equipe** (2): quebravam todo dia 1º — o resumo vai "até ontem" e a batida era de hoje.
+- **completar o período** (1): pegava os três últimos dias de segunda a quinta, que em novembro de 2026 não são
+  seguidos (o mês acaba numa segunda).
+- **vigia noturno** (1): a semana da segunda 30/11 atravessa o mês.
+
+**O que ficou, de propósito:** dois testes se pulam no começo do mês ("sem dia útil anterior neste mês"). Não falham;
+só deixam de conferir naqueles dias.
+
+## 21/11/2026 — mais dois testes que dependiam do dia de hoje (só teste; publicado no mesmo dia)
+
+Avisados pelo chat do Análise de SPs: falhavam na `main` sem mudança de ninguém. Nada do ponto em si.
+- `test_ponto_qr_banco.py` (alerta de batida faltando com foto escura): "ontem" caiu em **20/11, Consciência
+  Negra**. Agora "ontem" pula fim de semana e feriado.
+- `test_ponto_compensacao_horas_banco.py`: os dois dias ficavam a 34 dias um do outro, acima da regra dos
+  31 dias. Agora o dia trabalhado é recente.
+
+**Publicado em 21/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Suíte inteira: 12.434 passando.
+
 ## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
 
 ⚠️ **Mexi num arquivo desta área sem ser o chat dela, e por isso fica anotado

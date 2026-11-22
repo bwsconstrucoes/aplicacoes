@@ -497,7 +497,7 @@ const hm = m => { if (m === null || m === undefined) return "—"; const s = m <
                   return `${s}${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`; };
 const ROTULO_ALERTA = { FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando",
   HORA_EXTRA_NEGADA: "hora extra negada na conferência",
-  COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — a folga virou falta",
+  COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — virou falta",
   COMPENSACAO_INCOMPLETA: "compensação incompleta — faltou parte das horas",
   TRABALHOU_NA_FOLGA: "trabalhou no dia da folga (as horas contam)", ATRASO: "atraso",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
@@ -1828,6 +1828,8 @@ async function abrirAssinar(id) {
         <td style="padding:4px 6px">${esc(d.batidas.join(" ")) || "—"}</td>
         <td style="padding:4px 6px">${esc(d.ocorrencia || ({FALTA: "falta", FALTA_PARCIAL: "falta parcial", INCOMPLETO: "batida faltando"}[d.situacao] || ""))}
           ${d.extra ? ` +${hmA(d.extra)}` : ""}${d.debito ? ` -${hmA(d.debito)}` : ""}</td></tr>`).join("")}</tbody></table></div>
+    ${(f.compensacoes || []).length ? `<div class="aviso ambar" style="margin:8px 0"><b>Observações — compensações</b>
+      ${f.compensacoes.map(t => `<div style="margin-top:4px">• ${esc(t)}</div>`).join("")}</div>` : ""}
     <div class="aviso info" style="margin:8px 0">Trabalhado <b>${hmA(r.trabalhado)}</b> · extra <b>${hmA(r.extra)}</b> · débito <b>${hmA(r.debito)}</b> · faltas <b>${r.faltas || 0}</b></div>
     <p class="pequeno" style="margin:0 0 6px">${esc(TERMO_ASSINATURA)}</p>
     <label for="as-pin">PIN da pessoa (ela digita)</label>

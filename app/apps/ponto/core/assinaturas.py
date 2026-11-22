@@ -49,9 +49,10 @@ def prazo(competencia: dt.date) -> dt.date:
     return (c.replace(day=28) + dt.timedelta(days=4)).replace(day=DIA_DO_PRAZO)
 
 
-def lacre(esp: dict) -> str:
+def lacre(esp: dict, *, com_observacoes: bool = True) -> str:
     """PURA. O SHA-256 da folha como ela é mostrada: a pessoa, o mês, cada dia (as batidas, a situação, as horas, o
-    que justifica) e os totais. O que não aparece na folha (as notas internas) não entra."""
+    que justifica), os totais e, desde 21/11/2026, as observações de compensação (só quando há alguma — a folha sem
+    elas tem o mesmo lacre de antes). O que não aparece na folha (as notas internas) não entra."""
     p = esp.get("pessoa") or {}
     dias = [{"d": d.get("data"), "b": [b.get("hora") for b in d.get("batidas") or [] if b.get("status") != "REJEITADA"],
              "s": d.get("situacao"), "p": d.get("previsto"), "t": d.get("trabalhado"), "e": d.get("extra"),
@@ -59,6 +60,8 @@ def lacre(esp: dict) -> str:
     r = esp.get("resumo") or {}
     corpo = {"cpf": p.get("cpf"), "nome": p.get("nome"), "competencia": esp.get("competencia"), "dias": dias,
              "resumo": {k: r.get(k) for k in ("previsto", "trabalhado", "extra", "debito", "faltas", "abonados")}}
+    if com_observacoes and esp.get("compensacoes"):
+        corpo["observacoes"] = list(esp["compensacoes"])
     return hashlib.sha256(json.dumps(corpo, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
@@ -92,7 +95,9 @@ def _valendo(conn: Connection, ids: list[int], competencia: dt.date) -> dict[int
 
 def conferir_se_mudou(conn: Connection, assinatura: dict, esp: dict) -> bool:
     """A folha mudou depois de assinada (o mês foi reaberto)? Então a assinatura vira SUBSTITUÍDA. Devolve se mudou."""
-    if assinatura["situacao"] != "ASSINADA" or assinatura["lacre"] == lacre(esp):
+    # a folha assinada antes de 21/11/2026 não tinha as observações de compensação no lacre: o lacre sem elas também
+    # vale, senão toda folha com compensação assinada antes viraria "substituída" sem nada ter mudado nela
+    if assinatura["situacao"] != "ASSINADA" or assinatura["lacre"] in (lacre(esp), lacre(esp, com_observacoes=False)):
         return False
     db.executar(conn, """UPDATE ponto.espelho_assinaturas SET situacao = 'SUBSTITUIDA', substituida_em = now(),
                                 substituida_motivo = 'a folha mudou depois de assinada (o mês foi reaberto)'
@@ -275,6 +280,13 @@ def folha_assinada_pdf(esp: dict, *, assinatura: bytes, quando: dt.datetime, con
     pdf.set_font("Helvetica", "", 7)
     pdf.multi_cell(0, 3.6, "(aj) batida incluída por ajuste aprovado - a original, quando existe, continua guardada. "
                            "Batidas originais preservadas (Portaria MTP 671/2021).", new_x="LMARGIN", new_y="NEXT")
+    if esp.get("compensacoes"):            # as observações de compensação (21/11/2026): assinadas junto
+        pdf.ln(1)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(0, 5, "Observações - compensações", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 7.5)
+        for t in esp["compensacoes"]:
+            pdf.multi_cell(0, 3.8, "- " + t.replace("—", "-"), new_x="LMARGIN", new_y="NEXT")  # a fonte do PDF é latin-1
     # o comprovante
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 11)
