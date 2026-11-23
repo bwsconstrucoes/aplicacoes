@@ -57,3 +57,49 @@ def test_faltas_extras_e_justificadas(app, mundo):
                                                       "ate": "2026-06-30"}).status_code == 400
     assert dp.post("/erp/api/ponto/relatorios", json={"tipo": "xyz", "de": seg.isoformat()}).status_code == 400
     assert dp.get("/erp/ponto/relatorios").status_code == 200
+
+
+def test_faltas_sugeridas_no_desligamento_vem_do_espelho(app, mundo):
+    """23/11/2026: a janela de atendimento do desligamento sugere as faltas do
+    ponto, do dia seguinte ao corte até o último dia — a mesma conta do espelho."""
+    import datetime as dt
+    from app.apps.erp.core import dp_analise
+    seg = _segunda_passada()
+    ter = dia_util(seg, 1)
+    r = dp_analise.faltas_no_ponto(mundo["maria"], ter, hoje=ter + dt.timedelta(days=1))
+    assert r["disponivel"], r
+    inicio = dt.date.fromisoformat(r["inicio"])
+    esperadas = [d.isoformat() for d in (seg, ter) if d >= inicio]
+    assert r["dias"] == esperadas and r["integrais"] == len(esperadas)
+    assert r["parcial_ate_hoje"] is False
+
+
+def test_dp_abre_o_espelho_e_as_sugestoes_pelo_pedido_de_desligamento(app, mundo):
+    """23/11/2026: a janela de Atender traz as sugestões e abre a ficha única
+    do ponto no mês das faltas; quem não é DP não vê as sugestões."""
+    import datetime as dt
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    from app.apps.erp.db.database import get_session
+    from app.apps.erp.db.models.cadastros import Usuario
+    seg = _segunda_passada()
+    ter = dia_util(seg, 1)
+    with get_session() as s:
+        p = svc.abrir(s, {"tipo": "DESLIGAMENTO", "colaborador_id": mundo["maria"],
+                          "forma_desligamento": "Demissão com Aviso Indenizado",
+                          "aviso_previo": ter.isoformat(),
+                          "continua_prestador": "Não, está saindo da empresa"},
+                      s.get(Usuario, mundo["dp"]))
+        sid = p["id"]
+        s.commit()
+    dp = como(app, mundo["dp"])
+    r = dp.get(f"/erp/api/dp/solicitacoes/{sid}/sugestoes")
+    assert r.status_code == 200, r.get_json()
+    j = r.get_json()
+    assert j["valores"]["ultimo_dia"] == ter.isoformat()
+    per = j["periodo_faltas"]
+    assert per["ate"] == ter.isoformat()
+    # a janela abre a FICHA ÚNICA do ponto no espelho do mês (não um arquivo)
+    pagina = dp.get(f"/erp/ponto/pessoa/{mundo['maria']}?aba=mes&competencia={per['ate'][:7]}")
+    assert pagina.status_code == 200
+    assert como(app, mundo["fin"]).get(
+        f"/erp/api/dp/solicitacoes/{sid}/sugestoes").status_code in (302, 403, 404)

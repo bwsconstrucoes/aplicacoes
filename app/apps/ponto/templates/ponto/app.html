@@ -1637,6 +1637,9 @@ async function mostrarAvisosDoPonto(p, pode) {
       <span><b>✍️ Falta assinar o termo do ponto</b><small>é rápido: toque para ler e assinar com o dedo</small></span>
       <span class="seta">›</span></button>`);
   caixa.querySelectorAll("[data-termo-meu]").forEach(b => b.addEventListener("click", () => abrirMeuTermo()));
+  // A CENTRAL DE ASSINATURAS (23/11/2026, o dono: "o colaborador acessar e conseguir visualizar o que é que tem
+  // pendente para ele, para assinar"): os documentos do DP e a folha do mês fechado, num cartão só.
+  if (p.bate_ponto !== false) mostrarMeusDocumentos(caixa);
   caixa.querySelectorAll("[data-aviso]").forEach(b => b.addEventListener("click", () =>
     b.dataset.aviso === "meu" ? abrirMeuPontoEmDia() : abrirQualidadeEquipe()));
   caixa.querySelectorAll("[data-negativa]").forEach(b => b.addEventListener("click", () =>
@@ -1947,6 +1950,208 @@ async function abrirMeuTermo() {
     } catch (e) { $("tm-ok").disabled = false; erro(e.message); }
   };
 }
+// ---------------------------------------------------------------------------
+// A CENTRAL DE ASSINATURAS (23/11/2026). A pessoa: os documentos do DP (aviso prévio, termo de compensação…) e a
+// folha de ponto do mês fechado, assinados com o dedo e o PIN dela. Quem conduz: os documentos da equipe, na tela,
+// no papel (foto) ou a recusa com duas testemunhas — papel e recusa valem depois que o DP olha.
+// ---------------------------------------------------------------------------
+async function mostrarMeusDocumentos(caixa) {
+  let d;
+  try { d = await chamar("/ponto/app/api/meus-documentos"); } catch (e) { return; }
+  const n = (d.documentos || []).length + (d.folhas || []).length;
+  if (!n || caixa.querySelector("[data-meus-docs]")) return;
+  const atrasado = (d.documentos || []).some(x => x.atrasado) || (d.folhas || []).some(x => x.vencido);
+  caixa.insertAdjacentHTML("afterbegin", `<button type="button" class="alerta-ponto ${atrasado ? "ruim" : "atencao"}" data-meus-docs>
+      <span><b>📄 ${n === 1 ? "Você tem 1 documento para assinar" : `Você tem ${n} documentos para assinar`}</b>
+        <small>${esc([...(d.documentos || []).map(x => x.titulo), ...(d.folhas || []).map(x => `folha de ponto de ${nomeMes(x.competencia)}`)].slice(0, 3).join(" · "))}</small></span>
+      <span class="seta">›</span></button>`);
+  caixa.querySelector("[data-meus-docs]").addEventListener("click", () => abrirMeusDocumentos());
+}
+
+async function abrirMeusDocumentos() {
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Para assinar</h2><p class="pequeno">Carregando…</p>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let d;
+  try { d = await chamar("/ponto/app/api/meus-documentos"); }
+  catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Para assinar</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  const itens = [
+    ...(d.documentos || []).map(x => `<button type="button" class="opcao" data-md-doc="${x.id}"><span class="icone">📄</span>
+      <span>${esc(x.titulo)}<small>${x.devolvido ? "o DP pediu para assinar de novo · " : ""}${x.prazo ? `${x.atrasado ? "⚠ venceu em" : "até"} ${esc(dataBR(x.prazo).slice(0, 5))}` : ""}</small></span></button>`),
+    ...(d.folhas || []).map(x => `<button type="button" class="opcao" data-md-folha="${x.competencia}"><span class="icone">🗓</span>
+      <span>Folha de ponto de ${esc(nomeMes(x.competencia))}<small>${x.vencido ? "⚠ o prazo passou" : `até ${esc(dataBR(x.prazo).slice(0, 5))}`} · confira os dias e assine</small></span></button>`),
+    ...(d.termo_do_ponto ? [`<button type="button" class="opcao" data-md-termo><span class="icone">📝</span><span>Termo do ponto<small>leia e assine</small></span></button>`] : [])];
+  const feitos = (d.assinados || []).map(x => `<div style="padding:6px 0; border-top:1px solid #EEF1F5">
+      <b>${esc(x.titulo)}</b><br><small class="pequeno">${esc(x.rotulo)}${x.assinado_em ? ` em ${esc(dataBR(x.assinado_em).slice(0, 5))}` : ""}</small></div>`).join("");
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Para assinar</h2>
+    ${itens.length ? `<p class="pequeno" style="margin:0 0 8px">Toque para ler. Assine com o dedo e confirme com o seu PIN. Se tiver dúvida, fale com o pessoal da obra ou com o DP antes de assinar.</p>
+      <div class="opcoes">${itens.join("")}</div>` : `<div class="aviso ok">Nada para assinar agora.</div>`}
+    ${feitos ? `<h3 style="margin:14px 0 4px; font-size:15px">Já assinados</h3>${feitos}` : ""}`;
+  $("dlg-corpo").querySelectorAll("[data-md-doc]").forEach(b => b.onclick = () => abrirMeuDocumento(+b.dataset.mdDoc));
+  $("dlg-corpo").querySelectorAll("[data-md-folha]").forEach(b => b.onclick = () => abrirMinhaFolha(b.dataset.mdFolha));
+  $("dlg-corpo").querySelectorAll("[data-md-termo]").forEach(b => b.onclick = () => abrirMeuTermo());
+}
+
+// o texto do documento (o do DP é texto corrido, com as quebras de linha que ele tem)
+const htmlDoDocumento = t => `<div style="max-height:42vh; overflow:auto; white-space:pre-wrap; border:1px solid #DDE3EA;
+  border-radius:8px; padding:10px; font-size:14px; line-height:1.45; background:#FBFCFD">${esc(t || "")}</div>`;
+
+// O quadro de assinar: o PIN de quem assina, o traço e o botão. `enviar(pin, png)` faz o resto.
+function blocoDeAssinar(prefixo, rotuloPin, enviar, textoOk) {
+  return {
+    html: `<label for="${prefixo}-pin">${rotuloPin}</label>
+      <input id="${prefixo}-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8">
+      <label>Assinatura (com o dedo)</label>
+      <canvas id="${prefixo}-quadro" style="width:100%; height:150px; border:2px dashed #9AA6B8; border-radius:8px; background:#fff; touch-action:none"></canvas>
+      <div id="${prefixo}-msg" class="aviso erro oculto"></div>
+      <div class="linha"><button class="btn sec" type="button" id="${prefixo}-limpar">Limpar</button>
+        <button class="btn" type="button" id="${prefixo}-ok">${textoOk || "Assinar"}</button></div>`,
+    ligar() {
+      const q = quadroDeAssinatura($(`${prefixo}-quadro`));
+      const erro = t => { $(`${prefixo}-msg`).textContent = t; $(`${prefixo}-msg`).classList.remove("oculto"); };
+      $(`${prefixo}-limpar`).onclick = q.limpar;
+      $(`${prefixo}-ok`).onclick = async () => {
+        if (!$(`${prefixo}-pin`).value) return erro("Digite o PIN.");
+        if (q.vazio()) return erro("Falta a assinatura no quadro.");
+        $(`${prefixo}-ok`).disabled = true;
+        try { await enviar($(`${prefixo}-pin`).value, q.png()); }
+        catch (e) { $(`${prefixo}-ok`).disabled = false; erro(e.message); }
+      };
+    }};
+}
+
+async function abrirMeuDocumento(id) {
+  $("dlg-corpo").innerHTML = `<p class="pequeno">Carregando…</p>`;
+  let d;
+  try { d = (await chamar(`/ponto/app/api/meus-documentos/${id}`)).documento; }
+  catch (e) { $("dlg-corpo").innerHTML = `<div class="aviso erro">${esc(e.message)}</div>`; return; }
+  const b = blocoDeAssinar("md", "O seu PIN", async (pin, png) => {
+    await chamar(`/ponto/app/api/meus-documentos/${id}`, {pin, assinatura: png, ...localNoCorpo(await onde())});
+    aviso(`${d.titulo}: assinado e guardado. Obrigado!`, "ok");
+    abrirMeusDocumentos();
+    if (INICIO) mostrarAvisosDoPonto(INICIO.pessoa, INICIO.pode);
+  });
+  $("dlg-corpo").innerHTML = `<button class="link" type="button" id="md-voltar">‹ voltar</button>
+    <h2 style="margin:4px 0 4px">${esc(d.titulo)}</h2>
+    <p class="pequeno" style="margin:0 0 8px">Documento ${esc(d.numero)}. Leia com calma antes de assinar.</p>
+    ${htmlDoDocumento(d.texto)}
+    <p class="pequeno" style="margin:8px 0">${esc(d.termo_de_ciencia || "")}</p>${b.html}`;
+  $("md-voltar").onclick = () => abrirMeusDocumentos();
+  b.ligar();
+}
+
+async function abrirMinhaFolha(comp) {
+  $("dlg-corpo").innerHTML = `<p class="pequeno">Carregando…</p>`;
+  let f;
+  try { f = await chamar(`/ponto/app/api/minha-folha?competencia=${comp}`); }
+  catch (e) { $("dlg-corpo").innerHTML = `<div class="aviso erro">${esc(e.message)}</div>`; return; }
+  const r = f.resumo || {}, hmA = m => m == null ? "—" : `${m < 0 ? "-" : ""}${Math.floor(Math.abs(m) / 60)}h${String(Math.abs(m) % 60).padStart(2, "0")}`;
+  const linhas = f.dias.filter(x => x.batidas.length || x.ocorrencia || ["FALTA", "FALTA_PARCIAL", "INCOMPLETO"].includes(x.situacao));
+  const b = blocoDeAssinar("mf", "O seu PIN", async (pin, png) => {
+    await chamar("/ponto/app/api/minha-folha", {competencia: comp, pin, assinatura: png, ...localNoCorpo(await onde())});
+    aviso(`Folha de ${nomeMes(comp)} assinada e guardada. Obrigado!`, "ok");
+    abrirMeusDocumentos();
+    if (INICIO) mostrarAvisosDoPonto(INICIO.pessoa, INICIO.pode);
+  });
+  $("dlg-corpo").innerHTML = `<button class="link" type="button" id="mf-voltar">‹ voltar</button>
+    <h2 style="margin:4px 0 4px">Folha de ponto de ${esc(nomeMes(f.competencia))}</h2>
+    <div style="max-height:34vh; overflow:auto; border:1px solid #DDE3EA; border-radius:8px">
+      <table style="width:100%; border-collapse:collapse; font-size:14px"><tbody>${linhas.map(x => `<tr style="border-top:1px solid #EEF1F5">
+        <td style="padding:4px 6px; white-space:nowrap"><b>${esc(dataBR(x.data).slice(0, 5))}</b> ${esc((x.dia_semana || "").slice(0, 3))}</td>
+        <td style="padding:4px 6px">${esc(x.batidas.join(" ")) || "—"}</td>
+        <td style="padding:4px 6px">${esc(x.ocorrencia || ({FALTA: "falta", FALTA_PARCIAL: "falta parcial", INCOMPLETO: "batida faltando"}[x.situacao] || ""))}
+          ${x.extra ? ` +${hmA(x.extra)}` : ""}${x.debito ? ` -${hmA(x.debito)}` : ""}</td></tr>`).join("")}</tbody></table></div>
+    ${(f.compensacoes || []).length ? `<div class="aviso ambar" style="margin:8px 0"><b>Observações — compensações</b>
+      ${f.compensacoes.map(t => `<div style="margin-top:4px">• ${esc(t)}</div>`).join("")}</div>` : ""}
+    <div class="aviso info" style="margin:8px 0">Trabalhado <b>${hmA(r.trabalhado)}</b> · extra <b>${hmA(r.extra)}</b> · débito <b>${hmA(r.debito)}</b> · faltas <b>${r.faltas || 0}</b></div>
+    <p class="pequeno" style="margin:0 0 6px">${esc(TERMO_ASSINATURA)}</p>${b.html}`;
+  $("mf-voltar").onclick = () => abrirMeusDocumentos();
+  b.ligar();
+}
+
+// a foto do papel assinado: maior que a do rosto, para dar para LER (1600 px, JPEG)
+function fotoDoPapel(arquivo) {
+  return new Promise((ok, falha) => {
+    const img = new Image(), url = URL.createObjectURL(arquivo);
+    img.onload = () => { const lado = 1600, f = Math.min(1, lado / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * f); c.height = Math.round(img.height * f);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok(c.toDataURL("image/jpeg", 0.85)); };
+    img.onerror = () => { URL.revokeObjectURL(url); falha(new Error("A foto não abriu. Tire de novo.")); };
+    img.src = url;
+  });
+}
+
+async function abrirDocsEquipe() {
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Documentos para assinar</h2><p class="pequeno">Carregando…</p>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let d;
+  try { d = await chamar(comLocal("/ponto/app/api/equipe/documentos", await onde())); }
+  catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Documentos para assinar</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  const lista = d.documentos || [];
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Documentos para assinar</h2>
+    <p class="pequeno" style="margin:0 0 8px">Os papéis do DP que a sua equipe tem de assinar. Mostre o documento à pessoa:
+      ela assina aqui com o dedo e o PIN dela; ou assina no papel e você manda a foto; ou, se ela se recusar, registre com duas testemunhas.</p>
+    ${lista.length ? `<div class="opcoes">${lista.map(x => `<button type="button" class="opcao" data-de-doc="${x.id}">
+        <span class="icone">${x.atrasado ? "⚠️" : "📄"}</span><span>${esc(x.pessoa)}<small>${esc(x.titulo)}${x.prazo ? ` · ${x.atrasado ? "venceu em" : "até"} ${esc(dataBR(x.prazo).slice(0, 5))}` : ""}${x.devolvido ? " · o DP devolveu" : ""}</small></span></button>`).join("")}</div>`
+      : `<div class="aviso ok">Nenhum documento esperando a sua equipe.</div>`}`;
+  $("dlg-corpo").querySelectorAll("[data-de-doc]").forEach(b => b.onclick = () => abrirDocEquipe(+b.dataset.deDoc));
+}
+
+async function abrirDocEquipe(id, modo) {
+  $("dlg-corpo").innerHTML = `<p class="pequeno">Carregando…</p>`;
+  let d;
+  try { d = (await chamar(comLocal(`/ponto/app/api/equipe/documentos/${id}`, await onde()))).documento; }
+  catch (e) { $("dlg-corpo").innerHTML = `<div class="aviso erro">${esc(e.message)}</div>`; return; }
+  const url = `/ponto/app/api/equipe/documentos/${id}`;
+  const feito = t => { aviso(t, "ok"); abrirDocsEquipe(); };
+  modo = modo || "tela";
+  let corpo = "";
+  const b = blocoDeAssinar("de", `PIN de ${(d.pessoa || "").split(" ")[0]} (ela digita)`, async (pin, png) => {
+    await chamar(url, {acao: "assinar", pin, assinatura: png, ...localNoCorpo(await onde())});
+    feito(`${d.titulo}: assinado por ${d.pessoa} e guardado.`);
+  });
+  if (modo === "tela") corpo = `<p class="pequeno" style="margin:8px 0">${esc(d.termo_de_ciencia || "")}</p>${b.html}`;
+  else if (modo === "papel") corpo = `<div class="aviso info" style="margin:8px 0">Imprima (ou o DP manda impresso), a pessoa assina no papel, e você tira uma foto bem legível da folha assinada. O DP confere a foto antes de valer.</div>
+      <label for="de-foto">Foto do papel assinado</label><input id="de-foto" type="file" accept="image/*" capture="environment">
+      <div id="de-msg" class="aviso erro oculto"></div>
+      <button class="btn" type="button" id="de-enviar">Enviar a foto</button>`;
+  else corpo = `<div class="aviso ambar" style="margin:8px 0">Se a pessoa leu (ou ouviu a leitura) e não quer assinar, registre aqui, com duas testemunhas que viram. O DP confere antes de valer.</div>
+      <label for="de-motivo">O que aconteceu</label><textarea id="de-motivo" rows="3" maxlength="900"></textarea>
+      <label for="de-t1">Testemunha 1 (nome completo)</label><input id="de-t1" maxlength="120">
+      <label for="de-t2">Testemunha 2 (nome completo)</label><input id="de-t2" maxlength="120">
+      <div id="de-msg" class="aviso erro oculto"></div>
+      <button class="btn" type="button" id="de-recusa">Registrar a recusa</button>`;
+  $("dlg-corpo").innerHTML = `<button class="link" type="button" id="de-voltar">‹ voltar</button>
+    <h2 style="margin:4px 0 2px">${esc(d.titulo)}</h2>
+    <p class="pequeno" style="margin:0 0 8px"><b>${esc(d.pessoa)}</b> · CPF final ${esc(d.cpf_fim || "")} · ${esc(d.numero)}</p>
+    ${htmlDoDocumento(d.texto)}
+    <div class="linha" style="margin:10px 0 0; gap:6px">
+      <button class="btn ${modo === "tela" ? "" : "sec"}" type="button" data-de-modo="tela">Assinar aqui</button>
+      <button class="btn ${modo === "papel" ? "" : "sec"}" type="button" data-de-modo="papel">Assinou no papel</button>
+      <button class="btn ${modo === "recusa" ? "" : "sec"}" type="button" data-de-modo="recusa">Recusou</button></div>
+    ${corpo}`;
+  $("de-voltar").onclick = () => abrirDocsEquipe();
+  $("dlg-corpo").querySelectorAll("[data-de-modo]").forEach(x => x.onclick = () => abrirDocEquipe(id, x.dataset.deModo));
+  const erro = t => { $("de-msg").textContent = t; $("de-msg").classList.remove("oculto"); };
+  if (modo === "tela") b.ligar();
+  if (modo === "papel") $("de-enviar").onclick = async () => {
+    const arq = $("de-foto").files && $("de-foto").files[0];
+    if (!arq) return erro("Tire a foto do papel assinado.");
+    $("de-enviar").disabled = true;
+    try { await chamar(url, {acao: "papel", foto: await fotoDoPapel(arq), nome_arquivo: arq.name || "papel.jpg", ...localNoCorpo(await onde())});
+          feito("Foto enviada. O DP confere e o documento passa a valer."); }
+    catch (e) { $("de-enviar").disabled = false; erro(e.message); }
+  };
+  if (modo === "recusa") $("de-recusa").onclick = async () => {
+    const t = [$("de-t1").value.trim(), $("de-t2").value.trim()];
+    if ($("de-motivo").value.trim().length < 5) return erro("Conte o que aconteceu.");
+    if (t.some(x => x.split(/\s+/).length < 2)) return erro("O nome completo das duas testemunhas.");
+    $("de-recusa").disabled = true;
+    try { await chamar(url, {acao: "recusa", motivo: $("de-motivo").value.trim(), testemunhas: t.map(nome => ({nome})), ...localNoCorpo(await onde())});
+          feito("Recusa registrada. O DP confere."); }
+    catch (e) { $("de-recusa").disabled = false; erro(e.message); }
+  };
+}
+
 const TERMOS = {dados: null};
 async function abrirTermos() {
   $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Termo do ponto</h2><p class="pequeno">Carregando…</p>`;
@@ -3575,6 +3780,9 @@ async function abrirMenu() {
   if (p && ((pode.consultar && !INICIO.da_obra) || pode.qualidade_equipe)) ops.push({icone: "✍️", titulo: "Assinaturas da folha",
     sub: "a folha do mês fechado: cada pessoa confere e assina na tela — até o dia 20", acao: () => abrirAssinaturas()});
   // o termo do ponto (07/11/2026): quem responde pela equipe mostra o termo a quem ainda não assinou
+  // os documentos do DP da equipe (23/11/2026, a central de assinaturas): aviso prévio, termo de compensação…
+  if (p && ((pode.consultar && !INICIO.da_obra) || pode.qualidade_equipe)) ops.push({icone: "📄", titulo: "Documentos para assinar",
+    sub: "os papéis do DP da equipe (aviso prévio, termo de compensação…): a pessoa assina aqui, no papel, ou a recusa", acao: () => abrirDocsEquipe()});
   if (p && ((pode.consultar && !INICIO.da_obra) || pode.qualidade_equipe)) ops.push({icone: "📝", titulo: "Termo do ponto",
     sub: "quem da equipe ainda não assinou: mostre o termo e a pessoa assina aqui", acao: () => abrirTermos()});
   $("m-opcoes").innerHTML = ops.map((o, i) => `<button type="button" class="opcao ${o.principal ? "principal" : ""} ${o.desligada ? "desligada" : ""}" data-op="${i}">

@@ -9410,6 +9410,16 @@ def api_editar_usuario(usuario_id: int):
                 if campo in d:
                     valor = (d[campo] or "").strip()
                     setattr(u, campo, somente_digitos(valor) if campo == "telefone" else valor or None)
+            # ⚑ O CPF SE CORRIGE NA EDIÇÃO (23/11/2026). A tela mostrava o campo
+            # aberto, mas só o cadastro NOVO gravava — ele digitou, salvou, e o
+            # CPF continuou em branco. Vazio não apaga o que já existe.
+            if "cpf" in d:
+                from app.apps.erp.core.cadastros.validadores import cpf_valido as _cpf_ok
+                cpf_novo = somente_digitos(d.get("cpf") or "")
+                if cpf_novo and not _cpf_ok(cpf_novo):
+                    return jsonify({"ok": False, "erro": "CPF inválido."}), 400
+                if cpf_novo:
+                    u.cpf = cpf_novo
             if d.get("perfil"):
                 u.perfil = PerfilUsuario(d["perfil"])
             if "escopo_visao" in d:
@@ -9654,6 +9664,13 @@ def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
         s.flush()
     elif not operador.ativo:
         operador.ativo = True
+    # ⚑ O CPF VEM DO CADASTRO (23/11/2026). Ele, liberando uma pessoa da fila:
+    # *"O CPF já era para ele buscar e preencher automaticamente, não
+    # aconteceu."* Nome, e-mail e telefone vinham; o CPF ficava em branco na
+    # tela de operadores. Só preenche se estiver vazio — não troca o que alguém
+    # já digitou.
+    if not (operador.cpf or "").strip() and (c.cpf or "").strip():
+        operador.cpf = c.cpf
     # O CARGO, quando quem libera disse qual. A fila do portal manda
     # ADMINISTRATIVO_OBRA; a ficha, nada, e aí fica o CONSULTA de sempre.
     if perfil:
@@ -13063,6 +13080,27 @@ def api_dp_solicitacao(solicitacao_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 404
 
 
+@bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/sugestoes")
+@login_obrigatorio
+@permissao("atender_dp")
+def api_dp_solicitacao_sugestoes(solicitacao_id: int):
+    """O que a janela de atendimento já traz preenchido (23/11/2026): no
+    desligamento de carteira, o último dia e a saída pela forma e pela data do
+    aviso, e as faltas lidas do ponto desde o dia seguinte ao corte."""
+    from app.apps.erp.core import dp_analise, pessoal_solicitacoes as svc
+    from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
+    try:
+        with get_session() as s:
+            exigir_solicitacao_dp_no_escopo(s, _usuario_logado(s), solicitacao_id)
+            p = svc.ler(s, solicitacao_id)
+            sug = (dp_analise.sugestoes_do_desligamento(s, p)
+                   if p["tipo"] == "DESLIGAMENTO"
+                   else {"valores": {}, "explicacoes": {}})
+            return jsonify({"ok": True, **sug})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
 @bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/<acao>", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
@@ -13087,7 +13125,8 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             if acao in ("atender", "recusar", "item", "passo", "continuidade",
                         "encerrar", "assinar", "assinada", "corrigir",
                         "contabilidade", "termo", "termo_validar",
-                        "cancelar_andamento", "despachar") \
+                        "cancelar_andamento", "despachar", "termo_papel",
+                        "devolucao_papel") \
                     and not pode(usuario, "atender_dp"):
                 return jsonify({"ok": False, "erro":
                                 "Só o DP atende solicitação. Você pode abrir e "
@@ -13133,6 +13172,20 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
                 termos.validar(s, tid, usuario, aceitar=bool(d.get("aceitar")),
                                motivo=str(d.get("motivo") or ""))
                 svc.termo_voltou(s, tid, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+            elif acao in ("termo_papel", "devolucao_papel"):
+                # ⚑ O PLANO B (23/11/2026): o papel assinado chegou ao
+                # ESCRITÓRIO — a obra sem internet, a pessoa que assinou à mão
+                # e mandou pelo malote. O DP anexa aqui e o processo segue
+                # igual ao do portal. Quem anexa é o DP, que está olhando o
+                # papel: o documento para assinar já entra validado.
+                arq = request.files.get("arquivo")
+                if arq is None:
+                    raise ErroValidacao("Escolha a foto ou o PDF do papel assinado.")
+                svc.papel_no_escritorio(
+                    s, solicitacao_id, acao, int(request.form.get("id") or 0),
+                    arq.read(), arq.filename or "assinado", usuario)
                 s.flush()
                 p = svc.ler(s, solicitacao_id)
             elif acao == "cancelar_andamento":
@@ -13280,6 +13333,56 @@ def api_cargos_novo():
     except Exception as e:
         logger.exception("ERP: falha ao cadastrar cargo na convenção")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/cargos/modelo.xlsx")
+@login_obrigatorio
+@permissao("configurar")
+def api_cargos_modelo():
+    """A planilha para importar, já com o que está cadastrado (23/11/2026)."""
+    from flask import Response
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        conteudo = svc.planilha_modelo(s)
+    return Response(conteudo, mimetype="application/vnd.openxmlformats-"
+                    "officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition":
+                             'attachment; filename="cargos_e_convencoes.xlsx"'})
+
+
+@bp.route("/erp/api/convencoes/resumo")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_convencoes_resumo():
+    """Cada convenção com quantos cargos e quantas pessoas tem (23/11/2026)."""
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "convencoes": svc.convencoes_com_gente(
+            s, so_ativas=request.args.get("todos") != "1")})
+
+
+@bp.route("/erp/api/convencoes/<int:convencao_id>/pessoas")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_convencao_pessoas(convencao_id: int):
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "pessoas": svc.pessoas_da_convencao(s, convencao_id)})
+
+
+@bp.route("/erp/api/convencoes/<int:convencao_id>/excluir", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_convencao_excluir(convencao_id: int):
+    """Exclui a convenção sem ninguém; desativa a que só tem histórico."""
+    from app.apps.erp.core.cadastros import cargos as svc
+    try:
+        with get_session() as s:
+            r = svc.excluir_convencao(s, convencao_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/cargos/importar", methods=["POST"])
@@ -14554,12 +14657,36 @@ def api_dp_pedido(pedido_id: int):
 def api_dp_pedido_acao(pedido_id: int, acao: str):
     """enviar · cobrar · receber · concluir · aceitar-divergencia · cancelar."""
     from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.auth.permissoes import exigir_pedido_contabilidade_no_escopo
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
+            exigir_pedido_contabilidade_no_escopo(s, usuario, pedido_id)
             if acao == "enviar":
+                # ⚑ 23/11/2026: a tela de atendimento manda o texto como ficou
+                # (o DP leu e talvez corrigiu) junto com o "enviar".
+                if d.get("assunto") is not None or d.get("corpo") is not None:
+                    p_ = svc_ct.ler(s, pedido_id)
+                    svc_ct.editar_rascunho(
+                        s, pedido_id, assunto=d.get("assunto", p_["assunto"]),
+                        corpo=d.get("corpo", p_["corpo"]), usuario=usuario)
                 r = svc_ct.enviar(s, pedido_id, usuario, para=d.get("para"))
+            elif acao == "reenviar":
+                r = svc_ct.reenviar(s, pedido_id, usuario)
+            elif acao == "editar":
+                r = svc_ct.editar_rascunho(s, pedido_id, assunto=d.get("assunto"),
+                                           corpo=d.get("corpo"), usuario=usuario)
+            elif acao == "anexar":
+                arq = request.files.get("arquivo")
+                if arq is None:
+                    raise ErroValidacao("Escolha o arquivo.")
+                r = svc_ct.anexar_ao_rascunho(s, pedido_id, conteudo=arq.read(),
+                                              nome_arquivo=arq.filename or "anexo",
+                                              usuario=usuario)
+            elif acao == "tirar-anexo":
+                r = svc_ct.tirar_anexo(s, pedido_id, int(d.get("documento_id") or 0),
+                                       usuario)
             elif acao == "cobrar":
                 r = svc_ct.cobrar(s, pedido_id, usuario)
             elif acao == "receber":

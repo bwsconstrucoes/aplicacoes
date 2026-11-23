@@ -57,7 +57,7 @@
   <div class="campo" style="margin-top:10px"><label for="f-tipo">Tipo</label>
     <select id="f-tipo" data-sem-busca><option value="">Todos</option></select></div>
   <div class="campo" style="margin-top:10px"><label for="f-busca">Buscar</label>
-    <input id="f-busca" placeholder="telefone, CPF ou trecho do texto" autocomplete="off" data-sem-mascara></div>
+    <input id="f-busca" placeholder="nome, telefone, CPF ou trecho do texto" autocomplete="off" data-sem-mascara></div>
   <button class="btn" id="f-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
   <div class="cartao-dica" style="margin-top:16px">
     O registro guarda <b>90 dias</b> de tudo que o sistema tentou mandar: por onde, para quem,
@@ -365,11 +365,39 @@
   <div class="tabela-rolagem"><div id="envios"></div></div>
 </div>
 {% endif %}
+{# A FICHA DA PESSOA POR CIMA DA TELA (23/11/2026). O dono: "quando pesquiso
+   alguém e quero abrir o cadastro da pessoa, ele remete pra aba Pessoal ao invés
+   de simplesmente abrir o modal com o cadastro." É a mesma ficha única do
+   Pessoal e do ponto (/erp/ponto/pessoa/<id>), numa janela — fechar volta à
+   lista, com a busca e o filtro como estavam. #}
+<dialog id="dlg-ficha" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
+  <iframe id="ficha-quadro" title="Ficha da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const PODE_CONFIGURAR = {{ "true" if pode.configurar_mensagens else "false" }};
+const PODE_VER_PONTO = {{ "true" if pode.ver_ponto else "false" }};
+// A ficha da pessoa numa janela por cima (ver o <dialog id="dlg-ficha">). Quem
+// não enxerga o ponto não abre a ficha única: vai à de Colaboradores, como antes.
+function abrirFicha(id){
+  if (!PODE_VER_PONTO) { location.href = `/erp/colaboradores?pessoa=${encodeURIComponent(id)}`; return; }
+  els("ficha-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
+  els("dlg-ficha").showModal();
+}
+els("dlg-ficha").addEventListener("close", () => { els("ficha-quadro").src = "about:blank"; });
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (ev.origin === location.origin && d.tipo === "bws-ficha" && d.acao === "fechar"
+      && els("dlg-ficha").open) els("dlg-ficha").close();
+});
+document.addEventListener("click", ev => {
+  const a = ev.target.closest("[data-ficha]");
+  if (!a) return;
+  ev.preventDefault();
+  abrirFicha(a.dataset.ficha);
+});
 const POLITICAS = {{ politicas | tojson }};
 const hora = iso => { if (!iso) return ""; const d = new Date(iso);
   return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"}); };
@@ -759,13 +787,13 @@ function desenharPessoas(){
         const conv = !c ? "—" : `${pilula(cr, cc)}<br><small>${dia(c.criado_em)}${c.motivo === "AUTOMATICO" ? " · automático" : " · pela tela"}${c.usado_em ? " · <b>cadastrou-se pelo link</b>" : (c.aberto_em ? " · abriu o link" : "")}</small>`;
         const podeConvidar = l.diagnostico === "SEM_TELEGRAM";
         return `<tr>${PODE_CONFIGURAR ? `<td>${podeConvidar ? `<input type="checkbox" class="tg-marca" data-chave="${escapar(l.chave)}">` : ""}</td>` : ""}
-          <td><b>${escapar(l.nome)}</b><br><small>${l.tipo === "COLABORADOR" ? "Colaborador" : "Operador do ERP"}${l.cpf ? " · CPF " + escapar(l.cpf) : ""}</small></td>
+          <td>${l.colaborador_id ? `<a href="#" class="elo" data-ficha="${l.colaborador_id}" title="Abrir a ficha desta pessoa"><b>${escapar(l.nome)}</b></a>` : `<b>${escapar(l.nome)}</b>`}<br><small>${l.tipo === "COLABORADOR" ? "Colaborador" : "Operador do ERP"}${l.cpf ? " · CPF " + escapar(l.cpf) : ""}</small></td>
           <td>${escapar(l.obra || "—")}${l.cargo ? `<br><small>${escapar(l.cargo)}</small>` : ""}</td>
           <td style="white-space:nowrap">${escapar(telefoneBonito(l.telefone)) || "<small>sem telefone</small>"}</td>
           <td>${tg}</td><td style="white-space:normal; max-width:260px">${vered}</td>
           <td>${l.falhas_30d ? `<b>${l.falhas_30d}</b><br><small>a última em ${dia(l.ultima_falha)}</small>` : "—"}</td><td>${conv}</td>
           ${PODE_CONFIGURAR ? `<td style="white-space:nowrap">
-              ${l.colaborador_id ? `<a class="link-btn" href="/erp/colaboradores?pessoa=${l.colaborador_id}" title="Abrir a ficha desta pessoa no Pessoal">ficha</a><br>` : ""}
+              ${l.colaborador_id ? `<a class="link-btn" href="#" data-ficha="${l.colaborador_id}" title="Abrir a ficha desta pessoa">ficha</a><br>` : ""}
               ${l.telegram ? `<button class="link-btn tg-desv" data-id="${l.cadastro_id}" type="button">desligar</button>`
                 : podeConvidar ? `<button class="link-btn tg-um" data-chave="${escapar(l.chave)}" type="button">convidar agora</button>`
                 : `<small>acerte o telefone primeiro</small>`}</td>` : ""}</tr>`;
@@ -803,9 +831,10 @@ const MOTIVO = {TELEFONE_NAO_BATE: "O número do Telegram não está no cadastro
 function desenharTentativas(d){
   const L = d.tentativas || [];
   if (!L.length) { els("tg-tentativas").innerHTML = '<div class="aviso ok" style="margin:0">Ninguém na fila.</div>'; return; }
-  els("tg-tentativas").innerHTML = '<table><thead><tr><th>Quando</th><th>Nome no Telegram</th><th>Quem parece ser no ERP</th><th>Número do Telegram</th><th>CPF digitado</th><th>O que houve</th></tr></thead><tbody>'
+  els("tg-tentativas").innerHTML = '<table><thead><tr><th>Quando</th><th>Nome no Telegram</th><th>Quem parece ser no ERP</th><th>Número do Telegram</th><th>ID do Telegram</th><th>CPF digitado</th><th>O que houve</th></tr></thead><tbody>'
     + L.map(t => `<tr><td style="white-space:nowrap">${hora(t.criado_em)}</td><td>${escapar(t.nome_telegram || "—")}</td>
         <td>${escapar(t.nome_erp || "—")}</td><td style="white-space:nowrap">${escapar(telefoneBonito(t.telefone) || "—")}</td>
+        <td><span class="mono" style="font-size:12px">${escapar(t.chat_id || "—")}</span></td>
         <td>${escapar(t.cpf || "—")}</td><td>${escapar(MOTIVO[t.motivo] || t.motivo)}</td></tr>`).join("") + "</tbody></table>";
 }
 function desenharConferir(d){
@@ -896,16 +925,29 @@ function desenharMigracao(d){
       ${PODE_CONFIGURAR ? '<button class="btn" id="tg-migrar" type="button">Migrar da planilha agora</button>' : '<small>Quem migra é o administrador.</small>'}</div>`;
   } else if (r) {
     const c = r.contagem || {};
-    const tabela = linhas => '<table><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>O que houve</th></tr></thead><tbody>'
+    // ⚑ 23/11/2026: a tabela lia `divergentes`, `telefone` e `detalhe`, que o
+    // relatório nunca teve — as listas nunca apareceram. As chaves são as do
+    // `migrar_planilha`: `divergente`, `fora`, `telefone_telegram`, `telefone_erp`.
+    const tabela = linhas => '<table><thead><tr><th>Nome</th><th>CPF</th><th>Telefone no Telegram</th><th>Telefone no cadastro</th></tr></thead><tbody>'
       + linhas.map(l => `<tr><td>${escapar(l.nome || "—")}</td><td>${escapar(l.cpf || "—")}</td>
-          <td>${escapar(telefoneBonito(l.telefone) || "—")}</td><td><small>${escapar(l.detalhe || "")}</small></td></tr>`).join("")
+          <td>${escapar(telefoneBonito(l.telefone_telegram) || "—")}</td>
+          <td>${escapar(telefoneBonito(l.telefone_erp) || l.telefone_erp || "—")}</td></tr>`).join("")
       + "</tbody></table>";
+    const div = r.divergente || [], fora = r.fora || [];
     els("tg-migracao").innerHTML = `<details class="cartao"><summary style="cursor:pointer">
       <b>Migrado${d.ultima_importacao ? " em " + dia(d.ultima_importacao) : ""}</b> —
-      ${c.ok || 0} conferem, ${c.divergente || 0} com telefone diferente, ${c.fora || 0} fora do ERP</summary>
-      ${(r.divergentes || []).length ? `<h4>Telefone diferente do cadastro (${r.divergentes.length})</h4><div class="tabela-rolagem">${tabela(r.divergentes)}</div>` : ""}
-      ${(r.fora || []).length ? `<h4>Fora do ERP (${r.fora.length})</h4><div class="tabela-rolagem">${tabela(r.fora)}</div>` : ""}
-      ${PODE_CONFIGURAR ? '<button class="btn secundario" id="tg-migrar" type="button" style="margin-top:10px">Migrar de novo</button>' : ""}</details>`;
+      ${c.ok || 0} conferem, ${c.divergente || 0} com telefone diferente ou sem DDD, ${c.fora || 0} fora do ERP${c.ja_estava ? `, ${c.ja_estava} já estavam` : ""}</summary>
+      ${div.length ? `<h4>Telefone diferente do cadastro, ou cadastro sem DDD (${div.length})</h4>
+        <div class="cartao-dica" style="margin-top:0">Entraram e recebem. O DP acerta o telefone no cadastro.</div>
+        <div class="tabela-rolagem">${tabela(div)}</div>` : ""}
+      ${fora.length ? `<h4>Fora do ERP (${fora.length})</h4>
+        <div class="cartao-dica" style="margin-top:0">Não entraram: não foram achados entre os colaboradores ativos e
+          operadores, nem pelo CPF nem pelo telefone. Se alguém aqui ainda trabalha na BWS, confira o CPF no cadastro
+          e use <b>Migrar de novo</b>.</div>
+        <div class="tabela-rolagem">${tabela(fora)}</div>` : ""}
+      ${PODE_CONFIGURAR ? `<div class="cartao-dica">Migrar de novo só traz quem ainda não está no ERP: não religa quem foi
+        desligado aqui nesta tela, nem troca a conta de quem já mudou de Telegram.</div>
+        <button class="btn secundario" id="tg-migrar" type="button" style="margin-top:6px">Migrar de novo</button>` : ""}</details>`;
   } else els("tg-migracao").innerHTML = "";
   const b = els("tg-migrar");
   if (b) b.addEventListener("click", async () => {
@@ -913,7 +955,7 @@ function desenharMigracao(d){
     b.disabled = true; b.textContent = "Lendo a planilha e cruzando com o ERP…";
     try { const r2 = await api("/erp/api/mensagens/telegram/migrar", {method: "POST"});
       if (!bancoAtrasado(r2)) { const c = r2.relatorio.contagem;
-        aviso("mensagem", `Migrado: ${c.ok} conferem, ${c.divergente} com telefone diferente, ${c.fora} fora do ERP.`, "ok"); }
+        aviso("mensagem", `Migrado: ${r2.relatorio.novos} entraram agora (${c.ok} conferem, ${c.divergente} com telefone diferente ou sem DDD), ${c.ja_estava || 0} já estavam, ${c.fora} fora do ERP.`, "ok"); }
       carregarConvite();
     } catch (e) { aviso("mensagem", e.message, "erro"); b.disabled = false; b.textContent = "Migrar da planilha agora"; }
   });
@@ -941,7 +983,9 @@ async function ver(){
     els("envios").innerHTML = '<table><thead><tr><th>Quando</th><th>Mensagem</th><th>Canal</th><th>Para</th><th>Situação</th><th>Texto</th></tr></thead><tbody>'
       + L.map(l => `<tr><td style="white-space:nowrap">${hora(l.criado_em)}</td><td>${escapar(l.tipo_nome)}</td>
           <td>${CANAL[l.canal] ?? escapar(l.canal)}</td>
-          <td style="white-space:nowrap">${escapar(telefoneBonito(l.destinatario))}${l.cpf ? "<br><small>CPF " + escapar(l.cpf) + "</small>" : ""}</td>
+          <td style="white-space:nowrap">${l.para_colaborador_id
+              ? `<a href="#" class="elo" data-ficha="${l.para_colaborador_id}" title="Abrir a ficha desta pessoa"><b>${escapar(l.para_nome)}</b></a><br>`
+              : l.para_nome ? `<b>${escapar(l.para_nome)}</b><br>` : ""}<small>${escapar(telefoneBonito(l.destinatario))}${l.cpf ? " · CPF " + escapar(l.cpf) : ""}</small></td>
           <td>${etiqueta(l.status)}${l.detalhe ? "<br><small>" + escapar(l.detalhe) + "</small>" : ""}</td>
           <td style="white-space:normal; max-width:460px"><small>${escapar((l.texto || "").slice(0, 240))}${(l.texto || "").length > 240 ? "…" : ""}${l.nome_arquivo ? "<br>📎 " + escapar(l.nome_arquivo) : ""}</small></td></tr>`).join("")
       + "</tbody></table>";

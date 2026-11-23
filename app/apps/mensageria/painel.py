@@ -18,6 +18,7 @@ Hora e dia são os de Fortaleza.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from collections import defaultdict
 from typing import Optional
 
@@ -121,6 +122,33 @@ class Pessoas:
         if bd and len(bd) >= 8:
             destinos.append(bd)
         return cpfs or ["~"], destinos or ["~"]
+
+
+# ---------------------------------------------------------------------------
+# A ABA ENVIADAS COM O NOME DE QUEM RECEBEU (23/11/2026)
+#
+# Ele: *"não aparece o nome da pessoa para a qual a gente está mandando aquela
+# mensagem. Era interessante que aparecesse e esse nome fosse clicável e
+# abrisse o cadastro da pessoa."* O registro guarda só telefone, ID do Telegram
+# e CPF; quem dá o nome é esta mesma `Pessoas` — o Painel e a aba Enviadas não
+# podem discordar de quem é quem.
+#
+# CUSTO: 4 leituras do banco por carga da aba (elegíveis, colaboradores,
+# operadores, cadastros do Telegram), nenhuma ida à internet.
+# ---------------------------------------------------------------------------
+def envios_com_pessoa(conn, *, busca: str = "", **filtros) -> list[dict]:
+    """`core.listar_envios` + `para_nome` e `para_colaborador_id` em cada linha.
+    A busca com letras também acha pelo NOME de quem recebeu."""
+    pessoas = Pessoas(conn)
+    cpfs_b, destinos_b = (pessoas.destinos_da_busca(busca)
+                          if re.search(r"[^\W\d_]", busca or "") else (None, None))
+    linhas = core.listar_envios(conn, busca=busca, cpfs_da_busca=cpfs_b,
+                                destinos_da_busca=destinos_b, **filtros)
+    for l in linhas:
+        chave = pessoas.chave(l.get("cpf") or "", l.get("destinatario") or "")
+        l["para_nome"] = "" if chave.startswith("?") else pessoas.nome(chave)
+        l["para_colaborador_id"] = int(chave[1:]) if chave.startswith("C") else None
+    return linhas
 
 
 def _filtro(f: dict, pessoas: Pessoas) -> tuple[str, dict]:

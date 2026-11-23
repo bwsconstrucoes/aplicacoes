@@ -409,6 +409,12 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
 - O Fulano folgou no recesso e ainda vai pagar com sábado — onde isso aparece? 🔒 (no dia da folga: "Compensação (a pagar com o trabalho em DD/MM/AAAA)"; na folha de ponto do mês da folga, em "Observações — compensações", o combinado; enquanto o sábado não chega, a Conferência do fechamento avisa "ainda a cumprir"; desde 21/11/2026)
 - Quem não pagou o sábado da compensação? Que falta foi lançada por isso? 🔒 ⚠️ (desde 21/11/2026, na folga paga DEPOIS a falta cai NO SÁBADO, no mês dele — "Compensação não cumprida — este dia pagaria a folga de DD/MM/AAAA" —, e a folga continua folga no mês dela; o relatório de faltas mostra o motivo na coluna "Motivo"; se o sábado foi trabalhado em parte, é falta parcial do que faltou; "este mês" = o mês do sábado, não o da folga)
+- Quem ainda não assinou o termo de compensação? E o aviso prévio? 🔒 (ERP › Ponto › Assinaturas, "Documentos para assinar": cada documento do DP aberto, com o prazo e se venceu; desde 23/11/2026 o termo de compensação nasce sozinho da compensação de dia aprovada — um por pessoa por lançamento)
+- O que está esperando o DP validar? 🔒 (Ponto › Assinaturas, "Esperando o DP validar": o papel assinado por foto e a recusa com testemunhas — só valem depois de aceitos; o assinado na tela com o PIN vale sozinho)
+- Quem não assinou a folha de ponto do mês? 🔒 ⚠️ ("o mês" = o último mês FECHADO dos dois anteriores; Ponto › Assinaturas › Folha de ponto, por obra; ⚠️ conta quem tem assinatura guardada — uma folha assinada que mudou depois, com o mês reaberto, ainda aparece como assinada ali; o aplicativo de quem conduz refaz essa conta)
+- O que o Fulano já assinou? Me mostra o documento. 🔒 (a ficha › 📄 Documentos: os documentos do DP, as folhas de ponto assinadas e o termo do ponto, cada um com o PDF; a folha que falta não aparece ali)
+- A compensação já vale antes de o termo ser assinado? (sim — decisão do dono, 23/11/2026: o lançamento vale; o termo é cobrança; havendo discordância, o DP cancela a compensação em Ponto › Assinaturas e o termo cai junto)
+- Quem está no recesso de fim de ano, e com que sábados paga cada folga? 🔒 (os pedidos de compensação cuja descrição começa com "Recesso" — lançados pelo Quadro › "Recesso — folgas a compensar…", um por pessoa e por dia de folga; desde 22/11/2026; ❌ ainda não há uma lista só do recesso: hoje é pela Validação/pedidos de cada pessoa ou pelo espelho)
 - A pessoa assinou que ia compensar? 🔒 (a folha de ponto assinada tem as observações de compensação junto: a do mês da folga diz o combinado, a do mês do sábado diz se foi cumprido; desde 21/11/2026 elas entram no lacre da folha — ❌ isso NÃO é o acordo escrito que a lei pede para compensar fora do mês: o sistema não guarda esse acordo)
 - Que rondas foram feitas sem foto, e de quem? (Alertas › Tipo "Ronda registrada sem foto", um por ronda, com o motivo; e nas telas Rondas / Quadro › Rondas o chip "· sem foto"; desde 17/11/2026; a localização sempre foi gravada)
 - Quais alertas do mês passado ainda estão abertos? (Alertas › Período "Mês anterior", Situação "Abertos"; "mês passado" = o DIA do alerta no mês anterior, não o dia em que o alerta foi criado; desde 10/11/2026)
@@ -2240,6 +2246,30 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
 - Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
   do dono (só colaborador com telefone).
 
+### Acrescentadas em 23/11/2026 (telefone sem DDD e o ID editável na ficha)
+- Qual é o ID do Telegram de fulano? Desde quando? Foi informado à mão na
+  ficha ou veio do robô? (ficha da pessoa › Telegram e mensagens; origem
+  `FICHA` = à mão)
+- Quem trocou o ID do Telegram de fulano, e qual era o anterior? (a
+  observação do cadastro guarda quem, a conta do Telegram e o ID antigo; o log
+  do servidor também)
+- Quem recebe pelo Telegram mas está com o telefone sem DDD no cadastro?
+  (Cadastro do Telegram, veredito "Recebe (número diferente)" + telefone
+  curto) — ⚠️ é a lista que o DP precisa completar.
+- Quem ficou de fora da migração da planilha, e por quê? (relatório da
+  migração, "Fora do ERP"; a tabela só passou a aparecer em 23/11 — antes
+  lia chaves erradas)
+- Quantas pessoas voltaram ao "Migrar de novo"? (o aviso da tela e o
+  relatório: "entraram agora" × "já estavam")
+- Que mensagens saíram para fulano (pelo nome)? (aba Enviadas, busca pelo
+  nome — o nome vem do cadastro pelo CPF, telefone ou ID do Telegram; número
+  que não é de ninguém do ERP aparece sem nome)
+
+### ⚠️ Palavra que mudou de sentido em 23/11
+- **"telefone bate"**: com DDD, o número inteiro (com ou sem 55 e o nono
+  dígito). SEM DDD no cadastro, o final do número confirmado pelo Telegram —
+  e de uma pessoa só. Duas pessoas com o mesmo final = ninguém.
+
 ## 3z-quinquies. O PEDIDO QUE SE AJUSTA AO CASO, E O ATESTADO LONGO (15/11/2026)
 
 Seis decisões dele num pedido só: desligamento único, readmissão detectada pelo
@@ -3295,3 +3325,30 @@ não lê a caixa de e-mail; a proposta só existe para ele depois de jogada no m
 
 **Ainda NÃO responde:** *"a obra gastou mais do que o previsto em material?"* —
 não há orçamento de material por obra no ERP.
+
+## Atendimento do desligamento: datas e faltas sugeridas (23/11/2026)
+
+- Quantas faltas a pessoa tem desde o último fechamento do ponto? *(conta do
+  dia seguinte ao corte; "falta" = dia inteiro sem justificativa — horas a
+  menos são outra pergunta)*
+- Qual o último dia e a data de saída de quem recebe aviso hoje? *(depende da
+  forma: trabalhado, indenizado, pedido de demissão, fim de experiência)*
+- Quantos dias de aviso essa pessoa tem? *(30 + 3 por ano completo, até 90 —
+  só quando a empresa dispensa; no pedido de demissão, sempre 30)*
+- A data que o DP gravou bate com a conta? *(a análise do pedido aponta a
+  diferença)*
+- **Ainda não sabe:** se o contrato de experiência tem cláusula de rescisão
+  antecipada (art. 481) — o sistema não guarda isso.
+
+## Convenções e quem está nelas (23/11/2026)
+
+- Quantas pessoas estão em cada convenção? *(ativas = não desligadas;
+  afastado conta)* — **muda conforme quem pergunta**: precisa de
+  `editar_colaboradores`.
+- Tem convenção cadastrada sem ninguém?
+- Quais convenções estão sem mês da data-base? *(sem ele, o alerta de demitir
+  nos 30 dias antes não funciona)*
+- Quantos cargos de cada convenção estão sem piso?
+- **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
+  mês da data-base é guardado.
+

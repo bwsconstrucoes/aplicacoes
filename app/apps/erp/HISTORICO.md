@@ -63,6 +63,37 @@ saber:
   ela em "Receber e lançar a nota"). Para reabrir: em `AREAS`, `pronta: True`,
   `so_tela: True`, `tela` e `acao: "receber_material"` — está escrito lá.
 
+### ⚑ 23/11/2026 — PESSOAL CONSERTOU O CPF NA TELA DE OPERADORES (registro entre áreas)
+
+A edição de operador (`/erp/api/usuarios/<id>`, Configurações › Operadores)
+ignorava o CPF — só o cadastro novo gravava, embora o campo aparecesse aberto.
+Agora grava (vazio não apaga; inválido recusa). E salvar um operador mostra a
+situação do convite. E `core/auth/permissoes.py` (`_obras_designadas`): o
+alcance de quem enxerga por obra passa a incluir a obra onde o cadastro ligado
+ao operador bate ponto (`colaborador_obra_atual`) — vale para TODAS as áreas
+que recortam por obra. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (8).
+
+### ⚑ 23/11/2026 — MENSAGERIA MEXEU NO `erp_base.html` E NA TRAVA DE DESLIGADOS (registro entre áreas)
+
+O bloco `mensagensDaPessoa` (a aba "Telegram e mensagens" da ficha, usada pelo
+Pessoal e pelo ponto) passou a mostrar SEMPRE o ID do Telegram e ganhou o
+"trocar/informar" (nova `trocarIdDoTelegram`, só para `configurar_mensagens`).
+E `telegram_cadastro.desligado_da_empresa` passou a tratar como NÃO ativa quem
+tem data de saída vencida mesmo com a caixinha ATIVO — fechava um buraco da
+janela antes da virada do dia (o teste da virada, do DP, é o que pega isso).
+Detalhe em `app/apps/mensageria/HISTORICO.md`, 23/11.
+
+### ⚑ 23/11/2026 — PESSOAL MEXEU NO E-MAIL COMUM (registro entre áreas)
+
+`core/comum/email.py` ganhou `guardar_nos_enviados=False` em `enviar` e a
+função `guardar_copia_nos_enviados`: depois de entregar, grava a mesma
+mensagem na pasta de enviados da conta por IMAP (só se a caixa configurada em
+`email_entrada` for a MESMA conta; Gmail e Outlook/365 já guardam sozinhos e
+são pulados). **Só o pedido à contabilidade liga isso** — a cotação de
+Suprimentos continua igual (o padrão é desligado). E `email_entrada` passou a
+ignorar mensagem cujo Message-ID é de um envio do próprio ERP, para a cópia
+nunca ser lida como resposta. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (7).
+
 ### ⚑ 22/11/2026 — SUPRIMENTOS: AÇÃO E SEÇÃO NOVAS DE PERMISSÃO, E A ROTA DE MOVER ITEM (registro entre áreas)
 
 Detalhe em `HISTORICO_SUPRIMENTOS.md`, 22/11 (5ª rodada).

@@ -96,6 +96,11 @@
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
 {# A janela que mostra o documento (19/11/2026) — abre por cima do pedido. #}
 <dialog id="dlg-papel" style="width:94vw; max-width:1100px; height:90vh; padding:0; overflow:hidden"></dialog>
+<dialog id="dlg-pedido" style="width:94vw; max-width:900px"></dialog>
+{# O ponto da pessoa, por cima da janela de atender (23/11/2026). #}
+<dialog id="dlg-ponto" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh;
+  padding:0; overflow:hidden"><iframe id="ponto-quadro" title="Ponto da pessoa"
+  style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -594,13 +599,24 @@ function blocoDoProcesso(p){
         <button class="btn secundario" data-pr-termo-nao="${x.termo.id}">Devolver à obra…</button>`);
     if (x.termo && x.estado === "AGUARDANDO")
       b.push(`<button class="link-btn" data-pr-termo="1">gerar de novo</button>`);
+    {# ⚑ O PLANO B (23/11/2026): o papel assinado chegou ao escritório — a
+       obra sem internet, a pessoa que assinou à mão. O DP anexa e o processo
+       segue igual ao do portal. #}
+    if (x.termo && x.termo.situacao === "ABERTO")
+      b.push(`<button class="btn secundario" data-pr-papel="termo_papel"
+        data-id="${x.termo.id}">Chegou no papel? Anexar…</button>`);
+    if (x.devolucao_aberta_id)
+      b.push(`<button class="btn secundario" data-pr-papel="devolucao_papel"
+        data-id="${x.devolucao_aberta_id}">Chegou no escritório? Anexar…</button>`);
     {# ⚑ OS BOTÕES DA ADMISSÃO (19/11/2026) — ver `admissao_processo`. #}
     if (!deslig) {
       if (x.codigo === "CONTABILIDADE" && !x.pedido)
         b.push(`<button class="btn" data-pr-contab="1">Montar o pedido à contabilidade</button>`);
       if (x.pedido)
-        b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
-          ${escapar(x.pedido.numero)} em Contabilidade</a>`);
+        b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
+          data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
+            ? `ver o e-mail ${escapar(x.pedido.numero)}`
+            : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
       if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
         b.push(`<a class="btn secundario" href="/erp/colaboradores?editar=${p.colaborador_id}"
           target="_blank">abrir o cadastro para anexar</a>`);
@@ -611,8 +627,10 @@ function blocoDoProcesso(p){
     if (x.codigo === "CONTABILIDADE" && x.estado !== "FEITO" && !x.pedido)
       b.push(`<button class="btn" data-pr-ct="1">Montar o pedido à contabilidade</button>`);
     if (x.pedido)
-      b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
-        ${escapar(x.pedido.numero)} em Contabilidade</a>`);
+      b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
+        data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
+          ? `ver o e-mail ${escapar(x.pedido.numero)}`
+          : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
     if (x.codigo === "ENCAMINHADA" && x.estado === "PENDENTE")
       b.push(`<button class="btn" data-pr-assinar="1">Mandar para a obra assinar…</button>`);
     if (x.a_validar) {
@@ -704,8 +722,14 @@ function ligarBotoesDoProcesso(p){
   {# ⚑ UM BOTÃO SÓ PARA TODOS OS PEDIDOS QUE PASSAM PELA CONTABILIDADE
      (20/11/2026): o servidor sabe o modelo de cada tipo e monta o pedido já
      preenchido (`contabil_processo.montar_pedido`). #}
-  um("[data-pr-contab]", () => acao("contabilidade", {}));
+  um("[data-pr-contab]", async () => {
+    await acao("contabilidade", {});
+    const ped = ((ABERTA.processo || {}).passos || []).find(x => x.pedido);
+    if (ped) verPedidoContabil(ped.pedido.id);
+  });
+  um("[data-pr-pedido]", b => verPedidoContabil(+b.dataset.prPedido));
   um("[data-pr-termo]", () => acao("termo", {}));
+  um("[data-pr-papel]", b => anexarPapel(b.dataset.prPapel, b.dataset.id));
   um("[data-pr-termo-ok]", b => {
     if (confirm("Você abriu o documento e confere que está certo e assinado?"))
       acao("termo_validar", {termo_id: +b.dataset.prTermoOk, aceitar: true});
@@ -836,9 +860,7 @@ async function montarPedidoDeRescisao(p){
                 continua_prestador: d.continua_prestador,
                 observacao: d.observacao}})});
     await abrirPedido(p.id);
-    aviso("dlg-msg", `Pedido ${escapar(r.numero)} montado. Confira o texto e
-      envie em <a href="/erp/dp/contabilidade" target="_blank">Contabilidade</a>.`,
-      "ok");
+    verPedidoContabil(r.id);
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
@@ -922,6 +944,165 @@ async function acao(caminho, corpo){
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
+{# ⚑ O E-MAIL À CONTABILIDADE SE LÊ, SE CORRIGE E SAI DAQUI (23/11/2026).
+   Ele: *"Eu clico [montar], aí eu vou para outra tela ainda de contabilidade
+   para poder enviar (…) é para eu ler o e-mail, ver se eu concordo, para poder
+   enviar (…) permitir até anexar alguma coisa"* — e *"todas as outras
+   solicitações (…) precisam trabalhar da mesma forma (…) A gente quer
+   velocidade e agilidade."* Vale para TODO pedido à contabilidade que nasce
+   de uma solicitação: desligamento, admissão, férias, alteração… #}
+async function verPedidoContabil(id){
+  let p;
+  try { p = (await api(`/erp/api/dp/pedidos/${id}`)).pedido; }
+  catch(e){ aviso("dlg-msg", e.message, "erro"); return; }
+  const aberto = p.situacao === "RASCUNHO";
+  const dlg = els("dlg-pedido");
+  dlg.innerHTML = `<div class="dlg-topo"><h3>${escapar(p.numero)} — ${escapar(p.template_nome)}</h3>
+      <button class="topo-btn" style="margin-left:auto" onclick="els('dlg-pedido').close()">Fechar</button></div>
+    <div class="dlg-corpo">
+      <p class="desc" style="margin-top:0"><b>${escapar(p.situacao_rotulo || p.situacao)}</b>
+        · para ${escapar((p.para_que_vai || []).join(", ") || "— sem e-mail da contabilidade cadastrado")}
+        ${p.prazo ? ` · prazo de volta ${dataBR(p.prazo)}` : ""}</p>
+      ${aberto ? `<div class="form-grade">
+          <div class="campo" style="grid-column:1/-1"><label>Assunto</label>
+            <input id="pc-assunto" value="${escapar(p.assunto || "")}"></div>
+          <div class="campo" style="grid-column:1/-1"><label>O e-mail (leia e corrija se precisar)</label>
+            <textarea id="pc-corpo" rows="14">${escapar(p.corpo || "")}</textarea></div></div>`
+        : `<div class="cartao-dica" style="white-space:pre-wrap; max-height:50vh; overflow:auto">${
+            escapar(p.assunto || "")}\n\n${escapar(p.corpo || "")}</div>`}
+      <div style="margin-top:10px"><b>Vai junto</b>
+        <div id="pc-anexos">${(p.anexos || []).length ? "" : "<small class='desc'>nenhum anexo</small>"}
+        ${(p.anexos || []).map(n => {
+          const ex = (p.anexos_extras || []).find(x => x.nome === n);
+          return `<div>📎 ${escapar(n)}${ex && aberto ? ` <button class="link-btn"
+            data-pc-tirar="${ex.documento_id}">tirar</button>` : ""}</div>`; }).join("")}</div>
+        ${aberto ? `<button class="btn secundario" id="pc-anexar" style="margin-top:6px">Anexar arquivo…</button>` : ""}
+      </div>
+      ${(p.eventos || []).length ? `<div style="margin-top:12px"><b>O que aconteceu com este e-mail</b>
+        <small class="desc">— fica guardado no sistema, com de qual conta saiu e para quem</small>
+        <div class="tabela-rolagem" style="max-height:180px"><table><tbody>
+        ${p.eventos.map(e => `<tr><td style="white-space:nowrap">${dataBR((e.quando || "").slice(0, 10))}
+          ${(e.quando || "").slice(11, 16)}</td><td><b>${escapar(e.tipo)}</b></td>
+          <td class="desc">${escapar(e.texto)}</td>
+          <td>${e.pelo_agente ? "<small>pelo agente</small>" : escapar(e.quem || "—")}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        ${aberto ? `<button class="btn" id="pc-enviar">Enviar à contabilidade</button>
+                    <button class="btn secundario" id="pc-salvar">Guardar o texto e enviar depois</button>` : ""}
+        ${["ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE"].includes(p.situacao)
+          ? `<button class="btn secundario" id="pc-reenviar">Reenviar o mesmo e-mail</button>` : ""}
+        ${!aberto ? `<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">cobrar ou
+          registrar o retorno em Contabilidade</a>` : ""}
+      </div>
+      <div id="pc-msg" style="margin-top:10px"></div></div>`;
+  // "corpo" entre aspas: é o nome que o servidor lê, não opção do fetch.
+  const texto = () => ({"assunto": els("pc-assunto").value, "corpo": els("pc-corpo").value});
+  const fim = async (msg) => {
+    dlg.close();
+    await abrirPedido(ABERTA.id);
+    aviso("dlg-msg", msg, "ok");
+  };
+  if (els("pc-reenviar")) els("pc-reenviar").addEventListener("click", async () => {
+    if (!confirm(`Mandar de novo o mesmo e-mail, com os mesmos anexos, para ${
+        (p.para_que_vai || []).join(", ")}? O prazo de volta não muda.`)) return;
+    try {
+      const r = await api(`/erp/api/dp/pedidos/${id}/reenviar`, {method: "POST", body: "{}"});
+      if (r.enviado === false) throw new Error("O e-mail não saiu: " + (r.erro || ""));
+      await fim(`${p.numero} reenviado${r.copia_nos_enviados ? " — " + r.copia_nos_enviados : ""}.`);
+    } catch(e){ aviso("pc-msg", e.message, "erro"); }
+  });
+  if (aberto) {
+    els("pc-enviar").addEventListener("click", async () => {
+      if (!confirm(`Enviar o e-mail para ${(p.para_que_vai || []).join(", ")}?`)) return;
+      els("pc-enviar").disabled = true;
+      try {
+        const r = await api(`/erp/api/dp/pedidos/${id}/enviar`, {method: "POST",
+          body: JSON.stringify(texto())});
+        if (r.enviado === false)
+          throw new Error("O e-mail não saiu: " + (r.erro || "motivo não informado")
+            + ". O texto ficou guardado; tente de novo.");
+        await fim(`${p.numero} enviado à contabilidade`
+          + (r.copia_nos_enviados ? ` — ${r.copia_nos_enviados}.` : "."));
+      } catch(e){ aviso("pc-msg", e.message, "erro"); els("pc-enviar").disabled = false; }
+    });
+    els("pc-salvar").addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/dp/pedidos/${id}/editar`, {method: "POST", body: JSON.stringify(texto())});
+        await fim(`${p.numero} guardado, ainda não enviado.`);
+      } catch(e){ aviso("pc-msg", e.message, "erro"); }
+    });
+    els("pc-anexar").addEventListener("click", () => {
+      const ent = document.createElement("input");
+      ent.type = "file";
+      ent.addEventListener("change", async () => {
+        const f = ent.files && ent.files[0];
+        if (!f) return;
+        try {
+          await api(`/erp/api/dp/pedidos/${id}/editar`, {method: "POST", body: JSON.stringify(texto())});
+          const fd = new FormData();
+          fd.append("arquivo", f);
+          await api(`/erp/api/dp/pedidos/${id}/anexar`, {method: "POST", body: fd});
+          verPedidoContabil(id);
+        } catch(e){ aviso("pc-msg", e.message, "erro"); }
+      });
+      ent.click();
+    });
+    dlg.querySelectorAll("[data-pc-tirar]").forEach(b => b.addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/dp/pedidos/${id}/editar`, {method: "POST", body: JSON.stringify(texto())});
+        await api(`/erp/api/dp/pedidos/${id}/tirar-anexo`, {method: "POST",
+          body: JSON.stringify({documento_id: +b.dataset.pcTirar})});
+        verPedidoContabil(id);
+      } catch(e){ aviso("pc-msg", e.message, "erro"); }
+    }));
+  }
+  if (!els("dlg-pedido").open) els("dlg-pedido").showModal();
+}
+
+{# O ponto da pessoa numa janela POR CIMA da de atender — a de atender fica
+   aberta, com o que já foi digitado (23/11/2026). #}
+function verPontoDaPessoa(id, competencia){
+  els("ponto-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}?aba=mes`
+    + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
+  els("dlg-ponto").showModal();
+}
+
+els("dlg-ponto").addEventListener("close", () => { els("ponto-quadro").src = "about:blank"; });
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (ev.origin === location.origin && d.tipo === "bws-ficha" && d.acao === "fechar"
+      && els("dlg-ponto").open) els("dlg-ponto").close();
+});
+
+{# O papel assinado que chegou ao escritório (plano B, 23/11/2026). #}
+function anexarPapel(caminho, id){
+  const ent = document.createElement("input");
+  ent.type = "file";
+  ent.accept = "image/jpeg,image/png,image/heic,image/webp,application/pdf";
+  ent.addEventListener("change", async () => {
+    const f = ent.files && ent.files[0];
+    if (!f) return;
+    const termo = caminho === "termo_papel";
+    if (!confirm((termo
+        ? "Este papel está assinado pela pessoa e é o mesmo documento? "
+          + "Ao anexar, ele vale como assinado e o processo segue."
+        : "Este é o documento assinado que a obra devia devolver? Ao anexar, "
+          + "a pendência da obra fecha e o arquivo vai para a sua validação.")))
+      return;
+    const fd = new FormData();
+    fd.append("arquivo", f);
+    fd.append("id", id);
+    try {
+      const r = await api(`/erp/api/dp/solicitacoes/${ABERTA.id}/${caminho}`,
+        {method: "POST", body: fd});
+      ABERTA = r.solicitacao;
+      pintarPedido();
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  ent.click();
+}
+
 async function atender(){
   // O AVISO DIZ O QUE VAI ACONTECER NO CADASTRO. É a diferença em relação ao
   // Pipefy, onde atender era mover o card e alguém mexia no cadastro depois —
@@ -982,24 +1163,114 @@ async function atender(){
      depende do vínculo da pessoa: a data de saída de quem tem carteira é
      conta do DP (último dia + aviso prévio); a do prestador já veio da obra,
      e pedi-la de novo aqui abriria a porta para duas datas diferentes. #}
+  {# ⚑ A MATRÍCULA NÃO APARECE (23/11/2026). Ele: *"a matrícula é para ser
+     o número do CPF e não é nem para aparecer aqui nesse modal de
+     atendimento."* O servidor já grava o CPF quando ela está vazia
+     (`atender`, 19/11/2026); na readmissão, a que existia fica. #}
   const doDP = (ABERTA.campos_do_dp || tipo.campos_do_dp || [])
-    .filter(c => CAMPO_PEDIDO[c] !== false);
+    .filter(c => CAMPO_PEDIDO[c] !== false && c !== "matricula");
+  {# ⚑ CARGO E CONVENÇÃO SE ESCOLHEM DA LISTA, E O PISO VEM SOZINHO
+     (23/11/2026). Ele: *"a convenção precisa ser uma lista selecionável
+     baseada na base de dados (…) o cargo já é para ele identificar dentre os
+     cargos já cadastrados e automaticamente, quando eu colocar a convenção,
+     ele já vai buscar o salário que está cadastrado."* #}
+  let TAB = null;
+  if (doDP.some(c => ["cargo_id", "convencao_id", "cargo_deferido_id"].includes(c))) {
+    try { TAB = await api("/erp/api/cargos"); } catch (e) { TAB = null; }
+  }
+  const dadosAb = ABERTA.dados || {};
+  const pisoDe = (cargo, conv) => ((TAB && TAB.cruzamentos) || []).find(x =>
+    String(x.cargo_id) === String(cargo) && String(x.convencao_id) === String(conv));
+  {# ⚑ A JANELA CHEGA PREENCHIDA (23/11/2026). Ele: *"As faltas a descontar,
+     eu gostaria que já fosse coletada do ponto a título de sugestão"* — e as
+     datas, pela forma e pela data do aviso. É sugestão: o DP muda o que
+     quiser, e a explicação da conta fica embaixo de cada campo. Sem ponto ou
+     sem resposta, a janela abre vazia como antes. #}
+  let sug = {valores: {}, explicacoes: {}};
+  if (ABERTA.tipo === "DESLIGAMENTO" && doDP.length) {
+    try { sug = await api(`/erp/api/dp/solicitacoes/${ABERTA.id}/sugestoes`); }
+    catch (e) { /* sem sugestão, segue vazio */ }
+  }
+  const sugValor = c => (sug.valores || {})[c]
+    || ((ABERTA.dados || {})[c] ?? "");
+  const sugDica = c => (sug.explicacoes || {})[c] || undefined;
   const campos = doDP.map(c => {
     const rot = (tipo.rotulos_do_dp || {})[c] || ROTULO_CAMPO[c] || c.replace(/_/g, " ");
+    if (TAB && (c === "cargo_id" || c === "cargo_deferido_id"))
+      return {nome: c, rotulo: rot, tipo: "select", largura: 3,
+              valor: String(dadosAb[c] || dadosAb.cargo_pleiteado_id || ""),
+              opcoes: [{valor: "", rotulo: "— escolha o cargo —"}].concat(
+                (TAB.cargos || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
+    if (TAB && c === "convencao_id")
+      return {nome: c, rotulo: rot, tipo: "select", largura: 3,
+              valor: String(dadosAb.convencao_id || ""),
+              opcoes: [{valor: "", rotulo: "— escolha a convenção —"}].concat(
+                (TAB.convencoes || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
+    if (TAB && c === "salario" && doDP.includes("convencao_id"))
+      return {nome: c, rotulo: rot, largura: 3, valor: dadosAb.salario || "",
+              exemplo: "vem do piso ao escolher cargo e convenção",
+              dica: "O piso do cargo na convenção entra sozinho. Se o combinado for "
+                + "acima do piso, troque."};
     const opcoes = (tipo.opcoes_do_dp || {})[c];
     if (opcoes)
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
+              valor: sugValor(c), dica: sugDica(c),
               opcoes: [{valor: "", rotulo: "— deixar como está —"}].concat(
                 opcoes.map(o => (typeof o === "string"
                   ? {valor: o, rotulo: o} : o)))};
-    return {nome: c, rotulo: rot, largura: 3,
+    return {nome: c, rotulo: rot, largura: 3, valor: sugValor(c), dica: sugDica(c),
             tipo: /data|vigencia|ultimo_dia|admissao/.test(c) ? "date" : "text"};
   });
+  {# O espelho do ponto do período das faltas, numa aba nova: a janela de
+     atender continua aberta, com o que já foi digitado (23/11/2026). #}
+  {# ⚑ 23/11/2026, ele: *"era verificar a tela de sistema e não baixar o
+     arquivo. Então, é abrir outro modal com o ponto da pessoa, da mesma forma
+     que a gente vê o ponto lá dentro de ponto."* É a FICHA ÚNICA do ponto (a
+     mesma que Colaboradores mostra), aberta no espelho do mês, numa janela
+     por cima desta — dá para abonar, lançar atestado, trocar de mês. #}
+  const pf = sug.periodo_faltas;
+  const mesesDoPeriodo = pf ? [...new Set([pf.de.slice(0, 7), pf.ate.slice(0, 7)])] : [];
+  const espelho = pf && ABERTA.colaborador_id
+    ? `<p style="margin:8px 0 0">${mesesDoPeriodo.map(m => `<button type="button"
+         class="btn secundario" data-ver-ponto="${m}">🕒 Ver o ponto de ${
+         m.split("-").reverse().join("/")}</button>`).join(" ")}
+         <small class="desc">as faltas contam de ${pf.de.split("-").reverse().join("/")}
+         a ${pf.ate.split("-").reverse().join("/")}</small></p>` : "";
+  setTimeout(() => document.querySelectorAll("[data-ver-ponto]").forEach(b =>
+    b.addEventListener("click", () => verPontoDaPessoa(ABERTA.colaborador_id,
+                                                         b.dataset.verPonto))), 0);
+  if (TAB && doDP.includes("convencao_id") && doDP.includes("salario")) {
+    setTimeout(() => {
+      const idx = n => campos.findIndex(x => x.nome === n);
+      const elCargo = els(`pg-${idx(doDP.includes("cargo_id") ? "cargo_id" : "cargo_deferido_id")}`);
+      const elConv = els(`pg-${idx("convencao_id")}`);
+      const elSal = els(`pg-${idx("salario")}`);
+      const dicaSal = els(`pg-${idx("salario")}-dica`);
+      if (!elCargo || !elConv || !elSal) return;
+      const puxar = () => {
+        if (!elCargo.value || !elConv.value) return;
+        const x = pisoDe(elCargo.value, elConv.value);
+        if (x && x.salario_piso) {
+          elSal.value = numero(x.salario_piso);
+          if (dicaSal) dicaSal.textContent = `Piso de ${x.cargo} em ${x.convencao}: `
+            + `${moeda(x.salario_piso)}. Se o combinado for acima do piso, troque.`;
+        } else if (dicaSal) {
+          dicaSal.textContent = x ? "Este cargo nesta convenção ainda não tem piso "
+              + "cadastrado (Administração › Cargos e convenções) — digite o salário."
+            : "Este cargo não está cadastrado nesta convenção — confira a convenção, "
+              + "ou cadastre o cargo nela em Administração › Cargos e convenções.";
+        }
+      };
+      elCargo.addEventListener("change", puxar);
+      elConv.addEventListener("change", puxar);
+      if (!elSal.value) puxar();
+    }, 0);
+  }
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
     aviso: (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
             + "no cadastro — o atendimento é o registro do que foi feito.")
            + (campos.length ? " <b>Os campos abaixo são do DP</b>: a obra não "
-              + "os informa, e é aqui que eles entram." : ""),
+              + "os informa, e é aqui que eles entram." : "") + espelho,
     textoOk: "Atender",
     campos: campos.concat([
       {nome: "resposta", rotulo: "Resposta (opcional)", tipo: "textarea",

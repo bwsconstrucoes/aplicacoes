@@ -827,11 +827,18 @@ async function mensagensDaPessoa(alvo, colaboradorId){
 
        A ficha mostrava os pedaços e não concluía. Agora conclui — e a conta é
        feita num lugar só, para as duas telas não discordarem. #}
+    {# ⚑ O ID DO TELEGRAM SEMPRE À VISTA, e editável por quem configura as
+       mensagens (23/11/2026). Ele: *"gostaria de poder ver esse ID e, se tiver
+       sentido, alterar ele."* Antes só aparecia quando havia cadastro — quem
+       não tinha não via nem o campo vazio. #}
     const situacao = pilula(d.diagnostico_rotulo || "—", d.diagnostico_cor || "info")
       + (d.diagnostico_explicacao ? `<div class="cartao-dica" style="margin:6px 0 0">${escapar(d.diagnostico_explicacao)}</div>` : "")
-      + (t ? `<div style="margin-top:6px"><small>ID do Telegram
-          <b class="mono">${escapar(t.chat_id || "—")}</b>, desde ${quando(t.desde).slice(0, 10)}${
-            t.telefone ? " · número confirmado " + escapar(t.telefone) : ""}</small></div>` : "")
+      + `<div style="margin-top:6px"><small>ID do Telegram
+          <b class="mono">${escapar((t && t.chat_id) || "nenhum")}</b>${t ? `, desde ${quando(t.desde).slice(0, 10)}${
+            t.telefone ? " · número confirmado " + escapar(t.telefone) : " · número ainda não confirmado"}${
+            t.origem === "FICHA" ? " · informado à mão na ficha" : ""}` : ""}</small>
+          {% if pode.configurar_mensagens %}${d.colaborador.situacao !== "DESLIGADO" || t ? ` <button class="link-btn" type="button" id="mp-trocar-id"
+            title="Ligar esta pessoa a outra conta do Telegram, ou desligar">${t ? "trocar" : "informar"}</button>` : ""}{% endif %}</div>`
       + (t && t.telefone_diverge ? `<div class="aviso alerta" style="margin-top:6px">O Telegram está num número diferente do cadastro. Atualize o telefone no cadastro se ele mudou.</div>` : "");
     alvo.innerHTML = `<div style="margin-top:12px">${situacao}
       ${c ? `<div style="margin-top:8px"><small>Último convite pelo WhatsApp: ${quando(c.criado_em)} — ${escapar(c.status === "ENVIADO" ? "enviado" : c.status.toLowerCase())}${c.usado_em ? ", cadastrou-se pelo link" : c.aberto_em ? ", abriu o link" : ""}${c.motivo === "AUTOMATICO" ? " (automático)" : ""}</small></div>` : ""}
@@ -860,6 +867,8 @@ async function mensagensDaPessoa(alvo, colaboradorId){
      vez de deduzir pelo histórico, manda uma agora e mostra o que o Telegram
      respondeu. É o mesmo endereço do teste da tela Mensagens — não é um
      segundo caminho de enviar. #}
+  const trocar = alvo.querySelector("#mp-trocar-id");
+  if (trocar) trocar.addEventListener("click", () => trocarIdDoTelegram(alvo, colaboradorId, d));
   const botao = alvo.querySelector("#mp-testar");
   if (botao) botao.addEventListener("click", async () => {
     const destino = (t && t.chat_id) || d.colaborador.telefone || "";
@@ -875,6 +884,41 @@ async function mensagensDaPessoa(alvo, colaboradorId){
     mensagensDaPessoa(alvo, colaboradorId);
   });
   } catch (e) { alvo.innerHTML = ""; }
+}
+
+// Trocar o ID do Telegram pela ficha: pergunta o ID, o servidor confere no
+// Telegram de quem é a conta, e só grava depois do "é ela" de quem está mexendo.
+async function trocarIdDoTelegram(alvo, colaboradorId, d){
+  const t = d.telegram;
+  const r = await perguntar({titulo: "ID do Telegram de " + (d.colaborador.nome || "—"),
+    campos: [{rotulo: "ID do Telegram", nome: "telegram_id", valor: (t && t.chat_id) || "", exemplo: "ex.: 123456789",
+      dica: "São só números. Quem já tentou se cadastrar aparece com o ID na fila do DP, em Mensagens › "
+        + "Cadastro do Telegram. "
+        + (t ? "Apague o número para desligar o Telegram desta pessoa." : "")
+        + " O sistema confere no Telegram de quem é a conta antes de gravar."}],
+    textoOk: "Conferir"});
+  if (!r) return;
+  const url = `/erp/api/mensagens/pessoa/${encodeURIComponent(colaboradorId)}/telegram`;
+  const enviar = corpo => api(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+  const id = (r.telegram_id || "").replace(/\D/g, "");
+  try {
+    if (!id) {
+      if (!t) return;
+      if (!confirm(`Desligar o Telegram de ${d.colaborador.nome}? As mensagens deixam de chegar por lá até ela se cadastrar de novo.`)) return;
+      await enviar({chat_id: "", confirmar: true});
+      await mensagensDaPessoa(alvo, colaboradorId);
+      aviso("mp-msg", "Telegram desligado desta pessoa.", "ok");
+    } else {
+      const p = await enviar({chat_id: id});
+      if (p.banco_atrasado) { aviso("mp-msg", p.erro, "erro"); return; }
+      const conta = (p.nome_telegram || "sem nome") + (p.usuario_telegram ? ` (@${p.usuario_telegram})` : "");
+      if (!confirm(`No Telegram, o ID ${id} é de: ${conta}.\n\nÉ mesmo a conta de ${d.colaborador.nome}? `
+          + (p.anterior ? `O ID antigo (${p.anterior}) deixa de receber.` : ""))) return;
+      await enviar({chat_id: id, confirmar: true});
+      await mensagensDaPessoa(alvo, colaboradorId);
+      aviso("mp-msg", `Gravado. Na próxima vez que ${(d.colaborador.nome || "").split(" ")[0]} abrir o robô, ele pede para confirmar o número.`, "ok");
+    }
+  } catch (e) { aviso("mp-msg", e.message, "erro"); }
 }
 
 async function abrirEncaminhar(tipo, id){

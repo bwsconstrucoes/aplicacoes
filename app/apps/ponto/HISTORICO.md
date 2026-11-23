@@ -3,6 +3,16 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 23/11/2026 — (feito pelo chat do DP) A ficha da pessoa aceita `?aba=` e `?competencia=`
+
+Uma linha em `templates/ponto/gestao.html` (bloco `ponto_ficha`): a ficha
+única aberta sozinha (`/erp/ponto/pessoa/<id>`) passou a aceitar `?aba=mes` e
+`?competencia=AAAA-MM`. Sem os parâmetros, abre como antes. Quem usa: a janela
+de Atender o desligamento, no ERP, mostra o espelho do mês das faltas por cima
+dela (pedido do dono: *"abrir outro modal com o ponto da pessoa, da mesma
+forma que a gente vê o ponto lá dentro de ponto"*). Detalhe em
+`app/apps/erp/HISTORICO_PESSOAL.md`, 23/11/2026.
+
 ## 21/11/2026 — Teste do alerta de batida que quebrava no dia seguinte a feriado
 
 `tests/test_ponto_qr_banco.py::test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`
@@ -331,6 +341,124 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 23/11/2026 — A CENTRAL DE ASSINATURAS, pelo aplicativo do ponto (feita; ver a proposta logo abaixo)
+
+**As decisões dele (23/11):** (1) *"vamos concentrar o aplicativo do ponto para ser o caminho para a coleta dessas
+assinaturas, porque está tudo diretamente associado ao colaborador"*; (2) o termo de compensação: *"o sistema permite
+ser lançado, o DP toma ciência (…) o sistema em seguida cobra a assinatura do termo. (…) se houver alguma
+discordância, o DP vai fazer contato (…) vai poder cancelar aquele lançamento"*; (3) *"faça por aqui mesmo (…) e
+avisa ao chat do DP"* — avisado no mesmo dia (sessão do chat "erp dp").
+
+**O que ficou pronto:**
+- **A pessoa, no "Meu ponto":** cartão "📄 Você tem N documentos para assinar" (vermelho se algum venceu). Abre a lista:
+  os documentos do DP, a folha de ponto dos meses fechados ainda sem assinatura (até 3 meses) e o termo do ponto; e
+  "Já assinados". Assina com o dedo e o PIN dela. Rotas em `app_documentos.py` (novo).
+- **O administrativo (quem já via "Assinaturas da folha"):** item novo "📄 Documentos para assinar" — os papéis do DP da
+  equipe, os vencidos primeiro. Três jeitos: **assinar aqui** (a pessoa, com o dedo e o PIN DELA), **assinou no
+  papel** (foto, 1600 px; o DP valida) e **recusou** (o que houve + duas testemunhas; o DP valida).
+- **O DP, no ERP: Ponto › Assinaturas** (aba nova, depois de "Banco de horas"): esperando validar (aceitar/devolver
+  com o porquê), documentos para assinar (cancelar; o termo de compensação tem "cancelar a compensação"), a folha de
+  ponto do mês (quem falta, por obra), o termo do ponto (quem falta) e os assinados dos últimos 60 dias.
+- **A ficha da pessoa:** área nova "📄 Documentos › Documentos e assinaturas", com o PDF de cada um (o do DP abre
+  pelo Arquivo do ERP; a folha e o termo do ponto, pelo ponto).
+- **O termo de acordo de compensação nasce sozinho** (`core/termo_compensacao.py`): toda compensação de DIA aprovada
+  a partir de 23/11/2026 (não as de horas, nem trocas/permutas) abre UM termo por pessoa, depois que a requisição grava
+  — o recesso de quatro folgas vira um termo só, com os quatro pares no anexo. Prazo: até a primeira folga (no máximo
+  7 dias). **A compensação vale já; o termo é cobrança, não trava.** O texto é o modelo de 22/11 (o documento que ele
+  leu), com a empresa da obra, a pessoa e os pares.
+- **O DP cancela uma compensação JÁ APROVADA** (antes não havia como): só compensação de dia, só o DP, mês aberto, com
+  o porquê (`ocorrencias.cancelar_compensacao`). A folga volta a ser julgada pelo ponto; cancelando todas as do termo
+  aberto, o termo cai junto.
+
+**Onde mexeu fora do ponto (avisado ao chat do DP):** `app/apps/erp/core/termos.py` (assinar pela própria pessoa, a
+origem do termo, as listas por pessoa e o painel do DP) e a **migração 126 do ERP** (`126_termos_origem.sql`:
+`origem`, `origem_ids`, `assinado_pela_pessoa` e o tipo TERMO-COMPENSACAO no Arquivo). 124 e 125 são do chat de
+Suprimentos. **Sem a 126 aplicada, nada cai:** o termo de compensação simplesmente não nasce (fica no log), e o resto
+funciona. E nos testes: `_limpar_documentos_do_erp` na limpeza de `test_ponto_gestao_banco.py` e no `carlos`.
+
+**Decisões minhas, para ele trocar se quiser:**
+- a regra antiga "quem conduz não assina o próprio" continua para quem CONDUZ; a pessoa logada no próprio "Meu ponto"
+  passa a poder assinar os dela (documento do DP e folha de ponto);
+- o portal da obra (web) continua mostrando os documentos do DP — não tirei nada; o aplicativo passou a ser o caminho;
+- a folha sem assinatura não aparece na ficha (aparece em Ponto › Assinaturas): a ficha mostra o que foi assinado;
+- documentos sem obra (a pessoa sem obra no cadastro) só aparecem para a própria pessoa — não há administrativo.
+
+**A conta do custo** (regra de 17/11): o cartão do "Meu ponto" faz UMA chamada a mais por abertura da tela inicial
+(~6 consultas: as folhas dos últimos 3 meses, o termo, os documentos no ERP). A tela do DP conta as folhas sem
+remontar espelho (uma consulta por mês). Nada vai ao Google; o PDF assinado vai ao Arquivo do ERP (uma gravação, a de
+sempre).
+
+**O que ficou de fora:** o aviso por WhatsApp/Telegram de "documento para assinar" (o agente do DP já cobra os termos
+abertos); a ficha de EPI, o contrato e a rescisão como documentos — **a base está pronta, falta o DP gerar cada um**
+(cada documento novo é só um texto e um `termos.abrir`); o PDF do documento assinado para a própria pessoa baixar no
+celular.
+
+**Como foi verificado:** `tests/test_ponto_central_assinaturas_banco.py` (a pessoa assina o dela e não o dos outros; o
+administrativo na tela, no papel e a recusa; o DP devolve e aceita; a folha pela própria pessoa; a tela e a ficha) e
+`tests/test_ponto_termo_compensacao_banco.py` (o recesso vira um termo; cancela uma e o termo fica, cancela as duas e
+ele cai; a compensação de horas não gera termo). **No navegador de verdade:** o "Meu ponto" do João (cartão, lista,
+leitura, assinatura com o dedo), o administrativo (a lista da equipe, o modo papel), a tela do DP e a ficha — sem erro
+no console. **Não exercitado:** o PDF indo ao Arquivo de verdade (nos testes o Drive é dublado).
+
+## 23/11/2026 — a proposta da central de assinaturas (o que ele pediu e o que existia)
+
+**O pedido, resumido nas palavras dele:** vários documentos que o colaborador assina — a folha de ponto todo mês, o
+termo de compensação, a ficha de EPI, o contrato de trabalho, o aviso prévio, a documentação rescisória. Para todos:
+(1) **o administrativo de obra conduz**, porque *"sempre vai ter algum funcionário que não tem muita familiaridade
+com telefone (…) pouco estudo, pouca leitura"*; (2) **a própria pessoa**, pelo acesso do ponto, vê o que tem
+pendente e assina; (3) **o administrativo vê as pendências** dele — as do ponto e as de assinatura; (4) **o DP gere
+no ERP** o que falta, o que foi; (5) **na ficha de cada colaborador**, o histórico e os documentos assinados; (6) o
+documento que precisa de assinatura **gera a pendência sozinho** (ex.: o termo de compensação, ao ser lançado).
+
+**O que já existe, em TRÊS lugares separados** (é o risco de "três portas" de novo):
+1. a folha de ponto — `ponto/core/assinaturas.py` (`ponto.espelho_assinaturas`), no aplicativo do ponto, conduzida;
+2. o termo do ponto — `ponto/core/termo.py` (`ponto.termo_aceites`), no aplicativo, pela pessoa ou conduzido;
+3. o documento do DP — `erp/core/termos.py` (`dp_termos`, migração 117, 20/11, feito pelo chat do DP): aviso
+   prévio e o que vier, na tela / papel com foto / recusa com testemunhas, o DP valida, arquiva no Arquivo; aparece
+   no PORTAL da obra (web), não no aplicativo do ponto.
+
+**A proposta levada a ele** (resposta de 23/11): `dp_termos` vira a porta única dos documentos avulsos; o aplicativo
+do ponto vira o canal (a pessoa e o administrativo); a folha e o termo do ponto continuam com as tabelas deles, mas
+entram nas MESMAS listas. Perguntas em aberto: se o termo de compensação vale antes de assinado; quem constrói
+(atravessa o ERP · Pessoal e DP); se o portal da obra continua sendo caminho.
+
+## 22/11/2026 (domingo) — O RECESSO EM LOTE, no Quadro
+
+**O pedido:** *"pode criar uma tela para o DP lançar o recesso em lote."* (O número de sábados e de horas ele mandou
+ignorar: a tela pergunta na hora.)
+
+**Onde fica:** Ponto › Quadro. O DP monta o quadro (a obra, o filtro de sempre), marca as linhas — vale pelas
+**pessoas** marcadas, não pelos dias, como o "Definir a escala" — e aperta **"Recesso — folgas a compensar…"** (só
+quem aprova afastamento vê). A janela pede até 6 pares "dia de folga → pago com o trabalho em", mais o combinado
+(opcional).
+
+**A prévia antes de gravar**, pessoa por pessoa e par por par: ✓ "folga de 9h00; o dia de pagar precisa render
+9h00", ou ✗ com o porquê — não é dia de trabalho na escala dele, feriado, fora do contrato, mês fechado, já existe
+pedido naquele dia. Avisos (⚠) sem barrar: já há batida no dia da folga; o dia de pagar já é dia de trabalho dele
+(aí só conta o que passar da escala).
+
+**Gravar** = um pedido de compensação de UM dia por pessoa e por par, aprovado na hora com o nome de quem lançou, com
+a descrição "Recesso: <combinado> — folga em DD/MM/AAAA, paga com o trabalho em DD/MM/AAAA". É o mesmo pedido que
+o DP lançaria à mão, com tudo o que a folga paga depois já faz (a falta no sábado não cumprido, a observação na folha).
+Rodar de novo não duplica (o pedido existente barra).
+
+**Regras da janela:** cada dia de pagar serve a uma folga só (hora por hora: um sábado de 9h paga um dia de 9h);
+no máximo 10 pares; um dia não é folga e dia de pagar ao mesmo tempo. A tela manda de 40 em 40 pessoas.
+
+**A conta do custo** (a regra de 17/11): por pessoa e por par, a prévia faz ~12 consultas ao banco (o espelho do dia
+da folga, a escala, o mês fechado, o pedido existente) e a gravação, outras ~25 (a mesma conferência e o pedido com a
+aprovação). 40 pessoas × 4 folgas ≈ 2 mil consultas na prévia e 4 mil na gravação: segundos, não minutos. Nada vai
+ao Google nem ao Pipefy.
+
+**Como foi verificado:** `tests/test_ponto_recesso_lote_banco.py` (a prévia sem gravar, a gravação, o domingo de
+fora, rodar duas vezes sem duplicar, as recusas da janela, o supervisor barrado) e **no navegador de verdade**: o
+Quadro com 2 pessoas marcadas, a janela, a prévia (1 entra e 1 fica de fora para cada um) e a gravação — sem erro
+no console. Sem migração.
+
+**O termo de acordo de compensação** (o modelo que ele pediu "para dar uma olhadinha e pensar") está num documento
+à parte, fora do repositório. **Não está no sistema:** o sistema não guarda nem coleta esse acordo; decidir se ele é
+assinado no papel ou na tela, como o termo do ponto, é dele.
+
 ## 21/11/2026 (sábado, noite) — A FOLGA PAGA DEPOIS: a folga fica, a falta cai no sábado que não pagou
 
 **O pedido**, com o recesso de fim de ano em vista (folgar entre o Natal e o Ano Novo, pagar com sábados deste
@@ -370,6 +498,9 @@ folha de dezembro já fechada, paga e assinada.
 **Como foi verificado:** `tests/test_ponto_folga_paga_depois_banco.py` (o sábado sem batida, com 4h e com 9h; o
 relatório; as observações; a folha impressa; o pedido de vários dias recusado; o lacre antigo) e os 707 testes do
 ponto. **Não exercitado na tela de verdade.** Sem migração.
+
+**Publicado em 21/11/2026** (com o "pode" do dono, junto com a revisão dos testes abaixo) — SEM MIGRAÇÃO. Suíte
+inteira: 12.689 passando.
 
 ## 21/11/2026 (sábado) — REVISÃO: os testes do ponto rodados "em outras datas"
 

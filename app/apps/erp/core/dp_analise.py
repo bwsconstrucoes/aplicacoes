@@ -526,3 +526,177 @@ def resumo(itens: list[dict[str, Any]]) -> dict[str, int]:
     return {"atencao": sum(1 for i in itens if i["ok"] is False),
             "ok": sum(1 for i in itens if i["ok"] is True),
             "lembretes": sum(1 for i in itens if i["ok"] is None)}
+
+
+# ---------------------------------------------------------------------------
+# O QUE O DP PREENCHE AO ATENDER O DESLIGAMENTO — já sugerido
+#
+# ⚑ PEDIDO DELE, 23/11/2026, ao atender um pedido de demissão: *"As faltas a
+# descontar, eu gostaria que já fosse coletada do ponto a título de sugestão.
+# Do dia 26 do mês anterior em diante."* E sobre as datas: *"quando é a empresa
+# que está demitindo (…) se você souber, você já calcula a partir da data do
+# aviso (…) como tem a data de admissão no cadastro, talvez já dê para
+# calcular."*
+#
+# É SUGESTÃO: a janela de atendimento chega preenchida e o DP muda o que
+# quiser. A análise acima continua apontando se o que ficou gravado diverge.
+#
+# Custo: duas consultas no banco do ERP e UM espelho do ponto (o mesmo que a
+# tela do ponto monta para uma pessoa) — só quando o DP aperta "Atender".
+# ---------------------------------------------------------------------------
+def inicio_das_faltas(ultimo: date, corte: int) -> date:
+    """PURA. O primeiro dia da folha em que o último dia cai: o dia seguinte ao
+    corte do ponto. Com corte 25, último dia 10/12 → 26/11; 28/12 → 26/12."""
+    if ultimo.day > corte:
+        return ultimo.replace(day=corte + 1)
+    mes_anterior = ultimo.replace(day=1) - timedelta(days=1)
+    return mes_anterior.replace(day=corte + 1)
+
+
+def faltas_no_ponto(colaborador_id: int, ultimo: date,
+                    hoje: Optional[date] = None) -> dict[str, Any]:
+    """As faltas da pessoa no ponto, do dia seguinte ao corte até o último dia
+    (ou até ontem, se o último dia ainda não chegou). Usa o espelho do próprio
+    ponto — a mesma conta do fechamento —, nunca a tabela por fora.
+
+    Nunca levanta: sem ponto, devolve `disponivel: False` e o motivo."""
+    hoje = hoje or date.today()
+    try:
+        from app.apps.ponto import db as ponto_db
+        from app.apps.ponto.core import espelho, fechamento
+    except Exception as e:  # noqa: BLE001
+        return {"disponivel": False, "motivo": f"o módulo do ponto não carregou: {e}"}
+    try:
+        with ponto_db.conexao() as conn:
+            corte = fechamento.dia_de_corte(conn)
+            inicio = inicio_das_faltas(ultimo, corte)
+            fim = min(ultimo, hoje - timedelta(days=1))
+            base = {"disponivel": True, "inicio": inicio.isoformat(),
+                    "fim": fim.isoformat(), "corte": corte,
+                    "parcial_ate_hoje": fim < ultimo}
+            if fim < inicio:
+                return {**base, "integrais": 0, "dias": [], "parciais": []}
+            esp = espelho.montar(conn, int(colaborador_id), inicio, fim)
+            integrais, parciais = [], []
+            for d in esp.get("dias") or []:
+                f = fechamento.falta_do_dia(d)
+                if not f:
+                    continue
+                if f["tipo"] == "INTEGRAL":
+                    integrais.append(d["data"])
+                else:
+                    parciais.append({"data": d["data"], "minutos": f["minutos"],
+                                     "rotulo": f["rotulo"]})
+            return {**base, "integrais": len(integrais), "dias": integrais,
+                    "parciais": parciais}
+    except Exception as e:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("ERP/DP: faltas do ponto para o desligamento")
+        return {"disponivel": False, "motivo": f"o ponto não respondeu ({e})"}
+
+
+def sugestoes_do_desligamento(s: Session, sol: dict[str, Any],
+                              hoje: Optional[date] = None) -> dict[str, Any]:
+    """Os valores sugeridos para a janela de atendimento do desligamento de
+    quem tem carteira: último dia, data de saída e faltas a descontar — cada
+    um com a explicação da conta. Nunca levanta."""
+    hoje = hoje or date.today()
+    saida: dict[str, Any] = {"valores": {}, "explicacoes": {}}
+    try:
+        from app.apps.erp.core import pessoal_experiencia as svc_exp
+        dados = sol.get("dados") or {}
+        p = _pessoa(s, sol.get("colaborador_id"))
+        if p is None or (p["vinculo"] or "CTPS").upper() != "CTPS":
+            return saida
+        forma = str(dados.get("forma_desligamento") or "").upper()
+        aviso = _data(dados.get("aviso_previo"))
+        cumpre = str(dados.get("cumpre_aviso") or "1") not in ("0", "nao", "não", "NAO")
+        exp = svc_exp.situacao(p["admissao"], p["contrato_experiencia"], aviso or hoje)
+        ultimo = data_saida = None
+        texto = ""
+        if forma == "FIM_EXPERIENCIA" and exp["tem"]:
+            fim = _data(exp["fim_primeira"]) if exp["fase"] == "primeira" \
+                else _data(exp["fim_total"])
+            ultimo = data_saida = fim
+            texto = (f"fim do contrato de experiência ({_br(fim)}): sem aviso "
+                     "prévio, o último dia e a saída são o mesmo dia")
+        elif forma == "PEDIDO_COLABORADOR" and aviso and exp["tem"] \
+                and not exp["ja_acabou"]:
+            ultimo = data_saida = aviso
+            texto = ("pedido de demissão durante a experiência: não há aviso "
+                     "prévio (salvo cláusula no contrato) — sai no dia do pedido")
+        elif forma in ("AVISO_TRABALHADO", "AVISO_INDENIZADO",
+                       "PEDIDO_COLABORADOR") and aviso:
+            esp = datas_do_aviso(p["admissao"], aviso, forma, cumpre)
+            ultimo, data_saida = esp["ultimo_dia"], esp["data_saida"]
+            if forma == "PEDIDO_COLABORADOR":
+                texto = (f"pedido de demissão com aviso em {_br(aviso)}: "
+                         + ("trabalha os 30 dias — último dia e saída em "
+                            f"{_br(ultimo)} (se for dispensada do aviso, "
+                            f"os dois passam a ser {_br(aviso)})" if cumpre else
+                            "dispensado do aviso — sai no dia do pedido")
+                         + ". O aviso de quem pede é sempre 30 dias (o "
+                           "proporcional só vale a favor da pessoa). Se ela "
+                           "combinou outro último dia, troque aqui.")
+            else:
+                anos = anos_completos(p["admissao"], aviso) if p["admissao"] else 0
+                texto = (f"aviso de {esp['dias']} dias (30 + 3 por ano completo; "
+                         f"{anos} ano(s) de casa"
+                         + ("" if p["admissao"] else " — SEM admissão no "
+                            "cadastro, contei só 30") + "). "
+                         + (f"Trabalha 30 dias até {_br(ultimo)}; "
+                            if forma == "AVISO_TRABALHADO" else
+                            f"Indenizado: o último dia é o do aviso ({_br(ultimo)}); ")
+                         + f"a saída é a projeção do aviso, {_br(data_saida)}.")
+        if ultimo:
+            saida["valores"]["ultimo_dia"] = ultimo.isoformat()
+            saida["explicacoes"]["ultimo_dia"] = texto
+        if data_saida:
+            saida["valores"]["data_saida"] = data_saida.isoformat()
+            saida["explicacoes"]["data_saida"] = (
+                "na carteira, a data de saída é a projeção do aviso (OJ 82 da "
+                "SDI-1 do TST)" if forma in ("AVISO_TRABALHADO", "AVISO_INDENIZADO")
+                else "sem aviso a projetar, a saída é o último dia")
+
+        if forma == "PEDIDO_COLABORADOR":
+            saida["explicacoes"]["reducao_jornada"] = (
+                "a redução de jornada (2 horas por dia ou 7 dias) é direito de "
+                "quem foi DISPENSADO (CLT art. 488) — no pedido de demissão, "
+                "deixe em branco")
+        elif forma in ("AVISO_TRABALHADO", "AVISO_INDENIZADO", "FIM_EXPERIENCIA"):
+            saida["explicacoes"]["cumpre_aviso"] = (
+                "só vale no pedido de demissão — aqui, deixe em branco")
+            if forma != "AVISO_TRABALHADO":
+                saida["explicacoes"]["reducao_jornada"] = (
+                    "só vale no aviso trabalhado — aqui, deixe em branco")
+
+        # As faltas: do dia seguinte ao corte do ponto até o último dia.
+        if ultimo and sol.get("colaborador_id"):
+            f = faltas_no_ponto(int(sol["colaborador_id"]), ultimo, hoje)
+            if f.get("disponivel"):
+                # O período vai junto: a janela abre o espelho dele (23/11/2026).
+                saida["periodo_faltas"] = {"de": f["inicio"], "ate": f["fim"]}
+                saida["valores"]["faltas_a_descontar"] = str(f["integrais"])
+                partes = [f"pelo ponto, de {_br(_data(f['inicio']))} a "
+                          f"{_br(_data(f['fim']))}: {f['integrais']} falta(s) de "
+                          "dia inteiro sem justificativa"]
+                if f["dias"]:
+                    partes.append("(" + ", ".join(_br(_data(x))[:5] for x in f["dias"]) + ")")
+                if f["parciais"]:
+                    minutos = sum(x["minutos"] for x in f["parciais"])
+                    partes.append(f"; mais {len(f['parciais'])} dia(s) com horas a "
+                                  f"menos ({minutos // 60}h{minutos % 60:02d} no "
+                                  "total), que não entram neste número")
+                if f["parcial_ate_hoje"]:
+                    partes.append(". O último dia ainda não chegou: o número é até "
+                                  "ontem — confira de novo perto da saída")
+                saida["explicacoes"]["faltas_a_descontar"] = " ".join(partes).replace(" ;", ";").replace(" .", ".")
+            else:
+                saida["explicacoes"]["faltas_a_descontar"] = (
+                    f"não deu para ler o ponto: {f.get('motivo')}")
+        saida["forma"] = forma
+        return saida
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("ERP/DP: sugestões do desligamento")
+        return saida

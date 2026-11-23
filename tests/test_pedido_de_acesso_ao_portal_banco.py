@@ -154,6 +154,8 @@ def test_liberar_cria_acesso_com_administrativo_de_obra_e_a_obra_do_ponto(
     novo = sessao_real.get(Usuario, r.get_json()["usuario_id"])
     assert novo.email == "maria@gmail.com"
     assert novo.perfil == PerfilUsuario.ADMINISTRATIVO_OBRA
+    # 23/11/2026: o CPF vem do cadastro, como o nome e o telefone
+    assert novo.cpf == pessoa.cpf
     assert sessao_real.get(Colaborador, pessoa.id).usuario_id == novo.id
     alcance = {u.obra_id for u in sessao_real.query(UsuarioObra)
                .filter(UsuarioObra.usuario_id == novo.id).all()}
@@ -546,3 +548,56 @@ def test_lista_de_obras_vazia_e_escolha_nao_esquecimento(app_real, sessao_real,
     alcance = [x.obra_id for x in sessao_real.query(UsuarioObra)
                .filter(UsuarioObra.usuario_id == novo).all()]
     assert alcance == []
+
+
+def test_o_cpf_do_operador_se_corrige_na_edicao(app_real, sessao_real, pessoa, dp, obra):
+    """23/11/2026, ele: *"coloquei (…), salvei, e o CPF não ficou preenchido na
+    tela de operadores."* A edição ignorava o CPF — só o cadastro novo gravava."""
+    from tests.conftest import como                      # type: ignore
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="cpf@gmail.com", obra_id=obra.id)
+    c = como(app_real, dp.id)
+    uid = c.post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                 json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    assert c.post(f"/erp/api/usuarios/{uid}", json={"cpf": "123"}).status_code == 400
+    r = c.post(f"/erp/api/usuarios/{uid}", json={"cpf": "529.982.247-25"})
+    assert r.status_code == 200, r.get_json()
+    sessao_real.expire_all()
+    assert sessao_real.get(Usuario, uid).cpf == "52998224725"
+    # vazio não apaga
+    c.post(f"/erp/api/usuarios/{uid}", json={"cpf": ""})
+    sessao_real.expire_all()
+    assert sessao_real.get(Usuario, uid).cpf == "52998224725"
+
+
+def test_o_alcance_acompanha_a_obra_onde_a_pessoa_bate_ponto(app_real, sessao_real,
+                                                             pessoa, dp, obra):
+    """23/11/2026, ele: *"A obra que aquela pessoa está batendo ponto, ele já
+    teria acesso."* Dinâmico: muda a obra no ponto, muda o alcance; a marcada
+    à mão continua."""
+    from sqlalchemy import text as _t
+    from tests.conftest import como                      # type: ignore
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="ponto@gmail.com", obra_id=obra.id)
+    uid = como(app_real, dp.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    b = Obra(codigo="OBRPTB", nome="Obra B", status="ATIVA")
+    c = Obra(codigo="OBRPTC", nome="Obra C", status="ATIVA")
+    sessao_real.add_all([b, c])
+    sessao_real.flush()
+    sessao_real.expire_all()
+    u = sessao_real.get(Usuario, uid)
+    assert set(obras_de_registro_sem_autor(sessao_real, u)) == {obra.id}
+
+    sessao_real.execute(_t("INSERT INTO colaborador_obra_atual (colaborador_id, obra_id) "
+                           "VALUES (:c, :o)"), {"c": pessoa.id, "o": b.id})
+    assert set(obras_de_registro_sem_autor(sessao_real, u)) == {obra.id, b.id}
+
+    sessao_real.execute(_t("UPDATE colaborador_obra_atual SET obra_id = :o "
+                           "WHERE colaborador_id = :c"), {"c": pessoa.id, "o": c.id})
+    assert set(obras_de_registro_sem_autor(sessao_real, u)) == {obra.id, c.id}, \
+        "a obra antiga do ponto sai; a marcada à mão fica"
