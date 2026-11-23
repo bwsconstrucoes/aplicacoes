@@ -820,11 +820,16 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
         guardar_nos_enviados=True)
     deu = (registro.situacao == "ENVIADO")
     copia = getattr(registro, "copia_nos_enviados", None)
+    # ⚑ DE QUAL CONTA SAIU (23/11/2026). Ele: *"Que caixa da empresa é essa?
+    # (…) No sistema não ficou claro."* A trilha passa a dizer o remetente: a
+    # conta do DP, ou a da empresa quando a do DP não está configurada.
+    from email.utils import parseaddr as _parse
+    de = _parse(svc_email.remetente_de(empresa))[1] or "?"
     if deu and _reenviar:
         _evento(s, pedido_id, "REENVIADO",
-                f"o mesmo e-mail enviado de novo para {', '.join(destinos)}"
+                f"o mesmo e-mail enviado de novo, de {de} para {', '.join(destinos)}"
                 + (f" ({copia})" if copia else ""),
-                {"para": destinos}, usuario, pelo_agente)
+                {"para": destinos, "de": de}, usuario, pelo_agente)
         s.flush()
         return {"enviado": True, "erro": None, "copia_nos_enviados": copia,
                 "prazo": p.get("prazo")}
@@ -837,10 +842,10 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
             {"para": destinos, "prazo": prazo, "id": pedido_id,
              "mid": registro.message_id})
         _evento(s, pedido_id, "ENVIADO",
-                f"e-mail enviado para {', '.join(destinos)}; "
+                f"e-mail enviado de {de} para {', '.join(destinos)}; "
                 f"retorno esperado até {prazo:%d/%m/%Y}"
                 + (f" ({copia})" if copia else ""),
-                {"para": destinos, "prazo": str(prazo)}, usuario, pelo_agente)
+                {"para": destinos, "de": de, "prazo": str(prazo)}, usuario, pelo_agente)
     else:
         _evento(s, pedido_id, "FALHA_ENVIO", registro.erro or "não saiu",
                 {"para": destinos}, usuario, pelo_agente)

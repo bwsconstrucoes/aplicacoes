@@ -316,6 +316,8 @@ def test_reenviar_manda_o_mesmo_email_sem_mudar_o_prazo(sessao_real, monkeypatch
     lido = svc_ct.ler(sessao_real, p["id"])
     assert lido["prazo"] == prazo and lido["situacao"] == "ENVIADO"
     assert [x["tipo"] for x in lido["eventos"]][-1] == "REENVIADO"
+    # a trilha diz de qual conta saiu (aqui, a da empresa: o DP não tem conta)
+    assert "de compras@bws.teste" in lido["eventos"][-1]["texto"]
 
 
 def test_copia_em_enviados_acha_a_pasta_e_respeita_o_provedor(sessao_real, monkeypatch):

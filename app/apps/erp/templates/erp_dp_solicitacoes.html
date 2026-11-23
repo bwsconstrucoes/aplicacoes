@@ -978,6 +978,14 @@ async function verPedidoContabil(id){
             data-pc-tirar="${ex.documento_id}">tirar</button>` : ""}</div>`; }).join("")}</div>
         ${aberto ? `<button class="btn secundario" id="pc-anexar" style="margin-top:6px">Anexar arquivo…</button>` : ""}
       </div>
+      ${(p.eventos || []).length ? `<div style="margin-top:12px"><b>O que aconteceu com este e-mail</b>
+        <small class="desc">— fica guardado no sistema, com de qual conta saiu e para quem</small>
+        <div class="tabela-rolagem" style="max-height:180px"><table><tbody>
+        ${p.eventos.map(e => `<tr><td style="white-space:nowrap">${dataBR((e.quando || "").slice(0, 10))}
+          ${(e.quando || "").slice(11, 16)}</td><td><b>${escapar(e.tipo)}</b></td>
+          <td class="desc">${escapar(e.texto)}</td>
+          <td>${e.pelo_agente ? "<small>pelo agente</small>" : escapar(e.quem || "—")}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
       <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
         ${aberto ? `<button class="btn" id="pc-enviar">Enviar à contabilidade</button>
                     <button class="btn secundario" id="pc-salvar">Guardar o texto e enviar depois</button>` : ""}

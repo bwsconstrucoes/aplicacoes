@@ -169,8 +169,11 @@ eu não tenho essa opção."*
 - ⚠️ O que eu NÃO verifiquei: qual provedor e qual conta ele usa. Os dois
   e-mails que ele não achou podem ter saído pela conta da EMPRESA (a volta
   automática quando a conta do DP não está configurada, 18/11) — aí estão
-  nos enviados de outra caixa. A trilha do pedido diz para quem foi, não de
-  qual conta saiu.
+  nos enviados de outra caixa. Ele perguntou *"que caixa da empresa é essa?
+  (…) Fica alguma coisa em sistema?"*: desde então a trilha do pedido diz
+  "enviado DE <conta> PARA <contabilidade>", e a janela do e-mail mostra a
+  trilha ("O que aconteceu com este e-mail"). Os envios anteriores não têm o
+  "de" — a trilha deles só diz para quem foi.
 
 ### 23/11/2026 (6) — O e-mail à contabilidade se lê, se corrige, ganha anexo e sai da própria solicitação
 
