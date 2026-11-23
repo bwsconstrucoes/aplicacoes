@@ -1040,8 +1040,24 @@ async function atender(){
      depende do vínculo da pessoa: a data de saída de quem tem carteira é
      conta do DP (último dia + aviso prévio); a do prestador já veio da obra,
      e pedi-la de novo aqui abriria a porta para duas datas diferentes. #}
+  {# ⚑ A MATRÍCULA NÃO APARECE (23/11/2026). Ele: *"a matrícula é para ser
+     o número do CPF e não é nem para aparecer aqui nesse modal de
+     atendimento."* O servidor já grava o CPF quando ela está vazia
+     (`atender`, 19/11/2026); na readmissão, a que existia fica. #}
   const doDP = (ABERTA.campos_do_dp || tipo.campos_do_dp || [])
-    .filter(c => CAMPO_PEDIDO[c] !== false);
+    .filter(c => CAMPO_PEDIDO[c] !== false && c !== "matricula");
+  {# ⚑ CARGO E CONVENÇÃO SE ESCOLHEM DA LISTA, E O PISO VEM SOZINHO
+     (23/11/2026). Ele: *"a convenção precisa ser uma lista selecionável
+     baseada na base de dados (…) o cargo já é para ele identificar dentre os
+     cargos já cadastrados e automaticamente, quando eu colocar a convenção,
+     ele já vai buscar o salário que está cadastrado."* #}
+  let TAB = null;
+  if (doDP.some(c => ["cargo_id", "convencao_id", "cargo_deferido_id"].includes(c))) {
+    try { TAB = await api("/erp/api/cargos"); } catch (e) { TAB = null; }
+  }
+  const dadosAb = ABERTA.dados || {};
+  const pisoDe = (cargo, conv) => ((TAB && TAB.cruzamentos) || []).find(x =>
+    String(x.cargo_id) === String(cargo) && String(x.convencao_id) === String(conv));
   {# ⚑ A JANELA CHEGA PREENCHIDA (23/11/2026). Ele: *"As faltas a descontar,
      eu gostaria que já fosse coletada do ponto a título de sugestão"* — e as
      datas, pela forma e pela data do aviso. É sugestão: o DP muda o que
@@ -1057,6 +1073,21 @@ async function atender(){
   const sugDica = c => (sug.explicacoes || {})[c] || undefined;
   const campos = doDP.map(c => {
     const rot = (tipo.rotulos_do_dp || {})[c] || ROTULO_CAMPO[c] || c.replace(/_/g, " ");
+    if (TAB && (c === "cargo_id" || c === "cargo_deferido_id"))
+      return {nome: c, rotulo: rot, tipo: "select", largura: 3,
+              valor: String(dadosAb[c] || dadosAb.cargo_pleiteado_id || ""),
+              opcoes: [{valor: "", rotulo: "— escolha o cargo —"}].concat(
+                (TAB.cargos || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
+    if (TAB && c === "convencao_id")
+      return {nome: c, rotulo: rot, tipo: "select", largura: 3,
+              valor: String(dadosAb.convencao_id || ""),
+              opcoes: [{valor: "", rotulo: "— escolha a convenção —"}].concat(
+                (TAB.convencoes || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
+    if (TAB && c === "salario" && doDP.includes("convencao_id"))
+      return {nome: c, rotulo: rot, largura: 3, valor: dadosAb.salario || "",
+              exemplo: "vem do piso ao escolher cargo e convenção",
+              dica: "O piso do cargo na convenção entra sozinho. Se o combinado for "
+                + "acima do piso, troque."};
     const opcoes = (tipo.opcoes_do_dp || {})[c];
     if (opcoes)
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
@@ -1085,6 +1116,33 @@ async function atender(){
   setTimeout(() => document.querySelectorAll("[data-ver-ponto]").forEach(b =>
     b.addEventListener("click", () => verPontoDaPessoa(ABERTA.colaborador_id,
                                                          b.dataset.verPonto))), 0);
+  if (TAB && doDP.includes("convencao_id") && doDP.includes("salario")) {
+    setTimeout(() => {
+      const idx = n => campos.findIndex(x => x.nome === n);
+      const elCargo = els(`pg-${idx(doDP.includes("cargo_id") ? "cargo_id" : "cargo_deferido_id")}`);
+      const elConv = els(`pg-${idx("convencao_id")}`);
+      const elSal = els(`pg-${idx("salario")}`);
+      const dicaSal = els(`pg-${idx("salario")}-dica`);
+      if (!elCargo || !elConv || !elSal) return;
+      const puxar = () => {
+        if (!elCargo.value || !elConv.value) return;
+        const x = pisoDe(elCargo.value, elConv.value);
+        if (x && x.salario_piso) {
+          elSal.value = numero(x.salario_piso);
+          if (dicaSal) dicaSal.textContent = `Piso de ${x.cargo} em ${x.convencao}: `
+            + `${moeda(x.salario_piso)}. Se o combinado for acima do piso, troque.`;
+        } else if (dicaSal) {
+          dicaSal.textContent = x ? "Este cargo nesta convenção ainda não tem piso "
+              + "cadastrado (Administração › Cargos e convenções) — digite o salário."
+            : "Este cargo não está cadastrado nesta convenção — confira a convenção, "
+              + "ou cadastre o cargo nela em Administração › Cargos e convenções.";
+        }
+      };
+      elCargo.addEventListener("change", puxar);
+      elConv.addEventListener("change", puxar);
+      if (!elSal.value) puxar();
+    }, 0);
+  }
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
     aviso: (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
             + "no cadastro — o atendimento é o registro do que foi feito.")

@@ -141,6 +141,26 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (5) — Atender a admissão: sem matrícula, cargo e convenção da lista, piso sozinho; rescisão de quem veio sem vínculo
+
+Ele, atendendo uma admissão de verdade: *"a matrícula é para ser o número do
+CPF e não é nem para aparecer aqui (…) a convenção precisa ser uma lista
+selecionável (…) o cargo já é para ele identificar dentre os cargos já
+cadastrados e automaticamente, quando eu colocar a convenção, ele já vai
+buscar o salário."*
+
+- A matrícula saiu da janela de Atender (só da TELA: o servidor continua
+  gravando o CPF quando ela está vazia, e na readmissão a antiga fica).
+- Cargo e convenção viraram listas do cadastro (`/erp/api/cargos`); o cargo
+  vem marcado com o cargo pleiteado pela obra. Escolhidos os dois, o salário
+  recebe o piso daquele cargo naquela convenção, com a explicação embaixo; se
+  o cruzamento não existe ou está sem piso, a explicação diz isso e manda
+  para Administração › Cargos e convenções. O DP pode mudar o salário.
+- Defeito, no mesmo dia: "Montar o pedido à contabilidade" da rescisão
+  travava com "falta (…) forma do desligamento" para quem foi importado sem
+  histórico de vínculo — a forma só era procurada lá. Agora a forma escrita
+  no pedido também vale (`contabilidade.o_que_falta_para_pedir(pedido=)`).
+
 ### 23/11/2026 (4) — Convenções: quem está em cada uma, excluir e a planilha modelo
 
 Ele, antes de importar a tabela completa: *"eu queria um exemplo da planilha
