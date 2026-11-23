@@ -106,8 +106,10 @@ atualizações do banco" em Configurações **no mesmo momento**.
 
 **Ainda sem resposta dele:**
 
-- o endereço de produção, para entrar no lugar de `SEU-ENDERECO` no PDF de
-  orientação e na mensagem de WhatsApp (os dois estão prontos);
+- ~~o endereço de produção para o PDF de orientação~~ — resolvido em
+  23/11/2026: o guia novo usa `aplicacoes.bwsconstrucoes.com.br/erp/portal`, o
+  mesmo endereço que as mensagens do ERP já usam (ver `orientacao/`). O PDF e a
+  mensagem de 18/11 nunca tinham sido salvos no repositório;
 - se o diário de obra deve esconder também obra cuja **fase** está encerrada
   (hoje ele filtra só por `status <> 'ENCERRADA'` e **ignora a fase**, então
   obra marcada "Concluída" continua aparecendo na lista do diário).
@@ -131,6 +133,22 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 23/11/2026 — O guia do Portal da Obra para liberar o acesso
+
+Ele: *"preciso liberar as solicitações do DP, o acesso do portal (…) para os
+administrativos de obra (…) um mini manual com orientações para o cadastro no
+portal, bem como instruções de como utilizar a parte de solicitações (…) o
+pessoal já estava antes acostumado com o Pipefy."*
+
+- `app/apps/erp/orientacao/`: `guia_do_portal.html` (a fonte),
+  `Guia do Portal da Obra.pdf` (A4, 2 páginas), `guia_portal_1.png` e `_2.png`
+  (as mesmas páginas como imagem, para o WhatsApp) e `mensagem_whatsapp.txt`.
+  `gerar_guia.js` refaz PDF e imagens a partir do HTML (Playwright, Node).
+- Conteúdo conferido contra as telas: os nomes dos botões ("Criar o meu
+  acesso", "Mandar o código", "Confirmar"), as quatro áreas do portal
+  (Pagamentos ainda fechada), os 15 pedidos e os rótulos de situação.
+- ⚠️ **Mudou a tela, muda o guia** — editar o HTML e rodar o gerador.
 
 ### 21/11/2026 (2) — O agente cobra e lê o e-mail sozinho; o ASO alerta
 
