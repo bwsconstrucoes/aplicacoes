@@ -38,7 +38,7 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**⚠ NO RAMO, NÃO PUBLICADO (23/11/2026, 2ª conversa):** a porta do portal para
+**✔ PUBLICADO em 23/11/2026 (2ª conversa), com o "pode" dele:** a porta do portal para
 material virou **"Suprimentos" e está FECHADA de propósito** — ele: *"manter
 desativado por enquanto, da mesma forma que pagamentos."* NÃO REABRIR sem ele
 pedir. A tela continua pronta e o ERP ainda leva até ela. Sem migração. Detalhe
