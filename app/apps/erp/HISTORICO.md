@@ -45,7 +45,10 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 A edição de operador (`/erp/api/usuarios/<id>`, Configurações › Operadores)
 ignorava o CPF — só o cadastro novo gravava, embora o campo aparecesse aberto.
 Agora grava (vazio não apaga; inválido recusa). E salvar um operador mostra a
-situação do convite. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (8).
+situação do convite. E `core/auth/permissoes.py` (`_obras_designadas`): o
+alcance de quem enxerga por obra passa a incluir a obra onde o cadastro ligado
+ao operador bate ponto (`colaborador_obra_atual`) — vale para TODAS as áreas
+que recortam por obra. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (8).
 
 ### ⚑ 23/11/2026 — PESSOAL MEXEU NO E-MAIL COMUM (registro entre áreas)
 

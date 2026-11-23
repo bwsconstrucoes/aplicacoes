@@ -810,7 +810,20 @@ def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
             " WHERE (o.projeto_id IS NOT NULL AND o.projeto_id IN ("
             "         SELECT projeto_id FROM usuario_projetos WHERE usuario_id = :u))"
             "    OR (o.empresa_id IS NOT NULL AND o.empresa_id IN ("
-            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"),
+            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"
+            # ⚑ A OBRA ONDE A PESSOA BATE PONTO (23/11/2026). Ele: *"o ideal
+            # era isso ser feito de forma dinâmica em relação às obras. A obra
+            # que aquela pessoa está batendo ponto, ele já teria acesso."* A
+            # obra atual (`colaborador_obra_atual`, recalculada todo dia pela
+            # rodada do agente) do cadastro LIGADO a este operador soma-se às
+            # marcadas — mudou de obra no ponto, o alcance muda junto, sem
+            # ninguém mexer no operador; as marcadas à mão continuam. Mesma
+            # consulta, nenhuma ida a mais ao banco.
+            "    OR o.id IN ("
+            "         SELECT a.obra_id FROM colaborador_obra_atual a"
+            "           JOIN colaboradores c ON c.id = a.colaborador_id"
+            "          WHERE c.usuario_id = :u AND a.obra_id IS NOT NULL"
+            "            AND UPPER(COALESCE(c.situacao, '')) <> 'DESLIGADO')"),
             {"u": usuario.id}).all()
     except Exception:
         # Migração 066 ainda não aplicada: vale só o que está marcado obra a

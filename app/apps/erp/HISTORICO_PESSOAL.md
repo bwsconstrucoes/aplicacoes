@@ -154,12 +154,15 @@ informação nenhuma (…) Eu fiquei boiando."*
 - Ao salvar um operador, o recado diz em que pé está o convite: "próximo passo
   é dela: abrir o e-mail, criar a senha (vale até…)", "já criou a senha", ou
   "o convite venceu".
-- **Pergunta dele em aberto:** *"Se eu não marcar obra nenhuma (…) ele vai
-  trabalhar nas obras conforme ele trabalha no ponto."* Hoje NÃO é assim: sem
-  obra marcada, o administrativo de obra não enxerga ninguém (o padrão
-  NEGAR). Na liberação, a obra onde a pessoa bate ponto já entra marcada
-  sozinha; depois disso não acompanha o ponto. Fazer acompanhar é decisão
-  dele (ver a resposta de 23/11).
+- **O alcance acompanha o ponto** (decisão dele no mesmo dia: *"o ideal era
+  isso ser feito de forma dinâmica (…) A obra que aquela pessoa está batendo
+  ponto, ele já teria acesso"*). `permissoes._obras_designadas` soma às obras
+  marcadas a obra atual (`colaborador_obra_atual`, recalculada todo dia) do
+  cadastro LIGADO ao operador — na mesma consulta de projeto e empresa, sem
+  ida a mais ao banco. Mudou de obra no ponto, o alcance muda; as marcadas à
+  mão ficam. Vale para todo operador que enxerga por obra e tem cadastro de
+  colaborador ligado. A tela de operadores ainda NÃO mostra essa obra que vem
+  do ponto (só as marcadas).
 
 ### 23/11/2026 (7) — Checklists enxutos; cópia em "Enviados" e "Reenviar o mesmo e-mail"
 
