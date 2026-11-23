@@ -141,6 +141,19 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (9) — O guia do portal virou o guia de ACESSO, numa página
+
+Ele: *"não precisa avisar o que é que vai ser solicitado lá pela parte do DP
+(…) É só avisando como é que a pessoa faz o cadastramento (…) tem a
+solicitação de liberação de acesso. Aí o pedido vai chegar, aí a
+administração vai liberar para a pessoa então receber o link."*
+`orientacao/guia_do_portal.html` (fonte) → `Acesso ao Portal da Obra.pdf` e
+`guia_portal_1.png`, mais `mensagem_whatsapp.txt`. Três etapas com quem faz
+cada uma (VOCÊ pede → ESCRITÓRIO libera → VOCÊ cria a senha e entra), o que
+fazer se der problema e os cuidados com senha e código. A página 2 (o que dá
+para pedir ao DP) saiu. Textos conferidos contra as telas e o e-mail do
+convite (código 15 min; link 7 dias, uma vez).
+
 ### 23/11/2026 (8) — Liberar o portal: o CPF vem do cadastro, a edição grava o CPF, e o recado diz o próximo passo
 
 Ele, liberando da fila do portal uma pessoa com pré-cadastro: *"O CPF já era
