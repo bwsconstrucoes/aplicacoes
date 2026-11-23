@@ -985,7 +985,8 @@ async function verPedidoContabil(id){
           registrar o retorno em Contabilidade</a>` : ""}
       </div>
       <div id="pc-msg" style="margin-top:10px"></div></div>`;
-  const texto = () => ({assunto: els("pc-assunto").value, corpo: els("pc-corpo").value});
+  // "corpo" entre aspas: é o nome que o servidor lê, não opção do fetch.
+  const texto = () => ({"assunto": els("pc-assunto").value, "corpo": els("pc-corpo").value});
   const fim = async (msg) => {
     dlg.close();
     await abrirPedido(ABERTA.id);
