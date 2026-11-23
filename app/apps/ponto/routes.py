@@ -25,6 +25,15 @@ bp = Blueprint("ponto", __name__, url_prefix="/ponto", template_folder="template
 bp.before_request(auth.exigir_credencial)
 
 
+
+@bp.after_app_request
+def _termos_de_compensacao(resposta):
+    """O termo de compensação (23/11/2026, core/termo_compensacao.py) abre DEPOIS que a requisição gravou — vale
+    para as rotas do ponto e para as da gestão, que moram no blueprint do ERP."""
+    from .core import ocorrencias
+    return ocorrencias.depois_da_requisicao(resposta)
+
+
 @bp.record_once
 def _ligar_relogio_das_rondas(_estado):
     """O relógio das rondas surpresa nasce com o serviço (core/rondas.py): de

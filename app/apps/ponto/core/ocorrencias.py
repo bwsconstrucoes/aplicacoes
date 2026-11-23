@@ -810,6 +810,11 @@ def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
 
 def _aplicar(conn: Connection, o: dict, quem: Quem) -> None:
     """O que muda no mundo quando o pedido termina aprovado."""
+    # O TERMO DE COMPENSAÇÃO (23/11/2026, termo_compensacao.py): a compensação de dia aprovada vale já; o termo
+    # vem depois, como pendência de assinatura. Aqui só se anota quem precisa — o termo é aberto depois que a
+    # requisição grava tudo (`depois_da_requisicao`), para o recesso de quatro folgas virar UM termo.
+    if o["tipo"] == "COMPENSACAO":
+        anotar_termo_de_compensacao(int(o["colaborador_id"]))
     # ⚑ ATESTADO QUE PASSA DE 15 DIAS ABRE O AFASTAMENTO (15/11/2026).
     #
     # Decisão do dono, escolhendo entre abrir sozinho, sempre manual e sempre
@@ -855,6 +860,57 @@ def _aplicar(conn: Connection, o: dict, quem: Quem) -> None:
                          tipo="FOLGA", descricao=f"folga aprovada (pedido nº {o['id']})",
                          usuario_id=quem.usuario_id, usuario_nome=quem.nome,
                          ocorrencia_id=o["id"])
+
+
+def anotar_termo_de_compensacao(colaborador_id: int) -> None:
+    """Fora de uma requisição (um script, um teste do núcleo), não faz nada — aí chama-se
+    `termo_compensacao.sincronizar` direto."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:  # pragma: no cover
+        return
+    if has_request_context():
+        if not hasattr(g, "ponto_termos_de_compensacao"):
+            g.ponto_termos_de_compensacao = set()
+        g.ponto_termos_de_compensacao.add(int(colaborador_id))
+
+
+def depois_da_requisicao(resposta):
+    """Registrada no app (routes.py): depois que a requisição gravou, abre os termos de compensação anotados."""
+    try:
+        from flask import g
+        ids = getattr(g, "ponto_termos_de_compensacao", None)
+        if ids and resposta.status_code < 400:
+            from . import termo_compensacao
+            termo_compensacao.sincronizar(sorted(ids))
+            g.ponto_termos_de_compensacao = set()
+    except Exception:  # noqa: BLE001 — nunca derruba a resposta
+        logger.exception("Ponto: falha ao abrir o termo de compensação depois da requisição")
+    return resposta
+
+
+def cancelar_compensacao(conn: Connection, ocorrencia_id: int, quem: Quem, motivo: str) -> dict:
+    """O DP CANCELA UMA COMPENSAÇÃO JÁ APROVADA (23/11/2026, o dono: "se houver algum problema, alguma discordância,
+    o DP vai fazer contato (…) vai poder cancelar aquele lançamento"). Só compensação de dia, só o DP, com o mês
+    aberto e com o porquê. A folga volta a ser julgada pela batida (sem batida, falta) e o termo aberto dela é
+    cancelado junto (termo_compensacao.sincronizar)."""
+    if not quem.dp:
+        raise ErroDeValidacao("só o DP cancela uma compensação aprovada", campo="status")
+    o = _bruta(conn, ocorrencia_id)
+    if not pessoa_no_alcance(conn, quem, o["colaborador_id"]):
+        raise NaoEncontrado("pedido não encontrado")
+    if o["tipo"] != "COMPENSACAO" or o["status"] != "APROVADA":
+        raise ErroDeValidacao("só uma compensação aprovada se cancela por aqui", campo="status")
+    if len((motivo or "").strip()) < 5:
+        raise ErroDeValidacao("diga por que a compensação foi cancelada", campo="motivo")
+    competencias.exigir_aberta(conn, o["data_inicio"], o["data_fim"], o.get("dia_trabalhado"))
+    db.executar(conn, """UPDATE ponto.ocorrencias SET status = 'CANCELADA', motivo_negativa = :m,
+                                dp_usuario_id = :u, dp_nome = :n, atualizado_em = now() WHERE id = :id""",
+                m=("CANCELADA PELO DP: " + motivo.strip())[:500], u=quem.usuario_id, n=quem.nome[:120],
+                id=ocorrencia_id)
+    logger.info("Ponto: compensação %d CANCELADA por %s", ocorrencia_id, quem.nome)
+    anotar_termo_de_compensacao(int(o["colaborador_id"]))
+    return obter(conn, ocorrencia_id, quem)
 
 
 def cancelar(conn: Connection, ocorrencia_id: int, quem: Quem) -> dict:

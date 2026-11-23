@@ -2453,6 +2453,18 @@ def ponto_api_cancelar_ocorrencia(ocorrencia_id: int):
     return _ok(ocorrencia=o)
 
 
+@bp.route("/erp/api/ponto/ocorrencias/<int:ocorrencia_id>/cancelar-compensacao", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_cancelar_compensacao(ocorrencia_id: int):
+    """O DP cancela uma compensação já aprovada (23/11/2026); o termo aberto dela cai junto."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        o = ocorrencias.cancelar_compensacao(conn, ocorrencia_id, quem, d.get("motivo") or "")
+    return _ok(ocorrencia=o)
+
+
 @bp.route("/erp/api/ponto/afastamentos/<int:ocorrencia_id>/ler", methods=["POST"])
 @login_obrigatorio
 @permissao("aprovar_afastamento")

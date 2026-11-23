@@ -68,6 +68,18 @@ def tem_tabela(s: Session) -> bool:
     return _tabela["existe"]
 
 
+_colunas_126: dict[str, bool] = {}
+
+
+def tem_origem(s: Session) -> bool:
+    """A migração 126 (23/11/2026, a central de assinaturas): origem, origem_ids e assinado_pela_pessoa."""
+    if not _colunas_126.get("ok"):
+        _colunas_126["ok"] = s.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' "
+            "AND table_name = 'dp_termos' AND column_name = 'origem_ids'")).first() is not None
+    return _colunas_126["ok"]
+
+
 def lacre(titulo: str, texto_: str, cpf: str) -> str:
     """PURA. O texto como foi mostrado, mais de quem é."""
     bruto = f"{titulo}\n{texto_}\n{cpf}".encode("utf-8")
@@ -85,7 +97,11 @@ def _numero(s: Session) -> str:
 def abrir(s: Session, *, colaborador_id: int, tipo: str, titulo: str,
           texto_: str, solicitacao_id: Optional[int] = None,
           obra_id: Optional[int] = None, dias: int = 3,
-          usuario: Optional[Usuario] = None) -> dict[str, Any]:
+          usuario: Optional[Usuario] = None, origem: Optional[str] = None,
+          origem_ids: Optional[list[int]] = None) -> dict[str, Any]:
+    """`origem`/`origem_ids` (migração 126): o documento que nasce sozinho de outro lançamento — o termo de
+    compensação nasce dos pedidos de compensação do ponto. Sem obra, ele vale assim mesmo: a própria pessoa assina
+    pelo aplicativo do ponto (sem obra, só não há administrativo para conduzir)."""
     if not tem_tabela(s):
         raise ErroValidacao("Falta aplicar a atualização do banco (117) para "
                             "mandar documentos para assinar.")
@@ -98,7 +114,7 @@ def abrir(s: Session, *, colaborador_id: int, tipo: str, titulo: str,
     from app.apps.erp.core import obra_atual
     atual = obra_atual.da_pessoa(s, colaborador_id)
     obra = obra_id or (atual or {}).get("obra_id") or c["obra_id"]
-    if not obra:
+    if not obra and not origem:
         raise ErroValidacao("Sem obra não há quem colha a assinatura — "
                             "informe a obra no cadastro da pessoa.")
     numero = _numero(s)
@@ -111,6 +127,9 @@ def abrir(s: Session, *, colaborador_id: int, tipo: str, titulo: str,
          "l": lacre(titulo, texto_, c["cpf"] or ""),
          "p": date.today() + timedelta(days=max(1, int(dias or 3))),
          "u": usuario.id if usuario else None}).scalar()
+    if origem and tem_origem(s):
+        s.execute(text("UPDATE dp_termos SET origem = :o, origem_ids = :ids WHERE id = :i"),
+                  {"o": origem, "ids": [int(x) for x in origem_ids or []], "i": linha})
     registrar_evento(s, "colaborador", colaborador_id, "TERMO_PARA_ASSINAR",
                      {"numero": numero, "tipo": tipo, "titulo": titulo},
                      usuario.id if usuario else None)
@@ -169,25 +188,100 @@ def cancelar(s: Session, termo_id: int, motivo: str,
 # ---------------------------------------------------------------------------
 # O lado da obra (portal)
 # ---------------------------------------------------------------------------
-def pendentes(s: Session, obras: Optional[list[int]]) -> list[dict[str, Any]]:
-    """Os documentos que a obra tem de levar para a pessoa assinar."""
-    if (obras is not None and not obras) or not tem_tabela(s):
+def pendentes(s: Session, obras: Optional[list[int]], *,
+              colaborador_id: Optional[int] = None,
+              pessoas: Optional[list[int]] = None) -> list[dict[str, Any]]:
+    """Os documentos que a obra tem de levar para a pessoa assinar. `colaborador_id`: só os de uma pessoa (o
+    "Meu ponto", 23/11/2026) — aí a obra não importa. `pessoas`: os da obra OU dessas pessoas (o alcance do
+    administrativo no ponto é por pessoa, não só por obra)."""
+    if not tem_tabela(s):
+        return []
+    if colaborador_id is None and obras is not None and not obras and not pessoas:
         return []
     linhas = s.execute(text("""
-        SELECT t.id, t.numero, t.titulo, t.prazo, t.tipo, c.nome AS pessoa,
-               o.codigo AS obra
+        SELECT t.id, t.numero, t.titulo, t.prazo, t.tipo, t.colaborador_id, t.obra_id,
+               t.motivo_recusa, c.nome AS pessoa, o.codigo AS obra
           FROM dp_termos t
           JOIN colaboradores c ON c.id = t.colaborador_id
           LEFT JOIN obras o ON o.id = t.obra_id
          WHERE t.situacao = 'ABERTO'
-           AND (:todas OR t.obra_id = ANY(:obras))
+           AND (CAST(:pessoa AS BIGINT) IS NULL OR t.colaborador_id = :pessoa)
+           AND (CAST(:pessoa AS BIGINT) IS NOT NULL OR :todas OR t.obra_id = ANY(:obras)
+                OR t.colaborador_id = ANY(:pessoas))
          ORDER BY t.prazo NULLS LAST, t.id"""),
-        {"todas": obras is None, "obras": obras or []}).mappings().all()
+        {"todas": obras is None, "obras": obras or [], "pessoa": colaborador_id,
+         "pessoas": [int(x) for x in pessoas or []]}).mappings().all()
     hoje = date.today()
     return [{"id": l["id"], "numero": l["numero"], "titulo": l["titulo"],
-             "pessoa": l["pessoa"], "obra": l["obra"] or "",
+             "pessoa": l["pessoa"], "obra": l["obra"] or "", "tipo": l["tipo"],
+             "colaborador_id": int(l["colaborador_id"]),
+             "devolvido": str(l["motivo_recusa"] or "").startswith("DEVOLVIDO PELO DP"),
              "prazo": str(l["prazo"]) if l["prazo"] else None,
              "atrasado": bool(l["prazo"] and l["prazo"] < hoje)} for l in linhas]
+
+
+def da_pessoa(s: Session, colaborador_id: int) -> list[dict[str, Any]]:
+    """Todos os documentos de uma pessoa, menos os cancelados (a ficha, 23/11/2026): o que falta e o que foi."""
+    if not tem_tabela(s):
+        return []
+    linhas = s.execute(text("""
+        SELECT t.id, t.numero, t.titulo, t.tipo, t.situacao, t.forma, t.prazo, t.assinado_em,
+               t.validado_em, t.conduzido_por_nome, t.criado_em, d.anexo_id
+          FROM dp_termos t LEFT JOIN documentos d ON d.id = t.documento_id
+         WHERE t.colaborador_id = :c AND t.situacao <> 'CANCELADO'
+         ORDER BY t.criado_em DESC"""), {"c": colaborador_id}).mappings().all()
+    return [_resumo(l) for l in linhas]
+
+
+def _resumo(l) -> dict[str, Any]:
+    situ = l["situacao"]
+    vale = concluido(dict(l))
+    rotulo = ("para assinar" if situ == "ABERTO"
+              else "assinado" if vale and situ == "ASSINADO"
+              else "recusa registrada" if vale
+              else "esperando o DP validar")
+    return {"id": l["id"], "numero": l["numero"], "titulo": l["titulo"], "tipo": l["tipo"],
+            "situacao": situ, "forma": l["forma"], "rotulo": rotulo, "vale": vale,
+            "prazo": str(l["prazo"]) if l["prazo"] else None,
+            "assinado_em": l["assinado_em"].isoformat() if l["assinado_em"] else None,
+            "conduzido_por": l["conduzido_por_nome"] or "", "anexo_id": l["anexo_id"]}
+
+
+def painel_dp(s: Session, *, dias: int = 60) -> dict[str, Any]:
+    """O lado do DP (23/11/2026): o que está para assinar, o que espera validação e o que foi nos últimos dias."""
+    if not tem_tabela(s):
+        return {"disponivel": False, "abertos": [], "validar": [], "feitos": []}
+    linhas = s.execute(text("""
+        SELECT t.id, t.numero, t.titulo, t.tipo, t.situacao, t.forma, t.prazo, t.assinado_em,
+               t.validado_em, t.conduzido_por_nome, t.criado_em, t.colaborador_id, t.motivo_recusa,
+               c.nome AS pessoa, o.codigo AS obra, d.anexo_id
+          FROM dp_termos t
+          JOIN colaboradores c ON c.id = t.colaborador_id
+          LEFT JOIN obras o ON o.id = t.obra_id
+          LEFT JOIN documentos d ON d.id = t.documento_id
+         WHERE t.situacao = 'ABERTO'
+            OR (t.situacao IN ('ASSINADO', 'RECUSADO') AND t.validado_em IS NULL AND t.forma <> 'NA_TELA')
+            OR (t.situacao <> 'CANCELADO' AND t.assinado_em >= now() - make_interval(days => :d))
+         ORDER BY t.prazo NULLS LAST, t.id"""), {"d": int(dias)}).mappings().all()
+    hoje = date.today()
+    abertos, validar, feitos = [], [], []
+    for l in linhas:
+        r = {**_resumo(l), "pessoa": l["pessoa"], "obra": l["obra"] or "",
+             "colaborador_id": int(l["colaborador_id"]),
+             "atrasado": bool(l["situacao"] == "ABERTO" and l["prazo"] and l["prazo"] < hoje),
+             "motivo": l["motivo_recusa"] or ""}
+        (abertos if l["situacao"] == "ABERTO" else feitos if r["vale"] else validar).append(r)
+    return {"disponivel": True, "abertos": abertos, "validar": validar, "feitos": feitos}
+
+
+def da_origem(s: Session, origem: str, colaboradores: list[int]) -> list[dict[str, Any]]:
+    """Os termos (não cancelados) que nasceram de uma origem, para essas pessoas — com os ids que cobrem."""
+    if not tem_tabela(s) or not tem_origem(s) or not colaboradores:
+        return []
+    return [dict(l) for l in s.execute(text("""
+        SELECT id, colaborador_id, situacao, origem_ids FROM dp_termos
+         WHERE origem = :o AND situacao <> 'CANCELADO' AND colaborador_id = ANY(:cs)"""),
+        {"o": origem, "cs": [int(x) for x in colaboradores]}).mappings().all()]
 
 
 def _no_alcance(s: Session, termo_id: int, obras: Optional[list[int]]) -> dict[str, Any]:
@@ -197,8 +291,15 @@ def _no_alcance(s: Session, termo_id: int, obras: Optional[list[int]]) -> dict[s
     return t
 
 
-def para_assinar(s: Session, termo_id: int, obras: Optional[list[int]]) -> dict[str, Any]:
-    t = _no_alcance(s, termo_id, obras)
+def para_assinar(s: Session, termo_id: int, obras: Optional[list[int]], *,
+                 colaborador_id: Optional[int] = None) -> dict[str, Any]:
+    """`colaborador_id`: a própria pessoa lendo o documento dela (o "Meu ponto") — o de outra, "não encontrado"."""
+    if colaborador_id is not None:
+        t = ler(s, termo_id)
+        if int(t["colaborador_id"]) != int(colaborador_id):
+            raise ErroNaoEncontrado("Documento não encontrado.")
+    else:
+        t = _no_alcance(s, termo_id, obras)
     return {"id": t["id"], "numero": t["numero"], "titulo": t["titulo"],
             "texto": t["texto"], "pessoa": t["pessoa"],
             "cpf_fim": str(t["cpf"] or "")[-4:], "situacao": t["situacao"],
@@ -251,12 +352,19 @@ def _arquivar(s: Session, t: dict[str, Any], pdf: bytes, observacao: str):
 def assinar(s: Session, termo_id: int, obras: Optional[list[int]], *,
             pin: str, assinatura: Any, conduzido_por: dict[str, Any],
             latitude: Any = None, longitude: Any = None,
-            ip: str = "") -> dict[str, Any]:
-    """A pessoa assina na tela: PIN dela + traço + lacre. Fecha sozinho."""
-    t = _no_alcance(s, termo_id, obras)
+            ip: str = "", pela_pessoa: bool = False) -> dict[str, Any]:
+    """A pessoa assina na tela: PIN dela + traço + lacre. Fecha sozinho.
+
+    `pela_pessoa` (23/11/2026, a central de assinaturas): a própria pessoa, logada no aplicativo do ponto com CPF e
+    PIN, assina o documento DELA — o pedido do dono: *"o colaborador acessar e conseguir visualizar o que é que tem
+    pendente para ele, para assinar"*. Aí quem "conduz" é ela mesma, e o documento tem de ser dela (senão, "não
+    encontrado"). Sem `pela_pessoa`, continua valendo a regra de antes: quem conduz não assina o próprio."""
+    t = ler(s, termo_id) if pela_pessoa else _no_alcance(s, termo_id, obras)
+    if pela_pessoa and conduzido_por.get("colaborador_id") != t["colaborador_id"]:
+        raise ErroNaoEncontrado("Documento não encontrado.")
     if t["situacao"] != "ABERTO":
         raise ErroValidacao(f"{t['numero']} já está {t['situacao'].lower()}.")
-    if conduzido_por.get("colaborador_id") == t["colaborador_id"]:
+    if not pela_pessoa and conduzido_por.get("colaborador_id") == t["colaborador_id"]:
         raise ErroValidacao("Quem conduz não assina o próprio documento por aqui "
                             "— outra pessoa conduz o seu.")
     if lacre(t["titulo"], t["texto"], t["cpf"] or "") != t["lacre"]:
@@ -265,11 +373,12 @@ def assinar(s: Session, termo_id: int, obras: Optional[list[int]], *,
     png = _png(assinatura)
     _conferir_pin(t["cpf"] or "", pin)
     agora = datetime.now(timezone.utc)
+    quem_conduz = ("a própria pessoa, no aplicativo do ponto" if pela_pessoa
+                   else conduzido_por.get("nome") or "")
     pdf = documento_pdf(t, assinatura=png, quando=agora, forma="NA_TELA",
-                        conduzido_por=conduzido_por.get("nome") or "",
-                        latitude=latitude, longitude=longitude)
-    doc = _arquivar(s, t, pdf, f"assinado no celular, conduzido por "
-                               f"{conduzido_por.get('nome') or '?'}")
+                        conduzido_por=quem_conduz, latitude=latitude, longitude=longitude)
+    doc = _arquivar(s, t, pdf, "assinado pela própria pessoa, no aplicativo do ponto" if pela_pessoa
+                    else f"assinado no celular, conduzido por {conduzido_por.get('nome') or '?'}")
     s.execute(text("""
         UPDATE dp_termos
            SET situacao = 'ASSINADO', forma = 'NA_TELA', assinatura_png = :png,
@@ -282,6 +391,8 @@ def assinar(s: Session, termo_id: int, obras: Optional[list[int]], *,
          "cn": str(conduzido_por.get("nome") or "")[:120],
          "lat": _num(latitude), "lon": _num(longitude), "ip": (ip or "")[:60],
          "i": termo_id})
+    if pela_pessoa and tem_origem(s):
+        s.execute(text("UPDATE dp_termos SET assinado_pela_pessoa = TRUE WHERE id = :i"), {"i": termo_id})
     registrar_evento(s, "colaborador", t["colaborador_id"], "TERMO_ASSINADO",
                      {"numero": t["numero"], "forma": "NA_TELA",
                       "documento_id": doc.id}, None)
