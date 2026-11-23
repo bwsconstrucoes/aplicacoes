@@ -154,6 +154,8 @@ def test_liberar_cria_acesso_com_administrativo_de_obra_e_a_obra_do_ponto(
     novo = sessao_real.get(Usuario, r.get_json()["usuario_id"])
     assert novo.email == "maria@gmail.com"
     assert novo.perfil == PerfilUsuario.ADMINISTRATIVO_OBRA
+    # 23/11/2026: o CPF vem do cadastro, como o nome e o telefone
+    assert novo.cpf == pessoa.cpf
     assert sessao_real.get(Colaborador, pessoa.id).usuario_id == novo.id
     alcance = {u.obra_id for u in sessao_real.query(UsuarioObra)
                .filter(UsuarioObra.usuario_id == novo.id).all()}

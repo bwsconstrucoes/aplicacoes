@@ -9654,6 +9654,13 @@ def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
         s.flush()
     elif not operador.ativo:
         operador.ativo = True
+    # ⚑ O CPF VEM DO CADASTRO (23/11/2026). Ele, liberando uma pessoa da fila:
+    # *"O CPF já era para ele buscar e preencher automaticamente, não
+    # aconteceu."* Nome, e-mail e telefone vinham; o CPF ficava em branco na
+    # tela de operadores. Só preenche se estiver vazio — não troca o que alguém
+    # já digitou.
+    if not (operador.cpf or "").strip() and (c.cpf or "").strip():
+        operador.cpf = c.cpf
     # O CARGO, quando quem libera disse qual. A fila do portal manda
     # ADMINISTRATIVO_OBRA; a ficha, nada, e aí fica o CONSULTA de sempre.
     if perfil:
