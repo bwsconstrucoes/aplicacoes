@@ -194,13 +194,14 @@ def mensagens_api_parametros():
 @permissao("ver_mensagens")
 @_api
 def mensagens_api_enviadas():
+    from .painel import envios_com_pessoa
     a = request.args
     with db.conexao() as conn:
-        linhas = core.listar_envios(conn, tipo=core.normalizar_chave(a.get("tipo", "")),
-                                    canal=(a.get("canal") or "").strip().lower()[:20],
-                                    status=(a.get("status") or "").strip().upper()[:20],
-                                    busca=(a.get("busca") or "")[:60],
-                                    dias=int(a.get("dias") or 7), limite=int(a.get("limite") or 300))
+        linhas = envios_com_pessoa(conn, tipo=core.normalizar_chave(a.get("tipo", "")),
+                                   canal=(a.get("canal") or "").strip().lower()[:20],
+                                   status=(a.get("status") or "").strip().upper()[:20],
+                                   busca=(a.get("busca") or "")[:60],
+                                   dias=int(a.get("dias") or 7), limite=int(a.get("limite") or 300))
     for l in linhas:
         l["criado_em"] = l["criado_em"].isoformat() if l.get("criado_em") else ""
         l["tipo_nome"] = core.nome_do_tipo(l["tipo"])

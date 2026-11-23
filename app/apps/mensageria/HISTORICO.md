@@ -93,6 +93,17 @@ Ele: *"gostaria de poder ver esse ID e, se tiver sentido, alterar ele."*
 - A fila do DP ganhou a coluna "ID do Telegram" — é de onde se tira o ID de
   quem tentou se cadastrar.
 
+### 5. (mesmo dia, depois de publicado) A aba Enviadas diz PARA QUEM foi
+
+Ele: *"não aparece o nome da pessoa para a qual a gente está mandando aquela
+mensagem. Era interessante que aparecesse e esse nome fosse clicável e abrisse
+o cadastro."* A coluna "Para" mostra o nome acima do número; o nome abre a
+ficha por cima (a mesma janela do item 3). Quem dá o nome é a `Pessoas` do
+Painel (`painel.envios_com_pessoa`), para as duas abas não discordarem. A busca
+com letras passou a achar pelo nome também. Custo: 4 leituras do banco por
+carga da aba, nenhuma ida à internet. Número que não é de ninguém do ERP
+continua só com o número.
+
 ### ⚠️ Arquivo compartilhado tocado
 
 `erp_base.html` (o bloco `mensagensDaPessoa` e a nova `trocarIdDoTelegram`) —

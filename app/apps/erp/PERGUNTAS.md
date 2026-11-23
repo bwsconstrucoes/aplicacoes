@@ -2261,6 +2261,9 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
   lia chaves erradas)
 - Quantas pessoas voltaram ao "Migrar de novo"? (o aviso da tela e o
   relatório: "entraram agora" × "já estavam")
+- Que mensagens saíram para fulano (pelo nome)? (aba Enviadas, busca pelo
+  nome — o nome vem do cadastro pelo CPF, telefone ou ID do Telegram; número
+  que não é de ninguém do ERP aparece sem nome)
 
 ### ⚠️ Palavra que mudou de sentido em 23/11
 - **"telefone bate"**: com DDD, o número inteiro (com ou sem 55 e o nono
