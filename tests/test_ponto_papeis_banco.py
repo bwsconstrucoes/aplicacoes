@@ -41,6 +41,8 @@ def carlos(mundo, banco):
     yield cid
     with banco.connect() as conn:
         _limpar_ponto(conn)
+        from tests.test_ponto_gestao_banco import _limpar_documentos_do_erp
+        _limpar_documentos_do_erp(conn)
         conn.execute(text("DELETE FROM colaboradores WHERE cpf = :c"), {"c": CPF_CARLOS})
         conn.commit()
 

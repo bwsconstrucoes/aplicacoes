@@ -331,7 +331,66 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
-## 23/11/2026 — PEDIDO EM ABERTO: uma central de assinaturas (ainda não começada; espera decisão dele)
+## 23/11/2026 — A CENTRAL DE ASSINATURAS, pelo aplicativo do ponto (feita; ver a proposta logo abaixo)
+
+**As decisões dele (23/11):** (1) *"vamos concentrar o aplicativo do ponto para ser o caminho para a coleta dessas
+assinaturas, porque está tudo diretamente associado ao colaborador"*; (2) o termo de compensação: *"o sistema permite
+ser lançado, o DP toma ciência (…) o sistema em seguida cobra a assinatura do termo. (…) se houver alguma
+discordância, o DP vai fazer contato (…) vai poder cancelar aquele lançamento"*; (3) *"faça por aqui mesmo (…) e
+avisa ao chat do DP"* — avisado no mesmo dia (sessão do chat "erp dp").
+
+**O que ficou pronto:**
+- **A pessoa, no "Meu ponto":** cartão "📄 Você tem N documentos para assinar" (vermelho se algum venceu). Abre a lista:
+  os documentos do DP, a folha de ponto dos meses fechados ainda sem assinatura (até 3 meses) e o termo do ponto; e
+  "Já assinados". Assina com o dedo e o PIN dela. Rotas em `app_documentos.py` (novo).
+- **O administrativo (quem já via "Assinaturas da folha"):** item novo "📄 Documentos para assinar" — os papéis do DP da
+  equipe, os vencidos primeiro. Três jeitos: **assinar aqui** (a pessoa, com o dedo e o PIN DELA), **assinou no
+  papel** (foto, 1600 px; o DP valida) e **recusou** (o que houve + duas testemunhas; o DP valida).
+- **O DP, no ERP: Ponto › Assinaturas** (aba nova, depois de "Banco de horas"): esperando validar (aceitar/devolver
+  com o porquê), documentos para assinar (cancelar; o termo de compensação tem "cancelar a compensação"), a folha de
+  ponto do mês (quem falta, por obra), o termo do ponto (quem falta) e os assinados dos últimos 60 dias.
+- **A ficha da pessoa:** área nova "📄 Documentos › Documentos e assinaturas", com o PDF de cada um (o do DP abre
+  pelo Arquivo do ERP; a folha e o termo do ponto, pelo ponto).
+- **O termo de acordo de compensação nasce sozinho** (`core/termo_compensacao.py`): toda compensação de DIA aprovada
+  a partir de 23/11/2026 (não as de horas, nem trocas/permutas) abre UM termo por pessoa, depois que a requisição grava
+  — o recesso de quatro folgas vira um termo só, com os quatro pares no anexo. Prazo: até a primeira folga (no máximo
+  7 dias). **A compensação vale já; o termo é cobrança, não trava.** O texto é o modelo de 22/11 (o documento que ele
+  leu), com a empresa da obra, a pessoa e os pares.
+- **O DP cancela uma compensação JÁ APROVADA** (antes não havia como): só compensação de dia, só o DP, mês aberto, com
+  o porquê (`ocorrencias.cancelar_compensacao`). A folga volta a ser julgada pelo ponto; cancelando todas as do termo
+  aberto, o termo cai junto.
+
+**Onde mexeu fora do ponto (avisado ao chat do DP):** `app/apps/erp/core/termos.py` (assinar pela própria pessoa, a
+origem do termo, as listas por pessoa e o painel do DP) e a **migração 126 do ERP** (`126_termos_origem.sql`:
+`origem`, `origem_ids`, `assinado_pela_pessoa` e o tipo TERMO-COMPENSACAO no Arquivo). 124 e 125 são do chat de
+Suprimentos. **Sem a 126 aplicada, nada cai:** o termo de compensação simplesmente não nasce (fica no log), e o resto
+funciona. E nos testes: `_limpar_documentos_do_erp` na limpeza de `test_ponto_gestao_banco.py` e no `carlos`.
+
+**Decisões minhas, para ele trocar se quiser:**
+- a regra antiga "quem conduz não assina o próprio" continua para quem CONDUZ; a pessoa logada no próprio "Meu ponto"
+  passa a poder assinar os dela (documento do DP e folha de ponto);
+- o portal da obra (web) continua mostrando os documentos do DP — não tirei nada; o aplicativo passou a ser o caminho;
+- a folha sem assinatura não aparece na ficha (aparece em Ponto › Assinaturas): a ficha mostra o que foi assinado;
+- documentos sem obra (a pessoa sem obra no cadastro) só aparecem para a própria pessoa — não há administrativo.
+
+**A conta do custo** (regra de 17/11): o cartão do "Meu ponto" faz UMA chamada a mais por abertura da tela inicial
+(~6 consultas: as folhas dos últimos 3 meses, o termo, os documentos no ERP). A tela do DP conta as folhas sem
+remontar espelho (uma consulta por mês). Nada vai ao Google; o PDF assinado vai ao Arquivo do ERP (uma gravação, a de
+sempre).
+
+**O que ficou de fora:** o aviso por WhatsApp/Telegram de "documento para assinar" (o agente do DP já cobra os termos
+abertos); a ficha de EPI, o contrato e a rescisão como documentos — **a base está pronta, falta o DP gerar cada um**
+(cada documento novo é só um texto e um `termos.abrir`); o PDF do documento assinado para a própria pessoa baixar no
+celular.
+
+**Como foi verificado:** `tests/test_ponto_central_assinaturas_banco.py` (a pessoa assina o dela e não o dos outros; o
+administrativo na tela, no papel e a recusa; o DP devolve e aceita; a folha pela própria pessoa; a tela e a ficha) e
+`tests/test_ponto_termo_compensacao_banco.py` (o recesso vira um termo; cancela uma e o termo fica, cancela as duas e
+ele cai; a compensação de horas não gera termo). **No navegador de verdade:** o "Meu ponto" do João (cartão, lista,
+leitura, assinatura com o dedo), o administrativo (a lista da equipe, o modo papel), a tela do DP e a ficha — sem erro
+no console. **Não exercitado:** o PDF indo ao Arquivo de verdade (nos testes o Drive é dublado).
+
+## 23/11/2026 — a proposta da central de assinaturas (o que ele pediu e o que existia)
 
 **O pedido, resumido nas palavras dele:** vários documentos que o colaborador assina — a folha de ponto todo mês, o
 termo de compensação, a ficha de EPI, o contrato de trabalho, o aviso prévio, a documentação rescisória. Para todos:

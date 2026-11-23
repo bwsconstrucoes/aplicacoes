@@ -388,7 +388,8 @@ def assinar(s: Session, termo_id: int, obras: Optional[list[int]], *,
          WHERE id = :i"""),
         {"png": png, "doc": doc.id, "em": agora,
          "cc": conduzido_por.get("colaborador_id"),
-         "cn": str(conduzido_por.get("nome") or "")[:120],
+         "cn": ("a própria pessoa, no aplicativo do ponto" if pela_pessoa
+                else str(conduzido_por.get("nome") or ""))[:120],
          "lat": _num(latitude), "lon": _num(longitude), "ip": (ip or "")[:60],
          "i": termo_id})
     if pela_pessoa and tem_origem(s):

@@ -151,14 +151,20 @@ def _folha_do_mes(conn: Connection, colaborador_id: int, comp: dt.date) -> dict:
 
 
 def assinar(conn: Connection, *, colaborador_id: int, competencia, pin: str, assinatura, conduzida_por: dict,
-            dispositivo_id: Optional[int] = None, latitude=None, longitude=None, ip: str = "") -> dict:
-    """A pessoa assina a folha do mês: o PIN DELA confere, a folha é lacrada e o PDF arquivado."""
+            dispositivo_id: Optional[int] = None, latitude=None, longitude=None, ip: str = "",
+            pela_pessoa: bool = False) -> dict:
+    """A pessoa assina a folha do mês: o PIN DELA confere, a folha é lacrada e o PDF arquivado.
+
+    `pela_pessoa` (23/11/2026, a central de assinaturas): ela mesma, logada no "Meu ponto" — aí quem "conduz" é
+    ela. Sem isso, continua a regra de antes: quem conduz não assina a própria folha."""
     from . import acesso, cadastros, documentos
     comp = competencias.primeiro_dia(competencia)
     pessoa = cadastros.colaborador_por_id(conn, int(colaborador_id))
     if not pessoa:
         raise NaoEncontrado("pessoa não encontrada")
-    if int(conduzida_por.get("id") or 0) == int(colaborador_id):
+    if pela_pessoa and int(conduzida_por.get("id") or 0) != int(colaborador_id):
+        raise NaoEncontrado("pessoa não encontrada")
+    if not pela_pessoa and int(conduzida_por.get("id") or 0) == int(colaborador_id):
         raise ErroDeValidacao("quem conduz não assina a própria folha por aqui — outra pessoa conduz a sua")
     esp = _folha_do_mes(conn, int(colaborador_id), comp)
     acesso.entrar(conn, pessoa["cpf"], pin)                    # o PIN da própria pessoa (a frase de erro de sempre)
@@ -171,7 +177,7 @@ def assinar(conn: Connection, *, colaborador_id: int, competencia, pin: str, ass
                                     substituida_motivo = 'a pessoa assinou depois da recusa' WHERE id = :i""", i=ja["id"])
     agora = horario.agora()
     selo = lacre(esp)
-    pdf = folha_assinada_pdf(esp, assinatura=png, quando=agora, conduzida_por=conduzida_por.get("nome") or "",
+    pdf = folha_assinada_pdf(esp, assinatura=png, quando=agora, conduzida_por=("a própria pessoa, no aplicativo do ponto" if pela_pessoa else conduzida_por.get("nome") or ""),
                              lacre_=selo, latitude=latitude, longitude=longitude, dispositivo_id=dispositivo_id)
     doc = documentos.guardar(conn, "data:application/pdf;base64," + base64.b64encode(pdf).decode(),
                              colaborador_id=int(colaborador_id), tipo_ocorrencia="ESPELHO_ASSINADO",
