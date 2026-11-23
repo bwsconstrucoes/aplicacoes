@@ -268,7 +268,8 @@ def carteira_que_saiu(s: Session, c: Colaborador):
 
 
 def o_que_falta_para_pedir(s: Session, template: str,
-                           c: Colaborador) -> list[str]:
+                           c: Colaborador,
+                           pedido: Optional[dict[str, Any]] = None) -> list[str]:
     """PURA o bastante para a tela avisar ANTES de alguém apertar enviar."""
     regra = TEMPLATES.get(template)
     if regra is None:
@@ -286,7 +287,12 @@ def o_que_falta_para_pedir(s: Session, template: str,
             tem = c.empresa_id or c.cnpj_admissao
         elif campo == "forma_desligamento":
             v = svc_pessoas.vinculo_aberto(s, c.id)
-            tem = (v.forma_desligamento if v else None) or _ultima_forma(s, c.id)
+            # ⚑ 23/11/2026: a FORMA QUE O PEDIDO TRAZ também vale. Quem foi
+            # importado sem histórico de vínculo não tem onde a forma ficar
+            # gravada, e a rescisão travava com "falta a forma do
+            # desligamento" — com a forma escrita na própria solicitação.
+            tem = ((v.forma_desligamento if v else None) or _ultima_forma(s, c.id)
+                   or str((pedido or {}).get("forma_desligamento") or "").strip())
         else:
             tem = getattr(c, campo, None)
         if not tem:
@@ -565,7 +571,7 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
         if assinado:
             dados = {**dados, "dados": {**(dados.get("dados") or {}),
                                         "aviso_assinado": assinado}}
-    falta = o_que_falta_para_pedir(s, template, c)
+    falta = o_que_falta_para_pedir(s, template, c, dados.get("dados") or {})
     if falta:
         # RECUSA ANTES DE SAIR PELA METADE. É a economia da rotina R3 do
         # `AGENTE_DP.md`: e-mail incompleto custa dois dias de ida e volta.

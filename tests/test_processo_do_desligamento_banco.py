@@ -689,3 +689,23 @@ def test_documentacao_rescisoria_chegou_no_escritorio(mundo, monkeypatch):
     assert passo.get("a_validar"), "chegou: vai para a validação do DP, como pelo portal"
     proc.validar_assinada(s, _ler(mundo, r["id"]), {"acao": "validar"}, mundo["dp"])
     assert _estado(_ler(mundo, r["id"]), "ASSINADA") == "FEITO"
+
+
+def test_rescisao_de_quem_veio_sem_historico_de_vinculo_usa_a_forma_do_pedido(mundo):
+    """23/11/2026, ele ao montar o pedido: *"falta no cadastro de (…): forma do
+    desligamento."* A pessoa importada sem histórico de vínculo não tinha onde
+    a forma ficar gravada — mas a solicitação a trazia."""
+    s = mundo["s"]
+    s.execute(text("DELETE FROM colaborador_vinculos WHERE colaborador_id = :c"),
+              {"c": mundo["carteira"].id})
+    s.flush()
+    r = _desligamento(mundo, ultimo=HOJE + dt.timedelta(days=5))
+    with pytest.raises(ErroValidacao, match="forma do desligamento"):
+        svc_ct.abrir(s, {"template": "DESLIGAMENTO", "colaborador_id": mundo["carteira"].id,
+                         "solicitacao_id": r["id"], "dados": {}}, mundo["dp"])
+    ped = svc_ct.abrir(s, {"template": "DESLIGAMENTO",
+                           "colaborador_id": mundo["carteira"].id,
+                           "solicitacao_id": r["id"],
+                           "dados": {"forma_desligamento": r["dados"]["forma_desligamento"]}},
+                       mundo["dp"])
+    assert ped["numero"]
