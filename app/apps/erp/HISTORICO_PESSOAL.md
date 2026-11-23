@@ -141,6 +141,31 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (4) — Convenções: quem está em cada uma, excluir e a planilha modelo
+
+Ele, antes de importar a tabela completa: *"eu queria um exemplo da planilha
+de como eu devo importar os dados (…) visualizar quem são os colaboradores
+para cada convenção (…) se todas que foi cadastrada tem alguém ou se não.
+Inclusive, até excluir alguma que não precise estar aqui."*
+
+- **Quadro "Convenções"** no topo de Administração › Cargos e convenções:
+  UF, mês da data-base (marca "falta" quando vazio), cargos (e quantos sem
+  piso), pessoas ativas (clicável: nome, cargo, obra, vínculo — o nome abre o
+  cadastro) e desligados. Uma consulta agrupada.
+- **Excluir…** com três travas (`cargos.excluir_convencao`): com gente ativa,
+  RECUSA (troque a convenção das pessoas primeiro); só com desligados ou
+  histórico de vínculo/alteração, DESATIVA (some das listas, o histórico de
+  quem saiu continua dizendo a convenção); nunca usada, APAGA com os cargos e
+  pisos dela. Fica registrado na auditoria.
+- **"Baixar a planilha"**: o modelo JÁ VEM com o que está cadastrado — ele
+  completa e importa de volta. Colunas: Cargo, CBO, Convenção, UF, Mês da
+  data-base, Categoria, Salário, Valor diária, Status; aba "Como preencher".
+  A importação passou a ler UF e mês da data-base (o mês alimenta o alerta
+  dos 30 dias antes da data-base, Lei 7.238). A planilha do Pipefy continua
+  aceita.
+- Importar **não apaga** nada que não esteja na planilha — tirar convenção é
+  só pelo Excluir.
+
 ### 23/11/2026 (3) — Plano B: o papel assinado que chega ao escritório
 
 Ele: *"e se de repente aconteceu uma circunstância que a pessoa assinou num
@@ -204,14 +229,16 @@ souber, você já calcula a partir da data do aviso."*
 - Redução de jornada no pedido de demissão: a explicação diz para deixar em
   branco (art. 488 é de quem foi dispensado). Isto é a leitura majoritária;
   não travei nada.
-- **Botão "Ver o espelho do ponto"** dentro da janela de Atender (pedido dele,
-  antes de publicar: *"o DP já verifica se aquelas faltas estão ok, se tem
-  alguma observação, algo a adicionar ou a tirar"*). Abre numa aba nova — a
-  janela fica aberta com o que já foi digitado — a MESMA folha de impressão do
-  ponto, no período das faltas (que atravessa a virada do mês). Rota do ERP
-  (`/erp/dp/solicitacoes/<id>/espelho`, `atender_dp` + escopo), sem mexer em
-  arquivo do ponto: o chat do ponto estava trabalhando lá. Corrigir a falta
-  (abonar, lançar atestado) continua sendo no ponto.
+- **"Ver o ponto de MM/AAAA"** dentro da janela de Atender (um botão por mês
+  do período das faltas). Primeiro saiu como a folha de impressão numa aba
+  nova; ele corrigiu no mesmo dia: *"era verificar a tela de sistema e não
+  baixar o arquivo (…) abrir outro modal com o ponto da pessoa, da mesma forma
+  que a gente vê o ponto lá dentro de ponto."* Agora é a FICHA ÚNICA do ponto
+  (`/erp/ponto/pessoa/<id>?aba=mes&competencia=`), a mesma que Colaboradores
+  mostra, numa janela por cima da de atender — dá para abonar e lançar
+  atestado ali. A rota da folha de impressão saiu. Para isso, a ficha do ponto
+  passou a aceitar `?aba=` e `?competencia=` (uma linha em `gestao.html`,
+  arquivo do PONTO — registrado lá).
 
 ### 23/11/2026 — O guia do Portal da Obra para liberar o acesso
 

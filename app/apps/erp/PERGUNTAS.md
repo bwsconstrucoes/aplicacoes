@@ -3316,3 +3316,15 @@ não há orçamento de material por obra no ERP.
 - **Ainda não sabe:** se o contrato de experiência tem cláusula de rescisão
   antecipada (art. 481) — o sistema não guarda isso.
 
+## Convenções e quem está nelas (23/11/2026)
+
+- Quantas pessoas estão em cada convenção? *(ativas = não desligadas;
+  afastado conta)* — **muda conforme quem pergunta**: precisa de
+  `editar_colaboradores`.
+- Tem convenção cadastrada sem ninguém?
+- Quais convenções estão sem mês da data-base? *(sem ele, o alerta de demitir
+  nos 30 dias antes não funciona)*
+- Quantos cargos de cada convenção estão sem piso?
+- **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
+  mês da data-base é guardado.
+

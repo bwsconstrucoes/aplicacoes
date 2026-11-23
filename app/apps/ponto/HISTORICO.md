@@ -3,6 +3,16 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 23/11/2026 — (feito pelo chat do DP) A ficha da pessoa aceita `?aba=` e `?competencia=`
+
+Uma linha em `templates/ponto/gestao.html` (bloco `ponto_ficha`): a ficha
+única aberta sozinha (`/erp/ponto/pessoa/<id>`) passou a aceitar `?aba=mes` e
+`?competencia=AAAA-MM`. Sem os parâmetros, abre como antes. Quem usa: a janela
+de Atender o desligamento, no ERP, mostra o espelho do mês das faltas por cima
+dela (pedido do dono: *"abrir outro modal com o ponto da pessoa, da mesma
+forma que a gente vê o ponto lá dentro de ponto"*). Detalhe em
+`app/apps/erp/HISTORICO_PESSOAL.md`, 23/11/2026.
+
 ## 21/11/2026 — Teste do alerta de batida que quebrava no dia seguinte a feriado
 
 `tests/test_ponto_qr_banco.py::test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`

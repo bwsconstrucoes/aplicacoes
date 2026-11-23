@@ -75,8 +75,8 @@ def test_faltas_sugeridas_no_desligamento_vem_do_espelho(app, mundo):
 
 
 def test_dp_abre_o_espelho_e_as_sugestoes_pelo_pedido_de_desligamento(app, mundo):
-    """23/11/2026: da janela de Atender, o DP abre o espelho do período das
-    faltas — a mesma folha de impressão do ponto — e quem não é DP não abre."""
+    """23/11/2026: a janela de Atender traz as sugestões e abre a ficha única
+    do ponto no mês das faltas; quem não é DP não vê as sugestões."""
     import datetime as dt
     from app.apps.erp.core import pessoal_solicitacoes as svc
     from app.apps.erp.db.database import get_session
@@ -98,11 +98,8 @@ def test_dp_abre_o_espelho_e_as_sugestoes_pelo_pedido_de_desligamento(app, mundo
     assert j["valores"]["ultimo_dia"] == ter.isoformat()
     per = j["periodo_faltas"]
     assert per["ate"] == ter.isoformat()
-    pagina = dp.get(f"/erp/dp/solicitacoes/{sid}/espelho?de={per['de']}&ate={per['ate']}")
+    # a janela abre a FICHA ÚNICA do ponto no espelho do mês (não um arquivo)
+    pagina = dp.get(f"/erp/ponto/pessoa/{mundo['maria']}?aba=mes&competencia={per['ate'][:7]}")
     assert pagina.status_code == 200
-    html = pagina.get_data(as_text=True)
-    assert "Maria" in html or "MARIA" in html
-    assert dt.date.fromisoformat(per["de"]).strftime("%d/%m/%Y") in html
     assert como(app, mundo["fin"]).get(
-        f"/erp/dp/solicitacoes/{sid}/espelho").status_code in (302, 403, 404)
-    assert dp.get(f"/erp/dp/solicitacoes/{sid}/espelho?de=2026-01-01&ate=2026-12-01").status_code == 400
+        f"/erp/api/dp/solicitacoes/{sid}/sugestoes").status_code in (302, 403, 404)
