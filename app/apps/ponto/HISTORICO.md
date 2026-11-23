@@ -390,6 +390,9 @@ ele cai; a compensação de horas não gera termo). **No navegador de verdade:**
 leitura, assinatura com o dedo), o administrativo (a lista da equipe, o modo papel), a tela do DP e a ficha — sem erro
 no console. **Não exercitado:** o PDF indo ao Arquivo de verdade (nos testes o Drive é dublado).
 
+**Publicado em 23/11/2026** (com o "pode" do dono), junto com o recesso em lote de 22/11. **COM A MIGRAÇÃO 126 DO
+ERP** — apertar "Aplicar atualizações do banco" no ERP › Configurações. Suíte inteira: 12.723 passando.
+
 ## 23/11/2026 — a proposta da central de assinaturas (o que ele pediu e o que existia)
 
 **O pedido, resumido nas palavras dele:** vários documentos que o colaborador assina — a folha de ponto todo mês, o
@@ -444,6 +447,8 @@ ao Google nem ao Pipefy.
 fora, rodar duas vezes sem duplicar, as recusas da janela, o supervisor barrado) e **no navegador de verdade**: o
 Quadro com 2 pessoas marcadas, a janela, a prévia (1 entra e 1 fica de fora para cada um) e a gravação — sem erro
 no console. Sem migração.
+
+**Publicado em 23/11/2026** (com o "pode" do dono, junto com a central de assinaturas).
 
 **O termo de acordo de compensação** (o modelo que ele pediu "para dar uma olhadinha e pensar") está num documento
 à parte, fora do repositório. **Não está no sistema:** o sistema não guarda nem coleta esse acordo; decidir se ele é
