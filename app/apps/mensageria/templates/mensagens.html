@@ -57,7 +57,7 @@
   <div class="campo" style="margin-top:10px"><label for="f-tipo">Tipo</label>
     <select id="f-tipo" data-sem-busca><option value="">Todos</option></select></div>
   <div class="campo" style="margin-top:10px"><label for="f-busca">Buscar</label>
-    <input id="f-busca" placeholder="telefone, CPF ou trecho do texto" autocomplete="off" data-sem-mascara></div>
+    <input id="f-busca" placeholder="nome, telefone, CPF ou trecho do texto" autocomplete="off" data-sem-mascara></div>
   <button class="btn" id="f-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
   <div class="cartao-dica" style="margin-top:16px">
     O registro guarda <b>90 dias</b> de tudo que o sistema tentou mandar: por onde, para quem,
@@ -983,7 +983,9 @@ async function ver(){
     els("envios").innerHTML = '<table><thead><tr><th>Quando</th><th>Mensagem</th><th>Canal</th><th>Para</th><th>Situação</th><th>Texto</th></tr></thead><tbody>'
       + L.map(l => `<tr><td style="white-space:nowrap">${hora(l.criado_em)}</td><td>${escapar(l.tipo_nome)}</td>
           <td>${CANAL[l.canal] ?? escapar(l.canal)}</td>
-          <td style="white-space:nowrap">${escapar(telefoneBonito(l.destinatario))}${l.cpf ? "<br><small>CPF " + escapar(l.cpf) + "</small>" : ""}</td>
+          <td style="white-space:nowrap">${l.para_colaborador_id
+              ? `<a href="#" class="elo" data-ficha="${l.para_colaborador_id}" title="Abrir a ficha desta pessoa"><b>${escapar(l.para_nome)}</b></a><br>`
+              : l.para_nome ? `<b>${escapar(l.para_nome)}</b><br>` : ""}<small>${escapar(telefoneBonito(l.destinatario))}${l.cpf ? " · CPF " + escapar(l.cpf) : ""}</small></td>
           <td>${etiqueta(l.status)}${l.detalhe ? "<br><small>" + escapar(l.detalhe) + "</small>" : ""}</td>
           <td style="white-space:normal; max-width:460px"><small>${escapar((l.texto || "").slice(0, 240))}${(l.texto || "").length > 240 ? "…" : ""}${l.nome_arquivo ? "<br>📎 " + escapar(l.nome_arquivo) : ""}</small></td></tr>`).join("")
       + "</tbody></table>";

@@ -797,3 +797,35 @@ def test_id_vazio_desliga_e_desligado_da_empresa_nao_ganha_id(conn, gente, teleg
         tc.trocar_telegram_da_pessoa(conn, gente["cid"], "555001")
     with pytest.raises(LookupError):
         tc.trocar_telegram_da_pessoa(conn, 10 ** 9, "555001")
+
+
+# ---------------------------------------------------------------------------
+# 23/11/2026 — a aba Enviadas diz PARA QUEM foi, e o nome abre a ficha
+# ---------------------------------------------------------------------------
+def test_enviadas_diz_o_nome_de_quem_recebeu(conn, gente):
+    from app.apps.mensageria import painel
+    tc.gravar_cadastro(conn, chat_id=4321, cpf="22222222222", telefone="5585999990002")
+    core.registrar(conn, tipo="erp.titulo_pago", canal="telegram", destinatario="4321", cpf="",
+                   texto="pago", nome_arquivo="", status="ENVIADO", detalhe="")             # pelo ID
+    core.registrar(conn, tipo="ponto.qr", canal="whatsapp", destinatario="5585999990001", cpf="",
+                   texto="QR", nome_arquivo="", status="ENVIADO", detalhe="")              # pelo telefone
+    core.registrar(conn, tipo="ponto.qr", canal="whatsapp", destinatario="5511900000000", cpf="",
+                   texto="QR", nome_arquivo="", status="ENVIADO", detalhe="")              # de ninguém
+
+    por = {l["destinatario"]: l for l in painel.envios_com_pessoa(conn)}
+
+    assert (por["4321"]["para_nome"], por["4321"]["para_colaborador_id"]) == ("Bia Rocha", gente["bia"])
+    assert (por["5585999990001"]["para_nome"], por["5585999990001"]["para_colaborador_id"]) == ("Ana Lima", gente["ana"])
+    assert (por["5511900000000"]["para_nome"], por["5511900000000"]["para_colaborador_id"]) == ("", None)
+
+
+def test_enviadas_busca_pelo_nome(conn, gente):
+    from app.apps.mensageria import painel
+    tc.gravar_cadastro(conn, chat_id=4321, cpf="22222222222", telefone="5585999990002")
+    core.registrar(conn, tipo="erp.titulo_pago", canal="telegram", destinatario="4321", cpf="",
+                   texto="pago", nome_arquivo="", status="ENVIADO", detalhe="")
+    core.registrar(conn, tipo="ponto.qr", canal="whatsapp", destinatario="5585999990001", cpf="",
+                   texto="QR", nome_arquivo="", status="ENVIADO", detalhe="")
+
+    assert [l["para_nome"] for l in painel.envios_com_pessoa(conn, busca="bia")] == ["Bia Rocha"]
+    assert [l["para_nome"] for l in painel.envios_com_pessoa(conn, busca="QR")] == ["Ana Lima"]   # texto ainda vale
