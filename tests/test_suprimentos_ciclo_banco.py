@@ -1483,3 +1483,70 @@ def test_a_obra_so_pede_material_para_as_obras_dela(base):
                           "itens": [{**linha, "obra_id": base["obra_b"].id}]}, adm)
     svc_sol.criar(s, {"titulo": "Para a minha obra",
                       "itens": [{**linha, "obra_id": base["obra_a"].id}]}, adm)
+
+
+# ---------------------------------------------------------------------------
+# 23/11/2026 — o pedido não espera o cadastro do insumo
+# ---------------------------------------------------------------------------
+def _com_conta_e_categoria(base):
+    s = base["s"]
+    cat_insumo = s.scalars(select(Insumo)).first().categoria_insumo_id
+    conta = s.scalars(select(Categoria)).first()
+    if conta is None:
+        conta = Categoria(codigo="2.1.97", descricao="Material diverso")
+        s.add(conta); s.flush()
+    return cat_insumo, conta.id
+
+
+def test_o_pedido_leva_junto_o_material_que_nao_esta_no_cadastro(base):
+    """ "Ele faz o pedido já incluindo aquele cadastro de insumo (...) fica
+    pendente, aguardando a confirmação do cadastro. Na hora que liberar, o
+    pedido já fica pronto, e liberado para o suprimento." """
+    from app.apps.erp.core.suprimentos import insumos as svc_ins
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    adm = _administrativo_da_obra(base)
+    conhecido = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    novo = {"descricao": "Manta asfáltica aluminizada", "obra_id": base["obra_a"].id,
+            "quantidade": "12,5", "unidade": "M2", "especificacao": "3 mm"}
+    comum = {"titulo": "Impermeabilização da laje", "itens": [
+        {"insumo_id": conhecido, "obra_id": base["obra_a"].id, "quantidade": "2", "unidade": "M2"}]}
+    with pytest.raises(ErroValidacao):               # sem explicar o que é
+        svc_sol.criar(s, {**comum, "itens_novos": [{**novo, "explicacao": "manta"}]}, adm)
+    sol = svc_sol.criar(s, {**comum, "itens_novos": [{**novo, "explicacao":
+        "manta que impermeabiliza a laje, colada a quente; vem em rolo de 10 m"}]}, adm)
+    s.flush()
+    # o pedido existe com o que já tinha cadastro; o outro espera, à vista da obra
+    assert len([i for i in s.scalars(select(SuprimentoItem)).all()
+                if i.solicitacao_id == sol.id]) == 1
+    espera = svc_ins.esperando_cadastro(s, adm)
+    assert [(e["material"], e["quantidade"], e["solicitacao"]) for e in espera] == [
+        ("Manta asfáltica aluminizada", 12.5, sol.numero)]
+    pendente = next(p for p in svc_ins.listar(s, u, True) if p["id"] == espera[0]["cadastro_id"])
+    assert pendente["pedidos_esperando"] and "impermeabiliza" in pendente["justificativa"]
+    # o administrador cadastra: o material entra no pedido sozinho
+    cat_insumo, conta = _com_conta_e_categoria(base)
+    insumo = svc_ins.cadastrar(s, pendente["id"], {
+        "categoria_insumo_id": cat_insumo, "categoria_id": conta}, u)
+    itens = sorted([i for i in s.scalars(select(SuprimentoItem)).all()
+                    if i.solicitacao_id == sol.id], key=lambda i: i.numero)
+    assert len(itens) == 2 and itens[1].insumo_id == insumo.id
+    assert itens[1].quantidade == Decimal("12.5") and itens[1].especificacao == "3 mm"
+    assert itens[1].liberacao == "PENDENTE"          # o ok da engenharia continua valendo
+    assert svc_ins.esperando_cadastro(s, adm) == []
+
+
+def test_pedido_so_com_material_novo_e_a_recusa_do_cadastro(base):
+    from app.apps.erp.core.suprimentos import insumos as svc_ins
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    novo = {"descricao": "Perfil cartola galvanizado", "obra_id": base["obra_a"].id,
+            "quantidade": "40", "unidade": "M2",
+            "explicacao": "perfil metálico em forma de U invertido para fixar o forro"}
+    sol = svc_sol.criar(s, {"titulo": "Forro do refeitório", "itens": [], "itens_novos": [novo]}, u)
+    s.flush()
+    espera = svc_ins.esperando_cadastro(s, u)
+    svc_ins.recusar(s, espera[0]["cadastro_id"], "já existe como perfil F530", u)
+    depois = svc_ins.esperando_cadastro(s, u)
+    assert depois[0]["recusado_motivo"] == "já existe como perfil F530"
+    assert not [i for i in s.scalars(select(SuprimentoItem)).all() if i.solicitacao_id == sol.id]

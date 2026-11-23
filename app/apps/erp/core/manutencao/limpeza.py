@@ -83,7 +83,7 @@ AREAS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          "cotacoes", "cotacao_itens", "cotacao_fornecedores", "cotacao_precos",
          "precos_historico", "pedidos_compra", "pedido_itens",
          "pedido_item_reserva", "pedido_entregas", "pedido_titulos",
-         "compras_fora_do_fluxo",
+         "compras_fora_do_fluxo", "suprimento_itens_esperando_insumo",
          "previsoes_pagamento",
          "recebimentos",
          "recebimento_itens"),

@@ -617,6 +617,19 @@ function linhaDeItem(n){
       <button type="button" class="btn secundario ip-tirar" data-tirar>tirar</button>
     </div>
     <div class="ip-lido oculto"></div>
+    {# ⚑ O PEDIDO NÃO ESPERA O CADASTRO (23/11/2026). Material que não está no
+       catálogo vai no mesmo pedido, com a explicação do que é, e entra como
+       item sozinho quando o administrador cadastrar o insumo. #}
+    <div style="margin:2px 0 6px">
+      <button type="button" class="link-btn" data-novo-insumo>não encontrei este material no cadastro</button>
+      <div class="ip-novo oculto" style="margin-top:6px">
+        <label class="ip-campo" style="display:block"><span>Nome do material</span>
+          <input class="it-nome" data-sem-mascara placeholder="como você chama este material"></label>
+        <label class="ip-campo" style="display:block; margin-top:6px"><span>O que é e para que serve? (quem vai cadastrar precisa entender)</span>
+          <textarea class="it-exp" rows="2" placeholder="ex.: manta de borracha que vai embaixo do piso para não passar umidade; vendida em rolo de 10 m"></textarea></label>
+        <div class="dica">O pedido segue agora. Este material entra nele sozinho quando o cadastro for aprovado.</div>
+      </div>
+    </div>
     <div class="ip-grade">
       <label class="ip-campo ip-insumo"><span>Insumo</span>
         <select class="it-insumo">
@@ -678,6 +691,18 @@ function abrirNovo(){
     ligarLinhas();
   });
   els("ns-colar").addEventListener("click", colarLista);
+  els("ns-itens").addEventListener("click", ev => {
+    const botao = ev.target.closest("[data-novo-insumo]");
+    if (!botao) return;
+    const bloco = botao.closest("[data-item]"), campos = bloco.querySelector(".ip-novo");
+    campos.classList.toggle("oculto");
+    if (!campos.classList.contains("oculto")) {
+      bloco.querySelector(".it-insumo").value = "";
+      const nome = bloco.querySelector(".it-nome");
+      if (!nome.value && bloco.dataset.lido) nome.value = bloco.dataset.lido;
+      nome.focus();
+    }
+  });
   els("ns-salvar").addEventListener("click", salvarNovo);
   els("dlg").showModal();
 }
@@ -790,21 +815,26 @@ function aplicarLeitura(leitura){
 }
 
 async function salvarNovo(){
-  const itens = [...document.querySelectorAll("[data-item]")].map(tr => ({
+  const linhas = [...document.querySelectorAll("[data-item]")].map(tr => ({
     insumo_id: tr.querySelector(".it-insumo").value,
     especificacao: tr.querySelector(".it-espec").value,
     quantidade: tr.querySelector(".it-qtd").value,
     unidade: tr.querySelector(".it-un").value,
     obra_id: tr.querySelector(".it-obra").value,
-  })).filter(i => i.insumo_id);
+    descricao: tr.querySelector(".ip-novo").classList.contains("oculto") ? "" : tr.querySelector(".it-nome").value.trim(),
+    explicacao: tr.querySelector(".it-exp").value.trim(),
+  }));
+  const itens = linhas.filter(i => i.insumo_id);
+  const itens_novos = linhas.filter(i => !i.insumo_id && i.descricao);
   try {
     const d = await api("/erp/api/suprimentos/solicitacoes", {method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({titulo: els("ns-titulo").value,
                             previsao_entrega: els("ns-previsao").value,
-                            prioridade: els("ns-prioridade").value, itens})});
+                            prioridade: els("ns-prioridade").value, itens, itens_novos})});
     els("dlg").close();
-    aviso("mensagem", `Pedido ${d.numero} registrado.`, "ok");
+    aviso("mensagem", `Pedido ${d.numero} registrado.` + (itens_novos.length
+      ? ` ${itens_novos.length} material(is) esperam o cadastro do insumo e entram no pedido sozinhos quando ele for aprovado.` : ""), "ok");
     carregar();
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
