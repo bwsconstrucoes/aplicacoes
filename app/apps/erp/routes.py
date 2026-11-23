@@ -13001,6 +13001,27 @@ def api_dp_solicitacao(solicitacao_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 404
 
 
+@bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/sugestoes")
+@login_obrigatorio
+@permissao("atender_dp")
+def api_dp_solicitacao_sugestoes(solicitacao_id: int):
+    """O que a janela de atendimento já traz preenchido (23/11/2026): no
+    desligamento de carteira, o último dia e a saída pela forma e pela data do
+    aviso, e as faltas lidas do ponto desde o dia seguinte ao corte."""
+    from app.apps.erp.core import dp_analise, pessoal_solicitacoes as svc
+    from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
+    try:
+        with get_session() as s:
+            exigir_solicitacao_dp_no_escopo(s, _usuario_logado(s), solicitacao_id)
+            p = svc.ler(s, solicitacao_id)
+            sug = (dp_analise.sugestoes_do_desligamento(s, p)
+                   if p["tipo"] == "DESLIGAMENTO"
+                   else {"valores": {}, "explicacoes": {}})
+            return jsonify({"ok": True, **sug})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
 @bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/<acao>", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")

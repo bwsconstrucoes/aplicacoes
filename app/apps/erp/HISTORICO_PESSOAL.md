@@ -141,6 +141,35 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (2) — O atendimento do desligamento chega preenchido
+
+Ele, ao atender um pedido de demissão de verdade: *"As faltas a descontar, eu
+gostaria que já fosse coletada do ponto a título de sugestão. Do dia 26 do mês
+anterior em diante."* E: *"tem campo redução de jornada e cumpre aviso, mas é
+campo de texto livre, não deveria ter opções?"* E sobre as datas: *"se você
+souber, você já calcula a partir da data do aviso."*
+
+- **Defeito, não escolha:** "redução de jornada" e "cumpre aviso" têm opções
+  desde 20/11, mas as opções só eram mandadas para os campos do DP do TIPO,
+  e esses dois só existem no ramo CTPS do desligamento. Agora vão as dos
+  ramos também (`_campos_do_dp_todos`).
+- **A janela de Atender chega preenchida** (`dp_analise.sugestoes_do_desligamento`,
+  rota `GET .../sugestoes`, só quando o DP aperta Atender): último dia e saída
+  pela forma — trabalhado (30 dias; saída = projeção de 30 + 3/ano, até 90),
+  indenizado (último = aviso; saída = projeção), pedido de demissão (30 dias,
+  nunca proporcional; dispensado = sai no dia), fim de experiência (o fim do
+  contrato), pedido durante a experiência (sem aviso). Cada campo traz a conta
+  por escrito embaixo. O DP muda o que quiser.
+- **Faltas pelo espelho do ponto**, a mesma conta do fechamento
+  (`fechamento.falta_do_dia`): do dia seguinte ao corte (o parâmetro do ponto,
+  25 hoje) até o último dia — ou até ontem, se ele ainda não chegou, e a
+  explicação avisa para conferir de novo. O número é só de DIAS INTEIROS sem
+  justificativa; as horas a menos aparecem na explicação, fora do número.
+  Custo: um espelho de uma pessoa (~6 consultas), só no clique.
+- Redução de jornada no pedido de demissão: a explicação diz para deixar em
+  branco (art. 488 é de quem foi dispensado). Isto é a leitura majoritária;
+  não travei nada.
+
 ### 23/11/2026 — O guia do Portal da Obra para liberar o acesso
 
 Ele: *"preciso liberar as solicitações do DP, o acesso do portal (…) para os

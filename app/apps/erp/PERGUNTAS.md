@@ -3261,3 +3261,18 @@ não lê a caixa de e-mail; a proposta só existe para ele depois de jogada no m
 
 **Ainda NÃO responde:** *"a obra gastou mais do que o previsto em material?"* —
 não há orçamento de material por obra no ERP.
+
+## Atendimento do desligamento: datas e faltas sugeridas (23/11/2026)
+
+- Quantas faltas a pessoa tem desde o último fechamento do ponto? *(conta do
+  dia seguinte ao corte; "falta" = dia inteiro sem justificativa — horas a
+  menos são outra pergunta)*
+- Qual o último dia e a data de saída de quem recebe aviso hoje? *(depende da
+  forma: trabalhado, indenizado, pedido de demissão, fim de experiência)*
+- Quantos dias de aviso essa pessoa tem? *(30 + 3 por ano completo, até 90 —
+  só quando a empresa dispensa; no pedido de demissão, sempre 30)*
+- A data que o DP gravou bate com a conta? *(a análise do pedido aponta a
+  diferença)*
+- **Ainda não sabe:** se o contrato de experiência tem cláusula de rescisão
+  antecipada (art. 481) — o sistema não guarda isso.
+

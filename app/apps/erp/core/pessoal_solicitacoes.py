@@ -1848,12 +1848,24 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
                                       if x in EXPLICACAO_DA_OPCAO},
                       # O mesmo, para os campos que o DP preenche ao atender:
                       # a tela dele lê daqui, e não de uma segunda lista.
+                      # ⚑ 23/11/2026: os campos do DP de TODOS os ramos do
+                      # vínculo, não só os do tipo. A redução de jornada e o
+                      # "cumpre aviso" só existem no ramo CTPS do desligamento
+                      # e chegavam à tela SEM as opções — viravam texto livre.
                       "rotulos_do_dp": {
                           x: proprios.get(x, ROTULOS_DO_DP.get(x, ROTULOS.get(x, x)))
-                          for x in d.get("campos_do_dp", ())},
+                          for x in _campos_do_dp_todos(d)},
                       "opcoes_do_dp": {x: _opcoes(s, x)
-                                       for x in d.get("campos_do_dp", ())
+                                       for x in _campos_do_dp_todos(d)
                                        if x in CATEGORIAS}})
+    return saida
+
+
+def _campos_do_dp_todos(regra: dict[str, Any]) -> list[str]:
+    """Os campos do DP do tipo e de cada ramo do vínculo, sem repetir."""
+    saida = list(regra.get("campos_do_dp", ()))
+    for ramo in (regra.get("por_vinculo") or {}).values():
+        saida += [x for x in ramo.get("campos_do_dp", ()) if x not in saida]
     return saida
 
 

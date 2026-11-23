@@ -57,3 +57,18 @@ def test_faltas_extras_e_justificadas(app, mundo):
                                                       "ate": "2026-06-30"}).status_code == 400
     assert dp.post("/erp/api/ponto/relatorios", json={"tipo": "xyz", "de": seg.isoformat()}).status_code == 400
     assert dp.get("/erp/ponto/relatorios").status_code == 200
+
+
+def test_faltas_sugeridas_no_desligamento_vem_do_espelho(app, mundo):
+    """23/11/2026: a janela de atendimento do desligamento sugere as faltas do
+    ponto, do dia seguinte ao corte até o último dia — a mesma conta do espelho."""
+    import datetime as dt
+    from app.apps.erp.core import dp_analise
+    seg = _segunda_passada()
+    ter = dia_util(seg, 1)
+    r = dp_analise.faltas_no_ponto(mundo["maria"], ter, hoje=ter + dt.timedelta(days=1))
+    assert r["disponivel"], r
+    inicio = dt.date.fromisoformat(r["inicio"])
+    esperadas = [d.isoformat() for d in (seg, ter) if d >= inicio]
+    assert r["dias"] == esperadas and r["integrais"] == len(esperadas)
+    assert r["parcial_ate_hoje"] is False

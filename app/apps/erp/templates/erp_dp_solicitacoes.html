@@ -984,15 +984,29 @@ async function atender(){
      e pedi-la de novo aqui abriria a porta para duas datas diferentes. #}
   const doDP = (ABERTA.campos_do_dp || tipo.campos_do_dp || [])
     .filter(c => CAMPO_PEDIDO[c] !== false);
+  {# ⚑ A JANELA CHEGA PREENCHIDA (23/11/2026). Ele: *"As faltas a descontar,
+     eu gostaria que já fosse coletada do ponto a título de sugestão"* — e as
+     datas, pela forma e pela data do aviso. É sugestão: o DP muda o que
+     quiser, e a explicação da conta fica embaixo de cada campo. Sem ponto ou
+     sem resposta, a janela abre vazia como antes. #}
+  let sug = {valores: {}, explicacoes: {}};
+  if (ABERTA.tipo === "DESLIGAMENTO" && doDP.length) {
+    try { sug = await api(`/erp/api/dp/solicitacoes/${ABERTA.id}/sugestoes`); }
+    catch (e) { /* sem sugestão, segue vazio */ }
+  }
+  const sugValor = c => (sug.valores || {})[c]
+    || ((ABERTA.dados || {})[c] ?? "");
+  const sugDica = c => (sug.explicacoes || {})[c] || undefined;
   const campos = doDP.map(c => {
     const rot = (tipo.rotulos_do_dp || {})[c] || ROTULO_CAMPO[c] || c.replace(/_/g, " ");
     const opcoes = (tipo.opcoes_do_dp || {})[c];
     if (opcoes)
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
+              valor: sugValor(c), dica: sugDica(c),
               opcoes: [{valor: "", rotulo: "— deixar como está —"}].concat(
                 opcoes.map(o => (typeof o === "string"
                   ? {valor: o, rotulo: o} : o)))};
-    return {nome: c, rotulo: rot, largura: 3,
+    return {nome: c, rotulo: rot, largura: 3, valor: sugValor(c), dica: sugDica(c),
             tipo: /data|vigencia|ultimo_dia|admissao/.test(c) ? "date" : "text"};
   });
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
