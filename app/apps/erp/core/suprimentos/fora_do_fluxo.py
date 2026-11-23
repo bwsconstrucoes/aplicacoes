@@ -161,9 +161,10 @@ def listar(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
     # solicitação tardia). Uma não espera a outra — o pagamento não fica refém
     # de digitação, e o registro do material não some por já ter sido pago.
     linhas = s.execute(text(
-        "SELECT titulo_id, motivo, lancado_por, criado_em, autorizado_em, pedido_id "
+        "SELECT titulo_id, motivo, lancado_por, criado_em, autorizado_em, pedido_id, itens "
         "FROM compras_fora_do_fluxo "
-        "WHERE autorizado_em IS NULL OR pedido_id IS NULL ORDER BY criado_em")).all()
+        "WHERE autorizado_em IS NULL OR (pedido_id IS NULL AND itens IS NULL) "
+        "ORDER BY criado_em")).all()
     if not linhas:
         return []
     ids = [l[0] for l in linhas]
@@ -179,7 +180,7 @@ def listar(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
         Usuario.id.in_({l[2] for l in linhas if l[2]} or {0}))).all()}
     permitidas = obras_de_registro_sem_autor(s, usuario)
     saida = []
-    for titulo_id, motivo, lancado_por, criado_em, autorizado_em, pedido_id in linhas:
+    for titulo_id, motivo, lancado_por, criado_em, autorizado_em, pedido_id, itens in linhas:
         t = titulos.get(titulo_id)
         if t is None or getattr(t.status, "value", "") in ("CANCELADO", "ESTORNADO"):
             continue
@@ -194,7 +195,12 @@ def listar(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
             "motivo": motivo, "lancado_por": quem.get(lancado_por, ""),
             "lancado_por_id": lancado_por,
             "ciente": autorizado_em is not None,
-            "regularizado": pedido_id is not None,
+            "regularizado": pedido_id is not None or bool(itens),
+            # o que quem vai dar a ciência precisa ler antes de dar
+            "material_informado": [
+                {"insumo": i.get("insumo"), "quantidade": i.get("quantidade"),
+                 "unidade": i.get("unidade"), "preco_unitario": i.get("preco_unitario")}
+                for i in (itens or [])],
             "fornecedor_id": t.fornecedor_id,
             "obra_ids": sorted(obras),
             "dia": criado_em.date().isoformat() if criado_em else None})
@@ -219,6 +225,12 @@ def autorizar(s: Session, titulo_id: int, usuario: Usuario, observacao: str = ""
         "observacao = :o WHERE titulo_id = :t"),
         {"u": usuario.id, "q": datetime.now(timezone.utc),
          "o": " ".join((observacao or "").split()) or None, "t": titulo_id})
+    # A ciência é o que faz o pedido tardio nascer, no nome de quem a deu.
+    informado = s.execute(text(
+        "SELECT itens, pedido_id FROM compras_fora_do_fluxo WHERE titulo_id = :t"),
+        {"t": titulo_id}).first()
+    if informado and informado[0] and informado[1] is None:
+        _concretizar(s, titulo_id, list(informado[0]), usuario, usuario)
     registrar_evento(s, "titulo", titulo_id, "COMPRA_FORA_DO_FLUXO_AUTORIZADA",
                      {"observacao": observacao or None}, usuario.id)
     titulo = svc_titulos.obter(s, titulo_id)
@@ -249,70 +261,118 @@ def autorizar(s: Session, titulo_id: int, usuario: Usuario, observacao: str = ""
 # Com isso a compra por fora entra no histórico de preços, no consumo da obra
 # e nos relatórios, igual às outras. NÃO cria conta a pagar: ela já existe.
 # ---------------------------------------------------------------------------
+def _numero(valor: Any, campo: str):
+    from decimal import Decimal, InvalidOperation
+    bruto = str(valor or "").strip()
+    if "," in bruto:
+        bruto = bruto.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(bruto)
+    except (InvalidOperation, ValueError):
+        raise ErroValidacao(f"{campo}: número inválido.")
+
+
 def regularizar(s: Session, titulo_id: int, dados: dict[str, Any],
                 usuario: Usuario) -> dict[str, Any]:
-    from decimal import Decimal, InvalidOperation
-    from app.apps.erp.core.suprimentos import lancamento, pedido as svc_pedido
-    from app.apps.erp.core.suprimentos import recebimento, solicitacao
-    from app.apps.erp.core.titulos import service as svc_titulos
-    from app.apps.erp.db.models.cadastros import PedidoItem, SuprimentoItem
+    """Registra o que foi comprado por fora.
+
+    ⚑ QUEM REGISTRA NÃO É QUEM AUTORIZA (22/11/2026). O dono: "a pessoa não
+    pode simplesmente lançar e o financeiro pagar (...) tem que ir para
+    autorização também. Mesmo que tardio. Porque a pessoa que autoriza
+    participa, tem ciência de algo que não seguiu o procedimento."
+
+    Por isso são dois tempos:
+      1. quem lançou INFORMA os materiais — ficam guardados, à vista de quem
+         vai dar a ciência;
+      2. quando alguém com alçada dá a ciência, aí sim nascem a solicitação, o
+         pedido (autorizado NO NOME DELE), o recebimento e o vínculo.
+    Se a ciência já tinha sido dada antes, tudo nasce na hora, no nome de quem
+    a deu. O banco não aceita pedido autorizado sem o nome de quem autorizou —
+    e é essa regra que impede o registro de se autorizar sozinho.
+    """
+    import json
+    from app.apps.erp.db.models.cadastros import Insumo
     from app.apps.erp.db.models.financeiro import Rateio
 
     linha = s.execute(text(
-        "SELECT motivo, pedido_id FROM compras_fora_do_fluxo WHERE titulo_id = :t"),
-        {"t": titulo_id}).first()
+        "SELECT pedido_id, itens, autorizado_por FROM compras_fora_do_fluxo "
+        "WHERE titulo_id = :t"), {"t": titulo_id}).first()
     if linha is None:
         raise ErroNaoEncontrado("Este lançamento não está marcado como compra sem pedido.")
-    if linha[1] is not None:
+    if linha[0] is not None or linha[1] is not None:
         raise ErroValidacao("O que foi comprado neste lançamento já está registrado.")
-    titulo = svc_titulos.obter(s, titulo_id)
-    if not titulo.fornecedor_id:
-        raise ErroValidacao("O lançamento não tem fornecedor — não há de quem registrar a compra.")
 
     rateios = [r for r in s.scalars(select(Rateio).where(
         Rateio.titulo_id == titulo_id)).all() if r.titulo_id == titulo_id]
     obra_padrao = max(rateios, key=lambda r: r.valor).obra_id if rateios else None
-
-    if obra_padrao is None and any(not b.get("obra_id") for b in (dados.get("itens") or [])):
-        raise ErroValidacao(
-            "O lançamento não está rateado em nenhuma obra, então não dá para saber "
-            "para onde foi o material. Acerte o rateio do lançamento e registre de novo.")
-
-    def numero(valor: Any, campo: str) -> Decimal:
-        bruto = str(valor or "").strip()
-        if "," in bruto:
-            bruto = bruto.replace(".", "").replace(",", ".")
-        try:
-            return Decimal(bruto)
-        except (InvalidOperation, ValueError):
-            raise ErroValidacao(f"{campo}: número inválido.")
-
     brutos = dados.get("itens") or []
     if not brutos:
         raise ErroValidacao("Diga ao menos um material que foi comprado.")
-    itens, precos = [], []
+    if obra_padrao is None and any(not b.get("obra_id") for b in brutos):
+        raise ErroValidacao(
+            "O lançamento não está rateado em nenhuma obra, então não dá para saber "
+            "para onde foi o material. Acerte o rateio do lançamento e registre de novo.")
+    itens = []
     for n, b in enumerate(brutos, start=1):
-        preco = numero(b.get("preco_unitario"), f"Item {n}: preço")
-        if preco <= 0:
-            raise ErroValidacao(f"Item {n}: o preço unitário tem de ser maior que zero.")
-        itens.append({"insumo_id": b.get("insumo_id"), "obra_id": b.get("obra_id") or obra_padrao,
-                      "quantidade": str(numero(b.get("quantidade"), f"Item {n}: quantidade")),
-                      "unidade": b.get("unidade"), "especificacao": b.get("especificacao"),
-                      "observacoes": "Compra feita fora do processo — registro tardio."})
-        precos.append(preco)
+        insumo = s.get(Insumo, int(b.get("insumo_id") or 0))
+        if insumo is None:
+            raise ErroValidacao(f"Item {n}: escolha um material do cadastro.")
+        preco = _numero(b.get("preco_unitario"), f"Item {n}: preço")
+        quantidade = _numero(b.get("quantidade"), f"Item {n}: quantidade")
+        if preco <= 0 or quantidade <= 0:
+            raise ErroValidacao(f"Item {n}: quantidade e preço têm de ser maiores que zero.")
+        itens.append({"insumo_id": insumo.id, "insumo": insumo.descricao,
+                      "obra_id": int(b.get("obra_id") or obra_padrao),
+                      "quantidade": str(quantidade), "preco_unitario": str(preco),
+                      "unidade": (b.get("unidade") or insumo.unidade or "").strip().upper(),
+                      "especificacao": (b.get("especificacao") or "").strip() or None})
 
+    s.execute(text(
+        "UPDATE compras_fora_do_fluxo SET itens = CAST(:i AS JSONB), "
+        "regularizado_por = :u, regularizado_em = :q WHERE titulo_id = :t"),
+        {"i": json.dumps(itens), "u": usuario.id,
+         "q": datetime.now(timezone.utc), "t": titulo_id})
+    registrar_evento(s, "titulo", titulo_id, "COMPRA_FORA_DO_FLUXO_MATERIAL_INFORMADO",
+                     {"itens": len(itens)}, usuario.id)
+    if linha[2] is None:
+        return {"aguardando_ciencia": True, "pedido": None, "solicitacao": None}
+    quem_autorizou = s.get(Usuario, linha[2])
+    return {"aguardando_ciencia": False,
+            **_concretizar(s, titulo_id, itens, usuario, quem_autorizou)}
+
+
+def _concretizar(s: Session, titulo_id: int, itens: list[dict[str, Any]],
+                 usuario: Usuario, quem_autorizou: Usuario) -> dict[str, Any]:
+    """Com os materiais informados E a ciência dada: cria a solicitação, o
+    pedido (autorizado por quem deu a ciência), o recebimento e o vínculo."""
+    from app.apps.erp.core.suprimentos import lancamento, pedido as svc_pedido
+    from app.apps.erp.core.suprimentos import recebimento, solicitacao
+    from app.apps.erp.core.titulos import service as svc_titulos
+    from app.apps.erp.db.models.cadastros import PedidoItem, SuprimentoItem
+
+    titulo = svc_titulos.obter(s, titulo_id)
+    if not titulo.fornecedor_id:
+        raise ErroValidacao("O lançamento não tem fornecedor — não há de quem registrar a compra.")
+    motivo = s.execute(text("SELECT motivo FROM compras_fora_do_fluxo WHERE titulo_id = :t"),
+                       {"t": titulo_id}).scalar()
     marca = f"REGULARIZAÇÃO da compra lançada em {titulo.numero_sp}"
     sol = solicitacao.criar(s, {
         "titulo": f"Regularização — {titulo.numero_sp}",
-        "observacoes": f"{marca}. Motivo informado: {linha[0]}", "itens": itens}, usuario)
+        "observacoes": f"{marca}. Motivo informado: {motivo}",
+        "itens": [{"insumo_id": i["insumo_id"], "obra_id": i["obra_id"],
+                   "quantidade": i["quantidade"], "unidade": i["unidade"],
+                   "especificacao": i.get("especificacao"),
+                   "observacoes": "Compra feita fora do processo — registro tardio."}
+                  for i in itens]}, usuario, dispensa_liberacao=True)
     do_pedido = sorted([i for i in s.scalars(select(SuprimentoItem).where(
         SuprimentoItem.solicitacao_id == sol.id)).all() if i.solicitacao_id == sol.id],
         key=lambda i: i.numero)
     pedido = svc_pedido.fechar_direto(s, {
         "fornecedor_id": titulo.fornecedor_id, "observacoes": marca + ".",
-        "itens": [{"suprimento_item_id": i.id, "preco_unitario": str(p)}
-                  for i, p in zip(do_pedido, precos)]}, usuario)
-    svc_pedido.autorizar(s, pedido.id, usuario)
+        "justificativa_sem_cotacao": f"Compra feita fora do processo, registrada depois. {motivo}",
+        "itens": [{"suprimento_item_id": i.id, "preco_unitario": bruto["preco_unitario"]}
+                  for i, bruto in zip(do_pedido, itens)]}, usuario)
+    svc_pedido.autorizar(s, pedido.id, quem_autorizou, conferir_autoria=False)
     linhas = [l for l in s.scalars(select(PedidoItem).where(
         PedidoItem.pedido_id == pedido.id)).all() if l.pedido_id == pedido.id]
     chegou = titulo.data_emissao_doc or date.today()
@@ -324,15 +384,14 @@ def regularizar(s: Session, titulo_id: int, dados: dict[str, Any],
                   for l in linhas]}, usuario)
     s.flush()
     lancamento.vincular(s, titulo, pedido.id, usuario, recebimento_id=rec.id)
-    s.execute(text(
-        "UPDATE compras_fora_do_fluxo SET pedido_id = :p, regularizado_por = :u, "
-        "regularizado_em = :q WHERE titulo_id = :t"),
-        {"p": pedido.id, "u": usuario.id, "q": datetime.now(timezone.utc), "t": titulo_id})
+    s.execute(text("UPDATE compras_fora_do_fluxo SET pedido_id = :p WHERE titulo_id = :t"),
+              {"p": pedido.id, "t": titulo_id})
     total = svc_pedido.total(s, pedido)
     registrar_evento(s, "titulo", titulo_id, "COMPRA_FORA_DO_FLUXO_REGULARIZADA",
                      {"solicitacao": sol.numero, "pedido": pedido.numero,
                       "total_dos_itens": str(total),
-                      "valor_do_lancamento": str(titulo.valor_liquido)}, usuario.id)
+                      "valor_do_lancamento": str(titulo.valor_liquido),
+                      "autorizado_por": quem_autorizou.id}, usuario.id)
     logger.info("ERP/suprimentos: compra sem pedido %s regularizada — %s / %s",
                 titulo.numero_sp, sol.numero, pedido.numero)
     return {"solicitacao": sol.numero, "pedido": pedido.numero, "pedido_id": pedido.id,

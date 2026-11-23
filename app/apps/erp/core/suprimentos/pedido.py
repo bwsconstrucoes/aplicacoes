@@ -121,6 +121,15 @@ def fechar_direto(s: Session, dados: dict[str, Any], usuario: Usuario) -> Pedido
     itens = dados.get("itens") or []
     if not itens:
         raise ErroValidacao("Escolha os itens que vão neste pedido.")
+    # ⚑ SEM COTAÇÃO, COM JUSTIFICATIVA (22/11/2026). O dono: "digamos que a
+    # gente compra um insumo e sabe que só tem um fornecedor (...) eu já fecho
+    # direto. Mas o compras fecha encaminhando para autorização." A
+    # justificativa é o que quem autoriza lê para decidir.
+    justificativa = " ".join(str(dados.get("justificativa_sem_cotacao") or "").split())
+    if len(justificativa) < 10:
+        raise ErroValidacao(
+            "Escreva por que este pedido está sendo fechado sem cotação "
+            "(ex.: fornecedor único na região). Quem autoriza vai ler.")
     linhas = []
     for bruto in itens:
         item = s.get(SuprimentoItem, int(bruto.get("suprimento_item_id") or 0))
@@ -130,8 +139,10 @@ def fechar_direto(s: Session, dados: dict[str, Any], usuario: Usuario) -> Pedido
         if preco <= 0:
             raise ErroValidacao("Preço tem de ser maior que zero.")
         linhas.append((item, preco))
-    return _criar(s, fornecedor_id=int(dados.get("fornecedor_id") or 0),
-                  linhas=linhas, dados=dados, usuario=usuario)
+    pedido = _criar(s, fornecedor_id=int(dados.get("fornecedor_id") or 0),
+                    linhas=linhas, dados=dados, usuario=usuario)
+    pedido.justificativa_sem_cotacao = justificativa
+    return pedido
 
 
 def _criar(s: Session, *, fornecedor_id: int, linhas: list[tuple[SuprimentoItem, Decimal]],
@@ -142,6 +153,8 @@ def _criar(s: Session, *, fornecedor_id: int, linhas: list[tuple[SuprimentoItem,
     if forn is None:
         raise ErroValidacao("Fornecedor não encontrado.")
 
+    from app.apps.erp.core.suprimentos.solicitacao import exigir_liberados
+    exigir_liberados([i for i, _ in linhas])
     ids_das_linhas = [i.id for i, _ in linhas]
     reservados = {r.suprimento_item_id for r in s.scalars(
         select(PedidoItemReserva).where(
@@ -338,13 +351,24 @@ def _tem_dados_de_pagamento(s: Session, fornecedor: Fornecedor) -> bool:
 # Autorizar
 # ---------------------------------------------------------------------------
 def autorizar(s: Session, pedido_id: int, usuario: Usuario,
-              itens_recusados: Optional[list[int]] = None) -> PedidoCompra:
+              itens_recusados: Optional[list[int]] = None, *,
+              conferir_autoria: bool = True) -> PedidoCompra:
     """Libera o pedido e gera a previsão de pagamento.
 
     Quem autoriza pode recusar PARTE do pedido: os itens recusados saem, voltam
     a ficar disponíveis, e a previsão nasce só sobre o que ficou.
     """
     pedido = _pedido_pendente(s, pedido_id)
+    # ⚑ QUEM FECHOU NÃO AUTORIZA (22/11/2026). O dono: "o comprador lança o
+    # pedido, ele cotou, ele lançou, e alguém da alçada superior vai autorizar
+    # e disparar." Hoje comprar e autorizar estão nos mesmos dois perfis
+    # (admin e diretor) — sem esta linha, uma pessoa só fazia a compra inteira.
+    # `conferir_autoria=False` é só da compra tardia, onde a separação já é
+    # outra: quem lançou a nota não dá a ciência.
+    if conferir_autoria and pedido.criado_por == usuario.id:
+        raise ErroValidacao(
+            "Quem fechou o pedido não autoriza o próprio pedido. A autorização "
+            "é de outra pessoa, com alçada.")
     linhas = _itens(s, pedido.id)
     recusados = set(itens_recusados or [])
     se_ficam = [l for l in linhas if l.id not in recusados]
@@ -562,6 +586,7 @@ def detalhar(s: Session, pedido_id: int) -> dict[str, Any]:
         "previsao_entrega": (pedido.previsao_entrega.isoformat()
                              if pedido.previsao_entrega else None),
         "observacoes": pedido.observacoes, "motivo": pedido.motivo,
+        "justificativa_sem_cotacao": getattr(pedido, "justificativa_sem_cotacao", None),
         "itens": itens, "total": str(total(s, pedido)),
         "cotacao_id": pedido.cotacao_id,
         # O mapa vai junto: quem autoriza precisa ver as alternativas que o

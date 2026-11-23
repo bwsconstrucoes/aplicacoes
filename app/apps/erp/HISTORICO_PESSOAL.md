@@ -229,6 +229,22 @@ pessoal já estava antes acostumado com o Pipefy."*
   (Pagamentos ainda fechada), os 15 pedidos e os rótulos de situação.
 - ⚠️ **Mudou a tela, muda o guia** — editar o HTML e rodar o gerador.
 
+### 23/11/2026 — (feito pelo chat do PONTO) Os documentos do DP passam a ser assinados pelo aplicativo do ponto
+
+⚠️ **Mexeu em arquivo desta área sem ser o chat dela, a pedido do dono** (*"faça por aqui mesmo (…) e avisa ao chat
+do DP"*; avisado no mesmo dia). Detalhe em `app/apps/ponto/HISTORICO.md`, 23/11/2026.
+
+- **`core/termos.py`** (`dp_termos`) virou a base da CENTRAL DE ASSINATURAS: a pessoa assina o próprio documento,
+  logada no "Meu ponto" (`assinar(..., pela_pessoa=True)`; a regra "quem conduz não assina o próprio" continua para
+  quem conduz); `abrir(..., origem, origem_ids)`; `pendentes(..., colaborador_id=, pessoas=)`; `da_pessoa`,
+  `painel_dp`, `da_origem`. Nada do que já existia mudou de comportamento: o atendimento, o portal da obra e a
+  validação continuam iguais.
+- **Migração 126** (`126_termos_origem.sql`): `origem`, `origem_ids`, `assinado_pela_pessoa` e o tipo
+  TERMO-COMPENSACAO no Arquivo. **A próxima livre é a 127** (124 e 125 são de Suprimentos).
+- **Documento novo:** o termo de acordo de compensação nasce sozinho da compensação aprovada no ponto.
+- **Onde o DP gere agora:** ERP › Ponto › Assinaturas (pendentes, a validar, assinados) — inclusive os documentos que
+  nascem aqui, no atendimento (aviso prévio etc.).
+
 ### 21/11/2026 (2) — O agente cobra e lê o e-mail sozinho; o ASO alerta
 
 Ele, depois de entender as duas rotinas: *"sim, vamos deixar as rotinas

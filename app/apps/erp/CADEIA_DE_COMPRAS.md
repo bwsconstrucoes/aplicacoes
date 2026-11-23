@@ -47,6 +47,8 @@ flowchart TD
 | 10 | Nota × pedido | obra / comprador | Financeiro › Notas | `core/notas/cruzamento.py` | pronto, manual |
 | 11 | Conta a pagar | obra lança, financeiro analisa | Financeiro › Lançar (pré-preenchido pelo pedido) | `lancamento.py`, `core/titulos/` | **feito em 20/11** — nasce do recebimento |
 | 12 | Pagamento e fechamento | financeiro / coordenador | Acompanhar compras | `acompanhamento.py` | **feito em 20/11** |
+| 1a | **Material fora do cadastro vai no mesmo pedido** e espera o insumo | obra pede, administrador cadastra | portal › Pedir, ou Solicitações; Suprimentos › Configurações | `insumos.pedir_junto_com_o_pedido` | **feito em 23/11** — vira item sozinho quando o insumo é cadastrado |
+| 1b | **Liberação da engenharia** — pedido de quem não é da engenharia espera o ok | gestor / supervisor da obra | Solicitações, ou portal › Em andamento | `solicitacao.liberar` | **feito em 22/11** — sem o ok, o comprador vê mas não cota nem compra |
 | — | Compra feita por fora: aviso, ciência e **solicitação tardia** | quem lançou / coordenador | Suprimentos › Painel | `fora_do_fluxo.py` | **feito em 21/11** — registrar o que foi comprado cria solicitação, pedido e recebimento ligados ao lançamento |
 | — | Nota de fornecedor com material recebido e sem conta | quem lança | Financeiro › Lançar | `api_criar_titulo` | **feito em 21/11** — a tela exige dizer de qual pedido é |
 

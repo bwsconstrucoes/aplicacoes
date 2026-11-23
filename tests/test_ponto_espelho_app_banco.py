@@ -103,14 +103,13 @@ def test_no_ponto_da_obra_a_folha_de_outra_pessoa_abre_com_o_bilhete(app, mundo,
 def test_os_espelhos_da_equipe_num_arquivo_so(app, mundo, carlos, monkeypatch):
     """05/11/2026, o dono: "a pessoa tem 40 pessoas que emitem a folha e fazer isso um por um". Do resumo da equipe,
     um arquivo só com uma folha por pessoa — as MESMAS pessoas do resumo, com a obra escolhida nele."""
-    from app.apps.ponto import horario
     from tests.test_ponto_papeis_banco import OBRA_A
     _papeis(app, mundo, carlos, administrativo_obra=True)
-    _bater(CPF_MARIA, "PG-A", 30)
+    _bater(CPF_MARIA, "PG-A", 24 * 60)                   # ontem: o resumo vai até ontem (no dia 1º, o mês passado)
     c = _entrar_no_app(app, CPF_CARLOS, monkeypatch)
     aqui = {"latitude": OBRA_A[0], "longitude": OBRA_A[1], "precisao": 10}
-    mes = horario.hoje().strftime("%Y-%m")
     resumo = c.get(f"/ponto/app/api/equipe/resumo?{NA_OBRA_A}").get_json()
+    mes = resumo["de"][:7]                               # o mês do resumo (no dia 1º, o passado)
     do_resumo = {p["nome"] for g in resumo["grupos"] for p in g["pessoas"]}
     r = c.post(f"/ponto/app/api/equipe/espelhos/bilhete?competencia={mes}", json=aqui)
     assert r.status_code == 200, r.get_json()

@@ -38,6 +38,66 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**✔ PUBLICADO em 23/11/2026**, com o "pode" dele: a 7ª rodada. **A CONFERIR
+COM ELE no próximo chat:** (1) apertou "Aplicar atualizações do banco"? É a
+migração 125 — sem ela só o "pedir material fora do cadastro" não funciona;
+(2) colou uma lista de teste no portal? A leitura com a IA de verdade não foi
+vista funcionando no ambiente de teste.
+
+O retrato de antes da publicação:
+
+**No ramo em 23/11/2026: a 7ª rodada** — colar lista no
+portal e o pedido que leva junto o material fora do cadastro. Traz a
+**migração 125** (tabela nova, lida por SQL direto: se o botão atrasar, só o
+recurso novo espera; o resto segue funcionando). Arquivos compartilhados:
+`routes.py`, `core/manutencao/limpeza.py`.
+
+**✔ PUBLICADO em 22/11/2026**, com o "pode" dele: as rodadas 5 e 6 e a regra
+das obras. **A CONFERIR COM ELE no próximo chat:** (1) apertou "Aplicar
+atualizações do banco"? É a migração 124 — sem ela NENHUMA tela de suprimentos
+abre; (2) clicou "travar até autorizar" no Painel? É a escolha dele, e a chave
+nasce desligada; (3) há duas pessoas com alçada? Quem fecha o pedido não
+autoriza o próprio.
+
+O retrato de antes da publicação, mantido pelo contexto:
+
+**No ramo em 22/11/2026: a 5ª rodada** — liberação da
+engenharia, "recebido" que não se marca à mão, autorização que dispara o
+pedido, compra tardia em dois tempos. Traz a **migração 124** (a 123 é do DP)
+e **coluna nova em `suprimento_itens`**: sem o botão apertado, TODA tela de
+suprimentos quebra. Publicar e apertar no mesmo minuto. Arquivos
+compartilhados: `routes.py`, `core/auth/permissoes.py`, `core/auth/secoes.py`,
+`db/models/cadastros.py`.
+
+**Respondido por ele em 22/11 (2ª conversa) — não perguntar de novo:**
+- **Compra por fora TRAVA** até alguém dar a ciência ("a engenharia tem que
+  estar ciente (...) por mais que a empresa já tenha uma obrigação financeira").
+  ⚠ **A CHAVE CONTINUA DESLIGADA, E NÃO FUI EU QUE LIGUEI, DE PROPÓSITO:** hoje
+  NENHUMA compra passa pelo ERP. Ligar "travar" agora bloqueia TODO lançamento
+  de material do financeiro até alguém autorizar um por um. A decisão dele é a
+  regra; a HORA de ligar é quando as compras já estiverem saindo do ERP. Dito a
+  ele; confirmar antes de ligar.
+- **Quem fecha o pedido NÃO autoriza o próprio.** Feito.
+- **Compra sem cotação pede justificativa escrita.** Feito.
+- A lentidão ao mover item: "pode ajustar". Feito.
+
+- **Só se pede material para as próprias obras** (22/11, 3ª conversa): "vamos
+  oferecer só as obras da pessoa (...) pode puxar pelo ponto". Feito:
+  `solicitacao.obras_para_pedir` = obras ligadas no cadastro + a obra onde a
+  pessoa bate ponto. A caixinha do portal e o servidor usam a mesma lista.
+  ⚠ Quem não tem obra ligada nem ponto batido NÃO consegue pedir — é para
+  ligar a pessoa à obra em Configurações.
+- **A compra tardia NÃO libera o financeiro antes da ciência** — ele repetiu
+  pela terceira vez, com o motivo: *"se fizer assim, o cara lança tardio, cobra
+  o financeiro para pagar, o financeiro vai pagar, e a ciência acaba sendo
+  ignorada, fica esquecida. Quem trava mesmo é o financeiro (...) aí ele vai
+  ter que pedir para o gestor dele, dar uma explicação (...) pode inclusive
+  ser chamado a atenção."* **É a posição TRAVAR, que já existe e bloqueia o
+  título na análise. NÃO PERGUNTAR DE NOVO SE É PARA TRAVAR.** O que falta é
+  só o clique dele no Painel depois de publicar (a chave nasce desligada e eu
+  não tenho como ligar em produção). "Só avisar" ficou como opção na tela,
+  mas não é mais a escolha dele.
+
 **✔ PUBLICADO em 21/11/2026 (noite)**, com o "pode publicar" dele — tudo o que
 está abaixo, das rodadas de 20 e 21/11, está na `main` (commit `40db52e`).
 **A CONFERIR COM ELE no próximo chat:** (1) se apertou "Aplicar atualizações do
@@ -100,6 +160,133 @@ assinatura fica com a pessoa, desenhada na tela ou escaneada.
 ---
 
 ## Decisões desta área
+
+### ⚑ 22/11/2026 (5ª rodada) — A ENGENHARIA LIBERA, O RECEBIDO NÃO SE MARCA À MÃO, AUTORIZOU SAIU
+
+Ele pediu uma revisão de "todas as possibilidades de furar o procedimento".
+Levei sete furos; ele decidiu quatro na resposta seguinte. Feitos:
+
+**1. A liberação da engenharia** (migração 124, `solicitacao.liberar`). Ele:
+*"quando o administrativo de obra fizer esse pedido, alguém lá da parte da
+engenharia tem que dar um ok (...) ou um supervisor de obras (...) O compras
+tem que visualizar, mas não consegue gerar nem mapa de cotação, nem fazer
+pedido de compra."* O motivo, dele: sem isso a quantidade infla e passa batido
+um aditivo de contrato.
+- Ação nova `liberar_solicitacao`: admin, diretor, **gestor de obra e
+  supervisor de obra**. Seção nova `sup_liberar` nos perfis prontos.
+- Pedido de quem tem a ação nasce liberado, no nome dele. Pedido dos outros
+  (administrativo de obra) nasce `PENDENTE`.
+- Pendente: aparece para o comprador com o selo, mas `cotacao.criar`,
+  `pedido._criar` e `mudar_situacao` recusam. Recusar a liberação cancela o
+  item, com o motivo.
+- Libera-se na tela de Solicitações e no portal (aba Em andamento), no recorte
+  de obra de quem libera. `liberacao` vazio (itens antigos) vale como liberado.
+- **ESCOLHA MINHA:** "quem libera" é qualquer gestor/supervisor com alcance na
+  obra, não uma pessoa nomeada por obra. Ele falou "alguém da engenharia ou um
+  supervisor" — se quiser um responsável único por obra, é um campo na obra.
+- **Teto de quantidade: ADIADO POR ELE** — "depois, quando a gente trabalhar
+  melhor a parte da engenharia".
+
+**2. "Recebido" não se marca à mão.** A rota de mover item era
+`ver_suprimentos` (consulta e parceiro inclusive) e levava o item a recebido
+sem pedido nem nota. Agora é `comprar`, e RECEBIDO saiu das opções: só o
+recebimento fecha. O comprador ainda marca "entregue" (ele: *"a ideia é ele
+saber que o material chegou"*). **Almoxarifado fica como está** — ele: "depois
+a gente pensa melhor como finaliza a remessa do almoxarifado."
+⚠ Consequência: a obra não cancela mais o próprio item pela tela; pede ao
+comprador, ou a engenharia recusa a liberação.
+
+**3. Autorizou, saiu para o fornecedor.** Ele: *"na hora que ela autoriza, o
+pedido é disparado para o fornecedor."* A rota de autorizar grava a decisão e
+em seguida manda o e-mail com o PDF. Se o envio falha (fornecedor sem e-mail,
+conta de envio incompleta), **a autorização fica** e a tela diz por que não
+saiu; "Ver e mandar" continua em Pedidos. Vale igual para compra direta.
+
+**4. A compra tardia em dois tempos** (`fora_do_fluxo.regularizar` +
+`_concretizar`). Na 4ª rodada o registro criava o pedido já autorizado em nome
+de quem registrou — ele apontou o conflito. Agora: quem lançou INFORMA os
+materiais (ficam em `compras_fora_do_fluxo.itens`, à vista de quem autoriza);
+o pedido, o recebimento e o vínculo só nascem com a ciência, **no nome de quem
+a deu**. O próprio banco ajuda: `ck_pedido_autorizado` não aceita pedido
+autorizado sem o nome de quem autorizou.
+
+**Furos que levei e ele NÃO decidiu** — estão nas perguntas abertas, no alto.
+
+**Ineficiência vista de passagem, não consertada:** a rota de mover item
+carrega a lista inteira de itens visíveis (três leituras por item) só para
+conferir se a pessoa enxerga UM item. Com 2.000 itens são ~6.000 leituras por
+clique. Relatada a ele.
+
+**Não verificado:** o disparo de verdade na autorização (o banco de teste não
+tem conta de e-mail; vi a autorização ficar e o motivo aparecer); a liberação
+feita por um supervisor de verdade pelo celular (vi o selo no portal e a
+liberação pela tela do ERP).
+
+### ⚑ 23/11/2026 (7ª rodada) — O PEDIDO NÃO ESPERA O CADASTRO DO INSUMO, E O COLAR LISTA NO PORTAL
+
+**O que ele perguntou primeiro:** se o pedido de material do portal estava igual
+ao do ERP. Estava, menos o "colar lista". Ele pediu para colocar.
+
+**1. Colar lista no portal.** Mesma leitura do ERP (`/erp/api/suprimentos/
+ler-lista`, IA). O que a leitura reconhece entra como material do cadastro; o
+que não reconhece entra como "não está no cadastro", para a pessoa trocar pelo
+certo ou explicar o que é. Nada é enviado sem conferir.
+
+**2. O pedido leva junto o material que não está no cadastro** (migração 125,
+`insumos.pedir_junto_com_o_pedido` / `soltar_pedidos_que_esperavam`). Ele:
+*"quando não tem um insumo, quem vai lançar o pedido fica meio travado. Ele faz
+o pleito do novo insumo, para depois ser cadastrado, para então ser autorizado,
+aí ele é informado e então lança o pedido completo (...) ele faz o pedido já
+incluindo aquele cadastro de insumo (...) fica pendente, aguardando a
+confirmação do cadastro. Na hora que liberar, o pedido já fica pronto."*
+- No portal ("Não encontrei o material — pedir assim mesmo") e no ERP ("não
+  encontrei este material no cadastro", em cada linha do pedido).
+- A pessoa dá o nome e **explica o que é e para que serve** (mínimo de 15
+  letras — pedido dele: "às vezes é um nome técnico e ninguém compreende"),
+  mais quantidade, unidade, especificação e obra.
+- O pedido é criado na hora com o que já tem cadastro. O material novo fica em
+  `suprimento_itens_esperando_insumo` e abre (ou reaproveita) o pedido de
+  cadastro do insumo. Um pedido pode ter SÓ material novo.
+- Quando o administrador cadastra o insumo, a linha vira item do pedido
+  sozinha. **O ok da engenharia continua valendo**: se quem pediu não tem
+  alçada, o item nasce esperando liberação.
+- Se o cadastro é recusado, a linha fica à vista da obra com o motivo.
+- Quem cadastra vê, em Suprimentos › Configurações, quais pedidos estão
+  parados esperando cada cadastro — é o que diz o que é urgente.
+- Mesmo material pedido por duas obras entra na mesma fila de cadastro.
+
+**"Tem que ser facilmente pesquisável um insumo"** — conferido: no portal a
+busca é por qualquer palavra do nome, sem diferença de acento, até 25
+resultados; no ERP a lista tem caixa de busca. Não mexi.
+
+**Não verificado:** a leitura da lista colada com a IA de verdade — o ambiente
+de teste não tem a chave da IA; vi a tela mostrar o erro com clareza e o resto
+do pedido seguir. A leitura em si é a mesma do ERP, que já existia.
+
+### ⚑ 22/11/2026 (6ª rodada) — QUEM FECHA NÃO AUTORIZA, JUSTIFICATIVA DA COMPRA DIRETA, A ENGENHARIA DÁ A CIÊNCIA
+
+- **Quem fechou o pedido não autoriza o próprio** (`pedido.autorizar`). Ele: *"o
+  comprador lança o pedido, ele cotou, ele lançou, e alguém da alçada superior
+  vai autorizar e disparar."* Comprar e autorizar estão nos mesmos dois perfis
+  (admin e diretor); sem a regra, uma pessoa fazia a compra inteira.
+  ⚠ **Consequência prática:** precisa haver DUAS pessoas com alçada. Se só o
+  dono compra e autoriza, ele não consegue autorizar o que ele mesmo fechou.
+- **Justificativa da compra sem cotação**, em campo PRÓPRIO
+  (`pedidos_compra.justificativa_sem_cotacao`, migração 124), mínimo de 10
+  letras. **Defeito encontrado e corrigido junto:** o motivo era digitado nas
+  observações, e as observações saem impressas no pedido que vai ao
+  fornecedor. Agora quem autoriza lê; o fornecedor não.
+- **A ciência da compra por fora passou a ser também de gestor e supervisor de
+  obra** (`autorizar_compra_fora_do_fluxo`, na seção `sup_liberar`). Ele: *"quem
+  é responsável pelo setor, a engenharia, tem que estar ciente."* Quem lançou
+  continua sem poder dar a ciência do próprio lançamento.
+- **Mover item** confere UM item (`solicitacao.enxerga_item`) em vez de montar
+  a lista inteira: de ~6.000 leituras por clique (com 2.000 itens) para 3.
+- **A pergunta dele: "quando a compra tardia é lançada, já está associada ao
+  financeiro?"** Sim, e é ao contrário do fluxo normal: ela COMEÇA no
+  financeiro. O que existe primeiro é a nota lançada sem pedido; depois vêm os
+  materiais informados e a ciência; o pedido tardio nasce por último e é
+  ligado àquela mesma conta. Não se cria conta nova.
 
 ### ⚑ 21/11/2026 (4ª rodada) — NUNCA SÓ RECEBER, A SOLICITAÇÃO TARDIA, E OS ACERTOS NOS PAPÉIS
 

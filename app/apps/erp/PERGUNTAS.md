@@ -364,7 +364,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Qual o % de ajustes da obra X (ou de fulano) este mês? 🔒 ⚠️ (Qualidade › coluna "% de ajustes"; "% de ajustes" = batidas que entraram por pedido de ajuste ÷ todas as batidas válidas do mês — NÃO é o número de pedidos, um pedido pode incluir várias batidas; a incluída em lote pela gestão não conta; "este mês" = mês do calendário até ontem)
 - Quais as 10 melhores obras e os 20 melhores funcionários do ponto no mês? 🔒 (Qualidade › "Mensagem para o WhatsApp"; só quem entra no ranking: obra com 10 funcionários ou mais, funcionário com 10 dias de trabalho ou mais; muda conforme as obras de quem pergunta)
 - Quanto a declaração de comparecimento do Fulano abonou? 🔒 (o dia mostra: "o dia todo", "só o período" — só a parte dentro do expediente, desde 30/10/2026 —, "Xh abonadas" ou "não abonada"; Relatórios › Ausências justificadas, coluna "Horas abonadas")
-- Quais compensações ainda estão a cumprir, e quais não foram cumpridas? 🔒 (a cumprir: aba Conferência do fechamento e o espelho; não cumpridas: o aviso "compensação não cumprida" no espelho, no Quadro e nos alertas — a folga vira falta ou falta parcial; desde 30/10/2026; ❌ ainda não há uma lista só das compensações)
+- Quais compensações ainda estão a cumprir, e quais não foram cumpridas? 🔒 (a cumprir: aba Conferência do fechamento e o espelho; não cumpridas: o aviso "compensação não cumprida" no espelho, no Quadro e nos alertas — a folga vira falta ou falta parcial quando o dia trabalhado veio ANTES dela; quando vem DEPOIS, a falta cai no dia trabalhado (desde 21/11/2026); desde 30/10/2026; ❌ ainda não há uma lista só das compensações)
 - Que horas extras foram negadas na conferência, por quem e por quê? 🔒 (Fechamento › Horas extras por obra: riscadas; o motivo no passar do mouse; `ponto.horas_extras_negadas` — desde 29/10/2026, migração 019; ❌ ainda não há uma lista só das negadas)
 - O Fulano entra na conta de horas extras e faltas? ⚠️ (só quem é CTPS na coluna "Tipo" da planilha de colaboradores; prestador de serviço bate ponto, mas fica fora do fechamento e dos relatórios de Faltas, Horas extras e Banco — desde 29/10/2026)
 - Quem pediu o abono do Fulano, e quem aprovou? 🔒 (Validações e a janela da pessoa: o pedido guarda quem pediu — o supervisor no ERP, o responsável ou o administrativo no aplicativo, ou a própria pessoa — e cada etapa de aprovação; desde 29/10/2026 o abono é pedido como os outros pedidos)
@@ -407,6 +407,15 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Que batidas faltam ao Fulano entre tal e tal dia, pela escala? 🔒 (janela da pessoa › "📅 Completar o período pela escala" › "Ver o que vai entrar": a prévia dia a dia, sem gravar nada; até 31 dias; só quem trata o ponto; desde 13/11/2026)
 - Quantas batidas a gestão incluiu em lote para o Fulano? (ajustes com o motivo "incluída em lote pela gestão" — no espelho e nos pedidos da pessoa; ❌ ainda não há um relatório só dessas)
 - O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
+- O Fulano folgou no recesso e ainda vai pagar com sábado — onde isso aparece? 🔒 (no dia da folga: "Compensação (a pagar com o trabalho em DD/MM/AAAA)"; na folha de ponto do mês da folga, em "Observações — compensações", o combinado; enquanto o sábado não chega, a Conferência do fechamento avisa "ainda a cumprir"; desde 21/11/2026)
+- Quem não pagou o sábado da compensação? Que falta foi lançada por isso? 🔒 ⚠️ (desde 21/11/2026, na folga paga DEPOIS a falta cai NO SÁBADO, no mês dele — "Compensação não cumprida — este dia pagaria a folga de DD/MM/AAAA" —, e a folga continua folga no mês dela; o relatório de faltas mostra o motivo na coluna "Motivo"; se o sábado foi trabalhado em parte, é falta parcial do que faltou; "este mês" = o mês do sábado, não o da folga)
+- Quem ainda não assinou o termo de compensação? E o aviso prévio? 🔒 (ERP › Ponto › Assinaturas, "Documentos para assinar": cada documento do DP aberto, com o prazo e se venceu; desde 23/11/2026 o termo de compensação nasce sozinho da compensação de dia aprovada — um por pessoa por lançamento)
+- O que está esperando o DP validar? 🔒 (Ponto › Assinaturas, "Esperando o DP validar": o papel assinado por foto e a recusa com testemunhas — só valem depois de aceitos; o assinado na tela com o PIN vale sozinho)
+- Quem não assinou a folha de ponto do mês? 🔒 ⚠️ ("o mês" = o último mês FECHADO dos dois anteriores; Ponto › Assinaturas › Folha de ponto, por obra; ⚠️ conta quem tem assinatura guardada — uma folha assinada que mudou depois, com o mês reaberto, ainda aparece como assinada ali; o aplicativo de quem conduz refaz essa conta)
+- O que o Fulano já assinou? Me mostra o documento. 🔒 (a ficha › 📄 Documentos: os documentos do DP, as folhas de ponto assinadas e o termo do ponto, cada um com o PDF; a folha que falta não aparece ali)
+- A compensação já vale antes de o termo ser assinado? (sim — decisão do dono, 23/11/2026: o lançamento vale; o termo é cobrança; havendo discordância, o DP cancela a compensação em Ponto › Assinaturas e o termo cai junto)
+- Quem está no recesso de fim de ano, e com que sábados paga cada folga? 🔒 (os pedidos de compensação cuja descrição começa com "Recesso" — lançados pelo Quadro › "Recesso — folgas a compensar…", um por pessoa e por dia de folga; desde 22/11/2026; ❌ ainda não há uma lista só do recesso: hoje é pela Validação/pedidos de cada pessoa ou pelo espelho)
+- A pessoa assinou que ia compensar? 🔒 (a folha de ponto assinada tem as observações de compensação junto: a do mês da folga diz o combinado, a do mês do sábado diz se foi cumprido; desde 21/11/2026 elas entram no lacre da folha — ❌ isso NÃO é o acordo escrito que a lei pede para compensar fora do mês: o sistema não guarda esse acordo)
 - Que rondas foram feitas sem foto, e de quem? (Alertas › Tipo "Ronda registrada sem foto", um por ronda, com o motivo; e nas telas Rondas / Quadro › Rondas o chip "· sem foto"; desde 17/11/2026; a localização sempre foi gravada)
 - Quais alertas do mês passado ainda estão abertos? (Alertas › Período "Mês anterior", Situação "Abertos"; "mês passado" = o DIA do alerta no mês anterior, não o dia em que o alerta foi criado; desde 10/11/2026)
 - Quantos alertas a obra X tem abertos? (Alertas › filtro "Obra", com a contagem de cada; muda com o período, o tipo e a gravidade escolhidos, e com as obras de quem pergunta)
@@ -3163,6 +3172,37 @@ consulta inventada vai sendo usado cada vez menos.
   ficou afastado reiniciam" — é a contabilidade (Fortes), por decisão dele.
 
 
+
+## 3ad. MATERIAL PEDIDO QUE ESPERA O CADASTRO DO INSUMO (23/11/2026)
+
+Sem pergunta escrita no assistente; responde-se pelo portal (Em andamento) e
+por Suprimentos › Configurações.
+
+- "Quais pedidos estão parados esperando cadastro de insumo?" —
+  `suprimento_itens_esperando_insumo` sem `item_id` e sem recusa. ⚠ muda
+  conforme quem pergunta (recorte por obra).
+- "Há quanto tempo o material tal espera o cadastro?" — da criação da linha.
+- "Que cadastro de insumo foi recusado, e por quê?" — `recusado_motivo`.
+- ⚠ PALAVRA AMBÍGUA: "quanto a obra pediu de X" — o que espera cadastro AINDA
+  NÃO É item do pedido, e não entra na soma do que foi solicitado. A resposta
+  tem de dizer isso.
+
+## 3ac. O OK DA ENGENHARIA NO PEDIDO DA OBRA (22/11/2026)
+
+Sem pergunta escrita no assistente ainda; responde-se pela tela de Solicitações.
+
+- "O que está esperando liberação da engenharia?" — itens com `liberacao =
+  'PENDENTE'`. ⚠ muda conforme quem pergunta (recorte por obra).
+- "Quem liberou a compra do material tal, e quando?" — `liberado_por`,
+  `liberado_em` do item.
+- "O que a engenharia não liberou este mês, e por quê?" — itens cancelados com
+  o evento `LIBERACAO_RECUSADA`; o motivo está no evento e na observação.
+- "Há quanto tempo o pedido da obra X espera o ok?" — da criação do item até
+  hoje, enquanto pendente.
+- **AINDA NÃO RESPONDE:** "a obra está comprando mais do que o contrato
+  prevê?" Falta o quantitativo previsto de material por obra — adiado pelo
+  dono para quando a parte de engenharia for trabalhada. O assistente deve
+  dizer que não há previsto para comparar.
 
 ## 3ab. COMPRA POR FORA REGISTRADA E PREVISÃO DO QUE NEM FOI COTADO (21/11/2026)
 

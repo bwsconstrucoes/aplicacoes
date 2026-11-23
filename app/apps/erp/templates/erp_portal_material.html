@@ -158,7 +158,7 @@ async function carregar(){
   try {
     DADOS = await api("/erp/api/suprimentos/recebimentos");
     el("n-chegar").textContent = DADOS.esperando.length;
-    el("n-andamento").textContent = DADOS.em_andamento.length;
+    el("n-andamento").textContent = DADOS.em_andamento.length + (DADOS.esperando_cadastro || []).filter(i => !i.recusado_motivo).length;
     el("n-nota").textContent = DADOS.sem_nota.length;
     el("aba-pedir").hidden = !DADOS.pode_pedir;
     // Chegando com ?pedido=N (é para onde as telas do ERP mandam), o pedido
@@ -202,6 +202,10 @@ function guardarPedido(){
     i.quantidade = b.querySelector(".pm-qtd").value;
     i.unidade = b.querySelector(".pm-un").value;
     i.especificacao = b.querySelector(".pm-esp").value;
+    if (i.novo) {
+      i.descricao = b.querySelector(".pm-nome").value;
+      i.explicacao = b.querySelector(".pm-exp").value;
+    }
   });
 }
 
@@ -234,8 +238,15 @@ async function desenharPedir(){
       <div class="anexos">
         <b>Materiais${PEDIDO.itens.length ? ` (${PEDIDO.itens.length})` : ""}</b>
         ${PEDIDO.itens.map((i, n) => `<div class="parcela" data-item-pedido="${n}">
-            <div class="topo"><span>${esc(i.descricao)}</span>
+            <div class="topo"><span>${i.novo ? `<span class="etiqueta ambar">não está no cadastro</span>` : esc(i.descricao)}</span>
               <button class="tira" data-tira-item="${n}" aria-label="tirar o material">✕</button></div>
+            ${i.novo ? `<label class="campo">Nome do material
+                <input class="pm-nome pc-valor" value="${esc(i.descricao || "")}" placeholder="como você chama este material"></label>
+              <label class="campo">O que é e para que serve? <small>(quem vai cadastrar precisa entender)</small>
+                <textarea class="pm-exp pc-valor" rows="3" style="width:100%; padding:10px; margin-top:4px; border:1px solid #C9D3E4; border-radius:10px; font-size:16px"
+                  placeholder="ex.: manta de borracha que vai embaixo do piso para não passar umidade; vendida em rolo de 10 m">${esc(i.explicacao || "")}</textarea></label>
+              <div class="sub">O pedido segue agora. Este material entra nele sozinho assim que o
+                cadastro for aprovado — você não precisa pedir de novo.</div>` : ""}
             <div class="duas">
               <label class="campo">Quantidade
                 <input class="pm-qtd pc-valor" inputmode="decimal" value="${esc(i.quantidade || "")}"></label>
@@ -249,6 +260,15 @@ async function desenharPedir(){
         <label class="campo">Acrescentar material
           <input id="pm-busca" type="search" placeholder="digite o nome: cimento, disco de corte…" autocomplete="off"></label>
         <div id="pm-achados"></div>
+        <button class="btn-portal secundario" id="pm-novo" type="button">Não encontrei o material — pedir assim mesmo</button>
+        <button class="btn-portal secundario" id="pm-colar" type="button">Colar uma lista de materiais</button>
+        <div id="pm-area-colar" hidden>
+          <label class="campo">Cole aqui a lista (da planilha, do WhatsApp, de onde for)
+            <textarea id="pm-texto" rows="6" style="width:100%; padding:10px; margin-top:4px; border:1px solid #C9D3E4; border-radius:10px; font-size:16px"
+              placeholder="Vergalhão CA50 12,5mm  180  M&#10;Cola PU 800ml  12  UN"></textarea></label>
+          <div class="sub">O sistema lê e monta os materiais para você conferir. Nada é enviado sem você revisar.</div>
+          <button class="btn-portal" id="pm-ler" type="button">Ler a lista</button>
+        </div>
       </div>
       <label class="campo">Observação para o suprimento
         <input id="pm-obs" value="${esc(PEDIDO.obs)}" placeholder="opcional"></label>
@@ -263,7 +283,7 @@ async function desenharPedir(){
     el("pm-achados").innerHTML = achados.map(i => `<button class="cab-pedido" data-insumo="${i.id}"
         style="padding:10px 6px; border-top:1px solid #E6EAF2"><span class="cresce">${esc(i.descricao)}
         <small>${esc(i.unidade || "")}</small></span><span class="seta">＋</span></button>`).join("")
-      + `<button class="btn-portal secundario" id="pm-nao-achei">Não achei o material — pedir o cadastro dele</button>`;
+      + `<button class="btn-portal secundario" id="pm-nao-achei">Não é nenhum destes — pedir assim mesmo</button>`;
     document.querySelectorAll("[data-insumo]").forEach(b => b.addEventListener("click", () => {
       guardarPedido();
       const i = INSUMOS.find(x => x.id === +b.dataset.insumo);
@@ -272,19 +292,48 @@ async function desenharPedir(){
         especificacao: ""});
       desenharPedir();
     }));
-    el("pm-nao-achei").addEventListener("click", async () => {
-      const nome = el("pm-busca").value.trim();
-      if (nome.length < 3) return recado("Escreva o nome do material na busca.", "erro");
-      try {
-        await api("/erp/api/suprimentos/insumos/solicitacoes", {method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({descricao: nome, obra_id: el("pm-obra").value || null,
-            justificativa: "Pedido pelo portal da obra"})});
-        recado(`Pedi ao suprimento o cadastro de <b>${esc(nome)}</b>. Assim que ele entrar no
-          catálogo, você inclui no pedido. Os outros materiais podem seguir agora.`, "ok");
-        scrollTo(0, 0);
-      } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); }
-    });
+    el("pm-nao-achei").addEventListener("click", () => acrescentarNovo(el("pm-busca").value.trim()));
+  });
+  // ⚑ O PEDIDO NÃO ESPERA O CADASTRO (23/11/2026). O dono: "quando não tem um
+  // insumo, quem vai lançar o pedido fica meio travado (...) ele faz o pedido já
+  // incluindo aquele cadastro de insumo". O material fora do cadastro vai no
+  // MESMO pedido, com a explicação do que é; vira item sozinho quando o
+  // administrador cadastrar o insumo.
+  const acrescentarNovo = (nome, extra) => {
+    guardarPedido();
+    PEDIDO.itens.push({novo: true, descricao: nome || "", explicacao: "", quantidade: "",
+      unidade: DADOS.unidades[0] || "", especificacao: "", ...(extra || {})});
+    desenharPedir();
+  };
+  el("pm-novo").addEventListener("click", () => acrescentarNovo(el("pm-busca").value.trim()));
+  // ⚑ COLAR A LISTA, COMO NO ERP (23/11/2026). A mesma leitura; o que ela não
+  // reconhece entra como "não está no cadastro", para a pessoa trocar pelo
+  // material certo ou explicar o que é.
+  el("pm-colar").addEventListener("click", () => { el("pm-area-colar").hidden = !el("pm-area-colar").hidden; });
+  el("pm-ler").addEventListener("click", async () => {
+    const texto = el("pm-texto").value.trim();
+    if (texto.length < 3) return recado("Cole a lista antes de mandar ler.", "erro");
+    el("pm-ler").disabled = true; el("pm-ler").textContent = "Lendo…";
+    try {
+      const d = await api("/erp/api/suprimentos/ler-lista", {method: "POST",
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({texto})});
+      guardarPedido();
+      const unidade = u => DADOS.unidades.includes(String(u || "").toUpperCase())
+        ? String(u).toUpperCase() : (DADOS.unidades[0] || "");
+      let fora = 0;
+      d.leitura.itens.forEach(l => {
+        const achado = l.insumo_id ? INSUMOS.find(x => x.id === +l.insumo_id) : null;
+        const comum = {quantidade: l.quantidade ? String(l.quantidade).replace(".", ",") : "",
+          unidade: unidade(l.unidade || (achado && achado.unidade)), especificacao: l.especificacao || ""};
+        if (achado) PEDIDO.itens.push({insumo_id: achado.id, descricao: achado.descricao, ...comum});
+        else { fora++; PEDIDO.itens.push({novo: true, descricao: l.descricao_lida || "", explicacao: "", ...comum}); }
+      });
+      recado(`Li <b>${d.leitura.itens.length}</b> material(is). Confira as quantidades.` + (fora
+        ? ` <b>${fora}</b> não reconheci no cadastro: se for um material que existe, tire a linha e procure pelo nome; se for novo, explique o que é.` : ""),
+        fora ? "aviso" : "ok");
+      scrollTo(0, 0); desenharPedir();
+    } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0);
+      el("pm-ler").disabled = false; el("pm-ler").textContent = "Ler a lista"; }
   });
   document.querySelectorAll("[data-tira-item]").forEach(b => b.addEventListener("click", () => {
     guardarPedido(); PEDIDO.itens.splice(+b.dataset.tiraItem, 1); desenharPedir(); }));
@@ -296,6 +345,9 @@ async function desenharPedir(){
     if (!PEDIDO.precisa) falta.push("dizer até quando precisa");
     if (!PEDIDO.itens.length) falta.push("acrescentar ao menos um material");
     if (PEDIDO.itens.some(i => !(numero(i.quantidade) > 0))) falta.push("a quantidade de cada material");
+    if (PEDIDO.itens.some(i => i.novo && (i.descricao || "").trim().length < 3)) falta.push("o nome do material que não está no cadastro");
+    if (PEDIDO.itens.some(i => i.novo && (i.explicacao || "").trim().length < 15))
+      falta.push("explicar o que é o material que não está no cadastro");
     if (falta.length) { recado(`Falta ${falta.join("; ")}.`, "erro"); scrollTo(0, 0); return; }
     el("pm-enviar").disabled = true;
     try {
@@ -303,11 +355,17 @@ async function desenharPedir(){
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({titulo: PEDIDO.titulo, previsao_entrega: PEDIDO.precisa,
           prioridade: PEDIDO.prioridade, observacoes: PEDIDO.obs,
-          itens: PEDIDO.itens.map(i => ({insumo_id: i.insumo_id, obra_id: +PEDIDO.obra,
+          itens: PEDIDO.itens.filter(i => !i.novo).map(i => ({insumo_id: i.insumo_id, obra_id: +PEDIDO.obra,
+            quantidade: String(numero(i.quantidade)), unidade: i.unidade,
+            especificacao: i.especificacao})),
+          itens_novos: PEDIDO.itens.filter(i => i.novo).map(i => ({descricao: i.descricao,
+            explicacao: i.explicacao, obra_id: +PEDIDO.obra,
             quantidade: String(numero(i.quantidade)), unidade: i.unidade,
             especificacao: i.especificacao}))})});
+      const esperam = PEDIDO.itens.filter(i => i.novo).length;
       Object.assign(PEDIDO, {titulo: "", precisa: "", prioridade: "NORMAL", obs: "", itens: []});
-      recado(`<b>Pedido ${esc(r.numero || "")} enviado ao suprimento.</b> Acompanhe em "Em andamento".`, "ok");
+      recado(`<b>Pedido ${esc(r.numero || "")} enviado ao suprimento.</b> Acompanhe em "Em andamento".`
+        + (esperam ? ` ${esperam} material(is) esperam o cadastro e entram no pedido sozinhos quando ele for aprovado.` : ""), "ok");
       scrollTo(0, 0); ABA = "andamento"; carregar();
     } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); el("pm-enviar").disabled = false; }
   });
@@ -561,7 +619,19 @@ function desenharChegar(){
 
 function desenharAndamento(){
   const cor = {ATRASADO: "vermelha", FORNECEDOR: "vermelha", VAI_ATRASAR: "ambar", EM_RISCO: "ambar"};
-  el("conteudo").innerHTML = (DADOS.em_andamento.length ? `<div class="bloco">
+  const espera = DADOS.esperando_cadastro || [];
+  el("conteudo").innerHTML = (espera.length ? `<div class="bloco">
+      <h3>Esperando o cadastro do material</h3>
+      <div class="sub">Pedidos com material que ainda não está no catálogo. Assim que o
+        cadastro for aprovado, o material entra no pedido sozinho.</div>
+      ${espera.map(i => `<div class="item"><div class="cresce">
+          <b>${esc(i.material)}</b>
+          ${i.especificacao ? `<small>${esc(i.especificacao)}</small>` : ""}
+          <small>${qtd(i.quantidade)} ${esc(i.unidade)} · ${esc(i.obra)} · solicitação ${esc(i.solicitacao)}</small>
+          ${i.recusado_motivo ? `<span class="etiqueta vermelha">cadastro recusado</span>
+              <small>${esc(i.recusado_motivo)}</small>`
+            : `<span class="etiqueta ambar">aguardando o cadastro</span>`}
+        </div></div>`).join("")}</div>` : "") + (DADOS.em_andamento.length ? `<div class="bloco">
       <h3>Pedido pela obra, ainda não comprado</h3>
       <div class="sub">Para acompanhar. Quando o pedido de compra for autorizado, o
         material aparece em "Para receber".</div>
@@ -570,11 +640,34 @@ function desenharAndamento(){
           ${i.especificacao ? `<small>${esc(i.especificacao)}</small>` : ""}
           <small>${qtd(i.quantidade)} ${esc(i.unidade)} · ${esc(i.obra)} · solicitação ${esc(i.solicitacao)}</small>
           <small>${i.precisa_ate ? `a obra precisa até ${dia(i.precisa_ate)}` : "sem data informada"}</small>
-          <span class="etiqueta">${esc(i.etapa_rotulo)}</span>
+          ${i.aguarda_liberacao ? `<span class="etiqueta ambar">aguarda o ok da engenharia</span>`
+            : `<span class="etiqueta">${esc(i.etapa_rotulo)}</span>`}
+          ${i.aguarda_liberacao && DADOS.pode_liberar ? `<div style="margin-top:6px">
+            <button class="btn-portal" data-liberar="${i.id}" style="display:inline-block; width:auto; padding:8px 14px">Liberar para compra</button>
+            <button class="link" data-nao-liberar="${i.id}" style="margin-left:10px">não liberar</button></div>` : ""}
           ${cor[i.prazo] ? `<span class="etiqueta ${cor[i.prazo]}">${esc(i.prazo_rotulo)}</span>` : ""}
         </div></div>`).join("")}</div>`
     : `<div class="bloco vazio">Nada em cotação ou aguardando autorização para as suas obras.</div>`);
 }
+
+// ⚑ O OK DA ENGENHARIA, PELO CELULAR (22/11/2026).
+async function decidirLiberacao(corpo, texto){
+  try {
+    await api("/erp/api/suprimentos/itens/liberar", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+    recado(texto, "ok"); carregar();
+  } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); }
+}
+document.addEventListener("click", ev => {
+  const sim = ev.target.closest("[data-liberar]"), nao = ev.target.closest("[data-nao-liberar]");
+  if (sim) decidirLiberacao({itens: [+sim.dataset.liberar]}, "Material liberado para compra.");
+  if (nao) {
+    const motivo = prompt("Por que este material não será liberado? (quem pediu vai ver)");
+    if (motivo && motivo.trim().length >= 5)
+      decidirLiberacao({itens: [+nao.dataset.naoLiberar], recusar: true, motivo}, "Item não liberado.");
+    else if (motivo !== null) { recado("Escreva o motivo com um pouco mais de detalhe.", "erro"); scrollTo(0, 0); }
+  }
+});
 
 function desenharNota(){
   el("conteudo").innerHTML = (DADOS.sem_nota.length ? `<div class="recado aviso">
