@@ -2339,6 +2339,7 @@ def api_recebimentos_da_obra():
         from sqlalchemy import select
         from app.apps.erp.core import portal as svc_portal
         from app.apps.erp.db.models.cadastros import UnidadeCompra
+        from app.apps.erp.core.suprimentos import insumos as svc_insumos
         from app.apps.erp.core.suprimentos.solicitacao import obras_para_pedir
         para_pedir = obras_para_pedir(s, usuario)
         return jsonify({"ok": True, **svc.a_receber(s, usuario),
@@ -2346,6 +2347,7 @@ def api_recebimentos_da_obra():
                         "pode_lancar": pode(usuario, "lancar"),
                         "pode_pedir": pode(usuario, "solicitar_suprimento"),
                         "pode_liberar": pode(usuario, "liberar_solicitacao"),
+                        "esperando_cadastro": svc_insumos.esperando_cadastro(s, usuario),
                         # só as obras DELA (cadastro + onde bate ponto) — 22/11/2026
                         "obras": [o for o in svc_portal.obras_para_escolher(s, usuario)
                                   if para_pedir is None or o["id"] in para_pedir],

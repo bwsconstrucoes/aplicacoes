@@ -38,6 +38,12 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**⚠ NO RAMO, NÃO PUBLICADO (23/11/2026): a 7ª rodada** — colar lista no
+portal e o pedido que leva junto o material fora do cadastro. Traz a
+**migração 125** (tabela nova, lida por SQL direto: se o botão atrasar, só o
+recurso novo espera; o resto segue funcionando). Arquivos compartilhados:
+`routes.py`, `core/manutencao/limpeza.py`.
+
 **✔ PUBLICADO em 22/11/2026**, com o "pode" dele: as rodadas 5 e 6 e a regra
 das obras. **A CONFERIR COM ELE no próximo chat:** (1) apertou "Aplicar
 atualizações do banco"? É a migração 124 — sem ela NENHUMA tela de suprimentos
@@ -207,6 +213,47 @@ clique. Relatada a ele.
 tem conta de e-mail; vi a autorização ficar e o motivo aparecer); a liberação
 feita por um supervisor de verdade pelo celular (vi o selo no portal e a
 liberação pela tela do ERP).
+
+### ⚑ 23/11/2026 (7ª rodada) — O PEDIDO NÃO ESPERA O CADASTRO DO INSUMO, E O COLAR LISTA NO PORTAL
+
+**O que ele perguntou primeiro:** se o pedido de material do portal estava igual
+ao do ERP. Estava, menos o "colar lista". Ele pediu para colocar.
+
+**1. Colar lista no portal.** Mesma leitura do ERP (`/erp/api/suprimentos/
+ler-lista`, IA). O que a leitura reconhece entra como material do cadastro; o
+que não reconhece entra como "não está no cadastro", para a pessoa trocar pelo
+certo ou explicar o que é. Nada é enviado sem conferir.
+
+**2. O pedido leva junto o material que não está no cadastro** (migração 125,
+`insumos.pedir_junto_com_o_pedido` / `soltar_pedidos_que_esperavam`). Ele:
+*"quando não tem um insumo, quem vai lançar o pedido fica meio travado. Ele faz
+o pleito do novo insumo, para depois ser cadastrado, para então ser autorizado,
+aí ele é informado e então lança o pedido completo (...) ele faz o pedido já
+incluindo aquele cadastro de insumo (...) fica pendente, aguardando a
+confirmação do cadastro. Na hora que liberar, o pedido já fica pronto."*
+- No portal ("Não encontrei o material — pedir assim mesmo") e no ERP ("não
+  encontrei este material no cadastro", em cada linha do pedido).
+- A pessoa dá o nome e **explica o que é e para que serve** (mínimo de 15
+  letras — pedido dele: "às vezes é um nome técnico e ninguém compreende"),
+  mais quantidade, unidade, especificação e obra.
+- O pedido é criado na hora com o que já tem cadastro. O material novo fica em
+  `suprimento_itens_esperando_insumo` e abre (ou reaproveita) o pedido de
+  cadastro do insumo. Um pedido pode ter SÓ material novo.
+- Quando o administrador cadastra o insumo, a linha vira item do pedido
+  sozinha. **O ok da engenharia continua valendo**: se quem pediu não tem
+  alçada, o item nasce esperando liberação.
+- Se o cadastro é recusado, a linha fica à vista da obra com o motivo.
+- Quem cadastra vê, em Suprimentos › Configurações, quais pedidos estão
+  parados esperando cada cadastro — é o que diz o que é urgente.
+- Mesmo material pedido por duas obras entra na mesma fila de cadastro.
+
+**"Tem que ser facilmente pesquisável um insumo"** — conferido: no portal a
+busca é por qualquer palavra do nome, sem diferença de acento, até 25
+resultados; no ERP a lista tem caixa de busca. Não mexi.
+
+**Não verificado:** a leitura da lista colada com a IA de verdade — o ambiente
+de teste não tem a chave da IA; vi a tela mostrar o erro com clareza e o resto
+do pedido seguir. A leitura em si é a mesma do ERP, que já existia.
 
 ### ⚑ 22/11/2026 (6ª rodada) — QUEM FECHA NÃO AUTORIZA, JUSTIFICATIVA DA COMPRA DIRETA, A ENGENHARIA DÁ A CIÊNCIA
 

@@ -3167,6 +3167,20 @@ consulta inventada vai sendo usado cada vez menos.
 
 
 
+## 3ad. MATERIAL PEDIDO QUE ESPERA O CADASTRO DO INSUMO (23/11/2026)
+
+Sem pergunta escrita no assistente; responde-se pelo portal (Em andamento) e
+por Suprimentos › Configurações.
+
+- "Quais pedidos estão parados esperando cadastro de insumo?" —
+  `suprimento_itens_esperando_insumo` sem `item_id` e sem recusa. ⚠ muda
+  conforme quem pergunta (recorte por obra).
+- "Há quanto tempo o material tal espera o cadastro?" — da criação da linha.
+- "Que cadastro de insumo foi recusado, e por quê?" — `recusado_motivo`.
+- ⚠ PALAVRA AMBÍGUA: "quanto a obra pediu de X" — o que espera cadastro AINDA
+  NÃO É item do pedido, e não entra na soma do que foi solicitado. A resposta
+  tem de dizer isso.
+
 ## 3ac. O OK DA ENGENHARIA NO PEDIDO DA OBRA (22/11/2026)
 
 Sem pergunta escrita no assistente ainda; responde-se pela tela de Solicitações.

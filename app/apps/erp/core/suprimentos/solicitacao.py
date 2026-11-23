@@ -127,7 +127,10 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario, *,
             "que você vai encontrar isto depois.")
 
     itens = dados.get("itens") or []
-    if not itens:
+    # Material que ainda não está no cadastro entra no MESMO pedido (23/11/2026)
+    # e espera o insumo ser cadastrado — ver `insumos.pedir_junto_com_o_pedido`.
+    novos = [] if dispensa_liberacao else (dados.get("itens_novos") or [])
+    if not itens and not novos:
         raise ErroValidacao("Inclua pelo menos um item.")
 
     previsao = None
@@ -165,10 +168,17 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario, *,
                 item.liberado_em = datetime.now(timezone.utc)
         s.add(item)
     s.flush()
+    if novos:
+        from app.apps.erp.core.suprimentos import insumos as svc_insumos
+        for novo in novos:
+            if permitidas is not None and int(novo.get("obra_id") or 0) not in permitidas:
+                raise ErroValidacao("Você só pede material para as suas obras.")
+            svc_insumos.pedir_junto_com_o_pedido(s, sol, novo, usuario)
 
     registrar_evento(s, "suprimento_solicitacao", sol.id, "CRIADA",
-                     {"numero": sol.numero, "titulo": titulo,
-                      "itens": len(itens), "prioridade": prioridade}, usuario.id)
+                     {"numero": sol.numero, "titulo": titulo, "itens": len(itens),
+                      "esperando_cadastro_de_insumo": len(novos),
+                      "prioridade": prioridade}, usuario.id)
     return sol
 
 
