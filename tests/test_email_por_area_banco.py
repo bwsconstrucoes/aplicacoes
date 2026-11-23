@@ -222,3 +222,66 @@ def _pessoa_completa(s, nome: str, cpf: str):
     s.add(c)
     s.flush()
     return c
+
+
+def test_o_email_se_corrige_ganha_anexo_e_sai_com_ele(sessao_real, monkeypatch):
+    """23/11/2026, ele: *"é para eu ler o e-mail, ver se eu concordo, para
+    poder enviar (…) permitir até anexar alguma coisa."*"""
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.comum import email as svc_email
+    from app.apps.erp.db.models.cadastros import Empresa
+
+    e = Empresa(razao_social="BWS Construções", cnpj="11222333000183",
+                smtp_servidor="smtp.empresa.com", smtp_porta=587,
+                smtp_usuario="compras@bws.teste", smtp_senha_cifrada="x",
+                smtp_seguranca="STARTTLS", email="compras@bws.teste")
+    c = _pessoa_completa(sessao_real, "PESSOA COM ANEXO", "71428793860")
+    sessao_real.add(e)
+    sessao_real.flush()
+    c.empresa_id = e.id
+    sessao_real.flush()
+    p = svc_ct.abrir(sessao_real, {"colaborador_id": c.id,
+                                   "template": "ASSINATURA_CTPS"}, None)
+    lido = svc_ct.ler(sessao_real, p["id"])
+    assert lido["situacao_rotulo"] == "Ainda não enviado"
+
+    svc_ct.editar_rascunho(sessao_real, p["id"], assunto="Assunto corrigido",
+                           corpo="Texto corrigido pelo DP", usuario=None)
+    with pytest.raises(ErroValidacao):
+        svc_ct.editar_rascunho(sessao_real, p["id"], assunto="", corpo="x", usuario=None)
+
+    from app.apps.erp.core.documentos.armazenamento import salvar  # noqa: F401
+    guardado = {}
+
+    class Doc:
+        id = None
+
+    def arquivar(s_, conteudo, nome, **kw):
+        from sqlalchemy import text as _t
+        anexo = s_.execute(_t("""
+            INSERT INTO anexos (entidade_tipo, entidade_id, nome_arquivo, hash_sha256,
+                                tamanho_bytes, mime_type, conteudo)
+            VALUES ('colaborador', 1, :n, md5(random()::text), 3, 'application/pdf',
+                    :c) RETURNING id"""), {"n": nome, "c": conteudo}).scalar_one()
+        d = Doc()
+        d.id = s_.execute(_t("""
+            INSERT INTO documentos (tipo_codigo, anexo_id, colaborador_id, referencia,
+                                    nome_padronizado)
+            VALUES (:t, :a, :c, 'x', 'extra.pdf') RETURNING id"""),
+            {"t": kw["tipo_codigo"], "a": anexo, "c": kw.get("colaborador_id")}).scalar_one()
+        guardado["tipo"] = kw["tipo_codigo"]
+        return d
+    monkeypatch.setattr(svc_arq, "arquivar", arquivar)
+    svc_ct.anexar_ao_rascunho(sessao_real, p["id"], conteudo=b"%PD", nome_arquivo="extra.pdf",
+                              usuario=None)
+    assert "extra.pdf" in svc_ct.ler(sessao_real, p["id"])["anexos"]
+
+    saiu = []
+    monkeypatch.setattr(svc_email, "enviar", lambda s, **k: saiu.append(k) or _registro())
+    svc_ct.enviar(sessao_real, p["id"], None, para=["contabil@exemplo.com"])
+    assert saiu[0]["assunto"] == "Assunto corrigido"
+    assert saiu[0]["corpo"] == "Texto corrigido pelo DP"
+    assert [a["nome"] for a in saiu[0]["anexos"]] == ["extra.pdf"]
+    with pytest.raises(ErroValidacao, match="já foi enviado"):
+        svc_ct.editar_rascunho(sessao_real, p["id"], assunto="a", corpo="b", usuario=None)

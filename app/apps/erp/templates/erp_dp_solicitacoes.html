@@ -96,6 +96,7 @@
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
 {# A janela que mostra o documento (19/11/2026) — abre por cima do pedido. #}
 <dialog id="dlg-papel" style="width:94vw; max-width:1100px; height:90vh; padding:0; overflow:hidden"></dialog>
+<dialog id="dlg-pedido" style="width:94vw; max-width:900px"></dialog>
 {# O ponto da pessoa, por cima da janela de atender (23/11/2026). #}
 <dialog id="dlg-ponto" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh;
   padding:0; overflow:hidden"><iframe id="ponto-quadro" title="Ponto da pessoa"
@@ -612,8 +613,10 @@ function blocoDoProcesso(p){
       if (x.codigo === "CONTABILIDADE" && !x.pedido)
         b.push(`<button class="btn" data-pr-contab="1">Montar o pedido à contabilidade</button>`);
       if (x.pedido)
-        b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
-          ${escapar(x.pedido.numero)} em Contabilidade</a>`);
+        b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
+          data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
+            ? `ver o e-mail ${escapar(x.pedido.numero)}`
+            : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
       if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
         b.push(`<a class="btn secundario" href="/erp/colaboradores?editar=${p.colaborador_id}"
           target="_blank">abrir o cadastro para anexar</a>`);
@@ -624,8 +627,10 @@ function blocoDoProcesso(p){
     if (x.codigo === "CONTABILIDADE" && x.estado !== "FEITO" && !x.pedido)
       b.push(`<button class="btn" data-pr-ct="1">Montar o pedido à contabilidade</button>`);
     if (x.pedido)
-      b.push(`<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">abrir
-        ${escapar(x.pedido.numero)} em Contabilidade</a>`);
+      b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
+        data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
+          ? `ver o e-mail ${escapar(x.pedido.numero)}`
+          : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
     if (x.codigo === "ENCAMINHADA" && x.estado === "PENDENTE")
       b.push(`<button class="btn" data-pr-assinar="1">Mandar para a obra assinar…</button>`);
     if (x.a_validar) {
@@ -717,7 +722,12 @@ function ligarBotoesDoProcesso(p){
   {# ⚑ UM BOTÃO SÓ PARA TODOS OS PEDIDOS QUE PASSAM PELA CONTABILIDADE
      (20/11/2026): o servidor sabe o modelo de cada tipo e monta o pedido já
      preenchido (`contabil_processo.montar_pedido`). #}
-  um("[data-pr-contab]", () => acao("contabilidade", {}));
+  um("[data-pr-contab]", async () => {
+    await acao("contabilidade", {});
+    const ped = ((ABERTA.processo || {}).passos || []).find(x => x.pedido);
+    if (ped) verPedidoContabil(ped.pedido.id);
+  });
+  um("[data-pr-pedido]", b => verPedidoContabil(+b.dataset.prPedido));
   um("[data-pr-termo]", () => acao("termo", {}));
   um("[data-pr-papel]", b => anexarPapel(b.dataset.prPapel, b.dataset.id));
   um("[data-pr-termo-ok]", b => {
@@ -850,9 +860,7 @@ async function montarPedidoDeRescisao(p){
                 continua_prestador: d.continua_prestador,
                 observacao: d.observacao}})});
     await abrirPedido(p.id);
-    aviso("dlg-msg", `Pedido ${escapar(r.numero)} montado. Confira o texto e
-      envie em <a href="/erp/dp/contabilidade" target="_blank">Contabilidade</a>.`,
-      "ok");
+    verPedidoContabil(r.id);
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
@@ -934,6 +942,100 @@ async function acao(caminho, corpo){
     pintarPedido();
     carregar();
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+{# ⚑ O E-MAIL À CONTABILIDADE SE LÊ, SE CORRIGE E SAI DAQUI (23/11/2026).
+   Ele: *"Eu clico [montar], aí eu vou para outra tela ainda de contabilidade
+   para poder enviar (…) é para eu ler o e-mail, ver se eu concordo, para poder
+   enviar (…) permitir até anexar alguma coisa"* — e *"todas as outras
+   solicitações (…) precisam trabalhar da mesma forma (…) A gente quer
+   velocidade e agilidade."* Vale para TODO pedido à contabilidade que nasce
+   de uma solicitação: desligamento, admissão, férias, alteração… #}
+async function verPedidoContabil(id){
+  let p;
+  try { p = (await api(`/erp/api/dp/pedidos/${id}`)).pedido; }
+  catch(e){ aviso("dlg-msg", e.message, "erro"); return; }
+  const aberto = p.situacao === "RASCUNHO";
+  const dlg = els("dlg-pedido");
+  dlg.innerHTML = `<div class="dlg-topo"><h3>${escapar(p.numero)} — ${escapar(p.template_nome)}</h3>
+      <button class="topo-btn" style="margin-left:auto" onclick="els('dlg-pedido').close()">Fechar</button></div>
+    <div class="dlg-corpo">
+      <p class="desc" style="margin-top:0"><b>${escapar(p.situacao_rotulo || p.situacao)}</b>
+        · para ${escapar((p.para_que_vai || []).join(", ") || "— sem e-mail da contabilidade cadastrado")}
+        ${p.prazo ? ` · prazo de volta ${dataBR(p.prazo)}` : ""}</p>
+      ${aberto ? `<div class="form-grade">
+          <div class="campo" style="grid-column:1/-1"><label>Assunto</label>
+            <input id="pc-assunto" value="${escapar(p.assunto || "")}"></div>
+          <div class="campo" style="grid-column:1/-1"><label>O e-mail (leia e corrija se precisar)</label>
+            <textarea id="pc-corpo" rows="14">${escapar(p.corpo || "")}</textarea></div></div>`
+        : `<div class="cartao-dica" style="white-space:pre-wrap; max-height:50vh; overflow:auto">${
+            escapar(p.assunto || "")}\n\n${escapar(p.corpo || "")}</div>`}
+      <div style="margin-top:10px"><b>Vai junto</b>
+        <div id="pc-anexos">${(p.anexos || []).length ? "" : "<small class='desc'>nenhum anexo</small>"}
+        ${(p.anexos || []).map(n => {
+          const ex = (p.anexos_extras || []).find(x => x.nome === n);
+          return `<div>📎 ${escapar(n)}${ex && aberto ? ` <button class="link-btn"
+            data-pc-tirar="${ex.documento_id}">tirar</button>` : ""}</div>`; }).join("")}</div>
+        ${aberto ? `<button class="btn secundario" id="pc-anexar" style="margin-top:6px">Anexar arquivo…</button>` : ""}
+      </div>
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        ${aberto ? `<button class="btn" id="pc-enviar">Enviar à contabilidade</button>
+                    <button class="btn secundario" id="pc-salvar">Guardar o texto e enviar depois</button>` : ""}
+        ${!aberto ? `<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">cobrar ou
+          registrar o retorno em Contabilidade</a>` : ""}
+      </div>
+      <div id="pc-msg" style="margin-top:10px"></div></div>`;
+  const texto = () => ({assunto: els("pc-assunto").value, corpo: els("pc-corpo").value});
+  const fim = async (msg) => {
+    dlg.close();
+    await abrirPedido(ABERTA.id);
+    aviso("dlg-msg", msg, "ok");
+  };
+  if (aberto) {
+    els("pc-enviar").addEventListener("click", async () => {
+      if (!confirm(`Enviar o e-mail para ${(p.para_que_vai || []).join(", ")}?`)) return;
+      els("pc-enviar").disabled = true;
+      try {
+        const r = await api(`/erp/api/dp/pedidos/${id}/enviar`, {method: "POST",
+          body: JSON.stringify(texto())});
+        if (r.enviado === false)
+          throw new Error("O e-mail não saiu: " + (r.erro || "motivo não informado")
+            + ". O texto ficou guardado; tente de novo.");
+        await fim(`${p.numero} enviado à contabilidade.`);
+      } catch(e){ aviso("pc-msg", e.message, "erro"); els("pc-enviar").disabled = false; }
+    });
+    els("pc-salvar").addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/dp/pedidos/${id}/editar`, {method: "POST", body: JSON.stringify(texto())});
+        await fim(`${p.numero} guardado, ainda não enviado.`);
+      } catch(e){ aviso("pc-msg", e.message, "erro"); }
+    });
+    els("pc-anexar").addEventListener("click", () => {
+      const ent = document.createElement("input");
+      ent.type = "file";
+      ent.addEventListener("change", async () => {
+        const f = ent.files && ent.files[0];
+        if (!f) return;
+        try {
+          await api(`/erp/api/dp/pedidos/${id}/editar`, {method: "POST", body: JSON.stringify(texto())});
+          const fd = new FormData();
+          fd.append("arquivo", f);
+          await api(`/erp/api/dp/pedidos/${id}/anexar`, {method: "POST", body: fd});
+          verPedidoContabil(id);
+        } catch(e){ aviso("pc-msg", e.message, "erro"); }
+      });
+      ent.click();
+    });
+    dlg.querySelectorAll("[data-pc-tirar]").forEach(b => b.addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/dp/pedidos/${id}/editar`, {method: "POST", body: JSON.stringify(texto())});
+        await api(`/erp/api/dp/pedidos/${id}/tirar-anexo`, {method: "POST",
+          body: JSON.stringify({documento_id: +b.dataset.pcTirar})});
+        verPedidoContabil(id);
+      } catch(e){ aviso("pc-msg", e.message, "erro"); }
+    }));
+  }
+  if (!els("dlg-pedido").open) els("dlg-pedido").showModal();
 }
 
 {# O ponto da pessoa numa janela POR CIMA da de atender — a de atender fica

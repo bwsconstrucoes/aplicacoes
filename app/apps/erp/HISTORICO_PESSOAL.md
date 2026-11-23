@@ -141,6 +141,34 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (6) — O e-mail à contabilidade se lê, se corrige, ganha anexo e sai da própria solicitação
+
+Ele: *"Eu clico [montar o pedido], aí eu vou para outra tela ainda de
+contabilidade para poder enviar (…) é para eu ler o e-mail, ver se eu
+concordo, para poder enviar (…) permitir até anexar alguma coisa"*; *"todas
+as outras solicitações (…) precisam trabalhar da mesma forma (…) A gente quer
+velocidade e agilidade."* E sobre os nomes: *"como o que foi mandado, se nem
+foi mandado ainda (…) E aí a situação rascunho. Não fica estranho?"*
+
+- **Montar o pedido abre o e-mail na hora**, numa janela por cima da
+  solicitação: para quem vai, assunto e texto EDITÁVEIS, o que vai junto
+  (os documentos assinados pela pessoa entram sozinhos), "Anexar arquivo…",
+  "Enviar à contabilidade" e "Guardar o texto e enviar depois". Vale para
+  todo tipo que gera pedido (desligamento, admissão, férias, alteração,
+  afastamento…) — um botão só, `verPedidoContabil`. O link "abrir em
+  Contabilidade" saiu; o passo agora diz "Ler e enviar o e-mail PC-…".
+- Servidor: `contabilidade.editar_rascunho`, `anexar_ao_rascunho` (o arquivo
+  fica também no cadastro da pessoa, tipo "Outro documento do colaborador"),
+  `tirar_anexo`; `enviar` manda os anexos extras junto; ações `editar`,
+  `anexar`, `tirar-anexo` na rota do pedido, que passou a conferir o escopo
+  também nas ações. Os extras ficam em `dp_pedidos.dados.anexos_extras` —
+  sem migração. Depois de enviado, o texto não muda mais.
+- **Nomes:** "RASCUNHO" virou "Ainda não enviado" em todas as telas; o bloco
+  "O que foi mandado" diz "O e-mail que vai sair (ainda não foi enviado)"
+  enquanto não sai.
+- O agente no modo SUGERE continua montando o pedido sozinho; quem envia é o
+  DP, agora da própria solicitação — não precisa ir à tela do agente.
+
 ### 23/11/2026 (5) — Atender a admissão: sem matrícula, cargo e convenção da lista, piso sozinho; rescisão de quem veio sem vínculo
 
 Ele, atendendo uma admissão de verdade: *"a matrícula é para ser o número do

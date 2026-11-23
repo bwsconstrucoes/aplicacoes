@@ -1544,7 +1544,7 @@ function desenharDemandas(c, sol, ped, afast){
       <tbody>${pedidos.map(p => `<tr>
         <td class="dados">${escapar(p.numero)}</td>
         <td><b>${escapar(p.template_nome || p.template)}</b></td>
-        <td><span class="selo ${SELO_DO_PEDIDO[p.situacao] || "outro"}">${rotulo(p.situacao)}</span>
+        <td><span class="selo ${SELO_DO_PEDIDO[p.situacao] || "outro"}">${p.situacao === "RASCUNHO" ? "Ainda não enviado" : rotulo(p.situacao)}</span>
           ${p.atrasado ? `<br><small style="color:var(--vermelho)">atrasado</small>` : ""}</td>
         <td class="dados">${p.prazo ? dataBR(p.prazo) : "—"}</td>
         <td class="desc"><small>${escapar(p.documento_esperado_nome || "—")}</small></td>

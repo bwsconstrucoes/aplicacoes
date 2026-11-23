@@ -14640,12 +14640,34 @@ def api_dp_pedido(pedido_id: int):
 def api_dp_pedido_acao(pedido_id: int, acao: str):
     """enviar · cobrar · receber · concluir · aceitar-divergencia · cancelar."""
     from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.auth.permissoes import exigir_pedido_contabilidade_no_escopo
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
+            exigir_pedido_contabilidade_no_escopo(s, usuario, pedido_id)
             if acao == "enviar":
+                # ⚑ 23/11/2026: a tela de atendimento manda o texto como ficou
+                # (o DP leu e talvez corrigiu) junto com o "enviar".
+                if d.get("assunto") is not None or d.get("corpo") is not None:
+                    p_ = svc_ct.ler(s, pedido_id)
+                    svc_ct.editar_rascunho(
+                        s, pedido_id, assunto=d.get("assunto", p_["assunto"]),
+                        corpo=d.get("corpo", p_["corpo"]), usuario=usuario)
                 r = svc_ct.enviar(s, pedido_id, usuario, para=d.get("para"))
+            elif acao == "editar":
+                r = svc_ct.editar_rascunho(s, pedido_id, assunto=d.get("assunto"),
+                                           corpo=d.get("corpo"), usuario=usuario)
+            elif acao == "anexar":
+                arq = request.files.get("arquivo")
+                if arq is None:
+                    raise ErroValidacao("Escolha o arquivo.")
+                r = svc_ct.anexar_ao_rascunho(s, pedido_id, conteudo=arq.read(),
+                                              nome_arquivo=arq.filename or "anexo",
+                                              usuario=usuario)
+            elif acao == "tirar-anexo":
+                r = svc_ct.tirar_anexo(s, pedido_id, int(d.get("documento_id") or 0),
+                                       usuario)
             elif acao == "cobrar":
                 r = svc_ct.cobrar(s, pedido_id, usuario)
             elif acao == "receber":
