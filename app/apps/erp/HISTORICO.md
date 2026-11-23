@@ -40,6 +40,16 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 23/11/2026 — MENSAGERIA MEXEU NO `erp_base.html` E NA TRAVA DE DESLIGADOS (registro entre áreas)
+
+O bloco `mensagensDaPessoa` (a aba "Telegram e mensagens" da ficha, usada pelo
+Pessoal e pelo ponto) passou a mostrar SEMPRE o ID do Telegram e ganhou o
+"trocar/informar" (nova `trocarIdDoTelegram`, só para `configurar_mensagens`).
+E `telegram_cadastro.desligado_da_empresa` passou a tratar como NÃO ativa quem
+tem data de saída vencida mesmo com a caixinha ATIVO — fechava um buraco da
+janela antes da virada do dia (o teste da virada, do DP, é o que pega isso).
+Detalhe em `app/apps/mensageria/HISTORICO.md`, 23/11.
+
 ### ⚑ 23/11/2026 — PESSOAL MEXEU NO E-MAIL COMUM (registro entre áreas)
 
 `core/comum/email.py` ganhou `guardar_nos_enviados=False` em `enviar` e a
