@@ -331,6 +331,28 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 23/11/2026 — PEDIDO EM ABERTO: uma central de assinaturas (ainda não começada; espera decisão dele)
+
+**O pedido, resumido nas palavras dele:** vários documentos que o colaborador assina — a folha de ponto todo mês, o
+termo de compensação, a ficha de EPI, o contrato de trabalho, o aviso prévio, a documentação rescisória. Para todos:
+(1) **o administrativo de obra conduz**, porque *"sempre vai ter algum funcionário que não tem muita familiaridade
+com telefone (…) pouco estudo, pouca leitura"*; (2) **a própria pessoa**, pelo acesso do ponto, vê o que tem
+pendente e assina; (3) **o administrativo vê as pendências** dele — as do ponto e as de assinatura; (4) **o DP gere
+no ERP** o que falta, o que foi; (5) **na ficha de cada colaborador**, o histórico e os documentos assinados; (6) o
+documento que precisa de assinatura **gera a pendência sozinho** (ex.: o termo de compensação, ao ser lançado).
+
+**O que já existe, em TRÊS lugares separados** (é o risco de "três portas" de novo):
+1. a folha de ponto — `ponto/core/assinaturas.py` (`ponto.espelho_assinaturas`), no aplicativo do ponto, conduzida;
+2. o termo do ponto — `ponto/core/termo.py` (`ponto.termo_aceites`), no aplicativo, pela pessoa ou conduzido;
+3. o documento do DP — `erp/core/termos.py` (`dp_termos`, migração 117, 20/11, feito pelo chat do DP): aviso
+   prévio e o que vier, na tela / papel com foto / recusa com testemunhas, o DP valida, arquiva no Arquivo; aparece
+   no PORTAL da obra (web), não no aplicativo do ponto.
+
+**A proposta levada a ele** (resposta de 23/11): `dp_termos` vira a porta única dos documentos avulsos; o aplicativo
+do ponto vira o canal (a pessoa e o administrativo); a folha e o termo do ponto continuam com as tabelas deles, mas
+entram nas MESMAS listas. Perguntas em aberto: se o termo de compensação vale antes de assinado; quem constrói
+(atravessa o ERP · Pessoal e DP); se o portal da obra continua sendo caminho.
+
 ## 22/11/2026 (domingo) — O RECESSO EM LOTE, no Quadro
 
 **O pedido:** *"pode criar uma tela para o DP lançar o recesso em lote."* (O número de sábados e de horas ele mandou
