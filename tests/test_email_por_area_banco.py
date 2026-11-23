@@ -285,3 +285,77 @@ def test_o_email_se_corrige_ganha_anexo_e_sai_com_ele(sessao_real, monkeypatch):
     assert [a["nome"] for a in saiu[0]["anexos"]] == ["extra.pdf"]
     with pytest.raises(ErroValidacao, match="já foi enviado"):
         svc_ct.editar_rascunho(sessao_real, p["id"], assunto="a", corpo="b", usuario=None)
+
+
+def test_reenviar_manda_o_mesmo_email_sem_mudar_o_prazo(sessao_real, monkeypatch):
+    """23/11/2026, ele: *"se de repente eu precisar reenviar o e-mail, eu não
+    tenho essa opção."*"""
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.comum import email as svc_email
+    from app.apps.erp.db.models.cadastros import Empresa
+    e = Empresa(razao_social="BWS Construções", cnpj="11222333000184",
+                smtp_servidor="smtp.empresa.com", smtp_porta=587,
+                smtp_usuario="compras@bws.teste", smtp_senha_cifrada="x",
+                smtp_seguranca="STARTTLS", email="compras@bws.teste")
+    c = _pessoa_completa(sessao_real, "PESSOA REENVIO", "35379838855")
+    sessao_real.add(e)
+    sessao_real.flush()
+    c.empresa_id = e.id
+    sessao_real.flush()
+    p = svc_ct.abrir(sessao_real, {"colaborador_id": c.id,
+                                   "template": "ASSINATURA_CTPS"}, None)
+    saiu = []
+    monkeypatch.setattr(svc_email, "enviar", lambda s, **k: saiu.append(k) or _registro())
+    with pytest.raises(ErroValidacao, match="use Enviar"):
+        svc_ct.reenviar(sessao_real, p["id"], None)      # ainda não foi enviado
+    svc_ct.enviar(sessao_real, p["id"], None, para=["contabil@exemplo.com"])
+    prazo = svc_ct.ler(sessao_real, p["id"])["prazo"]
+    r = svc_ct.reenviar(sessao_real, p["id"], None)
+    assert r["enviado"] and len(saiu) == 2
+    assert saiu[1]["assunto"] == saiu[0]["assunto"] and saiu[1]["para"] == ["contabil@exemplo.com"]
+    lido = svc_ct.ler(sessao_real, p["id"])
+    assert lido["prazo"] == prazo and lido["situacao"] == "ENVIADO"
+    assert [x["tipo"] for x in lido["eventos"]][-1] == "REENVIADO"
+
+
+def test_copia_em_enviados_acha_a_pasta_e_respeita_o_provedor(sessao_real, monkeypatch):
+    """O ERP grava o que mandou na pasta de enviados da MESMA conta (IMAP)."""
+    from email.message import EmailMessage
+    from app.apps.erp.core.comum import email as svc_email
+    from app.apps.erp.core.comum import email_entrada
+
+    class Caixa:
+        gravado = []
+
+        def __init__(self, *a, **k): pass
+        def login(self, u, s): pass
+        def list(self):
+            return "OK", [b'(\\HasNoChildren) "." "INBOX"',
+                          b'(\\HasNoChildren \\Sent) "." "INBOX.Enviados"']
+        def append(self, pasta, flags, data, msg):
+            Caixa.gravado.append(pasta)
+            return "OK", [b""]
+        def logout(self): pass
+
+    import imaplib
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", Caixa)
+    monkeypatch.setattr(email_entrada, "configuracao", lambda s: {
+        "usavel": True, "usuario": "dp@bws.teste", "servidor": "imap.x", "porta": 993})
+    monkeypatch.setattr(email_entrada, "_ler", lambda s, k, p="": "")
+
+    class Conta:
+        smtp_servidor = "smtp.hostinger.com"
+        smtp_usuario = "DP@bws.teste"
+    msg = EmailMessage()
+    msg["Subject"] = "x"
+    msg.set_content("y")
+    assert svc_email.guardar_copia_nos_enviados(sessao_real, Conta, msg) == "guardado em Enviados"
+    assert Caixa.gravado == ["INBOX.Enviados"]
+
+    class Gmail(Conta):
+        smtp_servidor = "smtp.gmail.com"
+    assert "provedor" in svc_email.guardar_copia_nos_enviados(sessao_real, Gmail, msg)
+
+    class Outra(Conta):
+        smtp_usuario = "compras@bws.teste"
+    assert "não é a mesma conta" in svc_email.guardar_copia_nos_enviados(sessao_real, Outra, msg)

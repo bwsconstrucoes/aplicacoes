@@ -14655,6 +14655,8 @@ def api_dp_pedido_acao(pedido_id: int, acao: str):
                         s, pedido_id, assunto=d.get("assunto", p_["assunto"]),
                         corpo=d.get("corpo", p_["corpo"]), usuario=usuario)
                 r = svc_ct.enviar(s, pedido_id, usuario, para=d.get("para"))
+            elif acao == "reenviar":
+                r = svc_ct.reenviar(s, pedido_id, usuario)
             elif acao == "editar":
                 r = svc_ct.editar_rascunho(s, pedido_id, assunto=d.get("assunto"),
                                            corpo=d.get("corpo"), usuario=usuario)

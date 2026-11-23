@@ -40,6 +40,17 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 23/11/2026 — PESSOAL MEXEU NO E-MAIL COMUM (registro entre áreas)
+
+`core/comum/email.py` ganhou `guardar_nos_enviados=False` em `enviar` e a
+função `guardar_copia_nos_enviados`: depois de entregar, grava a mesma
+mensagem na pasta de enviados da conta por IMAP (só se a caixa configurada em
+`email_entrada` for a MESMA conta; Gmail e Outlook/365 já guardam sozinhos e
+são pulados). **Só o pedido à contabilidade liga isso** — a cotação de
+Suprimentos continua igual (o padrão é desligado). E `email_entrada` passou a
+ignorar mensagem cujo Message-ID é de um envio do próprio ERP, para a cópia
+nunca ser lida como resposta. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (7).
+
 ### ⚑ 22/11/2026 — SUPRIMENTOS: AÇÃO E SEÇÃO NOVAS DE PERMISSÃO, E A ROTA DE MOVER ITEM (registro entre áreas)
 
 Detalhe em `HISTORICO_SUPRIMENTOS.md`, 22/11 (5ª rodada).

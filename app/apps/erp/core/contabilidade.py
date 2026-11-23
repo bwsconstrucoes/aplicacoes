@@ -762,7 +762,7 @@ def _anexos_extras_para_envio(s: Session, p: dict[str, Any]) -> list[dict[str, A
 
 def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
            para: Optional[list[str]] = None,
-           pelo_agente: bool = False) -> dict[str, Any]:
+           pelo_agente: bool = False, _reenviar: bool = False) -> dict[str, Any]:
     """Manda o e-mail pela conta da empresa e marca o prazo.
 
     NUNCA LEVANTA POR FALHA DE ENVIO — o módulo de e-mail devolve o registro com
@@ -773,7 +773,8 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
     from app.apps.erp.db.models.cadastros import Empresa
 
     p = ler(s, pedido_id)
-    if p["situacao"] not in ("RASCUNHO",):
+    reenvio = p["situacao"] in ("ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE")
+    if p["situacao"] != "RASCUNHO" and not (reenvio and _reenviar):
         raise ErroValidacao(
             f"O pedido {p['numero']} já foi enviado (está "
             f"{p['situacao'].lower()}).")
@@ -815,8 +816,18 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
         s, empresa=empresa, para=destinos, assunto=p["assunto"],
         corpo=p["corpo"], entidade_tipo="dp_pedido", entidade_id=pedido_id,
         usuario=usuario, destinatario_tipo="contabilidade",
-        anexos=_documentos_assinados(s, p) + _anexos_extras_para_envio(s, p))
+        anexos=_documentos_assinados(s, p) + _anexos_extras_para_envio(s, p),
+        guardar_nos_enviados=True)
     deu = (registro.situacao == "ENVIADO")
+    copia = getattr(registro, "copia_nos_enviados", None)
+    if deu and _reenviar:
+        _evento(s, pedido_id, "REENVIADO",
+                f"o mesmo e-mail enviado de novo para {', '.join(destinos)}"
+                + (f" ({copia})" if copia else ""),
+                {"para": destinos}, usuario, pelo_agente)
+        s.flush()
+        return {"enviado": True, "erro": None, "copia_nos_enviados": copia,
+                "prazo": p.get("prazo")}
     if deu:
         prazo = dias_uteis_depois(date.today(), regra["prazo"])
         s.execute(text("""
@@ -827,15 +838,28 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
              "mid": registro.message_id})
         _evento(s, pedido_id, "ENVIADO",
                 f"e-mail enviado para {', '.join(destinos)}; "
-                f"retorno esperado até {prazo:%d/%m/%Y}",
+                f"retorno esperado até {prazo:%d/%m/%Y}"
+                + (f" ({copia})" if copia else ""),
                 {"para": destinos, "prazo": str(prazo)}, usuario, pelo_agente)
     else:
         _evento(s, pedido_id, "FALHA_ENVIO", registro.erro or "não saiu",
                 {"para": destinos}, usuario, pelo_agente)
     s.flush()
-    return {"enviado": deu, "erro": registro.erro,
+    return {"enviado": deu, "erro": registro.erro, "copia_nos_enviados": copia,
             "prazo": None if not deu else str(dias_uteis_depois(
                 date.today(), regra["prazo"]))}
+
+
+def reenviar(s: Session, pedido_id: int, usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O MESMO e-mail, de novo (23/11/2026). Ele: *"se de repente eu precisar
+    reenviar o e-mail, eu não tenho essa opção."* Mesmo texto, mesmos anexos,
+    mesmos destinatários; o prazo de volta não muda — reenviar não é cobrar."""
+    p = ler(s, pedido_id)
+    if p["situacao"] not in ("ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE"):
+        raise ErroValidacao(
+            f"O pedido {p['numero']} está {p['situacao_rotulo'].lower()} — "
+            + ("use Enviar." if p["situacao"] == "RASCUNHO" else "não há o que reenviar."))
+    return enviar(s, pedido_id, usuario, _reenviar=True)
 
 
 # A chave do parâmetro, na tabela `parametros` que o ERP já usa para tudo que é

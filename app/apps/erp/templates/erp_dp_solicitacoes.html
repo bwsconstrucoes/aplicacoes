@@ -981,6 +981,8 @@ async function verPedidoContabil(id){
       <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
         ${aberto ? `<button class="btn" id="pc-enviar">Enviar à contabilidade</button>
                     <button class="btn secundario" id="pc-salvar">Guardar o texto e enviar depois</button>` : ""}
+        ${["ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE"].includes(p.situacao)
+          ? `<button class="btn secundario" id="pc-reenviar">Reenviar o mesmo e-mail</button>` : ""}
         ${!aberto ? `<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">cobrar ou
           registrar o retorno em Contabilidade</a>` : ""}
       </div>
@@ -992,6 +994,15 @@ async function verPedidoContabil(id){
     await abrirPedido(ABERTA.id);
     aviso("dlg-msg", msg, "ok");
   };
+  if (els("pc-reenviar")) els("pc-reenviar").addEventListener("click", async () => {
+    if (!confirm(`Mandar de novo o mesmo e-mail, com os mesmos anexos, para ${
+        (p.para_que_vai || []).join(", ")}? O prazo de volta não muda.`)) return;
+    try {
+      const r = await api(`/erp/api/dp/pedidos/${id}/reenviar`, {method: "POST", body: "{}"});
+      if (r.enviado === false) throw new Error("O e-mail não saiu: " + (r.erro || ""));
+      await fim(`${p.numero} reenviado${r.copia_nos_enviados ? " — " + r.copia_nos_enviados : ""}.`);
+    } catch(e){ aviso("pc-msg", e.message, "erro"); }
+  });
   if (aberto) {
     els("pc-enviar").addEventListener("click", async () => {
       if (!confirm(`Enviar o e-mail para ${(p.para_que_vai || []).join(", ")}?`)) return;
@@ -1002,7 +1013,8 @@ async function verPedidoContabil(id){
         if (r.enviado === false)
           throw new Error("O e-mail não saiu: " + (r.erro || "motivo não informado")
             + ". O texto ficou guardado; tente de novo.");
-        await fim(`${p.numero} enviado à contabilidade.`);
+        await fim(`${p.numero} enviado à contabilidade`
+          + (r.copia_nos_enviados ? ` — ${r.copia_nos_enviados}.` : "."));
       } catch(e){ aviso("pc-msg", e.message, "erro"); els("pc-enviar").disabled = false; }
     });
     els("pc-salvar").addEventListener("click", async () => {

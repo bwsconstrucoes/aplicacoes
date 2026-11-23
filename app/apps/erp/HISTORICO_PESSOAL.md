@@ -141,6 +141,37 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (7) — Checklists enxutos; cópia em "Enviados" e "Reenviar o mesmo e-mail"
+
+**Checklists**, revisados com ele item a item: ficam só com o que o sistema
+não acompanha. Desligamento de carteira: só "Conferir as faltas no espelho do
+ponto" (eram os 11 do Pipefy — o resto é passo do processo). Ele: *"Não
+existe sistema para ativar e desativar (…) quando você coloca rescisão [no
+SomaPay], automaticamente ele desativa (…) O que precisa é lançar o
+pagamento"* — que já é o passo "Rescisão (TRCT) lançada e paga". E: *"basta
+informar a quantidade de faltas na rescisão"* — sem espelho anexo nem malote.
+Todo item de "sistema de pagamento" saiu de todos os tipos; o que o
+atendimento já grava (cadastro, dependente, alteração) também. Readmissão
+ficou sem checklist. Só vale para pedidos abertos daqui em diante; se ele
+tiver ajustado um tipo na tela "⚙️ Passos de cada tipo", o dele vale.
+
+**E-mail.** Ele: *"os e-mails que eu envio via sistema, eles não ficam salvos
+no e-mail (…) não estou localizando (…) se de repente eu precisar reenviar,
+eu não tenho essa opção."*
+- O SMTP só entrega; quem guarda em "Enviados" é o programa de e-mail. Agora
+  o ERP grava a cópia na pasta de enviados por IMAP (ver `HISTORICO.md`,
+  23/11, registro entre áreas). Condição: a caixa de e-mail configurada no
+  ERP (a que o agente lê) tem de ser a MESMA conta que envia. Se não for, o
+  envio sai igual e a mensagem diz que a cópia não ficou e por quê.
+- **"Reenviar o mesmo e-mail"** no pedido já enviado (na solicitação e na
+  tela de Contabilidade): mesmo texto, anexos e destinatários; o prazo de
+  volta não muda (reenviar não é cobrar); fica "REENVIADO" na trilha.
+- ⚠️ O que eu NÃO verifiquei: qual provedor e qual conta ele usa. Os dois
+  e-mails que ele não achou podem ter saído pela conta da EMPRESA (a volta
+  automática quando a conta do DP não está configurada, 18/11) — aí estão
+  nos enviados de outra caixa. A trilha do pedido diz para quem foi, não de
+  qual conta saiu.
+
 ### 23/11/2026 (6) — O e-mail à contabilidade se lê, se corrige, ganha anexo e sai da própria solicitação
 
 Ele: *"Eu clico [montar o pedido], aí eu vou para outra tela ainda de
