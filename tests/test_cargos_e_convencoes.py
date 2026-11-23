@@ -318,3 +318,70 @@ def test_o_salario_brasileiro_com_ponto_de_milhar_e_entendido(sessao_real):
     svc.definir_piso(sessao_real, cc.id, salario="1.910,65")
     sessao_real.flush()
     assert cc.salario_piso == Decimal("1910.65")
+
+
+# ===========================================================================
+# 23/11/2026 — a planilha modelo, a data-base, quem está em cada convenção e o
+# excluir com as três travas
+# ===========================================================================
+@pytest.mark.parametrize("bruto, mes", [("maio", 5), ("Maio/2026", 5), ("5", 5),
+                                        ("05", 5), ("01/05", 5), ("MARÇO", 3),
+                                        ("", None), ("13", None), ("xyz", None)])
+def test_o_mes_da_data_base_aceita_nome_ou_numero(bruto, mes):
+    assert svc.mes_da_data_base(bruto) == mes
+
+
+@bancos
+def test_a_planilha_modelo_volta_pela_importacao(sessao_real):
+    s = sessao_real
+    cargos_planilha.importar(s, _planilha([
+        ["", "PEDREIRO", "CE-Fortaleza", "PROFISSIONAL", "2230", "7152-10", "", "", "", "Ativo"]]),
+        gravar=True)
+    s.flush()
+    modelo = svc.planilha_modelo(s)
+    import io
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(modelo))
+    assert wb.sheetnames == ["Cargos", "Como preencher"]
+    ws = wb["Cargos"]
+    ws["E2"] = "maio"                 # o dono completa a data-base
+    ws["D2"] = "CE"
+    buf = io.BytesIO()
+    wb.save(buf)
+    r = cargos_planilha.importar(s, buf.getvalue(), gravar=True)
+    s.flush()
+    assert not r["erros"]
+    conv = next(c for c in svc.listar(s)["convencoes"] if c["nome"] == "CE-Fortaleza")
+    assert conv["mes_data_base"] == 5 and conv["uf"] == "CE"
+
+
+@bancos
+def test_excluir_convencao_com_as_tres_travas(sessao_real):
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+    s = sessao_real
+    cargos_planilha.importar(s, _planilha([
+        ["", "PEDREIRO", "CE-Fortaleza", "", "2230", "", "", "", "", "Ativo"],
+        ["", "PEDREIRO", "PI-Teresina", "", "2000", "", "", "", "", "Ativo"],
+        ["", "PEDREIRO", "MA-Imperatriz", "", "1900", "", "", "", "", "Ativo"]]),
+        gravar=True)
+    s.flush()
+    ids = {c["nome"]: c["id"] for c in svc.listar(s)["convencoes"]}
+    cpf = iter(("52998224725", "11144477735"))
+    for conv, situacao in (("CE-Fortaleza", "ATIVO"), ("PI-Teresina", "DESLIGADO")):
+        s.execute(text("""INSERT INTO colaboradores (nome, cpf, situacao, convencao_id)
+                          VALUES (:n, :c, :s, :v)"""),
+                  {"n": f"PESSOA {conv}", "c": next(cpf), "s": situacao, "v": ids[conv]})
+    s.flush()
+    resumo = {c["nome"]: c for c in svc.convencoes_com_gente(s)}
+    assert (resumo["CE-Fortaleza"]["pessoas"], resumo["PI-Teresina"]["desligados"],
+            resumo["MA-Imperatriz"]["pessoas"]) == (1, 1, 0)
+    assert [p["nome"] for p in svc.pessoas_da_convencao(s, ids["CE-Fortaleza"])] \
+        == ["PESSOA CE-Fortaleza"]
+    with pytest.raises(ErroValidacao, match="ativa"):
+        svc.excluir_convencao(s, ids["CE-Fortaleza"], None)
+    assert svc.excluir_convencao(s, ids["PI-Teresina"], None)["feito"] == "desativada"
+    assert svc.excluir_convencao(s, ids["MA-Imperatriz"], None)["feito"] == "excluida"
+    s.flush()
+    nomes = {c["nome"] for c in svc.convencoes_com_gente(s)}
+    assert nomes == {"CE-Fortaleza"}
+    assert "PI-Teresina" in {c["nome"] for c in svc.convencoes_com_gente(s, so_ativas=False)}

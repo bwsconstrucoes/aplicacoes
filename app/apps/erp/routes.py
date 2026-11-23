@@ -13374,6 +13374,56 @@ def api_cargos_novo():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/cargos/modelo.xlsx")
+@login_obrigatorio
+@permissao("configurar")
+def api_cargos_modelo():
+    """A planilha para importar, já com o que está cadastrado (23/11/2026)."""
+    from flask import Response
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        conteudo = svc.planilha_modelo(s)
+    return Response(conteudo, mimetype="application/vnd.openxmlformats-"
+                    "officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition":
+                             'attachment; filename="cargos_e_convencoes.xlsx"'})
+
+
+@bp.route("/erp/api/convencoes/resumo")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_convencoes_resumo():
+    """Cada convenção com quantos cargos e quantas pessoas tem (23/11/2026)."""
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "convencoes": svc.convencoes_com_gente(
+            s, so_ativas=request.args.get("todos") != "1")})
+
+
+@bp.route("/erp/api/convencoes/<int:convencao_id>/pessoas")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_convencao_pessoas(convencao_id: int):
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "pessoas": svc.pessoas_da_convencao(s, convencao_id)})
+
+
+@bp.route("/erp/api/convencoes/<int:convencao_id>/excluir", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_convencao_excluir(convencao_id: int):
+    """Exclui a convenção sem ninguém; desativa a que só tem histórico."""
+    from app.apps.erp.core.cadastros import cargos as svc
+    try:
+        with get_session() as s:
+            r = svc.excluir_convencao(s, convencao_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/cargos/importar", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")

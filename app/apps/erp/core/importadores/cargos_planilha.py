@@ -50,6 +50,12 @@ COLUNAS = {
     "cbo": ("cbo", "código cbo", "codigo cbo"),
     "diaria": ("valor diária", "valor diaria", "diária", "diaria"),
     "codigo": ("código", "codigo"),
+    # ⚑ 23/11/2026: a planilha modelo (`cargos.planilha_modelo`) traz a UF e
+    # o mês da data-base da convenção — a data-base é o que a análise do DP
+    # usa para o risco de demitir nos 30 dias antes dela (Lei 7.238).
+    "uf": ("uf", "estado"),
+    "data_base": ("mês da data-base", "mes da data-base", "mês data-base",
+                  "mes data-base", "data-base", "data base"),
     "titulo": ("título", "titulo"),
     "status": ("status",),
     "riscos": ("riscos associados",),
@@ -57,6 +63,7 @@ COLUNAS = {
 }
 # A coluna que identifica a tabela: sem ela não é a planilha de cargos.
 ESPERADAS = ("Cargo:", "Convenção:")
+ESPERADAS_MODELO = ("Cargo", "Convenção")
 
 
 def _valor(linha: dict[str, str], chave: str) -> str:
@@ -72,6 +79,10 @@ def importar(s: Session, conteudo: bytes, *, gravar: bool,
              vigencia: Optional[date] = None,
              usuario: Optional[Usuario] = None) -> dict[str, Any]:
     linhas = ler_tabela(conteudo, colunas_esperadas=ESPERADAS)
+    if not linhas:
+        # A planilha modelo do ERP (23/11/2026) tem o cabeçalho sem os dois
+        # pontos do Pipefy: "Cargo", "Convenção".
+        linhas = ler_tabela(conteudo, colunas_esperadas=ESPERADAS_MODELO)
     if not linhas:
         raise ErroValidacao("A planilha veio vazia.")
     quando = vigencia or date.today()
@@ -142,7 +153,17 @@ def importar(s: Session, conteudo: bytes, *, gravar: bool,
         cargo = svc.achar_ou_criar_cargo(s, nome_cargo, cbo=cbo)
         if cargo.criado_em is None:
             rel["cargos_novos"].append(cargo.nome)
-        conv = svc.achar_ou_criar_convencao(s, nome_conv)
+        conv = svc.achar_ou_criar_convencao(s, nome_conv, uf=_valor(linha, "uf"))
+        if _valor(linha, "uf"):
+            conv.uf = _valor(linha, "uf").strip().upper()[:2]
+        if _valor(linha, "data_base"):
+            mes = svc.mes_da_data_base(_valor(linha, "data_base"))
+            if mes:
+                conv.mes_data_base = mes
+            else:
+                rel["avisos"].append(
+                    f"linha {n}: mês da data-base “{_valor(linha, 'data_base')}” "
+                    "não é um mês — ficou como estava")
         cc = svc.cruzamento(s, cargo.id, conv.id, criar=True)
         novo = cc.salario_piso is None and cc.categoria is None
         cc.categoria = svc.normalizar_categoria(_valor(linha, "categoria"), nome_conv)
