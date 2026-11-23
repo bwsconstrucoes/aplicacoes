@@ -161,7 +161,7 @@ PLANILHA = [["Data", "CPF", "Telefone", "ID Telegram", "Nome", "Origem", "Obs"],
 def test_migrar_a_planilha_cruza_com_o_erp_e_nao_duplica(conn, gente):
     assert tc.migrado(conn) is False
     r = tc.migrar_planilha(conn, PLANILHA, por="Marcelo")
-    assert r["contagem"] == {"ok": 1, "divergente": 1, "fora": 2, "sem_chat": 1}
+    assert r["contagem"] == {"ok": 1, "divergente": 1, "fora": 2, "ja_estava": 0, "sem_chat": 1}
     assert [x["nome"] for x in r["divergente"]] == ["Bia Rocha"]
     assert r["divergente"][0]["telefone_erp"] == "558599990002"
     assert {x["nome"] for x in r["fora"]} == {"CID", "Fulano de fora"}
@@ -171,7 +171,7 @@ def test_migrar_a_planilha_cruza_com_o_erp_e_nao_duplica(conn, gente):
     assert tc.cadastro_por_chat(conn, 703) is None and tc.cadastro_por_chat(conn, 701) is None
     assert tc.relatorio_migracao(conn)["contagem"]["ok"] == 1
     r2 = tc.migrar_planilha(conn, PLANILHA)
-    assert (r2["novos"], r2["atualizados"]) == (0, 2)
+    assert (r2["novos"], r2["atualizados"], r2["contagem"]["ja_estava"]) == (0, 0, 2)
 
 
 def test_o_painel_mostra_quem_nao_recebe_e_o_que_conferir(conn, gente):
@@ -660,3 +660,140 @@ def test_a_ficha_e_a_tela_de_gestao_nunca_discordam(conn, gente):
     for cid, esperado in da_lista.items():
         if cid:
             assert tc.resumo_da_pessoa(conn, cid)["diagnostico"] == esperado
+
+
+# ---------------------------------------------------------------------------
+# 23/11/2026 — o caso do Manoel: recebia, e depois da migração parou, porque o
+# telefone dele no cadastro estava SEM DDD. A migração o deixou "fora".
+# ---------------------------------------------------------------------------
+def _manoel(conn, telefone="98877-6655"):
+    return _colab(conn, "Manoel Sem DDD", "66666666666", telefone)
+
+
+def test_migracao_traz_pelo_cpf_quem_tem_telefone_sem_ddd(conn, gente):
+    m = _manoel(conn)
+    planilha = [PLANILHA[0], ["01/10/2026", "666.666.666-66", "5585988776655", "800", "MANOEL", "TELEFONE", ""]]
+
+    r = tc.migrar_planilha(conn, planilha, por="Marcelo")
+
+    assert r["contagem"]["fora"] == 0
+    assert [x["nome"] for x in r["divergente"]] == ["Manoel Sem DDD"]   # entra, e o DP completa o DDD
+    cad = tc.cadastro_por_chat(conn, 800)
+    assert cad["colaborador_id"] == m and cad["ativo"] and "sem DDD" in cad["observacao"]
+
+
+def test_migracao_traz_pelo_final_do_numero_quando_a_planilha_nao_tem_cpf(conn, gente):
+    m = _manoel(conn, "988776655")
+    planilha = [PLANILHA[0], ["01/10/2026", "", "5585988776655", "801", "MANOEL", "TELEFONE", ""]]
+
+    tc.migrar_planilha(conn, planilha)
+
+    assert tc.cadastro_por_chat(conn, 801)["colaborador_id"] == m
+
+
+def test_final_igual_em_duas_pessoas_nao_liga_ninguem(conn, gente):
+    _manoel(conn, "988776655")
+    _colab(conn, "Outro Sem DDD", "77777777777", "98877-6655")
+
+    assert tc.achar_pessoa(conn, telefone="5585988776655") is None
+
+
+def test_o_robo_acha_pelo_numero_confirmado_quem_esta_sem_ddd(conn, gente):
+    """É o caminho do botão 📱: o número que o Telegram confirmou termina com
+    o do cadastro. Com e sem o nono dígito."""
+    _manoel(conn)
+    assert tc.achar_pessoa(conn, telefone="+55 85 98877-6655")["nome"] == "Manoel Sem DDD"
+    assert tc.achar_pessoa(conn, telefone="85 8877-6655")["nome"] == "Manoel Sem DDD"
+    assert tc.telefone_bate("5585988776655", tc.achar_pessoa(conn, telefone="5585988776655"))
+    assert tc.achar_pessoa(conn, telefone="5585911112222") is None
+
+
+def test_envio_pelo_telefone_sem_ddd_do_cadastro_acha_o_telegram(conn, gente):
+    _manoel(conn)
+    tc.gravar_cadastro(conn, chat_id=802, cpf="66666666666", telefone="5585988776655")
+    assert tc.chat_id_de(conn, telefone="98877-6655") == "802"
+
+
+def test_quem_esta_sem_ddd_e_ativo_nao_e_barrado_como_desligado(conn, gente):
+    _manoel(conn)
+    assert tc.desligado_da_empresa(conn, telefone="5585988776655") is None
+
+
+def test_migrar_de_novo_nao_religa_quem_foi_desligado_na_tela(conn, gente):
+    tc.migrar_planilha(conn, PLANILHA)
+    cad = tc.cadastro_por_chat(conn, 700)
+    tc.desvincular(conn, cad["id"], "Marcelo")
+
+    tc.migrar_planilha(conn, PLANILHA)
+
+    assert tc.cadastro_por_chat(conn, 700) is None
+
+
+def test_migrar_de_novo_nao_derruba_a_conta_nova_de_quem_trocou_de_telegram(conn, gente):
+    tc.migrar_planilha(conn, PLANILHA)
+    tc.gravar_cadastro(conn, chat_id=7000, cpf="11111111111", telefone="5585999990001")   # trocou de conta
+    assert tc.cadastro_por_chat(conn, 700) is None
+
+    tc.migrar_planilha(conn, PLANILHA)
+
+    assert tc.cadastro_por_chat(conn, 7000)["ativo"]
+    assert tc.cadastro_por_chat(conn, 700) is None
+
+
+# ---------------------------------------------------------------------------
+# 23/11/2026 — o ID do Telegram na ficha, editável
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def telegram_falso(monkeypatch):
+    contas = {"555001": {"ok": True, "nome": "Ana L.", "usuario": "analima", "tipo": "private"}}
+
+    def _falso(chat_id):
+        return contas.get(chat_id) or {"ok": False, "erro": "o Telegram não conhece esta conversa"}
+    monkeypatch.setattr(tc, "_consultar_telegram", _falso)
+    return contas
+
+
+def test_trocar_o_id_confere_primeiro_e_so_grava_com_confirmacao(conn, gente, telegram_falso):
+    previa = tc.trocar_telegram_da_pessoa(conn, gente["ana"], "555001", por="Marcelo")
+    assert previa["nome_telegram"] == "Ana L." and previa["gravado"] is False
+    assert tc.cadastro_por_chat(conn, 555001) is None
+
+    r = tc.trocar_telegram_da_pessoa(conn, gente["ana"], "555001", por="Marcelo", confirmar=True)
+
+    cad = tc.cadastro_por_chat(conn, 555001)
+    assert r["gravado"] and cad["colaborador_id"] == gente["ana"] and cad["origem"] == "FICHA"
+    assert cad["telefone"] == ""            # o número é confirmado no próximo /start (regra rígida)
+    assert "Marcelo" in cad["observacao"]
+
+
+def test_trocar_o_id_desliga_o_antigo(conn, gente, telegram_falso):
+    tc.gravar_cadastro(conn, chat_id=4321, cpf="11111111111", telefone="5585999990001")
+
+    r = tc.trocar_telegram_da_pessoa(conn, gente["ana"], "555001", por="Marcelo", confirmar=True)
+
+    assert r["anterior"] == "4321"
+    assert tc.cadastro_por_chat(conn, 4321) is None
+    assert tc.resumo_da_pessoa(conn, gente["ana"])["telegram"]["chat_id"] == "555001"
+
+
+def test_id_que_o_telegram_nao_conhece_e_recusado(conn, gente, telegram_falso):
+    with pytest.raises(ValueError, match="não conhece"):
+        tc.trocar_telegram_da_pessoa(conn, gente["ana"], "999999", confirmar=True)
+    assert tc.cadastro_por_chat(conn, 999999) is None
+
+
+def test_id_de_outra_pessoa_nao_e_tomado(conn, gente, telegram_falso):
+    tc.gravar_cadastro(conn, chat_id=555001, cpf="22222222222", telefone="5585999990002")
+    with pytest.raises(ValueError, match="Bia Rocha"):
+        tc.trocar_telegram_da_pessoa(conn, gente["ana"], "555001", confirmar=True)
+    assert tc.cadastro_por_chat(conn, 555001)["cpf"] == "22222222222"
+
+
+def test_id_vazio_desliga_e_desligado_da_empresa_nao_ganha_id(conn, gente, telegram_falso):
+    tc.gravar_cadastro(conn, chat_id=4321, cpf="11111111111", telefone="5585999990001")
+    tc.trocar_telegram_da_pessoa(conn, gente["ana"], "", por="Marcelo", confirmar=True)
+    assert tc.resumo_da_pessoa(conn, gente["ana"])["telegram"] is None
+    with pytest.raises(ValueError, match="desligada"):
+        tc.trocar_telegram_da_pessoa(conn, gente["cid"], "555001")
+    with pytest.raises(LookupError):
+        tc.trocar_telegram_da_pessoa(conn, 10 ** 9, "555001")

@@ -2246,6 +2246,27 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
 - Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
   do dono (só colaborador com telefone).
 
+### Acrescentadas em 23/11/2026 (telefone sem DDD e o ID editável na ficha)
+- Qual é o ID do Telegram de fulano? Desde quando? Foi informado à mão na
+  ficha ou veio do robô? (ficha da pessoa › Telegram e mensagens; origem
+  `FICHA` = à mão)
+- Quem trocou o ID do Telegram de fulano, e qual era o anterior? (a
+  observação do cadastro guarda quem, a conta do Telegram e o ID antigo; o log
+  do servidor também)
+- Quem recebe pelo Telegram mas está com o telefone sem DDD no cadastro?
+  (Cadastro do Telegram, veredito "Recebe (número diferente)" + telefone
+  curto) — ⚠️ é a lista que o DP precisa completar.
+- Quem ficou de fora da migração da planilha, e por quê? (relatório da
+  migração, "Fora do ERP"; a tabela só passou a aparecer em 23/11 — antes
+  lia chaves erradas)
+- Quantas pessoas voltaram ao "Migrar de novo"? (o aviso da tela e o
+  relatório: "entraram agora" × "já estavam")
+
+### ⚠️ Palavra que mudou de sentido em 23/11
+- **"telefone bate"**: com DDD, o número inteiro (com ou sem 55 e o nono
+  dígito). SEM DDD no cadastro, o final do número confirmado pelo Telegram —
+  e de uma pessoa só. Duas pessoas com o mesmo final = ninguém.
+
 ## 3z-quinquies. O PEDIDO QUE SE AJUSTA AO CASO, E O ATESTADO LONGO (15/11/2026)
 
 Seis decisões dele num pedido só: desligamento único, readmissão detectada pelo

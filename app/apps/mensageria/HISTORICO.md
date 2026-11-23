@@ -7,6 +7,107 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## ⚑ 23/11/2026 — O MANOEL PAROU DE RECEBER (telefone sem DDD), O BOTÃO QUE "NÃO APARECE" E O ID EDITÁVEL NA FICHA
+
+Quatro pedidos do dono numa mensagem só, todos feitos.
+
+### 1. O bug: quem tinha telefone sem DDD foi deixado de fora da migração
+
+**Ele, com o diagnóstico certo:** *"Essa pessoa (…) anteriormente recebia
+mensagens do telegram. Atualmente, depois de alguma atualização do mensageria,
+deixou de receber. Vi que o telefone dela no cadastro de pessoas estava sem o
+DDD. Acho que isso desincronizou alguma coisa."*
+
+**A causa:** o `migrar_planilha` (14/11) cruzava a aba TelegramID só com a
+`pessoas_elegiveis`, que exige telefone completo — é a régua do CONVITE, que
+vai por WhatsApp. Quem tinha telefone sem DDD não estava nessa lista, então a
+linha dele na planilha caiu em "fora" **mesmo com o CPF batendo**, não foi
+trazida, e depois da migração o robô e os envios só olham o ERP. A pessoa
+sumiu. Não verifiquei no banco de produção quantos foram (o relatório da
+migração está no parâmetro `telegram.relatorio_migracao`, lista "fora").
+
+**O conserto:**
+- **Pelo CPF, a pessoa é achada com qualquer telefone** (a nova
+  `pessoas_sem_telefone_completo`). CPF digitado no robô continua NÃO
+  cadastrando — a regra rígida de 14/11 não mudou; o CPF só identifica na
+  migração e no DP.
+- **Pelo telefone, o número sem DDD do cadastro vale como FINAL do número que
+  o Telegram confirmou**, com e sem o nono dígito (`final_bate`), e **só se for
+  de uma pessoa**. Dois cadastros com o mesmo final = ninguém. Isso vale no
+  botão 📱 do robô, no envio pelo telefone do cadastro (`chat_id_de`) e na
+  trava de desligados (quem está sem DDD e ativo não é barrado).
+- **"Migrar de novo" ficou seguro, e é ele que traz o Manoel de volta.** Antes,
+  rodar de novo REATIVAVA o que alguém tinha desligado na tela, e — pior — se a
+  pessoa tinha trocado de conta do Telegram depois, a conta velha da planilha
+  voltava e DESLIGAVA a nova. Agora só entra quem ainda não está no ERP
+  (contagem "já estavam").
+- **O relatório da migração na tela nunca mostrou as listas**: lia
+  `divergentes`, `telefone` e `detalhe`, chaves que o relatório não tem.
+  Corrigido; agora aparecem "telefone diferente ou sem DDD" e "fora do ERP".
+
+**De passagem, um buraco que já existia:** a trava de desligados perguntava
+primeiro "está ativa?" pela caixinha `situacao`. Quem estava ATIVO com data de
+saída vencida (a janela antes da virada do dia) e TINHA telefone era achado
+ali e escapava da trava. Agora "ativa" exclui saída vencida (`_saida_vencida`).
+A suíte pegou isto quando a busca por CPF ficou mais larga.
+
+### 2. O botão "Compartilhar meu número" que não aparece
+
+As mensagens que ele recebeu eram **encaminhadas** pelo Wilson — e mensagem
+encaminhada nunca leva o botão. Isso explica o que ele viu, mas não garante
+que o Manoel tenha visto o botão. Outros dois motivos reais: o Telegram recolhe
+o botão atrás do ícone ⌨️ quando a pessoa abre o teclado, e no computador o
+compartilhar número não funciona.
+
+- Teclado com `is_persistent` (fica à vista) e sem `one_time_keyboard` (que
+  escondia o botão depois do primeiro toque — quem tinha o número recusado
+  ficava sem ele). O robô continua tirando o botão quando o cadastro dá certo.
+- `DICA_BOTAO` em toda mensagem que pede o botão: o ícone ⌨️ e "só no celular".
+- O texto PADRÃO do convite por WhatsApp ganhou "faça isso no celular". ⚠️ Se o
+  texto foi personalizado na tela, a mudança não aparece — o personalizado vale.
+
+### 3. A ficha abre por cima, em vez de levar ao Pessoal
+
+Ele: *"dentro de mensagens quando pesquiso alguém e quero abrir o cadastro da
+pessoa, ele remete pra aba pessoal ao invés de simplesmente abrir o modal."*
+O nome e o "ficha" da aba Cadastro do Telegram abrem a ficha única
+(`/erp/ponto/pessoa/<id>`) numa janela por cima. Quem não tem `ver_ponto`
+continua indo à tela de Colaboradores.
+
+### 4. O ID do Telegram na ficha, visível e editável
+
+Ele: *"gostaria de poder ver esse ID e, se tiver sentido, alterar ele."*
+
+- O ID aparece SEMPRE na ficha (antes, só quando havia cadastro) — "nenhum"
+  quando não há.
+- "trocar"/"informar", para quem tem `configurar_mensagens` (hoje só o
+  Administrador — a mesma alçada do "desligar" da aba Cadastro do Telegram).
+  Rota `POST /erp/api/mensagens/pessoa/<id>/telegram`, em duas passadas.
+- **O ID é conferido no Telegram (`getChat`) antes de gravar**, e a tela mostra
+  de quem é a conta e pede o "é ela". Um número digitado errado ligaria a
+  pessoa à conversa de outra — e por ali sai contracheque. Se o Telegram não
+  conhece a conversa, a pessoa nunca abriu o robô, e ligar não adiantaria:
+  recusa dizendo isso. ID que já é de outra pessoa ativa: recusa, nomeando.
+- **Entra SEM número confirmado** (origem `FICHA`): no próximo /start o robô
+  pede o número e confere com o cadastro, como sempre. Apagar o ID desliga.
+- A fila do DP ganhou a coluna "ID do Telegram" — é de onde se tira o ID de
+  quem tentou se cadastrar.
+
+### ⚠️ Arquivo compartilhado tocado
+
+`erp_base.html` (o bloco `mensagensDaPessoa` e a nova `trocarIdDoTelegram`) —
+registrado também no `erp/HISTORICO.md`.
+
+### O que está pendente AGORA (pelo dono)
+1. **Publicar** (espera o "pode").
+2. Depois de publicar: **Mensagens › Convite e migração › Migrar de novo.** Traz
+   de volta quem ficou de fora pelo telefone sem DDD (o Manoel entre eles), sem
+   mexer em quem já está. Alternativa para um caso só: o ID na ficha.
+3. O DP completar o DDD de quem aparece como "telefone incompleto" ou
+   "número diferente".
+
+---
+
 ## ⚑ 17/11/2026 — O AVISO NÃO VAI MAIS PARA QUEM SAIU ONTEM (feito pelo chat do ERP/DP)
 
 ⚠️ **Mexi na mensageria vindo de outra área.** Um arquivo, uma consulta:

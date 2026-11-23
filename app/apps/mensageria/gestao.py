@@ -507,4 +507,23 @@ def mensagens_api_pessoa(colaborador_id: int):
     return jsonify({"ok": True, **d})
 
 
+
+# O ID do Telegram da pessoa, editável pela ficha (23/11/2026). Duas passadas:
+# a primeira confere no Telegram e devolve de quem é a conta; a segunda, com
+# "confirmar", grava. Quem mexe é quem configura as mensagens — é a mesma
+# alçada do "desligar" da aba Cadastro do Telegram.
+@bp.route("/erp/api/mensagens/pessoa/<int:colaborador_id>/telegram", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_mensagens")
+@_api
+def mensagens_api_pessoa_telegram(colaborador_id: int):
+    d = _corpo()
+    with db.conexao() as conn:
+        try:
+            r = tc.trocar_telegram_da_pessoa(conn, colaborador_id, str(d.get("chat_id") or ""),
+                                             por=_quem(), confirmar=bool(d.get("confirmar")))
+        except LookupError:
+            return jsonify({"ok": False, "erro": "não encontrado"}), 404
+    return jsonify({"ok": True, **r})
+
 _registrar_no_menu()
