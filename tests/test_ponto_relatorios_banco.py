@@ -72,3 +72,37 @@ def test_faltas_sugeridas_no_desligamento_vem_do_espelho(app, mundo):
     esperadas = [d.isoformat() for d in (seg, ter) if d >= inicio]
     assert r["dias"] == esperadas and r["integrais"] == len(esperadas)
     assert r["parcial_ate_hoje"] is False
+
+
+def test_dp_abre_o_espelho_e_as_sugestoes_pelo_pedido_de_desligamento(app, mundo):
+    """23/11/2026: da janela de Atender, o DP abre o espelho do período das
+    faltas — a mesma folha de impressão do ponto — e quem não é DP não abre."""
+    import datetime as dt
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    from app.apps.erp.db.database import get_session
+    from app.apps.erp.db.models.cadastros import Usuario
+    seg = _segunda_passada()
+    ter = dia_util(seg, 1)
+    with get_session() as s:
+        p = svc.abrir(s, {"tipo": "DESLIGAMENTO", "colaborador_id": mundo["maria"],
+                          "forma_desligamento": "Demissão com Aviso Indenizado",
+                          "aviso_previo": ter.isoformat(),
+                          "continua_prestador": "Não, está saindo da empresa"},
+                      s.get(Usuario, mundo["dp"]))
+        sid = p["id"]
+        s.commit()
+    dp = como(app, mundo["dp"])
+    r = dp.get(f"/erp/api/dp/solicitacoes/{sid}/sugestoes")
+    assert r.status_code == 200, r.get_json()
+    j = r.get_json()
+    assert j["valores"]["ultimo_dia"] == ter.isoformat()
+    per = j["periodo_faltas"]
+    assert per["ate"] == ter.isoformat()
+    pagina = dp.get(f"/erp/dp/solicitacoes/{sid}/espelho?de={per['de']}&ate={per['ate']}")
+    assert pagina.status_code == 200
+    html = pagina.get_data(as_text=True)
+    assert "Maria" in html or "MARIA" in html
+    assert dt.date.fromisoformat(per["de"]).strftime("%d/%m/%Y") in html
+    assert como(app, mundo["fin"]).get(
+        f"/erp/dp/solicitacoes/{sid}/espelho").status_code in (302, 403, 404)
+    assert dp.get(f"/erp/dp/solicitacoes/{sid}/espelho?de=2026-01-01&ate=2026-12-01").status_code == 400

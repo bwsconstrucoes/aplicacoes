@@ -674,6 +674,8 @@ def sugestoes_do_desligamento(s: Session, sol: dict[str, Any],
         if ultimo and sol.get("colaborador_id"):
             f = faltas_no_ponto(int(sol["colaborador_id"]), ultimo, hoje)
             if f.get("disponivel"):
+                # O período vai junto: a janela abre o espelho dele (23/11/2026).
+                saida["periodo_faltas"] = {"de": f["inicio"], "ate": f["fim"]}
                 saida["valores"]["faltas_a_descontar"] = str(f["integrais"])
                 partes = [f"pelo ponto, de {_br(_data(f['inicio']))} a "
                           f"{_br(_data(f['fim']))}: {f['integrais']} falta(s) de "

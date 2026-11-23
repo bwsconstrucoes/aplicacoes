@@ -1009,11 +1009,19 @@ async function atender(){
     return {nome: c, rotulo: rot, largura: 3, valor: sugValor(c), dica: sugDica(c),
             tipo: /data|vigencia|ultimo_dia|admissao/.test(c) ? "date" : "text"};
   });
+  {# O espelho do ponto do período das faltas, numa aba nova: a janela de
+     atender continua aberta, com o que já foi digitado (23/11/2026). #}
+  const espelho = sug.periodo_faltas
+    ? `<p style="margin:8px 0 0"><a class="btn secundario" target="_blank" rel="noopener"
+         href="/erp/dp/solicitacoes/${ABERTA.id}/espelho?de=${sug.periodo_faltas.de}&ate=${
+           sug.periodo_faltas.ate}">🕒 Ver o espelho do ponto (${
+           sug.periodo_faltas.de.split("-").reverse().join("/")} a ${
+           sug.periodo_faltas.ate.split("-").reverse().join("/")})</a></p>` : "";
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
     aviso: (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
             + "no cadastro — o atendimento é o registro do que foi feito.")
            + (campos.length ? " <b>Os campos abaixo são do DP</b>: a obra não "
-              + "os informa, e é aqui que eles entram." : ""),
+              + "os informa, e é aqui que eles entram." : "") + espelho,
     textoOk: "Atender",
     campos: campos.concat([
       {nome: "resposta", rotulo: "Resposta (opcional)", tipo: "textarea",

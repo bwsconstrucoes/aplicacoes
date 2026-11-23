@@ -169,6 +169,14 @@ souber, você já calcula a partir da data do aviso."*
 - Redução de jornada no pedido de demissão: a explicação diz para deixar em
   branco (art. 488 é de quem foi dispensado). Isto é a leitura majoritária;
   não travei nada.
+- **Botão "Ver o espelho do ponto"** dentro da janela de Atender (pedido dele,
+  antes de publicar: *"o DP já verifica se aquelas faltas estão ok, se tem
+  alguma observação, algo a adicionar ou a tirar"*). Abre numa aba nova — a
+  janela fica aberta com o que já foi digitado — a MESMA folha de impressão do
+  ponto, no período das faltas (que atravessa a virada do mês). Rota do ERP
+  (`/erp/dp/solicitacoes/<id>/espelho`, `atender_dp` + escopo), sem mexer em
+  arquivo do ponto: o chat do ponto estava trabalhando lá. Corrigir a falta
+  (abonar, lançar atestado) continua sendo no ponto.
 
 ### 23/11/2026 — O guia do Portal da Obra para liberar o acesso
 

@@ -13022,6 +13022,62 @@ def api_dp_solicitacao_sugestoes(solicitacao_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 404
 
 
+@bp.route("/erp/dp/solicitacoes/<int:solicitacao_id>/espelho")
+@login_obrigatorio
+@permissao("atender_dp")
+def dp_solicitacao_espelho(solicitacao_id: int):
+    """O espelho do ponto da pessoa do pedido, no período pedido (23/11/2026).
+
+    Ele: *"um botão para a partir da tela de atender visualizar o espelho do
+    ponto (…) o DP já verifica se aquelas faltas estão ok, se tem alguma
+    observação, algo a adicionar ou a tirar."* É a MESMA folha de impressão do
+    ponto e a mesma conta (`espelho.montar`) — só o período é o das faltas, do
+    dia seguinte ao corte até o último dia, que atravessa a virada do mês."""
+    from datetime import date, timedelta
+    from flask import render_template
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
+    from app.apps.ponto import db as ponto_db, horario as ponto_horario
+    from app.apps.ponto.core import competencias, espelho
+
+    def _pagina_de_erro(msg: str, status: int = 400):
+        from markupsafe import escape
+        return (f'<!doctype html><meta charset="utf-8"><title>Espelho de ponto</title>'
+                f'<body style="font-family:Arial,sans-serif;padding:24px">'
+                f'<h2>Não foi possível abrir o espelho</h2><p>{escape(msg)}</p></body>',
+                status)
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        exigir_solicitacao_dp_no_escopo(s, usuario, solicitacao_id)
+        p = svc.ler(s, solicitacao_id)
+        quem_gerou = usuario.nome
+    if not p.get("colaborador_id"):
+        return _pagina_de_erro("este pedido não tem pessoa ligada.")
+    try:
+        ate = date.fromisoformat(request.args.get("ate") or "")
+        de = date.fromisoformat(request.args.get("de") or "")
+    except ValueError:
+        ate = date.today()
+        de = ate - timedelta(days=30)
+    if ate < de or (ate - de).days > 92:
+        return _pagina_de_erro("período inválido (no máximo três meses).")
+    try:
+        with ponto_db.conexao() as conn:
+            esp = espelho.montar(conn, int(p["colaborador_id"]), de, ate)
+            esp["competencia"] = f"{de:%Y-%m}"
+            esp["competencia_fechada"] = (
+                competencias.esta_fechada(conn, competencias.primeiro_dia(de))
+                and competencias.esta_fechada(conn, competencias.primeiro_dia(ate)))
+            esp["periodo"] = True
+    except Exception as e:  # noqa: BLE001
+        logger.exception("ERP/DP: espelho do ponto do pedido")
+        return _pagina_de_erro(f"o ponto não respondeu: {e}", 503)
+    return render_template(
+        "ponto/espelho_impressao.html", e=esp, do_aplicativo=False,
+        gerado_em=ponto_horario.para_local(ponto_horario.agora()).strftime("%d/%m/%Y %H:%M"),
+        gerado_por=quem_gerou)
+
+
 @bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/<acao>", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
