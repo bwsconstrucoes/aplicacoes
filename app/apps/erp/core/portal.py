@@ -92,7 +92,9 @@ logger = logging.getLogger(__name__)
 AREAS: tuple[dict[str, Any], ...] = (
     {
         "chave": "pessoal",
-        "nome": "Pessoal e DP",
+        # ⚑ "Colaboradores", e não "Pessoal e DP" (23/11/2026). Ele: "quando
+        # você fala Pessoal e DP, vamos chamar de colaboradores, fica melhor."
+        "nome": "Colaboradores",
         # ⚑ A EXPLICAÇÃO SÓ PODE PROMETER O QUE A ÁREA TEM. Ela dizia
         # "férias", e férias NÃO É pedido de DP aqui — é do ponto. Ele viu, em
         # 10/11/2026: *"lá no resumo do portal tinha lá férias, e quando você
@@ -115,23 +117,22 @@ AREAS: tuple[dict[str, Any], ...] = (
     },
     {
         "chave": "suprimentos",
-        "nome": "Material da obra",
-        # ⚑ ABERTA EM 20/11/2026, e só com o que existe. Ele: *"a gente
-        # precisa disponibilizar o recebimento via portal, porque na verdade
-        # esse recebimento vai ser principalmente por lá (…) eles poderiam ver
-        # uma lista dos insumos que tem a receber na obra, os pedidos que
-        # estão para chegar, inclusive acompanhar a movimentação (…) e a
-        # partir disso fazer o recebimento e fechar a parte financeira."*
+        # ⚑ "SUPRIMENTOS", E FECHADA POR ENQUANTO (23/11/2026). Ele: "eu queria
+        # alterar para suprimentos. E eu queria manter desativado por
+        # enquanto. Da mesma forma que a parte de pagamentos está desativada."
         #
-        # A frase NÃO promete "pedir material": o pedido de material pelo
-        # portal ainda não existe (é pela tela de Solicitações), e porta que
-        # anuncia o que não tem é o defeito que esta lista já teve com férias.
+        # A tela `/erp/portal/material` (pedir, receber e lançar) ESTÁ PRONTA e
+        # continua respondendo — é para lá que o ERP manda em "Receber e
+        # lançar a nota". O que fechou foi só a PORTA do portal. Para reabrir:
+        # `pronta: True`, mais `so_tela: True` e `tela` como estão abaixo.
+        "nome": "Suprimentos",
         "explicacao": "pedir material, ver o que está para chegar, receber "
                       "e lançar a nota e o boleto",
-        "pronta": True,
-        "so_tela": True,
-        "tela": "/erp/portal/material",
-        "acao": "receber_material",
+        "pronta": False,
+        "enquanto_isso": "Continue pedindo material como você pede hoje.",
+        "tela_quando_abrir": "/erp/portal/material",
+        # Sem `acao` enquanto fechada: aparece para todos, marcada, como
+        # Pagamentos. Ao reabrir, volta `"acao": "receber_material"`.
     },
     {
         "chave": "financeiro",

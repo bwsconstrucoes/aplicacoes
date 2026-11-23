@@ -38,6 +38,12 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**⚠ NO RAMO, NÃO PUBLICADO (23/11/2026, 2ª conversa):** a porta do portal para
+material virou **"Suprimentos" e está FECHADA de propósito** — ele: *"manter
+desativado por enquanto, da mesma forma que pagamentos."* NÃO REABRIR sem ele
+pedir. A tela continua pronta e o ERP ainda leva até ela. Sem migração. Detalhe
+e o resto da arrumação do portal em `HISTORICO.md`, 23/11.
+
 **✔ PUBLICADO em 23/11/2026**, com o "pode" dele: a 7ª rodada. **A CONFERIR
 COM ELE no próximo chat:** (1) apertou "Aplicar atualizações do banco"? É a
 migração 125 — sem ela só o "pedir material fora do cadastro" não funciona;

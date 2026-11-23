@@ -40,6 +40,29 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 23/11/2026 — O PORTAL DA OBRA FOI REARRUMADO, PELO CHAT DE SUPRIMENTOS (registro entre áreas)
+
+Pedido do dono, olhando o portal. Mexe em `templates/erp_portal.html` e
+`core/portal.py`, que são do **Pessoal e DP** — quem abrir aquele chat precisa
+saber:
+
+- **"Pessoal e DP" virou "Colaboradores"** na porta do portal. Ele: *"vamos
+  chamar de colaboradores, fica melhor."* Só o nome da área; a chave
+  (`pessoal`) e os tipos não mudaram.
+- **Os avisos desceram e ficaram recolhidos.** "Contratos de experiência
+  terminando" e "Férias da equipe" ficavam no alto, abertos, e com muita gente
+  empurravam as solicitações para fora da tela. Ele: *"está muito grande a
+  informação (...) e estando em cima você se perde no portal."* Agora há um
+  bloco **"Avisos da equipe"** DEPOIS de "O que você já pediu", cada aviso só
+  com o título e a quantidade; toca e abre. **"Para o colaborador assinar" e
+  "Documentos a devolver" continuam no alto** — têm prazo e pedem ação.
+  ESCOLHA MINHA; ele só falou do aviso de experiência.
+- **A área de material chama "Suprimentos" e está FECHADA na porta**, como
+  Pagamentos. Ele: *"manter desativado por enquanto."* A tela
+  `/erp/portal/material` continua existindo e respondendo (o ERP manda para
+  ela em "Receber e lançar a nota"). Para reabrir: em `AREAS`, `pronta: True`,
+  `so_tela: True`, `tela` e `acao: "receber_material"` — está escrito lá.
+
 ### ⚑ 22/11/2026 — SUPRIMENTOS: AÇÃO E SEÇÃO NOVAS DE PERMISSÃO, E A ROTA DE MOVER ITEM (registro entre áreas)
 
 Detalhe em `HISTORICO_SUPRIMENTOS.md`, 22/11 (5ª rodada).
