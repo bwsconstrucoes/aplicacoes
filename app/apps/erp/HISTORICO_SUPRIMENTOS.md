@@ -38,7 +38,15 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**⚠ NO RAMO, NÃO PUBLICADO (23/11/2026): a 7ª rodada** — colar lista no
+**✔ PUBLICADO em 23/11/2026**, com o "pode" dele: a 7ª rodada. **A CONFERIR
+COM ELE no próximo chat:** (1) apertou "Aplicar atualizações do banco"? É a
+migração 125 — sem ela só o "pedir material fora do cadastro" não funciona;
+(2) colou uma lista de teste no portal? A leitura com a IA de verdade não foi
+vista funcionando no ambiente de teste.
+
+O retrato de antes da publicação:
+
+**No ramo em 23/11/2026: a 7ª rodada** — colar lista no
 portal e o pedido que leva junto o material fora do cadastro. Traz a
 **migração 125** (tabela nova, lida por SQL direto: se o botão atrasar, só o
 recurso novo espera; o resto segue funcionando). Arquivos compartilhados:
