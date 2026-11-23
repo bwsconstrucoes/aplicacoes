@@ -13102,7 +13102,8 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             if acao in ("atender", "recusar", "item", "passo", "continuidade",
                         "encerrar", "assinar", "assinada", "corrigir",
                         "contabilidade", "termo", "termo_validar",
-                        "cancelar_andamento", "despachar") \
+                        "cancelar_andamento", "despachar", "termo_papel",
+                        "devolucao_papel") \
                     and not pode(usuario, "atender_dp"):
                 return jsonify({"ok": False, "erro":
                                 "Só o DP atende solicitação. Você pode abrir e "
@@ -13148,6 +13149,20 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
                 termos.validar(s, tid, usuario, aceitar=bool(d.get("aceitar")),
                                motivo=str(d.get("motivo") or ""))
                 svc.termo_voltou(s, tid, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+            elif acao in ("termo_papel", "devolucao_papel"):
+                # ⚑ O PLANO B (23/11/2026): o papel assinado chegou ao
+                # ESCRITÓRIO — a obra sem internet, a pessoa que assinou à mão
+                # e mandou pelo malote. O DP anexa aqui e o processo segue
+                # igual ao do portal. Quem anexa é o DP, que está olhando o
+                # papel: o documento para assinar já entra validado.
+                arq = request.files.get("arquivo")
+                if arq is None:
+                    raise ErroValidacao("Escolha a foto ou o PDF do papel assinado.")
+                svc.papel_no_escritorio(
+                    s, solicitacao_id, acao, int(request.form.get("id") or 0),
+                    arq.read(), arq.filename or "assinado", usuario)
                 s.flush()
                 p = svc.ler(s, solicitacao_id)
             elif acao == "cancelar_andamento":

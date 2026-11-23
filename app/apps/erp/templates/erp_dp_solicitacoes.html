@@ -594,6 +594,15 @@ function blocoDoProcesso(p){
         <button class="btn secundario" data-pr-termo-nao="${x.termo.id}">Devolver à obra…</button>`);
     if (x.termo && x.estado === "AGUARDANDO")
       b.push(`<button class="link-btn" data-pr-termo="1">gerar de novo</button>`);
+    {# ⚑ O PLANO B (23/11/2026): o papel assinado chegou ao escritório — a
+       obra sem internet, a pessoa que assinou à mão. O DP anexa e o processo
+       segue igual ao do portal. #}
+    if (x.termo && x.termo.situacao === "ABERTO")
+      b.push(`<button class="btn secundario" data-pr-papel="termo_papel"
+        data-id="${x.termo.id}">Chegou no papel? Anexar…</button>`);
+    if (x.devolucao_aberta_id)
+      b.push(`<button class="btn secundario" data-pr-papel="devolucao_papel"
+        data-id="${x.devolucao_aberta_id}">Chegou no escritório? Anexar…</button>`);
     {# ⚑ OS BOTÕES DA ADMISSÃO (19/11/2026) — ver `admissao_processo`. #}
     if (!deslig) {
       if (x.codigo === "CONTABILIDADE" && !x.pedido)
@@ -706,6 +715,7 @@ function ligarBotoesDoProcesso(p){
      preenchido (`contabil_processo.montar_pedido`). #}
   um("[data-pr-contab]", () => acao("contabilidade", {}));
   um("[data-pr-termo]", () => acao("termo", {}));
+  um("[data-pr-papel]", b => anexarPapel(b.dataset.prPapel, b.dataset.id));
   um("[data-pr-termo-ok]", b => {
     if (confirm("Você abriu o documento e confere que está certo e assinado?"))
       acao("termo_validar", {termo_id: +b.dataset.prTermoOk, aceitar: true});
@@ -920,6 +930,35 @@ async function acao(caminho, corpo){
     pintarPedido();
     carregar();
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+{# O papel assinado que chegou ao escritório (plano B, 23/11/2026). #}
+function anexarPapel(caminho, id){
+  const ent = document.createElement("input");
+  ent.type = "file";
+  ent.accept = "image/*,application/pdf";
+  ent.addEventListener("change", async () => {
+    const f = ent.files && ent.files[0];
+    if (!f) return;
+    const termo = caminho === "termo_papel";
+    if (!confirm((termo
+        ? "Este papel está assinado pela pessoa e é o mesmo documento? "
+          + "Ao anexar, ele vale como assinado e o processo segue."
+        : "Este é o documento assinado que a obra devia devolver? Ao anexar, "
+          + "a pendência da obra fecha e o arquivo vai para a sua validação.")))
+      return;
+    const fd = new FormData();
+    fd.append("arquivo", f);
+    fd.append("id", id);
+    try {
+      const r = await api(`/erp/api/dp/solicitacoes/${ABERTA.id}/${caminho}`,
+        {method: "POST", body: fd});
+      ABERTA = r.solicitacao;
+      pintarPedido();
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  ent.click();
 }
 
 async function atender(){

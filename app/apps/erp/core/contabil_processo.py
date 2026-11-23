@@ -149,7 +149,7 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
             item("AUTORIZACAO", "Autorização de desconto assinada pela pessoa",
                  "obra colhe, DP confere", "FEITO",
                  f"{tm['numero']}: " + termos.FORMA_ROTULOS.get(tm.get("forma") or "", ""),
-                 termo={"id": tm["id"], "numero": tm["numero"],
+                 termo={"id": tm["id"], "numero": tm["numero"], "situacao": tm["situacao"],
                         "anexo_id": tm.get("anexo_id")})
         else:
             item("AUTORIZACAO", "Autorização de desconto assinada pela pessoa",
@@ -158,7 +158,7 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                  (f"{tm['numero']} com a obra para colher a assinatura"
                   if tm["situacao"] == "ABERTO" else
                   f"{tm['numero']} voltou — abra e valide"),
-                 termo={"id": tm["id"], "numero": tm["numero"],
+                 termo={"id": tm["id"], "numero": tm["numero"], "situacao": tm["situacao"],
                         "anexo_id": tm.get("anexo_id")},
                  termo_a_validar=tm["situacao"] != "ABERTO")
     if ped is None:
@@ -194,7 +194,7 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
         elif termos.concluido(tm):
             item("AVISO_FERIAS", rot, quem_, "FEITO",
                  f"{tm['numero']}: " + termos.FORMA_ROTULOS.get(tm.get("forma") or "", ""),
-                 termo={"id": tm["id"], "numero": tm["numero"],
+                 termo={"id": tm["id"], "numero": tm["numero"], "situacao": tm["situacao"],
                         "anexo_id": tm.get("anexo_id")})
         else:
             item("AVISO_FERIAS", rot, quem_,
@@ -202,7 +202,7 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                  (f"{tm['numero']} com a obra para colher a assinatura"
                   if tm["situacao"] == "ABERTO" else
                   f"{tm['numero']} voltou — abra e valide"),
-                 termo={"id": tm["id"], "numero": tm["numero"],
+                 termo={"id": tm["id"], "numero": tm["numero"], "situacao": tm["situacao"],
                         "anexo_id": tm.get("anexo_id")},
                  termo_a_validar=tm["situacao"] != "ABERTO")
     cumpridos = sum(1 for x in saida if x["estado"] == "FEITO")

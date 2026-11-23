@@ -40,7 +40,7 @@ from app.apps.erp.core import ferias as svc_ferias
 from app.apps.erp.core import dp_analise as svc_analise
 from app.apps.erp.core import desligamento_processo as svc_processo
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
-from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import Colaborador, Usuario
 
 logger = logging.getLogger(__name__)
@@ -3050,6 +3050,52 @@ def termo_voltou(s: Session, termo_id: int, usuario: Optional[Usuario]) -> None:
         return
     if termos.concluido(t_) and agente_dp.modo(s, "despacho") != "DESLIGADA":
         despachar(s, int(t_["solicitacao_id"]), usuario)
+
+
+def papel_no_escritorio(s: Session, solicitacao_id: int, qual: str, alvo_id: int,
+                        conteudo: bytes, nome_arquivo: str,
+                        usuario: Usuario) -> None:
+    """⚑ O PLANO B (23/11/2026): o papel assinado chegou ao ESCRITÓRIO.
+
+    Ele: *"e se de repente aconteceu uma circunstância que a pessoa assinou
+    num papel e encaminhou para cá para a gente anexar? (…) pode ser que uma
+    obra (…) não tem internet (…) a gente tem que ter uma alternativa."*
+
+    - `termo_papel`: o documento que a pessoa assina (aviso prévio, pedido de
+      demissão, aviso de férias, autorização de desconto). Entra como
+      "assinado no papel" e JÁ VALIDADO — quem anexa é o DP, que está olhando
+      o papel — e o processo segue como se tivesse sido assinado na tela.
+    - `devolucao_papel`: o que a obra devia devolver pelo portal (documentação
+      rescisória, ASO). A pendência fecha e o arquivo vai para a validação do
+      DP, como se tivesse chegado pelo portal.
+    """
+    from app.apps.erp.core import termos
+    from app.apps.erp.core import portal as svc_portal
+    if not conteudo:
+        raise ErroValidacao("Escolha a foto ou o PDF do papel assinado.")
+    if qual == "termo_papel":
+        if termos.ler(s, alvo_id).get("solicitacao_id") != solicitacao_id:
+            raise ErroNaoEncontrado("Documento não encontrado.")
+        termos.enviar_papel(
+            s, alvo_id, None, conteudo=conteudo, nome_arquivo=nome_arquivo,
+            conduzido_por={"colaborador_id": None,
+                           "nome": f"{usuario.nome} (DP, no escritório)"})
+        termos.validar(s, alvo_id, usuario, aceitar=True)
+        termo_voltou(s, alvo_id, usuario)
+        return
+    if qual != "devolucao_papel":
+        raise ErroValidacao("Não sei o que anexar.")
+    dono = s.execute(text("SELECT colaborador_id FROM dp_devolucoes WHERE id = :i"),
+                     {"i": alvo_id}).scalar()
+    pessoa = s.execute(text("SELECT colaborador_id FROM dp_solicitacoes WHERE id = :i"),
+                       {"i": solicitacao_id}).scalar()
+    if not dono or dono != pessoa:
+        raise ErroNaoEncontrado("Pendência não encontrada.")
+    svc_portal.devolver(s, alvo_id, conteudo, usuario, nome_arquivo,
+                        pelo_escritorio=True)
+    _evento(s, solicitacao_id, "AVISO",
+            {"texto": "documento assinado recebido no escritório e anexado pelo DP"},
+            usuario)
 
 
 def gerar_autorizacao_de_desconto(s: Session, sol: dict[str, Any],

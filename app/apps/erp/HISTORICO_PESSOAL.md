@@ -141,6 +141,41 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (3) — Plano B: o papel assinado que chega ao escritório
+
+Ele: *"e se de repente aconteceu uma circunstância que a pessoa assinou num
+papel e encaminhou para cá para a gente anexar? (…) Isso vale para outras
+circunstâncias de sistema também (…) a obra (…) não tem internet (…) a gente
+tem que ter uma alternativa, plano B."*
+
+**O que já havia:** pelo portal, a OBRA tinha três saídas para o documento
+que a pessoa assina — assinar na tela (PIN), mandar a foto do papel, ou
+registrar a recusa com duas testemunhas. O que faltava era o lado do
+ESCRITÓRIO: o papel que chegou por malote, mão ou e-mail não tinha por onde
+entrar — só pelo celular da obra.
+
+**O que entrou** (`pessoal_solicitacoes.papel_no_escritorio`, ações
+`termo_papel` e `devolucao_papel` da rota do DP):
+- **"Chegou no papel? Anexar…"** em todo documento para assinar ainda aberto
+  — aviso prévio, pedido de demissão, aviso de férias, autorização de
+  desconto. Entra como "assinado no papel" e JÁ VALIDADO (quem anexa é o DP,
+  olhando o papel); o processo segue igual: a rescisão à contabilidade é
+  montada, as férias fecham.
+- **"Chegou no escritório? Anexar…"** no que a obra devia devolver pelo
+  portal — documentação rescisória assinada e ASO demissional. A pendência
+  fecha (o agente para de cobrar a obra) e o arquivo vai para a validação.
+- O arquivo fica no cadastro da pessoa marcado "recebido no escritório",
+  separado do que veio pelo portal.
+
+**Decisão de detalhe:** o papel substitui o documento do sistema enquanto ele
+está ABERTO. Se já foi assinado na tela e o papel chegar depois, o papel vai
+para a ficha como documento a mais — não troca o assinado, que tem lacre.
+
+**Outros planos B que já existiam** (conferidos agora): o DP abre a
+solicitação pela tela dele quando a obra não consegue; o passo que foi feito
+por fora tem "feito por fora do sistema…"; o ponto guarda batida sem
+internet; a pessoa sem PIN assina no papel pela obra.
+
 ### 23/11/2026 (2) — O atendimento do desligamento chega preenchido
 
 Ele, ao atender um pedido de demissão de verdade: *"As faltas a descontar, eu

@@ -630,3 +630,62 @@ def test_o_aso_demissional_vai_junto_e_nao_trava(mundo):
                        "AND documento_esperado = 'ASO'"),
                   {"c": mundo["carteira"].id}).scalar()
     assert n == 1
+
+
+# ---------------------------------------------------------------------------
+# O plano B: o papel assinado chegou ao escritório (23/11/2026)
+# ---------------------------------------------------------------------------
+def _arquivo_falso(mundo, monkeypatch):
+    from app.apps.erp.core.arquivo import service as svc_arq
+
+    class Doc:
+        id = None
+
+    def arquivar(s_, conteudo, nome, **kw):
+        d = Doc()
+        d.id = _documento(mundo, kw["tipo_codigo"], "papel")
+        return d
+    monkeypatch.setattr(svc_arq, "arquivar", arquivar)
+
+
+def test_aviso_assinado_no_papel_o_dp_anexa_e_o_processo_segue(mundo, monkeypatch):
+    """Ele: *"e se (…) a pessoa assinou num papel e encaminhou para cá para a
+    gente anexar? (…) a gente tem que ter uma alternativa, plano B."*"""
+    from app.apps.erp.core import termos
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    _arquivo_falso(mundo, monkeypatch)
+    s = mundo["s"]
+    sid = _desligamento(mundo, assinar_aviso=False,
+                        ultimo=HOJE + dt.timedelta(days=5))["id"]
+    t_ = termos.do_pedido(s, sid)
+    passo = next(p for p in _ler(mundo, sid)["processo"]["passos"] if p["codigo"] == "AVISO")
+    assert passo["termo"]["situacao"] == "ABERTO"      # a tela mostra o botão
+    with pytest.raises(ErroValidacao):
+        svc.papel_no_escritorio(s, sid, "termo_papel", t_["id"], b"", "x.pdf", mundo["dp"])
+    with pytest.raises(ErroNaoEncontrado):
+        svc.papel_no_escritorio(s, sid + 999, "termo_papel", t_["id"], b"%PDF",
+                                "x.pdf", mundo["dp"])
+    svc.papel_no_escritorio(s, sid, "termo_papel", t_["id"], b"%PDF", "x.pdf", mundo["dp"])
+    t2 = termos.ler(s, t_["id"])
+    assert t2["forma"] == "PAPEL" and termos.concluido(t2), "o DP anexou: já vale"
+    assert _estado(_ler(mundo, sid), "AVISO") == "FEITO"
+    # e a rescisão à contabilidade pode ser montada, como na tela
+    svc_ct.abrir(s, {"template": "DESLIGAMENTO", "colaborador_id": mundo["carteira"].id,
+                     "solicitacao_id": sid, "dados": {}}, mundo["dp"])
+
+
+def test_documentacao_rescisoria_chegou_no_escritorio(mundo, monkeypatch):
+    _arquivo_falso(mundo, monkeypatch)
+    s = mundo["s"]
+    r = _desligamento(mundo)
+    proc.mandar_para_assinar(s, r, {"sem_arquivo": "1"}, mundo["dp"])
+    passo = next(p for p in _ler(mundo, r["id"])["processo"]["passos"]
+                 if p["codigo"] == "ASSINADA")
+    assert passo["estado"] == "AGUARDANDO" and passo["devolucao_aberta_id"]
+    svc.papel_no_escritorio(s, r["id"], "devolucao_papel", passo["devolucao_aberta_id"],
+                            b"%PDF", "rescisao.pdf", mundo["dp"])
+    passo = next(p for p in _ler(mundo, r["id"])["processo"]["passos"]
+                 if p["codigo"] == "ASSINADA")
+    assert passo.get("a_validar"), "chegou: vai para a validação do DP, como pelo portal"
+    proc.validar_assinada(s, _ler(mundo, r["id"]), {"acao": "validar"}, mundo["dp"])
+    assert _estado(_ler(mundo, r["id"]), "ASSINADA") == "FEITO"
