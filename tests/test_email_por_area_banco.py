@@ -361,3 +361,19 @@ def test_copia_em_enviados_acha_a_pasta_e_respeita_o_provedor(sessao_real, monke
     class Outra(Conta):
         smtp_usuario = "compras@bws.teste"
     assert "não é a mesma conta" in svc_email.guardar_copia_nos_enviados(sessao_real, Outra, msg)
+
+
+def test_pasta_de_enviados_sem_marca_acha_pelo_nome():
+    """Provedor que não marca a pasta (\\Sent): acha pelo nome, nunca a lixeira."""
+    from app.apps.erp.core.comum import email as svc_email
+
+    class Caixa:
+        def __init__(self, linhas): self.linhas = linhas
+        def list(self): return "OK", self.linhas
+
+    assert svc_email._pasta_de_enviados(Caixa([
+        b'(\\HasNoChildren) "." "INBOX"', b'(\\HasNoChildren) "." "INBOX.Lixeira"',
+        b'(\\HasNoChildren) "." "INBOX.Itens Enviados"'])) == "INBOX.Itens Enviados"
+    assert svc_email._pasta_de_enviados(Caixa([
+        b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren) "/" "Sent"'])) == "Sent"
+    assert svc_email._pasta_de_enviados(Caixa([b'(\\HasNoChildren) "." "INBOX"'])) is None

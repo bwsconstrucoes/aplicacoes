@@ -368,6 +368,14 @@ def _pasta_de_enviados(caixa) -> Optional[str]:
         for n in nomes:
             if n.lower() == candidato.lower():
                 return n
+    # ⚑ Sem marca e sem nome conhecido (23/11/2026, a caixa do DP é da
+    # Locaweb): a pasta cujo nome diz "enviad" ou "sent" — "INBOX.Itens
+    # Enviados", "INBOX.Sent Items". Nunca a lixeira nem os rascunhos.
+    for n in nomes:
+        baixo = n.lower()
+        if ("enviad" in baixo or "sent" in baixo) and not any(
+                x in baixo for x in ("trash", "lixeira", "draft", "rascunho")):
+            return n
     return None
 
 
