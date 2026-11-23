@@ -9410,6 +9410,16 @@ def api_editar_usuario(usuario_id: int):
                 if campo in d:
                     valor = (d[campo] or "").strip()
                     setattr(u, campo, somente_digitos(valor) if campo == "telefone" else valor or None)
+            # ⚑ O CPF SE CORRIGE NA EDIÇÃO (23/11/2026). A tela mostrava o campo
+            # aberto, mas só o cadastro NOVO gravava — ele digitou, salvou, e o
+            # CPF continuou em branco. Vazio não apaga o que já existe.
+            if "cpf" in d:
+                from app.apps.erp.core.cadastros.validadores import cpf_valido as _cpf_ok
+                cpf_novo = somente_digitos(d.get("cpf") or "")
+                if cpf_novo and not _cpf_ok(cpf_novo):
+                    return jsonify({"ok": False, "erro": "CPF inválido."}), 400
+                if cpf_novo:
+                    u.cpf = cpf_novo
             if d.get("perfil"):
                 u.perfil = PerfilUsuario(d["perfil"])
             if "escopo_visao" in d:

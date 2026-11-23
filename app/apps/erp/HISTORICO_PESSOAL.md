@@ -141,6 +141,26 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 23/11/2026 (8) — Liberar o portal: o CPF vem do cadastro, a edição grava o CPF, e o recado diz o próximo passo
+
+Ele, liberando da fila do portal uma pessoa com pré-cadastro: *"O CPF já era
+para ele buscar e preencher automaticamente, não aconteceu"*; *"coloquei (…)
+salvei, e o CPF não ficou preenchido"*; *"depois que eu liberei, eu não vi
+informação nenhuma (…) Eu fiquei boiando."*
+- Dois defeitos: `_liberar_acesso` copiava nome, e-mail e telefone do
+  cadastro, mas não o CPF; e a edição do operador (`/erp/api/usuarios/<id>`)
+  IGNORAVA o CPF — a tela mostrava o campo aberto, só o cadastro novo gravava.
+  Os dois corrigidos (vazio não apaga; CPF inválido recusa).
+- Ao salvar um operador, o recado diz em que pé está o convite: "próximo passo
+  é dela: abrir o e-mail, criar a senha (vale até…)", "já criou a senha", ou
+  "o convite venceu".
+- **Pergunta dele em aberto:** *"Se eu não marcar obra nenhuma (…) ele vai
+  trabalhar nas obras conforme ele trabalha no ponto."* Hoje NÃO é assim: sem
+  obra marcada, o administrativo de obra não enxerga ninguém (o padrão
+  NEGAR). Na liberação, a obra onde a pessoa bate ponto já entra marcada
+  sozinha; depois disso não acompanha o ponto. Fazer acompanhar é decisão
+  dele (ver a resposta de 23/11).
+
 ### 23/11/2026 (7) — Checklists enxutos; cópia em "Enviados" e "Reenviar o mesmo e-mail"
 
 **Checklists**, revisados com ele item a item: ficam só com o que o sistema

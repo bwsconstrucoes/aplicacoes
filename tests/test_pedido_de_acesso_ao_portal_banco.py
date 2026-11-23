@@ -548,3 +548,24 @@ def test_lista_de_obras_vazia_e_escolha_nao_esquecimento(app_real, sessao_real,
     alcance = [x.obra_id for x in sessao_real.query(UsuarioObra)
                .filter(UsuarioObra.usuario_id == novo).all()]
     assert alcance == []
+
+
+def test_o_cpf_do_operador_se_corrige_na_edicao(app_real, sessao_real, pessoa, dp, obra):
+    """23/11/2026, ele: *"coloquei (…), salvei, e o CPF não ficou preenchido na
+    tela de operadores."* A edição ignorava o CPF — só o cadastro novo gravava."""
+    from tests.conftest import como                      # type: ignore
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="cpf@gmail.com", obra_id=obra.id)
+    c = como(app_real, dp.id)
+    uid = c.post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                 json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    assert c.post(f"/erp/api/usuarios/{uid}", json={"cpf": "123"}).status_code == 400
+    r = c.post(f"/erp/api/usuarios/{uid}", json={"cpf": "529.982.247-25"})
+    assert r.status_code == 200, r.get_json()
+    sessao_real.expire_all()
+    assert sessao_real.get(Usuario, uid).cpf == "52998224725"
+    # vazio não apaga
+    c.post(f"/erp/api/usuarios/{uid}", json={"cpf": ""})
+    sessao_real.expire_all()
+    assert sessao_real.get(Usuario, uid).cpf == "52998224725"

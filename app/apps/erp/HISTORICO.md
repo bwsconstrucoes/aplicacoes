@@ -40,6 +40,13 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 23/11/2026 — PESSOAL CONSERTOU O CPF NA TELA DE OPERADORES (registro entre áreas)
+
+A edição de operador (`/erp/api/usuarios/<id>`, Configurações › Operadores)
+ignorava o CPF — só o cadastro novo gravava, embora o campo aparecesse aberto.
+Agora grava (vazio não apaga; inválido recusa). E salvar um operador mostra a
+situação do convite. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (8).
+
 ### ⚑ 23/11/2026 — PESSOAL MEXEU NO E-MAIL COMUM (registro entre áreas)
 
 `core/comum/email.py` ganhou `guardar_nos_enviados=False` em `enviar` e a
