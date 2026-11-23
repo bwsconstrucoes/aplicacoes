@@ -377,3 +377,8 @@ def test_pasta_de_enviados_sem_marca_acha_pelo_nome():
     assert svc_email._pasta_de_enviados(Caixa([
         b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren) "/" "Sent"'])) == "Sent"
     assert svc_email._pasta_de_enviados(Caixa([b'(\\HasNoChildren) "." "INBOX"'])) is None
+    # A caixa do DP na Locaweb (23/11/2026): o webmail usa "INBOX.enviadas";
+    # "INBOX.Sent" é do Thunderbird. Vale a do webmail, que é onde ele olha.
+    assert svc_email._pasta_de_enviados(Caixa([
+        b'(\\HasNoChildren) "." "INBOX"', b'(\\HasNoChildren \\Sent) "." "INBOX.Sent"',
+        b'(\\HasNoChildren) "." "INBOX.enviadas"'])) == "INBOX.enviadas"

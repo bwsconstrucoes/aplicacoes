@@ -163,6 +163,11 @@ eu não tenho essa opção."*
   23/11, registro entre áreas). Condição: a caixa de e-mail configurada no
   ERP (a que o agente lê) tem de ser a MESMA conta que envia. Se não for, o
   envio sai igual e a mensagem diz que a cópia não ficou e por quê.
+- A caixa do DP é da **Locaweb**, a MESMA conta para enviar e receber (ele
+  confirmou). Ela tem duas pastas de enviados: `INBOX.enviadas` (a do
+  webmail, onde ele procura) e `INBOX.Sent` (criada pelo Thunderbird). A
+  escolha da pasta prefere o nome em português; depois a marcada como
+  enviados; depois nomes conhecidos.
 - **"Reenviar o mesmo e-mail"** no pedido já enviado (na solicitação e na
   tela de Contabilidade): mesmo texto, anexos e destinatários; o prazo de
   volta não muda (reenviar não é cobrar); fica "REENVIADO" na trilha.

@@ -357,13 +357,24 @@ def _pasta_de_enviados(caixa) -> Optional[str]:
     ok, linhas = caixa.list()
     if ok != "OK":
         return None
-    nomes = []
+    nomes, marcada = [], None
     for bruta in linhas or []:
         linha = bruta.decode("utf-8", "replace") if isinstance(bruta, bytes) else str(bruta)
         nome = linha.rsplit(' "', 1)[-1].rstrip('"') if '"' in linha else linha.split()[-1]
-        if "\\Sent" in linha:
-            return nome
+        if "\\Sent" in linha and marcada is None:
+            marcada = nome
         nomes.append(nome)
+    # ⚑ A PASTA EM PORTUGUÊS VENCE (23/11/2026). A caixa do DP (Locaweb) tem
+    # DUAS: "INBOX.enviadas", que é a do webmail — onde ele procura — e
+    # "INBOX.Sent", criada por um programa de e-mail (Thunderbird). Ele: *"no
+    # envio via webmail, a caixa de enviadas é a .enviadas."* Gravar na outra
+    # seria guardar onde ninguém olha.
+    for n in nomes:
+        baixo = n.lower()
+        if "enviad" in baixo and not any(x in baixo for x in ("lixeira", "rascunho")):
+            return n
+    if marcada:
+        return marcada
     for candidato in NOMES_DE_ENVIADOS:
         for n in nomes:
             if n.lower() == candidato.lower():
