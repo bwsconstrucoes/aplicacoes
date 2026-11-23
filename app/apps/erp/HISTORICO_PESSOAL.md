@@ -38,6 +38,13 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**⚠️ EM OBRA NO CHAT DO PONTO (aviso dele em 23/11/2026):** a central única de
+assinaturas do colaborador vai para o aplicativo do ponto, usando
+`core/termos.py` como base. **Não mexer em `termos.py`** até ele avisar que
+publicou; migração nova do ERP: 127 em diante (124–126 tomadas). Pedi a ele que
+toda assinatura chame `pessoal_solicitacoes.termo_voltou` (fecha as férias e
+despacha a rescisão/desconto) e preserve `termos.concluido` e o lacre.
+
 **PUBLICADO (21/11/2026):** ASO sem travar (admissional reconhecido e com
 alerta; demissional pedido junto com a rescisão) e o agente cobrando e lendo o
 e-mail no automático — migração **123**. ⚠️ Confirmar com ele que apertou
