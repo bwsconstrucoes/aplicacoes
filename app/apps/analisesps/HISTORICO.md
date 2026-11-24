@@ -12244,6 +12244,50 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 277 — Tela DDA: colar o DDA do Bradesco e cruzar com as SPs (24/11/2026) — MIGRAÇÃO 058
+
+- *"No sistema do Bradesco, se a gente entrar lá no DDA, a gente consegue copiar (…) o
+  vencimento, o beneficiário, o pagador (…) o CNPJ do pagador, se é o da matriz, da
+  filial, o valor, e o código de barras (…) eu vou ficar colando diariamente (…) cruzar
+  essas informações com os registros que nós temos lançado (…) o beneficiário, em algumas
+  vezes, não vai bater 100%, porque às vezes a empresa vende o título (…) Se tem boletos
+  que estão lançados no sistema DDA, mas não estão lançados no nosso registro financeiro."*
+- Aba nova **DDA** (depois de Bradesco). `dda.py`: `ler` (o texto copiado da tela → um
+  boleto por bloco que termina em "Multa"; vencimento e limite, pagador e CNPJ — o DDA
+  escreve o CNPJ com um zero a mais na frente —, beneficiário e CNPJ/CPF, banco, valor (se
+  o do alto vier em branco, vale o "Valor do Documento"), linha digitável → código de
+  barras de 44, beneficiário final, nº do documento ("***" = sem), descontos, juros,
+  multa) e confere com o "Total (N boletos) R$ X" do banco. `guardar`: um boleto por
+  código de barras (colar de novo não duplica; marca a colagem em que apareceu por
+  último — o que sai do DDA, em geral, foi pago). Migração 058 (`dda_colagem`,
+  `dda_boleto`).
+- **Cruzamento** (`cruzar`, uma consulta às SPs não canceladas): código de barras igual
+  (100); CNPJ do credor inteiro ou raiz (matriz/filial) + valor + vencimento (92), + nº do
+  documento = NF (90), + vencimento a até 5 dias (82), só CNPJ + valor (72); valor +
+  vencimento com CNPJ diferente — título vendido — (60, "provável — conferir"); CNPJ + nº
+  do documento com valor diferente (58). Cada SP casa com UM boleto, os pares melhores
+  primeiro (os boletos iguais do Tintas Iquine se separam pelo nº da nota). Calculado a
+  cada abertura (a SP pode ser lançada depois); só o vínculo À MÃO fica gravado (o nº da
+  SP, ou "sem SP" de propósito).
+- Situações: **Sem lançamento** (a pergunta dele), **SP já paga** (boleto ainda no DDA
+  com a SP paga — risco de pagar duas vezes), Provável — conferir, Lançado, Sem SP
+  (confirmado). Filtros na lateral (situação, vencimento, busca, todas as colagens).
+- **No mesmo dia, três pedidos a mais:** (1) *"quando o sistema não conseguir cruzar
+  automático, é interessante ele sugerir as SPs que são próximas"* — `dda.sugestoes`: para
+  o boleto sem lançamento, até 3 SPs ainda não casadas, pontuadas por mesmo CNPJ/raiz,
+  valor perto (até 10%) e vencimento perto, com o porquê; a consulta às SPs passou a trazer
+  valor numa faixa de ±10% em vez de exato. (2) Clicar na SP (casada, alternativa ou
+  sugerida) abre a ficha no modal. (3) *"Eu seleciono alguns, gerar a mensagem do WhatsApp
+  para cobrar (…) o pessoal do suprimento"* — caixas por boleto, "marcar os sem
+  lançamento" e "Gerar mensagem do WhatsApp": o texto (beneficiário, CNPJ, valor,
+  vencimento, nº doc., filial pagadora, linha digitável, total) numa janela para ajustar,
+  copiar ou abrir no WhatsApp. Montado na própria tela, sem ir ao servidor.
+- Não cruza (ainda): uma SP que paga VÁRIOS boletos (soma), nem boleto parcelado contra
+  SP com o valor total. Não testado com uma colagem real além do texto de 24/11.
+- Custo: colar = 1 gravação por boleto; abrir a tela = 3 consultas ao banco (a das SPs
+  varre a base uma vez). Nada vai ao Google nem ao banco do Bradesco.
+- Testes: `test_analisesps_dda.py` (texto de exemplo em `tests/dados/`).
+
 #### Leva 276 — Comprovantes: a folha de rodapé é "Não é comprovante", não "Deu erro" (24/11/2026)
 
 - O dono: *"as páginas 'em branco' ainda estão sendo listadas com erro (…) sicredi_….pdf
@@ -12259,6 +12303,7 @@ somente Solicitações de uma conta especifica"*.
 - As linhas já gravadas entre 21 e 24/11 como "o robô não devolveu resultado" continuam
   como estão (não dá para saber, sem o PDF, se eram rodapé ou foto).
 - Teste: `test_a_folha_de_RODAPE_nao_vira_erro_e_a_escaneada_vira`.
+- **Publicado em 24/11/2026** (sem migração).
 
 #### Leva 275 — Comprovantes: a página entra na lista no envio, "Aguardando a baixa" (21/11/2026)
 

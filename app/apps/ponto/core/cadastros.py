@@ -276,6 +276,15 @@ def colaborador_por_cpf(conn: Connection, cpf: str) -> Optional[dict]:
                  cpf=somente_digitos(cpf), jornada_padrao=JORNADA_PADRAO)
 
 
+def colaboradores_por_ids(conn: Connection, ids) -> dict[int, dict]:
+    """Várias pessoas numa consulta só (24/11/2026: a lista sem internet do aparelho fazia uma por pessoa)."""
+    ids = sorted({int(i) for i in ids or []})
+    if not ids:
+        return {}
+    return {int(p["id"]): p for p in db.todos(conn, _sql_colaborador(conn) + " WHERE c.id = ANY(:ids)",
+                                              ids=ids, jornada_padrao=JORNADA_PADRAO)}
+
+
 def colaborador_por_id(conn: Connection, colaborador_id: int) -> Optional[dict]:
     return db.um(conn, _sql_colaborador(conn) + " WHERE c.id = :id",
                  id=colaborador_id, jornada_padrao=JORNADA_PADRAO)
