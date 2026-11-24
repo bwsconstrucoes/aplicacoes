@@ -651,6 +651,35 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Resultado por sócio, ficha da obra e conta corrente — PROPOSTA, nada construído — 24/11/2026
+
+O dono pediu três coisas e pediu para VER as telas antes ("me mande telas para a
+gente ir confirmando o que é para ser feito"). **Foi entregue só um desenho
+clicável com números inventados** (página privada dele no claude.ai, fora do
+repositório). Nenhuma linha do painel foi mexida.
+
+1. **Grade obra × sócio** (são ~6 sócios): em cada obra, quanto coube a cada um —
+   resultado ou prejuízo —, com a soma no fim e, embaixo, a estrutura e os juros
+   apropriados a cada sócio. Proposto como botão novo "Por sócio" no menu da
+   prestação, com a escolha "antes da estrutura e dos juros" / "resultado final".
+2. **Ficha da obra, em janela por cima** (ele pediu modal), ao clicar no nome da
+   obra: resumo tipo DRE (receita, despesas por grupo e categoria, resultado
+   direto, estrutura, juros, final, parte de cada sócio); mês a mês com a
+   estrutura e os juros apropriados; **por conta corrente** (de que conta saíram
+   os pagamentos e onde entraram os recebimentos); conferência com o DRE; e o
+   relatório da obra em PDF e planilha.
+3. **No DRE, um quadro "pagamentos por conta corrente"**, ao lado de "Despesas
+   por Categoria", seguindo os filtros da tela.
+
+**O que o dado sustenta:** o `fato` tem `conta_corrente` (migração 002), então o
+agrupamento é possível — só para o que já foi pago ou recebido; título em aberto
+não tem conta. **Não conferido:** como fica o título pago em mais de uma conta.
+
+**Aguardando a confirmação dele** das telas e de duas escolhas: qual das duas
+visões da grade abre primeiro, e se quem só lê a prestação vê a coluna de todos
+os sócios (o chat assumiu que sim, pela decisão de 16/11 — "quem vê só leitura,
+vê também"). **Não construir antes da resposta.**
+
 ## A evolução do rateio para os sócios — tela e relatório — 16/11/2026
 
 **PUBLICADO em 16/11/2026, 22:30 UTC** (`b2eaa1e4`), com o "pode" do dono, junto
