@@ -13472,14 +13472,24 @@ def _dia_do_pedido(bruto: str | None):
 @permissao("ver_diario")
 def api_diario_dia(obra_id: int):
     """O dia, já preenchido com tudo o que o sistema sabe."""
+    from app.apps.erp.core import clima as svc_clima
     from app.apps.erp.core import diario as svc
     from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
     try:
         with get_session() as s:
             exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
-            return jsonify({"ok": True,
-                            **svc.abrir_dia(s, obra_id,
-                                            _dia_do_pedido(request.args.get("data")))})
+            dia = _dia_do_pedido(request.args.get("data"))
+            # ⚑ O CLIMA MEDIDO SE BUSCA AO ABRIR O DIA (24/11/2026), UMA VEZ
+            # NA VIDA: medido, fica guardado e nunca mais se pergunta. Dia
+            # futuro, obra sem coordenada ou serviço fora do ar viram
+            # simplesmente "não mediu" — a tela abre igual.
+            try:
+                if svc_clima.medir(s, obra_id, dia) is not None:
+                    s.commit()
+            except Exception:                            # noqa: BLE001
+                logger.warning("ERP: clima não medido para a obra %s em %s",
+                               obra_id, dia)
+            return jsonify({"ok": True, **svc.abrir_dia(s, obra_id, dia)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
@@ -13729,32 +13739,56 @@ def api_diario_importar():
 @login_obrigatorio
 @permissao("importar")
 def api_obras_cdiarios():
-    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+    """Completa o cadastro das obras com a C. Diários.
 
-    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
-    propósito, nada é escrito. E o que já está preenchido no cadastro só é
-    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
-    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    ⚑ LÊ A PLANILHA ONLINE (24/11/2026), e é o caminho normal. Ele: *"pra que
+    eu vou fazer download de planilha se a planilha é online? Qual o sentido
+    de eu ficar fazendo download para fazer importação?"* Razão nenhuma — a
+    emissão de NFS-e já lia esta mesma planilha ao vivo.
+
+    O arquivo .xlsx continua aceito, para quando o Google estiver fora do ar
+    ou a credencial falhar: sem ele, uma pane no Google deixaria o cadastro
+    das obras sem nenhum caminho.
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1`,
+    nada é escrito.
     """
     from app.apps.erp.core.importadores import obras_cdiarios as imp
     arquivo = request.files.get("arquivo")
-    if arquivo is None:
-        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
-    if not (arquivo.filename or "").lower().endswith(".xlsx"):
-        return jsonify({"ok": False, "erro":
-                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
-                        "Arquivo › Fazer download › Microsoft Excel."}), 400
     gravar = request.form.get("gravar") in ("1", "true", "sim")
     regravar = request.form.get("regravar") in ("1", "true", "sim")
+    online = request.form.get("online") in ("1", "true", "sim")
+    if not online:
+        if arquivo is None:
+            return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+        if not (arquivo.filename or "").lower().endswith(".xlsx"):
+            return jsonify({"ok": False, "erro":
+                            "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                            "Arquivo › Fazer download › Microsoft Excel."}), 400
     try:
-        conteudo = arquivo.read()
+        linhas = None
+        conteudo = None
+        de_onde = {}
+        if online:
+            lido = imp.ler_online()
+            # ⚠️ O ERRO DA LEITURA VOLTA PARA A TELA, por extenso. Credencial
+            # faltando, planilha renomeada, aba trocada — tudo isso viraria
+            # "não aconteceu nada" se ficasse só no log.
+            if lido["erro"]:
+                return jsonify({"ok": False, "erro": lido["erro"]}), 400
+            linhas = lido["linhas"]
+            de_onde = {"aba": lido["aba"], "planilha": lido["planilha"]}
+        else:
+            conteudo = arquivo.read()
         with get_session() as s:
             usuario = _usuario_logado(s)
             rel = imp.importar(s, conteudo, usuario.id if usuario else None,
-                               simular=not gravar, regravar=regravar)
+                               simular=not gravar, regravar=regravar,
+                               linhas=linhas)
             if gravar:
                 s.commit()
-        return jsonify({"ok": True, "resultado": rel})
+        return jsonify({"ok": True, "resultado": {**rel, "online": online,
+                                                  **de_onde}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
@@ -13823,10 +13857,26 @@ def api_diario_fotos(obra_id: int):
             dia = _dia_do_pedido(request.args.get("data"))
             arquivo = request.files.get("foto")
             if arquivo is not None:
+                # ⚑ A POSIÇÃO DO APARELHO VEM JUNTO (24/11/2026), e é só
+                # REFORÇO: vale quando a própria foto não traz o local
+                # dentro dela. A foto sempre ganha do aparelho — foto da
+                # galeria mandada três dias depois tem o local certo dentro,
+                # e a posição do celular naquele instante seria a do
+                # escritório.
+                def _num(chave):
+                    bruto = request.form.get(chave)
+                    try:
+                        return float(bruto) if bruto not in (None, "") else None
+                    except (TypeError, ValueError):
+                        return None
                 r = svc.anexar(s, obra_id, dia, arquivo.read(),
                                arquivo.filename or "foto.jpg",
                                legenda=request.form.get("legenda", ""),
-                               usuario=usuario)
+                               usuario=usuario,
+                               local_do_aparelho={
+                                   "latitude": _num("latitude"),
+                                   "longitude": _num("longitude"),
+                                   "precisao_m": _num("precisao_m")})
                 s.commit()
                 return jsonify({"ok": True, **r})
             d = request.get_json(silent=True) or {}

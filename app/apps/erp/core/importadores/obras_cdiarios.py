@@ -133,9 +133,10 @@ _COLUNAS = {
 # Em Execução (80), Concluída (50), Acervo Técnico (31), Concluída com Dívida
 # (14), Distratada (3), Criação Centros (3), Especial (1), Aguardando O.S (1).
 #
-# ⚠️ "ESPECIAL" NÃO TEM PAR NO ERP e fica de fora de propósito: a obra
-# mantém a fase que já tem e o relatório avisa. Inventar uma fase para ela
-# seria marcar obra errada num campo que decide o que aparece no diário.
+# ⚑ "ESPECIAL" VIRA CONCLUÍDA — decisão dele, em 24/11/2026, depois de ver a
+# pergunta na tela: *"Especial tratar como obra Concluída tb, que não aparece
+# mais diário."* É 1 obra. O que ele quer é que ela saia do diário, e
+# "Concluída" é a fase que faz isso.
 #
 # ⚠️ E TRÊS FASES DO ERP NUNCA VÊM DAQUI — Paralisada, Recebimento provisório
 # e Recebimento definitivo não existem na planilha. Quem usar essas fases
@@ -150,6 +151,7 @@ FASES_DA_PLANILHA = {
     "aguardando o.s": "AGUARDANDO_OS",
     "aguardando os": "AGUARDANDO_OS",
     "aguardando o.s.": "AGUARDANDO_OS",
+    "especial": "CONCLUIDA",
     "paralisada": "PARALISADA",
     "recebimento provisorio": "RECEBIMENTO_PROVISORIO",
     "recebimento definitivo": "RECEBIMENTO_DEFINITIVO",
@@ -375,6 +377,22 @@ def ler_planilha(conteudo: bytes) -> list[dict[str, Any]]:
     # Os dois: o normalizado para CASAR, e o original para a mensagem de erro
     # — quem lê "achei estas: contrato, objeto" tem de reconhecer a própria
     # planilha, e não uma versão minúscula e sem acento dela.
+    return _entender(bruto_cab, list(it))
+
+
+def _entender(bruto_cab, brutas) -> list[dict[str, Any]]:
+    """Do cabeçalho e das linhas CRUAS para as linhas que a importação usa.
+
+    ⚑ MORA SEPARADO DESDE 24/11/2026, quando a leitura passou a ter duas
+    fontes: o arquivo .xlsx e a planilha ONLINE. Ele, com razão: *"pra que eu
+    vou fazer download de planilha se a planilha é online? Qual o sentido de
+    eu ficar fazendo download para fazer importação?"*
+
+    As duas fontes entregam a mesma coisa — um cabeçalho e um monte de
+    linhas. Tudo o que vem depois (casar coluna, ler data, partir
+    coordenada, traduzir a fase) é regra, e regra fica num lugar só. Duas
+    cópias divergiriam no primeiro ajuste.
+    """
     cabecalho = [_chave(c) for c in bruto_cab]
     como_escrito = [str(c or "").strip() for c in bruto_cab]
 
@@ -394,7 +412,7 @@ def ler_planilha(conteudo: bytes) -> list[dict[str, Any]]:
         return linha[i] if i is not None and i < len(linha) else None
 
     linhas = []
-    for numero, bruta in enumerate(it, start=2):
+    for numero, bruta in enumerate(brutas, start=2):
         if not any(c is not None and str(c).strip() for c in bruta):
             continue
         if len(linhas) >= TETO_DE_LINHAS:
@@ -432,6 +450,71 @@ def ler_planilha(conteudo: bytes) -> list[dict[str, Any]]:
             continue
         linhas.append(linha)
     return linhas
+
+
+# ===========================================================================
+# LER A PLANILHA ONLINE — sem download, sem upload
+#
+# Ele, em 24/11/2026: *"pra que eu vou fazer download de planilha se a
+# planilha é online? Qual o sentido de eu ficar fazendo download para fazer
+# importação? Por que tu não atualiza direto a planilha que está online?"*
+#
+# Razão nenhuma. A emissão de NFS-e lê ESTA MESMA planilha ao vivo há meses,
+# e a importação de pessoas do DP também (`planilha_dp.carregar`). Só esta
+# pedia arquivo.
+#
+# ⚑ A CREDENCIAL É A QUE JÁ EXISTE (`GOOGLE_CREDENTIALS_BASE64`), pela mesma
+# porta que o resto do monorepo usa. Não se cria variável nova para
+# credencial.
+#
+# ⚑ O ERRO VOLTA POR EXTENSO, nunca só no log. É a lição de 17/11/2026, que
+# custou uma rodada dele: *"Meu, não tá funcionando. Você precisa me mostrar
+# o que tá acontecendo."* Log é para quem abre o Render; ele abre a TELA.
+#
+# CUSTO: UMA leitura da planilha por importação — não uma por obra. Vai na
+# cota do Google que é dividida com o painel, o Análise de SPs e a emissão
+# de nota.
+# ===========================================================================
+import os
+
+# O id da planilha "Bases de Dados Pipefy", onde mora a aba C. Diários. É a
+# mesma que a emissão de NFS-e abre (`app/apps/emissaonf/worker.py`).
+PLANILHA_ID = os.getenv("ERP_CDIARIOS_SHEET_ID",
+                        "1C7MWQmr5uFGWuJ18osUNDapiojVXzQ_GxMMDQqxPsBk")
+
+
+def ler_online(planilha_id: str = "") -> dict[str, Any]:
+    """A aba C. Diários lida direto do Google.
+
+    Devolve `{"linhas": [...], "aba": ..., "planilha": ..., "erro": ...}` —
+    o erro vem preenchido quando não deu, para a tela poder mostrar.
+    """
+    chave = planilha_id or PLANILHA_ID
+    try:
+        from app.apps.analisesps.credenciais import cliente, com_retry
+        livro = com_retry(lambda: cliente().open_by_key(chave))
+        nome_aba = next((w.title for w in com_retry(lambda: livro.worksheets())
+                         if _e_a_aba_certa(w.title)), None)
+        if nome_aba is None:
+            abas = ", ".join(w.title for w in com_retry(lambda: livro.worksheets()))
+            return {"linhas": [], "planilha": chave, "aba": "",
+                    "erro": "Não achei a aba da C. Diários nesta planilha. "
+                            f"As abas são: {abas}."}
+        aba = com_retry(lambda: livro.worksheet(nome_aba))
+        brutas = com_retry(lambda: aba.get_all_values())
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("ERP/obras: não deu para ler a C. Diários online (%s)", e)
+        return {"linhas": [], "planilha": chave, "aba": "",
+                "erro": str(e)[:500]}
+    if len(brutas) < 2:
+        return {"linhas": [], "planilha": chave, "aba": nome_aba,
+                "erro": f'A aba "{nome_aba}" veio vazia.'}
+    try:
+        linhas = _entender(brutas[0], brutas[1:])
+    except ErroValidacao as e:
+        return {"linhas": [], "planilha": chave, "aba": nome_aba,
+                "erro": str(e)}
+    return {"linhas": linhas, "planilha": chave, "aba": nome_aba, "erro": ""}
 
 
 def colunas_ignoradas(conteudo: bytes) -> list[dict[str, str]]:
@@ -507,10 +590,19 @@ def _como_se_le(campo: str, valor: Any) -> str:
     return str(valor)
 
 
-def importar(s: Session, conteudo: bytes, usuario_id: Optional[int] = None, *,
-             simular: bool = True, regravar: bool = False) -> dict[str, Any]:
-    """Lê a C. Diários, confere e (se mandarem) completa o cadastro das obras."""
-    linhas = ler_planilha(conteudo)
+def importar(s: Session, conteudo: Optional[bytes] = None,
+             usuario_id: Optional[int] = None, *,
+             simular: bool = True, regravar: bool = False,
+             linhas: Optional[list[dict[str, Any]]] = None) -> dict[str, Any]:
+    """Confere e (se mandarem) completa o cadastro das obras.
+
+    As linhas vêm do arquivo .xlsx (`conteudo`) ou já prontas da planilha
+    online (`linhas`, de `ler_online`). Daqui para baixo é a mesma coisa.
+    """
+    if linhas is None:
+        if conteudo is None:
+            raise ErroValidacao("Nada para importar.")
+        linhas = ler_planilha(conteudo)
     if not linhas:
         raise ErroValidacao("Não achei nenhuma obra na planilha.")
 
@@ -575,8 +667,13 @@ def importar(s: Session, conteudo: bytes, usuario_id: Optional[int] = None, *,
                 "para_rotulo": fase_em_portugues(l["fase"]),
                 "na_planilha": l["fase_texto"]})
             if not simular:
-                svc_obras.mudar_fase(s, obra["id"], l["fase"], None,
-                                     observacao="C. Diários")
+                # ⚑ A OBSERVAÇÃO LEVA O TEXTO DA PLANILHA JUNTO. Seis meses
+                # depois, "por que esta obra está Concluída?" se responde
+                # abrindo o histórico de fase dela: "C. Diários: Especial".
+                # Sem isso, a trilha diz de onde veio mas não o quê.
+                svc_obras.mudar_fase(
+                    s, obra["id"], l["fase"], None,
+                    observacao=f"C. Diários: {l['fase_texto']}".strip(": "))
 
         if not novos:
             if not (l.get("fase") and l["fase"] != obra.get("fase")):

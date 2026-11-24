@@ -651,9 +651,80 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O "Total" do analítico sem juros e multa, e a conta do cenário guardada — 24/11/2026
+
+**NÃO PUBLICADO** — no ramo, à espera do "pode" do dono. Sem migração.
+
+### 1. A coluna "Total" do Despesas Analítico não somava juros e multa
+
+O dono, com o relatório completo aberto, filtrando só o pago: *"quando eu somo
+pago, juros e multa, bate com o total de custos e despesas no executado. Mas a
+coluna que fala total não está somando o pago mais os juros mais a multa."*
+
+Era verdade, na planilha, no PDF **e na tela**: o total de cada LINHA era só
+`pago + a pagar`, enquanto o total do alto da tela (e o DRE) sempre contou os
+encargos pagos. Agora o total da linha é `pago + a pagar + juros e multa pagos`,
+e a soma dos totais das linhas dá o total da tela (há teste com banco).
+
+**Decisão tomada junto, e que o dono pode reverter:** um título ainda EM ABERTO
+pode trazer juros e multa PREVISTOS. O painel inteiro só conta encargo pago;
+então nas colunas Juros e Multa passou a aparecer só o que foi pago — senão a
+linha em aberto voltaria a ter um Total que não é a soma das vizinhas. O
+previsto continua na linha (`encargo_previsto`), sem coluna. O valor que se
+compara com a conta corrente (`valor_extrato`) segue com os números crus, como
+era. **Não verificado:** se a base real tem título em aberto com juros previsto
+(o cenário de teste tem, de propósito).
+
+### 2. A conta do cenário fica guardada em memória
+
+Pergunta dele: *"quando eu abro uma determinada obra, ele vai montar a ficha e
+isso demora. Quando eu fecho e volto, tem que fazer todo o recálculo. A gente
+não poderia gravar temporariamente esse cálculo? (…) se for mexer muita coisa,
+deixa assim mesmo."*
+
+Mexia pouco, e o ganho é maior que a ficha: Resultado, Por sócio, Evolução, a
+ficha de cada obra e os relatórios pedem TODOS a mesma conta
+(`web._calcular_cenario`), e cada clique a refazia do zero. Agora ela é guardada
+(`consultas.lembrando_o_grande`) e vale enquanto NADA de que ela depende mudar:
+
+- **a base** — o carimbo da última carga, o mesmo das listas pequenas; e
+  `esquecer_listas`, que as alterações de classificação pelo painel já chamam;
+- **as regras** — a chave é uma impressão (`_impressao_do_cenario`) do cenário
+  inteiro, dos parâmetros gerais, dos sócios e dos ajustes: mudou qualquer um,
+  a chave muda sozinha, sem ninguém precisar lembrar de invalidar;
+- **prazo de 30 minutos**, como rede de segurança para um caminho de alteração
+  que escape das duas travas de cima;
+- **teto de 3 contas guardadas** (a mais antiga sai): a chave muda a cada regra
+  alterada, e sem teto uma tarde de ajustes encheria a memória do serviço.
+
+⚠️ **Quem usa o resultado de `_calcular_cenario` NÃO PODE alterá-lo** — o mesmo
+dicionário é entregue a todos os pedidos. Conferido nos usos de hoje; código
+novo que ordenar ou acrescentar em cima dele tem de copiar antes.
+
+**Não medido na base real.** No banco de teste (minúsculo) a ficha foi de 89 ms
+para 26 ms; o ganho de verdade depende do tamanho da base. Vale só dentro do
+serviço: reiniciou (publicação, renovação), a primeira abertura refaz.
+
 ## Resultado por sócio, ficha da obra e conta corrente no DRE — 24/11/2026
 
-**NÃO PUBLICADO** — está no ramo, à espera do "pode" do dono. **Sem migração.**
+**PUBLICADO em 24/11/2026, 14:00 UTC** (`3b550e92`), com o "pode" do dono. **Sem
+migração.**
+
+⚠️ **Foi publicado com o GitHub Actions VERMELHO, e não por causa do painel.** A
+suíte do GitHub falhava na `main` desde 23/11 (duas publicações de outras áreas
+antes desta) num teste do ERP:
+`tests/test_manutencao_limpeza_banco.py::test_nenhuma_area_de_movimento_leva_obra_junto`
+— o "zerar" tenta `DELETE FROM eventos` e o gatilho da tabela recusa ("eventos é
+append-only"). **Só aparece com o banco de teste criado do zero**, que é como o
+GitHub roda; num banco de teste já usado ele passa — por isso a suíte local
+dava verde. Reproduzido aqui apagando os bancos de teste: 1 falha, essa.
+Com o banco já usado: 12.818 passaram, nenhuma falha. O chat do painel NÃO
+mexeu nisso (é do ERP); o dono foi avisado para passar ao chat do ERP.
+
+**Lição para quem publica:** a ferramenta de ler o log do GitHub só devolve o
+FIM do log (teto de 5.000 linhas), e o fim é um despejo do Postgres — o nome do
+teste que falhou fica fora do alcance. Para descobrir, apagar os bancos
+`erp_teste_gw*` e rodar a suíte inteira local: é a condição do GitHub.
 
 O dono pediu três coisas, viu um desenho clicável com números inventados (página
 privada dele no claude.ai, fora do repositório) e confirmou: *"Quanto à tela 1,
@@ -712,6 +783,34 @@ imaginar, está mais ou menos no rumo"*. Foi lido como confirmação das três.
 - **A última linha da grade NÃO tem os ajustes** (retiradas, aportes): é a soma
   das quotas. Os ajustes continuam na "posição de cada um", no Resultado, e a
   tela diz isso.
+
+### Pessoal, caixa e analítico na ficha — pedido logo depois de publicar (24/11/2026)
+
+**PUBLICADO em 24/11/2026, 15:38 UTC** (`29bea5e2`), com o "pode" do dono. Sem
+migração. Suíte local inteira, com a `main` dentro: 12.829 passaram, nenhuma
+falha. O GitHub Actions ainda rodava na hora — e segue vermelho na `main` pelo
+teste de limpeza do ERP descrito acima, que não é do painel.
+
+O dono abriu a ficha no ar e pediu: *"o custo com despesa com pessoal, mês a
+mês, bem como o caixa da obra (…) isso preciso que saia na planilha também, e
+no relatório e planilha eu queria que também saísse o analítico das despesas e
+receitas, que aí fica mais completo."*
+
+- **Mês a mês** ganhou três colunas: "— da qual, pessoal" (a parte da despesa
+  que foi mão de obra: está DENTRO da despesa, não soma de novo), "Caixa do
+  mês" e "Caixa acumulado". O caixa é o MESMO da Evolução — o que a obra
+  recebeu menos o que pagou (com aporte), e o acumulado já descontada a
+  estrutura, que é o que decide os juros. A coluna "Acumulado" virou
+  "Resultado acumulado" para não confundir com a de caixa.
+- **Relatório e planilha da obra** ganharam duas abas no fim: "Receitas -
+  analitico" e "Despesas - analitico", lançamento a lançamento
+  (`consultas.lancamentos_da_obra`, a mesma régua da apuração; há teste
+  conferindo que a soma dá a despesa e a receita da ficha). O imposto retido
+  aparece na lista de receitas marcado como "Retido na fonte" e fica fora do
+  total. **O analítico NÃO aparece na tela** — ele pediu no arquivo; na tela o
+  administrador já abre os lançamentos pelo nome do grupo ou da categoria.
+- No PDF, lista com mais de 2.500 lançamentos sai cortada (com aviso) e
+  completa na planilha — regra que o PDF do painel sempre teve.
 
 ### O que NÃO foi verificado
 

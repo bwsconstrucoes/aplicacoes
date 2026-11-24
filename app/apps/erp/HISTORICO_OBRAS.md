@@ -37,13 +37,11 @@ acompanhamento de processos.
 treze campos novos e a fase. Está no ramo `claude/oi-vjvrn8`, testado, **sem
 migração**, esperando o "pode" dele.
 
-**⚠️ DEPOIS DE PUBLICAR, ELE PRECISA RODAR A IMPORTAÇÃO** em Importar › Obras
-pela C. Diários: baixar a planilha como Excel, conferir e gravar. **Nada muda
-sozinho.** Esperado no arquivo de hoje: ~179 obras mudam de fase e **98 somem
-do diário**.
-
-**⚠️ Pendente com ele:** a que fase corresponde **"Especial"** (1 obra). Hoje
-ela fica com a fase que já tem e a tela pede a tradução.
+**⚠️ DEPOIS DE PUBLICAR, ELE PRECISA RODAR A IMPORTAÇÃO** em Importar ›
+Cadastro das obras (C. Diários): apertar "Conferir sem gravar" — **não precisa
+baixar nada, a leitura é online** — e, se bater, "Completar o cadastro".
+**Nada muda sozinho.** Esperado: ~179 obras mudam de fase e **98 somem do
+diário**.
 
 Publicado e no ar: o filtro de fase no diário (19/11) e, de 24/11, a mudança
 de fase como função de serviço (`core/cadastros/obras.mudar_fase`).
@@ -73,6 +71,145 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 24/11/2026 — A foto do diário sabe onde foi tirada; e o clima saiu da gaveta
+
+**Ele, cobrando o que tinha sido prometido e não feito:**
+
+> *"Você disse que ia trazer baseado no registro do tempo, né? (…) E eu não vi
+> em canto nenhum no diário. Isso aqui ficou feito?"*
+
+Não tinha ficado. A coluna `clima_medido` nasceu na migração 092 em
+08/11/2026, com a decisão dele (*"a chuva da estação meteorológica entra — eu
+acho que é interessante sim colocar"*), e o próprio `HISTORICO.md` registrava:
+*"falta ligar o serviço, que é dependência nova e ainda não entrou."* Ficou
+**dezesseis dias** só como lugar vazio. Agora foi ligado.
+
+#### ⚠️ O DEFEITO DE BASE DAS FOTOS, que ninguém tinha visto
+
+Para caber no PDF, a foto era reduzida e **regravada** — e regravar **apaga o
+EXIF**, que é onde o celular grava a hora e o GPS. Ou seja: **a informação
+chegava e era destruída no envio**, desde 14/11. Não era "falta fazer": era
+coisa sendo jogada fora todo dia.
+
+**O conserto é a ORDEM**, e é o que o teste `test_o_local_sobrevive_ao_envio`
+guarda: **ler → carimbar → guardar**. Invertida, a leitura acontece depois da
+recompressão e não acha nada.
+
+#### Os cinco itens que ele mandou fazer
+
+1. **Ler o que a foto traz dentro** (hora e GPS), antes de qualquer redução.
+2. **Pedir a posição ao aparelho** no envio, como REFORÇO.
+3. **Mostrar o local na legenda**, na tela e no papel.
+4. **Carimbar na imagem.**
+5. **Ligar o clima** pela coordenada da obra.
+
+#### ⚑ A FOTO SEMPRE GANHA DO APARELHO, e é a decisão mais importante daqui
+
+O local honesto é **onde a foto foi tirada**, que está gravado dentro dela —
+não onde está quem envia. Foto da galeria mandada três dias depois tem o local
+certo dentro; a posição do celular naquele instante seria a do escritório.
+
+Por isso a procedência viaja junto e aparece escrita:
+
+- **"local gravado pela câmera"** (EXIF) — prova onde a foto foi tirada;
+- **"local informado pelo aparelho no envio"** — prova onde estava quem
+  enviou, que é outra coisa;
+- **sem local** — e aí **não se carimba**.
+
+⚠️ **Carimbo em foto sem local seria o sistema AFIRMANDO o que não sabe**, num
+papel que a fiscalização assina. Foto sem localização entra igual, sem
+carimbo, e a tela diz por quê.
+
+#### O carimbo: véu, não tarja
+
+A primeira maquete foi uma tarja preta embaixo. Ele corrigiu:
+
+> *"O carimbo ele fica sobre a foto, mas ele não apaga os dados da foto. Ele
+> fica como se fosse uma… não é uma marca d'água, porque a marca d'água
+> normalmente ela é meio transparente, mas é como se fosse uma marca d'água
+> viva sobre a imagem. Pelo menos é assim que as pessoas têm feito aqui
+> quando eles tiram uma foto."*
+
+Então: véu escuro de pouca opacidade e texto cheio com contorno por cima. O
+que estava na foto continua visível. **O teste `test_o_carimbo_nao_apaga_a_foto`
+prova isso objetivamente**: conta as cores na faixa do carimbo — tarja sólida
+teria uma só.
+
+#### O clima
+
+Open-Meteo: gratuito, **sem cadastro nem chave** (chave seria mais um segredo
+para guardar e renovar, contra a regra da casa). **Não é dependência nova de
+código** — usa o `requests`, que já existe. ⚠️ **É host novo de saída**:
+`archive-api.open-meteo.com`.
+
+- **uma consulta por obra e por dia, UMA VEZ NA VIDA** — medido, fica
+  guardado e não se pergunta de novo;
+- **não mede o futuro** (previsão não é prova) nem **obra sem coordenada**
+  (chutar pelo município poria a medição a quilômetros do canteiro);
+- **não substitui o tempo informado pela obra** — são duas colunas, e quando
+  divergem isso é informação, não erro;
+- **nunca derruba a tela**: serviço fora do ar vira "não mediu".
+
+⚑ **A coordenada da obra veio da C. Diários**, na importação publicada no
+mesmo dia. A peça que faltava para o clima entrou por outro caminho.
+
+**Na tela o clima agora se lê em português.** Antes a linha despejava o JSON
+cru — e ninguém nunca viu, porque a coluna jamais foi preenchida.
+
+**Migração 127.** Arquivo compartilhado mexido: `routes.py`.
+
+---
+
+
+### 24/11/2026 (fim do dia) — A planilha se lê ONLINE; download era trabalho à toa
+
+**Ele, e é a terceira correção de rumo do mesmo dia:**
+
+> *"Pra que eu vou fazer download de planilha se a planilha é online? Qual o
+> sentido de eu ficar fazendo download para fazer importação? Por que tu não
+> atualiza direto a planilha que está online?"*
+
+**Razão nenhuma.** E o pior: **a emissão de NFS-e já lia ESTA MESMA planilha
+ao vivo há meses** (`app/apps/emissaonf/cdiarios.py`), e a importação de
+pessoas do DP também (`planilha_dp.carregar`, desde 16/11). Só esta pedia
+arquivo. Terceiro lugar lendo a mesma planilha, e o único que obrigava
+trabalho manual.
+
+**Agora:** o botão "Conferir" lê a aba C. Diários direto do Google. Sem
+baixar, sem subir. Uma leitura por importação — não uma por obra — com a
+credencial que o monorepo já usa (`GOOGLE_CREDENTIALS_BASE64`), na cota
+dividida com o painel, o Análise de SPs e a emissão de nota.
+
+**O arquivo .xlsx ficou**, dobrado atrás de *"Google fora do ar? Mandar o
+arquivo à mão"*, e a tela diz para que serve. Não é gosto: sem ele, uma pane
+no Google ou uma credencial vencida deixariam o cadastro das obras sem
+nenhum caminho. Escolhido um arquivo, ele manda — quem abriu aquela gaveta
+fez por um motivo.
+
+**Duas decisões que valem mais que o código:**
+
+1. **A RÉGUA É UMA SÓ.** Entender o cabeçalho, casar coluna, ler data, partir
+   coordenada e traduzir a fase mora em `_entender()`, e as duas fontes
+   passam por ela. Há teste provando que online e arquivo devolvem
+   **exatamente** a mesma coisa — duas leituras divergiriam no primeiro
+   ajuste e ninguém perceberia até um campo entrar errado.
+2. **O ERRO VOLTA POR EXTENSO PARA A TELA.** É a lição de 17/11/2026, que já
+   custou uma rodada dele (*"Meu, não tá funcionando. Você precisa me mostrar
+   o que tá acontecendo"*): credencial faltando, planilha renomeada, aba
+   trocada — tudo isso viraria "não aconteceu nada" se ficasse só no log.
+   Verificado na tela, sem credencial: aparece a frase inteira dizendo que a
+   `GOOGLE_CREDENTIALS_BASE64` não está definida.
+
+**O id da planilha** fica em `PLANILHA_ID`, com a variável
+`ERP_CDIARIOS_SHEET_ID` para trocar sem mexer no código. É a mesma planilha
+que a emissão de NFS-e abre.
+
+⚠️ **Conferir e gravar são duas leituras.** Lendo online, a planilha pode
+mudar entre uma e outra — por isso gravar relê, e o relatório que volta é o
+do que foi gravado de verdade, não o da conferência.
+
+---
 
 ### 24/11/2026 (tarde) — A C. Diários passa a ser espelhada, e a aba estava errada
 
@@ -117,11 +254,19 @@ serviço, responsável técnico, fiscalização, início e fim de vigência, ART
 | Distratada | DISTRATADA | 3 |
 | Criação Centros | CRIACAO | 3 |
 | Aguardando O.S | AGUARDANDO_OS | 1 |
-| **Especial** | **— sem par —** | 1 |
+| Especial | CONCLUIDA | 1 |
 
-⚠️ **"Especial" não tem par e fica de fora de propósito**: a obra mantém a
-fase que tem e o relatório pede a tradução. Chutar mexeria no que aparece no
-diário.
+**"Especial" vira Concluída** — decisão dele no mesmo dia, depois de ver a
+pergunta na tela: *"Especial tratar como obra Concluída tb, que não aparece
+mais diário."* É 1 obra, e o que ele quer é que ela saia do diário.
+
+⚠️ **A trava continua de pé para valor NOVO**: status que ninguém mapeou não
+vira fase nenhuma — a obra fica com a que tem e o relatório pede a tradução.
+Chutar mexeria no que aparece no diário.
+
+⚑ **O histórico de fase guarda o texto da planilha** ("C. Diários: Especial").
+Seis meses depois, *"por que esta obra está Concluída?"* se responde abrindo
+o histórico dela.
 
 ⚠️ **Três fases do ERP nunca vêm daqui**: Paralisada, Recebimento provisório e
 Recebimento definitivo não existem na planilha. Quem usar essas marca na mão.
@@ -158,7 +303,7 @@ importação deixa de existir. É ferramenta de transição, com data para morre
    que decide o que aparece no diário; misturada numa lista de campos, "179
    obras mudam de fase" passaria sem ninguém ver.
 
-**Pendente com ele:** a que fase corresponde **"Especial"**.
+**Respondido por ele no mesmo dia:** "Especial" é Concluída.
 
 ---
 

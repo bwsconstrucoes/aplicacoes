@@ -87,8 +87,10 @@ def _ids_do_aparelho(conn: Connection, aparelho: dict) -> set[int]:
 def lista_do_aparelho(conn: Connection, aparelho: dict) -> dict:
     hoje = horario.hoje()
     pessoas = []
-    for cid in sorted(_ids_do_aparelho(conn, aparelho)):
-        p = cadastros.colaborador_por_id(conn, cid)
+    # numa consulta só (24/11/2026, "LENTA: lista-sem-internet — 10,9 s"): antes, uma por pessoa da obra
+    gente = cadastros.colaboradores_por_ids(conn, _ids_do_aparelho(conn, aparelho))
+    for cid in sorted(gente):
+        p = gente[cid]
         # Só quem bateria agora com internet: desligado, afastado, inativo no ponto
         # ou fora do período de contrato não entra (se digitar o CPF, vai para
         # conferência e o servidor decide na chegada).
