@@ -154,7 +154,10 @@ def test_a_ordem_e_a_data(base_de_extrato):
 def test_a_tela_abre_e_traz_as_colunas_que_o_dono_pediu(base_de_extrato,
                                                         monkeypatch):
     cliente = _cliente(monkeypatch)
-    html = cliente.get("/painel/extrato?conta=Bradesco+22069-8").get_data(as_text=True)
+    # (a LISTA de lançamentos: desde 24/11/2026 o administrador, com UMA conta
+    # escolhida, cai no "dia a dia, com saldo" — a lista se pede pelo nome)
+    html = cliente.get("/painel/extrato?conta=Bradesco+22069-8"
+                       "&visao=lancamentos").get_data(as_text=True)
     assert "Extrato de Conta Corrente" in html
     for coluna in ("Data", "Cliente ou Fornecedor", "CNPJ/CPF", "Conta",
                    "Categoria", "Documento", "Observação", "Valor"):
