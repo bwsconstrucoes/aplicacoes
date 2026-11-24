@@ -732,7 +732,10 @@ imaginar, está mais ou menos no rumo"*. Foi lido como confirmação das três.
 
 ### Pessoal, caixa e analítico na ficha — pedido logo depois de publicar (24/11/2026)
 
-**NÃO PUBLICADO** — no ramo, à espera do "pode". Sem migração.
+**PUBLICADO em 24/11/2026, 15:38 UTC** (`29bea5e2`), com o "pode" do dono. Sem
+migração. Suíte local inteira, com a `main` dentro: 12.829 passaram, nenhuma
+falha. O GitHub Actions ainda rodava na hora — e segue vermelho na `main` pelo
+teste de limpeza do ERP descrito acima, que não é do painel.
 
 O dono abriu a ficha no ar e pediu: *"o custo com despesa com pessoal, mês a
 mês, bem como o caixa da obra (…) isso preciso que saia na planilha também, e
