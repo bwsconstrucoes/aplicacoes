@@ -33,14 +33,17 @@ acompanhamento de processos.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (24/11/2026):** o acerto de fases em lote (abaixo). Está no
-ramo `claude/oi-vjvrn8`, testado, **sem migração**, esperando o "pode" dele.
-O filtro de fase no diário (19/11) **já foi publicado**.
+**A FAZER (24/11/2026): trazer a fase da C. Diários pelo importador que já
+existe.** Combinado com ele, ainda não construído — ver a decisão de 24/11
+abaixo. É ferramenta de transição: morre quando o Pipefy sair.
 
-**⚠️ A PERGUNTA QUE TRAVA TRABALHO DE VERDADE:** alguma planilha da casa tem
-uma coluna com a **fase ou a situação real** de cada obra? Se tiver, importar
-bate acertar oitenta caixinhas na mão — e isso só ele sabe. Perguntado em
-24/11/2026, ainda sem resposta.
+**⚠️ O QUE TRAVA ISSO, e só ele sabe:** o nome exato da coluna da fase na C.
+Diários e os valores que ela usa. O mapa entre o que a planilha escreve
+("Em execução", "Concluída", …) e as dez fases do ERP é onde isto erra em
+silêncio. Perguntado em 24/11/2026.
+
+Publicado e no ar: o filtro de fase no diário (19/11) e, de 24/11, a mudança
+de fase como função de serviço (`core/cadastros/obras.mudar_fase`).
 
 **Dito a ele e ainda não decidido:**
 
@@ -68,66 +71,88 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
-### 24/11/2026 — A fase nunca veio nas importações, e agora se acerta em lote
+### 24/11/2026 — A fase nunca veio nas importações; o caminho é sincronizar
 
 **Ele, e a pergunta é o diagnóstico:** *"quando importei as obras pro sistema,
 o sistema não copiou as informações de fase, e estão todas desatualizadas.
 Essa importação deve ter sido da planilha C. Diários, como fazer pra
 atualizar?"*
 
-**Conferido, e ele está certo — mas não era a C. Diários:** NENHUMA das duas
-importações de obra traz fase.
+**Conferido: nenhuma das duas importações de obra traz fase.**
 
 - o CSV de obras (`core/importadores/planilhas.py`) lê
   `codigo, nome, cno, municipio, uf, codigo_omie_depto` — e só;
 - a C. Diários (`core/importadores/obras_cdiarios.py`) traz contrato, objeto,
-  município, UF, CNO, cliente, CNPJ, valor, ISS e tributação. **Fase não está
-  na planilha**, nem entre as colunas que ela tem e o importador descarta.
+  município, UF, CNO, cliente, CNPJ, valor, ISS e tributação. **A coluna da
+  fase existe na planilha e o importador nunca olhou para ela.**
 
-Então toda obra nasceu no **padrão da coluna no banco: `CRIACAO`** — "Criação
-/ cadastro" — e lá ficou. Não é dado perdido na importação: é dado que nunca
-existiu do outro lado.
+Toda obra nasceu no **padrão da coluna no banco, `CRIACAO`** — "Criação /
+cadastro" — e lá ficou.
 
 ⚠️ **Isso também explica por que o filtro de 19/11 não escondeu nada:**
 CRIACAO é uma das quatro fases "em andamento". Enquanto as fases não forem
 acertadas, o diário continua mostrando todas as obras — os dois assuntos são
 o mesmo.
 
-**O que foi feito:** a tela de **Obras** ganhou o botão **"⇅ Acertar as
-fases"** (só para quem tem `configurar`). Ele troca a coluna Fase por uma
-caixa de escolha em cada linha; escolhe-se, e um botão grava tudo de uma vez.
+#### ⚠️ UMA TELA FOI FEITA E DESFEITA NO MESMO DIA — e o motivo fica escrito
 
-**Por que nesta tela, e não numa nova:** ela já lista todas as obras com a
-fase de cada uma e já tem os filtros. Filtrar por "Criação / cadastro" e
-acertar o que aparece é exatamente o caminho de quem está arrumando uma base
-importada. É a regra dele de 17/11 ("uma porta só") aplicada.
+A primeira entrega foi um botão "Acertar as fases" na tela de Obras, para
+escolher a fase de cada obra na mão e gravar em lote. **Ele desfez, em duas
+cobranças:**
 
-**Quatro decisões que valem mais que o código:**
+> *"Eu havia feito apenas uma pergunta."*
 
-1. **A REGRA SAIU DO `routes.py`.** `mudar_fase` agora mora em
-   `core/cadastros/obras.py`, e a mudança de UMA obra e a de QUARENTA passam
-   pela mesma função. Com a regra na rota, o lote teria de repetir o registro
-   do histórico e as datas automáticas — e no dia em que uma mudasse, a outra
-   ficaria para trás.
-2. **SÓ VIAJA O QUE MUDOU.** A tela compara com a fase de antes e manda só as
-   diferentes; o serviço, por garantia, não faz nada quando a fase pedida é a
-   que já está lá. Sem isso, um acerto em massa escreveria no histórico de
-   fases de TODA obra uma mudança que não houve — e o histórico de fase é
-   documento.
-3. **DATA NÃO SE REESCREVE.** A data de conclusão (e as de recebimento) só é
-   preenchida quando está vazia. Obra que acabou ano passado não pode receber
-   a data de hoje porque alguém passou pelo acerto em lote. **Este era o
-   estrago mais provável de todos**, e silencioso.
-4. **TUDO OU NADA.** Uma transação só: uma fase inválida no meio não grava
-   nenhuma. Meio acerto aplicado, sem saber onde parou, é pior que nenhum
-   quando são oitenta obras.
+> *"Eu acho que a tela que você fez é desnecessária. Quando eu falo em
+> sincronizar, isso só vai acontecer enquanto o ERP não está definitivo, uma
+> vez que ainda estamos atualizando via pipe."*
 
-**O escopo é conferido obra a obra**, dentro do laço: quem é preso a obras
-não acerta a fase das dos outros mandando uma lista.
+E depois, fechando o desenho:
 
-**Pendente com ele:** se alguma planilha da casa tiver uma coluna com a fase
-ou a situação real de cada obra, importar bate clicar oitenta caixinhas — e
-isso só ele sabe. Perguntado em 24/11.
+> *"Não é o Pipefy que entrega. O Pipefy sincroniza com a planilha C.
+> Diários, e lá temos todos os dados das obras atualizados. Inclusive as
+> fases."*
+
+**Os dois erros, para não repetir:**
+
+1. **Pergunta não é pedido.** Ele perguntou "como fazer pra atualizar?" e
+   recebeu uma funcionalidade. A resposta certa era a conta — "a fase está na
+   planilha, o importador não a lê, dá para ler" — e esperar.
+2. **Trabalho na mão quando existe fonte.** Oitenta caixinhas para escolher à
+   mão um dado que já está atualizado numa planilha, automaticamente, é a
+   ineficiência óbvia que ele cobra desde 17/11. A pergunta que faltou:
+   *de onde esse dado vem hoje?*
+
+**O que FICOU da tela desfeita, e é bom que tenha ficado:** `mudar_fase` saiu
+do `routes.py` para `core/cadastros/obras.py`, com teste. Quem trouxer a fase
+de fora chama a mesma função, e o histórico de fase, a trilha de auditoria e
+as datas automáticas saem iguais venha de onde vier.
+
+**Dois cuidados achados ali que valem para a sincronização**, e os testes
+guardam os dois:
+
+- **regravar a fase que já está lá não faz nada.** Sem isso, cada rodada da
+  sincronização escreveria no histórico de fases de TODA obra uma mudança que
+  não houve — e esse histórico é documento;
+- **data de conclusão não se reescreve.** Só é preenchida quando está vazia.
+  Obra que acabou ano passado não pode receber a data de hoje porque a
+  sincronização passou por ela. É o estrago mais silencioso dessa área.
+
+#### O desenho combinado (ainda não construído)
+
+A fase passa a vir da **C. Diários**, pelo importador que já existe. É
+**ferramenta de transição, com data para morrer**: ele foi explícito que a
+sincronização vale *"enquanto o ERP não está definitivo"*, porque a equipe
+ainda move card no Pipefy e o Pipefy alimenta a planilha. Quando o Pipefy
+sair, a fase passa a viver no ERP e esta leitura é desligada.
+
+⚠️ **A fase é a ÚNICA coisa em que a planilha ganha do ERP.** Para todo o
+resto, o importador não sobrescreve o que já está preenchido (regra 2 do
+`obras_cdiarios.py`). Para a fase é o contrário, de propósito — senão a
+segunda rodada não faz nada.
+
+**Pendente:** o nome exato da coluna e os valores que ela usa. O mapa entre o
+que a planilha escreve e as dez fases do ERP é onde isto erra em silêncio, e
+é informação que só ele tem. Perguntado em 24/11/2026.
 
 ---
 

@@ -10718,9 +10718,10 @@ def api_listar_obras():
 def api_mudar_fase(obra_id: int):
     """A regra mora em `core/cadastros/obras.mudar_fase` — aqui só a porta.
 
-    ⚑ Ela saiu daqui em 24/11/2026, quando nasceu o acerto em lote: duas
-    portas repetindo o registro do histórico e as datas automáticas é o
-    caminho certo para as duas divergirem.
+    ⚑ Ela saiu daqui em 24/11/2026, pela regra da casa: regra de negócio mora
+    em `core/<dominio>/`, nunca no `routes.py`. Quem for trazer a fase de
+    fora (a sincronização com o Pipefy, enquanto ele existir) chama a mesma
+    função, e o histórico de fase sai igual venha de onde vier.
     """
     from app.apps.erp.core.cadastros import obras as svc_obras
     d = request.get_json(silent=True) or {}
@@ -10739,68 +10740,6 @@ def api_mudar_fase(obra_id: int):
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao mudar fase")
-        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
-
-
-@bp.route("/erp/api/obras/fases", methods=["POST"])
-@login_obrigatorio
-@permissao("configurar")
-def api_mudar_fases_em_lote():
-    """ACERTAR A FASE DE VÁRIAS OBRAS DE UMA VEZ (24/11/2026).
-
-    Ele: *"quando importei as obras pro sistema, o sistema não copiou as
-    informações de fase, e estão todas desatualizadas."*
-
-    E era isso mesmo: nem o CSV de obras (`codigo,nome,cno,municipio,uf,
-    codigo_omie_depto`) nem a C. Diários trazem fase. Toda obra nasceu no
-    padrão da coluna — "Criação / cadastro" — e lá ficou. Acertar uma a uma
-    seria abrir a ficha de cada obra, duas idas ao servidor por obra.
-
-    ⚑ PASSA PELA MESMA FUNÇÃO da mudança de uma obra só: histórico de fase,
-    datas automáticas e trilha de auditoria saem iguais. Linha que já está na
-    fase pedida não é tocada e não vira registro de histórico — senão o
-    acerto em lote encheria o histórico de toda obra com uma mudança que não
-    houve.
-
-    ⚑ TUDO OU NADA: uma transação só. Meio acerto aplicado, sem saber onde
-    parou, é pior que nenhum.
-    """
-    from app.apps.erp.core.cadastros import obras as svc_obras
-    d = request.get_json(silent=True) or {}
-    itens = d.get("fases") or []
-    if not isinstance(itens, list) or not itens:
-        return jsonify({"ok": False,
-                        "erro": "Nenhuma fase para acertar."}), 400
-    if len(itens) > 500:
-        return jsonify({"ok": False,
-                        "erro": "Muitas obras de uma vez (máximo 500)."}), 400
-    try:
-        with get_session() as s:
-            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
-            atual = _usuario_logado(s)
-            mudadas = []
-            for item in itens:
-                try:
-                    obra_id = int(item.get("obra_id"))
-                except (TypeError, ValueError):
-                    raise ErroValidacao("Obra inválida na lista.")
-                # O escopo é conferido obra a obra: quem é preso a obras não
-                # acerta a fase das dos outros por uma lista.
-                exigir_obra_no_escopo(s, atual, obra_id)
-                r = svc_obras.mudar_fase(s, obra_id, item.get("fase") or "",
-                                         atual,
-                                         observacao=d.get("observacao") or "")
-                if r["mudou"]:
-                    mudadas.append({"obra_id": obra_id, **r})
-            s.commit()
-        return jsonify({"ok": True, "mudadas": len(mudadas),
-                        "sem_mudanca": len(itens) - len(mudadas)})
-    except ErroValidacao as e:
-        return jsonify({"ok": False, "erro": str(e)}), 400
-    except ErroNaoEncontrado:
-        raise        # recusa de escopo vira 404, nunca 500
-    except Exception as e:
-        logger.exception("ERP: falha ao acertar as fases em lote")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
