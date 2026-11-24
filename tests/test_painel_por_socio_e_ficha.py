@@ -438,3 +438,105 @@ def test_o_dre_agrupa_os_pagamentos_por_conta_corrente(com_socios, monkeypatch):
     # as outras duas quebras continuam como eram
     html = _cliente(monkeypatch).get("/painel/dre?quebra=categoria").get_data(as_text=True)
     assert "Despesas por Categoria" in html and "Total pago" not in html
+
+
+# ===========================================================================
+# 3. A conta do cenário fica GUARDADA — e é refeita quando algo muda
+# ===========================================================================
+# 24/11/2026, o dono: "quando eu abro uma determinada obra, ele vai montar a
+# ficha e isso demora. Quando eu fecho e volto, tem que fazer todo o recálculo.
+# A gente não poderia gravar temporariamente esse cálculo?"
+#
+# O perigo de guardar conta é mostrar número velho. Por isso o que se prova
+# aqui é mais o que DERRUBA a conta guardada do que o que a mantém.
+def test_o_grande_guardado_tem_teto_e_prazo(monkeypatch):
+    import time
+    from app.apps.painel import consultas
+    monkeypatch.setattr(consultas, "_carimbo_da_base", lambda: "carga-1")
+    consultas.esquecer_listas()
+    feitas = []
+
+    def conta(nome):
+        return lambda: feitas.append(nome) or nome.upper()
+
+    assert consultas.lembrando_o_grande("f", "a", conta("a"), maximo=2) == "A"
+    assert consultas.lembrando_o_grande("f", "a", conta("a"), maximo=2) == "A"
+    assert feitas == ["a"]                                  # a segunda veio da memória
+    # o terceiro resultado da família empurra o mais antigo para fora
+    consultas.lembrando_o_grande("f", "b", conta("b"), maximo=2)
+    consultas.lembrando_o_grande("f", "c", conta("c"), maximo=2)
+    consultas.lembrando_o_grande("f", "a", conta("a"), maximo=2)
+    assert feitas == ["a", "b", "c", "a"]
+    assert len([k for k in consultas._LEMBRADO if k[0] == "grande"]) == 2
+    # passou do prazo: refaz
+    agora = time.monotonic()
+    monkeypatch.setattr(time, "monotonic", lambda: agora + 3600)
+    consultas.lembrando_o_grande("f", "a", conta("a"), maximo=2, validade=1800)
+    assert feitas[-2:] == ["a", "a"]
+    monkeypatch.setattr(time, "monotonic", lambda: agora)
+    # entrou carga nova: tudo que estava guardado fala da base velha
+    monkeypatch.setattr(consultas, "_carimbo_da_base", lambda: "carga-2")
+    consultas.lembrando_o_grande("f", "c", conta("c"), maximo=2)
+    assert feitas[-1] == "c" and len([k for k in consultas._LEMBRADO if k[0] == "grande"]) == 1
+    consultas.esquecer_listas()
+    assert not consultas._LEMBRADO and not consultas._FILAS_DOS_GRANDES
+
+
+@banco
+def test_a_conta_do_cenario_e_guardada_e_refeita_quando_algo_muda(com_socios, monkeypatch):
+    from app.apps.painel import cenarios, consultas, prestacao_dados, web
+    de_fato = web._calcular_cenario_de_fato
+    contas = []
+    monkeypatch.setattr(web, "_calcular_cenario_de_fato",
+                        lambda c: contas.append(c["id"]) or de_fato(c))
+
+    def calcular():
+        return web._calcular_cenario(cenarios.completo(com_socios))
+
+    primeiro = calcular()
+    assert calcular() is primeiro and len(contas) == 1      # a segunda não refez
+
+    # abrir a ficha de duas obras e o Resultado: a MESMA conta, sem refazer
+    cliente = _cliente(monkeypatch)
+    for caminho in (f"/painel/prestacao/obra?cenario={com_socios}&obra=MUITA GENTE",
+                    f"/painel/prestacao/obra?cenario={com_socios}&obra=POUCA GENTE",
+                    f"/painel/prestacao/resultado?cenario={com_socios}",
+                    f"/painel/prestacao/por-socio?cenario={com_socios}"):
+        assert cliente.get(caminho).status_code == 200, caminho
+    assert len(contas) == 1
+
+    # CADA coisa de que a conta depende a derruba — número velho é o que não pode
+    socios = {s["nome"]: s["id"] for s in prestacao_dados.socios()}
+    mudancas = (
+        ("uma regra do cenário", lambda: cenarios.gravar_periodos(
+            com_socios, "grupo", "Administrativas", [("", 50, 0)])),
+        ("quem divide", lambda: cenarios.salvar_participacao(
+            com_socios, socios["Sócio A"], 30, obra="POUCA GENTE")),
+        ("um parâmetro geral", lambda: prestacao_dados.salvar_config("taxa_adm_pct", "2.5")),
+        ("um sócio novo", lambda: prestacao_dados.salvar_socio("Sócio C")),
+        ("a base (classificação alterada pelo painel)", consultas.esquecer_listas),
+    )
+    from app.apps.painel import db as painel_db
+    with painel_db.conexao() as conn:
+        antes = conn.execute("SELECT valor FROM config WHERE chave = 'taxa_adm_pct'").fetchone()
+    try:
+        for n, (o_que, mudar) in enumerate(mudancas, start=2):
+            mudar()
+            calcular()
+            assert len(contas) == n, f"mudou {o_que} e a conta guardada continuou valendo"
+            calcular()
+            assert len(contas) == n, f"depois de {o_que}, a conta nova não ficou guardada"
+    finally:
+        # o banco de teste é reaproveitado: o parâmetro volta ao que era
+        with painel_db.conexao() as conn:
+            conn.execute("DELETE FROM config WHERE chave = 'taxa_adm_pct'")
+            if antes:
+                conn.execute("INSERT INTO config (chave, valor) VALUES ('taxa_adm_pct', ?)",
+                             (antes[0],))
+            conn.commit()
+        consultas.esquecer_listas()
+
+    # e a regra nova está de fato na conta nova: metade do aluguel ficou no principal…
+    # (sem projeto principal neste cenário, "fica" não tem para onde ir: o que se
+    # confere aqui é só que a conta refeita não é a antiga)
+    assert calcular() is not primeiro

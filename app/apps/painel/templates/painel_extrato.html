@@ -39,7 +39,10 @@
 
 <div class="tabela-barra" style="margin-bottom:12px">
   <span>
-    {% for chave, rotulo in [('lancamentos', 'Lançamentos da conta'),
+    {# "Dia a dia, com saldo" (24/11/2026) é a visão para pôr ao lado do
+       extrato do banco; a lista serve para procurar em várias contas. #}
+    {% for chave, rotulo in ([('saldo', 'Dia a dia, com saldo')] if pode_ver_saldo else []) + [
+                             ('lancamentos', 'Lista de lançamentos'),
                              ('transferencias', 'Transferências entre contas')] %}
       {% if chave == visao %}
         <b>{{ rotulo }}</b>
@@ -51,7 +54,9 @@
   </span>
 </div>
 
-{% if visao == 'transferencias' %}
+{% if visao == 'saldo' %}
+{% include "painel_extrato_saldo.html" %}
+{% elif visao == 'transferencias' %}
 <p class="cartao-dica">
   No OMIE, <b>uma transferência são dois lançamentos separados</b> — um saindo
   de uma conta, outro entrando na outra, sem nada ligando um ao outro. Aqui eles

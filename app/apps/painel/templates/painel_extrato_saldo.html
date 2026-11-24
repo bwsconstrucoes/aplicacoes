@@ -1,0 +1,275 @@
+{# O EXTRATO CONFERÍVEL (24/11/2026) — incluído por `painel_extrato.html` na
+   visão "Dia a dia, com saldo". O dono: "o extrato de um lado e a conta do
+   outro. E conseguir visualizar o saldo do dia. E naquele extrato do painel,
+   eu poder enxergar cada título e a que se refere (…) Se for rateado em
+   obras, a gente poder clicar e expandir."
+
+   Uma conta, um período. Uma linha por movimento do banco; cada dia fecha com
+   o saldo dele. O saldo de UM dia é informado por quem tem o extrato do banco
+   na mão — o resto sai dele. Só o administrador chega aqui. #}
+<style>
+  /* o texto quebra, o dinheiro não: assim as três colunas de valor cabem na
+     tela sem rolar de lado — e o saldo, que é o que se confere, fica à vista */
+  .ext-saldo td.dados { white-space: nowrap; }
+  .ext-saldo thead th { white-space: normal; }
+  .ext-saldo td.desc { max-width: 240px; }
+  /* no celular a tabela rola de lado; o saldo — o que se confere — fica preso à direita */
+  .ext-saldo td:last-child, .ext-saldo thead th:last-child { position: sticky; right: 0; }
+  .ext-saldo td:last-child { background: var(--branco); box-shadow: -6px 0 6px -6px rgba(0, 0, 0, .18); }
+  .ext-saldo td.dados small, .ext-saldo td.desc small { display: block; color: var(--tinta-suave); font-size: 11.5px; font-family: var(--fonte); }
+  .ext-saldo tr.dia td { background: #E8EEF7; font-weight: 700; }
+  .ext-saldo tr.dia.conferido td { background: #E3F3E8; }
+  .ext-saldo tr.dia label { font-weight: 400; font-size: 12.5px; white-space: nowrap; cursor: pointer; margin-left: 10px; }
+  .ext-saldo tr.parte td { background: #F7F9FC; font-size: 13px; }
+  .ext-saldo tr.parte td.desc { padding-left: 28px; }
+  .ext-tipo { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 99px; padding: 1px 8px;
+              border: 1px solid var(--borda-forte); color: var(--tinta-suave); white-space: nowrap; }
+  .ext-tipo.receita { border-color: var(--verde); color: var(--verde); }
+  .ext-tipo.despesa { border-color: var(--vermelho); color: var(--vermelho); }
+  .ext-abre { border: 0; background: none; color: var(--azul-claro); font: inherit; font-weight: 700; cursor: pointer; padding: 0; }
+</style>
+
+{% macro br(d) %}{{ d[8:10] }}/{{ d[5:7] }}/{{ d[:4] }}{% endmacro %}
+
+{% if request.args.get('erro') %}
+<div class="aviso erro">{{ request.args.get('erro') }}</div>
+{% endif %}
+
+{% if not conta_unica %}
+<div class="aviso info">
+  <b>Escolha UMA conta na barra da esquerda.</b> O saldo é de uma conta só: com várias juntas (ou nenhuma
+  escolhida) não há saldo para conferir com o banco. Para procurar um lançamento em todas as contas, use a
+  “Lista de lançamentos”.
+</div>
+{% else %}
+
+<p class="cartao-dica" style="margin:-4px 0 12px">
+  Para pôr <b>ao lado do extrato do banco</b>: cada linha é um movimento da conta, com quem recebeu ou pagou,
+  a categoria e a obra; cada dia fecha com o <b>saldo</b>. Pagamento rateado em várias obras é <b>uma linha
+  só</b>, como no banco, e abre nas obras. Só entra o que virou dinheiro — com juros e multa, e sem o imposto
+  que o cliente reteve (ele nunca passou pela conta).
+</p>
+
+{# ------------------------------ o saldo informado ------------------------------ #}
+{% if not x.tabelas_prontas %}
+<div class="aviso info"><b>Falta aplicar as atualizações do banco</b> (em
+  <a href="{{ url_for('painel.configuracoes') }}">Configurações</a>) para poder informar o saldo e marcar os
+  dias conferidos. Até lá a tela mostra só a variação da conta.</div>
+{% else %}
+<div class="cartao" style="padding:10px 14px">
+  {% if x.informado %}
+  <span>Saldo informado: <b class="dados">{{ brl(x.informado.saldo) }}</b> ao fim de
+    <b>{{ x.informado.dia.strftime('%d/%m/%Y') }}</b>.</span>
+  {% else %}
+  <span class="selo aguardando">sem saldo</span>
+  <span><b>Informe o saldo desta conta num dia qualquer</b> (o do extrato do banco). Sem ele, a coluna de saldo
+    mostra só a variação desde o começo do período.</span>
+  {% endif %}
+  <details style="margin-top:6px" {% if not x.informado %}open{% endif %}>
+    <summary style="cursor:pointer">{{ 'Trocar o saldo informado' if x.informado else 'Informar o saldo' }}</summary>
+    <form method="post" action="{{ url_for('painel.api_extrato_saldo') }}" style="margin-top:8px">
+      <input type="hidden" name="conta" value="{{ conta_unica }}">
+      <input type="hidden" name="de" value="{{ de }}">
+      <input type="hidden" name="ate" value="{{ ate }}">
+      <div class="form-grade">
+        <div class="campo">
+          <label for="saldo-dia">Saldo ao FIM do dia</label>
+          <input id="saldo-dia" name="dia" type="date" required
+                 value="{{ x.informado.dia.isoformat() if x.informado else '' }}">
+        </div>
+        <div class="campo">
+          <label for="saldo-valor">Saldo (R$)</label>
+          <input id="saldo-valor" name="saldo" required inputmode="decimal" placeholder="184.320,55"
+                 value="{{ ('%.2f'|format(x.informado.saldo))|replace('.', ',') if x.informado else '' }}">
+        </div>
+        <div class="campo" style="align-self:flex-end">
+          <button class="btn" type="submit">Gravar o saldo</button>
+        </div>
+      </div>
+      <p class="cartao-dica">É o “saldo do dia” que o banco imprime — o que havia na conta <b>depois</b> do último
+        movimento daquele dia. Conta no negativo: escreva com o sinal de menos. Basta um dia; o painel calcula
+        os outros, para frente e para trás.</p>
+    </form>
+  </details>
+</div>
+{% endif %}
+
+{# ------------------------------ os números ------------------------------ #}
+<div class="kpis" style="margin-top:12px">
+  {% if x.tem_saldo %}
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Saldo antes de {{ br(de) }}</div>
+    <div class="kpi-valor {{ classe_valor(x.saldo_inicial) }}">{{ brl(x.saldo_inicial) }}</div>
+  </div>
+  {% endif %}
+  <div class="kpi estatico verde">
+    <div class="kpi-rotulo">Entrou</div>
+    <div class="kpi-valor">{{ brl(x.entrou) }}</div>
+  </div>
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Saiu</div>
+    <div class="kpi-valor">{{ brl(x.saiu) }}</div>
+  </div>
+  <div class="kpi estatico ciano">
+    <div class="kpi-rotulo">{{ ('Saldo ao fim de ' ~ br(ate)) if x.tem_saldo else 'Variação no período' }}</div>
+    <div class="kpi-valor {{ classe_valor(x.saldo_final) }}">{{ brl(x.saldo_final) }}</div>
+    {% if not x.tem_saldo %}<div class="kpi-sub">não é o saldo: é entrou menos saiu</div>{% endif %}
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Dias conferidos</div>
+    <div class="kpi-valor" id="ext-conferidos">{{ x.dias_conferidos }} de {{ x.dias|length }}</div>
+  </div>
+</div>
+
+<form method="get" class="cartao" style="margin-top:14px">
+  <input type="hidden" name="visao" value="saldo">
+  {% for c in selecao.contas %}<input type="hidden" name="conta" value="{{ c }}">{% endfor %}
+  <div class="form-grade">
+    <div class="campo">
+      <label for="de">De</label>
+      <input id="de" name="de" type="date" value="{{ de }}">
+    </div>
+    <div class="campo">
+      <label for="ate">Até</label>
+      <input id="ate" name="ate" type="date" value="{{ ate }}">
+    </div>
+    <div class="campo" style="align-self:flex-end">
+      <button class="btn" type="submit">Aplicar</button>
+    </div>
+  </div>
+</form>
+
+<div class="tabela-barra" style="margin-top:14px">
+  <span>{{ '{:,}'.format(x.quantos).replace(',', '.') }} movimento(s) em {{ x.dias|length }} dia(s) — {{ conta_unica }}</span>
+  <span class="espaco"></span>
+  <a class="btn secundario" style="text-decoration:none"
+     href="{{ link_baixar('extrato', visao='saldo', de=de, ate=ate) }}">⬇ Planilha</a>
+  <a class="btn secundario" style="text-decoration:none"
+     href="{{ link_baixar('extrato', visao='saldo', de=de, ate=ate, formato='pdf') }}">⬇ PDF</a>
+</div>
+
+{% if x.cortado %}
+<div class="aviso erro">O período tem lançamentos demais para uma tela só: mostrando até o último dia inteiro que
+  coube. <b>Encurte o período</b> para ver o resto.</div>
+{% endif %}
+
+{% if not x.dias %}
+<div class="vazio"><b>Nada andou nesta conta no período</b>Confira as datas, ou a conta escolhida na barra da esquerda.</div>
+{% else %}
+<div class="tabela-rolagem" style="max-height:none">
+  <table class="ext-saldo" id="ext-saldo" data-conta="{{ conta_unica }}"
+         data-gravar="{{ url_for('painel.api_extrato_conferido') }}">
+    <thead><tr>
+      <th class="sem-ordem">Tipo</th>
+      <th class="sem-ordem">Quem · a que se refere</th>
+      <th class="sem-ordem">Obra</th>
+      <th class="sem-ordem">Documento</th>
+      <th class="sem-ordem direita">Entrou</th>
+      <th class="sem-ordem direita">Saiu</th>
+      <th class="sem-ordem direita">{{ 'Saldo' if x.tem_saldo else 'Variação' }}</th>
+    </tr></thead>
+    <tbody>
+      {% if x.tem_saldo %}
+      <tr class="dia"><td colspan="6">Saldo antes de {{ br(de) }}</td>
+        <td class="dados direita {{ classe_valor(x.saldo_inicial) }}">{{ brl(x.saldo_inicial) }}</td></tr>
+      {% endif %}
+      {% for d in x.dias %}
+      <tr class="dia {{ 'conferido' if d.conferido }}" data-dia-linha="{{ d.dia }}">
+        <td colspan="4" style="white-space:nowrap">{{ d.rotulo }} · {{ d.quantos }} movimento{{ 's' if d.quantos != 1 }}
+          {% if x.tabelas_prontas %}
+          <label><input type="checkbox" data-conferi="{{ d.dia }}" {% if d.conferido %}checked{% endif %}> conferi com o banco</label>
+          {% endif %}
+        </td>
+        <td colspan="2" class="direita" style="font-weight:400">{{ 'saldo' if x.tem_saldo else 'variação' }} no fim do dia</td>
+        <td class="dados direita {{ classe_valor(d.saldo_final) }}">{{ brl(d.saldo_final) }}</td>
+      </tr>
+      {% for m in d.movimentos %}
+      {% set id_mov = d.dia ~ '-' ~ loop.index %}
+      <tr>
+        <td><span class="ext-tipo {{ m.tipo }}">{{ m.tipo_rotulo }}</span></td>
+        <td class="desc"><b>{{ m.quem or '—' }}</b>
+          <small>{{ m.categoria }}{% if m.grupo %} · {{ m.grupo }}{% endif %}</small>
+          {% if m.cnpj %}<small>{{ m.cnpj }}</small>{% endif %}
+          {% if m.observacao %}<small>{{ m.observacao }}</small>{% endif %}
+        </td>
+        <td class="desc">
+          {% if m.rateado %}
+          <button type="button" class="ext-abre" data-abre-partes="{{ id_mov }}" aria-expanded="false">{{ (m.n_obras ~ ' obras') if m.n_obras > 1 else (m.partes|length ~ ' partes') }} ▸</button>
+          {% else %}{{ m.obra or '—' }}{% endif %}
+        </td>
+        <td class="desc">{{ m.documento or '—' }}
+          <small>{% if m.codigo %}nº {{ m.codigo }}{% endif %}{% if m.link %}{{ ' · ' if m.codigo }}<a href="{{ m.link }}" target="_blank" rel="noopener">Pipefy ↗</a>{% endif %}</small>
+        </td>
+        <td class="dados direita v-pos">{{ brl(m.valor) if m.valor >= 0 else '' }}</td>
+        <td class="dados direita v-neg">{{ brl(-m.valor) if m.valor < 0 else '' }}</td>
+        <td class="dados direita {{ classe_valor(m.saldo) }}">{{ brl(m.saldo) }}</td>
+      </tr>
+      {% if m.rateado %}
+      {% for p in m.partes %}
+      <tr class="parte" data-parte-de="{{ id_mov }}" hidden>
+        <td></td>
+        <td class="desc">{{ p.categoria }}{% if p.grupo %} · {{ p.grupo }}{% endif %}</td>
+        <td class="desc">{{ p.obra or '—' }}</td>
+        <td></td>
+        <td class="dados direita v-pos">{{ brl(p.valor) if p.valor >= 0 else '' }}</td>
+        <td class="dados direita v-neg">{{ brl(-p.valor) if p.valor < 0 else '' }}</td>
+        <td></td>
+      </tr>
+      {% endfor %}
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      <tr style="font-weight:700; background:#F7F9FC">
+        <td colspan="4">Total do período</td>
+        <td class="dados direita v-pos">{{ brl(x.entrou) }}</td>
+        <td class="dados direita v-neg">{{ brl(x.saiu) }}</td>
+        <td class="dados direita {{ classe_valor(x.saldo_final) }}">{{ brl(x.saldo_final) }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p class="cartao-dica">
+  <b>O que conferir é o saldo no fim de cada dia.</b> A ordem das linhas dentro do dia é a do número do
+  lançamento, não a do banco. <b>Dois limites:</b> se o banco debitou vários títulos num lançamento só (um lote),
+  ele mostra uma linha e aqui aparece uma por título; e um lançamento feito no OMIE com data diferente da do banco
+  cai no dia errado — é justamente o tipo de coisa que esta tela serve para achar.
+</p>
+
+<script>
+(function () {
+  var tabela = document.getElementById("ext-saldo");
+  if (!tabela) return;
+  tabela.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-abre-partes]");
+    if (!b) return;
+    var aberto = b.getAttribute("aria-expanded") === "true";
+    tabela.querySelectorAll('tr[data-parte-de="' + b.getAttribute("data-abre-partes") + '"]')
+      .forEach(function (tr) { tr.hidden = aberto; });
+    b.setAttribute("aria-expanded", aberto ? "false" : "true");
+    b.textContent = b.textContent.replace(aberto ? "▾" : "▸", aberto ? "▸" : "▾");
+  });
+  tabela.addEventListener("change", function (e) {
+    var c = e.target.closest("[data-conferi]");
+    if (!c) return;
+    var linha = c.closest("tr"), quer = c.checked;
+    fetch(tabela.getAttribute("data-gravar"), {
+      method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({conta: tabela.getAttribute("data-conta"), dia: c.getAttribute("data-conferi"), conferido: quer})
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok || !j.ok) throw new Error(j.erro || r.status); }); })
+      .then(function () {
+        linha.classList.toggle("conferido", quer);
+        var total = tabela.querySelectorAll("[data-conferi]").length;
+        var feitos = tabela.querySelectorAll("[data-conferi]:checked").length;
+        var placar = document.getElementById("ext-conferidos");
+        if (placar) placar.textContent = feitos + " de " + total;
+      })
+      .catch(function (erro) {
+        c.checked = !quer;                       // não gravou: a marca volta ao que era
+        linha.title = "Não consegui gravar: " + erro.message;
+        linha.classList.add("atrasado");
+      });
+  });
+})();
+</script>
+{% endif %}
+{% endif %}

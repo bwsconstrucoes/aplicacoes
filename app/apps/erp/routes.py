@@ -13472,14 +13472,24 @@ def _dia_do_pedido(bruto: str | None):
 @permissao("ver_diario")
 def api_diario_dia(obra_id: int):
     """O dia, já preenchido com tudo o que o sistema sabe."""
+    from app.apps.erp.core import clima as svc_clima
     from app.apps.erp.core import diario as svc
     from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
     try:
         with get_session() as s:
             exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
-            return jsonify({"ok": True,
-                            **svc.abrir_dia(s, obra_id,
-                                            _dia_do_pedido(request.args.get("data")))})
+            dia = _dia_do_pedido(request.args.get("data"))
+            # ⚑ O CLIMA MEDIDO SE BUSCA AO ABRIR O DIA (24/11/2026), UMA VEZ
+            # NA VIDA: medido, fica guardado e nunca mais se pergunta. Dia
+            # futuro, obra sem coordenada ou serviço fora do ar viram
+            # simplesmente "não mediu" — a tela abre igual.
+            try:
+                if svc_clima.medir(s, obra_id, dia) is not None:
+                    s.commit()
+            except Exception:                            # noqa: BLE001
+                logger.warning("ERP: clima não medido para a obra %s em %s",
+                               obra_id, dia)
+            return jsonify({"ok": True, **svc.abrir_dia(s, obra_id, dia)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
@@ -13847,10 +13857,26 @@ def api_diario_fotos(obra_id: int):
             dia = _dia_do_pedido(request.args.get("data"))
             arquivo = request.files.get("foto")
             if arquivo is not None:
+                # ⚑ A POSIÇÃO DO APARELHO VEM JUNTO (24/11/2026), e é só
+                # REFORÇO: vale quando a própria foto não traz o local
+                # dentro dela. A foto sempre ganha do aparelho — foto da
+                # galeria mandada três dias depois tem o local certo dentro,
+                # e a posição do celular naquele instante seria a do
+                # escritório.
+                def _num(chave):
+                    bruto = request.form.get(chave)
+                    try:
+                        return float(bruto) if bruto not in (None, "") else None
+                    except (TypeError, ValueError):
+                        return None
                 r = svc.anexar(s, obra_id, dia, arquivo.read(),
                                arquivo.filename or "foto.jpg",
                                legenda=request.form.get("legenda", ""),
-                               usuario=usuario)
+                               usuario=usuario,
+                               local_do_aparelho={
+                                   "latitude": _num("latitude"),
+                                   "longitude": _num("longitude"),
+                                   "precisao_m": _num("precisao_m")})
                 s.commit()
                 return jsonify({"ok": True, **r})
             d = request.get_json(silent=True) or {}

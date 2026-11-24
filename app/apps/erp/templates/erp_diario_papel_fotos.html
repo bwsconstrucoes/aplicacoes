@@ -49,7 +49,13 @@
       <div class="quadro-foto"><img src="{{ f.dados }}" alt=""></div>
       <figcaption class="legenda-foto">
         <b>Foto {{ loop.index0 + 1 + (n_folha * por_folha) }}</b>
-        {{ f.legenda or "sem legenda" }}</figcaption>
+        {{ f.legenda or "sem legenda" }}
+        {# ⚑ O LOCAL EM TEXTO, além do carimbo que já está dentro da imagem
+           (24/11/2026). O carimbo prova; o texto se lê e se COPIA de um PDF,
+           que é o que alguém faz ao transcrever para um pleito de prazo. #}
+        {% if f.tem_local %}<br><span class="local-foto">{{ f.local }}{%
+          if f.precisao_m %} ±{{ f.precisao_m }} m{% endif %} ·
+          {{ f.local_rotulo }}</span>{% endif %}</figcaption>
     </figure>
     {% endfor %}
   </div>

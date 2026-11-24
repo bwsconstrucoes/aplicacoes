@@ -651,6 +651,62 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O "Total" do analítico sem juros e multa, e a conta do cenário guardada — 24/11/2026
+
+**PUBLICADO em 24/11/2026, 18:14 UTC** (`bc0e6aa7`), com o "pode" do dono. Sem
+migração. Suíte local inteira, com a `main` dentro: 12.869 passaram, nenhuma
+falha.
+
+### 1. A coluna "Total" do Despesas Analítico não somava juros e multa
+
+O dono, com o relatório completo aberto, filtrando só o pago: *"quando eu somo
+pago, juros e multa, bate com o total de custos e despesas no executado. Mas a
+coluna que fala total não está somando o pago mais os juros mais a multa."*
+
+Era verdade, na planilha, no PDF **e na tela**: o total de cada LINHA era só
+`pago + a pagar`, enquanto o total do alto da tela (e o DRE) sempre contou os
+encargos pagos. Agora o total da linha é `pago + a pagar + juros e multa pagos`,
+e a soma dos totais das linhas dá o total da tela (há teste com banco).
+
+**Decisão tomada junto, e que o dono pode reverter:** um título ainda EM ABERTO
+pode trazer juros e multa PREVISTOS. O painel inteiro só conta encargo pago;
+então nas colunas Juros e Multa passou a aparecer só o que foi pago — senão a
+linha em aberto voltaria a ter um Total que não é a soma das vizinhas. O
+previsto continua na linha (`encargo_previsto`), sem coluna. O valor que se
+compara com a conta corrente (`valor_extrato`) segue com os números crus, como
+era. **Não verificado:** se a base real tem título em aberto com juros previsto
+(o cenário de teste tem, de propósito).
+
+### 2. A conta do cenário fica guardada em memória
+
+Pergunta dele: *"quando eu abro uma determinada obra, ele vai montar a ficha e
+isso demora. Quando eu fecho e volto, tem que fazer todo o recálculo. A gente
+não poderia gravar temporariamente esse cálculo? (…) se for mexer muita coisa,
+deixa assim mesmo."*
+
+Mexia pouco, e o ganho é maior que a ficha: Resultado, Por sócio, Evolução, a
+ficha de cada obra e os relatórios pedem TODOS a mesma conta
+(`web._calcular_cenario`), e cada clique a refazia do zero. Agora ela é guardada
+(`consultas.lembrando_o_grande`) e vale enquanto NADA de que ela depende mudar:
+
+- **a base** — o carimbo da última carga, o mesmo das listas pequenas; e
+  `esquecer_listas`, que as alterações de classificação pelo painel já chamam;
+- **as regras** — a chave é uma impressão (`_impressao_do_cenario`) do cenário
+  inteiro, dos parâmetros gerais, dos sócios e dos ajustes: mudou qualquer um,
+  a chave muda sozinha, sem ninguém precisar lembrar de invalidar;
+- **prazo de 30 minutos**, como rede de segurança para um caminho de alteração
+  que escape das duas travas de cima;
+- **teto de 3 contas guardadas** (a mais antiga sai): a chave muda a cada regra
+  alterada, e sem teto uma tarde de ajustes encheria a memória do serviço.
+
+⚠️ **Quem usa o resultado de `_calcular_cenario` NÃO PODE alterá-lo** — o mesmo
+dicionário é entregue a todos os pedidos. Conferido nos usos de hoje; código
+novo que ordenar ou acrescentar em cima dele tem de copiar antes.
+
+**Não medido na base real.** No banco de teste (minúsculo) a ficha foi de 89 ms
+para 26 ms; o ganho de verdade depende do tamanho da base. Vale só dentro do
+serviço: reiniciou (publicação, renovação), a primeira abertura refaz.
+
 ## Resultado por sócio, ficha da obra e conta corrente no DRE — 24/11/2026
 
 **PUBLICADO em 24/11/2026, 14:00 UTC** (`3b550e92`), com o "pode" do dono. **Sem
@@ -732,7 +788,10 @@ imaginar, está mais ou menos no rumo"*. Foi lido como confirmação das três.
 
 ### Pessoal, caixa e analítico na ficha — pedido logo depois de publicar (24/11/2026)
 
-**NÃO PUBLICADO** — no ramo, à espera do "pode". Sem migração.
+**PUBLICADO em 24/11/2026, 15:38 UTC** (`29bea5e2`), com o "pode" do dono. Sem
+migração. Suíte local inteira, com a `main` dentro: 12.829 passaram, nenhuma
+falha. O GitHub Actions ainda rodava na hora — e segue vermelho na `main` pelo
+teste de limpeza do ERP descrito acima, que não é do painel.
 
 O dono abriu a ficha no ar e pediu: *"o custo com despesa com pessoal, mês a
 mês, bem como o caixa da obra (…) isso preciso que saia na planilha também, e
@@ -764,34 +823,70 @@ receitas, que aí fica mais completo."*
 - O tempo de abrir a ficha com a base real: é uma conta do cenário inteira por
   obra aberta, como trocar de obra na Evolução.
 
-## O extrato conferível — PROPOSTA, nada construído — 24/11/2026
+## O extrato conferível — dia a dia, com saldo — 24/11/2026
 
-No mesmo dia ele pediu para ver o extrato de uma conta **dia a dia, com o saldo
-do dia**, cada lançamento dizendo a que se refere (título, categoria, centro de
-custo), o rateado abrindo por obra — para pôr ao lado do extrato do banco:
-*"isso traz mais credibilidade ao que está lançado"*. Pediu para ver a ideia
-antes. **Foi entregue só um desenho** (página privada dele no claude.ai).
+**NÃO PUBLICADO** — no ramo, à espera do "pode" do dono. **TEM MIGRAÇÃO (029):**
+ao publicar, ele aperta "Aplicar atualizações do banco" em Configurações. Sem
+ela a tela abre do mesmo jeito (só não deixa informar saldo nem marcar dia) —
+testado, por causa da queda de Configurações em 11/11.
 
-**A proposta é refazer a tela "Extrato de Conta" que já existe**, não criar
-outra. O que ela tem hoje: uma linha por linha do `fato` (pagamento rateado em
-três obras aparece três vezes) e "entrou menos saiu", sem saldo. O que mudaria:
+O dono pediu para ver o extrato de uma conta **dia a dia, com o saldo do dia**,
+cada lançamento dizendo a que se refere, o rateado abrindo por obra — para pôr
+ao lado do extrato do banco: *"isso traz mais credibilidade ao que está
+lançado"*. Viu um desenho, e sobre a única dúvida que travava respondeu: *"vai
+precisar ser informado o saldo inicial, para poder bater."*
 
-- uma conta e um período, obrigatórios;
-- **saldo inicial, saldo depois de cada linha e saldo no fim de cada dia**;
-- **uma linha por movimento do banco**, abrindo nas obras quando rateado — a
-  junção já existe para o Analítico (`chave_do_movimento`,
-  `agrupar_por_movimento`, de 06/10/2026);
-- tipo de cada linha (receita, despesa, transferência, tarifa, aporte), quem,
-  categoria, obra, número do título e do documento, observação, Pipefy;
-- o saldo final do painel ao lado do saldo que o OMIE informa;
-- opcional: marcar "conferi" por dia.
+### O que foi feito
 
-**O ponto que decide a construção, e que NÃO está resolvido:** de onde vem o
-saldo inicial. O painel sabe o que andou na conta, não o saldo de abertura. O
-OMIE informa saldo (`ListarExtrato`, usado em `conferencia_saldo.py`), mas o
-docstring de lá diz que o formato da resposta nunca foi confirmado contra o
-OMIE real. Antes de construir é preciso ver uma resposta de verdade — ou o dono
-informa o saldo de uma data e o painel segue dali. **Aguardando a resposta dele.**
+É uma **terceira visão da tela "Extrato de Conta"**, não uma tela nova: "Dia a
+dia, com saldo", ao lado de "Lista de lançamentos" (a de sempre, renomeada) e
+"Transferências entre contas". **O administrador, com UMA conta escolhida na
+barra, passa a cair nela**; a lista continua a um clique.
+
+- **Uma conta e um período** (sem período: o mês corrente até hoje).
+- **Saldo antes do período, depois de cada movimento e no fim de cada dia.**
+- **Uma linha por movimento do banco**: o mesmo título no mesmo dia é uma linha,
+  com o valor que saiu ou entrou, e abre nas obras (ou categorias) quando rateado.
+- Em cada linha: tipo (receita, despesa, transferência, fora do resultado), quem,
+  CNPJ, categoria e grupo, obra, documento, número no OMIE, observação, Pipefy.
+- **"Conferi com o banco" por dia** (fica verde e conta num placar).
+- **Planilha e PDF** do mesmo extrato, com o resumo por dia.
+
+### As decisões, e o motivo
+
+- **O saldo de UM dia é informado** (tabela `extrato_saldo_informado`, uma linha
+  por conta: o saldo AO FIM do dia, como o banco imprime) e o dos outros sai
+  dele, para frente e para trás. O painel sabe o que andou na conta, não quanto
+  havia nela; e o saldo que o OMIE informa nunca teve o formato confirmado
+  (`conferencia_saldo.py`). Sem saldo informado a coluna mostra a variação, e
+  a tela diz isso. Saldo negativo é aceito; saldo em branco é erro, não zero.
+- **A régua é a da conferência de saldo**: o que foi pago ou recebido, COM juros
+  e multa, SEM o imposto retido pelo cliente, e sem corte de DRE (transferência,
+  aporte, tarifa e rendimento aparecem). A "Lista de lançamentos" antiga usa só
+  `pago_recebido` — por isso as duas visões podem diferir em centavos de juros.
+- **Só o administrador.** Quem tem login próprio vê a conta recortada nas obras
+  dele, e saldo de conta pela metade não é saldo. Ele continua na lista. Os dois
+  pontos de gravação são `painel.api_extrato_*`, que o prefixo `api_` já fecha.
+- **Sem busca nem filtro de categoria nesta visão**: filtrar linhas quebraria o
+  saldo. Para procurar, a lista.
+- **Teto de 6.000 linhas por período**, cortando em dia inteiro (metade de um
+  dia daria saldo do dia errado), com aviso para encurtar.
+
+### O que ela NÃO consegue, e a tela diz
+
+- **Lote:** se o banco debitou vários títulos num lançamento só, ele mostra uma
+  linha e o painel uma por título — o OMIE não guarda o vínculo.
+- **Ordem dentro do dia:** é a do número do lançamento, não a do banco. O que se
+  confere é o saldo no fim do dia.
+- **Não confere sozinho com o banco**: é para o olho. Ler o arquivo do banco
+  (OFX) e casar linha a linha seria o passo seguinte, se ele pedir.
+
+### O que NÃO foi verificado
+
+- **Nunca rodou contra a base real.** Testado com dados inventados e com a suíte.
+- Se na base real o mesmo título aparece mais de uma vez no mesmo dia e na mesma
+  conta por motivo que NÃO seja rateio (duas parcelas, por exemplo): viraria uma
+  linha só, com o valor somado.
 
 ## A evolução do rateio para os sócios — tela e relatório — 16/11/2026
 
