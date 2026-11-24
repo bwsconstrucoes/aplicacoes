@@ -57,6 +57,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.cadastros import obras as svc_obras
 from app.apps.erp.core.comum.auditoria import ErroValidacao
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,62 @@ _COLUNAS = {
     "valor_contrato": ("valor",),
     "aliquota_iss": ("aliquota iss", "alíquota iss"),
     "tributacao": ("tributacao", "tributação"),
+    # ⚑ O QUE ENTROU EM 24/11/2026, e por quê. Ele: *"os dados reais e
+    # atualizados estão lá (…) qualquer outro dado ele deve ser atualizado
+    # para o ERP (…) lá o trabalho manual já foi feito. Eu quero só replicar
+    # ele pro ERP. Porque senão o ERP vai nascer desatualizado."*
+    #
+    # ⚠️ CINCO DESTES ESTAVAM ESCRITOS AQUI COMO "a planilha não dá" —
+    # responsável técnico, ART, ordem de serviço, início e término. A frase
+    # vinha da planilha de DIÁRIOS (a de 1.427 linhas), onde essas colunas
+    # vêm vazias mesmo. Na C. DIÁRIOS elas existem e estão preenchidas. Eram
+    # justamente as que fazem o quadro de PRAZO do diário aparecer.
+    "endereco": ("endereco", "endereço"),
+    "data_inicio": ("data de inicio", "data de início"),
+    "data_termino": ("data de termino", "data de término"),
+    "ordem_servico": ("ordem de servico", "ordem de serviço"),
+    "responsavel_tecnico": ("responsavel tecnico", "responsável técnico"),
+    "engenheiro_fiscal": ("fiscalizacao", "fiscalização"),
+    "vigencia_inicio": ("data de inicio vigencia", "data de início vigência"),
+    "vigencia_fim": ("data de termino vigencia", "data de término vigência"),
+    "art_rrt": ("no art", "nº art", "n art", "art"),
+    "orgao_resumido": ("orgao resumido", "órgão resumido"),
+    "data_base_orcamento": ("data base p/ reajuste", "data base para reajuste",
+                            "data base reajuste"),
+    # A FASE DA OBRA. Vale o mapa de `FASES_DA_PLANILHA`, logo abaixo — o
+    # texto da planilha não é o nome que o ERP usa.
+    "fase_texto": ("status da obra", "status", "fase"),
+    # "-3.7319, -38.5267" numa célula só; o cadastro guarda em dois campos.
+    "coordenadas": ("coordenadas geograficas", "coordenadas geográficas",
+                    "coordenadas"),
+}
+
+# ⚑ O QUE A PLANILHA ESCREVE → A FASE DO ERP (24/11/2026).
+#
+# Os oito valores foram CONTADOS na planilha de verdade, não supostos:
+# Em Execução (80), Concluída (50), Acervo Técnico (31), Concluída com Dívida
+# (14), Distratada (3), Criação Centros (3), Especial (1), Aguardando O.S (1).
+#
+# ⚠️ "ESPECIAL" NÃO TEM PAR NO ERP e fica de fora de propósito: a obra
+# mantém a fase que já tem e o relatório avisa. Inventar uma fase para ela
+# seria marcar obra errada num campo que decide o que aparece no diário.
+#
+# ⚠️ E TRÊS FASES DO ERP NUNCA VÊM DAQUI — Paralisada, Recebimento provisório
+# e Recebimento definitivo não existem na planilha. Quem usar essas fases
+# marca na mão, e a sincronização não as desfaz sem valor equivalente.
+FASES_DA_PLANILHA = {
+    "em execucao": "EM_EXECUCAO",
+    "concluida": "CONCLUIDA",
+    "concluida com divida": "CONCLUIDA_COM_DIVIDA",
+    "acervo tecnico": "ACERVO_TECNICO",
+    "distratada": "DISTRATADA",
+    "criacao centros": "CRIACAO",
+    "aguardando o.s": "AGUARDANDO_OS",
+    "aguardando os": "AGUARDANDO_OS",
+    "aguardando o.s.": "AGUARDANDO_OS",
+    "paralisada": "PARALISADA",
+    "recebimento provisorio": "RECEBIMENTO_PROVISORIO",
+    "recebimento definitivo": "RECEBIMENTO_DEFINITIVO",
 }
 
 # ⚑ COLUNAS QUE EXISTEM E NÃO SÃO APROVEITADAS — ditas, nunca caladas.
@@ -114,20 +171,24 @@ NAO_APROVEITADAS = {
                    "obras e é chave única — mexer nele desalinha o rateio",
 }
 
-# O que NENHUMA planilha traz, e o diário precisa. Vai no relatório.
+# O que a C. Diários NÃO traz, e o diário precisa. Vai no relatório.
+#
+# ⚠️ ENCOLHEU EM 24/11/2026. Cinco itens saíram daqui — responsável técnico,
+# ART, ordem de serviço, início e término — porque estão na C. Diários e
+# agora são lidos. A frase "nenhuma planilha traz" vinha da planilha de
+# DIÁRIOS, onde vêm vazios mesmo; nunca tinha sido conferida contra esta.
 SO_NO_CADASTRO = [
-    ("responsavel_tecnico", "Responsável técnico"),
     ("crea_obra", "CREA"),
-    ("art_rrt", "ART/RRT"),
-    ("ordem_servico", "Ordem de serviço"),
     ("data_ordem_servico", "Data da ordem de serviço"),
-    ("data_inicio", "Início da obra"),
-    ("data_termino", "Término previsto"),
 ]
 
 _TEXTOS = ("contrato", "objeto", "municipio", "uf", "cno", "cliente",
-           "cnpj_cliente", "tributacao", "centro_custo_contabil")
-_NUMEROS = ("valor_contrato", "aliquota_iss")
+           "cnpj_cliente", "tributacao", "centro_custo_contabil",
+           "endereco", "ordem_servico", "responsavel_tecnico",
+           "engenheiro_fiscal", "art_rrt", "orgao_resumido")
+_NUMEROS = ("valor_contrato", "aliquota_iss", "latitude", "longitude")
+_DATAS = ("data_inicio", "data_termino", "vigencia_inicio", "vigencia_fim",
+          "data_base_orcamento")
 
 ROTULOS = {
     "contrato": "Contrato", "objeto": "Objeto", "municipio": "Município",
@@ -135,8 +196,41 @@ ROTULOS = {
     "cnpj_cliente": "CNPJ do cliente", "valor_contrato": "Valor do contrato",
     "aliquota_iss": "Alíquota de ISS", "tributacao": "Tributação",
     "centro_custo_contabil": "Centro de custo da contabilidade",
+    "endereco": "Endereço da obra",
+    "data_inicio": "Início da obra", "data_termino": "Término previsto",
+    "ordem_servico": "Ordem de serviço",
+    "responsavel_tecnico": "Responsável técnico",
+    "engenheiro_fiscal": "Fiscalização",
+    "vigencia_inicio": "Início da vigência",
+    "vigencia_fim": "Fim da vigência",
+    "art_rrt": "ART/RRT", "orgao_resumido": "Órgão resumido",
+    "data_base_orcamento": "Data base para reajuste",
+    "latitude": "Latitude", "longitude": "Longitude",
 }
 
+
+# ⚠️ OS NOMES QUE A ABA PODE TER — e isto é CONSERTO de 24/11/2026.
+#
+# A aba se chama **"C. Diários"** na planilha de verdade. A busca aqui aceitava
+# só "Centro de Custo" e, não achando, **caía na PRIMEIRA aba do arquivo** —
+# que no arquivo baixado inteiro do Google é `ClientesOmie`. Resultado: a
+# importação lia a aba errada, não casava obra nenhuma e devolvia "nenhuma obra
+# encontrada" sem ninguém entender por quê. Foi o que deixou o cadastro das
+# obras pela metade.
+#
+# A lista é a MESMA que a emissão de NFS-e já tolerava há meses
+# (`app/apps/emissaonf/worker.py`, `ABA_CDIARIOS`) — lá o nome certo estava, e
+# aqui não. Dois lugares lendo a mesma planilha com régua diferente.
+#
+# ⚑ E NÃO CAI MAIS NA PRIMEIRA ABA: não achando nenhum destes nomes, a leitura
+# RECUSA e diz quais abas viu. Adivinhar a aba é como se lê a planilha errada
+# calado.
+ABA_DA_PLANILHA = ("centro de custo", "centro de custos", "c. diarios",
+                   "c.diarios", "c diarios", "cdiarios")
+
+
+def _e_a_aba_certa(nome: str) -> bool:
+    return _chave(nome) in ABA_DA_PLANILHA
 
 def _chave(texto: Any) -> str:
     cru = unicodedata.normalize("NFD", str(texto or "").strip().lower())
@@ -176,6 +270,68 @@ def _numero(valor: Any) -> Optional[Decimal]:
         return None
 
 
+def _data(valor: Any):
+    """A célula de data vira `date`. O que não der, vira nada.
+
+    A planilha mistura os dois jeitos: célula de data de verdade (o openpyxl
+    devolve `datetime`) e texto "12/09/2026". Nunca levanta erro — data
+    escrita torta vira campo não preenchido, que o relatório mostra, e não
+    derruba a leitura das outras 182 obras.
+
+    ⚠️ DIA/MÊS, NUNCA MÊS/DIA: "03/04/2026" é 3 de abril. Lido ao contrário,
+    o diário imprimiria "dia 37 de 180" errado e ninguém desconfiaria.
+    """
+    from datetime import date as _d, datetime as _dt
+    if valor is None or isinstance(valor, bool):
+        return None
+    if isinstance(valor, _dt):
+        return valor.date()
+    if isinstance(valor, _d):
+        return valor
+    texto = str(valor).strip()
+    if not texto:
+        return None
+    for forma in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y"):
+        try:
+            return _dt.strptime(texto[:10], forma).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _coordenadas(valor: Any) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """"-3,7319, -38,5267" vira (latitude, longitude).
+
+    A planilha guarda as duas numa célula só. Vem com vírgula decimal ou com
+    ponto, com e sem espaço. Qualquer coisa fora do par de números vira nada:
+    coordenada errada põe a obra no meio do oceano no mapa.
+    """
+    texto = str(valor or "").strip()
+    if not texto:
+        return None, None
+    achados = re.findall(r"-?\d+[.,]?\d*", texto)
+    if len(achados) != 2:
+        return None, None
+    try:
+        lat = Decimal(achados[0].replace(",", "."))
+        lon = Decimal(achados[1].replace(",", "."))
+    except InvalidOperation:
+        return None, None
+    # Fora do planeta não entra: é erro de digitação, não coordenada.
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return None, None
+    return lat, lon
+
+
+def _fase_da_planilha(valor: Any) -> Optional[str]:
+    """"Em Execução" vira EM_EXECUCAO. O que não estiver no mapa vira nada.
+
+    Devolver `None` é a decisão: a obra fica com a fase que já tem e o
+    relatório avisa. Chutar uma fase mexe no que aparece no diário.
+    """
+    return FASES_DA_PLANILHA.get(_chave(valor))
+
+
 def _municipio_e_uf(municipio: str, uf: str) -> tuple[str, str]:
     """"Exu-PE" vira ("Exu", "PE"). A coluna UF, quando vem, manda.
 
@@ -204,9 +360,12 @@ def ler_planilha(conteudo: bytes) -> list[dict[str, Any]]:
         raise ErroValidacao(
             "Não consegui abrir o arquivo. Ele precisa ser .xlsx — se estiver "
             f"no Google Planilhas, baixe como Excel (.xlsx). ({e})")
-    # A aba certa é a "Centro de Custo"; não tendo esse nome, vale a primeira.
-    nome_aba = next((n for n in wb.sheetnames
-                     if _chave(n) == "centro de custo"), wb.sheetnames[0])
+    nome_aba = next((n for n in wb.sheetnames if _e_a_aba_certa(n)), None)
+    if nome_aba is None:
+        raise ErroValidacao(
+            "Não achei a aba da C. Diários neste arquivo. Procuro por "
+            "“C. Diários” ou “Centro de Custo”. As abas deste arquivo são: "
+            + ", ".join(wb.sheetnames) + ".")
     ws = wb[nome_aba]
     it = ws.iter_rows(values_only=True)
     try:
@@ -258,7 +417,17 @@ def ler_planilha(conteudo: bytes) -> list[dict[str, Any]]:
                 continue
             linha[campo] = str(pegar(bruta, campo) or "").strip()
         for campo in _NUMEROS:
+            if campo in ("latitude", "longitude"):
+                continue                       # vêm juntas, da mesma célula
             linha[campo] = _numero(pegar(bruta, campo))
+        for campo in _DATAS:
+            linha[campo] = _data(pegar(bruta, campo))
+        linha["latitude"], linha["longitude"] = _coordenadas(
+            pegar(bruta, "coordenadas"))
+        # A fase viaja nos dois formatos: o do ERP (para gravar) e o texto
+        # cru (para o relatório poder dizer "não conheço 'Especial'").
+        linha["fase_texto"] = str(pegar(bruta, "fase_texto") or "").strip()
+        linha["fase"] = _fase_da_planilha(linha["fase_texto"])
         if not linha["codigo"] and not linha["codigo_2"]:
             continue
         linhas.append(linha)
@@ -273,8 +442,9 @@ def colunas_ignoradas(conteudo: bytes) -> list[dict[str, str]]:
                                     data_only=True)
     except Exception:                                   # noqa: BLE001
         return []
-    nome_aba = next((n for n in wb.sheetnames
-                     if _chave(n) == "centro de custo"), wb.sheetnames[0])
+    nome_aba = next((n for n in wb.sheetnames if _e_a_aba_certa(n)), None)
+    if nome_aba is None:
+        return []
     try:
         cabecalho = [_chave(c) for c in next(wb[nome_aba].iter_rows(values_only=True))]
     except StopIteration:
@@ -296,7 +466,9 @@ def _obras_do_erp(s: Session) -> list[dict[str, Any]]:
     # Os campos que a planilha preenche E os que só o cadastro tem: estes
     # últimos entram para o relatório poder dizer quantas obras seguem sem
     # responsável técnico, sem ART, sem data de início.
-    campos = ", ".join(["id", "codigo", "nome"] + list(ROTULOS)
+    # `fase` entra fora de ROTULOS: ela não é campo que se escreve por UPDATE
+    # solto — passa por `obras.mudar_fase`, que guarda o histórico.
+    campos = ", ".join(["id", "codigo", "nome", "fase"] + list(ROTULOS)
                        + [c for c, _ in SO_NO_CADASTRO])
     return [dict(l) for l in s.execute(text(
         f"SELECT {campos} FROM obras")).mappings().all()]
@@ -349,6 +521,8 @@ def importar(s: Session, conteudo: bytes, usuario_id: Optional[int] = None, *,
         por_codigo.setdefault(_codigo(o["nome"]), o)
 
     preenchidas, conflitos, nao_encontradas = [], [], []
+    fases_mudadas: list[dict[str, Any]] = []
+    fases_desconhecidas: dict[str, list[str]] = {}
     ja_completas = 0
     vistas: set[int] = set()
 
@@ -381,8 +555,32 @@ def importar(s: Session, conteudo: bytes, usuario_id: Optional[int] = None, *,
                     "regravado": bool(regravar)})
                 if regravar:
                     novos[campo] = valor
+        # ⚑ A FASE ANDA POR FORA DO UPDATE (24/11/2026), e tem de ser assim:
+        # mudar de fase guarda histórico, trilha de auditoria e as datas de
+        # conclusão e recebimento. Escrevê-la com um UPDATE solto, junto dos
+        # outros campos, perderia tudo isso em 183 obras de uma vez.
+        if l.get("fase_texto") and not l.get("fase"):
+            fases_desconhecidas.setdefault(l["fase_texto"], []).append(
+                obra["codigo"])
+        elif l.get("fase") and l["fase"] != obra.get("fase"):
+            # ⚑ O RÓTULO VAI PRONTO. "EM_EXECUCAO" é o banco falando; quem
+            # confere 179 mudanças de fase lê "Em execução". Mesma régua do
+            # assistente, e a tradução mora num lugar só.
+            from app.apps.erp.core.cadastros.obras import fase_em_portugues
+            fases_mudadas.append({
+                "obra": obra["codigo"], "de": obra.get("fase"),
+                "de_rotulo": (fase_em_portugues(obra["fase"])
+                              if obra.get("fase") else ""),
+                "para": l["fase"],
+                "para_rotulo": fase_em_portugues(l["fase"]),
+                "na_planilha": l["fase_texto"]})
+            if not simular:
+                svc_obras.mudar_fase(s, obra["id"], l["fase"], None,
+                                     observacao="C. Diários")
+
         if not novos:
-            ja_completas += 1
+            if not (l.get("fase") and l["fase"] != obra.get("fase")):
+                ja_completas += 1
             continue
 
         preenchidas.append({
@@ -418,6 +616,14 @@ def importar(s: Session, conteudo: bytes, usuario_id: Optional[int] = None, *,
         "preenchidas": preenchidas[:50],
         "conflitos": conflitos[:50],
         "conflitos_total": len(conflitos),
+        # A FASE SAI SEPARADA no relatório, e não misturada nos campos: é ela
+        # que decide o que aparece na tela do diário, então quem confere tem
+        # de ver quantas obras mudam de fase sem caçar numa lista de campos.
+        "fases_mudadas": fases_mudadas[:50],
+        "fases_mudadas_total": len(fases_mudadas),
+        "fases_desconhecidas": [
+            {"na_planilha": k, "obras": len(v), "exemplos": sorted(v)[:6]}
+            for k, v in sorted(fases_desconhecidas.items())],
         "colunas_ignoradas": colunas_ignoradas(conteudo),
         "so_no_cadastro": faltando,
     }

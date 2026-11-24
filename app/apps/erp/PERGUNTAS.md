@@ -2998,6 +2998,16 @@ régua de escopo é a mesma da tela — não se escreve escopo novo.
 - **"Há quanto tempo esta obra está nesta fase?"** — a data da troca de fase
   é guardada (`fase_desde` e a tabela de fases), mas a conta não está escrita.
   É a pergunta que acharia obra "em execução" há dois anos sem diário nenhum.
+- **"Quais obras nunca tiveram a fase acertada?"** ⚠️ — pergunta de 24/11/2026,
+  e por enquanto a resposta é quase todas. A coluna da fase existe na C.
+  Diários, mas o importador nunca a leu: toda obra importada nasceu em
+  "Criação / cadastro". O sinal existe no banco (fase = CRIACAO **e**
+  `fase_desde` vazio quer dizer "ninguém nunca mexeu"), mas não há resposta
+  pronta. **Enquanto a fase não vier da planilha, toda pergunta sobre fase
+  devolve número errado** — e o filtro do diário não esconde nada.
+- **"De quando é a fase desta obra?"** ⚠️ — enquanto o Pipefy existir, a fase
+  do ERP é um retrato da C. Diários na última sincronização, não o que está
+  no card agora. Quem perguntar tem de saber disso.
 - **"Quais obras deveriam estar concluídas e ninguém marcou?"** — hoje
   ninguém avisa. Um sinal possível: obra sem diário nem gasto há N meses,
   ainda em fase de andamento.

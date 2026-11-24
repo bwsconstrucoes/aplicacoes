@@ -11087,37 +11087,26 @@ def api_listar_obras():
 @login_obrigatorio
 @permissao("configurar")
 def api_mudar_fase(obra_id: int):
-    from app.apps.erp.core.comum.auditoria import registrar_evento
-    from app.apps.erp.db.models.cadastros import Obra, ObraFase
+    """A regra mora em `core/cadastros/obras.mudar_fase` — aqui só a porta.
+
+    ⚑ Ela saiu daqui em 24/11/2026, pela regra da casa: regra de negócio mora
+    em `core/<dominio>/`, nunca no `routes.py`. Quem for trazer a fase de
+    fora (a sincronização com o Pipefy, enquanto ele existir) chama a mesma
+    função, e o histórico de fase sai igual venha de onde vier.
+    """
+    from app.apps.erp.core.cadastros import obras as svc_obras
     d = request.get_json(silent=True) or {}
-    fase = (d.get("fase") or "").upper()
-    if fase not in dict(FASES_OBRA):
-        return jsonify({"ok": False, "erro": f"Fase inválida: {fase}"}), 400
     try:
         with get_session() as s:
             from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
             exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
-            usuario = _usuario_logado(s)
-            obra = s.get(Obra, obra_id)
-            if obra is None:
-                return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
-            anterior = obra.fase
-            obra.fase = fase
-            obra.fase_desde = date.today()
-            if fase in ("CONCLUIDA", "CONCLUIDA_COM_DIVIDA") and not obra.data_conclusao:
-                obra.data_conclusao = date.today()
-            if fase == "RECEBIMENTO_PROVISORIO":
-                obra.data_recebimento_provisorio = date.today()
-            if fase == "RECEBIMENTO_DEFINITIVO":
-                obra.data_recebimento_definitivo = date.today()
-            s.add(ObraFase(obra_id=obra.id, fase=fase,
-                           observacao=(d.get("observacao") or "").strip() or None,
-                           usuario_id=usuario.id))
-            registrar_evento(s, "obra", obra.id, "FASE_ALTERADA",
-                             {"de": anterior, "para": fase,
-                              "observacao": d.get("observacao")}, usuario.id)
+            r = svc_obras.mudar_fase(
+                s, obra_id, d.get("fase") or "", _usuario_logado(s),
+                observacao=d.get("observacao") or "")
             s.commit()
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
