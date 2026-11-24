@@ -1005,12 +1005,18 @@ function formOperador(u){
         </select>
         <div class="dica">Diz <b>onde</b>. Duas pessoas do mesmo perfil podem
           acompanhar obras diferentes — por isso fica aqui, e não no perfil.</div></div>
-      <div class="campo"><label>Cargo (herança)</label><select id="op-perfil">
+      <div class="campo"><label>Cargo base</label><select id="op-perfil">
         ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
       </select>
-        <div class="dica">O cargo de antes dos perfis. Ele ainda decide para
-          quem não tem perfil de acesso escolhido, e sai de cena quando todo
-          mundo tiver.</div></div>
+        {# ⚑ NÃO SAI (24/11/2026). Ele pediu para excluir o "cargo (herança)",
+           "se não tiver outra coisa" — e tem: é ele que diz se a pessoa é do
+           ESCRITÓRIO ou da OBRA (administrativo de obra = só o portal,
+           `PERFIS_SO_PORTAL`), e ainda decide o acesso de quem não tem perfil
+           escolhido. Mudou o nome e a explicação, não a função. #}
+        <div class="dica">Diz se a pessoa é do <b>escritório</b> ou da
+          <b>obra</b>: quem é <b>Administrativo de obra</b> usa só o portal e o
+          diário. Também vale como acesso para quem não tem perfil escolhido
+          acima.</div></div>
       <div class="campo" id="op-escopo-bloco"><label>Dentro do alcance dela, o que vê</label>
         <select id="op-escopo">
           <option value="OBRAS_DESIGNADAS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"selected":""}>Tudo das obras marcadas</option>
@@ -1074,9 +1080,10 @@ function formOperador(u){
     </div>
 
     <div id="op-aviso-proprios" class="cartao-dica" style="margin-top:12px; display:none">
-      Com <b>“só os lançamentos que ela fez”</b> não há o que marcar aqui: ela
-      enxerga o que ela mesma lançou, em qualquer obra. Para prendê-la a obras,
-      troque para <b>“tudo das obras marcadas”</b>.</div>
+      Com <b>“só os lançamentos que ela fez”</b>, no <b>financeiro</b> ela vê
+      só o que ela mesma lançou. As obras marcadas abaixo continuam valendo
+      para o <b>Pessoal, o portal e o diário</b> — e, para quem é da obra, a
+      obra onde ela bate ponto entra sozinha.</div>
 
     <div id="op-alcance-bloco" style="margin-top:12px">
       <div class="cartao-dica">O alcance pode ser dito em três alturas, e elas
@@ -1168,8 +1175,14 @@ function formOperador(u){
     const todas = els("op-todas-obras").value === "1";
     els("op-escopo-bloco").style.display = todas ? "none" : "";
     const porObra = !todas && els("op-escopo").value === "OBRAS_DESIGNADAS";
-    els("op-obras-bloco").style.display = porObra ? "" : "none";
-    els("op-alcance-bloco").style.display = porObra ? "" : "none";
+    // ⚑ AS OBRAS APARECEM SEMPRE QUE ELA NÃO VÊ TODAS (24/11/2026). Ele: *"no
+    // perfil da pessoa, não aparece a lista das obras para selecionar (…) aí
+    // eu não consigo adicionar mais obras."* A lista só aparecia com "tudo das
+    // obras marcadas" — quando a obra só valia para o financeiro. Desde 24/11
+    // ela vale também para o Pessoal, o portal e o diário (`obras_no_pessoal`,
+    // `PERFIS_SO_PORTAL`), inclusive para quem está em "só os lançamentos".
+    els("op-obras-bloco").style.display = todas ? "none" : "";
+    els("op-alcance-bloco").style.display = todas ? "none" : "";
     // Quem vê "só os próprios lançamentos" não é recortado por obra em lugar
     // nenhum — e esconder as marcações sem dizer por quê deixa quem cadastra
     // procurando um campo que sumiu.

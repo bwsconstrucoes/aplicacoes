@@ -141,6 +141,22 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 (3) — Operadores: a lista de obras some de quem está em "só os lançamentos"; o "cargo (herança)" fica
+
+Ele: *"no perfil da pessoa, não aparece a lista das obras para selecionar (…)
+eu não consigo adicionar mais obras."* A tela só mostrava as obras com "tudo
+das obras marcadas" — o administrativo de obra nasce em "só os lançamentos".
+Isso fazia sentido quando a obra só valia para o financeiro; desde 24/11 ela
+vale para o Pessoal, o portal e o diário. Agora a lista (e empresa/projeto)
+aparece sempre que a pessoa não vê todas as obras, com o aviso de que no
+financeiro continua valendo "só os lançamentos". O servidor já gravava as
+obras em qualquer caso.
+
+Ele também pediu para excluir o "Cargo (herança)", *"se não tiver outra
+coisa"*. Tem: é ele que diz escritório × obra (`PERFIS_SO_PORTAL`) e decide o
+acesso de quem não tem perfil escolhido. Ficou, com o nome "Cargo base" e a
+explicação disso na tela.
+
 ### 24/11/2026 (2) — Portal: os botões no alto, as pendências agrupadas; a caixinha de tipos por assunto
 
 Ele: *"Sempre manter os botões para solicitação na parte superior. E logo

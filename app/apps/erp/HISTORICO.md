@@ -49,7 +49,9 @@ diário, a folha do diário e o anexo (`TELAS_DE_QUEM_E_DA_OBRA`). `pode_ver_obr
 para esse perfil usa as obras dele. Testes ajustados que diziam o contrário:
 homologação (títulos, lançar, DC), escopo (administrativo abria qualquer
 obra), diário (dono sem obra) e a marcação por pessoa (passou a usar LANÇADOR).
-**Quem cria tela nova para a obra:** ela tem de morar em `/erp/portal…` ou
+Na tela de Operadores (Configurações), a lista de obras passou a aparecer
+também para quem está em "só os lançamentos" (antes sumia), e "Cargo (herança)"
+virou "Cargo base". **Quem cria tela nova para a obra:** ela tem de morar em `/erp/portal…` ou
 entrar em `TELAS_DE_QUEM_E_DA_OBRA`. Detalhe em `HISTORICO_PESSOAL.md`, 24/11.
 
 ### ⚑ 24/11/2026 — PESSOAL: `obras_no_pessoal` em `permissoes.py`, e a MESMA FALHA EM OUTRAS ÁREAS (registro entre áreas)
