@@ -12287,6 +12287,7 @@ somente Solicitações de uma conta especifica"*.
 - Custo: colar = 1 gravação por boleto; abrir a tela = 3 consultas ao banco (a das SPs
   varre a base uma vez). Nada vai ao Google nem ao banco do Bradesco.
 - Testes: `test_analisesps_dda.py` (texto de exemplo em `tests/dados/`).
+- **Publicado em 24/11/2026.** Falta o dono apertar "Aplicar atualizações do banco" (058) e a primeira colagem real.
 
 #### Leva 276 — Comprovantes: a folha de rodapé é "Não é comprovante", não "Deu erro" (24/11/2026)
 
