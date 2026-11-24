@@ -141,6 +141,33 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 (5) — Pedido de demissão: "sai de imediato ou trabalha o aviso" é da obra; a carta anexada vale como assinada
+
+Ele: *"o mais comum é que o colaborador peça para sair de imediato (…) o campo
+data do aviso prévio está obrigatório (…) vamos ajustar para poder a gente
+trabalhar de uma forma ou de outra"*; *"pode ser que a pessoa na obra já tenha
+feito a cartinha e a gente vai anexar ao pedido"*; e sobre o texto gerado
+para assinar: *"acho que esse fluxo não se encaixa bem aqui, já que é o
+colaborador que está pedindo."*
+- No pedido de demissão (e só nele, `visiveis_se`), a obra responde **"O
+  colaborador vai trabalhar o aviso?"** — "Não — sai de imediato (pede
+  dispensa do aviso)" vem primeiro. Obrigatório nessa forma. Saiu dos campos
+  do DP (o DP corrige se precisar). A data passou a se chamar "Data do aviso
+  prévio (no pedido de demissão, a data do pedido)" — ela continua
+  obrigatória: é o dia em que a pessoa pediu, base da rescisão.
+- **A carta** (portal, opcional, só no pedido de demissão): anexada, entra
+  como documento "Pedido de demissão assinado" do pedido. No atendimento,
+  `desligamento_processo.gerar_termo` acha a carta e a registra como o
+  documento assinado (no papel, já validado pelo DP que atendeu) — a pessoa
+  NÃO assina de novo e o processo segue (`termo_voltou`). Sem carta, o
+  sistema gera o texto e a obra colhe a assinatura no portal, como antes.
+- **Decisão minha, a confirmar com ele:** mantive o texto gerado para quando
+  não há carta. A lei pede o pedido escrito e assinado pela pessoa; o texto
+  gerado é o "papel pronto" que ela lê e assina no celular. A alternativa
+  seria exigir a carta sempre.
+- A tela do formulário no portal NÃO foi vista no navegador (o mecanismo de
+  mostrar/esconder é o mesmo dos outros pedidos; o servidor tem teste).
+
 ### 24/11/2026 (4) — Toda lista de caixinhas longa ganha busca; "responde" vira "confere equipamentos"; "a obra do ponto + as marcadas"
 
 Ele: *"isso aí já é básico e já é para estar assim, nas regras gerais do

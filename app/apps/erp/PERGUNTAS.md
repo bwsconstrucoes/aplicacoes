@@ -3403,3 +3403,11 @@ não há orçamento de material por obra no ERP.
 - **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
   mês da data-base é guardado.
 
+## Pedido de demissão (24/11/2026)
+
+- Quantos pedidos de demissão foram com saída imediata e quantos cumpriram o
+  aviso? *(campo `cumpre_aviso` do pedido: 0 = imediato, 1 = trabalha)*
+- Quais pedidos de demissão vieram com a carta do colaborador e quais foram
+  assinados pelo portal? *(documento PAPEL "carta anexada pela obra" × assinado
+  na tela)*
+

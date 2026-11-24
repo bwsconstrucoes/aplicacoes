@@ -917,8 +917,9 @@ function pintarCamposDoTipo(){
         return `<label class="campo-portal">${rot}
           <input id="p-${c}" name="${c}" type="${tipo}"
             ${modo ? `inputmode="${modo}"` : ""}></label>`;
-      }).join("");
+      }).join("") + blocoDaCarta(t);
   ligarBuscaDePessoa();
+  ligarCarta(t);
   ligarRepetidos(t);
   ligarFiltroDeObra();
   ligarPapeis(t);
@@ -1262,6 +1263,34 @@ let LIDOS = {};
 
 // O papel principal de um arquivo: o primeiro que a leitura reconheceu e que
 // não é "outro". É com ele que o arquivo é guardado no cadastro.
+{# ⚑ A CARTA DO COLABORADOR (24/11/2026). Ele: *"o documento aviso (…) a
+   gente ter a opção de anexar. Porque pode ser que a pessoa na obra já tenha
+   feito a cartinha e a gente vai anexar ao pedido."* Opcional: com a carta,
+   ela VALE como o pedido de demissão assinado (o DP confere ao atender) e o
+   sistema não gera outro para assinar; sem ela, o sistema gera o texto e a
+   pessoa assina pelo portal, como antes. Só aparece no pedido de demissão. #}
+function blocoDaCarta(t){
+  if (t.chave !== "DESLIGAMENTO") return "";
+  return `<div class="papeis oculto" id="p-carta-bloco">
+    <b>Carta de pedido de demissão (opcional)</b>
+    <p class="ajuda">Se o colaborador já escreveu e assinou a carta, tire a foto
+      ou anexe o PDF: ela vale como o pedido assinado e ele <b>não precisa
+      assinar de novo</b>. Sem a carta, o sistema prepara o texto e ele assina
+      aqui no portal depois que o DP analisar.</p>
+    <input type="file" id="p-carta" accept="image/*,.pdf">
+  </div>`;
+}
+function ligarCarta(t){
+  if (t.chave !== "DESLIGAMENTO") return;
+  const mostrar = () => {
+    const f = els("p-forma_desligamento");
+    const ehPedido = !!f && /pedido/i.test(f.value || "");
+    els("p-carta-bloco").classList.toggle("oculto", !ehPedido);
+  };
+  els("p-campos").addEventListener("change", mostrar);
+  mostrar();
+}
+
 function tipoPrincipal(a){
   return (a.tipos || []).find(x => x !== "OUTRO") || "DOC-IDENTIDADE";
 }
@@ -1958,6 +1987,15 @@ async function enviarPedido(){
   // diz QUAL está incompleto — "falta a data de nascimento" não ajudaria
   // ninguém com três na tela.
   if (t.repete && REPETIDOS.length) corpo.dependentes = REPETIDOS;
+  // A carta do colaborador entra como papel do pedido, com o tipo dela
+  // (24/11/2026) — só se a forma escolhida ainda for o pedido de demissão.
+  const carta = els("p-carta");
+  const cartaVisivel = carta && !els("p-carta-bloco").classList.contains("oculto");
+  if (cartaVisivel && carta.files && carta.files[0]) {
+    ARQUIVOS = ARQUIVOS.filter(a => !(a.tipos || []).includes("PEDIDO-DEMISSAO"));
+    ARQUIVOS.push({arquivo: carta.files[0], nome: carta.files[0].name,
+                   tipos: ["PEDIDO-DEMISSAO"]});
+  }
   els("p-enviar").disabled = true;
   try {
     let d;
