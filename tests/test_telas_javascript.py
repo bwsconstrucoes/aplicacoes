@@ -43,8 +43,37 @@ DO_NAVEGADOR = {
 }
 
 
+def _com_includes(caminho: Path, vistos=None) -> str:
+    """O texto da tela COM o dos `{% include %}` dela dentro.
+
+    ⚑ NASCEU EM 24/11/2026, quando o formulário do operador saiu do
+    `erp_config.html` para um arquivo próprio (`erp_operador_form.html`),
+    porque a ficha do colaborador passou a usar o MESMO formulário. Sem isto,
+    toda vigia deste arquivo acusava "chama `formOperador`, que não existe" —
+    e a saída fácil seria copiar o formulário nas duas telas, que é
+    exatamente o que não se quer.
+
+    Segue include dentro de include, e não entra em laço: arquivo já visto
+    não se abre de novo.
+    """
+    vistos = vistos if vistos is not None else set()
+    if caminho in vistos or not caminho.exists():
+        return ""
+    vistos.add(caminho)
+    texto = caminho.read_text(encoding="utf-8")
+
+    # ⚠️ A TROCA É NO LUGAR, não no fim do arquivo: o `{% include %}` do
+    # formulário do operador fica DENTRO de um `<script>`, e o Jinja o
+    # resolve ali. Jogando o conteúdo no fim, ele cairia fora de qualquer
+    # bloco de script e as vigias não o enxergariam.
+    def _trocar(m):
+        return _com_includes(TEMPLATES / m.group(1), vistos)
+
+    return re.sub(r'\{%\s*include\s+"([^"]+)"\s*%\}', _trocar, texto)
+
+
 def _blocos(caminho: Path) -> list[str]:
-    return re.findall(r"<script>(.*?)</script>", caminho.read_text(encoding="utf-8"), re.S)
+    return re.findall(r"<script>(.*?)</script>", _com_includes(caminho), re.S)
 
 
 def _sem_jinja(texto: str) -> str:
@@ -244,7 +273,7 @@ def _ids_pedidos(codigo: str) -> set[str]:
 
 @pytest.mark.parametrize("tela", TELAS + [BASE], ids=lambda p: p.name)
 def test_a_tela_nao_procura_elemento_que_nao_existe(tela: Path):
-    texto = tela.read_text(encoding="utf-8")
+    texto = _com_includes(tela)        # com o dos includes dentro
     # AQUI o código vai CRU, sem passar por `_so_codigo`: o id que interessa
     # mora dentro das aspas de `els("...")`, e é justamente o conteúdo das
     # aspas que aquela função joga fora.
@@ -300,7 +329,7 @@ def test_a_tela_nao_procura_elemento_que_nao_existe(tela: Path):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
 def test_a_tela_que_tem_janela_sabe_abrir_a_janela(tela: Path):
-    texto = tela.read_text(encoding="utf-8")
+    texto = _com_includes(tela)        # com o dos includes dentro
     codigo = "\n".join(_blocos(tela))
     if "<dialog" not in texto:
         return
@@ -357,7 +386,7 @@ def test_quem_preenche_a_janela_tambem_a_abre(tela: Path):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
 def test_a_tela_que_fala_em_jogar_documento_tem_onde_jogar(tela: Path):
-    texto = tela.read_text(encoding="utf-8")
+    texto = _com_includes(tela)        # com o dos includes dentro
     if not re.search(r"[Jj]ogue o documento|[Jj]ogue aqui|arraste o documento",
                      texto):
         return
@@ -387,7 +416,7 @@ def test_a_tela_que_fala_em_jogar_documento_tem_onde_jogar(tela: Path):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("tela", TELAS + SOLTAS + [BASE], ids=lambda p: p.name)
 def test_a_folha_de_estilo_do_erp_vem_do_blueprint_do_erp(tela: Path):
-    texto = tela.read_text(encoding="utf-8")
+    texto = _com_includes(tela)        # com o dos includes dentro
     errados = re.findall(r"url_for\(\s*'static'\s*,\s*filename\s*=\s*'([^']+)'",
                          texto)
     errados += re.findall(r'url_for\(\s*"static"\s*,\s*filename\s*=\s*"([^"]+)"',
@@ -544,3 +573,36 @@ def test_a_janela_da_pessoa_nao_e_fechada_para_abrir_o_formulario():
             'a janela da pessoa está sendo fechada sem ser a pedido dela. '
             'Abrir o formulário NÃO pode fechá-la: ele reclamou disso duas '
             'vezes, e fechada ela não volta por nada.')
+
+
+# ---------------------------------------------------------------------------
+# O FORMULÁRIO QUE DUAS TELAS COMPARTILHAM (24/11/2026)
+#
+# Ele pediu a aba Operador dentro da ficha do colaborador. Em vez de copiar o
+# formulário da tela de Configurações, ele saiu para `erp_operador_form.html`
+# e as duas telas incluem o MESMO arquivo.
+#
+# ⚠️ ESTE TESTE EXISTE PARA QUE A CÓPIA NÃO VOLTE. O caminho fácil, no dia em
+# que alguém precisar mexer, é colar o formulário de novo numa das telas — e
+# aí elas divergem em silêncio, que é a regra dele de 17/11 ("um cadastro,
+# uma porta") sendo quebrada.
+# ---------------------------------------------------------------------------
+def test_o_formulario_do_operador_mora_num_lugar_so():
+    partial = TEMPLATES / "erp_operador_form.html"
+    assert partial.exists(), "o formulário compartilhado do operador sumiu"
+    assert "function formOperador" in partial.read_text(encoding="utf-8")
+
+    donos = [p for p in TEMPLATES.glob("erp_*.html")
+             if p != partial
+             and re.search(r"^function formOperador", p.read_text(encoding="utf-8"),
+                           re.M)]
+    assert not donos, (
+        f"{[p.name for p in donos]} declara(m) `formOperador` por conta "
+        f"própria. Ele mora em erp_operador_form.html, e as telas o INCLUEM — "
+        f"duas cópias divergem no primeiro ajuste.")
+
+    usam = [p.name for p in TEMPLATES.glob("erp_*.html")
+            if 'include "erp_operador_form.html"' in p.read_text(encoding="utf-8")]
+    assert set(usam) >= {"erp_config.html", "erp_colaboradores.html"}, (
+        f"esperava Configurações e Colaboradores usando o formulário "
+        f"compartilhado; achei {usam}")

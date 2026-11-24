@@ -880,7 +880,13 @@ def historico(s: Session, colaborador_id: int, meses: int = 24) -> dict[str, Any
                         "obra": c.obra.codigo if c.obra else None,
                         "situacao": c.situacao,
                         "admissao": c.admissao.isoformat() if c.admissao else None,
-                        "demissao": c.demissao.isoformat() if c.demissao else None},
+                        "demissao": c.demissao.isoformat() if c.demissao else None,
+                        # ⚑ O ACESSO AO SISTEMA (24/11/2026): é por ele que a
+                        # ficha sabe se mostra o cadastro de operador na aba
+                        # Operador ou o recado de "ainda não entra no
+                        # sistema". Sem isto a aba acha que ninguém tem
+                        # acesso — foi o que aconteceu ao dirigir a tela.
+                        "usuario_id": getattr(c, "usuario_id", None)},
         "lancamentos": linhas, "total": round(total, 2),
         "ultimos_12_meses": round(ultimos_12, 2),
         "por_verba": sorted(({"verba": k, "valor": round(v, 2)}
