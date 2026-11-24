@@ -360,6 +360,12 @@ mesmo tempo; `lista-sem-internet` 10,9 s; e uma tela do Análise de SPs (`/anali
   uma só (`cadastros.colaboradores_por_ids`).
 - **Relatado, não mexido (outras áreas):** a credencial do Drive refeita a cada chamada vale para o ERP inteiro (todo
   upload e download paga uma ida a mais ao Google); e os 40,8 s do Análise de SPs são da área deles.
+  **O dono, sobre o Análise de SPs: "não precisa mexer"** — fica como está.
+
+**Publicado em 24/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Junto, um conserto de teste: a limpeza dos
+testes do ponto passou a levar a trilha dos termos (`eventos`), que fazia a limpeza do ERP falhar quando as duas
+rodavam no mesmo trabalhador. Suíte inteira: 12.830 passando. **Não medido em produção** — conferir no log do Render,
+no próximo pico, se a busca pelo nome caiu para ~1 s e a lista sem internet saiu da lista de "LENTA".
 
 ## 23/11/2026 — A CENTRAL DE ASSINATURAS, pelo aplicativo do ponto (feita; ver a proposta logo abaixo)
 
