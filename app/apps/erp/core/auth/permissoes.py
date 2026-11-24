@@ -879,6 +879,38 @@ def ve_todas_as_obras(usuario: Usuario) -> bool:
     return usuario.perfil in VE_TUDO
 
 
+# ---------------------------------------------------------------------------
+# QUEM É DA OBRA SÓ TEM O PORTAL (24/11/2026)
+#
+# Decisão dele, com as palavras dele: *"tanto a parte do financeiro, pessoal,
+# ponto, suprimento, tudo, quem acessa é o pessoal do escritório (…) o que é
+# que o pessoal da obra tem acesso? Eles têm acesso ao portal. E o portal é o
+# caminho que eles têm para poder fazer solicitações e acompanhar as
+# solicitações. Isso em tudo."* E o diário: *"é só para eles lançarem (…)
+# olhar somente a obra deles e pode visualizar no calendário."*
+#
+# Duas consequências, as duas aqui e em `routes._guarda_permissao`:
+#   1. as TELAS do ERP se fecham para esses perfis (só o portal, o diário e o
+#      que o portal abre — ver `TELAS_DE_QUEM_E_DA_OBRA` em routes.py);
+#   2. ABRIR UMA OBRA (`pode_ver_obra` — o diário, o calendário, a logo) é
+#      só das obras deles — nunca o "sem filtro" que `obras_do_usuario` dá a
+#      quem enxerga por autoria, e que deixava o administrativo de obra abrir
+#      o diário de qualquer obra. As LISTAS das outras áreas (suprimentos,
+#      títulos) continuam com a regra delas: lá a autoria recorta de verdade.
+# ---------------------------------------------------------------------------
+PERFIS_SO_PORTAL = (P.ADMINISTRATIVO_OBRA,)
+
+
+def so_portal(perfil: Any) -> bool:
+    """Este perfil é de quem trabalha na obra — só o portal?"""
+    if perfil is None:
+        return False
+    try:
+        return P(getattr(perfil, "value", perfil)) in PERFIS_SO_PORTAL
+    except ValueError:
+        return False
+
+
 def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     """IDs das obras que o usuário enxerga. None = todas."""
     if ve_todas_as_obras(usuario):
@@ -1045,7 +1077,9 @@ def exigir_titulo_no_escopo(s: Session, usuario: Usuario, titulo_id: int) -> Non
 
 
 def pode_ver_obra(s: Session, usuario: Usuario, obra_id: int) -> bool:
-    obras = obras_do_usuario(s, usuario)
+    # Quem é da obra abre só as obras dele (24/11/2026, ver `PERFIS_SO_PORTAL`).
+    obras = (obras_de_registro_sem_autor(s, usuario) if so_portal(usuario.perfil)
+             else obras_do_usuario(s, usuario))
     if obras is None:
         return True                      # perfil que enxerga todas as obras
     return int(obra_id) in set(obras)

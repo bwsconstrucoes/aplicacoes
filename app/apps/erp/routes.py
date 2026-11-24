@@ -25,7 +25,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from app.apps.erp.core.auth.permissoes import (
     ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS,
-    acoes_do_perfil_no_banco, decidir, pode,
+    acoes_do_perfil_no_banco, decidir, pode, so_portal,
 )
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
@@ -402,6 +402,11 @@ def _contexto(aba: str) -> dict:
     # menu mostra. Duas chamadas seriam duas idas ao banco em TODA página.
     pode = _pode_agora(*ACOES_NA_TELA, *_acoes_das_abas())
     modulos_visiveis, abas_por_modulo = _menu_da_pessoa(pode)
+    # Quem é da obra só abre o diário fora do portal (24/11/2026): o menu não
+    # oferece os módulos do escritório, que só o levariam de volta ao portal.
+    if so_portal(session.get("erp_usuario_perfil", "")):
+        modulos_visiveis = []
+        abas_por_modulo = {chave: [a for a in modulo["abas"] if a[0] == aba]}
     return {"modulos": modulos_visiveis, "modulo": modulo,
             "abas": abas_por_modulo.get(chave, modulo["abas"]),
             "aba_ativa": aba,
@@ -685,7 +690,26 @@ def _guarda_permissao():
         logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
                        acao, session.get("erp_usuario_id"), perfil, endpoint)
         return _recusa_de_acesso(perfil_enum)
+    # ⚑ QUEM É DA OBRA SÓ TEM O PORTAL (24/11/2026) — ver
+    # `permissoes.PERFIS_SO_PORTAL`. TELA do ERP fora das do portal leva para o
+    # portal; o que o portal chama (as APIs) continua valendo pela ação de cada
+    # uma, e o alcance delas é o das obras da pessoa.
+    if so_portal(perfil_enum) and request.method == "GET" \
+            and not request.path.startswith("/erp/api/") \
+            and not request.path.startswith("/erp/portal") \
+            and endpoint not in TELAS_DE_QUEM_E_DA_OBRA:
+        logger.info("ERP/portal: %s levado ao portal (era %s)",
+                    session.get("erp_usuario_id"), endpoint)
+        return redirect(url_for("erp.pagina_portal"))
     return None
+
+
+# As telas que quem é da obra abre FORA do `/erp/portal`: o diário (é o
+# portal que leva para ele), a folha impressa dele e o documento anexado que o
+# portal mostra. Todo o resto do ERP é do escritório.
+TELAS_DE_QUEM_E_DA_OBRA = frozenset({
+    "erp.pagina_diario", "erp.pagina_diario_papel", "erp.baixar_anexo",
+})
 
 
 def _e_chamada_de_api() -> bool:
@@ -14015,9 +14039,10 @@ def pagina_portal():
     with get_session() as _s:
         quem = _usuario_logado(_s)
         from app.apps.erp.core.auth.permissoes import pode as _pode
-        mais = any(_pode(quem, a) for a in
-                   ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
-                    "ver_suprimentos", "configurar"))
+        mais = (quem is not None and not so_portal(quem.perfil)
+                and any(_pode(quem, a) for a in
+                        ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
+                         "ver_suprimentos", "configurar")))
     return render_template("erp_portal.html", pode_mais_que_o_portal=mais)
 
 

@@ -174,10 +174,31 @@ solicitacao.py`, `compras.py`), lista de obras, agenda, notas e a lista de
 despesas com colaborador (`core/pessoal.py::listar`). Cada uma precisa da
 decisão da área: lá pode haver autor que sirva de recorte.
 
-**Em aberto, decisão dele:** o perfil "administrativo de obra" abre o ERP
-(dentro das obras dele). Proposto: um perfil "Portal da obra" só com o portal,
-padrão da liberação pela fila — depende de ele dizer se algum administrativo
-usa o ERP de verdade.
+**E a decisão maior, no mesmo dia** — ele: *"tanto a parte do financeiro,
+pessoal, ponto, suprimento, tudo, quem acessa é o pessoal do escritório (…) o
+pessoal da obra (…) têm acesso ao portal (…) Isso em tudo."* E o diário: *"é
+só para eles lançarem (…) olhar somente a obra deles e pode visualizar no
+calendário."*
+- `permissoes.PERFIS_SO_PORTAL = (ADMINISTRATIVO_OBRA,)` e `so_portal()`.
+  No `_guarda_permissao`, TELA do ERP (GET fora de `/erp/api/` e de
+  `/erp/portal`) para esse perfil leva ao portal, exceto
+  `TELAS_DE_QUEM_E_DA_OBRA` (o diário, a folha do diário e o anexo). As APIs
+  seguem pela ação de cada uma — é o que o portal chama.
+- `pode_ver_obra` para esse perfil usa as obras dele (nunca o "sem filtro" da
+  autoria): o diário, o calendário e a logo só da obra dele.
+- O portal esconde "ERP completo"; a tela do diário, aberta pelo portal, não
+  mostra os módulos do escritório.
+- ⚠️ NÃO feito por perfil no banco: o cadastro de perfis junta, na mesma
+  seção, "pedir ao DP pelo portal" e "abrir Solicitações no ERP". Separar
+  mexeria em todas as áreas; a porta por perfil resolve sem isso.
+- ⚠️ O que o administrativo PERDE: Contas a pagar / Lançar / Despesas com
+  colaborador no ERP (o roteiro de homologação dizia que abriam). Se alguém
+  lança pagamento por lá hoje, deixa de conseguir — o portal ainda não tem a
+  área de pagamentos. Avisado ao dono.
+- As LISTAS das outras áreas (suprimentos, títulos) mantêm a regra delas
+  (a autoria recorta de verdade lá) — tentei trocar no `obras_do_usuario` e o
+  teste de Suprimentos "quem só vê os próprios" mostrou que mudaria regra
+  alheia. Supervisor e gestor de obra NÃO entraram na lista: perguntar.
 
 ### 23/11/2026 (9) — O guia do portal virou o guia de ACESSO, numa página
 

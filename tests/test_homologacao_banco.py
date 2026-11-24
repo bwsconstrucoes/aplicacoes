@@ -27,9 +27,12 @@ pytestmark = pytest.mark.banco
 # ---------------------------------------------------------------------------
 ROTEIRO = [
     # perfil,               caminho,               abre?
-    (P.ADMINISTRATIVO_OBRA, "/erp/titulos",        True),
-    (P.ADMINISTRATIVO_OBRA, "/erp/lancar",         True),
-    (P.ADMINISTRATIVO_OBRA, "/erp/dc",             True),
+    # ⚑ 24/11/2026: quem é da obra só tem o portal — as telas do ERP o levam
+    # para lá (decisão do dono: *"o pessoal da obra (…) têm acesso ao portal
+    # (…) Isso em tudo"*). Antes estas três abriam.
+    (P.ADMINISTRATIVO_OBRA, "/erp/titulos",        "PORTAL"),
+    (P.ADMINISTRATIVO_OBRA, "/erp/lancar",         "PORTAL"),
+    (P.ADMINISTRATIVO_OBRA, "/erp/dc",             "PORTAL"),
     (P.ADMINISTRATIVO_OBRA, "/erp/pagamentos",     False),
     (P.ADMINISTRATIVO_OBRA, "/erp/relatorios",     False),
     (P.ADMINISTRATIVO_OBRA, "/erp/configuracoes",  False),
@@ -52,7 +55,10 @@ ROTEIRO = [
                          ids=lambda v: v.value if isinstance(v, P) else str(v))
 def test_casos_do_roteiro(app_real, operadores, perfil, caminho, abre):
     r = como(app_real, operadores[perfil].id).get(caminho)
-    if abre:
+    if abre == "PORTAL":
+        assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal"), (
+            f"{perfil.value} devia ser levado ao portal em {caminho}: {r.status_code}")
+    elif abre:
         assert r.status_code == 200, f"{perfil.value} devia abrir {caminho}: {r.status_code}"
     else:
         assert r.status_code == 403, f"{perfil.value} devia ser recusado em {caminho}"

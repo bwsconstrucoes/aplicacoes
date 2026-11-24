@@ -43,7 +43,7 @@ def _jpeg(cor=(120, 140, 160), tamanho=(60, 45)) -> bytes:
 
 
 @pytest.fixture
-def dono(sessao_real):
+def dono(sessao_real, obra):
     from app.apps.erp.core.auth.service import gerar_hash
     from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
     u = Usuario(nome="Administrativo da obra", email="adm@fotos.teste",
@@ -51,6 +51,12 @@ def dono(sessao_real):
                 perfil=PerfilUsuario.ADMINISTRATIVO_OBRA,
                 telefone="5585900000021")
     sessao_real.add(u)
+    sessao_real.flush()
+    # ⚑ 24/11/2026: quem é da obra abre só as obras dele (`PERFIS_SO_PORTAL`).
+    # Antes, sem obra nenhuma, o administrativo abria o diário de qualquer
+    # obra — o vazamento corrigido. O dono do diário é o da obra do teste.
+    from app.apps.erp.db.models.cadastros import UsuarioObra
+    sessao_real.add(UsuarioObra(usuario_id=u.id, obra_id=obra))
     sessao_real.flush()
     return u
 

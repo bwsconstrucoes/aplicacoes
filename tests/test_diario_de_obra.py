@@ -44,7 +44,7 @@ def test_todo_tempo_tem_rotulo_em_portugues():
 # COM BANCO
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def dono(sessao_real):
+def dono(sessao_real, obra):
     """Quem lança o diário: o ADMINISTRATIVO da obra. Decisão dele em
     08/11/2026 — *"quem lança realmente é o administrativo da obra, não é
     encarregado, não."*"""
@@ -55,6 +55,12 @@ def dono(sessao_real):
                 perfil=PerfilUsuario.ADMINISTRATIVO_OBRA,
                 telefone="5585900000009")
     sessao_real.add(u)
+    sessao_real.flush()
+    # ⚑ 24/11/2026: quem é da obra abre só as obras dele (`PERFIS_SO_PORTAL`).
+    # Antes, sem obra nenhuma, o administrativo abria o diário de qualquer
+    # obra — o vazamento corrigido. O dono do diário é o da obra do teste.
+    from app.apps.erp.db.models.cadastros import UsuarioObra
+    sessao_real.add(UsuarioObra(usuario_id=u.id, obra_id=obra))
     sessao_real.flush()
     return u
 
@@ -1175,12 +1181,9 @@ def test_o_portal_recebe_o_rotulo_da_obra_pronto(sessao_real, obra, dono):
     rótulo vem PRONTO do servidor, da mesma regra que o resto do ERP usa."""
     from app.apps.erp.core import portal as svc_portal
     from app.apps.erp.core.comum.rotulos import rotulo_da_obra
-    from app.apps.erp.db.models.cadastros import UsuarioObra
-    # ⚑ 24/11/2026: o administrativo de obra alcança AS OBRAS DELE. Antes, sem
-    # obra nenhuma, ele via todas — era o vazamento corrigido em
-    # `permissoes.obras_no_pessoal`, e este teste o tomava por regra.
-    sessao_real.add(UsuarioObra(usuario_id=dono.id, obra_id=obra))
-    sessao_real.flush()
+    # ⚑ 24/11/2026: o administrativo de obra alcança AS OBRAS DELE (o `dono`
+    # é ligado à obra do teste). Antes, sem obra nenhuma, ele via todas — era
+    # o vazamento corrigido em `permissoes.obras_no_pessoal`.
     lista = svc_portal.obras_para_escolher(sessao_real, dono)
     assert lista, "o dono alcança pelo menos a obra do teste"
     assert {o["id"] for o in lista} == {obra}, "e só as dele"

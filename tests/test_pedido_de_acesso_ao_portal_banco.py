@@ -640,3 +640,36 @@ def test_administrativo_liberado_pelo_portal_so_ve_o_pessoal_da_obra_dele(
     # o DP continua vendo a empresa inteira
     fila_dp = como(app_real, pessoal.id).get("/erp/api/dp/solicitacoes").get_json()
     assert sol_fora["id"] in [x["id"] for x in fila_dp["solicitacoes"]]
+
+
+def test_quem_e_da_obra_so_tem_o_portal(app_real, sessao_real, pessoa, obra, dp, pessoal):
+    """24/11/2026, ele: *"o pessoal da obra (…) têm acesso ao portal (…) Isso
+    em tudo."* O diário fica, só da obra dele. O escritório não muda."""
+    from tests.conftest import como                      # type: ignore
+    outra = Obra(codigo="OBRFORA", nome="Obra de fora", status="ATIVA")
+    sessao_real.add(outra)
+    sessao_real.flush()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                            nome=pessoa.nome, email="so.portal@gmail.com", obra_id=obra.id)
+    uid = como(app_real, dp.id).post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                                     json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    sessao_real.commit()
+    adm = como(app_real, uid)
+    with adm.session_transaction() as sess:
+        sess["erp_usuario_perfil"] = "ADMINISTRATIVO_OBRA"
+
+    for tela in ("/erp/inicio", "/erp/colaboradores", "/erp/dp/solicitacoes",
+                 "/erp/dp/contabilidade", "/erp/titulos", "/erp/ponto/espelho"):
+        r = adm.get(tela)
+        assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal"), tela
+    assert adm.get("/erp/portal").status_code == 200
+    assert "ERP completo" not in adm.get("/erp/portal").get_data(as_text=True)
+    assert adm.get("/erp/obras/diario").status_code == 200
+    # o diário só da obra dele
+    assert adm.get(f"/erp/api/diario/{obra.id}").status_code == 200
+    assert adm.get(f"/erp/api/diario/{outra.id}").status_code == 404
+
+    # o escritório continua igual
+    dp_real = como(app_real, pessoal.id)
+    assert dp_real.get("/erp/colaboradores").status_code == 200
+    assert dp_real.get("/erp/dp/solicitacoes").status_code == 200

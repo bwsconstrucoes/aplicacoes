@@ -221,8 +221,11 @@ def test_com_banco_real_a_marcacao_libera_e_a_desmarcacao_recusa(app_real, sessa
     from app.apps.erp.db.models.cadastros import Usuario, UsuarioPermissao
     from conftest import como
 
+    # LANÇADOR, e não ADMINISTRATIVO_OBRA: desde 24/11/2026 quem é da obra só
+    # tem o portal, e qualquer tela do ERP o leva para lá — este teste é da
+    # MARCAÇÃO por pessoa, não do perfil.
     u = Usuario(nome="Ajustado", email="ajuste@teste.bws.local",
-                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.ADMINISTRATIVO_OBRA)
+                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.LANCADOR)
     sessao_real.add(u)
     sessao_real.flush()
     sessao_real.commit()
