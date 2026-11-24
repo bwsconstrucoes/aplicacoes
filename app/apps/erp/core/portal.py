@@ -196,6 +196,33 @@ TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# ⚑ A CAIXINHA AGRUPADA (24/11/2026). Ele, abrindo os tipos: *"tem solicitação
+# de férias, alteração de férias, cancelamento de férias. Não tem como agrupar
+# melhor isso aqui, não? Colocar o cancelar solicitação de desligamento abaixo
+# de desligamento de colaborador."* A ORDEM da caixinha é a destes grupos
+# (não a de `TIPOS_POR_AREA`, que diz só O QUE a obra pode pedir), e cada grupo
+# vira um título dentro da lista. Tipo que não estiver aqui cai em "Outros".
+GRUPOS_DO_PESSOAL: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Admissão", ("CADASTRO", "ADMISSAO_PRESTADOR")),
+    ("Desligamento", ("DESLIGAMENTO", "CANCELAR_DESLIGAMENTO")),
+    ("Férias", ("FERIAS", "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS")),
+    ("Afastamento", ("AFASTAMENTO", "RETORNO_AFASTAMENTO")),
+    ("Dados e benefícios", ("ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE",
+                            "AJUDA_DE_CUSTO")),
+    ("Outros", ("DIVERSOS",)),
+)
+
+
+def _grupo_e_ordem(chave: str) -> tuple[str, int]:
+    """O grupo do tipo e a posição dele na caixinha."""
+    pos = 0
+    for nome, chaves in GRUPOS_DO_PESSOAL:
+        for k in chaves:
+            if k == chave:
+                return nome, pos
+            pos += 1
+    return "Outros", 999
+
 # Mantido para quem já usava o nome antigo. É a soma das áreas, não uma
 # segunda lista — duas listas para a mesma coisa divergem no primeiro mês.
 TIPOS_DO_PORTAL = tuple(
@@ -399,7 +426,9 @@ def tipos(s: Session) -> list[dict[str, Any]]:
             # porta para duas respostas diferentes.
             if not d["exige_pessoa"] and "obra_id" not in campos:
                 campos.insert(0, "obra_id")
+            grupo, ordem = _grupo_e_ordem(k) if area == "pessoal" else ("", 0)
             saida.append({
+                "grupo": grupo, "_ordem": ordem,
                 "chave": k, "area": area, "nome": d["nome"],
                 "explicacao": d["explicacao"],
                 "exige_pessoa": d["exige_pessoa"],
@@ -464,6 +493,8 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 # preenche ao escolher a pessoa e marca como conferência.
                 "ja_no_cadastro": dict(d.get("ja_no_cadastro") or {}),
             })
+    # A ordem da caixinha é a dos grupos (24/11/2026); estável dentro da área.
+    saida.sort(key=lambda x: (x["area"], x.pop("_ordem", 0)))
     return saida
 
 

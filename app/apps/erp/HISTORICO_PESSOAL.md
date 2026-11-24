@@ -141,6 +141,41 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 (3) — Operadores: a lista de obras some de quem está em "só os lançamentos"; o "cargo (herança)" fica
+
+Ele: *"no perfil da pessoa, não aparece a lista das obras para selecionar (…)
+eu não consigo adicionar mais obras."* A tela só mostrava as obras com "tudo
+das obras marcadas" — o administrativo de obra nasce em "só os lançamentos".
+Isso fazia sentido quando a obra só valia para o financeiro; desde 24/11 ela
+vale para o Pessoal, o portal e o diário. Agora a lista (e empresa/projeto)
+aparece sempre que a pessoa não vê todas as obras, com o aviso de que no
+financeiro continua valendo "só os lançamentos". O servidor já gravava as
+obras em qualquer caso.
+
+Ele também pediu para excluir o "Cargo (herança)", *"se não tiver outra
+coisa"*. Tem: é ele que diz escritório × obra (`PERFIS_SO_PORTAL`) e decide o
+acesso de quem não tem perfil escolhido. Ficou, com o nome "Cargo base" e a
+explicação disso na tela.
+
+### 24/11/2026 (2) — Portal: os botões no alto, as pendências agrupadas; a caixinha de tipos por assunto
+
+Ele: *"Sempre manter os botões para solicitação na parte superior. E logo
+abaixo (…) os avisos, o que já foi solicitado, o que tem pendente (…) para o
+colaborador assinar (…) similar ao aviso da equipe. Para estar agrupado e a
+gente poder expandir."* E: *"solicitação de férias, alteração de férias,
+cancelamento de férias. Não tem como agrupar melhor (…)? Colocar o cancelar
+solicitação de desligamento abaixo de desligamento."*
+- Ordem do portal: **Abrir uma solicitação** → **Pendências da obra**
+  (novo bloco; "Para o colaborador assinar" e "Documentos a devolver"
+  recolhidos, com a quantidade em destaque) → **Avisos da equipe** → **O que
+  você já pediu**. Antes, assinar e devolver ficavam abertos ACIMA dos botões.
+  (O chat de Suprimentos tinha posto os dois "no alto" em 23/11; a decisão do
+  dono agora é outra.)
+- A caixinha "O que você precisa" vem com títulos (`portal.GRUPOS_DO_PESSOAL`):
+  Admissão · Desligamento (o cancelamento logo abaixo) · Férias (as três) ·
+  Afastamento · Dados e benefícios · Outros. A ordem é a dos grupos.
+- Conferido com a tela montada no navegador (dados de exemplo).
+
 ### 24/11/2026 — ⚠️ VAZAMENTO: o administrativo de obra via o Pessoal da empresa inteira
 
 Ele, depois de liberar administrativos pelo portal: *"estão vendo (…) as
@@ -198,7 +233,9 @@ calendário."*
 - As LISTAS das outras áreas (suprimentos, títulos) mantêm a regra delas
   (a autoria recorta de verdade lá) — tentei trocar no `obras_do_usuario` e o
   teste de Suprimentos "quem só vê os próprios" mostrou que mudaria regra
-  alheia. Supervisor e gestor de obra NÃO entraram na lista: perguntar.
+  alheia. Supervisor e gestor de obra NÃO entraram na lista — ele, 24/11:
+  *"depois a gente decide, ainda não tem nenhum cadastrado."* Publicado em
+  24/11/2026.
 
 ### 23/11/2026 (9) — O guia do portal virou o guia de ACESSO, numa página
 
