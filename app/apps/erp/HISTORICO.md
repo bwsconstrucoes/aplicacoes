@@ -40,6 +40,17 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 24/11/2026 — PESSOAL: `obras_no_pessoal` em `permissoes.py`, e a MESMA FALHA EM OUTRAS ÁREAS (registro entre áreas)
+
+`obras_do_usuario` devolve "sem filtro" para quem enxerga por AUTORIA. Onde o
+registro não tem autor (colaborador, solicitação), isso entregava a empresa
+inteira ao administrativo de obra. O Pessoal e o portal passaram a usar
+`obras_no_pessoal` (todas para quem vê tudo ou atende o DP; as obras da
+pessoa para os demais). **Áreas que ainda usam `obras_do_usuario` em registro
+possivelmente sem autor, a conferir por quem cuida delas:** Arquivo, Diário de
+obra (usado pelo portal), Suprimentos, lista de obras, agenda, notas e a lista
+de despesas com colaborador. Detalhe em `HISTORICO_PESSOAL.md`, 24/11/2026.
+
 ### ⚑ 23/11/2026 — PESSOAL CONSERTOU O CPF NA TELA DE OPERADORES (registro entre áreas)
 
 A edição de operador (`/erp/api/usuarios/<id>`, Configurações › Operadores)

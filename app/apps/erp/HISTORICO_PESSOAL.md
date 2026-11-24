@@ -141,6 +141,44 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 — ⚠️ VAZAMENTO: o administrativo de obra via o Pessoal da empresa inteira
+
+Ele, depois de liberar administrativos pelo portal: *"estão vendo (…) as
+pendências, as solicitações do DP. Uma determinada pessoa passou a informação
+de 2 desligamentos (…) que ele não tem nada a ver."*
+
+**A causa:** as telas do Pessoal usavam `obras_do_usuario`, que devolve "sem
+filtro" para quem enxerga por AUTORIA ("só o que eu lancei"). Colaborador e
+solicitação não têm autor que sirva de recorte, então o administrativo de
+obra (padrão PROPRIOS) via a fila de solicitações, a lista e a FICHA de
+qualquer colaborador, férias e pedidos à contabilidade da empresa inteira — e
+o portal também. O aviso "readmissões não foram feitas" ia sem recorte
+nenhum para qualquer um. É a mesma armadilha achada nas Locações em
+11/09/2026 (`obras_de_registro_sem_autor`).
+
+**O conserto:** `permissoes.obras_no_pessoal` — quem enxerga todas as obras
+OU atende o DP (`atender_dp`) vê tudo; os demais, as obras deles (marcadas,
+projeto, empresa, a do ponto). NÃO dava para usar só
+`obras_de_registro_sem_autor`: o DP também está em autoria, e o "sem filtro"
+era o que o deixava ver tudo — teria sido cortado. Conferido perfil a perfil:
+só o ADMINISTRATIVO_OBRA muda. Aplicado em: fila e detalhe de solicitações,
+readmissões pendentes, lista/busca/ficha de colaboradores, opções de obras do
+cadastro, fila do cadastro, férias e períodos, pedidos à contabilidade, e o
+portal inteiro (`portal.obras_que_alcanca`). Teste com banco reproduz o caso
+(falha sem o conserto).
+
+**Ainda com a mesma armadilha, em OUTRAS áreas (não mexi):** Arquivo
+(`api_arquivo_donos`, `core/arquivo/service.py`), Diário de obra (quadro,
+procurar, pendências — o portal usa), Suprimentos (`core/suprimentos/
+solicitacao.py`, `compras.py`), lista de obras, agenda, notas e a lista de
+despesas com colaborador (`core/pessoal.py::listar`). Cada uma precisa da
+decisão da área: lá pode haver autor que sirva de recorte.
+
+**Em aberto, decisão dele:** o perfil "administrativo de obra" abre o ERP
+(dentro das obras dele). Proposto: um perfil "Portal da obra" só com o portal,
+padrão da liberação pela fila — depende de ele dizer se algum administrativo
+usa o ERP de verdade.
+
 ### 23/11/2026 (9) — O guia do portal virou o guia de ACESSO, numa página
 
 Ele: *"não precisa avisar o que é que vai ser solicitado lá pela parte do DP

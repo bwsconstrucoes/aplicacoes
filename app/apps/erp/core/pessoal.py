@@ -257,12 +257,12 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
     Colaborador SEM obra é do escritório, e não aparece para quem responde por
     uma obra: o escritório não é a frente dele.
     """
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
 
     stmt = select(Colaborador).options(
         selectinload(Colaborador.cargo), selectinload(Colaborador.obra))
     if usuario is not None:
-        permitidas = obras_do_usuario(s, usuario)
+        permitidas = obras_no_pessoal(s, usuario)  # 24/11/2026: a regra do Pessoal
         if permitidas is not None:
             if not permitidas:
                 return []

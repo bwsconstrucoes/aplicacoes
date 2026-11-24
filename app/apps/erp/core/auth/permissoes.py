@@ -888,6 +888,30 @@ def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     return None          # filtra por autoria, não por obra
 
 
+def obras_no_pessoal(s: Session, usuario: Usuario) -> Optional[list[int]]:
+    """As obras que esta pessoa alcança NO PESSOAL (24/11/2026). None = todas.
+
+    ⚑ POR QUE EXISTE. As telas do Pessoal (colaboradores, solicitações, férias,
+    pedidos à contabilidade, o portal) usavam `obras_do_usuario`, que devolve
+    "sem filtro" para quem enxerga por AUTORIA. Colaborador e solicitação não
+    têm "quem lançou" que sirva de recorte — e o administrativo de obra,
+    liberado pelo portal, via a fila e a equipe da EMPRESA INTEIRA. Ele: *"estão
+    vendo (…) as solicitações do DP (…) 2 desligamentos (…) que ele não tem
+    nada a ver."*
+
+    E o mesmo "sem filtro" era o que deixava o DP ver tudo — ele também está
+    em autoria. Trocar só por `obras_de_registro_sem_autor` cortaria o DP.
+    Daí a regra própria do Pessoal:
+
+      · enxerga todas as obras (cadastro) OU atende o DP (`atender_dp`) → TODAS;
+      · qualquer outro → as obras dele (marcadas, projeto, empresa e a obra
+        onde bate ponto), e nenhuma se não tiver nenhuma — o padrão NEGAR.
+    """
+    if ve_todas_as_obras(usuario) or pode_com_banco(s, usuario, "atender_dp"):
+        return None
+    return _obras_designadas(s, usuario)
+
+
 def obras_de_registro_sem_autor(s: Session, usuario: Usuario) -> Optional[list[int]]:
     """Obras que a pessoa alcança num registro que NÃO TEM AUTOR.
 
@@ -1213,9 +1237,11 @@ def exigir_colaborador_no_escopo(s: Session, usuario: Usuario,
     c = s.get(Colaborador, colaborador_id)
     if c is None:
         raise ErroNaoEncontrado("Colaborador não encontrado.")
-    try:
-        exigir_obra_no_escopo(s, usuario, c.obra_id)
-    except ErroNaoEncontrado:
+    # ⚑ 24/11/2026: SEM AUTORIA. Colaborador não tem "quem lançou"; com
+    # `exigir_obra_no_escopo`, quem enxerga por autoria (o administrativo de
+    # obra liberado pelo portal) abria a ficha de QUALQUER pessoa.
+    obras = obras_no_pessoal(s, usuario)
+    if obras is not None and (c.obra_id is None or int(c.obra_id) not in set(obras)):
         raise ErroNaoEncontrado("Colaborador não encontrado.")
 
 
@@ -1299,7 +1325,8 @@ def exigir_pedido_contabilidade_no_escopo(s: Session, usuario: Usuario,
     obra_id, aberto_por = linha[0], linha[1]
     if usuario is not None and aberto_por == usuario.id:
         return
-    alcance = obras_do_usuario(s, usuario)
+    # 24/11/2026: a regra do Pessoal (ver `obras_no_pessoal`).
+    alcance = obras_no_pessoal(s, usuario)
     if alcance is None:
         return
     if obra_id is None or int(obra_id) not in set(alcance):
@@ -1328,7 +1355,8 @@ def exigir_solicitacao_dp_no_escopo(s: Session, usuario: Usuario,
     obra_id, solicitante_id = linha[0], linha[1]
     if usuario is not None and solicitante_id == usuario.id:
         return                      # quem abriu acompanha sempre
-    alcance = obras_do_usuario(s, usuario)
+    # 24/11/2026: a regra do Pessoal (ver `obras_no_pessoal`).
+    alcance = obras_no_pessoal(s, usuario)
     if alcance is None:
         return                      # enxerga todas as obras
     if obra_id is None or int(obra_id) not in set(alcance):
