@@ -198,7 +198,9 @@ calendário."*
 - As LISTAS das outras áreas (suprimentos, títulos) mantêm a regra delas
   (a autoria recorta de verdade lá) — tentei trocar no `obras_do_usuario` e o
   teste de Suprimentos "quem só vê os próprios" mostrou que mudaria regra
-  alheia. Supervisor e gestor de obra NÃO entraram na lista: perguntar.
+  alheia. Supervisor e gestor de obra NÃO entraram na lista — ele, 24/11:
+  *"depois a gente decide, ainda não tem nenhum cadastrado."* Publicado em
+  24/11/2026.
 
 ### 23/11/2026 (9) — O guia do portal virou o guia de ACESSO, numa página
 
