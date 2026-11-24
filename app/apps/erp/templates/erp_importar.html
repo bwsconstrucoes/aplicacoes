@@ -108,16 +108,33 @@
   </div>
   <div class="dica" style="margin-top:8px">No Google Planilhas:
     <b>Arquivo › Fazer download › Microsoft Excel</b>. A aba lida é a
-    <b>Centro de Custo</b>. Vem de lá: contrato, objeto, município, UF, CNO,
-    cliente, CNPJ do cliente, valor, alíquota de ISS e tributação.
+    <b>C. Diários</b>. Vem de lá: a <b>fase da obra</b>, contrato, objeto,
+    endereço, município, UF, CNO, cliente, CNPJ do cliente, valor, alíquota de
+    ISS, tributação, responsável técnico, fiscalização, ART, ordem de serviço,
+    órgão resumido, coordenadas, as datas de início e término, as de vigência
+    e a data base de reajuste.
     <b>Não vem de lá</b>, e continua sendo digitado no cadastro da obra:
-    responsável técnico, CREA, ART, ordem de serviço e as datas de início e
-    término — são elas que fazem o quadro de prazo do diário aparecer.</div>
+    CREA e a data da ordem de serviço.</div>
+  {# ⚑ ESPELHAR VIROU O PADRÃO EM 24/11/2026. Ele: *"os dados reais e
+     atualizados estão lá (…) qualquer outro dado ele deve ser atualizado
+     para o ERP, porque de repente tem alguma coisa que a gente mudou (…)
+     precisa espelhar do que está lá, porque lá o trabalho manual já foi
+     feito lá. Eu quero só replicar ele pro ERP. Porque senão o ERP vai
+     nascer desatualizado."*
+
+     Era o contrário: a caixinha nascia desmarcada e só campo vazio era
+     preenchido — regra escrita quando se supunha que o ERP já era a fonte.
+     Enquanto o Pipefy alimentar a C. Diários, a planilha é que está certa.
+
+     ⚠️ Quando o Pipefy sair, isto se inverte de novo: o ERP passa a ser a
+     fonte e esta importação deixa de existir. #}
   <label class="opcao" style="margin-top:10px">
-    <input type="checkbox" id="ob-regravar">
-    <span class="rotulo">Trocar também o que já está preenchido aqui</span></label>
-  <div class="dica">Desmarcado — o normal — só preenche campo vazio, e mostra
-    abaixo onde a planilha diverge do que já está no cadastro.</div>
+    <input type="checkbox" id="ob-regravar" checked>
+    <span class="rotulo">Espelhar a planilha (trocar o que já está aqui)</span></label>
+  <div class="dica">Marcado — o normal enquanto o Pipefy alimentar a planilha:
+    o que está lá é o atualizado. <b>O código da obra nunca é trocado</b>, é
+    por ele que a obra é encontrada. Desmarque para só preencher campo vazio e
+    ver onde os dois divergem, sem mexer em nada.</div>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-obras">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-obras" disabled>Completar o cadastro</button>
@@ -655,12 +672,45 @@ function pintarResultadoDasObras(rel){
       </tr>`).join("")}</tbody></table></div>`);
   }
 
+  {# ⚑ A FASE TEM BLOCO PRÓPRIO (24/11/2026), e não é capricho: é ela que
+     decide o que aparece na tela do diário. Misturada numa lista de campos,
+     "98 obras mudam de fase" passaria sem ninguém ver. #}
+  if ((rel.fases_mudadas || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">Fase das obras</h4>
+      <div class="cartao-dica"><b>${rel.fases_mudadas_total} obra(s)</b> mudam
+        de fase pela planilha. Fica registrado no histórico de cada uma. Obra
+        em fase de conclusão <b>some do diário</b> — era isso que estava
+        poluindo a tela.</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Obra</th><th>Fase agora</th><th>Vai para</th>
+          <th>Na planilha</th></tr></thead>
+        <tbody>${rel.fases_mudadas.map(f => `<tr>
+          <td>${escapar(f.obra)}</td>
+          <td><small>${escapar(f.de_rotulo || "—")}</small></td>
+          <td><b>${escapar(f.para_rotulo)}</b></td>
+          <td><small>${escapar(f.na_planilha)}</small></td></tr>`).join("")}
+        </tbody></table></div>`);
+    if (rel.fases_mudadas_total > rel.fases_mudadas.length)
+      linhas.push(`<div class="cartao-dica">… e mais ${
+        rel.fases_mudadas_total - rel.fases_mudadas.length}.</div>`);
+  }
+
+  if ((rel.fases_desconhecidas || []).length) {
+    linhas.push(`<div class="aviso alerta" style="margin-top:10px">
+      <b>Não conheço estas fases da planilha</b>, e por isso não mexi nelas —
+      cada obra ficou com a fase que já tinha:
+      ${rel.fases_desconhecidas.map(f => `<div><b>${escapar(f.na_planilha)}</b>
+        — ${f.obras} obra(s): ${f.exemplos.map(escapar).join(", ")}</div>`).join("")}
+      <div style="margin-top:6px">Me diga a que fase do sistema cada uma
+      corresponde e eu acrescento.</div></div>`);
+  }
+
   if ((rel.conflitos || []).length) {
     linhas.push(`<h4 style="margin-top:14px">O que não bate</h4>
       <div class="cartao-dica">${rel.conflitos[0].regravado
-        ? "Como você marcou trocar, o valor da planilha entra no lugar."
-        : "<b>Nada disto foi trocado.</b> O cadastro venceu. Para trocar, "
-          + "marque “trocar também o que já está preenchido”."}</div>
+        ? "Espelhando a planilha: o valor dela entra no lugar do que está aqui."
+        : "<b>Nada disto foi trocado.</b> O cadastro venceu. Para espelhar a "
+          + "planilha, marque “Espelhar a planilha”."}</div>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Obra</th><th>Campo</th><th>No cadastro</th>
           <th>Na planilha</th></tr></thead>
@@ -687,9 +737,8 @@ function pintarResultadoDasObras(rel){
   const falta = (rel.so_no_cadastro || []).filter(f => f.obras_sem > 0);
   if (falta.length) {
     linhas.push(`<h4 style="margin-top:14px">O que a C. Diários não tem</h4>
-      <div class="cartao-dica">Estes cinco se digitam no cadastro da obra. Sem
-        <b>Início</b> e <b>Término previsto</b>, o diário não mostra o quadro de
-        prazo (“dia 37 de 180”).</div>
+      <div class="cartao-dica">Só isto continua sendo digitado no cadastro da
+        obra — o resto vem da planilha desde 24/11/2026.</div>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Campo</th><th class="direita">Obras sem ele</th>
           <th>Por exemplo</th></tr></thead>
