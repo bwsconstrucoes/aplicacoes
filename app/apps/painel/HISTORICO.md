@@ -823,34 +823,70 @@ receitas, que aí fica mais completo."*
 - O tempo de abrir a ficha com a base real: é uma conta do cenário inteira por
   obra aberta, como trocar de obra na Evolução.
 
-## O extrato conferível — PROPOSTA, nada construído — 24/11/2026
+## O extrato conferível — dia a dia, com saldo — 24/11/2026
 
-No mesmo dia ele pediu para ver o extrato de uma conta **dia a dia, com o saldo
-do dia**, cada lançamento dizendo a que se refere (título, categoria, centro de
-custo), o rateado abrindo por obra — para pôr ao lado do extrato do banco:
-*"isso traz mais credibilidade ao que está lançado"*. Pediu para ver a ideia
-antes. **Foi entregue só um desenho** (página privada dele no claude.ai).
+**NÃO PUBLICADO** — no ramo, à espera do "pode" do dono. **TEM MIGRAÇÃO (029):**
+ao publicar, ele aperta "Aplicar atualizações do banco" em Configurações. Sem
+ela a tela abre do mesmo jeito (só não deixa informar saldo nem marcar dia) —
+testado, por causa da queda de Configurações em 11/11.
 
-**A proposta é refazer a tela "Extrato de Conta" que já existe**, não criar
-outra. O que ela tem hoje: uma linha por linha do `fato` (pagamento rateado em
-três obras aparece três vezes) e "entrou menos saiu", sem saldo. O que mudaria:
+O dono pediu para ver o extrato de uma conta **dia a dia, com o saldo do dia**,
+cada lançamento dizendo a que se refere, o rateado abrindo por obra — para pôr
+ao lado do extrato do banco: *"isso traz mais credibilidade ao que está
+lançado"*. Viu um desenho, e sobre a única dúvida que travava respondeu: *"vai
+precisar ser informado o saldo inicial, para poder bater."*
 
-- uma conta e um período, obrigatórios;
-- **saldo inicial, saldo depois de cada linha e saldo no fim de cada dia**;
-- **uma linha por movimento do banco**, abrindo nas obras quando rateado — a
-  junção já existe para o Analítico (`chave_do_movimento`,
-  `agrupar_por_movimento`, de 06/10/2026);
-- tipo de cada linha (receita, despesa, transferência, tarifa, aporte), quem,
-  categoria, obra, número do título e do documento, observação, Pipefy;
-- o saldo final do painel ao lado do saldo que o OMIE informa;
-- opcional: marcar "conferi" por dia.
+### O que foi feito
 
-**O ponto que decide a construção, e que NÃO está resolvido:** de onde vem o
-saldo inicial. O painel sabe o que andou na conta, não o saldo de abertura. O
-OMIE informa saldo (`ListarExtrato`, usado em `conferencia_saldo.py`), mas o
-docstring de lá diz que o formato da resposta nunca foi confirmado contra o
-OMIE real. Antes de construir é preciso ver uma resposta de verdade — ou o dono
-informa o saldo de uma data e o painel segue dali. **Aguardando a resposta dele.**
+É uma **terceira visão da tela "Extrato de Conta"**, não uma tela nova: "Dia a
+dia, com saldo", ao lado de "Lista de lançamentos" (a de sempre, renomeada) e
+"Transferências entre contas". **O administrador, com UMA conta escolhida na
+barra, passa a cair nela**; a lista continua a um clique.
+
+- **Uma conta e um período** (sem período: o mês corrente até hoje).
+- **Saldo antes do período, depois de cada movimento e no fim de cada dia.**
+- **Uma linha por movimento do banco**: o mesmo título no mesmo dia é uma linha,
+  com o valor que saiu ou entrou, e abre nas obras (ou categorias) quando rateado.
+- Em cada linha: tipo (receita, despesa, transferência, fora do resultado), quem,
+  CNPJ, categoria e grupo, obra, documento, número no OMIE, observação, Pipefy.
+- **"Conferi com o banco" por dia** (fica verde e conta num placar).
+- **Planilha e PDF** do mesmo extrato, com o resumo por dia.
+
+### As decisões, e o motivo
+
+- **O saldo de UM dia é informado** (tabela `extrato_saldo_informado`, uma linha
+  por conta: o saldo AO FIM do dia, como o banco imprime) e o dos outros sai
+  dele, para frente e para trás. O painel sabe o que andou na conta, não quanto
+  havia nela; e o saldo que o OMIE informa nunca teve o formato confirmado
+  (`conferencia_saldo.py`). Sem saldo informado a coluna mostra a variação, e
+  a tela diz isso. Saldo negativo é aceito; saldo em branco é erro, não zero.
+- **A régua é a da conferência de saldo**: o que foi pago ou recebido, COM juros
+  e multa, SEM o imposto retido pelo cliente, e sem corte de DRE (transferência,
+  aporte, tarifa e rendimento aparecem). A "Lista de lançamentos" antiga usa só
+  `pago_recebido` — por isso as duas visões podem diferir em centavos de juros.
+- **Só o administrador.** Quem tem login próprio vê a conta recortada nas obras
+  dele, e saldo de conta pela metade não é saldo. Ele continua na lista. Os dois
+  pontos de gravação são `painel.api_extrato_*`, que o prefixo `api_` já fecha.
+- **Sem busca nem filtro de categoria nesta visão**: filtrar linhas quebraria o
+  saldo. Para procurar, a lista.
+- **Teto de 6.000 linhas por período**, cortando em dia inteiro (metade de um
+  dia daria saldo do dia errado), com aviso para encurtar.
+
+### O que ela NÃO consegue, e a tela diz
+
+- **Lote:** se o banco debitou vários títulos num lançamento só, ele mostra uma
+  linha e o painel uma por título — o OMIE não guarda o vínculo.
+- **Ordem dentro do dia:** é a do número do lançamento, não a do banco. O que se
+  confere é o saldo no fim do dia.
+- **Não confere sozinho com o banco**: é para o olho. Ler o arquivo do banco
+  (OFX) e casar linha a linha seria o passo seguinte, se ele pedir.
+
+### O que NÃO foi verificado
+
+- **Nunca rodou contra a base real.** Testado com dados inventados e com a suíte.
+- Se na base real o mesmo título aparece mais de uma vez no mesmo dia e na mesma
+  conta por motivo que NÃO seja rateio (duas parcelas, por exemplo): viraria uma
+  linha só, com o valor somado.
 
 ## A evolução do rateio para os sócios — tela e relatório — 16/11/2026
 
