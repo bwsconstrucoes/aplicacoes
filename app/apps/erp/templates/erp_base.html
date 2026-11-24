@@ -1157,12 +1157,59 @@ function aplicarBuscaEmListasLongas(raiz) {
   });
 }
 
+// ⚑ A MESMA REGRA PARA LISTA DE CAIXINHAS (24/11/2026). Ele, marcando as
+// obras de um operador: *"isso aí já é básico e já é para estar assim, nas
+// regras gerais do sistema (…) As obras não é pesquisável. Aí fica sem
+// condições."* A busca automática só olhava <select>; a lista de MARCAR
+// (`.filtro-opcoes`, várias escolhas) ficava de fora — e é justamente a de
+// obras, empresas e projetos do cadastro de operador. Agora toda lista de
+// caixinhas acima do limite ganha o campo, sozinha, nesta e na próxima tela.
+// Quem já monta busca própria (os filtros laterais) é respeitado: se há um
+// campo de busca logo antes ou dentro, não se cria outro. Exceção, como no
+// <select>: `data-sem-busca` no contêiner.
+function _semAcentoDaBusca(t){
+  return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function aplicarBuscaEmCaixinhas(raiz) {
+  const alvos = [];
+  if (raiz && raiz.classList && raiz.classList.contains("filtro-opcoes")) alvos.push(raiz);
+  if (raiz && raiz.querySelectorAll) alvos.push(...raiz.querySelectorAll(".filtro-opcoes"));
+  alvos.forEach(cx => {
+    if (cx.dataset.temBusca || cx.hasAttribute("data-sem-busca")) return;
+    if (cx.children.length <= LIMITE_PARA_BUSCA) return;
+    const antes = cx.previousElementSibling;
+    if (cx.querySelector('input[type="search"]')
+        || (antes && antes.matches && antes.matches('input[type="search"]'))) return;
+    cx.dataset.temBusca = "1";
+    const campo = document.createElement("input");
+    campo.type = "search";
+    campo.placeholder = "digite para filtrar…";
+    campo.style.cssText = "width:100%; margin-bottom:4px; padding:7px 9px;" +
+      "border:1px solid var(--borda-forte); border-radius:8px; font-size:13px";
+    cx.parentNode.insertBefore(campo, cx);
+    campo.addEventListener("input", () => {
+      const q = _semAcentoDaBusca(campo.value.trim());
+      [...cx.children].forEach(item => {
+        // O que está MARCADO continua à vista: filtrar não pode esconder uma
+        // escolha já feita e deixar parecer que ela sumiu.
+        const marcado = !!item.querySelector("input[type=checkbox]:checked");
+        item.style.display = (!q || marcado || _semAcentoDaBusca(item.textContent).includes(q))
+          ? "" : "none";
+      });
+    });
+  });
+}
+
 // Observa a página inteira: as listas longas quase sempre nascem dentro de uma
 // caixa de diálogo montada na hora, depois que a tela já carregou.
 new MutationObserver(registros => {
   for (const r of registros) {
+    // A lista de caixinhas que já existia e recebeu os itens agora.
+    if (r.target && r.target.classList && r.target.classList.contains("filtro-opcoes"))
+      aplicarBuscaEmCaixinhas(r.target);
     for (const no of r.addedNodes) {
       if (no.nodeType !== 1) continue;
+      aplicarBuscaEmCaixinhas(no);
       if (no.tagName === "SELECT") { aplicarBuscaEmListasLongas(no.parentNode); }
       // O padrão mais comum do ERP: o <select> já está no HTML e as opções
       // chegam depois, por innerHTML. Aqui quem nasce é a <option>.
@@ -1191,6 +1238,7 @@ new MutationObserver(registros => {
 
 document.addEventListener("DOMContentLoaded", () => {
   aplicarBuscaEmListasLongas();
+  aplicarBuscaEmCaixinhas(document.body);
   aplicarMascaras();
   aportuguesarEscolhaDeArquivo();
   explicarCelulasCortadas();

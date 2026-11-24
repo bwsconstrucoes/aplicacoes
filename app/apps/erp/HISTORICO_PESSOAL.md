@@ -141,6 +141,27 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 (4) — Toda lista de caixinhas longa ganha busca; "responde" vira "confere equipamentos"; "a obra do ponto + as marcadas"
+
+Ele: *"isso aí já é básico e já é para estar assim, nas regras gerais do
+sistema (…) As obras não é pesquisável."* A busca automática da base só
+cobria `<select>`. `erp_base.html` ganhou `aplicarBuscaEmCaixinhas`: toda
+`.filtro-opcoes` com mais de 12 itens ganha o campo de filtro, sozinha, em
+qualquer tela do ERP (quem já tem busca própria logo antes ou dentro é
+respeitado; exceção com `data-sem-busca`). O que está marcado nunca some ao
+filtrar. Isso alcança também os filtros laterais que não tinham busca
+(credor, obra, conta nos títulos e pagamentos, etc.).
+
+"Responde", ao lado de cada obra no operador — ele: *"é um termo que ninguém
+nem entende"* — virou **"confere equipamentos"**, com a explicação: marcar a
+obra é enxergar; conferir é receber todo mês a conferência dos equipamentos
+locados daquela obra (e marca a obra junto). No cadastro da obra o bloco
+continua "Quem responde por esta obra" (área de Obras, não mexi).
+
+E o alcance: *"É a obra do ponto mais as obras marcadas abaixo."* — é o que
+o sistema já faz; a opção dizia "Só as obras marcadas abaixo" e enganava.
+Agora: "A obra onde bate ponto + as marcadas abaixo".
+
 ### 24/11/2026 (3) — Operadores: a lista de obras some de quem está em "só os lançamentos"; o "cargo (herança)" fica
 
 Ele: *"no perfil da pessoa, não aparece a lista das obras para selecionar (…)

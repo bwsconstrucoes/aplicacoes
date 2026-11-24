@@ -40,6 +40,14 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 24/11/2026 — `erp_base.html`: TODA LISTA DE CAIXINHAS LONGA GANHA BUSCA (registro entre áreas)
+
+`aplicarBuscaEmCaixinhas`: `.filtro-opcoes` com mais de 12 itens ganha o campo
+de filtro sozinha, em todas as telas do ERP, como já acontecia com `<select>`.
+Respeita quem já tem busca própria (campo de busca logo antes ou dentro) e
+`data-sem-busca`. Marcado nunca some ao filtrar. Telas de todas as áreas
+ganham isso nos filtros laterais longos. Detalhe em `HISTORICO_PESSOAL.md`.
+
 ### ⚑ 24/11/2026 — QUEM É DA OBRA SÓ TEM O PORTAL (registro entre áreas — vale para TODOS os módulos)
 
 Decisão do dono: o pessoal da obra usa só o portal, em tudo; o escritório usa o

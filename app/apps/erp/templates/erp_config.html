@@ -1000,11 +1000,18 @@ function formOperador(u){
           para todos os perfis dela.</div></div>
       <div class="campo"><label>Obras que esta pessoa enxerga</label>
         <select id="op-todas-obras">
-          <option value="0" ${u.ve_todas_as_obras?"":"selected"}>Só as obras marcadas abaixo</option>
+          <option value="0" ${u.ve_todas_as_obras?"":"selected"}>A obra onde bate ponto + as marcadas abaixo</option>
           <option value="1" ${u.ve_todas_as_obras?"selected":""}>Todas as obras da empresa</option>
         </select>
-        <div class="dica">Diz <b>onde</b>. Duas pessoas do mesmo perfil podem
-          acompanhar obras diferentes — por isso fica aqui, e não no perfil.</div></div>
+        {# ⚑ 24/11/2026, ele: *"está esquisito (…) eu não tinha nem obra
+           marcada, era as obras do ponto (…) É a obra do ponto mais as obras
+           marcadas abaixo."* É o que o sistema já faz desde 23/11
+           (`permissoes._obras_designadas` soma a `colaborador_obra_atual`); o
+           texto dizia "só as marcadas" e enganava. #}
+        <div class="dica">Diz <b>onde</b>. A obra em que a pessoa está batendo
+          ponto entra <b>sozinha</b> (e muda quando ela muda de obra no ponto);
+          as obras marcadas abaixo <b>somam</b> a ela. Não precisa marcar a obra
+          do ponto.</div></div>
       <div class="campo"><label>Cargo base</label><select id="op-perfil">
         ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
       </select>
@@ -1123,15 +1130,19 @@ function formOperador(u){
           <label class="opcao" title="Recebe a conferência mensal dos equipamentos desta obra"
                  style="white-space:nowrap"><input type="checkbox" class="op-resp" value="${o.id}"
             ${(u.obras_responsavel||[]).includes(o.id)?"checked":""}
-            ><span class="rotulo" style="font-size:12px">responde</span></label>
+            ><span class="rotulo" style="font-size:12px">confere equipamentos</span></label>
         </div>`).join("")}
       </div>
-      <div class="dica"><b>Acompanha</b> é enxergar — vale para o supervisor e para
-        quem estiver como "tudo das obras designadas"; gestor vê todas.
-        <b>Responde</b> é outra coisa: é quem recebe a conferência mensal dos
-        equipamentos daquela obra e a cobrança do sistema. Pode marcar mais de
-        uma pessoa por obra — todas recebem. A mesma marca aparece no cadastro
-        da obra, e é a mesma informação.</div>
+      {# ⚑ "RESPONDE" VIROU "CONFERE EQUIPAMENTOS" (24/11/2026). Ele: *"é um
+         termo que ninguém nem entende."* A função é a mesma: quem recebe a
+         conferência mensal dos equipamentos locados daquela obra. #}
+      <div class="dica"><b>Marcar a obra</b> é a pessoa <b>enxergar</b> aquela
+        obra. <b>Confere equipamentos</b> é uma tarefa a mais: ela recebe, todo
+        mês, a conferência dos <b>equipamentos locados</b> daquela obra e a
+        cobrança do sistema se não fizer. Quem confere precisa enxergar, por
+        isso marcar "confere equipamentos" marca a obra junto. Pode haver mais
+        de uma pessoa por obra — todas recebem. No cadastro da obra é o bloco
+        "Quem responde por esta obra" (a mesma informação).</div>
     </div>
     ${novo ? `
     <div class="aviso info" style="margin-top:12px">Deixe a <b>senha em
