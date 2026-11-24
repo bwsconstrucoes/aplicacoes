@@ -653,7 +653,9 @@ sai.
 
 ## O "Total" do analítico sem juros e multa, e a conta do cenário guardada — 24/11/2026
 
-**NÃO PUBLICADO** — no ramo, à espera do "pode" do dono. Sem migração.
+**PUBLICADO em 24/11/2026, 18:14 UTC** (`bc0e6aa7`), com o "pode" do dono. Sem
+migração. Suíte local inteira, com a `main` dentro: 12.869 passaram, nenhuma
+falha.
 
 ### 1. A coluna "Total" do Despesas Analítico não somava juros e multa
 
