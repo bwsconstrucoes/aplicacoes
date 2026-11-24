@@ -825,8 +825,10 @@ receitas, que aí fica mais completo."*
 
 ## O extrato conferível — dia a dia, com saldo — 24/11/2026
 
-**NÃO PUBLICADO** — no ramo, à espera do "pode" do dono. **TEM MIGRAÇÃO (029):**
-ao publicar, ele aperta "Aplicar atualizações do banco" em Configurações. Sem
+**PUBLICADO em 24/11/2026, 19:25 UTC** (`578d19de`), com o "pode" do dono. Suíte
+local inteira, com a `main` dentro: 12.883 passaram, nenhuma falha. **TEM
+MIGRAÇÃO (029):** ele foi avisado para apertar "Aplicar atualizações do banco"
+em Configurações — se a tela disser "falta aplicar as atualizações", é isso. Sem
 ela a tela abre do mesmo jeito (só não deixa informar saldo nem marcar dia) —
 testado, por causa da queda de Configurações em 11/11.
 
