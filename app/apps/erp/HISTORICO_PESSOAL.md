@@ -141,6 +141,25 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 (2) — Portal: os botões no alto, as pendências agrupadas; a caixinha de tipos por assunto
+
+Ele: *"Sempre manter os botões para solicitação na parte superior. E logo
+abaixo (…) os avisos, o que já foi solicitado, o que tem pendente (…) para o
+colaborador assinar (…) similar ao aviso da equipe. Para estar agrupado e a
+gente poder expandir."* E: *"solicitação de férias, alteração de férias,
+cancelamento de férias. Não tem como agrupar melhor (…)? Colocar o cancelar
+solicitação de desligamento abaixo de desligamento."*
+- Ordem do portal: **Abrir uma solicitação** → **Pendências da obra**
+  (novo bloco; "Para o colaborador assinar" e "Documentos a devolver"
+  recolhidos, com a quantidade em destaque) → **Avisos da equipe** → **O que
+  você já pediu**. Antes, assinar e devolver ficavam abertos ACIMA dos botões.
+  (O chat de Suprimentos tinha posto os dois "no alto" em 23/11; a decisão do
+  dono agora é outra.)
+- A caixinha "O que você precisa" vem com títulos (`portal.GRUPOS_DO_PESSOAL`):
+  Admissão · Desligamento (o cancelamento logo abaixo) · Férias (as três) ·
+  Afastamento · Dados e benefícios · Outros. A ordem é a dos grupos.
+- Conferido com a tela montada no navegador (dados de exemplo).
+
 ### 24/11/2026 — ⚠️ VAZAMENTO: o administrativo de obra via o Pessoal da empresa inteira
 
 Ele, depois de liberar administrativos pelo portal: *"estão vendo (…) as
