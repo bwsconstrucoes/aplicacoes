@@ -68,6 +68,15 @@ def _schema_ponto2(banco):
         conn.commit()
 
 
+def _limpar_documentos_do_erp(conn) -> None:
+    """Os documentos do DP (`dp_termos`) das pessoas das obras de teste (23/11/2026, a central de assinaturas): o
+    termo de compensação nasce sozinho no ponto e aponta para a pessoa e para quem conduziu."""
+    if conn.execute(text("SELECT to_regclass('public.dp_termos')")).scalar() is None:
+        return
+    gente = "(SELECT id FROM colaboradores WHERE obra_id IN (SELECT id FROM obras WHERE codigo LIKE 'PG-%'))"
+    conn.execute(text(f"DELETE FROM dp_termos WHERE colaborador_id IN {gente} OR conduzido_por_colaborador IN {gente}"))
+
+
 def _limpar(banco):
     with banco.connect() as conn:
         tabelas = [r[0] for r in conn.execute(text(
@@ -93,6 +102,7 @@ def _limpar(banco):
         conn.execute(text("DELETE FROM eventos WHERE (entidade_tipo = 'obra' AND entidade_id IN "
                           "(SELECT id FROM obras WHERE codigo LIKE 'PG-%')) "
                           "OR usuario_id IN (SELECT id FROM usuarios WHERE email LIKE '%@ponto.teste')"))
+        _limpar_documentos_do_erp(conn)
         conn.execute(text("DELETE FROM usuarios WHERE email LIKE '%@ponto.teste'"))
         conn.execute(text("DELETE FROM colaboradores WHERE cpf IN (:a, :b)"),
                      {"a": CPF_JOAO, "b": CPF_MARIA})

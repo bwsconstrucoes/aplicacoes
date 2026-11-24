@@ -311,9 +311,18 @@ def da_vez(conn: Connection, token: str, colaborador_id: int, *, agora: Optional
             "feita_em": horario.texto(r["feita_em"]) if r.get("feita_em") else None}
 
 
+# A RONDA SEM FOTO (17/11/2026, o dono: "um determinado telefone (…) memória cheia: tenta bater e não consegue enviar a
+# foto. O mais importante é a geolocalização (…) enviar sem a foto, da mesma forma que chega o ponto sem foto (…) e
+# talvez um alerta, para a pessoa não perder a ronda"). A LOCALIZAÇÃO continua obrigatória — é ela que prova a
+# presença. A foto fica: sem ela, só com o motivo dito pelo aplicativo (`sem_foto`), e a ronda entra com o motivo
+# gravado e um alerta "Ronda sem foto" para alguém conferir o celular. A foto que chega estragada também não
+# derruba a ronda: entra sem ela, pelo mesmo caminho.
+MOTIVO_SEM_FOTO = "registrada sem foto"
+
+
 def registrar(conn: Connection, token: str, colaborador_id: int, *, latitude=None, longitude=None,
-              precisao=None, foto_base64: str = "", agora: Optional[dt.datetime] = None) -> dict:
-    """Foto e localização são obrigatórias: é o que prova a presença."""
+              precisao=None, foto_base64: str = "", agora: Optional[dt.datetime] = None, sem_foto: str = "") -> dict:
+    """A localização é obrigatória; a foto também, salvo quando o aplicativo diz por que ela não saiu (`sem_foto`)."""
     from . import cadastros, fotos, geo
     agora = agora or horario.agora()
     r = db.um(conn, "SELECT * FROM ponto.rondas WHERE token_hash = :h FOR UPDATE", h=_hash(token)) if token else None
@@ -325,13 +334,21 @@ def registrar(conn: Connection, token: str, colaborador_id: int, *, latitude=Non
         raise ErroDeValidacao("esta ronda não está mais aberta")
     if agora > r["prazo_ate"] + dt.timedelta(minutes=TOLERANCIA_ATRASO_MIN):
         raise ErroDeValidacao("passou do prazo desta ronda — ela ficou como perdida")
-    if not foto_base64:
+    sem_foto = " ".join(str(sem_foto or "").split())[:200]
+    if not foto_base64 and not sem_foto:
         raise ErroDeValidacao("tire a foto para registrar a ronda", campo="foto_base64")
     if not geo.coordenada_valida(latitude, longitude):
         raise ErroDeValidacao("ligue a localização do celular para registrar a ronda", campo="latitude")
-    foto = fotos.preparar(foto_base64)
-    foto_id = fotos.guardar(conn, foto, nome=f"{horario.para_local(agora):%Y-%m-%d_%H%M%S}_colab{colaborador_id}_ronda{r['id']}.jpg",
-                            momento=agora, subir=False)
+    foto_id, motivo = None, None
+    if foto_base64:
+        try:
+            foto = fotos.preparar(foto_base64)
+            foto_id = fotos.guardar(conn, foto, momento=agora, subir=False,
+                                    nome=f"{horario.para_local(agora):%Y-%m-%d_%H%M%S}_colab{colaborador_id}_ronda{r['id']}.jpg")
+        except ErroDeValidacao:
+            sem_foto = "a foto chegou estragada"           # a presença está na localização: a ronda não se perde
+    if foto_id is None:
+        motivo = f"{MOTIVO_SEM_FOTO}: {sem_foto}"
     obra = cadastros.obra_por_id(conn, int(r["obra_id"])) if r.get("obra_id") else None
     dentro, distancia = None, None
     if obra:
@@ -340,13 +357,31 @@ def registrar(conn: Connection, token: str, colaborador_id: int, *, latitude=Non
     status = "FEITA" if agora <= r["prazo_ate"] else "ATRASADA"
     db.executar(conn, """
         UPDATE ponto.rondas SET status = :s, feita_em = :a, latitude = :la, longitude = :lo, precisao_metros = :p,
-               distancia_metros = :d, dentro_da_cerca = :dc, foto_id = :f
+               distancia_metros = :d, dentro_da_cerca = :dc, foto_id = :f, motivo = COALESCE(:m, motivo)
          WHERE id = :i""", s=status, a=agora, la=float(latitude), lo=float(longitude),
-        p=(float(precisao) if precisao not in (None, "") else None), d=distancia, dc=dentro, f=foto_id, i=r["id"])
+        p=(float(precisao) if precisao not in (None, "") else None), d=distancia, dc=dentro, f=foto_id, m=motivo,
+        i=r["id"])
+    if motivo:
+        _alertar_sem_foto(conn, r, colaborador_id, agora, sem_foto)
     logger.info("Ponto: ronda %s registrada (%s) pelo vigia %s — %s da obra", r["id"], status, colaborador_id,
                 f"{distancia:.0f} m" if distancia is not None else "?")
     return {"status": status, "hora": horario.para_local(agora).strftime("%H:%M"), "dentro_da_cerca": dentro,
-            "distancia_metros": distancia}
+            "distancia_metros": distancia, "sem_foto": foto_id is None}
+
+
+def _alertar_sem_foto(conn: Connection, r: dict, colaborador_id: int, agora: dt.datetime, motivo: str) -> None:
+    """O alerta "Ronda sem foto": um por ronda — para alguém conferir o celular (memória cheia, câmera)."""
+    from . import alertas, cadastros
+    try:
+        p = cadastros.colaborador_por_id(conn, int(colaborador_id)) or {}
+        local = horario.para_local(agora)
+        alertas._registrar(conn, set(), chave=f"RONDA_SEM_FOTO:{r['id']}", codigo="RONDA_SEM_FOTO",
+                           mensagem=f"{p.get('nome') or 'O vigia'}: {r['numero']}ª ronda das {local:%H:%M} registrada "
+                                    f"sem foto ({motivo}) — a localização foi gravada; confira o celular (memória cheia, "
+                                    "câmera)",
+                           colaborador_id=int(colaborador_id), obra_id=r.get("obra_id"), data=local.date())
+    except Exception:  # noqa: BLE001 — o alerta nunca impede a ronda de entrar
+        logger.warning("Ponto: o alerta da ronda sem foto %s não entrou", r.get("id"), exc_info=True)
 
 
 # ---------------------------------------------------------------------------

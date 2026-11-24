@@ -47,6 +47,142 @@ estragou alguma coisa.
 
 ### O que está pendente AGORA
 
+**18/11/2026 — comprovante de duas folhas: a segunda não é comprovante.** Em
+ramo, aguardando o "pode" do dono. Sem migração de banco.
+
+Ele mandou o arquivo: *"alguns comprovantes como esse saem em duas páginas e o
+sistema tenta a segunda página. Gostaria que isso fosse detectado pra não
+tentar baixar."* É o boleto pago pelo **Sicredi**: a folha 2 tem 106 caracteres
+e são só os telefones do banco ("SAC 0800 … Ouvidoria 0800 …").
+
+**O estrago era duplo, e o segundo ninguém tinha visto:**
+
+1. A folha de rodapé virava uma linha "NÃO localizado" no relatório, em todo
+   comprovante desses — barulho que esconde o que importa.
+2. **E disparava a leitura das 52 mil linhas da SPsBD.** Por ser "não
+   localizada", o robô ia procurar uma SP já paga com Omie pendente (o plano B
+   de 14/11). Ou seja: uma folha com dois telefones custava a leitura mais cara
+   que este sistema tem, em todo boleto do Sicredi.
+
+**A regra, e por que ela é conservadora:** a página só é descartada quando
+**NADA** que identifique um pagamento foi lido — nem valor, nem data, nem número
+da SP, nem autenticação, nem código de barras, nem conta de origem, nem chave
+PIX, nem documento de quem recebeu — **e** o texto é curto (até 400
+caracteres; a folha 2 tem 106). Faltando todos esses campos, aquela página não
+poderia virar baixa de jeito nenhum: o próprio `_decidir_execucao` a barraria
+por "campos mínimos ausentes". Página CHEIA de texto que o leitor não entendeu
+**continua** indo ao relatório como "não baixou" — ali pode haver dinheiro
+precisando de olho humano.
+
+**No mesmo lugar, um descarte silencioso que acabou:** página **sem texto
+nenhum** era pulada sem uma palavra. Isso é, quase sempre, comprovante
+**fotografado ou escaneado** — e a aplicação **não tem OCR**, não lê imagem.
+O pagamento não baixava e ninguém ficava sabendo. Agora aparece no relatório,
+com o que fazer: reenviar o PDF do banco.
+
+As duas situações viram linha no relatório do Telegram, **resumidas**: trinta
+boletos do Sicredi dariam trinta linhas de nada, então o rodapé entra como "N
+página(s) de rodapé ou continuação". A página escaneada ganha destaque, porque
+exige ação.
+
+**Um susto que não era real, registrado para ninguém repetir:** na primeira
+leitura do arquivo aqui, a folha 1 parecia não ler NADA (nem valor, nem SP) — o
+que seria um defeito gravíssimo. Era artefato do ambiente: faltava o
+`pdfminer.six` nesta máquina, o `pdfplumber` não carregou e o
+`extract_pdf_pages` caiu no `pypdf`, que devolve o texto do Sicredi em ordem
+invertida e grudado ("38.114,00Valor Pago (R$):"), formato que nenhum leitor
+entende. Com o `pdfplumber` funcionando — que é o que roda em produção — a
+folha 1 lê tudo: SP, valor, data, código de barras e conta. **Ao investigar
+leitura de PDF, conferir primeiro qual biblioteca está realmente sendo usada.**
+
+
+**17/11/2026 — o Make não espera mais a resposta, e o trabalho repetido virou
+lote.** Em ramo, aguardando o "pode" do dono. Sem migração de banco.
+
+O problema, relatado por ele em 16/11: *"o módulo do Make que chama a baixa
+constantemente dá erro: This module timed out. E suspeito ainda que quando ele
+tenta reexecutar, ele manda o comprovante todo novamente (…) tem um módulo
+break no cenário e ele repete a operação."* Os registros do Render daquela
+noite confirmaram os dois pontos: a rota levou 162 s, 194 s, 246 s, 460 s,
+522 s e 602 s, e às 20:28 apareceram DUAS execuções do mesmo arquivo lado a
+lado ("há 477 s" e "há 114 s"), ocupando duas das quatro linhas de atendimento.
+
+Era um ciclo que se alimentava: lote grande → estoura o tempo do Make → o break
+remanda → duas execuções → o dobro de cota do Google e do Omie → mais lento →
+mais estouro.
+
+**A decisão foi dele, e mudou o contrato com o Make:**
+
+> *"no Make eu não preciso de resposta para cada baixa. A gente não está
+> utilizando isso. O cenário manda e acabou-se. (…) Basta dizer: ó, tá
+> processando. (…) O que precisa ser garantido é que, uma vez feita a chamada,
+> a baixa aconteça. (…) O retorno ao final de tudo você me manda no Telegram."*
+
+O que mudou, então:
+
+1. **A rota responde na hora** (`recebido: true`) e a baixa continua no
+   servidor. O Make nunca mais vê timeout, nunca mais dispara o break. Só a
+   ROTA se comporta assim: quem chama a função por dentro (a tela do Análise de
+   SPs, a fila de adiados) continua recebendo o resultado completo, porque as
+   duas precisam dele — e nenhuma das duas ocupa linha de atendimento.
+2. **O lote vai para o disco antes da resposta** e só sai de lá quando a baixa
+   termina. É o que sustenta a garantia que ele pediu.
+3. **Lote repetido é recusado na porta.** Mesma impressão digital já rodando =
+   responde na hora, sem refazer nada. Defesa contra o reenvio que escapar.
+4. **O relatório de cada comprovante vai para o Telegram** — o que antes ia
+   para o Make. Telegram e não WhatsApp por escolha dele: *"preferencialmente
+   no Telegram, para não ter problema"*, e o motivo é concreto (o Z-API bloqueia
+   quando o volume sobe, e já deixou aviso sem entregar em 13/09/2026). O aviso
+   do que NÃO baixou continua indo para o financeiro pelo WhatsApp, como era.
+
+**E a segunda metade do pedido dele, no mesmo dia:** *"é uma série de tarefas
+repetidas, né? (…) um único comando para atualizar a planilha (…) um único
+comando pra atualizar o pipefy, fazendo uma mutation e atualizar vários cards
+ao mesmo tempo."* A execução passou a ser por FASE, e não por comprovante:
+
+| Etapa | Antes | Agora |
+|---|---|---|
+| Planilha | 3 idas ao Google por comprovante | 3 para o lote inteiro |
+| Pipefy | 1 mutation por card | 1 mutation para 5 cards |
+| Impressões digitais | 1 gravação por comprovante | 1 para o lote |
+| Omie | 2 a 3 chamadas por título | **igual** — a API baixa um título por chamada |
+
+Num lote de trinta comprovantes isso sai de ~120 idas à internet para ~70, e a
+parte que sobra é quase toda Omie.
+
+**O que NÃO foi feito, e por quê:**
+
+- **Omie em paralelo.** Seria o maior ganho que resta (ele responde em 1 a 3 s e
+  são duas chamadas por título). Não foi feito porque o Omie limita pedidos por
+  segundo por chave, e uma recusa dele é o único ponto desta rotina onde o
+  engano custa dinheiro. Com o Make não esperando mais, a pressa deixou de ser
+  urgente. Fica como próximo passo, se ele quiser, com medição antes.
+- **Confirmar na documentação do Omie se existe baixa em lote.** A sessão não
+  alcança `developer.omie.com.br` (fora da lista de domínios liberados). O que
+  está escrito acima vem do código em produção, não da documentação.
+- **Upload do Dropbox em paralelo.** Ganho pequeno perto do Omie; não compensou
+  mexer agora.
+
+**Os limites desta garantia, escritos para não virarem promessa:**
+
+- A pasta é a `/tmp`. **Uma publicação apaga o container inteiro**, e um lote em
+  andamento se perde — o Make já recebeu "ok" e não reenvia. A garantia cobre a
+  renovação do trabalhador do gunicorn (o caso comum), não publicação no meio
+  de uma baixa.
+- **O resgate do que morreu no meio depende do disparo periódico estar ligado**
+  (`/api/baixabradesco/processar-fila-tardia` no cron-job.org). Ele estava
+  desligado em 16/11.
+- Lote acima de 25 MB não cabe na `/tmp` e roda sem a rede de proteção; a
+  resposta diz isso em `guardado_em_disco: false`.
+- No máximo 6 lotes ao mesmo tempo; acima disso a rota pede para reenviar daqui
+  a alguns minutos (memória é 2 GB e cada lote carrega os PDFs inteiros).
+
+**O que conferir na primeira baixa real:** se o relatório chega no Telegram com
+uma linha por comprovante; se `/api/baixabradesco/fila-resumo` mostra
+`baixas_em_andamento` enquanto um lote roda; e se o tempo da rota caiu para
+menos de um segundo nos registros do Render.
+
+
 **Publicado em 11/09/2026** (junção `1a21605`), com o "pode" do dono: os **dois
 caminhos da Somapay** funcionando — o depósito pago direto na Somapay e a
 transferência Bradesco → Somapay —, a conta de destino vindo da BaseBancos pela

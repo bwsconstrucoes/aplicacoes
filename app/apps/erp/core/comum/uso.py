@@ -92,12 +92,18 @@ POR_ENTIDADE: dict[str, str] = {
     # O cruzamento cargo × convenção (migração 085): mexer no piso é manutenção
     # de TABELA, não de pessoa — por isso cadastro, e não pessoal.
     "cargo_convencao": "cadastro",
+    # Excluir ou desativar a convenção (23/11/2026): manutenção da mesma tabela.
+    "convencao": "cadastro",
     # O pedido formal à contabilidade (migração 090) é trabalho de PESSOAL: é o
     # DP pedindo admissão, rescisão e alteração de contrato para fora.
     "dp_pedido": "pessoal",
     # Ligar e desligar rotina do agente é CONFIGURAÇÃO, não operação — quem faz
     # isso está ajustando o sistema, não atendendo ninguém.
     "agente_dp": "configuracao",
+    # Mexer nos passos de um tipo de solicitação (migração 112) é CONFIGURAÇÃO
+    # pela mesma razão: quem faz está ajustando a rotina de trabalho do DP, não
+    # atendendo o pedido de alguém.
+    "dp_checklist": "configuracao",
     "fornecedor": "cadastro",
     "fornecedor_conta": "cadastro",
     "obra": "cadastro",
@@ -179,8 +185,9 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "contrato_locacao": "contrato de locação",
     "locacao_conferencia": "conferência de locação",
     "despesa_colaborador": "despesa de colaborador", "colaborador": "colaborador",
-    "cargo_convencao": "cargo na convenção",
+    "cargo_convencao": "cargo na convenção", "convencao": "convenção",
     "dp_pedido": "pedido à contabilidade", "agente_dp": "agente de DP",
+    "dp_checklist": "passos de um tipo de solicitação",
     "fornecedor": "fornecedor", "fornecedor_conta": "conta do fornecedor",
     "obra": "obra", "insumo": "insumo", "insumo_categoria": "categoria de insumo",
     "empresa": "empresa", "conta_bancaria": "conta bancária",

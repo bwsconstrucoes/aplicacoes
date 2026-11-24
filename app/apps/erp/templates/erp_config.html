@@ -25,6 +25,10 @@
   {# A CONTA DE E-MAIL DO SISTEMA (09/11/2026). Fica em Configurações e não em
      Empresas porque ela não é de CNPJ nenhum: quem fala por ela é o SISTEMA. #}
   <a class="subaba" href="#emailsistema" data-ir="emailsistema">E-mail do sistema</a>
+  {# ⚑ A CHAVE DE SEGREDOS (17/11/2026). Fica ao lado do E-mail do sistema
+     porque é lá que ela morde: sem chave válida, nenhuma senha de e-mail é
+     guardada — e até hoje isso só aparecia no momento de salvar. #}
+  <a class="subaba" href="#chavesegredos" data-ir="chavesegredos">Chave de segredos</a>
   <a class="subaba" href="#diarias" data-ir="diarias">Diárias</a>
   <a class="subaba" href="#documentos" data-ir="documentos">Tipos de documento</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
@@ -154,14 +158,53 @@
    quem fala é o SISTEMA. Sair por compras@ faria a pessoa achar que compras
    mandou, e responder para lá.
    =========================================================================== #}
+{# ===========================================================================
+   A CHAVE QUE CIFRA AS SENHAS (17/11/2026)
+
+   Ele, tentando gravar a conta de e-mail de uma empresa: *"fui gravar o email
+   no cadastro da empresa e apareceu: A chave em ERP_CHAVE_SEGREDOS não tem o
+   formato esperado."*
+
+   O recado estava certo e era inútil: mandava rodar `Fernet.generate_key()`,
+   que é comando de programador. Quem opera este sistema não roda comando — na
+   prática a mensagem dizia "chame alguém".
+
+   Agora o próprio ERP sorteia a chave. O que ele NÃO faz é guardá-la: ela vai
+   à mão para a Environment do Render, porque guardá-la no banco desfaria a
+   razão de ela existir.
+   =========================================================================== #}
+<div class="cartao" data-secao="chavesegredos">
+  <div class="cartao-cab"><h3>Chave de segredos</h3>
+    <small>é ela que cifra as senhas de e-mail e o certificado da nota</small></div>
+  <div class="cartao-dica">As senhas das contas de e-mail e a senha do
+    certificado digital não ficam legíveis no banco: são cifradas com uma
+    chave que mora <b>fora</b> dele, na Environment do Render. Sem ela, o
+    sistema se recusa a guardar essas senhas — guardar em claro "só desta vez"
+    é como uma senha vaza sem ninguém perceber.</div>
+  <div id="cs-situacao" class="desc" style="margin:8px 0">carregando…</div>
+  <div id="cs-nova"></div>
+  <div style="margin-top:12px">
+    <button class="btn secundario" id="cs-gerar">Gerar uma chave nova</button>
+  </div>
+  <div id="cs-msg"></div>
+</div>
+
 <div class="cartao" data-secao="emailsistema">
   <div class="cartao-cab"><h3>E-mail do sistema</h3>
     <small>por onde saem o convite de acesso e os avisos do próprio sistema</small></div>
-  <div class="cartao-dica">É uma conta <b>à parte</b> da do DP e da de compras.
-    Use um endereço do tipo <b>sistema@</b> ou <b>naoresponda@</b>: dele saem o
-    convite para a pessoa definir a senha e os avisos automáticos. Os pedidos à
-    contabilidade e as cotações continuam saindo pela conta <b>da empresa</b>,
-    em Empresas.</div>
+  {# ⚑ O TEXTO FOI CORRIGIDO EM 18/11/2026. Ele dizia que "os pedidos à
+     contabilidade e as cotações" saíam pela conta da empresa — virou meia
+     verdade no mesmo dia, quando o DP ganhou conta própria. Texto de tela que
+     descreve o sistema errado é pior que texto nenhum: a pessoa configura o
+     lugar errado e jura que configurou. #}
+  <div class="cartao-dica">É uma conta <b>à parte</b>, e cada área da empresa
+    tem a sua. Use aqui um endereço do tipo <b>sistema@</b> ou
+    <b>naoresponda@</b>: dele saem o <b>convite para a pessoa definir a
+    senha</b> e os avisos automáticos do sistema — nada mais.
+    <br><b>As outras duas:</b> os pedidos à contabilidade saem pela conta do
+    <b>DP</b> (em Pessoal › Contabilidade › Caixa de entrada) e as cotações
+    saem pela conta <b>da empresa</b>, uma por CNPJ, no cadastro de
+    Empresas.</div>
   <div id="es-situacao" class="desc" style="margin:8px 0">carregando…</div>
   <div class="form-grade">
     <div class="campo"><label for="es-servidor">Servidor de saída (SMTP)</label>
@@ -592,7 +635,75 @@ window.addEventListener("hashchange", () =>
 document.addEventListener("DOMContentLoaded", () => {
   mostrarSecao((location.hash || "").replace("#", "") || SECAO_PADRAO);
   carregarEmailDoSistema();
+  carregarChaveDeSegredos();
 });
+
+// ---------------------------------------------------------------------------
+// A CHAVE QUE CIFRA AS SENHAS — ver o comentário no HTML, acima do cartão
+//
+// ⚠️ A CHAVE EXISTENTE NUNCA DESCE PARA A TELA. O servidor diz se ela serve e,
+// quando não serve, o que há de errado (tamanho, aspas) — nunca o valor. Só a
+// chave RECÉM-GERADA aparece, porque é a única que ainda não é segredo de
+// nada.
+// ---------------------------------------------------------------------------
+async function carregarChaveDeSegredos(){
+  const onde = els("cs-situacao");
+  if (!onde) return;
+  try {
+    const d = await api("/erp/api/chave-de-segredos");
+    const guardados = d.segredos_guardados || 0;
+    onde.innerHTML = d.serve
+      ? `<span class="etiqueta verde">a chave está configurada e funciona</span>`
+        + (guardados ? ` <small>${guardados} senha(s) guardada(s) com ela —
+             trocar a chave obriga a digitar todas de novo</small>` : "")
+      : `<span class="etiqueta ambar">${d.tem ? "a chave não serve" : "a chave não existe"}</span>
+         <small>${escapar(d.problema || "")}. Enquanto isso, o sistema recusa
+         guardar senha de e-mail e do certificado — o resto do cadastro salva
+         normalmente.</small>`;
+  } catch(e){ onde.textContent = "não foi possível olhar a chave: " + e.message; }
+}
+
+function ligarChaveDeSegredos(){
+  if (!els("cs-gerar")) return;
+  els("cs-gerar").addEventListener("click", async () => {
+    const d = await api("/erp/api/chave-de-segredos").catch(() => ({}));
+    if (d.serve) {
+      const ok = await perguntar({titulo: "Gerar uma chave nova?",
+        aviso: `A chave de hoje <b>funciona</b>. Trocar por uma nova
+          <b>apaga na prática</b> ${d.segredos_guardados || 0} senha(s) já
+          guardada(s): o que foi cifrado com a chave antiga não abre com a
+          nova, e cada senha terá de ser digitada de novo.`,
+        campos: [], textoOk: "Gerar assim mesmo"});
+      if (!ok) return;
+    }
+    try {
+      const r = await api("/erp/api/chave-de-segredos/gerar", {method: "POST"});
+      els("cs-nova").innerHTML = `
+        <div class="aviso info" style="margin-top:10px">
+          <b>Copie isto para a Environment do Render</b>, numa variável chamada
+          <b class="mono">${escapar(r.variavel)}</b>, e salve. O serviço
+          reinicia sozinho; depois disso o sistema volta a guardar senha.
+          <div style="display:flex; gap:8px; margin-top:8px; align-items:center">
+            <input id="cs-valor" class="mono" readonly
+                   style="flex:1; min-width:0" value="${escapar(r.chave)}">
+            <button class="btn secundario" type="button" id="cs-copiar">Copiar</button>
+          </div>
+          <small>⚠️ Esta chave não fica guardada em lugar nenhum do sistema:
+            saindo desta tela, ela some. Se perder, gere outra — mas aí as
+            senhas já cifradas terão de ser digitadas de novo.
+            <b>Sem aspas em volta</b>, e sem espaço antes ou depois.</small>
+        </div>`;
+      els("cs-copiar").addEventListener("click", async () => {
+        els("cs-valor").select();
+        try { await navigator.clipboard.writeText(r.chave);
+              aviso("cs-msg", "Copiada. Cole no Render e salve.", "ok"); }
+        catch(e){ aviso("cs-msg", "Seu navegador não deixou copiar sozinho — "
+                                  + "selecione o texto e copie à mão.", "info"); }
+      });
+    } catch(e){ aviso("cs-msg", e.message, "erro"); }
+  });
+}
+ligarChaveDeSegredos();
 
 // ---------------------------------------------------------------------------
 // A CONTA DE E-MAIL DO SISTEMA
@@ -1274,7 +1385,8 @@ function formOperador(u){
       empresas: [...document.querySelectorAll(".op-empresa:checked")].map(i=>+i.value),
       obras_responsavel: [...document.querySelectorAll(".op-resp:checked")].map(i=>+i.value)};
     if (els("op-senha").value) corpo.senha = els("op-senha").value;
-    if (novo) { corpo.email = els("op-email").value; corpo.cpf = els("op-cpf").value; }
+    if (novo) corpo.email = els("op-email").value;
+    corpo.cpf = els("op-cpf").value;
     try {
       await api(novo ? "/erp/api/usuarios" : `/erp/api/usuarios/${u.id}`,
         {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
@@ -1287,7 +1399,29 @@ function formOperador(u){
            body: JSON.stringify({permissoes})});
       }
       els("dlg").close();
-      aviso("mensagem", novo ? "Operador cadastrado." : "Operador atualizado.", "ok");
+      {# ⚑ DEPOIS DE SALVAR, DIZ EM QUE PÉ ESTÁ O ACESSO (23/11/2026). Ele,
+         depois de liberar uma pessoa da fila do portal: *"depois que eu
+         liberei, eu não vi informação nenhuma. A pessoa recebeu o e-mail
+         para poder completar o cadastro e ter acesso, é isso? Eu fiquei
+         boiando aqui."* A situação do convite estava numa linha pequena
+         dentro do formulário; agora vem no recado, que fica na tela. #}
+      let situacaoDoAcesso = "";
+      if (!novo) {
+        try {
+          const c = (await api(`/erp/api/usuarios/${u.id}/convite/situacao`)).convite || {};
+          situacaoDoAcesso = !c.tem ? ""
+            : c.usado ? ` ${escapar(u.nome)} já criou a senha e consegue entrar.`
+            : c.vencido ? ` ⚠️ O convite de ${escapar(u.nome)} venceu sem ser usado — `
+                + `abra o operador e aperte "Enviar convite" de novo.`
+            : ` <b>Próximo passo é de ${escapar(u.nome)}:</b> abrir o e-mail enviado para `
+                + `${escapar(c.enviado_para || u.email)}, clicar no link e criar a senha `
+                + `(vale até ${dataBR(c.expira_dia)}). Depois disso ela entra no portal com `
+                + `esse e-mail e a senha. Se o e-mail não chegar, olhe o spam ou reenvie `
+                + `o convite pelo operador.`;
+        } catch(e){ /* sem a situação, fica o recado simples */ }
+      }
+      aviso("mensagem", (novo ? "Operador cadastrado." : "Operador atualizado.")
+        + situacaoDoAcesso, "ok");
       carregarOperadores();
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
@@ -2148,12 +2282,63 @@ els("btn-pix-salvar") && els("btn-pix-salvar").addEventListener("click", async (
 
 // ENCADEAMENTO: ?conta=N#plano abre a conta do plano direto, vinda do
 // título que a usa. Quem chega aqui já sabe qual conta quer ver.
-carregar().then(() => {
-  const pedida = new URLSearchParams(location.search).get("conta");
-  if (!pedida) return;
-  const id = +pedida;
-  if (DADOS.categorias.some(c => c.id === id)) editarCategoria(id);
-  else aviso("mensagem", "Esta conta do plano não existe mais.", "erro");
+//
+// ⚑ ?operador=N#usuarios faz o mesmo, vindo da LIBERAÇÃO DE ACESSO
+// (18/11/2026). Ele: *"no ato da liberação já abrir a tela de configurações
+// do cadastro da pessoa (…) lá será designado o perfil dela, obras de acesso
+// e etc."*
+//
+// É aqui, e não numa janelinha dentro da tela de Pessoal, porque esta tela
+// JÁ é o lugar onde o acesso se configura — com perfil, perfis acrescentados,
+// obras, fundo fixo e situação. Uma segunda tela com metade dos campos seria
+// a terceira porta de que ele reclamou em 17/11.
+carregar().then(async () => {
+  const busca = new URLSearchParams(location.search);
+  const pedida = busca.get("conta");
+  if (pedida) {
+    const id = +pedida;
+    if (DADOS.categorias.some(c => c.id === id)) editarCategoria(id);
+    else aviso("mensagem", "Esta conta do plano não existe mais.", "erro");
+  }
+  const operador = busca.get("operador");
+  if (operador) {
+    // ⚠️ A LISTA DE OPERADORES TEM CARGA PRÓPRIA, separada da desta tela.
+    // Sem esperar por ela, a pessoa recém-liberada "não existe" — foi
+    // exatamente o que aconteceu na primeira vez que isto foi dirigido no
+    // navegador: a tela abria dizendo que o operador não existe mais.
+    if (!OPERADORES.length) await carregarOperadores();
+    const u = OPERADORES.find(x => x.id === +operador);
+    if (!u) { aviso("mensagem", "Este operador não existe mais.", "erro"); return; }
+    mostrarSecao("usuarios");
+    // O RESULTADO DA LIBERAÇÃO VEM JUNTO, porque ela aconteceu na tela
+    // anterior e quem chega aqui não viu como terminou: sem isto, ninguém
+    // fica sabendo que o convite não saiu — nem recebe o link para entregar
+    // na mão.
+    //
+    // ⚠️ O TEXTO É MONTADO AQUI, não vem escrito na URL. O aviso escreve
+    // HTML na tela; um endereço com texto dentro viraria caminho para
+    // injetar marcação na página de quem administra o sistema. Da URL só
+    // vêm uma marca conhecida e o link, e o link vai escapado.
+    formOperador(u);
+    // ⚠️ O RECADO VAI DENTRO DA JANELA, não na página atrás dela — foi o que
+    // apareceu ao dirigir a tela: o aviso ficava escondido debaixo do
+    // formulário, e com ele o link do convite, que é justamente o que
+    // alguém precisa entregar na mão quando o e-mail não sai.
+    const convite = busca.get("convite");
+    if (convite === "ok") {
+      aviso("dlg-msg", `Acesso liberado e convite enviado para `
+            + `<b>${escapar(u.email)}</b>. Agora defina o <b>perfil</b> e as `
+            + `<b>obras</b> dela aqui, e salve.`, "ok");
+    } else if (convite === "falhou") {
+      const link = busca.get("link") || "";
+      aviso("dlg-msg", `Acesso liberado, mas o convite <b>NÃO saiu por `
+            + `e-mail</b>.`
+            + (link ? ` Entregue este link para ela (vale uma vez):<br>`
+                      + `<code>${escapar(link)}</code>` : "")
+            + `<br>Defina o <b>perfil</b> e as <b>obras</b> dela aqui, e `
+            + `salve.`, "alerta");
+    }
+  }
 });
 carregarIA();
 carregarAnexos();

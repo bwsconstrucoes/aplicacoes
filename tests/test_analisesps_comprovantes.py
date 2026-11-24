@@ -464,3 +464,22 @@ def test_o_erro_de_COTA_do_Google_vira_frase_de_quem_opera():
     assert "429" not in frase
     assert comprovantes.explicar_erro("Read timed out (read timeout=60)")
     assert comprovantes.explicar_erro("título não encontrado no Omie") == ""
+
+
+def test_a_folha_de_RODAPE_nao_vira_erro_e_a_escaneada_vira():
+    """24/11/2026: o boleto do Sicredi sai em duas folhas; desde 18/11 o robô pula a
+    segunda e diz isso em `paginas_sem_pagamento`. A tela chamava de "Deu erro — o robô
+    não devolveu resultado"."""
+    linhas = comprovantes.ler_resposta({
+        "paginas_sem_pagamento": [
+            {"arquivo": "s.pdf", "pagina": 2, "motivo": "Página sem nenhum dado de "
+             "pagamento — rodapé ou continuação do comprovante. Não foi tentada."},
+            {"arquivo": "s.pdf", "pagina": 3, "motivo": "Página sem texto nenhum — "
+             "provavelmente foto ou documento escaneado."}],
+        "duplicados": [{"arquivo": "s.pdf", "pagina": 1, "motivo": "já baixado"}]},
+        primeira_pagina=11)
+    por = {l["pagina"]: l for l in linhas}
+    assert por[12]["situacao"] == comprovantes.SEM_PAGAMENTO
+    assert por[13]["situacao"] == comprovantes.ERRO and "escaneado" in por[13]["motivo"]
+    assert por[11]["situacao"] == comprovantes.DUPLICADO, "o duplicado vem com a página"
+    assert comprovantes.ROTULOS[comprovantes.SEM_PAGAMENTO] == "Não é comprovante"

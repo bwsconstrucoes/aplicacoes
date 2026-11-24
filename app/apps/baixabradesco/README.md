@@ -31,6 +31,82 @@ substituiu esse cenário.
 Ninguém abre tela aqui: **não existe interface**. A aplicação só responde a
 chamadas de máquina.
 
+### ⚠️ O Make NÃO espera a baixa terminar — 17/11/2026
+
+`POST /executar` responde **na hora**, com `recebido: true`, e a baixa continua
+rodando no servidor. Quem quiser o resultado olha o **Telegram**: ao terminar,
+o robô manda uma linha por comprovante (arquivo, página, valor, SP, o que
+aconteceu).
+
+Foi decisão do dono, e o motivo era concreto: a baixa de um lote grande leva
+minutos, o módulo HTTP do Make desiste em 300 segundos e o cenário tem um
+"break" que **remanda o lote inteiro** — o que fazia duas execuções do mesmo
+arquivo rodarem juntas, ocupando duas das quatro linhas de atendimento do
+serviço. Ele foi claro: *"no Make eu não preciso de resposta para cada baixa.
+O cenário manda e acabou-se."*
+
+Três coisas sustentam isso:
+
+- **O lote é gravado em disco antes da resposta** e só sai quando a baixa
+  termina. Se o trabalhador do gunicorn renovar no meio, o arquivo continua lá
+  e o disparo periódico termina o serviço. ⚠️ Uma **publicação** apaga a `/tmp`
+  inteira — contra isso não há proteção, e o Make não reenvia porque já recebeu
+  "ok".
+- **Lote repetido é recusado na porta** (`ja_em_andamento: true`), pela
+  impressão digital dos arquivos. Nada é refeito.
+- **No máximo 6 lotes ao mesmo tempo.** Acima disso a rota responde
+  `recusado_por_lotacao` e pede para reenviar em alguns minutos.
+
+**Isto vale SÓ para a rota.** Quem chama a função por dentro do serviço — a
+tela do Análise de SPs e a fila de adiados — continua recebendo o resultado
+completo, porque as duas dependem dele (uma para mostrar "baixado", a outra
+para decidir se apaga o adiado). Nenhuma das duas ocupa linha de atendimento,
+então nenhuma tem o problema que isto resolve.
+
+Para acompanhar um lote em andamento: `GET /api/baixabradesco/fila-resumo`
+traz `baixas_em_andamento` com os arquivos e há quantos segundos cada um roda.
+
+### Página que não é comprovante — 18/11/2026
+
+Comprovante pode sair em mais de uma folha. O boleto pago pelo **Sicredi** sai
+em duas: a segunda tem só os telefones de SAC e ouvidoria do banco.
+
+Agora a página é descartada **antes de tentar qualquer coisa** quando nada que
+identifique um pagamento foi lido (valor, data, número da SP, autenticação,
+código de barras, conta de origem, chave PIX, documento de quem recebeu) **e** o
+texto é curto — até 400 caracteres. A folha 2 do Sicredi tem 106.
+
+Isso economiza mais do que parece: por ser "não localizada", aquela folha fazia
+o robô ler as **52 mil linhas da SPsBD** procurando uma SP paga com Omie
+pendente. Em todo boleto do Sicredi.
+
+⚠️ **A trava do tamanho existe para o caso contrário:** página cheia de texto
+que o leitor não entendeu continua aparecendo como "não baixou", porque ali pode
+haver pagamento de verdade.
+
+**Página sem texto nenhum** (comprovante fotografado ou escaneado) também
+aparece no relatório, com destaque: a aplicação **não tem OCR** e não lê imagem.
+Antes de 18/11/2026 ela era pulada em silêncio absoluto — o pagamento não
+baixava e ninguém ficava sabendo.
+
+As duas aparecem no relatório do Telegram em linha resumida (`N página(s) de
+rodapé ou continuação`), e na resposta em `paginas_sem_pagamento`.
+
+### A execução é por fase, não por comprovante
+
+Também de 17/11/2026, e pelo mesmo motivo (tempo): cada etapa trata o lote
+inteiro de uma vez.
+
+| Etapa | Custo por lote de 30 comprovantes |
+|---|---|
+| Planilha SPsBD | **3 idas ao Google** (eram 3 por comprovante = 90) |
+| Pipefy | **6 mutations**, de 5 cards cada (eram 30) |
+| Impressões digitais | **1 gravação** (eram 30) |
+| Omie | **60 a 90 chamadas** — a API baixa um título por chamada, não dá para agrupar |
+
+O que falha vai para a fila **sozinho**: um comprovante que o Pipefy recusou
+não leva os outros quatro do mesmo pedaço junto.
+
 ### Senha de entrada
 
 Todas as rotas conferem a senha `BAIXABRADESCO_SECRET`, que vem no corpo do

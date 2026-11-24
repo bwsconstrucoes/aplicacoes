@@ -180,10 +180,8 @@ def definir(s: Session, empresa_id: int, dados: dict[str, Any],
     token = dados.get("token")
     if token:
         if not ha_chave():
-            raise ErroValidacao(
-                "O token não foi guardado: falta a chave ERP_CHAVE_SEGREDOS na "
-                "Environment do Render. O resto foi salvo — assim que a chave "
-                "existir, digite o token de novo.")
+            from app.apps.erp.core.comum.segredos import recado_do_problema
+            raise ErroValidacao(recado_do_problema("O token não foi guardado"))
         empresa.emissao_token_cifrado = cifrar(str(token))
 
     # A trava do banco recusaria de qualquer jeito; recusar aqui deixa a

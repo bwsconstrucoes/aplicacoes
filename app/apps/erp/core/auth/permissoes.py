@@ -119,6 +119,23 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                             P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.APROVADOR},
     "configurar":      {P.ADMIN},
     "gerir_usuarios":  {P.ADMIN},
+    # ⚑ LIBERAR O ACESSO AO PORTAL É AÇÃO PRÓPRIA desde 18/11/2026, por decisão
+    # dele: *"libera o DP também."*
+    #
+    # POR QUE NÃO DEI `gerir_usuarios` AO DP, que seria uma linha mais curta:
+    # essa ação abre a tela de operadores INTEIRA — criar operador com qualquer
+    # perfil, inclusive ADMIN, marcar exceção de alçada de qualquer um, mexer
+    # no acesso do financeiro. Ele pediu para o DP resolver UMA fila, não para
+    # o DP virar administrador do sistema.
+    #
+    # O que esta ação libera, e só isso: ver a fila de quem pediu acesso pelo
+    # ponto, liberar (o acesso nasce SEMPRE administrativo de obra, preso à
+    # obra em que a pessoa bate ponto) e recusar com motivo.
+    #
+    # ⚠️ A rota IGNORA o perfil que vier do navegador quando quem decide não
+    # tem `gerir_usuarios` — senão o DP poderia pedir "perfil ADMIN" na mão e
+    # criar um administrador por uma fila de obra. Há teste disso.
+    "liberar_acesso_portal": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
     # Uso do sistema por pessoa. DELIBERADAMENTE estreita: ver o que os OUTROS
     # fizeram é informação de gestão de gente, não de operação. Ver a PRÓPRIA
     # semana não passa por aqui — é `ver_erp`, e a rota nem aceita o número de
@@ -133,6 +150,29 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
+    # ⚑ VER A REMUNERAÇÃO É AÇÃO PRÓPRIA desde 17/11/2026, e ela existe por um
+    # pedido dele, ao decidir liberar o ERP para o administrativo de obra:
+    #
+    #   *"Eles não são DP, eles são administrativos de obra. Então eles vão
+    #    visualizar PARCIAL as informações. (…) não é para ter acesso à
+    #    documentação dos colaboradores, é para ter um acesso mais restrito."*
+    #   *"Visão restrita é os dados básicos mesmo. (…) saber se tem algum dado
+    #    tipo demissional, aviso prévio, data de saída, se já botou o telefone,
+    #    em que etapa está."*
+    #
+    # ⚠️ ANTES DISTO, QUEM ABRIA A TELA DE PESSOAL VIA TUDO: salário, valor de
+    # diária, auxílios, PIS, chave Pix. `ver_pessoal` era uma porta só, e o
+    # administrativo de obra a tinha. Era o achado que travava a liberação.
+    #
+    # A separação é entre DUAS perguntas diferentes:
+    #   `ver_pessoal`     — posso abrir a tela e ver QUEM trabalha aqui?
+    #   `ver_remuneracao` — posso ver QUANTO essa pessoa recebe e como?
+    #
+    # A lista é a de `ver_pessoal` MENOS o administrativo de obra. Nenhum
+    # outro perfil perde nada: mexer no alcance de quem já trabalha com isso
+    # não foi pedido, e tirar acesso sem pedir quebra o trabalho de alguém.
+    "ver_remuneracao": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.DEPARTAMENTO_PESSOAL, P.PARCEIRO},
     # ⚑ "ESTE CPF JÁ TEM CADASTRO?" — AÇÃO PRÓPRIA (15/11/2026).
     #
     # A conferência é usada por DOIS caminhos com pesos diferentes: o DP
@@ -174,6 +214,26 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                              P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # ⚑ LIBERAR A SOLICITAÇÃO PARA COMPRA (22/11/2026). O ok da engenharia:
+    # o pedido do administrativo de obra não chega ao comprador como
+    # comprável sem ele. O administrativo fica de fora DE PROPÓSITO.
+    "liberar_solicitacao": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA},
+    # ⚑ AUTORIZAR MATERIAL COMPRADO SEM PEDIDO (21/11/2026). Ação própria: é a
+    # ciência de que uma compra não passou pelo suprimento, e libera o
+    # lançamento para o financeiro. Quem autoriza pedido ganha de graça.
+    # ⚑ 22/11/2026 — entraram gestor e supervisor de obra. O dono: "quem é
+    # responsável pelo setor, a engenharia, tem que estar ciente de que foi
+    # feita uma compra (...) tem que ser dado ciência por alguém."
+    "autorizar_compra_fora_do_fluxo": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                                       P.SUPERVISOR_OBRA},
+    # ⚑ RECEBER MATERIAL (20/11/2026). Quem confere o que desceu do caminhão é
+    # a OBRA — e até aqui o recebimento morava dentro da tela de Pedidos, que
+    # só comprador e diretor abrem. A regra existia; a obra não tinha porta.
+    # Ação própria, e não `ver_suprimentos`: registrar recebimento muda o saldo
+    # do pedido e é o que diz ao financeiro que há conta a caminho.
+    "receber_material":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "administrar_insumos": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "administrar_fornecedores": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     # A fila de pedidos serve a DOIS papéis: quem compra acompanha o que fechou,
@@ -192,8 +252,17 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # quê NÃO é esta ação, é o SIGILO do tipo (aberto, restrito, pessoal) e o
     # escopo por obra: folha de pagamento e documento de sócio não aparecem
     # para quem não é do financeiro ou do DP, mesmo com esta ação marcada.
+    # ⚑ O ADMINISTRATIVO DE OBRA SAIU DAQUI em 17/11/2026, e ele foi direto ao
+    # ponto quando perguntei: *"Tirar o arquivo desse perfil, sim. Visualizar
+    # os arquivos da documentação da pessoa, não."*
+    #
+    # ⚠️ ELE PERDE O ARQUIVO INTEIRO, não só os documentos de pessoa — foi dito
+    # e confirmado antes de mexer. O Arquivo é um lugar só, com documento de
+    # obra, de empresa, de contrato e de colaborador juntos; não havia como
+    # tirar uma gaveta e deixar as outras sem inventar um recorte novo que
+    # ninguém pediu.
     "ver_arquivo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.SUPERVISOR_OBRA,
                         P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA, P.PARCEIRO},
     "arquivar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                         P.DEPARTAMENTO_PESSOAL, P.GESTOR_OBRA},
@@ -310,6 +379,10 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
 # verdade sobre quem entra.
 ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "ver_pedidos_compra": ("comprar", "autorizar_pedido"),
+    # O comprador também registra recebimento: é ele quem fecha o ciclo quando
+    # a obra não lançou.
+    "receber_material": ("comprar",),
+    "autorizar_compra_fora_do_fluxo": ("autorizar_pedido",),
     # Quem compra enxerga as notas e cruza: é ele que sabe de que pedido cada
     # nota é, e o dono deixou em aberto quem confere — a resposta prática é
     # "os dois, na mesma tela", porque a nota tem uma ponta em cada mundo.
@@ -334,6 +407,9 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # Quem cadastra colaborador e quem abre pedido ao DP precisam da MESMA
     # resposta: "este CPF já existe?". Ver o comentário da ação, acima.
     "conferir_cpf_colaborador": ("editar_colaboradores", "solicitar_dp"),
+    # Quem gere operadores resolve a fila do portal — é o mesmo assunto, e sem
+    # esta linha quem administra o sistema perderia uma fila que já enxergava.
+    "liberar_acesso_portal": ("gerir_usuarios",),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -355,6 +431,7 @@ ACAO_ROTULOS = {
     "ver_dados_pagamento":  "Ver dados bancários e chave Pix",
     "configurar":           "Abrir Configurações",
     "gerir_usuarios":       "Cadastrar e editar operadores",
+    "liberar_acesso_portal": "Liberar acesso ao portal a quem pediu pelo ponto",
     "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
     "ver_titulos":          "Ver a lista de solicitações de pagamento",
@@ -363,6 +440,7 @@ ACAO_ROTULOS = {
     "ver_obras":            "Ver o painel de obras",
     "ver_locacoes":         "Ver as locações de equipamento",
     "ver_pessoal":          "Ver despesas de colaborador",
+    "ver_remuneracao":      "Ver salário, diária e dados de pagamento",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
     "conferir_cpf_colaborador": "Conferir se um CPF já tem cadastro",
@@ -373,6 +451,9 @@ ACAO_ROTULOS = {
     "solicitar_suprimento": "Pedir material para a obra",
     "comprar":              "Cotar e fechar pedido de compra",
     "autorizar_pedido":     "Autorizar pedido de compra",
+    "liberar_solicitacao":  "Liberar para compra o material pedido pela obra",
+    "receber_material":     "Registrar o material que chegou na obra",
+    "autorizar_compra_fora_do_fluxo": "Autorizar material comprado sem pedido de compra",
     "administrar_insumos":  "Cadastrar e corrigir insumos",
     "administrar_fornecedores": "Cadastrar e corrigir fornecedores",
     "ver_pedidos_compra":   "Ver a fila de pedidos de compra",
@@ -729,7 +810,20 @@ def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
             " WHERE (o.projeto_id IS NOT NULL AND o.projeto_id IN ("
             "         SELECT projeto_id FROM usuario_projetos WHERE usuario_id = :u))"
             "    OR (o.empresa_id IS NOT NULL AND o.empresa_id IN ("
-            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"),
+            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"
+            # ⚑ A OBRA ONDE A PESSOA BATE PONTO (23/11/2026). Ele: *"o ideal
+            # era isso ser feito de forma dinâmica em relação às obras. A obra
+            # que aquela pessoa está batendo ponto, ele já teria acesso."* A
+            # obra atual (`colaborador_obra_atual`, recalculada todo dia pela
+            # rodada do agente) do cadastro LIGADO a este operador soma-se às
+            # marcadas — mudou de obra no ponto, o alcance muda junto, sem
+            # ninguém mexer no operador; as marcadas à mão continuam. Mesma
+            # consulta, nenhuma ida a mais ao banco.
+            "    OR o.id IN ("
+            "         SELECT a.obra_id FROM colaborador_obra_atual a"
+            "           JOIN colaboradores c ON c.id = a.colaborador_id"
+            "          WHERE c.usuario_id = :u AND a.obra_id IS NOT NULL"
+            "            AND UPPER(COALESCE(c.situacao, '')) <> 'DESLIGADO')"),
             {"u": usuario.id}).all()
     except Exception:
         # Migração 066 ainda não aplicada: vale só o que está marcado obra a

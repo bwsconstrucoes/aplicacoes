@@ -29,6 +29,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 
 logger = logging.getLogger("analisesps.comprovantes")
 
@@ -196,20 +197,33 @@ NAO_LOCALIZADO = "NAO_LOCALIZADO"
 PENDENTE_VALIDACAO = "PENDENTE_VALIDACAO"
 RECUSADO = "RECUSADO"
 ERRO = "ERRO"
+# A folha que não é comprovante — rodapé do banco, continuação (24/11/2026). O robô
+# a pula desde 18/11 (`paginas_sem_pagamento` na resposta). Não pede ação.
+SEM_PAGAMENTO = "SEM_PAGAMENTO"
+# A página que acabou de chegar e espera a vez (21/11/2026): a linha nasce no envio
+# e é trocada pelo resultado quando a leva dela volta do robô.
+AGUARDANDO = "AGUARDANDO"
+# A página mandada de novo pela tela (19/11/2026): o resultado está no envio novo.
+# Sai das contas do que "pede ação" — senão o mesmo comprovante contaria duas vezes.
+REENVIADO = "REENVIADO"
 
 ROTULOS = {
+    AGUARDANDO: "Aguardando a baixa",
     BAIXADO: "Baixado",
     DUPLICADO: "Já tinha sido baixado",
     NAO_LOCALIZADO: "Não achei a SP",
     PENDENTE_VALIDACAO: "Falta liberar antes de baixar",
     RECUSADO: "Pagamento não efetivado",
     ERRO: "Deu erro",
+    REENVIADO: "Mandado de novo",
+    SEM_PAGAMENTO: "Não é comprovante",
 }
 
 # A ordem em que a tela mostra: primeiro o que pede ação, por último o que
 # deu certo. Quem abre a tela quer saber o que ficou de fora — o que baixou é
 # o esperado.
-ORDEM = [ERRO, NAO_LOCALIZADO, PENDENTE_VALIDACAO, RECUSADO, DUPLICADO, BAIXADO]
+ORDEM = [AGUARDANDO, ERRO, NAO_LOCALIZADO, PENDENTE_VALIDACAO, RECUSADO, DUPLICADO, BAIXADO,
+         REENVIADO, SEM_PAGAMENTO]
 
 
 def _texto(v) -> str:
@@ -461,7 +475,9 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
     def acrescentar(situacao, bruto, motivo=""):
         recibo = (bruto or {}).get("receipt") or bruto or {}
         try:
-            pagina = int(recibo.get("page") or 0)
+            # Os planos trazem a página em `receipt.page`; os duplicados e os
+            # recusados, em `pagina` (24/11/2026: o duplicado aparecia sem página).
+            pagina = int(recibo.get("page") or (bruto or {}).get("pagina") or 0)
         except (TypeError, ValueError):
             pagina = 0
         # ⚠️ A SP VEM DE DOIS LUGARES, e a tela lia só um. Relato do dono em
@@ -496,6 +512,24 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
         acrescentar(RECUSADO, item,
                     _texto(item.get("motivo"))
                     or "O pagamento não consta como efetivado.")
+    # ⚠️ A FOLHA QUE NÃO É COMPROVANTE (24/11/2026). Desde 18/11 o robô pula a folha
+    # de rodapé ou de continuação (o boleto do Sicredi sai em duas folhas) e diz isso
+    # em `paginas_sem_pagamento`. Sem ler esta lista, a página voltava sem resultado e
+    # a tela a chamava de "Deu erro — o robô não devolveu resultado", com o botão de
+    # baixar de novo. Rodapé não pede ação; a página SEM TEXTO nenhum (foto,
+    # escaneado) pede — não vai baixar nunca sem alguém reenviar o PDF do banco.
+    for item in resposta.get("paginas_sem_pagamento") or []:
+        motivo = _texto((item or {}).get("motivo"))
+        try:
+            pagina = int((item or {}).get("pagina") or 0)
+        except (TypeError, ValueError):
+            pagina = 0
+        linhas.append({
+            "pagina": (primeira_pagina + pagina - 1) if pagina else None,
+            "situacao": ERRO if "sem texto" in motivo.lower() else SEM_PAGAMENTO,
+            "sp_id": "", "valor": "", "recebedor": "",
+            "motivo": (motivo or "Folha sem nenhum dado de pagamento.")[:500],
+            "conversa_omie": ""})
     # ⚠️ A TRAVA QUE TERIA PEGADO O DEFEITO DE 13/09/2026 NO PRIMEIRO DIA.
     # O robô devolve no corpo da resposta se rodou em ensaio. Se rodou, NADA
     # foi gravado — e nenhuma página pode ser anunciada como baixada, por mais
@@ -553,6 +587,7 @@ def guardar(conteudo: bytes, nome: str, pessoa: str, quem: str) -> int:
         conn.execute(
             "UPDATE analisesps.comprovantes_lote SET caminho = ? WHERE id = ?",
             (caminho, lote_id))
+        _aguardar(conn, lote_id, paginas)
         conn.commit()
 
     logger.info("Análise de SPs: comprovante %r recebido — lote %d, %d página(s), "
@@ -651,6 +686,43 @@ def _mandar_ao_robo(pedaco: bytes, nome: str) -> dict:
     return processar_baixabradesco(pedido) or {}
 
 
+# ---------------------------------------------------------------------------
+# A LINHA NASCE NO ENVIO (21/11/2026)
+#
+# O dono: *"quando você anexa o comprovante e coloca mandar para a baixa (…) ele
+# meio que some (…) e desaparece qualquer informação. Aí depois que é baixado ou
+# não é baixado, é que ele é listado na tabela (…) a gente fica na dúvida, foi,
+# não foi (…) o ideal era que na hora que mandasse para a baixa, ele já
+# alimentasse a tabela e ficasse aguardando a baixa."*
+#
+# Cada página entra na lista no momento do envio, como "Aguardando a baixa". Quando
+# a leva dela volta do robô, as linhas DAQUELAS páginas são trocadas pelo resultado
+# (o que também evita a linha dobrada quando um envio parado é retomado do
+# começo). Página que o robô não devolveu, ou que ficou para trás num envio que
+# parou, não fica "aguardando" para sempre: vira "Deu erro", dizendo por quê, e
+# pode ser baixada de novo.
+# ---------------------------------------------------------------------------
+def _aguardar(conn, lote_id: int, paginas: int) -> None:
+    for pagina in range(1, int(paginas or 0) + 1):
+        conn.execute("INSERT INTO analisesps.comprovantes_item "
+                     "  (lote_id, pagina, situacao, motivo) VALUES (?, ?, ?, ?)",
+                     (int(lote_id), pagina, AGUARDANDO, "Na fila para a baixa."))
+
+
+def _encerrar_aguardando(lote_id: int, motivo: str) -> int:
+    """As páginas que ficaram aguardando viram "Deu erro", com o motivo."""
+    from .db import conexao
+    with conexao() as conn:
+        cur = conn.execute(
+            "UPDATE analisesps.comprovantes_item SET situacao = ?, motivo = ? "
+            " WHERE lote_id = ? AND situacao = ?",
+            (ERRO, str(motivo or "")[:500], int(lote_id), AGUARDANDO))
+        n = cur.rowcount or 0
+        cur.close()
+        conn.commit()
+    return n
+
+
 def _gravar_itens(conn, lote_id: int, linhas: list) -> None:
     """Grava as linhas de uma leva.
 
@@ -733,6 +805,8 @@ def processar_um(lote_id: int, anotar=None) -> dict:
                  "sido baixado não baixa duas vezes.", lote_id))
             conn.commit()
         logger.warning("Análise de SPs: lote %d sem arquivo (%s).", lote_id, e)
+        _encerrar_aguardando(lote_id, "O arquivo não está mais no servidor (o serviço "
+                             "reiniciou antes de processar). Arraste o PDF de novo.")
         return {"ok": False, "erro": "arquivo sumiu"}
 
     feitas, contagem = 0, {}
@@ -743,7 +817,23 @@ def processar_um(lote_id: int, anotar=None) -> dict:
             resposta = _mandar_com_paciencia(pedaco, nome, anotar,
                                              f"{nome}: leva {feitas + 1} de {levas}")
             itens = ler_resposta(resposta, primeira)
+            ultima = min(primeira + POR_LEVA - 1, int(paginas or 0) or primeira)
             with conexao() as conn:
+                # As linhas destas páginas (o "aguardando", ou o resultado de uma
+                # rodada anterior que parou no meio) dão lugar ao resultado.
+                conn.execute("DELETE FROM analisesps.comprovantes_item "
+                             " WHERE lote_id = ? AND pagina BETWEEN ? AND ?",
+                             (lote_id, primeira, ultima))
+                # Página da leva que o robô não devolveu não some da lista: vira
+                # erro, dizendo isso (a não ser que ele tenha devolvido linhas sem
+                # o número da página, que então são elas).
+                devolvidas = {i["pagina"] for i in itens if i.get("pagina")}
+                sem_numero = sum(1 for i in itens if not i.get("pagina"))
+                faltam = [n for n in range(primeira, ultima + 1) if n not in devolvidas]
+                if len(faltam) > sem_numero:
+                    itens = itens + [{"pagina": n, "situacao": ERRO, "motivo": (
+                        "O robô não devolveu resultado para esta página. Use "
+                        "\"Baixar de novo\".")} for n in faltam]
                 _gravar_itens(conn, lote_id, itens)
                 feitas += 1
                 conn.execute(
@@ -761,6 +851,9 @@ def processar_um(lote_id: int, anotar=None) -> dict:
                 (str(e)[:1000], lote_id))
             conn.commit()
         # ⚠️ O PDF FICA: é este lote que vai precisar de "Processar de novo".
+        _encerrar_aguardando(lote_id, "O envio parou antes de chegar a esta página: "
+                             + (explicar_erro(str(e)) or str(e))[:300])
+        guardar_paginas_no_drive(lote_id, conteudo)
         return {"ok": False, "erro": str(e), "levas_feitas": feitas}
 
     with conexao() as conn:
@@ -768,6 +861,11 @@ def processar_um(lote_id: int, anotar=None) -> dict:
             "UPDATE analisesps.comprovantes_lote SET situacao = 'PRONTO', "
             "  terminado_em = now() WHERE id = ?", (lote_id,))
         conn.commit()
+    if _encerrar_aguardando(lote_id, "O robô não devolveu resultado para esta página. "
+                            "Use \"Baixar de novo\"."):
+        contagem[ERRO] = contagem.get(ERRO, 0) + 1
+    # O que não baixou vai para o Drive ANTES de o PDF poder sair do disco.
+    guardar_paginas_no_drive(lote_id, conteudo)
     # Só sai do disco quando não sobrou nada a refazer.
     if not any(contagem.get(s) for s in PEDEM_NOVA_TENTATIVA):
         _apagar_arquivo(caminho)
@@ -913,6 +1011,9 @@ def reprocessar_lote(lote_id: int) -> dict:
         # instante com o lote "esperando" e as linhas velhas ainda ali.
         conn.execute("DELETE FROM analisesps.comprovantes_item "
                      " WHERE lote_id = ?", (int(lote_id),))
+        paginas_ = consultar_um("SELECT paginas FROM analisesps.comprovantes_lote "
+                                " WHERE id = ?", (int(lote_id),))
+        _aguardar(conn, int(lote_id), int((paginas_ or [0])[0] or 0))
         conn.execute(
             "UPDATE analisesps.comprovantes_lote "
             "   SET situacao = 'ESPERANDO', levas_feitas = 0, erro = '', "
@@ -1062,6 +1163,355 @@ def processar_pendentes(anotar=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# A PÁGINA QUE NÃO BAIXOU VAI PARA O DRIVE (18/11/2026)
+#
+# O dono: *"os comprovantes que não foram baixados, eu acho que eles deveriam
+# ficar salvos no Google Drive, até para depois eu posterior analisar que
+# comprovante foi aquele, para eu entender por que ele não baixou, se há alguma
+# regra que não existe ainda."*
+#
+# O PDF do envio vive no disco do servidor, que some a cada publicação. No fim do
+# processamento, cada página que PEDE NOVA TENTATIVA (não achei a SP, falta
+# liberar, pagamento não efetivado, erro) é recortada e sobe para a subpasta
+# "Comprovantes não baixados" da pasta do Drive configurada (a mesma dos arquivos
+# da folha). O link fica no lote, por página (migração 057) — "Processar de novo"
+# não perde a cópia nem a envia de novo.
+#
+# Custo: 3 chamadas ao Drive por página que não baixou (criar, gravar, liberar o
+# link), mais 1 busca da subpasta por lote. Página que baixou não custa nada.
+# Nunca derruba a baixa: falha no Drive vira linha de log.
+# ---------------------------------------------------------------------------
+PASTA_NO_DRIVE = "Comprovantes não baixados"
+
+
+def paginas_no_drive(lote_id: int) -> dict:
+    """`{pagina (int): link}` das páginas deste lote copiadas para o Drive."""
+    import json
+    from .db import consultar_um
+    try:
+        linha = consultar_um("SELECT paginas_no_drive FROM analisesps.comprovantes_lote "
+                             " WHERE id = ?", (int(lote_id),))
+        dado = json.loads(linha[0]) if linha and linha[0] else {}
+    except Exception:  # noqa: BLE001 — migração 057 ainda não aplicada
+        return {}
+    return {int(k): v for k, v in (dado or {}).items() if str(k).isdigit() and v}
+
+
+def recortar_pagina(conteudo: bytes, pagina: int) -> bytes:
+    """A página `pagina` (1, 2, …) do PDF, sozinha num PDF."""
+    from pypdf import PdfReader, PdfWriter
+    leitor = PdfReader(io.BytesIO(conteudo))
+    if not 1 <= int(pagina) <= len(leitor.pages):
+        raise ErroDeComprovante(f"O PDF não tem a página {pagina}.")
+    escritor = PdfWriter()
+    escritor.add_page(leitor.pages[int(pagina) - 1])
+    saida = io.BytesIO()
+    escritor.write(saida)
+    return saida.getvalue()
+
+
+def guardar_paginas_no_drive(lote_id: int, conteudo: bytes | None = None) -> dict:
+    """Copia para o Drive as páginas deste lote que não baixaram e ainda não estão
+    lá. Devolve `{"guardadas": n, "falhas": [...]}`; nunca levanta erro."""
+    import json
+    from .db import conexao, consultar, consultar_um
+    saida = {"guardadas": 0, "falhas": []}
+    try:
+        ja = paginas_no_drive(lote_id)
+        marcas = ",".join(["?"] * len(PEDEM_NOVA_TENTATIVA))
+        faltam = sorted({int(p) for (p,) in consultar(
+            "SELECT DISTINCT pagina FROM analisesps.comprovantes_item "
+            f" WHERE lote_id = ? AND pagina IS NOT NULL AND situacao IN ({marcas})",
+            (int(lote_id), *sorted(PEDEM_NOVA_TENTATIVA)))} - set(ja))
+        if not faltam:
+            return saida
+        lote = consultar_um("SELECT arquivo, caminho, recebido_em "
+                            "  FROM analisesps.comprovantes_lote WHERE id = ?",
+                            (int(lote_id),))
+        if not lote:
+            return saida
+        if conteudo is None:
+            with open(lote[1], "rb") as arquivo:
+                conteudo = arquivo.read()
+        from . import drive
+        from .beevale import pasta_do_drive
+        pasta, _ = pasta_do_drive()
+        if not pasta:
+            saida["falhas"].append("a pasta do Drive não está configurada")
+            return saida
+        destino = drive.pasta_filha(pasta, PASTA_NO_DRIVE)
+    except Exception as e:  # noqa: BLE001 — a baixa já terminou; isto é extra
+        logger.exception("Comprovantes: não consegui preparar a cópia no Drive do lote %s",
+                         lote_id)
+        saida["falhas"].append(str(e)[:200])
+        return saida
+    quando = lote[2].strftime("%Y-%m-%d") if hasattr(lote[2], "strftime") else ""
+    base = os.path.splitext(os.path.basename(lote[0] or f"lote {lote_id}"))[0][:80]
+    for pagina in faltam:
+        try:
+            subido = drive.subir_arquivo(
+                recortar_pagina(conteudo, pagina),
+                f"{quando} - {base} - pág {pagina} - lote {lote_id}.pdf", destino,
+                mime="application/pdf")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Comprovantes: a página %s do lote %s não subiu ao Drive",
+                             pagina, lote_id)
+            saida["falhas"].append(f"página {pagina}: {str(e)[:160]}")
+            continue
+        ja[pagina] = subido["link"]
+        saida["guardadas"] += 1
+        # Grava a cada página: se cair no meio, a próxima vez não reenvia.
+        with conexao() as conn:
+            conn.execute("UPDATE analisesps.comprovantes_lote SET paginas_no_drive = ? "
+                         " WHERE id = ?", (json.dumps({str(k): v for k, v in ja.items()}),
+                                           int(lote_id)))
+            conn.commit()
+    if saida["guardadas"]:
+        logger.info("Comprovantes: lote %s — %d página(s) não baixada(s) guardada(s) no Drive.",
+                    lote_id, saida["guardadas"])
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# A LISTA DOS COMPROVANTES, COM FILTROS (18/11/2026)
+#
+# O dono: *"eu queria poder, no sidebar, fazer filtragem das informações (…)
+# aparece uma série de coisas que deu erro. Aí eu quero entender o que é que deu
+# erro (…) se tem o número da SP, nós gravamos o comprovante (…) conseguir
+# visualizar esse comprovante."* Uma linha por PÁGINA (cada página é um
+# comprovante), de todos os envios, com o link do comprovante: o arquivado na SP
+# (o robô grava o link na coluna Comprovante) para o que baixou; a cópia no Drive,
+# ou a página ainda no servidor, para o que não baixou.
+#
+# Duas consultas (as linhas e a contagem por situação), seja qual for o filtro.
+# ---------------------------------------------------------------------------
+TETO_DA_LISTA = 300
+DIAS_PADRAO = 30
+
+
+def filtros_da_tela(args) -> dict:
+    import datetime as _dt
+
+    def data(v):
+        try:
+            return _dt.date.fromisoformat(str(v or "")[:10])
+        except ValueError:
+            return None
+    situacoes = [s for s in (args.getlist("situacao") if hasattr(args, "getlist")
+                             else args.get("situacao") or []) if s in ROTULOS]
+    lote = str(args.get("lote") or "").strip()
+    f = {"situacoes": situacoes, "busca": " ".join(str(args.get("busca") or "").split())[:80],
+         "quem": [q for q in (args.getlist("quem") if hasattr(args, "getlist") else [])
+                  if q][:20],
+         "de": data(args.get("de")), "ate": data(args.get("ate")),
+         "lote": int(lote) if lote.isdigit() else None,
+         "aplicado": bool(args.get("f"))}
+    # Sem filtro de data nem envio escolhido: os últimos DIAS_PADRAO dias.
+    if not f["aplicado"] and not f["lote"]:
+        from .horario import agora
+        f["de"] = agora().date() - _dt.timedelta(days=DIAS_PADRAO)
+    return f
+
+
+def _onde(f: dict, com_situacao: bool = True) -> tuple:
+    partes, params = [], []
+    if com_situacao and f.get("situacoes"):
+        partes.append("i.situacao IN (" + ",".join("?" for _ in f["situacoes"]) + ")")
+        params += list(f["situacoes"])
+    if f.get("lote"):
+        partes.append("i.lote_id = ?")
+        params.append(int(f["lote"]))
+    if f.get("de"):
+        partes.append("l.recebido_em >= ?")
+        params.append(f["de"].isoformat())
+    if f.get("ate"):
+        partes.append("l.recebido_em < (CAST(? AS date) + 1)")
+        params.append(f["ate"].isoformat())
+    if f.get("quem"):
+        partes.append("l.quem IN (" + ",".join("?" for _ in f["quem"]) + ")")
+        params += list(f["quem"])
+    if f.get("busca"):
+        termo = "%" + f["busca"].lower() + "%"
+        partes.append("(lower(i.sp_id) LIKE ? OR lower(i.recebedor) LIKE ? OR "
+                      " lower(i.valor) LIKE ? OR lower(l.arquivo) LIKE ? OR "
+                      " lower(i.motivo) LIKE ?)")
+        params += [termo] * 5
+    return (" WHERE " + " AND ".join(partes)) if partes else "", params
+
+
+def listar(f: dict) -> dict:
+    """As páginas no filtro (até TETO_DA_LISTA, mais novas primeiro), a contagem
+    por situação (sem o filtro de situação, para os números servirem de atalho) e
+    quem já enviou."""
+    import json
+
+    from .db import consultar
+    from .formatos import links_da_celula
+    onde, params = _onde(f)
+    try:
+        linhas = consultar(
+            "SELECT i.lote_id, i.pagina, i.situacao, i.sp_id, i.valor, i.recebedor, "
+            "       i.motivo, i.conversa_omie, l.arquivo, l.quem, l.recebido_em, "
+            "       l.paginas_no_drive, coalesce(s.comprovante, ''), "
+            "       l.situacao, l.levas, l.levas_feitas "
+            "  FROM analisesps.comprovantes_item i "
+            "  JOIN analisesps.comprovantes_lote l ON l.id = i.lote_id "
+            "  LEFT JOIN analisesps.sps s ON s.id = i.sp_id AND i.sp_id <> '' "
+            + onde + " ORDER BY l.recebido_em DESC, i.lote_id DESC, i.pagina NULLS LAST "
+            " LIMIT ?", tuple(params) + (TETO_DA_LISTA + 1,))
+        tem_drive = True
+    except Exception:  # noqa: BLE001 — migração 057 ainda não aplicada
+        logger.exception("Comprovantes: lendo a lista sem as cópias do Drive")
+        linhas = [tuple(l[:11]) + ("{}",) + tuple(l[11:]) for l in consultar(
+            "SELECT i.lote_id, i.pagina, i.situacao, i.sp_id, i.valor, i.recebedor, "
+            "       i.motivo, i.conversa_omie, l.arquivo, l.quem, l.recebido_em, "
+            "       coalesce(s.comprovante, ''), l.situacao, l.levas, l.levas_feitas "
+            "  FROM analisesps.comprovantes_item i "
+            "  JOIN analisesps.comprovantes_lote l ON l.id = i.lote_id "
+            "  LEFT JOIN analisesps.sps s ON s.id = i.sp_id AND i.sp_id <> '' "
+            + onde + " ORDER BY l.recebido_em DESC, i.lote_id DESC, i.pagina NULLS LAST "
+            " LIMIT ?", tuple(params) + (TETO_DA_LISTA + 1,))]
+        tem_drive = False
+    onde_sem, params_sem = _onde(f, com_situacao=False)
+    contagem = dict(consultar(
+        "SELECT i.situacao, count(*) FROM analisesps.comprovantes_item i "
+        "  JOIN analisesps.comprovantes_lote l ON l.id = i.lote_id"
+        + onde_sem + " GROUP BY i.situacao", tuple(params_sem)))
+    quem = [q for (q,) in consultar(
+        "SELECT DISTINCT quem FROM analisesps.comprovantes_lote WHERE quem <> '' "
+        " ORDER BY quem")]
+    no_disco: dict = {}
+    itens = []
+    for l in linhas[:TETO_DA_LISTA]:
+        try:
+            drive_ = json.loads(l[11] or "{}") if tem_drive else {}
+        except ValueError:
+            drive_ = {}
+        if l[0] not in no_disco:
+            no_disco[l[0]] = _tem_arquivo(l[0])
+        arquivado = (links_da_celula(l[12]) or [""])[0]
+        itens.append({
+            "lote_id": l[0], "pagina": l[1], "situacao": l[2],
+            "rotulo": ROTULOS.get(l[2], l[2]), "sp_id": l[3], "valor": l[4],
+            "recebedor": l[5], "motivo": l[6], "motivo_explicado": explicar_erro(l[6]),
+            "conversa_omie": l[7], "arquivo": l[8], "quem": l[9], "recebido_em": l[10],
+            "pede_acao": l[2] not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO, SEM_PAGAMENTO),
+            # Onde está a página que aguarda: na fila, ou a leva dela já está no robô.
+            "andamento": ("" if l[2] != AGUARDANDO else
+                          (f"baixando agora — leva {min((l[15] or 0) + 1, l[14] or 1)} de "
+                           f"{l[14] or 1}" if l[13] == "RODANDO" else "na fila")),
+            "pode_reenviar": l[2] in PEDEM_NOVA_TENTATIVA and bool(
+                l[1] and (no_disco[l[0]] or drive_.get(str(l[1])))),
+            # O comprovante, na ordem do que vale mais: o arquivado na SP pelo robô;
+            # a cópia no Drive; a página ainda no servidor.
+            "link_arquivado": arquivado if l[2] in (BAIXADO, DUPLICADO) else "",
+            "link_drive": drive_.get(str(l[1]) if l[1] is not None else "", ""),
+            "no_servidor": bool(l[1] and no_disco[l[0]]),
+        })
+    return {"itens": itens, "mais": len(linhas) > TETO_DA_LISTA,
+            "contagem": [(s, ROTULOS[s], int(contagem.get(s, 0))) for s in ORDEM],
+            "total": sum(int(v) for v in contagem.values()), "quem": quem}
+
+
+# ---------------------------------------------------------------------------
+# BAIXAR DE NOVO UMA PÁGINA (19/11/2026)
+#
+# O dono: *"nos que não foram baixados, eu queria algum botão para baixar
+# novamente. Utilizar aquele mesmo arquivo e encaminhar novamente para a baixa.
+# Porque às vezes a gente esquece de alterar o status e acaba não encontrando."*
+#
+# É o "Processar de novo" de UMA página (ou das marcadas), sem refazer o envio
+# inteiro e sem precisar do PDF original: a página vem do servidor, enquanto ele
+# ainda a tem, ou da cópia no Drive (`guardar_paginas_no_drive`). As escolhidas
+# viram UM envio novo, com a fila e o robô de sempre — o que já foi baixado não
+# baixa duas vezes. A linha antiga vira "Mandado de novo", com o número do envio
+# novo, e sai da conta do que pede ação.
+# ---------------------------------------------------------------------------
+MAXIMO_NO_REENVIO = 50
+_ID_DO_DRIVE = re.compile(r"[?&]id=([\w-]+)|/d/([\w-]+)")
+
+
+def _bytes_da_pagina(lote_id: int, pagina: int, no_drive: dict) -> bytes:
+    caminho = os.path.join(PASTA, f"lote-{int(lote_id)}.pdf")
+    if os.path.exists(caminho):
+        with open(caminho, "rb") as arquivo:
+            return recortar_pagina(arquivo.read(), int(pagina))
+    link = no_drive.get(int(pagina))
+    achado = _ID_DO_DRIVE.search(link or "")
+    if not achado:
+        raise ErroDeComprovante("a página não está mais no servidor nem no Drive")
+    from . import drive
+    return drive.baixar_arquivo(next(g for g in achado.groups() if g))
+
+
+def reenviar(paginas, pessoa: str, quem: str) -> dict:
+    """Manda de novo para a baixa as páginas `[(lote, página)]`, num envio novo.
+    Devolve `{"lote": id, "paginas": n, "faltaram": [...]}`; levanta
+    `ErroDeComprovante` quando nenhuma página pôde ser lida."""
+    from pypdf import PdfReader, PdfWriter
+
+    from .db import conexao, consultar
+    pedidas = list(dict.fromkeys((int(l), int(p)) for l, p in paginas or []))
+    if not pedidas:
+        raise ErroDeComprovante("Nenhum comprovante marcado.")
+    if len(pedidas) > MAXIMO_NO_REENVIO:
+        raise ErroDeComprovante(f"São no máximo {MAXIMO_NO_REENVIO} comprovantes de cada vez.")
+    lotes = sorted({l for l, _ in pedidas})
+    nomes = dict(consultar("SELECT id, arquivo FROM analisesps.comprovantes_lote WHERE id IN ("
+                           + ",".join("?" for _ in lotes) + ")", tuple(lotes)))
+    escritor, entraram, faltaram = PdfWriter(), [], []
+    drive_por_lote: dict = {}
+    for lote_id, pagina in pedidas:
+        if lote_id not in nomes:
+            faltaram.append(f"envio {lote_id}: não existe mais")
+            continue
+        if lote_id not in drive_por_lote:
+            drive_por_lote[lote_id] = paginas_no_drive(lote_id)
+        try:
+            pedaco = _bytes_da_pagina(lote_id, pagina, drive_por_lote[lote_id])
+            for folha in PdfReader(io.BytesIO(pedaco)).pages:
+                escritor.add_page(folha)
+            entraram.append((lote_id, pagina))
+        except Exception as e:  # noqa: BLE001 — uma página que falta não barra as outras
+            logger.warning("Comprovantes: não consegui reler a página %s do envio %s (%s)",
+                           pagina, lote_id, e)
+            faltaram.append(f"{nomes[lote_id]} pág. {pagina}: {e}")
+    if not entraram:
+        raise ErroDeComprovante("Nenhuma das páginas pôde ser lida de novo — "
+                                + "; ".join(faltaram))
+    saida = io.BytesIO()
+    escritor.write(saida)
+    if len(entraram) == 1:
+        l, p = entraram[0]
+        nome = f"Reenvio - {os.path.splitext(nomes[l])[0]} - pág {p}.pdf"
+    else:
+        nome = f"Reenvio - {len(entraram)} comprovantes.pdf"
+    novo = guardar(saida.getvalue(), nome[:200], pessoa, quem)
+    with conexao() as conn:
+        for l, p in entraram:
+            conn.execute(
+                "UPDATE analisesps.comprovantes_item SET situacao = ?, "
+                "       motivo = motivo || ? "
+                " WHERE lote_id = ? AND pagina = ? AND situacao IN ("
+                + ",".join("?" for _ in PEDEM_NOVA_TENTATIVA) + ")",
+                (REENVIADO, f" · Mandado de novo no envio {novo}.", l, p,
+                 *sorted(PEDEM_NOVA_TENTATIVA)))
+        conn.commit()
+    logger.info("Comprovantes: %d página(s) mandada(s) de novo por %s — envio %d.",
+                len(entraram), quem or "?", novo)
+    return {"lote": novo, "paginas": len(entraram), "faltaram": faltaram}
+
+
+def pagina_do_servidor(lote_id: int, pagina: int) -> bytes:
+    """A página do PDF do envio, enquanto ele ainda está no servidor."""
+    caminho = os.path.join(PASTA, f"lote-{int(lote_id)}.pdf")
+    if not os.path.exists(caminho):
+        raise ErroDeComprovante("O PDF deste envio não está mais no servidor.")
+    with open(caminho, "rb") as arquivo:
+        return recortar_pagina(arquivo.read(), int(pagina))
+
+
+# ---------------------------------------------------------------------------
 # O que a tela mostra
 # ---------------------------------------------------------------------------
 def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
@@ -1127,7 +1577,8 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
                          for s in ORDEM if contagem.get(s)],
             "resolvidos": contagem.get(BAIXADO, 0) + contagem.get(DUPLICADO, 0),
             "pendencias": sum(q for s, q in contagem.items()
-                              if s not in (BAIXADO, DUPLICADO)),
+                              if s not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO,
+                                           SEM_PAGAMENTO)),
         })
     return saida
 

@@ -59,12 +59,35 @@ def endereco_valido(endereco: str) -> bool:
 
 
 def remetente_de(empresa: Empresa) -> str:
-    """Como o destinatário vê quem mandou."""
-    escrito = _texto(getattr(empresa, "smtp_remetente", ""))
-    if escrito:
-        return escrito
+    """Como o destinatário vê quem mandou — SEMPRE com um endereço dentro.
+
+    ⚑ CONSERTO DE 18/11/2026, e o defeito era meu. O dono configurou a conta
+    do DP e a do sistema e as duas recusaram o envio com "o servidor recusou o
+    endereço", nas contas que a empresa usa há anos sem restrição nenhuma.
+
+    A CAUSA: este campo era devolvido CRU. A tela pede "como aparece para quem
+    recebe", e quem lê isso escreve um NOME — "DP — BWS Construções". Esse
+    texto virava o `From` da mensagem, e um `From` sem `@` não é endereço: o
+    `smtplib` tira dele o remetente do envelope, manda um envelope vazio ou
+    torto, e aí o servidor recusa o DESTINATÁRIO (é nessa hora que a recusa
+    aparece, o que jogava a suspeita para o lado errado — o endereço de
+    destino, que estava certo o tempo todo).
+
+    A REGRA AGORA: se o que está escrito já tem endereço (`fulano@x` ou
+    `Nome <fulano@x>`), vale como está. Se é só um nome, ele vira o NOME e o
+    endereço da conta entra junto. Assim a tela pode continuar pedindo "como
+    aparece", que é o que a pessoa entende, sem produzir mensagem inválida.
+    """
     conta = _texto(getattr(empresa, "smtp_usuario", "")) or \
         _texto(getattr(empresa, "email", ""))
+    escrito = _texto(getattr(empresa, "smtp_remetente", ""))
+    if escrito:
+        # ⚠️ A CONTA DO "@" É NO TEXTO INTEIRO, e não no que o `parseaddr`
+        # devolve: para "ERP BWS" ele responde ("", "ERP"), engolindo metade
+        # do nome. Sem arroba em lugar nenhum, o que está escrito é um NOME.
+        if "@" in escrito:
+            return escrito
+        return formataddr((escrito, conta)) if conta else escrito
     nome = _texto(getattr(empresa, "nome_fantasia", "")) or \
         _texto(getattr(empresa, "razao_social", ""))
     return formataddr((nome, conta)) if conta else nome
@@ -134,7 +157,8 @@ def conta_configurada(empresa: Optional[Empresa],
 # ---------------------------------------------------------------------------
 def _montar(empresa: Empresa, para: list[str], assunto: str, corpo: str,
             copia: list[str], responder_para: Optional[str],
-            anexos: list[dict[str, Any]]) -> EmailMessage:
+            anexos: list[dict[str, Any]],
+            corpo_html: Optional[str] = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = remetente_de(empresa)
     msg["To"] = ", ".join(para)
@@ -154,6 +178,12 @@ def _montar(empresa: Empresa, para: list[str], assunto: str, corpo: str,
     msg["Message-ID"] = make_msgid(domain=(parseaddr(msg["From"])[1]
                                            .split("@")[-1] or None))
     msg.set_content(corpo)
+    # ⚑ VERSÃO FORMATADA, OPCIONAL (21/11/2026). O dono: "quando o texto fica
+    # simples demais dá a impressão de que não é nem uma coisa de verdade".
+    # O texto puro CONTINUA indo junto, como alternativa: é o que aparece em
+    # leitor que não abre formatação, e o que pesa a favor nos filtros de spam.
+    if corpo_html:
+        msg.add_alternative(corpo_html, subtype="html")
     for anexo in anexos or []:
         conteudo = anexo.get("conteudo")
         if not conteudo:
@@ -189,8 +219,26 @@ def _entregar(empresa: Empresa, msg: EmailMessage, destinos: list[str]) -> None:
             "Workspace com verificação em duas etapas, a senha aqui tem de "
             "ser uma SENHA DE APLICATIVO, não a senha de entrar no e-mail.")
     except smtplib.SMTPRecipientsRefused as e:
-        recusados = ", ".join(sorted((e.recipients or {}).keys()))
-        raise ErroDeEnvio(f"O servidor recusou o(s) endereço(s): {recusados}.")
+        # ⚑ O MOTIVO DO SERVIDOR ENTRA NA FRASE (18/11/2026). Antes dizíamos só
+        # "recusou o endereço X" — e o dono ficou parado com isso na tela, sem
+        # ter como saber por quê. A informação ESTAVA aqui: `e.recipients` é um
+        # dicionário {endereço: (código, motivo)}, e nós jogávamos o motivo
+        # fora. Erro que esconde a causa custa uma ida e volta inteira.
+        partes = []
+        for endereco, resposta in sorted((e.recipients or {}).items()):
+            try:
+                codigo, texto_ = resposta
+                motivo = (texto_.decode(errors="replace")
+                          if isinstance(texto_, bytes) else str(texto_))
+                partes.append(f"{endereco} — {codigo} {motivo.strip()}")
+            except Exception:                           # noqa: BLE001
+                partes.append(str(endereco))
+        raise ErroDeEnvio(
+            "O servidor recusou o destinatário: " + "; ".join(partes)
+            + ". Isto quase nunca é o endereço estar errado: é o provedor "
+            "não deixar esta conta mandar para fora (relay). Confira se o "
+            "endereço que entrou é o mesmo que aparece como remetente, e se "
+            "a conta tem permissão de enviar para endereços externos.")
     except smtplib.SMTPSenderRefused:
         raise ErroDeEnvio(
             f"O servidor recusou o remetente. Normalmente ele tem de ser a "
@@ -212,7 +260,10 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
            responder_para: Optional[str] = None,
            anexos: Optional[list[dict[str, Any]]] = None,
            destinatario_tipo: Optional[str] = None,
-           destinatario_id: Optional[int] = None) -> EnvioEmail:
+           destinatario_id: Optional[int] = None,
+           corpo_registrado: Optional[str] = None,
+           corpo_html: Optional[str] = None,
+           guardar_nos_enviados: bool = False) -> EnvioEmail:
     """Manda, e registra o que aconteceu — deu certo ou não.
 
     Nunca levanta por falha de envio: devolve o registro com situação FALHOU e
@@ -245,19 +296,25 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
         entidade_id=entidade_id, destinatario_tipo=destinatario_tipo,
         destinatario_id=destinatario_id, para=para, copia=copia,
         responder_para=_texto(responder_para) or None,
-        assunto=_texto(assunto), corpo=corpo,
+        # `corpo_registrado` (21/11/2026): quando o conteúdo vai num PDF anexo
+        # e o corpo do e-mail é só o aviso, o REGISTRO guarda o conteúdo por
+        # extenso. O registro existe para provar o que foi mandado — e um
+        # "segue em anexo" não prova nada.
+        assunto=_texto(assunto), corpo=corpo_registrado or corpo,
         anexos=[{"nome": a.get("nome"), "mime": a.get("mime"),
                  "bytes": len(a.get("conteudo") or b"")} for a in anexos],
         enviado_por=usuario.id if usuario else None, situacao="ENVIADO")
 
     try:
         msg = _montar(empresa, para, _texto(assunto), corpo, copia,
-                      responder_para, anexos)
+                      responder_para, anexos, corpo_html)
         # Guardado no registro para quem chamou poder casar a resposta depois.
         registro.message_id = msg["Message-ID"]
         _entregar(dona, msg, para + copia)
         logger.info("ERP/e-mail: %s %s enviado para %s pela empresa %s",
                     entidade_tipo, entidade_id, para, empresa.id)
+        if guardar_nos_enviados:
+            registro.copia_nos_enviados = guardar_copia_nos_enviados(s, dona, msg)
     except ErroDeEnvio as e:
         registro.situacao = "FALHOU"
         registro.erro = str(e)
@@ -271,6 +328,103 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
     s.add(registro)
     s.flush()
     return registro
+
+
+# ---------------------------------------------------------------------------
+# A CÓPIA EM "ENVIADOS" (23/11/2026)
+#
+# Ele: *"os e-mails que eu envio via sistema, eles não ficam salvos no e-mail
+# (…) estou procurando dentre os enviados (…) não estou localizando."*
+#
+# O SMTP só ENTREGA; quem guarda em "Enviados" é o programa de e-mail. Gmail e
+# Outlook/Microsoft 365 guardam sozinhos o que sai pelo SMTP deles; os outros
+# provedores não. Aqui o ERP faz o que o programa faria: depois de entregar,
+# grava a mesma mensagem na pasta de enviados da conta (IMAP APPEND).
+#
+# Usa a caixa de entrada configurada (`email_entrada`) e SÓ se ela for a mesma
+# conta que enviou — não se grava cópia na caixa de outra pessoa. Falhar aqui
+# NÃO desfaz o envio: o e-mail já saiu; a resposta diz que a cópia não ficou.
+# Custo: uma conexão IMAP a mais por envio (um ou dois segundos).
+# ---------------------------------------------------------------------------
+GUARDAM_SOZINHOS = ("gmail", "google", "office365", "outlook", "hotmail")
+NOMES_DE_ENVIADOS = ("Sent", "INBOX.Sent", "Enviados", "INBOX.Enviados",
+                     "Itens Enviados", "Sent Items", "Sent Messages",
+                     "[Gmail]/Sent Mail", "INBOX/Sent")
+
+
+def _pasta_de_enviados(caixa) -> Optional[str]:
+    """A pasta marcada como \\Sent (RFC 6154); sem marca, um nome conhecido."""
+    ok, linhas = caixa.list()
+    if ok != "OK":
+        return None
+    nomes, marcada = [], None
+    for bruta in linhas or []:
+        linha = bruta.decode("utf-8", "replace") if isinstance(bruta, bytes) else str(bruta)
+        nome = linha.rsplit(' "', 1)[-1].rstrip('"') if '"' in linha else linha.split()[-1]
+        if "\\Sent" in linha and marcada is None:
+            marcada = nome
+        nomes.append(nome)
+    # ⚑ A PASTA EM PORTUGUÊS VENCE (23/11/2026). A caixa do DP (Locaweb) tem
+    # DUAS: "INBOX.enviadas", que é a do webmail — onde ele procura — e
+    # "INBOX.Sent", criada por um programa de e-mail (Thunderbird). Ele: *"no
+    # envio via webmail, a caixa de enviadas é a .enviadas."* Gravar na outra
+    # seria guardar onde ninguém olha.
+    for n in nomes:
+        baixo = n.lower()
+        if "enviad" in baixo and not any(x in baixo for x in ("lixeira", "rascunho")):
+            return n
+    if marcada:
+        return marcada
+    for candidato in NOMES_DE_ENVIADOS:
+        for n in nomes:
+            if n.lower() == candidato.lower():
+                return n
+    # ⚑ Sem marca e sem nome conhecido (23/11/2026, a caixa do DP é da
+    # Locaweb): a pasta cujo nome diz "enviad" ou "sent" — "INBOX.Itens
+    # Enviados", "INBOX.Sent Items". Nunca a lixeira nem os rascunhos.
+    for n in nomes:
+        baixo = n.lower()
+        if ("enviad" in baixo or "sent" in baixo) and not any(
+                x in baixo for x in ("trash", "lixeira", "draft", "rascunho")):
+            return n
+    return None
+
+
+def guardar_copia_nos_enviados(s: Session, conta: Any, msg: EmailMessage) -> str:
+    """Grava a mensagem enviada em "Enviados". Devolve o que aconteceu, em
+    português. Nunca levanta."""
+    import imaplib
+    import time
+    servidor = _texto(getattr(conta, "smtp_servidor", "")).lower()
+    if any(x in servidor for x in GUARDAM_SOZINHOS):
+        return "o próprio provedor guarda em Enviados"
+    try:
+        from app.apps.erp.core.comum import email_entrada
+        c = email_entrada.configuracao(s)
+        usuario = _texto(getattr(conta, "smtp_usuario", "")).lower()
+        if not c.get("usavel") or _texto(c.get("usuario")).lower() != usuario:
+            return ("sem cópia em Enviados: a caixa de e-mail configurada no ERP "
+                    "não é a mesma conta que enviou")
+        senha = decifrar(email_entrada._ler(s, "senha"))
+        caixa = imaplib.IMAP4_SSL(c["servidor"], c["porta"], timeout=TEMPO_LIMITE)
+        try:
+            caixa.login(c["usuario"], senha or "")
+            pasta = _pasta_de_enviados(caixa)
+            if not pasta:
+                return "sem cópia em Enviados: não achei a pasta de enviados"
+            alvo = f'"{pasta}"' if " " in pasta else pasta
+            ok, _ = caixa.append(alvo, "(\\Seen)", imaplib.Time2Internaldate(time.time()),
+                                 msg.as_bytes())
+            return "guardado em Enviados" if ok == "OK" else \
+                f"sem cópia em Enviados: o servidor recusou ({ok})"
+        finally:
+            try:
+                caixa.logout()
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ERP/e-mail: cópia em Enviados falhou — %s", e)
+        return f"sem cópia em Enviados: {e}"
 
 
 def testar_conta(s: Session, empresa: Empresa, para: str,

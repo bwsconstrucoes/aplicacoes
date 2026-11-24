@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — criar o meu acesso</title>
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+<link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
+<style>
+  .passo { display: none; }
+  .passo.ativo { display: block; }
+  .trilho { display: flex; gap: 6px; margin: 0 0 14px; }
+  .trilho span {
+    flex: 1; height: 4px; border-radius: 2px; background: var(--borda);
+  }
+  .trilho span.feito { background: var(--azul, #123a63); }
+  .explica { font-size: 13px; color: var(--tinta-suave); margin: 0 0 12px; }
+  .codigo { letter-spacing: .5em; font-size: 22px; text-align: center; }
+</style>
+</head>
+<body>
+<main class="entrada">
+  <form id="form" onsubmit="return false">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>Criar o meu acesso</h1>
+        <p class="sub">BWS Construções</p>
+      </div>
+    </div>
+
+    <div class="trilho">
+      <span id="t1" class="feito"></span><span id="t2"></span><span id="t3"></span>
+    </div>
+    <div id="msg"></div>
+
+    {# ----------------------------------------------------------------------
+       PASSO 1 — quem é você.
+
+       ⚑ O TELEFONE CONFERE, NÃO ESCOLHE O DESTINO. O código vai para o número
+       DO CADASTRO: o que a pessoa digita é prova de que é ela, não endereço.
+       A tela diz isso com todas as letras, senão quem trocou de número digita
+       o novo e fica esperando um código que nunca vai chegar ali.
+       ---------------------------------------------------------------------- #}
+    <section class="passo ativo" id="p1">
+      <p class="explica">Informe o seu <b>CPF</b> e o <b>telefone que está no
+        seu cadastro na BWS</b>. Vamos mandar um código por WhatsApp para esse
+        número.</p>
+      <label for="cpf">CPF</label>
+      <input id="cpf" name="cpf" inputmode="numeric" autocomplete="off"
+             placeholder="000.000.000-00" autofocus>
+      <label for="telefone">Telefone do seu cadastro</label>
+      <input id="telefone" name="telefone" inputmode="tel"
+             autocomplete="tel" placeholder="(00) 00000-0000">
+      <button class="btn" type="button" id="b1">Mandar o código</button>
+    </section>
+
+    {# ----------------------------------------------------------------------
+       PASSO 2 — o código e o e-mail, na MESMA tela.
+
+       Separar em dois passos faria a pessoa digitar o código, passar de tela,
+       e só então descobrir que também precisa do e-mail — com o código já
+       correndo contra o relógio.
+       ---------------------------------------------------------------------- #}
+    <section class="passo" id="p2">
+      <div class="aviso info" id="aviso-codigo"></div>
+      <label for="codigo">Código do WhatsApp</label>
+      <input id="codigo" class="codigo" inputmode="numeric" maxlength="6"
+             autocomplete="one-time-code" placeholder="000000">
+      <label for="email">Seu e-mail</label>
+      <input id="email" type="email" autocomplete="email"
+             placeholder="nome@exemplo.com">
+      <p class="explica">É por este e-mail que você vai receber o link para
+        criar a sua senha, e é com ele que vai entrar no sistema.</p>
+      <button class="btn" type="button" id="b2">Confirmar</button>
+      <a href="#" id="voltar1" style="display:block; margin-top:10px;
+         text-align:center; font-size:13px">Não recebi o código</a>
+    </section>
+
+    {# PASSO 3 — o fim. Diz o que vem depois, para ninguém ficar esperando sem
+       saber o quê. #}
+    <section class="passo" id="p3">
+      <div class="aviso ok" id="pronto"></div>
+      <p class="explica">O escritório confere o seu pedido e libera. Assim que
+        isso acontecer, o link para criar a senha chega no seu e-mail.</p>
+      <a class="btn secundario" style="display:block; text-align:center"
+         href="{{ url_for('erp.pagina_login') }}">Voltar para a entrada</a>
+    </section>
+
+    <a href="{{ url_for('erp.pagina_login') }}" id="rodape"
+       style="display:block; margin-top:14px; text-align:center;
+              font-size:13px">Já tenho acesso — entrar</a>
+  </form>
+</main>
+
+<script>
+const els = id => document.getElementById(id);
+function aviso(onde, texto, tipo){
+  els(onde).innerHTML = texto
+    ? `<div class="aviso ${tipo || "info"}">${texto}</div>` : "";
+}
+function irPara(n){
+  ["p1","p2","p3"].forEach((p, i) => els(p).classList.toggle("ativo", i === n - 1));
+  ["t1","t2","t3"].forEach((t, i) => els(t).classList.toggle("feito", i < n));
+  els("rodape").style.display = n === 3 ? "none" : "";
+  aviso("msg", "");
+}
+async function chamar(url, corpo){
+  const r = await fetch(url, {method: "POST",
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.ok === false) throw new Error(d.erro || "Não deu certo. Tente de novo.");
+  return d;
+}
+
+els("b1").addEventListener("click", async () => {
+  const cpf = els("cpf").value, telefone = els("telefone").value;
+  if (!cpf.trim() || !telefone.trim())
+    return aviso("msg", "Preencha o CPF e o telefone.", "erro");
+  els("b1").disabled = true;
+  try {
+    const d = await chamar("/erp/api/primeiro-acesso/codigo", {cpf, telefone});
+    aviso("aviso-codigo", d.mensagem, "info");
+    irPara(2);
+    els("codigo").focus();
+  } catch(e){ aviso("msg", e.message, "erro"); }
+  els("b1").disabled = false;
+});
+
+els("b2").addEventListener("click", async () => {
+  const codigo = els("codigo").value, email = els("email").value;
+  if (!codigo.trim() || !email.trim())
+    return aviso("msg", "Preencha o código e o seu e-mail.", "erro");
+  els("b2").disabled = true;
+  try {
+    const d = await chamar("/erp/api/primeiro-acesso/concluir",
+                           {cpf: els("cpf").value, codigo, email});
+    els("pronto").textContent = d.mensagem;
+    irPara(3);
+  } catch(e){ aviso("msg", e.message, "erro"); }
+  els("b2").disabled = false;
+});
+
+// "Não recebi o código" volta para o passo 1 com o CPF preenchido: quem não
+// recebeu quase sempre errou o telefone, e fazer digitar o CPF de novo é
+// cobrar duas vezes pelo mesmo engano.
+els("voltar1").addEventListener("click", ev => {
+  ev.preventDefault();
+  irPara(1);
+  els("telefone").focus();
+  aviso("msg", "Confira o telefone — tem de ser o que está no seu cadastro "
+             + "na BWS. Se mudou de número, fale com o escritório.", "alerta");
+});
+</script>
+</body>
+</html>

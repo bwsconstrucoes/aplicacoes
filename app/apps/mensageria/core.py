@@ -64,6 +64,13 @@ CATALOGO: list[dict] = [
     {"chave": "ponto.codigo_acesso", "nome": "Código de acesso do Meu ponto", "modulo": "Ponto",
      "politica": WHATSAPP,
      "descricao": "O código de 6 dígitos para a pessoa criar o PIN e entrar no Meu ponto pelo celular."},
+    # ⚑ O CÓDIGO DO PORTAL (18/11/2026). Mesma mecânica do código do ponto, e
+    # por isso WHATSAPP e não Telegram: quem está criando o primeiro acesso
+    # não tem Telegram ligado ao cadastro — se tivesse, já estaria no sistema.
+    {"chave": "erp.codigo_portal", "nome": "Código de primeiro acesso ao portal",
+     "modulo": "ERP", "politica": WHATSAPP,
+     "descricao": "O código de 6 dígitos para a pessoa criar o acesso dela ao "
+                  "portal, sem depender do escritório para começar."},
     {"chave": "ponto.mosaico", "nome": "Mosaico de fotos da obra", "modulo": "Ponto", "politica": WHATSAPP,
      "descricao": "O link do mosaico de fotos do dia para o responsável pela obra conferir."},
     {"chave": "ponto.aviso_foto", "nome": "Aviso de batida sem foto", "modulo": "Ponto",
@@ -172,6 +179,33 @@ def _inteiro(texto: str, padrao: int) -> int:
 
 def whatsapp_ligado(conn) -> bool:
     return ler_parametro(conn, WHATSAPP_LIGADO, "") == "1"
+
+
+# ---------------------------------------------------------------------------
+# NÃO MANDAR MENSAGEM PARA QUEM FOI DESLIGADO (17/11/2026)
+#
+# Decisão dele, dita com todas as letras: *"essa correlação entre o ERP e as
+# pessoas é fundamental, tendo em vista a questão do bloqueio de envio de
+# mensagens para as pessoas desligadas. Por isso que tem que estar tudo
+# correlacionado."*
+#
+# ⚑ NASCE LIGADO. Não é configuração que se descobre depois: ele pediu o
+# bloqueio, então o padrão é bloquear. A chave existe para o caso contrário —
+# se um dia ele precisar avisar alguém que já saiu, desliga pela tela em vez de
+# esperar código novo.
+#
+# ⚑ O QUE ISTO BLOQUEIA, E O QUE NÃO: bloqueia o que a EMPRESA MANDA (passa
+# pelo `notificador.notificar`). NÃO bloqueia o robô RESPONDENDO a quem pede —
+# o contracheque pelo Telegram sai por outro caminho (`telegram_bot._tg_enviar`)
+# e continua funcionando, porque quem acabou de sair costuma precisar do último
+# contracheque. A separação é o que faz o bloqueio não virar um problema novo.
+# ---------------------------------------------------------------------------
+BLOQUEAR_DESLIGADOS = "bloquear_desligados"
+BARRADO_DESLIGADO = "DESLIGADO_DA_EMPRESA"
+
+
+def bloqueia_desligados(conn) -> bool:
+    return ler_parametro(conn, BLOQUEAR_DESLIGADOS, "1") == "1"
 
 
 def tetos(conn) -> tuple[int, int]:
@@ -358,7 +392,11 @@ def limpar_se_preciso(conn) -> None:
 
 
 def listar_envios(conn, *, tipo: str = "", canal: str = "", status: str = "", busca: str = "",
-                  dias: int = 7, limite: int = 300) -> list[dict]:
+                  dias: int = 7, limite: int = 300, cpfs_da_busca: Optional[list] = None,
+                  destinos_da_busca: Optional[list] = None) -> list[dict]:
+    """`cpfs_da_busca` / `destinos_da_busca`: o que a busca POR NOME achou no
+    cadastro (ver `painel.Pessoas.destinos_da_busca`) — o registro guarda
+    telefone, ID e CPF, não o nome."""
     sql = ["SELECT id, criado_em, tipo, canal, destinatario, cpf, texto, nome_arquivo, status, detalhe, origem",
            "FROM mensageria.envios WHERE criado_em > now() - make_interval(days => :dias)"]
     p: dict = {"dias": max(1, min(int(dias or 7), RETENCAO_DIAS)), "lim": max(1, min(int(limite or 300), 2000))}
@@ -369,7 +407,11 @@ def listar_envios(conn, *, tipo: str = "", canal: str = "", status: str = "", bu
     if status:
         sql.append("AND status = :status"); p["status"] = status
     if busca:
-        sql.append("AND (destinatario ILIKE :b OR cpf ILIKE :b OR texto ILIKE :b)")
+        extra = ""
+        if cpfs_da_busca or destinos_da_busca:
+            extra = " OR cpf = ANY(:bc) OR destinatario = ANY(:bd)"
+            p["bc"], p["bd"] = list(cpfs_da_busca or ["~"]), list(destinos_da_busca or ["~"])
+        sql.append(f"AND (destinatario ILIKE :b OR cpf ILIKE :b OR texto ILIKE :b{extra})")
         p["b"] = f"%{busca.strip()}%"
     sql.append("ORDER BY id DESC LIMIT :lim")
     return db.todos(conn, "\n".join(sql), **p)

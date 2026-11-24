@@ -458,3 +458,89 @@ def test_campo_de_momento_nao_vai_para_o_ajudante_de_data(tela: Path):
         f"{tela.name} passa {errados} para `dataBR`, e o nome diz que é "
         f"TIMESTAMP. `dataBR` parte no hífen e inverte: com hora junto, sai "
         f"\"08 17:50:45+00:00/11/2026\" na tela. Use `momentoBR`.")
+
+
+# ---------------------------------------------------------------------------
+# ⚑ RECADO NÃO PODE SAIR ATRÁS DA JANELA ABERTA (17/11/2026)
+#
+# Achado dirigindo a tela: a trava de "concluído" recusou certo, com o recado
+# certo — e o recado NÃO APARECEU. Era escrito em `#mensagem`, que fica na
+# lista, atrás da janela do cadastro; e no cadastro aberto dentro do ponto a
+# lista não é nem desenhada, então ia para um elemento invisível.
+#
+# Para quem usa, é o pior desfecho possível: aperta o botão, nada acontece,
+# nenhum erro na tela. Parece sistema quebrado, e é trava funcionando.
+#
+# Esta varredura recusa a reincidência: função que roda com a janela do
+# cadastro aberta escreve com `recado(...)`, que escolhe o lugar certo.
+# ---------------------------------------------------------------------------
+FUNCOES_QUE_RODAM_COM_A_JANELA_ABERTA = (
+    "abrirMudancaDeEtapa", "concluirAConferencia", "abrirFichaCompleta",
+)
+
+
+def test_recado_de_quem_roda_com_a_janela_aberta_vai_para_dentro_dela():
+    import re
+    from pathlib import Path
+
+    tela = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp"
+            / "templates" / "erp_colaboradores.html").read_text(encoding="utf-8")
+    assert "function recado(" in tela, (
+        "o ajudante `recado()` sumiu — ele é quem põe o recado dentro da "
+        "janela aberta em vez de atrás dela")
+
+    ruins = []
+    for nome in FUNCOES_QUE_RODAM_COM_A_JANELA_ABERTA:
+        # o corpo da função até a próxima declaração no mesmo nível
+        m = re.search(rf"(async )?function {nome}\s*\(.*?\n\}}\n", tela, re.S)
+        if not m:
+            ruins.append(f"{nome}: função não encontrada (renomeada?)")
+            continue
+        if 'aviso("mensagem"' in m.group(0):
+            ruins.append(f'{nome}: escreve em "mensagem", que fica atrás da janela')
+
+    assert ruins == [], (
+        "\n  ".join(ruins)
+        + "\n  Use `recado(texto, tipo)`: com a janela aberta o recado vai "
+        "para dentro dela; sem janela, vai para a lista.")
+
+
+# ---------------------------------------------------------------------------
+# ⚑ A TELA DE TRÁS NÃO FECHA PARA ABRIR A DA FRENTE (18/11/2026)
+#
+# Ele reclamou DUAS VEZES:
+#
+#   *"Já havia combinado que eu não estou conseguindo navegar no cadastro do
+#    colaborador. Se eu entro na tela principal do cadastro e clico no botão
+#    Editar o cadastro completo, a tela principal fecha e não consigo voltar
+#    pra ela. Não pode fechar a tela principal pra abrir o modal seguinte."*
+#
+# Na primeira vez eu consertei o caminho ERRADO (a ficha do ERP, com
+# `VOLTAR_PARA_FICHA`). O caminho que ele usa é a janela da pessoa que vem do
+# ponto, e o código a FECHAVA de propósito antes de abrir o formulário —
+# fechada, ela não volta por nada.
+#
+# Duas janelas modais empilham: a nova nasce por cima e fechá-la revela a de
+# trás. Esta varredura recusa o `close()` voltar.
+# ---------------------------------------------------------------------------
+def test_a_janela_da_pessoa_nao_e_fechada_para_abrir_o_formulario():
+    import re
+    from pathlib import Path
+
+    tela = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp"
+            / "templates" / "erp_colaboradores.html").read_text(encoding="utf-8")
+
+    # o ouvinte das mensagens da janela da pessoa
+    m = re.search(r'd\.tipo !== "bws-ficha".*?\n\}\);', tela, re.S)
+    assert m, "o ouvinte de 'bws-ficha' sumiu — renomeado?"
+    corpo = m.group(0)
+
+    # fechar a janela de trás só é permitido quando ELA pediu ("fechar")
+    fechamentos = re.findall(r'els\("dlg-unica"\)\.close\(\)', corpo)
+    assert len(fechamentos) <= 1, (
+        "mais de um ponto fecha a janela da pessoa dentro do ouvinte")
+    if fechamentos:
+        assert 'd.acao === "fechar"' in corpo, (
+            'a janela da pessoa está sendo fechada sem ser a pedido dela. '
+            'Abrir o formulário NÃO pode fechá-la: ele reclamou disso duas '
+            'vezes, e fechada ela não volta por nada.')

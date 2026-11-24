@@ -92,7 +92,9 @@ logger = logging.getLogger(__name__)
 AREAS: tuple[dict[str, Any], ...] = (
     {
         "chave": "pessoal",
-        "nome": "Pessoal e DP",
+        # ⚑ "Colaboradores", e não "Pessoal e DP" (23/11/2026). Ele: "quando
+        # você fala Pessoal e DP, vamos chamar de colaboradores, fica melhor."
+        "nome": "Colaboradores",
         # ⚑ A EXPLICAÇÃO SÓ PODE PROMETER O QUE A ÁREA TEM. Ela dizia
         # "férias", e férias NÃO É pedido de DP aqui — é do ponto. Ele viu, em
         # 10/11/2026: *"lá no resumo do portal tinha lá férias, e quando você
@@ -109,13 +111,28 @@ AREAS: tuple[dict[str, Any], ...] = (
                       "carteira, cargo, dados da pessoa, dependente e ajuda "
                       "de custo",
         "pronta": True,
+        # ⚑ A AÇÃO QUE ESTA ÁREA EXIGE (18/11/2026) — ver o comentário de
+        # `areas()`. Quem não a tem não vê a área, em vez de ver e esbarrar.
+        "acao": "solicitar_dp",
     },
     {
         "chave": "suprimentos",
-        "nome": "Material e compras",
-        "explicacao": "pedir material, ferramenta, locação",
+        # ⚑ "SUPRIMENTOS", E FECHADA POR ENQUANTO (23/11/2026). Ele: "eu queria
+        # alterar para suprimentos. E eu queria manter desativado por
+        # enquanto. Da mesma forma que a parte de pagamentos está desativada."
+        #
+        # A tela `/erp/portal/material` (pedir, receber e lançar) ESTÁ PRONTA e
+        # continua respondendo — é para lá que o ERP manda em "Receber e
+        # lançar a nota". O que fechou foi só a PORTA do portal. Para reabrir:
+        # `pronta: True`, mais `so_tela: True` e `tela` como estão abaixo.
+        "nome": "Suprimentos",
+        "explicacao": "pedir material, ver o que está para chegar, receber "
+                      "e lançar a nota e o boleto",
         "pronta": False,
         "enquanto_isso": "Continue pedindo material como você pede hoje.",
+        "tela_quando_abrir": "/erp/portal/material",
+        # Sem `acao` enquanto fechada: aparece para todos, marcada, como
+        # Pagamentos. Ao reabrir, volta `"acao": "receber_material"`.
     },
     {
         "chave": "financeiro",
@@ -139,6 +156,11 @@ AREAS: tuple[dict[str, Any], ...] = (
         "pronta": True,
         "so_tela": True,
         "tela": "/erp/obras/diario",
+        # ⚑ O DIÁRIO NÃO PEDE `solicitar_dp`, e é o conserto de 18/11/2026.
+        # Ele: *"e para quem vai preencher diário de obra mas não vai acessar
+        # DP, como faz?"* — e a resposta de então era ruim: a pessoa perdia o
+        # diário junto. Ver `areas()`.
+        "acao": "ver_diario",
     },
 )
 
@@ -161,7 +183,16 @@ TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
     "pessoal": (
         "CADASTRO", "DESLIGAMENTO", "ADMISSAO_PRESTADOR",
         "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
-        "DIVERSOS",
+        # 20/11/2026: a obra pede férias (ele: *"o administrativo de obra pode
+        # pedir as férias"*) — e também altera e cancela, e pede o
+        # cancelamento de um desligamento (ele: *"pode ser que seja a própria
+        # obra (…) Ele vai fazer o pedido (…) em cima daquela solicitação de
+        # desligamento."*).
+        "FERIAS", "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
+        "CANCELAR_DESLIGAMENTO",
+        # 20/11/2026: a obra comunica o afastamento (o acidente não espera o
+        # ponto) e o retorno.
+        "AFASTAMENTO", "RETORNO_AFASTAMENTO", "DIVERSOS",
     ),
 }
 
@@ -172,15 +203,35 @@ TIPOS_DO_PORTAL = tuple(
 
 
 def areas(s: Session, eu: dict[str, Any]) -> list[dict[str, Any]]:
-    """As áreas, com quantos tipos cada uma oferece A ESTA PESSOA.
+    """As áreas que ESTA PESSOA pode usar, com quantos tipos cada uma oferece.
 
     A área que ainda não abriu vem com `pronta: False` e a frase do que fazer
     enquanto isso. A tela não decide nada disso: ela desenha o que vem daqui.
+
+    ⚑ FILTRA PELA PESSOA DESDE 18/11/2026, e a docstring já prometia isso
+    antes de o código fazer — `eu` chegava aqui e não era usado.
+
+    O defeito apareceu numa pergunta dele: *"e para quem vai preencher diário
+    de obra mas não vai acessar DP, como faz?"* A resposta de então era ruim.
+    Tirar "Solicitar ao DP" da pessoa no cadastro fazia a tela esconder o
+    BLOCO INTEIRO de abrir — e ela perdia o **diário** junto, que não tem nada
+    a ver com o DP. Quem só lança diário ficava sem o botão do diário.
+
+    Agora cada área diz a ação que exige (`acao`) e quem não a tem simplesmente
+    não vê aquela área. ⚠️ Não vê — e não vê "fechada": `pronta: False` quer
+    dizer "ainda não construímos isso", que é outra conversa. Marcar de fechado
+    o que existe e a pessoa é que não alcança seria mentir na porta, o defeito
+    que o comentário de "férias" acima descreve.
     """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    from app.apps.erp.core.auth.permissoes import pode
 
+    quem = eu.get("usuario") if isinstance(eu, dict) else None
     saida = []
     for a in AREAS:
+        acao = a.get("acao")
+        if acao and quem is not None and not pode(quem, acao):
+            continue
         chaves = TIPOS_POR_AREA.get(a["chave"], ())
         quantos = len([k for k in chaves if k in svc_sp.TIPOS])
         saida.append({**a, "tipos": quantos,
@@ -349,6 +400,9 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 "chave": k, "area": area, "nome": d["nome"],
                 "explicacao": d["explicacao"],
                 "exige_pessoa": d["exige_pessoa"],
+                # ⚑ O vínculo que este tipo aceita, quando ele aceita só um
+                # (17/11/2026): a busca de pessoa filtra por ele.
+                "so_vinculo": d.get("so_vinculo") or "",
                 "campos": campos,
                 # ⚑ O ASTERISCO E OS PAPÉIS VÊM DA REGRA, que os tirou do
                 # Pipe. A tela não decide nem um nem outro — se decidisse,
@@ -384,6 +438,13 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                                for c, mapa in (d.get("ocultos_se") or {}).items()},
                 "visiveis_se": {c: {v: list(p) for v, p in mapa.items()}
                                 for c, mapa in (d.get("visiveis_se") or {}).items()},
+                # Campo cuja LISTA muda com outra resposta: o tipo de
+                # contrato, que tem uma lista para CTPS e outra para
+                # prestador (17/11/2026).
+                "opcoes_se": {
+                    c: {v: {vv: list(pp) for vv, pp in m.items()}
+                        for v, m in mapa.items()}
+                    for c, mapa in (d.get("opcoes_se") or {}).items()},
                 # O rótulo→código: as condições são escritas com o código que
                 # o banco guarda, e a caixinha manda o rótulo. Sem isto a
                 # condição não dispara — defeito que já aconteceu na tela do
@@ -436,12 +497,22 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
 
     listas = {campo: par(campo, chaves, ROTULOS.get(campo, {}))
               for campo, chaves in svc.DA_LISTA.items()}
-    # ⚑ TIPO DE CONTRATO: só os de PRESTADOR (15/11/2026). O `DA_LISTA` traz
-    # os nove valores aceitos, que servem para LER ficha antiga; o campo só
-    # aparece para prestador, e lá as duas opções de CLT não existem. Ele:
-    # *"CTPS não abre tipo de contrato, porque já é CLT."*
+    # ⚑ TIPO DE CONTRATO: os de CTPS E os de prestador, nesta ordem
+    # (17/11/2026). O `DA_LISTA` traz todos os valores aceitos, inclusive os
+    # que só servem para LER ficha antiga — esta lista é a de ESCOLHER.
+    #
+    # Em 15/11/2026 eram só os de prestador, porque "CTPS é sempre CLT". Ele
+    # corrigiu a premissa em 17/11/2026: *"Se Jovem Aprendiz é CTPS,
+    # precisamos poder selecionar o tipo de contrato entre: CLT (tempo
+    # indeterminado), CLT (tempo determinado), Jovem Aprendiz."* Jovem
+    # aprendiz tem carteira, então a escolha existe dos dois lados.
+    #
+    # Quem mostra a metade certa é a TELA, por `opcoes_se` — e não esta
+    # lista, que precisa conter as duas para a caixinha nunca ficar sem a
+    # opção certa enquanto a pessoa troca de documentação.
     listas["tipo_contrato"] = par(
-        "tipo_contrato", svc.TIPOS_CONTRATO_PRESTADOR,
+        "tipo_contrato",
+        svc.TIPOS_CONTRATO_CTPS + svc.TIPOS_CONTRATO_PRESTADOR,
         svc.TIPO_CONTRATO_ROTULOS)
     # Estes dois são campos do PEDIDO, não do cadastro, então não estão no
     # `DA_LISTA` — mas a lista é a mesma do cadastro.
@@ -526,7 +597,16 @@ def abrir(s: Session, dados: dict[str, Any],
     if tipo not in TIPOS_DO_PORTAL:
         raise ErroValidacao(
             "Este tipo de pedido não é aberto pela obra — fale com o DP.")
-    _pode_pela_pessoa(s, eu, dados.get("colaborador_id"))
+    # ⚑ A READMISSÃO DE QUEM SAIU DE OUTRA OBRA (19/11/2026). O desligado
+    # escolhido na busca da admissão pode ter trabalhado em qualquer obra — é
+    # justamente quem volta. Para ele o alcance por obra não vale; para todo
+    # o resto, vale como sempre.
+    alvo = s.get(Colaborador, int(dados["colaborador_id"])) \
+        if dados.get("colaborador_id") else None
+    if not (tipo == "CADASTRO" and alvo is not None
+            and (alvo.situacao or "").upper() == "DESLIGADO"
+            and pode_pedir_por_outros(s, eu)):
+        _pode_pela_pessoa(s, eu, dados.get("colaborador_id"))
 
     r = svc_sp.abrir(s, {**dados, "tipo": tipo,
                          "requerente": eu["nome"]}, usuario=None)
@@ -534,12 +614,17 @@ def abrir(s: Session, dados: dict[str, Any],
     # coluna, o pedido do portal ficaria sem autor — e autor é o que permite a
     # pessoa acompanhar o que ela mesma abriu.
     s.execute(text("""UPDATE dp_solicitacoes
-                         SET solicitante_colaborador_id = :c
+                         SET solicitante_colaborador_id = :c,
+                             solicitante_id = COALESCE(solicitante_id, :u)
                        WHERE id = :s"""),
-              {"c": eu["colaborador_id"], "s": r["id"]})
-    registrar_evento(s, "colaborador", eu["colaborador_id"],
-                     "PEDIDO_PELO_PORTAL",
-                     {"numero": r.get("numero"), "tipo": tipo}, None)
+              {"c": eu["colaborador_id"], "u": eu["usuario_id"], "s": r["id"]})
+    # Quem entra no portal sem ficha de colaborador (gente de escritório) não
+    # tem onde pendurar o evento — e o evento sem dono derrubava o pedido
+    # inteiro (achado em 19/11/2026, abrindo a admissão como administrador).
+    if eu["colaborador_id"]:
+        registrar_evento(s, "colaborador", eu["colaborador_id"],
+                         "PEDIDO_PELO_PORTAL",
+                         {"numero": r.get("numero"), "tipo": tipo}, None)
     s.flush()
     return {**r, "aberto_por": eu["nome"]}
 
@@ -550,25 +635,98 @@ def abrir(s: Session, dados: dict[str, Any],
 def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """O que EU abri, e em que pé está. Sem salário, sem dado de ninguém."""
     eu = quem_esta(s, usuario)
+    # ⚑ A PESSOA DO PEDIDO, INDIVIDUALIZADA (19/11/2026). Ele: *"uma admissão
+    # de colaborador que não existia no sistema ficou sem nome (…) Para
+    # individualizar a pessoa, o ideal é que tenha o nome, a obra, CPF e o
+    # cargo."* O nome vinha só do cadastro; pedido sem cadastro ligado ficava
+    # em branco, mesmo com o nome escrito no pedido.
+    # E "o que EU abri" passa a valer também para quem entra sem ficha de
+    # colaborador (gente de escritório): pelo usuário.
     linhas = s.execute(text("""
         SELECT sol.id, sol.numero, sol.tipo, sol.situacao, sol.criado_em,
-               sol.resposta, c.nome AS pessoa
+               sol.colaborador_id, sol.dados,
+               sol.resposta, COALESCE(c.nome, sol.nome_informado) AS pessoa,
+               COALESCE(c.cpf, sol.cpf_informado) AS cpf,
+               o.codigo AS obra, COALESCE(gc.nome, gp.nome) AS cargo
           FROM dp_solicitacoes sol
           LEFT JOIN colaboradores c ON c.id = sol.colaborador_id
-         WHERE sol.solicitante_colaborador_id = :eu
+          LEFT JOIN obras o ON o.id = sol.obra_id
+          LEFT JOIN cargos gc ON gc.id = c.cargo_id
+          LEFT JOIN cargos gp ON gp.id::text = (sol.dados ->> 'cargo_pleiteado_id')
+         WHERE (sol.solicitante_colaborador_id = :eu
+                OR (:u IS NOT NULL AND sol.solicitante_id = :u))
          ORDER BY sol.id DESC LIMIT 100"""),
-        {"eu": eu["colaborador_id"]}).mappings().all()
+        {"eu": eu["colaborador_id"], "u": eu["usuario_id"]}).mappings().all()
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     return [{
         "numero": l["numero"],
+        # O código e a pessoa: é o que o botão "Pedir o cancelamento" do
+        # desligamento usa para abrir o pedido já com a pessoa escolhida.
+        "tipo_codigo": l["tipo"], "colaborador_id": l["colaborador_id"],
+        "id": l["id"],
+        "mudanca_pedida": ((l["dados"] or {}).get("mudanca_pedida") or {}).get("texto", ""),
         "tipo": svc_sp.TIPOS.get(l["tipo"], {}).get("nome", l["tipo"]),
         # O RÓTULO EM PORTUGUÊS, NÃO O CÓDIGO. Quem olha está na obra, no
         # celular: "EM_ANALISE" na tela é defeito, não detalhe. E o rótulo é o
         # MESMO que o DP vê na tela dele — a mesma palavra nos dois lados.
         "situacao": svc_sp.SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
         "pessoa": l["pessoa"] or "",
+        "cpf": _cpf_inteiro(l["cpf"]) if l["cpf"] else "",
+        "obra": l["obra"] or "", "cargo": l["cargo"] or "",
         "quando": str(l["criado_em"]), "resposta": l["resposta"] or "",
     } for l in linhas]
+
+
+def ferias_da_equipe(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
+    """As férias chegando e em curso de quem esta pessoa cuida (20/11/2026).
+
+    Ele: *"quando estiver se aproximando as férias (…) tanto o DP quanto a
+    pessoa que bate o ponto desse colaborador tem que estar ciente."* Quem
+    cuida do ponto na obra é quem a alcança — o administrativo de obra, pela
+    mesma regra de alcance do resto do portal. Quem pede só por si vê as
+    próprias férias.
+    """
+    from app.apps.erp.core import ferias as svc_ferias
+    eu = quem_esta(s, usuario)
+    if pode_pedir_por_outros(s, eu):
+        lista = svc_ferias.chegando(s, obras=obras_que_alcanca(s, eu))
+    elif eu.get("colaborador_id"):
+        lista = [f for f in svc_ferias.chegando(s)
+                 if f["colaborador_id"] == eu["colaborador_id"]]
+    else:
+        lista = []
+    # Sem o histórico e sem número de pedido do DP: é aviso, não ficha.
+    campos = ("colaborador_id", "pessoa", "cargo", "obra", "inicio", "fim",
+              "retorno", "dias", "situacao_rotulo", "faltam_dias", "momento")
+    return [{**{k: f[k] for k in campos},
+             "mudanca": (f["mudanca"] or {}).get("rotulo", "")} for f in lista]
+
+
+def experiencias_da_equipe(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
+    """Contratos de experiência da equipe que terminam nos próximos dias
+    (20/11/2026). Para quem cuida da obra — o administrativo decide com o DP
+    se efetiva, prorroga ou encerra."""
+    from app.apps.erp.core import pessoal_experiencia
+    try:
+        eu = quem_esta(s, usuario)
+        if not pode_pedir_por_outros(s, eu):
+            return []
+        return pessoal_experiencia.terminando(s, obras_que_alcanca(s, eu))
+    except SemAcesso:
+        return []
+
+
+def termos_para_assinar(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
+    """Os documentos que a obra tem de levar para a pessoa assinar (20/11/2026).
+    Para quem alcança a obra — o administrativo, que conduz a assinatura."""
+    from app.apps.erp.core import termos
+    try:
+        eu = quem_esta(s, usuario)
+        if not pode_pedir_por_outros(s, eu):
+            return []
+        return termos.pendentes(s, obras_que_alcanca(s, eu))
+    except SemAcesso:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -621,7 +779,7 @@ def minhas_devolucoes(s: Session, usuario: Optional[Usuario]) -> list[dict[str, 
 
 def devolver(s: Session, devolucao_id: int, conteudo: bytes,
              usuario: Optional[Usuario],
-             nome_arquivo: str) -> dict[str, Any]:
+             nome_arquivo: str, *, pelo_escritorio: bool = False) -> dict[str, Any]:
     """A obra devolve o documento assinado. Arquiva no Drive e fecha a pendência.
 
     O TIPO vem da pendência, não do nome do arquivo: "foto.jpg" não diz nada, e
@@ -630,14 +788,20 @@ def devolver(s: Session, devolucao_id: int, conteudo: bytes,
     """
     from app.apps.erp.core.arquivo import service as svc_arq
 
-    eu = quem_esta(s, usuario)
+    # ⚑ O PLANO B (23/11/2026). Ele: *"pode ser que uma obra (…) tem um
+    # problema, não tem internet (…) a gente tem que ter uma alternativa, plano
+    # B."* O papel que chegou ao ESCRITÓRIO (malote, mão, e-mail) o DP anexa
+    # daqui: a pendência fecha do mesmo jeito e segue para a validação. A rota
+    # é do DP (`atender_dp`); o alcance por obra é o do portal, não se aplica.
+    eu = ({"nome": f"{usuario.nome if usuario else '?'} (DP, no escritório)",
+           "colaborador_id": None} if pelo_escritorio else quem_esta(s, usuario))
     linha = s.execute(text("""
         SELECT id, numero, obra_id, colaborador_id, documento_esperado, situacao
           FROM dp_devolucoes WHERE id = :d"""),
         {"d": devolucao_id}).mappings().first()
     if linha is None:
         raise ErroNaoEncontrado("Pendência não encontrada.")
-    alcance = obras_que_alcanca(s, eu)
+    alcance = None if pelo_escritorio else obras_que_alcanca(s, eu)
     if alcance is not None and linha["obra_id"] not in set(alcance):
         raise ErroNaoEncontrado("Pendência não encontrada.")
     if linha["situacao"] not in ("ABERTA", "COBRADA"):
@@ -651,9 +815,11 @@ def devolver(s: Session, devolucao_id: int, conteudo: bytes,
         s, conteudo, nome_arquivo or "documento",
         tipo_codigo=linha["documento_esperado"],
         colaborador_id=linha["colaborador_id"],
-        referencia=f"{linha['numero']} — devolvido pela obra",
-        origem="PORTAL",
-        observacao=f"devolvido por {eu['nome']} pelo portal",
+        referencia=(f"{linha['numero']} — recebido no escritório"
+                    if pelo_escritorio else f"{linha['numero']} — devolvido pela obra"),
+        origem="TELA" if pelo_escritorio else "PORTAL",
+        observacao=(f"anexado por {eu['nome']}" if pelo_escritorio
+                    else f"devolvido por {eu['nome']} pelo portal"),
         usuario=None)
     s.execute(text("""
         UPDATE dp_devolucoes
@@ -662,7 +828,8 @@ def devolver(s: Session, devolucao_id: int, conteudo: bytes,
          WHERE id = :d"""),
         {"doc": d.id, "quem": eu["colaborador_id"], "d": devolucao_id})
     registrar_evento(s, "colaborador", linha["colaborador_id"] or 0,
-                     "DOCUMENTO_DEVOLVIDO_PELO_PORTAL",
+                     "DOCUMENTO_RECEBIDO_NO_ESCRITORIO" if pelo_escritorio
+                     else "DOCUMENTO_DEVOLVIDO_PELO_PORTAL",
                      {"devolucao": linha["numero"], "por": eu["nome"],
                       "documento_id": d.id}, None)
     s.flush()
@@ -873,6 +1040,11 @@ def _sem_acento(texto: Any) -> str:
     return "".join(c for c in cru if _u.category(c) != "Mn")
 
 
+def _cpf_inteiro(cpf: Any) -> str:
+    d = "".join(c for c in str(cpf or "") if c.isdigit())
+    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}" if len(d) == 11 else d
+
+
 def _cpf_do_fim(cpf: Any) -> str:
     """"…901" — o bastante para conferir que é a pessoa certa, e só isso.
 
@@ -884,9 +1056,27 @@ def _cpf_do_fim(cpf: Any) -> str:
     return ("…" + so_digito[-3:]) if len(so_digito) >= 3 else ""
 
 
+def vinculo_do_tipo(chave: str) -> str:
+    """O vínculo que este tipo de pedido aceita, ou "" para todos.
+
+    ⚑ QUEM DECIDE É A REGRA, não a tela: a tela manda a chave do tipo e o
+    servidor olha em `TIPOS`. Se a tela mandasse o vínculo direto, bastaria
+    trocá-lo no navegador para a busca voltar a oferecer todo mundo.
+    """
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    regra = svc_sp.TIPOS.get(str(chave or "").strip().upper()) or {}
+    return str(regra.get("so_vinculo") or "")
+
+
 def procurar_pessoas(s: Session, usuario: Optional[Usuario],
-                     termo: str) -> list[dict[str, Any]]:
-    """Quem bate com o que foi digitado, dentro do alcance de quem procura."""
+                     termo: str, *, so_vinculo: str = "",
+                     desligados: bool = False) -> list[dict[str, Any]]:
+    """Quem bate com o que foi digitado, dentro do alcance de quem procura.
+
+    `so_vinculo`: restringe ao vínculo pedido pelo TIPO de solicitação — ver
+    `so_vinculo` em `pessoal_solicitacoes.TIPOS`. É o caso da admissão de
+    prestador, que só pode ser feita para quem É prestador (17/11/2026).
+    """
     procurado = str(termo or "").strip()
     so_digito = "".join(c for c in procurado if c.isdigit())
     if len(procurado) < MINIMO_DA_BUSCA_DE_PESSOA and len(so_digito) < 3:
@@ -896,8 +1086,17 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
         # Quem só pede por si não procura ninguém: devolve a si mesmo.
         return [x for x in pessoas_ao_alcance(s, usuario)
                 if procurado.lower() in str(x["nome"]).lower()]
+    alvo = (so_vinculo or "").strip().upper()
     obras = obras_que_alcanca(s, eu)
-    if obras is not None and not obras:
+    # ⚑ OS DESLIGADOS, PARA A ADMISSÃO (19/11/2026). Ele: *"se não tiver
+    # documento, eu queria poder pesquisar o nome da pessoa (…) ou pelo CPF,
+    # ou pelo nome, e mostrar lá a pessoa, e você só selecionar."* Quem volta
+    # pode ter trabalhado em qualquer obra, então a obra não recorta — e por
+    # isso a busca devolve só nome, cargo e o fim do CPF; o que o cadastro tem
+    # de dado pessoal vai como "tem / não tem" (`MARCA_TEM`).
+    if desligados:
+        obras = None
+    elif obras is not None and not obras:
         return []
     # ⚑ AS COLUNAS QUE OS TIPOS CONSULTAM vêm JUNTO com a pessoa, e não numa
     # segunda chamada depois do clique: no celular, na obra, cada ida ao
@@ -905,7 +1104,8 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
     # (`COLUNAS_JA_NO_CADASTRO`), não escrita aqui — tipo novo que consulte
     # outra coluna passa a trazê-la sozinho.
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
-    extras = svc_sp.COLUNAS_JA_NO_CADASTRO
+    extras = tuple(dict.fromkeys(svc_sp.COLUNAS_JA_NO_CADASTRO
+                                 + svc_sp.CAMPOS_DA_PESSOA))
     colunas_extras = "".join(f", c.{c} AS ja_{c}" for c in extras)
     linhas = s.execute(text(f"""
         SELECT c.id, c.nome, c.cpf, c.vinculo{colunas_extras},
@@ -916,11 +1116,12 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
           LEFT JOIN cargos  g ON g.id = c.cargo_id
           LEFT JOIN funcoes f ON f.id = c.funcao_id
          WHERE (:todas OR c.obra_id = ANY(:obras))
-           AND c.situacao = 'ATIVO'
+           AND c.situacao = :situacao
+           AND (:vinculo = '' OR upper(COALESCE(c.vinculo, 'CTPS')) = :vinculo)
            AND (translate(lower(c.nome),
                           'áàâãäéèêëíìîïóòôõöúùûüç',
                           'aaaaaeeeeiiiiooooouuuuc') LIKE :nome
-                OR (:digitos <> '' AND regexp_replace(c.cpf, '\D', '', 'g')
+                OR (:digitos <> '' AND regexp_replace(c.cpf, '\\D', '', 'g')
                     LIKE :digitos || '%'))
          ORDER BY c.nome
          LIMIT :teto"""),
@@ -929,15 +1130,25 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
          # `unaccent` (que não está instalada): quem digita "jose" acha
          # "José", que é como se digita no celular, com pressa.
          "nome": "%" + _sem_acento(procurado) + "%", "digitos": so_digito,
+         "vinculo": alvo,
+         "situacao": "DESLIGADO" if desligados else "ATIVO",
          "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
              "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
-             "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"]),
+             "obra_id": l["obra_id"],
+             # ⚑ NA READMISSÃO, O CPF INTEIRO (19/11/2026). Ele: *"o que
+             # individualiza a pessoa é o CPF. Tem que aparecer o CPF também
+             # para a gente saber se é a mesma pessoa."* Nome repete; CPF não.
+             "cpf": (_cpf_inteiro(l["cpf"]) if desligados
+                     else _cpf_do_fim(l["cpf"])),
              # Só o que ESTÁ preenchido: campo vazio aqui viraria "já no
              # cadastro" na tela, e a pessoa não preencheria o que falta.
-             "cadastro": {c: str(l[f"ja_{c}"]).strip() for c in extras
+             "cadastro": {c: (svc_sp.MARCA_TEM if c in svc_sp.SO_A_MARCA
+                              else str(l[f"ja_{c}"]).strip())
+                          for c in extras
                           if l[f"ja_{c}"] is not None
-                          and str(l[f"ja_{c}"]).strip()}}
+                          and str(l[f"ja_{c}"]).strip()},
+             "desligado": desligados}
             for l in linhas]
 
 
@@ -959,6 +1170,47 @@ def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str
     from app.apps.erp.core.comum.rotulos import rotulo_da_obra
     return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"],
              "rotulo": rotulo_da_obra(l["codigo"], l["nome"])} for l in linhas]
+
+
+def obra_sugerida(s: Session, usuario: Optional[Usuario]) -> Optional[int]:
+    """A obra que já vem escolhida no pedido — SUGESTÃO, nunca trava.
+
+    Ele, em 17/11/2026: *"quando eu falei em geolocalização, na verdade eu quis
+    dizer mais onde é que a pessoa (…) de qual obra ela está cuidando."* Quem
+    sabe responder isso é o PONTO: é o único lugar onde a presença fica
+    registrada todo dia. O cadastro envelhece — a pessoa muda de obra e ninguém
+    vai atualizar a ficha —, e a batida não.
+
+    A ordem é: a obra onde ela mais bateu ponto nos últimos 60 dias; na falta
+    de batida, a obra do cadastro dela; na falta das duas, nenhuma, e a pessoa
+    escolhe na lista.
+
+    ⚑ É SUGESTÃO, E A CAIXINHA CONTINUA ABERTA. Travar a obra pelo ponto
+    quebraria quem abre pedido para outra obra — e o administrativo faz isso
+    (cobre férias de colega em outro canteiro). Sugerir poupa um toque; travar
+    cria um impedimento que ninguém consegue contornar pela tela.
+
+    Nunca levanta: ponto fora do ar, sem migração ou sem colaborador ligado ao
+    operador devolve `None` e o pedido abre como antes.
+    """
+    if usuario is None:
+        return None
+    try:
+        linha = s.execute(text(
+            "SELECT id, obra_id FROM colaboradores WHERE usuario_id = :u "
+            " LIMIT 1"), {"u": int(usuario.id)}).mappings().first()
+        if linha is None:
+            return None
+        from app.apps.ponto import db as ponto_db
+        from app.apps.ponto.core import cadastros as ponto_cadastros
+        with ponto_db.conexao() as conn:
+            obra = ponto_cadastros.obra_pelo_ponto(conn, int(linha["id"]))
+        if obra:
+            return int(obra["id"])
+        return int(linha["obra_id"]) if linha["obra_id"] else None
+    except Exception:  # noqa: BLE001
+        logger.exception("Portal: falha ao sugerir a obra pelo ponto")
+        return None
 
 
 # ---------------------------------------------------------------------------

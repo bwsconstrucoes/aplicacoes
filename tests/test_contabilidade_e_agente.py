@@ -133,15 +133,33 @@ def pessoa(sessao_real, dono):
 
 
 @banco_
-def test_o_agente_nasce_desligado(sessao_real, banco):
-    """Pedido dele com todas as letras: *"a gente não vai começar com ele
-    ativo."* A migração semeia as sete rotinas DESLIGADAS."""
-    for r in ag.configuracao(sessao_real):
-        assert r["modo"] == "DESLIGADA", f"a rotina {r['chave']} nasceu ligada"
+def test_o_agente_nasce_ligado_como_ele_decidiu(sessao_real, banco):
+    """Ele começou com tudo desligado (*"a gente não vai começar com ele
+    ativo"*, migração 090) e, em 20/11/2026, mandou ligar: *"Vamos botar para
+    funcionar."* A migração 117 liga, em SUGERE, só as rotinas que não mandam
+    nada para fora; a cobrança (e-mail à contabilidade, WhatsApp à obra) e a
+    caixa continuam como ele deixou."""
+    modos = {r["chave"]: r["modo"] for r in ag.configuracao(sessao_real)}
+    for chave in ("triagem", "despacho", "vigia", "relatorio"):
+        assert modos[chave] == "SUGERE", chave
+    # 21/11/2026 (migração 123), ele: *"sim, vamos deixar as rotinas
+    # automáticas"* — a cobrança e a leitura do e-mail passam a FAZER.
+    for chave in ("cobranca", "caixa"):
+        assert modos[chave] == "FAZ", chave
+    for chave in ("leitura", "conferencia"):
+        assert modos.get(chave, "DESLIGADA") == "DESLIGADA", chave
+
+
+@banco_
+def test_a_conferencia_nao_liga_porque_nao_existe(sessao_real, dono):
+    with pytest.raises(ErroValidacao, match="ainda não existe"):
+        ag.definir(sessao_real, "conferencia", modo_novo="SUGERE", usuario=dono)
 
 
 @banco_
 def test_rodar_com_tudo_desligado_nao_faz_nada_e_diz_isso(sessao_real, dono):
+    for r in ag.configuracao(sessao_real):
+        ag.definir(sessao_real, r["chave"], modo_novo="DESLIGADA", usuario=dono)
     r = ag.rodar(sessao_real, dono)
     assert r["rotinas_ligadas"] == []
     assert "não fez" in r["aviso"]
@@ -172,7 +190,9 @@ def test_pedido_nao_sai_pela_metade(sessao_real, dono):
     with pytest.raises(ErroValidacao) as e:
         ct.abrir(sessao_real, {"template": "ASSINATURA_CTPS",
                                "colaborador_id": c.id}, dono)
-    assert "nº do PIS" in str(e.value) and "cargo" in str(e.value)
+    assert "cargo" in str(e.value)
+    # o PIS deixou de ser exigido em 19/11/2026: o eSocial é feito com o CPF
+    assert "PIS" not in str(e.value)
 
 
 @banco_
@@ -200,7 +220,12 @@ def test_o_que_falta_para_pedir_e_consultavel_antes_de_tentar(sessao_real, dono,
     outro = sessao_real.get(Colaborador, pessoa.id)
     outro.pis = None
     sessao_real.flush()
-    assert "nº do PIS" in ct.o_que_falta_para_pedir(
+    # sem o PIS o pedido sai (19/11/2026: o eSocial é feito com o CPF) …
+    assert ct.o_que_falta_para_pedir(sessao_real, "ASSINATURA_CTPS", outro) == []
+    # … e sem o cargo, não
+    outro.cargo_id = None
+    sessao_real.flush()
+    assert "cargo" in ct.o_que_falta_para_pedir(
         sessao_real, "ASSINATURA_CTPS", outro)
 
 
@@ -275,9 +300,22 @@ def test_retorno_sem_nada_lido_fica_sem_conferencia_e_a_tela_sabe(sessao_real,
 @banco_
 def test_concluir_o_desligamento_move_a_etapa(sessao_real, dono, pessoa):
     """O template manda, e é o retorno da contabilidade que fecha o ciclo."""
+    import datetime as _dt
     from app.apps.erp.core.cadastros import pessoas as svc
-    svc.desligar(sessao_real, pessoa.id, {"data_saida": "2026-11-30",
-                                          "ultimo_dia": "2026-11-30",
+    # DATA RELATIVA A HOJE: era "2026-11-30" fixa, e deixou de ser passado.
+    saiu = (_dt.date.today() - _dt.timedelta(days=2)).isoformat()
+    # a pessoa da fixture foi admitida HOJE; para ter saído há dois dias, a
+    # admissão tem de ser antes disso.
+    from sqlalchemy import text as _text
+    antes = _dt.date.today() - _dt.timedelta(days=60)
+    sessao_real.execute(_text("UPDATE colaborador_vinculos SET admissao = :a "
+                              " WHERE colaborador_id = :c"),
+                        {"a": antes, "c": pessoa.id})
+    pessoa.admissao = antes
+    sessao_real.flush()
+    sessao_real.expire_all()
+    svc.desligar(sessao_real, pessoa.id, {"data_saida": saiu,
+                                          "ultimo_dia": saiu,
                                           "forma_desligamento": "AVISO_TRABALHADO"}, dono)
     r = ct.abrir(sessao_real, {"template": "DESLIGAMENTO",
                                "colaborador_id": pessoa.id,
@@ -287,6 +325,27 @@ def test_concluir_o_desligamento_move_a_etapa(sessao_real, dono, pessoa):
     fim = ct.concluir(sessao_real, r["id"], dono)
     assert pessoa.etapa == "DESLIGADO"
     assert fim["concluido"] is True
+
+
+@banco_
+def test_concluir_o_desligamento_NAO_desliga_quem_cumpre_aviso(sessao_real,
+                                                               dono, pessoa):
+    """⚑ 19/11/2026. A rescisão pode voltar antes do último dia. Mover a etapa
+    para "Desligado" aí tiraria do ponto quem ainda trabalha o aviso prévio —
+    o mesmo defeito de 17/11, por outra porta. Quem desliga é a DATA."""
+    import datetime as _dt
+    from app.apps.erp.core.cadastros import pessoas as svc
+    sai = (_dt.date.today() + _dt.timedelta(days=10)).isoformat()
+    svc.desligar(sessao_real, pessoa.id, {"data_saida": sai, "ultimo_dia": sai,
+                                          "forma_desligamento": "AVISO_TRABALHADO"}, dono)
+    r = ct.abrir(sessao_real, {"template": "DESLIGAMENTO",
+                               "colaborador_id": pessoa.id,
+                               "dados": {"forma_desligamento": "AVISO_TRABALHADO"}},
+                 dono)
+    ct.receber(sessao_real, r["id"], dono, lido={"cpf": CPF_A})
+    fim = ct.concluir(sessao_real, r["id"], dono)
+    assert fim["concluido"] is True
+    assert pessoa.etapa != "DESLIGADO" and pessoa.situacao == "ATIVO"
 
 
 @banco_
@@ -316,6 +375,8 @@ def test_cancelar_exige_motivo(sessao_real, dono, pessoa):
 # ---------------------------------------------------------------------------
 @banco_
 def test_a_cobranca_desligada_nao_faz_nada(sessao_real, dono):
+    # Desde a migração 123 ela nasce ligada; aqui se confere o "desligada".
+    ag.definir(sessao_real, "cobranca", modo_novo="DESLIGADA", usuario=dono)
     r = ag.rodar_cobranca(sessao_real, dono)
     assert r == {"modo": "DESLIGADA", "olhou": 0, "cobrou": 0, "sugeriu": 0}
 
@@ -439,7 +500,7 @@ def test_a_triagem_nao_julga_merito(sessao_real, dono, pessoa):
     p = sp.abrir(sessao_real, {"tipo": "ALTERACAO_CARGO",
                                "colaborador_id": pessoa.id,
                                "cargo_pleiteado_id": pessoa.cargo_id,
-                               "data_inicio": "2026-06-01",
+                               "data_inicio": (date.today() + timedelta(days=10)).isoformat(),
                                "justificativa": "merece"}, dono)
     r = ag.triagem(sessao_real, p["id"],
                    {"cargo_id": pessoa.cargo_id, "salario": "90.000,00"})

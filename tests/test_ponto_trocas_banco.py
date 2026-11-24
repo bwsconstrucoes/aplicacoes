@@ -10,6 +10,20 @@ import pytest
 from tests.test_ponto_gestao_banco import CPF_JOAO, CPF_MARIA, _schema_ponto2, _segunda_passada, app, como, mundo  # noqa: F401
 
 
+def _dez_noites() -> list:
+    """As dez noites do teste (e a manhã seguinte à última): no mesmo mês e sem feriado no meio. Antes eram as
+    duas semanas antes da "segunda passada", sem olhar o feriado da primeira — de 23/11 a 06/12/2026 a quinta
+    noite caía em 20/11 (Consciência Negra) e não havia falta para trocar; e o teste se PULAVA quando o
+    período atravessava o mês. Agora recua uma semana até achar um período que sirva."""
+    from tests.test_ponto_gestao_banco import _FERIADOS_FIXOS
+    base = _segunda_passada() - dt.timedelta(days=7)
+    while True:
+        d = [base + dt.timedelta(days=n) for n in range(11)]
+        if d[0].month == d[-1].month and not any((x.month, x.day) in _FERIADOS_FIXOS for x in d):
+            return d[:10]
+        base -= dt.timedelta(days=7)
+
+
 def test_a_regra_pura():
     from app.apps.ponto.core.trocas import detectar
     dia = lambda n: f"2026-10-{n:02d}"                                       # noqa: E731
@@ -36,10 +50,8 @@ def test_a_troca_proposta_confirmada_e_no_espelho(app, mundo):
     from app.apps.ponto.core import escalas
     from tests.test_ponto_gestao_banco import bater_via_chave, local
     dp = como(app, mundo["dp"])
-    base = _segunda_passada() - dt.timedelta(days=7)
-    d = [base + dt.timedelta(days=n) for n in range(10)]
-    if d[0].month != d[-1].month:
-        pytest.skip("o período do teste atravessa o mês")
+    d = _dez_noites()
+    base = d[0]
     with db.conexao() as conn:
         conn.execute(text("DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = ANY(:ids)"),
                      {"ids": [mundo["joao"], mundo["maria"]]})
@@ -92,10 +104,8 @@ def test_a_permuta_lancada_a_mao_e_a_sugerida_nas_validacoes(app, mundo):
     from app.apps.ponto.core import escalas, trocas
     from tests.test_ponto_gestao_banco import bater_via_chave, local
     dp = como(app, mundo["dp"])
-    base = _segunda_passada() - dt.timedelta(days=7)
-    d = [base + dt.timedelta(days=n) for n in range(10)]
-    if d[0].month != d[-1].month:
-        pytest.skip("o período do teste atravessa o mês")
+    d = _dez_noites()
+    base = d[0]
 
     def permuta(**extra):
         return dp.post("/erp/api/ponto/ocorrencias", json={

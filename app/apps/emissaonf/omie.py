@@ -150,16 +150,21 @@ def montar_param_retencoes(codigo_integracao, r, doc_final) -> dict:
     }
 
 
-def alterar_retencoes(creds, codigo_integracao, r, numero_nota):
+def alterar_retencoes(creds, codigo_integracao, r, numero_nota, remover=""):
     """Lê o título, acumula o nº da nota no documento fiscal (ex.: 3001/3072) e grava
     as retenções calculadas. Retorna (resposta, doc_final).
-    Use na PRIMEIRA nota (com r da medição INTEGRAL)."""
+    Use na PRIMEIRA nota (com r da medição INTEGRAL).
+
+    `remover` é o nº de uma nota que sai de cena (cancelada ou substituída): ele é
+    tirado do documento na MESMA chamada em que as retenções são gravadas. Isso não
+    é economia de código — o Omie trava o registro por alguns segundos depois de
+    cada escrita, e duas escritas seguidas no mesmo título falham."""
     atual = ""
     try:
         atual = _ler_num_doc(consultar(creds, codigo_integracao))
     except Exception:
         atual = ""                      # se a consulta falhar, grava só o novo número
-    doc, descartados = montar_numero_documento(atual, novo=numero_nota)
+    doc, descartados = montar_numero_documento(atual, novo=numero_nota, remover=remover)
     _avisar_descartados(descartados, doc)
     param = montar_param_retencoes(codigo_integracao, r, doc)
     return _post("AlterarContaReceber", param, creds), doc

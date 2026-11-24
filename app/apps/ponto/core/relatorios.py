@@ -103,7 +103,10 @@ def faltas(conn: Connection, pessoas: list[dict], inicio: dt.date, fim: dt.date)
                            "previsto": d["previsto"], "tipo": "Falta" if inteira else "Falta parcial",
                            "faltou": d["previsto"] if inteira else d.get("debito") or 0,
                            "batidas": [b["hora"] for b in d.get("batidas") or []],
-                           "pendente": ", ".join(x["rotulo"] for x in d.get("pendentes") or [])})
+                           "pendente": ", ".join(x["rotulo"] for x in d.get("pendentes") or []),
+                           # o porquê, quando o sistema sabe (21/11/2026: a compensação não cumprida)
+                           "motivo": "; ".join(x["rotulo"] for x in d.get("declaracoes") or []
+                                               if str(x.get("subtipo") or "").startswith("COMPENSACAO_"))})
         if dias:
             meus = linhas[-len(dias):]
             por_pessoa.append({**_base(p), "faltas": sum(1 for x in meus if x["tipo"] == "Falta"),

@@ -802,6 +802,77 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 17/11/2026 — Os três logins passam a se enxergar, e a pessoa pede o acesso pelo ponto (atravessa ERP e ponto)
+
+**A pergunta que abriu isto:** *"nós temos ponto, nós temos portal e temos ERP.
+Para o ERP ou portal, onde é o login? Como é que eu migro de uma tela para
+outra? Como é que eu sei que eu estou no portal?"*
+
+**O mapa, que estava certo em cada parte e errado no conjunto:**
+
+| Tela | Endereço | Entra com | Autenticação |
+|---|---|---|---|
+| Meu ponto | `/ponto/app` | CPF + **PIN de 6 dígitos** | própria, código por WhatsApp |
+| Portal | `/erp/portal` | **e-mail + senha** | sessão do ERP (`ver_erp`) |
+| ERP | `/erp` | **e-mail + senha** | sessão do ERP |
+
+Portal e ERP são a MESMA porta. Faltava dizer isso na tela e ligar os dois —
+agora o portal se identifica ("Portal da obra"), tem link para `/erp` (só para
+quem tem mais que o portal) e o ERP tem o botão "Portal" de volta.
+
+**A decisão de arquitetura:** **o pedido de acesso nasce no ponto, a decisão
+continua no ERP.** Motivo: o acesso ao ERP só nasce com e-mail, e o e-mail da
+gente de obra o sistema não tem — ninguém pede e-mail para contratar. O DP não
+adivinha. A pessoa sabe, e já está autenticada no ponto todo dia.
+
+- **A fila é `public.portal_pedidos_de_acesso`** (migração **108 do ERP**), não
+  uma tabela do schema `ponto`. Quem decide é o ERP e o resultado da decisão é
+  uma linha em `usuarios` — tabela do ERP. Pôr a fila no ponto obrigaria a
+  apertar DOIS botões de migração para uma coisa só funcionar.
+- **A regra mora num lugar só**: `app/apps/erp/core/auth/pedidos_de_portal.py`.
+  O ponto chama essa função (`app/apps/ponto/core/portal_do_erp.py`) e não tem
+  SQL da tabela — duas cópias da mesma regra divergem.
+- **`ON DELETE CASCADE` no colaborador, de propósito:** pedido de acesso não é
+  movimento da pessoa no sistema, então não pode entrar na lista do que impede
+  apagar um cadastro (a regra de 17/11: tem ponto, desliga; não tem, exclui).
+- **Criar acesso tem UMA implementação**, `routes._liberar_acesso`. A ficha da
+  pessoa e a fila do portal chamam a mesma. Era a cobrança dele do mesmo dia
+  sobre os três botões de importar: caminho novo que faz "quase a mesma coisa"
+  divergindo em silêncio.
+- **Funciona antes do botão da migração.** O ponto pergunta se a tabela existe;
+  sem ela, a opção não aparece no menu. Errar para o lado de esconder.
+
+⚠️ **Em aberto, e é alçada dele:** quem libera é **ADMIN** (`gerir_usuarios`),
+não o DP. A regra já era essa antes da fila. O efeito prático é que o DP vê a
+fila e não resolve — mudar é uma linha em `permissoes.py`, com a consequência de
+o DP passar a poder criar acesso para qualquer um, inclusive para si.
+
+### 17/11/2026 — A chamada do Make não espera mais a baixa; e "questionar visando a otimização" virou regra (atravessa áreas)
+
+**A parte do BaixaBradesco** (detalhe em `app/apps/baixabradesco/HISTORICO.md`):
+o módulo HTTP do Make dava "This module timed out" o tempo todo, e o "break" do
+cenário **remandava o lote inteiro** — duas execuções do mesmo arquivo lado a
+lado, ocupando duas das quatro linhas de atendimento (registros do Render de
+16/11: 162 s, 194 s, 246 s, 460 s, 522 s, 602 s na mesma rota). Decisão do dono:
+*"no Make eu não preciso de resposta para cada baixa. O cenário manda e
+acabou-se."* Agora `POST /api/baixabradesco/executar` responde na hora, o lote é
+gravado em disco antes da resposta (garantia de que a baixa acontece), lote
+repetido é recusado na porta, e o relatório por comprovante vai para o
+**Telegram**. A execução virou por fase: planilha e Pipefy agrupam o lote
+inteiro; o Omie não, porque a API baixa um título por chamada.
+
+⚠️ **Só a ROTA responde assim.** Quem chama `processar_baixabradesco` por dentro
+do serviço — `analisesps/comprovantes.py` e a fila de adiados — continua
+recebendo o resultado completo, porque as duas dependem dele. O parâmetro é
+`em_segundo_plano`, e o padrão é **não**.
+
+**A parte que atravessa tudo:** o dono pediu *"não deixe de me questionar
+visando a otimização"*, depois de apontar que a ineficiência estava escrita no
+próprio código havia meses. A regra entrou no `CLAUDE.md`: contar o custo da
+operação (chamadas de rede, leituras de planilha, por item e por lote) antes de
+mexer numa área, e **relatar** o que a conta mostrar — mesmo sem mexer. Não
+fazer sem pedir continua valendo; não FALAR sem ser perguntado nunca foi regra.
+
 ### 16/11/2026 — DECIDIDO: O PONTO VAI CORTAR O VÍNCULO COM A PLANILHA (atravessa áreas: Ponto, ERP e Análise de SPs)
 
 **Ainda NÃO foi feito.** Fica registrado porque é decisão tomada, com condição
@@ -1545,6 +1616,75 @@ tocado** — é outra área, e mudar a identidade lá muda o que o ERP já gravo
 chat do ERP precisa decidir se a importação de extrato dele
 (`core/pagamentos/service.py`) sofre do mesmo problema com o Bradesco e, se
 sim, aplicar a mesma regra com uma refeitura das identidades já gravadas.
+
+### 17/11/2026 — PARA QUE o ERP existe: substituir planilha, Pipefy e OMIE
+
+Ele disse isto duas vezes no mesmo dia, a segunda depois de eu tratar o Pipefy
+como opção viva:
+
+> *"Não vai ter Pipefy mais. Preciso dizer de novo?"*
+
+> *"O ERP vai substituir planilha e Pipefy e Omie."*
+
+**Está registrado aqui, e não só no histórico do ERP, porque muda o desenho de
+TODAS as áreas** — e porque chat novo não lembra de conversa, só do que está
+escrito. O detalhe prático está no `CLAUDE.md`, na seção de mesmo nome.
+
+**O que vira o quê:**
+
+| Sai | Quem assume |
+|---|---|
+| Pipefy (cadastro de colaboradores, SPs, fluxos do DP) | ERP |
+| Planilhas (Registro de Colaboradores, C. Diários, SPsBD) | ERP |
+| OMIE (títulos, contas a pagar e a receber) | ERP |
+
+**A consequência para quem for mexer em qualquer área:** importação de
+Pipefy, de planilha e do OMIE é **ferramenta de mudança, não de operação** —
+serve para trazer o que já existe, e não se desenha funcionalidade
+dependendo dela para sempre. Integração de IDA (o ERP escrevendo em OMIE ou
+em planilha) é caminho que vai morrer: antes de criar mais uma, perguntar se
+não é o ERP que deveria ser a fonte.
+
+⚠️ **E isto NÃO autoriza desligar nem apagar nada.** Os três estão em
+produção e a empresa depende deles hoje; a ordem e o momento de cada
+desligamento são decisão dele.
+
+---
+
+### 17/11/2026 — a suíte caiu de ~8 min para ~5 min, e o gargalo era UM arquivo
+
+**Segunda cobrança dele sobre o mesmo assunto** (16/11/2026): *"eu havia
+comentado da demora dos testes (…) precisa otimizar eles."* A primeira foi em
+29/09, logo abaixo nesta lista — e o conserto de lá continua valendo. O que
+apareceu agora é outro gargalo, criado depois.
+
+**Onde estava:** a homologação por perfil (`tests/test_homologacao*_banco.py`)
+tinha crescido para **1.659 casos num arquivo só**. A suíte roda com
+`--dist loadfile`, que mantém os testes de um mesmo arquivo no MESMO
+trabalhador — de propósito, para as fixtures de sessão não serem refeitas. O
+efeito colateral: um processo trabalhava 8 minutos sozinho enquanto os outros
+três ficavam ociosos. O arquivo ERA a suíte.
+
+**Dois consertos, nenhum deles afrouxando regra:**
+
+1. **Dividido em quatro arquivos** — leituras, telas, escritas e o roteiro — com
+   o que é comum em `tests/homologacao.py`, que **não** é arquivo de teste (não
+   começa com `test_`), é a peça que os quatro leem. Agora o paralelismo os
+   alcança. Os mesmos casos continuam sendo conferidos, contra o mesmo Postgres.
+2. **A senha de teste passou a ser embaralhada uma vez**, não uma por caso: eram
+   1.659 × 63 ms para produzir sempre o MESMO texto. Embaralhar senha é caro de
+   propósito — é o que torna inviável adivinhar senha por tentativa —, e em
+   produção esse custo é a proteção. Nestes testes é desperdício puro: nenhum
+   deles faz login por senha; todos entram pela sessão.
+
+**Medido:** 11.500 testes, de ~491 s para **306 s** com quatro trabalhadores.
+
+**A armadilha, para quem vier depois:** com `--dist loadfile`, um arquivo de
+teste gigante é um gargalo invisível — a suíte "demora" sem que nenhum teste
+individual seja lento. Se a demora voltar, o primeiro lugar a olhar é
+`--durations=20`, procurando um ARQUIVO que concentra casos, não um teste caro.
+
+---
 
 ### 29/09/2026 — a suíte de testes, de inviável a um comando
 

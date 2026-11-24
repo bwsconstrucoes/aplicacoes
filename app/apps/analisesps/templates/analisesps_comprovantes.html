@@ -13,6 +13,35 @@
    *"se eu sair da tela e voltar, a informação vai ser me dada ainda?"*. Vai: o
    resultado mora no banco, não nesta página.
 --------------------------------------------------------------------------- #}
+{% block filtros %}
+{# O CAMPO DE SOLTAR OS COMPROVANTES, NA LATERAL (dono, 18/11/2026: *"coloque o campo
+   para jogar os comprovantes no sidebar"*): fica à mão sem ocupar o alto da lista. #}
+<div class="lateral-comprovantes">
+  <div class="filtros-cab"><h2>Mandar para a baixa</h2></div>
+  {% if pode_operar %}
+    <form id="form-comprovantes" method="post" enctype="multipart/form-data"
+          action="{{ url_for('analisesps.enviar_comprovantes') }}">
+      <label id="area-solta" class="solta" for="campo-comprovantes">
+        <span class="solta-titulo">Solte os comprovantes aqui</span>
+        <span class="solta-dica">ou clique para escolher — PDF, até
+          {{ maximo_mb }} MB cada, {{ maximo_arquivos }} por vez. Cada página é um
+          comprovante, em levas de {{ por_leva }}; pode fechar a tela.</span>
+        <input type="file" id="campo-comprovantes" name="arquivos"
+               accept="application/pdf" multiple hidden>
+      </label>
+      <div id="escolhidos" class="cartao-dica" hidden></div>
+      <div style="display:flex; gap:8px; margin-top:12px">
+        <button class="btn" type="submit" id="btn-enviar" disabled>
+          Mandar para a baixa</button>
+      </div>
+    </form>
+  {% else %}
+    <p class="cartao-dica">O perfil Consulta vê o resultado, mas não envia.</p>
+  {% endif %}
+</div>
+{% if lista %}{% include "analisesps_comprovantes_filtros.html" %}{% endif %}
+{% endblock %}
+
 {% block conteudo %}
 
 {# O endereço e o "tem coisa andando" vêm do SERVIDOR, não são adivinhados
@@ -26,35 +55,6 @@
      data-trabalhando="{{ '1' if trabalhando else '' }}"></div>
 
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
-
-<div class="cartao">
-  <h2>Comprovantes</h2>
-  <p class="cartao-dica">
-    Arraste os comprovantes aqui. Cada <b>página</b> do PDF é um comprovante, e
-    eles são processados em levas de {{ por_leva }} — do mesmo jeito que o seu
-    script já faz hoje pelo e-mail. Você pode fechar esta tela: o trabalho
-    continua, e o resultado fica guardado.
-  </p>
-
-  {% if pode_operar %}
-    <form id="form-comprovantes" method="post" enctype="multipart/form-data"
-          action="{{ url_for('analisesps.enviar_comprovantes') }}">
-      <label id="area-solta" class="solta" for="campo-comprovantes">
-        <span class="solta-titulo">Solte os comprovantes aqui</span>
-        <span class="solta-dica">ou clique para escolher — PDF, até
-          {{ maximo_mb }} MB cada, {{ maximo_arquivos }} por vez</span>
-        <input type="file" id="campo-comprovantes" name="arquivos"
-               accept="application/pdf" multiple hidden>
-      </label>
-      <div id="escolhidos" class="cartao-dica" hidden></div>
-      <div style="display:flex; gap:8px; margin-top:12px">
-        <button class="btn" type="submit" id="btn-enviar" disabled>
-          Mandar para a baixa</button>
-      </div>
-    </form>
-  {% else %}
-    <p class="cartao-dica">O perfil Consulta vê o resultado, mas não envia.</p>
-  {% endif %}
 
   {# ⚠️ O BOTÃO QUE A MENSAGEM PROMETIA. A tela dizia "ainda processando" para
      lotes parados havia horas, e não oferecia nada para destravar. Um lote fica
@@ -74,7 +74,7 @@
         Omie é reconhecido e marcado como duplicado.</small>
     </div>
   {% endif %}
-</div>
+
 
 {% if andamento.rodando %}
   <div class="aviso atencao" id="aviso-rodando">
@@ -85,8 +85,92 @@
   </div>
 {% endif %}
 
+{# ---------------------------------------------------------------------------
+   OS COMPROVANTES, UM POR LINHA (18/11/2026) — de todos os envios, no filtro da
+   barra lateral. O dono: *"aparece uma série de coisas que deu erro. Aí eu quero
+   entender o que é que deu erro (…) se tem o número da SP, nós gravamos o
+   comprovante (…) a partir daqui, conseguir visualizar esse comprovante."*
+--------------------------------------------------------------------------- #}
+{% if lista %}
 <div class="cartao">
-  <h2>O que aconteceu</h2>
+  <h2>Comprovante a comprovante
+    <small>{{ lista.total }} no filtro{% if filtros.lote %} · só o envio {{ filtros.lote }}
+      (<a href="{{ url_for('analisesps.tela_comprovantes') }}">todos</a>){% endif %}</small></h2>
+  <div class="kpis kpis-comprovantes">
+    {% for chave, rotulo, quantos in lista.contagem %}
+      {% set ativo = chave in filtros.situacoes %}
+      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'AGUARDANDO', 'SEM_PAGAMENTO') and quantos else '' }} {{ 'ativo' if ativo }}"
+         href="{{ url_for('analisesps.tela_comprovantes', f=1, situacao=('' if ativo else chave), busca=filtros.busca or None,
+                          de=filtros.de or None, ate=filtros.ate or None, lote=filtros.lote or None) }}"
+         title="Mostrar só: {{ rotulo }}">
+        <div class="kpi-rotulo">{{ rotulo }}</div><div class="kpi-valor">{{ quantos }}</div></a>
+    {% endfor %}
+  </div>
+  {# BAIXAR DE NOVO (19/11/2026): *"nos que não foram baixados (…) um botão para
+     baixar novamente (…) às vezes a gente esquece de alterar o status e acaba não
+     encontrando."* A mesma página vai num envio novo; marcar várias manda juntas. #}
+  {% set reenviaveis = lista.itens|selectattr('pode_reenviar')|list %}
+  <form method="post" id="form-reenviar" action="{{ url_for('analisesps.reenviar_comprovantes') }}">
+  {% if pode_operar and reenviaveis %}
+    <div class="barra-acoes-lista">
+      <label class="cartao-dica"><input type="checkbox" id="reenviar-todas"> marcar os {{ reenviaveis|length }} que não baixaram</label>
+      <button type="submit" class="btn secundario" id="reenviar-marcadas" disabled>Baixar de novo os marcados</button>
+      <span class="cartao-dica">Corrija antes o que impediu (status da SP, título no Omie) — a mesma página vai num envio novo; o que já baixou não baixa duas vezes.</span>
+    </div>
+  {% endif %}
+  <div class="tabela-wrap"><div class="tabela-rolagem livre">
+  <table class="sps" id="tabela-comprovantes">
+    <thead><tr>{% if pode_operar and reenviaveis %}<th class="marca"></th>{% endif %}<th>Enviado</th><th>Arquivo · pág.</th><th>Situação</th><th>SP</th>
+      <th>Valor</th><th>Quem recebeu</th><th>Comprovante</th><th>Por quê</th></tr></thead>
+    <tbody>
+    {% for i in lista.itens %}
+      <tr class="{{ 'com-risco' if i.pede_acao }}">
+        {% if pode_operar and reenviaveis %}<td class="marca">{% if i.pode_reenviar %}<input type="checkbox"
+            class="marca-reenviar" name="pagina" value="{{ i.lote_id }}:{{ i.pagina }}"
+            aria-label="Marcar a página {{ i.pagina }} para baixar de novo">{% endif %}</td>{% endif %}
+        <td>{{ i.recebido_em|momento_br }}<br><span class="cartao-dica">{{ i.quem or '—' }}</span></td>
+        <td><a href="{{ url_for('analisesps.tela_comprovantes', f=1, lote=i.lote_id, de='') }}"
+               title="Ver só as páginas deste envio">{{ i.arquivo }}</a>
+          <span class="cartao-dica">pág. {{ i.pagina or '—' }}</span></td>
+        <td>{% if i.situacao == 'AGUARDANDO' %}<span class="etiqueta">{{ i.rotulo }}</span>
+            <br><span class="cartao-dica">{{ i.andamento }}</span>
+          {% else %}<span class="etiqueta {{ 'ruim' if i.pede_acao else 'boa' }}">{{ i.rotulo }}</span>{% endif %}</td>
+        <td class="id">{% if i.sp_id %}<a href="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}"
+              data-ficha="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}" data-id="{{ i.sp_id }}"
+              title="Abre a SP aqui">{{ i.sp_id }}</a>{% else %}—{% endif %}</td>
+        <td>{{ i.valor or '—' }}</td>
+        <td>{{ i.recebedor or '—' }}</td>
+        <td class="sem-quebra">
+          {% if i.link_arquivado %}<a href="{{ i.link_arquivado }}" target="_blank" rel="noopener"
+              title="O comprovante arquivado na SP">ver comprovante</a>
+          {% elif i.link_drive %}<a href="{{ i.link_drive }}" target="_blank" rel="noopener"
+              title="Cópia desta página no Drive (pasta Comprovantes não baixados)">ver no Drive</a>
+          {% elif i.no_servidor %}<a href="{{ url_for('analisesps.pagina_do_comprovante', lote_id=i.lote_id, pagina=i.pagina) }}"
+              target="_blank" rel="noopener" title="A página, enquanto o PDF ainda está no servidor">ver a página</a>
+          {% else %}<span class="cartao-dica">—</span>{% endif %}
+          {% if pode_operar and i.pode_reenviar %}<br><button type="submit" class="btn secundario btn-pequeno"
+              name="so" value="{{ i.lote_id }}:{{ i.pagina }}"
+              title="Manda esta mesma página de novo para a baixa, num envio novo">Baixar de novo</button>{% endif %}</td>
+        <td>{% if i.motivo_explicado %}{{ i.motivo_explicado }}
+            <details><summary class="cartao-dica">Detalhe técnico</summary><small>{{ i.motivo }}</small></details>
+          {% else %}{{ i.motivo or '' }}{% endif %}
+          {% if i.conversa_omie %}<details class="conversa-omie">
+            <summary>o que o Omie respondeu, passo a passo</summary><pre>{{ i.conversa_omie }}</pre></details>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="cartao-dica">Nenhum comprovante neste filtro.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+  </form>
+  {% if lista.mais %}<p class="cartao-dica">Mostrando os {{ lista.itens|length }} mais recentes —
+    estreite o filtro para ver o resto.</p>{% endif %}
+</div>
+{% endif %}
+
+<div class="cartao">
+  <h2>Os envios</h2>
   {% if not historico %}
     <p class="cartao-dica">Nenhum comprovante foi enviado por aqui ainda.</p>
   {% else %}
@@ -103,7 +187,7 @@
             <span class="etiqueta ruim">falhou</span>
           {% endif %}
           {% for chave, rotulo, quantos in lote.contagem %}
-            <span class="etiqueta {{ 'boa' if chave in ('BAIXADO', 'DUPLICADO') else 'ruim' }}">
+            <span class="etiqueta {{ 'boa' if chave in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'SEM_PAGAMENTO') else 'ruim' }}">
               {{ rotulo }}: {{ quantos }}</span>
           {% endfor %}
           <span class="cartao-dica">{{ lote.quem }} · {{ lote.recebido_em|momento_br }}</span>
@@ -121,47 +205,9 @@
           </div>
         {% endif %}
 
-        {% set itens = lote.itens %}
-        {% if itens %}
-          <table class="sps">
-            <thead><tr>
-              <th>Pág.</th><th>Situação</th><th>SP</th><th>Valor</th>
-              <th>Quem recebeu</th><th>Por quê</th>
-            </tr></thead>
-            <tbody>
-              {% for i in itens %}
-                <tr class="{{ 'com-risco' if i.situacao not in ('BAIXADO', 'DUPLICADO') }}">
-                  <td>{{ i.pagina or '—' }}</td>
-                  <td>{{ i.rotulo }}</td>
-                  <td class="id">{{ i.sp_id or '—' }}</td>
-                  <td>{{ i.valor or '—' }}</td>
-                  <td>{{ i.recebedor or '—' }}</td>
-                  <td>{% if i.motivo_explicado %}{{ i.motivo_explicado }}
-                    <details><summary class="cartao-dica">Detalhe técnico</summary>
-                      <small>{{ i.motivo }}</small></details>
-                    {% else %}{{ i.motivo or '' }}{% endif %}
-                    {# ⚠️ A CONVERSA COM O OMIE, a um clique.
-
-                       *"A causa raiz é saber POR QUE não está baixando no
-                       Omie, porque se eu estou mandando pra baixar é pra
-                       baixar."* — e o Omie sempre respondeu por quê. A frase
-                       dele vai no motivo; aqui fica a sequência inteira
-                       (consultar → alterar → baixar), para o caso em que a
-                       frase não basta.
-
-                       Fechado por padrão: não é leitura do dia a dia. Mas
-                       quando faz falta, não pode estar noutro lugar. #}
-                    {% if i.conversa_omie %}
-                      <details class="conversa-omie">
-                        <summary>o que o Omie respondeu, passo a passo</summary>
-                        <pre>{{ i.conversa_omie }}</pre>
-                      </details>
-                    {% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        {% if lote.contagem %}
+          <p style="margin:6px 0"><a href="{{ url_for('analisesps.tela_comprovantes', f=1, lote=lote.id, de='') }}"
+            >ver as {{ lote.paginas }} página(s) deste envio, com o comprovante e o motivo de cada uma</a></p>
         {% elif lote.situacao in ('ESPERANDO', 'RODANDO') %}
           {# ⚠️ NÃO DIZER "ainda processando" PARA O QUE ESTÁ PARADO. A tela
              dizia isso para um lote parado desde as 7h47 da manhã — quem lê
@@ -238,4 +284,37 @@
   {% endif %}
 </div>
 
+<style>
+  .kpis-comprovantes a.kpi { text-decoration:none; color:inherit; }
+  .kpis-comprovantes a.kpi.ativo { outline:2px solid var(--azul); }
+  #tabela-comprovantes td.sem-quebra { white-space:nowrap; }
+  .lateral-comprovantes { padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid var(--borda); }
+  .lateral-comprovantes .solta { padding:18px 10px; text-align:center; }
+  .lateral-comprovantes #btn-enviar { width:100%; }
+  .filtro-opcoes .contagem { margin-left:auto; color:var(--tinta-suave); font-size:12px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{# O número da SP abre a ficha aqui, como nas outras telas. #}
+{% include "analisesps_ficha_modal.html" %}
+<script>
+(() => {
+  const marcas = Array.from(document.querySelectorAll(".marca-reenviar"));
+  const todas = document.getElementById("reenviar-todas");
+  const botao = document.getElementById("reenviar-marcadas");
+  if (!botao) return;
+  const atualizar = () => {
+    const n = marcas.filter(m => m.checked).length;
+    botao.disabled = !n;
+    botao.textContent = n ? "Baixar de novo os " + n + " marcados" : "Baixar de novo os marcados";
+  };
+  marcas.forEach(m => m.addEventListener("change", atualizar));
+  if (todas) todas.addEventListener("change", () => { marcas.forEach(m => { m.checked = todas.checked; }); atualizar(); });
+  // O botão de UMA linha não leva as marcadas junto.
+  document.querySelectorAll("button[name=so]").forEach(b => b.addEventListener("click", () => {
+    marcas.forEach(m => { m.checked = false; });
+  }));
+})();
+</script>
 {% endblock %}

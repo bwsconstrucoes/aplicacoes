@@ -371,6 +371,40 @@ def cargo_do_card(s: Session, campos: dict[str, str]) -> tuple[Optional[int], st
     return None, nome
 
 
+# ⚑ A CÓPIA DA PLANILHA NO BANCO SAIU DAQUI em 16/11/2026, poucas horas depois
+# de entrar. Ela tem 30 das 79 colunas da aba e fica velha entre uma
+# atualização e outra: o dono atualizou a planilha, importou, e nada mudou.
+# A leitura agora é da planilha AO VIVO — `core/importadores/planilha_dp.py`,
+# escrito com a aba aberta, coluna por coluna e valor por valor.
+#
+# O que sobrou aqui é só o casamento dos NOMES (cargo, convenção, obra) com os
+# cadastros do ERP, que continua valendo seja qual for a fonte.
+def _ligacoes_do_espelho(s: Session, nomes: dict[str, str]) -> dict[str, int]:
+    """Cargo, convenção e obra pelo NOME, exatos — nunca por semelhança."""
+    from app.apps.erp.db.models.cadastros import Cargo, Convencao, Obra
+
+    saida: dict[str, int] = {}
+    if nomes.get("cargo"):
+        alvo = _cru(nomes["cargo"])
+        for c in s.scalars(select(Cargo).where(Cargo.ativo.is_(True))).all():
+            if _cru(c.nome) == alvo:
+                saida["cargo_id"] = c.id
+                break
+    if nomes.get("convencao"):
+        alvo = _cru(nomes["convencao"])
+        for c in s.scalars(select(Convencao)).all():
+            if _cru(c.nome) == alvo:
+                saida["convencao_id"] = c.id
+                break
+    if nomes.get("obra"):
+        alvo = _cru(nomes["obra"])
+        for o in s.scalars(select(Obra)).all():
+            if _cru(o.codigo) == alvo:
+                saida["obra_id"] = o.id
+                break
+    return saida
+
+
 def anexos_do_card(campos: dict[str, str]) -> list[dict[str, Any]]:
     """Cada arquivo pendurado no card, com o tipo que ele vai ter aqui."""
     saida = []
@@ -486,6 +520,8 @@ def relatorio_vazio(motivo: str) -> dict[str, Any]:
             "documentos_ja_tinha": 0, "documentos_que_falharam": 0,
             "campos_preenchidos": 0, "cards_sem_resposta": [], "falhas": [],
             "cargos_sem_par": [], "fases_sem_etapa": [],
+            "planilha_nao_entendi": [],
+            "fora_da_planilha": [], "planilha_lida": 0, "planilha": {},
             "rotulos": dict(ROTULO_DO_CAMPO),
             "por_pessoa": [], "de_fora": dict(PAPEIS_DE_FORA),
             "cards_pedidos": 0, "cards_sem_pessoa": []}
@@ -851,7 +887,10 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
              obra_id: Optional[int] = None,
              teto_de_pessoas: Optional[int] = POR_RODADA,
              ler_cards=None, cards: Any = None,
-             regravar: bool = False, ler_papel: Any = None) -> dict[str, Any]:
+             regravar: bool = False, ler_papel: Any = None,
+             # A leitura da planilha entra por aqui para o teste poder trocá-la
+             # — a de verdade vai ao Google, e teste não vai à internet.
+             ler_planilha=None) -> dict[str, Any]:
     """Lê os cards das pessoas e traz documentos e campos vazios.
 
     Com `simular=True` (o padrão) NADA é gravado e nenhum arquivo é baixado:
@@ -896,6 +935,12 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         # lista, a pessoa simplesmente ficaria na etapa antiga e ninguém
         # saberia por quê.
         "fases_sem_etapa": [],
+        # Valor que a planilha escreve e que o de-para não conhece. É a lista
+        # que acaba com a adivinhação: ela diz o que está escrito lá.
+        "planilha_nao_entendi": [],
+        "fora_da_planilha": [],
+        "planilha_lida": 0,
+        "planilha": {},
         # Para a tela falar "Cargo" e não "cargo_id" com quem confere cadastro.
         "rotulos": dict(ROTULO_DO_CAMPO),
         "por_pessoa": [],
@@ -935,6 +980,26 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
     ja_veio = set() if regravar else o_que_ja_veio(
         s, [p["card"] for p in pessoas])
 
+    # ⚑ A PLANILHA "Dados Documentos" É LIDA UMA VEZ, AO VIVO (16/11/2026).
+    # Ele: *"a planilha é espelho do card."* É verdade — eu conferi lendo a
+    # aba: as 79 colunas têm TUDO o que o card tem, inclusive RG, nome do pai
+    # e da mãe, endereço, sexo e escolaridade, que eu havia afirmado existirem
+    # só no card. Do Pipefy sobra o que a planilha não tem: os DOCUMENTOS.
+    #
+    # Ao vivo, e não da cópia no banco: a cópia tem 30 das 79 colunas e fica
+    # velha entre uma atualização e outra — ele atualizou a planilha, importou,
+    # e nada mudou, porque a cópia era de antes.
+    lido = (ler_planilha or _svc_planilha().carregar)()
+    # O diagnóstico vem junto: quantas pessoas, qual aba e o ERRO por extenso
+    # quando a leitura falha — era o que faltava para ele ver o que acontece.
+    if "pessoas" not in lido:                 # leitor antigo, ou teste simples
+        lido = {"pessoas": lido, "erro": "", "planilha": "", "aba": "",
+                "linhas": len(lido), "colunas": 0}
+    da_planilha = lido.get("pessoas") or {}
+    relatorio["planilha_lida"] = len(da_planilha)
+    relatorio["planilha"] = {k: lido.get(k) for k in
+                             ("erro", "planilha", "aba", "linhas", "colunas")}
+
     for pessoa in pessoas:
         card = str(pessoa["card"])
         bruto = lidos.get(card)
@@ -973,14 +1038,69 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
                 {"nome": pessoa["nome"], "card": card,
                  "fase": str(bruto.get("fase")).strip()})
 
+        # ⚑ O ESPELHO DA PLANILHA ENTRA AQUI E MANDA (16/11/2026). É o pedido
+        # dele: os dados do card já estão em "Dados Documentos", e lá os nomes
+        # das colunas são legíveis — não se adivinha apelido de campo. Foi por
+        # adivinhação que VÍNCULO e PAGAMENTO nunca entraram.
+        do_planilha: dict[str, Any] = {}
+        espelho = dict(da_planilha.get(_so_digitos(pessoa.get("cpf") or "")) or {})
+        nomes_do_espelho = espelho.pop("_nomes", {}) if espelho else {}
+        nao_entendi = espelho.pop("_nao_entendi", []) if espelho else []
+        # O CPF e o NOME não entram por aqui: o CPF é a identidade da pessoa, e
+        # o nome só muda por decisão de alguém (ver `_gravar_campos`).
+        espelho.pop("cpf", None)
+        espelho.pop("nome", None)
+        if not espelho:
+            relatorio["fora_da_planilha"].append(
+                {"nome": pessoa["nome"], "cpf": pessoa.get("cpf", ""),
+                 "card": card})
+        else:
+            linha["planilha_crua"] = dict(espelho)
+            ligacoes = _ligacoes_do_espelho(s, nomes_do_espelho)
+            achados.update(espelho)
+            achados.update(ligacoes)
+            do_planilha.update(espelho)
+            do_planilha.update(ligacoes)
+            linha["do_espelho"] = sorted(espelho) + sorted(ligacoes)
+            # Nome que a planilha traz e que não existe como cadastro aqui.
+            for chave, campo, rotulo in (("cargo", "cargo_id", "Cargo"),
+                                         ("convencao", "convencao_id", "Convenção"),
+                                         ("obra", "obra_id", "Obra")):
+                if nomes_do_espelho.get(chave) and campo not in ligacoes:
+                    nao_entendi.append({
+                        "coluna": chave, "campo": rotulo,
+                        "valor": nomes_do_espelho[chave] + " — não existe no ERP"})
+        if nao_entendi:
+            linha["planilha_nao_entendi"] = nao_entendi
+            for x in nao_entendi:
+                relatorio["planilha_nao_entendi"].append({**x, "nome": pessoa["nome"]})
+
         cargo_id, cargo_nome = cargo_do_card(s, campos)
-        if cargo_id:
+        if cargo_id and "cargo_id" not in achados:
             achados["cargo_id"] = cargo_id
-        elif cargo_nome:
+        elif cargo_nome and "cargo_id" not in achados:
             linha["cargo_sem_par"] = cargo_nome
             relatorio["cargos_sem_par"].append(
                 {"nome": pessoa["nome"], "card": card, "cargo": cargo_nome})
-        preencher = achados if regravar else _vazios(s, pessoa["id"], achados)
+        # ⚑ O QUE VEM DA PLANILHA NÃO PASSA PELO FILTRO DE "SÓ O QUE ESTÁ
+        # VAZIO" — conserto de 17/11/2026, e era esta a causa de ele ver
+        # *"parte dos dados vem, mas vínculo e pagamento continua em branco"*.
+        #
+        # `vinculo` NUNCA está vazio: todo cadastro nasce com "CTPS" (ver
+        # `pessoas.salvar`). Então o filtro o considerava "já preenchido" e
+        # pulava — para sempre, em toda importação. `mensalista` idem.
+        #
+        # E o filtro não faz sentido para esta fonte: a planilha É o cadastro
+        # que a empresa mantém, não um palpite. Ele já tinha dito, sobre o
+        # card: *"eu quero que o que vier do pipe preencha o ERP. Não adianta
+        # eu ter que já ter uma base e ter que preencher de novo."* A planilha
+        # é o espelho desse card.
+        #
+        # O filtro continua valendo para o que vem do CARD e do DOCUMENTO.
+        do_card = {k: v for k, v in achados.items() if k not in do_planilha}
+        preencher = dict(do_planilha)
+        preencher.update(do_card if regravar
+                         else _vazios(s, pessoa["id"], do_card))
         # ⚑ O QUE NÃO FOI PREENCHIDO, E POR QUÊ — conserto de 16/11/2026. Ele
         # olhou o relatório, viu um campo só e disse: *"a verdade é que me
         # parece que não tá puxando é nada."* E ele não tinha como saber: o
@@ -1070,6 +1190,11 @@ def importar(s: Session, usuario: Optional[Usuario] = None, *,
         "simulada" if simular else "de verdade", relatorio["pessoas_lidas"],
         relatorio["documentos_guardados"], relatorio["campos_preenchidos"])
     return relatorio
+
+
+def _svc_planilha():
+    from app.apps.erp.core.importadores import planilha_dp as svc
+    return svc
 
 
 def _svc_pessoas():

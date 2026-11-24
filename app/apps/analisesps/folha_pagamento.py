@@ -576,7 +576,7 @@ def registrar_card(arquivo_id: int, card: str, link_card: str = "") -> bool:
         cur = conn.execute(
             "UPDATE analisesps.folha_arquivo_gerado "
             "   SET card_pipefy = ?, link_card = ? WHERE id = ?",
-            (str(card or "")[:60], str(link_card or "")[:400], int(arquivo_id)))
+            (str(card or "")[:4000], str(link_card or "")[:400], int(arquivo_id)))
         mudou = cur.rowcount or 0
         cur.close()
         conn.commit()
@@ -1098,14 +1098,90 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
 # uma vez, mais o de análise que os fecha. É ela que vira card no Pipefy, e é ela
 # que se seleciona.
 # ---------------------------------------------------------------------------
-def rodadas(teto: int = 400) -> list:
-    """As gerações, da mais nova para a mais antiga.
+# ---------------------------------------------------------------------------
+# OS FILTROS DE ARQUIVOS GERADOS (dono, 18/11/2026): competência, pagamento
+# (quinzena, fim de mês, DC, avulso), verba e a data em que foi gerado.
+# ---------------------------------------------------------------------------
+ROTULO_DO_PAGAMENTO = [("quinzena", "Quinzena"), ("fim_de_mes", "Fim de mês"),
+                       ("dc", "Despesas com colaboradores"), ("avulso", "Pagamento avulso")]
+
+
+def filtro_das_rodadas(args) -> dict:
+    import datetime as _dt
+    import re as _re
+
+    def data(valor):
+        try:
+            return _dt.date.fromisoformat(str(valor or "")[:10]).isoformat()
+        except ValueError:
+            return ""
+    competencia = str(args.get("competencia") or "").strip()
+    filtro = {"competencia": competencia if _re.fullmatch(r"\d{4}-\d{2}", competencia) else "",
+              "tipo": str(args.get("tipo") or "").strip(),
+              "verba": " ".join(str(args.get("verba") or "").split()),
+              "de": data(args.get("de")), "ate": data(args.get("ate"))}
+    filtro["algum"] = any(filtro.values())
+    return filtro
+
+
+def opcoes_do_filtro() -> dict:
+    """As competências e verbas que existem no registro — uma consulta cada."""
+    from .db import consultar
+    vazio = {"competencias": [], "tipos": ROTULO_DO_PAGAMENTO, "verbas": []}
+    try:
+        if not _pronto():
+            return vazio
+        comps = [f"{int(a):04d}-{int(m):02d}" for a, m in consultar(
+            "SELECT DISTINCT ano, mes FROM analisesps.folha_arquivo_gerado "
+            " ORDER BY ano DESC, mes DESC")]
+        brutas = consultar("SELECT DISTINCT verbas FROM analisesps.folha_arquivo_gerado "
+                           " WHERE destino = ?", (ANALISE,))
+    except Exception:  # noqa: BLE001 — sem as opções, a tela abre sem filtro
+        logger.exception("Folha: não consegui ler as opções do filtro de arquivos gerados")
+        return vazio
+    rotulos = set()
+    for (verbas,) in brutas:
+        rotulo = " + ".join(geracao.rotulo_da_verba(v) for v in (verbas or "").split("+") if v)
+        if rotulo:
+            rotulos.add(rotulo)
+    return {"competencias": comps, "tipos": ROTULO_DO_PAGAMENTO, "verbas": sorted(rotulos)}
+
+
+def filtrar_rodadas(rodadas_: list, filtro: dict) -> list:
+    from .formatos import _como_momento
+    from .horario import para_brasilia
+
+    def dia(r):
+        m = _como_momento(r.get("criado_em"))
+        m = para_brasilia(m) if hasattr(m, "hour") else m
+        return m.date().isoformat() if hasattr(m, "date") else str(m or "")[:10]
+    saida = []
+    for r in rodadas_:
+        if filtro.get("tipo") and r.get("tipo") != filtro["tipo"]:
+            continue
+        if filtro.get("verba") and filtro["verba"] != (r.get("verbas") or ""):
+            continue
+        if filtro.get("de") and dia(r) < filtro["de"]:
+            continue
+        if filtro.get("ate") and dia(r) > filtro["ate"]:
+            continue
+        saida.append(r)
+    return saida
+
+
+def rodadas(teto: int = 400, competencia: str = "") -> list:
+    """As gerações, da mais nova para a mais antiga. `competencia` ("2026-11"):
+    só as daquele mês, sem o teto pesar sobre os meses mais antigos.
 
     `gerar` registra os arquivos de pagamento e, por último, o de análise; então
     uma rodada é o que entrou entre a análise anterior (da mesma competência e
     pagamento) e esta. Arquivos sem análise depois deles (geração que parou no
     meio) formam uma rodada "incompleta"."""
-    arquivos = sorted(log(teto=teto), key=lambda a: a["id"])
+    if competencia:
+        ano, mes = (int(x) for x in competencia.split("-"))
+        arquivos = sorted(log(teto=max(teto, 2000), ano=ano, mes=mes), key=lambda a: a["id"])
+    else:
+        arquivos = sorted(log(teto=teto), key=lambda a: a["id"])
     abertos: dict = {}
     saida = []
     for a in arquivos:
@@ -1175,11 +1251,24 @@ def situacao_das_sps(rodadas_: list) -> None:
     na base", e não inventa status."""
     from .consultas import SQL_STATUS_AGEND
     from .db import consultar
+    # TODAS as SPs de cada arquivo, do andamento do lançamento: o registro do
+    # arquivo guardava só as cinco primeiras até 18/11/2026 (`folha_cards._ids_que_cabem`).
+    try:
+        from . import folha_cards
+        completas = folha_cards.sps_dos_arquivos(rodadas_)
+    except Exception:  # noqa: BLE001 — segue com o que o registro tem
+        logger.exception("Folha: não consegui ler as SPs do andamento")
+        completas = {}
     por_arquivo = []
     ids: set = set()
+    nomes: dict = {}
     for r in rodadas_ or []:
         for a in r.get("pagamentos") or []:
             dele = [i.strip() for i in str(a.get("card_pipefy") or "").split(",") if i.strip()]
+            do_andamento = completas.get(a["id"]) or []
+            if len(do_andamento) >= len(dele):
+                dele = [x["id"] for x in do_andamento] or dele
+                nomes.update({x["id"]: x["nome"] for x in do_andamento})
             por_arquivo.append((a, dele))
             ids.update(dele)
     situacao = {}
@@ -1194,7 +1283,7 @@ def situacao_das_sps(rodadas_: list) -> None:
             logger.exception("Folha: não consegui ler a situação das SPs geradas")
             return
     for a, dele in por_arquivo:
-        a["sps"] = [{"id": i,
+        a["sps"] = [{"id": i, "nome": nomes.get(i, ""),
                      "link": f"https://app.pipefy.com/open-cards/{i}",
                      "status_pgt": (situacao.get(i) or ("", ""))[0],
                      "status_agend": (situacao.get(i) or ("", ""))[1],

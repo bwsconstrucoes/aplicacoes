@@ -58,7 +58,7 @@ def test_comprovante_do_bradesco_nao_vai_para_o_leitor_do_sicredi():
 def test_o_fluxo_escolhe_o_leitor_pelo_formato_do_papel():
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core.processar_baixabradesco)
+    fonte = inspect.getsource(core._processar_lote) + inspect.getsource(core._executar_em_fases)
     assert 'parse_sicredi_text if is_sicredi(text) else parse_bradesco_text' in fonte
 
 

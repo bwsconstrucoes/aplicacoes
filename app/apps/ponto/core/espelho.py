@@ -191,6 +191,31 @@ def compensacao_de_horas(o: dict) -> bool:
     return o.get("tipo") == "COMPENSACAO" and o.get("subtipo") == SUBTIPO_HORAS
 
 
+def e_troca(o: dict) -> bool:
+    return str(o.get("descricao") or "").startswith(("Troca de plantão com", "Permuta com"))
+
+
+def paga_depois(o: dict) -> bool:
+    """A FOLGA QUE SE PAGA DEPOIS (21/11/2026, o dono, no recesso de fim de ano pago com sábados de janeiro: "o dia
+    que não foi trabalhado fica como folga, compensação a ser paga no futuro (…) lá na frente, quando aquele sábado
+    não acontecer, o sistema lança uma falta automática dizendo o motivo"). A folga fica abonada no mês dela, para
+    sempre — a folha daquele mês não muda depois de fechada e assinada —, e o que o dia trabalhado não pagar vira
+    falta NELE, no mês dele. Quando o dia trabalhado vem ANTES da folga, fica a regra de 29/10/2026: a folga não
+    paga é que vira falta (os dois casos põem a falta no mais tarde dos dois dias)."""
+    return (o.get("tipo") == "COMPENSACAO" and not compensacao_de_horas(o) and not e_troca(o)
+            and o.get("dia_trabalhado") is not None and o.get("data_fim") is not None
+            and o["dia_trabalhado"] > o["data_fim"])
+
+
+def _br(d: dt.date) -> str:
+    return f"{d:%d/%m/%Y}"
+
+
+def _folgas_br(o: dict) -> str:
+    i, f = o["data_inicio"], o["data_fim"]
+    return _br(i) if i == f else f"{i:%d/%m} a {_br(f)}"
+
+
 def _hm(minutos: int) -> str:
     return f"{int(minutos) // 60}h{int(minutos) % 60:02d}"
 
@@ -304,6 +329,14 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             sobra = max(0, sobra - precisa)
         return 0
 
+    def devido_e_coberto(o: dict) -> tuple[int, int]:
+        """Na folga paga depois: (os minutos das folgas, quanto o dia trabalhado pagou deles)."""
+        devido = sum(_minutos_previstos(vigencias.no_dia(f)[0], f) for f in _dias(o["data_inicio"], o["data_fim"]))
+        if o["id"] not in rendeu:
+            rendeu[o["id"]] = _rendeu_na_compensacao(conn, int(colaborador_id), o, por_dia, inicio, fim, vigencias,
+                                                     calendario, pessoa, pre_assinaladas)
+        return devido, min(rendeu[o["id"]], devido)
+
     # a compensação de horas: quanto cada uma cobre = o menor entre as horas a mais do dia trabalhado e as horas a
     # menos do dia curto (as duas contas cruas, sem abono) — e só depois de o dia trabalhado ter passado
     horas_aprovadas = [o for o in ocorrencias if o["status"] == "APROVADA" and compensacao_de_horas(o)
@@ -346,6 +379,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             coberto_min = folga_coberta(o, dia)
             if coberto_min is None:
                 a_cumprir = o
+                continue
+            if paga_depois(o):            # a folga fica; o que faltar pagar é falta no dia trabalhado (21/11/2026)
                 continue
             previsto_folga = _minutos_previstos(vigencias.no_dia(dia)[0], dia)
             if previsto_folga and coberto_min < previsto_folga:
@@ -440,6 +475,31 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             r.alertas = [a for a in r.alertas if a not in ("TRABALHO_EM_DESCANSO",
                                                            "TRABALHO_EM_FERIADO")]
             r.situacao = "COMPENSADO"
+        # a folga paga depois (21/11/2026): passado o dia trabalhado, o que ele não pagou é falta AQUI, com o motivo
+        pagamento_falhou = None
+        pagar_aqui = [o for o in compensa if paga_depois(o)]
+        if pagar_aqui and dia < hoje and dia >= vale_desde and not r.abonado:     # o atestado do dia vale
+            devido = coberto_ = 0
+            for o in pagar_aqui:
+                d_, c_ = devido_e_coberto(o)
+                devido, coberto_ = devido + d_, coberto_ + c_
+            faltou = devido - coberto_
+            if faltou > 0:
+                folgas = " e ".join(_folgas_br(o) for o in pagar_aqui)
+                if r.previsto:                   # um dia de trabalho: o que faltou pagar soma ao débito dele
+                    r.debito = (r.debito or 0) + faltou
+                    if r.situacao in ("OK", "COMPENSADO"):
+                        r.situacao = "FALTA_PARCIAL"
+                else:                            # o sábado (o descanso): passa a esperar as horas da folga
+                    r.previsto, r.debito = devido, faltou
+                    r.situacao, r.falta = ("FALTA_PARCIAL", False) if coberto_ else ("FALTA", True)
+                r.extra = 0
+                codigo = "COMPENSACAO_INCOMPLETA" if coberto_ else "COMPENSACAO_NAO_CUMPRIDA"
+                r.alertas = [a for a in r.alertas if a not in ("TRABALHO_EM_DESCANSO", "TRABALHO_EM_FERIADO")] + [codigo]
+                rot = (f"Compensação incompleta — este dia pagaria a folga de {folgas}: cobriu {_hm(coberto_)} das "
+                       f"{_hm(devido)}; faltam {_hm(faltou)}" if coberto_
+                       else f"Compensação não cumprida — este dia pagaria a folga de {folgas}; não houve trabalho")
+                pagamento_falhou = {"id": pagar_aqui[0]["id"], "rotulo": rot, "minutos": coberto_, "subtipo": codigo}
         # a compensação de horas: no dia das horas a mais, sai da hora extra só o que pagou o outro dia
         horas_usadas = [o for o in horas_aprovadas if o["dia_trabalhado"] == dia]
         if horas_usadas and r.extra:
@@ -521,7 +581,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "ocorrencia": ({"id": aprovadas[0]["id"], "tipo": aprovadas[0]["tipo"],
                             "subtipo": aprovadas[0].get("subtipo"),
                             "rotulo": rotulo_da_ocorrencia(aprovadas[0])} if aprovadas else None),
-            "compensacao": ({"id": compensa[0]["id"], "rotulo": rotulo_da_ocorrencia(compensa[0])} if compensa
+            "compensacao": ({"id": compensa[0]["id"], "rotulo": rotulo_da_ocorrencia(compensa[0]),
+                             "folga": _folgas_br(compensa[0])} if compensa
                             else {"id": horas_usadas[0]["id"], "subtipo": SUBTIPO_HORAS,
                                   "rotulo": "Compensação de horas — " + ", ".join(
                                       f"{_hm(cobertura.get(o['id'], 0))} pagam {o['data_inicio']:%d/%m}"
@@ -530,9 +591,14 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "declaracoes": [{"id": o["id"], "rotulo": rotulo_da_ocorrencia(o), "subtipo": o["subtipo"],
                              "minutos": int(o.get("minutos") or 0)} for o in declaracoes]
                            + ([compensacao_falhou] if compensacao_falhou and julgavel else [])
+                           + ([pagamento_falhou] if pagamento_falhou and julgavel else [])
                            + (horas_aqui if julgavel else []),
             "compensacao_a_cumprir": (a_cumprir["dia_trabalhado"].isoformat()
                                       if a_cumprir and dia >= vale_desde else None),
+            # a folga compensatória diz, no próprio dia, quando se paga (21/11/2026) — não muda com o tempo
+            "folga_paga_em": next((o["dia_trabalhado"].isoformat() for o in aprovadas
+                                   if o["tipo"] == "COMPENSACAO" and o.get("dia_trabalhado") and not e_troca(o)),
+                                  None) if dia >= vale_desde else None,
             "pendentes": [{"id": o["id"], "tipo": o["tipo"], "rotulo": rotulo_da_ocorrencia(o),
                            "status": o["status"],
                            "hora": (horario.para_local(o["horario"]).strftime("%H:%M")
@@ -563,6 +629,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             } for b in do_dia],
         })
 
+    compensacoes = observacoes_de_compensacao(ocorrencias, dias, inicio, fim, vale_desde)
     contaveis = [d for d in dias if d["situacao"] not in ("FUTURO", "EM_ANDAMENTO",
                                                           "FORA_DO_CONTRATO", vigencia_do_ponto.SITUACAO_ANTES)]
     resumo = {
@@ -588,7 +655,38 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                        "tipo_jornada": pessoa["tipo_jornada"],
                        "regime_banco": pessoa.get("regime_banco", "SEM_BANCO")},
             "inicio": inicio.isoformat(), "fim": fim.isoformat(),
-            "dias": dias, "resumo": resumo}
+            "dias": dias, "resumo": resumo, "compensacoes": compensacoes}
+
+
+def observacoes_de_compensacao(ocorrencias: list[dict], dias: list[dict], inicio: dt.date, fim: dt.date,
+                               vale_desde: dt.date) -> list[str]:
+    """PURA. As observações da folha de ponto sobre as compensações de dia (21/11/2026, o dono: "na própria folha
+    de ponto, quando existir essa situação, (…) uma observação, e a pessoa assina também junto"). Na folha do mês
+    da folga, o COMBINADO (que não muda depois); na do mês do dia trabalhado, o que aconteceu."""
+    por_data = {d["data"]: d for d in dias}
+    linhas = []
+    for o in ocorrencias:
+        if (o["status"] != "APROVADA" or o["tipo"] != "COMPENSACAO" or compensacao_de_horas(o) or e_troca(o)
+                or not o.get("dia_trabalhado")):
+            continue
+        dt_, folgas = o["dia_trabalhado"], _folgas_br(o)
+        dsem = escalas.DIAS[dt_.weekday()].lower()
+        folga_aqui = o["data_fim"] >= max(inicio, vale_desde) and o["data_inicio"] <= fim
+        if folga_aqui:
+            linhas.append(f"Folga compensatória em {folgas}, paga com o trabalho em {_br(dt_)} ({dsem})."
+                          + (" Se esse dia não for trabalhado, a falta é lançada nele." if paga_depois(o) else ""))
+        d = por_data.get(dt_.isoformat())
+        if paga_depois(o) and d and dt_ >= vale_desde:
+            falhou = next((x for x in d.get("declaracoes") or [] if x.get("id") == o["id"]
+                           and str(x.get("subtipo") or "").startswith("COMPENSACAO_")), None)
+            if d["situacao"] in ("FUTURO", "EM_ANDAMENTO"):
+                linhas.append(f"{_br(dt_)} ({dsem}): dia de pagar a folga de {folgas}.")
+            elif falhou:
+                linhas.append(f"{_br(dt_)} ({dsem}): {falhou['rotulo'][0].lower()}{falhou['rotulo'][1:]} — "
+                              "falta lançada neste dia.")
+            else:
+                linhas.append(f"{_br(dt_)} ({dsem}): trabalhado para pagar a folga de {folgas} — compensação cumprida.")
+    return linhas
 
 
 def do_mes(conn: Connection, colaborador_id: int, competencia, **kw) -> dict:

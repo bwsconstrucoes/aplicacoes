@@ -143,7 +143,9 @@ function desenhar(){
 
   els("tb-pedidos").innerHTML = PEDIDOS.map(p => `<tr>
       <td>${p.descricao}${p.unidade ? ` <small>(${p.unidade})</small>` : ""}</td>
-      <td>${p.solicitante || "—"}</td><td class="desc">${p.justificativa || "—"}</td>
+      <td>${p.solicitante || "—"}</td><td class="desc">${p.justificativa || "—"}${
+        (p.pedidos_esperando || []).length ? `<br><b style="color:var(--vermelho)">Pedido de material parado esperando este cadastro:</b>
+          <small>${p.pedidos_esperando.join("; ")}</small>` : ""}</td>
       <td><span class="selo ${p.status === "PENDENTE" ? "aguardando"
         : p.status === "CADASTRADO" ? "aprovado" : "bloqueado"}">${rotulo(p.status)}</span>
         ${p.motivo ? `<br><small>${p.motivo}</small>` : ""}</td>

@@ -132,9 +132,23 @@ MSG_CPF_NAO_ENCONTRADO = (
     "Procure o RH/Financeiro para verificar seu cadastro. "
     "Sua tentativa foi registrada para análise."
 )
+# ⚑ ONDE ESTÁ O BOTÃO (23/11/2026). O dono recebeu, encaminhadas, as mensagens
+# do cadastro de um colaborador, sem botão nenhum. Três coisas somem com ele, e
+# nenhuma é defeito do robô — por isso a explicação vai junto com o pedido:
+#   · mensagem ENCAMINHADA nunca leva o botão (é o que ele viu no encaminhado);
+#   · o botão fica no lugar do teclado do celular, e o Telegram o recolhe atrás
+#     do ícone ⌨️ / 🎛 ao lado do campo de mensagem quando a pessoa digita;
+#   · no computador e no Telegram pela internet, compartilhar o número não
+#     funciona — o número só é confirmado pelo aplicativo do celular.
+DICA_BOTAO = (
+    "\n\n_Não está vendo o botão? Toque no ícone ⌨️ (quadradinhos) ao lado do "
+    "campo de mensagem. Ele só funciona no Telegram do celular — no computador, "
+    "abra esta conversa pelo celular._"
+)
+MSG_BOAS_VINDAS = MSG_BOAS_VINDAS + DICA_BOTAO
 MSG_INSTRUCAO = (
-    "Para se cadastrar, toque no botão *📱 Compartilhar meu número* abaixo.\n"
-    "Se o botão não aparecer, envie /start."
+    "Para se cadastrar, toque no botão *📱 Compartilhar meu número* abaixo."
+    + DICA_BOTAO + "\n\n_Se ainda assim não aparecer, envie /start._"
 )
 MSG_NUMERO_NAO_BATE = (
     "⚠️ O número deste Telegram ({numero}) *não está no cadastro da BWS*.\n\n"
@@ -147,7 +161,7 @@ MSG_CPF_NAO_CADASTRA = (
     "confirmado pelo próprio Telegram — não pelo CPF.\n\n"
     "Toque em *📱 Compartilhar meu número*. Se o número deste Telegram não for o "
     "do seu cadastro na empresa, peça ao *DP* para atualizar o seu telefone."
-)
+) + DICA_BOTAO
 MSG_INDISPONIVEL = (
     "⚠️ Sistema temporariamente indisponível para consulta.\n"
     "Tente novamente em alguns minutos, por favor."
@@ -519,7 +533,36 @@ def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
 # Envio de mensagens ao Telegram (retry + checagem de status)
 # ---------------------------------------------------------------------------
 
+# O MOTIVO da última recusa do Telegram, para o registro da tela Mensagens
+# (17/11/2026). Antes ele só ia para o log do servidor, e a tela dizia "Falhou"
+# sem dizer por quê — o dono perguntou e não havia como responder pela tela.
+_ULTIMA_FALHA = threading.local()
+
+
+def _traduzir_falha_tg(status, texto):
+    t = (texto or "").lower()
+    if status == 403 and "blocked" in t:
+        return "a pessoa bloqueou o robô da BWS no Telegram (ela precisa desbloquear e tocar em Iniciar)"
+    if status == 403 and "deactivated" in t:
+        return "a conta do Telegram da pessoa foi apagada"
+    if status == 403:
+        return f"o Telegram recusou a entrega (HTTP 403): {texto[:160]}"
+    if status == 400 and "chat not found" in t:
+        return "o Telegram não acha esta conversa: o cadastro aponta para um chat que não existe mais"
+    if status == 400 and "too long" in t:
+        return "mensagem longa demais para o Telegram"
+    if status == 429:
+        return "o Telegram pediu para esperar (excesso de mensagens)"
+    return f"o Telegram respondeu HTTP {status}: {(texto or '')[:160]}"
+
+
+def motivo_da_ultima_falha():
+    """O motivo da última falha de envio NESTA linha de execução, ou ""."""
+    return getattr(_ULTIMA_FALHA, "motivo", "")
+
+
 def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
+    _ULTIMA_FALHA.motivo = ""
     payload = {
         "chat_id": chat_id,
         "text": texto,
@@ -544,6 +587,9 @@ def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
                 return True
             print(f"[telegram_bot] sendMessage HTTP {r.status_code}: "
                   f"{r.text[:300]}")
+            _ULTIMA_FALHA.motivo = _traduzir_falha_tg(r.status_code, r.text)
+            if r.status_code == 403 or (r.status_code == 400 and "chat not found" in r.text.lower()):
+                return False      # recusa definitiva: insistir não muda nada
             if (r.status_code == 400 and payload.get("parse_mode")
                     and "parse" in r.text.lower()):
                 # Markdown desbalanceado na mensagem (ex.: * ou [ sem par):
@@ -557,16 +603,24 @@ def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
                 time.sleep(1 + tentativa)
         except requests.RequestException as e:
             print(f"[telegram_bot] Erro de rede sendMessage: {e}")
+            _ULTIMA_FALHA.motivo = f"erro de rede ao falar com o Telegram: {str(e)[:120]}"
             time.sleep(1 + tentativa)
     return False
 
 
 def _teclado_contato():
+    # ⚑ 23/11/2026: `is_persistent` mantém o botão à vista mesmo quando a
+    # pessoa abre o teclado para digitar (antes ele sumia atrás do ícone ⌨️ e
+    # quem não conhecia o ícone achava que não havia botão). E `one_time_keyboard`
+    # saiu: escondia o botão depois do primeiro toque — se o número não batia,
+    # a pessoa ficava sem ele para tentar de novo. Quem tira o botão é o robô,
+    # com `remover_teclado`, quando o cadastro dá certo.
     return {
         "keyboard": [[{"text": "📱 Compartilhar meu número",
                        "request_contact": True}]],
         "resize_keyboard": True,
-        "one_time_keyboard": True,
+        "is_persistent": True,
+        "input_field_placeholder": "Toque em 📱 Compartilhar meu número",
     }
 
 
@@ -893,7 +947,7 @@ def _abrir_convite(chat_id, codigo, nome_tg):
     _tg_enviar(chat_id,
                f"👋 Olá, *{_primeiro_nome(convite.get('nome'), nome_tg)}*! Falta só um passo para "
                "receber os avisos da BWS por aqui.\n\nToque no botão abaixo para confirmar o seu "
-               "número de telefone.", teclado=_teclado_contato())
+               "número de telefone." + DICA_BOTAO, teclado=_teclado_contato())
     return jsonify({"ok": True})
 
 
@@ -1411,7 +1465,7 @@ def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
                 time.sleep(espera)
             elif 400 <= r.status_code < 500:
                 # erro definitivo (ex.: chat bloqueou o bot, formato inválido)
-                return False, r.text[:300]
+                return False, _traduzir_falha_tg(r.status_code, r.text)
             else:
                 time.sleep(1 + tentativa)
         except requests.RequestException as e:

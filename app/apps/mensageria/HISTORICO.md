@@ -7,6 +7,335 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## ⚑ 23/11/2026 — O MANOEL PAROU DE RECEBER (telefone sem DDD), O BOTÃO QUE "NÃO APARECE" E O ID EDITÁVEL NA FICHA
+
+Quatro pedidos do dono numa mensagem só, todos feitos.
+
+### 1. O bug: quem tinha telefone sem DDD foi deixado de fora da migração
+
+**Ele, com o diagnóstico certo:** *"Essa pessoa (…) anteriormente recebia
+mensagens do telegram. Atualmente, depois de alguma atualização do mensageria,
+deixou de receber. Vi que o telefone dela no cadastro de pessoas estava sem o
+DDD. Acho que isso desincronizou alguma coisa."*
+
+**A causa:** o `migrar_planilha` (14/11) cruzava a aba TelegramID só com a
+`pessoas_elegiveis`, que exige telefone completo — é a régua do CONVITE, que
+vai por WhatsApp. Quem tinha telefone sem DDD não estava nessa lista, então a
+linha dele na planilha caiu em "fora" **mesmo com o CPF batendo**, não foi
+trazida, e depois da migração o robô e os envios só olham o ERP. A pessoa
+sumiu. Não verifiquei no banco de produção quantos foram (o relatório da
+migração está no parâmetro `telegram.relatorio_migracao`, lista "fora").
+
+**O conserto:**
+- **Pelo CPF, a pessoa é achada com qualquer telefone** (a nova
+  `pessoas_sem_telefone_completo`). CPF digitado no robô continua NÃO
+  cadastrando — a regra rígida de 14/11 não mudou; o CPF só identifica na
+  migração e no DP.
+- **Pelo telefone, o número sem DDD do cadastro vale como FINAL do número que
+  o Telegram confirmou**, com e sem o nono dígito (`final_bate`), e **só se for
+  de uma pessoa**. Dois cadastros com o mesmo final = ninguém. Isso vale no
+  botão 📱 do robô, no envio pelo telefone do cadastro (`chat_id_de`) e na
+  trava de desligados (quem está sem DDD e ativo não é barrado).
+- **"Migrar de novo" ficou seguro, e é ele que traz o Manoel de volta.** Antes,
+  rodar de novo REATIVAVA o que alguém tinha desligado na tela, e — pior — se a
+  pessoa tinha trocado de conta do Telegram depois, a conta velha da planilha
+  voltava e DESLIGAVA a nova. Agora só entra quem ainda não está no ERP
+  (contagem "já estavam").
+- **O relatório da migração na tela nunca mostrou as listas**: lia
+  `divergentes`, `telefone` e `detalhe`, chaves que o relatório não tem.
+  Corrigido; agora aparecem "telefone diferente ou sem DDD" e "fora do ERP".
+
+**De passagem, um buraco que já existia:** a trava de desligados perguntava
+primeiro "está ativa?" pela caixinha `situacao`. Quem estava ATIVO com data de
+saída vencida (a janela antes da virada do dia) e TINHA telefone era achado
+ali e escapava da trava. Agora "ativa" exclui saída vencida (`_saida_vencida`).
+A suíte pegou isto quando a busca por CPF ficou mais larga.
+
+### 2. O botão "Compartilhar meu número" que não aparece
+
+As mensagens que ele recebeu eram **encaminhadas** pelo Wilson — e mensagem
+encaminhada nunca leva o botão. Isso explica o que ele viu, mas não garante
+que o Manoel tenha visto o botão. Outros dois motivos reais: o Telegram recolhe
+o botão atrás do ícone ⌨️ quando a pessoa abre o teclado, e no computador o
+compartilhar número não funciona.
+
+- Teclado com `is_persistent` (fica à vista) e sem `one_time_keyboard` (que
+  escondia o botão depois do primeiro toque — quem tinha o número recusado
+  ficava sem ele). O robô continua tirando o botão quando o cadastro dá certo.
+- `DICA_BOTAO` em toda mensagem que pede o botão: o ícone ⌨️ e "só no celular".
+- O texto PADRÃO do convite por WhatsApp ganhou "faça isso no celular". ⚠️ Se o
+  texto foi personalizado na tela, a mudança não aparece — o personalizado vale.
+
+### 3. A ficha abre por cima, em vez de levar ao Pessoal
+
+Ele: *"dentro de mensagens quando pesquiso alguém e quero abrir o cadastro da
+pessoa, ele remete pra aba pessoal ao invés de simplesmente abrir o modal."*
+O nome e o "ficha" da aba Cadastro do Telegram abrem a ficha única
+(`/erp/ponto/pessoa/<id>`) numa janela por cima. Quem não tem `ver_ponto`
+continua indo à tela de Colaboradores.
+
+### 4. O ID do Telegram na ficha, visível e editável
+
+Ele: *"gostaria de poder ver esse ID e, se tiver sentido, alterar ele."*
+
+- O ID aparece SEMPRE na ficha (antes, só quando havia cadastro) — "nenhum"
+  quando não há.
+- "trocar"/"informar", para quem tem `configurar_mensagens` (hoje só o
+  Administrador — a mesma alçada do "desligar" da aba Cadastro do Telegram).
+  Rota `POST /erp/api/mensagens/pessoa/<id>/telegram`, em duas passadas.
+- **O ID é conferido no Telegram (`getChat`) antes de gravar**, e a tela mostra
+  de quem é a conta e pede o "é ela". Um número digitado errado ligaria a
+  pessoa à conversa de outra — e por ali sai contracheque. Se o Telegram não
+  conhece a conversa, a pessoa nunca abriu o robô, e ligar não adiantaria:
+  recusa dizendo isso. ID que já é de outra pessoa ativa: recusa, nomeando.
+- **Entra SEM número confirmado** (origem `FICHA`): no próximo /start o robô
+  pede o número e confere com o cadastro, como sempre. Apagar o ID desliga.
+- A fila do DP ganhou a coluna "ID do Telegram" — é de onde se tira o ID de
+  quem tentou se cadastrar.
+
+### 5. (mesmo dia, depois de publicado) A aba Enviadas diz PARA QUEM foi
+
+Ele: *"não aparece o nome da pessoa para a qual a gente está mandando aquela
+mensagem. Era interessante que aparecesse e esse nome fosse clicável e abrisse
+o cadastro."* A coluna "Para" mostra o nome acima do número; o nome abre a
+ficha por cima (a mesma janela do item 3). Quem dá o nome é a `Pessoas` do
+Painel (`painel.envios_com_pessoa`), para as duas abas não discordarem. A busca
+com letras passou a achar pelo nome também. Custo: 4 leituras do banco por
+carga da aba, nenhuma ida à internet. Número que não é de ninguém do ERP
+continua só com o número.
+
+### ⚠️ Arquivo compartilhado tocado
+
+`erp_base.html` (o bloco `mensagensDaPessoa` e a nova `trocarIdDoTelegram`) —
+registrado também no `erp/HISTORICO.md`.
+
+### O que está pendente AGORA (pelo dono)
+1. **Publicar** (espera o "pode").
+2. Depois de publicar: **Mensagens › Convite e migração › Migrar de novo.** Traz
+   de volta quem ficou de fora pelo telefone sem DDD (o Manoel entre eles), sem
+   mexer em quem já está. Alternativa para um caso só: o ID na ficha.
+3. O DP completar o DDD de quem aparece como "telefone incompleto" ou
+   "número diferente".
+
+---
+
+## ⚑ 17/11/2026 — O AVISO NÃO VAI MAIS PARA QUEM SAIU ONTEM (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi na mensageria vindo de outra área.** Um arquivo, uma consulta:
+`telegram_cadastro.py` › `desligado_da_empresa`.
+
+**O que mudou:** o bloqueio de mensagem para quem saiu passou a barrar também
+por **data de saída vencida**, não só pela caixinha `situacao` do cadastro.
+
+**Por que, e é uma janela de horas que ninguém veria:** no mesmo dia o ERP
+ganhou uma "virada do dia" que marca como desligado quem tem data de saída
+vencida (decisão dele: *"o ideal é cortar tudo, porque aí corre o risco de a
+gente esquecer"*). Ela roda na **primeira requisição do ERP** de cada dia. Mas
+o resumo da manhã por WhatsApp é disparado pela **rotina do ponto**, na
+primeira batida depois das 6h — **quase sempre ANTES de alguém do escritório
+abrir o ERP**. Nessa janela a caixinha ainda dizia ATIVO, e quem saiu ontem
+receberia o aviso da empresa.
+
+**⚠️ A régua é "anterior a hoje", igual à do resto do sistema:** quem sai HOJE
+ainda trabalha hoje e **continua recebendo** os avisos do dia. Não é detalhe —
+são justamente os avisos de que ela precisa no último dia.
+
+**O que NÃO mudou:** o robô **respondendo** a quem pede continua funcionando
+para quem saiu (o contracheque pelo Telegram sai por outro caminho,
+`telegram_bot._tg_enviar`). Essa separação é o que faz o bloqueio não virar um
+problema novo, e ela segue de pé — ele reforçou isso de novo hoje: *"se ela
+precisar de um contracheque, alguma coisa, ela solicita ao DP e o DP manda."*
+
+**Teste:** em `tests/test_virada_do_dia_dos_desligamentos_banco.py` (ficou lá
+porque a história é a mesma), dois casos: o aviso barrado para quem saiu ontem
+**com a caixinha ainda em ATIVO**, e o aviso seguindo para quem sai hoje.
+
+---
+
+## ⚑ 17/11/2026 — A GESTÃO DOS CADASTROS, reconstruída (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi na mensageria vindo de outra área.** Arquivos tocados:
+`telegram_cadastro.py`, `gestao.py` e `templates/mensagens.html`. Mais
+`tests/test_mensageria_telegram_banco.py` (10 casos novos).
+
+**O que ele disse, olhando a aba "Cadastro do Telegram" com as 49 pessoas
+importadas:**
+
+> *"Aqui está dizendo a data do cadastro, mas não aparece, por exemplo, o ID do
+> Telegram. Por que que não aparece aqui nessas informações? Até para a gente
+> comparar, de repente se der algum problema."*
+
+> *"Tem uma pessoa aqui que está dizendo que não está recebendo mensagens. Aí
+> eu não sei o que é que está acontecendo."*
+
+> *"A tela, eu estou achando que está meio poluída, porque está misturando o
+> cadastro com o convite pelo WhatsApp. Aí tem a migração da planilha, está
+> meio bagunçado. E assim, poucos filtros, pouca informação, pouca correlação
+> com o cadastro de colaboradores do ERP. Tem que estar mais integrado isso
+> aqui para entender. Eu preciso ter alguma gestão e compreender pessoas que
+> estão cadastradas, não estão cadastradas, estão com problema. Melhorou a
+> parte do painel e tudo, mas a gestão dos cadastros está pobre."*
+
+**Ele estava certo nos três, e a causa é a mesma:** a tela tinha todos os
+PEDAÇOS (tem Telegram? quantas mensagens falharam? o telefone bate?) e deixava
+a CONCLUSÃO para quem olhava. Pedaço é dado; gestão é conclusão.
+
+### O que mudou
+
+| Antes | Agora |
+|---|---|
+| Uma página com 6 blocos: migração, totais, fila do DP, convite (config + texto), lista, sem telefone, a conferir | **Duas abas.** "Cadastro do Telegram" = gestão de todo dia. **"Convite e migração"** = o que se ajusta uma vez |
+| O ID do Telegram não subia para a tela | Aparece na lista e em "a conferir", e **é buscável** |
+| A lista dava pedaços | **Coluna "Recebe?"** com veredito em português E o que fazer |
+| Abria filtrada em "sem Telegram e com mensagem que não chegou" | Abre em **Todos**, com 8 recortes, cada um com a sua contagem ao lado |
+| Sem obra, sem cargo | **Obra e cargo do cadastro do ERP**, e os dois são filtro. Link "ficha" abre a pessoa em Pessoal |
+| Quem não tem telefone ficava numa tabela no pé | **Entra na lista**, com veredito próprio — é quem nunca vai receber nada |
+| Tabela "sem telefone" separada | Virou o filtro "Sem telefone no cadastro" |
+
+**Os vereditos** (`DIAGNOSTICOS`, em `telegram_cadastro.py`):
+
+- **Recebe** — tem Telegram ligado.
+- **Recebe (número diferente)** — chega (o sistema acha pelo CPF), mas o número
+  confirmado no Telegram não é o do cadastro. ⚑ Dizer "não recebe" aqui seria
+  mentira; dizer só "recebe" esconderia trabalho do DP.
+- **Não recebe: sem Telegram** — pode ser convidada.
+- **Não recebe: sem telefone no cadastro** / **telefone incompleto** — o DP
+  acerta o cadastro ANTES; convidar não resolve, porque o convite vai por
+  WhatsApp.
+
+### Duas decisões de desenho que vale não desfazer
+
+1. **`pessoas_elegiveis` e `pessoas_do_erp` são funções diferentes, de
+   propósito.** A primeira responde "a quem o sistema PODE mandar convite?" —
+   e exige telefone, porque o convite é por WhatsApp; ela é usada pelo envio e
+   pelo robô. A segunda responde "quem a empresa tem, e como cada um está?".
+   Juntar as duas faria o sistema tentar convidar quem não tem como receber, ou
+   esconder da gestão exatamente quem mais precisa de atenção.
+2. **Os números do cabeçalho são os filtros.** Tem teste conferindo que cada
+   contagem bate com a lista que ela abre — número que não bate com a tela é
+   pior que número nenhum.
+
+### O teste de envio passou a aceitar o ID do Telegram
+
+Ele, na mesma conversa: *"quando eu boto o Telegram, o canal, fica até
+incompatível a digitação do ID. (…) Eu gostaria de poder botar também o ID.
+Tipo assim, você botar o ID ou o telefone, porque fica mais uma opção, mais
+direta de teste."* Natural: ele acabou de ganhar a coluna do ID na lista, então
+o caminho é copiar de lá e colar no teste.
+
+**O "incompatível a digitação" era defeito meu:** o campo se chamava
+`telefone`, e o `erp_base.html` põe máscara de telefone pelo NOME do campo — a
+máscara brigava com a digitação do ID. Agora o campo leva `data-sem-mascara`.
+
+**⚑ COMO O SISTEMA SABE QUAL É QUAL, e é a parte que erraria em silêncio:** um
+ID do Telegram tem 9 ou 10 dígitos e um telefone com DDD tem 10 ou 11 — eles
+**se sobrepõem**. Contar dígitos mandaria mensagem para o lugar errado sem
+avisar. Então o sistema **procura o valor entre os IDs cadastrados**: achou, é
+ID (e a resposta diz de quem); não achou, é telefone. ID de grupo é negativo e
+aí não há ambiguidade nenhuma. No WhatsApp o ID não vale — ali ele não quer
+dizer nada.
+
+**E a resposta diz para onde foi** ("Teste enviado para o ID 123456 (Bia
+Rocha)"), que é a pergunta que o teste existe para responder. Um campo só, não
+dois lado a lado: a pessoa não escolhe caminho, cola o que tem na mão.
+
+### ⚑ A TRAVA DE QUEM SAIU DA EMPRESA — ele decidiu, e está feita
+
+**Ele voltou ao assunto e fechou a decisão:** *"essa correlação entre o ERP e as
+pessoas é fundamental, tendo em vista a questão do bloqueio de envio de
+mensagens para as pessoas desligadas. Por isso que tem que estar tudo
+correlacionado."*
+
+**O que passou a valer:** com a trava ligada (e ela **nasce ligada**), nenhum
+aviso do sistema sai para quem está DESLIGADO no cadastro de colaboradores —
+nem por Telegram nem por WhatsApp. A mensagem não sai e fica no registro como
+**BARRADO**, com o nome de quem foi e a data da saída. Nada em silêncio.
+
+**⚑ ONDE A TRAVA MORA, e por que ali:** em `notificador.notificar` e nos dois
+atalhos (`enviar_telegram`, `enviar_whatsapp`). São **sete** módulos chamando o
+notificador — ERP, ponto, Análise de SPs, BaixaBradesco, ProcessarNovaSP,
+ValidaSP e o bot. Trava espalhada por sete lugares é trava que um deles
+esquece.
+
+**⚠️ O QUE ELA NÃO BARRA, E ISSO RESOLVE A RESSALVA QUE EU TINHA LEVANTADO:** o
+robô **respondendo** a quem pede. O contracheque pelo Telegram sai por
+`telegram_bot._tg_enviar`, que **não passa pelo notificador** — então quem
+acabou de sair continua conseguindo pedir o último contracheque. A trava barra
+o que a EMPRESA MANDA; não barra a pessoa procurando a empresa. Os dois pedidos
+dele (bloquear, e não deixar a pessoa sem o contracheque) caem em lados
+diferentes dessa linha, e por isso não há conflito.
+
+**A ordem das perguntas é o que evita barrar quem não devia**, e é a parte com
+mais teste:
+
+1. Esta pessoa está **ativa em algum lugar** (colaborador não desligado OU
+   operador do ERP ativo)? Se sim, **não barra**. Cobre o parceiro da obra e o
+   contador (operam o sistema e não são colaboradores) e o **recontratado** cujo
+   vínculo antigo ficou na tabela.
+2. Só então: existe colaborador **DESLIGADO** com este CPF ou telefone? Barra.
+3. Não achou ninguém? **Não barra.** Fornecedor, contabilidade, número que não é
+   de colaborador — barrar o desconhecido fecharia metade dos avisos.
+
+**A chave está na tela** (Mensagens › Tipos e canais › "Quem saiu da empresa"),
+para o dia em que ele precisar avisar alguém que já saiu, sem esperar código
+novo. Desligar pede confirmação, e a tela avisa em vermelho enquanto estiver
+desligada.
+
+### ⚑ A FICHA DA PESSOA PASSOU A RESPONDER "POR QUE NÃO RECEBE?"
+
+Ele: *"a partir do cadastro da pessoa, a gente conseguir ver as mensagens para
+aquela pessoa. Não sei se vai clicar no canto e abrir alguma coisa. Porque tem
+uma determinada pessoa que está cadastrada e ele está relatando que não está
+recebendo mensagem. E eu não consigo nem entender, a princípio. (…) Precisa ter
+um ambiente."*
+
+**O bloco já existia** — aba **Mensagens** na ficha da pessoa, em Pessoal, e na
+ficha única do ponto, o mesmo código no `erp_base.html`. Ele não achou, e
+achando não resolveria, por três buracos:
+
+1. **O motivo estava no banco e não na tela.** O sistema já guardava, em
+   português, por que a mensagem não chegou — *"a pessoa bloqueou o robô da BWS
+   no Telegram (ela precisa desbloquear e tocar em Iniciar)"*, *"o Telegram não
+   acha esta conversa"*. A coluna mostrava o TEXTO da mensagem e **não o
+   `detalhe`**. A resposta que ele procurava estava gravada e escondida. **É o
+   conserto mais importante desta rodada.**
+2. **Não havia veredito.** A ficha dava pedaços. Agora conclui, com o **mesmo**
+   `diagnosticar()` da tela de gestão — há teste provando que as duas nunca
+   discordam.
+3. **Não havia como testar na hora.** Agora tem **"Mandar um teste agora"**: em
+   vez de deduzir pelo histórico, manda uma e mostra o que o Telegram
+   respondeu. Usa o mesmo endereço do teste da tela Mensagens, não um segundo
+   caminho de enviar.
+
+Mais o **ID do Telegram** e o número confirmado, na própria ficha.
+
+### ⚠️ A pergunta dele que precisa ficar registrada
+
+> *"Eles são colaboradores, né? Se não for colaborador, ele desliga automático,
+> né?"*
+
+**O CADASTRO não se desliga sozinho — mas O ENVIO passou a ser barrado**, e são
+coisas diferentes que vale não confundir:
+
+| | O que acontece |
+|---|---|
+| **O cadastro** (a linha em `telegram_cadastros`) | continua ativo. Quem saiu cai em "Cadastros a conferir", com um botão de desligar. **Isto é de propósito:** é esse cadastro que deixa a pessoa pedir o último contracheque ao robô |
+| **O envio** (o que a empresa manda) | **barrado**, desde a decisão dele de 17/11 — ver a seção da trava, acima |
+
+Quem é desligado da empresa sai da lista de gestão, mas o Telegram dela
+continua ligado e ela cai em **"Cadastros a conferir"**, com um botão de
+desligar.
+
+O motivo de não ser automático: **quem acabou de sair ainda costuma precisar do
+último contracheque pelo robô.** Cortar o Telegram no momento do desligamento
+tiraria isso dela — e o robô entrega contracheque a quem pede, não é aviso que
+a empresa manda. A tela agora explica isso em voz alta, no próprio cartão.
+
+Se ele decidir que quer automático, é uma mudança pequena, **mas é decisão
+dele** e tem esse custo junto.
+
+---
+
 ## Como esta memória nasceu — 05/10/2026
 
 O dono abriu um chat para estas aplicações e pediu duas coisas:
@@ -35,6 +364,14 @@ registro de quando cada coisa foi escrita nem por quê** além dos comentários
 no próprio código.
 
 ---
+
+## 17/11/2026 — "Falhou" passa a dizer POR QUÊ
+
+O dono viu dois avisos da baixa Bradesco como "Falhou" no Telegram (13/11 e 16/11) e perguntou o motivo. A tela não
+sabia: o robô recebia a resposta do Telegram, escrevia só no log do servidor e mandava "falha no envio" ao registro.
+Agora `_tg_enviar` guarda a recusa traduzida (bloqueou o robô, conta apagada, conversa que não existe mais, excesso de
+mensagens) e o notificador a anota na coluna de detalhe. Recusa definitiva (403, chat não encontrado) não é mais
+repetida três vezes. "Sem destinatário" continua sendo outra coisa: a pessoa não tem cadastro.
 
 ## 14/11/2026 (tarde) — REGRA RÍGIDA, FIM DAS PLANILHAS, PAINEL E A FICHA DA PESSOA
 

@@ -84,6 +84,46 @@ def importar_pipefy(s: Session, parametros: dict[str, Any], andamento) -> dict[s
 # ---------------------------------------------------------------------------
 # Trazer do Pipefy o cadastro das pessoas
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# OS DADOS, DIRETO DA PLANILHA — sem card (17/11/2026)
+#
+# Ele: *"mas por que rodar com o card dela se quero que puxe da planilha?"*
+# O card servia para achar a pessoa e baixar os documentos; a planilha tem o
+# CPF e acha sozinha. Duas portas: DADOS vêm daqui, DOCUMENTOS vêm do Pipefy.
+#
+# Vai para a fila porque a planilha tem 3.600 linhas e a leitura vai ao
+# Google: num clique, seguraria uma das quatro linhas de atendimento.
+# ---------------------------------------------------------------------------
+def importar_cadastro_planilha(s: Session, parametros: dict[str, Any],
+                               andamento) -> dict[str, Any]:
+    from app.apps.erp.core.importadores import planilha_dp as svc
+
+    gravar = bool(parametros.get("gravar"))
+    andamento(0, 1, "Lendo a planilha “Dados Documentos”…")
+    rel = svc.importar(s, _usuario(s, parametros), gravar=gravar,
+                       cpfs=parametros.get("cpfs"),
+                       criar=bool(parametros.get("criar")),
+                       so_estes=bool(parametros.get("so_estes")))
+    if gravar:
+        s.commit()
+    andamento(1, 1, "Terminado.")
+    erro = (rel.get("planilha") or {}).get("erro")
+    if erro:
+        resumo = f"NÃO consegui ler a planilha: {erro[:160]}"
+    else:
+        verbo = "atualizadas" if gravar else "mudariam"
+        verbo_novo = "cadastradas" if gravar else "nasceriam"
+        resumo = (f"{rel['pessoas_na_planilha']} pessoa(s) na planilha · "
+                  f"{len(rel['atualizadas'])} {verbo} · "
+                  f"{len(rel.get('criadas') or [])} {verbo_novo} · "
+                  f"{len(rel['sem_cadastro'])} de fora · "
+                  + (f"{len(rel.get('apagadas') or [])} "
+                     + ("apagada(s)" if gravar else "seriam apagadas") + " · "
+                     if rel.get("limpou") else "")
+                  + f"{len(rel['nao_entendi'])} pendência(s).")
+    return {"relatorio": rel, "resumo": resumo}
+
+
 def importar_cadastro_pipefy(s: Session, parametros: dict[str, Any],
                              andamento) -> dict[str, Any]:
     """Os documentos das pessoas que ficaram no Pipefy.
@@ -327,10 +367,41 @@ def equalizar_fornecedores(s: Session, parametros: dict[str, Any],
     }
 
 
+# ---------------------------------------------------------------------------
+# A rodada diária do agente de DP (20/11/2026)
+# ---------------------------------------------------------------------------
+def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str, Any]:
+    """Roda o que está ligado no agente de DP — o mesmo que o botão da tela.
+    Fora da requisição: a leitura da caixa de e-mail pode demorar, e quem
+    abriu o ERP de manhã não pode esperar por ela."""
+    from app.apps.erp.core import agente_dp, obra_atual
+    # A obra atual vem ANTES: o vigia usa ela para avisar da transferência, e
+    # os avisos do portal (férias, experiência) chegam a quem cuida da obra
+    # onde a pessoa está batendo ponto de verdade.
+    obra = obra_atual.atualizar(s)
+    # A OBRA DO MÊS (20/11/2026): no começo do mês, a obra de cadastro passa
+    # sozinha a ser a obra em que a pessoa mais trabalhou no mês que acabou.
+    from app.apps.erp.core import obra_do_mes
+    obra["obra_do_mes"] = obra_do_mes.se_preciso(s)
+    # Passada a experiência, o contrato vira indeterminado sozinho (20/11/2026).
+    from app.apps.erp.core import pessoal_experiencia
+    obra["contratos_indeterminados"] = pessoal_experiencia.virar_indeterminado(s)
+    s.commit()
+    from app.apps.erp.core import ponte_do_ponto
+    ponte = ponte_do_ponto.trazer(s)
+    s.commit()
+    feito = agente_dp.rodar(s, None)
+    s.commit()
+    return {"obra_atual": obra, "ponte_do_ponto": ponte, "vigia": feito.get("vigia"),
+            "ligadas": feito.get("rotinas_ligadas")}
+
+
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
+    tarefas.registrar("agente_dp_dia", agente_dp_dia)
     tarefas.registrar("importar_pipefy", importar_pipefy)
     tarefas.registrar("importar_cadastro_pipefy", importar_cadastro_pipefy)
+    tarefas.registrar("importar_cadastro_planilha", importar_cadastro_planilha)
     tarefas.registrar("sincronizar_agenda", sincronizar_agenda)
     tarefas.registrar("emitir_nota", emitir_nota)
     tarefas.registrar("texto_dos_documentos", texto_dos_documentos)

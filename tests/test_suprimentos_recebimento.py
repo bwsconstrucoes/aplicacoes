@@ -41,7 +41,10 @@ def _cenario(quantidade="100", recebida="0", status_pedido=SP.AUTORIZADO):
                           status=status_pedido, criado_por=1)
     linha = PedidoItem(id=60, pedido_id=50, suprimento_item_id=7, numero=1,
                        quantidade=Decimal(quantidade), preco_unitario=Decimal("38"))
-    s = SessaoFalsa(OBRA, item, pedido, linha,
+    # A Amanda é da obra 1: desde 20/11/2026 quem está preso a obra só recebe
+    # material das obras dele — sem essa ligação o pedido "não existe" para ela.
+    from app.apps.erp.db.models.cadastros import UsuarioObra
+    s = SessaoFalsa(OBRA, item, pedido, linha, UsuarioObra(usuario_id=5, obra_id=1),
                     Insumo(id=10, codigo="INS-0010", descricao="Vergalhão CA50 12.5mm"),
                     Obra(id=1, codigo="CREPETERRA", nome="Crepeterra"),
                     SuprimentoSolicitacao(id=1, numero="SS-0001", titulo="armadura",

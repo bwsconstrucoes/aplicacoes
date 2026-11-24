@@ -3,6 +3,240 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 23/11/2026 — (feito pelo chat do DP) A ficha da pessoa aceita `?aba=` e `?competencia=`
+
+Uma linha em `templates/ponto/gestao.html` (bloco `ponto_ficha`): a ficha
+única aberta sozinha (`/erp/ponto/pessoa/<id>`) passou a aceitar `?aba=mes` e
+`?competencia=AAAA-MM`. Sem os parâmetros, abre como antes. Quem usa: a janela
+de Atender o desligamento, no ERP, mostra o espelho do mês das faltas por cima
+dela (pedido do dono: *"abrir outro modal com o ponto da pessoa, da mesma
+forma que a gente vê o ponto lá dentro de ponto"*). Detalhe em
+`app/apps/erp/HISTORICO_PESSOAL.md`, 23/11/2026.
+
+## 21/11/2026 — Teste do alerta de batida que quebrava no dia seguinte a feriado
+
+`tests/test_ponto_qr_banco.py::test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`
+falhou em 21/11/2026 também na `main`: ele usava "ontem, dia de semana", e
+ontem foi 20/11 — Consciência Negra, feriado nacional na base. Em feriado a
+escala não prevê batida, e o alerta não diz "qual faltou". **Era defeito do
+teste, não do alerta.** Consertado em duas sessões ao mesmo tempo; ficou a
+versão que usa o calendário de feriados do próprio ponto (`feriados.Calendario`,
+por obra). Só o teste mudou.
+
+## ⚑ 17/11/2026 — A FICHA ÚNICA VIROU "AMBIENTE DA PESSOA", COM TRÊS ÁREAS (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi nesta tela vindo de outra área.** Um arquivo: `gestao.html` — a
+fileira de abas da ficha da pessoa e o estilo dela.
+
+**O desenho é dele, e vale ler nas palavras dele:**
+
+> *"Imagina que eu cliquei no colaborador. Lá em cima fica o nome dela e ali
+> tem uma espécie de botão que direciona para a parte do ponto. Tipo assim, tem
+> o cadastro pessoal, aí tem a outra, aí eu clico ponto. Aí quando eu clico
+> ponto, abre toda a parte do ponto, as configurações, como se fosse a tela
+> abrindo lá do ponto. E quando eu clico de novo no cadastro pessoal, abre as
+> telas relacionadas ao cadastro. (…) A parte de mensagens a gente tem como
+> colocar dentro também. (…) Porque às vezes eu estou olhando uma determinada
+> pessoa e eu não preciso sair para ir para outra tela, para pesquisar o nome
+> dela de novo."*
+
+**O problema que isso resolve:** a ficha tinha **nove abas numa fileira só**, e
+elas não diziam o que pertencia a quê — "Cadastro" e "Configuração do ponto"
+ficavam lado a lado sendo coisas de mundos diferentes.
+
+**Agora são dois níveis:** a fileira de cima diz o ASSUNTO —
+**👤 Cadastro pessoal · 🕐 Ponto · 💬 Mensagens** — e a de baixo, o que ver
+dentro dele:
+
+| Área | Abas |
+|---|---|
+| 👤 Cadastro pessoal | Cadastro · Pagamentos |
+| 🕐 Ponto | Dia · Espelho do mês · Pedidos · Aparelhos · Configuração do ponto · Conferência do rosto |
+| 💬 Mensagens | Telegram e mensagens |
+
+**⚠️ NADA MUDOU do que cada painel faz nem de permissão.** A mesma aba continua
+aparecendo para quem já a enxergava, e área sem aba nenhuma não aparece (quem
+não vê pessoal não ganha uma área vazia). Trocar de área cai na primeira aba
+dela. O que mudou é o agrupamento.
+
+Conferido no navegador: as três áreas, a troca entre elas e a volta, sem erro
+de JavaScript.
+
+---
+
+## ⚠️ 17/11/2026 — QUEM CUMPRE AVISO PRÉVIO VOLTOU A BATER PONTO (feito pelo chat do ERP/DP)
+
+**Leia isto se a base de pessoas do ponto estiver no cadastro do ERP.**
+
+Horas depois de a base virar o ERP, ele viu: *"pessoas que estavam com último
+dia trabalhado mesmo depois de hoje e estavam na fase Solicitações DP, quando
+ativei o cadastro do ERP foram considerados desligados."*
+
+**Gente cumprindo aviso prévio parou de conseguir bater ponto** — e a jornada
+dela é registro legal do REP-P, que não pode ter buraco.
+
+**A parte que era DESTE módulo:** o ponto tinha duas respostas para a mesma
+pergunta. Com a planilha como base ele **perguntava a data**
+(`r.data_saida < hoje`, em `registro.trechos_sql`); com o cadastro do ERP ele
+apenas **lia `c.situacao`**. O ERP havia gravado "DESLIGADO" ao ver que existia
+data de saída, sem olhar se ela tinha chegado (consertado lá, em
+`erp/core/cadastros/pessoas.py` › `ja_saiu`), e o ponto acreditou.
+
+**O que mudou aqui:** `_SITUACAO_DO_ERP`, em `core/cadastros.py` — a base ERP
+passa a perguntar a data, igual à planilha. Três efeitos:
+
+- quem está em aviso prévio **volta a bater hoje, sem mexer em dado nenhum**;
+- no dia da saída a pessoa sai do ponto **sozinha** — ninguém aperta nada, e
+  nenhuma rotina precisa rodar na hora certa;
+- o bloqueio automático do celular (`desligamentos.py`) passa a cair no dia
+  certo, nem antes nem depois. A régua é a MESMA das duas bases: `<` hoje,
+  porque **a pessoa trabalha o último dia**.
+
+⚠️ **O CASE também desfaz a caixinha errada na leitura:** quem está marcado
+DESLIGADO mas tem data de saída de hoje ou depois é lido como ATIVO. Isso
+existe porque o dado errado está gravado em produção; a migração 109 do ERP
+arruma a coluna. As duas coisas são necessárias — o ERP lê a mesma coluna nas
+listas do Pessoal e na folha, e lá não há CASE nenhum.
+
+**Teste com Postgres de verdade:** `tests/test_aviso_previo_no_ponto_banco.py`
+— quatro casos (aviso prévio, último dia hoje, saiu ontem, sem data), com a
+caixinha errada de propósito.
+
+---
+
+## ⚑ 17/11/2026 — O CADASTRO DO ERP ABRE DENTRO DA FICHA DO PONTO (feito pelo chat do ERP/DP)
+
+**O que mudou nesta tela:** na ficha da pessoa, aba **Cadastro**, o botão
+"✏️ Editar o cadastro completo" **não abre mais outra aba** na tela de Pessoal.
+Abre uma janela em cima desta, com o **mesmo** formulário do ERP.
+
+Pedido do dono: *"quando estou vendo o pessoal pelo ponto e coloco pra abrir o
+cadastro ele remete pra página de pessoal, quando deveria apenas abrir o modal
+correspondente sem necessidade de ir pra outro lado. Os dados de cada um tem
+que estar de fácil acesso e todos correlacionados."*
+
+**Como funciona, e o que NÃO mudou:**
+
+- A janela mostra `/erp/colaboradores/cadastro/<id>` — rota nova no ERP que
+  serve a tela de Colaboradores em **modo embutido**: sem cabeçalho, sem filtro
+  lateral e **sem carregar a lista**. São **3** chamadas de rede (obras, funções
+  e opções do cadastro) contra as 5 da tela inteira.
+- **Gravou lá dentro, a ficha do ponto se atualiza sozinha** (só o painel da
+  pessoa, não a tela toda). Fechou por dentro, a janela de fora fecha.
+- **Dentro da tela de Colaboradores nada mudou:** quando a ficha do ponto está
+  aparecendo DENTRO dela (iframe), o botão continua pedindo a ELA que abra o
+  formulário — ela é a dona do formulário. Caminho antigo, intacto.
+- **Os DOCUMENTOS continuam abrindo em outra aba.** Ler e arquivar papel é
+  trabalho da tela de Pessoal, e aquela janela ainda não sabe aparecer sozinha.
+  Quando souber, cai no mesmo caminho.
+- Fora do alcance de quem abre, a janela responde **"Esta pessoa não está entre
+  as que você acompanha"** — em português, não o JSON técnico que uma API
+  devolveria.
+
+**⚠️ Dívida anotada, não paga:** esta tela já tinha o próprio jeito de aparecer
+"embutida" (o estilo de `.corpo.embutido`, de 13/11), e o ERP ganhou agora um
+segundo (`body.embutido`, em `erp_base.html`). São dois jeitos de dizer a mesma
+coisa. **Não unifiquei** — mexer nesta tela além do pedido não estava
+autorizado. A nota está nos dois lugares do código.
+
+---
+
+## ⚑ 17/11/2026 — TROCAR A BASE DO PONTO ERA DECISÃO NO ESCURO (feito pelo chat do ERP/DP)
+
+**O dono trocou a base do ponto para o cadastro do ERP** (Ponto › Configuração ›
+Geral › "Base de pessoas do ponto") e perguntou, olhando os números do cartão:
+
+> *"Esses são os KPIs, tudo certo né?"*
+
+Com estes números na tela: 616 ativos de 3.667 linhas · 11 afastados · **20 não
+batem pela planilha** · **0 faltam no ERP** · 0 só no ERP · **40 sem obra
+reconhecida**.
+
+**NÃO ESTAVA TUDO CERTO, e a causa é de desenho:** os seis números do cartão são
+**todos calculados sobre a PLANILHA**. Eles descrevem a base que se está
+DEIXANDO, não a que se está PEGANDO. Quem troca a chave olhando só para eles
+troca no escuro.
+
+**O número que mais importa era justamente o enganoso.** "Não batem pela
+planilha: 20" (PJ, pró-labore e a obra ESCRUSSAS) é regra **da planilha**.
+Passando para o ERP, quem não bate sai do **tipo de contrato do cadastro** — a
+mudança de 16/11, logo abaixo nesta memória. **A tela não mostrava o número
+equivalente.** Se o tipo de contrato estiver em branco ou errado, PJ e
+pró-labore **começam a bater ponto**; e batida é registro legal do REP-P,
+encadeada por hash, que não se apaga como se corrige um cadastro.
+
+**E havia um caso que NENHUM dos seis contava:** quem está **ativo na planilha e
+DESLIGADO no ERP**. Essa pessoa simplesmente **para de conseguir bater** no dia
+da virada, e ninguém saberia antes de ela reclamar.
+
+### As três contas que o cartão passou a mostrar (`registro.pelo_erp`)
+
+| Conta | Para que serve |
+|---|---|
+| **Não batem pelo ERP** | comparar com o número da planilha. Vem **menor**? falta tipo de contrato em quem não devia bater. A tela mostra os dois lado a lado e avisa em vermelho quando diferem |
+| **Ativos sem obra no ERP** | "faltam no ERP = 0" garante que a PESSOA existe, não que ela tem OBRA. Sem obra, a batida acontece e cai em conferência, sem cerca |
+| **Ativos na planilha, desligados no ERP** | estes param de bater se a base for o ERP |
+
+**⚑ REUSA `cadastros._nao_bate_do_erp()`, não reimplementa.** É a MESMA regra que
+decide a batida de verdade. Duas cópias divergiriam, e aí a tela diria "pode
+virar" sobre uma conta diferente da que vale na hora de bater.
+
+**Achado por teste, e vale saber:** quando a cópia da planilha não existe no
+banco, `retrato()` devolvia antes de calcular — então as contas do ERP ficavam
+de fora **exatamente quando são a única fonte de informação** (sem cópia, a base
+É o ERP). Agora vão nos dois caminhos. E a terceira conta devolve `None`, não
+zero, sem a planilha para comparar: zero afirmaria "não há ninguém nessa
+situação", o que não se pode dizer sem ter com o que comparar.
+
+**⚠️ Pendente do dono:** ele trocou a base para o ERP **durante a manhã, com o
+pessoal batendo**. Recomendei voltar para a planilha até conferir as três contas
+— a troca é um clique, e a cópia da planilha estava fresca (12:02 do mesmo dia).
+Quem pegar esta área: conferir em que base o ponto está antes de qualquer coisa.
+
+## 17/11/2026 — PEDIR ACESSO AO PORTAL pelo "Meu ponto" (feito pelo chat do ERP/DP)
+
+⚠️ **Mexi no ponto vindo de outra área.** Arquivos novos/tocados:
+`core/portal_do_erp.py` (novo), `app_colaborador.py` (rota
+`POST /ponto/app/api/portal/pedir` e o estado em `/app/api/eu`),
+`app_obra.py` (o estado em `/app/api/inicio`) e `templates/ponto/app.html`
+(a opção do menu e o diálogo do e-mail).
+
+**Desenho do dono:** *"que tal a partir do ponto eu requerer a liberação do
+acesso ao portal? (…) Ela já tem o cadastro no ponto, e lá pelo ponto ela vai
+informar o e-mail dela, na hora que ela pediu acesso ao portal."*
+
+**O problema.** O acesso ao ERP/portal só nasce com e-mail, e o e-mail da
+gente de obra o sistema **não tem** — ninguém pede e-mail para contratar. O DP
+não tem como adivinhar, então o acesso não nascia. Quem sabe o e-mail é a
+pessoa; e o ponto é o único lugar onde ela já está autenticada de verdade (CPF
++ PIN, com bloqueio por tentativa).
+
+**O que o ponto faz, e o que NÃO faz.** Faz: mostra "Pedir acesso ao portal"
+no menu do celular, pede o e-mail e coloca o pedido na fila, com a obra em que
+a pessoa **bate ponto** (`cadastros.obra_pelo_ponto`, 60 dias; na falta, a do
+cadastro). Mostra o andamento ("esperando a liberação", ou o motivo da recusa),
+e, quando liberado, o atalho para `/erp/portal`. **NÃO faz:** criar usuário do
+ERP, escolher perfil ou mandar convite. A decisão é do ERP, por quem tem
+`gerir_usuarios`, pela porta que já existia.
+
+**⚑ Só no CELULAR DA PESSOA, nunca no aparelho da obra.** No tablet quem está
+na frente da tela é qualquer um da equipe: e-mail digitado ali é e-mail que não
+se sabe de quem.
+
+**A fila mora no ERP** (`public.portal_pedidos_de_acesso`, migração **108 do
+ERP**) e a regra dela em `app/apps/erp/core/auth/pedidos_de_portal.py`. Aqui
+não há SQL dessa tabela, de propósito — duas cópias da mesma regra divergem.
+
+**⚠️ DEPENDE DO BOTÃO DO ERP, não do do ponto.** Enquanto a migração 108 não
+for aplicada ("Aplicar atualizações do banco", nas Configurações do ERP), o
+estado vem `disponivel: false` e **a opção nem aparece no menu**. Ninguém vê
+erro — só não vê o recurso. Foi escolha: errar para o lado de esconder.
+
+**Testes:** `tests/test_ponto_pede_acesso_ao_portal_banco.py` (8 casos, banco
+de verdade) — cobre o pedido pelo celular, a obra vir do ponto e não do
+cadastro, o andamento na tela, o DP ver e não liberar, sem PIN não pedir, e a
+obra sugerida no pedido do portal.
+
 ## 16/11/2026 — quem não bate ponto passa a sair do TIPO DE CONTRATO (feito pelo chat do ERP/DP)
 
 ⚠️ **Mexi em `core/cadastros.py` vindo de outra área.** Está escrito aqui porque
@@ -106,6 +340,199 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 (Administrador, Diretor financeiro, DP). O conteúdo é o bloco `mensagensDaPessoa` do `erp_base.html` — o mesmo
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
+
+## 23/11/2026 — A CENTRAL DE ASSINATURAS, pelo aplicativo do ponto (feita; ver a proposta logo abaixo)
+
+**As decisões dele (23/11):** (1) *"vamos concentrar o aplicativo do ponto para ser o caminho para a coleta dessas
+assinaturas, porque está tudo diretamente associado ao colaborador"*; (2) o termo de compensação: *"o sistema permite
+ser lançado, o DP toma ciência (…) o sistema em seguida cobra a assinatura do termo. (…) se houver alguma
+discordância, o DP vai fazer contato (…) vai poder cancelar aquele lançamento"*; (3) *"faça por aqui mesmo (…) e
+avisa ao chat do DP"* — avisado no mesmo dia (sessão do chat "erp dp").
+
+**O que ficou pronto:**
+- **A pessoa, no "Meu ponto":** cartão "📄 Você tem N documentos para assinar" (vermelho se algum venceu). Abre a lista:
+  os documentos do DP, a folha de ponto dos meses fechados ainda sem assinatura (até 3 meses) e o termo do ponto; e
+  "Já assinados". Assina com o dedo e o PIN dela. Rotas em `app_documentos.py` (novo).
+- **O administrativo (quem já via "Assinaturas da folha"):** item novo "📄 Documentos para assinar" — os papéis do DP da
+  equipe, os vencidos primeiro. Três jeitos: **assinar aqui** (a pessoa, com o dedo e o PIN DELA), **assinou no
+  papel** (foto, 1600 px; o DP valida) e **recusou** (o que houve + duas testemunhas; o DP valida).
+- **O DP, no ERP: Ponto › Assinaturas** (aba nova, depois de "Banco de horas"): esperando validar (aceitar/devolver
+  com o porquê), documentos para assinar (cancelar; o termo de compensação tem "cancelar a compensação"), a folha de
+  ponto do mês (quem falta, por obra), o termo do ponto (quem falta) e os assinados dos últimos 60 dias.
+- **A ficha da pessoa:** área nova "📄 Documentos › Documentos e assinaturas", com o PDF de cada um (o do DP abre
+  pelo Arquivo do ERP; a folha e o termo do ponto, pelo ponto).
+- **O termo de acordo de compensação nasce sozinho** (`core/termo_compensacao.py`): toda compensação de DIA aprovada
+  a partir de 23/11/2026 (não as de horas, nem trocas/permutas) abre UM termo por pessoa, depois que a requisição grava
+  — o recesso de quatro folgas vira um termo só, com os quatro pares no anexo. Prazo: até a primeira folga (no máximo
+  7 dias). **A compensação vale já; o termo é cobrança, não trava.** O texto é o modelo de 22/11 (o documento que ele
+  leu), com a empresa da obra, a pessoa e os pares.
+- **O DP cancela uma compensação JÁ APROVADA** (antes não havia como): só compensação de dia, só o DP, mês aberto, com
+  o porquê (`ocorrencias.cancelar_compensacao`). A folga volta a ser julgada pelo ponto; cancelando todas as do termo
+  aberto, o termo cai junto.
+
+**Onde mexeu fora do ponto (avisado ao chat do DP):** `app/apps/erp/core/termos.py` (assinar pela própria pessoa, a
+origem do termo, as listas por pessoa e o painel do DP) e a **migração 126 do ERP** (`126_termos_origem.sql`:
+`origem`, `origem_ids`, `assinado_pela_pessoa` e o tipo TERMO-COMPENSACAO no Arquivo). 124 e 125 são do chat de
+Suprimentos. **Sem a 126 aplicada, nada cai:** o termo de compensação simplesmente não nasce (fica no log), e o resto
+funciona. E nos testes: `_limpar_documentos_do_erp` na limpeza de `test_ponto_gestao_banco.py` e no `carlos`.
+
+**Decisões minhas, para ele trocar se quiser:**
+- a regra antiga "quem conduz não assina o próprio" continua para quem CONDUZ; a pessoa logada no próprio "Meu ponto"
+  passa a poder assinar os dela (documento do DP e folha de ponto);
+- o portal da obra (web) continua mostrando os documentos do DP — não tirei nada; o aplicativo passou a ser o caminho;
+- a folha sem assinatura não aparece na ficha (aparece em Ponto › Assinaturas): a ficha mostra o que foi assinado;
+- documentos sem obra (a pessoa sem obra no cadastro) só aparecem para a própria pessoa — não há administrativo.
+
+**A conta do custo** (regra de 17/11): o cartão do "Meu ponto" faz UMA chamada a mais por abertura da tela inicial
+(~6 consultas: as folhas dos últimos 3 meses, o termo, os documentos no ERP). A tela do DP conta as folhas sem
+remontar espelho (uma consulta por mês). Nada vai ao Google; o PDF assinado vai ao Arquivo do ERP (uma gravação, a de
+sempre).
+
+**O que ficou de fora:** o aviso por WhatsApp/Telegram de "documento para assinar" (o agente do DP já cobra os termos
+abertos); a ficha de EPI, o contrato e a rescisão como documentos — **a base está pronta, falta o DP gerar cada um**
+(cada documento novo é só um texto e um `termos.abrir`); o PDF do documento assinado para a própria pessoa baixar no
+celular.
+
+**Como foi verificado:** `tests/test_ponto_central_assinaturas_banco.py` (a pessoa assina o dela e não o dos outros; o
+administrativo na tela, no papel e a recusa; o DP devolve e aceita; a folha pela própria pessoa; a tela e a ficha) e
+`tests/test_ponto_termo_compensacao_banco.py` (o recesso vira um termo; cancela uma e o termo fica, cancela as duas e
+ele cai; a compensação de horas não gera termo). **No navegador de verdade:** o "Meu ponto" do João (cartão, lista,
+leitura, assinatura com o dedo), o administrativo (a lista da equipe, o modo papel), a tela do DP e a ficha — sem erro
+no console. **Não exercitado:** o PDF indo ao Arquivo de verdade (nos testes o Drive é dublado).
+
+## 23/11/2026 — a proposta da central de assinaturas (o que ele pediu e o que existia)
+
+**O pedido, resumido nas palavras dele:** vários documentos que o colaborador assina — a folha de ponto todo mês, o
+termo de compensação, a ficha de EPI, o contrato de trabalho, o aviso prévio, a documentação rescisória. Para todos:
+(1) **o administrativo de obra conduz**, porque *"sempre vai ter algum funcionário que não tem muita familiaridade
+com telefone (…) pouco estudo, pouca leitura"*; (2) **a própria pessoa**, pelo acesso do ponto, vê o que tem
+pendente e assina; (3) **o administrativo vê as pendências** dele — as do ponto e as de assinatura; (4) **o DP gere
+no ERP** o que falta, o que foi; (5) **na ficha de cada colaborador**, o histórico e os documentos assinados; (6) o
+documento que precisa de assinatura **gera a pendência sozinho** (ex.: o termo de compensação, ao ser lançado).
+
+**O que já existe, em TRÊS lugares separados** (é o risco de "três portas" de novo):
+1. a folha de ponto — `ponto/core/assinaturas.py` (`ponto.espelho_assinaturas`), no aplicativo do ponto, conduzida;
+2. o termo do ponto — `ponto/core/termo.py` (`ponto.termo_aceites`), no aplicativo, pela pessoa ou conduzido;
+3. o documento do DP — `erp/core/termos.py` (`dp_termos`, migração 117, 20/11, feito pelo chat do DP): aviso
+   prévio e o que vier, na tela / papel com foto / recusa com testemunhas, o DP valida, arquiva no Arquivo; aparece
+   no PORTAL da obra (web), não no aplicativo do ponto.
+
+**A proposta levada a ele** (resposta de 23/11): `dp_termos` vira a porta única dos documentos avulsos; o aplicativo
+do ponto vira o canal (a pessoa e o administrativo); a folha e o termo do ponto continuam com as tabelas deles, mas
+entram nas MESMAS listas. Perguntas em aberto: se o termo de compensação vale antes de assinado; quem constrói
+(atravessa o ERP · Pessoal e DP); se o portal da obra continua sendo caminho.
+
+## 22/11/2026 (domingo) — O RECESSO EM LOTE, no Quadro
+
+**O pedido:** *"pode criar uma tela para o DP lançar o recesso em lote."* (O número de sábados e de horas ele mandou
+ignorar: a tela pergunta na hora.)
+
+**Onde fica:** Ponto › Quadro. O DP monta o quadro (a obra, o filtro de sempre), marca as linhas — vale pelas
+**pessoas** marcadas, não pelos dias, como o "Definir a escala" — e aperta **"Recesso — folgas a compensar…"** (só
+quem aprova afastamento vê). A janela pede até 6 pares "dia de folga → pago com o trabalho em", mais o combinado
+(opcional).
+
+**A prévia antes de gravar**, pessoa por pessoa e par por par: ✓ "folga de 9h00; o dia de pagar precisa render
+9h00", ou ✗ com o porquê — não é dia de trabalho na escala dele, feriado, fora do contrato, mês fechado, já existe
+pedido naquele dia. Avisos (⚠) sem barrar: já há batida no dia da folga; o dia de pagar já é dia de trabalho dele
+(aí só conta o que passar da escala).
+
+**Gravar** = um pedido de compensação de UM dia por pessoa e por par, aprovado na hora com o nome de quem lançou, com
+a descrição "Recesso: <combinado> — folga em DD/MM/AAAA, paga com o trabalho em DD/MM/AAAA". É o mesmo pedido que
+o DP lançaria à mão, com tudo o que a folga paga depois já faz (a falta no sábado não cumprido, a observação na folha).
+Rodar de novo não duplica (o pedido existente barra).
+
+**Regras da janela:** cada dia de pagar serve a uma folga só (hora por hora: um sábado de 9h paga um dia de 9h);
+no máximo 10 pares; um dia não é folga e dia de pagar ao mesmo tempo. A tela manda de 40 em 40 pessoas.
+
+**A conta do custo** (a regra de 17/11): por pessoa e por par, a prévia faz ~12 consultas ao banco (o espelho do dia
+da folga, a escala, o mês fechado, o pedido existente) e a gravação, outras ~25 (a mesma conferência e o pedido com a
+aprovação). 40 pessoas × 4 folgas ≈ 2 mil consultas na prévia e 4 mil na gravação: segundos, não minutos. Nada vai
+ao Google nem ao Pipefy.
+
+**Como foi verificado:** `tests/test_ponto_recesso_lote_banco.py` (a prévia sem gravar, a gravação, o domingo de
+fora, rodar duas vezes sem duplicar, as recusas da janela, o supervisor barrado) e **no navegador de verdade**: o
+Quadro com 2 pessoas marcadas, a janela, a prévia (1 entra e 1 fica de fora para cada um) e a gravação — sem erro
+no console. Sem migração.
+
+**O termo de acordo de compensação** (o modelo que ele pediu "para dar uma olhadinha e pensar") está num documento
+à parte, fora do repositório. **Não está no sistema:** o sistema não guarda nem coleta esse acordo; decidir se ele é
+assinado no papel ou na tela, como o termo do ponto, é dele.
+
+## 21/11/2026 (sábado, noite) — A FOLGA PAGA DEPOIS: a folga fica, a falta cai no sábado que não pagou
+
+**O pedido**, com o recesso de fim de ano em vista (folgar entre o Natal e o Ano Novo, pagar com sábados deste
+ano e do ano que vem): *"o dia que não foi trabalhado fica como folga, compensação a ser paga no futuro (…) na
+folha de ponto aparecer essa informação (…) quando aquele sábado não acontecer, o sistema lança uma falta
+automática dizendo o motivo (…) a de dezembro que o cara não trabalhou, com a informação que era para ser
+compensado, e a do mês posterior com a informação de que não foi compensado (…) e a pessoa assina também junto."*
+
+**Como era:** passado o dia trabalhado sem pagar, a FOLGA virava falta. Com o sábado em janeiro, isso reabria a
+folha de dezembro já fechada, paga e assinada.
+
+**Como ficou** (`core/espelho.py`, `paga_depois`): na compensação de dia em que o dia trabalhado vem DEPOIS da folga:
+- a folga fica **abonada para sempre** no mês dela, com "(a pagar com o trabalho em DD/MM/AAAA)" no dia;
+- passado o sábado, o que ele não pagou é **falta NO SÁBADO**: sem batida = falta do dia inteiro, com o previsto
+  da folga (9h); trabalhou parte = falta parcial do resto. O motivo vai no dia ("Compensação não cumprida — este
+  dia pagaria a folga de DD/MM/AAAA") e no relatório de faltas (coluna nova "Motivo");
+- **"Observações — compensações"** na folha de ponto (a impressa, a do PDF assinado e a tela de assinatura no
+  celular): no mês da folga, o combinado (que não muda depois); no mês do sábado, o que aconteceu. Entram no lacre
+  da folha só quando existem, e o lacre sem elas também vale — senão toda folha com compensação já assinada viraria
+  "substituída" sem nada ter mudado.
+- **Quando o dia trabalhado vem ANTES da folga, nada mudou** (a regra de 29/10). Os dois casos põem a falta no mais
+  tarde dos dois dias, que é o mês ainda aberto.
+- **Fiz sem perguntar, para ele trocar se quiser:** a folga paga depois passa a ser **um pedido por dia de folga**.
+  Antes aceitava "28 a 31/12 pagos pelo sábado X", e aí um sábado não cumprido seria uma falta valendo quatro dias.
+  Trocas e permutas de plantão ficaram de fora da regra nova.
+
+**O que ficou de fora — e é decisão dele:**
+1. **Não há "recesso em lote".** 40 pessoas × 4 dias = 160 pedidos à mão. Oferecido: escolher as pessoas, os dias e
+   os sábados, e o sistema monta os pares, mostra a prévia e grava tudo de uma vez.
+2. **A lei:** compensar fora do mês é banco de horas (CLT art. 59 §5º: acordo individual ESCRITO, até 6 meses; ou
+   convenção). A observação assinada na folha ajuda, mas não é o acordo. Oferecido: um modelo de termo.
+3. **O sábado trabalhado além do devido** (10h para pagar 9h) não vira extra — como já era.
+4. **Quem sai da empresa antes do sábado:** o sábado fica "fora do contrato" e a falta não é lançada. A rescisão
+   precisa olhar as compensações a cumprir (a Conferência do fechamento já lista).
+5. Não há prazo máximo entre a folga e o sábado.
+
+**Como foi verificado:** `tests/test_ponto_folga_paga_depois_banco.py` (o sábado sem batida, com 4h e com 9h; o
+relatório; as observações; a folha impressa; o pedido de vários dias recusado; o lacre antigo) e os 707 testes do
+ponto. **Não exercitado na tela de verdade.** Sem migração.
+
+**Publicado em 21/11/2026** (com o "pode" do dono, junto com a revisão dos testes abaixo) — SEM MIGRAÇÃO. Suíte
+inteira: 12.689 passando.
+
+## 21/11/2026 (sábado) — REVISÃO: os testes do ponto rodados "em outras datas"
+
+**O pedido:** *"pode revisar os testes do ponto"*, depois de três consertos do mesmo tipo no mês.
+
+**Como foi feito**, para quem quiser repetir: o `libfaketime` desloca o relógio do Python e do Postgres juntos (o
+Postgres sobe pelo `pg_ctl` com `LD_PRELOAD`, porque o `pg_ctlcluster` limpa o ambiente). O `time.sleep` do Python
+3.11 quebra com ele (`OSError 22`), então um `sitecustomize.py` troca o sleep por `select` só nessa rodada. 15 datas na
+primeira rodada (Natal, viradas de mês e ano, Carnaval, Sexta Santa, São José, domingo, 22h30 e 4h de Fortaleza) e
+14 na segunda (Tiradentes, 1º de maio, feriados de 2027). Nada disso ficou no repositório.
+
+**O que quebrava, e foi consertado (só teste):**
+- **trocas de plantão** (2 testes): o período não olhava o feriado da primeira semana. **Ia quebrar DE VERDADE de
+  23/11 a 06/12/2026** (20/11 no meio). E o teste se PULAVA quando o período atravessava o mês; agora recua uma
+  semana.
+- **resumo e folhas da equipe** (2): quebravam todo dia 1º — o resumo vai "até ontem" e a batida era de hoje.
+- **completar o período** (1): pegava os três últimos dias de segunda a quinta, que em novembro de 2026 não são
+  seguidos (o mês acaba numa segunda).
+- **vigia noturno** (1): a semana da segunda 30/11 atravessa o mês.
+
+**O que ficou, de propósito:** dois testes se pulam no começo do mês ("sem dia útil anterior neste mês"). Não falham;
+só deixam de conferir naqueles dias.
+
+## 21/11/2026 — mais dois testes que dependiam do dia de hoje (só teste; publicado no mesmo dia)
+
+Avisados pelo chat do Análise de SPs: falhavam na `main` sem mudança de ninguém. Nada do ponto em si.
+- `test_ponto_qr_banco.py` (alerta de batida faltando com foto escura): "ontem" caiu em **20/11, Consciência
+  Negra**. Agora "ontem" pula fim de semana e feriado.
+- `test_ponto_compensacao_horas_banco.py`: os dois dias ficavam a 34 dias um do outro, acima da regra dos
+  31 dias. Agora o dia trabalhado é recente.
+
+**Publicado em 21/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Suíte inteira: 12.434 passando.
 
 ## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
 
@@ -652,6 +1079,30 @@ arquivo.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+
+## 17/11/2026 (terça) — A ronda sem foto: a localização basta, com um alerta
+
+O dono: *"o vigia (…) num determinado telefone, aquele problema de memória cheia: tenta bater e não consegue enviar a
+foto. O mais importante é a geolocalização (…) quando não desse, enviar sem a foto, da mesma forma que chega o ponto
+sem foto, e talvez um alerta, para a pessoa não perder a ronda."*
+- **No aplicativo** (ronda surpresa): se a foto não sai (a câmera não salvou, a imagem não abriu, o celular sem
+  memória quebrou a redução) — ou se ela não chegou ao servidor (sem rede, servidor fora) —, aparece "📍 Registrar só
+  com a localização (sem foto)", com a explicação "pode ser a memória do celular cheia". A página não tem como saber
+  se foi memória ou se a pessoa desistiu. **Ajustado no mesmo dia** (o dono: *"não gostei, pois induz a pessoa a tirar
+  sem a foto"*): o caminho sem foto só aparece depois de **3 tentativas** que não deram certo (`TENTATIVAS_ANTES_DE_SEM_FOTO`),
+  como um link discreto — "Tentou 3 vezes e a foto não sai? Só nesse caso, registre sem foto: o escritório recebe um
+  aviso" —, e o motivo gravado diz "depois de 3 tentativas". O botão grande continua sendo o da foto.
+**Publicado em 17/11/2026** (com o "pode" do dono; suíte inteira: 11.822 passaram). Sem migração.
+  Depois de registrar, o aviso "foi sem foto — apague fotos ou vídeos antigos".
+- **No servidor** (`rondas.registrar`, `sem_foto=`): a LOCALIZAÇÃO continua obrigatória (é ela que prova a
+  presença). Sem foto, só com o motivo que o aplicativo manda; a foto que chega estragada também não derruba a
+  ronda — entra sem ela ("a foto chegou estragada"). A ronda fica FEITA (ou ATRASADA) com o motivo gravado
+  ("registrada sem foto: …").
+- **O alerta "Ronda registrada sem foto"** (`RONDA_SEM_FOTO`, um por ronda): diz o vigia, a ronda, a hora e o motivo,
+  e "confira o celular (memória cheia, câmera)". Nas telas Rondas e Quadro › Rondas, o chip diz "· sem foto".
+- Teste: `test_ponto_rondas_banco.py::test_a_ronda_sem_foto_entra_com_a_localizacao_e_um_alerta` (sem localização
+  não entra; sem foto com motivo entra; foto estragada entra sem ela; os dois alertas). E no celular simulado: a foto
+  falhando, o botão aparecendo e a ronda entrando sem foto.
 ## 13/11/2026 (sexta, noite) — Alertas com função, dia da semana e feriado; intervalo curto abaixo de 50 min; a compensação incompleta
 
 O dono, num pedido só: *"em alerta mostrar função do colaborador; o alerta de intervalo curto somente se inferior a
@@ -675,6 +1126,7 @@ to achando que não ta gravando direito"* (a folga de 03/11, terça, paga pelo s
 - Testes: `test_ponto_tipos_ausencia_banco.py` (a incompleta com o texto), `test_ponto_apuracao.py` (58 min não
   acende, 49 acende), `test_ponto_alertas_pagina_banco.py` (dia da semana, feriado e função na linha). E a tela de
   Alertas no navegador (o feriado de Finados aparecendo).
+**Publicado em 13/11/2026** (com o "pode" do dono; suíte inteira: 11.009 passaram). Sem migração.
 
 ## 13/11/2026 (sexta, mais tarde) — A busca automática de feriados só de madrugada
 

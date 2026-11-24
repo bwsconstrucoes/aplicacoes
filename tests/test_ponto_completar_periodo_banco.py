@@ -24,7 +24,14 @@ def _dias_uteis(mundo, n):
         cal = feriados.Calendario(conn, inicio, fim)
         uteis = [d for d in (inicio + dt.timedelta(days=i) for i in range((fim - inicio).days + 1))
                  if d.weekday() < 4 and not cal.feriado(d, mundo["obra_a"])]
-    return uteis[-n:]
+    # n dias SEGUIDOS: o teste consulta de um ao outro e conta tudo o que há no meio. Antes eram os n últimos de
+    # segunda a quinta, e quando o mês passado terminava numa segunda (novembro de 2026) a sexta e o fim de
+    # semana caíam no meio — a sexta sem batida aparecia para completar e o teste falhava o mês inteiro.
+    for i in range(len(uteis) - n, -1, -1):
+        trecho = uteis[i:i + n]
+        if (trecho[-1] - trecho[0]).days == n - 1:
+            return trecho
+    raise AssertionError("o mês passado não tem dias úteis seguidos suficientes para o teste")
 
 
 def test_completar_o_periodo_pela_escala(app, mundo):

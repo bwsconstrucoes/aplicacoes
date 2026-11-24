@@ -298,3 +298,154 @@ def _notificador_entregou(resposta: Any) -> bool:
     if 'ok' in resposta:
         return bool(resposta.get('ok'))
     return any(isinstance(v, dict) and v.get('ok') for v in resposta.values())
+
+
+# ── O relatório do lote, no Telegram ─────────────────────────────────────────
+#
+# Pedido do dono em 17/11/2026, quando o Make deixou de esperar resposta:
+#
+#   *"o retorno, a resposta ao final de tudo, aí você me responde.
+#   Preferencialmente no Telegram, para não ter problema. Aqui, ó: comprovante
+#   tal, enviado tal, baixou SP tal, valor tal. Comprovante tal, valor tal, não
+#   baixou SP, não localizou. (…) Manda no Telegram o que você encaminharia no
+#   Make."*
+#
+# Diferença para o `enviar_aviso` acima, e as duas coisas convivem de propósito:
+# o AVISO conta só o que deu errado, vai para o financeiro e para o dono, e sai
+# pelo WhatsApp. O RELATÓRIO conta o lote INTEIRO — o que baixou e o que não —
+# e vai só para o dono, pelo Telegram, que é o canal que não cai.
+LIMITE_TELEGRAM = 3500   # o Telegram corta em 4096; sobra folga para o cabeçalho
+LIMITE_MENSAGENS = 5     # lote gigante não vira vinte mensagens no celular
+
+
+def _situacao_do_plano(plano: Dict[str, Any]) -> tuple:
+    """(ícone, frase) do que aconteceu com uma página de comprovante."""
+    respostas = plano.get('responses') or {}
+    match = plano.get('match') or {}
+    sp_id = as_string(match.get('id'))
+
+    if not plano.get('pode_executar'):
+        return '❌', f'NÃO baixou — {_motivo_do_plano(plano)}'
+
+    if respostas.get('nao_marcou'):
+        return '❌', ('NÃO baixou — o Omie não confirmou. A SP continua a pagar; '
+                      'resolva no Omie e reenvie o comprovante.')
+
+    pendencias = []
+    sheets = respostas.get('sheets') or {}
+    if sheets and not sheets.get('ok'):
+        pendencias.append('planilha na fila')
+    pipefy = (respostas.get('pipefy') or [{}])[0] if respostas.get('pipefy') else {}
+    if pipefy and pipefy.get('ok') is False:
+        pendencias.append('card do Pipefy na fila')
+
+    if pendencias:
+        return '⚠️', f'baixou no Omie (SP {sp_id}) — falta: ' + ', '.join(pendencias)
+    return '✅', f'baixou a SP {sp_id}'
+
+
+def _linha_do_plano(plano: Dict[str, Any]) -> str:
+    rec = plano.get('receipt') or {}
+    icone, frase = _situacao_do_plano(plano)
+    partes = [as_string(rec.get('filename')) or 'arquivo', f"pág. {rec.get('page') or '?'}"]
+    if rec.get('valor_pago'):
+        partes.append(f"R$ {rec['valor_pago']}")
+    if rec.get('data_pagamento'):
+        partes.append(as_string(rec['data_pagamento']))
+    return f"{icone} {' | '.join(partes)}\n    {frase}"
+
+
+def montar_relatorio(resultado: Dict[str, Any]) -> List[str]:
+    """O relatório do lote, já partido em mensagens que cabem no Telegram."""
+    planos = resultado.get('planos') or []
+    duplicados = resultado.get('duplicados') or []
+    recusados = resultado.get('recusados') or []
+    if not planos and not duplicados and not recusados \
+            and not (resultado.get('paginas_sem_pagamento') or []):
+        return []
+
+    linhas = [_linha_do_plano(p) for p in planos]
+
+    for d in duplicados:
+        sp = as_string(d.get('sp'))
+        linhas.append(
+            f"⏭️ {as_string(d.get('arquivo')) or 'arquivo'} | pág. {d.get('pagina') or '?'}\n"
+            f"    já tinha sido baixado antes{f' — SP {sp}' if sp else ''}.")
+
+    for r in recusados:
+        linhas.append(
+            f"⚠️ {as_string(r.get('arquivo')) or 'arquivo'} | pág. {r.get('pagina') or '?'}\n"
+            f"    o banco não efetivou a operação — não virou baixa.")
+
+    # Rodapé e continuação NÃO viram uma linha cada: o boleto do Sicredi sai em
+    # duas folhas, então num lote de trinta seriam trinta linhas de nada. Uma
+    # linha resumida basta — mas EXISTE, para não ser descarte em silêncio.
+    sem_pagamento = resultado.get('paginas_sem_pagamento') or []
+    if sem_pagamento:
+        escaneadas = [s for s in sem_pagamento if 'sem texto' in as_string(s.get('motivo'))]
+        if escaneadas:
+            linhas.append(
+                f"⚠️ {len(escaneadas)} página(s) sem texto nenhum (foto ou documento "
+                f"escaneado).\n    O robô não lê imagem — reenvie em PDF do banco.")
+        rodape = len(sem_pagamento) - len(escaneadas)
+        if rodape:
+            linhas.append(
+                f"ℹ️ {rodape} página(s) de rodapé ou continuação do comprovante.\n"
+                f"    Sem dado de pagamento; não foram tentadas.")
+
+    baixados = sum(1 for p in planos if _situacao_do_plano(p)[0] == '✅')
+    parciais = sum(1 for p in planos if _situacao_do_plano(p)[0] == '⚠️')
+    falhados = sum(1 for p in planos if _situacao_do_plano(p)[0] == '❌')
+
+    cabecalho = (f"BaixaBradesco — {len(planos)} comprovante(s) lidos\n"
+                 f"{baixados} baixado(s) · {falhados} sem baixar · "
+                 f"{parciais} pela metade · {len(duplicados)} repetido(s) · "
+                 f"{len(recusados)} recusado(s) pelo banco")
+
+    mensagens: List[str] = []
+    atual = cabecalho
+    for linha in linhas:
+        if len(atual) + len(linha) + 2 > LIMITE_TELEGRAM:
+            mensagens.append(atual)
+            if len(mensagens) >= LIMITE_MENSAGENS:
+                mensagens[-1] += '\n\n(a lista continua — veja o restante na planilha)'
+                return mensagens
+            atual = '(continuação)'
+        atual += '\n\n' + linha
+    mensagens.append(atual)
+    return mensagens
+
+
+def resolver_telefone_do_relatorio() -> str:
+    """Para quem vai o relatório. Só o dono, por padrão — foi o que ele pediu."""
+    configurado = only_digits(as_string(os.getenv('BAIXABRADESCO_RELATORIO_TELEFONE', '')))
+    return configurado or TELEFONE_DONO
+
+
+def enviar_relatorio(resultado: Dict[str, Any],
+                     payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Manda o relatório do lote pelo Telegram. Nunca derruba a baixa."""
+    if as_string(os.getenv('BAIXABRADESCO_RELATORIO', '1')).strip().lower() in ('0', 'nao', 'não', 'false', 'off'):
+        return {'ok': None, 'skipped': True, 'motivo': 'relatório desligado (BAIXABRADESCO_RELATORIO)'}
+
+    mensagens = montar_relatorio(resultado)
+    if not mensagens:
+        return {'ok': None, 'skipped': True, 'motivo': 'lote sem nenhum comprovante'}
+
+    telefone = resolver_telefone_do_relatorio()
+    if not telefone:
+        return {'ok': None, 'skipped': True, 'motivo': 'nenhum telefone configurado'}
+
+    envios = []
+    for mensagem in mensagens:
+        try:
+            from app.apps.notificador import enviar_telegram
+            envios.append(enviar_telegram(telefone=telefone, mensagem=mensagem))
+        except Exception as e:
+            envios.append({'ok': False, 'erro': str(e)[:200]})
+
+    return {
+        'ok': any(bool(e.get('ok')) for e in envios),
+        'mensagens': len(mensagens),
+        'envios': envios,
+    }

@@ -228,8 +228,12 @@ def test_VIA_SP_uma_SP_POR_PESSOA_com_o_favorecido_e_o_rateio_dela(banco_gm, mon
     from app.apps.analisesps import folha_cards as fcd, folha_pagamento as fp
     from app.apps.analisesps import gratificados as gm
     from tests.test_analisesps_folha_cards import PipefyFalso
+    from app.apps.analisesps import drive
     pipe = PipefyFalso(monkeypatch)
     subidos = _subir(monkeypatch)
+    refeitos = []
+    monkeypatch.setattr(drive, "substituir_conteudo",
+                        lambda arquivo_id, conteudo, mime: refeitos.append(conteudo))
     c = gm.calcular(ANO, MES, "quinzena", gm.SP)
     p = _por(c)
     assert set(p) == {PJ1, PJ2}
@@ -277,6 +281,21 @@ def test_VIA_SP_uma_SP_POR_PESSOA_com_o_favorecido_e_o_rateio_dela(banco_gm, mon
     assert um["valores"]["radio_horizontal_t_tulo"] == "Pessoa Jurídica"
     assert um["valores"]["cnpj"] == "12.345.678/0001-95"
     assert "Chave Pix (CNPJ): 12345678000195" in um["valores"]["descri_o"]
+    # 18/11/2026: o relatório em PDF de cada conta foi refeito com o número da SP
+    # de cada pessoa (gravado por cima do arquivo no Drive).
+    import fitz
+    assert refeitos, "o relatório com o número das SPs não foi regravado"
+    texto = "".join(pg.get_text() for c in refeitos
+                    for pg in fitz.open(stream=c, filetype="pdf"))
+    for criado in criados:
+        assert f"SP {criado['id']}" in texto
+    # A tela lista TODAS as SPs de cada conta, com o nome (o registro cortava em 5).
+    rodadas = fp.rodadas()
+    fp.situacao_das_sps(rodadas)
+    nas_contas = {sp["id"]: sp["nome"] for r in rodadas for a in r["pagamentos"]
+                  for sp in a.get("sps") or []}
+    assert set(nas_contas) == {c["id"] for c in criados}
+    assert set(nas_contas.values()) == {"PJ UM", "PRO LABORE DOIS"}
     # Lançar de novo não cria nada (o andamento guarda as duas).
     with pytest.raises(fcd.ErroDosCards):
         fcd.lancar(analise, quem="MARCELO")

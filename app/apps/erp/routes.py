@@ -17,7 +17,8 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
-    Blueprint, g, jsonify, redirect, render_template, request, session, url_for,
+    Blueprint, g, jsonify, make_response, redirect, render_template, request,
+    session, url_for,
 )
 
 from sqlalchemy.exc import IntegrityError, ProgrammingError
@@ -76,6 +77,35 @@ def _saude_comecou():
             tarefas.acordar()
         except Exception:
             logger.warning("ERP/tarefas: não deu para iniciar a fila", exc_info=True)
+    # ⚑ A VIRADA DO DIA DOS DESLIGAMENTOS (17/11/2026). Ele: *"o ideal é cortar
+    # tudo, porque aí corre o risco de a gente esquecer."*
+    #
+    # Quem tem data de saída vencida e ainda está ativo é desligado aqui, e o
+    # login dela cai junto. Ver `core/cadastros/desligamentos_do_dia.py`.
+    #
+    # ⚠️ ESTÁ NESTE GANCHO, E NÃO EM OUTRO, DE PROPÓSITO: ele roda ANTES da
+    # guarda de permissão (que vem mais abaixo neste arquivo). Então, mesmo que
+    # a primeira pessoa a tocar o ERP no dia seja justamente quem saiu, a
+    # própria requisição dela desliga o cadastro e a guarda a recusa em
+    # seguida. Pendurado depois da guarda, ela entraria uma última vez.
+    #
+    # Depois da primeira vez do dia é a comparação de uma variável.
+    try:
+        from app.apps.erp.core.cadastros import desligamentos_do_dia
+        if desligamentos_do_dia.precisa_rodar():
+            with get_session() as s:
+                desligamentos_do_dia.aplicar_se_preciso(s)
+    except Exception:                               # noqa: BLE001
+        logger.warning("ERP/desligamentos: a virada do dia não rodou", exc_info=True)
+    # ⚑ A RODADA DIÁRIA DO AGENTE DE DP (20/11/2026) — vai para a fila de
+    # trabalhos, uma vez por dia. Ver `agente_dp.rodada_do_dia_se_preciso`.
+    try:
+        from app.apps.erp.core import agente_dp
+        if agente_dp.precisa_da_rodada():
+            with get_session() as s:
+                agente_dp.rodada_do_dia_se_preciso(s)
+    except Exception:                               # noqa: BLE001
+        logger.warning("ERP/agente: a rodada do dia não foi enfileirada", exc_info=True)
 
 
 _FILA_ACORDADA = False
@@ -165,9 +195,17 @@ MODULOS = [
             # Configuracoes > Cargos e convencoes.
             # A fila de pedidos administrativos (05/11/2026): o segundo pipe do
             # Pipefy. Os pedidos de PONTO já vivem no módulo do ponto.
-            ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
+            ("dp_solicitacoes", "Solicitações", "erp.pagina_dp_solicitacoes"),
+            # A programação de férias (20/11/2026): o que a contabilidade
+            # confirmou, o que está chegando e o que está para mudar.
+            ("dp_ferias", "Férias", "erp.pagina_dp_ferias"),
             ("dp_contabilidade", "Contabilidade e agente",
              "erp.pagina_dp_contabilidade"),
+            # ⚑ AS CONDICIONAIS QUE O PIPEFY NÃO EXPORTA (17/11/2026). Ele:
+            # *"o pipe não exporta condicionais, por isso minha pergunta sobre
+            # mais ajuda na construção."* Esta tela MEDE a regra nos cadastros
+            # em vez de perguntá-la — ver core/cadastros/regras_pelos_dados.py.
+            ("dp_regras", "Regras do cadastro", "erp.pagina_dp_regras"),
         ],
     },
     {
@@ -175,13 +213,31 @@ MODULOS = [
         "descricao": "Insumos, fornecedores, cotação e pedidos de compra",
         "cor": "var(--ambar)",
         "abas": [
+            # ⚑ O PAINEL VEM PRIMEIRO (20/11/2026). Ele: *"tem que ter um
+            # painel do coordenador, para ele poder bater o olho e compreender
+            # a coisa (…) o que é prioritário, o que está atrasando, o que
+            # deveria ter chegado e não chegou."*
+            ("sup_painel", "Painel", "erp.pagina_suprimentos_painel"),
             ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
             ("sup_planejar", "Planejar cotações", "erp.pagina_suprimentos_planejar"),
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
             ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
+            # ⚑ AS DUAS VISÕES QUE FALTAVAM (20/11/2026). "Acompanhar" é a do
+            # coordenador de suprimentos: cada compra do pedido ao pagamento,
+            # e o que falta para fechar o ciclo. "Projeção" é a do financeiro:
+            # o que as compras ainda vão custar, e quando — antes de a nota
+            # chegar. Ele: *"o financeiro não pode ficar no escuro em relação
+            # ao planejamento do compras."*
+            # A porta da OBRA: conferir e registrar o que desceu do caminhão.
+            ("sup_receber", "Receber material", "erp.pagina_suprimentos_receber"),
+            ("sup_acompanhar", "Acompanhar compras", "erp.pagina_suprimentos_acompanhar"),
+            ("sup_projecao", "Projeção de pagamentos", "erp.pagina_suprimentos_projecao"),
             ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("sup_compras", "Compras", "erp.pagina_compras"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
+            # Os relatórios de GESTÃO (21/11/2026): economia da cotação, preço
+            # contra a compra anterior, desempenho do fornecedor, tempo do ciclo.
+            ("sup_relatorios", "Relatórios", "erp.pagina_suprimentos_relatorios"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_insumos"),
         ],
     },
@@ -213,7 +269,12 @@ ACOES_NA_TELA = (
                  # Pedir à contabilidade: decide se a tela mostra o botão de
                  # enviar, cobrar e conferir o retorno.
                  "pedir_contabilidade","administrar_insumos", "administrar_fornecedores", "comprar",
-                 "autorizar_pedido", "solicitar_suprimento", "configurar",
+                 "autorizar_pedido", "solicitar_suprimento", "receber_material",
+                 "liberar_solicitacao",
+                 # Decide se "Receber material" oferece o atalho para lançar a
+                 # nota e o boleto logo depois do recebimento.
+                 "lancar",
+                 "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
                  "tratar_agenda", "aprovar",
                  # O DIÁRIO DE OBRA (08/11/2026): decide se a tela mostra o
@@ -222,6 +283,28 @@ ACOES_NA_TELA = (
                  # a primeira foto mostrou, com o formulário inteiro na tela e
                  # nenhum botão de gravar embaixo dele.
                  "lancar_diario",
+                 # ⚑ VER REMUNERAÇÃO (17/11/2026): decide se a tela de Pessoal
+                 # mostra as colunas de salário e diária. O corte de verdade é
+                 # no servidor (`pessoal._sem_remuneracao`) — isto aqui é para
+                 # a tela não desenhar coluna que vai vir vazia.
+                 "ver_remuneracao",
+                 # ⚑ GERIR USUÁRIOS (17/11/2026): decide se a ficha da pessoa
+                 # mostra os botões de liberar e desligar o acesso dela ao ERP.
+                 # Quem não tem a ação continua VENDO se a pessoa entra no
+                 # sistema e com qual e-mail — o que ele não ganha é um botão
+                 # que responderia 403.
+                 "gerir_usuarios",
+                 # ⚑ LIBERAR ACESSO AO PORTAL (18/11/2026, "libera o DP
+                 # também"): decide se a tela de Pessoal mostra a fila de quem
+                 # pediu acesso pelo ponto. É ação PRÓPRIA, mais estreita que
+                 # `gerir_usuarios` — ver o comentário dela em `permissoes.py`.
+                 "liberar_acesso_portal",
+                 # ⚑ CONFIGURAR MENSAGENS (17/11/2026): o bloco "Mensagens" da
+                 # ficha da pessoa mora no `erp_base.html` (é o mesmo na ficha
+                 # do Pessoal e na do ponto) e oferece "Mandar um teste agora".
+                 # Sem a ação aqui, o botão não apareceria em tela nenhuma
+                 # além da própria tela Mensagens — inclusive para o ADMIN.
+                 "configurar_mensagens",
                  # Cancelar título é ação própria desde 12/09/2026: quem lança
                  # cancela o PRÓPRIO lançamento, e a tela precisa saber disso
                  # para mostrar o botão a quem não aprova.
@@ -396,6 +479,29 @@ def _perfil_bruto(s) -> str:
     return linha[0] if linha else ""
 
 
+def _acesso_desativado(s) -> bool:
+    """O acesso desta sessão foi desativado DEPOIS de ela ter sido aberta?
+
+    ⚑ 17/11/2026. Até aqui `usuarios.ativo` era conferido SÓ no login: quem já
+    estava com a tela aberta continuava trabalhando mesmo depois de o acesso
+    ser desligado — e isso vale para o desligamento (a virada do dia, que corta
+    o login de quem saiu, por decisão dele) e para o bloqueio feito à mão pelo
+    DP. Agora a sessão cai no clique seguinte.
+
+    ⚠️ A CONSULTA É A MESMA de `_perfil_bruto`, por SQL direto e sem o ORM, e
+    sem coluna que dependa de migração nova: esta função roda antes de TODA
+    rota, inclusive da tela que aplica as migrações. Carregar o `Usuario` aqui
+    é o impasse circular que derrubou o ERP em 02/09/2026.
+    """
+    from sqlalchemy import text as _text
+    uid = session.get("erp_usuario_id")
+    if not uid:
+        return False
+    linha = s.execute(_text("SELECT ativo FROM usuarios WHERE id = :i"),
+                      {"i": uid}).first()
+    return bool(linha) and linha[0] is False
+
+
 def login_obrigatorio(fn):
     @wraps(fn)
     def _wrap(*a, **kw):
@@ -548,6 +654,18 @@ def _guarda_permissao():
     # modelo, ainda não criada), quebraria aqui, e o botão que conserta o banco
     # ficaria inalcançável: o impasse circular que derrubou o ERP em 2026-09-02.
     with get_session() as s:
+        # ⚑ ACESSO DESATIVADO DERRUBA A SESSÃO ABERTA (17/11/2026) — ver
+        # `_acesso_desativado`. Vem ANTES de tudo: quem teve o acesso cortado
+        # não tem perfil que valha.
+        if _acesso_desativado(s):
+            uid = session.get("erp_usuario_id")
+            session.clear()
+            logger.info("ERP/permissao: sessão do usuário %s encerrada — "
+                        "acesso desativado", uid)
+            if request.path.startswith("/erp/api/"):
+                return jsonify({"ok": False, "erro":
+                                "Seu acesso foi encerrado. Procure o DP."}), 401
+            return redirect(url_for("erp.pagina_login"))
         perfil = _perfil_bruto(s)
         excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
         # O PERFIL CADASTRADO (migração 065) decide, quando existe. Devolve
@@ -900,6 +1018,47 @@ def pagina_colaboradores():
     with get_session() as _s:
         ve_pessoal = "PESSOAL" in sigilos_visiveis(_usuario_logado(_s))
     return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
+                           **_contexto("colaboradores"))
+
+
+@bp.route("/erp/colaboradores/cadastro/<int:colaborador_id>")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def pagina_colaborador_embutido(colaborador_id: int):
+    """O FORMULÁRIO DO CADASTRO SOZINHO, para aparecer DENTRO de outra tela.
+
+    ⚑ 17/11/2026, pedido dele: *"quando estou vendo o pessoal pelo ponto e
+    coloco pra abrir o cadastro, ele remete pra página de pessoal, quando
+    deveria apenas abrir o modal correspondente sem necessidade de ir pra outro
+    lado."*
+
+    É a MESMA tela de Colaboradores e o MESMO formulário — não há um segundo
+    cadastro. O que muda é que ela chega sem cabeçalho, sem filtro e sem lista
+    (`embutido`), já com a janela da pessoa aberta. Quem a mostra (hoje a ficha
+    do ponto) a põe numa janela e fica onde está.
+
+    Custo, porque vale dizer: aberta assim ela NÃO carrega a lista de
+    colaboradores — são 3 chamadas (obras, funções e opções do cadastro) em vez
+    das 5 da tela inteira, e nenhuma delas traz as mais de mil pessoas.
+    """
+    from app.apps.erp.core.arquivo.service import sigilos_visiveis
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    with get_session() as _s:
+        usuario = _usuario_logado(_s)
+        # Fora do alcance responde "não encontrado" (ver o CLAUDE.md) — mas
+        # como isto é PÁGINA, e não API, a resposta é em português dentro da
+        # janela. O errorhandler do blueprint devolve JSON, e quem abrisse a
+        # janela leria `{"erro": ...}` na tela.
+        try:
+            exigir_colaborador_no_escopo(_s, usuario, colaborador_id)
+        except ErroNaoEncontrado:
+            return ("<!doctype html><meta charset=utf-8>"
+                    "<div style=\"font:15px system-ui; padding:24px\">"
+                    "Esta pessoa não está entre as que você acompanha.</div>"), 404
+        ve_pessoal = "PESSOAL" in sigilos_visiveis(usuario)
+    return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
+                           embutido=True, abrir_cadastro=colaborador_id,
                            **_contexto("colaboradores"))
 
 
@@ -1957,6 +2116,33 @@ def api_ler_proposta(coluna_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/proposta", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_jogar_proposta_no_mapa(cotacao_id: int):
+    """A proposta jogada no mapa, sem dizer de quem é: o sistema lê uma vez,
+    reconhece o fornecedor pelo CNPJ ou pelo nome e devolve os preços casados
+    com as linhas. Não grava preço — devolve sugestão para conferir."""
+    from app.apps.erp.core.suprimentos import proposta
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Jogue o arquivo da proposta."}), 400
+    try:
+        with get_session() as s:
+            leitura = proposta.ler_no_mapa(
+                s, cotacao_id, conteudo=arquivo.read(),
+                nome_arquivo=arquivo.filename or "", usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "leitura": leitura})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao ler a proposta jogada no mapa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 # --- Pedido de compra e autorização -----------------------------------------
 # A fila de pedidos serve a dois papéis — quem compra e quem autoriza —, e por
 # isso tem ação própria (`ver_pedidos_compra`), que ambos ganham de graça. A
@@ -2082,9 +2268,33 @@ def api_decidir_pedido(pedido_id: int, acao: str):
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
+            envio_feito = None
             if acao == "autorizar":
                 svc.autorizar(s, pedido_id, atual,
                               [int(x) for x in (d.get("itens_recusados") or [])])
+                # ⚑ AUTORIZOU, SAIU PARA O FORNECEDOR (22/11/2026). O dono: "a
+                # pessoa designada a autorizar, na hora que ela autoriza, o
+                # pedido é disparado para o fornecedor. Aí é encaminhado o
+                # e-mail e o anexo." A autorização é gravada ANTES e não
+                # depende do envio: fornecedor sem e-mail ou conta de envio
+                # fora do ar não desfaz a decisão — a tela diz que não saiu e
+                # o botão de mandar continua em Pedidos.
+                s.commit()
+                try:
+                    from app.apps.erp.core.suprimentos import envio as svc_envio
+                    feito = svc_envio.disparar_pedido(s, pedido_id, {}, atual)
+                    s.commit()
+                    envio_feito = {"enviado": feito.get("situacao") == "ENVIADO",
+                                   "para": feito.get("para") or [],
+                                   "motivo": feito.get("erro")}
+                except ErroValidacao as e:
+                    s.rollback()
+                    envio_feito = {"enviado": False, "para": [], "motivo": str(e)}
+                except Exception as e:
+                    s.rollback()
+                    logger.exception("ERP/suprimentos: pedido autorizado, envio falhou")
+                    envio_feito = {"enviado": False, "para": [], "motivo": recado_de_falha(e)}
+                return jsonify({"ok": True, "envio": envio_feito})
             elif acao == "recusar":
                 svc.recusar(s, pedido_id, d.get("motivo") or "", atual)
             elif acao == "cancelar":
@@ -2105,20 +2315,184 @@ def api_decidir_pedido(pedido_id: int, acao: str):
 # --- Recebimento na obra ----------------------------------------------------
 # Quem confere é a obra: a rota exige apenas "ver_suprimentos", e o escopo por
 # obra já limita o que cada pessoa enxerga.
+@bp.route("/erp/suprimentos/receber")
+@login_obrigatorio
+@permissao("receber_material")
+def pagina_suprimentos_receber():
+    return render_template("erp_suprimentos_receber.html",
+                           **_contexto("sup_receber"))
+
+
+@bp.route("/erp/api/suprimentos/recebimentos")
+@login_obrigatorio
+@permissao("receber_material")
+def api_recebimentos_da_obra():
+    """O que está para chegar nas obras da pessoa, o que chegou sem nota e —
+    para ela acompanhar — o que ainda está sendo cotado ou autorizado."""
+    from app.apps.erp.core.suprimentos import acompanhamento as svc_acomp
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        antes = [i for i in svc_acomp.planejamento(s, usuario)["itens"]
+                 if i["etapa"] in ("SEM_COTACAO", "EM_COTACAO", "A_AUTORIZAR")]
+        # Para PEDIR material pelo portal: as obras da pessoa e as unidades.
+        from sqlalchemy import select
+        from app.apps.erp.core import portal as svc_portal
+        from app.apps.erp.db.models.cadastros import UnidadeCompra
+        from app.apps.erp.core.suprimentos import insumos as svc_insumos
+        from app.apps.erp.core.suprimentos.solicitacao import obras_para_pedir
+        para_pedir = obras_para_pedir(s, usuario)
+        return jsonify({"ok": True, **svc.a_receber(s, usuario),
+                        "em_andamento": antes,
+                        "pode_lancar": pode(usuario, "lancar"),
+                        "pode_pedir": pode(usuario, "solicitar_suprimento"),
+                        "pode_liberar": pode(usuario, "liberar_solicitacao"),
+                        "esperando_cadastro": svc_insumos.esperando_cadastro(s, usuario),
+                        # só as obras DELA (cadastro + onde bate ponto) — 22/11/2026
+                        "obras": [o for o in svc_portal.obras_para_escolher(s, usuario)
+                                  if para_pedir is None or o["id"] in para_pedir],
+                        "obra_sugerida": svc_portal.obra_sugerida(s, usuario),
+                        "unidades": [u.codigo for u in s.scalars(
+                            select(UnidadeCompra).order_by(UnidadeCompra.codigo)).all()
+                            if getattr(u, "ativo", True) is not False]})
+
+
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/receber-e-lancar",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_receber_e_lancar(pedido_id: int):
+    """O procedimento único da obra: registra o que chegou E lança a conta a
+    pagar, numa transação só. Exige `lancar` — quem só recebe usa a rota de
+    recebimento, e a conta fica aparecendo como "falta lançar"."""
+    from app.apps.erp.core.suprimentos import lancamento as svc
+    from app.apps.erp.core.suprimentos.recebimento import exigir_pedido_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if not pode(usuario, "receber_material"):
+                return jsonify({"ok": False,
+                                "erro": "Você não registra recebimento de material."}), 403
+            exigir_pedido_no_escopo(s, usuario, pedido_id)
+            saida = svc.receber_e_lancar(s, usuario, pedido_id,
+                                         request.get_json(silent=True) or {})
+            s.commit()
+            return jsonify({"ok": True, **saida})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao receber e lançar")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/recebimentos/<int:recebimento_id>/documentos",
+          methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("receber_material")
+def api_documentos_do_recebimento(recebimento_id: int):
+    """Nota, boleto e o que mais vier junto do material — vários por recebimento."""
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rec = svc._recebimento_no_escopo(s, usuario, recebimento_id)
+            svc.exigir_pedido_no_escopo(s, usuario, rec.pedido_id)
+            if request.method == "GET":
+                return jsonify({"ok": True, "documentos": svc.documentos_do_pedido(
+                    s, rec.pedido_id, recebimento_id=rec.id)})
+            arquivo = request.files.get("arquivo")
+            if arquivo is None:
+                return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+            doc = svc.anexar(s, usuario, rec.id, arquivo.read(), arquivo.filename or "",
+                             request.form.get("categoria") or "OUTRO")
+            s.commit()
+            return jsonify({"ok": True, "documento": doc})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/suprimentos/recebimentos/documento/<int:anexo_id>")
+@login_obrigatorio
+@permissao(GET="ver_suprimentos")
+def baixar_documento_do_recebimento(anexo_id: int):
+    """O arquivo anexado num recebimento. O recorte por obra é conferido pelo
+    pedido a que o recebimento pertence."""
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        svc.exigir_pedido_no_escopo(s, usuario, svc.pedido_do_documento(s, anexo_id))
+        conteudo, nome, mime = svc.conteudo_do_documento(s, usuario, anexo_id)
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = mime
+    resposta.headers["Content-Disposition"] = f'inline; filename="{nome}"'
+    return resposta
+
+
+@bp.route("/erp/api/suprimentos/pedidos/a-lancar")
+@login_obrigatorio
+@permissao("lancar")
+def api_pedidos_a_lancar():
+    """Os pedidos de compra de um fornecedor que ainda têm conta a lançar —
+    para a tela de Lançar perguntar "é deste pedido?"."""
+    from app.apps.erp.core.suprimentos import lancamento as svc
+    bruto = (request.args.get("fornecedor_id") or "").strip()
+    if not bruto.isdigit():
+        return jsonify({"ok": True, "pedidos": []})
+    with get_session() as s:
+        return jsonify({"ok": True, "pedidos": svc.pedidos_do_fornecedor_a_lancar(
+            s, _usuario_logado(s), int(bruto))})
+
+
+@bp.route("/erp/portal/material")
+@login_obrigatorio
+@permissao("receber_material")
+def pagina_portal_material():
+    """O MATERIAL DA OBRA, NO PORTAL (20/11/2026) — a tela enxuta, de celular,
+    por onde a obra recebe. Usa as mesmas rotas de "Receber material" do ERP:
+    são duas portas para a mesma regra, e não duas regras."""
+    return render_template("erp_portal_material.html")
+
+
+# ⚑ O POST DEIXOU DE SER `ver_suprimentos` em 20/11/2026. Quem só VÊ suprimentos
+# (o perfil de consulta, o parceiro de fora da empresa) registrava recebimento
+# — e sem recorte de obra. Agora é ação própria, e o pedido tem de ter item
+# numa obra da pessoa.
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/recebimento",
           methods=["GET", "POST"])
 @login_obrigatorio
-@permissao("ver_suprimentos")
+@permissao(GET="ver_suprimentos", POST="receber_material")
 def api_recebimento(pedido_id: int):
     from app.apps.erp.core.suprimentos import recebimento as svc
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
+            svc.exigir_pedido_no_escopo(s, atual, pedido_id)
             if request.method == "GET":
                 return jsonify({"ok": True, "situacao": svc.situacao(s, pedido_id)})
-            svc.registrar(s, pedido_id, request.get_json(silent=True) or {}, atual)
+            # ⚑ NUNCA SÓ O RECEBIMENTO, para quem pode lançar (21/11/2026). O
+            # dono: "nunca pode ser feito só o recebimento. Isso deixa um
+            # vácuo." Quem lança pagamento recebe pelo procedimento único
+            # (`receber-e-lancar`), que registra a chegada e a conta juntas —
+            # ou a saída "a nota não veio", com o motivo escrito. Esta rota
+            # fica só para quem NÃO lança: aí o recebimento entra, e fica
+            # registrado por que veio sem conta.
+            if pode(atual, "lancar"):
+                return jsonify({"ok": False, "erro":
+                    "O recebimento é registrado junto com a nota e o boleto. "
+                    "Abra Suprimentos › Receber material e use \"Receber e "
+                    "lançar a nota\"."}), 400
+            rec = svc.registrar(s, pedido_id, request.get_json(silent=True) or {}, atual)
+            from app.apps.erp.core.comum.auditoria import registrar_evento
+            registrar_evento(s, "pedido_compra", pedido_id, "RECEBIDO_SEM_LANCAMENTO",
+                             {"recebimento_id": rec.id,
+                              "motivo": "quem recebeu não lança pagamentos"}, atual.id)
+            saida = {"ok": True, "recebimento_id": rec.id}
             s.commit()
-            return jsonify({"ok": True})
+            return jsonify(saida)
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
@@ -2229,9 +2603,40 @@ def api_suprimento_solicitacao(solicitacao_id: int):
                         "solicitacao": svc.obter(s, solicitacao_id, _usuario_logado(s))})
 
 
+@bp.route("/erp/api/suprimentos/itens/liberar", methods=["POST"])
+@login_obrigatorio
+@permissao("liberar_solicitacao")
+def api_liberar_solicitacao():
+    """O ok da engenharia no material pedido pela obra — ou a recusa, com motivo.
+    O recorte por obra é conferido item a item, dentro do serviço."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if d.get("recusar"):
+                n = svc.recusar_liberacao(s, d.get("itens") or [], d.get("motivo") or "", atual)
+            else:
+                n = svc.liberar(s, d.get("itens") or [], atual)
+            s.commit()
+            return jsonify({"ok": True, "itens": n})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao liberar solicitação")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ⚑ SÓ O COMPRADOR MOVE O ITEM À MÃO (22/11/2026). Era `ver_suprimentos` — o
+# que deixava perfil de consulta e parceiro levar um item a "entregue" e
+# "recebido" sem pedido nem nota. O dono: "o compras até pode botar entregue,
+# porque a ideia é ele saber que o material chegou (...) daí em diante, a
+# pessoa que recebeu na obra vai fazer o recebimento."
 @bp.route("/erp/api/suprimentos/itens/<int:item_id>/situacao", methods=["POST"])
 @login_obrigatorio
-@permissao("ver_suprimentos")
+@permissao("comprar")
 def api_suprimento_situacao(item_id: int):
     """Move o item pelo fluxo. Só quem enxerga o item pode mexer nele."""
     from app.apps.erp.core.suprimentos import solicitacao as svc
@@ -2239,8 +2644,7 @@ def api_suprimento_situacao(item_id: int):
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
-            visiveis = {i["id"] for i in svc.listar_itens(s, atual)}
-            if item_id not in visiveis:
+            if not svc.enxerga_item(s, atual, item_id):
                 raise ErroNaoEncontrado("Item não encontrado.")
             svc.mudar_situacao(s, item_id, d.get("status") or "", atual,
                                d.get("observacao") or "")
@@ -4469,6 +4873,87 @@ def api_pipefy_cadastro_situacao():
 TETO_DE_CARDS_POR_RODADA = 300
 
 
+@bp.route("/erp/api/importar/planilha-cadastro", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_importar_planilha_cadastro():
+    """Põe na fila a leitura da planilha "Dados Documentos" e o preenchimento
+    dos cadastros.
+
+    ⚑ SEM CARD NENHUM — e foi ele quem apontou, em 17/11/2026: *"mas por que
+    rodar com o card dela se quero que puxe da planilha?"* O card servia para
+    achar a pessoa e baixar os documentos; a planilha tem o CPF e acha
+    sozinha. Exigir o número do card para trazer dado que está na planilha era
+    pedir 575 números para nada.
+
+    Os DOCUMENTOS continuam vindo do Pipefy (`/erp/api/importar/pipefy-cadastro`):
+    é o que a planilha não tem.
+    """
+    import re
+
+    from app.apps.erp.core.comum import tarefas, trabalhos
+
+    d = request.get_json(silent=True) or {}
+    gravar = bool(d.get("gravar"))
+    # Lista opcional de CPFs: é como se começa, com dois ou três.
+    escrito = str(d.get("cpfs") or "").strip()
+    cpfs = [c for c in re.findall(r"\d[\d.\-]{9,}", escrito)]
+    cpfs = [re.sub(r"\D", "", c) for c in cpfs]
+    cpfs = [c for c in cpfs if len(c) == 11]
+    # ⚑ ESCREVEU E EU NÃO ENTENDI ⇒ RECUSA, nunca "a planilha inteira".
+    #
+    # Ele, em 17/11/2026: *"tem mais gente no ERP do que eu coloquei para
+    # importar. Só quero os que eu coloquei para importar."*
+    #
+    # Era este o defeito, e ele é do tipo mais caro: campo em branco quer
+    # dizer "a planilha inteira", e CPF que o sistema não conseguia ler virava
+    # campo em branco. Ou seja, um CPF digitado com um dígito faltando
+    # transformava "importe estas três pessoas" em "importe as 700" — sem uma
+    # linha de aviso.
+    #
+    # Agora a diferença entre "não pedi ninguém" e "pedi e você não entendeu"
+    # é explícita, e a segunda para o trabalho antes de ele começar.
+    if escrito and not cpfs:
+        return jsonify({"ok": False, "erro":
+                        "Você escreveu algo no campo de CPF e eu não achei "
+                        "nenhum CPF de 11 dígitos ali. Confira o que digitou. "
+                        "Para trazer a planilha inteira, deixe o campo "
+                        "totalmente em branco."}), 400
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            t = tarefas.enfileirar(
+                s, "importar_cadastro_planilha",
+                {"gravar": gravar, "cpfs": cpfs,
+                 # ⚑ CADASTRAR QUEM FALTA É OPT-IN (17/11/2026). Criar gente é
+                 # a única coisa que esta importação faz que não se desfaz com
+                 # outra importação — então não pode ser padrão. Ele achou o
+                 # ERP com mais gente do que pediu, e tinha razão.
+                 "criar": bool(d.get("criar")),
+                 # ⚑ LIMPAR A BASE: apaga quem está no ERP e não está na
+                 # lista. Ele pediu em 17/11/2026 (*"o CPF que não tiver
+                 # dentro da minha lista de importação, eu quero que seja
+                 # excluído dessa base de dados"*). Só vale COM lista — o
+                 # importador recusa sem ela, porque lista vazia quer dizer
+                 # "a planilha inteira" e isso apagaria o cadastro todo.
+                 "so_estes": bool(d.get("so_estes")) and bool(cpfs),
+                 "usuario_id": usuario.id if usuario else None},
+                rotulo=(("Conferir sem gravar" if not gravar
+                         else "Trazer da planilha")
+                        + (f": {len(cpfs)} pessoa(s)" if cpfs
+                           else ": a planilha inteira")
+                        + (" (cadastrando quem falta)" if d.get("criar") else "")
+                        + (" + APAGANDO quem não está na lista"
+                           if d.get("so_estes") and cpfs else "")),
+                usuario=usuario)
+            linha = tarefas.ler(s, t.id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/importar/pipefy-cadastro", methods=["POST"])
 @login_obrigatorio
 @permissao("importar")
@@ -5333,7 +5818,50 @@ def api_criar_titulo():
                     d["justificativa_excecao"] = (
                         f"Lançamento sem documento fiscal vinculado — "
                         f"registrado por {usuario.email}.")
+            # ⚑ A NOTA NÃO ENTRA SOLTA SE HÁ MATERIAL DESTE FORNECEDOR RECEBIDO
+            # E SEM CONTA (21/11/2026, noite). A pergunta do dono: "ficou o
+            # pedido recebido, pendente de lançamento de nota, e se alguém
+            # tentar lançar a nota sem o pedido, como é que a gente vai
+            # garantir que esse pedido seja vinculado depois?" Assim: a tela
+            # já oferecia o pedido; agora o servidor EXIGE a resposta — ou a
+            # pessoa escolhe o pedido, ou declara que a nota não é de nenhum
+            # deles (e a declaração fica registrada).
+            pedidos_sem_conta = []
+            if not d.get("pedido_compra_id") and d.get("fornecedor_id"):
+                try:
+                    with s.begin_nested():
+                        from app.apps.erp.core.suprimentos import lancamento as _lanc
+                        pedidos_sem_conta = [
+                            p for p in _lanc.pedidos_do_fornecedor_a_lancar(
+                                s, usuario, int(d["fornecedor_id"])) if p["chegou"]]
+                except Exception:      # suprimentos fora de uso: o lançamento segue
+                    logger.exception("ERP: não consegui procurar pedidos do credor")
+                    pedidos_sem_conta = []
+                if pedidos_sem_conta and not d.get("nao_e_de_pedido"):
+                    return jsonify({
+                        "ok": False, "escolher_pedido": True, "pedidos": pedidos_sem_conta,
+                        "erro": "Este fornecedor tem material recebido e ainda sem conta "
+                                "lançada. Diga de qual pedido é esta nota."}), 409
             titulo = svc.criar_titulo(s, d, usuario)
+            if pedidos_sem_conta:
+                from app.apps.erp.core.comum.auditoria import registrar_evento
+                registrar_evento(s, "titulo", titulo.id, "NOTA_DECLARADA_SEM_PEDIDO",
+                                 {"pedidos_recusados": [p["numero"] for p in pedidos_sem_conta],
+                                  "declarado_por": usuario.email}, usuario.id)
+            # ⚑ LANÇADO A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA
+            # (20/11/2026): o título nasce pelo caminho de sempre, e SÓ ENTÃO
+            # é ligado ao pedido — a previsão de pagamento do pedido é baixada
+            # e o coordenador passa a ver a conta. Erro aqui desfaz o título
+            # inteiro (mesma transação): vínculo pela metade seria pior.
+            if d.get("pedido_compra_id"):
+                from app.apps.erp.core.suprimentos import lancamento as svc_lanc
+                svc_lanc.vincular(s, titulo, int(d["pedido_compra_id"]), usuario,
+                                  recebimento_id=d.get("recebimento_id") or None)
+            # ⚑ MATERIAL SEM PEDIDO DE COMPRA (21/11/2026): com a chave ligada
+            # em Suprimentos › Painel, o lançamento exige o motivo e nasce
+            # bloqueado até alguém com alçada autorizar. Desligada, não faz nada.
+            from app.apps.erp.core.suprimentos import fora_do_fluxo
+            retido = fora_do_fluxo.conferir(s, titulo, d, usuario)
             if d.get("chave_acesso"):
                 titulo.chave_acesso_nfe = str(d["chave_acesso"])[:44] or None
             if d.get("cno_documento"):
@@ -5346,8 +5874,14 @@ def api_criar_titulo():
             s.commit()
             return jsonify({"ok": True, "titulo": {
                 "id": titulo.id, "numero_sp": titulo.numero_sp,
-                "status": titulo.status.value, "risco": titulo.score_risco}})
+                "status": titulo.status.value, "risco": titulo.score_risco,
+                "fora_do_fluxo": bool(retido),
+                "fora_do_fluxo_trava": bool(retido) and fora_do_fluxo.estado(s)[0] == "TRAVAR"}})
     except ErroValidacao as e:
+        from app.apps.erp.core.suprimentos.fora_do_fluxo import PrecisaDoMotivo
+        if isinstance(e, PrecisaDoMotivo):
+            # nada foi gravado: a tela pergunta o motivo e manda de novo
+            return jsonify({"ok": False, "erro": str(e), "precisa_motivo": True}), 409
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
@@ -8876,6 +9410,16 @@ def api_editar_usuario(usuario_id: int):
                 if campo in d:
                     valor = (d[campo] or "").strip()
                     setattr(u, campo, somente_digitos(valor) if campo == "telefone" else valor or None)
+            # ⚑ O CPF SE CORRIGE NA EDIÇÃO (23/11/2026). A tela mostrava o campo
+            # aberto, mas só o cadastro NOVO gravava — ele digitou, salvou, e o
+            # CPF continuou em branco. Vazio não apaga o que já existe.
+            if "cpf" in d:
+                from app.apps.erp.core.cadastros.validadores import cpf_valido as _cpf_ok
+                cpf_novo = somente_digitos(d.get("cpf") or "")
+                if cpf_novo and not _cpf_ok(cpf_novo):
+                    return jsonify({"ok": False, "erro": "CPF inválido."}), 400
+                if cpf_novo:
+                    u.cpf = cpf_novo
             if d.get("perfil"):
                 u.perfil = PerfilUsuario(d["perfil"])
             if "escopo_visao" in d:
@@ -9069,6 +9613,114 @@ def api_colaborador_foto(colaborador_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+def _liberar_acesso(s, c, *, autor, email=None, perfil=None, perfil_id=None,
+                    obra_id=None, obra_ids=None, todas_as_obras=False,
+                    convidar=True) -> dict:
+    """CRIA O ACESSO de um colaborador — a ÚNICA implementação disto.
+
+    ⚑ POR QUE É UMA FUNÇÃO E NÃO SÓ A ROTA (17/11/2026): a fila de pedidos
+    vindos do ponto precisa liberar acesso, e a tentação era escrever um
+    segundo caminho que faz "quase a mesma coisa". Foi exatamente a cobrança
+    dele naquele dia — *"três botões para importar pessoas (…) às vezes não
+    compreendo a lógica de complicar"*. Duas implementações do mesmo ato
+    divergem: uma manda convite, a outra esquece; uma liga a obra, a outra
+    não. Então há uma, e as duas portas chamam esta.
+
+    NÃO dá commit: quem chama decide quando fechar a transação (a fila precisa
+    marcar o pedido como atendido na MESMA transação — senão existe um instante
+    em que o acesso foi criado e o pedido continua na fila).
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.apps.erp.core.auth import convites as svc_convites
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import (
+        PerfilUsuario, Usuario, UsuarioObra,
+    )
+    import secrets as _secrets
+
+    email = (email or c.email or "").strip().lower()
+    if "@" not in email:
+        return {"ok": False, "erro":
+                "Informe o e-mail da pessoa — é por ele que ela entra e "
+                "recebe o convite."}
+    if (c.situacao or "").upper() == "DESLIGADO":
+        return {"ok": False, "erro":
+                "Esta pessoa está desligada. Readmita antes de liberar o "
+                "acesso."}
+    operador = s.scalars(
+        sa_select(Usuario).where(Usuario.email == email)).first()
+    if operador is None:
+        # SENHA SORTEADA E JOGADA FORA: a conta nasce sem senha utilizável, e
+        # quem define é a pessoa, pelo convite. Nasce com uma senha conhecida
+        # seria uma porta aberta até alguém trocar.
+        operador = Usuario(
+            nome=c.nome, email=email,
+            senha_hash=gerar_hash(_secrets.token_urlsafe(32)),
+            perfil=PerfilUsuario.CONSULTA, ativo=True,
+            telefone=(c.telefone or None))
+        s.add(operador)
+        s.flush()
+    elif not operador.ativo:
+        operador.ativo = True
+    # ⚑ O CPF VEM DO CADASTRO (23/11/2026). Ele, liberando uma pessoa da fila:
+    # *"O CPF já era para ele buscar e preencher automaticamente, não
+    # aconteceu."* Nome, e-mail e telefone vinham; o CPF ficava em branco na
+    # tela de operadores. Só preenche se estiver vazio — não troca o que alguém
+    # já digitou.
+    if not (operador.cpf or "").strip() and (c.cpf or "").strip():
+        operador.cpf = c.cpf
+    # O CARGO, quando quem libera disse qual. A fila do portal manda
+    # ADMINISTRATIVO_OBRA; a ficha, nada, e aí fica o CONSULTA de sempre.
+    if perfil:
+        try:
+            operador.perfil = PerfilUsuario(str(perfil).strip().upper())
+        except ValueError:
+            return {"ok": False, "erro": f"Perfil desconhecido: {perfil}."}
+    if perfil_id:
+        operador.perfil_id = int(perfil_id)
+    svc.ligar_ao_operador(s, c.id, operador.id, autor)
+    # A OBRA DA PESSOA vira o alcance dela, que é o caso comum de quem
+    # trabalha em obra: sem isto o acesso nasce sem enxergar nada e alguém
+    # teria de ir marcar na outra tela. `obra_id` de fora (a obra em que ela
+    # bate ponto) tem preferência sobre a do cadastro, que envelhece.
+    # ⚑ VÁRIAS OBRAS DESDE 18/11/2026. Ele, fechando o ciclo da liberação:
+    # *"o administrador vai liberar a pessoa, mas tem que definir o acesso
+    # dele, o perfil, as obras, etc e tal."*
+    #
+    # Antes era UMA obra — a do cadastro — e quem respondia por três ficava
+    # vendo uma. `obra_ids` vazio mantém o de sempre (a obra do cadastro), e é
+    # o que faz a liberação continuar sendo um clique para o caso comum.
+    if todas_as_obras:
+        operador.ve_todas_as_obras = True
+    # ⚠️ LISTA VAZIA É ESCOLHA, não omissão: quem desmarcou tudo na tela quis
+    # liberar o acesso sem obra nenhuma (um acesso de escritório, por
+    # exemplo). Por isso a diferença entre `None` (ninguém disse nada — vale o
+    # padrão de sempre) e `[]` (disseram "nenhuma").
+    if obra_ids is None:
+        escolhidas = [int(obra_id)] if obra_id else (
+            [int(c.obra_id)] if c.obra_id else [])
+    else:
+        escolhidas = [int(x) for x in obra_ids if x]
+    alvo = escolhidas[0] if escolhidas else None
+    if not getattr(operador, "ve_todas_as_obras", False):
+        for uma in escolhidas:
+            ja = s.scalars(sa_select(UsuarioObra).where(
+                UsuarioObra.usuario_id == operador.id,
+                UsuarioObra.obra_id == uma)).first()
+            if ja is None:
+                s.add(UsuarioObra(usuario_id=operador.id, obra_id=uma))
+    convite = {"enviado": False, "erro": "", "link": ""}
+    if convidar:
+        convite = svc_convites.enviar(
+            s, operador.id, link_base=_link_do_convite(), autor=autor)
+    return {"ok": True, "usuario_id": operador.id, "email": email,
+            "obra_id": alvo, "obra_ids": escolhidas,
+            "todas_as_obras": bool(getattr(operador, "ve_todas_as_obras", False)),
+            "convite": convite}
+
+
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/acesso",
           methods=["POST", "DELETE"])
 @login_obrigatorio
@@ -9092,15 +9744,8 @@ def api_colaborador_acesso(colaborador_id: int):
     DELETE desfaz a LIGAÇÃO, não o operador. Apagar o operador levaria junto a
     autoria de tudo o que ele lançou.
     """
-    from sqlalchemy import select as sa_select
-
-    from app.apps.erp.core.auth import convites as svc_convites
-    from app.apps.erp.core.auth.service import gerar_hash
     from app.apps.erp.core.cadastros import pessoas as svc
-    from app.apps.erp.db.models.cadastros import (
-        Colaborador, PerfilUsuario, Usuario,
-    )
-    import secrets as _secrets
+    from app.apps.erp.db.models.cadastros import Colaborador
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
@@ -9113,52 +9758,20 @@ def api_colaborador_acesso(colaborador_id: int):
                 return jsonify({"ok": True})
 
             d = request.get_json(silent=True) or {}
-            email = (d.get("email") or c.email or "").strip().lower()
-            if "@" not in email:
-                return jsonify({"ok": False, "erro":
-                                "Informe o e-mail da pessoa — é por ele que "
-                                "ela entra e recebe o convite."}), 400
-            if (c.situacao or "").upper() == "DESLIGADO":
-                return jsonify({"ok": False, "erro":
-                                "Esta pessoa está desligada. Readmita antes "
-                                "de liberar o acesso."}), 400
-            operador = s.scalars(
-                sa_select(Usuario).where(Usuario.email == email)).first()
-            if operador is None:
-                # SENHA SORTEADA E JOGADA FORA: a conta nasce sem senha
-                # utilizável, e quem define é a pessoa, pelo convite. Nasce
-                # com uma senha conhecida seria uma porta aberta até alguém
-                # trocar.
-                operador = Usuario(
-                    nome=c.nome, email=email,
-                    senha_hash=gerar_hash(_secrets.token_urlsafe(32)),
-                    perfil=PerfilUsuario.CONSULTA, ativo=True,
-                    telefone=(c.telefone or None))
-                s.add(operador)
-                s.flush()
-            elif not operador.ativo:
-                operador.ativo = True
-            if d.get("perfil_id"):
-                operador.perfil_id = int(d["perfil_id"])
-            svc.ligar_ao_operador(s, colaborador_id, operador.id, atual)
-            # A OBRA DA PESSOA vira o alcance dela, que é o caso comum de quem
-            # trabalha em obra: sem isto o acesso nasce sem enxergar nada e
-            # alguém teria de ir marcar na outra tela.
-            if c.obra_id and not getattr(operador, "ve_todas_as_obras", False):
-                from app.apps.erp.db.models.cadastros import UsuarioObra
-                ja = s.scalars(sa_select(UsuarioObra).where(
-                    UsuarioObra.usuario_id == operador.id,
-                    UsuarioObra.obra_id == c.obra_id)).first()
-                if ja is None:
-                    s.add(UsuarioObra(usuario_id=operador.id,
-                                      obra_id=c.obra_id))
-            convite = {"enviado": False, "erro": "", "link": ""}
-            if d.get("convidar", True):
-                convite = svc_convites.enviar(
-                    s, operador.id, link_base=_link_do_convite(), autor=atual)
+            r = _liberar_acesso(s, c, autor=atual, email=d.get("email"),
+                                perfil=d.get("perfil"),
+                                perfil_id=d.get("perfil_id"),
+                                obra_id=d.get("obra_id"),
+                                # A rota inteira já exige `gerir_usuarios`,
+                                # então quem chega aqui pode escolher obra e
+                                # alcance — não há o que filtrar de novo.
+                                obra_ids=d.get("obra_ids"),
+                                todas_as_obras=bool(d.get("todas_as_obras")),
+                                convidar=d.get("convidar", True))
+            if not r["ok"]:
+                return jsonify(r), 400
             s.commit()
-            return jsonify({"ok": True, "usuario_id": operador.id,
-                            "email": email, "convite": convite})
+            return jsonify(r)
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado as e:
@@ -9166,6 +9779,143 @@ def api_colaborador_acesso(colaborador_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao liberar acesso do colaborador %s",
                          colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# A FILA DE PEDIDOS DE ACESSO AO PORTAL (17/11/2026)
+#
+# Ele: *"que tal a partir do ponto eu requerer a liberação do acesso ao
+# portal? Ela já tem o cadastro no ponto, e lá pelo ponto ela vai informar o
+# e-mail dela."*
+#
+# O que esta fila resolve: o acesso só nasce com e-mail, e o e-mail da gente de
+# obra o sistema não tem — ninguém pede e-mail para contratar. A pessoa informa
+# no ponto (onde ela já está autenticada com CPF e PIN) e o DP decide aqui.
+#
+# ⚑ LIBERAR CHAMA `_liberar_acesso`, a MESMA função da ficha da pessoa. Não há
+# segundo caminho de criar acesso — ver o comentário dela.
+# ===========================================================================
+@bp.route("/erp/api/portal/pedidos-de-acesso")
+@login_obrigatorio
+@permissao("liberar_acesso_portal")
+def api_pedidos_de_acesso():
+    from app.apps.erp.core.auth import pedidos_de_portal as fila
+    try:
+        with get_session() as s:
+            conn = s.connection()
+            status = (request.args.get("status") or "PENDENTE").upper()
+            # ⚑ QUEM ADMINISTRA O ACESSO VAI DIRETO CONFIGURAR (18/11/2026).
+            # Ele, fechando o ciclo: *"no ato da liberação já abrir a tela de
+            # configurações do cadastro da pessoa (…) lá será designado o
+            # perfil dela, obras de acesso e etc."*
+            #
+            # A resposta diz só SE esta pessoa administra operadores. A tela
+            # usa isso para mandar quem libera direto para Configurações ›
+            # Usuários, com o operador aberto. A lista de perfis NÃO vem aqui:
+            # ela já existe lá, e mandá-la nesta resposta era uma consulta por
+            # abertura da tela de Pessoal para desenhar uma lista que acabou
+            # morando em outro lugar.
+            #
+            # Quem apenas resolve a fila (o DP) não administra: para ele o
+            # acesso nasce preso à obra do cadastro e a tela não muda.
+            from app.apps.erp.core.auth.permissoes import pode_com_banco
+            atual = _usuario_logado(s)
+            administra = bool(atual is not None
+                              and pode_com_banco(s, atual, "gerir_usuarios"))
+            return jsonify({"ok": True,
+                            "pedidos": fila.listar(conn, status=status),
+                            "pendentes": fila.quantos_pendentes(conn),
+                            "administra_acesso": administra,
+                            "disponivel": fila.tabela_existe(conn)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar os pedidos de acesso ao portal")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/portal/pedidos-de-acesso/<int:pedido_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("liberar_acesso_portal")
+def api_pedido_de_acesso_decidir(pedido_id: int):
+    """LIBERAR ou RECUSAR um pedido.
+
+    Liberar cria o acesso com o perfil escolhido (padrão
+    ADMINISTRATIVO_OBRA — quem pede acesso ao portal pela obra é quem abre
+    pedidos de lá), liga a obra em que a pessoa bate ponto e manda o convite
+    de primeira senha. Tudo numa transação só: ou o acesso nasce E o pedido
+    sai da fila, ou nada acontece.
+    """
+    from app.apps.erp.core.auth import pedidos_de_portal as fila
+    from app.apps.erp.core.auth.permissoes import pode_com_banco
+    from app.apps.erp.db.models.cadastros import Colaborador
+    d = request.get_json(silent=True) or {}
+    acao = (d.get("acao") or "").strip().upper()
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            conn = s.connection()
+            pedidos = {p["id"]: p for p in fila.listar(conn, status="TODOS",
+                                                       limite=1000)}
+            p = pedidos.get(pedido_id)
+            if p is None:
+                raise ErroNaoEncontrado("Pedido não encontrado.")
+            if p["status"] != fila.PENDENTE:
+                return jsonify({"ok": False, "erro":
+                                "Este pedido já foi decidido."}), 400
+
+            if acao == "RECUSAR":
+                fila.decidir(conn, pedido_id, status=fila.RECUSADO,
+                             decidido_por=atual.id if atual else None,
+                             motivo=d.get("motivo") or "")
+                s.commit()
+                return jsonify({"ok": True, "status": fila.RECUSADO})
+            if acao != "LIBERAR":
+                return jsonify({"ok": False, "erro":
+                                "Diga o que fazer: LIBERAR ou RECUSAR."}), 400
+            if not p["colaborador_id"]:
+                return jsonify({"ok": False, "erro":
+                                "Este pedido não está ligado a um cadastro de "
+                                "colaborador."}), 400
+            c = s.get(Colaborador, p["colaborador_id"])
+            if c is None:
+                raise ErroNaoEncontrado("O cadastro desta pessoa não existe mais.")
+            # ⚠️ O PERFIL NÃO VEM DO NAVEGADOR quando quem decide não gere
+            # operadores (18/11/2026, ao liberar a fila para o DP). Sem esta
+            # trava, o DP mandaria "perfil: ADMIN" na mão e criaria um
+            # administrador do sistema por uma fila de acesso de obra. Quem
+            # tem `gerir_usuarios` continua podendo escolher — essa pessoa já
+            # cria operador com qualquer perfil pela tela de operadores.
+            administra = pode_com_banco(s, atual, "gerir_usuarios") if atual else False
+            r = _liberar_acesso(
+                s, c, autor=atual, email=d.get("email") or p["email"],
+                # ⚑ O PADRÃO É ADMINISTRATIVO DE OBRA, e é escolha explícita:
+                # é o perfil de quem abre pedido pela obra e NÃO vê salário
+                # nem documento de ninguém (`ver_remuneracao`, `ver_arquivo`).
+                # CONSULTA, o padrão da ficha, não deixaria ela pedir nada —
+                # o acesso nasceria inútil e ela voltaria a pedir.
+                perfil=(d.get("perfil") if administra else None)
+                       or "ADMINISTRATIVO_OBRA",
+                perfil_id=d.get("perfil_id") if administra else None,
+                # As OBRAS também só vêm do navegador para quem gere
+                # operadores: para o DP fica a obra do cadastro, de sempre.
+                obra_ids=(d.get("obra_ids") if administra else None),
+                todas_as_obras=bool(d.get("todas_as_obras")) if administra
+                               else False,
+                obra_id=p["obra_id"], convidar=True)
+            if not r["ok"]:
+                return jsonify(r), 400
+            fila.decidir(conn, pedido_id, status=fila.LIBERADO,
+                         decidido_por=atual.id if atual else None,
+                         usuario_id=r["usuario_id"])
+            s.commit()
+            return jsonify({"ok": True, "status": fila.LIBERADO, **r})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao decidir o pedido de acesso %s", pedido_id)
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -9230,6 +9980,98 @@ def api_usuario_convite_situacao(usuario_id: int):
             return jsonify({"ok": True, "convite": svc.situacao(s, usuario_id)})
     except Exception as e:
         logger.exception("ERP: falha ao ler a situação do convite")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# PRIMEIRO ACESSO PELO PRÓPRIO PORTAL (18/11/2026)
+#
+# Ele, ao tentar orientar a equipe e esbarrar no absurdo: *"então tá errado
+# esse acesso ser liberado pelo aplicativo de ponto. Qual o sentido que tem de
+# uma pessoa que vai lançar um diário ter que ir lá no aplicativo do ponto?
+# (…) O cara tem que ir pro portal e criar o acesso dele por lá."*
+#
+# ⚑ AS DUAS ROTAS SÃO PÚBLICAS, e têm de ser: quem não tem acesso não pode
+# entrar para pedir acesso. O que as segura é o teto por IP e o código no
+# telefone DO CADASTRO — não a sessão.
+#
+# ⚑ E NENHUMA DELAS CRIA ACESSO. A segunda só põe o pedido na fila de sempre,
+# com a identidade marcada como confirmada. Quem cria é quem aprova, pelo
+# botão que já existe — decisão dele no mesmo dia: *"ainda assim precisa ser
+# validado por alguém no sistema. (…) aí aumenta o nível de segurança."*
+# ===========================================================================
+def _dentro_do_teto(tipo: str, por_hora: int) -> bool:
+    """Teto por IP para as rotas públicas do primeiro acesso.
+
+    ⚑ REUSA O CONTADOR DO PONTO, que já faz exatamente isto e está em
+    produção. Escrever um segundo contador aqui seria duas regras para a mesma
+    coisa, e a segunda envelheceria sozinha.
+
+    ⚠️ O TETO POR IP É FOLGADO DE PROPÓSITO: atrás de um proxy, a obra inteira
+    sai pelo mesmo endereço, e um teto apertado trancaria todo mundo porque um
+    colega tentou. A trava fina é por PESSOA, no banco (três códigos por hora)
+    e nas cinco tentativas de cada código.
+    """
+    try:
+        from app.apps.ponto import auth as auth_ponto
+        return auth_ponto.dentro_do_limite(
+            tipo, request.remote_addr or "sem-ip", por_hora)
+    except Exception:                                       # noqa: BLE001
+        # O contador é defesa extra, não a trava. Se ele falhar, o código no
+        # telefone do cadastro continua sendo o que segura a porta.
+        logger.warning("ERP: contador de tentativas indisponível")
+        return True
+
+
+@bp.route("/erp/primeiro-acesso")
+@permissao_publica("tela de primeiro acesso — quem ainda não tem conta não "
+                   "tem como entrar para pedir uma")
+def pagina_primeiro_acesso_portal():
+    return render_template("erp_primeiro_acesso_portal.html")
+
+
+@bp.route("/erp/api/primeiro-acesso/codigo", methods=["POST"])
+@permissao_publica("pedir o código por WhatsApp; a resposta é a mesma exista "
+                   "o CPF ou não")
+def api_primeiro_acesso_codigo():
+    from app.apps.erp.core.auth import primeiro_acesso_portal as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            if not _dentro_do_teto("codigo-portal", 12):
+                return jsonify({"ok": False, "erro":
+                                "Muitos pedidos deste lugar. Tente mais "
+                                "tarde."}), 429
+            r = svc.pedir_codigo(s, d.get("cpf"), d.get("telefone"),
+                                 ip=request.remote_addr or "")
+            s.commit()
+            return jsonify(r), (200 if r.get("ok") else 400)
+    except Exception as e:
+        logger.exception("ERP: falha ao pedir o código de primeiro acesso")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/primeiro-acesso/concluir", methods=["POST"])
+@permissao_publica("conferir o código e abrir o pedido de acesso na fila")
+def api_primeiro_acesso_concluir():
+    from app.apps.erp.core.auth import primeiro_acesso_portal as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            if not _dentro_do_teto("concluir-portal", 20):
+                return jsonify({"ok": False, "erro":
+                                "Muitas tentativas deste lugar. Tente mais "
+                                "tarde."}), 429
+            r = svc.concluir(s, d.get("cpf"), d.get("codigo"), d.get("email"),
+                             ip=request.remote_addr or "")
+            s.commit()
+            return jsonify(r)
+    except svc.CodigoRecusado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao concluir o primeiro acesso")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -9343,6 +10185,83 @@ def api_diarias():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ===========================================================================
+# A CHAVE DE SEGREDOS — ver, diagnosticar e gerar uma nova
+#
+# Nasceu de um relato dele em 17/11/2026: *"fui gravar o email no cadastro da
+# empresa e apareceu: A chave em ERP_CHAVE_SEGREDOS não tem o formato
+# esperado."*
+#
+# Duas coisas estavam erradas, e nenhuma era a chave:
+#
+#  1. A TELA NÃO AVISAVA ANTES. Ela só perguntava "a variável existe?". Com uma
+#     chave presente mas torta, ele preenchia a conta inteira, digitava a senha
+#     e só então levava o recado.
+#  2. O RECADO MANDAVA RODAR UM COMANDO DE PROGRAMADOR
+#     (`Fernet.generate_key()`). Quem opera este sistema não roda comando
+#     nenhum — então a mensagem, na prática, dizia "chame alguém".
+#
+# ⚠️ O ERP GERA A CHAVE, MAS NÃO A GUARDA. Ela tem de ser copiada à mão para a
+# Environment do Render. Gravá-la no banco desfaria a razão de ela existir:
+# quem tivesse uma cópia do banco teria as senhas junto.
+# ===========================================================================
+@bp.route("/erp/api/chave-de-segredos")
+@login_obrigatorio
+@permissao("configurar")
+def api_chave_de_segredos():
+    """Em que pé está a chave — e o que a troca dela custaria.
+
+    ⚠️ NUNCA devolve o valor da chave. Só se ela serve, o que há de errado, e
+    quantos segredos já foram guardados com ela (porque trocar a chave
+    invalida todos eles, e quem decide trocar precisa saber disso ANTES).
+    """
+    from sqlalchemy import text as sa_text
+
+    from app.apps.erp.core.comum import segredos
+    try:
+        estado = dict(segredos.situacao())
+        with get_session() as s:
+            guardados = 0
+            for tabela, coluna in (("empresas", "smtp_senha_cifrada"),
+                                   ("empresas", "emissao_token_cifrado"),
+                                   ("parametros", None)):
+                try:
+                    with s.begin_nested():
+                        if coluna is None:
+                            continue
+                        n = s.execute(sa_text(
+                            f"SELECT count(*) FROM {tabela} "
+                            f" WHERE {coluna} IS NOT NULL")).scalar() or 0
+                        guardados += int(n)
+                except Exception:        # coluna que ainda não existe no banco
+                    pass
+        estado["segredos_guardados"] = guardados
+        return jsonify({"ok": True, **estado})
+    except Exception as e:
+        logger.exception("ERP: falha ao olhar a chave de segredos")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/chave-de-segredos/gerar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_chave_de_segredos_gerar():
+    """Sorteia uma chave válida para quem configura copiar para o Render.
+
+    ⚑ NÃO GRAVA NADA, nem no banco nem em arquivo, e NÃO ENTRA NO LOG. A
+    resposta existe uma vez, na tela de quem pediu, e acabou.
+    """
+    from app.apps.erp.core.comum import segredos
+    try:
+        logger.info("ERP: chave de segredos gerada para configuração "
+                    "(o valor não é registrado)")
+        return jsonify({"ok": True, "chave": segredos.gerar_chave(),
+                        "variavel": segredos.VARIAVEL})
+    except Exception as e:
+        logger.exception("ERP: falha ao gerar a chave de segredos")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/email-sistema", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao("configurar")
@@ -9388,6 +10307,66 @@ def api_email_sistema_testar():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha no teste do e-mail do sistema")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# O E-MAIL DO DP (18/11/2026)
+#
+# Ele: *"O que eu vou encaminhar a partir do DP é uma coisa, é um e-mail. O que
+# eu vou encaminhar a partir do suprimento é outro e-mail. (…) o DP, por
+# enquanto, eu quero um e-mail geral. (…) Eu tenho que configurar isso no
+# próprio DP."*
+#
+# ⚑ ROTA PRÓPRIA, E NÃO UM `area` NO CORPO DA ROTA DO SISTEMA, e a razão é
+# regra do CLAUDE.md: a ação declarada tem de decidir sozinha quem entra. A
+# conta do SISTEMA é do administrador (`configurar`); a do DP é de quem opera o
+# DP (`pedir_contabilidade`). Uma rota só, com duas alçadas por dentro, faria a
+# declaração mentir — e a homologação com banco de verdade acusa isso.
+# ===========================================================================
+@bp.route("/erp/api/dp/email", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="pedir_contabilidade")
+def api_email_do_dp():
+    """A conta por onde o DP manda (e por onde a resposta volta). Senha nunca sai."""
+    from app.apps.erp.core.comum import email_sistema as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, "config": svc.configuracao(s, "DP"),
+                                "falta": svc.o_que_falta(s, "DP")})
+            r = svc.configurar(s, request.get_json(silent=True) or {},
+                               _usuario_logado(s), area="DP")
+            s.commit()
+            return jsonify({"ok": True, "config": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na conta de e-mail do DP")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/email/testar", methods=["POST"])
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_email_do_dp_testar():
+    from app.apps.erp.core.comum import email_sistema as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            para = ((request.get_json(silent=True) or {}).get("para")
+                    or (atual.email if atual else "")).strip()
+            if not para:
+                return jsonify({"ok": False,
+                                "erro": "Para qual endereço mando o teste?"}), 400
+            registro = svc.testar(s, para, atual, area="DP")
+            s.commit()
+            return jsonify({"ok": registro.situacao == "ENVIADO",
+                            "erro": registro.erro, "para": para})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no teste do e-mail do DP")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -10966,6 +11945,376 @@ def pagina_compras():
                            **_contexto("sup_compras"))
 
 
+# ---------------------------------------------------------------------------
+# O PAINEL DO COORDENADOR E A PROJEÇÃO DO FINANCEIRO (20/11/2026)
+#
+# As duas telas só LEEM, e leem o cruzamento de coisas que outras telas
+# gravam: o recebimento da obra, a nota vinculada ao pedido, o título que
+# nasceu da nota. Por isso `ver_suprimentos` basta — a mesma ação que já abre
+# a tela de Compras, e que o perfil do financeiro já tem.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/suprimentos/painel")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_painel():
+    return render_template("erp_suprimentos_painel.html",
+                           **_contexto("sup_painel"))
+
+
+@bp.route("/erp/api/suprimentos/painel")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_painel():
+    """O planejamento do coordenador: cada item pedido pela obra que ainda não
+    chegou por inteiro, na ordem em que deve ser olhado — mais o resumo dos
+    pedidos de compra (entrega, nota, pagamento) para os quadros do topo."""
+    from app.apps.erp.core.suprimentos import acompanhamento as svc
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        compras = svc.painel(s, usuario)
+        return jsonify({"ok": True, **svc.planejamento(s, usuario),
+                        "compras": {"resumo": compras["resumo"],
+                                    "destaques": compras["destaques"]}})
+
+
+@bp.route("/erp/suprimentos/relatorios")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_relatorios():
+    return render_template("erp_suprimentos_relatorios.html",
+                           **_contexto("sup_relatorios"))
+
+
+@bp.route("/erp/api/suprimentos/relatorios")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_relatorios():
+    """Os relatórios de gestão das compras, no recorte de obra de quem pede."""
+    from datetime import date as _date
+    from app.apps.erp.core.suprimentos import relatorios as svc
+
+    def _data(nome):
+        try:
+            return _date.fromisoformat((request.args.get(nome) or "").strip())
+        except ValueError:
+            return None
+
+    def _numero(nome):
+        v = (request.args.get(nome) or "").strip()
+        return int(v) if v.isdigit() else None
+
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.gerar(
+            s, request.args.get("tipo") or "ECONOMIA", _usuario_logado(s),
+            de=_data("de"), ate=_data("ate"), obra_id=_numero("obra_id"),
+            fornecedor_id=_numero("fornecedor_id"))})
+
+
+# ---------------------------------------------------------------------------
+# MATERIAL COMPRADO SEM PEDIDO DE COMPRA — ciência e autorização (21/11/2026)
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/suprimentos/fora-do-fluxo", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_suprimentos", POST="configurar")
+def api_fora_do_fluxo():
+    """GET: o que está esperando autorização e se a regra está ligada.
+    POST: liga ou desliga a regra (só quem configura o sistema)."""
+    from app.apps.erp.core.suprimentos import fora_do_fluxo as svc
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "POST":
+                svc.ligar(s, usuario, (request.get_json(silent=True) or {}).get("modo") or "")
+                s.commit()
+            modo, desde = svc.estado(s)
+            return jsonify({"ok": True, "modo": modo,
+                            "ligado_desde": desde.isoformat() if desde else None,
+                            "pendentes": svc.listar(s, usuario) if desde else [],
+                            "pode_autorizar": pode(usuario, "autorizar_compra_fora_do_fluxo"),
+                            "pode_regularizar": pode(usuario, "receber_material"),
+                            "pode_configurar": pode(usuario, "configurar"),
+                            "eu": usuario.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/suprimentos/fora-do-fluxo/<int:titulo_id>/autorizar", methods=["POST"])
+@login_obrigatorio
+@permissao("autorizar_compra_fora_do_fluxo")
+def api_autorizar_fora_do_fluxo(titulo_id: int):
+    """Dá ciência da compra feita sem pedido e libera o lançamento."""
+    from app.apps.erp.core.suprimentos import fora_do_fluxo as svc
+    try:
+        with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            usuario = _usuario_logado(s)
+            exigir_titulo_no_escopo(s, usuario, titulo_id)
+            svc.autorizar(s, titulo_id, usuario,
+                          (request.get_json(silent=True) or {}).get("observacao") or "")
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+@bp.route("/erp/api/suprimentos/fora-do-fluxo/<int:titulo_id>/regularizar", methods=["POST"])
+@login_obrigatorio
+@permissao("receber_material")
+def api_regularizar_fora_do_fluxo(titulo_id: int):
+    """A solicitação tardia: registra o que foi comprado por fora, e disso
+    nascem a solicitação, o pedido e o recebimento ligados ao lançamento."""
+    from app.apps.erp.core.suprimentos import fora_do_fluxo as svc
+    try:
+        with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            usuario = _usuario_logado(s)
+            exigir_titulo_no_escopo(s, usuario, titulo_id)
+            saida = svc.regularizar(s, titulo_id, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, **saida})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao regularizar compra sem pedido")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/suprimentos/acompanhar")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_acompanhar():
+    return render_template("erp_suprimentos_acompanhar.html",
+                           **_contexto("sup_acompanhar"))
+
+
+@bp.route("/erp/api/suprimentos/acompanhamento")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_acompanhamento():
+    """Cada pedido de pé, cruzado: entrega × nota × pagamento."""
+    from app.apps.erp.core.suprimentos import acompanhamento as svc
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.painel(
+            s, _usuario_logado(s),
+            incluir_fechados=request.args.get("fechados") == "1",
+            incluir_sem_efeito=request.args.get("todos") == "1")})
+
+
+@bp.route("/erp/suprimentos/projecao")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_projecao():
+    return render_template("erp_suprimentos_projecao.html",
+                           **_contexto("sup_projecao"))
+
+
+@bp.route("/erp/api/suprimentos/projecao")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_projecao():
+    """O que as compras ainda vão custar e quando, antes de virar título."""
+    from app.apps.erp.core.suprimentos import projecao as svc
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.projetar(s, _usuario_logado(s))})
+
+
+@bp.route("/erp/api/suprimentos/entrega/locais")
+@login_obrigatorio
+@permissao("comprar")
+def api_locais_de_entrega():
+    """O endereço de cada obra e a sede que pode recebê-la — para o pedido
+    direto (sem cotação) oferecer "onde desce" como o fechamento do mapa."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    ids = [int(x) for x in (request.args.get("obras") or "").split(",") if x.isdigit()]
+    with get_session() as s:
+        return jsonify({"ok": True, "obras": svc.locais_possiveis(s, ids)})
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/fechamento")
+@login_obrigatorio
+@permissao("comprar")
+def api_preparar_fechamento(cotacao_id: int):
+    """O que a tela precisa para fechar um pedido a partir do mapa: o que cada
+    fornecedor cotou, o que ainda está livre e onde o material pode descer."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.preparar_fechamento(s, cotacao_id)})
+
+
+# ---------------------------------------------------------------------------
+# A ASSINATURA DE QUEM ASSINA DOCUMENTO PELO SISTEMA (21/11/2026)
+# Cada um cadastra a SUA — por isso `ver_erp`, a ação mais baixa, e nenhum
+# número de pessoa na rota: a assinatura é sempre a de quem está logado.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/assinatura")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_assinatura():
+    return render_template("erp_assinatura.html")
+
+
+@bp.route("/erp/api/minha-assinatura/imagem")
+@login_obrigatorio
+@permissao("ver_erp")
+def imagem_da_minha_assinatura():
+    from app.apps.erp.core.comum import assinatura
+    with get_session() as s:
+        conteudo = assinatura.obter(s, _usuario_logado(s).id)
+    if not conteudo:
+        return "", 404
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "image/jpeg"
+    resposta.headers["Cache-Control"] = "no-store"
+    return resposta
+
+
+@bp.route("/erp/api/minha-assinatura", methods=["POST", "DELETE"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_minha_assinatura():
+    from app.apps.erp.core.comum import assinatura
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "DELETE":
+                assinatura.remover(s, usuario)
+            else:
+                assinatura.salvar(s, usuario,
+                                  (request.get_json(silent=True) or {}).get("imagem"))
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/suprimentos/cotacoes/<int:cotacao_id>/solicitacao.pdf")
+@login_obrigatorio
+@permissao("ver_pedidos_compra")
+def pdf_da_solicitacao_de_cotacao(cotacao_id: int):
+    """A solicitação de cotação em PDF — o anexo que o fornecedor recebe."""
+    from app.apps.erp.core.suprimentos import cotacao_pdf, envio
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            pedida = (request.args.get("empresa") or "").strip()
+            empresa = (s.get(Empresa, int(pedida)) if pedida.isdigit()
+                       else envio._empresa_do_disparo(s, cotacao_id, None))
+            if empresa is None:
+                return "Não há empresa definida para esta cotação.", 400
+            conteudo = cotacao_pdf.gerar(
+                s, cotacao_id, empresa, usuario=usuario,
+                prazo=(request.args.get("prazo") or "").strip() or None,
+                observacao=request.args.get("observacao") or "")
+    except ErroValidacao as e:
+        return str(e), 400
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "application/pdf"
+    resposta.headers["Content-Disposition"] = (
+        f'inline; filename="Cotacao-{cotacao_id}.pdf"')
+    return resposta
+
+
+@bp.route("/erp/suprimentos/cotacoes/<int:cotacao_id>/pdf")
+@login_obrigatorio
+@permissao("ver_pedidos_compra")
+def pdf_do_mapa(cotacao_id: int):
+    """O mapa de cotação em PDF, no formato da planilha: o mapa inteiro com as
+    condições de cada fornecedor e os resumos. É o que vai para a gestão."""
+    from app.apps.erp.core.cadastros import empresas as svc_empresas
+    from app.apps.erp.core.suprimentos import mapa_pdf
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        padrao = svc_empresas.padrao(s)
+        conteudo = mapa_pdf.gerar(
+            s, cotacao_id, quem=usuario.nome or "",
+            empresa_nome=(getattr(padrao, "nome_fantasia", None)
+                          or getattr(padrao, "razao_social", "") or ""))
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "application/pdf"
+    resposta.headers["Content-Disposition"] = (
+        f'inline; filename="Mapa-de-cotacao-{cotacao_id}.pdf"')
+    return resposta
+
+
+@bp.route("/erp/suprimentos/pedidos/<int:pedido_id>/pdf")
+@login_obrigatorio
+@permissao("ver_pedidos_compra")
+def pdf_do_pedido(pedido_id: int):
+    """O pedido de compra em PDF, exatamente como vai anexo ao e-mail do
+    fornecedor. Serve para conferir antes de mandar — e para baixar."""
+    from app.apps.erp.core.suprimentos import envio, pedido_pdf
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            possiveis = envio.empresa_do_pedido(s, pedido_id)
+            pedida = (request.args.get("empresa") or "").strip()
+            empresa_id = int(pedida) if pedida.isdigit() else possiveis["sugerida"]
+            empresa = s.get(Empresa, empresa_id) if empresa_id else None
+            if empresa is None:
+                return ("Não há empresa definida para este pedido. Ligue a obra "
+                        "a uma empresa em Configurações › Empresas."), 400
+            conteudo = pedido_pdf.gerar(s, pedido_id, empresa, usuario)
+            numero = pedido_pdf.dados(s, pedido_id, empresa)["numero"]
+    except ErroValidacao as e:
+        return str(e), 400
+    resposta = make_response(conteudo)
+    resposta.headers["Content-Type"] = "application/pdf"
+    resposta.headers["Content-Disposition"] = f'inline; filename="Pedido-{numero}.pdf"'
+    return resposta
+
+
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/para-lancar")
+@login_obrigatorio
+@permissao("lancar")
+def api_pedido_para_lancar(pedido_id: int):
+    """O lançamento financeiro já preenchido com o que o pedido sabe: credor,
+    valor do que chegou, rateio por obra e as parcelas da previsão."""
+    from app.apps.erp.core.suprimentos import lancamento as svc
+    try:
+        with get_session() as s:
+            from app.apps.erp.core.suprimentos.recebimento import (
+                exigir_pedido_no_escopo)
+            usuario = _usuario_logado(s)
+            exigir_pedido_no_escopo(s, usuario, pedido_id)
+            rec = (request.args.get("recebimento") or "").strip()
+            return jsonify({"ok": True, "pedido": svc.preparar(
+                s, usuario, pedido_id,
+                recebimento_id=int(rec) if rec.isdigit() else None)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/entrega", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_redefinir_entrega(pedido_id: int):
+    """Troca onde o material desce (obra, sede ou outro endereço) — enquanto
+    nada chegou."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc.redefinir_entrega(s, pedido_id, d.get("locais_entrega") or [],
+                                  _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao redefinir a entrega")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/suprimentos/compras")
 @login_obrigatorio
 @permissao("ver_suprimentos")
@@ -11303,6 +12652,55 @@ def api_colaboradores():
     except Exception as e:
         logger.exception("ERP: falha em colaboradores")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/convencoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="editar_colaboradores")
+def api_convencoes():
+    """As convenções coletivas, e a criação de uma nova de dentro do cadastro.
+
+    ⚑ 17/11/2026, pedido dele com todas as letras: *"eu não quero um botão
+    mais cargo. Cargo é para estar. Quando a gente for cadastrar, aqui eu ter
+    a relação de cargos e daqui DENTRO do cadastro eu poder criar um novo
+    cargo, criar uma nova convenção. Eu não posso criar obra, porque obra se
+    cria no outro canto, mas isso aqui é área exclusiva do DP."*
+
+    É a regra "um cadastro, uma porta" do `CLAUDE.md` aplicada à lista: a
+    pessoa não sai da ficha para cadastrar o que falta na caixinha.
+    """
+    from sqlalchemy import func, select
+
+    from app.apps.erp.db.models.cadastros import Convencao
+    try:
+        with get_session() as s:
+            if request.method == "POST":
+                d = request.get_json(silent=True) or {}
+                nome = (d.get("nome") or "").strip()
+                if not nome:
+                    return jsonify({"ok": False,
+                                    "erro": "Informe o nome da convenção."}), 400
+                # Mesmo nome é a mesma convenção: duas linhas para o mesmo
+                # acordo fariam duas pessoas da mesma obra terem pisos
+                # diferentes sem ninguém ver.
+                ja = s.scalars(select(Convencao).where(
+                    func.upper(func.btrim(Convencao.nome)) == nome.upper())).first()
+                if ja is not None:
+                    ja.ativo = True
+                    s.commit()
+                    return jsonify({"ok": True, "convencao_id": ja.id,
+                                    "ja_existia": True})
+                nova = Convencao(nome=nome,
+                                 uf=(d.get("uf") or "").strip().upper() or None)
+                s.add(nova)
+                s.commit()
+                return jsonify({"ok": True, "convencao_id": nova.id})
+            return jsonify({"ok": True, "convencoes": [
+                {"id": c.id, "nome": c.nome, "uf": c.uf or ""}
+                for c in s.scalars(select(Convencao).where(
+                    Convencao.ativo.is_not(False)).order_by(Convencao.nome)).all()]})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/funcoes", methods=["GET", "POST"])
@@ -11647,6 +13045,11 @@ def api_dp_solicitacoes():
         with get_session() as s:
             usuario = _usuario_logado(s)
             if request.method == "GET":
+                # ⚑ O que o ponto lançou e precisa da contabilidade entra na
+                # fila sozinho (20/11/2026) — `core/ponte_do_ponto.py`.
+                from app.apps.erp.core import ponte_do_ponto
+                if ponte_do_ponto.trazer(s).get("abertas"):
+                    s.commit()
                 return jsonify({"ok": True, **svc.listar(
                     s, situacao=request.args.get("situacao", ""),
                     tipo=request.args.get("tipo", ""),
@@ -11677,6 +13080,27 @@ def api_dp_solicitacao(solicitacao_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 404
 
 
+@bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/sugestoes")
+@login_obrigatorio
+@permissao("atender_dp")
+def api_dp_solicitacao_sugestoes(solicitacao_id: int):
+    """O que a janela de atendimento já traz preenchido (23/11/2026): no
+    desligamento de carteira, o último dia e a saída pela forma e pela data do
+    aviso, e as faltas lidas do ponto desde o dia seguinte ao corte."""
+    from app.apps.erp.core import dp_analise, pessoal_solicitacoes as svc
+    from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
+    try:
+        with get_session() as s:
+            exigir_solicitacao_dp_no_escopo(s, _usuario_logado(s), solicitacao_id)
+            p = svc.ler(s, solicitacao_id)
+            sug = (dp_analise.sugestoes_do_desligamento(s, p)
+                   if p["tipo"] == "DESLIGAMENTO"
+                   else {"valores": {}, "explicacoes": {}})
+            return jsonify({"ok": True, **sug})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
 @bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/<acao>", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
@@ -11696,7 +13120,14 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
         with get_session() as s:
             usuario = _usuario_logado(s)
             exigir_solicitacao_dp_no_escopo(s, usuario, solicitacao_id)
-            if acao in ("atender", "recusar", "item") and not pode(usuario, "atender_dp"):
+            # ⚑ OS PASSOS DO DESLIGAMENTO (19/11/2026) são do DP, como atender:
+            # marcar o passo, confirmar a continuidade e encerrar o processo.
+            if acao in ("atender", "recusar", "item", "passo", "continuidade",
+                        "encerrar", "assinar", "assinada", "corrigir",
+                        "contabilidade", "termo", "termo_validar",
+                        "cancelar_andamento", "despachar", "termo_papel",
+                        "devolucao_papel") \
+                    and not pode(usuario, "atender_dp"):
                 return jsonify({"ok": False, "erro":
                                 "Só o DP atende solicitação. Você pode abrir e "
                                 "acompanhar o que abriu."}), 403
@@ -11709,6 +13140,98 @@ def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
             elif acao == "item":
                 p = svc.marcar_item(s, solicitacao_id, int(d.get("item_id") or 0),
                                     bool(d.get("feito")), usuario)
+            elif acao == "contabilidade":
+                # ⚑ 20/11/2026: monta o pedido à contabilidade desta
+                # solicitação, já preenchido (admissão, alteração de cargo,
+                # dependente, férias, cancelamento de desligamento).
+                from app.apps.erp.core import contabil_processo as svc_contab
+                atual = svc.ler(s, solicitacao_id)
+                r = svc_contab.montar_pedido(s, atual, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                p["aviso"] = (f"Pedido {r['numero']} montado. Confira o texto e "
+                              "envie em Contabilidade.")
+            elif acao == "termo":
+                # Gera (de novo) o documento para a pessoa assinar.
+                from app.apps.erp.core import desligamento_processo as svc_proc
+                atual = svc.ler(s, solicitacao_id)
+                if atual["tipo"] == "DESCONTO_EM_FOLHA":
+                    svc.gerar_autorizacao_de_desconto(s, atual, usuario)
+                elif atual["tipo"] in ("FERIAS", "ALTERACAO_FERIAS"):
+                    from app.apps.erp.core import ferias as svc_ferias
+                    svc_ferias.gerar_aviso(s, atual, usuario)
+                else:
+                    svc_proc.gerar_termo(s, atual, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+            elif acao == "termo_validar":
+                from app.apps.erp.core import termos
+                tid = int(d.get("termo_id") or 0)
+                if termos.ler(s, tid).get("solicitacao_id") != solicitacao_id:
+                    raise ErroNaoEncontrado("Documento não encontrado.")
+                termos.validar(s, tid, usuario, aceitar=bool(d.get("aceitar")),
+                               motivo=str(d.get("motivo") or ""))
+                svc.termo_voltou(s, tid, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+            elif acao in ("termo_papel", "devolucao_papel"):
+                # ⚑ O PLANO B (23/11/2026): o papel assinado chegou ao
+                # ESCRITÓRIO — a obra sem internet, a pessoa que assinou à mão
+                # e mandou pelo malote. O DP anexa aqui e o processo segue
+                # igual ao do portal. Quem anexa é o DP, que está olhando o
+                # papel: o documento para assinar já entra validado.
+                arq = request.files.get("arquivo")
+                if arq is None:
+                    raise ErroValidacao("Escolha a foto ou o PDF do papel assinado.")
+                svc.papel_no_escritorio(
+                    s, solicitacao_id, acao, int(request.form.get("id") or 0),
+                    arq.read(), arq.filename or "assinado", usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+            elif acao == "cancelar_andamento":
+                # ⚑ 20/11/2026: cancelar o que o DP já atendeu — com a
+                # contabilidade, se ela já tinha recebido.
+                from app.apps.erp.core import contabil_processo as svc_contab
+                r = svc_contab.cancelar_em_andamento(
+                    s, svc.ler(s, solicitacao_id), str(d.get("motivo") or ""), usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                if r.get("cancelamento"):
+                    p["aviso"] = (f"Pedido de cancelamento {r['cancelamento']} "
+                                  "montado: envie à contabilidade. O pedido fica "
+                                  "em andamento até ela confirmar.")
+            elif acao == "despachar":
+                numero = svc.despachar(s, solicitacao_id, usuario)
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                if numero:
+                    p["aviso"] = f"Pedido {numero} montado. Confira e envie."
+            elif acao == "pedir_mudanca":
+                # Quem pediu avisa que quer cancelar ou mudar (não precisa ser DP).
+                p = svc.pedir_mudanca(s, solicitacao_id, d, usuario)
+            elif acao == "corrigir":
+                # ⚑ 19/11/2026: o DP corrige o pedido (e o pré-cadastro) na
+                # própria tela do atendimento, olhando o documento.
+                p = svc.corrigir(s, solicitacao_id, d, usuario)
+            elif acao in ("passo", "continuidade", "encerrar", "assinar",
+                          "assinada"):
+                from app.apps.erp.core import desligamento_processo as svc_proc
+                atual = svc.ler(s, solicitacao_id)
+                if acao == "passo":
+                    feito = svc_proc.marcar(s, atual, d, usuario)
+                elif acao == "assinar":
+                    feito = svc_proc.mandar_para_assinar(s, atual, d, usuario)
+                elif acao == "assinada":
+                    feito = svc_proc.validar_assinada(s, atual, d, usuario)
+                elif acao == "continuidade":
+                    feito = svc_proc.confirmar_continuidade(s, atual, d, usuario)
+                else:
+                    svc_proc.encerrar(s, atual, usuario)
+                    feito = {}
+                s.flush()
+                p = svc.ler(s, solicitacao_id)
+                if (feito or {}).get("aviso"):
+                    p["aviso"] = feito["aviso"]
             else:
                 raise ErroNaoEncontrado(f"Ação desconhecida: {acao}")
             s.commit()
@@ -11810,6 +13333,56 @@ def api_cargos_novo():
     except Exception as e:
         logger.exception("ERP: falha ao cadastrar cargo na convenção")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/cargos/modelo.xlsx")
+@login_obrigatorio
+@permissao("configurar")
+def api_cargos_modelo():
+    """A planilha para importar, já com o que está cadastrado (23/11/2026)."""
+    from flask import Response
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        conteudo = svc.planilha_modelo(s)
+    return Response(conteudo, mimetype="application/vnd.openxmlformats-"
+                    "officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition":
+                             'attachment; filename="cargos_e_convencoes.xlsx"'})
+
+
+@bp.route("/erp/api/convencoes/resumo")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_convencoes_resumo():
+    """Cada convenção com quantos cargos e quantas pessoas tem (23/11/2026)."""
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "convencoes": svc.convencoes_com_gente(
+            s, so_ativas=request.args.get("todos") != "1")})
+
+
+@bp.route("/erp/api/convencoes/<int:convencao_id>/pessoas")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_convencao_pessoas(convencao_id: int):
+    from app.apps.erp.core.cadastros import cargos as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "pessoas": svc.pessoas_da_convencao(s, convencao_id)})
+
+
+@bp.route("/erp/api/convencoes/<int:convencao_id>/excluir", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_convencao_excluir(convencao_id: int):
+    """Exclui a convenção sem ninguém; desativa a que só tem histórico."""
+    from app.apps.erp.core.cadastros import cargos as svc
+    try:
+        with get_session() as s:
+            r = svc.excluir_convencao(s, convencao_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/cargos/importar", methods=["POST"])
@@ -12193,8 +13766,13 @@ def api_diario_quadro():
         mes = request.args.get("mes", type=int) or hoje.month
         with get_session() as s:
             minhas = obras_do_usuario(s, _usuario_logado(s))
+            # ⚑ ?todas=1 traz também as obras em fase de conclusão. A tela
+            # inicial NÃO manda isso: ele, em 19/11/2026, *"a tela inicial
+            # exibe só as obras ativas. As obras concluídas ficam ocultas. Aí
+            # eu altero o filtro e visualizo todas, se eu quiser."*
             return jsonify({"ok": True, **svc.quadro_do_mes(
-                s, ano, mes, obra_ids=minhas)})
+                s, ano, mes, obra_ids=minhas,
+                incluir_encerradas=request.args.get("todas") == "1")})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
@@ -12394,7 +13972,8 @@ def api_diario_pendencias():
         with get_session() as s:
             permitidas = obras_do_usuario(s, _usuario_logado(s))
             return jsonify({"ok": True, "obras": svc.pendencias_por_obra(
-                s, obra_ids=list(permitidas) if permitidas is not None else None)})
+                s, obra_ids=list(permitidas) if permitidas is not None else None,
+                incluir_encerradas=request.args.get("todas") == "1")})
     except Exception as e:
         logger.exception("ERP: falha nas pendências de diário")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
@@ -12424,7 +14003,16 @@ def pagina_portal():
     para quem só quer fazer um pedido, é o oposto de "ambiente mais enxuto".
     Quem quiser o ERP inteiro vai nele — está a um endereço de distância.
     """
-    return render_template("erp_portal.html")
+    # ⚑ O link "ERP completo" só existe para quem tem mais que o portal
+    # (17/11/2026). Quem só pede e acompanha não precisa de um botão que leva
+    # a um menu de 18 telas — leva a se perder.
+    with get_session() as _s:
+        quem = _usuario_logado(_s)
+        from app.apps.erp.core.auth.permissoes import pode as _pode
+        mais = any(_pode(quem, a) for a in
+                   ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
+                    "ver_suprimentos", "configurar"))
+    return render_template("erp_portal.html", pode_mais_que_o_portal=mais)
 
 
 @bp.route("/erp/portal/api/inicio")
@@ -12450,8 +14038,16 @@ def api_portal_inicio():
                 "tipos": svc_portal.tipos(s),
                 "pessoas": svc_portal.pessoas_ao_alcance(s, usuario),
                 "obras_lista": svc_portal.obras_para_escolher(s, usuario),
+                # A obra onde a pessoa bate ponto, já escolhida na caixinha
+                # (17/11/2026). Sugestão: a lista continua aberta.
+                "obra_sugerida": svc_portal.obra_sugerida(s, usuario),
                 "listas": svc_portal.listas_fechadas(s),
                 "pedidos": svc_portal.meus_pedidos(s, usuario),
+                "ferias": svc_portal.ferias_da_equipe(s, usuario),
+                # Os documentos para a pessoa assinar (20/11/2026, noite).
+                "termos": svc_portal.termos_para_assinar(s, usuario),
+                # Experiência terminando (20/11/2026): o aviso para a obra.
+                "experiencias": svc_portal.experiencias_da_equipe(s, usuario),
                 "devolucoes": svc_portal.minhas_devolucoes(s, usuario)})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
@@ -12474,7 +14070,15 @@ def api_portal_pessoas():
             usuario = _usuario_logado(s)
             svc_portal.quem_esta(s, usuario)            # 401 se não entrou
             achados = svc_portal.procurar_pessoas(
-                s, usuario, request.args.get("q", ""))
+                s, usuario, request.args.get("q", ""),
+                # A admissão procura também quem JÁ SAIU — é a readmissão.
+                desligados=(request.args.get("desligados") == "1"
+                            and request.args.get("tipo", "") == "CADASTRO"),
+                # O tipo de pedido pode valer só para um vínculo — a admissão
+                # de prestador, por exemplo. A tela diz qual; o servidor
+                # confere contra a regra, para a tela não poder alargar.
+                so_vinculo=svc_portal.vinculo_do_tipo(
+                    request.args.get("tipo", "")))
         return jsonify({"ok": True, "pessoas": achados})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
@@ -12509,11 +14113,20 @@ def api_portal_conferir_cpf():
             usuario = _usuario_logado(s)
             svc_portal.quem_esta(s, usuario)            # 401 se não entrou
             achado = svc_pessoas.conferir_cpf(s, request.args.get("cpf", ""))
+            # ⚑ NA READMISSÃO, O QUE O CADASTRO JÁ TEM (19/11/2026) — só os
+            # NOMES dos campos preenchidos, nunca os valores: quem digitou o
+            # CPF está com a pessoa ao lado, mas o RG e o endereço antigos não
+            # descem para o celular. A tela deixa de exigir o que já existe.
+            tem: list[str] = []
+            if achado["situacao"] == "desligado" and achado.get("colaborador_id"):
+                from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+                tem = sorted(svc_sp.o_que_o_cadastro_ja_tem(
+                    s, "CADASTRO", int(achado["colaborador_id"])))
         # O recado completo do cadastro traz "abra a ficha dela" — coisa que
         # quem está na obra não pode fazer. A frase daqui é a do portal.
         return jsonify({"ok": True, "situacao": achado["situacao"],
                         "nome": achado.get("nome", ""),
-                        "aviso": achado.get("aviso", "")})
+                        "aviso": achado.get("aviso", ""), "tem": tem})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
     except Exception as e:
@@ -12564,15 +14177,69 @@ def api_portal_ler_documento():
         return jsonify({"ok": False, "erro": recado_de_falha(e)})
 
 
+@bp.route("/erp/portal/api/ler-documentos", methods=["POST"])
+@permissao_publica("o portal tem autenticação própria, do ponto — ver "
+                   "core/portal.quem_esta")
+def api_portal_ler_documentos():
+    """Lê VÁRIOS papéis numa leitura só e devolve o que cada um é e os campos.
+
+    ⚑ 19/11/2026 — ele: *"eu quero jogar o RG, jogar a CNH, o comprovante de
+    endereço, o CPF, e o sistema fazer a leitura de todas essas informações."*
+    Uma chamada de IA por lote, não por arquivo (`documentos_de_pessoa`).
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import documentos_de_pessoa as svc_doc
+    try:
+        with get_session() as s:
+            svc_portal.quem_esta(s, _usuario_logado(s))     # 401 se não entrou
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    arquivos = [(f.read(), f.filename or "documento")
+                for f in request.files.getlist("arquivos")][:svc_doc.TETO_DE_ARQUIVOS]
+    if not arquivos:
+        return jsonify({"ok": False, "erro": "Nenhum arquivo."}), 400
+    _exigir_saldo_de_ia()
+    try:
+        from app.apps.erp.core.comum.ia_custo import contexto
+        with contexto(operacao="leitura_documentos_admissao"):
+            r = svc_doc.ler_varios(arquivos)
+        return jsonify({"ok": True, **r})
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao ler o lote de documentos")
+        # 200: a tela trata como "anexado, não consegui ler" e pede digitação.
+        return jsonify({"ok": False, "erro": recado_de_falha(e)})
+
+
 @bp.route("/erp/portal/api/pedidos", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
 def api_portal_abrir():
+    """Abre o pedido. Com papéis, vem como formulário (`pedido` em JSON e os
+    arquivos em `papeis`, com o tipo de cada um em `tipos`, na mesma ordem) —
+    e o pedido e os papéis são gravados na MESMA transação: ou os dois, ou
+    nenhum. Pedido de admissão sem os papéis é o que não pode existir."""
+    import json as _json
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     from app.apps.erp.core import portal as svc_portal
     try:
+        if request.files:
+            dados = _json.loads(request.form.get("pedido") or "{}")
+            tipos_dos_papeis = request.form.getlist("tipos")
+            arquivos = [{"conteudo": f.read(), "nome": f.filename or "documento",
+                         "tipo": (tipos_dos_papeis[i] if i < len(tipos_dos_papeis)
+                                  else "")}
+                        for i, f in enumerate(request.files.getlist("papeis"))]
+        else:
+            dados = request.get_json(silent=True) or {}
+            arquivos = []
         with get_session() as s:
-            r = svc_portal.abrir(s, request.get_json(silent=True) or {},
-                                 _usuario_logado(s))
+            r = svc_portal.abrir(s, dados, _usuario_logado(s))
+            if arquivos:
+                from sqlalchemy import text as _text
+                cid = s.execute(_text("SELECT colaborador_id FROM dp_solicitacoes "
+                                      " WHERE id = :i"), {"i": r["id"]}).scalar()
+                r["papeis_guardados"] = svc_sp.guardar_papeis(
+                    s, r["id"], cid, arquivos)
             s.commit()
             return jsonify({"ok": True, **r})
     except svc_portal.SemAcesso as e:
@@ -12610,6 +14277,58 @@ def api_portal_devolver(devolucao_id: int):
         raise
     except Exception as e:
         logger.exception("ERP: falha ao devolver documento pelo portal")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# O DOCUMENTO QUE O COLABORADOR ASSINA (20/11/2026, noite) — `core/termos.py`.
+# Quem conduz é quem alcança a obra (o administrativo); a pessoa assina com o
+# PIN dela. Fora do alcance responde "não encontrado".
+# ---------------------------------------------------------------------------
+@bp.route("/erp/portal/api/termos/<int:termo_id>", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_portal_termo(termo_id: int):
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import termos
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            eu = svc_portal.quem_esta(s, usuario)
+            obras = svc_portal.obras_que_alcanca(s, eu)
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "termo": termos.para_assinar(s, termo_id, obras)})
+            conduz = {"colaborador_id": eu.get("colaborador_id"), "nome": eu["nome"]}
+            if request.files.get("arquivo") is not None:
+                arq = request.files["arquivo"]
+                r = termos.enviar_papel(s, termo_id, obras, conteudo=arq.read(),
+                                        nome_arquivo=arq.filename or "assinado",
+                                        conduzido_por=conduz)
+            else:
+                d = request.get_json(silent=True) or {}
+                if d.get("acao") == "recusa":
+                    r = termos.registrar_recusa(
+                        s, termo_id, obras, motivo=str(d.get("motivo") or ""),
+                        testemunhas=d.get("testemunhas") or [], conduzido_por=conduz)
+                else:
+                    r = termos.assinar(
+                        s, termo_id, obras, pin=str(d.get("pin") or ""),
+                        assinatura=d.get("assinatura"), conduzido_por=conduz,
+                        latitude=d.get("latitude"), longitude=d.get("longitude"),
+                        ip=request.headers.get("X-Forwarded-For", request.remote_addr or ""))
+            svc_sp.termo_voltou(s, termo_id, None)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no documento para assinar")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -12660,9 +14379,17 @@ def api_dp_devolucao_cobrar(devolucao_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ⚑ QUEM CONFIGURA A CAIXA É O DP (18/11/2026), não só o administrador. Ele:
+# *"como a gente vai monitorar a caixa de mensagens, eu tenho que associar a
+# caixa própria. Eu tenho que configurar isso no próprio DP."*
+#
+# Ela JÁ ERA a caixa do DP na prática (é ela que o agente lê para casar resposta
+# com pedido da contabilidade) — o que faltava era quem a configura ser quem a
+# usa. `configurar` é ADMIN; isso deixava o DP dependendo dele para uma caixa
+# que é do DP.
 @bp.route("/erp/api/dp/caixa", methods=["GET", "POST"])
 @login_obrigatorio
-@permissao(GET="ver_pessoal", POST="configurar")
+@permissao(GET="ver_pessoal", POST="pedir_contabilidade")
 def api_dp_caixa():
     """A caixa de entrada que o agente lê. A SENHA nunca sai na resposta."""
     from app.apps.erp.core.comum import email_entrada
@@ -12727,6 +14454,112 @@ def pagina_dp_contabilidade():
                            **_contexto("dp_contabilidade"))
 
 
+# ---------------------------------------------------------------------------
+# A PROGRAMAÇÃO DE FÉRIAS (migração 116, 20/11/2026) — `core/ferias.py`.
+# Quem abre pedido ao DP vê as férias das obras que alcança (o administrativo
+# de obra, que cuida do ponto); o DP vê todas.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/dp/ferias")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def pagina_dp_ferias():
+    return render_template("erp_dp_ferias.html", **_contexto("dp_ferias"))
+
+
+@bp.route("/erp/api/dp/ferias")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_dp_ferias():
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            obras = obras_do_usuario(s, usuario)
+            passadas = request.args.get("passadas") == "1"
+            hoje = date.today()
+            lista = svc_ferias.listar(
+                s, obras=obras, com_canceladas=passadas,
+                desde=hoje - timedelta(days=365 if passadas else 0))
+            return jsonify({"ok": True, "ferias": lista,
+                            "avisar_com_dias": svc_ferias.AVISAR_COM_DIAS,
+                            "tabela": svc_ferias.tem_tabela(s)})
+    except Exception as e:
+        logger.exception("ERP/DP: falha na programação de férias")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/ferias/periodos")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_dp_ferias_periodos():
+    """Os períodos de férias de cada pessoa de carteira — para não vencerem."""
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if not svc_ferias._tem_controle(s):
+                return jsonify({"ok": True, "periodos": [], "tabela": False})
+            return jsonify({"ok": True, "tabela": True,
+                            "periodos": svc_ferias.situacao_dos_periodos(
+                                s, obras=obras_do_usuario(s, usuario))})
+    except Exception as e:
+        logger.exception("ERP/DP: falha nos períodos de férias")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/ferias/controle/<int:colaborador_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("atender_dp")
+def api_dp_ferias_controle(colaborador_id: int):
+    """O DP informa até quando as férias da pessoa estão quitadas."""
+    from app.apps.erp.core import ferias as svc_ferias
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            svc_ferias.informar_quitado(s, colaborador_id, d.get("quitado_ate"), usuario)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+@bp.route("/erp/dp/regras")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def pagina_dp_regras():
+    return render_template("erp_dp_regras.html", **_contexto("dp_regras"))
+
+
+@bp.route("/erp/api/dp/regras")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_dp_regras():
+    """AS CONDICIONAIS MEDIDAS NOS CADASTROS — só leitura, não muda nada.
+
+    ⚠️ CUSTO, porque vale dizer antes de alguém apertar: é UMA consulta que
+    lê todos os cadastros não cancelados (hoje ~2.600 linhas, 20 colunas) e
+    cruza 2 campos-chave × 18 campos na memória. Não vai ao banco por pessoa
+    nem por campo. O resultado NÃO é guardado: a resposta muda com o cadastro,
+    e cache aqui faria ele decidir por número velho.
+    """
+    from app.apps.erp.core.cadastros import regras_pelos_dados as svc
+    try:
+        with get_session() as s:
+            minimo = request.args.get("minimo", type=int)
+            return jsonify({"ok": True, **svc.comparar_com_o_formulario(
+                s, svc.medir(s, minimo=minimo) if minimo else None)})
+    except Exception as e:
+        logger.exception("ERP/DP: falha ao medir as regras do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/dp/pedidos", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_pessoal", POST="pedir_contabilidade")
@@ -12743,14 +14576,29 @@ def api_dp_pedidos():
             usuario = _usuario_logado(s)
             if request.method == "GET":
                 permitidas = obras_do_usuario(s, usuario)
+                alvo = request.args.get("colaborador_id", type=int)
+                templates = svc_ct.templates_para_tela()
+                # ⚑ COM UMA PESSOA NA MÃO, CADA MODELO JÁ DIZ O QUE FALTA NELA
+                # (17/11/2026). Sem isto a tela só descobre a falta DEPOIS de
+                # a pessoa escolher o modelo e o servidor recusar — que é
+                # exatamente o que o Pipefy fazia, e o que a aba Demandas
+                # existe para não repetir. Vem na MESMA resposta: a tela já
+                # pedia esta lista, e perguntar por modelo seriam sete idas.
+                if alvo:
+                    from app.apps.erp.db.models.cadastros import Colaborador
+                    c = s.get(Colaborador, alvo)
+                    if c is not None:
+                        for t in templates:
+                            t["falta"] = svc_ct.o_que_falta_para_pedir(s, t["chave"], c)
+                            t["avisos"] = svc_ct.avisos_do_pedido(s, t["chave"], c)
                 return jsonify({
                     "ok": True,
                     "pedidos": svc_ct.listar(
                         s, situacao=request.args.get("situacao", ""),
                         atrasados=request.args.get("atrasados") == "1",
-                        colaborador_id=request.args.get("colaborador_id", type=int),
+                        colaborador_id=alvo,
                         obra_ids=list(permitidas) if permitidas is not None else None),
-                    "templates": svc_ct.templates_para_tela(),
+                    "templates": templates,
                     "emails": svc_ct.endereco_padrao(s)})
             r = svc_ct.abrir(s, request.get_json(silent=True) or {}, usuario)
             s.commit()
@@ -12809,12 +14657,36 @@ def api_dp_pedido(pedido_id: int):
 def api_dp_pedido_acao(pedido_id: int, acao: str):
     """enviar · cobrar · receber · concluir · aceitar-divergencia · cancelar."""
     from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.auth.permissoes import exigir_pedido_contabilidade_no_escopo
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
+            exigir_pedido_contabilidade_no_escopo(s, usuario, pedido_id)
             if acao == "enviar":
+                # ⚑ 23/11/2026: a tela de atendimento manda o texto como ficou
+                # (o DP leu e talvez corrigiu) junto com o "enviar".
+                if d.get("assunto") is not None or d.get("corpo") is not None:
+                    p_ = svc_ct.ler(s, pedido_id)
+                    svc_ct.editar_rascunho(
+                        s, pedido_id, assunto=d.get("assunto", p_["assunto"]),
+                        corpo=d.get("corpo", p_["corpo"]), usuario=usuario)
                 r = svc_ct.enviar(s, pedido_id, usuario, para=d.get("para"))
+            elif acao == "reenviar":
+                r = svc_ct.reenviar(s, pedido_id, usuario)
+            elif acao == "editar":
+                r = svc_ct.editar_rascunho(s, pedido_id, assunto=d.get("assunto"),
+                                           corpo=d.get("corpo"), usuario=usuario)
+            elif acao == "anexar":
+                arq = request.files.get("arquivo")
+                if arq is None:
+                    raise ErroValidacao("Escolha o arquivo.")
+                r = svc_ct.anexar_ao_rascunho(s, pedido_id, conteudo=arq.read(),
+                                              nome_arquivo=arq.filename or "anexo",
+                                              usuario=usuario)
+            elif acao == "tirar-anexo":
+                r = svc_ct.tirar_anexo(s, pedido_id, int(d.get("documento_id") or 0),
+                                       usuario)
             elif acao == "cobrar":
                 r = svc_ct.cobrar(s, pedido_id, usuario)
             elif acao == "receber":
@@ -12840,6 +14712,41 @@ def api_dp_pedido_acao(pedido_id: int, acao: str):
         raise
     except Exception as e:
         logger.exception("ERP: falha na ação do pedido à contabilidade")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# OS CHECKLISTS DO DP (18/11/2026)
+#
+# Ele: *"vi que você importou checklist do Pipefy, só que eles estão todos
+# desatualizados. Precisa de uma tela pra configurar eles de forma fácil."*
+#
+# ⚑ LER É DE QUEM VÊ PESSOAL; ESCREVER É DE QUEM ATENDE. Mudar o checklist muda
+# a rotina de trabalho do DP inteiro — é mais que marcar um item, e por isso não
+# cabe em `ver_pessoal`.
+# ===========================================================================
+@bp.route("/erp/api/dp/checklists", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="atender_dp")
+def api_dp_checklists():
+    """Os passos de cada tipo de solicitação, e a gravação deles."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "checklists": svc.checklists_para_a_tela(s)})
+            d = request.get_json(silent=True) or {}
+            r = svc.gravar_checklist(
+                s, str(d.get("tipo") or "").strip().upper(),
+                list(d.get("itens") or []),
+                vinculo=d.get("vinculo"), usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha nos checklists do DP")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -13033,6 +14940,178 @@ def api_colaborador_etapa(colaborador_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ===========================================================================
+# AFASTAMENTO E RETORNO (18/11/2026)
+#
+# Pergunta dele: *"Colaborador estava afastado e vai retornar ao trabalho. O que
+# deve ser exigido dele e o que o sistema deve pedir pra travar o simples
+# retorno?"* — e, sobre quem faz: *"o DP vai fazer isso depois que alimentar com
+# as informações pertinentes para o retorno."*
+#
+# ⚑ AS DUAS ROTAS DE ESCRITA SÃO A ÚNICA PORTA de entrar e sair de "Afastado".
+# Mover a etapa pelo quadro recusa, com a frase que manda para cá — a trava
+# está em `pessoas.mover_etapa`, não na tela, porque o arrasto contornaria.
+# ===========================================================================
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/afastamento")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_afastamento(colaborador_id: int):
+    """O afastamento em curso, o histórico, e o que a volta vai exigir."""
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import afastamentos as svc_afast
+    try:
+        with get_session() as s:
+            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
+            return jsonify({
+                "ok": True,
+                "tipos": svc_afast.opcoes(),
+                "aberto": svc_afast.aberto(s, colaborador_id),
+                "historico": svc_afast.historico(s, colaborador_id),
+                "estabilidade": svc_afast.estabilidade(s, colaborador_id),
+                "retorno": svc_afast.o_que_falta_para_voltar(s, colaborador_id)})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o afastamento de %s", colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/afastamento",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_afastar(colaborador_id: int):
+    """Afasta: registra o tipo e as datas, e leva a etapa para “Afastado”."""
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import afastamentos as svc_afast
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            r = svc_afast.abrir(s, colaborador_id, d, usuario)
+            # ⚑ 20/11/2026: a contabilidade fica sabendo pela solicitação.
+            from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+            numero = svc_sp.comunicar_pela_ficha(s, colaborador_id, "AFASTAMENTO",
+                                                 d, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r, "solicitacao": numero})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao afastar %s", colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/afastamento/retorno",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_retorno_de_afastamento(colaborador_id: int):
+    """Registra a volta: confere o exame, guarda a estabilidade, devolve à ativa."""
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import afastamentos as svc_afast
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            r = svc_afast.retornar(s, colaborador_id, d, usuario)
+            from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+            numero = svc_sp.comunicar_pela_ficha(s, colaborador_id,
+                                                 "RETORNO_AFASTAMENTO", d, usuario)
+            s.commit()
+            if isinstance(r, dict):
+                r = {**r, "solicitacao": numero}
+            return jsonify(r)
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao registrar o retorno de %s", colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/conferencia-folha")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_conferencia_folha():
+    """O ERP e a planilha pagariam a mesma coisa? — ver `conferencia_folha`.
+
+    ⚑ 17/11/2026. Ele: *"precisamos fazer de uma forma infalível essa
+    desativação da planilha e a leitura do Análise de SPs pela base do ERP. A
+    gravidade disso é pagar funcionários de forma equivocada."*
+
+    Exige `editar_colaboradores` porque o relatório carrega salário, auxílios e
+    valor de diária de todo mundo.
+    """
+    from datetime import date as _date
+
+    from app.apps.erp.core import conferencia_folha
+    ate = None
+    bruto = (request.args.get("ate") or "").strip()
+    if bruto:
+        try:
+            ate = _date.fromisoformat(bruto)
+        except ValueError:
+            return jsonify({"ok": False,
+                            "erro": "Data inválida — use AAAA-MM-DD."}), 400
+    with get_session() as s:
+        return jsonify(conferencia_folha.comparar(s, ate=ate))
+
+
+@bp.route("/erp/api/colaboradores/criados-recentemente")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_colaboradores_criados_recentemente():
+    """Quem nasceu no cadastro nas últimas horas — para conferir e desfazer.
+
+    ⚑ 17/11/2026. Ele, depois de uma importação: *"tem mais gente no ERP do
+    que eu coloquei para importar. Só quero os que eu coloquei para importar."*
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    horas = request.args.get("horas", type=int) or 48
+    with get_session() as s:
+        return jsonify({"ok": True, "horas": horas,
+                        "pessoas": svc_pessoas.criados_recentemente(
+                            s, horas=min(max(horas, 1), 720))})
+
+
+@bp.route("/erp/api/colaboradores/remover", methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_colaboradores_remover():
+    """Apaga cadastros criados por engano — um por um, dizendo o que deu.
+
+    Recusa quem tem movimento, e a recusa vem do BANCO (ver
+    `pessoas.remover_cadastro`). Quem não pôde ser apagada volta na lista de
+    recusadas com o motivo, em vez de o lote inteiro falhar por causa de uma.
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    d = request.get_json(silent=True) or {}
+    ids = [int(x) for x in (d.get("ids") or []) if str(x).strip().isdigit()]
+    if not ids:
+        return jsonify({"ok": False, "erro": "Nenhuma pessoa escolhida."}), 400
+    apagadas, desligadas, recusadas = [], [], []
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        for cid in ids:
+            try:
+                r = svc_pessoas.remover_cadastro(s, cid, usuario,
+                                                 levar_junto=True)
+                # Tem batida de ponto ⇒ desligada, não apagada (regra dele em
+                # 17/11/2026; batida é registro legal do REP-P).
+                (desligadas if r.get("desligada") else apagadas).append(r)
+            except ErroValidacao as e:
+                recusadas.append({"id": cid, "motivo": str(e)})
+        s.commit()
+    return jsonify({"ok": True, "apagadas": apagadas,
+                    "desligadas": desligadas, "recusadas": recusadas})
+
+
 @bp.route("/erp/api/colaboradores/para-folha")
 @login_obrigatorio
 @permissao("editar_colaboradores")
@@ -13130,14 +15209,30 @@ def api_colaboradores_importar_fichas():
 @login_obrigatorio
 @permissao("ver_pessoal")
 def api_historico_colaborador(colaborador_id: int):
-    """Tudo que já se pagou a esta pessoa: DC, títulos diretos e rateados."""
+    """Tudo que já se pagou a esta pessoa: DC, títulos diretos e rateados.
+
+    ⚠️ QUEM NÃO VÊ REMUNERAÇÃO NÃO VÊ VALOR AQUI (17/11/2026). Esta rota pede
+    `ver_pessoal`, que o administrativo de obra tem — e ela devolve tudo o que
+    já se pagou à pessoa. Sem o corte, a visão restrita que ele pediu teria um
+    buraco do tamanho do histórico financeiro inteiro.
+
+    O painel continua abrindo: a pessoa, a obra, o cargo, a situação e as
+    datas. O que sai são os valores e as verbas.
+    """
+    from app.apps.erp.core.auth.permissoes import pode
     from app.apps.erp.core.pessoal import historico
     try:
         with get_session() as s:
             from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
-            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
-            return jsonify({"ok": True, "historico": historico(
-                s, colaborador_id, meses=request.args.get("meses", type=int) or 24)})
+            quem = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, quem, colaborador_id)
+            h = historico(
+                s, colaborador_id, meses=request.args.get("meses", type=int) or 24)
+            if not pode(quem, "ver_remuneracao"):
+                h = {**h, "lancamentos": [], "total": None,
+                     "ultimos_12_meses": None, "por_verba": [],
+                     "sem_remuneracao": True}
+            return jsonify({"ok": True, "historico": h})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
     except ErroNaoEncontrado:

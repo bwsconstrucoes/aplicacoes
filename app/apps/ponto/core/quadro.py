@@ -486,6 +486,128 @@ def compensar_horas_em_lote(quem: Quem, itens: list[dict], *, dia_das_horas_a_ma
 
 
 # ---------------------------------------------------------------------------
+# O RECESSO EM LOTE (22/11/2026, o dono: "pode criar uma tela para o DP lançar o recesso em lote"). As pessoas
+# marcadas folgam nos dias do recesso e pagam cada dia trabalhando noutro (o sábado), hora por hora: uma compensação
+# de dia por pessoa e por par, aprovada na hora pelo DP. É o mesmo pedido que o DP lançaria à mão, um a um — com
+# a folga paga DEPOIS (espelho.paga_depois), o sábado não cumprido vira falta NELE, e a folha de cada mês leva a
+# observação. Antes de gravar, a prévia: o que entra e o que fica de fora, com o porquê.
+# ---------------------------------------------------------------------------
+MAX_PARES_DO_RECESSO = 10
+MAX_PESSOAS_POR_CHAMADA = 40
+
+
+def _pares_do_recesso(pares) -> list[tuple[dt.date, dt.date]]:
+    saida = []
+    for i, par in enumerate(pares or [], start=1):
+        if not isinstance(par, dict) or not (par.get("folga") or par.get("pagar")):
+            continue
+        if not par.get("folga") or not par.get("pagar"):
+            raise ErroDeValidacao(f"par {i}: diga o dia da folga e o dia de pagar", campo="pares")
+        folga, pagar = _data(par["folga"], f"folga do par {i}"), _data(par["pagar"], f"dia de pagar do par {i}")
+        if folga == pagar:
+            raise ErroDeValidacao(f"par {i}: a folga e o dia de pagar são o mesmo dia", campo="pares")
+        saida.append((folga, pagar))
+    if not saida:
+        raise ErroDeValidacao("diga ao menos um dia de folga e o dia em que ele é pago", campo="pares")
+    if len(saida) > MAX_PARES_DO_RECESSO:
+        raise ErroDeValidacao(f"no máximo {MAX_PARES_DO_RECESSO} dias de folga por vez", campo="pares")
+    folgas, pagamentos = [f for f, _ in saida], [p for _, p in saida]
+    if len(set(folgas)) != len(folgas):
+        raise ErroDeValidacao("o mesmo dia de folga está em dois pares", campo="pares")
+    if len(set(pagamentos)) != len(pagamentos):
+        # hora por hora: um sábado de 9h paga um dia de 9h — dois dias de folga no mesmo sábado ficariam devendo
+        raise ErroDeValidacao("cada dia de pagar serve a uma folga só (hora por hora)", campo="pares")
+    if set(folgas) & set(pagamentos):
+        raise ErroDeValidacao("um dia não pode ser folga e dia de pagar ao mesmo tempo", campo="pares")
+    return sorted(saida)
+
+
+def _hm_curto(m: int) -> str:
+    return f"{int(m) // 60}h{int(m) % 60:02d}"
+
+
+def _conferir_par(conn: Connection, cid: int, folga: dt.date, pagar: dt.date) -> dict:
+    """Um par de uma pessoa, sem gravar: entra? por que não? o que avisar?"""
+    from . import competencias
+    linha = {"folga": folga.isoformat(), "pagar": pagar.isoformat()}
+    d = espelho.montar(conn, cid, folga, folga)["dias"][0]
+    if d["situacao"] == "FORA_DO_CONTRATO":
+        return {**linha, "ok": False, "erro": "fora do contrato nesse dia"}
+    if d.get("feriado"):
+        return {**linha, "ok": False, "erro": f"feriado ({d['feriado']}) — não há o que compensar"}
+    vigencias = escalas.EscalasDaPessoa(conn, cid)
+    escala, _ = vigencias.no_dia(folga)
+    previsto = sum(max(0, s - e) for e, s in escala.periodos(folga)) if escala is not None else 0
+    if not previsto:
+        return {**linha, "ok": False, "erro": "não é dia de trabalho na escala dele — não há o que compensar"}
+    for dia in (folga, pagar):
+        if competencias.esta_fechada(conn, dia):
+            return {**linha, "ok": False, "erro": f"o mês de {dia:%m/%Y} está fechado"}
+    ja = db.um(conn, """SELECT id, tipo FROM ponto.ocorrencias
+                         WHERE colaborador_id = :c AND status NOT IN ('NEGADA', 'CANCELADA') AND tipo <> 'AJUSTE_BATIDA'
+                           AND data_fim >= :d AND data_inicio <= :d LIMIT 1""", c=cid, d=folga)
+    if ja:
+        return {**linha, "ok": False, "erro": f"já existe um pedido nesse dia (nº {ja['id']})"}
+    avisos = []
+    if d.get("batidas"):
+        avisos.append("já tem batida no dia da folga — as horas trabalhadas nele contam à parte")
+    e_pagar, _ = vigencias.no_dia(pagar)
+    if e_pagar is not None and any(True for _ in e_pagar.periodos(pagar)):
+        avisos.append(f"{pagar:%d/%m} já é dia de trabalho na escala dele — só paga o que passar da escala")
+    return {**linha, "ok": True, "previsto": previsto,
+            "nota": f"folga de {_hm_curto(previsto)}; o dia de pagar precisa render {_hm_curto(previsto)}",
+            "avisos": avisos}
+
+
+def recesso_em_lote(quem: Quem, colaborador_ids: list, pares, *, motivo: str = "", simular: bool = True) -> dict:
+    """As pessoas × os pares (folga, dia de pagar). `simular`: só a prévia. Cada pessoa na sua transação — uma recusa
+    não desfaz as outras; cada par é um pedido (o sábado não cumprido vira UMA falta, a dele)."""
+    from . import ocorrencias
+    if not quem.dp:
+        raise ErroDeValidacao("o recesso em lote é lançado pelo DP", campo="tipo")
+    lista = _pares_do_recesso(pares)
+    try:
+        ids = list(dict.fromkeys(int(x) for x in colaborador_ids or []))
+    except (TypeError, ValueError):
+        raise ErroDeValidacao("lista de pessoas ilegível", campo="pessoas") from None
+    if not ids:
+        raise ErroDeValidacao("marque ao menos uma pessoa", campo="pessoas")
+    if len(ids) > MAX_PESSOAS_POR_CHAMADA:
+        raise ErroDeValidacao(f"no máximo {MAX_PESSOAS_POR_CHAMADA} pessoas por vez", campo="pessoas")
+    motivo = str(motivo or "").strip()
+    pessoas = []
+    for cid in ids:
+        p = {"colaborador_id": cid, "pares": []}
+        try:
+            with db.conexao() as conn:
+                pessoa = ocorrencias.exigir_pessoa_no_alcance(conn, quem, cid)
+                p["nome"] = pessoa["nome"]
+                for folga, pagar in lista:
+                    r = _conferir_par(conn, cid, folga, pagar)
+                    if r["ok"] and not simular:
+                        try:
+                            o = ocorrencias.criar(conn, quem, {
+                                "tipo": "COMPENSACAO", "colaborador_id": cid, "data_inicio": folga.isoformat(),
+                                "data_fim": folga.isoformat(), "dia_trabalhado": pagar.isoformat(), "aprovar_ja": True,
+                                "descricao": (f"Recesso: {motivo}" if motivo else "Recesso")
+                                             + f" — folga em {folga:%d/%m/%Y}, paga com o trabalho em {pagar:%d/%m/%Y}"},
+                                origem="GESTAO")
+                            r.update(pedido_id=o["id"], aprovado=o["status"] == "APROVADA")
+                        except ErroDeValidacao as e:
+                            r.update(ok=False, erro=str(e))
+                    p["pares"].append(r)
+        except NaoEncontrado as e:
+            p.update(nome=p.get("nome") or f"pessoa nº {cid}", erro=str(e))
+        pessoas.append(p)
+    entram = sum(1 for p in pessoas for r in p["pares"] if r["ok"])
+    return {"simulado": simular, "pares": [{"folga": f.isoformat(), "pagar": g.isoformat()} for f, g in lista],
+            "pessoas": pessoas, "entram": entram,
+            "ficam_de_fora": sum(1 for p in pessoas for r in p["pares"] if not r["ok"])
+                             + sum(len(lista) for p in pessoas if p.get("erro")),
+            "aprovadas": sum(1 for p in pessoas for r in p["pares"] if r.get("aprovado"))}
+
+
+# ---------------------------------------------------------------------------
 # A qualidade e as rondas do recorte (27/10/2026: as abas saíram do menu e viraram
 # visões do Quadro — com o MESMO filtro de funcionários e o mesmo período)
 # ---------------------------------------------------------------------------
