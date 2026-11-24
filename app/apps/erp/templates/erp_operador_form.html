@@ -1,0 +1,547 @@
+{# ===========================================================================
+   O CADASTRO DO OPERADOR — um formulário, duas telas
+
+   ⚑ NASCEU SEPARADO EM 24/11/2026, a pedido dele:
+
+       *"Quando eu entro no cadastro de um colaborador em pessoal, eu queria
+        ter acesso à parte de operadores, para editar o cadastro dele (…) da
+        mesma forma que tem lá cadastro, ponto, mensagens, aí ter operador,
+        aí clicar e abrir o cadastro operador. Mas sem fechar o modal
+        inicial, permitindo voltar para ver as outras configurações da
+        pessoa."*
+
+   Até aqui este formulário morava dentro do `erp_config.html`. Copiá-lo para
+   a tela de Pessoal daria DUAS telas de cadastro de operador — e no primeiro
+   ajuste uma ficaria para trás. É a regra dele de 17/11 ("um cadastro, uma
+   porta"), e a mesma lição da tela de fases que nasceu e morreu em 24/11.
+
+   QUEM USA ISTO PRECISA TER NA PÁGINA:
+     · `PERFIS`, `PERFIS_CADASTRADOS`, `PROJETOS_CAD`, `EMPRESAS_CAD`
+       (vêm de `/erp/api/usuarios`);
+     · `DADOS.obras` e `DADOS.categorias` (vêm de `/erp/api/config`);
+     · os ajudantes de sempre do `erp_base.html`.
+
+   COMO SE CHAMA:
+     formOperador(u)                        → desenha na janela de sempre
+     formOperador(u, {alvo, aoSalvar})      → desenha dentro de `alvo`, sem
+                                              janela e sem fechar nada
+   =========================================================================== #}
+function alcanceDoOperador(u){
+  // Depois da migração 065 quem responde é o CADASTRO da pessoa. Antes dela a
+  // marca vem nula, e aí vale a leitura antiga, pelo cargo — as duas
+  // convivem só na janela entre publicar e apertar o botão do banco.
+  if (u.ve_todas_as_obras === true) return "todas as obras";
+  if (u.ve_todas_as_obras === false) {
+    if (u.escopo_visao !== "OBRAS_DESIGNADAS") return "só o que ela lançou";
+    // O alcance pode vir de três alturas (migração 066): a linha diz as três,
+    // porque "3 obras" sem dizer que veio de um projeto engana quem confere.
+    const partes = [];
+    if (u.obras.length) partes.push(u.obras.join(", "));
+    (u.empresas||[]).forEach(id => {
+      const e = EMPRESAS_CAD.find(x=>x.id===id);
+      partes.push(`empresa ${e ? e.nome : id}`);
+    });
+    (u.projetos||[]).forEach(id => {
+      const p = PROJETOS_CAD.find(x=>x.id===id);
+      partes.push(`projeto ${p ? p.codigo : id}`);
+    });
+    return partes.length ? partes.join(" · ")
+      : "nada marcado — não enxerga nada";
+  }
+  const porObra = u.perfil === "SUPERVISOR_OBRA"
+    || (["ADMINISTRATIVO_OBRA","LANCADOR"].includes(u.perfil)
+        && u.escopo_visao === "OBRAS_DESIGNADAS");
+  if (porObra) return u.obras.length ? u.obras.join(", ") : "só o que lançou (sem obra designada)";
+  if (["ADMINISTRATIVO_OBRA","LANCADOR","DEPARTAMENTO_PESSOAL"].includes(u.perfil))
+    return "o que lançou";
+  return "todas";
+}
+
+function formOperador(u, opcoes){
+  // ⚑ `opcoes.alvo` É O QUE PERMITE ESTE FORMULÁRIO VIVER EM DUAS TELAS
+  // (24/11/2026). Sem ele, o formulário só sabia desenhar dentro da janela
+  // de Configurações. Ver o cabeçalho deste arquivo.
+  opcoes = opcoes || {};
+  const naJanela = !opcoes.alvo;
+  const CORPO = opcoes.alvo || "dlg-corpo";
+  const novo = !u;
+  u = u || {perfil:"ADMINISTRATIVO_OBRA", ativo:true, obras:[]};
+  if (naJanela)
+    els("dlg-titulo").textContent = novo ? "Novo operador" : `Editar ${u.nome}`;
+  els(CORPO).innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Nome *</label>
+        <input id="op-nome" value="${u.nome||""}"></div>
+      <div class="campo"><label>E-mail (login) *</label>
+        <input id="op-email" type="email" value="${u.email||""}" ${novo?"":"disabled"}></div>
+      <div class="campo"><label>CPF</label><input id="op-cpf" value="${u.cpf||""}" placeholder="somente números"></div>
+      <div class="campo"><label>Telefone</label><input id="op-tel" value="${u.telefone||""}" placeholder="85999998888"></div>
+      <div class="campo"><label>Perfil de acesso *</label><select id="op-perfil-cad">
+        <option value="">— nenhum —</option>
+        ${PERFIS_CADASTRADOS.map(p=>`<option value="${p.id}"
+          ${p.id===u.perfil_id?"selected":""}>${escapar(p.nome)}</option>`).join("")}
+      </select>
+        <div class="dica">Diz <b>o que</b> esta pessoa faz. Cria-se e edita-se em
+          <b>Perfis de acesso</b>, na faixa acima. Sem perfil escolhido, vale o
+          cargo antigo — o campo de baixo.</div></div>
+      {# MAIS DE UM PERFIL NA MESMA PESSOA (migração 095). Pedido dele em
+         09/11/2026: *"pode ser que eu queira que uma pessoa utilize mais de
+         um perfil de acesso. Digamos que uma pessoa é do financeiro, mas eu
+         quero que ele acesse diário de obras."*
+
+         ⚑ A TELA PRECISA DIZER QUE PERFIL SÓ SOMA. Sem essa frase, alguém um
+         dia marca um perfil pequeno achando que ele RESTRINGE a pessoa — e
+         estaria dando acesso, não tirando. #}
+      <div class="campo" id="op-perfis-extras-bloco"><label>Também com o acesso de</label>
+        <div id="op-perfis-extras" class="filtro-opcoes"
+             style="max-height:150px; border:1px solid var(--borda);
+                    border-radius:8px; padding:6px">
+          ${PERFIS_CADASTRADOS.filter(p=>p.id!==u.perfil_id).map(p=>`
+            <label class="opcao"><input type="checkbox" class="op-perfil-extra"
+              value="${p.id}" ${(u.perfis_extras||[]).includes(p.id)?"checked":""}>
+              <span class="rotulo">${escapar(p.nome)}</span></label>`).join("")
+            || `<small class="desc">Nenhum outro perfil cadastrado.</small>`}
+        </div>
+        <div class="dica">Para quem faz duas coisas — alguém do Financeiro que
+          também lança o diário de obra. <b>Perfil só SOMA acesso, nunca
+          tira:</b> marcar aqui só acrescenta telas. Para TIRAR alguma coisa,
+          use as caixinhas de <b>ajuste fino</b>, lá no fim deste cadastro.
+          As <b>obras</b> continuam sendo as marcadas aqui embaixo, iguais
+          para todos os perfis dela.</div></div>
+      <div class="campo"><label>Obras que esta pessoa enxerga</label>
+        <select id="op-todas-obras">
+          <option value="0" ${u.ve_todas_as_obras?"":"selected"}>Só as obras marcadas abaixo</option>
+          <option value="1" ${u.ve_todas_as_obras?"selected":""}>Todas as obras da empresa</option>
+        </select>
+        <div class="dica">Diz <b>onde</b>. Duas pessoas do mesmo perfil podem
+          acompanhar obras diferentes — por isso fica aqui, e não no perfil.</div></div>
+      <div class="campo"><label>Cargo (herança)</label><select id="op-perfil">
+        ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
+      </select>
+        <div class="dica">O cargo de antes dos perfis. Ele ainda decide para
+          quem não tem perfil de acesso escolhido, e sai de cena quando todo
+          mundo tiver.</div></div>
+      <div class="campo" id="op-escopo-bloco"><label>Dentro do alcance dela, o que vê</label>
+        <select id="op-escopo">
+          <option value="OBRAS_DESIGNADAS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"selected":""}>Tudo das obras marcadas</option>
+          <option value="PROPRIOS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"":"selected"}>Só os lançamentos que ela fez</option>
+        </select>
+        <div class="dica"><b>Tudo das obras marcadas</b> é o caso comum. <b>Só
+          os lançamentos dela</b> é mais apertado: nem o que o colega lançou na
+          mesma obra ela vê — e aí as marcações de obra abaixo não têm efeito
+          no financeiro.</div></div>
+      <div class="campo"><label>${novo?"Senha *":"Nova senha (deixe vazio para manter)"}</label>
+        <input id="op-senha" type="password" placeholder="mínimo 8 caracteres"></div>
+      <div class="campo"><label>Situação</label><select id="op-ativo">
+        <option value="1" ${u.ativo?"selected":""}>Ativo</option>
+        <option value="0" ${u.ativo?"":"selected"}>Inativo</option></select></div>
+    </div>
+    <h4>Fundo fixo</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Pode movimentar fundo fixo</label><select id="op-ff">
+        <option value="0" ${u.ff_autorizado?"":"selected"}>Não</option>
+        <option value="1" ${u.ff_autorizado?"selected":""}>Sim</option></select></div>
+      <div class="campo"><label>Limite por despesa</label>
+        <input id="op-ff-item" value="${u.ff_teto_item??""}" placeholder="ex.: 500,00">
+        <div class="dica">Acima disso, o gasto é apontado na conferência.</div></div>
+      <div class="campo"><label>Limite por prestação</label>
+        <input id="op-ff-total" value="${u.ff_teto_prestacao??""}" placeholder="ex.: 3.000,00">
+        <div class="dica">Acima disso, a prestação é bloqueada.</div></div>
+      <div class="campo"><label>Adiantamento em aberto</label>
+        <input value="${u.ff_saldo_adiantamento??0}" disabled>
+        <div class="dica">Atualizado pelas prestações; não se edita aqui.</div></div>
+    </div>
+
+    <h4>Inteligência artificial</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Limite do mês (US$)</label>
+        <input id="op-teto-ia" value="${u.teto_ia_usd??""}" placeholder="5,00">
+        <div class="dica">
+          Padrão de US$ 5,00 por mês. <b>Deixe em branco para sem limite.</b>
+          Só a leitura de documento e a transcrição de áudio gastam — telas,
+          relatórios e as perguntas calculadas pelo sistema não consomem nada.
+        </div></div>
+      <div class="campo"><label>Já usou neste mês</label>
+        <input value="${u.ia_do_mes && u.ia_do_mes.teto!==null
+                        ? `US$ ${(u.ia_do_mes.gasto||0).toFixed(2)} de US$ ${u.ia_do_mes.teto.toFixed(2)} (${u.ia_do_mes.percentual}%)`
+                        : `US$ ${((u.ia_do_mes&&u.ia_do_mes.gasto)||0).toFixed(2)} — sem limite`}" disabled>
+        <div class="dica">Zera na virada do mês.</div></div>
+    </div>
+
+    <div class="campo" style="margin-top:12px">
+      <label>Contas do plano liberadas para lançar
+        <span id="op-cat-resumo" class="qtd" style="float:right; font-weight:700"></span></label>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+        <input id="op-filtro-cat" placeholder="filtrar…" style="flex:1; margin:0">
+        <button type="button" class="link-btn" id="op-cat-limpar">limpar tudo</button>
+      </div>
+      <div id="op-cats" style="max-height:300px; overflow:auto;
+           border:1px solid var(--borda); border-radius:8px; padding:6px"></div>
+      <div class="dica">Nada marcado = todas liberadas. Marque só o que a pessoa
+        costuma lançar, para ela não se perder no plano inteiro. Clicar no
+        <b>grupo</b> marca o grupo inteiro — e ele fica <b>verde</b> quando está
+        todo marcado, <b>âmbar</b> quando está pela metade.</div>
+    </div>
+
+    <div id="op-aviso-proprios" class="cartao-dica" style="margin-top:12px; display:none">
+      Com <b>“só os lançamentos que ela fez”</b> não há o que marcar aqui: ela
+      enxerga o que ela mesma lançou, em qualquer obra. Para prendê-la a obras,
+      troque para <b>“tudo das obras marcadas”</b>.</div>
+
+    <div id="op-alcance-bloco" style="margin-top:12px">
+      <div class="cartao-dica">O alcance pode ser dito em três alturas, e elas
+        se somam: <b>empresa</b> (todas as obras daquele CNPJ), <b>projeto</b>
+        (as obras daquele projeto) e <b>obra</b> (uma a uma). Marcar a empresa
+        ou o projeto alcança também as obras que entrarem depois — sem precisar
+        voltar aqui.</div>
+      <div class="form-grade" style="margin-top:8px">
+        <div class="campo"><label>Empresas que esta pessoa alcança</label>
+          <div class="filtro-opcoes" style="max-height:140px; border:1px solid var(--borda);
+               border-radius:8px; padding:6px">
+            ${EMPRESAS_CAD.length ? EMPRESAS_CAD.map(e=>`<label class="opcao">
+              <input type="checkbox" class="op-empresa" value="${e.id}"
+                ${(u.empresas||[]).includes(e.id)?"checked":""}>
+              <span class="rotulo">${escapar(e.nome)}</span></label>`).join("")
+              : `<small>Nenhuma empresa cadastrada.</small>`}
+          </div></div>
+        <div class="campo"><label>Projetos que esta pessoa alcança</label>
+          <div class="filtro-opcoes" style="max-height:140px; border:1px solid var(--borda);
+               border-radius:8px; padding:6px">
+            ${PROJETOS_CAD.length ? PROJETOS_CAD.map(p=>`<label class="opcao">
+              <input type="checkbox" class="op-projeto" value="${p.id}"
+                ${(u.projetos||[]).includes(p.id)?"checked":""}>
+              <span class="rotulo">${escapar(rotuloObra(p))}
+                <small>(${p.quantas_obras} obra(s))</small></span></label>`).join("")
+              : `<small>Nenhum projeto cadastrado. Crie em Obras › ▦ Projetos.</small>`}
+          </div></div>
+      </div>
+    </div>
+
+    <div id="op-obras-bloco" class="campo" style="margin-top:12px">
+      <label>Obras que este operador acompanha</label>
+      <div class="filtro-opcoes" style="max-height:220px; border:1px solid var(--borda); border-radius:8px; padding:6px">
+        ${DADOS.obras.map(o=>`<div style="display:flex; align-items:center; gap:10px">
+          <label class="opcao" style="flex:1"><input type="checkbox" class="op-obra" value="${o.id}"
+            ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${escapar(rotuloObra(o))}</span></label>
+          <label class="opcao" title="Recebe a conferência mensal dos equipamentos desta obra"
+                 style="white-space:nowrap"><input type="checkbox" class="op-resp" value="${o.id}"
+            ${(u.obras_responsavel||[]).includes(o.id)?"checked":""}
+            ><span class="rotulo" style="font-size:12px">responde</span></label>
+        </div>`).join("")}
+      </div>
+      <div class="dica"><b>Acompanha</b> é enxergar — vale para o supervisor e para
+        quem estiver como "tudo das obras designadas"; gestor vê todas.
+        <b>Responde</b> é outra coisa: é quem recebe a conferência mensal dos
+        equipamentos daquela obra e a cobrança do sistema. Pode marcar mais de
+        uma pessoa por obra — todas recebem. A mesma marca aparece no cadastro
+        da obra, e é a mesma informação.</div>
+    </div>
+    ${novo ? `
+    <div class="aviso info" style="margin-top:12px">Deixe a <b>senha em
+      branco</b>: ao salvar, a pessoa recebe um e-mail para escolher a senha
+      dela. <b>Ninguém mais vai saber qual é</b> — nem você. Se preferir
+      definir uma senha aqui, o convite não é enviado.</div>` : `
+    {# O CONVITE DE PRIMEIRO ACESSO, na ficha de quem já existe. Serve para
+       reenviar ("não chegou", "caiu no spam") e para quem foi cadastrado
+       antes de isto existir. Reenviar invalida o link anterior. #}
+    <div class="campo" style="margin-top:12px">
+      <label>Acesso da pessoa</label>
+      <div id="op-convite" class="desc">—</div>
+      <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap">
+        <button class="btn secundario" type="button" id="op-convidar">
+          Enviar convite para definir a senha</button>
+      </div>
+      <div class="dica">A pessoa recebe um link e escolhe a própria senha. O
+        link vale 7 dias, serve uma vez só, e <b>enviar de novo cancela o
+        anterior</b>.</div>
+    </div>
+    <div class="campo" style="margin-top:12px">
+      <label>O que esta pessoa pode fazer</label>
+      <div class="filtro-opcoes" id="op-perms"
+           style="max-height:260px; border:1px solid var(--borda); border-radius:8px; padding:6px">
+        <small>carregando…</small>
+      </div>
+      <div class="dica">O <b>perfil de acesso</b> já define o essencial. Aqui você
+        acrescenta ou tira <b>desta pessoa</b> — por exemplo, deixar alguém
+        autorizando enquanto o diretor está de férias. O que estiver diferente
+        do perfil fica marcado como <b>ajuste</b>.</div>
+    </div>`}
+    <div style="margin-top:14px"><button class="btn" id="op-salvar">Salvar</button></div>`;
+
+  // Perfis cujo alcance é escolhido pessoa a pessoa; os demais já veem tudo
+  // ou têm regra própria. Espelha ESCOPO_CONFIGURAVEL do core/auth.
+  const ESCOPO_CONFIGURAVEL = ["ADMINISTRATIVO_OBRA", "LANCADOR"];
+
+  function alternarObras(){
+    // Quem enxerga TODAS as obras não escolhe obra nenhuma, e a pergunta "só
+    // os lançamentos dela" perde o sentido junto.
+    const todas = els("op-todas-obras").value === "1";
+    els("op-escopo-bloco").style.display = todas ? "none" : "";
+    const porObra = !todas && els("op-escopo").value === "OBRAS_DESIGNADAS";
+    els("op-obras-bloco").style.display = porObra ? "" : "none";
+    els("op-alcance-bloco").style.display = porObra ? "" : "none";
+    // Quem vê "só os próprios lançamentos" não é recortado por obra em lugar
+    // nenhum — e esconder as marcações sem dizer por quê deixa quem cadastra
+    // procurando um campo que sumiu.
+    const aviso_ = els("op-aviso-proprios");
+    if (aviso_) aviso_.style.display = (!todas && !porObra) ? "" : "none";
+  }
+  els("op-perfil").addEventListener("change", alternarObras);
+  els("op-escopo").addEventListener("change", alternarObras);
+  els("op-todas-obras").addEventListener("change", alternarObras);
+  // Marcar "responde" liga a obra junto: responder por obra que a pessoa não
+  // enxerga daria a ela uma cobrança que ela não consegue abrir.
+  document.querySelectorAll(".op-resp").forEach(caixa =>
+    caixa.addEventListener("change", () => {
+      if (!caixa.checked) return;
+      const obra = document.querySelector(`.op-obra[value="${caixa.value}"]`);
+      if (obra && !obra.checked) obra.checked = true;
+    }));
+  alternarObras();
+
+  // ---- Contas do plano: agrupadas, em colunas, e com a marcação à vista
+  //
+  // Antes era uma coluna só com oitenta linhas e uma fileira de botões de
+  // grupo acima. Marcar um grupo funcionava, mas quem estava rolando lá
+  // embaixo não tinha como confirmar o que ficou marcado sem subir e conferir
+  // linha a linha — reclamação do dono em 10/09/2026. Agora o cabeçalho do
+  // grupo é a própria caixinha e muda de cor: verde inteiro, âmbar pela
+  // metade.
+  const CATS_ATIVAS = DADOS.categorias.filter(x => x.ativo);
+  const GRUPOS_DO_PLANO = [...new Set(CATS_ATIVAS.map(x => x.grupo_codigo))].sort();
+
+  function montarContasDoPlano(marcadas){
+    const escolhidas = new Set((marcadas || []).map(String));
+    els("op-cats").innerHTML = GRUPOS_DO_PLANO.map(g => {
+      const doGrupo = CATS_ATIVAS.filter(x => x.grupo_codigo === g);
+      const nome = (doGrupo[0] || {}).grupo_nome || "";
+      return `<div class="grupo-contas" data-g="${escapar(g)}">
+        <label class="opcao grupo-cab">
+          <input type="checkbox" class="op-grupo" value="${escapar(g)}">
+          <span class="rotulo"><b>${escapar(g)} · ${escapar(nome)}</b></span>
+          <span class="qtd" data-cont="${escapar(g)}"></span>
+        </label>
+        <div class="grade-contas">
+          ${doGrupo.map(x => `<label class="opcao"
+              data-cat-rot="${escapar((x.codigo + " " + x.descricao).toLowerCase())}"
+              title="${escapar(x.codigo + " · " + x.descricao)}">
+            <input type="checkbox" class="op-cat" value="${x.id}"
+              data-grupo-de="${escapar(g)}" ${escolhidas.has(String(x.id)) ? "checked" : ""}>
+            <span class="rotulo">${escapar(x.codigo)} · ${escapar(x.descricao)}</span>
+          </label>`).join("")}
+        </div>
+      </div>`;
+    }).join("");
+
+    document.querySelectorAll(".op-cat").forEach(i =>
+      i.addEventListener("change", pintarContasDoPlano));
+    document.querySelectorAll(".op-grupo").forEach(cx =>
+      cx.addEventListener("change", () => {
+        // Marcar o grupo marca só o que está VISÍVEL: com um filtro digitado,
+        // marcar o grupo inteiro incluiria contas que a pessoa nem viu.
+        document.querySelectorAll(`.op-cat[data-grupo-de="${cx.value}"]`).forEach(i => {
+          if (i.closest(".opcao").style.display !== "none") i.checked = cx.checked;
+        });
+        pintarContasDoPlano();
+      }));
+    pintarContasDoPlano();
+  }
+
+  function pintarContasDoPlano(){
+    let total = 0, marcadas = 0;
+    GRUPOS_DO_PLANO.forEach(g => {
+      const caixas = [...document.querySelectorAll(`.op-cat[data-grupo-de="${g}"]`)];
+      const quantas = caixas.filter(i => i.checked).length;
+      total += caixas.length; marcadas += quantas;
+      const cab = document.querySelector(`.grupo-contas[data-g="${g}"] .grupo-cab`);
+      const cx = cab.querySelector(".op-grupo");
+      cx.checked = quantas > 0 && quantas === caixas.length;
+      cx.indeterminate = quantas > 0 && quantas < caixas.length;
+      cab.classList.toggle("cheio", quantas === caixas.length && quantas > 0);
+      cab.classList.toggle("parcial", quantas > 0 && quantas < caixas.length);
+      cab.querySelector(`[data-cont="${g}"]`).textContent =
+        quantas ? `${quantas}/${caixas.length}` : "";
+    });
+    els("op-cat-resumo").textContent = marcadas
+      ? `${marcadas} de ${total} marcadas`
+      : `nenhuma marcada — todas liberadas`;
+  }
+
+  els("op-cat-limpar").addEventListener("click", () => {
+    document.querySelectorAll(".op-cat").forEach(i => i.checked = false);
+    pintarContasDoPlano();
+  });
+  els("op-filtro-cat").addEventListener("input", ev => {
+    const q = ev.target.value.toLowerCase();
+    document.querySelectorAll("[data-cat-rot]").forEach(el =>
+      el.style.display = el.dataset.catRot.includes(q) ? "" : "none");
+    // Grupo que ficou sem nenhuma conta visível some junto — cabeçalho de
+    // grupo vazio só atrapalha quem está procurando.
+    document.querySelectorAll(".grupo-contas").forEach(bloco => {
+      const algum = [...bloco.querySelectorAll("[data-cat-rot]")]
+        .some(el => el.style.display !== "none");
+      bloco.style.display = algum ? "" : "none";
+    });
+  });
+  // ---- O QUE CADA PERFIL DE OBRA JÁ LANÇA, sem ninguém ter de marcar
+  //
+  // Pedido do dono em 10/09/2026: *"vamos deixar já pré-configurado o
+  // administrativo de obra... podendo lançar custos de obra, pessoal e
+  // despesas administrativas. Toda a vida que eu selecionar o administrativo
+  // de obra, que é o que mais tem rotatividade, já aparece isso."* Vale para
+  // os três perfis de obra.
+  //
+  // O preenchimento é SUGESTÃO, e é por isso que ele acontece na tela e não no
+  // servidor: fica tudo à vista antes de salvar, e desmarcar é um clique. Se
+  // fosse regra fixa no servidor, mudar a exceção de uma pessoa exigiria
+  // mexer no código.
+  const PRESET_DE_PERFIL = {
+    ADMINISTRATIVO_OBRA: {grupos: ["3", "4", "5"], fundo_fixo: true},
+    SUPERVISOR_OBRA:     {grupos: ["3", "4", "5"], fundo_fixo: true},
+    GESTOR_OBRA:         {grupos: ["3", "4", "5"], fundo_fixo: true},
+  };
+
+  function aplicarPresetDoPerfil(){
+    const chave = els("op-perfil").value;
+    const preset = PRESET_DE_PERFIL[chave];
+    if (!preset) return;                   // perfil sem receita: não mexe em nada
+    const ids = CATS_ATIVAS
+      .filter(x => preset.grupos.includes(String(x.grupo_codigo)))
+      .map(x => x.id);
+    montarContasDoPlano(ids);
+    if (preset.fundo_fixo) els("op-ff").value = "1";
+    const nomes = preset.grupos
+      .map(g => (CATS_ATIVAS.find(x => String(x.grupo_codigo) === g) || {}).grupo_nome)
+      .filter(Boolean).join(", ");
+    const rot = (PERFIS.find(p => p.chave === chave) || {}).rotulo || chave;
+    aviso("dlg-msg", `Já deixei pré-configurado para <b>${escapar(rot)}</b>: `
+      + `${escapar(nomes)}${preset.fundo_fixo ? ", e o fundo fixo liberado" : ""}. `
+      + `É sugestão — desmarque o que não quiser antes de salvar.`, "ok");
+  }
+  els("op-perfil").addEventListener("change", aplicarPresetDoPerfil);
+  // Trocar o perfil PRINCIPAL tira ele da lista de acréscimos na hora: ver o
+  // mesmo perfil marcado nos dois lugares faria qualquer um duvidar de qual
+  // está valendo.
+  els("op-perfil-cad").addEventListener("change", () => {
+    const principal = +els("op-perfil-cad").value || 0;
+    document.querySelectorAll(".op-perfil-extra").forEach(i => {
+      const mesmo = +i.value === principal;
+      i.disabled = mesmo;
+      if (mesmo) i.checked = false;
+      i.closest(".opcao").style.opacity = mesmo ? ".45" : "";
+    });
+  });
+
+  montarContasDoPlano(u.categorias || []);
+  // Cadastro novo já nasce com a receita do perfil escolhido; ao EDITAR
+  // alguém, o que está marcado é o dela e só muda se trocarem o perfil.
+  if (novo) aplicarPresetDoPerfil();
+
+  // As permissões da pessoa só existem depois que ela existe: no cadastro novo
+  // o bloco nem aparece, e o ajuste fino se faz ao editar.
+  async function carregarPermissoes(){
+    try {
+      const d = await api(`/erp/api/usuarios/${u.id}/permissoes`);
+      els("op-perms").innerHTML = d.acoes.map(a => `
+        <label class="opcao" title="${a.do_cargo ? "o perfil já dá" : "o perfil não dá"}">
+          <input type="checkbox" class="op-perm" value="${a.acao}"
+                 ${a.efetiva ? "checked" : ""} ${a.travada ? "disabled" : ""}>
+          <span class="rotulo">${a.rotulo}${
+            a.travada ? ' <small>(o administrador não perde esta)</small>'
+            : a.marcada === null || a.marcada === undefined ? ""
+            : ` <b>· ajuste</b>`}</span></label>`).join("");
+    } catch(e){ els("op-perms").innerHTML = `<small>não foi possível carregar: ${e.message}</small>`; }
+  }
+  if (!novo) carregarPermissoes();
+  if (!novo) carregarConvite();
+
+  async function carregarConvite(){
+    try {
+      const d = await api(`/erp/api/usuarios/${u.id}/convite/situacao`);
+      const c = d.convite || {};
+      els("op-convite").innerHTML = !c.tem
+        ? "Nunca foi enviado convite para esta pessoa."
+        : c.usado ? `Senha definida pela própria pessoa em ${escapar(c.usado_em)}.`
+        : c.vencido ? `<b style="color:var(--vermelho)">Convite vencido</b> (valia até ${dataBR(c.expira_dia)}). Envie outro.`
+        : `Convite aberto, enviado para ${escapar(c.enviado_para||"—")} — vale até ${dataBR(c.expira_dia)}.`;
+    } catch(e){ els("op-convite").textContent = "não foi possível ler: " + e.message; }
+  }
+
+  if (!novo) els("op-convidar").addEventListener("click", async () => {
+    const b = els("op-convidar"); b.disabled = true;
+    try {
+      const r = await api(`/erp/api/usuarios/${u.id}/convite`, {method:"POST"});
+      if (r.enviado) aviso("dlg-msg", `Convite enviado para ${escapar(r.para)}.`, "ok");
+      else aviso("dlg-msg", `O e-mail NÃO saiu: ${escapar(r.erro||"motivo não informado")}.`
+        + (r.link ? ` Enquanto isso, o link é: <br><code>${escapar(r.link)}</code>` : ""), "erro");
+      carregarConvite();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    b.disabled = false;
+  });
+
+  els("op-salvar").addEventListener("click", async () => {
+    const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
+      perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
+      perfil_id: els("op-perfil-cad").value || null,
+      perfis_extras: [...document.querySelectorAll(".op-perfil-extra:checked")].map(i=>+i.value),
+      ve_todas_as_obras: els("op-todas-obras").value === "1",
+      escopo_visao: els("op-escopo").value,
+      ff_autorizado: els("op-ff").value === "1",
+      ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
+      teto_ia_usd: els("op-teto-ia").value,
+      categorias: [...document.querySelectorAll(".op-cat:checked")].map(i=>+i.value),
+      obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value),
+      projetos: [...document.querySelectorAll(".op-projeto:checked")].map(i=>+i.value),
+      empresas: [...document.querySelectorAll(".op-empresa:checked")].map(i=>+i.value),
+      obras_responsavel: [...document.querySelectorAll(".op-resp:checked")].map(i=>+i.value)};
+    if (els("op-senha").value) corpo.senha = els("op-senha").value;
+    if (novo) corpo.email = els("op-email").value;
+    corpo.cpf = els("op-cpf").value;
+    try {
+      await api(novo ? "/erp/api/usuarios" : `/erp/api/usuarios/${u.id}`,
+        {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      const caixas = [...document.querySelectorAll(".op-perm")];
+      if (!novo && caixas.length) {
+        const permissoes = {};
+        caixas.forEach(i => permissoes[i.value] = i.checked);
+        await api(`/erp/api/usuarios/${u.id}/permissoes`,
+          {method:"POST", headers:{"Content-Type":"application/json"},
+           body: JSON.stringify({permissoes})});
+      }
+      // ⚠️ NA ABA, A JANELA NÃO FECHA. Ele, pedindo a aba: *"mas sem fechar
+      // o modal inicial, permitindo voltar para ver as outras configurações
+      // da pessoa."* Fechar aqui jogaria a pessoa para fora da ficha inteira.
+      if (naJanela) els("dlg").close();
+      {# ⚑ DEPOIS DE SALVAR, DIZ EM QUE PÉ ESTÁ O ACESSO (23/11/2026). Ele,
+         depois de liberar uma pessoa da fila do portal: *"depois que eu
+         liberei, eu não vi informação nenhuma. A pessoa recebeu o e-mail
+         para poder completar o cadastro e ter acesso, é isso? Eu fiquei
+         boiando aqui."* A situação do convite estava numa linha pequena
+         dentro do formulário; agora vem no recado, que fica na tela. #}
+      let situacaoDoAcesso = "";
+      if (!novo) {
+        try {
+          const c = (await api(`/erp/api/usuarios/${u.id}/convite/situacao`)).convite || {};
+          situacaoDoAcesso = !c.tem ? ""
+            : c.usado ? ` ${escapar(u.nome)} já criou a senha e consegue entrar.`
+            : c.vencido ? ` ⚠️ O convite de ${escapar(u.nome)} venceu sem ser usado — `
+                + `abra o operador e aperte "Enviar convite" de novo.`
+            : ` <b>Próximo passo é de ${escapar(u.nome)}:</b> abrir o e-mail enviado para `
+                + `${escapar(c.enviado_para || u.email)}, clicar no link e criar a senha `
+                + `(vale até ${dataBR(c.expira_dia)}). Depois disso ela entra no portal com `
+                + `esse e-mail e a senha. Se o e-mail não chegar, olhe o spam ou reenvie `
+                + `o convite pelo operador.`;
+        } catch(e){ /* sem a situação, fica o recado simples */ }
+      }
+      aviso(naJanela ? "mensagem" : "dlg-msg",
+            (novo ? "Operador cadastrado." : "Operador atualizado.")
+            + situacaoDoAcesso, "ok");
+      // ⚠️ QUEM CHAMA DIZ O QUE FAZER DEPOIS. Antes isto chamava
+      // `carregarOperadores()` direto — função que só existe na tela de
+      // Configurações. Com o formulário morando em duas telas, nome de uma
+      // delas aqui dentro é "is not defined" na outra.
+      if (opcoes.aoSalvar) opcoes.aoSalvar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  if (naJanela) els("dlg").showModal();
+}
