@@ -75,6 +75,11 @@ def _limpar_documentos_do_erp(conn) -> None:
         return
     gente = "(SELECT id FROM colaboradores WHERE obra_id IN (SELECT id FROM obras WHERE codigo LIKE 'PG-%'))"
     conn.execute(text(f"DELETE FROM dp_termos WHERE colaborador_id IN {gente} OR conduzido_por_colaborador IN {gente}"))
+    # a trilha do termo (TERMO_PARA_ASSINAR, TERMO_ASSINADO) sai junto: `eventos` é append-only por gatilho, e o
+    # `replica` desliga o gatilho só nesta transação (a mesma chave do `_limpar`). Sem isto, a limpeza do ERP
+    # (`test_manutencao_limpeza_banco.py`) tropeçava nesses eventos quando rodava depois no mesmo trabalhador.
+    conn.execute(text("SET LOCAL session_replication_role = replica"))
+    conn.execute(text(f"DELETE FROM eventos WHERE entidade_tipo = 'colaborador' AND entidade_id IN {gente}"))
 
 
 def _limpar(banco):

@@ -267,6 +267,8 @@ TELAS = [
     # substituir (alimentação, transporte, diaristas, importação).
     ("folha",         "Folha PGT",     "analisesps.tela_folha"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
+    # 24/11/2026: o DDA do Bradesco colado, cruzado com as SPs (ver `dda.py`).
+    ("dda",           "DDA",           "analisesps.tela_dda"),
     ("log",           "Log",           "analisesps.log"),
     ("configuracoes", "Configurações", "analisesps.configuracoes"),
 ]
@@ -8785,6 +8787,68 @@ def estado_comprovantes():
                    "pendencias": l["pendencias"], "resolvidos": l["resolvidos"]}
                   for l in lotes],
     }
+
+
+@bp.route("/dda")
+@exige_consulta
+def tela_dda():
+    """O DDA do Bradesco colado, cruzado com as SPs (24/11/2026) — ver `dda.py`."""
+    from . import consultas, dda
+    base = consultas.base_carregada()
+    filtros = dda.filtros_da_tela(request.args)
+    lista, erro = None, None
+    try:
+        lista = dda.listar(filtros)
+    except Exception as e:  # noqa: BLE001 — migração 058 ainda não aplicada
+        logger.exception("DDA: não consegui montar a tela")
+        erro = str(e)
+    return render_template(
+        "analisesps_dda.html", aba="dda", base=base, lista=lista, filtros=filtros,
+        erro=erro, aviso=request.args.get("aviso") or None,
+        dda=dda, pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
+
+
+@bp.route("/dda/colar", methods=["POST"])
+@exige_operador
+def dda_colar():
+    from . import dda
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        lido = dda.ler(request.form.get("texto") or "")
+        feito = dda.guardar(lido, quem)
+    except dda.ErroDoDDA as e:
+        return redirect(url_for("analisesps.tela_dda", aviso=str(e)))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("DDA: falhou guardar a colagem")
+        return redirect(url_for("analisesps.tela_dda",
+                                aviso=f"Não consegui guardar a colagem: {e}"))
+    banco = lido.get("do_banco")
+    from .formatos import moeda
+    aviso = (f"{len(lido['boletos'])} boleto(s) lidos, R$ {moeda(lido['total'])} "
+             f"({feito['novos']} novo(s), {feito['ja_conhecidos']} já vistos antes). ")
+    if banco:
+        aviso += ("Confere com o total do banco." if lido["confere"] else
+                  f"⚠️ NÃO confere com o total do banco ({banco['boletos']} boletos, "
+                  f"R$ {moeda(banco['total'])}) — algum boleto pode não ter sido lido.")
+    if lido.get("nao_lidos"):
+        aviso += f" {lido['nao_lidos']} bloco(s) não puderam ser lidos."
+    return redirect(url_for("analisesps.tela_dda", aviso=aviso))
+
+
+@bp.route("/dda/<int:boleto_id>/vincular", methods=["POST"])
+@exige_operador
+def dda_vincular(boleto_id: int):
+    from . import dda
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        dda.vincular(boleto_id, request.form.get("sp") or "", quem)
+    except dda.ErroDoDDA as e:
+        return redirect(url_for("analisesps.tela_dda", aviso=str(e)))
+    volta = request.form.get("volta") or url_for("analisesps.tela_dda")
+    if not volta.startswith("/"):
+        volta = url_for("analisesps.tela_dda")
+    return redirect(volta)
 
 
 @bp.route("/bradesco", methods=["GET", "POST"])

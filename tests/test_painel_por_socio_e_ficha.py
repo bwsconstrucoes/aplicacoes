@@ -155,6 +155,10 @@ def test_a_ficha_confere_as_categorias_e_o_dre():
              "resultado_direto": -400.0, "rateio": -30.0, "juros": -20.0, "resultado": -450.0},
             {"obra": "OUTRA", "mes": "2025-01", "receita_liquida": 9.0, "despesas": 0.0,
              "resultado_direto": 9.0, "rateio": 0.0, "juros": 0.0, "resultado": 9.0}],
+        # o pessoal vem em valor absoluto (é a régua); o caixa, com sinal
+        "pessoal": [("2025-01", "OBRA", 250.0), ("2025-02", "OBRA", 200.0), ("2025-01", "OUTRA", 77.0)],
+        "caixa": [("2025-01", "OBRA", -400.0), ("2025-02", "OBRA", 700.0), ("2025-03", "OBRA", 40.0),
+                  ("2025-01", "OUTRA", 5.0)],
     }
     detalhe = {
         "despesas": [{"grupo": "Pessoal", "categoria": "Salários", "valor": -450.0},
@@ -173,7 +177,13 @@ def test_a_ficha_confere_as_categorias_e_o_dre():
     assert f["despesas"][0]["valor"] == pytest.approx(-500.0)
     assert [r["categoria"] for r in f["retidas"]] == ["ISS Retido"]
     # mês a mês na ordem do tempo, só desta obra, com o acumulado
-    assert [(m["rotulo"], m["acumulado"]) for m in f["meses"]] == [("01/2025", -450.0), ("02/2025", 200.0)]
+    assert [(m["rotulo"], m["acumulado"]) for m in f["meses"]] == \
+        [("01/2025", -450.0), ("02/2025", 200.0), ("03/2025", 200.0)]
+    # o pessoal do mês (parte da despesa) e o caixa — pedido de 24/11/2026.
+    # O caixa acumulado desconta a estrutura: -400-30, +700-50, +40
+    assert [(m["pessoal"], m["caixa"], m["caixa_acumulado"]) for m in f["meses"]] == \
+        [(-250.0, -400.0, -430.0), (-200.0, 700.0, 220.0), (0.0, 40.0, 260.0)]
+    assert (f["total_pessoal"], f["total_caixa"], f["caixa_final"]) == (-450.0, 340.0, 260.0)
     assert [round(c["pct"], 1) for c in f["contas"]] == [71.4, 28.6]
     assert (f["total_pago"], f["total_recebido"]) == (-700.0, 1000.0)
 
@@ -192,6 +202,29 @@ def test_a_ficha_confere_as_categorias_e_o_dre():
     assert [n for n, _c, _l in abas] == ["Resumo", "Despesas por categoria", "Mes a mes",
                                          "Por conta corrente", "Conferencia com o DRE"]
     for nome, colunas, linhas in abas:
+        for linha in linhas:
+            assert all(chave in linha for chave, _t in colunas), nome
+    mes_a_mes = dict((n, (c, l)) for n, c, l in abas)["Mes a mes"]
+    assert [c for c, _t in mes_a_mes[0]][3] == "pessoal" and \
+        [c for c, _t in mes_a_mes[0]][-2:] == ["caixa", "caixa_acumulado"]
+    assert mes_a_mes[1][-1]["rotulo"] == "TOTAL" and mes_a_mes[1][-1]["caixa_acumulado"] == 260.0
+
+    # com o analítico, o relatório ganha as duas listas — e o total das
+    # receitas não conta o imposto que o cliente reteve
+    lancamentos = [
+        {"data": None, "tipo": "Receita", "quem": "CLIENTE", "grupo": "Receita", "categoria": "Medição",
+         "documento": "NF 1", "conta": "Banco A", "situacao": "RECEBIDO", "observacao": "", "codigo": 1, "valor": 1000.0},
+        {"data": None, "tipo": "Retido na fonte", "quem": "CLIENTE", "grupo": "Receita", "categoria": "ISS Retido",
+         "documento": "NF 1", "conta": "", "situacao": "RECEBIDO", "observacao": "", "codigo": 2, "valor": 100.0},
+        {"data": None, "tipo": "Despesa", "quem": "FORNECEDOR", "grupo": "Pessoal", "categoria": "Salários",
+         "documento": "", "conta": "Banco A", "situacao": "PAGO", "observacao": "", "codigo": 3, "valor": -700.0},
+    ]
+    completo = ficha_obra.abas(f, lancamentos)
+    assert [n for n, _c, _l in completo][-2:] == ["Receitas - analitico", "Despesas - analitico"]
+    receitas, despesas = completo[-2][2], completo[-1][2]
+    assert [l["tipo"] for l in receitas] == ["Receita", "Retido na fonte", "TOTAL (sem o retido)"]
+    assert receitas[-1]["valor"] == 1000.0 and despesas[-1]["valor"] == -700.0
+    for nome, colunas, linhas in completo:
         for linha in linhas:
             assert all(chave in linha for chave, _t in colunas), nome
 
@@ -248,6 +281,15 @@ def test_o_detalhe_da_obra_fecha_com_a_apuracao(com_socios):
     # com o corte do cenário antes do movimento, a obra fica vazia
     assert consultas.detalhe_da_obra("MUITA GENTE", "executado", "2025-02")["despesas"] == []
 
+    # o analítico é a mesma régua, lançamento a lançamento: fecha com a ficha
+    for medida, despesa in (("comprometido", -2250.0), ("executado", -2000.0)):
+        linhas = consultas.lancamentos_da_obra("MUITA GENTE", medida)
+        assert sum(l["valor"] for l in linhas if l["tipo"] == "Despesa") == pytest.approx(despesa)
+        assert sum(l["valor"] for l in linhas if l["tipo"] == "Receita") == pytest.approx(1000.0)
+    assert [(l["tipo"], l["categoria"], l["codigo"]) for l in linhas] == \
+        [("Despesa", "Salários", 801), ("Receita", "Medição", 803)]
+    assert consultas.lancamentos_da_obra("MUITA GENTE", "executado", "2025-02") == []
+
 
 @banco
 def test_a_tela_por_socio_abre_e_fecha_com_as_quotas(com_socios, monkeypatch):
@@ -287,8 +329,16 @@ def test_a_ficha_da_obra_abre_com_as_quatro_partes(com_socios, monkeypatch):
     assert "<html" not in html and "Ficha da obra" in html
     for trecho in ("Despesas com Pessoal", "Salários", "Medição", "Resultado direto da obra",
                    "Estrutura apropriada", "Sócio A · 60%", "03/2025", "Banco Ímpar",
-                   "Conferir com o DRE", "Na prestação", "No DRE"):
+                   "Conferir com o DRE", "Na prestação", "No DRE",
+                   # o mês a mês mostra o pessoal e o caixa (24/11/2026)
+                   "— da qual, pessoal", "Caixa do mês", "Caixa acumulado"):
         assert trecho in html, trecho
+    # 2.000 de pessoal em março; recebeu 1.000 e pagou 2.000: caixa de -1.000
+    from app.apps.painel import cenarios
+    from app.apps.painel.web import _ficha_da_obra
+    marco = _ficha_da_obra(cenarios.completo(com_socios), "MUITA GENTE")["meses"][0]
+    assert (marco["rotulo"], marco["pessoal"], marco["caixa"]) == ("03/2025", -2000.0, -1000.0)
+    assert marco["caixa_acumulado"] == pytest.approx(-1000.0 + marco["estrutura"])
     # o cenário é pelo executado: o título em aberto fica de fora, e a ficha bate com o DRE
     assert "Cimento" not in html and "<b>Bate.</b>" in html
     # obra que não existe, ou sem dizer a obra: "não encontrado"
@@ -351,7 +401,12 @@ def test_os_relatorios_saem_em_planilha_e_em_pdf(com_socios, monkeypatch):
     r = cliente.get(f"/painel/baixar/obra?cenario={com_socios}&obra=MUITA GENTE")
     livro = load_workbook(io.BytesIO(r.data))
     assert livro.sheetnames == ["Resumo", "Despesas por categoria", "Mes a mes",
-                                "Por conta corrente", "Conferencia com o DRE"]
+                                "Por conta corrente", "Conferencia com o DRE",
+                                "Receitas - analitico", "Despesas - analitico"]
+    titulos = [c.value for c in livro["Mes a mes"][1]]
+    assert "Despesa com pessoal (dentro da despesa)" in titulos and titulos[-2:] == ["Caixa do mês", "Caixa acumulado"]
+    despesas = [[c.value for c in linha] for linha in livro["Despesas - analitico"].iter_rows(min_row=2)]
+    assert [(l[1], l[4], l[-1]) for l in despesas] == [("Despesa", "Salários", -2000), ("TOTAL", None, -2000)]
     assert [l[0].value for l in livro["Por conta corrente"].iter_rows(min_row=2)] == ["Banco Ímpar", "TOTAL"]
     for caminho in (f"/painel/baixar/por_socio?cenario={com_socios}&formato=pdf",
                     f"/painel/baixar/obra?cenario={com_socios}&obra=MUITA GENTE&formato=pdf",
