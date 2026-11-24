@@ -212,6 +212,14 @@ TEMPLATES: dict[str, dict[str, Any]] = {
 
 SITUACOES = ("RASCUNHO", "ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE",
              "CONCLUIDO", "CANCELADO")
+# O NOME QUE A PESSOA LÊ (23/11/2026). Ele: *"como o que foi mandado, se nem
+# foi mandado ainda (…) E aí a situação rascunho. Não fica estranho?"*
+SITUACAO_ROTULOS = {
+    "RASCUNHO": "Ainda não enviado", "ENVIADO": "Enviado — esperando a contabilidade",
+    "COBRADO": "Cobrado — esperando a contabilidade",
+    "RESPONDIDO": "A contabilidade respondeu", "DIVERGENTE": "Voltou diferente do cadastro",
+    "CONCLUIDO": "Concluído", "CANCELADO": "Cancelado",
+}
 # Em que situações o pedido ainda espera algo de FORA.
 ESPERANDO = ("ENVIADO", "COBRADO")
 ABERTAS = ("RASCUNHO", "ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE")
@@ -268,7 +276,8 @@ def carteira_que_saiu(s: Session, c: Colaborador):
 
 
 def o_que_falta_para_pedir(s: Session, template: str,
-                           c: Colaborador) -> list[str]:
+                           c: Colaborador,
+                           pedido: Optional[dict[str, Any]] = None) -> list[str]:
     """PURA o bastante para a tela avisar ANTES de alguém apertar enviar."""
     regra = TEMPLATES.get(template)
     if regra is None:
@@ -286,7 +295,12 @@ def o_que_falta_para_pedir(s: Session, template: str,
             tem = c.empresa_id or c.cnpj_admissao
         elif campo == "forma_desligamento":
             v = svc_pessoas.vinculo_aberto(s, c.id)
-            tem = (v.forma_desligamento if v else None) or _ultima_forma(s, c.id)
+            # ⚑ 23/11/2026: a FORMA QUE O PEDIDO TRAZ também vale. Quem foi
+            # importado sem histórico de vínculo não tem onde a forma ficar
+            # gravada, e a rescisão travava com "falta a forma do
+            # desligamento" — com a forma escrita na própria solicitação.
+            tem = ((v.forma_desligamento if v else None) or _ultima_forma(s, c.id)
+                   or str((pedido or {}).get("forma_desligamento") or "").strip())
         else:
             tem = getattr(c, campo, None)
         if not tem:
@@ -565,7 +579,7 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
         if assinado:
             dados = {**dados, "dados": {**(dados.get("dados") or {}),
                                         "aviso_assinado": assinado}}
-    falta = o_que_falta_para_pedir(s, template, c)
+    falta = o_que_falta_para_pedir(s, template, c, dados.get("dados") or {})
     if falta:
         # RECUSA ANTES DE SAIR PELA METADE. É a economia da rotina R3 do
         # `AGENTE_DP.md`: e-mail incompleto custa dois dias de ida e volta.
@@ -642,9 +656,113 @@ def _documentos_assinados(s: Session, p: dict[str, Any]) -> list[dict[str, Any]]
         return []
 
 
+# ---------------------------------------------------------------------------
+# O RASCUNHO NA TELA DE ATENDIMENTO (23/11/2026)
+#
+# Ele: *"Eu clico [montar], aí eu vou para outra tela ainda de contabilidade
+# para poder enviar (…) A definição é para ser aqui, na mesma tela de
+# atendimento (…) se for um e-mail (…) é para eu ler o e-mail, ver se eu
+# concordo, para poder enviar (…) permitir até anexar alguma coisa."*
+#
+# O rascunho se lê, se corrige, ganha anexo e sai — dali mesmo. Depois de
+# enviado o texto não muda mais: é o que foi mandado.
+# ---------------------------------------------------------------------------
+def _exigir_rascunho(s: Session, pedido_id: int) -> dict[str, Any]:
+    p = ler(s, pedido_id)
+    if p["situacao"] != "RASCUNHO":
+        raise ErroValidacao(f"O pedido {p['numero']} já foi enviado — o texto "
+                            "fica como foi mandado.")
+    return p
+
+
+def editar_rascunho(s: Session, pedido_id: int, *, assunto: str, corpo: str,
+                    usuario: Optional[Usuario]) -> dict[str, Any]:
+    p = _exigir_rascunho(s, pedido_id)
+    assunto, corpo = str(assunto or "").strip(), str(corpo or "").strip()
+    if not assunto or not corpo:
+        raise ErroValidacao("O assunto e o texto do e-mail não podem ficar vazios.")
+    if assunto == (p["assunto"] or "") and corpo == (p["corpo"] or ""):
+        return {"mudou": False}
+    s.execute(text("UPDATE dp_pedidos SET assunto = :a, corpo = :c WHERE id = :i"),
+              {"a": assunto, "c": corpo, "i": pedido_id})
+    _evento(s, pedido_id, "EDITADO", "o DP corrigiu o texto antes de enviar",
+            usuario=usuario)
+    return {"mudou": True}
+
+
+def anexos_extras(p: dict[str, Any]) -> list[dict[str, Any]]:
+    return list(((p.get("dados") or {}).get("anexos_extras")) or [])
+
+
+def anexar_ao_rascunho(s: Session, pedido_id: int, *, conteudo: bytes,
+                       nome_arquivo: str, usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Um arquivo a mais no e-mail. Fica também no cadastro da pessoa."""
+    import json
+    from app.apps.erp.core.arquivo import service as svc_arq
+    p = _exigir_rascunho(s, pedido_id)
+    if not conteudo:
+        raise ErroValidacao("Escolha o arquivo.")
+    if len(conteudo) > 15 * 1024 * 1024:
+        raise ErroValidacao("Arquivo acima de 15 MB — o e-mail não sairia.")
+    doc = svc_arq.arquivar(
+        s, conteudo, nome_arquivo or "anexo", tipo_codigo="DOC-PESSOA-OUTRO",
+        colaborador_id=p.get("colaborador_id"),
+        referencia=f"{p['numero']} — anexo do pedido à contabilidade",
+        observacao=f"anexado ao pedido {p['numero']}", usuario=usuario)
+    extras = anexos_extras(p) + [{"documento_id": doc.id,
+                                  "nome": nome_arquivo or "anexo"}]
+    s.execute(text("""UPDATE dp_pedidos SET dados = dados || CAST(:d AS jsonb)
+                       WHERE id = :i"""),
+              {"d": json.dumps({"anexos_extras": extras}), "i": pedido_id})
+    _evento(s, pedido_id, "ANEXO", f"anexado: {nome_arquivo}", usuario=usuario)
+    return {"anexos_extras": extras}
+
+
+def tirar_anexo(s: Session, pedido_id: int, documento_id: int,
+                usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Tira do e-mail; o arquivo continua no cadastro da pessoa."""
+    import json
+    p = _exigir_rascunho(s, pedido_id)
+    extras = [x for x in anexos_extras(p) if int(x["documento_id"]) != int(documento_id)]
+    s.execute(text("""UPDATE dp_pedidos SET dados = dados || CAST(:d AS jsonb)
+                       WHERE id = :i"""),
+              {"d": json.dumps({"anexos_extras": extras}), "i": pedido_id})
+    return {"anexos_extras": extras}
+
+
+def anexos_que_vao(s: Session, p: dict[str, Any]) -> list[str]:
+    """Os NOMES do que vai junto — para a tela mostrar antes de enviar, sem
+    baixar arquivo nenhum."""
+    nomes = []
+    from app.apps.erp.core import termos
+    if p.get("solicitacao_id") and termos.tem_tabela(s):
+        for l in s.execute(text("""
+            SELECT t.numero, t.tipo FROM dp_termos t
+             WHERE t.solicitacao_id = :s AND t.situacao IN ('ASSINADO', 'RECUSADO')
+               AND t.documento_id IS NOT NULL ORDER BY t.id"""),
+                {"s": p["solicitacao_id"]}).mappings().all():
+            nomes.append(f"{l['tipo'].lower()}_{l['numero']}.pdf (assinado pela pessoa)")
+    return nomes + [x["nome"] for x in anexos_extras(p)]
+
+
+def _anexos_extras_para_envio(s: Session, p: dict[str, Any]) -> list[dict[str, Any]]:
+    from app.apps.erp.core.documentos.armazenamento import conteudo_de, obter
+    saida = []
+    for x in anexos_extras(p):
+        doc = s.execute(text("SELECT anexo_id FROM documentos WHERE id = :i"),
+                        {"i": int(x["documento_id"])}).scalar()
+        if not doc:
+            continue
+        a = obter(s, int(doc))
+        saida.append({"nome": x.get("nome") or a.nome_arquivo,
+                      "mime": a.mime_type or "application/octet-stream",
+                      "conteudo": conteudo_de(s, a)})
+    return saida
+
+
 def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
            para: Optional[list[str]] = None,
-           pelo_agente: bool = False) -> dict[str, Any]:
+           pelo_agente: bool = False, _reenviar: bool = False) -> dict[str, Any]:
     """Manda o e-mail pela conta da empresa e marca o prazo.
 
     NUNCA LEVANTA POR FALHA DE ENVIO — o módulo de e-mail devolve o registro com
@@ -655,7 +773,8 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
     from app.apps.erp.db.models.cadastros import Empresa
 
     p = ler(s, pedido_id)
-    if p["situacao"] not in ("RASCUNHO",):
+    reenvio = p["situacao"] in ("ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE")
+    if p["situacao"] != "RASCUNHO" and not (reenvio and _reenviar):
         raise ErroValidacao(
             f"O pedido {p['numero']} já foi enviado (está "
             f"{p['situacao'].lower()}).")
@@ -697,8 +816,23 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
         s, empresa=empresa, para=destinos, assunto=p["assunto"],
         corpo=p["corpo"], entidade_tipo="dp_pedido", entidade_id=pedido_id,
         usuario=usuario, destinatario_tipo="contabilidade",
-        anexos=_documentos_assinados(s, p))
+        anexos=_documentos_assinados(s, p) + _anexos_extras_para_envio(s, p),
+        guardar_nos_enviados=True)
     deu = (registro.situacao == "ENVIADO")
+    copia = getattr(registro, "copia_nos_enviados", None)
+    # ⚑ DE QUAL CONTA SAIU (23/11/2026). Ele: *"Que caixa da empresa é essa?
+    # (…) No sistema não ficou claro."* A trilha passa a dizer o remetente: a
+    # conta do DP, ou a da empresa quando a do DP não está configurada.
+    from email.utils import parseaddr as _parse
+    de = _parse(svc_email.remetente_de(empresa))[1] or "?"
+    if deu and _reenviar:
+        _evento(s, pedido_id, "REENVIADO",
+                f"o mesmo e-mail enviado de novo, de {de} para {', '.join(destinos)}"
+                + (f" ({copia})" if copia else ""),
+                {"para": destinos, "de": de}, usuario, pelo_agente)
+        s.flush()
+        return {"enviado": True, "erro": None, "copia_nos_enviados": copia,
+                "prazo": p.get("prazo")}
     if deu:
         prazo = dias_uteis_depois(date.today(), regra["prazo"])
         s.execute(text("""
@@ -708,16 +842,29 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
             {"para": destinos, "prazo": prazo, "id": pedido_id,
              "mid": registro.message_id})
         _evento(s, pedido_id, "ENVIADO",
-                f"e-mail enviado para {', '.join(destinos)}; "
-                f"retorno esperado até {prazo:%d/%m/%Y}",
-                {"para": destinos, "prazo": str(prazo)}, usuario, pelo_agente)
+                f"e-mail enviado de {de} para {', '.join(destinos)}; "
+                f"retorno esperado até {prazo:%d/%m/%Y}"
+                + (f" ({copia})" if copia else ""),
+                {"para": destinos, "de": de, "prazo": str(prazo)}, usuario, pelo_agente)
     else:
         _evento(s, pedido_id, "FALHA_ENVIO", registro.erro or "não saiu",
                 {"para": destinos}, usuario, pelo_agente)
     s.flush()
-    return {"enviado": deu, "erro": registro.erro,
+    return {"enviado": deu, "erro": registro.erro, "copia_nos_enviados": copia,
             "prazo": None if not deu else str(dias_uteis_depois(
                 date.today(), regra["prazo"]))}
+
+
+def reenviar(s: Session, pedido_id: int, usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O MESMO e-mail, de novo (23/11/2026). Ele: *"se de repente eu precisar
+    reenviar o e-mail, eu não tenho essa opção."* Mesmo texto, mesmos anexos,
+    mesmos destinatários; o prazo de volta não muda — reenviar não é cobrar."""
+    p = ler(s, pedido_id)
+    if p["situacao"] not in ("ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE"):
+        raise ErroValidacao(
+            f"O pedido {p['numero']} está {p['situacao_rotulo'].lower()} — "
+            + ("use Enviar." if p["situacao"] == "RASCUNHO" else "não há o que reenviar."))
+    return enviar(s, pedido_id, usuario, _reenviar=True)
 
 
 # A chave do parâmetro, na tabela `parametros` que o ERP já usa para tudo que é
@@ -1108,6 +1255,11 @@ def ler(s: Session, pedido_id: int) -> dict[str, Any]:
           LEFT JOIN usuarios u ON u.id = e.usuario_id
          WHERE e.pedido_id = :id ORDER BY e.criado_em, e.id"""),
         {"id": pedido_id}).mappings().all()]
+    # O que vai junto no e-mail (23/11/2026): a tela mostra antes de enviar.
+    d["anexos"] = anexos_que_vao(s, d)
+    d["anexos_extras"] = anexos_extras(d)
+    d["situacao_rotulo"] = SITUACAO_ROTULOS.get(d["situacao"], d["situacao"])
+    d["para_que_vai"] = list(d.get("para") or []) or list(endereco_padrao(s) or [])
     return d
 
 

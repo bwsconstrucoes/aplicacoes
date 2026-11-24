@@ -214,6 +214,26 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                              P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # ⚑ LIBERAR A SOLICITAÇÃO PARA COMPRA (22/11/2026). O ok da engenharia:
+    # o pedido do administrativo de obra não chega ao comprador como
+    # comprável sem ele. O administrativo fica de fora DE PROPÓSITO.
+    "liberar_solicitacao": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA},
+    # ⚑ AUTORIZAR MATERIAL COMPRADO SEM PEDIDO (21/11/2026). Ação própria: é a
+    # ciência de que uma compra não passou pelo suprimento, e libera o
+    # lançamento para o financeiro. Quem autoriza pedido ganha de graça.
+    # ⚑ 22/11/2026 — entraram gestor e supervisor de obra. O dono: "quem é
+    # responsável pelo setor, a engenharia, tem que estar ciente de que foi
+    # feita uma compra (...) tem que ser dado ciência por alguém."
+    "autorizar_compra_fora_do_fluxo": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                                       P.SUPERVISOR_OBRA},
+    # ⚑ RECEBER MATERIAL (20/11/2026). Quem confere o que desceu do caminhão é
+    # a OBRA — e até aqui o recebimento morava dentro da tela de Pedidos, que
+    # só comprador e diretor abrem. A regra existia; a obra não tinha porta.
+    # Ação própria, e não `ver_suprimentos`: registrar recebimento muda o saldo
+    # do pedido e é o que diz ao financeiro que há conta a caminho.
+    "receber_material":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "administrar_insumos": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "administrar_fornecedores": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     # A fila de pedidos serve a DOIS papéis: quem compra acompanha o que fechou,
@@ -359,6 +379,10 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
 # verdade sobre quem entra.
 ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "ver_pedidos_compra": ("comprar", "autorizar_pedido"),
+    # O comprador também registra recebimento: é ele quem fecha o ciclo quando
+    # a obra não lançou.
+    "receber_material": ("comprar",),
+    "autorizar_compra_fora_do_fluxo": ("autorizar_pedido",),
     # Quem compra enxerga as notas e cruza: é ele que sabe de que pedido cada
     # nota é, e o dono deixou em aberto quem confere — a resposta prática é
     # "os dois, na mesma tela", porque a nota tem uma ponta em cada mundo.
@@ -427,6 +451,9 @@ ACAO_ROTULOS = {
     "solicitar_suprimento": "Pedir material para a obra",
     "comprar":              "Cotar e fechar pedido de compra",
     "autorizar_pedido":     "Autorizar pedido de compra",
+    "liberar_solicitacao":  "Liberar para compra o material pedido pela obra",
+    "receber_material":     "Registrar o material que chegou na obra",
+    "autorizar_compra_fora_do_fluxo": "Autorizar material comprado sem pedido de compra",
     "administrar_insumos":  "Cadastrar e corrigir insumos",
     "administrar_fornecedores": "Cadastrar e corrigir fornecedores",
     "ver_pedidos_compra":   "Ver a fila de pedidos de compra",
@@ -783,7 +810,20 @@ def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
             " WHERE (o.projeto_id IS NOT NULL AND o.projeto_id IN ("
             "         SELECT projeto_id FROM usuario_projetos WHERE usuario_id = :u))"
             "    OR (o.empresa_id IS NOT NULL AND o.empresa_id IN ("
-            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"),
+            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"
+            # ⚑ A OBRA ONDE A PESSOA BATE PONTO (23/11/2026). Ele: *"o ideal
+            # era isso ser feito de forma dinâmica em relação às obras. A obra
+            # que aquela pessoa está batendo ponto, ele já teria acesso."* A
+            # obra atual (`colaborador_obra_atual`, recalculada todo dia pela
+            # rodada do agente) do cadastro LIGADO a este operador soma-se às
+            # marcadas — mudou de obra no ponto, o alcance muda junto, sem
+            # ninguém mexer no operador; as marcadas à mão continuam. Mesma
+            # consulta, nenhuma ida a mais ao banco.
+            "    OR o.id IN ("
+            "         SELECT a.obra_id FROM colaborador_obra_atual a"
+            "           JOIN colaboradores c ON c.id = a.colaborador_id"
+            "          WHERE c.usuario_id = :u AND a.obra_id IS NOT NULL"
+            "            AND UPPER(COALESCE(c.situacao, '')) <> 'DESLIGADO')"),
             {"u": usuario.id}).all()
     except Exception:
         # Migração 066 ainda não aplicada: vale só o que está marcado obra a

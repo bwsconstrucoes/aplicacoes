@@ -38,6 +38,19 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**⚠️ EM OBRA NO CHAT DO PONTO (aviso dele em 23/11/2026):** a central única de
+assinaturas do colaborador vai para o aplicativo do ponto, usando
+`core/termos.py` como base. **Não mexer em `termos.py`** até ele avisar que
+publicou; migração nova do ERP: 127 em diante (124–126 tomadas). Pedi a ele que
+toda assinatura chame `pessoal_solicitacoes.termo_voltou` (fecha as férias e
+despacha a rescisão/desconto) e preserve `termos.concluido` e o lacre.
+
+**PUBLICADO (21/11/2026):** ASO sem travar (admissional reconhecido e com
+alerta; demissional pedido junto com a rescisão) e o agente cobrando e lendo o
+e-mail no automático — migração **123**. ⚠️ Confirmar com ele que apertou
+"Aplicar atualizações do banco" e se a conta de e-mail do DP está configurada
+(sem ela a leitura não faz nada).
+
 **PUBLICADO (20/11/2026, noite, 8):** o contrato que vira indeterminado
 sozinho ao fim da experiência (sem migração; a primeira rodada diária depois
 da publicação alcança o estoque).
@@ -100,8 +113,10 @@ atualizações do banco" em Configurações **no mesmo momento**.
 
 **Ainda sem resposta dele:**
 
-- o endereço de produção, para entrar no lugar de `SEU-ENDERECO` no PDF de
-  orientação e na mensagem de WhatsApp (os dois estão prontos);
+- ~~o endereço de produção para o PDF de orientação~~ — resolvido em
+  23/11/2026: o guia novo usa `aplicacoes.bwsconstrucoes.com.br/erp/portal`, o
+  mesmo endereço que as mensagens do ERP já usam (ver `orientacao/`). O PDF e a
+  mensagem de 18/11 nunca tinham sido salvos no repositório;
 - se o diário de obra deve esconder também obra cuja **fase** está encerrada
   (hoje ele filtra só por `status <> 'ENCERRADA'` e **ignora a fase**, então
   obra marcada "Concluída" continua aparecendo na lista do diário).
@@ -125,6 +140,284 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 23/11/2026 (8) — Liberar o portal: o CPF vem do cadastro, a edição grava o CPF, e o recado diz o próximo passo
+
+Ele, liberando da fila do portal uma pessoa com pré-cadastro: *"O CPF já era
+para ele buscar e preencher automaticamente, não aconteceu"*; *"coloquei (…)
+salvei, e o CPF não ficou preenchido"*; *"depois que eu liberei, eu não vi
+informação nenhuma (…) Eu fiquei boiando."*
+- Dois defeitos: `_liberar_acesso` copiava nome, e-mail e telefone do
+  cadastro, mas não o CPF; e a edição do operador (`/erp/api/usuarios/<id>`)
+  IGNORAVA o CPF — a tela mostrava o campo aberto, só o cadastro novo gravava.
+  Os dois corrigidos (vazio não apaga; CPF inválido recusa).
+- Ao salvar um operador, o recado diz em que pé está o convite: "próximo passo
+  é dela: abrir o e-mail, criar a senha (vale até…)", "já criou a senha", ou
+  "o convite venceu".
+- **O alcance acompanha o ponto** (decisão dele no mesmo dia: *"o ideal era
+  isso ser feito de forma dinâmica (…) A obra que aquela pessoa está batendo
+  ponto, ele já teria acesso"*). `permissoes._obras_designadas` soma às obras
+  marcadas a obra atual (`colaborador_obra_atual`, recalculada todo dia) do
+  cadastro LIGADO ao operador — na mesma consulta de projeto e empresa, sem
+  ida a mais ao banco. Mudou de obra no ponto, o alcance muda; as marcadas à
+  mão ficam. Vale para todo operador que enxerga por obra e tem cadastro de
+  colaborador ligado. A tela de operadores ainda NÃO mostra essa obra que vem
+  do ponto (só as marcadas).
+
+### 23/11/2026 (7) — Checklists enxutos; cópia em "Enviados" e "Reenviar o mesmo e-mail"
+
+**Checklists**, revisados com ele item a item: ficam só com o que o sistema
+não acompanha. Desligamento de carteira: só "Conferir as faltas no espelho do
+ponto" (eram os 11 do Pipefy — o resto é passo do processo). Ele: *"Não
+existe sistema para ativar e desativar (…) quando você coloca rescisão [no
+SomaPay], automaticamente ele desativa (…) O que precisa é lançar o
+pagamento"* — que já é o passo "Rescisão (TRCT) lançada e paga". E: *"basta
+informar a quantidade de faltas na rescisão"* — sem espelho anexo nem malote.
+Todo item de "sistema de pagamento" saiu de todos os tipos; o que o
+atendimento já grava (cadastro, dependente, alteração) também. Readmissão
+ficou sem checklist. Só vale para pedidos abertos daqui em diante; se ele
+tiver ajustado um tipo na tela "⚙️ Passos de cada tipo", o dele vale.
+
+**E-mail.** Ele: *"os e-mails que eu envio via sistema, eles não ficam salvos
+no e-mail (…) não estou localizando (…) se de repente eu precisar reenviar,
+eu não tenho essa opção."*
+- O SMTP só entrega; quem guarda em "Enviados" é o programa de e-mail. Agora
+  o ERP grava a cópia na pasta de enviados por IMAP (ver `HISTORICO.md`,
+  23/11, registro entre áreas). Condição: a caixa de e-mail configurada no
+  ERP (a que o agente lê) tem de ser a MESMA conta que envia. Se não for, o
+  envio sai igual e a mensagem diz que a cópia não ficou e por quê.
+- A caixa do DP é da **Locaweb**, a MESMA conta para enviar e receber (ele
+  confirmou). Ela tem duas pastas de enviados: `INBOX.enviadas` (a do
+  webmail, onde ele procura) e `INBOX.Sent` (criada pelo Thunderbird). A
+  escolha da pasta prefere o nome em português; depois a marcada como
+  enviados; depois nomes conhecidos.
+- **"Reenviar o mesmo e-mail"** no pedido já enviado (na solicitação e na
+  tela de Contabilidade): mesmo texto, anexos e destinatários; o prazo de
+  volta não muda (reenviar não é cobrar); fica "REENVIADO" na trilha.
+- ⚠️ O que eu NÃO verifiquei: qual provedor e qual conta ele usa. Os dois
+  e-mails que ele não achou podem ter saído pela conta da EMPRESA (a volta
+  automática quando a conta do DP não está configurada, 18/11) — aí estão
+  nos enviados de outra caixa. Ele perguntou *"que caixa da empresa é essa?
+  (…) Fica alguma coisa em sistema?"*: desde então a trilha do pedido diz
+  "enviado DE <conta> PARA <contabilidade>", e a janela do e-mail mostra a
+  trilha ("O que aconteceu com este e-mail"). Os envios anteriores não têm o
+  "de" — a trilha deles só diz para quem foi.
+
+### 23/11/2026 (6) — O e-mail à contabilidade se lê, se corrige, ganha anexo e sai da própria solicitação
+
+Ele: *"Eu clico [montar o pedido], aí eu vou para outra tela ainda de
+contabilidade para poder enviar (…) é para eu ler o e-mail, ver se eu
+concordo, para poder enviar (…) permitir até anexar alguma coisa"*; *"todas
+as outras solicitações (…) precisam trabalhar da mesma forma (…) A gente quer
+velocidade e agilidade."* E sobre os nomes: *"como o que foi mandado, se nem
+foi mandado ainda (…) E aí a situação rascunho. Não fica estranho?"*
+
+- **Montar o pedido abre o e-mail na hora**, numa janela por cima da
+  solicitação: para quem vai, assunto e texto EDITÁVEIS, o que vai junto
+  (os documentos assinados pela pessoa entram sozinhos), "Anexar arquivo…",
+  "Enviar à contabilidade" e "Guardar o texto e enviar depois". Vale para
+  todo tipo que gera pedido (desligamento, admissão, férias, alteração,
+  afastamento…) — um botão só, `verPedidoContabil`. O link "abrir em
+  Contabilidade" saiu; o passo agora diz "Ler e enviar o e-mail PC-…".
+- Servidor: `contabilidade.editar_rascunho`, `anexar_ao_rascunho` (o arquivo
+  fica também no cadastro da pessoa, tipo "Outro documento do colaborador"),
+  `tirar_anexo`; `enviar` manda os anexos extras junto; ações `editar`,
+  `anexar`, `tirar-anexo` na rota do pedido, que passou a conferir o escopo
+  também nas ações. Os extras ficam em `dp_pedidos.dados.anexos_extras` —
+  sem migração. Depois de enviado, o texto não muda mais.
+- **Nomes:** "RASCUNHO" virou "Ainda não enviado" em todas as telas; o bloco
+  "O que foi mandado" diz "O e-mail que vai sair (ainda não foi enviado)"
+  enquanto não sai.
+- O agente no modo SUGERE continua montando o pedido sozinho; quem envia é o
+  DP, agora da própria solicitação — não precisa ir à tela do agente.
+
+### 23/11/2026 (5) — Atender a admissão: sem matrícula, cargo e convenção da lista, piso sozinho; rescisão de quem veio sem vínculo
+
+Ele, atendendo uma admissão de verdade: *"a matrícula é para ser o número do
+CPF e não é nem para aparecer aqui (…) a convenção precisa ser uma lista
+selecionável (…) o cargo já é para ele identificar dentre os cargos já
+cadastrados e automaticamente, quando eu colocar a convenção, ele já vai
+buscar o salário."*
+
+- A matrícula saiu da janela de Atender (só da TELA: o servidor continua
+  gravando o CPF quando ela está vazia, e na readmissão a antiga fica).
+- Cargo e convenção viraram listas do cadastro (`/erp/api/cargos`); o cargo
+  vem marcado com o cargo pleiteado pela obra. Escolhidos os dois, o salário
+  recebe o piso daquele cargo naquela convenção, com a explicação embaixo; se
+  o cruzamento não existe ou está sem piso, a explicação diz isso e manda
+  para Administração › Cargos e convenções. O DP pode mudar o salário.
+- Defeito, no mesmo dia: "Montar o pedido à contabilidade" da rescisão
+  travava com "falta (…) forma do desligamento" para quem foi importado sem
+  histórico de vínculo — a forma só era procurada lá. Agora a forma escrita
+  no pedido também vale (`contabilidade.o_que_falta_para_pedir(pedido=)`).
+
+### 23/11/2026 (4) — Convenções: quem está em cada uma, excluir e a planilha modelo
+
+Ele, antes de importar a tabela completa: *"eu queria um exemplo da planilha
+de como eu devo importar os dados (…) visualizar quem são os colaboradores
+para cada convenção (…) se todas que foi cadastrada tem alguém ou se não.
+Inclusive, até excluir alguma que não precise estar aqui."*
+
+- **Quadro "Convenções"** no topo de Administração › Cargos e convenções:
+  UF, mês da data-base (marca "falta" quando vazio), cargos (e quantos sem
+  piso), pessoas ativas (clicável: nome, cargo, obra, vínculo — o nome abre o
+  cadastro) e desligados. Uma consulta agrupada.
+- **Excluir…** com três travas (`cargos.excluir_convencao`): com gente ativa,
+  RECUSA (troque a convenção das pessoas primeiro); só com desligados ou
+  histórico de vínculo/alteração, DESATIVA (some das listas, o histórico de
+  quem saiu continua dizendo a convenção); nunca usada, APAGA com os cargos e
+  pisos dela. Fica registrado na auditoria.
+- **"Baixar a planilha"**: o modelo JÁ VEM com o que está cadastrado — ele
+  completa e importa de volta. Colunas: Cargo, CBO, Convenção, UF, Mês da
+  data-base, Categoria, Salário, Valor diária, Status; aba "Como preencher".
+  A importação passou a ler UF e mês da data-base (o mês alimenta o alerta
+  dos 30 dias antes da data-base, Lei 7.238). A planilha do Pipefy continua
+  aceita.
+- Importar **não apaga** nada que não esteja na planilha — tirar convenção é
+  só pelo Excluir.
+
+### 23/11/2026 (3) — Plano B: o papel assinado que chega ao escritório
+
+Ele: *"e se de repente aconteceu uma circunstância que a pessoa assinou num
+papel e encaminhou para cá para a gente anexar? (…) Isso vale para outras
+circunstâncias de sistema também (…) a obra (…) não tem internet (…) a gente
+tem que ter uma alternativa, plano B."*
+
+**O que já havia:** pelo portal, a OBRA tinha três saídas para o documento
+que a pessoa assina — assinar na tela (PIN), mandar a foto do papel, ou
+registrar a recusa com duas testemunhas. O que faltava era o lado do
+ESCRITÓRIO: o papel que chegou por malote, mão ou e-mail não tinha por onde
+entrar — só pelo celular da obra.
+
+**O que entrou** (`pessoal_solicitacoes.papel_no_escritorio`, ações
+`termo_papel` e `devolucao_papel` da rota do DP):
+- **"Chegou no papel? Anexar…"** em todo documento para assinar ainda aberto
+  — aviso prévio, pedido de demissão, aviso de férias, autorização de
+  desconto. Entra como "assinado no papel" e JÁ VALIDADO (quem anexa é o DP,
+  olhando o papel); o processo segue igual: a rescisão à contabilidade é
+  montada, as férias fecham.
+- **"Chegou no escritório? Anexar…"** no que a obra devia devolver pelo
+  portal — documentação rescisória assinada e ASO demissional. A pendência
+  fecha (o agente para de cobrar a obra) e o arquivo vai para a validação.
+- O arquivo fica no cadastro da pessoa marcado "recebido no escritório",
+  separado do que veio pelo portal.
+
+**Decisão de detalhe:** o papel substitui o documento do sistema enquanto ele
+está ABERTO. Se já foi assinado na tela e o papel chegar depois, o papel vai
+para a ficha como documento a mais — não troca o assinado, que tem lacre.
+
+**Outros planos B que já existiam** (conferidos agora): o DP abre a
+solicitação pela tela dele quando a obra não consegue; o passo que foi feito
+por fora tem "feito por fora do sistema…"; o ponto guarda batida sem
+internet; a pessoa sem PIN assina no papel pela obra.
+
+### 23/11/2026 (2) — O atendimento do desligamento chega preenchido
+
+Ele, ao atender um pedido de demissão de verdade: *"As faltas a descontar, eu
+gostaria que já fosse coletada do ponto a título de sugestão. Do dia 26 do mês
+anterior em diante."* E: *"tem campo redução de jornada e cumpre aviso, mas é
+campo de texto livre, não deveria ter opções?"* E sobre as datas: *"se você
+souber, você já calcula a partir da data do aviso."*
+
+- **Defeito, não escolha:** "redução de jornada" e "cumpre aviso" têm opções
+  desde 20/11, mas as opções só eram mandadas para os campos do DP do TIPO,
+  e esses dois só existem no ramo CTPS do desligamento. Agora vão as dos
+  ramos também (`_campos_do_dp_todos`).
+- **A janela de Atender chega preenchida** (`dp_analise.sugestoes_do_desligamento`,
+  rota `GET .../sugestoes`, só quando o DP aperta Atender): último dia e saída
+  pela forma — trabalhado (30 dias; saída = projeção de 30 + 3/ano, até 90),
+  indenizado (último = aviso; saída = projeção), pedido de demissão (30 dias,
+  nunca proporcional; dispensado = sai no dia), fim de experiência (o fim do
+  contrato), pedido durante a experiência (sem aviso). Cada campo traz a conta
+  por escrito embaixo. O DP muda o que quiser.
+- **Faltas pelo espelho do ponto**, a mesma conta do fechamento
+  (`fechamento.falta_do_dia`): do dia seguinte ao corte (o parâmetro do ponto,
+  25 hoje) até o último dia — ou até ontem, se ele ainda não chegou, e a
+  explicação avisa para conferir de novo. O número é só de DIAS INTEIROS sem
+  justificativa; as horas a menos aparecem na explicação, fora do número.
+  Custo: um espelho de uma pessoa (~6 consultas), só no clique.
+- Redução de jornada no pedido de demissão: a explicação diz para deixar em
+  branco (art. 488 é de quem foi dispensado). Isto é a leitura majoritária;
+  não travei nada.
+- **"Ver o ponto de MM/AAAA"** dentro da janela de Atender (um botão por mês
+  do período das faltas). Primeiro saiu como a folha de impressão numa aba
+  nova; ele corrigiu no mesmo dia: *"era verificar a tela de sistema e não
+  baixar o arquivo (…) abrir outro modal com o ponto da pessoa, da mesma forma
+  que a gente vê o ponto lá dentro de ponto."* Agora é a FICHA ÚNICA do ponto
+  (`/erp/ponto/pessoa/<id>?aba=mes&competencia=`), a mesma que Colaboradores
+  mostra, numa janela por cima da de atender — dá para abonar e lançar
+  atestado ali. A rota da folha de impressão saiu. Para isso, a ficha do ponto
+  passou a aceitar `?aba=` e `?competencia=` (uma linha em `gestao.html`,
+  arquivo do PONTO — registrado lá).
+
+### 23/11/2026 — O guia do Portal da Obra para liberar o acesso
+
+Ele: *"preciso liberar as solicitações do DP, o acesso do portal (…) para os
+administrativos de obra (…) um mini manual com orientações para o cadastro no
+portal, bem como instruções de como utilizar a parte de solicitações (…) o
+pessoal já estava antes acostumado com o Pipefy."*
+
+- `app/apps/erp/orientacao/`: `guia_do_portal.html` (a fonte),
+  `Guia do Portal da Obra.pdf` (A4, 2 páginas), `guia_portal_1.png` e `_2.png`
+  (as mesmas páginas como imagem, para o WhatsApp) e `mensagem_whatsapp.txt`.
+  `gerar_guia.js` refaz PDF e imagens a partir do HTML (Playwright, Node).
+- Conteúdo conferido contra as telas: os nomes dos botões ("Criar o meu
+  acesso", "Mandar o código", "Confirmar"), as quatro áreas do portal
+  (Pagamentos ainda fechada), os 15 pedidos e os rótulos de situação.
+- ⚠️ **Mudou a tela, muda o guia** — editar o HTML e rodar o gerador.
+
+### 23/11/2026 — (feito pelo chat do PONTO) Os documentos do DP passam a ser assinados pelo aplicativo do ponto
+
+⚠️ **Mexeu em arquivo desta área sem ser o chat dela, a pedido do dono** (*"faça por aqui mesmo (…) e avisa ao chat
+do DP"*; avisado no mesmo dia). Detalhe em `app/apps/ponto/HISTORICO.md`, 23/11/2026.
+
+- **`core/termos.py`** (`dp_termos`) virou a base da CENTRAL DE ASSINATURAS: a pessoa assina o próprio documento,
+  logada no "Meu ponto" (`assinar(..., pela_pessoa=True)`; a regra "quem conduz não assina o próprio" continua para
+  quem conduz); `abrir(..., origem, origem_ids)`; `pendentes(..., colaborador_id=, pessoas=)`; `da_pessoa`,
+  `painel_dp`, `da_origem`. Nada do que já existia mudou de comportamento: o atendimento, o portal da obra e a
+  validação continuam iguais.
+- **Migração 126** (`126_termos_origem.sql`): `origem`, `origem_ids`, `assinado_pela_pessoa` e o tipo
+  TERMO-COMPENSACAO no Arquivo. **A próxima livre é a 127** (124 e 125 são de Suprimentos).
+- **Documento novo:** o termo de acordo de compensação nasce sozinho da compensação aprovada no ponto.
+- **Onde o DP gere agora:** ERP › Ponto › Assinaturas (pendentes, a validar, assinados) — inclusive os documentos que
+  nascem aqui, no atendimento (aviso prévio etc.).
+
+### 21/11/2026 (2) — O agente cobra e lê o e-mail sozinho; o ASO alerta
+
+Ele, depois de entender as duas rotinas: *"sim, vamos deixar as rotinas
+automáticas. E quanto ao ASO, vamos alertar, só não vai ser obrigatório por
+enquanto."*
+
+- **Migração 123** (era 120; renumerada porque o chat de Suprimentos usou 120–122 no mesmo dia): cobrança e leitura do e-mail em **FAZ**. A cobrança manda
+  e-mail à contabilidade quando o pedido vence (até o teto; depois escala para
+  o DP) e WhatsApp à obra pela devolução vencida; não cobra no fim de semana.
+  A leitura liga a resposta ao pedido, arquiva o anexo e marca respondido — não
+  conclui. Rodam uma vez por dia. ⚠️ A leitura depende da conta de e-mail do
+  DP configurada no ERP — não verificado daqui.
+- **ASO admissional:** a análise do pedido passou de lembrete a ATENÇÃO (⚠️)
+  quando não veio; a lista de pendências avisa quando a admissão começa em até
+  2 dias sem ASO. Continua sem travar.
+- O mapa (artefato "Mapa do Pessoal") trocou "vigia" por "lista de
+  pendências", que é o que ele entende.
+
+### 21/11/2026 — O ASO entra sem travar; folha e 13º para depois
+
+Ele, sobre os buracos do mapa (artefato "Mapa do Pessoal"): *"fechamento de
+folha (…) ainda vai integrar a parte do ponto com os pagamentos, então não vou
+mexer ainda (…) 13º salário é uma vez por ano, também não precisa. Exame
+admissional e demissional: a gente pode deixar preparar para receber ele junto
+com os demais documentos (…) por enquanto sem travar. O demissional já pode
+ficar como cobrança do retorno junto com a documentação assinada rescisória,
+mas por enquanto não é obrigatório."*
+
+- **ASO admissional:** a leitura por IA reconhece o ASO entre os documentos da
+  admissão; o portal mostra "ASO admissional — opcional por enquanto"; a
+  análise do pedido lembra quando não veio. Nada trava.
+- **ASO demissional:** ao mandar a documentação rescisória para a obra
+  assinar, abre-se junto uma pendência "Exame demissional (ASO)", devolvida
+  pelo portal e cobrada como as outras. Passo próprio no desligamento, marcado
+  opcional: não entra no "falta" nem segura o encerramento.
+- **Fechamento da folha e 13º:** ficam para depois, por decisão dele.
 
 ### 20/11/2026 (noite, 7) — As regras dele na tela de Regras do cadastro
 

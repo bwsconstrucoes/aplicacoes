@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Minha assinatura — BWS</title>
+{# A ASSINATURA, DESENHADA COM O DEDO (21/11/2026). Ele: "a gente pode ver uma
+   forma de ele cadastrar a assinatura dele pela tela do celular. Fica mais
+   fácil de desenhar com o dedo." Página própria, enxuta, que serve no celular
+   e no computador (com o mouse). Quem já tem a imagem escaneada manda o
+   arquivo — as duas portas dão no mesmo lugar. #}
+<style>
+  body { margin: 0; background: #F4F6FA; font-family: system-ui, -apple-system,
+         "Segoe UI", Roboto, sans-serif; color: #10233F; }
+  .topo { background: #0B2C5C; color: #fff; padding: 14px 16px; display: flex;
+         justify-content: space-between; align-items: center; }
+  .topo a { color: #fff; font-size: 13px; }
+  .caixa { max-width: 720px; margin: 0 auto; padding: 14px; }
+  .bloco { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px;
+         box-shadow: 0 1px 3px rgba(16,35,63,.12); }
+  .bloco p { margin: 0 0 10px; font-size: 14px; color: #5A6B85; }
+  canvas { width: 100%; height: 220px; border: 2px dashed #9FB0CB; border-radius: 10px;
+         background: #fff; touch-action: none; display: block; }
+  .linha-base { position: relative; }
+  .linha-base::after { content: "assine acima desta linha"; position: absolute; left: 8%;
+         right: 8%; bottom: 46px; border-top: 1px solid #C9D3E4; font-size: 11px;
+         color: #9FB0CB; text-align: center; padding-top: 4px; pointer-events: none; }
+  .botoes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  button, label.btn { flex: 1 1 140px; border: 0; border-radius: 10px; padding: 13px 14px;
+         font-size: 15px; font-weight: 700; cursor: pointer; text-align: center; }
+  .principal { background: #F4B942; color: #10233F; }
+  .secundario { background: #E3E9F3; color: #31507F; }
+  .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
+  .recado.ok { background: #E8F6EE; color: #1C6B3C; }
+  .recado.erro { background: #FDECEC; color: #A32020; }
+  img.atual { max-width: 100%; max-height: 140px; border: 1px solid #E6EAF2; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="topo"><b>Minha assinatura</b>
+  <a href="javascript:history.back()">‹ voltar</a></div>
+<div class="caixa">
+  <div id="recado"></div>
+  <div class="bloco" id="bloco-atual" hidden>
+    <p><b>A assinatura que está valendo.</b> Ela sai nos pedidos de compra e nas
+      cotações que você manda.</p>
+    <img class="atual" id="atual" alt="sua assinatura atual">
+  </div>
+  <div class="bloco">
+    <p>Assine no quadro com o dedo (ou com o mouse). Se preferir, mande a foto
+      de uma assinatura feita no papel.</p>
+    <div class="linha-base"><canvas id="quadro"></canvas></div>
+    <div class="botoes">
+      <button class="secundario" id="limpar">Limpar</button>
+      <label class="btn secundario">Mandar imagem
+        <input type="file" id="arquivo" accept="image/*" hidden></label>
+      <button class="principal" id="salvar">Salvar assinatura</button>
+    </div>
+  </div>
+</div>
+<script>
+const quadro = document.getElementById("quadro"), tinta = quadro.getContext("2d");
+let desenhando = false, riscou = false;
+
+function ajustar(){
+  // O quadro tem o dobro dos pontos da tela: a assinatura sai nítida no PDF.
+  const r = quadro.getBoundingClientRect();
+  quadro.width = Math.round(r.width * 2); quadro.height = Math.round(r.height * 2);
+  tinta.fillStyle = "#fff"; tinta.fillRect(0, 0, quadro.width, quadro.height);
+  tinta.lineWidth = 5; tinta.lineCap = "round"; tinta.lineJoin = "round";
+  tinta.strokeStyle = "#10233F"; riscou = false;
+}
+function ponto(e){
+  const r = quadro.getBoundingClientRect();
+  return [(e.clientX - r.left) * 2, (e.clientY - r.top) * 2];
+}
+quadro.addEventListener("pointerdown", e => { desenhando = true; riscou = true;
+  quadro.setPointerCapture(e.pointerId); tinta.beginPath(); tinta.moveTo(...ponto(e)); });
+quadro.addEventListener("pointermove", e => { if (!desenhando) return;
+  tinta.lineTo(...ponto(e)); tinta.stroke(); });
+["pointerup", "pointercancel"].forEach(ev =>
+  quadro.addEventListener(ev, () => { desenhando = false; }));
+document.getElementById("limpar").addEventListener("click", ajustar);
+
+function recado(texto, tipo){
+  document.getElementById("recado").innerHTML = `<div class="recado ${tipo}">${texto}</div>`;
+  scrollTo(0, 0);
+}
+async function mandar(imagem){
+  try {
+    const r = await fetch("/erp/api/minha-assinatura", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({imagem})});
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.erro || "Não foi possível salvar.");
+    recado("<b>Assinatura salva.</b> Ela já sai nos próximos pedidos que você mandar.", "ok");
+    mostrarAtual(); ajustar();
+  } catch(e){ recado(e.message, "erro"); }
+}
+document.getElementById("salvar").addEventListener("click", () => {
+  if (!riscou) return recado("Assine no quadro antes de salvar.", "erro");
+  mandar(quadro.toDataURL("image/png"));
+});
+document.getElementById("arquivo").addEventListener("change", ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const leitor = new FileReader();
+  leitor.onload = () => mandar(leitor.result);
+  leitor.readAsDataURL(f);
+  ev.target.value = "";
+});
+async function mostrarAtual(){
+  const r = await fetch("/erp/api/minha-assinatura/imagem?" + Date.now());
+  if (!r.ok) return;
+  document.getElementById("atual").src = URL.createObjectURL(await r.blob());
+  document.getElementById("bloco-atual").hidden = false;
+}
+ajustar(); mostrarAtual();
+</script>
+</body>
+</html>

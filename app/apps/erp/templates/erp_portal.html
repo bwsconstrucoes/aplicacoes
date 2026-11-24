@@ -24,6 +24,9 @@
   .bloco { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,35,63,.12);
          padding: 14px; margin-bottom: 12px; }
   .bloco h3 { margin: 0 0 4px; font-size: 15px; }
+  .aviso-recolhido { border-top: 1px solid #E6EAF2; padding: 10px 0 2px; }
+  .aviso-recolhido summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  .aviso-recolhido[open] summary { margin-bottom: 6px; }
   .bloco p.ajuda { margin: 0 0 10px; font-size: 13px; color: #5A6B85; }
   .linha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
          padding: 10px 0; border-top: 1px solid #E6EAF2; }
@@ -191,27 +194,6 @@
      o dela. E a área que ainda não abriu APARECE, marcada: esconder o que
      falta faz achar que o sistema só serve para DP — e aí o material continua
      sendo pedido por WhatsApp, que é o que se quer acabar. #}
-  {# ⚑ AS FÉRIAS DA EQUIPE (20/11/2026). Ele: *"quando estiver se aproximando
-     as férias (…) tanto o DP quanto a pessoa que bate o ponto desse
-     colaborador tem que estar ciente."* Quem cuida da obra vê aqui quem sai e
-     quem está fora, nos próximos dias — e se a contabilidade já confirmou. #}
-  <div class="bloco" id="bloco-ferias" style="display:none">
-    <h3>Férias da equipe</h3>
-    <p class="ajuda">Quem sai de férias nos próximos dias e quem está de férias
-      agora. Programe a obra sem essas pessoas e não conte falta no ponto.</p>
-    <div id="ferias"></div>
-  </div>
-
-  {# ⚑ A EXPERIÊNCIA TERMINANDO (20/11/2026). Ele: *"DP e o administrativo de
-     obra devam ser alertados sobre o acontecimento. Poucos dias antes."* #}
-  <div class="bloco" id="bloco-experiencia" style="display:none">
-    <h3>Contratos de experiência terminando</h3>
-    <p class="ajuda">Decida com o DP <b>antes da data</b>: efetivar (não precisa
-      fazer nada), ou encerrar no prazo (peça o desligamento). Depois do fim da
-      prorrogação, sair custa aviso prévio e multa.</p>
-    <div id="experiencias"></div>
-  </div>
-
   <div class="bloco" id="bloco-pedir">
     <h3>Abrir uma solicitação</h3>
     <p class="ajuda" id="pedir-ajuda">Escolha a área do que você precisa.</p>
@@ -225,6 +207,39 @@
       responderam. <b>Uma lista só</b> — você quer saber o que está parado, não
       caçar área por área.</p>
     <div id="meus"></div>
+  </div>
+
+  {# ⚑ OS AVISOS FICAM EMBAIXO E RECOLHIDOS (23/11/2026). O dono, ao abrir o
+     portal: "são muitos (...) está muito grande a informação, ocupando muito
+     espaço da tela, e estando em cima você se perde no portal. Você nem entende
+     onde é que estão as solicitações." Experiência terminando e férias da
+     equipe são AVISO, não tarefa — por isso descem para depois de "o que você
+     já pediu", com nome próprio, e mostram só o título e a quantidade. Quem
+     quer ler, toca e abre. O que tem prazo e pede ação (documento para assinar
+     e para devolver) continua no alto. #}
+  <div class="bloco" id="bloco-avisos" style="display:none">
+    <h3>Avisos da equipe</h3>
+    <p class="ajuda">Para você se programar. Toque em um aviso para abrir a lista.</p>
+
+    {# A EXPERIÊNCIA TERMINANDO (20/11/2026). Ele: *"DP e o administrativo de
+       obra devam ser alertados sobre o acontecimento. Poucos dias antes."* #}
+    <details class="aviso-recolhido" id="bloco-experiencia" style="display:none">
+      <summary>Contratos de experiência terminando <span class="etiqueta" id="n-experiencia"></span></summary>
+      <p class="ajuda">Decida com o DP <b>antes da data</b>: efetivar (não precisa
+        fazer nada), ou encerrar no prazo (peça o desligamento). Depois do fim da
+        prorrogação, sair custa aviso prévio e multa.</p>
+      <div id="experiencias"></div>
+    </details>
+
+    {# AS FÉRIAS DA EQUIPE (20/11/2026). Ele: *"quando estiver se aproximando
+       as férias (…) tanto o DP quanto a pessoa que bate o ponto desse
+       colaborador tem que estar ciente."* #}
+    <details class="aviso-recolhido" id="bloco-ferias" style="display:none">
+      <summary>Férias da equipe <span class="etiqueta" id="n-ferias"></span></summary>
+      <p class="ajuda">Quem sai de férias nos próximos dias e quem está de férias
+        agora. Programe a obra sem essas pessoas e não conte falta no ponto.</p>
+      <div id="ferias"></div>
+    </details>
   </div>
 </div>
 
@@ -418,9 +433,16 @@ async function recusaDoTermo(id){
   } catch(e){ recado(e.message, "erro"); }
 }
 
+function mostrarAvisos(){
+  const ha = (DADOS.experiencias || []).length + (DADOS.ferias || []).length;
+  els("bloco-avisos").style.display = ha ? "" : "none";
+}
+
 function pintarExperiencias(){
   const l = DADOS.experiencias || [];
   els("bloco-experiencia").style.display = l.length ? "" : "none";
+  els("n-experiencia").textContent = l.length;
+  mostrarAvisos();
   els("experiencias").innerHTML = l.map(x => `
     <div class="linha">
       <div class="cresce">
@@ -436,6 +458,8 @@ function pintarExperiencias(){
 function pintarFerias(){
   const l = DADOS.ferias || [];
   els("bloco-ferias").style.display = l.length ? "" : "none";
+  els("n-ferias").textContent = l.length;
+  mostrarAvisos();
   els("ferias").innerHTML = l.map(f => {
     const quando = f.momento === "em_ferias" ? `de férias até ${dataBR(f.fim)}`
       : f.faltam_dias === 0 ? "começa hoje"
@@ -1242,7 +1266,8 @@ function blocoDosPapeis(t){
   return readmissao + `<div class="papeis" id="p-papeis">
     <b>1. Os documentos da pessoa</b>
     <p class="ajuda">Jogue aqui <b>todos de uma vez</b> — RG (frente e verso),
-      CNH, CPF, comprovante de endereço e, se for carteira assinada, a CTPS.
+      CNH, CPF, comprovante de endereço, se for carteira assinada a CTPS, e o
+      ASO (exame admissional), se já tiver.
       O sistema lê tudo junto e <b>preenche os campos abaixo</b>. Confira o
       que ele leu: o que não der para ler fica para você digitar.</p>
     <div id="p-solta" class="area-solta" tabindex="0">
@@ -1283,6 +1308,7 @@ const ROTULO_PAPEL = {
   "CTPS-FOTO": "CTPS — página com a foto",
   "CTPS-INFORMACOES": "CTPS — página com as informações",
   "DOC-DEPENDENTE": "Documento do dependente (certidão ou RG)",
+  "ASO": "ASO admissional (exame médico)",
   "OUTRO": "Outro documento",
 };
 
@@ -1323,6 +1349,15 @@ function pintarPapeis(t){
   const onde = els("p-papeis-lista");
   if (!onde) return;
   const exigidos = papeisExigidos(t);
+  {# ⚑ O ASO ADMISSIONAL É OPCIONAL POR ENQUANTO (21/11/2026): aparece na
+     lista para lembrar, mas não segura o envio. #}
+  const aso = (t.chave === "CADASTRO" || t.chave === "ADMISSAO_PRESTADOR") ? `
+    <div class="papel ${PAPEIS["ASO"] ? "tem" : ""}">
+      <span class="marca">${PAPEIS["ASO"] ? "✓" : "○"}</span>
+      <div class="papel-corpo"><b>${esc(ROTULO_PAPEL["ASO"])}</b>
+        <small>${PAPEIS["ASO"] ? "em " + esc(PAPEIS["ASO"].nome)
+          : "opcional por enquanto — se já tiver, mande junto"}</small></div>
+    </div>` : "";
   onde.innerHTML = exigidos.length ? `<small class="ajuda">O que precisa
       estar entre eles:</small>` + exigidos.map(c => {
     const tem = PAPEIS[c];
@@ -1331,7 +1366,7 @@ function pintarPapeis(t){
       <div class="papel-corpo"><b>${esc(ROTULO_PAPEL[c] || c)}</b>
         <small>${tem ? "em " + esc(tem.nome) : "ainda não veio"}</small></div>
     </div>`;
-  }).join("")
+  }).join("") + aso
     : (READMITIDO || (CPF_JA_EXISTE && CPF_JA_EXISTE.situacao === "desligado")
        ? `<small class="ajuda">Como a pessoa já tem cadastro, os documentos
            são opcionais — mande só se algo mudou (o que vier atualiza o

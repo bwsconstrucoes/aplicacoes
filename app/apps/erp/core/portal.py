@@ -92,7 +92,9 @@ logger = logging.getLogger(__name__)
 AREAS: tuple[dict[str, Any], ...] = (
     {
         "chave": "pessoal",
-        "nome": "Pessoal e DP",
+        # ⚑ "Colaboradores", e não "Pessoal e DP" (23/11/2026). Ele: "quando
+        # você fala Pessoal e DP, vamos chamar de colaboradores, fica melhor."
+        "nome": "Colaboradores",
         # ⚑ A EXPLICAÇÃO SÓ PODE PROMETER O QUE A ÁREA TEM. Ela dizia
         # "férias", e férias NÃO É pedido de DP aqui — é do ponto. Ele viu, em
         # 10/11/2026: *"lá no resumo do portal tinha lá férias, e quando você
@@ -115,10 +117,22 @@ AREAS: tuple[dict[str, Any], ...] = (
     },
     {
         "chave": "suprimentos",
-        "nome": "Material e compras",
-        "explicacao": "pedir material, ferramenta, locação",
+        # ⚑ "SUPRIMENTOS", E FECHADA POR ENQUANTO (23/11/2026). Ele: "eu queria
+        # alterar para suprimentos. E eu queria manter desativado por
+        # enquanto. Da mesma forma que a parte de pagamentos está desativada."
+        #
+        # A tela `/erp/portal/material` (pedir, receber e lançar) ESTÁ PRONTA e
+        # continua respondendo — é para lá que o ERP manda em "Receber e
+        # lançar a nota". O que fechou foi só a PORTA do portal. Para reabrir:
+        # `pronta: True`, mais `so_tela: True` e `tela` como estão abaixo.
+        "nome": "Suprimentos",
+        "explicacao": "pedir material, ver o que está para chegar, receber "
+                      "e lançar a nota e o boleto",
         "pronta": False,
         "enquanto_isso": "Continue pedindo material como você pede hoje.",
+        "tela_quando_abrir": "/erp/portal/material",
+        # Sem `acao` enquanto fechada: aparece para todos, marcada, como
+        # Pagamentos. Ao reabrir, volta `"acao": "receber_material"`.
     },
     {
         "chave": "financeiro",
@@ -765,7 +779,7 @@ def minhas_devolucoes(s: Session, usuario: Optional[Usuario]) -> list[dict[str, 
 
 def devolver(s: Session, devolucao_id: int, conteudo: bytes,
              usuario: Optional[Usuario],
-             nome_arquivo: str) -> dict[str, Any]:
+             nome_arquivo: str, *, pelo_escritorio: bool = False) -> dict[str, Any]:
     """A obra devolve o documento assinado. Arquiva no Drive e fecha a pendência.
 
     O TIPO vem da pendência, não do nome do arquivo: "foto.jpg" não diz nada, e
@@ -774,14 +788,20 @@ def devolver(s: Session, devolucao_id: int, conteudo: bytes,
     """
     from app.apps.erp.core.arquivo import service as svc_arq
 
-    eu = quem_esta(s, usuario)
+    # ⚑ O PLANO B (23/11/2026). Ele: *"pode ser que uma obra (…) tem um
+    # problema, não tem internet (…) a gente tem que ter uma alternativa, plano
+    # B."* O papel que chegou ao ESCRITÓRIO (malote, mão, e-mail) o DP anexa
+    # daqui: a pendência fecha do mesmo jeito e segue para a validação. A rota
+    # é do DP (`atender_dp`); o alcance por obra é o do portal, não se aplica.
+    eu = ({"nome": f"{usuario.nome if usuario else '?'} (DP, no escritório)",
+           "colaborador_id": None} if pelo_escritorio else quem_esta(s, usuario))
     linha = s.execute(text("""
         SELECT id, numero, obra_id, colaborador_id, documento_esperado, situacao
           FROM dp_devolucoes WHERE id = :d"""),
         {"d": devolucao_id}).mappings().first()
     if linha is None:
         raise ErroNaoEncontrado("Pendência não encontrada.")
-    alcance = obras_que_alcanca(s, eu)
+    alcance = None if pelo_escritorio else obras_que_alcanca(s, eu)
     if alcance is not None and linha["obra_id"] not in set(alcance):
         raise ErroNaoEncontrado("Pendência não encontrada.")
     if linha["situacao"] not in ("ABERTA", "COBRADA"):
@@ -795,9 +815,11 @@ def devolver(s: Session, devolucao_id: int, conteudo: bytes,
         s, conteudo, nome_arquivo or "documento",
         tipo_codigo=linha["documento_esperado"],
         colaborador_id=linha["colaborador_id"],
-        referencia=f"{linha['numero']} — devolvido pela obra",
-        origem="PORTAL",
-        observacao=f"devolvido por {eu['nome']} pelo portal",
+        referencia=(f"{linha['numero']} — recebido no escritório"
+                    if pelo_escritorio else f"{linha['numero']} — devolvido pela obra"),
+        origem="TELA" if pelo_escritorio else "PORTAL",
+        observacao=(f"anexado por {eu['nome']}" if pelo_escritorio
+                    else f"devolvido por {eu['nome']} pelo portal"),
         usuario=None)
     s.execute(text("""
         UPDATE dp_devolucoes
@@ -806,7 +828,8 @@ def devolver(s: Session, devolucao_id: int, conteudo: bytes,
          WHERE id = :d"""),
         {"doc": d.id, "quem": eu["colaborador_id"], "d": devolucao_id})
     registrar_evento(s, "colaborador", linha["colaborador_id"] or 0,
-                     "DOCUMENTO_DEVOLVIDO_PELO_PORTAL",
+                     "DOCUMENTO_RECEBIDO_NO_ESCRITORIO" if pelo_escritorio
+                     else "DOCUMENTO_DEVOLVIDO_PELO_PORTAL",
                      {"devolucao": linha["numero"], "por": eu["nome"],
                       "documento_id": d.id}, None)
     s.flush()

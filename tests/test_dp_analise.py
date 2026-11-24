@@ -42,3 +42,58 @@ def test_periodos_de_ferias_e_o_prazo_para_gozar():
     ps = a.periodos_de_ferias(date(2024, 3, 10), date(2026, 11, 20))
     assert [p["inicio"] for p in ps] == [date(2024, 3, 10), date(2025, 3, 10), date(2026, 3, 10)]
     assert ps[0]["fim"] == date(2025, 3, 9) and ps[0]["limite"] == date(2026, 3, 9)
+
+
+# ---------------------------------------------------------------------------
+# A janela de atendimento do desligamento chega preenchida (23/11/2026)
+# ---------------------------------------------------------------------------
+def test_faltas_contam_do_dia_seguinte_ao_corte():
+    assert a.inicio_das_faltas(date(2026, 12, 10), 25) == date(2026, 11, 26)
+    assert a.inicio_das_faltas(date(2026, 12, 25), 25) == date(2026, 11, 26)
+    assert a.inicio_das_faltas(date(2026, 12, 28), 25) == date(2026, 12, 26)
+    assert a.inicio_das_faltas(date(2027, 1, 5), 25) == date(2026, 12, 26)
+
+
+def _sugere(monkeypatch, forma, aviso, admissao=date(2022, 1, 10),
+            contrato=None, cumpre=None, faltas=None):
+    monkeypatch.setattr(a, "_pessoa", lambda s, i: {
+        "vinculo": "CTPS", "admissao": admissao, "contrato_experiencia": contrato})
+    monkeypatch.setattr(a, "faltas_no_ponto", lambda cid, ultimo, hoje=None: faltas or {
+        "disponivel": True, "inicio": "2026-11-26", "fim": "2026-12-04",
+        "corte": 25, "parcial_ate_hoje": True, "integrais": 2,
+        "dias": ["2026-11-27", "2026-12-02"],
+        "parciais": [{"data": "2026-12-01", "minutos": 90, "rotulo": "x"}]})
+    dados = {"forma_desligamento": forma, "aviso_previo": aviso.isoformat()}
+    if cumpre is not None:
+        dados["cumpre_aviso"] = cumpre
+    return a.sugestoes_do_desligamento(
+        None, {"colaborador_id": 7, "dados": dados}, hoje=date(2026, 12, 5))
+
+
+def test_sugestao_do_aviso_trabalhado_projeta_a_saida(monkeypatch):
+    r = _sugere(monkeypatch, "AVISO_TRABALHADO", date(2026, 11, 20))
+    assert r["valores"]["ultimo_dia"] == "2026-12-20"
+    assert r["valores"]["data_saida"] == "2027-01-01"        # 42 dias
+    assert r["valores"]["faltas_a_descontar"] == "2"
+    assert "1h30" in r["explicacoes"]["faltas_a_descontar"]
+
+
+def test_sugestao_do_pedido_de_demissao(monkeypatch):
+    r = _sugere(monkeypatch, "PEDIDO_COLABORADOR", date(2026, 12, 1))
+    assert r["valores"]["ultimo_dia"] == r["valores"]["data_saida"] == "2026-12-31"
+    assert "art. 488" in r["explicacoes"]["reducao_jornada"]
+    d = _sugere(monkeypatch, "PEDIDO_COLABORADOR", date(2026, 12, 1), cumpre="0")
+    assert d["valores"]["ultimo_dia"] == d["valores"]["data_saida"] == "2026-12-01"
+
+
+def test_sugestao_no_fim_da_experiencia_e_o_fim_do_contrato(monkeypatch):
+    r = _sugere(monkeypatch, "FIM_EXPERIENCIA", date(2026, 12, 1),
+                admissao=date(2026, 11, 1), contrato="45+45")
+    assert r["valores"]["ultimo_dia"] == r["valores"]["data_saida"] == "2026-12-15"
+
+
+def test_sem_ponto_a_sugestao_de_faltas_fica_vazia_e_diz_por_que(monkeypatch):
+    r = _sugere(monkeypatch, "AVISO_INDENIZADO", date(2026, 11, 20),
+                faltas={"disponivel": False, "motivo": "fora do ar"})
+    assert "faltas_a_descontar" not in r["valores"]
+    assert "fora do ar" in r["explicacoes"]["faltas_a_descontar"]

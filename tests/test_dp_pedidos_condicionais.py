@@ -54,8 +54,10 @@ def test_os_tres_tipos_saem_da_caixinha_mas_ficam_no_dicionario():
         assert codigo in svc.TIPOS, f"{codigo} saiu do dicionário"
         assert svc.TIPOS[codigo].get("oculto") is True
         # E continua tendo nome e checklist, que é para o que ele ficou.
+        # (A readmissão ficou com o checklist VAZIO em 23/11/2026: tudo o que
+        # ele tinha o atendimento já grava.)
         assert svc.TIPOS[codigo]["nome"]
-        assert svc.TIPOS[codigo]["checklist"]
+        assert "checklist" in svc.TIPOS[codigo]
 
 
 def test_desligamento_de_carteira_pede_forma_e_aviso():
@@ -134,8 +136,9 @@ def test_o_checklist_do_prestador_nao_tem_passo_de_rescisao():
     não se marca é lista que ninguém olha."""
     ctps = svc.checklist_do_tipo("DESLIGAMENTO", "CTPS")
     prest = svc.checklist_do_tipo("DESLIGAMENTO", "PRESTADOR")
-    assert len(ctps) == 11 and any("TRCT" in x for x in ctps)
-    assert len(prest) == 3 and not any("TRCT" in x for x in prest)
+    # 23/11/2026: o resto virou passo do processo — fica só o que é manual.
+    assert ctps == ("Conferir as faltas no espelho do ponto",)
+    assert prest == ("Conferir o período prestado",)
 
 
 def test_o_vale_transporte_continua_alcancavel_pela_ajuda_de_custo():
@@ -458,8 +461,8 @@ def test_desligar_prestador_nao_pede_aviso_previo(mundo):
                                "data_saida": "2026-07-31"}, mundo["obra_user"])
     assert p["dados"]["data_saida"] == "2026-07-31"
     assert "aviso_previo" not in p["dados"]
-    # E o checklist é o de prestador: três passos, sem rescisão.
-    assert len(p["itens"]) == 3
+    # E o checklist é o de prestador, sem rescisão.
+    assert [i["descricao"] for i in p["itens"]] == ["Conferir o período prestado"]
 
 
 @pytest.mark.banco

@@ -565,10 +565,13 @@ def test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura(app, mundo, banc
     from app.apps.ponto import db
     from app.apps.ponto.core import alertas, marcacoes
     from tests.test_ponto_gestao_banco import bater_via_chave
+    from app.apps.ponto.core import feriados
     t, h, _ = _tablet(app, mundo)
     ontem = _hoje() - dt.timedelta(days=1)
-    while ontem.weekday() > 4:
-        ontem -= dt.timedelta(days=1)
+    with db.conexao() as conn:             # dia útil e sem feriado (em 21/11/2026, "ontem" era a Consciência Negra)
+        cal = feriados.Calendario(conn, ontem - dt.timedelta(days=15), ontem)
+        while ontem.weekday() > 4 or cal.feriado(ontem, mundo["obra_a"]):
+            ontem -= dt.timedelta(days=1)
     for hh in (7, 11, 12):
         bater_via_chave(app, CPF_JOAO, local(ontem, hh, 0))                  # faltou a saída
     preta = _foto(cor=(0, 0, 0), listras=False)

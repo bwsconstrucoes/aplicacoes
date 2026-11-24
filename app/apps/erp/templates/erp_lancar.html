@@ -5,6 +5,7 @@
 {% block conteudo %}
 <h2>Nova solicitação de pagamento <small>anexe o documento e confira o que o sistema leu</small></h2>
 <div id="mensagem"></div>
+<div id="faixa-pedido"></div>
 
 <!-- 1. DOCUMENTO -->
 {# 1 · DOCUMENTOS, no plural. Antes era um só, e ele nem ficava guardado:
@@ -179,6 +180,123 @@
 <script>
 let D = {fornecedores: [], obras: [], categorias: []}, LIDO = null;
 let RET = [], PARC = [{}], RAT = [{}];
+
+// ⚑ LANÇAR A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA (20/11/2026).
+//
+// O dono: "eu quero gerar o financeiro a partir do recebimento (…) a pessoa
+// vai receber o pedido e lança nota, lança boleto, lança tudo e gera a
+// obrigação financeira. Ou confirma uma previsão que já existe."
+//
+// Chegando com ?pedido_compra=N (é para onde "Receber material" manda), a tela
+// já abre com o que o pedido sabe: credor, valor do que chegou, rateio por
+// obra e as parcelas da previsão. A pessoa joga a nota e o boleto e CONFERE —
+// o que a nota disser vale mais que o pedido, menos o rateio por obra, que só
+// o pedido conhece. O título nasce pelo caminho de sempre e sai ligado ao
+// pedido; nada do que esta tela critica deixa de ser criticado.
+let DO_PEDIDO = null;
+// Material sem pedido de compra, com a regra ligada: o servidor recusa e pede
+// o motivo; a tela pergunta e manda de novo. Ver `fora_do_fluxo.py`.
+let MOTIVO_SEM_PEDIDO = null;
+let NAO_E_DE_PEDIDO = false;   // a pessoa declarou que a nota não é de nenhum pedido recebido
+
+// ⚑ "É DESTE PEDIDO?" (21/11/2026). O dono: "a gente tem que tentar inibir a
+// possibilidade de uma compra sem ter seguido o processo do suprimento (…)
+// quando fosse anexar uma nota e identificar que não identificou um pedido…"
+//
+// Esta é a metade que IDENTIFICA: escolhido o credor, o sistema procura os
+// pedidos de compra dele que ainda têm conta a lançar e oferece o vínculo com
+// um clique. Não bloqueia nada — a parte de dar ciência e autorizar a compra
+// feita por fora ainda espera a decisão dele (ver HISTORICO_SUPRIMENTOS.md).
+async function procurarPedidosDoCredor(){
+  if (DO_PEDIDO) return;
+  const alvo = els("faixa-pedido");
+  const credor = els("f-credor").value;
+  if (!credor) { alvo.innerHTML = ""; return; }
+  try {
+    const d = await api(`/erp/api/suprimentos/pedidos/a-lancar?fornecedor_id=${credor}`);
+    if (DO_PEDIDO || els("f-credor").value !== credor) return;
+    if (!d.pedidos.length) { alvo.innerHTML = ""; return; }
+    alvo.innerHTML = `<div class="aviso alerta"><b>Este credor tem ${d.pedidos.length}
+      pedido(s) de compra com conta a lançar.</b> Se esta nota é de um deles,
+      clique nele: o lançamento fica ligado ao pedido e o suprimento passa a
+      ver o pagamento.<br>${d.pedidos.map(p => `<button class="btn secundario"
+        data-do-pedido="${p.pedido_id}" style="margin:6px 6px 0 0">${escapar(p.numero)}
+        · a lançar ${fmt(+p.a_lancar)} · ${escapar(p.obras.join(", "))}${
+          p.chegou ? "" : " · material ainda não recebido"}</button>`).join("")}</div>`;
+    document.querySelectorAll("[data-do-pedido]").forEach(b =>
+      b.addEventListener("click", () => preencherDoPedido(b.dataset.doPedido)));
+  } catch(_) { /* o suprimento pode não estar em uso; o lançamento segue */ }
+}
+
+async function preencherDoPedido(escolhido){
+  const q = new URLSearchParams(location.search);
+  const id = escolhido || q.get("pedido_compra");
+  if (!id || !/^\d+$/.test(String(id))) return;
+  try {
+    const rec = escolhido ? null : q.get("recebimento");
+    const d = await api(`/erp/api/suprimentos/pedidos/${id}/para-lancar`
+      + (rec && /^\d+$/.test(rec) ? `?recebimento=${rec}` : ""));
+    const p = DO_PEDIDO = d.pedido;
+    const br = v => String(v || "").replace(".", ",");
+    // Vínculo feito DEPOIS de a nota ter sido lida (o botão "é deste
+    // pedido?"): o que a nota já preencheu fica — valor, número, parcelas do
+    // boleto. Do pedido entra só o que a nota não sabe: o rateio por obra.
+    const jaLido = !!escolhido && dec(els("f-valor").value) > 0;
+    els("f-credor").value = p.fornecedor_id;
+    if (!jaLido) {
+      els("f-descricao").value = p.descricao || "";
+      els("f-valor").value = br(p.valor);
+      if (p.documento_numero) els("f-doc-numero").value = p.documento_numero;
+      if (p.parcelas.length) PARC = p.parcelas.map(x => ({vencimento: x.vencimento,
+        valor: br(x.valor)}));
+    } else if (!els("f-descricao").value.trim()) {
+      els("f-descricao").value = p.descricao || "";
+    }
+    if (p.categoria_id && !els("f-categoria").value) els("f-categoria").value = p.categoria_id;
+    if (p.rateios.length === 1 && jaLido) {
+      RAT = [{obra_id: p.rateios[0].obra_id, valor: els("f-valor").value,
+              categoria_id: p.rateios[0].categoria_id || ""}];
+    } else if (p.rateios.length) {
+      RAT = p.rateios.map(r => ({obra_id: r.obra_id,
+        valor: br(r.valor), categoria_id: r.categoria_id || ""}));
+      if (jaLido) p.avisos.push("O rateio por obra veio do pedido e pode não somar "
+        + "o valor da nota — confira as linhas do rateio.");
+    }
+    desenharLinhas(); atualizarCredor();
+    els("faixa-pedido").innerHTML = `<div class="aviso info">
+      <b>Lançando a conta do pedido ${escapar(p.numero)} — ${escapar(p.fornecedor)}.</b>
+      Credor, valor, rateio por obra e parcelas já vieram do pedido
+      (total do pedido ${fmt(+p.total_do_pedido)}${+p.ja_lancado > 0
+        ? `, já lançado ${fmt(+p.ja_lancado)}` : ""}).
+      Junte a <b>nota e o boleto</b> abaixo e confira os campos: o que a nota
+      disser vale mais que o pedido.
+      ${p.avisos.map(a => `<br>• ${escapar(a)}`).join("")}
+      <br><button class="link-btn" id="btn-soltar-pedido">não é deste pedido — desvincular</button></div>`;
+    els("btn-soltar-pedido").addEventListener("click", () => {
+      DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; });
+    // A NOTA E O BOLETO ANEXADOS NO RECEBIMENTO já entram aqui, como se a
+    // pessoa os tivesse escolhido: é só mandar ler. Assim ninguém procura o
+    // mesmo arquivo duas vezes — uma no canteiro, outra no lançamento.
+    let trazidos = 0;
+    for (const doc of (p.documentos || [])) {
+      try {
+        const r = await fetch(`/erp/suprimentos/recebimentos/documento/${doc.id}`);
+        if (!r.ok) continue;
+        const arquivo = new File([await r.blob()], doc.nome, {type: doc.mime || ""});
+        if (!DOCS.some(d => d.arquivo.name === arquivo.name && d.arquivo.size === arquivo.size)) {
+          DOCS.push({arquivo, lido: false, categoria: doc.categoria || "OUTRO"});
+          trazidos++;
+        }
+      } catch(_) { /* o documento continua no recebimento; dá para juntar à mão */ }
+    }
+    if (trazidos) {
+      desenharDocumentos();
+      els("faixa-pedido").firstElementChild.insertAdjacentHTML("beforeend",
+        `<br><b>${trazidos} documento(s) anexado(s) no recebimento já estão aqui embaixo</b>
+         — clique em "Ler" para o sistema conferir os campos pela nota.`);
+    }
+  } catch(e){ aviso("mensagem", `Não consegui trazer os dados do pedido: ${e.message}`, "erro"); }
+}
 
 const dec = v => {
   const s = String(v||"").replace(/[R$\s]/g,"").replace(/\./g,"").replace(",",".");
@@ -474,7 +592,7 @@ function aplicarLeitura(x, primeira = true){
        ${x.categoria_sugerida.codigo} · ${x.categoria_sugerida.descricao} —
        ${x.categoria_sugerida.motivo}. <b>Confirme se está certo.</b>`;
   }
-  if (x.obra_sugerida) RAT = [{obra_id: x.obra_sugerida.obra_id,
+  if (x.obra_sugerida && !DO_PEDIDO) RAT = [{obra_id: x.obra_sugerida.obra_id,
                               valor: String(x.valor_total||"").replace(".",",")}];
   if (x.fornecedor_id && (primeira || !els("f-credor").value)) els("f-credor").value = x.fornecedor_id;
   avisarCredorNaoCadastrado(x);
@@ -499,7 +617,7 @@ function aplicarLeitura(x, primeira = true){
   // Documento que não trouxe parcela nenhuma: a primeira parcela nasce com o
   // líquido inteiro, que é o pedido do dono — em vez de zero para digitar.
   distribuirParcelas();
-  if (x.obra_id) RAT = [{obra_id: x.obra_id, valor: String(x.valor_total||"").replace(".",",")}];
+  if (x.obra_id && !DO_PEDIDO) RAT = [{obra_id: x.obra_id, valor: String(x.valor_total||"").replace(".",",")}];
   els("form-bloco").classList.remove("oculto");
   desenharLinhas(); atualizarCredor();
   els("form-bloco").scrollIntoView({behavior:"smooth", block:"start"});
@@ -534,6 +652,7 @@ els("btn-manual").addEventListener("click", () => {
 });
 
 function atualizarCredor(){
+  procurarPedidosDoCredor();
   const f = D.fornecedores.find(x => String(x.id) === els("f-credor").value);
   const forma = els("f-forma").value;
   const precisa = ["PIX","TED"].includes(forma);
@@ -790,6 +909,10 @@ function montar(){
     rateios: RAT.filter(r=>r.obra_id).map(r=>({obra_id:+r.obra_id, valor:String(dec(r.valor)),
       categoria_id: r.categoria_id ? +r.categoria_id : null,
       descricao: r.descricao || null})),
+    motivo_sem_pedido: MOTIVO_SEM_PEDIDO,
+    nao_e_de_pedido: NAO_E_DE_PEDIDO,
+    pedido_compra_id: DO_PEDIDO ? DO_PEDIDO.pedido_id : null,
+    recebimento_id: DO_PEDIDO ? DO_PEDIDO.recebimento_id : null,
     interessados: [...document.querySelectorAll(".interessado:checked")].map(i=>+i.value),
     colaborador_id: els("f-colaborador") && els("f-colaborador").value
       ? +els("f-colaborador").value : null,
@@ -858,13 +981,22 @@ els("btn-enviar").addEventListener("click", async () => {
       } catch(err){ falhas.push(`${doc.arquivo.name} (${err.message})`); }
     }
     const quantos = DOCS.length - falhas.length;
-    aviso("mensagem", (t.status === "BLOQUEADO"
+    aviso("mensagem", (t.fora_do_fluxo_trava
+      ? `Solicitação <b>${t.numero_sp}</b> registrada como <b>material sem pedido de compra</b>.
+         Ela fica bloqueada até alguém com alçada autorizar, em Suprimentos › Painel.`
+      : t.fora_do_fluxo
+      ? `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).
+         <b>Este material não tem pedido de compra</b> — o suprimento foi avisado.
+         Falta <a href="/erp/suprimentos/painel">registrar o que foi comprado</a>
+         (a solicitação tardia), para o material entrar no controle da obra.`
+      : t.status === "BLOQUEADO"
       ? `Solicitação <b>${t.numero_sp}</b> registrada e <b>bloqueada</b> pela análise (risco ${t.risco}). Veja em Títulos.`
       : `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).`)
       + (quantos ? ` ${quantos} documento(s) anexado(s).` : "")
       + (falhas.length ? `<br><b>Não consegui anexar:</b> ${falhas.map(escapar).join("; ")}
            — anexe pela ficha do título ${escapar(t.numero_sp)}.` : ""),
       falhas.length ? "info" : (t.status === "BLOQUEADO" ? "info" : "ok"));
+    DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; MOTIVO_SEM_PEDIDO = null; NAO_E_DE_PEDIDO = false;
     RET = []; PARC = [{}]; RAT = [{}]; LIDO = null; DOCS = [];
     ["f-descricao","f-valor","f-doc-numero","f-emissao"].forEach(i=>els(i).value="");
     els("leitura").innerHTML = ""; els("bloco-critica").innerHTML = "";
@@ -872,6 +1004,44 @@ els("btn-enviar").addEventListener("click", async () => {
     desenharLinhas();
     window.scrollTo({top:0, behavior:"smooth"});
   } catch(e){
+    // ⚑ A NOTA NÃO ENTRA SOLTA (21/11/2026): o fornecedor tem material
+    // recebido e sem conta. Ou a pessoa diz de qual pedido é, ou declara que
+    // não é de nenhum — e a declaração fica registrada.
+    if (e.dados && e.dados.escolher_pedido) {
+      b.disabled = false; b.textContent = "Enviar solicitação";
+      const r = await perguntar({titulo: "De qual pedido de compra é esta nota?",
+        aviso: "Este fornecedor tem material que já chegou e ainda está sem conta lançada. "
+          + "Ligando a nota ao pedido, o suprimento e o financeiro passam a ver o pagamento.",
+        campos: [{nome: "pedido", rotulo: "Pedido", tipo: "select",
+          opcoes: e.dados.pedidos.map(p => ({valor: String(p.pedido_id),
+            rotulo: `${p.numero} · a lançar ${fmt(+p.a_lancar)} · ${p.obras.join(", ")}`}))
+            .concat([{valor: "nenhum", rotulo: "Não é de nenhum destes pedidos"}])}],
+        textoOk: "Continuar"});
+      if (!r) return;
+      if (r.pedido === "nenhum") { NAO_E_DE_PEDIDO = true; els("btn-enviar").click(); }
+      else {
+        await preencherDoPedido(r.pedido);
+        aviso("mensagem", "O lançamento foi ligado ao pedido. Confira os dados e envie de novo.", "info");
+        window.scrollTo({top: 0, behavior: "smooth"});
+      }
+      return;
+    }
+    if (e.dados && e.dados.precisa_motivo) {
+      b.disabled = false; b.textContent = "Enviar solicitação";
+      const r = await perguntar({titulo: "Material sem pedido de compra",
+        aviso: e.message + " Se a nota é de um pedido, feche esta janela e clique "
+          + "no pedido que aparece no alto da tela.",
+        campos: [{nome: "motivo", rotulo: "Por que a compra não passou pelo suprimento?",
+                  tipo: "textarea", linhas: 3}],
+        textoOk: "Enviar para autorização"});
+      if (r && (r.motivo || "").trim().length >= 10) {
+        MOTIVO_SEM_PEDIDO = r.motivo.trim();
+        els("btn-enviar").click();
+      } else if (r) {
+        aviso("mensagem", "Escreva o motivo com um pouco mais de detalhe.", "erro");
+      }
+      return;
+    }
     if (e.message.includes("duplicidade")) {
       try { const r = await (await fetch("/erp/api/lancamento", {method:"POST",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify(montar())})).json();
@@ -883,7 +1053,7 @@ els("btn-enviar").addEventListener("click", async () => {
   b.disabled = false; b.textContent = "Enviar solicitação";
 });
 
-carregar();
+carregar().then(preencherDoPedido);
 carregarInteressados();
 </script>
 {% endblock %}

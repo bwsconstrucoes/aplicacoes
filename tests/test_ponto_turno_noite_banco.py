@@ -85,6 +85,13 @@ def test_a_saida_da_madrugada_fica_no_dia_da_entrada(app, mundo):
     from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
     dp = como(app, mundo["dp"])
     seg = _segunda_passada()
+    from tests.test_ponto_gestao_banco import _FERIADOS_FIXOS
+    semana = lambda s: [s + dt.timedelta(days=n) for n in range(5)]  # noqa: E731
+    # a semana inteira no mês do espelho que o teste lê, e sem feriado (com a segunda 30/11/2026, a terça era de
+    # dezembro e o espelho de novembro não a tinha)
+    while (semana(seg)[-1].month != seg.month
+           or any((x.month, x.day) in _FERIADOS_FIXOS for x in semana(seg))):
+        seg -= dt.timedelta(days=7)
     ter, qua, qui = (seg + dt.timedelta(days=n) for n in (1, 2, 3))
 
     def dias():

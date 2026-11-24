@@ -392,7 +392,11 @@ def limpar_se_preciso(conn) -> None:
 
 
 def listar_envios(conn, *, tipo: str = "", canal: str = "", status: str = "", busca: str = "",
-                  dias: int = 7, limite: int = 300) -> list[dict]:
+                  dias: int = 7, limite: int = 300, cpfs_da_busca: Optional[list] = None,
+                  destinos_da_busca: Optional[list] = None) -> list[dict]:
+    """`cpfs_da_busca` / `destinos_da_busca`: o que a busca POR NOME achou no
+    cadastro (ver `painel.Pessoas.destinos_da_busca`) — o registro guarda
+    telefone, ID e CPF, não o nome."""
     sql = ["SELECT id, criado_em, tipo, canal, destinatario, cpf, texto, nome_arquivo, status, detalhe, origem",
            "FROM mensageria.envios WHERE criado_em > now() - make_interval(days => :dias)"]
     p: dict = {"dias": max(1, min(int(dias or 7), RETENCAO_DIAS)), "lim": max(1, min(int(limite or 300), 2000))}
@@ -403,7 +407,11 @@ def listar_envios(conn, *, tipo: str = "", canal: str = "", status: str = "", bu
     if status:
         sql.append("AND status = :status"); p["status"] = status
     if busca:
-        sql.append("AND (destinatario ILIKE :b OR cpf ILIKE :b OR texto ILIKE :b)")
+        extra = ""
+        if cpfs_da_busca or destinos_da_busca:
+            extra = " OR cpf = ANY(:bc) OR destinatario = ANY(:bd)"
+            p["bc"], p["bd"] = list(cpfs_da_busca or ["~"]), list(destinos_da_busca or ["~"])
+        sql.append(f"AND (destinatario ILIKE :b OR cpf ILIKE :b OR texto ILIKE :b{extra})")
         p["b"] = f"%{busca.strip()}%"
     sql.append("ORDER BY id DESC LIMIT :lim")
     return db.todos(conn, "\n".join(sql), **p)

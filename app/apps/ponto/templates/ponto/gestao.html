@@ -14,9 +14,9 @@
 {% block titulo %}Ponto — {{ {
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
   "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas no ponto", "ponto_banco": "Banco de horas", "ponto_relatorios": "Relatórios", "ponto_alertas": "Alertas",
-  "ponto_qualidade": "Qualidade", "ponto_painel": "Painel",
+  "ponto_qualidade": "Qualidade", "ponto_painel": "Painel", "ponto_assinaturas": "Assinaturas",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
-{% block classe_corpo %}{% if aba_ponto in ("ponto_banco", "ponto_rondas") %}sem-filtros{% elif aba_ponto == "ponto_ficha" %}sem-filtros embutido{% endif %}{% endblock %}
+{% block classe_corpo %}{% if aba_ponto in ("ponto_banco", "ponto_rondas", "ponto_assinaturas") %}sem-filtros{% elif aba_ponto == "ponto_ficha" %}sem-filtros embutido{% endif %}{% endblock %}
 
 {# =========================================================================
    BARRA DA ESQUERDA (filtros)
@@ -740,7 +740,8 @@
   <button class="btn secundario" id="qd-dia-inteiro" type="button">Lançar o dia inteiro pela escala…</button>
   <button class="btn secundario" id="qd-definir-escala" type="button">Definir a escala…</button>{% endif %}
   {% if pode.aprovar_afastamento %}<button class="btn amarelo" id="qd-abonar" type="button">Abonar a falta…</button>
-  <button class="btn secundario" id="qd-compensar-horas" type="button">Compensar horas…</button>{% endif %}
+  <button class="btn secundario" id="qd-compensar-horas" type="button">Compensar horas…</button>
+  <button class="btn secundario" id="qd-recesso" type="button">Recesso — folgas a compensar…</button>{% endif %}
   <button class="link-btn" id="qd-desmarcar" type="button">desmarcar</button>
   <small class="suave" style="flex-basis:100%">cada ação vale só para as linhas marcadas em que ela cabe — o número no
     botão diz quantas; as outras ficam de fora, com o porquê. Tudo fica registrado com o motivo e o seu nome.</small>
@@ -1124,6 +1125,25 @@
       nota é calculada. O texto pode ser mexido antes de copiar. "Abrir no WhatsApp" abre a conversa para você escolher
       o grupo — nada é enviado sozinho.</small>
   </div></dialog>
+
+{% elif aba_ponto == "ponto_assinaturas" %}
+{# ----------------------------------------------------------- ASSINATURAS #}
+<h2>Assinaturas <small id="as-sub"></small></h2>
+<div id="mensagem"></div>
+<div class="cartao">
+  <div class="cartao-dica" style="margin-top:0">Tudo o que o colaborador tem de assinar, num lugar só: os documentos do
+    DP (aviso prévio, termo de compensação…), a folha de ponto do mês e o termo do ponto. A pessoa vê os dela no
+    "Meu ponto" do aplicativo e assina com o dedo e o PIN; o administrativo da obra vê os da equipe e conduz — na
+    tela, no papel (foto) ou a recusa com duas testemunhas. <b>Papel e recusa só valem depois que o DP valida aqui.</b></div>
+  <div class="kpis" id="as-kpis"></div>
+</div>
+<div class="cartao"><h3 style="margin-top:0">Esperando o DP validar <small class="suave">papel assinado e recusa</small></h3><div id="as-validar"></div></div>
+<div class="cartao"><h3 style="margin-top:0">Documentos para assinar</h3><div id="as-abertos"></div></div>
+<div class="cartao"><h3 style="margin-top:0">Folha de ponto <small class="suave" id="as-folha-sub"></small></h3>
+  <div class="barra-acoes"><div class="campo" style="max-width:180px"><label for="as-comp">Mês</label>
+    <input type="month" id="as-comp"></div></div><div id="as-folhas"></div></div>
+<div class="cartao"><h3 style="margin-top:0">Termo do ponto <small class="suave">quem bate ponto e ainda não assinou</small></h3><div id="as-termo"></div></div>
+<div class="cartao"><h3 style="margin-top:0">Assinados nos últimos 60 dias</h3><div id="as-feitos"></div></div>
 
 {% elif aba_ponto == "ponto_rondas" %}
 {# ----------------------------------------------------------------- RONDAS #}
@@ -1582,7 +1602,7 @@ const listaDeTexto = t => String(t || "").split(/[,;\n]+/).map(s => s.trim()).fi
 const ROTULO_ALERTA_DIA = {
   FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
   HORA_EXTRA_NEGADA: "hora extra negada na conferência",
-  COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — a folga virou falta",
+  COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — virou falta",
   COMPENSACAO_INCOMPLETA: "compensação incompleta — faltou parte das horas",
   TRABALHOU_NA_FOLGA: "trabalhou no dia da folga compensatória (as horas contam)",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
@@ -1735,6 +1755,9 @@ function desenharPainel() {
       ["cadastro", "Configuração do ponto"],
       ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`],
     ]},
+    // os documentos e as assinaturas (23/11/2026, o dono: "dentro do cadastro de cada colaborador (…) visualizar esse
+    // histórico de assinaturas, de documentos, ter acesso a esses documentos que ele tem assinado")
+    {chave: "documentos", rotulo: "📄 Documentos", abas: [["assinaturas", "Documentos e assinaturas"]]},
     ...(PODE_VER_MENSAGENS ? [{chave: "mensagens", rotulo: "💬 Mensagens", abas: [
       ["mensagens", "Telegram e mensagens"],
     ]}] : []),
@@ -1773,9 +1796,11 @@ function desenharPainel() {
     <div id="dp-conteudo">${({dia: painelDia, mes: painelMes, pedidos: painelPedidos, aparelhos: painelAparelhos,
                               cadastro: painelCadastro, rosto: painelRosto, pessoa: painelPessoaErp,
                               pagamentos: painelPagamentosErp,
-                              mensagens: () => '<div id="dp-mensagens"></div>'}[PAINEL_ABA] || painelDia)()}</div>`;
+                              mensagens: () => '<div id="dp-mensagens"></div>',
+                              assinaturas: () => '<div id="dp-assinaturas"><p class="suave">carregando…</p></div>'}[PAINEL_ABA] || painelDia)()}</div>`;
   if (PAINEL_ABA === "pessoa" || PAINEL_ABA === "pagamentos") carregarErpDaPessoa(p.id);
   if (PAINEL_ABA === "mensagens") mensagensDaPessoa(els("dp-mensagens"), p.id);  // bloco da Mensageria (erp_base)
+  if (PAINEL_ABA === "assinaturas") assinaturasDaPessoa(p.id);
   els("dp-corpo").querySelectorAll("[data-dp-aba]").forEach(b => b.addEventListener("click", () => {
     PAINEL_ABA = b.dataset.dpAba; desenharPainel(); }));
   // Trocar de ÁREA cai na primeira aba dela — e não numa aba vazia.
@@ -2212,6 +2237,34 @@ async function carregarErpDaPessoa(id) {
 }
 const ROTULO_ERP = v => String(v || "").toLowerCase().replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
 const dinheiro = v => v == null ? "—" : Number(v).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+// A FICHA › DOCUMENTOS E ASSINATURAS (23/11/2026): o que a pessoa assinou — e o que falta —, com o documento.
+const ddmmFicha = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "";
+const SIT_FOLHA = {ASSINADA: "assinada", RECUSADA: "recusa registrada"};
+async function assinaturasDaPessoa(id) {
+  let d;
+  try { d = await api(`/erp/api/ponto/pessoas/${id}/assinaturas`); }
+  catch (e) { if (els("dp-assinaturas")) els("dp-assinaturas").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; return; }
+  if (!els("dp-assinaturas")) return;
+  const doc = x => x.anexo_id ? `<a href="/erp/anexo/${x.anexo_id}" target="_blank" rel="noopener">abrir</a>` : "";
+  const docPonto = x => x.documento_id ? `<a href="/erp/api/ponto/documentos/${x.documento_id}" target="_blank" rel="noopener">abrir</a>` : "";
+  const linhas = [
+    ...(d.documentos || []).map(x => `<tr><td><b>${escapar(x.titulo)}</b><small>${escapar(x.numero)}</small></td>
+        <td><span class="selo ${x.situacao === "ABERTO" ? "aguardando" : x.vale ? "pago" : "aguardando"}">${escapar(x.rotulo)}</span>
+          ${x.assinado_em ? `<small>${ddmmFicha(x.assinado_em.slice(0, 10))}${x.conduzido_por ? ` · ${escapar(x.conduzido_por)}` : ""}</small>` : x.prazo ? `<small>até ${ddmmFicha(x.prazo)}</small>` : ""}</td>
+        <td>${doc(x)}</td></tr>`),
+    ...(d.folhas || []).map(x => `<tr><td><b>Folha de ponto de ${x.competencia.slice(5)}/${x.competencia.slice(0, 4)}</b></td>
+        <td><span class="selo ${x.situacao === "ASSINADA" ? "pago" : "aguardando"}">${escapar(SIT_FOLHA[x.situacao] || x.situacao)}</span>
+          <small>${x.em ? ddmmFicha(x.em.slice(0, 10)) : ""}${x.por ? ` · ${escapar(x.por)}` : ""}${x.motivo ? ` · ${escapar(x.motivo)}` : ""}</small></td>
+        <td>${docPonto(x)}</td></tr>`),
+    ...(d.termo_do_ponto ? [`<tr><td><b>Termo do ponto</b></td><td><span class="selo ${d.termo_do_ponto.situacao === "ASSINADO" ? "pago" : "aguardando"}">${
+        escapar({ASSINADO: "assinado", RECUSADO: "recusa registrada", FALTA: "para assinar"}[d.termo_do_ponto.situacao] || d.termo_do_ponto.situacao)}</span>
+        ${d.termo_do_ponto.em ? `<small>${ddmmFicha(d.termo_do_ponto.em.slice(0, 10))}</small>` : ""}</td><td>${docPonto(d.termo_do_ponto)}</td></tr>`] : [])];
+  els("dp-assinaturas").innerHTML = linhas.length
+    ? `<p class="suave" style="margin:0 0 6px">A folha de ponto sem assinatura só aparece aqui depois de assinada ou recusada — a que falta está em Ponto › Assinaturas.</p>
+       <div class="tabela-wrap"><table><tbody>${linhas.join("")}</tbody></table></div>`
+    : `<p class="suave">Nenhum documento ainda.</p>`;
+}
+
 function painelPessoaErp() { return `<div id="dp-erp"><p class="suave">carregando o cadastro…</p></div>`; }
 function painelPagamentosErp() { return `<div id="dp-erp"><p class="suave">carregando os pagamentos…</p></div>`; }
 function pintarErpDaPessoa() {
@@ -3785,7 +3838,15 @@ window.addEventListener("message", ev => {
   if (d.acao === "fechou") els("dlg-cadastro").close();
   if (d.acao === "gravou") { ERP_DA_PESSOA = null; if (PAINEL && PAINEL.pessoa) carregarErpDaPessoa(PAINEL.pessoa.id); }
 });
-abrirPessoaPainel(FICHA_ID, null, PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia");
+// ?aba=mes&competencia=AAAA-MM (23/11/2026, chat do DP): o atendimento do desligamento abre a ficha JÁ no espelho do
+// mês das faltas — o DP confere sem sair da janela de atender.
+(() => {
+  const q = new URLSearchParams(location.search);
+  const aba = q.get("aba"), comp = q.get("competencia");
+  abrirPessoaPainel(FICHA_ID, null, aba && /^[a-z_]+$/.test(aba) ? aba
+    : (PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia"),
+    comp && /^\d{4}-\d{2}$/.test(comp) ? comp : null);
+})();
 {% elif aba_ponto == "ponto_hoje" %}
 // ===========================================================================
 // HOJE — quem bateu, quem não bateu, por obra. A tela do encarregado às 7h30.
@@ -4358,7 +4419,8 @@ function qdLote() {
    ["qd-dia-inteiro", "dia", "Lançar o dia inteiro pela escala", "serve para o dia sem nenhuma batida, com escala"],
    ["qd-definir-escala", "escala", "Definir a escala", "vale para as pessoas marcadas, a partir da data escolhida"],
    ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta e para a falta parcial (só as horas que faltaram)"],
-   ["qd-compensar-horas", "horas", "Compensar horas", "serve para o dia com horas a menos: as horas a mais de outro dia pagam"]].forEach(([id, acao, rotulo, dica]) => {
+   ["qd-compensar-horas", "horas", "Compensar horas", "serve para o dia com horas a menos: as horas a mais de outro dia pagam"],
+   ["qd-recesso", "escala", "Recesso — folgas a compensar", "vale para as pessoas marcadas: cada dia de folga é pago noutro dia, hora por hora"]].forEach(([id, acao, rotulo, dica]) => {
     const b = els(id);
     if (!b) return;
     const n = acao === "escala" ? new Set(marcadas.map(l => l.colaborador_id)).size : marcadas.filter(QD_SERVE[acao]).length;
@@ -4494,6 +4556,80 @@ async function qdCompensarHoras() {
                     ["compensação lançada", "compensações lançadas"]);
 }
 
+// O RECESSO EM LOTE (22/11/2026, o dono: "pode criar uma tela para o DP lançar o recesso em lote"). As PESSOAS
+// marcadas (não os dias) folgam nos dias do recesso; cada dia de folga é pago trabalhando noutro dia, hora por hora.
+// Primeiro a prévia — o que entra e o que fica de fora, com o porquê —, depois a gravação: um pedido aprovado por
+// pessoa e por dia. Folga paga depois: se o dia de pagar não for trabalhado, a falta cai nele, com o motivo.
+const QD_RECESSO_PARES = 6;
+async function qdRecessoChamar(ids, corpo) {
+  const junto = {pessoas: [], entram: 0, ficam_de_fora: 0, aprovadas: 0};
+  for (let i = 0; i < ids.length; i += 40) {
+    aviso("qd-lote-msg", `${corpo.simular ? "Conferindo" : "Lançando"}… ${Math.min(i + 40, ids.length)} de ${contar(ids.length, "pessoa", "pessoas")}`, "info");
+    const r = await postar("/erp/api/ponto/quadro/recesso", {...corpo, pessoas: ids.slice(i, i + 40)});
+    junto.pessoas.push(...r.pessoas); junto.entram += r.entram; junto.ficam_de_fora += r.ficam_de_fora;
+    junto.aprovadas += r.aprovadas;
+  }
+  els("qd-lote-msg").innerHTML = "";
+  return junto;
+}
+
+function qdRecessoTabela(r) {
+  return `<div style="max-height:46vh; overflow:auto; margin-top:8px"><table class="tabela" style="font-size:13px"><tbody>
+    ${r.pessoas.map(p => `<tr><td style="white-space:nowrap; vertical-align:top"><b>${escapar(p.nome || "")}</b></td><td>
+      ${p.erro ? `<span style="color:#8A1C1C">✗ ${escapar(p.erro)}</span>` : p.pares.map(x => x.ok
+        ? `<div>✓ ${diaCurto(x.folga)} → ${diaCurto(x.pagar)} <small class="suave">${escapar(x.nota || "")}</small>
+             ${(x.avisos || []).map(a => `<br><small style="color:var(--ambar, #9A6700)">⚠ ${escapar(a)}</small>`).join("")}</div>`
+        : `<div style="color:#8A1C1C">✗ ${diaCurto(x.folga)} → ${diaCurto(x.pagar)} — ${escapar(x.erro)}</div>`).join("")}
+    </td></tr>`).join("")}</tbody></table></div>`;
+}
+
+async function qdRecesso() {
+  const ids = [...new Set(qdMarcadas().map(l => l.colaborador_id))];
+  if (!ids.length) return;
+  const campos = [];
+  for (let i = 1; i <= QD_RECESSO_PARES; i++) {
+    campos.push({nome: `folga_${i}`, rotulo: `${i}º dia de folga`, tipo: "date", obrigatorio: i === 1, largura: 3},
+                {nome: `pagar_${i}`, rotulo: "pago com o trabalho em", tipo: "date", obrigatorio: i === 1, largura: 3});
+  }
+  campos.push({nome: "motivo", rotulo: "O que foi combinado (opcional)", tipo: "textarea", linhas: 2, largura: 6,
+               exemplo: "ex.: recesso de fim de ano 2026 — folga de 28 a 31/12, paga com sábados de dezembro e janeiro"});
+  const r = await perguntar({titulo: `Recesso — ${contar(ids.length, "pessoa", "pessoas")}`,
+    aviso: "Cada <b>dia de folga</b> é pago com o trabalho noutro dia (o sábado), <b>hora por hora</b>: um par por linha, " +
+           "e cada dia de pagar serve a uma folga só. Vale para <b>todas as pessoas marcadas</b>. " +
+           "Antes de gravar, você vê a prévia de quem entra e quem fica de fora. " +
+           "Se o dia de pagar vier <b>depois</b> da folga e não for trabalhado, a falta cai nele, com o motivo; a folga " +
+           "continua folga. Feriados (25/12, 01/01) não precisam de compensação.",
+    campos, textoOk: "Ver a prévia"});
+  if (!r) return;
+  const pares = [];
+  for (let i = 1; i <= QD_RECESSO_PARES; i++) if (r[`folga_${i}`] || r[`pagar_${i}`]) pares.push({folga: r[`folga_${i}`], pagar: r[`pagar_${i}`]});
+  let previa;
+  try { previa = await qdRecessoChamar(ids, {pares, motivo: r.motivo || "", simular: true}); }
+  catch (e) { aviso("qd-lote-msg", escapar(e.message), "erro"); return; }
+  const resumo = `<b>${contar(previa.entram, "folga entra", "folgas entram")}</b>` +
+    (previa.ficam_de_fora ? ` · <b>${previa.ficam_de_fora}</b> ficam de fora (o porquê está em cada linha)` : "") +
+    ` — ${contar(ids.length, "pessoa", "pessoas")} × ${contar(pares.length, "dia de folga", "dias de folga")}.`;
+  if (!previa.entram) {
+    await perguntar({titulo: "Recesso — nada a lançar", aviso: resumo + qdRecessoTabela(previa), campos: [], textoOk: "Fechar"});
+    return;
+  }
+  const ok = await perguntar({titulo: "Recesso — confira antes de gravar",
+    aviso: resumo + " Cada folga vira um pedido de compensação aprovado com o seu nome." + qdRecessoTabela(previa),
+    campos: [], textoOk: `Lançar ${contar(previa.entram, "folga", "folgas")}`});
+  if (!ok) return;
+  let feito;
+  try { feito = await qdRecessoChamar(ids, {pares, motivo: r.motivo || "", simular: false}); }
+  catch (e) { aviso("qd-lote-msg", escapar(e.message), "erro"); return; }
+  const recusas = [];
+  feito.pessoas.forEach(p => p.erro ? recusas.push(`${escapar(p.nome || "")}: ${escapar(p.erro)}`)
+    : p.pares.filter(x => !x.ok).forEach(x => recusas.push(`${escapar(p.nome || "")} (${diaCurto(x.folga)}): ${escapar(x.erro)}`)));
+  aviso("qd-lote-msg", `<b>${contar(feito.entram, "folga do recesso lançada", "folgas do recesso lançadas")}</b>` +
+    (feito.entram - feito.aprovadas > 0 ? ` (${feito.entram - feito.aprovadas} esperando validação de quem aprova)` : "") +
+    (recusas.length ? ` · ${recusas.length} não entraram:<ul style="margin:6px 0 0 18px">${recusas.slice(0, 30).map(x => `<li>${x}</li>`).join("")}</ul>` : ""),
+    recusas.length ? "alerta" : "ok");
+  QD_MARCADAS.clear(); qdMontar();
+}
+
 async function qdIncluir() {
   const linhas = qdMarcadas().filter(QD_SERVE.batida);
   if (!linhas.length) return;
@@ -4543,6 +4679,7 @@ if (els("qd-dia-inteiro")) els("qd-dia-inteiro").addEventListener("click", qdDia
 if (els("qd-definir-escala")) els("qd-definir-escala").addEventListener("click", qdEscala);
 if (els("qd-abonar")) els("qd-abonar").addEventListener("click", qdAbonar);
 if (els("qd-compensar-horas")) els("qd-compensar-horas").addEventListener("click", qdCompensarHoras);
+if (els("qd-recesso")) els("qd-recesso").addEventListener("click", qdRecesso);
 els("qd-limpar").addEventListener("click", () => {
   document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando]").forEach(x => { x.checked = false; });
   FP_QD.limpar();
@@ -5724,7 +5861,7 @@ function rlColunas() {
     : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Tipo", l => l.tipo || "Falta"],
        ["Escala", l => l.escala || ""], ["Batidas", l => (l.batidas || []).join(" "), "dados"],
        ["Previsto", l => hm(l.previsto), "num"], ["Faltou", l => hm(l.faltou ?? l.previsto), "num"],
-       ["Pedido esperando decisão", l => l.pendente || ""]];
+       ["Motivo", l => l.motivo || ""], ["Pedido esperando decisão", l => l.pendente || ""]];
   if (RL.tipo === "extras") return RL_VISAO === "pessoas"
     ? [...pessoa, ["Dias", l => l.dias, "num"], ["Em dia de trabalho", l => hmCelula(l.util), "num"],
        ["Em descanso", l => hmCelula(l.descanso), "num"], ["Em feriado", l => hmCelula(l.feriado), "num"],
@@ -7236,6 +7373,91 @@ carregarObrasDaQualidade().then(() => {
   if (obra && [...els("q-obra").options].some(o => o.value === obra)) els("q-obra").value = obra;
   carregarQualidade();
 });
+
+{% elif aba_ponto == "ponto_assinaturas" %}
+// ============================================================== ASSINATURAS (23/11/2026)
+// O pedido do dono: "o DP poder gerir (…) o que é que tá, o que é que precisa ser feito, o que é que já foi".
+let AS = null;
+const ddmmAs = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "";
+const FORMA_AS = {NA_TELA: "na tela, com o PIN", PAPEL: "no papel (foto)", RECUSA: "recusa com testemunhas"};
+const anexoAs = x => x.anexo_id ? ` · <a href="/erp/anexo/${x.anexo_id}" target="_blank" rel="noopener">ver o documento</a>` : "";
+function linhaDocAs(x, acoes) {
+  return `<tr><td>${eloPessoa(x.colaborador_id, x.pessoa)}<small>${escapar(x.obra || "sem obra")}</small></td>
+    <td><b>${escapar(x.titulo)}</b><small>${escapar(x.numero)}${x.motivo && x.situacao === "ABERTO" && x.motivo.startsWith("DEVOLVIDO") ? ` · ${escapar(x.motivo)}` : ""}</small></td>
+    <td>${x.situacao === "ABERTO" ? (x.prazo ? `<span class="selo ${x.atrasado ? "negada" : "aguardando"}">${x.atrasado ? "venceu" : "até"} ${ddmmAs(x.prazo)}</span>` : "—")
+        : `${escapar(FORMA_AS[x.forma] || x.forma || "")}${x.assinado_em ? ` · ${ddmmAs(x.assinado_em.slice(0, 10))}` : ""}<small>${escapar(x.conduzido_por || "")}</small>`}${anexoAs(x)}</td>
+    <td style="white-space:nowrap">${acoes || ""}</td></tr>`;
+}
+function desenharAs() {
+  const docs = AS.documentos || {}, f = AS.folhas || {}, t = AS.termo_do_ponto || [];
+  const kpi = (r, v, c, d) => `<div class="kpi estatico ${c || ""}"><div class="kpi-rotulo">${r}</div><div class="kpi-valor">${v}</div><div class="kpi-sub">${d}</div></div>`;
+  els("as-kpis").innerHTML = docs.disponivel === false ? `<div class="aviso alerta">Falta aplicar as atualizações do banco do ERP (117 e 126) — sem elas, os documentos do DP não aparecem.</div>`
+    : kpi("Esperando validar", (docs.validar || []).length, (docs.validar || []).length ? "amarelo" : "", "papel e recusa")
+      + kpi("Documentos para assinar", (docs.abertos || []).length, (docs.abertos || []).some(x => x.atrasado) ? "vermelho" : "", `${(docs.abertos || []).filter(x => x.atrasado).length} vencidos`)
+      + kpi("Folhas sem assinatura", (f.faltam || []).length, (f.faltam || []).length ? "amarelo" : "", f.competencia ? `de ${f.competencia.slice(5)}/${f.competencia.slice(0, 4)}` : "")
+      + kpi("Termo do ponto", t.length, t.length ? "amarelo" : "", "faltam assinar");
+  const tabela = (linhas, vazio) => linhas.length ? `<div class="tabela-wrap"><table><tbody>${linhas.join("")}</tbody></table></div>` : `<p class="suave">${vazio}</p>`;
+  els("as-validar").innerHTML = tabela((docs.validar || []).map(x => linhaDocAs(x,
+    `<button class="btn" type="button" data-as-validar="${x.id}">Aceitar</button> <button class="btn secundario" type="button" data-as-devolver="${x.id}">Devolver</button>`)),
+    "Nada esperando você.");
+  els("as-abertos").innerHTML = tabela((docs.abertos || []).map(x => linhaDocAs(x,
+    (x.origem === "PONTO_COMPENSACAO" ? `<button class="link-btn" type="button" data-as-cancelar-comp="${x.id}">cancelar a compensação</button>`
+                                      : `<button class="link-btn" type="button" data-as-cancelar="${x.id}">cancelar</button>`))),
+    "Nenhum documento esperando assinatura.");
+  els("as-feitos").innerHTML = tabela((docs.feitos || []).map(x => linhaDocAs(x, "")), "Nada assinado nos últimos 60 dias.");
+  els("as-folha-sub").textContent = f.competencia ? `${f.competencia.slice(5)}/${f.competencia.slice(0, 4)} · ${f.assinadas || 0} assinada(s), ${f.recusadas || 0} recusa(s), ${(f.faltam || []).length} sem assinar de ${f.pessoas || 0}${f.fechado ? "" : " · o mês ainda não foi fechado"}${f.prazo ? ` · prazo ${ddmmAs(f.prazo)}` : ""}` : "";
+  if (f.competencia && !els("as-comp").value) els("as-comp").value = f.competencia;
+  els("as-folhas").innerHTML = !f.disponivel ? `<p class="suave">Falta aplicar as atualizações do ponto (027).</p>`
+    : tabela((f.faltam || []).map(x => `<tr><td>${eloPessoa(x.id, x.nome)}</td><td>${escapar(x.obra || "")}</td></tr>`), "Todas as folhas assinadas (ou com recusa registrada).");
+  els("as-termo").innerHTML = tabela(t.map(x => `<tr><td>${eloPessoa(x.id, x.nome)}</td><td>${escapar(x.obra || "")}</td></tr>`), "Todos assinaram o termo do ponto.");
+  document.querySelectorAll("[data-as-validar]").forEach(b => b.onclick = () => validarAs(+b.dataset.asValidar, true));
+  document.querySelectorAll("[data-as-devolver]").forEach(b => b.onclick = () => validarAs(+b.dataset.asDevolver, false));
+  document.querySelectorAll("[data-as-cancelar]").forEach(b => b.onclick = () => cancelarAs(+b.dataset.asCancelar));
+  document.querySelectorAll("[data-as-cancelar-comp]").forEach(b => b.onclick = () => cancelarCompAs(+b.dataset.asCancelarComp));
+}
+async function carregarAs() {
+  const comp = els("as-comp").value;
+  try { AS = await api(`/erp/api/ponto/assinaturas-central${comp ? `?competencia=${comp}` : ""}`); }
+  catch (e) { falhou(e); return; }
+  desenharAs();
+}
+async function validarAs(id, aceitar) {
+  let motivo = "";
+  if (!aceitar) {
+    const r = await perguntar({titulo: "Devolver para a obra", campos: [{nome: "motivo", rotulo: "O que está errado", tipo: "textarea", obrigatorio: true, largura: 6,
+      exemplo: "ex.: a foto está cortada, não dá para ver a assinatura"}], textoOk: "Devolver"});
+    if (!r) return; motivo = r.motivo;
+  }
+  try { await postar(`/erp/api/ponto/assinaturas-central/documentos/${id}/validar`, {aceitar, motivo});
+        aviso("mensagem", aceitar ? "Aceito — o documento passou a valer." : "Devolvido — a obra colhe de novo.", "ok"); carregarAs(); }
+  catch (e) { falhou(e); }
+}
+async function cancelarAs(id) {
+  const r = await perguntar({titulo: "Cancelar o documento", campos: [{nome: "motivo", rotulo: "Por quê", tipo: "textarea", obrigatorio: true, largura: 6}], textoOk: "Cancelar o documento"});
+  if (!r) return;
+  try { await postar(`/erp/api/ponto/assinaturas-central/documentos/${id}/cancelar`, {motivo: r.motivo}); aviso("mensagem", "Documento cancelado.", "ok"); carregarAs(); }
+  catch (e) { falhou(e); }
+}
+// O termo de compensação (23/11/2026, o dono: "se houver alguma discordância, o DP vai fazer contato (…) vai poder
+// cancelar aquele lançamento"): cancela as compensações do termo — o termo cai junto, e a folga volta a ser julgada.
+async function cancelarCompAs(id) {
+  const x = (AS.documentos.abertos || []).find(d => d.id === id);
+  if (!x) return;
+  const r = await perguntar({titulo: `Cancelar a compensação — ${escapar(x.pessoa)}`,
+    aviso: `Cancela ${contar((x.origem_ids || []).length, "folga compensada", "folgas compensadas")} deste termo. A folga volta a ser julgada pelo ponto (sem batida, falta) e o termo é cancelado junto.`,
+    campos: [{nome: "motivo", rotulo: "Por quê", tipo: "textarea", obrigatorio: true, largura: 6, exemplo: "ex.: a pessoa não concordou com os sábados; combinado outro acerto"}],
+    textoOk: "Cancelar a compensação"});
+  if (!r) return;
+  try {
+    for (const oid of (x.origem_ids || [])) {
+      try { await postar(`/erp/api/ponto/ocorrencias/${oid}/cancelar-compensacao`, {motivo: r.motivo}); }
+      catch (e) { if (!/só uma compensação aprovada/.test(e.message)) throw e; }     // já cancelada: segue
+    }
+    aviso("mensagem", "Compensação cancelada; o termo caiu junto.", "ok"); carregarAs();
+  } catch (e) { falhou(e); }
+}
+els("as-comp").addEventListener("change", carregarAs);
+carregarAs();
 
 {% elif aba_ponto == "ponto_rondas" %}
 // ============================================================== RONDAS

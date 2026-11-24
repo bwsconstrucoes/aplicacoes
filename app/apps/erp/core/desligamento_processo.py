@@ -98,6 +98,12 @@ PASSOS: tuple[dict[str, Any], ...] = (
      "rotulo": "A documentação foi para a obra colher a assinatura"},
     {"codigo": "ASSINADA", "como": "lido", "quem": "obra, e o DP valida",
      "rotulo": "A documentação voltou assinada e o DP validou"},
+    # ⚑ O ASO DEMISSIONAL (21/11/2026). Ele: *"O demissional já pode ficar
+    # como cobrança do retorno junto com a documentação assinada rescisória,
+    # mas por enquanto não é obrigatório."* Vai para a obra junto, e NÃO
+    # segura o encerramento (`opcional`).
+    {"codigo": "ASO_DEMISSIONAL", "como": "lido", "quem": "obra",
+     "rotulo": "ASO demissional (opcional por enquanto)", "opcional": True},
     {"codigo": "RESCISAO_PAGA", "como": "titulo", "quem": "DP e Financeiro",
      "rotulo": "Rescisão (TRCT) lançada e paga"},
     {"codigo": "MULTA_PAGA", "como": "titulo", "quem": "DP e Financeiro",
@@ -227,6 +233,20 @@ def _devolucao(s: Session, sol: dict[str, Any],
          ORDER BY d.criado_em DESC, d.id DESC LIMIT 1"""),
         {"ped": pedido["id"] if pedido else None, "c": sol["colaborador_id"],
          "tipo": DOC_ASSINADA, "desde": sol["criado_em"]}).mappings().first()
+    return dict(linha) if linha else None
+
+
+def _devolucao_do_aso(s: Session, sol: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """A pendência do ASO demissional desta pessoa, aberta depois do pedido."""
+    if not sol.get("colaborador_id"):
+        return None
+    linha = s.execute(text("""
+        SELECT d.id, d.numero, d.situacao, d.prazo, doc.anexo_id
+          FROM dp_devolucoes d LEFT JOIN documentos doc ON doc.id = d.documento_id
+         WHERE d.colaborador_id = :c AND d.documento_esperado = 'ASO'
+           AND d.situacao <> 'CANCELADA' AND d.criado_em >= :desde
+         ORDER BY d.id DESC LIMIT 1"""),
+        {"c": sol["colaborador_id"], "desde": sol["criado_em"]}).mappings().first()
     return dict(linha) if linha else None
 
 
@@ -627,6 +647,8 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                        if dev["cobrancas"] else "")
                     + " — o agente cobra a obra quando o prazo vence")
                 item["atrasado"] = bool(prazo and prazo < hoje)
+                # Plano B: o papel chegou ao escritório, o DP anexa.
+                item["devolucao_aberta_id"] = dev["id"]
             elif dev["situacao"] == "DEVOLVIDA":
                 item["detalhe"] = ("chegou pelo portal — confira a análise e "
                                    "valide o recebimento")
@@ -634,6 +656,24 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                 item["analise"] = analisar_devolucao(s, dev)
                 item["documento_id"] = dev.get("documento_id")
                 item["anexo_id"] = dev.get("anexo_id")
+
+        elif cod == "ASO_DEMISSIONAL":
+            item["opcional"] = True
+            aso = _devolucao_do_aso(s, sol)
+            if aso is None:
+                item["detalhe"] = ("vai para a obra junto com a documentação "
+                                   "rescisória — a norma pede o exame até 10 "
+                                   "dias depois da saída")
+            elif aso["situacao"] == "DEVOLVIDA":
+                item["estado"] = "FEITO"
+                item["detalhe"] = f"chegou pelo portal ({aso['numero']})"
+                item["anexo_id"] = aso.get("anexo_id")
+            else:
+                item["estado"] = "AGUARDANDO"
+                item["devolucao_aberta_id"] = aso["id"]
+                item["detalhe"] = (f"com a obra ({aso['numero']})"
+                                   + (f", prazo {aso['prazo']:%d/%m/%Y}"
+                                      if aso.get("prazo") else ""))
 
         elif cod in ("RESCISAO_PAGA", "MULTA_PAGA"):
             if m and m["situacao"] == "LANCADO" and m.get("titulo_id"):
@@ -661,10 +701,12 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                 item["detalhe"] = "lance a SP e informe o número aqui"
         saida.append(item)
 
-    cumpridos = sum(1 for x in saida if x["estado"] in ("FEITO", "NAO_SE_APLICA"))
-    proximo = next((x for x in saida
+    # O passo OPCIONAL não conta para o "falta" nem para encerrar.
+    obrig = [x for x in saida if not x.get("opcional")]
+    cumpridos = sum(1 for x in obrig if x["estado"] in ("FEITO", "NAO_SE_APLICA"))
+    proximo = next((x for x in obrig
                     if x["estado"] not in ("FEITO", "NAO_SE_APLICA")), None)
-    return {"passos": saida, "cumpridos": cumpridos, "total": len(saida),
+    return {"passos": saida, "cumpridos": cumpridos, "total": len(obrig),
             "pode_encerrar": registrado and proximo is None,
             "proximo": proximo["rotulo"] if proximo else "",
             "marcacoes_disponiveis": _tem_tabela(s)}
@@ -832,6 +874,20 @@ def mandar_para_assinar(s: Session, sol: dict[str, Any], dados: dict[str, Any],
                      "portal.")}, usuario)
     _evento(s, sol["id"], "MANDADA_PARA_ASSINAR",
             {"devolucao": r["numero"], "com_arquivo": bool(enviado)}, usuario)
+    # ⚑ O ASO DEMISSIONAL VAI JUNTO, como pendência própria (21/11/2026): a
+    # obra devolve pelo portal e o agente cobra como as outras — mas o
+    # desligamento não espera por ele.
+    if _devolucao_do_aso(s, sol) is None:
+        aso = svc_portal.abrir_devolucao(s, {
+            "colaborador_id": sol["colaborador_id"],
+            "obra_id": sol.get("obra_id"),
+            "documento_esperado": "ASO",
+            "dias": dados.get("dias") or 5,
+            "o_que": ("Exame demissional (ASO): levar a pessoa ao exame — até 10 "
+                      "dias depois da saída — e enviar o ASO pelo portal.")},
+            usuario)
+        _evento(s, sol["id"], "ASO_DEMISSIONAL_PEDIDO", {"devolucao": aso["numero"]},
+                usuario)
     return r
 
 

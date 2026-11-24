@@ -185,15 +185,15 @@ def test_os_rotulos_sao_os_do_pipe_e_nao_os_meus():
 
 
 def test_o_checklist_do_tipo_nasce_com_o_pedido(mundo):
-    """O desligamento CTPS tem ONZE passos no pipe, e eles existem porque o
-    atendimento é trabalho de vários dias e mais de uma pessoa."""
+    """O checklist do tipo nasce com o pedido. Desde 23/11/2026 o desligamento
+    CTPS tem UM passo (eram os onze do Pipefy): o resto o processo acompanha."""
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
                                "continua_prestador": "Não, está saindo da empresa",
                                "aviso_previo": "2026-03-01"}, mundo["dp"])
-    assert p["total_itens"] == 11 and p["feitos"] == 0
-    assert any("TRCT" in i["descricao"] for i in p["itens"])
+    assert p["total_itens"] == 1 and p["feitos"] == 0
+    assert "faltas" in p["itens"][0]["descricao"]
 
 
 def test_desligamento_sem_data_de_saida_e_recusado_na_abertura(mundo):
@@ -434,11 +434,11 @@ def test_marcar_item_poe_o_pedido_em_analise(mundo):
 
 
 def test_desmarcar_item_volta_atras(mundo):
-    p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
-                               "empresa_id": mundo["empresa_id"],
-                               "cargo_pleiteado_id": mundo["cargo"].id,
+    p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
-                               "admissao": "2026-02-01"}, mundo["dp"])
+                               "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "continua_prestador": "Não, está saindo da empresa",
+                               "aviso_previo": "2026-03-01"}, mundo["dp"])
     svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
     r = svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], False, mundo["dp"])
     assert r["feitos"] == 0
@@ -475,11 +475,9 @@ def test_a_fila_poe_as_abertas_na_frente(mundo):
 
 
 def test_em_andamento_conta_o_checklist_comecado_e_nao_terminado(mundo):
-    p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
-                               "colaborador_id": mundo["pessoa"].id,
-                               "forma_desligamento": "Demissão com Aviso Trabalhado",
-                               "continua_prestador": "Não, está saindo da empresa",
-                               "aviso_previo": "2026-03-01"}, mundo["dp"])
+    # ajuda de custo: três passos, então um marcado é "começado e não terminado"
+    p = svc.abrir(mundo["s"], {"tipo": "AJUDA_DE_CUSTO", "solicitacao": "Solicitar ou Atualizar",
+                               "colaborador_id": mundo["pessoa"].id}, mundo["dp"])
     svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
     mundo["s"].flush()
     assert svc.listar(mundo["s"])["indicadores"]["em_andamento"] == 1

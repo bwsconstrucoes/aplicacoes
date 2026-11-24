@@ -67,6 +67,7 @@ ABAS = [
     ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
     ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
+    ("ponto_assinaturas", "Assinaturas", "erp.ponto_pagina_assinaturas"),
     ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
     ("ponto_fotos", "Fotos de cadastro", "erp.ponto_pagina_fotos_cadastro"),
     ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
@@ -240,6 +241,14 @@ def ponto_pagina_espelho():
     # Voltou ao menu em 28/10/2026 (o dono: "as telas que foram ocultadas precisam voltar"), com a
     # mesma tabela do espelho da janela da pessoa.
     return _pagina("ponto_espelho")
+
+
+@bp.route("/erp/ponto/assinaturas")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_assinaturas():
+    """A central de assinaturas do DP (23/11/2026): documentos do DP, folhas de ponto e o termo do ponto."""
+    return _pagina("ponto_assinaturas")
 
 
 @bp.route("/erp/ponto/pendencias")
@@ -1861,6 +1870,24 @@ def ponto_api_quadro_compensar_horas():
                aprovadas=sum(1 for x in r if x.get("aprovado")))
 
 
+@bp.route("/erp/api/ponto/quadro/recesso", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_quadro_recesso():
+    """O recesso em lote (22/11/2026): as pessoas marcadas folgam nos dias de folga e pagam cada um num dia de
+    pagar (hora por hora). `simular` (padrão): só a prévia; `simular: false`: grava, um pedido aprovado por par."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    simular = d.get("simular", True) is not False
+    r = quadro.recesso_em_lote(quem, d.get("pessoas") or [], d.get("pares") or [], motivo=d.get("motivo") or "",
+                               simular=simular)
+    if not simular:
+        logger.info("Ponto: recesso em lote por %s — %d pessoas, %d folgas lançadas, %d de fora", quem.nome,
+                    len(r["pessoas"]), r["entram"], r["ficam_de_fora"])
+    return _ok(**r)
+
+
 @bp.route("/erp/api/ponto/vigencia", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_ponto", POST="configurar_ponto")
@@ -2432,6 +2459,67 @@ def ponto_api_cancelar_ocorrencia(ocorrencia_id: int):
     quem = _quem()
     with db.conexao() as conn:
         o = ocorrencias.cancelar(conn, ocorrencia_id, quem)
+    return _ok(ocorrencia=o)
+
+
+@bp.route("/erp/api/ponto/assinaturas-central")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_assinaturas_central():
+    """O que falta assinar, o que espera o DP validar e o que foi — as três fontes juntas (23/11/2026)."""
+    from .core import central_assinaturas
+    quem = _quem()
+    with db.conexao() as conn:
+        r = central_assinaturas.painel(conn, quem, request.args.get("competencia") or None)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/assinaturas-central/documentos/<int:termo_id>/validar", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_assinaturas_validar(termo_id: int):
+    """O DP aceita o papel (ou a recusa com testemunhas) — ou devolve para a obra, com o porquê."""
+    from .core import central_assinaturas
+    d = _corpo()
+    return _ok(**central_assinaturas.validar(_quem(), termo_id, aceitar=d.get("aceitar") is not False,
+                                             motivo=d.get("motivo") or ""))
+
+
+@bp.route("/erp/api/ponto/assinaturas-central/documentos/<int:termo_id>/cancelar", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_assinaturas_cancelar(termo_id: int):
+    from .core import central_assinaturas
+    central_assinaturas.cancelar(_quem(), termo_id, _corpo().get("motivo") or "")
+    return _ok()
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/assinaturas")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_assinaturas_da_pessoa(colaborador_id: int):
+    """A ficha: o que a pessoa assinou (com o documento) e o que falta (23/11/2026)."""
+    from .core import central_assinaturas
+    quem = _quem()
+    with db.conexao() as conn:
+        ocorrencias.exigir_pessoa_no_alcance(conn, quem, colaborador_id)
+        r = central_assinaturas.da_pessoa(conn, colaborador_id)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/ocorrencias/<int:ocorrencia_id>/cancelar-compensacao", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_cancelar_compensacao(ocorrencia_id: int):
+    """O DP cancela uma compensação já aprovada (23/11/2026); o termo aberto dela cai junto."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        o = ocorrencias.cancelar_compensacao(conn, ocorrencia_id, quem, d.get("motivo") or "")
     return _ok(ocorrencia=o)
 
 

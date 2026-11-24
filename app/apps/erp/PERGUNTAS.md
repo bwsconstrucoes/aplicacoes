@@ -364,7 +364,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Qual o % de ajustes da obra X (ou de fulano) este mês? 🔒 ⚠️ (Qualidade › coluna "% de ajustes"; "% de ajustes" = batidas que entraram por pedido de ajuste ÷ todas as batidas válidas do mês — NÃO é o número de pedidos, um pedido pode incluir várias batidas; a incluída em lote pela gestão não conta; "este mês" = mês do calendário até ontem)
 - Quais as 10 melhores obras e os 20 melhores funcionários do ponto no mês? 🔒 (Qualidade › "Mensagem para o WhatsApp"; só quem entra no ranking: obra com 10 funcionários ou mais, funcionário com 10 dias de trabalho ou mais; muda conforme as obras de quem pergunta)
 - Quanto a declaração de comparecimento do Fulano abonou? 🔒 (o dia mostra: "o dia todo", "só o período" — só a parte dentro do expediente, desde 30/10/2026 —, "Xh abonadas" ou "não abonada"; Relatórios › Ausências justificadas, coluna "Horas abonadas")
-- Quais compensações ainda estão a cumprir, e quais não foram cumpridas? 🔒 (a cumprir: aba Conferência do fechamento e o espelho; não cumpridas: o aviso "compensação não cumprida" no espelho, no Quadro e nos alertas — a folga vira falta ou falta parcial; desde 30/10/2026; ❌ ainda não há uma lista só das compensações)
+- Quais compensações ainda estão a cumprir, e quais não foram cumpridas? 🔒 (a cumprir: aba Conferência do fechamento e o espelho; não cumpridas: o aviso "compensação não cumprida" no espelho, no Quadro e nos alertas — a folga vira falta ou falta parcial quando o dia trabalhado veio ANTES dela; quando vem DEPOIS, a falta cai no dia trabalhado (desde 21/11/2026); desde 30/10/2026; ❌ ainda não há uma lista só das compensações)
 - Que horas extras foram negadas na conferência, por quem e por quê? 🔒 (Fechamento › Horas extras por obra: riscadas; o motivo no passar do mouse; `ponto.horas_extras_negadas` — desde 29/10/2026, migração 019; ❌ ainda não há uma lista só das negadas)
 - O Fulano entra na conta de horas extras e faltas? ⚠️ (só quem é CTPS na coluna "Tipo" da planilha de colaboradores; prestador de serviço bate ponto, mas fica fora do fechamento e dos relatórios de Faltas, Horas extras e Banco — desde 29/10/2026)
 - Quem pediu o abono do Fulano, e quem aprovou? 🔒 (Validações e a janela da pessoa: o pedido guarda quem pediu — o supervisor no ERP, o responsável ou o administrativo no aplicativo, ou a própria pessoa — e cada etapa de aprovação; desde 29/10/2026 o abono é pedido como os outros pedidos)
@@ -407,6 +407,15 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Que batidas faltam ao Fulano entre tal e tal dia, pela escala? 🔒 (janela da pessoa › "📅 Completar o período pela escala" › "Ver o que vai entrar": a prévia dia a dia, sem gravar nada; até 31 dias; só quem trata o ponto; desde 13/11/2026)
 - Quantas batidas a gestão incluiu em lote para o Fulano? (ajustes com o motivo "incluída em lote pela gestão" — no espelho e nos pedidos da pessoa; ❌ ainda não há um relatório só dessas)
 - O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
+- O Fulano folgou no recesso e ainda vai pagar com sábado — onde isso aparece? 🔒 (no dia da folga: "Compensação (a pagar com o trabalho em DD/MM/AAAA)"; na folha de ponto do mês da folga, em "Observações — compensações", o combinado; enquanto o sábado não chega, a Conferência do fechamento avisa "ainda a cumprir"; desde 21/11/2026)
+- Quem não pagou o sábado da compensação? Que falta foi lançada por isso? 🔒 ⚠️ (desde 21/11/2026, na folga paga DEPOIS a falta cai NO SÁBADO, no mês dele — "Compensação não cumprida — este dia pagaria a folga de DD/MM/AAAA" —, e a folga continua folga no mês dela; o relatório de faltas mostra o motivo na coluna "Motivo"; se o sábado foi trabalhado em parte, é falta parcial do que faltou; "este mês" = o mês do sábado, não o da folga)
+- Quem ainda não assinou o termo de compensação? E o aviso prévio? 🔒 (ERP › Ponto › Assinaturas, "Documentos para assinar": cada documento do DP aberto, com o prazo e se venceu; desde 23/11/2026 o termo de compensação nasce sozinho da compensação de dia aprovada — um por pessoa por lançamento)
+- O que está esperando o DP validar? 🔒 (Ponto › Assinaturas, "Esperando o DP validar": o papel assinado por foto e a recusa com testemunhas — só valem depois de aceitos; o assinado na tela com o PIN vale sozinho)
+- Quem não assinou a folha de ponto do mês? 🔒 ⚠️ ("o mês" = o último mês FECHADO dos dois anteriores; Ponto › Assinaturas › Folha de ponto, por obra; ⚠️ conta quem tem assinatura guardada — uma folha assinada que mudou depois, com o mês reaberto, ainda aparece como assinada ali; o aplicativo de quem conduz refaz essa conta)
+- O que o Fulano já assinou? Me mostra o documento. 🔒 (a ficha › 📄 Documentos: os documentos do DP, as folhas de ponto assinadas e o termo do ponto, cada um com o PDF; a folha que falta não aparece ali)
+- A compensação já vale antes de o termo ser assinado? (sim — decisão do dono, 23/11/2026: o lançamento vale; o termo é cobrança; havendo discordância, o DP cancela a compensação em Ponto › Assinaturas e o termo cai junto)
+- Quem está no recesso de fim de ano, e com que sábados paga cada folga? 🔒 (os pedidos de compensação cuja descrição começa com "Recesso" — lançados pelo Quadro › "Recesso — folgas a compensar…", um por pessoa e por dia de folga; desde 22/11/2026; ❌ ainda não há uma lista só do recesso: hoje é pela Validação/pedidos de cada pessoa ou pelo espelho)
+- A pessoa assinou que ia compensar? 🔒 (a folha de ponto assinada tem as observações de compensação junto: a do mês da folga diz o combinado, a do mês do sábado diz se foi cumprido; desde 21/11/2026 elas entram no lacre da folha — ❌ isso NÃO é o acordo escrito que a lei pede para compensar fora do mês: o sistema não guarda esse acordo)
 - Que rondas foram feitas sem foto, e de quem? (Alertas › Tipo "Ronda registrada sem foto", um por ronda, com o motivo; e nas telas Rondas / Quadro › Rondas o chip "· sem foto"; desde 17/11/2026; a localização sempre foi gravada)
 - Quais alertas do mês passado ainda estão abertos? (Alertas › Período "Mês anterior", Situação "Abertos"; "mês passado" = o DIA do alerta no mês anterior, não o dia em que o alerta foi criado; desde 10/11/2026)
 - Quantos alertas a obra X tem abertos? (Alertas › filtro "Obra", com a contagem de cada; muda com o período, o tipo e a gravidade escolhidos, e com as obras de quem pergunta)
@@ -2237,6 +2246,30 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
 - Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
   do dono (só colaborador com telefone).
 
+### Acrescentadas em 23/11/2026 (telefone sem DDD e o ID editável na ficha)
+- Qual é o ID do Telegram de fulano? Desde quando? Foi informado à mão na
+  ficha ou veio do robô? (ficha da pessoa › Telegram e mensagens; origem
+  `FICHA` = à mão)
+- Quem trocou o ID do Telegram de fulano, e qual era o anterior? (a
+  observação do cadastro guarda quem, a conta do Telegram e o ID antigo; o log
+  do servidor também)
+- Quem recebe pelo Telegram mas está com o telefone sem DDD no cadastro?
+  (Cadastro do Telegram, veredito "Recebe (número diferente)" + telefone
+  curto) — ⚠️ é a lista que o DP precisa completar.
+- Quem ficou de fora da migração da planilha, e por quê? (relatório da
+  migração, "Fora do ERP"; a tabela só passou a aparecer em 23/11 — antes
+  lia chaves erradas)
+- Quantas pessoas voltaram ao "Migrar de novo"? (o aviso da tela e o
+  relatório: "entraram agora" × "já estavam")
+- Que mensagens saíram para fulano (pelo nome)? (aba Enviadas, busca pelo
+  nome — o nome vem do cadastro pelo CPF, telefone ou ID do Telegram; número
+  que não é de ninguém do ERP aparece sem nome)
+
+### ⚠️ Palavra que mudou de sentido em 23/11
+- **"telefone bate"**: com DDD, o número inteiro (com ou sem 55 e o nono
+  dígito). SEM DDD no cadastro, o final do número confirmado pelo Telegram —
+  e de uma pessoa só. Duas pessoas com o mesmo final = ninguém.
+
 ## 3z-quinquies. O PEDIDO QUE SE AJUSTA AO CASO, E O ATESTADO LONGO (15/11/2026)
 
 Seis decisões dele num pedido só: desligamento único, readmissão detectada pelo
@@ -3161,4 +3194,161 @@ consulta inventada vai sendo usado cada vez menos.
   natureza acidente e o pedido à contabilidade de cada um.
 - **AINDA NÃO:** "quanto o INSS está pagando" e "quando as férias de quem
   ficou afastado reiniciam" — é a contabilidade (Fortes), por decisão dele.
+
+
+
+## 3ad. MATERIAL PEDIDO QUE ESPERA O CADASTRO DO INSUMO (23/11/2026)
+
+Sem pergunta escrita no assistente; responde-se pelo portal (Em andamento) e
+por Suprimentos › Configurações.
+
+- "Quais pedidos estão parados esperando cadastro de insumo?" —
+  `suprimento_itens_esperando_insumo` sem `item_id` e sem recusa. ⚠ muda
+  conforme quem pergunta (recorte por obra).
+- "Há quanto tempo o material tal espera o cadastro?" — da criação da linha.
+- "Que cadastro de insumo foi recusado, e por quê?" — `recusado_motivo`.
+- ⚠ PALAVRA AMBÍGUA: "quanto a obra pediu de X" — o que espera cadastro AINDA
+  NÃO É item do pedido, e não entra na soma do que foi solicitado. A resposta
+  tem de dizer isso.
+
+## 3ac. O OK DA ENGENHARIA NO PEDIDO DA OBRA (22/11/2026)
+
+Sem pergunta escrita no assistente ainda; responde-se pela tela de Solicitações.
+
+- "O que está esperando liberação da engenharia?" — itens com `liberacao =
+  'PENDENTE'`. ⚠ muda conforme quem pergunta (recorte por obra).
+- "Quem liberou a compra do material tal, e quando?" — `liberado_por`,
+  `liberado_em` do item.
+- "O que a engenharia não liberou este mês, e por quê?" — itens cancelados com
+  o evento `LIBERACAO_RECUSADA`; o motivo está no evento e na observação.
+- "Há quanto tempo o pedido da obra X espera o ok?" — da criação do item até
+  hoje, enquanto pendente.
+- **AINDA NÃO RESPONDE:** "a obra está comprando mais do que o contrato
+  prevê?" Falta o quantitativo previsto de material por obra — adiado pelo
+  dono para quando a parte de engenharia for trabalhada. O assistente deve
+  dizer que não há previsto para comparar.
+
+## 3ab. COMPRA POR FORA REGISTRADA E PREVISÃO DO QUE NEM FOI COTADO (21/11/2026)
+
+Ainda **sem pergunta escrita no assistente**; hoje se responde pela tela
+(Suprimentos › Painel e Suprimentos › Projeção de pagamentos).
+
+- "Quanto a obra X comprou por fora do suprimento este mês?" — ⚠ muda conforme
+  quem pergunta (escopo por obra). ⚠ "este mês": do lançamento, não da compra.
+  Sai de `compras_fora_do_fluxo` + rateio do título.
+- "Quais compras por fora ainda estão sem o material registrado?" — as linhas
+  com `pedido_id` vazio. "E sem ciência?" — `autorizado_em` vazio.
+- "O que o engenheiro comprou naquela nota?" — depois do registro tardio, os
+  itens estão no pedido de regularização ligado ao título.
+- "Quanto vou gastar com material nos próximos meses?" — ⚠ PALAVRA AMBÍGUA:
+  "vou gastar" soma quatro certezas diferentes (comprado, a autorizar, em
+  cotação, solicitado). A resposta tem de dizer cada parcela, nunca um número só.
+- "Quanto vale o que a obra pediu e ainda não foi cotado?" — o grau
+  SOLICITADO, pelo último preço conhecido.
+- **AINDA NÃO RESPONDE:** o valor do que foi solicitado e **nunca foi comprado
+  antes** (sem preço anterior). Falta: importar o histórico de preços da
+  planilha, ou um preço de referência no cadastro do insumo. O assistente deve
+  dizer quantos itens ficaram de fora — a Projeção já conta.
+- "De qual pedido é a nota tal?" — `pedido_titulos`. Nota declarada como "não
+  é de nenhum pedido" tem o evento `NOTA_DECLARADA_SEM_PEDIDO` no título.
+
+## 3aa. O CICLO DA COMPRA: entrega, nota e pagamento cruzados (20/11/2026)
+
+Nasceram com o painel **Acompanhar compras**, a **Projeção de pagamentos** e a
+tela **Receber material**. As respostas saem de `core/suprimentos/acompanhamento.py`
+e `core/suprimentos/projecao.py` — ainda **sem pergunta escrita no assistente**;
+hoje se responde pela tela.
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Quais pedidos estão com a entrega atrasada? | `acompanhamento.painel`, ciclo `ENTREGA_ATRASADA` | depende de o pedido ter previsão de entrega |
+| O que chegou incompleto e está pendente com o fornecedor? | `painel` → `pendentes` | só conta pedido com ao menos um recebimento |
+| Quanto de material já chegou e ainda não tem nota lançada? | `painel` → `destaques.recebido_sem_nota` | ⚠ "nota lançada" = nota VINCULADA ao pedido em Financeiro › Notas, não o número digitado no recebimento |
+| Esse pedido já foi pago? | `painel` → `pagamento` | o caminho é pedido → nota vinculada → título com aquela nota; título lançado sem a nota não é enxergado |
+| Quais pedidos já fecharam o ciclo? | ciclo `FECHADO` | fechado = entregue inteiro + nota + pago |
+| Quanto as compras vão custar em dezembro? | `projecao.projetar` → `meses` | ⚠ palavra ambígua: **"vão custar"** tem três graus (comprado, a autorizar, em cotação) — dizer qual; e NÃO inclui o que já virou título |
+| O que já deveria ter virado conta a pagar e não virou? | `projetar` → `vencido_sem_conta` | parcela prevista com data vencida e sem título |
+| O que tem para chegar na minha obra? | `recebimento.a_receber` | **muda conforme quem pergunta** (obras da pessoa) |
+
+**Mudam conforme quem pergunta** (recorte por obra, `obras_de_registro_sem_autor`):
+todas as desta seção.
+
+**O que o sistema AINDA NÃO responde, e o que falta:**
+
+- *"Quanto tempo leva entre pedir e receber?"* — as datas existem (solicitação,
+  pedido, recebimento); falta a soma escrita.
+- *"O fornecedor X costuma entregar incompleto?"* — o dado nasce agora com os
+  recebimentos parciais; `desempenho.py` ainda não o lê.
+- *"Esta nota confere com o pedido item a item?"* — o cruzamento é por valor
+  total; não há conferência item a item da nota.
+- *"Quanto está previsto para pagar no total (compras + o resto)?"* — a
+  projeção de compras e o contas a pagar são telas separadas; falta a visão
+  somada no Financeiro.
+
+**Acrescentadas em 20/11/2026 (2ª rodada), com o Painel de suprimentos**
+(`acompanhamento.planejamento`):
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| O que já deveria ter chegado e não chegou? | prazo `ATRASADO` | ⚠ **"atrasado"** tem dois sentidos: a data que a OBRA pediu passou (`ATRASADO`) ou a data que o FORNECEDOR prometeu passou (`FORNECEDOR`). Dizer qual |
+| O que é prioridade alta e está em risco? | filtro prioridade + prazo | "em risco" = faltam 7 dias ou menos e sem pedido autorizado |
+| O que vai chegar depois do que a obra precisa? | prazo `VAI_ATRASAR` | compara a data do pedido de compra com a da solicitação |
+| O que ainda está sem cotação? | etapa `SEM_COTACAO` | muda conforme quem pergunta (obras da pessoa) |
+
+**Ainda NÃO responde:** *"vai dar tempo de comprar isto?"* — falta o prazo de
+entrega típico por tipo de insumo, que o sistema não tem.
+
+**Acrescentadas em 20/11/2026 (3ª rodada):**
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Esse pedido já tem conta a pagar lançada? Qual? | `acompanhamento.painel` → `pagamento.titulos` | agora enxerga o título lançado a partir do recebimento (`pedido_titulos`), além do que veio pela nota vinculada |
+| Quanto falta lançar deste pedido? | `lancamento.preparar` → `valor` | é o valor do que CHEGOU e ainda não virou conta — não o saldo do pedido |
+| De qual pedido de compra é esta conta a pagar? | `pedido_titulos` | só para título lançado pelo caminho do recebimento |
+| O que tem para chegar na minha obra? E o que ainda está em cotação? | `recebimento.a_receber` + `acompanhamento.planejamento` | muda conforme quem pergunta |
+| Para quem a cobrança da cotação foi mandada, e por qual canal? | retorno de `cobranca.cobrar` (`canais`) | ⚠ o WhatsApp NÃO fica registrado em `envios_email`; só o e-mail guarda o texto |
+
+**Ainda NÃO responde:** *"quais propostas chegaram e ninguém leu?"* — o sistema
+não lê a caixa de e-mail; a proposta só existe para ele depois de jogada no mapa.
+
+**Acrescentadas em 21/11/2026:**
+
+| Como o dono perguntaria | De onde sai | Atenção |
+|---|---|---|
+| Quanto a gente economizou cotando? | `relatorios.gerar("ECONOMIA")` | ⚠ **"economia"** = contra a MÉDIA do mapa (há também contra o maior preço). Só itens; sem frete |
+| Esse material subiu de preço? | `relatorios.gerar("HISTORICO")` | compara o mesmo INSUMO, sem olhar especificação nem inflação |
+| Qual fornecedor mais atrasa? Quem entrega incompleto? | `relatorios.gerar("FORNECEDOR")` | o atraso é medido pelo recebimento que a OBRA registra |
+| Quantos dias leva do pedido da obra até chegar? | `relatorios.gerar("CICLO")` | só o que já chegou por inteiro |
+| Tem compra feita sem pedido esperando autorização? | `fora_do_fluxo.listar` | só existe com a regra ligada |
+| Quem autorizou essa compra por fora, e por quê? | `compras_fora_do_fluxo` + evento `COMPRA_FORA_DO_FLUXO_AUTORIZADA` | |
+| Por que esse recebimento não teve conta lançada? | `recebimentos.observacoes` ("SEM LANÇAMENTO NO RECEBIMENTO: …") | |
+
+**Ainda NÃO responde:** *"a obra gastou mais do que o previsto em material?"* —
+não há orçamento de material por obra no ERP.
+
+## Atendimento do desligamento: datas e faltas sugeridas (23/11/2026)
+
+- Quantas faltas a pessoa tem desde o último fechamento do ponto? *(conta do
+  dia seguinte ao corte; "falta" = dia inteiro sem justificativa — horas a
+  menos são outra pergunta)*
+- Qual o último dia e a data de saída de quem recebe aviso hoje? *(depende da
+  forma: trabalhado, indenizado, pedido de demissão, fim de experiência)*
+- Quantos dias de aviso essa pessoa tem? *(30 + 3 por ano completo, até 90 —
+  só quando a empresa dispensa; no pedido de demissão, sempre 30)*
+- A data que o DP gravou bate com a conta? *(a análise do pedido aponta a
+  diferença)*
+- **Ainda não sabe:** se o contrato de experiência tem cláusula de rescisão
+  antecipada (art. 481) — o sistema não guarda isso.
+
+## Convenções e quem está nelas (23/11/2026)
+
+- Quantas pessoas estão em cada convenção? *(ativas = não desligadas;
+  afastado conta)* — **muda conforme quem pergunta**: precisa de
+  `editar_colaboradores`.
+- Tem convenção cadastrada sem ninguém?
+- Quais convenções estão sem mês da data-base? *(sem ele, o alerta de demitir
+  nos 30 dias antes não funciona)*
+- Quantos cargos de cada convenção estão sem piso?
+- **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
+  mês da data-base é guardado.
 

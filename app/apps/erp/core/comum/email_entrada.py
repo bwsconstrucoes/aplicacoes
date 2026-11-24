@@ -367,6 +367,15 @@ def _uma_mensagem(s: Session, caixa, num: bytes, rel: dict[str, Any],
                       "WHERE message_id = :m"), {"m": mid}).first():
         rel["repetidas"] += 1
         return
+    # ⚑ A CÓPIA DO QUE O PRÓPRIO ERP MANDOU NÃO É RESPOSTA (23/11/2026). Desde
+    # que o envio guarda cópia em "Enviados", uma caixa mal apontada (ou um
+    # provedor que joga o enviado na entrada) traria o nosso e-mail de volta —
+    # com a marca do pedido no assunto — e ele seria lido como o retorno da
+    # contabilidade.
+    if s.execute(text("SELECT 1 FROM envios_email WHERE message_id = :m"),
+                 {"m": mid}).first():
+        rel["repetidas"] += 1
+        return
 
     corpo = _corpo_em_texto(msg)
     anexos = _anexos(msg)

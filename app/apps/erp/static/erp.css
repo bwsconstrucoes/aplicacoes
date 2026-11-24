@@ -1218,3 +1218,54 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .achado-diario small { display: block; color: var(--cinza); font-size: 11.5px; }
 .achado-diario small.onde { margin-top: 3px; color: var(--tinta); }
 .achado-diario small.onde i { color: var(--cinza); font-style: normal; }
+
+
+/* ---------------------------------------------------------------------------
+   O MAPA DE COTAÇÃO NO FORMATO DA PLANILHA, E EM TELA CHEIA (20/11/2026)
+   Pedido do dono: cotação com 30, 40 insumos e 5, 6 fornecedores não cabe num
+   quadro pequeno — "tem que ter um modal que expanda na tela, para facilitar a
+   visualização e o preenchimento".
+   --------------------------------------------------------------------------- */
+.rolagem-mapa { overflow: auto; max-height: 68vh; border: 1px solid var(--borda); border-radius: var(--raio-p); }
+.mapa.planilha { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; }
+.mapa.planilha th, .mapa.planilha td { border-right: 1px solid var(--borda); border-bottom: 1px solid var(--borda); }
+.mapa.planilha thead { position: sticky; top: 0; z-index: 4; }
+.mapa.planilha thead th { background: #EEF2F8; font-size: 11px; padding: 3px 6px; }
+.mapa.planilha tr.cab-forn th { text-align: center; font-weight: 500; }
+.mapa.planilha tr.cab-forn th.rot { text-align: right; font-weight: 700; color: var(--tinta-suave);
+  text-transform: uppercase; letter-spacing: .04em; font-size: 10px; position: sticky; left: 0; z-index: 5; }
+.mapa.planilha tr.cab-forn.total th { background: #E3EAF5; font-size: 12.5px; }
+.mapa.planilha .nome-forn { font-weight: 700; font-size: 11.5px; max-width: 170px; margin: 0 auto;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.mapa.planilha tr.cab-itens th { background: #DDE5F1; }
+.mapa.planilha td.fixa, .mapa.planilha th.fixa { position: sticky; z-index: 2; background: #fff; }
+.mapa.planilha thead th.fixa { z-index: 5; background: #DDE5F1; }
+.mapa.planilha tbody tr:nth-child(even) td.fixa { background: #FAFBFD; }
+.mapa.planilha td.fixa:nth-child(1), .mapa.planilha th.fixa:nth-child(1) { left: 0; min-width: 62px; max-width: 62px; }
+.mapa.planilha td.fixa:nth-child(2), .mapa.planilha th.fixa:nth-child(2) { left: 62px; min-width: 28px; max-width: 28px; }
+.mapa.planilha td.fixa:nth-child(3), .mapa.planilha th.fixa:nth-child(3) { left: 90px; min-width: 250px; max-width: 300px;
+  box-shadow: 2px 0 0 var(--borda-forte); }
+.mapa.planilha td.subtotal { color: var(--tinta-suave); min-width: 74px; }
+.mapa.planilha td.sem-preco { background: #FBECEA; }
+.mapa.planilha .cel { width: 78px; }
+.rodape-mapa { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-top: 10px; }
+.rodape-mapa div { background: #F4F7FB; border-radius: var(--raio-p); padding: 8px 10px; }
+.rodape-mapa div.alerta { background: #FBECEA; }
+.rodape-mapa span { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--tinta-suave); font-weight: 600; }
+.rodape-mapa b { font-family: var(--fonte-dados); font-size: 17px; }
+.rodape-mapa small { display: block; color: var(--tinta-suave); font-size: 11px; }
+.barra-mapa { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.solta-proposta { border: 2px dashed var(--borda-forte); border-radius: var(--raio-p); padding: 10px 12px;
+  margin-bottom: 10px; font-size: 13px; background: #FAFBFD; }
+.solta-proposta small { display: block; color: var(--tinta-suave); margin-top: 2px; }
+.solta-proposta.sobre { border-color: var(--azul); background: #EAF1FB; }
+/* Tela cheia: o cartão do mapa cobre tudo, e a barra de botões fica presa embaixo. */
+#cartao-mapa.cheio { position: fixed; inset: 0; z-index: 900; margin: 0; border-radius: 0;
+  display: flex; flex-direction: column; padding: 12px 16px; overflow: hidden; }
+#cartao-mapa.cheio .rolagem-mapa { flex: 1 1 auto; max-height: none; min-height: 0; }
+#cartao-mapa.cheio .cartao-dica { display: none; }
+body.com-mapa-cheio { overflow: hidden; }
+/* Os diálogos desta tela (relatórios, fechar pedido, disparo) trabalham com
+   tabela larga: ocupam quase a tela toda. */
+dialog.largo { width: min(1500px, 97vw); }
+dialog.largo .dlg-corpo { max-height: 86vh; }

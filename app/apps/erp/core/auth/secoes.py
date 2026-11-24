@@ -220,15 +220,27 @@ SECOES: list[dict[str, Any]] = [
                    "aplicativo do ponto",
      "ler": [], "editar": ["liberar_acesso_portal"]},
     # --------------------------------------------------------- Suprimentos
-    {"chave": "sup_solicitar", "area": "Suprimentos", "nome": "Solicitações de material",
-     "explicacao": "pedir material para a obra",
-     "ler": ["ver_suprimentos"], "editar": ["solicitar_suprimento"]},
+    # ⚑ RECEBER MATERIAL ENTROU AQUI (20/11/2026), e não numa seção própria:
+    # quem pede material para a obra é quem confere quando ele chega. Seção
+    # nova exigiria mexer nos perfis já gravados de todo mundo; assim, quem já
+    # "mexe" em Solicitações passa a receber, sem ninguém ganhar nem perder
+    # mais nada — há teste comparando cada perfil pronto com o cargo.
+    {"chave": "sup_solicitar", "area": "Suprimentos",
+     "nome": "Solicitações e recebimento de material",
+     "explicacao": "pedir material para a obra e registrar o que chegou",
+     "ler": ["ver_suprimentos"],
+     "editar": ["solicitar_suprimento", "receber_material"]},
+    {"chave": "sup_liberar", "area": "Suprimentos", "nome": "Liberação do pedido da obra",
+     "explicacao": "dar o ok da engenharia no material pedido pela obra e a ciência na compra feita por fora",
+     "ler": ["ver_suprimentos"],
+     "editar": ["liberar_solicitacao", "autorizar_compra_fora_do_fluxo"]},
     {"chave": "sup_comprar", "area": "Suprimentos", "nome": "Cotações e pedidos",
      "explicacao": "cotar, fechar pedido e acompanhar a fila",
      "ler": ["ver_suprimentos", "ver_pedidos_compra"], "editar": ["comprar"]},
     {"chave": "sup_autorizar", "area": "Suprimentos", "nome": "Autorização de pedido",
      "explicacao": "liberar o pedido de compra fechado",
-     "ler": ["ver_pedidos_compra"], "editar": ["autorizar_pedido"]},
+     "ler": ["ver_pedidos_compra"],
+     "editar": ["autorizar_pedido", "autorizar_compra_fora_do_fluxo"]},
     {"chave": "sup_locacoes", "area": "Suprimentos", "nome": "Locações",
      "explicacao": "equipamentos locados, parcelas e a conferência mensal",
      "ler": ["ver_locacoes"], "editar": []},
