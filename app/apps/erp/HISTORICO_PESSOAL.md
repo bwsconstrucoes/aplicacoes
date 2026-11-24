@@ -141,6 +141,79 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 (5) — Aba "Operador" na ficha da pessoa, com o MESMO formulário
+
+**Ele:**
+
+> *"Quando eu entro no cadastro de um colaborador em pessoal, eu queria ter
+> acesso à parte de operadores, para editar o cadastro dele, ou seja, ter a
+> aba lá, operadores (…) da mesma forma que tem lá cadastro, ponto,
+> mensagens, aí ter operador, aí clicar e abrir o cadastro operador. **Mas sem
+> fechar o modal inicial**, permitindo voltar para ver as outras configurações
+> da pessoa."*
+
+**O que mudou:** a ficha da pessoa ganhou a aba **Operador**, ao lado de
+Resumo, Ponto, Pagamentos, Documentos e Mensagens. Ela abre o cadastro de
+operador inteiro — perfil, perfis acrescentados, obras, cargo, fundo fixo,
+senha, situação — **dentro da ficha**. Salvar **não fecha nada**: o aviso
+aparece ali e dá para voltar para as outras abas.
+
+**Só para quem gere operadores.** É a mesma alçada que a tela de
+Configurações exige; não pode ser menor só porque o caminho é outro.
+
+#### ⚑ A DECISÃO QUE IMPORTA: é o MESMO formulário, não uma cópia
+
+O formulário morava dentro do `erp_config.html` (470 linhas). Copiá-lo daria
+**duas telas de cadastro de operador**, e no primeiro ajuste uma ficaria para
+trás — a regra dele de 17/11 ("um cadastro, uma porta") e a mesma lição da
+tela de fases que nasceu e morreu em 24/11.
+
+Então ele saiu para **`erp_operador_form.html`**, e as duas telas fazem
+`{% include %}` do mesmo arquivo. Ganhou dois parâmetros:
+
+- `alvo` — onde desenhar (sem ele, a janela de Configurações, como sempre);
+- `aoSalvar` — o que fazer depois (antes chamava `carregarOperadores()`
+  direto, função que só existe numa das telas: seria "is not defined" na
+  outra).
+
+**Há teste travando isso** (`test_o_formulario_do_operador_mora_num_lugar_so`):
+ele acusa se alguém declarar `formOperador` fora do arquivo compartilhado, ou
+se uma das duas telas deixar de incluí-lo.
+
+#### A aba NÃO vira uma segunda porta para criar acesso
+
+Pessoa sem operador ligado vê um recado explicando e um botão para o cadastro
+completo — **liberar acesso continua sendo só na aba Endereço**, onde está o
+e-mail que vira o login. Duas portas para criar acesso é exatamente o que ele
+cobrou em 17/11.
+
+#### Dois consertos que vieram de arrasto
+
+1. **A ficha não sabia se a pessoa tem acesso.** O `usuario_id` não vinha no
+   que a ficha carrega, então a aba achava que ninguém tinha operador.
+   Achado dirigindo a tela, não por teste.
+2. **As vigias de tela não enxergavam `{% include %}`.** Elas liam o arquivo
+   cru, então o formulário incluído era invisível para elas e toda vigia
+   acusava "chama função que não existe". Agora resolvem o include **no
+   lugar** — importa que seja no lugar, e não no fim: o include fica DENTRO
+   de um `<script>`, e jogado no fim cairia fora de qualquer bloco.
+
+**Arquivos compartilhados mexidos** (importa para quem roda outro chat do
+ERP): `erp_config.html`, `tests/test_telas_javascript.py` e
+`core/pessoal.py`. Nasceu `templates/erp_operador_form.html`.
+
+⚑ **A junção com a `main` teve de ser feita à mão, e isto vai acontecer de
+novo:** enquanto este formulário mudava de lugar, dois commits da `main` (a
+entrada (3) e a (4), logo abaixo) mexiam DENTRO dele — "cargo base", "a obra
+do ponto + as marcadas", "confere equipamentos" e a lista de obras que volta a
+aparecer. O Git não tinha como casar as duas coisas: um lado trocou 504 linhas
+por um `include`, o outro editou aquelas 504 linhas. As quatro mudanças deles
+foram levadas para dentro de `erp_operador_form.html` uma a uma, com os
+comentários que explicam cada decisão. **Quem for mexer no cadastro do
+operador agora mexe num arquivo só** — era justamente esse o ganho.
+
+---
+
 ### 24/11/2026 (4) — Toda lista de caixinhas longa ganha busca; "responde" vira "confere equipamentos"; "a obra do ponto + as marcadas"
 
 Ele: *"isso aí já é básico e já é para estar assim, nas regras gerais do

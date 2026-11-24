@@ -243,6 +243,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
+{# O cadastro de operador, o MESMO que a tela de Configurações usa. Ver o
+   cabeçalho daquele arquivo: copiar daria duas telas que divergem.
+
+   ⚠️ DENTRO do `<script>`, e não antes dele: o arquivo incluído é JavaScript
+   puro, sem marcação. Fora daqui o navegador o leria como texto da página. #}
+{% include "erp_operador_form.html" %}
 // A área de jogar documento exige DUAS coisas: poder arquivar e enxergar
 // documento de pessoa (sigilo PESSOAL). Quem só tem a primeira arquivaria um
 // ASO que não conseguiria abrir depois.
@@ -271,6 +277,11 @@ const PODE_VER_PONTO = {{ 'true' if pode.ver_ponto else 'false' }};
 const PODE_PEDIR_CT = {{ 'true' if pode.pedir_contabilidade else 'false' }};
 const PODE_VER_MENSAGENS = {{ 'true' if pode.ver_mensagens else 'false' }};
 let COL = [], OBRAS = [], FUNCOES = [], ETAPAS = [], CARGOS = [], CONVENCOES = [];
+// O que o formulário compartilhado do operador espera achar na página. Ficam
+// vazios até alguém abrir a aba Operador — ver `carregarApoioDoOperador`.
+let OPERADORES = [], PERFIS = [], PERFIS_CADASTRADOS = [],
+    PROJETOS_CAD = [], EMPRESAS_CAD = [],
+    DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 
 {# ⚑ ESTA TELA DENTRO DE OUTRA (17/11/2026) — ver o motivo em
    `routes.py` › pagina_colaborador_embutido e o estilo em `erp_base.html`.
@@ -1086,6 +1097,17 @@ async function ficha(id, aba){
         <button class="subaba" data-fp="pagamentos">Pagamentos</button>
         <button class="subaba" data-fp="documentos">Documentos</button>
         ${PODE_VER_MENSAGENS ? `<button class="subaba" data-fp="mensagens">Telegram e mensagens</button>` : ""}
+        {# ⚑ A ABA DO OPERADOR (24/11/2026). Ele: *"quando eu entro no
+           cadastro de um colaborador em pessoal, eu queria ter acesso à parte
+           de operadores, para editar o cadastro dele (…) da mesma forma que
+           tem lá cadastro, ponto, mensagens (…) mas sem fechar o modal
+           inicial, permitindo voltar para ver as outras configurações da
+           pessoa."*
+
+           Só para quem gere operadores: é a mesma alçada que a tela de
+           Configurações exige, e aqui não pode ser menor só porque o caminho
+           é outro. #}
+        ${LIBERA_ACESSO ? `<button class="subaba" data-fp="operador">Operador</button>` : ""}
       </div>
       <div id="fp-painel"></div>`;
     els("fp-abas").querySelectorAll("[data-fp]").forEach(b =>
@@ -1154,7 +1176,85 @@ function painelDaPessoa(){
   if (ABA_FICHA_PESSOA === "ponto") return pintarPontoDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "pagamentos") return pintarPagamentosDaPessoa(alvo);
   if (ABA_FICHA_PESSOA === "mensagens") return mensagensDaPessoa(alvo, FICHA_ID);
+  if (ABA_FICHA_PESSOA === "operador") return pintarOperadorDaPessoa(alvo);
   return pintarDocumentosDaPessoa(alvo);
+}
+
+// ===========================================================================
+// A ABA DO OPERADOR — o cadastro de acesso, dentro da ficha da pessoa
+//
+// ⚑ É O MESMO FORMULÁRIO DA TELA DE CONFIGURAÇÕES, não uma cópia: ele mora
+// em `erp_operador_form.html` e as duas telas incluem o mesmo arquivo. Copiar
+// daria duas telas de cadastro de operador, e no primeiro ajuste uma ficaria
+// para trás — é a regra dele de 17/11, "um cadastro, uma porta".
+//
+// ⚠️ A JANELA DA FICHA NÃO FECHA ao salvar. Ele pediu com todas as letras:
+// *"sem fechar o modal inicial, permitindo voltar para ver as outras
+// configurações da pessoa."*
+//
+// CUSTO DE REDE: duas idas ao servidor, e só na PRIMEIRA vez que a aba é
+// aberta na sessão (a lista de operadores com perfis/projetos/empresas, e os
+// dados de configuração com obras e categorias). Depois ficam na página.
+// Quem nunca abre a aba não paga nada.
+// ===========================================================================
+let OP_CARREGADO = false;
+
+async function carregarApoioDoOperador(){
+  if (OP_CARREGADO) return true;
+  const [u, cfg] = await Promise.all([
+    api("/erp/api/usuarios"), api("/erp/api/config")]);
+  OPERADORES = u.usuarios || [];
+  PERFIS = u.perfis || [];
+  PERFIS_CADASTRADOS = u.perfis_cadastrados || [];
+  PROJETOS_CAD = u.projetos_cadastrados || [];
+  EMPRESAS_CAD = u.empresas_cadastradas || [];
+  DADOS = cfg.dados || DADOS;
+  OP_CARREGADO = true;
+  return true;
+}
+
+async function pintarOperadorDaPessoa(alvo){
+  const c = (FICHA_H || {}).colaborador || {};
+  if (!c.usuario_id) {
+    // Sem acesso ainda: a aba NÃO vira um segundo jeito de criar operador.
+    // Liberar acesso já tem porta — na aba Endereço, onde está o e-mail que
+    // vira o login. Duas portas para criar acesso é o que ele cobrou em
+    // 17/11.
+    alvo.innerHTML = `<div class="cartao" style="margin-top:12px">
+      <h4 style="margin-top:0">Sem acesso ao sistema</h4>
+      <p class="cartao-dica">${escapar(c.nome || "Esta pessoa")} ainda não
+        entra no sistema — é só cadastro de quem trabalha.</p>
+      <p class="cartao-dica">Para liberar, abra <b>o cadastro completo</b> e
+        vá na aba <b>Endereço</b>: é lá que fica o e-mail, que vira o login.
+        Depois de liberado, o cadastro de operador aparece aqui.</p>
+      <button class="btn secundario" id="op-ir-cadastro">Abrir o cadastro completo</button>
+    </div>`;
+    const b = els("op-ir-cadastro");
+    if (b) b.addEventListener("click", () => abrirFichaCompleta(FICHA_ID));
+    return;
+  }
+  alvo.innerHTML = `<div class="cartao-dica" style="margin-top:12px">Carregando…</div>`;
+  try {
+    await carregarApoioDoOperador();
+  } catch(e){
+    alvo.innerHTML = `<div class="aviso erro" style="margin-top:12px">
+      Não consegui abrir o cadastro de operador: ${escapar(e.message)}</div>`;
+    return;
+  }
+  const u = OPERADORES.find(x => x.id === c.usuario_id);
+  if (!u) {
+    alvo.innerHTML = `<div class="aviso alerta" style="margin-top:12px">
+      O acesso ligado a esta pessoa não aparece na lista de operadores —
+      pode ter sido apagado. Abra Configurações › Usuários para conferir.</div>`;
+    return;
+  }
+  alvo.innerHTML = `<div id="fp-operador" style="margin-top:12px"></div>`;
+  formOperador(u, {
+    alvo: "fp-operador",
+    // Salvou: recarrega a lista de operadores (para a aba refletir o que
+    // mudou) e FICA na ficha.
+    aoSalvar: async () => { OP_CARREGADO = false; await carregarApoioDoOperador(); },
+  });
 }
 
 function pintarResumoDaPessoa(alvo){
