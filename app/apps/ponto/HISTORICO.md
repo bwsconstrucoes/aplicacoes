@@ -341,6 +341,23 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 24/11/2026 — Lentidão ao meio-dia: a busca pelo nome e a lista sem internet
+
+**O que ele mandou** (log do Render, 13h01–13h02, pico das batidas): `buscar-nome` levando 3,6 a 4,5 s, várias ao
+mesmo tempo; `lista-sem-internet` 10,9 s; e uma tela do Análise de SPs (`/analisesps/solicitacoes`) segurando uma das
+4 linhas por 40,8 s.
+
+**As contas, e o que foi feito:**
+- **A busca pelo nome** buscava as até 6 fotos **do Drive, uma depois da outra** — e cada ida ao Drive refaz a
+  credencial do Google (`erp/core/documentos/drive.py`, `_servico` monta tudo de novo a cada chamada). 6 × ~0,7 s ≈
+  os 4 s. Agora as fotos que faltam na memória vêm **em paralelo** (`fotos.miniaturas`). E cada letra digitada
+  montava duas vezes a lista da empresa inteira e contava as batidas do mês da obra: agora o conjunto de quem pode
+  aparecer fica guardado **60 s** por obra do aparelho (`busca_nome._candidatos`).
+- **A lista sem internet** (cada aparelho baixa de 30 em 30 min) fazia **uma consulta por pessoa** da obra; agora é
+  uma só (`cadastros.colaboradores_por_ids`).
+- **Relatado, não mexido (outras áreas):** a credencial do Drive refeita a cada chamada vale para o ERP inteiro (todo
+  upload e download paga uma ida a mais ao Google); e os 40,8 s do Análise de SPs são da área deles.
+
 ## 23/11/2026 — A CENTRAL DE ASSINATURAS, pelo aplicativo do ponto (feita; ver a proposta logo abaixo)
 
 **As decisões dele (23/11):** (1) *"vamos concentrar o aplicativo do ponto para ser o caminho para a coleta dessas
