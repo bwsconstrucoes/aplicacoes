@@ -12244,22 +12244,42 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
-#### Leva 278 — DDA: o que é NOVO nesta colagem e o que SAIU do DDA (24/11/2026)
+#### Leva 278 — DDA: a base inteira na tela, o selo de pagamento, os novos e mais filtros (24/11/2026)
 
-- O dono, depois de testar: *"ele está gravando a informação? (…) A gente vai ficar
-  copiando e colando diariamente (…) o que já foi importado, ignora e apenas adiciona as
-  coisas novas. E é interessante até dar um que foi adicionado novo (…) cada vez que a
-  gente entrar nessa tela do DDA, aí vai estar atualizado (…) tem que ser dinâmico."*
-- **O que já era assim (leva 277), confirmado a ele:** grava um boleto por código de
-  barras; colar de novo não duplica (o conhecido só ganha "visto de novo"); o cruzamento
-  com as SPs é refeito a cada abertura da tela — SP lançada depois casa sozinha.
-- **Novo:** no alto da tela, "N novo(s) nesta colagem" (boleto cuja primeira colagem é a
-  última) e "N saíram do DDA desde a colagem anterior" (estavam na anterior e não nesta —
-  em geral, pagos). Os dois são clicáveis e filtram a lista (`recorte=novos|sairam`); cada
-  linha nova ganha a etiqueta "novo". Na primeira colagem não aparece (seria tudo novo).
-- Sem migração (as colunas `primeira_colagem`/`ultima_colagem` já existiam). Custo: +2
-  consultas leves ao banco por abertura.
-- Teste: `test_a_segunda_colagem_diz_o_que_e_NOVO_e_o_que_SAIU`.
+- O dono, depois de testar: *"ele está gravando a informação? (…) o que já foi importado,
+  ignora e apenas adiciona as coisas novas. E é interessante até dar um que foi adicionado
+  novo (…) tem que ser dinâmico e ir atualizando."* E em seguida: *"eu colei mais
+  informações. E as informações anteriores (…) não estão mais aparecendo (…) essa base de
+  boletos vai só crescendo (…) Eu quero ir sempre adicionando e atualizando o cruzamento."*
+- **A impressão dele estava certa.** Gravava tudo (um boleto por código de barras, sem
+  duplicar), mas a tela mostrava SÓ a última colagem — supus que cada colagem seria a
+  lista inteira do DDA. Ele cola em PEDAÇOS. Agora o padrão é **a base inteira**; "só a
+  última colagem" e "só os novos" viraram opção da lateral (grupo "Colagem"). O
+  cruzamento com as SPs é refeito a cada abertura — SP lançada depois casa sozinha.
+- **"Novo":** etiqueta no boleto que entrou na base com a última colagem, e a contagem no
+  alto ("6 boleto(s) lidos, dos quais N novos", clicável). Na primeira colagem não
+  aparece. Descartado no caminho: "saíram do DDA desde a colagem anterior" — com colagem em
+  pedaços, quem não veio na última NÃO saiu do DDA, e o número mentiria.
+- **Selo de pagamento** (*"uma etiqueta similar à parte do lote de solicitações (…) se o
+  boleto está pago ou se não está pago"*): coluna "Pagamento" com o selo do Lote — A pagar,
+  Agendado, Pago parcial, Pago, Sem SP. O DDA não diz se o boleto foi pago; o selo é o da
+  SP casada (status de pagamento + agendamento).
+- **"SP já paga" virou "SP já paga — ainda no DDA"** e só vale para o boleto da ÚLTIMA
+  colagem (o banco ainda o lista em aberto: risco de pagar duas vezes). Boleto antigo com
+  a SP paga é situação nova, **"Pago"**, sem alarme — senão a base que cresce viraria um
+  mar de vermelho.
+- **Lateral nova:** Pagamento, Prazo dos não pagos (Vencidos, Vencem hoje, Próximos 7
+  dias, Mais adiante — a linha ganha "vencido"/"vence hoje"), Pagadora (matriz/filial, só
+  se houver mais de uma), Valor de/até (aceita "1.234,50" e "1234.50"), Colagem. Clicar
+  num cartão de situação mantém os outros filtros.
+- **Teto:** a lista traz até 2.000 boletos, os de vencimento mais recente; passou disso, a
+  tela avisa para usar os filtros.
+- Custo de abrir a tela: 6 consultas ao banco (última colagem, anterior, contagens, os
+  boletos, as SPs candidatas numa consulta só, as pagadoras). Nada vai ao Google. A
+  consulta das SPs cresce com a base (uma faixa de valor por boleto) — com milhares de
+  boletos pode pesar; se pesar, cruzar só os não pagos.
+- Sem migração. Testes: `test_a_base_CRESCE_e_a_segunda_colagem_diz_o_que_e_NOVO`,
+  `test_o_selo_de_PAGAMENTO_e_os_filtros_da_lateral`, `test_o_PRAZO_nao_alarma_o_que_ja_foi_pago`.
 
 #### Leva 277 — Tela DDA: colar o DDA do Bradesco e cruzar com as SPs (24/11/2026) — MIGRAÇÃO 058
 
