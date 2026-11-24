@@ -12259,6 +12259,7 @@ somente Solicitações de uma conta especifica"*.
 - As linhas já gravadas entre 21 e 24/11 como "o robô não devolveu resultado" continuam
   como estão (não dá para saber, sem o PDF, se eram rodapé ou foto).
 - Teste: `test_a_folha_de_RODAPE_nao_vira_erro_e_a_escaneada_vira`.
+- **Publicado em 24/11/2026** (sem migração).
 
 #### Leva 275 — Comprovantes: a página entra na lista no envio, "Aguardando a baixa" (21/11/2026)
 
