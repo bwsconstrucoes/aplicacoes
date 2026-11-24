@@ -40,6 +40,87 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 24/11/2026 — QUEM É DA OBRA SÓ TEM O PORTAL (registro entre áreas — vale para TODOS os módulos)
+
+Decisão do dono: o pessoal da obra usa só o portal, em tudo; o escritório usa o
+ERP. `permissoes.PERFIS_SO_PORTAL` (hoje só ADMINISTRATIVO_OBRA) + o
+`_guarda_permissao` em `routes.py`: tela do ERP leva ao portal, exceto o
+diário, a folha do diário e o anexo (`TELAS_DE_QUEM_E_DA_OBRA`). `pode_ver_obra`
+para esse perfil usa as obras dele. Testes ajustados que diziam o contrário:
+homologação (títulos, lançar, DC), escopo (administrativo abria qualquer
+obra), diário (dono sem obra) e a marcação por pessoa (passou a usar LANÇADOR).
+**Quem cria tela nova para a obra:** ela tem de morar em `/erp/portal…` ou
+entrar em `TELAS_DE_QUEM_E_DA_OBRA`. Detalhe em `HISTORICO_PESSOAL.md`, 24/11.
+
+### ⚑ 24/11/2026 — PESSOAL: `obras_no_pessoal` em `permissoes.py`, e a MESMA FALHA EM OUTRAS ÁREAS (registro entre áreas)
+
+`obras_do_usuario` devolve "sem filtro" para quem enxerga por AUTORIA. Onde o
+registro não tem autor (colaborador, solicitação), isso entregava a empresa
+inteira ao administrativo de obra. O Pessoal e o portal passaram a usar
+`obras_no_pessoal` (todas para quem vê tudo ou atende o DP; as obras da
+pessoa para os demais). **Áreas que ainda usam `obras_do_usuario` em registro
+possivelmente sem autor, a conferir por quem cuida delas:** Arquivo, Diário de
+obra (usado pelo portal), Suprimentos, lista de obras, agenda, notas e a lista
+de despesas com colaborador. Detalhe em `HISTORICO_PESSOAL.md`, 24/11/2026.
+Mexi num teste de Obras (`tests/test_diario_de_obra.py::test_o_portal_recebe_
+o_rotulo_da_obra_pronto`): ele montava um administrativo SEM obra e esperava
+que o portal mostrasse todas — era o vazamento tomado por regra. Agora o
+administrativo é ligado à obra do teste e só ela aparece.
+
+### ⚑ 23/11/2026 — O PORTAL DA OBRA FOI REARRUMADO, PELO CHAT DE SUPRIMENTOS (registro entre áreas)
+
+Pedido do dono, olhando o portal. Mexe em `templates/erp_portal.html` e
+`core/portal.py`, que são do **Pessoal e DP** — quem abrir aquele chat precisa
+saber:
+
+- **"Pessoal e DP" virou "Colaboradores"** na porta do portal. Ele: *"vamos
+  chamar de colaboradores, fica melhor."* Só o nome da área; a chave
+  (`pessoal`) e os tipos não mudaram.
+- **Os avisos desceram e ficaram recolhidos.** "Contratos de experiência
+  terminando" e "Férias da equipe" ficavam no alto, abertos, e com muita gente
+  empurravam as solicitações para fora da tela. Ele: *"está muito grande a
+  informação (...) e estando em cima você se perde no portal."* Agora há um
+  bloco **"Avisos da equipe"** DEPOIS de "O que você já pediu", cada aviso só
+  com o título e a quantidade; toca e abre. **"Para o colaborador assinar" e
+  "Documentos a devolver" continuam no alto** — têm prazo e pedem ação.
+  ESCOLHA MINHA; ele só falou do aviso de experiência.
+- **A área de material chama "Suprimentos" e está FECHADA na porta**, como
+  Pagamentos. Ele: *"manter desativado por enquanto."* A tela
+  `/erp/portal/material` continua existindo e respondendo (o ERP manda para
+  ela em "Receber e lançar a nota"). Para reabrir: em `AREAS`, `pronta: True`,
+  `so_tela: True`, `tela` e `acao: "receber_material"` — está escrito lá.
+
+### ⚑ 23/11/2026 — PESSOAL CONSERTOU O CPF NA TELA DE OPERADORES (registro entre áreas)
+
+A edição de operador (`/erp/api/usuarios/<id>`, Configurações › Operadores)
+ignorava o CPF — só o cadastro novo gravava, embora o campo aparecesse aberto.
+Agora grava (vazio não apaga; inválido recusa). E salvar um operador mostra a
+situação do convite. E `core/auth/permissoes.py` (`_obras_designadas`): o
+alcance de quem enxerga por obra passa a incluir a obra onde o cadastro ligado
+ao operador bate ponto (`colaborador_obra_atual`) — vale para TODAS as áreas
+que recortam por obra. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (8).
+
+### ⚑ 23/11/2026 — MENSAGERIA MEXEU NO `erp_base.html` E NA TRAVA DE DESLIGADOS (registro entre áreas)
+
+O bloco `mensagensDaPessoa` (a aba "Telegram e mensagens" da ficha, usada pelo
+Pessoal e pelo ponto) passou a mostrar SEMPRE o ID do Telegram e ganhou o
+"trocar/informar" (nova `trocarIdDoTelegram`, só para `configurar_mensagens`).
+E `telegram_cadastro.desligado_da_empresa` passou a tratar como NÃO ativa quem
+tem data de saída vencida mesmo com a caixinha ATIVO — fechava um buraco da
+janela antes da virada do dia (o teste da virada, do DP, é o que pega isso).
+Detalhe em `app/apps/mensageria/HISTORICO.md`, 23/11.
+
+### ⚑ 23/11/2026 — PESSOAL MEXEU NO E-MAIL COMUM (registro entre áreas)
+
+`core/comum/email.py` ganhou `guardar_nos_enviados=False` em `enviar` e a
+função `guardar_copia_nos_enviados`: depois de entregar, grava a mesma
+mensagem na pasta de enviados da conta por IMAP (só se a caixa configurada em
+`email_entrada` for a MESMA conta; Gmail e Outlook/365 já guardam sozinhos e
+são pulados). **Só o pedido à contabilidade liga isso** — a cotação de
+Suprimentos continua igual (o padrão é desligado). E `email_entrada` passou a
+ignorar mensagem cujo Message-ID é de um envio do próprio ERP, para a cópia
+nunca ser lida como resposta. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (7).
+
 ### ⚑ 22/11/2026 — SUPRIMENTOS: AÇÃO E SEÇÃO NOVAS DE PERMISSÃO, E A ROTA DE MOVER ITEM (registro entre áreas)
 
 Detalhe em `HISTORICO_SUPRIMENTOS.md`, 22/11 (5ª rodada).

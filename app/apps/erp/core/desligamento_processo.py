@@ -647,6 +647,8 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                        if dev["cobrancas"] else "")
                     + " — o agente cobra a obra quando o prazo vence")
                 item["atrasado"] = bool(prazo and prazo < hoje)
+                # Plano B: o papel chegou ao escritório, o DP anexa.
+                item["devolucao_aberta_id"] = dev["id"]
             elif dev["situacao"] == "DEVOLVIDA":
                 item["detalhe"] = ("chegou pelo portal — confira a análise e "
                                    "valide o recebimento")
@@ -668,6 +670,7 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                 item["anexo_id"] = aso.get("anexo_id")
             else:
                 item["estado"] = "AGUARDANDO"
+                item["devolucao_aberta_id"] = aso["id"]
                 item["detalhe"] = (f"com a obra ({aso['numero']})"
                                    + (f", prazo {aso['prazo']:%d/%m/%Y}"
                                       if aso.get("prazo") else ""))

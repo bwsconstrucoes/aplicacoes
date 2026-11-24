@@ -457,7 +457,27 @@ def dre_linhas(f: Filtros) -> dict:
 
 def despesas_por(f: Filtros, quebra: str = "grupo", visao: str = "comprometido",
                  limite: int = 25) -> list[dict]:
-    """Despesas por grupo ou por categoria, da maior para a menor."""
+    """Despesas por grupo, por categoria ou por CONTA CORRENTE, da maior para
+    a menor.
+
+    A conta corrente entrou em 24/11/2026 (o dono: "eu queria ver as despesas,
+    os pagamentos por conta corrente"). Ela só existe no que JÁ FOI PAGO —
+    título em aberto não saiu de conta nenhuma —, então nessa quebra a visão é
+    sempre a das pagas, qualquer que seja a pedida. O total fecha com o de
+    "Pagas (executado)" das outras duas quebras: é o mesmo dinheiro, agrupado
+    de outro jeito."""
+    if quebra == "conta":
+        where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {PAGO}", [PAG])
+        sql = (f"SELECT COALESCE(NULLIF(conta_corrente,''), '{SEM_CONTA}'), SUM({EXECUTADO}), "
+               f"       COUNT(DISTINCT (codigo_lancamento, data)) "
+               f"  FROM fato{where} GROUP BY 1 HAVING SUM({EXECUTADO}) <> 0 "
+               f" ORDER BY SUM({EXECUTADO}) ASC LIMIT {int(limite)}")
+        linhas = [{"nome": nome, "valor": float(valor or 0), "pagamentos": int(n or 0)}
+                  for nome, valor, n in consultar(sql, params)]
+        total = sum(l["valor"] for l in linhas) or 1.0
+        for linha in linhas:
+            linha["pct_total"] = abs(linha["valor"] / total * 100)
+        return linhas
     coluna = "categoria" if quebra == "categoria" else "grupo"
     medida = {"executado": EXECUTADO, "aberto": EM_ABERTO}.get(visao, COMPROMETIDO)
     where, params = f.where("analise = 'DRE' AND tipo = ?", [PAG])
@@ -1038,6 +1058,103 @@ def apuracao_por_obra_mes(medida: str = "comprometido") -> list[dict]:
                              float(linha[3] or 0), float(linha[4] or 0),
                              float(linha[5] or 0))))
             for linha in consultar(sql, [REC, REC, PAG])]
+
+
+def detalhe_da_obra(obra: str, medida: str = "comprometido", ate_mes: str = "") -> dict:
+    """O que está por trás dos números de UMA obra na prestação de contas.
+
+    24/11/2026, o dono: "clicar na obra, abrir um modal (…) onde eu veria as
+    despesas, as receitas (…) agrupado por categoria de despesa (…) quanto das
+    despesas de cada obra foram pagas em qual conta corrente".
+
+    A MESMA régua de `apuracao_por_obra_mes` — mesmas linhas, mesma medida, com
+    os encargos dentro da despesa —, só que agrupada por categoria em vez de
+    por mês. É de propósito: a soma das categorias TEM de dar a despesa que a
+    prestação mostra para a obra, senão a ficha serviria para desconfiar dela.
+
+    `ate_mes` é o corte do cenário ("a obra só conta até tal mês"): com ele, o
+    que veio depois — e o que não tem data — fica de fora, como na apuração.
+
+    A conta corrente só existe no que foi pago ou recebido de fato; por isso
+    esse quadro é sempre do executado, qualquer que seja a medida do cenário."""
+    valor = _medida(medida)
+    valor_desp = _medida_de_despesa(medida)
+    condicoes, params = ["analise = 'DRE'", f"{OBRA_OU_SEM} = ?"], [obra]
+    if ate_mes:
+        condicoes.append("data IS NOT NULL AND to_char(data, 'YYYY-MM') <= ?")
+        params.append(ate_mes)
+    where = " WHERE " + " AND ".join(condicoes)
+
+    despesas = [
+        {"grupo": g, "categoria": c, "valor": float(v or 0)}
+        for g, c, v in consultar(
+            f"""SELECT COALESCE(NULLIF(TRIM(grupo),''), '(sem grupo)'),
+                       COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+                       SUM({valor_desp})
+                  FROM fato{where} AND tipo = ?
+                 GROUP BY 1, 2 HAVING ABS(SUM({valor_desp})) > 0.005
+                 ORDER BY 1, 3""", params + [PAG])]
+    receitas = [
+        {"categoria": c, "retido": bool(retido), "valor": float(v or 0)}
+        for c, retido, v in consultar(
+            f"""SELECT COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+                       ({RETIDO}), SUM({valor})
+                  FROM fato{where} AND tipo = ?
+                 GROUP BY 1, 2 HAVING ABS(SUM({valor})) > 0.005
+                 ORDER BY 2, 3 DESC""", params + [REC])]
+    contas = [
+        {"conta": conta, "pago": float(pago or 0), "recebido": float(recebido or 0),
+         "pagamentos": int(n_pago or 0), "recebimentos": int(n_rec or 0)}
+        for conta, pago, recebido, n_pago, n_rec in consultar(
+            f"""SELECT COALESCE(NULLIF(conta_corrente,''), '{SEM_CONTA}'),
+                       SUM(CASE WHEN tipo = ? THEN {EXECUTADO_COM_ENCARGO} ELSE 0 END),
+                       SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+                       COUNT(DISTINCT CASE WHEN tipo = ? THEN (codigo_lancamento, data) END),
+                       COUNT(DISTINCT CASE WHEN tipo = ? AND NOT ({RETIDO})
+                                           THEN (codigo_lancamento, data) END)
+                  FROM fato{where} AND {PAGO}
+                 GROUP BY 1
+                HAVING ABS(SUM(CASE WHEN tipo = ? THEN {EXECUTADO_COM_ENCARGO} ELSE 0 END))
+                     + ABS(SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END))
+                     > 0.005
+                 ORDER BY 2""", [PAG, REC, PAG, REC] + params + [PAG, REC])]
+    return {"despesas": despesas, "receitas": receitas, "contas": contas}
+
+
+def lancamentos_da_obra(obra: str, medida: str = "comprometido", ate_mes: str = "") -> list[dict]:
+    """O ANALÍTICO de uma obra: cada receita e cada despesa que forma os
+    números dela na prestação, lançamento a lançamento.
+
+    Mesmas linhas e mesma medida de `detalhe_da_obra` e da apuração — a soma
+    das despesas daqui TEM de dar a despesa da ficha, e a das receitas (sem o
+    retido) a receita líquida. Sai só no relatório e na planilha da obra."""
+    valor = _medida(medida)
+    valor_desp = _medida_de_despesa(medida)
+    condicoes, params = ["analise = 'DRE'", f"{OBRA_OU_SEM} = ?", "tipo IN (?, ?)"], [obra, REC, PAG]
+    if ate_mes:
+        condicoes.append("data IS NOT NULL AND to_char(data, 'YYYY-MM') <= ?")
+        params.append(ate_mes)
+    quanto = f"CASE WHEN tipo = ? THEN {valor_desp} ELSE {valor} END"
+    campos = ("data", "tipo", "quem", "grupo", "categoria", "documento", "conta",
+              "situacao", "observacao", "codigo", "valor")
+    linhas = []
+    for linha in consultar(
+            f"""SELECT data,
+                       CASE WHEN tipo = ? THEN 'Despesa'
+                            WHEN ({RETIDO}) THEN 'Retido na fonte'
+                            ELSE 'Receita' END,
+                       razao_social,
+                       COALESCE(NULLIF(TRIM(grupo),''), '(sem grupo)'),
+                       COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+                       numero_documento, COALESCE(conta_corrente, ''),
+                       situacao, observacao, codigo_lancamento, {quanto}
+                  FROM fato WHERE {' AND '.join(condicoes)} AND ABS({quanto}) > 0.005
+                 ORDER BY data NULLS LAST, codigo_lancamento""",
+            [PAG, PAG] + params + [PAG]):
+        d = dict(zip(campos, linha))
+        d["valor"] = float(d["valor"] or 0)
+        linhas.append(d)
+    return linhas
 
 
 def custo_de_pessoal_por_obra_mes(grupo_pessoal: str,

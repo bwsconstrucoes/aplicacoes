@@ -93,6 +93,8 @@ LEITURA_DA_PRESTACAO = frozenset({
     "painel.cenario_resultado",      # o resultado, por obra e por sócio
     "painel.cenario_como",           # como a conta é feita
     "painel.cenario_evolucao",       # a evolução mês a mês, por obra/projeto/estrutura
+    "painel.cenario_por_socio",      # a grade obra × sócio
+    "painel.cenario_ficha_da_obra",  # a ficha de uma obra, que abre por cima das telas
     "painel.cenario_montagem",       # a montagem — vê, não grava
     "painel.prestacao_parametros",   # os cadastros — vê, não grava
 })
@@ -100,7 +102,7 @@ LEITURA_DA_PRESTACAO = frozenset({
 
 # os arquivos que quem lê a prestação baixa: o do Resultado e o da Evolução —
 # a mesma informação das telas que ela já abre
-DOWNLOADS_DA_PRESTACAO = frozenset({"cenario", "evolucao"})
+DOWNLOADS_DA_PRESTACAO = frozenset({"cenario", "evolucao", "por_socio", "obra"})
 
 
 def le_a_prestacao(pessoa=None) -> bool:

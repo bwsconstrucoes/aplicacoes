@@ -154,6 +154,8 @@ def test_liberar_cria_acesso_com_administrativo_de_obra_e_a_obra_do_ponto(
     novo = sessao_real.get(Usuario, r.get_json()["usuario_id"])
     assert novo.email == "maria@gmail.com"
     assert novo.perfil == PerfilUsuario.ADMINISTRATIVO_OBRA
+    # 23/11/2026: o CPF vem do cadastro, como o nome e o telefone
+    assert novo.cpf == pessoa.cpf
     assert sessao_real.get(Colaborador, pessoa.id).usuario_id == novo.id
     alcance = {u.obra_id for u in sessao_real.query(UsuarioObra)
                .filter(UsuarioObra.usuario_id == novo.id).all()}
@@ -546,3 +548,128 @@ def test_lista_de_obras_vazia_e_escolha_nao_esquecimento(app_real, sessao_real,
     alcance = [x.obra_id for x in sessao_real.query(UsuarioObra)
                .filter(UsuarioObra.usuario_id == novo).all()]
     assert alcance == []
+
+
+def test_o_cpf_do_operador_se_corrige_na_edicao(app_real, sessao_real, pessoa, dp, obra):
+    """23/11/2026, ele: *"coloquei (…), salvei, e o CPF não ficou preenchido na
+    tela de operadores."* A edição ignorava o CPF — só o cadastro novo gravava."""
+    from tests.conftest import como                      # type: ignore
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="cpf@gmail.com", obra_id=obra.id)
+    c = como(app_real, dp.id)
+    uid = c.post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                 json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    assert c.post(f"/erp/api/usuarios/{uid}", json={"cpf": "123"}).status_code == 400
+    r = c.post(f"/erp/api/usuarios/{uid}", json={"cpf": "529.982.247-25"})
+    assert r.status_code == 200, r.get_json()
+    sessao_real.expire_all()
+    assert sessao_real.get(Usuario, uid).cpf == "52998224725"
+    # vazio não apaga
+    c.post(f"/erp/api/usuarios/{uid}", json={"cpf": ""})
+    sessao_real.expire_all()
+    assert sessao_real.get(Usuario, uid).cpf == "52998224725"
+
+
+def test_o_alcance_acompanha_a_obra_onde_a_pessoa_bate_ponto(app_real, sessao_real,
+                                                             pessoa, dp, obra):
+    """23/11/2026, ele: *"A obra que aquela pessoa está batendo ponto, ele já
+    teria acesso."* Dinâmico: muda a obra no ponto, muda o alcance; a marcada
+    à mão continua."""
+    from sqlalchemy import text as _t
+    from tests.conftest import como                      # type: ignore
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
+                            cpf=pessoa.cpf, nome=pessoa.nome,
+                            email="ponto@gmail.com", obra_id=obra.id)
+    uid = como(app_real, dp.id).post(
+        f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+        json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    b = Obra(codigo="OBRPTB", nome="Obra B", status="ATIVA")
+    c = Obra(codigo="OBRPTC", nome="Obra C", status="ATIVA")
+    sessao_real.add_all([b, c])
+    sessao_real.flush()
+    sessao_real.expire_all()
+    u = sessao_real.get(Usuario, uid)
+    assert set(obras_de_registro_sem_autor(sessao_real, u)) == {obra.id}
+
+    sessao_real.execute(_t("INSERT INTO colaborador_obra_atual (colaborador_id, obra_id) "
+                           "VALUES (:c, :o)"), {"c": pessoa.id, "o": b.id})
+    assert set(obras_de_registro_sem_autor(sessao_real, u)) == {obra.id, b.id}
+
+    sessao_real.execute(_t("UPDATE colaborador_obra_atual SET obra_id = :o "
+                           "WHERE colaborador_id = :c"), {"c": pessoa.id, "o": c.id})
+    assert set(obras_de_registro_sem_autor(sessao_real, u)) == {obra.id, c.id}, \
+        "a obra antiga do ponto sai; a marcada à mão fica"
+
+
+def test_administrativo_liberado_pelo_portal_so_ve_o_pessoal_da_obra_dele(
+        app_real, sessao_real, pessoa, obra, dp, pessoal):
+    """24/11/2026, ele: *"estão vendo (…) as solicitações do DP (…) 2
+    desligamentos (…) que ele não tem nada a ver."* Quem enxerga por autoria
+    ganhava "sem filtro" em toda tela do Pessoal. O DP continua vendo tudo."""
+    from tests.conftest import como                      # type: ignore
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    outra = Obra(codigo="OBROUT", nome="Obra de outra pessoa", status="ATIVA")
+    sessao_real.add(outra)
+    sessao_real.flush()
+    de_fora = Colaborador(nome="JOSE DE OUTRA OBRA", cpf="11144477735",
+                          situacao="ATIVO", obra_id=outra.id)
+    sessao_real.add(de_fora)
+    sessao_real.flush()
+    sol_fora = svc.abrir(sessao_real, {"tipo": "DESLIGAMENTO", "colaborador_id": de_fora.id,
+                                       "obra_id": outra.id,
+                                       "forma_desligamento": "Demissão com Aviso Trabalhado",
+                                       "aviso_previo": "2026-12-01",
+                                       "continua_prestador": "Não, está saindo da empresa"},
+                         dp)
+    sessao_real.commit()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                            nome=pessoa.nome, email="adm.obra@gmail.com", obra_id=obra.id)
+    uid = como(app_real, dp.id).post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                                     json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    sessao_real.commit()
+    adm = como(app_real, uid)
+
+    fila_dele = adm.get("/erp/api/dp/solicitacoes").get_json()
+    assert sol_fora["id"] not in [x["id"] for x in fila_dele["solicitacoes"]]
+    assert adm.get(f"/erp/api/dp/solicitacoes/{sol_fora['id']}").status_code == 404
+    nomes = [c.get("nome") for c in adm.get("/erp/api/colaboradores").get_json()["colaboradores"]]
+    assert "JOSE DE OUTRA OBRA" not in nomes and "MARIA DO PEDIDO" in nomes
+
+    # o DP continua vendo a empresa inteira
+    fila_dp = como(app_real, pessoal.id).get("/erp/api/dp/solicitacoes").get_json()
+    assert sol_fora["id"] in [x["id"] for x in fila_dp["solicitacoes"]]
+
+
+def test_quem_e_da_obra_so_tem_o_portal(app_real, sessao_real, pessoa, obra, dp, pessoal):
+    """24/11/2026, ele: *"o pessoal da obra (…) têm acesso ao portal (…) Isso
+    em tudo."* O diário fica, só da obra dele. O escritório não muda."""
+    from tests.conftest import como                      # type: ignore
+    outra = Obra(codigo="OBRFORA", nome="Obra de fora", status="ATIVA")
+    sessao_real.add(outra)
+    sessao_real.flush()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                            nome=pessoa.nome, email="so.portal@gmail.com", obra_id=obra.id)
+    uid = como(app_real, dp.id).post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                                     json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    sessao_real.commit()
+    adm = como(app_real, uid)
+    with adm.session_transaction() as sess:
+        sess["erp_usuario_perfil"] = "ADMINISTRATIVO_OBRA"
+
+    for tela in ("/erp/inicio", "/erp/colaboradores", "/erp/dp/solicitacoes",
+                 "/erp/dp/contabilidade", "/erp/titulos", "/erp/ponto/espelho"):
+        r = adm.get(tela)
+        assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal"), tela
+    assert adm.get("/erp/portal").status_code == 200
+    assert "ERP completo" not in adm.get("/erp/portal").get_data(as_text=True)
+    assert adm.get("/erp/obras/diario").status_code == 200
+    # o diário só da obra dele
+    assert adm.get(f"/erp/api/diario/{obra.id}").status_code == 200
+    assert adm.get(f"/erp/api/diario/{outra.id}").status_code == 404
+
+    # o escritório continua igual
+    dp_real = como(app_real, pessoal.id)
+    assert dp_real.get("/erp/colaboradores").status_code == 200
+    assert dp_real.get("/erp/dp/solicitacoes").status_code == 200

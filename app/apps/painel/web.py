@@ -632,7 +632,9 @@ def dre():
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
     f = _filtros_do_pedido()
-    quebra = "categoria" if request.args.get("quebra") == "categoria" else "grupo"
+    quebra = request.args.get("quebra")
+    if quebra not in ("categoria", "conta"):
+        quebra = "grupo"
     visao = request.args.get("visao", "comprometido")
     medida = "comprometido" if request.args.get("medida") == "comprometido" else "executado"
     bloco = request.args.get("bloco", "despesas")
@@ -644,6 +646,9 @@ def dre():
     # multiplicar por quatro o custo de abrir o DRE, para mostrar um deles.
     extra = {}
     if bloco == "despesas":
+        # por conta corrente só existe o que foi pago (24/11/2026)
+        if quebra == "conta":
+            visao = "executado"
         extra["despesas"] = graficos.proporcoes(
             consultas.despesas_por(f, quebra=quebra, visao=visao))
     elif bloco == "receitas":
@@ -1652,6 +1657,9 @@ def _calcular_cenario(cenario: dict) -> dict:
         # da empresa em cada mês — a conta já os tinha, só não devolvia
         "lado_de": lado_de,
         "juros_por_mes": juros_por_mes,
+        # o custo de pessoal de cada obra, mês a mês — é a régua quando o
+        # cenário divide por mão de obra, e a ficha da obra o mostra sempre
+        "pessoal": pessoal,
     }
 
 
@@ -2479,6 +2487,71 @@ def _caminho_ate(arvore: list, chave: str) -> list[str]:
             partes = linha["linha"].split("/")
             return ["/".join(partes[:i]) for i in range(1, len(partes))]
     return []
+
+
+@bp.route("/prestacao/por-socio")
+def cenario_por_socio():
+    """O resultado de cada obra, sócio por sócio — a grade obra × sócio.
+
+    24/11/2026, o dono: "cada sócio bate o olho e já vê quanto é que está sendo
+    apropriado para ele em relação àquela obra". Só leitura."""
+    from . import cenarios, consultas, por_socio, prestacao_dados
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    lista = cenarios.listar(_de_quem())
+    atual = _cenario_do_pedido(lista)
+    if atual is None:
+        return redirect(url_for("painel.cenario_montagem"))
+    calculo = _calcular_cenario(atual)
+    dados = por_socio.montar(calculo, [s["nome"] for s in prestacao_dados.socios()])
+    return render_template(
+        "painel_cenario_por_socio.html",
+        **dict(_contexto_comum("prestacao"),
+               so_leitura=not cenarios.altera(atual, _de_quem())),
+        cenarios=lista, cenario=atual, g=dados,
+        visao=por_socio.visao_valida(request.args.get("visao") or ""),
+        criticas_participacoes=calculo["criticas_participacoes"])
+
+
+def _ficha_da_obra(atual: dict, obra: str):
+    """A ficha de uma obra neste cenário — ou None, se a obra não está na
+    prestação. Para a tela (a janela que abre por cima) e para o relatório."""
+    from . import consultas, ficha_obra
+    calculo = _calcular_cenario(atual)
+    if obra not in calculo["por_obra"]:
+        return None
+    medida = "executado" if atual.get("medida") == "executado" else "comprometido"
+    corte = (calculo.get("cortes") or {}).get(obra) or ""
+    no_dre = consultas.resultado_dre(consultas.Filtros(departamentos=[obra]))
+    sufixo = "_exec" if medida == "executado" else ""
+    return ficha_obra.montar(
+        calculo, obra, consultas.detalhe_da_obra(obra, medida, corte),
+        {c: no_dre[c + sufixo] for c in ("receita", "despesa", "resultado")}, corte)
+
+
+@bp.route("/prestacao/obra")
+def cenario_ficha_da_obra():
+    """A ficha de UMA obra, como pedaço de página: a janela que abre por cima
+    das telas da prestação busca isto e mostra.
+
+    24/11/2026, o dono: "clicar na obra, abrir um modal, aí visualizar lá por
+    obra as despesas, as receitas" — e a conta corrente, e o confronto com o
+    DRE. Só leitura. Obra que não está na prestação responde "não encontrado",
+    como o resto do painel."""
+    from . import cenarios
+    lista = cenarios.listar(_de_quem())
+    atual = _cenario_do_pedido(lista)
+    obra = (request.args.get("obra") or "").strip()
+    ficha = _ficha_da_obra(atual, obra) if (atual is not None and obra) else None
+    if ficha is None:
+        return auth.nao_encontrado()
+    medida = "executado" if atual.get("medida") == "executado" else "comprometido"
+    return render_template(
+        "painel_ficha_da_obra_corpo.html",
+        f=ficha, cenario=atual, medida=medida,
+        # os lançamentos por trás de uma linha só abrem para o administrador
+        # (a tela de lançamentos segue as obras liberadas a cada pessoa)
+        abre_lancamentos=auth.e_administrador())
 
 
 @bp.route("/prestacao/resultado")
@@ -4002,7 +4075,80 @@ def baixar(assunto):
             ficha_de_cada_obra=(request.args.get("formato") == "pdf"
                                 and request.args.get("obras") == "todas"))
 
+    def _cenario_do_download():
+        """O cenário pedido na URL, se a pessoa o enxerga — ou None."""
+        from . import cenarios
+        atual = cenarios.completo(request.args.get("cenario") or 0)
+        if atual is not None and not cenarios.enxerga(atual, _de_quem()):
+            return None
+        return atual
+
+    def _capa_do_cenario(titulo, atual, detalhe=""):
+        from . import cenarios
+        from .horario import agora
+        return dict(
+            titulo=f"{titulo} — cenário {atual['nome']}",
+            subtitulo=(f"Gerado em {agora():%d/%m/%Y às %H:%M} (Brasília)  ·  "
+                       + (f"{detalhe}  ·  " if detalhe else "")
+                       + f"Régua: {cenarios.CRITERIOS.get(atual['criterio'], atual['criterio'])}"
+                       f"  ·  Base: {atual['medida']}"))
+
+    def _abas_por_socio():
+        """A grade obra × sócio em arquivo (24/11/2026) — as duas visões e o
+        resumo de cada sócio, do mesmo `por_socio.montar` da tela."""
+        from . import por_socio, prestacao_dados
+        from .pdf import brl as brl_pdf
+        atual = _cenario_do_download()
+        if atual is None:
+            return [("Por socio", [("o_que", "O que"), ("valor", "Valor")],
+                     [{"o_que": "Cenario", "valor": "nenhum escolhido"}])]
+        dados = por_socio.montar(_calcular_cenario(atual),
+                                 [s["nome"] for s in prestacao_dados.socios()])
+        capa_propria.update(
+            _capa_do_cenario("Resultado por Sócio", atual),
+            resumo=[("Resultado final de cada um", "")]
+                   + [(s["nome"], brl_pdf(dados["rodape"]["final"]["por_socio"][i]))
+                      for i, s in enumerate(dados["socios"])],
+            observacao=("Em cada obra, a parte de cada sócio. Na primeira aba, antes da "
+                        "estrutura e dos juros; na segunda, o resultado final. Despesa e "
+                        "prejuízo saem com o sinal de menos."))
+        return por_socio.abas(dados)
+
+    def _abas_da_obra():
+        """O relatório de UMA obra (24/11/2026): as quatro partes da ficha."""
+        from . import ficha_obra
+        from .pdf import brl as brl_pdf
+        atual = _cenario_do_download()
+        obra = (request.args.get("obra") or "").strip()
+        ficha = _ficha_da_obra(atual, obra) if (atual is not None and obra) else None
+        if ficha is None:
+            return [("Obra", [("o_que", "O que"), ("valor", "Valor")],
+                     [{"o_que": "Obra", "valor": "não está nesta prestação"}])]
+        n = ficha["n"]
+        capa_propria.update(
+            _capa_do_cenario(f"Ficha da obra {obra}", atual,
+                             f"Projeto: {ficha['projeto'] or '—'}"
+                             + (f"  ·  conta só até {ficha['corte_rotulo']}" if ficha["corte"] else "")),
+            resumo=[("Receita líquida", brl_pdf(n["receita_liquida"])),
+                    ("Despesas", brl_pdf(n["despesas"])),
+                    ("Resultado direto", brl_pdf(n["resultado_direto"])),
+                    ("Estrutura apropriada", brl_pdf(n["rateio"])),
+                    ("Juros apropriados", brl_pdf(n["juros"])),
+                    ("Resultado final", brl_pdf(n["resultado"])),
+                    ("Confere com o DRE?", "sim" if ficha["bate_com_o_dre"] else "NÃO — ver a última seção")],
+            observacao=("Despesa e prejuízo saem com o sinal de menos. A conta corrente só "
+                        "existe no que já foi pago ou recebido."))
+        # O ANALÍTICO entra só no arquivo (dono, 24/11/2026: "no relatório e
+        # planilha eu queria que também saísse o analítico das despesas e
+        # receitas, que aí fica mais completo"). A tela não o busca: são
+        # milhares de linhas para quem só quer abrir a ficha.
+        medida = "executado" if atual.get("medida") == "executado" else "comprometido"
+        return ficha_obra.abas(
+            ficha, consultas.lancamentos_da_obra(obra, medida, ficha["corte"]))
+
     montadores = {
+        "obra": _abas_da_obra,
+        "por_socio": _abas_por_socio,
         "evolucao": _abas_da_evolucao,
         "dre": lambda: [("DRE", C["dre"], _dre())],
         "conferencia": _abas_da_conferencia,

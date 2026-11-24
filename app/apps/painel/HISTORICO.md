@@ -651,10 +651,153 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Resultado por sócio, ficha da obra e conta corrente no DRE — 24/11/2026
+
+**PUBLICADO em 24/11/2026, 14:00 UTC** (`3b550e92`), com o "pode" do dono. **Sem
+migração.**
+
+⚠️ **Foi publicado com o GitHub Actions VERMELHO, e não por causa do painel.** A
+suíte do GitHub falhava na `main` desde 23/11 (duas publicações de outras áreas
+antes desta) num teste do ERP:
+`tests/test_manutencao_limpeza_banco.py::test_nenhuma_area_de_movimento_leva_obra_junto`
+— o "zerar" tenta `DELETE FROM eventos` e o gatilho da tabela recusa ("eventos é
+append-only"). **Só aparece com o banco de teste criado do zero**, que é como o
+GitHub roda; num banco de teste já usado ele passa — por isso a suíte local
+dava verde. Reproduzido aqui apagando os bancos de teste: 1 falha, essa.
+Com o banco já usado: 12.818 passaram, nenhuma falha. O chat do painel NÃO
+mexeu nisso (é do ERP); o dono foi avisado para passar ao chat do ERP.
+
+**Lição para quem publica:** a ferramenta de ler o log do GitHub só devolve o
+FIM do log (teto de 5.000 linhas), e o fim é um despejo do Postgres — o nome do
+teste que falhou fica fora do alcance. Para descobrir, apagar os bancos
+`erp_teste_gw*` e rodar a suíte inteira local: é a condição do GitHub.
+
+O dono pediu três coisas, viu um desenho clicável com números inventados (página
+privada dele no claude.ai, fora do repositório) e confirmou: *"Quanto à tela 1,
+ok, pode ser daquela forma"* — a visão que abre é a de **antes da estrutura e
+dos juros**; a outra é o resultado final. Sobre a ficha e o DRE: *"já dá para
+imaginar, está mais ou menos no rumo"*. Foi lido como confirmação das três.
+
+### O que foi feito
+
+1. **Tela "Por sócio"** (`/painel/prestacao/por-socio`, botão novo no menu da
+   prestação): a grade obra × sócio. Em cada obra, a parte de cada um — verde ou
+   vermelha, com o percentual dele embaixo —, agrupada por projeto. No fim, a
+   passagem: soma do resultado direto, (−) estrutura apropriada, (−) juros
+   apropriados, (±) taxa de administração das parcerias (só se houver obra com
+   parceiro) e = resultado final de cada um. Planilha e PDF (`baixar/por_socio`).
+2. **Ficha da obra, em janela por cima da tela** (ele pediu modal): abre ao
+   clicar no nome da obra em "Por sócio", no Resultado e na Evolução (ali, um
+   "ficha ↗" ao lado do nome). Quatro partes: resumo (receita, despesas por
+   grupo e categoria, resultado direto, estrutura, juros, final, parte de cada
+   sócio), mês a mês, **por conta corrente**, e **conferir com o DRE**. Relatório
+   da obra em PDF e planilha (`baixar/obra`).
+3. **No DRE**, o quadro de despesas ganhou a terceira opção de "Quebrar por":
+   **Conta corrente** (além de Grupo e Categoria), com o número de pagamentos e
+   o total.
+
+### As decisões de construção, e o motivo
+
+- **Nenhuma das três faz conta nova.** `prestacao.quotas_por_obra` passou a
+  devolver as quatro PARCELAS de cada quota (`parte_direto`, `parte_estrutura`,
+  `parte_juros`, `parte_taxa`), que somam a quota — a conta da quota não mudou.
+  A grade (`por_socio.py`) só as arruma. A ficha (`ficha_obra.py`) usa os
+  totais do cenário e o detalhe de `consultas.detalhe_da_obra`, que tem a MESMA
+  régua de `apuracao_por_obra_mes` (mesmas linhas, mesma medida, encargo dentro
+  da despesa), agrupada por categoria. Há teste conferindo que as categorias
+  somam a despesa da prestação, nas duas medidas.
+- **A ficha diz quando NÃO fecha**, em vez de esconder: se a soma das categorias
+  não der a despesa, ou se a prestação divergir do DRE da obra, aparece em
+  vermelho. Obra com corte no cenário ("só até tal mês") diverge do DRE de
+  propósito, e a ficha explica.
+- **No DRE a conta corrente virou opção de "Quebrar por", não um quadro a mais**
+  — é o mesmo quadro, o mesmo dinheiro, agrupado de outro jeito; o total fecha
+  com "Pagas (executado)" das outras quebras. O desenho mostrava um quadro
+  separado; ficou assim por ser mais simples de achar e de conferir.
+- **Conta corrente só existe no que foi pago ou recebido.** Na quebra por conta a
+  visão é sempre a das pagas. Na ficha de um cenário pelo comprometido, o quadro
+  de conta avisa que soma menos que a despesa do resumo. Imposto retido pelo
+  cliente não entra nos recebimentos (nunca passou pela conta).
+- **Um pagamento rateado em várias obras conta UMA vez** no número de
+  pagamentos do DRE (conta-se título + dia, não linha).
+- **Quem só lê a prestação vê tudo** — a coluna de todos os sócios e a ficha de
+  qualquer obra —, pela decisão de 16/11 ("quem vê só leitura, vê também"). Mas
+  **os lançamentos por trás da ficha só abrem para o administrador**, como na
+  Evolução.
+- **A ficha vem inteira num pedido só** (as quatro partes; a troca é na tela):
+  abrir uma obra custa UMA conta do cenário, não quatro.
+- **A última linha da grade NÃO tem os ajustes** (retiradas, aportes): é a soma
+  das quotas. Os ajustes continuam na "posição de cada um", no Resultado, e a
+  tela diz isso.
+
+### Pessoal, caixa e analítico na ficha — pedido logo depois de publicar (24/11/2026)
+
+**NÃO PUBLICADO** — no ramo, à espera do "pode". Sem migração.
+
+O dono abriu a ficha no ar e pediu: *"o custo com despesa com pessoal, mês a
+mês, bem como o caixa da obra (…) isso preciso que saia na planilha também, e
+no relatório e planilha eu queria que também saísse o analítico das despesas e
+receitas, que aí fica mais completo."*
+
+- **Mês a mês** ganhou três colunas: "— da qual, pessoal" (a parte da despesa
+  que foi mão de obra: está DENTRO da despesa, não soma de novo), "Caixa do
+  mês" e "Caixa acumulado". O caixa é o MESMO da Evolução — o que a obra
+  recebeu menos o que pagou (com aporte), e o acumulado já descontada a
+  estrutura, que é o que decide os juros. A coluna "Acumulado" virou
+  "Resultado acumulado" para não confundir com a de caixa.
+- **Relatório e planilha da obra** ganharam duas abas no fim: "Receitas -
+  analitico" e "Despesas - analitico", lançamento a lançamento
+  (`consultas.lancamentos_da_obra`, a mesma régua da apuração; há teste
+  conferindo que a soma dá a despesa e a receita da ficha). O imposto retido
+  aparece na lista de receitas marcado como "Retido na fonte" e fica fora do
+  total. **O analítico NÃO aparece na tela** — ele pediu no arquivo; na tela o
+  administrador já abre os lançamentos pelo nome do grupo ou da categoria.
+- No PDF, lista com mais de 2.500 lançamentos sai cortada (com aviso) e
+  completa na planilha — regra que o PDF do painel sempre teve.
+
+### O que NÃO foi verificado
+
+- **Nunca rodou contra a base real.** Testado com dados inventados e com a suíte.
+- **Título pago em mais de uma conta:** cada parte paga é uma linha do `fato`
+  com a conta dela, então a soma por conta deve fechar — mas isso não foi visto
+  com um caso real.
+- O tempo de abrir a ficha com a base real: é uma conta do cenário inteira por
+  obra aberta, como trocar de obra na Evolução.
+
+## O extrato conferível — PROPOSTA, nada construído — 24/11/2026
+
+No mesmo dia ele pediu para ver o extrato de uma conta **dia a dia, com o saldo
+do dia**, cada lançamento dizendo a que se refere (título, categoria, centro de
+custo), o rateado abrindo por obra — para pôr ao lado do extrato do banco:
+*"isso traz mais credibilidade ao que está lançado"*. Pediu para ver a ideia
+antes. **Foi entregue só um desenho** (página privada dele no claude.ai).
+
+**A proposta é refazer a tela "Extrato de Conta" que já existe**, não criar
+outra. O que ela tem hoje: uma linha por linha do `fato` (pagamento rateado em
+três obras aparece três vezes) e "entrou menos saiu", sem saldo. O que mudaria:
+
+- uma conta e um período, obrigatórios;
+- **saldo inicial, saldo depois de cada linha e saldo no fim de cada dia**;
+- **uma linha por movimento do banco**, abrindo nas obras quando rateado — a
+  junção já existe para o Analítico (`chave_do_movimento`,
+  `agrupar_por_movimento`, de 06/10/2026);
+- tipo de cada linha (receita, despesa, transferência, tarifa, aporte), quem,
+  categoria, obra, número do título e do documento, observação, Pipefy;
+- o saldo final do painel ao lado do saldo que o OMIE informa;
+- opcional: marcar "conferi" por dia.
+
+**O ponto que decide a construção, e que NÃO está resolvido:** de onde vem o
+saldo inicial. O painel sabe o que andou na conta, não o saldo de abertura. O
+OMIE informa saldo (`ListarExtrato`, usado em `conferencia_saldo.py`), mas o
+docstring de lá diz que o formato da resposta nunca foi confirmado contra o
+OMIE real. Antes de construir é preciso ver uma resposta de verdade — ou o dono
+informa o saldo de uma data e o painel segue dali. **Aguardando a resposta dele.**
+
 ## A evolução do rateio para os sócios — tela e relatório — 16/11/2026
 
-**NÃO PUBLICADO** — está no ramo, junto com os cenários por pessoa, à espera do
-"pode" do dono. **Não tem migração própria** (a 028 é da leva dos cenários).
+**PUBLICADO em 16/11/2026, 22:30 UTC** (`b2eaa1e4`), com o "pode" do dono, junto
+com os cenários por pessoa. **Não tem migração própria** (a 028 é da leva dos
+cenários — o dono foi avisado para apertar "Aplicar atualizações do banco").
 
 O dono mostrou a prestação a um dos sócios e saiu com o pedido: **o número final
 não basta**. *"Os sócios não vão se conter apenas com o cálculo final, sem
@@ -784,8 +927,9 @@ Tirado antes de publicar. Texto para os sócios lerem só entra a pedido dele.
 
 ## Cada pessoa com os próprios cenários, a partir do que já existe — 13/11/2026
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
-migração (028):** ao publicar, ele aperta "Aplicar atualizações do banco".
+**PUBLICADO em 16/11/2026, 22:30 UTC** (`b2eaa1e4`), com o "pode" do dono. **Tem
+migração (028):** ele foi avisado para apertar "Aplicar atualizações do banco"
+no mesmo momento — se algo da prestação falhar, conferir primeiro se apertou.
 
 O dono: *"a prestação de contas está meio como se estivesse vinculada a apenas
 um usuário (…) eu queria que cada usuário que tem acesso à prestação possa

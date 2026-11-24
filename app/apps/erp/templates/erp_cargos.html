@@ -25,9 +25,23 @@
       <span class="rotulo">Incluir inativos</span></label>
     <span class="espaco"></span>
     <span id="exportar" style="display:flex; gap:6px"></span>
+    <a class="btn secundario" href="/erp/api/cargos/modelo.xlsx">Baixar a planilha</a>
     <button class="btn secundario" id="btn-importar">Importar a planilha</button>
     <button class="btn amarelo" id="btn-novo">+ Cargo na convenção</button>
   </div>
+</div>
+
+{# ⚑ AS CONVENÇÕES E QUEM ESTÁ NELAS (23/11/2026). Ele: *"eu queria
+   visualizar quem são os colaboradores para cada convenção (…) se todas que
+   foi cadastrada tem alguém ou se não. Inclusive, até excluir alguma."* #}
+<div class="cartao" style="margin-bottom:12px">
+  <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px">
+    <b>Convenções</b><small class="desc">quantas pessoas ativas estão em cada uma</small>
+  </div>
+  <div class="tabela-rolagem"><table><thead><tr><th>Convenção</th><th>UF</th>
+    <th>Data-base</th><th class="direita">Cargos</th><th class="direita">Pessoas ativas</th>
+    <th class="direita">Desligados</th><th></th></tr></thead>
+    <tbody id="convs"></tbody></table></div>
 </div>
 
 <div class="kpis" id="kpis" style="margin-bottom:12px"></div>
@@ -45,6 +59,72 @@
 {% block scripts %}
 <script>
 let DADOS = {cruzamentos: [], cargos: [], convencoes: [], categorias: []};
+const NOME_MES = ["", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago",
+                  "set", "out", "nov", "dez"];
+
+async function carregarConvencoes(){
+  let l = [];
+  try {
+    l = (await api(`/erp/api/convencoes/resumo${els("f-todos").checked ? "?todos=1" : ""}`))
+      .convencoes || [];
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  els("convs").innerHTML = l.map(c => `<tr>
+    <td><b>${escapar(c.nome)}</b>${c.ativo === false ? " <small>inativa</small>" : ""}</td>
+    <td>${escapar(c.uf || "—")}</td>
+    <td>${c.mes_data_base ? NOME_MES[c.mes_data_base]
+      : "<span class='selo bloqueado'>falta</span>"}</td>
+    <td class="direita dados">${c.cargos}${c.sem_piso
+      ? ` <small>(${c.sem_piso} sem piso)</small>` : ""}</td>
+    <td class="direita dados">${c.pessoas
+      ? `<button class="link-btn" data-conv-pessoas="${c.id}"
+           data-nome="${escapar(c.nome)}">${c.pessoas}</button>`
+      : "<span class='selo'>ninguém</span>"}</td>
+    <td class="direita dados">${c.desligados || "—"}</td>
+    <td>${c.ativo === false ? "" : `<button class="link-btn" data-conv-excluir="${c.id}"
+      data-nome="${escapar(c.nome)}" data-pessoas="${c.pessoas}"
+      data-desligados="${c.desligados}">Excluir…</button>`}</td>
+  </tr>`).join("") || `<tr><td colspan="7" class="desc">Nenhuma convenção cadastrada.</td></tr>`;
+  els("convs").querySelectorAll("[data-conv-pessoas]").forEach(b =>
+    b.addEventListener("click", () => verPessoas(+b.dataset.convPessoas, b.dataset.nome)));
+  els("convs").querySelectorAll("[data-conv-excluir]").forEach(b =>
+    b.addEventListener("click", () => excluirConvencao(b.dataset)));
+}
+
+async function verPessoas(id, nome){
+  els("dlg-titulo").textContent = `Quem está em ${nome}`;
+  els("dlg-corpo").innerHTML = "Carregando…";
+  els("dlg").showModal();
+  try {
+    const {pessoas} = await api(`/erp/api/convencoes/${id}/pessoas`);
+    els("dlg-corpo").innerHTML = `<p class="desc">${pessoas.length} pessoa(s) ativa(s).
+      Para trocar a convenção de alguém, abra o cadastro.</p>
+      <div class="tabela-rolagem" style="max-height:60vh"><table><thead><tr>
+        <th>Nome</th><th>Cargo</th><th>Obra</th><th>Vínculo</th><th>Situação</th></tr></thead>
+      <tbody>${pessoas.map(p => `<tr>
+        <td><a href="/erp/colaboradores?editar=${p.id}" target="_blank">${escapar(p.nome)}</a></td>
+        <td>${escapar(p.cargo || "—")}</td><td>${escapar(p.obra || "—")}</td>
+        <td>${escapar(p.vinculo || "—")}</td><td>${escapar(p.situacao || "")}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+  } catch(e){ els("dlg-corpo").innerHTML = escapar(e.message); }
+}
+
+async function excluirConvencao(d){
+  if (+d.pessoas) {
+    aviso("mensagem", `${d.nome} tem ${d.pessoas} pessoa(s) ativa(s): troque a `
+      + "convenção delas no cadastro antes de excluir.", "erro");
+    return;
+  }
+  const texto = +d.desligados
+    ? `${d.nome} tem ${d.desligados} desligado(s) no histórico. Ela será DESATIVADA: `
+      + "some das listas, mas o histórico de quem saiu continua dizendo a convenção. Seguir?"
+    : `Excluir ${d.nome} de vez, com os cargos e pisos dela? Ninguém nunca esteve nela.`;
+  if (!confirm(texto)) return;
+  try {
+    const r = await api(`/erp/api/convencoes/${d.convExcluir}/excluir`, {method: "POST"});
+    aviso("mensagem", `${r.nome}: ${r.feito === "excluida" ? "excluída" : "desativada"}.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
 
 async function carregar(){
   try {
@@ -55,6 +135,7 @@ async function carregar(){
     + DADOS.convencoes.map(c => `<option value="${c.id}">${escapar(c.nome)}</option>`).join("");
   sel.value = antes;
   desenhar();
+  carregarConvencoes();
 }
 
 function visiveis(){
@@ -186,7 +267,10 @@ async function novoCruzamento(){
 function abrirImportacao(){
   els("dlg-titulo").textContent = "Importar a planilha de cargos";
   els("dlg-corpo").innerHTML = `
-    <div class="cartao-dica">A planilha exportada do Pipefy ("Cargo e Convenção").
+    <div class="cartao-dica"><b>Comece pela <a href="/erp/api/cargos/modelo.xlsx">planilha
+      modelo</a></b>: ela já vem com o que está cadastrado — complete e mande de volta.
+      A aba "Como preencher" explica cada coluna. Também aceita
+      a planilha exportada do Pipefy ("Cargo e Convenção").
       O sistema <b>separa</b> cargo de convenção, junta as grafias diferentes da mesma
       convenção e conserta o CBO. O que ele <b>não</b> adivinha — nome com erro de
       digitação e cargo com dois salários — vira aviso para você decidir.</div>

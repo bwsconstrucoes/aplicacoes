@@ -2246,6 +2246,30 @@ do mensageria."* A resposta mora em **ERP › Mensagens › Cadastro do Telegram
 - Fornecedor ou terceiro sem cadastro no ERP não recebe convite, por decisão
   do dono (só colaborador com telefone).
 
+### Acrescentadas em 23/11/2026 (telefone sem DDD e o ID editável na ficha)
+- Qual é o ID do Telegram de fulano? Desde quando? Foi informado à mão na
+  ficha ou veio do robô? (ficha da pessoa › Telegram e mensagens; origem
+  `FICHA` = à mão)
+- Quem trocou o ID do Telegram de fulano, e qual era o anterior? (a
+  observação do cadastro guarda quem, a conta do Telegram e o ID antigo; o log
+  do servidor também)
+- Quem recebe pelo Telegram mas está com o telefone sem DDD no cadastro?
+  (Cadastro do Telegram, veredito "Recebe (número diferente)" + telefone
+  curto) — ⚠️ é a lista que o DP precisa completar.
+- Quem ficou de fora da migração da planilha, e por quê? (relatório da
+  migração, "Fora do ERP"; a tabela só passou a aparecer em 23/11 — antes
+  lia chaves erradas)
+- Quantas pessoas voltaram ao "Migrar de novo"? (o aviso da tela e o
+  relatório: "entraram agora" × "já estavam")
+- Que mensagens saíram para fulano (pelo nome)? (aba Enviadas, busca pelo
+  nome — o nome vem do cadastro pelo CPF, telefone ou ID do Telegram; número
+  que não é de ninguém do ERP aparece sem nome)
+
+### ⚠️ Palavra que mudou de sentido em 23/11
+- **"telefone bate"**: com DDD, o número inteiro (com ou sem 55 e o nono
+  dígito). SEM DDD no cadastro, o final do número confirmado pelo Telegram —
+  e de uma pessoa só. Duas pessoas com o mesmo final = ninguém.
+
 ## 3z-quinquies. O PEDIDO QUE SE AJUSTA AO CASO, E O ATESTADO LONGO (15/11/2026)
 
 Seis decisões dele num pedido só: desligamento único, readmissão detectada pelo
@@ -2974,6 +2998,16 @@ régua de escopo é a mesma da tela — não se escreve escopo novo.
 - **"Há quanto tempo esta obra está nesta fase?"** — a data da troca de fase
   é guardada (`fase_desde` e a tabela de fases), mas a conta não está escrita.
   É a pergunta que acharia obra "em execução" há dois anos sem diário nenhum.
+- **"Quais obras nunca tiveram a fase acertada?"** ⚠️ — pergunta de 24/11/2026,
+  e por enquanto a resposta é quase todas. A coluna da fase existe na C.
+  Diários, mas o importador nunca a leu: toda obra importada nasceu em
+  "Criação / cadastro". O sinal existe no banco (fase = CRIACAO **e**
+  `fase_desde` vazio quer dizer "ninguém nunca mexeu"), mas não há resposta
+  pronta. **Enquanto a fase não vier da planilha, toda pergunta sobre fase
+  devolve número errado** — e o filtro do diário não esconde nada.
+- **"De quando é a fase desta obra?"** ⚠️ — enquanto o Pipefy existir, a fase
+  do ERP é um retrato da C. Diários na última sincronização, não o que está
+  no card agora. Quem perguntar tem de saber disso.
 - **"Quais obras deveriam estar concluídas e ninguém marcou?"** — hoje
   ninguém avisa. Um sinal possível: obra sem diário nem gasto há N meses,
   ainda em fase de andamento.
@@ -3301,3 +3335,30 @@ não lê a caixa de e-mail; a proposta só existe para ele depois de jogada no m
 
 **Ainda NÃO responde:** *"a obra gastou mais do que o previsto em material?"* —
 não há orçamento de material por obra no ERP.
+
+## Atendimento do desligamento: datas e faltas sugeridas (23/11/2026)
+
+- Quantas faltas a pessoa tem desde o último fechamento do ponto? *(conta do
+  dia seguinte ao corte; "falta" = dia inteiro sem justificativa — horas a
+  menos são outra pergunta)*
+- Qual o último dia e a data de saída de quem recebe aviso hoje? *(depende da
+  forma: trabalhado, indenizado, pedido de demissão, fim de experiência)*
+- Quantos dias de aviso essa pessoa tem? *(30 + 3 por ano completo, até 90 —
+  só quando a empresa dispensa; no pedido de demissão, sempre 30)*
+- A data que o DP gravou bate com a conta? *(a análise do pedido aponta a
+  diferença)*
+- **Ainda não sabe:** se o contrato de experiência tem cláusula de rescisão
+  antecipada (art. 481) — o sistema não guarda isso.
+
+## Convenções e quem está nelas (23/11/2026)
+
+- Quantas pessoas estão em cada convenção? *(ativas = não desligadas;
+  afastado conta)* — **muda conforme quem pergunta**: precisa de
+  `editar_colaboradores`.
+- Tem convenção cadastrada sem ninguém?
+- Quais convenções estão sem mês da data-base? *(sem ele, o alerta de demitir
+  nos 30 dias antes não funciona)*
+- Quantos cargos de cada convenção estão sem piso?
+- **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
+  mês da data-base é guardado.
+

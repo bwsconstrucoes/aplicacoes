@@ -1,0 +1,174 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Resultado por sócio — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# O RESULTADO DE CADA OBRA, SÓCIO POR SÓCIO (24/11/2026). O dono: "cada sócio
+   bate o olho e já vê quanto é que está sendo apropriado para ele em relação
+   àquela obra. Se é resultado, quanto de resultado; se prejuízo, quanto de
+   prejuízo. (…) E ao final poderia ter a apropriação dos custos
+   administrativos e de juros."
+
+   Só leitura, sem conta própria: tudo vem de `por_socio.montar`, que só
+   arruma as quotas do cenário em grade. A visão que abre é a "antes da
+   estrutura e dos juros" — decisão dele, no mesmo dia. #}
+
+{% block conteudo %}
+<style>
+  .grade-socios td.obra, .grade-socios th.obra { position: sticky; left: 0; background: var(--branco); white-space: nowrap; }
+  .grade-socios thead th.obra { background: #F7F9FC; z-index: 3; }
+  .grade-socios td.dados small { display: block; color: var(--tinta-suave); font-size: 11px; font-family: var(--fonte); }
+  .grade-socios tr.projeto td { background: #F7F9FC; font-weight: 700; font-size: 12.5px; }
+  .grade-socios tr.rodape td { font-weight: 700; background: #F7F9FC; }
+  .grade-socios tr.rodape td.obra { background: #F7F9FC; }
+  .grade-socios tr.final td, .grade-socios tr.final td.obra { font-weight: 800; background: #FFF4D6; }
+  .grade-socios button.obra-abre { border: 0; background: none; color: var(--azul-claro); font: inherit;
+                                   font-weight: 700; cursor: pointer; padding: 0; text-align: left; }
+  .grade-socios button.obra-abre:hover { text-decoration: underline; }
+</style>
+
+<h2>Resultado por sócio
+  <small>em cada obra, quanto coube a cada um — e a soma no fim</small>
+</h2>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao, rotulo_do_cenario %}
+{{ nav_da_prestacao('por_socio', cenario.id) }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
+
+<form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
+  <input type="hidden" name="visao" value="{{ visao }}">
+  <div class="campo" style="max-width:360px">
+    <label for="cenario">Cenário</label>
+    <select id="cenario" name="cenario" onchange="this.form.submit()">
+      {% for c in cenarios %}
+      <option value="{{ c.id }}" {% if c.id == cenario.id %}selected{% endif %}>{{ rotulo_do_cenario(c, meu_numero) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <span class="resumo">base <b>{{ cenario.medida }}</b> &nbsp;·&nbsp; período <b>toda a vida da empresa</b></span>
+  <span class="espaco"></span>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.baixar', assunto='por_socio', cenario=cenario.id) }}">⬇ Planilha</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.baixar', assunto='por_socio', formato='pdf', cenario=cenario.id) }}">⬇ PDF</a>
+</form>
+
+<div class="chips nao-imprime" style="gap:8px">
+  <span class="resumo">Mostrar em cada obra</span>
+  {% for chave, rotulo in [('antes', 'Antes da estrutura e dos juros'), ('final', 'Resultado final')] %}
+  <a class="modulo-btn {% if visao == chave %}ativo{% endif %}"
+     href="{{ url_for('painel.cenario_por_socio', cenario=cenario.id, visao=chave) }}"
+     style="background:{{ 'var(--azul)' if visao == chave else 'var(--branco)' }};
+            color:{{ '#fff' if visao == chave else 'var(--tinta)' }};
+            border:1px solid var(--borda); text-decoration:none; padding:6px 14px">{{ rotulo }}</a>
+  {% endfor %}
+</div>
+
+{% if not g.socios %}
+<div class="aviso info">Este cenário ainda não diz <b>quem divide</b> o resultado.
+  Preencha em <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}#passo-divide">Montar o cenário</a>.</div>
+{% else %}
+
+{% if criticas_participacoes %}
+<div class="aviso erro">
+  <b>Percentuais de quem divide não somam 100%:</b>
+  {% for c in criticas_participacoes %}{{ c.obra }} soma {{ '%.2f'|format(c.soma) }}%{{ ' · ' if not loop.last }}{% endfor %}.
+  Nessas obras a soma das colunas dos sócios não fecha com o resultado da obra.
+</div>
+{% endif %}
+{% if g.sem_dono %}
+<div class="aviso info">
+  <b>{{ g.sem_dono|length }} obra(s) sem ninguém definido para dividir</b> — aparecem na lista, mas não entram na
+  coluna de nenhum sócio: {{ g.sem_dono[:8]|join(' · ') }}{{ '…' if g.sem_dono|length > 8 }}.
+</div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>{{ 'A parte de cada um no resultado direto das obras' if visao == 'antes' else 'A parte de cada um no resultado final das obras' }}</h3>
+    <small>clique no nome da obra para abrir a ficha dela</small>
+  </div>
+  <div class="tabela-rolagem" style="max-height:none">
+    <table class="sem-quebra grade-socios">
+      <thead>
+        <tr>
+          <th class="sem-ordem obra">Obra</th>
+          <th class="sem-ordem direita">{{ 'Resultado direto' if visao == 'antes' else 'Resultado final' }}</th>
+          {% for s in g.socios %}
+          <th class="sem-ordem direita">{{ s.nome }}{% if s.tipo|lower == 'externo' %} <span class="selo neutro">parceiro</span>{% endif %}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(projeto=None) %}
+        {% for l in g.linhas %}
+        {% if l.projeto != ns.projeto %}
+        {% set ns.projeto = l.projeto %}
+        <tr class="projeto"><td class="obra" colspan="{{ g.socios|length + 2 }}">{{ l.projeto }}</td></tr>
+        {% endif %}
+        <tr>
+          <td class="obra">
+            <button type="button" class="obra-abre" data-ficha-da-obra="{{ l.obra }}">{{ l.obra }}</button>
+            {% if l.com_parceiro %}<span class="selo neutro" title="Obra com parceiro de fora: vale a regra da taxa de administração">parceria</span>{% endif %}
+            {% if l.nao_fecha %}<span class="selo aguardando" title="Os percentuais desta obra somam {{ l.soma_pct }}%">{{ l.soma_pct }}%</span>{% endif %}
+          </td>
+          <td class="dados direita {{ classe_valor(l[visao]) }}">{{ brl(l[visao]) }}</td>
+          {% for c in l.celulas %}
+          {% if c %}
+          <td class="dados direita {{ classe_valor(c[visao]) }}">{{ brl(c[visao]) }}<small>{{ ('%.2f'|format(c.pct)).rstrip('0').rstrip('.')|replace('.', ',') }}%</small></td>
+          {% else %}
+          <td class="dados direita">—</td>
+          {% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+
+        {% set r = g.rodape %}
+        {% if visao == 'antes' %}
+        <tr class="rodape">
+          <td class="obra">Soma do resultado direto</td>
+          <td class="dados direita {{ classe_valor(r.parte_direto.total) }}">{{ brl(r.parte_direto.total) }}</td>
+          {% for v in r.parte_direto.por_socio %}<td class="dados direita {{ classe_valor(v) }}">{{ brl(v) }}</td>{% endfor %}
+        </tr>
+        <tr class="rodape">
+          <td class="obra">(−) Estrutura apropriada</td>
+          <td class="dados direita">{{ brl(-r.parte_estrutura.total) }}</td>
+          {% for v in r.parte_estrutura.por_socio %}<td class="dados direita">{{ brl(-v) }}</td>{% endfor %}
+        </tr>
+        <tr class="rodape">
+          <td class="obra">(−) Juros apropriados</td>
+          <td class="dados direita">{{ brl(-r.parte_juros.total) }}</td>
+          {% for v in r.parte_juros.por_socio %}<td class="dados direita">{{ brl(-v) }}</td>{% endfor %}
+        </tr>
+        {% if g.tem_taxa %}
+        <tr class="rodape">
+          <td class="obra">(±) Taxa de administração das parcerias</td>
+          <td class="dados direita {{ classe_valor(r.parte_taxa.total) }}">{{ brl(r.parte_taxa.total) }}</td>
+          {% for v in r.parte_taxa.por_socio %}<td class="dados direita {{ classe_valor(v) }}">{{ brl(v) }}</td>{% endfor %}
+        </tr>
+        {% endif %}
+        {% endif %}
+        <tr class="final">
+          <td class="obra">= Resultado final de cada um</td>
+          <td class="dados direita {{ classe_valor(r.final.total) }}">{{ brl(r.final.total) }}</td>
+          {% for v in r.final.por_socio %}<td class="dados direita {{ classe_valor(v) }}">{{ brl(v) }}</td>{% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    O percentual pequeno é a participação do sócio naquela obra; “—” é obra em que ele não participa.
+    {% if visao == 'antes' %}
+    Em cada obra está a parte dele no <b>resultado direto</b> — o que a obra deu sozinha. As linhas do fim
+    fazem a passagem até o resultado final: a <b>estrutura</b> (custo da matriz e da filial) e os
+    <b>juros</b> de empréstimo que couberam a cada um{% if g.tem_taxa %}, e a <b>taxa de administração</b>
+    das obras com parceiro (o parceiro paga, os sócios da BWS recebem){% endif %}.
+    {% else %}
+    Em cada obra está a <b>quota</b> dele: a parte no resultado da obra já com a estrutura e os juros.
+    {% endif %}
+    A última linha é a mesma nas duas visões. Ela ainda não tem os <b>ajustes</b> (retiradas, aportes) —
+    esses estão na “posição de cada um”, na tela de Resultado.
+  </p>
+</div>
+{% endif %}
+
+{% include "painel_ficha_da_obra.html" %}
+{% endblock %}

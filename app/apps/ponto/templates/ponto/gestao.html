@@ -3838,7 +3838,15 @@ window.addEventListener("message", ev => {
   if (d.acao === "fechou") els("dlg-cadastro").close();
   if (d.acao === "gravou") { ERP_DA_PESSOA = null; if (PAINEL && PAINEL.pessoa) carregarErpDaPessoa(PAINEL.pessoa.id); }
 });
-abrirPessoaPainel(FICHA_ID, null, PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia");
+// ?aba=mes&competencia=AAAA-MM (23/11/2026, chat do DP): o atendimento do desligamento abre a ficha JÁ no espelho do
+// mês das faltas — o DP confere sem sair da janela de atender.
+(() => {
+  const q = new URLSearchParams(location.search);
+  const aba = q.get("aba"), comp = q.get("competencia");
+  abrirPessoaPainel(FICHA_ID, null, aba && /^[a-z_]+$/.test(aba) ? aba
+    : (PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia"),
+    comp && /^\d{4}-\d{2}$/.test(comp) ? comp : null);
+})();
 {% elif aba_ponto == "ponto_hoje" %}
 // ===========================================================================
 // HOJE — quem bateu, quem não bateu, por obra. A tela do encarregado às 7h30.

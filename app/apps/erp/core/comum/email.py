@@ -262,7 +262,8 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
            destinatario_tipo: Optional[str] = None,
            destinatario_id: Optional[int] = None,
            corpo_registrado: Optional[str] = None,
-           corpo_html: Optional[str] = None) -> EnvioEmail:
+           corpo_html: Optional[str] = None,
+           guardar_nos_enviados: bool = False) -> EnvioEmail:
     """Manda, e registra o que aconteceu — deu certo ou não.
 
     Nunca levanta por falha de envio: devolve o registro com situação FALHOU e
@@ -312,6 +313,8 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
         _entregar(dona, msg, para + copia)
         logger.info("ERP/e-mail: %s %s enviado para %s pela empresa %s",
                     entidade_tipo, entidade_id, para, empresa.id)
+        if guardar_nos_enviados:
+            registro.copia_nos_enviados = guardar_copia_nos_enviados(s, dona, msg)
     except ErroDeEnvio as e:
         registro.situacao = "FALHOU"
         registro.erro = str(e)
@@ -325,6 +328,103 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
     s.add(registro)
     s.flush()
     return registro
+
+
+# ---------------------------------------------------------------------------
+# A CÓPIA EM "ENVIADOS" (23/11/2026)
+#
+# Ele: *"os e-mails que eu envio via sistema, eles não ficam salvos no e-mail
+# (…) estou procurando dentre os enviados (…) não estou localizando."*
+#
+# O SMTP só ENTREGA; quem guarda em "Enviados" é o programa de e-mail. Gmail e
+# Outlook/Microsoft 365 guardam sozinhos o que sai pelo SMTP deles; os outros
+# provedores não. Aqui o ERP faz o que o programa faria: depois de entregar,
+# grava a mesma mensagem na pasta de enviados da conta (IMAP APPEND).
+#
+# Usa a caixa de entrada configurada (`email_entrada`) e SÓ se ela for a mesma
+# conta que enviou — não se grava cópia na caixa de outra pessoa. Falhar aqui
+# NÃO desfaz o envio: o e-mail já saiu; a resposta diz que a cópia não ficou.
+# Custo: uma conexão IMAP a mais por envio (um ou dois segundos).
+# ---------------------------------------------------------------------------
+GUARDAM_SOZINHOS = ("gmail", "google", "office365", "outlook", "hotmail")
+NOMES_DE_ENVIADOS = ("Sent", "INBOX.Sent", "Enviados", "INBOX.Enviados",
+                     "Itens Enviados", "Sent Items", "Sent Messages",
+                     "[Gmail]/Sent Mail", "INBOX/Sent")
+
+
+def _pasta_de_enviados(caixa) -> Optional[str]:
+    """A pasta marcada como \\Sent (RFC 6154); sem marca, um nome conhecido."""
+    ok, linhas = caixa.list()
+    if ok != "OK":
+        return None
+    nomes, marcada = [], None
+    for bruta in linhas or []:
+        linha = bruta.decode("utf-8", "replace") if isinstance(bruta, bytes) else str(bruta)
+        nome = linha.rsplit(' "', 1)[-1].rstrip('"') if '"' in linha else linha.split()[-1]
+        if "\\Sent" in linha and marcada is None:
+            marcada = nome
+        nomes.append(nome)
+    # ⚑ A PASTA EM PORTUGUÊS VENCE (23/11/2026). A caixa do DP (Locaweb) tem
+    # DUAS: "INBOX.enviadas", que é a do webmail — onde ele procura — e
+    # "INBOX.Sent", criada por um programa de e-mail (Thunderbird). Ele: *"no
+    # envio via webmail, a caixa de enviadas é a .enviadas."* Gravar na outra
+    # seria guardar onde ninguém olha.
+    for n in nomes:
+        baixo = n.lower()
+        if "enviad" in baixo and not any(x in baixo for x in ("lixeira", "rascunho")):
+            return n
+    if marcada:
+        return marcada
+    for candidato in NOMES_DE_ENVIADOS:
+        for n in nomes:
+            if n.lower() == candidato.lower():
+                return n
+    # ⚑ Sem marca e sem nome conhecido (23/11/2026, a caixa do DP é da
+    # Locaweb): a pasta cujo nome diz "enviad" ou "sent" — "INBOX.Itens
+    # Enviados", "INBOX.Sent Items". Nunca a lixeira nem os rascunhos.
+    for n in nomes:
+        baixo = n.lower()
+        if ("enviad" in baixo or "sent" in baixo) and not any(
+                x in baixo for x in ("trash", "lixeira", "draft", "rascunho")):
+            return n
+    return None
+
+
+def guardar_copia_nos_enviados(s: Session, conta: Any, msg: EmailMessage) -> str:
+    """Grava a mensagem enviada em "Enviados". Devolve o que aconteceu, em
+    português. Nunca levanta."""
+    import imaplib
+    import time
+    servidor = _texto(getattr(conta, "smtp_servidor", "")).lower()
+    if any(x in servidor for x in GUARDAM_SOZINHOS):
+        return "o próprio provedor guarda em Enviados"
+    try:
+        from app.apps.erp.core.comum import email_entrada
+        c = email_entrada.configuracao(s)
+        usuario = _texto(getattr(conta, "smtp_usuario", "")).lower()
+        if not c.get("usavel") or _texto(c.get("usuario")).lower() != usuario:
+            return ("sem cópia em Enviados: a caixa de e-mail configurada no ERP "
+                    "não é a mesma conta que enviou")
+        senha = decifrar(email_entrada._ler(s, "senha"))
+        caixa = imaplib.IMAP4_SSL(c["servidor"], c["porta"], timeout=TEMPO_LIMITE)
+        try:
+            caixa.login(c["usuario"], senha or "")
+            pasta = _pasta_de_enviados(caixa)
+            if not pasta:
+                return "sem cópia em Enviados: não achei a pasta de enviados"
+            alvo = f'"{pasta}"' if " " in pasta else pasta
+            ok, _ = caixa.append(alvo, "(\\Seen)", imaplib.Time2Internaldate(time.time()),
+                                 msg.as_bytes())
+            return "guardado em Enviados" if ok == "OK" else \
+                f"sem cópia em Enviados: o servidor recusou ({ok})"
+        finally:
+            try:
+                caixa.logout()
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ERP/e-mail: cópia em Enviados falhou — %s", e)
+        return f"sem cópia em Enviados: {e}"
 
 
 def testar_conta(s: Session, empresa: Empresa, para: str,

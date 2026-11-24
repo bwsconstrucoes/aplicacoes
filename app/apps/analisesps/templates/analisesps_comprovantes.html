@@ -99,7 +99,7 @@
   <div class="kpis kpis-comprovantes">
     {% for chave, rotulo, quantos in lista.contagem %}
       {% set ativo = chave in filtros.situacoes %}
-      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'AGUARDANDO') and quantos else '' }} {{ 'ativo' if ativo }}"
+      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'AGUARDANDO', 'SEM_PAGAMENTO') and quantos else '' }} {{ 'ativo' if ativo }}"
          href="{{ url_for('analisesps.tela_comprovantes', f=1, situacao=('' if ativo else chave), busca=filtros.busca or None,
                           de=filtros.de or None, ate=filtros.ate or None, lote=filtros.lote or None) }}"
          title="Mostrar só: {{ rotulo }}">
@@ -187,7 +187,7 @@
             <span class="etiqueta ruim">falhou</span>
           {% endif %}
           {% for chave, rotulo, quantos in lote.contagem %}
-            <span class="etiqueta {{ 'boa' if chave in ('BAIXADO', 'DUPLICADO', 'REENVIADO') else 'ruim' }}">
+            <span class="etiqueta {{ 'boa' if chave in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'SEM_PAGAMENTO') else 'ruim' }}">
               {{ rotulo }}: {{ quantos }}</span>
           {% endfor %}
           <span class="cartao-dica">{{ lote.quem }} · {{ lote.recebido_em|momento_br }}</span>

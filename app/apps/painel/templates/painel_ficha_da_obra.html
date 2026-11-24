@@ -1,0 +1,70 @@
+{# A JANELA DA FICHA DA OBRA (24/11/2026) — incluída nas telas da prestação.
+   O dono: "clicar na obra, abrir um modal". Qualquer coisa na página com
+   `data-ficha-da-obra="NOME"` abre a ficha daquela obra por cima da tela; o
+   miolo vem de `/painel/prestacao/obra`, do cenário que a página está
+   mostrando. Precisa de `cenario` no contexto. #}
+<style>
+  .ficha-obra-veu { position: fixed; inset: 0; background: rgba(10, 27, 46, .55); z-index: 50;
+                    display: flex; align-items: flex-start; justify-content: center;
+                    padding: 24px 12px; overflow-y: auto; }
+  .ficha-obra-veu[hidden] { display: none; }
+  .ficha-obra { background: var(--branco); border-radius: 14px; width: min(940px, 100%);
+                padding: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, .3); }
+  .ficha-obra-cab { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+  .ficha-obra-cab h3 { margin: 0; font-size: 18px; }
+  .ficha-obra-cab small { color: var(--tinta-suave); }
+  .ficha-obra-cab small.rotulo { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .ficha-obra .ficha-aba { background: var(--branco); color: var(--tinta); border: 1px solid var(--borda);
+                           padding: 6px 12px; cursor: pointer; font: inherit; }
+  .ficha-obra .ficha-aba[aria-pressed="true"] { background: var(--azul); color: #fff; font-weight: 700; }
+  @media (max-width: 600px) { .ficha-obra-veu { padding: 0; } .ficha-obra { border-radius: 0; min-height: 100%; } }
+  @media print { body.com-ficha-aberta > *:not(.ficha-obra-veu) { display: none !important; }
+                 .ficha-obra-veu { position: static; background: none; padding: 0; }
+                 .ficha-obra { box-shadow: none; width: 100%; } [data-ficha-parte][hidden] { display: block !important; } }
+</style>
+<div class="ficha-obra-veu" id="ficha-obra-veu" hidden>
+  <div class="ficha-obra" id="ficha-obra" role="dialog" aria-modal="true" aria-labelledby="ficha-obra-nome" tabindex="-1"></div>
+</div>
+<script>
+(function () {
+  var veu = document.getElementById("ficha-obra-veu"), caixa = document.getElementById("ficha-obra");
+  var endereco = {{ url_for('painel.cenario_ficha_da_obra', cenario=cenario.id)|tojson }};
+  var quemAbriu = null;
+
+  function fechar() {
+    veu.hidden = true;
+    document.body.classList.remove("com-ficha-aberta");
+    document.body.style.overflow = "";
+    if (quemAbriu) quemAbriu.focus();
+  }
+  function abrir(obra, botao) {
+    quemAbriu = botao || null;
+    caixa.innerHTML = '<p style="padding:24px 4px">Montando a ficha de <b></b>…</p>';
+    caixa.querySelector("b").textContent = obra;
+    veu.hidden = false;
+    document.body.classList.add("com-ficha-aberta");
+    document.body.style.overflow = "hidden";
+    caixa.focus();
+    fetch(endereco + "&obra=" + encodeURIComponent(obra), {credentials: "same-origin"})
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (html) { caixa.innerHTML = html; })
+      .catch(function () {
+        caixa.innerHTML = '<div class="aviso erro">Não deu para montar a ficha desta obra agora. '
+          + 'Ela pode não estar nesta prestação. <button type="button" class="btn secundario" data-ficha-fechar>Fechar</button></div>';
+      });
+  }
+  document.addEventListener("click", function (e) {
+    var abre = e.target.closest("[data-ficha-da-obra]");
+    if (abre) { e.preventDefault(); abrir(abre.getAttribute("data-ficha-da-obra"), abre); return; }
+    if (e.target.closest("[data-ficha-fechar]") || e.target === veu) { fechar(); return; }
+    var aba = e.target.closest("[data-ficha-aba]");
+    if (aba) {
+      caixa.querySelectorAll("[data-ficha-aba]").forEach(function (b) {
+        b.setAttribute("aria-pressed", b === aba ? "true" : "false"); });
+      caixa.querySelectorAll("[data-ficha-parte]").forEach(function (p) {
+        p.hidden = p.getAttribute("data-ficha-parte") !== aba.getAttribute("data-ficha-aba"); });
+    }
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !veu.hidden) fechar(); });
+})();
+</script>

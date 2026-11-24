@@ -132,9 +132,23 @@ MSG_CPF_NAO_ENCONTRADO = (
     "Procure o RH/Financeiro para verificar seu cadastro. "
     "Sua tentativa foi registrada para análise."
 )
+# ⚑ ONDE ESTÁ O BOTÃO (23/11/2026). O dono recebeu, encaminhadas, as mensagens
+# do cadastro de um colaborador, sem botão nenhum. Três coisas somem com ele, e
+# nenhuma é defeito do robô — por isso a explicação vai junto com o pedido:
+#   · mensagem ENCAMINHADA nunca leva o botão (é o que ele viu no encaminhado);
+#   · o botão fica no lugar do teclado do celular, e o Telegram o recolhe atrás
+#     do ícone ⌨️ / 🎛 ao lado do campo de mensagem quando a pessoa digita;
+#   · no computador e no Telegram pela internet, compartilhar o número não
+#     funciona — o número só é confirmado pelo aplicativo do celular.
+DICA_BOTAO = (
+    "\n\n_Não está vendo o botão? Toque no ícone ⌨️ (quadradinhos) ao lado do "
+    "campo de mensagem. Ele só funciona no Telegram do celular — no computador, "
+    "abra esta conversa pelo celular._"
+)
+MSG_BOAS_VINDAS = MSG_BOAS_VINDAS + DICA_BOTAO
 MSG_INSTRUCAO = (
-    "Para se cadastrar, toque no botão *📱 Compartilhar meu número* abaixo.\n"
-    "Se o botão não aparecer, envie /start."
+    "Para se cadastrar, toque no botão *📱 Compartilhar meu número* abaixo."
+    + DICA_BOTAO + "\n\n_Se ainda assim não aparecer, envie /start._"
 )
 MSG_NUMERO_NAO_BATE = (
     "⚠️ O número deste Telegram ({numero}) *não está no cadastro da BWS*.\n\n"
@@ -147,7 +161,7 @@ MSG_CPF_NAO_CADASTRA = (
     "confirmado pelo próprio Telegram — não pelo CPF.\n\n"
     "Toque em *📱 Compartilhar meu número*. Se o número deste Telegram não for o "
     "do seu cadastro na empresa, peça ao *DP* para atualizar o seu telefone."
-)
+) + DICA_BOTAO
 MSG_INDISPONIVEL = (
     "⚠️ Sistema temporariamente indisponível para consulta.\n"
     "Tente novamente em alguns minutos, por favor."
@@ -595,11 +609,18 @@ def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
 
 
 def _teclado_contato():
+    # ⚑ 23/11/2026: `is_persistent` mantém o botão à vista mesmo quando a
+    # pessoa abre o teclado para digitar (antes ele sumia atrás do ícone ⌨️ e
+    # quem não conhecia o ícone achava que não havia botão). E `one_time_keyboard`
+    # saiu: escondia o botão depois do primeiro toque — se o número não batia,
+    # a pessoa ficava sem ele para tentar de novo. Quem tira o botão é o robô,
+    # com `remover_teclado`, quando o cadastro dá certo.
     return {
         "keyboard": [[{"text": "📱 Compartilhar meu número",
                        "request_contact": True}]],
         "resize_keyboard": True,
-        "one_time_keyboard": True,
+        "is_persistent": True,
+        "input_field_placeholder": "Toque em 📱 Compartilhar meu número",
     }
 
 
@@ -926,7 +947,7 @@ def _abrir_convite(chat_id, codigo, nome_tg):
     _tg_enviar(chat_id,
                f"👋 Olá, *{_primeiro_nome(convite.get('nome'), nome_tg)}*! Falta só um passo para "
                "receber os avisos da BWS por aqui.\n\nToque no botão abaixo para confirmar o seu "
-               "número de telefone.", teclado=_teclado_contato())
+               "número de telefone." + DICA_BOTAO, teclado=_teclado_contato())
     return jsonify({"ok": True})
 
 

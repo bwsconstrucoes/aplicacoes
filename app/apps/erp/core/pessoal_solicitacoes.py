@@ -40,7 +40,7 @@ from app.apps.erp.core import ferias as svc_ferias
 from app.apps.erp.core import dp_analise as svc_analise
 from app.apps.erp.core import desligamento_processo as svc_processo
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
-from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import Colaborador, Usuario
 
 logger = logging.getLogger(__name__)
@@ -201,9 +201,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                 # Prestador não tem aviso prévio nem faltas a descontar em
                 # folha: o DP não tem nada a acrescentar aqui.
                 "campos_do_dp": (),
-                "checklist": ("Conferir o período prestado",
-                              "Encerrar no sistema de pagamento",
-                              "Desativação no sistema de ponto"),
+                "checklist": ("Conferir o período prestado",),
             },
         },
         # ⚑ `data_saida` NÃO ENTRA AQUI, e isso é a trava funcionando: para o
@@ -211,21 +209,15 @@ TIPOS: dict[str, dict[str, Any]] = {
         # mesmo campo nos dois lados é exatamente o que a separação proíbe.
         # Ela é campo do DP só no ramo CTPS, acima, onde é conta dele.
         "campos_do_dp": ("ultimo_dia", "faltas_a_descontar"),
-        # Os ONZE itens do checklist do pipe, na ordem em que o DP faz. É o
-        # checklist do vínculo CTPS; o do prestador está em `por_vinculo`.
-        "checklist": (
-            "Solicitação de aviso prévio ou encerramento de contrato",
-            "Lançamento de faltas",
-            "Recebimento da documentação rescisória",
-            "Lançar a despesa do TRCT",
-            "Lançar a SP da GRRF",
-            "Impressão do TRCT",
-            "Impressão da folha de ponto",
-            "Malote físico ou digital",
-            "Pagamento do TRCT",
-            "Desativação no sistema de pagamento (após o pagamento)",
-            "Desativação no sistema de ponto",
-        ),
+        # ⚑ O CHECKLIST FICA SÓ COM O QUE O SISTEMA NÃO ACOMPANHA (23/11/2026).
+        # Eram os ONZE itens do Pipefy. O aviso, a contabilidade, a
+        # documentação, as assinaturas e os pagamentos (TRCT e GRRF) são
+        # passos do processo (`desligamento_processo`), lidos da prova; o
+        # ponto corta sozinho; impressão e malote viraram o portal. E o
+        # "sistema de pagamento" não se desativa — ele, revisando: *"quando
+        # você coloca rescisão [no SomaPay], automaticamente ele desativa."*
+        # As faltas vão no e-mail: *"basta informar a quantidade de faltas."*
+        "checklist": ("Conferir as faltas no espelho do ponto",),
     },
     # ⚑ O PIPE TEM DOIS DESLIGAMENTOS, e eles pedem coisas diferentes: o do
     # prestador não tem aviso prévio (não há), tem DATA DE SAÍDA. Eu tinha
@@ -242,9 +234,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         "campos": ("data_saida", "observacao"),
         "obrigatorios": ("data_saida",),
         "campos_do_dp": (),
-        "checklist": ("Conferir o período prestado",
-                      "Encerrar no sistema de pagamento",
-                      "Desativação no sistema de ponto"),
+        "checklist": ("Conferir o período prestado",),
     },
     "CANCELAR_DESLIGAMENTO": {
         "nome": "Cancelar Solicitação de Desligamento",
@@ -257,8 +247,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         "campos": ("observacao",),
         "obrigatorios": (),
         "campos_do_dp": (),
-        "checklist": ("Conferir se o desligamento ainda não foi processado",
-                      "Cancelar o pedido"),
+        "checklist": ("Confirmar com a obra que a pessoa continua trabalhando",),
     },
     # ⚑ SAIU DA CAIXINHA EM 15/11/2026, e quem a substitui é o CADASTRO.
     #
@@ -285,9 +274,9 @@ TIPOS: dict[str, dict[str, Any]] = {
         "obrigatorios": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
                          "empresa_id"),
         "campos_do_dp": ("cargo_id", "convencao_id", "salario", "matricula"),
-        "checklist": ("Atualizar a data de admissão", "Conferir cargo e convenção",
-                      "Conferir a obra", "Atualizar a matrícula",
-                      "Reativar no sistema de pagamento"),
+        # 23/11/2026: data, cargo, convenção, obra e matrícula o atendimento
+        # grava; não há sistema de pagamento a reativar.
+        "checklist": (),
     },
     "ADMISSAO_PRESTADOR": {
         # Pipe: "Admissão de Prestador de Serviço". Eu tinha chamado de
@@ -339,8 +328,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                              "num_pis": "CTPS-INFORMACOES"},
         # Os dados da pessoa NÃO têm papel exigido aqui: a carteira não traz o
         # RG nem o endereço. Faltando no cadastro, a obra digita.
-        "checklist": ("Conferir a documentação de admissão",
-                      "Registrar na carteira", "Cadastro no sistema de pagamento"),
+        "checklist": ("Conferir a documentação de admissão",),
     },
     "ALTERACAO_CARGO": {
         "nome": "Solicitação de Alteração de Cargo",
@@ -351,8 +339,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         "campos": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
         "obrigatorios": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
         "campos_do_dp": ("cargo_deferido_id", "salario"),
-        "checklist": ("Conferir o piso da convenção", "Registrar a alteração",
-                      "Atualizar no sistema de pagamento"),
+        "checklist": ("Conferir o piso da convenção",),
     },
     "ATUALIZACAO_DADOS": {
         "nome": "Atualização de Dados Cadastrais",
@@ -375,8 +362,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "municipio", "uf", "nome_novo"),
         "obrigatorios": ("descricao",),
         "campos_do_dp": (),
-        "checklist": ("Conferir o documento que comprova", "Atualizar o cadastro",
-                      "Atualizar no sistema de pagamento"),
+        "checklist": ("Conferir o documento que comprova",),
     },
     "DEPENDENTE": {
         "nome": "Solicitação de Cadastro de Dependente",
@@ -400,8 +386,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         # ⚑ VÁRIOS DE UMA VEZ. Ele: *"dependente tem que ser um a um, não
         # posso adicionar outro, não, para pedir mais de um."*
         "repete": True,
-        "checklist": ("Receber a certidão", "Cadastrar o dependente",
-                      "Solicitar o salário-família"),
+        "checklist": ("Conferir a certidão ou o RG do dependente",),
     },
     "AJUDA_DE_CUSTO": {
         "nome": "Solicitação de Ajuda de Custo",
@@ -440,7 +425,6 @@ TIPOS: dict[str, dict[str, Any]] = {
         # confissão de que o número nasce lá.
         "campos_do_dp": (),
         "checklist": ("Conferir o valor que a obra informou",
-                      "Atualizar o cadastro",
                       "Cadastro no sistema de transporte (se houver VT)",
                       "Encaminhamento do cartão (se houver VT)"),
     },
@@ -472,8 +456,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "observacao"),
         "obrigatorios": ("valor_total",),
         "campos_do_dp": ("primeira_competencia",),
-        "checklist": ("Conferir a autorização do colaborador",
-                      "Lançar no sistema de pagamento"),
+        "checklist": ("Conferir valor e parcelas",),
     },
     # ⚑ NÃO EXISTE "PRÉ-CADASTRO", e isso foi ELE quem corrigiu em 09/11/2026:
     # *"você colocou lá pré-cadastro colaborador, não existe esse pré-cadastro,
@@ -1717,7 +1700,7 @@ def readmissoes_esquecidas(s: Session) -> list[dict[str, Any]]:
     """
     linhas = s.execute(text("""
         SELECT d.numero, d.colaborador_id, d.atendido_em, d.criado_em,
-               c.nome, c.demissao, o.codigo AS obra
+               c.nome, c.demissao, o.codigo AS obra, d.obra_id, d.solicitante_id
           FROM dp_solicitacoes d
           JOIN colaboradores c ON c.id = d.colaborador_id
           LEFT JOIN obras o ON o.id = d.obra_id
@@ -1731,7 +1714,8 @@ def readmissoes_esquecidas(s: Session) -> list[dict[str, Any]]:
          ORDER BY c.demissao NULLS LAST, d.criado_em""")).mappings().all()
     return [{"numero": l["numero"], "colaborador_id": l["colaborador_id"],
              "pessoa": l["nome"], "obra": l["obra"] or "",
-             "saiu_em": l["demissao"].isoformat() if l["demissao"] else None}
+             "saiu_em": l["demissao"].isoformat() if l["demissao"] else None,
+             "obra_id": l["obra_id"], "solicitante_id": l["solicitante_id"]}
             for l in linhas]
 
 
@@ -1848,12 +1832,24 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
                                       if x in EXPLICACAO_DA_OPCAO},
                       # O mesmo, para os campos que o DP preenche ao atender:
                       # a tela dele lê daqui, e não de uma segunda lista.
+                      # ⚑ 23/11/2026: os campos do DP de TODOS os ramos do
+                      # vínculo, não só os do tipo. A redução de jornada e o
+                      # "cumpre aviso" só existem no ramo CTPS do desligamento
+                      # e chegavam à tela SEM as opções — viravam texto livre.
                       "rotulos_do_dp": {
                           x: proprios.get(x, ROTULOS_DO_DP.get(x, ROTULOS.get(x, x)))
-                          for x in d.get("campos_do_dp", ())},
+                          for x in _campos_do_dp_todos(d)},
                       "opcoes_do_dp": {x: _opcoes(s, x)
-                                       for x in d.get("campos_do_dp", ())
+                                       for x in _campos_do_dp_todos(d)
                                        if x in CATEGORIAS}})
+    return saida
+
+
+def _campos_do_dp_todos(regra: dict[str, Any]) -> list[str]:
+    """Os campos do DP do tipo e de cada ramo do vínculo, sem repetir."""
+    saida = list(regra.get("campos_do_dp", ()))
+    for ramo in (regra.get("por_vinculo") or {}).values():
+        saida += [x for x in ramo.get("campos_do_dp", ()) if x not in saida]
     return saida
 
 
@@ -3040,6 +3036,52 @@ def termo_voltou(s: Session, termo_id: int, usuario: Optional[Usuario]) -> None:
         despachar(s, int(t_["solicitacao_id"]), usuario)
 
 
+def papel_no_escritorio(s: Session, solicitacao_id: int, qual: str, alvo_id: int,
+                        conteudo: bytes, nome_arquivo: str,
+                        usuario: Usuario) -> None:
+    """⚑ O PLANO B (23/11/2026): o papel assinado chegou ao ESCRITÓRIO.
+
+    Ele: *"e se de repente aconteceu uma circunstância que a pessoa assinou
+    num papel e encaminhou para cá para a gente anexar? (…) pode ser que uma
+    obra (…) não tem internet (…) a gente tem que ter uma alternativa."*
+
+    - `termo_papel`: o documento que a pessoa assina (aviso prévio, pedido de
+      demissão, aviso de férias, autorização de desconto). Entra como
+      "assinado no papel" e JÁ VALIDADO — quem anexa é o DP, que está olhando
+      o papel — e o processo segue como se tivesse sido assinado na tela.
+    - `devolucao_papel`: o que a obra devia devolver pelo portal (documentação
+      rescisória, ASO). A pendência fecha e o arquivo vai para a validação do
+      DP, como se tivesse chegado pelo portal.
+    """
+    from app.apps.erp.core import termos
+    from app.apps.erp.core import portal as svc_portal
+    if not conteudo:
+        raise ErroValidacao("Escolha a foto ou o PDF do papel assinado.")
+    if qual == "termo_papel":
+        if termos.ler(s, alvo_id).get("solicitacao_id") != solicitacao_id:
+            raise ErroNaoEncontrado("Documento não encontrado.")
+        termos.enviar_papel(
+            s, alvo_id, None, conteudo=conteudo, nome_arquivo=nome_arquivo,
+            conduzido_por={"colaborador_id": None,
+                           "nome": f"{usuario.nome} (DP, no escritório)"})
+        termos.validar(s, alvo_id, usuario, aceitar=True)
+        termo_voltou(s, alvo_id, usuario)
+        return
+    if qual != "devolucao_papel":
+        raise ErroValidacao("Não sei o que anexar.")
+    dono = s.execute(text("SELECT colaborador_id FROM dp_devolucoes WHERE id = :i"),
+                     {"i": alvo_id}).scalar()
+    pessoa = s.execute(text("SELECT colaborador_id FROM dp_solicitacoes WHERE id = :i"),
+                       {"i": solicitacao_id}).scalar()
+    if not dono or dono != pessoa:
+        raise ErroNaoEncontrado("Pendência não encontrada.")
+    svc_portal.devolver(s, alvo_id, conteudo, usuario, nome_arquivo,
+                        pelo_escritorio=True)
+    _evento(s, solicitacao_id, "AVISO",
+            {"texto": "documento assinado recebido no escritório e anexado pelo DP"},
+            usuario)
+
+
 def gerar_autorizacao_de_desconto(s: Session, sol: dict[str, Any],
                                   usuario: Optional[Usuario]) -> Optional[dict[str, Any]]:
     """A autorização de desconto que a pessoa assina (CLT art. 462)."""
@@ -3415,7 +3457,12 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         # ponto não aceita essa pessoa amanhã (15/11/2026). Só pega os pedidos
         # atendidos ANTES de 19/11/2026 — os de agora não desligam quem
         # continua (ver `desligamento_processo`).
-        "readmissoes_pendentes": readmissoes_esquecidas(s),
+        # ⚑ Recortado pela obra desde 24/11/2026: antes ia a lista da empresa
+        # inteira para qualquer um que abrisse a tela.
+        "readmissoes_pendentes": [
+            x for x in readmissoes_esquecidas(s)
+            if obra_ids is None or x.get("obra_id") in set(obra_ids)
+            or (usuario_id and x.get("solicitante_id") == usuario_id)],
         # ⚑ Os desligamentos em andamento, com o próximo passo de cada um.
         # Recortado pelo que esta pessoa enxerga na fila: quem é preso a obra
         # não vê o desligamento da obra dos outros por aqui.
