@@ -34,8 +34,13 @@ from typing import Any, Optional
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core import admissao_processo as svc_admissao
+from app.apps.erp.core import contabil_processo as svc_contabil
+from app.apps.erp.core import ferias as svc_ferias
+from app.apps.erp.core import dp_analise as svc_analise
+from app.apps.erp.core import desligamento_processo as svc_processo
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
-from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import Colaborador, Usuario
 
 logger = logging.getLogger(__name__)
@@ -69,6 +74,33 @@ logger = logging.getLogger(__name__)
 #   · `campos_do_dp`  — o que o DP preenche ao atender, na tela dele.
 # Campo de DP que aparecesse no formulário da obra é defeito, e há teste.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ⚑ OS DADOS DA PESSOA QUE A ADMISSÃO EXIGE (19/11/2026)
+#
+# Ele, com a lista na mão: *"E-Social precisa de nome, nome da mãe, data de
+# nascimento, CPF. SomaPay, a gente precisa agregar RG, data de emissão, o
+# órgão emissor, o estado de emissão e a data de início e o telefone e o tipo
+# de contrato. (…) Além disso, a gente precisa internamente do endereço da
+# pessoa."*
+#
+# Os nomes são os das COLUNAS do cadastro: o pedido grava, o atendimento
+# copia para a ficha sem tradução, e o "já está no cadastro" da readmissão
+# lê a mesma coluna. Nome e CPF ficam fora porque já estavam no formulário.
+# ---------------------------------------------------------------------------
+CAMPOS_DA_PESSOA = ("nome_mae", "data_nascimento",
+                    "rg", "rg_emissao", "rg_orgao", "rg_uf",
+                    "cep", "logradouro", "numero_endereco", "complemento",
+                    "bairro", "municipio", "uf")
+# O complemento é o único opcional: muita casa não tem.
+OBRIGATORIOS_DA_PESSOA = tuple(c for c in CAMPOS_DA_PESSOA if c != "complemento")
+# De qual papel cada um sai. A leitura preenche; o que ela não achar vira
+# pergunta, e a pessoa digita.
+DA_IDENTIDADE = ("nome", "cpf", "nome_mae", "data_nascimento",
+                 "rg", "rg_emissao", "rg_orgao", "rg_uf")
+DO_COMPROVANTE = ("cep", "logradouro", "numero_endereco", "complemento",
+                  "bairro", "municipio", "uf")
+
+
 TIPOS: dict[str, dict[str, Any]] = {
     "DESLIGAMENTO": {
         # Pipe: "Desligamento de Colaborador".
@@ -154,8 +186,12 @@ TIPOS: dict[str, dict[str, Any]] = {
                                  "continua_prestador"),
                 # A data de saída de quem tem carteira é CONTA do DP (último
                 # dia + aviso), não informação da obra.
+                # ⚑ 20/11/2026: o que o AVISO PRÉVIO escreve. A redução da
+                # jornada (CLT art. 488) e, no pedido de demissão, se a
+                # pessoa cumpre o aviso — os dois vão no texto que ela assina.
                 "campos_do_dp": ("ultimo_dia", "data_saida",
-                                 "faltas_a_descontar"),
+                                 "faltas_a_descontar", "reducao_jornada",
+                                 "cumpre_aviso"),
             },
             "PRESTADOR": {
                 # Prestador não tem aviso prévio — não há o que avisar. Tem a
@@ -165,9 +201,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                 # Prestador não tem aviso prévio nem faltas a descontar em
                 # folha: o DP não tem nada a acrescentar aqui.
                 "campos_do_dp": (),
-                "checklist": ("Conferir o período prestado",
-                              "Encerrar no sistema de pagamento",
-                              "Desativação no sistema de ponto"),
+                "checklist": ("Conferir o período prestado",),
             },
         },
         # ⚑ `data_saida` NÃO ENTRA AQUI, e isso é a trava funcionando: para o
@@ -175,21 +209,15 @@ TIPOS: dict[str, dict[str, Any]] = {
         # mesmo campo nos dois lados é exatamente o que a separação proíbe.
         # Ela é campo do DP só no ramo CTPS, acima, onde é conta dele.
         "campos_do_dp": ("ultimo_dia", "faltas_a_descontar"),
-        # Os ONZE itens do checklist do pipe, na ordem em que o DP faz. É o
-        # checklist do vínculo CTPS; o do prestador está em `por_vinculo`.
-        "checklist": (
-            "Solicitação de aviso prévio ou encerramento de contrato",
-            "Lançamento de faltas",
-            "Recebimento da documentação rescisória",
-            "Lançar a despesa do TRCT",
-            "Lançar a SP da GRRF",
-            "Impressão do TRCT",
-            "Impressão da folha de ponto",
-            "Malote físico ou digital",
-            "Pagamento do TRCT",
-            "Desativação no sistema de pagamento (após o pagamento)",
-            "Desativação no sistema de ponto",
-        ),
+        # ⚑ O CHECKLIST FICA SÓ COM O QUE O SISTEMA NÃO ACOMPANHA (23/11/2026).
+        # Eram os ONZE itens do Pipefy. O aviso, a contabilidade, a
+        # documentação, as assinaturas e os pagamentos (TRCT e GRRF) são
+        # passos do processo (`desligamento_processo`), lidos da prova; o
+        # ponto corta sozinho; impressão e malote viraram o portal. E o
+        # "sistema de pagamento" não se desativa — ele, revisando: *"quando
+        # você coloca rescisão [no SomaPay], automaticamente ele desativa."*
+        # As faltas vão no e-mail: *"basta informar a quantidade de faltas."*
+        "checklist": ("Conferir as faltas no espelho do ponto",),
     },
     # ⚑ O PIPE TEM DOIS DESLIGAMENTOS, e eles pedem coisas diferentes: o do
     # prestador não tem aviso prévio (não há), tem DATA DE SAÍDA. Eu tinha
@@ -206,19 +234,20 @@ TIPOS: dict[str, dict[str, Any]] = {
         "campos": ("data_saida", "observacao"),
         "obrigatorios": ("data_saida",),
         "campos_do_dp": (),
-        "checklist": ("Conferir o período prestado",
-                      "Encerrar no sistema de pagamento",
-                      "Desativação no sistema de ponto"),
+        "checklist": ("Conferir o período prestado",),
     },
     "CANCELAR_DESLIGAMENTO": {
         "nome": "Cancelar Solicitação de Desligamento",
-        "explicacao": "desfaz o pedido de desligamento antes de ele ser feito",
-        "exige_pessoa": True, "executa": None,
+        "explicacao": ("a pessoa vai continuar trabalhando: o DP desfaz a "
+                       "saída e avisa a contabilidade"),
+        # ⚑ 20/11/2026: ATENDER NÃO FAZIA NADA — a saída continuava marcada e
+        # a pessoa era desligada no dia mesmo assim. Agora desfaz de verdade
+        # (`cancelar_desligamento`).
+        "exige_pessoa": True, "executa": "cancelar_desligamento",
         "campos": ("observacao",),
         "obrigatorios": (),
         "campos_do_dp": (),
-        "checklist": ("Conferir se o desligamento ainda não foi processado",
-                      "Cancelar o pedido"),
+        "checklist": ("Confirmar com a obra que a pessoa continua trabalhando",),
     },
     # ⚑ SAIU DA CAIXINHA EM 15/11/2026, e quem a substitui é o CADASTRO.
     #
@@ -245,9 +274,9 @@ TIPOS: dict[str, dict[str, Any]] = {
         "obrigatorios": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
                          "empresa_id"),
         "campos_do_dp": ("cargo_id", "convencao_id", "salario", "matricula"),
-        "checklist": ("Atualizar a data de admissão", "Conferir cargo e convenção",
-                      "Conferir a obra", "Atualizar a matrícula",
-                      "Reativar no sistema de pagamento"),
+        # 23/11/2026: data, cargo, convenção, obra e matrícula o atendimento
+        # grava; não há sistema de pagamento a reativar.
+        "checklist": (),
     },
     "ADMISSAO_PRESTADOR": {
         # Pipe: "Admissão de Prestador de Serviço". Eu tinha chamado de
@@ -277,17 +306,29 @@ TIPOS: dict[str, dict[str, Any]] = {
         # cadastro dela pode já ter os dois números. `ja_no_cadastro` diz de
         # qual coluna cada campo vem; quando ela está preenchida, o campo sai
         # da exigência e aparece só para conferir.
-        "campos": ("num_ctps", "num_pis", "salario_familia", "observacao"),
-        "obrigatorios": ("num_ctps", "num_pis", "salario_familia"),
-        "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis"},
+        # ⚑ 19/11/2026: virar CTPS é ENTRAR no eSocial e no SomaPay — então
+        # os mesmos dados da admissão (`OBRIGATORIOS_DA_PESSOA`). O prestador
+        # já tem ficha: o que ela tiver não se pergunta; só o que faltar.
+        "campos": ("num_ctps", "num_pis") + CAMPOS_DA_PESSOA + (
+                   "salario_familia", "observacao"),
+        # ⚑ O PIS NÃO É OBRIGATÓRIO (19/11/2026). Ele: *"pode fazer a leitura,
+        # se encontrar, mas não tornar item obrigatório, porque o cadastro
+        # social é feito com o CPF."* O campo fica; a leitura preenche quando
+        # acha.
+        "obrigatorios": ("num_ctps",) + OBRIGATORIOS_DA_PESSOA + (
+                         "salario_familia",),
+        "rotulos_proprios": {"data_nascimento": "Data de Nascimento"},
+        "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis",
+                           **{c: c for c in CAMPOS_DA_PESSOA}},
         "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
         "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
         # Mesma regra do cadastro: o número sai da foto da carteira que este
         # pedido JÁ exige. Ninguém transcreve onze dígitos à mão.
         "vem_do_documento": {"num_ctps": "CTPS-INFORMACOES",
                              "num_pis": "CTPS-INFORMACOES"},
-        "checklist": ("Conferir a documentação de admissão",
-                      "Registrar na carteira", "Cadastro no sistema de pagamento"),
+        # Os dados da pessoa NÃO têm papel exigido aqui: a carteira não traz o
+        # RG nem o endereço. Faltando no cadastro, a obra digita.
+        "checklist": ("Conferir a documentação de admissão",),
     },
     "ALTERACAO_CARGO": {
         "nome": "Solicitação de Alteração de Cargo",
@@ -298,8 +339,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         "campos": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
         "obrigatorios": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
         "campos_do_dp": ("cargo_deferido_id", "salario"),
-        "checklist": ("Conferir o piso da convenção", "Registrar a alteração",
-                      "Atualizar no sistema de pagamento"),
+        "checklist": ("Conferir o piso da convenção",),
     },
     "ATUALIZACAO_DADOS": {
         "nome": "Atualização de Dados Cadastrais",
@@ -322,8 +362,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "municipio", "uf", "nome_novo"),
         "obrigatorios": ("descricao",),
         "campos_do_dp": (),
-        "checklist": ("Conferir o documento que comprova", "Atualizar o cadastro",
-                      "Atualizar no sistema de pagamento"),
+        "checklist": ("Conferir o documento que comprova",),
     },
     "DEPENDENTE": {
         "nome": "Solicitação de Cadastro de Dependente",
@@ -347,8 +386,7 @@ TIPOS: dict[str, dict[str, Any]] = {
         # ⚑ VÁRIOS DE UMA VEZ. Ele: *"dependente tem que ser um a um, não
         # posso adicionar outro, não, para pedir mais de um."*
         "repete": True,
-        "checklist": ("Receber a certidão", "Cadastrar o dependente",
-                      "Solicitar o salário-família"),
+        "checklist": ("Conferir a certidão ou o RG do dependente",),
     },
     "AJUDA_DE_CUSTO": {
         "nome": "Solicitação de Ajuda de Custo",
@@ -367,6 +405,11 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "categoria_transporte", "aux_transporte",
                    "descontar_vt", "observacao"),
         "obrigatorios": ("solicitacao",),
+        # "Não recebe" esconde o valor — a mesma regra da admissão (19/11/2026).
+        "ocultos_se": {
+            "categoria_alimentacao": {"NAO_RECEBE": ("aux_alimentacao",)},
+            "categoria_transporte": {"NAO_RECEBE": ("aux_transporte",
+                                                    "descontar_vt")}},
         # Só se pergunta o desconto quando há vale-transporte para descontar,
         # e o VALOR só depois de escolhida a categoria — antes disso, "valor
         # da alimentação" não quer dizer nada.
@@ -382,7 +425,6 @@ TIPOS: dict[str, dict[str, Any]] = {
         # confissão de que o número nasce lá.
         "campos_do_dp": (),
         "checklist": ("Conferir o valor que a obra informou",
-                      "Atualizar o cadastro",
                       "Cadastro no sistema de transporte (se houver VT)",
                       "Encaminhamento do cartão (se houver VT)"),
     },
@@ -414,8 +456,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "observacao"),
         "obrigatorios": ("valor_total",),
         "campos_do_dp": ("primeira_competencia",),
-        "checklist": ("Conferir a autorização do colaborador",
-                      "Lançar no sistema de pagamento"),
+        "checklist": ("Conferir valor e parcelas",),
     },
     # ⚑ NÃO EXISTE "PRÉ-CADASTRO", e isso foi ELE quem corrigiu em 09/11/2026:
     # *"você colocou lá pré-cadastro colaborador, não existe esse pré-cadastro,
@@ -427,8 +468,15 @@ TIPOS: dict[str, dict[str, Any]] = {
     # as outras solicitações."* Por isso o cadastro é um TIPO desta fila, e
     # não uma tela à parte.
     "CADASTRO": {
-        "nome": "Cadastro de Colaborador",
-        "explicacao": "a obra abre com os dados E os documentos; o DP confere",
+        # ⚑ "ADMISSÃO DE COLABORADOR" desde 19/11/2026. Ele: *"eu quero trocar
+        # por admissão de colaborador. Porque dessa forma, eu tanto atendo quem
+        # não tem cadastro conosco, quem já teve cadastro conosco."* O CÓDIGO
+        # continua CADASTRO: há pedidos gravados com ele, e o que muda é a
+        # palavra que a pessoa lê.
+        "nome": "Admissão de Colaborador",
+        "explicacao": ("quem nunca trabalhou conosco e quem já trabalhou: a "
+                       "obra manda os documentos, a leitura preenche, o DP "
+                       "confere"),
         "exige_pessoa": False, "executa": "criar_cadastro",
         # Os rótulos vêm do pipe CADASTRO COLABORADORES. "Tipo de Documentação
         # para Cadastro" é o nome certo do que eu chamava de "tipo de
@@ -470,7 +518,8 @@ TIPOS: dict[str, dict[str, Any]] = {
         # Ele: *"quando for pessoa PJ, abrir campos Razão social (PJ) e CNPJ
         # (PJ)."* Sem eles o DP recebia um PJ e ia pedir a nota fiscal sem
         # saber em nome de quem ela sai.
-        "campos": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
+        "campos": ("nome", "cpf") + CAMPOS_DA_PESSOA + (
+                   "telefone", "pix_tipo", "pix_chave",
                    "tipo_documentacao", "tipo_contrato",
                    "razao_social_pj", "cnpj_pj", "empresa_id",
                    "num_ctps", "num_pis",
@@ -491,10 +540,21 @@ TIPOS: dict[str, dict[str, Any]] = {
         # e autônomo (RPA), e campo que não aparece não pode ser exigido — o
         # envio travaria sem a pessoa ter como resolver. Virou
         # `obrigatorios_se`, abaixo.
-        "obrigatorios": ("nome", "cpf", "telefone", "pix_tipo", "pix_chave",
-                         "tipo_documentacao", "empresa_id",
+        # ⚑ 19/11/2026: os dados do eSocial e do SomaPay (`OBRIGATORIOS_DA_
+        # PESSOA`) e o TIPO DE CONTRATO, que o SomaPay exige de todos.
+        "obrigatorios": ("nome", "cpf") + OBRIGATORIOS_DA_PESSOA + (
+                         "telefone", "pix_tipo", "pix_chave",
+                         "tipo_documentacao", "tipo_contrato", "empresa_id",
                          "data_inicio", "cargo_pleiteado_id",
                          "categoria_alimentacao", "categoria_transporte"),
+        "rotulos_proprios": {"data_nascimento": "Data de Nascimento"},
+        # ⚑ NA READMISSÃO, o que o cadastro antigo já tem não se pede de novo
+        # (19/11/2026). Ele: *"se for um colaborador desligado, nós já temos os
+        # dados dele"* — e, sobre o que faltar: a obra digita na hora.
+        # ⚠️ CADASTRO não exige pessoa, então este mapa NÃO entra na busca de
+        # pessoa do portal (`COLUNAS_JA_NO_CADASTRO`): ninguém lê o RG ou a
+        # mãe de outra pessoa procurando pelo nome.
+        "ja_no_cadastro": {c: c for c in CAMPOS_DA_PESSOA},
         # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
         # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
         # PIS também."*
@@ -519,7 +579,8 @@ TIPOS: dict[str, dict[str, Any]] = {
         # (Autônomo (RPA)); demais, não exibir."* Então ela é obrigatória
         # nesses três casos, e nos outros não existe.
         "obrigatorios_se": {"tipo_documentacao": {
-            "CTPS": ("num_ctps", "num_pis", "tipo_contrato"),
+            # ⚑ PIS saiu em 19/11/2026: o eSocial é feito com o CPF.
+            "CTPS": ("num_ctps", "tipo_contrato"),
             "PRESTADOR": ("tipo_contrato", "pagamento")},
             "tipo_contrato": {
                 "CLT_INDETERMINADO": ("valor_diaria",),
@@ -539,8 +600,21 @@ TIPOS: dict[str, dict[str, Any]] = {
         #
         # VALOR DO MÊS também só aparece para mensalista — diarista não tem
         # valor de mês, tem diária.
-        "ocultos_se": {"tipo_documentacao": {
-            "CTPS": ("pagamento", "valor_mes")},
+        # ⚑ "NÃO RECEBE" ESCONDE O VALOR (19/11/2026). Ele: *"quando coloca
+        # ajuda com alimentação, ajuda com transporte, não recebe, oculta o
+        # campo valor."* Valor de ajuda que não existe é campo que alguém
+        # preenche por engano.
+        "ocultos_se": {
+            "categoria_alimentacao": {"NAO_RECEBE": ("aux_alimentacao",)},
+            "categoria_transporte": {"NAO_RECEBE": ("aux_transporte",
+                                                    "descontar_vt")},
+            "tipo_documentacao": {
+            "CTPS": ("pagamento", "valor_mes"),
+            # ⚑ 19/11/2026, ele: *"quando a gente colocar o vínculo prestador
+            # de serviço, oculta o número da CTPS e oculta o número do PIS,
+            # porque essa informação não precisa."* A leitura ainda os grava,
+            # se achar — oculto não é apagado.
+            "PRESTADOR": ("num_ctps", "num_pis")},
             "pagamento": {"DIARISTA": ("valor_mes",)}},
         # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre DEPOIS de escolhida a
         # documentação — e aí abre para as DUAS, com listas diferentes.
@@ -600,8 +674,8 @@ TIPOS: dict[str, dict[str, Any]] = {
         "vem_do_documento": {
             "num_ctps": "CTPS-INFORMACOES",
             "num_pis": "CTPS-INFORMACOES",
-            "nome": "DOC-IDENTIDADE",
-            "cpf": "DOC-IDENTIDADE",
+            **{c: "DOC-IDENTIDADE" for c in DA_IDENTIDADE},
+            **{c: "COMPROVANTE-ENDERECO-PESSOA" for c in DO_COMPROVANTE},
         },
         # ⚑ Matrícula e convenção são do DP — estão em FASE no Pipe, não no
         # formulário. Os VALORES dos auxílios também; a CATEGORIA deles subiu
@@ -646,12 +720,107 @@ TIPOS: dict[str, dict[str, Any]] = {
         # DP é outro: não há cadastro para criar, há vínculo para reabrir.
         # Este é o checklist que o tipo READMISSAO tinha, e que vem para cá
         # junto com ele (15/11/2026).
+        # ⚑ ENXUGADO EM 19/11/2026, item por item, por ele: a saída anterior
+        # vai sozinha para o histórico; a admissão, a obra e o cargo vêm do
+        # pedido; a matrícula é o CPF (ou a que já existia); prestador não tem
+        # convenção; o ponto reativa sozinho; o sistema de pagamento não se
+        # mexe. O que sobra é conferir o que veio.
         "checklist_readmissao": (
-            "Conferir se a saída anterior está fechada",
-            "Atualizar a data de admissão", "Conferir cargo e convenção",
-            "Conferir a obra", "Atualizar a matrícula",
-            "Reativar no sistema de pagamento",
-            "Reativar no sistema de ponto"),
+            "Conferir os dados e os documentos",),
+    },
+    # ⚑ FÉRIAS ENTRARAM COMO PEDIDO EM 20/11/2026. Ele: *"Se as férias não
+    # estão em solicitações, tem que entrar também, porque o administrativo de
+    # obra pode pedir as férias. E o DP tem que fazer a mesma coisa, solicitar
+    # a contabilidade, aguardar retorno e etc. Para então finalizar."* Só para
+    # quem tem carteira — prestador não tem férias. O pedido passa pela
+    # contabilidade (modelo FERIAS) e fecha quando ela devolve o aviso
+    # (`contabil_processo`).
+    "FERIAS": {
+        "nome": "Solicitação de Férias",
+        "explicacao": "o período de férias; o DP pede o aviso à contabilidade",
+        # ⚑ 20/11/2026 (tarde): atender PROGRAMA as férias (`core/ferias.py`)
+        # — elas aparecem na tela Férias como "aguardando a contabilidade" e
+        # viram "confirmadas" quando ela devolve.
+        "exige_pessoa": True, "executa": "programar_ferias", "so_vinculo": "CTPS",
+        "campos": ("ferias_inicio", "ferias_dias", "abono_pecuniario",
+                   "adiantamento_13", "observacao"),
+        "obrigatorios": ("ferias_inicio", "ferias_dias"),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o período aquisitivo e o saldo de dias",),
+    },
+    # ⚑ ALTERAR E CANCELAR FÉRIAS (20/11/2026). Ele: *"tem que pensar na
+    # possibilidade de alteração e cancelamento. E aí tem que estar DP no
+    # meio, contabilidade no meio, o agente de IA no meio."* Dois pedidos
+    # próprios, com o mesmo caminho das férias: a obra (ou o DP) pede, o DP
+    # atende, a contabilidade devolve — e só então a data muda.
+    "ALTERACAO_FERIAS": {
+        "nome": "Alteração de Férias",
+        "explicacao": "mudar a data ou os dias de férias já marcadas",
+        "exige_pessoa": True, "executa": "alterar_ferias", "so_vinculo": "CTPS",
+        "campos": ("ferias_inicio", "ferias_dias", "abono_pecuniario",
+                   "adiantamento_13", "observacao"),
+        "obrigatorios": ("ferias_inicio", "ferias_dias", "observacao"),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o período aquisitivo e o saldo de dias",),
+    },
+    "CANCELAMENTO_FERIAS": {
+        "nome": "Cancelamento de Férias",
+        "explicacao": "desmarcar férias já marcadas",
+        "exige_pessoa": True, "executa": "cancelar_ferias", "so_vinculo": "CTPS",
+        "campos": ("observacao",),
+        "obrigatorios": ("observacao",),
+        "campos_do_dp": (),
+        "checklist": (),
+    },
+    # ⚑ O AFASTAMENTO PASSA PELO DP E PELA CONTABILIDADE (20/11/2026). Ele:
+    # *"se o que lançar no ponto demandar ações do DP junto à contabilidade
+    # (…) automaticamente gera uma solicitação do DP para ser dado o devido
+    # tratamento junto à contabilidade (…) acidente de trabalho também (…)
+    # Mesma coisa para maternidade."* Nasce sozinho do ponto
+    # (`ponte_do_ponto.py`) ou é aberto pela obra/DP. A natureza (INSS,
+    # acidente, maternidade) quem confirma é o DP ao atender — o ponto não a
+    # registra. O controle do benefício e das férias é da contabilidade
+    # (Fortes), decisão dele.
+    "AFASTAMENTO": {
+        "nome": "Comunicação de Afastamento",
+        "explicacao": ("atestado acima de 15 dias, INSS, acidente de trabalho, "
+                       "maternidade — o DP comunica à contabilidade"),
+        "exige_pessoa": True, "executa": "registrar_afastamento",
+        "so_vinculo": "CTPS",
+        "campos": ("afastamento_natureza", "afast_inicio", "afast_previsao",
+                   "observacao"),
+        "obrigatorios": ("afast_inicio",),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o atestado, o laudo ou a CAT",),
+    },
+    "RETORNO_AFASTAMENTO": {
+        "nome": "Retorno de Afastamento",
+        "explicacao": "a pessoa voltou — o DP registra e comunica à contabilidade",
+        "exige_pessoa": True, "executa": "registrar_retorno",
+        "so_vinculo": "CTPS",
+        "campos": ("retorno_data", "observacao"),
+        "obrigatorios": ("retorno_data",),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o exame de retorno (ASO)",),
+    },
+    # ⚑ A TRANSFERÊNCIA DE OBRA (20/11/2026). Ele: *"A transferência será
+    # informada também à contabilidade, pois impacta diretamente na geração
+    # das guias de FGTS e tributos."* A obra do pedido (`obra_id`) é a obra
+    # de DESTINO. Nasce sozinha quando o ponto mostra a pessoa uma semana
+    # noutra obra (`obra_atual.abrir_transferencias`), ou a obra/DP abre.
+    "TRANSFERENCIA_OBRA": {
+        # ⚑ SAIU DA CAIXINHA NO MESMO DIA (20/11/2026): a obra muda sozinha,
+        # pelo mês trabalhado (`obra_do_mes`). Fica aqui só para os pedidos
+        # já gravados continuarem legíveis.
+        "oculto": True,
+        "nome": "Transferência de Obra",
+        "explicacao": "a pessoa passa a trabalhar em outra obra (de carteira, "
+                      "o DP comunica à contabilidade)",
+        "exige_pessoa": True, "executa": "transferir_obra",
+        "campos": ("obra_id", "transferencia_data", "observacao"),
+        "obrigatorios": ("obra_id", "transferencia_data"),
+        "campos_do_dp": (),
+        "checklist": (),
     },
     "DIVERSOS": {
         "nome": "Solicitações Diversas",
@@ -742,6 +911,15 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
     "continua_prestador": ("Não, está saindo da empresa",
                            "Sim, continua como prestador de serviço"),
     "salario_familia": ("Sim", "Não"),
+    "abono_pecuniario": ("Sim", "Não"),
+    "adiantamento_13": ("Sim", "Não"),
+    "reducao_jornada": ("2 horas a menos por dia", "7 dias corridos de folga no fim",
+                        "A pessoa escolhe na hora"),
+    "afastamento_natureza": ("Auxílio-doença do INSS (atestado acima de 15 dias)",
+                             "Acidente de trabalho ou doença ocupacional",
+                             "Licença-maternidade",
+                             "Atestado médico (até 15 dias)"),
+    "cumpre_aviso": ("Sim, trabalha os 30 dias", "Não, pede dispensa do aviso"),
 }
 
 # ---------------------------------------------------------------------------
@@ -794,8 +972,8 @@ EXPLICACAO_DA_OPCAO: dict[str, dict[str, str]] = {
         "Não, está saindo da empresa":
             "o acesso ao ponto cai na data de saída e não volta",
         "Sim, continua como prestador de serviço":
-            "o acesso ao ponto cai na saída, então a readmissão como prestador "
-            "tem de ser feita no mesmo dia — o sistema vai cobrar isso do DP",
+            "a pessoa continua ativa e batendo ponto; depois do último dia de "
+            "carteira o DP confirma, e o cadastro passa a prestador",
     },
     # ⚑ AS CHAVES SEGUEM O RÓTULO, que agora vem do cadastro de pessoas: se
     # alguém trocar a palavra lá e esquecer aqui, a dica some da tela. Tem
@@ -841,9 +1019,21 @@ DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
     "descontar_vt": {"Sim, descontar em folha": "1", "Não, a empresa absorve": "0"},
     "continua_prestador": {"Não, está saindo da empresa": "0",
                            "Sim, continua como prestador de serviço": "1"},
+    "afastamento_natureza": {
+        "Auxílio-doença do INSS (atestado acima de 15 dias)": "INSS",
+        "Acidente de trabalho ou doença ocupacional": "ACIDENTE",
+        "Licença-maternidade": "MATERNIDADE",
+        "Atestado médico (até 15 dias)": "ATESTADO"},
+    "reducao_jornada": {"2 horas a menos por dia": "DUAS_HORAS",
+                        "7 dias corridos de folga no fim": "SETE_DIAS",
+                        "A pessoa escolhe na hora": "ESCOLHE"},
+    "cumpre_aviso": {"Sim, trabalha os 30 dias": "1",
+                     "Não, pede dispensa do aviso": "0"},
     "parentesco": {"Filho": "FILHO", "Cônjuge": "CONJUGE"},
     "pagamento": {"Diarista": "DIARISTA", "Mensalista": "MENSALISTA"},
     "salario_familia": {"Sim": "1", "Não": "0"},
+    "abono_pecuniario": {"Sim": "1", "Não": "0"},
+    "adiantamento_13": {"Sim": "1", "Não": "0"},
     "conceder": {"Sim": "1", "Não": "0"},
     "pix_tipo": {"E-mail": "EMAIL", "Telefone": "TELEFONE", "CPF": "CPF",
                  "Aleatória": "ALEATORIA"},
@@ -861,6 +1051,7 @@ ROTULOS_DE_DOCUMENTO = {
     "CTPS-FOTO": "CTPS (página com a foto)",
     "CTPS-INFORMACOES": "CTPS (página com as informações)",
     "DOC-DEPENDENTE": "documento do dependente (certidão ou RG)",
+    "ASO": "ASO (exame médico)",
 }
 
 
@@ -954,14 +1145,18 @@ def campos_do_dp_do_tipo(tipo: str,
     return tuple(regra.get("campos_do_dp", ()))
 
 
-# ⚑ OS PASSOS QUE A RESPOSTA ACRESCENTA. Hoje é um só, e é o que fecha o
-# buraco do desligamento que continua como prestador: o acesso ao ponto cai na
-# saída, e se ninguém readmitir a pessoa não consegue bater no dia seguinte.
+# ⚑ OS PASSOS QUE A RESPOSTA ACRESCENTA ao checklist.
+#
+# ⚠️ ATÉ 19/11/2026 havia aqui "Abrir a readmissão como prestador": quem
+# continuava era desligado e readmitido. Desde então a pessoa NÃO é desligada —
+# o DP confirma a continuidade depois do último dia e o cadastro passa a
+# prestador (`desligamento_processo.confirmar_continuidade`). A confirmação é
+# um PASSO do processo, que trava o encerramento; repeti-la no checklist seria
+# a mesma tarefa em dois lugares, um que trava e outro que não.
 PASSOS_A_MAIS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
     "DESLIGAMENTO": {"continua_prestador": {"1": (
-        "Abrir a readmissão como prestador — SEM ela o ponto não aceita a "
-        "pessoa no dia seguinte",
-        "Conferir que a pessoa voltou a bater o ponto")}},
+        "Conferir, no dia seguinte ao último dia, que a pessoa continua "
+        "batendo o ponto como prestador",)}},
 }
 
 
@@ -1166,9 +1361,17 @@ def _condicionais(regra: dict[str, Any], chave: str,
 # do módulo, e não em produção.
 COLUNAS_JA_NO_CADASTRO: tuple[str, ...] = tuple(sorted({
     coluna
-    for regra in TIPOS.values()
+    for regra in TIPOS.values() if regra.get("exige_pessoa")
     for coluna in (regra.get("ja_no_cadastro") or {}).values()
 }))
+# ⚑ DADO PESSOAL VIAJA COMO "TEM", NUNCA COMO VALOR (19/11/2026). A busca de
+# pessoa do portal traz o que o cadastro já sabe, para não se perguntar de
+# novo — mas o RG, a mãe e o endereço de alguém não podem descer para o
+# celular de quem só procurou um nome. A tela recebe a marca e esconde o
+# campo dizendo "já está no cadastro"; o valor fica no servidor, que o junta
+# ao pedido (`o_que_o_cadastro_ja_tem`).
+SO_A_MARCA = frozenset(CAMPOS_DA_PESSOA)
+MARCA_TEM = "__tem__"
 for _c in COLUNAS_JA_NO_CADASTRO:
     if not re.fullmatch(r"[a-z][a-z0-9_]*", _c):
         raise ValueError(
@@ -1278,6 +1481,16 @@ def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
 # nome de campo à mão.
 ROTULOS: dict[str, str] = {
     "obra_id": "Código da Obra",
+    "ferias_inicio": "Início das férias",
+    "ferias_dias": "Quantos dias",
+    "abono_pecuniario": "Vender 1/3 (abono pecuniário)?",
+    "adiantamento_13": "Adiantar a 1ª parcela do 13º?",
+    "nome_mae": "Nome da Mãe",
+    "rg": "Nº do RG",
+    "rg_emissao": "Data de Emissão do RG",
+    "rg_orgao": "Órgão Emissor do RG",
+    "rg_uf": "Estado de Emissão do RG",
+    "complemento": "Complemento",
     "forma_desligamento": "Forma de Desligamento",
     "aviso_previo": "Data do Aviso Prévio",
     "data_saida": "Data de Saída",
@@ -1363,6 +1576,13 @@ ROTULOS: dict[str, str] = {
 ROTULOS_DO_DP: dict[str, str] = {
     "ultimo_dia": "Último dia trabalhado",
     "faltas_a_descontar": "Faltas a descontar",
+    "reducao_jornada": "Redução da jornada no aviso trabalhado (CLT art. 488)",
+    "afastamento_natureza": "Natureza do afastamento",
+    "afast_inicio": "Início do afastamento",
+    "afast_previsao": "Previsão de retorno",
+    "retorno_data": "Data em que voltou ao trabalho",
+    "transferencia_data": "A partir de quando (na obra nova)",
+    "cumpre_aviso": "No pedido de demissão, a pessoa cumpre o aviso?",
     "matricula": "Matrícula",
     "convencao_id": "Convenção",
     "cargo_id": "Cargo",
@@ -1385,8 +1605,15 @@ ROTULOS_DO_DP: dict[str, str] = {
 #     à contabilidade cobra o retorno dela. Pedido solto não era rastreio, era
 #     lembrete.
 
-SITUACOES = ("ABERTA", "EM_ANALISE", "ATENDIDA", "RECUSADA", "CANCELADA")
-ABERTAS = ("ABERTA", "EM_ANALISE")
+SITUACOES = ("ABERTA", "EM_ANALISE", "EM_ANDAMENTO", "ATENDIDA", "RECUSADA",
+             "CANCELADA")
+# ⚑ "EM ANDAMENTO" (19/11/2026) é do desligamento de carteira: o DP já
+# registrou a saída, e o processo segue até a rescisão e a multa pagas — ver
+# `core/desligamento_processo.py`. O pedido continua ABERTO na fila (é
+# trabalho de alguém), mas já NÃO se atende, recusa nem cancela: a saída foi
+# gravada, e desfazê-la é outro pedido ("Cancelar desligamento").
+ABERTAS = ("ABERTA", "EM_ANALISE", "EM_ANDAMENTO")
+A_ATENDER = ("ABERTA", "EM_ANALISE")
 
 
 def _opcoes(s: Optional[Session], campo: str) -> list[str]:
@@ -1530,8 +1757,10 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
         # 10/11/2026: *"Pipe, todo campo obrigatório, ele tem um asterisco,
         # facilita. Aqui não, ninguém sabe o que é obrigatório, o que é que
         # não é."* A lista é a do Pipe, tipo por tipo.
+        # A transferência é a exceção: a obra que ela pergunta é a de DESTINO,
+        # que a ficha não tem (20/11/2026).
         obrigatorios = ([x for x in d.get("obrigatorios", ()) if x != "obra_id"]
-                        if d["exige_pessoa"]
+                        if d["exige_pessoa"] and c != "TRANSFERENCIA_OBRA"
                         else ["obra_id"] + [x for x in d.get("obrigatorios", ())
                                             if x != "obra_id"])
         proprios = d.get("rotulos_proprios") or {}
@@ -1602,12 +1831,24 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
                                       if x in EXPLICACAO_DA_OPCAO},
                       # O mesmo, para os campos que o DP preenche ao atender:
                       # a tela dele lê daqui, e não de uma segunda lista.
+                      # ⚑ 23/11/2026: os campos do DP de TODOS os ramos do
+                      # vínculo, não só os do tipo. A redução de jornada e o
+                      # "cumpre aviso" só existem no ramo CTPS do desligamento
+                      # e chegavam à tela SEM as opções — viravam texto livre.
                       "rotulos_do_dp": {
                           x: proprios.get(x, ROTULOS_DO_DP.get(x, ROTULOS.get(x, x)))
-                          for x in d.get("campos_do_dp", ())},
+                          for x in _campos_do_dp_todos(d)},
                       "opcoes_do_dp": {x: _opcoes(s, x)
-                                       for x in d.get("campos_do_dp", ())
+                                       for x in _campos_do_dp_todos(d)
                                        if x in CATEGORIAS}})
+    return saida
+
+
+def _campos_do_dp_todos(regra: dict[str, Any]) -> list[str]:
+    """Os campos do DP do tipo e de cada ramo do vínculo, sem repetir."""
+    saida = list(regra.get("campos_do_dp", ()))
+    for ramo in (regra.get("por_vinculo") or {}).values():
+        saida += [x for x in ramo.get("campos_do_dp", ()) if x not in saida]
     return saida
 
 
@@ -1688,6 +1929,15 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
 
     if tipo == "CADASTRO":
         from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
+        # ⚑ O DESLIGADO ESCOLHIDO PELA BUSCA (19/11/2026). Ele: *"se não tiver
+        # documento, eu queria poder pesquisar o nome da pessoa (…) e só
+        # selecionar sem ter a necessidade de incluir de novos documentos."*
+        # A busca devolve a pessoa, não o CPF inteiro (o portal não expõe
+        # CPF); o CPF sai do cadastro, e a regra abaixo decide como sempre.
+        if pessoa is not None and not somente_digitos(dados.get("cpf") or ""):
+            dados = {**dados, "cpf": pessoa.cpf}
+        if pessoa is not None and not str(dados.get("nome") or "").strip():
+            dados = {**dados, "nome": pessoa.nome}
         cpf = somente_digitos(dados.get("cpf") or "")
         if not cpf_valido(cpf):
             raise ErroValidacao("CPF inválido.")
@@ -1715,6 +1965,32 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     pedido = traduzir_do_pipe(
         {c: dados.get(c) for c in campos_do_tipo(tipo, vinculo)
          if dados.get(c) not in (None, "")})
+    # Qual programação de férias se altera ou cancela, quando o pedido sai da
+    # tela de Férias (o botão na linha). Pelo portal, sem ela, vale a próxima
+    # férias da pessoa (`ferias.vigente`).
+    if tipo in ("ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS") \
+            and str(dados.get("ferias_id") or "").isdigit():
+        pedido["ferias_id"] = str(dados["ferias_id"])
+    if tipo in ("CADASTRO", "ADMISSAO_PRESTADOR"):
+        # ⚑ CAIXA ALTA E SEM ACENTO (19/11/2026), digitado ou lido — ver
+        # `documentos_de_pessoa.caixa_alta`.
+        from app.apps.erp.core.documentos_de_pessoa import (
+            CAMPOS_DE_TEXTO, EXTRAS_DA_LEITURA, caixa_alta, normalizar_campos)
+        # O que a leitura achou além do formulário (pai, sexo, estado civil,
+        # naturalidade, série da CTPS…) — passado de novo pela conferência de
+        # forma, porque vem do navegador.
+        # O telefone chega formatado da tela ("(85) 98888-7777"); guarda-se
+        # só o número, como o resto do sistema (WhatsApp, ponto) espera.
+        if pedido.get("telefone"):
+            pedido["telefone"] = "".join(c for c in str(pedido["telefone"])
+                                         if c.isdigit())
+        lidos = normalizar_campos(dados.get("lidos_do_documento") or {})
+        for c in EXTRAS_DA_LEITURA:
+            if lidos.get(c) and not pedido.get(c):
+                pedido[c] = lidos[c]
+        for c in CAMPOS_DE_TEXTO:
+            if str(pedido.get(c) or "").strip():
+                pedido[c] = caixa_alta(pedido[c])
     if readmissao:
         # Fica GRAVADO no pedido, e não só deduzido depois: é o que faz a
         # tela do DP e o histórico dizerem "readmissão" em vez de "cadastro".
@@ -1757,7 +2033,8 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
                     + ", ".join(falta) + ".")
         faltando = []
     else:
-        faltando = [ROTULOS.get(c, c) for c in exige["campos"]
+        proprios = regra.get("rotulos_proprios") or {}
+        faltando = [proprios.get(c) or ROTULOS.get(c, c) for c in exige["campos"]
                     if c != "dependentes" and not pedido.get(c)]
     # ⚑ A OBRA SAI DESTA CONTA, e tem conferência PRÓPRIA logo abaixo: ela
     # pode vir do pedido OU do cadastro da pessoa, e exigi-la aqui recusaria
@@ -1767,11 +2044,17 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     if faltando:
         raise ErroValidacao("Falta preencher: " + ", ".join(faltando) + ".")
 
-    # ⚑ E OS PAPÉIS. `documentos` vem da tela: os códigos dos tipos que já
-    # foram anexados ao pedido (o arquivo em si já subiu e está esperando).
+    # ⚑ E OS PAPÉIS. `documentos` são os tipos dos arquivos que vieram JUNTO
+    # com o pedido (a rota do portal os guarda na mesma transação — ver
+    # `guardar_papeis`).
+    #
+    # ⚑ NA READMISSÃO NÃO SE EXIGE PAPEL (19/11/2026). Ele: *"já que é uma
+    # pessoa que a gente já tem cadastro, né? Então a gente não precisaria."*
+    # Os papéis da primeira passagem estão no cadastro dela; o que faltar de
+    # DADO a obra digita (acima, pela mesma conta de sempre).
     anexados = {str(x).strip().upper() for x in (dados.get("documentos") or [])}
-    sem_papel = [d["rotulo"] for d in exige["documentos"]
-                 if d["codigo"] not in anexados]
+    sem_papel = [] if readmissao else [
+        d["rotulo"] for d in exige["documentos"] if d["codigo"] not in anexados]
     if sem_papel:
         porque = (" Sem esses papéis o cadastro não se faz e a pessoa não "
                   "entra no sistema de pagamento — por isso o pedido não sai "
@@ -1791,6 +2074,8 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # sem obra: pedido sem obra é pedido que ninguém sabe de onde veio, e
     # quem for atendê-lo vai perguntar por WhatsApp — que é o trabalho que
     # esta fila existe para acabar.
+    if tipo == "TRANSFERENCIA_OBRA" and not str(dados.get("obra_id") or "").isdigit():
+        raise ErroValidacao("Escolha a obra para onde a pessoa vai.")
     obra_do_pedido = (int(dados["obra_id"]) if dados.get("obra_id")
                       else (pessoa.obra_id if pessoa else None))
     if not obra_do_pedido:
@@ -1826,6 +2111,33 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
                       or pedido.get("aux_transporte"), "valor"),
     })
     solicitacao_id = int(linha.scalar())
+    # -----------------------------------------------------------------------
+    # ⚑ A ADMISSÃO NASCE COM O PRÉ-CADASTRO (19/11/2026)
+    #
+    # Ele: *"eu fiz uma admissão de colaborador e eu pensei que a pessoa já
+    # apareceria na fase inicial (…) Se eu atender (…) ele gera o cadastro
+    # inicial, é isso? Não tem sentido. (…) não existe um cadastro ou
+    # pré-cadastro dessa pessoa já."*
+    #
+    # Agora a pessoa nova nasce no cadastro na hora do pedido, na etapa
+    # INICIAL, com os dados e os papéis — é lá que o DP confere. Atender o
+    # pedido passa a ser completar o que é do DP (matrícula, convenção,
+    # cargo, salário). Recusado ou cancelado, o pré-cadastro vai para
+    # "Cancelado". A readmissão continua como era: a pessoa já existe, e só
+    # volta à ativa quando o DP atende.
+    # -----------------------------------------------------------------------
+    if tipo == "CADASTRO" and not readmissao and not colaborador_id:
+        novo = svc_pessoas.salvar(s, {
+            **para_o_cadastro(pedido), "obra_id": obra_do_pedido,
+            "etapa": "CADASTRO_INICIAL"}, usuario)
+        colaborador_id = novo.id
+        pedido["pre_cadastro"] = "1"
+        s.execute(text("""UPDATE dp_solicitacoes
+                             SET colaborador_id = :c, dados = CAST(:d AS jsonb)
+                           WHERE id = :s"""),
+                  {"c": novo.id, "s": solicitacao_id,
+                   "d": __import__("json").dumps(pedido, ensure_ascii=False,
+                                                 default=str)})
     for i, item in enumerate(checklist_do_tipo(tipo, vinculo,
                                                readmissao=readmissao,
                                                pedido=pedido, s=s)):
@@ -1853,6 +2165,563 @@ def _evento(s: Session, solicitacao_id: int, acao: str, detalhe: dict,
 
 
 # ---------------------------------------------------------------------------
+# ⚑ OS PAPÉIS DO PEDIDO (19/11/2026)
+#
+# ⚠️ DEFEITO ACHADO NESTE TRABALHO, e grave: o portal LIA os documentos
+# anexados e mandava ao servidor só os TIPOS ("anexei o RG") — o arquivo nunca
+# subia. O comentário daqui dizia "o arquivo já subiu e está esperando", e a
+# coluna `documentos.dp_solicitacao_id` (migração 100) existia sem ninguém
+# escrever nela. Ou seja: o DP recebia o pedido de admissão sem papel nenhum.
+#
+# Agora os arquivos vêm NA MESMA requisição do pedido e são guardados na mesma
+# transação: pessoa que já existe (readmissão) recebe o papel direto no
+# cadastro; pessoa nova recebe quando o DP atende (`transferir_papeis`).
+# ---------------------------------------------------------------------------
+def cancelar_desligamento(s: Session, colaborador_id: int, p: dict[str, Any],
+                          usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Desfaz o desligamento que ainda não aconteceu (20/11/2026).
+
+    ⚠️ ANTES, atender este pedido não fazia NADA: a data de saída continuava
+    marcada, a virada do dia desligava a pessoa no dia, e a contabilidade
+    seguia preparando a rescisão.
+
+    O que faz:
+      · recusa se a pessoa JÁ saiu — aí não é cancelar, é readmitir;
+      · apaga a saída agendada (data de saída, aviso, último dia) do cadastro
+        e do vínculo aberto;
+      · encerra o pedido de desligamento em andamento como CANCELADO;
+      · pedido de rescisão à contabilidade ainda em rascunho: cancela; já
+        enviado: o cancelamento PASSA pela contabilidade (modelo
+        "Cancelamento de desligamento"), e este pedido fica Em andamento até
+        ela devolver.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    # ⚑ O CANCELAMENTO PEDIDO A TEMPO VALE MESMO DEPOIS DA DATA (20/11/2026).
+    # A virada do dia SEGURA quem tem cancelamento aberto
+    # (`desligamentos_do_dia`): se a obra pediu antes da saída e o DP atendeu
+    # um dia depois, a pessoa não foi desligada — e recusar aqui a jogaria na
+    # readmissão por demora nossa. Ele: *"Imagina desligar uma pessoa que vai
+    # continuar trabalhando. É uma falha grave."*
+    criado = p.get("criado_em")
+    try:
+        criado_dia = (criado.date() if hasattr(criado, "date")
+                      else date.fromisoformat(str(criado or "")[:10]))
+    except ValueError:
+        criado_dia = None
+    a_tempo = (c.demissao is not None and criado_dia is not None
+               and criado_dia <= c.demissao
+               and (c.situacao or "ATIVO").upper() != "DESLIGADO")
+    if svc_pessoas.ja_saiu(c.demissao) and not a_tempo:
+        raise ErroValidacao(
+            f"{c.nome} já saiu em {c.demissao:%d/%m/%Y}. Depois da saída não se "
+            "cancela o desligamento — o caminho é a readmissão.")
+    efeito: dict[str, Any] = {}
+    desl = s.execute(text("""
+        SELECT id, numero, situacao FROM dp_solicitacoes
+         WHERE colaborador_id = :c AND tipo = 'DESLIGAMENTO'
+           AND situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')
+         ORDER BY id DESC LIMIT 1"""), {"c": c.id}).mappings().first()
+    antes = {"data_saida": str(c.demissao) if c.demissao else None,
+             "aviso_previo": str(c.aviso_previo) if c.aviso_previo else None,
+             "ultimo_dia": str(c.ultimo_dia) if c.ultimo_dia else None}
+    c.demissao = c.aviso_previo = c.ultimo_dia = None
+    v = svc_pessoas.vinculo_aberto(s, c.id)
+    if v is not None:
+        v.demissao = v.aviso_previo = v.ultimo_dia = None
+        v.forma_desligamento = None
+    s.flush()
+    registrar_evento(s, "colaborador", c.id, "DESLIGAMENTO_CANCELADO",
+                     {"pedido": p.get("numero"), "antes": antes},
+                     usuario.id if usuario else None)
+    if desl is not None:
+        # A RESPOSTA TAMBÉM: é ela que quem pediu o desligamento lê no portal
+        # ("O que você já pediu") — e ele pode não ser quem pediu o
+        # cancelamento. Todo mundo envolvido fica sabendo.
+        s.execute(text("""UPDATE dp_solicitacoes
+                             SET situacao = 'CANCELADA', cancelado_por = :u,
+                                 cancelado_em = now(), atualizado_em = now(),
+                                 motivo_cancelamento = :m, resposta = :m
+                           WHERE id = :s"""),
+                  {"u": usuario.id if usuario else None, "s": desl["id"],
+                   "m": f"desligamento cancelado pelo pedido {p.get('numero')} "
+                        "— a pessoa continua trabalhando"})
+        _evento(s, desl["id"], "CANCELADA",
+                {"motivo": f"cancelado pelo pedido {p.get('numero')}"}, usuario)
+        efeito["desligamento_cancelado"] = desl["numero"]
+    rescisao = s.execute(text("""
+        SELECT id, numero, situacao, criado_em FROM dp_pedidos
+         WHERE colaborador_id = :c AND template = 'DESLIGAMENTO'
+           AND situacao NOT IN ('CANCELADO', 'CONCLUIDO')
+         ORDER BY id DESC LIMIT 1"""), {"c": c.id}).mappings().first()
+    if rescisao is not None:
+        if rescisao["situacao"] == "RASCUNHO":
+            from app.apps.erp.core import contabilidade as svc_ct
+            svc_ct.cancelar(s, rescisao["id"], usuario,
+                            motivo=f"desligamento cancelado ({p.get('numero')})")
+        else:
+            # A contabilidade já recebeu a rescisão: o pedido de cancelamento
+            # sai montado com a data em que ela foi comunicada.
+            s.execute(text("""UPDATE dp_solicitacoes
+                                 SET dados = dados || CAST(:j AS jsonb)
+                               WHERE id = :s"""),
+                      {"s": p["id"], "j": __import__("json").dumps(
+                          {"desligamento_comunicado_em":
+                           rescisao["criado_em"].date().isoformat()})})
+    # ⚑ DE CARTEIRA, O CANCELAMENTO SEMPRE PASSA PELA CONTABILIDADE
+    # (20/11/2026). Antes, só quando a rescisão já tinha sido enviada. Ele:
+    # *"esse cancelamento tem que ser avisado à contabilidade, ela tem que
+    # estar ciente, tem que ser dado o retorno."* A contabilidade pode saber
+    # do desligamento por outro caminho (telefone, e-mail, o eSocial já
+    # agendado) — avisar quando ela não sabia custa um e-mail; não avisar
+    # quando ela sabia é rescisão de quem continua trabalhando.
+    # O prestador não tem registro na contabilidade: fecha no atendimento.
+    if (vinculo_da_pessoa(s, c.id) or "CTPS").upper() == "CTPS":
+        efeito["precisa_contabilidade"] = True
+    return efeito
+
+
+def _transferir_obra(s: Session, colaborador_id: int, p: dict[str, Any],
+                     pedido: dict[str, Any], usuario: Optional[Usuario]) -> dict[str, Any]:
+    """A obra de CADASTRO passa a ser a de destino. A de antes fica na trilha
+    e no pedido — é o "de" que a contabilidade precisa para as guias."""
+    destino = pedido.get("obra_id") or p.get("obra_id")
+    if not str(destino or "").isdigit():
+        raise ErroValidacao("Escolha a obra de destino.")
+    c = s.get(Colaborador, colaborador_id)
+    de = c.obra_id
+    if de == int(destino):
+        return {"transferencia": "a obra de cadastro já era esta"}
+    c.obra_id = int(destino)
+    s.flush()
+    s.execute(text("UPDATE dp_solicitacoes SET dados = dados || CAST(:j AS jsonb) "
+                   "WHERE id = :i"),
+              {"i": p["id"], "j": __import__("json").dumps({"obra_origem_id": str(de or "")})})
+    registrar_evento(s, "colaborador", c.id, "TRANSFERENCIA_DE_OBRA",
+                     {"de": de, "para": int(destino), "pedido": p.get("numero"),
+                      "a_partir_de": pedido.get("transferencia_data")},
+                     usuario.id if usuario else None)
+    return {"transferencia": f"obra {de} → {destino}"}
+
+
+def _registrar_afastamento(s: Session, colaborador_id: int, pedido: dict[str, Any],
+                           p: dict[str, Any], usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Atender a comunicação de afastamento: o afastamento entra na ficha (se
+    ainda não estiver) e o pedido segue para a contabilidade."""
+    from app.apps.erp.core.cadastros import afastamentos
+    natureza = str(pedido.get("afastamento_natureza") or "").upper()
+    if natureza not in ("INSS", "ACIDENTE", "MATERNIDADE", "ATESTADO"):
+        raise ErroValidacao("Escolha a natureza do afastamento (INSS, acidente, "
+                            "maternidade) — é o que a contabilidade informa ao "
+                            "eSocial.")
+    if afastamentos.aberto(s, colaborador_id) is not None:
+        return {"afastamento": "já estava na ficha"}
+    afastamentos.abrir(s, colaborador_id, {
+        "tipo": natureza, "data_inicio": pedido.get("afast_inicio"),
+        "previsao_retorno": pedido.get("afast_previsao") or "",
+        "motivo": f"{p.get('numero')}: " + str(pedido.get("observacao") or "")[:400]},
+        usuario)
+    return {"afastamento": "registrado na ficha"}
+
+
+def _registrar_retorno(s: Session, colaborador_id: int, pedido: dict[str, Any],
+                       p: dict[str, Any], usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Atender o retorno: a volta é registrada na ficha (com as travas dela —
+    o exame de retorno), salvo se o DP já registrou por lá."""
+    from app.apps.erp.core.cadastros import afastamentos
+    if afastamentos.aberto(s, colaborador_id) is None:
+        return {"retorno": "já registrado na ficha"}
+    afastamentos.retornar(s, colaborador_id, {
+        "data_retorno": pedido.get("retorno_data"),
+        "observacao": f"{p.get('numero')}: " + str(pedido.get("observacao") or "")[:400]},
+        usuario)
+    return {"retorno": "registrado na ficha"}
+
+
+def comunicar_pela_ficha(s: Session, colaborador_id: int, tipo: str,
+                         dados: dict[str, Any], usuario: Optional[Usuario]) -> Optional[str]:
+    """O DP afastou (ou registrou a volta) direto na ficha: nasce a
+    solicitação, para a contabilidade ficar sabendo pelo mesmo caminho de
+    todo o resto (20/11/2026). Só de carteira, e só se não houver uma aberta
+    para a mesma pessoa. Devolve o número, ou None."""
+    if (vinculo_da_pessoa(s, colaborador_id) or "CTPS").upper() != "CTPS":
+        return None
+    ja = s.execute(text("""SELECT numero FROM dp_solicitacoes
+                            WHERE colaborador_id = :c AND tipo = :t
+                              AND situacao IN ('ABERTA', 'EM_ANALISE')"""),
+                   {"c": colaborador_id, "t": tipo}).scalar()
+    if ja:
+        return None
+    if tipo == "AFASTAMENTO":
+        corpo = {"afastamento_natureza": str(dados.get("tipo") or "").upper(),
+                 "afast_inicio": dados.get("data_inicio"),
+                 "afast_previsao": dados.get("previsao_retorno") or "",
+                 "observacao": "registrado pelo DP na ficha. "
+                               + str(dados.get("motivo") or "")}
+    else:
+        corpo = {"retorno_data": dados.get("data_retorno"),
+                 "observacao": "registrado pelo DP na ficha. "
+                               + str(dados.get("observacao") or "")}
+    p = abrir(s, {"tipo": tipo, "colaborador_id": colaborador_id,
+                  **{k: v for k, v in corpo.items() if v}}, usuario)
+    return p["numero"]
+
+
+def para_o_cadastro(pedido: dict[str, Any]) -> dict[str, Any]:
+    """O pedido de admissão no vocabulário da FICHA da pessoa.
+
+    ⚠️ ACHADO EM 19/11/2026: o atendimento passava o pedido direto para o
+    cadastro, e quatro campos tinham NOME DIFERENTE lá — o vínculo
+    (`tipo_documentacao` × `vinculo`), o cargo (`cargo_pleiteado_id` ×
+    `cargo_id`), a CTPS e o PIS. Os quatro se perdiam calados: o prestador
+    nascia como CTPS, sem cargo e sem os números da carteira.
+    """
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    d = dict(pedido)
+    if d.get("tipo_documentacao"):
+        d["vinculo"] = d["tipo_documentacao"]
+    if d.get("cargo_pleiteado_id"):
+        d["cargo_id"] = d["cargo_pleiteado_id"]
+    if d.get("num_ctps"):
+        d["ctps_numero"] = d["num_ctps"]
+    # O PIS não é obrigatório (19/11/2026); um PIS que não passa na conta dos
+    # dígitos (leitura torta, digitação) não pode travar a admissão — ele
+    # fica no pedido para o DP ver, e não entra no cadastro.
+    if d.get("num_pis") and svc_pessoas.pis_valido(d["num_pis"]):
+        d["pis"] = d["num_pis"]
+    if d.get("data_inicio"):
+        d.setdefault("admissao", d["data_inicio"])
+    if str(d.get("pagamento") or "").upper() in ("MENSALISTA", "DIARISTA"):
+        d["mensalista"] = str(d["pagamento"]).upper() == "MENSALISTA"
+    # A MATRÍCULA É O CPF (19/11/2026), desde o nascimento do cadastro.
+    cpf = somente_digitos(d.get("cpf") or "")
+    if cpf and not str(d.get("matricula") or "").strip():
+        d["matricula"] = cpf
+    return d
+
+
+def guardar_papeis(s: Session, solicitacao_id: int,
+                   colaborador_id: Optional[int],
+                   arquivos: list[dict[str, Any]],
+                   usuario: Optional[Usuario] = None) -> int:
+    """Guarda os arquivos do pedido. `arquivos`: [{conteudo, nome, tipo}]."""
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.documentos.armazenamento import salvar
+
+    numero = s.execute(text("SELECT numero FROM dp_solicitacoes WHERE id = :i"),
+                       {"i": solicitacao_id}).scalar() or ""
+    feitos = 0
+    for a in arquivos:
+        tipo = str(a.get("tipo") or "").strip().upper() or "DOC-IDENTIDADE"
+        nome = str(a.get("nome") or "documento")
+        conteudo = a.get("conteudo") or b""
+        if not conteudo:
+            continue
+        if colaborador_id:
+            svc_arq.arquivar(s, conteudo, nome, tipo_codigo=tipo,
+                             colaborador_id=colaborador_id,
+                             referencia=f"{numero} — enviado pela obra",
+                             origem="PORTAL", usuario=usuario)
+        else:
+            anexo = salvar(s, conteudo, f"{tipo} {numero} {nome}",
+                           entidade_tipo="dp_solicitacao",
+                           entidade_id=solicitacao_id, categoria="OUTRO",
+                           descricao=tipo, usuario=usuario)
+            texto_ = ""
+            try:
+                from app.apps.erp.core.arquivo import texto as svc_texto
+                texto_ = svc_texto.extrair(conteudo, nome) or ""
+            except Exception:                            # noqa: BLE001
+                texto_ = ""
+            s.execute(text("""
+                INSERT INTO documentos (tipo_codigo, anexo_id, nome_padronizado,
+                                        nome_original, dp_solicitacao_id,
+                                        referencia, origem, texto)
+                VALUES (:t, :a, :n, :o, :s, :r, 'PORTAL', NULLIF(:x, ''))"""),
+                {"t": tipo, "a": anexo.id, "n": f"{tipo} — {numero} — {nome}"[:200],
+                 "o": nome[:200], "s": solicitacao_id,
+                 "r": f"{numero} — enviado pela obra", "x": texto_})
+        feitos += 1
+    s.flush()
+    return feitos
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O PEDIDO EM LINGUAGEM DE GENTE (19/11/2026)
+#
+# Ele, olhando a tela do atendimento: *"a nomenclatura ela não está amigável
+# (…) cargo hífen pleiteado hífen ID, aí está a numeração de sistema do cargo
+# (…) não recebe todo maiúsculo com hífen (…) CEP não está no padrão do CEP,
+# CNPJ (…) sem pontuação. Data (…) no padrão americano (…) Empresa hífen ID,
+# aí está o número da empresa e não o nome."*
+#
+# A tela mostrava o JSON do pedido cru. Agora o servidor devolve cada campo
+# com o rótulo em português e o valor como se lê: nome do cargo, da empresa e
+# da obra; o rótulo da opção; data dd/mm/aaaa; CPF, CNPJ, CEP e telefone com
+# a pontuação. As marcas internas (pré-cadastro, processo…) não aparecem.
+# ---------------------------------------------------------------------------
+_MARCAS_INTERNAS = {"pre_cadastro", "readmissao", "processo_desligamento",
+                    "processo_admissao", "processo_contabil",
+                    "continuidade_revista", "documentos", "lidos_do_documento",
+                    "ferias_id"}
+
+
+def _formatar(campo: str, valor: Any, s: Session) -> str:
+    import re as _re
+    from datetime import date as _date
+    if valor in (None, ""):
+        return ""
+    if isinstance(valor, list):
+        return f"{len(valor)} item(ns)"
+    texto_ = str(valor).strip()
+    so = "".join(c for c in texto_ if c.isdigit())
+    # nomes de cadastro no lugar do número
+    tabelas = {"cargo_pleiteado_id": ("cargos", "nome"),
+               "cargo_id": ("cargos", "nome"),
+               "convencao_id": ("convencoes", "nome"),
+               "empresa_id": ("empresas", "COALESCE(nome_fantasia, razao_social)"),
+               "obra_id": ("obras", "codigo || ' — ' || nome")}
+    if campo in tabelas and so:
+        tabela, coluna = tabelas[campo]
+        nome = s.execute(text(f"SELECT {coluna} FROM {tabela} WHERE id = :i"),
+                         {"i": int(so)}).scalar()
+        return str(nome or texto_)
+    # ⚑ DINHEIRO NO PADRÃO DO BRASIL (19/11/2026): R$ 1.234,56.
+    if campo in CAMPOS_DE_DINHEIRO:
+        try:
+            v = _dec(texto_, campo)
+        except ErroValidacao:
+            v = None
+        if v is not None:
+            inteiro, cent = f"{v:,.2f}".split(".")
+            return "R$ " + inteiro.replace(",", ".") + "," + cent
+    if campo in ("cpf", "pix_chave") and len(so) == 11 and len(texto_) <= 14:
+        return f"{so[:3]}.{so[3:6]}.{so[6:9]}-{so[9:]}"
+    if campo in ("cnpj_admissao", "cnpj_pj") and len(so) == 14:
+        return f"{so[:2]}.{so[2:5]}.{so[5:8]}/{so[8:12]}-{so[12:]}"
+    if campo == "cep" and len(so) == 8:
+        return f"{so[:5]}-{so[5:]}"
+    if campo == "telefone" and len(so) in (10, 11):
+        meio = 7 if len(so) == 11 else 6
+        return f"({so[:2]}) {so[2:meio]}-{so[meio:]}"
+    if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", texto_):
+        a, m, d = texto_.split("-")
+        return f"{d}/{m}/{a}"
+    # o rótulo da opção, no lugar do código
+    rotulos = {
+        "categoria_alimentacao": svc_pessoas.CATEGORIA_ALIMENTACAO_ROTULOS,
+        "categoria_transporte": svc_pessoas.CATEGORIA_TRANSPORTE_ROTULOS,
+        "tipo_contrato": svc_pessoas.TIPO_CONTRATO_ROTULOS,
+        "tipo_documentacao": svc_pessoas.VINCULO_ROTULOS,
+        "vinculo": svc_pessoas.VINCULO_ROTULOS,
+        "forma_desligamento": svc_pessoas.FORMA_DESLIGAMENTO_ROTULOS,
+        "sexo": svc_pessoas.SEXO_ROTULOS,
+        "estado_civil": svc_pessoas.ESTADO_CIVIL_ROTULOS,
+        "parentesco": svc_pessoas.PARENTESCO_ROTULOS,
+    }.get(campo)
+    if rotulos and texto_ in rotulos:
+        r = rotulos[texto_]
+        return r if isinstance(r, str) else str(r)
+    inverso = {v: k for k, v in (DO_PIPE_PARA_O_CODIGO.get(campo) or {}).items()}
+    if texto_ in inverso:
+        return inverso[texto_]
+    if texto_ in ("1", "0") and campo in SIM_NAO_DOS_CAMPOS:
+        return "Sim" if texto_ == "1" else "Não"
+    return texto_
+
+
+CAMPOS_DE_DINHEIRO = {"valor_diaria", "valor_mes", "aux_alimentacao",
+                      "aux_transporte", "salario", "valor_total", "valor",
+                      "valor_parcela", "valor_gratificacao"}
+SIM_NAO_DOS_CAMPOS = {"abono_pecuniario", "adiantamento_13",
+                      "continua_prestador", "salario_familia", "conceder",
+                      "descontar_vt", "dependente_ir"}
+
+
+def dados_legiveis(s: Session, tipo: str, dados: dict[str, Any]
+                   ) -> list[dict[str, str]]:
+    """O pedido como se lê: [{campo, rotulo, valor}] na ordem dos campos do
+    tipo (e o que sobrar, depois)."""
+    regra = TIPOS.get(tipo) or {}
+    proprios = regra.get("rotulos_proprios") or {}
+    ordem = list(regra.get("campos") or ()) + list(regra.get("campos_do_dp") or ())
+    ordem += [c for c in dados if c not in ordem]
+    saida = []
+    for c in dict.fromkeys(ordem):
+        if c in _MARCAS_INTERNAS or c not in dados:
+            continue
+        try:
+            valor = _formatar(c, dados.get(c), s)
+        except Exception:                                # noqa: BLE001
+            valor = str(dados.get(c))
+        if not valor:
+            continue
+        rotulo = (proprios.get(c) or ROTULOS.get(c)
+                  or svc_pessoas.CAMPO_ROTULOS.get(c) or c.replace("_", " "))
+        saida.append({"campo": c, "rotulo": rotulo, "valor": valor})
+    return saida
+
+
+def corrigir(s: Session, solicitacao_id: int, dados: dict[str, Any],
+             usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O DP corrige o pedido na tela do atendimento — e, havendo cadastro
+    ligado (pré-cadastro), o cadastro junto.
+
+    ⚑ Ele: *"se eu precisar editar, esses campos deveriam ser todos
+    editáveis (…) se eu entender que a obra não era para ser essa, se eu
+    entender que o cargo não era para ser esse, então aqui é o local e momento
+    de a gente corrigir."*
+
+    Só campos do tipo; vazio APAGA o campo do pedido (é correção, a pessoa viu
+    o campo e o limpou). Fica rastro de/para.
+    """
+    import json
+    p = ler(s, solicitacao_id)
+    # ⚑ DEPOIS DE ATENDIDO TAMBÉM SE CORRIGE (20/11/2026, noite) — e o que já
+    # foi à contabilidade vira um pedido de CORREÇÃO a ela
+    # (`contabil_processo.comunicar_correcao`).
+    if p["situacao"] not in A_ATENDER + ("EM_ANDAMENTO", "ATENDIDA"):
+        raise ErroValidacao(f"{p['numero']} já está {p['situacao_rotulo'].lower()} "
+                            "— não dá mais para corrigir.")
+    tipo = p["tipo"]
+    permitidos = set(campos_do_tipo(tipo, p.get("pessoa_vinculo") or None)) \
+        | set(campos_do_dp_do_tipo(tipo, p.get("pessoa_vinculo") or None)) \
+        | {"obra_id"}
+    novos = traduzir_do_pipe({k: v for k, v in (dados.get("dados") or {}).items()
+                              if k in permitidos})
+    if tipo in ("CADASTRO", "ADMISSAO_PRESTADOR"):
+        from app.apps.erp.core.documentos_de_pessoa import CAMPOS_DE_TEXTO, caixa_alta
+        for c in CAMPOS_DE_TEXTO:
+            if str(novos.get(c) or "").strip():
+                novos[c] = caixa_alta(novos[c])
+        if novos.get("telefone"):
+            novos["telefone"] = "".join(x for x in str(novos["telefone"]) if x.isdigit())
+    antes = dict(p["dados"] or {})
+    depois = dict(antes)
+    mudou = []
+    for k, v in novos.items():
+        v = "" if v is None else v
+        if str(antes.get(k) or "") != str(v):
+            mudou.append({"campo": k, "de": antes.get(k), "para": v})
+            if str(v).strip():
+                depois[k] = v
+            else:
+                depois.pop(k, None)
+    if not mudou:
+        return p
+    nova_obra = depois.get("obra_id")
+    s.execute(text("""UPDATE dp_solicitacoes
+                         SET dados = CAST(:d AS jsonb), atualizado_em = now(),
+                             obra_id = COALESCE(:o, obra_id)
+                       WHERE id = :s"""),
+              {"d": json.dumps(depois, ensure_ascii=False, default=str),
+               "o": int(nova_obra) if str(nova_obra or "").isdigit() else None,
+               "s": solicitacao_id})
+    _evento(s, solicitacao_id, "CORRIGIDO_PELO_DP", {"mudou": mudou}, usuario)
+    # O pré-cadastro acompanha: é a mesma pessoa, e o DP corrigiu olhando o
+    # documento. A readmissão aplica as correções no atendimento.
+    if (antes.get("pre_cadastro") and p.get("colaborador_id")):
+        c = s.get(Colaborador, int(p["colaborador_id"]))
+        alterados = {m["campo"]: depois.get(m["campo"], "") for m in mudou}
+        svc_pessoas.salvar(s, {**para_o_cadastro(alterados),
+                               "cpf": c.cpf, "nome": depois.get("nome") or c.nome},
+                           usuario)
+    if p["situacao"] not in A_ATENDER:
+        _corrigir_depois_de_atendido(s, {**p, "dados": depois}, mudou, usuario)
+    s.flush()
+    return ler(s, solicitacao_id)
+
+
+def _corrigir_depois_de_atendido(s: Session, p: dict[str, Any],
+                                 mudou: list[dict[str, Any]],
+                                 usuario: Optional[Usuario]) -> None:
+    """O efeito do atendimento acompanha a correção, onde dá para refazer sem
+    risco; e a contabilidade fica sabendo do que já tinha recebido."""
+    import json
+    tipo = p["tipo"]
+    alvo = p.get("colaborador_id")
+    campos = {m["campo"] for m in mudou}
+    d = p["dados"]
+    if tipo in ("ATUALIZACAO_DADOS", "AJUDA_DE_CUSTO", "VALE_TRANSPORTE") and alvo:
+        c = s.get(Colaborador, int(alvo))
+        svc_pessoas.salvar(s, {**{k: d.get(k, "") for k in campos},
+                               "cpf": c.cpf, "nome": c.nome}, usuario)
+    elif tipo == "FERIAS" and svc_ferias.tem_tabela(s) and \
+            campos & {"ferias_inicio", "ferias_dias"}:
+        ini = svc_ferias._data(d.get("ferias_inicio"))
+        dias = svc_ferias._dias(d.get("ferias_dias"))
+        if ini and dias:
+            s.execute(text("""UPDATE ferias_programadas
+                                 SET inicio = :i, dias = :d, fim = :f,
+                                     atualizado_em = now()
+                               WHERE solicitacao_id = :s AND situacao = 'PEDIDA'"""),
+                      {"i": ini, "d": dias, "f": svc_ferias.periodo(ini, dias),
+                       "s": p["id"]})
+    elif tipo == "DESLIGAMENTO" and campos & {"aviso_previo", "ultimo_dia",
+                                              "data_saida", "forma_desligamento",
+                                              "reducao_jornada", "cumpre_aviso"}:
+        from app.apps.erp.core import termos
+        if alvo and campos & {"aviso_previo", "ultimo_dia", "data_saida"}:
+            c = s.get(Colaborador, int(alvo))
+            for campo, coluna in (("aviso_previo", "aviso_previo"),
+                                  ("ultimo_dia", "ultimo_dia"),
+                                  ("data_saida", "demissao")):
+                if campo in campos and d.get(campo) and \
+                        (d.get("continua_prestador") != "1" or coluna != "demissao"):
+                    setattr(c, coluna, svc_pessoas._data(d[campo], campo))
+        # O aviso tem as datas antigas: vai um novo para a pessoa assinar.
+        t_ = termos.do_pedido(s, int(p["id"]))
+        if t_ is not None:
+            if t_["situacao"] == "ABERTO":
+                termos.cancelar(s, t_["id"], "as datas foram corrigidas", usuario)
+            else:
+                s.execute(text("UPDATE dp_termos SET situacao = 'CANCELADO', "
+                               "motivo_recusa = 'substituído: as datas foram "
+                               "corrigidas' WHERE id = :i"), {"i": t_["id"]})
+        svc_processo.gerar_termo(s, p, usuario)
+    else:
+        _evento(s, p["id"], "AVISO", {"texto": "corrigido depois de atendido: "
+                                      "confira se o cadastro precisa do mesmo "
+                                      "acerto"}, usuario)
+    svc_contabil.comunicar_correcao(s, p, mudou, usuario)
+    # O pedido de mudança da obra, se havia, foi atendido.
+    if (p.get("dados") or {}).get("mudanca_pedida"):
+        s.execute(text("UPDATE dp_solicitacoes SET dados = dados - 'mudanca_pedida' "
+                       "WHERE id = :i"), {"i": p["id"]})
+    _ = json
+
+
+def papeis_do_pedido(s: Session, solicitacao_id: int, numero: str,
+                     colaborador_id: Optional[int]) -> list[dict[str, Any]]:
+    """Os arquivos que vieram com este pedido — onde quer que estejam agora
+    (ainda no pedido, ou já no cadastro da pessoa, marcados com o número)."""
+    linhas = s.execute(text("""
+        SELECT d.id, d.anexo_id, d.tipo_codigo, d.nome_original,
+               d.nome_padronizado, t.nome AS tipo_nome
+          FROM documentos d
+          LEFT JOIN documento_tipos t ON t.codigo = d.tipo_codigo
+         WHERE d.dp_solicitacao_id = :s
+            OR (:c IS NOT NULL AND d.colaborador_id = :c
+                AND d.referencia LIKE :ref)
+         ORDER BY d.id"""),
+        {"s": solicitacao_id, "c": colaborador_id,
+         "ref": f"{numero} %"}).mappings().all()
+    return [{"id": l["id"], "anexo_id": l["anexo_id"],
+             "tipo": l["tipo_nome"] or l["tipo_codigo"],
+             "nome": l["nome_original"] or l["nome_padronizado"]}
+            for l in linhas]
+
+
+def transferir_papeis(s: Session, solicitacao_id: int, colaborador_id: int) -> int:
+    """Os papéis do pedido passam a ser da pessoa (dono único: `ck_documento_um_dono`)."""
+    r = s.execute(text("""
+        UPDATE documentos SET colaborador_id = :c, dp_solicitacao_id = NULL
+         WHERE dp_solicitacao_id = :s"""), {"c": colaborador_id, "s": solicitacao_id})
+    return r.rowcount or 0
+
+
+# ---------------------------------------------------------------------------
 # Atender — e EXECUTAR
 # ---------------------------------------------------------------------------
 def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
@@ -1869,7 +2738,7 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
     atendido pela metade.
     """
     p = ler(s, solicitacao_id)
-    if p["situacao"] not in ABERTAS:
+    if p["situacao"] not in A_ATENDER:
         raise ErroValidacao(
             f"{p['numero']} já está {p['situacao_rotulo'].lower()} — não dá para atender de novo.")
     regra = TIPOS[p["tipo"]]
@@ -1885,6 +2754,26 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
     # a enxergaria.
     if p.get("obra_id"):
         pedido.setdefault("obra_id", p["obra_id"])
+    # ⚑ A MATRÍCULA É O CPF (19/11/2026). Ele: *"toda vida que a gente
+    # cadastrar um funcionário, a gente vai utilizar a matrícula e a matrícula
+    # dele vai ser o CPF dele."* O SomaPay exige matrícula. Vale para quem
+    # ENTRA daqui em diante — admissão e readmissão —; ele decidiu não mexer
+    # nas matrículas de quem já está cadastrado. O DP ainda pode digitar outra
+    # no atendimento: o que ele digitar vence.
+    # ⚑ E NA READMISSÃO (19/11/2026, ele): *"se for uma readmissão e o campo
+    # estiver em branco, bota o CPF. Se (…) o campo já existia, deixa o que já
+    # estava."*
+    if executa == "criar_cadastro":
+        from app.apps.erp.core.cadastros.validadores import somente_digitos
+        cpf_do_pedido = somente_digitos(pedido.get("cpf") or p.get("pessoa_cpf") or "")
+        ja_tinha = ""
+        if p.get("colaborador_id"):
+            ja_tinha = str(s.execute(text(
+                "SELECT matricula FROM colaboradores WHERE id = :i"),
+                {"i": p["colaborador_id"]}).scalar() or "").strip()
+        if cpf_do_pedido and not ja_tinha \
+                and not str(pedido.get("matricula") or "").strip():
+            pedido["matricula"] = cpf_do_pedido
     if executa and p["colaborador_id"]:
         alvo = p["colaborador_id"]
         # ⚑ CADASTRO COM PESSOA LIGADA É READMISSÃO, e precisa estar ANTES dos
@@ -1892,19 +2781,106 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
         # preenchido entrava aqui, não casava com nenhum ramo, e o pedido era
         # marcado como ATENDIDO sem nada ter acontecido. Atendimento que não
         # faz nada e diz que fez é pior que erro — ninguém vai conferir.
-        if executa == "criar_cadastro":
+        if executa == "criar_cadastro" and pedido.get("pre_cadastro"):
+            # O pré-cadastro já existe desde o pedido: atender é completar o
+            # que é do DP. Só o que veio preenchido entra — vazio não apaga.
+            c_atual = s.get(Colaborador, alvo)
+            do_dp = {k: pedido[k] for k in campos_do_dp_do_tipo("CADASTRO")
+                     if str(pedido.get(k) or "").strip()}
+            if do_dp:
+                svc_pessoas.salvar(s, {**do_dp, "cpf": c_atual.cpf,
+                                       "nome": c_atual.nome}, usuario)
+            efeito["completou_pre_cadastro"] = True
+            # Papel que tenha ficado no pedido (pedido aberto antes do
+            # pré-cadastro existir) passa para a pessoa agora.
+            efeito["papeis"] = transferir_papeis(s, solicitacao_id, alvo)
+        elif executa == "criar_cadastro":
             svc_pessoas.readmitir(s, alvo, {
                 **pedido, "admissao": pedido.get("data_inicio"),
                 "vinculo": pedido.get("tipo_documentacao") or None}, usuario)
+            # ⚑ OS DADOS NOVOS ATUALIZAM O CADASTRO ANTIGO (19/11/2026). Ele:
+            # *"os dados novos vão estar atualizados, a gente vai estar
+            # atualizando os dados, se tiver colocado algum documento."* Só o
+            # que o pedido TROUXE — campo vazio no pedido não apaga o que o
+            # cadastro tinha. A trilha campo a campo registra o de→para.
+            novos = {c: pedido[c] for c in CAMPOS_DA_PESSOA + ("telefone",)
+                     if str(pedido.get(c) or "").strip()}
+            if novos:
+                c_atual = s.get(Colaborador, alvo)
+                svc_pessoas.salvar(s, {**novos, "cpf": c_atual.cpf,
+                                       "nome": c_atual.nome}, usuario)
             efeito["readmitiu"] = True
         elif executa == "desligar":
-            svc_pessoas.desligar(s, alvo, pedido, usuario)
+            # ⚑ O DESLIGAMENTO DE CARTEIRA VIRA PROCESSO (19/11/2026) — ver
+            # `core/desligamento_processo.py`. E quem CONTINUA como prestador
+            # não é desligado: a saída da carteira fica agendada, e o DP
+            # confirma depois do último dia.
+            vinculo_alvo = vinculo_da_pessoa(s, alvo)
+            if svc_processo.e_processo(p["tipo"], vinculo_alvo):
+                efeito["processo"] = True
+                pedido["processo_desligamento"] = "1"
+                if svc_processo.continua(pedido):
+                    svc_pessoas.agendar_saida_da_carteira(s, alvo, pedido, usuario)
+                    efeito["continua_a_confirmar"] = True
+                else:
+                    svc_pessoas.desligar(s, alvo, pedido, usuario)
+            else:
+                svc_pessoas.desligar(s, alvo, pedido, usuario)
         elif executa == "readmitir":
             svc_pessoas.readmitir(s, alvo, pedido, usuario)
         elif executa == "trocar_vinculo":
-            svc_pessoas.trocar_vinculo(s, alvo, {**pedido, "vinculo": pedido.get("vinculo") or "CTPS"}, usuario)
+            svc_pessoas.trocar_vinculo(s, alvo, {
+                **pedido, "vinculo": pedido.get("vinculo") or "CTPS",
+                "ctps_numero": pedido.get("num_ctps"),
+                "admissao": pedido.get("admissao") or pedido.get("data_inicio")
+                or str(date.today())}, usuario)
+            # ⚑ 20/11/2026: virou CTPS, então o cadastro NÃO está concluído
+            # até a contabilidade registrar a carteira. Antes ficava em
+            # "Concluído" sem registro — o que a trava de concluir existe para
+            # impedir. Volta para a Inicial e o pedido segue Em andamento.
+            c_alvo = s.get(Colaborador, alvo)
+            # Os números da carteira e os dados do eSocial/SomaPay que a obra
+            # informou entram na ficha (só o que veio — vazio não apaga).
+            novos = para_o_cadastro({k: pedido[k] for k in
+                                     ("num_ctps", "num_pis") + CAMPOS_DA_PESSOA
+                                     if str(pedido.get(k) or "").strip()})
+            novos.pop("matricula", None)
+            if novos:
+                svc_pessoas.salvar(s, {**novos, "cpf": c_alvo.cpf,
+                                       "nome": c_alvo.nome}, usuario)
+            if (c_alvo.etapa or "").upper() not in ("CADASTRO_INICIAL",
+                                                     "NA_CONTABILIDADE"):
+                svc_pessoas.mover_etapa(s, alvo, "CADASTRO_INICIAL", usuario,
+                                        automatico=True,
+                                        motivo="passou a CTPS: falta o registro "
+                                               "da carteira")
         elif executa == "alteracao":
-            svc_pessoas.registrar_alteracao(s, alvo, pedido, usuario)
+            # ⚠️ 20/11/2026: o pedido fala em "cargo pleiteado/deferido" e
+            # "data de início"; o cadastro, em "cargo" e "vigência". Sem a
+            # tradução o cargo nunca mudava — e a obra do pedido (que é a de
+            # hoje) virava uma "alteração de obra" de mentira.
+            svc_pessoas.registrar_alteracao(s, alvo, {
+                "cargo_id": pedido.get("cargo_deferido_id")
+                or pedido.get("cargo_pleiteado_id"),
+                "salario": pedido.get("salario"),
+                "convencao_id": pedido.get("convencao_id"),
+                "vigencia": pedido.get("vigencia") or pedido.get("data_inicio"),
+                "motivo": pedido.get("motivo"),
+                "justificativa": pedido.get("justificativa")}, usuario)
+        elif executa == "cancelar_desligamento":
+            efeito.update(cancelar_desligamento(s, alvo, p, usuario))
+        elif executa == "transferir_obra":
+            efeito.update(_transferir_obra(s, alvo, p, pedido, usuario))
+        elif executa == "registrar_afastamento":
+            efeito.update(_registrar_afastamento(s, alvo, pedido, p, usuario))
+        elif executa == "registrar_retorno":
+            efeito.update(_registrar_retorno(s, alvo, pedido, p, usuario))
+        elif executa == "programar_ferias":
+            efeito.update(svc_ferias.programar(s, p, pedido, usuario))
+        elif executa in ("alterar_ferias", "cancelar_ferias"):
+            efeito.update(svc_ferias.pedir_mudanca(
+                s, p, pedido, "ALTERACAO" if executa == "alterar_ferias"
+                else "CANCELAMENTO", usuario))
         elif executa == "dependente":
             # ⚑ VÁRIOS DE UMA VEZ. Ele, em 10/11/2026: *"dependente tem que
             # ser um a um, não posso adicionar outro, não, para pedir mais de
@@ -1930,29 +2906,252 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                                    "nome": novo_nome or c.nome}, usuario)
         efeito["executou"] = executa
     elif executa == "criar_cadastro":
-        c = svc_pessoas.salvar(s, {**pedido, "admissao": pedido.get("data_inicio")}, usuario)
+        c = svc_pessoas.salvar(s, para_o_cadastro(pedido), usuario)
         s.execute(text("UPDATE dp_solicitacoes SET colaborador_id = :c WHERE id = :s"),
                   {"c": c.id, "s": solicitacao_id})
         efeito["colaborador_id"] = c.id
+        # ⚑ OS PAPÉIS DO PEDIDO PASSAM PARA A PESSOA que acabou de nascer, na
+        # mesma transação (migração 100: "o papel nunca fica órfão").
+        efeito["papeis"] = transferir_papeis(s, solicitacao_id, c.id)
+    # ⚑ A ADMISSÃO SÓ FECHA COM O CADASTRO CONCLUÍDO (19/11/2026) — ver
+    # `admissao_processo`. O prestador que já pode, conclui agora; o resto
+    # fica Em andamento e fecha sozinho quando o cadastro chegar lá.
+    # ⚑ OS QUE PASSAM PELA CONTABILIDADE (20/11/2026) — alteração de cargo,
+    # dependente, férias, cancelamento de desligamento já comunicado.
+    if svc_contabil.e_processo(p["tipo"]) and (
+            efeito.get("precisa_contabilidade")
+            or svc_contabil.aplica(s, p["tipo"], p.get("colaborador_id"), pedido)):
+        efeito["processo"] = True
+        pedido["processo_contabil"] = "1"
+    if svc_admissao.e_processo(p["tipo"]):
+        pessoa_id = efeito.get("colaborador_id") or p.get("colaborador_id")
+        pedido["processo_admissao"] = "1"
+        if pessoa_id and not svc_admissao.avancar_no_atendimento(
+                s, int(pessoa_id), usuario):
+            efeito["processo"] = True
+            efeito["falta"] = "o cadastro ainda não está concluído"
+    # O desligamento de carteira não fecha aqui: abre o processo.
+    nova = svc_processo.EM_ANDAMENTO if efeito.get("processo") else "ATENDIDA"
     s.execute(text("""UPDATE dp_solicitacoes
-                         SET situacao = 'ATENDIDA', atendido_por = :u,
+                         SET situacao = :nova, atendido_por = :u,
                              atendido_em = now(), resposta = :r, atualizado_em = now(),
                              dados = CAST(:d AS jsonb)
                        WHERE id = :s"""),
-              {"u": usuario.id if usuario else None, "s": solicitacao_id,
+              {"nova": nova, "u": usuario.id if usuario else None,
+               "s": solicitacao_id,
                "r": (str(dados.get("resposta") or "").strip() or None),
                "d": __import__("json").dumps(pedido, ensure_ascii=False, default=str)})
-    _evento(s, solicitacao_id, "ATENDIDA",
+    _evento(s, solicitacao_id,
+            ("DESLIGAMENTO_REGISTRADO" if p["tipo"] == "DESLIGAMENTO"
+             else "ATENDIDA_EM_ANDAMENTO") if efeito.get("processo") else "ATENDIDA",
             {"resposta": dados.get("resposta"), **efeito}, usuario)
+    if efeito.get("processo"):
+        depois_de_atender(s, {**p, "dados": pedido, "situacao": nova}, usuario)
     logger.info("ERP/DP: solicitação %s atendida por %s (%s)", p["numero"],
                 usuario.nome if usuario else "?", efeito.get("executou") or "sem efeito")
+    return ler(s, solicitacao_id)
+
+
+def depois_de_atender(s: Session, sol: dict[str, Any],
+                      usuario: Optional[Usuario]) -> None:
+    """O que segue sozinho depois que o DP atende (20/11/2026, noite).
+
+    1. O DOCUMENTO PARA A PESSOA ASSINAR: o aviso prévio (ou o pedido de
+       demissão) e a autorização de desconto. Nasce AQUI, depois da análise do
+       DP — ele: *"eu só não posso liberar de imediato para a obra assinar (…)
+       o DP só confere e libera para a obra"*.
+    2. O DESPACHO: com a rotina ligada, o pedido à contabilidade já sai
+       MONTADO (rascunho) — o DP confere o texto e envia. É o *"o DP apenas
+       olhe e dê o ok"*. O que impede de montar (dado faltando no cadastro)
+       vira recado na trilha, não erro: atender não pode falhar por isso.
+    """
+    from app.apps.erp.core import agente_dp
+    tipo = sol["tipo"]
+    try:
+        with s.begin_nested():
+            if tipo == "DESLIGAMENTO":
+                svc_processo.gerar_termo(s, sol, usuario)
+            elif tipo == "DESCONTO_EM_FOLHA":
+                gerar_autorizacao_de_desconto(s, sol, usuario)
+    except ErroValidacao as e:
+        _evento(s, sol["id"], "AVISO",
+                {"texto": f"o documento para assinar não foi gerado: {e}"}, usuario)
+    if agente_dp.modo(s, "despacho") == "DESLIGADA":
+        return
+    if tipo in ("DESLIGAMENTO", "DESCONTO_EM_FOLHA"):
+        return          # esperam a assinatura; montam quando ela voltar
+    if not (svc_contabil.e_processo(tipo) or svc_admissao.e_processo(tipo)):
+        return
+    if (tipo in ("CADASTRO", "ADMISSAO_PRESTADOR")
+            and (vinculo_da_pessoa(s, sol.get("colaborador_id")) or "CTPS") != "CTPS"):
+        return
+    despachar(s, sol["id"], usuario)
+
+
+def despachar(s: Session, solicitacao_id: int, usuario: Optional[Usuario]) -> Optional[str]:
+    """Monta o pedido à contabilidade desta solicitação, se ainda não houver.
+    Devolve o número, ou None (com o motivo na trilha)."""
+    sol = ler(s, solicitacao_id)
+    try:
+        with s.begin_nested():
+            if sol["tipo"] == "DESLIGAMENTO":
+                r = svc_processo.montar_rescisao(s, sol, usuario)
+            else:
+                r = svc_contabil.montar_pedido(s, sol, usuario)
+    except ErroValidacao as e:
+        _evento(s, solicitacao_id, "AVISO",
+                {"texto": f"o agente não montou o pedido à contabilidade: {e}"},
+                usuario)
+        return None
+    if r:
+        _evento(s, solicitacao_id, "DESPACHADO_PELO_AGENTE",
+                {"texto": f"{r['numero']} montado — confira e envie"}, usuario)
+        return r["numero"]
+    return None
+
+
+def termo_voltou(s: Session, termo_id: int, usuario: Optional[Usuario]) -> None:
+    """O documento voltou assinado (e valendo): fica na trilha do pedido, e o
+    despacho monta o pedido à contabilidade que esperava por ele."""
+    from app.apps.erp.core import agente_dp, termos
+    t_ = termos.ler(s, termo_id)
+    if not t_.get("solicitacao_id"):
+        return
+    _evento(s, t_["solicitacao_id"], "DOCUMENTO_ASSINADO",
+            {"numero": t_["numero"],
+             "texto": termos.FORMA_ROTULOS.get(t_.get("forma") or "", "")}, usuario)
+    sol = s.execute(text("SELECT id, tipo, situacao FROM dp_solicitacoes "
+                         "WHERE id = :i"), {"i": t_["solicitacao_id"]}).mappings().first()
+    # O aviso de férias assinado é o último passo: o pedido de férias fecha.
+    if termos.concluido(t_) and sol and sol["tipo"] in svc_ferias.TIPOS_COM_AVISO:
+        if sol["situacao"] == "EM_ANDAMENTO" and \
+                not svc_contabil.extras_abertos(s, int(sol["id"])):
+            s.execute(text("UPDATE dp_solicitacoes SET situacao = 'ATENDIDA', "
+                           "atualizado_em = now() WHERE id = :i"), {"i": sol["id"]})
+            _evento(s, sol["id"], "ATENDIDA",
+                    {"texto": "a pessoa assinou o aviso de férias"}, usuario)
+        return
+    if termos.concluido(t_) and agente_dp.modo(s, "despacho") != "DESLIGADA":
+        despachar(s, int(t_["solicitacao_id"]), usuario)
+
+
+def papel_no_escritorio(s: Session, solicitacao_id: int, qual: str, alvo_id: int,
+                        conteudo: bytes, nome_arquivo: str,
+                        usuario: Usuario) -> None:
+    """⚑ O PLANO B (23/11/2026): o papel assinado chegou ao ESCRITÓRIO.
+
+    Ele: *"e se de repente aconteceu uma circunstância que a pessoa assinou
+    num papel e encaminhou para cá para a gente anexar? (…) pode ser que uma
+    obra (…) não tem internet (…) a gente tem que ter uma alternativa."*
+
+    - `termo_papel`: o documento que a pessoa assina (aviso prévio, pedido de
+      demissão, aviso de férias, autorização de desconto). Entra como
+      "assinado no papel" e JÁ VALIDADO — quem anexa é o DP, que está olhando
+      o papel — e o processo segue como se tivesse sido assinado na tela.
+    - `devolucao_papel`: o que a obra devia devolver pelo portal (documentação
+      rescisória, ASO). A pendência fecha e o arquivo vai para a validação do
+      DP, como se tivesse chegado pelo portal.
+    """
+    from app.apps.erp.core import termos
+    from app.apps.erp.core import portal as svc_portal
+    if not conteudo:
+        raise ErroValidacao("Escolha a foto ou o PDF do papel assinado.")
+    if qual == "termo_papel":
+        if termos.ler(s, alvo_id).get("solicitacao_id") != solicitacao_id:
+            raise ErroNaoEncontrado("Documento não encontrado.")
+        termos.enviar_papel(
+            s, alvo_id, None, conteudo=conteudo, nome_arquivo=nome_arquivo,
+            conduzido_por={"colaborador_id": None,
+                           "nome": f"{usuario.nome} (DP, no escritório)"})
+        termos.validar(s, alvo_id, usuario, aceitar=True)
+        termo_voltou(s, alvo_id, usuario)
+        return
+    if qual != "devolucao_papel":
+        raise ErroValidacao("Não sei o que anexar.")
+    dono = s.execute(text("SELECT colaborador_id FROM dp_devolucoes WHERE id = :i"),
+                     {"i": alvo_id}).scalar()
+    pessoa = s.execute(text("SELECT colaborador_id FROM dp_solicitacoes WHERE id = :i"),
+                       {"i": solicitacao_id}).scalar()
+    if not dono or dono != pessoa:
+        raise ErroNaoEncontrado("Pendência não encontrada.")
+    svc_portal.devolver(s, alvo_id, conteudo, usuario, nome_arquivo,
+                        pelo_escritorio=True)
+    _evento(s, solicitacao_id, "AVISO",
+            {"texto": "documento assinado recebido no escritório e anexado pelo DP"},
+            usuario)
+
+
+def gerar_autorizacao_de_desconto(s: Session, sol: dict[str, Any],
+                                  usuario: Optional[Usuario]) -> Optional[dict[str, Any]]:
+    """A autorização de desconto que a pessoa assina (CLT art. 462)."""
+    from app.apps.erp.core import termos
+    if (vinculo_da_pessoa(s, sol.get("colaborador_id")) or "CTPS") != "CTPS":
+        return None
+    if not termos.tem_tabela(s):
+        return None
+    vivo = termos.do_pedido(s, int(sol["id"]))
+    if vivo is not None and vivo["situacao"] == "ABERTO":
+        termos.cancelar(s, vivo["id"], "gerado de novo", usuario)
+    elif vivo is not None:
+        raise ErroValidacao(f"{vivo['numero']} já voltou assinado.")
+    d = sol.get("dados") or {}
+    c = s.get(Colaborador, int(sol["colaborador_id"]))
+    parcelas = str(d.get("parcelas") or "1")
+    texto_ = (f"Eu, {c.nome}, CPF {c.cpf}, AUTORIZO a empresa a descontar do meu "
+              f"salário o valor total de R$ {d.get('valor_total') or '?'}, em "
+              f"{parcelas} parcela(s)"
+              + (f" de R$ {d.get('valor_parcela')}" if d.get("valor_parcela") else "")
+              + (f", a partir de {d.get('primeira_competencia')}"
+                 if d.get("primeira_competencia") else "")
+              + f".\n\nReferente a: {d.get('observacao') or '(não informado)'}."
+              + "\n\nSe o contrato terminar antes do fim das parcelas, o saldo "
+                "pode ser descontado na rescisão, até o limite da lei "
+                "(CLT art. 477 §5º).")
+    r = termos.abrir(s, colaborador_id=c.id, tipo="AUTORIZACAO-DESCONTO",
+                     titulo="Autorização de desconto em folha", texto_=texto_,
+                     solicitacao_id=int(sol["id"]), obra_id=sol.get("obra_id"),
+                     dias=3, usuario=usuario)
+    _evento(s, sol["id"], "AUTORIZACAO_PARA_ASSINAR", {"numero": r["numero"]}, usuario)
+    return r
+
+
+def pedir_mudanca(s: Session, solicitacao_id: int, dados: dict[str, Any],
+                  usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Quem pediu quer CANCELAR ou MUDAR um pedido que o DP já está tocando.
+
+    Ele: *"praticamente tudo que se pede pode vir a ser necessário ser
+    cancelado (…) ou alterado alguma coisa."* A obra não mexe no que já foi à
+    contabilidade: ela AVISA, o DP decide e faz (corrigir ou cancelar), e o
+    agente cobra até ele decidir.
+    """
+    import json
+    p = ler(s, solicitacao_id)
+    if p["situacao"] in A_ATENDER:
+        raise ErroValidacao("O DP ainda não atendeu: cancele o pedido ou "
+                            "abra outro com o certo.")
+    if p["situacao"] not in ("EM_ANDAMENTO", "ATENDIDA"):
+        raise ErroValidacao(f"{p['numero']} já está {p['situacao_rotulo'].lower()}.")
+    oque = str(dados.get("o_que") or "").strip().lower()
+    if oque not in ("cancelar", "corrigir"):
+        raise ErroValidacao("Diga se é para cancelar ou para corrigir.")
+    texto_ = " ".join(str(dados.get("texto") or "").split())
+    if len(texto_) < 5:
+        raise ErroValidacao("Conte o que mudou — o DP precisa saber.")
+    s.execute(text("UPDATE dp_solicitacoes SET dados = dados || CAST(:j AS jsonb), "
+                   "atualizado_em = now() WHERE id = :i"),
+              {"i": solicitacao_id, "j": json.dumps({"mudanca_pedida": {
+                  "o_que": oque, "texto": texto_,
+                  "por": usuario.nome if usuario else "",
+                  "em": date.today().isoformat()}}, ensure_ascii=False)})
+    _evento(s, solicitacao_id, "MUDANCA_PEDIDA",
+            {"o_que": oque, "texto": texto_}, usuario)
     return ler(s, solicitacao_id)
 
 
 def recusar(s: Session, solicitacao_id: int, dados: dict[str, Any],
             usuario: Usuario) -> dict[str, Any]:
     p = ler(s, solicitacao_id)
-    if p["situacao"] not in ABERTAS:
+    if p["situacao"] not in A_ATENDER:
         raise ErroValidacao(f"{p['numero']} já está {p['situacao_rotulo'].lower()}.")
     motivo = str(dados.get("resposta") or dados.get("motivo") or "").strip()
     if len(motivo) < 5:
@@ -1965,7 +3164,22 @@ def recusar(s: Session, solicitacao_id: int, dados: dict[str, Any],
                        WHERE id = :s"""),
               {"u": usuario.id if usuario else None, "s": solicitacao_id, "r": motivo})
     _evento(s, solicitacao_id, "RECUSADA", {"motivo": motivo}, usuario)
+    _cancelar_pre_cadastro(s, p, f"pedido {p['numero']} recusado: {motivo}", usuario)
     return ler(s, solicitacao_id)
+
+
+def _cancelar_pre_cadastro(s: Session, p: dict[str, Any], motivo: str,
+                           usuario: Optional[Usuario]) -> None:
+    """O pré-cadastro de um pedido que não vai adiante vai para "Cancelado" —
+    o cadastro que nunca virou gente na empresa (`pessoas.ETAPAS`)."""
+    if not (p.get("dados") or {}).get("pre_cadastro") or not p.get("colaborador_id"):
+        return
+    try:
+        svc_pessoas.mover_etapa(s, int(p["colaborador_id"]), "CANCELADO",
+                                usuario, automatico=True, motivo=motivo[:300])
+    except ErroValidacao as e:
+        _evento(s, p["id"], "AVISO",
+                {"texto": f"o pré-cadastro não foi para Cancelado: {e}"}, usuario)
 
 
 def cancelar(s: Session, solicitacao_id: int, dados: dict[str, Any],
@@ -1978,9 +3192,12 @@ def cancelar(s: Session, solicitacao_id: int, dados: dict[str, Any],
     resposta.
     """
     p = ler(s, solicitacao_id)
-    if p["situacao"] not in ABERTAS:
+    if p["situacao"] not in A_ATENDER:
         raise ErroValidacao(
-            f"{p['numero']} já está {p['situacao_rotulo'].lower()} — não dá para cancelar.")
+            f"{p['numero']} já está {p['situacao_rotulo'].lower()} — não dá para cancelar."
+            + (" A saída já foi registrada: para desfazê-la, abra um pedido de "
+               "cancelamento de desligamento." if p["situacao"] == "EM_ANDAMENTO"
+               else ""))
     motivo = str(dados.get("motivo") or "").strip()
     if len(motivo) < 5:
         raise ErroValidacao("Diga por que está cancelando.")
@@ -1991,6 +3208,7 @@ def cancelar(s: Session, solicitacao_id: int, dados: dict[str, Any],
                        WHERE id = :s"""),
               {"u": usuario.id if usuario else None, "s": solicitacao_id, "m": motivo})
     _evento(s, solicitacao_id, "CANCELADA", {"motivo": motivo}, usuario)
+    _cancelar_pre_cadastro(s, p, f"pedido {p['numero']} cancelado: {motivo}", usuario)
     return ler(s, solicitacao_id)
 
 
@@ -2018,6 +3236,7 @@ def marcar_item(s: Session, solicitacao_id: int, item_id: int, feito: bool,
 # Ler
 # ---------------------------------------------------------------------------
 SITUACAO_ROTULOS = {"ABERTA": "Aberta", "EM_ANALISE": "Em análise",
+                    "EM_ANDAMENTO": "Em andamento",
                     "ATENDIDA": "Atendida", "RECUSADA": "Recusada",
                     "CANCELADA": "Cancelada"}
 
@@ -2034,9 +3253,11 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
     linha = s.execute(text("""
         SELECT d.*, c.nome AS pessoa, c.cpf AS pessoa_cpf, c.vinculo AS pessoa_vinculo,
                o.codigo AS obra,
-               u.nome AS solicitante, a.nome AS atendente
+               COALESCE(u.nome, sc.nome, d.requerente) AS solicitante,
+               a.nome AS atendente
           FROM dp_solicitacoes d
           LEFT JOIN colaboradores c ON c.id = d.colaborador_id
+          LEFT JOIN colaboradores sc ON sc.id = d.solicitante_colaborador_id
           LEFT JOIN obras o ON o.id = d.obra_id
           LEFT JOIN usuarios u ON u.id = d.solicitante_id
           LEFT JOIN usuarios a ON a.id = d.atendido_por
@@ -2063,7 +3284,7 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
                                  WHERE e.solicitacao_id = :s
                                  ORDER BY e.criado_em, e.id"""),
                         {"s": solicitacao_id}).mappings().all()
-    return {
+    saida = {
         "id": d["id"], "numero": d["numero"], "tipo": d["tipo"],
         "tipo_rotulo": rotulo_tipo,
         "readmissao": bool((d["dados"] or {}).get("readmissao")),
@@ -2088,6 +3309,31 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         "motivo_cancelamento": d["motivo_cancelamento"] or "",
         "criado_em": d["criado_em"].isoformat(),
         "aberta": d["situacao"] in ABERTAS,
+        # ⚑ OS PAPÉIS QUE VIERAM COM O PEDIDO (19/11/2026). Ele: *"conferir se
+        # a documentação veio completa, mas cadê a documentação? A gente não
+        # consegue visualizar ela."*
+        "papeis": papeis_do_pedido(s, d["id"], d["numero"], d["colaborador_id"]),
+        "pre_cadastro": bool((d["dados"] or {}).get("pre_cadastro")),
+        "dados_legiveis": dados_legiveis(s, d["tipo"], d["dados"] or {}),
+        # Atender/recusar/cancelar: só antes de a saída ser registrada.
+        "a_atender": d["situacao"] in A_ATENDER,
+        "processo": (svc_processo.passos(s, {**d, "dados": d["dados"] or {}})
+                     if d["tipo"] == "DESLIGAMENTO"
+                     and (d["situacao"] == svc_processo.EM_ANDAMENTO
+                          or (d["dados"] or {}).get("processo_desligamento"))
+                     else svc_admissao.passos(s, {**d, "dados": d["dados"] or {}})
+                     if svc_admissao.e_processo(d["tipo"])
+                     and (d["situacao"] == svc_admissao.EM_ANDAMENTO
+                          or (d["dados"] or {}).get("processo_admissao"))
+                     else svc_contabil.passos(s, {**d, "dados": d["dados"] or {}})
+                     if svc_contabil.e_processo(d["tipo"])
+                     and (d["situacao"] == svc_contabil.EM_ANDAMENTO
+                          or (d["dados"] or {}).get("processo_contabil"))
+                     else None),
+        # ⚑ A ANÁLISE DO AGENTE (20/11/2026, noite) — `core/dp_analise.py`.
+        "analise": svc_analise.analisar(s, {**d, "dados": d["dados"] or {}}),
+        "mudanca_pedida": (d["dados"] or {}).get("mudanca_pedida"),
+        "cancelando": (d["dados"] or {}).get("cancelando"),
         "itens": [{"id": i["id"], "descricao": i["descricao"], "feito": i["feito"],
                    "por": i["por"] or "",
                    "em": i["feito_em"].isoformat() if i["feito_em"] else None}
@@ -2097,6 +3343,24 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
                      "por": e["por"] or "", "em": e["criado_em"].isoformat()}
                     for e in eventos],
     }
+    # ⚑ A CORREÇÃO E O CANCELAMENTO COMUNICADOS À CONTABILIDADE entram como
+    # passos de qualquer processo — e sem processo, viram um (20/11/2026).
+    extras = svc_contabil.passos_extras(s, d["id"])
+    if extras:
+        pr = saida["processo"] or {"passos": [], "cumpridos": 0, "total": 0,
+                                   "pode_encerrar": False, "fecha_sozinho": True,
+                                   "proximo": "", "marcacoes_disponiveis": True}
+        pr["passos"] = list(pr["passos"]) + extras
+        pr["total"] = len(pr["passos"])
+        pr["cumpridos"] = sum(1 for x in pr["passos"]
+                              if x["estado"] in ("FEITO", "NAO_SE_APLICA"))
+        abertos = [x for x in pr["passos"]
+                   if x["estado"] not in ("FEITO", "NAO_SE_APLICA")]
+        pr["proximo"] = abertos[0]["rotulo"] if abertos else ""
+        pr["pode_encerrar"] = pr["pode_encerrar"] and not any(
+            x in abertos for x in extras)
+        saida["processo"] = pr
+    return saida
 
 
 def listar(s: Session, *, situacao: str = "", tipo: str = "",
@@ -2110,7 +3374,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
     """
     onde, params = ["1 = 1"], {"limite": limite, "eu": usuario_id}
     if situacao == "ABERTAS":
-        onde.append("d.situacao IN ('ABERTA', 'EM_ANALISE')")
+        onde.append("d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')")
     elif situacao:
         onde.append("d.situacao = :situacao")
         params["situacao"] = situacao
@@ -2135,17 +3399,27 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         SELECT d.id, d.numero, d.tipo, d.situacao, d.colaborador_id, d.obra_id,
                d.data_referencia, d.valor, d.criado_em, d.atendido_em,
                COALESCE(c.nome, d.nome_informado) AS pessoa,
-               o.codigo AS obra, u.nome AS solicitante,
+               COALESCE(c.cpf, d.cpf_informado) AS pessoa_cpf,
+               COALESCE(gc.nome, gp.nome) AS cargo,
+               o.codigo AS obra,
+               -- ⚑ QUEM PEDIU (19/11/2026): pelo portal o autor é o
+               -- COLABORADOR (o usuário ficava vazio), e a coluna saía em
+               -- branco para quem olhava — inclusive o DP.
+               COALESCE(u.nome, sc.nome, d.requerente) AS solicitante,
                (SELECT count(*) FROM dp_solicitacao_itens i
                  WHERE i.solicitacao_id = d.id) AS total_itens,
                (SELECT count(*) FROM dp_solicitacao_itens i
                  WHERE i.solicitacao_id = d.id AND i.feito) AS feitos
           FROM dp_solicitacoes d
           LEFT JOIN colaboradores c ON c.id = d.colaborador_id
+          LEFT JOIN colaboradores sc ON sc.id = d.solicitante_colaborador_id
+          LEFT JOIN cargos gc ON gc.id = c.cargo_id
+          LEFT JOIN cargos gp ON gp.id::text = (d.dados ->> 'cargo_pleiteado_id')
           LEFT JOIN obras o ON o.id = d.obra_id
           LEFT JOIN usuarios u ON u.id = d.solicitante_id
          WHERE {' AND '.join(onde)}
-         ORDER BY (d.situacao IN ('ABERTA', 'EM_ANALISE')) DESC, d.criado_em DESC
+         ORDER BY (d.situacao IN ('ABERTA', 'EM_ANALISE', 'EM_ANDAMENTO')) DESC,
+                  d.criado_em DESC
          LIMIT :limite"""), params).mappings().all()
     fila = [{
         "id": l["id"], "numero": l["numero"], "tipo": l["tipo"],
@@ -2153,6 +3427,8 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         "situacao": l["situacao"],
         "situacao_rotulo": SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
         "pessoa": l["pessoa"] or "", "obra": l["obra"] or "",
+        "pessoa_cpf": _formatar("cpf", l["pessoa_cpf"], s) if l["pessoa_cpf"] else "",
+        "cargo": l["cargo"] or "",
         "solicitante": l["solicitante"] or "",
         "data_referencia": l["data_referencia"].isoformat() if l["data_referencia"] else None,
         "valor": float(l["valor"]) if l["valor"] is not None else None,
@@ -2177,7 +3453,15 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         # um CNPJ, e não a lista vir do lugar errado.
         "empresas": empresas_para_escolher(s),
         # Quem foi desligado dizendo que continua, e não foi readmitido: o
-        # ponto não aceita essa pessoa amanhã (15/11/2026).
+        # ponto não aceita essa pessoa amanhã (15/11/2026). Só pega os pedidos
+        # atendidos ANTES de 19/11/2026 — os de agora não desligam quem
+        # continua (ver `desligamento_processo`).
         "readmissoes_pendentes": readmissoes_esquecidas(s),
+        # ⚑ Os desligamentos em andamento, com o próximo passo de cada um.
+        # Recortado pelo que esta pessoa enxerga na fila: quem é preso a obra
+        # não vê o desligamento da obra dos outros por aqui.
+        "desligamentos_em_andamento": [
+            x for x in svc_processo.em_andamento(s)
+            if obra_ids is None or x["id"] in {f["id"] for f in fila}],
         "situacoes": [{"valor": c, "rotulo": r} for c, r in SITUACAO_ROTULOS.items()],
     }

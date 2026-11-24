@@ -99,25 +99,42 @@
   <div class="kpis kpis-comprovantes">
     {% for chave, rotulo, quantos in lista.contagem %}
       {% set ativo = chave in filtros.situacoes %}
-      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO') and quantos else '' }} {{ 'ativo' if ativo }}"
+      <a class="kpi {{ 'vermelho' if chave not in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'AGUARDANDO', 'SEM_PAGAMENTO') and quantos else '' }} {{ 'ativo' if ativo }}"
          href="{{ url_for('analisesps.tela_comprovantes', f=1, situacao=('' if ativo else chave), busca=filtros.busca or None,
                           de=filtros.de or None, ate=filtros.ate or None, lote=filtros.lote or None) }}"
          title="Mostrar só: {{ rotulo }}">
         <div class="kpi-rotulo">{{ rotulo }}</div><div class="kpi-valor">{{ quantos }}</div></a>
     {% endfor %}
   </div>
+  {# BAIXAR DE NOVO (19/11/2026): *"nos que não foram baixados (…) um botão para
+     baixar novamente (…) às vezes a gente esquece de alterar o status e acaba não
+     encontrando."* A mesma página vai num envio novo; marcar várias manda juntas. #}
+  {% set reenviaveis = lista.itens|selectattr('pode_reenviar')|list %}
+  <form method="post" id="form-reenviar" action="{{ url_for('analisesps.reenviar_comprovantes') }}">
+  {% if pode_operar and reenviaveis %}
+    <div class="barra-acoes-lista">
+      <label class="cartao-dica"><input type="checkbox" id="reenviar-todas"> marcar os {{ reenviaveis|length }} que não baixaram</label>
+      <button type="submit" class="btn secundario" id="reenviar-marcadas" disabled>Baixar de novo os marcados</button>
+      <span class="cartao-dica">Corrija antes o que impediu (status da SP, título no Omie) — a mesma página vai num envio novo; o que já baixou não baixa duas vezes.</span>
+    </div>
+  {% endif %}
   <div class="tabela-wrap"><div class="tabela-rolagem livre">
   <table class="sps" id="tabela-comprovantes">
-    <thead><tr><th>Enviado</th><th>Arquivo · pág.</th><th>Situação</th><th>SP</th>
+    <thead><tr>{% if pode_operar and reenviaveis %}<th class="marca"></th>{% endif %}<th>Enviado</th><th>Arquivo · pág.</th><th>Situação</th><th>SP</th>
       <th>Valor</th><th>Quem recebeu</th><th>Comprovante</th><th>Por quê</th></tr></thead>
     <tbody>
     {% for i in lista.itens %}
       <tr class="{{ 'com-risco' if i.pede_acao }}">
+        {% if pode_operar and reenviaveis %}<td class="marca">{% if i.pode_reenviar %}<input type="checkbox"
+            class="marca-reenviar" name="pagina" value="{{ i.lote_id }}:{{ i.pagina }}"
+            aria-label="Marcar a página {{ i.pagina }} para baixar de novo">{% endif %}</td>{% endif %}
         <td>{{ i.recebido_em|momento_br }}<br><span class="cartao-dica">{{ i.quem or '—' }}</span></td>
         <td><a href="{{ url_for('analisesps.tela_comprovantes', f=1, lote=i.lote_id, de='') }}"
                title="Ver só as páginas deste envio">{{ i.arquivo }}</a>
           <span class="cartao-dica">pág. {{ i.pagina or '—' }}</span></td>
-        <td><span class="etiqueta {{ 'ruim' if i.pede_acao else 'boa' }}">{{ i.rotulo }}</span></td>
+        <td>{% if i.situacao == 'AGUARDANDO' %}<span class="etiqueta">{{ i.rotulo }}</span>
+            <br><span class="cartao-dica">{{ i.andamento }}</span>
+          {% else %}<span class="etiqueta {{ 'ruim' if i.pede_acao else 'boa' }}">{{ i.rotulo }}</span>{% endif %}</td>
         <td class="id">{% if i.sp_id %}<a href="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}"
               data-ficha="{{ url_for('analisesps.detalhe', sp_id=i.sp_id) }}" data-id="{{ i.sp_id }}"
               title="Abre a SP aqui">{{ i.sp_id }}</a>{% else %}—{% endif %}</td>
@@ -130,7 +147,10 @@
               title="Cópia desta página no Drive (pasta Comprovantes não baixados)">ver no Drive</a>
           {% elif i.no_servidor %}<a href="{{ url_for('analisesps.pagina_do_comprovante', lote_id=i.lote_id, pagina=i.pagina) }}"
               target="_blank" rel="noopener" title="A página, enquanto o PDF ainda está no servidor">ver a página</a>
-          {% else %}<span class="cartao-dica">—</span>{% endif %}</td>
+          {% else %}<span class="cartao-dica">—</span>{% endif %}
+          {% if pode_operar and i.pode_reenviar %}<br><button type="submit" class="btn secundario btn-pequeno"
+              name="so" value="{{ i.lote_id }}:{{ i.pagina }}"
+              title="Manda esta mesma página de novo para a baixa, num envio novo">Baixar de novo</button>{% endif %}</td>
         <td>{% if i.motivo_explicado %}{{ i.motivo_explicado }}
             <details><summary class="cartao-dica">Detalhe técnico</summary><small>{{ i.motivo }}</small></details>
           {% else %}{{ i.motivo or '' }}{% endif %}
@@ -138,11 +158,12 @@
             <summary>o que o Omie respondeu, passo a passo</summary><pre>{{ i.conversa_omie }}</pre></details>{% endif %}</td>
       </tr>
     {% else %}
-      <tr><td colspan="8" class="cartao-dica">Nenhum comprovante neste filtro.</td></tr>
+      <tr><td colspan="9" class="cartao-dica">Nenhum comprovante neste filtro.</td></tr>
     {% endfor %}
     </tbody>
   </table>
   </div></div>
+  </form>
   {% if lista.mais %}<p class="cartao-dica">Mostrando os {{ lista.itens|length }} mais recentes —
     estreite o filtro para ver o resto.</p>{% endif %}
 </div>
@@ -166,7 +187,7 @@
             <span class="etiqueta ruim">falhou</span>
           {% endif %}
           {% for chave, rotulo, quantos in lote.contagem %}
-            <span class="etiqueta {{ 'boa' if chave in ('BAIXADO', 'DUPLICADO') else 'ruim' }}">
+            <span class="etiqueta {{ 'boa' if chave in ('BAIXADO', 'DUPLICADO', 'REENVIADO', 'SEM_PAGAMENTO') else 'ruim' }}">
               {{ rotulo }}: {{ quantos }}</span>
           {% endfor %}
           <span class="cartao-dica">{{ lote.quem }} · {{ lote.recebido_em|momento_br }}</span>
@@ -277,4 +298,23 @@
 {% block scripts %}
 {# O número da SP abre a ficha aqui, como nas outras telas. #}
 {% include "analisesps_ficha_modal.html" %}
+<script>
+(() => {
+  const marcas = Array.from(document.querySelectorAll(".marca-reenviar"));
+  const todas = document.getElementById("reenviar-todas");
+  const botao = document.getElementById("reenviar-marcadas");
+  if (!botao) return;
+  const atualizar = () => {
+    const n = marcas.filter(m => m.checked).length;
+    botao.disabled = !n;
+    botao.textContent = n ? "Baixar de novo os " + n + " marcados" : "Baixar de novo os marcados";
+  };
+  marcas.forEach(m => m.addEventListener("change", atualizar));
+  if (todas) todas.addEventListener("change", () => { marcas.forEach(m => { m.checked = todas.checked; }); atualizar(); });
+  // O botão de UMA linha não leva as marcadas junto.
+  document.querySelectorAll("button[name=so]").forEach(b => b.addEventListener("click", () => {
+    marcas.forEach(m => { m.checked = false; });
+  }));
+})();
+</script>
 {% endblock %}

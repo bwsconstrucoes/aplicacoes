@@ -234,7 +234,12 @@
    cadastro, os pagamentos, o ponto, os aparelhos, a configuração do ponto e o rosto. Ela mora no módulo do ponto
    (/erp/ponto/pessoa/<id>) e aparece aqui inteira; editar o cadastro e os documentos voltam para o formulário daqui. #}
 <dialog id="dlg-unica" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
-  <iframe id="unica-quadro" title="Ficha da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
+  <div style="display:flex; flex-direction:column; height:100%">
+    {# A FAIXA DO AFASTAMENTO (19/11/2026) fica FORA do quadro do ponto, aqui no
+       ERP: a janela da pessoa é do ponto, e o afastamento é do cadastro. #}
+    <div id="unica-afast"></div>
+    <iframe id="unica-quadro" title="Ficha da pessoa" style="width:100%; flex:1; border:0; display:block"></iframe>
+  </div></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -937,10 +942,79 @@ let ABA_FICHA_PESSOA = "resumo", FICHA_ID = null, FICHA_H = null;
 // janela do ponto, que agora traz o cadastro e os pagamentos daqui; quem não enxerga, a ficha de sempre (abaixo).
 function abrirFichaUnica(id){
   if (!PODE_VER_PONTO) return ficha(id);
+  FAIXA_DE = id;
+  els("unica-afast").innerHTML = "";
   els("unica-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
   els("dlg-unica").showModal();
+  pintarFaixaDoAfastamento(els("unica-afast"), id);
 }
-els("dlg-unica").addEventListener("close", () => { els("unica-quadro").src = "about:blank"; });
+els("dlg-unica").addEventListener("close", () => {
+  els("unica-quadro").src = "about:blank";
+  els("unica-afast").innerHTML = "";
+  FAIXA_DE = null;
+});
+
+// ===========================================================================
+// ⚑ A FAIXA DO AFASTAMENTO NA JANELA DA PESSOA (19/11/2026)
+//
+// Ele procurou como devolver um afastado a "Concluído" e não achou: *"não
+// existe a aba demandas"*. Existia — dentro do cadastro COMPLETO, dois cliques
+// abaixo da janela da pessoa, que não dizia em lugar nenhum que ela estava
+// afastada. Construído e inalcançável, de novo.
+//
+// Agora, quem abre a pessoa afastada vê no alto: desde quando, de quê, o que
+// falta para a volta, e o botão que leva direto ao registro do retorno. Só
+// para quem edita o cadastro (a leitura do afastamento é do DP).
+//
+// ⚠️ CUSTO: uma ida ao servidor, e só quando a lista já diz que a pessoa está
+// afastada. Para os outros, nenhuma.
+// ===========================================================================
+let FAIXA_DE = null;
+
+async function pintarFaixaDoAfastamento(alvo, id){
+  if (!alvo || !PODE_EDITAR) return;
+  const dalista = COL.find(x => x.id === id) || {};
+  const afastado = [dalista.etapa, dalista.situacao].includes("AFASTADO");
+  if (!afastado) { alvo.innerHTML = ""; return; }
+  let r;
+  try { r = await api(`/erp/api/colaboradores/${id}/afastamento`); }
+  catch(e){ alvo.innerHTML = ""; return; }
+  const a = r.aberto;
+  if (!a) {
+    {# Etapa "Afastado" sem afastamento registrado só acontece se a migração
+       111 ainda não foi aplicada — e aí a volta também não funciona. #}
+    alvo.innerHTML = `<div class="aviso alerta" style="margin:8px 12px">🏥 Esta
+      pessoa está na etapa <b>Afastado</b>, mas não há afastamento registrado.
+      Confira se a atualização do banco foi aplicada (Configurações).</div>`;
+    return;
+  }
+  const impede = (r.retorno && r.retorno.impede) || [];
+  alvo.innerHTML = `<div class="aviso ${impede.length ? "alerta" : "info"}"
+      style="margin:8px 12px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <div style="flex:1; min-width:240px">🏥 <b>Afastado desde ${dataBR(a.data_inicio)}</b>
+      ${a.tipo_desconhecido ? `<small>(data estimada pelo sistema — confira no retorno)</small>` : ""}
+      — ${a.dias} dia(s) · ${escapar(a.tipo_rotulo || "")}
+      ${impede.length ? `<br><small>Para voltar falta: ${impede.map(escapar).join(" ")}</small>` : ""}</div>
+    <button class="btn" type="button" data-faixa-voltar="${id}">↩️ Registrar o retorno…</button>
+  </div>`;
+  alvo.querySelector("[data-faixa-voltar]").addEventListener("click",
+    () => irParaORetorno(id));
+}
+
+// Abre o cadastro completo já na aba Demandas e, carregado o afastamento,
+// a janela do retorno. A janela da pessoa fica ATRÁS (ver "A TELA DE TRÁS NÃO
+// FECHA MAIS").
+async function irParaORetorno(id){
+  try {
+    const r = await api(`/erp/api/colaboradores/${id}/ficha`);
+    await formulario(r.colaborador);
+    els("c-abas").querySelectorAll(".subaba").forEach(x =>
+      x.classList.toggle("ativa", x.dataset.aba === "demandas"));
+    ABA_FICHA = "demandas";
+    await pintarDemandasDaPessoa(els("c-painel"), FICHA);
+    if (AFASTAMENTO && AFASTAMENTO.aberto) registrarRetorno(FICHA);
+  } catch(e){ recado(e.message, "erro"); }
+}
 
 // ===========================================================================
 // ⚑ A TELA DE TRÁS NÃO FECHA MAIS PARA ABRIR A DA FRENTE (18/11/2026)
@@ -975,6 +1049,13 @@ els("dlg").addEventListener("close", () => {
     GRAVOU_NO_FORMULARIO = false;
     const q = els("unica-quadro");
     if (q && q.src && q.src !== "about:blank") q.src = q.src;   // recarrega
+    // A faixa do afastamento também: quem acabou de registrar a volta não
+    // pode continuar vendo "Afastado desde…".
+    if (FAIXA_DE) {
+      const x = COL.find(y => y.id === FAIXA_DE);
+      if (x && FICHA && FICHA.id === FAIXA_DE) { x.etapa = FICHA.etapa; x.situacao = FICHA.situacao; }
+      pintarFaixaDoAfastamento(els("unica-afast"), FAIXA_DE);
+    }
   }
 });
 
@@ -998,6 +1079,7 @@ async function ficha(id, aba){
     const dalista = COL.find(x => x.id === id) || {};
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
       ${cabecaDaFicha(c, dalista)}
+      <div id="fp-afast"></div>
       <div class="subabas" id="fp-abas">
         <button class="subaba" data-fp="resumo">Resumo</button>
         ${PODE_VER_PONTO ? `<button class="subaba" data-fp="ponto">Ponto e espelho</button>` : ""}
@@ -1017,6 +1099,7 @@ async function ficha(id, aba){
       }));
     painelDaPessoa();
     els("dlg").showModal();
+    pintarFaixaDoAfastamento(els("fp-afast"), id);
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
@@ -1413,7 +1496,7 @@ const SELO_DO_PEDIDO = {
   CONCLUIDO: "aprovado", CANCELADO: "outro",
 };
 const SELO_DA_SOLICITACAO = {
-  ABERTA: "aguardando", EM_ANALISE: "aguardando", ATENDIDA: "aprovado",
+  ABERTA: "aguardando", EM_ANALISE: "aguardando", EM_ANDAMENTO: "aguardando", ATENDIDA: "aprovado",
   RECUSADA: "bloqueado", CANCELADA: "outro",
 };
 
@@ -1455,13 +1538,13 @@ function desenharDemandas(c, sol, ped, afast){
     <h4 style="margin:4px 0 6px">Pedidos à contabilidade</h4>
     <div class="cartao-dica">O que o DP pediu formalmente, com prazo e com o
       documento que fecha o pedido. Enquanto houver um aberto aqui, o cadastro
-      fica na etapa <b>Solicitações</b>.</div>
+      fica na etapa <b>Contabilidade</b>.</div>
     <table><thead><tr><th>Nº</th><th>Pedido</th><th>Situação</th><th>Prazo</th>
       <th>Espera de volta</th><th></th></tr></thead>
       <tbody>${pedidos.map(p => `<tr>
         <td class="dados">${escapar(p.numero)}</td>
         <td><b>${escapar(p.template_nome || p.template)}</b></td>
-        <td><span class="selo ${SELO_DO_PEDIDO[p.situacao] || "outro"}">${rotulo(p.situacao)}</span>
+        <td><span class="selo ${SELO_DO_PEDIDO[p.situacao] || "outro"}">${p.situacao === "RASCUNHO" ? "Ainda não enviado" : rotulo(p.situacao)}</span>
           ${p.atrasado ? `<br><small style="color:var(--vermelho)">atrasado</small>` : ""}</td>
         <td class="dados">${p.prazo ? dataBR(p.prazo) : "—"}</td>
         <td class="desc"><small>${escapar(p.documento_esperado_nome || "—")}</small></td>
@@ -1643,14 +1726,25 @@ async function registrarRetorno(c){
          + `Afastada desde <b>${dataBR(a.data_inicio)}</b> por `
          + `<b>${escapar(a.tipo_rotulo || "")}</b>.`
          + (a.tipo_desconhecido
-             ? " ⚠️ Este afastamento é antigo e a natureza dele não foi"
-               + " registrada na época. Diga o tipo abaixo."
+             ? " ⚠️ Este afastamento é antigo: a natureza dele não foi"
+               + " registrada na época e a data de início foi ESTIMADA pelo"
+               + " sistema. Diga o tipo e confira a data abaixo — o que falta"
+               + " é recalculado com a data que você informar."
              : ""),
     campos: [
       ...(a.tipo_desconhecido || (r0.impede || []).some(x => x.indexOf("tipo") >= 0)
           ? [{nome: "tipo", rotulo: "Qual era o tipo?", tipo: "select",
               obrigatorio: true, largura: 6,
               opcoes: tipos.map(x => ({valor: x.valor, rotulo: x.rotulo}))}]
+          : []),
+      {# ⚑ A DATA DE INÍCIO DO AFASTAMENTO ANTIGO É ESTIMADA (migração 111: a
+         última ida para "Afastado" ou, sem isso, a admissão). Corrigir aqui é
+         o que impede o sistema de cobrar ASO de quem ficou uma semana fora. #}
+      ...(a.tipo_desconhecido
+          ? [{nome: "data_inicio", rotulo: "Afastado desde (confira)", tipo: "date",
+              obrigatorio: true, largura: 3, valor: a.data_inicio,
+              dica: "a data veio estimada — corrija para o dia em que ele parou "
+                  + "de trabalhar; é ela que decide se o ASO é obrigatório"}]
           : []),
       {nome: "data_retorno", rotulo: "Voltou em", tipo: "date",
        obrigatorio: true, largura: 3, valor: hoje(),
@@ -1662,7 +1756,7 @@ async function registrarRetorno(c){
   try {
     const d = await api(`/erp/api/colaboradores/${c.id}/afastamento/retorno`,
                         {method: "POST", body: JSON.stringify(r)});
-    c.etapa = "CONCLUIDO"; c.situacao = "ATIVO";
+    c.etapa = d.etapa || "CONCLUIDO"; c.situacao = "ATIVO";
     await pintarDemandasDaPessoa(els("c-painel"), c);
     aviso("dem-msg",
       `${escapar(c.nome)} voltou em ${dataBR(d.data_retorno)} `
@@ -2407,9 +2501,13 @@ function painelDaFicha(){
       ${campoTexto("Categoria na convenção", "c-convcategoria", c.convencao_categoria,
                    'style="grid-column:span 2"')}
       <div class="campo" style="grid-column:span 3" id="c-piso-caixa"></div>
-      <div class="campo"><label>Obra</label><select id="c-obra"><option value="">—</option>
+      <div class="campo"><label>Obra de cadastro</label><select id="c-obra"><option value="">—</option>
         ${OBRAS.map(x => `<option value="${x.id}" ${String(c.obra_id) === String(x.id)
-          ? "selected" : ""}>${rotuloObra(x)}</option>`).join("")}</select></div>
+          ? "selected" : ""}>${rotuloObra(x)}</option>`).join("")}</select>
+        ${c.obra_atual ? `<small class="desc">Obra atual (pelo ponto): <b>${escapar(c.obra_atual.codigo)}</b>${
+          c.obra_atual.desde ? " desde " + dataBR(c.obra_atual.desde) : ""}${
+          String(c.obra_atual.obra_id) !== String(c.obra_id || "")
+            ? ` <span class="etiqueta ambar">diferente do cadastro</span>` : ""}</small>` : ""}</div>
       ${campoTexto("Matrícula", "c-mat", c.matricula)}
       <div class="campo"><label>Contrato de experiência</label>${lista("c-exper",
         o.contratos_experiencia, c.contrato_experiencia)}</div>

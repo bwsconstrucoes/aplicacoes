@@ -43,7 +43,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -308,3 +308,193 @@ def historico_do_piso(s: Session, cargo_convencao_id: int) -> list[dict[str, Any
         "vigente": l.vigencia_fim is None,
         "motivo": l.motivo or "",
     } for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# AS CONVENÇÕES E QUEM ESTÁ NELAS (23/11/2026)
+#
+# Ele, antes de importar a tabela completa: *"eu queria visualizar quem são os
+# colaboradores para cada convenção dessa. Até para entender se todas que foi
+# cadastrada tem alguém ou se não. Inclusive, até excluir alguma que não
+# precise estar aqui."*
+#
+# Custo: UMA consulta para o resumo (contagem agrupada), uma por convenção
+# aberta. Nada de carregar o cadastro inteiro para contar.
+# ---------------------------------------------------------------------------
+def convencoes_com_gente(s: Session, *, so_ativas: bool = True) -> list[dict[str, Any]]:
+    """Cada convenção com quantos cargos tem e quantas pessoas estão nela."""
+    linhas = s.execute(text("""
+        SELECT v.id, v.nome, v.uf, v.mes_data_base, v.ativo,
+               (SELECT count(*) FROM cargo_convencao cc
+                 WHERE cc.convencao_id = v.id AND cc.ativo) AS cargos,
+               (SELECT count(*) FROM cargo_convencao cc
+                 WHERE cc.convencao_id = v.id AND cc.ativo
+                   AND cc.salario_piso IS NULL) AS sem_piso,
+               count(c.id) FILTER (WHERE UPPER(COALESCE(c.situacao, '')) <> 'DESLIGADO')
+                   AS pessoas,
+               count(c.id) FILTER (WHERE UPPER(COALESCE(c.situacao, '')) = 'DESLIGADO')
+                   AS desligados
+          FROM convencoes v
+          LEFT JOIN colaboradores c ON c.convencao_id = v.id
+         WHERE (:todas OR v.ativo IS NOT FALSE)
+         GROUP BY v.id
+         ORDER BY v.nome"""), {"todas": not so_ativas}).mappings().all()
+    return [dict(l) for l in linhas]
+
+
+def pessoas_da_convencao(s: Session, convencao_id: int) -> list[dict[str, Any]]:
+    """Quem está na convenção hoje (sem os desligados), com cargo e obra."""
+    linhas = s.execute(text("""
+        SELECT c.id, c.nome, c.vinculo, c.situacao, g.nome AS cargo,
+               o.codigo AS obra
+          FROM colaboradores c
+          LEFT JOIN cargos g ON g.id = c.cargo_id
+          LEFT JOIN obras o ON o.id = c.obra_id
+         WHERE c.convencao_id = :v
+           AND UPPER(COALESCE(c.situacao, '')) <> 'DESLIGADO'
+         ORDER BY c.nome"""), {"v": convencao_id}).mappings().all()
+    return [dict(l) for l in linhas]
+
+
+def excluir_convencao(s: Session, convencao_id: int, usuario: Any) -> dict[str, Any]:
+    """Exclui a convenção que não serve — com as três travas que a história pede.
+
+    - Tem gente ATIVA nela: não exclui. Primeiro se troca a convenção dessas
+      pessoas; senão a ficha delas ficaria sem piso e sem data-base.
+    - Só gente DESLIGADA (ou histórico de vínculo/alteração apontando para
+      ela): DESATIVA — some das listas e das caixinhas, mas a rescisão e o
+      histórico de quem saiu continuam dizendo em que convenção estavam.
+    - Ninguém nunca: apaga de vez, com os cargos dela e o histórico do piso.
+    """
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    conv = s.get(Convencao, convencao_id)
+    if conv is None:
+        raise ErroValidacao("Convenção não encontrada.")
+    ativas = len(pessoas_da_convencao(s, convencao_id))
+    if ativas:
+        raise ErroValidacao(
+            f"{conv.nome} tem {ativas} pessoa(s) ativa(s). Troque a convenção "
+            "delas no cadastro primeiro — senão a ficha fica sem piso e sem "
+            "data-base.")
+    usada = s.execute(text("""
+        SELECT (SELECT count(*) FROM colaboradores WHERE convencao_id = :v)
+             + (SELECT count(*) FROM colaborador_vinculos WHERE convencao_id = :v)
+             + (SELECT count(*) FROM colaborador_alteracoes
+                 WHERE convencao_de_id = :v OR convencao_para_id = :v)"""),
+        {"v": convencao_id}).scalar() or 0
+    nome = conv.nome
+    if usada:
+        conv.ativo = False
+        s.execute(text("UPDATE cargo_convencao SET ativo = FALSE WHERE convencao_id = :v"),
+                  {"v": convencao_id})
+        feito = "desativada"
+    else:
+        s.execute(text("DELETE FROM cargo_convencao WHERE convencao_id = :v"),
+                  {"v": convencao_id})
+        s.delete(conv)
+        feito = "excluida"
+    s.flush()
+    registrar_evento(s, "convencao", convencao_id,
+                     "DESATIVADA" if usada else "EXCLUIDA",
+                     {"nome": nome, "historico": int(usada)},
+                     getattr(usuario, "id", None))
+    return {"feito": feito, "nome": nome}
+
+
+MESES = ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+         "agosto", "setembro", "outubro", "novembro", "dezembro")
+
+
+def mes_da_data_base(bruto: Any) -> Optional[int]:
+    """PURA. "5", "05", "maio", "Maio/2026", "01/05" → 5. Vazio ou ilegível → None."""
+    t = _sem_acento(str(bruto or "")).strip().lower()
+    if not t:
+        return None
+    for i, nome in enumerate(MESES, start=1):
+        if t.startswith(_sem_acento(nome).lower()[:3]):
+            return i
+    numeros = re.findall(r"\d+", t)
+    if len(numeros) >= 2 and len(numeros[0]) <= 2 and len(numeros[1]) <= 2:
+        n = int(numeros[1])            # 01/05 = dia/mês
+    elif numeros:
+        n = int(numeros[0])
+    else:
+        return None
+    return n if 1 <= n <= 12 else None
+
+
+def planilha_modelo(s: Session) -> bytes:
+    """A planilha para importar, JÁ COM o que está cadastrado — quem baixa
+    completa e manda de volta. Uma aba com os dados, outra com as regras."""
+    from io import BytesIO
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    dados = listar(s, so_ativos=True)
+    convs = {c["id"]: c for c in dados["convencoes"]}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cargos"
+    cab = ("Cargo", "CBO", "Convenção", "UF", "Mês da data-base", "Categoria",
+           "Salário", "Valor diária", "Status")
+    ws.append(cab)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0B2C5C")
+    for x in dados["cruzamentos"]:
+        v = convs.get(x["convencao_id"]) or {}
+        ws.append((x["cargo"], x["cbo"], x["convencao"], v.get("uf") or "",
+                   MESES[v["mes_data_base"] - 1] if v.get("mes_data_base") else "",
+                   x["categoria"], x.get("salario_piso"), x.get("valor_diaria"),
+                   "Ativo"))
+    if not dados["cruzamentos"]:
+        ws.append(("PEDREIRO", "7152-10", "CE-Fortaleza", "CE", "maio",
+                   "PROFISSIONAL", 2230.00, None, "Ativo"))
+        ws.append(("SERVENTE", "7170-20", "CE-Fortaleza", "CE", "maio",
+                   "SERVENTE", 1650.00, None, "Ativo"))
+    for col, larg in zip("ABCDEFGHI", (34, 10, 26, 6, 16, 22, 12, 12, 10)):
+        ws.column_dimensions[col].width = larg
+    for linha in ws.iter_rows(min_row=2, min_col=7, max_col=8):
+        for c in linha:
+            c.number_format = "#,##0.00"
+    ws.freeze_panes = "A2"
+
+    ajuda = wb.create_sheet("Como preencher")
+    regras = (
+        ("Como preencher a aba Cargos", ""),
+        ("", ""),
+        ("Uma linha", "é um cargo NUMA convenção. PEDREIRO em CE-Fortaleza e PEDREIRO em "
+                      "MA-Imperatriz são duas linhas, cada uma com o seu salário."),
+        ("Cargo *", "o nome do cargo. Caixa e acento não importam: “Pedreiro” e "
+                    "“PEDREIRO” são o mesmo."),
+        ("Convenção *", "o nome da convenção. Se ainda não existir, é criada. Vazio = "
+                        "“Sem Convenção” (quem não tem, como autônomo)."),
+        ("CBO", "com ou sem traço: 7152-10 ou 715210."),
+        ("UF", "a sigla do estado. Se o nome da convenção começar por ela "
+               "(“CE-Fortaleza”), pode deixar vazio."),
+        ("Mês da data-base", "o mês do reajuste da convenção: “maio” ou 5. É ele que "
+                             "avisa o DP do risco de demitir nos 30 dias antes."),
+        ("Categoria", "uma de: " + ", ".join(CATEGORIAS) + "."),
+        ("Salário", "o piso. 2230,00 ou 2.230,00. Salário novo ABRE uma linha no "
+                    "histórico na data que você escolher ao importar — o antigo "
+                    "continua valendo para os meses passados."),
+        ("Valor diária", "só para quem é pago por dia."),
+        ("Status", "“Ativo” ou vazio. Qualquer outra coisa (“Inativo”) entra inativo."),
+        ("", ""),
+        ("Ao importar", "a tela primeiro CONFERE sem gravar e mostra o que vai "
+                        "acontecer e os avisos; só depois você grava."),
+        ("Nada é apagado", "cargo ou convenção que não estiver na planilha continua "
+                           "como está. Para tirar uma convenção, use o botão Excluir na tela."),
+    )
+    for a, b in regras:
+        ajuda.append((a, b))
+    ajuda["A1"].font = Font(bold=True, size=13)
+    ajuda.column_dimensions["A"].width = 20
+    ajuda.column_dimensions["B"].width = 100
+    for linha in ajuda.iter_rows(min_row=3):
+        linha[0].font = Font(bold=True)
+        linha[1].alignment = Alignment(wrap_text=True, vertical="top")
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

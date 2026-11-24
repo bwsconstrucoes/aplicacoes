@@ -12244,6 +12244,58 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 276 — Comprovantes: a folha de rodapé é "Não é comprovante", não "Deu erro" (24/11/2026)
+
+- O dono: *"as páginas 'em branco' ainda estão sendo listadas com erro (…) sicredi_….pdf
+  pág. 2 — Deu erro — O robô não devolveu resultado para esta página."*
+- Desde 18/11 o BaixaBradesco pula a folha que não é comprovante (rodapé do Sicredi,
+  continuação) e diz isso em `paginas_sem_pagamento` na resposta. `ler_resposta` não lia
+  essa lista; com a leva 275 (página sem resultado vira erro), a folha de rodapé passou a
+  aparecer como "Deu erro". Agora: rodapé/continuação → `SEM_PAGAMENTO` ("Não é
+  comprovante", não pede ação); página SEM TEXTO nenhum (foto/escaneado) → "Deu erro" com o
+  motivo do robô (essa não baixa nunca sem alguém reenviar o PDF do banco).
+- De quebra: o "Já tinha sido baixado" vinha sem número de página (o robô o põe em
+  `pagina`, e a tela só lia `receipt.page`).
+- As linhas já gravadas entre 21 e 24/11 como "o robô não devolveu resultado" continuam
+  como estão (não dá para saber, sem o PDF, se eram rodapé ou foto).
+- Teste: `test_a_folha_de_RODAPE_nao_vira_erro_e_a_escaneada_vira`.
+
+#### Leva 275 — Comprovantes: a página entra na lista no envio, "Aguardando a baixa" (21/11/2026)
+
+- *"Quando você anexa o comprovante e coloca mandar para a baixa (…) ele meio que some (…)
+  e desaparece qualquer informação. Aí depois (…) é que ele é listado na tabela (…) a gente
+  fica na dúvida, foi, não foi (…) o ideal era que na hora que mandasse para a baixa, ele
+  já alimentasse a tabela e ficasse aguardando a baixa."*
+- `comprovantes.guardar` cria uma linha por página com a situação `AGUARDANDO` ("Aguardando
+  a baixa"; na lista: "na fila" ou "baixando agora — leva x de y"). Quando a leva volta do
+  robô, as linhas daquelas páginas são TROCADAS pelo resultado (o que também acaba com a
+  linha dobrada quando um envio parado era retomado do começo).
+- Nada fica "aguardando" para sempre: página da leva que o robô não devolveu vira "Deu
+  erro — o robô não devolveu resultado"; envio que parou no meio deixa as que faltavam como
+  "Deu erro — o envio parou antes desta página: <motivo>"; sem o PDF no servidor, idem.
+  Todas podem ser baixadas de novo (leva 274). "Processar de novo" recria o aguardando.
+- A tela se recarrega a cada leva que volta (antes, só no fim do envio).
+- Sem migração. Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+- **Publicado em 21/11/2026.** Os testes antigos do processamento (`test_analisesps_banco.py`) foram ajustados à linha que nasce no envio.
+
+#### Leva 274 — Comprovantes: "Baixar de novo" na página que não baixou (19/11/2026)
+
+- *"Nos que não foram baixados, eu queria que tivesse algum botão (…) para eu baixar
+  novamente. Utilizar aquele mesmo arquivo e encaminhar novamente (…) às vezes a gente
+  esquece de alterar o status e acaba não encontrando."*
+- Na lista "comprovante a comprovante", a linha que não baixou (não achei a SP, falta
+  liberar, não efetivado, erro) ganha "Baixar de novo", e caixas para marcar várias
+  ("Baixar de novo os marcados", até 50). `comprovantes.reenviar`: a mesma página vem do
+  servidor (enquanto o PDF está lá) ou da cópia no Drive (leva 273), as escolhidas viram
+  UM envio novo ("Reenvio - …") na fila de sempre, e o robô baixa — o que já baixou não
+  baixa duas vezes.
+- A linha antiga vira **"Mandado de novo"** (situação `REENVIADO`, motivo com o número do
+  envio novo) e sai da conta do que pede ação — senão o mesmo comprovante contaria duas
+  vezes. O resultado está no envio novo. Sem migração.
+- Sem servidor nem Drive (envio antigo, anterior à 273), não há botão: arrastar de novo.
+- **Publicado em 19/11/2026** (sem migração).
+- Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+
 #### Leva 273 — Comprovantes: lista com filtros, o comprovante de cada página e o que não baixou no Drive (18/11/2026) — MIGRAÇÃO 057
 
 - *"Eu queria poder, no sidebar, fazer filtragem das informações (…) aparece uma série de

@@ -320,6 +320,61 @@ def test_afastamento_antigo_so_volta_depois_de_dizer_o_tipo(sessao_real, pessoa)
                         None)["ok"]
 
 
+def test_afastamento_antigo_corrige_o_inicio_e_deixa_de_cobrar_o_aso(
+        sessao_real, pessoa):
+    """19/11/2026. A migração 111 estimou o início de quem já estava afastado
+    — e, para quem veio pela importação, a estimativa é a ADMISSÃO. Com ela, a
+    conta dava centenas de dias e a trava cobrava ASO de quem ficou uma semana
+    fora. O DP corrige a data no retorno, e a trava conta pela data certa."""
+    sessao_real.execute(text("""
+        INSERT INTO colaborador_afastamentos (colaborador_id, tipo, data_inicio)
+        VALUES (:c, 'NAO_INFORMADO', :i)"""),
+        {"c": pessoa.id, "i": pessoa.admissao})
+    pessoa.etapa, pessoa.situacao = "AFASTADO", "AFASTADO"
+    sessao_real.flush()
+
+    # pela data estimada (a admissão, 900 dias atrás) o exame seria cobrado.
+    # Num ponto de salvamento, como a rota faz ao recusar: o que a tentativa
+    # gravou (o tipo) volta atrás.
+    ponto = sessao_real.begin_nested()
+    with pytest.raises(ErroValidacao) as e:
+        svc.retornar(sessao_real, pessoa.id,
+                     {"data_retorno": HOJE.isoformat(), "tipo": "ATESTADO"}, None)
+    assert "ASO de retorno" in str(e.value)
+    ponto.rollback()
+
+    # com o início real (10 dias atrás), não é
+    inicio = HOJE - dt.timedelta(days=10)
+    r = svc.retornar(sessao_real, pessoa.id,
+                     {"data_retorno": HOJE.isoformat(), "tipo": "ATESTADO",
+                      "data_inicio": inicio.isoformat()}, None)
+    assert r["ok"] and r["dias"] == 10
+    linha = sessao_real.execute(text("""
+        SELECT data_inicio FROM colaborador_afastamentos
+         WHERE colaborador_id = :c"""), {"c": pessoa.id}).one()
+    assert linha.data_inicio == inicio
+    rastro = sessao_real.execute(text("""
+        SELECT count(*) FROM eventos
+         WHERE entidade_tipo = 'colaborador' AND entidade_id = :c
+           AND acao = 'AFASTAMENTO_INICIO_CORRIGIDO'"""), {"c": pessoa.id}).scalar()
+    assert rastro == 1, "a correção da data tem de deixar rastro"
+
+
+def test_o_inicio_do_afastamento_NOVO_nao_se_corrige_no_retorno(
+        sessao_real, pessoa):
+    """O afastamento novo teve a data informada por alguém, na hora. Mexer
+    nela na volta seria reescrever o registro — e escaparia da trava."""
+    svc.abrir(sessao_real, pessoa.id,
+              {"tipo": "INSS",
+               "data_inicio": (HOJE - dt.timedelta(days=60)).isoformat()}, None)
+    with pytest.raises(ErroValidacao) as e:
+        svc.retornar(sessao_real, pessoa.id,
+                     {"data_retorno": HOJE.isoformat(),
+                      "data_inicio": (HOJE - dt.timedelta(days=5)).isoformat()},
+                     None)
+    assert "ASO de retorno" in str(e.value)
+
+
 def test_datas_incoerentes_sao_recusadas(sessao_real, pessoa):
     svc.abrir(sessao_real, pessoa.id,
               {"tipo": "INSS", "data_inicio": HOJE.isoformat()}, None)
@@ -407,6 +462,10 @@ def test_a_frase_do_vigia_na_tela_nao_promete_o_que_o_codigo_nao_faz():
     if "afastamento" in frase:
         assert "colaborador_afastamentos" in codigo, (
             "a frase do vigia promete olhar afastamento e o código não olha")
+    if "desligamento em andamento" in frase or "continua como" in frase:
+        assert "desligamento_processo" in codigo, (
+            "a frase do vigia promete olhar o desligamento em andamento e o "
+            "código não olha")
 
 
 def test_quem_volta_com_pedido_aberto_vai_para_SOLICITACOES(sessao_real, pessoa):

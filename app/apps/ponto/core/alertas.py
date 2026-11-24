@@ -51,7 +51,7 @@ GRAVIDADE = {
 }
 ROTULO = {
     "FALTA": "Falta sem justificativa", "FALTA_PARCIAL": "Falta parcial", "BATIDA_FALTANDO": "Batida faltando",
-    "COMPENSACAO_NAO_CUMPRIDA": "Compensação não cumprida — a folga virou falta",
+    "COMPENSACAO_NAO_CUMPRIDA": "Compensação não cumprida — virou falta",
     "COMPENSACAO_INCOMPLETA": "Compensação incompleta — faltou parte das horas da folga",
     "TRABALHOU_NA_FOLGA": "Trabalhou no dia da folga compensatória",
     "ATRASO": "Atraso", "SAIDA_ANTECIPADA": "Saída antecipada",

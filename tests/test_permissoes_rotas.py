@@ -223,6 +223,8 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
         "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
         "erp.pagina_primeiro_acesso", "erp.pagina_esqueci_a_senha",
         "erp.api_portal_pessoas", "erp.api_portal_ler_documento",
+        # 19/11/2026: a leitura de VÁRIOS papéis numa chamada só (admissão).
+        "erp.api_portal_ler_documentos",
         "erp.api_portal_conferir_cpf",
         "erp.pagina_primeiro_acesso_portal",
         "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir"}

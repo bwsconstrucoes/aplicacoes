@@ -41,7 +41,9 @@ class PessoaFalsa:
 @pytest.mark.parametrize("vinculo, contrato, esperado", [
     ("CTPS", "CLT_INDETERMINADO", "NA_CONTABILIDADE"),
     ("CTPS", None, "NA_CONTABILIDADE"),
-    ("PRESTADOR", "PJ", "CONTRATO_A_ASSINAR"),
+    # 19/11/2026: o PJ não passa mais por "Assinar" — vai para Concluído, e a
+    # trava de concluir exige o contrato de prestação anexado.
+    ("PRESTADOR", "PJ", "CONCLUIDO"),
     ("PRESTADOR", "AUTONOMO_RPA", "CONCLUIDO"),
     ("PRESTADOR", "AUTONOMO_MENSALISTA", "CONCLUIDO"),
     ("PRESTADOR", None, "CONCLUIDO"),
@@ -166,11 +168,15 @@ def test_a_conferencia_conclui_o_prestador_que_nao_e_pj(sessao_real, dono):
 
 
 @banco_
-def test_o_prestador_pj_para_no_contrato_a_assinar(sessao_real, dono):
+def test_o_prestador_pj_so_conclui_com_o_contrato_anexado(sessao_real, dono):
+    """19/11/2026, ele: *"o passo é a anexação do contrato de prestação de
+    serviço (…) não tem nada a ver com assinar."*"""
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
     c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Prestador Pj Ltda",
                                  "vinculo": "PRESTADOR", "tipo_contrato": "PJ"}, dono)
-    r = svc.concluir_conferencia(sessao_real, c.id, dono)
-    assert r["etapa"] == "CONTRATO_A_ASSINAR"
+    with pytest.raises(ErroValidacao, match="contrato de prestação"):
+        svc.concluir_conferencia(sessao_real, c.id, dono)
+    assert c.etapa == "CADASTRO_INICIAL"
 
 
 @banco_
@@ -191,8 +197,8 @@ def test_conferir_duas_vezes_e_recusado_com_a_etapa_de_agora(sessao_real, dono):
                                  "vinculo": "CTPS"}, dono)
     svc.concluir_conferencia(sessao_real, c.id, dono)
     from app.apps.erp.core.comum.auditoria import ErroValidacao
-    # "Na contabilidade" virou "Solicitações" em 17/11/2026 (migração 107).
-    with pytest.raises(ErroValidacao, match="Solicitações"):
+    # O rótulo é "Contabilidade" desde 19/11/2026 (antes "Solicitações").
+    with pytest.raises(ErroValidacao, match="Contabilidade"):
         svc.concluir_conferencia(sessao_real, c.id, dono)
 
 
@@ -250,15 +256,30 @@ def test_desligar_move_a_etapa_e_a_pessoa_sai_da_fila(sessao_real, dono):
 
 
 @banco_
-def test_readmissao_volta_para_a_conferencia(sessao_real, dono):
-    """O endereço muda, o documento vence, a convenção da obra nova pode ser
-    outra. Era isto que o "Checklist Readmissão" do Pipefy cobrava à mão."""
+def test_readmissao_vai_para_a_etapa_certa_e_limpa_a_saida(sessao_real, dono):
+    """19/11/2026, ele: *"na hora que eu atender essa readmissão de um
+    prestador, aí a pessoa já vai para a etapa concluído."* Carteira vai para
+    Inicial (falta o registro da CTPS). Antes ia para "EM_CONFERENCIA", etapa
+    fora de circulação, e a pessoa sumia da fila. E a saída anterior sai do
+    cadastro — senão o ponto a bloquearia."""
     c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Vai Voltar Depois",
-                                 "etapa": "CONCLUIDO", "admissao": "2025-01-05"}, dono)
+                                 "etapa": "CONCLUIDO", "admissao": "2025-01-05",
+                                 "vinculo": "PRESTADOR"}, dono)
     svc.desligar(sessao_real, c.id, {"data_saida": "2025-12-31",
                                      "forma_desligamento": "PEDIDO_COLABORADOR"}, dono)
-    svc.readmitir(sessao_real, c.id, {"admissao": "2026-06-01"}, dono)
-    assert c.etapa == "EM_CONFERENCIA"
+    svc.readmitir(sessao_real, c.id, {"admissao": "2026-06-01",
+                                      "vinculo": "PRESTADOR"}, dono)
+    assert c.etapa == "CONCLUIDO" and c.demissao is None
+    assert c.situacao == "ATIVO"
+
+    d = svc.salvar(sessao_real, {"cpf": CPF_B, "nome": "Volta De Carteira",
+                                 "etapa": "CONCLUIDO", "admissao": "2025-01-05",
+                                 "vinculo": "CTPS"}, dono)
+    svc.desligar(sessao_real, d.id, {"data_saida": "2025-12-31",
+                                     "forma_desligamento": "PEDIDO_COLABORADOR"}, dono)
+    svc.readmitir(sessao_real, d.id, {"admissao": "2026-06-01",
+                                      "vinculo": "CTPS"}, dono)
+    assert d.etapa == "CADASTRO_INICIAL"
 
 
 @banco_

@@ -284,6 +284,7 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/comprovantes"),
     ("GET", "/analisesps/comprovantes/1/pagina/1"),
     ("POST", "/analisesps/comprovantes/enviar"),
+    ("POST", "/analisesps/comprovantes/reenviar"),
     ("GET", "/analisesps/api/comprovantes/estado"),
     ("GET", "/analisesps/agenda"),
     ("GET", "/analisesps/log"),

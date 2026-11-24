@@ -88,6 +88,8 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Cotacao:
     if faltando:
         raise ErroValidacao(f"Item {faltando[0]} não encontrado.")
 
+    from app.apps.erp.core.suprimentos.solicitacao import exigir_liberados
+    exigir_liberados(itens)
     ja_cotados = _itens_em_cotacao_aberta(s, ids)
     if ja_cotados:
         raise ErroValidacao(
@@ -273,7 +275,9 @@ def lancar_preco(s: Session, cotacao_fornecedor_id: int, cotacao_item_id: int,
 
 
 def _celula(s: Session, coluna_id: int, linha_id: int) -> Optional[CotacaoPreco]:
-    for p in s.scalars(select(CotacaoPreco)).all():
+    for p in s.scalars(select(CotacaoPreco).where(
+            CotacaoPreco.cotacao_fornecedor_id == coluna_id,
+            CotacaoPreco.cotacao_item_id == linha_id)).all():
         if p.cotacao_fornecedor_id == coluna_id and p.cotacao_item_id == linha_id:
             return p
     return None
@@ -308,13 +312,20 @@ def montar_mapa(s: Session, cotacao_id: int) -> dict[str, Any]:
     if cot is None:
         raise ErroNaoEncontrado("Cotação não encontrada.")
 
-    linhas = sorted([x for x in s.scalars(select(CotacaoItem)).all()
+    # Os `.where` são o que o banco usa; os `if` ficam para a sessão dublada
+    # dos testes. Sem eles o mapa lia os itens, as colunas e os preços de
+    # TODAS as cotações da empresa para montar uma.
+    linhas = sorted([x for x in s.scalars(select(CotacaoItem).where(
+                         CotacaoItem.cotacao_id == cotacao_id)).all()
                      if x.cotacao_id == cotacao_id], key=lambda x: x.numero or 0)
-    colunas = sorted([x for x in s.scalars(select(CotacaoFornecedor)).all()
+    colunas = sorted([x for x in s.scalars(select(CotacaoFornecedor).where(
+                          CotacaoFornecedor.cotacao_id == cotacao_id)).all()
                       if x.cotacao_id == cotacao_id],
                      key=lambda x: (x.ordem or 0, x.id or 0))
     precos = {(p.cotacao_fornecedor_id, p.cotacao_item_id): p
-              for p in s.scalars(select(CotacaoPreco)).all()}
+              for p in s.scalars(select(CotacaoPreco).where(
+                  CotacaoPreco.cotacao_fornecedor_id.in_(
+                      [c.id for c in colunas] or [0]))).all()}
 
     from app.apps.erp.core.suprimentos.solicitacao import (
         _quantas_correcoes, pode_corrigir,
@@ -362,6 +373,9 @@ def montar_mapa(s: Session, cotacao_id: int) -> dict[str, Any]:
             "status": (item.status.value if item is not None and item.status
                        else None),
             "status_rotulo": _rotulo_do_status(item),
+            # A solicitação de origem, como na planilha ("Nº SS"): é por ela
+            # que o comprador reconhece de quem veio o pedido.
+            "solicitacao": getattr(getattr(item, "solicitacao", None), "numero", None),
             # O comprador corrige a linha do próprio mapa: é aqui que ele
             # descobre que a obra pediu em saco o que só vem em bag.
             "correcoes": correcoes.get(getattr(item, "id", 0), 0),

@@ -52,7 +52,10 @@ def test_o_que_falta_nao_cobra_PIS_de_prestador():
     ctps = Colaborador(nome="Alguém", cpf="1", vinculo="CTPS")
     prest = Colaborador(nome="Alguém", cpf="2", vinculo="PRESTADOR")
 
-    assert "nº do PIS" in svc.o_que_falta(ctps)
+    # desde 19/11/2026 o PIS não é cobrado de ninguém: o eSocial é feito com
+    # o CPF (decisão dele). A CTPS continua sendo cobrada de quem tem carteira.
+    assert "nº do PIS" not in svc.o_que_falta(ctps)
+    assert "nº da CTPS" in svc.o_que_falta(ctps)
     assert "nº do PIS" not in svc.o_que_falta(prest)
     assert "nº da CTPS" not in svc.o_que_falta(prest)
     # o que vale para os dois continua cobrado

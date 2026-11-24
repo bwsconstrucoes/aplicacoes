@@ -1600,9 +1600,12 @@ def test_cada_leva_e_gravada_NA_HORA_e_nao_no_fim(banco_analisesps, monkeypatch,
 
     def responder(pedaco, nome):
         # No meio da segunda leva, olha o banco: a primeira já tem de estar lá.
+        # (21/11/2026: cada página já nasce "aguardando" no envio; conta-se o
+        # RESULTADO — e uma leva gravada leva as dez páginas dela.)
         vistos.append(consultar_um(
             "SELECT count(*) FROM analisesps.comprovantes_item "
-            " WHERE lote_id = (SELECT max(id) FROM analisesps.comprovantes_lote)")[0])
+            " WHERE lote_id = (SELECT max(id) FROM analisesps.comprovantes_lote) "
+            "   AND situacao <> 'AGUARDANDO'")[0])
         return {"planos": [{"match": {"status": "localizado"},
                             "pode_executar": True, "receipt": {"page": 1}}]}
 
@@ -1610,7 +1613,7 @@ def test_cada_leva_e_gravada_NA_HORA_e_nao_no_fim(banco_analisesps, monkeypatch,
     lote_id = comprovantes.guardar(_pdf(25), "x.pdf", "p", "P")
     comprovantes.processar_um(lote_id)
 
-    assert vistos == [0, 1, 2], (
+    assert vistos == [0, 10, 20], (
         f"as levas não foram gravadas uma a uma: {vistos}")
 
 
@@ -1626,7 +1629,7 @@ def test_o_PDF_sai_do_disco_quando_o_lote_termina(banco_analisesps, monkeypatch,
     from app.apps.analisesps.db import consultar_um
 
     monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
-    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", _robo_falso(1))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", _robo_falso(2))
     lote_id = comprovantes.guardar(_pdf(2), "x.pdf", "p", "P")
     caminho = consultar_um(
         "SELECT caminho FROM analisesps.comprovantes_lote WHERE id = ?",
@@ -1661,8 +1664,11 @@ def test_falha_no_meio_marca_o_lote_e_guarda_o_que_ja_tinha_saido(
     lote = comprovantes.historico()[0]
     assert lote["situacao"] == "FALHOU"
     assert "Omie" in lote["erro"]
-    assert len(comprovantes.itens_do_lote(lote_id)) == 1, (
-        "a leva que deu certo antes da falha se perdeu")
+    por = {i["pagina"]: i["motivo"] for i in comprovantes.itens_do_lote(lote_id)}
+    assert len(por) == 25, "cada página continua na lista, uma vez só"
+    assert "parou antes" not in por[1], "a leva que deu certo antes da falha se perdeu"
+    assert all("parou antes" in por[n] for n in range(11, 26)), (
+        "o que ficou para trás não pode ficar 'aguardando' para sempre")
 
 
 @pytest.mark.banco
@@ -6786,6 +6792,7 @@ def test_reprocessar_APAGA_as_linhas_velhas_e_nao_duplica_a_tela(
     monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
     lote_id = comprovantes.guardar(_pdf(2), "duas.pdf", "p", "P")
     with conexao() as conn:
+        conn.execute("DELETE FROM analisesps.comprovantes_item WHERE lote_id = ?", (lote_id,))
         comprovantes._gravar_itens(conn, lote_id, [
             {"pagina": 1, "situacao": "BAIXADO", "sp_id": "111"},
             {"pagina": 2, "situacao": "NAO_LOCALIZADO", "motivo": "sem SP"}])
@@ -6798,8 +6805,12 @@ def test_reprocessar_APAGA_as_linhas_velhas_e_nao_duplica_a_tela(
     comprovantes.reprocessar_lote(lote_id)
 
     assert consultar_um("SELECT count(*) FROM analisesps.comprovantes_item "
-                        " WHERE lote_id = ?", (lote_id,))[0] == 0, (
+                        " WHERE lote_id = ? AND situacao <> 'AGUARDANDO'",
+                        (lote_id,))[0] == 0, (
         "as linhas velhas ficaram; a tela mostraria cada página duas vezes")
+    # E as páginas voltam a aparecer como "aguardando a baixa" (21/11/2026).
+    assert consultar_um("SELECT count(*) FROM analisesps.comprovantes_item "
+                        " WHERE lote_id = ?", (lote_id,))[0] == 2
 
 
 @pytest.mark.banco
@@ -7502,6 +7513,7 @@ def test_o_DESEMPATE_reenvia_juntos_e_grava_o_resultado(banco_analisesps, monkey
     a = comprovantes.guardar(_pdf(1), "sicredi_1.pdf", "p", "P")
     b = comprovantes.guardar(_pdf(1), "sicredi_2.pdf", "p", "P")
     with conexao() as conn:
+        conn.execute("DELETE FROM analisesps.comprovantes_item WHERE situacao = 'AGUARDANDO'")
         for lote in (a, b):
             conn.execute("INSERT INTO analisesps.comprovantes_item (lote_id, pagina, "
                          " situacao, valor, motivo) VALUES (?, 1, 'PENDENTE_VALIDACAO', "

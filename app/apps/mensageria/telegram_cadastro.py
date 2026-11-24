@@ -83,7 +83,8 @@ TEXTO_PADRAO = (
     "Para se cadastrar (leva 1 minuto):\n"
     "1️⃣ Se ainda não tem, instale o *Telegram* pela loja de aplicativos do celular.\n"
     "2️⃣ Toque neste link: {link}\n"
-    "3️⃣ Toque em *INICIAR* e depois em *📱 Compartilhar meu número*.\n\n"
+    "3️⃣ Toque em *INICIAR* e depois em *📱 Compartilhar meu número*. Faça isso *no celular*: "
+    "pelo computador o botão não funciona.\n\n"
     "Pronto: a partir daí as mensagens da BWS chegam por lá.\n"
     "Dúvidas? Fale com o RH ou o Financeiro."
 )
@@ -284,8 +285,13 @@ def diagnosticar(linha: dict) -> str:
     return "SEM_TELEGRAM"
 
 
-def achar_pessoa(conn, *, telefone=None, cpf=None, pessoas: Optional[list] = None) -> Optional[dict]:
-    """A pessoa elegível com este CPF ou este telefone (CPF tem preferência)."""
+def achar_pessoa(conn, *, telefone=None, cpf=None, pessoas: Optional[list] = None,
+                 completo: bool = True) -> Optional[dict]:
+    """A pessoa do ERP com este CPF ou este telefone (CPF tem preferência).
+
+    Primeiro entre as elegíveis (telefone completo). Não achou e `completo`?
+    Procura também entre quem tem telefone SEM DDD ou nenhum — ver
+    `pessoas_sem_telefone_completo`, que explica o caso que obrigou a isto."""
     pessoas = pessoas if pessoas is not None else pessoas_elegiveis(conn)
     alvo_cpf = normalizar_cpf(cpf) if cpf else ""
     if alvo_cpf:
@@ -297,7 +303,75 @@ def achar_pessoa(conn, *, telefone=None, cpf=None, pessoas: Optional[list] = Non
         for p in pessoas:
             if variantes_telefone(p["telefone"]) & alvo_tel:
                 return p
+    if completo and (alvo_cpf or alvo_tel):
+        return _achar_sem_ddd(pessoas_sem_telefone_completo(conn), alvo_cpf, telefone)
     return None
+
+
+# ---------------------------------------------------------------------------
+# QUEM TEM TELEFONE SEM DDD (23/11/2026)
+#
+# O caso real: o Manoel recebia pelo Telegram, e depois da migração da aba
+# TelegramID (17/11) deixou de receber. O telefone dele no cadastro de pessoas
+# estava SEM DDD. A migração só cruzava a planilha com `pessoas_elegiveis`, que
+# exige telefone completo (é a régua do CONVITE, que vai por WhatsApp) — então a
+# linha dele caiu em "fora" e não foi trazida, mesmo com o CPF batendo. O dono
+# diagnosticou certo: *"vi que o telefone dela no cadastro de pessoas estava sem
+# o ddd. Acho que isso desincronizou alguma coisa."*
+#
+# ⚑ A REGRA, e por que ela não fura a regra rígida de 14/11:
+#
+#   · pelo CPF, a pessoa é achada com qualquer telefone — o CPF identifica, e
+#     CPF digitado no robô continua NÃO cadastrando (só a migração e o DP usam);
+#   · pelo telefone, o número sem DDD do cadastro tem de ser o FINAL do número
+#     que o Telegram confirmou, e de UMA pessoa só. Dois cadastros com o mesmo
+#     final em cidades diferentes = ninguém (o DP completa o DDD e resolve).
+#     Com DDD faltando, é o mesmo número — só incompleto.
+# ---------------------------------------------------------------------------
+def pessoas_sem_telefone_completo(conn) -> list[dict]:
+    """Colaboradores não desligados e operadores ativos cujo telefone NÃO serve
+    para convite (sem DDD, faltando dígito ou vazio). Mesmo formato da
+    `pessoas_elegiveis`, com `telefone_incompleto` = True."""
+    todas = pessoas_do_erp(conn)
+    return [{**p, "telefone": digitos(p["telefone"])[2:] if p["telefone"].startswith("55")
+             and len(digitos(p["telefone"])) < 12 else digitos(p["telefone"]),
+             "telefone_incompleto": True}
+            for p in todas if not p["telefone_serve"]]
+
+
+def _achar_sem_ddd(pessoas: list[dict], alvo_cpf: str, telefone) -> Optional[dict]:
+    if alvo_cpf:
+        for p in pessoas:
+            if p["cpf"] == alvo_cpf:
+                return p
+    if not telefone:
+        return None
+    achadas = [p for p in pessoas if final_bate(telefone, p["telefone"])]
+    return achadas[0] if len(achadas) == 1 else None
+
+
+def final_bate(telefone_completo, telefone_sem_ddd) -> bool:
+    """O número sem DDD do cadastro (8 ou 9 dígitos) é o final do número
+    completo, com ou sem o nono dígito?"""
+    curto = digitos(telefone_sem_ddd)
+    if len(curto) not in (8, 9):
+        return False
+    for v in variantes_telefone(telefone_completo):
+        if len(v) < 10:
+            continue
+        numero = v[2:]
+        if numero == curto or (len(curto) == 9 and curto[0] == "9" and numero == curto[1:]) \
+                or (len(curto) == 8 and numero == "9" + curto):
+            return True
+    return False
+
+
+def telefone_bate(telefone, pessoa: dict) -> bool:
+    """O número confirmado pelo Telegram é o desta pessoa? Completo pelas
+    variantes; sem DDD pelo final (ver acima)."""
+    if pessoa.get("telefone_incompleto"):
+        return final_bate(telefone, pessoa.get("telefone"))
+    return bool(variantes_telefone(telefone) & variantes_telefone(pessoa.get("telefone")))
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +408,12 @@ def chat_id_de(conn, *, telefone=None, cpf=None) -> Optional[str]:
             for c in ativos:
                 if normalizar_cpf(c["cpf"]) == pessoa["cpf"]:
                     return c["chat_id"]
+        # Quem manda pelo telefone do cadastro e ele está SEM DDD (23/11/2026):
+        # vale o final do número confirmado no Telegram, se for de um só.
+        if len(digitos(telefone)) in (8, 9):
+            achados = [c for c in ativos if final_bate(c["telefone"], telefone)]
+            if len(achados) == 1:
+                return achados[0]["chat_id"]
     return None
 
 
@@ -391,17 +471,26 @@ def migrar_planilha(conn, linhas: list[list[str]], por: str = "") -> dict:
 
       ok          a pessoa está no ERP e o telefone bate — entra ativa;
       divergente  a pessoa está no ERP pelo CPF, mas o telefone do Telegram é
-                  outro — entra ATIVA (cortar quem já recebe não é o objetivo)
-                  e vai para a lista do DP atualizar o telefone;
+                  outro (ou o do cadastro está sem DDD) — entra ATIVA (cortar
+                  quem já recebe não é o objetivo) e vai para a lista do DP;
       fora        não é colaborador ativo nem operador do ERP (desligado, ou
                   nunca foi) — NÃO entra;
+      ja_estava   o id do Telegram já está no ERP, ou a pessoa já tem OUTRA
+                  conta ligada — não mexe (ver abaixo);
       sem_chat    linha sem id do Telegram — ignorada.
 
-    Pode rodar de novo: quem já está no banco só ganha o que faltar. Depois
-    dela, a planilha não é mais usada."""
+    ⚑ RODAR DE NOVO É SEGURO (23/11/2026). Antes, rodar de novo REATIVAVA o que
+    alguém tinha desligado na tela, e — pior — se a pessoa trocou de conta do
+    Telegram depois da migração, a conta velha da planilha voltava e DESLIGAVA
+    a nova. Agora só entra o que ainda não está no ERP. É o que permite trazer
+    de volta, com um clique, quem ficou de fora pelo telefone sem DDD."""
     import json
     pessoas = pessoas_elegiveis(conn)
-    rel = {"ok": [], "divergente": [], "fora": [], "sem_chat": 0, "novos": 0, "atualizados": 0}
+    incompletas = pessoas_sem_telefone_completo(conn)
+    rel = {"ok": [], "divergente": [], "fora": [], "ja_estava": 0, "sem_chat": 0, "novos": 0,
+           "atualizados": 0}
+    chats_no_erp = {str(r["chat_id"]) for r in db.todos(conn, "SELECT chat_id FROM mensageria.telegram_cadastros")}
+    cpfs_ligados = {normalizar_cpf(r["cpf"]) for r in cadastros_ativos(conn) if r["cpf"]}
     for linha in (linhas or [])[1:]:
         linha = list(linha) + [""] * 7
         chat = (linha[3] or "").strip()
@@ -409,29 +498,45 @@ def migrar_planilha(conn, linhas: list[list[str]], por: str = "") -> dict:
             rel["sem_chat"] += 1
             continue
         cpf_planilha, tel_planilha, nome_planilha = linha[1], linha[2], (linha[4] or "").strip()
-        por_cpf = achar_pessoa(conn, cpf=cpf_planilha, pessoas=pessoas) if digitos(cpf_planilha) else None
-        por_tel = achar_pessoa(conn, telefone=tel_planilha, pessoas=pessoas) if digitos(tel_planilha) else None
-        pessoa = por_cpf or por_tel
+        alvo_cpf = normalizar_cpf(cpf_planilha) if digitos(cpf_planilha) else ""
+        pessoa = None
+        if alvo_cpf:
+            pessoa = achar_pessoa(conn, cpf=alvo_cpf, pessoas=pessoas, completo=False) \
+                or _achar_sem_ddd(incompletas, alvo_cpf, None)
+        if not pessoa and digitos(tel_planilha):
+            pessoa = achar_pessoa(conn, telefone=tel_planilha, pessoas=pessoas, completo=False) \
+                or _achar_sem_ddd(incompletas, "", tel_planilha)
         resumo = {"nome": (pessoa or {}).get("nome") or nome_planilha, "cpf": normalizar_cpf(cpf_planilha),
                   "telefone_telegram": telefone_canonico(tel_planilha),
                   "telefone_erp": (pessoa or {}).get("telefone", "")}
         if not pessoa:
             rel["fora"].append(resumo)
             continue
-        bate = bool(variantes_telefone(tel_planilha) & variantes_telefone(pessoa["telefone"]))
-        existia = cadastro_por_chat(conn, chat)
-        gravar_cadastro(conn, chat_id=chat, cpf=pessoa["cpf"], telefone=tel_planilha or pessoa["telefone"],
-                        nome=pessoa["nome"], origem=(existia or {}).get("origem") or "PLANILHA",
-                        observacao=("migrado da aba TelegramID" if bate or not digitos(tel_planilha) else
-                                    "migrado da aba TelegramID; telefone do Telegram diferente do cadastro"),
-                        pessoa=pessoa)
-        rel["atualizados" if existia else "novos"] += 1
-        rel["ok" if bate or not digitos(tel_planilha) else "divergente"].append(resumo)
+        if chat in chats_no_erp or (pessoa["cpf"] and pessoa["cpf"] in cpfs_ligados):
+            rel["ja_estava"] += 1
+            continue
+        bate = not pessoa.get("telefone_incompleto") and (
+            not digitos(tel_planilha) or telefone_bate(tel_planilha, pessoa))
+        if pessoa.get("telefone_incompleto"):
+            obs = "migrado da aba TelegramID; o telefone do cadastro está sem DDD — o DP completa"
+        elif bate:
+            obs = "migrado da aba TelegramID"
+        else:
+            obs = "migrado da aba TelegramID; telefone do Telegram diferente do cadastro"
+        gravar_cadastro(conn, chat_id=chat, cpf=pessoa["cpf"],
+                        telefone=tel_planilha if digitos(tel_planilha) else "",
+                        nome=pessoa["nome"], origem="PLANILHA", observacao=obs, pessoa=pessoa)
+        chats_no_erp.add(chat)
+        if pessoa["cpf"]:
+            cpfs_ligados.add(pessoa["cpf"])
+        rel["novos"] += 1
+        rel["ok" if bate else "divergente"].append(resumo)
     momento = core._agora().isoformat()
     core.gravar_parametro(conn, MIGRADO_EM, momento, por)
     guardado = {**rel, "em": momento, "por": por,
                 "contagem": {"ok": len(rel["ok"]), "divergente": len(rel["divergente"]),
-                             "fora": len(rel["fora"]), "sem_chat": rel["sem_chat"]}}
+                             "fora": len(rel["fora"]), "ja_estava": rel["ja_estava"],
+                             "sem_chat": rel["sem_chat"]}}
     core.gravar_parametro(conn, RELATORIO_MIGRACAO, json.dumps(guardado, ensure_ascii=False)[:200000], por)
     return guardado
 
@@ -448,7 +553,8 @@ def relatorio_migracao(conn) -> Optional[dict]:
 def importar_planilha(conn, linhas, por: str = "") -> dict:
     """Nome antigo (mesma coisa que migrar_planilha), mantido para quem chamava."""
     r = migrar_planilha(conn, linhas, por)
-    return {"novos": r["novos"], "atualizados": r["atualizados"], "ignorados": r["sem_chat"] + len(r["fora"])}
+    return {"novos": r["novos"], "atualizados": r["atualizados"],
+            "ignorados": r["sem_chat"] + len(r["fora"]) + r["ja_estava"]}
 
 
 # ---------------------------------------------------------------------------
@@ -510,7 +616,13 @@ def desligado_da_empresa(conn, *, telefone=None, cpf=None) -> Optional[dict]:
     if not alvo_cpf and not variantes:
         return None
     # 1. está ativa em algum lugar?
-    if achar_pessoa(conn, telefone=telefone, cpf=cpf) is not None:
+    #
+    # ⚑ "Ativa" exclui quem tem DATA DE SAÍDA VENCIDA (23/11/2026). Antes a
+    # busca só via a caixinha `situacao`; com ATIVO e saída ontem, a pessoa era
+    # achada aqui e escapava da trava — o mesmo buraco da janela antes da
+    # virada do dia, descrita logo abaixo.
+    ativa = achar_pessoa(conn, telefone=telefone, cpf=cpf)
+    if ativa is not None and not _saida_vencida(conn, ativa):
         return None
     # 2. é desligada?
     #
@@ -538,6 +650,14 @@ def desligado_da_empresa(conn, *, telefone=None, cpf=None) -> Optional[dict]:
             return _desligada(c)
     # 3. não é de ninguém que a gente conhece
     return None
+
+
+def _saida_vencida(conn, pessoa: dict) -> bool:
+    if not pessoa.get("colaborador_id"):
+        return False
+    return bool(db.um(conn, """SELECT 1 FROM public.colaboradores
+                                WHERE id = :i AND demissao IS NOT NULL AND demissao < CURRENT_DATE""",
+                      i=pessoa["colaborador_id"]))
 
 
 def _desligada(c: dict) -> dict:
@@ -636,6 +756,121 @@ def resumo_da_pessoa(conn, colaborador_id: int) -> dict:
                          if cad else None),
             "convite": convite, "contagem_30d": contagem, "mensagens": mensagens,
             "chave": f"C{c['id']}"}
+
+
+# ---------------------------------------------------------------------------
+# O ID DO TELEGRAM NA FICHA, EDITÁVEL (23/11/2026)
+#
+# Ele: *"acho que no cadastro deveria ter o campo do ID do telegram para caso
+# quiséssemos editar caso necessário. Por ventura a pessoa pode ter mudado o
+# telegram, ou o cadastro está incompleto (…) gostaria de poder ver esse ID e,
+# se tiver sentido, alterar ele."*
+#
+# ⚑ POR QUE O ID É CONFERIDO NO TELEGRAM ANTES DE GRAVAR, e não aceito como
+# veio: um número digitado errado ligaria a pessoa à conversa de OUTRA pessoa —
+# e por ali saem comprovante e contracheque. O Telegram responde, para o id
+# informado, o nome da conta; a tela mostra esse nome e só grava depois que
+# quem está mexendo confirma "é ela". Se o Telegram não conhece a conversa, é
+# porque a pessoa nunca abriu o robô — e aí ligar não adianta nada: nenhuma
+# mensagem chegaria. Recusa, dizendo isso.
+#
+# ⚑ E A REGRA RÍGIDA DO TELEFONE (14/11) CONTINUA: o id entra SEM número
+# confirmado. Na próxima vez que a pessoa tocar em /start, o robô pede o número
+# e confere com o cadastro, como sempre.
+# ---------------------------------------------------------------------------
+ORIGEM_FICHA = "FICHA"
+
+
+def _consultar_telegram(chat_id: str) -> dict:
+    """getChat do Telegram. Devolve {"ok", "nome", "usuario", "tipo", "erro"}.
+    Separado para o teste trocar por um dublê — nenhum teste fala com o Telegram."""
+    import requests
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        return {"ok": False, "erro": "o robô do Telegram não está configurado neste servidor"}
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{token}/getChat",
+                         params={"chat_id": chat_id}, timeout=10)
+        corpo = r.json() if r.content else {}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Mensageria: getChat do Telegram falhou: %r", e)
+        return {"ok": False, "erro": "não consegui falar com o Telegram agora — tente de novo em instantes"}
+    if not corpo.get("ok"):
+        desc = str(corpo.get("description") or "")
+        if "chat not found" in desc.lower():
+            return {"ok": False, "erro": "o Telegram não conhece esta conversa: ou o número está errado, ou "
+                                         "a pessoa nunca abriu o robô da BWS. Peça a ela para abrir o robô "
+                                         "e tocar em INICIAR — aí o ID passa a valer"}
+        return {"ok": False, "erro": f"o Telegram recusou este ID ({desc[:120] or r.status_code})"}
+    chat = corpo.get("result") or {}
+    nome = " ".join(filter(None, [chat.get("first_name"), chat.get("last_name")])) or chat.get("title") or ""
+    return {"ok": True, "nome": nome, "usuario": chat.get("username") or "", "tipo": chat.get("type") or ""}
+
+
+def trocar_telegram_da_pessoa(conn, colaborador_id: int, chat_id: str, *, por: str = "",
+                              confirmar: bool = False) -> dict:
+    """Liga (ou troca) o ID do Telegram de um colaborador, pela ficha.
+
+    Sem `confirmar`: confere e devolve quem o Telegram diz que é, sem gravar.
+    Com `confirmar`: grava. `chat_id` vazio + `confirmar` = desliga o Telegram
+    da pessoa (o mesmo "desligar" da aba Cadastro do Telegram)."""
+    c = db.um(conn, "SELECT id, nome, cpf, situacao, usuario_id FROM public.colaboradores WHERE id = :i",
+              i=int(colaborador_id))
+    if not c:
+        raise LookupError("colaborador não encontrado")
+    cpf = normalizar_cpf(c["cpf"])
+    atuais = db.todos(conn, """SELECT * FROM mensageria.telegram_cadastros
+                                WHERE ativo AND (colaborador_id = :i OR (cpf <> '' AND cpf = :cpf))""",
+                      i=c["id"], cpf=cpf or "~")
+    chat_id = digitos(chat_id)
+    if not chat_id:
+        if not atuais:
+            raise ValueError("esta pessoa não tem Telegram ligado")
+        if confirmar:
+            for a in atuais:
+                desvincular(conn, a["id"], por)
+            logger.info("Mensageria: Telegram de %s (colaborador %s) desligado na ficha por %s",
+                        c["nome"], c["id"], por)
+        return {"desligado": confirmar, "anterior": atuais[0]["chat_id"]}
+    if not 5 <= len(chat_id) <= 15:
+        raise ValueError("o ID do Telegram de uma pessoa tem de 5 a 15 algarismos")
+    if (c["situacao"] or "") == "DESLIGADO":
+        raise ValueError("a pessoa foi desligada da empresa — o sistema não manda aviso para quem saiu")
+    if any(str(a["chat_id"]) == chat_id for a in atuais):
+        raise ValueError("este já é o ID do Telegram desta pessoa")
+    dono = db.um(conn, """SELECT nome, cpf, colaborador_id FROM mensageria.telegram_cadastros
+                           WHERE ativo AND chat_id = :c""", c=chat_id)
+    if dono and dono.get("colaborador_id") != c["id"] and not (cpf and normalizar_cpf(dono["cpf"]) == cpf):
+        raise ValueError(f"este ID do Telegram já está ligado a {dono['nome'] or 'outra pessoa'} — "
+                         "desligue lá primeiro, na aba Cadastro do Telegram")
+    tg = _consultar_telegram(chat_id)
+    if not tg["ok"]:
+        raise ValueError(tg["erro"])
+    if tg.get("tipo") and tg["tipo"] != "private":
+        raise ValueError("este ID é de um grupo ou canal, não da conversa de uma pessoa")
+    previa = {"chat_id": chat_id, "nome_telegram": tg["nome"], "usuario_telegram": tg["usuario"],
+              "anterior": atuais[0]["chat_id"] if atuais else "", "nome": c["nome"]}
+    if not confirmar:
+        return {**previa, "gravado": False}
+    # O id pode ter sido de outra pessoa no passado (linha desligada): o número
+    # confirmado era DELA, e não pode passar para esta.
+    db.executar(conn, """UPDATE mensageria.telegram_cadastros SET telefone = ''
+                          WHERE chat_id = :c AND NOT ativo AND coalesce(cpf, '') <> :cpf""",
+                c=chat_id, cpf=cpf)
+    for a in atuais:
+        db.executar(conn, """UPDATE mensageria.telegram_cadastros SET ativo = FALSE, atualizado_em = now(),
+                                    observacao = :obs WHERE id = :id""",
+                    id=a["id"], obs=f"trocado na ficha por {por} para o ID {chat_id}"[:300])
+    gravar_cadastro(conn, chat_id=chat_id, cpf=cpf, telefone="", nome=c["nome"] or "", origem=ORIGEM_FICHA,
+                    observacao=(f"ID informado na ficha por {por}; conta do Telegram: {tg['nome']}"
+                                + (f" (@{tg['usuario']})" if tg["usuario"] else "")
+                                + (f"; antes era {previa['anterior']}" if previa["anterior"] else "")
+                                + " — o número será confirmado no próximo /start")[:300],
+                    pessoa={"colaborador_id": c["id"], "usuario_id": c.get("usuario_id"), "cpf": cpf,
+                            "nome": c["nome"] or ""})
+    logger.info("Mensageria: Telegram de %s (colaborador %s) trocado na ficha por %s: %s -> %s",
+                c["nome"], c["id"], por, previa["anterior"] or "nenhum", chat_id)
+    return {**previa, "gravado": True}
 
 
 # ---------------------------------------------------------------------------

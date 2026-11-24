@@ -28,6 +28,8 @@ def lotes(banco_analisesps, tmp_path, monkeypatch):
     um = cp.guardar(pdf_com(3), "Bradesco_18112026.pdf", "marcelo", "MARCELO")
     dois = cp.guardar(pdf_com(1), "Sicredi.pdf", "ana", "ANA")
     with conexao() as conn:
+        # Os envios já processados: o "aguardando" do envio dá lugar ao resultado.
+        conn.execute("DELETE FROM analisesps.comprovantes_item WHERE situacao = 'AGUARDANDO'")
         cp._gravar_itens(conn, um, [
             {"pagina": 1, "situacao": cp.BAIXADO, "sp_id": "1400000001", "valor": "100,00",
              "recebedor": "FULANO", "motivo": "Baixa confirmada", "conversa_omie": ""},
@@ -132,3 +134,102 @@ def test_a_tela_mostra_a_lista_os_filtros_e_o_link(lotes, app):  # noqa: F811
     um, _ = lotes
     pagina = cliente.get(f"/analisesps/comprovantes/{um}/pagina/2")
     assert pagina.status_code == 200 and pagina.get_data().startswith(b"%PDF")
+
+
+# --- baixar de novo (19/11/2026) ----------------------------------------------
+def test_baixar_de_novo_manda_as_paginas_num_envio_novo_e_tira_da_conta(lotes):
+    from app.apps.analisesps import comprovantes as cp
+    from app.apps.analisesps.db import consultar_um
+    um, _ = lotes
+    por = {(i["lote_id"], i["pagina"]): i for i in cp.listar(_filtro())["itens"]}
+    assert por[(um, 2)]["pode_reenviar"] and por[(um, 3)]["pode_reenviar"]
+    assert not por[(um, 1)]["pode_reenviar"], "o que baixou não se reenvia"
+    feito = cp.reenviar([(um, 2), (um, 3)], "marcelo", "MARCELO")
+    assert feito["paginas"] == 2 and feito["faltaram"] == []
+    novo = consultar_um("SELECT arquivo, paginas, situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (feito["lote"],))
+    assert novo == ("Reenvio - 2 comprovantes.pdf", 2, "ESPERANDO")
+    lista = cp.listar(_filtro())
+    contagem = {s: q for s, _, q in lista["contagem"]}
+    assert contagem[cp.REENVIADO] == 2 and contagem[cp.ERRO] == 0
+    antigo = {i["pagina"]: i for i in lista["itens"] if i["lote_id"] == um}
+    assert antigo[2]["rotulo"] == "Mandado de novo" and not antigo[2]["pede_acao"]
+    assert f"envio {feito['lote']}" in antigo[2]["motivo"]
+
+
+def test_sem_o_PDF_no_servidor_a_pagina_vem_do_Drive(lotes, monkeypatch):
+    from app.apps.analisesps import beevale, comprovantes as cp, drive
+    um, _ = lotes
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "tela"))
+    monkeypatch.setattr(drive, "pasta_filha", lambda pasta, nome: "SUB")
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k: {
+        "id": "x", "link": f"https://drive.google.com/uc?export=download&id=ARQ{nome.split('pág ')[1][0]}"})
+    cp.guardar_paginas_no_drive(um)
+    os.remove(os.path.join(cp.PASTA, f"lote-{um}.pdf"))
+    pedidos = []
+    monkeypatch.setattr(drive, "baixar_arquivo",
+                        lambda arquivo_id: pedidos.append(arquivo_id) or pdf_com(1))
+    assert {i["pagina"] for i in cp.listar(_filtro())["itens"]
+            if i["lote_id"] == um and i["pode_reenviar"]} == {2, 3}
+    feito = cp.reenviar([(um, 3)], "marcelo", "MARCELO")
+    assert pedidos == ["ARQ3"] and feito["paginas"] == 1
+
+
+def test_sem_servidor_e_sem_Drive_nao_ha_o_que_reenviar(lotes):
+    from app.apps.analisesps import comprovantes as cp
+    um, _ = lotes
+    os.remove(os.path.join(cp.PASTA, f"lote-{um}.pdf"))
+    assert not any(i["pode_reenviar"] for i in cp.listar(_filtro())["itens"])
+    with pytest.raises(cp.ErroDeComprovante):
+        cp.reenviar([(um, 2)], "marcelo", "MARCELO")
+
+
+def test_o_botao_da_tela_manda_de_novo(lotes, app, monkeypatch):  # noqa: F811
+    from app.apps.analisesps import tarefas
+    from tests.test_analisesps_telas import _como_mestre
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, **k: disparos.append(modo) or {})
+    cliente = _como_mestre(app)
+    um, _ = lotes
+    html = cliente.get("/analisesps/comprovantes?f=1").get_data(as_text=True)
+    assert f'name="so" value="{um}:2"' in html and "Baixar de novo os marcados" in html
+    r = cliente.post("/analisesps/comprovantes/reenviar", data={"so": f"{um}:2"})
+    assert r.status_code == 302 and "mandado" in r.headers["Location"]
+    assert disparos == ["comprovantes"]
+
+
+# --- a linha nasce no envio (21/11/2026) ---------------------------------------
+def test_ao_mandar_a_pagina_ja_aparece_aguardando_e_e_trocada_pelo_resultado(
+        banco_analisesps, tmp_path, monkeypatch):
+    """*"Na hora que mandasse para a baixa, ele já alimentasse a tabela e ficasse
+    aguardando a baixa."*"""
+    from app.apps.analisesps import comprovantes as cp
+    monkeypatch.setattr(cp, "PASTA", str(tmp_path))
+    monkeypatch.setattr(cp, "guardar_paginas_no_drive", lambda *a, **k: {})
+    lote = cp.guardar(pdf_com(12), "novo.pdf", "marcelo", "MARCELO")
+    itens = [i for i in cp.listar(_filtro())["itens"] if i["lote_id"] == lote]
+    assert len(itens) == 12
+    assert {(i["situacao"], i["andamento"]) for i in itens} == {(cp.AGUARDANDO, "na fila")}
+    assert not any(i["pede_acao"] or i["pode_reenviar"] for i in itens)
+
+    # A 1ª leva (págs. 1–10) volta só com a 1 baixada; a 2ª (11–12) cai.
+    respostas = iter([{"planos": [{"match": {"status": "localizado", "id": "1400000001"},
+                                   "pode_executar": True, "acao": "baixar_titulo",
+                                   "receipt": {"page": 1, "valor_pago": "10,00"},
+                                   "responses": {"omie": [{"step": "baixar",
+                                                           "response": {"ok": True}}]}}]}])
+
+    def robo(pedaco, nome, anotar, onde):
+        try:
+            return next(respostas)
+        except StopIteration:
+            raise RuntimeError("503 Service Unavailable")
+    monkeypatch.setattr(cp, "_mandar_com_paciencia", robo)
+    cp.processar_um(lote)
+    por = {i["pagina"]: i for i in cp.listar(_filtro())["itens"] if i["lote_id"] == lote}
+    assert len(por) == 12, "nenhuma página dobrada nem perdida"
+    assert por[1]["situacao"] == cp.BAIXADO
+    assert por[2]["situacao"] == cp.ERRO and "não devolveu" in por[2]["motivo"]
+    assert por[11]["situacao"] == cp.ERRO and "parou antes" in por[11]["motivo"]
+    assert por[11]["pode_reenviar"], "o que ficou para trás pode ser baixado de novo"
+    assert {s: q for s, _, q in cp.listar(_filtro())["contagem"]}[cp.AGUARDANDO] == 0

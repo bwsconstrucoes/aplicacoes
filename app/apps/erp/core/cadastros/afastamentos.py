@@ -488,6 +488,32 @@ def retornar(s: Session, colaborador_id: int, dados: dict[str, Any],
             "registrar.")
 
     volta = _data(dados.get("data_retorno"), "data em que a pessoa voltou")
+
+    # ⚑ O INÍCIO DO AFASTAMENTO ANTIGO PODE SER CORRIGIDO NA VOLTA (19/11/2026).
+    #
+    # A migração 111 deu aos afastamentos que já existiam uma data ESTIMADA: a
+    # última vez que o cartão foi para "Afastado" ou, sem isso, a ADMISSÃO —
+    # que é o caso de quem veio pela importação. Com a admissão no lugar do
+    # início, a conta de dias explode e a trava cobra ASO de quem ficou uma
+    # semana fora. Só o afastamento antigo aceita a correção: o novo teve a
+    # data informada por alguém na hora, e mexer nela na volta seria reescrever
+    # o que foi registrado.
+    if (dados.get("data_inicio") or "").strip() and af["tipo_desconhecido"]:
+        novo_inicio = _data(dados.get("data_inicio"), "início do afastamento")
+        if novo_inicio > volta:
+            raise ErroValidacao(
+                f"O início ({novo_inicio:%d/%m/%Y}) é depois da volta "
+                f"({volta:%d/%m/%Y}).")
+        if novo_inicio.isoformat() != af["data_inicio"]:
+            s.execute(text("UPDATE colaborador_afastamentos SET data_inicio = :d "
+                           " WHERE id = :id"), {"d": novo_inicio, "id": af["id"]})
+            registrar_evento(s, "colaborador", c.id,
+                             "AFASTAMENTO_INICIO_CORRIGIDO",
+                             {"de": af["data_inicio"],
+                              "para": novo_inicio.isoformat()},
+                             usuario.id if usuario else None)
+            af = aberto(s, colaborador_id) or af
+
     inicio = dt.date.fromisoformat(af["data_inicio"])
     if volta < inicio:
         raise ErroValidacao(
@@ -568,7 +594,7 @@ def retornar(s: Session, colaborador_id: int, dados: dict[str, Any],
         s, c.id, destino, usuario, automatico=True,
         motivo=(f"voltou do afastamento ({t.get('nome', af['tipo'])}) em "
                 f"{volta:%d/%m/%Y}, {situacao['dias']} dias afastada"
-                + (" — segue em Solicitações, há pedido à contabilidade em "
+                + (" — segue em Contabilidade, há pedido à contabilidade em "
                    "aberto" if tem_pedido else "")))
     s.flush()
     logger.info("ERP: %s voltou do afastamento em %s (%s dias)",

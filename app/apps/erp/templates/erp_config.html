@@ -1385,7 +1385,8 @@ function formOperador(u){
       empresas: [...document.querySelectorAll(".op-empresa:checked")].map(i=>+i.value),
       obras_responsavel: [...document.querySelectorAll(".op-resp:checked")].map(i=>+i.value)};
     if (els("op-senha").value) corpo.senha = els("op-senha").value;
-    if (novo) { corpo.email = els("op-email").value; corpo.cpf = els("op-cpf").value; }
+    if (novo) corpo.email = els("op-email").value;
+    corpo.cpf = els("op-cpf").value;
     try {
       await api(novo ? "/erp/api/usuarios" : `/erp/api/usuarios/${u.id}`,
         {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
@@ -1398,7 +1399,29 @@ function formOperador(u){
            body: JSON.stringify({permissoes})});
       }
       els("dlg").close();
-      aviso("mensagem", novo ? "Operador cadastrado." : "Operador atualizado.", "ok");
+      {# ⚑ DEPOIS DE SALVAR, DIZ EM QUE PÉ ESTÁ O ACESSO (23/11/2026). Ele,
+         depois de liberar uma pessoa da fila do portal: *"depois que eu
+         liberei, eu não vi informação nenhuma. A pessoa recebeu o e-mail
+         para poder completar o cadastro e ter acesso, é isso? Eu fiquei
+         boiando aqui."* A situação do convite estava numa linha pequena
+         dentro do formulário; agora vem no recado, que fica na tela. #}
+      let situacaoDoAcesso = "";
+      if (!novo) {
+        try {
+          const c = (await api(`/erp/api/usuarios/${u.id}/convite/situacao`)).convite || {};
+          situacaoDoAcesso = !c.tem ? ""
+            : c.usado ? ` ${escapar(u.nome)} já criou a senha e consegue entrar.`
+            : c.vencido ? ` ⚠️ O convite de ${escapar(u.nome)} venceu sem ser usado — `
+                + `abra o operador e aperte "Enviar convite" de novo.`
+            : ` <b>Próximo passo é de ${escapar(u.nome)}:</b> abrir o e-mail enviado para `
+                + `${escapar(c.enviado_para || u.email)}, clicar no link e criar a senha `
+                + `(vale até ${dataBR(c.expira_dia)}). Depois disso ela entra no portal com `
+                + `esse e-mail e a senha. Se o e-mail não chegar, olhe o spam ou reenvie `
+                + `o convite pelo operador.`;
+        } catch(e){ /* sem a situação, fica o recado simples */ }
+      }
+      aviso("mensagem", (novo ? "Operador cadastrado." : "Operador atualizado.")
+        + situacaoDoAcesso, "ok");
       carregarOperadores();
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });

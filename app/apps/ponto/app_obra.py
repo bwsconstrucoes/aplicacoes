@@ -456,7 +456,8 @@ def app_api_assinatura_folha(colaborador_id: int):
                dias=[{k: d.get(k) for k in ("data", "dia_semana", "situacao", "previsto", "trabalhado", "extra", "debito")}
                      | {"batidas": [b["hora"] + (" (aj)" if b["status"] == "AJUSTADA" else "") for b in d["batidas"]
                                     if b["status"] != "REJEITADA"],
-                        "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo")} for d in esp["dias"]])
+                        "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo")} for d in esp["dias"]],
+               compensacoes=esp.get("compensacoes") or [])
 
 
 @bp.route("/app/api/assinaturas/<int:colaborador_id>", methods=["POST"])

@@ -77,7 +77,8 @@ def empresas_possiveis(s: Session, cotacao_id: int) -> dict[str, Any]:
     escolhe — porque a decisão "por qual CNPJ esta compra corre" é dele, não
     do sistema.
     """
-    itens = [x for x in s.scalars(select(CotacaoItem)).all()
+    itens = [x for x in s.scalars(select(CotacaoItem).where(
+                 CotacaoItem.cotacao_id == cotacao_id)).all()
              if x.cotacao_id == cotacao_id]
     obras_ids = set()
     for linha in itens:
@@ -166,7 +167,8 @@ def montar_mensagem(s: Session, cotacao_id: int, empresa: Empresa,
     if cot is None:
         raise ErroNaoEncontrado("Cotação não encontrada.")
 
-    linhas = sorted([x for x in s.scalars(select(CotacaoItem)).all()
+    linhas = sorted([x for x in s.scalars(select(CotacaoItem).where(
+                         CotacaoItem.cotacao_id == cotacao_id)).all()
                      if x.cotacao_id == cotacao_id],
                     key=lambda x: x.numero or 0)
     if not linhas:
@@ -207,8 +209,97 @@ def montar_mensagem(s: Session, cotacao_id: int, empresa: Empresa,
                  f"Favor mantê-la ao responder.")
     corpo += ["", "Atenciosamente,"] + _assinatura(empresa)
 
-    return {"assunto": f"Cotação {cot.numero} — {cot.titulo}",
+    # O assunto leva o nome da EMPRESA, não o apelido interno da cotação
+    # ("Utilitários 1" não diz nada ao fornecedor — 21/11/2026).
+    return {"assunto": f"Solicitação de cotação {cot.numero} — "
+                       f"{_texto(empresa.nome_fantasia) or _texto(empresa.razao_social)}",
             "corpo": "\n".join(corpo)}
+
+
+# ---------------------------------------------------------------------------
+# O CORPO PADRÃO DO E-MAIL (21/11/2026)
+#
+# O dono: "tem que ter um corpo de e-mail padrão, avisando o fornecedor. E no
+# anexo, o relatório completo." O e-mail é curto e sempre igual; o conteúdo vai
+# no PDF. O texto por extenso (`montar_mensagem`, `montar_pedido`) continua
+# existindo: é o que fica no REGISTRO do envio e o que a tela mostra na prévia.
+# ---------------------------------------------------------------------------
+def corpo_padrao_da_cotacao(cot, empresa: Empresa, prazo: Optional[str] = None) -> str:
+    fantasia = _texto(empresa.nome_fantasia) or _texto(empresa.razao_social)
+    linhas = ["Prezados,", "",
+              f"Segue em anexo a nossa solicitação de cotação {cot.numero}.", "",
+              "O PDF traz os itens, as quantidades e o endereço de entrega. "
+              "Pedimos que a proposta informe preço unitário, prazo de entrega, "
+              "condição de pagamento e frete."]
+    if prazo:
+        linhas += ["", f"Aguardamos o retorno até {prazo}."]
+    linhas += ["", "A resposta pode vir neste mesmo e-mail. Por favor, mantenha a "
+               f"referência {cot.numero}.", "", "Atenciosamente,", "Suprimentos — " + fantasia]
+    return "\n".join(linhas)
+
+
+def corpo_padrao_do_pedido(pedido, empresa: Empresa, total: Any) -> str:
+    fantasia = _texto(empresa.nome_fantasia) or _texto(empresa.razao_social)
+    linhas = ["Prezados,", "",
+              f"Confirmamos a compra. Segue em anexo o pedido de compra {pedido.numero}, "
+              f"no valor de R$ {_dinheiro(total)}.", "",
+              "O PDF traz os itens, os preços, o endereço de entrega, a condição de "
+              "pagamento e as instruções para a nota fiscal."]
+    if pedido.previsao_entrega:
+        linhas += ["", "Precisamos do material no local de entrega até "
+                   f"{pedido.previsao_entrega.strftime('%d/%m/%Y')}."]
+    linhas += ["", f"Por favor, confirme o recebimento deste pedido e cite {pedido.numero} "
+               "na nota fiscal.", "", "Atenciosamente,", "Suprimentos — " + fantasia]
+    return "\n".join(linhas)
+
+
+def corpo_em_html(empresa: Empresa, titulo: str, texto: str,
+                  destaques: Optional[list[tuple[str, str]]] = None) -> str:
+    """O mesmo aviso, com cara de documento da empresa.
+
+    ⚑ 21/11/2026 — o dono, ao ver o e-mail em texto puro: "quando o texto fica
+    simples demais dá a sensação de que às vezes não é nem uma coisa de
+    verdade (...) simples, mas com alguma formatação."
+
+    DE PROPÓSITO SIMPLES: uma faixa com o nome da empresa e o título, o texto,
+    um quadro com os dois ou três dados que importam e o rodapé com razão
+    social e CNPJ. Sem imagem (leitor de e-mail bloqueia imagem por padrão, e
+    o que sobra é um quadrado vazio) e só com tabela e estilo na própria
+    marca — é o que Outlook e Gmail mostram igual.
+    """
+    from html import escape
+    fantasia = _texto(empresa.nome_fantasia) or _texto(empresa.razao_social)
+    paragrafos = "".join(
+        f'<p style="margin:0 0 14px 0">{escape(bloco).replace(chr(10), "<br>")}</p>'
+        for bloco in (b.strip() for b in texto.split("\n\n")) if bloco)
+    quadro = ""
+    if destaques:
+        celulas = "".join(
+            f'<tr><td style="padding:4px 14px 4px 0;color:#5b6b85;font-size:13px">{escape(r)}</td>'
+            f'<td style="padding:4px 0;font-weight:bold;font-size:14px">{escape(v)}</td></tr>'
+            for r, v in destaques if v)
+        quadro = ('<table cellpadding="0" cellspacing="0" style="margin:4px 0 18px 0;'
+                  'background:#f2f5fa;border-left:4px solid #1f3a6e;padding:10px 16px">'
+                  f'{celulas}</table>')
+    rodape = " · ".join(x for x in (
+        _texto(empresa.razao_social),
+        ("CNPJ " + _cnpj_por_extenso(empresa.cnpj)) if _texto(empresa.cnpj) else "",
+        _texto(empresa.telefone), _texto(empresa.email)) if x)
+    return (
+        '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#eef1f6">'
+        '<table width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f6">'
+        '<tr><td align="center" style="padding:24px 12px">'
+        '<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;'
+        'width:100%;background:#ffffff;font-family:Arial,Helvetica,sans-serif;'
+        'color:#14233b;font-size:15px;line-height:1.5">'
+        '<tr><td style="background:#1f3a6e;padding:18px 28px;color:#ffffff">'
+        f'<div style="font-size:19px;font-weight:bold">{escape(fantasia)}</div>'
+        f'<div style="font-size:13px;margin-top:2px;color:#c9d6ee">{escape(titulo)}</div>'
+        '</td></tr>'
+        f'<tr><td style="padding:26px 28px 10px 28px">{quadro}{paragrafos}</td></tr>'
+        '<tr><td style="padding:14px 28px;border-top:1px solid #dfe5ef;'
+        f'color:#5b6b85;font-size:12px">{escape(rodape)}</td></tr>'
+        '</table></td></tr></table></body></html>')
 
 
 def _cnpj_por_extenso(cnpj: Any) -> str:
@@ -314,7 +405,8 @@ def preparar(s: Session, cotacao_id: int) -> dict[str, Any]:
     if possiveis["sugerida"]:
         empresa = s.get(Empresa, possiveis["sugerida"])
 
-    colunas = sorted([x for x in s.scalars(select(CotacaoFornecedor)).all()
+    colunas = sorted([x for x in s.scalars(select(CotacaoFornecedor).where(
+                          CotacaoFornecedor.cotacao_id == cotacao_id)).all()
                       if x.cotacao_id == cotacao_id],
                      key=lambda x: (x.ordem or 0, x.id or 0))
     # O histórico vem do mais novo para o mais velho, então o primeiro que
@@ -359,6 +451,8 @@ def preparar(s: Session, cotacao_id: int) -> dict[str, Any]:
         "conta_pronta": pode_empresa, "o_que_falta": falta,
         "destinatarios": destinatarios,
         "assunto": mensagem["assunto"], "corpo": mensagem["corpo"],
+        "corpo_do_email": (corpo_padrao_da_cotacao(s.get(Cotacao, cotacao_id), empresa)
+                           if empresa else ""),
         "aviso": ("O sistema registra que a mensagem foi ACEITA pelo servidor "
                   "de saída, com data, hora e o texto exato. Isso não é o "
                   "mesmo que entregue, e muito menos lido."),
@@ -382,7 +476,8 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
         raise ErroValidacao(falta)
 
     escolhidas = [int(x) for x in (dados.get("colunas") or [])]
-    colunas = [c for c in s.scalars(select(CotacaoFornecedor)).all()
+    colunas = [c for c in s.scalars(select(CotacaoFornecedor).where(
+                   CotacaoFornecedor.cotacao_id == cotacao_id)).all()
                if c.cotacao_id == cotacao_id
                and (not escolhidas or c.id in escolhidas)]
 
@@ -402,10 +497,27 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
             "Nenhum fornecedor escolhido. Acrescente fornecedores ao mapa antes "
             "de disparar.")
 
-    mensagem = montar_mensagem(s, cotacao_id, empresa,
-                               prazo=_texto(dados.get("prazo")) or None,
+    prazo = _texto(dados.get("prazo")) or None
+    mensagem = montar_mensagem(s, cotacao_id, empresa, prazo=prazo,
                                observacao=dados.get("observacao") or "")
+    # O e-mail é o aviso; o conteúdo vai no PDF. Se o PDF não puder ser gerado,
+    # sai o texto completo no corpo, como era — a cotação não fica parada.
+    corpo_do_email, anexos = mensagem["corpo"], []
+    try:
+        from app.apps.erp.core.suprimentos import cotacao_pdf
+        anexos = [{"nome": f"Cotacao-{cot.numero}.pdf", "mime": "application/pdf",
+                   "conteudo": cotacao_pdf.gerar(
+                       s, cotacao_id, empresa, prazo=prazo,
+                       observacao=dados.get("observacao") or "", usuario=usuario)}]
+        corpo_do_email = corpo_padrao_da_cotacao(cot, empresa, prazo)
+    except Exception:
+        logger.exception("ERP/suprimentos: não consegui gerar o PDF da cotação %s",
+                         cot.numero)
 
+    # a versão formatada só existe quando o corpo é o aviso padrão (com o PDF)
+    corpo_formatado = corpo_em_html(
+        empresa, "Solicitação de cotação", corpo_do_email,
+        [("Cotação", cot.numero), ("Retorno até", prazo or "")]) if anexos else None
     enviados, falhas, sem_endereco = [], [], []
     for coluna in sorted(colunas, key=lambda c: (c.ordem or 0, c.id or 0)):
         forn = s.get(Fornecedor, coluna.fornecedor_id)
@@ -418,7 +530,8 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
             continue
         registro = correio.enviar(
             s, empresa=empresa, para=destinos,
-            assunto=mensagem["assunto"], corpo=mensagem["corpo"],
+            assunto=mensagem["assunto"], corpo=corpo_do_email, anexos=anexos,
+            corpo_registrado=mensagem["corpo"], corpo_html=corpo_formatado,
             entidade_tipo="cotacao", entidade_id=cotacao_id,
             destinatario_tipo="cotacao_fornecedor", destinatario_id=coluna.id,
             usuario=usuario)
@@ -481,7 +594,8 @@ def empresa_do_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
     if s.get(PedidoCompra, pedido_id) is None:
         raise ErroNaoEncontrado("Pedido não encontrado.")
     obras_ids = set()
-    for linha in s.scalars(select(PedidoItem)).all():
+    for linha in s.scalars(select(PedidoItem).where(
+            PedidoItem.pedido_id == pedido_id)).all():
         if linha.pedido_id != pedido_id:
             continue
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
@@ -554,13 +668,20 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     cond = (s.get(CondicaoPagamento, pedido.condicao_pagamento_id)
             if pedido.condicao_pagamento_id else None)
 
-    linhas = sorted([x for x in s.scalars(select(PedidoItem)).all()
+    linhas = sorted([x for x in s.scalars(select(PedidoItem).where(
+                         PedidoItem.pedido_id == pedido_id)).all()
                      if x.pedido_id == pedido_id], key=lambda x: x.numero or 0)
     if not linhas:
         raise ErroValidacao("Este pedido não tem item nenhum.")
 
     corpo = [f"PEDIDO DE COMPRA {pedido.numero}", ""]
-    corpo.append(f"Fornecedor: {_texto(getattr(forn, 'razao_social', ''))}")
+    doc_forn = _cnpj_por_extenso(getattr(forn, "cnpj_cpf", None))
+    corpo.append(f"Fornecedor: {_texto(getattr(forn, 'razao_social', ''))}"
+                 f"{f' — CNPJ/CPF {doc_forn}' if doc_forn else ''}")
+    # PARA QUEM FATURAR vem no topo, como no modelo que a equipe usava: nota
+    # emitida contra o CNPJ errado da BWS é a devolução mais comum.
+    corpo.append(f"Faturar para: {_texto(empresa.razao_social)} — "
+                 f"CNPJ {_cnpj_por_extenso(empresa.cnpj)}")
     corpo.append("")
     corpo.append("Prezados,")
     corpo.append("")
@@ -570,13 +691,24 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
 
     # Agrupado por endereço: é o motorista que lê, e um mesmo pedido leva
     # material para obras diferentes.
+    #
+    # O LOCAL pode não ser a obra (migração 120): quem fecha o pedido pode
+    # mandar o material de uma obra para a sede. Aí o bloco diz as duas
+    # coisas — onde desce e de qual obra é —, porque a nota continua sendo
+    # da obra mesmo com o caminhão indo para outro endereço.
+    from app.apps.erp.core.suprimentos.entrega import (
+        desvios_do_pedido, local_de_entrega)
+    from app.apps.erp.db.models.cadastros import SuprimentoSolicitacao
+    desvios = desvios_do_pedido(s, pedido_id)
     blocos: dict[str, dict[str, Any]] = {}
     for linha in linhas:
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
         insumo = s.get(Insumo, item.insumo_id) if item is not None else None
         obra = s.get(Obra, item.obra_id) if item is not None and item.obra_id else None
-        endereco = endereco_da_obra(obra)
-        bloco = blocos.setdefault(endereco, {"obras": [], "itens": []})
+        local = local_de_entrega(obra, desvios.get(getattr(item, "obra_id", None)))
+        bloco = blocos.setdefault(local["endereco"], {
+            "obras": [], "itens": [], "na_obra": local["na_obra"],
+            "local": local["rotulo"], "mapa": local["mapa"]})
         rotulo = rotulo_da_obra(obra)
         if rotulo and rotulo not in bloco["obras"]:
             bloco["obras"].append(rotulo)
@@ -586,8 +718,14 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     soma = Decimal("0")
     for endereco, bloco in blocos.items():
         corpo.append(f"ENTREGAR EM: {endereco}")
+        if not bloco["na_obra"]:
+            corpo.append(f"Local: {bloco['local']} — ATENÇÃO: a entrega NÃO é "
+                         f"no canteiro da obra.")
         if bloco["obras"]:
-            corpo.append(f"Obra(s): {' · '.join(bloco['obras'])}")
+            corpo.append(("Material da(s) obra(s): " if not bloco["na_obra"]
+                          else "Obra(s): ") + " · ".join(bloco["obras"]))
+        if bloco["mapa"]:
+            corpo.append(f"Localização no mapa: {bloco['mapa']}")
         for linha, item, insumo in bloco["itens"]:
             numero_do_item += 1
             quantidade = Decimal(str(linha.quantidade or 0))
@@ -602,10 +740,16 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
             corpo.append(
                 f"{numero_do_item:>3}. {descricao}"
                 f"{f' — {especificacao}' if especificacao else ''}")
+            # A solicitação de origem vai na linha: é por ela que a obra
+            # reconhece o que pediu quando o caminhão chega.
+            sol = (s.get(SuprimentoSolicitacao, item.solicitacao_id)
+                   if item is not None else None)
+            origem = _texto(getattr(sol, "numero", ""))
             corpo.append(
                 f"     {_quantidade(linha.quantidade)} "
                 f"{_texto(getattr(item, 'unidade', ''))} x "
-                f"R$ {_dinheiro(unitario)}  =  R$ {_dinheiro(total_linha)}")
+                f"R$ {_dinheiro(unitario)}  =  R$ {_dinheiro(total_linha)}"
+                f"{f'   (solicitação {origem})' if origem else ''}")
         corpo.append("")
 
     corpo.append(f"Subtotal dos itens: R$ {_dinheiro(soma)}")
@@ -636,7 +780,16 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     if _texto(pedido.observacoes):
         corpo += ["", _texto(pedido.observacoes)]
 
+    # AS TRÊS INSTRUÇÕES DA NOTA, do modelo que a equipe já mandava. São elas
+    # que permitem casar a nota com o pedido quando ela chegar — sozinha, por
+    # e-mail ou capturada da SEFAZ.
     corpo += ["",
+              "PARA A NOTA FISCAL:",
+              f"  - Informar nas observações da nota: Pedido BWS {pedido.numero}.",
+              "  - Informar nas observações da nota o endereço de destino do "
+              "material, conforme acima.",
+              "  - Faturar apenas os itens listados neste pedido.",
+              "",
               f"Referência deste pedido: {pedido.numero}. Favor citá-la na "
               f"nota fiscal e em qualquer contato sobre esta compra.",
               "", "Atenciosamente,"] + _assinatura(empresa)
@@ -644,6 +797,11 @@ def montar_pedido(s: Session, pedido_id: int, empresa: Empresa) -> dict[str, str
     return {"assunto": f"Pedido de compra {pedido.numero} — "
                        f"{_texto(getattr(forn, 'razao_social', ''))}",
             "corpo": "\n".join(corpo)}
+
+
+def svc_total(s: Session, pedido) -> Any:
+    from app.apps.erp.core.suprimentos import pedido as _svc
+    return _svc.total(s, pedido)
 
 
 def preparar_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
@@ -681,6 +839,10 @@ def preparar_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
         "obras_sem_empresa": possiveis["obras_sem_empresa"],
         "conta_pronta": pode_empresa, "o_que_falta": falta,
         "assunto": mensagem["assunto"], "corpo": mensagem["corpo"],
+        # o que vai NO E-MAIL (curto); `corpo` é o conteúdo do PDF por extenso
+        "tem_assinatura": None,     # preenchido pela rota, que sabe quem está logado
+        "corpo_do_email": (corpo_padrao_do_pedido(
+            pedido, empresa, svc_total(s, pedido)) if empresa else ""),
         "envios": envios,
         "aviso": ("O sistema registra que a mensagem foi ACEITA pelo servidor "
                   "de saída, com data, hora e o texto exato. Isso não é o "
@@ -729,9 +891,34 @@ def disparar_pedido(s: Session, pedido_id: int, dados: dict[str, Any],
             f"pedido por outro canal.")
 
     mensagem = montar_pedido(s, pedido_id, empresa)
+    # ⚑ O PEDIDO VAI EM PDF, ANEXO (20/11/2026). Ele: "o pedido em PDF, sim (…)
+    # a gente vai encaminhar por e-mail." O texto continua no corpo — é o que o
+    # fornecedor lê no celular sem abrir nada, e o que sobra se o anexo for
+    # barrado por um filtro. Falha ao gerar o PDF NÃO segura o pedido: sai o
+    # texto, e o registro diz que foi sem anexo.
+    anexos = []
+    try:
+        from app.apps.erp.core.suprimentos import pedido_pdf
+        anexos.append({"nome": f"Pedido-{pedido.numero}.pdf",
+                       "mime": "application/pdf",
+                       "conteudo": pedido_pdf.gerar(s, pedido_id, empresa, usuario)})
+    except Exception:
+        logger.exception("ERP/suprimentos: não consegui gerar o PDF do pedido %s",
+                         pedido.numero)
+    from app.apps.erp.core.suprimentos import pedido as _svc_pedido
+    total_do_pedido = _svc_pedido.total(s, pedido)
+    aviso_padrao = corpo_padrao_do_pedido(pedido, empresa, total_do_pedido)
     registro = correio.enviar(
         s, empresa=empresa, para=destinos,
-        assunto=mensagem["assunto"], corpo=mensagem["corpo"],
+        assunto=mensagem["assunto"],
+        # com o PDF anexo, o corpo é o aviso padrão; sem ele, o texto completo
+        corpo=aviso_padrao if anexos else mensagem["corpo"],
+        corpo_html=corpo_em_html(
+            empresa, "Pedido de compra", aviso_padrao,
+            [("Pedido", pedido.numero), ("Valor", f"R$ {_dinheiro(total_do_pedido)}"),
+             ("Entregar até", pedido.previsao_entrega.strftime("%d/%m/%Y")
+              if pedido.previsao_entrega else "")]) if anexos else None,
+        anexos=anexos, corpo_registrado=mensagem["corpo"],
         entidade_tipo="pedido_compra", entidade_id=pedido_id,
         destinatario_tipo="fornecedor", destinatario_id=pedido.fornecedor_id,
         usuario=usuario)
@@ -749,5 +936,8 @@ def disparar_pedido(s: Session, pedido_id: int, dados: dict[str, Any],
     return {"ok": True, "para": destinos,
             "empresa": empresa.razao_social,
             "remetente": correio.remetente_de(empresa),
+            "com_pdf": bool(anexos),
             "resumo": f"Pedido {pedido.numero} enviado para "
-                      f"{', '.join(destinos)}."}
+                      f"{', '.join(destinos)}"
+                      + (", com o PDF anexo." if anexos
+                         else ". ATENÇÃO: o PDF não pôde ser gerado; foi só o texto.")}

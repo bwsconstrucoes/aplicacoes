@@ -40,6 +40,145 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 23/11/2026 — O PORTAL DA OBRA FOI REARRUMADO, PELO CHAT DE SUPRIMENTOS (registro entre áreas)
+
+Pedido do dono, olhando o portal. Mexe em `templates/erp_portal.html` e
+`core/portal.py`, que são do **Pessoal e DP** — quem abrir aquele chat precisa
+saber:
+
+- **"Pessoal e DP" virou "Colaboradores"** na porta do portal. Ele: *"vamos
+  chamar de colaboradores, fica melhor."* Só o nome da área; a chave
+  (`pessoal`) e os tipos não mudaram.
+- **Os avisos desceram e ficaram recolhidos.** "Contratos de experiência
+  terminando" e "Férias da equipe" ficavam no alto, abertos, e com muita gente
+  empurravam as solicitações para fora da tela. Ele: *"está muito grande a
+  informação (...) e estando em cima você se perde no portal."* Agora há um
+  bloco **"Avisos da equipe"** DEPOIS de "O que você já pediu", cada aviso só
+  com o título e a quantidade; toca e abre. **"Para o colaborador assinar" e
+  "Documentos a devolver" continuam no alto** — têm prazo e pedem ação.
+  ESCOLHA MINHA; ele só falou do aviso de experiência.
+- **A área de material chama "Suprimentos" e está FECHADA na porta**, como
+  Pagamentos. Ele: *"manter desativado por enquanto."* A tela
+  `/erp/portal/material` continua existindo e respondendo (o ERP manda para
+  ela em "Receber e lançar a nota"). Para reabrir: em `AREAS`, `pronta: True`,
+  `so_tela: True`, `tela` e `acao: "receber_material"` — está escrito lá.
+
+### ⚑ 23/11/2026 — PESSOAL CONSERTOU O CPF NA TELA DE OPERADORES (registro entre áreas)
+
+A edição de operador (`/erp/api/usuarios/<id>`, Configurações › Operadores)
+ignorava o CPF — só o cadastro novo gravava, embora o campo aparecesse aberto.
+Agora grava (vazio não apaga; inválido recusa). E salvar um operador mostra a
+situação do convite. E `core/auth/permissoes.py` (`_obras_designadas`): o
+alcance de quem enxerga por obra passa a incluir a obra onde o cadastro ligado
+ao operador bate ponto (`colaborador_obra_atual`) — vale para TODAS as áreas
+que recortam por obra. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (8).
+
+### ⚑ 23/11/2026 — MENSAGERIA MEXEU NO `erp_base.html` E NA TRAVA DE DESLIGADOS (registro entre áreas)
+
+O bloco `mensagensDaPessoa` (a aba "Telegram e mensagens" da ficha, usada pelo
+Pessoal e pelo ponto) passou a mostrar SEMPRE o ID do Telegram e ganhou o
+"trocar/informar" (nova `trocarIdDoTelegram`, só para `configurar_mensagens`).
+E `telegram_cadastro.desligado_da_empresa` passou a tratar como NÃO ativa quem
+tem data de saída vencida mesmo com a caixinha ATIVO — fechava um buraco da
+janela antes da virada do dia (o teste da virada, do DP, é o que pega isso).
+Detalhe em `app/apps/mensageria/HISTORICO.md`, 23/11.
+
+### ⚑ 23/11/2026 — PESSOAL MEXEU NO E-MAIL COMUM (registro entre áreas)
+
+`core/comum/email.py` ganhou `guardar_nos_enviados=False` em `enviar` e a
+função `guardar_copia_nos_enviados`: depois de entregar, grava a mesma
+mensagem na pasta de enviados da conta por IMAP (só se a caixa configurada em
+`email_entrada` for a MESMA conta; Gmail e Outlook/365 já guardam sozinhos e
+são pulados). **Só o pedido à contabilidade liga isso** — a cotação de
+Suprimentos continua igual (o padrão é desligado). E `email_entrada` passou a
+ignorar mensagem cujo Message-ID é de um envio do próprio ERP, para a cópia
+nunca ser lida como resposta. Detalhe em `HISTORICO_PESSOAL.md`, 23/11 (7).
+
+### ⚑ 22/11/2026 — SUPRIMENTOS: AÇÃO E SEÇÃO NOVAS DE PERMISSÃO, E A ROTA DE MOVER ITEM (registro entre áreas)
+
+Detalhe em `HISTORICO_SUPRIMENTOS.md`, 22/11 (5ª rodada).
+- `core/auth/permissoes.py`: ação `liberar_solicitacao` (admin, diretor, gestor
+  e supervisor de obra). `core/auth/secoes.py`: seção `sup_liberar`. A
+  migração 124 a inclui nos quatro perfis prontos.
+- `db/models/cadastros.py`: `SuprimentoItem` ganhou `liberacao`,
+  `liberado_por`, `liberado_em`. **Coluna nova em modelo: sem a migração 124
+  aplicada, toda consulta a `suprimento_itens` falha.**
+- A rota `/erp/api/suprimentos/itens/<id>/situacao` passou de `ver_suprimentos`
+  para `comprar`.
+- `autorizar_compra_fora_do_fluxo` passou a incluir gestor e supervisor de obra.
+- `PedidoCompra` ganhou `justificativa_sem_cotacao` (migração 124).
+
+### ⚑ 21/11/2026 (noite) — SUPRIMENTOS: A NOTA NÃO ENTRA SOLTA, E O E-MAIL PODE SER FORMATADO (registro entre áreas)
+
+Detalhe em `HISTORICO_SUPRIMENTOS.md`, 21/11 (4ª rodada). O que encosta nas
+outras áreas:
+
+- **Financeiro — `api_criar_titulo` (`routes.py`) e `erp_lancar.html`.** Ao
+  lançar um título de fornecedor que tem **material recebido e ainda sem
+  conta**, o servidor responde **409 `escolher_pedido`** com a lista dos
+  pedidos; a tela pergunta de qual é. A pessoa escolhe, ou declara que não é de
+  nenhum (`nao_e_de_pedido: true` no envio; evento
+  `NOTA_DECLARADA_SEM_PEDIDO`). A procura roda dentro de um ponto de retorno:
+  se o suprimento não estiver em uso ou a consulta falhar, o lançamento segue
+  como sempre. **Quem chama a rota por fora da tela e bate nesse 409 precisa
+  mandar `pedido_compra_id` ou `nao_e_de_pedido`.**
+- **`core/comum/email.py`** — `enviar` e `_montar` aceitam `corpo_html`
+  (opcional). Sem ele, nada muda. Com ele, a mensagem leva texto puro E a
+  versão formatada. Qualquer área pode usar.
+- **Rota de recebimento sozinho** (`/pedidos/<id>/recebimento`, POST) passou a
+  recusar quem tem a ação `lancar` — esses recebem e lançam juntos.
+
+### ⚑ 20/11/2026 (noite) — SUPRIMENTOS MEXEU NO FINANCEIRO E NO PORTAL (registro entre áreas)
+
+Pedido do dono: a conta a pagar da compra nasce do RECEBIMENTO. Para isso:
+
+- **`templates/erp_lancar.html`** ganhou `?pedido_compra=N&recebimento=M`: a
+  tela abre pré-preenchida pelo pedido (`preencherDoPedido`). Sem o parâmetro,
+  nada muda. Com ele, a leitura do documento não sobrescreve o rateio por obra.
+- **`api_criar_titulo`** (routes.py): se o corpo traz `pedido_compra_id`, depois
+  de `criar_titulo` chama `suprimentos.lancamento.vincular` na MESMA transação.
+- **Migração 121** — tabela `pedido_titulos` (título × pedido de compra).
+- **`core/portal.py`**: a área "suprimentos" abriu como tela
+  (`/erp/portal/material`), exigindo `receber_material`.
+- **`static/erp.css`**: bloco novo no fim (mapa em planilha, `dialog.largo`).
+
+- **21/11:** a tela de Lançar também pergunta "é deste pedido?" ao escolher um
+  credor que tem pedido de compra com conta a lançar (não bloqueia), e traz
+  sozinha os documentos anexados no recebimento.
+
+- **21/11 (2ª rodada):** crítica nova **S1** em `core/titulos/analise.py`
+  (material sem pedido de compra) — só age com a chave ligada em Suprimentos ›
+  Painel, e nasce DESLIGADA. `api_criar_titulo` chama `fora_do_fluxo.conferir`
+  e responde 409 `precisa_motivo` quando falta o motivo. **Migração 122.**
+  `core/comum/email.py` ganhou `corpo_registrado` (opcional). Ação nova
+  `autorizar_compra_fora_do_fluxo`, dentro da seção `sup_autorizar`. A obra
+  passou a lançar título pelo portal (`/receber-e-lancar`), pelo mesmo
+  `criar_titulo`. Página nova `/erp/assinatura` (de qualquer operador).
+
+Detalhe e motivos em `HISTORICO_SUPRIMENTOS.md`, 3ª rodada e 21/11.
+
+### ⚑ 20/11/2026 — nota para as OUTRAS ÁREAS, vinda de Suprimentos (registro entre áreas)
+
+A **migração 120** (`pedido_entregas` + índices) é de Suprimentos, mas cria um
+índice em `titulos (documento_fiscal_id)`. Ação nova **`receber_material`** em
+`permissoes.py` (obra + quem compra), posta dentro da seção `sup_solicitar`
+em `secoes.py` (quem pede material é quem recebe — nenhum perfil gravado muda).
+Três abas novas no menu de Suprimentos (`routes.py`). Para o **Financeiro**:
+existe agora **Suprimentos › Projeção de pagamentos**, que mostra o que as
+compras ainda vão virar de conta a pagar — ela LÊ `titulos`, `parcelas` e
+`documentos_fiscais`, não grava nada. Um título lançado com a nota vinculada
+a um pedido passa a ter mais um leitor. Detalhe em `HISTORICO_SUPRIMENTOS.md`.
+
+### ⚑ 19/11/2026 — nota para o FINANCEIRO, vinda do DP (registro entre áreas)
+
+A migração **114** (`dp_desligamento_passos`) é do DP, mas **aponta para
+`titulos`**: o processo do desligamento liga a SP da rescisão e a da multa do
+FGTS ao pedido, e se cumpre quando o lançamento fica **PAGO**. O DP só LÊ o
+lançamento (número da SP e situação) — não cria, não aprova, não paga.
+Consequência para quem mexe no Financeiro: um lançamento ESTORNADO ou
+CANCELADO faz o passo voltar a pedir SP; e o status `PAGO` passou a ter um
+leitor a mais. Detalhe em `HISTORICO_PESSOAL.md`, 19/11/2026.
+
 ### ⚑ 18/11/2026 — AFASTAMENTO COM TIPO E RETORNO CONFERIDO (ENTREGUE)
 
 Pergunta dele: *"Colaborador estava afastado e vai retornar ao trabalho. O que
@@ -10316,6 +10455,22 @@ cadastrada em seguida já nasceu no grupo certo, na ordem certa.
    senha (`ERP_COMPROVANTE_SECRET`) já está no Render; falta o Make usá-la.
 
 ---
+
+## 20/11/2026 — Mudança do ERP · Pessoal que encosta em arquivos comuns
+
+Registrada aqui porque atravessa áreas (o resto está em `HISTORICO_PESSOAL.md`):
+- `core/comum/trabalhos.py` ganhou o executor `agente_dp_dia` (a rodada diária
+  do agente de DP, enfileirada na primeira requisição do dia pelo gancho do
+  `routes.py`, ao lado da virada dos desligamentos).
+- `core/contabilidade.py`: o e-mail do pedido passa a levar ANEXO os documentos
+  assinados da solicitação (aviso prévio, autorização de desconto) — uma
+  leitura do arquivo por documento.
+- `core/cadastros/desligamentos_do_dia.py`: a virada SEGURA quem tem
+  cancelamento de desligamento pedido e não atendido.
+- Migrações **116** e **117** (`ferias_programadas`, `dp_termos`,
+  `ferias_controle`, rotinas do agente ligadas em SUGERE).
+- O ERP lê o **PIN do ponto** (`ponto.core.acesso.entrar`) para a assinatura
+  do aviso no portal — só leitura, a mesma função do app do ponto.
 
 ## O SISTEMA PARA ANTES DE MANDAR — e quem mandou isso foi o dono
 

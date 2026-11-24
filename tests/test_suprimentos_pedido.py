@@ -122,6 +122,7 @@ def test_pedido_direto_dispensa_mapa():
 
     pedido = svc.fechar_direto(s, {
         "fornecedor_id": 100, "condicao_pagamento_id": 3,
+        "justificativa_sem_cotacao": "fornecedor único na região",
         "itens": [{"suprimento_item_id": 7, "preco_unitario": "40,00"}]}, COMPRADOR)
 
     assert pedido.cotacao_id is None
@@ -137,7 +138,8 @@ def test_compra_a_vista_com_fornecedor_sem_dados_de_pagamento_e_recusada():
 
     with pytest.raises(ErroValidacao, match="chave Pix nem dados bancários"):
         svc.fechar_direto(s, {"fornecedor_id": 100, "antecipado": True,
-                              "itens": [{"suprimento_item_id": 7,
+                              "justificativa_sem_cotacao": "fornecedor único na região",
+        "itens": [{"suprimento_item_id": 7,
                                          "preco_unitario": "40"}]}, COMPRADOR)
 
 
@@ -146,7 +148,8 @@ def test_compra_a_vista_passa_quando_o_fornecedor_tem_conta():
                     FornecedorConta(id=1, fornecedor_id=100))
 
     pedido = svc.fechar_direto(s, {"fornecedor_id": 100, "antecipado": True,
-                                   "itens": [{"suprimento_item_id": 7,
+                                   "justificativa_sem_cotacao": "fornecedor único na região",
+        "itens": [{"suprimento_item_id": 7,
                                               "preco_unitario": "40"}]}, COMPRADOR)
 
     assert pedido.antecipado is True
@@ -154,12 +157,15 @@ def test_compra_a_vista_passa_quando_o_fornecedor_tem_conta():
 
 @pytest.mark.parametrize("dados,erro", [
     ({"fornecedor_id": 100, "itens": []}, "Escolha os itens"),
-    ({"fornecedor_id": 999, "itens": [{"suprimento_item_id": 7, "preco_unitario": "1"}]},
+    ({"fornecedor_id": 999, "justificativa_sem_cotacao": "fornecedor único na região",
+        "itens": [{"suprimento_item_id": 7, "preco_unitario": "1"}]},
      "Fornecedor não encontrado"),
-    ({"fornecedor_id": 100, "itens": [{"suprimento_item_id": 7, "preco_unitario": "0"}]},
+    ({"fornecedor_id": 100, "justificativa_sem_cotacao": "fornecedor único na região",
+        "itens": [{"suprimento_item_id": 7, "preco_unitario": "0"}]},
      "maior que zero"),
     ({"fornecedor_id": 100, "previsao_entrega": "31/02/2026",
-      "itens": [{"suprimento_item_id": 7, "preco_unitario": "1"}]}, "Data de previsão"),
+      "justificativa_sem_cotacao": "fornecedor único na região",
+        "itens": [{"suprimento_item_id": 7, "preco_unitario": "1"}]}, "Data de previsão"),
 ])
 def test_o_que_nao_fecha(dados, erro):
     s = SessaoFalsa(*_cadastro(), _item())

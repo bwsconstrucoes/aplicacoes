@@ -149,6 +149,23 @@ RECUSADAS: dict[tuple[str, str, str], str] = {
         "o mesmo caso: CLT pago por dia existe, por decisão dele de 10/11/2026",
     ("tipo_contrato", "CLT_INDETERMINADO", "valor_diaria"):
         "o mesmo caso: CLT pago por dia existe, por decisão dele de 10/11/2026",
+    # ⚑ 19/11/2026, decisão dele: *"não tornar item obrigatório, porque o
+    # cadastro social é feito com o CPF."* A medição não volta a propor.
+    ("vinculo", "CTPS", "pis"):
+        "o PIS não é obrigatório: o eSocial é feito com o CPF (decisão dele, "
+        "19/11/2026)",
+    ("tipo_contrato", "CLT_INDETERMINADO", "pis"):
+        "idem: PIS não é obrigatório",
+    ("tipo_contrato", "CLT_DETERMINADO", "pis"):
+        "idem: PIS não é obrigatório",
+    # ⚑ 20/11/2026, ele: *"Autônomo não tem convenção. Apenas se define o
+    # valor da diária."* Os 207 de 207 com convenção preenchida são sobra do
+    # Pipefy — o número estava certo e a conclusão errada.
+    ("tipo_contrato", "AUTONOMO_RPA", "convencao_id"):
+        "autônomo não tem convenção — só o valor da diária (decisão dele, "
+        "20/11/2026); a convenção que aparece nos cadastros é sobra do Pipefy",
+    ("vinculo", "PRESTADOR", "convencao_id"):
+        "prestador não tem convenção coletiva (decisão dele, 20/11/2026)",
 }
 
 
@@ -184,6 +201,17 @@ def medir(s: Session, *, minimo: int = MINIMO_DE_CASOS) -> dict[str, Any]:
 
     rotulos = dict(DEPENDENTES)
     rotulos_chave = dict(CHAVES)
+    # Quem voltou de carteira a carteira em até 1 ano (sem experiência).
+    readmitidos: set[int] = set(s.execute(text("""
+        SELECT a.colaborador_id FROM colaborador_vinculos a
+          JOIN colaborador_vinculos b ON b.colaborador_id = a.colaborador_id
+                                     AND b.demissao IS NOT NULL
+                                     AND b.demissao < a.admissao
+         WHERE a.demissao IS NULL
+           AND UPPER(COALESCE(a.vinculo, 'CTPS')) = 'CTPS'
+           AND UPPER(COALESCE(b.vinculo, 'CTPS')) = 'CTPS'
+           AND a.admissao - b.demissao <= :d"""),
+        {"d": svc.DIAS_READMISSAO_SEM_EXPERIENCIA}).scalars().all())
     propostas: list[dict[str, Any]] = []
     ignoradas: list[dict[str, Any]] = []
     # Campo vazio em todo mundo: achado próprio, contado uma vez por campo.
@@ -268,8 +296,19 @@ def medir(s: Session, *, minimo: int = MINIMO_DE_CASOS) -> dict[str, Any]:
                         f"“{base['valor_rotulo']}”, “{rotulos[campo]}” está "
                         f"preenchido em {tem} de {total} cadastros "
                         f"({proporcao:.1%}) — proponho OBRIGATÓRIO.")
-                    base["excecoes"] = _nomes(
-                        [p for p in gente if _vazio(p[campo])])
+                    sem = [p for p in gente if _vazio(p[campo])]
+                    # ⚑ A READMISSÃO EM ATÉ 1 ANO NÃO TEM EXPERIÊNCIA (regra
+                    # dele, 20/11/2026): quem voltou nesse prazo está CERTO
+                    # sem o campo, e não é discordante.
+                    if campo == "contrato_experiencia":
+                        certos = [p for p in sem if p["id"] in readmitidos]
+                        sem = [p for p in sem if p["id"] not in readmitidos]
+                        if certos:
+                            base["frase"] += (
+                                f" ({len(certos)} sem o campo voltaram em até "
+                                "1 ano — readmissão entra sem experiência, "
+                                "e está certo.)")
+                    base["excecoes"] = _nomes(sem)
                     base["o_que_sao_as_excecoes"] = (
                         "estes estão sem o campo: ou a regra tem exceção, ou o "
                         "cadastro deles está incompleto")
@@ -280,6 +319,13 @@ def medir(s: Session, *, minimo: int = MINIMO_DE_CASOS) -> dict[str, Any]:
                         # vazio aqui E lá fora: esconder seria encobrir falta
                         # de dado. Isto entra UMA vez por campo, não uma por
                         # valor da chave, senão enche a tela com a mesma notícia.
+                        # ⚑ CAMPO QUE ELE JÁ DECIDIU SER CONDICIONAL não é
+                        # "campo que ninguém preenche" (20/11/2026: *"CNPJ PJ
+                        # e Razão Social PJ são obrigatórios para o Tipo de
+                        # Contrato PJ"*). São poucos PJ — abaixo do mínimo da
+                        # medição —, e por isso a medição não via o contraste.
+                        if "tipo_contrato" in (svc.CAMPOS_SO_SE.get(campo) or {}):
+                            continue
                         if campo not in _ja_contado_vazio:
                             _ja_contado_vazio.add(campo)
                             vazios.append({
