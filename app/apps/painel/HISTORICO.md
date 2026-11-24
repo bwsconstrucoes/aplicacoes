@@ -653,7 +653,24 @@ sai.
 
 ## Resultado por sócio, ficha da obra e conta corrente no DRE — 24/11/2026
 
-**NÃO PUBLICADO** — está no ramo, à espera do "pode" do dono. **Sem migração.**
+**PUBLICADO em 24/11/2026, 14:00 UTC** (`3b550e92`), com o "pode" do dono. **Sem
+migração.**
+
+⚠️ **Foi publicado com o GitHub Actions VERMELHO, e não por causa do painel.** A
+suíte do GitHub falhava na `main` desde 23/11 (duas publicações de outras áreas
+antes desta) num teste do ERP:
+`tests/test_manutencao_limpeza_banco.py::test_nenhuma_area_de_movimento_leva_obra_junto`
+— o "zerar" tenta `DELETE FROM eventos` e o gatilho da tabela recusa ("eventos é
+append-only"). **Só aparece com o banco de teste criado do zero**, que é como o
+GitHub roda; num banco de teste já usado ele passa — por isso a suíte local
+dava verde. Reproduzido aqui apagando os bancos de teste: 1 falha, essa.
+Com o banco já usado: 12.818 passaram, nenhuma falha. O chat do painel NÃO
+mexeu nisso (é do ERP); o dono foi avisado para passar ao chat do ERP.
+
+**Lição para quem publica:** a ferramenta de ler o log do GitHub só devolve o
+FIM do log (teto de 5.000 linhas), e o fim é um despejo do Postgres — o nome do
+teste que falhou fica fora do alcance. Para descobrir, apagar os bancos
+`erp_teste_gw*` e rodar a suíte inteira local: é a condição do GitHub.
 
 O dono pediu três coisas, viu um desenho clicável com números inventados (página
 privada dele no claude.ai, fora do repositório) e confirmou: *"Quanto à tela 1,
