@@ -40,6 +40,33 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 24/11/2026 — QUEM É DA OBRA SÓ TEM O PORTAL (registro entre áreas — vale para TODOS os módulos)
+
+Decisão do dono: o pessoal da obra usa só o portal, em tudo; o escritório usa o
+ERP. `permissoes.PERFIS_SO_PORTAL` (hoje só ADMINISTRATIVO_OBRA) + o
+`_guarda_permissao` em `routes.py`: tela do ERP leva ao portal, exceto o
+diário, a folha do diário e o anexo (`TELAS_DE_QUEM_E_DA_OBRA`). `pode_ver_obra`
+para esse perfil usa as obras dele. Testes ajustados que diziam o contrário:
+homologação (títulos, lançar, DC), escopo (administrativo abria qualquer
+obra), diário (dono sem obra) e a marcação por pessoa (passou a usar LANÇADOR).
+**Quem cria tela nova para a obra:** ela tem de morar em `/erp/portal…` ou
+entrar em `TELAS_DE_QUEM_E_DA_OBRA`. Detalhe em `HISTORICO_PESSOAL.md`, 24/11.
+
+### ⚑ 24/11/2026 — PESSOAL: `obras_no_pessoal` em `permissoes.py`, e a MESMA FALHA EM OUTRAS ÁREAS (registro entre áreas)
+
+`obras_do_usuario` devolve "sem filtro" para quem enxerga por AUTORIA. Onde o
+registro não tem autor (colaborador, solicitação), isso entregava a empresa
+inteira ao administrativo de obra. O Pessoal e o portal passaram a usar
+`obras_no_pessoal` (todas para quem vê tudo ou atende o DP; as obras da
+pessoa para os demais). **Áreas que ainda usam `obras_do_usuario` em registro
+possivelmente sem autor, a conferir por quem cuida delas:** Arquivo, Diário de
+obra (usado pelo portal), Suprimentos, lista de obras, agenda, notas e a lista
+de despesas com colaborador. Detalhe em `HISTORICO_PESSOAL.md`, 24/11/2026.
+Mexi num teste de Obras (`tests/test_diario_de_obra.py::test_o_portal_recebe_
+o_rotulo_da_obra_pronto`): ele montava um administrativo SEM obra e esperava
+que o portal mostrasse todas — era o vazamento tomado por regra. Agora o
+administrativo é ligado à obra do teste e só ela aparece.
+
 ### ⚑ 23/11/2026 — O PORTAL DA OBRA FOI REARRUMADO, PELO CHAT DE SUPRIMENTOS (registro entre áreas)
 
 Pedido do dono, olhando o portal. Mexe em `templates/erp_portal.html` e

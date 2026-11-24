@@ -557,3 +557,121 @@ def test_sem_espelhar_o_cadastro_vence_e_o_relatorio_mostra(sessao_real):
     assert sessao_real.execute(text("SELECT endereco FROM obras WHERE id = :o"),
                                {"o": oid}).scalar() == "Endereço velho, 1"
     assert any(c["campo"] == "endereco" for c in r["conflitos"])
+
+
+# ===========================================================================
+# LER A PLANILHA ONLINE (24/11/2026)
+#
+# Ele: *"pra que eu vou fazer download de planilha se a planilha é online?
+# Qual o sentido de eu ficar fazendo download para fazer importação? Por que
+# tu não atualiza direto a planilha que está online?"*
+#
+# ⚑ NADA AQUI ENCOSTA NO GOOGLE. O que se prova é o que quebra na prática:
+# que as duas fontes passam pela MESMA régua, e que a falha volta por extenso
+# para a tela em vez de virar "não aconteceu nada".
+# ===========================================================================
+class _AbaFalsa:
+    def __init__(self, titulo, linhas):
+        self.title = titulo
+        self._linhas = linhas
+
+    def get_all_values(self):
+        return self._linhas
+
+
+class _LivroFalso:
+    def __init__(self, abas):
+        self._abas = abas
+
+    def worksheets(self):
+        return self._abas
+
+    def worksheet(self, titulo):
+        return next(a for a in self._abas if a.title == titulo)
+
+
+def _google_falso(monkeypatch, abas=None, estoura=None):
+    import app.apps.analisesps.credenciais as cred
+
+    def _cliente():
+        if estoura:
+            raise RuntimeError(estoura)
+
+        class _C:
+            def open_by_key(self, _):
+                return _LivroFalso(abas or [])
+        return _C()
+
+    monkeypatch.setattr(cred, "cliente", _cliente, raising=False)
+    monkeypatch.setattr(cred, "com_retry", lambda fn, *a, **k: fn(),
+                        raising=False)
+
+
+def _grade():
+    """O cabeçalho e uma linha, como a planilha devolve: lista de listas."""
+    base = _linha_completa()
+    return [CAB_COMPLETO, [str(c) for c in base]]
+
+
+def test_online_le_a_aba_e_entende_as_linhas(monkeypatch):
+    _google_falso(monkeypatch, abas=[
+        _AbaFalsa("ClientesOmie", [["cnpj_cpf"], ["000"]]),
+        _AbaFalsa("C. Diários", _grade())])
+    r = imp.ler_online("qualquer")
+    assert r["erro"] == "" and r["aba"] == "C. Diários"
+    assert len(r["linhas"]) == 1
+    assert r["linhas"][0]["codigo"] == "AEROARACATI"
+    assert r["linhas"][0]["fase"] == "EM_EXECUCAO"
+
+
+def test_online_e_arquivo_dao_exatamente_a_mesma_coisa(monkeypatch):
+    """⚑ A RÉGUA É UMA SÓ. Duas fontes com duas leituras divergiriam no
+    primeiro ajuste, e ninguém perceberia até um campo entrar errado."""
+    _google_falso(monkeypatch, abas=[_AbaFalsa("C. Diários", _grade())])
+    do_google = imp.ler_online("qualquer")["linhas"]
+    do_arquivo = imp.ler_planilha(_xlsx([_linha_completa()]))
+    assert do_google == do_arquivo
+
+
+def test_online_sem_a_aba_certa_diz_quais_abas_viu(monkeypatch):
+    _google_falso(monkeypatch, abas=[_AbaFalsa("Outra Coisa", [["x"], ["1"]])])
+    r = imp.ler_online("qualquer")
+    assert r["linhas"] == [] and "Outra Coisa" in r["erro"]
+
+
+def test_online_devolve_o_erro_por_extenso(monkeypatch):
+    """⚠️ A LIÇÃO DE 17/11/2026, que custou uma rodada dele: *"Meu, não tá
+    funcionando. Você precisa me mostrar o que tá acontecendo."* Log é para
+    quem abre o Render; ele abre a TELA."""
+    _google_falso(monkeypatch, estoura="credencial do Google inválida")
+    r = imp.ler_online("qualquer")
+    assert r["linhas"] == [] and "credencial" in r["erro"]
+
+
+def test_online_com_a_aba_vazia_avisa(monkeypatch):
+    _google_falso(monkeypatch, abas=[_AbaFalsa("C. Diários", [CAB_COMPLETO])])
+    r = imp.ler_online("qualquer")
+    assert r["linhas"] == [] and "vazia" in r["erro"]
+
+
+@banco_
+def test_importar_aceita_as_linhas_prontas_do_online(sessao_real, monkeypatch):
+    oid = _obra(sessao_real, "CDONLINE1", fase="CRIACAO")
+    sessao_real.flush()
+    _google_falso(monkeypatch, abas=[_AbaFalsa("C. Diários", [
+        CAB_COMPLETO,
+        [str(c) for c in _linha_completa(**{"Código Primário": "CDONLINE1",
+                                            "Obra": "CDONLINE1",
+                                            "Status da Obra": "Concluída"})]])])
+    lido = imp.ler_online("qualquer")
+    r = imp.importar(sessao_real, None, None, simular=False,
+                     linhas=lido["linhas"])
+    sessao_real.flush()
+    assert r["fases_mudadas_total"] == 1
+    assert sessao_real.execute(text("SELECT fase FROM obras WHERE id = :o"),
+                               {"o": oid}).scalar() == "CONCLUIDA"
+
+
+def test_importar_sem_arquivo_e_sem_linhas_recusa():
+    with pytest.raises(ErroValidacao):
+        imp.importar(None, None, None)

@@ -25,7 +25,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from app.apps.erp.core.auth.permissoes import (
     ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS,
-    acoes_do_perfil_no_banco, decidir, pode,
+    acoes_do_perfil_no_banco, decidir, pode, so_portal,
 )
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
@@ -402,6 +402,11 @@ def _contexto(aba: str) -> dict:
     # menu mostra. Duas chamadas seriam duas idas ao banco em TODA página.
     pode = _pode_agora(*ACOES_NA_TELA, *_acoes_das_abas())
     modulos_visiveis, abas_por_modulo = _menu_da_pessoa(pode)
+    # Quem é da obra só abre o diário fora do portal (24/11/2026): o menu não
+    # oferece os módulos do escritório, que só o levariam de volta ao portal.
+    if so_portal(session.get("erp_usuario_perfil", "")):
+        modulos_visiveis = []
+        abas_por_modulo = {chave: [a for a in modulo["abas"] if a[0] == aba]}
     return {"modulos": modulos_visiveis, "modulo": modulo,
             "abas": abas_por_modulo.get(chave, modulo["abas"]),
             "aba_ativa": aba,
@@ -685,7 +690,26 @@ def _guarda_permissao():
         logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
                        acao, session.get("erp_usuario_id"), perfil, endpoint)
         return _recusa_de_acesso(perfil_enum)
+    # ⚑ QUEM É DA OBRA SÓ TEM O PORTAL (24/11/2026) — ver
+    # `permissoes.PERFIS_SO_PORTAL`. TELA do ERP fora das do portal leva para o
+    # portal; o que o portal chama (as APIs) continua valendo pela ação de cada
+    # uma, e o alcance delas é o das obras da pessoa.
+    if so_portal(perfil_enum) and request.method == "GET" \
+            and not request.path.startswith("/erp/api/") \
+            and not request.path.startswith("/erp/portal") \
+            and endpoint not in TELAS_DE_QUEM_E_DA_OBRA:
+        logger.info("ERP/portal: %s levado ao portal (era %s)",
+                    session.get("erp_usuario_id"), endpoint)
+        return redirect(url_for("erp.pagina_portal"))
     return None
+
+
+# As telas que quem é da obra abre FORA do `/erp/portal`: o diário (é o
+# portal que leva para ele), a folha impressa dele e o documento anexado que o
+# portal mostra. Todo o resto do ERP é do escritório.
+TELAS_DE_QUEM_E_DA_OBRA = frozenset({
+    "erp.pagina_diario", "erp.pagina_diario_papel", "erp.baixar_anexo",
+})
 
 
 def _e_chamada_de_api() -> bool:
@@ -9530,7 +9554,7 @@ def api_colaboradores_buscar():
     """
     from sqlalchemy import or_, select as _select
 
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
     from app.apps.erp.core.cadastros.validadores import somente_digitos
     from app.apps.erp.db.models.cadastros import Colaborador, Obra
     procurado = (request.args.get("q") or "").strip()
@@ -9549,7 +9573,7 @@ def api_colaboradores_buscar():
             # O ESCOPO POR OBRA. `None` quer dizer "alcança todas"; uma lista
             # vazia quer dizer "nenhuma", e aí não acha ninguém — que é o
             # certo, e não o contrário.
-            permitidas = obras_do_usuario(s, atual)
+            permitidas = obras_no_pessoal(s, atual)
             if permitidas is not None:
                 consulta = consulta.where(
                     Colaborador.obra_id.in_(list(permitidas) or [-1]))
@@ -12868,12 +12892,12 @@ def api_colaboradores_opcoes():
     """
     from sqlalchemy import select
 
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
     from app.apps.erp.core.cadastros import cargos as svc_cargos
     from app.apps.erp.core.cadastros import pessoas as svc_pessoas
     from app.apps.erp.db.models.cadastros import Obra
     with get_session() as s:
-        permitidas = obras_do_usuario(s, _usuario_logado(s))
+        permitidas = obras_no_pessoal(s, _usuario_logado(s))
         obras = [o for o in s.scalars(select(Obra).order_by(Obra.codigo)).all()
                  if getattr(o, "status", None) != "ENCERRADA"
                  and (permitidas is None or o.id in set(permitidas))]
@@ -13029,7 +13053,7 @@ def api_dp_solicitacoes():
     quem pediu não acompanharia o próprio pedido.
     """
     from app.apps.erp.core import pessoal_solicitacoes as svc
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
@@ -13043,7 +13067,13 @@ def api_dp_solicitacoes():
                     s, situacao=request.args.get("situacao", ""),
                     tipo=request.args.get("tipo", ""),
                     colaborador_id=request.args.get("colaborador_id", type=int),
-                    obra_ids=obras_do_usuario(s, usuario),
+                    # ⚑ 24/11/2026: `obras_no_pessoal`, não
+                    # `obras_do_usuario` — esta devolve "sem filtro" para quem
+                    # enxerga por autoria, e o administrativo de obra via a
+                    # fila de TODAS as obras. Ele: *"estão vendo (…) as
+                    # solicitações do DP (…) 2 desligamentos (…) que ele não
+                    # tem nada a ver."* Mesma troca em toda tela do Pessoal.
+                    obra_ids=obras_no_pessoal(s, usuario),
                     usuario_id=usuario.id if usuario else None)})
             p = svc.abrir(s, request.get_json(silent=True) or {}, usuario)
             s.commit()
@@ -13699,32 +13729,56 @@ def api_diario_importar():
 @login_obrigatorio
 @permissao("importar")
 def api_obras_cdiarios():
-    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+    """Completa o cadastro das obras com a C. Diários.
 
-    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
-    propósito, nada é escrito. E o que já está preenchido no cadastro só é
-    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
-    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    ⚑ LÊ A PLANILHA ONLINE (24/11/2026), e é o caminho normal. Ele: *"pra que
+    eu vou fazer download de planilha se a planilha é online? Qual o sentido
+    de eu ficar fazendo download para fazer importação?"* Razão nenhuma — a
+    emissão de NFS-e já lia esta mesma planilha ao vivo.
+
+    O arquivo .xlsx continua aceito, para quando o Google estiver fora do ar
+    ou a credencial falhar: sem ele, uma pane no Google deixaria o cadastro
+    das obras sem nenhum caminho.
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1`,
+    nada é escrito.
     """
     from app.apps.erp.core.importadores import obras_cdiarios as imp
     arquivo = request.files.get("arquivo")
-    if arquivo is None:
-        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
-    if not (arquivo.filename or "").lower().endswith(".xlsx"):
-        return jsonify({"ok": False, "erro":
-                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
-                        "Arquivo › Fazer download › Microsoft Excel."}), 400
     gravar = request.form.get("gravar") in ("1", "true", "sim")
     regravar = request.form.get("regravar") in ("1", "true", "sim")
+    online = request.form.get("online") in ("1", "true", "sim")
+    if not online:
+        if arquivo is None:
+            return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+        if not (arquivo.filename or "").lower().endswith(".xlsx"):
+            return jsonify({"ok": False, "erro":
+                            "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                            "Arquivo › Fazer download › Microsoft Excel."}), 400
     try:
-        conteudo = arquivo.read()
+        linhas = None
+        conteudo = None
+        de_onde = {}
+        if online:
+            lido = imp.ler_online()
+            # ⚠️ O ERRO DA LEITURA VOLTA PARA A TELA, por extenso. Credencial
+            # faltando, planilha renomeada, aba trocada — tudo isso viraria
+            # "não aconteceu nada" se ficasse só no log.
+            if lido["erro"]:
+                return jsonify({"ok": False, "erro": lido["erro"]}), 400
+            linhas = lido["linhas"]
+            de_onde = {"aba": lido["aba"], "planilha": lido["planilha"]}
+        else:
+            conteudo = arquivo.read()
         with get_session() as s:
             usuario = _usuario_logado(s)
             rel = imp.importar(s, conteudo, usuario.id if usuario else None,
-                               simular=not gravar, regravar=regravar)
+                               simular=not gravar, regravar=regravar,
+                               linhas=linhas)
             if gravar:
                 s.commit()
-        return jsonify({"ok": True, "resultado": rel})
+        return jsonify({"ok": True, "resultado": {**rel, "online": online,
+                                                  **de_onde}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
@@ -13998,9 +14052,10 @@ def pagina_portal():
     with get_session() as _s:
         quem = _usuario_logado(_s)
         from app.apps.erp.core.auth.permissoes import pode as _pode
-        mais = any(_pode(quem, a) for a in
-                   ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
-                    "ver_suprimentos", "configurar"))
+        mais = (quem is not None and not so_portal(quem.perfil)
+                and any(_pode(quem, a) for a in
+                        ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
+                         "ver_suprimentos", "configurar")))
     return render_template("erp_portal.html", pode_mais_que_o_portal=mais)
 
 
@@ -14460,11 +14515,11 @@ def pagina_dp_ferias():
 @permissao("solicitar_dp")
 def api_dp_ferias():
     from app.apps.erp.core import ferias as svc_ferias
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
-            obras = obras_do_usuario(s, usuario)
+            obras = obras_no_pessoal(s, usuario)
             passadas = request.args.get("passadas") == "1"
             hoje = date.today()
             lista = svc_ferias.listar(
@@ -14484,7 +14539,7 @@ def api_dp_ferias():
 def api_dp_ferias_periodos():
     """Os períodos de férias de cada pessoa de carteira — para não vencerem."""
     from app.apps.erp.core import ferias as svc_ferias
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
@@ -14492,7 +14547,7 @@ def api_dp_ferias_periodos():
                 return jsonify({"ok": True, "periodos": [], "tabela": False})
             return jsonify({"ok": True, "tabela": True,
                             "periodos": svc_ferias.situacao_dos_periodos(
-                                s, obras=obras_do_usuario(s, usuario))})
+                                s, obras=obras_no_pessoal(s, usuario))})
     except Exception as e:
         logger.exception("ERP/DP: falha nos períodos de férias")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
@@ -14559,12 +14614,12 @@ def api_dp_pedidos():
     isso que acaba com o "e aí, saiu?" por WhatsApp. Pedir é do DP.
     """
     from app.apps.erp.core import contabilidade as svc_ct
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
             if request.method == "GET":
-                permitidas = obras_do_usuario(s, usuario)
+                permitidas = obras_no_pessoal(s, usuario)
                 alvo = request.args.get("colaborador_id", type=int)
                 templates = svc_ct.templates_para_tela()
                 # ⚑ COM UMA PESSOA NA MÃO, CADA MODELO JÁ DIZ O QUE FALTA NELA
@@ -14881,11 +14936,11 @@ def api_colaboradores_fila():
     É o quadro do Pipefy virado lista. O recorte por obra é o mesmo da listagem
     de colaboradores — quem responde por uma obra vê a fila dela.
     """
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
     from app.apps.erp.core.cadastros import pessoas as svc_pessoas
     with get_session() as s:
         usuario = _usuario_logado(s)
-        permitidas = obras_do_usuario(s, usuario)
+        permitidas = obras_no_pessoal(s, usuario)
         return jsonify({
             "ok": True,
             "fila": svc_pessoas.fila_do_cadastro(

@@ -601,3 +601,75 @@ def test_o_alcance_acompanha_a_obra_onde_a_pessoa_bate_ponto(app_real, sessao_re
                            "WHERE colaborador_id = :c"), {"c": pessoa.id, "o": c.id})
     assert set(obras_de_registro_sem_autor(sessao_real, u)) == {obra.id, c.id}, \
         "a obra antiga do ponto sai; a marcada à mão fica"
+
+
+def test_administrativo_liberado_pelo_portal_so_ve_o_pessoal_da_obra_dele(
+        app_real, sessao_real, pessoa, obra, dp, pessoal):
+    """24/11/2026, ele: *"estão vendo (…) as solicitações do DP (…) 2
+    desligamentos (…) que ele não tem nada a ver."* Quem enxerga por autoria
+    ganhava "sem filtro" em toda tela do Pessoal. O DP continua vendo tudo."""
+    from tests.conftest import como                      # type: ignore
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    outra = Obra(codigo="OBROUT", nome="Obra de outra pessoa", status="ATIVA")
+    sessao_real.add(outra)
+    sessao_real.flush()
+    de_fora = Colaborador(nome="JOSE DE OUTRA OBRA", cpf="11144477735",
+                          situacao="ATIVO", obra_id=outra.id)
+    sessao_real.add(de_fora)
+    sessao_real.flush()
+    sol_fora = svc.abrir(sessao_real, {"tipo": "DESLIGAMENTO", "colaborador_id": de_fora.id,
+                                       "obra_id": outra.id,
+                                       "forma_desligamento": "Demissão com Aviso Trabalhado",
+                                       "aviso_previo": "2026-12-01",
+                                       "continua_prestador": "Não, está saindo da empresa"},
+                         dp)
+    sessao_real.commit()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                            nome=pessoa.nome, email="adm.obra@gmail.com", obra_id=obra.id)
+    uid = como(app_real, dp.id).post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                                     json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    sessao_real.commit()
+    adm = como(app_real, uid)
+
+    fila_dele = adm.get("/erp/api/dp/solicitacoes").get_json()
+    assert sol_fora["id"] not in [x["id"] for x in fila_dele["solicitacoes"]]
+    assert adm.get(f"/erp/api/dp/solicitacoes/{sol_fora['id']}").status_code == 404
+    nomes = [c.get("nome") for c in adm.get("/erp/api/colaboradores").get_json()["colaboradores"]]
+    assert "JOSE DE OUTRA OBRA" not in nomes and "MARIA DO PEDIDO" in nomes
+
+    # o DP continua vendo a empresa inteira
+    fila_dp = como(app_real, pessoal.id).get("/erp/api/dp/solicitacoes").get_json()
+    assert sol_fora["id"] in [x["id"] for x in fila_dp["solicitacoes"]]
+
+
+def test_quem_e_da_obra_so_tem_o_portal(app_real, sessao_real, pessoa, obra, dp, pessoal):
+    """24/11/2026, ele: *"o pessoal da obra (…) têm acesso ao portal (…) Isso
+    em tudo."* O diário fica, só da obra dele. O escritório não muda."""
+    from tests.conftest import como                      # type: ignore
+    outra = Obra(codigo="OBRFORA", nome="Obra de fora", status="ATIVA")
+    sessao_real.add(outra)
+    sessao_real.flush()
+    pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                            nome=pessoa.nome, email="so.portal@gmail.com", obra_id=obra.id)
+    uid = como(app_real, dp.id).post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
+                                     json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    sessao_real.commit()
+    adm = como(app_real, uid)
+    with adm.session_transaction() as sess:
+        sess["erp_usuario_perfil"] = "ADMINISTRATIVO_OBRA"
+
+    for tela in ("/erp/inicio", "/erp/colaboradores", "/erp/dp/solicitacoes",
+                 "/erp/dp/contabilidade", "/erp/titulos", "/erp/ponto/espelho"):
+        r = adm.get(tela)
+        assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal"), tela
+    assert adm.get("/erp/portal").status_code == 200
+    assert "ERP completo" not in adm.get("/erp/portal").get_data(as_text=True)
+    assert adm.get("/erp/obras/diario").status_code == 200
+    # o diário só da obra dele
+    assert adm.get(f"/erp/api/diario/{obra.id}").status_code == 200
+    assert adm.get(f"/erp/api/diario/{outra.id}").status_code == 404
+
+    # o escritório continua igual
+    dp_real = como(app_real, pessoal.id)
+    assert dp_real.get("/erp/colaboradores").status_code == 200
+    assert dp_real.get("/erp/dp/solicitacoes").status_code == 200
