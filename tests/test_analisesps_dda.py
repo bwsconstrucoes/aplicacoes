@@ -102,6 +102,12 @@ def banco_dda(banco_analisesps):
             # cancelada não conta
             ("1400000005", "REDEMAQUINAS", "06.094.934/0001-16", "930.00", "2026-11-25", "",
              "", "Cancelado"),
+            # parecidas, para a sugestão: o mesmo credor do boleto da Cora com outro
+            # valor, e um credor qualquer com valor perto do da Redemáquinas
+            ("1400000006", "ASSOCIACAO SOTUD", "56.932.477/0001-60", "190.00", "2026-11-20",
+             "", "", "Pagar"),
+            ("1400000007", "OUTRO FORNECEDOR", "11.111.111/0001-11", "940.00", "2026-11-26",
+             "", "", "Pagar"),
         ]:
             conn.execute("INSERT INTO analisesps.sps (id, credor, documento, valor_num, "
                          " vencimento_d, codigo_barras, nf, status_pgt) VALUES "
@@ -155,4 +161,22 @@ def test_a_tela_cola_e_mostra(banco_dda, app):  # noqa: F811
     assert r.status_code == 302 and "Confere com o total do banco" in unquote_plus(r.headers["Location"])
     html = cliente.get("/analisesps/dda").get_data(as_text=True)
     assert 'id="tabela-dda"' in html and "Sem lançamento" in html and "1400000001" in html
+    assert "Gerar mensagem do WhatsApp" in html and 'class="dda-marca"' in html
+    assert "Parecidas:" in html
     assert "Confere com o total do banco" in html
+
+
+def test_o_que_nao_casou_ganha_as_SPs_PARECIDAS(banco_dda):
+    """24/11/2026: *"quando o sistema não conseguir cruzar automático, é interessante
+    ele sugerir as SPs que são próximas."*"""
+    from app.apps.analisesps import dda
+    dda.guardar(dda.ler(EXEMPLO), "MARCELO")
+    por = {b["banco"][:3]: b for b in dda.listar(dda.filtros_da_tela({}))["boletos"]
+           if b["situacao"] == dda.SEM_LANCAMENTO}
+    cora, rede = por["403"], por["341"]
+    assert [s["id"] for s in cora["sugestoes"]][0] == "1400000006"
+    assert "mesmo CNPJ" in cora["sugestoes"][0]["porque"]
+    assert [s["id"] for s in rede["sugestoes"]] == ["1400000007"]
+    assert "valor R$ 940,00" in rede["sugestoes"][0]["porque"]
+    assert all(s["id"] not in ("1400000001", "1400000002", "1400000003")
+               for b in por.values() for s in b["sugestoes"]), "SP já casada não é sugerida"

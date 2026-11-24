@@ -12272,6 +12272,16 @@ somente Solicitações de uma conta especifica"*.
 - Situações: **Sem lançamento** (a pergunta dele), **SP já paga** (boleto ainda no DDA
   com a SP paga — risco de pagar duas vezes), Provável — conferir, Lançado, Sem SP
   (confirmado). Filtros na lateral (situação, vencimento, busca, todas as colagens).
+- **No mesmo dia, três pedidos a mais:** (1) *"quando o sistema não conseguir cruzar
+  automático, é interessante ele sugerir as SPs que são próximas"* — `dda.sugestoes`: para
+  o boleto sem lançamento, até 3 SPs ainda não casadas, pontuadas por mesmo CNPJ/raiz,
+  valor perto (até 10%) e vencimento perto, com o porquê; a consulta às SPs passou a trazer
+  valor numa faixa de ±10% em vez de exato. (2) Clicar na SP (casada, alternativa ou
+  sugerida) abre a ficha no modal. (3) *"Eu seleciono alguns, gerar a mensagem do WhatsApp
+  para cobrar (…) o pessoal do suprimento"* — caixas por boleto, "marcar os sem
+  lançamento" e "Gerar mensagem do WhatsApp": o texto (beneficiário, CNPJ, valor,
+  vencimento, nº doc., filial pagadora, linha digitável, total) numa janela para ajustar,
+  copiar ou abrir no WhatsApp. Montado na própria tela, sem ir ao servidor.
 - Não cruza (ainda): uma SP que paga VÁRIOS boletos (soma), nem boleto parcelado contra
   SP com o valor total. Não testado com uma colagem real além do texto de 24/11.
 - Custo: colar = 1 gravação por boleto; abrir a tela = 3 consultas ao banco (a das SPs

@@ -326,6 +326,10 @@ def _sps_candidatas(boletos: list) -> list:
                      for d in (b["beneficiario_doc"], b.get("beneficiario_final_doc") or "")
                      if len(d) == 14} | {d for b in boletos
                                          for d in (b["beneficiario_doc"],) if len(d) == 11})
+    # O valor numa FAIXA de ±10%, e não exato: além do cruzamento, a consulta traz as
+    # SPs de valor PARECIDO, que viram sugestão para o boleto que não casou (dono,
+    # 24/11/2026: "quando o sistema não conseguir cruzar automático, é interessante
+    # ele sugerir as SPs que são próximas").
     valores = sorted({b["valor"] for b in boletos if b["valor"]})
     barras = sorted({b["barras"] for b in boletos if b["barras"]}
                     | {b["linha_digitavel"] for b in boletos if b["linha_digitavel"]})
@@ -337,8 +341,10 @@ def _sps_candidatas(boletos: list) -> list:
                          + ",".join("?" for _ in raizes) + ")")
         params += [r[:8] for r in raizes] + raizes
     if valores:
-        condicoes.append("valor_num IN (" + ",".join("?" for _ in valores) + ")")
-        params += valores
+        condicoes.append("(" + " OR ".join("valor_num BETWEEN ? AND ?" for _ in valores) + ")")
+        for v in valores:
+            params += [(v * Decimal("0.9")).quantize(Decimal("0.01")),
+                       (v * Decimal("1.1")).quantize(Decimal("0.01"))]
     if barras:
         condicoes.append("regexp_replace(coalesce(codigo_barras,''), '[^0-9]', '', 'g') IN ("
                          + ",".join("?" for _ in barras) + ")")
@@ -381,6 +387,7 @@ def cruzar(boletos: list) -> None:
             continue
         casados[i] = (sp_id, -neg, porque)
         usadas.add(sp_id)
+    sobras = [s for s in sps if s["id"] not in usadas]
     manuais = [b["sp_manual"] for b in boletos if b.get("sp_manual") not in ("", NENHUMA)]
     if manuais:
         for s in _sps_por_id(manuais):
@@ -388,7 +395,7 @@ def cruzar(boletos: list) -> None:
     for i, b in enumerate(boletos):
         manual = b.get("sp_manual") or ""
         if manual == NENHUMA:
-            b.update(situacao=SEM_SP_CONFIRMADO, sp=None, outras=[])
+            b.update(situacao=SEM_SP_CONFIRMADO, sp=None, outras=[], sugestoes=[])
             continue
         if manual:
             s = por_id.get(manual)
@@ -403,6 +410,7 @@ def cruzar(boletos: list) -> None:
         else:
             b.update(sp=None, outras=[])
         sp = b.get("sp")
+        b["sugestoes"] = [] if sp or manual else sugestoes(b, sobras)
         if not sp:
             b["situacao"] = SEM_LANCAMENTO
         elif sp.get("status_pgt", "").lower().startswith("pago"):
@@ -411,6 +419,50 @@ def cruzar(boletos: list) -> None:
             b["situacao"] = LANCADO
         else:
             b["situacao"] = PROVAVEL
+
+
+def sugestoes(boleto: dict, sps: list, quantas: int = 3) -> list:
+    """As SPs mais PARECIDAS com um boleto que não casou: o mesmo credor (CNPJ ou
+    raiz), o valor perto, o vencimento perto. `[{"id", "credor", "porque", ...}]`,
+    da mais parecida para a menos; só as que somam pelo menos 30 pontos."""
+    from .formatos import moeda
+    docs_b = {boleto["beneficiario_doc"], boleto.get("beneficiario_final_doc") or ""} - {""}
+    saida = []
+    for s in sps:
+        pontos, motivos = 0, []
+        if s["doc"] and s["doc"] in docs_b:
+            pontos += 50
+            motivos.append("mesmo CNPJ")
+        elif len(s["doc"]) == 14 and any(len(d) == 14 and d[:8] == s["doc"][:8] for d in docs_b):
+            pontos += 45
+            motivos.append("mesma raiz de CNPJ")
+        if s["valor"] is not None and boleto["valor"]:
+            dif = abs(s["valor"] - boleto["valor"])
+            pct = dif / boleto["valor"]
+            if dif <= Decimal("0.01"):
+                pontos += 30
+                motivos.append("mesmo valor")
+            elif pct <= Decimal("0.10"):
+                pontos += 20 if pct <= Decimal("0.05") else 10
+                motivos.append(f"valor R$ {moeda(s['valor'])} (dif. R$ {moeda(dif)})")
+        if s["vencimento"] and boleto["vencimento"]:
+            dias = abs((s["vencimento"] - boleto["vencimento"]).days)
+            if dias <= 3:
+                pontos += 15
+            elif dias <= 15:
+                pontos += 8
+            elif dias <= 45:
+                pontos += 3
+            if dias:
+                motivos.append(f"venc. {s['vencimento'].strftime('%d/%m/%Y')}")
+            else:
+                motivos.append("mesmo vencimento")
+        if s["status_pgt"].lower() == "pagar":
+            pontos += 5
+        if pontos >= 30:
+            saida.append((pontos, s, motivos))
+    saida.sort(key=lambda x: -x[0])
+    return [dict(s, pontos=p, porque=", ".join(m)) for p, s, m in saida[:quantas]]
 
 
 def _sps_por_id(ids) -> list:
