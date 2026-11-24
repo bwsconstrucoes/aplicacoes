@@ -1,160 +1,113 @@
 <!doctype html>
 <!--
-  GUIA DO PORTAL DA OBRA — para o administrativo de obra (23/11/2026).
+  GUIA DE ACESSO AO PORTAL DA OBRA — uma página, genérico (23/11/2026).
 
-  Pedido do dono: "um mini manual com orientações para o cadastro no portal,
-  bem como instruções de como utilizar a parte de solicitações (…) o pessoal já
-  estava acostumado com o Pipefy, a gente já desativou e precisa ativar agora
-  o portal."
+  Pedido do dono, ao refazer o guia: *"não precisa avisar o que é que vai ser
+  solicitado lá pela parte do DP, não. É só avisando como é que a pessoa faz o
+  cadastramento (…) tem a solicitação de liberação de acesso. Aí o pedido vai
+  chegar, aí a administração vai liberar para a pessoa então receber o link."*
 
-  Este HTML é a FONTE. O PDF (A4, duas páginas) e as imagens para o WhatsApp
-  saem dele com `gerar_guia.py`, ao lado. Mudou a tela do portal? Muda aqui e
-  gera de novo — o guia não pode prometer um botão que não existe.
+  Este HTML é a FONTE. O PDF (A4, uma página) e a imagem para o WhatsApp saem
+  dele com `gerar_guia.js`, ao lado. Mudou a tela de entrada ou a de "Criar o
+  meu acesso"? Muda aqui e gera de novo — o guia não pode prometer um botão que
+  não existe. Textos conferidos em 23/11/2026 contra `erp_login.html`,
+  `erp_primeiro_acesso_portal.html` e o e-mail de `core/auth/convites.py`
+  (código do WhatsApp: 15 minutos; link da senha: 7 dias, uma vez só).
 -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Guia do Portal da Obra — BWS</title>
+<title>Acesso ao Portal da Obra — BWS</title>
 <style>
   @page { size: A4; margin: 0; }
   :root { --navy: #0B2C5C; --amarelo: #F4B942; --tinta: #10233F; --suave: #4F607A;
-          --linha: #D5DCE8; --fundo: #F4F6FA; --verde: #1C6B3C; --verde-f: #E8F6EE;
-          --vermelho: #A32020; --vermelho-f: #FDECEC; }
+          --linha: #D5DCE8; --fundo: #F4F6FA; --verde: #1C6B3C; --verde-f: #E8F6EE; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "DejaVu Sans", Arial, sans-serif; color: var(--tinta);
-         font-size: 10.6pt; line-height: 1.38; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+         font-size: 10.8pt; line-height: 1.38; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .folha { width: 210mm; height: 297mm; padding: 0 14mm 12mm; overflow: hidden;
-           page-break-after: always; position: relative; background: #fff; }
-  .folha:last-child { page-break-after: auto; }
-  .faixa { background: var(--navy); color: #fff; margin: 0 -14mm 7mm; padding: 9mm 14mm 7mm; }
+           position: relative; background: #fff; }
+  .faixa { background: var(--navy); color: #fff; margin: 0 -14mm 6mm; padding: 9mm 14mm 7mm; }
   .faixa small { color: var(--amarelo); font-weight: 700; letter-spacing: .08em; font-size: 9pt; }
-  .faixa h1 { margin: 2mm 0 1mm; font-size: 21pt; line-height: 1.1; }
+  .faixa h1 { margin: 2mm 0 1mm; font-size: 22pt; line-height: 1.1; }
   .faixa p { margin: 0; opacity: .9; font-size: 10.5pt; }
   .endereco { display: inline-block; margin-top: 4mm; background: var(--amarelo); color: var(--tinta);
               font-weight: 700; font-size: 13pt; padding: 2mm 4mm; border-radius: 3mm; }
-  h2 { font-size: 13.5pt; margin: 0 0 3mm; color: var(--navy); }
-  h2 .n { display: inline-block; width: 7.5mm; height: 7.5mm; border-radius: 50%; background: var(--navy);
-          color: #fff; text-align: center; line-height: 7.5mm; font-size: 10.5pt; margin-right: 2mm; vertical-align: 1px; }
-  .passos { display: grid; gap: 2.5mm; margin-bottom: 5mm; }
+  h2 { font-size: 13pt; margin: 0 0 3mm; color: var(--navy); }
+  .quem { display: inline-block; font-size: 8.5pt; font-weight: 700; letter-spacing: .04em;
+          border-radius: 2mm; padding: .4mm 2mm; margin-left: 1.5mm; vertical-align: 1px; }
+  .quem.voce { background: var(--amarelo); color: var(--tinta); }
+  .quem.escritorio { background: var(--navy); color: #fff; }
+  .passos { display: grid; gap: 2.4mm; margin-bottom: 5mm; }
   .passo { display: grid; grid-template-columns: 9mm 1fr; gap: 3mm; align-items: start;
-           border: 1px solid var(--linha); border-radius: 3mm; padding: 2.5mm 3.5mm; }
+           border: 1px solid var(--linha); border-radius: 3mm; padding: 2.4mm 3.5mm; }
+  .passo.esc { background: var(--fundo); }
   .passo .num { width: 8mm; height: 8mm; border-radius: 2mm; background: var(--amarelo); font-weight: 700;
                 text-align: center; line-height: 8mm; }
+  .passo.esc .num { background: var(--navy); color: #fff; }
   .passo b { display: block; }
   .passo span { color: var(--suave); font-size: 9.8pt; }
   .btn { display: inline-block; background: var(--fundo); border: 1px solid var(--linha); border-radius: 1.5mm;
          padding: 0 1.6mm; font-weight: 700; color: var(--navy); white-space: nowrap; }
-  .caixa { border-radius: 3mm; padding: 3mm 4mm; margin-bottom: 4mm; font-size: 9.8pt; }
+  .duas { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .caixa { border-radius: 3mm; padding: 3mm 4mm; font-size: 9.6pt; }
   .caixa.atencao { background: #FFF6E5; border: 1px solid #F1DDAE; }
   .caixa.ok { background: var(--verde-f); border: 1px solid #BFE3CC; }
-  .caixa b { color: var(--tinta); }
-  .areas { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; margin-bottom: 4mm; }
-  .area { border: 1px solid var(--linha); border-radius: 3mm; padding: 2.5mm 3.5mm; }
-  .area b { color: var(--navy); }
-  .area span { display: block; color: var(--suave); font-size: 9.4pt; }
-  .area.fora { opacity: .65; }
-  table { width: 100%; border-collapse: collapse; font-size: 9.6pt; margin-bottom: 4mm; }
-  th { text-align: left; background: var(--navy); color: #fff; padding: 1.8mm 2.5mm; font-size: 9pt; }
-  td { border-bottom: 1px solid var(--linha); padding: 1.7mm 2.5mm; vertical-align: top; }
-  td:first-child { font-weight: 700; width: 39%; }
-  tr:nth-child(even) td { background: #FAFBFD; }
-  .ouro { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; }
-  .ouro div { background: var(--fundo); border-radius: 3mm; padding: 2.5mm 3.5mm; font-size: 9.6pt; }
-  .ouro .t { display: block; color: var(--navy); }
+  .caixa b.t { display: block; color: var(--navy); margin-bottom: 1mm; }
+  .caixa p { margin: 0 0 1.5mm; }
+  .caixa p:last-child { margin: 0; }
   .rodape { position: absolute; bottom: 8mm; left: 14mm; right: 14mm; font-size: 8.5pt; color: var(--suave);
             display: flex; justify-content: space-between; border-top: 1px solid var(--linha); padding-top: 2mm; }
 </style>
 </head>
 <body>
-
-<!-- ============================ PÁGINA 1 ============================ -->
 <section class="folha">
   <div class="faixa">
-    <small>BWS CONSTRUÇÕES · NO LUGAR DO PIPEFY</small>
-    <h1>Portal da Obra</h1>
-    <p>Tudo o que a obra pede ao DP — e acompanha — passa a ser por aqui, pelo celular.</p>
+    <small>BWS CONSTRUÇÕES</small>
+    <h1>Como pedir o seu acesso ao Portal da Obra</h1>
+    <p>Pelo celular, uma vez só. Depois é só entrar com o seu e-mail e a sua senha.</p>
     <span class="endereco">aplicacoes.bwsconstrucoes.com.br/erp/portal</span>
   </div>
 
-  <h2><span class="n">1</span>Crie o seu acesso (uma vez só)</h2>
+  <h2>1. Você pede o acesso <span class="quem voce">VOCÊ</span></h2>
   <div class="passos">
     <div class="passo"><span class="num">1</span><div><b>Abra o endereço acima no celular</b>
       <span>Na tela de entrada, toque em <span class="btn">Criar o meu acesso</span>.</span></div></div>
     <div class="passo"><span class="num">2</span><div><b>Digite o seu CPF e o telefone que está no seu cadastro na BWS</b>
       <span>Toque em <span class="btn">Mandar o código</span>. O código chega no seu WhatsApp e vale 15 minutos.</span></div></div>
-    <div class="passo"><span class="num">3</span><div><b>Digite o código e o seu e-mail</b>
-      <span>Toque em <span class="btn">Confirmar</span>. É com esse e-mail que você vai entrar no sistema.</span></div></div>
-    <div class="passo"><span class="num">4</span><div><b>O escritório confere e libera</b>
-      <span>Quando liberar, chega no seu e-mail um link para criar a senha.</span></div></div>
-    <div class="passo"><span class="num">5</span><div><b>Entre com o e-mail e a senha</b>
-      <span>Dica: no navegador do celular, use <span class="btn">Adicionar à tela inicial</span> — o portal fica como um aplicativo.</span></div></div>
+    <div class="passo"><span class="num">3</span><div><b>Digite o código e o seu e-mail, e toque em <span class="btn">Confirmar</span></b>
+      <span>Pronto: o seu pedido de acesso foi para o escritório. Use um e-mail que você abre — é por ele que chega o
+        link da senha, e é com ele que você vai entrar.</span></div></div>
   </div>
 
-  <div class="caixa atencao"><b>O código não chegou?</b> Ele vai para o telefone que está no <b>seu cadastro</b>, não
-    para o que você digitou. Se você trocou de número, fale com o DP para atualizar o cadastro e tente de novo.</div>
-
-  <h2><span class="n">2</span>O que aparece quando você entra</h2>
-  <div class="areas">
-    <div class="area"><b>Para o colaborador assinar</b><span>Aviso prévio, aviso de férias, autorização de desconto. Mostre à
-      pessoa: ela lê, assina com o dedo e digita o PIN dela (o mesmo do ponto).</span></div>
-    <div class="area"><b>Documentos a devolver</b><span>Rescisão assinada, exame demissional (ASO). Envie a foto ou o PDF por
-      aqui — <b>não por WhatsApp</b>.</span></div>
-    <div class="area"><b>Férias da equipe</b><span>Quem sai de férias nos próximos dias e quem está de férias agora.</span></div>
-    <div class="area"><b>Contratos de experiência terminando</b><span>Decida com o DP <b>antes</b> da data: depois, sair custa
-      aviso prévio e multa.</span></div>
-    <div class="area"><b>Abrir uma solicitação</b><span>Escolha a área: <b>Pessoal e DP</b>, <b>Material da obra</b> ou
-      <b>Diário de obra</b>. (Pagamentos ainda não: continue como hoje.)</span></div>
-    <div class="area"><b>O que você já pediu</b><span>Tudo o que você abriu e a resposta do DP. Dá para pedir o cancelamento
-      ou a correção de um pedido em andamento.</span></div>
+  <h2>2. O escritório libera <span class="quem escritorio">ESCRITÓRIO</span></h2>
+  <div class="passos">
+    <div class="passo esc"><span class="num">4</span><div><b>O escritório confere o seu pedido e libera o acesso</b>
+      <span>Não precisa fazer nada nesta etapa. Assim que for liberado, chega um e-mail para você.</span></div></div>
   </div>
 
-  <div class="rodape"><span>Portal da Obra · BWS Construções</span><span>1/2</span></div>
+  <h2>3. Você cria a senha e entra <span class="quem voce">VOCÊ</span></h2>
+  <div class="passos">
+    <div class="passo"><span class="num">5</span><div><b>Abra o e-mail “Seu acesso ao ERP da BWS” e toque no link</b>
+      <span>Escolha a sua senha. O link vale 7 dias e funciona uma vez só. Não achou o e-mail? Olhe a caixa de spam.</span></div></div>
+    <div class="passo"><span class="num">6</span><div><b>Entre com o seu e-mail e a senha que você criou</b>
+      <span>No mesmo endereço do início. Dica: no navegador do celular, use <span class="btn">Adicionar à tela inicial</span>
+        — o portal fica como um aplicativo.</span></div></div>
+  </div>
+
+  <div class="duas">
+    <div class="caixa atencao"><b class="t">Se der algum problema</b>
+      <p><b>O código não chegou?</b> Ele vai para o telefone do <b>seu cadastro</b>, não para o que você digitou.
+        Trocou de número? Fale com o escritório para atualizar e tente de novo.</p>
+      <p><b>O link venceu?</b> Peça ao escritório para enviar outro.</p>
+      <p><b>Esqueceu a senha?</b> Na tela de entrada, toque em <span class="btn">Esqueci minha senha</span>.</p></div>
+    <div class="caixa ok"><b class="t">Cuidados</b>
+      <p>A senha é só sua: <b>ninguém do escritório sabe nem pede</b> a sua senha.</p>
+      <p>Não passe o código do WhatsApp para ninguém.</p>
+      <p>Recebeu um e-mail de acesso que você não pediu? Não abra o link e avise o escritório.</p></div>
+  </div>
+
+  <div class="rodape"><span>Portal da Obra · BWS Construções</span><span>Dúvida? Fale com o escritório.</span></div>
 </section>
-
-<!-- ============================ PÁGINA 2 ============================ -->
-<section class="folha">
-  <div class="faixa" style="padding-top:7mm">
-    <small>PESSOAL E DP</small>
-    <h1 style="font-size:18pt">O que dá para pedir ao DP</h1>
-    <p>Em <span class="btn" style="background:#fff">Abrir uma solicitação</span> › <b>Pessoal e DP</b>, escolha o tipo e preencha.
-      Campo com <b>*</b> é obrigatório.</p>
-  </div>
-
-  <table>
-    <thead><tr><th>Pedido</th><th>Quando usar — e o que ter à mão</th></tr></thead>
-    <tbody>
-      <tr><td>Admissão de Colaborador</td><td>Pessoa nova <b>ou que já trabalhou</b> com a gente (pelo CPF o sistema
-        reconhece). Fotografe tudo de uma vez: RG ou CNH, CPF, comprovante de endereço, CTPS (se for carteira) e o
-        ASO admissional, se já tiver. O sistema lê e preenche; confira.</td></tr>
-      <tr><td>Desligamento de Colaborador</td><td>Escolha a forma e a data do aviso. O DP confere primeiro; depois o
-        aviso aparece para a pessoa assinar.</td></tr>
-      <tr><td>Cancelar Solicitação de Desligamento</td><td>A pessoa vai continuar trabalhando. Também pelo botão
-        <b>Pedir o cancelamento deste desligamento</b>, em "O que você já pediu".</td></tr>
-      <tr><td>Admissão de Prestador de Serviço</td><td>Prestador que passa a ter carteira assinada.</td></tr>
-      <tr><td>Alteração de Cargo</td><td>Promoção ou mudança de função, com a justificativa.</td></tr>
-      <tr><td>Atualização de Dados</td><td>Telefone, chave Pix, endereço ou nome.</td></tr>
-      <tr><td>Cadastro de Dependente</td><td>Filho ou cônjuge, com a certidão ou o RG.</td></tr>
-      <tr><td>Ajuda de Custo</td><td>Alimentação e transporte.</td></tr>
-      <tr><td>Férias · Alteração · Cancelamento</td><td>Com <b>pelo menos 30 dias</b> antes do início. A data só vale
-        depois que a contabilidade confirma.</td></tr>
-      <tr><td>Comunicação de Afastamento</td><td>INSS, maternidade e, principalmente, <b>acidente de trabalho: comunique
-        no mesmo dia</b>. Atestado lançado no ponto acima de 15 dias já chega sozinho ao DP.</td></tr>
-      <tr><td>Retorno de Afastamento</td><td>A pessoa voltou. Ela precisa do exame de retorno.</td></tr>
-      <tr><td>Solicitações Diversas</td><td>O que não couber nos outros.</td></tr>
-    </tbody>
-  </table>
-
-  <h2 style="margin-top:1mm">Regras de ouro</h2>
-  <div class="ouro">
-    <div><b class="t">Tudo por aqui</b>Pedido, documento e assinatura: pelo portal. O que vai por WhatsApp se perde.</div>
-    <div><b class="t">Acompanhe</b>Em "O que você já pediu": <b>Aberta</b> → <b>Em andamento</b> (com a contabilidade) →
-      <b>Atendida</b>.</div>
-    <div><b class="t">Antecedência</b>Férias e desligamento com antecedência. Acidente de trabalho no mesmo dia.</div>
-    <div><b class="t">Mudou alguma coisa?</b>Peça a correção ou o cancelamento no próprio pedido — não abra outro.</div>
-  </div>
-
-  <div class="rodape"><span>Dúvida? Fale com o DP.</span><span>2/2</span></div>
-</section>
-
 </body>
 </html>

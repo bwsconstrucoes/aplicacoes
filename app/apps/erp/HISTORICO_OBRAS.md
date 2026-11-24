@@ -33,8 +33,21 @@ acompanhamento de processos.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (19/11/2026):** o filtro de fase no diário (abaixo). Está no
-ramo `claude/oi-vjvrn8`, testado, **sem migração**, esperando o "pode" dele.
+**Falta publicar (24/11/2026):** o espelho da C. Diários — a aba corrigida,
+treze campos novos e a fase. Está no ramo `claude/oi-vjvrn8`, testado, **sem
+migração**, esperando o "pode" dele.
+
+**⚠️ DEPOIS DE PUBLICAR, ELE PRECISA RODAR A IMPORTAÇÃO** em Importar ›
+Cadastro das obras (C. Diários): apertar "Conferir sem gravar" — **não precisa
+baixar nada, a leitura é online** — e, se bater, "Completar o cadastro".
+**Nada muda sozinho.** Esperado: ~179 obras mudam de fase e **98 somem do
+diário**.
+
+**⚠️ Pendente com ele:** a que fase corresponde **"Especial"** (1 obra). Hoje
+ela fica com a fase que já tem e a tela pede a tradução.
+
+Publicado e no ar: o filtro de fase no diário (19/11) e, de 24/11, a mudança
+de fase como função de serviço (`core/cadastros/obras.mudar_fase`).
 
 **Dito a ele e ainda não decidido:**
 
@@ -61,6 +74,228 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 24/11/2026 (fim do dia) — A planilha se lê ONLINE; download era trabalho à toa
+
+**Ele, e é a terceira correção de rumo do mesmo dia:**
+
+> *"Pra que eu vou fazer download de planilha se a planilha é online? Qual o
+> sentido de eu ficar fazendo download para fazer importação? Por que tu não
+> atualiza direto a planilha que está online?"*
+
+**Razão nenhuma.** E o pior: **a emissão de NFS-e já lia ESTA MESMA planilha
+ao vivo há meses** (`app/apps/emissaonf/cdiarios.py`), e a importação de
+pessoas do DP também (`planilha_dp.carregar`, desde 16/11). Só esta pedia
+arquivo. Terceiro lugar lendo a mesma planilha, e o único que obrigava
+trabalho manual.
+
+**Agora:** o botão "Conferir" lê a aba C. Diários direto do Google. Sem
+baixar, sem subir. Uma leitura por importação — não uma por obra — com a
+credencial que o monorepo já usa (`GOOGLE_CREDENTIALS_BASE64`), na cota
+dividida com o painel, o Análise de SPs e a emissão de nota.
+
+**O arquivo .xlsx ficou**, dobrado atrás de *"Google fora do ar? Mandar o
+arquivo à mão"*, e a tela diz para que serve. Não é gosto: sem ele, uma pane
+no Google ou uma credencial vencida deixariam o cadastro das obras sem
+nenhum caminho. Escolhido um arquivo, ele manda — quem abriu aquela gaveta
+fez por um motivo.
+
+**Duas decisões que valem mais que o código:**
+
+1. **A RÉGUA É UMA SÓ.** Entender o cabeçalho, casar coluna, ler data, partir
+   coordenada e traduzir a fase mora em `_entender()`, e as duas fontes
+   passam por ela. Há teste provando que online e arquivo devolvem
+   **exatamente** a mesma coisa — duas leituras divergiriam no primeiro
+   ajuste e ninguém perceberia até um campo entrar errado.
+2. **O ERRO VOLTA POR EXTENSO PARA A TELA.** É a lição de 17/11/2026, que já
+   custou uma rodada dele (*"Meu, não tá funcionando. Você precisa me mostrar
+   o que tá acontecendo"*): credencial faltando, planilha renomeada, aba
+   trocada — tudo isso viraria "não aconteceu nada" se ficasse só no log.
+   Verificado na tela, sem credencial: aparece a frase inteira dizendo que a
+   `GOOGLE_CREDENTIALS_BASE64` não está definida.
+
+**O id da planilha** fica em `PLANILHA_ID`, com a variável
+`ERP_CDIARIOS_SHEET_ID` para trocar sem mexer no código. É a mesma planilha
+que a emissão de NFS-e abre.
+
+⚠️ **Conferir e gravar são duas leituras.** Lendo online, a planilha pode
+mudar entre uma e outra — por isso gravar relê, e o relatório que volta é o
+do que foi gravado de verdade, não o da conferência.
+
+---
+
+### 24/11/2026 (tarde) — A C. Diários passa a ser espelhada, e a aba estava errada
+
+**⚠️ O DEFEITO DE RAIZ, e ele é maior que a fase:** a aba da planilha se chama
+**"C. Diários"**. A leitura aqui só aceitava **"Centro de Custo"** e, não
+achando, **caía na PRIMEIRA aba do arquivo** — que no arquivo inteiro baixado
+do Google é `ClientesOmie`. A importação lia a planilha errada, não casava
+obra nenhuma e devolvia "nenhuma obra encontrada" sem ninguém entender por
+quê. **É isto que deixou o cadastro das obras pela metade.**
+
+A emissão de NFS-e lê a MESMA planilha e já tolerava os dois nomes há meses
+(`app/apps/emissaonf/worker.py`, `ABA_CDIARIOS`). Dois lugares lendo a mesma
+planilha com régua diferente, e o errado era o novo.
+
+**Agora RECUSA em vez de adivinhar:** não achando a aba, a leitura para e diz
+quais abas viu. Cair na primeira é ler a planilha errada calado.
+
+#### O que a planilha tem e o ERP ignorava
+
+Conferido na planilha de verdade (183 obras, 40 colunas, lida em 24/11/2026).
+**Cinco campos estavam escritos no código como "nenhuma planilha traz"** —
+responsável técnico, ART, ordem de serviço, início e término. Essa frase vinha
+da planilha de DIÁRIOS (a de 1.427 linhas), onde vêm vazios mesmo, e nunca
+tinha sido conferida contra a C. Diários. **São justamente os que fazem o
+quadro de prazo do diário aparecer.**
+
+Passaram a entrar: **fase**, endereço da obra, início, término, ordem de
+serviço, responsável técnico, fiscalização, início e fim de vigência, ART,
+órgão resumido, data base de reajuste e coordenadas. Sobraram só **CREA** e
+**data da ordem de serviço** como digitados no cadastro.
+
+#### A fase: os oito valores, contados
+
+`Status da Obra` (coluna V), preenchida em 183 de 183:
+
+| Na planilha | No ERP | Obras |
+|---|---|---|
+| Em Execução | EM_EXECUCAO | 80 |
+| Concluída | CONCLUIDA | 50 |
+| Acervo Técnico | ACERVO_TECNICO | 31 |
+| Concluída com Dívida | CONCLUIDA_COM_DIVIDA | 14 |
+| Distratada | DISTRATADA | 3 |
+| Criação Centros | CRIACAO | 3 |
+| Aguardando O.S | AGUARDANDO_OS | 1 |
+| **Especial** | **— sem par —** | 1 |
+
+⚠️ **"Especial" não tem par e fica de fora de propósito**: a obra mantém a
+fase que tem e o relatório pede a tradução. Chutar mexeria no que aparece no
+diário.
+
+⚠️ **Três fases do ERP nunca vêm daqui**: Paralisada, Recebimento provisório e
+Recebimento definitivo não existem na planilha. Quem usar essas marca na mão.
+
+⚑ **98 das 183 obras estão em fase de conclusão** (concluída, com dívida,
+acervo técnico, distratada). É o que o filtro do diário de 19/11 vai esconder
+assim que isto rodar.
+
+#### Espelhar virou o padrão
+
+> *"Os dados reais e atualizados estão lá (…) qualquer outro dado ele deve ser
+> atualizado para o ERP, porque de repente tem alguma coisa que a gente mudou,
+> porque estava mal escrito, porque precisou alterar o endereço (…) lá o
+> trabalho manual já foi feito lá. Eu quero só replicar ele pro ERP. Porque
+> senão o ERP vai nascer desatualizado."*
+
+A caixinha "trocar o que já está preenchido" **nasce marcada** e se chama
+**"Espelhar a planilha"**. Era o contrário: a regra 2 deste importador dizia
+que o ERP vence a planilha, escrita quando se supunha que o ERP já era a
+fonte. **O código da obra nunca é trocado** — é por ele que a obra é achada.
+
+⚠️ **Isto se inverte quando o Pipefy sair.** O ERP passa a ser a fonte e esta
+importação deixa de existir. É ferramenta de transição, com data para morrer.
+
+#### Três decisões de implementação
+
+1. **A FASE NÃO É UM UPDATE SOLTO.** Passa por `obras.mudar_fase`, que guarda
+   histórico, trilha de auditoria e as datas de conclusão e recebimento.
+   Escrita junto dos outros campos, perderia tudo isso em 183 obras de uma vez.
+2. **Fase que já está certa não vira registro.** Rodar a sincronização duas
+   vezes não pode encher o histórico de fase de toda obra com uma mudança que
+   não houve.
+3. **A fase tem bloco próprio no relatório**, com o rótulo em português. É ela
+   que decide o que aparece no diário; misturada numa lista de campos, "179
+   obras mudam de fase" passaria sem ninguém ver.
+
+**Pendente com ele:** a que fase corresponde **"Especial"**.
+
+---
+
+### 24/11/2026 — A fase nunca veio nas importações; o caminho é sincronizar
+
+**Ele, e a pergunta é o diagnóstico:** *"quando importei as obras pro sistema,
+o sistema não copiou as informações de fase, e estão todas desatualizadas.
+Essa importação deve ter sido da planilha C. Diários, como fazer pra
+atualizar?"*
+
+**Conferido: nenhuma das duas importações de obra traz fase.**
+
+- o CSV de obras (`core/importadores/planilhas.py`) lê
+  `codigo, nome, cno, municipio, uf, codigo_omie_depto` — e só;
+- a C. Diários (`core/importadores/obras_cdiarios.py`) traz contrato, objeto,
+  município, UF, CNO, cliente, CNPJ, valor, ISS e tributação. **A coluna da
+  fase existe na planilha e o importador nunca olhou para ela.**
+
+Toda obra nasceu no **padrão da coluna no banco, `CRIACAO`** — "Criação /
+cadastro" — e lá ficou.
+
+⚠️ **Isso também explica por que o filtro de 19/11 não escondeu nada:**
+CRIACAO é uma das quatro fases "em andamento". Enquanto as fases não forem
+acertadas, o diário continua mostrando todas as obras — os dois assuntos são
+o mesmo.
+
+#### ⚠️ UMA TELA FOI FEITA E DESFEITA NO MESMO DIA — e o motivo fica escrito
+
+A primeira entrega foi um botão "Acertar as fases" na tela de Obras, para
+escolher a fase de cada obra na mão e gravar em lote. **Ele desfez, em duas
+cobranças:**
+
+> *"Eu havia feito apenas uma pergunta."*
+
+> *"Eu acho que a tela que você fez é desnecessária. Quando eu falo em
+> sincronizar, isso só vai acontecer enquanto o ERP não está definitivo, uma
+> vez que ainda estamos atualizando via pipe."*
+
+E depois, fechando o desenho:
+
+> *"Não é o Pipefy que entrega. O Pipefy sincroniza com a planilha C.
+> Diários, e lá temos todos os dados das obras atualizados. Inclusive as
+> fases."*
+
+**Os dois erros, para não repetir:**
+
+1. **Pergunta não é pedido.** Ele perguntou "como fazer pra atualizar?" e
+   recebeu uma funcionalidade. A resposta certa era a conta — "a fase está na
+   planilha, o importador não a lê, dá para ler" — e esperar.
+2. **Trabalho na mão quando existe fonte.** Oitenta caixinhas para escolher à
+   mão um dado que já está atualizado numa planilha, automaticamente, é a
+   ineficiência óbvia que ele cobra desde 17/11. A pergunta que faltou:
+   *de onde esse dado vem hoje?*
+
+**O que FICOU da tela desfeita, e é bom que tenha ficado:** `mudar_fase` saiu
+do `routes.py` para `core/cadastros/obras.py`, com teste. Quem trouxer a fase
+de fora chama a mesma função, e o histórico de fase, a trilha de auditoria e
+as datas automáticas saem iguais venha de onde vier.
+
+**Dois cuidados achados ali que valem para a sincronização**, e os testes
+guardam os dois:
+
+- **regravar a fase que já está lá não faz nada.** Sem isso, cada rodada da
+  sincronização escreveria no histórico de fases de TODA obra uma mudança que
+  não houve — e esse histórico é documento;
+- **data de conclusão não se reescreve.** Só é preenchida quando está vazia.
+  Obra que acabou ano passado não pode receber a data de hoje porque a
+  sincronização passou por ela. É o estrago mais silencioso dessa área.
+
+#### O desenho combinado (ainda não construído)
+
+A fase passa a vir da **C. Diários**, pelo importador que já existe. É
+**ferramenta de transição, com data para morrer**: ele foi explícito que a
+sincronização vale *"enquanto o ERP não está definitivo"*, porque a equipe
+ainda move card no Pipefy e o Pipefy alimenta a planilha. Quando o Pipefy
+sair, a fase passa a viver no ERP e esta leitura é desligada.
+
+⚠️ **A fase é a ÚNICA coisa em que a planilha ganha do ERP.** Para todo o
+resto, o importador não sobrescreve o que já está preenchido (regra 2 do
+`obras_cdiarios.py`). Para a fase é o contrário, de propósito — senão a
+segunda rodada não faz nada.
+
+**Pendente:** o nome exato da coluna e os valores que ela usa. O mapa entre o
+que a planilha escreve e as dez fases do ERP é onde isto erra em silêncio, e
+é informação que só ele tem. Perguntado em 24/11/2026.
+
+---
 
 ### 19/11/2026 — O diário esconde obra em fase de conclusão (e não proíbe)
 

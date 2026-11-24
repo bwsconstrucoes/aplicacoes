@@ -321,9 +321,12 @@ def obras_que_alcanca(s: Session, eu: dict[str, Any]) -> Optional[list[int]]:
     enxerga a base inteira. Não reimplemento o recorte: duas regras de alcance
     que divergem é o pior dos dois mundos.
     """
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    # ⚑ 24/11/2026: `obras_no_pessoal`. A equipe, as férias, os
+    # termos e os pedidos do portal não têm "quem lançou"; com
+    # `obras_do_usuario`, quem enxerga por autoria via a empresa inteira.
+    from app.apps.erp.core.auth.permissoes import obras_no_pessoal
 
-    return obras_do_usuario(s, eu["usuario"])
+    return obras_no_pessoal(s, eu["usuario"])
 
 
 def pode_pedir_por_outros(s: Session, eu: dict[str, Any]) -> bool:

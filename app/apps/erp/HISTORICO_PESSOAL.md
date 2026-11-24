@@ -141,6 +141,78 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 — ⚠️ VAZAMENTO: o administrativo de obra via o Pessoal da empresa inteira
+
+Ele, depois de liberar administrativos pelo portal: *"estão vendo (…) as
+pendências, as solicitações do DP. Uma determinada pessoa passou a informação
+de 2 desligamentos (…) que ele não tem nada a ver."*
+
+**A causa:** as telas do Pessoal usavam `obras_do_usuario`, que devolve "sem
+filtro" para quem enxerga por AUTORIA ("só o que eu lancei"). Colaborador e
+solicitação não têm autor que sirva de recorte, então o administrativo de
+obra (padrão PROPRIOS) via a fila de solicitações, a lista e a FICHA de
+qualquer colaborador, férias e pedidos à contabilidade da empresa inteira — e
+o portal também. O aviso "readmissões não foram feitas" ia sem recorte
+nenhum para qualquer um. É a mesma armadilha achada nas Locações em
+11/09/2026 (`obras_de_registro_sem_autor`).
+
+**O conserto:** `permissoes.obras_no_pessoal` — quem enxerga todas as obras
+OU atende o DP (`atender_dp`) vê tudo; os demais, as obras deles (marcadas,
+projeto, empresa, a do ponto). NÃO dava para usar só
+`obras_de_registro_sem_autor`: o DP também está em autoria, e o "sem filtro"
+era o que o deixava ver tudo — teria sido cortado. Conferido perfil a perfil:
+só o ADMINISTRATIVO_OBRA muda. Aplicado em: fila e detalhe de solicitações,
+readmissões pendentes, lista/busca/ficha de colaboradores, opções de obras do
+cadastro, fila do cadastro, férias e períodos, pedidos à contabilidade, e o
+portal inteiro (`portal.obras_que_alcanca`). Teste com banco reproduz o caso
+(falha sem o conserto).
+
+**Ainda com a mesma armadilha, em OUTRAS áreas (não mexi):** Arquivo
+(`api_arquivo_donos`, `core/arquivo/service.py`), Diário de obra (quadro,
+procurar, pendências — o portal usa), Suprimentos (`core/suprimentos/
+solicitacao.py`, `compras.py`), lista de obras, agenda, notas e a lista de
+despesas com colaborador (`core/pessoal.py::listar`). Cada uma precisa da
+decisão da área: lá pode haver autor que sirva de recorte.
+
+**E a decisão maior, no mesmo dia** — ele: *"tanto a parte do financeiro,
+pessoal, ponto, suprimento, tudo, quem acessa é o pessoal do escritório (…) o
+pessoal da obra (…) têm acesso ao portal (…) Isso em tudo."* E o diário: *"é
+só para eles lançarem (…) olhar somente a obra deles e pode visualizar no
+calendário."*
+- `permissoes.PERFIS_SO_PORTAL = (ADMINISTRATIVO_OBRA,)` e `so_portal()`.
+  No `_guarda_permissao`, TELA do ERP (GET fora de `/erp/api/` e de
+  `/erp/portal`) para esse perfil leva ao portal, exceto
+  `TELAS_DE_QUEM_E_DA_OBRA` (o diário, a folha do diário e o anexo). As APIs
+  seguem pela ação de cada uma — é o que o portal chama.
+- `pode_ver_obra` para esse perfil usa as obras dele (nunca o "sem filtro" da
+  autoria): o diário, o calendário e a logo só da obra dele.
+- O portal esconde "ERP completo"; a tela do diário, aberta pelo portal, não
+  mostra os módulos do escritório.
+- ⚠️ NÃO feito por perfil no banco: o cadastro de perfis junta, na mesma
+  seção, "pedir ao DP pelo portal" e "abrir Solicitações no ERP". Separar
+  mexeria em todas as áreas; a porta por perfil resolve sem isso.
+- ⚠️ O que o administrativo PERDE: Contas a pagar / Lançar / Despesas com
+  colaborador no ERP (o roteiro de homologação dizia que abriam). Se alguém
+  lança pagamento por lá hoje, deixa de conseguir — o portal ainda não tem a
+  área de pagamentos. Avisado ao dono.
+- As LISTAS das outras áreas (suprimentos, títulos) mantêm a regra delas
+  (a autoria recorta de verdade lá) — tentei trocar no `obras_do_usuario` e o
+  teste de Suprimentos "quem só vê os próprios" mostrou que mudaria regra
+  alheia. Supervisor e gestor de obra NÃO entraram na lista: perguntar.
+
+### 23/11/2026 (9) — O guia do portal virou o guia de ACESSO, numa página
+
+Ele: *"não precisa avisar o que é que vai ser solicitado lá pela parte do DP
+(…) É só avisando como é que a pessoa faz o cadastramento (…) tem a
+solicitação de liberação de acesso. Aí o pedido vai chegar, aí a
+administração vai liberar para a pessoa então receber o link."*
+`orientacao/guia_do_portal.html` (fonte) → `Acesso ao Portal da Obra.pdf` e
+`guia_portal_1.png`, mais `mensagem_whatsapp.txt`. Três etapas com quem faz
+cada uma (VOCÊ pede → ESCRITÓRIO libera → VOCÊ cria a senha e entra), o que
+fazer se der problema e os cuidados com senha e código. A página 2 (o que dá
+para pedir ao DP) saiu. Textos conferidos contra as telas e o e-mail do
+convite (código 15 min; link 7 dias, uma vez).
+
 ### 23/11/2026 (8) — Liberar o portal: o CPF vem do cadastro, a edição grava o CPF, e o recado diz o próximo passo
 
 Ele, liberando da fila do portal uma pessoa com pré-cadastro: *"O CPF já era

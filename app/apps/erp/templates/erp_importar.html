@@ -102,26 +102,61 @@
 <div class="cartao">
   <div class="cartao-cab"><h3>Cadastro das obras (C. Diários)</h3>
     <small>completa o que falta no cadastro — é daqui que o cabeçalho do diário se enche</small></div>
-  <div class="form-grade">
-    <div class="campo"><label for="arq-obras">Arquivo .xlsx da C. Diários</label>
-      <input type="file" id="arq-obras" accept=".xlsx"></div>
-  </div>
-  <div class="dica" style="margin-top:8px">No Google Planilhas:
-    <b>Arquivo › Fazer download › Microsoft Excel</b>. A aba lida é a
-    <b>Centro de Custo</b>. Vem de lá: contrato, objeto, município, UF, CNO,
-    cliente, CNPJ do cliente, valor, alíquota de ISS e tributação.
+  {# ⚑ LER ONLINE É O CAMINHO NORMAL (24/11/2026). Ele: *"pra que eu vou
+     fazer download de planilha se a planilha é online? Qual o sentido de eu
+     ficar fazendo download para fazer importação? Por que tu não atualiza
+     direto a planilha que está online?"*
+
+     Razão nenhuma: a emissão de NFS-e já lia ESTA MESMA planilha ao vivo há
+     meses, e a importação de pessoas do DP também. Só esta pedia arquivo.
+
+     ⚠️ O ARQUIVO FICA como segunda porta, e a tela diz para que serve: sem
+     ele, uma pane no Google ou uma credencial vencida deixariam o cadastro
+     das obras sem nenhum caminho. Não é escolha de gosto — é o plano B. #}
+  <div class="dica" style="margin-bottom:10px">Lê a aba <b>C. Diários</b>
+    direto do Google, sem baixar nada. Vem de lá: a <b>fase da obra</b>,
+    contrato, objeto,
+    endereço, município, UF, CNO, cliente, CNPJ do cliente, valor, alíquota de
+    ISS, tributação, responsável técnico, fiscalização, ART, ordem de serviço,
+    órgão resumido, coordenadas, as datas de início e término, as de vigência
+    e a data base de reajuste.
     <b>Não vem de lá</b>, e continua sendo digitado no cadastro da obra:
-    responsável técnico, CREA, ART, ordem de serviço e as datas de início e
-    término — são elas que fazem o quadro de prazo do diário aparecer.</div>
+    CREA e a data da ordem de serviço.</div>
+  {# ⚑ ESPELHAR VIROU O PADRÃO EM 24/11/2026. Ele: *"os dados reais e
+     atualizados estão lá (…) qualquer outro dado ele deve ser atualizado
+     para o ERP, porque de repente tem alguma coisa que a gente mudou (…)
+     precisa espelhar do que está lá, porque lá o trabalho manual já foi
+     feito lá. Eu quero só replicar ele pro ERP. Porque senão o ERP vai
+     nascer desatualizado."*
+
+     Era o contrário: a caixinha nascia desmarcada e só campo vazio era
+     preenchido — regra escrita quando se supunha que o ERP já era a fonte.
+     Enquanto o Pipefy alimentar a C. Diários, a planilha é que está certa.
+
+     ⚠️ Quando o Pipefy sair, isto se inverte de novo: o ERP passa a ser a
+     fonte e esta importação deixa de existir. #}
   <label class="opcao" style="margin-top:10px">
-    <input type="checkbox" id="ob-regravar">
-    <span class="rotulo">Trocar também o que já está preenchido aqui</span></label>
-  <div class="dica">Desmarcado — o normal — só preenche campo vazio, e mostra
-    abaixo onde a planilha diverge do que já está no cadastro.</div>
+    <input type="checkbox" id="ob-regravar" checked>
+    <span class="rotulo">Espelhar a planilha (trocar o que já está aqui)</span></label>
+  <div class="dica">Marcado — o normal enquanto o Pipefy alimentar a planilha:
+    o que está lá é o atualizado. <b>O código da obra nunca é trocado</b>, é
+    por ele que a obra é encontrada. Desmarque para só preencher campo vazio e
+    ver onde os dois divergem, sem mexer em nada.</div>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn secundario" id="btn-conferir-obras">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-obras" disabled>Completar o cadastro</button>
   </div>
+  <details style="margin-top:12px">
+    <summary class="desc" style="cursor:pointer">Google fora do ar? Mandar o
+      arquivo à mão</summary>
+    <div class="form-grade" style="margin-top:8px">
+      <div class="campo"><label for="arq-obras">Arquivo .xlsx da C. Diários</label>
+        <input type="file" id="arq-obras" accept=".xlsx"></div>
+    </div>
+    <div class="dica">Só serve quando a leitura online falha. No Google
+      Planilhas: <b>Arquivo › Fazer download › Microsoft Excel</b>. Escolhido
+      o arquivo, os botões acima passam a usar ele.</div>
+  </details>
   <div id="resultado-obras"></div>
 </div>
 
@@ -637,6 +672,11 @@ function travarGravarObras(){
 
 function pintarResultadoDasObras(rel){
   const linhas = [];
+  // DE ONDE VIERAM OS DADOS — e, lendo online, QUAL aba. É o que separa
+  // "não mudou nada" de "li a planilha errada".
+  if (rel.online)
+    linhas.push(`<div class="dica">Lido <b>direto do Google</b>, da aba
+      <b>${escapar(rel.aba || "C. Diários")}</b>, agora mesmo.</div>`);
   linhas.push(`<div class="cartao-resumo">${
     [[rel.linhas_no_arquivo, "linha(s) na planilha"],
      [rel.obras_no_erp, "obra(s) no cadastro"],
@@ -655,12 +695,45 @@ function pintarResultadoDasObras(rel){
       </tr>`).join("")}</tbody></table></div>`);
   }
 
+  {# ⚑ A FASE TEM BLOCO PRÓPRIO (24/11/2026), e não é capricho: é ela que
+     decide o que aparece na tela do diário. Misturada numa lista de campos,
+     "98 obras mudam de fase" passaria sem ninguém ver. #}
+  if ((rel.fases_mudadas || []).length) {
+    linhas.push(`<h4 style="margin-top:14px">Fase das obras</h4>
+      <div class="cartao-dica"><b>${rel.fases_mudadas_total} obra(s)</b> mudam
+        de fase pela planilha. Fica registrado no histórico de cada uma. Obra
+        em fase de conclusão <b>some do diário</b> — era isso que estava
+        poluindo a tela.</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Obra</th><th>Fase agora</th><th>Vai para</th>
+          <th>Na planilha</th></tr></thead>
+        <tbody>${rel.fases_mudadas.map(f => `<tr>
+          <td>${escapar(f.obra)}</td>
+          <td><small>${escapar(f.de_rotulo || "—")}</small></td>
+          <td><b>${escapar(f.para_rotulo)}</b></td>
+          <td><small>${escapar(f.na_planilha)}</small></td></tr>`).join("")}
+        </tbody></table></div>`);
+    if (rel.fases_mudadas_total > rel.fases_mudadas.length)
+      linhas.push(`<div class="cartao-dica">… e mais ${
+        rel.fases_mudadas_total - rel.fases_mudadas.length}.</div>`);
+  }
+
+  if ((rel.fases_desconhecidas || []).length) {
+    linhas.push(`<div class="aviso alerta" style="margin-top:10px">
+      <b>Não conheço estas fases da planilha</b>, e por isso não mexi nelas —
+      cada obra ficou com a fase que já tinha:
+      ${rel.fases_desconhecidas.map(f => `<div><b>${escapar(f.na_planilha)}</b>
+        — ${f.obras} obra(s): ${f.exemplos.map(escapar).join(", ")}</div>`).join("")}
+      <div style="margin-top:6px">Me diga a que fase do sistema cada uma
+      corresponde e eu acrescento.</div></div>`);
+  }
+
   if ((rel.conflitos || []).length) {
     linhas.push(`<h4 style="margin-top:14px">O que não bate</h4>
       <div class="cartao-dica">${rel.conflitos[0].regravado
-        ? "Como você marcou trocar, o valor da planilha entra no lugar."
-        : "<b>Nada disto foi trocado.</b> O cadastro venceu. Para trocar, "
-          + "marque “trocar também o que já está preenchido”."}</div>
+        ? "Espelhando a planilha: o valor dela entra no lugar do que está aqui."
+        : "<b>Nada disto foi trocado.</b> O cadastro venceu. Para espelhar a "
+          + "planilha, marque “Espelhar a planilha”."}</div>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Obra</th><th>Campo</th><th>No cadastro</th>
           <th>Na planilha</th></tr></thead>
@@ -687,9 +760,8 @@ function pintarResultadoDasObras(rel){
   const falta = (rel.so_no_cadastro || []).filter(f => f.obras_sem > 0);
   if (falta.length) {
     linhas.push(`<h4 style="margin-top:14px">O que a C. Diários não tem</h4>
-      <div class="cartao-dica">Estes cinco se digitam no cadastro da obra. Sem
-        <b>Início</b> e <b>Término previsto</b>, o diário não mostra o quadro de
-        prazo (“dia 37 de 180”).</div>
+      <div class="cartao-dica">Só isto continua sendo digitado no cadastro da
+        obra — o resto vem da planilha desde 24/11/2026.</div>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Campo</th><th class="direita">Obras sem ele</th>
           <th>Por exemplo</th></tr></thead>
@@ -713,16 +785,25 @@ function pintarResultadoDasObras(rel){
 }
 
 async function mandarObras(gravar){
-  const arq = els("arq-obras").files[0];
-  if (!arq) { aviso("mensagem", "Escolha o arquivo .xlsx da C. Diários.", "erro"); return; }
-  if (gravar && OBRAS_CONFERIDO !== assinaturaDoArquivo(arq)) {
-    aviso("mensagem", "Confira sem gravar antes — o arquivo mudou desde a "
-        + "última conferência.", "erro");
-    travarGravarObras();
-    return;
-  }
+  // ⚑ ONLINE POR PADRÃO (24/11/2026). O arquivo só entra em cena se alguém
+  // escolheu um na gaveta do plano B — e aí ele manda, porque quem abriu
+  // aquela gaveta fez isso por um motivo.
+  const arq = els("arq-obras") ? els("arq-obras").files[0] : null;
   const fd = new FormData();
-  fd.append("arquivo", arq);
+  if (arq) {
+    if (gravar && OBRAS_CONFERIDO !== assinaturaDoArquivo(arq)) {
+      aviso("mensagem", "Confira sem gravar antes — o arquivo mudou desde a "
+          + "última conferência.", "erro");
+      travarGravarObras();
+      return;
+    }
+    fd.append("arquivo", arq);
+  } else {
+    // ⚠️ A CONFERÊNCIA VALE PARA A PLANILHA DAQUELE MOMENTO. Lendo online, a
+    // planilha pode ter mudado entre conferir e gravar — por isso a gravação
+    // relê, e o relatório que volta é o do que foi gravado de verdade.
+    fd.append("online", "1");
+  }
   if (gravar) fd.append("gravar", "1");
   if (els("ob-regravar").checked) fd.append("regravar", "1");
   ["btn-conferir-obras", "btn-gravar-obras"].forEach(
@@ -734,7 +815,9 @@ async function mandarObras(gravar){
       OBRAS_CONFERIDO = null;
       aviso("mensagem", `${d.resultado.completadas} obra(s) completada(s).`, "ok");
     } else {
-      OBRAS_CONFERIDO = assinaturaDoArquivo(arq);
+      // Lendo online não há arquivo para assinar: a marca é a palavra
+      // "online", e serve só para destravar o botão de gravar.
+      OBRAS_CONFERIDO = arq ? assinaturaDoArquivo(arq) : "online";
       aviso("mensagem", "Conferido. Nada foi gravado — leia o resumo e, se "
           + "estiver certo, aperte Completar o cadastro.", "info");
     }

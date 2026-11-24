@@ -6,6 +6,7 @@
 <div class="chips nao-imprime" style="margin:0 0 14px; gap:8px">
   {% for chave, rotulo, dica, destino in [
       ('resultado', 'Resultado', 'por obra e por sócio', url_for('painel.cenario_resultado', cenario=cenario_id)),
+      ('por_socio', 'Por sócio', 'cada obra, sócio por sócio', url_for('painel.cenario_por_socio', cenario=cenario_id)),
       ('evolucao', 'Evolução', 'mês a mês, por obra, projeto e estrutura', url_for('painel.cenario_evolucao', cenario=cenario_id)),
       ('como', 'Como é feita', 'para mostrar aos sócios', url_for('painel.cenario_como', cenario=cenario_id)),
       ('montagem', 'Montar o cenário', 'o que entra, percentuais dos grupos e categorias, quem recebe, quem divide',

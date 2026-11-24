@@ -1700,7 +1700,7 @@ def readmissoes_esquecidas(s: Session) -> list[dict[str, Any]]:
     """
     linhas = s.execute(text("""
         SELECT d.numero, d.colaborador_id, d.atendido_em, d.criado_em,
-               c.nome, c.demissao, o.codigo AS obra
+               c.nome, c.demissao, o.codigo AS obra, d.obra_id, d.solicitante_id
           FROM dp_solicitacoes d
           JOIN colaboradores c ON c.id = d.colaborador_id
           LEFT JOIN obras o ON o.id = d.obra_id
@@ -1714,7 +1714,8 @@ def readmissoes_esquecidas(s: Session) -> list[dict[str, Any]]:
          ORDER BY c.demissao NULLS LAST, d.criado_em""")).mappings().all()
     return [{"numero": l["numero"], "colaborador_id": l["colaborador_id"],
              "pessoa": l["nome"], "obra": l["obra"] or "",
-             "saiu_em": l["demissao"].isoformat() if l["demissao"] else None}
+             "saiu_em": l["demissao"].isoformat() if l["demissao"] else None,
+             "obra_id": l["obra_id"], "solicitante_id": l["solicitante_id"]}
             for l in linhas]
 
 
@@ -3456,7 +3457,12 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         # ponto não aceita essa pessoa amanhã (15/11/2026). Só pega os pedidos
         # atendidos ANTES de 19/11/2026 — os de agora não desligam quem
         # continua (ver `desligamento_processo`).
-        "readmissoes_pendentes": readmissoes_esquecidas(s),
+        # ⚑ Recortado pela obra desde 24/11/2026: antes ia a lista da empresa
+        # inteira para qualquer um que abrisse a tela.
+        "readmissoes_pendentes": [
+            x for x in readmissoes_esquecidas(s)
+            if obra_ids is None or x.get("obra_id") in set(obra_ids)
+            or (usuario_id and x.get("solicitante_id") == usuario_id)],
         # ⚑ Os desligamentos em andamento, com o próximo passo de cada um.
         # Recortado pelo que esta pessoa enxerga na fila: quem é preso a obra
         # não vê o desligamento da obra dos outros por aqui.

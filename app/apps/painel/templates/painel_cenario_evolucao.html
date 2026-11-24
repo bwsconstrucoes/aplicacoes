@@ -254,7 +254,9 @@
                     aria-label="Abrir {{ n.nome }}">{{ '▾' if n.linha in abertos else '▸' }}</button>
             {% endif %}
             <a class="no" href="{{ url_for('painel.cenario_evolucao', cenario=cenario.id, visao=visao, ver=n.chave) }}#ficha">{{ n.nome }}</a>
-            {% if n.tipo != 'obra' %}<span class="selo neutro">{{ n.n_obras }} obra{{ 's' if n.n_obras != 1 else '' }}</span>{% endif %}
+            {% if n.tipo != 'obra' %}<span class="selo neutro">{{ n.n_obras }} obra{{ 's' if n.n_obras != 1 else '' }}</span>
+            {% else %}<button type="button" class="evo-abre" data-ficha-da-obra="{{ n.nome }}" style="font-weight:400; font-size:12px; padding-left:6px"
+                              title="Receitas, despesas por categoria e por conta corrente desta obra">ficha ↗</button>{% endif %}
           </td>
           <td class="dados direita">{{ brl(n.regua) }}</td>
           <td class="dados direita">{{ pct(n.pct_regua) }}</td>
@@ -436,4 +438,5 @@
 })();
 </script>
 {% endif %}
+{% include "painel_ficha_da_obra.html" %}
 {% endblock %}
