@@ -50,6 +50,10 @@ pessoa para os demais). **Áreas que ainda usam `obras_do_usuario` em registro
 possivelmente sem autor, a conferir por quem cuida delas:** Arquivo, Diário de
 obra (usado pelo portal), Suprimentos, lista de obras, agenda, notas e a lista
 de despesas com colaborador. Detalhe em `HISTORICO_PESSOAL.md`, 24/11/2026.
+Mexi num teste de Obras (`tests/test_diario_de_obra.py::test_o_portal_recebe_
+o_rotulo_da_obra_pronto`): ele montava um administrativo SEM obra e esperava
+que o portal mostrasse todas — era o vazamento tomado por regra. Agora o
+administrativo é ligado à obra do teste e só ela aparece.
 
 ### ⚑ 23/11/2026 — O PORTAL DA OBRA FOI REARRUMADO, PELO CHAT DE SUPRIMENTOS (registro entre áreas)
 

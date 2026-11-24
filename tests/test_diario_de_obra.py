@@ -1175,8 +1175,15 @@ def test_o_portal_recebe_o_rotulo_da_obra_pronto(sessao_real, obra, dono):
     rótulo vem PRONTO do servidor, da mesma regra que o resto do ERP usa."""
     from app.apps.erp.core import portal as svc_portal
     from app.apps.erp.core.comum.rotulos import rotulo_da_obra
+    from app.apps.erp.db.models.cadastros import UsuarioObra
+    # ⚑ 24/11/2026: o administrativo de obra alcança AS OBRAS DELE. Antes, sem
+    # obra nenhuma, ele via todas — era o vazamento corrigido em
+    # `permissoes.obras_no_pessoal`, e este teste o tomava por regra.
+    sessao_real.add(UsuarioObra(usuario_id=dono.id, obra_id=obra))
+    sessao_real.flush()
     lista = svc_portal.obras_para_escolher(sessao_real, dono)
     assert lista, "o dono alcança pelo menos a obra do teste"
+    assert {o["id"] for o in lista} == {obra}, "e só as dele"
     for o in lista:
         assert o["rotulo"] == rotulo_da_obra(o["codigo"], o["nome"])
 
