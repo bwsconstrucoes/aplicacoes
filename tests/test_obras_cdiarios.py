@@ -449,13 +449,22 @@ def test_os_valores_de_status_da_planilha_viram_fase(escrito, esperado):
     assert l["fase"] == esperado
 
 
-def test_status_sem_par_no_erp_nao_vira_fase_nenhuma():
-    """⚠️ "Especial" (1 obra na planilha dele). Chutar uma fase mexeria no que
-    aparece na tela do diário — a obra fica com a que já tem, e o relatório
-    avisa."""
+def test_especial_vira_concluida():
+    """Decisão dele em 24/11/2026, depois de ver a pergunta na tela:
+    *"Especial tratar como obra Concluída tb, que não aparece mais diário."*
+    É 1 obra, e o que ele quer é que ela saia do diário."""
     l = imp.ler_planilha(_xlsx([_linha_completa(
         **{"Status da Obra": "Especial"})]))[0]
-    assert l["fase"] is None and l["fase_texto"] == "Especial"
+    assert l["fase"] == "CONCLUIDA" and l["fase_texto"] == "Especial"
+
+
+def test_status_que_ninguem_traduziu_nao_vira_fase_nenhuma():
+    """⚠️ A TRAVA CONTINUA DE PÉ para valor novo. Se amanhã aparecer um status
+    que ninguém mapeou, a obra fica com a fase que tem e o relatório pede a
+    tradução — chutar mexeria no que aparece no diário."""
+    l = imp.ler_planilha(_xlsx([_linha_completa(
+        **{"Status da Obra": "Em Negociação"})]))[0]
+    assert l["fase"] is None and l["fase_texto"] == "Em Negociação"
 
 
 # ---------------------------------------------------------------------------
@@ -519,11 +528,26 @@ def test_fase_que_o_erp_nao_conhece_e_relatada_e_nao_mexe(sessao_real):
     sessao_real.flush()
     r = imp.importar(sessao_real, _xlsx([_linha_completa(
         **{"Código Primário": "CDFASE4", "Obra": "CDFASE4",
-           "Status da Obra": "Especial"})]), None, simular=False)
+           "Status da Obra": "Em Negociação"})]), None, simular=False)
     sessao_real.flush()
-    assert [f["na_planilha"] for f in r["fases_desconhecidas"]] == ["Especial"]
+    assert [f["na_planilha"] for f in r["fases_desconhecidas"]] == ["Em Negociação"]
     assert sessao_real.execute(text("SELECT fase FROM obras WHERE id = :o"),
                                {"o": oid}).scalar() == "EM_EXECUCAO"
+
+
+@banco_
+def test_o_historico_guarda_o_que_estava_escrito_na_planilha(sessao_real):
+    """Seis meses depois, "por que esta obra está Concluída?" se responde
+    abrindo o histórico de fase dela."""
+    oid = _obra(sessao_real, "CDFASE5", fase="EM_EXECUCAO")
+    sessao_real.flush()
+    imp.importar(sessao_real, _xlsx([_linha_completa(
+        **{"Código Primário": "CDFASE5", "Obra": "CDFASE5",
+           "Status da Obra": "Especial"})]), None, simular=False)
+    sessao_real.flush()
+    assert sessao_real.execute(text(
+        "SELECT observacao FROM obra_fases WHERE obra_id = :o"),
+        {"o": oid}).scalar() == "C. Diários: Especial"
 
 
 @banco_

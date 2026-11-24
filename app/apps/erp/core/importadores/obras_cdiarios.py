@@ -133,9 +133,10 @@ _COLUNAS = {
 # Em Execução (80), Concluída (50), Acervo Técnico (31), Concluída com Dívida
 # (14), Distratada (3), Criação Centros (3), Especial (1), Aguardando O.S (1).
 #
-# ⚠️ "ESPECIAL" NÃO TEM PAR NO ERP e fica de fora de propósito: a obra
-# mantém a fase que já tem e o relatório avisa. Inventar uma fase para ela
-# seria marcar obra errada num campo que decide o que aparece no diário.
+# ⚑ "ESPECIAL" VIRA CONCLUÍDA — decisão dele, em 24/11/2026, depois de ver a
+# pergunta na tela: *"Especial tratar como obra Concluída tb, que não aparece
+# mais diário."* É 1 obra. O que ele quer é que ela saia do diário, e
+# "Concluída" é a fase que faz isso.
 #
 # ⚠️ E TRÊS FASES DO ERP NUNCA VÊM DAQUI — Paralisada, Recebimento provisório
 # e Recebimento definitivo não existem na planilha. Quem usar essas fases
@@ -150,6 +151,7 @@ FASES_DA_PLANILHA = {
     "aguardando o.s": "AGUARDANDO_OS",
     "aguardando os": "AGUARDANDO_OS",
     "aguardando o.s.": "AGUARDANDO_OS",
+    "especial": "CONCLUIDA",
     "paralisada": "PARALISADA",
     "recebimento provisorio": "RECEBIMENTO_PROVISORIO",
     "recebimento definitivo": "RECEBIMENTO_DEFINITIVO",
@@ -665,8 +667,13 @@ def importar(s: Session, conteudo: Optional[bytes] = None,
                 "para_rotulo": fase_em_portugues(l["fase"]),
                 "na_planilha": l["fase_texto"]})
             if not simular:
-                svc_obras.mudar_fase(s, obra["id"], l["fase"], None,
-                                     observacao="C. Diários")
+                # ⚑ A OBSERVAÇÃO LEVA O TEXTO DA PLANILHA JUNTO. Seis meses
+                # depois, "por que esta obra está Concluída?" se responde
+                # abrindo o histórico de fase dela: "C. Diários: Especial".
+                # Sem isso, a trilha diz de onde veio mas não o quê.
+                svc_obras.mudar_fase(
+                    s, obra["id"], l["fase"], None,
+                    observacao=f"C. Diários: {l['fase_texto']}".strip(": "))
 
         if not novos:
             if not (l.get("fase") and l["fase"] != obra.get("fase")):
