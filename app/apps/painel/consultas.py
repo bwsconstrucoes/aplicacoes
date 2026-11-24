@@ -1121,6 +1121,42 @@ def detalhe_da_obra(obra: str, medida: str = "comprometido", ate_mes: str = "") 
     return {"despesas": despesas, "receitas": receitas, "contas": contas}
 
 
+def lancamentos_da_obra(obra: str, medida: str = "comprometido", ate_mes: str = "") -> list[dict]:
+    """O ANALÍTICO de uma obra: cada receita e cada despesa que forma os
+    números dela na prestação, lançamento a lançamento.
+
+    Mesmas linhas e mesma medida de `detalhe_da_obra` e da apuração — a soma
+    das despesas daqui TEM de dar a despesa da ficha, e a das receitas (sem o
+    retido) a receita líquida. Sai só no relatório e na planilha da obra."""
+    valor = _medida(medida)
+    valor_desp = _medida_de_despesa(medida)
+    condicoes, params = ["analise = 'DRE'", f"{OBRA_OU_SEM} = ?", "tipo IN (?, ?)"], [obra, REC, PAG]
+    if ate_mes:
+        condicoes.append("data IS NOT NULL AND to_char(data, 'YYYY-MM') <= ?")
+        params.append(ate_mes)
+    quanto = f"CASE WHEN tipo = ? THEN {valor_desp} ELSE {valor} END"
+    campos = ("data", "tipo", "quem", "grupo", "categoria", "documento", "conta",
+              "situacao", "observacao", "codigo", "valor")
+    linhas = []
+    for linha in consultar(
+            f"""SELECT data,
+                       CASE WHEN tipo = ? THEN 'Despesa'
+                            WHEN ({RETIDO}) THEN 'Retido na fonte'
+                            ELSE 'Receita' END,
+                       razao_social,
+                       COALESCE(NULLIF(TRIM(grupo),''), '(sem grupo)'),
+                       COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+                       numero_documento, COALESCE(conta_corrente, ''),
+                       situacao, observacao, codigo_lancamento, {quanto}
+                  FROM fato WHERE {' AND '.join(condicoes)} AND ABS({quanto}) > 0.005
+                 ORDER BY data NULLS LAST, codigo_lancamento""",
+            [PAG, PAG] + params + [PAG]):
+        d = dict(zip(campos, linha))
+        d["valor"] = float(d["valor"] or 0)
+        linhas.append(d)
+    return linhas
+
+
 def custo_de_pessoal_por_obra_mes(grupo_pessoal: str,
                                   medida: str = "comprometido") -> list[tuple]:
     """Quanto cada obra gastou com pessoal, mês a mês.

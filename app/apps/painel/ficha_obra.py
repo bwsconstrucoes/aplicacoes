@@ -63,16 +63,41 @@ def montar(calculo: dict, obra: str, detalhe: dict, dre: dict, corte: str = "") 
               for q in calculo.get("quotas") or () if q["obra"] == obra]
 
     # --- mês a mês ---------------------------------------------------------
-    meses, acumulado = [], 0.0
-    for l in sorted((l for l in calculo.get("apurado") or () if l["obra"] == obra),
-                    key=lambda l: l["mes"]):
+    # Além do resultado, o que o dono pediu em 24/11/2026: "o custo com
+    # despesa com pessoal, mês a mês, bem como o caixa da obra". O PESSOAL é
+    # parte da despesa (não soma de novo) — é a régua do rateio, e por isso
+    # interessa ver ao lado da estrutura que a obra absorveu. O CAIXA é o
+    # mesmo da tela de Evolução: o que a obra recebeu menos o que pagou no mês,
+    # e o acumulado já descontada a estrutura — é esse acumulado que diz se
+    # ela estava no vermelho, e é por ele que os juros são repartidos.
+    apurado_do_mes = {l["mes"]: l for l in calculo.get("apurado") or () if l["obra"] == obra}
+    pessoal_do_mes: dict[str, float] = {}
+    for mes, nome, valor in calculo.get("pessoal") or ():
+        if nome == obra:
+            pessoal_do_mes[mes] = pessoal_do_mes.get(mes, 0.0) - abs(float(valor or 0))
+    caixa_do_mes: dict[str, float] = {}
+    for mes, nome, valor in calculo.get("caixa") or ():
+        if nome == obra:
+            caixa_do_mes[mes] = caixa_do_mes.get(mes, 0.0) + float(valor or 0)
+
+    meses, acumulado, caixa_acumulado = [], 0.0, 0.0
+    vazio = {"receita_liquida": 0.0, "despesas": 0.0, "resultado_direto": 0.0,
+             "rateio": 0.0, "juros": 0.0, "resultado": 0.0}
+    for mes in sorted(set(apurado_do_mes) | set(pessoal_do_mes) | set(caixa_do_mes)):
+        l = apurado_do_mes.get(mes, vazio)
         acumulado += l["resultado"]
+        caixa = caixa_do_mes.get(mes, 0.0)
+        caixa_acumulado += caixa + l["rateio"]
         meses.append({
-            "mes": l["mes"], "rotulo": _rotulo(l["mes"]),
+            "mes": mes, "rotulo": _rotulo(mes),
             "receita": l["receita_liquida"], "despesa": l["despesas"],
+            "pessoal": pessoal_do_mes.get(mes, 0.0),
             "direto": l["resultado_direto"], "estrutura": l["rateio"],
             "juros": l["juros"], "resultado": l["resultado"], "acumulado": acumulado,
+            "caixa": caixa, "caixa_acumulado": caixa_acumulado,
         })
+    total_pessoal = sum(m["pessoal"] for m in meses)
+    total_caixa = sum(m["caixa"] for m in meses)
 
     # --- por conta corrente -------------------------------------------------
     contas = list(detalhe.get("contas") or ())
@@ -102,6 +127,8 @@ def montar(calculo: dict, obra: str, detalhe: dict, dre: dict, corte: str = "") 
         "despesas_fecham": abs(soma_das_despesas - float(n.get("despesas", 0.0))) <= TOLERANCIA,
         "soma_das_despesas": soma_das_despesas,
         "socios": socios, "meses": meses,
+        "total_pessoal": total_pessoal, "total_caixa": total_caixa,
+        "caixa_final": caixa_acumulado,
         "contas": contas, "total_pago": total_pago, "total_recebido": total_recebido,
         "conferencia": conferencia, "bate_com_o_dre": all(c["bate"] for c in conferencia),
     }
@@ -110,7 +137,18 @@ def montar(calculo: dict, obra: str, detalhe: dict, dre: dict, corte: str = "") 
 # ---------------------------------------------------------------------------
 # O relatório da obra: as mesmas quatro partes, para a planilha e para o PDF
 # ---------------------------------------------------------------------------
-def abas(f: dict) -> list[tuple]:
+COLUNAS_DO_ANALITICO = [
+    ("data", "Data"), ("tipo", "Tipo"), ("quem", "Cliente ou fornecedor"),
+    ("grupo", "Grupo"), ("categoria", "Categoria"), ("documento", "Documento"),
+    ("conta", "Conta corrente"), ("situacao", "Situação"), ("observacao", "Observação"),
+    ("codigo", "Nº no OMIE"), ("valor", "Valor"),
+]
+
+
+def abas(f: dict, lancamentos=None) -> list[tuple]:
+    """As abas do relatório da obra. `lancamentos` é o analítico
+    (`consultas.lancamentos_da_obra`): quando vem, entra em duas abas no fim —
+    receitas e despesas, lançamento a lançamento."""
     n = f["n"]
     resumo = [{"o_que": "Receita bruta", "valor": n["receita_bruta"]},
               {"o_que": "(-) Retido na fonte", "valor": -n["retencoes"]},
@@ -134,24 +172,42 @@ def abas(f: dict) -> list[tuple]:
     meses = [dict(m) for m in f["meses"]]
     if meses:
         meses.append({"rotulo": "TOTAL", "receita": n["receita_liquida"],
-                      "despesa": n["despesas"], "direto": n["resultado_direto"],
+                      "despesa": n["despesas"], "pessoal": f["total_pessoal"],
+                      "direto": n["resultado_direto"],
                       "estrutura": n["rateio"], "juros": n["juros"],
-                      "resultado": n["resultado"], "acumulado": n["resultado"]})
+                      "resultado": n["resultado"], "acumulado": n["resultado"],
+                      "caixa": f["total_caixa"], "caixa_acumulado": f["caixa_final"]})
 
     contas = [dict(c, pct=round(c["pct"], 2)) for c in f["contas"]]
     contas.append({"conta": "TOTAL", "pago": f["total_pago"], "pct": 100.0 if contas else "",
                    "pagamentos": sum(c["pagamentos"] for c in f["contas"]),
                    "recebido": f["total_recebido"],
                    "recebimentos": sum(c["recebimentos"] for c in f["contas"])})
+    analitico = []
+    if lancamentos is not None:
+        receitas = [l for l in lancamentos if l["tipo"] != "Despesa"]
+        despesas = [l for l in lancamentos if l["tipo"] == "Despesa"]
+        for nome, linhas in (("Receitas - analitico", receitas), ("Despesas - analitico", despesas)):
+            linhas = list(linhas)
+            if linhas:
+                # o imposto retido aparece na lista, mas não é receita da obra
+                # (o cliente ficou com ele): o total é o da ficha, sem ele
+                total = sum(l["valor"] for l in linhas if l["tipo"] != "Retido na fonte")
+                linhas.append({"data": "", "tipo": "TOTAL" + (" (sem o retido)" if nome.startswith("Receitas") else ""),
+                               "quem": "", "grupo": "", "categoria": "", "documento": "", "conta": "",
+                               "situacao": "", "observacao": "", "codigo": "", "valor": total})
+            analitico.append((nome, COLUNAS_DO_ANALITICO, linhas))
     return [
         ("Resumo", [("o_que", "Conta"), ("valor", "Valor")], resumo),
         ("Despesas por categoria",
          [("grupo", "Grupo"), ("categoria", "Categoria"), ("valor", "Valor")], categorias),
         ("Mes a mes",
          [("rotulo", "Mês"), ("receita", "Receita líquida"), ("despesa", "Despesa"),
+          ("pessoal", "Despesa com pessoal (dentro da despesa)"),
           ("direto", "Resultado direto"), ("estrutura", "Estrutura apropriada"),
           ("juros", "Juros apropriados"), ("resultado", "Resultado do mês"),
-          ("acumulado", "Acumulado")], meses),
+          ("acumulado", "Resultado acumulado"),
+          ("caixa", "Caixa do mês"), ("caixa_acumulado", "Caixa acumulado")], meses),
         ("Por conta corrente",
          [("conta", "Conta corrente"), ("pago", "Valor pago"), ("pct", "% dos pagamentos"),
           ("pagamentos", "Pagamentos"), ("recebido", "Valor recebido"),
@@ -159,4 +215,4 @@ def abas(f: dict) -> list[tuple]:
         ("Conferencia com o DRE",
          [("o_que", "O que"), ("prestacao", "Valor na prestação"), ("dre", "Valor no DRE"),
           ("diferenca", "Valor da diferença")], f["conferencia"]),
-    ]
+    ] + analitico

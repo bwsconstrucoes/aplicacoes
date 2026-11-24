@@ -730,6 +730,31 @@ imaginar, está mais ou menos no rumo"*. Foi lido como confirmação das três.
   das quotas. Os ajustes continuam na "posição de cada um", no Resultado, e a
   tela diz isso.
 
+### Pessoal, caixa e analítico na ficha — pedido logo depois de publicar (24/11/2026)
+
+**NÃO PUBLICADO** — no ramo, à espera do "pode". Sem migração.
+
+O dono abriu a ficha no ar e pediu: *"o custo com despesa com pessoal, mês a
+mês, bem como o caixa da obra (…) isso preciso que saia na planilha também, e
+no relatório e planilha eu queria que também saísse o analítico das despesas e
+receitas, que aí fica mais completo."*
+
+- **Mês a mês** ganhou três colunas: "— da qual, pessoal" (a parte da despesa
+  que foi mão de obra: está DENTRO da despesa, não soma de novo), "Caixa do
+  mês" e "Caixa acumulado". O caixa é o MESMO da Evolução — o que a obra
+  recebeu menos o que pagou (com aporte), e o acumulado já descontada a
+  estrutura, que é o que decide os juros. A coluna "Acumulado" virou
+  "Resultado acumulado" para não confundir com a de caixa.
+- **Relatório e planilha da obra** ganharam duas abas no fim: "Receitas -
+  analitico" e "Despesas - analitico", lançamento a lançamento
+  (`consultas.lancamentos_da_obra`, a mesma régua da apuração; há teste
+  conferindo que a soma dá a despesa e a receita da ficha). O imposto retido
+  aparece na lista de receitas marcado como "Retido na fonte" e fica fora do
+  total. **O analítico NÃO aparece na tela** — ele pediu no arquivo; na tela o
+  administrador já abre os lançamentos pelo nome do grupo ou da categoria.
+- No PDF, lista com mais de 2.500 lançamentos sai cortada (com aviso) e
+  completa na planilha — regra que o PDF do painel sempre teve.
+
 ### O que NÃO foi verificado
 
 - **Nunca rodou contra a base real.** Testado com dados inventados e com a suíte.
