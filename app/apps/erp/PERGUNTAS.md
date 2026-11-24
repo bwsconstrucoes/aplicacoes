@@ -2900,6 +2900,13 @@ régua de escopo é a mesma da tela — não se escreve escopo novo.
 - **"Há quanto tempo esta obra está nesta fase?"** — a data da troca de fase
   é guardada (`fase_desde` e a tabela de fases), mas a conta não está escrita.
   É a pergunta que acharia obra "em execução" há dois anos sem diário nenhum.
+- **"Quais obras nunca tiveram a fase acertada?"** ⚠️ — pergunta de 24/11/2026,
+  e por enquanto a resposta é quase todas. Nem o CSV de obras nem a C. Diários
+  trazem fase: toda obra importada nasceu em "Criação / cadastro". O sinal
+  existe no banco (fase = CRIACAO **e** `fase_desde` vazio quer dizer "ninguém
+  nunca mexeu"), mas não há resposta pronta. **Enquanto isso não for acertado,
+  toda pergunta sobre fase devolve número errado** — e o filtro do diário não
+  esconde nada.
 - **"Quais obras deveriam estar concluídas e ninguém marcou?"** — hoje
   ninguém avisa. Um sinal possível: obra sem diário nem gasto há N meses,
   ainda em fase de andamento.

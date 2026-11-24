@@ -44,7 +44,31 @@
     <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn secundario" id="btn-mapa">🗺 Mapa</button>
     <button class="btn secundario" id="btn-projetos">▦ Projetos</button>
+    {# ⚑ ACERTAR AS FASES EM LOTE (24/11/2026). Ele: *"quando importei as obras
+       pro sistema, o sistema não copiou as informações de fase, e estão todas
+       desatualizadas."*
+
+       E era isso mesmo: nem o CSV de obras nem a C. Diários trazem fase — toda
+       obra nasceu no padrão da coluna, "Criação / cadastro". Acertar uma a uma
+       é abrir a ficha de cada obra.
+
+       Fica AQUI, nesta tela, e não numa tela nova: esta lista já mostra todas
+       as obras com a fase de cada uma e já tem os filtros. Filtrar por
+       "Criação / cadastro" e acertar as que aparecem é o caminho exato de quem
+       está arrumando uma base importada. #}
+    {% if pode.configurar %}
+    <button class="btn secundario" id="btn-fases">⇅ Acertar as fases</button>
+    {% endif %}
     <button class="btn secundario" id="btn-nova">+ Nova obra</button>
+  </div>
+  <div class="aviso oculto" id="barra-fases" style="margin:0 0 10px">
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+      <span id="fases-recado">Escolha a fase de cada obra na coluna
+        <b>Fase</b>. Só as que você mudar são gravadas.</span>
+      <span class="espaco" style="flex:1"></span>
+      <button class="btn" id="btn-fases-salvar">Gravar as fases</button>
+      <button class="btn secundario" id="btn-fases-cancelar">Cancelar</button>
+    </div>
   </div>
   <div class="tabela-rolagem">
     <table><thead><tr>
@@ -69,6 +93,9 @@
 <script>
 let OBRAS = [], FASES = [], CONTAS = [], PROJETOS = [],
     F = {fase: new Set(), projeto: new Set()}, ORDEM = {campo:"codigo", asc:true};
+// Modo de acertar a fase de várias obras de uma vez — ver o comentário do
+// botão "Acertar as fases", na barra da tabela.
+let MODO_FASES = false;
 const CATEGORIAS_ANEXO = ["CONTRATO","ART","SEGURO","OS","MEDICAO","OUTRO"];
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
@@ -226,7 +253,13 @@ function desenhar(){
       <td class="desc">${o.nome}${restoDoObjeto(o.objeto, o.nome)
         ? `<small>${restoDoObjeto(o.objeto, o.nome)}</small>` : ""}</td>
       <td>${o.cliente||"—"}</td>
-      <td><span class="selo ${o.fase==="EM_EXECUCAO"?"aprovado":o.fase.startsWith("CONCLUIDA")?"pago":"outro"}">${o.fase_rotulo}</span></td>
+      <td>${MODO_FASES
+        ? `<select class="fase-lote" data-obra-fase="${o.id}"
+             data-antes="${o.fase}" data-sem-busca
+             onclick="event.stopPropagation()">${FASES.map(f=>
+             `<option value="${f.chave}" ${f.chave===o.fase?"selected":""}
+               >${escapar(f.rotulo)}</option>`).join("")}</select>`
+        : `<span class="selo ${o.fase==="EM_EXECUCAO"?"aprovado":o.fase.startsWith("CONCLUIDA")?"pago":"outro"}">${o.fase_rotulo}</span>`}</td>
       <td class="direita dados">${o.numeros===false?"—":`${numero(o.valor_vigente)}${o.aditivos?`<small>+${numero(o.aditivos)}</small>`:""}`}</td>
       <td class="direita dados">${o.numeros===false?"—":numero(o.recebido)}</td>
       <td class="direita dados">${o.numeros===false?"—":numero(o.gasto)}</td>
@@ -237,8 +270,13 @@ function desenhar(){
         data-aba="${a.p}" data-foco="${a.f||""}"
         title="Clique para ${a.q||"resolver"}">${a.t}</span>`).join("")||"—"}</td>
     </tr>`).join("");
-  document.querySelectorAll("[data-obra]").forEach(tr =>
-    tr.addEventListener("click", ()=>abrir(+tr.dataset.obra)));
+  // ⚠️ NO MODO DE ACERTO A LINHA NÃO ABRE A FICHA: quem está escolhendo
+  // fase em vinte linhas erra o alvo uma vez a cada tanto, e abrir a ficha
+  // por cima do trabalho perderia as escolhas ainda não gravadas.
+  if (!MODO_FASES) {
+    document.querySelectorAll("[data-obra]").forEach(tr =>
+      tr.addEventListener("click", ()=>abrir(+tr.dataset.obra)));
+  }
   {# O SELO DE ALERTA É UM ATALHO. Clicar nele abre a ficha já na aba que
      resolve aquilo, com o cursor no campo. `stopPropagation` para não disparar
      também o clique da linha, que abriria no Resumo. #}
@@ -1337,6 +1375,60 @@ function formProjeto(p){
 
 els("btn-projetos").addEventListener("click", abrirProjetos);
 
+// ---------------------------------------------------------------------------
+// ACERTAR A FASE DE VÁRIAS OBRAS DE UMA VEZ (24/11/2026)
+//
+// Ele: *"quando importei as obras pro sistema, o sistema não copiou as
+// informações de fase, e estão todas desatualizadas."*
+//
+// ⚑ SÓ VIAJA O QUE MUDOU. Cada caixinha guarda a fase de antes; na hora de
+// gravar, a tela compara e manda só as diferentes. Mandar as oitenta seria
+// escrever no histórico de fases de toda obra uma mudança que não houve — e
+// o histórico de fase é documento, não rascunho.
+// ---------------------------------------------------------------------------
+function ligarModoDeFases(){
+  const botao = els("btn-fases");
+  if (!botao) return;                 // quem não configura não vê o botão
+  const entrar = ligado => {
+    MODO_FASES = ligado;
+    els("barra-fases").classList.toggle("oculto", !ligado);
+    botao.classList.toggle("oculto", ligado);
+    desenhar();
+  };
+  botao.addEventListener("click", () => entrar(true));
+  els("btn-fases-cancelar").addEventListener("click", () => entrar(false));
+  els("btn-fases-salvar").addEventListener("click", async () => {
+    const mudadas = [...document.querySelectorAll("[data-obra-fase]")]
+      .filter(c => c.value !== c.dataset.antes)
+      .map(c => ({obra_id: +c.dataset.obraFase, fase: c.value}));
+    if (!mudadas.length) {
+      aviso("mensagem", "Nenhuma fase foi mudada.", "alerta");
+      return;
+    }
+    // A confirmação diz o NÚMERO, porque é um acerto em massa e desfazer
+    // é obra a obra.
+    const r = await perguntar({titulo: "Gravar as fases",
+      aviso: `<b>${mudadas.length} obra(s)</b> vão mudar de fase. Fica `
+           + `registrado no histórico de cada uma, com a data de hoje e o `
+           + `seu nome. As que você não mexeu continuam como estão.`,
+      campos: [{nome: "observacao", rotulo: "Observação (opcional)",
+                largura: 6, exemplo: "acerto das fases da importação",
+                dica: "Vai no histórico de todas as obras deste acerto."}],
+      textoOk: "Gravar"});
+    if (!r) return;
+    try {
+      const d = await api("/erp/api/obras/fases", {method:"POST",
+        body: JSON.stringify({fases: mudadas,
+                              observacao: r.observacao || ""})});
+      aviso("mensagem", `${d.mudadas} obra(s) mudaram de fase.`, "ok");
+      MODO_FASES = false;
+      els("barra-fases").classList.add("oculto");
+      botao.classList.remove("oculto");
+      await carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  });
+}
+
 els("btn-nova").addEventListener("click", async () => {
   NOVA_DOC = null;
   // As empresas ANTES de desenhar: os dois modos têm o select, e select vazio
@@ -1650,6 +1742,8 @@ carregar().then(() => {
   else aviso("mensagem", "Esta obra não aparece na sua lista — ou foi apagada, "
     + "ou está fora das obras que você acompanha.", "erro");
 });
+
+ligarModoDeFases();
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

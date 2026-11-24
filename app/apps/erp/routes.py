@@ -10716,41 +10716,91 @@ def api_listar_obras():
 @login_obrigatorio
 @permissao("configurar")
 def api_mudar_fase(obra_id: int):
-    from app.apps.erp.core.comum.auditoria import registrar_evento
-    from app.apps.erp.db.models.cadastros import Obra, ObraFase
+    """A regra mora em `core/cadastros/obras.mudar_fase` — aqui só a porta.
+
+    ⚑ Ela saiu daqui em 24/11/2026, quando nasceu o acerto em lote: duas
+    portas repetindo o registro do histórico e as datas automáticas é o
+    caminho certo para as duas divergirem.
+    """
+    from app.apps.erp.core.cadastros import obras as svc_obras
     d = request.get_json(silent=True) or {}
-    fase = (d.get("fase") or "").upper()
-    if fase not in dict(FASES_OBRA):
-        return jsonify({"ok": False, "erro": f"Fase inválida: {fase}"}), 400
     try:
         with get_session() as s:
             from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
             exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
-            usuario = _usuario_logado(s)
-            obra = s.get(Obra, obra_id)
-            if obra is None:
-                return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
-            anterior = obra.fase
-            obra.fase = fase
-            obra.fase_desde = date.today()
-            if fase in ("CONCLUIDA", "CONCLUIDA_COM_DIVIDA") and not obra.data_conclusao:
-                obra.data_conclusao = date.today()
-            if fase == "RECEBIMENTO_PROVISORIO":
-                obra.data_recebimento_provisorio = date.today()
-            if fase == "RECEBIMENTO_DEFINITIVO":
-                obra.data_recebimento_definitivo = date.today()
-            s.add(ObraFase(obra_id=obra.id, fase=fase,
-                           observacao=(d.get("observacao") or "").strip() or None,
-                           usuario_id=usuario.id))
-            registrar_evento(s, "obra", obra.id, "FASE_ALTERADA",
-                             {"de": anterior, "para": fase,
-                              "observacao": d.get("observacao")}, usuario.id)
+            r = svc_obras.mudar_fase(
+                s, obra_id, d.get("fase") or "", _usuario_logado(s),
+                observacao=d.get("observacao") or "")
             s.commit()
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao mudar fase")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/obras/fases", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_mudar_fases_em_lote():
+    """ACERTAR A FASE DE VÁRIAS OBRAS DE UMA VEZ (24/11/2026).
+
+    Ele: *"quando importei as obras pro sistema, o sistema não copiou as
+    informações de fase, e estão todas desatualizadas."*
+
+    E era isso mesmo: nem o CSV de obras (`codigo,nome,cno,municipio,uf,
+    codigo_omie_depto`) nem a C. Diários trazem fase. Toda obra nasceu no
+    padrão da coluna — "Criação / cadastro" — e lá ficou. Acertar uma a uma
+    seria abrir a ficha de cada obra, duas idas ao servidor por obra.
+
+    ⚑ PASSA PELA MESMA FUNÇÃO da mudança de uma obra só: histórico de fase,
+    datas automáticas e trilha de auditoria saem iguais. Linha que já está na
+    fase pedida não é tocada e não vira registro de histórico — senão o
+    acerto em lote encheria o histórico de toda obra com uma mudança que não
+    houve.
+
+    ⚑ TUDO OU NADA: uma transação só. Meio acerto aplicado, sem saber onde
+    parou, é pior que nenhum.
+    """
+    from app.apps.erp.core.cadastros import obras as svc_obras
+    d = request.get_json(silent=True) or {}
+    itens = d.get("fases") or []
+    if not isinstance(itens, list) or not itens:
+        return jsonify({"ok": False,
+                        "erro": "Nenhuma fase para acertar."}), 400
+    if len(itens) > 500:
+        return jsonify({"ok": False,
+                        "erro": "Muitas obras de uma vez (máximo 500)."}), 400
+    try:
+        with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            atual = _usuario_logado(s)
+            mudadas = []
+            for item in itens:
+                try:
+                    obra_id = int(item.get("obra_id"))
+                except (TypeError, ValueError):
+                    raise ErroValidacao("Obra inválida na lista.")
+                # O escopo é conferido obra a obra: quem é preso a obras não
+                # acerta a fase das dos outros por uma lista.
+                exigir_obra_no_escopo(s, atual, obra_id)
+                r = svc_obras.mudar_fase(s, obra_id, item.get("fase") or "",
+                                         atual,
+                                         observacao=d.get("observacao") or "")
+                if r["mudou"]:
+                    mudadas.append({"obra_id": obra_id, **r})
+            s.commit()
+        return jsonify({"ok": True, "mudadas": len(mudadas),
+                        "sem_mudanca": len(itens) - len(mudadas)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao acertar as fases em lote")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

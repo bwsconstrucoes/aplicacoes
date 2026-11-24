@@ -33,8 +33,14 @@ acompanhamento de processos.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-**Falta publicar (19/11/2026):** o filtro de fase no diário (abaixo). Está no
+**Falta publicar (24/11/2026):** o acerto de fases em lote (abaixo). Está no
 ramo `claude/oi-vjvrn8`, testado, **sem migração**, esperando o "pode" dele.
+O filtro de fase no diário (19/11) **já foi publicado**.
+
+**⚠️ A PERGUNTA QUE TRAVA TRABALHO DE VERDADE:** alguma planilha da casa tem
+uma coluna com a **fase ou a situação real** de cada obra? Se tiver, importar
+bate acertar oitenta caixinhas na mão — e isso só ele sabe. Perguntado em
+24/11/2026, ainda sem resposta.
 
 **Dito a ele e ainda não decidido:**
 
@@ -61,6 +67,69 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 24/11/2026 — A fase nunca veio nas importações, e agora se acerta em lote
+
+**Ele, e a pergunta é o diagnóstico:** *"quando importei as obras pro sistema,
+o sistema não copiou as informações de fase, e estão todas desatualizadas.
+Essa importação deve ter sido da planilha C. Diários, como fazer pra
+atualizar?"*
+
+**Conferido, e ele está certo — mas não era a C. Diários:** NENHUMA das duas
+importações de obra traz fase.
+
+- o CSV de obras (`core/importadores/planilhas.py`) lê
+  `codigo, nome, cno, municipio, uf, codigo_omie_depto` — e só;
+- a C. Diários (`core/importadores/obras_cdiarios.py`) traz contrato, objeto,
+  município, UF, CNO, cliente, CNPJ, valor, ISS e tributação. **Fase não está
+  na planilha**, nem entre as colunas que ela tem e o importador descarta.
+
+Então toda obra nasceu no **padrão da coluna no banco: `CRIACAO`** — "Criação
+/ cadastro" — e lá ficou. Não é dado perdido na importação: é dado que nunca
+existiu do outro lado.
+
+⚠️ **Isso também explica por que o filtro de 19/11 não escondeu nada:**
+CRIACAO é uma das quatro fases "em andamento". Enquanto as fases não forem
+acertadas, o diário continua mostrando todas as obras — os dois assuntos são
+o mesmo.
+
+**O que foi feito:** a tela de **Obras** ganhou o botão **"⇅ Acertar as
+fases"** (só para quem tem `configurar`). Ele troca a coluna Fase por uma
+caixa de escolha em cada linha; escolhe-se, e um botão grava tudo de uma vez.
+
+**Por que nesta tela, e não numa nova:** ela já lista todas as obras com a
+fase de cada uma e já tem os filtros. Filtrar por "Criação / cadastro" e
+acertar o que aparece é exatamente o caminho de quem está arrumando uma base
+importada. É a regra dele de 17/11 ("uma porta só") aplicada.
+
+**Quatro decisões que valem mais que o código:**
+
+1. **A REGRA SAIU DO `routes.py`.** `mudar_fase` agora mora em
+   `core/cadastros/obras.py`, e a mudança de UMA obra e a de QUARENTA passam
+   pela mesma função. Com a regra na rota, o lote teria de repetir o registro
+   do histórico e as datas automáticas — e no dia em que uma mudasse, a outra
+   ficaria para trás.
+2. **SÓ VIAJA O QUE MUDOU.** A tela compara com a fase de antes e manda só as
+   diferentes; o serviço, por garantia, não faz nada quando a fase pedida é a
+   que já está lá. Sem isso, um acerto em massa escreveria no histórico de
+   fases de TODA obra uma mudança que não houve — e o histórico de fase é
+   documento.
+3. **DATA NÃO SE REESCREVE.** A data de conclusão (e as de recebimento) só é
+   preenchida quando está vazia. Obra que acabou ano passado não pode receber
+   a data de hoje porque alguém passou pelo acerto em lote. **Este era o
+   estrago mais provável de todos**, e silencioso.
+4. **TUDO OU NADA.** Uma transação só: uma fase inválida no meio não grava
+   nenhuma. Meio acerto aplicado, sem saber onde parou, é pior que nenhum
+   quando são oitenta obras.
+
+**O escopo é conferido obra a obra**, dentro do laço: quem é preso a obras
+não acerta a fase das dos outros mandando uma lista.
+
+**Pendente com ele:** se alguma planilha da casa tiver uma coluna com a fase
+ou a situação real de cada obra, importar bate clicar oitenta caixinhas — e
+isso só ele sabe. Perguntado em 24/11.
+
+---
 
 ### 19/11/2026 — O diário esconde obra em fase de conclusão (e não proíbe)
 
