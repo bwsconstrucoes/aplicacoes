@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import threading
+import time
 import unicodedata
 
 from sqlalchemy.engine import Connection
@@ -48,12 +50,27 @@ def nome_curto(nome: str) -> str:
     return " ".join(partes[:1] + partes[-1:]) if len(partes) > 1 else (partes[0] if partes else "")
 
 
-def buscar(conn: Connection, alcance: papeis.Alcance, texto: str, *, todas: bool = False,
-           hoje: dt.date | None = None) -> dict:
-    texto = str(texto or "").strip()
-    if len("".join(_palavras(texto))) < MIN_LETRAS:
-        return {"pessoas": [], "mais": 0, "curta": True}
-    hoje = hoje or horario.hoje()
+# QUEM PODE APARECER, GUARDADO (24/11/2026). Cada letra digitada (passados 350 ms) é uma busca, e cada busca
+# montava DUAS vezes a lista da empresa inteira (os ativos; e, para o alcance da obra, todos — com os desligados) e
+# contava as batidas do mês da obra. Quem digita "jos", "jose", "jose s" fazia isso três vezes em três segundos, para
+# o mesmo conjunto. Agora o conjunto fica guardado por obra do aparelho — 30 min, o mesmo intervalo da lista sem
+# internet (o dono: "essa lista pode ter um delay bem maior, não?"). E O RECÉM-CADASTRADO NÃO FICA DE FORA: a busca que
+# não acha ninguém refaz o conjunto na hora e procura de novo (`buscar`). O que pode atrasar é o contrário — quem saiu
+# da obra ou foi desligado ainda aparecer por até 30 min —, e a batida dele continua passando pelas regras de sempre.
+GUARDA_S = 30 * 60
+_guardados: dict = {}
+_guardados_trava = threading.Lock()
+
+
+def _candidatos(conn: Connection, alcance: papeis.Alcance, todas: bool, hoje: dt.date, *,
+                novo: bool = False) -> tuple[list[dict], bool]:
+    """(o conjunto, se veio guardado). `novo`: monta de novo, sem olhar o guardado."""
+    chave = (todas, tuple(sorted(alcance.obras or ())), tuple(sorted(alcance.equipe or ())), hoje)
+    agora = time.monotonic()
+    with _guardados_trava:
+        g = _guardados.get(chave)
+        if g and not novo and agora - g[0] < GUARDA_S:
+            return g[1], True
     ativas = [p for p in cadastros.listar_colaboradores(conn, so_ativos=True)
               if p.get("situacao") not in ("DESLIGADO", "AFASTADO")]
     if not todas:
@@ -61,5 +78,23 @@ def buscar(conn: Connection, alcance: papeis.Alcance, texto: str, *, todas: bool
         novos = {int(p["id"]) for p in ativas if not p.get("obra_id")
                  or (p.get("admissao") and p["admissao"] >= hoje - dt.timedelta(days=NOVOS_DIAS))}
         ativas = [p for p in ativas if int(p["id"]) in da_obra | novos]
+    leves = [{k: p.get(k) for k in ("id", "nome", "funcao", "obra_codigo", "foto_cadastral_id")} for p in ativas]
+    with _guardados_trava:
+        for k in [k for k, (em, _) in _guardados.items() if agora - em >= GUARDA_S]:
+            _guardados.pop(k, None)
+        _guardados[chave] = (agora, leves)
+    return leves, False
+
+
+def buscar(conn: Connection, alcance: papeis.Alcance, texto: str, *, todas: bool = False,
+           hoje: dt.date | None = None) -> dict:
+    texto = str(texto or "").strip()
+    if len("".join(_palavras(texto))) < MIN_LETRAS:
+        return {"pessoas": [], "mais": 0, "curta": True}
+    hoje = hoje or horario.hoje()
+    ativas, guardado = _candidatos(conn, alcance, todas, hoje)
     achadas = sorted((p for p in ativas if casa(texto, p["nome"])), key=lambda p: p["nome"])
+    if not achadas and guardado:        # não achou no guardado: pode ser quem acabou de ser cadastrado
+        ativas, _ = _candidatos(conn, alcance, todas, hoje, novo=True)
+        achadas = sorted((p for p in ativas if casa(texto, p["nome"])), key=lambda p: p["nome"])
     return {"pessoas": achadas[:MAX_RESULTADOS], "mais": max(0, len(achadas) - MAX_RESULTADOS), "curta": False}

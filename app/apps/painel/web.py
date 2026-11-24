@@ -1657,6 +1657,9 @@ def _calcular_cenario(cenario: dict) -> dict:
         # da empresa em cada mês — a conta já os tinha, só não devolvia
         "lado_de": lado_de,
         "juros_por_mes": juros_por_mes,
+        # o custo de pessoal de cada obra, mês a mês — é a régua quando o
+        # cenário divide por mão de obra, e a ficha da obra o mostra sempre
+        "pessoal": pessoal,
     }
 
 
@@ -4135,7 +4138,13 @@ def baixar(assunto):
                     ("Confere com o DRE?", "sim" if ficha["bate_com_o_dre"] else "NÃO — ver a última seção")],
             observacao=("Despesa e prejuízo saem com o sinal de menos. A conta corrente só "
                         "existe no que já foi pago ou recebido."))
-        return ficha_obra.abas(ficha)
+        # O ANALÍTICO entra só no arquivo (dono, 24/11/2026: "no relatório e
+        # planilha eu queria que também saísse o analítico das despesas e
+        # receitas, que aí fica mais completo"). A tela não o busca: são
+        # milhares de linhas para quem só quer abrir a ficha.
+        medida = "executado" if atual.get("medida") == "executado" else "comprometido"
+        return ficha_obra.abas(
+            ficha, consultas.lancamentos_da_obra(obra, medida, ficha["corte"]))
 
     montadores = {
         "obra": _abas_da_obra,

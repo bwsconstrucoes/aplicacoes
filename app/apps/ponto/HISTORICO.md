@@ -341,6 +341,26 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 24/11/2026 — Lentidão ao meio-dia: a busca pelo nome e a lista sem internet
+
+**O que ele mandou** (log do Render, 13h01–13h02, pico das batidas): `buscar-nome` levando 3,6 a 4,5 s, várias ao
+mesmo tempo; `lista-sem-internet` 10,9 s; e uma tela do Análise de SPs (`/analisesps/solicitacoes`) segurando uma das
+4 linhas por 40,8 s.
+
+**As contas, e o que foi feito:**
+- **A busca pelo nome** buscava as até 6 fotos **do Drive, uma depois da outra** — e cada ida ao Drive refaz a
+  credencial do Google (`erp/core/documentos/drive.py`, `_servico` monta tudo de novo a cada chamada). 6 × ~0,7 s ≈
+  os 4 s. Agora as fotos que faltam na memória vêm **em paralelo** (`fotos.miniaturas`). E cada letra digitada
+  montava duas vezes a lista da empresa inteira e contava as batidas do mês da obra: agora o conjunto de quem pode
+  aparecer fica guardado por obra do aparelho (`busca_nome._candidatos`) — primeiro 60 s; no mesmo dia, a pedido
+  dele (*"essa lista pode ter um delay bem maior, não?"*), **30 min**, com uma salvaguarda: a busca que não acha
+  ninguém refaz o conjunto na hora, e o recém-cadastrado aparece sem esperar. O que ainda pode atrasar até 30 min é
+  quem SAIU da obra continuar aparecendo — a batida dele passa pelas regras de sempre.
+- **A lista sem internet** (cada aparelho baixa de 30 em 30 min) fazia **uma consulta por pessoa** da obra; agora é
+  uma só (`cadastros.colaboradores_por_ids`).
+- **Relatado, não mexido (outras áreas):** a credencial do Drive refeita a cada chamada vale para o ERP inteiro (todo
+  upload e download paga uma ida a mais ao Google); e os 40,8 s do Análise de SPs são da área deles.
+
 ## 23/11/2026 — A CENTRAL DE ASSINATURAS, pelo aplicativo do ponto (feita; ver a proposta logo abaixo)
 
 **As decisões dele (23/11):** (1) *"vamos concentrar o aplicativo do ponto para ser o caminho para a coleta dessas
@@ -400,6 +420,9 @@ ele cai; a compensação de horas não gera termo). **No navegador de verdade:**
 leitura, assinatura com o dedo), o administrativo (a lista da equipe, o modo papel), a tela do DP e a ficha — sem erro
 no console. **Não exercitado:** o PDF indo ao Arquivo de verdade (nos testes o Drive é dublado).
 
+**Publicado em 23/11/2026** (com o "pode" do dono), junto com o recesso em lote de 22/11. **COM A MIGRAÇÃO 126 DO
+ERP** — apertar "Aplicar atualizações do banco" no ERP › Configurações. Suíte inteira: 12.723 passando.
+
 ## 23/11/2026 — a proposta da central de assinaturas (o que ele pediu e o que existia)
 
 **O pedido, resumido nas palavras dele:** vários documentos que o colaborador assina — a folha de ponto todo mês, o
@@ -454,6 +477,8 @@ ao Google nem ao Pipefy.
 fora, rodar duas vezes sem duplicar, as recusas da janela, o supervisor barrado) e **no navegador de verdade**: o
 Quadro com 2 pessoas marcadas, a janela, a prévia (1 entra e 1 fica de fora para cada um) e a gravação — sem erro
 no console. Sem migração.
+
+**Publicado em 23/11/2026** (com o "pode" do dono, junto com a central de assinaturas).
 
 **O termo de acordo de compensação** (o modelo que ele pediu "para dar uma olhadinha e pensar") está num documento
 à parte, fora do repositório. **Não está no sistema:** o sistema não guarda nem coleta esse acordo; decidir se ele é

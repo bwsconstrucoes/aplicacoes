@@ -43,9 +43,6 @@ baixar nada, a leitura é online** — e, se bater, "Completar o cadastro".
 **Nada muda sozinho.** Esperado: ~179 obras mudam de fase e **98 somem do
 diário**.
 
-**⚠️ Pendente com ele:** a que fase corresponde **"Especial"** (1 obra). Hoje
-ela fica com a fase que já tem e a tela pede a tradução.
-
 Publicado e no ar: o filtro de fase no diário (19/11) e, de 24/11, a mudança
 de fase como função de serviço (`core/cadastros/obras.mudar_fase`).
 
@@ -167,11 +164,19 @@ serviço, responsável técnico, fiscalização, início e fim de vigência, ART
 | Distratada | DISTRATADA | 3 |
 | Criação Centros | CRIACAO | 3 |
 | Aguardando O.S | AGUARDANDO_OS | 1 |
-| **Especial** | **— sem par —** | 1 |
+| Especial | CONCLUIDA | 1 |
 
-⚠️ **"Especial" não tem par e fica de fora de propósito**: a obra mantém a
-fase que tem e o relatório pede a tradução. Chutar mexeria no que aparece no
-diário.
+**"Especial" vira Concluída** — decisão dele no mesmo dia, depois de ver a
+pergunta na tela: *"Especial tratar como obra Concluída tb, que não aparece
+mais diário."* É 1 obra, e o que ele quer é que ela saia do diário.
+
+⚠️ **A trava continua de pé para valor NOVO**: status que ninguém mapeou não
+vira fase nenhuma — a obra fica com a que tem e o relatório pede a tradução.
+Chutar mexeria no que aparece no diário.
+
+⚑ **O histórico de fase guarda o texto da planilha** ("C. Diários: Especial").
+Seis meses depois, *"por que esta obra está Concluída?"* se responde abrindo
+o histórico dela.
 
 ⚠️ **Três fases do ERP nunca vêm daqui**: Paralisada, Recebimento provisório e
 Recebimento definitivo não existem na planilha. Quem usar essas marca na mão.
@@ -208,7 +213,7 @@ importação deixa de existir. É ferramenta de transição, com data para morre
    que decide o que aparece no diário; misturada numa lista de campos, "179
    obras mudam de fase" passaria sem ninguém ver.
 
-**Pendente com ele:** a que fase corresponde **"Especial"**.
+**Respondido por ele no mesmo dia:** "Especial" é Concluída.
 
 ---
 

@@ -348,7 +348,7 @@ def app_api_obra_buscar_nome():
     Cada pessoa vem com uma ESCOLHA assinada, deste aparelho, que serve para bater ou
     para consultar."""
     import base64
-    from .core import busca_nome, mosaico, qr
+    from .core import busca_nome, qr
     d = _corpo()
     with db.conexao() as conn:
         ctx = _contexto(conn)
@@ -360,13 +360,13 @@ def app_api_obra_buscar_nome():
         if not todas and ctx.alcance.vazio:
             raise Recusada(ctx.alcance.sem_alcance or "a busca vale na obra em que o aparelho está")
         r = busca_nome.buscar(conn, ctx.alcance, d.get("nome"), todas=todas)
+        # as fotos de uma vez, em paralelo (24/11/2026: uma a uma, do Drive, a busca levava 3,6 a 4,5 s)
+        from .core import fotos as _fotos
+        minis = _fotos.miniaturas(conn, [p.get("foto_cadastral_id") for p in r["pessoas"]])
         pessoas = []
         for p in r["pessoas"]:
-            foto = None
-            try:
-                foto = "data:image/jpeg;base64," + base64.b64encode(mosaico.foto_cadastral(conn, int(p["id"]))).decode()
-            except Exception:  # noqa: BLE001 — sem foto de cadastro (ou o Drive fora): vai só o nome
-                foto = None
+            mini = minis.get(int(p["foto_cadastral_id"])) if p.get("foto_cadastral_id") else None
+            foto = "data:image/jpeg;base64," + base64.b64encode(mini).decode() if mini else None
             pessoas.append({"nome": busca_nome.nome_curto(p["nome"]), "funcao": p.get("funcao"),
                             "obra": p.get("obra_codigo"), "foto": foto,
                             "escolha": qr.emitir_escolha(int(p["id"]), int(ctx.aparelho["id"]))})

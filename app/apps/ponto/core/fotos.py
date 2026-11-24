@@ -343,6 +343,61 @@ def miniatura(conn: Connection, foto_id: int) -> bytes:
     return pequena
 
 
+def miniaturas(conn: Connection, foto_ids: list[int], *, paralelo: int = 6) -> dict[int, bytes]:
+    """Várias miniaturas de uma vez (24/11/2026, a busca pelo nome no ponto da obra: "LENTA — 4,5 s"). O que está na
+    memória sai na hora; o que falta vem do Drive EM PARALELO — antes eram uma depois da outra, e cada ida ao Drive
+    custa quase um segundo (a credencial é refeita a cada chamada, no ERP). A que não abre fica de fora."""
+    global _miniaturas_bytes
+    saida: dict[int, bytes] = {}
+    faltam = []
+    with _miniaturas_trava:
+        for i in {int(x) for x in foto_ids if x}:
+            if i in _miniaturas:
+                _miniaturas.move_to_end(i)
+                saida[i] = _miniaturas[i]
+            else:
+                faltam.append(i)
+    if not faltam:
+        return saida
+    linhas = {int(l["id"]): l for l in db.todos(
+        conn, "SELECT id, drive_file_id, conteudo FROM ponto.fotos WHERE id = ANY(:ids)", ids=faltam)}
+
+    def uma(i: int):
+        l = linhas.get(i)
+        if not l:
+            return i, None
+        try:
+            if l["conteudo"] is not None:
+                dados = bytes(l["conteudo"])
+            elif l["drive_file_id"]:
+                from app.apps.erp.core.documentos import drive as drive_erp
+                dados = drive_erp.baixar(l["drive_file_id"], impersonar=quem_personificar())
+            else:
+                return i, None
+            return i, _reduzir_miniatura(dados)
+        except Exception:  # noqa: BLE001 — sem a foto, vai só o nome
+            logger.warning("Ponto: a miniatura da foto %s não abriu", i, exc_info=True)
+            return i, None
+    if len(faltam) == 1:
+        prontas = [uma(faltam[0])]
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max(1, min(paralelo, len(faltam))), thread_name_prefix="ponto-mini") as ex:
+            prontas = list(ex.map(uma, faltam))
+    with _miniaturas_trava:
+        for i, pequena in prontas:
+            if pequena is None:
+                continue
+            saida[i] = pequena
+            if i not in _miniaturas:
+                _miniaturas[i] = pequena
+                _miniaturas_bytes += len(pequena)
+        while _miniaturas_bytes > _MINIATURAS_MAX_BYTES and _miniaturas:
+            _, saiu = _miniaturas.popitem(last=False)
+            _miniaturas_bytes -= len(saiu)
+    return saida
+
+
 def baixar(conn: Connection, foto_id: int) -> tuple[bytes, str]:
     """Os bytes da foto (do Drive, ou da sala de espera). Levanta LookupError."""
     f = db.um(conn, "SELECT drive_file_id, conteudo, mime FROM ponto.fotos WHERE id = :id",
