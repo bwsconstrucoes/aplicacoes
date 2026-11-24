@@ -1229,21 +1229,38 @@ def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0,
         for p in gente:
             externo = (p.get("tipo") or "").lower() == "externo"
             fracao = float(p["pct"]) / 100.0
+            # AS PARTES DA QUOTA (24/11/2026, para a grade obra × sócio: "cada
+            # sócio bate o olho e já vê quanto é que está sendo apropriado para
+            # ele" e, no fim, "a apropriação dos custos administrativos e de
+            # juros"). A quota é a soma de quatro parcelas: a parte dele no
+            # resultado direto, na estrutura, nos juros e — só em obra com
+            # parceiro — na taxa de administração. A conta da quota não mudou;
+            # isto só diz de onde cada real dela veio.
+            parte_direto = n.get("resultado_direto", 0.0) * fracao
+            parte_juros = n.get("juros", 0.0) * fracao
             if tem_externo:
                 base = (n.get("resultado_direto", 0.0) + n.get("juros", 0.0)
                         - taxa_adm)
                 quota = base * fracao
                 credito = 0.0
+                # todos pagam a taxa; os internos a recebem de volta, e são
+                # eles que carregam a estrutura da obra
+                parte_taxa = -taxa_adm * fracao
+                parte_estrutura = 0.0
                 if not externo and soma_interna > 0:
-                    credito = ((taxa_adm + n.get("rateio", 0.0))
-                               * float(p["pct"]) / soma_interna)
+                    entre_internos = float(p["pct"]) / soma_interna
+                    credito = ((taxa_adm + n.get("rateio", 0.0)) * entre_internos)
                     quota += credito
+                    parte_taxa += taxa_adm * entre_internos
+                    parte_estrutura = n.get("rateio", 0.0) * entre_internos
                 visao = ("Parceria — resultado direto, mais os juros, menos a taxa"
                          if externo else "Parceria, lado BWS — mais a taxa e o rateio")
             else:
                 base = n.get("resultado", 0.0)
                 quota = base * fracao
                 credito = 0.0
+                parte_taxa = 0.0
+                parte_estrutura = n.get("rateio", 0.0) * fracao
                 visao = "Obra só da BWS — resultado com rateio e juros"
 
             saida.append({
@@ -1255,6 +1272,10 @@ def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0,
                 "resultado": n.get("resultado", 0.0),
                 "resultado_direto": n.get("resultado_direto", 0.0),
                 "rateio": n.get("rateio", 0.0), "juros": n.get("juros", 0.0),
+                # as quatro parcelas somam a quota (despesa é negativa aqui,
+                # como em todo o painel)
+                "parte_direto": parte_direto, "parte_estrutura": parte_estrutura,
+                "parte_juros": parte_juros, "parte_taxa": parte_taxa,
             })
     saida.sort(key=lambda q: (q["socio"], q["obra"]))
     return saida

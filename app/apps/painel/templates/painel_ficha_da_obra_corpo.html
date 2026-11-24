@@ -1,0 +1,157 @@
+{# O MIOLO DA FICHA DA OBRA (24/11/2026) — um pedaço de página, sem cabeçalho
+   nem menu: a janela de `painel_ficha_da_obra.html` busca isto e mostra.
+   As quatro partes vêm juntas e a troca entre elas é só na tela, para abrir
+   uma obra custar UMA conta do cenário, não quatro. #}
+{% macro n(v) %}<td class="dados direita {{ classe_valor(v) }}">{{ brl(v) }}</td>{% endmacro %}
+{% macro lancamentos(rotulo) %}{% if abre_lancamentos %}<a href="{{ url_for('painel.analitico', obra=f.obra, visao=medida, **kwargs) }}" title="Ver lançamento a lançamento">{{ rotulo }}</a>{% else %}{{ rotulo }}{% endif %}{% endmacro %}
+
+<div class="ficha-obra-cab">
+  <div>
+    <small class="rotulo">Ficha da obra</small>
+    <h3 id="ficha-obra-nome">{{ f.obra }}</h3>
+    <small>{{ f.projeto or 'sem projeto' }} · {{ 'pelo que foi pago e recebido' if medida == 'executado' else 'pelo comprometido (pago mais o que está em aberto)' }}{% if f.corte %} · <b>conta só até {{ f.corte_rotulo }}</b>{% endif %}</small>
+  </div>
+  <button type="button" class="btn secundario" data-ficha-fechar aria-label="Fechar a ficha">✕ Fechar</button>
+</div>
+
+<div class="kpis" style="margin-bottom:12px; grid-template-columns:repeat(auto-fit, minmax(138px, 1fr))">
+  {% for rotulo, valor in [('Receita líquida', f.n.receita_liquida), ('Despesas', f.n.despesas),
+                           ('Resultado direto', f.n.resultado_direto), ('Estrutura apropriada', f.n.rateio),
+                           ('Juros apropriados', f.n.juros), ('Resultado final', f.n.resultado)] %}
+  <div class="kpi estatico" style="padding:8px 10px">
+    <div class="kpi-rotulo">{{ rotulo }}</div>
+    <div class="kpi-valor {{ classe_valor(valor) }}" style="font-size:16px">{{ brl(valor) }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="tabela-barra" style="border:0; padding:0 0 10px; gap:8px">
+  <div class="chips" style="margin:0; gap:6px" role="group" aria-label="Parte da ficha">
+    {% for chave, rotulo in [('resumo', 'Resumo'), ('mes', 'Mês a mês'), ('conta', 'Por conta corrente'), ('dre', 'Conferir com o DRE')] %}
+    <button type="button" class="modulo-btn ficha-aba" data-ficha-aba="{{ chave }}"
+            aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ rotulo }}{% if chave == 'dre' %} {{ '✓' if f.bate_com_o_dre else '⚠' }}{% endif %}</button>
+    {% endfor %}
+  </div>
+  <span class="espaco"></span>
+  <a class="btn secundario" style="text-decoration:none"
+     href="{{ url_for('painel.baixar', assunto='obra', formato='pdf', cenario=cenario.id, obra=f.obra) }}">⬇ Relatório da obra (PDF)</a>
+  <a class="btn secundario" style="text-decoration:none"
+     href="{{ url_for('painel.baixar', assunto='obra', cenario=cenario.id, obra=f.obra) }}">⬇ Planilha</a>
+</div>
+
+{# ------------------------------- RESUMO ------------------------------- #}
+<div data-ficha-parte="resumo">
+  {% if not f.despesas_fecham %}
+  <div class="aviso erro">A soma das categorias ({{ brl(f.soma_das_despesas) }}) não dá a despesa que a
+    prestação mostra para esta obra ({{ brl(f.n.despesas) }}). Avise quem cuida do painel.</div>
+  {% endif %}
+  <div class="tabela-rolagem" style="max-height:none">
+    <table class="sem-quebra">
+      <thead><tr><th class="sem-ordem">Conta</th><th class="sem-ordem direita">Valor</th>
+        <th class="sem-ordem direita">% da receita</th></tr></thead>
+      <tbody>
+        {% set base = f.n.receita_liquida if f.n.receita_liquida|abs > 0.005 else none %}
+        {% macro p(v) %}<td class="dados direita">{{ ('%.1f'|format((v / base * 100)|abs)|replace('.', ',') ~ '%') if base else '—' }}</td>{% endmacro %}
+        <tr><td class="desc"><b>Receita bruta</b></td>{{ n(f.n.receita_bruta) }}<td></td></tr>
+        {% for r in f.retidas %}
+        <tr><td class="desc" style="padding-left:26px; color:var(--tinta-suave)">(−) {{ r.categoria }}</td>{{ n(-r.valor) }}<td></td></tr>
+        {% endfor %}
+        {% for r in f.receitas %}
+        <tr><td class="desc" style="padding-left:26px; color:var(--tinta-suave)">{{ lancamentos(r.categoria, categoria=r.categoria) }}</td>{{ n(r.valor) }}{{ p(r.valor) }}</tr>
+        {% endfor %}
+        <tr style="font-weight:700; background:#F7F9FC"><td>Receita líquida</td>{{ n(f.n.receita_liquida) }}<td class="dados direita">{{ '100,0%' if base else '—' }}</td></tr>
+        {% for g in f.despesas %}
+        <tr><td class="desc"><b>{{ lancamentos(g.grupo, grupo=g.grupo) }}</b></td>{{ n(g.valor) }}{{ p(g.valor) }}</tr>
+          {% for c in g.categorias %}
+          <tr><td class="desc" style="padding-left:26px; color:var(--tinta-suave)">{{ lancamentos(c.categoria, grupo=g.grupo, categoria=c.categoria) }}</td>{{ n(c.valor) }}{{ p(c.valor) }}</tr>
+          {% endfor %}
+        {% endfor %}
+        <tr style="font-weight:700; background:#F7F9FC"><td>Resultado direto da obra</td>{{ n(f.n.resultado_direto) }}{{ p(f.n.resultado_direto) }}</tr>
+        <tr><td class="desc">Estrutura apropriada (matriz e filial)</td>{{ n(f.n.rateio) }}{{ p(f.n.rateio) }}</tr>
+        <tr><td class="desc">Juros apropriados</td>{{ n(f.n.juros) }}{{ p(f.n.juros) }}</tr>
+        <tr style="font-weight:800; background:#FFF4D6"><td>= Resultado final</td>{{ n(f.n.resultado) }}{{ p(f.n.resultado) }}</tr>
+        {% for s in f.socios %}
+        <tr><td class="desc" style="padding-left:26px; color:var(--tinta-suave)">{{ s.socio }} · {{ ('%.2f'|format(s.pct)).rstrip('0').rstrip('.')|replace('.', ',') }}%{% if s.tipo|lower == 'externo' %} · parceiro{% endif %}</td>{{ n(s.quota) }}<td></td></tr>
+        {% else %}
+        <tr><td class="desc" style="padding-left:26px; color:var(--tinta-suave)">Ninguém definido para dividir esta obra.</td><td></td><td></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">O percentual é sobre a receita líquida da obra.
+    {% if abre_lancamentos %}Clique num grupo ou numa categoria para abrir os lançamentos dela.{% endif %}</p>
+</div>
+
+{# ------------------------------- MÊS A MÊS ------------------------------- #}
+<div data-ficha-parte="mes" hidden>
+  <div class="tabela-rolagem" style="max-height:none">
+    <table class="sem-quebra">
+      <thead><tr><th class="sem-ordem">Mês</th><th class="sem-ordem direita">Receita líquida</th>
+        <th class="sem-ordem direita">Despesa</th><th class="sem-ordem direita">Estrutura apropriada</th>
+        <th class="sem-ordem direita">Juros apropriados</th><th class="sem-ordem direita">Resultado do mês</th>
+        <th class="sem-ordem direita">Acumulado</th></tr></thead>
+      <tbody>
+        {% for m in f.meses %}
+        <tr><td><b>{{ m.rotulo }}</b></td>{{ n(m.receita) }}{{ n(m.despesa) }}{{ n(m.estrutura) }}{{ n(m.juros) }}{{ n(m.resultado) }}{{ n(m.acumulado) }}</tr>
+        {% else %}
+        <tr><td colspan="7">Sem movimento.</td></tr>
+        {% endfor %}
+        <tr style="font-weight:700; background:#F7F9FC"><td>Total</td>{{ n(f.n.receita_liquida) }}{{ n(f.n.despesas) }}{{ n(f.n.rateio) }}{{ n(f.n.juros) }}{{ n(f.n.resultado) }}{{ n(f.n.resultado) }}</tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">A estrutura e os juros de cada mês são os mesmos da tela de
+    <a href="{{ url_for('painel.cenario_evolucao', cenario=cenario.id, visao='obra', ver='obra:' ~ f.obra) }}#ficha">Evolução</a>,
+    que mostra a conta de cada mês em palavras.</p>
+</div>
+
+{# ------------------------------- CONTA CORRENTE ------------------------------- #}
+<div data-ficha-parte="conta" hidden>
+  <div class="tabela-rolagem" style="max-height:none">
+    <table class="sem-quebra">
+      <thead><tr><th class="sem-ordem">Conta corrente</th><th class="sem-ordem direita">Pagamentos da obra</th>
+        <th class="sem-ordem direita">% dos pagamentos</th><th class="sem-ordem direita">Nº</th>
+        <th class="sem-ordem direita">Recebimentos da obra</th><th class="sem-ordem direita">Nº</th></tr></thead>
+      <tbody>
+        {% for c in f.contas %}
+        <tr><td class="desc"><b>{{ lancamentos(c.conta, conta=c.conta) }}</b></td>{{ n(c.pago) }}
+          <td class="dados direita">{{ '%.1f'|format(c.pct)|replace('.', ',') }}%</td><td class="dados direita">{{ c.pagamentos }}</td>
+          {% if c.recebido|abs > 0.005 %}{{ n(c.recebido) }}{% else %}<td class="dados direita">—</td>{% endif %}
+          <td class="dados direita">{{ c.recebimentos or '—' }}</td></tr>
+        {% else %}
+        <tr><td colspan="6">Nada pago nem recebido nesta obra ainda.</td></tr>
+        {% endfor %}
+        <tr style="font-weight:700; background:#F7F9FC"><td>Total</td>{{ n(f.total_pago) }}<td class="dados direita">100,0%</td><td></td>{{ n(f.total_recebido) }}<td></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica"><b>Só entra o que já foi pago ou recebido</b> — título em aberto ainda não passou por conta
+    nenhuma{% if medida != 'executado' %}; por isso o total daqui é menor que a despesa do resumo, que neste cenário
+    inclui o que está em aberto{% endif %}. O imposto retido pelo cliente não entra nos recebimentos: nunca passou pela conta.</p>
+</div>
+
+{# ------------------------------- CONFERIR COM O DRE ------------------------------- #}
+<div data-ficha-parte="dre" hidden>
+  {% if f.bate_com_o_dre %}
+  <div class="aviso ok"><b>Bate.</b> O volume desta obra na prestação é o mesmo que o DRE mostra para ela.</div>
+  {% else %}
+  <div class="aviso erro"><b>Não bate.</b> Há diferença entre o que a prestação e o DRE mostram para esta obra.
+    {% if f.corte %}Neste cenário a obra <b>só conta até {{ f.corte_rotulo }}</b>; o DRE mostra a vida inteira dela —
+    a diferença deve ser o que veio depois.{% endif %}</div>
+  {% endif %}
+  <div class="tabela-rolagem" style="max-height:none">
+    <table class="sem-quebra">
+      <thead><tr><th class="sem-ordem"></th><th class="sem-ordem direita">Na prestação</th>
+        <th class="sem-ordem direita">No DRE</th><th class="sem-ordem direita">Diferença</th></tr></thead>
+      <tbody>
+        {% for c in f.conferencia %}
+        <tr><td class="desc"><b>{{ c.o_que }}</b></td>{{ n(c.prestacao) }}{{ n(c.dre) }}
+          <td class="dados direita {{ 'v-pos' if c.bate else 'v-neg' }}">{{ brl(c.diferenca) }} {{ '✓' if c.bate else '' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">O DRE aqui é o da tela do DRE filtrado só nesta obra, sem filtro de ano, na mesma base do
+    cenário ({{ 'pago e recebido' if medida == 'executado' else 'comprometido' }}).
+    {% if abre_lancamentos %}<a href="{{ url_for('painel.dre', obra=f.obra, medida=medida) }}">Abrir o DRE desta obra →</a>{% endif %}</p>
+</div>

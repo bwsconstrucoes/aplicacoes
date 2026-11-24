@@ -1,18 +1,22 @@
 *Portal da Obra — BWS* 🏗️
 
-A partir de agora, os pedidos ao DP (admissão, desligamento, férias, afastamento, ajuda de custo, dados, dependentes…) são feitos pelo *Portal da Obra*, no lugar do Pipefy.
+Para usar o Portal da Obra, cada pessoa precisa pedir o próprio acesso. É pelo celular e uma vez só:
 
-*Para criar o seu acesso (uma vez só):*
-1️⃣ Abra no celular: aplicacoes.bwsconstrucoes.com.br/erp/portal
-2️⃣ Toque em *Criar o meu acesso*
-3️⃣ Digite o seu CPF e o telefone do seu cadastro na BWS → *Mandar o código*
-4️⃣ Digite o código que chegar no WhatsApp (vale 15 minutos) e o seu e-mail → *Confirmar*
-5️⃣ O escritório libera e você recebe no e-mail o link para criar a senha
+*1️⃣ Você pede o acesso*
+• Abra: aplicacoes.bwsconstrucoes.com.br/erp/portal
+• Toque em *Criar o meu acesso*
+• Digite o seu CPF e o telefone do seu cadastro na BWS → *Mandar o código*
+• Digite o código que chegar no WhatsApp (vale 15 minutos) e o seu e-mail → *Confirmar*
 
-Depois é só entrar com e-mail e senha. Dica: use *Adicionar à tela inicial* para o portal ficar como um aplicativo.
+*2️⃣ O escritório libera*
+O escritório confere o seu pedido e libera. Não precisa fazer nada nesta etapa.
 
-📎 Junto vai o guia com tudo o que dá para pedir e como acompanhar.
+*3️⃣ Você cria a senha e entra*
+• Chega no seu e-mail a mensagem *"Seu acesso ao ERP da BWS"* com um link (vale 7 dias, funciona uma vez só). Não achou? Olhe o spam.
+• Abra o link e crie a sua senha.
+• Entre no portal com o seu e-mail e essa senha. Dica: use *Adicionar à tela inicial* para ficar como um aplicativo.
 
-*Importante:* documento, pedido e assinatura agora são pelo portal — não por WhatsApp. Acidente de trabalho: comunique no mesmo dia.
+O código não chegou? Ele vai para o telefone do seu cadastro. Se trocou de número, fale com o escritório.
+Esqueceu a senha? Na tela de entrada, toque em *Esqueci minha senha*.
 
-Dúvida, fale com o DP.
+📎 Junto vai o guia em imagem.

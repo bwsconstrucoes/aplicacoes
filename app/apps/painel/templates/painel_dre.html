@@ -191,8 +191,9 @@
 {% if bloco == 'despesas' %}
 <div class="cartao">
   <div class="cartao-cab">
-    <h3>Despesas por {{ 'Categoria' if quebra == 'categoria' else 'Grupo' }}</h3>
-    <small>{{ despesas|length }} maiores</small>
+    {% set nome_da_quebra = {'categoria': 'Categoria', 'conta': 'Conta corrente'}.get(quebra, 'Grupo') %}
+    <h3>{{ 'Pagamentos' if quebra == 'conta' else 'Despesas' }} por {{ nome_da_quebra }}</h3>
+    <small>{{ despesas|length }} {{ 'contas' if quebra == 'conta' else 'maiores' }}</small>
   </div>
 
   <form method="get" class="tabela-barra" style="border:0; padding:0 0 10px">
@@ -202,11 +203,13 @@
       <select id="quebra" name="quebra" onchange="this.form.submit()">
         <option value="grupo" {% if quebra == 'grupo' %}selected{% endif %}>Grupo</option>
         <option value="categoria" {% if quebra == 'categoria' %}selected{% endif %}>Categoria</option>
+        {# 24/11/2026, o dono: "eu queria ver as despesas, os pagamentos por conta corrente" #}
+        <option value="conta" {% if quebra == 'conta' %}selected{% endif %}>Conta corrente</option>
       </select>
     </div>
     <div class="campo" style="max-width:230px">
       <label for="visao">Visão</label>
-      <select id="visao" name="visao" onchange="this.form.submit()">
+      <select id="visao" name="visao" onchange="this.form.submit()" {% if quebra == 'conta' %}disabled title="Por conta corrente só existe o que já foi pago"{% endif %}>
         <option value="executado" {% if visao == 'executado' %}selected{% endif %}>Pagas (executado)</option>
         <option value="aberto" {% if visao == 'aberto' %}selected{% endif %}>A pagar (em aberto)</option>
         <option value="comprometido" {% if visao == 'comprometido' %}selected{% endif %}>Comprometido</option>
@@ -222,17 +225,19 @@
     <table>
       <thead>
         <tr>
-          <th class="sem-ordem">{{ 'Categoria' if quebra == 'categoria' else 'Grupo' }}</th>
+          <th class="sem-ordem">{{ nome_da_quebra }}</th>
           <th class="sem-ordem" style="width:34%">Peso</th>
-          <th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem direita">{{ 'Pago' if quebra == 'conta' else 'Valor' }}</th>
           <th class="sem-ordem direita">% do total</th>
+          {% if quebra == 'conta' %}<th class="sem-ordem direita">Pagamentos</th>{% endif %}
         </tr>
       </thead>
       <tbody>
         {% for d in despesas %}
         <tr>
           <td class="desc">
-            <a href="{{ link_analitico(**{quebra: d.nome}) }}"
+            <a href="{{ link_analitico(visao='executado', **{quebra: d.nome}) if quebra == 'conta'
+                        else link_analitico(**{quebra: d.nome}) }}"
                title="Ver lançamento a lançamento">{{ d.nome }}</a>
           </td>
           <td>
@@ -242,14 +247,29 @@
           </td>
           <td class="dados direita v-neg">{{ brl(d.valor) }}</td>
           <td class="dados direita">{{ '%.1f'|format(d.pct_total) }}%</td>
+          {% if quebra == 'conta' %}<td class="dados direita">{{ d.pagamentos }}</td>{% endif %}
         </tr>
         {% endfor %}
+        {% if quebra == 'conta' %}
+        <tr style="font-weight:700; background:#F7F9FC">
+          <td>Total pago</td><td></td>
+          <td class="dados direita v-neg">{{ brl(despesas|sum(attribute='valor')) }}</td>
+          <td class="dados direita">100,0%</td>
+          <td class="dados direita">{{ despesas|sum(attribute='pagamentos') }}</td>
+        </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
   <p class="cartao-dica">
+    {% if quebra == 'conta' %}
+    De que conta saiu o dinheiro das despesas. <b>Só entra o que já foi pago</b> — título em
+    aberto ainda não saiu de conta nenhuma. Um pagamento rateado em várias obras conta uma vez.
+    Clique numa conta para abrir o <b>Analítico</b> dela.
+    {% else %}
     Clique num {{ 'categoria' if quebra == 'categoria' else 'grupo' }} para abrir
     o <b>Analítico</b> — lançamento a lançamento, com quem recebeu, quando e quanto.
+    {% endif %}
   </p>
   {% else %}
     <div class="vazio"><b>Sem despesas</b>Nenhuma despesa nos filtros escolhidos.</div>

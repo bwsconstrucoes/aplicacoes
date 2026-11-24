@@ -879,6 +879,38 @@ def ve_todas_as_obras(usuario: Usuario) -> bool:
     return usuario.perfil in VE_TUDO
 
 
+# ---------------------------------------------------------------------------
+# QUEM É DA OBRA SÓ TEM O PORTAL (24/11/2026)
+#
+# Decisão dele, com as palavras dele: *"tanto a parte do financeiro, pessoal,
+# ponto, suprimento, tudo, quem acessa é o pessoal do escritório (…) o que é
+# que o pessoal da obra tem acesso? Eles têm acesso ao portal. E o portal é o
+# caminho que eles têm para poder fazer solicitações e acompanhar as
+# solicitações. Isso em tudo."* E o diário: *"é só para eles lançarem (…)
+# olhar somente a obra deles e pode visualizar no calendário."*
+#
+# Duas consequências, as duas aqui e em `routes._guarda_permissao`:
+#   1. as TELAS do ERP se fecham para esses perfis (só o portal, o diário e o
+#      que o portal abre — ver `TELAS_DE_QUEM_E_DA_OBRA` em routes.py);
+#   2. ABRIR UMA OBRA (`pode_ver_obra` — o diário, o calendário, a logo) é
+#      só das obras deles — nunca o "sem filtro" que `obras_do_usuario` dá a
+#      quem enxerga por autoria, e que deixava o administrativo de obra abrir
+#      o diário de qualquer obra. As LISTAS das outras áreas (suprimentos,
+#      títulos) continuam com a regra delas: lá a autoria recorta de verdade.
+# ---------------------------------------------------------------------------
+PERFIS_SO_PORTAL = (P.ADMINISTRATIVO_OBRA,)
+
+
+def so_portal(perfil: Any) -> bool:
+    """Este perfil é de quem trabalha na obra — só o portal?"""
+    if perfil is None:
+        return False
+    try:
+        return P(getattr(perfil, "value", perfil)) in PERFIS_SO_PORTAL
+    except ValueError:
+        return False
+
+
 def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     """IDs das obras que o usuário enxerga. None = todas."""
     if ve_todas_as_obras(usuario):
@@ -886,6 +918,30 @@ def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     if _ve_por_obra(usuario):
         return _obras_designadas(s, usuario)
     return None          # filtra por autoria, não por obra
+
+
+def obras_no_pessoal(s: Session, usuario: Usuario) -> Optional[list[int]]:
+    """As obras que esta pessoa alcança NO PESSOAL (24/11/2026). None = todas.
+
+    ⚑ POR QUE EXISTE. As telas do Pessoal (colaboradores, solicitações, férias,
+    pedidos à contabilidade, o portal) usavam `obras_do_usuario`, que devolve
+    "sem filtro" para quem enxerga por AUTORIA. Colaborador e solicitação não
+    têm "quem lançou" que sirva de recorte — e o administrativo de obra,
+    liberado pelo portal, via a fila e a equipe da EMPRESA INTEIRA. Ele: *"estão
+    vendo (…) as solicitações do DP (…) 2 desligamentos (…) que ele não tem
+    nada a ver."*
+
+    E o mesmo "sem filtro" era o que deixava o DP ver tudo — ele também está
+    em autoria. Trocar só por `obras_de_registro_sem_autor` cortaria o DP.
+    Daí a regra própria do Pessoal:
+
+      · enxerga todas as obras (cadastro) OU atende o DP (`atender_dp`) → TODAS;
+      · qualquer outro → as obras dele (marcadas, projeto, empresa e a obra
+        onde bate ponto), e nenhuma se não tiver nenhuma — o padrão NEGAR.
+    """
+    if ve_todas_as_obras(usuario) or pode_com_banco(s, usuario, "atender_dp"):
+        return None
+    return _obras_designadas(s, usuario)
 
 
 def obras_de_registro_sem_autor(s: Session, usuario: Usuario) -> Optional[list[int]]:
@@ -1021,7 +1077,9 @@ def exigir_titulo_no_escopo(s: Session, usuario: Usuario, titulo_id: int) -> Non
 
 
 def pode_ver_obra(s: Session, usuario: Usuario, obra_id: int) -> bool:
-    obras = obras_do_usuario(s, usuario)
+    # Quem é da obra abre só as obras dele (24/11/2026, ver `PERFIS_SO_PORTAL`).
+    obras = (obras_de_registro_sem_autor(s, usuario) if so_portal(usuario.perfil)
+             else obras_do_usuario(s, usuario))
     if obras is None:
         return True                      # perfil que enxerga todas as obras
     return int(obra_id) in set(obras)
@@ -1213,9 +1271,11 @@ def exigir_colaborador_no_escopo(s: Session, usuario: Usuario,
     c = s.get(Colaborador, colaborador_id)
     if c is None:
         raise ErroNaoEncontrado("Colaborador não encontrado.")
-    try:
-        exigir_obra_no_escopo(s, usuario, c.obra_id)
-    except ErroNaoEncontrado:
+    # ⚑ 24/11/2026: SEM AUTORIA. Colaborador não tem "quem lançou"; com
+    # `exigir_obra_no_escopo`, quem enxerga por autoria (o administrativo de
+    # obra liberado pelo portal) abria a ficha de QUALQUER pessoa.
+    obras = obras_no_pessoal(s, usuario)
+    if obras is not None and (c.obra_id is None or int(c.obra_id) not in set(obras)):
         raise ErroNaoEncontrado("Colaborador não encontrado.")
 
 
@@ -1299,7 +1359,8 @@ def exigir_pedido_contabilidade_no_escopo(s: Session, usuario: Usuario,
     obra_id, aberto_por = linha[0], linha[1]
     if usuario is not None and aberto_por == usuario.id:
         return
-    alcance = obras_do_usuario(s, usuario)
+    # 24/11/2026: a regra do Pessoal (ver `obras_no_pessoal`).
+    alcance = obras_no_pessoal(s, usuario)
     if alcance is None:
         return
     if obra_id is None or int(obra_id) not in set(alcance):
@@ -1328,7 +1389,8 @@ def exigir_solicitacao_dp_no_escopo(s: Session, usuario: Usuario,
     obra_id, solicitante_id = linha[0], linha[1]
     if usuario is not None and solicitante_id == usuario.id:
         return                      # quem abriu acompanha sempre
-    alcance = obras_do_usuario(s, usuario)
+    # 24/11/2026: a regra do Pessoal (ver `obras_no_pessoal`).
+    alcance = obras_no_pessoal(s, usuario)
     if alcance is None:
         return                      # enxerga todas as obras
     if obra_id is None or int(obra_id) not in set(alcance):
