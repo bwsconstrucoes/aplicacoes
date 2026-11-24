@@ -4,6 +4,7 @@
 # ============================================================================
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -109,6 +110,58 @@ def criar(s: Session, dados: dict[str, Any], usuario: Optional[Usuario]) -> Obra
                       "origem": dados.get("origem", "SISTEMA")},
                      usuario.id if usuario else None)
     return obra
+
+
+def mudar_fase(s: Session, obra_id: int, fase: str, usuario: Optional[Usuario],
+               *, observacao: str = "") -> dict[str, Any]:
+    """Move a obra de fase, com histórico e com as datas que a fase implica.
+
+    ⚑ MORA AQUI DESDE 24/11/2026, e antes vivia dentro do `routes.py`. A
+    mudança veio quando o dono precisou acertar a fase de TODAS as obras de
+    uma vez: *"quando importei as obras pro sistema, o sistema não copiou as
+    informações de fase, e estão todas desatualizadas."*
+
+    Com a regra na rota, a tela de acerto em lote teria de repetir o registro
+    do histórico e as datas automáticas — e no dia em que uma das duas
+    mudasse, a outra ficaria para trás. Mudar fase de uma obra e mudar de
+    quarenta passam pela MESMA função.
+
+    Devolve o que mudou, para quem chamou poder contar: `{"mudou": bool,
+    "de": ..., "para": ...}`. Chamar com a fase que a obra já tem não faz
+    nada — e isso importa no lote, onde a maioria das linhas não muda.
+    """
+    from app.apps.erp.db.models.cadastros import ObraFase
+
+    fase = (fase or "").strip().upper()
+    if fase not in dict(FASES_OBRA):
+        raise ErroValidacao(f"Fase desconhecida: {fase}.")
+    obra = s.get(Obra, obra_id)
+    if obra is None:
+        raise ErroValidacao("Obra inexistente.")
+    anterior = obra.fase
+    if anterior == fase:
+        return {"mudou": False, "de": anterior, "para": fase}
+
+    obra.fase = fase
+    obra.fase_desde = date.today()
+    # ⚠️ AS DATAS SÓ SE PREENCHEM QUANDO ESTÃO VAZIAS. Reaplicar a fase não
+    # pode reescrever a data de conclusão de uma obra que acabou ano passado
+    # com a data de hoje — e no acerto em lote isso aconteceria em massa.
+    if fase in ("CONCLUIDA", "CONCLUIDA_COM_DIVIDA") and not obra.data_conclusao:
+        obra.data_conclusao = date.today()
+    if fase == "RECEBIMENTO_PROVISORIO" and not obra.data_recebimento_provisorio:
+        obra.data_recebimento_provisorio = date.today()
+    if fase == "RECEBIMENTO_DEFINITIVO" and not obra.data_recebimento_definitivo:
+        obra.data_recebimento_definitivo = date.today()
+
+    s.add(ObraFase(obra_id=obra.id, fase=fase,
+                   observacao=(observacao or "").strip() or None,
+                   usuario_id=usuario.id if usuario else None))
+    registrar_evento(s, "obra", obra.id, "FASE_ALTERADA",
+                     {"de": anterior, "para": fase,
+                      "observacao": (observacao or "").strip() or None},
+                     usuario.id if usuario else None)
+    return {"mudou": True, "de": anterior, "para": fase}
 
 
 def encerrar(s: Session, obra_id: int, usuario: Usuario) -> Obra:

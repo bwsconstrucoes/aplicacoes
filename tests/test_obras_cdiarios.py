@@ -256,19 +256,23 @@ def test_a_obra_casa_tambem_pelo_codigo_da_primeira_coluna(sessao_real):
 
 @banco_
 def test_o_relatorio_diz_o_que_a_planilha_nao_tem(sessao_real):
-    """⚑ METADE DO VALOR DO RELATÓRIO. Sem isto dá para importar e achar que o
-    cabeçalho ficou completo — quando responsável técnico, CREA, ART, ordem de
-    serviço e as datas continuam vazios, e é a data de início que faz o quadro
-    de prazo do diário existir."""
+    """⚑ METADE DO VALOR DO RELATÓRIO: importar e achar que acabou é o jeito
+    de o cabeçalho do diário seguir pela metade sem ninguém entender por quê.
+
+    ⚠️ A LISTA ENCOLHEU EM 24/11/2026, e o motivo vale guardar: ela dizia que
+    responsável técnico, ART, ordem de serviço e as datas de início e término
+    "nenhuma planilha traz". Essa frase vinha da planilha de DIÁRIOS, onde
+    essas colunas vêm vazias mesmo — nunca tinha sido conferida contra a
+    C. DIÁRIOS, onde todas existem e estão preenchidas. Sobraram dois.
+    """
     _obra(sessao_real, "CDTESTE6")
     sessao_real.flush()
     r = imp.importar(sessao_real,
                      _planilha([_linha(**{"Código Primário": "CDTESTE6",
                                           "Obra": "CDTESTE6"})]), None)
     campos = {f["campo"]: f for f in r["so_no_cadastro"]}
-    assert "responsavel_tecnico" in campos
-    assert "data_inicio" in campos
-    assert campos["data_inicio"]["obras_sem"] >= 1
+    assert set(campos) == {"crea_obra", "data_ordem_servico"}
+    assert campos["crea_obra"]["obras_sem"] >= 1
 
 
 @banco_
@@ -287,3 +291,269 @@ def test_obra_repetida_na_planilha_entra_uma_vez_so(sessao_real):
     assert sessao_real.execute(text(
         "SELECT contrato FROM obras WHERE codigo = 'CDTESTE7'")).scalar() \
         == "CT 014/2025"
+
+
+# ===========================================================================
+# ESPELHAR A C. DIÁRIOS (24/11/2026)
+#
+# Ele: *"os dados reais e atualizados estão lá (…) qualquer outro dado ele
+# deve ser atualizado para o ERP, porque de repente tem alguma coisa que a
+# gente mudou, porque estava mal escrito, porque precisou alterar o endereço
+# (…) lá o trabalho manual já foi feito lá. Eu quero só replicar ele pro ERP.
+# Porque senão o ERP vai nascer desatualizado."*
+#
+# ⚠️ E O DEFEITO DE RAIZ, achado no mesmo dia: a aba se chama "C. Diários" na
+# planilha de verdade, e a leitura só aceitava "Centro de Custo" — caindo na
+# PRIMEIRA aba do arquivo. Lendo o arquivo inteiro baixado do Google, isso é
+# a aba de clientes do OMIE. A importação lia a planilha errada e devolvia
+# "nenhuma obra encontrada" sem ninguém entender por quê.
+# ===========================================================================
+CAB_COMPLETO = CABECALHO + [
+    "Endereço", "Data de Início", "Data de Término", "Ordem de Serviço",
+    "Responsável Técnico", "Fiscalização", "Data de Início Vigência",
+    "Data de Término Vigência", "Nº ART", "Órgão Resumido",
+    "Data Base p/ Reajuste", "Status da Obra", "Coordenadas Geográficas"]
+
+
+def _linha_completa(**troca):
+    base = {
+        "Obra": "AEROARACATI", "Código Primário": "AEROARACATI",
+        "Centro de Custo": "Aeroporto de Aracati", "Município": "Aracati-CE",
+        "UF": "CE", "Valor": "R$ 1.234.567,89", "Alíquota ISS": "5,00%",
+        "Tributação": "SERVICO", "CNO": "12.345.67890/12",
+        "Cliente": "PREFEITURA DE ARACATI",
+        "CNPJ Cliente": "07.954.555/0001-90",
+        "Endereço Cliente": "Rua da Prefeitura, 1 — Centro",
+        "Contrato": "CT 014/2025",
+        "Objeto": "Reforma do terminal de passageiros",
+        "Código Omie": "9901", "Empresa": "BWS CONSTRUÇÕES",
+        "Endereço": "Av. Beira Rio, s/n — Aracati",
+        "Data de Início": "12/03/2026", "Data de Término": "10/09/2026",
+        "Ordem de Serviço": "OS 07/2026",
+        "Responsável Técnico": "Eng. Fulano de Tal",
+        "Fiscalização": "Eng. Beltrana",
+        "Data de Início Vigência": "01/03/2026",
+        "Data de Término Vigência": "28/02/2027",
+        "Nº ART": "CE20260012345", "Órgão Resumido": "PMA",
+        "Data Base p/ Reajuste": "01/01/2026",
+        "Status da Obra": "Em Execução",
+        "Coordenadas Geográficas": "-4,5622, -37,7700",
+    }
+    base.update(troca)
+    return [base.get(c, "") for c in CAB_COMPLETO]
+
+
+def _xlsx(linhas, aba="C. Diários"):
+    import openpyxl
+    wb = openpyxl.Workbook()
+    # a primeira aba é OUTRA, de propósito: é assim no arquivo de verdade
+    wb.active.title = "ClientesOmie"
+    wb.active.append(["codigo_cliente_omie", "cnpj_cpf", "razao_social"])
+    ws = wb.create_sheet(aba)
+    ws.append(CAB_COMPLETO)
+    for l in linhas:
+        ws.append(l)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# A ABA
+# ---------------------------------------------------------------------------
+def test_acha_a_aba_chamada_c_diarios():
+    """O nome de verdade da aba. Antes de 24/11/2026 ela não era encontrada e
+    a leitura caía na primeira aba do arquivo."""
+    linhas = imp.ler_planilha(_xlsx([_linha_completa()], aba="C. Diários"))
+    assert len(linhas) == 1 and linhas[0]["codigo"] == "AEROARACATI"
+
+
+def test_acha_a_aba_chamada_centro_de_custo():
+    """O nome antigo continua valendo: planilha de quem já baixou não quebra."""
+    linhas = imp.ler_planilha(_xlsx([_linha_completa()], aba="Centro de Custo"))
+    assert len(linhas) == 1
+
+
+def test_sem_a_aba_certa_RECUSA_em_vez_de_ler_a_primeira():
+    """⚠️ O CONSERTO QUE MAIS IMPORTA. Cair na primeira aba é ler a planilha
+    errada calado — e foi o que deixou o cadastro das obras pela metade."""
+    with pytest.raises(ErroValidacao) as e:
+        imp.ler_planilha(_xlsx([_linha_completa()], aba="Outra Coisa"))
+    assert "Outra Coisa" in str(e.value) and "ClientesOmie" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# OS CAMPOS NOVOS
+# ---------------------------------------------------------------------------
+def test_le_os_campos_que_faltavam():
+    from datetime import date
+    l = imp.ler_planilha(_xlsx([_linha_completa()]))[0]
+    assert l["endereco"] == "Av. Beira Rio, s/n — Aracati"
+    assert l["data_inicio"] == date(2026, 3, 12)
+    assert l["data_termino"] == date(2026, 9, 10)
+    assert l["vigencia_inicio"] == date(2026, 3, 1)
+    assert l["vigencia_fim"] == date(2027, 2, 28)
+    assert l["data_base_orcamento"] == date(2026, 1, 1)
+    assert l["ordem_servico"] == "OS 07/2026"
+    assert l["responsavel_tecnico"] == "Eng. Fulano de Tal"
+    assert l["engenheiro_fiscal"] == "Eng. Beltrana"
+    assert l["art_rrt"] == "CE20260012345"
+    assert l["orgao_resumido"] == "PMA"
+
+
+def test_a_data_e_lida_como_dia_mes_ano():
+    """⚠️ "03/04/2026" é 3 de abril. Lido ao contrário, o diário imprimiria o
+    prazo errado e ninguém desconfiaria."""
+    from datetime import date
+    l = imp.ler_planilha(_xlsx([_linha_completa(
+        **{"Data de Início": "03/04/2026"})]))[0]
+    assert l["data_inicio"] == date(2026, 4, 3)
+
+
+def test_data_escrita_torta_vira_nada_e_nao_derruba_a_leitura():
+    l = imp.ler_planilha(_xlsx([_linha_completa(
+        **{"Data de Início": "qualquer coisa"})]))[0]
+    assert l["data_inicio"] is None and l["codigo"] == "AEROARACATI"
+
+
+def test_as_coordenadas_viram_dois_campos():
+    l = imp.ler_planilha(_xlsx([_linha_completa()]))[0]
+    assert l["latitude"] == Decimal("-4.5622")
+    assert l["longitude"] == Decimal("-37.7700")
+
+
+def test_coordenada_fora_do_planeta_e_recusada():
+    """Coordenada errada põe a obra no meio do oceano no mapa."""
+    l = imp.ler_planilha(_xlsx([_linha_completa(
+        **{"Coordenadas Geográficas": "-999, 500"})]))[0]
+    assert l["latitude"] is None and l["longitude"] is None
+
+
+# ---------------------------------------------------------------------------
+# A FASE — os oito valores que a planilha dele realmente usa
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("escrito,esperado", [
+    ("Em Execução", "EM_EXECUCAO"),
+    ("Concluída", "CONCLUIDA"),
+    ("Concluída com Dívida", "CONCLUIDA_COM_DIVIDA"),
+    ("Acervo Técnico", "ACERVO_TECNICO"),
+    ("Distratada", "DISTRATADA"),
+    ("Criação Centros", "CRIACAO"),
+    ("Aguardando O.S", "AGUARDANDO_OS"),
+])
+def test_os_valores_de_status_da_planilha_viram_fase(escrito, esperado):
+    """Os oito valores foram CONTADOS na planilha de verdade em 24/11/2026,
+    não supostos. Falta só "Especial", que não tem par — ver abaixo."""
+    l = imp.ler_planilha(_xlsx([_linha_completa(
+        **{"Status da Obra": escrito})]))[0]
+    assert l["fase"] == esperado
+
+
+def test_status_sem_par_no_erp_nao_vira_fase_nenhuma():
+    """⚠️ "Especial" (1 obra na planilha dele). Chutar uma fase mexeria no que
+    aparece na tela do diário — a obra fica com a que já tem, e o relatório
+    avisa."""
+    l = imp.ler_planilha(_xlsx([_linha_completa(
+        **{"Status da Obra": "Especial"})]))[0]
+    assert l["fase"] is None and l["fase_texto"] == "Especial"
+
+
+# ---------------------------------------------------------------------------
+# COM BANCO — a fase e o espelho
+# ---------------------------------------------------------------------------
+@banco_
+def test_a_fase_entra_pelo_servico_e_guarda_historico(sessao_real):
+    """⚑ A FASE NÃO É UM UPDATE SOLTO. Mudar de fase guarda histórico, trilha
+    de auditoria e as datas de conclusão e recebimento. Escrevê-la junto dos
+    outros campos perderia tudo isso em 183 obras de uma vez."""
+    oid = _obra(sessao_real, "CDFASE1", fase="CRIACAO")
+    sessao_real.flush()
+    r = imp.importar(sessao_real, _xlsx([_linha_completa(
+        **{"Código Primário": "CDFASE1", "Obra": "CDFASE1",
+           "Status da Obra": "Concluída"})]), None, simular=False)
+    sessao_real.flush()
+
+    assert r["fases_mudadas_total"] == 1
+    linha = sessao_real.execute(text(
+        "SELECT fase, data_conclusao FROM obras WHERE id = :o"),
+        {"o": oid}).first()
+    assert linha[0] == "CONCLUIDA" and linha[1] is not None
+    assert sessao_real.execute(text(
+        "SELECT count(*) FROM obra_fases WHERE obra_id = :o"),
+        {"o": oid}).scalar() == 1
+
+
+@banco_
+def test_conferir_nao_muda_fase_nenhuma(sessao_real):
+    oid = _obra(sessao_real, "CDFASE2", fase="CRIACAO")
+    sessao_real.flush()
+    r = imp.importar(sessao_real, _xlsx([_linha_completa(
+        **{"Código Primário": "CDFASE2", "Obra": "CDFASE2",
+           "Status da Obra": "Distratada"})]), None)
+    sessao_real.flush()
+    assert r["fases_mudadas_total"] == 1          # o relatório mostra
+    assert sessao_real.execute(text("SELECT fase FROM obras WHERE id = :o"),
+                               {"o": oid}).scalar() == "CRIACAO"
+
+
+@banco_
+def test_fase_que_ja_esta_certa_nao_vira_registro(sessao_real):
+    """Rodar a sincronização duas vezes não pode encher o histórico de fase de
+    toda obra com uma mudança que não houve."""
+    oid = _obra(sessao_real, "CDFASE3", fase="EM_EXECUCAO")
+    sessao_real.flush()
+    dados = _xlsx([_linha_completa(**{"Código Primário": "CDFASE3",
+                                      "Obra": "CDFASE3",
+                                      "Status da Obra": "Em Execução"})])
+    r = imp.importar(sessao_real, dados, None, simular=False)
+    sessao_real.flush()
+    assert r["fases_mudadas_total"] == 0
+    assert sessao_real.execute(text(
+        "SELECT count(*) FROM obra_fases WHERE obra_id = :o"),
+        {"o": oid}).scalar() == 0
+
+
+@banco_
+def test_fase_que_o_erp_nao_conhece_e_relatada_e_nao_mexe(sessao_real):
+    oid = _obra(sessao_real, "CDFASE4", fase="EM_EXECUCAO")
+    sessao_real.flush()
+    r = imp.importar(sessao_real, _xlsx([_linha_completa(
+        **{"Código Primário": "CDFASE4", "Obra": "CDFASE4",
+           "Status da Obra": "Especial"})]), None, simular=False)
+    sessao_real.flush()
+    assert [f["na_planilha"] for f in r["fases_desconhecidas"]] == ["Especial"]
+    assert sessao_real.execute(text("SELECT fase FROM obras WHERE id = :o"),
+                               {"o": oid}).scalar() == "EM_EXECUCAO"
+
+
+@banco_
+def test_espelhar_troca_o_que_estava_desatualizado(sessao_real):
+    """Ele: *"de repente tem alguma coisa que a gente mudou, porque estava mal
+    escrito, porque precisou alterar o endereço."* Com `regravar`, a planilha
+    manda."""
+    oid = _obra(sessao_real, "CDESP1", endereco="Endereço velho, 1",
+                objeto="Objeto escrito errado")
+    sessao_real.flush()
+    imp.importar(sessao_real, _xlsx([_linha_completa(
+        **{"Código Primário": "CDESP1", "Obra": "CDESP1",
+           "Endereço": "Av. Nova, 500", "Objeto": "Objeto corrigido"})]),
+        None, simular=False, regravar=True)
+    sessao_real.flush()
+    linha = sessao_real.execute(text(
+        "SELECT endereco, objeto, codigo FROM obras WHERE id = :o"),
+        {"o": oid}).first()
+    assert linha[0] == "Av. Nova, 500" and linha[1] == "Objeto corrigido"
+    assert linha[2] == "CDESP1", "o código da obra NUNCA é trocado"
+
+
+@banco_
+def test_sem_espelhar_o_cadastro_vence_e_o_relatorio_mostra(sessao_real):
+    oid = _obra(sessao_real, "CDESP2", endereco="Endereço velho, 1")
+    sessao_real.flush()
+    r = imp.importar(sessao_real, _xlsx([_linha_completa(
+        **{"Código Primário": "CDESP2", "Obra": "CDESP2",
+           "Endereço": "Av. Nova, 500"})]), None, simular=False)
+    sessao_real.flush()
+    assert sessao_real.execute(text("SELECT endereco FROM obras WHERE id = :o"),
+                               {"o": oid}).scalar() == "Endereço velho, 1"
+    assert any(c["campo"] == "endereco" for c in r["conflitos"])
