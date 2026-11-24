@@ -13699,32 +13699,56 @@ def api_diario_importar():
 @login_obrigatorio
 @permissao("importar")
 def api_obras_cdiarios():
-    """Completa o cadastro das obras com a C. Diários (aba Centro de Custo).
+    """Completa o cadastro das obras com a C. Diários.
 
-    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1` de
-    propósito, nada é escrito. E o que já está preenchido no cadastro só é
-    trocado com `regravar=1` — o que alguém digitou aqui vale mais que a
-    planilha, e quando os dois divergem o relatório mostra os dois lados.
+    ⚑ LÊ A PLANILHA ONLINE (24/11/2026), e é o caminho normal. Ele: *"pra que
+    eu vou fazer download de planilha se a planilha é online? Qual o sentido
+    de eu ficar fazendo download para fazer importação?"* Razão nenhuma — a
+    emissão de NFS-e já lia esta mesma planilha ao vivo.
+
+    O arquivo .xlsx continua aceito, para quando o Google estiver fora do ar
+    ou a credencial falhar: sem ele, uma pane no Google deixaria o cadastro
+    das obras sem nenhum caminho.
+
+    ⚑ `simular` é o PADRÃO, como em toda importação da casa: sem `gravar=1`,
+    nada é escrito.
     """
     from app.apps.erp.core.importadores import obras_cdiarios as imp
     arquivo = request.files.get("arquivo")
-    if arquivo is None:
-        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
-    if not (arquivo.filename or "").lower().endswith(".xlsx"):
-        return jsonify({"ok": False, "erro":
-                        "O arquivo precisa ser .xlsx. No Google Planilhas: "
-                        "Arquivo › Fazer download › Microsoft Excel."}), 400
     gravar = request.form.get("gravar") in ("1", "true", "sim")
     regravar = request.form.get("regravar") in ("1", "true", "sim")
+    online = request.form.get("online") in ("1", "true", "sim")
+    if not online:
+        if arquivo is None:
+            return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+        if not (arquivo.filename or "").lower().endswith(".xlsx"):
+            return jsonify({"ok": False, "erro":
+                            "O arquivo precisa ser .xlsx. No Google Planilhas: "
+                            "Arquivo › Fazer download › Microsoft Excel."}), 400
     try:
-        conteudo = arquivo.read()
+        linhas = None
+        conteudo = None
+        de_onde = {}
+        if online:
+            lido = imp.ler_online()
+            # ⚠️ O ERRO DA LEITURA VOLTA PARA A TELA, por extenso. Credencial
+            # faltando, planilha renomeada, aba trocada — tudo isso viraria
+            # "não aconteceu nada" se ficasse só no log.
+            if lido["erro"]:
+                return jsonify({"ok": False, "erro": lido["erro"]}), 400
+            linhas = lido["linhas"]
+            de_onde = {"aba": lido["aba"], "planilha": lido["planilha"]}
+        else:
+            conteudo = arquivo.read()
         with get_session() as s:
             usuario = _usuario_logado(s)
             rel = imp.importar(s, conteudo, usuario.id if usuario else None,
-                               simular=not gravar, regravar=regravar)
+                               simular=not gravar, regravar=regravar,
+                               linhas=linhas)
             if gravar:
                 s.commit()
-        return jsonify({"ok": True, "resultado": rel})
+        return jsonify({"ok": True, "resultado": {**rel, "online": online,
+                                                  **de_onde}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:

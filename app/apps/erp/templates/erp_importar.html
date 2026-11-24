@@ -102,13 +102,20 @@
 <div class="cartao">
   <div class="cartao-cab"><h3>Cadastro das obras (C. Diários)</h3>
     <small>completa o que falta no cadastro — é daqui que o cabeçalho do diário se enche</small></div>
-  <div class="form-grade">
-    <div class="campo"><label for="arq-obras">Arquivo .xlsx da C. Diários</label>
-      <input type="file" id="arq-obras" accept=".xlsx"></div>
-  </div>
-  <div class="dica" style="margin-top:8px">No Google Planilhas:
-    <b>Arquivo › Fazer download › Microsoft Excel</b>. A aba lida é a
-    <b>C. Diários</b>. Vem de lá: a <b>fase da obra</b>, contrato, objeto,
+  {# ⚑ LER ONLINE É O CAMINHO NORMAL (24/11/2026). Ele: *"pra que eu vou
+     fazer download de planilha se a planilha é online? Qual o sentido de eu
+     ficar fazendo download para fazer importação? Por que tu não atualiza
+     direto a planilha que está online?"*
+
+     Razão nenhuma: a emissão de NFS-e já lia ESTA MESMA planilha ao vivo há
+     meses, e a importação de pessoas do DP também. Só esta pedia arquivo.
+
+     ⚠️ O ARQUIVO FICA como segunda porta, e a tela diz para que serve: sem
+     ele, uma pane no Google ou uma credencial vencida deixariam o cadastro
+     das obras sem nenhum caminho. Não é escolha de gosto — é o plano B. #}
+  <div class="dica" style="margin-bottom:10px">Lê a aba <b>C. Diários</b>
+    direto do Google, sem baixar nada. Vem de lá: a <b>fase da obra</b>,
+    contrato, objeto,
     endereço, município, UF, CNO, cliente, CNPJ do cliente, valor, alíquota de
     ISS, tributação, responsável técnico, fiscalização, ART, ordem de serviço,
     órgão resumido, coordenadas, as datas de início e término, as de vigência
@@ -139,6 +146,17 @@
     <button class="btn secundario" id="btn-conferir-obras">Conferir sem gravar</button>
     <button class="btn" id="btn-gravar-obras" disabled>Completar o cadastro</button>
   </div>
+  <details style="margin-top:12px">
+    <summary class="desc" style="cursor:pointer">Google fora do ar? Mandar o
+      arquivo à mão</summary>
+    <div class="form-grade" style="margin-top:8px">
+      <div class="campo"><label for="arq-obras">Arquivo .xlsx da C. Diários</label>
+        <input type="file" id="arq-obras" accept=".xlsx"></div>
+    </div>
+    <div class="dica">Só serve quando a leitura online falha. No Google
+      Planilhas: <b>Arquivo › Fazer download › Microsoft Excel</b>. Escolhido
+      o arquivo, os botões acima passam a usar ele.</div>
+  </details>
   <div id="resultado-obras"></div>
 </div>
 
@@ -654,6 +672,11 @@ function travarGravarObras(){
 
 function pintarResultadoDasObras(rel){
   const linhas = [];
+  // DE ONDE VIERAM OS DADOS — e, lendo online, QUAL aba. É o que separa
+  // "não mudou nada" de "li a planilha errada".
+  if (rel.online)
+    linhas.push(`<div class="dica">Lido <b>direto do Google</b>, da aba
+      <b>${escapar(rel.aba || "C. Diários")}</b>, agora mesmo.</div>`);
   linhas.push(`<div class="cartao-resumo">${
     [[rel.linhas_no_arquivo, "linha(s) na planilha"],
      [rel.obras_no_erp, "obra(s) no cadastro"],
@@ -762,16 +785,25 @@ function pintarResultadoDasObras(rel){
 }
 
 async function mandarObras(gravar){
-  const arq = els("arq-obras").files[0];
-  if (!arq) { aviso("mensagem", "Escolha o arquivo .xlsx da C. Diários.", "erro"); return; }
-  if (gravar && OBRAS_CONFERIDO !== assinaturaDoArquivo(arq)) {
-    aviso("mensagem", "Confira sem gravar antes — o arquivo mudou desde a "
-        + "última conferência.", "erro");
-    travarGravarObras();
-    return;
-  }
+  // ⚑ ONLINE POR PADRÃO (24/11/2026). O arquivo só entra em cena se alguém
+  // escolheu um na gaveta do plano B — e aí ele manda, porque quem abriu
+  // aquela gaveta fez isso por um motivo.
+  const arq = els("arq-obras") ? els("arq-obras").files[0] : null;
   const fd = new FormData();
-  fd.append("arquivo", arq);
+  if (arq) {
+    if (gravar && OBRAS_CONFERIDO !== assinaturaDoArquivo(arq)) {
+      aviso("mensagem", "Confira sem gravar antes — o arquivo mudou desde a "
+          + "última conferência.", "erro");
+      travarGravarObras();
+      return;
+    }
+    fd.append("arquivo", arq);
+  } else {
+    // ⚠️ A CONFERÊNCIA VALE PARA A PLANILHA DAQUELE MOMENTO. Lendo online, a
+    // planilha pode ter mudado entre conferir e gravar — por isso a gravação
+    // relê, e o relatório que volta é o do que foi gravado de verdade.
+    fd.append("online", "1");
+  }
   if (gravar) fd.append("gravar", "1");
   if (els("ob-regravar").checked) fd.append("regravar", "1");
   ["btn-conferir-obras", "btn-gravar-obras"].forEach(
@@ -783,7 +815,9 @@ async function mandarObras(gravar){
       OBRAS_CONFERIDO = null;
       aviso("mensagem", `${d.resultado.completadas} obra(s) completada(s).`, "ok");
     } else {
-      OBRAS_CONFERIDO = assinaturaDoArquivo(arq);
+      // Lendo online não há arquivo para assinar: a marca é a palavra
+      // "online", e serve só para destravar o botão de gravar.
+      OBRAS_CONFERIDO = arq ? assinaturaDoArquivo(arq) : "online";
       aviso("mensagem", "Conferido. Nada foi gravado — leia o resumo e, se "
           + "estiver certo, aperte Completar o cadastro.", "info");
     }
