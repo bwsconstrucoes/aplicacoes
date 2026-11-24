@@ -143,3 +143,26 @@ def test_busca_pelo_nome_nao_vale_no_celular_pessoal(app, mundo, monkeypatch):
     c = _entrar_no_app(app, CPF_JOAO, monkeypatch)
     r = c.post("/ponto/app/api/obra/buscar-nome", json={"nome": "maria"})
     assert r.status_code in (401, 403)
+
+
+@pytest.mark.banco
+def test_a_lista_guardada_acha_quem_acabou_de_ser_cadastrado(mundo, banco):
+    """24/11/2026: o conjunto de quem pode aparecer fica guardado 30 min; a busca que não acha ninguém refaz na hora —
+    o recém-cadastrado não espera a meia hora."""
+    from sqlalchemy import text
+    from app.apps.ponto import db
+    from app.apps.ponto.core import busca_nome, papeis
+    alcance = papeis.Alcance(obras={mundo["obra_a"]: {"id": mundo["obra_a"], "codigo": "PG-A", "nome": "A"}})
+    with db.conexao() as conn:
+        assert busca_nome.buscar(conn, alcance, "joão")["pessoas"]            # monta e guarda
+    with banco.connect() as c:
+        c.execute(text("INSERT INTO colaboradores (nome, cpf, obra_id) VALUES ('Zacarias Novato', '93541134780', :o)"),
+                  {"o": mundo["obra_a"]})
+        c.commit()
+    try:
+        with db.conexao() as conn:
+            assert [p["nome"] for p in busca_nome.buscar(conn, alcance, "zacarias")["pessoas"]] == ["Zacarias Novato"]
+    finally:
+        with banco.connect() as c:
+            c.execute(text("DELETE FROM colaboradores WHERE cpf = '93541134780'"))
+            c.commit()

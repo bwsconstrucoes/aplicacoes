@@ -352,7 +352,10 @@ mesmo tempo; `lista-sem-internet` 10,9 s; e uma tela do Análise de SPs (`/anali
   credencial do Google (`erp/core/documentos/drive.py`, `_servico` monta tudo de novo a cada chamada). 6 × ~0,7 s ≈
   os 4 s. Agora as fotos que faltam na memória vêm **em paralelo** (`fotos.miniaturas`). E cada letra digitada
   montava duas vezes a lista da empresa inteira e contava as batidas do mês da obra: agora o conjunto de quem pode
-  aparecer fica guardado **60 s** por obra do aparelho (`busca_nome._candidatos`).
+  aparecer fica guardado por obra do aparelho (`busca_nome._candidatos`) — primeiro 60 s; no mesmo dia, a pedido
+  dele (*"essa lista pode ter um delay bem maior, não?"*), **30 min**, com uma salvaguarda: a busca que não acha
+  ninguém refaz o conjunto na hora, e o recém-cadastrado aparece sem esperar. O que ainda pode atrasar até 30 min é
+  quem SAIU da obra continuar aparecendo — a batida dele passa pelas regras de sempre.
 - **A lista sem internet** (cada aparelho baixa de 30 em 30 min) fazia **uma consulta por pessoa** da obra; agora é
   uma só (`cadastros.colaboradores_por_ids`).
 - **Relatado, não mexido (outras áreas):** a credencial do Drive refeita a cada chamada vale para o ERP inteiro (todo
