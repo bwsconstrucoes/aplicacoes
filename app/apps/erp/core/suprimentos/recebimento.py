@@ -313,7 +313,8 @@ def a_receber(s: Session, usuario: Usuario, *,
     esperando.sort(key=lambda p: (-p["dias_de_atraso"],
                                   p["previsao_entrega"] or "9999"))
     sem_nota.sort(key=lambda p: -p["dias"])
-    return {"hoje": hoje.isoformat(), "esperando": esperando, "sem_nota": sem_nota}
+    return {"hoje": hoje.isoformat(), "esperando": esperando, "sem_nota": sem_nota,
+            "do_almoxarifado": do_almoxarifado(s, usuario)}
 
 
 # ---------------------------------------------------------------------------
@@ -401,3 +402,74 @@ def conteudo_do_documento(s: Session, usuario: Usuario, anexo_id: int):
     _recebimento_no_escopo(s, usuario, anexo.entidade_id)
     return (armazenamento.conteudo_de(s, anexo), anexo.nome_arquivo,
             anexo.mime_type or "application/octet-stream")
+
+
+# ---------------------------------------------------------------------------
+# O MATERIAL QUE VEM DO ALMOXARIFADO (24/11/2026)
+#
+# O dono: "a gente ainda não tem um controle de estoque (...) isso pode ficar
+# para depois, envolve estoque, remessa, recebimento, baixa." E o que vale por
+# enquanto: "A obra confirma que recebeu, sem nota. É isso mesmo."
+#
+# O comprador marca "almoxarifado" (não precisa comprar: tem em estoque) e,
+# quando manda, "entregue". Até aqui o item morria aí: ficava "entregue" para
+# sempre, com zero recebido, e a obra não tinha onde dizer que chegou. Agora a
+# obra confirma — sem nota e sem conta a pagar, porque não houve compra.
+#
+# Só vale para item SEM pedido de compra: o que foi comprado continua exigindo
+# o recebimento com a nota.
+# ---------------------------------------------------------------------------
+def _status_do_estoque():
+    from app.apps.erp.db.models.cadastros import StatusItemSuprimento
+    return (StatusItemSuprimento.ALMOXARIFADO, StatusItemSuprimento.ENTREGUE)
+
+
+def do_almoxarifado(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
+    """O que saiu (ou vai sair) do almoxarifado para as obras da pessoa e ainda
+    espera ela confirmar que chegou."""
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    from app.apps.erp.db.models.cadastros import (
+        Insumo, Obra, PedidoItemReserva, SuprimentoItem, SuprimentoSolicitacao)
+    q = (select(SuprimentoItem, SuprimentoSolicitacao, Insumo, Obra)
+         .join(SuprimentoSolicitacao, SuprimentoSolicitacao.id == SuprimentoItem.solicitacao_id)
+         .join(Insumo, Insumo.id == SuprimentoItem.insumo_id)
+         .join(Obra, Obra.id == SuprimentoItem.obra_id)
+         .where(SuprimentoItem.status.in_(_status_do_estoque()),
+                SuprimentoItem.id.notin_(select(PedidoItemReserva.suprimento_item_id))))
+    permitidas = obras_de_registro_sem_autor(s, usuario)
+    if permitidas is not None:
+        q = q.where(SuprimentoItem.obra_id.in_(permitidas or [0]))
+    return [{"item_id": i.id, "insumo": insumo.descricao, "especificacao": i.especificacao or "",
+             "quantidade": float(i.quantidade), "unidade": i.unidade,
+             "obra_id": obra.id, "obra": obra.codigo, "solicitacao": sol.numero,
+             "ja_saiu": i.status.value == "ENTREGUE"}
+            for i, sol, insumo, obra in s.execute(q.order_by(SuprimentoItem.id)).all()]
+
+
+def confirmar_do_almoxarifado(s: Session, item_id: int, usuario: Usuario,
+                              observacao: str = "") -> None:
+    """A obra diz que o material do almoxarifado chegou. Fecha o item."""
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    from app.apps.erp.db.models.cadastros import (
+        PedidoItemReserva, StatusItemSuprimento, SuprimentoItem)
+    item = s.get(SuprimentoItem, int(item_id))
+    permitidas = obras_de_registro_sem_autor(s, usuario)
+    if item is None or (permitidas is not None and item.obra_id not in permitidas):
+        raise ErroNaoEncontrado("Item não encontrado.")
+    if item.status not in _status_do_estoque():
+        raise ErroValidacao("Este material não está vindo do almoxarifado.")
+    com_pedido = [r for r in s.scalars(select(PedidoItemReserva).where(
+        PedidoItemReserva.suprimento_item_id == item.id)).all()
+        if r.suprimento_item_id == item.id]
+    if com_pedido:
+        raise ErroValidacao(
+            "Este material foi comprado: o recebimento é com a nota, em "
+            "Receber material.")
+    antes = item.status.value
+    item.quantidade_recebida = item.quantidade
+    item.status = StatusItemSuprimento.RECEBIDO
+    registrar_evento(s, "suprimento_item", item.id, "RECEBIDO_DO_ALMOXARIFADO",
+                     {"de": antes, "quantidade": str(item.quantidade),
+                      "observacao": " ".join((observacao or "").split()) or None},
+                     usuario.id)
+    s.flush()

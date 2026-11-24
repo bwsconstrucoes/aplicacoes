@@ -216,7 +216,10 @@ def autorizar(s: Session, titulo_id: int, usuario: Usuario, observacao: str = ""
         "WHERE titulo_id = :t AND autorizado_em IS NULL"), {"t": titulo_id}).first()
     if linha is None:
         raise ErroNaoEncontrado("Não há lançamento esperando autorização com este número.")
-    if linha[0] == usuario.id:
+    # O administrador é a exceção (24/11/2026): "é bom que o administrador
+    # possa fazer tudo" — para a operação não parar por falta de cadastro.
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+    if linha[0] == usuario.id and usuario.perfil is not PerfilUsuario.ADMIN:
         raise ErroValidacao(
             "Quem lançou não autoriza o próprio lançamento. Peça a outra pessoa "
             "com alçada.")

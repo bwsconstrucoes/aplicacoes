@@ -1198,8 +1198,12 @@ def test_material_sem_pedido_exige_motivo_bloqueia_e_so_outro_autoriza(base):
     svc_titulos.reanalisar(s, titulo.id, u); s.flush()
     assert titulo.status is StatusTitulo.BLOQUEADO
 
+    # quem lançou não dá a ciência do próprio lançamento — menos o administrador
+    # (24/11/2026: "é bom que o administrador possa fazer tudo")
+    u.perfil = P.DIRETOR_FINANCEIRO
     with pytest.raises(ErroValidacao, match="não autoriza o próprio"):
         svc_fora.autorizar(s, titulo.id, u)
+    u.perfil = P.ADMIN
     svc_fora.autorizar(s, titulo.id, _outro_que_autoriza(base), "ciente; conversar com a obra")
     s.flush()
     assert titulo.status is StatusTitulo.AGUARDANDO_APROVACAO
@@ -1450,8 +1454,10 @@ def test_quem_fechou_nao_autoriza_e_sem_cotacao_pede_justificativa(base):
     from app.apps.erp.core.suprimentos import solicitacao as svc_sol
     s, u = base["s"], base["u"]
     pedido = _fechar(base, autorizar=False)
+    u.perfil = P.DIRETOR_FINANCEIRO
     with pytest.raises(ErroValidacao):
         svc_ped.autorizar(s, pedido.id, u)                    # o próprio comprador
+    u.perfil = P.ADMIN
     svc_ped.autorizar(s, pedido.id, _outro_que_autoriza(base))
     assert pedido.autorizado_por != pedido.criado_por
 
@@ -1568,3 +1574,70 @@ def test_a_conta_do_pedido_nao_chega_ao_financeiro_como_sem_pedido(base):
     criticas = s.execute(text("SELECT criticas FROM analises WHERE titulo_id = :t"),
                          {"t": saida["titulo"]["id"]}).scalar() or []
     assert "B1" not in [c["codigo"] for c in criticas]
+
+
+# ---------------------------------------------------------------------------
+# 24/11/2026 — o administrador pode tudo, o almoxarifado fecha, as pendências
+# no portal e a conferência de prontidão
+# ---------------------------------------------------------------------------
+def test_o_administrador_fecha_e_autoriza_o_proprio_pedido(base):
+    """ "É bom que o administrador possa fazer tudo (...) pode ser que tenha uma
+    obra que tem alguma coisa que tem que autorizar, mas não tem ninguém
+    cadastrado ainda." """
+    s, u = base["s"], base["u"]
+    assert u.perfil is P.ADMIN
+    pedido = _fechar(base, autorizar=False)
+    svc_ped.autorizar(s, pedido.id, u)
+    assert pedido.autorizado_por == u.id == pedido.criado_por
+
+
+def test_o_material_do_almoxarifado_fecha_quando_a_obra_confirma(base):
+    """ "A obra confirma que recebeu, sem nota. É isso mesmo." """
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    adm = _administrativo_da_obra(base)
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    sol = svc_sol.criar(s, {"titulo": "Tem no estoque", "itens": [
+        {"insumo_id": insumo, "obra_id": base["obra_a"].id, "quantidade": "4", "unidade": "M2"}]}, u)
+    item = s.scalars(select(SuprimentoItem).where(SuprimentoItem.solicitacao_id == sol.id)).one()
+    assert svc_rec.do_almoxarifado(s, adm) == []          # ainda é só um pedido
+    svc_sol.mudar_situacao(s, item.id, "ALMOXARIFADO", u); s.flush()
+    svc_sol.mudar_situacao(s, item.id, "ENTREGUE", u); s.flush()
+    espera = svc_rec.do_almoxarifado(s, adm)
+    assert [(e["item_id"], e["ja_saiu"]) for e in espera] == [(item.id, True)]
+    # material COMPRADO não fecha por aqui: é com a nota
+    with pytest.raises(ErroValidacao):
+        svc_rec.confirmar_do_almoxarifado(s, base["item_a"].id, adm)
+    svc_rec.confirmar_do_almoxarifado(s, item.id, adm, "chegou completo")
+    assert item.status is StatusItemSuprimento.RECEBIDO
+    assert item.quantidade_recebida == item.quantidade
+    assert svc_rec.do_almoxarifado(s, adm) == []
+
+
+def test_o_portal_diz_a_cada_um_o_que_espera_por_ele(base):
+    """ "Padronizar o portal como local de (...) visualizar o que tem de
+    pendente, para todos." """
+    from app.apps.erp.core.suprimentos import esperando
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+    s, u = base["s"], base["u"]
+    adm = _administrativo_da_obra(base)
+    insumo = s.get(SuprimentoItem, base["item_a"].id).insumo_id
+    svc_sol.criar(s, {"titulo": "Pedido do administrativo", "itens": [
+        {"insumo_id": insumo, "obra_id": base["obra_a"].id, "quantidade": "1", "unidade": "M2"}]}, adm)
+    _fechar(base, autorizar=False)
+    diretor = _outro_que_autoriza(base)
+    do_diretor = {p["chave"]: p["quantos"] for p in esperando.comigo(s, diretor)}
+    assert do_diretor["liberar"] == 1 and do_diretor["autorizar"] == 1
+    # quem pediu não tem nada para liberar nem autorizar: não é com ele
+    do_adm = {p["chave"] for p in esperando.comigo(s, adm)}
+    assert not ({"liberar", "autorizar"} & do_adm)
+    assert all(p["link"].startswith("/erp/") and p["texto"] for p in esperando.comigo(s, diretor))
+
+
+def test_a_conferencia_de_prontidao_aponta_o_que_falta(base):
+    from app.apps.erp.core.suprimentos import prontidao
+    d = prontidao.conferir(base["s"])
+    por_titulo = {i["titulo"]: i for i in d["itens"]}
+    assert por_titulo["Conta de e-mail da empresa"]["situacao"] == "FALTA"
+    assert d["faltam"] + d["atencao"] + d["prontos"] == len(d["itens"])
+    assert all(i["por_que"] and i["onde"] for i in d["itens"])

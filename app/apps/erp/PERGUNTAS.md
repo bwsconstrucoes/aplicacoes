@@ -3197,6 +3197,19 @@ consulta inventada vai sendo usado cada vez menos.
 
 
 
+## 3ae. O QUE ESPERA POR MIM, O ALMOXARIFADO E A PRONTIDÃO (24/11/2026)
+
+- "O que está pendente comigo?" — `esperando.comigo`. ⚠ A RESPOSTA MUDA
+  INTEIRA conforme quem pergunta: é por ação e por obra. Hoje cobre
+  suprimentos e aval; pendência de DP ainda não entra — o assistente deve dizer.
+- "O que veio do almoxarifado para a obra X e ainda não foi confirmado?" —
+  `recebimento.do_almoxarifado`.
+- "Quanto material a obra recebeu do estoque este mês?" — evento
+  `RECEBIDO_DO_ALMOXARIFADO`. ⚠ É quantidade, não valor: **não há controle de
+  estoque nem custo do material de almoxarifado** — o assistente não deve
+  inventar valor.
+- "O que falta para o suprimento rodar?" — `prontidao.conferir`.
+
 ## 3ad. MATERIAL PEDIDO QUE ESPERA O CADASTRO DO INSUMO (23/11/2026)
 
 Sem pergunta escrita no assistente; responde-se pelo portal (Em andamento) e

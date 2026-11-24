@@ -238,6 +238,8 @@ MODULOS = [
             # Os relatórios de GESTÃO (21/11/2026): economia da cotação, preço
             # contra a compra anterior, desempenho do fornecedor, tempo do ciclo.
             ("sup_relatorios", "Relatórios", "erp.pagina_suprimentos_relatorios"),
+            # O que falta nos cadastros para o suprimento rodar (24/11/2026).
+            ("sup_prontidao", "Prontidão", "erp.pagina_suprimentos_prontidao"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_insumos"),
         ],
     },
@@ -11975,6 +11977,65 @@ def api_suprimentos_painel():
         return jsonify({"ok": True, **svc.planejamento(s, usuario),
                         "compras": {"resumo": compras["resumo"],
                                     "destaques": compras["destaques"]}})
+
+
+@bp.route("/erp/suprimentos/prontidao")
+@login_obrigatorio
+@permissao("comprar")
+def pagina_suprimentos_prontidao():
+    return render_template("erp_suprimentos_prontidao.html",
+                           **_contexto("sup_prontidao"))
+
+
+@bp.route("/erp/api/suprimentos/prontidao")
+@login_obrigatorio
+@permissao("comprar")
+def api_suprimentos_prontidao():
+    """O que falta nos cadastros para o suprimento rodar sem parar no meio."""
+    from app.apps.erp.core.suprimentos import prontidao
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **prontidao.conferir(s)})
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha na conferência de prontidão")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/pendencias-comigo")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_pendencias_comigo():
+    """O que está esperando por ESTA pessoa — o portal mostra no alto. Cada
+    contagem só existe para quem tem a ação correspondente."""
+    from app.apps.erp.core.suprimentos import esperando
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "pendencias": esperando.comigo(s, _usuario_logado(s))})
+    except Exception as e:
+        logger.exception("ERP: falha ao contar as pendências da pessoa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/itens/<int:item_id>/chegou-do-almoxarifado", methods=["POST"])
+@login_obrigatorio
+@permissao("receber_material")
+def api_chegou_do_almoxarifado(item_id: int):
+    """A obra confirma que o material vindo do almoxarifado chegou — sem nota,
+    porque não houve compra. O recorte por obra é conferido no serviço."""
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    try:
+        with get_session() as s:
+            svc.confirmar_do_almoxarifado(s, item_id, _usuario_logado(s),
+                                          (request.get_json(silent=True) or {}).get("observacao") or "")
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao confirmar material do almoxarifado")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/suprimentos/relatorios")

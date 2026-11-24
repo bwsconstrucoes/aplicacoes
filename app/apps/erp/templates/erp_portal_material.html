@@ -157,7 +157,7 @@ function recado(texto, tipo){
 async function carregar(){
   try {
     DADOS = await api("/erp/api/suprimentos/recebimentos");
-    el("n-chegar").textContent = DADOS.esperando.length;
+    el("n-chegar").textContent = DADOS.esperando.length + (DADOS.do_almoxarifado || []).length;
     el("n-andamento").textContent = DADOS.em_andamento.length + (DADOS.esperando_cadastro || []).filter(i => !i.recusado_motivo).length;
     el("n-nota").textContent = DADOS.sem_nota.length;
     el("aba-pedir").hidden = !DADOS.pode_pedir;
@@ -499,13 +499,30 @@ function palpiteDaCategoria(nome){
   return "OUTRO";
 }
 
+// ⚑ O QUE VEM DO ALMOXARIFADO (24/11/2026): sem compra, sem nota. A obra só
+// confirma que chegou.
+function blocoDoAlmoxarifado(){
+  const l = DADOS.do_almoxarifado || [];
+  return !l.length ? "" : `<div class="bloco">
+      <h3>Vindo do almoxarifado</h3>
+      <div class="sub">Material que a empresa já tinha. Não tem nota: confirme quando chegar na obra.</div>
+      ${l.map(i => `<div class="item"><div class="cresce">
+          <b>${esc(i.insumo)}</b>
+          ${i.especificacao ? `<small>${esc(i.especificacao)}</small>` : ""}
+          <small>${qtd(i.quantidade)} ${esc(i.unidade)} · ${esc(i.obra)} · solicitação ${esc(i.solicitacao)}</small>
+          <span class="etiqueta">${i.ja_saiu ? "enviado para a obra" : "separado no almoxarifado"}</span>
+          <div style="margin-top:6px"><button class="btn-portal" data-chegou="${i.item_id}"
+            style="display:inline-block; width:auto; padding:8px 14px">Chegou na obra</button></div>
+        </div></div>`).join("")}</div>`;
+}
+
 function desenharChegar(){
   if (!DADOS.esperando.length) {
-    el("conteudo").innerHTML =
+    el("conteudo").innerHTML = blocoDoAlmoxarifado() ||
       `<div class="bloco vazio">Nenhum material a caminho para as suas obras.</div>`;
     return;
   }
-  el("conteudo").innerHTML = DADOS.esperando.map(p => {
+  el("conteudo").innerHTML = blocoDoAlmoxarifado() + DADOS.esperando.map(p => {
     const situacao = p.dias_de_atraso
       ? `<span class="etiqueta vermelha">atrasado ${p.dias_de_atraso} dia(s)</span>`
       : p.previsao_entrega ? `<span class="etiqueta">previsto ${dia(p.previsao_entrega)}</span>`
@@ -659,6 +676,13 @@ async function decidirLiberacao(corpo, texto){
   } catch(e){ recado(esc(e.message), "erro"); scrollTo(0, 0); }
 }
 document.addEventListener("click", ev => {
+  const chegou = ev.target.closest("[data-chegou]");
+  if (chegou && confirm("Confirmar que este material chegou na obra?")) {
+    api(`/erp/api/suprimentos/itens/${chegou.dataset.chegou}/chegou-do-almoxarifado`, {method: "POST",
+        headers: {"Content-Type": "application/json"}, body: "{}"})
+      .then(() => { recado("Recebimento confirmado.", "ok"); carregar(); })
+      .catch(e => { recado(esc(e.message), "erro"); scrollTo(0, 0); });
+  }
   const sim = ev.target.closest("[data-liberar]"), nao = ev.target.closest("[data-nao-liberar]");
   if (sim) decidirLiberacao({itens: [+sim.dataset.liberar]}, "Material liberado para compra.");
   if (nao) {

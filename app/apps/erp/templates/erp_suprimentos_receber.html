@@ -19,6 +19,7 @@
   <small>confira o que desceu do caminhão e registre — o que faltar vira pendência com o fornecedor</small></h2>
 <div id="mensagem"></div>
 <div id="sem-nota"></div>
+<div id="do-almoxarifado"></div>
 <div id="lista"></div>
 {% endblock %}
 
@@ -69,6 +70,32 @@ function desenhar(){
       {% if pode.lancar %} · <a href="/erp/lancar?pedido_compra=${n.pedido_id}">lançar a nota e o boleto</a>{% endif %}
       </li>`).join("")}</ul>
   </div>`;
+
+  // ⚑ O QUE VEM DO ALMOXARIFADO (24/11/2026): não houve compra, então não há
+  // nota. A obra só confirma que chegou — e o item fecha.
+  const estoque = DADOS.do_almoxarifado || [];
+  els("do-almoxarifado").innerHTML = !estoque.length ? "" : `<div class="cartao" style="margin-bottom:14px">
+    <div class="cartao-cab"><h3>Vindo do almoxarifado (${estoque.length})</h3>
+      <small>material que a empresa já tinha — sem compra e sem nota; confirme quando chegar na obra</small></div>
+    <div style="overflow-x:auto"><table><thead><tr><th>Material</th><th>Obra</th><th class="direita">Quantidade</th><th>Situação</th><th></th></tr></thead>
+    <tbody>${estoque.map(i => `<tr><td><b>${escapar(i.insumo)}</b>${i.especificacao ? `<br><small>${escapar(i.especificacao)}</small>` : ""}
+        <br><small>solicitação ${escapar(i.solicitacao)}</small></td>
+      <td class="dados">${escapar(i.obra)}</td>
+      <td class="direita dados">${quantidadeBR(i.quantidade)} ${escapar(i.unidade)}</td>
+      <td>${i.ja_saiu ? "enviado para a obra" : "separado no almoxarifado"}</td>
+      <td class="direita" style="white-space:nowrap"><button class="btn" data-chegou="${i.item_id}">Chegou na obra</button></td></tr>`).join("")}
+    </tbody></table></div></div>`;
+  document.querySelectorAll("[data-chegou]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Confirmar que o material chegou", campos: [
+        {nome: "observacao", rotulo: "Observação (opcional)", tipo: "textarea", linhas: 2}],
+      aviso: "O material sai da lista de pendências. Não há nota a lançar: ele veio do estoque da empresa.",
+      textoOk: "Chegou"});
+    if (!r) return;
+    try { await api(`/erp/api/suprimentos/itens/${b.dataset.chegou}/chegou-do-almoxarifado`, {method: "POST",
+            headers: {"Content-Type": "application/json"}, body: JSON.stringify({observacao: r.observacao || ""})});
+          aviso("mensagem", "Recebimento confirmado.", "ok"); carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  }));
 
   const q = (els("f-busca").value || "").toLowerCase().trim();
   const obra = els("f-obra").value;

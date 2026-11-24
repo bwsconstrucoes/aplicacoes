@@ -171,6 +171,19 @@
      formalizar e coletar a assinatura de forma legal, parecido com a forma
      que a gente está coletando a assinatura do ponto."* Quem conduz mostra o
      texto; a pessoa assina com o dedo e digita o PIN DELA (o do ponto). #}
+  {# ⚑ O QUE ESPERA POR VOCÊ (24/11/2026). O dono, sobre como avisar quem
+     precisa agir: "a gente pode utilizar o portal. Inclusive padronizar ele
+     como local de fazer solicitações e visualizar o que tem de pendente, para
+     todos." Antes ninguém era avisado: o pedido esperando o ok da engenharia,
+     o pedido de compra esperando autorização, o pagamento esperando aval —
+     tudo dependia de a pessoa abrir a tela certa.
+     UMA LINHA POR ASSUNTO, com a contagem — e não a lista: tocar leva à tela
+     que resolve. É de propósito curto; o portal já ficou grande demais uma vez. #}
+  <div class="bloco" id="bloco-comigo" style="display:none">
+    <h3>Esperando por você</h3>
+    <div id="comigo"></div>
+  </div>
+
   <div class="bloco" id="bloco-termos" style="display:none">
     <h3>Para o colaborador assinar</h3>
     <p class="ajuda">O DP analisou e liberou. Mostre o documento à pessoa,
@@ -288,11 +301,24 @@ async function carregar(){
   els("quem").innerHTML = `${esc(DADOS.nome)}<br>${
     DADOS.administrativo ? "administrativo de obra" : "colaborador"}`;
   pintarDevolucoes();
+  carregarComigo();
   pintarTermos();
   pintarFerias();
   pintarExperiencias();
   pintarFormulario();
   pintarMeus();
+}
+
+// Em chamada própria, DEPOIS do resto: contar pendência não pode segurar a
+// abertura do portal, e uma falha aqui não derruba a tela.
+async function carregarComigo(){
+  let l = [];
+  try { l = (await chamar("/erp/api/pendencias-comigo")).pendencias || []; } catch(_) { l = []; }
+  els("bloco-comigo").style.display = l.length ? "" : "none";
+  els("comigo").innerHTML = l.map(p => `<a class="linha" href="${esc(p.link)}"
+      style="text-decoration:none; color:inherit; align-items:center">
+      <div class="cresce">${esc(p.texto)}</div>
+      <span class="etiqueta ${p.quantos ? "vermelha" : ""}">resolver →</span></a>`).join("");
 }
 
 function pintarTermos(){

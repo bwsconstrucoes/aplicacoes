@@ -1,0 +1,50 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Prontidão do suprimento — ERP BWS{% endblock %}
+
+{# ⚑ O QUE FALTA NOS CADASTROS PARA O SUPRIMENTO RODAR (24/11/2026).
+   O dono perguntou se o suprimento estava pronto para a produção e contou que
+   o DP custou uma semana por "fluxo incompleto". A caminhada de ponta a ponta
+   mostrou que o fluxo fecha — e que para em cadastro faltando: conta de
+   e-mail, conta do plano no insumo, conta bancária do fornecedor, obra ligada
+   à pessoa, alguém para liberar e autorizar. Esta tela mostra tudo de uma vez,
+   ANTES de a primeira compra de verdade esbarrar. Só lê. #}
+
+{% block conteudo %}
+<h2 class="pagina-titulo">Prontidão do suprimento
+  <small>o que falta nos cadastros para uma compra ir do pedido ao pagamento sem parar</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="resumo"></div>
+<div id="lista" style="margin-top:14px"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SELO = {OK: ["aprovado", "pronto"], FALTA: ["bloqueado", "falta — o fluxo para aqui"],
+              ATENCAO: ["aguardando", "atenção"]};
+async function carregar(){
+  try {
+    const d = await api("/erp/api/suprimentos/prontidao");
+    els("resumo").innerHTML = `
+      <div class="kpi estatico vermelho"><div class="kpi-rotulo">Faltando</div>
+        <div class="kpi-valor">${d.faltam}</div><div class="kpi-sub">o fluxo para nestes pontos</div></div>
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Atenção</div>
+        <div class="kpi-valor">${d.atencao}</div><div class="kpi-sub">funciona, com alguma perda</div></div>
+      <div class="kpi estatico verde"><div class="kpi-rotulo">Prontos</div>
+        <div class="kpi-valor">${d.prontos}</div><div class="kpi-sub">conferidos</div></div>`;
+    const ordem = {FALTA: 0, ATENCAO: 1, OK: 2};
+    els("lista").innerHTML = d.itens.slice().sort((a, b) => ordem[a.situacao] - ordem[b.situacao])
+      .map(i => `<div class="cartao" style="margin-bottom:10px">
+        <div class="cartao-cab"><h3>${escapar(i.titulo)}</h3>
+          <span class="selo ${SELO[i.situacao][0]}">${SELO[i.situacao][1]}</span></div>
+        <div><b>${escapar(i.resumo)}</b></div>
+        <div class="sub" style="margin-top:4px">${escapar(i.por_que)}</div>
+        ${i.situacao !== "OK" ? `<div class="sub" style="margin-top:4px"><b>Onde acertar:</b> ${escapar(i.onde)}</div>` : ""}
+        ${i.situacao !== "OK" && i.exemplos.length ? `<details style="margin-top:6px"><summary>ver quais</summary>
+          <div class="sub" style="margin-top:4px">${i.exemplos.map(escapar).join(" · ")}${
+            i.mais ? ` · e mais ${i.mais}` : ""}</div></details>` : ""}
+      </div>`).join("");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+carregar();
+</script>
+{% endblock %}

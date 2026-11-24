@@ -365,7 +365,14 @@ def autorizar(s: Session, pedido_id: int, usuario: Usuario,
     # (admin e diretor) — sem esta linha, uma pessoa só fazia a compra inteira.
     # `conferir_autoria=False` é só da compra tardia, onde a separação já é
     # outra: quem lançou a nota não dá a ciência.
-    if conferir_autoria and pedido.criado_por == usuario.id:
+    # ⚑ MENOS O ADMINISTRADOR (24/11/2026). O dono: "o administrador precisa
+    # poder, até para quando a gente colocar em produção a coisa rodar (...) é
+    # bom que o administrador possa fazer tudo. Pode ser que tenha uma obra que
+    # tem alguma coisa que tem que autorizar, mas não tem ninguém cadastrado."
+    # Continua registrado, no evento, quem fechou e quem autorizou.
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+    if (conferir_autoria and pedido.criado_por == usuario.id
+            and usuario.perfil is not PerfilUsuario.ADMIN):
         raise ErroValidacao(
             "Quem fechou o pedido não autoriza o próprio pedido. A autorização "
             "é de outra pessoa, com alçada.")

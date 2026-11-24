@@ -49,28 +49,25 @@ diante: antes de dizer "pronto", PERCORRER o caminho inteiro com perfis
 diferentes, pelas rotas de verdade, e procurar onde ele morre. Teste de regra
 isolada não acha isso.
 
-**BECOS QUE A CAMINHADA ACHOU E AINDA ESTÃO ABERTOS** (levados a ele em 24/11,
-esperando decisão):
-1. **Ninguém é avisado de que há algo esperando por ele** — liberar (engenharia),
-   autorizar (diretor), dar ciência, dar o aval, cadastrar insumo. Tudo depende
-   de a pessoa abrir a tela certa. É o beco que mais atrasa.
-2. **Almoxarifado não fecha**: o item vai a ENTREGUE e fica ali para sempre, com
-   zero recebido; no portal aparece com o rótulo errado ("sem cotação"). Ele já
-   tinha dito "depois a gente pensa" — mas é fluxo incompleto.
-3. **A crítica A10** ("exige documento fiscal vinculado") aparece em TODA conta
-   nascida do recebimento, mesmo com o número da nota e o arquivo anexado. Não
-   bloqueia; é risco a mais e ruído para quem aprova. É do Financeiro.
-4. **Compra por fora pula o aval**: depois da ciência, a conta vai direto para
-   aprovação. Na prática a ciência é dada pelas mesmas pessoas que avalizam —
-   mas é um passo a menos que na compra normal.
-5. **Só o administrador liga a trava** da compra por fora (a rota exige
-   `configurar`); o diretor não consegue.
-6. **Pré-requisitos sem os quais o fluxo para**: conta de e-mail da empresa
-   (cotação e pedido não saem), conta do plano em cada insumo (a conta não
-   nasce), conta bancária HOMOLOGADA do fornecedor para Pix/TED (a conta nasce
-   bloqueada), obra ligada a cada pessoa, duas pessoas com alçada.
-7. **A porta do portal está fechada** (decisão dele): a obra pede, a engenharia
-   libera e a obra recebe pelo ERP completo, não pelo portal.
+**OS BECOS DA CAMINHADA, DEPOIS DA RESPOSTA DELE (24/11, 2ª conversa):**
+1. ~~Ninguém é avisado~~ — **FEITO:** bloco "Esperando por você" no portal.
+   Decisão dele: o aviso É o portal ("padronizar ele como local de fazer
+   solicitações e visualizar o que tem de pendente, para todos" — menos o
+   ponto, que é do pessoal da produção).
+2. ~~Almoxarifado não fecha~~ — **FEITO:** a obra confirma que chegou, sem
+   nota. Estoque, remessa e baixa de verdade ficam **para depois, dito por ele**.
+3. **A crítica A10 continua** (é do Financeiro). Expliquei a ele; não decidiu.
+4. Compra por fora pula o aval — **é assim mesmo, decidido por ele**: "ela tem
+   que pular, porque já foi comprada (...) depois de avalizada [a ciência], vai
+   para o financeiro."
+5. Só o administrador liga a trava — fica assim. E **o administrador pode
+   tudo** (ver a 8ª rodada).
+6. ~~Pré-requisitos~~ — **FEITO:** tela Suprimentos › Prontidão.
+7. A porta do portal: "só está fechada porque não está em produção ainda o
+   suprimento. Assim que a gente libera, [abre] o portal."
+
+**AINDA NÃO FEITO:** transformar a caminhada em teste permanente (ele não
+entendeu o que era; expliquei e ofereci).
 
 **✔ PUBLICADO em 23/11/2026 (2ª conversa), com o "pode" dele:** a porta do portal para
 material virou **"Suprimentos" e está FECHADA de propósito** — ele: *"manter
@@ -261,6 +258,44 @@ clique. Relatada a ele.
 tem conta de e-mail; vi a autorização ficar e o motivo aparecer); a liberação
 feita por um supervisor de verdade pelo celular (vi o selo no portal e a
 liberação pela tela do ERP).
+
+### ⚑ 24/11/2026 (8ª rodada) — O PORTAL AVISA, O ALMOXARIFADO FECHA, O ADMINISTRADOR PODE TUDO, E A PRONTIDÃO
+
+**1. "Esperando por você", no portal** (`core/suprimentos/esperando.py`, rota
+`/erp/api/pendencias-comigo`). Uma linha por assunto, com a contagem e o link
+para a tela que resolve — e não a lista, porque o portal já ficou grande demais
+uma vez. Cada linha só existe para quem tem a ação: liberar o pedido da obra,
+autorizar pedido de compra, dar ciência de compra por fora, informar o que
+comprou por fora, confirmar material do almoxarifado, material sem nota,
+cadastrar insumo, dar aval em pagamento. Carrega DEPOIS do resto do portal, em
+chamada própria: até oito consultas, que não seguram a abertura da tela.
+⚠ Hoje só conta o que é de suprimentos e o aval. As outras áreas (DP,
+financeiro) podem acrescentar a contagem delas na mesma função — é o lugar.
+
+**2. O almoxarifado fecha** (`recebimento.do_almoxarifado` /
+`confirmar_do_almoxarifado`). O comprador marca "almoxarifado" e depois
+"entregue"; a obra confirma "chegou na obra" em Receber material ou no portal,
+sem nota e sem conta. Só para item SEM pedido de compra. No acompanhamento o
+item aparece como "vem do almoxarifado" (antes: "sem cotação").
+
+**3. O administrador pode tudo.** Ele: *"é bom que o administrador possa fazer
+tudo (...) pode ser que tenha uma obra que tem alguma coisa que tem que
+autorizar, mas não tem ninguém cadastrado ainda."* O perfil ADMIN ficou fora de
+"quem fechou não autoriza" e de "quem lançou não dá a ciência". Para os outros
+perfis as duas regras continuam. O evento registra quem fez o quê.
+
+**4. Suprimentos › Prontidão** (`core/suprimentos/prontidao.py`). Catorze
+conferências dos cadastros, com o que falta, por que importa e onde acertar:
+e-mail da empresa, conta do plano nos insumos, e-mail e conta conferida dos
+fornecedores, endereço/CNO/empresa das obras, obra ligada a quem pede, quem
+libera em cada obra, quem compra e autoriza, condições de pagamento, histórico
+de preços, chave da IA, e a trava da compra por fora. Só lê.
+
+**Respostas que dei a ele e convém saber:**
+- "A obra pode receber sem lançamento financeiro?" — em dois casos: material
+  do almoxarifado (não tem nota) e "a nota não veio" (com motivo escrito).
+- A trava da compra por fora vale desde o lançamento, mas a chave nasce
+  desligada e só o administrador liga, em Suprimentos › Painel.
 
 ### ⚑ 24/11/2026 — A CAMINHADA DE PONTA A PONTA (e o defeito que ela achou)
 

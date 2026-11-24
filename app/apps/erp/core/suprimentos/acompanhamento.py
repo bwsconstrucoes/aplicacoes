@@ -514,6 +514,8 @@ ETAPAS = {
     "A_AUTORIZAR":  "Pedido aguardando autorização",
     "A_CAMINHO":    "Comprado, aguardando entrega",
     "EM_PARTE":     "Chegou em parte",
+    # Vem do estoque, sem compra (24/11/2026). Antes aparecia como "sem cotação".
+    "DO_ALMOXARIFADO": "Vem do almoxarifado — a obra confirma quando chegar",
 }
 ORDEM_DAS_ETAPAS = list(ETAPAS)
 _PESO_PRIORIDADE = {"ALTA": 0, "MEDIA": 1, "NORMAL": 2}
@@ -591,6 +593,8 @@ def planejamento(s: Session, usuario: Optional[Usuario] = None, *,
             etapa = "A_AUTORIZAR"
         elif cotacao is not None:
             etapa = "EM_COTACAO"
+        elif sup.status is StatusItemSuprimento.ENTREGUE:
+            etapa = "DO_ALMOXARIFADO"
         else:
             etapa = "SEM_COTACAO"
         previsto = pedido.previsao_entrega if pedido is not None else None

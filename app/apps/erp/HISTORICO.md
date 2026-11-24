@@ -40,6 +40,15 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 24/11/2026 — O PORTAL GANHOU "ESPERANDO POR VOCÊ" — E É DE TODAS AS ÁREAS (registro entre áreas)
+
+Decisão do dono: **o portal é o lugar onde cada pessoa vê o que está pendente
+com ela**, de todas as áreas (menos o ponto). Hoje o bloco conta as pendências
+de suprimentos e o aval de pagamento. **DP e Financeiro: para a pendência de
+vocês aparecer ali, acrescentem uma `linha(...)` em
+`core/suprimentos/esperando.py::comigo`** — contagem, texto e link. A rota é
+`/erp/api/pendencias-comigo`; a tela (`erp_portal.html`) não precisa mudar.
+
 ### ⚑ 24/11/2026 — SUPRIMENTOS MEXEU EM `core/titulos/service.py` (registro entre áreas)
 
 Uma linha, em `criar_titulo`: a exigência de "pedido vinculado" do tipo de
