@@ -651,6 +651,60 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O "Total" do analítico sem juros e multa, e a conta do cenário guardada — 24/11/2026
+
+**NÃO PUBLICADO** — no ramo, à espera do "pode" do dono. Sem migração.
+
+### 1. A coluna "Total" do Despesas Analítico não somava juros e multa
+
+O dono, com o relatório completo aberto, filtrando só o pago: *"quando eu somo
+pago, juros e multa, bate com o total de custos e despesas no executado. Mas a
+coluna que fala total não está somando o pago mais os juros mais a multa."*
+
+Era verdade, na planilha, no PDF **e na tela**: o total de cada LINHA era só
+`pago + a pagar`, enquanto o total do alto da tela (e o DRE) sempre contou os
+encargos pagos. Agora o total da linha é `pago + a pagar + juros e multa pagos`,
+e a soma dos totais das linhas dá o total da tela (há teste com banco).
+
+**Decisão tomada junto, e que o dono pode reverter:** um título ainda EM ABERTO
+pode trazer juros e multa PREVISTOS. O painel inteiro só conta encargo pago;
+então nas colunas Juros e Multa passou a aparecer só o que foi pago — senão a
+linha em aberto voltaria a ter um Total que não é a soma das vizinhas. O
+previsto continua na linha (`encargo_previsto`), sem coluna. O valor que se
+compara com a conta corrente (`valor_extrato`) segue com os números crus, como
+era. **Não verificado:** se a base real tem título em aberto com juros previsto
+(o cenário de teste tem, de propósito).
+
+### 2. A conta do cenário fica guardada em memória
+
+Pergunta dele: *"quando eu abro uma determinada obra, ele vai montar a ficha e
+isso demora. Quando eu fecho e volto, tem que fazer todo o recálculo. A gente
+não poderia gravar temporariamente esse cálculo? (…) se for mexer muita coisa,
+deixa assim mesmo."*
+
+Mexia pouco, e o ganho é maior que a ficha: Resultado, Por sócio, Evolução, a
+ficha de cada obra e os relatórios pedem TODOS a mesma conta
+(`web._calcular_cenario`), e cada clique a refazia do zero. Agora ela é guardada
+(`consultas.lembrando_o_grande`) e vale enquanto NADA de que ela depende mudar:
+
+- **a base** — o carimbo da última carga, o mesmo das listas pequenas; e
+  `esquecer_listas`, que as alterações de classificação pelo painel já chamam;
+- **as regras** — a chave é uma impressão (`_impressao_do_cenario`) do cenário
+  inteiro, dos parâmetros gerais, dos sócios e dos ajustes: mudou qualquer um,
+  a chave muda sozinha, sem ninguém precisar lembrar de invalidar;
+- **prazo de 30 minutos**, como rede de segurança para um caminho de alteração
+  que escape das duas travas de cima;
+- **teto de 3 contas guardadas** (a mais antiga sai): a chave muda a cada regra
+  alterada, e sem teto uma tarde de ajustes encheria a memória do serviço.
+
+⚠️ **Quem usa o resultado de `_calcular_cenario` NÃO PODE alterá-lo** — o mesmo
+dicionário é entregue a todos os pedidos. Conferido nos usos de hoje; código
+novo que ordenar ou acrescentar em cima dele tem de copiar antes.
+
+**Não medido na base real.** No banco de teste (minúsculo) a ficha foi de 89 ms
+para 26 ms; o ganho de verdade depende do tamanho da base. Vale só dentro do
+serviço: reiniciou (publicação, renovação), a primeira abertura refaz.
+
 ## Resultado por sócio, ficha da obra e conta corrente no DRE — 24/11/2026
 
 **PUBLICADO em 24/11/2026, 14:00 UTC** (`3b550e92`), com o "pode" do dono. **Sem

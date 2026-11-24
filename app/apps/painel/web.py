@@ -1469,7 +1469,53 @@ def _deptos_administrativos(config) -> list[str]:
     return prestacao.centros_da_estrutura(config)
 
 
+def _impressao_do_cenario(cenario: dict) -> str:
+    """Tudo de que a conta de um cenário depende, FORA a base de lançamentos,
+    resumido num texto curto. Mudou qualquer regra, sócio, ajuste ou parâmetro
+    → muda a impressão → a conta guardada não serve mais e é refeita.
+
+    A base em si é coberta pelo carimbo da última carga (`consultas`), e as
+    alterações de classificação feitas pelo painel chamam `esquecer_listas`."""
+    import hashlib
+    import json
+    from . import cenarios, prestacao_dados
+    partes = {
+        # o que veio no pedido (a montagem pode simular com regras por gravar)…
+        "pedido": cenario,
+        # …e o que está gravado, que é de onde a conta lê o que o pedido não traz
+        "gravado": cenarios.completo(cenario.get("id") or 0),
+        "config": prestacao_dados.config(),
+        "socios": prestacao_dados.socios(),
+        "ajustes": prestacao_dados.ajustes(),
+    }
+    try:
+        texto = json.dumps(partes, sort_keys=True, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        texto = repr(partes)
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
 def _calcular_cenario(cenario: dict) -> dict:
+    """A conta de um cenário — GUARDADA enquanto nada de que ela depende mudar.
+
+    24/11/2026, o dono: "quando eu abro uma determinada obra, ele vai montar a
+    ficha e isso demora. Quando eu fecho e volto, tem que fazer todo o
+    recálculo. A gente não poderia gravar temporariamente esse cálculo?"
+
+    Podia, e o ganho é maior que a ficha: Resultado, Por sócio, Evolução, a
+    ficha de cada obra e os relatórios pedem TODOS a mesma conta, e cada clique
+    a refazia do zero — várias consultas pesadas à base inteira. A base só muda
+    na carga diária.
+
+    QUEM USA O RESULTADO NÃO PODE ALTERÁ-LO: o mesmo dicionário é entregue a
+    todos os pedidos. Quem precisar de outra forma monta uma lista nova."""
+    from . import consultas
+    return consultas.lembrando_o_grande(
+        "cenario", _impressao_do_cenario(cenario),
+        lambda: _calcular_cenario_de_fato(cenario))
+
+
+def _calcular_cenario_de_fato(cenario: dict) -> dict:
     """A conta inteira de um cenario, do banco ate a quota de cada pessoa.
 
     Fica aqui, e nao na rota, porque a tela de montagem e a de resultado

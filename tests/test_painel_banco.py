@@ -519,6 +519,20 @@ def test_faixa_de_data_recorta_o_analitico(consultas):
     so_junho = consultas.analitico_despesas(f, de="2025-06-01", ate="2025-06-30")
     assert so_junho["quantos"] == 2
     assert reais(so_junho["total"]) == -675.00          # 400 + 250 + 25 de encargo
+    # O TOTAL DE CADA LINHA TEM OS JUROS E A MULTA DENTRO (24/11/2026). O dono
+    # somou as colunas do relatório e viu que "Total" não era a soma das
+    # vizinhas: ele dava só pago + a pagar. A soma dos totais das linhas tem de
+    # dar o total da tela — o mesmo dinheiro, linha a linha.
+    assert reais(sum(l["total"] for l in so_junho["linhas"])) == -675.00
+    for l in so_junho["linhas"]:
+        assert reais(l["total"]) == reais(l["pago"] + l["a_pagar"] + l["juros"] + l["multa"])
+    assert any(l["juros"] or l["multa"] for l in so_junho["linhas"]), \
+        "o cenário tem de ter encargo, senão este teste não prova nada"
+    # o título em aberto traz 999 de juros PREVISTOS: não foram pagos, não
+    # entram no total nem nas colunas de juros e multa — ficam em campo próprio
+    aberto = next(l for l in so_junho["linhas"] if l["a_pagar"])
+    assert (aberto["juros"], aberto["multa"], reais(aberto["total"])) == (0.0, 0.0, -250.00)
+    assert reais(aberto["encargo_previsto"]) == -999.00
 
     ate_junho = consultas.analitico_despesas(f, ate="2025-06-30")
     assert ate_junho["quantos"] == 3                    # entra a de 2024 também

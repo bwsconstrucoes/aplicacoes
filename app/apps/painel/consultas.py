@@ -160,7 +160,46 @@ def _carimbo_da_base() -> str:
 def esquecer_listas() -> None:
     """Joga fora o que esta guardado. Usado pelos testes e depois de uma carga."""
     _LEMBRADO.clear()
+    _FILAS_DOS_GRANDES.clear()
     _CARIMBO_LEMBRADO[0] = ""
+
+
+# O QUE É GRANDE TEM TETO E PRAZO (24/11/2026). O `_lembrando` de baixo guarda
+# listas pequenas, sem limite. A conta de um cenário da prestação é outra
+# escala — as alocações de cada obra em cada mês — e a chave dela muda a cada
+# regra alterada: sem teto, uma tarde de ajustes encheria a memória do serviço,
+# que é dividida com as outras áreas. Por isso cada "família" guarda só os
+# últimos `maximo` resultados, e nenhum por mais de `validade` segundos.
+_FILAS_DOS_GRANDES: dict[str, list] = {}
+
+
+def lembrando_o_grande(familia: str, chave, calcular, *, maximo: int = 3,
+                       validade: float = 1800.0):
+    """Como o `_lembrando`, para resultado caro e volumoso.
+
+    Vale enquanto a base for a mesma (o carimbo da última carga), enquanto
+    ninguém chamar `esquecer_listas` e por no máximo `validade` segundos — o
+    prazo é rede de segurança: se algum caminho de alteração escapar das duas
+    primeiras travas, o número velho não dura mais que isso."""
+    import time as _relogio
+    carimbo = _carimbo_da_base()
+    if carimbo != _CARIMBO_LEMBRADO[0]:
+        _LEMBRADO.clear()
+        _FILAS_DOS_GRANDES.clear()
+        _CARIMBO_LEMBRADO[0] = carimbo
+    completa = ("grande", familia, chave)
+    agora = _relogio.monotonic()
+    guardado = _LEMBRADO.get(completa)
+    if guardado is None or agora - guardado[0] > validade:
+        guardado = (agora, calcular())
+        _LEMBRADO[completa] = guardado
+        fila = _FILAS_DOS_GRANDES.setdefault(familia, [])
+        if completa in fila:
+            fila.remove(completa)
+        fila.append(completa)
+        while len(fila) > maximo:
+            _LEMBRADO.pop(fila.pop(0), None)
+    return guardado[1]
 
 
 def _lembrando(chave: tuple, calcular):
@@ -169,6 +208,7 @@ def _lembrando(chave: tuple, calcular):
     if carimbo != _CARIMBO_LEMBRADO[0]:
         # entrou carga nova: tudo que estava guardado fala da base velha
         _LEMBRADO.clear()
+        _FILAS_DOS_GRANDES.clear()
         _CARIMBO_LEMBRADO[0] = carimbo
     if chave not in _LEMBRADO:
         _LEMBRADO[chave] = calcular()
@@ -2099,7 +2139,8 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
                -- atraso em dias: so faz sentido no que ja foi pago. Subtracao de
                -- DATE no Postgres ja devolve o numero de dias, sem funcao nenhuma
                CASE WHEN data_pagamento IS NOT NULL AND data_vencimento IS NOT NULL
-                    THEN data_pagamento - data_vencimento END
+                    THEN data_pagamento - data_vencimento END,
+               {ENCARGO}
           FROM fato{where}
          ORDER BY {ordenacao}
          {paginando}"""
@@ -2111,13 +2152,32 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
               # a medição em que ele caiu e o número para procurar no OMIE
               "vencimento", "pedido", "medicao", "lancamento",
               # as duas datas separadas, e a diferenca entre elas
-              "data_vencimento", "data_pagamento", "atraso")
+              "data_vencimento", "data_pagamento", "atraso", "encargo")
     linhas = []
     for bruta in consultar(sql, params):
         linha = dict(zip(campos, bruta))
-        for campo in ("pago", "a_pagar", "juros", "multa"):
+        for campo in ("pago", "a_pagar", "juros", "multa", "encargo"):
             linha[campo] = float(linha[campo] or 0)
-        linha["total"] = linha["pago"] + linha["a_pagar"]
+        # O TOTAL DA LINHA TEM OS JUROS E A MULTA DENTRO (24/11/2026). O dono,
+        # com o relatório aberto: "quando eu somo pago, juros e multa, bate com
+        # o total de custos e despesas no executado. Mas a coluna que fala
+        # total não está somando o pago mais os juros mais a multa." Ela somava
+        # só pago + a pagar — enquanto o total da TELA, lá em cima, sempre
+        # contou os encargos, como o DRE. Uma coluna chamada Total que não é a
+        # soma das vizinhas faz desconfiar do relatório inteiro.
+        # (`encargo` é juros + multa do que foi pago — a mesma régua do total
+        # da tela; a soma dos totais das linhas dá esse total.)
+        linha["total"] = linha["pago"] + linha["a_pagar"] + linha["encargo"]
+        # JURO PREVISTO NÃO É JURO PAGO. Um título ainda em aberto pode trazer
+        # juros e multa previstos; o painel inteiro só conta encargo PAGO (o
+        # DRE, o total desta tela). Nas colunas Juros e Multa fica só o que foi
+        # pago — senão a linha em aberto voltaria a ter um Total que não é a
+        # soma das vizinhas. O previsto continua na linha, em campo próprio.
+        juros_cru, multa_crua = linha["juros"], linha["multa"]
+        linha["encargo_previsto"] = 0.0
+        if abs(linha["encargo"]) < 0.005 and (juros_cru or multa_crua):
+            linha["encargo_previsto"] = juros_cru + multa_crua
+            linha["juros"] = linha["multa"] = 0.0
         # A "medição" de uma despesa comum É o número do documento: quando não
         # há medição na observação, `chave_medicao` cai em "DOC:<documento>" e o
         # rótulo vira o próprio documento. Mostrar isso numa coluna chamada
@@ -2130,12 +2190,15 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
         # se compara ao débito; em aberto, à previsão do vencimento.
         conta = linha["conta"] or SEM_CONTA
         linha["movimento"] = chave_do_movimento(linha["lancamento"], linha["data"], conta)
+        # (o que se compara com a conta corrente segue com os valores crus,
+        # como sempre foi: no título em aberto, a previsão do vencimento)
         linha["movimento_extrato"] = (
-            linha["movimento"] if linha["pago"] or linha["juros"] or linha["multa"]
+            linha["movimento"] if linha["pago"] or juros_cru or multa_crua
             else chave_do_movimento(linha["lancamento"],
                                     linha["data_vencimento"] or linha["data"], conta,
                                     em_aberto=True))
-        linha["valor_extrato"] = linha["total"] + linha["juros"] + linha["multa"]
+        linha["valor_extrato"] = (linha["pago"] + linha["a_pagar"]
+                                  + juros_cru + multa_crua)
         linhas.append(linha)
 
     quantos = quantos or 0
