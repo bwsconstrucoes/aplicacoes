@@ -180,3 +180,28 @@ def test_o_que_nao_casou_ganha_as_SPs_PARECIDAS(banco_dda):
     assert "valor R$ 940,00" in rede["sugestoes"][0]["porque"]
     assert all(s["id"] not in ("1400000001", "1400000002", "1400000003")
                for b in por.values() for s in b["sugestoes"]), "SP já casada não é sugerida"
+
+
+def test_a_segunda_colagem_diz_o_que_e_NOVO_e_o_que_SAIU(banco_dda):
+    """24/11/2026: *"o que já foi importado, ignora e apenas adiciona as coisas novas. E
+    é interessante até dar um que foi adicionado novo."*"""
+    from app.apps.analisesps import dda
+    blocos = EXEMPLO.split("Código de barras:")
+    assert len(blocos) == 7
+    dda.guardar(dda.ler(EXEMPLO), "MARCELO")
+    # Amanhã: o boleto da Storehost saiu (foi pago) e chega um novo.
+    lido = dda.ler(EXEMPLO)
+    saiu = lido["boletos"].pop(1)
+    novo = dict(lido["boletos"][0], barras="9" * 44, linha_digitavel="9" * 47,
+                beneficiario_nome="FORNECEDOR NOVO", numero_documento="555")
+    lido["boletos"].append(novo)
+    feito = dda.guardar(lido, "MARCELO")
+    assert feito["novos"] == 1 and feito["ja_conhecidos"] == 5
+    lista = dda.listar(dda.filtros_da_tela({}))
+    assert lista["novos"] == 1 and lista["sairam"] == 1 and lista["quantos"] == 6
+    assert [b["beneficiario_nome"] for b in lista["boletos"] if b["novo"]] == ["FORNECEDOR NOVO"]
+    from werkzeug.datastructures import MultiDict
+    so_novos = dda.listar(dda.filtros_da_tela(MultiDict({"recorte": "novos"})))
+    assert [b["beneficiario_nome"] for b in so_novos["boletos"]] == ["FORNECEDOR NOVO"]
+    sairam = dda.listar(dda.filtros_da_tela(MultiDict({"recorte": "sairam"})))
+    assert [b["beneficiario_nome"] for b in sairam["boletos"]] == [saiu["beneficiario_nome"]]

@@ -494,11 +494,15 @@ def filtros_da_tela(args) -> dict:
     return {"situacoes": situacoes,
             "busca": " ".join(str(args.get("busca") or "").split())[:80],
             "de": data(args.get("de")), "ate": data(args.get("ate")),
-            "todas": bool(args.get("todas")), "aplicado": bool(args.get("f"))}
+            "todas": bool(args.get("todas")), "aplicado": bool(args.get("f")),
+            # "novos": os que apareceram pela primeira vez na última colagem;
+            # "sairam": os que estavam na anterior e não estão na última (em geral, pagos).
+            "recorte": args.get("recorte") if args.get("recorte") in ("novos", "sairam") else ""}
 
 
 _CAMPOS_DA_LISTA = ["id", "barras"] + _COLUNAS + ["sp_manual", "sp_manual_por",
-                                                    "ultima_colagem", "visto_em"]
+                                                    "ultima_colagem", "visto_em",
+                                                    "primeira_colagem"]
 
 
 def ultima_colagem() -> dict | None:
@@ -515,10 +519,31 @@ def ultima_colagem() -> dict | None:
 def listar(f: dict) -> dict:
     """Os boletos (da última colagem, ou de todas), cruzados com as SPs, com a
     contagem por situação. Duas consultas, mais a das SPs candidatas."""
-    from .db import consultar
+    from .db import consultar, consultar_um
     ultima = ultima_colagem()
+    # O QUE MUDOU DESDE A COLAGEM ANTERIOR (dono, 24/11/2026: *"o que já foi importado,
+    # ignora e apenas adiciona as coisas novas. E é interessante até dar um que foi
+    # adicionado novo"*): os novos desta colagem, e os que saíram do DDA.
+    anterior, novos, sairam = None, 0, 0
+    if ultima:
+        linha = consultar_um("SELECT max(id) FROM analisesps.dda_colagem WHERE id < ?",
+                             (ultima["id"],))
+        anterior = linha[0] if linha else None
+        linha = consultar_um(
+            "SELECT count(*) FILTER (WHERE primeira_colagem = ?), "
+            "       count(*) FILTER (WHERE ultima_colagem = ?) FROM analisesps.dda_boleto",
+            (ultima["id"], anterior or -1))
+        novos, sairam = (int(linha[0] or 0), int(linha[1] or 0)) if linha else (0, 0)
+        if not anterior:
+            novos = 0          # a primeira colagem: tudo é "novo", e dizer isso não ajuda
     partes, params = [], []
-    if not f.get("todas") and ultima:
+    if f.get("recorte") == "novos" and ultima:
+        partes.append("primeira_colagem = ?")
+        params.append(ultima["id"])
+    elif f.get("recorte") == "sairam" and ultima:
+        partes.append("ultima_colagem = ?")
+        params.append(anterior or -1)
+    elif not f.get("todas") and ultima:
         partes.append("ultima_colagem = ?")
         params.append(ultima["id"])
     if f.get("de"):
@@ -545,6 +570,7 @@ def listar(f: dict) -> dict:
             if b[c] is not None:
                 b[c] = Decimal(str(b[c]))
         b["na_ultima"] = bool(ultima and b["ultima_colagem"] == ultima["id"])
+        b["novo"] = bool(ultima and anterior and b["primeira_colagem"] == ultima["id"])
     cruzar(boletos)
     contagem = {s: 0 for s in ORDEM}
     totais = {s: Decimal("0") for s in ORDEM}
@@ -558,7 +584,8 @@ def listar(f: dict) -> dict:
     ordem = {s: n for n, s in enumerate(ORDEM)}
     mostrar.sort(key=lambda b: (ordem[b["situacao"]], b["vencimento"] or dt.date.max,
                                 -b["valor"]))
-    return {"boletos": mostrar, "ultima": ultima,
+    return {"boletos": mostrar, "ultima": ultima, "novos": novos, "sairam": sairam,
+            "tem_anterior": bool(anterior),
             "contagem": [(s, ROTULOS[s], contagem[s], totais[s]) for s in ORDEM],
             "total": sum((b["valor"] for b in boletos), Decimal("0")),
             "quantos": len(boletos)}

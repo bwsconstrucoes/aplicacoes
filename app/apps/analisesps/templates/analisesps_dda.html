@@ -88,7 +88,19 @@
   {% set u = lista.ultima %}
   <div class="cartao">
     <h2>DDA <small>{{ lista.quantos }} boleto(s) · {{ lista.total|moeda }}
-      {% if not filtros.todas %}· colado em {{ u.colado_em|momento_br }}{% if u.colado_por %} por {{ u.colado_por }}{% endif %}{% else %}· todas as colagens{% endif %}</small></h2>
+      {% if filtros.recorte == 'novos' %}· só os novos da última colagem
+      {% elif filtros.recorte == 'sairam' %}· só os que saíram do DDA
+      {% elif not filtros.todas %}· colado em {{ u.colado_em|momento_br }}{% if u.colado_por %} por {{ u.colado_por }}{% endif %}{% else %}· todas as colagens{% endif %}</small></h2>
+    {# O QUE MUDOU DESDE A COLAGEM ANTERIOR (24/11/2026). O cruzamento com as SPs é
+       refeito a cada abertura: SP lançada depois do boleto casa sozinha. #}
+    {% if lista.tem_anterior %}
+      <p class="dda-mudou">
+        {% if lista.novos %}<a class="etiqueta novo" href="{{ url_for('analisesps.tela_dda', f=1, recorte='novos') }}">{{ lista.novos }} novo(s) nesta colagem</a>{% else %}<span class="cartao-dica">nenhum boleto novo nesta colagem</span>{% endif %}
+        {% if lista.sairam %} · <a href="{{ url_for('analisesps.tela_dda', f=1, recorte='sairam') }}"
+          title="Estavam na colagem anterior e não estão nesta — em geral, já foram pagos">{{ lista.sairam }} saíram do DDA desde a colagem anterior</a>{% endif %}
+        {% if filtros.recorte %} · <a href="{{ url_for('analisesps.tela_dda') }}">ver a última colagem inteira</a>{% endif %}
+      </p>
+    {% endif %}
     {% if not filtros.todas and u.total_do_banco is not none %}
       {% if u.boletos == u.boletos_do_banco and u.total == u.total_do_banco %}
         <p class="cartao-dica">✓ Confere com o total do banco ({{ u.boletos_do_banco }} boletos, {{ u.total_do_banco|moeda }}).</p>
@@ -136,7 +148,7 @@
             data-linha="{{ b.linha_digitavel }}" aria-label="Marcar o boleto de {{ b.beneficiario_nome }}"></td>
         <td>{{ b.vencimento|data_br }}{% if b.limite and b.limite != b.vencimento %}<br><span class="cartao-dica">limite {{ b.limite|data_br }}</span>{% endif %}
           {% if not b.na_ultima %}<br><span class="cartao-dica" title="Não estava na última colagem — em geral, já foi pago">fora do DDA</span>{% endif %}</td>
-        <td><b>{{ b.beneficiario_nome }}</b><br><span class="cartao-dica">{{ dda.documento_bonito(b.beneficiario_doc) }} · {{ b.banco }}</span>
+        <td>{% if b.novo %}<span class="etiqueta novo" title="Apareceu pela primeira vez na última colagem">novo</span> {% endif %}<b>{{ b.beneficiario_nome }}</b><br><span class="cartao-dica">{{ dda.documento_bonito(b.beneficiario_doc) }} · {{ b.banco }}</span>
           {% if b.beneficiario_final_nome %}<br><span class="cartao-dica">beneficiário final: {{ b.beneficiario_final_nome }}{% if b.beneficiario_final_doc %} ({{ dda.documento_bonito(b.beneficiario_final_doc) }}){% endif %}</span>{% endif %}
           <br><span class="cartao-dica linha-dig" title="Linha digitável">{{ b.linha_digitavel }}</span></td>
         <td><span class="cartao-dica">{{ dda.filial(b.pagador_cnpj) }}</span><br><span class="cartao-dica">{{ dda.documento_bonito(b.pagador_cnpj) }}</span></td>
@@ -184,6 +196,8 @@
 {% endif %}
 
 <style>
+  .etiqueta.novo { background:#E6F0F7; color:var(--ciano); text-decoration:none; }
+  .dda-mudou { margin:2px 0 10px; }
   .lateral-dda { padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid var(--borda); }
   .lateral-dda textarea { width:100%; font-size:12px; }
   .kpis-dda a.kpi { text-decoration:none; color:inherit; }

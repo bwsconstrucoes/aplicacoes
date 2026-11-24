@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 278 — DDA: o que é NOVO nesta colagem e o que SAIU do DDA (24/11/2026)
+
+- O dono, depois de testar: *"ele está gravando a informação? (…) A gente vai ficar
+  copiando e colando diariamente (…) o que já foi importado, ignora e apenas adiciona as
+  coisas novas. E é interessante até dar um que foi adicionado novo (…) cada vez que a
+  gente entrar nessa tela do DDA, aí vai estar atualizado (…) tem que ser dinâmico."*
+- **O que já era assim (leva 277), confirmado a ele:** grava um boleto por código de
+  barras; colar de novo não duplica (o conhecido só ganha "visto de novo"); o cruzamento
+  com as SPs é refeito a cada abertura da tela — SP lançada depois casa sozinha.
+- **Novo:** no alto da tela, "N novo(s) nesta colagem" (boleto cuja primeira colagem é a
+  última) e "N saíram do DDA desde a colagem anterior" (estavam na anterior e não nesta —
+  em geral, pagos). Os dois são clicáveis e filtram a lista (`recorte=novos|sairam`); cada
+  linha nova ganha a etiqueta "novo". Na primeira colagem não aparece (seria tudo novo).
+- Sem migração (as colunas `primeira_colagem`/`ultima_colagem` já existiam). Custo: +2
+  consultas leves ao banco por abertura.
+- Teste: `test_a_segunda_colagem_diz_o_que_e_NOVO_e_o_que_SAIU`.
+
 #### Leva 277 — Tela DDA: colar o DDA do Bradesco e cruzar com as SPs (24/11/2026) — MIGRAÇÃO 058
 
 - *"No sistema do Bradesco, se a gente entrar lá no DDA, a gente consegue copiar (…) o
