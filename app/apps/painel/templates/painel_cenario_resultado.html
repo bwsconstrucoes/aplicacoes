@@ -153,7 +153,9 @@
       <tbody>
         {% for nome, n in por_obra %}
         <tr>
-          <td class="desc"><b>{{ nome }}</b></td>
+          {# o nome abre a ficha da obra por cima da tela (24/11/2026) #}
+          <td class="desc"><button type="button" data-ficha-da-obra="{{ nome }}" title="Abrir a ficha desta obra"
+              style="border:0; background:none; color:var(--azul-claro); font:inherit; font-weight:700; cursor:pointer; padding:0; text-align:left">{{ nome }}</button></td>
           <td class="dados direita">{{ brl(n.receita_bruta) }}</td>
           <td class="dados direita">{{ brl(n.receita_liquida) }}</td>
           <td class="dados direita">{{ brl(n.despesas) }}</td>
@@ -523,4 +525,5 @@
   </div>
 </div>
 {% endif %}
+{% include "painel_ficha_da_obra.html" %}
 {% endblock %}
