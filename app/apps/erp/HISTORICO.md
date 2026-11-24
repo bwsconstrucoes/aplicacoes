@@ -51,6 +51,29 @@ possivelmente sem autor, a conferir por quem cuida delas:** Arquivo, Diário de
 obra (usado pelo portal), Suprimentos, lista de obras, agenda, notas e a lista
 de despesas com colaborador. Detalhe em `HISTORICO_PESSOAL.md`, 24/11/2026.
 
+### ⚑ 23/11/2026 — O PORTAL DA OBRA FOI REARRUMADO, PELO CHAT DE SUPRIMENTOS (registro entre áreas)
+
+Pedido do dono, olhando o portal. Mexe em `templates/erp_portal.html` e
+`core/portal.py`, que são do **Pessoal e DP** — quem abrir aquele chat precisa
+saber:
+
+- **"Pessoal e DP" virou "Colaboradores"** na porta do portal. Ele: *"vamos
+  chamar de colaboradores, fica melhor."* Só o nome da área; a chave
+  (`pessoal`) e os tipos não mudaram.
+- **Os avisos desceram e ficaram recolhidos.** "Contratos de experiência
+  terminando" e "Férias da equipe" ficavam no alto, abertos, e com muita gente
+  empurravam as solicitações para fora da tela. Ele: *"está muito grande a
+  informação (...) e estando em cima você se perde no portal."* Agora há um
+  bloco **"Avisos da equipe"** DEPOIS de "O que você já pediu", cada aviso só
+  com o título e a quantidade; toca e abre. **"Para o colaborador assinar" e
+  "Documentos a devolver" continuam no alto** — têm prazo e pedem ação.
+  ESCOLHA MINHA; ele só falou do aviso de experiência.
+- **A área de material chama "Suprimentos" e está FECHADA na porta**, como
+  Pagamentos. Ele: *"manter desativado por enquanto."* A tela
+  `/erp/portal/material` continua existindo e respondendo (o ERP manda para
+  ela em "Receber e lançar a nota"). Para reabrir: em `AREAS`, `pronta: True`,
+  `so_tela: True`, `tela` e `acao: "receber_material"` — está escrito lá.
+
 ### ⚑ 23/11/2026 — PESSOAL CONSERTOU O CPF NA TELA DE OPERADORES (registro entre áreas)
 
 A edição de operador (`/erp/api/usuarios/<id>`, Configurações › Operadores)

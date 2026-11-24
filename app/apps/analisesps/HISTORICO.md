@@ -12244,6 +12244,22 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 276 — Comprovantes: a folha de rodapé é "Não é comprovante", não "Deu erro" (24/11/2026)
+
+- O dono: *"as páginas 'em branco' ainda estão sendo listadas com erro (…) sicredi_….pdf
+  pág. 2 — Deu erro — O robô não devolveu resultado para esta página."*
+- Desde 18/11 o BaixaBradesco pula a folha que não é comprovante (rodapé do Sicredi,
+  continuação) e diz isso em `paginas_sem_pagamento` na resposta. `ler_resposta` não lia
+  essa lista; com a leva 275 (página sem resultado vira erro), a folha de rodapé passou a
+  aparecer como "Deu erro". Agora: rodapé/continuação → `SEM_PAGAMENTO` ("Não é
+  comprovante", não pede ação); página SEM TEXTO nenhum (foto/escaneado) → "Deu erro" com o
+  motivo do robô (essa não baixa nunca sem alguém reenviar o PDF do banco).
+- De quebra: o "Já tinha sido baixado" vinha sem número de página (o robô o põe em
+  `pagina`, e a tela só lia `receipt.page`).
+- As linhas já gravadas entre 21 e 24/11 como "o robô não devolveu resultado" continuam
+  como estão (não dá para saber, sem o PDF, se eram rodapé ou foto).
+- Teste: `test_a_folha_de_RODAPE_nao_vira_erro_e_a_escaneada_vira`.
+
 #### Leva 275 — Comprovantes: a página entra na lista no envio, "Aguardando a baixa" (21/11/2026)
 
 - *"Quando você anexa o comprovante e coloca mandar para a baixa (…) ele meio que some (…)
@@ -12260,6 +12276,7 @@ somente Solicitações de uma conta especifica"*.
   Todas podem ser baixadas de novo (leva 274). "Processar de novo" recria o aguardando.
 - A tela se recarrega a cada leva que volta (antes, só no fim do envio).
 - Sem migração. Testes: `test_analisesps_comprovantes_gestao_banco.py`.
+- **Publicado em 21/11/2026.** Os testes antigos do processamento (`test_analisesps_banco.py`) foram ajustados à linha que nasce no envio.
 
 #### Leva 274 — Comprovantes: "Baixar de novo" na página que não baixou (19/11/2026)
 

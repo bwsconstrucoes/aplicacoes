@@ -197,6 +197,9 @@ NAO_LOCALIZADO = "NAO_LOCALIZADO"
 PENDENTE_VALIDACAO = "PENDENTE_VALIDACAO"
 RECUSADO = "RECUSADO"
 ERRO = "ERRO"
+# A folha que não é comprovante — rodapé do banco, continuação (24/11/2026). O robô
+# a pula desde 18/11 (`paginas_sem_pagamento` na resposta). Não pede ação.
+SEM_PAGAMENTO = "SEM_PAGAMENTO"
 # A página que acabou de chegar e espera a vez (21/11/2026): a linha nasce no envio
 # e é trocada pelo resultado quando a leva dela volta do robô.
 AGUARDANDO = "AGUARDANDO"
@@ -213,13 +216,14 @@ ROTULOS = {
     RECUSADO: "Pagamento não efetivado",
     ERRO: "Deu erro",
     REENVIADO: "Mandado de novo",
+    SEM_PAGAMENTO: "Não é comprovante",
 }
 
 # A ordem em que a tela mostra: primeiro o que pede ação, por último o que
 # deu certo. Quem abre a tela quer saber o que ficou de fora — o que baixou é
 # o esperado.
 ORDEM = [AGUARDANDO, ERRO, NAO_LOCALIZADO, PENDENTE_VALIDACAO, RECUSADO, DUPLICADO, BAIXADO,
-         REENVIADO]
+         REENVIADO, SEM_PAGAMENTO]
 
 
 def _texto(v) -> str:
@@ -471,7 +475,9 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
     def acrescentar(situacao, bruto, motivo=""):
         recibo = (bruto or {}).get("receipt") or bruto or {}
         try:
-            pagina = int(recibo.get("page") or 0)
+            # Os planos trazem a página em `receipt.page`; os duplicados e os
+            # recusados, em `pagina` (24/11/2026: o duplicado aparecia sem página).
+            pagina = int(recibo.get("page") or (bruto or {}).get("pagina") or 0)
         except (TypeError, ValueError):
             pagina = 0
         # ⚠️ A SP VEM DE DOIS LUGARES, e a tela lia só um. Relato do dono em
@@ -506,6 +512,24 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
         acrescentar(RECUSADO, item,
                     _texto(item.get("motivo"))
                     or "O pagamento não consta como efetivado.")
+    # ⚠️ A FOLHA QUE NÃO É COMPROVANTE (24/11/2026). Desde 18/11 o robô pula a folha
+    # de rodapé ou de continuação (o boleto do Sicredi sai em duas folhas) e diz isso
+    # em `paginas_sem_pagamento`. Sem ler esta lista, a página voltava sem resultado e
+    # a tela a chamava de "Deu erro — o robô não devolveu resultado", com o botão de
+    # baixar de novo. Rodapé não pede ação; a página SEM TEXTO nenhum (foto,
+    # escaneado) pede — não vai baixar nunca sem alguém reenviar o PDF do banco.
+    for item in resposta.get("paginas_sem_pagamento") or []:
+        motivo = _texto((item or {}).get("motivo"))
+        try:
+            pagina = int((item or {}).get("pagina") or 0)
+        except (TypeError, ValueError):
+            pagina = 0
+        linhas.append({
+            "pagina": (primeira_pagina + pagina - 1) if pagina else None,
+            "situacao": ERRO if "sem texto" in motivo.lower() else SEM_PAGAMENTO,
+            "sp_id": "", "valor": "", "recebedor": "",
+            "motivo": (motivo or "Folha sem nenhum dado de pagamento.")[:500],
+            "conversa_omie": ""})
     # ⚠️ A TRAVA QUE TERIA PEGADO O DEFEITO DE 13/09/2026 NO PRIMEIRO DIA.
     # O robô devolve no corpo da resposta se rodou em ensaio. Se rodou, NADA
     # foi gravado — e nenhuma página pode ser anunciada como baixada, por mais
@@ -1371,7 +1395,7 @@ def listar(f: dict) -> dict:
             "rotulo": ROTULOS.get(l[2], l[2]), "sp_id": l[3], "valor": l[4],
             "recebedor": l[5], "motivo": l[6], "motivo_explicado": explicar_erro(l[6]),
             "conversa_omie": l[7], "arquivo": l[8], "quem": l[9], "recebido_em": l[10],
-            "pede_acao": l[2] not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO),
+            "pede_acao": l[2] not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO, SEM_PAGAMENTO),
             # Onde está a página que aguarda: na fila, ou a leva dela já está no robô.
             "andamento": ("" if l[2] != AGUARDANDO else
                           (f"baixando agora — leva {min((l[15] or 0) + 1, l[14] or 1)} de "
@@ -1553,7 +1577,8 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
                          for s in ORDEM if contagem.get(s)],
             "resolvidos": contagem.get(BAIXADO, 0) + contagem.get(DUPLICADO, 0),
             "pendencias": sum(q for s, q in contagem.items()
-                              if s not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO)),
+                              if s not in (BAIXADO, DUPLICADO, REENVIADO, AGUARDANDO,
+                                           SEM_PAGAMENTO)),
         })
     return saida
 
