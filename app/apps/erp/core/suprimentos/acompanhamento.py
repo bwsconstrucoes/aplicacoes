@@ -246,8 +246,11 @@ def financeiro_do_pedido(pedido: PedidoCompra, base: dict[str, Any]) -> dict[str
     notas_sem_titulo = 0
     proximo: Optional[date] = None
     numeros = []
+    vistos: set[int] = set()
+
     def somar(titulo: Titulo) -> None:
         nonlocal em_titulo, pago, proximo
+        vistos.add(titulo.id)
         numeros.append(titulo.numero_sp)
         em_titulo += _d(titulo.valor_liquido)
         for parcela in base["parcelas"].get(titulo.id, []):
@@ -266,6 +269,11 @@ def financeiro_do_pedido(pedido: PedidoCompra, base: dict[str, Any]) -> dict[str
     # jogada na tela de Lançar), então conta também como "tem nota".
     diretos = base.get("titulos_diretos", {}).get(pedido.id, [])
     for titulo in diretos:
+        # Desde 24/11/2026 o recebimento GRAVA a nota e a liga ao pedido e ao
+        # título: aí o mesmo título chega pelos dois caminhos, e somá-lo duas
+        # vezes dobraria a conta do pedido.
+        if titulo.id in vistos:
+            continue
         somar(titulo)
         em_nota += _d(titulo.valor_bruto)
     return {"notas": len(notas) + len(diretos), "em_nota": em_nota.quantize(_CENT),

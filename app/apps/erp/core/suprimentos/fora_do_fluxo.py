@@ -57,12 +57,29 @@ class PrecisaDoMotivo(ErroValidacao):
 #           para o coordenador tomar ciência. Não pede motivo, não bloqueia.
 #   TRAVAR  pede o motivo e bloqueia até alguém com alçada autorizar.
 MODOS = ("AVISAR", "TRAVAR")
+NASCE_LIGADA_EM = date(2026, 11, 24)
 
 
 def estado(s: Session) -> tuple[Optional[str], Optional[date]]:
     """(modo, desde quando) — ou (None, None) com a regra desligada."""
     linha = s.get(Parametro, CHAVE)
-    valor = (linha.valor or "").strip() if linha else ""
+    if linha is None:
+        # ⚑ NASCE LIGADA, TRAVANDO (24/11/2026). O dono, pela quarta vez e sem
+        # margem: "a trava da compra por fora é pra estar sempre ligada." Até
+        # aqui a chave nascia desligada e dependia de um clique no Painel —
+        # que podia nunca acontecer. Agora, sem ninguém ter mexido, vale
+        # TRAVAR. O administrador ainda pode desligar ou só avisar pelo
+        # Painel (aí a escolha fica gravada e é ela que vale).
+        # Só liga se a tabela existir: com o banco atrasado, travar quebraria
+        # todo lançamento de material.
+        try:
+            with s.begin_nested():
+                existe = s.execute(text(
+                    "SELECT to_regclass('compras_fora_do_fluxo')")).scalar() is not None
+        except Exception:
+            existe = False
+        return ("TRAVAR", NASCE_LIGADA_EM) if existe else (None, None)
+    valor = (linha.valor or "").strip()
     if not valor:
         return None, None
     modo, _, quando = valor.partition(":") if ":" in valor else ("TRAVAR", "", valor)

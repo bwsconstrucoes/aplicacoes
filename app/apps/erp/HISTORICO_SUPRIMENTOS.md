@@ -66,8 +66,16 @@ isolada não acha isso.
 7. A porta do portal: "só está fechada porque não está em produção ainda o
    suprimento. Assim que a gente libera, [abre] o portal."
 
-**AINDA NÃO FEITO:** transformar a caminhada em teste permanente (ele não
-entendeu o que era; expliquei e ofereci).
+**FEITO em 24/11 (3ª conversa):** a caminhada virou teste permanente
+(`tests/test_suprimentos_caminhada_banco.py`); a crítica A10 morreu porque o
+recebimento passou a gravar a nota; a trava da compra por fora nasce ligada.
+
+**⚠ A TRAVA NASCE LIGADA A PARTIR DA PRÓXIMA PUBLICAÇÃO.** Toda conta de
+material lançada sem pedido de compra vai pedir o motivo e ficar bloqueada até
+a ciência — inclusive as que hoje são lançadas direto no financeiro, porque as
+compras ainda não passam pelo ERP. Ele foi avisado três vezes e decidiu: *"a
+trava da compra por fora é pra estar sempre ligada."* **NÃO PERGUNTAR DE NOVO.**
+O administrador ainda pode desligar ou pôr em "só avisar" pelo Painel.
 
 **✔ PUBLICADO em 23/11/2026 (2ª conversa), com o "pode" dele:** a porta do portal para
 material virou **"Suprimentos" e está FECHADA de propósito** — ele: *"manter
@@ -258,6 +266,38 @@ clique. Relatada a ele.
 tem conta de e-mail; vi a autorização ficar e o motivo aparecer); a liberação
 feita por um supervisor de verdade pelo celular (vi o selo no portal e a
 liberação pela tela do ERP).
+
+### ⚑ 24/11/2026 (9ª rodada) — O RECEBIMENTO GRAVA A NOTA, A TRAVA NASCE LIGADA, A CAMINHADA É TESTE
+
+**1. O recebimento grava a nota** (`lancamento.gravar_a_nota`). Ele: *"o
+recebimento precisa anexar a nota e o sistema gravar a nota. Não tem sentido eu
+fazer isso novamente no financeiro se já poderia fazer no recebimento."* No
+receber-e-lançar (e ao lançar pela tela de Lançar a conta de um pedido), nasce
+um registro em Financeiro › Notas — `documentos_fiscais`, origem `RECEBIMENTO`
+— ligado ao pedido de compra e ao título. Com isso a crítica A10 ("exige
+documento fiscal vinculado") deixa de aparecer, porque deixou de ser verdade.
+- Nota que já existe (chave de acesso, ou emitente + número) é reaproveitada —
+  é o que vai acontecer quando o monitoramento por API trouxer o XML antes.
+- **Nota que já pertence a outro título é recusada**: "já está lançada no
+  título X. Lançar de novo seria pagar duas vezes." Trava nova, de brinde.
+- `acompanhamento.financeiro_do_pedido` deixou de somar duas vezes o título que
+  agora chega pelos dois caminhos (pela nota e pelo vínculo direto).
+- A situação da nota nasce `DESCONHECIDA`: não houve consulta à Sefaz.
+
+**2. A trava da compra por fora NASCE LIGADA** (`fora_do_fluxo.estado`). Sem a
+chave gravada, vale TRAVAR — desde que a tabela da migração 122 exista (banco
+atrasado = desligada, para não quebrar todo lançamento). Chave gravada pelo
+administrador (desligar, só avisar) continua valendo como escolha dele.
+
+**3. A caminhada é teste permanente**
+(`tests/test_suprimentos_caminhada_banco.py`, marcado `banco`). Quatro
+caminhos pelas rotas, com cinco pessoas: compra normal até o pagamento; compra
+direta, recusa, cancelamento e almoxarifado; material fora do cadastro; compra
+por fora até o pedido tardio. Cada passo tem nome, e a falha diz qual quebrou.
+⚠ O `mundo` desse arquivo troca o `get_session` por um que DESFAZ quando a rota
+termina em erro, como na produção — o `app_real` comum não desfaz, e o resto de
+um passo recusado vazava para o seguinte.
+**Mudou uma etapa do fluxo de propósito? Atualize a caminhada junto.**
 
 ### ⚑ 24/11/2026 (8ª rodada) — O PORTAL AVISA, O ALMOXARIFADO FECHA, O ADMINISTRADOR PODE TUDO, E A PRONTIDÃO
 

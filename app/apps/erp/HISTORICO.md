@@ -40,6 +40,23 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 24/11/2026 — A TRAVA DA COMPRA POR FORA NASCE LIGADA, E O RECEBIMENTO GRAVA NOTA (registro entre áreas — FINANCEIRO, LEIA)
+
+Duas mudanças do chat de Suprimentos que o **Financeiro** vai sentir:
+
+1. **Toda conta de MATERIAL lançada sem pedido de compra passa a pedir o motivo
+   e nasce BLOQUEADA** até alguém dar a ciência (gestor, supervisor, diretor ou
+   administrador), em Suprimentos › Painel ou pelo portal. Antes a regra
+   existia desligada; decisão do dono: "é pra estar sempre ligada". Vale para o
+   que for lançado depois da publicação. Quem chama `/erp/api/lancamento` com
+   tipo de material e sem `pedido_compra_id` recebe 409 `precisa_motivo` e tem
+   de mandar `motivo_sem_pedido`. O administrador pode mudar em Suprimentos ›
+   Painel.
+2. **O recebimento de material cria um registro em `documentos_fiscais`**
+   (origem `RECEBIMENTO`, situação `DESCONHECIDA`), ligado ao pedido e ao
+   título. A tela de Notas vai mostrar essas notas. A mesma nota (emitente +
+   número, ou chave) não entra em dois títulos.
+
 ### ⚑ 24/11/2026 — O PORTAL GANHOU "ESPERANDO POR VOCÊ" — E É DE TODAS AS ÁREAS (registro entre áreas)
 
 Decisão do dono: **o portal é o lugar onde cada pessoa vê o que está pendente

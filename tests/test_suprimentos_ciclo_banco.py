@@ -1170,10 +1170,16 @@ def _outro_que_autoriza(base):
     return base["_diretor"]
 
 
-def test_com_a_regra_desligada_nada_muda(base):
+def test_a_trava_nasce_ligada_e_so_desliga_se_alguem_desligar(base):
+    """ "A trava da compra por fora é pra estar sempre ligada" (24/11/2026)."""
+    s, u = base["s"], base["u"]
+    assert svc_fora.estado(s)[0] == "TRAVAR"             # ninguém mexeu: trava
     titulo = _titulo_solto(base, "500.00", "SP-FORA-0")
-    assert svc_fora.ligado_desde(base["s"]) is None
-    assert svc_fora.conferir(base["s"], titulo, {}, base["u"]) is False
+    with pytest.raises(svc_fora.PrecisaDoMotivo):
+        svc_fora.conferir(s, titulo, {}, u)
+    svc_fora.ligar(s, u, ""); s.flush()                  # o administrador desligou
+    assert svc_fora.estado(s) == (None, None)
+    assert svc_fora.conferir(s, titulo, {}, u) is False
     assert titulo.status is StatusTitulo.APROVADO
 
 
@@ -1641,3 +1647,34 @@ def test_a_conferencia_de_prontidao_aponta_o_que_falta(base):
     assert por_titulo["Conta de e-mail da empresa"]["situacao"] == "FALTA"
     assert d["faltam"] + d["atencao"] + d["prontos"] == len(d["itens"])
     assert all(i["por_que"] and i["onde"] for i in d["itens"])
+
+
+def test_o_recebimento_grava_a_nota_e_o_financeiro_nao_pede_de_novo(base):
+    """ "O recebimento precisa anexar a nota e o sistema gravar a nota. Não tem
+    sentido eu fazer isso novamente no financeiro." """
+    from sqlalchemy import text
+    from app.apps.erp.db.models.financeiro import Titulo as _Titulo
+    s, u = base["s"], base["u"]
+    _com_conta_do_plano(base)
+    pedido = _fechar(base)
+    venc = (hoje() + timedelta(days=30)).isoformat()
+    fin = dict(documento_numero="9911", forma_pagamento="PIX", data_emissao=hoje().isoformat())
+    saida = svc_lanc.receber_e_lancar(s, u, pedido.id, _pacote(
+        base, pedido, [(base["item_a"], 10)], valor="1000,00",
+        parcelas=[{"vencimento": venc, "valor": "1000.00"}], **fin))
+    titulo = s.get(_Titulo, saida["titulo"]["id"])
+    nota = s.get(DocumentoFiscal, titulo.documento_fiscal_id)
+    assert nota is not None and nota.numero == "9911"
+    assert nota.pedido_compra_id == pedido.id and nota.origem == "RECEBIMENTO"
+    assert nota.valor_total == Decimal("1000.00")
+    criticas = s.execute(text("SELECT criticas FROM analises WHERE titulo_id = :t"),
+                         {"t": titulo.id}).scalar() or []
+    assert not ({"A10", "B1"} & {c["codigo"] for c in criticas})
+    # o pedido não conta a mesma conta duas vezes (nota + título direto)
+    conta = svc_acomp.financeiro_do_pedido(pedido, svc_acomp.carregar(s, [pedido]))
+    assert conta["em_titulo"] == Decimal("1000.00") and conta["em_nota"] == Decimal("1000.00")
+    # e a mesma nota não entra de novo
+    with pytest.raises(ErroValidacao, match="já está lançada"):
+        svc_lanc.receber_e_lancar(s, u, pedido.id, _pacote(
+            base, pedido, [(base["item_b"], 20)], valor="1000,00",
+            parcelas=[{"vencimento": venc, "valor": "1000.00"}], **fin))

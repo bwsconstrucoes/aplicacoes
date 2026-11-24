@@ -414,6 +414,9 @@ def receber_e_lancar(s: Session, usuario: Usuario, pedido_id: int,
         "retencoes": [], "interessados": [],
         "pedido_compra_id": pedido.id, "recebimento_id": rec.id,
     }
+    nota = gravar_a_nota(s, pedido, numero=numero_nota, valor=valor,
+                         emissao=fin.get("data_emissao"), chave=fin.get("chave_acesso"))
+    d["documento_fiscal_id"] = nota.id
     critica = checar(s, {"fornecedor_id": d["fornecedor_id"], "valor": d["valor_bruto"],
                          "parcelas": d["parcelas"], "descricao": d["descricao"],
                          "categoria_id": d["categoria_id"],
@@ -437,3 +440,74 @@ def receber_e_lancar(s: Session, usuario: Usuario, pedido_id: int,
             "titulo": {"id": titulo.id, "numero_sp": titulo.numero_sp,
                        "status": titulo.status.value,
                        "alertas": [a.get("msg") for a in critica["alertas"]]}}
+
+
+# ---------------------------------------------------------------------------
+# O RECEBIMENTO GRAVA A NOTA (24/11/2026)
+#
+# O dono, ao saber que a conta nascida do recebimento chegava ao financeiro com
+# o aviso "exige documento fiscal vinculado", mesmo com o número da nota e o
+# arquivo anexados: "o recebimento precisa anexar a nota e o sistema gravar a
+# nota. Não tem sentido eu fazer isso novamente no financeiro se já poderia
+# fazer no recebimento."
+#
+# Então a nota passa a existir como NOTA (em Financeiro › Notas), ligada ao
+# pedido de compra e ao título, no mesmo ato do recebimento. Ninguém cadastra
+# duas vezes, e a crítica A10 deixa de aparecer porque deixou de ser verdade.
+#
+# Nota que JÁ EXISTE (veio por XML, ou vai vir pelo monitoramento) é
+# reaproveitada — pela chave de acesso, ou por emitente + número. E se ela já
+# pertence a outro título, o lançamento é recusado: é a mesma nota duas vezes.
+# ---------------------------------------------------------------------------
+def gravar_a_nota(s: Session, pedido: PedidoCompra, *, numero: str, valor: Any,
+                  emissao: Any = None, chave: Any = None):
+    import re
+    from app.apps.erp.db.models.cadastros import Fornecedor
+    from app.apps.erp.db.models.financeiro import (
+        DocumentoFiscal, SituacaoNota, TipoDocFiscal, Titulo)
+
+    forn = s.get(Fornecedor, pedido.fornecedor_id)
+    emitente = re.sub(r"\D", "", getattr(forn, "cnpj_cpf", "") or "")
+    numero = " ".join(str(numero or "").split())
+    chave = re.sub(r"\D", "", str(chave or ""))[:44] or None
+    nota = None
+    if chave:
+        nota = s.scalars(select(DocumentoFiscal).where(
+            DocumentoFiscal.chave_acesso == chave)).first()
+    if nota is None and emitente and numero:
+        nota = next((n for n in s.scalars(select(DocumentoFiscal).where(
+            DocumentoFiscal.emitente_doc == emitente,
+            DocumentoFiscal.numero == numero)).all()
+            if n.emitente_doc == emitente and n.numero == numero), None)
+    if nota is not None:
+        dono = s.scalars(select(Titulo).where(
+            Titulo.documento_fiscal_id == nota.id)).first()
+        if dono is not None and getattr(dono.status, "value", "") not in ("CANCELADO", "ESTORNADO"):
+            raise ErroValidacao(
+                f"A nota {numero} deste fornecedor já está lançada no título "
+                f"{dono.numero_sp}. Lançar de novo seria pagar duas vezes.")
+        if nota.pedido_compra_id is None:
+            nota.pedido_compra_id = pedido.id
+        return nota
+
+    data_emissao = None
+    if emissao:
+        try:
+            data_emissao = date.fromisoformat(str(emissao)[:10])
+        except ValueError:
+            data_emissao = None
+    empresa_id = None
+    try:
+        from app.apps.erp.core.suprimentos.envio import empresa_do_pedido
+        empresa_id = empresa_do_pedido(s, pedido.id).get("sugerida")
+    except Exception:
+        empresa_id = None
+    nota = DocumentoFiscal(
+        tipo=TipoDocFiscal.NFE, chave_acesso=chave, numero=numero,
+        emitente_doc=emitente or "0", emitente_nome=getattr(forn, "razao_social", None),
+        valor_total=_d(valor), data_emissao=data_emissao,
+        situacao=SituacaoNota.DESCONHECIDA, origem="RECEBIMENTO",
+        empresa_id=int(empresa_id) if empresa_id else None, pedido_compra_id=pedido.id)
+    s.add(nota)
+    s.flush()
+    return nota

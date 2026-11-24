@@ -5828,6 +5828,20 @@ def api_criar_titulo():
             # já oferecia o pedido; agora o servidor EXIGE a resposta — ou a
             # pessoa escolhe o pedido, ou declara que a nota não é de nenhum
             # deles (e a declaração fica registrada).
+            # ⚑ A NOTA É GRAVADA JUNTO (24/11/2026): lançando a conta de um
+            # pedido de compra pela tela de Lançar (a nota que veio depois),
+            # ela passa a existir em Notas, ligada ao pedido e ao título —
+            # como no recebimento. Ninguém cadastra a nota duas vezes.
+            if (d.get("pedido_compra_id") and not d.get("documento_fiscal_id")
+                    and str(d.get("documento_numero") or "").strip()):
+                from app.apps.erp.core.suprimentos import lancamento as _lanc_nota
+                from app.apps.erp.db.models.cadastros import PedidoCompra as _PC
+                _pedido = s.get(_PC, int(d["pedido_compra_id"]))
+                if _pedido is not None and _pedido.fornecedor_id == int(d.get("fornecedor_id") or 0):
+                    d["documento_fiscal_id"] = _lanc_nota.gravar_a_nota(
+                        s, _pedido, numero=d.get("documento_numero"),
+                        valor=d.get("valor_bruto"), emissao=d.get("data_emissao_doc"),
+                        chave=d.get("chave_acesso")).id
             pedidos_sem_conta = []
             if not d.get("pedido_compra_id") and d.get("fornecedor_id"):
                 try:
