@@ -38,6 +38,40 @@ está escrito não foi conferido por ninguém usando.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**⚠ NO RAMO, NÃO PUBLICADO (24/11/2026):** a correção da crítica B1 (ver a
+"caminhada" logo abaixo, em Decisões). Mexe em `core/titulos/service.py`, que é
+do **Financeiro**. Sem migração.
+
+**⚑ O QUE ELE DISSE SOBRE LIBERAR PARA PRODUÇÃO (24/11):** *"sofri muito com o
+DP. Passei de uma semana pra conseguir liberar no portal (...) o maior
+problema no DP foi o FLUXO INCOMPLETO."* É o critério desta área daqui em
+diante: antes de dizer "pronto", PERCORRER o caminho inteiro com perfis
+diferentes, pelas rotas de verdade, e procurar onde ele morre. Teste de regra
+isolada não acha isso.
+
+**BECOS QUE A CAMINHADA ACHOU E AINDA ESTÃO ABERTOS** (levados a ele em 24/11,
+esperando decisão):
+1. **Ninguém é avisado de que há algo esperando por ele** — liberar (engenharia),
+   autorizar (diretor), dar ciência, dar o aval, cadastrar insumo. Tudo depende
+   de a pessoa abrir a tela certa. É o beco que mais atrasa.
+2. **Almoxarifado não fecha**: o item vai a ENTREGUE e fica ali para sempre, com
+   zero recebido; no portal aparece com o rótulo errado ("sem cotação"). Ele já
+   tinha dito "depois a gente pensa" — mas é fluxo incompleto.
+3. **A crítica A10** ("exige documento fiscal vinculado") aparece em TODA conta
+   nascida do recebimento, mesmo com o número da nota e o arquivo anexado. Não
+   bloqueia; é risco a mais e ruído para quem aprova. É do Financeiro.
+4. **Compra por fora pula o aval**: depois da ciência, a conta vai direto para
+   aprovação. Na prática a ciência é dada pelas mesmas pessoas que avalizam —
+   mas é um passo a menos que na compra normal.
+5. **Só o administrador liga a trava** da compra por fora (a rota exige
+   `configurar`); o diretor não consegue.
+6. **Pré-requisitos sem os quais o fluxo para**: conta de e-mail da empresa
+   (cotação e pedido não saem), conta do plano em cada insumo (a conta não
+   nasce), conta bancária HOMOLOGADA do fornecedor para Pix/TED (a conta nasce
+   bloqueada), obra ligada a cada pessoa, duas pessoas com alçada.
+7. **A porta do portal está fechada** (decisão dele): a obra pede, a engenharia
+   libera e a obra recebe pelo ERP completo, não pelo portal.
+
 **✔ PUBLICADO em 23/11/2026 (2ª conversa), com o "pode" dele:** a porta do portal para
 material virou **"Suprimentos" e está FECHADA de propósito** — ele: *"manter
 desativado por enquanto, da mesma forma que pagamentos."* NÃO REABRIR sem ele
@@ -227,6 +261,38 @@ clique. Relatada a ele.
 tem conta de e-mail; vi a autorização ficar e o motivo aparecer); a liberação
 feita por um supervisor de verdade pelo celular (vi o selo no portal e a
 liberação pela tela do ERP).
+
+### ⚑ 24/11/2026 — A CAMINHADA DE PONTA A PONTA (e o defeito que ela achou)
+
+Depois de ele dizer que o problema do DP foi fluxo incompleto, percorri a compra
+inteira pelas ROTAS, num banco limpo, com cinco pessoas: administrativo de
+obra, supervisor (engenharia), comprador (admin), diretor e financeiro. Quatro
+caminhos: (A) pedido da obra → liberação → cotação → pedido → autorização →
+recebimento parcial com nota → resto sem nota → lançamento ligado ao pedido →
+aval → aprovação → pagamento; (B) compra direta, recusa do diretor,
+cancelamento, almoxarifado; (C) material fora do cadastro; (D) compra por fora
+com a trava ligada, até o pedido tardio.
+
+**O caminho A fecha.** Todas as recusas esperadas aconteceram (obra pedindo
+para obra alheia, comprador cotando antes do ok, comprador autorizando o
+próprio pedido, receber sem lançar sem motivo, nota solta de fornecedor com
+material recebido, financeiro pagando conta travada).
+
+**DEFEITO ACHADO E CORRIGIDO — a crítica B1.** A conta lançada no recebimento
+de um pedido de compra chegava ao financeiro com "B1: título do tipo exige
+pedido vinculado" — o título que TEM pedido. `criar_titulo` só conhecia o campo
+antigo `pedido_id`; o vínculo do suprimento (`pedido_compra_id`) é gravado
+depois, na mesma transação. Toda conta de material levava 15 pontos de risco e
+uma crítica mentirosa para quem aprova. Corrigido em
+`core/titulos/service.py`; há teste (`test_a_conta_do_pedido_nao_chega_ao_
+financeiro_como_sem_pedido`).
+
+**O que NÃO percorri:** as telas com clique de gente (percorri as rotas que as
+telas chamam); o e-mail e a IA de verdade; volume real.
+
+O roteiro está em `/tmp/.../scratchpad/caminhada.py` desta sessão e NÃO foi
+para o repositório — ele zera o banco em que roda. Vale reescrevê-lo como
+teste com banco (`@pytest.mark.banco`) para virar guarda permanente.
 
 ### ⚑ 23/11/2026 (7ª rodada) — O PEDIDO NÃO ESPERA O CADASTRO DO INSUMO, E O COLAR LISTA NO PORTAL
 

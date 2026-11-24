@@ -40,6 +40,16 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 24/11/2026 — SUPRIMENTOS MEXEU EM `core/titulos/service.py` (registro entre áreas)
+
+Uma linha, em `criar_titulo`: a exigência de "pedido vinculado" do tipo de
+título passou a ser satisfeita também por `pedido_compra_id` (o pedido de
+compra do suprimento), e não só pelo campo antigo `pedido_id`. Antes, toda
+conta nascida do recebimento de um pedido levava a crítica B1 dizendo que não
+tinha pedido. **Para o Financeiro:** a crítica A10 ("exige documento fiscal
+vinculado") continua aparecendo nessas contas, mesmo com número de nota e
+arquivo anexado — não mexi; é decisão dessa área.
+
 ### ⚑ 23/11/2026 — O PORTAL DA OBRA FOI REARRUMADO, PELO CHAT DE SUPRIMENTOS (registro entre áreas)
 
 Pedido do dono, olhando o portal. Mexe em `templates/erp_portal.html` e

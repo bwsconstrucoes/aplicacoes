@@ -1550,3 +1550,21 @@ def test_pedido_so_com_material_novo_e_a_recusa_do_cadastro(base):
     depois = svc_ins.esperando_cadastro(s, u)
     assert depois[0]["recusado_motivo"] == "já existe como perfil F530"
     assert not [i for i in s.scalars(select(SuprimentoItem)).all() if i.solicitacao_id == sol.id]
+
+
+def test_a_conta_do_pedido_nao_chega_ao_financeiro_como_sem_pedido(base):
+    """Achado na caminhada de 24/11/2026: o título lançado no recebimento de um
+    pedido de compra nascia com a crítica "B1: exige pedido vinculado"."""
+    from sqlalchemy import text
+    s, u = base["s"], base["u"]
+    _com_conta_do_plano(base)
+    pedido = _fechar(base)
+    saida = svc_lanc.receber_e_lancar(s, u, pedido.id, _pacote(
+        base, pedido, [(base["item_a"], 10), (base["item_b"], 20)],
+        documento_numero="7788", valor="2000,00", forma_pagamento="PIX",
+        data_emissao=hoje().isoformat(),
+        parcelas=[{"vencimento": (hoje() + timedelta(days=30)).isoformat(),
+                   "valor": "2000.00"}]))
+    criticas = s.execute(text("SELECT criticas FROM analises WHERE titulo_id = :t"),
+                         {"t": saida["titulo"]["id"]}).scalar() or []
+    assert "B1" not in [c["codigo"] for c in criticas]

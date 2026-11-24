@@ -265,7 +265,15 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     contrato_id = dados.get("contrato_id") or None
     doc_fiscal_id = dados.get("documento_fiscal_id") or None
 
-    if regras.exige_pedido and not pedido_id:
+    # ⚑ O PEDIDO DE COMPRA DO SUPRIMENTO SATISFAZ A EXIGÊNCIA (24/11/2026).
+    # Achado na caminhada de ponta a ponta: a conta lançada no recebimento de
+    # um pedido de compra chegava ao financeiro com a crítica "B1: exige pedido
+    # vinculado" — justamente o título que TEM pedido. O vínculo do suprimento
+    # (`pedido_compra_id`, gravado em `pedido_titulos` logo depois de o título
+    # nascer, na mesma transação) não era visto aqui, que só conhecia o campo
+    # antigo `pedido_id`. Era risco a mais e uma crítica mentirosa para quem
+    # aprova.
+    if regras.exige_pedido and not (pedido_id or dados.get("pedido_compra_id")):
         if modo_transicao():
             criticas_transicao.append("B1: título do tipo exige pedido vinculado (pendência de transição).")
         else:
