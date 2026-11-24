@@ -1,0 +1,267 @@
+Data de Vencimento e Limite de Pagamento		Data de Débito		Pagador e CPF/CNPJ		Beneficiário, CPF/CNPJ e Banco Destinatário		Valor a Cobrar
+24/11/2026
+24/11/2026
+		
+/
+/
+&nbsp;
+		BWS CONSTRUCOES LTDA
+000.079.526/0003-70		3 TABELIONATO DE PROTESTO DE REC
+029.640.584/0001-41
+237 - BCO BRADESCO S.A.		R$ 8.761,20
+Código de barras:   23792.89107 90000.070244 67002.824901 1 16400000876120
+
+    Beneficiário Final e CPF/CNPJ:
+    Não Informado
+
+	
+
+    Número de documento:
+    83354126
+
+    Valor do Documento:
+    R$ 8.761,20
+
+	
+
+    Descontos:
+    R$ 0,00
+
+    Bonificação:
+    R$ 0,00
+
+	
+
+    Abatimentos:
+    R$ 0,00
+
+    Juros:
+    R$ 0,00
+
+	
+
+    Multa:
+    R$ 0,00
+
+24/11/2026
+
+		
+/
+/
+&nbsp;
+		BWS CONSTRUCOES LTDA
+000.079.526/0001-09		STOREHOST BRASIL
+049.003.392/0001-31
+237 - BCO BRADESCO S.A.		R$ 859,56
+Código de barras:   23793.19201 90015.700041 11000.616604 7 16400000085956
+
+    Beneficiário Final e CPF/CNPJ:
+    Não Informado
+
+	
+
+    Número de documento:
+    0157000411
+
+    Valor do Documento:
+    R$ 859,56
+
+	
+
+    Descontos:
+    R$ 0,00
+
+    Bonificação:
+    R$ 0,00
+
+	
+
+    Abatimentos:
+    R$ 0,00
+
+    Juros:
+    R$ 0,00
+
+	
+
+    Multa:
+    R$ 0,00
+
+24/11/2026
+22/02/2027
+		
+/
+/
+&nbsp;
+		Bws Construcoes Ltda
+000.079.526/0001-09		Associacao Sotud Energia Renovav
+056.932.477/0001-60
+403 - CORA SCD S.A.		R$ 197,72
+Código de barras:   40390.00007 56932.477021 08774.024015 8 16400000019772
+
+    Beneficiário Final e CPF/CNPJ:
+    Associacao Sotud Energia Renovaveis
+    056.932.477/0001-60 
+
+	
+
+    Número de documento:
+    ***************
+
+    Valor do Documento:
+    R$ 197,72
+
+	
+
+    Descontos:
+    R$ 0,00
+
+    Bonificação:
+    R$ 0,00
+
+	
+
+    Abatimentos:
+    R$ 0,00
+
+    Juros:
+    R$ 0,00
+
+	
+
+    Multa:
+    R$ 0,00
+
+25/11/2026
+25/11/2036
+		
+/
+/
+&nbsp;
+		BWS CONSTRUCOES LTDA - EPP
+000.079.526/0001-09		REDEMAQUINAS COMERCIO S M EQU
+006.094.934/0001-16
+341 - ITAÚ UNIBANCO S.A.		R$
+Código de barras:   34191.09008 04696.643826 73447.670008 1 16410000093000
+
+    Beneficiário Final e CPF/CNPJ:
+    Não Informado
+
+	
+
+    Número de documento:
+    057092
+
+    Valor do Documento:
+    R$ 930,00
+
+	
+
+    Descontos:
+    R$ 0,00
+
+    Bonificação:
+    R$ 0,00
+
+	
+
+    Abatimentos:
+    R$ 0,00
+
+    Juros:
+    R$ 0,00
+
+	
+
+    Multa:
+    R$ 0,00
+
+25/11/2026
+25/01/2027
+		
+/
+/
+&nbsp;
+		BWS CONSTRUCOES LTDA
+000.079.526/0003-70		TINTAS IQUINE LTDA
+009.722.463/0001-31
+237 - BCO BRADESCO S.A.		R$ 2.098,65
+Código de barras:   23792.96003 23134.024670 65000.313406 4 16410000209865
+
+    Beneficiário Final e CPF/CNPJ:
+    Não Informado
+
+	
+
+    Número de documento:
+    0770780 02
+
+    Valor do Documento:
+    R$ 2.098,65
+
+	
+
+    Descontos:
+    R$ 0,00
+
+    Bonificação:
+    R$ 0,00
+
+	
+
+    Abatimentos:
+    R$ 0,00
+
+    Juros:
+    R$ 0,00
+
+	
+
+    Multa:
+    R$ 0,00
+
+25/11/2026
+25/01/2027
+		
+/
+/
+&nbsp;
+		BWS CONSTRUCOES LTDA
+000.079.526/0003-70		TINTAS IQUINE LTDA
+009.722.463/0001-31
+237 - BCO BRADESCO S.A.		R$ 2.098,65
+Código de barras:   23792.96003 23134.024670 70000.313406 1 16410000209865
+
+    Beneficiário Final e CPF/CNPJ:
+    Não Informado
+
+	
+
+    Número de documento:
+    0770781 02
+
+    Valor do Documento:
+    R$ 2.098,65
+
+	
+
+    Descontos:
+    R$ 0,00
+
+    Bonificação:
+    R$ 0,00
+
+	
+
+    Abatimentos:
+    R$ 0,00
+
+    Juros:
+    R$ 0,00
+
+	
+
+    Multa:
+    R$ 0,00
+
+Total (6 boletos)				R$  14.945,78

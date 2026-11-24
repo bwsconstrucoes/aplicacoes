@@ -1,0 +1,182 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}DDA — Análise de SPs{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   O DDA DO BRADESCO (24/11/2026) — ver `dda.py`. Cola-se a lista do DDA; o sistema
+   lê cada boleto e procura a SP dele. O que interessa primeiro: o boleto que está no
+   DDA e NÃO está lançado.
+--------------------------------------------------------------------------- #}
+{% block filtros %}
+<div class="lateral-dda">
+  <div class="filtros-cab"><h2>Colar o DDA</h2></div>
+  {% if pode_operar %}
+    <form method="post" action="{{ url_for('analisesps.dda_colar') }}">
+      <textarea name="texto" rows="7" class="campo-largo" required
+                placeholder="No Bradesco, em DDA, selecione a lista inteira (até o &quot;Total&quot;), copie e cole aqui."></textarea>
+      <button class="btn" type="submit" style="width:100%; margin-top:6px">Ler e cruzar</button>
+      <p class="cartao-dica" style="margin:6px 2px 0">Colar de novo amanhã não duplica: o
+        boleto já visto só é atualizado.</p>
+    </form>
+  {% else %}
+    <p class="cartao-dica">O perfil Consulta vê o cruzamento, mas não cola.</p>
+  {% endif %}
+</div>
+{% if lista %}
+<form method="get" id="form-filtros-dda" action="{{ url_for('analisesps.tela_dda') }}">
+  <input type="hidden" name="f" value="1">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_dda') }}">Limpar</a>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="busca" value="{{ filtros.busca }}"
+           placeholder="beneficiário, CNPJ, nº do documento, valor…">
+  </div>
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação</span><span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for chave, rotulo, quantos, valor in lista.contagem %}
+        <label class="opcao"><input type="checkbox" name="situacao" value="{{ chave }}"
+               {% if chave in filtros.situacoes %}checked{% endif %}><span class="rotulo">{{ rotulo }}</span>
+          <span class="contagem">{{ quantos }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Vencimento</span><span class="seta">▾</span></div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label><input type="date" name="de" value="{{ filtros.de or '' }}"></div>
+        <div><label>Até</label><input type="date" name="ate" value="{{ filtros.ate or '' }}"></div>
+      </div>
+    </div>
+  </div>
+  <label class="opcao" style="margin:10px 4px"><input type="checkbox" name="todas" value="1"
+         {% if filtros.todas %}checked{% endif %}><span class="rotulo">Todas as colagens (não só a última)</span></label>
+</form>
+<script>
+(() => {
+  const form = document.getElementById("form-filtros-dda");
+  let relogio = null;
+  const agendar = espera => { if (relogio) clearTimeout(relogio); relogio = setTimeout(() => form.submit(), espera); };
+  form.addEventListener("change", e => { if (e.target.matches("input[type=checkbox], input[type=date]")) agendar(400); });
+  form.addEventListener("input", e => { if (e.target.matches("input[name=busca]")) agendar(900); });
+  form.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); agendar(0); } });
+})();
+</script>
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+{% if erro %}
+  <div class="aviso atencao"><b>A tela do DDA precisa da atualização do banco.</b> Em
+    Configurações, aperte "Aplicar atualizações do banco". <small>({{ erro }})</small></div>
+{% elif not lista.ultima %}
+  <div class="cartao">
+    <h2>DDA</h2>
+    <p class="cartao-dica">Nenhuma colagem ainda. No internet banking do Bradesco, entre em
+      <b>DDA</b>, selecione a lista de boletos inteira — do primeiro até a linha
+      "Total" —, copie e cole no campo da lateral. O sistema lê cada boleto (vencimento,
+      beneficiário e CNPJ, pagador, valor, código de barras, nº do documento) e procura
+      a SP de cada um.</p>
+  </div>
+{% else %}
+  {% set u = lista.ultima %}
+  <div class="cartao">
+    <h2>DDA <small>{{ lista.quantos }} boleto(s) · {{ lista.total|moeda }}
+      {% if not filtros.todas %}· colado em {{ u.colado_em|momento_br }}{% if u.colado_por %} por {{ u.colado_por }}{% endif %}{% else %}· todas as colagens{% endif %}</small></h2>
+    {% if not filtros.todas and u.total_do_banco is not none %}
+      {% if u.boletos == u.boletos_do_banco and u.total == u.total_do_banco %}
+        <p class="cartao-dica">✓ Confere com o total do banco ({{ u.boletos_do_banco }} boletos, {{ u.total_do_banco|moeda }}).</p>
+      {% else %}
+        <div class="aviso atencao">A leitura NÃO confere com o total do banco ({{ u.boletos_do_banco }} boletos,
+          {{ u.total_do_banco|moeda }}) — algum boleto pode ter ficado de fora. Copie a lista de novo, inteira.</div>
+      {% endif %}
+    {% endif %}
+    <div class="kpis kpis-dda">
+      {% for chave, rotulo, quantos, valor in lista.contagem %}
+        {% set ativo = chave in filtros.situacoes %}
+        <a class="kpi {{ 'vermelho' if chave in ('sem_lancamento', 'sp_ja_paga') and quantos else ('ambar' if chave == 'provavel' and quantos else '') }} {{ 'ativo' if ativo }}"
+           href="{{ url_for('analisesps.tela_dda', f=1, situacao=('' if ativo else chave), todas=filtros.todas or None,
+                            busca=filtros.busca or None, de=filtros.de or None, ate=filtros.ate or None) }}">
+          <div class="kpi-rotulo">{{ rotulo }}</div><div class="kpi-valor">{{ quantos }}</div>
+          <div class="cartao-dica">{{ valor|moeda }}</div></a>
+      {% endfor %}
+    </div>
+    <p class="cartao-dica" style="margin:8px 0 0">
+      Como cruza: o <b>código de barras</b> igual ao da SP; ou o <b>CNPJ do credor</b> (inteiro ou a raiz —
+      matriz e filial) com o <b>valor</b> e o <b>vencimento</b> ou o <b>nº do documento</b> (a nota);
+      ou o valor e o vencimento com outro CNPJ (título vendido a banco ou fundo — por isso "conferir").
+      Cada SP vale para um boleto só.</p>
+  </div>
+
+  <div class="tabela-wrap"><div class="tabela-rolagem livre">
+  <table class="sps" id="tabela-dda">
+    <thead><tr><th>Vencimento</th><th>Beneficiário</th><th>Pagador</th><th>Nº doc.</th>
+      <th class="num">Valor</th><th>Situação</th><th>SP</th></tr></thead>
+    <tbody>
+    {% for b in lista.boletos %}
+      <tr class="dda-{{ b.situacao }}">
+        <td>{{ b.vencimento|data_br }}{% if b.limite and b.limite != b.vencimento %}<br><span class="cartao-dica">limite {{ b.limite|data_br }}</span>{% endif %}
+          {% if not b.na_ultima %}<br><span class="cartao-dica" title="Não estava na última colagem — em geral, já foi pago">fora do DDA</span>{% endif %}</td>
+        <td><b>{{ b.beneficiario_nome }}</b><br><span class="cartao-dica">{{ dda.documento_bonito(b.beneficiario_doc) }} · {{ b.banco }}</span>
+          {% if b.beneficiario_final_nome %}<br><span class="cartao-dica">beneficiário final: {{ b.beneficiario_final_nome }}{% if b.beneficiario_final_doc %} ({{ dda.documento_bonito(b.beneficiario_final_doc) }}){% endif %}</span>{% endif %}
+          <br><span class="cartao-dica linha-dig" title="Linha digitável">{{ b.linha_digitavel }}</span></td>
+        <td><span class="cartao-dica">{{ dda.filial(b.pagador_cnpj) }}</span><br><span class="cartao-dica">{{ dda.documento_bonito(b.pagador_cnpj) }}</span></td>
+        <td>{{ b.numero_documento or '—' }}</td>
+        <td class="num">{{ b.valor|moeda }}{% if (b.juros or 0) > 0 or (b.multa or 0) > 0 %}<br><span class="cartao-dica">juros/multa</span>{% endif %}</td>
+        <td><span class="etiqueta {{ 'ruim' if b.situacao in ('sem_lancamento', 'sp_ja_paga') else ('' if b.situacao == 'provavel' else 'boa') }}">{{ dda.ROTULOS[b.situacao] }}</span>
+          {% if b.sp %}<br><span class="cartao-dica">{{ b.sp.porque }}</span>{% endif %}</td>
+        <td>
+          {% if b.sp %}
+            <a href="{{ url_for('analisesps.detalhe', sp_id=b.sp.id) }}" data-ficha="{{ url_for('analisesps.detalhe', sp_id=b.sp.id) }}"
+               data-id="{{ b.sp.id }}">{{ b.sp.id }}</a>
+            <br><span class="cartao-dica">{{ b.sp.credor }}{% if b.sp.status_pgt %} · {{ b.sp.status_pgt }}{% endif %}
+              {% if b.sp.vencimento %} · venc. {{ b.sp.vencimento|data_br }}{% endif %}{% if b.sp.valor is defined and b.sp.valor is not none %} · {{ b.sp.valor|moeda }}{% endif %}</span>
+          {% endif %}
+          {% for o in b.outras %}<br><span class="cartao-dica">ou <a href="{{ url_for('analisesps.detalhe', sp_id=o.id) }}" data-ficha="{{ url_for('analisesps.detalhe', sp_id=o.id) }}">{{ o.id }}</a> ({{ o.porque }})</span>{% endfor %}
+          {% if pode_operar %}
+            <form method="post" class="dda-vincular" action="{{ url_for('analisesps.dda_vincular', boleto_id=b.id) }}">
+              <input type="hidden" name="volta" value="{{ request.full_path }}">
+              {% if b.sp_manual %}
+                <button class="btn secundario btn-pequeno" name="sp" value="" title="Volta ao cruzamento automático">desfazer</button>
+              {% else %}
+                {% if b.sp %}<details><summary class="cartao-dica">trocar a SP</summary>{% endif %}
+                <input type="text" name="sp" inputmode="numeric" placeholder="nº da SP" size="11" aria-label="Número da SP">
+                <button class="btn secundario btn-pequeno" type="submit">vincular</button>
+                {% if b.situacao == 'sem_lancamento' %}<button class="btn secundario btn-pequeno" name="sp" value="NENHUMA"
+                  title="Este boleto não terá SP, de propósito (ex.: cobrança indevida)">sem SP</button>{% endif %}
+                {% if b.sp %}</details>{% endif %}
+              {% endif %}
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="cartao-dica">Nenhum boleto neste filtro.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+{% endif %}
+
+<style>
+  .lateral-dda { padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid var(--borda); }
+  .lateral-dda textarea { width:100%; font-size:12px; }
+  .kpis-dda a.kpi { text-decoration:none; color:inherit; }
+  .kpis-dda a.kpi.ativo { outline:2px solid var(--azul); }
+  #tabela-dda .linha-dig { font-family:var(--fonte-dados); font-size:11px; }
+  #tabela-dda tr.dda-sem_lancamento td, #tabela-dda tr.dda-sp_ja_paga td { background:#FEF2F2; }
+  .dda-vincular { margin-top:6px; display:flex; gap:4px; flex-wrap:wrap; }
+  .dda-vincular input { padding:3px 6px; font-size:12px; }
+  .filtro-opcoes .contagem { margin-left:auto; color:var(--tinta-suave); font-size:12px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{% include "analisesps_ficha_modal.html" %}
+{% endblock %}
