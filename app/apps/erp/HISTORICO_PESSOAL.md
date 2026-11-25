@@ -141,6 +141,39 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 — Dependente com certidão de nascimento: reconhecida, guardada como do dependente e lida para o quadro dele
+
+Ele, cadastrando uma criança: *"ele só tem certidão de nascimento e o sistema
+tá exigindo RG"*; e *"o sistema tá identificando como se fosse documento do
+titular (…) e ele não tá lendo o documento e preenchendo também não."*
+Três defeitos juntos:
+- A leitura em lote (`documentos_de_pessoa.ler_varios`) não conhecia certidão:
+  `TIPOS_RECONHECIDOS` e a instrução ganharam DOC-DEPENDENTE (certidão de
+  nascimento ou casamento), e a instrução diz que na certidão o nome é o de
+  quem nasceu, não o dos pais.
+- O "diga o que é este arquivo" do portal escondia "Documento do dependente";
+  agora aparece no pedido de dependente. Nesse pedido, um RG também conta
+  como documento do dependente — e é GUARDADO como DOC-DEPENDENTE, não como a
+  identidade do titular.
+- A leitura preenchia só os campos do formulário comum; o dependente vive em
+  quadros repetidos. Agora o que a leitura achou vai para o primeiro quadro
+  sem nome (nome, nascimento e, pela certidão, parentesco Filho/Cônjuge), só
+  em campo vazio, e o recado pede para conferir. Não toca nos dados do
+  colaborador.
+- **Vários dependentes de uma vez** — ele: *"pode ser que eu esteja
+  cadastrando mais de um dependente."* No pedido de dependente cada documento
+  é lido SOZINHO (a leitura em lote supõe uma pessoa só) e preenche o quadro
+  de um dependente. Custo: uma leitura de IA por documento, e não uma por lote.
+- **O funcionário pela certidão** — ele: *"o ideal era que ele conseguisse
+  buscar o nome do funcionário na hora que eu colocasse o documento. Aí, se
+  não, a pessoa fazia a pesquisa e selecionava."* A certidão traz mãe e pai;
+  nome IGUAL a um só colaborador do alcance de quem pede → escolhido; parecido
+  ou vários → a lista aparece; nada → a busca de sempre. Nunca troca quem já
+  foi escolhido. Um recado só no fim diz o que foi preenchido.
+- Conferido no navegador com respostas simuladas (dois documentos, dois
+  quadros preenchidos com parentesco Filho, a mãe achada). Não verificado com
+  uma certidão de verdade (a leitura usa a IA).
+
 ### 24/11/2026 (5) — Pedido de demissão: "sai de imediato ou trabalha o aviso" é da obra; a carta anexada vale como assinada
 
 Ele: *"o mais comum é que o colaborador peça para sair de imediato (…) o campo

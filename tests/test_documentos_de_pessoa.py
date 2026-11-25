@@ -153,3 +153,14 @@ def test_todo_papel_exigido_sabe_o_que_espera():
         assert codigo in svc.O_QUE_ESPERO, (
             f"{codigo} é exigido em algum pedido e a leitura não sabe o que "
             f"esperar dele — nenhum aviso sairia")
+
+
+def test_a_certidao_de_nascimento_e_reconhecida_como_documento_do_dependente(monkeypatch):
+    """25/11/2026, ele: *"estou cadastrando um dependente, que no caso trata-se
+    de uma criança, e ele só tem certidão de nascimento e o sistema tá
+    exigindo RG."* A leitura em lote não conhecia a certidão."""
+    _dublê(monkeypatch, {"arquivos": [{"indice": 0, "documento": "certidão de nascimento",
+                                       "tipos": ["DOC-DEPENDENTE"], "legivel": True}],
+                         "campos": {}})
+    r = svc.ler_varios([(b"\xff\xd8 foto", "certidao.jpg")])
+    assert r["arquivos"][0]["tipos"] == ["DOC-DEPENDENTE"]
