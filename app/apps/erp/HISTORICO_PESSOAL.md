@@ -141,6 +141,29 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (5) — Alteração de cargo com convenção e piso; a recusa vira alerta na entrada do portal
+
+**Alteração de cargo.** Ele: *"a obra faz o pleito de alteração, ela vai
+indicar o cargo e no DP, na hora de ele encaminhar para a contabilidade, ele tem
+que selecionar a convenção e automaticamente aparecer valor (…) Cargo,
+convenção e valor."* Os campos do DP eram só "cargo deferido" e "salário" — sem
+convenção, a janela não tinha de onde puxar o piso (a mesma mecânica da
+admissão, que já funcionava). Entrou `convencao_id` nos campos do DP; a janela
+abre com o cargo pleiteado e a convenção ATUAL da pessoa (`pessoa_convencao_id`
+no `ler`), e o piso entra sozinho. O e-mail à contabilidade ganhou a linha
+"Convenção" (`contabil_processo._dados_do_pedido` → `convencao_nova`).
+
+**Recusa.** Ele: *"uma recusa é algo mais crítico (…) o natural é ser atendido.
+(…) o ideal é que a pessoa, na hora que ela logasse no portal, ela já se
+deparasse com aquela mensagem, aquele alerta de recusa."* Antes: a recusa só
+virava etiqueta vermelha no fim de "o que você pediu", com o motivo — sem
+alerta, sem aviso. Agora: caixa vermelha no ALTO do portal, com o pedido, a
+pessoa e o motivo, até quem pediu tocar em "Entendi". O "visto" é um evento na
+trilha (`QUEM_PEDIU_VIU_A_RECUSA`, sem migração); o DP vê, no pedido, "quem
+pediu viu a recusa em…" ou "ainda não abriu o portal desde a recusa". Só quem
+abriu o pedido vê o alerta e marca o visto (`portal.ciente_da_recusa`; de outro,
+404). Aviso no celular na recusa NÃO foi feito — ficou como oferta a ele.
+
 ### 25/11/2026 (4) — Data de início ≠ data de admissão: o DP confirma a admissão ao atender
 
 Ele: *"não necessariamente a data de início ela é igual à data de admissão, por

@@ -14342,6 +14342,28 @@ def api_portal_abrir():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/portal/api/pedidos/<int:solicitacao_id>/ciente-da-recusa",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_portal_ciente_da_recusa(solicitacao_id: int):
+    """Quem pediu tocou em "Entendi" no alerta de recusa (25/11/2026). O
+    escopo é o próprio pedido: de outra pessoa responde "não encontrado"."""
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        with get_session() as s:
+            svc_portal.ciente_da_recusa(s, solicitacao_id, _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao registrar a ciência da recusa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/portal/api/devolucoes/<int:devolucao_id>", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")

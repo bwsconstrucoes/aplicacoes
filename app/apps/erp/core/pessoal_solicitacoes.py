@@ -352,7 +352,12 @@ TIPOS: dict[str, dict[str, Any]] = {
         # "Cargo Deferido" é a resposta, e salário é consequência dele.
         "campos": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
         "obrigatorios": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
-        "campos_do_dp": ("cargo_deferido_id", "salario"),
+        # ⚑ A CONVENÇÃO TAMBÉM É DO DP (25/11/2026). Ele: *"a obra faz o
+        # pleito de alteração, ela vai indicar o cargo e no DP (…) ele tem que
+        # selecionar a convenção e automaticamente aparecer valor para
+        # encaminhar no pedido que vai para a contabilidade. Cargo, convenção
+        # e valor."* Sem a convenção, a janela não tinha de onde puxar o piso.
+        "campos_do_dp": ("cargo_deferido_id", "convencao_id", "salario"),
         "checklist": ("Conferir o piso da convenção",),
     },
     "ATUALIZACAO_DADOS": {
@@ -3288,6 +3293,7 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
     """
     linha = s.execute(text("""
         SELECT d.*, c.nome AS pessoa, c.cpf AS pessoa_cpf, c.vinculo AS pessoa_vinculo,
+               c.convencao_id AS pessoa_convencao_id,
                o.codigo AS obra,
                COALESCE(u.nome, sc.nome, d.requerente) AS solicitante,
                a.nome AS atendente
@@ -3332,6 +3338,8 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         # campos são dele: no desligamento, a data de saída de quem tem
         # carteira é conta do DP; a do prestador veio da obra.
         "pessoa_vinculo": (d["pessoa_vinculo"] or "") if d["pessoa_vinculo"] else "",
+        # A convenção de hoje, para a janela de atender já abrir nela.
+        "pessoa_convencao_id": d.get("pessoa_convencao_id"),
         "campos_do_dp": list(campos_do_dp_do_tipo(
             d["tipo"], d["pessoa_vinculo"])) if d["tipo"] in TIPOS else [],
         "pessoa_cpf": d["pessoa_cpf"] or d["cpf_informado"] or "",

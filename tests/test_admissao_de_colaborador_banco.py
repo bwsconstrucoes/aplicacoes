@@ -1285,3 +1285,61 @@ def test_readmissao_guarda_o_inicio_e_a_admissao_separados(mundo):
     c = s.get(svc_pessoas.Colaborador, volta.id)
     assert c.data_inicio == dt.date(2026, 11, 20)
     assert c.admissao == dt.date(2026, 12, 1)
+
+
+@pytestmark_banco
+def test_alteracao_de_cargo_leva_cargo_convencao_e_valor_a_contabilidade(mundo):
+    """Ele (25/11/2026): *"a obra faz o pleito de alteração, ela vai indicar o
+    cargo e no DP (…) ele tem que selecionar a convenção e automaticamente
+    aparecer valor para encaminhar no pedido que vai para a contabilidade.
+    Cargo, convenção e valor."*"""
+    s = mundo["s"]
+    c = _carteira(mundo)
+    novo = s.execute(text("INSERT INTO cargos (nome, ativo) VALUES "
+                          "('Mestre de obras adm', TRUE) RETURNING id")).scalar()
+    conv = s.execute(text("INSERT INTO convencoes (nome) VALUES "
+                          "('Convenção Teste 2026') RETURNING id")).scalar()
+    p = svc.abrir(s, {"tipo": "ALTERACAO_CARGO", "colaborador_id": c.id,
+                      "data_inicio": "2026-12-01", "cargo_pleiteado_id": novo,
+                      "justificativa": "promovido na obra"}, mundo["obra_user"])
+    lido = svc.ler(s, p["id"])
+    assert "convencao_id" in lido["campos_do_dp"]
+    assert "pessoa_convencao_id" in lido
+    svc.atender(s, p["id"], {"dados": {"cargo_deferido_id": str(novo),
+                                       "convencao_id": str(conv),
+                                       "salario": "3100"}}, mundo["dp"])
+    s.flush()
+    assert s.get(svc_pessoas.Colaborador, c.id).convencao_id == conv
+    # O atendimento já monta o pedido à contabilidade (rascunho).
+    corpo = s.execute(text("SELECT corpo FROM dp_pedidos WHERE solicitacao_id = :i "
+                           "ORDER BY id DESC LIMIT 1"), {"i": p["id"]}).scalar() or ""
+    assert "Mestre de obras adm" in corpo
+    assert "Convenção Teste 2026" in corpo
+    assert "3100" in corpo or "3.100" in corpo
+
+
+@pytestmark_banco
+def test_a_recusa_aparece_na_entrada_do_portal_ate_quem_pediu_ver(mundo):
+    """Ele (25/11/2026): *"na hora que ela logasse no portal, ela já se
+    deparasse com aquela mensagem, aquele alerta de recusa."*"""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    svc.recusar(s, p["id"], {"resposta": "faltou o comprovante de endereço"},
+                mundo["dp"])
+    s.flush()
+    meu = next(x for x in svc_portal.meus_pedidos(s, mundo["obra_user"])
+               if x["id"] == p["id"])
+    assert meu["recusa_nao_vista"] is True
+    assert "comprovante" in meu["resposta"]
+    with pytest.raises(ErroNaoEncontrado):
+        svc_portal.ciente_da_recusa(s, p["id"], mundo["dp"])   # não foi quem pediu
+    svc_portal.ciente_da_recusa(s, p["id"], mundo["obra_user"])
+    svc_portal.ciente_da_recusa(s, p["id"], mundo["obra_user"])  # não duplica
+    s.flush()
+    meu = next(x for x in svc_portal.meus_pedidos(s, mundo["obra_user"])
+               if x["id"] == p["id"])
+    assert meu["recusa_nao_vista"] is False
+    eventos = [e["acao"] for e in svc.ler(s, p["id"])["eventos"]]
+    assert eventos.count(svc_portal.RECUSA_VISTA) == 1

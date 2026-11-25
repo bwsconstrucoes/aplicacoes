@@ -465,7 +465,12 @@ function pintarPedido(){
     </div>
     ${p.resposta ? `<div class="aviso ${p.situacao === "RECUSADA" ? "erro" : "ok"}"
       style="margin-top:10px"><b>${p.situacao === "RECUSADA" ? "Recusado" : "Resposta"}:</b>
-      ${escapar(p.resposta)}</div>` : ""}
+      ${escapar(p.resposta)}${p.situacao === "RECUSADA" ? (() => {
+        {# 25/11/2026: o DP vê se quem pediu já leu a recusa no portal. #}
+        const v = (p.eventos || []).find(e => e.acao === "QUEM_PEDIU_VIU_A_RECUSA");
+        return `<br><small>${v ? `Quem pediu viu a recusa em ${dataBR(v.em.slice(0, 10))}.`
+          : "Quem pediu ainda não abriu o portal desde a recusa."}</small>`;
+      })() : ""}</div>` : ""}
     ${p.motivo_cancelamento ? `<div class="aviso alerta" style="margin-top:10px">
       <b>Cancelado:</b> ${escapar(p.motivo_cancelamento)}</div>` : ""}
     ${p.aviso ? `<div class="aviso alerta" style="margin-top:10px">${escapar(p.aviso)}</div>` : ""}
@@ -1219,7 +1224,7 @@ async function atender(){
                 (TAB.cargos || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
     if (TAB && c === "convencao_id")
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
-              valor: String(dadosAb.convencao_id || ""),
+              valor: String(dadosAb.convencao_id || ABERTA.pessoa_convencao_id || ""),
               opcoes: [{valor: "", rotulo: "— escolha a convenção —"}].concat(
                 (TAB.convencoes || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
     if (TAB && c === "salario" && doDP.includes("convencao_id"))
