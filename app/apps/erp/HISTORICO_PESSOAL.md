@@ -141,6 +141,16 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (6) — A admissão NÃO é mais lançada na planilha nem no Pipefy
+
+Confirmado pelo dono: *"não lança mais"*. Consequência: o cálculo dos
+diaristas da Análise de SPs, que lê só a cópia da planilha
+(`analisesps.colaborador`), não enxerga quem foi admitido só pelo ERP — os dias
+entre o início e a admissão ficam sem pagamento pelo sistema. O ponto não tem
+o problema (lê `public.colaboradores`). A troca de fonte é da área da Análise
+de SPs (`pessoas.para_folha` já entrega as duas datas); ficou como tarefa
+sugerida ao dono, não feita aqui.
+
 ### 25/11/2026 (5) — Alteração de cargo com convenção e piso; a recusa vira alerta na entrada do portal
 
 **Alteração de cargo.** Ele: *"a obra faz o pleito de alteração, ela vai
