@@ -1064,11 +1064,14 @@ function preencherDependente(t, campos, lote){
   if (nasc && !alvo.data_nascimento) alvo.data_nascimento = nasc;
   const oQue = lote.map(a => (a.documento || "").toLowerCase()).join(" ");
   if (!alvo.parentesco) {
-    if (/nascimento/.test(oQue)) alvo.parentesco = "FILHO";
-    else if (/casamento/.test(oQue)) alvo.parentesco = "CONJUGE";
+    // O valor é o da caixinha do portal ("Filho", "Cônjuge"), não o código.
+    const opcoes = ((DADOS.listas || {}).parentesco || []).map(o => o.valor);
+    const achar = re => opcoes.find(v => re.test(v || "")) || "";
+    if (/nascimento/.test(oQue)) alvo.parentesco = achar(/^filh/i);
+    else if (/casamento/.test(oQue)) alvo.parentesco = achar(/c[oô]njuge/i);
   }
   pintarRepetidos(t);
-  recado(`Lemos o documento e preenchemos o ${i + 1}º dependente — confira.`, "ok");
+  return i + 1;
 }
 
 function pintarRepetidos(t){
@@ -1497,6 +1500,30 @@ async function receberArquivos(t, novos){
                                 tipos: [], documento: "", aviso: "", lendo: true}));
   ARQUIVOS = ARQUIVOS.concat(lote);
   pintarPapeis(t); conferirOQueFalta(t);
+  {# ⚑ NO PEDIDO DE DEPENDENTE, UM DOCUMENTO POR VEZ (25/11/2026). Ele: *"pode
+     ser que eu esteja cadastrando mais de um dependente."* A leitura em lote
+     devolve os dados de UMA pessoa — certo para a admissão (RG, CPF e
+     comprovante são do mesmo trabalhador), errado para três certidões de três
+     filhos. Aqui cada documento é lido sozinho e preenche o quadro de um
+     dependente. Custa uma leitura de IA por documento, e não uma por lote. #}
+  const partes = t.repete ? lote.map(a => [a]) : [lote];
+  LEITURA_DOS_DEPENDENTES = []; FUNCIONARIO_ACHADO = "";
+  for (const parte of partes) await lerParte(t, parte);
+  lote.forEach(a => { a.lendo = false; });
+  recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+  // Um recado só, no fim — o de cada documento apagava o do anterior.
+  if (t.repete && (LEITURA_DOS_DEPENDENTES.length || FUNCIONARIO_ACHADO))
+    recado((LEITURA_DOS_DEPENDENTES.length
+             ? `Lemos ${LEITURA_DOS_DEPENDENTES.length === 1 ? "o documento" : "os documentos"}`
+               + ` e preenchemos ${LEITURA_DOS_DEPENDENTES.map(n => n + "º").join(", ")}`
+               + ` dependente${LEITURA_DOS_DEPENDENTES.length > 1 ? "s" : ""}` : "")
+           + (FUNCIONARIO_ACHADO ? `${LEITURA_DOS_DEPENDENTES.length ? "; " : ""}`
+               + `achamos o colaborador pela certidão: ${FUNCIONARIO_ACHADO}` : "")
+           + " — confira.", "ok");
+}
+let LEITURA_DOS_DEPENDENTES = [], FUNCIONARIO_ACHADO = "";
+
+async function lerParte(t, lote){
   try {
     const fd = new FormData();
     lote.forEach(a => fd.append("arquivos", a.arquivo, a.nome));
@@ -1516,8 +1543,11 @@ async function receberArquivos(t, novos){
       // nascimento e, pela certidão, o parentesco —, nunca para os dados do
       // colaborador. Só em campo vazio, como no resto.
       if (t.repete) {
-        preencherDependente(t, d.campos || {}, lote);
-      } else {
+        const qual = preencherDependente(t, d.campos || {}, lote);
+        if (qual) LEITURA_DOS_DEPENDENTES.push(qual);
+        await acharOFuncionario(t, d.campos || {});
+        return;
+      }
       // O que os documentos disseram entra nos campos VAZIOS — nunca por
       // cima do que a pessoa já escreveu. E fica marcado como LIDO, para ela
       // conferir.
@@ -1531,15 +1561,44 @@ async function receberArquivos(t, novos){
           alvo.dispatchEvent(new Event("input", {bubbles: true}));
         }
       });
-      }
     } else {
       lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
     }
   } catch(e) {
     lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
   }
-  lote.forEach(a => { a.lendo = false; });
-  recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+}
+
+{# ⚑ O FUNCIONÁRIO PELA CERTIDÃO (25/11/2026). Ele: *"o ideal era que ele
+   conseguisse buscar o nome do funcionário na hora que eu colocasse o
+   documento. Aí, se não, a pessoa fazia a pesquisa e selecionava."* A
+   certidão traz a mãe e o pai — um deles é o colaborador. Nome IGUAL a um só
+   colaborador do seu alcance: escolhido. Parecido ou mais de um: a lista
+   aparece para você escolher. Nada: fica a busca de sempre. Nunca troca o
+   colaborador que você já escolheu. #}
+async function acharOFuncionario(t, campos){
+  if (!els("p-pessoa") || els("p-pessoa").value) return;
+  const simples = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/\s+/g, " ").trim();
+  const nomes = [campos.nome_mae, campos.nome_pai].filter(n => (n || "").trim().length >= 5);
+  let iguais = [], primeiro = "";
+  for (const n of nomes) {
+    try {
+      const r = await fetch("/erp/portal/api/pessoas?q=" + encodeURIComponent(n)
+                            + "&tipo=" + encodeURIComponent(t.chave));
+      const d = await r.json();
+      const achados = (d && d.pessoas) || [];
+      if (achados.length && !primeiro) primeiro = n;
+      iguais = iguais.concat(achados.filter(p => simples(p.nome) === simples(n)));
+    } catch(e) { /* sem a busca, fica a de sempre */ }
+  }
+  if (iguais.length === 1) {
+    escolherPessoa(iguais[0]);
+    FUNCIONARIO_ACHADO = iguais[0].nome;
+  } else if (primeiro) {
+    els("p-pessoa-busca").value = primeiro;
+    procurarPessoa(primeiro);
+  }
 }
 
 // ---------------------------------------------------------------------------
