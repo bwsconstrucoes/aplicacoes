@@ -341,6 +341,58 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 25/11/2026 (2) — A tolerância do fechamento destravada; relatórios por vínculo e empresa; as folhas do recorte
+
+**1. A tolerância** — o dono: *"pelo volume de pessoas (…) às vezes começa a bater ponto um pouquinho mais cedo (…) ou
+fica no final da fila e bate um pouquinho depois. Como são 4 batidas (…) pode gerar um acúmulo superior a 10 minutos,
+sendo que o trabalho efetivo tem acontecido nas horas normais (…) está chegando a quase 20 minutos (…) deixa ele
+livre"*. O campo do Fechamento "Desconsiderar a hora extra do dia de até (minutos)" — que vale também para o atraso —
+foi travado em 10 em 06/11 (revisão da CLT); **volta a ir até 120** (`fechamento.HE_MINIMA_MAXIMA`). ⚠️ Risco dito na
+tela e a ele: a lei tolera 10 min por dia (art. 58 §1º); acima disso conta o tempo todo (Súmula 366). **Não mudou** a
+tolerância do cálculo do espelho (5 min por batida, 10 no dia) — o espelho e os relatórios mostram o dia como a lei
+conta; o que fica de fora é no fechamento.
+
+**2. Quem entra no relatório e de que empresa** — *"colocar aqui ponto dos celetistas e prestadores de serviço. E ainda
+poder definir qual empresa"*. Na barra dos Relatórios: **"Quem entra"** (o padrão do relatório · Celetistas ·
+Prestadores de serviço · Celetistas e prestadores) e **"Empresa"** (`relatorios.recorte`). A empresa da pessoa é a do
+cadastro dela (`colaboradores.empresa_id`) e, sem ela, a da obra. Com celetistas e prestadores juntos, a tabela ganha a
+coluna "Vínculo". O título diz o vínculo e a empresa. **O fechamento da folha continua só CTPS** (é para a
+contabilidade).
+
+**3. As folhas de ponto do recorte** — *"gerar as folhas de ponto de outros colaboradores"*: botão **"🗂️ Folhas de ponto
+do recorte"** (aparece com o relatório montado): a folha de cada pessoa do mesmo período, filtro, vínculo e empresa,
+uma por página, até 150 de uma vez (`/erp/ponto/relatorios/folhas`).
+
+**Testado:** `tests/test_ponto_relatorio_vinculo_banco.py` (o padrão só CTPS; prestadores; todos; a empresa; as folhas) e
+o fechamento (20 aceito, 121 recusado); e **no navegador** (a barra, o relatório misto de uma empresa, as folhas).
+
+**4. A barra dos Relatórios mais curta** — *"esses explicativos estão ocupando muito do sidebar (…) algo tipo pra
+clicar e expandir"*: cada explicação virou um "ⓘ o que é" que abre ao tocar (inclusive os períodos do mês anterior e do
+corrente, que ficaram no "o que é" da Folha do mês). E **o mês em 11/2026**, não 2026-11: o campo de mês do navegador
+mostrava o formato da máquina; virou uma lista dos meses (`opcoesDeMes`), também em Ponto › Assinaturas.
+
+## ⚠️ 25/11/2026 — O RELATÓRIO DE FALTAS E DE HORAS EXTRAS TIRAVA QUASE TODO MUNDO (desde 17/11)
+
+**O que ele viu** (período 26/10 a 25/11): *"só aparece falta de 8 pessoas (…) Da mesma forma horas extras,
+pouquíssimas pessoas."*
+
+**A causa:** as contas de horas (falta, hora extra, banco) são só de quem é CTPS (`relatorios.conta_horas`, decisão
+de 29/10). Com a PLANILHA como base, o "Tipo" vinha **"CTPS"**. Em **17/11 a base passou para o cadastro do ERP**, e
+aí o campo passou a trazer o **tipo de contrato** (`CLT_INDETERMINADO`, `CLT_DETERMINADO`…). Como só "CTPS" contava,
+**todo mundo de carteira saiu** — sobraram os de tipo de contrato em branco (as 8 pessoas). O relatório olha o
+cadastro de HOJE, então o período inteiro (inclusive outubro) saiu errado, não só depois de 17/11.
+
+**⚠️ O MESMO FILTRO VALE NO FECHAMENTO** (`fechamento.py`): os arquivos de faltas e de horas extras para a
+contabilidade gerados depois de 17/11 também saíram sem essas pessoas. **Perguntado ao dono se algum foi enviado.**
+
+**O conserto:** na base ERP, o campo passa a trazer o **vínculo** do cadastro (CTPS / PRESTADOR) e, sem ele, o tipo de
+contrato; e `conta_horas` aceita CTPS, CLT (determinado e indeterminado), jovem aprendiz e temporário (a folha do ERP
+também trata o temporário como CTPS). Prestador (PJ, RPA, mensalista, estágio, pró-labore) continua fora; vazio
+continua entrando. Teste: `tests/test_ponto_relatorio_vinculo_banco.py`.
+
+**Por que os testes não pegaram:** as pessoas de teste não tinham vínculo nem tipo de contrato — e vazio entra. O
+teste novo põe os dois.
+
 ## 24/11/2026 — Lentidão ao meio-dia: a busca pelo nome e a lista sem internet
 
 **O que ele mandou** (log do Render, 13h01–13h02, pico das batidas): `buscar-nome` levando 3,6 a 4,5 s, várias ao
@@ -360,6 +412,12 @@ mesmo tempo; `lista-sem-internet` 10,9 s; e uma tela do Análise de SPs (`/anali
   uma só (`cadastros.colaboradores_por_ids`).
 - **Relatado, não mexido (outras áreas):** a credencial do Drive refeita a cada chamada vale para o ERP inteiro (todo
   upload e download paga uma ida a mais ao Google); e os 40,8 s do Análise de SPs são da área deles.
+  **O dono, sobre o Análise de SPs: "não precisa mexer"** — fica como está.
+
+**Publicado em 24/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Junto, um conserto de teste: a limpeza dos
+testes do ponto passou a levar a trilha dos termos (`eventos`), que fazia a limpeza do ERP falhar quando as duas
+rodavam no mesmo trabalhador. Suíte inteira: 12.830 passando. **Não medido em produção** — conferir no log do Render,
+no próximo pico, se a busca pelo nome caiu para ~1 s e a lista sem internet saiu da lista de "LENTA".
 
 ## 23/11/2026 — A CENTRAL DE ASSINATURAS, pelo aplicativo do ponto (feita; ver a proposta logo abaixo)
 
