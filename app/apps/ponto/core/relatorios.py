@@ -66,6 +66,9 @@ def _pessoas(conn: Connection, quem: Quem, f: dict, inicio: dt.date, fim: dt.dat
     return filtro_pessoas.aplicar(conn, quem, pessoas, f, inicio, min(fim, horario.hoje()))[0]
 
 
+TIPOS_QUE_CONTAM_HORAS = ("CTPS", "CLT_INDETERMINADO", "CLT_DETERMINADO", "JOVEM_APRENDIZ", "TEMPORARIO")
+
+
 def conta_horas(p: dict) -> bool:
     """PURA. Só quem é CTPS entra nas contas de horas — falta, hora extra, banco (29/10/2026, o dono: "só entra
     para efeito de hora o pessoal que na coluna D é CTPS. Demais, que são prestador de serviço, eles não entram
@@ -73,7 +76,10 @@ def conta_horas(p: dict) -> bool:
     (ou sem a planilha) entra — e o fechamento avisa na Conferência —, para um buraco na planilha não sumir
     com as faltas de ninguém calado."""
     tipo = " ".join(str(p.get("tipo_cadastro") or "").split()).upper()
-    return not tipo or tipo == "CTPS"
+    # 25/11/2026: com o cadastro do ERP como base, vem o vínculo ("CTPS"/"PRESTADOR") ou, sem ele, o tipo de contrato
+    # — os de carteira (CLT determinado e indeterminado, jovem aprendiz) e o temporário (a folha do ERP também o
+    # trata como CTPS) contam. Antes só "CTPS" contava, e na base ERP quase ninguém entrava nas contas.
+    return not tipo or tipo in TIPOS_QUE_CONTAM_HORAS
 
 
 def _base(p: dict) -> dict:

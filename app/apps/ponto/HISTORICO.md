@@ -341,6 +341,28 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## ⚠️ 25/11/2026 — O RELATÓRIO DE FALTAS E DE HORAS EXTRAS TIRAVA QUASE TODO MUNDO (desde 17/11)
+
+**O que ele viu** (período 26/10 a 25/11): *"só aparece falta de 8 pessoas (…) Da mesma forma horas extras,
+pouquíssimas pessoas."*
+
+**A causa:** as contas de horas (falta, hora extra, banco) são só de quem é CTPS (`relatorios.conta_horas`, decisão
+de 29/10). Com a PLANILHA como base, o "Tipo" vinha **"CTPS"**. Em **17/11 a base passou para o cadastro do ERP**, e
+aí o campo passou a trazer o **tipo de contrato** (`CLT_INDETERMINADO`, `CLT_DETERMINADO`…). Como só "CTPS" contava,
+**todo mundo de carteira saiu** — sobraram os de tipo de contrato em branco (as 8 pessoas). O relatório olha o
+cadastro de HOJE, então o período inteiro (inclusive outubro) saiu errado, não só depois de 17/11.
+
+**⚠️ O MESMO FILTRO VALE NO FECHAMENTO** (`fechamento.py`): os arquivos de faltas e de horas extras para a
+contabilidade gerados depois de 17/11 também saíram sem essas pessoas. **Perguntado ao dono se algum foi enviado.**
+
+**O conserto:** na base ERP, o campo passa a trazer o **vínculo** do cadastro (CTPS / PRESTADOR) e, sem ele, o tipo de
+contrato; e `conta_horas` aceita CTPS, CLT (determinado e indeterminado), jovem aprendiz e temporário (a folha do ERP
+também trata o temporário como CTPS). Prestador (PJ, RPA, mensalista, estágio, pró-labore) continua fora; vazio
+continua entrando. Teste: `tests/test_ponto_relatorio_vinculo_banco.py`.
+
+**Por que os testes não pegaram:** as pessoas de teste não tinham vínculo nem tipo de contrato — e vazio entra. O
+teste novo põe os dois.
+
 ## 24/11/2026 — Lentidão ao meio-dia: a busca pelo nome e a lista sem internet
 
 **O que ele mandou** (log do Render, 13h01–13h02, pico das batidas): `buscar-nome` levando 3,6 a 4,5 s, várias ao
