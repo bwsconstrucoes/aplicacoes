@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """SEMEIA UM PORTAL DA OBRA CHEIO, num banco de teste, para fotografar as
-telas do manual (`app/apps/erp/static/manual_portal/`).
+telas do manual (`app/apps/erp/manual_portal/`).
 
 ⚑ POR QUE EXISTE (25/11/2026): o manual do portal tem 17 telas. Sem este
 arquivo, atualizar uma delas custa meia hora remontando dado de exemplo à

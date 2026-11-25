@@ -24,7 +24,7 @@ from app.apps.erp.core import pessoal_solicitacoes as svc_sp
 from app.apps.erp.core import portal
 
 MANUAL = (Path(__file__).resolve().parents[1]
-          / "app" / "apps" / "erp" / "static" / "manual_portal")
+          / "app" / "apps" / "erp" / "manual_portal")
 
 
 @pytest.fixture(scope="module")
@@ -97,3 +97,36 @@ def test_o_manual_nao_promete_area_fechada_como_aberta(texto: str):
         parte = texto.split(a["nome"], 1)[1][:1200]
         assert "ainda não" in parte.lower() or "enquanto" in parte.lower(), (
             f"a área {a['nome']} está fechada no sistema e o manual não diz isso")
+
+# ---------------------------------------------------------------------------
+# ONDE O LINK MORA — decisão dele em 25/11/2026, depois de procurar e não achar
+# ---------------------------------------------------------------------------
+TEMPLATES = (Path(__file__).resolve().parents[1]
+             / "app" / "apps" / "erp" / "templates")
+
+
+def test_o_portal_leva_ao_manual_no_alto_e_no_pe():
+    """Link que a pessoa precisa procurar é link que não existe.
+
+    Ele: *"eu não entendi bem exatamente onde é que está o link para acesso ao
+    manual. Mas eu acho que o ideal é na tela depois do login."* O link estava
+    só no pé da página. Agora está também na barra azul, visível sem rolar —
+    e este teste existe para ele não sumir de lá numa mexida futura.
+    """
+    tela = (TEMPLATES / "erp_portal.html").read_text(encoding="utf-8")
+    topo = tela.split('<div class="topo-portal">', 1)[1].split("</div>\n<div class=\"caixa\">", 1)[0]
+    assert "/erp/portal/manual/" in topo, (
+        "o link do manual saiu da barra do portal — ele tem de aparecer sem rolar")
+    assert tela.count("/erp/portal/manual/") >= 2, (
+        "o manual deixou de ter o segundo caminho, no pé da página")
+    assert "/erp/portal/manual.pdf" in tela, "sumiu o 'baixar em PDF' do portal"
+
+
+def test_a_tela_publica_de_criar_acesso_nao_leva_ao_manual():
+    """O manual exige login desde 25/11/2026. Um link para ele numa tela de
+    quem AINDA NÃO ENTROU é link morto: leva à tela de entrar, que é de onde a
+    pessoa veio. Pior que não ter link é ter um que não vai a lugar nenhum."""
+    tela = (TEMPLATES / "erp_primeiro_acesso_portal.html").read_text(encoding="utf-8")
+    assert "/erp/portal/manual" not in tela, (
+        "a tela pública de criar acesso voltou a apontar para o manual, que "
+        "agora exige login — o link levaria de volta para a tela de entrar.")
