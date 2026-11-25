@@ -427,21 +427,73 @@ def enviar_papel(s: Session, termo_id: int, obras: Optional[list[int]], *,
             "falta": "o DP validar"}
 
 
+# ---------------------------------------------------------------------------
+# ⚑ ONDE A RECUSA NÃO VALE (25/11/2026). A recusa com testemunhas é a praxe
+# para o que a EMPRESA comunica (aviso prévio, aviso de férias). Nos documentos
+# que são a VONTADE da própria pessoa, recusar é o contrário do documento — e a
+# recusa validada contava como "concluído", deixando a rescisão seguir sem a
+# carta, ou o desconto sem autorização (CLT art. 462). A regra mora AQUI para
+# valer nas duas portas: o portal da obra e a central do aplicativo do ponto.
+# ---------------------------------------------------------------------------
+TIPOS_SEM_RECUSA = {
+    "PEDIDO-DEMISSAO": "O pedido de demissão é a vontade da própria pessoa: se "
+                       "ela não quer assinar, não há pedido. Avise o DP — o "
+                       "pedido de desligamento precisa ser revisto ou cancelado.",
+    "AUTORIZACAO-DESCONTO": "O desconto em folha só vale com a autorização da "
+                            "pessoa (CLT art. 462): se ela não assina, não há "
+                            "desconto. Avise o DP.",
+}
+
+
+def _testemunhas(t: dict[str, Any], testemunhas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """⚑ AS TESTEMUNHAS ASSINAM NA TELA, COM CPF (25/11/2026). Pedido do dono:
+    *"faz as testemunhas assinarem na tela com CPF."* Antes eram dois nomes
+    digitados — prova fraca: qualquer um digita qualquer nome. Agora cada uma
+    tem nome completo, CPF válido e a assinatura com o dedo; as duas são
+    pessoas diferentes, e nenhuma é a própria pessoa que recusou.
+    Devolve [{nome, cpf, png}] — o `png` vai para o PDF, não para o banco."""
+    from app.apps.erp.core.cadastros.validadores import cpf_valido
+    import re
+    if len(testemunhas or []) < 2:
+        raise ErroValidacao("A recusa precisa de duas testemunhas, cada uma com "
+                            "nome, CPF e assinatura.")
+    saida: list[dict[str, Any]] = []
+    for i, x in enumerate(testemunhas[:2], 1):
+        nome = " ".join(str(x.get("nome") or "").split())
+        cpf = re.sub(r"\D", "", str(x.get("cpf") or ""))
+        if len(nome.split()) < 2:
+            raise ErroValidacao(f"Testemunha {i}: o nome completo.")
+        if not cpf_valido(cpf):
+            raise ErroValidacao(f"Testemunha {i}: o CPF não confere — confira os 11 números.")
+        if not x.get("assinatura"):
+            raise ErroValidacao(f"Testemunha {i}: falta a assinatura no quadro.")
+        try:
+            png = _png(x.get("assinatura"))
+        except ErroValidacao as e:
+            raise ErroValidacao(f"Testemunha {i}: {e}") from e
+        saida.append({"nome": nome, "cpf": cpf, "png": png})
+    if saida[0]["cpf"] == saida[1]["cpf"]:
+        raise ErroValidacao("As duas testemunhas têm de ser pessoas diferentes.")
+    if re.sub(r"\D", "", str(t.get("cpf") or "")) in (saida[0]["cpf"], saida[1]["cpf"]):
+        raise ErroValidacao("Quem recusou não pode ser testemunha da própria recusa.")
+    return saida
+
+
 def registrar_recusa(s: Session, termo_id: int, obras: Optional[list[int]], *,
                      motivo: str, testemunhas: list[dict[str, Any]],
                      conduzido_por: dict[str, Any]) -> dict[str, Any]:
     """A pessoa se recusou a assinar. A praxe trabalhista: o documento vale com
-    a declaração de duas testemunhas de que ela foi comunicada."""
+    a declaração de duas testemunhas de que ela foi comunicada — desde
+    25/11/2026, assinada por elas na tela, com CPF (`_testemunhas`)."""
     t = _no_alcance(s, termo_id, obras)
     if t["situacao"] != "ABERTO":
         raise ErroValidacao(f"{t['numero']} já está {t['situacao'].lower()}.")
-    validas = [x for x in (testemunhas or [])
-               if len(" ".join(str(x.get("nome") or "").split())) >= 5]
-    if len(validas) < 2:
-        raise ErroValidacao("Informe o nome de duas testemunhas que viram a "
-                            "pessoa ser comunicada.")
+    sem = TIPOS_SEM_RECUSA.get(str(t.get("tipo") or "").upper())
+    if sem:
+        raise ErroValidacao(sem)
     if len((motivo or "").strip()) < 5:
         raise ErroValidacao("Conte o que aconteceu — o DP precisa saber.")
+    validas = _testemunhas(t, testemunhas)
     agora = datetime.now(timezone.utc)
     pdf = documento_pdf(t, assinatura=None, quando=agora, forma="RECUSA",
                         conduzido_por=conduzido_por.get("nome") or "",
@@ -455,7 +507,8 @@ def registrar_recusa(s: Session, termo_id: int, obras: Optional[list[int]], *,
                conduzido_por_colaborador = :cc, conduzido_por_nome = :cn
          WHERE id = :i"""),
         {"doc": doc.id, "em": agora, "m": motivo.strip()[:1000],
-         "tst": json.dumps(validas, ensure_ascii=False),
+         "tst": json.dumps([{"nome": x["nome"], "cpf": x["cpf"]} for x in validas],
+                           ensure_ascii=False),
          "cc": conduzido_por.get("colaborador_id"),
          "cn": str(conduzido_por.get("nome") or "")[:120], "i": termo_id})
     return {"recusado": True, "numero": t["numero"], "falta": "o DP validar"}
@@ -552,6 +605,14 @@ def documento_pdf(t: dict[str, Any], *, assinatura: Optional[bytes],
                 f"Testemunha {i}: {x.get('nome')}"
                 + (f" - CPF {_cpf_formatado(x.get('cpf'))}" if x.get("cpf") else "")),
                 new_x="LMARGIN", new_y="NEXT")
+            # A assinatura dela, com o dedo (25/11/2026).
+            if x.get("png"):
+                y = pdf.get_y() + 1
+                try:
+                    pdf.image(io.BytesIO(x["png"]), x=pdf.l_margin, y=y, w=55)
+                except Exception:  # noqa: BLE001 — imagem ruim não derruba o comprovante
+                    pass
+                pdf.set_y(y + 24)
     linhas = [f"Colaborador: {t.get('pessoa') or ''} - CPF {_cpf_formatado(t.get('cpf'))}",
               f"Em: {local:%d/%m/%Y %H:%M} (horário de Fortaleza)"
               + (", com o PIN pessoal da pessoa" if forma == "NA_TELA" else ""),

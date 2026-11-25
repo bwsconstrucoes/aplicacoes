@@ -14511,10 +14511,8 @@ def api_portal_termo(termo_id: int):
             else:
                 d = request.get_json(silent=True) or {}
                 if d.get("acao") == "recusa":
-                    termos.para_assinar(s, termo_id, obras)     # escopo antes
-                    sem = svc_portal.recusa_nao_vale(termos.ler(s, termo_id).get("tipo"))
-                    if sem:
-                        raise ErroValidacao(sem)
+                    # Onde a recusa não vale e as testemunhas com CPF e
+                    # assinatura: `termos.registrar_recusa` (25/11/2026).
                     r = termos.registrar_recusa(
                         s, termo_id, obras, motivo=str(d.get("motivo") or ""),
                         testemunhas=d.get("testemunhas") or [], conduzido_por=conduz)

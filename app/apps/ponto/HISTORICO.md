@@ -3,6 +3,21 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 25/11/2026 — (feito pelo chat do DP) Recusa de assinatura: testemunhas com CPF e assinatura; onde a recusa não vale
+
+Pedido do dono: *"faz as testemunhas assinarem na tela com CPF."* A regra mora
+em `erp/core/termos.registrar_recusa`, que esta central de assinaturas
+(`app_documentos.py`, ação `recusa`) também chama:
+- cada uma das duas testemunhas manda `nome`, `cpf` (válido) e `assinatura`
+  (PNG em data URL, como a da pessoa); CPFs diferentes, e nenhum igual ao de
+  quem recusou. Só o nome, como era, agora volta 400 com "CPF";
+- no **pedido de demissão** e na **autorização de desconto** a recusa é
+  recusada (`termos.TIPOS_SEM_RECUSA`): são a vontade da própria pessoa.
+Na tela `templates/ponto/app.html` (documentos da equipe › "Recusou"), cada
+testemunha ganhou CPF e um quadro (`quadroDeAssinatura`). O teste
+`tests/test_ponto_central_assinaturas_banco.py` foi ajustado para mandar CPF e
+assinatura. Tela não vista num celular.
+
 ## 23/11/2026 — (feito pelo chat do DP) A ficha da pessoa aceita `?aba=` e `?competencia=`
 
 Uma linha em `templates/ponto/gestao.html` (bloco `ponto_ficha`): a ficha

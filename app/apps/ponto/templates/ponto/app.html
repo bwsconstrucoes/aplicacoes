@@ -2116,8 +2116,13 @@ async function abrirDocEquipe(id, modo) {
       <button class="btn" type="button" id="de-enviar">Enviar a foto</button>`;
   else corpo = `<div class="aviso ambar" style="margin:8px 0">Se a pessoa leu (ou ouviu a leitura) e não quer assinar, registre aqui, com duas testemunhas que viram. O DP confere antes de valer.</div>
       <label for="de-motivo">O que aconteceu</label><textarea id="de-motivo" rows="3" maxlength="900"></textarea>
-      <label for="de-t1">Testemunha 1 (nome completo)</label><input id="de-t1" maxlength="120">
-      <label for="de-t2">Testemunha 2 (nome completo)</label><input id="de-t2" maxlength="120">
+      ${[1, 2].map(n => `<div style="border:1px solid #D5DCE8; border-radius:8px; padding:8px; margin-top:8px">
+        <b>Testemunha ${n}</b> <span class="pequeno">— nome completo, CPF e assinatura com o dedo (25/11/2026)</span>
+        <label for="de-t${n}">Nome completo</label><input id="de-t${n}" maxlength="120">
+        <label for="de-t${n}-cpf">CPF</label><input id="de-t${n}-cpf" inputmode="numeric" maxlength="14">
+        <label>Assinatura</label>
+        <canvas id="de-t${n}-quadro" style="width:100%; height:120px; border:2px dashed #9AA6B8; border-radius:8px; background:#fff; touch-action:none"></canvas>
+        <button class="btn sec" type="button" id="de-t${n}-limpar">Limpar</button></div>`).join("")}
       <div id="de-msg" class="aviso erro oculto"></div>
       <button class="btn" type="button" id="de-recusa">Registrar a recusa</button>`;
   $("dlg-corpo").innerHTML = `<button class="link" type="button" id="de-voltar">‹ voltar</button>
@@ -2141,12 +2146,22 @@ async function abrirDocEquipe(id, modo) {
           feito("Foto enviada. O DP confere e o documento passa a valer."); }
     catch (e) { $("de-enviar").disabled = false; erro(e.message); }
   };
+  // ⚑ AS TESTEMUNHAS ASSINAM NA TELA, COM CPF (25/11/2026, pedido do dono). A regra mora em
+  // `erp/core/termos.registrar_recusa`, que vale também para o portal da obra.
+  const quadrosTst = modo === "recusa" ? [1, 2].map(n => {
+    const q = quadroDeAssinatura($(`de-t${n}-quadro`));
+    $(`de-t${n}-limpar`).onclick = q.limpar;
+    return q;
+  }) : [];
   if (modo === "recusa") $("de-recusa").onclick = async () => {
     const t = [$("de-t1").value.trim(), $("de-t2").value.trim()];
     if ($("de-motivo").value.trim().length < 5) return erro("Conte o que aconteceu.");
     if (t.some(x => x.split(/\s+/).length < 2)) return erro("O nome completo das duas testemunhas.");
+    if ([1, 2].some(n => $(`de-t${n}-cpf`).value.replace(/\D/g, "").length !== 11)) return erro("O CPF das duas testemunhas.");
+    if (quadrosTst.some(q => q.vazio())) return erro("Falta a assinatura de uma testemunha.");
     $("de-recusa").disabled = true;
-    try { await chamar(url, {acao: "recusa", motivo: $("de-motivo").value.trim(), testemunhas: t.map(nome => ({nome})), ...localNoCorpo(await onde())});
+    const testemunhas = t.map((nome, i) => ({nome, cpf: $(`de-t${i + 1}-cpf`).value, assinatura: quadrosTst[i].png()}));
+    try { await chamar(url, {acao: "recusa", motivo: $("de-motivo").value.trim(), testemunhas, ...localNoCorpo(await onde())});
           feito("Recusa registrada. O DP confere."); }
     catch (e) { $("de-recusa").disabled = false; erro(e.message); }
   };

@@ -110,8 +110,15 @@ def test_o_administrativo_conduz_na_tela_no_papel_e_a_recusa(app, mundo, carlos,
     r = adm.post(url.format(por_nome["Maria Obra B"]), json={"acao": "recusa", "motivo": "não quis assinar",
                                                              "testemunhas": [{"nome": "Ana Souza"}], **aqui})
     assert r.status_code == 400
+    # 25/11/2026: só o nome não basta mais — cada testemunha tem CPF e assina com o dedo
     r = adm.post(url.format(por_nome["Maria Obra B"]), json={"acao": "recusa", "motivo": "não quis assinar",
                                                              "testemunhas": [{"nome": "Ana Souza"}, {"nome": "Rui Lima"}], **aqui})
+    assert r.status_code == 400 and "CPF" in r.get_json()["erro"]
+    r = adm.post(url.format(por_nome["Maria Obra B"]), json={"acao": "recusa", "motivo": "não quis assinar",
+                                                             "testemunhas": [
+                                                                 {"nome": "Ana Souza", "cpf": "714.602.380-01", "assinatura": _png()},
+                                                                 {"nome": "Rui Lima", "cpf": "286.255.878-87", "assinatura": _png()}],
+                                                             **aqui})
     assert r.status_code == 201, r.get_json()
     assert dp.post(v, json={"aceitar": True}).status_code == 200
     central = dp.get("/erp/api/ponto/assinaturas-central").get_json()["documentos"]

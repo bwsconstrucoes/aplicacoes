@@ -745,22 +745,14 @@ RECUSA_VISTA = "QUEM_PEDIU_VIU_A_RECUSA"
 # seguir sem a carta e sem a autorização. Ele, no mesmo dia: *"pedido de
 # demissão tem que ter carta de pedido sempre."*
 #
-# A trava fica aqui e na rota, e não em `core/termos.py`, que é usado também
-# pela central de assinaturas do ponto.
+# A trava de verdade está em `core/termos.registrar_recusa` (vale também para
+# a central do aplicativo do ponto); aqui é só a tela não oferecer a recusa.
 # ---------------------------------------------------------------------------
-TERMOS_SEM_RECUSA = {
-    "PEDIDO-DEMISSAO": "O pedido de demissão é a vontade da própria pessoa: se "
-                       "ela não quer assinar, não há pedido. Avise o DP — o "
-                       "pedido de desligamento precisa ser revisto ou cancelado.",
-    "AUTORIZACAO-DESCONTO": "O desconto em folha só vale com a autorização da "
-                            "pessoa (CLT art. 462): se ela não assina, não há "
-                            "desconto. Avise o DP.",
-}
-
-
 def recusa_nao_vale(tipo: str) -> str:
-    """O motivo de a recusa não valer para este tipo de documento, ou ""."""
-    return TERMOS_SEM_RECUSA.get(str(tipo or "").upper(), "")
+    """O motivo de a recusa não valer para este tipo de documento, ou "".
+    A lista mora em `termos.TIPOS_SEM_RECUSA`, que trava as duas portas."""
+    from app.apps.erp.core import termos
+    return termos.TIPOS_SEM_RECUSA.get(str(tipo or "").upper(), "")
 
 
 def ciente_da_recusa(s: Session, solicitacao_id: int,

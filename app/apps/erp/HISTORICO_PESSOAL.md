@@ -141,6 +141,27 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (8) — As testemunhas da recusa assinam na tela, com CPF; a trava da recusa passa a valer nas duas portas
+
+Ele: *"faz as testemunhas assinarem na tela com CPF."* Ao fazer, achei que a
+central de assinaturas do APLICATIVO DO PONTO (`ponto/app_documentos.py`)
+também chama `termos.registrar_recusa` — a trava de (7), posta só na rota do
+portal, era contornável por lá. As duas regras foram para
+`core/termos.registrar_recusa`, que serve às duas portas:
+- `TIPOS_SEM_RECUSA` (pedido de demissão, autorização de desconto) — o portal
+  só lê a lista para não oferecer a opção.
+- `_testemunhas`: duas, cada uma com nome completo, CPF válido e assinatura com
+  o dedo; CPFs diferentes entre si e diferentes do de quem recusou. O PDF da
+  recusa traz nome, CPF e a assinatura de cada uma; o banco guarda nome e CPF
+  (a imagem vai só no PDF).
+- Telas: o portal (`erp_portal.html`) e o aplicativo do ponto (`ponto/templates/
+  ponto/app.html`, aba "Recusou" dos documentos da equipe) ganharam, por
+  testemunha, CPF e um quadro de assinatura.
+⚠️ `core/termos.py` e a tela do aplicativo do ponto são arquivos que o chat do
+PONTO também mexe — registrado no `ponto/HISTORICO.md`. As telas não foram
+vistas num celular; o servidor tem teste (inclusive o PDF com as duas
+assinaturas).
+
 ### 25/11/2026 (7) — A recusa de assinar não vale no pedido de demissão nem na autorização de desconto; guia do PIN
 
 Ele perguntou se a recusa de assinatura já existia. Existia (portal: motivo +

@@ -598,14 +598,34 @@ def test_recusa_de_assinatura_precisa_de_duas_testemunhas_e_do_dp(mundo, monkeyp
         d.id = _documento(mundo, kw["tipo_codigo"], "recusa")
         return d
     monkeypatch.setattr(svc_arq, "arquivar", arquivar)
+    from tests.test_ponto_assinatura_folha_banco import _png   # type: ignore
     with pytest.raises(ErroValidacao, match="duas testemunhas"):
         termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
                                 testemunhas=[{"nome": "Fulano de Tal"}],
                                 conduzido_por={"nome": "Adm"})
+    # 25/11/2026: o nome sozinho não basta — CPF válido e a assinatura de cada uma
+    so_nomes = [{"nome": "Fulano de Tal"}, {"nome": "Beltrano Silva"}]
+    with pytest.raises(ErroValidacao, match="CPF"):
+        termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
+                                testemunhas=so_nomes, conduzido_por={"nome": "Adm"})
+    sem_assinar = [{"nome": "Fulano de Tal", "cpf": "71460238001"},
+                   {"nome": "Beltrano Silva", "cpf": "28625587887"}]
+    with pytest.raises(ErroValidacao, match="assinatura"):
+        termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
+                                testemunhas=sem_assinar, conduzido_por={"nome": "Adm"})
+    mesma = [{"nome": "Fulano de Tal", "cpf": "71460238001", "assinatura": _png()},
+             {"nome": "Beltrano Silva", "cpf": "714.602.380-01", "assinatura": _png()}]
+    with pytest.raises(ErroValidacao, match="pessoas diferentes"):
+        termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
+                                testemunhas=mesma, conduzido_por={"nome": "Adm"})
     termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
-                            testemunhas=[{"nome": "Fulano de Tal"},
-                                         {"nome": "Beltrano Silva"}],
+                            testemunhas=[{**x, "assinatura": _png()} for x in sem_assinar],
                             conduzido_por={"nome": "Adm"})
+    gravadas = s.execute(text("SELECT testemunhas FROM dp_termos WHERE id = :i"),
+                         {"i": t_["id"]}).scalar()
+    assert [x["cpf"] for x in gravadas] == ["71460238001", "28625587887"]
+    assert all("png" not in x and "assinatura" not in x for x in gravadas), \
+        "a assinatura vai para o PDF, não para o banco"
     assert _estado(_ler(mundo, sid), "AVISO") == "PENDENTE", "o DP ainda não validou"
     termos.validar(s, t_["id"], mundo["dp"], aceitar=True)
     assert _estado(_ler(mundo, sid), "AVISO") == "FEITO"
@@ -805,4 +825,29 @@ def test_no_pedido_de_demissao_a_recusa_de_assinar_nao_vale(mundo, app_real):
         "acao": "recusa", "motivo": "não quis assinar",
         "testemunhas": [{"nome": "Fulano de Tal"}, {"nome": "Beltrano Silva"}]})
     assert r.status_code == 400 and "vontade" in r.get_json()["erro"]
+    with pytest.raises(ErroValidacao, match="vontade"):       # a porta do ponto também
+        termos.registrar_recusa(s, t_["id"], None, motivo="não quis assinar",
+                                testemunhas=[], conduzido_por={"nome": "Adm"})
     assert termos.do_pedido(s, p["id"])["situacao"] == "ABERTO"
+
+
+def test_o_pdf_da_recusa_traz_cpf_e_assinatura_das_testemunhas():
+    """25/11/2026: *"faz as testemunhas assinarem na tela com CPF."*"""
+    import base64
+    from datetime import datetime, timezone
+    import fitz
+    from app.apps.erp.core import termos
+    from tests.test_ponto_assinatura_folha_banco import _png   # type: ignore
+    png = base64.b64decode(_png().split(",", 1)[1])
+    pdf = termos.documento_pdf(
+        {"numero": "TRM-1", "titulo": "Aviso prévio", "texto": "texto do aviso",
+         "pessoa": "Fulano", "cpf": "52998224725", "tipo": "AVISO-PREVIO",
+         "lacre": "abc123"},
+        assinatura=None, quando=datetime.now(timezone.utc), forma="RECUSA",
+        conduzido_por="Adm", motivo="não quis assinar",
+        testemunhas=[{"nome": "Ana Souza", "cpf": "71460238001", "png": png},
+                     {"nome": "Rui Lima", "cpf": "28625587887", "png": png}])
+    doc = fitz.open(stream=pdf, filetype="pdf")
+    texto = "".join(p.get_text() for p in doc)
+    assert "714.602.380-01" in texto and "286.255.878-87" in texto
+    assert sum(len(p.get_image_info()) for p in doc) >= 2, "as duas assinaturas"
