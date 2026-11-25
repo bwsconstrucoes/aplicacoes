@@ -18,7 +18,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, g, jsonify, make_response, redirect, render_template, request,
-    session, url_for,
+    send_from_directory, session, url_for,
 )
 
 from sqlalchemy.exc import IntegrityError, ProgrammingError
@@ -14098,6 +14098,56 @@ def pagina_portal():
                         ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
                          "ver_suprimentos", "configurar")))
     return render_template("erp_portal.html", pode_mais_que_o_portal=mais)
+
+
+# ===========================================================================
+# O MANUAL DO PORTAL DA OBRA (25/11/2026, pedido do dono: "preciso criar um
+# manual do portal de solicitações (…) no padrão do manual do ponto. Clique
+# pra visualizar online e ainda possibilidade de baixar pdf").
+#
+# ⚑ MESMO DESENHO DO MANUAL DO PONTO, de propósito: página fixa em
+# `static/manual_portal/` (index.html + telas/ + o PDF impresso dela pelo
+# Chromium), sem login e sem dado de ninguém — as telas são de um banco de
+# teste, com nomes inventados. Ver `app/apps/ponto/app_colaborador.py`.
+#
+# ⚠️ AO MUDAR UMA TELA OU UMA REGRA QUE A OBRA VÊ, o manual fica velho. A
+# parte correspondente precisa ser conferida, e o PDF, reimpresso.
+# ===========================================================================
+PASTA_MANUAL_PORTAL = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "static", "manual_portal")
+
+
+@bp.route("/erp/portal/manual/")
+@permissao_publica("o manual de uso do portal; página fixa, sem dado de ninguém")
+def pagina_manual_portal():
+    resposta = send_from_directory(PASTA_MANUAL_PORTAL, "index.html",
+                                   mimetype="text/html")
+    resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
+
+
+@bp.route("/erp/portal/manual")
+@bp.route("/erp/portal/manual.html")
+@permissao_publica("o manual; leva ao endereço com barra, que as imagens usam")
+def pagina_manual_portal_sem_barra():
+    return redirect("/erp/portal/manual/", code=301)
+
+
+@bp.route("/erp/portal/manual/telas/<nome>")
+@permissao_publica("as telas do manual (imagens de um banco de teste)")
+def manual_portal_tela(nome: str):
+    resposta = send_from_directory(
+        os.path.join(PASTA_MANUAL_PORTAL, "telas"), nome)
+    resposta.headers["Cache-Control"] = "public, max-age=86400"
+    return resposta
+
+
+@bp.route("/erp/portal/manual.pdf")
+@permissao_publica("o manual de uso do portal em PDF")
+def manual_portal_pdf():
+    return send_from_directory(PASTA_MANUAL_PORTAL, "manual-portal-da-obra.pdf",
+                               mimetype="application/pdf",
+                               download_name="Manual do Portal da Obra.pdf")
 
 
 @bp.route("/erp/portal/api/inicio")

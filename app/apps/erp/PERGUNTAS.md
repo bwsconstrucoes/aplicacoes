@@ -3059,6 +3059,54 @@ de escopo da tela.
 
 ---
 
+## 3z-duodevicies. O MANUAL DO PORTAL DA OBRA (25/11/2026)
+
+O manual é **página fixa**, não banco. Entra aqui porque muda o que o agente
+deve responder: pergunta de **"como eu faço"** agora tem um lugar certo para
+onde apontar, com endereço e parte numerada — em vez de o agente explicar de
+memória e arriscar descrever uma tela que mudou.
+
+### ⚠️ As palavras ambíguas desta parte
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"o manual"** | ① o do **ponto** (`/ponto/app/manual/`), para bater ponto; ② o do **portal** (`/erp/portal/manual/`), para pedir ao escritório. São sistemas e senhas diferentes — mandar a pessoa para o errado faz ela perder a viagem |
+| **"o portal"** | ① o **Portal da Obra** do ERP; ② o portal do **Pipefy**, que ele vai substituir; ③ o portal da **prefeitura**, na emissão de nota. Só o primeiro tem manual |
+| **"como peço X"** | ① como se pede **pelo portal** (o manual responde); ② qual a **regra** de X — prazo, direito, valor (o manual não responde, e não deve fingir que responde) |
+
+### O que dá para perguntar
+
+- **"Onde fica o manual do portal?"** / **"Tem manual para a obra?"** —
+  responder com o endereço e dizer que dá para baixar em PDF.
+- **"Como a obra pede férias pelo portal?"** / **"Como peço uma admissão?"**
+  — a parte 3 do manual, por grupo de assunto.
+- **"Como a pessoa assina o aviso prévio?"** — parte 7.
+- **"Como devolvo a rescisão assinada?"** — parte 7, e a regra que importa:
+  **não por WhatsApp**.
+- **"Por que não consigo pedir material pelo portal?"** — partes 4 e 5: a
+  área existe e ainda não abriu.
+- **"Por que não acho fulano na busca do portal?"** — parte 10, alcance.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- **"O que eu posso pedir?"** — depende do perfil: quem não tem `solicitar_dp`
+  não vê o bloco de abrir; quem só tem `ver_diario` vê o portal com o diário e
+  mais nada. O manual descreve o caso cheio, do administrativo de obra.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Esta parte do manual ainda está certa?"** — há teste conferindo que toda
+  **área** e todo **tipo de pedido** aparecem no manual, e que a conta de
+  pedidos bate (`tests/test_manual_do_portal.py`). Ninguém confere o TEXTO:
+  uma tela que muda de jeito sem mudar de nome passa batida.
+- **"Quantas pessoas abriram o manual?"** — não há contagem de acesso. Sem
+  ela, não dá para saber se o manual está sendo usado ou ignorado.
+- **"O manual em PDF está igual à página?"** — o PDF é impresso da página à
+  mão, quando alguém lembra. Publicar a página sem reimprimir o PDF deixa os
+  dois diferentes, e nada acusa.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
