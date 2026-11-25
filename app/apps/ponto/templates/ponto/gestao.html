@@ -227,20 +227,26 @@
     {% if pode.aprovar_afastamento %}<label><input type="radio" name="rl-tipo" value="fechamento"> 📦 Fechamento da folha (contabilidade)</label>{% endif %}
   </div>
   {% if pode.aprovar_afastamento %}<div id="rl-fech" hidden style="margin-top:10px">
-    <div class="campo"><label for="rl-comp">Folha do mês</label><input type="month" id="rl-comp"></div>
+    {# AS EXPLICAÇÕES RECOLHIDAS (25/11/2026, o dono: "esses explicativos estão ocupando muito do sidebar (…) algo
+       para clicar e expandir"): cada uma num "ⓘ o que é". E o mês em 11/2026, não 2026-11 (o campo de mês do
+       navegador mostrava o formato da máquina): uma lista dos meses. #}
+    <div class="campo"><label for="rl-comp">Folha do mês</label><select id="rl-comp" data-sem-busca></select>
+      <details class="explica"><summary>ⓘ o que é</summary><small class="suave"><span id="rl-fech-periodos"></span></small></details></div>
     <div class="campo"><label for="rl-he-min">Desconsiderar a hora extra do dia de até (minutos)</label>
       <input type="number" id="rl-he-min" min="0" max="120" step="1" placeholder="0 = tudo entra">
-      <small class="suave">O dia com até esse tanto de hora extra — ou de atraso — não entra no fechamento (fica marcado
+      <details class="explica"><summary>ⓘ o que é</summary><small class="suave">O dia com até esse tanto de hora extra — ou de atraso — não entra no fechamento (fica marcado
         no calendário, entre parênteses). Até 120 min. ⚠️ A lei tolera até 10 min por dia (CLT, art. 58 §1º); acima
-        disso é decisão da empresa, com o risco de cobrança depois. A escolha fica guardada; mude e monte de novo.</small></div>
+        disso é decisão da empresa, com o risco de cobrança depois. A escolha fica guardada; mude e monte de novo.</small></details></div>
     <label class="opcao" style="margin-top:6px"><input type="checkbox" id="rl-he-abater">
-      <span class="rotulo">Abater os atrasos e as saídas antecipadas das horas extras</span></label>
-    <small class="suave">Ligado: quem tem 1 h de extra e 30 min de atraso no período fica com 30 min de extra (o atraso
-      abatido sai da planilha de atrasos). A falta parcial e a falta inteira não são abatidas.</small>
+      <span class="rotulo" title="Abater os atrasos e as saídas antecipadas das horas extras">Abater os atrasos e as saídas antecipadas das horas extras</span></label>
+    <details class="explica"><summary>ⓘ o que é</summary><small class="suave">Ligado: quem tem 1 h de extra e 30 min de atraso no período fica com 30 min de extra (o atraso
+      abatido sai da planilha de atrasos). A falta parcial e a falta inteira não são abatidas.</small></details>
     <label class="opcao" style="margin-top:6px"><input type="checkbox" id="rl-cal-todos">
-      <span class="rotulo">Calendário geral: mostrar todo mundo que trabalhou, com ou sem hora extra</span></label>
-    <small class="suave">Desligado, o calendário mostra só quem teve hora a mais ou a menos no período.</small>
-    <div class="cartao-dica" id="rl-fech-periodos" style="margin-top:8px"></div>
+      <span class="rotulo" title="Calendário geral: todo mundo que trabalhou, com ou sem hora extra">Calendário geral: todo mundo que trabalhou, com ou sem hora extra</span></label>
+    <details class="explica"><summary>ⓘ o que é</summary><small class="suave">Desligado, o calendário mostra só quem teve hora a mais ou a menos no período.</small></details>
+    <style>.explica { margin: 2px 0 4px; } .explica > summary { cursor: pointer; font-size: 12px; color: var(--azul, #1F4E79);
+      list-style: none; } .explica > summary::-webkit-details-marker { display: none; }
+      .explica[open] > summary { margin-bottom: 2px; }</style>
   </div>{% endif %}
   <div id="rl-periodo">
   <div class="qd-atalhos" style="margin-top:10px">
@@ -260,11 +266,11 @@
         <option value="PRESTADOR">Prestadores de serviço</option>
         <option value="TODOS">Celetistas e prestadores</option>
       </select>
-      <small class="suave">O padrão: faltas, horas extras e banco só com quem tem carteira; ausências, todos.
-        Prestador é quem bate ponto sem carteira (autônomo, estágio…).</small></div>
+<details class="explica"><summary>ⓘ o que é</summary><small class="suave">O padrão: faltas, horas extras e banco só com quem tem carteira; ausências, todos.
+        Prestador é quem bate ponto sem carteira (autônomo, estágio…).</small></details></div>
     <div class="campo"><label for="rl-empresa">Empresa</label>
       <select id="rl-empresa"><option value="">Todas as empresas</option></select>
-      <small class="suave">A do cadastro da pessoa; sem ela, a da obra dela.</small></div>
+<details class="explica"><summary>ⓘ o que é</summary><small class="suave">A do cadastro da pessoa; sem ela, a da obra dela.</small></details></div>
   </div>
   </div>
   {{ filtro_pessoas("rl") }}
@@ -1156,7 +1162,7 @@
 <div class="cartao"><h3 style="margin-top:0">Documentos para assinar</h3><div id="as-abertos"></div></div>
 <div class="cartao"><h3 style="margin-top:0">Folha de ponto <small class="suave" id="as-folha-sub"></small></h3>
   <div class="barra-acoes"><div class="campo" style="max-width:180px"><label for="as-comp">Mês</label>
-    <input type="month" id="as-comp"></div></div><div id="as-folhas"></div></div>
+    <select id="as-comp" data-sem-busca></select></div></div><div id="as-folhas"></div></div>
 <div class="cartao"><h3 style="margin-top:0">Termo do ponto <small class="suave">quem bate ponto e ainda não assinou</small></h3><div id="as-termo"></div></div>
 <div class="cartao"><h3 style="margin-top:0">Assinados nos últimos 60 dias</h3><div id="as-feitos"></div></div>
 
@@ -1681,6 +1687,19 @@ const seloEnvio = s => {
 };
 // "1 pessoa", "3 pessoas" — o número primeiro, a palavra no plural certo.
 const contar = (n, um, varios) => `${Number(n) || 0} ${Number(n) === 1 ? um : varios}`;
+// A lista dos meses (25/11/2026): "11/2026", do mês que vem até um ano e meio atrás. O valor continua AAAA-MM.
+function opcoesDeMes(sel, atual) {
+  if (!sel || sel.tagName !== "SELECT") return;
+  const d = new Date(hojeISO() + "T12:00:00"); d.setDate(1); d.setMonth(d.getMonth() + 1);
+  const meses = [];
+  for (let i = 0; i < 19; i++) {
+    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    d.setMonth(d.getMonth() - 1);
+  }
+  if (atual && !meses.includes(atual)) meses.push(atual);
+  sel.innerHTML = meses.map(v => `<option value="${v}">${v.slice(5)}/${v.slice(0, 4)}</option>`).join("");
+  if (atual) sel.value = atual;
+}
 
 // O nível da conferência do rosto que se adapta (confianca.py) — usado na ficha e na Configuração.
 const NIVEL_ROSTO = {OBSERVACAO: ["vermelho", "🔍"], BOA: ["ambar", "👍"], OTIMA: ["ciano", "⭐"], EXEMPLAR: ["verde", "🏅"]};
@@ -6017,7 +6036,7 @@ function rlFolhas() {
 document.querySelectorAll('input[name="rl-tipo"]').forEach(r => r.addEventListener("change", rlMostrarOpcoes));
 rlMostrarOpcoes();
 window.addEventListener("pageshow", rlMostrarOpcoes);
-if (els("rl-comp")) { els("rl-comp").value = fechFolhaPadrao(); fechPeriodos(); els("rl-comp").addEventListener("change", fechPeriodos); }
+if (els("rl-comp")) { opcoesDeMes(els("rl-comp"), fechFolhaPadrao()); fechPeriodos(); els("rl-comp").addEventListener("change", fechPeriodos); }
 if (els("rl-he-abater")) els("rl-he-abater").addEventListener("change", e => { e.target.dataset.mudou = "1"; });
 // o calendário geral: ligar ou desligar remonta, se o fechamento já está na tela
 if (els("rl-cal-todos")) els("rl-cal-todos").addEventListener("change", () => { if (RL && RL.tipo === "fechamento") rlMontar(); });
@@ -7437,7 +7456,7 @@ function desenharAs() {
     "Nenhum documento esperando assinatura.");
   els("as-feitos").innerHTML = tabela((docs.feitos || []).map(x => linhaDocAs(x, "")), "Nada assinado nos últimos 60 dias.");
   els("as-folha-sub").textContent = f.competencia ? `${f.competencia.slice(5)}/${f.competencia.slice(0, 4)} · ${f.assinadas || 0} assinada(s), ${f.recusadas || 0} recusa(s), ${(f.faltam || []).length} sem assinar de ${f.pessoas || 0}${f.fechado ? "" : " · o mês ainda não foi fechado"}${f.prazo ? ` · prazo ${ddmmAs(f.prazo)}` : ""}` : "";
-  if (f.competencia && !els("as-comp").value) els("as-comp").value = f.competencia;
+  if (f.competencia && !els("as-comp").dataset.pronto) { opcoesDeMes(els("as-comp"), f.competencia); els("as-comp").dataset.pronto = "1"; }
   els("as-folhas").innerHTML = !f.disponivel ? `<p class="suave">Falta aplicar as atualizações do ponto (027).</p>`
     : tabela((f.faltam || []).map(x => `<tr><td>${eloPessoa(x.id, x.nome)}</td><td>${escapar(x.obra || "")}</td></tr>`), "Todas as folhas assinadas (ou com recusa registrada).");
   els("as-termo").innerHTML = tabela(t.map(x => `<tr><td>${eloPessoa(x.id, x.nome)}</td><td>${escapar(x.obra || "")}</td></tr>`), "Todos assinaram o termo do ponto.");
@@ -7447,7 +7466,7 @@ function desenharAs() {
   document.querySelectorAll("[data-as-cancelar-comp]").forEach(b => b.onclick = () => cancelarCompAs(+b.dataset.asCancelarComp));
 }
 async function carregarAs() {
-  const comp = els("as-comp").value;
+  const comp = els("as-comp").dataset.pronto ? els("as-comp").value : "";
   try { AS = await api(`/erp/api/ponto/assinaturas-central${comp ? `?competencia=${comp}` : ""}`); }
   catch (e) { falhou(e); return; }
   desenharAs();

@@ -366,6 +366,11 @@ uma por página, até 150 de uma vez (`/erp/ponto/relatorios/folhas`).
 **Testado:** `tests/test_ponto_relatorio_vinculo_banco.py` (o padrão só CTPS; prestadores; todos; a empresa; as folhas) e
 o fechamento (20 aceito, 121 recusado); e **no navegador** (a barra, o relatório misto de uma empresa, as folhas).
 
+**4. A barra dos Relatórios mais curta** — *"esses explicativos estão ocupando muito do sidebar (…) algo tipo pra
+clicar e expandir"*: cada explicação virou um "ⓘ o que é" que abre ao tocar (inclusive os períodos do mês anterior e do
+corrente, que ficaram no "o que é" da Folha do mês). E **o mês em 11/2026**, não 2026-11: o campo de mês do navegador
+mostrava o formato da máquina; virou uma lista dos meses (`opcoesDeMes`), também em Ponto › Assinaturas.
+
 ## ⚠️ 25/11/2026 — O RELATÓRIO DE FALTAS E DE HORAS EXTRAS TIRAVA QUASE TODO MUNDO (desde 17/11)
 
 **O que ele viu** (período 26/10 a 25/11): *"só aparece falta de 8 pessoas (…) Da mesma forma horas extras,

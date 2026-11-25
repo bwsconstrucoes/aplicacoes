@@ -1679,17 +1679,21 @@ def ponto_relatorio_folhas():
     from .app_colaborador import folha_que_nao_abriu
     quem = _quem()
     try:
-        inicio, fim = relatorios.periodo(request.args.get("de"), request.args.get("ate"))
+        from .core import competencias
+        hoje = horario.hoje()
+        inicio, fim = relatorios.periodo(request.args.get("de") or competencias.primeiro_dia(hoje).isoformat(),
+                                         request.args.get("ate") or hoje.isoformat())
         f = filtro_pessoas.de_argumentos(request.args)
         f["vinculo"], f["empresa"] = request.args.get("vinculo") or "", request.args.get("empresa") or ""
         with db.conexao() as conn:
             pessoas = relatorios.recorte(conn, quem, "folhas", inicio, fim, f)
-            if not pessoas:
-                raise NaoEncontrado("ninguém nesse recorte")
+            if not pessoas:                 # uma página que diz isso, não um erro
+                return ("<!doctype html><meta charset='utf-8'><title>Folhas de ponto</title>"
+                        "<body style='font-family:Arial,sans-serif;padding:24px;color:#14213A'>"
+                        "<h2>Nenhuma folha</h2><p>Ninguém nesse recorte (período, filtro, vínculo e empresa).</p>")
             if len(pessoas) > MAX_FOLHAS_DE_UMA_VEZ:
                 raise ErroDeValidacao(f"são {len(pessoas)} pessoas — no máximo {MAX_FOLHAS_DE_UMA_VEZ} de uma vez; "
                                       "escolha uma obra ou uma empresa")
-            from .core import competencias
             fechada = (competencias.esta_fechada(conn, competencias.primeiro_dia(inicio))
                        and competencias.esta_fechada(conn, competencias.primeiro_dia(fim)))
             pessoas = sorted(pessoas, key=lambda p: (p.get("nome") or "").upper())
@@ -1704,6 +1708,12 @@ def ponto_relatorio_folhas():
                        gerado_em=horario.para_local(horario.agora()).strftime("%d/%m/%Y %H:%M"), gerado_por=quem.nome)
     except (ErroDeValidacao, NaoEncontrado) as e:
         return folha_que_nao_abriu(e)
+    except ProgrammingError as e:
+        if not _e_banco_atrasado(e):
+            raise
+        return ("<!doctype html><meta charset='utf-8'><title>Folhas de ponto</title>"
+                "<body style='font-family:Arial,sans-serif;padding:24px;color:#14213A'>"
+                f"<h2>Folhas de ponto</h2><p>{BANCO_DO_PONTO_ATRASADO}</p>")
 
 
 # O PERCENTUAL DA HORA EXTRA POR ESTADO OU OBRA (29/10/2026, core/hora_extra.py): o evento do .ps do Fortes.
