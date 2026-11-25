@@ -149,7 +149,43 @@ def registrar(conn, *, colaborador_id: Optional[int], cpf: str, nome: str,
             "origem": (origem or "PONTO").upper()[:20],
         }).mappings().first()
     logger.info("Portal: pedido de acesso %s de %s (%s)", linha["id"], nome, email)
+    avisar_administradores(conn, nome or "", obra_id)
     return {"ok": True, "id": int(linha["id"])}
+
+
+def avisar_administradores(conn, nome: str, obra_id: Optional[int]) -> int:
+    """⚑ O AVISO NO CELULAR (25/11/2026). Ele: *"para o administrador, tanto no
+    aviso no celular como na tela de início do ERP."* Só no pedido NOVO (o
+    repetido e a correção de e-mail não avisam de novo). Vai a cada ADMIN
+    ativo com telefone ou CPF, pela mensageria (`erp.acesso_portal`). Nunca
+    levanta: aviso que falha não pode impedir o pedido de existir."""
+    try:
+        from app.apps.notificador import enviar_telegram
+    except Exception as e:                      # módulo ausente fora do monorepo
+        logger.warning("Portal: notificador indisponível (%s)", e)
+        return 0
+    enviados = 0
+    try:
+        obra = conn.execute(text("SELECT codigo FROM obras WHERE id = :o"),
+                            {"o": obra_id}).scalar() if obra_id else None
+        admins = conn.execute(text("""
+            SELECT nome, telefone, cpf FROM usuarios
+             WHERE perfil = 'ADMIN' AND ativo AND (telefone IS NOT NULL OR cpf IS NOT NULL)
+        """)).mappings().all()
+        texto_ = (f"🖥 {nome or 'Alguém'}" + (f" (obra {obra})" if obra else "")
+                  + " pediu acesso ao Portal da Obra. Para liberar: ERP › "
+                  "Configurações › Operadores.")
+        for a in admins:
+            try:
+                r = enviar_telegram(telefone=a["telefone"], cpf=a["cpf"], mensagem=texto_,
+                                    finalidade="erp.acesso_portal")
+                if r and r.get("ok"):
+                    enviados += 1
+            except Exception as e:              # noqa: BLE001
+                logger.warning("Portal: aviso de pedido não chegou a %s (%s)", a["nome"], e)
+    except Exception as e:                      # noqa: BLE001
+        logger.warning("Portal: não consegui avisar os administradores (%s)", e)
+    return enviados
 
 
 def meu(conn, colaborador_id: int) -> Optional[dict[str, Any]]:

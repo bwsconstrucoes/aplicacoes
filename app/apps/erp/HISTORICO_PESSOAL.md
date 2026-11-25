@@ -141,7 +141,7 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
-### 25/11/2026 — O manual do Portal da Obra: online e em PDF
+### 25/11/2026 (4) — O manual do Portal da Obra: online e em PDF
 
 **Ele:**
 
@@ -216,6 +216,125 @@ ERP): `routes.py` (quatro rotas novas, junto da `pagina_portal`),
 **Sem migração de banco.**
 
 ---
+
+### 25/11/2026 (3) — Três decisões dele: carta sempre, ponto na hora, foto de iPhone
+
+Ele: *"Pedido de demissão tem que ter carta de pedido sempre, seja pelo painel,
+seja anexado. A admissão pedida pelo portal, sim, o cara imediatamente já pode
+bater ponto. Foto de iPhone no portal, sim, tem que aceitar também."*
+
+- **Carta sempre** (fecha a "decisão minha, a confirmar" de 24/11 (5)). As
+  duas portas continuam: a carta anexada pela obra, ou o texto que a pessoa
+  assina pelo portal (ou no papel, fotografado — plano B do termo). O que
+  mudou é que **não há terceira**: no pedido de demissão, o passo "Pedido de
+  demissão assinado" não aceita mais "feito por fora do sistema" nem "não se
+  aplica" (`desligamento_processo.marcar` recusa; a tela esconde o link pelo
+  `sem_marca_manual`), e a trava da rescisão diz "a carta ainda não voltou".
+  O texto do portal deixou de dizer "(opcional)": diz que uma das duas é
+  obrigatória. Marca manual feita ANTES disto continua valendo (não mexi em
+  dado gravado).
+- **Ponto na hora:** já era assim — o pré-cadastro da admissão pedida pela obra
+  bate ponto antes de o DP atender. Nada mudou no código; fica registrado que
+  é a decisão dele, não um descuido. Quem não for admitido sai pelo
+  "Cancelado", que conta como desligado e corta o ponto.
+- **Foto de iPhone (HEIC):** dependência nova `pillow-heif`, com o ok dele.
+  `core/comum/fotos.py` converte para JPG na chegada dos quatro envios do
+  portal; o leitor por IA também abre HEIC. Ver `CONTEXTO.md` §9, 25/11/2026.
+  Não testado com um iPhone de verdade: o teste gera um HEIC na hora.
+
+### 25/11/2026 (2) — Liberar o acesso ao portal é do administrador; o DP só vê a fila
+
+Ele: *"o portal não é só para o DP (…) quem é para fazer a liberação tem que
+ter acesso à parte de operadores (…) dizer o tipo de pessoa, o tipo de obra
+(…) isso não é o DP quem vai fazer"*; e, ajustando a proposta: *"o DP pode ser
+avisado. É bom que ele visualize (…) ele só não vai ter o botão (…) para o
+administrador, tanto no aviso no celular como na tela de início do ERP."*
+- `liberar_acesso_portal` → só ADMIN (e quem gere operadores, por
+  implicação). Ação nova `ver_pedidos_de_acesso` (ADMIN e DP) para VER a fila.
+  A seção "Acesso ao portal" ganhou LER (ver) além de EDITAR (liberar).
+  **Migração 128**: o perfil pronto "Departamento pessoal" desce de EDITAR
+  para LER nessa seção.
+- **Configurações › Operadores** tem agora, no topo, o bloco "Pedidos de
+  acesso ao portal (N)" com Liberar (confirma o e-mail e abre o cadastro do
+  operador já com a pessoa, para perfil e obras) e Recusar (com motivo).
+- **Colaboradores** (DP): a fila continua aparecendo, só leitura, com
+  "quem libera é o administrador" (para o ADMIN, um link "Liberar em
+  Operadores").
+- **Tela de início**: cartão "N pedidos de acesso ao portal esperando
+  liberação", só para quem libera, levando a Operadores.
+- **Aviso no celular**: `pedidos_de_portal.avisar_administradores`, no pedido
+  NOVO (repetido e correção de e-mail não avisam), a cada ADMIN ativo com
+  telefone ou CPF, pela mensageria com o tipo novo `erp.acesso_portal`
+  (`mensageria/core.py` — registrado lá).
+
+### 25/11/2026 — Dependente com certidão de nascimento: reconhecida, guardada como do dependente e lida para o quadro dele
+
+Ele, cadastrando uma criança: *"ele só tem certidão de nascimento e o sistema
+tá exigindo RG"*; e *"o sistema tá identificando como se fosse documento do
+titular (…) e ele não tá lendo o documento e preenchendo também não."*
+Três defeitos juntos:
+- A leitura em lote (`documentos_de_pessoa.ler_varios`) não conhecia certidão:
+  `TIPOS_RECONHECIDOS` e a instrução ganharam DOC-DEPENDENTE (certidão de
+  nascimento ou casamento), e a instrução diz que na certidão o nome é o de
+  quem nasceu, não o dos pais.
+- O "diga o que é este arquivo" do portal escondia "Documento do dependente";
+  agora aparece no pedido de dependente. Nesse pedido, um RG também conta
+  como documento do dependente — e é GUARDADO como DOC-DEPENDENTE, não como a
+  identidade do titular.
+- A leitura preenchia só os campos do formulário comum; o dependente vive em
+  quadros repetidos. Agora o que a leitura achou vai para o primeiro quadro
+  sem nome (nome, nascimento e, pela certidão, parentesco Filho/Cônjuge), só
+  em campo vazio, e o recado pede para conferir. Não toca nos dados do
+  colaborador.
+- **Vários dependentes de uma vez** — ele: *"pode ser que eu esteja
+  cadastrando mais de um dependente."* No pedido de dependente cada documento
+  é lido SOZINHO (a leitura em lote supõe uma pessoa só) e preenche o quadro
+  de um dependente. Custo: uma leitura de IA por documento, e não uma por lote.
+- **O funcionário pela certidão** — ele: *"o ideal era que ele conseguisse
+  buscar o nome do funcionário na hora que eu colocasse o documento. Aí, se
+  não, a pessoa fazia a pesquisa e selecionava."* A certidão traz mãe e pai;
+  nome IGUAL a um só colaborador do alcance de quem pede → escolhido; parecido
+  ou vários → a lista aparece; nada → a busca de sempre. Nunca troca quem já
+  foi escolhido. Um recado só no fim diz o que foi preenchido.
+- **E a leitura nem acontecia** (mesmo dia, ele: *"a IA não tá conseguindo
+  fazer a leitura"*, com "não consegui ler"): as duas leituras de
+  `documentos_de_pessoa` mandavam o arquivo CRU como imagem. PDF cru a IA
+  recusa (certidão chega muito em PDF), e foto de celular inteira estoura o
+  tamanho. Agora usam o preparo do `documentos/leitor.py`: PDF vira PNG (até 2
+  páginas por arquivo) e foto é reduzida a 1800 px. Isso vale também para a
+  admissão. NÃO coberto: foto HEIC de iPhone (o Pillow não abre sem uma
+  biblioteca a mais — dependência nova, perguntar) e o teto de IA da pessoa
+  (se ele estourar, a leitura também volta "não consegui ler").
+- Conferido no navegador com respostas simuladas (dois documentos, dois
+  quadros preenchidos com parentesco Filho, a mãe achada). Não verificado com
+  uma certidão de verdade (a leitura usa a IA).
+
+### 24/11/2026 (5) — Pedido de demissão: "sai de imediato ou trabalha o aviso" é da obra; a carta anexada vale como assinada
+
+Ele: *"o mais comum é que o colaborador peça para sair de imediato (…) o campo
+data do aviso prévio está obrigatório (…) vamos ajustar para poder a gente
+trabalhar de uma forma ou de outra"*; *"pode ser que a pessoa na obra já tenha
+feito a cartinha e a gente vai anexar ao pedido"*; e sobre o texto gerado
+para assinar: *"acho que esse fluxo não se encaixa bem aqui, já que é o
+colaborador que está pedindo."*
+- No pedido de demissão (e só nele, `visiveis_se`), a obra responde **"O
+  colaborador vai trabalhar o aviso?"** — "Não — sai de imediato (pede
+  dispensa do aviso)" vem primeiro. Obrigatório nessa forma. Saiu dos campos
+  do DP (o DP corrige se precisar). A data passou a se chamar "Data do aviso
+  prévio (no pedido de demissão, a data do pedido)" — ela continua
+  obrigatória: é o dia em que a pessoa pediu, base da rescisão.
+- **A carta** (portal, opcional, só no pedido de demissão): anexada, entra
+  como documento "Pedido de demissão assinado" do pedido. No atendimento,
+  `desligamento_processo.gerar_termo` acha a carta e a registra como o
+  documento assinado (no papel, já validado pelo DP que atendeu) — a pessoa
+  NÃO assina de novo e o processo segue (`termo_voltou`). Sem carta, o
+  sistema gera o texto e a obra colhe a assinatura no portal, como antes.
+- **Decisão minha, a confirmar com ele:** mantive o texto gerado para quando
+  não há carta. A lei pede o pedido escrito e assinado pela pessoa; o texto
+  gerado é o "papel pronto" que ela lê e assina no celular. A alternativa
+  seria exigir a carta sempre.
+- A tela do formulário no portal NÃO foi vista no navegador (o mecanismo de
+  mostrar/esconder é o mesmo dos outros pedidos; o servidor tem teste).
 
 ### 24/11/2026 (5) — Aba "Operador" na ficha da pessoa, com o MESMO formulário
 

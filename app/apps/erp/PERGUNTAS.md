@@ -409,6 +409,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
 - O Fulano folgou no recesso e ainda vai pagar com sábado — onde isso aparece? 🔒 (no dia da folga: "Compensação (a pagar com o trabalho em DD/MM/AAAA)"; na folha de ponto do mês da folga, em "Observações — compensações", o combinado; enquanto o sábado não chega, a Conferência do fechamento avisa "ainda a cumprir"; desde 21/11/2026)
 - Quem não pagou o sábado da compensação? Que falta foi lançada por isso? 🔒 ⚠️ (desde 21/11/2026, na folga paga DEPOIS a falta cai NO SÁBADO, no mês dele — "Compensação não cumprida — este dia pagaria a folga de DD/MM/AAAA" —, e a folga continua folga no mês dela; o relatório de faltas mostra o motivo na coluna "Motivo"; se o sábado foi trabalhado em parte, é falta parcial do que faltou; "este mês" = o mês do sábado, não o da folga)
+- Quais prestadores de serviço da empresa X faltaram (ou fizeram hora a mais) no mês? 🔒 ⚠️ (Ponto › Relatórios, "Quem entra: Prestadores de serviço" e "Empresa"; desde 25/11/2026; ⚠️ "prestador" = quem bate ponto sem carteira — autônomo, estágio…; PJ e pró-labore não batem ponto; "empresa" = a do cadastro da pessoa, ou a da obra dela)
+- Me dá as folhas de ponto dos prestadores da empresa X. 🔒 (Relatórios › monte o relatório com o vínculo e a empresa › "Folhas de ponto do recorte": uma por pessoa, até 150)
 - Quem ainda não assinou o termo de compensação? E o aviso prévio? 🔒 (ERP › Ponto › Assinaturas, "Documentos para assinar": cada documento do DP aberto, com o prazo e se venceu; desde 23/11/2026 o termo de compensação nasce sozinho da compensação de dia aprovada — um por pessoa por lançamento)
 - O que está esperando o DP validar? 🔒 (Ponto › Assinaturas, "Esperando o DP validar": o papel assinado por foto e a recusa com testemunhas — só valem depois de aceitos; o assinado na tela com o PIN vale sozinho)
 - Quem não assinou a folha de ponto do mês? 🔒 ⚠️ ("o mês" = o último mês FECHADO dos dois anteriores; Ponto › Assinaturas › Folha de ponto, por obra; ⚠️ conta quem tem assinatura guardada — uma folha assinada que mudou depois, com o mês reaberto, ainda aparece como assinada ali; o aplicativo de quem conduz refaz essa conta)
@@ -3450,4 +3452,12 @@ não há orçamento de material por obra no ERP.
 - Quantos cargos de cada convenção estão sem piso?
 - **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
   mês da data-base é guardado.
+
+## Pedido de demissão (24/11/2026)
+
+- Quantos pedidos de demissão foram com saída imediata e quantos cumpriram o
+  aviso? *(campo `cumpre_aviso` do pedido: 0 = imediato, 1 = trabalha)*
+- Quais pedidos de demissão vieram com a carta do colaborador e quais foram
+  assinados pelo portal? *(documento PAPEL "carta anexada pela obra" × assinado
+  na tela)*
 

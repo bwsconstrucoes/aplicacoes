@@ -66,6 +66,9 @@ def _pessoas(conn: Connection, quem: Quem, f: dict, inicio: dt.date, fim: dt.dat
     return filtro_pessoas.aplicar(conn, quem, pessoas, f, inicio, min(fim, horario.hoje()))[0]
 
 
+TIPOS_QUE_CONTAM_HORAS = ("CTPS", "CLT_INDETERMINADO", "CLT_DETERMINADO", "JOVEM_APRENDIZ", "TEMPORARIO")
+
+
 def conta_horas(p: dict) -> bool:
     """PURA. Só quem é CTPS entra nas contas de horas — falta, hora extra, banco (29/10/2026, o dono: "só entra
     para efeito de hora o pessoal que na coluna D é CTPS. Demais, que são prestador de serviço, eles não entram
@@ -73,12 +76,77 @@ def conta_horas(p: dict) -> bool:
     (ou sem a planilha) entra — e o fechamento avisa na Conferência —, para um buraco na planilha não sumir
     com as faltas de ninguém calado."""
     tipo = " ".join(str(p.get("tipo_cadastro") or "").split()).upper()
-    return not tipo or tipo == "CTPS"
+    # 25/11/2026: com o cadastro do ERP como base, vem o vínculo ("CTPS"/"PRESTADOR") ou, sem ele, o tipo de contrato
+    # — os de carteira (CLT determinado e indeterminado, jovem aprendiz) e o temporário (a folha do ERP também o
+    # trata como CTPS) contam. Antes só "CTPS" contava, e na base ERP quase ninguém entrava nas contas.
+    return not tipo or tipo in TIPOS_QUE_CONTAM_HORAS
+
+
+# QUEM ENTRA, E DE QUE EMPRESA (25/11/2026, o dono: "no relatório a gente está exibindo só o pessoal celetista (…) tem
+# uma necessidade também de gerar as folhas de ponto de outros colaboradores (…) que bate ponto (…) colocar aqui ponto
+# dos celetistas e prestadores de serviço. E ainda poder definir qual empresa"). O padrão das contas de horas continua
+# o de 29/10 — só CTPS —; escolhendo, entram os prestadores (que batem ponto) ou todos.
+VINCULOS = {"CTPS": "Celetistas (CTPS)", "PRESTADOR": "Prestadores de serviço", "TODOS": "Celetistas e prestadores"}
+
+
+def vinculo_padrao(tipo: str) -> str:
+    """PURA. Faltas, horas extras e banco: só CTPS; ausências justificadas: todos (como sempre foi)."""
+    return "TODOS" if tipo == "justificadas" else "CTPS"
+
+
+def empresas(conn: Connection) -> list[dict]:
+    """As empresas que aparecem nas pessoas ou nas obras — para escolher de qual o relatório sai."""
+    partes = []
+    if _tem_coluna_publica(conn, "colaboradores", "empresa_id"):
+        partes.append("SELECT empresa_id FROM public.colaboradores WHERE empresa_id IS NOT NULL")
+    if _tem_coluna_publica(conn, "obras", "empresa_id"):
+        partes.append("SELECT empresa_id FROM public.obras WHERE empresa_id IS NOT NULL")
+    if not partes:
+        return []
+    return [dict(l) for l in db.todos(conn, f"""
+        SELECT e.id, e.razao_social, e.cnpj FROM public.empresas e
+         WHERE e.id IN ({" UNION ".join(partes)}) ORDER BY e.razao_social""")]
+
+
+def _tem_coluna_publica(conn: Connection, tabela: str, coluna: str) -> bool:
+    return db.um(conn, """SELECT 1 AS x FROM information_schema.columns WHERE table_schema = 'public'
+                           AND table_name = :t AND column_name = :c""", t=tabela, c=coluna) is not None
+
+
+def empresa_de(conn: Connection, pessoas: list[dict]) -> dict[int, Optional[int]]:
+    """A empresa de cada pessoa: a do cadastro dela (`colaboradores.empresa_id`) e, sem ela, a da obra da pessoa."""
+    ids = [int(p["id"]) for p in pessoas]
+    do_cadastro = ({int(l["id"]): l["empresa_id"] for l in db.todos(
+        conn, "SELECT id, empresa_id FROM public.colaboradores WHERE id = ANY(:i)", i=ids)}
+        if ids and _tem_coluna_publica(conn, "colaboradores", "empresa_id") else {})
+    da_obra = ({int(l["id"]): l["empresa_id"] for l in db.todos(conn, "SELECT id, empresa_id FROM public.obras")}
+               if _tem_coluna_publica(conn, "obras", "empresa_id") else {})
+    return {int(p["id"]): do_cadastro.get(int(p["id"])) or da_obra.get(int(p.get("obra_id") or 0)) for p in pessoas}
+
+
+def recorte(conn: Connection, quem: Quem, tipo: str, inicio: dt.date, fim: dt.date, f: dict) -> list[dict]:
+    """As pessoas do relatório: o filtro do Quadro, o vínculo e a empresa."""
+    pessoas = _pessoas(conn, quem, f, inicio, fim)
+    vinculo = str(f.get("vinculo") or "").upper() or vinculo_padrao(tipo)
+    if vinculo == "CTPS":
+        pessoas = [p for p in pessoas if conta_horas(p)]
+    elif vinculo == "PRESTADOR":
+        pessoas = [p for p in pessoas if not conta_horas(p)]
+    elif vinculo != "TODOS":
+        raise ErroDeValidacao("escolha: celetistas, prestadores ou todos", campo="vinculo")
+    if f.get("empresa"):
+        try:
+            emp = int(f["empresa"])
+        except (TypeError, ValueError):
+            raise ErroDeValidacao("empresa ilegível", campo="empresa") from None
+        de = empresa_de(conn, pessoas)
+        pessoas = [p for p in pessoas if de.get(int(p["id"])) == emp]
+    return pessoas
 
 
 def _base(p: dict) -> dict:
     return {"colaborador_id": int(p["id"]), "nome": p["nome"], "cpf": p.get("cpf"), "funcao": p.get("funcao"),
-            "obra": p.get("obra_codigo")}
+            "obra": p.get("obra_codigo"), "vinculo": "CTPS" if conta_horas(p) else "Prestador"}
 
 
 def _espelhos(conn: Connection, pessoas: list[dict], inicio: dt.date, fim: dt.date):
@@ -232,9 +300,7 @@ def montar(conn: Connection, quem: Quem, tipo: str, de, ate, f: Optional[dict] =
     if not _uma_por_vez.acquire(blocking=False):
         raise Ocupado("outro relatório está sendo montado agora — tente de novo em instantes")
     try:
-        pessoas = _pessoas(conn, quem, f, inicio, fim)
-        if tipo in ("faltas", "extras", "banco"):
-            pessoas = [p for p in pessoas if conta_horas(p)]          # só CTPS (29/10/2026)
+        pessoas = recorte(conn, quem, tipo, inicio, fim, f)        # só CTPS por padrão (29/10/2026)
         if tipo == "faltas":
             corpo = faltas(conn, pessoas, max(inicio, vale), fim) if fim >= vale else faltas(conn, [], inicio, fim)
         elif tipo == "extras":
@@ -245,6 +311,10 @@ def montar(conn: Connection, quem: Quem, tipo: str, de, ate, f: Optional[dict] =
             corpo = banco_de_horas(conn, pessoas, fim)
     finally:
         _uma_por_vez.release()
+    vinculo = str(f.get("vinculo") or "").upper() or vinculo_padrao(tipo)
+    emp = next((e for e in empresas(conn) if str(e["id"]) == str(f.get("empresa") or "")), None)
     return {"tipo": tipo, "titulo": TIPOS[tipo], "de": inicio.isoformat(), "ate": fim.isoformat(),
+            "vinculo": vinculo, "vinculo_rotulo": VINCULOS.get(vinculo, ""),
+            "empresa": ({"id": emp["id"], "razao_social": emp["razao_social"], "cnpj": emp["cnpj"]} if emp else None),
             "vale_desde": vale.isoformat(), "pessoas_no_recorte": len(pessoas),
             "funcoes": sorted({p.get("funcao") for p in pessoas if p.get("funcao")}), **corpo}

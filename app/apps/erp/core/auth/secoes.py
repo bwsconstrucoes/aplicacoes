@@ -216,9 +216,10 @@ SECOES: list[dict[str, Any]] = [
     # sempre administrativo de obra, preso à obra em que a pessoa bate ponto.
     {"chave": "pes_acesso_portal", "area": "Pessoal",
      "nome": "Acesso ao portal",
-     "explicacao": "liberar ou recusar quem pediu acesso ao portal pelo "
-                   "aplicativo do ponto",
-     "ler": [], "editar": ["liberar_acesso_portal"]},
+     "explicacao": "ver (ler) ou liberar e recusar (editar) quem pediu "
+                   "acesso ao portal pelo aplicativo do ponto",
+     # 25/11/2026: ler = ver a fila (o DP); editar = liberar (o administrador).
+     "ler": ["ver_pedidos_de_acesso"], "editar": ["liberar_acesso_portal"]},
     # --------------------------------------------------------- Suprimentos
     # ⚑ RECEBER MATERIAL ENTROU AQUI (20/11/2026), e não numa seção própria:
     # quem pede material para a obra é quem confere quando ele chega. Seção

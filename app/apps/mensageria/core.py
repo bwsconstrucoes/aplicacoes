@@ -95,6 +95,11 @@ CATALOGO: list[dict] = [
      "politica": TELEGRAM, "descricao": "A resposta de uma pergunta que a pessoa pediu para receber em horário combinado."},
     {"chave": "erp.teto_ia", "nome": "Aviso de consumo de IA", "modulo": "ERP", "politica": TELEGRAM,
      "descricao": "Aviso aos ADMIN quando o consumo de IA passa de 80% do teto, ou estoura."},
+    # 25/11/2026, pedido do dono (chat do Pessoal): o administrador sabe na hora
+    # que alguém pediu acesso ao portal.
+    {"chave": "erp.acesso_portal", "nome": "Pedido de acesso ao portal", "modulo": "ERP",
+     "politica": TELEGRAM,
+     "descricao": "Aviso aos ADMIN quando alguém pede acesso ao Portal da Obra."},
     {"chave": "erp.insumos", "nome": "Avisos de Suprimentos", "modulo": "ERP", "politica": TELEGRAM,
      "descricao": "Avisos do módulo de Suprimentos (insumo, cotação, pedido)."},
     # O DP falando com a OBRA (05/11/2026). Decisão do dono sobre os canais:

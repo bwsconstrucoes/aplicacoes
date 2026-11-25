@@ -8,6 +8,17 @@
    A agenda só serve se a pessoa esbarrar nela. Deixá-la esperando dentro de
    uma aba faria dela mais uma tela que se abre quando já se lembrou do
    assunto — que é exatamente o problema que ela veio resolver. #}
+{# Os pedidos de acesso ao portal esperando o administrador (25/11/2026). #}
+{% if pedidos_de_acesso %}
+<a class="cartao" href="/erp/configuracoes#usuarios"
+   style="display:block; text-decoration:none; color:inherit; margin-bottom:12px;
+          border-left:4px solid var(--azul)">
+  <div class="cartao-cab"><h3>Acesso ao portal</h3></div>
+  <p style="margin:0"><b>{{ pedidos_de_acesso }}</b>
+    {{ 'pedido' if pedidos_de_acesso == 1 else 'pedidos' }} de acesso ao portal
+    esperando liberação — toque para liberar em Operadores.</p>
+</a>
+{% endif %}
 {% if agenda and agenda.abertos %}
 <a class="cartao" href="{{ url_for('erp.pagina_agenda') }}"
    style="display:block; text-decoration:none; margin-bottom:20px;

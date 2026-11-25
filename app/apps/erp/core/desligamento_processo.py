@@ -335,6 +335,8 @@ def _passo_do_aviso(s: Session, sol: dict[str, Any], forma: str,
         return
     if forma == "PEDIDO_COLABORADOR":
         item["rotulo"] = "Pedido de demissão assinado pelo colaborador"
+        # A carta é sempre exigida (25/11/2026): sem "feito por fora".
+        item["sem_marca_manual"] = True
     t = termos.do_pedido(s, int(sol["id"]))
     if sol.get("situacao") not in (EM_ANDAMENTO, "ATENDIDA"):
         item["detalhe"] = "o DP analisa e atende; aí o documento vai para a obra"
@@ -443,6 +445,16 @@ def gerar_termo(s: Session, sol: dict[str, Any], usuario: Optional[Usuario],
     if not termos.tem_tabela(s):
         return None
     vivo = termos.do_pedido(s, int(sol["id"]))
+    # ⚑ A CARTA QUE A OBRA ANEXOU VALE COMO O PEDIDO ASSINADO (24/11/2026).
+    # Ele: *"pode ser que a pessoa na obra já tenha feito a cartinha e a gente
+    # vai anexar ao pedido."* Se a obra mandou a carta junto com o pedido de
+    # demissão, ela é registrada como o documento assinado (no papel), já
+    # conferida — quem atende é o DP, olhando a carta no pedido — e o sistema
+    # não gera outro texto para a pessoa assinar de novo.
+    if forma == "PEDIDO_COLABORADOR" and vivo is None:
+        carta = carta_do_pedido(s, sol)
+        if carta is not None:
+            return _registrar_carta(s, sol, carta, usuario)
     if vivo is not None and vivo["situacao"] != "CANCELADO":
         if vivo["situacao"] == "ABERTO":
             termos.cancelar(s, vivo["id"], "gerado de novo pelo DP", usuario)
@@ -454,6 +466,49 @@ def gerar_termo(s: Session, sol: dict[str, Any], usuario: Optional[Usuario],
                      obra_id=sol.get("obra_id"), dias=dias, usuario=usuario)
     _evento(s, sol["id"], "AVISO_PARA_ASSINAR", {"numero": r["numero"],
                                                  "titulo": titulo}, usuario)
+    return r
+
+
+def carta_do_pedido(s: Session, sol: dict[str, Any]) -> Optional[int]:
+    """O documento "Pedido de demissão" que a obra anexou ao pedido, se houver."""
+    if not sol.get("colaborador_id"):
+        return None
+    return s.execute(text("""
+        SELECT id FROM documentos
+         WHERE tipo_codigo = 'PEDIDO-DEMISSAO'
+           AND (dp_solicitacao_id = :s
+                OR (colaborador_id = :c AND referencia LIKE :ref))
+         ORDER BY id DESC LIMIT 1"""),
+        {"s": sol["id"], "c": sol["colaborador_id"],
+         "ref": f"{sol.get('numero') or '?'} %"}).scalar()
+
+
+def _registrar_carta(s: Session, sol: dict[str, Any], documento_id: int,
+                     usuario: Optional[Usuario]) -> dict[str, Any]:
+    """A carta da obra vira o documento assinado do pedido: assinado no papel,
+    já validado pelo DP que atendeu. Daí para a frente o processo segue como
+    se a pessoa tivesse assinado pelo portal (`termo_voltou`)."""
+    from app.apps.erp.core import termos
+    from app.apps.erp.core.pessoal_solicitacoes import _evento, termo_voltou
+    tipo, titulo, texto_ = texto_do_aviso(s, sol)
+    r = termos.abrir(s, colaborador_id=int(sol["colaborador_id"]), tipo=tipo,
+                     titulo=titulo,
+                     texto_="Carta de pedido de demissão escrita e assinada pelo "
+                            "colaborador, anexada pela obra ao pedido "
+                            f"{sol.get('numero') or ''}.",
+                     solicitacao_id=int(sol["id"]), obra_id=sol.get("obra_id"),
+                     usuario=usuario)
+    s.execute(text("""
+        UPDATE dp_termos SET situacao = 'ASSINADO', forma = 'PAPEL',
+               documento_id = :doc, assinado_em = now(),
+               conduzido_por_nome = 'carta anexada pela obra',
+               validado_por = :u, validado_em = now()
+         WHERE id = :i"""),
+        {"doc": documento_id, "u": getattr(usuario, "id", None), "i": r["id"]})
+    _evento(s, sol["id"], "AVISO", {"texto": "a carta de pedido de demissão que a "
+                                    "obra anexou vale como o documento assinado "
+                                    f"({r['numero']})"}, usuario)
+    termo_voltou(s, int(r["id"]), usuario)
     return r
 
 
@@ -476,6 +531,10 @@ def aviso_pendente(s: Session, solicitacao_id: int) -> str:
         return ""
     if termos.concluido(termos.do_pedido(s, solicitacao_id)):
         return ""
+    if forma == "PEDIDO_COLABORADOR":
+        return ("A carta de pedido de demissão ainda não voltou assinada pelo "
+                "colaborador (ou o DP ainda não validou). Sem ela a rescisão "
+                "não vai à contabilidade.")
     return ("O aviso prévio ainda não voltou assinado pelo colaborador (ou o DP "
             "ainda não validou). A rescisão vai à contabilidade com o aviso "
             "assinado — ou marque o passo como feito por fora do sistema.")
@@ -777,6 +836,20 @@ def marcar(s: Session, sol: dict[str, Any], dados: dict[str, Any],
                   {"s": sol["id"], "p": passo})
         _evento(s, sol["id"], "PASSO_DESFEITO", {"passo": meta["rotulo"]}, usuario)
         return {"passo": passo, "estado": "desfeito"}
+
+    # ⚑ PEDIDO DE DEMISSÃO SEMPRE TEM A CARTA (25/11/2026). Ele: *"pedido de
+    # demissão tem que ter carta de pedido sempre, seja pelo painel, seja
+    # anexado."* As duas portas são a carta que a obra anexa ao pedido e o
+    # texto que a pessoa assina pelo portal (ou no papel, fotografado, pelo
+    # plano B do termo). Dar o passo por feito "por fora", ou dispensá-lo,
+    # deixaria a rescisão ir à contabilidade sem a carta — por isso aqui não.
+    forma_sol = str((sol.get("dados") or {}).get("forma_desligamento") or "").upper()
+    if (passo == "AVISO" and forma_sol == "PEDIDO_COLABORADOR"
+            and acao in ("feito", "nao_se_aplica")):
+        raise ErroValidacao(
+            "Pedido de demissão sempre tem a carta do colaborador. Anexe a "
+            "carta ao pedido, ou gere o documento para ele assinar pelo "
+            "portal (ou no papel, com a foto da folha assinada).")
 
     if acao == "nao_se_aplica":
         if len(obs) < 5:

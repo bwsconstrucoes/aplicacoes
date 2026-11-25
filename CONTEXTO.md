@@ -802,6 +802,17 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 25/11/2026 — Dependência nova: `pillow-heif` (foto de iPhone)
+
+Com o ok do dono: *"foto de iPhone no portal, sim, tem que aceitar também. É
+comum o pessoal ter iPhone."* Entrou no `requirements.txt`. Tem pacote pronto
+para Linux (não compila nada no Render). O uso fica em
+`app/apps/erp/core/comum/fotos.py`: o HEIC vira JPG **na chegada** dos quatro
+envios do portal (leitura de documentos, pedido com papéis, devolução assinada,
+papel do termo), e o leitor de documentos do ERP (`documentos/leitor.py`, usado
+por várias áreas) passa a abrir HEIC na leitura por IA. Sem a biblioteca, nada
+quebra: o arquivo segue como veio, como antes.
+
 ### 17/11/2026 — Os três logins passam a se enxergar, e a pessoa pede o acesso pelo ponto (atravessa ERP e ponto)
 
 **A pergunta que abriu isto:** *"nós temos ponto, nós temos portal e temos ERP.

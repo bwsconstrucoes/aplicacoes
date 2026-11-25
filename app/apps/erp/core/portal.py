@@ -555,6 +555,11 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
         svc.FORMA_DESLIGAMENTO_ROTULOS)
     listas["parentesco"] = par("parentesco", svc.PARENTESCOS,
                                svc.PARENTESCO_ROTULOS)
+    # 24/11/2026: no pedido de demissão, a obra diz se a pessoa sai de
+    # imediato ou trabalha o aviso — o mais comum vem primeiro.
+    listas["cumpre_aviso"] = [
+        {"valor": "0", "rotulo": "Não — sai de imediato (pede dispensa do aviso)"},
+        {"valor": "1", "rotulo": "Sim — vai trabalhar os 30 dias do aviso"}]
     listas["pix_tipo"] = [{"valor": v, "rotulo": r} for v, r in (
         ("CPF", "CPF"), ("CNPJ", "CNPJ"), ("EMAIL", "E-mail"),
         ("TELEFONE", "Telefone"), ("ALEATORIA", "Chave aleatória"))]

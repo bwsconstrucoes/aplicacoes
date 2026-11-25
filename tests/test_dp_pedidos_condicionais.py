@@ -473,7 +473,7 @@ def test_desligar_de_carteira_pelo_mesmo_tipo_continua_pedindo_o_aviso(mundo):
                                "forma_desligamento": "Demissão com Aviso Trabalhado",
                                "continua_prestador": "Não, está saindo da empresa"},
                   mundo["obra_user"])
-    assert "Data do Aviso Prévio" in str(e.value)
+    assert "Data do aviso prévio" in str(e.value)   # rótulo de 24/11/2026
 
 
 @pytest.mark.banco

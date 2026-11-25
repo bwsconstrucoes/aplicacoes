@@ -40,6 +40,15 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 25/11/2026 — ACESSO AO PORTAL: SÓ O ADMINISTRADOR LIBERA; MIGRAÇÃO 128 (registro entre áreas)
+
+`liberar_acesso_portal` virou só do ADMIN; `ver_pedidos_de_acesso` (ADMIN e
+DP) para ver a fila. Seção `pes_acesso_portal` com LER e EDITAR; migração 128
+desce o perfil "Departamento pessoal" para LER. A fila com os botões mora em
+Configurações › Operadores; tela de início com cartão para quem libera;
+aviso por Telegram/WhatsApp aos ADMIN pelo tipo novo `erp.acesso_portal` da
+mensageria. Detalhe em `HISTORICO_PESSOAL.md`, 25/11 (2).
+
 ### ⚑ 24/11/2026 — `erp_base.html`: TODA LISTA DE CAIXINHAS LONGA GANHA BUSCA (registro entre áreas)
 
 `aplicarBuscaEmCaixinhas`: `.filtro-opcoes` com mais de 12 itens ganha o campo

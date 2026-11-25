@@ -646,7 +646,8 @@ function blocoDoProcesso(p){
         x.titulo ? "Trocar a SP…" : "Informar a SP…"}</button>`);
     if (x.como === "titulo" && x.estado === "PENDENTE")
       b.push(`<button class="link-btn" data-pr-dispensa="${x.codigo}">não se aplica…</button>`);
-    if (x.como === "lido" && x.codigo !== "REGISTRADO" && x.estado === "PENDENTE")
+    if (x.como === "lido" && x.codigo !== "REGISTRADO" && x.estado === "PENDENTE"
+        && !x.sem_marca_manual)
       b.push(`<button class="link-btn" data-pr-mao="${x.codigo}">feito por fora do sistema…</button>`);
     if (x.por && x.codigo !== "CONTINUIDADE" && x.codigo !== "REGISTRADO"
         && ["FEITO", "NAO_SE_APLICA"].includes(x.estado) && x.detalhe !== "")
@@ -1117,7 +1118,16 @@ async function atender(){
            + "rescisão e a multa serem pagas"
          : "grava a data de saída (o acesso ao ponto cai no dia seguinte a "
            + "ela) e abre o processo: o pedido fica EM ANDAMENTO até a "
-           + "rescisão e a multa serem pagas"),
+           + "rescisão e a multa serem pagas"
+           {# ⚑ 24/11/2026: a carta que a obra anexou vale como o pedido
+              assinado — o sistema não gera outro para a pessoa assinar. #}
+           + ((ABERTA.papeis || []).some(x => /pedido de demiss/i.test(x.tipo || ""))
+              ? ". A CARTA de pedido de demissão que a obra anexou passa a valer "
+                + "como o documento assinado (confira acima) — a pessoa não "
+                + "assina de novo"
+              : ((ABERTA.dados || {}).forma_desligamento === "PEDIDO_COLABORADOR"
+                 ? ". Sem carta anexada, o sistema gera o pedido de demissão e a "
+                   + "obra colhe a assinatura da pessoa no portal" : ""))),
     READMISSAO: "traz a pessoa de volta a ativa, com vínculo novo (o anterior fica no histórico)",
     ADMISSAO_PRESTADOR: "fecha o vínculo de prestador e abre o de carteira no dia seguinte",
     ALTERACAO_CARGO: "grava a alteração de cargo/salário com o de→para e, para "
