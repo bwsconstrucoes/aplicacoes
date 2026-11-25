@@ -391,3 +391,16 @@ def test_o_notificador_anota_o_motivo_e_nao_falha_no_envio(monkeypatch):
     r = notificador._tg_notificar(chat_id=55, mensagem="BaixaBradesco: 1 comprovante NÃO foi baixado")
     assert r["ok"] is False and "bloqueou o robô" in r["detalhe"]
     assert notificador._status_tg(r) == "FALHOU"
+
+
+def test_o_55_repetido_do_make_e_o_mesmo_numero():
+    """25/11/2026: aviso de SP cancelada chegou para "55555581984262674"."""
+    from app.apps.telegram import telegram_bot as tb
+    for f in (tc.variantes_telefone, tb._variantes_telefone):
+        assert f("55555581984262674") == f("(81) 98426-2674") == {"81984262674", "8184262674"}
+        assert f("555581984262674") == f("81984262674")
+    assert tc.telefone_canonico("55555581984262674") == tb._telefone_canonico("55555581984262674") \
+        == "5581984262674"
+    # o DDD 55 (RS) continua sendo DDD: 55 + 55 + 9 dígitos = 13, não se mexe
+    assert tc.variantes_telefone("5555991234567") == {"55991234567", "5591234567"}
+    assert tc.telefone_canonico("5555991234567") == "5555991234567"

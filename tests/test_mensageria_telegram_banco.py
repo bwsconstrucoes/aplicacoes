@@ -829,3 +829,17 @@ def test_enviadas_busca_pelo_nome(conn, gente):
 
     assert [l["para_nome"] for l in painel.envios_com_pessoa(conn, busca="bia")] == ["Bia Rocha"]
     assert [l["para_nome"] for l in painel.envios_com_pessoa(conn, busca="QR")] == ["Ana Lima"]   # texto ainda vale
+
+
+def test_aviso_do_make_com_55_repetido_acha_o_telegram(conn, gente):
+    tc.gravar_cadastro(conn, chat_id=8972386892, cpf="11111111111", telefone="5585999990001")
+    assert tc.chat_id_de(conn, telefone="55555585999990001") == "8972386892"
+
+
+def test_enviadas_da_nome_a_quem_esta_com_telefone_sem_ddd(conn, gente):
+    from app.apps.mensageria import painel
+    m = _colab(conn, "Fulano Sem DDD", "88888888888", "99102-1992")
+    core.registrar(conn, tipo="sem_tipo", canal="telegram", destinatario="5582991021992", cpf="",
+                   texto="SP validada", nome_arquivo="", status="SEM_DESTINO", detalhe="")
+    l = painel.envios_com_pessoa(conn)[0]
+    assert (l["para_nome"], l["para_colaborador_id"]) == ("Fulano Sem DDD", m)
