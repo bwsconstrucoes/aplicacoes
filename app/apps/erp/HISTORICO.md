@@ -10507,12 +10507,16 @@ cadastrada em seguida já nasceu no grupo certo, na ordem certa.
 Registrado aqui porque o portal é a porta de **todas** as áreas, e o manual
 descreve as quatro (o resto está em `HISTORICO_PESSOAL.md`):
 
-- Página fixa em `app/apps/erp/static/manual_portal/`, aberta em
+- Página fixa em `app/apps/erp/manual_portal/` (FORA de `static/`, que é
+  público), aberta em
   `/erp/portal/manual/`, com PDF em `/erp/portal/manual.pdf`. Mesmo desenho do
   manual do ponto (`app/apps/ponto/HISTORICO.md`, 15/10/2026).
-- **Quatro rotas públicas novas** no `routes.py`, declaradas em
-  `tests/test_permissoes_rotas.py`: é página fixa, sem banco e sem dado de
-  ninguém, e quem está travado na porta é quem precisa lê-la.
+- **Quatro rotas novas** no `routes.py`, **todas exigindo login** (`ver_erp`)
+  — decisão dele no mesmo dia: *"não fica exposto esse manual. Só para quem
+  tem acesso."* ⚠️ Por isso o manual **não pode voltar para `static/`**: o
+  `static/` do blueprint é servido sem login, e o manual ficava aberto por
+  `/erp/static/manual_portal/...` (conferido: respondia 200). Há teste
+  travando isso em `tests/test_permissoes_rotas.py`.
 - O manual tem parte própria para **Suprimentos**, **Pagamentos** e **Diário
   de obra**, inclusive fechadas. **Quem abrir uma dessas áreas precisa revisar
   a parte dela** — `tests/test_manual_do_portal.py` quebra se a área ou um

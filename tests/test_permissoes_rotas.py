@@ -91,9 +91,19 @@ def test_rota_que_recebe_id_e_aberta_a_perfil_restrito_precisa_checar_escopo():
                     return True
         return False
 
+    # ⚑ A ÚNICA DISPENSA, e ela é escrita aqui para ser discutida na revisão:
+    # `manual_portal_tela` recebe o NOME DE UM ARQUIVO do manual, não o número
+    # de um registro de ninguém. Não há "registro dele" a conferir — as telas
+    # são as mesmas para todo mundo, de um banco de teste, com nomes
+    # inventados. O que ela faz no lugar do escopo é conferir o nome contra a
+    # lista do que existe na pasta, e responder 404 fora dela.
+    SEM_REGISTRO_A_RECORTAR = {"manual_portal_tela"}
+
     sem_escopo = []
     for no in ast.walk(ast.parse(fonte)):
         if not isinstance(no, ast.FunctionDef):
+            continue
+        if no.name in SEM_REGISTRO_A_RECORTAR:
             continue
         mapa = routes._REGISTRO_PERMISSOES.get(f"erp.{no.name}")
         if not mapa or not (set(mapa.values()) & AMPLAS):
@@ -227,19 +237,49 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
         "erp.api_portal_ler_documentos",
         "erp.api_portal_conferir_cpf",
         "erp.pagina_primeiro_acesso_portal",
-        "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir",
-        # ⚑ AS QUATRO DO MANUAL DO PORTAL (25/11/2026). São PÁGINA FIXA: um
-        # arquivo HTML, as imagens dele e o PDF, todos versionados em
-        # `static/manual_portal/`. Não consultam banco, não recebem nada e
-        # não têm como vazar dado de ninguém — as telas são de um ambiente de
-        # teste, com nomes inventados.
-        #
-        # E precisam ser públicas pelo mesmo motivo das três de cima: quem
-        # está travado na porta é exatamente quem precisa ler como entrar. O
-        # manual do ponto segue o mesmo desenho desde 15/10/2026
-        # (`ponto/app_colaborador.py`).
-        "erp.pagina_manual_portal", "erp.pagina_manual_portal_sem_barra",
-        "erp.manual_portal_tela", "erp.manual_portal_pdf"}
+        "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir"}
+
+
+def test_o_manual_do_portal_exige_login(app):
+    """O MANUAL NÃO É PÚBLICO — decisão dele em 25/11/2026.
+
+    Ele nasceu público, no mesmo desenho do manual do ponto. No mesmo dia, ao
+    procurar o link, o dono mudou a regra: *"eu acho que o ideal é na tela
+    depois do login (…) porque não fica exposto esse manual. Só para quem tem
+    acesso."*
+
+    O manual do PONTO continua público, e não é incoerência: lá o manual
+    ensina o PRIMEIRO acesso de quem ainda não tem senha, então não há login a
+    exigir. Aqui o manual descreve como a empresa trabalha por dentro — quem
+    pede o quê, quem assina, quem libera —, e o acesso já existe.
+
+    ⚠️ **A trava de verdade não é este teste: é a PASTA.** O manual mora em
+    `app/apps/erp/manual_portal/`, e não em `static/`, porque o `static/` do
+    blueprint é servido pelo Flask sem passar por login. Enquanto esteve lá,
+    `/erp/static/manual_portal/index.html` respondia a qualquer um — e o
+    login destas rotas seria encenação. Há teste disso logo abaixo.
+    """
+    from app.apps.erp import routes
+
+    for endpoint in ("erp.pagina_manual_portal",
+                     "erp.pagina_manual_portal_sem_barra",
+                     "erp.manual_portal_tela", "erp.manual_portal_pdf"):
+        assert endpoint not in routes._ENDPOINTS_PUBLICOS, (
+            f"{endpoint} voltou a ser pública — o manual ficaria aberto na "
+            "internet. Foi decisão do dono que ele exige login.")
+
+
+def test_o_manual_do_portal_nao_mora_no_static(app):
+    """Guardá-lo em `static/` o abre de novo, por outro endereço e em
+    silêncio: nenhum teste de permissão olha para o `static/` do blueprint,
+    porque é lá que moram o CSS e os ícones, que são públicos de propósito."""
+    from pathlib import Path
+
+    estatico = (Path(__file__).resolve().parents[1]
+                / "app" / "apps" / "erp" / "static" / "manual_portal")
+    assert not estatico.exists(), (
+        "o manual do portal voltou para `static/`, que o Flask serve em "
+        "/erp/static/... sem login. Ele mora em `app/apps/erp/manual_portal/`.")
 
 
 def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):

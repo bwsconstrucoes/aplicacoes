@@ -157,13 +157,61 @@ desde 15/10/2026 e já provou que funciona):
 |---|---|
 | A página | `/erp/portal/manual/` (e `/erp/portal/manual`, que redireciona) |
 | O PDF | `/erp/portal/manual.pdf` — 23 páginas A4 |
-| Os arquivos | `app/apps/erp/static/manual_portal/` (index.html + `telas/` + o PDF) |
-| Os links | no pé do portal e na tela de **criar o acesso** |
+| Os arquivos | `app/apps/erp/manual_portal/` (index.html + `telas/` + o PDF) |
+| Os links | **📖 Manual** na barra azul do portal (sem rolar) e no pé da página |
 
-**As quatro rotas são PÚBLICAS, e isso foi decidido, não esquecido:** é página
-fixa, sem consulta ao banco e sem dado de ninguém — e quem está travado na
-porta é exatamente quem precisa ler como entrar. Estão declaradas em
-`tests/test_permissoes_rotas.py`, com o motivo escrito.
+#### ⚑ ELE MUDOU DUAS COISAS NO MESMO DIA, e as duas são a mesma frase
+
+> *"Eu não entendi bem exatamente onde é que está o link para acesso ao
+> manual. Mas eu acho que o ideal é na tela depois do login, né? Você loga,
+> aí a tela de entrada e nela a coisa, porque não fica exposto esse manual.
+> Só para quem tem acesso."*
+
+**1. O link subiu para o alto.** Ele estava só no PÉ da página, e o dono não
+achou. Link que a pessoa precisa procurar é link que não existe. Agora está na
+barra azul, visível na primeira tela depois de entrar — e continua no pé, para
+quem rolou a página inteira e ficou com dúvida. São dois caminhos para a mesma
+porta, na mesma tela: não é o "cardápio de portas" que a regra proíbe.
+
+**2. O manual DEIXOU DE SER PÚBLICO.** Nasceu público, no desenho do manual do
+ponto. As quatro rotas passaram a exigir login (`ver_erp`, a ação mais baixa
+que existe: qualquer um que entre no sistema lê). O link saiu da tela pública
+de **criar o acesso**, que é de quem ainda não entrou.
+
+⚠️ **A TRAVA DE VERDADE NÃO É O DECORADOR — É A PASTA.** O manual morava em
+`static/manual_portal/`, e o `static/` do blueprint é servido pelo Flask em
+`/erp/static/...` **sem passar por login nenhum** (é onde vivem o CSS e os
+ícones). Enquanto esteve lá, `/erp/static/manual_portal/index.html` respondia a
+qualquer um, e o login das rotas seria encenação. **Conferido no navegador:
+respondia mesmo, 200.** Por isso a pasta mudou para `app/apps/erp/manual_portal/`,
+fora do `static/`, e há teste travando o retorno dela.
+
+⚠️ **O QUE ISSO CUSTA, e está dito porque é real:** quem está criando o
+primeiro acesso **não consegue mais ler o manual** — e é a parte 1 que explica
+justamente aquela tela. Quem travar na porta depende de alguém mandar o PDF.
+Foi escolha dele, com o motivo dele: o manual conta como a empresa trabalha por
+dentro, e isso não precisa ficar aberto na internet.
+
+**Por que o manual do PONTO continua público e isso não é incoerência:** lá o
+manual ensina o primeiro acesso de quem nunca teve senha — não há login a
+exigir. Aqui o acesso já existe antes de a pessoa precisar do manual.
+
+#### Dois defeitos que a homologação pegou ao fechar o manual
+
+Nenhum dos dois tem a ver com o pedido dele — apareceram porque, ao exigir
+login, o manual passou a ser **tela do ERP** e entrou nos testes que toda tela
+do ERP enfrenta. Valem registro porque custariam caro soltos:
+
+1. **A página não tinha `<body>`.** Ela nasceu copiando o esqueleto do manual
+   do ponto, que também não tem — o navegador fecha sozinho e ninguém nota. A
+   homologação exige, e está certa. Agora o manual tem `</head><body>…</body>`.
+2. **O teste de homologação quebrava no PDF.** Ele lê toda resposta como texto
+   UTF-8 e procura `<body`; o PDF é binário e estourava no primeiro byte. Não
+   era defeito do manual: o teste supunha que toda rota de TELA devolve
+   página. Agora ele olha o `Content-Type` e, no que não é HTML, confere o que
+   faz sentido (abriu 200, não jogou ninguém para o login). **Mexe num
+   arquivo que serve o ERP inteiro** — vale para qualquer rota futura que
+   entregue arquivo.
 
 **Subdividido pelas áreas, como ele pediu**, e as fechadas entram também: 1
 entrar · 2 a tela inicial · **3 Colaboradores (os 14 pedidos, grupo a grupo)**

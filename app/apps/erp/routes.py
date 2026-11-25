@@ -14105,20 +14105,40 @@ def pagina_portal():
 # manual do portal de solicitações (…) no padrão do manual do ponto. Clique
 # pra visualizar online e ainda possibilidade de baixar pdf").
 #
-# ⚑ MESMO DESENHO DO MANUAL DO PONTO, de propósito: página fixa em
-# `static/manual_portal/` (index.html + telas/ + o PDF impresso dela pelo
-# Chromium), sem login e sem dado de ninguém — as telas são de um banco de
-# teste, com nomes inventados. Ver `app/apps/ponto/app_colaborador.py`.
+# ⚑ MESMO DESENHO DO MANUAL DO PONTO: página fixa em `manual_portal/`
+# (index.html + telas/ + o PDF impresso dela pelo Chromium), sem dado de
+# ninguém — as telas são de um banco de teste, com nomes inventados.
+#
+# ⚑ MAS, AO CONTRÁRIO DO MANUAL DO PONTO, **ELE EXIGE LOGIN** — e foi decisão
+# dele no mesmo dia em que o manual nasceu, depois de procurar o link e não
+# achar: *"eu acho que o ideal é na tela depois do login, né? (…) porque não
+# fica exposto esse manual. Só para quem tem acesso."*
+#
+# O manual do ponto é público porque qualquer colaborador precisa dele para o
+# PRIMEIRO acesso, e não há login a exigir. Aqui o cálculo é outro: o portal
+# descreve como a empresa trabalha por dentro — quem pede o quê, quem assina,
+# quem libera o quê —, e isso não precisa ficar aberto na internet. A ação é a
+# mais baixa que existe (`ver_erp`): qualquer um que entre no sistema lê.
+#
+# ⚠️ O QUE ISSO CUSTA, e ele sabe: quem está criando o primeiro acesso NÃO
+# consegue mais ler o manual, e é justamente a parte 1 que explica aquela
+# tela. Quem está travado na porta depende de alguém mandar o PDF.
 #
 # ⚠️ AO MUDAR UMA TELA OU UMA REGRA QUE A OBRA VÊ, o manual fica velho. A
 # parte correspondente precisa ser conferida, e o PDF, reimpresso.
 # ===========================================================================
+# ⚑ FORA DE `static/`, E ISSO É A TRAVA, NÃO ARRUMAÇÃO. A pasta `static/` do
+# blueprint é servida pelo Flask em `/erp/static/...` SEM passar por login
+# nenhum — é onde moram o CSS e os ícones. Manual guardado lá continuaria
+# aberto na internet por esse caminho, e o login destas rotas seria encenação.
+# Aqui dentro, só estas quatro rotas alcançam o arquivo.
 PASTA_MANUAL_PORTAL = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "static", "manual_portal")
+    os.path.dirname(os.path.abspath(__file__)), "manual_portal")
 
 
 @bp.route("/erp/portal/manual/")
-@permissao_publica("o manual de uso do portal; página fixa, sem dado de ninguém")
+@login_obrigatorio
+@permissao("ver_erp")
 def pagina_manual_portal():
     resposta = send_from_directory(PASTA_MANUAL_PORTAL, "index.html",
                                    mimetype="text/html")
@@ -14128,22 +14148,38 @@ def pagina_manual_portal():
 
 @bp.route("/erp/portal/manual")
 @bp.route("/erp/portal/manual.html")
-@permissao_publica("o manual; leva ao endereço com barra, que as imagens usam")
+@login_obrigatorio
+@permissao("ver_erp")
 def pagina_manual_portal_sem_barra():
     return redirect("/erp/portal/manual/", code=301)
 
 
 @bp.route("/erp/portal/manual/telas/<nome>")
-@permissao_publica("as telas do manual (imagens de um banco de teste)")
+@login_obrigatorio
+@permissao("ver_erp")
 def manual_portal_tela(nome: str):
-    resposta = send_from_directory(
-        os.path.join(PASTA_MANUAL_PORTAL, "telas"), nome)
-    resposta.headers["Cache-Control"] = "public, max-age=86400"
+    """Uma das telas do manual.
+
+    ⚑ O NOME É CONFERIDO CONTRA O QUE EXISTE NA PASTA, e não é zelo
+    decorativo: esta é a única rota do manual que recebe algo de fora. O
+    `send_from_directory` já barra `../`, mas depender de uma defesa só, numa
+    rota que monta caminho de arquivo, é apostar que ninguém vai trocar a
+    função um dia. Nome que não está na pasta responde **404**, como manda a
+    regra de escopo do ERP — e não 403, que confirmaria o que existe.
+    """
+    pasta = os.path.join(PASTA_MANUAL_PORTAL, "telas")
+    if nome not in set(os.listdir(pasta)):
+        raise ErroNaoEncontrado("Esta tela do manual não existe.")
+    resposta = send_from_directory(pasta, nome)
+    # ⚑ `private`: a imagem só vale para quem está logado, e um cache
+    # compartilhado (o proxy da obra) não pode servi-la a quem não está.
+    resposta.headers["Cache-Control"] = "private, max-age=86400"
     return resposta
 
 
 @bp.route("/erp/portal/manual.pdf")
-@permissao_publica("o manual de uso do portal em PDF")
+@login_obrigatorio
+@permissao("ver_erp")
 def manual_portal_pdf():
     return send_from_directory(PASTA_MANUAL_PORTAL, "manual-portal-da-obra.pdf",
                                mimetype="application/pdf",
