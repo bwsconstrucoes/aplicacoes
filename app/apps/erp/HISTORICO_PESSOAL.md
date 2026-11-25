@@ -141,6 +141,31 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (2) — Liberar o acesso ao portal é do administrador; o DP só vê a fila
+
+Ele: *"o portal não é só para o DP (…) quem é para fazer a liberação tem que
+ter acesso à parte de operadores (…) dizer o tipo de pessoa, o tipo de obra
+(…) isso não é o DP quem vai fazer"*; e, ajustando a proposta: *"o DP pode ser
+avisado. É bom que ele visualize (…) ele só não vai ter o botão (…) para o
+administrador, tanto no aviso no celular como na tela de início do ERP."*
+- `liberar_acesso_portal` → só ADMIN (e quem gere operadores, por
+  implicação). Ação nova `ver_pedidos_de_acesso` (ADMIN e DP) para VER a fila.
+  A seção "Acesso ao portal" ganhou LER (ver) além de EDITAR (liberar).
+  **Migração 128**: o perfil pronto "Departamento pessoal" desce de EDITAR
+  para LER nessa seção.
+- **Configurações › Operadores** tem agora, no topo, o bloco "Pedidos de
+  acesso ao portal (N)" com Liberar (confirma o e-mail e abre o cadastro do
+  operador já com a pessoa, para perfil e obras) e Recusar (com motivo).
+- **Colaboradores** (DP): a fila continua aparecendo, só leitura, com
+  "quem libera é o administrador" (para o ADMIN, um link "Liberar em
+  Operadores").
+- **Tela de início**: cartão "N pedidos de acesso ao portal esperando
+  liberação", só para quem libera, levando a Operadores.
+- **Aviso no celular**: `pedidos_de_portal.avisar_administradores`, no pedido
+  NOVO (repetido e correção de e-mail não avisam), a cada ADMIN ativo com
+  telefone ou CPF, pela mensageria com o tipo novo `erp.acesso_portal`
+  (`mensageria/core.py` — registrado lá).
+
 ### 25/11/2026 — Dependente com certidão de nascimento: reconhecida, guardada como do dependente e lida para o quadro dele
 
 Ele, cadastrando uma criança: *"ele só tem certidão de nascimento e o sistema

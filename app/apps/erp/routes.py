@@ -299,6 +299,9 @@ ACOES_NA_TELA = (
                  # pediu acesso pelo ponto. É ação PRÓPRIA, mais estreita que
                  # `gerir_usuarios` — ver o comentário dela em `permissoes.py`.
                  "liberar_acesso_portal",
+                 # 25/11/2026: o DP VÊ a fila (sem os botões); só o
+                 # administrador libera.
+                 "ver_pedidos_de_acesso",
                  # ⚑ CONFIGURAR MENSAGENS (17/11/2026): o bloco "Mensagens" da
                  # ficha da pessoa mora no `erp_base.html` (é o mesmo na ficha
                  # do Pessoal e na do ponto) e oferece "Mandar um teste agora".
@@ -962,8 +965,20 @@ def pagina_inicio():
     # inteira — é aqui que ela escolhe para onde ir, e oferecer uma área que
     # responde 403 é pior do que não mostrá-la.
     modulos_visiveis, _ = _menu_da_pessoa(pode)
+    # ⚑ OS PEDIDOS DE ACESSO AO PORTAL, para quem libera (25/11/2026). Ele:
+    # *"como é que a gente vai ver que tem pendente na hora que entrar"* —
+    # um cartão aqui, na porta de entrada, como o da agenda. Uma contagem.
+    pedidos_de_acesso = 0
+    if pode.get("liberar_acesso_portal"):
+        try:
+            from app.apps.erp.core.auth import pedidos_de_portal as _fila
+            with get_session() as s:
+                pedidos_de_acesso = _fila.quantos_pendentes(s.connection())
+        except Exception:
+            logger.warning("ERP: contagem dos pedidos de acesso indisponível")
     return render_template("erp_inicio.html", modulos=modulos_visiveis, modulo=None,
                            abas=[], aba_ativa="", agenda=agenda,
+                           pedidos_de_acesso=pedidos_de_acesso,
                            usuario_nome=session.get("erp_usuario_nome", ""),
                            usuario_perfil=session.get("erp_usuario_perfil", ""),
                            # `pode` é do molde comum a todas as telas: o
@@ -9822,7 +9837,7 @@ def api_colaborador_acesso(colaborador_id: int):
 # ===========================================================================
 @bp.route("/erp/api/portal/pedidos-de-acesso")
 @login_obrigatorio
-@permissao("liberar_acesso_portal")
+@permissao("ver_pedidos_de_acesso")
 def api_pedidos_de_acesso():
     from app.apps.erp.core.auth import pedidos_de_portal as fila
     try:

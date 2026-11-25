@@ -266,7 +266,9 @@ const VE_REMUNERACAO = {{ 'true' if pode.ver_remuneracao else 'false' }};
 const LIBERA_ACESSO = {{ 'true' if pode.gerir_usuarios else 'false' }};
 {# A FILA DO PORTAL tem ação própria desde 18/11/2026 ("libera o DP
    também"): o DP resolve a fila sem ganhar a tela de operadores. #}
-const RESOLVE_FILA_PORTAL = {{ 'true' if pode.liberar_acesso_portal else 'false' }};
+{# 25/11/2026: o DP VÊ a fila, mas quem libera é o administrador, em
+   Configurações › Operadores — aqui não há botão. #}
+const RESOLVE_FILA_PORTAL = {{ 'true' if (pode.ver_pedidos_de_acesso or pode.liberar_acesso_portal) else 'false' }};
 const PODE_IMPORTAR = {{ 'true' if pode.configurar else 'false' }};
 {# A aba do PONTO dentro da ficha só aparece para quem enxerga o ponto. O
    módulo do ponto registra as ações dele no menu do ERP, então `pode.ver_ponto`
@@ -382,10 +384,9 @@ async function carregarFilaDoPortal(){
          descreve o sistema errado é pior que texto nenhum. #}
       <div class="cartao-dica" style="margin:0 0 10px">Pediram pelo
         <b>portal</b> (criando o próprio acesso) ou pelo <b>aplicativo do
-        ponto</b>, e informaram o e-mail. Liberar cria o acesso como
-        <b>administrativo de obra</b> (abre pedidos da obra; não vê salário nem
-        documento de ninguém), liga a obra da pessoa e manda o convite para ela
-        criar a senha dela.
+        ponto</b>, e informaram o e-mail. <b>Quem libera é o administrador</b>,
+        em Configurações › Operadores, onde escolhe o perfil e as obras — aqui
+        é para o DP acompanhar e avisar se algo demorar.
         <br><b>“✓ identidade confirmada”</b> quer dizer que ela provou quem é:
         digitou o código que foi para o WhatsApp do telefone <b>do cadastro</b>.
         Sem essa marca, confira quem é antes de liberar.</div>
@@ -405,77 +406,15 @@ async function carregarFilaDoPortal(){
               ? `<br><span class="etiqueta ambar">${escapar(p.situacao)}</span>` : ""}</td>
           <td class="mono">${escapar(p.email)}</td>
           <td>${escapar(p.obra || "—")}</td>
-          <td style="white-space:nowrap">
-            <button class="btn" type="button" data-liberar="${p.id}">Liberar e convidar</button>
-            <button class="btn secundario" type="button" data-recusar="${p.id}">Recusar</button>
-          </td>
+          <td style="white-space:nowrap">${FILA_OPCOES.administra_acesso
+            ? `<a class="btn" href="/erp/configuracoes#usuarios">Liberar em Operadores</a>`
+            : `<small class="desc">quem libera é o administrador</small>`}</td>
         </tr>`).join("")}</tbody></table>
     </div>`;
-  caixa.querySelectorAll("[data-liberar]").forEach(b =>
-    b.addEventListener("click", () => decidirPedidoDePortal(+b.dataset.liberar, "LIBERAR")));
-  caixa.querySelectorAll("[data-recusar]").forEach(b =>
-    b.addEventListener("click", () => decidirPedidoDePortal(+b.dataset.recusar, "RECUSAR")));
 }
 
-async function decidirPedidoDePortal(id, acao){
-  const p = FILA_PORTAL.find(x => x.id === id);
-  if (!p) return;
-  let corpo = {acao};
-  if (acao === "RECUSAR") {
-    // O MOTIVO VOLTA PARA O CELULAR DA PESSOA. Recusa sem motivo faz ela pedir
-    // de novo amanhã, com o mesmo e-mail, e ninguém sai do lugar.
-    const r = await perguntar({titulo: "Recusar o pedido de acesso",
-      aviso: `${escapar(p.nome)} não vai receber o acesso. O motivo aparece para ela no aplicativo do ponto.`,
-      campos: [{nome: "motivo", rotulo: "Por quê?", largura: 6,
-                dica: "ex.: pedido não confere com a função dela"}],
-      textoOk: "Recusar"});
-    if (!r) return;
-    corpo.motivo = r.motivo || "";
-  } else {
-    // O diálogo pergunta UMA coisa só: o e-mail, que é o login dela e para
-    // onde vai o convite. Perfil e obras não se escolhem aqui — quem
-    // administra cai na tela de configuração logo depois de confirmar.
-    const campos = [{nome: "email", rotulo: "E-mail (confira)",
-                     valor: p.email, largura: 6}];
-    const r = await perguntar({titulo: "Liberar o acesso ao portal",
-      aviso: `${escapar(p.nome)} vai receber um convite em <b>${escapar(p.email)}</b> para criar a senha dela.`
-           + (p.identidade_confirmada
-               ? ` <b>Ela já provou quem é</b> — o código foi conferido no WhatsApp do telefone do cadastro.`
-               : ` ⚠️ <b>Este pedido veio sem confirmação de identidade.</b> Confira quem é antes de liberar.`)
-           + (p.obra ? ` A obra do cadastro é ${escapar(p.obra)}.` : "")
-           + (FILA_OPCOES.administra_acesso
-               ? ` Ao confirmar, você vai para a tela onde define <b>o perfil e as obras</b> dela.`
-               : ""),
-      campos, textoOk: "Liberar e convidar"});
-    if (!r) return;
-    corpo.email = r.email || p.email;
-  }
-  try {
-    const d = await api(`/erp/api/portal/pedidos-de-acesso/${id}`,
-                        {method:"POST", body: JSON.stringify(corpo)});
-    const cv = d.convite || {};
-    // ⚑ QUEM ADMINISTRA SEGUE DIRETO PARA CONFIGURAR (18/11/2026), levando o
-    // resultado do convite junto — inclusive o link, quando o e-mail não sai.
-    // Sai desta tela, então o aviso de baixo não chega a ser lido.
-    if (acao === "LIBERAR" && d.usuario_id && FILA_OPCOES.administra_acesso) {
-      irConfigurarOAcesso(d.usuario_id, cv);
-      return;
-    }
-    // ⚠️ O LINK APARECE AQUI TAMBÉM (18/11/2026). Antes esta tela dizia só
-    // "reenvie pela ficha da pessoa" — e se o e-mail do sistema não estiver
-    // configurado, reenviar não vai sair também. Sem o link, a liberação
-    // acontecia e ninguém tinha como entrar. A ficha já mostrava; a fila, não.
-    aviso("mensagem", acao === "LIBERAR"
-      ? `Acesso liberado para ${escapar(p.nome)}.`
-        + (cv.enviado ? " O convite foi enviado."
-           : ` ⚠️ O convite NÃO saiu: ${escapar(cv.erro || "motivo não informado")}.`
-             + (cv.link ? `<br>Entregue este link para ela (vale uma vez): `
-                        + `<code>${escapar(cv.link)}</code>` : ""))
-      : `Pedido de ${escapar(p.nome)} recusado.`,
-      acao === "LIBERAR" && !cv.enviado ? "alerta" : "ok");
-    await carregar();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-}
+{# A liberação (e a recusa) saiu daqui em 25/11/2026: é do administrador, em
+   Configurações › Operadores (`decidirPedidoDeAcesso` em erp_config.html). #}
 
 {# A partir de quantas opções o bloco ganha procura. É a mesma régua do
    Análise de SPs, e pelo mesmo motivo: doze se acham com o olho; oitenta

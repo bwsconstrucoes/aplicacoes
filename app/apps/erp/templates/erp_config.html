@@ -551,6 +551,14 @@
   </div>
 </div>
 
+{# ⚑ OS PEDIDOS DE ACESSO AO PORTAL MORAM AQUI (25/11/2026). Ele: *"quem é
+   para fazer a liberação tem que ter acesso à parte de operadores para poder
+   (…) dizer o tipo de pessoa, o tipo de obra (…) isso não é o DP quem vai
+   fazer."* Liberar abre o cadastro do operador já com a pessoa, para escolher
+   perfil e obras e salvar. O DP continua vendo a fila em Colaboradores, sem
+   botão. #}
+<div class="cartao oculto" data-secao="usuarios" id="fila-portal-adm"></div>
+
 <div class="cartao" data-secao="usuarios">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -803,6 +811,73 @@ let PROJETOS_CAD = [], EMPRESAS_CAD = [];
 // resposta possível para a mesma pergunta.
 let CATALOGO = [], NIVEIS = [];
 
+// ---- Pedidos de acesso ao portal (25/11/2026): a fila e as duas ações.
+let FILA_ADM = [];
+async function carregarFilaDoPortal(){
+  const caixa = els("fila-portal-adm");
+  let d;
+  try { d = await api("/erp/api/portal/pedidos-de-acesso"); }
+  catch(e){ return; }                     // sem a ação: o bloco não existe
+  FILA_ADM = d.pedidos || [];
+  caixa.classList.toggle("oculto", !FILA_ADM.length);
+  if (!FILA_ADM.length) { caixa.innerHTML = ""; return; }
+  caixa.innerHTML = `<div class="cartao-cab"><h3>🖥 Pedidos de acesso ao portal
+      (${FILA_ADM.length})</h3><small>liberar escolhe o perfil e as obras</small></div>
+    <div class="cartao-dica" style="margin-bottom:8px"><b>“✓ identidade
+      confirmada”</b>: a pessoa digitou o código que foi para o WhatsApp do
+      telefone do cadastro. Sem a marca, confira quem é antes de liberar.</div>
+    <table><thead><tr><th>Pessoa</th><th>E-mail</th><th>Obra</th><th></th></tr></thead><tbody>
+    ${FILA_ADM.map(p => `<tr>
+      <td><b>${escapar(p.nome || "—")}</b><br>${p.identidade_confirmada
+        ? `<span class="etiqueta verde">✓ identidade confirmada</span>`
+        : `<span class="etiqueta">sem confirmação</span>`}</td>
+      <td class="mono">${escapar(p.email)}</td><td>${escapar(p.obra || "—")}</td>
+      <td style="white-space:nowrap">
+        <button class="btn" type="button" data-fila-liberar="${p.id}">Liberar e convidar</button>
+        <button class="btn secundario" type="button" data-fila-recusar="${p.id}">Recusar</button></td>
+    </tr>`).join("")}</tbody></table>`;
+  caixa.querySelectorAll("[data-fila-liberar]").forEach(b => b.addEventListener("click",
+    () => decidirPedidoDeAcesso(+b.dataset.filaLiberar, "LIBERAR")));
+  caixa.querySelectorAll("[data-fila-recusar]").forEach(b => b.addEventListener("click",
+    () => decidirPedidoDeAcesso(+b.dataset.filaRecusar, "RECUSAR")));
+}
+
+async function decidirPedidoDeAcesso(id, acao){
+  const p = FILA_ADM.find(x => x.id === id);
+  if (!p) return;
+  const corpo = {acao};
+  if (acao === "RECUSAR") {
+    const r = await perguntar({titulo: "Recusar o pedido de acesso",
+      aviso: `${escapar(p.nome)} não vai receber o acesso. O motivo aparece para ela.`,
+      campos: [{nome: "motivo", rotulo: "Por quê?", largura: 6}], textoOk: "Recusar"});
+    if (!r) return;
+    corpo.motivo = r.motivo || "";
+  } else {
+    const r = await perguntar({titulo: "Liberar o acesso ao portal",
+      aviso: `${escapar(p.nome)} vai receber um convite em <b>${escapar(p.email)}</b> para
+        criar a senha. Ao confirmar, abre o cadastro dela aqui para você escolher o
+        <b>perfil</b> e as <b>obras</b>.`,
+      campos: [{nome: "email", rotulo: "E-mail (confira)", valor: p.email, largura: 6}],
+      textoOk: "Liberar e convidar"});
+    if (!r) return;
+    corpo.email = r.email || p.email;
+  }
+  try {
+    const d = await api(`/erp/api/portal/pedidos-de-acesso/${id}`,
+                        {method: "POST", body: JSON.stringify(corpo)});
+    if (acao === "LIBERAR" && d.usuario_id) {
+      const cv = d.convite || {};
+      const q = new URLSearchParams({operador: String(d.usuario_id),
+                                     convite: cv.enviado ? "ok" : "falhou"});
+      if (!cv.enviado && cv.link) q.set("link", cv.link);
+      location.href = "/erp/configuracoes?" + q.toString() + "#usuarios";
+      return;
+    }
+    aviso("mensagem", `Pedido de ${escapar(p.nome)} recusado.`, "ok");
+    carregarFilaDoPortal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
 async function carregarOperadores(){
   try {
     const d = await api("/erp/api/usuarios");
@@ -907,6 +982,7 @@ function formPerfil(p){
       els("dlg").close();
       aviso("mensagem", novo ? "Perfil criado." : "Perfil atualizado.", "ok");
       carregarPerfis(); carregarOperadores();
+carregarFilaDoPortal();
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
   if (!novo) els("pf-arquivar").addEventListener("click", async () => {
