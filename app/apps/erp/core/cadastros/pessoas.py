@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -698,9 +698,23 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
     for campo in TEXTOS:
         if campo in dados:
             setattr(c, campo, (str(dados[campo]).strip() or None))
+    admissao_antes = c.admissao
     for campo in DATAS:
         if campo in dados:
             setattr(c, campo, _data(dados[campo], campo))
+    # ⚑ A ADMISSÃO CONFIRMADA PELO DP ACOMPANHA O VÍNCULO ABERTO (25/11/2026).
+    # O pré-cadastro nasce com a admissão igual ao início (é o que a obra
+    # informou); quando o DP confirma outra — dia 1º ou 16, para entrar na
+    # quinzena —, o vínculo que nasceu junto tem de mudar também, senão
+    # férias e rescisão contariam do dia errado. Só mexe no vínculo que tinha
+    # a data antiga: vínculo de outra história não é tocado aqui.
+    if (not novo and c.admissao and admissao_antes
+            and c.admissao != admissao_antes):
+        s.execute(update(ColaboradorVinculo)
+                  .where(ColaboradorVinculo.colaborador_id == c.id,
+                         ColaboradorVinculo.demissao.is_(None),
+                         ColaboradorVinculo.admissao == admissao_antes)
+                  .values(admissao=c.admissao))
     for campo in DINHEIRO:
         if campo in dados:
             setattr(c, campo, _dec(dados[campo], campo))
@@ -1140,7 +1154,10 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
     # O cadastro passa a refletir o vínculo de hoje.
     c.situacao, c.demissao = "ATIVO", None
     c.aviso_previo = c.ultimo_dia = None
-    c.admissao, c.data_inicio = admissao, admissao
+    # A admissão (a da carteira) e o início (o dia em que pisou na obra) podem
+    # ser diferentes — 25/11/2026, ver `pessoal_solicitacoes.TIPOS["CADASTRO"]`.
+    c.admissao = admissao
+    c.data_inicio = _data(dados.get("data_inicio"), "data de início") or admissao
     c.vinculo, c.tipo_contrato = novo.vinculo, novo.tipo_contrato
     c.cargo_id, c.convencao_id, c.obra_id = novo.cargo_id, novo.convencao_id, novo.obra_id
     c.empresa_id, c.cnpj_admissao = novo.empresa_id, novo.cnpj_admissao

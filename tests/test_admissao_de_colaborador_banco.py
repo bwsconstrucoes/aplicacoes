@@ -1218,3 +1218,70 @@ def test_passada_a_experiencia_o_contrato_vira_indeterminado_sozinho(mundo):
     assert s.get(svc_pessoas.Colaborador, velho.id).tipo_contrato == "CLT_INDETERMINADO"
     assert s.get(svc_pessoas.Colaborador, novo.id).tipo_contrato == "CLT_DETERMINADO"
     assert pessoal_experiencia.virar_indeterminado(s, hoje)["viraram"] == 0
+
+
+@pytestmark_banco
+def test_a_admissao_confirmada_pelo_dp_e_a_que_vai_a_contabilidade(mundo):
+    """Ele (25/11/2026): *"não necessariamente a data de início ela é igual à
+    data de admissão (…) a gente gosta de admitir no primeiro dia ou no 16º
+    dia (…) o que vale para a contabilidade é a data de admissão."* As duas
+    ficam: o início para os dias de diária, a admissão para a carteira."""
+    import datetime as dt
+    from app.apps.erp.core import contabilidade as svc_ct
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo, tipo_documentacao="CTPS",
+                               tipo_contrato="CLT (tempo indeterminado)",
+                               num_ctps="1234567", data_inicio="2026-11-05",
+                               documentos=["DOC-IDENTIDADE", "CPF-DOC",
+                                           "COMPROVANTE-ENDERECO-PESSOA",
+                                           "CTPS-FOTO", "CTPS-INFORMACOES"]),
+                  mundo["obra_user"])
+    assert "admissao" in svc.ler(s, p["id"])["campos_do_dp"]
+    svc.atender(s, p["id"], {"dados": {"salario": "2000",
+                                       "admissao": "2026-11-16"}}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    s.refresh(c)
+    assert c.data_inicio == dt.date(2026, 11, 5), "o início da obra fica"
+    assert c.admissao == dt.date(2026, 11, 16), "a admissão é a do DP"
+    v = svc_pessoas.vinculo_aberto(s, c.id)
+    s.refresh(v)
+    assert v.admissao == dt.date(2026, 11, 16), "o vínculo acompanha"
+    ped = svc_ct.abrir(s, {"template": "ASSINATURA_CTPS",
+                           "colaborador_id": c.id, "solicitacao_id": p["id"]},
+                       mundo["dp"])
+    corpo = s.execute(text("SELECT corpo FROM dp_pedidos WHERE id = :i"),
+                      {"i": ped["id"]}).scalar() or ""
+    assert "16/11/2026" in corpo and "05/11/2026" not in corpo
+
+
+@pytestmark_banco
+def test_sem_o_dp_mexer_a_admissao_e_o_inicio(mundo):
+    import datetime as dt
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo, tipo_documentacao="CTPS",
+                               tipo_contrato="CLT (tempo indeterminado)",
+                               num_ctps="1234567",
+                               documentos=["DOC-IDENTIDADE", "CPF-DOC",
+                                           "COMPROVANTE-ENDERECO-PESSOA",
+                                           "CTPS-FOTO", "CTPS-INFORMACOES"]),
+                  mundo["obra_user"])
+    svc.atender(s, p["id"], {"dados": {"salario": "2000"}}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    assert c.admissao == c.data_inicio == dt.date(2026, 11, 20)
+
+
+@pytestmark_banco
+def test_readmissao_guarda_o_inicio_e_a_admissao_separados(mundo):
+    import datetime as dt
+    s = mundo["s"]
+    volta = mundo["volta"]
+    p = svc.abrir(s, _admissao(mundo, cpf=CPF_VOLTA, nome="Jose Que Volta",
+                               data_inicio="2026-11-20", documentos=[]),
+                  mundo["obra_user"])
+    svc.atender(s, p["id"], {"dados": {"admissao": "2026-12-01"}}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, volta.id)
+    assert c.data_inicio == dt.date(2026, 11, 20)
+    assert c.admissao == dt.date(2026, 12, 1)

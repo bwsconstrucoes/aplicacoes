@@ -1177,8 +1177,14 @@ async function atender(){
      o número do CPF e não é nem para aparecer aqui nesse modal de
      atendimento."* O servidor já grava o CPF quando ela está vazia
      (`atender`, 19/11/2026); na readmissão, a que existia fica. #}
+  {# ⚑ A ADMISSÃO SÓ EXISTE PARA QUEM TEM CARTEIRA (25/11/2026). Prestador
+     não tem data de admissão diferente do início — perguntar seria convidar
+     a uma segunda data sem sentido. #}
+  const ehPrestador = ABERTA.tipo === "CADASTRO" && String(
+    (ABERTA.dados || {}).tipo_documentacao || "").toUpperCase() === "PRESTADOR";
   const doDP = (ABERTA.campos_do_dp || tipo.campos_do_dp || [])
-    .filter(c => CAMPO_PEDIDO[c] !== false && c !== "matricula");
+    .filter(c => CAMPO_PEDIDO[c] !== false && c !== "matricula")
+    .filter(c => !(c === "admissao" && ehPrestador));
   {# ⚑ CARGO E CONVENÇÃO SE ESCOLHEM DA LISTA, E O PISO VEM SOZINHO
      (23/11/2026). Ele: *"a convenção precisa ser uma lista selecionável
      baseada na base de dados (…) o cargo já é para ele identificar dentre os
@@ -1221,6 +1227,27 @@ async function atender(){
               exemplo: "vem do piso ao escolher cargo e convenção",
               dica: "O piso do cargo na convenção entra sozinho. Se o combinado for "
                 + "acima do piso, troque."};
+    {# ⚑ A DATA DE ADMISSÃO NASCE COM A DATA DE INÍCIO (25/11/2026). Ele:
+       *"a gente gosta de admitir no primeiro dia ou no 16º dia, para poder a
+       pessoa entrar dentro da quinzena. E aqueles dias entre a data de início
+       e a admissão a pessoa paga na diária."* O DP confirma ou troca; a dica
+       mostra o início e o próximo dia 1º ou 16. #}
+    if (c === "admissao") {
+      const ini = dadosAb.data_inicio || "";
+      let dica = "Vale para a contabilidade (é a data da carteira). ";
+      if (ini) {
+        const d = new Date(ini + "T12:00:00");
+        const prox = d.getDate() === 1 || d.getDate() === 16 ? null
+          : (d.getDate() < 16 ? new Date(d.getFullYear(), d.getMonth(), 16)
+                              : new Date(d.getFullYear(), d.getMonth() + 1, 1));
+        const br = x => x.toLocaleDateString("pt-BR");
+        dica += `A obra informou o início em ${br(d)}.`
+          + (prox ? ` Para entrar na quinzena, a admissão seria ${br(prox)}; `
+              + "os dias entre o início e a admissão são pagos como diária." : "");
+      }
+      return {nome: c, rotulo: rot, largura: 3, tipo: "date", dica,
+              valor: dadosAb.admissao || ini};
+    }
     const opcoes = (tipo.opcoes_do_dp || {})[c];
     if (opcoes)
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,

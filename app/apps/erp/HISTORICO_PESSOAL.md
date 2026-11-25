@@ -141,6 +141,48 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (4) — Data de início ≠ data de admissão: o DP confirma a admissão ao atender
+
+Ele: *"não necessariamente a data de início ela é igual à data de admissão, por
+questões de fechamento de folha (…) a gente gosta de admitir no primeiro dia ou
+no 16º dia, para poder a pessoa entrar dentro da quinzena. E aqueles dias entre
+a data de início e a admissão a pessoa paga na diária."* E: *"o que vale para a
+contabilidade (…) é a data de admissão. A data de início não importa."* (A
+mensagem dele chegou cortada em "a data de admissão pode vir já pré-preenchida
+com a…" — entendi "com a data de início", e foi o que fiz.)
+
+**O que estava errado:** o pedido só tem a data de início; o pré-cadastro e a
+readmissão copiavam essa data para a admissão, e o DP não tinha onde trocá-la
+no atendimento. O e-mail de registro da carteira saía com a data de início.
+
+**O que mudou:**
+- "Data de admissão (a da carteira — vale para a contabilidade)" entrou nos
+  campos do DP ao atender a Admissão de Colaborador, a readmissão e a Admissão
+  de Prestador (prestador → CTPS). Vem preenchida com o início; a dica mostra
+  o início e o próximo dia 1º ou 16 ("os dias entre um e outro são diária").
+  Não aparece para quem entra como prestador.
+- O cadastro guarda as duas: `data_inicio` (da obra) e `admissao` (do DP).
+  `pessoas.readmitir` deixou de forçar as duas iguais. `pessoas.salvar`, ao
+  trocar a admissão, leva junto o vínculo aberto que tinha a data antiga
+  (senão férias e rescisão contariam do dia errado).
+- O e-mail à contabilidade já usava `admissao` — agora ela é a certa.
+
+**A conferência que ele pediu, no cálculo dos diaristas (Análise de SPs):**
+está certo. A regra é dia a dia (`analisesps/folha_vinculo.classificar_dia`,
+tradução da fórmula da coluna AH da Mobponto): do início até a véspera da
+admissão é DIÁRIA; da admissão em diante é CTPS e sai da lista dos diaristas.
+Sem pagamento dobrado, sem dia perdido. **MAS ela lê a planilha "Registro de
+Colaboradores"** (cópia em `analisesps.colaborador`, alimentada pelo Pipefy),
+**não o ERP.** A admissão feita só pelo ERP não chega lá sozinha — a
+pergunta ao dono sobre isso está na resposta deste dia. Quando o ERP virar a
+fonte, `pessoas.para_folha` já entrega as duas datas (`data_inicio`,
+`data_admissao`). Não mexi na Análise de SPs.
+
+Pontos de atenção do cálculo, registrados para quando o ERP virar a fonte:
+dia de ponto ANTES do início cai como CTPS e é descartado sem aviso; a diária
+de CTPS só sai se o "Tipo" for exatamente "CTPS"; sem admissão e CLT, os dias
+ficam "sem decidir".
+
 ### 25/11/2026 (3) — Três decisões dele: carta sempre, ponto na hora, foto de iPhone
 
 Ele: *"Pedido de demissão tem que ter carta de pedido sempre, seja pelo painel,

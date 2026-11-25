@@ -283,7 +283,9 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "empresa_id", "observacao"),
         "obrigatorios": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
                          "empresa_id"),
-        "campos_do_dp": ("cargo_id", "convencao_id", "salario", "matricula"),
+        # ⚑ 25/11/2026: a ADMISSÃO é do DP (ver a nota em "CADASTRO").
+        "campos_do_dp": ("admissao", "cargo_id", "convencao_id", "salario",
+                         "matricula"),
         # 23/11/2026: data, cargo, convenção, obra e matrícula o atendimento
         # grava; não há sistema de pagamento a reativar.
         "checklist": (),
@@ -330,7 +332,9 @@ TIPOS: dict[str, dict[str, Any]] = {
         "rotulos_proprios": {"data_nascimento": "Data de Nascimento"},
         "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis",
                            **{c: c for c in CAMPOS_DA_PESSOA}},
-        "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
+        # ⚑ 25/11/2026: a ADMISSÃO na carteira é do DP (ver "CADASTRO").
+        "campos_do_dp": ("admissao", "cargo_id", "salario", "matricula",
+                         "convencao_id"),
         "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
         # Mesma regra do cadastro: o número sai da foto da carteira que este
         # pedido JÁ exige. Ninguém transcreve onze dígitos à mão.
@@ -705,7 +709,19 @@ TIPOS: dict[str, dict[str, Any]] = {
         # saber é pôr uma ligação telefônica dentro do sistema.
         #
         # O DP continua podendo corrigir na ficha da pessoa.
-        "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario"),
+        #
+        # ⚑ A DATA DE ADMISSÃO É DO DP, E NÃO É A DATA DE INÍCIO (25/11/2026).
+        # Ele: *"não necessariamente a data de início ela é igual à data de
+        # admissão, por questões de fechamento de folha (…) a gente gosta de
+        # admitir no primeiro dia ou no 16º dia, para poder a pessoa entrar
+        # dentro da quinzena. E aqueles dias entre a data de início e a
+        # admissão a pessoa paga na diária."* E: *"o que vale para a
+        # contabilidade é a data de admissão."* A obra informa o INÍCIO (o
+        # dia em que a pessoa pisa na obra); o DP confirma a ADMISSÃO (a da
+        # carteira) ao atender — a janela já vem com o início, e ele troca.
+        # As duas ficam no cadastro: `data_inicio` e `admissao`.
+        "campos_do_dp": ("admissao", "matricula", "convencao_id", "cargo_id",
+                         "salario"),
         # ⚑ OS PAPÉIS SÃO OBRIGATÓRIOS, E O PEDIDO NÃO SAI SEM ELES.
         #
         # Eu tinha proposto deixar entrar incompleto, e ele derrubou — com o
@@ -1601,6 +1617,7 @@ ROTULOS_DO_DP: dict[str, str] = {
     "transferencia_data": "A partir de quando (na obra nova)",
     "cumpre_aviso": "No pedido de demissão, a pessoa cumpre o aviso?",
     "matricula": "Matrícula",
+    "admissao": "Data de admissão (a da carteira — vale para a contabilidade)",
     "convencao_id": "Convenção",
     "cargo_id": "Cargo",
     "salario": "Salário",
@@ -2814,7 +2831,8 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
             efeito["papeis"] = transferir_papeis(s, solicitacao_id, alvo)
         elif executa == "criar_cadastro":
             svc_pessoas.readmitir(s, alvo, {
-                **pedido, "admissao": pedido.get("data_inicio"),
+                **pedido,
+                "admissao": pedido.get("admissao") or pedido.get("data_inicio"),
                 "vinculo": pedido.get("tipo_documentacao") or None}, usuario)
             # ⚑ OS DADOS NOVOS ATUALIZAM O CADASTRO ANTIGO (19/11/2026). Ele:
             # *"os dados novos vão estar atualizados, a gente vai estar

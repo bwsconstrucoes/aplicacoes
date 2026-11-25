@@ -3102,6 +3102,7 @@ consulta inventada vai sendo usado cada vez menos.
 |---|---|
 | **"admissão"** | o PEDIDO "Admissão de Colaborador" (que cobre gente nova E readmissão) ou a ADMISSÃO da carteira (a data). O pedido de prestador virando CTPS é outro: "Admissão de Prestador" |
 | **"matrícula"** | desde 19/11/2026, para quem entra, é o CPF. Quem já estava antes mantém a antiga — "a matrícula do fulano" pode ser um número antigo |
+| **"data de entrada" / "quando começou"** | desde 25/11/2026 são DUAS datas: o **início** (o dia em que pisou na obra, informado pela obra) e a **admissão** (a da carteira, confirmada pelo DP — costuma ser dia 1º ou 16). Para a contabilidade vale a admissão; para os dias de diária, o intervalo entre as duas. Na dúvida, pergunte qual |
 | **"cadastro completo"** | completo para o eSocial/SomaPay (a lista de `CAMPOS_DA_PESSOA`) ou para o DP concluir (`o_que_falta`)? São listas diferentes |
 
 ### Perguntas que o sistema responde
@@ -3112,6 +3113,13 @@ consulta inventada vai sendo usado cada vez menos.
   recusa; consulta direta nas colunas.
 - **"Quem entrou com matrícula diferente do CPF?"** — quem entrou antes de
   19/11/2026, ou quem o DP digitou outra.
+- **"Quantos dias o fulano recebeu como diarista antes de ser fichado?"** —
+  os dias de ponto entre a **data de início** e a **data de admissão** da
+  ficha (desde 25/11/2026 as duas ficam guardadas). ⚠️ O cálculo que PAGA
+  esses dias hoje é o da Análise de SPs, que lê a planilha "Registro de
+  Colaboradores", não o ERP — se as duas fontes divergirem, vale a que pagou.
+- **"Quem foi admitido com data diferente da que começou?"** — ficha de
+  carteira com admissão ≠ início.
 - **"Os documentos da admissão do fulano chegaram?"** — sim desde 19/11/2026:
   ficam no cadastro dele, com a origem PORTAL e o número do pedido.
 
