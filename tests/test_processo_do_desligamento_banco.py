@@ -85,6 +85,9 @@ def _desligamento(mundo, *, forma="Demissão com Aviso Trabalhado",
         "tipo": "DESLIGAMENTO", "colaborador_id": mundo["carteira"].id,
         "forma_desligamento": forma,
         "aviso_previo": (HOJE - dt.timedelta(days=40)).isoformat(),
+        # 24/11/2026: no pedido de demissão a obra diz se a pessoa trabalha o aviso
+        **({"cumpre_aviso": "Sim — vai trabalhar os 30 dias do aviso"}
+           if "Pedido" in forma else {}),
         "continua_prestador": continua}, mundo["obra_user"])
     dados = {"data_saida": (saida or HOJE + dt.timedelta(days=5)).isoformat()}
     if ultimo:
@@ -709,3 +712,71 @@ def test_rescisao_de_quem_veio_sem_historico_de_vinculo_usa_a_forma_do_pedido(mu
                            "dados": {"forma_desligamento": r["dados"]["forma_desligamento"]}},
                        mundo["dp"])
     assert ped["numero"]
+
+
+# ---------------------------------------------------------------------------
+# O pedido de demissão: sai de imediato ou trabalha o aviso; a carta da obra
+# (24/11/2026)
+# ---------------------------------------------------------------------------
+def _pedido_de_demissao(mundo, cumpre=None):
+    dados = {"tipo": "DESLIGAMENTO", "colaborador_id": mundo["carteira"].id,
+             "forma_desligamento": "À Pedido do Colaborador",
+             "aviso_previo": HOJE.isoformat(),
+             "continua_prestador": "Não, está saindo da empresa"}
+    if cumpre is not None:
+        dados["cumpre_aviso"] = cumpre
+    return svc.abrir(mundo["s"], dados, mundo["obra_user"])
+
+
+def test_pedido_de_demissao_pergunta_se_sai_de_imediato(mundo):
+    """Ele: *"o mais comum é que o colaborador peça para sair de imediato (…)
+    vamos ajustar para (…) trabalhar de uma forma ou de outra."*"""
+    from app.apps.erp.core import termos
+    with pytest.raises(ErroValidacao, match="trabalhar o aviso"):
+        _pedido_de_demissao(mundo)
+    p = _pedido_de_demissao(mundo, "Não — sai de imediato (pede dispensa do aviso)")
+    assert p["dados"]["cumpre_aviso"] == "0"
+    svc.atender(mundo["s"], p["id"], {"dados": {"data_saida": HOJE.isoformat()}},
+                mundo["dp"])
+    mundo["s"].flush()
+    t_ = termos.do_pedido(mundo["s"], p["id"])
+    assert t_["tipo"] == "PEDIDO-DEMISSAO" and "dispensa" in t_["texto"]
+    assert t_["situacao"] == "ABERTO", "sem carta, a pessoa assina pelo portal"
+
+
+def test_a_carta_anexada_pela_obra_vale_como_pedido_assinado(mundo):
+    """Ele: *"pode ser que a pessoa na obra já tenha feito a cartinha e a gente
+    vai anexar ao pedido."*"""
+    from app.apps.erp.core import termos
+    s = mundo["s"]
+    p = _pedido_de_demissao(mundo, "Sim — vai trabalhar os 30 dias do aviso")
+    doc = _documento(mundo, "PEDIDO-DEMISSAO", "carta escrita à mão")
+    s.execute(text("UPDATE documentos SET referencia = :r WHERE id = :i"),
+              {"r": f"{p['numero']} — enviado pela obra", "i": doc})
+    s.flush()
+    svc.atender(s, p["id"], {"dados": {"data_saida": (HOJE + dt.timedelta(days=30)).isoformat()}},
+                mundo["dp"])
+    s.flush()
+    t_ = termos.ler(s, termos.do_pedido(s, p["id"])["id"])
+    assert t_["forma"] == "PAPEL" and termos.concluido(t_), "a carta já vale"
+    assert _estado(_ler(mundo, p["id"]), "AVISO") == "FEITO"
+
+
+def test_pedido_de_demissao_nao_anda_sem_a_carta(mundo):
+    """Ele (25/11/2026): *"pedido de demissão tem que ter carta de pedido
+    sempre, seja pelo painel, seja anexado."* Sem carta anexada, o passo fica
+    esperando a assinatura pelo portal — e o DP não consegue dá-lo por feito
+    nem dispensá-lo à mão."""
+    s = mundo["s"]
+    p = _pedido_de_demissao(mundo, "Não — sai de imediato (pede dispensa do aviso)")
+    svc.atender(s, p["id"], {"dados": {"data_saida": HOJE.isoformat()}}, mundo["dp"])
+    s.flush()
+    sol = _ler(mundo, p["id"])
+    aviso = next(x for x in sol["processo"]["passos"] if x["codigo"] == "AVISO")
+    assert aviso["sem_marca_manual"] is True
+    for acao in ("feito", "nao_se_aplica"):
+        with pytest.raises(ErroValidacao, match="sempre tem a carta"):
+            proc.marcar(s, sol, {"passo": "AVISO", "acao": acao,
+                                 "observacao": "assinou no papel por fora"},
+                        mundo["dp"])
+    assert "carta de pedido de demissão" in proc.aviso_pendente(s, p["id"])

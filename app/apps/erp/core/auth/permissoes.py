@@ -135,7 +135,14 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # ⚠️ A rota IGNORA o perfil que vier do navegador quando quem decide não
     # tem `gerir_usuarios` — senão o DP poderia pedir "perfil ADMIN" na mão e
     # criar um administrador por uma fila de obra. Há teste disso.
-    "liberar_acesso_portal": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
+    # ⚑ 25/11/2026: LIBERAR É SÓ DO ADMINISTRADOR. Ele: *"o portal não é só
+    # para o DP (…) quem é para fazer a liberação tem que ter acesso à parte
+    # de operadores (…) dizer o tipo de pessoa, o tipo de obra (…) isso não é
+    # o DP quem vai fazer."* E o DP continua VENDO a fila — *"é bom que ele
+    # visualize (…) ele só não vai ter o botão (…) pode avisar um
+    # administrador"* —, por `ver_pedidos_de_acesso`, abaixo.
+    "liberar_acesso_portal": {P.ADMIN},
+    "ver_pedidos_de_acesso": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
     # Uso do sistema por pessoa. DELIBERADAMENTE estreita: ver o que os OUTROS
     # fizeram é informação de gestão de gente, não de operação. Ver a PRÓPRIA
     # semana não passa por aqui — é `ver_erp`, e a rota nem aceita o número de
@@ -410,6 +417,8 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # Quem gere operadores resolve a fila do portal — é o mesmo assunto, e sem
     # esta linha quem administra o sistema perderia uma fila que já enxergava.
     "liberar_acesso_portal": ("gerir_usuarios",),
+    # Quem libera também vê a fila.
+    "ver_pedidos_de_acesso": ("liberar_acesso_portal", "gerir_usuarios"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -432,6 +441,7 @@ ACAO_ROTULOS = {
     "configurar":           "Abrir Configurações",
     "gerir_usuarios":       "Cadastrar e editar operadores",
     "liberar_acesso_portal": "Liberar acesso ao portal a quem pediu pelo ponto",
+    "ver_pedidos_de_acesso": "Ver quem pediu acesso ao portal (sem liberar)",
     "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
     "ver_titulos":          "Ver a lista de solicitações de pagamento",

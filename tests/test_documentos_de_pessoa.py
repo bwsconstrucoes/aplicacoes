@@ -153,3 +153,44 @@ def test_todo_papel_exigido_sabe_o_que_espera():
         assert codigo in svc.O_QUE_ESPERO, (
             f"{codigo} é exigido em algum pedido e a leitura não sabe o que "
             f"esperar dele — nenhum aviso sairia")
+
+
+def test_a_certidao_de_nascimento_e_reconhecida_como_documento_do_dependente(monkeypatch):
+    """25/11/2026, ele: *"estou cadastrando um dependente, que no caso trata-se
+    de uma criança, e ele só tem certidão de nascimento e o sistema tá
+    exigindo RG."* A leitura em lote não conhecia a certidão."""
+    _dublê(monkeypatch, {"arquivos": [{"indice": 0, "documento": "certidão de nascimento",
+                                       "tipos": ["DOC-DEPENDENTE"], "legivel": True}],
+                         "campos": {}})
+    r = svc.ler_varios([(b"\xff\xd8 foto", "certidao.jpg")])
+    assert r["arquivos"][0]["tipos"] == ["DOC-DEPENDENTE"]
+
+
+def test_certidao_em_PDF_e_foto_grande_chegam_a_leitura_como_imagem(monkeypatch):
+    """25/11/2026, ele: *"a IA não tá conseguindo fazer a leitura."* O portal
+    mandava o arquivo CRU: PDF a IA recusa, e foto de 12 MP estoura o tamanho
+    — nos dois casos voltava "não consegui ler"."""
+    import io
+    import fitz
+    from PIL import Image
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "CERTIDAO DE NASCIMENTO - ANA SOUZA")
+    pdf = doc.tobytes()
+    buf = io.BytesIO()
+    Image.new("RGB", (4000, 3000), "white").save(buf, format="JPEG")
+    foto = buf.getvalue()
+
+    imgs_pdf = svc._imagens_para_ia(pdf, "certidao.pdf")
+    assert imgs_pdf and all(u.startswith("data:image/png;base64,") for u in imgs_pdf)
+    imgs_foto = svc._imagens_para_ia(foto, "foto.jpg")
+    assert imgs_foto[0].startswith("data:image/jpeg;base64,")
+    assert len(imgs_foto[0]) < len(foto) * 1.34, "a foto foi reduzida"
+
+    pedido = {}
+    _dublê(monkeypatch, {"arquivos": [{"indice": 0, "documento": "certidão de nascimento",
+                                       "tipos": ["DOC-DEPENDENTE"]}], "campos": {}},
+           guarda=pedido)
+    svc.ler_varios([(pdf, "certidao.pdf")])
+    partes = pedido["messages"][0]["content"]
+    urls = [p["image_url"]["url"] for p in partes if p["type"] == "image_url"]
+    assert urls and not any("application/pdf" in u for u in urls)

@@ -112,16 +112,13 @@ def ler(conteudo: bytes, nome_do_arquivo: str, tipo: str) -> dict[str, Any]:
         cliente = _cliente()
         import os as _os
         modelo = _os.getenv("ERP_MODELO_IA_VISAO", "gpt-4o")
-        dado = _b64.b64encode(conteudo).decode()
-        mime = ("application/pdf" if nome_do_arquivo.lower().endswith(".pdf")
-                else "image/jpeg")
+        imagens = _imagens_para_ia(conteudo, nome_do_arquivo)
         resp = cliente.chat.completions.create(
             model=modelo, temperature=0, max_tokens=700,
             messages=[{"role": "user", "content": [
                 {"type": "text",
-                 "text": _INSTRUCAO.format(esperado=esperado)},
-                {"type": "image_url",
-                 "image_url": {"url": f"data:{mime};base64,{dado}"}}]}])
+                 "text": _INSTRUCAO.format(esperado=esperado)}] + [
+                {"type": "image_url", "image_url": {"url": u}} for u in imagens]}])
         lido = _extrair_json(resp.choices[0].message.content or "") or {}
     except Exception as e:                                # noqa: BLE001
         logger.warning("ERP/portal: não consegui ler o documento (%s)", e)
@@ -182,8 +179,13 @@ def ler(conteudo: bytes, nome_do_arquivo: str, tipo: str) -> dict[str, Any]:
 # papel: a CNH é identificação E traz o CPF. A tela marca os papéis exigidos
 # pelo que a leitura reconheceu, e a pessoa pode corrigir o tipo à mão.
 # ===========================================================================
+# ⚑ DOC-DEPENDENTE entrou em 25/11/2026. Ele, cadastrando uma criança: *"ele
+# só tem certidão de nascimento e o sistema tá exigindo RG."* A leitura não
+# conhecia a certidão: ela voltava "não reconhecida" e o pedido de dependente
+# não saía.
 TIPOS_RECONHECIDOS = ("DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA",
-                      "CTPS-FOTO", "CTPS-INFORMACOES", "ASO", "OUTRO")
+                      "CTPS-FOTO", "CTPS-INFORMACOES", "ASO", "DOC-DEPENDENTE",
+                      "OUTRO")
 TETO_DE_ARQUIVOS = 8
 CAMPOS_DO_LOTE = ("nome", "cpf", "nome_mae", "data_nascimento", "rg",
                   "rg_emissao", "rg_orgao", "rg_uf", "cep", "logradouro",
@@ -191,8 +193,14 @@ CAMPOS_DO_LOTE = ("nome", "cpf", "nome_mae", "data_nascimento", "rg",
                   "num_ctps", "num_pis")
 
 _INSTRUCAO_LOTE = """Você recebe {n} arquivo(s), na ordem 0, 1, 2…, com os
-documentos de UM trabalhador brasileiro, fotografados com celular em canteiro
-de obra (torto, com sombra, às vezes frente e verso em fotos separadas).
+documentos de UM trabalhador brasileiro — ou de UM dependente dele —,
+fotografados com celular em canteiro de obra (torto, com sombra, às vezes
+frente e verso em fotos separadas).
+
+Se for CERTIDÃO DE NASCIMENTO, "nome" e "data_nascimento" são os de quem
+NASCEU (a criança), nunca os da mãe ou do pai; os pais vão em "nome_mae" e
+"nome_pai". Se for CERTIDÃO DE CASAMENTO, "nome" é o do cônjuge que não é o
+trabalhador, quando der para saber; se não der, deixe "".
 
 Devolva SOMENTE um JSON:
 
@@ -201,10 +209,11 @@ Devolva SOMENTE um JSON:
     {{"indice": 0,
       "documento": "o que é (RG frente, RG verso, CNH, CPF, comprovante de
                     endereço, CTPS página da foto, CTPS página de informações,
-                    outro)",
+                    certidão de nascimento, certidão de casamento, outro)",
       "tipos": ["um ou mais entre: DOC-IDENTIDADE, CPF-DOC,
                  COMPROVANTE-ENDERECO-PESSOA, CTPS-FOTO, CTPS-INFORMACOES,
                  ASO (atestado de saúde ocupacional, o exame admissional),
+                 DOC-DEPENDENTE (certidão de nascimento ou de casamento),
                  OUTRO — a CNH e o RG novo trazem o CPF, então valem por
                  DOC-IDENTIDADE e CPF-DOC"],
       "legivel": true ou false,
@@ -229,6 +238,27 @@ Devolva SOMENTE um JSON:
 ou um RG errado impede a pessoa de receber. Preferir "" a chutar. O endereço
 vem do comprovante de endereço; o RG, a emissão e o órgão vêm do RG (ou da
 CNH, no campo de documento de identidade)."""
+
+
+# ⚑ PDF E FOTO GRANDE (25/11/2026). Ele, com uma certidão: *"a IA não tá
+# conseguindo fazer a leitura."* As duas leituras deste arquivo mandavam o
+# arquivo CRU como imagem. PDF cru a IA recusa — e certidão chega muito em
+# PDF (a digital, do cartório) —, e foto de celular inteira (12 MP) estoura o
+# tamanho; nos dois casos voltava "não consegui ler". Agora passam pelo mesmo
+# preparo do leitor de documentos do ERP: PDF vira imagem página a página
+# (até 2 por arquivo — documento de pessoa não passa disso) e a foto é
+# reduzida para 1800 px.
+PAGINAS_POR_ARQUIVO = 2
+
+
+def _imagens_para_ia(conteudo: bytes, nome: str) -> list[str]:
+    """As imagens deste arquivo, prontas para a IA (data URL)."""
+    from app.apps.erp.core.documentos import leitor
+    if (nome or "").lower().endswith(".pdf") or conteudo[:5] == b"%PDF-":
+        paginas = leitor._paginas_como_png(conteudo)[:PAGINAS_POR_ARQUIVO]
+        return [f"data:image/png;base64,{p}" for p in paginas]
+    dado, mime = leitor._preparar_imagem(conteudo)
+    return [f"data:{mime};base64,{dado}"]
 
 
 def _mime(nome: str) -> str:
@@ -346,9 +376,8 @@ def ler_varios(arquivos: list[tuple[bytes, str]]) -> dict[str, Any]:
             {"type": "text", "text": _INSTRUCAO_LOTE.format(n=len(arquivos))}]
         for i, (conteudo, nome) in enumerate(arquivos):
             partes.append({"type": "text", "text": f"Arquivo {i}: {nome}"})
-            partes.append({"type": "image_url", "image_url": {
-                "url": f"data:{_mime(nome)};base64,"
-                       + _b64.b64encode(conteudo).decode()}})
+            for u in _imagens_para_ia(conteudo, nome):
+                partes.append({"type": "image_url", "image_url": {"url": u}})
         resp = cliente.chat.completions.create(
             model=modelo, temperature=0, max_tokens=1500,
             messages=[{"role": "user", "content": partes}])

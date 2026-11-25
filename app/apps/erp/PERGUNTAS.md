@@ -352,6 +352,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem da minha obra está com o ponto em dia e quem precisa corrigir? (aplicativo › "Ponto da minha equipe": responde conforme quem pergunta — o responsável pelo ponto da obra vê quem bateu no aparelho dele; o administrativo e o liberado, o alcance da consulta; "este mês" = do dia 1 até ontem)
 - Quem faltou ou está com batida faltando, por obra, para mandar no grupo? 🔒 (Relatórios › Fechamento › "Resumo dos problemas (WhatsApp)": marcar os tipos; "período" = o do fechamento, 26→25, ou só o mês corrente; a obra é a do dia, onde a pessoa bateu)
 - Quem trabalhou em cada dia do período, com ou sem hora extra? 🔒 (Relatórios › Fechamento › "Calendário geral" ligado: o ✓ é o dia trabalhado no horário; "período" = o do fechamento, 26→25; não entra quem não trabalhou dia nenhum nem faltou)
+- Quem da empresa X trabalhou em obra de outra empresa no período? 🔒 ⚠️ (Relatórios › Fechamento, com a empresa escolhida: as obras de outras empresas vêm no fim, na parte "Funcionários da X que também trabalharam em obras de outras empresas"; "da empresa X" = a empresa do CADASTRO da pessoa (sem ela, a da obra do cadastro); a obra é a do dia, onde a pessoa bateu; desde 25/11/2026; ❌ quem é de OUTRA empresa e trabalhou numa obra da X não aparece nesse recorte)
+- Que dias do Fulano foram corrigidos por ajuste? 🔒 (Relatórios › Fechamento › Horas extras por obra: o ✎ ao lado do dia; na janela da pessoa, as batidas "AJUSTADA"; desde 25/11/2026)
 - Que permutas de plantão foram lançadas ou aprovadas este mês? 🔒 ⚠️ (pedidos "Permuta de plantão" — compensação com subtipo PERMUTA e o colega; aprovada, os dois lados estão aprovados; as de antes de 31/10 são "Troca de plantão com …"; "este mês" = mês das noites, não do pedido)
 - Que permutas o sistema achou e ninguém aplicou? 🔒 (Validações › "Permutas que o sistema identificou nas batidas": últimos 35 dias, só vigias do 12x36; é sugestão — pode ter sido hora extra de fato)
 - Quem bate ponto por exceção (fora da regra da planilha)? 🔒 (janela da pessoa › Cadastro › "Bate ponto?": "Sim, por exceção", com o motivo, quem e quando; ainda não há uma lista que junte só esses — falta uma consulta)
@@ -409,6 +411,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - O Fulano compensou a folga do dia X? Quanto faltou? (espelho do dia da folga: "Compensação incompleta — <dia trabalhado> cobriu Xh das Yh; faltam Zh", ou "Compensação não cumprida — nada coberto"; a regra é hora por hora: a folga fica paga no que o dia trabalhado rendeu além do previsto dele; desde 13/11/2026 os dois avisos são separados)
 - O Fulano folgou no recesso e ainda vai pagar com sábado — onde isso aparece? 🔒 (no dia da folga: "Compensação (a pagar com o trabalho em DD/MM/AAAA)"; na folha de ponto do mês da folga, em "Observações — compensações", o combinado; enquanto o sábado não chega, a Conferência do fechamento avisa "ainda a cumprir"; desde 21/11/2026)
 - Quem não pagou o sábado da compensação? Que falta foi lançada por isso? 🔒 ⚠️ (desde 21/11/2026, na folga paga DEPOIS a falta cai NO SÁBADO, no mês dele — "Compensação não cumprida — este dia pagaria a folga de DD/MM/AAAA" —, e a folga continua folga no mês dela; o relatório de faltas mostra o motivo na coluna "Motivo"; se o sábado foi trabalhado em parte, é falta parcial do que faltou; "este mês" = o mês do sábado, não o da folga)
+- Quais prestadores de serviço da empresa X faltaram (ou fizeram hora a mais) no mês? 🔒 ⚠️ (Ponto › Relatórios, "Quem entra: Prestadores de serviço" e "Empresa"; desde 25/11/2026; ⚠️ "prestador" = quem bate ponto sem carteira — autônomo, estágio…; PJ e pró-labore não batem ponto; "empresa" = a do cadastro da pessoa, ou a da obra dela)
+- Me dá as folhas de ponto dos prestadores da empresa X. 🔒 (Relatórios › monte o relatório com o vínculo e a empresa › "Folhas de ponto do recorte": uma por pessoa, até 150)
 - Quem ainda não assinou o termo de compensação? E o aviso prévio? 🔒 (ERP › Ponto › Assinaturas, "Documentos para assinar": cada documento do DP aberto, com o prazo e se venceu; desde 23/11/2026 o termo de compensação nasce sozinho da compensação de dia aprovada — um por pessoa por lançamento)
 - O que está esperando o DP validar? 🔒 (Ponto › Assinaturas, "Esperando o DP validar": o papel assinado por foto e a recusa com testemunhas — só valem depois de aceitos; o assinado na tela com o PIN vale sozinho)
 - Quem não assinou a folha de ponto do mês? 🔒 ⚠️ ("o mês" = o último mês FECHADO dos dois anteriores; Ponto › Assinaturas › Folha de ponto, por obra; ⚠️ conta quem tem assinatura guardada — uma folha assinada que mudou depois, com o mês reaberto, ainda aparece como assinada ali; o aplicativo de quem conduz refaz essa conta)
@@ -3057,6 +3061,54 @@ de escopo da tela.
 
 ---
 
+## 3z-duodevicies. O MANUAL DO PORTAL DA OBRA (25/11/2026)
+
+O manual é **página fixa**, não banco. Entra aqui porque muda o que o agente
+deve responder: pergunta de **"como eu faço"** agora tem um lugar certo para
+onde apontar, com endereço e parte numerada — em vez de o agente explicar de
+memória e arriscar descrever uma tela que mudou.
+
+### ⚠️ As palavras ambíguas desta parte
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"o manual"** | ① o do **ponto** (`/ponto/app/manual/`), para bater ponto; ② o do **portal** (`/erp/portal/manual/`), para pedir ao escritório. São sistemas e senhas diferentes — mandar a pessoa para o errado faz ela perder a viagem |
+| **"o portal"** | ① o **Portal da Obra** do ERP; ② o portal do **Pipefy**, que ele vai substituir; ③ o portal da **prefeitura**, na emissão de nota. Só o primeiro tem manual |
+| **"como peço X"** | ① como se pede **pelo portal** (o manual responde); ② qual a **regra** de X — prazo, direito, valor (o manual não responde, e não deve fingir que responde) |
+
+### O que dá para perguntar
+
+- **"Onde fica o manual do portal?"** / **"Tem manual para a obra?"** —
+  responder com o endereço e dizer que dá para baixar em PDF.
+- **"Como a obra pede férias pelo portal?"** / **"Como peço uma admissão?"**
+  — a parte 3 do manual, por grupo de assunto.
+- **"Como a pessoa assina o aviso prévio?"** — parte 7.
+- **"Como devolvo a rescisão assinada?"** — parte 7, e a regra que importa:
+  **não por WhatsApp**.
+- **"Por que não consigo pedir material pelo portal?"** — partes 4 e 5: a
+  área existe e ainda não abriu.
+- **"Por que não acho fulano na busca do portal?"** — parte 10, alcance.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- **"O que eu posso pedir?"** — depende do perfil: quem não tem `solicitar_dp`
+  não vê o bloco de abrir; quem só tem `ver_diario` vê o portal com o diário e
+  mais nada. O manual descreve o caso cheio, do administrativo de obra.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Esta parte do manual ainda está certa?"** — há teste conferindo que toda
+  **área** e todo **tipo de pedido** aparecem no manual, e que a conta de
+  pedidos bate (`tests/test_manual_do_portal.py`). Ninguém confere o TEXTO:
+  uma tela que muda de jeito sem mudar de nome passa batida.
+- **"Quantas pessoas abriram o manual?"** — não há contagem de acesso. Sem
+  ela, não dá para saber se o manual está sendo usado ou ignorado.
+- **"O manual em PDF está igual à página?"** — o PDF é impresso da página à
+  mão, quando alguém lembra. Publicar a página sem reimprimir o PDF deixa os
+  dois diferentes, e nada acusa.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
@@ -3402,4 +3454,12 @@ não há orçamento de material por obra no ERP.
 - Quantos cargos de cada convenção estão sem piso?
 - **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
   mês da data-base é guardado.
+
+## Pedido de demissão (24/11/2026)
+
+- Quantos pedidos de demissão foram com saída imediata e quantos cumpriram o
+  aviso? *(campo `cumpre_aviso` do pedido: 0 = imediato, 1 = trabalha)*
+- Quais pedidos de demissão vieram com a carta do colaborador e quais foram
+  assinados pelo portal? *(documento PAPEL "carta anexada pela obra" × assinado
+  na tela)*
 

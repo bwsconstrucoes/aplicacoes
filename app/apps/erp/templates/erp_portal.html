@@ -46,6 +46,9 @@
   label.campo-portal input, label.campo-portal select, label.campo-portal textarea {
          width: 100%; box-sizing: border-box; padding: 10px; margin-top: 4px;
          border: 1px solid #C9D3E4; border-radius: 10px; font-size: 15px; }
+  .rodape-portal { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center;
+         margin: 4px 0 0; padding: 10px 0; font-size: 14px; }
+  .rodape-portal a { color: #31507F; }
   .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
   .recado.erro { background: #FDECEC; color: #A32020; }
   .recado.ok { background: #E8F6EE; color: #1C6B3C; }
@@ -134,6 +137,7 @@
   .ir-erp { color: #fff; font-size: 13px; font-weight: 600; text-decoration: none;
             border: 1px solid rgba(255,255,255,.45); border-radius: 999px;
             padding: 7px 13px; white-space: nowrap; }
+  .links-do-topo { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .dica-portal { display: block; font-weight: 400; color: #5A6B85;
                  font-size: 12.5px; margin-top: 4px; }
   .voltar { background: none; border: 0; color: #31507F; font-size: 14px;
@@ -157,9 +161,18 @@
     <b>Portal da obra</b>
     <small id="quem">—</small>
   </div>
-  {% if pode_mais_que_o_portal %}
-  <a href="/erp" class="ir-erp">ERP completo →</a>
-  {% endif %}
+  <div class="links-do-topo">
+    {# ⚑ O MANUAL NO ALTO (25/11/2026). Ele tinha ficado só no pé da página, e
+       o dono não achou: *"eu não entendi bem exatamente onde é que está o
+       link para acesso ao manual. Mas eu acho que o ideal é na tela depois do
+       login."* Link que a pessoa precisa procurar é link que não existe. Aqui
+       ele aparece sem rolar, na primeira tela depois de entrar — e continua
+       no pé, para quem terminou de ler a página e ficou com dúvida. #}
+    <a href="/erp/portal/manual/" class="ir-erp" title="Como usar o portal">📖 Manual</a>
+    {% if pode_mais_que_o_portal %}
+    <a href="/erp" class="ir-erp">ERP completo →</a>
+    {% endif %}
+  </div>
 </div>
 <div class="caixa">
   <div id="recado"></div>
@@ -252,6 +265,16 @@
       caçar área por área.</p>
     <div id="meus"></div>
   </div>
+
+  {# ⚑ O MANUAL (25/11/2026, pedido dele: "preciso criar um manual do portal
+     de solicitações (…) Clique pra visualizar online e ainda possibilidade de
+     baixar pdf"). Fica no PÉ, e não no alto: quem entra no portal vem fazer
+     uma coisa, não ler. Quem precisa de ajuda rola até o fim e acha. Mesmo
+     lugar e mesmo texto do manual do ponto. #}
+  <p class="rodape-portal">
+    <a href="/erp/portal/manual/">📖 Como usar o portal (manual)</a>
+    <a href="/erp/portal/manual.pdf">baixar em PDF</a>
+  </p>
 
 </div>
 
@@ -623,7 +646,8 @@ const ROTULO = {
   cnpj_admissao: "CNPJ para Admissão",
   solicitacao: "Solicitação",
   meio_transporte: "Meio de Transporte para chegar à Obra?",
-  aviso_previo: "Data do Aviso Prévio",
+  aviso_previo: "Data do aviso prévio (no pedido de demissão, a data do pedido)",
+  cumpre_aviso: "O colaborador vai trabalhar o aviso?",
   data_inicio: "Data de Início",
   justificativa: "Justificativa de Alteração do Cargo",
   conceder: "Conceder Vale Transporte?",
@@ -917,8 +941,9 @@ function pintarCamposDoTipo(){
         return `<label class="campo-portal">${rot}
           <input id="p-${c}" name="${c}" type="${tipo}"
             ${modo ? `inputmode="${modo}"` : ""}></label>`;
-      }).join("");
+      }).join("") + blocoDaCarta(t);
   ligarBuscaDePessoa();
+  ligarCarta(t);
   ligarRepetidos(t);
   ligarFiltroDeObra();
   ligarPapeis(t);
@@ -1047,6 +1072,29 @@ function blocoRepetido(t){
   REPETIDOS = [{}];
   return `<div class="repetidos" id="p-repetidos"></div>
     <button type="button" class="btn-mais" id="p-mais">+ outro dependente</button>`;
+}
+
+{# O quadro do dependente preenchido pela leitura (25/11/2026): o primeiro sem
+   nome — ou um novo, se todos já têm. Campo já escrito não é tocado. #}
+function preencherDependente(t, campos, lote){
+  const nome = (campos.nome || "").trim();
+  const nasc = (campos.data_nascimento || "").trim();
+  if (!nome && !nasc) return;
+  let i = REPETIDOS.findIndex(x => !(x.nome || "").trim());
+  if (i < 0) { REPETIDOS.push({}); i = REPETIDOS.length - 1; }
+  const alvo = REPETIDOS[i];
+  if (nome && !alvo.nome) alvo.nome = nome;
+  if (nasc && !alvo.data_nascimento) alvo.data_nascimento = nasc;
+  const oQue = lote.map(a => (a.documento || "").toLowerCase()).join(" ");
+  if (!alvo.parentesco) {
+    // O valor é o da caixinha do portal ("Filho", "Cônjuge"), não o código.
+    const opcoes = ((DADOS.listas || {}).parentesco || []).map(o => o.valor);
+    const achar = re => opcoes.find(v => re.test(v || "")) || "";
+    if (/nascimento/.test(oQue)) alvo.parentesco = achar(/^filh/i);
+    else if (/casamento/.test(oQue)) alvo.parentesco = achar(/c[oô]njuge/i);
+  }
+  pintarRepetidos(t);
+  return i + 1;
 }
 
 function pintarRepetidos(t){
@@ -1262,6 +1310,40 @@ let LIDOS = {};
 
 // O papel principal de um arquivo: o primeiro que a leitura reconheceu e que
 // não é "outro". É com ele que o arquivo é guardado no cadastro.
+{# ⚑ A CARTA DO COLABORADOR (24/11/2026). Ele: *"o documento aviso (…) a
+   gente ter a opção de anexar. Porque pode ser que a pessoa na obra já tenha
+   feito a cartinha e a gente vai anexar ao pedido."* Opcional: com a carta,
+   ela VALE como o pedido de demissão assinado (o DP confere ao atender) e o
+   sistema não gera outro para assinar; sem ela, o sistema gera o texto e a
+   pessoa assina pelo portal, como antes. Só aparece no pedido de demissão.
+   25/11/2026: *"pedido de demissão tem que ter carta de pedido sempre, seja
+   pelo painel, seja anexado."* O anexo continua opcional AQUI porque a outra
+   porta (assinar pelo portal) existe — mas o texto diz que uma das duas é
+   obrigatória, e o DP não consegue mais dar o passo por feito sem ela. #}
+function blocoDaCarta(t){
+  if (t.chave !== "DESLIGAMENTO") return "";
+  return `<div class="papeis oculto" id="p-carta-bloco">
+    <b>Carta de pedido de demissão</b>
+    <p class="ajuda">O pedido de demissão <b>sempre</b> precisa da carta do
+      colaborador. Se ele já escreveu e assinou, tire a foto ou anexe o PDF
+      aqui: ela vale como o pedido assinado e ele <b>não precisa assinar de
+      novo</b>. Se ainda não tem a carta, o sistema prepara o texto e ele
+      assina aqui no portal depois que o DP analisar — sem essa assinatura o
+      desligamento não segue.</p>
+    <input type="file" id="p-carta" accept="image/*,.pdf">
+  </div>`;
+}
+function ligarCarta(t){
+  if (t.chave !== "DESLIGAMENTO") return;
+  const mostrar = () => {
+    const f = els("p-forma_desligamento");
+    const ehPedido = !!f && /pedido/i.test(f.value || "");
+    els("p-carta-bloco").classList.toggle("oculto", !ehPedido);
+  };
+  els("p-campos").addEventListener("change", mostrar);
+  mostrar();
+}
+
 function tipoPrincipal(a){
   return (a.tipos || []).find(x => x !== "OUTRO") || "DOC-IDENTIDADE";
 }
@@ -1273,6 +1355,12 @@ function recalcularPapeis(){
   ARQUIVOS.forEach(a => (a.tipos || []).forEach(t => {
     if (t !== "OUTRO" && !PAPEIS[t]) PAPEIS[t] = {nome: a.nome};
   }));
+  {# ⚑ NO PEDIDO DE DEPENDENTE, o RG do dependente também é o documento dele
+     (25/11/2026) — a certidão já vem reconhecida como DOC-DEPENDENTE. Criança
+     só tem certidão; adulto pode mandar o RG. #}
+  if ((els("p-tipo") || {}).value === "DEPENDENTE" && !PAPEIS["DOC-DEPENDENTE"]
+      && PAPEIS["DOC-IDENTIDADE"])
+    PAPEIS["DOC-DEPENDENTE"] = PAPEIS["DOC-IDENTIDADE"];
 }
 
 function blocoDosPapeis(t){
@@ -1361,7 +1449,8 @@ function pintarPapeis(t){
           ${a.lendo ? "" : `<select data-arq-tipo="${i}" class="tipo-arquivo">
             ${(a.tipos || []).some(x => x !== "OUTRO") ? ""
               : `<option value="" selected>diga o que é este arquivo…</option>`}
-            ${Object.entries(ROTULO_PAPEL).filter(([c]) => c !== "DOC-DEPENDENTE")
+            ${Object.entries(ROTULO_PAPEL).filter(([c]) => c !== "DOC-DEPENDENTE"
+                || t.chave === "DEPENDENTE")
               .map(([c, r]) => `<option value="${c}"
                 ${(a.tipos || []).some(x => x !== "OUTRO") && tipoPrincipal(a) === c ? "selected" : ""}
                 >${esc(r)}</option>`).join("")}
@@ -1440,6 +1529,30 @@ async function receberArquivos(t, novos){
                                 tipos: [], documento: "", aviso: "", lendo: true}));
   ARQUIVOS = ARQUIVOS.concat(lote);
   pintarPapeis(t); conferirOQueFalta(t);
+  {# ⚑ NO PEDIDO DE DEPENDENTE, UM DOCUMENTO POR VEZ (25/11/2026). Ele: *"pode
+     ser que eu esteja cadastrando mais de um dependente."* A leitura em lote
+     devolve os dados de UMA pessoa — certo para a admissão (RG, CPF e
+     comprovante são do mesmo trabalhador), errado para três certidões de três
+     filhos. Aqui cada documento é lido sozinho e preenche o quadro de um
+     dependente. Custa uma leitura de IA por documento, e não uma por lote. #}
+  const partes = t.repete ? lote.map(a => [a]) : [lote];
+  LEITURA_DOS_DEPENDENTES = []; FUNCIONARIO_ACHADO = "";
+  for (const parte of partes) await lerParte(t, parte);
+  lote.forEach(a => { a.lendo = false; });
+  recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+  // Um recado só, no fim — o de cada documento apagava o do anterior.
+  if (t.repete && (LEITURA_DOS_DEPENDENTES.length || FUNCIONARIO_ACHADO))
+    recado((LEITURA_DOS_DEPENDENTES.length
+             ? `Lemos ${LEITURA_DOS_DEPENDENTES.length === 1 ? "o documento" : "os documentos"}`
+               + ` e preenchemos ${LEITURA_DOS_DEPENDENTES.map(n => n + "º").join(", ")}`
+               + ` dependente${LEITURA_DOS_DEPENDENTES.length > 1 ? "s" : ""}` : "")
+           + (FUNCIONARIO_ACHADO ? `${LEITURA_DOS_DEPENDENTES.length ? "; " : ""}`
+               + `achamos o colaborador pela certidão: ${FUNCIONARIO_ACHADO}` : "")
+           + " — confira.", "ok");
+}
+let LEITURA_DOS_DEPENDENTES = [], FUNCIONARIO_ACHADO = "";
+
+async function lerParte(t, lote){
   try {
     const fd = new FormData();
     lote.forEach(a => fd.append("arquivos", a.arquivo, a.nome));
@@ -1452,6 +1565,18 @@ async function receberArquivos(t, novos){
         a.tipos = x.tipos || ["OUTRO"]; a.documento = x.documento || "";
         a.aviso = x.aviso || "";
       });
+      // ⚑ NO PEDIDO DE DEPENDENTE, a leitura é do DEPENDENTE (25/11/2026).
+      // Ele: *"o sistema tá identificando como se fosse documento do titular
+      // (…) e ele não tá lendo o documento e preenchendo também não."* O que
+      // a certidão (ou o RG) diz vai para o quadro do dependente — nome,
+      // nascimento e, pela certidão, o parentesco —, nunca para os dados do
+      // colaborador. Só em campo vazio, como no resto.
+      if (t.repete) {
+        const qual = preencherDependente(t, d.campos || {}, lote);
+        if (qual) LEITURA_DOS_DEPENDENTES.push(qual);
+        await acharOFuncionario(t, d.campos || {});
+        return;
+      }
       // O que os documentos disseram entra nos campos VAZIOS — nunca por
       // cima do que a pessoa já escreveu. E fica marcado como LIDO, para ela
       // conferir.
@@ -1471,8 +1596,38 @@ async function receberArquivos(t, novos){
   } catch(e) {
     lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
   }
-  lote.forEach(a => { a.lendo = false; });
-  recalcularPapeis(); pintarPapeis(t); conferirOQueFalta(t);
+}
+
+{# ⚑ O FUNCIONÁRIO PELA CERTIDÃO (25/11/2026). Ele: *"o ideal era que ele
+   conseguisse buscar o nome do funcionário na hora que eu colocasse o
+   documento. Aí, se não, a pessoa fazia a pesquisa e selecionava."* A
+   certidão traz a mãe e o pai — um deles é o colaborador. Nome IGUAL a um só
+   colaborador do seu alcance: escolhido. Parecido ou mais de um: a lista
+   aparece para você escolher. Nada: fica a busca de sempre. Nunca troca o
+   colaborador que você já escolheu. #}
+async function acharOFuncionario(t, campos){
+  if (!els("p-pessoa") || els("p-pessoa").value) return;
+  const simples = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/\s+/g, " ").trim();
+  const nomes = [campos.nome_mae, campos.nome_pai].filter(n => (n || "").trim().length >= 5);
+  let iguais = [], primeiro = "";
+  for (const n of nomes) {
+    try {
+      const r = await fetch("/erp/portal/api/pessoas?q=" + encodeURIComponent(n)
+                            + "&tipo=" + encodeURIComponent(t.chave));
+      const d = await r.json();
+      const achados = (d && d.pessoas) || [];
+      if (achados.length && !primeiro) primeiro = n;
+      iguais = iguais.concat(achados.filter(p => simples(p.nome) === simples(n)));
+    } catch(e) { /* sem a busca, fica a de sempre */ }
+  }
+  if (iguais.length === 1) {
+    escolherPessoa(iguais[0]);
+    FUNCIONARIO_ACHADO = iguais[0].nome;
+  } else if (primeiro) {
+    els("p-pessoa-busca").value = primeiro;
+    procurarPessoa(primeiro);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1958,6 +2113,15 @@ async function enviarPedido(){
   // diz QUAL está incompleto — "falta a data de nascimento" não ajudaria
   // ninguém com três na tela.
   if (t.repete && REPETIDOS.length) corpo.dependentes = REPETIDOS;
+  // A carta do colaborador entra como papel do pedido, com o tipo dela
+  // (24/11/2026) — só se a forma escolhida ainda for o pedido de demissão.
+  const carta = els("p-carta");
+  const cartaVisivel = carta && !els("p-carta-bloco").classList.contains("oculto");
+  if (cartaVisivel && carta.files && carta.files[0]) {
+    ARQUIVOS = ARQUIVOS.filter(a => !(a.tipos || []).includes("PEDIDO-DEMISSAO"));
+    ARQUIVOS.push({arquivo: carta.files[0], nome: carta.files[0].name,
+                   tipos: ["PEDIDO-DEMISSAO"]});
+  }
   els("p-enviar").disabled = true;
   try {
     let d;
@@ -1970,7 +2134,11 @@ async function enviarPedido(){
       fd.append("pedido", JSON.stringify(corpo));
       ARQUIVOS.forEach(a => {
         fd.append("papeis", a.arquivo, a.nome);
-        fd.append("tipos", tipoPrincipal(a));
+        // No pedido de dependente, o RG é do DEPENDENTE: guardado como dele,
+        // e não como a identidade do colaborador (25/11/2026).
+        const tipoDoPapel = tipoPrincipal(a);
+        fd.append("tipos", t.chave === "DEPENDENTE" && tipoDoPapel === "DOC-IDENTIDADE"
+                           ? "DOC-DEPENDENTE" : tipoDoPapel);
       });
       const r = await fetch("/erp/portal/api/pedidos", {method: "POST", body: fd});
       d = await r.json().catch(() => ({}));

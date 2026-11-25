@@ -18,7 +18,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, g, jsonify, make_response, redirect, render_template, request,
-    session, url_for,
+    send_from_directory, session, url_for,
 )
 
 from sqlalchemy.exc import IntegrityError, ProgrammingError
@@ -299,6 +299,9 @@ ACOES_NA_TELA = (
                  # pediu acesso pelo ponto. É ação PRÓPRIA, mais estreita que
                  # `gerir_usuarios` — ver o comentário dela em `permissoes.py`.
                  "liberar_acesso_portal",
+                 # 25/11/2026: o DP VÊ a fila (sem os botões); só o
+                 # administrador libera.
+                 "ver_pedidos_de_acesso",
                  # ⚑ CONFIGURAR MENSAGENS (17/11/2026): o bloco "Mensagens" da
                  # ficha da pessoa mora no `erp_base.html` (é o mesmo na ficha
                  # do Pessoal e na do ponto) e oferece "Mandar um teste agora".
@@ -962,8 +965,20 @@ def pagina_inicio():
     # inteira — é aqui que ela escolhe para onde ir, e oferecer uma área que
     # responde 403 é pior do que não mostrá-la.
     modulos_visiveis, _ = _menu_da_pessoa(pode)
+    # ⚑ OS PEDIDOS DE ACESSO AO PORTAL, para quem libera (25/11/2026). Ele:
+    # *"como é que a gente vai ver que tem pendente na hora que entrar"* —
+    # um cartão aqui, na porta de entrada, como o da agenda. Uma contagem.
+    pedidos_de_acesso = 0
+    if pode.get("liberar_acesso_portal"):
+        try:
+            from app.apps.erp.core.auth import pedidos_de_portal as _fila
+            with get_session() as s:
+                pedidos_de_acesso = _fila.quantos_pendentes(s.connection())
+        except Exception:
+            logger.warning("ERP: contagem dos pedidos de acesso indisponível")
     return render_template("erp_inicio.html", modulos=modulos_visiveis, modulo=None,
                            abas=[], aba_ativa="", agenda=agenda,
+                           pedidos_de_acesso=pedidos_de_acesso,
                            usuario_nome=session.get("erp_usuario_nome", ""),
                            usuario_perfil=session.get("erp_usuario_perfil", ""),
                            # `pode` é do molde comum a todas as telas: o
@@ -9822,7 +9837,7 @@ def api_colaborador_acesso(colaborador_id: int):
 # ===========================================================================
 @bp.route("/erp/api/portal/pedidos-de-acesso")
 @login_obrigatorio
-@permissao("liberar_acesso_portal")
+@permissao("ver_pedidos_de_acesso")
 def api_pedidos_de_acesso():
     from app.apps.erp.core.auth import pedidos_de_portal as fila
     try:
@@ -14085,6 +14100,92 @@ def pagina_portal():
     return render_template("erp_portal.html", pode_mais_que_o_portal=mais)
 
 
+# ===========================================================================
+# O MANUAL DO PORTAL DA OBRA (25/11/2026, pedido do dono: "preciso criar um
+# manual do portal de solicitações (…) no padrão do manual do ponto. Clique
+# pra visualizar online e ainda possibilidade de baixar pdf").
+#
+# ⚑ MESMO DESENHO DO MANUAL DO PONTO: página fixa em `manual_portal/`
+# (index.html + telas/ + o PDF impresso dela pelo Chromium), sem dado de
+# ninguém — as telas são de um banco de teste, com nomes inventados.
+#
+# ⚑ MAS, AO CONTRÁRIO DO MANUAL DO PONTO, **ELE EXIGE LOGIN** — e foi decisão
+# dele no mesmo dia em que o manual nasceu, depois de procurar o link e não
+# achar: *"eu acho que o ideal é na tela depois do login, né? (…) porque não
+# fica exposto esse manual. Só para quem tem acesso."*
+#
+# O manual do ponto é público porque qualquer colaborador precisa dele para o
+# PRIMEIRO acesso, e não há login a exigir. Aqui o cálculo é outro: o portal
+# descreve como a empresa trabalha por dentro — quem pede o quê, quem assina,
+# quem libera o quê —, e isso não precisa ficar aberto na internet. A ação é a
+# mais baixa que existe (`ver_erp`): qualquer um que entre no sistema lê.
+#
+# ⚠️ O QUE ISSO CUSTA, e ele sabe: quem está criando o primeiro acesso NÃO
+# consegue mais ler o manual, e é justamente a parte 1 que explica aquela
+# tela. Quem está travado na porta depende de alguém mandar o PDF.
+#
+# ⚠️ AO MUDAR UMA TELA OU UMA REGRA QUE A OBRA VÊ, o manual fica velho. A
+# parte correspondente precisa ser conferida, e o PDF, reimpresso.
+# ===========================================================================
+# ⚑ FORA DE `static/`, E ISSO É A TRAVA, NÃO ARRUMAÇÃO. A pasta `static/` do
+# blueprint é servida pelo Flask em `/erp/static/...` SEM passar por login
+# nenhum — é onde moram o CSS e os ícones. Manual guardado lá continuaria
+# aberto na internet por esse caminho, e o login destas rotas seria encenação.
+# Aqui dentro, só estas quatro rotas alcançam o arquivo.
+PASTA_MANUAL_PORTAL = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "manual_portal")
+
+
+@bp.route("/erp/portal/manual/")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_manual_portal():
+    resposta = send_from_directory(PASTA_MANUAL_PORTAL, "index.html",
+                                   mimetype="text/html")
+    resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
+
+
+@bp.route("/erp/portal/manual")
+@bp.route("/erp/portal/manual.html")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_manual_portal_sem_barra():
+    return redirect("/erp/portal/manual/", code=301)
+
+
+@bp.route("/erp/portal/manual/telas/<nome>")
+@login_obrigatorio
+@permissao("ver_erp")
+def manual_portal_tela(nome: str):
+    """Uma das telas do manual.
+
+    ⚑ O NOME É CONFERIDO CONTRA O QUE EXISTE NA PASTA, e não é zelo
+    decorativo: esta é a única rota do manual que recebe algo de fora. O
+    `send_from_directory` já barra `../`, mas depender de uma defesa só, numa
+    rota que monta caminho de arquivo, é apostar que ninguém vai trocar a
+    função um dia. Nome que não está na pasta responde **404**, como manda a
+    regra de escopo do ERP — e não 403, que confirmaria o que existe.
+    """
+    pasta = os.path.join(PASTA_MANUAL_PORTAL, "telas")
+    if nome not in set(os.listdir(pasta)):
+        raise ErroNaoEncontrado("Esta tela do manual não existe.")
+    resposta = send_from_directory(pasta, nome)
+    # ⚑ `private`: a imagem só vale para quem está logado, e um cache
+    # compartilhado (o proxy da obra) não pode servi-la a quem não está.
+    resposta.headers["Cache-Control"] = "private, max-age=86400"
+    return resposta
+
+
+@bp.route("/erp/portal/manual.pdf")
+@login_obrigatorio
+@permissao("ver_erp")
+def manual_portal_pdf():
+    return send_from_directory(PASTA_MANUAL_PORTAL, "manual-portal-da-obra.pdf",
+                               mimetype="application/pdf",
+                               download_name="Manual do Portal da Obra.pdf")
+
+
 @bp.route("/erp/portal/api/inicio")
 @login_obrigatorio
 @permissao("ver_erp")
@@ -14264,7 +14365,8 @@ def api_portal_ler_documentos():
             svc_portal.quem_esta(s, _usuario_logado(s))     # 401 se não entrou
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
-    arquivos = [(f.read(), f.filename or "documento")
+    from app.apps.erp.core.comum.fotos import heic_para_jpeg
+    arquivos = [heic_para_jpeg(f.read(), f.filename or "documento")
                 for f in request.files.getlist("arquivos")][:svc_doc.TETO_DE_ARQUIVOS]
     if not arquivos:
         return jsonify({"ok": False, "erro": "Nenhum arquivo."}), 400
@@ -14295,10 +14397,13 @@ def api_portal_abrir():
         if request.files:
             dados = _json.loads(request.form.get("pedido") or "{}")
             tipos_dos_papeis = request.form.getlist("tipos")
-            arquivos = [{"conteudo": f.read(), "nome": f.filename or "documento",
-                         "tipo": (tipos_dos_papeis[i] if i < len(tipos_dos_papeis)
-                                  else "")}
-                        for i, f in enumerate(request.files.getlist("papeis"))]
+            from app.apps.erp.core.comum.fotos import heic_para_jpeg
+            arquivos = []
+            for i, f in enumerate(request.files.getlist("papeis")):
+                conteudo, nome = heic_para_jpeg(f.read(), f.filename or "documento")
+                arquivos.append({"conteudo": conteudo, "nome": nome,
+                                 "tipo": (tipos_dos_papeis[i]
+                                          if i < len(tipos_dos_papeis) else "")})
         else:
             dados = request.get_json(silent=True) or {}
             arquivos = []
@@ -14333,10 +14438,11 @@ def api_portal_devolver(devolucao_id: int):
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
     try:
+        from app.apps.erp.core.comum.fotos import heic_para_jpeg
+        conteudo, nome = heic_para_jpeg(arquivo.read(), arquivo.filename or "documento")
         with get_session() as s:
-            r = svc_portal.devolver(s, devolucao_id, arquivo.read(),
-                                    _usuario_logado(s),
-                                    arquivo.filename or "documento")
+            r = svc_portal.devolver(s, devolucao_id, conteudo,
+                                    _usuario_logado(s), nome)
             s.commit()
             return jsonify({"ok": True, **r})
     except svc_portal.SemAcesso as e:
@@ -14372,10 +14478,11 @@ def api_portal_termo(termo_id: int):
                                 "termo": termos.para_assinar(s, termo_id, obras)})
             conduz = {"colaborador_id": eu.get("colaborador_id"), "nome": eu["nome"]}
             if request.files.get("arquivo") is not None:
+                from app.apps.erp.core.comum.fotos import heic_para_jpeg
                 arq = request.files["arquivo"]
-                r = termos.enviar_papel(s, termo_id, obras, conteudo=arq.read(),
-                                        nome_arquivo=arq.filename or "assinado",
-                                        conduzido_por=conduz)
+                conteudo, nome = heic_para_jpeg(arq.read(), arq.filename or "assinado")
+                r = termos.enviar_papel(s, termo_id, obras, conteudo=conteudo,
+                                        nome_arquivo=nome, conduzido_por=conduz)
             else:
                 d = request.get_json(silent=True) or {}
                 if d.get("acao") == "recusa":

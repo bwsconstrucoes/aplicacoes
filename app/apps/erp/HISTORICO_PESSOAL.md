@@ -141,6 +141,332 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (4) — O manual do Portal da Obra: online e em PDF
+
+**Ele:**
+
+> *"Preciso criar um manual do portal de solicitações com o que temos até
+> então. No padrão do manual do ponto. Clique pra visualizar online e ainda
+> possibilidade de baixar pdf. Subdividir ele pelas áreas e explicar pra que
+> serve e como ele funciona."*
+
+**O que existe agora**, no mesmo desenho do manual do ponto (que está de pé
+desde 15/10/2026 e já provou que funciona):
+
+| | Onde |
+|---|---|
+| A página | `/erp/portal/manual/` (e `/erp/portal/manual`, que redireciona) |
+| O PDF | `/erp/portal/manual.pdf` — 23 páginas A4 |
+| Os arquivos | `app/apps/erp/manual_portal/` (index.html + `telas/` + o PDF) |
+| Os links | **📖 Manual** na barra azul do portal (sem rolar) e no pé da página |
+
+#### ⚑ ELE MUDOU DUAS COISAS NO MESMO DIA, e as duas são a mesma frase
+
+> *"Eu não entendi bem exatamente onde é que está o link para acesso ao
+> manual. Mas eu acho que o ideal é na tela depois do login, né? Você loga,
+> aí a tela de entrada e nela a coisa, porque não fica exposto esse manual.
+> Só para quem tem acesso."*
+
+**1. O link subiu para o alto.** Ele estava só no PÉ da página, e o dono não
+achou. Link que a pessoa precisa procurar é link que não existe. Agora está na
+barra azul, visível na primeira tela depois de entrar — e continua no pé, para
+quem rolou a página inteira e ficou com dúvida. São dois caminhos para a mesma
+porta, na mesma tela: não é o "cardápio de portas" que a regra proíbe.
+
+**2. O manual DEIXOU DE SER PÚBLICO.** Nasceu público, no desenho do manual do
+ponto. As quatro rotas passaram a exigir login (`ver_erp`, a ação mais baixa
+que existe: qualquer um que entre no sistema lê). O link saiu da tela pública
+de **criar o acesso**, que é de quem ainda não entrou.
+
+⚠️ **A TRAVA DE VERDADE NÃO É O DECORADOR — É A PASTA.** O manual morava em
+`static/manual_portal/`, e o `static/` do blueprint é servido pelo Flask em
+`/erp/static/...` **sem passar por login nenhum** (é onde vivem o CSS e os
+ícones). Enquanto esteve lá, `/erp/static/manual_portal/index.html` respondia a
+qualquer um, e o login das rotas seria encenação. **Conferido no navegador:
+respondia mesmo, 200.** Por isso a pasta mudou para `app/apps/erp/manual_portal/`,
+fora do `static/`, e há teste travando o retorno dela.
+
+⚠️ **O QUE ISSO CUSTA, e está dito porque é real:** quem está criando o
+primeiro acesso **não consegue mais ler o manual** — e é a parte 1 que explica
+justamente aquela tela. Quem travar na porta depende de alguém mandar o PDF.
+Foi escolha dele, com o motivo dele: o manual conta como a empresa trabalha por
+dentro, e isso não precisa ficar aberto na internet.
+
+**Por que o manual do PONTO continua público e isso não é incoerência:** lá o
+manual ensina o primeiro acesso de quem nunca teve senha — não há login a
+exigir. Aqui o acesso já existe antes de a pessoa precisar do manual.
+
+#### Dois defeitos que a homologação pegou ao fechar o manual
+
+Nenhum dos dois tem a ver com o pedido dele — apareceram porque, ao exigir
+login, o manual passou a ser **tela do ERP** e entrou nos testes que toda tela
+do ERP enfrenta. Valem registro porque custariam caro soltos:
+
+1. **A página não tinha `<body>`.** Ela nasceu copiando o esqueleto do manual
+   do ponto, que também não tem — o navegador fecha sozinho e ninguém nota. A
+   homologação exige, e está certa. Agora o manual tem `</head><body>…</body>`.
+2. **O teste de homologação quebrava no PDF.** Ele lê toda resposta como texto
+   UTF-8 e procura `<body`; o PDF é binário e estourava no primeiro byte. Não
+   era defeito do manual: o teste supunha que toda rota de TELA devolve
+   página. Agora ele olha o `Content-Type` e, no que não é HTML, confere o que
+   faz sentido (abriu 200, não jogou ninguém para o login). **Mexe num
+   arquivo que serve o ERP inteiro** — vale para qualquer rota futura que
+   entregue arquivo.
+
+**Subdividido pelas áreas, como ele pediu**, e as fechadas entram também: 1
+entrar · 2 a tela inicial · **3 Colaboradores (os 14 pedidos, grupo a grupo)**
+· **4 Suprimentos** · **5 Pagamentos** · **6 Diário de obra** · 7 pendências
+(assinar e devolver) · 8 avisos · 9 acompanhar · 10 quem vê o quê · 11 pode e
+não pode · 12 mensagens da tela · 13 dúvidas.
+
+⚑ **Por que a área FECHADA ganhou parte própria no manual:** é a mesma razão
+pela qual ela aparece no portal (`core/portal.py`). Manual que pula Suprimentos
+faria a obra achar que nunca vai existir — e continuar pedindo material por
+WhatsApp, que é o que se quer acabar. A parte dela diz uma frase: *continue
+pedindo como você pede hoje*.
+
+**As 17 telas são de um banco de teste**, com nomes, CPFs e obra **inventados**
+— nenhuma pessoa de verdade entra no repositório.
+
+#### O que foi feito para o manual NÃO envelhecer em silêncio
+
+É o risco de verdade deste trabalho, e o manual do ponto já viveu isso
+(*"ao mudar uma tela ou uma regra que o colaborador vê, o manual fica velho"*).
+Três coisas, porque lembrar não é um plano:
+
+1. **`tests/test_manual_do_portal.py`** quebra quando uma **área** nova ou um
+   **tipo de pedido** novo não aparecem no manual, quando a conta de pedidos
+   escrita nele não bate com a tela, quando uma imagem citada não existe, e
+   quando uma área fechada é descrita como aberta. Já pegou uma tela sobrando
+   na pasta.
+2. **`app/apps/erp/scripts/semear_manual_portal.py`** monta de novo o portal
+   cheio (obra, equipe, pedidos em quatro situações, pendências, avisos e um
+   aviso prévio para assinar) num banco de teste. **Recusa qualquer banco sem
+   "teste" no nome.** Sem ele, refotografar custa meia hora de dado montado à
+   mão — e é esse custo que faz manual morrer.
+3. **`app/apps/erp/scripts/imprimir_manual_portal.js`** reimprime o PDF da
+   própria página. O PDF é cópia: mudar a página e não reimprimir deixa os
+   dois diferentes, e **nada acusa** — está anotado em `PERGUNTAS.md` como
+   limite conhecido.
+
+#### O que o teste NÃO alcança, e fica dito
+
+Ele confere **nomes e contas**, não redação. Tela que muda de jeito sem mudar
+de nome passa batida — por exemplo, se o botão "Enviar o pedido" virar outra
+coisa, ou se a ordem dos blocos do portal mudar de novo (mudou em 23 e em
+24/11). Quem mexer no portal continua tendo de olhar a parte correspondente.
+
+⚑ **O manual já nasceu tendo de alcançar a `main` — e isso prova o risco
+acima.** Entre escrever e publicar, outros chats publicaram três mudanças que
+a obra VÊ, e as três entraram no texto antes de o manual subir: **quem libera
+o acesso ao portal é o ADMINISTRADOR** (era "o DP libera", e o teste de nomes
+não pegaria isso), a **carta do pedido de demissão** passou a ser sempre
+exigida, e a leitura de documentos passou a aceitar **PDF, foto grande, foto
+de iPhone e a certidão de nascimento do dependente**. As 17 telas foram
+refotografadas contra a `main` e comparadas pixel a pixel com as antigas:
+três tinham mudado.
+
+**Arquivos compartilhados mexidos** (importa para quem roda outro chat do
+ERP): `routes.py` (quatro rotas novas, junto da `pagina_portal`),
+`tests/test_permissoes_rotas.py` e `PERGUNTAS.md`. Mexidos também
+`templates/erp_portal.html` (o link no pé) e
+`templates/erp_primeiro_acesso_portal.html` (o link antes de entrar).
+**Sem migração de banco.**
+
+---
+
+### 25/11/2026 (3) — Três decisões dele: carta sempre, ponto na hora, foto de iPhone
+
+Ele: *"Pedido de demissão tem que ter carta de pedido sempre, seja pelo painel,
+seja anexado. A admissão pedida pelo portal, sim, o cara imediatamente já pode
+bater ponto. Foto de iPhone no portal, sim, tem que aceitar também."*
+
+- **Carta sempre** (fecha a "decisão minha, a confirmar" de 24/11 (5)). As
+  duas portas continuam: a carta anexada pela obra, ou o texto que a pessoa
+  assina pelo portal (ou no papel, fotografado — plano B do termo). O que
+  mudou é que **não há terceira**: no pedido de demissão, o passo "Pedido de
+  demissão assinado" não aceita mais "feito por fora do sistema" nem "não se
+  aplica" (`desligamento_processo.marcar` recusa; a tela esconde o link pelo
+  `sem_marca_manual`), e a trava da rescisão diz "a carta ainda não voltou".
+  O texto do portal deixou de dizer "(opcional)": diz que uma das duas é
+  obrigatória. Marca manual feita ANTES disto continua valendo (não mexi em
+  dado gravado).
+- **Ponto na hora:** já era assim — o pré-cadastro da admissão pedida pela obra
+  bate ponto antes de o DP atender. Nada mudou no código; fica registrado que
+  é a decisão dele, não um descuido. Quem não for admitido sai pelo
+  "Cancelado", que conta como desligado e corta o ponto.
+- **Foto de iPhone (HEIC):** dependência nova `pillow-heif`, com o ok dele.
+  `core/comum/fotos.py` converte para JPG na chegada dos quatro envios do
+  portal; o leitor por IA também abre HEIC. Ver `CONTEXTO.md` §9, 25/11/2026.
+  Não testado com um iPhone de verdade: o teste gera um HEIC na hora.
+
+### 25/11/2026 (2) — Liberar o acesso ao portal é do administrador; o DP só vê a fila
+
+Ele: *"o portal não é só para o DP (…) quem é para fazer a liberação tem que
+ter acesso à parte de operadores (…) dizer o tipo de pessoa, o tipo de obra
+(…) isso não é o DP quem vai fazer"*; e, ajustando a proposta: *"o DP pode ser
+avisado. É bom que ele visualize (…) ele só não vai ter o botão (…) para o
+administrador, tanto no aviso no celular como na tela de início do ERP."*
+- `liberar_acesso_portal` → só ADMIN (e quem gere operadores, por
+  implicação). Ação nova `ver_pedidos_de_acesso` (ADMIN e DP) para VER a fila.
+  A seção "Acesso ao portal" ganhou LER (ver) além de EDITAR (liberar).
+  **Migração 128**: o perfil pronto "Departamento pessoal" desce de EDITAR
+  para LER nessa seção.
+- **Configurações › Operadores** tem agora, no topo, o bloco "Pedidos de
+  acesso ao portal (N)" com Liberar (confirma o e-mail e abre o cadastro do
+  operador já com a pessoa, para perfil e obras) e Recusar (com motivo).
+- **Colaboradores** (DP): a fila continua aparecendo, só leitura, com
+  "quem libera é o administrador" (para o ADMIN, um link "Liberar em
+  Operadores").
+- **Tela de início**: cartão "N pedidos de acesso ao portal esperando
+  liberação", só para quem libera, levando a Operadores.
+- **Aviso no celular**: `pedidos_de_portal.avisar_administradores`, no pedido
+  NOVO (repetido e correção de e-mail não avisam), a cada ADMIN ativo com
+  telefone ou CPF, pela mensageria com o tipo novo `erp.acesso_portal`
+  (`mensageria/core.py` — registrado lá).
+
+### 25/11/2026 — Dependente com certidão de nascimento: reconhecida, guardada como do dependente e lida para o quadro dele
+
+Ele, cadastrando uma criança: *"ele só tem certidão de nascimento e o sistema
+tá exigindo RG"*; e *"o sistema tá identificando como se fosse documento do
+titular (…) e ele não tá lendo o documento e preenchendo também não."*
+Três defeitos juntos:
+- A leitura em lote (`documentos_de_pessoa.ler_varios`) não conhecia certidão:
+  `TIPOS_RECONHECIDOS` e a instrução ganharam DOC-DEPENDENTE (certidão de
+  nascimento ou casamento), e a instrução diz que na certidão o nome é o de
+  quem nasceu, não o dos pais.
+- O "diga o que é este arquivo" do portal escondia "Documento do dependente";
+  agora aparece no pedido de dependente. Nesse pedido, um RG também conta
+  como documento do dependente — e é GUARDADO como DOC-DEPENDENTE, não como a
+  identidade do titular.
+- A leitura preenchia só os campos do formulário comum; o dependente vive em
+  quadros repetidos. Agora o que a leitura achou vai para o primeiro quadro
+  sem nome (nome, nascimento e, pela certidão, parentesco Filho/Cônjuge), só
+  em campo vazio, e o recado pede para conferir. Não toca nos dados do
+  colaborador.
+- **Vários dependentes de uma vez** — ele: *"pode ser que eu esteja
+  cadastrando mais de um dependente."* No pedido de dependente cada documento
+  é lido SOZINHO (a leitura em lote supõe uma pessoa só) e preenche o quadro
+  de um dependente. Custo: uma leitura de IA por documento, e não uma por lote.
+- **O funcionário pela certidão** — ele: *"o ideal era que ele conseguisse
+  buscar o nome do funcionário na hora que eu colocasse o documento. Aí, se
+  não, a pessoa fazia a pesquisa e selecionava."* A certidão traz mãe e pai;
+  nome IGUAL a um só colaborador do alcance de quem pede → escolhido; parecido
+  ou vários → a lista aparece; nada → a busca de sempre. Nunca troca quem já
+  foi escolhido. Um recado só no fim diz o que foi preenchido.
+- **E a leitura nem acontecia** (mesmo dia, ele: *"a IA não tá conseguindo
+  fazer a leitura"*, com "não consegui ler"): as duas leituras de
+  `documentos_de_pessoa` mandavam o arquivo CRU como imagem. PDF cru a IA
+  recusa (certidão chega muito em PDF), e foto de celular inteira estoura o
+  tamanho. Agora usam o preparo do `documentos/leitor.py`: PDF vira PNG (até 2
+  páginas por arquivo) e foto é reduzida a 1800 px. Isso vale também para a
+  admissão. NÃO coberto: foto HEIC de iPhone (o Pillow não abre sem uma
+  biblioteca a mais — dependência nova, perguntar) e o teto de IA da pessoa
+  (se ele estourar, a leitura também volta "não consegui ler").
+- Conferido no navegador com respostas simuladas (dois documentos, dois
+  quadros preenchidos com parentesco Filho, a mãe achada). Não verificado com
+  uma certidão de verdade (a leitura usa a IA).
+
+### 24/11/2026 (5) — Pedido de demissão: "sai de imediato ou trabalha o aviso" é da obra; a carta anexada vale como assinada
+
+Ele: *"o mais comum é que o colaborador peça para sair de imediato (…) o campo
+data do aviso prévio está obrigatório (…) vamos ajustar para poder a gente
+trabalhar de uma forma ou de outra"*; *"pode ser que a pessoa na obra já tenha
+feito a cartinha e a gente vai anexar ao pedido"*; e sobre o texto gerado
+para assinar: *"acho que esse fluxo não se encaixa bem aqui, já que é o
+colaborador que está pedindo."*
+- No pedido de demissão (e só nele, `visiveis_se`), a obra responde **"O
+  colaborador vai trabalhar o aviso?"** — "Não — sai de imediato (pede
+  dispensa do aviso)" vem primeiro. Obrigatório nessa forma. Saiu dos campos
+  do DP (o DP corrige se precisar). A data passou a se chamar "Data do aviso
+  prévio (no pedido de demissão, a data do pedido)" — ela continua
+  obrigatória: é o dia em que a pessoa pediu, base da rescisão.
+- **A carta** (portal, opcional, só no pedido de demissão): anexada, entra
+  como documento "Pedido de demissão assinado" do pedido. No atendimento,
+  `desligamento_processo.gerar_termo` acha a carta e a registra como o
+  documento assinado (no papel, já validado pelo DP que atendeu) — a pessoa
+  NÃO assina de novo e o processo segue (`termo_voltou`). Sem carta, o
+  sistema gera o texto e a obra colhe a assinatura no portal, como antes.
+- **Decisão minha, a confirmar com ele:** mantive o texto gerado para quando
+  não há carta. A lei pede o pedido escrito e assinado pela pessoa; o texto
+  gerado é o "papel pronto" que ela lê e assina no celular. A alternativa
+  seria exigir a carta sempre.
+- A tela do formulário no portal NÃO foi vista no navegador (o mecanismo de
+  mostrar/esconder é o mesmo dos outros pedidos; o servidor tem teste).
+
+### 24/11/2026 (5) — Aba "Operador" na ficha da pessoa, com o MESMO formulário
+
+**Ele:**
+
+> *"Quando eu entro no cadastro de um colaborador em pessoal, eu queria ter
+> acesso à parte de operadores, para editar o cadastro dele, ou seja, ter a
+> aba lá, operadores (…) da mesma forma que tem lá cadastro, ponto,
+> mensagens, aí ter operador, aí clicar e abrir o cadastro operador. **Mas sem
+> fechar o modal inicial**, permitindo voltar para ver as outras configurações
+> da pessoa."*
+
+**O que mudou:** a ficha da pessoa ganhou a aba **Operador**, ao lado de
+Resumo, Ponto, Pagamentos, Documentos e Mensagens. Ela abre o cadastro de
+operador inteiro — perfil, perfis acrescentados, obras, cargo, fundo fixo,
+senha, situação — **dentro da ficha**. Salvar **não fecha nada**: o aviso
+aparece ali e dá para voltar para as outras abas.
+
+**Só para quem gere operadores.** É a mesma alçada que a tela de
+Configurações exige; não pode ser menor só porque o caminho é outro.
+
+#### ⚑ A DECISÃO QUE IMPORTA: é o MESMO formulário, não uma cópia
+
+O formulário morava dentro do `erp_config.html` (470 linhas). Copiá-lo daria
+**duas telas de cadastro de operador**, e no primeiro ajuste uma ficaria para
+trás — a regra dele de 17/11 ("um cadastro, uma porta") e a mesma lição da
+tela de fases que nasceu e morreu em 24/11.
+
+Então ele saiu para **`erp_operador_form.html`**, e as duas telas fazem
+`{% include %}` do mesmo arquivo. Ganhou dois parâmetros:
+
+- `alvo` — onde desenhar (sem ele, a janela de Configurações, como sempre);
+- `aoSalvar` — o que fazer depois (antes chamava `carregarOperadores()`
+  direto, função que só existe numa das telas: seria "is not defined" na
+  outra).
+
+**Há teste travando isso** (`test_o_formulario_do_operador_mora_num_lugar_so`):
+ele acusa se alguém declarar `formOperador` fora do arquivo compartilhado, ou
+se uma das duas telas deixar de incluí-lo.
+
+#### A aba NÃO vira uma segunda porta para criar acesso
+
+Pessoa sem operador ligado vê um recado explicando e um botão para o cadastro
+completo — **liberar acesso continua sendo só na aba Endereço**, onde está o
+e-mail que vira o login. Duas portas para criar acesso é exatamente o que ele
+cobrou em 17/11.
+
+#### Dois consertos que vieram de arrasto
+
+1. **A ficha não sabia se a pessoa tem acesso.** O `usuario_id` não vinha no
+   que a ficha carrega, então a aba achava que ninguém tinha operador.
+   Achado dirigindo a tela, não por teste.
+2. **As vigias de tela não enxergavam `{% include %}`.** Elas liam o arquivo
+   cru, então o formulário incluído era invisível para elas e toda vigia
+   acusava "chama função que não existe". Agora resolvem o include **no
+   lugar** — importa que seja no lugar, e não no fim: o include fica DENTRO
+   de um `<script>`, e jogado no fim cairia fora de qualquer bloco.
+
+**Arquivos compartilhados mexidos** (importa para quem roda outro chat do
+ERP): `erp_config.html`, `tests/test_telas_javascript.py` e
+`core/pessoal.py`. Nasceu `templates/erp_operador_form.html`.
+
+⚑ **A junção com a `main` teve de ser feita à mão, e isto vai acontecer de
+novo:** enquanto este formulário mudava de lugar, dois commits da `main` (a
+entrada (3) e a (4), logo abaixo) mexiam DENTRO dele — "cargo base", "a obra
+do ponto + as marcadas", "confere equipamentos" e a lista de obras que volta a
+aparecer. O Git não tinha como casar as duas coisas: um lado trocou 504 linhas
+por um `include`, o outro editou aquelas 504 linhas. As quatro mudanças deles
+foram levadas para dentro de `erp_operador_form.html` uma a uma, com os
+comentários que explicam cada decisão. **Quem for mexer no cadastro do
+operador agora mexe num arquivo só** — era justamente esse o ganho.
+
+---
+
 ### 24/11/2026 (4) — Toda lista de caixinhas longa ganha busca; "responde" vira "confere equipamentos"; "a obra do ponto + as marcadas"
 
 Ele: *"isso aí já é básico e já é para estar assim, nas regras gerais do

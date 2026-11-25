@@ -188,6 +188,14 @@ def _trechos_colaborador(conn: Connection) -> dict:
         # com ele mesmo: "ele tá bloqueando pq meu cadastro é de Prolabore"). Só a pessoa de teste; as horas
         # continuam fora das contas de CTPS (`relatorios.conta_horas`).
         trechos["nao_bate"] = f"CASE WHEN COALESCE(pc.ensaio, FALSE) THEN NULL::text ELSE ({trechos['nao_bate']}) END"
+    # O VÍNCULO NA BASE ERP (25/11/2026, o dono: "só aparece falta de 8 pessoas (…) horas extras, pouquíssimas").
+    # Com a planilha, o "Tipo" vinha "CTPS"; com o cadastro do ERP como base (desde 17/11), vinha o TIPO DE CONTRATO
+    # ("CLT_INDETERMINADO"…) — e `relatorios.conta_horas`, que só aceitava "CTPS", tirava todo mundo de carteira dos
+    # relatórios e do fechamento. Agora vem o VÍNCULO do cadastro (CTPS / PRESTADOR) e, sem ele, o tipo de contrato.
+    if trechos.get("tipo_cadastro") == "c.tipo_contrato" and _tem_tipo_contrato(conn) and db.um(
+            conn, """SELECT 1 AS x FROM information_schema.columns WHERE table_schema = 'public'
+                      AND table_name = 'colaboradores' AND column_name = 'vinculo'"""):
+        trechos["tipo_cadastro"] = "COALESCE(NULLIF(btrim(c.vinculo), ''), NULLIF(btrim(c.tipo_contrato), ''))"
     # O que a planilha diz, mesmo quando uma exceção passa por cima — a janela da pessoa mostra os dois.
     trechos["nao_bate_planilha"] = trechos["nao_bate"]
     # BATE PONTO POR EXCEÇÃO (31/10/2026, migração 025; o dono: "são exatamente as regras da planilha que eu quero
