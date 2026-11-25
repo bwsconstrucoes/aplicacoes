@@ -482,6 +482,9 @@
   .he-grade { font-size:12px; } .he-grade th, .he-grade td { padding:3px 4px; text-align:center; white-space:nowrap; }
   .he-grade .he-nome { text-align:left; position:sticky; left:0; background:var(--fundo, #fff); min-width:190px; z-index:1; }
   .he-grade .he-nome small { display:block; } .he-grade .fds { background:#F3F4F6; }
+  .he-grade .fer { background:#FDE7C2; } .he-grade th .sem { display:block; font-weight:600; color:#6B7280; }
+  .he-grade .aj { font-size:10px; color:#7C3AED; vertical-align:super; margin-left:1px; }
+  .he-secao { margin:22px 0 2px; padding:8px 10px; border-left:4px solid #B45309; background:#FFF7ED; border-radius:6px; }
   .he-grade td.he-cel { cursor:pointer; font-family:var(--fonte-dados); }
   .he-grade td.he-cel:hover, .he-grade td.he-dia:hover { background:#EAF1FB; } .he-grade td.he-dia { cursor:pointer; }
   .he-grade td.marcada { outline:2px solid #2563EB; outline-offset:-2px; background:#E8F0FE; }
@@ -5612,8 +5615,10 @@ function fechGrupos() {
   const pessoaDe = x => {
     const g = grupos[x.obra_do_dia] ||= {obra: x.obra_do_dia, nome: x.obra_nome, pessoas: {}, porDia: {}, total: 0, atrasos: 0};
     const p = g.pessoas[x.colaborador_id] ||= {id: x.colaborador_id, nome: x.nome, funcao: x.funcao || "", banco: x.banco,
-                                               dias: {}, negadas: {}, negativos: {}, trabalhou: {}, total: 0, atrasos: 0, primeiro: x.data};
+                                               vinculo: ({CTPS: "CLT", Prestador: "Prestador"})[x.vinculo] || "",
+                                               dias: {}, negadas: {}, negativos: {}, trabalhou: {}, ajustados: {}, total: 0, atrasos: 0, primeiro: x.data};
     if (x.data < p.primeiro) p.primeiro = x.data;
+    if (x.ajustado) p.ajustados[x.data] = true;
     return [g, p];
   };
   // as horas a menos (30/10/2026), em vermelho: o atraso soma em "atrasos" (e sai do saldo, com o abatimento ligado)
@@ -5633,13 +5638,28 @@ function fechGrupos() {
   const noCalendario = new Set([...(RL.he_dias || []), ...(RL.neg_dias || [])].map(x => x.colaborador_id));
   (RL.trab_dias || []).forEach(x => { if (RL.calendario_todos || noCalendario.has(x.colaborador_id)) pessoaDe(x)[1].trabalhou[x.data] = x.minutos; });
   const obras = Object.values(grupos).sort((a, b) => (a.obra || "~").localeCompare(b.obra || "~"));
+  // o feriado (25/11/2026): o nacional, em toda obra; o estadual, o municipal e o da obra, onde a pessoa estava
+  const empresaDa = RL.obra_empresa || {}, nomes = RL.empresas_nomes || {};
   obras.forEach(g => {
     g.lista = Object.values(g.pessoas).sort((a, b) => a.nome.localeCompare(b.nome));
     g.lista.forEach(p => { p.saldo = p.total - (RL.abater && !p.banco ? p.atrasos : 0); });
     g.saldo = g.lista.reduce((s, p) => s + p.saldo, 0);
+    g.feriados = {...(RL.feriados_nacionais || {}), ...((RL.feriados_por_obra || {})[g.obra] || {})};
+    const emp = empresaDa[g.obra];
+    g.empresaNome = emp ? (nomes[String(emp)] || "") : "";
+    // AS OBRAS DE OUTRA EMPRESA (25/11/2026, o dono: "ele lista primeiro as obras dessa empresa (…) ao final, ele faz
+    // o complemento"): com a empresa escolhida, a obra de outra empresa vai para o fim, numa parte própria
+    g.outra = !!(RL.empresa && emp && emp !== RL.empresa);
   });
-  return {dias, obras};
+  const ordenadas = [...obras.filter(g => !g.outra), ...obras.filter(g => g.outra)];
+  return {dias, obras: ordenadas, empresaNome: RL.empresa ? (nomes[String(RL.empresa)] || "a empresa escolhida") : ""};
 }
+// o cabeçalho do dia (25/11/2026, o dono: "deveria ter também o dia da semana. Só a inicial"): 26 / 10 / S
+const INICIAL_DO_DIA = ["D", "S", "T", "Q", "Q", "S", "S"];
+const diaDaSemana = iso => new Date(iso + "T12:00:00").getDay();
+// a cor da coluna: o feriado (laranja) vence o fim de semana (cinza)
+const corDoDia = (g, iso) => g.feriados[iso] ? "fer" : [0, 6].includes(diaDaSemana(iso)) ? "fds" : "";
+const funcaoEVinculo = p => [p.funcao, p.vinculo].filter(Boolean).join(" - ");
 // uma célula de hora a menos: vermelha; "falta" no dia inteiro; entre parênteses a pequena (desconsiderada)
 const hmSinal = m => (m < 0 ? "-" : "") + hm(Math.abs(m));
 function celulaNegativa(n) {
@@ -5649,43 +5669,52 @@ function celulaNegativa(n) {
 }
 const FECH_MARC = new Set();
 function fechGradeSupervisao() {
-  const {dias, obras} = fechGrupos();
-  const fds = iso => [0, 6].includes(new Date(iso + "T12:00:00").getDay());
+  const {dias, obras, empresaNome} = fechGrupos();
+  let separou = false;
+  const secao = g => {
+    if (!g.outra || separou) return "";
+    separou = true;
+    return `<div class="he-secao"><b>Funcionários da ${escapar(empresaNome)} que também trabalharam em obras de outras empresas</b>
+      <small class="suave" style="display:block">Os mesmos funcionários de cima, nos dias em que bateram ponto em obra de outra empresa.</small></div>`;
+  };
   return `<div class="barra-lote" style="margin:0 0 8px">
       <b id="fech-he-qtd">${contar(FECH_MARC.size, "hora marcada", "horas marcadas")}</b>
       <button class="btn secundario" type="button" id="fech-he-negar">🚫 Negar as horas marcadas…</button>
       <button class="btn secundario" type="button" id="fech-he-voltar">↩️ Voltar a contar as marcadas</button>
-      <small class="suave">Um clique na hora extra marca (ou desmarca) para negar; dois cliques no dia abrem o espelho.</small></div>
+      <small class="suave">Um clique na hora extra marca (ou desmarca) para negar; dois cliques no dia abrem o espelho.
+        Em cinza, sábado e domingo; em <span style="background:#FDE7C2; padding:0 3px">laranja</span>, o feriado (o nome aparece com o mouse em cima do dia);
+        <span style="color:#7C3AED">✎</span> = dia com batida incluída por ajuste aprovado.</small></div>
     <div class="he-rolagem">
-    ${obras.length ? obras.map(g => `<h3 style="margin:14px 0 4px">Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}
+    ${obras.length ? obras.map(g => { const fds = d => corDoDia(g, d); return `${secao(g)}<h3 style="margin:14px 0 4px">Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}${g.outra && g.empresaNome ? ` <small class="suave">(${escapar(g.empresaNome)})</small>` : ""}
         <small class="suave">${contar(g.lista.length, "pessoa", "pessoas")} · extras ${hm(g.total)}${g.atrasos ? ` · atrasos -${hm(g.atrasos)}` : ""}${RL.abater ? ` · saldo ${hmSinal(g.saldo)}` : ""}</small></h3>
       <div><table class="he-grade"><thead><tr><th class="sem-ordem he-nome">Funcionário</th>
-        ${dias.map(d => `<th class="sem-ordem ${fds(d) ? "fds" : ""}">${d.slice(8)}<br><small style="display:inline">${d.slice(5, 7)}</small></th>`).join("")}
+        ${dias.map(d => `<th class="sem-ordem ${fds(d)}" ${g.feriados[d] ? `title="${escapar(`feriado: ${g.feriados[d]}`)}"` : ""}>${d.slice(8)}<br><small style="display:inline">${d.slice(5, 7)}</small><span class="sem">${INICIAL_DO_DIA[diaDaSemana(d)]}</span></th>`).join("")}
         <th class="sem-ordem">Extras</th><th class="sem-ordem">Atrasos</th>${RL.abater ? `<th class="sem-ordem">Saldo</th>` : ""}</tr></thead><tbody>
       ${g.lista.map(p => `<tr><td class="he-nome">${eloPessoa(p.id, p.nome, p.primeiro)}${p.banco ? ` <small style="display:inline">(banco)</small>` : ""}
-          <small>${escapar(p.funcao)}</small></td>
+          <small>${escapar(funcaoEVinculo(p))}</small></td>
         ${dias.map(d => { const k = `${p.id}|${d}`, ng = p.negadas[d], m = p.dias[d], pq = (p.pequenas || {})[d];
           // todo dia abre o espelho da pessoa naquele mês (30/10/2026, o dono: "clicar no dia da pessoa e
           // visualizar o espelho do ponto"); a hora extra, com o modo ligado, se marca para negar
           // 31/10/2026, o dono: o clique que abria o espelho tomava o lugar do marcar para negar — agora um clique
           // marca a hora extra e DOIS cliques abrem o espelho
+          const aj = p.ajustados[d] ? `<span class="aj" title="dia com batida incluída por ajuste aprovado">✎</span>` : "";
           const abre = `data-abrir-duplo="${p.id}" data-dia="${d}" data-aba="mes" data-competencia="${d.slice(0, 7)}"`;
-          if (pq && !m && !ng) return `<td class="he-dia he-pequena ${fds(d) ? "fds" : ""}" ${abre}
+          if (pq && !m && !ng) return `<td class="he-dia he-pequena ${fds(d)}" ${abre}
             title="${escapar(`${hm(pq.minutos)} — até ${RL.he_minima} min: desconsiderada`)}">(${hm(pq.minutos)})</td>`;
           const neg = p.negativos[d];
           if (neg && !m && !ng && !pq) { const c = celulaNegativa(neg);
-            return `<td class="he-dia ${c.classe} ${fds(d) ? "fds" : ""}" ${abre} title="${escapar(c.dica)}">${c.texto}</td>`; }
-          if (!m && !ng && p.trabalhou[d]) return `<td class="he-dia he-ok ${fds(d) ? "fds" : ""}" ${abre}
-            title="${escapar(`trabalhou ${hm(p.trabalhou[d])} — no horário, sem hora a mais nem a menos`)}">✓</td>`;
-          if (!m && !ng) return `<td class="he-dia ${fds(d) ? "fds" : ""}" ${abre} title="dois cliques: o espelho de ${dataBR(d)}"></td>`;
-          return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}" ${abre}
+            return `<td class="he-dia ${c.classe} ${fds(d)}" ${abre} title="${escapar(c.dica)}">${c.texto}${aj}</td>`; }
+          if (!m && !ng && p.trabalhou[d]) return `<td class="he-dia he-ok ${fds(d)}" ${abre}
+            title="${escapar(`trabalhou ${hm(p.trabalhou[d])} — no horário, sem hora a mais nem a menos`)}">✓${aj}</td>`;
+          if (!m && !ng) return `<td class="he-dia ${fds(d)}" ${abre} title="dois cliques: o espelho de ${dataBR(d)}"></td>`;
+          return `<td class="he-cel ${fds(d)} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}" ${abre}
             data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`)
-              : `um clique: marcar para negar · dois cliques: o espelho de ${dataBR(d)}`}">${hm(ng ? ng.minutos : m)}</td>`; }).join("")}
+              : `um clique: marcar para negar · dois cliques: o espelho de ${dataBR(d)}`}">${hm(ng ? ng.minutos : m)}${aj}</td>`; }).join("")}
         <td class="num he-pos"><b>${hm(p.total)}</b></td><td class="num he-neg">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>
         ${RL.abater ? `<td class="num"><b class="${p.saldo < 0 ? "he-neg" : "he-pos"}">${hmSinal(p.saldo)}</b></td>` : ""}</tr>`).join("")}
-      </tbody><tfoot><tr><td class="he-nome"><b>Total da obra</b></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}"><b>${g.porDia[d] ? hm(g.porDia[d]) : ""}</b></td>`).join("")}
+      </tbody><tfoot><tr><td class="he-nome"><b>Total da obra</b></td>${dias.map(d => `<td class="${fds(d)}"><b>${g.porDia[d] ? hm(g.porDia[d]) : ""}</b></td>`).join("")}
         <td class="num he-pos"><b>${hm(g.total)}</b></td><td class="num he-neg"><b>${g.atrasos ? `-${hm(g.atrasos)}` : ""}</b></td>
-        ${RL.abater ? `<td class="num"><b>${hmSinal(g.saldo)}</b></td>` : ""}</tr></tfoot></table></div>`).join("")
+        ${RL.abater ? `<td class="num"><b>${hmSinal(g.saldo)}</b></td>` : ""}</tr></tfoot></table></div>`; }).join("")
       : `<div class="vazio"><b>Nenhuma hora extra</b>neste fechamento.</div>`}</div>`;
 }
 function fechLigarGrade() {
@@ -5733,10 +5762,10 @@ function fechLigarGrade() {
 }
 
 function fechImprimirSupervisao() {
-  const {dias, obras} = fechGrupos();
+  const {dias, obras, empresaNome} = fechGrupos();
+  let separou = false;
   const w = window.open("", "_blank");
   if (!w) { aviso("mensagem", "O navegador bloqueou a janela de impressão — libere as janelas deste site.", "erro"); return; }
-  const fds = iso => [0, 6].includes(new Date(iso + "T12:00:00").getDay());
   const c = m => m ? hm(m) : "";
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Horas extras por obra — ${escapar(RL.titulo)}</title>
     <style>@page{size:A4 landscape;margin:8mm} body{font:10px Arial,sans-serif;color:#111;margin:0}
@@ -5744,22 +5773,25 @@ function fechImprimirSupervisao() {
     .obra{page-break-after:always} .obra:last-child{page-break-after:auto}
     table{border-collapse:collapse;width:100%;table-layout:fixed} th,td{border:1px solid #999;padding:2px 2px;text-align:center;overflow:hidden;white-space:nowrap}
     th.nome,td.nome{text-align:left;width:150px} th.func,td.func{text-align:left;width:80px;font-size:9px} th.tot,td.tot{width:42px;font-weight:bold}
-    th{background:#e8eef6;font-size:9px} .fds{background:#f3f3f3} tfoot td{font-weight:bold;background:#f6f6f6}
+    th{background:#e8eef6;font-size:9px} .fds{background:#f3f3f3} .fer{background:#fde7c2} th .sem{display:block;color:#555}
+    .aj{color:#7c3aed;font-size:8px;vertical-align:super} .secao{font-size:13px;margin:0 0 6px;padding:4px 6px;border-left:4px solid #b45309;background:#fff7ed} tfoot td{font-weight:bold;background:#f6f6f6}
     .assina{margin-top:14px;display:flex;gap:40px} .assina div{border-top:1px solid #555;padding-top:2px;width:260px}</style></head><body>
-    ${obras.length ? obras.map(g => `<div class="obra">
-      <h1>BWS — Horas extras para conferência da supervisão</h1>
-      <h2>Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}</h2>
+    ${obras.length ? obras.map(g => { const fds = d => corDoDia(g, d);
+      const sec = g.outra && !separou ? (separou = true, `<div class="secao"><b>Funcionários da ${escapar(empresaNome)} que também trabalharam em obras de outras empresas</b></div>`) : "";
+      return `<div class="obra">
+      <h1>BWS — Horas extras para conferência da supervisão</h1>${sec}
+      <h2>Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}${g.outra && g.empresaNome ? ` (${escapar(g.empresaNome)})` : ""}</h2>
       <p>${escapar(RL.titulo)} · de ${dataBR(RL.anterior.de)} a ${dataBR(RL.corrente.ate)} · horas extras de cada dia (h:mm) na obra em que a pessoa
-        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência${RL.he_minima ? ` · (entre parênteses) = até ${RL.he_minima} min, desconsiderada` : ""} — as duas fora do total · <span style="color:#1d4ed8">azul</span> = hora extra, <span style="color:#b91c1c">vermelho</span> = horas a menos${RL.abater ? " (o saldo abate os atrasos)" : ""} · ✓ = trabalhou no horário · emitido em ${new Date().toLocaleString("pt-BR")}</p>
-      <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d) ? "fds" : ""}">${d.slice(8)}<br>${d.slice(5, 7)}</th>`).join("")}<th class="tot">Extras</th><th class="tot">Atrasos</th>${RL.abater ? `<th class="tot">Saldo</th>` : ""}</tr></thead>
+        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência${RL.he_minima ? ` · (entre parênteses) = até ${RL.he_minima} min, desconsiderada` : ""} — as duas fora do total · <span style="color:#1d4ed8">azul</span> = hora extra, <span style="color:#b91c1c">vermelho</span> = horas a menos${RL.abater ? " (o saldo abate os atrasos)" : ""} · ✓ = trabalhou no horário · em cinza, sábado e domingo; em laranja, o feriado · <span style="color:#7c3aed">✎</span> = dia com batida incluída por ajuste · emitido em ${new Date().toLocaleString("pt-BR")}</p>
+      <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d)}" ${g.feriados[d] ? `title="${escapar(g.feriados[d])}"` : ""}>${d.slice(8)}<br>${d.slice(5, 7)}<span class="sem">${INICIAL_DO_DIA[diaDaSemana(d)]}</span></th>`).join("")}<th class="tot">Extras</th><th class="tot">Atrasos</th>${RL.abater ? `<th class="tot">Saldo</th>` : ""}</tr></thead>
       <tbody>${g.lista.map(p => `<tr><td class="nome">${escapar(p.nome)}${p.banco ? " (banco)" : ""}</td>
-        <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${p.negadas[d] ? `<s style="color:#b00">${hm(p.negadas[d].minutos)}</s>`
+        <td class="func">${escapar(funcaoEVinculo(p))}</td>${dias.map(d => `<td class="${fds(d)}">${p.negadas[d] ? `<s style="color:#b00">${hm(p.negadas[d].minutos)}</s>`
           : (p.pequenas || {})[d] && !p.dias[d] ? `<span style="color:#999">(${hm(p.pequenas[d].minutos)})</span>`
           : p.dias[d] ? `<span style="color:#1d4ed8">${hm(p.dias[d])}</span>`
           : p.negativos[d] ? (n => `<span style="color:${n.desconsiderada ? "#999" : "#b91c1c"}">${escapar(celulaNegativa(n).texto)}</span>`)(p.negativos[d])
-          : p.trabalhou[d] ? `<span style="color:#6b7280">✓</span>` : ""}</td>`).join("")}<td class="tot" style="color:#1d4ed8">${hm(p.total)}</td><td class="tot" style="color:#b91c1c">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(p.saldo)}</td>` : ""}</tr>`).join("")}</tbody>
-      <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td><td class="tot">${g.atrasos ? `-${hm(g.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(g.saldo)}</td>` : ""}</tr></tfoot></table>
-      <div class="assina"><div>Conferido por (encarregado / supervisor)</div><div>Data</div></div></div>`).join("")
+          : p.trabalhou[d] ? `<span style="color:#6b7280">✓</span>` : ""}${p.ajustados[d] ? `<span class="aj">✎</span>` : ""}</td>`).join("")}<td class="tot" style="color:#1d4ed8">${hm(p.total)}</td><td class="tot" style="color:#b91c1c">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(p.saldo)}</td>` : ""}</tr>`).join("")}</tbody>
+      <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d)}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td><td class="tot">${g.atrasos ? `-${hm(g.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(g.saldo)}</td>` : ""}</tr></tfoot></table>
+      <div class="assina"><div>Conferido por (encarregado / supervisor)</div><div>Data</div></div></div>`; }).join("")
       : `<h1>BWS — Horas extras para conferência da supervisão</h1><p>Nenhuma hora extra neste período.</p>`}
     <script>window.onload = () => window.print();<\/script></body></html>`);
   w.document.close();
