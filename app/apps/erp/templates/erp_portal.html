@@ -36,6 +36,7 @@
          background: #EEF2FA; color: #31507F; white-space: nowrap; }
   .etiqueta.vermelha { background: #FDECEC; color: #A32020; }
   .etiqueta.verde { background: #E8F6EE; color: #1C6B3C; }
+  .etiqueta.ambar { background: #FFF1D6; color: #8A5A00; }
   .btn-portal { background: #F4B942; border: 0; border-radius: 10px; padding: 11px 16px;
          font-size: 15px; font-weight: 700; color: #10233F; cursor: pointer; }
   .btn-portal.secundario { background: #EEF2FA; color: #31507F; }
@@ -163,32 +164,6 @@
 <div class="caixa">
   <div id="recado"></div>
 
-  {# A DEVOLUÇÃO VEM PRIMEIRO, e não é ordem alfabética: é o que tem prazo e o
-     que o DP está esperando. Pedido novo pode esperar o fim da rolagem; o
-     documento que está na mesa de alguém, não. #}
-  {# ⚑ O DOCUMENTO QUE A PESSOA ASSINA NO CELULAR (20/11/2026, noite). Ele:
-     *"o administrativo de obra já coletar o aviso prévio das pessoas,
-     formalizar e coletar a assinatura de forma legal, parecido com a forma
-     que a gente está coletando a assinatura do ponto."* Quem conduz mostra o
-     texto; a pessoa assina com o dedo e digita o PIN DELA (o do ponto). #}
-  <div class="bloco" id="bloco-termos" style="display:none">
-    <h3>Para o colaborador assinar</h3>
-    <p class="ajuda">O DP analisou e liberou. Mostre o documento à pessoa,
-      ela lê, assina com o dedo e digita o PIN dela (o mesmo do ponto). Se ela
-      não tiver PIN, assine no papel e envie a foto; se ela se recusar, registre
-      com duas testemunhas.</p>
-    <div id="termos"></div>
-    <div id="termo-aberto"></div>
-  </div>
-
-  <div class="bloco" id="bloco-devolver" style="display:none">
-    <h3>Documentos a devolver</h3>
-    <p class="ajuda">O DP mandou estes documentos para a obra. Depois de colher
-      a assinatura, envie aqui — <b>não mande por WhatsApp</b>: aqui ele fica
-      guardado no cadastro da pessoa, com data e tipo.</p>
-    <div id="devolucoes"></div>
-  </div>
-
   {# ESCOLHER A ÁREA VEM ANTES DE ESCOLHER O TIPO. Uma lista corrida com os
      pedidos de quatro áreas misturados obriga a pessoa a ler tudo para achar
      o dela. E a área que ainda não abriu APARECE, marcada: esconder o que
@@ -201,12 +176,41 @@
     <div id="form-pedido"></div>
   </div>
 
-  <div class="bloco">
-    <h3>O que você já pediu</h3>
-    <p class="ajuda">Tudo o que você abriu, de todas as áreas, e o que
-      responderam. <b>Uma lista só</b> — você quer saber o que está parado, não
-      caçar área por área.</p>
-    <div id="meus"></div>
+  {# ⚑ A ORDEM DO PORTAL (24/11/2026). Ele: *"Sempre manter os botões para
+     solicitação na parte superior. E logo abaixo (…) os avisos, o que já foi
+     solicitado, o que tem pendente (…) para o colaborador assinar (…) devia
+     ser também (…) similar ao aviso da equipe. Para estar agrupado e a gente
+     poder expandir. E ficar na parte logo abaixo dos botões de solicitação."*
+     Antes, os documentos para assinar e devolver ficavam abertos no alto,
+     ACIMA dos botões, e com vários termos empurravam o "Abrir uma solicitação"
+     para fora da tela. Agora: os botões no alto; as pendências logo abaixo,
+     recolhidas com a quantidade à vista (têm prazo — por isso vêm antes dos
+     avisos); depois os avisos da equipe; por fim o que você já pediu. #}
+  <div class="bloco" id="bloco-pendencias" style="display:none">
+    <h3>Pendências da obra</h3>
+    <p class="ajuda">Têm prazo e o DP está esperando. Toque para abrir.</p>
+
+    {# ⚑ O DOCUMENTO QUE A PESSOA ASSINA NO CELULAR (20/11/2026, noite). Ele:
+       *"o administrativo de obra já coletar o aviso prévio das pessoas,
+       formalizar e coletar a assinatura de forma legal, parecido com a forma
+       que a gente está coletando a assinatura do ponto."* #}
+    <details class="aviso-recolhido" id="bloco-termos" style="display:none">
+      <summary>Para o colaborador assinar <span class="etiqueta ambar" id="n-termos"></span></summary>
+      <p class="ajuda">O DP analisou e liberou. Mostre o documento à pessoa,
+        ela lê, assina com o dedo e digita o PIN dela (o mesmo do ponto). Se ela
+        não tiver PIN, assine no papel e envie a foto; se ela se recusar, registre
+        com duas testemunhas.</p>
+      <div id="termos"></div>
+      <div id="termo-aberto"></div>
+    </details>
+
+    <details class="aviso-recolhido" id="bloco-devolver" style="display:none">
+      <summary>Documentos a devolver <span class="etiqueta ambar" id="n-devolver"></span></summary>
+      <p class="ajuda">O DP mandou estes documentos para a obra. Depois de colher
+        a assinatura, envie aqui — <b>não mande por WhatsApp</b>: aqui ele fica
+        guardado no cadastro da pessoa, com data e tipo.</p>
+      <div id="devolucoes"></div>
+    </details>
   </div>
 
   {# ⚑ OS AVISOS FICAM EMBAIXO E RECOLHIDOS (23/11/2026). O dono, ao abrir o
@@ -241,6 +245,14 @@
       <div id="ferias"></div>
     </details>
   </div>
+  <div class="bloco">
+    <h3>O que você já pediu</h3>
+    <p class="ajuda">Tudo o que você abriu, de todas as áreas, e o que
+      responderam. <b>Uma lista só</b> — você quer saber o que está parado, não
+      caçar área por área.</p>
+    <div id="meus"></div>
+  </div>
+
 </div>
 
 <script>
@@ -298,6 +310,8 @@ async function carregar(){
 function pintarTermos(){
   const l = DADOS.termos || [];
   els("bloco-termos").style.display = l.length ? "" : "none";
+  els("n-termos").textContent = l.length;
+  mostrarPendencias();
   els("termos").innerHTML = l.map(x => `
     <div class="linha">
       <div class="cresce">
@@ -433,6 +447,12 @@ async function recusaDoTermo(id){
   } catch(e){ recado(e.message, "erro"); }
 }
 
+// O bloco das pendências só existe quando há o que fazer (24/11/2026).
+function mostrarPendencias(){
+  const ha = (DADOS.termos || []).length + (DADOS.devolucoes || []).length;
+  els("bloco-pendencias").style.display = ha ? "" : "none";
+}
+
 function mostrarAvisos(){
   const ha = (DADOS.experiencias || []).length + (DADOS.ferias || []).length;
   els("bloco-avisos").style.display = ha ? "" : "none";
@@ -478,6 +498,8 @@ function pintarFerias(){
 function pintarDevolucoes(){
   const l = DADOS.devolucoes || [];
   els("bloco-devolver").style.display = l.length ? "" : "none";
+  els("n-devolver").textContent = l.length;
+  mostrarPendencias();
   els("devolucoes").innerHTML = l.map(d => `
     <div class="linha">
       <div class="cresce">
@@ -601,7 +623,8 @@ const ROTULO = {
   cnpj_admissao: "CNPJ para Admissão",
   solicitacao: "Solicitação",
   meio_transporte: "Meio de Transporte para chegar à Obra?",
-  aviso_previo: "Data do Aviso Prévio",
+  aviso_previo: "Data do aviso prévio (no pedido de demissão, a data do pedido)",
+  cumpre_aviso: "O colaborador vai trabalhar o aviso?",
   data_inicio: "Data de Início",
   justificativa: "Justificativa de Alteração do Cargo",
   conceder: "Conceder Vale Transporte?",
@@ -718,7 +741,20 @@ function escolherArea(chave){
     <label class="campo-portal">O que você precisa
       <select id="p-tipo">
         <option value="">escolha…</option>
-        ${tipos.map(t => `<option value="${t.chave}">${esc(t.nome)}</option>`).join("")}
+        ${(() => {
+          {# Agrupados por assunto, com título (24/11/2026): férias juntas, o
+             cancelamento do desligamento logo abaixo do desligamento. O
+             grupo e a ordem vêm do servidor (`portal.GRUPOS_DO_PESSOAL`). #}
+          const opt = t => `<option value="${t.chave}">${esc(t.nome)}</option>`;
+          if (!tipos.some(t => t.grupo)) return tipos.map(opt).join("");
+          const grupos = [];
+          tipos.forEach(t => {
+            const g = grupos.find(x => x.nome === t.grupo);
+            if (g) g.tipos.push(t); else grupos.push({nome: t.grupo, tipos: [t]});
+          });
+          return grupos.map(g => `<optgroup label="${esc(g.nome)}">${
+            g.tipos.map(opt).join("")}</optgroup>`).join("");
+        })()}
       </select></label>
     <p class="ajuda" id="p-explica" style="margin-top:6px"></p>
     <div id="p-campos"></div>
@@ -882,8 +918,9 @@ function pintarCamposDoTipo(){
         return `<label class="campo-portal">${rot}
           <input id="p-${c}" name="${c}" type="${tipo}"
             ${modo ? `inputmode="${modo}"` : ""}></label>`;
-      }).join("");
+      }).join("") + blocoDaCarta(t);
   ligarBuscaDePessoa();
+  ligarCarta(t);
   ligarRepetidos(t);
   ligarFiltroDeObra();
   ligarPapeis(t);
@@ -1227,6 +1264,34 @@ let LIDOS = {};
 
 // O papel principal de um arquivo: o primeiro que a leitura reconheceu e que
 // não é "outro". É com ele que o arquivo é guardado no cadastro.
+{# ⚑ A CARTA DO COLABORADOR (24/11/2026). Ele: *"o documento aviso (…) a
+   gente ter a opção de anexar. Porque pode ser que a pessoa na obra já tenha
+   feito a cartinha e a gente vai anexar ao pedido."* Opcional: com a carta,
+   ela VALE como o pedido de demissão assinado (o DP confere ao atender) e o
+   sistema não gera outro para assinar; sem ela, o sistema gera o texto e a
+   pessoa assina pelo portal, como antes. Só aparece no pedido de demissão. #}
+function blocoDaCarta(t){
+  if (t.chave !== "DESLIGAMENTO") return "";
+  return `<div class="papeis oculto" id="p-carta-bloco">
+    <b>Carta de pedido de demissão (opcional)</b>
+    <p class="ajuda">Se o colaborador já escreveu e assinou a carta, tire a foto
+      ou anexe o PDF: ela vale como o pedido assinado e ele <b>não precisa
+      assinar de novo</b>. Sem a carta, o sistema prepara o texto e ele assina
+      aqui no portal depois que o DP analisar.</p>
+    <input type="file" id="p-carta" accept="image/*,.pdf">
+  </div>`;
+}
+function ligarCarta(t){
+  if (t.chave !== "DESLIGAMENTO") return;
+  const mostrar = () => {
+    const f = els("p-forma_desligamento");
+    const ehPedido = !!f && /pedido/i.test(f.value || "");
+    els("p-carta-bloco").classList.toggle("oculto", !ehPedido);
+  };
+  els("p-campos").addEventListener("change", mostrar);
+  mostrar();
+}
+
 function tipoPrincipal(a){
   return (a.tipos || []).find(x => x !== "OUTRO") || "DOC-IDENTIDADE";
 }
@@ -1923,6 +1988,15 @@ async function enviarPedido(){
   // diz QUAL está incompleto — "falta a data de nascimento" não ajudaria
   // ninguém com três na tela.
   if (t.repete && REPETIDOS.length) corpo.dependentes = REPETIDOS;
+  // A carta do colaborador entra como papel do pedido, com o tipo dela
+  // (24/11/2026) — só se a forma escolhida ainda for o pedido de demissão.
+  const carta = els("p-carta");
+  const cartaVisivel = carta && !els("p-carta-bloco").classList.contains("oculto");
+  if (cartaVisivel && carta.files && carta.files[0]) {
+    ARQUIVOS = ARQUIVOS.filter(a => !(a.tipos || []).includes("PEDIDO-DEMISSAO"));
+    ARQUIVOS.push({arquivo: carta.files[0], nome: carta.files[0].name,
+                   tipos: ["PEDIDO-DEMISSAO"]});
+  }
   els("p-enviar").disabled = true;
   try {
     let d;

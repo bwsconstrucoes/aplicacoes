@@ -787,8 +787,22 @@ function blocoDoRelato(){
                  ${so_leitura ? "disabled" : ""} placeholder="7:00 às 17:00">
           <small class="desc">Já vem preenchido conforme o dia da semana.
             Se o horário foi outro, basta trocar.</small></div>
-        ${d.clima_medido ? `<div class="aviso" style="margin-top:8px">☁️
-          <b>O sistema conferiu:</b> ${escapar(JSON.stringify(d.clima_medido))}</div>` : ""}
+        {# ⚑ EM PORTUGUÊS, E NÃO O JSON CRU (24/11/2026). Até aqui esta
+           linha despejava o objeto inteiro na tela — e nunca ninguém viu,
+           porque a coluna jamais foi preenchida. Agora é preenchida, então
+           precisa ser legível.
+
+           A PROCEDÊNCIA VAI JUNTO: num pleito de prazo o que vale não é a
+           obra dizer que choveu, é a medição com fonte e hora. #}
+        ${d.clima_medido ? `<div class="aviso" style="margin-top:8px">
+          <b>A estação registrou:</b> ${escapar(d.clima_medido.resumo || "—")}${
+            d.clima_medido.temp_min != null && d.clima_medido.temp_max != null
+              ? ` · ${d.clima_medido.temp_min}° a ${d.clima_medido.temp_max}°` : ""}
+          <br><small class="desc">Medição independente do que a obra informou
+            acima — serve de prova em pleito de prazo. Fonte:
+            ${escapar(d.clima_medido.fonte || "—")}, na coordenada da obra,
+            consultada em ${dataHoraBR(d.clima_medido.consultado_em)}.</small>
+          </div>` : ""}
         <div class="campo" style="margin-top:10px">
           <label>Relato diário</label>
           <textarea id="d-relato" rows="6" ${so_leitura ? "disabled" : ""}
@@ -885,7 +899,9 @@ function blocoDasFotos(){
       <h3>Fotos do dia <small>${fotos.length} de ${teto}</small></h3>
       <p class="cartao-dica">Elas saem no diário impresso, numa
         <b>folha de anexo</b> depois da folha do dia — o formato do RDO não
-        muda. Ficam guardadas no Google Drive da empresa.</p>
+        muda. Ficam guardadas no Google Drive da empresa.
+        <b>Foto com localização sai carimbada</b> com a data, a hora e a
+        coordenada, por cima da imagem, sem tapar o que ela mostra.</p>
       ${!DIA.existe ? `<div class="cartao-dica">Grave o dia primeiro: a foto
         fica presa ao diário, não à data.</div>` : ""}
       ${fotos.length ? `<div class="fotos-grade">${fotos.map(f => `
@@ -899,6 +915,23 @@ function blocoDasFotos(){
                    value="${escapar(f.legenda)}" placeholder="Legenda — o que a foto mostra"
                    maxlength="300">`
               : `<span>${escapar(f.legenda || "sem legenda")}</span>`}
+            {# ⚑ O LOCAL DA FOTO, EM PORTUGUÊS (24/11/2026). Ele: *"que na
+               legenda dessa foto apareça essa geolocalização."*
+
+               Vem com a PROCEDÊNCIA junto, e isso não é detalhe: "gravado
+               pela câmera" prova onde a foto foi tirada; "informado pelo
+               aparelho no envio" prova onde estava quem enviou, que é outra
+               coisa. Num documento que a fiscalização assina, misturar as
+               duas seria afirmar o que não se sabe. #}
+            ${f.latitude !== null ? `<div class="foto-local">
+              <span class="etiqueta ${f.origem_local === "EXIF" ? "verde" : "ambar"}"
+                title="${escapar(f.local_rotulo)}">📍 ${escapar(f.local)}${
+                f.precisao_m ? ` ±${f.precisao_m} m` : ""}</span>
+              <small class="desc">${escapar(f.local_rotulo)}${
+                f.tirada_em ? ` · tirada em ${dataHoraBR(f.tirada_em)}` : ""}</small>
+            </div>` : `<div class="foto-local"><small class="desc">
+              Sem localização — foto antiga ou tirada com o GPS desligado.
+              Ela entra no diário igual, só não leva carimbo.</small></div>`}
             <div class="foto-pe">
               <small class="desc">${f.kb} KB ${f.no_drive
                 ? "· no Drive" : "· <b>ainda no banco</b>"}</small>
@@ -921,6 +954,41 @@ function blocoDasFotos(){
     </div>`;
 }
 
+// ---------------------------------------------------------------------------
+// ONDE O APARELHO ESTÁ — e por que isto nunca trava o envio
+//
+// Quem está na obra muitas vezes está sem sinal bom, ou já negou a permissão
+// de localização uma vez e nem lembra. Foto é prova do serviço: ela tem de
+// entrar mesmo sem local. Por isso: 8 segundos de paciência e, dando errado,
+// devolve vazio sem reclamar.
+//
+// O navegador só entrega posição em página segura (https) — no Render é; no
+// computador de teste, não. Mais um motivo para nunca depender disto.
+// ---------------------------------------------------------------------------
+// "2026-11-24T14:37:00" vira "24/11/2026 14:37". Mora aqui, e não no
+// `erp_base.html`, de propósito: o base é mexido por quatro chats ao mesmo
+// tempo, e isto é usado numa tela só.
+function dataHoraBR(iso){
+  if (!iso) return "—";
+  const [d, h] = String(iso).split("T");
+  return dataBR(d) + (h ? " " + h.slice(0, 5) : "");
+}
+
+function ondeEstou(){
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve({});
+    let respondeu = false;
+    const pronto = v => { if (!respondeu) { respondeu = true; resolve(v); } };
+    setTimeout(() => pronto({}), 8000);
+    navigator.geolocation.getCurrentPosition(
+      p => pronto({latitude: p.coords.latitude, longitude: p.coords.longitude,
+                   precisao_m: p.coords.accuracy != null
+                     ? Math.round(p.coords.accuracy) : null}),
+      () => pronto({}),
+      {enableHighAccuracy: true, timeout: 7000, maximumAge: 60000});
+  });
+}
+
 async function mandarFoto(){
   const campo = els("d-foto"), arq = campo && campo.files[0];
   if (!arq) return;
@@ -934,6 +1002,15 @@ async function mandarFoto(){
   const fd = new FormData();
   fd.append("foto", arq);
   fd.append("legenda", legenda.legenda || "");
+  // ⚑ A POSIÇÃO DO APARELHO VAI JUNTO, como REFORÇO (24/11/2026). O servidor
+  // só usa se a própria foto não trouxer o local dentro dela. Não trava
+  // nada: negar a permissão ou não ter sinal manda a foto do mesmo jeito.
+  const onde = await ondeEstou();
+  if (onde.latitude != null) {
+    fd.append("latitude", onde.latitude);
+    fd.append("longitude", onde.longitude);
+    if (onde.precisao_m != null) fd.append("precisao_m", onde.precisao_m);
+  }
   campo.disabled = true;
   try {
     const r = await api(

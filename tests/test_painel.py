@@ -602,7 +602,9 @@ def _consultar_falso(sql, params=()):
                  # as quatro que estavam no banco e não apareciam na tela
                  "Quitado", "PC-4471", "Obra Um · Medição 3", 998877,
                  # vencimento, pagamento e o atraso entre os dois
-                 dt.date(2025, 4, 1), dt.date(2025, 4, 8), 7)]
+                 dt.date(2025, 4, 1), dt.date(2025, 4, 8), 7,
+                 # o encargo PAGO da linha (juros + multa) — entra no total dela
+                 -25.0)]
     if "medicao_rotulo" in sql and "COUNT(*)" in sql:           # os totais
         return [(3, 7000.0, 300.0, 500.0)]
     if "GROUP BY codigo_lancamento" in sql and "MAX(observacao)" in sql:  # um título
@@ -1241,6 +1243,34 @@ def test_data_invalida_na_barra_de_endereco_nao_derruba_a_tela(painel):
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
     r = painel.get("/painel/analitico?de=ontem&ate=');DROP+TABLE")
     assert r.status_code == 200
+
+
+def test_o_total_da_linha_do_analitico_soma_juros_e_multa(painel):
+    """24/11/2026, o dono, com o relatório completo aberto: "a coluna que fala
+    total não está somando o pago mais os juros mais a multa". Na linha do
+    dublê: 3.000 pagos, 20 de juros e 5 de multa — o total é 3.025, na tela e
+    na planilha."""
+    import io
+    from openpyxl import load_workbook
+    from app.apps.painel import consultas
+    linha = consultas.analitico_despesas(consultas.Filtros())["linhas"][0]
+    assert (linha["pago"], linha["juros"], linha["multa"], linha["total"]) == \
+        (-3000.0, -20.0, -5.0, -3025.0)
+    # o que se compara com o débito na conta continua o mesmo valor
+    assert linha["valor_extrato"] == -3025.0
+
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    assert "3.025,00" in painel.get("/painel/analitico").get_data(as_text=True)
+    livro = load_workbook(io.BytesIO(painel.get("/painel/baixar/analitico").data))
+    for nome in livro.sheetnames:
+        titulos = [c.value for c in livro[nome][1]]
+        if titulos[-5:] == ["Pago", "A pagar", "Juros", "Multa", "Total"]:
+            aba = livro[nome]
+            break
+    else:
+        raise AssertionError(f"nenhuma aba com as cinco colunas de valor: {livro.sheetnames}")
+    pago, a_pagar, juros, multa, total = [c.value for c in aba[2]][-5:]
+    assert total == pago + a_pagar + juros + multa == -3025
 
 
 def test_o_analitico_mostra_o_que_estava_escondido_no_banco(painel):

@@ -878,8 +878,16 @@ def extrato():
     # entre contas com OS DOIS LADOS juntos. Ficam aqui, e não em outra aba,
     # porque a pergunta é a mesma — "o que andou nesta conta?" — e os filtros
     # são os mesmos.
-    visao = request.args.get("visao", "lancamentos")
-    if visao not in ("lancamentos", "transferencias"):
+    # A TERCEIRA VISÃO, e a que serve para conferir com o banco (24/11/2026):
+    # UMA conta, dia a dia, com saldo e o rateado numa linha só. Só para o
+    # administrador: quem tem login próprio vê a conta recortada nas obras
+    # dele, e saldo de conta pela metade não é saldo.
+    pode_ver_saldo = auth.e_administrador()
+    conta_unica = f.contas[0] if len(f.contas) == 1 else ""
+    visao = request.args.get("visao") or (
+        "saldo" if (pode_ver_saldo and conta_unica) else "lancamentos")
+    if visao not in ("lancamentos", "transferencias", "saldo") or (
+            visao == "saldo" and not pode_ver_saldo):
         visao = "lancamentos"
 
     pessoa = auth.usuario_da_sessao()
@@ -889,11 +897,21 @@ def extrato():
             f, de=de, ate=ate, destino=request.args.get("destino", ""),
             contas_visiveis=(pessoa.get("contas") if pessoa else None))
 
+    extrato_do_dia = None
+    if visao == "saldo":
+        from . import extrato as extrato_conferivel
+        de, ate = extrato_conferivel.periodo_padrao(de, ate)
+        if conta_unica:
+            extrato_do_dia = extrato_conferivel.do_pedido(conta_unica, de, ate)
+
     return render_template(
         "painel_extrato.html",
         **_contexto_comum("extrato"),
-        chips=f.resumo(),
+        # no dia a dia com saldo a transferência SEMPRE aparece (ela andou na
+        # conta): o aviso "sem transferências" da barra não vale para ele
+        chips=[c for c in f.resumo() if visao != "saldo" or c != "Sem transferências"],
         de=de, ate=ate, visao=visao,
+        pode_ver_saldo=pode_ver_saldo, conta_unica=conta_unica, x=extrato_do_dia,
         destino=request.args.get("destino", ""),
         busca=(request.args.get("busca") or "").strip(),
         categoria=request.args.get("categoria", ""),
@@ -906,6 +924,46 @@ def extrato():
             de=de, ate=ate, ordem=request.args.get("ordem", "data"),
             pagina=pagina) if visao == "lancamentos" else None,
     )
+
+
+@bp.route("/api/extrato/saldo", methods=["POST"])
+def api_extrato_saldo():
+    """Grava o saldo que a conta tinha ao fim de um dia — o ponto de partida do
+    extrato conferível. Só o administrador (o prefixo `api_` garante)."""
+    from . import extrato as extrato_conferivel
+    conta = (request.form.get("conta") or "").strip()
+    dia = (request.form.get("dia") or "").strip()
+    volta = dict(conta=conta, visao="saldo", de=request.form.get("de") or None,
+                 ate=request.form.get("ate") or None)
+    if not conta or not _DATA_ISO.match(dia):
+        return redirect(url_for("painel.extrato", erro="Informe a conta e o dia do saldo.", **volta))
+    try:
+        saldo = extrato_conferivel.ler_saldo(request.form.get("saldo"))
+    except ValueError:
+        return redirect(url_for("painel.extrato", erro="Não entendi o valor do saldo.", **volta))
+    if not extrato_conferivel.tabelas_prontas():
+        return redirect(url_for("painel.extrato", **volta,
+                                erro="Aplique as atualizações do banco, em Configurações, "
+                                     "antes de informar o saldo."))
+    extrato_conferivel.gravar_saldo(conta, dia, saldo, "administrador")
+    return redirect(url_for("painel.extrato", **volta))
+
+
+@bp.route("/api/extrato/conferido", methods=["POST"])
+def api_extrato_conferido():
+    """Marca (ou desmarca) um dia da conta como conferido com o banco."""
+    from . import extrato as extrato_conferivel
+    dados = request.get_json(silent=True) or request.form
+    conta = (dados.get("conta") or "").strip()
+    dia = (dados.get("dia") or "").strip()
+    if not conta or not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Conta ou dia inválido."}), 400
+    if not extrato_conferivel.tabelas_prontas():
+        return jsonify({"ok": False, "erro": "Aplique as atualizações do banco, em "
+                                             "Configurações, antes de marcar."}), 409
+    marcado = str(dados.get("conferido")).lower() in ("1", "true", "sim", "on")
+    extrato_conferivel.marcar_dia(conta, dia, marcado, "administrador")
+    return jsonify({"ok": True, "conferido": marcado})
 
 
 # ---------------------------------------------------------------------------
@@ -1469,7 +1527,53 @@ def _deptos_administrativos(config) -> list[str]:
     return prestacao.centros_da_estrutura(config)
 
 
+def _impressao_do_cenario(cenario: dict) -> str:
+    """Tudo de que a conta de um cenário depende, FORA a base de lançamentos,
+    resumido num texto curto. Mudou qualquer regra, sócio, ajuste ou parâmetro
+    → muda a impressão → a conta guardada não serve mais e é refeita.
+
+    A base em si é coberta pelo carimbo da última carga (`consultas`), e as
+    alterações de classificação feitas pelo painel chamam `esquecer_listas`."""
+    import hashlib
+    import json
+    from . import cenarios, prestacao_dados
+    partes = {
+        # o que veio no pedido (a montagem pode simular com regras por gravar)…
+        "pedido": cenario,
+        # …e o que está gravado, que é de onde a conta lê o que o pedido não traz
+        "gravado": cenarios.completo(cenario.get("id") or 0),
+        "config": prestacao_dados.config(),
+        "socios": prestacao_dados.socios(),
+        "ajustes": prestacao_dados.ajustes(),
+    }
+    try:
+        texto = json.dumps(partes, sort_keys=True, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        texto = repr(partes)
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
 def _calcular_cenario(cenario: dict) -> dict:
+    """A conta de um cenário — GUARDADA enquanto nada de que ela depende mudar.
+
+    24/11/2026, o dono: "quando eu abro uma determinada obra, ele vai montar a
+    ficha e isso demora. Quando eu fecho e volto, tem que fazer todo o
+    recálculo. A gente não poderia gravar temporariamente esse cálculo?"
+
+    Podia, e o ganho é maior que a ficha: Resultado, Por sócio, Evolução, a
+    ficha de cada obra e os relatórios pedem TODOS a mesma conta, e cada clique
+    a refazia do zero — várias consultas pesadas à base inteira. A base só muda
+    na carga diária.
+
+    QUEM USA O RESULTADO NÃO PODE ALTERÁ-LO: o mesmo dicionário é entregue a
+    todos os pedidos. Quem precisar de outra forma monta uma lista nova."""
+    from . import consultas
+    return consultas.lembrando_o_grande(
+        "cenario", _impressao_do_cenario(cenario),
+        lambda: _calcular_cenario_de_fato(cenario))
+
+
+def _calcular_cenario_de_fato(cenario: dict) -> dict:
     """A conta inteira de um cenario, do banco ate a quota de cada pessoa.
 
     Fica aqui, e nao na rota, porque a tela de montagem e a de resultado
@@ -4146,6 +4250,45 @@ def baixar(assunto):
         return ficha_obra.abas(
             ficha, consultas.lancamentos_da_obra(obra, medida, ficha["corte"]))
 
+    def _abas_do_extrato():
+        """O extrato em arquivo. Na visão "dia a dia, com saldo" (24/11/2026)
+        sai o extrato conferível — uma linha por movimento, o saldo e o resumo
+        por dia; nas outras, a lista de lançamentos de sempre."""
+        de, ate = _faixa_de_data()
+        if (request.args.get("visao") == "saldo" and auth.e_administrador()
+                and len(f.contas) == 1):
+            from . import extrato as extrato_conferivel
+            from .horario import agora
+            from .pdf import brl as brl_pdf
+            de, ate = extrato_conferivel.periodo_padrao(de, ate)
+            dados = extrato_conferivel.do_pedido(f.contas[0], de, ate)
+            br = lambda d: f"{d[8:10]}/{d[5:7]}/{d[:4]}"  # noqa: E731
+            resumo = [("Movimentos", str(dados["quantos"])),
+                      ("Entrou", brl_pdf(dados["entrou"])), ("Saiu", brl_pdf(-dados["saiu"]))]
+            if dados["tem_saldo"]:
+                resumo = ([("Saldo antes de " + br(de), brl_pdf(dados["saldo_inicial"]))] + resumo
+                          + [("Saldo ao fim de " + br(ate), brl_pdf(dados["saldo_final"]))])
+            capa_propria.update(
+                titulo=f"Extrato da conta {f.contas[0]}",
+                subtitulo=(f"Gerado em {agora():%d/%m/%Y às %H:%M} (Brasília)  ·  "
+                           f"De {br(de)} a {br(ate)}"),
+                resumo=resumo,
+                observacao=("Só o que foi pago ou recebido, com juros e multa, sem o imposto "
+                            "retido pelo cliente. Pagamento rateado é uma linha só, com as partes "
+                            "embaixo."
+                            + ("" if dados["tem_saldo"] else
+                               " Nenhum saldo foi informado para esta conta: a coluna de saldo "
+                               "mostra a variação desde o começo do período.")))
+            return extrato_conferivel.abas(dados)
+        return [("Extrato de Conta", C["extrato"],
+                 consultas.extrato_da_conta(
+                     f, busca=(request.args.get("busca") or "").strip(),
+                     categoria=request.args.get("categoria", ""),
+                     de=request.args.get("de", ""),
+                     ate=request.args.get("ate", ""),
+                     ordem=request.args.get("ordem", "data"),
+                     por_pagina=20000)["linhas"])]
+
     montadores = {
         "obra": _abas_da_obra,
         "por_socio": _abas_por_socio,
@@ -4154,14 +4297,7 @@ def baixar(assunto):
         "conferencia": _abas_da_conferencia,
         "calendario": _abas_do_calendario,
         "analitico": _abas_do_analitico,
-        "extrato": lambda: [("Extrato de Conta", C["extrato"],
-                             consultas.extrato_da_conta(
-                                 f, busca=(request.args.get("busca") or "").strip(),
-                                 categoria=request.args.get("categoria", ""),
-                                 de=request.args.get("de", ""),
-                                 ate=request.args.get("ate", ""),
-                                 ordem=request.args.get("ordem", "data"),
-                                 por_pagina=20000)["linhas"])],
+        "extrato": _abas_do_extrato,
         "despesas": lambda: [("Despesas", C["despesas"], consultas.despesas_por(
             f, quebra=request.args.get("quebra", "grupo"),
             visao=request.args.get("visao", "comprometido"), limite=1000))],

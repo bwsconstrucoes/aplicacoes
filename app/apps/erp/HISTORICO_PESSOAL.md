@@ -141,6 +141,162 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 24/11/2026 (5) — Pedido de demissão: "sai de imediato ou trabalha o aviso" é da obra; a carta anexada vale como assinada
+
+Ele: *"o mais comum é que o colaborador peça para sair de imediato (…) o campo
+data do aviso prévio está obrigatório (…) vamos ajustar para poder a gente
+trabalhar de uma forma ou de outra"*; *"pode ser que a pessoa na obra já tenha
+feito a cartinha e a gente vai anexar ao pedido"*; e sobre o texto gerado
+para assinar: *"acho que esse fluxo não se encaixa bem aqui, já que é o
+colaborador que está pedindo."*
+- No pedido de demissão (e só nele, `visiveis_se`), a obra responde **"O
+  colaborador vai trabalhar o aviso?"** — "Não — sai de imediato (pede
+  dispensa do aviso)" vem primeiro. Obrigatório nessa forma. Saiu dos campos
+  do DP (o DP corrige se precisar). A data passou a se chamar "Data do aviso
+  prévio (no pedido de demissão, a data do pedido)" — ela continua
+  obrigatória: é o dia em que a pessoa pediu, base da rescisão.
+- **A carta** (portal, opcional, só no pedido de demissão): anexada, entra
+  como documento "Pedido de demissão assinado" do pedido. No atendimento,
+  `desligamento_processo.gerar_termo` acha a carta e a registra como o
+  documento assinado (no papel, já validado pelo DP que atendeu) — a pessoa
+  NÃO assina de novo e o processo segue (`termo_voltou`). Sem carta, o
+  sistema gera o texto e a obra colhe a assinatura no portal, como antes.
+- **Decisão minha, a confirmar com ele:** mantive o texto gerado para quando
+  não há carta. A lei pede o pedido escrito e assinado pela pessoa; o texto
+  gerado é o "papel pronto" que ela lê e assina no celular. A alternativa
+  seria exigir a carta sempre.
+- A tela do formulário no portal NÃO foi vista no navegador (o mecanismo de
+  mostrar/esconder é o mesmo dos outros pedidos; o servidor tem teste).
+
+### 24/11/2026 (5) — Aba "Operador" na ficha da pessoa, com o MESMO formulário
+
+**Ele:**
+
+> *"Quando eu entro no cadastro de um colaborador em pessoal, eu queria ter
+> acesso à parte de operadores, para editar o cadastro dele, ou seja, ter a
+> aba lá, operadores (…) da mesma forma que tem lá cadastro, ponto,
+> mensagens, aí ter operador, aí clicar e abrir o cadastro operador. **Mas sem
+> fechar o modal inicial**, permitindo voltar para ver as outras configurações
+> da pessoa."*
+
+**O que mudou:** a ficha da pessoa ganhou a aba **Operador**, ao lado de
+Resumo, Ponto, Pagamentos, Documentos e Mensagens. Ela abre o cadastro de
+operador inteiro — perfil, perfis acrescentados, obras, cargo, fundo fixo,
+senha, situação — **dentro da ficha**. Salvar **não fecha nada**: o aviso
+aparece ali e dá para voltar para as outras abas.
+
+**Só para quem gere operadores.** É a mesma alçada que a tela de
+Configurações exige; não pode ser menor só porque o caminho é outro.
+
+#### ⚑ A DECISÃO QUE IMPORTA: é o MESMO formulário, não uma cópia
+
+O formulário morava dentro do `erp_config.html` (470 linhas). Copiá-lo daria
+**duas telas de cadastro de operador**, e no primeiro ajuste uma ficaria para
+trás — a regra dele de 17/11 ("um cadastro, uma porta") e a mesma lição da
+tela de fases que nasceu e morreu em 24/11.
+
+Então ele saiu para **`erp_operador_form.html`**, e as duas telas fazem
+`{% include %}` do mesmo arquivo. Ganhou dois parâmetros:
+
+- `alvo` — onde desenhar (sem ele, a janela de Configurações, como sempre);
+- `aoSalvar` — o que fazer depois (antes chamava `carregarOperadores()`
+  direto, função que só existe numa das telas: seria "is not defined" na
+  outra).
+
+**Há teste travando isso** (`test_o_formulario_do_operador_mora_num_lugar_so`):
+ele acusa se alguém declarar `formOperador` fora do arquivo compartilhado, ou
+se uma das duas telas deixar de incluí-lo.
+
+#### A aba NÃO vira uma segunda porta para criar acesso
+
+Pessoa sem operador ligado vê um recado explicando e um botão para o cadastro
+completo — **liberar acesso continua sendo só na aba Endereço**, onde está o
+e-mail que vira o login. Duas portas para criar acesso é exatamente o que ele
+cobrou em 17/11.
+
+#### Dois consertos que vieram de arrasto
+
+1. **A ficha não sabia se a pessoa tem acesso.** O `usuario_id` não vinha no
+   que a ficha carrega, então a aba achava que ninguém tinha operador.
+   Achado dirigindo a tela, não por teste.
+2. **As vigias de tela não enxergavam `{% include %}`.** Elas liam o arquivo
+   cru, então o formulário incluído era invisível para elas e toda vigia
+   acusava "chama função que não existe". Agora resolvem o include **no
+   lugar** — importa que seja no lugar, e não no fim: o include fica DENTRO
+   de um `<script>`, e jogado no fim cairia fora de qualquer bloco.
+
+**Arquivos compartilhados mexidos** (importa para quem roda outro chat do
+ERP): `erp_config.html`, `tests/test_telas_javascript.py` e
+`core/pessoal.py`. Nasceu `templates/erp_operador_form.html`.
+
+⚑ **A junção com a `main` teve de ser feita à mão, e isto vai acontecer de
+novo:** enquanto este formulário mudava de lugar, dois commits da `main` (a
+entrada (3) e a (4), logo abaixo) mexiam DENTRO dele — "cargo base", "a obra
+do ponto + as marcadas", "confere equipamentos" e a lista de obras que volta a
+aparecer. O Git não tinha como casar as duas coisas: um lado trocou 504 linhas
+por um `include`, o outro editou aquelas 504 linhas. As quatro mudanças deles
+foram levadas para dentro de `erp_operador_form.html` uma a uma, com os
+comentários que explicam cada decisão. **Quem for mexer no cadastro do
+operador agora mexe num arquivo só** — era justamente esse o ganho.
+
+---
+
+### 24/11/2026 (4) — Toda lista de caixinhas longa ganha busca; "responde" vira "confere equipamentos"; "a obra do ponto + as marcadas"
+
+Ele: *"isso aí já é básico e já é para estar assim, nas regras gerais do
+sistema (…) As obras não é pesquisável."* A busca automática da base só
+cobria `<select>`. `erp_base.html` ganhou `aplicarBuscaEmCaixinhas`: toda
+`.filtro-opcoes` com mais de 12 itens ganha o campo de filtro, sozinha, em
+qualquer tela do ERP (quem já tem busca própria logo antes ou dentro é
+respeitado; exceção com `data-sem-busca`). O que está marcado nunca some ao
+filtrar. Isso alcança também os filtros laterais que não tinham busca
+(credor, obra, conta nos títulos e pagamentos, etc.).
+
+"Responde", ao lado de cada obra no operador — ele: *"é um termo que ninguém
+nem entende"* — virou **"confere equipamentos"**, com a explicação: marcar a
+obra é enxergar; conferir é receber todo mês a conferência dos equipamentos
+locados daquela obra (e marca a obra junto). No cadastro da obra o bloco
+continua "Quem responde por esta obra" (área de Obras, não mexi).
+
+E o alcance: *"É a obra do ponto mais as obras marcadas abaixo."* — é o que
+o sistema já faz; a opção dizia "Só as obras marcadas abaixo" e enganava.
+Agora: "A obra onde bate ponto + as marcadas abaixo".
+
+### 24/11/2026 (3) — Operadores: a lista de obras some de quem está em "só os lançamentos"; o "cargo (herança)" fica
+
+Ele: *"no perfil da pessoa, não aparece a lista das obras para selecionar (…)
+eu não consigo adicionar mais obras."* A tela só mostrava as obras com "tudo
+das obras marcadas" — o administrativo de obra nasce em "só os lançamentos".
+Isso fazia sentido quando a obra só valia para o financeiro; desde 24/11 ela
+vale para o Pessoal, o portal e o diário. Agora a lista (e empresa/projeto)
+aparece sempre que a pessoa não vê todas as obras, com o aviso de que no
+financeiro continua valendo "só os lançamentos". O servidor já gravava as
+obras em qualquer caso.
+
+Ele também pediu para excluir o "Cargo (herança)", *"se não tiver outra
+coisa"*. Tem: é ele que diz escritório × obra (`PERFIS_SO_PORTAL`) e decide o
+acesso de quem não tem perfil escolhido. Ficou, com o nome "Cargo base" e a
+explicação disso na tela.
+
+### 24/11/2026 (2) — Portal: os botões no alto, as pendências agrupadas; a caixinha de tipos por assunto
+
+Ele: *"Sempre manter os botões para solicitação na parte superior. E logo
+abaixo (…) os avisos, o que já foi solicitado, o que tem pendente (…) para o
+colaborador assinar (…) similar ao aviso da equipe. Para estar agrupado e a
+gente poder expandir."* E: *"solicitação de férias, alteração de férias,
+cancelamento de férias. Não tem como agrupar melhor (…)? Colocar o cancelar
+solicitação de desligamento abaixo de desligamento."*
+- Ordem do portal: **Abrir uma solicitação** → **Pendências da obra**
+  (novo bloco; "Para o colaborador assinar" e "Documentos a devolver"
+  recolhidos, com a quantidade em destaque) → **Avisos da equipe** → **O que
+  você já pediu**. Antes, assinar e devolver ficavam abertos ACIMA dos botões.
+  (O chat de Suprimentos tinha posto os dois "no alto" em 23/11; a decisão do
+  dono agora é outra.)
+- A caixinha "O que você precisa" vem com títulos (`portal.GRUPOS_DO_PESSOAL`):
+  Admissão · Desligamento (o cancelamento logo abaixo) · Férias (as três) ·
+  Afastamento · Dados e benefícios · Outros. A ordem é a dos grupos.
+- Conferido com a tela montada no navegador (dados de exemplo).
+
 ### 24/11/2026 — ⚠️ VAZAMENTO: o administrativo de obra via o Pessoal da empresa inteira
 
 Ele, depois de liberar administrativos pelo portal: *"estão vendo (…) as
@@ -198,7 +354,9 @@ calendário."*
 - As LISTAS das outras áreas (suprimentos, títulos) mantêm a regra delas
   (a autoria recorta de verdade lá) — tentei trocar no `obras_do_usuario` e o
   teste de Suprimentos "quem só vê os próprios" mostrou que mudaria regra
-  alheia. Supervisor e gestor de obra NÃO entraram na lista: perguntar.
+  alheia. Supervisor e gestor de obra NÃO entraram na lista — ele, 24/11:
+  *"depois a gente decide, ainda não tem nenhum cadastrado."* Publicado em
+  24/11/2026.
 
 ### 23/11/2026 (9) — O guia do portal virou o guia de ACESSO, numa página
 

@@ -3016,6 +3016,47 @@ régua de escopo é a mesma da tela — não se escreve escopo novo.
 
 ---
 
+## 3z-septdecies. A FOTO, O LOCAL E O CLIMA DO DIÁRIO (24/11/2026)
+
+### ⚠️ As palavras ambíguas desta parte
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"onde a foto foi tirada"** | ① o que a **câmera gravou** dentro da foto (EXIF) — prova onde ela foi tirada; ② o que o **aparelho informou no envio** — prova onde estava quem enviou, que é outra coisa; ③ a coordenada da **obra** no cadastro, que não é da foto. Uma resposta que some as três está errada |
+| **"choveu na obra"** | ① o que o encarregado **informou** (`tempo_manha`/`tempo_tarde`); ② o que a **estação mediu** (`clima_medido`). Divergir é normal, e é informação — num pleito de prazo vale a segunda |
+| **"foto do dia"** | a foto está presa ao **diário**, não à data: dia não gravado não tem onde prender foto |
+
+### O que dá para perguntar
+
+- **"Quantas fotos esta obra tem no mês?"** / **"Quais dias estão sem foto?"**
+- **"Quais fotos têm localização confirmada?"** — e a pergunta de verdade:
+  **"quais foram gravadas pela câmera e quais só pelo aparelho de quem
+  enviou?"**
+- **"Em que dias choveu nesta obra, segundo a estação?"**
+- **"Quantos milímetros choveu no mês, e em quantos dias?"**
+- **"Em que dias a obra informou tempo bom e a estação registrou chuva?"** —
+  a pergunta que acha diário preenchido no automático.
+- **"Que dias têm chuva medida acima de X mm?"** — o começo de um pleito de
+  prazo.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+Todas as de lista: quem é preso a obras só recebe as dele, pela mesma régua
+de escopo da tela.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quantos dias de chuva justificariam prorrogação?"** — a medição existe,
+  o critério contratual não está escrito em lugar nenhum. É regra de
+  contrato, e muda de obra para obra.
+- **"Esta foto é mesmo desta obra?"** — a coordenada da foto e a da obra
+  existem, mas ninguém compara. Daria para avisar "esta foto foi tirada a 40
+  km da obra", que é o sinal de foto trocada de pasta.
+- **"Quais obras estão sem coordenada?"** — sem ela não há clima medido nem
+  conferência de foto. Hoje ninguém avisa.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
@@ -3361,4 +3402,12 @@ não há orçamento de material por obra no ERP.
 - Quantos cargos de cada convenção estão sem piso?
 - **Ainda não sabe:** a vigência da convenção (início e fim do acordo) — só o
   mês da data-base é guardado.
+
+## Pedido de demissão (24/11/2026)
+
+- Quantos pedidos de demissão foram com saída imediata e quantos cumpriram o
+  aviso? *(campo `cumpre_aviso` do pedido: 0 = imediato, 1 = trabalha)*
+- Quais pedidos de demissão vieram com a carta do colaborador e quais foram
+  assinados pelo portal? *(documento PAPEL "carta anexada pela obra" × assinado
+  na tela)*
 

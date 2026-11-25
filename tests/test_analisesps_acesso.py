@@ -284,6 +284,9 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/comprovantes"),
     ("GET", "/analisesps/comprovantes/1/pagina/1"),
     ("POST", "/analisesps/comprovantes/enviar"),
+    ("GET", "/analisesps/dda"),
+    ("POST", "/analisesps/dda/colar"),
+    ("POST", "/analisesps/dda/1/vincular"),
     ("POST", "/analisesps/comprovantes/reenviar"),
     ("GET", "/analisesps/api/comprovantes/estado"),
     ("GET", "/analisesps/agenda"),
@@ -363,6 +366,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<int:item_id>", "123")
                    .replace("<int:n>", "1")
                    .replace("<int:lote_id>", "1").replace("<int:pagina>", "1")
+                   .replace("<int:boleto_id>", "1")
                    .replace("<numero>", "123")
                    .replace("<path:numero>", "123")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))

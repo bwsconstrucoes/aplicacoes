@@ -156,6 +156,10 @@ TIPOS: dict[str, dict[str, Any]] = {
         # rescisão.
         "ocultos_se": {"forma_desligamento": {
             "FIM_EXPERIENCIA": ("aviso_previo",)}},
+        # O "vai trabalhar o aviso?" só existe no pedido de demissão.
+        "visiveis_se": {"cumpre_aviso": {"forma_desligamento": ("PEDIDO_COLABORADOR",)}},
+        "obrigatorios_se": {"forma_desligamento": {
+            "PEDIDO_COLABORADOR": ("cumpre_aviso",)}},
         "por_vinculo": {
             "CTPS": {
                 # ⚑ "ELA CONTINUA TRABALHANDO?" — A PERGUNTA QUE FECHA O BURACO
@@ -180,7 +184,14 @@ TIPOS: dict[str, dict[str, Any]] = {
                 # "readmissões pendentes" na tela de Solicitações
                 # (`readmissoes_esquecidas`). O pedido não pode ser fechado
                 # deixando isso em branco.
-                "campos": ("forma_desligamento", "aviso_previo",
+                # ⚑ 24/11/2026: "cumpre_aviso" passou a ser da OBRA, e só no
+                # pedido de demissão (`visiveis_se` abaixo). Ele: *"o mais
+                # comum é que o colaborador peça para sair de imediato (…)
+                # vamos ajustar para poder a gente trabalhar de uma forma ou
+                # de outra. Se ele está pedindo desligamento imediato ou se ele
+                # vai trabalhar o aviso."* Quem sabe isso é a obra, que recebeu
+                # o pedido; o DP corrige se precisar.
+                "campos": ("forma_desligamento", "aviso_previo", "cumpre_aviso",
                            "continua_prestador", "observacao"),
                 "obrigatorios": ("forma_desligamento", "aviso_previo",
                                  "continua_prestador"),
@@ -190,8 +201,7 @@ TIPOS: dict[str, dict[str, Any]] = {
                 # jornada (CLT art. 488) e, no pedido de demissão, se a
                 # pessoa cumpre o aviso — os dois vão no texto que ela assina.
                 "campos_do_dp": ("ultimo_dia", "data_saida",
-                                 "faltas_a_descontar", "reducao_jornada",
-                                 "cumpre_aviso"),
+                                 "faltas_a_descontar", "reducao_jornada",),
             },
             "PRESTADOR": {
                 # Prestador não tem aviso prévio — não há o que avisar. Tem a
@@ -919,7 +929,9 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
                              "Acidente de trabalho ou doença ocupacional",
                              "Licença-maternidade",
                              "Atestado médico (até 15 dias)"),
-    "cumpre_aviso": ("Sim, trabalha os 30 dias", "Não, pede dispensa do aviso"),
+    # 24/11/2026: a obra responde, e a resposta mais comum vem primeiro.
+    "cumpre_aviso": ("Não — sai de imediato (pede dispensa do aviso)",
+                     "Sim — vai trabalhar os 30 dias do aviso"),
 }
 
 # ---------------------------------------------------------------------------
@@ -1027,7 +1039,10 @@ DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
     "reducao_jornada": {"2 horas a menos por dia": "DUAS_HORAS",
                         "7 dias corridos de folga no fim": "SETE_DIAS",
                         "A pessoa escolhe na hora": "ESCOLHE"},
-    "cumpre_aviso": {"Sim, trabalha os 30 dias": "1",
+    "cumpre_aviso": {"Sim — vai trabalhar os 30 dias do aviso": "1",
+                     "Não — sai de imediato (pede dispensa do aviso)": "0",
+                     # os rótulos de antes de 24/11/2026, para pedido já gravado
+                     "Sim, trabalha os 30 dias": "1",
                      "Não, pede dispensa do aviso": "0"},
     "parentesco": {"Filho": "FILHO", "Cônjuge": "CONJUGE"},
     "pagamento": {"Diarista": "DIARISTA", "Mensalista": "MENSALISTA"},
@@ -1492,7 +1507,9 @@ ROTULOS: dict[str, str] = {
     "rg_uf": "Estado de Emissão do RG",
     "complemento": "Complemento",
     "forma_desligamento": "Forma de Desligamento",
-    "aviso_previo": "Data do Aviso Prévio",
+    # 24/11/2026: no pedido de demissão é a data em que a pessoa pediu.
+    "aviso_previo": "Data do aviso prévio (no pedido de demissão, a data do pedido)",
+    "cumpre_aviso": "O colaborador vai trabalhar o aviso?",
     "data_saida": "Data de Saída",
     "data_inicio": "Data de Início",
     "tipo_readmissao": "Tipo de Readmissão",
