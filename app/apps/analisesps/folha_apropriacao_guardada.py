@@ -78,7 +78,7 @@ def _competencia(ano, mes, tipo) -> tuple:
     tipo = str(tipo or "").strip()
     if tipo not in TIPOS:
         raise ErroDaApropriacao(
-            f'tipo de pagamento "{tipo}" não reconhecido. Valores aceitos: "quinzena" e "fim_de_mes".')
+            f'tipo de pagamento "{tipo}" não reconhecido. Valores aceitos: ' + ", ".join(TIPOS) + ".")
     return ano, mes, tipo
 
 

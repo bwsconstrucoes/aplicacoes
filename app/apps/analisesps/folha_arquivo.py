@@ -40,11 +40,13 @@ logger = logging.getLogger("analisesps.folha_arquivo")
 # de memória em julho de 2026.
 MAXIMO_DO_ARQUIVO = 10 * 1024 * 1024        # 10 MB
 
-TIPOS = (folha_sintetica.QUINZENA, folha_sintetica.FIM_DE_MES)
+TIPOS = (folha_sintetica.QUINZENA, folha_sintetica.FIM_DE_MES) + folha_sintetica.DECIMOS
 
 ROTULO_DO_TIPO = {
     folha_sintetica.QUINZENA: "Quinzena (dia 1 ao 15)",
     folha_sintetica.FIM_DE_MES: "Fim de mês (16 ao último dia)",
+    # O 13º (25/11/2026): o rateio lê o ponto do ANO — ver `periodo_do_pagamento`.
+    **folha_sintetica.ROTULO_DO_DECIMO,
 }
 
 
@@ -119,12 +121,16 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
     # relatório é a fonte.
     ano_final = lida.ano or ano
     mes_final = lida.mes or mes
+    tipo_final = lida.tipo_sugerido or str(tipo or "").strip()
+    # O 13º com a competência "13/2026" — há sistema de folha que escreve assim. Vale
+    # o mês em que a parcela é paga: novembro a 1ª, dezembro a 2ª.
+    if tipo_final in folha_sintetica.DECIMOS and mes_final and int(mes_final) > 12:
+        mes_final = 11 if tipo_final == folha_sintetica.DECIMO_1 else 12
     if not ano_final or not mes_final:
         raise ErroDaImportacao(
             "o arquivo não informa a competência da folha. Selecione a competência "
             "na tela e importe novamente.")
 
-    tipo_final = lida.tipo_sugerido or str(tipo or "").strip()
     if tipo_final not in TIPOS:
         raise ErroDaImportacao(
             'não foi possível identificar se a folha é de QUINZENA ou de FIM DE MÊS '

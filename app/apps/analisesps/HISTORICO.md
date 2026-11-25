@@ -12244,6 +12244,45 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 279 — A folha do 13º salário: um tipo à parte, rateado pelo ponto do ano (25/11/2026) — MIGRAÇÃO 059
+
+- O dono: *"vou lançar a folha do 13º. Pagamos o adiantamento dele em novembro e o
+  restante em dezembro. Ela é igual à folha da contabilidade. Como podemos tratar? Aba
+  específica? Em relação ao rateio, gostaria de dividir cada funcionário de acordo com o
+  ponto do ano."* Título real: "Folha Sintética - Adiantamento de 13º Salário".
+- **O risco que havia:** a folha é UMA por competência e tipo, e só existiam quinzena e
+  fim de mês. O título do 13º tem "Adiantamento" → entraria como a quinzena de novembro e
+  SUBSTITUIRIA a quinzena de verdade (com os ajustes). Qualquer outra escolha substituiria
+  a folha normal do mês.
+- **Desenho (proposto e seguido; ele perguntou "uma nova tela?" — não):** a MESMA tela da
+  Folha da Contabilidade, com dois tipos novos — `decimo_1` ("13º salário — 1ª parcela
+  (adiantamento)") e `decimo_2` ("13º salário — 2ª parcela"). O título com "13º"/"décimo
+  terceiro" é conferido ANTES do "adiantamento". Botões novos na escolha manual do tipo.
+  Competência "13/AAAA" (se o Fortes escrever assim) vira 11 (1ª) ou 12 (2ª).
+- **Rateio pelo ponto do ano** (`periodo_do_pagamento`): de 1º/01 ao fim do mês da
+  parcela, até 30/11 — as DUAS parcelas leem jan–nov (a 2ª é paga antes de dezembro
+  fechar; assim caem nas obras na mesma proporção). **Escolha minha, a confirmar.** A regra
+  do dia é a de sempre (obra do ponto; férias/atestado/feriado não contam; regra de rateio
+  para quem não bate ponto; ajuste de mão vence).
+- `ponto.dias_do_pagamento(ano, mes, tipo)`: a porta única (tela, fechamento e
+  complementar). No 13º, `dias_do_ano` lê MÊS A MÊS e guarda só o dia resolvido (data +
+  obra) — o ano cru (~165 mil dias com JSON) arriscaria a memória. Guardado 10 min na
+  memória (11 meses de leitura por abertura seria lento); correção de ponto de mês passado
+  aparece em até 10 min. Perde-se só a marca de "empate" do dia.
+- A tela do 13º diz o período e **lista os meses sem ponto carregado** (ficam fora do
+  rateio). "Bateu ponto e não está na folha", no 13º, olha só o último mês (quem saiu em
+  março recebeu na rescisão e não é alerta).
+- Pipefy: título "Folha de Pagamento - 13º Salário 1ª/2ª Parcela", mesmo tipo de despesa
+  da folha. Arquivos gerados: filtro "13º — 1ª/2ª parcela"; nomes de arquivo "13o salario
+  1a parcela".
+- **Complementar** (pergunta dele: *"se eu precisar lançar algo complementar dele ou da
+  folha, não vai misturar?"*): não — a complementar é por competência E tipo; a do 13º
+  compara só com o que foi pago no 13º. O único ponto comum é a lista "a descontar na
+  próxima folha" (pago a mais), que é uma só.
+- Não verificado: o arquivo real do 13º (só o título); o título da 2ª parcela (suposto
+  "13º Salário"); quantos meses de 2026 têm ponto carregado em produção.
+- Migração 059 (troca a trava do tipo). Testes: `test_analisesps_folha_decimo.py`.
+
 #### Leva 278 — DDA: a base inteira na tela, o selo de pagamento, os novos e mais filtros (24/11/2026)
 
 - O dono, depois de testar: *"ele está gravando a informação? (…) o que já foi importado,

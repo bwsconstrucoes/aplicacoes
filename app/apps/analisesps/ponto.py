@@ -60,6 +60,7 @@ chave que já circulou é chave a trocar.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 import os
@@ -1609,6 +1610,68 @@ def dias_por_cpf(ano: int, mes: int) -> dict:
             else:
                 saida.pop(cpf, None)
     return saida
+
+
+# O PONTO DO ANO, PARA O 13º (25/11/2026) — ver `folha_apropriacao.periodo_do_pagamento`.
+#
+# ⚠️ MÊS A MÊS, E ENXUGADO. O ano inteiro cru são ~165 mil dias (500 pessoas × 11
+# meses), cada um com o JSON do Mobponto — carregar tudo de uma vez é o caminho
+# do estouro de memória de julho (CONTEXTO.md §9). Então lê-se UM mês por vez (a
+# mesma leitura da folha do mês), resolve-se a obra de cada dia ali mesmo, e guarda-
+# se só o resolvido: data, a obra (como marcação única) e o motivo do dia sem obra.
+# A conta da apropriação dá o mesmo resultado; só o "empate" do dia se perde.
+#
+# ⚠️ GUARDADO 10 MINUTOS NA MEMÓRIA: são 11 meses de leitura (dezenas de consultas,
+# segundos num banco de um décimo de núcleo) a cada abertura da tela do 13º. Ponto
+# corrigido de um mês passado aparece em até 10 minutos.
+_ANO_GUARDADO: dict = {}
+_VALIDADE_DO_ANO = 600
+
+
+def _dia_enxuto(dia: dict) -> dict:
+    from .folha_apropriacao import obra_do_dia
+    r = obra_do_dia(dia.get("marcacoes"), dia.get("presenca", ""), dia.get("falta", ""))
+    if r["obra"]:
+        return {"data": dia["data"], "marcacoes": [r["obra"]], "presenca": "", "falta": ""}
+    return {"data": dia["data"], "marcacoes": [], "presenca": dia.get("presenca", ""),
+            "falta": dia.get("falta", "")}
+
+
+def dias_do_ano(ini, fim) -> dict:
+    """`{cpf: [dias enxutos]}` de `ini` a `fim` (datas), mês a mês. Os meses sem
+    carga ficam de fora e vão em `_meses_sem_ponto` da resposta."""
+    chave = (ini, fim)
+    guardado = _ANO_GUARDADO.get(chave)
+    if guardado and time.monotonic() - guardado[0] < _VALIDADE_DO_ANO:
+        return guardado[1]
+    saida: dict = {}
+    sem_ponto = []
+    ano, mes = ini.year, ini.month
+    while (ano, mes) <= (fim.year, fim.month):
+        do_mes = dias_por_cpf(ano, mes)
+        if not do_mes:
+            sem_ponto.append(f"{mes:02d}/{ano}")
+        for cpf, dias in do_mes.items():
+            saida.setdefault(cpf, []).extend(
+                _dia_enxuto(d) for d in dias
+                if isinstance(d.get("data"), dt.date) and ini <= d["data"] <= fim)
+        del do_mes
+        ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+    resposta = {"dias": saida, "meses_sem_ponto": sem_ponto}
+    _ANO_GUARDADO.clear()          # um ano guardado por vez: memória é o que falta
+    _ANO_GUARDADO[chave] = (time.monotonic(), resposta)
+    return resposta
+
+
+def dias_do_pagamento(ano: int, mes: int, tipo: str) -> dict:
+    """Os dias que a apropriação de UM pagamento lê: o mês, na quinzena e no fim
+    de mês; o ano até novembro, no 13º. É a porta única — a tela, o fechamento e a
+    complementar passam por aqui, e a conta não diverge entre elas."""
+    from .folha_apropriacao import periodo_do_pagamento
+    if tipo in ("decimo_1", "decimo_2"):
+        ini, fim = periodo_do_pagamento(ano, mes, tipo)
+        return dias_do_ano(ini, fim)["dias"]
+    return dias_por_cpf(ano, mes)
 
 
 def nomes_do_ponto_eletronico(ano: int, mes: int) -> dict:

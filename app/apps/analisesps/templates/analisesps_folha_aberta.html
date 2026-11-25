@@ -326,6 +326,10 @@
                 >Quinzena (dias 1 a 15)</button>
         <button type="button" class="btn secundario escolhe-tipo" data-tipo="fim_de_mes"
                 >Fim de mês (dia 16 ao último dia)</button>
+        <button type="button" class="btn secundario escolhe-tipo" data-tipo="decimo_1"
+                >13º salário — 1ª parcela</button>
+        <button type="button" class="btn secundario escolhe-tipo" data-tipo="decimo_2"
+                >13º salário — 2ª parcela</button>
       </div>
     </div>
     <div id="saida-folha" style="margin-top:8px"></div>
@@ -421,7 +425,20 @@
    "precisam de olho" não dizia o que a coisa fazia. Este bloco é CURTO de
    propósito: ele aponta e a lista resolve, porque a decisão é por pessoa.
    ------------------------------------------------------------------------ #}
-{% if not montado.ponto.tem_carga %}
+{% if montado.ponto.do_ano %}
+  {# O 13º SE RATEIA PELO PONTO DO ANO (25/11/2026) — `folha_apropriacao.periodo_do_pagamento`. #}
+  <div class="aviso">
+    <b>13º salário:</b> cada pessoa é dividida entre as obras pelos dias de ponto de
+    {{ montado.ponto.periodo[0]|data_br }} a {{ montado.ponto.periodo[1]|data_br }}.
+    Férias, atestado e feriado não contam; quem não bate ponto segue a regra de rateio.
+  </div>
+  {% if montado.ponto.meses_sem_ponto %}
+    <div class="aviso erro"><b>Sem ponto carregado em {{ montado.ponto.meses_sem_ponto|join(', ') }}.</b>
+      Esses meses ficam fora do rateio do 13º — a obra em que a pessoa trabalhou neles não recebe
+      a parte dela. Carregue-os em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a>
+      (alguns minutos cada; fora do horário de bater ponto) antes de gerar o pagamento.</div>
+  {% endif %}
+{% elif not montado.ponto.tem_carga %}
   <div class="aviso erro">
     <b>Não há ponto de {{ folha.competencia }} carregado.</b> Sem o ponto não é
     possível apropriar os dias por obra, e a folha fica integralmente sem obra.

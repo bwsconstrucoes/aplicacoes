@@ -1103,6 +1103,7 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
 # (quinzena, fim de mês, DC, avulso), verba e a data em que foi gerado.
 # ---------------------------------------------------------------------------
 ROTULO_DO_PAGAMENTO = [("quinzena", "Quinzena"), ("fim_de_mes", "Fim de mês"),
+                       ("decimo_1", "13º — 1ª parcela"), ("decimo_2", "13º — 2ª parcela"),
                        ("dc", "Despesas com colaboradores"), ("avulso", "Pagamento avulso")]
 
 
