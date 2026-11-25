@@ -371,6 +371,10 @@ clicar e expandir"*: cada explicação virou um "ⓘ o que é" que abre ao tocar
 corrente, que ficaram no "o que é" da Folha do mês). E **o mês em 11/2026**, não 2026-11: o campo de mês do navegador
 mostrava o formato da máquina; virou uma lista dos meses (`opcoesDeMes`), também em Ponto › Assinaturas.
 
+**Publicado em 25/11/2026** (com o "pode" do dono), junto com o conserto do vínculo (abaixo) — SEM MIGRAÇÃO. Suíte
+inteira: 12.909 passando. **Pendente com ele:** se algum arquivo do fechamento gerado depois de 17/11 foi mandado à
+contabilidade — se foi, refazer (saiu sem a maior parte das pessoas).
+
 ## ⚠️ 25/11/2026 — O RELATÓRIO DE FALTAS E DE HORAS EXTRAS TIRAVA QUASE TODO MUNDO (desde 17/11)
 
 **O que ele viu** (período 26/10 a 25/11): *"só aparece falta de 8 pessoas (…) Da mesma forma horas extras,
