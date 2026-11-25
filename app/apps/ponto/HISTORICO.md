@@ -341,6 +341,31 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 25/11/2026 (2) — A tolerância do fechamento destravada; relatórios por vínculo e empresa; as folhas do recorte
+
+**1. A tolerância** — o dono: *"pelo volume de pessoas (…) às vezes começa a bater ponto um pouquinho mais cedo (…) ou
+fica no final da fila e bate um pouquinho depois. Como são 4 batidas (…) pode gerar um acúmulo superior a 10 minutos,
+sendo que o trabalho efetivo tem acontecido nas horas normais (…) está chegando a quase 20 minutos (…) deixa ele
+livre"*. O campo do Fechamento "Desconsiderar a hora extra do dia de até (minutos)" — que vale também para o atraso —
+foi travado em 10 em 06/11 (revisão da CLT); **volta a ir até 120** (`fechamento.HE_MINIMA_MAXIMA`). ⚠️ Risco dito na
+tela e a ele: a lei tolera 10 min por dia (art. 58 §1º); acima disso conta o tempo todo (Súmula 366). **Não mudou** a
+tolerância do cálculo do espelho (5 min por batida, 10 no dia) — o espelho e os relatórios mostram o dia como a lei
+conta; o que fica de fora é no fechamento.
+
+**2. Quem entra no relatório e de que empresa** — *"colocar aqui ponto dos celetistas e prestadores de serviço. E ainda
+poder definir qual empresa"*. Na barra dos Relatórios: **"Quem entra"** (o padrão do relatório · Celetistas ·
+Prestadores de serviço · Celetistas e prestadores) e **"Empresa"** (`relatorios.recorte`). A empresa da pessoa é a do
+cadastro dela (`colaboradores.empresa_id`) e, sem ela, a da obra. Com celetistas e prestadores juntos, a tabela ganha a
+coluna "Vínculo". O título diz o vínculo e a empresa. **O fechamento da folha continua só CTPS** (é para a
+contabilidade).
+
+**3. As folhas de ponto do recorte** — *"gerar as folhas de ponto de outros colaboradores"*: botão **"🗂️ Folhas de ponto
+do recorte"** (aparece com o relatório montado): a folha de cada pessoa do mesmo período, filtro, vínculo e empresa,
+uma por página, até 150 de uma vez (`/erp/ponto/relatorios/folhas`).
+
+**Testado:** `tests/test_ponto_relatorio_vinculo_banco.py` (o padrão só CTPS; prestadores; todos; a empresa; as folhas) e
+o fechamento (20 aceito, 121 recusado); e **no navegador** (a barra, o relatório misto de uma empresa, as folhas).
+
 ## ⚠️ 25/11/2026 — O RELATÓRIO DE FALTAS E DE HORAS EXTRAS TIRAVA QUASE TODO MUNDO (desde 17/11)
 
 **O que ele viu** (período 26/10 a 25/11): *"só aparece falta de 8 pessoas (…) Da mesma forma horas extras,

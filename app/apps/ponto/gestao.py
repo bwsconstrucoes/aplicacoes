@@ -1654,6 +1654,58 @@ def ponto_api_relatorio():
     return _ok(**r)
 
 
+@bp.route("/erp/api/ponto/relatorios/empresas")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_relatorio_empresas():
+    """As empresas para escolher de qual o relatório sai (25/11/2026)."""
+    from .core import relatorios
+    with db.conexao() as conn:
+        return _ok(empresas=relatorios.empresas(conn), vinculos=relatorios.VINCULOS)
+
+
+MAX_FOLHAS_DE_UMA_VEZ = 150
+
+
+@bp.route("/erp/ponto/relatorios/folhas")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_relatorio_folhas():
+    """AS FOLHAS DE PONTO DO RECORTE, uma por pessoa, num arquivo só (25/11/2026, o dono: "gerar as folhas de ponto de
+    outros colaboradores (…) do prestador de serviço de uma empresa"): o mesmo filtro do relatório — obra, função,
+    vínculo e empresa — e o período escolhido. O cálculo é o da folha de cada um."""
+    from .core import filtro_pessoas, relatorios
+    from .app_colaborador import folha_que_nao_abriu
+    quem = _quem()
+    try:
+        inicio, fim = relatorios.periodo(request.args.get("de"), request.args.get("ate"))
+        f = filtro_pessoas.de_argumentos(request.args)
+        f["vinculo"], f["empresa"] = request.args.get("vinculo") or "", request.args.get("empresa") or ""
+        with db.conexao() as conn:
+            pessoas = relatorios.recorte(conn, quem, "folhas", inicio, fim, f)
+            if not pessoas:
+                raise NaoEncontrado("ninguém nesse recorte")
+            if len(pessoas) > MAX_FOLHAS_DE_UMA_VEZ:
+                raise ErroDeValidacao(f"são {len(pessoas)} pessoas — no máximo {MAX_FOLHAS_DE_UMA_VEZ} de uma vez; "
+                                      "escolha uma obra ou uma empresa")
+            from .core import competencias
+            fechada = (competencias.esta_fechada(conn, competencias.primeiro_dia(inicio))
+                       and competencias.esta_fechada(conn, competencias.primeiro_dia(fim)))
+            pessoas = sorted(pessoas, key=lambda p: (p.get("nome") or "").upper())
+            lote = espelho.Lote(conn, pessoas, inicio, fim)
+            folhas = []
+            for p in pessoas:
+                esp = espelho.montar(conn, int(p["id"]), inicio, fim, lote=lote)
+                esp["competencia"], esp["competencia_fechada"], esp["periodo"] = f"{inicio:%Y-%m}", fechada, True
+                folhas.append(esp)
+        logger.info("Ponto: %d folhas de ponto abertas por %s (%s a %s)", len(folhas), quem.nome, inicio, fim)
+        return _render("espelho_impressao.html", folhas=folhas,
+                       gerado_em=horario.para_local(horario.agora()).strftime("%d/%m/%Y %H:%M"), gerado_por=quem.nome)
+    except (ErroDeValidacao, NaoEncontrado) as e:
+        return folha_que_nao_abriu(e)
+
+
 # O PERCENTUAL DA HORA EXTRA POR ESTADO OU OBRA (29/10/2026, core/hora_extra.py): o evento do .ps do Fortes.
 @bp.route("/erp/api/ponto/hora-extra/percentuais", methods=["GET", "POST"])
 @login_obrigatorio
