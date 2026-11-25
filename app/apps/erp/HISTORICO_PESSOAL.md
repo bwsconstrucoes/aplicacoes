@@ -141,6 +141,31 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (3) — Três decisões dele: carta sempre, ponto na hora, foto de iPhone
+
+Ele: *"Pedido de demissão tem que ter carta de pedido sempre, seja pelo painel,
+seja anexado. A admissão pedida pelo portal, sim, o cara imediatamente já pode
+bater ponto. Foto de iPhone no portal, sim, tem que aceitar também."*
+
+- **Carta sempre** (fecha a "decisão minha, a confirmar" de 24/11 (5)). As
+  duas portas continuam: a carta anexada pela obra, ou o texto que a pessoa
+  assina pelo portal (ou no papel, fotografado — plano B do termo). O que
+  mudou é que **não há terceira**: no pedido de demissão, o passo "Pedido de
+  demissão assinado" não aceita mais "feito por fora do sistema" nem "não se
+  aplica" (`desligamento_processo.marcar` recusa; a tela esconde o link pelo
+  `sem_marca_manual`), e a trava da rescisão diz "a carta ainda não voltou".
+  O texto do portal deixou de dizer "(opcional)": diz que uma das duas é
+  obrigatória. Marca manual feita ANTES disto continua valendo (não mexi em
+  dado gravado).
+- **Ponto na hora:** já era assim — o pré-cadastro da admissão pedida pela obra
+  bate ponto antes de o DP atender. Nada mudou no código; fica registrado que
+  é a decisão dele, não um descuido. Quem não for admitido sai pelo
+  "Cancelado", que conta como desligado e corta o ponto.
+- **Foto de iPhone (HEIC):** dependência nova `pillow-heif`, com o ok dele.
+  `core/comum/fotos.py` converte para JPG na chegada dos quatro envios do
+  portal; o leitor por IA também abre HEIC. Ver `CONTEXTO.md` §9, 25/11/2026.
+  Não testado com um iPhone de verdade: o teste gera um HEIC na hora.
+
 ### 25/11/2026 (2) — Liberar o acesso ao portal é do administrador; o DP só vê a fila
 
 Ele: *"o portal não é só para o DP (…) quem é para fazer a liberação tem que

@@ -21,6 +21,9 @@ qrcode[pil]
 SQLAlchemy>=2.0
 psycopg2-binary
 pillow
+# Foto de iPhone (HEIC) vira JPG na chegada do portal (25/11/2026, com o ok
+# do dono). Ver app/apps/erp/core/comum/fotos.py.
+pillow-heif
 # Código de barras do boleto (Análise de SPs). Python puro, sem nada
 # compilado — a tela que a usa vem numa entrega seguinte.
 python-barcode>=0.15

@@ -1292,15 +1292,21 @@ let LIDOS = {};
    feito a cartinha e a gente vai anexar ao pedido."* Opcional: com a carta,
    ela VALE como o pedido de demissão assinado (o DP confere ao atender) e o
    sistema não gera outro para assinar; sem ela, o sistema gera o texto e a
-   pessoa assina pelo portal, como antes. Só aparece no pedido de demissão. #}
+   pessoa assina pelo portal, como antes. Só aparece no pedido de demissão.
+   25/11/2026: *"pedido de demissão tem que ter carta de pedido sempre, seja
+   pelo painel, seja anexado."* O anexo continua opcional AQUI porque a outra
+   porta (assinar pelo portal) existe — mas o texto diz que uma das duas é
+   obrigatória, e o DP não consegue mais dar o passo por feito sem ela. #}
 function blocoDaCarta(t){
   if (t.chave !== "DESLIGAMENTO") return "";
   return `<div class="papeis oculto" id="p-carta-bloco">
-    <b>Carta de pedido de demissão (opcional)</b>
-    <p class="ajuda">Se o colaborador já escreveu e assinou a carta, tire a foto
-      ou anexe o PDF: ela vale como o pedido assinado e ele <b>não precisa
-      assinar de novo</b>. Sem a carta, o sistema prepara o texto e ele assina
-      aqui no portal depois que o DP analisar.</p>
+    <b>Carta de pedido de demissão</b>
+    <p class="ajuda">O pedido de demissão <b>sempre</b> precisa da carta do
+      colaborador. Se ele já escreveu e assinou, tire a foto ou anexe o PDF
+      aqui: ela vale como o pedido assinado e ele <b>não precisa assinar de
+      novo</b>. Se ainda não tem a carta, o sistema prepara o texto e ele
+      assina aqui no portal depois que o DP analisar — sem essa assinatura o
+      desligamento não segue.</p>
     <input type="file" id="p-carta" accept="image/*,.pdf">
   </div>`;
 }

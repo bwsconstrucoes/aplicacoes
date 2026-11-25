@@ -335,6 +335,8 @@ def _passo_do_aviso(s: Session, sol: dict[str, Any], forma: str,
         return
     if forma == "PEDIDO_COLABORADOR":
         item["rotulo"] = "Pedido de demissão assinado pelo colaborador"
+        # A carta é sempre exigida (25/11/2026): sem "feito por fora".
+        item["sem_marca_manual"] = True
     t = termos.do_pedido(s, int(sol["id"]))
     if sol.get("situacao") not in (EM_ANDAMENTO, "ATENDIDA"):
         item["detalhe"] = "o DP analisa e atende; aí o documento vai para a obra"
@@ -529,6 +531,10 @@ def aviso_pendente(s: Session, solicitacao_id: int) -> str:
         return ""
     if termos.concluido(termos.do_pedido(s, solicitacao_id)):
         return ""
+    if forma == "PEDIDO_COLABORADOR":
+        return ("A carta de pedido de demissão ainda não voltou assinada pelo "
+                "colaborador (ou o DP ainda não validou). Sem ela a rescisão "
+                "não vai à contabilidade.")
     return ("O aviso prévio ainda não voltou assinado pelo colaborador (ou o DP "
             "ainda não validou). A rescisão vai à contabilidade com o aviso "
             "assinado — ou marque o passo como feito por fora do sistema.")
@@ -830,6 +836,20 @@ def marcar(s: Session, sol: dict[str, Any], dados: dict[str, Any],
                   {"s": sol["id"], "p": passo})
         _evento(s, sol["id"], "PASSO_DESFEITO", {"passo": meta["rotulo"]}, usuario)
         return {"passo": passo, "estado": "desfeito"}
+
+    # ⚑ PEDIDO DE DEMISSÃO SEMPRE TEM A CARTA (25/11/2026). Ele: *"pedido de
+    # demissão tem que ter carta de pedido sempre, seja pelo painel, seja
+    # anexado."* As duas portas são a carta que a obra anexa ao pedido e o
+    # texto que a pessoa assina pelo portal (ou no papel, fotografado, pelo
+    # plano B do termo). Dar o passo por feito "por fora", ou dispensá-lo,
+    # deixaria a rescisão ir à contabilidade sem a carta — por isso aqui não.
+    forma_sol = str((sol.get("dados") or {}).get("forma_desligamento") or "").upper()
+    if (passo == "AVISO" and forma_sol == "PEDIDO_COLABORADOR"
+            and acao in ("feito", "nao_se_aplica")):
+        raise ErroValidacao(
+            "Pedido de demissão sempre tem a carta do colaborador. Anexe a "
+            "carta ao pedido, ou gere o documento para ele assinar pelo "
+            "portal (ou no papel, com a foto da folha assinada).")
 
     if acao == "nao_se_aplica":
         if len(obs) < 5:

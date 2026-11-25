@@ -14279,7 +14279,8 @@ def api_portal_ler_documentos():
             svc_portal.quem_esta(s, _usuario_logado(s))     # 401 se não entrou
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
-    arquivos = [(f.read(), f.filename or "documento")
+    from app.apps.erp.core.comum.fotos import heic_para_jpeg
+    arquivos = [heic_para_jpeg(f.read(), f.filename or "documento")
                 for f in request.files.getlist("arquivos")][:svc_doc.TETO_DE_ARQUIVOS]
     if not arquivos:
         return jsonify({"ok": False, "erro": "Nenhum arquivo."}), 400
@@ -14310,10 +14311,13 @@ def api_portal_abrir():
         if request.files:
             dados = _json.loads(request.form.get("pedido") or "{}")
             tipos_dos_papeis = request.form.getlist("tipos")
-            arquivos = [{"conteudo": f.read(), "nome": f.filename or "documento",
-                         "tipo": (tipos_dos_papeis[i] if i < len(tipos_dos_papeis)
-                                  else "")}
-                        for i, f in enumerate(request.files.getlist("papeis"))]
+            from app.apps.erp.core.comum.fotos import heic_para_jpeg
+            arquivos = []
+            for i, f in enumerate(request.files.getlist("papeis")):
+                conteudo, nome = heic_para_jpeg(f.read(), f.filename or "documento")
+                arquivos.append({"conteudo": conteudo, "nome": nome,
+                                 "tipo": (tipos_dos_papeis[i]
+                                          if i < len(tipos_dos_papeis) else "")})
         else:
             dados = request.get_json(silent=True) or {}
             arquivos = []
@@ -14348,10 +14352,11 @@ def api_portal_devolver(devolucao_id: int):
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
     try:
+        from app.apps.erp.core.comum.fotos import heic_para_jpeg
+        conteudo, nome = heic_para_jpeg(arquivo.read(), arquivo.filename or "documento")
         with get_session() as s:
-            r = svc_portal.devolver(s, devolucao_id, arquivo.read(),
-                                    _usuario_logado(s),
-                                    arquivo.filename or "documento")
+            r = svc_portal.devolver(s, devolucao_id, conteudo,
+                                    _usuario_logado(s), nome)
             s.commit()
             return jsonify({"ok": True, **r})
     except svc_portal.SemAcesso as e:
@@ -14387,10 +14392,11 @@ def api_portal_termo(termo_id: int):
                                 "termo": termos.para_assinar(s, termo_id, obras)})
             conduz = {"colaborador_id": eu.get("colaborador_id"), "nome": eu["nome"]}
             if request.files.get("arquivo") is not None:
+                from app.apps.erp.core.comum.fotos import heic_para_jpeg
                 arq = request.files["arquivo"]
-                r = termos.enviar_papel(s, termo_id, obras, conteudo=arq.read(),
-                                        nome_arquivo=arq.filename or "assinado",
-                                        conduzido_por=conduz)
+                conteudo, nome = heic_para_jpeg(arq.read(), arq.filename or "assinado")
+                r = termos.enviar_papel(s, termo_id, obras, conteudo=conteudo,
+                                        nome_arquivo=nome, conduzido_por=conduz)
             else:
                 d = request.get_json(silent=True) or {}
                 if d.get("acao") == "recusa":
