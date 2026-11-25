@@ -252,7 +252,7 @@ def _apropriado_sem_fora(folha) -> tuple:
     ajustes = guardada.ajustes_do_pagamento(ano, mes, tipo)
     sem_fora = {c: dict(a, fora=False) for c, a in ajustes.items()}
     apropriado = folha_apropriacao.apropriar(
-        folha["linhas"], dias_por_cpf=mod_ponto.dias_por_cpf(ano, mes),
+        folha["linhas"], dias_por_cpf=mod_ponto.dias_do_pagamento(ano, mes, tipo),
         regras_por_cpf=regras_por_cpf, ajustes_por_cpf=sem_fora,
         cadastro_por_id=colaboradores.de_para_do_fortes(),
         periodo=folha_apropriacao.periodo_do_pagamento(ano, mes, tipo))
@@ -352,13 +352,18 @@ def a_descontar(so_pendentes: bool = True) -> list:
     return [x for x in lista if not (so_pendentes and x.get("descontado_em"))]
 
 
+def _rotulo_do_tipo(tipo: str) -> str:
+    from .folha_sintetica import ROTULO_DO_DECIMO
+    return {"quinzena": "quinzena", **ROTULO_DO_DECIMO}.get(tipo, "fim do mês")
+
+
 def guardar_a_descontar(montado: dict, quem: str = "") -> int:
     """Grava (ou atualiza) o pago a mais desta competência na lista "a descontar
     na próxima folha". Uma entrada por pessoa e competência."""
     from .horario import agora
     rotulo = montado.get("rotulo_a_descontar") or (
         f"{montado['mes']:02d}/{montado['ano']} "
-        + ("quinzena" if montado["tipo"] == "quinzena" else "fim do mês"))
+        + _rotulo_do_tipo(montado["tipo"]))
     lista = _ler_meta(CHAVE_A_DESCONTAR)
     lista = lista if isinstance(lista, list) else []
     chave = montado.get("chave_a_descontar") or f"{montado['ano']}-{montado['mes']:02d}-{montado['tipo']}"
@@ -455,7 +460,7 @@ def montado_do_relatorio(montado: dict, so_a_pagar: bool = False) -> dict:
     competencia = f"{montado['mes']:02d}/{montado['ano']}"
     rotulo = montado.get("rotulo_do_relatorio") or (
         f"Folha complementar {numero(montado['verba'])} · "
-        + ("quinzena" if montado["tipo"] == "quinzena" else "fim do mês"))
+        + _rotulo_do_tipo(montado["tipo"]))
     prefixo = montado.get("prefixo_do_relatorio") or "Folha complementar"
     return {"titulo": f"{prefixo} {competencia}",
             "prefixo_arquivo": prefixo,

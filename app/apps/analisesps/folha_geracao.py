@@ -561,8 +561,9 @@ def nome_do_arquivo(lote, ano: int, mes: int, tipo: str) -> str:
         # o dia e a hora da geração, para um arquivo não se confundir com outro.
         from .horario import agora
         partes[1] = agora().strftime("%d-%m-%Y %Hh%M")
+    from .folha_sintetica import ROTULO_CURTO_DO_DECIMO
     rotulo_tipo = {"quinzena": "Quinzena", "fim_de_mes": "Fim de mes",
-                   "dc": "", "avulso": ""}.get(str(tipo or ""), str(tipo or ""))
+                   "dc": "", "avulso": "", **ROTULO_CURTO_DO_DECIMO}.get(str(tipo or ""), str(tipo or ""))
     if rotulo_tipo:
         partes.append(rotulo_tipo)
     verbas = [rotulo_da_verba(v) for v in (lote.get("verbas") or [])]
@@ -644,8 +645,10 @@ def analise_xlsx(lotes, pessoas=None, ano: int = 0, mes: int = 0,
     aba = planilha.active
     aba.title = "Resumo"
     competencia = f"{int(mes or 0):02d}/{int(ano or 0)}"
+    from .folha_sintetica import ROTULO_DO_DECIMO
     rotulo_tipo = {"quinzena": "Quinzena (dias 1 a 15)",
-                   "fim_de_mes": "Fim de mês (16 ao último dia)"}.get(
+                   "fim_de_mes": "Fim de mês (16 ao último dia)",
+                   **ROTULO_DO_DECIMO}.get(
                        str(tipo or ""), str(tipo or ""))
     aba.append(["Competência", competencia])
     aba.append(["Pagamento", rotulo_tipo])

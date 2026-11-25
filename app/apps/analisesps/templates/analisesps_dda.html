@@ -54,15 +54,73 @@
       </div>
     </div>
   </div>
-  <label class="opcao" style="margin:10px 4px"><input type="checkbox" name="todas" value="1"
-         {% if filtros.todas %}checked{% endif %}><span class="rotulo">Todas as colagens (não só a última)</span></label>
+  {# MAIS FILTROS (24/11/2026). Pagamento = o selo da SP casada (o mesmo do Lote). #}
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Pagamento</span><span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for chave, rotulo, quantos in lista.por_pagamento %}
+        <label class="opcao"><input type="checkbox" name="pagamento" value="{{ chave }}"
+               {% if chave in filtros.pagamentos %}checked{% endif %}><span class="rotulo">{{ rotulo }}</span>
+          <span class="contagem">{{ quantos }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Prazo <span class="cartao-dica">(dos não pagos)</span></span><span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for chave, rotulo, quantos in lista.por_prazo %}
+        <label class="opcao"><input type="checkbox" name="prazo" value="{{ chave }}"
+               {% if chave in filtros.prazos %}checked{% endif %}><span class="rotulo">{{ rotulo }}</span>
+          <span class="contagem">{{ quantos }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+  {% if lista.pagadoras|length > 1 %}
+  <div class="filtro {{ 'aberto' if filtros.pagadoras }}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Pagadora (matriz / filial)</span><span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for cnpj, rotulo, quantos in lista.pagadoras %}
+        <label class="opcao"><input type="checkbox" name="pagadora" value="{{ cnpj }}"
+               {% if cnpj in filtros.pagadoras %}checked{% endif %}><span class="rotulo">{{ rotulo or dda.documento_bonito(cnpj) }}
+            <span class="cartao-dica">{{ dda.documento_bonito(cnpj) }}</span></span>
+          <span class="contagem">{{ quantos }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+  {% endif %}
+  <div class="filtro {{ 'aberto' if filtros.valor_de is not none or filtros.valor_ate is not none }}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Valor</span><span class="seta">▾</span></div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label><input type="text" inputmode="decimal" name="valor_de" placeholder="0,00"
+             value="{{ filtros.valor_de|moeda if filtros.valor_de is not none else '' }}"></div>
+        <div><label>Até</label><input type="text" inputmode="decimal" name="valor_ate" placeholder="0,00"
+             value="{{ filtros.valor_ate|moeda if filtros.valor_ate is not none else '' }}"></div>
+      </div>
+    </div>
+  </div>
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Colagem</span><span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for chave, rotulo in [('', 'A base inteira'), ('ultima', 'Só os da última colagem'), ('novos', 'Só os novos da última colagem')] %}
+        <label class="opcao"><input type="radio" name="colagem" value="{{ chave }}"
+               {% if filtros.colagem == chave %}checked{% endif %}><span class="rotulo">{{ rotulo }}</span>
+          {% if chave == 'novos' %}<span class="contagem">{{ lista.novos }}</span>{% endif %}</label>
+      {% endfor %}
+    </div></div>
+  </div>
 </form>
 <script>
 (() => {
   const form = document.getElementById("form-filtros-dda");
   let relogio = null;
   const agendar = espera => { if (relogio) clearTimeout(relogio); relogio = setTimeout(() => form.submit(), espera); };
-  form.addEventListener("change", e => { if (e.target.matches("input[type=checkbox], input[type=date]")) agendar(400); });
+  form.addEventListener("change", e => { if (e.target.matches("input[type=checkbox], input[type=radio], input[type=date], input[name^=valor_]")) agendar(400); });
   form.addEventListener("input", e => { if (e.target.matches("input[name=busca]")) agendar(900); });
   form.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); agendar(0); } });
 })();
@@ -87,13 +145,23 @@
 {% else %}
   {% set u = lista.ultima %}
   <div class="cartao">
-    <h2>DDA <small>{{ lista.quantos }} boleto(s) · {{ lista.total|moeda }}
-      {% if not filtros.todas %}· colado em {{ u.colado_em|momento_br }}{% if u.colado_por %} por {{ u.colado_por }}{% endif %}{% else %}· todas as colagens{% endif %}</small></h2>
-    {% if not filtros.todas and u.total_do_banco is not none %}
+    <h2>DDA <small>{% if lista.mostrados != lista.quantos %}{{ lista.mostrados }} de {% endif %}{{ lista.quantos }} boleto(s) · {{ lista.total|moeda }}
+      {% if filtros.recorte == 'novos' %}· só os novos da última colagem
+      {% elif filtros.so_ultima %}· só a última colagem{% else %}· a base inteira ({{ lista.na_base }} boletos guardados){% endif %}</small></h2>
+    {# A BASE CRESCE (24/11/2026): cada colagem acrescenta o que é novo e atualiza o que
+       já existia; nada some. O cruzamento com as SPs é refeito a cada abertura da tela:
+       SP lançada depois do boleto casa sozinha. #}
+    <p class="dda-mudou cartao-dica">Última colagem: {{ u.colado_em|momento_br }}{% if u.colado_por %} por {{ u.colado_por }}{% endif %}
+      — {{ u.boletos }} boleto(s) lido(s){% if lista.tem_anterior %}, dos quais
+        {% if lista.novos %}<a class="etiqueta novo" href="{{ url_for('analisesps.tela_dda', f=1, recorte='novos') }}">{{ lista.novos }} novo(s)</a>{% else %}nenhum novo{% endif %}{% endif %}.
+      {% if filtros.recorte or filtros.so_ultima %} <a href="{{ url_for('analisesps.tela_dda') }}">ver a base inteira</a>{% endif %}
+    </p>
+    {% if lista.cortado %}<div class="aviso atencao">A base passou de {{ dda.TETO_DA_LISTA }} boletos neste filtro: aparecem só os de vencimento mais recente. Use o vencimento ou a busca para ver os antigos.</div>{% endif %}
+    {% if u.total_do_banco is not none %}
       {% if u.boletos == u.boletos_do_banco and u.total == u.total_do_banco %}
-        <p class="cartao-dica">✓ Confere com o total do banco ({{ u.boletos_do_banco }} boletos, {{ u.total_do_banco|moeda }}).</p>
+        <p class="cartao-dica">✓ A última colagem confere com o total do banco ({{ u.boletos_do_banco }} boletos, {{ u.total_do_banco|moeda }}).</p>
       {% else %}
-        <div class="aviso atencao">A leitura NÃO confere com o total do banco ({{ u.boletos_do_banco }} boletos,
+        <div class="aviso atencao">A última colagem NÃO confere com o total do banco ({{ u.boletos_do_banco }} boletos,
           {{ u.total_do_banco|moeda }}) — algum boleto pode ter ficado de fora. Copie a lista de novo, inteira.</div>
       {% endif %}
     {% endif %}
@@ -101,8 +169,7 @@
       {% for chave, rotulo, quantos, valor in lista.contagem %}
         {% set ativo = chave in filtros.situacoes %}
         <a class="kpi {{ 'vermelho' if chave in ('sem_lancamento', 'sp_ja_paga') and quantos else ('ambar' if chave == 'provavel' and quantos else '') }} {{ 'ativo' if ativo }}"
-           href="{{ url_for('analisesps.tela_dda', f=1, situacao=('' if ativo else chave), todas=filtros.todas or None,
-                            busca=filtros.busca or None, de=filtros.de or None, ate=filtros.ate or None) }}">
+           href="{{ url_for('analisesps.tela_dda') }}?{{ (args_sem_situacao + ([] if ativo else [('situacao', chave)]) + [('f', '1')])|urlencode }}">
           <div class="kpi-rotulo">{{ rotulo }}</div><div class="kpi-valor">{{ quantos }}</div>
           <div class="cartao-dica">{{ valor|moeda }}</div></a>
       {% endfor %}
@@ -125,7 +192,7 @@
   <div class="tabela-wrap"><div class="tabela-rolagem livre">
   <table class="sps" id="tabela-dda">
     <thead><tr><th class="marca"></th><th>Vencimento</th><th>Beneficiário</th><th>Pagador</th><th>Nº doc.</th>
-      <th class="num">Valor</th><th>Situação</th><th>SP</th></tr></thead>
+      <th class="num">Valor</th><th>Pagamento</th><th>Situação</th><th>SP</th></tr></thead>
     <tbody>
     {% for b in lista.boletos %}
       <tr class="dda-{{ b.situacao }}">
@@ -134,15 +201,17 @@
             data-valor="{{ b.valor|moeda }}" data-valor-num="{{ b.valor }}" data-venc="{{ b.vencimento|data_br }}"
             data-numero="{{ b.numero_documento }}" data-pagador="{{ dda.filial(b.pagador_cnpj) }}"
             data-linha="{{ b.linha_digitavel }}" aria-label="Marcar o boleto de {{ b.beneficiario_nome }}"></td>
-        <td>{{ b.vencimento|data_br }}{% if b.limite and b.limite != b.vencimento %}<br><span class="cartao-dica">limite {{ b.limite|data_br }}</span>{% endif %}
-          {% if not b.na_ultima %}<br><span class="cartao-dica" title="Não estava na última colagem — em geral, já foi pago">fora do DDA</span>{% endif %}</td>
-        <td><b>{{ b.beneficiario_nome }}</b><br><span class="cartao-dica">{{ dda.documento_bonito(b.beneficiario_doc) }} · {{ b.banco }}</span>
+        <td>{{ b.vencimento|data_br }}{% if b.prazo == 'vencido' %}<br><span class="etiqueta ruim">vencido</span>{% elif b.prazo == 'hoje' %}<br><span class="etiqueta">vence hoje</span>{% endif %}{% if b.limite and b.limite != b.vencimento %}<br><span class="cartao-dica">limite {{ b.limite|data_br }}</span>{% endif %}
+</td>
+        <td>{% if b.novo %}<span class="etiqueta novo" title="Apareceu pela primeira vez na última colagem">novo</span> {% endif %}<b>{{ b.beneficiario_nome }}</b><br><span class="cartao-dica">{{ dda.documento_bonito(b.beneficiario_doc) }} · {{ b.banco }}</span>
           {% if b.beneficiario_final_nome %}<br><span class="cartao-dica">beneficiário final: {{ b.beneficiario_final_nome }}{% if b.beneficiario_final_doc %} ({{ dda.documento_bonito(b.beneficiario_final_doc) }}){% endif %}</span>{% endif %}
           <br><span class="cartao-dica linha-dig" title="Linha digitável">{{ b.linha_digitavel }}</span></td>
         <td><span class="cartao-dica">{{ dda.filial(b.pagador_cnpj) }}</span><br><span class="cartao-dica">{{ dda.documento_bonito(b.pagador_cnpj) }}</span></td>
         <td>{{ b.numero_documento or '—' }}</td>
         <td class="num">{{ b.valor|moeda }}{% if (b.juros or 0) > 0 or (b.multa or 0) > 0 %}<br><span class="cartao-dica">juros/multa</span>{% endif %}</td>
-        <td><span class="etiqueta {{ 'ruim' if b.situacao in ('sem_lancamento', 'sp_ja_paga') else ('' if b.situacao == 'provavel' else 'boa') }}">{{ dda.ROTULOS[b.situacao] }}</span>
+        <td><span class="selo {{ {'pagar': 'pagar', 'agendado': 'agendado', 'parcial': 'incompleto', 'pago': 'pago'}.get(b.pagamento, 'cancelado') }}"
+              title="{{ 'O DDA não diz se foi pago: o selo é o da SP casada com o boleto' if b.sp else 'Nenhuma SP casada com este boleto' }}">{{ dda.PAGAMENTOS[b.pagamento] }}</span></td>
+        <td><span class="etiqueta {{ 'ruim' if b.situacao in ('sem_lancamento', 'sp_ja_paga') else ('' if b.situacao in ('provavel', 'pago') else 'boa') }}">{{ dda.ROTULOS[b.situacao] }}</span>
           {% if b.sp %}<br><span class="cartao-dica">{{ b.sp.porque }}</span>{% endif %}</td>
         <td>
           {% if b.sp %}
@@ -176,7 +245,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="8" class="cartao-dica">Nenhum boleto neste filtro.</td></tr>
+      <tr><td colspan="9" class="cartao-dica">Nenhum boleto neste filtro.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -184,6 +253,8 @@
 {% endif %}
 
 <style>
+  .etiqueta.novo { background:#E6F0F7; color:var(--ciano); text-decoration:none; }
+  .dda-mudou { margin:2px 0 10px; }
   .lateral-dda { padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid var(--borda); }
   .lateral-dda textarea { width:100%; font-size:12px; }
   .kpis-dda a.kpi { text-decoration:none; color:inherit; }

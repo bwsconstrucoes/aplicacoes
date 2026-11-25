@@ -55,6 +55,7 @@ from decimal import ROUND_DOWN, Decimal
 
 from . import folha_geracao as geracao
 from . import formatos, pipefy
+from .folha_sintetica import ROTULO_DO_DECIMO
 
 logger = logging.getLogger("analisesps.folha")
 
@@ -82,6 +83,9 @@ CNPJ_DA_BWS = "00.079.526/0001-09"
 GRUPOS = {
     ("folha", "quinzena"): ("Folha de Pagamento - Quinzena", "386045084", "383928967"),
     ("folha", "fim_de_mes"): ("Folha de Pagamento - Fim de Mês", "386045084", "383928967"),
+    # O 13º (25/11/2026): o mesmo tipo de despesa da folha; o título diz a parcela.
+    ("folha", "decimo_1"): ("Folha de Pagamento - 13º Salário 1ª Parcela", "386045084", "383928967"),
+    ("folha", "decimo_2"): ("Folha de Pagamento - 13º Salário 2ª Parcela", "386045084", "383928967"),
     ("transporte", ""): ("Auxílio Transporte", "386045060", "383846062"),
     ("alimentacao", ""): ("Auxílio Alimentação", "386045055", "383846061"),
     ("diaria", ""): ("Pagamento de Diárias", "404847566", "383928967"),
@@ -252,7 +256,8 @@ def descricao_do_card(competencia: str, tipo: str, verbas, conta: str,
     saber de que competência é, que verbas entraram, de qual conta saiu e onde está
     o arquivo — sem depender de ninguém lembrar."""
     rotulo_tipo = {"quinzena": "Quinzena (dias 1 a 15)",
-                   "fim_de_mes": "Fim de mês (16 ao último dia)"}.get(
+                   "fim_de_mes": "Fim de mês (16 ao último dia)",
+                   **ROTULO_DO_DECIMO}.get(
                        str(tipo or ""), str(tipo or ""))
     linhas = [
         f"Competência: {competencia}",
@@ -888,7 +893,8 @@ def descricao_via_sp(analise: dict, lote: dict, p: dict, sp: dict) -> str:
     Pix e o rateio por obra."""
     fav = p.get("favorecido") or {}
     rotulo_periodo = {"quinzena": "Quinzena (dias 1 a 15)",
-                      "fim_de_mes": "Fim de mês (16 ao último dia)"}.get(
+                      "fim_de_mes": "Fim de mês (16 ao último dia)",
+                      **ROTULO_DO_DECIMO}.get(
                           lote.get("periodo") or "", "")
     linhas = _com_conta_origem(sp.get("conta"), [
         f"Pagamento via SP — competência {analise['competencia']}",
@@ -1091,7 +1097,7 @@ def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
     competência"*)."""
     rotulo_tipo = {"quinzena": "Quinzena (dias 1 a 15)",
                    "fim_de_mes": "Fim de mês (16 ao último dia)",
-                   "avulso": ""}.get(str(tipo or ""), str(tipo or ""))
+                   "avulso": "", **ROTULO_DO_DECIMO}.get(str(tipo or ""), str(tipo or ""))
     destino = geracao.ROTULO_DO_DESTINO.get(sp.get("destino") or "", "")
     linhas = _com_conta_origem(sp.get("conta"), [
         f"{geracao.rotulo_da_verba(verba)} — competência {competencia}",
