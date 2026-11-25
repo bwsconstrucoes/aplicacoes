@@ -363,7 +363,8 @@ sido trabalhado"*.
   `ajustado`. **Pedido ao dono:** o nome e um dia, para conferir.
 - Testes: `tests/test_ponto_fechamento_calendario_banco.py` (a ordem por empresa, o vínculo, o feriado no Excel, o
   domingo cinza, o ✎; com banco: o ajuste marcado, o feriado da obra que não vaza, a empresa de cada obra). Tela e
-  impressão conferidas no navegador. SEM MIGRAÇÃO. Não publicado — espera o "pode".
+  impressão conferidas no navegador. SEM MIGRAÇÃO. **Publicado em 25/11/2026** (com o "pode" do dono; `main` em
+  `927a15ac`; suíte inteira passando depois de trazer a `main`).
 - **Ambiente de teste:** a suíte em paralelo estourou "out of shared memory" no Postgres local deste chat
   (`max_locks_per_transaction`); subido para 1024. Não é do código.
 
@@ -384,7 +385,7 @@ que a pessoa passou a ver depois. **Entrou:**
   páginas (eram 31). A capa passou de uma página na primeira tentativa (o PDF saiu com a página 2 em branco):
   encurtado o parágrafo de abertura e o título da parte 8 no sumário.
 - **Fora:** a tela da ronda não foi fotografada (precisa de uma ronda aberta); o texto descreve.
-SEM MIGRAÇÃO. Não publicado — espera o "pode".
+**Publicado em 25/11/2026** (com o "pode" do dono, junto com o calendário abaixo; `main` em `927a15ac`) — SEM MIGRAÇÃO.
 
 ## 25/11/2026 (2) — A tolerância do fechamento destravada; relatórios por vínculo e empresa; as folhas do recorte
 
