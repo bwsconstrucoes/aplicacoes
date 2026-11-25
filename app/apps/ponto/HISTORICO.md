@@ -371,6 +371,14 @@ clicar e expandir"*: cada explicação virou um "ⓘ o que é" que abre ao tocar
 corrente, que ficaram no "o que é" da Folha do mês). E **o mês em 11/2026**, não 2026-11: o campo de mês do navegador
 mostrava o formato da máquina; virou uma lista dos meses (`opcoesDeMes`), também em Ponto › Assinaturas.
 
+**5. (mesmo dia, depois de publicado) O fechamento também** — o dono: *"eu não estou vendo nenhum filtro de empresa
+(…) em relação ao fechamento da folha (…) quero que seja exibido mesmo o prestador ou a pessoa de outra empresa (…) é
+uma espécie de calendário (…) bem livre para eu visualizar"*. Os filtros ficavam DENTRO do período, que some quando o
+Fechamento é escolhido — por isso ele não os via. Agora "Quem entra" e "Empresa" valem para todos os relatórios,
+inclusive o Fechamento (`fechamento.montar` usa `relatorios.recorte`). **O .ps da folha continua só com quem tem
+carteira** (`vai_ao_ps`): o prestador aparece no calendário e nas planilhas, não no arquivo do Fortes; e o aviso de "sem
+ID Fortes" não acende para ele. Teste: `test_o_fechamento_mostra_o_prestador_mas_o_ps_so_leva_quem_tem_carteira`.
+
 **Publicado em 25/11/2026** (com o "pode" do dono), junto com o conserto do vínculo (abaixo) — SEM MIGRAÇÃO. Suíte
 inteira: 12.909 passando. **Pendente com ele:** se algum arquivo do fechamento gerado depois de 17/11 foi mandado à
 contabilidade — se foi, refazer (saiu sem a maior parte das pessoas).

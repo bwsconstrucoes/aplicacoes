@@ -244,10 +244,10 @@
     <label class="opcao" style="margin-top:6px"><input type="checkbox" id="rl-cal-todos">
       <span class="rotulo" title="Calendário geral: todo mundo que trabalhou, com ou sem hora extra">Calendário geral: todo mundo que trabalhou, com ou sem hora extra</span></label>
     <details class="explica"><summary>ⓘ o que é</summary><small class="suave">Desligado, o calendário mostra só quem teve hora a mais ou a menos no período.</small></details>
+  </div>{% endif %}
     <style>.explica { margin: 2px 0 4px; } .explica > summary { cursor: pointer; font-size: 12px; color: var(--azul, #1F4E79);
       list-style: none; } .explica > summary::-webkit-details-marker { display: none; }
       .explica[open] > summary { margin-bottom: 2px; }</style>
-  </div>{% endif %}
   <div id="rl-periodo">
   <div class="qd-atalhos" style="margin-top:10px">
     <button class="chip" type="button" data-rl-atalho="mes">Este mês</button>
@@ -258,6 +258,7 @@
     <div class="campo"><label for="rl-de">De</label><input type="date" id="rl-de"></div>
     <div class="campo"><label for="rl-ate">Até</label><input type="date" id="rl-ate"></div>
   </div>
+  </div>
   <div id="rl-quem">
     <div class="campo" style="margin-top:8px"><label for="rl-vinculo">Quem entra</label>
       <select id="rl-vinculo">
@@ -266,12 +267,12 @@
         <option value="PRESTADOR">Prestadores de serviço</option>
         <option value="TODOS">Celetistas e prestadores</option>
       </select>
-<details class="explica"><summary>ⓘ o que é</summary><small class="suave">O padrão: faltas, horas extras e banco só com quem tem carteira; ausências, todos.
-        Prestador é quem bate ponto sem carteira (autônomo, estágio…).</small></details></div>
+<details class="explica"><summary>ⓘ o que é</summary><small class="suave">O padrão: faltas, horas extras, banco e fechamento só com quem tem carteira; ausências, todos.
+        Prestador é quem bate ponto sem carteira (autônomo, estágio…). No fechamento, o prestador aparece no calendário e
+        nas planilhas, mas os arquivos .ps da folha continuam só com quem tem carteira.</small></details></div>
     <div class="campo"><label for="rl-empresa">Empresa</label>
       <select id="rl-empresa"><option value="">Todas as empresas</option></select>
 <details class="explica"><summary>ⓘ o que é</summary><small class="suave">A do cadastro da pessoa; sem ela, a da obra dela.</small></details></div>
-  </div>
   </div>
   {{ filtro_pessoas("rl") }}
   <div id="rl-tipos-just" hidden>
@@ -5841,7 +5842,7 @@ async function rlMontar() {
   if (rlTipo() === "fechamento") {
     els("rl-tabela").innerHTML = `<div class="vazio"><b>Montando o fechamento…</b>passa pelo espelho de todo mundo — pode levar alguns segundos.</div>`;
     try {
-      const filtros = {...FP_RL.valores()};
+      const filtros = {...FP_RL.valores(), vinculo: els("rl-vinculo").value, empresa: els("rl-empresa").value};
       RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, filtros,
                                                       he_minima: els("rl-he-min").value,
                                                       calendario_todos: els("rl-cal-todos").checked ? "1" : "0",
@@ -5850,7 +5851,11 @@ async function rlMontar() {
       els("rl-he-abater").checked = !!RL.abater; delete els("rl-he-abater").dataset.mudou;
       RL.tipo = "fechamento"; RL._filtros = filtros;
       if (!FECH_PARTES.some(([c]) => c === RL_VISAO)) RL_VISAO = "supervisao";
-      RL.titulo = `Fechamento da folha de ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)}`;
+      RL.titulo = `Fechamento da folha de ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)}`
+        + (els("rl-vinculo").value ? ` · ${els("rl-vinculo").selectedOptions[0].text}` : "")
+        + (els("rl-empresa").value ? ` · ${els("rl-empresa").selectedOptions[0].text}` : "");
+      // com o vínculo escolhido, a coluna "Vínculo" também aparece no fechamento
+      RL.vinculo = els("rl-vinculo").value === "TODOS" ? "TODOS" : RL.vinculo;
       RL.de = RL.anterior.de; RL.ate = RL.corrente.ate;
       rlDesenhar();
     } catch (e) { els("rl-tabela").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
