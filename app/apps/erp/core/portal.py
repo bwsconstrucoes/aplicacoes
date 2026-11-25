@@ -736,6 +736,33 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
 RECUSA_VISTA = "QUEM_PEDIU_VIU_A_RECUSA"
 
 
+# ---------------------------------------------------------------------------
+# ⚑ ONDE A RECUSA DE ASSINAR NÃO VALE (25/11/2026). A recusa com duas
+# testemunhas é a praxe para documento que a EMPRESA comunica (aviso prévio,
+# aviso de férias): a pessoa foi avisada, assinando ou não. Nos documentos que
+# são a VONTADE da própria pessoa, recusar é o contrário do documento — e a
+# recusa validada contava como "concluído", deixando a rescisão (ou o desconto)
+# seguir sem a carta e sem a autorização. Ele, no mesmo dia: *"pedido de
+# demissão tem que ter carta de pedido sempre."*
+#
+# A trava fica aqui e na rota, e não em `core/termos.py`, que é usado também
+# pela central de assinaturas do ponto.
+# ---------------------------------------------------------------------------
+TERMOS_SEM_RECUSA = {
+    "PEDIDO-DEMISSAO": "O pedido de demissão é a vontade da própria pessoa: se "
+                       "ela não quer assinar, não há pedido. Avise o DP — o "
+                       "pedido de desligamento precisa ser revisto ou cancelado.",
+    "AUTORIZACAO-DESCONTO": "O desconto em folha só vale com a autorização da "
+                            "pessoa (CLT art. 462): se ela não assina, não há "
+                            "desconto. Avise o DP.",
+}
+
+
+def recusa_nao_vale(tipo: str) -> str:
+    """O motivo de a recusa não valer para este tipo de documento, ou ""."""
+    return TERMOS_SEM_RECUSA.get(str(tipo or "").upper(), "")
+
+
 def ciente_da_recusa(s: Session, solicitacao_id: int,
                      usuario: Optional[Usuario]) -> None:
     """Quem pediu marca que viu a recusa. Pedido de outro: não encontrado."""

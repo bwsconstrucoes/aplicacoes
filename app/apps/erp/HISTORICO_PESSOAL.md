@@ -141,6 +141,26 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (7) — A recusa de assinar não vale no pedido de demissão nem na autorização de desconto; guia do PIN
+
+Ele perguntou se a recusa de assinatura já existia. Existia (portal: motivo +
+nome de duas testemunhas; o DP valida), mas valia para QUALQUER documento — e a
+recusa validada conta como "concluído" (`termos.concluido`). No pedido de
+demissão isso deixava a rescisão ir à contabilidade sem a carta (contra a
+decisão do mesmo dia), e na autorização de desconto deixava o desconto seguir
+sem autorização (CLT art. 462). Agora `portal.TERMOS_SEM_RECUSA` trava os dois:
+a rota recusa, e a tela troca a opção por "avise o DP". A trava NÃO está em
+`core/termos.py` porque a central de assinaturas do ponto usa o mesmo arquivo.
+Não conferi se já existe em produção alguma recusa validada desses dois tipos.
+
+Limite que ficou dito a ele: as testemunhas da recusa são só NOMES digitados —
+não assinam, não têm CPF. Proposta (não feita): assinatura das testemunhas na
+tela ou o caminho do papel com as assinaturas delas.
+
+Guia do PIN em `orientacao/` (página 1 para o colaborador, página 2 para o DP e
+o administrativo; PDF, imagem e texto de WhatsApp), mais uma mensagem curta
+sobre a importância do PIN (`mensagem_importancia_do_pin.txt`).
+
 ### 25/11/2026 (6) — A admissão NÃO é mais lançada na planilha nem no Pipefy
 
 Confirmado pelo dono: *"não lança mais"*. Consequência: o cálculo dos

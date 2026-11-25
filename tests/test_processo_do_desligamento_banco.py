@@ -780,3 +780,29 @@ def test_pedido_de_demissao_nao_anda_sem_a_carta(mundo):
                                  "observacao": "assinou no papel por fora"},
                         mundo["dp"])
     assert "carta de pedido de demissão" in proc.aviso_pendente(s, p["id"])
+
+
+def test_no_pedido_de_demissao_a_recusa_de_assinar_nao_vale(mundo, app_real):
+    """25/11/2026: o pedido de demissão é a vontade da pessoa — recusar não
+    pode virar o documento assinado (a recusa validada contava como
+    concluído). No aviso prévio a recusa continua valendo."""
+    from tests.conftest import como                      # type: ignore
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import termos
+    assert svc_portal.recusa_nao_vale("PEDIDO-DEMISSAO")
+    assert svc_portal.recusa_nao_vale("AUTORIZACAO-DESCONTO")
+    assert not svc_portal.recusa_nao_vale("AVISO-PREVIO")
+    assert not svc_portal.recusa_nao_vale("AVISO-FERIAS")
+    s = mundo["s"]
+    p = _pedido_de_demissao(mundo, "Não — sai de imediato (pede dispensa do aviso)")
+    svc.atender(s, p["id"], {"dados": {"data_saida": HOJE.isoformat()}}, mundo["dp"])
+    s.commit()
+    t_ = termos.do_pedido(s, p["id"])
+    cli = como(app_real, mundo["dp"].id)
+    g = cli.get(f"/erp/portal/api/termos/{t_['id']}").get_json()
+    assert g["ok"] and "vontade da própria pessoa" in g["termo"]["sem_recusa"]
+    r = cli.post(f"/erp/portal/api/termos/{t_['id']}", json={
+        "acao": "recusa", "motivo": "não quis assinar",
+        "testemunhas": [{"nome": "Fulano de Tal"}, {"nome": "Beltrano Silva"}]})
+    assert r.status_code == 400 and "vontade" in r.get_json()["erro"]
+    assert termos.do_pedido(s, p["id"])["situacao"] == "ABERTO"

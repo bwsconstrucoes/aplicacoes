@@ -417,6 +417,10 @@ async function abrirTermo(id){
                capture="environment" style="display:none">
         <button class="btn-portal" id="t-enviar-papel" style="margin-top:8px">Enviar a foto</button>
       </details>
+      {# 25/11/2026: no pedido de demissão e na autorização de desconto a
+         recusa não vale — a tela diz o que fazer em vez de oferecê-la. #}
+      ${d.sem_recusa ? `<p class="ajuda" style="margin-top:10px"><b>A pessoa não quer
+        assinar?</b> ${esc(d.sem_recusa)}</p>` : `
       <details style="margin-top:10px"><summary style="cursor:pointer; color:#A32020">
         A pessoa se recusou a assinar</summary>
         <p class="ajuda">Leia o documento para ela na frente de duas testemunhas e
@@ -425,7 +429,7 @@ async function abrirTermo(id){
         <label class="campo-portal">Testemunha 1 (nome completo)<input id="t-tst1"></label>
         <label class="campo-portal">Testemunha 2 (nome completo)<input id="t-tst2"></label>
         <button class="btn-portal" id="t-recusa" style="margin-top:8px">Registrar a recusa</button>
-      </details>
+      </details>`}
     </div>`;
   ligarQuadro(els("quadro"));
   els("t-limpar").addEventListener("click", () => ligarQuadro(els("quadro")));
@@ -436,7 +440,7 @@ async function abrirTermo(id){
   });
   els("t-assinar").addEventListener("click", () => assinarTermo(d.id));
   els("t-enviar-papel").addEventListener("click", () => papelDoTermo(d.id));
-  els("t-recusa").addEventListener("click", () => recusaDoTermo(d.id));
+  if (els("t-recusa")) els("t-recusa").addEventListener("click", () => recusaDoTermo(d.id));
   caixa.scrollIntoView({behavior: "smooth"});
 }
 

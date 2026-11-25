@@ -14496,8 +14496,11 @@ def api_portal_termo(termo_id: int):
             eu = svc_portal.quem_esta(s, usuario)
             obras = svc_portal.obras_que_alcanca(s, eu)
             if request.method == "GET":
-                return jsonify({"ok": True,
-                                "termo": termos.para_assinar(s, termo_id, obras)})
+                termo = termos.para_assinar(s, termo_id, obras)
+                # 25/11/2026: onde a recusa não vale, a tela nem a oferece.
+                termo["sem_recusa"] = svc_portal.recusa_nao_vale(
+                    termos.ler(s, termo_id).get("tipo"))
+                return jsonify({"ok": True, "termo": termo})
             conduz = {"colaborador_id": eu.get("colaborador_id"), "nome": eu["nome"]}
             if request.files.get("arquivo") is not None:
                 from app.apps.erp.core.comum.fotos import heic_para_jpeg
@@ -14508,6 +14511,10 @@ def api_portal_termo(termo_id: int):
             else:
                 d = request.get_json(silent=True) or {}
                 if d.get("acao") == "recusa":
+                    termos.para_assinar(s, termo_id, obras)     # escopo antes
+                    sem = svc_portal.recusa_nao_vale(termos.ler(s, termo_id).get("tipo"))
+                    if sem:
+                        raise ErroValidacao(sem)
                     r = termos.registrar_recusa(
                         s, termo_id, obras, motivo=str(d.get("motivo") or ""),
                         testemunhas=d.get("testemunhas") or [], conduzido_por=conduz)
