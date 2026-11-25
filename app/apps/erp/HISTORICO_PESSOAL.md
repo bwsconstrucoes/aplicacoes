@@ -170,6 +170,15 @@ Três defeitos juntos:
   nome IGUAL a um só colaborador do alcance de quem pede → escolhido; parecido
   ou vários → a lista aparece; nada → a busca de sempre. Nunca troca quem já
   foi escolhido. Um recado só no fim diz o que foi preenchido.
+- **E a leitura nem acontecia** (mesmo dia, ele: *"a IA não tá conseguindo
+  fazer a leitura"*, com "não consegui ler"): as duas leituras de
+  `documentos_de_pessoa` mandavam o arquivo CRU como imagem. PDF cru a IA
+  recusa (certidão chega muito em PDF), e foto de celular inteira estoura o
+  tamanho. Agora usam o preparo do `documentos/leitor.py`: PDF vira PNG (até 2
+  páginas por arquivo) e foto é reduzida a 1800 px. Isso vale também para a
+  admissão. NÃO coberto: foto HEIC de iPhone (o Pillow não abre sem uma
+  biblioteca a mais — dependência nova, perguntar) e o teto de IA da pessoa
+  (se ele estourar, a leitura também volta "não consegui ler").
 - Conferido no navegador com respostas simuladas (dois documentos, dois
   quadros preenchidos com parentesco Filho, a mãe achada). Não verificado com
   uma certidão de verdade (a leitura usa a IA).

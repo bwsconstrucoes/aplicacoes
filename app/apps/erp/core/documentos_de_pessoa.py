@@ -112,16 +112,13 @@ def ler(conteudo: bytes, nome_do_arquivo: str, tipo: str) -> dict[str, Any]:
         cliente = _cliente()
         import os as _os
         modelo = _os.getenv("ERP_MODELO_IA_VISAO", "gpt-4o")
-        dado = _b64.b64encode(conteudo).decode()
-        mime = ("application/pdf" if nome_do_arquivo.lower().endswith(".pdf")
-                else "image/jpeg")
+        imagens = _imagens_para_ia(conteudo, nome_do_arquivo)
         resp = cliente.chat.completions.create(
             model=modelo, temperature=0, max_tokens=700,
             messages=[{"role": "user", "content": [
                 {"type": "text",
-                 "text": _INSTRUCAO.format(esperado=esperado)},
-                {"type": "image_url",
-                 "image_url": {"url": f"data:{mime};base64,{dado}"}}]}])
+                 "text": _INSTRUCAO.format(esperado=esperado)}] + [
+                {"type": "image_url", "image_url": {"url": u}} for u in imagens]}])
         lido = _extrair_json(resp.choices[0].message.content or "") or {}
     except Exception as e:                                # noqa: BLE001
         logger.warning("ERP/portal: não consegui ler o documento (%s)", e)
@@ -243,6 +240,27 @@ vem do comprovante de endereço; o RG, a emissão e o órgão vêm do RG (ou da
 CNH, no campo de documento de identidade)."""
 
 
+# ⚑ PDF E FOTO GRANDE (25/11/2026). Ele, com uma certidão: *"a IA não tá
+# conseguindo fazer a leitura."* As duas leituras deste arquivo mandavam o
+# arquivo CRU como imagem. PDF cru a IA recusa — e certidão chega muito em
+# PDF (a digital, do cartório) —, e foto de celular inteira (12 MP) estoura o
+# tamanho; nos dois casos voltava "não consegui ler". Agora passam pelo mesmo
+# preparo do leitor de documentos do ERP: PDF vira imagem página a página
+# (até 2 por arquivo — documento de pessoa não passa disso) e a foto é
+# reduzida para 1800 px.
+PAGINAS_POR_ARQUIVO = 2
+
+
+def _imagens_para_ia(conteudo: bytes, nome: str) -> list[str]:
+    """As imagens deste arquivo, prontas para a IA (data URL)."""
+    from app.apps.erp.core.documentos import leitor
+    if (nome or "").lower().endswith(".pdf") or conteudo[:5] == b"%PDF-":
+        paginas = leitor._paginas_como_png(conteudo)[:PAGINAS_POR_ARQUIVO]
+        return [f"data:image/png;base64,{p}" for p in paginas]
+    dado, mime = leitor._preparar_imagem(conteudo)
+    return [f"data:{mime};base64,{dado}"]
+
+
 def _mime(nome: str) -> str:
     n = (nome or "").lower()
     if n.endswith(".pdf"):
@@ -358,9 +376,8 @@ def ler_varios(arquivos: list[tuple[bytes, str]]) -> dict[str, Any]:
             {"type": "text", "text": _INSTRUCAO_LOTE.format(n=len(arquivos))}]
         for i, (conteudo, nome) in enumerate(arquivos):
             partes.append({"type": "text", "text": f"Arquivo {i}: {nome}"})
-            partes.append({"type": "image_url", "image_url": {
-                "url": f"data:{_mime(nome)};base64,"
-                       + _b64.b64encode(conteudo).decode()}})
+            for u in _imagens_para_ia(conteudo, nome):
+                partes.append({"type": "image_url", "image_url": {"url": u}})
         resp = cliente.chat.completions.create(
             model=modelo, temperature=0, max_tokens=1500,
             messages=[{"role": "user", "content": partes}])
