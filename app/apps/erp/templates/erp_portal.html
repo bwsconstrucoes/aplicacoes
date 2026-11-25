@@ -1051,6 +1051,26 @@ function blocoRepetido(t){
     <button type="button" class="btn-mais" id="p-mais">+ outro dependente</button>`;
 }
 
+{# O quadro do dependente preenchido pela leitura (25/11/2026): o primeiro sem
+   nome — ou um novo, se todos já têm. Campo já escrito não é tocado. #}
+function preencherDependente(t, campos, lote){
+  const nome = (campos.nome || "").trim();
+  const nasc = (campos.data_nascimento || "").trim();
+  if (!nome && !nasc) return;
+  let i = REPETIDOS.findIndex(x => !(x.nome || "").trim());
+  if (i < 0) { REPETIDOS.push({}); i = REPETIDOS.length - 1; }
+  const alvo = REPETIDOS[i];
+  if (nome && !alvo.nome) alvo.nome = nome;
+  if (nasc && !alvo.data_nascimento) alvo.data_nascimento = nasc;
+  const oQue = lote.map(a => (a.documento || "").toLowerCase()).join(" ");
+  if (!alvo.parentesco) {
+    if (/nascimento/.test(oQue)) alvo.parentesco = "FILHO";
+    else if (/casamento/.test(oQue)) alvo.parentesco = "CONJUGE";
+  }
+  pintarRepetidos(t);
+  recado(`Lemos o documento e preenchemos o ${i + 1}º dependente — confira.`, "ok");
+}
+
 function pintarRepetidos(t){
   const onde = els("p-repetidos");
   if (!onde) return;
@@ -1303,6 +1323,12 @@ function recalcularPapeis(){
   ARQUIVOS.forEach(a => (a.tipos || []).forEach(t => {
     if (t !== "OUTRO" && !PAPEIS[t]) PAPEIS[t] = {nome: a.nome};
   }));
+  {# ⚑ NO PEDIDO DE DEPENDENTE, o RG do dependente também é o documento dele
+     (25/11/2026) — a certidão já vem reconhecida como DOC-DEPENDENTE. Criança
+     só tem certidão; adulto pode mandar o RG. #}
+  if ((els("p-tipo") || {}).value === "DEPENDENTE" && !PAPEIS["DOC-DEPENDENTE"]
+      && PAPEIS["DOC-IDENTIDADE"])
+    PAPEIS["DOC-DEPENDENTE"] = PAPEIS["DOC-IDENTIDADE"];
 }
 
 function blocoDosPapeis(t){
@@ -1391,7 +1417,8 @@ function pintarPapeis(t){
           ${a.lendo ? "" : `<select data-arq-tipo="${i}" class="tipo-arquivo">
             ${(a.tipos || []).some(x => x !== "OUTRO") ? ""
               : `<option value="" selected>diga o que é este arquivo…</option>`}
-            ${Object.entries(ROTULO_PAPEL).filter(([c]) => c !== "DOC-DEPENDENTE")
+            ${Object.entries(ROTULO_PAPEL).filter(([c]) => c !== "DOC-DEPENDENTE"
+                || t.chave === "DEPENDENTE")
               .map(([c, r]) => `<option value="${c}"
                 ${(a.tipos || []).some(x => x !== "OUTRO") && tipoPrincipal(a) === c ? "selected" : ""}
                 >${esc(r)}</option>`).join("")}
@@ -1482,6 +1509,15 @@ async function receberArquivos(t, novos){
         a.tipos = x.tipos || ["OUTRO"]; a.documento = x.documento || "";
         a.aviso = x.aviso || "";
       });
+      // ⚑ NO PEDIDO DE DEPENDENTE, a leitura é do DEPENDENTE (25/11/2026).
+      // Ele: *"o sistema tá identificando como se fosse documento do titular
+      // (…) e ele não tá lendo o documento e preenchendo também não."* O que
+      // a certidão (ou o RG) diz vai para o quadro do dependente — nome,
+      // nascimento e, pela certidão, o parentesco —, nunca para os dados do
+      // colaborador. Só em campo vazio, como no resto.
+      if (t.repete) {
+        preencherDependente(t, d.campos || {}, lote);
+      } else {
       // O que os documentos disseram entra nos campos VAZIOS — nunca por
       // cima do que a pessoa já escreveu. E fica marcado como LIDO, para ela
       // conferir.
@@ -1495,6 +1531,7 @@ async function receberArquivos(t, novos){
           alvo.dispatchEvent(new Event("input", {bubbles: true}));
         }
       });
+      }
     } else {
       lote.forEach(a => { a.aviso = "não consegui ler — diga o que é"; });
     }
@@ -2009,7 +2046,11 @@ async function enviarPedido(){
       fd.append("pedido", JSON.stringify(corpo));
       ARQUIVOS.forEach(a => {
         fd.append("papeis", a.arquivo, a.nome);
-        fd.append("tipos", tipoPrincipal(a));
+        // No pedido de dependente, o RG é do DEPENDENTE: guardado como dele,
+        // e não como a identidade do colaborador (25/11/2026).
+        const tipoDoPapel = tipoPrincipal(a);
+        fd.append("tipos", t.chave === "DEPENDENTE" && tipoDoPapel === "DOC-IDENTIDADE"
+                           ? "DOC-DEPENDENTE" : tipoDoPapel);
       });
       const r = await fetch("/erp/portal/api/pedidos", {method: "POST", body: fd});
       d = await r.json().catch(() => ({}));

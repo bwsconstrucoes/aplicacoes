@@ -182,8 +182,13 @@ def ler(conteudo: bytes, nome_do_arquivo: str, tipo: str) -> dict[str, Any]:
 # papel: a CNH é identificação E traz o CPF. A tela marca os papéis exigidos
 # pelo que a leitura reconheceu, e a pessoa pode corrigir o tipo à mão.
 # ===========================================================================
+# ⚑ DOC-DEPENDENTE entrou em 25/11/2026. Ele, cadastrando uma criança: *"ele
+# só tem certidão de nascimento e o sistema tá exigindo RG."* A leitura não
+# conhecia a certidão: ela voltava "não reconhecida" e o pedido de dependente
+# não saía.
 TIPOS_RECONHECIDOS = ("DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA",
-                      "CTPS-FOTO", "CTPS-INFORMACOES", "ASO", "OUTRO")
+                      "CTPS-FOTO", "CTPS-INFORMACOES", "ASO", "DOC-DEPENDENTE",
+                      "OUTRO")
 TETO_DE_ARQUIVOS = 8
 CAMPOS_DO_LOTE = ("nome", "cpf", "nome_mae", "data_nascimento", "rg",
                   "rg_emissao", "rg_orgao", "rg_uf", "cep", "logradouro",
@@ -191,8 +196,14 @@ CAMPOS_DO_LOTE = ("nome", "cpf", "nome_mae", "data_nascimento", "rg",
                   "num_ctps", "num_pis")
 
 _INSTRUCAO_LOTE = """Você recebe {n} arquivo(s), na ordem 0, 1, 2…, com os
-documentos de UM trabalhador brasileiro, fotografados com celular em canteiro
-de obra (torto, com sombra, às vezes frente e verso em fotos separadas).
+documentos de UM trabalhador brasileiro — ou de UM dependente dele —,
+fotografados com celular em canteiro de obra (torto, com sombra, às vezes
+frente e verso em fotos separadas).
+
+Se for CERTIDÃO DE NASCIMENTO, "nome" e "data_nascimento" são os de quem
+NASCEU (a criança), nunca os da mãe ou do pai; os pais vão em "nome_mae" e
+"nome_pai". Se for CERTIDÃO DE CASAMENTO, "nome" é o do cônjuge que não é o
+trabalhador, quando der para saber; se não der, deixe "".
 
 Devolva SOMENTE um JSON:
 
@@ -201,10 +212,11 @@ Devolva SOMENTE um JSON:
     {{"indice": 0,
       "documento": "o que é (RG frente, RG verso, CNH, CPF, comprovante de
                     endereço, CTPS página da foto, CTPS página de informações,
-                    outro)",
+                    certidão de nascimento, certidão de casamento, outro)",
       "tipos": ["um ou mais entre: DOC-IDENTIDADE, CPF-DOC,
                  COMPROVANTE-ENDERECO-PESSOA, CTPS-FOTO, CTPS-INFORMACOES,
                  ASO (atestado de saúde ocupacional, o exame admissional),
+                 DOC-DEPENDENTE (certidão de nascimento ou de casamento),
                  OUTRO — a CNH e o RG novo trazem o CPF, então valem por
                  DOC-IDENTIDADE e CPF-DOC"],
       "legivel": true ou false,
