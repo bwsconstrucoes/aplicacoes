@@ -12282,6 +12282,8 @@ somente Solicitações de uma conta especifica"*.
 - Não verificado: o arquivo real do 13º (só o título); o título da 2ª parcela (suposto
   "13º Salário"); quantos meses de 2026 têm ponto carregado em produção.
 - Migração 059 (troca a trava do tipo). Testes: `test_analisesps_folha_decimo.py`.
+- **Publicado em 25/11/2026**, junto com a leva 278. Falta o dono apertar "Aplicar
+  atualizações do banco" (059) e importar o arquivo real do 13º.
 
 #### Leva 278 — DDA: a base inteira na tela, o selo de pagamento, os novos e mais filtros (24/11/2026)
 
@@ -12319,6 +12321,7 @@ somente Solicitações de uma conta especifica"*.
   boletos pode pesar; se pesar, cruzar só os não pagos.
 - Sem migração. Testes: `test_a_base_CRESCE_e_a_segunda_colagem_diz_o_que_e_NOVO`,
   `test_o_selo_de_PAGAMENTO_e_os_filtros_da_lateral`, `test_o_PRAZO_nao_alarma_o_que_ja_foi_pago`.
+- **Publicado em 25/11/2026** (sem migração).
 
 #### Leva 277 — Tela DDA: colar o DDA do Bradesco e cruzar com as SPs (24/11/2026) — MIGRAÇÃO 058
 
