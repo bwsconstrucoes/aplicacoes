@@ -378,10 +378,11 @@ Fechamento é escolhido — por isso ele não os via. Agora "Quem entra" e "Empr
 inclusive o Fechamento (`fechamento.montar` usa `relatorios.recorte`). **O .ps da folha continua só com quem tem
 carteira** (`vai_ao_ps`): o prestador aparece no calendário e nas planilhas, não no arquivo do Fortes; e o aviso de "sem
 ID Fortes" não acende para ele. Teste: `test_o_fechamento_mostra_o_prestador_mas_o_ps_so_leva_quem_tem_carteira`.
+**Publicado em 25/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Suíte inteira: 12.911 passando. Ele confirmou que
+**nada foi enviado à contabilidade depois de 17/11** — não há arquivo do fechamento a refazer.
 
 **Publicado em 25/11/2026** (com o "pode" do dono), junto com o conserto do vínculo (abaixo) — SEM MIGRAÇÃO. Suíte
-inteira: 12.909 passando. **Pendente com ele:** se algum arquivo do fechamento gerado depois de 17/11 foi mandado à
-contabilidade — se foi, refazer (saiu sem a maior parte das pessoas).
+inteira: 12.909 passando. (Perguntado se algum fechamento foi enviado depois de 17/11: nenhum.)
 
 ## ⚠️ 25/11/2026 — O RELATÓRIO DE FALTAS E DE HORAS EXTRAS TIRAVA QUASE TODO MUNDO (desde 17/11)
 
