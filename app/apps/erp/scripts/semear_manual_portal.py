@@ -69,7 +69,10 @@ with get_session() as s:
 
     # --- a equipe da obra
     equipe = [
-        ("José Nascimento",  "15350946056", "CTPS",      "Carpinteiro",        HOJE - timedelta(days=70),  HOJE + timedelta(days=20)),
+        # 84 dias de casa com experiência de 45+45: a prorrogação acaba em 6
+        # dias, dentro da janela de aviso (10 dias). É esta linha que faz
+        # aparecer "Contratos de experiência terminando" na tela.
+        ("José Nascimento",  "15350946056", "CTPS",      "Carpinteiro",        HOJE - timedelta(days=84),  HOJE + timedelta(days=6)),
         ("Rita Gomes",       "28625802023", "CTPS",      "Servente",           HOJE - timedelta(days=400), None),
         ("Davi Monteiro",    "70784221060", "CTPS",      "Encarregado de obra",HOJE - timedelta(days=900), None),
         ("Sueli Albuquerque","96087096020", "CTPS",      "Servente",           HOJE - timedelta(days=500), None),

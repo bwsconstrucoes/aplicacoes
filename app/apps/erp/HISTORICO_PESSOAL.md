@@ -208,6 +208,16 @@ de nome passa batida — por exemplo, se o botão "Enviar o pedido" virar outra
 coisa, ou se a ordem dos blocos do portal mudar de novo (mudou em 23 e em
 24/11). Quem mexer no portal continua tendo de olhar a parte correspondente.
 
+⚑ **O manual já nasceu tendo de alcançar a `main` — e isso prova o risco
+acima.** Entre escrever e publicar, outros chats publicaram três mudanças que
+a obra VÊ, e as três entraram no texto antes de o manual subir: **quem libera
+o acesso ao portal é o ADMINISTRADOR** (era "o DP libera", e o teste de nomes
+não pegaria isso), a **carta do pedido de demissão** passou a ser sempre
+exigida, e a leitura de documentos passou a aceitar **PDF, foto grande, foto
+de iPhone e a certidão de nascimento do dependente**. As 17 telas foram
+refotografadas contra a `main` e comparadas pixel a pixel com as antigas:
+três tinham mudado.
+
 **Arquivos compartilhados mexidos** (importa para quem roda outro chat do
 ERP): `routes.py` (quatro rotas novas, junto da `pagina_portal`),
 `tests/test_permissoes_rotas.py` e `PERGUNTAS.md`. Mexidos também
