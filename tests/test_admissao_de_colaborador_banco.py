@@ -1343,3 +1343,30 @@ def test_a_recusa_aparece_na_entrada_do_portal_ate_quem_pediu_ver(mundo):
     assert meu["recusa_nao_vista"] is False
     eventos = [e["acao"] for e in svc.ler(s, p["id"])["eventos"]]
     assert eventos.count(svc_portal.RECUSA_VISTA) == 1
+
+
+@pytestmark_banco
+def test_o_dp_ve_e_abre_os_documentos_que_a_obra_mandou(mundo, app_real):
+    """Ele (25/11/2026): *"a operadora do DP (…) não está visualizando os
+    anexos. Onde é que eles ficam? Confirma se está nessa tela."* Caminho
+    inteiro: a obra manda o pedido com os arquivos, o DP abre o pedido e abre
+    cada arquivo."""
+    from tests.conftest import como                      # type: ignore
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    cid = s.execute(text("SELECT colaborador_id FROM dp_solicitacoes "
+                         "WHERE id = :i"), {"i": p["id"]}).scalar()
+    assert cid, "a admissão nasce com o pré-cadastro"
+    svc.guardar_papeis(s, p["id"], cid, [
+        {"conteudo": b"%PDF-1.4 rg" * 80, "nome": "rg.pdf", "tipo": "DOC-IDENTIDADE"},
+        {"conteudo": b"%PDF-1.4 cpf" * 80, "nome": "cpf.pdf", "tipo": "CPF-DOC"},
+        {"conteudo": b"%PDF-1.4 luz" * 80, "nome": "luz.pdf",
+         "tipo": "COMPROVANTE-ENDERECO-PESSOA"}])
+    s.commit()
+    d = como(app_real, mundo["dp"].id).get(
+        f"/erp/api/dp/solicitacoes/{p['id']}").get_json()
+    papeis = d.get("papeis") or (d.get("solicitacao") or {}).get("papeis") or []
+    assert len(papeis) == 3, d.keys()
+    for x in papeis:
+        r = como(app_real, mundo["dp"].id).get(f"/erp/anexo/{x['anexo_id']}")
+        assert r.status_code == 200, (x, r.get_data(as_text=True)[:200])
