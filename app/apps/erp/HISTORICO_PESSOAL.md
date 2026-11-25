@@ -141,6 +141,82 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 — O manual do Portal da Obra: online e em PDF
+
+**Ele:**
+
+> *"Preciso criar um manual do portal de solicitações com o que temos até
+> então. No padrão do manual do ponto. Clique pra visualizar online e ainda
+> possibilidade de baixar pdf. Subdividir ele pelas áreas e explicar pra que
+> serve e como ele funciona."*
+
+**O que existe agora**, no mesmo desenho do manual do ponto (que está de pé
+desde 15/10/2026 e já provou que funciona):
+
+| | Onde |
+|---|---|
+| A página | `/erp/portal/manual/` (e `/erp/portal/manual`, que redireciona) |
+| O PDF | `/erp/portal/manual.pdf` — 23 páginas A4 |
+| Os arquivos | `app/apps/erp/static/manual_portal/` (index.html + `telas/` + o PDF) |
+| Os links | no pé do portal e na tela de **criar o acesso** |
+
+**As quatro rotas são PÚBLICAS, e isso foi decidido, não esquecido:** é página
+fixa, sem consulta ao banco e sem dado de ninguém — e quem está travado na
+porta é exatamente quem precisa ler como entrar. Estão declaradas em
+`tests/test_permissoes_rotas.py`, com o motivo escrito.
+
+**Subdividido pelas áreas, como ele pediu**, e as fechadas entram também: 1
+entrar · 2 a tela inicial · **3 Colaboradores (os 14 pedidos, grupo a grupo)**
+· **4 Suprimentos** · **5 Pagamentos** · **6 Diário de obra** · 7 pendências
+(assinar e devolver) · 8 avisos · 9 acompanhar · 10 quem vê o quê · 11 pode e
+não pode · 12 mensagens da tela · 13 dúvidas.
+
+⚑ **Por que a área FECHADA ganhou parte própria no manual:** é a mesma razão
+pela qual ela aparece no portal (`core/portal.py`). Manual que pula Suprimentos
+faria a obra achar que nunca vai existir — e continuar pedindo material por
+WhatsApp, que é o que se quer acabar. A parte dela diz uma frase: *continue
+pedindo como você pede hoje*.
+
+**As 17 telas são de um banco de teste**, com nomes, CPFs e obra **inventados**
+— nenhuma pessoa de verdade entra no repositório.
+
+#### O que foi feito para o manual NÃO envelhecer em silêncio
+
+É o risco de verdade deste trabalho, e o manual do ponto já viveu isso
+(*"ao mudar uma tela ou uma regra que o colaborador vê, o manual fica velho"*).
+Três coisas, porque lembrar não é um plano:
+
+1. **`tests/test_manual_do_portal.py`** quebra quando uma **área** nova ou um
+   **tipo de pedido** novo não aparecem no manual, quando a conta de pedidos
+   escrita nele não bate com a tela, quando uma imagem citada não existe, e
+   quando uma área fechada é descrita como aberta. Já pegou uma tela sobrando
+   na pasta.
+2. **`app/apps/erp/scripts/semear_manual_portal.py`** monta de novo o portal
+   cheio (obra, equipe, pedidos em quatro situações, pendências, avisos e um
+   aviso prévio para assinar) num banco de teste. **Recusa qualquer banco sem
+   "teste" no nome.** Sem ele, refotografar custa meia hora de dado montado à
+   mão — e é esse custo que faz manual morrer.
+3. **`app/apps/erp/scripts/imprimir_manual_portal.js`** reimprime o PDF da
+   própria página. O PDF é cópia: mudar a página e não reimprimir deixa os
+   dois diferentes, e **nada acusa** — está anotado em `PERGUNTAS.md` como
+   limite conhecido.
+
+#### O que o teste NÃO alcança, e fica dito
+
+Ele confere **nomes e contas**, não redação. Tela que muda de jeito sem mudar
+de nome passa batida — por exemplo, se o botão "Enviar o pedido" virar outra
+coisa, ou se a ordem dos blocos do portal mudar de novo (mudou em 23 e em
+24/11). Quem mexer no portal continua tendo de olhar a parte correspondente.
+
+**Arquivos compartilhados mexidos** (importa para quem roda outro chat do
+ERP): `routes.py` (quatro rotas novas, junto da `pagina_portal`),
+`tests/test_permissoes_rotas.py` e `PERGUNTAS.md`. Mexidos também
+`templates/erp_portal.html` (o link no pé) e
+`templates/erp_primeiro_acesso_portal.html` (o link antes de entrar).
+**Sem migração de banco.**
+
+---
+
 ### 24/11/2026 (5) — Aba "Operador" na ficha da pessoa, com o MESMO formulário
 
 **Ele:**

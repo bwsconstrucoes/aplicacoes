@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+<title>Manual do Portal da Obra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout: uma coluna de leitura; cada passo é texto + a tela do celular ao lado (empilha no celular). */
+:root {
+  --fundo: #f3f5f8;
+  --papel: #ffffff;
+  --tinta: #17222e;
+  --suave: #566474;
+  --linha: #d9dfe7;
+  --marinho: #12355b;      /* o azul do cabeçalho do aplicativo */
+  --marinho-claro: #e6edf6;
+  --verde: #1d7a3a;
+  --verde-claro: #e3f3e8;
+  --ambar: #9a5b00;
+  --ambar-claro: #fdf1dc;
+  --vermelho: #a3261b;
+  --vermelho-claro: #fbe7e4;
+  --f-titulo: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-texto: "Atkinson Hyperlegible", "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --fundo: #0e151d; --papel: #16212c; --tinta: #e6ebf1; --suave: #9eabb9; --linha: #2a3846;
+  --marinho: #8fb6e3; --marinho-claro: #1b2b3d; --verde: #6fcf8d; --verde-claro: #16301f;
+  --ambar: #f0b45a; --ambar-claro: #33270f; --vermelho: #f08a7e; --vermelho-claro: #3a1a16; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --fundo: #0e151d; --papel: #16212c; --tinta: #e6ebf1; --suave: #9eabb9; --linha: #2a3846;
+  --marinho: #8fb6e3; --marinho-claro: #1b2b3d; --verde: #6fcf8d; --verde-claro: #16301f;
+  --ambar: #f0b45a; --ambar-claro: #33270f; --vermelho: #f08a7e; --vermelho-claro: #3a1a16; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--fundo); color: var(--tinta); font: 17px/1.55 var(--f-texto); }
+.pagina { max-width: 880px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-titulo); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: 2.4rem; color: var(--marinho); }
+h2 { font-size: 1.75rem; color: var(--marinho); }
+h3 { font-size: 1.3rem; }
+p { margin: 0; }
+a { color: var(--marinho); }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--marinho); outline-offset: 2px; border-radius: 4px; }
+.rotulo { font: 700 .78rem/1 var(--f-texto); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
+.pilha { display: flex; flex-direction: column; gap: 14px; }
+
+/* abertura */
+.abertura { display: grid; gap: 14px; padding-bottom: 26px; border-bottom: 2px solid var(--linha); }
+.abertura .lead { font-size: 1.12rem; max-width: 62ch; }
+.endereco { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--papel);
+  border: 1px solid var(--linha); border-radius: 10px; padding: 12px 14px; }
+.barra { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; font-weight: 700; }
+.barra a { text-decoration: none; }
+.endereco code { font: 700 1rem/1.3 ui-monospace, Menlo, Consolas, monospace; color: var(--marinho); word-break: break-all; }
+.endereco button { font: 700 .9rem var(--f-texto); border: 1px solid var(--marinho); color: var(--marinho);
+  background: transparent; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+
+/* os quatro jeitos */
+.perfis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 6px; }
+.perfil { display: flex; flex-direction: column; gap: 6px; background: var(--papel); border: 1px solid var(--linha);
+  border-top: 5px solid var(--marinho); border-radius: 10px; padding: 14px; text-decoration: none; color: var(--tinta); }
+.perfil b { font: 700 1.25rem/1.15 var(--f-titulo); color: var(--marinho); }
+.perfil span { color: var(--suave); font-size: .95rem; }
+.perfil em { font-style: normal; font-weight: 700; font-size: .9rem; color: var(--marinho); margin-top: auto; }
+.qual { background: var(--marinho-claro); border-radius: 10px; padding: 14px 16px; }
+
+/* índice */
+.indice { margin-top: 22px; }
+.indice ol { margin: 8px 0 0; padding-left: 1.3em; columns: 2; column-gap: 32px; }
+.indice li { break-inside: avoid; margin-bottom: 4px; }
+
+/* seções */
+section.parte { margin-top: 44px; display: flex; flex-direction: column; gap: 18px; scroll-margin-top: 12px; }
+.parte > header { display: flex; flex-direction: column; gap: 6px; border-left: 6px solid var(--marinho); padding-left: 12px; }
+.parte > header p { color: var(--suave); }
+
+/* um passo: texto + tela */
+.passo { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 20px; align-items: start;
+  background: var(--papel); border: 1px solid var(--linha); border-radius: 12px; padding: 18px; }
+.passo.sem-tela { grid-template-columns: minmax(0, 1fr); }
+.passo .texto { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.passo ol, .passo ul { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 5px; }
+.telas { display: flex; flex-direction: column; gap: 14px; }
+figure.tela { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+figure.tela img { width: 100%; height: auto; display: block; border-radius: 18px; border: 6px solid #1b2530;
+  background: #1b2530; box-shadow: 0 2px 10px rgba(10, 25, 45, .18); }
+figure.tela figcaption { font-size: .85rem; color: var(--suave); text-align: center; }
+.botao { display: inline-block; font-weight: 700; background: var(--marinho-claro); color: var(--marinho);
+  border-radius: 6px; padding: 0 6px; white-space: normal; }
+
+/* avisos */
+.nota { border-radius: 10px; padding: 12px 14px; font-size: .97rem; }
+.nota.info { background: var(--marinho-claro); }
+.nota.ok { background: var(--verde-claro); }
+.nota.atencao { background: var(--ambar-claro); }
+.nota.proibido { background: var(--vermelho-claro); }
+.nota b:first-child { display: block; margin-bottom: 2px; }
+
+/* pode / não pode */
+.regras { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.regras > div { background: var(--papel); border: 1px solid var(--linha); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.regras h3 { font-size: 1.25rem; }
+.regras .sim h3 { color: var(--verde); }
+.regras .nao h3 { color: var(--vermelho); }
+.regras ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+
+/* mensagens */
+.tabela { overflow-x: auto; background: var(--papel); border: 1px solid var(--linha); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: .96rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--linha); }
+th { font: 700 .78rem var(--f-texto); letter-spacing: .06em; text-transform: uppercase; color: var(--suave); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 700; width: 42%; }
+
+details.duvida { background: var(--papel); border: 1px solid var(--linha); border-radius: 10px; padding: 12px 14px; }
+details.duvida summary { font-weight: 700; cursor: pointer; }
+details.duvida p { margin-top: 8px; }
+
+.rodape { margin-top: 48px; padding-top: 16px; border-top: 2px solid var(--linha); color: var(--suave); font-size: .92rem; }
+
+@media screen and (max-width: 900px) { .perfis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media screen and (max-width: 720px) {
+  .perfis { grid-template-columns: minmax(0, 1fr); }
+  .indice ol { columns: 1; }
+  .passo { grid-template-columns: minmax(0, 1fr); }
+  .telas { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  figure.tela { flex: 0 0 min(240px, 78%); }
+  .regras { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: 2rem; }
+}
+
+/* PAPEL (A4): cada parte começa numa página; o texto em cima e as telas lado a lado embaixo. */
+@page { size: A4; margin: 13mm 13mm 15mm; }
+@media print {
+  :root { --fundo: #fff; --papel: #fff; --tinta: #111; --suave: #444; --linha: #c9d1db; --marinho: #12355b;
+    --marinho-claro: #e9eff7; --verde: #1d6b35; --verde-claro: #e6f3ea; --ambar: #8a5200; --ambar-claro: #fbf0dc;
+    --vermelho: #9a2318; --vermelho-claro: #fbe9e6; color-scheme: light; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-size: 10.5pt; line-height: 1.45; }
+  .pagina { max-width: none; padding: 0; }
+  .so-tela { display: none !important; }
+  h1 { font-size: 26pt; } h2 { font-size: 17pt; } h3 { font-size: 12.5pt; }
+  section.parte { break-before: page; margin-top: 0; gap: 10px; }
+  .parte > header, h3 { break-after: avoid; }
+  /* o passo pode quebrar entre o texto e as telas — senão o título da parte fica sozinho numa página */
+  .passo { grid-template-columns: minmax(0, 1fr); padding: 12px 14px; gap: 10px; border-radius: 8px; }
+  .telas { flex-direction: row; gap: 10px; justify-content: flex-start; overflow: visible; break-inside: avoid; }
+  .passo h3, .passo ol, .passo ul { break-inside: avoid; }
+  figure.tela { flex: 0 0 46mm; break-inside: avoid; }
+  figure.tela img { border-width: 3px; border-radius: 10px; box-shadow: none; }
+  figure.tela figcaption { font-size: 8pt; }
+  .perfis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .indice ol { columns: 3; column-gap: 20px; font-size: 9.5pt; }
+  .abertura { gap: 10px; padding-bottom: 14px; }
+  .perfil { padding: 10px; }
+  .regras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .regras > div, .nota, details.duvida, tr { break-inside: avoid; }
+  .tabela { overflow: visible; } table { min-width: 0; font-size: 9.5pt; }
+  a { text-decoration: none; color: inherit; }
+  details.duvida summary { list-style: none; } details.duvida summary::-webkit-details-marker { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+/* a tela larga (o diário, no computador) não leva moldura de celular */
+figure.tela.larga img { border-radius: 8px; border-width: 3px; }
+figure.tela.larga { flex: 1 1 100%; }
+.passo.larga { grid-template-columns: minmax(0, 1fr) 320px; }
+@media print { .passo.larga { grid-template-columns: minmax(0, 1fr); }
+  figure.tela.larga { flex: 0 0 110mm; }
+  /* uma tela sozinha no papel não precisa caber ao lado de mais duas */
+  figure.tela:only-child { flex: 0 0 68mm; } }
+</style>
+
+<main class="pagina">
+
+<div class="abertura">
+  <div class="barra so-tela"><a href="/erp/portal">‹ Abrir o portal</a><a href="/erp/portal/manual.pdf">Baixar em PDF</a></div>
+  <span class="rotulo">BWS Construções · para quem trabalha na obra</span>
+  <h1>Manual do Portal da Obra</h1>
+  <p class="lead">O Portal da Obra é a tela enxuta do ERP, feita para o celular. Por ele a obra <b>pede</b> o que precisa ao escritório, <b>acompanha</b> o que pediu, <b>colhe assinatura</b> dos documentos que o DP mandou, <b>devolve</b> esses documentos pelo sistema e <b>lança o diário</b> do dia. É uma porta só, com um login só — o mesmo do ERP.</p>
+  <div class="endereco">
+    <span class="rotulo">Endereço</span>
+    <code id="end">https://aplicacoes.bwsconstrucoes.com.br/erp/portal</code>
+    <button type="button" id="copiar" class="so-tela">Copiar</button>
+  </div>
+  <p style="color:var(--suave); font-size:.95rem">Abre no navegador do celular (Chrome ou Safari) e não precisa instalar nada da loja. Depois de abrir, use o menu do navegador e escolha <b>“Adicionar à tela inicial”</b>: vira um ícone, como um aplicativo. No computador é o mesmo endereço.</p>
+
+  <div class="nota info" style="margin-top:10px"><b>O portal não é o ponto.</b> Bater ponto, ver o seu mês e o seu espelho continua sendo no <b>BWS Ponto</b>, com CPF e PIN. O portal é outra coisa: é onde a obra <b>pede ao escritório</b>. São dois endereços e duas senhas diferentes — e o manual do ponto é outro.</div>
+
+  <h2 style="margin-top:10px">As quatro áreas</h2>
+  <div class="perfis">
+    <a class="perfil" href="#colaboradores"><b>Colaboradores</b><span>Admissão, desligamento, férias, afastamento, cargo, dados, dependente e ajuda de custo.</span><em>Aberta — 14 pedidos →</em></a>
+    <a class="perfil" href="#suprimentos"><b>Suprimentos</b><span>Pedir material, ver o que está para chegar, receber e lançar nota e boleto.</span><em>Ainda não aberta →</em></a>
+    <a class="perfil" href="#pagamentos"><b>Pagamentos</b><span>Pedir pagamento de nota, de boleto e reembolso.</span><em>Ainda não aberta →</em></a>
+    <a class="perfil" href="#diario"><b>Diário de obra</b><span>O que aconteceu na obra no dia: relato, fotos, equipamentos, clima.</span><em>Aberta — abre a tela →</em></a>
+  </div>
+  <div class="qual"><b>Por que a área fechada aparece?</b> Para você saber que ela <b>vai</b> existir, e não achar que o sistema só serve para o DP. Enquanto não abre, ela diz o que fazer: continue pedindo material e pagamento como você pede hoje. Quando abrir, o botão acende sozinho — ninguém precisa avisar.</div>
+
+  <nav class="indice" aria-label="Conteúdo">
+    <span class="rotulo">Conteúdo</span>
+    <ol>
+      <li><a href="#entrar">Entrar: criar o seu acesso</a></li>
+      <li><a href="#inicial">A tela inicial, bloco por bloco</a></li>
+      <li><a href="#colaboradores">Área Colaboradores: os 14 pedidos</a></li>
+      <li><a href="#suprimentos">Área Suprimentos</a></li>
+      <li><a href="#pagamentos">Área Pagamentos</a></li>
+      <li><a href="#diario">Área Diário de obra</a></li>
+      <li><a href="#pendencias">Pendências: assinar e devolver</a></li>
+      <li><a href="#avisos">Avisos da equipe</a></li>
+      <li><a href="#acompanhar">O que você já pediu</a></li>
+      <li><a href="#alcance">Quem vê o quê</a></li>
+      <li><a href="#regras">O que pode e o que não pode</a></li>
+      <li><a href="#mensagens">Mensagens na tela</a></li>
+      <li><a href="#duvidas">Dúvidas comuns</a></li>
+    </ol>
+  </nav>
+</div>
+
+<!-- 1 -->
+<section class="parte" id="entrar">
+  <header><span class="rotulo">Para todos</span><h2>1. Entrar: criar o seu acesso</h2>
+    <p>O acesso ao portal é o <b>mesmo acesso do ERP</b>: e-mail e senha. Não é o CPF e o PIN do ponto.</p></header>
+
+  <div class="passo">
+    <div class="texto">
+      <h3>Se você ainda não tem acesso</h3>
+      <ol>
+        <li>Abra o endereço do portal. Na tela de entrada, toque em <span class="botao">Criar o meu acesso</span>.</li>
+        <li>Digite o seu <b>CPF</b> e o <b>telefone que está no seu cadastro</b> na BWS.</li>
+        <li>Chega um código de 6 números no WhatsApp <b>daquele número</b>. Digite o código.</li>
+        <li>Informe o e-mail que você vai usar como login e conclua.</li>
+      </ol>
+      <div class="nota atencao"><b>Isso ainda não libera o acesso — e é de propósito.</b> O seu pedido entra numa fila e <b>alguém do DP libera</b>. É essa conferência que impede que qualquer um crie acesso ao sistema da empresa. Quando liberarem, você recebe o convite para criar a senha.</div>
+      <div class="nota info"><b>O código não chegou?</b> Ele vai para o telefone do seu cadastro. Se o seu número mudou, peça ao DP para atualizar antes de tentar de novo. São até 3 códigos por hora por pessoa.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/01-entrar.jpg" alt="A tela de entrada do ERP" width="800" height="1720"><figcaption>A tela de entrada do ERP</figcaption></figure>
+      <figure class="tela"><img src="telas/02-primeiro-acesso.jpg" alt="Criar o acesso pelo CPF" width="800" height="1720"><figcaption>Criar o acesso pelo CPF</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="passo sem-tela">
+    <div class="texto">
+      <h3>Se você já tem acesso</h3>
+      <p>Entre com o e-mail e a senha. Quem é <b>administrativo de obra</b> cai direto no portal — é a tela dele, e o menu grande do ERP não aparece de propósito: seriam 18 telas que ele não usa.</p>
+      <p>Quem tem acesso maior (escritório, gestão, DP) vê no alto o link <span class="botao">ERP completo →</span> e vai e volta entre os dois.</p>
+      <div class="nota atencao"><b>Esqueceu a senha?</b> Na tela de entrada, toque em <span class="botao">Esqueci minha senha</span>. Quem <b>nunca</b> teve senha não usa esse caminho — usa o <span class="botao">Criar o meu acesso</span>, logo acima.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="parte" id="inicial">
+  <header><span class="rotulo">A porta</span><h2>2. A tela inicial, bloco por bloco</h2>
+    <p>São quatro blocos, nesta ordem, e a ordem tem razão de ser: primeiro o que você veio fazer, depois o que tem prazo, depois o que é só aviso, por fim o histórico.</p></header>
+
+  <div class="passo">
+    <div class="texto">
+      <ol>
+        <li><b>Abrir uma solicitação</b> — fica no alto, sempre. É o motivo de o portal existir.</li>
+        <li><b>Pendências da obra</b> — o que <b>tem prazo</b> e o DP está esperando: documento para o colaborador assinar e documento para devolver. Vem recolhido, com a quantidade à vista.</li>
+        <li><b>Avisos da equipe</b> — para você se programar: contrato de experiência terminando e férias chegando. Não é tarefa; por isso fica embaixo e recolhido.</li>
+        <li><b>O que você já pediu</b> — tudo o que você abriu, <b>de todas as áreas, numa lista só</b>, com a resposta do DP.</li>
+      </ol>
+      <div class="nota info"><b>No alto da tela</b> ficam o seu nome e o seu perfil. É por ali que você confere que entrou com o acesso certo.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/03-inicio.jpg" alt="A tela inicial do portal" width="800" height="1720"><figcaption>A tela inicial do portal</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="parte" id="colaboradores">
+  <header><span class="rotulo">Área aberta</span><h2>3. Área Colaboradores: os 14 pedidos</h2>
+    <p>É tudo o que a obra pede ao <b>DP</b> sobre gente: entrar, sair, férias, afastamento, cargo, dados, dependente e ajuda de custo. O pedido vira uma <b>solicitação numerada</b>, cai na fila do DP e volta com resposta.</p></header>
+
+  <div class="passo">
+    <div class="texto">
+      <h3>Como qualquer pedido funciona — três passos</h3>
+      <ol>
+        <li><b>Escolha a área</b> (Colaboradores) e depois <b>o que você precisa</b>. A lista vem agrupada por assunto: Admissão, Desligamento, Férias, Afastamento, Dados e benefícios, Outros.</li>
+        <li><b>Preencha.</b> Os campos mudam conforme o tipo — e conforme o <b>vínculo da pessoa</b>. Campo com <b>*</b> é obrigatório.</li>
+        <li><b>Envie.</b> A tela responde com o <b>número do pedido</b> (ex.: SDP‑000012) e ele já aparece em “O que você já pediu”.</li>
+      </ol>
+      <div class="nota ok"><b>Só se pede o que o sistema não sabe.</b> Se a pessoa já tem cadastro, o formulário puxa o que já existe e só pergunta o que falta. Digitar de novo o que o sistema já tem é a maior fonte de dado divergente.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/08-escolher-tipo.jpg" alt="Escolher o que você precisa" width="744" height="492"><figcaption>Escolher o que você precisa</figcaption></figure>
+      <figure class="tela"><img src="telas/17-pedido-enviado.jpg" alt="O número do pedido, depois de enviar" width="800" height="1720"><figcaption>O número do pedido, depois de enviar</figcaption></figure>
+    </div>
+  </div>
+
+  <h3 style="margin-top:6px">3.1 Admissão</h3>
+  <div class="passo">
+    <div class="texto">
+      <p><b>Admissão de Colaborador</b> serve para quem <b>nunca</b> trabalhou conosco e para quem <b>já</b> trabalhou — é um tipo só, e o sistema descobre sozinho pelo CPF.</p>
+      <ol>
+        <li>Se a pessoa já trabalhou aqui, procure pelo nome ou CPF no quadro <b>“Já trabalhou conosco?”</b>: o cadastro dela volta e você só completa o que falta.</li>
+        <li><b>Fotografe os documentos primeiro</b> — todos de uma vez: RG (frente e verso) ou CNH, CPF, comprovante de endereço, a CTPS se for carteira assinada, e o ASO se já tiver. O sistema lê e <b>preenche os campos abaixo</b>.</li>
+        <li><b>Confira o que ele leu</b> e complete o resto: obra, empresa, cargo, salário, data de admissão.</li>
+      </ol>
+      <div class="nota atencao"><b>A lista “O que precisa estar entre eles”</b> vai se marcando sozinha conforme os documentos chegam. Enquanto houver papel faltando, o sistema avisa — e o DP não recebe a admissão pela metade.</div>
+      <p><b>Admissão de Prestador de Serviço</b> é o caminho de quem <b>já é prestador</b> e passa a ter carteira. A busca só oferece prestadores — admitir em carteira quem já está em carteira não existe.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/09-admissao-documentos.jpg" alt="Os documentos vêm primeiro" width="800" height="1720"><figcaption>Os documentos vêm primeiro</figcaption></figure>
+      <figure class="tela"><img src="telas/09b-admissao-campos.jpg" alt="Os campos, já preenchidos pela leitura" width="800" height="1720"><figcaption>Os campos, já preenchidos pela leitura</figcaption></figure>
+    </div>
+  </div>
+
+  <h3>3.2 Desligamento</h3>
+  <div class="passo">
+    <div class="texto">
+      <p><b>Desligamento de Colaborador</b> fecha o vínculo e tira o acesso ao ponto. Escolha a pessoa pela busca: digite parte do nome ou do CPF e toque no resultado — o cargo e o vínculo aparecem ali, que é como você confere que acertou a pessoa.</p>
+      <ul>
+        <li><b>Carteira assinada:</b> forma do desligamento, data do aviso prévio e se a pessoa continua como prestador.</li>
+        <li><b>Prestador:</b> só a data de saída.</li>
+      </ul>
+      <div class="nota info"><b>O que você NÃO informa:</b> último dia trabalhado, faltas a descontar e chave Pix. Quem apura isso é o DP, com o que o sistema já tem.</div>
+      <p><b>Cancelar Solicitação de Desligamento</b> é para quando a pessoa vai continuar: o DP desfaz a saída e avisa a contabilidade. Em “O que você já pediu”, o próprio desligamento tem o botão que já abre esse cancelamento com a pessoa escolhida.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/10-buscar-pessoa.jpg" alt="Procurar a pessoa pelo nome" width="744" height="1050"><figcaption>Procurar a pessoa pelo nome</figcaption></figure>
+      <figure class="tela"><img src="telas/11-desligamento.jpg" alt="Os campos do vínculo dela" width="744" height="1220"><figcaption>Os campos do vínculo dela</figcaption></figure>
+    </div>
+  </div>
+
+  <h3>3.3 Férias</h3>
+  <div class="passo">
+    <div class="texto">
+      <p>São três pedidos, e eles ficam juntos na lista:</p>
+      <ul>
+        <li><b>Solicitação de Férias</b> — início, quantos dias, se vende 1/3 e se adianta o 13º.</li>
+        <li><b>Alteração de Férias</b> — mudar data ou dias de férias já marcadas.</li>
+        <li><b>Cancelamento de Férias</b> — desmarcar.</li>
+      </ul>
+      <div class="nota atencao"><b>Férias marcadas aparecem no bloco “Avisos da equipe”</b> alguns dias antes. É o aviso para programar a obra sem a pessoa — e para <b>não contar falta</b> no ponto dela.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/16-ferias.jpg" alt="O pedido de férias" width="744" height="1680"><figcaption>O pedido de férias</figcaption></figure>
+    </div>
+  </div>
+
+  <h3>3.4 Afastamento</h3>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <p><b>Comunicação de Afastamento</b>: atestado acima de 15 dias, INSS, acidente de trabalho, maternidade. Informe a natureza, a data de início e a previsão de volta. <b>Acidente não espera o ponto</b> — comunique por aqui no mesmo dia.</p>
+      <p><b>Retorno de Afastamento</b>: a pessoa voltou. O DP registra e comunica à contabilidade.</p>
+      <div class="nota info"><b>Atestado de até 15 dias</b> continua sendo entregue pelo <b>aplicativo do ponto</b>, pela própria pessoa. O portal é para o afastamento longo, que muda o vínculo.</div>
+    </div>
+  </div>
+
+  <h3>3.5 Dados e benefícios</h3>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <ul>
+        <li><b>Solicitação de Alteração de Cargo</b> — o cargo pleiteado, a data e a justificativa.</li>
+        <li><b>Atualização de Dados Cadastrais</b> — telefone, chave Pix, endereço, nome.</li>
+        <li><b>Solicitação de Cadastro de Dependente</b> — para salário‑família. Dá para mandar <b>vários de uma vez</b>: cada dependente ganha um quadro numerado, e o sistema diz qual está incompleto.</li>
+        <li><b>Solicitação de Ajuda de Custo</b> — auxílio alimentação e auxílio transporte, inclusive o vale‑transporte (ele mora aqui dentro, nas categorias de transporte).</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>3.6 Outros</h3>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <p><b>Solicitações Diversas</b> é para o que não cabe nos tipos acima: você escreve o que precisa. Use com parcimônia — pedido com tipo próprio anda mais rápido, porque o DP já sabe o que fazer com ele.</p>
+      <div class="nota proibido"><b>O que a obra NÃO abre por aqui:</b> desconto em folha. Lançar desconto no salário de alguém é do DP, não da obra.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="parte" id="suprimentos">
+  <header><span class="rotulo">Ainda não aberta</span><h2>4. Área Suprimentos</h2>
+    <p>Pedir material, ver o que está para chegar, receber e lançar a nota e o boleto.</p></header>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <div class="nota atencao"><b>Enquanto não abre: continue pedindo material como você pede hoje.</b> O botão aparece no portal marcado como “ainda não disponível aqui”. Ele acende sozinho quando a empresa abrir a área — ninguém precisa avisar você.</div>
+      <p>A tela existe e está pronta; o que não foi aberto ainda é a <b>porta do portal</b> para ela. É decisão da direção quando a obra passa a pedir material por aqui.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="parte" id="pagamentos">
+  <header><span class="rotulo">Ainda não aberta</span><h2>5. Área Pagamentos</h2>
+    <p>Pedir pagamento de nota, de boleto e reembolso.</p></header>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <div class="nota atencao"><b>Enquanto não abre: continue pedindo pagamento como você pede hoje.</b> Mesma regra da área de Suprimentos.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="parte" id="diario">
+  <header><span class="rotulo">Área aberta</span><h2>6. Área Diário de obra</h2>
+    <p>Esta área não abre formulário de pedido: ela <b>abre a tela do diário</b>. Diário não é pedido — é registro do dia.</p></header>
+  <div class="passo larga">
+    <div class="texto">
+      <p>Toque em <span class="botao">Diário de obra</span> e o portal leva direto para a tela. Lá você:</p>
+      <ul>
+        <li>vê o <b>quadro do mês</b>, com um quadrado por dia — <b>vermelho é dia sem diário</b>;</li>
+        <li>abre o dia e escreve o <b>relato</b>: o que aconteceu, as ocorrências, os equipamentos;</li>
+        <li>anexa <b>fotos</b>, que já vão com data, hora e <b>o lugar onde foram tiradas</b>, e com legenda;</li>
+        <li>o sistema junta sozinho o que ele já sabe do dia: quem bateu ponto e o <b>clima</b>.</li>
+      </ul>
+      <div class="nota info"><b>Obra em fase de conclusão não aparece</b> na lista do dia a dia — senão a tela viraria uma lista imensa de obras que já acabaram. Se precisar de uma delas, troque o filtro <b>“Quais obras”</b> para “Todas, inclusive as concluídas”.</div>
+      <div class="nota ok"><b>Para voltar ao portal</b>, use o link <b>Portal</b> no alto da tela do diário.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela larga"><img src="telas/15-diario.jpg" alt="O quadro do mês, no diário" width="800" height="1720"><figcaption>O quadro do mês, no diário</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="parte" id="pendencias">
+  <header><span class="rotulo">Tem prazo</span><h2>7. Pendências: assinar e devolver</h2>
+    <p>É o que o DP mandou <b>para a obra fazer</b>. Tem prazo, e o sistema cobra. São duas coisas diferentes.</p></header>
+
+  <div class="passo">
+    <div class="texto">
+      <h3>Para o colaborador assinar</h3>
+      <p>O DP analisou, liberou, e agora a pessoa precisa assinar — um aviso prévio, por exemplo. <b>O documento nasce no DP, nunca no pedido da obra</b>: é isso que dá lisura ao processo.</p>
+      <ol>
+        <li>Toque no documento e <b>mostre a tela à pessoa</b>. Ela lê.</li>
+        <li>Ela <b>assina com o dedo</b> no quadro e digita o <b>PIN dela</b> — o mesmo do aplicativo do ponto.</li>
+        <li>Toque em <span class="botao">Assinar</span>. Pronto: o documento é gerado, guardado no cadastro dela e vai para o DP.</li>
+      </ol>
+      <p>Quando não dá para assinar na tela, há os dois outros caminhos, logo abaixo:</p>
+      <ul>
+        <li><b>A pessoa não tem PIN</b> — imprima, colha a assinatura no papel e <b>envie a foto</b>. O DP valida olhando.</li>
+        <li><b>A pessoa se recusou a assinar</b> — registre, com o nome de <b>duas testemunhas</b>. O DP valida.</li>
+      </ul>
+      <div class="nota info"><b>Por que o PIN dela, e não o seu?</b> Porque é a assinatura <b>dela</b>. O sistema guarda quem assinou, a hora, o lugar e um lacre do texto — é o que prova, depois, que ela assinou aquilo e que o texto não mudou. A mesma base da folha de ponto.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/12-termo-assinar.jpg" alt="O documento, a assinatura e o PIN" width="688" height="1472"><figcaption>O documento, a assinatura e o PIN</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="passo">
+    <div class="texto">
+      <h3>Documentos a devolver</h3>
+      <p>O DP mandou um documento para a obra e espera ele <b>de volta</b> — a rescisão assinada, um ASO. Colha a assinatura e envie por aqui: escolha o arquivo ou tire a foto e toque em <span class="botao">Enviar</span>.</p>
+      <div class="nota proibido"><b>Não mande por WhatsApp.</b> Foto em conversa de WhatsApp é foto perdida num celular: sem tipo, sem dono e sem prazo. Enviado por aqui, o documento fica guardado <b>no cadastro da pessoa</b>, com data e tipo, e a pendência fecha sozinha.</div>
+      <div class="nota atencao"><b>Prazo vencido fica em vermelho</b> e o sistema cobra a obra pelo WhatsApp. A cobrança avisa; o arquivo volta pelo portal.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/05-pendencias.jpg" alt="As duas pendências, abertas" width="744" height="1666"><figcaption>As duas pendências, abertas</figcaption></figure>
+      <figure class="tela"><img src="telas/13-devolver.jpg" alt="Enviar o documento assinado" width="688" height="942"><figcaption>Enviar o documento assinado</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="parte" id="avisos">
+  <header><span class="rotulo">Para se programar</span><h2>8. Avisos da equipe</h2>
+    <p>Não é tarefa: é informação que chega antes de virar problema. Fica recolhido, mostrando só o assunto e a quantidade.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <h3>Contratos de experiência terminando</h3>
+      <p>Aparece alguns dias antes do fim. <b>Decida com o DP antes da data:</b> efetivar (não precisa fazer nada) ou encerrar no prazo (peça o desligamento).</p>
+      <div class="nota atencao"><b>Depois do fim da prorrogação, sair custa aviso prévio e multa.</b> É justamente a data que costuma passar batido — por isso o aviso existe.</div>
+      <h3>Férias da equipe</h3>
+      <p>Quem sai de férias nos próximos dias e quem está de férias agora. Programe a obra sem essas pessoas e <b>não conte falta</b> no ponto delas.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/06-avisos.jpg" alt="Os avisos, abertos" width="744" height="1492"><figcaption>Os avisos, abertos</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="parte" id="acompanhar">
+  <header><span class="rotulo">Depois de pedir</span><h2>9. O que você já pediu</h2>
+    <p>Uma lista só, de todas as áreas. Você quer saber o que está parado — não caçar área por área.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <p>Cada linha traz o <b>tipo</b>, o <b>número</b>, a <b>pessoa</b> (nome, CPF, obra e cargo), a <b>data</b> e a <b>situação</b>. Quando o DP responde, a resposta aparece ali mesmo, marcada com <b>DP:</b>.</p>
+      <div class="tabela"><table>
+        <tr><th>Situação</th><th>O que quer dizer</th></tr>
+        <tr><td>Aberta</td><td>Chegou ao DP e ainda não foi pega.</td></tr>
+        <tr><td>Em análise</td><td>O DP está olhando.</td></tr>
+        <tr><td>Em andamento</td><td>Já está sendo executada — pode haver passo com a contabilidade.</td></tr>
+        <tr><td>Atendida</td><td>Terminou. A resposta do DP explica o que foi feito.</td></tr>
+        <tr><td>Recusada</td><td>Não vai ser feita. O motivo vem escrito.</td></tr>
+        <tr><td>Cancelada</td><td>Foi cancelada — por você ou pelo DP.</td></tr>
+      </table></div>
+      <h3>Errou alguma coisa, ou mudou de ideia</h3>
+      <p>Toque em <span class="botao">Pedir para cancelar ou corrigir</span>, escolha entre <b>cancelar este pedido</b> e <b>corrigir alguma coisa</b>, explique, e toque em <span class="botao">Avisar o DP</span>.</p>
+      <div class="nota info"><b>Você avisa; quem desfaz é o DP.</b> Se a contabilidade já recebeu, é ele que comunica a ela. Por isso não existe um botão que simplesmente apaga o pedido.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/07-meus-pedidos.jpg" alt="A lista do que você pediu" width="688" height="1062"><figcaption>A lista do que você pediu</figcaption></figure>
+      <figure class="tela"><img src="telas/14-pedir-mudanca.jpg" alt="Pedir correção ou cancelamento" width="688" height="1452"><figcaption>Pedir correção ou cancelamento</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="parte" id="alcance">
+  <header><span class="rotulo">Importante</span><h2>10. Quem vê o quê</h2>
+    <p>O portal mostra a <b>sua</b> obra — não a empresa inteira. Quem decide isso é o seu cadastro, feito pelo DP.</p></header>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <ul>
+        <li><b>As pessoas que você encontra na busca</b> são as das obras que você alcança.</li>
+        <li><b>Os avisos, as pendências e os documentos a devolver</b> são os da sua obra.</li>
+        <li><b>“O que você já pediu”</b> é o que <b>você</b> abriu — não o que a obra inteira abriu.</li>
+        <li>A <b>obra onde a pessoa bate ponto</b> entra sozinha no seu alcance; as obras marcadas no seu cadastro <b>somam</b> a ela.</li>
+      </ul>
+      <div class="nota atencao"><b>Não achou alguém na busca?</b> Ou a pessoa não está na sua obra, ou o cadastro dela ainda não existe. Se for alguém da sua equipe e mesmo assim não aparecer, fale com o DP: é o alcance do seu acesso que precisa ser ajustado.</div>
+      <div class="nota info"><b>O que ninguém vê pelo portal:</b> salário de outras pessoas e dado de quem não é da sua obra. O portal não mostra ficha de gente — ele mostra <b>pedido</b>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="parte" id="regras">
+  <header><span class="rotulo">Regras</span><h2>11. O que pode e o que não pode</h2></header>
+  <div class="regras">
+    <div class="sim">
+      <h3>Pode</h3>
+      <ul>
+        <li>Abrir pedido por qualquer pessoa da sua obra.</li>
+        <li>Abrir pedido por você mesmo, se você também é colaborador.</li>
+        <li>Mandar <b>vários documentos de uma vez</b> num pedido (até 8 arquivos).</li>
+        <li>Pedir correção ou cancelamento de um pedido que você abriu.</li>
+        <li>Colher assinatura na tela, no papel, ou registrar a recusa.</li>
+        <li>Usar no celular, no tablet e no computador — é o mesmo endereço.</li>
+      </ul>
+    </div>
+    <div class="nao">
+      <h3>Não pode</h3>
+      <ul>
+        <li>Lançar desconto em folha — isso é do DP.</li>
+        <li>Desfazer um pedido sozinho depois de enviado.</li>
+        <li>Devolver documento por WhatsApp.</li>
+        <li>Assinar no lugar da pessoa: o PIN é dela, e a assinatura também.</li>
+        <li>Ver pessoas e obras fora do seu alcance.</li>
+        <li>Pedir material e pagamento por aqui — <b>ainda</b>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="parte" id="mensagens">
+  <header><span class="rotulo">Quando aparece na tela</span><h2>12. Mensagens na tela</h2>
+    <p>O que o portal diz, o que significa e o que fazer.</p></header>
+  <div class="tabela"><table>
+    <tr><th>A tela diz</th><th>O que fazer</th></tr>
+    <tr><td>Entre no sistema para abrir ou acompanhar pedidos.</td><td>A sua sessão caiu. Entre de novo com e-mail e senha.</td></tr>
+    <tr><td>Seu acesso foi encerrado. Procure o DP.</td><td>O acesso foi desativado no cadastro. Só o DP reativa.</td></tr>
+    <tr><td>Escolha de quem é o pedido.</td><td>Falta escolher a pessoa na busca. Digite o nome e toque no resultado.</td></tr>
+    <tr><td>Escolha a obra — é ela que diz de onde vem a pessoa.</td><td>Selecione a obra na caixinha do formulário.</td></tr>
+    <tr><td>Falta a assinatura no quadro.</td><td>A pessoa precisa riscar o quadro com o dedo antes de confirmar.</td></tr>
+    <tr><td>O PIN tem 6 dígitos.</td><td>É o PIN do aplicativo do ponto, da própria pessoa.</td></tr>
+    <tr><td>Escolha o arquivo do documento.</td><td>Na devolução, escolha o arquivo ou tire a foto antes de enviar.</td></tr>
+    <tr><td>São no máximo 8 arquivos por pedido.</td><td>Mande os principais; o resto o DP pede depois, se precisar.</td></tr>
+    <tr><td>Muitos pedidos deste lugar. Tente mais tarde.</td><td>É a trava do primeiro acesso. Espere e tente de novo, ou peça ao DP.</td></tr>
+  </table></div>
+</section>
+
+<!-- 13 -->
+<section class="parte" id="duvidas">
+  <header><span class="rotulo">Perguntas</span><h2>13. Dúvidas comuns</h2></header>
+  <div class="pilha">
+    <details class="duvida"><summary>O portal é o mesmo aplicativo do ponto?</summary>
+      <p>Não. São dois: o <b>BWS Ponto</b> (CPF e PIN) é para bater ponto e ver o seu mês; o <b>Portal da Obra</b> (e-mail e senha) é para pedir ao escritório. O PIN do ponto só volta a aparecer no portal num lugar: quando a pessoa assina um documento na tela.</p></details>
+    <details class="duvida"><summary>Por que aparecem áreas que não abrem?</summary>
+      <p>Para você saber que elas vão existir, e enquanto isso continuar pedindo como pede hoje. Esconder o que falta faria todo mundo achar que o sistema só serve para o DP.</p></details>
+    <details class="duvida"><summary>Abri o pedido errado. E agora?</summary>
+      <p>Em “O que você já pediu”, toque em <b>Pedir para cancelar ou corrigir</b>, escolha “Cancelar este pedido” e explique. O DP desfaz e, se a contabilidade já recebeu, comunica a ela.</p></details>
+    <details class="duvida"><summary>A pessoa não tem PIN e precisa assinar hoje.</summary>
+      <p>Use <b>“A pessoa não tem PIN — assinou no papel”</b>: imprima, colha a assinatura, fotografe e envie. O DP valida olhando a foto. Vale o mesmo.</p></details>
+    <details class="duvida"><summary>A pessoa se recusou a assinar.</summary>
+      <p>Registre pela opção <b>“A pessoa se recusou a assinar”</b>, com o nome de duas testemunhas. O prazo não para de correr só porque ela não assinou — registrar é o que protege a empresa e você.</p></details>
+    <details class="duvida"><summary>Mandei a admissão sem um documento. Preciso abrir outro pedido?</summary>
+      <p>Não. Use “Pedir para cancelar ou corrigir” no mesmo pedido e diga o que falta — o DP pede o documento por ali. Abrir um segundo pedido cria duas filas para a mesma pessoa.</p></details>
+    <details class="duvida"><summary>Fiquei sem internet no meio do pedido.</summary>
+      <p>O pedido só é gravado quando você toca em “Enviar o pedido” e a tela mostra o número. Sem o número, nada foi enviado — refaça quando a internet voltar.</p></details>
+    <details class="duvida"><summary>Dá para usar no computador da obra?</summary>
+      <p>Dá. É o mesmo endereço e a mesma tela — ela só fica mais larga. O diário, em especial, é bem mais confortável no computador.</p></details>
+    <details class="duvida"><summary>Não acho uma pessoa da minha equipe na busca.</summary>
+      <p>Ou ela não está na sua obra, ou ainda não tem cadastro. Se for da sua equipe, fale com o DP: o alcance do seu acesso precisa ser ajustado.</p></details>
+    <details class="duvida"><summary>Quanto tempo o DP leva para responder?</summary>
+      <p>Depende do tipo. O que tem prazo legal — desligamento, afastamento — anda primeiro. Você acompanha a situação em “O que você já pediu”, e a resposta aparece na própria linha.</p></details>
+  </div>
+</section>
+
+<p class="rodape">Manual do Portal da Obra, versão de novembro de 2026. As telas são de um ambiente de teste: os nomes, os CPFs e a obra são inventados. Dúvida que este manual não respondeu: fale com o DP.</p>
+</main>
+
+
+<script>
+(function () {
+  var abrir = function () { document.querySelectorAll("details").forEach(function (d) { d.open = true; }); };
+  window.addEventListener("beforeprint", abrir);
+  if (window.matchMedia && matchMedia("print").matches) abrir();
+})();
+(function () {
+  var b = document.getElementById("copiar"), t = document.getElementById("end");
+  if (!b || !t) return;
+  b.addEventListener("click", function () {
+    var texto = t.textContent.trim();
+    var ok = function () { b.textContent = "Copiado"; setTimeout(function () { b.textContent = "Copiar"; }, 2000); };
+    var selecionar = function () { var r = document.createRange(); r.selectNodeContents(t); var s = getSelection(); s.removeAllRanges(); s.addRange(r); };
+    try { navigator.clipboard.writeText(texto).then(ok, selecionar); } catch (e) { selecionar(); }
+  });
+})();
+</script>
+
+</html>
