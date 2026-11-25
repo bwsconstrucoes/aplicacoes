@@ -341,6 +341,25 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 25/11/2026 (3) — O manual do colaborador atualizado (o que mudou desde 06/11)
+
+O dono: *"algo à atualizar no manual do ponto?"* Sim: o manual (`static/manual/`) era de 06/11 e não falava de nada
+que a pessoa passou a ver depois. **Entrou:**
+- **Parte 2:** os avisos do alto da tela ("📄 Você tem N documentos para assinar", "✍️ Falta assinar o termo do
+  ponto"); "Documentos para assinar" (o que pode aparecer, como assinar com o PIN e o dedo, perguntar antes); "A minha
+  folha de ponto do mês" (conferir, as observações de compensação, prazo dia 20, não assinar com erro); o termo do
+  ponto; "Pedir acesso ao portal".
+- **Parte 5:** "Folgar agora e pagar depois" — um pedido por folga, a folga abonada, a falta no dia de pagar com o
+  motivo, as observações na folha e o termo de acordo de compensação.
+- **Parte 8** (virou "Ponto da minha equipe e as assinaturas"): os documentos da equipe (assinar aqui, no papel com
+  foto, recusa com duas testemunhas; o DP pode devolver) e o termo do ponto conduzido (foto no lugar do PIN).
+- **Parte 9:** a ronda sem foto depois de 3 tentativas. **Partes 10–12:** regras, 6 mensagens e 4 dúvidas novas.
+- **9 telas novas** (35 a 43), do aplicativo de verdade num banco de teste, pela receita de 31/10. **O PDF:** 37
+  páginas (eram 31). A capa passou de uma página na primeira tentativa (o PDF saiu com a página 2 em branco):
+  encurtado o parágrafo de abertura e o título da parte 8 no sumário.
+- **Fora:** a tela da ronda não foi fotografada (precisa de uma ronda aberta); o texto descreve.
+SEM MIGRAÇÃO. Não publicado — espera o "pode".
+
 ## 25/11/2026 (2) — A tolerância do fechamento destravada; relatórios por vínculo e empresa; as folhas do recorte
 
 **1. A tolerância** — o dono: *"pelo volume de pessoas (…) às vezes começa a bater ponto um pouquinho mais cedo (…) ou
