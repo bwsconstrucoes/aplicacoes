@@ -760,3 +760,23 @@ def test_a_carta_anexada_pela_obra_vale_como_pedido_assinado(mundo):
     t_ = termos.ler(s, termos.do_pedido(s, p["id"])["id"])
     assert t_["forma"] == "PAPEL" and termos.concluido(t_), "a carta já vale"
     assert _estado(_ler(mundo, p["id"]), "AVISO") == "FEITO"
+
+
+def test_pedido_de_demissao_nao_anda_sem_a_carta(mundo):
+    """Ele (25/11/2026): *"pedido de demissão tem que ter carta de pedido
+    sempre, seja pelo painel, seja anexado."* Sem carta anexada, o passo fica
+    esperando a assinatura pelo portal — e o DP não consegue dá-lo por feito
+    nem dispensá-lo à mão."""
+    s = mundo["s"]
+    p = _pedido_de_demissao(mundo, "Não — sai de imediato (pede dispensa do aviso)")
+    svc.atender(s, p["id"], {"dados": {"data_saida": HOJE.isoformat()}}, mundo["dp"])
+    s.flush()
+    sol = _ler(mundo, p["id"])
+    aviso = next(x for x in sol["processo"]["passos"] if x["codigo"] == "AVISO")
+    assert aviso["sem_marca_manual"] is True
+    for acao in ("feito", "nao_se_aplica"):
+        with pytest.raises(ErroValidacao, match="sempre tem a carta"):
+            proc.marcar(s, sol, {"passo": "AVISO", "acao": acao,
+                                 "observacao": "assinou no papel por fora"},
+                        mundo["dp"])
+    assert "carta de pedido de demissão" in proc.aviso_pendente(s, p["id"])

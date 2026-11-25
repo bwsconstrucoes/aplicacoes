@@ -341,8 +341,10 @@ def pessoal(sessao_real):
     return u
 
 
-def test_o_dp_enxerga_e_resolve_a_fila_do_portal(app_real, sessao_real,
-                                                 pessoa, pessoal):
+def test_o_dp_enxerga_a_fila_do_portal_mas_nao_libera(app_real, sessao_real,
+                                                      pessoa, pessoal):
+    """25/11/2026, ele: *"o DP pode ser avisado. É bom que ele visualize (…) ele
+    só não vai ter o botão para confirmar."* Liberar é do administrador."""
     from tests.conftest import como                      # type: ignore
     pedido = fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id,
                             cpf=pessoa.cpf, nome=pessoa.nome,
@@ -356,8 +358,8 @@ def test_o_dp_enxerga_e_resolve_a_fila_do_portal(app_real, sessao_real,
 
     r = c.post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
                json={"acao": "LIBERAR"})
-    assert r.status_code == 200, r.get_json()
-    assert fila.listar(_conn(sessao_real)) == []
+    assert r.status_code == 403, r.get_json()
+    assert [p["id"] for p in fila.listar(_conn(sessao_real))] == [pedido["id"]]
 
 
 def test_o_dp_NAO_escolhe_o_perfil_do_acesso_que_libera(app_real, sessao_real,
@@ -371,12 +373,9 @@ def test_o_dp_NAO_escolhe_o_perfil_do_acesso_que_libera(app_real, sessao_real,
     r = como(app_real, pessoal.id).post(
         f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
         json={"acao": "LIBERAR", "perfil": "ADMIN"})
-    assert r.status_code == 200, r.get_json()
-
-    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
-    assert novo
-    assert (sessao_real.get(Usuario, novo).perfil
-            == PerfilUsuario.ADMINISTRATIVO_OBRA)
+    # 25/11/2026: o DP nem libera mais — a trava ficou mais forte, não sumiu.
+    assert r.status_code == 403, r.get_json()
+    assert sessao_real.get(Colaborador, pessoa.id).usuario_id is None
 
 
 def test_a_fila_do_portal_NAO_da_ao_dp_a_tela_de_operadores(app_real, pessoal):
@@ -474,15 +473,10 @@ def test_o_dp_nao_escolhe_obra_nem_alcance(app_real, sessao_real, pessoa,
         f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
         json={"acao": "LIBERAR", "perfil": "ADMIN",
               "obra_ids": [outra.id], "todas_as_obras": True})
-    assert r.status_code == 200, r.get_json()
+    # 25/11/2026: o DP nem libera mais — a trava ficou mais forte, não sumiu.
+    assert r.status_code == 403, r.get_json()
+    assert sessao_real.get(Colaborador, pessoa.id).usuario_id is None
 
-    novo = sessao_real.get(Colaborador, pessoa.id).usuario_id
-    u = sessao_real.get(Usuario, novo)
-    assert u.perfil == PerfilUsuario.ADMINISTRATIVO_OBRA
-    assert not u.ve_todas_as_obras
-    alcance = {x.obra_id for x in sessao_real.query(UsuarioObra)
-               .filter(UsuarioObra.usuario_id == novo).all()}
-    assert alcance == {obra.id}, "o DP leva a obra do cadastro, e só"
 
 
 def test_a_fila_diz_quem_administra_o_acesso(app_real, sessao_real,
@@ -673,3 +667,43 @@ def test_quem_e_da_obra_so_tem_o_portal(app_real, sessao_real, pessoa, obra, dp,
     dp_real = como(app_real, pessoal.id)
     assert dp_real.get("/erp/colaboradores").status_code == 200
     assert dp_real.get("/erp/dp/solicitacoes").status_code == 200
+
+
+def test_pedido_novo_avisa_os_administradores_no_celular(sessao_real, pessoa, dp,
+                                                         monkeypatch):
+    """25/11/2026, ele: *"para o administrador, tanto no aviso no celular como
+    na tela de início do ERP."* Só o pedido NOVO avisa."""
+    import app.apps.notificador as notificador
+    enviados = []
+    monkeypatch.setattr(notificador, "enviar_telegram",
+                        lambda **k: enviados.append(k) or {"ok": True})
+    dp.telefone = "85999990000"
+    sessao_real.flush()
+    fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                   nome=pessoa.nome, email="aviso@gmail.com")
+    assert len(enviados) == 1 and enviados[0]["finalidade"] == "erp.acesso_portal"
+    assert pessoa.nome in enviados[0]["mensagem"]
+    fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                   nome=pessoa.nome, email="aviso@gmail.com")
+    assert len(enviados) == 1, "o pedido repetido não avisa de novo"
+
+
+def test_a_tela_de_inicio_mostra_os_pedidos_ao_administrador(app_real, sessao_real,
+                                                              pessoa, dp, pessoal,
+                                                              monkeypatch):
+    from tests.conftest import como                      # type: ignore
+    # Abrir o /erp/inicio dispara as rodadas do dia (agente de DP, virada dos
+    # desligamentos), que enfileiram trabalho no banco que este trabalhador
+    # divide com outros testes. Aqui só interessa o cartão.
+    from app.apps.erp.core import agente_dp
+    from app.apps.erp.core.cadastros import desligamentos_do_dia
+    monkeypatch.setattr(agente_dp, "precisa_da_rodada", lambda: False)
+    monkeypatch.setattr(desligamentos_do_dia, "precisa_rodar", lambda: False)
+    fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
+                   nome=pessoa.nome, email="inicio@gmail.com")
+    sessao_real.commit()
+    html = como(app_real, dp.id).get("/erp/inicio").get_data(as_text=True)
+    assert "pedido de acesso ao portal" in html
+    html_dp = como(app_real, pessoal.id).get("/erp/inicio").get_data(as_text=True)
+    assert "esperando liberação" not in html_dp, "o cartão é de quem libera"
+

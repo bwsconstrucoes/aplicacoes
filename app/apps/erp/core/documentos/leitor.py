@@ -223,6 +223,9 @@ def _preparar_imagem(conteudo: bytes) -> tuple[str, str]:
         from PIL import Image
     except ImportError:
         return base64.b64encode(conteudo).decode(), "image/jpeg"
+    # Foto de iPhone (HEIC) também abre — 25/11/2026, `core/comum/fotos.py`.
+    from app.apps.erp.core.comum.fotos import registrar_heic
+    registrar_heic()
     try:
         img = Image.open(io.BytesIO(conteudo))
         img = img.convert("RGB")

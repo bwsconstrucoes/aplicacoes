@@ -227,7 +227,19 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
         "erp.api_portal_ler_documentos",
         "erp.api_portal_conferir_cpf",
         "erp.pagina_primeiro_acesso_portal",
-        "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir"}
+        "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir",
+        # ⚑ AS QUATRO DO MANUAL DO PORTAL (25/11/2026). São PÁGINA FIXA: um
+        # arquivo HTML, as imagens dele e o PDF, todos versionados em
+        # `static/manual_portal/`. Não consultam banco, não recebem nada e
+        # não têm como vazar dado de ninguém — as telas são de um ambiente de
+        # teste, com nomes inventados.
+        #
+        # E precisam ser públicas pelo mesmo motivo das três de cima: quem
+        # está travado na porta é exatamente quem precisa ler como entrar. O
+        # manual do ponto segue o mesmo desenho desde 15/10/2026
+        # (`ponto/app_colaborador.py`).
+        "erp.pagina_manual_portal", "erp.pagina_manual_portal_sem_barra",
+        "erp.manual_portal_tela", "erp.manual_portal_pdf"}
 
 
 def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):

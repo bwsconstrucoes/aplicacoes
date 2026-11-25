@@ -143,12 +143,17 @@ def _apagar_operador(banco, uid):
 # ganhou a FILA, não a administração do sistema. Quem percorre o resto da
 # alçada (o perfil que ele NÃO escolhe, a tela de operadores que ele não abre)
 # é `tests/test_pedido_de_acesso_ao_portal_banco.py`.
-def test_o_dp_libera_a_fila_de_ponta_a_ponta(app, mundo, banco, monkeypatch):
+def test_o_administrador_libera_a_fila_de_ponta_a_ponta(app, mundo, banco, admin,
+                                                         monkeypatch):
+    """25/11/2026: liberar é do administrador; o DP só vê."""
     c = _entrar_no_app(app, CPF_JOAO, monkeypatch)
     c.post("/ponto/app/api/portal/pedir", json={"email": "joao@gmail.com"})
     [p] = _fila(banco)
 
-    r = como(app, mundo["dp"]).post(
+    assert como(app, mundo["dp"]).post(
+        f"/erp/api/portal/pedidos-de-acesso/{p['id']}",
+        json={"acao": "LIBERAR"}).status_code == 403
+    r = como(app, admin).post(
         f"/erp/api/portal/pedidos-de-acesso/{p['id']}", json={"acao": "LIBERAR"})
 
     assert r.status_code == 200, r.get_json()

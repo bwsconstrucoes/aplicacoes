@@ -141,6 +141,142 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 25/11/2026 (4) — O manual do Portal da Obra: online e em PDF
+
+**Ele:**
+
+> *"Preciso criar um manual do portal de solicitações com o que temos até
+> então. No padrão do manual do ponto. Clique pra visualizar online e ainda
+> possibilidade de baixar pdf. Subdividir ele pelas áreas e explicar pra que
+> serve e como ele funciona."*
+
+**O que existe agora**, no mesmo desenho do manual do ponto (que está de pé
+desde 15/10/2026 e já provou que funciona):
+
+| | Onde |
+|---|---|
+| A página | `/erp/portal/manual/` (e `/erp/portal/manual`, que redireciona) |
+| O PDF | `/erp/portal/manual.pdf` — 23 páginas A4 |
+| Os arquivos | `app/apps/erp/static/manual_portal/` (index.html + `telas/` + o PDF) |
+| Os links | no pé do portal e na tela de **criar o acesso** |
+
+**As quatro rotas são PÚBLICAS, e isso foi decidido, não esquecido:** é página
+fixa, sem consulta ao banco e sem dado de ninguém — e quem está travado na
+porta é exatamente quem precisa ler como entrar. Estão declaradas em
+`tests/test_permissoes_rotas.py`, com o motivo escrito.
+
+**Subdividido pelas áreas, como ele pediu**, e as fechadas entram também: 1
+entrar · 2 a tela inicial · **3 Colaboradores (os 14 pedidos, grupo a grupo)**
+· **4 Suprimentos** · **5 Pagamentos** · **6 Diário de obra** · 7 pendências
+(assinar e devolver) · 8 avisos · 9 acompanhar · 10 quem vê o quê · 11 pode e
+não pode · 12 mensagens da tela · 13 dúvidas.
+
+⚑ **Por que a área FECHADA ganhou parte própria no manual:** é a mesma razão
+pela qual ela aparece no portal (`core/portal.py`). Manual que pula Suprimentos
+faria a obra achar que nunca vai existir — e continuar pedindo material por
+WhatsApp, que é o que se quer acabar. A parte dela diz uma frase: *continue
+pedindo como você pede hoje*.
+
+**As 17 telas são de um banco de teste**, com nomes, CPFs e obra **inventados**
+— nenhuma pessoa de verdade entra no repositório.
+
+#### O que foi feito para o manual NÃO envelhecer em silêncio
+
+É o risco de verdade deste trabalho, e o manual do ponto já viveu isso
+(*"ao mudar uma tela ou uma regra que o colaborador vê, o manual fica velho"*).
+Três coisas, porque lembrar não é um plano:
+
+1. **`tests/test_manual_do_portal.py`** quebra quando uma **área** nova ou um
+   **tipo de pedido** novo não aparecem no manual, quando a conta de pedidos
+   escrita nele não bate com a tela, quando uma imagem citada não existe, e
+   quando uma área fechada é descrita como aberta. Já pegou uma tela sobrando
+   na pasta.
+2. **`app/apps/erp/scripts/semear_manual_portal.py`** monta de novo o portal
+   cheio (obra, equipe, pedidos em quatro situações, pendências, avisos e um
+   aviso prévio para assinar) num banco de teste. **Recusa qualquer banco sem
+   "teste" no nome.** Sem ele, refotografar custa meia hora de dado montado à
+   mão — e é esse custo que faz manual morrer.
+3. **`app/apps/erp/scripts/imprimir_manual_portal.js`** reimprime o PDF da
+   própria página. O PDF é cópia: mudar a página e não reimprimir deixa os
+   dois diferentes, e **nada acusa** — está anotado em `PERGUNTAS.md` como
+   limite conhecido.
+
+#### O que o teste NÃO alcança, e fica dito
+
+Ele confere **nomes e contas**, não redação. Tela que muda de jeito sem mudar
+de nome passa batida — por exemplo, se o botão "Enviar o pedido" virar outra
+coisa, ou se a ordem dos blocos do portal mudar de novo (mudou em 23 e em
+24/11). Quem mexer no portal continua tendo de olhar a parte correspondente.
+
+⚑ **O manual já nasceu tendo de alcançar a `main` — e isso prova o risco
+acima.** Entre escrever e publicar, outros chats publicaram três mudanças que
+a obra VÊ, e as três entraram no texto antes de o manual subir: **quem libera
+o acesso ao portal é o ADMINISTRADOR** (era "o DP libera", e o teste de nomes
+não pegaria isso), a **carta do pedido de demissão** passou a ser sempre
+exigida, e a leitura de documentos passou a aceitar **PDF, foto grande, foto
+de iPhone e a certidão de nascimento do dependente**. As 17 telas foram
+refotografadas contra a `main` e comparadas pixel a pixel com as antigas:
+três tinham mudado.
+
+**Arquivos compartilhados mexidos** (importa para quem roda outro chat do
+ERP): `routes.py` (quatro rotas novas, junto da `pagina_portal`),
+`tests/test_permissoes_rotas.py` e `PERGUNTAS.md`. Mexidos também
+`templates/erp_portal.html` (o link no pé) e
+`templates/erp_primeiro_acesso_portal.html` (o link antes de entrar).
+**Sem migração de banco.**
+
+---
+
+### 25/11/2026 (3) — Três decisões dele: carta sempre, ponto na hora, foto de iPhone
+
+Ele: *"Pedido de demissão tem que ter carta de pedido sempre, seja pelo painel,
+seja anexado. A admissão pedida pelo portal, sim, o cara imediatamente já pode
+bater ponto. Foto de iPhone no portal, sim, tem que aceitar também."*
+
+- **Carta sempre** (fecha a "decisão minha, a confirmar" de 24/11 (5)). As
+  duas portas continuam: a carta anexada pela obra, ou o texto que a pessoa
+  assina pelo portal (ou no papel, fotografado — plano B do termo). O que
+  mudou é que **não há terceira**: no pedido de demissão, o passo "Pedido de
+  demissão assinado" não aceita mais "feito por fora do sistema" nem "não se
+  aplica" (`desligamento_processo.marcar` recusa; a tela esconde o link pelo
+  `sem_marca_manual`), e a trava da rescisão diz "a carta ainda não voltou".
+  O texto do portal deixou de dizer "(opcional)": diz que uma das duas é
+  obrigatória. Marca manual feita ANTES disto continua valendo (não mexi em
+  dado gravado).
+- **Ponto na hora:** já era assim — o pré-cadastro da admissão pedida pela obra
+  bate ponto antes de o DP atender. Nada mudou no código; fica registrado que
+  é a decisão dele, não um descuido. Quem não for admitido sai pelo
+  "Cancelado", que conta como desligado e corta o ponto.
+- **Foto de iPhone (HEIC):** dependência nova `pillow-heif`, com o ok dele.
+  `core/comum/fotos.py` converte para JPG na chegada dos quatro envios do
+  portal; o leitor por IA também abre HEIC. Ver `CONTEXTO.md` §9, 25/11/2026.
+  Não testado com um iPhone de verdade: o teste gera um HEIC na hora.
+
+### 25/11/2026 (2) — Liberar o acesso ao portal é do administrador; o DP só vê a fila
+
+Ele: *"o portal não é só para o DP (…) quem é para fazer a liberação tem que
+ter acesso à parte de operadores (…) dizer o tipo de pessoa, o tipo de obra
+(…) isso não é o DP quem vai fazer"*; e, ajustando a proposta: *"o DP pode ser
+avisado. É bom que ele visualize (…) ele só não vai ter o botão (…) para o
+administrador, tanto no aviso no celular como na tela de início do ERP."*
+- `liberar_acesso_portal` → só ADMIN (e quem gere operadores, por
+  implicação). Ação nova `ver_pedidos_de_acesso` (ADMIN e DP) para VER a fila.
+  A seção "Acesso ao portal" ganhou LER (ver) além de EDITAR (liberar).
+  **Migração 128**: o perfil pronto "Departamento pessoal" desce de EDITAR
+  para LER nessa seção.
+- **Configurações › Operadores** tem agora, no topo, o bloco "Pedidos de
+  acesso ao portal (N)" com Liberar (confirma o e-mail e abre o cadastro do
+  operador já com a pessoa, para perfil e obras) e Recusar (com motivo).
+- **Colaboradores** (DP): a fila continua aparecendo, só leitura, com
+  "quem libera é o administrador" (para o ADMIN, um link "Liberar em
+  Operadores").
+- **Tela de início**: cartão "N pedidos de acesso ao portal esperando
+  liberação", só para quem libera, levando a Operadores.
+- **Aviso no celular**: `pedidos_de_portal.avisar_administradores`, no pedido
+  NOVO (repetido e correção de e-mail não avisam), a cada ADMIN ativo com
+  telefone ou CPF, pela mensageria com o tipo novo `erp.acesso_portal`
+  (`mensageria/core.py` — registrado lá).
+
 ### 25/11/2026 — Dependente com certidão de nascimento: reconhecida, guardada como do dependente e lida para o quadro dele
 
 Ele, cadastrando uma criança: *"ele só tem certidão de nascimento e o sistema
@@ -170,6 +306,15 @@ Três defeitos juntos:
   nome IGUAL a um só colaborador do alcance de quem pede → escolhido; parecido
   ou vários → a lista aparece; nada → a busca de sempre. Nunca troca quem já
   foi escolhido. Um recado só no fim diz o que foi preenchido.
+- **E a leitura nem acontecia** (mesmo dia, ele: *"a IA não tá conseguindo
+  fazer a leitura"*, com "não consegui ler"): as duas leituras de
+  `documentos_de_pessoa` mandavam o arquivo CRU como imagem. PDF cru a IA
+  recusa (certidão chega muito em PDF), e foto de celular inteira estoura o
+  tamanho. Agora usam o preparo do `documentos/leitor.py`: PDF vira PNG (até 2
+  páginas por arquivo) e foto é reduzida a 1800 px. Isso vale também para a
+  admissão. NÃO coberto: foto HEIC de iPhone (o Pillow não abre sem uma
+  biblioteca a mais — dependência nova, perguntar) e o teto de IA da pessoa
+  (se ele estourar, a leitura também volta "não consegui ler").
 - Conferido no navegador com respostas simuladas (dois documentos, dois
   quadros preenchidos com parentesco Filho, a mãe achada). Não verificado com
   uma certidão de verdade (a leitura usa a IA).

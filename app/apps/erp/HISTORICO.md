@@ -40,6 +40,15 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 25/11/2026 — ACESSO AO PORTAL: SÓ O ADMINISTRADOR LIBERA; MIGRAÇÃO 128 (registro entre áreas)
+
+`liberar_acesso_portal` virou só do ADMIN; `ver_pedidos_de_acesso` (ADMIN e
+DP) para ver a fila. Seção `pes_acesso_portal` com LER e EDITAR; migração 128
+desce o perfil "Departamento pessoal" para LER. A fila com os botões mora em
+Configurações › Operadores; tela de início com cartão para quem libera;
+aviso por Telegram/WhatsApp aos ADMIN pelo tipo novo `erp.acesso_portal` da
+mensageria. Detalhe em `HISTORICO_PESSOAL.md`, 25/11 (2).
+
 ### ⚑ 24/11/2026 — `erp_base.html`: TODA LISTA DE CAIXINHAS LONGA GANHA BUSCA (registro entre áreas)
 
 `aplicarBuscaEmCaixinhas`: `.filtro-opcoes` com mais de 12 itens ganha o campo
@@ -10492,6 +10501,26 @@ cadastrada em seguida já nasceu no grupo certo, na ordem certa.
    senha (`ERP_COMPROVANTE_SECRET`) já está no Render; falta o Make usá-la.
 
 ---
+
+## 25/11/2026 — O manual do Portal da Obra (atravessa áreas)
+
+Registrado aqui porque o portal é a porta de **todas** as áreas, e o manual
+descreve as quatro (o resto está em `HISTORICO_PESSOAL.md`):
+
+- Página fixa em `app/apps/erp/static/manual_portal/`, aberta em
+  `/erp/portal/manual/`, com PDF em `/erp/portal/manual.pdf`. Mesmo desenho do
+  manual do ponto (`app/apps/ponto/HISTORICO.md`, 15/10/2026).
+- **Quatro rotas públicas novas** no `routes.py`, declaradas em
+  `tests/test_permissoes_rotas.py`: é página fixa, sem banco e sem dado de
+  ninguém, e quem está travado na porta é quem precisa lê-la.
+- O manual tem parte própria para **Suprimentos**, **Pagamentos** e **Diário
+  de obra**, inclusive fechadas. **Quem abrir uma dessas áreas precisa revisar
+  a parte dela** — `tests/test_manual_do_portal.py` quebra se a área ou um
+  tipo de pedido novo não aparecerem no manual, mas não lê o texto.
+- Dois utilitários para o manual não envelhecer:
+  `scripts/semear_manual_portal.py` (remonta o portal cheio num banco com
+  "teste" no nome — recusa os outros) e `scripts/imprimir_manual_portal.js`
+  (reimprime o PDF da própria página).
 
 ## 20/11/2026 — Mudança do ERP · Pessoal que encosta em arquivos comuns
 

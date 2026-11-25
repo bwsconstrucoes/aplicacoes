@@ -46,6 +46,9 @@
   label.campo-portal input, label.campo-portal select, label.campo-portal textarea {
          width: 100%; box-sizing: border-box; padding: 10px; margin-top: 4px;
          border: 1px solid #C9D3E4; border-radius: 10px; font-size: 15px; }
+  .rodape-portal { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center;
+         margin: 4px 0 0; padding: 10px 0; font-size: 14px; }
+  .rodape-portal a { color: #31507F; }
   .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
   .recado.erro { background: #FDECEC; color: #A32020; }
   .recado.ok { background: #E8F6EE; color: #1C6B3C; }
@@ -252,6 +255,16 @@
       caçar área por área.</p>
     <div id="meus"></div>
   </div>
+
+  {# ⚑ O MANUAL (25/11/2026, pedido dele: "preciso criar um manual do portal
+     de solicitações (…) Clique pra visualizar online e ainda possibilidade de
+     baixar pdf"). Fica no PÉ, e não no alto: quem entra no portal vem fazer
+     uma coisa, não ler. Quem precisa de ajuda rola até o fim e acha. Mesmo
+     lugar e mesmo texto do manual do ponto. #}
+  <p class="rodape-portal">
+    <a href="/erp/portal/manual/">📖 Como usar o portal (manual)</a>
+    <a href="/erp/portal/manual.pdf">baixar em PDF</a>
+  </p>
 
 </div>
 
@@ -1292,15 +1305,21 @@ let LIDOS = {};
    feito a cartinha e a gente vai anexar ao pedido."* Opcional: com a carta,
    ela VALE como o pedido de demissão assinado (o DP confere ao atender) e o
    sistema não gera outro para assinar; sem ela, o sistema gera o texto e a
-   pessoa assina pelo portal, como antes. Só aparece no pedido de demissão. #}
+   pessoa assina pelo portal, como antes. Só aparece no pedido de demissão.
+   25/11/2026: *"pedido de demissão tem que ter carta de pedido sempre, seja
+   pelo painel, seja anexado."* O anexo continua opcional AQUI porque a outra
+   porta (assinar pelo portal) existe — mas o texto diz que uma das duas é
+   obrigatória, e o DP não consegue mais dar o passo por feito sem ela. #}
 function blocoDaCarta(t){
   if (t.chave !== "DESLIGAMENTO") return "";
   return `<div class="papeis oculto" id="p-carta-bloco">
-    <b>Carta de pedido de demissão (opcional)</b>
-    <p class="ajuda">Se o colaborador já escreveu e assinou a carta, tire a foto
-      ou anexe o PDF: ela vale como o pedido assinado e ele <b>não precisa
-      assinar de novo</b>. Sem a carta, o sistema prepara o texto e ele assina
-      aqui no portal depois que o DP analisar.</p>
+    <b>Carta de pedido de demissão</b>
+    <p class="ajuda">O pedido de demissão <b>sempre</b> precisa da carta do
+      colaborador. Se ele já escreveu e assinou, tire a foto ou anexe o PDF
+      aqui: ela vale como o pedido assinado e ele <b>não precisa assinar de
+      novo</b>. Se ainda não tem a carta, o sistema prepara o texto e ele
+      assina aqui no portal depois que o DP analisar — sem essa assinatura o
+      desligamento não segue.</p>
     <input type="file" id="p-carta" accept="image/*,.pdf">
   </div>`;
 }

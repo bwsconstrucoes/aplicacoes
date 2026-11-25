@@ -7,6 +7,13 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## 25/11/2026 — (feito pelo chat do Pessoal) Tipo novo `erp.acesso_portal`
+
+Uma linha em `core.py` (TIPOS): "Pedido de acesso ao portal", política
+TELEGRAM, aviso aos ADMIN quando alguém pede acesso ao Portal da Obra. Quem
+manda é `erp/core/auth/pedidos_de_portal.avisar_administradores`. Detalhe em
+`app/apps/erp/HISTORICO_PESSOAL.md`, 25/11 (2).
+
 ## ⚑ 23/11/2026 — O MANOEL PAROU DE RECEBER (telefone sem DDD), O BOTÃO QUE "NÃO APARECE" E O ID EDITÁVEL NA FICHA
 
 Quatro pedidos do dono numa mensagem só, todos feitos.

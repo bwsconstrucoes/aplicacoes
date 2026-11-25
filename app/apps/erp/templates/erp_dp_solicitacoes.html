@@ -646,7 +646,8 @@ function blocoDoProcesso(p){
         x.titulo ? "Trocar a SP…" : "Informar a SP…"}</button>`);
     if (x.como === "titulo" && x.estado === "PENDENTE")
       b.push(`<button class="link-btn" data-pr-dispensa="${x.codigo}">não se aplica…</button>`);
-    if (x.como === "lido" && x.codigo !== "REGISTRADO" && x.estado === "PENDENTE")
+    if (x.como === "lido" && x.codigo !== "REGISTRADO" && x.estado === "PENDENTE"
+        && !x.sem_marca_manual)
       b.push(`<button class="link-btn" data-pr-mao="${x.codigo}">feito por fora do sistema…</button>`);
     if (x.por && x.codigo !== "CONTINUIDADE" && x.codigo !== "REGISTRADO"
         && ["FEITO", "NAO_SE_APLICA"].includes(x.estado) && x.detalhe !== "")
