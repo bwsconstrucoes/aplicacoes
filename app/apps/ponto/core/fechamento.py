@@ -270,6 +270,10 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                          "cor_faltas_parciais", "cor_extras_integrais", "cor_extras_quebradas", "conferencia",
                          "he_dias", "neg_dias", "abatimentos", "fora_ciclo")}
     trab_dias: list[dict] = []
+    # O FERIADO NO CABEÇALHO (25/11/2026, o dono: "deveria ter alguma cor também no dia que for feriado"): o
+    # feriado de cada dia, na obra daquele dia — o mesmo que o espelho de cada pessoa usou (estadual e municipal
+    # dependem da obra). {obra: {iso: nome}}
+    feriados_por_obra: dict[str, dict[str, str]] = defaultdict(dict)
     ps_faltas, ps_extras = defaultdict(int), defaultdict(int)
     pequenas: list[int] = []
     pequenas_neg: list[int] = []
@@ -296,6 +300,12 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
             corrente = ci <= dia <= cf
             if not (anterior or corrente):
                 continue
+            if d.get("feriado"):
+                obf_ = obra_do_dia(d, p.get("obra_codigo"))
+                feriados_por_obra[str(obf_).upper() if obf_ else ""][d["data"]] = d["feriado"]
+            # o dia com batida incluída por ajuste aprovado (25/11/2026): marcado no calendário, para ver onde
+            # ele foi parar — a obra do dia é a da batida, e a do ajuste é a que o pedido disse
+            ajustado = any(b.get("status") == "AJUSTADA" for b in d.get("batidas") or [])
             if d.get("compensacao_a_cumprir"):
                 # a folga já está abonada, mas o dia trabalhado ainda não chegou: se não cumprir, vira falta
                 r["conferencia"].append({**base, "aviso": f"folga compensatória em {_br(d['data'])} ainda a cumprir — "
@@ -325,7 +335,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                 r["neg_dias"].append({**base, "data": d["data"], "obra_do_dia": obn,
                                       "obra_nome": (obras.get(obn) or {}).get("nome") or "", "minutos": f["minutos"],
                                       "tipo": f["tipo"], "rotulo": f["rotulo"], "banco": banco_de_horas,
-                                      "desconsiderada": atraso_pequeno,
+                                      "desconsiderada": atraso_pequeno, "ajustado": ajustado,
                                       # para o resumo do WhatsApp (31/10/2026): o que foi batido e quantas faltaram
                                       "batidas": " ".join(b["hora"] for b in d.get("batidas") or []),
                                       "faltam": len(d.get("faltando") or [])})
@@ -336,7 +346,8 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                 obt = str(obt).upper() if obt else ""
                 trab_dias.append({**base, "data": d["data"], "obra_do_dia": obt,
                                   "obra_nome": (obras.get(obt) or {}).get("nome") or "",
-                                  "minutos": d.get("trabalhado") or 0, "banco": banco_de_horas})
+                                  "minutos": d.get("trabalhado") or 0, "banco": banco_de_horas,
+                                  "ajustado": ajustado})
             if atraso_pequeno and not banco_de_horas:
                 pequenas_neg.append(f["minutos"])
                 f = None
@@ -372,7 +383,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                                      "minutos": d.get("extra") or d.get("extra_negada") or 0, "evento": ev_sup,
                                      "banco": banco_de_horas, "negada": bool(not d.get("extra") and negada),
                                      "desconsiderada": bool(d.get("extra") and d["extra"] <= minima),
-                                     "negada_motivo": (negada or {}).get("motivo"),
+                                     "negada_motivo": (negada or {}).get("motivo"), "ajustado": ajustado,
                                      "negada_por": (negada or {}).get("por")})
             if d.get("extra") and d["extra"] <= minima and not banco_de_horas:
                 pequenas.append(d["extra"])          # a hora extra pequena desconsiderada: fora das contas
@@ -443,6 +454,17 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
     no_calendario = {x["colaborador_id"] for x in r["he_dias"] + r["neg_dias"]}
     r["trab_dias"] = trab_dias if calendario_todos else [x for x in trab_dias if x["colaborador_id"] in no_calendario]
     r["calendario_todos"] = bool(calendario_todos)
+    # A EMPRESA DE CADA OBRA (25/11/2026, o dono: "se eu estou colocando aqui uma determinada empresa, ele lista
+    # primeiro as obras dessa empresa (…) ao final, ele faz o complemento"): o calendário põe primeiro as obras da
+    # empresa escolhida e, depois, as obras de outras empresas em que o pessoal dela trabalhou.
+    usadas = {x["obra_do_dia"] for x in r["he_dias"] + r["neg_dias"] + r["trab_dias"] if x.get("obra_do_dia")}
+    obra_empresa, nomes_empresas = _empresas_das_obras(conn, usadas)
+    try:
+        empresa = int((filtros or {}).get("empresa") or 0) or None
+    except (TypeError, ValueError):
+        empresa = None
+    if empresa and str(empresa) not in nomes_empresas:
+        nomes_empresas.update(_nomes_de_empresas(conn, [empresa]))
     linhas_faltas = [linha_ps(i, e, d, q) for (i, e, d), q in sorted(ps_faltas.items(), key=lambda x: (x[0][0], x[0][2]))]
     linhas_extras = [linha_ps(i, e, d, min(q, 9999)) for (i, e, d), q in
                      sorted(ps_extras.items(), key=lambda x: (x[0][0], x[0][2], x[0][1]))]
@@ -456,6 +478,12 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
         "corrente": {"de": ci.isoformat(), "ate": cf.isoformat()},
         "vale_desde": vale.isoformat(), "pessoas": len(pessoas), "gerado_em": horario.texto(horario.agora()),
         "regras_hora_extra": hora_extra.para_json(cfg)["regras"], "he_minima": minima, "abater": abate,
+        "feriados_por_obra": {k: v for k, v in feriados_por_obra.items()}, "obra_empresa": obra_empresa,
+        # os nacionais valem em toda obra — também na que ninguém dela estava naquele dia
+        "feriados_nacionais": {l["data"].isoformat(): l["nome"] for l in db.todos(
+            conn, "SELECT data, nome FROM ponto.feriados WHERE abrangencia = 'NACIONAL' AND data BETWEEN :i AND :f",
+            i=ai, f=cf)},
+        "empresas_nomes": nomes_empresas, "empresa": empresa,
         **r, "ps_faltas": linhas_faltas, "ps_extras": linhas_extras,
         "totais": {
             "ant_faltas_integrais": sum(1 for x in r["ant_faltas"] if x["tipo"] == "Falta integral"),
@@ -472,6 +500,39 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
             "abatido_minutos": sum(x["minutos"] for x in r["abatimentos"]),
         },
     }
+
+
+def _empresas_das_obras(conn: Connection, codigos: set) -> tuple[dict[str, Optional[int]], dict[str, str]]:
+    """A empresa de cada obra do calendário ({código: empresa_id}) e o nome de cada empresa ({id: razão social}).
+    Sem a coluna `obras.empresa_id` (ERP antigo), nada — o calendário fica como era, sem separar."""
+    if not codigos or not relatorios._tem_coluna_publica(conn, "obras", "empresa_id"):
+        return {}, {}
+    linhas = db.todos(conn, "SELECT upper(codigo) AS codigo, empresa_id FROM public.obras WHERE upper(codigo) = ANY(:c)",
+                      c=sorted(codigos))
+    obra_empresa = {l["codigo"]: (int(l["empresa_id"]) if l["empresa_id"] is not None else None) for l in linhas}
+    return obra_empresa, _nomes_de_empresas(conn, [i for i in obra_empresa.values() if i])
+
+
+def _nomes_de_empresas(conn: Connection, ids: list) -> dict[str, str]:
+    if not ids:
+        return {}
+    return {str(l["id"]): l["razao_social"] for l in db.todos(
+        conn, "SELECT id, razao_social FROM public.empresas WHERE id = ANY(:i)", i=sorted(set(ids)))}
+
+
+DIA_DA_SEMANA_INICIAL = ("S", "T", "Q", "Q", "S", "S", "D")      # segunda (0) a domingo (6), como o `weekday()`
+
+
+def grupos_por_empresa(f: dict, obras: list[dict]) -> tuple[list[dict], list[dict]]:
+    """PURA. As obras do calendário em duas partes: as da empresa escolhida (e as de empresa desconhecida, que não
+    dá para separar) e as de OUTRAS empresas — onde o pessoal da empresa escolhida também trabalhou. Sem empresa
+    escolhida, tudo fica na primeira parte."""
+    empresa, de = f.get("empresa"), f.get("obra_empresa") or {}
+    if not empresa:
+        return obras, []
+    minhas = [g for g in obras if de.get(g["obra"]) in (None, empresa)]
+    outras = [g for g in obras if de.get(g["obra"]) not in (None, empresa)]
+    return minhas, outras
 
 
 # ---------------------------------------------------------------------------
@@ -620,11 +681,15 @@ def supervisao(f: dict) -> dict:
                                                        "atrasos": 0})
         return g, g["pessoas"].setdefault(x["colaborador_id"], {
             "nome": x["nome"], "funcao": x.get("funcao") or "", "cpf": x.get("cpf"), "banco": x.get("banco"),
+            "vinculo": rotulo_do_vinculo(x.get("vinculo")),
             "dias": defaultdict(int), "negadas": {}, "pequenas": {}, "negativos": {}, "trabalhou": {}, "total": 0,
-            "atrasos": 0})
+            "atrasos": 0, "ajustados": set()})
 
     # as horas a menos (30/10/2026): em vermelho no calendário; o atraso (dia completo com horas a menos) soma em
     # "atrasos" e, com o abatimento ligado, sai do saldo; falta parcial e falta inteira só aparecem
+    for x in (f.get("neg_dias") or []) + (f.get("he_dias") or []):
+        if x.get("ajustado"):
+            pessoa_do_grupo(x)[1]["ajustados"].add(x["data"])
     for x in f.get("neg_dias") or []:
         g, p = pessoa_do_grupo(x)
         p["negativos"][x["data"]] = {"minutos": x["minutos"], "tipo": x["tipo"], "desconsiderada": x.get("desconsiderada")}
@@ -647,16 +712,35 @@ def supervisao(f: dict) -> dict:
     no_calendario = {x["colaborador_id"] for x in (f.get("he_dias") or []) + (f.get("neg_dias") or [])}
     for x in f.get("trab_dias") or []:
         if f.get("calendario_todos") or x["colaborador_id"] in no_calendario:
-            pessoa_do_grupo(x)[1]["trabalhou"][x["data"]] = x["minutos"]
+            p = pessoa_do_grupo(x)[1]
+            p["trabalhou"][x["data"]] = x["minutos"]
+            if x.get("ajustado"):
+                p["ajustados"].add(x["data"])
     obras = []
+    nacionais = f.get("feriados_nacionais") or {}
     for g in sorted(grupos.values(), key=lambda g: (not g["obra"], g["obra"])):
+        emp = (f.get("obra_empresa") or {}).get(g["obra"])
         obras.append({**g, "pessoas": sorted(({**p, "dias": dict(p["dias"])} for p in g["pessoas"].values()),
                                               key=lambda p: p["nome"]),
-                      "por_dia": dict(g["por_dia"])})
+                      "por_dia": dict(g["por_dia"]),
+                      "feriados": {**nacionais, **((f.get("feriados_por_obra") or {}).get(g["obra"]) or {})},
+                      "empresa_nome": (f.get("empresas_nomes") or {}).get(str(emp)) if emp else ""})
     for g in obras:
         for p in g["pessoas"]:
             p["saldo"] = p["total"] - (p["atrasos"] if f.get("abater") and not p.get("banco") else 0)
-    return {"dias": dias, "obras": obras, "total": sum(g["total"] for g in obras)}
+    minhas, outras = grupos_por_empresa(f, obras)
+    for g in outras:
+        g["outra_empresa"] = True
+    return {"dias": dias, "obras": minhas + outras, "total": sum(g["total"] for g in obras),
+            "empresa_nome": (f.get("empresas_nomes") or {}).get(str(f.get("empresa"))) if f.get("empresa") else ""}
+
+
+def rotulo_do_vinculo(v) -> str:
+    """PURA. A etiqueta do calendário (25/11/2026, o dono: "CLT ou prestador")."""
+    return {"CTPS": "CLT", "Prestador": "Prestador"}.get(v or "", "")
+
+
+
 
 
 def excel_supervisao(f: dict) -> bytes:
@@ -673,6 +757,7 @@ def excel_supervisao(f: dict) -> bytes:
     negrito, cab, obra_fill = Font(bold=True), PatternFill("solid", fgColor="E8EEF6"), PatternFill("solid", fgColor="D9E2F0")
     azul, vermelho, cinza = Font(color="1D4ED8"), Font(color="B91C1C"), Font(color="9CA3AF")
     trabalhou = Font(color="6B7280")
+    fds_fill, feriado_fill = PatternFill("solid", fgColor="F3F4F6"), PatternFill("solid", fgColor="FDE7C2")
     comp = f["competencia"]
     ws.append([f"Horas extras para conferência da supervisão — folha de {comp[5:]}/{comp[:4]} "
                f"({_br(s['dias'][0])} a {_br(s['dias'][-1])})"])
@@ -684,18 +769,34 @@ def excel_supervisao(f: dict) -> bytes:
                "(atraso ou saída antecipada; \"falta\" = o dia inteiro). ✓ = trabalhou no horário, sem hora a mais "
                "nem a menos. "
                + ("O saldo é a hora extra menos os atrasos (o abatimento está ligado)." if f.get("abater")
-                  else "Os atrasos não são abatidos das horas extras (o abatimento está desligado).")])
-    dias_cab = [dt.date.fromisoformat(d).strftime("%d/%m") for d in s["dias"]]
+                  else "Os atrasos não são abatidos das horas extras (o abatimento está desligado).")
+               + " Em cinza, sábado e domingo; em laranja, o feriado. * = dia com batida incluída por ajuste."])
+    datas = [dt.date.fromisoformat(d) for d in s["dias"]]
+    dias_cab = [f"{d:%d/%m}\n{DIA_DA_SEMANA_INICIAL[d.weekday()]}" for d in datas]
+    separou = False
     for g in s["obras"]:
+        if g.get("outra_empresa") and not separou:
+            separou = True
+            ws.append([])
+            ws.append([f"Funcionários da {s['empresa_nome'] or 'empresa escolhida'} que também trabalharam em obras "
+                       "de outras empresas"])
+            ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=13)
         ws.append([])
-        ws.append([f"Obra {g['obra'] or 'sem obra'}" + (f" — {g['nome']}" if g["nome"] else "")])
+        ws.append([f"Obra {g['obra'] or 'sem obra'}" + (f" — {g['nome']}" if g["nome"] else "")
+                   + (f" ({g['empresa_nome']})" if g.get("outra_empresa") and g.get("empresa_nome") else "")])
         linha = ws.max_row
         for cel in ws[linha]:
             cel.font, cel.fill = Font(bold=True, size=12), obra_fill
         ws.append(["Funcionário", "Função", *dias_cab, "Extras", "Atrasos", "Saldo"])
-        for cel in ws[ws.max_row]:
+        for i, cel in enumerate(ws[ws.max_row]):
             cel.font, cel.fill = negrito, cab
-            cel.alignment = Alignment(horizontal="center")
+            cel.alignment = Alignment(horizontal="center", wrap_text=True)
+            if 2 <= i < 2 + len(datas):
+                d = s["dias"][i - 2]
+                if g["feriados"].get(d):
+                    cel.fill = feriado_fill
+                elif datas[i - 2].weekday() >= 5:
+                    cel.fill = fds_fill
         for p in g["pessoas"]:
             celulas, fontes = [], []
             for d in s["dias"]:
@@ -714,13 +815,21 @@ def excel_supervisao(f: dict) -> bytes:
                     celulas.append("✓"); fontes.append(trabalhou)
                 else:
                     celulas.append(""); fontes.append(None)
-            ws.append([p["nome"] + (" (banco)" if p.get("banco") else ""), p["funcao"], *celulas,
+                if celulas[-1] and d in p.get("ajustados", ()):
+                    celulas[-1] += "*"
+            ws.append([p["nome"] + (" (banco)" if p.get("banco") else ""),
+                       " - ".join(x for x in (p["funcao"], p.get("vinculo")) if x), *celulas,
                        hhmm(p["total"]), f"-{hhmm(p['atrasos'])}" if p["atrasos"] else "",
                        (("-" if p["saldo"] < 0 else "") + hhmm(abs(p["saldo"]))) if f.get("abater") else ""])
             linha = ws.max_row
             for i, fonte in enumerate(fontes):
                 if fonte is not None:
                     ws.cell(row=linha, column=3 + i).font = fonte
+                d = s["dias"][i]
+                if g["feriados"].get(d):
+                    ws.cell(row=linha, column=3 + i).fill = feriado_fill
+                elif datas[i].weekday() >= 5:
+                    ws.cell(row=linha, column=3 + i).fill = fds_fill
         ws.append(["Total da obra", "", *[hhmm(g["por_dia"][d]) if g["por_dia"].get(d) else "" for d in s["dias"]],
                    hhmm(g["total"]), f"-{hhmm(g['atrasos'])}" if g["atrasos"] else "",
                    hhmm(sum(p["saldo"] for p in g["pessoas"])) if f.get("abater") else ""])

@@ -341,6 +341,32 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 25/11/2026 (4) — O calendário do fechamento: dia da semana, feriado, CLT/Prestador, a empresa primeiro, o ✎ do ajuste
+
+O dono, olhando o calendário (Relatórios › Fechamento › Horas extras por obra): cor no feriado; a inicial do dia da
+semana; "função - CLT" ou "função - Prestador"; com uma empresa escolhida, *"lista primeiro as obras dessa empresa
+(…) ao final, ele faz o complemento"*; e *"os dias que o ponto dele foi corrigido (…) não aparece como se tivesse
+sido trabalhado"*.
+- **Cabeçalho:** dia / mês / inicial (S T Q Q S S D). Sábado e domingo continuam cinza; **feriado em laranja**, com o
+  nome no passar do mouse — o feriado vence o cinza. O nacional vale em toda obra (`feriados_nacionais`, lido da
+  tabela); o estadual, o municipal e o da obra só na obra em que a pessoa estava naquele dia (`feriados_por_obra`,
+  tirado do próprio espelho). Na primeira versão o feriado de UMA obra pintava todas (a "interseção" das obras de
+  um calendário com uma obra só é ela mesma) — achado no navegador e trocado pela lista dos nacionais.
+- **"Pedreiro - CLT" / "Pedreiro - Prestador"** embaixo do nome (tela, impressão e Excel).
+- **A empresa primeiro:** com a empresa escolhida, as obras de OUTRA empresa (`obras.empresa_id`) vão para o fim,
+  sob "Funcionários da X que também trabalharam em obras de outras empresas", cada uma com o nome da empresa dela. A
+  obra sem empresa no cadastro fica em cima (não dá para dizer que é de outra). Sem empresa escolhida, nada muda.
+- **O dia corrigido — NÃO reproduzido.** No teste, o ajuste aprovado do dia inteiro aparece com ✓ na obra do pedido.
+  Hipótese mais provável: a obra do ajuste é outra (a do cadastro, por exemplo), e o dia foi para o calendário
+  DAQUELA obra — o que ele vê é a linha da obra de costume com o dia em branco. **Feito para enxergar:** o dia com
+  batida incluída por ajuste ganha um **✎** (tela, impressão; `*` no Excel), e cada item do fechamento leva
+  `ajustado`. **Pedido ao dono:** o nome e um dia, para conferir.
+- Testes: `tests/test_ponto_fechamento_calendario_banco.py` (a ordem por empresa, o vínculo, o feriado no Excel, o
+  domingo cinza, o ✎; com banco: o ajuste marcado, o feriado da obra que não vaza, a empresa de cada obra). Tela e
+  impressão conferidas no navegador. SEM MIGRAÇÃO. Não publicado — espera o "pode".
+- **Ambiente de teste:** a suíte em paralelo estourou "out of shared memory" no Postgres local deste chat
+  (`max_locks_per_transaction`); subido para 1024. Não é do código.
+
 ## 25/11/2026 (3) — O manual do colaborador atualizado (o que mudou desde 06/11)
 
 O dono: *"algo à atualizar no manual do ponto?"* Sim: o manual (`static/manual/`) era de 06/11 e não falava de nada
