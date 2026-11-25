@@ -689,8 +689,16 @@ def test_pedido_novo_avisa_os_administradores_no_celular(sessao_real, pessoa, dp
 
 
 def test_a_tela_de_inicio_mostra_os_pedidos_ao_administrador(app_real, sessao_real,
-                                                              pessoa, dp, pessoal):
+                                                              pessoa, dp, pessoal,
+                                                              monkeypatch):
     from tests.conftest import como                      # type: ignore
+    # Abrir o /erp/inicio dispara as rodadas do dia (agente de DP, virada dos
+    # desligamentos), que enfileiram trabalho no banco que este trabalhador
+    # divide com outros testes. Aqui só interessa o cartão.
+    from app.apps.erp.core import agente_dp
+    from app.apps.erp.core.cadastros import desligamentos_do_dia
+    monkeypatch.setattr(agente_dp, "precisa_da_rodada", lambda: False)
+    monkeypatch.setattr(desligamentos_do_dia, "precisa_rodar", lambda: False)
     fila.registrar(_conn(sessao_real), colaborador_id=pessoa.id, cpf=pessoa.cpf,
                    nome=pessoa.nome, email="inicio@gmail.com")
     sessao_real.commit()
