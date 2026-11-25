@@ -82,3 +82,29 @@ def test_o_relatorio_dos_prestadores_de_uma_empresa_e_as_folhas(app, mundo, banc
         c.execute(text("DELETE FROM empresas WHERE id = :e AND NOT EXISTS (SELECT 1 FROM obras WHERE empresa_id = :e)"),
                   {"e": e1})
         c.commit()
+
+
+def test_o_fechamento_mostra_o_prestador_mas_o_ps_so_leva_quem_tem_carteira(app, mundo, banco):
+    """25/11/2026, o dono: "no fechamento (…) quero que seja exibido mesmo o prestador ou a pessoa de outra empresa
+    (…) é uma espécie de calendário". O calendário e as planilhas mostram; o .ps da folha continua só CTPS."""
+    with banco.connect() as c:
+        c.execute(text("UPDATE colaboradores SET vinculo = 'CTPS', tipo_contrato = 'CLT_INDETERMINADO' WHERE id = :i"),
+                  {"i": mundo["joao"]})
+        c.execute(text("UPDATE colaboradores SET vinculo = 'PRESTADOR', tipo_contrato = 'AUTONOMO_RPA' WHERE id = :i"),
+                  {"i": mundo["maria"]})
+        c.commit()
+    from app.apps.ponto import horario
+    dp = como(app, mundo["dp"])
+    comp = horario.hoje().strftime("%Y-%m")
+
+    def fech(f):
+        r = dp.post("/erp/api/ponto/fechamento", json={"competencia": comp, "filtros": f})
+        assert r.status_code == 200, r.get_json()
+        return r.get_json()
+    quem_aparece = lambda d: {x["colaborador_id"] for k in ("ant_faltas", "cor_faltas_integrais", "cor_faltas_parciais")  # noqa: E731
+                              for x in d.get(k) or []}
+    padrao, todos = fech({}), fech({"vinculo": "TODOS"})
+    assert mundo["maria"] not in quem_aparece(padrao)                       # o padrão: só CTPS
+    assert mundo["maria"] in quem_aparece(todos)                            # escolhendo, o prestador aparece
+    # ... mas o .ps não leva o prestador: as linhas são as mesmas do padrão
+    assert todos["ps_faltas"] == padrao["ps_faltas"] and todos["ps_extras"] == padrao["ps_extras"]

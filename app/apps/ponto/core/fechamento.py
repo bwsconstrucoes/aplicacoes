@@ -251,9 +251,12 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
     if not relatorios._uma_por_vez.acquire(blocking=False):
         raise relatorios.Ocupado("outro relatório está sendo montado agora — tente de novo em instantes")
     try:
-        # quem não bate ponto fica fora; e só CTPS entra nas contas de horas (29/10/2026, `relatorios.conta_horas`)
-        pessoas = [p for p in relatorios._pessoas(conn, quem, filtros or {}, ai, cf)
-                   if p.get("ativo_no_ponto", True) and relatorios.conta_horas(p)]
+        # quem não bate ponto fica fora. O padrão continua só CTPS (29/10/2026, `relatorios.conta_horas`); desde
+        # 25/11/2026 dá para ver os prestadores e escolher a empresa (o dono: "quero que seja exibido mesmo o prestador
+        # ou a pessoa de outra empresa (…) ele é uma espécie de calendário (…) bem livre para eu visualizar") — mas
+        # os arquivos .ps, que vão para a folha da contabilidade, continuam SÓ com quem tem carteira (`vai_ao_ps`).
+        pessoas = [p for p in relatorios.recorte(conn, quem, "fechamento", ai, cf, filtros or {})
+                   if p.get("ativo_no_ponto", True)]
         inicio = max(ai, vale)
         espelhos = list(relatorios._espelhos(conn, pessoas, inicio, cf)) if cf >= inicio else []
     finally:
@@ -272,6 +275,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
     pequenas_neg: list[int] = []
     for p, esp in espelhos:
         base = relatorios._base(p)
+        vai_ao_ps = relatorios.conta_horas(p)          # o prestador aparece no calendário, não no .ps da folha
         cpf = _so_digitos(p.get("cpf"))
         idf, sem_id = id_fortes_ok(fortes.get(cpf))
         base = {**base, "cpf": cpf, "id_fortes": idf or ""}
@@ -351,7 +355,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                     r["ant_faltas"].append(linha)
                 elif f["tipo"] == "INTEGRAL":
                     r["cor_faltas_integrais"].append(linha)
-                    if idf:
+                    if idf and vai_ao_ps:
                         ps_faltas[(idf, EVENTO_FALTA, dia)] += 1
                 else:
                     r["cor_faltas_parciais"].append(linha)
@@ -408,14 +412,14 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
             comum = {**base, "evento": ev, "rotulo": ROTULO_EVENTO[ev], "data": data.isoformat(), "minutos_total": minutos}
             if inteiras:
                 r["cor_extras_integrais"].append({**comum, "horas": inteiras})
-                if idf:
+                if idf and vai_ao_ps:
                     ps_extras[(idf, ev, data)] += inteiras
             if resto:
                 r["cor_extras_quebradas"].append({**comum, "minutos": resto})
         if teve_algo and banco_de_horas:
             r["conferencia"].append({**base, "aviso": "tem banco de horas: as horas extras e as faltas parciais "
                                                          "ficaram fora (vão para o banco); a falta integral entra"})
-        if sem_id and (any(x["cpf"] == cpf for x in r["cor_faltas_integrais"])
+        if sem_id and vai_ao_ps and (any(x["cpf"] == cpf for x in r["cor_faltas_integrais"])
                        or any(x["cpf"] == cpf for x in r["cor_extras_integrais"])):
             r["conferencia"].append({**base, "aviso": f"IGNORADA no arquivo .ps — {sem_id}; lance à mão ou "
                                                          "corrija o ID Fortes na Análise de SPs"})
