@@ -50,6 +50,9 @@
   label.campo-portal input, label.campo-portal select, label.campo-portal textarea {
          width: 100%; box-sizing: border-box; padding: 10px; margin-top: 4px;
          border: 1px solid #C9D3E4; border-radius: 10px; font-size: 15px; }
+  .rodape-portal { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center;
+         margin: 4px 0 0; padding: 10px 0; font-size: 14px; }
+  .rodape-portal a { color: #31507F; }
   .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
   .recado.erro { background: #FDECEC; color: #A32020; }
   .recado.ok { background: #E8F6EE; color: #1C6B3C; }
@@ -138,6 +141,7 @@
   .ir-erp { color: #fff; font-size: 13px; font-weight: 600; text-decoration: none;
             border: 1px solid rgba(255,255,255,.45); border-radius: 999px;
             padding: 7px 13px; white-space: nowrap; }
+  .links-do-topo { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .dica-portal { display: block; font-weight: 400; color: #5A6B85;
                  font-size: 12.5px; margin-top: 4px; }
   .voltar { background: none; border: 0; color: #31507F; font-size: 14px;
@@ -161,9 +165,18 @@
     <b>Portal da obra</b>
     <small id="quem">—</small>
   </div>
-  {% if pode_mais_que_o_portal %}
-  <a href="/erp" class="ir-erp">ERP completo →</a>
-  {% endif %}
+  <div class="links-do-topo">
+    {# ⚑ O MANUAL NO ALTO (25/11/2026). Ele tinha ficado só no pé da página, e
+       o dono não achou: *"eu não entendi bem exatamente onde é que está o
+       link para acesso ao manual. Mas eu acho que o ideal é na tela depois do
+       login."* Link que a pessoa precisa procurar é link que não existe. Aqui
+       ele aparece sem rolar, na primeira tela depois de entrar — e continua
+       no pé, para quem terminou de ler a página e ficou com dúvida. #}
+    <a href="/erp/portal/manual/" class="ir-erp" title="Como usar o portal">📖 Manual</a>
+    {% if pode_mais_que_o_portal %}
+    <a href="/erp" class="ir-erp">ERP completo →</a>
+    {% endif %}
+  </div>
 </div>
 <div class="caixa">
   <div id="recado"></div>
@@ -262,6 +275,16 @@
       caçar área por área.</p>
     <div id="meus"></div>
   </div>
+
+  {# ⚑ O MANUAL (25/11/2026, pedido dele: "preciso criar um manual do portal
+     de solicitações (…) Clique pra visualizar online e ainda possibilidade de
+     baixar pdf"). Fica no PÉ, e não no alto: quem entra no portal vem fazer
+     uma coisa, não ler. Quem precisa de ajuda rola até o fim e acha. Mesmo
+     lugar e mesmo texto do manual do ponto. #}
+  <p class="rodape-portal">
+    <a href="/erp/portal/manual/">📖 Como usar o portal (manual)</a>
+    <a href="/erp/portal/manual.pdf">baixar em PDF</a>
+  </p>
 
 </div>
 

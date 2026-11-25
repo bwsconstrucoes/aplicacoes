@@ -205,6 +205,139 @@ Pontos de atenção do cálculo, registrados para quando o ERP virar a fonte:
 dia de ponto ANTES do início cai como CTPS e é descartado sem aviso; a diária
 de CTPS só sai se o "Tipo" for exatamente "CTPS"; sem admissão e CLT, os dias
 ficam "sem decidir".
+### 25/11/2026 (4) — O manual do Portal da Obra: online e em PDF
+
+**Ele:**
+
+> *"Preciso criar um manual do portal de solicitações com o que temos até
+> então. No padrão do manual do ponto. Clique pra visualizar online e ainda
+> possibilidade de baixar pdf. Subdividir ele pelas áreas e explicar pra que
+> serve e como ele funciona."*
+
+**O que existe agora**, no mesmo desenho do manual do ponto (que está de pé
+desde 15/10/2026 e já provou que funciona):
+
+| | Onde |
+|---|---|
+| A página | `/erp/portal/manual/` (e `/erp/portal/manual`, que redireciona) |
+| O PDF | `/erp/portal/manual.pdf` — 23 páginas A4 |
+| Os arquivos | `app/apps/erp/manual_portal/` (index.html + `telas/` + o PDF) |
+| Os links | **📖 Manual** na barra azul do portal (sem rolar) e no pé da página |
+
+#### ⚑ ELE MUDOU DUAS COISAS NO MESMO DIA, e as duas são a mesma frase
+
+> *"Eu não entendi bem exatamente onde é que está o link para acesso ao
+> manual. Mas eu acho que o ideal é na tela depois do login, né? Você loga,
+> aí a tela de entrada e nela a coisa, porque não fica exposto esse manual.
+> Só para quem tem acesso."*
+
+**1. O link subiu para o alto.** Ele estava só no PÉ da página, e o dono não
+achou. Link que a pessoa precisa procurar é link que não existe. Agora está na
+barra azul, visível na primeira tela depois de entrar — e continua no pé, para
+quem rolou a página inteira e ficou com dúvida. São dois caminhos para a mesma
+porta, na mesma tela: não é o "cardápio de portas" que a regra proíbe.
+
+**2. O manual DEIXOU DE SER PÚBLICO.** Nasceu público, no desenho do manual do
+ponto. As quatro rotas passaram a exigir login (`ver_erp`, a ação mais baixa
+que existe: qualquer um que entre no sistema lê). O link saiu da tela pública
+de **criar o acesso**, que é de quem ainda não entrou.
+
+⚠️ **A TRAVA DE VERDADE NÃO É O DECORADOR — É A PASTA.** O manual morava em
+`static/manual_portal/`, e o `static/` do blueprint é servido pelo Flask em
+`/erp/static/...` **sem passar por login nenhum** (é onde vivem o CSS e os
+ícones). Enquanto esteve lá, `/erp/static/manual_portal/index.html` respondia a
+qualquer um, e o login das rotas seria encenação. **Conferido no navegador:
+respondia mesmo, 200.** Por isso a pasta mudou para `app/apps/erp/manual_portal/`,
+fora do `static/`, e há teste travando o retorno dela.
+
+⚠️ **O QUE ISSO CUSTA, e está dito porque é real:** quem está criando o
+primeiro acesso **não consegue mais ler o manual** — e é a parte 1 que explica
+justamente aquela tela. Quem travar na porta depende de alguém mandar o PDF.
+Foi escolha dele, com o motivo dele: o manual conta como a empresa trabalha por
+dentro, e isso não precisa ficar aberto na internet.
+
+**Por que o manual do PONTO continua público e isso não é incoerência:** lá o
+manual ensina o primeiro acesso de quem nunca teve senha — não há login a
+exigir. Aqui o acesso já existe antes de a pessoa precisar do manual.
+
+#### Dois defeitos que a homologação pegou ao fechar o manual
+
+Nenhum dos dois tem a ver com o pedido dele — apareceram porque, ao exigir
+login, o manual passou a ser **tela do ERP** e entrou nos testes que toda tela
+do ERP enfrenta. Valem registro porque custariam caro soltos:
+
+1. **A página não tinha `<body>`.** Ela nasceu copiando o esqueleto do manual
+   do ponto, que também não tem — o navegador fecha sozinho e ninguém nota. A
+   homologação exige, e está certa. Agora o manual tem `</head><body>…</body>`.
+2. **O teste de homologação quebrava no PDF.** Ele lê toda resposta como texto
+   UTF-8 e procura `<body`; o PDF é binário e estourava no primeiro byte. Não
+   era defeito do manual: o teste supunha que toda rota de TELA devolve
+   página. Agora ele olha o `Content-Type` e, no que não é HTML, confere o que
+   faz sentido (abriu 200, não jogou ninguém para o login). **Mexe num
+   arquivo que serve o ERP inteiro** — vale para qualquer rota futura que
+   entregue arquivo.
+
+**Subdividido pelas áreas, como ele pediu**, e as fechadas entram também: 1
+entrar · 2 a tela inicial · **3 Colaboradores (os 14 pedidos, grupo a grupo)**
+· **4 Suprimentos** · **5 Pagamentos** · **6 Diário de obra** · 7 pendências
+(assinar e devolver) · 8 avisos · 9 acompanhar · 10 quem vê o quê · 11 pode e
+não pode · 12 mensagens da tela · 13 dúvidas.
+
+⚑ **Por que a área FECHADA ganhou parte própria no manual:** é a mesma razão
+pela qual ela aparece no portal (`core/portal.py`). Manual que pula Suprimentos
+faria a obra achar que nunca vai existir — e continuar pedindo material por
+WhatsApp, que é o que se quer acabar. A parte dela diz uma frase: *continue
+pedindo como você pede hoje*.
+
+**As 17 telas são de um banco de teste**, com nomes, CPFs e obra **inventados**
+— nenhuma pessoa de verdade entra no repositório.
+
+#### O que foi feito para o manual NÃO envelhecer em silêncio
+
+É o risco de verdade deste trabalho, e o manual do ponto já viveu isso
+(*"ao mudar uma tela ou uma regra que o colaborador vê, o manual fica velho"*).
+Três coisas, porque lembrar não é um plano:
+
+1. **`tests/test_manual_do_portal.py`** quebra quando uma **área** nova ou um
+   **tipo de pedido** novo não aparecem no manual, quando a conta de pedidos
+   escrita nele não bate com a tela, quando uma imagem citada não existe, e
+   quando uma área fechada é descrita como aberta. Já pegou uma tela sobrando
+   na pasta.
+2. **`app/apps/erp/scripts/semear_manual_portal.py`** monta de novo o portal
+   cheio (obra, equipe, pedidos em quatro situações, pendências, avisos e um
+   aviso prévio para assinar) num banco de teste. **Recusa qualquer banco sem
+   "teste" no nome.** Sem ele, refotografar custa meia hora de dado montado à
+   mão — e é esse custo que faz manual morrer.
+3. **`app/apps/erp/scripts/imprimir_manual_portal.js`** reimprime o PDF da
+   própria página. O PDF é cópia: mudar a página e não reimprimir deixa os
+   dois diferentes, e **nada acusa** — está anotado em `PERGUNTAS.md` como
+   limite conhecido.
+
+#### O que o teste NÃO alcança, e fica dito
+
+Ele confere **nomes e contas**, não redação. Tela que muda de jeito sem mudar
+de nome passa batida — por exemplo, se o botão "Enviar o pedido" virar outra
+coisa, ou se a ordem dos blocos do portal mudar de novo (mudou em 23 e em
+24/11). Quem mexer no portal continua tendo de olhar a parte correspondente.
+
+⚑ **O manual já nasceu tendo de alcançar a `main` — e isso prova o risco
+acima.** Entre escrever e publicar, outros chats publicaram três mudanças que
+a obra VÊ, e as três entraram no texto antes de o manual subir: **quem libera
+o acesso ao portal é o ADMINISTRADOR** (era "o DP libera", e o teste de nomes
+não pegaria isso), a **carta do pedido de demissão** passou a ser sempre
+exigida, e a leitura de documentos passou a aceitar **PDF, foto grande, foto
+de iPhone e a certidão de nascimento do dependente**. As 17 telas foram
+refotografadas contra a `main` e comparadas pixel a pixel com as antigas:
+três tinham mudado.
+
+**Arquivos compartilhados mexidos** (importa para quem roda outro chat do
+ERP): `routes.py` (quatro rotas novas, junto da `pagina_portal`),
+`tests/test_permissoes_rotas.py` e `PERGUNTAS.md`. Mexidos também
+`templates/erp_portal.html` (o link no pé) e
+`templates/erp_primeiro_acesso_portal.html` (o link antes de entrar).
+**Sem migração de banco.**
+
+---
 
 ### 25/11/2026 (3) — Três decisões dele: carta sempre, ponto na hora, foto de iPhone
 

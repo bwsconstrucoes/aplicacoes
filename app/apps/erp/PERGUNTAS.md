@@ -352,6 +352,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem da minha obra está com o ponto em dia e quem precisa corrigir? (aplicativo › "Ponto da minha equipe": responde conforme quem pergunta — o responsável pelo ponto da obra vê quem bateu no aparelho dele; o administrativo e o liberado, o alcance da consulta; "este mês" = do dia 1 até ontem)
 - Quem faltou ou está com batida faltando, por obra, para mandar no grupo? 🔒 (Relatórios › Fechamento › "Resumo dos problemas (WhatsApp)": marcar os tipos; "período" = o do fechamento, 26→25, ou só o mês corrente; a obra é a do dia, onde a pessoa bateu)
 - Quem trabalhou em cada dia do período, com ou sem hora extra? 🔒 (Relatórios › Fechamento › "Calendário geral" ligado: o ✓ é o dia trabalhado no horário; "período" = o do fechamento, 26→25; não entra quem não trabalhou dia nenhum nem faltou)
+- Quem da empresa X trabalhou em obra de outra empresa no período? 🔒 ⚠️ (Relatórios › Fechamento, com a empresa escolhida: as obras de outras empresas vêm no fim, na parte "Funcionários da X que também trabalharam em obras de outras empresas"; "da empresa X" = a empresa do CADASTRO da pessoa (sem ela, a da obra do cadastro); a obra é a do dia, onde a pessoa bateu; desde 25/11/2026; ❌ quem é de OUTRA empresa e trabalhou numa obra da X não aparece nesse recorte)
+- Que dias do Fulano foram corrigidos por ajuste? 🔒 (Relatórios › Fechamento › Horas extras por obra: o ✎ ao lado do dia; na janela da pessoa, as batidas "AJUSTADA"; desde 25/11/2026)
 - Que permutas de plantão foram lançadas ou aprovadas este mês? 🔒 ⚠️ (pedidos "Permuta de plantão" — compensação com subtipo PERMUTA e o colega; aprovada, os dois lados estão aprovados; as de antes de 31/10 são "Troca de plantão com …"; "este mês" = mês das noites, não do pedido)
 - Que permutas o sistema achou e ninguém aplicou? 🔒 (Validações › "Permutas que o sistema identificou nas batidas": últimos 35 dias, só vigias do 12x36; é sugestão — pode ter sido hora extra de fato)
 - Quem bate ponto por exceção (fora da regra da planilha)? 🔒 (janela da pessoa › Cadastro › "Bate ponto?": "Sim, por exceção", com o motivo, quem e quando; ainda não há uma lista que junte só esses — falta uma consulta)
@@ -3056,6 +3058,54 @@ de escopo da tela.
   km da obra", que é o sinal de foto trocada de pasta.
 - **"Quais obras estão sem coordenada?"** — sem ela não há clima medido nem
   conferência de foto. Hoje ninguém avisa.
+
+---
+
+## 3z-duodevicies. O MANUAL DO PORTAL DA OBRA (25/11/2026)
+
+O manual é **página fixa**, não banco. Entra aqui porque muda o que o agente
+deve responder: pergunta de **"como eu faço"** agora tem um lugar certo para
+onde apontar, com endereço e parte numerada — em vez de o agente explicar de
+memória e arriscar descrever uma tela que mudou.
+
+### ⚠️ As palavras ambíguas desta parte
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"o manual"** | ① o do **ponto** (`/ponto/app/manual/`), para bater ponto; ② o do **portal** (`/erp/portal/manual/`), para pedir ao escritório. São sistemas e senhas diferentes — mandar a pessoa para o errado faz ela perder a viagem |
+| **"o portal"** | ① o **Portal da Obra** do ERP; ② o portal do **Pipefy**, que ele vai substituir; ③ o portal da **prefeitura**, na emissão de nota. Só o primeiro tem manual |
+| **"como peço X"** | ① como se pede **pelo portal** (o manual responde); ② qual a **regra** de X — prazo, direito, valor (o manual não responde, e não deve fingir que responde) |
+
+### O que dá para perguntar
+
+- **"Onde fica o manual do portal?"** / **"Tem manual para a obra?"** —
+  responder com o endereço e dizer que dá para baixar em PDF.
+- **"Como a obra pede férias pelo portal?"** / **"Como peço uma admissão?"**
+  — a parte 3 do manual, por grupo de assunto.
+- **"Como a pessoa assina o aviso prévio?"** — parte 7.
+- **"Como devolvo a rescisão assinada?"** — parte 7, e a regra que importa:
+  **não por WhatsApp**.
+- **"Por que não consigo pedir material pelo portal?"** — partes 4 e 5: a
+  área existe e ainda não abriu.
+- **"Por que não acho fulano na busca do portal?"** — parte 10, alcance.
+
+### Perguntas cuja resposta MUDA conforme quem pergunta
+
+- **"O que eu posso pedir?"** — depende do perfil: quem não tem `solicitar_dp`
+  não vê o bloco de abrir; quem só tem `ver_diario` vê o portal com o diário e
+  mais nada. O manual descreve o caso cheio, do administrativo de obra.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Esta parte do manual ainda está certa?"** — há teste conferindo que toda
+  **área** e todo **tipo de pedido** aparecem no manual, e que a conta de
+  pedidos bate (`tests/test_manual_do_portal.py`). Ninguém confere o TEXTO:
+  uma tela que muda de jeito sem mudar de nome passa batida.
+- **"Quantas pessoas abriram o manual?"** — não há contagem de acesso. Sem
+  ela, não dá para saber se o manual está sendo usado ou ignorado.
+- **"O manual em PDF está igual à página?"** — o PDF é impresso da página à
+  mão, quando alguém lembra. Publicar a página sem reimprimir o PDF deixa os
+  dois diferentes, e nada acusa.
 
 ---
 

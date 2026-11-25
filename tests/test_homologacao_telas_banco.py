@@ -50,7 +50,21 @@ def test_toda_tela_e_desenhada_por_quem_pode_abrir(app_real, operadores, caso):
     assert r.status_code == 200, (
         f"{caminho} não abriu para {quem[0].value} (HTTP {r.status_code}). "
         f"Com a base vazia, toda tela do ERP tem de desenhar. "
-        f"{r.get_data(as_text=True)[:300]}")
+        f"{r.get_data(as_text=False)[:300]!r}")
+
+    # ⚑ NEM TODA ROTA DE TELA DEVOLVE TELA (25/11/2026). O manual do portal
+    # tem um endereço que entrega o PDF — ele é do mesmo mundo (abre pelo
+    # navegador, exige a mesma ação), mas o que volta é arquivo, não página.
+    # Pedir "<body" dele é pedir a coisa errada, e `as_text` ainda estoura no
+    # primeiro byte que não é UTF-8. O que vale conferir aqui é o que já está
+    # conferido: abriu 200 e não jogou ninguém para o login.
+    tipo = (r.headers.get("Content-Type") or "").lower()
+    if "html" not in tipo:
+        assert r.get_data(), f"{caminho} respondeu 200 vazio"
+        assert "/erp/entrar" not in r.request.path, (
+            f"{caminho} jogou {quem[0].value} para o login em vez de abrir")
+        return
+
     corpo = r.get_data(as_text=True)
     assert "<body" in corpo.lower(), f"{caminho} respondeu 200 sem página"
     assert "/erp/entrar" not in r.request.path, (
