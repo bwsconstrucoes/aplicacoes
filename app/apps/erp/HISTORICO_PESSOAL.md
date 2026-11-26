@@ -141,6 +141,67 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (4) — ⚠️ A fila de acesso ao portal não aparecia em Operadores
+
+**Ele:**
+
+> *"Algo errado na parte de operadores. Aparece a pendência em Pessoal, clico,
+> sou remetido pra Operadores, mas não abre a tela pra liberação e confirmação
+> do perfil. Tampouco se eu clicar em adm e operadores, não vejo quem tá
+> pendente."*
+
+**A causa, e ela é de UMA LINHA:** `carregarFilaDoPortal()` — a chamada que
+busca a fila — tinha ido parar **dentro do "Salvar" do formulário de PERFIS**,
+em `erp_config.html`. O cartão "Pedidos de acesso ao portal" só nascia se
+alguém abrisse um perfil de acesso e salvasse. Em toda abertura normal da tela
+a fila simplesmente **não era buscada**.
+
+⚠️ **E não havia erro nenhum.** O cartão nasce com a classe `oculto` e só sai
+dela quando a fila chega; sem a chamada, ele ficava invisível, em silêncio. A
+tela parecia funcionar. Foi preciso o dono tropeçar para alguém notar — e isso
+levou **um dia inteiro** desde a publicação (25/11).
+
+**O segundo sintoma era outro defeito, não o mesmo:** o link "Liberar em
+Operadores" era `/erp/configuracoes#usuarios`, **igual para todas as pessoas da
+fila**. Mesmo com o cartão aparecendo, quem clicava na pendência de alguém
+chegava numa lista e tinha de achar a pessoa de novo. Agora o link leva o
+número do pedido (`?pedido=N`) e, do outro lado, a confirmação **abre sozinha**:
+confere o e-mail, cria o acesso, manda o convite e abre o cadastro do operador
+para escolher perfil e obras — que é o que ele pediu em 24/11.
+
+#### A lição que vale mais que o conserto
+
+**Este é o terceiro defeito desta classe em três dias**, e os três têm a mesma
+cara: uma ou mais linhas coladas **dentro de uma função**, quando deveriam
+estar na abertura da tela. Começam na coluna zero, o arquivo continua válido, o
+navegador não reclama — e o código simplesmente não roda.
+
+Há um irmão ainda de pé, encontrado de passagem e **não consertado** (não foi
+pedido): em `erp_config.html`, as linhas `carregarDepara()`,
+`carregarOperadores()`, o registro do botão **"+ Novo operador"**, o do
+**"Instalar de-para"** e `carregar()` existem **duas vezes** — uma correta, na
+abertura, e outra **dentro do clique de "Aplicar atualizações do banco"**.
+Efeito: depois de aplicar as migrações, "+ Novo operador" abre **dois**
+diálogos, porque ganhou um segundo ouvinte. É pequeno, mas é real.
+
+**O teste que ficou** (`tests/test_tela_da_fila_de_acesso.py`) trava os dois
+defeitos: a fila tem de ser carregada na sequência de abertura, não pode estar
+dentro do Salvar de perfis, e o link de Pessoal tem de levar o pedido.
+
+⚠️ **O que o teste NÃO faz, e está escrito nele:** ele não entende JavaScript.
+Escrevi primeiro um contador de profundidade de chaves e **ele não funcionou**
+neste arquivo — o template mistura Jinja, crases com HTML dentro e expressões
+regulares, e a conta sai errada. **Provado: com o defeito de volta, o contador
+dizia que estava tudo bem.** Troquei pela conferência simples, e provei que
+essa pega (2 testes falham com o defeito, 3 passam sem ele). Uma conferência
+que mente é pior que nenhuma.
+
+**Arquivos compartilhados mexidos:** `templates/erp_config.html` (a tela de
+Configurações, que todas as áreas usam) e `templates/erp_colaboradores.html`.
+**Sem migração de banco.**
+
+---
+
 ### 26/11/2026 (3) — Autônomo mensalista exige o salário do mês; salário e diária em destaque no atendimento
 
 Ele: *"para o colaborador Autônomo Mensalista, o campo Salário do Mês se torna
