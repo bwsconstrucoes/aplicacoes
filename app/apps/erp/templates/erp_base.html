@@ -1641,7 +1641,70 @@ function aviso(alvo, texto, tipo) {
 //
 // `FormData` fica de fora de propósito — nele o navegador monta o `boundary`
 // sozinho, e fixar o tipo à mão quebra o envio de arquivo.
+// ---------------------------------------------------------------------------
+// ⚑ O BOTÃO MOSTRA QUE ESTÁ TRABALHANDO (26/11/2026). Ele: *"Você clica no
+// botão e você fica na dúvida se está havendo algum processamento ou não (…)
+// eu clico ler agora e eu fico na dúvida se a leitura está acontecendo ou não,
+// porque a tela fica parada."* Vale para o ERP inteiro, num lugar só: toda
+// chamada ao servidor que nasce de um clique (até 1 s depois dele) desativa o
+// botão clicado, põe ⏳ nele e mostra "Processando…" no alto, até a resposta.
+// Resposta rápida (menos de 0,3 s) não pisca nada.
+// ---------------------------------------------------------------------------
+const OCUPADO = {botao: null, quando: 0, abertas: 0, timer: null};
+document.addEventListener("click", ev => {
+  const b = ev.target.closest && ev.target.closest("button, .btn, a.link-btn");
+  if (b) { OCUPADO.botao = b; OCUPADO.quando = Date.now(); }
+}, true);
+let FAIXA_OCUPADO = null;
+function _faixaOcupado(mostrar){
+  let f = FAIXA_OCUPADO;
+  if (!f && mostrar) {
+    f = FAIXA_OCUPADO = document.createElement("div");
+    f.textContent = "⏳ Processando…";
+    f.style.cssText = "position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:2147483647;"
+      + "background:#10233F; color:#fff; padding:6px 14px; border-radius:999px; font:600 13px system-ui;"
+      + "box-shadow:0 4px 14px rgba(0,0,0,.25)";
+    document.body.appendChild(f);
+  }
+  if (f) f.style.display = mostrar ? "" : "none";
+  // A faixa também por cima de janela aberta (top layer): ela é posta dentro
+  // da última janela modal aberta, se houver.
+  const aberta = [...document.querySelectorAll("dialog[open]")].pop();
+  if (f && mostrar && aberta && f.parentElement !== aberta) aberta.appendChild(f);
+  if (f && mostrar && !aberta && f.parentElement !== document.body) document.body.appendChild(f);
+}
+function _comecouTrabalho(){
+  const b = (Date.now() - OCUPADO.quando < 1000) ? OCUPADO.botao : null;
+  OCUPADO.botao = null;
+  OCUPADO.abertas++;
+  clearTimeout(OCUPADO.timer);
+  OCUPADO.timer = setTimeout(() => { if (OCUPADO.abertas > 0) _faixaOcupado(true); }, 300);
+  if (b && b.tagName === "BUTTON" && !b.disabled && !b.dataset.ocupado) {
+    b.dataset.ocupado = "1";
+    b.disabled = true;
+    b.dataset.textoAntes = b.innerHTML;
+    setTimeout(() => { if (b.dataset.ocupado) b.innerHTML = "⏳ " + b.dataset.textoAntes; }, 300);
+    return b;
+  }
+  return null;
+}
+function _terminouTrabalho(b){
+  OCUPADO.abertas = Math.max(0, OCUPADO.abertas - 1);
+  if (!OCUPADO.abertas) { clearTimeout(OCUPADO.timer); _faixaOcupado(false); }
+  if (b && b.dataset.ocupado) {
+    if (b.dataset.textoAntes !== undefined) b.innerHTML = b.dataset.textoAntes;
+    delete b.dataset.ocupado; delete b.dataset.textoAntes;
+    b.disabled = false;
+  }
+}
+
 async function api(url, opcoes) {
+  const botao = _comecouTrabalho();
+  try { return await _api(url, opcoes); }
+  finally { _terminouTrabalho(botao); }
+}
+
+async function _api(url, opcoes) {
   if (opcoes && typeof opcoes.body === "string") {
     const temTipo = Object.keys(opcoes.headers || {})
       .some(h => h.toLowerCase() === "content-type");
