@@ -471,7 +471,7 @@ def test_a_fila_poe_as_abertas_na_frente(mundo):
     fila = svc.listar(mundo["s"])
     assert fila["solicitacoes"][0]["aberta"] is True
     assert fila["indicadores"] == {"abertas": 1, "atendidas": 1, "recusadas": 0,
-                                   "em_andamento": 0}
+                                   "em_andamento": 0, "agente_a_revisar": 0}
 
 
 def test_em_andamento_conta_o_checklist_comecado_e_nao_terminado(mundo):
