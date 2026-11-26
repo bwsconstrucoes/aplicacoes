@@ -122,6 +122,14 @@
       <button class="btn secundario" id="ba-validar" data-precisa-selecao
               title="Marca Validação = Sim (pede a senha de validação)">Validar</button>
     {% endif %}
+    {% if pode_operar and tela != 'codigos' %}
+      {# CANCELAR SP (26/11/2026): abre a janela com o que vai ser cancelado; na
+         confirmação, cria no Pipefy o card de pedido (o Make termina). #}
+      <button class="btn secundario" id="ba-cancelar-sp" data-precisa-selecao
+              data-url-previa="{{ url_for('analisesps.cancelar_sp_previa') }}"
+              data-url-confirmar="{{ url_for('analisesps.cancelar_sp_confirmar') }}"
+              title="Pede no Pipefy o cancelamento das SPs marcadas (mostra antes o que vai)">Cancelar SP</button>
+    {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
     <button class="btn secundario" id="ba-anexos" data-precisa-selecao

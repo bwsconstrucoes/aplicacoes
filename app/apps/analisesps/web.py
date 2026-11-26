@@ -1752,6 +1752,47 @@ def validar():
     return _gravar_alteracao(ids, "validacao", "Sim", "Validar")
 
 
+# CANCELAR SP PELO SISTEMA (26/11/2026) — ver `cancelar_sp.py`. A prévia lista o
+# que vai ser cancelado; a confirmação cria os cards no Pipefy (o Make termina).
+@bp.route("/api/cancelar-sp/previa", methods=["POST"])
+@exige_operador
+def cancelar_sp_previa():
+    from . import cancelar_sp
+    from .formatos import data_br, moeda
+    ids, erro = _ids_do_pedido(request.get_json(silent=True) or {})
+    if erro:
+        return erro
+    vista = cancelar_sp.previa(ids)
+    return {"ok": True, "vao": vista["vao"], "sps": [
+        {"id": s["id"], "achada": s["achada"], "credor": s.get("credor", ""),
+         "valor": moeda(s.get("valor")) if s.get("valor") is not None else "",
+         "vencimento": data_br(s["vencimento"]) if s.get("vencimento") else "",
+         "status": s.get("status", ""), "obra": s.get("obra", ""),
+         "cancelada": bool(s.get("cancelada")),
+         "pedido": (f"já pedido em {s['pedido']['em']:%d/%m/%Y %H:%M}"
+                    + (f" por {s['pedido']['por']}" if s["pedido"]["por"] else ""))
+                   if s.get("pedido") and s["pedido"].get("em") else ""}
+        for s in vista["sps"]]}
+
+
+@bp.route("/api/cancelar-sp", methods=["POST"])
+@exige_operador
+def cancelar_sp_confirmar():
+    from . import cancelar_sp
+    ids, erro = _ids_do_pedido(request.get_json(silent=True) or {})
+    if erro:
+        return erro
+    try:
+        feito = cancelar_sp.pedir(ids, auth.nome_atual() or "",
+                                  auth.ROTULOS.get(auth.perfil_atual(), ""))
+    except cancelar_sp.ErroDoCancelamento as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001 — token ausente, Pipefy fora do ar
+        logger.exception("Cancelar SP: falhou o pedido ao Pipefy")
+        return {"ok": False, "erro": f"Não consegui falar com o Pipefy: {e}"}, 502
+    return {"ok": True, **feito}
+
+
 # ---------------------------------------------------------------------------
 # Configurações e sincronização
 # ---------------------------------------------------------------------------

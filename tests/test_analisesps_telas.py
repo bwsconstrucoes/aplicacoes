@@ -636,11 +636,13 @@ def test_o_link_escrito_na_descricao_fica_clicavel(app_ficha, monkeypatch):
 
 
 def test_cancelar_sp_nao_e_botao_vermelho(app_ficha):
-    """Ele só ABRE o formulário do Pipefy — não cancela nada por si. Em
-    vermelho puxava o olho para si toda vez que a ficha abria."""
+    """Ele só ABRE a janela de confirmação — não cancela nada por si. Em
+    vermelho puxava o olho para si toda vez que a ficha abria. (O vermelho fica
+    no "Confirmar o cancelamento" da janela, que é o passo sem volta.)"""
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
-    trecho = html[html.index("Cancelar%20SP") - 400:html.index("Cancelar SP")]
+    i = html.index('data-cancelar-sp="1234567890"')
+    trecho = html[html.rindex("<button", 0, i):html.index("</button>", i)]
     assert "perigo" not in trecho
 
 
@@ -2958,11 +2960,15 @@ def test_cancelar_na_ficha_e_o_pedido_no_pipefy_como_no_streamlit(app_ficha):
     Na conversão virou um botão que gravava "Cancelado" na planilha — mesma
     palavra, outra ação, e sem volta pelo caminho errado: quem pedia o
     cancelamento da SP acabava só marcando a planilha, e o card seguia vivo
-    lá. Voltou a ser o formulário; e a tela diz, onde os botões estão, que
-    daqui não se mexe no Pipefy."""
+    lá. Voltou a ser o pedido no Pipefy; e a tela diz, onde os botões estão, que
+    os botões de status não mexem no Pipefy.
+
+    26/11/2026: o pedido deixou de ser o formulário público preenchido à mão — o
+    botão abre a janela de confirmação e o sistema cria o card (`cancelar_sp.py`)."""
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
-    assert "app.pipefy.com/public/form/" in html, "sumiu o pedido de cancelamento"
+    assert 'data-cancelar-sp="1234567890"' in html, "sumiu o pedido de cancelamento"
+    assert "/analisesps/api/cancelar-sp" in html
     assert 'data-valor="Cancelado"' not in html, (
         "voltou o botão que grava Cancelado na planilha chamando-se Cancelar")
     assert "O Pipefy não é" in html and "alterado por aqui" in html
@@ -4113,10 +4119,11 @@ def test_agir_sobre_a_selecao_apaga_a_memoria_dela():
     from pathlib import Path
     js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
     assert "function selecaoConsumida()" in js
-    # As seis ações que ALTERAM alguma coisa têm de chamar (a quinta, de
+    # As sete ações que ALTERAM alguma coisa têm de chamar (a quinta, de
     # 08/10/2026, é o "Marcar Pago" do modal Consultar Omie; a sexta, de
-    # 24/10/2026, o "Mover para novo lote").
-    assert js.count("selecaoConsumida();") == 6, (
+    # 24/10/2026, o "Mover para novo lote"; a sétima, de 26/11/2026, o
+    # "Cancelar SP").
+    assert js.count("selecaoConsumida();") == 7, (
         "cada ação que altera precisa apagar a memória da seleção")
 
 

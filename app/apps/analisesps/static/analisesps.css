@@ -3051,3 +3051,8 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 }
 .chip-folha b { font-weight: 700; }
 .chip-folha.alerta { background: #FFF4D6; color: #7A5300; border-color: #F0D58A; }
+
+/* CANCELAR SP (26/11/2026): a linha que não vai (já cancelada / não achada) fica apagada. */
+#dialogo-cancelar-sp { max-width: 980px; width: calc(100vw - 32px); }
+#dialogo-cancelar-sp .cs-fora td { color: var(--cinza); }
+#dialogo-cancelar-sp .cs-criados { margin: 8px 0 0 18px; }
