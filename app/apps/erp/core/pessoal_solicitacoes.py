@@ -610,6 +610,12 @@ TIPOS: dict[str, dict[str, Any]] = {
                 "CLT_INDETERMINADO": ("valor_diaria",),
                 "CLT_DETERMINADO": ("valor_diaria",),
                 "AUTONOMO_RPA": ("valor_diaria",),
+                # ⚑ 26/11/2026, ele: *"para o colaborador Autônomo Mensalista,
+                # o campo Salário do Mês se torna obrigatório, pois ele recebe
+                # não é por diárias, mas sim por um valor pré-determinado por
+                # mês."* O tipo de contrato já diz que é mensalista — a
+                # pergunta "diarista ou mensalista" some (ver `ocultos_se`).
+                "AUTONOMO_MENSALISTA": ("valor_mes",),
                 "PJ": ("razao_social_pj", "cnpj_pj")},
             "pagamento": {"MENSALISTA": ("valor_mes",)}},
         # ⚑ O QUE NÃO SE APLICA NEM APARECE (15/11/2026). Ele: *"quando é
@@ -639,6 +645,8 @@ TIPOS: dict[str, dict[str, Any]] = {
             # porque essa informação não precisa."* A leitura ainda os grava,
             # se achar — oculto não é apagado.
             "PRESTADOR": ("num_ctps", "num_pis")},
+            # 26/11/2026: autônomo mensalista é mensalista por definição.
+            "tipo_contrato": {"AUTONOMO_MENSALISTA": ("pagamento",)},
             "pagamento": {"DIARISTA": ("valor_mes",)}},
         # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre DEPOIS de escolhida a
         # documentação — e aí abre para as DUAS, com listas diferentes.
@@ -1521,6 +1529,10 @@ def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
         v = saida.get(campo)
         if isinstance(v, str) and v in mapa:
             saida[campo] = mapa[v]
+    # ⚑ AUTÔNOMO MENSALISTA RECEBE POR MÊS (26/11/2026): o tipo de contrato
+    # responde a pergunta "diarista ou mensalista", que nem aparece na tela.
+    if str(saida.get("tipo_contrato") or "").upper() == "AUTONOMO_MENSALISTA":
+        saida["pagamento"] = "MENSALISTA"
     return saida
 
 
@@ -1583,7 +1595,7 @@ ROTULOS: dict[str, str] = {
     "pix_chave": "Chave Pix (o dado)",
     "pagamento": "Pagamento",
     "valor_diaria": "Valor da Diária",
-    "valor_mes": "Valor do Mês",
+    "valor_mes": "Salário do Mês",
     "meio_transporte": "Meio de Transporte para chegar à Obra?",
     "categoria_alimentacao": "Ajuda com Alimentação",
     "categoria_transporte": "Ajuda com Transporte",

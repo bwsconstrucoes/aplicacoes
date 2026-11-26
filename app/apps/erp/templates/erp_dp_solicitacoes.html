@@ -455,6 +455,7 @@ function pintarPedido(){
   {# ⚑ O SUBTÍTULO (26/11/2026): vínculo e contrato na admissão, a forma no
      desligamento — para bater o olho (`pessoal_solicitacoes.resumo`). #}
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    ${destaqueDoValor(p)}
     ${p.resumo ? `<div style="margin:-4px 0 10px; font-size:15px; font-weight:600;
       color:var(--azul, #0B2C5C)">${escapar(p.resumo)}</div>` : ""}
     <div class="kpis">
@@ -1314,7 +1315,7 @@ async function atender(){
     }, 0);
   }
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
-    aviso: (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
+    aviso: destaqueDoValor(ABERTA) + (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
             + "no cadastro — o atendimento é o registro do que foi feito.")
            + (campos.length ? " <b>Os campos abaixo são do DP</b>: a obra não "
               + "os informa, e é aqui que eles entram." : "") + espelho,
@@ -1328,6 +1329,22 @@ async function atender(){
   doDP.forEach(c => { if (r[c]) dados[c] = r[c]; });
   acao("atender", {resposta: r.resposta,
                    ...(Object.keys(dados).length ? {dados} : {})});
+}
+
+{# ⚑ O VALOR COMBINADO EM DESTAQUE (26/11/2026). Ele: *"Exibir esse campo e
+   dar destaque à ele, pois é uma informação sensível. Dar destaque também ao
+   Valor da Diária, que também deve aparecer na tela de atendimento do
+   autônomo (RPA)."* Vale para o salário do mês (autônomo mensalista e
+   mensalista) e para a diária (RPA e CLT) — o que o pedido trouxer. #}
+function destaqueDoValor(p){
+  const v = c => ((p.dados_legiveis || []).find(x => x.campo === c) || {}).valor;
+  const itens = [["valor_mes", "Salário do mês"], ["valor_diaria", "Valor da diária"]]
+    .filter(([c]) => v(c)).map(([c, r]) => `<div><small style="display:block; opacity:.8">${r}</small>
+      <b style="font-size:20px">${escapar(v(c))}</b></div>`);
+  return itens.length ? `<div style="display:flex; gap:24px; flex-wrap:wrap; margin:0 0 12px;
+      padding:10px 14px; border-radius:10px; background:#FFF6E5; border:2px solid #F4B942">
+      ${itens.join("")}<small style="align-self:center; flex:1; min-width:180px">Valor combinado
+      pela obra — confira antes de atender.</small></div>` : "";
 }
 
 async function recusar(){

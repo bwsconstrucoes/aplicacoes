@@ -908,3 +908,19 @@ def test_o_subtitulo_do_pedido_mostra_o_que_ele_e():
     assert svc.resumo(None, "DESLIGAMENTO", {"saida_prestador": "Pela empresa"}) \
         == "Pela empresa"
     assert svc.resumo(None, "ALTERACAO_CARGO", {"cargo_pleiteado_id": "3"}) == ""
+
+
+def test_autonomo_mensalista_exige_o_salario_do_mes_e_nao_pergunta_diaria():
+    """26/11/2026, ele: *"para o colaborador Autônomo Mensalista, o campo
+    Salário do Mês se torna obrigatório, pois ele recebe não é por diárias."*"""
+    base = {"tipo_documentacao": "PRESTADOR", "tipo_contrato": "Autônomo mensalista"}
+    campos = svc.exigencias("CADASTRO", base)["campos"]
+    assert "valor_mes" in campos
+    assert "pagamento" not in campos, "o contrato já diz que é mensalista"
+    assert "valor_diaria" not in campos
+    assert svc.traduzir_do_pipe(base)["pagamento"] == "MENSALISTA"
+    assert svc.ROTULOS["valor_mes"] == "Salário do Mês"
+    # O RPA continua pela diária.
+    rpa = svc.exigencias("CADASTRO", {"tipo_documentacao": "PRESTADOR",
+                                      "tipo_contrato": "Autônomo (RPA)"})["campos"]
+    assert "valor_diaria" in rpa and "valor_mes" not in rpa

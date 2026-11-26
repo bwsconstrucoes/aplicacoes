@@ -141,6 +141,21 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (3) — Autônomo mensalista exige o salário do mês; salário e diária em destaque no atendimento
+
+Ele: *"para o colaborador Autônomo Mensalista, o campo Salário do Mês se torna
+obrigatório, pois ele recebe não é por diárias, mas sim por um valor
+pré-determinado por mês (…) Exibir esse campo e dar destaque a ele, pois é uma
+informação sensível. Dar destaque também ao Valor da Diária, que também deve
+aparecer na tela de atendimento do autônomo (RPA)."*
+- `obrigatorios_se` CADASTRO: `AUTONOMO_MENSALISTA` → `valor_mes`; a pergunta
+  "diarista ou mensalista" some para ele (`ocultos_se`) e `traduzir_do_pipe`
+  grava `pagamento = MENSALISTA`. O rótulo `valor_mes` virou "Salário do Mês".
+- Tela do DP: faixa amarela com "Salário do mês" e/ou "Valor da diária" no
+  alto do pedido e dentro da janela de Atender (`destaqueDoValor`).
+- Pedido já aberto de autônomo mensalista sem o valor: não é barrado
+  retroativamente; o DP corrige pelo "Corrigir os dados".
+
 ### 26/11/2026 (2) — Os diaristas da Análise de SPs passam a ver quem foi admitido pelo ERP
 
 Fecha a lacuna de 25/11/2026 (6). Feito a pedido dele neste chat; o registro
