@@ -383,7 +383,8 @@ function desenhar(){
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
     <td class="dados">${escapar(x.numero)}</td>
-    <td><b>${escapar(x.tipo_rotulo)}</b></td>
+    <td><b>${escapar(x.tipo_rotulo)}</b>${x.resumo
+      ? `<br><small class="desc">${escapar(x.resumo)}</small>` : ""}</td>
     <td>${escapar(x.pessoa || "—")}${x.cargo ? `<br><small class="desc">${escapar(x.cargo)}</small>` : ""}</td>
     <td class="dados" style="white-space:nowrap">${escapar(x.pessoa_cpf || "—")}</td>
     <td class="dados">${escapar(x.obra || "—")}</td>
@@ -451,7 +452,11 @@ function pintarPedido(){
      data dd/mm/aaaa, CPF/CNPJ/CEP/telefone pontuados. Antes era o JSON cru. #}
   const linhas = (p.dados_legiveis || []).map(x => `<tr><td>${escapar(x.rotulo)}</td>
       <td>${escapar(x.valor)}</td></tr>`).join("");
+  {# ⚑ O SUBTÍTULO (26/11/2026): vínculo e contrato na admissão, a forma no
+     desligamento — para bater o olho (`pessoal_solicitacoes.resumo`). #}
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    ${p.resumo ? `<div style="margin:-4px 0 10px; font-size:15px; font-weight:600;
+      color:var(--azul, #0B2C5C)">${escapar(p.resumo)}</div>` : ""}
     <div class="kpis">
       <div class="kpi estatico"><div class="kpi-rotulo">Situação</div>
         <div class="kpi-valor" style="font-size:16px">${escapar(p.situacao_rotulo)}</div>

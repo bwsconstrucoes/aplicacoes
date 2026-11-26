@@ -141,6 +141,23 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 — Subtítulo nos pedidos; o desligamento de prestador diz como saiu
+
+Ele: *"quando se trata de admissão, a gente colocar o tipo de vínculo e o tipo
+de contrato como subtítulo, só para você bater o olho (…) desligamento,
+colocar o tipo de desligamento (…) eu clico e não aparece, só diz assim, data
+de saída e observações."* Na alteração de cargo: *"é um pleito pequeno, tá ok."*
+- `pessoal_solicitacoes.resumo`: admissão/readmissão/admissão de prestador →
+  vínculo · contrato; desligamento → a forma (e, no pedido de demissão, "sai de
+  imediato"/"trabalha o aviso"; "continua como prestador" quando for). Aparece
+  embaixo do título do pedido e embaixo do tipo na LISTA de solicitações (sem
+  consulta a mais: `d.dados` vem na mesma leitura).
+- **O porquê de "só data de saída e observações":** o pedido era de
+  PRESTADOR, e o ramo PRESTADOR do desligamento não perguntava a forma (as da
+  CLT não servem). Ganhou `saida_prestador` (obrigatório): "A pedido do
+  prestador", "Pela empresa", "Fim do serviço ou do contrato". Pedido antigo de
+  prestador fica sem — o subtítulo só não aparece.
+
 ### 25/11/2026 (8) — As testemunhas da recusa assinam na tela, com CPF; a trava da recusa passa a valer nas duas portas
 
 Ele: *"faz as testemunhas assinarem na tela com CPF."* Ao fazer, achei que a

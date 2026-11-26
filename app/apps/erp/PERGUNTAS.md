@@ -3170,6 +3170,9 @@ consulta inventada vai sendo usado cada vez menos.
   Colaboradores", não o ERP — se as duas fontes divergirem, vale a que pagou.
 - **"Quem foi admitido com data diferente da que começou?"** — ficha de
   carteira com admissão ≠ início.
+- **"Quantos prestadores saíram a pedido este mês?"** — desde 26/11/2026 o
+  desligamento de prestador diz como saiu ("A pedido do prestador", "Pela
+  empresa", "Fim do serviço ou do contrato"). ⚠️ Os anteriores não têm a resposta.
 - **"A obra já viu que recusei o pedido X?"** — desde 25/11/2026: o pedido
   guarda quando quem pediu tocou em "Entendi" no alerta do portal.
 - **"Quais recusas a obra ainda não viu?"** — pedidos RECUSADA sem o evento de

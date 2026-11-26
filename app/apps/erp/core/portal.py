@@ -553,6 +553,10 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
     listas["forma_desligamento"] = par(
         "forma_desligamento", svc.FORMAS_DESLIGAMENTO,
         svc.FORMA_DESLIGAMENTO_ROTULOS)
+    # 26/11/2026: como o prestador saiu (o desligamento dele não tem as formas da CLT).
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    listas["saida_prestador"] = [{"valor": x, "rotulo": x}
+                                 for x in svc_sp.SAIDAS_DE_PRESTADOR]
     listas["parentesco"] = par("parentesco", svc.PARENTESCOS,
                                svc.PARENTESCO_ROTULOS)
     # 24/11/2026: no pedido de demissão, a obra diz se a pessoa sai de

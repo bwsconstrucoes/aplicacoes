@@ -206,8 +206,13 @@ TIPOS: dict[str, dict[str, Any]] = {
             "PRESTADOR": {
                 # Prestador não tem aviso prévio — não há o que avisar. Tem a
                 # data em que a prestação acaba.
-                "campos": ("data_saida", "observacao"),
-                "obrigatorios": ("data_saida",),
+                # ⚑ 26/11/2026: e diz COMO saiu. Ele: *"quando a gente está
+                # falando de desligamento, colocar o tipo de desligamento (…)
+                # eu clico e não aparece, só diz assim, data de saída e
+                # observações."* As formas da CLT não servem ao prestador —
+                # por isso uma lista própria, curta (`SAIDAS_DE_PRESTADOR`).
+                "campos": ("saida_prestador", "data_saida", "observacao"),
+                "obrigatorios": ("saida_prestador", "data_saida"),
                 # Prestador não tem aviso prévio nem faltas a descontar em
                 # folha: o DP não tem nada a acrescentar aqui.
                 "campos_do_dp": (),
@@ -867,7 +872,13 @@ TIPOS: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 # AS CAIXINHAS, com as opções do Pipe — palavra por palavra
 # ---------------------------------------------------------------------------
+SAIDAS_DE_PRESTADOR = ("A pedido do prestador", "Pela empresa",
+                       "Fim do serviço ou do contrato")
+
+
 CATEGORIAS: dict[str, tuple[str, ...]] = {
+    # 26/11/2026 — como o PRESTADOR saiu (ver o ramo PRESTADOR do desligamento).
+    "saida_prestador": SAIDAS_DE_PRESTADOR,
     "forma_desligamento": (
         "À Pedido do Colaborador", "Encerramento de Contrato de Experiência",
         "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado"),
@@ -1516,6 +1527,7 @@ def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
 # O rótulo de cada campo, como está no Pipe. A tela lê daqui — não escreve
 # nome de campo à mão.
 ROTULOS: dict[str, str] = {
+    "saida_prestador": "Como foi o desligamento",
     "obra_id": "Código da Obra",
     "ferias_inicio": "Início das férias",
     "ferias_dias": "Quantos dias",
@@ -2579,6 +2591,37 @@ SIM_NAO_DOS_CAMPOS = {"abono_pecuniario", "adiantamento_13",
                       "descontar_vt", "dependente_ir"}
 
 
+def resumo(s: Optional[Session], tipo: str, dados: dict[str, Any]) -> str:
+    """O SUBTÍTULO DO PEDIDO, para bater o olho (26/11/2026). Ele: *"quando se
+    trata de admissão, a gente colocar o tipo de vínculo e o tipo de contrato
+    como subtítulo, só para você bater o olho e já sabe do que se trata.
+    Quando a gente está falando de desligamento, colocar o tipo de
+    desligamento."* Na alteração de cargo ele disse que não precisa."""
+    d = dados or {}
+
+    def f(campo: str) -> str:
+        v = d.get(campo)
+        if v in (None, ""):
+            return ""
+        try:
+            return str(_formatar(campo, v, s) or "")
+        except Exception:                                # noqa: BLE001
+            return str(v)
+
+    partes: list[str] = []
+    if tipo in ("CADASTRO", "READMISSAO", "ADMISSAO_PRESTADOR"):
+        vinc = f("tipo_documentacao") or ("CTPS" if tipo == "ADMISSAO_PRESTADOR" else "")
+        partes = [vinc, f("tipo_contrato")]
+    elif tipo in ("DESLIGAMENTO", "DESLIGAMENTO_PRESTADOR"):
+        partes = [f("forma_desligamento") or f("saida_prestador")]
+        cumpre = str(d.get("cumpre_aviso") or "")
+        if str(d.get("forma_desligamento") or "").upper() == "PEDIDO_COLABORADOR" and cumpre:
+            partes.append("sai de imediato" if cumpre == "0" else "trabalha o aviso")
+        if str(d.get("continua_prestador") or "") == "1":
+            partes.append("continua como prestador")
+    return " · ".join(p for p in partes if p)
+
+
 def dados_legiveis(s: Session, tipo: str, dados: dict[str, Any]
                    ) -> list[dict[str, str]]:
     """O pedido como se lê: [{campo, rotulo, valor}] na ordem dos campos do
@@ -3359,6 +3402,7 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         "papeis": papeis_do_pedido(s, d["id"], d["numero"], d["colaborador_id"]),
         "pre_cadastro": bool((d["dados"] or {}).get("pre_cadastro")),
         "dados_legiveis": dados_legiveis(s, d["tipo"], d["dados"] or {}),
+        "resumo": resumo(s, d["tipo"], d["dados"] or {}),
         # Atender/recusar/cancelar: só antes de a saída ser registrada.
         "a_atender": d["situacao"] in A_ATENDER,
         "processo": (svc_processo.passos(s, {**d, "dados": d["dados"] or {}})
@@ -3441,6 +3485,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
                         else "FALSE")
     linhas = s.execute(text(f"""
         SELECT d.id, d.numero, d.tipo, d.situacao, d.colaborador_id, d.obra_id,
+               d.dados AS dados_do_pedido,
                d.data_referencia, d.valor, d.criado_em, d.atendido_em,
                COALESCE(c.nome, d.nome_informado) AS pessoa,
                COALESCE(c.cpf, d.cpf_informado) AS pessoa_cpf,
@@ -3468,6 +3513,8 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
     fila = [{
         "id": l["id"], "numero": l["numero"], "tipo": l["tipo"],
         "tipo_rotulo": TIPOS.get(l["tipo"], {}).get("nome", l["tipo"]),
+        # 26/11/2026: o subtítulo também na fila (vínculo/contrato, forma).
+        "resumo": resumo(s, l["tipo"], l["dados_do_pedido"] or {}),
         "situacao": l["situacao"],
         "situacao_rotulo": SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
         "pessoa": l["pessoa"] or "", "obra": l["obra"] or "",
