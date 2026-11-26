@@ -702,6 +702,48 @@ def ler_pagamentos(ids, token=None) -> dict:
     return saida
 
 
+def _sem_acento(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", str(texto or ""))
+                   if not unicodedata.combining(c)).lower()
+
+
+def anexos_do_campo(ids, pedaco_do_rotulo: str, token=None) -> dict:
+    """`{card_id: [links]}` dos campos de ANEXO cujo rótulo contém `pedaco_do_rotulo`
+    (sem acento, sem caixa). Card sem o campo, ou com ele vazio, fica de fora.
+
+    UMA ida à API para cada `POR_VEZ` cards (apelidos), como `ler_pagamentos`. Só
+    lê; não escreve nada no Pipefy."""
+    token = token or _token()
+    procura = _sem_acento(pedaco_do_rotulo)
+    saida = {}
+    for bloco in _blocos([str(i) for i in ids], POR_VEZ):
+        pedacos = [
+            f"c{i}: card(id: {_numero_do_card(cid)}) {{ id fields {{ name field {{ label }} value }} }}"
+            for i, cid in enumerate(bloco)]
+        dados, _falhas = graphql_parcial("query { " + "\n".join(pedacos) + " }", token)
+        for card in (dados or {}).values():
+            if not card:
+                continue
+            links = []
+            for campo in (card.get("fields") or []):
+                rotulo = (campo.get("field") or {}).get("label") or campo.get("name") or ""
+                if procura not in _sem_acento(rotulo):
+                    continue
+                valor = campo.get("value")
+                try:
+                    lista = json.loads(valor) if isinstance(valor, str) and valor.strip().startswith("[") else valor
+                except ValueError:
+                    lista = valor
+                for url in (lista if isinstance(lista, list) else [lista]):
+                    url = str(url or "").strip()
+                    if url.startswith("http") and url not in links:
+                        links.append(url)
+            if links:
+                saida[str(card["id"])] = links
+    return saida
+
+
 def mover_cards(ids, fase_id, token=None) -> dict:
     """Move vários cards para a mesma fase, `POR_VEZ` por ida à API.
 

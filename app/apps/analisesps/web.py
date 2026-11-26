@@ -7133,7 +7133,7 @@ def lote_relatorio_completo_estado(chave: str):
                                      "sido renovado). Gere de novo."}, 404
     return {"ok": True, "pronto": t["pronto"], "erro": t["erro"], "etapa": t["etapa"],
             "feitos": t["feitos"], "total": t["total"], "nome": t["nome"],
-            "tamanho": t.get("tamanho") or 0,
+            "tamanho": t.get("tamanho") or 0, "aviso": t.get("aviso") or "",
             "arquivo": (url_for("analisesps.lote_relatorio_completo_arquivo", chave=chave)
                         if t["pronto"] else "")}
 

@@ -407,7 +407,8 @@ async function rcAcompanhar(endereco) {
     if (!d.ok || d.erro) { etapa.textContent = "Não consegui gerar: " + (d.erro || "erro"); return; }
     const pct = d.pronto ? 100 : (d.total ? Math.round(90 * d.feitos / d.total) : 5);
     barra.style.width = pct + "%";
-    etapa.textContent = d.pronto ? ("Pronto: " + d.nome + " (" + (d.tamanho / 1048576).toFixed(1).replace(".", ",") + " MB)")
+    etapa.textContent = d.pronto ? ("Pronto: " + d.nome + " (" + (d.tamanho / 1048576).toFixed(1).replace(".", ",") + " MB)"
+                                    + (d.aviso ? " — atenção: " + d.aviso + "." : ""))
                                  : (d.etapa + (d.total ? " (" + d.feitos + " de " + d.total + ")" : ""));
     if (d.pronto) { rcPronto(d); return; }
     await new Promise(ok => setTimeout(ok, 2000));
