@@ -141,6 +141,12 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (2) — Os diaristas da Análise de SPs passam a ver quem foi admitido pelo ERP
+
+Fecha a lacuna de 25/11/2026 (6). Feito a pedido dele neste chat; o registro
+completo está em `analisesps/HISTORICO.md` (26/11/2026). Aqui no ERP só mudou
+`pessoas.para_folha`, que ganhou o filtro `cpfs`.
+
 ### 26/11/2026 — Subtítulo nos pedidos; o desligamento de prestador diz como saiu
 
 Ele: *"quando se trata de admissão, a gente colocar o tipo de vínculo e o tipo
