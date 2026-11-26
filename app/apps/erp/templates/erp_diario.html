@@ -168,6 +168,10 @@ let OBRAS = [], DIA = null, HOJE = new Date().toISOString().slice(0, 10);
 // é o que uma cor de alarme tem de querer dizer.
 const ESTADO_ROTULO = {
   aberto: "escrito — falta fechar", fechado: "fechado",
+  // ⚑ COMEÇADO (26/11/2026): o dia existe porque alguém mandou uma foto, mas
+  // ninguém escreveu o relato ainda. Ele CONTA como pendente — ver
+  // `core/diario.py`, `estado_do_dia`.
+  comecado: "começado (tem foto, falta o relato)",
   sem_expediente: "sem expediente", falta: "falta o diário",
   descanso: "descanso", fora: "fora do prazo",
 };
@@ -177,6 +181,7 @@ const ESTADO_ROTULO = {
 const LEGENDA = [
   ["fechado", "fechado"],
   ["aberto", "escrito, falta fechar"],
+  ["comecado", "começado — falta o relato"],
   ["falta", "falta o diário"],
   ["sem_expediente", "sem expediente"],
   ["descanso", "fim de semana / feriado"],
@@ -893,6 +898,16 @@ function blocoDoRelato(){
 function blocoDasFotos(){
   const fotos = DIA.fotos || [], teto = DIA.fotos_teto || 6;
   const podeMexer = PODE_LANCAR && DIA.existe;
+  {# ⚑ ANEXAR NÃO DEPENDE MAIS DE O DIA ESTAR GRAVADO (26/11/2026). Ele: *"se
+     a pessoa quiser colocar uma foto na hora, no dia, e alimentar
+     imediatamente, ela vai abrir o dia, adicionar a foto. E depois vai fazer o
+     relato, concluir o diário. E da forma que tá, não tá assim."*
+
+     Quem está na obra fotografa primeiro e escreve depois. A foto agora CRIA o
+     dia (`diario_fotos.anexar`), e o dia nasce **começado** — continua
+     vermelho no quadro até alguém escrever o relato. Legendar e tirar foto
+     seguem presos a `podeMexer`: não se legenda o que ainda não existe. #}
+  const podeAnexar = PODE_LANCAR;
   const fechado = (DIA.diario.situacao === "FECHADO");
   return `
     <div class="cartao">
@@ -902,8 +917,10 @@ function blocoDasFotos(){
         muda. Ficam guardadas no Google Drive da empresa.
         <b>Foto com localização sai carimbada</b> com a data, a hora e a
         coordenada, por cima da imagem, sem tapar o que ela mostra.</p>
-      ${!DIA.existe ? `<div class="cartao-dica">Grave o dia primeiro: a foto
-        fica presa ao diário, não à data.</div>` : ""}
+      ${!DIA.existe ? `<div class="cartao-dica">Pode mandar a foto agora: ela
+        <b>abre este dia</b> sozinha. O dia fica <b>começado</b> e continua
+        aparecendo como pendente no quadro do mês até você escrever o relato e
+        gravar.</div>` : ""}
       ${fotos.length ? `<div class="fotos-grade">${fotos.map(f => `
         <figure class="foto-item">
           <a href="/erp/anexo/${f.id}" target="_blank" title="abrir a foto inteira">
@@ -940,13 +957,14 @@ function blocoDasFotos(){
             </div>
           </figcaption>
         </figure>`).join("")}</div>` : ""}
-      ${podeMexer && fotos.length < teto ? `
+      ${podeAnexar && fotos.length < teto ? `
         <div class="campo" style="margin-top:10px">
-          <label for="d-foto">Acrescentar foto</label>
+          <label for="d-foto">${DIA.existe ? "Acrescentar foto"
+                                 : "Mandar a primeira foto do dia"}</label>
           <input type="file" id="d-foto" accept="image/*" capture="environment">
           <small class="desc">No celular, isto abre a câmera. JPG, PNG ou WEBP.</small>
         </div>` : ""}
-      ${podeMexer && fotos.length >= teto ? `<div class="cartao-dica">
+      ${podeAnexar && fotos.length >= teto ? `<div class="cartao-dica">
         Este dia já tem o máximo de ${teto} fotos. Para trocar, tire uma
         antes.</div>` : ""}
       ${fechado && fotos.length ? `<div class="cartao-dica">Diário fechado:
@@ -1016,10 +1034,16 @@ async function mandarFoto(){
     const r = await api(
       `/erp/api/diario/${els("f-obra").value}/fotos?data=${els("f-data").value}`,
       {method: "POST", body: fd});
-    aviso("mensagem", r.no_drive
+    // Quando a foto é que abriu o dia, dizer isso: a pessoa precisa saber
+    // que ainda falta o relato, senão ela acha que o dia está resolvido.
+    const abriuODia = !DIA.existe;
+    aviso("mensagem", (r.no_drive
       ? "Foto guardada no Google Drive."
       : "Foto guardada — o Drive não respondeu agora, então ela ficou no "
-        + "banco e vai para o Drive depois.", r.no_drive ? "ok" : "alerta");
+        + "banco e vai para o Drive depois.")
+      + (abriuODia ? " <b>O dia foi aberto com ela</b> — escreva o relato e "
+                   + "aperte Gravar para concluir." : ""),
+      r.no_drive ? "ok" : "alerta");
     await carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); campo.disabled = false; }
 }
@@ -1512,10 +1536,28 @@ async function pintarQuadro(){
   const cab = q.dias.map(d => `<th class="${d.semana >= 5 ? "fds" : ""}"
       title="${escapar(dataBR(d.data) + (d.feriado ? " · " + d.feriado : ""))}"
     >${d.dia}</th>`).join("");
+  {# ⚑ O NOME DA OBRA ABRE A OBRA (26/11/2026). Ele: *"a gente deveria poder
+     clicar na obra do quadro do mês e já ir para a obra. Que tal? A gente já
+     vai para o mês mais recente daquela obra. Facilita."*
+
+     Clicar num quadradinho já levava ao DIA. Faltava o caminho de quem não
+     quer um dia específico — quer a obra. E ele vai para o mês do ÚLTIMO
+     diário dela (`ultimo_diario`, do servidor), que é onde o trabalho parou;
+     obra sem diário nenhum fica no mês que está à vista.
+
+     ⚑ No celular o nome é o alvo grande da linha: os quadradinhos de um mês
+     inteiro cabem na tela, mas são finos demais para o dedo. Ver o `@media`
+     de `.quadro-mes` no `erp.css`. #}
   const linhas = q.obras.map(o => `
     <tr>
       <th class="obra-col" title="${escapar(o.rotulo)}">
-        <span>${escapar(o.rotulo)}</span>
+        {# No celular cabe o CÓDIGO; no computador, o rótulo inteiro. O nome
+           completo fica no `title` dos dois jeitos. #}
+        <button type="button" class="link-btn obra-ir" data-ir-obra="${o.obra_id}"
+                data-ultimo="${escapar(o.ultimo_diario || "")}"
+                title="Abrir ${escapar(o.rotulo)}"><span class="so-largo"
+          >${escapar(o.rotulo)}</span><span class="so-estreito"
+          >${escapar(o.codigo)}</span></button>
         ${o.faltam ? `<b class="etiqueta vermelha">${o.faltam}</b>` : ""}
       </th>
       ${o.celulas.map((e, i) => `<td class="q-${e}"
@@ -1556,6 +1598,19 @@ async function pintarQuadro(){
       els("f-obra").value = c.dataset.obra;
       els("f-data").value = c.dataset.dia;
       montarMesEAno(c.dataset.dia.slice(0, 7));
+      mostrarObraEscolhida();
+      carregar();
+    }));
+
+  els("painel").querySelectorAll("[data-ir-obra]").forEach(b =>
+    b.addEventListener("click", () => {
+      els("f-obra").value = b.dataset.irObra;
+      // O mês do último diário da obra; sem diário nenhum, fica no mês à vista.
+      const ultimo = b.dataset.ultimo;
+      if (ultimo) {
+        els("f-data").value = ultimo;
+        montarMesEAno(ultimo.slice(0, 7));
+      }
       mostrarObraEscolhida();
       carregar();
     }));
