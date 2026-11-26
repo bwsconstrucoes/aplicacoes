@@ -593,6 +593,61 @@ def criar_card(pipe_id, titulo: str, valores: list, token=None) -> dict:
             "link": card.get("url") or f"https://app.pipefy.com/open-cards/{card['id']}"}
 
 
+# Quantos cards por mutation na criação em lote. createCard pesa mais que a
+# leitura; dez por chamada fica longe do teto de complexidade da API.
+CARDS_POR_VEZ = 10
+
+
+def _campos_do_card(valores) -> str:
+    pedacos = []
+    for item in valores or []:
+        campo = str((item or {}).get("campo") or "").strip()
+        if not campo:
+            continue
+        valor = (item or {}).get("valor")
+        literal = ("[" + ", ".join(_texto_gql(v) for v in valor) + "]"
+                   if isinstance(valor, (list, tuple)) else _texto_gql(valor))
+        pedacos.append(f"{{ field_id: {_texto_gql(campo)}, field_value: {literal} }}")
+    return " ".join(pedacos)
+
+
+def criar_cards(pipe_id, cards: list, token=None) -> dict:
+    """Cria VÁRIOS cards, `CARDS_POR_VEZ` por mutation (apelidos `c0`, `c1`…), em
+    vez de uma chamada por card — pedido do dono, 26/11/2026: *"você vai fazer em
+    mutation, se tiver mais de um, para economizar chamadas de API"*.
+
+    `cards`: `[{"chave", "titulo", "valores": [{"campo", "valor"}]}]`. Devolve
+    `{chave: {"id", "link"}}` dos criados e `{chave: {"erro"}}` dos recusados — um
+    card recusado não esconde os outros da mesma chamada.
+
+    ⚠️ CHAMADA SEM VOLTA, como `criar_card`."""
+    token = token or _token()
+    pipe = _numero_do_card(pipe_id)
+    saida = {}
+    for bloco in _blocos(list(cards or []), CARDS_POR_VEZ):
+        pedacos = [
+            f"c{i}: createCard(input: {{ pipe_id: {pipe}, title: {_texto_gql(c.get('titulo') or '')}, "
+            f"fields_attributes: [{_campos_do_card(c.get('valores'))}] }}) {{ card {{ id url }} }}"
+            for i, c in enumerate(bloco)]
+        try:
+            dados, falhas = graphql_parcial("mutation { " + "\n".join(pedacos) + " }", token)
+        except Exception as e:  # noqa: BLE001 — a chamada inteira caiu: todos do bloco falharam
+            for c in bloco:
+                saida[str(c["chave"])] = {"erro": str(e)[:300]}
+            continue
+        for i, c in enumerate(bloco):
+            card = ((dados or {}).get(f"c{i}") or {}).get("card") or {}
+            if card.get("id"):
+                saida[str(c["chave"])] = {
+                    "id": str(card["id"]),
+                    "link": card.get("url") or f"https://app.pipefy.com/open-cards/{card['id']}"}
+            else:
+                saida[str(c["chave"])] = {"erro": falhas.get(f"c{i}")
+                                          or "o Pipefy não devolveu o card criado"}
+        logger.info("Análise de SPs: %d card(s) pedidos no pipe %s numa chamada.", len(bloco), pipe)
+    return saida
+
+
 # Quantos campos por ida à API na atualização em lote. O Make liga até dez SPs
 # numa chamada só; trinta campos curtos cabem com folga numa requisição.
 CAMPOS_POR_VEZ = 30

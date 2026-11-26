@@ -95,13 +95,17 @@
     <a class="btn secundario" href="{{ hook_omie }}?id={{ sp.id }}&acao=atualizatitulo"
        target="_blank" rel="noopener" title="Manda o Omie atualizar o título">Atualizar</a>
   {% endif %}
-  {# CANCELAR = pedido de cancelamento NO PIPEFY, como no Streamlit. Não é o
-     mesmo que marcar "Cancelado" na planilha — ver a nota nos botões abaixo.
-     Sem cor de alerta: só ABRE um formulário, não cancela nada por si. #}
-  <a class="btn secundario"
-     href="https://app.pipefy.com/public/form/RCvCgX9c?n_da_solicita_o={{ sp.id }}&selecione_o_procedimento=Cancelar%20SP"
-     target="_blank" rel="noopener"
-     title="Abre no Pipefy o formulário de pedido de cancelamento desta SP">Cancelar SP</a>
+  {# CANCELAR = pedido de cancelamento NO PIPEFY. Não é o mesmo que marcar
+     "Cancelado" na planilha — ver a nota nos botões abaixo.
+     26/11/2026: deixou de abrir o formulário público para preencher à mão — o
+     botão abre a janela com a SP e, na confirmação, o sistema cria o card de
+     pedido sozinho (ver `cancelar_sp.py`), como na barra de Solicitações e Lote. #}
+  {% if pode_operar %}
+    <button type="button" class="btn secundario" data-cancelar-sp="{{ sp.id }}"
+            data-url-previa="{{ url_for('analisesps.cancelar_sp_previa') }}"
+            data-url-confirmar="{{ url_for('analisesps.cancelar_sp_confirmar') }}"
+            title="Pede no Pipefy o cancelamento desta SP (mostra antes o que vai)">Cancelar SP</button>
+  {% endif %}
 </div>
 
 {% if pendencias %}

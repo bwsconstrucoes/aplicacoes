@@ -790,6 +790,15 @@ const LEMBRAR = {
     finally { btnValidar.disabled = false; }
   });
 
+  // --- Cancelar SP (26/11/2026): janela com o que vai, depois o card no Pipefy ---
+  const btnCancelarSP = document.getElementById("ba-cancelar-sp");
+  if (btnCancelarSP) btnCancelarSP.addEventListener("click", () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    selecaoConsumida();
+    window.abrirCancelarSP(ids, btnCancelarSP.dataset);
+  });
+
   // --- Tirar do lote o que esta marcado ------------------------------------
   //
   // Mexe SO na lista do lote: nao altera status, nao vai para a planilha.
@@ -2847,4 +2856,95 @@ document.addEventListener("submit", async e => {
   } finally {
     botao.disabled = false;
   }
+});
+
+
+// ---------------------------------------------------------------------------
+// CANCELAR SP PELO SISTEMA (26/11/2026). O dono: *"antes de cancelar, abre um modal
+// listando o que vai ser cancelado, para a gente em seguida fazer a confirmação"*.
+// Uma janela só, para a barra (Solicitações e Lote) e para a ficha: ela mesma se
+// monta. `urls` traz `urlPrevia` e `urlConfirmar` (os data-* do botão).
+// ---------------------------------------------------------------------------
+window.abrirCancelarSP = async function (ids, urls) {
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+      c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  let dlg = document.getElementById("dialogo-cancelar-sp");
+  if (!dlg) {
+    dlg = document.createElement("dialog");
+    dlg.id = "dialogo-cancelar-sp";
+    dlg.className = "dialogo";
+    document.body.appendChild(dlg);
+  }
+  dlg.innerHTML = `<button type="button" class="btn secundario dialogo-fechar" data-fechar>Fechar</button>
+    <h3>Cancelar SP <small>${ids.length} marcada(s)</small></h3>
+    <div class="cs-corpo"><p class="cartao-dica">Conferindo as SPs…</p></div>
+    <div class="gd-botoes cs-botoes" hidden>
+      <span class="cartao-dica cs-resumo"></span>
+      <button type="button" class="btn secundario" data-fechar>Voltar</button>
+      <button type="button" class="btn perigo cs-confirmar">Confirmar o cancelamento</button>
+    </div>`;
+  dlg.querySelectorAll("[data-fechar]").forEach(b => b.addEventListener("click", () => dlg.close()));
+  if (!dlg.open) dlg.showModal();
+  const corpo = dlg.querySelector(".cs-corpo");
+  const post = async (url, corpoJson) => {
+    const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                                body: JSON.stringify(corpoJson)});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+    return d;
+  };
+  let vista;
+  try { vista = await post(urls.urlPrevia, {ids}); }
+  catch (e) { corpo.innerHTML = `<div class="aviso erro">Não consegui conferir: ${esc(e.message)}</div>`; return; }
+  const vao = vista.vao;
+  corpo.innerHTML = `
+    <p class="cartao-dica">Só vai a SP com status <b>Pagar</b> e <b>sem agendamento</b>; paga,
+      agendada ou já cancelada fica de fora — mude o status ou desagende antes.</p>
+    <p>Para cada SP abaixo será criado no Pipefy um <b>card de pedido de cancelamento</b>
+      (procedimento "Cancelar SP", motivo "Cancelado pelo Sistema AnaliseSPs"). A automação do
+      Make faz o cancelamento; a SP aparece como <b>Cancelado</b> depois, na sincronização.
+      <b>Não tem volta por aqui</b> — desfazer é no Pipefy.</p>
+    <div class="tabela-rolagem livre"><table class="tabela-omie">
+      <thead><tr><th>SP</th><th>Credor</th><th>Obra</th><th class="num">Valor</th><th>Venc.</th><th>Status</th><th>Agendado</th><th></th></tr></thead>
+      <tbody>${vista.sps.map(s => `<tr class="${vao.includes(s.id) ? "" : "cs-fora"}">
+        <td>${esc(s.id)}</td><td>${esc(s.credor) || "—"}</td><td>${esc(s.obra)}</td>
+        <td class="num">${esc(s.valor)}</td><td>${esc(s.vencimento)}</td><td>${esc(s.status) || "—"}</td>
+        <td>${esc(s.agendado) || "—"}</td>
+        <td>${!s.achada ? '<span class="omie-erro">não encontrada — não vai</span>'
+             : s.bloqueio ? `<span class="${s.cancelada ? "cartao-dica" : "omie-erro"}">${esc(s.bloqueio)} — não vai</span>`
+             : s.pedido ? `<span class="omie-erro" title="Confirmar cria OUTRO card">⚠ ${esc(s.pedido)}</span>` : ""}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+  const botoes = dlg.querySelector(".cs-botoes");
+  const confirmar = dlg.querySelector(".cs-confirmar");
+  const resumo = dlg.querySelector(".cs-resumo");
+  botoes.hidden = false;
+  confirmar.disabled = !vao.length;
+  confirmar.textContent = vao.length ? `Confirmar o cancelamento (${vao.length})` : "Nada a cancelar";
+  confirmar.addEventListener("click", async () => {
+    confirmar.disabled = true;
+    resumo.textContent = "Criando os cards no Pipefy…";
+    try {
+      const d = await post(urls.urlConfirmar, {ids: vao});
+      const erros = Object.entries(d.erros || {});
+      corpo.innerHTML = `
+        ${d.criados.length ? `<div class="aviso">✓ ${d.criados.length} pedido(s) de cancelamento criado(s) no Pipefy.
+          O Make termina o cancelamento; a SP aparece como Cancelado na próxima sincronização.</div>` : ""}
+        ${erros.length ? `<div class="aviso erro"><b>${erros.length} não foram criados</b> — nada mudou nelas:
+          ${erros.map(([sp, e]) => `<br>SP ${esc(sp)}: ${esc(e)}`).join("")}</div>` : ""}
+        <ul class="cs-criados">${d.criados.map(c => `<li>SP ${esc(c.sp)} → <a href="${esc(c.link)}" target="_blank" rel="noopener">card ${esc(c.card)}</a></li>`).join("")}</ul>`;
+      resumo.textContent = "";
+      confirmar.hidden = true;
+    } catch (e) {
+      resumo.textContent = "Não deu certo: " + e.message;
+      confirmar.disabled = false;
+    }
+  });
+};
+
+// O "Cancelar SP" da ficha (na tela e na janela): o botão diz qual SP.
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-cancelar-sp]");
+  if (!b) return;
+  e.preventDefault();
+  window.abrirCancelarSP([b.dataset.cancelarSp], b.dataset);
 });

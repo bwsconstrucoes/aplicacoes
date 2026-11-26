@@ -12275,6 +12275,40 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 283 — "Cancelar SP" pelo sistema: o card de pedido no Pipefy, das Solicitações, do Lote e da ficha (26/11/2026)
+
+- O dono: *"um botão tanto na parte de solicitações quanto em lote, que vai ser cancelar
+  SP. E também no modal (…) junto com os botões da direita (…) Você vai criar um novo
+  card no Pipefy (…) 301426645, (…) em mutation, se tiver mais de um, para economizar
+  chamadas de API (…) antes de cancelar, abre um modal listando o que vai ser cancelado
+  (…) tem uma automação no make.com que vai terminar o trabalho."* Campos ditados:
+  `selecione_o_procedimento` = "Cancelar SP", `n_da_solicita_o` = nº da SP, `motivo` =
+  "Cancelado pelo Sistema AnaliseSPs", `colaborador_solicitante` = 620439304.
+- **A trava** (dono, no mesmo dia: *"se a solicitação de pagamento tiver com algum
+  agendamento, tiver em agendado, ou tiver pago, não permitir o cancelamento. Tem que
+  alterar primeiro o status para sem agendamento e pagar"*): só vai a SP com Status Pgt =
+  "Pagar" E o campo Agendado vazio (`cancelar_sp.bloqueio`). Paga, Pago Parcial, com
+  qualquer agendamento (Agendar, Agendado, Falha…) ou já cancelada fica de fora, e a
+  janela diz o que fazer antes ("mude para Pagar antes" / "desagende antes").
+- `cancelar_sp.py`: `previa` (credor, obra, valor, vencimento, status, agendado; as
+  travadas e as não encontradas NÃO vão; aviso "já pedido em … por …" se a SP já teve pedido) e
+  `pedir` (cria os cards e grava cada pedido no Log — `log_alteracoes`, ação "Cancelar SP",
+  status "enviado", com o número do card). NÃO muda o status da SP: quem cancela é o Make;
+  aparece "Cancelado" na sincronização seguinte.
+- `pipefy.criar_cards`: VÁRIOS cards numa mutation (apelidos), 10 por chamada; um card
+  recusado não esconde os outros. Custo: 1 ida à API a cada 10 SPs canceladas.
+- Botão "Cancelar SP" na barra (Solicitações e Lote, ao lado de Validar) e na ficha; uma
+  janela só (`abrirCancelarSP`, no `analisesps.js`). Só Operador; só SPs do recorte de
+  quem pede (o mesmo `_ids_do_pedido`).
+- ⚠️ **SUBSTITUIU** o "Cancelar SP" da ficha, que abria o formulário PÚBLICO do Pipefy
+  (`RCvCgX9c`) para preencher à mão (onde dava para escrever outro motivo). Mesmo lugar,
+  mesmo nome; agora sem digitar nada e com motivo fixo. Dito ao dono; volta se ele pedir.
+- `colaborador_solicitante` vai como LISTA (campo de conexão). Não verificado com o pipe
+  real: se for outro tipo de campo, o Pipefy recusa e a janela mostra o erro — nada é
+  criado naquela SP.
+- Sem migração. Testes: `test_analisesps_cancelar_sp.py`; três de `test_analisesps_telas.py`
+  ajustados ao botão novo.
+
 #### Leva 282 — Relatório completo do lote: o "Anexo Prestação de Conta" do Fundo Fixo entra (26/11/2026)
 
 - O dono: *"tem um tipo de solicitação de pagamento que o nome do campo é outro. O campo
@@ -12295,6 +12329,7 @@ somente Solicitações de uma conta especifica"*.
 - ⚠️ Caminho que morre com o Pipefy (o ERP vai substituí-lo): quando a prestação de
   contas do Fundo Fixo for para o ERP, o anexo passa a vir de lá.
 - Sem migração. Testes em `test_analisesps_lote_relatorio_completo.py`.
+- **Publicado em 26/11/2026** (sem migração).
 
 #### Leva 281 — Relatório completo do lote: anexo .zip entra, e PDF com defeito não derruba mais (26/11/2026)
 
