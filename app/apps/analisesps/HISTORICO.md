@@ -12303,9 +12303,8 @@ somente Solicitações de uma conta especifica"*.
 - ⚠️ **SUBSTITUIU** o "Cancelar SP" da ficha, que abria o formulário PÚBLICO do Pipefy
   (`RCvCgX9c`) para preencher à mão (onde dava para escrever outro motivo). Mesmo lugar,
   mesmo nome; agora sem digitar nada e com motivo fixo. Dito ao dono; volta se ele pedir.
-- `colaborador_solicitante` vai como LISTA (campo de conexão). Não verificado com o pipe
-  real: se for outro tipo de campo, o Pipefy recusa e a janela mostra o erro — nada é
-  criado naquela SP.
+- `colaborador_solicitante` vai como LISTA com o id do registro. **Confirmado pelo dono
+  em 26/11/2026:** é campo de CONEXÃO com database, e 620439304 é o id do registro.
 - Sem migração. Testes: `test_analisesps_cancelar_sp.py`; três de `test_analisesps_telas.py`
   ajustados ao botão novo.
 - **Publicado em 26/11/2026** (sem migração). Falta o primeiro card de verdade — o dono
