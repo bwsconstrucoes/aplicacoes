@@ -182,15 +182,36 @@ def _local_da_foto(conteudo: bytes, do_aparelho: Optional[dict[str, Any]]
     return local
 
 
-def _diario(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
+def _diario(s: Session, obra_id: int, dia: date, *,
+            comecar: bool = False,
+            usuario: Optional[Any] = None) -> dict[str, Any]:
+    """O diário do dia. Com `comecar`, cria o dia vazio em vez de recusar.
+
+    ⚑ ANTES DE 26/11/2026 ISTO RECUSAVA, e o dono explicou por que estava
+    errado: *"se a pessoa quiser colocar uma foto na hora, no dia, e alimentar
+    imediatamente, ela vai abrir o dia, adicionar a foto. E depois vai fazer o
+    relato, concluir o diário. E da forma que tá, não tá assim."*
+
+    Ele tem razão: quem está na obra fotografa primeiro e escreve depois. Exigir
+    o relato antes da foto obriga a pessoa a inventar um texto só para poder
+    guardar a imagem — ou a guardar a foto no celular e esquecer.
+
+    ⚠️ O DIA CRIADO ASSIM CONTINUA SENDO COBRADO. Ele nasce **começado** e segue
+    pendente no quadro do mês até alguém escrever o relato
+    (`diario.estado_do_dia`). A foto adianta o trabalho; não o conclui.
+    """
     linha = s.execute(text("""
         SELECT id, situacao FROM diarios_obra
          WHERE obra_id = :o AND data = :d"""),
         {"o": obra_id, "d": dia}).mappings().first()
     if linha is None:
-        raise ErroNaoEncontrado(
-            "Grave o diário deste dia antes de anexar foto — a foto fica "
-            "presa ao dia, não à data.")
+        if not comecar:
+            raise ErroNaoEncontrado(
+                "Grave o diário deste dia antes de anexar foto — a foto fica "
+                "presa ao dia, não à data.")
+        from app.apps.erp.core import diario as svc_diario
+        nova = svc_diario.comecar_o_dia(s, obra_id, dia, usuario)
+        return {"id": nova["id"], "situacao": nova["situacao"]}
     return dict(linha)
 
 
@@ -263,7 +284,9 @@ def anexar(s: Session, obra_id: int, dia: date, conteudo: bytes,
     """
     from app.apps.erp.core.documentos import armazenamento
 
-    d = _diario(s, obra_id, dia)
+    # ⚠️ A RECUSA VEM ANTES DE CRIAR O DIA. Desde 26/11/2026 anexar foto cria
+    # o dia; se a conferência viesse depois, um envio recusado deixaria para
+    # trás um diário vazio que ninguém pediu — e ele passaria a ser cobrado.
     if not conteudo:
         raise ErroValidacao("A foto chegou vazia.")
 
@@ -275,6 +298,12 @@ def anexar(s: Session, obra_id: int, dia: date, conteudo: bytes,
         raise ErroValidacao(
             "Aqui entra só foto (JPG, PNG ou WEBP). Documento da obra tem "
             "lugar próprio, no Arquivo.")
+
+    # ⚑ A FOTO CRIA O DIA (26/11/2026), e só depois de o arquivo ser aceito.
+    # Ele: *"se a pessoa quiser colocar uma foto na hora, no dia (…) ela vai
+    # abrir o dia, adicionar a foto. E depois vai fazer o relato."*
+    # Só aqui: legendar e tirar foto continuam exigindo que o dia exista.
+    d = _diario(s, obra_id, dia, comecar=True, usuario=usuario)
 
     ja = quantas(s, d["id"])
     if ja >= TETO_POR_DIA:

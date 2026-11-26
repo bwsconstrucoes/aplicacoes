@@ -72,6 +72,93 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 — A foto abre o dia; o quadro cabe no celular; a obra se clica
+
+**Três coisas que ele viu usando, no telefone**, e as três viraram conserto:
+
+> *"Eu não consigo adicionar uma foto. (…) Por que eu não adiciono a foto e
+> automaticamente aquela foto já grava? (…) Se a pessoa quiser colocar uma foto
+> na hora, no dia, e alimentar imediatamente, ela vai abrir o dia, adicionar a
+> foto. E depois vai fazer o relato, concluir o diário. E da forma que tá, não
+> tá assim."*
+>
+> *"Na hora que abre, ele abre no quadro do mês (…) não é boa a visualização no
+> mês. Aliás, no celular. A tela ficou um pouquinho maior do que deveria."*
+>
+> *"A gente deveria poder clicar na obra do quadro do mês e já ir para a obra.
+> Que tal? A gente já vai para o mês mais recente daquela obra. Facilita."*
+
+#### 1. A FOTO ABRE O DIA — e o dia nasce **começado**
+
+Anexar foto num dia sem diário era **recusado** ("grave o diário primeiro").
+Ele está certo: quem está na obra **fotografa primeiro e escreve depois**.
+Exigir o relato antes da foto obriga a pessoa a inventar um texto só para poder
+guardar a imagem — ou a guardar a foto no celular e esquecer.
+
+⚠️ **E AQUI ESTAVA O PERIGO, que não era óbvio:** se a foto criasse um diário
+vazio, o dia deixaria de ser cobrado. O quadro mostraria preenchido, a
+pendência sumiria, e **ninguém teria escrito o relato**. É exatamente o buraco
+que a regra "dia com expediente precisa de relato" existe para tapar.
+
+**A saída foi um estado novo, "COMEÇADO"** (`diario.estado_do_dia`): o dia
+existe, aparece em **âmbar** no quadro e no calendário, e **continua contando**
+como dia devendo diário — no quadro, no calendário e nas pendências por obra.
+A foto adianta o trabalho; não o conclui. Escrever o relato é que fecha.
+
+- Quem cria o dia assim é só o **anexar** (`diario_fotos._diario(comecar=True)`).
+  Legendar e tirar foto continuam exigindo o dia — não se legenda o que não
+  existe, e criar um dia para remover uma foto inexistente seria absurdo.
+- **A recusa vem antes de criar:** arquivo vazio ou que não é imagem é barrado
+  primeiro. Senão, um envio recusado deixaria um diário vazio para trás — que
+  passaria a ser cobrado.
+- O **Gravar continua exigindo relato**. `comecar_o_dia` não é atalho para o
+  `salvar`: lá a pessoa diz "terminei", aqui diz "comecei".
+
+#### 2. O QUADRO DO MÊS CABE NO CELULAR
+
+A conta explica o que ele sentiu: a coluna da obra pedia 150–190 px e cada dia,
+22 px. Um mês de 31 dias dava **~680 px numa tela de 368 px úteis** — apareciam
+**7 dias**, e o resto só rolando uma faixa estreita. Quem abria no telefone via
+a primeira semana e achava que era isso.
+
+Agora, abaixo de 640 px: a coluna da obra mostra só o **código** (o nome
+inteiro fica no toque e no `title`), o número de dias em falta por obra sai da
+linha (ele já está somado no alto do cartão) e o dia vira uma barrinha de 8 px.
+**O mês inteiro cabe.** Conferido no navegador a 400 px: 30 de 30 dias à vista.
+
+#### 3. O NOME DA OBRA ABRE A OBRA
+
+Clicar num quadradinho já levava ao DIA. Faltava o caminho de quem quer a
+**obra**: agora o nome é botão e leva ao mês do **último diário** dela
+(`ultimo_diario`, uma consulta a mais para o quadro inteiro — não uma por
+obra). Obra sem diário nenhum fica no mês que está à vista.
+
+No celular, esse botão é o alvo grande da linha: os quadradinhos de um mês
+inteiro cabem, mas são finos demais para o dedo. A pessoa toca na obra e cai no
+calendário, onde os dias têm tamanho de dedo.
+
+⚠️ **Um defeito nasceu aqui e só apareceu no navegador:** o botão herdava o
+espaçamento do `.link-btn`, ficava mais alto que a linha de 18 px do celular e
+**transbordava por cima da linha de baixo** — a obra de cima ficava impossível
+de clicar, porque o botão da obra seguinte recebia o toque. Pego dirigindo a
+tela, não pelos testes.
+
+#### O que ficou de fora, e por quê
+
+Ele também perguntou: *"na hora que abre, ele abre no quadro do mês (…) eu não
+sei se essa seria a melhor tela (…) aí eu tenho que clicar em filtros para
+poder pesquisar para o específico."* **Não mexi na tela de abertura** — é
+decisão dele qual deve ser, e trocar a porta de entrada do diário por conta
+própria seria grande demais para uma dúvida em voz alta. Está perguntado na
+resposta.
+
+**Arquivos mexidos:** `core/diario.py`, `core/diario_fotos.py`,
+`templates/erp_diario.html` e `static/erp.css` (**folha compartilhada** — as
+regras novas são todas dentro de `.quadro-mes` e `.cal-dia`, mas quem mexer no
+CSS em outro chat precisa saber). **Sem migração de banco.**
+
+---
+
 ### 24/11/2026 — A foto do diário sabe onde foi tirada; e o clima saiu da gaveta
 
 **Ele, cobrando o que tinha sido prometido e não feito:**
