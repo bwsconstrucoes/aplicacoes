@@ -57,8 +57,12 @@
   <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
   <div class="campo"><label>Quem pediu</label><select id="f-quem"></select></div>
 
-  <button class="btn amarelo" id="btn-nova" style="width:100%; margin-top:12px">
-    + Solicitação</button>
+  {# ⚑ "+ SOLICITAÇÃO" SAIU (26/11/2026): todo pleito é pelo portal, inclusive
+     o do DP — ele: *"o próprio DP, se precisar fazer de alguma coisa, ele
+     também acessa o portal e faz o pleito. E aquele pleito vai entrar em
+     solicitações."* #}
+  <a class="btn amarelo" href="/erp/portal" style="display:block; text-align:center;
+     width:100%; margin-top:12px; box-sizing:border-box; text-decoration:none">Abrir pedido pelo portal</a>
   {# ⚑ CONFIGURAR OS PASSOS (18/11/2026). Ele: *"vi que você importou checklist
      do Pipefy, só que eles estão todos desatualizados. Precisa de uma tela pra
      configurar eles de forma fácil."*
@@ -672,11 +676,11 @@ function blocoDoProcesso(p){
      seja a própria obra (…) ou o próprio DP fazer o pedido, né? Em cima
      daquela solicitação de desligamento."* Qualquer um que veja o pedido pode
      pedir; quem atende é o DP, e a contabilidade é avisada. #}
+  {# 26/11/2026: o pedido de cancelamento também é pelo portal ("todo pleito"). #}
   const pedirCancel = deslig && p.situacao === "EM_ANDAMENTO"
-    ? `<div style="margin:6px 0 10px"><button class="btn secundario" id="pr-pedir-cancel">
-        Pedir o cancelamento deste desligamento…</button>
-        <small class="desc">a pessoa vai continuar trabalhando — o DP atende e a
-        contabilidade é avisada</small></div>` : "";
+    ? `<div class="cartao-dica" style="margin:6px 0 10px">Para cancelar este
+        desligamento, peça pelo <a href="/erp/portal" target="_top">Portal da obra</a> (Cancelar Solicitação de
+        Desligamento) — o DP atende e a contabilidade é avisada.</div>` : "";
   return `<h4>${deslig ? "O desligamento" : admissao ? "A admissão"
       : escapar(p.tipo_rotulo || "O pedido")}, do início ao fim (${pr.cumpridos}/${pr.total})</h4>
     ${pedirCancel}
@@ -754,8 +758,6 @@ function ligarBotoesDoProcesso(p){
         tipo: "textarea", obrigatorio: true, largura: 6, linhas: 2}]});
     if (r) acao("termo_validar", {termo_id: +b.dataset.prTermoNao, aceitar: false, ...r});
   });
-  const pc = els("pr-pedir-cancel");
-  if (pc) pc.addEventListener("click", () => pedirCancelamentoDoDesligamento(p));
   {# ⚑ A ASSINATURA VAI E VOLTA PELO SISTEMA (19/11/2026). Ele: *"o arquivo
      precisa ser cobrado pelo Agente e recebido (…) o agente analisa e o DP
      valida o recebimento."* A ida é a pendência do portal (com prazo, que o
@@ -1844,7 +1846,7 @@ async function novaSolicitacao(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
-els("btn-nova").addEventListener("click", novaSolicitacao);
+// ("+ Solicitação" virou o link para o portal — 26/11/2026)
 els("btn-checklists").addEventListener("click", abrirChecklists);
 els("f-busca").addEventListener("input", desenhar);
 document.querySelectorAll("input[name=sit]").forEach(i =>

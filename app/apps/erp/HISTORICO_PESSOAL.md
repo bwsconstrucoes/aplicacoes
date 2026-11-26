@@ -141,6 +141,30 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (8) — "Todo pleito é pelo portal", agora sem exceção — inclusive o do DP
+
+Ele: *"conforme eu falei, todo pleito ele é feito no portal. Então, qualquer
+coisa que eu não tenha citado, para não dar conflito na tentativa de
+operacionalizar pelo ERP, então vamos fazer pelo portal. Inclusive o próprio
+DP, se precisar fazer de alguma coisa, ele também acessa o portal e faz o
+pleito. E aquele pleito vai entrar em solicitações."*
+
+Saíram, com uma frase de "peça pelo Portal da obra" no lugar:
+- Cadastro › Histórico: **Registrar alteração, Readmitir, Trocar o vínculo,
+  Desligar** (ficam "Conferência concluída" e "Mudar a etapa" — trabalho do DP
+  sobre o cadastro, não pedido);
+- **↩️ Registrar o retorno…** (na faixa do afastado e na aba Demandas);
+- Pedidos ao DP: **+ Solicitação** (virou "Abrir pedido pelo portal") e
+  **Pedir o cancelamento deste desligamento…**;
+- Férias: **Pedir alteração / Pedir cancelamento**.
+Cobertura conferida: o portal tem cada um desses tipos, e o DP pede por
+qualquer pessoa (`portal.pode_pedir_por_outros`). As funções por trás ficaram
+no código, sem porta. Teste: `test_cadastro_so_pelo_portal_banco.py`.
+
+**Lacuna dita a ele:** reajuste SÓ de salário (sem troca de cargo) não tem
+tipo no portal — "Alteração de Cargo" exige o cargo pleiteado. Era o
+"Registrar alteração" que fazia isso.
+
 ### 26/11/2026 (7) — Todo pleito é pelo portal: saem "+ Colaborador", "Mandar para a contabilidade…" e "Afastar…"
 
 Ele: *"Dentro do sistema, tem o botão Mais Colaborador (…) As regras de

@@ -51,3 +51,16 @@ def test_a_tela_nao_tem_mais_os_botoes_que_abriam_pedido_por_fora():
     assert 'id="btn-novo"' not in TELA, "+ Colaborador"
     assert 'id="dem-novo"' not in TELA, "Mandar para a contabilidade"
     assert 'id="af-afastar"' not in TELA, "Afastar"
+
+
+def test_nenhum_pleito_nasce_pelo_erp():
+    """26/11/2026, ele: *"qualquer coisa que eu não tenha citado (…) vamos
+    fazer pelo portal. Inclusive o próprio DP."*"""
+    base = pathlib.Path(__file__).resolve().parents[1] / "app" / "apps" / "erp" / "templates"
+    for botao in ('id="c-alteracao"', 'id="c-readmitir"', 'id="c-trocar"',
+                  'id="c-desligar"', 'id="af-voltar"', "data-faixa-voltar"):
+        assert botao not in TELA, botao
+    sol = (base / "erp_dp_solicitacoes.html").read_text(encoding="utf-8")
+    assert 'id="btn-nova"' not in sol and 'id="pr-pedir-cancel"' not in sol
+    fer = (base / "erp_dp_ferias.html").read_text(encoding="utf-8")
+    assert 'data-alterar="' not in fer and 'data-cancelar="' not in fer
