@@ -141,6 +141,35 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (7) — Todo pleito é pelo portal: saem "+ Colaborador", "Mandar para a contabilidade…" e "Afastar…"
+
+Ele: *"Dentro do sistema, tem o botão Mais Colaborador (…) As regras de
+cadastro não batem com as regras do portal (…) ficou faltando um bocado de
+informação (…) Vamos eliminar essa possibilidade de cadastro colaborador
+dentro do ERP e deixar apenas no portal. E a gente concentra o regramento todo
+lá."* E, na aba Demandas: *"botei solicitar férias. Aí ele montou um rascunho
+(…) não tem campo para preencher (…) férias de quando? (…) esse botão não está
+casando com a metodologia do portal (…) Tira esse botão aqui (…) também não é
+para ter esse botão [Afastar] (…) Todo pleito é pelo portal. Se fizer por
+aqui atrapalha, porque aqui não está sincronizado com o portal."*
+
+- `erp_colaboradores.html`: saíram o "+ Colaborador" (no lugar, a frase "pessoa
+  nova entra pelo Portal da obra"), o "📨 Mandar para a contabilidade…" da aba
+  Demandas e o "🏥 Afastar…" do bloco de afastamento — cada um com a frase de
+  onde o pedido nasce agora.
+- Servidor: `_so_quem_ja_existe` em `/erp/api/colaboradores/completo` e em
+  `/erp/api/colaboradores` (POST) — pelo ERP só se EDITA quem existe; pessoa
+  nova responde "entra pelo Portal da obra". As importações (planilha,
+  Fortes) e o pré-cadastro do portal seguem por outro caminho e não mudaram.
+- As funções por trás (`mandarParaAContabilidade`, `afastar`, `formulario(null)`)
+  ficaram no código, sem porta.
+
+**NÃO tirei, e perguntei a ele:** no Histórico do cadastro ainda há
+"Registrar alteração", "Readmitir", "Trocar vínculo" e "Desligar"; e o
+"↩️ Registrar o retorno…" do afastamento. Pela regra "todo pleito é pelo
+portal" seriam candidatos — mas tirar funcionalidade é decisão dele
+(CLAUDE.md, 17/11: *"eu não pedi pra tirar"*).
+
 ### 26/11/2026 (6) — Desligamento a pedido: o portal exigia "vai trabalhar o aviso?" e não mostrava a pergunta
 
 Ele: *"está como obrigatório, mas esse campo não apareceu aqui. Aí a pessoa

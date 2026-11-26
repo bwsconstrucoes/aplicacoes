@@ -115,8 +115,15 @@
     </div>
   </div>
 
-  <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:12px">
-    + Colaborador</button>
+  {# ⚑ O "+ COLABORADOR" SAIU (26/11/2026). Ele: *"Esse cadastro (…) as regras
+     de cadastro não batem com as regras do portal. Então, a gente cadastrou
+     aqui, aí ficou faltando um bocado de informação (…) Vamos eliminar essa
+     possibilidade de cadastro colaborador dentro do ERP e deixar apenas no
+     portal. E a gente concentra o regramento todo lá."* Pessoa nova entra pelo
+     pedido de admissão do portal (que cria o pré-cadastro com os papéis); o
+     servidor também recusa cadastro novo pela tela (`api_colaborador_completo`). #}
+  <div class="cartao-dica" style="margin-top:12px">Pessoa nova entra pelo
+    <b>Portal da obra</b> › Colaboradores › Admissão de Colaborador.</div>
   {# ⚑ O BOTÃO "+ CARGO" SAIU DA BARRA em 17/11/2026, por pedido dele com
      todas as letras: *"eu não quero um botão mais cargo. Isso que não tem
      sentido. Cargo é para estar. Quando a gente for cadastrar, aqui eu ter a
@@ -1621,11 +1628,16 @@ function desenharDemandas(c, sol, ped, afast){
       </tr>`).join("") || `<tr><td colspan="6" class="cartao-dica">
         Nenhum pedido à contabilidade para esta pessoa.</td></tr>`}
       </tbody></table>
-    ${PODE_PEDIR_CT ? `<div style="margin-top:10px">
-      <button class="btn amarelo" id="dem-novo">📨 Mandar para a contabilidade…</button>
-      <small class="desc"> — admissão, alteração de cargo, férias, desligamento…</small>
-    </div>` : `<div class="cartao-dica" style="margin-top:8px">Pedir à
-      contabilidade é do DP — você vê o andamento, mas não pode abrir.</div>`}
+    {# ⚑ O "MANDAR PARA A CONTABILIDADE" SAIU DAQUI (26/11/2026). Ele: *"eu
+       botei solicitar férias. Aí ele montou um rascunho (…) não tem campo
+       para preencher (…) férias de quando? (…) esse botão não está casando
+       com a metodologia do portal. (…) Tira esse botão aqui, tudo faz pelo
+       portal também. (…) Todo pleito é pelo portal."* O pedido à
+       contabilidade nasce do pedido do portal, quando o DP atende — com os
+       dados que o pedido trouxe. #}
+    <div class="cartao-dica" style="margin-top:8px">O pedido à contabilidade
+      nasce do pedido feito pelo <b>portal</b>, quando o DP atende — com os
+      dados que o pedido trouxe.</div>
 
     <h4 style="margin:18px 0 6px">Pedidos que a obra fez ao DP</h4>
     <div class="cartao-dica">O que chegou pelo portal sobre esta pessoa, e em
@@ -1652,10 +1664,7 @@ function desenharDemandas(c, sol, ped, afast){
   alvo = els("dem-corpo");
   alvo.querySelectorAll("[data-ct-abrir]").forEach(b =>
     b.addEventListener("click", () => abrirPedidoDaContabilidade(+b.dataset.ctAbrir, c)));
-  if (els("dem-novo"))
-    els("dem-novo").addEventListener("click", () => mandarParaAContabilidade(c));
-  if (els("af-afastar"))
-    els("af-afastar").addEventListener("click", () => afastar(c));
+  // ("Mandar para a contabilidade…" e "Afastar…" saíram em 26/11/2026 — pelo portal.)
   if (els("af-voltar"))
     els("af-voltar").addEventListener("click", () => registrarRetorno(c));
 }
@@ -1704,8 +1713,12 @@ function blocoDoAfastamento(c){
         <b>tipo</b> e a <b>data de início</b> — é o tipo que decide o que a
         volta vai exigir (exame de retorno, estabilidade, férias).</div>
       ${anteriores}
-      ${PODE_EDITAR ? `<div style="margin-top:8px">
-        <button class="btn secundario" id="af-afastar">🏥 Afastar…</button></div>` : ""}
+      {# ⚑ O "AFASTAR…" SAIU DAQUI (26/11/2026): afastamento é pedido do
+         portal ("Comunicação de Afastamento"), e o DP atende — ele, no mesmo
+         dia: *"isso aqui é para ir também pelo portal. É tudo pelo portal."* #}
+      <div class="cartao-dica" style="margin-top:8px">Afastamento é pedido
+        pelo <b>portal</b> (Comunicação de Afastamento); o DP atende e ele
+        aparece aqui.</div>
     </div>`;
   }
 
@@ -3803,7 +3816,7 @@ async function importarPessoas(gravar){
   b.disabled = false;
 }
 
-els("btn-novo").addEventListener("click", ()=>formulario(null));
+// (o "+ Colaborador" saiu em 26/11/2026 — admissão é pelo portal)
 if (els("btn-importar")) els("btn-importar").addEventListener("click", abrirImportacaoDePessoas);
 if (els("btn-fichas")) els("btn-fichas").addEventListener("click", abrirImportacaoDeFichas);
 {# O ouvinte do botão "+ Cargo" saiu junto com o botão (17/11/2026): criar
