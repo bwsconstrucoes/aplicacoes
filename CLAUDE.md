@@ -251,6 +251,66 @@ que quatro arquivos pequenos e mutilados.
 `erp_base.html`, uma migração que mexe em tabela de outra área) é registrada no
 `HISTORICO.md` **além** do histórico da área.
 
+### ⚑ TELA QUE SERVE VÁRIAS ÁREAS: manda o ASSUNTO, não a tela (26/11/2026)
+
+Pergunta dele, e ela vale para o portal, para o diário e para tudo que vier:
+
+> *"Quando eu vou tratar, por exemplo, do portal, o portal normalmente envolve
+> tudo. Mas tem a parte do portal que trata do DP, tem a parte que trata do
+> financeiro, tem a parte do diário de obras (…) Se for do financeiro, eu trato
+> no chat financeiro. Se for do DP, eu trato no chat do DP (…) mesmo que o
+> assunto seja portal. Pode ser dessa forma? (…) Às vezes eu fico com receio de
+> misturar demais."*
+
+**PODE, E É ASSIM QUE SE FAZ.** A tela é uma vitrine; quem manda é de quem é o
+**assunto**. O código já nasceu assim: cada área do portal tem a sua lista de
+tipos, as suas regras e o seu arquivo de memória.
+
+| O assunto é | O chat é |
+|---|---|
+| pedido de férias, admissão, desligamento — mesmo abrindo pelo portal | **ERP · Pessoal e DP** |
+| pagamento de nota, boleto, reembolso — mesmo pelo portal | **ERP · Financeiro** |
+| pedir material, receber, lançar nota — mesmo pelo portal | **ERP · Suprimentos** |
+| diário de obra — mesmo sendo o portal que leva até ele | **ERP · Obras e Arquivo** |
+
+**A pergunta que resolve a dúvida não é "de quem é esta tela?" — é "de quem é
+este assunto?".**
+
+**Os números que sustentam isso** (10 dias até 26/11/2026): o `erp_portal.html`
+foi mexido **18 vezes**, por chats diferentes, quase todas de DP. Num único dia,
+quatro junções da `main` com três chats mexendo no portal ao mesmo tempo: **a
+tela se juntou sozinha nas quatro**. O que deu conflito foi o **histórico da
+área** — todo mundo escreve no topo do mesmo arquivo —, que é chato e inofensivo.
+
+**As duas exceções, e só elas:**
+
+1. **A MOLDURA da tela** (a ordem dos blocos do portal, quem entra, o que
+   aparece no alto, o manual) não é de área nenhuma: trate onde for mais
+   prático e registre em `HISTORICO.md`, além do histórico da área.
+2. **Mover um pedaço grande de código de lugar** dá conflito feio em qualquer
+   divisão. Avise na resposta antes de fazer.
+
+#### ⚠️ O QUE ESTA DIVISÃO DEIXA PASSAR, e é preciso dizer
+
+Com cada chat cuidando do seu pedaço, **ninguém cuida da tela inteira**. Cada um
+testa a sua área e vai embora.
+
+**A prova:** em 25/11/2026 a fila de pedidos de acesso ao portal ficou **um dia
+inteiro invisível** em Configurações › Operadores — uma linha de código no lugar
+errado, **sem erro nenhum na tela**. O chat que publicou conferiu a parte dele
+(a fila em Pessoal, que funcionava) e não abriu o outro lado. Quem descobriu foi
+o dono, tropeçando.
+
+⚠️ **Repare onde o defeito estava:** não no portal, e sim na tela de
+Configurações, que é a OUTRA ponta do mesmo caminho. Funcionalidade que
+atravessa duas telas precisa ser aberta nas duas antes de publicar — a divisão
+por assunto não dispensa isso.
+
+**Isso NÃO é motivo para desfazer a divisão** — juntar tudo num chat só traz de
+volta o problema de 18/11. O que compensa é barato: de vez em quando, num chat
+qualquer, **abrir a tela inteira e conferir se tudo responde**. É o tipo de
+buraco que só aparece olhando, e que teste nenhum pega.
+
 ### ⚠️ A emissão de NFS-e: a memória existe desde 21/09/2026 — e o risco continua
 
 Ela entrou na tabela **sem memória nenhuma**, e a primeira entrega do primeiro
