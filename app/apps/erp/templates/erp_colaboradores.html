@@ -407,7 +407,13 @@ async function carregarFilaDoPortal(){
           <td class="mono">${escapar(p.email)}</td>
           <td>${escapar(p.obra || "—")}</td>
           <td style="white-space:nowrap">${FILA_OPCOES.administra_acesso
-            ? `<a class="btn" href="/erp/configuracoes#usuarios">Liberar em Operadores</a>`
+            {# ⚑ O LINK LEVA A PESSOA JUNTO (26/11/2026). Ele: *"clico, sou
+               remetido pra Operadores, mas não abre a tela pra liberação e
+               confirmação do perfil."* O link era o mesmo para todo mundo —
+               chegava em Operadores e a pessoa tinha de procurar de novo na
+               lista quem ela acabou de clicar. Com o número do pedido, a
+               confirmação abre sozinha do outro lado. #}
+            ? `<a class="btn" href="/erp/configuracoes?pedido=${p.id}#usuarios">Liberar em Operadores</a>`
             : `<small class="desc">quem libera é o administrador</small>`}</td>
         </tr>`).join("")}</tbody></table>
     </div>`;

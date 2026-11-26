@@ -982,7 +982,6 @@ function formPerfil(p){
       els("dlg").close();
       aviso("mensagem", novo ? "Perfil criado." : "Perfil atualizado.", "ok");
       carregarPerfis(); carregarOperadores();
-carregarFilaDoPortal();
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
   if (!novo) els("pf-arquivar").addEventListener("click", async () => {
@@ -1387,6 +1386,13 @@ checarBanco();
 carregarDepara();
 carregarOperadores();
 els("btn-novo-op").addEventListener("click", () => formOperador(null, {aoSalvar: carregarOperadores}));
+{# ⚑ A FILA PRECISA SER CARREGADA NA ABERTURA DA TELA (26/11/2026).
+   Ela não era: a chamada tinha ido parar DENTRO do "Salvar" do formulário de
+   PERFIS, então o bloco "Pedidos de acesso ao portal" só nascia se alguém
+   abrisse um perfil e salvasse — coisa que ninguém faz para liberar acesso.
+   Resultado para o dono: a pendência aparecia em Pessoal, ele clicava, vinha
+   para cá e não encontrava nada. Ver `HISTORICO_PESSOAL.md`, 26/11/2026. #}
+carregarFilaDoPortal();
 carregarPerfis();
 els("btn-novo-perfil").addEventListener("click", () => formPerfil(null));
 
@@ -1876,6 +1882,19 @@ carregar().then(async () => {
     if (DADOS.categorias.some(c => c.id === id)) editarCategoria(id);
     else aviso("mensagem", "Esta conta do plano não existe mais.", "erro");
   }
+  {# ⚑ CHEGOU DE PESSOAL PARA LIBERAR ALGUÉM (26/11/2026): abre a confirmação
+     daquele pedido, em vez de só mostrar a lista. É o que ele esperava e não
+     acontecia. Se o pedido já foi resolvido por outra pessoa no meio do
+     caminho, diz isso — a fila fica à vista do mesmo jeito. #}
+  const pedido = busca.get("pedido");
+  if (pedido) {
+    mostrarSecao("usuarios");
+    if (!FILA_ADM.length) await carregarFilaDoPortal();
+    if (FILA_ADM.some(x => x.id === +pedido)) decidirPedidoDeAcesso(+pedido, "LIBERAR");
+    else aviso("mensagem", "Este pedido de acesso já foi resolvido.", "aviso");
+    return;
+  }
+
   const operador = busca.get("operador");
   if (operador) {
     // ⚠️ A LISTA DE OPERADORES TEM CARGA PRÓPRIA, separada da desta tela.
