@@ -12275,6 +12275,27 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 282 — Relatório completo do lote: o "Anexo Prestação de Conta" do Fundo Fixo entra (26/11/2026)
+
+- O dono: *"tem um tipo de solicitação de pagamento que o nome do campo é outro. O campo
+  é 'Anexo Prestação de Conta' (…) os anexos desse campo não estão sendo embutidos (…)
+  na hora que fosse baixar, ele fosse verificado também se há algum anexo nesse campo."*
+  E: *"É somente em uma circunstância (…) quando o tipo de despesa for igual a Fundo
+  Fixo."*
+- O campo NÃO está na base (a SPsBD só tem a coluna Q, "Anexo"). Na geração, as SPs de
+  tipo de despesa "Fundo Fixo" do relatório têm o card lido no Pipefy
+  (`pipefy.anexos_do_campo`, pelo RÓTULO do campo, sem acento — "Anexo Prestação de
+  Conta(s)"); os links entram como "Prestação de contas" depois do anexo da SP, sem
+  repetir link. Só lê o Pipefy. Custo: 1 ida à API a cada 20 SPs de Fundo Fixo do
+  relatório; relatório sem Fundo Fixo não vai ao Pipefy.
+- Pipefy fora do ar / sem token: o relatório sai sem esses anexos e a JANELA de geração
+  diz "atenção: não consegui conferir no Pipefy…" (não o PDF, que vai para o parceiro).
+- Não verificado: o download de um anexo real do Pipefy (link assinado do armazenamento
+  deles) — o "Anexo" da coluna Q já vem do mesmo lugar e baixa.
+- ⚠️ Caminho que morre com o Pipefy (o ERP vai substituí-lo): quando a prestação de
+  contas do Fundo Fixo for para o ERP, o anexo passa a vir de lá.
+- Sem migração. Testes em `test_analisesps_lote_relatorio_completo.py`.
+
 #### Leva 281 — Relatório completo do lote: anexo .zip entra, e PDF com defeito não derruba mais (26/11/2026)
 
 - O dono: *"Não consegui gerar: code=7: malformed page tree"*, e logo depois: *"tem um
@@ -12294,6 +12315,7 @@ somente Solicitações de uma conta especifica"*.
   o anexo fica de fora com o motivo. E a cópia final, se ainda falhar, pula aquele anexo.
 - Sem migração. Testes: `test_PDF_COM_DEFEITO_nao_derruba_o_relatorio`,
   `test_o_ZIP_com_imagens_entra_no_relatorio`.
+- **Publicado em 26/11/2026** (sem migração).
 
 #### Leva 280 — DDA: o motor refeito (rápido) e a lista em páginas de 50 (26/11/2026)
 

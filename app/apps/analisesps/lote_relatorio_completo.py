@@ -1034,12 +1034,71 @@ def _paginas_do_anexo(destino, origem, l, anexo, i_anexo, n_anexos) -> int:
     return n
 
 
-def montar_pdf(dados: dict, baixar=None, progresso=None, com_anexos: bool = True) -> bytes:
+def _anexos_de_prestacao(ids) -> dict:
+    """`{sp: [links]}` do campo "Anexo Prestação de Conta" dos cards no Pipefy."""
+    from . import pipefy
+    return pipefy.anexos_do_campo(ids, CAMPO_DA_PRESTACAO)
+
+
+# O ANEXO DA PRESTAÇÃO DE CONTAS (26/11/2026). O dono: *"tem um tipo de solicitação
+# de pagamento que o nome do campo é outro. O campo é 'Anexo Prestação de Conta' (…)
+# os anexos desse campo não estão sendo embutidos (…) na hora que fosse baixar, ele
+# fosse verificado também se há algum anexo nesse campo."* O campo NÃO vem na base
+# (a SPsBD só tem a coluna Q, "Anexo"): é lido do card no Pipefy na hora de gerar.
+# Só lê. Se o Pipefy falhar, o relatório
+# sai sem eles e diz isso na janela. Só nas SPs de tipo de despesa "Fundo Fixo" —
+# 1 ida à API para cada 20 delas.
+CAMPO_DA_PRESTACAO = "prestação de conta"
+
+
+def _e_fundo_fixo(tipo) -> bool:
+    import unicodedata
+    t = "".join(c for c in unicodedata.normalize("NFKD", str(tipo or ""))
+                if not unicodedata.combining(c)).lower()
+    return "fundo fixo" in " ".join(t.split())
+
+
+def acrescentar_prestacao(dados: dict, ler=None, progresso=None) -> int:
+    """Põe em cada SP os anexos da prestação de contas que o Pipefy tiver. Devolve
+    quantos entraram."""
+    ler = ler or _anexos_de_prestacao
+    progresso = progresso or (lambda *a: None)
+    # SÓ O FUNDO FIXO tem o campo (dono, 26/11/2026: *"É somente em uma
+    # circunstância (…) quando o tipo de despesa for igual a Fundo Fixo"*). Relatório
+    # sem Fundo Fixo não vai ao Pipefy.
+    ids = [str(l["id"]) for l in dados["linhas"] if _e_fundo_fixo(l.get("tipo_despesa"))]
+    if not ids:
+        return 0
+    progresso(0, 0, "Conferindo no Pipefy o anexo da prestação de contas")
+    try:
+        achados = ler(ids) or {}
+    except Exception:  # noqa: BLE001 — sem o Pipefy, o relatório sai com o que tem
+        logger.exception("Relatório completo do lote: não consegui ler a prestação de contas no Pipefy")
+        dados["aviso_prestacao"] = "não consegui conferir no Pipefy o anexo da prestação de contas"
+        return 0
+    entraram = 0
+    for l in dados["linhas"]:
+        links = [u for u in achados.get(str(l["id"])) or []
+                 if u not in {a["url"] for a in l["_anexos"]}]
+        for i, url in enumerate(links, start=1):
+            l["_anexos"].append({"url": url, "origem": "prestacao",
+                                 "rotulo": "Prestação de contas" + (f" {i}" if len(links) > 1 else "")})
+            entraram += 1
+    dados["sem_anexo"] = [l for l in dados["linhas"] if not l["_anexos"]]
+    return entraram
+
+
+def montar_pdf(dados: dict, baixar=None, progresso=None, com_anexos: bool = True,
+               prestacao=None) -> bytes:
     """O relatório inteiro. `baixar(url) -> bytes` (o padrão é `baixar_anexo`; o
-    teste passa um falso). `progresso(feitos, total, texto)` acompanha os downloads."""
+    teste passa um falso). `progresso(feitos, total, texto)` acompanha os downloads.
+    `prestacao(ids) -> {sp: [links]}` lê o anexo da prestação de contas (o padrão
+    vai ao Pipefy)."""
     import fitz
     baixar = baixar or baixar_anexo
     progresso = progresso or (lambda *a: None)
+    if com_anexos:
+        acrescentar_prestacao(dados, prestacao, progresso)
 
     # 1. Baixa e prepara os anexos ANTES de desenhar: o detalhe de cada SP diz
     #    quantas páginas vêm a seguir, ou por que um documento ficou de fora.
@@ -1218,8 +1277,10 @@ def iniciar(dados: dict, com_anexos: bool = True) -> str:
                 with arquivo:
                     arquivo.write(conteudo)
                 with _trava:
+                    # O aviso fica na JANELA, não no PDF: o PDF vai para o parceiro.
                     _trabalhos[chave].update(pronto=True, caminho=arquivo.name,
-                                             etapa="Pronto", tamanho=len(conteudo))
+                                             etapa="Pronto", tamanho=len(conteudo),
+                                             aviso=dados.get("aviso_prestacao", ""))
             except Exception as e:  # noqa: BLE001
                 logger.exception("Relatório completo do lote: falhou a geração")
                 with _trava:
