@@ -51,11 +51,15 @@ def test_VARIOS_cards_numa_mutation_so_e_um_recusado_nao_esconde_os_outros(monke
 def banco_cancelar(banco_analisesps):
     from app.apps.analisesps.db import conexao
     with conexao() as conn:
-        for sp in [("1400000001", "CREDOR A", "100.00", "Pagar"),
-                   ("1400000002", "CREDOR B", "200.00", "Pagar"),
-                   ("1400000003", "CREDOR C", "300.00", "Cancelado")]:
-            conn.execute("INSERT INTO analisesps.sps (id, credor, valor_num, status_pgt) "
-                         "VALUES (?, ?, ?, ?)", sp)
+        for sp in [("1400000001", "CREDOR A", "100.00", "Pagar", ""),
+                   ("1400000002", "CREDOR B", "200.00", "Pagar", ""),
+                   ("1400000003", "CREDOR C", "300.00", "Cancelado", ""),
+                   ("1400000004", "CREDOR D", "400.00", "Pago", ""),
+                   ("1400000005", "CREDOR E", "500.00", "Pagar", "Agendado"),
+                   ("1400000006", "CREDOR F", "600.00", "Pagar", "Agendar"),
+                   ("1400000007", "CREDOR G", "700.00", "Pago Parcial", "")]:
+            conn.execute("INSERT INTO analisesps.sps (id, credor, valor_num, status_pgt, agendado) "
+                         "VALUES (?, ?, ?, ?, ?)", sp)
         conn.commit()
 
 
@@ -98,3 +102,22 @@ def test_tudo_ja_cancelado_e_recusado_sem_ir_ao_Pipefy(banco_cancelar):
     from app.apps.analisesps import cancelar_sp
     with pytest.raises(cancelar_sp.ErroDoCancelamento):
         cancelar_sp.pedir(["1400000003"], criar=lambda *a: 1 / 0)
+
+
+@pytest.mark.banco
+def test_PAGA_ou_AGENDADA_nao_cancela(banco_cancelar):
+    """26/11/2026: *"se a solicitação de pagamento tiver com algum agendamento, tiver em
+    agendado, ou tiver pago, não permitir o cancelamento. Tem que alterar primeiro o
+    status para sem agendamento e pagar."*"""
+    from app.apps.analisesps import cancelar_sp
+    todas = [f"140000000{i}" for i in range(1, 8)]
+    vista = cancelar_sp.previa(todas)
+    assert vista["vao"] == ["1400000001", "1400000002"]
+    motivo = {s["id"]: s["bloqueio"] for s in vista["sps"]}
+    assert "Pagar antes" in motivo["1400000004"] and "Pagar antes" in motivo["1400000007"]
+    assert "desagende" in motivo["1400000005"] and "Agendar" in motivo["1400000006"]
+    assert motivo["1400000003"] == "já cancelada"
+    pedidos = []
+    cancelar_sp.pedir(todas, criar=lambda pipe, cards: (pedidos.extend(c["chave"] for c in cards),
+                                                       {c["chave"]: {"id": "1"} for c in cards})[1])
+    assert pedidos == ["1400000001", "1400000002"]

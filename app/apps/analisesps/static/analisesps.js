@@ -2898,17 +2898,20 @@ window.abrirCancelarSP = async function (ids, urls) {
   catch (e) { corpo.innerHTML = `<div class="aviso erro">Não consegui conferir: ${esc(e.message)}</div>`; return; }
   const vao = vista.vao;
   corpo.innerHTML = `
+    <p class="cartao-dica">Só vai a SP com status <b>Pagar</b> e <b>sem agendamento</b>; paga,
+      agendada ou já cancelada fica de fora — mude o status ou desagende antes.</p>
     <p>Para cada SP abaixo será criado no Pipefy um <b>card de pedido de cancelamento</b>
       (procedimento "Cancelar SP", motivo "Cancelado pelo Sistema AnaliseSPs"). A automação do
       Make faz o cancelamento; a SP aparece como <b>Cancelado</b> depois, na sincronização.
       <b>Não tem volta por aqui</b> — desfazer é no Pipefy.</p>
     <div class="tabela-rolagem livre"><table class="tabela-omie">
-      <thead><tr><th>SP</th><th>Credor</th><th>Obra</th><th class="num">Valor</th><th>Venc.</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>SP</th><th>Credor</th><th>Obra</th><th class="num">Valor</th><th>Venc.</th><th>Status</th><th>Agendado</th><th></th></tr></thead>
       <tbody>${vista.sps.map(s => `<tr class="${vao.includes(s.id) ? "" : "cs-fora"}">
         <td>${esc(s.id)}</td><td>${esc(s.credor) || "—"}</td><td>${esc(s.obra)}</td>
         <td class="num">${esc(s.valor)}</td><td>${esc(s.vencimento)}</td><td>${esc(s.status) || "—"}</td>
+        <td>${esc(s.agendado) || "—"}</td>
         <td>${!s.achada ? '<span class="omie-erro">não encontrada — não vai</span>'
-             : s.cancelada ? '<span class="cartao-dica">já cancelada — não vai</span>'
+             : s.bloqueio ? `<span class="${s.cancelada ? "cartao-dica" : "omie-erro"}">${esc(s.bloqueio)} — não vai</span>`
              : s.pedido ? `<span class="omie-erro" title="Confirmar cria OUTRO card">⚠ ${esc(s.pedido)}</span>` : ""}</td>
       </tr>`).join("")}</tbody></table></div>`;
   const botoes = dlg.querySelector(".cs-botoes");

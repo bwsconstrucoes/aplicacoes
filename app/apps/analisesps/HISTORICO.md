@@ -12284,8 +12284,14 @@ somente Solicitações de uma conta especifica"*.
   (…) tem uma automação no make.com que vai terminar o trabalho."* Campos ditados:
   `selecione_o_procedimento` = "Cancelar SP", `n_da_solicita_o` = nº da SP, `motivo` =
   "Cancelado pelo Sistema AnaliseSPs", `colaborador_solicitante` = 620439304.
-- `cancelar_sp.py`: `previa` (credor, obra, valor, vencimento, status; as já canceladas e
-  as não encontradas NÃO vão; aviso "já pedido em … por …" se a SP já teve pedido) e
+- **A trava** (dono, no mesmo dia: *"se a solicitação de pagamento tiver com algum
+  agendamento, tiver em agendado, ou tiver pago, não permitir o cancelamento. Tem que
+  alterar primeiro o status para sem agendamento e pagar"*): só vai a SP com Status Pgt =
+  "Pagar" E o campo Agendado vazio (`cancelar_sp.bloqueio`). Paga, Pago Parcial, com
+  qualquer agendamento (Agendar, Agendado, Falha…) ou já cancelada fica de fora, e a
+  janela diz o que fazer antes ("mude para Pagar antes" / "desagende antes").
+- `cancelar_sp.py`: `previa` (credor, obra, valor, vencimento, status, agendado; as
+  travadas e as não encontradas NÃO vão; aviso "já pedido em … por …" se a SP já teve pedido) e
   `pedir` (cria os cards e grava cada pedido no Log — `log_alteracoes`, ação "Cancelar SP",
   status "enviado", com o número do card). NÃO muda o status da SP: quem cancela é o Make;
   aparece "Cancelado" na sincronização seguinte.

@@ -1768,7 +1768,8 @@ def cancelar_sp_previa():
          "valor": moeda(s.get("valor")) if s.get("valor") is not None else "",
          "vencimento": data_br(s["vencimento"]) if s.get("vencimento") else "",
          "status": s.get("status", ""), "obra": s.get("obra", ""),
-         "cancelada": bool(s.get("cancelada")),
+         "agendado": s.get("agendado", ""),
+         "cancelada": bool(s.get("cancelada")), "bloqueio": s.get("bloqueio", ""),
          "pedido": (f"já pedido em {s['pedido']['em']:%d/%m/%Y %H:%M}"
                     + (f" por {s['pedido']['por']}" if s["pedido"]["por"] else ""))
                    if s.get("pedido") and s["pedido"].get("em") else ""}

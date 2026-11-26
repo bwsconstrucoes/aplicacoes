@@ -21,6 +21,9 @@ Os campos do card, ditados pelo dono:
     motivo                   = "Cancelado pelo Sistema AnaliseSPs"
     colaborador_solicitante  = 620439304  (conexão: vai como lista)
 
+SÓ VAI A SP COM STATUS "PAGAR" E SEM AGENDAMENTO (`bloqueio`) — paga, agendada ou já
+cancelada fica de fora, e a janela diz o que fazer antes.
+
 O PEDIDO FICA NO LOG (`log_alteracoes`, ação "Cancelar SP"): quem pediu, quando e o
 card criado — e a janela avisa se a SP já teve cancelamento pedido antes, para não
 criar um segundo card sem querer.
@@ -52,6 +55,23 @@ def _cancelada(status: str) -> bool:
     return str(status or "").strip().lower() == "cancelado"
 
 
+# A TRAVA (dono, 26/11/2026): *"se a solicitação de pagamento tiver com algum
+# agendamento, tiver em agendado, ou tiver pago, não permitir o cancelamento. Tem que
+# alterar primeiro o status para sem agendamento e pagar. O que tiver cancelado (…)
+# não cancela também."* Só vai a SP com Status Pgt = "Pagar" e o campo Agendado vazio.
+def bloqueio(status: str, agendado: str) -> str:
+    """"" quando pode cancelar; senão, a frase do que fazer antes."""
+    st = str(status or "").strip()
+    ag = str(agendado or "").strip()
+    if _cancelada(st):
+        return "já cancelada"
+    if st.lower() != "pagar":
+        return f"está {st or 'sem status'} — mude para Pagar antes"
+    if ag:
+        return f"tem agendamento ({ag}) — desagende antes"
+    return ""
+
+
 def previa(ids: list) -> dict:
     """O que a janela de confirmação mostra: cada SP com credor, valor, vencimento e
     status; as já canceladas (não vão) e as que já tiveram pedido antes (aviso)."""
@@ -60,7 +80,8 @@ def previa(ids: list) -> dict:
     marcas = ",".join("?" for _ in ids)
     linhas = consultar(
         "SELECT id, credor, valor_num, vencimento_d, trim(coalesce(status_pgt,'')), "
-        "       centro_custo FROM analisesps.sps WHERE id IN (" + marcas + ")", tuple(ids))
+        "       centro_custo, trim(coalesce(agendado,'')) "
+        "  FROM analisesps.sps WHERE id IN (" + marcas + ")", tuple(ids))
     por_id = {str(l[0]): l for l in linhas}
     pedidos = {}
     for sp, quando, quem in consultar(
@@ -76,9 +97,10 @@ def previa(ids: list) -> dict:
             continue
         sps.append({"id": sp, "achada": True, "credor": l[1] or "", "valor": l[2],
                     "vencimento": l[3], "status": l[4], "obra": l[5] or "",
-                    "cancelada": _cancelada(l[4]), "pedido": pedidos.get(sp)})
+                    "agendado": l[6] or "", "cancelada": _cancelada(l[4]),
+                    "bloqueio": bloqueio(l[4], l[6]), "pedido": pedidos.get(sp)})
     return {"sps": sps,
-            "vao": [s["id"] for s in sps if s.get("achada") and not s.get("cancelada")]}
+            "vao": [s["id"] for s in sps if s.get("achada") and not s.get("bloqueio")]}
 
 
 def pedir(ids: list, quem: str = "", perfil: str = "", criar=None) -> dict:
@@ -93,8 +115,9 @@ def pedir(ids: list, quem: str = "", perfil: str = "", criar=None) -> dict:
     vao = vista["vao"]
     pulados = [s["id"] for s in vista["sps"] if s["id"] not in vao]
     if not vao:
-        raise ErroDoCancelamento("Nenhuma das SPs marcadas pode ser cancelada "
-                                 "(já estão canceladas ou não foram encontradas).")
+        raise ErroDoCancelamento("Nenhuma das SPs marcadas pode ser cancelada: só vai a SP "
+                                 "com status Pagar e sem agendamento (as outras estão pagas, "
+                                 "agendadas, já canceladas ou não foram encontradas).")
     feito = criar(PIPE_DE_PROCEDIMENTOS,
                   [{"chave": sp, "titulo": f"Cancelar SP {sp}", "valores": valores_do_card(sp)}
                    for sp in vao])
