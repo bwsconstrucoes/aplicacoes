@@ -1370,3 +1370,25 @@ def test_o_dp_ve_e_abre_os_documentos_que_a_obra_mandou(mundo, app_real):
     for x in papeis:
         r = como(app_real, mundo["dp"].id).get(f"/erp/anexo/{x['anexo_id']}")
         assert r.status_code == 200, (x, r.get_data(as_text=True)[:200])
+
+
+@pytestmark_banco
+def test_o_aso_entra_pelo_portal_sem_data_de_vencimento(mundo):
+    """26/11/2026, relato da obra: *"da essa msg pedindo o vencimento do exame
+    médico… só que não tem onde colocar no app e no exame tbm não tem o
+    vencimento."* O ASO não traz vencimento: a validade é calculada (12 meses)
+    e o pedido de admissão não trava."""
+    import datetime as dt
+    from app.apps.erp.core.agenda.geradores import _somar_meses
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    cid = s.execute(text("SELECT colaborador_id FROM dp_solicitacoes WHERE id = :i"),
+                    {"i": p["id"]}).scalar()
+    n = svc.guardar_papeis(s, p["id"], cid, [
+        {"conteudo": b"%PDF-1.4 aso apto" * 80, "nome": "aso.pdf", "tipo": "ASO"}])
+    assert n == 1
+    validade, obs = s.execute(text(
+        "SELECT validade, observacao FROM documentos WHERE colaborador_id = :c "
+        " AND tipo_codigo = 'ASO'"), {"c": cid}).one()
+    assert validade == _somar_meses(dt.date.today(), 12)
+    assert "estimada" in (obs or "")

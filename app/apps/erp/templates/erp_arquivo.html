@@ -307,6 +307,10 @@ async function carregar(){
 function linkDoDono(d){
   const nome = escapar(d.dono || "");
   if (!nome) return "—";
+  // 26/11/2026: a pessoa abre no modal-ponte, sem sair do Arquivo.
+  if (d.colaborador_id)
+    return `<a href="#" data-abrir-ambiente="${d.colaborador_id}" data-ambiente-aba="documentos"
+              title="Abrir a pessoa">${nome}</a>`;
   const onde = d.colaborador_id ? `/erp/colaboradores?pessoa=${d.colaborador_id}`
              : d.empresa_id     ? `/erp/empresas?empresa=${d.empresa_id}`
              : d.obra_id        ? `/erp/obras?obra=${d.obra_id}`
@@ -502,12 +506,14 @@ function ajustarFormulario(){
     ? itens.map(([id, nome]) => `<option value="${id}">${nome}</option>`).join("")
     : `<option value="">(este tipo ainda não tem lista aqui)</option>`;
   comBusca(dono, "digite para filtrar…");
-  dica.textContent = t.vence
+  dica.textContent = t.vence && t.validade_padrao_meses
+    ? `Este tipo vence, mas o papel não diz quando: em branco, o sistema conta ${t.validade_padrao_meses} meses a partir da emissão.`
+    : t.vence
     ? "Este tipo VENCE — a validade é obrigatória, senão o sistema não avisa antes."
     : t.por_competencia
       ? "Este tipo é de um mês — informe a competência."
       : "O documento pertence a UM dono só.";
-  els("d-validade").required = !!t.vence;
+  els("d-validade").required = !!t.vence && !t.validade_padrao_meses;
   els("d-comp").required = !!t.por_competencia;
   previa();
 }

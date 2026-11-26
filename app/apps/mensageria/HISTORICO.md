@@ -7,6 +7,11 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## 26/11/2026 — (feito pelo chat do DP) O nome da pessoa abre o modal-ponte
+
+`templates/mensagens.html`, `abrirFicha`: abre `abrirPessoa(id, "mensagens")` (erp_base.html), o modal único da
+pessoa, já na aba Mensagens. Detalhe em `erp/HISTORICO_PESSOAL.md`, 26/11/2026 (4).
+
 ## 25/11/2026 — o "55" repetido que vem do Make, e o nome de quem está sem DDD
 
 Dois casos que o dono trouxe da aba Enviadas.

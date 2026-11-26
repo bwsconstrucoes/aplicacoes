@@ -1230,7 +1230,8 @@ function desenhar(){
 
   els("tb-usuarios").innerHTML = OPERADORES.map(u => `
     <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
-      <td>${u.nome}</td><td>${u.email}</td>
+      <td>${u.nome}${u.colaborador_id ? ` <button type="button" class="link-btn" title="abrir a pessoa (cadastro, ponto, mensagens…)"
+          onclick="event.stopPropagation(); abrirPessoa(${u.colaborador_id})">👤 ver a pessoa</button>` : ""}</td><td>${u.email}</td>
       <td class="dados">${u.cpf||"—"}</td><td class="dados">${u.telefone||"—"}</td>
       {# O perfil principal e, embaixo, os ACRESCENTADOS (migração 095). Sem
          mostrar aqui, uma pessoa com dois perfis pareceria ter só um — e

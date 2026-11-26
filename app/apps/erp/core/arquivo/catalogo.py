@@ -137,6 +137,11 @@ CATALOGO: tuple[tuple[Any, ...], ...] = (
 )
 
 
+
+def _validade_padrao_meses(codigo: str) -> int:
+    from app.apps.erp.core.arquivo.service import VALIDADE_PADRAO_MESES
+    return VALIDADE_PADRAO_MESES.get(codigo or "", 0)
+
 def aplicar(s: Session) -> dict[str, int]:
     """Cria o que falta e atualiza o nome do que não foi personalizado.
 
@@ -172,6 +177,8 @@ def listar(s: Session, *, incluir_inativos: bool = False) -> list[dict[str, Any]
         "codigo": t.codigo, "nome": t.nome, "grupo": t.grupo,
         "grupo_nome": GRUPOS.get(t.grupo, t.grupo),
         "dono": t.dono, "vence": t.vence, "avisar_dias": t.avisar_dias,
+        # 26/11/2026: vence, mas a validade em branco é calculada (o ASO).
+        "validade_padrao_meses": _validade_padrao_meses(t.codigo),
         "por_competencia": t.por_competencia, "sigilo": t.sigilo,
         "ativo": t.ativo,
     } for t in s.scalars(stmt).all()]

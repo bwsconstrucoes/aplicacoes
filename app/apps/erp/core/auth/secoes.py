@@ -167,7 +167,8 @@ SECOES: list[dict[str, Any]] = [
      "ler": ["ver_pessoal"], "editar": ["lancar_dc"]},
     {"chave": "pes_colaboradores", "area": "Pessoal", "nome": "Colaboradores",
      "explicacao": "o cadastro das pessoas da obra",
-     "ler": ["ver_pessoal"], "editar": ["editar_colaboradores"]},
+     # 26/11/2026: abrir a pessoa no modal-ponte (também vem de ver o ponto).
+     "ler": ["ver_pessoal", "abrir_pessoa"], "editar": ["editar_colaboradores"]},
     # ⚑ SALÁRIO É SEÇÃO PRÓPRIA (17/11/2026), e não um pedaço de
     # "Colaboradores": quem precisa ver quem está na obra e em que etapa do
     # cadastro ela está não precisa ver quanto cada um ganha. Era o pedido

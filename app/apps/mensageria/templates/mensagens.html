@@ -382,6 +382,8 @@ const PODE_VER_PONTO = {{ "true" if pode.ver_ponto else "false" }};
 // A ficha da pessoa numa janela por cima (ver o <dialog id="dlg-ficha">). Quem
 // não enxerga o ponto não abre a ficha única: vai à de Colaboradores, como antes.
 function abrirFicha(id){
+  // 26/11/2026: o modal-ponte da pessoa (erp_base.html), já na aba Mensagens.
+  if (typeof abrirPessoa === "function") return abrirPessoa(Number(id), "mensagens");
   if (!PODE_VER_PONTO) { location.href = `/erp/colaboradores?pessoa=${encodeURIComponent(id)}`; return; }
   els("ficha-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
   els("dlg-ficha").showModal();

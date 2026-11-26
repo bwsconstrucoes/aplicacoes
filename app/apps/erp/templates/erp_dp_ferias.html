@@ -115,7 +115,8 @@ function desenhar(){
   corpo.innerHTML = FERIAS.map((f, i) => {
     const mexe = f.situacao !== "CANCELADA" && f.momento !== "passou" && !f.mudanca;
     return `<tr>
-      <td><b>${escapar(f.pessoa)}</b><div class="desc">${escapar(f.cargo)}</div></td>
+      <td><b>${f.colaborador_id ? `<a href="#" data-abrir-ambiente="${f.colaborador_id}">${escapar(f.pessoa)}</a>`
+        : escapar(f.pessoa)}</b><div class="desc">${escapar(f.cargo)}</div></td>
       <td>${escapar(f.obra)}</td>
       <td>${br(f.inicio)} a ${br(f.fim)}<div class="desc">${f.dias} dias${
         f.abono_pecuniario ? " · vende 1/3" : ""}${f.adiantamento_13 ? " · adianta o 13º" : ""}</div></td>
@@ -201,7 +202,8 @@ function desenharPeriodos(){
     + `${conta("nao_informado")} sem informação`;
   els("linhas-p").innerHTML = l.map((x, i) => {
     const [r, cor] = ESTADO_ROTULO[x.estado] || [x.estado, ""];
-    return `<tr><td><b>${escapar(x.pessoa)}</b></td><td>${escapar(x.obra)}</td>
+    return `<tr><td><b>${x.colaborador_id ? `<a href="#" data-abrir-ambiente="${x.colaborador_id}">${escapar(x.pessoa)}</a>`
+      : escapar(x.pessoa)}</b></td><td>${escapar(x.obra)}</td>
       <td>${br(x.admissao)}</td><td>${x.quitado_ate ? br(x.quitado_ate) : (x.informado ? "nenhum período" : "—")}</td>
       <td><b style="color:${cor}">${r}</b><div class="desc">${escapar(x.detalhe)}</div></td>
       <td><button class="btn secundario" data-quitado="${x.colaborador_id}">Informar quitadas até…</button></td></tr>`;

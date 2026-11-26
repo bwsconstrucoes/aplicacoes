@@ -193,6 +193,36 @@
     <div id="enc-msg"></div>
   </div></dialog>
 {% endif %}
+{# ===================================================================
+   ⚑ O MODAL-PONTE DA PESSOA (26/11/2026) — `abrirPessoa(id, aba)`.
+
+   Pedido dele: *"todas as telas que têm relação com a pessoa, eu poder abrir
+   de um único local, e esse ambiente ser partilhado em todas as áreas (…)
+   Em resumo essa nova tela seria apenas uma ponte para as demais telas. Abre
+   um modal com todas as abas que podemos clicar que se relacionam com o
+   colaborador. Mas tudo abrindo dentro do mesmo modal."*
+
+   UM modal, o MESMO em toda tela do ERP e do ponto. No alto, quem é a pessoa;
+   embaixo, as abas — cada uma é a tela que já existe, embutida (sem menu).
+   Quais abas aparecem é o servidor que diz (`/erp/api/pessoa/<id>/ambiente`),
+   pela permissão de cada tela. Uma aba aberta fica carregada enquanto o modal
+   está aberto: voltar a ela não recarrega.
+   =================================================================== #}
+<dialog id="dlg-ambiente" style="width:97vw; max-width:1500px; height:94vh; max-height:94vh;
+        padding:0; overflow:hidden">
+  <div style="display:flex; flex-direction:column; height:100%">
+    <div class="dlg-topo" style="align-items:flex-start">
+      <div style="flex:1; min-width:0">
+        <h3 id="amb-nome" style="margin:0">—</h3>
+        <div id="amb-sub" style="font-size:13px; opacity:.85; margin-top:2px"></div>
+      </div>
+      <button class="topo-btn" type="button" onclick="els('dlg-ambiente').close()">Fechar</button>
+    </div>
+    <div id="amb-abas" style="display:flex; gap:4px; flex-wrap:wrap; padding:8px 12px 0;
+         border-bottom:1px solid var(--borda, #D5DCE8); background:var(--fundo, #F4F6FA)"></div>
+    <div id="amb-corpo" style="position:relative; flex:1; min-height:0; background:#fff"></div>
+  </div>
+</dialog>
 
 <div class="ia-painel" id="ia-painel" hidden role="dialog"
      aria-label="Assistente do ERP">
@@ -1998,7 +2028,7 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
   const rotulo = d.rotulo_validade || "Vale até";
   const valor = d.campo_validade ? (d.valor_validade || "") : (g.validade || "");
   const emissao = d.emissao || g.emissao || "";
-  const falta = g.tipo_vence && !valor;
+  const falta = g.tipo_vence && !valor && !g.tipo_validade_padrao_meses;
   const faltaComp = g.tipo_por_competencia && !g.competencia;
   const extras = (d.extras || []).map(x => `
     <div class="campo"><label>${escapar(x.rotulo)}</label>
@@ -2025,9 +2055,11 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
           <input id="${prefixo}-dt-emissao" type="date" value="${escapar(emissao)}"
             oninput="recalcularDiasDaVigencia('${prefixo}')"></div>
         ${extras}
-        ${g.tipo_vence ? `<div class="campo"><label>${escapar(rotulo)} *</label>
+        ${g.tipo_vence ? `<div class="campo"><label>${escapar(rotulo)}${g.tipo_validade_padrao_meses ? "" : " *"}</label>
           <input id="${prefixo}-dt-validade" type="date" value="${escapar(valor)}"
-            oninput="recalcularDiasDaVigencia('${prefixo}', true)"></div>` : ""}
+            oninput="recalcularDiasDaVigencia('${prefixo}', true)">
+          ${g.tipo_validade_padrao_meses ? `<div class="dica">O papel não traz vencimento: em branco, o sistema
+            conta ${g.tipo_validade_padrao_meses} meses a partir da emissão.</div>` : ""}</div>` : ""}
         ${g.tipo_vence && d.aceita_dias ? `<div class="campo">
           <label>ou prazo, em dias</label>
           <input id="${prefixo}-dt-dias" inputmode="numeric" placeholder="365"
@@ -2101,7 +2133,8 @@ function datasDoDocumento(prefixo, g, d){
   const validade = g.tipo_vence ? pegar(prefixo + "-dt-validade") : "";
   const comp = g.tipo_por_competencia ? pegar(prefixo + "-dt-comp") : "";
   const rotulo = (d.rotulo_validade || "Vale até").toLowerCase();
-  if (g.tipo_vence && !validade) {
+  // O ASO (26/11/2026): em branco, o sistema calcula — ver `datasDoDocumento`.
+  if (g.tipo_vence && !validade && !g.tipo_validade_padrao_meses) {
     return {ok: false, erro: `Informe ${rotulo} — está logo acima, em “Datas do `
             + `documento”. Dá para digitar a data ou o prazo em dias.`};
   }
@@ -2272,6 +2305,118 @@ function marcarCampoDigitado(entrada, attrMarca, campo){
   new MutationObserver(contar).observe(aside, {childList: true, subtree: true});
   contar();
 })();
+</script>
+<script>
+// ===========================================================================
+// O MODAL-PONTE DA PESSOA — ver o comentário no <dialog id="dlg-ambiente">.
+// `abrirPessoa(id)` abre na primeira aba; `abrirPessoa(id, "ponto", {aba:
+// "mes", competencia: "2026-11"})` abre numa aba e passa o recado à tela de
+// dentro. As telas de dentro conversam com o modal por mensagem:
+//   · "bws-pessoa"  {acao: "aba", aba, recarregar} — trocar de aba;
+//   · "bws-ficha"   {acao: "editar" | "documentos"} — a ficha do ponto pede o
+//     cadastro ou os documentos: viram abas daqui;
+//   · "bws-cadastro" {acao: "gravou"} — o cadastro mudou: o cabeçalho e as
+//     outras abas abertas são recarregados.
+// ===========================================================================
+const AMB = {id: null, abas: [], atual: null, quadros: {}, sujas: new Set()};
+
+async function abrirPessoa(id, aba, extra){
+  if (!id) return;
+  const dlg = els("dlg-ambiente");
+  if (AMB.id !== Number(id)) fecharQuadrosDaPessoa();
+  AMB.id = Number(id);
+  els("amb-nome").textContent = "Carregando…";
+  els("amb-sub").textContent = "";
+  if (!dlg.open) dlg.showModal();
+  let d;
+  try { d = await api(`/erp/api/pessoa/${AMB.id}/ambiente`); }
+  catch (e) {
+    els("amb-nome").textContent = "Não foi possível abrir a pessoa";
+    els("amb-sub").textContent = e.message || "";
+    els("amb-abas").innerHTML = ""; return;
+  }
+  pintarCabecaDoAmbiente(d.pessoa);
+  AMB.abas = d.abas || [];
+  els("amb-abas").innerHTML = AMB.abas.map(a => `<button type="button" data-amb="${a.chave}"
+      style="border:0; border-bottom:3px solid transparent; background:none; padding:8px 12px;
+             font:inherit; font-weight:600; cursor:pointer; color:var(--tinta, #10233F)">${escapar(a.rotulo)}</button>`).join("");
+  els("amb-abas").querySelectorAll("[data-amb]").forEach(b =>
+    b.addEventListener("click", () => mostrarAbaDoAmbiente(b.dataset.amb)));
+  if (!AMB.abas.length) {
+    els("amb-corpo").innerHTML = `<div class="aviso alerta" style="margin:16px">Nada desta pessoa está liberado para o seu perfil.</div>`;
+    return;
+  }
+  mostrarAbaDoAmbiente(AMB.abas.some(a => a.chave === aba) ? aba : AMB.abas[0].chave, extra);
+}
+
+function pintarCabecaDoAmbiente(p){
+  els("amb-nome").textContent = p.nome || "—";
+  els("amb-sub").textContent = [p.cpf ? "CPF " + p.cpf : "", p.cargo,
+    p.obra ? `${p.obra}${p.obra_nome ? " — " + p.obra_nome : ""}` : "",
+    p.vinculo, p.etapa || p.situacao].filter(Boolean).join(" · ");
+}
+
+function mostrarAbaDoAmbiente(chave, extra){
+  const a = AMB.abas.find(x => x.chave === chave);
+  if (!a) return;
+  AMB.atual = chave;
+  els("amb-abas").querySelectorAll("[data-amb]").forEach(b => {
+    const ativa = b.dataset.amb === chave;
+    b.style.borderBottomColor = ativa ? "var(--amarelo, #F4B942)" : "transparent";
+    b.style.background = ativa ? "#fff" : "none";
+  });
+  let q = AMB.quadros[chave];
+  const precisa = !q || AMB.sujas.has(chave) || (extra && Object.keys(extra).length);
+  if (!q) {
+    q = document.createElement("iframe");
+    q.title = a.rotulo;
+    q.style.cssText = "position:absolute; inset:0; width:100%; height:100%; border:0; background:#fff";
+    els("amb-corpo").appendChild(q);
+    AMB.quadros[chave] = q;
+  }
+  if (precisa) {
+    const url = new URL(a.url, location.origin);
+    Object.entries(extra || {}).forEach(([k, v]) => { if (v != null && v !== "") url.searchParams.set(k, v); });
+    q.src = url.pathname + url.search;
+    AMB.sujas.delete(chave);
+  }
+  Object.entries(AMB.quadros).forEach(([k, f]) => f.style.display = k === chave ? "" : "none");
+}
+
+function fecharQuadrosDaPessoa(){
+  Object.values(AMB.quadros).forEach(f => f.remove());
+  AMB.quadros = {}; AMB.sujas = new Set(); AMB.atual = null;
+}
+
+els("dlg-ambiente").addEventListener("close", () => { fecharQuadrosDaPessoa(); AMB.id = null; });
+
+window.addEventListener("message", async ev => {
+  const d = ev.data || {};
+  if (ev.origin !== location.origin || !els("dlg-ambiente").open) return;
+  const deDentro = Object.values(AMB.quadros).some(f => f.contentWindow === ev.source);
+  if (!deDentro) return;
+  if (d.tipo === "bws-pessoa" && d.acao === "aba") {
+    if (d.recarregar) AMB.sujas.add(d.aba);
+    mostrarAbaDoAmbiente(d.aba);
+  } else if (d.tipo === "bws-ficha" && (d.acao === "editar" || d.acao === "documentos")) {
+    mostrarAbaDoAmbiente(d.acao === "editar" ? "cadastro" : "documentos");
+  } else if (d.tipo === "bws-cadastro" && d.acao === "gravou") {
+    // O cadastro mudou: as outras abas abertas leem de novo quando voltarem.
+    Object.keys(AMB.quadros).forEach(k => { if (k !== AMB.atual) AMB.sujas.add(k); });
+    try { pintarCabecaDoAmbiente((await api(`/erp/api/pessoa/${AMB.id}/ambiente`)).pessoa); }
+    catch (e) { /* o cabeçalho fica como estava */ }
+  }
+});
+
+// Atalho de qualquer tela: um elemento com data-abrir-ambiente="ID" (e, se
+// quiser, data-ambiente-aba="ponto") abre o modal ao clicar. Nome próprio de
+// propósito: "data-pessoa" já é usado pelo ponto e pela tela de Uso.
+document.addEventListener("click", ev => {
+  const alvo = ev.target.closest && ev.target.closest("[data-abrir-ambiente]");
+  if (!alvo || !alvo.dataset.abrirAmbiente) return;
+  ev.preventDefault();
+  abrirPessoa(Number(alvo.dataset.abrirAmbiente), alvo.dataset.ambienteAba || undefined);
+});
 </script>
 {% block scripts %}{% endblock %}
 

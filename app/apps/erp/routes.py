@@ -266,6 +266,8 @@ MODULOS = [
 # Repetir a lista aqui é de propósito: `_contexto` roda em TODA página, e
 # perguntar por 20 ações a cada carregamento seria desperdício.
 ACOES_NA_TELA = (
+                 # 26/11/2026: o modal-ponte da pessoa (`abrirPessoa`, erp_base).
+                 "abrir_pessoa",
                  # Pedir à contabilidade: decide se a tela mostra o botão de
                  # enviar, cobrar e conferir o retorno.
                  "pedir_contabilidade","administrar_insumos", "administrar_fornecedores", "comprar",
@@ -1098,6 +1100,47 @@ def pagina_colaborador_embutido(colaborador_id: int):
         ve_pessoal = "PESSOAL" in sigilos_visiveis(usuario)
     return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
                            embutido=True, abrir_cadastro=colaborador_id,
+                           mostrar=_mostrar_valido(request.args.get("mostrar")),
+                           ambiente=bool(request.args.get("ambiente")),
+                           **_contexto("colaboradores"))
+
+
+# O que uma tela embutida da pessoa pode mostrar (26/11/2026, o modal-ponte):
+# as abas do formulário (cadastro, arquivos, demandas) e os painéis da ficha
+# de consulta (resumo, documentos, pagamentos, mensagens, operador).
+_MOSTRAR = ("cadastro", "arquivos", "demandas", "resumo", "documentos",
+            "pagamentos", "mensagens", "operador")
+
+
+def _mostrar_valido(v) -> str:
+    v = str(v or "").strip().lower()
+    return v if v in _MOSTRAR else ""
+
+
+@bp.route("/erp/colaboradores/pessoa/<int:colaborador_id>")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def pagina_pessoa_embutida(colaborador_id: int):
+    """OS PAINÉIS DE CONSULTA DA PESSOA, sozinhos, para o modal-ponte
+    (26/11/2026): resumo, documentos, pagamentos, mensagens e operador. É a
+    mesma ficha da tela de Colaboradores (`ficha`), sem lista e sem cabeçalho —
+    quem mostra o nome é o modal. Cada painel continua com a permissão dele."""
+    from app.apps.erp.core.arquivo.service import sigilos_visiveis
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    with get_session() as _s:
+        usuario = _usuario_logado(_s)
+        try:
+            exigir_colaborador_no_escopo(_s, usuario, colaborador_id)
+        except ErroNaoEncontrado:
+            return ("<!doctype html><meta charset=utf-8>"
+                    "<div style=\"font:15px system-ui; padding:24px\">"
+                    "Esta pessoa não está entre as que você acompanha.</div>"), 404
+        ve_pessoal = "PESSOAL" in sigilos_visiveis(usuario)
+    return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
+                           embutido=True, abrir_painel=colaborador_id,
+                           mostrar=_mostrar_valido(request.args.get("mostrar")) or "resumo",
+                           ambiente=bool(request.args.get("ambiente")),
                            **_contexto("colaboradores"))
 
 
@@ -9320,8 +9363,14 @@ def api_usuarios():
                         obra.codigo if obra else str(v.obra_id))
                     if v.responsavel:
                         responde_por.setdefault(v.usuario_id, []).append(v.obra_id)
+                # 26/11/2026: o colaborador de cada operador, para a lista abrir
+                # a pessoa no modal-ponte (uma consulta para todos).
+                from sqlalchemy import text as _texto
+                pessoa_do_operador = {r[0]: r[1] for r in s.execute(_texto(
+                    "SELECT usuario_id, id FROM colaboradores WHERE usuario_id IS NOT NULL")).all()}
                 return jsonify({"ok": True, "usuarios": [{
                     "id": u.id, "nome": u.nome, "email": u.email,
+                    "colaborador_id": pessoa_do_operador.get(u.id),
                     "cpf": u.cpf, "telefone": u.telefone,
                     "ff_autorizado": u.ff_autorizado,
                     "ff_teto_item": float(u.ff_teto_item) if u.ff_teto_item else None,
@@ -15407,6 +15456,81 @@ def api_colaboradores_importar_fichas():
     except Exception as e:
         logger.exception("ERP: falha ao importar as fichas do Fortes")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O AMBIENTE DA PESSOA — O MODAL-PONTE (26/11/2026)
+#
+# Ele: *"todas as telas que têm relação com a pessoa, eu poder abrir de um
+# único local, e esse ambiente ser partilhado em todas as áreas que se
+# relacionem com o colaborador (…) Em resumo essa nova tela seria apenas uma
+# ponte para as demais telas. Abre um modal com todas as abas que podemos
+# clicar que se relacionam com o colaborador. Mas tudo abrindo dentro do mesmo
+# modal."*
+#
+# Esta rota NÃO monta tela nenhuma: diz o cabeçalho da pessoa e QUAIS abas quem
+# está olhando pode abrir, cada uma com o endereço da tela que já existe, no
+# modo embutido. O modal (`abrirPessoa`, em `erp_base.html`) é o mesmo em
+# todas as telas do ERP e do ponto. A regra de quem vê cada aba é a de cada
+# tela — aqui ela só é lida, para não oferecer aba que responderia "sem
+# permissão".
+#
+# Custo: uma consulta (a pessoa, com obra e cargo) e a leitura das permissões.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/pessoa/<int:colaborador_id>/ambiente")
+@login_obrigatorio
+@permissao("abrir_pessoa")
+def api_ambiente_da_pessoa(colaborador_id: int):
+    from sqlalchemy import text as _text
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    pode_ = _pode_agora("ver_pessoal", "editar_colaboradores", "ver_ponto",
+                        "ver_mensagens", "gerir_usuarios")
+    with get_session() as s:
+        quem = _usuario_logado(s)
+        if not pode_["ver_ponto"]:
+            exigir_colaborador_no_escopo(s, quem, colaborador_id)
+        c = s.execute(_text("""
+            SELECT c.id, c.nome, c.cpf, c.vinculo, c.situacao, c.etapa,
+                   c.usuario_id, g.nome AS cargo, o.codigo AS obra, o.nome AS obra_nome
+              FROM colaboradores c
+              LEFT JOIN cargos g ON g.id = c.cargo_id
+              LEFT JOIN obras o ON o.id = c.obra_id
+             WHERE c.id = :i"""), {"i": colaborador_id}).mappings().first()
+        if c is None:
+            raise ErroNaoEncontrado("Pessoa não encontrada.")
+    i = colaborador_id
+    cad = f"/erp/colaboradores/cadastro/{i}?ambiente=1&mostrar="
+    ver = f"/erp/colaboradores/pessoa/{i}?ambiente=1&mostrar="
+    abas = []
+
+    def aba(chave, rotulo, url):
+        abas.append({"chave": chave, "rotulo": rotulo, "url": url})
+
+    if pode_["editar_colaboradores"]:
+        aba("cadastro", "👤 Cadastro", cad + "cadastro")
+        aba("documentos", "📎 Documentos", cad + "arquivos")
+        aba("demandas", "📨 Demandas", cad + "demandas")
+    elif pode_["ver_pessoal"]:
+        aba("cadastro", "👤 Cadastro", ver + "resumo")
+        aba("documentos", "📎 Documentos", ver + "documentos")
+    if pode_["ver_ponto"]:
+        aba("ponto", "🕐 Ponto", f"/erp/ponto/pessoa/{i}?area=ponto")
+    if pode_["ver_pessoal"]:
+        aba("pagamentos", "💰 Pagamentos", ver + "pagamentos")
+    if pode_["ver_mensagens"] and pode_["ver_pessoal"]:
+        aba("mensagens", "💬 Mensagens", ver + "mensagens")
+    if pode_["gerir_usuarios"] and pode_["ver_pessoal"]:
+        aba("operador", "🔑 Operador", ver + "operador")
+    return jsonify({"ok": True, "pessoa": {
+        "id": c["id"], "nome": c["nome"],
+        "cpf": (lambda d: f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}" if len(d) == 11 else d)(
+            "".join(x for x in str(c["cpf"] or "") if x.isdigit())),
+        "cargo": c["cargo"] or "", "obra": c["obra"] or "", "obra_nome": c["obra_nome"] or "",
+        "vinculo": svc_pessoas.VINCULO_ROTULOS.get(c["vinculo"] or "", c["vinculo"] or ""),
+        "situacao": (c["situacao"] or "").capitalize(),
+        "etapa": svc_pessoas.ETAPA_ROTULOS.get(c["etapa"] or "", c["etapa"] or ""),
+    }, "abas": abas})
 
 
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/historico")
