@@ -7,6 +7,26 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## 25/11/2026 — o "55" repetido que vem do Make, e o nome de quem está sem DDD
+
+Dois casos que o dono trouxe da aba Enviadas.
+
+1. **Wyllyan "não recebe nada"**, mas o teste da ficha chegou no Telegram
+   dele. O aviso de SP CANCELADA, que vem do Make pelo `/telegram/enviar`,
+   chegou para `55555581984262674`: o 55 do país três vezes. Nenhuma busca
+   achava a pessoa, e o aviso caiu em "sem Telegram cadastrado". Quem repete
+   o 55 é o cenário do Make, que não se mexe (regra do dono). Do nosso lado:
+   `sem_55_repetido` no robô e na mensageria, ou seja, número com mais de 13
+   dígitos que começa com 55 perde os 55 da frente. O DDD 55 (RS) não se
+   confunde. Não deu para ver no banco quantas outras pessoas foram afetadas;
+   na aba Enviadas são as linhas "Envio externo" com número começando por
+   5555.
+2. **"Esse tem cadastro, mas não envia"**: o aviso de SP VALIDADA (ValidaSP)
+   sai para DOIS telefones, o do responsável e o do requerente. A cópia do
+   Anthonny chegou. A que falhou era para OUTRO número, (82) 99102-1992, sem
+   nome na tela. A aba Enviadas não dava nome a quem tem telefone SEM DDD no
+   cadastro, e agora dá (pelo final do número, de uma pessoa só).
+
 ## 25/11/2026 — (feito pelo chat do Pessoal) Tipo novo `erp.acesso_portal`
 
 Uma linha em `core.py` (TIPOS): "Pedido de acesso ao portal", política

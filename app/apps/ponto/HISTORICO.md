@@ -3,6 +3,21 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 25/11/2026 — (feito pelo chat do DP) Recusa de assinatura: testemunhas com CPF e assinatura; onde a recusa não vale
+
+Pedido do dono: *"faz as testemunhas assinarem na tela com CPF."* A regra mora
+em `erp/core/termos.registrar_recusa`, que esta central de assinaturas
+(`app_documentos.py`, ação `recusa`) também chama:
+- cada uma das duas testemunhas manda `nome`, `cpf` (válido) e `assinatura`
+  (PNG em data URL, como a da pessoa); CPFs diferentes, e nenhum igual ao de
+  quem recusou. Só o nome, como era, agora volta 400 com "CPF";
+- no **pedido de demissão** e na **autorização de desconto** a recusa é
+  recusada (`termos.TIPOS_SEM_RECUSA`): são a vontade da própria pessoa.
+Na tela `templates/ponto/app.html` (documentos da equipe › "Recusou"), cada
+testemunha ganhou CPF e um quadro (`quadroDeAssinatura`). O teste
+`tests/test_ponto_central_assinaturas_banco.py` foi ajustado para mandar CPF e
+assinatura. Tela não vista num celular.
+
 ## 23/11/2026 — (feito pelo chat do DP) A ficha da pessoa aceita `?aba=` e `?competencia=`
 
 Uma linha em `templates/ponto/gestao.html` (bloco `ponto_ficha`): a ficha
@@ -341,6 +356,51 @@ pessoa (`gestao.html`, `desenharPainel`) entrou a aba **Telegram e mensagens**, 
 da ficha de Colaboradores, para não haver duas cópias. Nada mais do ponto mudou. Detalhe em
 `app/apps/mensageria/HISTORICO.md`.
 
+## 25/11/2026 (4) — O calendário do fechamento: dia da semana, feriado, CLT/Prestador, a empresa primeiro, o ✎ do ajuste
+
+O dono, olhando o calendário (Relatórios › Fechamento › Horas extras por obra): cor no feriado; a inicial do dia da
+semana; "função - CLT" ou "função - Prestador"; com uma empresa escolhida, *"lista primeiro as obras dessa empresa
+(…) ao final, ele faz o complemento"*; e *"os dias que o ponto dele foi corrigido (…) não aparece como se tivesse
+sido trabalhado"*.
+- **Cabeçalho:** dia / mês / inicial (S T Q Q S S D). Sábado e domingo continuam cinza; **feriado em laranja**, com o
+  nome no passar do mouse — o feriado vence o cinza. O nacional vale em toda obra (`feriados_nacionais`, lido da
+  tabela); o estadual, o municipal e o da obra só na obra em que a pessoa estava naquele dia (`feriados_por_obra`,
+  tirado do próprio espelho). Na primeira versão o feriado de UMA obra pintava todas (a "interseção" das obras de
+  um calendário com uma obra só é ela mesma) — achado no navegador e trocado pela lista dos nacionais.
+- **"Pedreiro - CLT" / "Pedreiro - Prestador"** embaixo do nome (tela, impressão e Excel).
+- **A empresa primeiro:** com a empresa escolhida, as obras de OUTRA empresa (`obras.empresa_id`) vão para o fim,
+  sob "Funcionários da X que também trabalharam em obras de outras empresas", cada uma com o nome da empresa dela. A
+  obra sem empresa no cadastro fica em cima (não dá para dizer que é de outra). Sem empresa escolhida, nada muda.
+- **O dia corrigido — NÃO reproduzido.** No teste, o ajuste aprovado do dia inteiro aparece com ✓ na obra do pedido.
+  Hipótese mais provável: a obra do ajuste é outra (a do cadastro, por exemplo), e o dia foi para o calendário
+  DAQUELA obra — o que ele vê é a linha da obra de costume com o dia em branco. **Feito para enxergar:** o dia com
+  batida incluída por ajuste ganha um **✎** (tela, impressão; `*` no Excel), e cada item do fechamento leva
+  `ajustado`. **Pedido ao dono:** o nome e um dia, para conferir.
+- Testes: `tests/test_ponto_fechamento_calendario_banco.py` (a ordem por empresa, o vínculo, o feriado no Excel, o
+  domingo cinza, o ✎; com banco: o ajuste marcado, o feriado da obra que não vaza, a empresa de cada obra). Tela e
+  impressão conferidas no navegador. SEM MIGRAÇÃO. Não publicado — espera o "pode".
+- **Ambiente de teste:** a suíte em paralelo estourou "out of shared memory" no Postgres local deste chat
+  (`max_locks_per_transaction`); subido para 1024. Não é do código.
+
+## 25/11/2026 (3) — O manual do colaborador atualizado (o que mudou desde 06/11)
+
+O dono: *"algo à atualizar no manual do ponto?"* Sim: o manual (`static/manual/`) era de 06/11 e não falava de nada
+que a pessoa passou a ver depois. **Entrou:**
+- **Parte 2:** os avisos do alto da tela ("📄 Você tem N documentos para assinar", "✍️ Falta assinar o termo do
+  ponto"); "Documentos para assinar" (o que pode aparecer, como assinar com o PIN e o dedo, perguntar antes); "A minha
+  folha de ponto do mês" (conferir, as observações de compensação, prazo dia 20, não assinar com erro); o termo do
+  ponto; "Pedir acesso ao portal".
+- **Parte 5:** "Folgar agora e pagar depois" — um pedido por folga, a folga abonada, a falta no dia de pagar com o
+  motivo, as observações na folha e o termo de acordo de compensação.
+- **Parte 8** (virou "Ponto da minha equipe e as assinaturas"): os documentos da equipe (assinar aqui, no papel com
+  foto, recusa com duas testemunhas; o DP pode devolver) e o termo do ponto conduzido (foto no lugar do PIN).
+- **Parte 9:** a ronda sem foto depois de 3 tentativas. **Partes 10–12:** regras, 6 mensagens e 4 dúvidas novas.
+- **9 telas novas** (35 a 43), do aplicativo de verdade num banco de teste, pela receita de 31/10. **O PDF:** 37
+  páginas (eram 31). A capa passou de uma página na primeira tentativa (o PDF saiu com a página 2 em branco):
+  encurtado o parágrafo de abertura e o título da parte 8 no sumário.
+- **Fora:** a tela da ronda não foi fotografada (precisa de uma ronda aberta); o texto descreve.
+SEM MIGRAÇÃO. Não publicado — espera o "pode".
+
 ## 25/11/2026 (2) — A tolerância do fechamento destravada; relatórios por vínculo e empresa; as folhas do recorte
 
 **1. A tolerância** — o dono: *"pelo volume de pessoas (…) às vezes começa a bater ponto um pouquinho mais cedo (…) ou
@@ -378,10 +438,11 @@ Fechamento é escolhido — por isso ele não os via. Agora "Quem entra" e "Empr
 inclusive o Fechamento (`fechamento.montar` usa `relatorios.recorte`). **O .ps da folha continua só com quem tem
 carteira** (`vai_ao_ps`): o prestador aparece no calendário e nas planilhas, não no arquivo do Fortes; e o aviso de "sem
 ID Fortes" não acende para ele. Teste: `test_o_fechamento_mostra_o_prestador_mas_o_ps_so_leva_quem_tem_carteira`.
+**Publicado em 25/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Suíte inteira: 12.911 passando. Ele confirmou que
+**nada foi enviado à contabilidade depois de 17/11** — não há arquivo do fechamento a refazer.
 
 **Publicado em 25/11/2026** (com o "pode" do dono), junto com o conserto do vínculo (abaixo) — SEM MIGRAÇÃO. Suíte
-inteira: 12.909 passando. **Pendente com ele:** se algum arquivo do fechamento gerado depois de 17/11 foi mandado à
-contabilidade — se foi, refazer (saiu sem a maior parte das pessoas).
+inteira: 12.909 passando. (Perguntado se algum fechamento foi enviado depois de 17/11: nenhum.)
 
 ## ⚠️ 25/11/2026 — O RELATÓRIO DE FALTAS E DE HORAS EXTRAS TIRAVA QUASE TODO MUNDO (desde 17/11)
 

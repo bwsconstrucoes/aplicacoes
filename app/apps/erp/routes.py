@@ -14428,6 +14428,28 @@ def api_portal_abrir():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/portal/api/pedidos/<int:solicitacao_id>/ciente-da-recusa",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_portal_ciente_da_recusa(solicitacao_id: int):
+    """Quem pediu tocou em "Entendi" no alerta de recusa (25/11/2026). O
+    escopo é o próprio pedido: de outra pessoa responde "não encontrado"."""
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        with get_session() as s:
+            svc_portal.ciente_da_recusa(s, solicitacao_id, _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao registrar a ciência da recusa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/portal/api/devolucoes/<int:devolucao_id>", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
@@ -14474,8 +14496,11 @@ def api_portal_termo(termo_id: int):
             eu = svc_portal.quem_esta(s, usuario)
             obras = svc_portal.obras_que_alcanca(s, eu)
             if request.method == "GET":
-                return jsonify({"ok": True,
-                                "termo": termos.para_assinar(s, termo_id, obras)})
+                termo = termos.para_assinar(s, termo_id, obras)
+                # 25/11/2026: onde a recusa não vale, a tela nem a oferece.
+                termo["sem_recusa"] = svc_portal.recusa_nao_vale(
+                    termos.ler(s, termo_id).get("tipo"))
+                return jsonify({"ok": True, "termo": termo})
             conduz = {"colaborador_id": eu.get("colaborador_id"), "nome": eu["nome"]}
             if request.files.get("arquivo") is not None:
                 from app.apps.erp.core.comum.fotos import heic_para_jpeg
@@ -14486,6 +14511,8 @@ def api_portal_termo(termo_id: int):
             else:
                 d = request.get_json(silent=True) or {}
                 if d.get("acao") == "recusa":
+                    # Onde a recusa não vale e as testemunhas com CPF e
+                    # assinatura: `termos.registrar_recusa` (25/11/2026).
                     r = termos.registrar_recusa(
                         s, termo_id, obras, motivo=str(d.get("motivo") or ""),
                         testemunhas=d.get("testemunhas") or [], conduzido_por=conduz)

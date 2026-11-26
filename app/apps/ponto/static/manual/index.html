@@ -176,7 +176,7 @@ details.duvida p { margin-top: 8px; }
   <div class="barra so-tela"><a href="/ponto/app">‹ Abrir o aplicativo</a><a href="/ponto/app/manual.pdf">Baixar em PDF</a></div>
   <span class="rotulo">BWS Construções · para os colaboradores</span>
   <h1>Manual do BWS Ponto</h1>
-  <p class="lead">O BWS Ponto é o aplicativo do ponto eletrônico da empresa. Por ele você cria a sua senha, vê as suas batidas, o seu mês e o seu espelho, mostra o seu QR Code para bater na obra e acompanha os seus pedidos (atestado, ajuste, licença, abono). Para algumas pessoas, ele também bate o ponto no próprio celular. E quem cuida do ponto de uma obra acompanha a equipe por ele.</p>
+  <p class="lead">O BWS Ponto é o aplicativo do ponto eletrônico da empresa. Por ele você cria a sua senha, vê as suas batidas, o seu mês e o seu espelho, mostra o seu QR Code para bater na obra, acompanha os seus pedidos e <b>assina os seus documentos</b> (o termo do ponto, a folha do mês, os papéis do DP). Para algumas pessoas, ele também bate o ponto no próprio celular. E quem cuida do ponto de uma obra acompanha a equipe por ele.</p>
   <div class="endereco">
     <span class="rotulo">Endereço</span>
     <code id="end">https://aplicacoes.bwsconstrucoes.com.br/ponto/app</code>
@@ -203,7 +203,7 @@ details.duvida p { margin-top: 8px; }
       <li><a href="#pedidos">Pedidos: atestado, ajuste, abono, licença</a></li>
       <li><a href="#obra">Para o responsável do ponto da obra</a></li>
       <li><a href="#administrativo">Administrativo da obra e quem o DP liberou</a></li>
-      <li><a href="#equipe">Ponto da minha equipe</a></li>
+      <li><a href="#equipe">Ponto da equipe e assinaturas</a></li>
       <li><a href="#vigia">Vigia: 12x36, plantão dobrado, permuta e ronda</a></li>
       <li><a href="#regras">O que pode e o que não pode</a></li>
       <li><a href="#mensagens">Mensagens na tela e o que fazer</a></li>
@@ -245,12 +245,19 @@ details.duvida p { margin-top: 8px; }
     <div class="texto">
       <h3>A tela inicial</h3>
       <p>Depois de entrar, você vê as opções. As que aparecem apagadas não são para você. Toque nelas e o aplicativo diz onde aquilo é feito.</p>
+      <p>No alto podem aparecer avisos coloridos. Os de assinatura vêm primeiro:</p>
+      <ul>
+        <li><b>📄 Você tem N documentos para assinar</b>: o que está esperando a sua assinatura (<a href="#assinar">veja abaixo</a>). Fica vermelho quando algum prazo passou.</li>
+        <li><b>✍️ Falta assinar o termo do ponto</b>: o termo que explica as regras do ponto. É rápido.</li>
+      </ul>
+      <p>E as opções:</p>
       <ul>
         <li><b>📊 Como está o meu ponto este mês</b>: o resumo do seu mês. Toque para ver os dias, os pontos e o selo.</li>
         <li><b>Meu ponto</b>: o seu dia (as batidas de hoje), o seu mês e os seus pedidos.</li>
         <li><b>Espelho do ponto</b>: o seu mês como sai no papel. Dá para baixar em PDF (<a href="#espelho">veja abaixo</a>).</li>
         <li><b>Ranking do ponto</b>: as obras e as pessoas com o ponto mais em dia no mês.</li>
         <li><b>Meu QR Code</b>: o código que você mostra na câmera do aparelho da obra para bater o ponto sem digitar o CPF.</li>
+        <li><b>🖥 Pedir acesso ao portal</b>: o portal é a tela do computador para abrir pedidos e acompanhar. Você informa o seu e-mail e o escritório libera (<a href="#portal">veja abaixo</a>).</li>
       </ul>
       <h3>Meu ponto</h3>
       <p>Aparece o aviso “Você bate o ponto no aparelho da obra”. Embaixo ficam as batidas de hoje. Toque num horário para ver o comprovante.</p>
@@ -295,6 +302,62 @@ details.duvida p { margin-top: 8px; }
     <div class="telas">
       <figure class="tela"><img src="telas/22-meu-espelho.jpg" alt="Espelho do ponto do mês com os números e os dias" width="600" height="1298"><figcaption>O espelho do mês</figcaption></figure>
       <figure class="tela"><img src="telas/23-ranking.jpg" alt="Ranking do ponto com as abas do mês, obras e funcionários" width="600" height="1298"><figcaption>O ranking do ponto</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo" id="assinar">
+    <div class="texto">
+      <h3>Documentos para assinar</h3>
+      <p>Tudo o que precisa da sua assinatura fica num lugar só, no seu celular. Pode aparecer:</p>
+      <ul>
+        <li><b>O termo do ponto</b>: diz como funciona o ponto pelo aplicativo — a foto e a localização servem só para provar que foi você e onde; o PIN e o QR Code são só seus. Assina-se uma vez.</li>
+        <li><b>A folha de ponto do mês</b>, depois que o DP fecha o mês (<a href="#folha">veja abaixo</a>).</li>
+        <li><b>Documentos do DP</b>: o termo de acordo de compensação (quando você folga num dia e paga em outro — <a href="#compensacao">parte 5</a>), o aviso prévio e outros papéis.</li>
+      </ul>
+      <ol>
+        <li>Na tela inicial, toque em <b>📄 Você tem N documentos para assinar</b>.</li>
+        <li>Toque no documento e <b>leia com calma</b>. Embaixo de cada um aparece o prazo.</li>
+        <li>Digite o <b>seu PIN</b> e assine <b>com o dedo</b> no quadro. Errou o traço? <span class="botao">Limpar</span>.</li>
+        <li>Toque em <span class="botao">Assinar</span>. Ele some da lista e vai para <b>Já assinados</b>.</li>
+      </ol>
+      <div class="nota atencao"><b>Tem dúvida? Pergunte antes de assinar</b> — ao pessoal da obra ou ao DP. Não sabe ler bem? Peça para alguém da obra ler com você: o administrativo também pode conduzir a assinatura (<a href="#equipe">parte 8</a>).</div>
+      <div class="nota info">O documento assinado vira um PDF guardado pela empresa, com a sua assinatura, a data, a hora e o local. Você não precisa imprimir nada.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/35-inicio-documentos.jpg" alt="Tela inicial com o aviso de documentos para assinar e o do termo do ponto" width="600" height="1298"><figcaption>Os avisos no alto da tela</figcaption></figure>
+      <figure class="tela"><img src="telas/36-para-assinar.jpg" alt="Lista do que falta assinar: termo de compensação, folha do mês e termo do ponto" width="600" height="1298"><figcaption>O que falta assinar</figcaption></figure>
+      <figure class="tela"><img src="telas/37-documento-assinar.jpg" alt="Termo de compensação aberto, com o PIN e a assinatura com o dedo" width="600" height="1298"><figcaption>Ler, PIN e assinar com o dedo</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo" id="folha">
+    <div class="texto">
+      <h3>A minha folha de ponto do mês</h3>
+      <p>Depois que o DP fecha o mês, a folha aparece na sua lista para assinar. <b>Prazo: até o dia 20 do mês seguinte.</b></p>
+      <ol>
+        <li>Abra a folha e <b>confira os dias</b>: as batidas, as faltas, as horas a mais e a menos, e o resumo embaixo.</li>
+        <li>Se tiver <b>Observações — compensações</b>, leia: é o que foi combinado sobre as suas folgas compensadas e o que aconteceu com elas.</li>
+        <li>Digite o seu PIN, assine com o dedo e toque em <span class="botao">Assinar</span>.</li>
+      </ol>
+      <div class="nota atencao"><b>Viu um erro?</b> Não assine: fale com o DP ou com o administrativo da obra antes. Se o mês for reaberto e a folha mudar, ela volta para a sua lista e você assina de novo.</div>
+      <p>Prefere assinar com alguém junto? O administrativo da obra pode mostrar a folha no celular dele e você assina lá, com o <b>seu</b> PIN (<a href="#equipe">parte 8</a>).</p>
+      <h3>O termo do ponto</h3>
+      <p>Seis frases curtas sobre o ponto pelo aplicativo. Ele <b>não muda nada</b> no seu ponto: é para você saber as regras. Se o texto mudar um dia, ele volta para a sua lista para assinar o novo.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/38-folha-do-mes.jpg" alt="A folha de ponto do mês com os dias e as batidas" width="600" height="1298"><figcaption>A folha do mês: confira os dias</figcaption></figure>
+      <figure class="tela"><img src="telas/39-folha-observacoes.jpg" alt="Observações de compensação, o resumo do mês e a assinatura" width="600" height="1298"><figcaption>As observações e a assinatura</figcaption></figure>
+      <figure class="tela"><img src="telas/40-termo-do-ponto.jpg" alt="O termo do ponto eletrônico com as frases numeradas" width="600" height="1298"><figcaption>O termo do ponto</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo sem-tela" id="portal">
+    <div class="texto">
+      <h3>Pedir acesso ao portal</h3>
+      <p>O portal é a tela do <b>computador</b> para abrir pedidos e acompanhar o que você pediu.</p>
+      <ol>
+        <li>Na tela inicial, toque em <b>🖥 Pedir acesso ao portal</b>.</li>
+        <li>Informe o <b>seu e-mail</b> e toque em <span class="botao">Pedir acesso</span>.</li>
+        <li>Aparece “Acesso ao portal: pedido enviado”. Quando o escritório liberar, chega um <b>e-mail</b> para você criar a senha do portal.</li>
+      </ol>
+      <p>Já tem acesso? A opção vira <b>Portal da obra</b>, com o seu e-mail, e abre o portal. Se o pedido não for liberado, aparece o motivo e dá para pedir de novo. Essa opção só aparece no seu celular, nunca no aparelho da obra.</p>
     </div>
   </div>
 </section>
@@ -454,7 +517,7 @@ details.duvida p { margin-top: 8px; }
         <li><b>Mandar atestado médico</b>: o primeiro dia, quantos dias o médico deu, e a foto ou PDF do atestado. Só o DP vê o atestado.</li>
         <li><b>Declaração de comparecimento</b> (consulta, exame): o dia, o horário escrito na declaração e a foto dela. O DP confere e decide se abona o dia todo, só aquele horário ou nada.</li>
         <li><b>Esqueci de bater o ponto</b>: o dia (ou vários dias) e os horários que faltaram, com o motivo.</li>
-        <li><b>Trabalhar num dia no lugar de outro</b>: a compensação combinada com a obra — o dia em que vai trabalhar (ou trabalhou) e o dia da folga no lugar.</li>
+        <li><b>Trabalhar num dia no lugar de outro</b>: a compensação combinada com a obra — o dia em que vai trabalhar (ou trabalhou) e o dia da folga no lugar. Para folgar agora e pagar depois, <a href="#compensacao">veja abaixo</a>.</li>
         <li><b>Compensação de horas</b>: ficou até mais tarde num dia e vai sair mais cedo em outro (ou o contrário). Diga só os dois dias: o sistema conta as horas pelas batidas. As horas a mais pagam as horas a menos; o que sobrar continua hora extra, e o que faltar continua devendo.</li>
         <li><b>Permuta de plantão com um colega</b>: só para vigia do 12x36 (<a href="#vigia">parte 9</a>).</li>
         <li><b>Licença</b>: casamento, luto, paternidade e as outras da lei, com o documento quando houver (certidão, por exemplo).</li>
@@ -491,6 +554,20 @@ details.duvida p { margin-top: 8px; }
     <div class="telas">
       <figure class="tela"><img src="telas/14-pedido-esqueci.jpg" alt="Formulário de esqueci de bater o ponto" width="600" height="1298"><figcaption>Esqueci de bater</figcaption></figure>
       <figure class="tela"><img src="telas/12-meu-mes.jpg" alt="Meu mês com o resumo e os dias" width="600" height="1298"><figcaption>Meu mês: toque no dia para corrigir</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo sem-tela" id="compensacao">
+    <div class="texto">
+      <h3>Folgar agora e pagar depois (por exemplo, o recesso de fim de ano)</h3>
+      <p>Combinou com a obra de folgar num dia e trabalhar num sábado mais à frente para pagar? É a compensação:</p>
+      <ul>
+        <li><b>Um pedido por dia de folga</b>, cada um com o sábado (ou o dia) que vai pagar. Quatro dias de folga são quatro pedidos — ou o DP lança todos de uma vez.</li>
+        <li>Aprovada, a folga fica <b>abonada</b> no seu mês, com o aviso “(a pagar com o trabalho em …)”.</li>
+        <li>No dia de pagar, <b>bata o ponto normalmente</b>, entrada e saída.</li>
+        <li><b>Não foi trabalhar no dia de pagar?</b> A falta é lançada <b>nesse dia</b>, com o motivo: “Compensação não cumprida — este dia pagaria a folga de …”. Trabalhou só uma parte? O que faltou vira falta parcial. A folga, que já passou, continua abonada.</li>
+        <li>Na <b>folha do mês</b> aparecem as <b>Observações — compensações</b>: no mês da folga, o que foi combinado; no mês de pagar, o que aconteceu. Você assina a folha com elas (<a href="#folha">parte 2</a>).</li>
+      </ul>
+      <div class="nota info"><b>O termo de acordo de compensação.</b> Aprovada a compensação, chega na sua lista de <b>documentos para assinar</b> o termo de acordo, com as folgas e os dias de pagar. A compensação <b>já vale</b>; o termo é o papel que a lei pede, e tem prazo (até a primeira folga). Discorda do que foi lançado? Fale com o DP, que pode cancelar a compensação.</div>
     </div>
   </div>
   <div class="passo sem-tela">
@@ -561,6 +638,7 @@ details.duvida p { margin-top: 8px; }
         <li><b>Atestados, afastamentos e ajustes</b>: escolha a pessoa da obra; no dia dela, toque para lançar ou corrigir.</li>
         <li><b>Consultar o ponto das pessoas</b>: a lista do mês, com busca pelo nome. Aparece quem bateu ponto na obra no mês e quem é da obra pelo cadastro. Com muitas obras, escolha a obra nos botões do alto.</li>
         <li><b>🏆 Ponto da minha equipe</b>: o resumo de quem precisa corrigir (<a href="#equipe">parte 8</a>).</li>
+        <li><b>✍️ Assinaturas da folha</b>, <b>📄 Documentos para assinar</b> e <b>📝 Termo do ponto</b>: o que a equipe tem de assinar, com você conduzindo (<a href="#equipe">parte 8</a>).</li>
       </ul>
       <div class="nota info"><b>Não bate ponto, mas foi liberado?</b> Você entra com CPF e PIN do mesmo jeito. A tela mostra só o que é dos outros: as opções do seu próprio ponto (bater, Meu ponto, Espelho) não aparecem.</div>
     </div>
@@ -585,8 +663,8 @@ details.duvida p { margin-top: 8px; }
 
 <!-- 8 -->
 <section class="parte" id="equipe">
-  <header><span class="rotulo">Responsável, administrativo e liberados</span><h2>8. Ponto da minha equipe</h2>
-    <p>Um resumo, obra por obra, de quem está em dia e de quem tem falta, batida faltando ou erro — para você orientar as pessoas a corrigir o ponto antes do fechamento.</p></header>
+  <header><span class="rotulo">Responsável, administrativo e liberados</span><h2>8. Ponto da minha equipe e as assinaturas</h2>
+    <p>Um resumo, obra por obra, de quem está em dia e de quem tem falta, batida faltando ou erro — para você orientar as pessoas a corrigir o ponto antes do fechamento. E as assinaturas da equipe: a folha do mês, o termo do ponto e os documentos do DP.</p></header>
   <div class="passo">
     <div class="texto">
       <ol>
@@ -597,7 +675,7 @@ details.duvida p { margin-top: 8px; }
         <li>Para mandar o resumo no grupo da obra, toque em <span class="botao">Compartilhar (WhatsApp)</span>.</li>
       </ol>
       <h3>Assinaturas da folha do mês</h3>
-      <p>Depois que o DP fecha o mês, cada pessoa da equipe confere e assina a folha dela na tela. <b>Prazo: até o dia 20 do mês seguinte.</b></p>
+      <p>Depois que o DP fecha o mês, cada pessoa da equipe confere e assina a folha dela. <b>Prazo: até o dia 20 do mês seguinte.</b> Quem tem o PIN pode assinar sozinha, no próprio celular (<a href="#folha">parte 2</a>); para quem prefere assinar com você, ou não consegue sozinha:</p>
       <ol>
         <li>Na tela inicial, toque em <span class="botao">✍️ Assinaturas da folha</span>. Aparecem as pessoas do mês: ✍️ falta assinar, ✅ assinou, ⛔ recusou.</li>
         <li>Toque em <span class="botao">Assinar</span> na pessoa e entregue o celular a ela: a folha do mês aparece para conferir.</li>
@@ -619,6 +697,35 @@ details.duvida p { margin-top: 8px; }
     <div class="telas">
       <figure class="tela"><img src="telas/29-ponto-da-equipe.jpg" alt="Ponto da minha equipe com o resumo da obra e as pessoas" width="600" height="1298"><figcaption>O resumo da obra</figcaption></figure>
       <figure class="tela"><img src="telas/29b-ponto-da-equipe-pessoa.jpg" alt="Uma pessoa aberta no resumo, com os dias e o botão de corrigir" width="600" height="1298"><figcaption>Os dias da pessoa e “Abrir o ponto e corrigir”</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
+      <h3>Documentos para assinar da equipe</h3>
+      <p>Os papéis do DP que a sua equipe tem de assinar — termo de compensação, aviso prévio e outros —, os vencidos primeiro. Cada pessoa também vê os dela no próprio celular; aqui ficam os que ainda faltam.</p>
+      <ol>
+        <li>Na tela inicial, toque em <span class="botao">📄 Documentos para assinar</span> e escolha a pessoa.</li>
+        <li>Mostre o documento a ela (leia junto, se ela preferir). Depois, um dos três:</li>
+      </ol>
+      <ul>
+        <li><span class="botao">Assinar aqui</span>: <b>a própria pessoa digita o PIN dela</b> e assina com o dedo. Vale na hora.</li>
+        <li><span class="botao">Assinou no papel</span>: a pessoa assinou o papel impresso; tire uma <b>foto bem legível</b> da folha assinada e envie. Vale depois que o DP conferir a foto.</li>
+        <li><span class="botao">Recusou</span>: a pessoa leu (ou ouviu a leitura) e não quer assinar. Escreva o que aconteceu e o <b>nome completo de duas testemunhas</b> que viram. Vale depois que o DP conferir.</li>
+      </ul>
+      <div class="nota atencao"><b>O DP pode devolver</b> a foto ou a recusa (foto cortada, por exemplo). O documento volta para a lista, marcado “o DP devolveu”, para fazer de novo.</div>
+      <h3>O termo do ponto da equipe</h3>
+      <ol>
+        <li>Toque em <span class="botao">📝 Termo do ponto</span>: aparece a equipe, quem falta assinar primeiro (✍️ falta, ✅ assinou, ⛔ recusou).</li>
+        <li>Toque em <span class="botao">Mostrar o termo</span> e passe o celular para a pessoa: ela lê, digita o PIN dela e assina com o dedo.</li>
+        <li><b>Sem PIN, ou esqueceu?</b> Toque em <span class="botao">📷 Tirar a foto da pessoa</span>: a foto do rosto dela, na hora, fica junto com a assinatura.</li>
+        <li>Se ela não quiser assinar, toque em “A pessoa não quer assinar…” e escreva o motivo. O ponto dela continua normal.</li>
+      </ol>
+      <div class="nota proibido"><b>Quem assina é sempre a pessoa.</b> Você conduz, mas não digita o PIN dela nem assina por ela.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/41-documentos-da-equipe.jpg" alt="Lista de documentos para assinar da equipe, por pessoa" width="600" height="1298"><figcaption>Os documentos da equipe</figcaption></figure>
+      <figure class="tela"><img src="telas/42-documento-no-papel.jpg" alt="Documento aberto com as opções assinar aqui, assinou no papel e recusou; a foto do papel" width="600" height="1298"><figcaption>Assinou no papel: a foto</figcaption></figure>
+      <figure class="tela"><img src="telas/43-documento-recusa.jpg" alt="Registro da recusa com o que aconteceu e duas testemunhas" width="600" height="1298"><figcaption>Recusou: duas testemunhas</figcaption></figure>
     </div>
   </div>
 </section>
@@ -690,6 +797,7 @@ details.duvida p { margin-top: 8px; }
         <li>Na <b>saída</b>, as rondas que ainda não chegaram são canceladas.</li>
       </ol>
       <div class="nota atencao"><b>Passou dos 10 minutos?</b> Até meia hora depois, a ronda ainda vale, marcada como atrasada. Sem resposta, fica <b>perdida</b>, e a administração da obra é avisada na hora. Use o celular que foi liberado para a ronda.</div>
+      <div class="nota info"><b>A foto não sai?</b> (memória do celular cheia, câmera travada, sem internet na hora de mandar.) Tente de novo. Depois de <b>3 tentativas</b> aparece <span class="botao">Registrar sem foto (o escritório é avisado)</span>: a ronda vale só com a <b>localização</b>, e o escritório recebe um aviso para conferir. Use só nesse caso — e, se for a memória, apague fotos e vídeos antigos.</div>
     </div>
   </div>
 </section>
@@ -708,6 +816,8 @@ details.duvida p { margin-top: 8px; }
         <li>Bater num feriado ou num dia de folga, se trabalhou.</li>
         <li>Ver o seu mês, o seu espelho e os seus comprovantes a qualquer hora.</li>
         <li>Trocar de noite com outro vigia do 12x36, pedindo a permuta.</li>
+        <li>Assinar os seus documentos e a sua folha no seu celular, ou com o administrativo da obra.</li>
+        <li>Perguntar antes de assinar, e não assinar a folha se viu um erro.</li>
       </ul>
     </div>
     <div class="nao">
@@ -715,7 +825,7 @@ details.duvida p { margin-top: 8px; }
       <ul>
         <li>Bater pelo colega ou deixar alguém bater por você. A foto mostra quem bateu.</li>
         <li>Usar foto ou print do QR Code.</li>
-        <li>Passar o seu PIN para outra pessoa.</li>
+        <li>Passar o seu PIN para outra pessoa, ou assinar por outra pessoa.</li>
         <li>Pedir ajuste com um horário que você não trabalhou, ou um horário que ainda não chegou.</li>
         <li>Bater estando afastado (atestado, licença, INSS) ou depois do último dia de trabalho: o aplicativo recusa. Voltou ao trabalho? O DP atualiza o seu cadastro.</li>
         <li>Bater fora da obra sem motivo de trabalho.</li>
@@ -745,6 +855,12 @@ details.duvida p { margin-top: 8px; }
         <tr><td>Batida enviada para conferência</td><td>A batida foi registrada, mas só vale depois que a administração da obra validar. Acompanhe no seu dia.</td></tr>
         <tr><td>⚠️ Confira a obra … / Confirmo a obra … — enviar</td><td>No pedido de ajuste, a obra escolhida é estranha: a pessoa não bateu ponto nela nos últimos dias, ou ninguém bate lá. Troque a obra se estiver errada; se estiver certa, toque em “Confirmo a obra”.</td></tr>
         <tr><td>❌ Pedido negado</td><td>Toque no aviso para ver o motivo. Se o pedido estava errado, peça de novo: quem pede pelo celular tem o botão “Pedir de novo”; quem entrega na obra, entrega de novo lá.</td></tr>
+        <tr><td>📄 Você tem N documentos para assinar</td><td>Toque para ver o que é. Leia, digite o seu PIN e assine com o dedo (<a href="#assinar">parte 2</a>). Vermelho quer dizer que algum prazo passou.</td></tr>
+        <tr><td>✍️ Falta assinar o termo do ponto</td><td>Toque, leia as seis frases e assine. Não muda nada no seu ponto.</td></tr>
+        <tr><td>(a pagar com o trabalho em …)</td><td>A folga foi abonada por uma compensação. Trabalhe no dia indicado para pagar (<a href="#compensacao">parte 5</a>).</td></tr>
+        <tr><td>Compensação não cumprida — este dia pagaria a folga de …</td><td>O dia de pagar a folga não foi trabalhado (ou foi só uma parte), e virou falta. Se houve engano, fale com o DP.</td></tr>
+        <tr><td>Acesso ao portal: pedido enviado</td><td>Normal. Espere o e-mail do escritório para criar a senha do portal.</td></tr>
+        <tr><td>Registrar sem foto (o escritório é avisado)</td><td>Só aparece na ronda depois de 3 tentativas de foto que não deram certo. Use só se a foto não sair mesmo.</td></tr>
         <tr><td>Ninguém entra no ranking ainda neste mês</td><td>Normal no começo do mês: entra no ranking quem tem 10 dias de trabalho ou mais no mês.</td></tr>
         <tr><td>A liberação deste celular vence em … / venceu</td><td>Peça a renovação ao DP. Depois do vencimento, o celular para de bater.</td></tr>
         <tr><td>Este celular foi bloqueado</td><td>Quase sempre é o mesmo celular aberto por outro caminho (outro navegador, aba anônima, dados limpos). Toque em “Este é o meu celular de sempre” e confirme (<a href="#bloqueado">parte 4</a>). Sem o botão, mande ao DP o código que aparece no aviso.</td></tr>
@@ -786,12 +902,20 @@ details.duvida p { margin-top: 8px; }
       <p>No aparelho da obra, bata normalmente: sem internet, ele guarda a batida e manda depois (use o CPF ou o QR do WhatsApp). No celular pessoal, sem internet não dá para bater. Bata quando a internet voltar e, se passou da hora, peça o ajuste em “Esqueci de bater o ponto”.</p></details>
     <details class="duvida"><summary>A batida aparece “em conferência”. Ela vale?</summary>
       <p>Vale depois que a administração da obra validar. Isso acontece com batida fora da obra, sem localização ou sem foto no aparelho da obra.</p></details>
+    <details class="duvida"><summary>Sou obrigado a assinar o termo do ponto?</summary>
+      <p>O termo diz que você <b>sabe</b> como funciona o ponto pelo aplicativo. Se não quiser assinar, fale com o administrativo da obra: a recusa fica registrada e o seu ponto continua normal. Tem dúvida sobre o texto? Pergunte ao DP.</p></details>
+    <details class="duvida"><summary>Assinei a folha e depois vi um erro. E agora?</summary>
+      <p>Fale com o DP. Se o mês for reaberto e a folha mudar, ela volta para a sua lista e você assina a nova.</p></details>
+    <details class="duvida"><summary>Folguei para pagar num sábado e não fui. O que acontece?</summary>
+      <p>A folga continua abonada, mas o sábado vira <b>falta</b>, com o motivo escrito no dia e nas observações da folha. Se foi combinado outro dia, fale com a obra e com o DP antes.</p></details>
+    <details class="duvida"><summary>Esqueci o PIN. Como assino?</summary>
+      <p>Crie um PIN novo em “Primeiro acesso ou esqueci o PIN” (parte 1). No termo do ponto, quem conduz também pode tirar uma foto do seu rosto no lugar do PIN.</p></details>
     <details class="duvida"><summary>Por que o meu dia saiu como falta parcial, se eu bati?</summary>
       <p>Porque falta alguma batida do dia. Cada período (manhã, tarde) só conta com a entrada e a saída dele. Veja o dia no <b>Meu mês</b> e peça o ajuste do horário que faltou.</p></details>
   </div>
 </section>
 
-<p class="rodape">Manual do BWS Ponto, versão de novembro de 2026. As telas são de um ambiente de teste, com nomes de exemplo. Dúvida que este manual não respondeu: fale com o DP ou com o responsável da sua obra.</p>
+<p class="rodape">Manual do BWS Ponto, versão de 25 de novembro de 2026. As telas são de um ambiente de teste, com nomes de exemplo. Dúvida que este manual não respondeu: fale com o DP ou com o responsável da sua obra.</p>
 </main>
 
 <script>

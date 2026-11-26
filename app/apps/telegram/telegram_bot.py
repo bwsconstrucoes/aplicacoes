@@ -252,13 +252,27 @@ def _log_pendencia(evento, telefone="", cpf="", chat_id="", nome="", obs=""):
 # Normalização de telefone/CPF
 # ---------------------------------------------------------------------------
 
+# ⚑ O "55" REPETIDO (25/11/2026). Um aviso de SP cancelada chegou pelo Make
+# para "55555581984262674" — o 55 do país três vezes na frente de (81)
+# 98426-2674. Nenhuma busca achava a pessoa, a mensagem caiu em "sem Telegram
+# cadastrado", e ela, que TEM Telegram e recebe os avisos do ERP, deixou de
+# receber os do Make. Número brasileiro tem no máximo 13 dígitos com o 55;
+# passou disso e começa com 55, é o mesmo número com o código repetido.
+# (O DDD 55, do interior do RS, não se confunde: "55 55 9xxxx-xxxx" tem 13.)
+def _sem_55_repetido(d):
+    while len(d) > 13 and d.startswith("55"):
+        d = d[2:]
+    return d
+
+
 def _variantes_telefone(bruto):
     """
     Variantes canônicas de um telefone BR para matching robusto.
     Canônico = DDD + número (sem o 55), com e sem o nono dígito.
-    Cobre: "+5585998322004", "5583999213393", "81 98790-7522".
+    Cobre: "+5585998322004", "5583999213393", "81 98790-7522" e o 55
+    repetido que chega do Make ("55555581984262674").
     """
-    d = re.sub(r"\D", "", bruto or "")
+    d = _sem_55_repetido(re.sub(r"\D", "", bruto or ""))
     if not d:
         return set()
     if d.startswith("55") and len(d) >= 12:
@@ -275,7 +289,7 @@ def _variantes_telefone(bruto):
 
 def _telefone_canonico(bruto):
     """Forma única para gravação: 55 + DDD + número (ex.: 5585998322004)."""
-    d = re.sub(r"\D", "", bruto or "")
+    d = _sem_55_repetido(re.sub(r"\D", "", bruto or ""))
     if d.startswith("55") and len(d) >= 12:
         return d
     return "55" + d if d else ""

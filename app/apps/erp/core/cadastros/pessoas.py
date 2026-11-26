@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -698,9 +698,23 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
     for campo in TEXTOS:
         if campo in dados:
             setattr(c, campo, (str(dados[campo]).strip() or None))
+    admissao_antes = c.admissao
     for campo in DATAS:
         if campo in dados:
             setattr(c, campo, _data(dados[campo], campo))
+    # ⚑ A ADMISSÃO CONFIRMADA PELO DP ACOMPANHA O VÍNCULO ABERTO (25/11/2026).
+    # O pré-cadastro nasce com a admissão igual ao início (é o que a obra
+    # informou); quando o DP confirma outra — dia 1º ou 16, para entrar na
+    # quinzena —, o vínculo que nasceu junto tem de mudar também, senão
+    # férias e rescisão contariam do dia errado. Só mexe no vínculo que tinha
+    # a data antiga: vínculo de outra história não é tocado aqui.
+    if (not novo and c.admissao and admissao_antes
+            and c.admissao != admissao_antes):
+        s.execute(update(ColaboradorVinculo)
+                  .where(ColaboradorVinculo.colaborador_id == c.id,
+                         ColaboradorVinculo.demissao.is_(None),
+                         ColaboradorVinculo.admissao == admissao_antes)
+                  .values(admissao=c.admissao))
     for campo in DINHEIRO:
         if campo in dados:
             setattr(c, campo, _dec(dados[campo], campo))
@@ -1140,7 +1154,10 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
     # O cadastro passa a refletir o vínculo de hoje.
     c.situacao, c.demissao = "ATIVO", None
     c.aviso_previo = c.ultimo_dia = None
-    c.admissao, c.data_inicio = admissao, admissao
+    # A admissão (a da carteira) e o início (o dia em que pisou na obra) podem
+    # ser diferentes — 25/11/2026, ver `pessoal_solicitacoes.TIPOS["CADASTRO"]`.
+    c.admissao = admissao
+    c.data_inicio = _data(dados.get("data_inicio"), "data de início") or admissao
     c.vinculo, c.tipo_contrato = novo.vinculo, novo.tipo_contrato
     c.cargo_id, c.convencao_id, c.obra_id = novo.cargo_id, novo.convencao_id, novo.obra_id
     c.empresa_id, c.cnpj_admissao = novo.empresa_id, novo.cnpj_admissao
@@ -1958,8 +1975,12 @@ def o_que_falta(c: Colaborador) -> list[str]:
 #     no campo — não mais a situação crua.
 # ---------------------------------------------------------------------------
 def para_folha(s: Session, *, so_ativos: bool = True,
-               obra_id: Optional[int] = None) -> list[dict[str, Any]]:
-    """O cadastro de quem recebe, na forma que a folha lê. Só leitura."""
+               obra_id: Optional[int] = None,
+               cpfs: Optional[list[str]] = None) -> list[dict[str, Any]]:
+    """O cadastro de quem recebe, na forma que a folha lê. Só leitura.
+
+    `cpfs` (26/11/2026): só estas pessoas — o cálculo dos diaristas pede as do
+    ponto do mês, e ler as ~3.500 fichas para usar 400 seria desperdício."""
     from app.apps.erp.db.models.cadastros import Obra
 
     def dinheiro(v: Any) -> Optional[float]:
@@ -1981,7 +2002,13 @@ def para_folha(s: Session, *, so_ativos: bool = True,
         "SELECT colaborador_id, obra_id FROM colaborador_obra_atual")).all()}
         if obra_atual.tem_tabela(s) else {})
     saida = []
-    for c in s.scalars(select(Colaborador)).all():
+    consulta = select(Colaborador)
+    if cpfs is not None:
+        limpos = sorted({_digitos(x) for x in cpfs if len(_digitos(x)) == 11})
+        if not limpos:
+            return []
+        consulta = consulta.where(Colaborador.cpf.in_(limpos))
+    for c in s.scalars(consulta).all():
         # ⚠️ "ATIVO" AQUI É DINHEIRO: quem cai fora desta lista não entra na
         # folha. Até 17/11/2026 bastava EXISTIR data de saída para sair — e
         # quem estava cumprindo aviso prévio, trabalhando, saía da folha.

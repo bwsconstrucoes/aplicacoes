@@ -1584,9 +1584,13 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
 
 
 def _dicionario(linha, ate=None) -> dict:
+    return _completar({campo: linha[i] for i, campo in enumerate(CAMPOS_LIDOS)}, ate)
+
+
+def _completar(registro: dict, ate=None) -> dict:
+    """O que as telas esperam além das colunas: link, CPF pontuado, situação."""
     from .folha_rateio import cpf_bonito
 
-    registro = {campo: linha[i] for i, campo in enumerate(CAMPOS_LIDOS)}
     registro["link_pipefy"] = link_do_card(registro.get("card_pipefy"))
     # ⚠️ O CPF SAI PONTUADO PARA A TELA. Pedido do dono em 28/09/2026: *"o CPF
     # não está com a pontuação, isso facilita visualmente."* O banco continua
@@ -1634,6 +1638,81 @@ def muitos_por_cpf(cpfs, ate=None) -> dict:
         "SELECT " + ", ".join(CAMPOS_LIDOS) + " FROM analisesps.colaborador "
         f" WHERE cpf IN ({marcadores})", tuple(limpos))
     return {l[0]: _dicionario(l, ate) for l in linhas}
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O CADASTRO DO ERP COMPLETA A CÓPIA DA PLANILHA (26/11/2026)
+#
+# O dono confirmou em 25/11/2026 que a admissão NÃO é mais lançada no Pipefy
+# nem na planilha "Registro de Colaboradores" — ela nasce no ERP. A cópia
+# (`analisesps.colaborador`) parou de receber gente nova, e o cálculo dos
+# diaristas, que só lia a cópia, deixava sem pagamento os dias entre o início
+# e a admissão de quem foi admitido pelo ERP. A troca de fonte já estava
+# decidida por ele desde 05/11/2026 (ver `erp/core/cadastros/pessoas.para_folha`,
+# que entrega os campos com os MESMOS nomes desta tabela).
+#
+# O PASSO DESTE DIA É O MENOR QUE RESOLVE: a cópia continua valendo para quem
+# está nela, e o ERP entra (a) para quem NÃO está na cópia e (b) para quem
+# voltou pelo ERP — readmissão — e por isso tem no ERP uma história mais nova
+# (início/admissão posteriores aos da cópia). Trocar a fonte de TODO MUNDO de
+# uma vez mudaria a base do pagamento de quem a planilha já pagava certo, e
+# essa é uma decisão a tomar olhando as diferenças, não no escuro.
+#
+# Custo: UMA consulta ao ERP por cálculo, só com os CPFs do ponto do período
+# (não as ~3.500 fichas). Sem o ERP (banco fora, migração faltando), segue só
+# com a cópia — como era antes.
+# ---------------------------------------------------------------------------
+_DATAS_DO_ERP = ("data_inicio", "data_admissao", "aviso_previo", "ultimo_dia",
+                 "data_saida")
+
+
+def fichas_do_erp(cpfs, ate=None) -> dict:
+    """`{cpf: ficha}` do cadastro do ERP, no formato de `muitos_por_cpf`, com
+    `origem = "ERP"` e o `valor_diaria` da ficha."""
+    import datetime as _dt
+    from .folha_rateio import so_digitos
+    limpos = sorted({so_digitos(c) for c in (cpfs or []) if len(so_digitos(c)) == 11})
+    if not limpos:
+        return {}
+    try:
+        from app.apps.erp.core.cadastros import pessoas as erp_pessoas
+        from app.apps.erp.db.database import get_session
+        with get_session() as s:
+            linhas = erp_pessoas.para_folha(s, so_ativos=False, cpfs=limpos)
+    except Exception:  # noqa: BLE001 — sem o ERP, a folha segue com a cópia
+        logger.warning("Folha: não consegui ler o cadastro do ERP; sigo só com "
+                       "a cópia da planilha", exc_info=True)
+        return {}
+    saida = {}
+    for x in linhas:
+        registro = {campo: x.get(campo) for campo in CAMPOS_LIDOS}
+        for campo in _DATAS_DO_ERP:
+            v = registro.get(campo)
+            registro[campo] = _dt.date.fromisoformat(v) if isinstance(v, str) and v else None
+        registro = _completar(registro, ate)
+        registro["origem"] = "ERP"
+        registro["valor_diaria"] = x.get("valor_diaria")
+        saida[registro["cpf"]] = registro
+    return saida
+
+
+def _mais_recente(ficha: dict):
+    datas = [d for d in (ficha.get("data_inicio"), ficha.get("data_admissao")) if d]
+    return max(datas) if datas else None
+
+
+def para_a_folha(cpfs, ate=None) -> dict:
+    """A cópia da planilha, completada pelo ERP (ver o bloco acima)."""
+    base = muitos_por_cpf(cpfs, ate)
+    for cpf, do_erp in fichas_do_erp(cpfs, ate).items():
+        atual = base.get(cpf)
+        if atual is None:
+            base[cpf] = do_erp
+            continue
+        novo, velho = _mais_recente(do_erp), _mais_recente(atual)
+        if novo and (velho is None or novo > velho):
+            base[cpf] = do_erp          # voltou pelo ERP: a história nova é a dele
+    return base
 
 
 def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200,

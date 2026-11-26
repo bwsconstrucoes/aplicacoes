@@ -1218,3 +1218,155 @@ def test_passada_a_experiencia_o_contrato_vira_indeterminado_sozinho(mundo):
     assert s.get(svc_pessoas.Colaborador, velho.id).tipo_contrato == "CLT_INDETERMINADO"
     assert s.get(svc_pessoas.Colaborador, novo.id).tipo_contrato == "CLT_DETERMINADO"
     assert pessoal_experiencia.virar_indeterminado(s, hoje)["viraram"] == 0
+
+
+@pytestmark_banco
+def test_a_admissao_confirmada_pelo_dp_e_a_que_vai_a_contabilidade(mundo):
+    """Ele (25/11/2026): *"não necessariamente a data de início ela é igual à
+    data de admissão (…) a gente gosta de admitir no primeiro dia ou no 16º
+    dia (…) o que vale para a contabilidade é a data de admissão."* As duas
+    ficam: o início para os dias de diária, a admissão para a carteira."""
+    import datetime as dt
+    from app.apps.erp.core import contabilidade as svc_ct
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo, tipo_documentacao="CTPS",
+                               tipo_contrato="CLT (tempo indeterminado)",
+                               num_ctps="1234567", data_inicio="2026-11-05",
+                               documentos=["DOC-IDENTIDADE", "CPF-DOC",
+                                           "COMPROVANTE-ENDERECO-PESSOA",
+                                           "CTPS-FOTO", "CTPS-INFORMACOES"]),
+                  mundo["obra_user"])
+    assert "admissao" in svc.ler(s, p["id"])["campos_do_dp"]
+    svc.atender(s, p["id"], {"dados": {"salario": "2000",
+                                       "admissao": "2026-11-16"}}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    s.refresh(c)
+    assert c.data_inicio == dt.date(2026, 11, 5), "o início da obra fica"
+    assert c.admissao == dt.date(2026, 11, 16), "a admissão é a do DP"
+    v = svc_pessoas.vinculo_aberto(s, c.id)
+    s.refresh(v)
+    assert v.admissao == dt.date(2026, 11, 16), "o vínculo acompanha"
+    ped = svc_ct.abrir(s, {"template": "ASSINATURA_CTPS",
+                           "colaborador_id": c.id, "solicitacao_id": p["id"]},
+                       mundo["dp"])
+    corpo = s.execute(text("SELECT corpo FROM dp_pedidos WHERE id = :i"),
+                      {"i": ped["id"]}).scalar() or ""
+    assert "16/11/2026" in corpo and "05/11/2026" not in corpo
+
+
+@pytestmark_banco
+def test_sem_o_dp_mexer_a_admissao_e_o_inicio(mundo):
+    import datetime as dt
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo, tipo_documentacao="CTPS",
+                               tipo_contrato="CLT (tempo indeterminado)",
+                               num_ctps="1234567",
+                               documentos=["DOC-IDENTIDADE", "CPF-DOC",
+                                           "COMPROVANTE-ENDERECO-PESSOA",
+                                           "CTPS-FOTO", "CTPS-INFORMACOES"]),
+                  mundo["obra_user"])
+    svc.atender(s, p["id"], {"dados": {"salario": "2000"}}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, p["colaborador_id"])
+    assert c.admissao == c.data_inicio == dt.date(2026, 11, 20)
+
+
+@pytestmark_banco
+def test_readmissao_guarda_o_inicio_e_a_admissao_separados(mundo):
+    import datetime as dt
+    s = mundo["s"]
+    volta = mundo["volta"]
+    p = svc.abrir(s, _admissao(mundo, cpf=CPF_VOLTA, nome="Jose Que Volta",
+                               data_inicio="2026-11-20", documentos=[]),
+                  mundo["obra_user"])
+    svc.atender(s, p["id"], {"dados": {"admissao": "2026-12-01"}}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, volta.id)
+    assert c.data_inicio == dt.date(2026, 11, 20)
+    assert c.admissao == dt.date(2026, 12, 1)
+
+
+@pytestmark_banco
+def test_alteracao_de_cargo_leva_cargo_convencao_e_valor_a_contabilidade(mundo):
+    """Ele (25/11/2026): *"a obra faz o pleito de alteração, ela vai indicar o
+    cargo e no DP (…) ele tem que selecionar a convenção e automaticamente
+    aparecer valor para encaminhar no pedido que vai para a contabilidade.
+    Cargo, convenção e valor."*"""
+    s = mundo["s"]
+    c = _carteira(mundo)
+    novo = s.execute(text("INSERT INTO cargos (nome, ativo) VALUES "
+                          "('Mestre de obras adm', TRUE) RETURNING id")).scalar()
+    conv = s.execute(text("INSERT INTO convencoes (nome) VALUES "
+                          "('Convenção Teste 2026') RETURNING id")).scalar()
+    p = svc.abrir(s, {"tipo": "ALTERACAO_CARGO", "colaborador_id": c.id,
+                      "data_inicio": "2026-12-01", "cargo_pleiteado_id": novo,
+                      "justificativa": "promovido na obra"}, mundo["obra_user"])
+    lido = svc.ler(s, p["id"])
+    assert "convencao_id" in lido["campos_do_dp"]
+    assert "pessoa_convencao_id" in lido
+    svc.atender(s, p["id"], {"dados": {"cargo_deferido_id": str(novo),
+                                       "convencao_id": str(conv),
+                                       "salario": "3100"}}, mundo["dp"])
+    s.flush()
+    assert s.get(svc_pessoas.Colaborador, c.id).convencao_id == conv
+    # O atendimento já monta o pedido à contabilidade (rascunho).
+    corpo = s.execute(text("SELECT corpo FROM dp_pedidos WHERE solicitacao_id = :i "
+                           "ORDER BY id DESC LIMIT 1"), {"i": p["id"]}).scalar() or ""
+    assert "Mestre de obras adm" in corpo
+    assert "Convenção Teste 2026" in corpo
+    assert "3100" in corpo or "3.100" in corpo
+
+
+@pytestmark_banco
+def test_a_recusa_aparece_na_entrada_do_portal_ate_quem_pediu_ver(mundo):
+    """Ele (25/11/2026): *"na hora que ela logasse no portal, ela já se
+    deparasse com aquela mensagem, aquele alerta de recusa."*"""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    svc.recusar(s, p["id"], {"resposta": "faltou o comprovante de endereço"},
+                mundo["dp"])
+    s.flush()
+    meu = next(x for x in svc_portal.meus_pedidos(s, mundo["obra_user"])
+               if x["id"] == p["id"])
+    assert meu["recusa_nao_vista"] is True
+    assert "comprovante" in meu["resposta"]
+    with pytest.raises(ErroNaoEncontrado):
+        svc_portal.ciente_da_recusa(s, p["id"], mundo["dp"])   # não foi quem pediu
+    svc_portal.ciente_da_recusa(s, p["id"], mundo["obra_user"])
+    svc_portal.ciente_da_recusa(s, p["id"], mundo["obra_user"])  # não duplica
+    s.flush()
+    meu = next(x for x in svc_portal.meus_pedidos(s, mundo["obra_user"])
+               if x["id"] == p["id"])
+    assert meu["recusa_nao_vista"] is False
+    eventos = [e["acao"] for e in svc.ler(s, p["id"])["eventos"]]
+    assert eventos.count(svc_portal.RECUSA_VISTA) == 1
+
+
+@pytestmark_banco
+def test_o_dp_ve_e_abre_os_documentos_que_a_obra_mandou(mundo, app_real):
+    """Ele (25/11/2026): *"a operadora do DP (…) não está visualizando os
+    anexos. Onde é que eles ficam? Confirma se está nessa tela."* Caminho
+    inteiro: a obra manda o pedido com os arquivos, o DP abre o pedido e abre
+    cada arquivo."""
+    from tests.conftest import como                      # type: ignore
+    s = mundo["s"]
+    p = svc.abrir(s, _admissao(mundo), mundo["obra_user"])
+    cid = s.execute(text("SELECT colaborador_id FROM dp_solicitacoes "
+                         "WHERE id = :i"), {"i": p["id"]}).scalar()
+    assert cid, "a admissão nasce com o pré-cadastro"
+    svc.guardar_papeis(s, p["id"], cid, [
+        {"conteudo": b"%PDF-1.4 rg" * 80, "nome": "rg.pdf", "tipo": "DOC-IDENTIDADE"},
+        {"conteudo": b"%PDF-1.4 cpf" * 80, "nome": "cpf.pdf", "tipo": "CPF-DOC"},
+        {"conteudo": b"%PDF-1.4 luz" * 80, "nome": "luz.pdf",
+         "tipo": "COMPROVANTE-ENDERECO-PESSOA"}])
+    s.commit()
+    d = como(app_real, mundo["dp"].id).get(
+        f"/erp/api/dp/solicitacoes/{p['id']}").get_json()
+    papeis = d.get("papeis") or (d.get("solicitacao") or {}).get("papeis") or []
+    assert len(papeis) == 3, d.keys()
+    for x in papeis:
+        r = como(app_real, mundo["dp"].id).get(f"/erp/anexo/{x['anexo_id']}")
+        assert r.status_code == 200, (x, r.get_data(as_text=True)[:200])

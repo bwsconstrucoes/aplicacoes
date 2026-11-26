@@ -8804,6 +8804,8 @@ def tela_dda():
         erro = str(e)
     return render_template(
         "analisesps_dda.html", aba="dda", base=base, lista=lista, filtros=filtros,
+        args_sem_situacao=[(k, v) for k, v in request.args.items(multi=True)
+                           if k not in ("situacao", "f", "aviso")],
         erro=erro, aviso=request.args.get("aviso") or None,
         dda=dda, pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())

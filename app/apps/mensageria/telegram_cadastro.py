@@ -106,9 +106,22 @@ def normalizar_cpf(valor) -> str:
     return d.zfill(11) if len(d) in (10, 11) else d
 
 
+# ⚑ O "55" REPETIDO (25/11/2026). Um aviso de SP cancelada chegou pelo Make
+# para "55555581984262674" — o 55 do país três vezes na frente de (81)
+# 98426-2674. Nenhuma busca achava a pessoa, a mensagem caiu em "sem Telegram
+# cadastrado", e ela, que TEM Telegram e recebe os avisos do ERP, deixou de
+# receber os do Make. Número brasileiro tem no máximo 13 dígitos com o 55;
+# passou disso e começa com 55, é o mesmo número com o código repetido.
+# (O DDD 55, do interior do RS, não se confunde: "55 55 9xxxx-xxxx" tem 13.)
+def sem_55_repetido(d: str) -> str:
+    while len(d) > 13 and d.startswith("55"):
+        d = d[2:]
+    return d
+
+
 def variantes_telefone(bruto) -> set[str]:
     """DDD + número, sem o 55, com e sem o nono dígito."""
-    d = digitos(bruto)
+    d = sem_55_repetido(digitos(bruto))
     if not d:
         return set()
     if d.startswith("55") and len(d) >= 12:
@@ -124,7 +137,7 @@ def variantes_telefone(bruto) -> set[str]:
 
 
 def telefone_canonico(bruto) -> str:
-    d = digitos(bruto)
+    d = sem_55_repetido(digitos(bruto))
     if not d:
         return ""
     if d.startswith("55") and len(d) >= 12:

@@ -352,6 +352,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem da minha obra está com o ponto em dia e quem precisa corrigir? (aplicativo › "Ponto da minha equipe": responde conforme quem pergunta — o responsável pelo ponto da obra vê quem bateu no aparelho dele; o administrativo e o liberado, o alcance da consulta; "este mês" = do dia 1 até ontem)
 - Quem faltou ou está com batida faltando, por obra, para mandar no grupo? 🔒 (Relatórios › Fechamento › "Resumo dos problemas (WhatsApp)": marcar os tipos; "período" = o do fechamento, 26→25, ou só o mês corrente; a obra é a do dia, onde a pessoa bateu)
 - Quem trabalhou em cada dia do período, com ou sem hora extra? 🔒 (Relatórios › Fechamento › "Calendário geral" ligado: o ✓ é o dia trabalhado no horário; "período" = o do fechamento, 26→25; não entra quem não trabalhou dia nenhum nem faltou)
+- Quem da empresa X trabalhou em obra de outra empresa no período? 🔒 ⚠️ (Relatórios › Fechamento, com a empresa escolhida: as obras de outras empresas vêm no fim, na parte "Funcionários da X que também trabalharam em obras de outras empresas"; "da empresa X" = a empresa do CADASTRO da pessoa (sem ela, a da obra do cadastro); a obra é a do dia, onde a pessoa bateu; desde 25/11/2026; ❌ quem é de OUTRA empresa e trabalhou numa obra da X não aparece nesse recorte)
+- Que dias do Fulano foram corrigidos por ajuste? 🔒 (Relatórios › Fechamento › Horas extras por obra: o ✎ ao lado do dia; na janela da pessoa, as batidas "AJUSTADA"; desde 25/11/2026)
 - Que permutas de plantão foram lançadas ou aprovadas este mês? 🔒 ⚠️ (pedidos "Permuta de plantão" — compensação com subtipo PERMUTA e o colega; aprovada, os dois lados estão aprovados; as de antes de 31/10 são "Troca de plantão com …"; "este mês" = mês das noites, não do pedido)
 - Que permutas o sistema achou e ninguém aplicou? 🔒 (Validações › "Permutas que o sistema identificou nas batidas": últimos 35 dias, só vigias do 12x36; é sugestão — pode ter sido hora extra de fato)
 - Quem bate ponto por exceção (fora da regra da planilha)? 🔒 (janela da pessoa › Cadastro › "Bate ponto?": "Sim, por exceção", com o motivo, quem e quando; ainda não há uma lista que junte só esses — falta uma consulta)
@@ -3150,6 +3152,7 @@ consulta inventada vai sendo usado cada vez menos.
 |---|---|
 | **"admissão"** | o PEDIDO "Admissão de Colaborador" (que cobre gente nova E readmissão) ou a ADMISSÃO da carteira (a data). O pedido de prestador virando CTPS é outro: "Admissão de Prestador" |
 | **"matrícula"** | desde 19/11/2026, para quem entra, é o CPF. Quem já estava antes mantém a antiga — "a matrícula do fulano" pode ser um número antigo |
+| **"data de entrada" / "quando começou"** | desde 25/11/2026 são DUAS datas: o **início** (o dia em que pisou na obra, informado pela obra) e a **admissão** (a da carteira, confirmada pelo DP — costuma ser dia 1º ou 16). Para a contabilidade vale a admissão; para os dias de diária, o intervalo entre as duas. Na dúvida, pergunte qual |
 | **"cadastro completo"** | completo para o eSocial/SomaPay (a lista de `CAMPOS_DA_PESSOA`) ou para o DP concluir (`o_que_falta`)? São listas diferentes |
 
 ### Perguntas que o sistema responde
@@ -3160,6 +3163,20 @@ consulta inventada vai sendo usado cada vez menos.
   recusa; consulta direta nas colunas.
 - **"Quem entrou com matrícula diferente do CPF?"** — quem entrou antes de
   19/11/2026, ou quem o DP digitou outra.
+- **"Quantos dias o fulano recebeu como diarista antes de ser fichado?"** —
+  os dias de ponto entre a **data de início** e a **data de admissão** da
+  ficha (desde 25/11/2026 as duas ficam guardadas). ⚠️ O cálculo que PAGA
+  esses dias hoje é o da Análise de SPs, que lê a planilha "Registro de
+  Colaboradores", não o ERP — se as duas fontes divergirem, vale a que pagou.
+- **"Quem foi admitido com data diferente da que começou?"** — ficha de
+  carteira com admissão ≠ início.
+- **"Quantos prestadores saíram a pedido este mês?"** — desde 26/11/2026 o
+  desligamento de prestador diz como saiu ("A pedido do prestador", "Pela
+  empresa", "Fim do serviço ou do contrato"). ⚠️ Os anteriores não têm a resposta.
+- **"A obra já viu que recusei o pedido X?"** — desde 25/11/2026: o pedido
+  guarda quando quem pediu tocou em "Entendi" no alerta do portal.
+- **"Quais recusas a obra ainda não viu?"** — pedidos RECUSADA sem o evento de
+  visto. ⚠️ "Viu" é "tocou em Entendi", não "corrigiu e pediu de novo".
 - **"Os documentos da admissão do fulano chegaram?"** — sim desde 19/11/2026:
   ficam no cadastro dele, com a origem PORTAL e o número do pedido.
 

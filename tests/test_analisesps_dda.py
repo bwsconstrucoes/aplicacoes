@@ -163,7 +163,7 @@ def test_a_tela_cola_e_mostra(banco_dda, app):  # noqa: F811
     assert 'id="tabela-dda"' in html and "Sem lançamento" in html and "1400000001" in html
     assert "Gerar mensagem do WhatsApp" in html and 'class="dda-marca"' in html
     assert "Parecidas:" in html
-    assert "Confere com o total do banco" in html
+    assert "confere com o total do banco" in html
 
 
 def test_o_que_nao_casou_ganha_as_SPs_PARECIDAS(banco_dda):
@@ -180,3 +180,71 @@ def test_o_que_nao_casou_ganha_as_SPs_PARECIDAS(banco_dda):
     assert "valor R$ 940,00" in rede["sugestoes"][0]["porque"]
     assert all(s["id"] not in ("1400000001", "1400000002", "1400000003")
                for b in por.values() for s in b["sugestoes"]), "SP já casada não é sugerida"
+
+
+def test_a_base_CRESCE_e_a_segunda_colagem_diz_o_que_e_NOVO(banco_dda):
+    """24/11/2026: *"essa base de boletos vai só crescendo (…) eu quero ir sempre
+    adicionando e atualizando o cruzamento"* — e *"dar um que foi adicionado novo"*. Ele
+    cola a lista em pedaços: o que não veio na última colagem continua na tela."""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import dda
+    dda.guardar(dda.ler(EXEMPLO), "MARCELO")
+    # Segunda colagem: sem o boleto da Storehost (a SP dele está paga) e com um novo.
+    lido = dda.ler(EXEMPLO)
+    saiu = lido["boletos"].pop(1)
+    assert saiu["beneficiario_nome"].startswith("STOREHOST")
+    novo = dict(lido["boletos"][0], barras="9" * 44, linha_digitavel="9" * 47,
+                beneficiario_nome="FORNECEDOR NOVO", numero_documento="555")
+    lido["boletos"].append(novo)
+    feito = dda.guardar(lido, "MARCELO")
+    assert feito["novos"] == 1 and feito["ja_conhecidos"] == 5
+    lista = dda.listar(dda.filtros_da_tela(MultiDict()))
+    assert lista["quantos"] == 7 and lista["na_base"] == 7, "nada some da tela"
+    assert lista["novos"] == 1
+    assert [b["beneficiario_nome"] for b in lista["boletos"] if b["novo"]] == ["FORNECEDOR NOVO"]
+    store = [b for b in lista["boletos"] if b["beneficiario_nome"].startswith("STOREHOST")][0]
+    assert store["situacao"] == dda.PAGO, \
+        "SP paga e o boleto fora da última colagem é o normal, não alarme"
+    so_novos = dda.listar(dda.filtros_da_tela(MultiDict({"recorte": "novos"})))
+    assert [b["beneficiario_nome"] for b in so_novos["boletos"]] == ["FORNECEDOR NOVO"]
+    so_ultima = dda.listar(dda.filtros_da_tela(MultiDict({"so_ultima": "1"})))
+    assert so_ultima["quantos"] == 6
+
+
+def test_o_selo_de_PAGAMENTO_e_os_filtros_da_lateral(banco_dda):
+    """24/11/2026: *"uma etiqueta similar à parte do lote de solicitações, para saber
+    (…) se o boleto está pago ou se não está pago. E (…) ampliar o sidebar com mais
+    opções de filtragem."*"""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import dda
+    dda.guardar(dda.ler(EXEMPLO), "MARCELO")
+    lista = dda.listar(dda.filtros_da_tela(MultiDict()))
+    por = {b["beneficiario_nome"] + "|" + b["numero_documento"]: b for b in lista["boletos"]}
+    assert por["STOREHOST BRASIL|0157000411"]["pagamento"] == "pago"
+    assert por["3 TABELIONATO DE PROTESTO DE REC|83354126"]["pagamento"] == "pagar"
+    assert por["REDEMAQUINAS COMERCIO S M EQU|057092"]["pagamento"] == "sem_sp"
+    contagem = dict((k, q) for k, _, q in lista["por_pagamento"])
+    assert contagem["pago"] == 1 and contagem["sem_sp"] == 2
+    so_pagos = dda.listar(dda.filtros_da_tela(MultiDict({"pagamento": "pago"})))
+    assert [b["beneficiario_nome"] for b in so_pagos["boletos"]] == ["STOREHOST BRASIL"]
+    assert so_pagos["quantos"] == 6 and so_pagos["mostrados"] == 1
+    # valor, no jeito brasileiro e no de máquina
+    caro = dda.listar(dda.filtros_da_tela(MultiDict({"valor_de": "2.000,00"})))
+    assert caro["boletos"] and all(b["valor"] >= 2000 for b in caro["boletos"])
+    assert dda.filtros_da_tela(MultiDict({"valor_ate": "859.56"}))["valor_ate"] == D("859.56")
+    # pagadora: o CNPJ da matriz ou da filial
+    uma = lista["pagadoras"][0][0]
+    so_uma = dda.listar(dda.filtros_da_tela(MultiDict({"pagadora": uma})))
+    assert so_uma["boletos"] and all(b["pagador_cnpj"] == uma for b in so_uma["boletos"])
+
+
+def test_o_PRAZO_nao_alarma_o_que_ja_foi_pago():
+    import datetime as dt
+    from app.apps.analisesps import dda
+    hoje = dt.date(2026, 11, 24)
+    assert dda.prazo({"vencimento": dt.date(2026, 11, 20), "pagamento": "pagar"}, hoje) == "vencido"
+    assert dda.prazo({"vencimento": dt.date(2026, 11, 20), "pagamento": "pago"}, hoje) == ""
+    assert dda.prazo({"vencimento": hoje}, hoje) == "hoje"
+    assert dda.prazo({"vencimento": hoje, "pagamento": "pago"}, hoje) == ""
+    assert dda.prazo({"vencimento": dt.date(2026, 11, 30)}, hoje) == "semana"
+    assert dda.prazo({"vencimento": dt.date(2026, 12, 30)}, hoje) == "depois"

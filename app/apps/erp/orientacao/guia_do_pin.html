@@ -1,0 +1,182 @@
+<!doctype html>
+<!--
+  GUIA DO PIN — página 1 para o colaborador; página 2 para o DP e o
+  administrativo da obra (25/11/2026). Ao colaborador, mande só a imagem da 1.
+
+  Pedido do dono: *"faz um manual simples, bem didático, ensinando como a
+  pessoa criar esse acesso, tanto no seu celular como no celular de um
+  terceiro (…) fazer no celular próprio, no celular de terceiro, fazer
+  recebendo o código no WhatsApp próprio ou com código gerado pelo DP."*
+  O público tem baixa escolaridade: frase curta, um passo por linha, os nomes
+  dos botões exatamente como estão na tela.
+
+  Este HTML é a FONTE. O PDF e a imagem para o WhatsApp saem dele com
+  `gerar_guia.js`, ao lado. Textos conferidos em 25/11/2026 contra
+  `app/apps/ponto/templates/ponto/app.html` (botões "Primeiro acesso ou
+  esqueci o PIN", "Mandar o código", "Já tenho um código (entregue pelo DP)",
+  "Criar PIN e entrar", "Sair"), `ponto/core/acesso.py` (código de 15 minutos,
+  PIN de 6 números, 5 erros travam 15 minutos, PIN fácil recusado) e a ficha
+  do ponto em `ponto/templates/ponto/gestao.html` ("🔑 Código de acesso do
+  aplicativo (PIN)…" → "Gerar código para entregar em mãos").
+  Mudou um botão? Muda aqui e gera de novo.
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Como criar o seu PIN — BWS</title>
+<style>
+  @page { size: A4; margin: 0; }
+  :root { --navy: #0B2C5C; --amarelo: #F4B942; --tinta: #10233F; --suave: #4F607A;
+          --linha: #D5DCE8; --fundo: #F4F6FA; --verde-f: #E8F6EE; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "DejaVu Sans", Arial, sans-serif; color: var(--tinta);
+         font-size: 10.2pt; line-height: 1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .folha { width: 210mm; height: 297mm; padding: 0 13mm 12mm; overflow: hidden;
+           position: relative; background: #fff; }
+  .faixa { background: var(--navy); color: #fff; margin: 0 -13mm 4mm; padding: 7mm 13mm 5mm; }
+  .faixa small { color: var(--amarelo); font-weight: 700; letter-spacing: .08em; font-size: 9pt; }
+  .faixa h1 { margin: 2mm 0 1mm; font-size: 22pt; line-height: 1.1; }
+  .faixa p { margin: 0; opacity: .92; font-size: 10.5pt; }
+  .endereco { display: inline-block; margin-top: 3.5mm; background: var(--amarelo); color: var(--tinta);
+              font-weight: 700; font-size: 12.5pt; padding: 2mm 4mm; border-radius: 3mm; }
+  h2 { font-size: 12.5pt; margin: 0 0 2.5mm; color: var(--navy); }
+  .escolhas { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-bottom: 3mm; }
+  .escolha { border: 1px solid var(--linha); border-radius: 3mm; padding: 2.5mm 3.5mm; background: var(--fundo); }
+  .escolha b.t { display: block; color: var(--navy); margin-bottom: 1mm; }
+  .escolha ul { margin: 0; padding-left: 5mm; }
+  .passos { display: grid; gap: 1.6mm; margin-bottom: 3mm; }
+  .passo { display: grid; grid-template-columns: 9mm 1fr; gap: 3mm; align-items: start;
+           border: 1px solid var(--linha); border-radius: 3mm; padding: 1.8mm 3.5mm; }
+  .passo .num { width: 8mm; height: 8mm; border-radius: 2mm; background: var(--amarelo); font-weight: 700;
+                text-align: center; line-height: 8mm; }
+  .passo > div > b.t { display: block; }
+  .passo span.s { color: var(--suave); font-size: 9.6pt; }
+  .dois { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; margin-top: 1.5mm; }
+  .opcao { border-radius: 2mm; padding: 1.8mm 2.5mm; font-size: 9.6pt; background: var(--fundo); }
+  .opcao b { color: var(--navy); }
+  .so-outro { border-left: 3px solid var(--navy); }
+  .btn { display: inline-block; background: var(--fundo); border: 1px solid var(--linha); border-radius: 1.5mm;
+         padding: 0 1.6mm; font-weight: 700; color: var(--navy); white-space: nowrap; }
+  .opcao .btn { background: #fff; }
+  .caixas { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .caixa { border-radius: 3mm; padding: 2.4mm 3.6mm; font-size: 9.1pt; }
+  .caixa.atencao { background: #FFF6E5; border: 1px solid #F1DDAE; }
+  .caixa.ok { background: var(--verde-f); border: 1px solid #BFE3CC; }
+  .quem { display: inline-block; font-size: 8.5pt; font-weight: 700; letter-spacing: .04em; border-radius: 2mm;
+          padding: .4mm 2mm; margin-left: 1.5mm; vertical-align: 1px; background: var(--navy); color: #fff; }
+  .caixa b.t { display: block; color: var(--navy); margin-bottom: 1mm; }
+  .caixa p { margin: 0 0 1mm; }
+  .caixa p:last-child { margin: 0; }
+  .rodape { position: absolute; bottom: 7mm; left: 13mm; right: 13mm; font-size: 8.5pt; color: var(--suave);
+            display: flex; justify-content: space-between; border-top: 1px solid var(--linha); padding-top: 2mm; }
+</style>
+</head>
+<body>
+<section class="folha">
+  <div class="faixa">
+    <small>BWS CONSTRUÇÕES</small>
+    <h1>Como criar o seu PIN</h1>
+    <p>O PIN é a sua senha de 6 números. Com ele você bate o ponto no celular e
+      assina documentos da BWS (aviso, férias, pedido de demissão).</p>
+    <span class="endereco">aplicacoes.bwsconstrucoes.com.br/ponto/app</span>
+  </div>
+
+  <h2>Antes de começar, escolha duas coisas</h2>
+  <div class="escolhas">
+    <div class="escolha"><b class="t">1. Em qual celular?</b>
+      <ul><li><b>No seu celular.</b></li>
+        <li><b>No celular de outra pessoa</b> (do administrativo da obra ou de um colega).
+          Pode, sim — é só usar uma aba anônima (passo 1).</li></ul></div>
+    <div class="escolha"><b class="t">2. Como chega o código?</b>
+      <ul><li><b>No seu WhatsApp</b>, no número que está no seu cadastro da BWS.</li>
+        <li><b>Entregue pelo DP</b>, em mãos — para quem não tem WhatsApp ou trocou de número.</li></ul></div>
+  </div>
+
+  <h2>Passo a passo</h2>
+  <div class="passos">
+    <div class="passo"><span class="num">1</span><div><b class="t">Abra o endereço acima no navegador do celular</b>
+      <div class="dois">
+        <div class="opcao"><b>No seu celular:</b> abra normalmente.</div>
+        <div class="opcao so-outro"><b>No celular de outra pessoa:</b> abra uma <b>aba anônima</b>
+          (Chrome: ⋮ › Nova guia anônima; iPhone: Abas › Privada). O acesso do dono do celular não é mexido.</div>
+      </div></div></div>
+    <div class="passo"><span class="num">2</span><div><b class="t">Toque em <span class="btn">Primeiro acesso ou esqueci o PIN</span> e digite o seu CPF</b></div></div>
+    <div class="passo"><span class="num">3</span><div><b class="t">Pegue o código</b>
+      <div class="dois">
+        <div class="opcao"><b>Pelo WhatsApp:</b> toque em <span class="btn">Mandar o código</span>.
+          Ele chega no WhatsApp do seu cadastro e vale 15 minutos.</div>
+        <div class="opcao"><b>Pelo DP:</b> peça o código ao DP e toque em
+          <span class="btn">Já tenho um código (entregue pelo DP)</span>. Também vale 15 minutos.</div>
+      </div></div></div>
+    <div class="passo"><span class="num">4</span><div><b class="t">Digite o código e crie o seu PIN</b>
+      <span class="s">Escolha 6 números, digite duas vezes e toque em <span class="btn">Criar PIN e entrar</span>.
+        <b>Você mesmo digita</b> — não deixe outra pessoa escolher por você.</span></div></div>
+    <div class="passo"><span class="num">5</span><div><b class="t">Pronto. Se foi no celular de outra pessoa, saia</b>
+      <span class="s">Toque em <span class="btn">Sair</span> e feche a aba anônima.
+        No seu celular, pode continuar: dica, use “Adicionar à tela inicial” para ficar como um aplicativo.</span></div></div>
+  </div>
+
+  <div class="caixas">
+    <div class="caixa ok"><b class="t">Para assinar um documento</b>
+      <p>Não precisa entrar em nada. O administrativo da obra abre o documento no celular dele.</p>
+      <p>Você lê (ou pede para alguém ler para você), assina com o dedo e <b>digita o seu PIN</b>.</p>
+      <p>Não consegue de jeito nenhum? Dá para assinar no papel — o administrativo manda a foto ao DP.</p></div>
+    <div class="caixa atencao"><b class="t">Cuidados com o PIN</b>
+      <p>O PIN é só seu. <b>Não conte para ninguém</b> — nem para quem está ajudando.</p>
+      <p>Números fáceis (123456, 111111) não são aceitos.</p>
+      <p>Errou 5 vezes? Trava por 15 minutos. Esqueceu? Faça o mesmo caminho: ele troca o PIN.</p>
+      <p>O código não chegou? Ele vai para o telefone do <b>seu cadastro</b>. Trocou de número? Peça o código ao DP.</p></div>
+  </div>
+
+  <div class="rodape"><span>Ponto e assinatura · BWS Construções</span><span>Dúvida? Fale com o administrativo da obra ou com o DP.</span></div>
+</section>
+
+<section class="folha">
+  <div class="faixa">
+    <small>BWS CONSTRUÇÕES · PARA O DP E O ADMINISTRATIVO DA OBRA</small>
+    <h1>Ajudar a pessoa com o PIN</h1>
+    <p>Para quem não tem WhatsApp, trocou de número ou não sabe mexer no celular.</p>
+  </div>
+
+  <h2>1. Gerar o código para entregar em mãos <span class="quem">DP</span></h2>
+  <div class="passos">
+    <div class="passo"><span class="num">1</span><div><b class="t">No ERP, abra a ficha do ponto da pessoa</b>
+      <span class="s">Toque em <span class="btn">🔑 Código de acesso do aplicativo (PIN)…</span>. A janela mostra o telefone do
+        cadastro, se ela já tem PIN, se está travado, e os últimos códigos pedidos com o resultado do envio.</span></div></div>
+    <div class="passo"><span class="num">2</span><div><b class="t">Toque em <span class="btn">Gerar código para entregar em mãos</span></b>
+      <span class="s">Aparecem 6 números grandes. Valem 15 minutos, e só o último gerado vale.
+        Precisa da permissão de configurar o ponto.</span></div></div>
+    <div class="passo"><span class="num">3</span><div><b class="t">Confira que é a própria pessoa e entregue o código</b>
+      <span class="s">Documento com foto. Por telefone, só se você reconhecer a pessoa — o código dá acesso ao ponto dela.</span></div></div>
+  </div>
+
+  <h2>2. Ajudar a criar o PIN no seu celular <span class="quem">ADMINISTRATIVO</span></h2>
+  <div class="passos">
+    <div class="passo"><span class="num">1</span><div><b class="t">Abra uma aba anônima e o endereço do ponto</b>
+      <span class="s">Chrome: ⋮ › Nova guia anônima; iPhone: Abas › Privada. Assim o SEU acesso continua como estava.</span></div></div>
+    <div class="passo"><span class="num">2</span><div><b class="t">Siga a página 1 com a pessoa ao lado</b>
+      <span class="s">Você pode digitar o CPF e o código. <b>O PIN, quem digita é ela</b> — e você não olha.
+        Se você escolher o PIN por ela, ele deixa de provar que foi ela quem assinou.</span></div></div>
+    <div class="passo"><span class="num">3</span><div><b class="t">No fim, toque em <span class="btn">Sair</span> e feche a aba anônima</b>
+      <span class="s">Na lista de aparelhos do ponto pode aparecer um celular “pendente” com o nome dela:
+        <b>não aprove</b> — aquele celular é seu, não dela.</span></div></div>
+  </div>
+
+  <h2>3. Quando o PIN não resolve, a assinatura tem outros caminhos</h2>
+  <div class="caixas">
+    <div class="caixa ok"><b class="t">No papel</b>
+      <p>No documento do portal, escolha assinar no papel: imprima, a pessoa assina à caneta e você manda a foto da
+        folha inteira. O DP confere e valida.</p>
+      <p><b>Quem não sabe assinar o nome:</b> impressão do polegar, alguém assina “a rogo” (a pedido dela) e
+        <b>duas testemunhas</b> assinam com nome e CPF.</p></div>
+    <div class="caixa atencao"><b class="t">Recusa</b>
+      <p>Se a pessoa se recusa a assinar, registre a recusa no portal: <b>duas testemunhas</b> que viram ela ser
+        comunicada põem o nome, o <b>CPF</b> e <b>assinam com o dedo</b> na tela.</p>
+      <p><b>Não vale</b> no <b>pedido de demissão</b> nem na <b>autorização de desconto</b>: são a vontade da
+        própria pessoa. Se ela não assina, avise o DP.</p></div>
+  </div>
+
+  <div class="rodape"><span>Ponto e assinatura · BWS Construções</span><span>Página 2 — para uso interno</span></div>
+</section>
+</body>
+</html>

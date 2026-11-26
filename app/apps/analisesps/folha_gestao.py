@@ -287,7 +287,7 @@ def apropriar_a_folha(folha) -> dict:
             regras_por_cpf[pessoa["cpf"]] = regra
 
     ajustes = guardada.ajustes_do_pagamento(ano, mes, tipo)
-    dias_por_cpf = mod_ponto.dias_por_cpf(ano, mes)
+    dias_por_cpf = mod_ponto.dias_do_pagamento(ano, mes, tipo)
 
     return {
         "periodo": periodo,
@@ -778,6 +778,12 @@ def montar(folha_id: int, filtros=None) -> dict:
             # estar escrito na tela, não só na tela do Ponto.
             "completa": bool(carga.get("completa", True)) if carga else True,
             "pessoas_no_ponto": len(dias_por_cpf),
+            # O 13º lê o ANO (25/11/2026): os meses sem ponto carregado deixam o
+            # rateio torto (a obra daquele mês não entra), e a tela tem de dizer.
+            "do_ano": tipo in ("decimo_1", "decimo_2"),
+            "meses_sem_ponto": (mod_ponto.dias_do_ano(*periodo)["meses_sem_ponto"]
+                                if tipo in ("decimo_1", "decimo_2") and periodo else []),
+            "periodo": periodo,
         },
         "fechamento": guardada.fechamento(ano, mes, tipo),
         "fora_da_folha": apropriado["fora_da_folha"],

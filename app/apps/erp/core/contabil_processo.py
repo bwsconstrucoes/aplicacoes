@@ -221,7 +221,11 @@ def _dados_do_pedido(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
         cargo = d.get("cargo_deferido_id") or d.get("cargo_pleiteado_id")
         nome_cargo = s.execute(text("SELECT nome FROM cargos WHERE id = :i"),
                                {"i": int(cargo)}).scalar() if str(cargo or "").isdigit() else ""
-        return {"cargo_novo": nome_cargo or "", "salario_novo": d.get("salario"),
+        conv = d.get("convencao_id")
+        nome_conv = s.execute(text("SELECT nome FROM convencoes WHERE id = :i"),
+                              {"i": int(conv)}).scalar() if str(conv or "").isdigit() else ""
+        return {"cargo_novo": nome_cargo or "", "convencao_nova": nome_conv or "",
+                "salario_novo": d.get("salario"),
                 "vigencia": d.get("data_inicio"), "motivo": d.get("justificativa")}
     if tipo == "DEPENDENTE":
         um = (d.get("dependentes") or [d])[0] if isinstance(d.get("dependentes"), list) \

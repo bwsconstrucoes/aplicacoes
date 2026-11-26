@@ -141,7 +141,7 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
-### 26/11/2026 — ⚠️ A fila de acesso ao portal não aparecia em Operadores
+### 26/11/2026 (4) — ⚠️ A fila de acesso ao portal não aparecia em Operadores
 
 **Ele:**
 
@@ -202,6 +202,159 @@ Configurações, que todas as áreas usam) e `templates/erp_colaboradores.html`.
 
 ---
 
+### 26/11/2026 (3) — Autônomo mensalista exige o salário do mês; salário e diária em destaque no atendimento
+
+Ele: *"para o colaborador Autônomo Mensalista, o campo Salário do Mês se torna
+obrigatório, pois ele recebe não é por diárias, mas sim por um valor
+pré-determinado por mês (…) Exibir esse campo e dar destaque a ele, pois é uma
+informação sensível. Dar destaque também ao Valor da Diária, que também deve
+aparecer na tela de atendimento do autônomo (RPA)."*
+- `obrigatorios_se` CADASTRO: `AUTONOMO_MENSALISTA` → `valor_mes`; a pergunta
+  "diarista ou mensalista" some para ele (`ocultos_se`) e `traduzir_do_pipe`
+  grava `pagamento = MENSALISTA`. O rótulo `valor_mes` virou "Salário do Mês".
+- Tela do DP: faixa amarela com "Salário do mês" e/ou "Valor da diária" no
+  alto do pedido e dentro da janela de Atender (`destaqueDoValor`).
+- Pedido já aberto de autônomo mensalista sem o valor: não é barrado
+  retroativamente; o DP corrige pelo "Corrigir os dados".
+
+### 26/11/2026 (2) — Os diaristas da Análise de SPs passam a ver quem foi admitido pelo ERP
+
+Fecha a lacuna de 25/11/2026 (6). Feito a pedido dele neste chat; o registro
+completo está em `analisesps/HISTORICO.md` (26/11/2026). Aqui no ERP só mudou
+`pessoas.para_folha`, que ganhou o filtro `cpfs`.
+
+### 26/11/2026 — Subtítulo nos pedidos; o desligamento de prestador diz como saiu
+
+Ele: *"quando se trata de admissão, a gente colocar o tipo de vínculo e o tipo
+de contrato como subtítulo, só para você bater o olho (…) desligamento,
+colocar o tipo de desligamento (…) eu clico e não aparece, só diz assim, data
+de saída e observações."* Na alteração de cargo: *"é um pleito pequeno, tá ok."*
+- `pessoal_solicitacoes.resumo`: admissão/readmissão/admissão de prestador →
+  vínculo · contrato; desligamento → a forma (e, no pedido de demissão, "sai de
+  imediato"/"trabalha o aviso"; "continua como prestador" quando for). Aparece
+  embaixo do título do pedido e embaixo do tipo na LISTA de solicitações (sem
+  consulta a mais: `d.dados` vem na mesma leitura).
+- **O porquê de "só data de saída e observações":** o pedido era de
+  PRESTADOR, e o ramo PRESTADOR do desligamento não perguntava a forma (as da
+  CLT não servem). Ganhou `saida_prestador` (obrigatório): "A pedido do
+  prestador", "Pela empresa", "Fim do serviço ou do contrato". Pedido antigo de
+  prestador fica sem — o subtítulo só não aparece.
+
+### 25/11/2026 (8) — As testemunhas da recusa assinam na tela, com CPF; a trava da recusa passa a valer nas duas portas
+
+Ele: *"faz as testemunhas assinarem na tela com CPF."* Ao fazer, achei que a
+central de assinaturas do APLICATIVO DO PONTO (`ponto/app_documentos.py`)
+também chama `termos.registrar_recusa` — a trava de (7), posta só na rota do
+portal, era contornável por lá. As duas regras foram para
+`core/termos.registrar_recusa`, que serve às duas portas:
+- `TIPOS_SEM_RECUSA` (pedido de demissão, autorização de desconto) — o portal
+  só lê a lista para não oferecer a opção.
+- `_testemunhas`: duas, cada uma com nome completo, CPF válido e assinatura com
+  o dedo; CPFs diferentes entre si e diferentes do de quem recusou. O PDF da
+  recusa traz nome, CPF e a assinatura de cada uma; o banco guarda nome e CPF
+  (a imagem vai só no PDF).
+- Telas: o portal (`erp_portal.html`) e o aplicativo do ponto (`ponto/templates/
+  ponto/app.html`, aba "Recusou" dos documentos da equipe) ganharam, por
+  testemunha, CPF e um quadro de assinatura.
+⚠️ `core/termos.py` e a tela do aplicativo do ponto são arquivos que o chat do
+PONTO também mexe — registrado no `ponto/HISTORICO.md`. As telas não foram
+vistas num celular; o servidor tem teste (inclusive o PDF com as duas
+assinaturas).
+
+### 25/11/2026 (7) — A recusa de assinar não vale no pedido de demissão nem na autorização de desconto; guia do PIN
+
+Ele perguntou se a recusa de assinatura já existia. Existia (portal: motivo +
+nome de duas testemunhas; o DP valida), mas valia para QUALQUER documento — e a
+recusa validada conta como "concluído" (`termos.concluido`). No pedido de
+demissão isso deixava a rescisão ir à contabilidade sem a carta (contra a
+decisão do mesmo dia), e na autorização de desconto deixava o desconto seguir
+sem autorização (CLT art. 462). Agora `portal.TERMOS_SEM_RECUSA` trava os dois:
+a rota recusa, e a tela troca a opção por "avise o DP". A trava NÃO está em
+`core/termos.py` porque a central de assinaturas do ponto usa o mesmo arquivo.
+Não conferi se já existe em produção alguma recusa validada desses dois tipos.
+
+Limite que ficou dito a ele: as testemunhas da recusa são só NOMES digitados —
+não assinam, não têm CPF. Proposta (não feita): assinatura das testemunhas na
+tela ou o caminho do papel com as assinaturas delas.
+
+Guia do PIN em `orientacao/` (página 1 para o colaborador, página 2 para o DP e
+o administrativo; PDF, imagem e texto de WhatsApp), mais uma mensagem curta
+sobre a importância do PIN (`mensagem_importancia_do_pin.txt`).
+
+### 25/11/2026 (6) — A admissão NÃO é mais lançada na planilha nem no Pipefy
+
+Confirmado pelo dono: *"não lança mais"*. Consequência: o cálculo dos
+diaristas da Análise de SPs, que lê só a cópia da planilha
+(`analisesps.colaborador`), não enxerga quem foi admitido só pelo ERP — os dias
+entre o início e a admissão ficam sem pagamento pelo sistema. O ponto não tem
+o problema (lê `public.colaboradores`). A troca de fonte é da área da Análise
+de SPs (`pessoas.para_folha` já entrega as duas datas); ficou como tarefa
+sugerida ao dono, não feita aqui.
+
+### 25/11/2026 (5) — Alteração de cargo com convenção e piso; a recusa vira alerta na entrada do portal
+
+**Alteração de cargo.** Ele: *"a obra faz o pleito de alteração, ela vai
+indicar o cargo e no DP, na hora de ele encaminhar para a contabilidade, ele tem
+que selecionar a convenção e automaticamente aparecer valor (…) Cargo,
+convenção e valor."* Os campos do DP eram só "cargo deferido" e "salário" — sem
+convenção, a janela não tinha de onde puxar o piso (a mesma mecânica da
+admissão, que já funcionava). Entrou `convencao_id` nos campos do DP; a janela
+abre com o cargo pleiteado e a convenção ATUAL da pessoa (`pessoa_convencao_id`
+no `ler`), e o piso entra sozinho. O e-mail à contabilidade ganhou a linha
+"Convenção" (`contabil_processo._dados_do_pedido` → `convencao_nova`).
+
+**Recusa.** Ele: *"uma recusa é algo mais crítico (…) o natural é ser atendido.
+(…) o ideal é que a pessoa, na hora que ela logasse no portal, ela já se
+deparasse com aquela mensagem, aquele alerta de recusa."* Antes: a recusa só
+virava etiqueta vermelha no fim de "o que você pediu", com o motivo — sem
+alerta, sem aviso. Agora: caixa vermelha no ALTO do portal, com o pedido, a
+pessoa e o motivo, até quem pediu tocar em "Entendi". O "visto" é um evento na
+trilha (`QUEM_PEDIU_VIU_A_RECUSA`, sem migração); o DP vê, no pedido, "quem
+pediu viu a recusa em…" ou "ainda não abriu o portal desde a recusa". Só quem
+abriu o pedido vê o alerta e marca o visto (`portal.ciente_da_recusa`; de outro,
+404). Aviso no celular na recusa NÃO foi feito — ficou como oferta a ele.
+
+### 25/11/2026 (4) — Data de início ≠ data de admissão: o DP confirma a admissão ao atender
+
+Ele: *"não necessariamente a data de início ela é igual à data de admissão, por
+questões de fechamento de folha (…) a gente gosta de admitir no primeiro dia ou
+no 16º dia, para poder a pessoa entrar dentro da quinzena. E aqueles dias entre
+a data de início e a admissão a pessoa paga na diária."* E: *"o que vale para a
+contabilidade (…) é a data de admissão. A data de início não importa."* (A
+mensagem dele chegou cortada em "a data de admissão pode vir já pré-preenchida
+com a…" — entendi "com a data de início", e foi o que fiz.)
+
+**O que estava errado:** o pedido só tem a data de início; o pré-cadastro e a
+readmissão copiavam essa data para a admissão, e o DP não tinha onde trocá-la
+no atendimento. O e-mail de registro da carteira saía com a data de início.
+
+**O que mudou:**
+- "Data de admissão (a da carteira — vale para a contabilidade)" entrou nos
+  campos do DP ao atender a Admissão de Colaborador, a readmissão e a Admissão
+  de Prestador (prestador → CTPS). Vem preenchida com o início; a dica mostra
+  o início e o próximo dia 1º ou 16 ("os dias entre um e outro são diária").
+  Não aparece para quem entra como prestador.
+- O cadastro guarda as duas: `data_inicio` (da obra) e `admissao` (do DP).
+  `pessoas.readmitir` deixou de forçar as duas iguais. `pessoas.salvar`, ao
+  trocar a admissão, leva junto o vínculo aberto que tinha a data antiga
+  (senão férias e rescisão contariam do dia errado).
+- O e-mail à contabilidade já usava `admissao` — agora ela é a certa.
+
+**A conferência que ele pediu, no cálculo dos diaristas (Análise de SPs):**
+está certo. A regra é dia a dia (`analisesps/folha_vinculo.classificar_dia`,
+tradução da fórmula da coluna AH da Mobponto): do início até a véspera da
+admissão é DIÁRIA; da admissão em diante é CTPS e sai da lista dos diaristas.
+Sem pagamento dobrado, sem dia perdido. **MAS ela lê a planilha "Registro de
+Colaboradores"** (cópia em `analisesps.colaborador`, alimentada pelo Pipefy),
+**não o ERP.** A admissão feita só pelo ERP não chega lá sozinha — a
+pergunta ao dono sobre isso está na resposta deste dia. Quando o ERP virar a
+fonte, `pessoas.para_folha` já entrega as duas datas (`data_inicio`,
+`data_admissao`). Não mexi na Análise de SPs.
+
+Pontos de atenção do cálculo, registrados para quando o ERP virar a fonte:
+dia de ponto ANTES do início cai como CTPS e é descartado sem aviso; a diária
+de CTPS só sai se o "Tipo" for exatamente "CTPS"; sem admissão e CLT, os dias
+ficam "sem decidir".
 ### 25/11/2026 (4) — O manual do Portal da Obra: online e em PDF
 
 **Ele:**

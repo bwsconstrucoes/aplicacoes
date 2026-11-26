@@ -405,6 +405,7 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
     elif template == "ALTERACAO_CARGO":
         miolo = ["Solicitamos a alteração de contrato abaixo.", "",
                  _linha("Cargo novo", d.get("cargo_novo") or (cargo.nome if cargo else "")),
+                 _linha("Convenção", d.get("convencao_nova") or (conv.nome if conv else "")),
                  _linha("Salário novo", d.get("salario_novo")),
                  _linha("A partir de", d.get("vigencia")),
                  _linha("Motivo", d.get("motivo"))]

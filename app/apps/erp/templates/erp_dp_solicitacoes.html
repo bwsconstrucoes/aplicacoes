@@ -383,7 +383,8 @@ function desenhar(){
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
     <td class="dados">${escapar(x.numero)}</td>
-    <td><b>${escapar(x.tipo_rotulo)}</b></td>
+    <td><b>${escapar(x.tipo_rotulo)}</b>${x.resumo
+      ? `<br><small class="desc">${escapar(x.resumo)}</small>` : ""}</td>
     <td>${escapar(x.pessoa || "—")}${x.cargo ? `<br><small class="desc">${escapar(x.cargo)}</small>` : ""}</td>
     <td class="dados" style="white-space:nowrap">${escapar(x.pessoa_cpf || "—")}</td>
     <td class="dados">${escapar(x.obra || "—")}</td>
@@ -451,7 +452,12 @@ function pintarPedido(){
      data dd/mm/aaaa, CPF/CNPJ/CEP/telefone pontuados. Antes era o JSON cru. #}
   const linhas = (p.dados_legiveis || []).map(x => `<tr><td>${escapar(x.rotulo)}</td>
       <td>${escapar(x.valor)}</td></tr>`).join("");
+  {# ⚑ O SUBTÍTULO (26/11/2026): vínculo e contrato na admissão, a forma no
+     desligamento — para bater o olho (`pessoal_solicitacoes.resumo`). #}
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    ${destaqueDoValor(p)}
+    ${p.resumo ? `<div style="margin:-4px 0 10px; font-size:15px; font-weight:600;
+      color:var(--azul, #0B2C5C)">${escapar(p.resumo)}</div>` : ""}
     <div class="kpis">
       <div class="kpi estatico"><div class="kpi-rotulo">Situação</div>
         <div class="kpi-valor" style="font-size:16px">${escapar(p.situacao_rotulo)}</div>
@@ -465,7 +471,12 @@ function pintarPedido(){
     </div>
     ${p.resposta ? `<div class="aviso ${p.situacao === "RECUSADA" ? "erro" : "ok"}"
       style="margin-top:10px"><b>${p.situacao === "RECUSADA" ? "Recusado" : "Resposta"}:</b>
-      ${escapar(p.resposta)}</div>` : ""}
+      ${escapar(p.resposta)}${p.situacao === "RECUSADA" ? (() => {
+        {# 25/11/2026: o DP vê se quem pediu já leu a recusa no portal. #}
+        const v = (p.eventos || []).find(e => e.acao === "QUEM_PEDIU_VIU_A_RECUSA");
+        return `<br><small>${v ? `Quem pediu viu a recusa em ${dataBR(v.em.slice(0, 10))}.`
+          : "Quem pediu ainda não abriu o portal desde a recusa."}</small>`;
+      })() : ""}</div>` : ""}
     ${p.motivo_cancelamento ? `<div class="aviso alerta" style="margin-top:10px">
       <b>Cancelado:</b> ${escapar(p.motivo_cancelamento)}</div>` : ""}
     ${p.aviso ? `<div class="aviso alerta" style="margin-top:10px">${escapar(p.aviso)}</div>` : ""}
@@ -1177,8 +1188,14 @@ async function atender(){
      o número do CPF e não é nem para aparecer aqui nesse modal de
      atendimento."* O servidor já grava o CPF quando ela está vazia
      (`atender`, 19/11/2026); na readmissão, a que existia fica. #}
+  {# ⚑ A ADMISSÃO SÓ EXISTE PARA QUEM TEM CARTEIRA (25/11/2026). Prestador
+     não tem data de admissão diferente do início — perguntar seria convidar
+     a uma segunda data sem sentido. #}
+  const ehPrestador = ABERTA.tipo === "CADASTRO" && String(
+    (ABERTA.dados || {}).tipo_documentacao || "").toUpperCase() === "PRESTADOR";
   const doDP = (ABERTA.campos_do_dp || tipo.campos_do_dp || [])
-    .filter(c => CAMPO_PEDIDO[c] !== false && c !== "matricula");
+    .filter(c => CAMPO_PEDIDO[c] !== false && c !== "matricula")
+    .filter(c => !(c === "admissao" && ehPrestador));
   {# ⚑ CARGO E CONVENÇÃO SE ESCOLHEM DA LISTA, E O PISO VEM SOZINHO
      (23/11/2026). Ele: *"a convenção precisa ser uma lista selecionável
      baseada na base de dados (…) o cargo já é para ele identificar dentre os
@@ -1213,7 +1230,7 @@ async function atender(){
                 (TAB.cargos || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
     if (TAB && c === "convencao_id")
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
-              valor: String(dadosAb.convencao_id || ""),
+              valor: String(dadosAb.convencao_id || ABERTA.pessoa_convencao_id || ""),
               opcoes: [{valor: "", rotulo: "— escolha a convenção —"}].concat(
                 (TAB.convencoes || []).map(x => ({valor: String(x.id), rotulo: escapar(x.nome)})))};
     if (TAB && c === "salario" && doDP.includes("convencao_id"))
@@ -1221,6 +1238,27 @@ async function atender(){
               exemplo: "vem do piso ao escolher cargo e convenção",
               dica: "O piso do cargo na convenção entra sozinho. Se o combinado for "
                 + "acima do piso, troque."};
+    {# ⚑ A DATA DE ADMISSÃO NASCE COM A DATA DE INÍCIO (25/11/2026). Ele:
+       *"a gente gosta de admitir no primeiro dia ou no 16º dia, para poder a
+       pessoa entrar dentro da quinzena. E aqueles dias entre a data de início
+       e a admissão a pessoa paga na diária."* O DP confirma ou troca; a dica
+       mostra o início e o próximo dia 1º ou 16. #}
+    if (c === "admissao") {
+      const ini = dadosAb.data_inicio || "";
+      let dica = "Vale para a contabilidade (é a data da carteira). ";
+      if (ini) {
+        const d = new Date(ini + "T12:00:00");
+        const prox = d.getDate() === 1 || d.getDate() === 16 ? null
+          : (d.getDate() < 16 ? new Date(d.getFullYear(), d.getMonth(), 16)
+                              : new Date(d.getFullYear(), d.getMonth() + 1, 1));
+        const br = x => x.toLocaleDateString("pt-BR");
+        dica += `A obra informou o início em ${br(d)}.`
+          + (prox ? ` Para entrar na quinzena, a admissão seria ${br(prox)}; `
+              + "os dias entre o início e a admissão são pagos como diária." : "");
+      }
+      return {nome: c, rotulo: rot, largura: 3, tipo: "date", dica,
+              valor: dadosAb.admissao || ini};
+    }
     const opcoes = (tipo.opcoes_do_dp || {})[c];
     if (opcoes)
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
@@ -1277,7 +1315,7 @@ async function atender(){
     }, 0);
   }
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
-    aviso: (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
+    aviso: destaqueDoValor(ABERTA) + (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
             + "no cadastro — o atendimento é o registro do que foi feito.")
            + (campos.length ? " <b>Os campos abaixo são do DP</b>: a obra não "
               + "os informa, e é aqui que eles entram." : "") + espelho,
@@ -1291,6 +1329,22 @@ async function atender(){
   doDP.forEach(c => { if (r[c]) dados[c] = r[c]; });
   acao("atender", {resposta: r.resposta,
                    ...(Object.keys(dados).length ? {dados} : {})});
+}
+
+{# ⚑ O VALOR COMBINADO EM DESTAQUE (26/11/2026). Ele: *"Exibir esse campo e
+   dar destaque à ele, pois é uma informação sensível. Dar destaque também ao
+   Valor da Diária, que também deve aparecer na tela de atendimento do
+   autônomo (RPA)."* Vale para o salário do mês (autônomo mensalista e
+   mensalista) e para a diária (RPA e CLT) — o que o pedido trouxer. #}
+function destaqueDoValor(p){
+  const v = c => ((p.dados_legiveis || []).find(x => x.campo === c) || {}).valor;
+  const itens = [["valor_mes", "Salário do mês"], ["valor_diaria", "Valor da diária"]]
+    .filter(([c]) => v(c)).map(([c, r]) => `<div><small style="display:block; opacity:.8">${r}</small>
+      <b style="font-size:20px">${escapar(v(c))}</b></div>`);
+  return itens.length ? `<div style="display:flex; gap:24px; flex-wrap:wrap; margin:0 0 12px;
+      padding:10px 14px; border-radius:10px; background:#FFF6E5; border:2px solid #F4B942">
+      ${itens.join("")}<small style="align-self:center; flex:1; min-width:180px">Valor combinado
+      pela obra — confira antes de atender.</small></div>` : "";
 }
 
 async function recusar(){

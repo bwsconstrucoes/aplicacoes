@@ -35,6 +35,10 @@
   .etiqueta { font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
          background: #EEF2FA; color: #31507F; white-space: nowrap; }
   .etiqueta.vermelha { background: #FDECEC; color: #A32020; }
+  #alerta-recusas .recusa { background: #FDECEC; border: 1px solid #F1B5B5;
+    color: #5A1010; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    display: grid; gap: 4px; }
+  #alerta-recusas .motivo { background: #fff; border-radius: 6px; padding: 6px 8px; }
   .etiqueta.verde { background: #E8F6EE; color: #1C6B3C; }
   .etiqueta.ambar { background: #FFF1D6; color: #8A5A00; }
   .btn-portal { background: #F4B942; border: 0; border-radius: 10px; padding: 11px 16px;
@@ -176,6 +180,12 @@
 </div>
 <div class="caixa">
   <div id="recado"></div>
+
+  {# ⚑ A RECUSA NA ENTRADA (25/11/2026). Ele: *"uma recusa é algo mais
+     crítico (…) na hora que ela logasse no portal, ela já se deparasse com
+     aquela mensagem, aquele alerta de recusa."* Fica no alto, acima de tudo,
+     até quem pediu tocar em "Entendi". #}
+  <div id="alerta-recusas" class="oculto"></div>
 
   {# ESCOLHER A ÁREA VEM ANTES DE ESCOLHER O TIPO. Uma lista corrida com os
      pedidos de quatro áreas misturados obriga a pessoa a ler tudo para achar
@@ -328,6 +338,33 @@ async function carregar(){
   pintarExperiencias();
   pintarFormulario();
   pintarMeus();
+  pintarRecusas();
+}
+
+function pintarRecusas(){
+  const l = (DADOS.pedidos || []).filter(p => p.recusa_nao_vista);
+  const caixa = els("alerta-recusas");
+  caixa.classList.toggle("oculto", !l.length);
+  caixa.innerHTML = l.map(p => `
+    <div class="recusa">
+      <b>⚠️ Pedido recusado pelo DP</b>
+      <div>${esc(p.tipo)} <small>${esc(p.numero)}</small>${
+        p.pessoa ? " · " + esc(p.pessoa) : ""}</div>
+      <div class="motivo"><b>Motivo:</b> ${esc(p.resposta || "—")}</div>
+      <small>Corrija o que o DP apontou e abra o pedido de novo.</small>
+      <div><button class="btn-portal" type="button" data-ciente="${p.id}">Entendi</button></div>
+    </div>`).join("");
+  caixa.querySelectorAll("[data-ciente]").forEach(b =>
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await chamar(`/erp/portal/api/pedidos/${b.dataset.ciente}/ciente-da-recusa`,
+                     {method: "POST", body: "{}"});
+        const p = (DADOS.pedidos || []).find(x => String(x.id) === b.dataset.ciente);
+        if (p) p.recusa_nao_vista = false;
+        pintarRecusas();
+      } catch(e){ b.disabled = false; recado(e.message, "erro"); }
+    }));
 }
 
 function pintarTermos(){
@@ -380,15 +417,29 @@ async function abrirTermo(id){
                capture="environment" style="display:none">
         <button class="btn-portal" id="t-enviar-papel" style="margin-top:8px">Enviar a foto</button>
       </details>
+      {# 25/11/2026: no pedido de demissão e na autorização de desconto a
+         recusa não vale — a tela diz o que fazer em vez de oferecê-la. #}
+      ${d.sem_recusa ? `<p class="ajuda" style="margin-top:10px"><b>A pessoa não quer
+        assinar?</b> ${esc(d.sem_recusa)}</p>` : `
       <details style="margin-top:10px"><summary style="cursor:pointer; color:#A32020">
         A pessoa se recusou a assinar</summary>
         <p class="ajuda">Leia o documento para ela na frente de duas testemunhas e
-          registre aqui. O DP confere.</p>
+          registre aqui. <b>Cada testemunha põe o nome completo, o CPF e assina com o
+          dedo.</b> O DP confere.</p>
         <label class="campo-portal">O que aconteceu<textarea id="t-motivo" rows="2"></textarea></label>
-        <label class="campo-portal">Testemunha 1 (nome completo)<input id="t-tst1"></label>
-        <label class="campo-portal">Testemunha 2 (nome completo)<input id="t-tst2"></label>
+        ${[1, 2].map(n => `
+        <div style="border:1px solid #D5DCE8; border-radius:8px; padding:8px; margin-top:8px">
+          <b style="font-size:13px">Testemunha ${n}</b>
+          <label class="campo-portal">Nome completo<input id="t-tst${n}"></label>
+          <label class="campo-portal">CPF<input id="t-tst${n}-cpf" name="cpf" inputmode="numeric"></label>
+          <span class="ajuda">Assinatura com o dedo:</span>
+          <canvas id="t-tst${n}-quadro" width="600" height="160"
+            style="width:100%; height:120px; border:1px dashed #8FA3C2; border-radius:8px;
+                   background:#fff; touch-action:none"></canvas>
+          <button class="voltar" type="button" data-limpar-tst="${n}">limpar</button>
+        </div>`).join("")}
         <button class="btn-portal" id="t-recusa" style="margin-top:8px">Registrar a recusa</button>
-      </details>
+      </details>`}
     </div>`;
   ligarQuadro(els("quadro"));
   els("t-limpar").addEventListener("click", () => ligarQuadro(els("quadro")));
@@ -399,7 +450,12 @@ async function abrirTermo(id){
   });
   els("t-assinar").addEventListener("click", () => assinarTermo(d.id));
   els("t-enviar-papel").addEventListener("click", () => papelDoTermo(d.id));
-  els("t-recusa").addEventListener("click", () => recusaDoTermo(d.id));
+  if (els("t-recusa")) {
+    [1, 2].forEach(n => ligarQuadro(els(`t-tst${n}-quadro`)));
+    document.querySelectorAll("[data-limpar-tst]").forEach(b => b.addEventListener("click",
+      () => ligarQuadro(els(`t-tst${b.dataset.limparTst}-quadro`))));
+    els("t-recusa").addEventListener("click", () => recusaDoTermo(d.id));
+  }
   caixa.scrollIntoView({behavior: "smooth"});
 }
 
@@ -407,7 +463,11 @@ function ligarQuadro(cv){
   const ctx = cv.getContext("2d");
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#10233F";
-  TRACO = {riscou: false};
+  {# O quadro da pessoa é o TRACO; o das testemunhas guarda o próprio estado
+     (25/11/2026). #}
+  const estado = {riscou: false};
+  if (cv.id === "quadro") TRACO = estado;
+  cv._estado = estado;
   let desenhando = false;
   const ponto = e => {
     const r = cv.getBoundingClientRect();
@@ -416,7 +476,7 @@ function ligarQuadro(cv){
   cv.onpointerdown = e => { desenhando = true; const [x, y] = ponto(e);
     ctx.beginPath(); ctx.moveTo(x, y); cv.setPointerCapture(e.pointerId); };
   cv.onpointermove = e => { if (!desenhando) return; const [x, y] = ponto(e);
-    ctx.lineTo(x, y); ctx.stroke(); TRACO.riscou = true; };
+    ctx.lineTo(x, y); ctx.stroke(); estado.riscou = true; };
   cv.onpointerup = () => { desenhando = false; };
 }
 
@@ -463,7 +523,10 @@ async function recusaDoTermo(id){
   try {
     const r = await chamar(`/erp/portal/api/termos/${id}`, {method: "POST",
       body: JSON.stringify({acao: "recusa", motivo: els("t-motivo").value,
-        testemunhas: [{nome: els("t-tst1").value}, {nome: els("t-tst2").value}]})});
+        testemunhas: [1, 2].map(n => ({nome: els(`t-tst${n}`).value,
+          cpf: els(`t-tst${n}-cpf`).value,
+          assinatura: els(`t-tst${n}-quadro`)._estado.riscou
+            ? els(`t-tst${n}-quadro`).toDataURL("image/png") : ""}))})});
     recado(`Recusa registrada em ${r.numero}. O DP confere.`, "ok");
     els("termo-aberto").innerHTML = "";
     carregar();

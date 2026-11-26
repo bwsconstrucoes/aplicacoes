@@ -206,8 +206,13 @@ TIPOS: dict[str, dict[str, Any]] = {
             "PRESTADOR": {
                 # Prestador não tem aviso prévio — não há o que avisar. Tem a
                 # data em que a prestação acaba.
-                "campos": ("data_saida", "observacao"),
-                "obrigatorios": ("data_saida",),
+                # ⚑ 26/11/2026: e diz COMO saiu. Ele: *"quando a gente está
+                # falando de desligamento, colocar o tipo de desligamento (…)
+                # eu clico e não aparece, só diz assim, data de saída e
+                # observações."* As formas da CLT não servem ao prestador —
+                # por isso uma lista própria, curta (`SAIDAS_DE_PRESTADOR`).
+                "campos": ("saida_prestador", "data_saida", "observacao"),
+                "obrigatorios": ("saida_prestador", "data_saida"),
                 # Prestador não tem aviso prévio nem faltas a descontar em
                 # folha: o DP não tem nada a acrescentar aqui.
                 "campos_do_dp": (),
@@ -283,7 +288,9 @@ TIPOS: dict[str, dict[str, Any]] = {
                    "empresa_id", "observacao"),
         "obrigatorios": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
                          "empresa_id"),
-        "campos_do_dp": ("cargo_id", "convencao_id", "salario", "matricula"),
+        # ⚑ 25/11/2026: a ADMISSÃO é do DP (ver a nota em "CADASTRO").
+        "campos_do_dp": ("admissao", "cargo_id", "convencao_id", "salario",
+                         "matricula"),
         # 23/11/2026: data, cargo, convenção, obra e matrícula o atendimento
         # grava; não há sistema de pagamento a reativar.
         "checklist": (),
@@ -330,7 +337,9 @@ TIPOS: dict[str, dict[str, Any]] = {
         "rotulos_proprios": {"data_nascimento": "Data de Nascimento"},
         "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis",
                            **{c: c for c in CAMPOS_DA_PESSOA}},
-        "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
+        # ⚑ 25/11/2026: a ADMISSÃO na carteira é do DP (ver "CADASTRO").
+        "campos_do_dp": ("admissao", "cargo_id", "salario", "matricula",
+                         "convencao_id"),
         "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
         # Mesma regra do cadastro: o número sai da foto da carteira que este
         # pedido JÁ exige. Ninguém transcreve onze dígitos à mão.
@@ -348,7 +357,12 @@ TIPOS: dict[str, dict[str, Any]] = {
         # "Cargo Deferido" é a resposta, e salário é consequência dele.
         "campos": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
         "obrigatorios": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
-        "campos_do_dp": ("cargo_deferido_id", "salario"),
+        # ⚑ A CONVENÇÃO TAMBÉM É DO DP (25/11/2026). Ele: *"a obra faz o
+        # pleito de alteração, ela vai indicar o cargo e no DP (…) ele tem que
+        # selecionar a convenção e automaticamente aparecer valor para
+        # encaminhar no pedido que vai para a contabilidade. Cargo, convenção
+        # e valor."* Sem a convenção, a janela não tinha de onde puxar o piso.
+        "campos_do_dp": ("cargo_deferido_id", "convencao_id", "salario"),
         "checklist": ("Conferir o piso da convenção",),
     },
     "ATUALIZACAO_DADOS": {
@@ -596,6 +610,12 @@ TIPOS: dict[str, dict[str, Any]] = {
                 "CLT_INDETERMINADO": ("valor_diaria",),
                 "CLT_DETERMINADO": ("valor_diaria",),
                 "AUTONOMO_RPA": ("valor_diaria",),
+                # ⚑ 26/11/2026, ele: *"para o colaborador Autônomo Mensalista,
+                # o campo Salário do Mês se torna obrigatório, pois ele recebe
+                # não é por diárias, mas sim por um valor pré-determinado por
+                # mês."* O tipo de contrato já diz que é mensalista — a
+                # pergunta "diarista ou mensalista" some (ver `ocultos_se`).
+                "AUTONOMO_MENSALISTA": ("valor_mes",),
                 "PJ": ("razao_social_pj", "cnpj_pj")},
             "pagamento": {"MENSALISTA": ("valor_mes",)}},
         # ⚑ O QUE NÃO SE APLICA NEM APARECE (15/11/2026). Ele: *"quando é
@@ -625,6 +645,8 @@ TIPOS: dict[str, dict[str, Any]] = {
             # porque essa informação não precisa."* A leitura ainda os grava,
             # se achar — oculto não é apagado.
             "PRESTADOR": ("num_ctps", "num_pis")},
+            # 26/11/2026: autônomo mensalista é mensalista por definição.
+            "tipo_contrato": {"AUTONOMO_MENSALISTA": ("pagamento",)},
             "pagamento": {"DIARISTA": ("valor_mes",)}},
         # ⚑ O TIPO DE CONTRATO NASCE FECHADO e só abre DEPOIS de escolhida a
         # documentação — e aí abre para as DUAS, com listas diferentes.
@@ -705,7 +727,19 @@ TIPOS: dict[str, dict[str, Any]] = {
         # saber é pôr uma ligação telefônica dentro do sistema.
         #
         # O DP continua podendo corrigir na ficha da pessoa.
-        "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario"),
+        #
+        # ⚑ A DATA DE ADMISSÃO É DO DP, E NÃO É A DATA DE INÍCIO (25/11/2026).
+        # Ele: *"não necessariamente a data de início ela é igual à data de
+        # admissão, por questões de fechamento de folha (…) a gente gosta de
+        # admitir no primeiro dia ou no 16º dia, para poder a pessoa entrar
+        # dentro da quinzena. E aqueles dias entre a data de início e a
+        # admissão a pessoa paga na diária."* E: *"o que vale para a
+        # contabilidade é a data de admissão."* A obra informa o INÍCIO (o
+        # dia em que a pessoa pisa na obra); o DP confirma a ADMISSÃO (a da
+        # carteira) ao atender — a janela já vem com o início, e ele troca.
+        # As duas ficam no cadastro: `data_inicio` e `admissao`.
+        "campos_do_dp": ("admissao", "matricula", "convencao_id", "cargo_id",
+                         "salario"),
         # ⚑ OS PAPÉIS SÃO OBRIGATÓRIOS, E O PEDIDO NÃO SAI SEM ELES.
         #
         # Eu tinha proposto deixar entrar incompleto, e ele derrubou — com o
@@ -846,7 +880,13 @@ TIPOS: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 # AS CAIXINHAS, com as opções do Pipe — palavra por palavra
 # ---------------------------------------------------------------------------
+SAIDAS_DE_PRESTADOR = ("A pedido do prestador", "Pela empresa",
+                       "Fim do serviço ou do contrato")
+
+
 CATEGORIAS: dict[str, tuple[str, ...]] = {
+    # 26/11/2026 — como o PRESTADOR saiu (ver o ramo PRESTADOR do desligamento).
+    "saida_prestador": SAIDAS_DE_PRESTADOR,
     "forma_desligamento": (
         "À Pedido do Colaborador", "Encerramento de Contrato de Experiência",
         "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado"),
@@ -1489,12 +1529,17 @@ def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
         v = saida.get(campo)
         if isinstance(v, str) and v in mapa:
             saida[campo] = mapa[v]
+    # ⚑ AUTÔNOMO MENSALISTA RECEBE POR MÊS (26/11/2026): o tipo de contrato
+    # responde a pergunta "diarista ou mensalista", que nem aparece na tela.
+    if str(saida.get("tipo_contrato") or "").upper() == "AUTONOMO_MENSALISTA":
+        saida["pagamento"] = "MENSALISTA"
     return saida
 
 
 # O rótulo de cada campo, como está no Pipe. A tela lê daqui — não escreve
 # nome de campo à mão.
 ROTULOS: dict[str, str] = {
+    "saida_prestador": "Como foi o desligamento",
     "obra_id": "Código da Obra",
     "ferias_inicio": "Início das férias",
     "ferias_dias": "Quantos dias",
@@ -1550,7 +1595,7 @@ ROTULOS: dict[str, str] = {
     "pix_chave": "Chave Pix (o dado)",
     "pagamento": "Pagamento",
     "valor_diaria": "Valor da Diária",
-    "valor_mes": "Valor do Mês",
+    "valor_mes": "Salário do Mês",
     "meio_transporte": "Meio de Transporte para chegar à Obra?",
     "categoria_alimentacao": "Ajuda com Alimentação",
     "categoria_transporte": "Ajuda com Transporte",
@@ -1601,6 +1646,7 @@ ROTULOS_DO_DP: dict[str, str] = {
     "transferencia_data": "A partir de quando (na obra nova)",
     "cumpre_aviso": "No pedido de demissão, a pessoa cumpre o aviso?",
     "matricula": "Matrícula",
+    "admissao": "Data de admissão (a da carteira — vale para a contabilidade)",
     "convencao_id": "Convenção",
     "cargo_id": "Cargo",
     "salario": "Salário",
@@ -2557,6 +2603,37 @@ SIM_NAO_DOS_CAMPOS = {"abono_pecuniario", "adiantamento_13",
                       "descontar_vt", "dependente_ir"}
 
 
+def resumo(s: Optional[Session], tipo: str, dados: dict[str, Any]) -> str:
+    """O SUBTÍTULO DO PEDIDO, para bater o olho (26/11/2026). Ele: *"quando se
+    trata de admissão, a gente colocar o tipo de vínculo e o tipo de contrato
+    como subtítulo, só para você bater o olho e já sabe do que se trata.
+    Quando a gente está falando de desligamento, colocar o tipo de
+    desligamento."* Na alteração de cargo ele disse que não precisa."""
+    d = dados or {}
+
+    def f(campo: str) -> str:
+        v = d.get(campo)
+        if v in (None, ""):
+            return ""
+        try:
+            return str(_formatar(campo, v, s) or "")
+        except Exception:                                # noqa: BLE001
+            return str(v)
+
+    partes: list[str] = []
+    if tipo in ("CADASTRO", "READMISSAO", "ADMISSAO_PRESTADOR"):
+        vinc = f("tipo_documentacao") or ("CTPS" if tipo == "ADMISSAO_PRESTADOR" else "")
+        partes = [vinc, f("tipo_contrato")]
+    elif tipo in ("DESLIGAMENTO", "DESLIGAMENTO_PRESTADOR"):
+        partes = [f("forma_desligamento") or f("saida_prestador")]
+        cumpre = str(d.get("cumpre_aviso") or "")
+        if str(d.get("forma_desligamento") or "").upper() == "PEDIDO_COLABORADOR" and cumpre:
+            partes.append("sai de imediato" if cumpre == "0" else "trabalha o aviso")
+        if str(d.get("continua_prestador") or "") == "1":
+            partes.append("continua como prestador")
+    return " · ".join(p for p in partes if p)
+
+
 def dados_legiveis(s: Session, tipo: str, dados: dict[str, Any]
                    ) -> list[dict[str, str]]:
     """O pedido como se lê: [{campo, rotulo, valor}] na ordem dos campos do
@@ -2814,7 +2891,8 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
             efeito["papeis"] = transferir_papeis(s, solicitacao_id, alvo)
         elif executa == "criar_cadastro":
             svc_pessoas.readmitir(s, alvo, {
-                **pedido, "admissao": pedido.get("data_inicio"),
+                **pedido,
+                "admissao": pedido.get("admissao") or pedido.get("data_inicio"),
                 "vinculo": pedido.get("tipo_documentacao") or None}, usuario)
             # ⚑ OS DADOS NOVOS ATUALIZAM O CADASTRO ANTIGO (19/11/2026). Ele:
             # *"os dados novos vão estar atualizados, a gente vai estar
@@ -3270,6 +3348,7 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
     """
     linha = s.execute(text("""
         SELECT d.*, c.nome AS pessoa, c.cpf AS pessoa_cpf, c.vinculo AS pessoa_vinculo,
+               c.convencao_id AS pessoa_convencao_id,
                o.codigo AS obra,
                COALESCE(u.nome, sc.nome, d.requerente) AS solicitante,
                a.nome AS atendente
@@ -3314,6 +3393,8 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         # campos são dele: no desligamento, a data de saída de quem tem
         # carteira é conta do DP; a do prestador veio da obra.
         "pessoa_vinculo": (d["pessoa_vinculo"] or "") if d["pessoa_vinculo"] else "",
+        # A convenção de hoje, para a janela de atender já abrir nela.
+        "pessoa_convencao_id": d.get("pessoa_convencao_id"),
         "campos_do_dp": list(campos_do_dp_do_tipo(
             d["tipo"], d["pessoa_vinculo"])) if d["tipo"] in TIPOS else [],
         "pessoa_cpf": d["pessoa_cpf"] or d["cpf_informado"] or "",
@@ -3333,6 +3414,7 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
         "papeis": papeis_do_pedido(s, d["id"], d["numero"], d["colaborador_id"]),
         "pre_cadastro": bool((d["dados"] or {}).get("pre_cadastro")),
         "dados_legiveis": dados_legiveis(s, d["tipo"], d["dados"] or {}),
+        "resumo": resumo(s, d["tipo"], d["dados"] or {}),
         # Atender/recusar/cancelar: só antes de a saída ser registrada.
         "a_atender": d["situacao"] in A_ATENDER,
         "processo": (svc_processo.passos(s, {**d, "dados": d["dados"] or {}})
@@ -3415,6 +3497,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
                         else "FALSE")
     linhas = s.execute(text(f"""
         SELECT d.id, d.numero, d.tipo, d.situacao, d.colaborador_id, d.obra_id,
+               d.dados AS dados_do_pedido,
                d.data_referencia, d.valor, d.criado_em, d.atendido_em,
                COALESCE(c.nome, d.nome_informado) AS pessoa,
                COALESCE(c.cpf, d.cpf_informado) AS pessoa_cpf,
@@ -3442,6 +3525,8 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
     fila = [{
         "id": l["id"], "numero": l["numero"], "tipo": l["tipo"],
         "tipo_rotulo": TIPOS.get(l["tipo"], {}).get("nome", l["tipo"]),
+        # 26/11/2026: o subtítulo também na fila (vínculo/contrato, forma).
+        "resumo": resumo(s, l["tipo"], l["dados_do_pedido"] or {}),
         "situacao": l["situacao"],
         "situacao_rotulo": SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
         "pessoa": l["pessoa"] or "", "obra": l["obra"] or "",

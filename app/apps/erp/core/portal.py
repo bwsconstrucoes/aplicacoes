@@ -553,6 +553,10 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
     listas["forma_desligamento"] = par(
         "forma_desligamento", svc.FORMAS_DESLIGAMENTO,
         svc.FORMA_DESLIGAMENTO_ROTULOS)
+    # 26/11/2026: como o prestador saiu (o desligamento dele não tem as formas da CLT).
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    listas["saida_prestador"] = [{"valor": x, "rotulo": x}
+                                 for x in svc_sp.SAIDAS_DE_PRESTADOR]
     listas["parentesco"] = par("parentesco", svc.PARENTESCOS,
                                svc.PARENTESCO_ROTULOS)
     # 24/11/2026: no pedido de demissão, a obra diz se a pessoa sai de
@@ -686,7 +690,11 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
                sol.colaborador_id, sol.dados,
                sol.resposta, COALESCE(c.nome, sol.nome_informado) AS pessoa,
                COALESCE(c.cpf, sol.cpf_informado) AS cpf,
-               o.codigo AS obra, COALESCE(gc.nome, gp.nome) AS cargo
+               o.codigo AS obra, COALESCE(gc.nome, gp.nome) AS cargo,
+               (sol.situacao = 'RECUSADA' AND NOT EXISTS (
+                    SELECT 1 FROM dp_solicitacao_eventos e
+                     WHERE e.solicitacao_id = sol.id
+                       AND e.acao = :visto)) AS recusa_nao_vista
           FROM dp_solicitacoes sol
           LEFT JOIN colaboradores c ON c.id = sol.colaborador_id
           LEFT JOIN obras o ON o.id = sol.obra_id
@@ -695,7 +703,8 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
          WHERE (sol.solicitante_colaborador_id = :eu
                 OR (:u IS NOT NULL AND sol.solicitante_id = :u))
          ORDER BY sol.id DESC LIMIT 100"""),
-        {"eu": eu["colaborador_id"], "u": eu["usuario_id"]}).mappings().all()
+        {"eu": eu["colaborador_id"], "u": eu["usuario_id"],
+         "visto": RECUSA_VISTA}).mappings().all()
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     return [{
         "numero": l["numero"],
@@ -713,7 +722,62 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
         "cpf": _cpf_inteiro(l["cpf"]) if l["cpf"] else "",
         "obra": l["obra"] or "", "cargo": l["cargo"] or "",
         "quando": str(l["criado_em"]), "resposta": l["resposta"] or "",
+        "recusa_nao_vista": bool(l["recusa_nao_vista"]),
     } for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# ⚑ A RECUSA APARECE NA ENTRADA DO PORTAL (25/11/2026). Ele: *"uma recusa é
+# algo mais crítico (…) o natural é ser atendido. Aí quando você recusa, o
+# ideal é que a pessoa, na hora que ela logasse no portal, ela já se deparasse
+# com aquela mensagem, aquele alerta de recusa."*
+#
+# Antes, a recusa só virava uma etiqueta vermelha no fim da lista "o que você
+# pediu" — quem não rolava a tela até lá não sabia. Agora ela fica no ALTO,
+# com o motivo, até quem pediu tocar em "Entendi". O "visto" é um evento na
+# trilha do pedido (sem coluna nova): o DP enxerga quando a obra viu.
+# ---------------------------------------------------------------------------
+RECUSA_VISTA = "QUEM_PEDIU_VIU_A_RECUSA"
+
+
+# ---------------------------------------------------------------------------
+# ⚑ ONDE A RECUSA DE ASSINAR NÃO VALE (25/11/2026). A recusa com duas
+# testemunhas é a praxe para documento que a EMPRESA comunica (aviso prévio,
+# aviso de férias): a pessoa foi avisada, assinando ou não. Nos documentos que
+# são a VONTADE da própria pessoa, recusar é o contrário do documento — e a
+# recusa validada contava como "concluído", deixando a rescisão (ou o desconto)
+# seguir sem a carta e sem a autorização. Ele, no mesmo dia: *"pedido de
+# demissão tem que ter carta de pedido sempre."*
+#
+# A trava de verdade está em `core/termos.registrar_recusa` (vale também para
+# a central do aplicativo do ponto); aqui é só a tela não oferecer a recusa.
+# ---------------------------------------------------------------------------
+def recusa_nao_vale(tipo: str) -> str:
+    """O motivo de a recusa não valer para este tipo de documento, ou "".
+    A lista mora em `termos.TIPOS_SEM_RECUSA`, que trava as duas portas."""
+    from app.apps.erp.core import termos
+    return termos.TIPOS_SEM_RECUSA.get(str(tipo or "").upper(), "")
+
+
+def ciente_da_recusa(s: Session, solicitacao_id: int,
+                     usuario: Optional[Usuario]) -> None:
+    """Quem pediu marca que viu a recusa. Pedido de outro: não encontrado."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    eu = quem_esta(s, usuario)
+    linha = s.execute(text("""
+        SELECT situacao FROM dp_solicitacoes
+         WHERE id = :i AND (solicitante_colaborador_id = :eu
+                            OR (:u IS NOT NULL AND solicitante_id = :u))"""),
+        {"i": solicitacao_id, "eu": eu["colaborador_id"],
+         "u": eu["usuario_id"]}).first()
+    if linha is None or linha[0] != "RECUSADA":
+        raise ErroNaoEncontrado("Pedido não encontrado.")
+    ja = s.execute(text("SELECT 1 FROM dp_solicitacao_eventos WHERE "
+                        "solicitacao_id = :i AND acao = :a"),
+                   {"i": solicitacao_id, "a": RECUSA_VISTA}).first()
+    if ja is None:
+        svc_sp._evento(s, solicitacao_id, RECUSA_VISTA,
+                       {"nome": eu.get("nome") or ""}, usuario)
 
 
 def ferias_da_equipe(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:

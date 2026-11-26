@@ -73,6 +73,15 @@ class Pessoas:
             cpf = tc.normalizar_cpf(u["cpf"])
             if cpf and cpf not in self.por_cpf:
                 self._guardar(f"U{u['id']}", (u["nome"] or "").strip(), cpf, "")
+        # ⚑ Telefone SEM DDD no cadastro (25/11/2026): o registro guarda o
+        # número completo, e a pessoa ficava "sem nome" na aba Enviadas — o
+        # dono não tinha como saber que era de alguém da empresa. Vale o final
+        # do número, de uma pessoa só (a régua de `tc.final_bate`).
+        self.por_curto: dict[str, set] = {}
+        for p in tc.pessoas_sem_telefone_completo(conn):
+            if len(p["telefone"]) in (8, 9):
+                self.nomes.setdefault(p["chave"], p["nome"])
+                self.por_curto.setdefault(p["telefone"], set()).add(p["chave"])
         for c in db.todos(conn, "SELECT chat_id, cpf, nome, telefone FROM mensageria.telegram_cadastros"):
             chave = self.por_cpf.get(tc.normalizar_cpf(c["cpf"])) if c["cpf"] else None
             if chave:
@@ -98,6 +107,12 @@ class Pessoas:
         for v in tc.variantes_telefone(d):
             if v in self.por_tel:
                 return self.por_tel[v]
+        achadas = set()
+        for v in tc.variantes_telefone(d):
+            if len(v) >= 10:
+                achadas |= self.por_curto.get(v[2:], set())
+        if len(achadas) == 1:
+            return achadas.pop()
         return "?" + (cpf_n or tc.digitos(d) or "sem destinatário")
 
     def nome(self, chave: str) -> str:
