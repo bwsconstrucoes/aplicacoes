@@ -58,6 +58,8 @@ TEMPLATE_DO_TIPO = {
     "AFASTAMENTO": "AFASTAMENTO",
     "RETORNO_AFASTAMENTO": "RETORNO_AFASTAMENTO",
     "TRANSFERENCIA_OBRA": "TRANSFERENCIA_OBRA",
+    # 26/11/2026: só quando o DP escolhe encaminhar (ver `aplica`).
+    "DIVERSOS": "DIVERSOS",
     # A admissão usa o mesmo botão para o registro da carteira.
     "CADASTRO": "ASSINATURA_CTPS",
     "ADMISSAO_PRESTADOR": "ASSINATURA_CTPS",
@@ -68,7 +70,8 @@ def e_processo(tipo: str) -> bool:
     return tipo in ("ALTERACAO_CARGO", "DEPENDENTE", "FERIAS",
                     "ALTERACAO_FERIAS", "CANCELAMENTO_FERIAS",
                     "CANCELAR_DESLIGAMENTO", "DESCONTO_EM_FOLHA",
-                    "AFASTAMENTO", "RETORNO_AFASTAMENTO", "TRANSFERENCIA_OBRA")
+                    "AFASTAMENTO", "RETORNO_AFASTAMENTO", "TRANSFERENCIA_OBRA",
+                    "DIVERSOS")
 
 
 # ⚑ A ATUALIZAÇÃO CADASTRAL (nome, endereço) NÃO VAI À CONTABILIDADE — decisão
@@ -103,7 +106,15 @@ def aplica(s: Session, tipo: str, colaborador_id: Optional[int],
         algum = algum or marcou(pedido.get("salario_familia")) \
             or marcou(pedido.get("dependente_ir"))
         return vinculo == "CTPS" and algum
+    # A diversa vai à contabilidade SÓ se o DP escolheu, ao atender, e com a
+    # pessoa ligada (o e-mail é sobre alguém). Prestador também, se ele quiser.
+    if tipo == "DIVERSOS":
+        return encaminha_diversa(pedido) and bool(colaborador_id)
     return False
+
+
+def encaminha_diversa(pedido: dict[str, Any]) -> bool:
+    return str(pedido.get("encaminhar_contabilidade") or "").strip().lower().startswith("sim")
 
 
 def _pedido_ligado(s: Session, sol: dict[str, Any], template: str):
@@ -227,6 +238,8 @@ def _dados_do_pedido(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
         return {"cargo_novo": nome_cargo or "", "convencao_nova": nome_conv or "",
                 "salario_novo": d.get("salario"),
                 "vigencia": d.get("data_inicio"), "motivo": d.get("justificativa")}
+    if tipo == "DIVERSOS":
+        return {"descricao": d.get("descricao")}
     if tipo == "DEPENDENTE":
         um = (d.get("dependentes") or [d])[0] if isinstance(d.get("dependentes"), list) \
             else d

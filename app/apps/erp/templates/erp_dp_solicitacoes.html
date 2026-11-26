@@ -1267,6 +1267,12 @@ async function atender(){
               valor: dadosAb.admissao || ini};
     }
     const opcoes = (tipo.opcoes_do_dp || {})[c];
+    // A diversa (26/11/2026): a resposta é sim ou não, e o padrão é "não".
+    if (opcoes && c === "encaminhar_contabilidade")
+      return {nome: c, rotulo: rot, tipo: "select", largura: 4,
+              valor: opcoes[0], dica: "Sim manda o texto do pedido à contabilidade (precisa do "
+                + "colaborador ligado). Se for preciso mudar o cadastro, o DP edita à mão.",
+              opcoes: opcoes.map(o => ({valor: o, rotulo: o}))};
     if (opcoes)
       return {nome: c, rotulo: rot, tipo: "select", largura: 3,
               valor: sugValor(c), dica: sugDica(c),

@@ -433,6 +433,8 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 "chave": k, "area": area, "nome": d["nome"],
                 "explicacao": d["explicacao"],
                 "exige_pessoa": d["exige_pessoa"],
+                # 26/11/2026: a diversa pode ser sobre alguém, sem obrigar.
+                "pessoa_opcional": bool(d.get("pessoa_opcional")),
                 # ⚑ O vínculo que este tipo aceita, quando ele aceita só um
                 # (17/11/2026): a busca de pessoa filtra por ele.
                 "so_vinculo": d.get("so_vinculo") or "",

@@ -3201,6 +3201,11 @@ consulta inventada vai sendo usado cada vez menos.
   Colaboradores", não o ERP — se as duas fontes divergirem, vale a que pagou.
 - **"Quem foi admitido com data diferente da que começou?"** — ficha de
   carteira com admissão ≠ início.
+- **"Quais solicitações diversas foram à contabilidade?"** — desde 26/11/2026
+  o atendimento guarda a escolha ("Encaminhar à contabilidade?") e o pedido à
+  contabilidade nasce com o modelo "Solicitação diversa". ⚠️ É texto livre:
+  "quantos reajustes de salário houve" não sai daqui com certeza — depende do
+  que foi escrito.
 - **"Quantos prestadores saíram a pedido este mês?"** — desde 26/11/2026 o
   desligamento de prestador diz como saiu ("A pedido do prestador", "Pela
   empresa", "Fim do serviço ou do contrato"). ⚠️ Os anteriores não têm a resposta.

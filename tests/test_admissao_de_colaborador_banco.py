@@ -1392,3 +1392,43 @@ def test_o_aso_entra_pelo_portal_sem_data_de_vencimento(mundo):
         " AND tipo_codigo = 'ASO'"), {"c": cid}).one()
     assert validade == _somar_meses(dt.date.today(), 12)
     assert "estimada" in (obs or "")
+
+
+@pytestmark_banco
+def test_a_diversa_vai_a_contabilidade_so_se_o_dp_escolher(mundo):
+    """26/11/2026, ele: *"Permitir que a solicitação diversa opcionalmente seja
+    encaminhada à contabilidade com a demanda, textual mesmo (…) E o DP edita o
+    cadastro da pessoa manualmente."*"""
+    s = mundo["s"]
+    c = _carteira(mundo)
+    texto = "Reajuste do salário para R$ 2.600,00 a partir de 01/12/2026."
+    sim = svc.abrir(s, {"tipo": "DIVERSOS", "colaborador_id": c.id,
+                        "obra_id": mundo["obra"].id, "descricao": texto}, mundo["obra_user"])
+    r = svc.atender(s, sim["id"], {"dados": {
+        "encaminhar_contabilidade": "Sim — mandar o texto à contabilidade"}}, mundo["dp"])
+    s.flush()
+    assert r["situacao"] == "EM_ANDAMENTO", "espera o retorno da contabilidade"
+    # O atendimento já monta o pedido (rascunho) — o DP lê e envia.
+    tpl, corpo = s.execute(text("SELECT template, corpo FROM dp_pedidos "
+                                "WHERE solicitacao_id = :i"), {"i": sim["id"]}).one()
+    assert tpl == "DIVERSOS" and texto in corpo
+
+    nao = svc.abrir(s, {"tipo": "DIVERSOS", "colaborador_id": c.id,
+                        "obra_id": mundo["obra"].id, "descricao": "Trocar o crachá"},
+                    mundo["obra_user"])
+    r2 = svc.atender(s, nao["id"], {"dados": {
+        "encaminhar_contabilidade": "Não — o DP resolve aqui"}}, mundo["dp"])
+    assert r2["situacao"] == "ATENDIDA"
+
+    sem = svc.abrir(s, {"tipo": "DIVERSOS", "obra_id": mundo["obra"].id,
+                        "descricao": "Pedido sem pessoa"}, mundo["obra_user"])
+    with pytest.raises(ErroValidacao, match="colaborador ligado"):
+        svc.atender(s, sem["id"], {"dados": {
+            "encaminhar_contabilidade": "Sim — mandar o texto à contabilidade"}}, mundo["dp"])
+
+
+def test_a_diversa_oferece_a_pessoa_sem_obrigar():
+    d = svc.TIPOS["DIVERSOS"]
+    assert d["pessoa_opcional"] and not d["exige_pessoa"]
+    assert "encaminhar_contabilidade" in d["campos_do_dp"]
+    assert svc.CATEGORIAS["encaminhar_contabilidade"][0].startswith("Não")

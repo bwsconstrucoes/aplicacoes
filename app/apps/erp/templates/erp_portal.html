@@ -889,7 +889,11 @@ function pintarCamposDoTipo(){
     + {# ⚑ "COLABORADOR", e não "de quem é o pedido". Ele, em 10/11/2026: *"eu
        falei sobre de quem é o pedido. Isso é termo que se usa, cara. Bota
        colaborador."* No Pipe o campo se chama "CPF Colaborador". #}
-    (t.exige_pessoa ? `<label class="campo-portal">Colaborador *
+    {# ⚑ 26/11/2026: na Solicitação Diversa a pessoa é opcional
+       (`pessoa_opcional`) — o pedido pode ser sobre alguém (um reajuste, por
+       exemplo) e aí o DP pode mandá-lo à contabilidade. #}
+    (t.exige_pessoa || t.pessoa_opcional ? `<label class="campo-portal">Colaborador${
+        t.exige_pessoa ? " *" : " (se o pedido for sobre alguém)"}
         <input id="p-pessoa-busca" type="search" autocomplete="off"
                inputmode="search"
                placeholder="digite o nome ou o CPF">
@@ -2156,6 +2160,8 @@ async function enviarPedido(){
     const p = els("p-pessoa");
     if (!p || !p.value) { recado("Escolha de quem é o pedido.", "erro"); return; }
     corpo.colaborador_id = +p.value;
+  } else if (t.pessoa_opcional && els("p-pessoa") && els("p-pessoa").value) {
+    corpo.colaborador_id = +els("p-pessoa").value;
   }
   t.campos.forEach(c => {
     const campo = els("p-" + c);

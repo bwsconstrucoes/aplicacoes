@@ -197,6 +197,25 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "conferir": ("nome", "cpf", "admissao", "data_saida"),
         "etapa_ao_concluir": "DESLIGADO",
     },
+    # ⚑ A SOLICITAÇÃO DIVERSA, EM TEXTO (26/11/2026). Ele: *"é algo que é
+    # muito raro de acontecer. Permitir que a solicitação diversa
+    # opcionalmente seja encaminhada à contabilidade com a demanda, textual
+    # mesmo (…) E o DP edita o cadastro da pessoa manualmente. E essa opção
+    # serve para outras possibilidades também que venham a surgir."* (O caso
+    # que puxou: reajuste só de salário, que não tem tipo próprio.) O e-mail
+    # leva o texto do pedido; o retorno é a resposta da contabilidade.
+    "DIVERSOS": {
+        "nome": "Solicitação diversa",
+        "explicacao": "o texto do pedido, para o que não tem modelo próprio",
+        "exige": ("nome", "cpf"),
+        # O que volta é o documento do que foi feito (no reajuste, a alteração
+        # contratual) — o mesmo das correções e cancelamentos, que também são
+        # texto. O DP pode concluir à mão se a resposta for só o e-mail.
+        "espera": "ALTERACAO-CONTRATO",
+        "prazo": 3, "cobrancas": 3, "intervalo": 3,
+        "conferir": ("nome", "cpf"),
+        "etapa_ao_concluir": "",
+    },
     "CANCELAMENTO_DESLIGAMENTO": {
         "nome": "Cancelamento de desligamento",
         "explicacao": "desfazer um desligamento já comunicado",
@@ -511,6 +530,9 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
                  _linha("O que mudou (de → para)", d.get("o_que_mudou")),
                  "", "Por favor, confirme a ciência e o que for refeito "
                      "respondendo este e-mail."]
+    elif template == "DIVERSOS":
+        miolo = ["Solicitamos o que segue:", "", str(d.get("descricao") or ""),
+                 "", "Por favor, confirme o que for feito respondendo este e-mail."]
     elif template == "CANCELAMENTO_SOLICITACAO":
         miolo = ["Pedimos o CANCELAMENTO de um pedido já enviado a vocês: "
                  "nada dele deve ser processado.", "",
