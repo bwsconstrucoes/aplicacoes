@@ -108,7 +108,7 @@ ROTINAS: dict[str, dict[str, Any]] = {
     },
     "cobranca": {
         "nome": "Cobrador de prazo",
-        "quando": "todo dia, uma vez",
+        "quando": "todo dia, uma vez, a partir das 8h30 (fora das batidas)",
         "analisa": "cada pedido aberto contra o prazo do template",
         "nao_analisa": "pedido que já teve retorno e espera conferência — a "
                        "bola está com a gente, e cobrar quem já respondeu "
@@ -118,7 +118,8 @@ ROTINAS: dict[str, dict[str, Any]] = {
     },
     "caixa": {
         "nome": "Leitura da caixa de entrada",
-        "quando": "a cada rodada do agente",
+        "quando": "dias úteis, às 8h30, 9h30, 10h30, 11h30, 14h30, 15h30 e "
+                  "18h30 — fora das batidas do ponto",
         "analisa": "as mensagens não lidas da caixa: casa cada uma com o "
                    "pedido que a originou (pelo In-Reply-To, pelo número no "
                    "assunto ou pelo CPF), baixa os anexos e arquiva no Drive "
@@ -1181,21 +1182,77 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
 
 # ---------------------------------------------------------------------------
 # A RODADA DIÁRIA, SOZINHA (20/11/2026). Ele: *"Vamos botar para funcionar."*
-# O mesmo desenho da virada do dia dos desligamentos: na primeira requisição
-# do ERP de cada dia, a rodada vai para a FILA de trabalhos (não roda dentro
-# da requisição de ninguém). Roda só o que está ligado na tela do agente.
+# Na primeira requisição do ERP de cada dia, a rodada ia para a FILA de
+# trabalhos (não roda dentro da requisição de ninguém). Roda só o que está
+# ligado na tela do agente.
+#
+# ⚑ 26/11/2026 — O RELÓGIO QUE FOGE DA BATIDA DO PONTO. Ele: *"a leitura dos
+# e-mails (…) de hora em hora, mas sempre protegendo o horário de batida do
+# ponto (…) 7 horas, meio-dia, 13 horas, 16 horas ou 17 horas. (…) qualquer
+# rotina que exija processamento (…) se abstenha desses horários (…) nos dias
+# úteis (…) não precisa no final de semana."*
+#
+# · A CAIXA (ler e-mail → casar → conferir o retorno → concluir) roda nos
+#   HORARIOS_DA_CAIXA, só de segunda a sexta. É leve: uma conexão ao e-mail e
+#   só baixa o que é novo.
+# · A RODADA DIÁRIA (obra atual, ponte do ponto, cobrança, vigia) deixou de
+#   rodar "no primeiro acesso" — que caía justo às 7h, na batida — e passa a
+#   rodar a partir de INICIO_DA_RODADA_DIARIA, nunca dentro de uma JANELA de
+#   batida.
+# · Quem dispara é o RELÓGIO da linha de trabalho em segundo plano
+#   (`tarefas.registrar_relogio`), que acorda a cada poucos segundos — não
+#   depende de alguém abrir tela. O primeiro acesso ao ERP depois de o serviço
+#   reiniciar é o que liga essa linha.
 # ---------------------------------------------------------------------------
+FUSO = "America/Fortaleza"
+BATIDAS = ((7, 0), (12, 0), (13, 0), (16, 0), (17, 0))
+MARGEM_DA_BATIDA_MIN = 20            # 20 min antes e depois de cada batida
+HORARIOS_DA_CAIXA = ((8, 30), (9, 30), (10, 30), (11, 30),
+                     (14, 30), (15, 30), (18, 30))
+INICIO_DA_RODADA_DIARIA = (8, 30)
 _PARAMETRO_DA_RODADA = "agente_dp.rodada_em"
-_rodada: dict[str, Optional[str]] = {"dia": None}
+_PARAMETRO_DA_CAIXA = "agente_dp.caixa_em"
+_rodada: dict[str, Optional[str]] = {"dia": None, "caixa": None}
 
 
-def precisa_da_rodada() -> bool:
-    return _rodada["dia"] != date.today().isoformat()
+def agora_local() -> datetime:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo(FUSO))
+
+
+def em_janela_de_batida(agora: Optional[datetime] = None) -> bool:
+    """Perto de uma batida do ponto? Então nada de processamento pesado."""
+    agora = agora or agora_local()
+    m = agora.hour * 60 + agora.minute
+    return any(abs(m - (h * 60 + mi)) < MARGEM_DA_BATIDA_MIN for h, mi in BATIDAS)
+
+
+def vez_da_caixa(agora: Optional[datetime] = None) -> Optional[str]:
+    """A marca ("AAAA-MM-DD HH:MM") do horário da caixa que está valendo agora,
+    ou None. Fim de semana: None. Um horário vale por 50 minutos — se o serviço
+    estava reiniciando na hora cheia, ele ainda pega a vez."""
+    agora = agora or agora_local()
+    if agora.weekday() >= 5 or em_janela_de_batida(agora):
+        return None
+    m = agora.hour * 60 + agora.minute
+    for h, mi in reversed(HORARIOS_DA_CAIXA):
+        if 0 <= m - (h * 60 + mi) < 50:
+            return f"{agora.date().isoformat()} {h:02d}:{mi:02d}"
+    return None
+
+
+def precisa_da_rodada(agora: Optional[datetime] = None) -> bool:
+    agora = agora or agora_local()
+    if _rodada["dia"] == agora.date().isoformat():
+        return False
+    if (agora.hour, agora.minute) < INICIO_DA_RODADA_DIARIA:
+        return False
+    return not em_janela_de_batida(agora)
 
 
 def rodada_do_dia_se_preciso(s: Session) -> bool:
     """Enfileira a rodada do dia, uma vez. Nunca levanta. Devolve se enfileirou."""
-    hoje = date.today().isoformat()
+    hoje = agora_local().date().isoformat()
     if _rodada["dia"] == hoje:
         return False
     try:
@@ -1217,6 +1274,46 @@ def rodada_do_dia_se_preciso(s: Session) -> bool:
     except Exception:  # noqa: BLE001 — rotina de fundo não derruba a tela
         logger.warning("Agente DP: a rodada do dia não foi enfileirada", exc_info=True)
         return False
+
+
+def caixa_da_hora_se_preciso(s: Session, agora: Optional[datetime] = None) -> bool:
+    """Enfileira a leitura da caixa do horário, uma vez. Nunca levanta."""
+    vez = vez_da_caixa(agora)
+    if vez is None or _rodada["caixa"] == vez:
+        return False
+    try:
+        _rodada["caixa"] = vez
+        if modo(s, "caixa") == "DESLIGADA":
+            return False
+        ja = s.execute(text("SELECT valor FROM parametros WHERE chave = :c"),
+                       {"c": _PARAMETRO_DA_CAIXA}).scalar()
+        if str(ja or "") == vez:
+            return False
+        s.execute(text("""
+            INSERT INTO parametros (chave, valor) VALUES (:c, :v)
+            ON CONFLICT (chave) DO UPDATE SET valor = :v, atualizado_em = now()"""),
+            {"c": _PARAMETRO_DA_CAIXA, "v": vez})
+        from app.apps.erp.core.comum import tarefas
+        tarefas.enfileirar_unico(s, "agente_dp_caixa", {},
+                                 rotulo=f"Leitura da caixa do DP ({vez[-5:]})",
+                                 frescor_minutos=20)
+        s.commit()
+        return True
+    except Exception:  # noqa: BLE001
+        logger.warning("Agente DP: a leitura da caixa não foi enfileirada", exc_info=True)
+        return False
+
+
+def tique_do_relogio() -> None:
+    """Chamado pela linha de trabalho em segundo plano, uma vez por minuto."""
+    from app.apps.erp.db.database import get_session
+    agora = agora_local()
+    if not precisa_da_rodada(agora) and vez_da_caixa(agora) in (None, _rodada["caixa"]):
+        return
+    with get_session() as s:
+        if precisa_da_rodada(agora):
+            rodada_do_dia_se_preciso(s)
+        caixa_da_hora_se_preciso(s, agora)
 
 
 def _carimbar(s: Session, chave: str) -> None:

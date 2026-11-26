@@ -149,6 +149,32 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (12) — O agente lê a caixa de hora em hora, nos dias úteis, fora das batidas do ponto
+
+Ele: *"de hora em hora, mas sempre protegendo o horário de batida do ponto
+(…) 7 horas, meio-dia, 13 horas, 16 horas ou 17 horas. (…) qualquer rotina que
+exija processamento (…) se abstenha desses horários (…) não precisa no final
+de semana."*
+
+- **Caixa** (ler → casar → conferir → concluir): seg a sex, 8h30, 9h30,
+  10h30, 11h30, 14h30, 15h30 e 18h30 (hora de Fortaleza). 12h30 e 16h30
+  ficaram de fora por estarem entre duas batidas. Cada horário vale 50 min
+  (se o serviço reiniciava na hora, pega a vez); a marca fica em `parametros`
+  (`agente_dp.caixa_em`), então reiniciar não repete.
+- **Rodada diária** (obra atual, ponte do ponto, cobrança, vigia): deixou de
+  rodar "no primeiro acesso do dia" — que caía na batida das 7h — e roda a
+  partir das 8h30, nunca a menos de 20 min de uma batida.
+- **Quem dispara:** um relógio na linha de trabalho em segundo plano
+  (`tarefas.registrar_relogio`, uma checagem por minuto), não a tela de
+  ninguém. Só enfileira; a fila tem uma linha só, então a caixa nunca roda ao
+  mesmo tempo que outro trabalho pesado. ⚠️ A linha liga no primeiro acesso ao
+  ERP depois de o serviço reiniciar — se ninguém abrir o ERP depois de um
+  reinício, o relógio fica parado até alguém abrir.
+- **Custo de uma leitura:** 1 conexão ao e-mail + 1 busca + 1 leitura de
+  cabeçalhos; por e-mail NOVO, 1 download; por anexo de retorno, 1 envio ao
+  Drive + 1 leitura por IA. Sem e-mail novo, são 3 idas ao servidor de e-mail
+  e nada mais. 7 por dia.
+
 ### 26/11/2026 (11) — O agente trabalha sozinho, com diário revisável; uma tela e um número só
 
 Ele: *"eu quero um agente que trabalhe como um humano (…) as ações que o agente

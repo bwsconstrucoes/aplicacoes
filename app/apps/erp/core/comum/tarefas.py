@@ -92,6 +92,30 @@ def registrar_sem_repeticao(tipo: str) -> None:
     """Marca um tipo cujo efeito é irreversível: falhou, não tenta de novo."""
     _SEM_REPETICAO.add(tipo)
 
+# ⚑ O RELÓGIO (26/11/2026): funções que a linha de fundo chama uma vez por
+# minuto, para rotinas com HORA marcada (a caixa do DP de hora em hora, fora
+# das batidas do ponto). Elas só ENFILEIRAM — o trabalho entra na fila como
+# qualquer outro, e respeita a linha única.
+_RELOGIO: list[Callable[[], None]] = []
+_ultimo_tique: dict[str, float] = {"em": 0.0}
+
+
+def registrar_relogio(funcao: Callable[[], None]) -> None:
+    if funcao not in _RELOGIO:
+        _RELOGIO.append(funcao)
+
+
+def _tique() -> None:
+    if time.monotonic() - _ultimo_tique["em"] < 60:
+        return
+    _ultimo_tique["em"] = time.monotonic()
+    for f in list(_RELOGIO):
+        try:
+            f()
+        except Exception:                            # noqa: BLE001
+            logger.warning("ERP/tarefas: o relógio falhou em %s", getattr(f, "__name__", f),
+                           exc_info=True)
+
 _trabalhador: Optional[threading.Thread] = None
 _trava = threading.Lock()
 _acordar = threading.Event()
@@ -208,6 +232,7 @@ def _laco() -> None:
             with get_session() as s:
                 recuperar_orfas(s)
                 s.commit()
+            _tique()
             feito = False
             while True:
                 tarefa_id = _pegar_proxima()
