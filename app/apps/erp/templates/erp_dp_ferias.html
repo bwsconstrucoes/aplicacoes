@@ -123,9 +123,8 @@ function desenhar(){
       <td>${br(f.retorno)}</td>
       <td>${situacao(f)}</td>
       <td>${quando(f)}</td>
-      <td style="white-space:nowrap">${mexe ? `
-        <button class="btn secundario" data-alterar="${i}">Pedir alteração</button>
-        <button class="btn secundario" data-cancelar="${i}">Pedir cancelamento</button>` : ""}</td>
+      <td>${mexe ? `<small class="desc">alterar ou cancelar: pelo
+        <a href="/erp/portal" target="_top">Portal da obra</a></small>` : ""}</td>
     </tr>`;
   }).join("");
   corpo.querySelectorAll("[data-alterar]").forEach(b =>

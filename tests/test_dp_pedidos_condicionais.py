@@ -924,3 +924,24 @@ def test_autonomo_mensalista_exige_o_salario_do_mes_e_nao_pergunta_diaria():
     rpa = svc.exigencias("CADASTRO", {"tipo_documentacao": "PRESTADOR",
                                       "tipo_contrato": "Autônomo (RPA)"})["campos"]
     assert "valor_diaria" in rpa and "valor_mes" not in rpa
+
+
+def test_todo_campo_exigido_e_desenhado_pela_tela():
+    """26/11/2026, ele: *"está como obrigatório, mas esse campo não apareceu
+    aqui. Aí a pessoa está bloqueada (…) perguntando uma coisa que o sistema
+    não está permitindo preencher."* "O colaborador vai trabalhar o aviso?"
+    só existia no ramo da carteira, e a tela só desenhava os campos do tipo.
+
+    A regra, para todo tipo: o que pode ser exigido — em qualquer vínculo, ou
+    por outra resposta — tem de estar entre os campos que a tela desenha."""
+    for chave, regra in svc.TIPOS.items():
+        desenha = set(svc.campos_para_desenhar(regra)) | {"obra_id"}
+        exigiveis = set(regra.get("obrigatorios") or ())
+        for ramo in (regra.get("por_vinculo") or {}).values():
+            exigiveis |= set(ramo.get("obrigatorios") or ())
+        for por_resposta in (regra.get("obrigatorios_se") or {}).values():
+            for lista in por_resposta.values():
+                exigiveis |= set(lista)
+        assert exigiveis <= desenha, (chave, sorted(exigiveis - desenha))
+    desl = [t for t in svc.tipos_para_tela(None) if t["valor"] == "DESLIGAMENTO"][0]
+    assert "cumpre_aviso" in desl["campos"] and "saida_prestador" in desl["campos"]

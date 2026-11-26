@@ -1015,6 +1015,11 @@ def test_o_diagnostico_de_quem_NAO_esta_no_cadastro(banco_cadastro):
 
 # ---------------------------------------------------------------------------
 # 26/11/2026 — o cadastro do ERP completa a cópia da planilha na folha
+#
+# ⚠️ A CÓPIA DA PLANILHA É SIMULADA AQUI (`muitos_por_cpf`), e não gravada com
+# `gravar`: gravar confirma de verdade no banco do trabalhador, e a pessoa
+# aparecia na conferência de `test_importar_pessoas.py` rodando depois no mesmo
+# processo ("só no ERP" com um CPF a mais).
 # ---------------------------------------------------------------------------
 def _erp_na_sessao(monkeypatch, sessao_real):
     import contextlib
@@ -1026,26 +1031,47 @@ def _erp_na_sessao(monkeypatch, sessao_real):
     monkeypatch.setattr(database, "get_session", _mesma)
 
 
-def test_quem_so_esta_no_erp_entra_na_folha_com_as_duas_datas(
-        banco_cadastro, sessao_real, monkeypatch):
+def _planilha_com(monkeypatch, *fichas):
+    from app.apps.analisesps import colaboradores as col
+    base = {f["cpf"]: col._completar(dict(f)) for f in fichas}
+    monkeypatch.setattr(col, "muitos_por_cpf",
+                        lambda cpfs, ate=None: {k: v for k, v in base.items()
+                                                if k in {"".join(x for x in c if x.isdigit()) for c in cpfs}})
+
+
+def _ficha_da_planilha(cpf, nome, **extra):
+    from app.apps.analisesps import colaboradores as col
+    r = {c: None for c in col.CAMPOS_LIDOS}
+    r.update({"cpf": cpf, "nome": nome, "fase": "", "card_pipefy": ""})
+    r.update(extra)
+    return r
+
+
+def _dp(sessao_real, apelido):
+    from app.apps.erp.db.models.cadastros import PerfilUsuario as P, Usuario
+    u = Usuario(nome=apelido, email=f"{apelido}@teste", ativo=True,
+                senha_hash="x", perfil=P.DEPARTAMENTO_PESSOAL)
+    sessao_real.add(u)
+    sessao_real.flush()
+    return u
+
+
+def test_quem_so_esta_no_erp_entra_na_folha_com_as_duas_datas(sessao_real, monkeypatch):
     """O dono, 25/11/2026: a admissão não é mais lançada na planilha. Quem foi
     admitido pelo ERP tem de chegar ao cálculo dos diaristas, com o início e a
     admissão separados (os dias entre um e outro são diária)."""
     from app.apps.analisesps import colaboradores as col
     from app.apps.erp.core.cadastros import pessoas
-    from app.apps.erp.db.models.cadastros import PerfilUsuario as P, Usuario
     _erp_na_sessao(monkeypatch, sessao_real)
-    u = Usuario(nome="dp-folha", email="dp-folha@teste", ativo=True,
-                senha_hash="x", perfil=P.DEPARTAMENTO_PESSOAL)
-    sessao_real.add(u)
-    sessao_real.flush()
+    u = _dp(sessao_real, "dp-folha")
     pessoas.salvar(sessao_real, {
         "cpf": "71460238001", "nome": "Novo Pelo ERP", "vinculo": "CTPS",
         "tipo_contrato": "CLT_INDETERMINADO", "valor_diaria": "95,00",
         "data_inicio": "2026-11-05", "admissao": "2026-11-16"}, u)
     sessao_real.flush()
-    gravar(pessoa("99713349334", "SO NA PLANILHA",
-                  data_inicio=dt.date(2025, 1, 6), data_admissao=dt.date(2025, 1, 6)))
+    _planilha_com(monkeypatch, _ficha_da_planilha(
+        "99713349334", "SO NA PLANILHA",
+        data_inicio=dt.date(2025, 1, 6), data_admissao=dt.date(2025, 1, 6)))
     fichas = col.para_a_folha(["714.602.380-01", "99713349334"])
     erp = fichas["71460238001"]
     assert erp["origem"] == "ERP"
@@ -1054,42 +1080,37 @@ def test_quem_so_esta_no_erp_entra_na_folha_com_as_duas_datas(
     assert erp["valor_diaria"] == 95.0
     assert erp["situacao"] == col.SITUACAO_ATIVO
     assert fichas["99713349334"].get("origem") != "ERP", "a planilha continua valendo"
-    # A regra dia a dia, com a ficha do ERP: antes da admissão é diária.
     from app.apps.analisesps import folha_diaristas, folha_vinculo
     regra = folha_diaristas._cadastro_para_a_regra(erp)
     assert folha_vinculo.classificar_dia(dt.date(2026, 11, 10), regra) == folha_vinculo.DIARIA
     assert folha_vinculo.classificar_dia(dt.date(2026, 11, 16), regra) != folha_vinculo.DIARIA
 
 
-def test_quem_voltou_pelo_erp_usa_a_historia_nova(banco_cadastro, sessao_real, monkeypatch):
+def test_quem_voltou_pelo_erp_usa_a_historia_nova(sessao_real, monkeypatch):
     """Readmitido pelo ERP: a planilha tem a passagem antiga (com saída); a
     folha tem de usar a nova."""
     from app.apps.analisesps import colaboradores as col
     from app.apps.erp.core.cadastros import pessoas
-    from app.apps.erp.db.models.cadastros import PerfilUsuario as P, Usuario
     _erp_na_sessao(monkeypatch, sessao_real)
-    u = Usuario(nome="dp-folha2", email="dp-folha2@teste", ativo=True,
-                senha_hash="x", perfil=P.DEPARTAMENTO_PESSOAL)
-    sessao_real.add(u)
-    sessao_real.flush()
+    u = _dp(sessao_real, "dp-folha2")
     pessoas.salvar(sessao_real, {
         "cpf": "28625587887", "nome": "Voltou Pelo ERP", "vinculo": "CTPS",
         "data_inicio": "2026-11-03", "admissao": "2026-11-16"}, u)
     sessao_real.flush()
-    gravar(pessoa("28625587887", "VOLTOU PELO ERP",
-                  data_inicio=dt.date(2024, 2, 1), data_admissao=dt.date(2024, 2, 1),
-                  data_saida=dt.date(2025, 3, 10)))
+    _planilha_com(monkeypatch, _ficha_da_planilha(
+        "28625587887", "VOLTOU PELO ERP", data_inicio=dt.date(2024, 2, 1),
+        data_admissao=dt.date(2024, 2, 1), data_saida=dt.date(2025, 3, 10)))
     f = col.para_a_folha(["28625587887"])["28625587887"]
     assert f["origem"] == "ERP" and f["data_inicio"] == dt.date(2026, 11, 3)
     assert f["situacao"] == col.SITUACAO_ATIVO
 
 
-def test_sem_o_erp_a_folha_segue_com_a_planilha(banco_cadastro, monkeypatch):
+def test_sem_o_erp_a_folha_segue_com_a_planilha(monkeypatch):
     from app.apps.analisesps import colaboradores as col
     from app.apps.erp.db import database
 
     def quebrado():
         raise RuntimeError("ERP fora do ar")
     monkeypatch.setattr(database, "get_session", quebrado)
-    gravar(pessoa("99713349334", "SO NA PLANILHA"))
+    _planilha_com(monkeypatch, _ficha_da_planilha("99713349334", "SO NA PLANILHA"))
     assert list(col.para_a_folha(["99713349334"])) == ["99713349334"]

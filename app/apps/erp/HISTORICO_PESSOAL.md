@@ -141,6 +141,102 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (9) — A Solicitação Diversa: pessoa opcional e, se o DP quiser, à contabilidade em texto
+
+Ele, sobre o reajuste só de salário (que ficou sem porta quando "Registrar
+alteração" saiu): *"Eu acho que é melhor colocar em solicitação diversa. É
+algo que é muito raro de acontecer. Permitir que a solicitação diversa
+opcionalmente seja encaminhada à contabilidade com a demanda, textual mesmo,
+sem problema. E o DP edita o cadastro da pessoa manualmente. E essa opção serve
+para outras possibilidades também que venham a surgir."*
+
+- `TIPOS["DIVERSOS"]`: `pessoa_opcional` (o portal mostra "Colaborador (se o
+  pedido for sobre alguém)", sem asterisco; o alcance continua conferido por
+  `portal._pode_pela_pessoa`) e o campo do DP `encaminhar_contabilidade`
+  ("Não — o DP resolve aqui" vem marcado; "Sim — mandar o texto à
+  contabilidade").
+- "Sim": o pedido fica Em andamento e o pedido à contabilidade nasce com o
+  modelo novo `DIVERSOS` (`contabilidade.TEMPLATES`): "Solicitamos o que
+  segue:" + o texto do pedido; espera de volta a alteração contratual (o DP
+  conclui à mão se a resposta for só o e-mail). Sem pessoa ligada, o
+  atendimento com "Sim" é recusado com a explicação.
+- "Não": fecha na hora, como antes. O cadastro não muda sozinho em nenhum dos
+  dois — quem edita é o DP.
+Conferido no navegador: o portal com a pessoa opcional (pedido enviado) e a
+janela de atender com a pergunta.
+
+### 26/11/2026 (8) — "Todo pleito é pelo portal", agora sem exceção — inclusive o do DP
+
+Ele: *"conforme eu falei, todo pleito ele é feito no portal. Então, qualquer
+coisa que eu não tenha citado, para não dar conflito na tentativa de
+operacionalizar pelo ERP, então vamos fazer pelo portal. Inclusive o próprio
+DP, se precisar fazer de alguma coisa, ele também acessa o portal e faz o
+pleito. E aquele pleito vai entrar em solicitações."*
+
+Saíram, com uma frase de "peça pelo Portal da obra" no lugar:
+- Cadastro › Histórico: **Registrar alteração, Readmitir, Trocar o vínculo,
+  Desligar** (ficam "Conferência concluída" e "Mudar a etapa" — trabalho do DP
+  sobre o cadastro, não pedido);
+- **↩️ Registrar o retorno…** (na faixa do afastado e na aba Demandas);
+- Pedidos ao DP: **+ Solicitação** (virou "Abrir pedido pelo portal") e
+  **Pedir o cancelamento deste desligamento…**;
+- Férias: **Pedir alteração / Pedir cancelamento**.
+Cobertura conferida: o portal tem cada um desses tipos, e o DP pede por
+qualquer pessoa (`portal.pode_pedir_por_outros`). As funções por trás ficaram
+no código, sem porta. Teste: `test_cadastro_so_pelo_portal_banco.py`.
+
+**Lacuna dita a ele:** reajuste SÓ de salário (sem troca de cargo) não tem
+tipo no portal — "Alteração de Cargo" exige o cargo pleiteado. Era o
+"Registrar alteração" que fazia isso.
+
+### 26/11/2026 (7) — Todo pleito é pelo portal: saem "+ Colaborador", "Mandar para a contabilidade…" e "Afastar…"
+
+Ele: *"Dentro do sistema, tem o botão Mais Colaborador (…) As regras de
+cadastro não batem com as regras do portal (…) ficou faltando um bocado de
+informação (…) Vamos eliminar essa possibilidade de cadastro colaborador
+dentro do ERP e deixar apenas no portal. E a gente concentra o regramento todo
+lá."* E, na aba Demandas: *"botei solicitar férias. Aí ele montou um rascunho
+(…) não tem campo para preencher (…) férias de quando? (…) esse botão não está
+casando com a metodologia do portal (…) Tira esse botão aqui (…) também não é
+para ter esse botão [Afastar] (…) Todo pleito é pelo portal. Se fizer por
+aqui atrapalha, porque aqui não está sincronizado com o portal."*
+
+- `erp_colaboradores.html`: saíram o "+ Colaborador" (no lugar, a frase "pessoa
+  nova entra pelo Portal da obra"), o "📨 Mandar para a contabilidade…" da aba
+  Demandas e o "🏥 Afastar…" do bloco de afastamento — cada um com a frase de
+  onde o pedido nasce agora.
+- Servidor: `_so_quem_ja_existe` em `/erp/api/colaboradores/completo` e em
+  `/erp/api/colaboradores` (POST) — pelo ERP só se EDITA quem existe; pessoa
+  nova responde "entra pelo Portal da obra". As importações (planilha,
+  Fortes) e o pré-cadastro do portal seguem por outro caminho e não mudaram.
+- As funções por trás (`mandarParaAContabilidade`, `afastar`, `formulario(null)`)
+  ficaram no código, sem porta.
+
+**NÃO tirei, e perguntei a ele:** no Histórico do cadastro ainda há
+"Registrar alteração", "Readmitir", "Trocar vínculo" e "Desligar"; e o
+"↩️ Registrar o retorno…" do afastamento. Pela regra "todo pleito é pelo
+portal" seriam candidatos — mas tirar funcionalidade é decisão dele
+(CLAUDE.md, 17/11: *"eu não pedi pra tirar"*).
+
+### 26/11/2026 (6) — Desligamento a pedido: o portal exigia "vai trabalhar o aviso?" e não mostrava a pergunta
+
+Ele: *"está como obrigatório, mas esse campo não apareceu aqui. Aí a pessoa
+está bloqueada, não consegue enviar o pedido, porque está perguntando uma coisa
+que o sistema não está permitindo preencher."*
+
+**Causa:** os campos que só existem num VÍNCULO (`cumpre_aviso`, da carteira;
+`saida_prestador`, do prestador — este de hoje cedo) moravam só no ramo
+`por_vinculo`, e o portal (`portal.tipos`) e a tela do DP
+(`tipos_para_tela`) desenhavam só os `campos` do tipo. O campo nunca existia
+na tela; o servidor o exigia. Os testes de 24/11 cobriam o servidor, e a tela
+"não foi vista no navegador" — estava escrito no registro de 24/11 (5).
+
+**Conserto:** `campos_para_desenhar(regra)` — os do tipo + os de cada ramo, no
+lugar do vizinho — usado pelas duas telas. Conferido no navegador: com "À
+Pedido do Colaborador" a pergunta aparece e o pedido sai. Teste novo: para
+TODO tipo, o que pode ser exigido (por vínculo ou por outra resposta) está
+entre os campos desenhados.
+
 ### 26/11/2026 (5) — O ASO travava a admissão pelo portal: a validade agora é calculada
 
 Relato da obra, trazido por ele: *"Quando a gente coloca pra concluir o

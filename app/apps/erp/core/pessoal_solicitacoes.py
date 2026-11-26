@@ -870,9 +870,14 @@ TIPOS: dict[str, dict[str, Any]] = {
         "nome": "Solicitações Diversas",
         "explicacao": "o que não cabe nos tipos acima",
         "exige_pessoa": False, "executa": None,
+        # ⚑ 26/11/2026: a pessoa é OPCIONAL (o pedido pode ser sobre alguém —
+        # o reajuste só de salário, por exemplo) e o DP escolhe, ao atender,
+        # se o texto vai à contabilidade (`contabil_processo.aplica`). Quem
+        # mexe no cadastro, se precisar, é o DP, à mão.
+        "pessoa_opcional": True,
         "campos": ("descricao",),
         "obrigatorios": ("descricao",),
-        "campos_do_dp": (),
+        "campos_do_dp": ("encaminhar_contabilidade",),
         "checklist": (),
     },
 }
@@ -885,6 +890,9 @@ SAIDAS_DE_PRESTADOR = ("A pedido do prestador", "Pela empresa",
 
 
 CATEGORIAS: dict[str, tuple[str, ...]] = {
+    # 26/11/2026 — a solicitação diversa, ao ser atendida.
+    "encaminhar_contabilidade": ("Não — o DP resolve aqui",
+                                 "Sim — mandar o texto à contabilidade"),
     # 26/11/2026 — como o PRESTADOR saiu (ver o ramo PRESTADOR do desligamento).
     "saida_prestador": SAIDAS_DE_PRESTADOR,
     "forma_desligamento": (
@@ -1163,6 +1171,30 @@ def _nao_cabe_agora(regra: dict[str, Any], campo: str,
         if valor in tuple(aceitos):
             return False
     return True
+
+
+def campos_para_desenhar(regra: dict[str, Any]) -> list[str]:
+    """TODOS os campos que a tela precisa desenhar: os do tipo E os de cada
+    vínculo (a tela esconde, depois, o que não é do vínculo da pessoa).
+
+    ⚑ 26/11/2026. "O colaborador vai trabalhar o aviso?" (só da carteira) e
+    "Como foi o desligamento" (só do prestador) moram só nos ramos — e as
+    telas (o portal e a do DP) desenhavam só `campos`: o campo nunca existia, e
+    o servidor o exigia. Ele: *"está perguntando uma coisa que o sistema não
+    está permitindo preencher."* Cada campo de ramo entra junto do vizinho.
+    """
+    campos = list(regra.get("campos") or ())
+    for ramo in (regra.get("por_vinculo") or {}).values():
+        lista = list(ramo.get("campos") or ())
+        for i_, c_ in enumerate(lista):
+            if c_ in campos:
+                continue
+            if i_ and lista[i_ - 1] in campos:              # depois do anterior
+                campos.insert(campos.index(lista[i_ - 1]) + 1, c_)
+                continue
+            seguinte = next((x for x in lista[i_ + 1:] if x in campos), None)
+            campos.insert(campos.index(seguinte) if seguinte else len(campos), c_)
+    return campos
 
 
 def campos_do_tipo(tipo: str, vinculo: Optional[str] = None) -> tuple[str, ...]:
@@ -1539,6 +1571,7 @@ def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
 # O rótulo de cada campo, como está no Pipe. A tela lê daqui — não escreve
 # nome de campo à mão.
 ROTULOS: dict[str, str] = {
+    "encaminhar_contabilidade": "Encaminhar à contabilidade?",
     "saida_prestador": "Como foi o desligamento",
     "obra_id": "Código da Obra",
     "ferias_inicio": "Início das férias",
@@ -1802,7 +1835,7 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
         # de custo. A entrada fica no dicionário pelos pedidos já gravados.
         if d.get("oculto"):
             continue
-        campos = list(d["campos"])
+        campos = campos_para_desenhar(d)
         # ⚑ A OBRA SÓ SE PERGUNTA QUANDO NÃO HÁ DE ONDE TIRÁ-LA (15/11/2026).
         #
         # Ele: *"a obra está no cadastro. Ignora isso aí, tira isso aí"* — e,
@@ -2844,6 +2877,13 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                           if v not in (None, "")}})
     efeito: dict[str, Any] = {}
     executa = regra["executa"]
+    # A diversa à contabilidade precisa de pessoa: o e-mail é sobre alguém.
+    if p["tipo"] == "DIVERSOS" and svc_contabil.encaminha_diversa(pedido) \
+            and not p.get("colaborador_id"):
+        raise ErroValidacao(
+            "Para mandar à contabilidade, o pedido precisa ter o colaborador "
+            "ligado — este foi aberto sem ninguém. Peça que abram de novo pelo "
+            "portal escolhendo a pessoa, ou atenda sem encaminhar.")
     # A obra do pedido entra no efeito: é ela que o cadastro grava, e sem isso
     # a pessoa nasceria (ou voltaria) sem obra — e quem é preso a uma obra não
     # a enxergaria.
@@ -3077,6 +3117,10 @@ def depois_de_atender(s: Session, sol: dict[str, Any],
     if tipo in ("DESLIGAMENTO", "DESCONTO_EM_FOLHA"):
         return          # esperam a assinatura; montam quando ela voltar
     if not (svc_contabil.e_processo(tipo) or svc_admissao.e_processo(tipo)):
+        return
+    # A diversa só vai se o DP escolheu "Sim" e há pessoa ligada (26/11/2026).
+    if tipo == "DIVERSOS" and not svc_contabil.aplica(
+            s, tipo, sol.get("colaborador_id"), sol.get("dados") or {}):
         return
     if (tipo in ("CADASTRO", "ADMISSAO_PRESTADOR")
             and (vinculo_da_pessoa(s, sol.get("colaborador_id")) or "CTPS") != "CTPS"):

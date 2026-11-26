@@ -115,8 +115,15 @@
     </div>
   </div>
 
-  <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:12px">
-    + Colaborador</button>
+  {# ⚑ O "+ COLABORADOR" SAIU (26/11/2026). Ele: *"Esse cadastro (…) as regras
+     de cadastro não batem com as regras do portal. Então, a gente cadastrou
+     aqui, aí ficou faltando um bocado de informação (…) Vamos eliminar essa
+     possibilidade de cadastro colaborador dentro do ERP e deixar apenas no
+     portal. E a gente concentra o regramento todo lá."* Pessoa nova entra pelo
+     pedido de admissão do portal (que cria o pré-cadastro com os papéis); o
+     servidor também recusa cadastro novo pela tela (`api_colaborador_completo`). #}
+  <div class="cartao-dica" style="margin-top:12px">Pessoa nova entra pelo
+    <b>Portal da obra</b> › Colaboradores › Admissão de Colaborador.</div>
   {# ⚑ O BOTÃO "+ CARGO" SAIU DA BARRA em 17/11/2026, por pedido dele com
      todas as letras: *"eu não quero um botão mais cargo. Isso que não tem
      sentido. Cargo é para estar. Quando a gente for cadastrar, aqui eu ter a
@@ -966,10 +973,8 @@ async function pintarFaixaDoAfastamento(alvo, id){
       ${a.tipo_desconhecido ? `<small>(data estimada pelo sistema — confira no retorno)</small>` : ""}
       — ${a.dias} dia(s) · ${escapar(a.tipo_rotulo || "")}
       ${impede.length ? `<br><small>Para voltar falta: ${impede.map(escapar).join(" ")}</small>` : ""}</div>
-    <button class="btn" type="button" data-faixa-voltar="${id}">↩️ Registrar o retorno…</button>
+    <small class="desc">A volta é pedida pelo <a href="/erp/portal" target="_top">Portal da obra</a> (Retorno de Afastamento).</small>
   </div>`;
-  alvo.querySelector("[data-faixa-voltar]").addEventListener("click",
-    () => irParaORetorno(id));
 }
 
 // Abre o cadastro completo já na aba Demandas e, carregado o afastamento,
@@ -1621,11 +1626,16 @@ function desenharDemandas(c, sol, ped, afast){
       </tr>`).join("") || `<tr><td colspan="6" class="cartao-dica">
         Nenhum pedido à contabilidade para esta pessoa.</td></tr>`}
       </tbody></table>
-    ${PODE_PEDIR_CT ? `<div style="margin-top:10px">
-      <button class="btn amarelo" id="dem-novo">📨 Mandar para a contabilidade…</button>
-      <small class="desc"> — admissão, alteração de cargo, férias, desligamento…</small>
-    </div>` : `<div class="cartao-dica" style="margin-top:8px">Pedir à
-      contabilidade é do DP — você vê o andamento, mas não pode abrir.</div>`}
+    {# ⚑ O "MANDAR PARA A CONTABILIDADE" SAIU DAQUI (26/11/2026). Ele: *"eu
+       botei solicitar férias. Aí ele montou um rascunho (…) não tem campo
+       para preencher (…) férias de quando? (…) esse botão não está casando
+       com a metodologia do portal. (…) Tira esse botão aqui, tudo faz pelo
+       portal também. (…) Todo pleito é pelo portal."* O pedido à
+       contabilidade nasce do pedido do portal, quando o DP atende — com os
+       dados que o pedido trouxe. #}
+    <div class="cartao-dica" style="margin-top:8px">O pedido à contabilidade
+      nasce do pedido feito pelo <b>portal</b>, quando o DP atende — com os
+      dados que o pedido trouxe.</div>
 
     <h4 style="margin:18px 0 6px">Pedidos que a obra fez ao DP</h4>
     <div class="cartao-dica">O que chegou pelo portal sobre esta pessoa, e em
@@ -1652,12 +1662,8 @@ function desenharDemandas(c, sol, ped, afast){
   alvo = els("dem-corpo");
   alvo.querySelectorAll("[data-ct-abrir]").forEach(b =>
     b.addEventListener("click", () => abrirPedidoDaContabilidade(+b.dataset.ctAbrir, c)));
-  if (els("dem-novo"))
-    els("dem-novo").addEventListener("click", () => mandarParaAContabilidade(c));
-  if (els("af-afastar"))
-    els("af-afastar").addEventListener("click", () => afastar(c));
-  if (els("af-voltar"))
-    els("af-voltar").addEventListener("click", () => registrarRetorno(c));
+  // ("Mandar para a contabilidade…" e "Afastar…" saíram em 26/11/2026 — pelo portal.)
+  // (o retorno do afastamento é pedido pelo portal — 26/11/2026)
 }
 
 
@@ -1704,8 +1710,12 @@ function blocoDoAfastamento(c){
         <b>tipo</b> e a <b>data de início</b> — é o tipo que decide o que a
         volta vai exigir (exame de retorno, estabilidade, férias).</div>
       ${anteriores}
-      ${PODE_EDITAR ? `<div style="margin-top:8px">
-        <button class="btn secundario" id="af-afastar">🏥 Afastar…</button></div>` : ""}
+      {# ⚑ O "AFASTAR…" SAIU DAQUI (26/11/2026): afastamento é pedido do
+         portal ("Comunicação de Afastamento"), e o DP atende — ele, no mesmo
+         dia: *"isso aqui é para ir também pelo portal. É tudo pelo portal."* #}
+      <div class="cartao-dica" style="margin-top:8px">Afastamento é pedido
+        pelo <b>portal</b> (Comunicação de Afastamento); o DP atende e ele
+        aparece aqui.</div>
     </div>`;
   }
 
@@ -1729,11 +1739,9 @@ function blocoDoAfastamento(c){
     ${(r.acarreta || []).length ? `<div class="aviso info" style="margin-top:10px">
       <b>A volta acarreta:</b>${lista(r.acarreta, "")}</div>` : ""}
 
-    ${PODE_EDITAR ? `<div style="margin-top:10px">
-      <button class="btn" id="af-voltar">↩️ Registrar o retorno…</button>
-      <small class="desc"> — o sistema confere o que falta e devolve a pessoa à ativa</small>
-    </div>` : `<div class="cartao-dica" style="margin-top:8px">Registrar o
-      retorno é do DP.</div>`}
+    <div class="cartao-dica" style="margin-top:10px">A volta é pedida pelo
+      <a href="/erp/portal" target="_top">Portal da obra</a> (Retorno de Afastamento); o DP atende e o sistema
+      confere o que falta antes de devolver a pessoa à ativa.</div>
   </div>`;
 }
 
@@ -2808,8 +2816,18 @@ function painelDaFicha(){
         <td class="desc"><small>${escapar(x.justificativa || "")}</small></td>
       </tr>`).join("") || `<tr><td colspan="6" class="cartao-dica">Nenhuma alteração.</td></tr>`}
       </tbody></table>
-      ${PODE_EDITAR ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
-        <button class="btn secundario" id="c-alteracao">Registrar alteração</button>
+      {# ⚑ TODO PLEITO É PELO PORTAL (26/11/2026). Ele: *"qualquer coisa que eu
+         não tenha citado, para não dar conflito na tentativa de operacionalizar
+         pelo ERP, então vamos fazer pelo portal. Inclusive o próprio DP, se
+         precisar fazer de alguma coisa, ele também acessa o portal e faz o
+         pleito. E aquele pleito vai entrar em solicitações."* Saíram daqui
+         "Registrar alteração", "Readmitir", "Trocar o vínculo" e "Desligar".
+         Ficam "Conferência concluída" e "Mudar a etapa", que são o trabalho do
+         DP sobre o cadastro, não pedidos. #}
+      ${PODE_EDITAR ? `<div class="cartao-dica" style="margin-top:12px">Alteração
+        de cargo, desligamento, readmissão e troca de vínculo são pedidos pelo
+        <a href="/erp/portal" target="_top">Portal da obra</a> — inclusive pelo DP — e entram em Solicitações.</div>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
         {# ⚑ "CONFERÊNCIA CONCLUÍDA" TEM BOTÃO PRÓPRIO (17/11/2026), e não é
            uma das opções de "mudar etapa", porque quem decide o destino é a
            REGRA e não a pessoa: prestador morre no DP e vai para concluído,
@@ -2823,18 +2841,11 @@ function painelDaFicha(){
           ? `<button class="btn verde" id="c-conferido">Conferência concluída</button>`
           : ""}
         <button class="btn secundario" id="c-etapa">Mudar a etapa</button>
-        ${c.situacao === "DESLIGADO"
-          ? `<button class="btn" id="c-readmitir">Readmitir</button>`
-          : `<button class="btn secundario" id="c-trocar">Trocar o vínculo</button>
-             <button class="btn vermelho" id="c-desligar">Desligar</button>`}
       </div>` : ""}`;
     if (els("c-etapa")) els("c-etapa").addEventListener("click", abrirMudancaDeEtapa);
     if (els("c-conferido"))
       els("c-conferido").addEventListener("click", concluirAConferencia);
-    if (els("c-alteracao")) els("c-alteracao").addEventListener("click", abrirAlteracao);
-    if (els("c-readmitir")) els("c-readmitir").addEventListener("click", abrirReadmissao);
-    if (els("c-trocar")) els("c-trocar").addEventListener("click", abrirTrocaDeVinculo);
-    if (els("c-desligar")) els("c-desligar").addEventListener("click", abrirDesligamento);
+    // (alteração, readmissão, troca de vínculo e desligamento: pelo portal, 26/11/2026)
   }
   ligarCriacaoDeLista();
   aplicarMascaras(alvo);
@@ -3803,7 +3814,7 @@ async function importarPessoas(gravar){
   b.disabled = false;
 }
 
-els("btn-novo").addEventListener("click", ()=>formulario(null));
+// (o "+ Colaborador" saiu em 26/11/2026 — admissão é pelo portal)
 if (els("btn-importar")) els("btn-importar").addEventListener("click", abrirImportacaoDePessoas);
 if (els("btn-fichas")) els("btn-fichas").addEventListener("click", abrirImportacaoDeFichas);
 {# O ouvinte do botão "+ Cargo" saiu junto com o botão (17/11/2026): criar
