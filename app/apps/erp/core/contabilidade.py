@@ -1128,8 +1128,13 @@ def receber(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
                atualizado_em = now() WHERE id = :id"""),
         {"sit": situacao, "doc": documento_id,
          "div": json.dumps(fora, ensure_ascii=False), "id": pedido_id})
+    # ⚑ 26/11/2026: "os dados batem" só quando os dados foram LIDOS do
+    # documento. Sem leitura (o retorno pela caixa de entrada), a frase era
+    # falsa — dizia que conferiu sem ter conferido.
     _evento(s, pedido_id, situacao,
-            ("o documento voltou e os dados batem com o cadastro" if not fora
+            ("o documento voltou — o conteúdo ainda não foi conferido pelo sistema"
+             if not lido else
+             "o documento voltou e os dados batem com o cadastro" if not fora
              else "o documento voltou com " + str(len(fora))
              + " dado(s) diferente(s) do cadastro"),
             {"conferido": bool(lido), "divergencias": fora}, usuario, pelo_agente)
@@ -1283,7 +1288,33 @@ def ler(s: Session, pedido_id: int) -> dict[str, Any]:
     d["anexos_extras"] = anexos_extras(d)
     d["situacao_rotulo"] = SITUACAO_ROTULOS.get(d["situacao"], d["situacao"])
     d["para_que_vai"] = list(d.get("para") or []) or list(endereco_padrao(s) or [])
+    d.update(o_que_voltou(s, pedido_id, d.get("numero") or ""))
     return d
+
+
+def o_que_voltou(s: Session, pedido_id: int, numero: str) -> dict[str, Any]:
+    """⚑ O QUE A CONTABILIDADE RESPONDEU, À VISTA NO PEDIDO (26/11/2026). O dono:
+    *"a gente clica (…) não vê o que é que a contabilidade respondeu, não vê o
+    que é que ela anexou. Então meio que perde o sentido eu ter que de novo lá
+    na caixa de entrada de e-mail, buscar a informação."* As respostas lidas
+    pela caixa (com o texto, desde a migração 129) e os documentos que vieram
+    nelas — que já ficam no Arquivo da pessoa."""
+    from app.apps.erp.core.comum.email_entrada import _tem_coluna_corpo
+    corpo = "corpo" if _tem_coluna_corpo(s) else "NULL AS corpo"
+    respostas = [dict(r) for r in s.execute(text(f"""
+        SELECT de, assunto, recebido_em, processado_em, situacao, anexos, {corpo}
+          FROM email_entrada_mensagens WHERE pedido_id = :p
+         ORDER BY processado_em DESC NULLS LAST, id DESC LIMIT 20"""),
+        {"p": pedido_id}).mappings().all()]
+    for r in respostas:
+        for k in ("recebido_em", "processado_em"):
+            r[k] = r[k].isoformat() if r.get(k) else None
+    docs = [dict(r) for r in s.execute(text("""
+        SELECT d.id, d.anexo_id, d.nome_padronizado AS nome, t.nome AS tipo
+          FROM documentos d LEFT JOIN documento_tipos t ON t.codigo = d.tipo_codigo
+         WHERE d.referencia LIKE :ref ORDER BY d.id"""),
+        {"ref": f"{numero} — retorno%"}).mappings().all()] if numero else []
+    return {"respostas": respostas, "documentos_que_voltaram": docs}
 
 
 def listar(s: Session, *, situacao: str = "", atrasados: bool = False,

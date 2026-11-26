@@ -315,6 +315,7 @@ async function abrirPedido(id){
         <small>${p.situacao === "RASCUNHO"
           ? "Para corrigir o texto ou anexar algo, abra o pedido pela solicitação, na tela de atendimento."
           : "O texto fica guardado como foi enviado: o pedido de março continua mostrando o texto de março."}</small></div>
+      ${blocoDoQueVoltou(p)}
       ${(p.eventos || []).length ? `<div style="margin-top:12px"><b>O que aconteceu</b>
         <div class="tabela-rolagem" style="max-height:240px"><table><tbody>
         ${p.eventos.map(e => `<tr><td style="white-space:nowrap">${dataBR(e.quando)}</td>
@@ -833,11 +834,15 @@ async function acaoCaixa(qual){
     if (qual === "testar") {
       aviso("cx-msg", `Conectou. ${r.nao_lidas} mensagem(ns) não lida(s).`, "ok");
     } else {
-      aviso("cx-msg", `${r.olhou} mensagem(ns) olhada(s): ${r.casadas} casada(s), `
-        + `${r.sem_dono} sem dono, ${r.arquivados} anexo(s) arquivado(s).`
-        + (qual === "conferir" ? " Nada foi gravado — é só a conferência." : ""),
+      // 26/11/2026: a tela é redesenhada ANTES do recado — antes, o recado
+      // aparecia e sumia no mesmo instante, e ninguém sabia se tinha lido.
+      await carregarCaixa();
+      aviso("cx-msg", `${r.olhou} mensagem(ns) nova(s) olhada(s): ${r.casadas} casada(s) com pedido, `
+        + `${r.sem_anexo || 0} resposta(s) sem anexo, ${r.sem_dono} sem dono, ${r.arquivados} anexo(s) arquivado(s).`
+        + (qual === "conferir" ? " Nada foi gravado — é só a conferência."
+           : (r.pasta_do_agente ? ` As que casaram foram para a pasta ${r.pasta_do_agente}.` : "")
+             + " As que não casaram ficaram NÃO LIDAS na caixa de entrada, para o DP."),
         "ok");
-      carregarCaixa();
     }
   } catch(e){ aviso("cx-msg", e.message, "erro"); }
 }

@@ -994,6 +994,7 @@ async function verPedidoContabil(id){
             data-pc-tirar="${ex.documento_id}">tirar</button>` : ""}</div>`; }).join("")}</div>
         ${aberto ? `<button class="btn secundario" id="pc-anexar" style="margin-top:6px">Anexar arquivo…</button>` : ""}
       </div>
+      ${blocoDoQueVoltou(p)}
       ${(p.eventos || []).length ? `<div style="margin-top:12px"><b>O que aconteceu com este e-mail</b>
         <small class="desc">— fica guardado no sistema, com de qual conta saiu e para quem</small>
         <div class="tabela-rolagem" style="max-height:180px"><table><tbody>

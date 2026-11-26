@@ -1698,6 +1698,26 @@ function _terminouTrabalho(b){
   }
 }
 
+// ⚑ O QUE A CONTABILIDADE RESPONDEU (26/11/2026) — o texto de cada resposta
+// lida pela caixa e os documentos que vieram nelas, dentro do pedido. Usado
+// pela tela da Contabilidade e pelo pedido ao DP (`contabilidade.o_que_voltou`).
+function blocoDoQueVoltou(p){
+  const rs = p.respostas || [], ds = p.documentos_que_voltaram || [];
+  if (!rs.length && !ds.length) return "";
+  const quando = r => (r.recebido_em || r.processado_em || "").slice(0, 16).replace("T", " ");
+  return `<div style="margin-top:12px; border-left:4px solid var(--verde, #1C6B3C); padding:8px 12px;
+      background:#E8F6EE; border-radius:8px"><b>O que a contabilidade respondeu</b>
+    ${ds.length ? `<div style="margin-top:6px"><small>Documentos que vieram (já no Arquivo da pessoa):</small>
+      ${ds.map(d => `<div>📎 <a href="/erp/anexo/${d.anexo_id}" target="_blank">${escapar(d.nome || d.tipo || "documento")}</a>
+        ${d.tipo ? `<small class="desc">· ${escapar(d.tipo)}</small>` : ""}</div>`).join("")}</div>` : ""}
+    ${rs.map(r => `<details style="margin-top:6px" ${rs.length === 1 ? "open" : ""}>
+      <summary><small>${escapar(quando(r))} · ${escapar(r.de || "")} · ${r.anexos || 0} anexo(s)</small></summary>
+      <div style="white-space:pre-wrap; font-size:13px; background:#fff; border-radius:6px; padding:8px;
+           max-height:240px; overflow:auto; margin-top:4px">${escapar(r.assunto || "")}\n\n${escapar(r.corpo || "(texto não guardado — resposta lida antes de 26/11/2026)")}</div>
+    </details>`).join("")}
+  </div>`;
+}
+
 async function api(url, opcoes) {
   const botao = _comecouTrabalho();
   try { return await _api(url, opcoes); }

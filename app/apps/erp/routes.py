@@ -14700,9 +14700,13 @@ def api_dp_caixa():
 
 @bp.route("/erp/api/dp/caixa/<acao>", methods=["POST"])
 @login_obrigatorio
-@permissao("configurar")
+@permissao("pedir_contabilidade")
 def api_dp_caixa_acao(acao: str):
-    """testar · ler (uma rodada agora) · conferir (uma rodada SEM gravar)."""
+    """testar · ler (uma rodada agora) · conferir (uma rodada SEM gravar).
+
+    26/11/2026: era só do administrador (`configurar`), e a tela mostrava o
+    "Ler agora" ao DP, que recebia "sem permissão". Ler a caixa é trabalho do
+    DP; configurá-la (servidor, senha) continua na rota de configuração."""
     from app.apps.erp.core.comum import email_entrada
     try:
         with get_session() as s:
