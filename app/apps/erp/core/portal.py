@@ -416,7 +416,8 @@ def tipos(s: Session) -> list[dict[str, Any]]:
             if k not in svc_sp.TIPOS:
                 continue
             d = svc_sp.TIPOS[k]
-            campos = list(d["campos"])
+            # 26/11/2026: com os campos de cada vínculo — ver `campos_para_desenhar`.
+            campos = svc_sp.campos_para_desenhar(d)
             # ⚑ A OBRA SÓ ONDE NÃO HÁ DE ONDE TIRÁ-LA (15/11/2026). Ele: *"a
             # obra está no cadastro. Ignora isso aí, tira isso aí"* — e,
             # perguntado se valia para gente nova: *"admissão nova ou de

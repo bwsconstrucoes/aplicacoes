@@ -1165,6 +1165,30 @@ def _nao_cabe_agora(regra: dict[str, Any], campo: str,
     return True
 
 
+def campos_para_desenhar(regra: dict[str, Any]) -> list[str]:
+    """TODOS os campos que a tela precisa desenhar: os do tipo E os de cada
+    vínculo (a tela esconde, depois, o que não é do vínculo da pessoa).
+
+    ⚑ 26/11/2026. "O colaborador vai trabalhar o aviso?" (só da carteira) e
+    "Como foi o desligamento" (só do prestador) moram só nos ramos — e as
+    telas (o portal e a do DP) desenhavam só `campos`: o campo nunca existia, e
+    o servidor o exigia. Ele: *"está perguntando uma coisa que o sistema não
+    está permitindo preencher."* Cada campo de ramo entra junto do vizinho.
+    """
+    campos = list(regra.get("campos") or ())
+    for ramo in (regra.get("por_vinculo") or {}).values():
+        lista = list(ramo.get("campos") or ())
+        for i_, c_ in enumerate(lista):
+            if c_ in campos:
+                continue
+            if i_ and lista[i_ - 1] in campos:              # depois do anterior
+                campos.insert(campos.index(lista[i_ - 1]) + 1, c_)
+                continue
+            seguinte = next((x for x in lista[i_ + 1:] if x in campos), None)
+            campos.insert(campos.index(seguinte) if seguinte else len(campos), c_)
+    return campos
+
+
 def campos_do_tipo(tipo: str, vinculo: Optional[str] = None) -> tuple[str, ...]:
     """Os campos que o formulário pede. Sem vínculo conhecido, a união deles.
 
@@ -1802,7 +1826,7 @@ def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
         # de custo. A entrada fica no dicionário pelos pedidos já gravados.
         if d.get("oculto"):
             continue
-        campos = list(d["campos"])
+        campos = campos_para_desenhar(d)
         # ⚑ A OBRA SÓ SE PERGUNTA QUANDO NÃO HÁ DE ONDE TIRÁ-LA (15/11/2026).
         #
         # Ele: *"a obra está no cadastro. Ignora isso aí, tira isso aí"* — e,

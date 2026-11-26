@@ -141,6 +141,25 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (6) — Desligamento a pedido: o portal exigia "vai trabalhar o aviso?" e não mostrava a pergunta
+
+Ele: *"está como obrigatório, mas esse campo não apareceu aqui. Aí a pessoa
+está bloqueada, não consegue enviar o pedido, porque está perguntando uma coisa
+que o sistema não está permitindo preencher."*
+
+**Causa:** os campos que só existem num VÍNCULO (`cumpre_aviso`, da carteira;
+`saida_prestador`, do prestador — este de hoje cedo) moravam só no ramo
+`por_vinculo`, e o portal (`portal.tipos`) e a tela do DP
+(`tipos_para_tela`) desenhavam só os `campos` do tipo. O campo nunca existia
+na tela; o servidor o exigia. Os testes de 24/11 cobriam o servidor, e a tela
+"não foi vista no navegador" — estava escrito no registro de 24/11 (5).
+
+**Conserto:** `campos_para_desenhar(regra)` — os do tipo + os de cada ramo, no
+lugar do vizinho — usado pelas duas telas. Conferido no navegador: com "À
+Pedido do Colaborador" a pergunta aparece e o pedido sai. Teste novo: para
+TODO tipo, o que pode ser exigido (por vínculo ou por outra resposta) está
+entre os campos desenhados.
+
 ### 26/11/2026 (5) — O ASO travava a admissão pelo portal: a validade agora é calculada
 
 Relato da obra, trazido por ele: *"Quando a gente coloca pra concluir o
