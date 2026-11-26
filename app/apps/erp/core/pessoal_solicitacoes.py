@@ -3684,9 +3684,18 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         "aberta": l["situacao"] in ABERTAS,
         "feitos": int(l["feitos"]), "total_itens": int(l["total_itens"]),
     } for l in linhas]
+    # ⚑ A MARCA "🤖 agente" (26/11/2026). Ele: *"tudo que for feito pelo agente
+    # (…) na própria listagem tem alguma tag que indique isso, porque serve de
+    # uma espécie de alerta para a gente abrir e verificar."* Some quando
+    # alguém revisa as ações no Diário do agente.
+    from app.apps.erp.core import agente_diario
+    do_agente = agente_diario.nao_revisadas_por_solicitacao(s, [x["id"] for x in fila])
+    for x in fila:
+        x["agente_a_revisar"] = do_agente.get(x["id"], 0)
     return {
         "solicitacoes": fila,
         "indicadores": {
+            "agente_a_revisar": sum(1 for x in fila if x["agente_a_revisar"]),
             "abertas": sum(1 for x in fila if x["aberta"]),
             "atendidas": sum(1 for x in fila if x["situacao"] == "ATENDIDA"),
             "recusadas": sum(1 for x in fila if x["situacao"] == "RECUSADA"),

@@ -1698,6 +1698,43 @@ function _terminouTrabalho(b){
   }
 }
 
+// ⚑ O DIÁRIO DO AGENTE (26/11/2026) — a tabela das ações que ele fez sozinho,
+// com ✔ Certo / ✘ Errado. Usada dentro da solicitação e na aba "Diário do
+// agente" de Contabilidade e agente (`agente_diario`).
+function desenharAcoesDoAgente(acoes, comPedido){
+  const sel = a => a.revisao === "CERTO" ? `<span class="etiqueta verde">✔ certo</span>`
+    : a.revisao === "ERRADO" ? `<span class="etiqueta vermelho" title="${escapar(a.comentario || "")}">✘ errado</span>`
+    : `<button class="btn secundario" data-ag-certo="${a.id}">✔ Certo</button>
+       <button class="btn secundario" data-ag-errado="${a.id}">✘ Errado…</button>`;
+  return `<div class="tabela-rolagem"><table><tbody>${acoes.map(a => `<tr>
+    <td style="white-space:nowrap" class="dados">${dataBR((a.criado_em || "").slice(0, 10))}
+      ${(a.criado_em || "").slice(11, 16)}</td>
+    ${comPedido ? `<td class="dados" style="white-space:nowrap">${a.solicitacao_id
+      ? `<a href="#" class="link-btn" data-ag-sol="${a.solicitacao_id}">${escapar(a.solicitacao_numero || "")}</a>`
+      : "—"}<br><small>${escapar(a.pessoa || "")}</small></td>` : ""}
+    <td><b>${escapar(a.acao_rotulo || a.acao)}</b><br><small class="desc">${escapar(a.texto || "")}</small>
+      ${a.revisao === "ERRADO" && a.comentario ? `<br><small><i>${escapar(a.comentario)}</i>
+        — ${escapar(a.revisado_por_nome || "")}</small>` : ""}</td>
+    <td style="white-space:nowrap">${sel(a)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function ligarRevisaoDoAgente(lugar, depois){
+  const revisar = async (id, revisao, comentario) => {
+    await api(`/erp/api/dp/agente/acoes/${id}/revisao`, {method: "POST",
+      body: JSON.stringify({revisao, comentario: comentario || ""})});
+    if (depois) depois();
+  };
+  lugar.querySelectorAll("[data-ag-certo]").forEach(b => b.addEventListener("click", () =>
+    revisar(b.dataset.agCerto, "CERTO").catch(e => alert(e.message))));
+  lugar.querySelectorAll("[data-ag-errado]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "O agente errou aqui", textoOk: "Marcar como errado",
+      aviso: "Diga o que estava errado e o que era para ter feito. É isto que vira o ajuste "
+           + "do agente — traga para o chat do DP para mudar a regra.",
+      campos: [{nome: "comentario", rotulo: "O que era para ter feito", tipo: "textarea"}]});
+    if (r) revisar(b.dataset.agErrado, "ERRADO", r.comentario).catch(e => alert(e.message));
+  }));
+}
+
 // ⚑ O QUE A CONTABILIDADE RESPONDEU (26/11/2026) — o texto de cada resposta
 // lida pela caixa e os documentos que vieram nelas, dentro do pedido. Usado
 // pela tela da Contabilidade e pelo pedido ao DP (`contabilidade.o_que_voltou`).

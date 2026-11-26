@@ -64,9 +64,17 @@ def registrar(s: Session, acao: str, texto_: str, *, solicitacao_id: Optional[in
          "c": colaborador_id, "d": json.dumps(detalhe or {}, ensure_ascii=False, default=str)}).scalar()
 
 
-def listar(s: Session, *, so_pendentes: bool = False, limite: int = 200) -> list[dict[str, Any]]:
+def listar(s: Session, *, so_pendentes: bool = False, solicitacao_id: Optional[int] = None,
+           limite: int = 200) -> list[dict[str, Any]]:
     if not tem_tabela(s):
         return []
+    onde = ["TRUE"]
+    params: dict[str, Any] = {"l": limite}
+    if so_pendentes:
+        onde.append("a.revisao IS NULL")
+    if solicitacao_id:
+        onde.append("a.solicitacao_id = :s")
+        params["s"] = solicitacao_id
     linhas = s.execute(text(f"""
         SELECT a.*, sol.numero AS solicitacao_numero, c.nome AS pessoa,
                u.nome AS revisado_por_nome
@@ -74,8 +82,8 @@ def listar(s: Session, *, so_pendentes: bool = False, limite: int = 200) -> list
           LEFT JOIN dp_solicitacoes sol ON sol.id = a.solicitacao_id
           LEFT JOIN colaboradores c ON c.id = a.colaborador_id
           LEFT JOIN usuarios u ON u.id = a.revisado_por
-         {"WHERE a.revisao IS NULL" if so_pendentes else ""}
-         ORDER BY a.id DESC LIMIT :l"""), {"l": limite}).mappings().all()
+         WHERE {" AND ".join(onde)}
+         ORDER BY a.id DESC LIMIT :l"""), params).mappings().all()
     saida = []
     for l in linhas:
         d = dict(l)

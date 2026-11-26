@@ -78,6 +78,8 @@ DIAS_OLHADOS = 30
 # A pasta para onde vai, lida, a mensagem que o agente casou com um pedido.
 PASTA_DO_AGENTE = "Agente"
 MARCA_PEDIDO = re.compile(r"\[(CT-\d{4,6})\]")
+# ⚑ 26/11/2026 — número único: o e-mail novo leva o número da solicitação.
+MARCA_SOLICITACAO = re.compile(r"\[(SDP-\d{4,6}(?:/\d{1,2})?)\]")
 MARCA_DEVOLUCAO = re.compile(r"\[(DV-\d{4,6})\]")
 SO_DIGITOS = re.compile(r"\D")
 CPF_NO_TEXTO = re.compile(r"\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b")
@@ -272,6 +274,16 @@ def casar(s: Session, *, in_reply_to: str, references: str, assunto: str,
             {"ids": ids}).first()
         if linha:
             return {"pedido_id": linha.id, "como": "In-Reply-To"}
+
+    m = MARCA_SOLICITACAO.search(assunto or "") or MARCA_SOLICITACAO.search(corpo or "")
+    if m:
+        # A marca fica no assunto que o ERP gravou; o mais novo com ela é o dono.
+        linha = s.execute(text("""
+            SELECT id FROM dp_pedidos WHERE assunto LIKE :m
+             ORDER BY id DESC LIMIT 1"""), {"m": f"%[{m.group(1)}]%"}).first()
+        if linha:
+            return {"pedido_id": linha.id, "como": "número da solicitação no assunto"}
+        return {"motivo": f"o assunto cita {m.group(1)}, que não tem e-mail aqui"}
 
     m = MARCA_PEDIDO.search(assunto or "") or MARCA_PEDIDO.search(corpo or "")
     if m:

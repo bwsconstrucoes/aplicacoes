@@ -107,8 +107,10 @@
 {# ATENDER é do DP; ABRIR e acompanhar é de quem está na obra. A tela esconde o
    que a pessoa não pode — mas a trava de verdade é o @permissao da rota. #}
 const PODE_ATENDER = {{ 'true' if pode.atender_dp else 'false' }};
+const PODE_REVISAR_AGENTE = {{ 'true' if pode.pedir_contabilidade else 'false' }};
 let DADOS = {solicitacoes: [], tipos: [], indicadores: {}};
 let ABERTA = null;
+let SO_AGENTE = false;   // o cartão "🤖 Feito pelo agente" filtra a lista
 
 // ===========================================================================
 // OS PASSOS DE CADA TIPO (18/11/2026)
@@ -292,6 +294,7 @@ function visiveis(){
         && !(x.total_itens && x.feitos && x.feitos < x.total_itens)) return false;
     if (els("f-parada").checked
         && !(ABERTAS.includes(x.situacao) && diasAberta(x) > 3)) return false;
+    if (SO_AGENTE && !x.agente_a_revisar) return false;
     return true;
   });
 }
@@ -311,7 +314,13 @@ function desenhar(){
     <div class="kpi estatico verde"><div class="kpi-rotulo">Atendidas</div>
       <div class="kpi-valor">${i.atendidas || 0}</div></div>
     <div class="kpi estatico"><div class="kpi-rotulo">Recusadas</div>
-      <div class="kpi-valor">${i.recusadas || 0}</div></div>`;
+      <div class="kpi-valor">${i.recusadas || 0}</div></div>
+    ${i.agente_a_revisar ? `<div class="kpi ambar" id="kpi-agente" style="cursor:pointer"
+      title="Mostra só estas"><div class="kpi-rotulo">🤖 Feito pelo agente</div>
+      <div class="kpi-valor">${i.agente_a_revisar}</div>
+      <div class="kpi-sub">abra e confira</div></div>` : ""}`;
+  if (els("kpi-agente")) els("kpi-agente").addEventListener("click", () => {
+    SO_AGENTE = !SO_AGENTE; desenhar(); });
   {# ⚑ AS READMISSÕES QUE NINGUÉM FEZ, EM CIMA DE TUDO (15/11/2026).
 
      Ele: *"o colaborador que é desligado da carteira e continua como
@@ -383,7 +392,8 @@ function desenhar(){
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
     <td class="dados">${escapar(x.numero)}</td>
-    <td><b>${escapar(x.tipo_rotulo)}</b>${x.resumo
+    <td><b>${escapar(x.tipo_rotulo)}</b>${x.agente_a_revisar
+      ? ` <span class="etiqueta azul" title="O agente fez ${x.agente_a_revisar} coisa(s) aqui sozinho — abra e confira">🤖 agente</span>` : ""}${x.resumo
       ? `<br><small class="desc">${escapar(x.resumo)}</small>` : ""}</td>
     <td>${escapar(x.pessoa || "—")}${x.cargo ? `<br><small class="desc">${escapar(x.cargo)}</small>` : ""}</td>
     <td class="dados" style="white-space:nowrap">${escapar(x.pessoa_cpf || "—")}</td>
@@ -490,6 +500,7 @@ function pintarPedido(){
       ${escapar(p.cancelando.motivo)} — fecha quando a contabilidade confirmar.</div>` : ""}
     ${blocoDaAnalise(p)}
     ${blocoDoProcesso(p)}
+    <div id="dlg-agente"></div>
     {# ⚑ OS DOCUMENTOS E O CADASTRO, À VISTA (19/11/2026). Ele: *"conferir se
        a documentação veio completa, mas cadê a documentação? A gente não
        consegue visualizar ela (…) não existe um cadastro ou pré-cadastro
@@ -536,6 +547,7 @@ function pintarPedido(){
       <button class="link-btn" id="s-cancelar">Cancelar o pedido</button>
     </div>` : ""}`;
   ligarBotoesDoProcesso(p);
+  pintarOQueOAgenteFez(p);
   els("dlg-corpo").querySelectorAll("[data-ver-papel]").forEach(b =>
     b.addEventListener("click", () => verPapel(b.dataset.verPapel, b.dataset.nome)));
   if (els("s-corrigir")) els("s-corrigir").addEventListener("click", () => corrigirPedido(p));
@@ -628,8 +640,8 @@ function blocoDoProcesso(p){
       if (x.pedido)
         b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
           data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
-            ? `ver o e-mail ${escapar(x.pedido.numero)}`
-            : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
+            ? `ver o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`
+            : `Ler e enviar o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`}</button>`);
       if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
         b.push(`<a class="btn secundario" href="#" data-abrir-ambiente="${p.colaborador_id}"
           data-ambiente-aba="documentos">abrir os documentos para anexar</a>`);
@@ -642,8 +654,8 @@ function blocoDoProcesso(p){
     if (x.pedido)
       b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
         data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
-          ? `ver o e-mail ${escapar(x.pedido.numero)}`
-          : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
+          ? `ver o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`
+          : `Ler e enviar o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`}</button>`);
     if (x.codigo === "ENCAMINHADA" && x.estado === "PENDENTE")
       b.push(`<button class="btn" data-pr-assinar="1">Mandar para a obra assinar…</button>`);
     if (x.a_validar) {
@@ -708,6 +720,21 @@ function blocoDoProcesso(p){
           pr.total - pr.cumpridos > 1 ? " e mais " + (pr.total - pr.cumpridos - 1) : ""}.</small>`}</div>` : ""}`;
 }
 
+
+{# ⚑ O QUE O AGENTE FEZ NESTA SOLICITAÇÃO (26/11/2026), com ✔ Certo / ✘ Errado.
+   Ele: *"ele vai fazendo, aí eu analiso (…) opa, essa aqui deu errado."* A
+   revisão tira a marca "🤖 agente" da lista; o "errado" vira ajuste no chat. #}
+async function pintarOQueOAgenteFez(p){
+  const lugar = els("dlg-agente");
+  if (!lugar || !PODE_REVISAR_AGENTE) return;
+  let acoes = [];
+  try { acoes = (await api(`/erp/api/dp/agente/acoes?solicitacao_id=${p.id}`)).acoes || []; }
+  catch(e){ return; }
+  if (!acoes.length || ABERTA !== p) return;
+  lugar.innerHTML = `<h4>🤖 O que o agente fez sozinho aqui</h4>
+    ${desenharAcoesDoAgente(acoes)}`;
+  ligarRevisaoDoAgente(lugar, () => abrirPedido(p.id));
+}
 
 function ligarBotoesDoProcesso(p){
   const corpo = els("dlg-corpo");
@@ -949,6 +976,9 @@ async function verPedidoContabil(id){
   let p;
   try { p = (await api(`/erp/api/dp/pedidos/${id}`)).pedido; }
   catch(e){ aviso("dlg-msg", e.message, "erro"); return; }
+  // NÚMERO ÚNICO (26/11/2026): o que a tela mostra é o que foi no assunto —
+  // o da solicitação; o CT é só a chave interna.
+  p.numero = p.marca || p.numero;
   const aberto = p.situacao === "RASCUNHO";
   const dlg = els("dlg-pedido");
   dlg.innerHTML = `<div class="dlg-topo"><h3>${escapar(p.numero)} — ${escapar(p.template_nome)}</h3>
@@ -986,8 +1016,19 @@ async function verPedidoContabil(id){
                     <button class="btn secundario" id="pc-salvar">Guardar o texto e enviar depois</button>` : ""}
         ${["ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE"].includes(p.situacao)
           ? `<button class="btn secundario" id="pc-reenviar">Reenviar o mesmo e-mail</button>` : ""}
-        ${!aberto ? `<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">cobrar ou
-          registrar o retorno em Contabilidade</a>` : ""}
+        {# ⚑ TELA ÚNICA (26/11/2026). Ele: *"unificar as telas (…) uma tela só,
+           um número só"*. Cobrar, receber o retorno e concluir saem daqui — a
+           tela Contabilidade e agente vira configuração. #}
+        ${["ENVIADO", "COBRADO"].includes(p.situacao)
+          ? `<button class="btn secundario" id="pc-cobrar">Cobrar o retorno</button>
+             <button class="btn secundario" id="pc-retorno">Chegou o documento por fora? Anexar…</button>` : ""}
+        ${p.situacao === "RESPONDIDO"
+          ? `<button class="btn" id="pc-concluir">Concluir</button>` : ""}
+        ${p.situacao === "DIVERGENTE"
+          ? `<button class="btn secundario" id="pc-aceitar">Aceitar a divergência…</button>
+             <button class="btn secundario" id="pc-retorno">Anexar o documento corrigido…</button>` : ""}
+        ${!aberto && !["CONCLUIDO", "CANCELADO"].includes(p.situacao)
+          ? `<button class="link-btn" id="pc-cancelar">cancelar este e-mail…</button>` : ""}
       </div>
       <div id="pc-msg" style="margin-top:10px"></div></div>`;
   // "corpo" entre aspas: é o nome que o servidor lê, não opção do fetch.
@@ -1005,6 +1046,50 @@ async function verPedidoContabil(id){
       if (r.enviado === false) throw new Error("O e-mail não saiu: " + (r.erro || ""));
       await fim(`${p.numero} reenviado${r.copia_nos_enviados ? " — " + r.copia_nos_enviados : ""}.`);
     } catch(e){ aviso("pc-msg", e.message, "erro"); }
+  });
+  const liga = (qual, fn) => { if (els(qual)) els(qual).addEventListener("click", fn); };
+  const faz = async (qual, corpo, msg) => {
+    try {
+      const r = await api(`/erp/api/dp/pedidos/${id}/${qual}`, {method: "POST",
+        body: corpo instanceof FormData ? corpo : JSON.stringify(corpo || {})});
+      if (r.erro) throw new Error(r.erro);
+      await fim(typeof msg === "function" ? msg(r) : msg);
+    } catch(e){ aviso("pc-msg", e.message, "erro"); }
+  };
+  liga("pc-cobrar", () => {
+    if (confirm(`Mandar uma cobrança de ${p.numero} para ${(p.para_que_vai || []).join(", ")}?`))
+      faz("cobrar", {}, `Cobrança de ${p.numero} enviada.`);
+  });
+  liga("pc-concluir", () => {
+    if (confirm(`Concluir ${p.numero}? A solicitação fecha e quem pediu é avisado.`))
+      faz("concluir", {}, `${p.numero} concluído.`);
+  });
+  liga("pc-aceitar", async () => {
+    const r = await perguntar({titulo: "Por que a divergência está aceita?", textoOk: "Aceitar",
+      campos: [{nome: "motivo", rotulo: "Motivo", tipo: "textarea"}]});
+    if (r) faz("aceitar-divergencia", {motivo: r.motivo}, "Divergência aceita.");
+  });
+  liga("pc-cancelar", async () => {
+    const r = await perguntar({titulo: `Cancelar ${p.numero}?`, textoOk: "Cancelar o e-mail",
+      aviso: "A contabilidade não é avisada por aqui — se ela já está trabalhando nisso, avise.",
+      campos: [{nome: "motivo", rotulo: "Motivo", tipo: "textarea"}]});
+    if (r) faz("cancelar", {motivo: r.motivo}, `${p.numero} cancelado.`);
+  });
+  liga("pc-retorno", () => {
+    const ent = document.createElement("input");
+    ent.type = "file";
+    ent.addEventListener("change", () => {
+      const f = ent.files && ent.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append("arquivo", f);
+      faz("retorno-arquivo", fd, r => r.concluiu
+        ? `🤖 O agente leu o documento, bate com o cadastro e concluiu ${p.numero}.`
+        : (r.divergencias || []).length
+          ? `O documento foi guardado, mas tem ${r.divergencias.length} dado(s) diferente(s) do cadastro — veja no pedido.`
+          : `O documento foi guardado na pessoa. Confira e conclua.`);
+    });
+    ent.click();
   });
   if (aberto) {
     els("pc-enviar").addEventListener("click", async () => {

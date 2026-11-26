@@ -1517,3 +1517,66 @@ def test_afastamento_sem_atestado_nao_vai_sozinho(mundo):
            "dados": {"afastamento_natureza": "Doença", "afast_inicio": "2026-11-20"}}
     assert "atestado" in ps._por_que_nao_envia(s, sol)
     assert ps._por_que_nao_envia(s, {**sol, "tipo": "FERIAS"}) == "este tipo o DP envia"
+
+
+# ---------------------------------------------------------------------------
+# 26/11/2026 — tela única e número único
+# ---------------------------------------------------------------------------
+@pytestmark_banco
+def test_o_email_leva_o_numero_da_solicitacao_e_a_resposta_casa_por_ele(mundo, monkeypatch):
+    """Ele: *"tela única e número único, sim."* O assunto sai com [SDP-…]."""
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.comum import email_entrada
+    s, c, p, pid, _ = _dependente_enviado(mundo, monkeypatch)
+    ped = svc_ct.ler(s, pid)
+    assert ped["assunto"].startswith(f"[{p['numero']}] ")
+    assert ped["marca"] == p["numero"]
+    assert ped["numero"].startswith("CT-"), "o CT continua por dentro"
+    achou = email_entrada.casar(s, in_reply_to="", references="",
+                                assunto=f"RE: [{p['numero']}] Inclusão de dependente", corpo="")
+    assert achou.get("pedido_id") == pid
+    # o segundo e-mail da mesma solicitação ganha /2 e casa com ele, não com o primeiro
+    assert svc_ct.marca_para_o_email(s, p["id"], "CT-99999") == f"{p['numero']}/2"
+    linha = next(x for x in svc_ct.listar(s, situacao="") if x["id"] == pid)
+    assert linha["marca"] == p["numero"], "a lista mostra o número da solicitação"
+
+
+@pytestmark_banco
+def test_o_email_antigo_com_ct_continua_casando(mundo, monkeypatch):
+    """Ele: *"tem alguns envios à contabilidade que saíram (…) você tem que manter o casamento."*"""
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.comum import email_entrada
+    s, c, p, pid, _ = _dependente_enviado(mundo, monkeypatch)
+    numero = svc_ct.ler(s, pid)["numero"]
+    s.execute(text("UPDATE dp_pedidos SET assunto = :a WHERE id = :i"),
+              {"a": f"[{numero}] Inclusão de dependente — antigo", "i": pid})
+    achou = email_entrada.casar(s, in_reply_to="", references="",
+                                assunto=f"Re: [{numero}] Inclusão de dependente", corpo="")
+    assert achou.get("pedido_id") == pid
+    assert svc_ct.ler(s, pid)["marca"] == numero
+
+
+@pytestmark_banco
+def test_o_dp_anexa_o_retorno_no_pedido_e_o_agente_confere(mundo, monkeypatch):
+    """O documento que chegou por fora entra pelo pedido, na tela de Solicitações."""
+    from app.apps.erp.core import conferencia_retorno as cr
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core import pessoal_solicitacoes as ps
+    s, c, p, pid, _ = _dependente_enviado(mundo, monkeypatch)
+    s.execute(text("UPDATE dp_pedidos SET situacao = 'ENVIADO' WHERE id = :i"), {"i": pid})
+    s.execute(text("INSERT INTO dp_agente_rotinas (chave, modo) VALUES ('conferencia','FAZ') "
+                   "ON CONFLICT (chave) DO UPDATE SET modo = 'FAZ'"))
+    monkeypatch.setattr(ps, "avisar_quem_pediu", lambda s_, i, **kw: True)
+    monkeypatch.setattr(cr, "ler_retorno", lambda b, n: {"nome": c.nome, "cpf": c.cpf})
+    r = svc_ct.receber_arquivo(s, pid, conteudo=b"%PDF-1.4 retorno" * 60,
+                               nome_arquivo="retorno.pdf", usuario=mundo["dp"])
+    assert r["concluiu"] is True
+    assert svc_ct.ler(s, pid)["documentos_que_voltaram"], "o documento aparece no pedido"
+    # a solicitação ganha a marca "🤖 agente" até alguém revisar
+    linha = next(x for x in ps.listar(s)["solicitacoes"] if x["id"] == p["id"])
+    assert linha["agente_a_revisar"] >= 1
+    from app.apps.erp.core import agente_diario
+    for a in agente_diario.listar(s, solicitacao_id=p["id"]):
+        agente_diario.revisar(s, a["id"], "CERTO", "", mundo["dp"])
+    linha = next(x for x in ps.listar(s)["solicitacoes"] if x["id"] == p["id"])
+    assert linha["agente_a_revisar"] == 0

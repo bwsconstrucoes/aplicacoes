@@ -38,6 +38,14 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**NO RAMO, SEM PUBLICAR (26/11/2026, lote 10 e 11)** — decisão dele: *"Não vamos
+publicar, vamos juntar aí com as novas respostas e fazer tudo de uma vez."*
+Caixa de entrada sem marcar lido + pasta Agente, aviso de "processando", fichas
+antigas apagadas, o agente autônomo (confere, conclui, envia dependente e
+afastamento, avisa quem pediu), o diário com ✔/✘, a marca "🤖 agente", a tela
+única e o número único. **Migração 129** — apertar "Aplicar atualizações do
+banco" no momento da junção. Ver "Decisões", 26/11 (10) e (11).
+
 **⚠️ EM OBRA NO CHAT DO PONTO (aviso dele em 23/11/2026):** a central única de
 assinaturas do colaborador vai para o aplicativo do ponto, usando
 `core/termos.py` como base. **Não mexer em `termos.py`** até ele avisar que
@@ -140,6 +148,58 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 26/11/2026 (11) — O agente trabalha sozinho, com diário revisável; uma tela e um número só
+
+Ele: *"eu quero um agente que trabalhe como um humano (…) as ações que o agente
+fez de forma autônoma ficasse todo o histórico (…) opa, essa aqui deu errado."*
+Decisões dele (*"concordando com o ABC"*): **envia sozinho** dependente (sim),
+afastamento (só se o agente ler e estiver tudo certo), férias (não), alteração
+de cargo (não); **conclui sozinho** quando o documento que volta bate — *"mas é
+bom dar destaque tudo que for feito pelo agente (…) na própria listagem tem
+alguma tag"*; **tela única e número único, sim** — *"você tem que manter o
+casamento"* dos e-mails que já saíram com CT.
+
+- **Conferência do retorno** (`conferencia_retorno.py`): o anexo que volta pela
+  caixa (ou que o DP anexa no pedido) é lido por IA (nome, CPF, cargo,
+  salário, admissão, saída) e comparado com o cadastro. Bate → conclui o
+  pedido e fecha a solicitação; diverge → DIVERGENTE, para o DP; não deu para
+  ler → fica para o DP. **Desligamento e Diversos nunca concluem sozinhos.** A
+  rotina "conferencia" nasce em FAZ pela migração 129 (só se estava
+  DESLIGADA).
+- **Envio sozinho** (`pessoal_solicitacoes.enviar_sozinho_se_pode`):
+  DEPENDENTE e AFASTAMENTO, depois do atendimento do DP, se a análise do
+  agente não acusou nada (afastamento exige natureza, início e o atestado).
+- **Aviso a quem pediu** (`avisar_quem_pediu`): ao fechar a solicitação, cartão
+  verde "✅ Pedido resolvido" na entrada do portal (some no "Entendi") e
+  mensagem pelo Telegram/celular (tipo `erp.pedido_resolvido` na mensageria).
+  ⚠️ **Ele não respondeu como quer o aviso**; escolhi portal + Telegram.
+- **Diário do agente** (`agente_diario.py`, tabela `dp_agente_acoes`, 129):
+  cada coisa que ele fez sozinho, com ✔ Certo / ✘ Errado (o errado exige dizer
+  o que era para ter feito). **O agente não aprende sozinho com a revisão, de
+  propósito** — o "errado" vira conversa no chat e ajuste de regra. Aparece
+  dentro da solicitação e na aba "Diário do agente".
+- **Marca "🤖 agente"** na lista de Solicitações e cartão "Feito pelo agente"
+  (clicável, filtra) — some quando todas as ações daquela solicitação são
+  revisadas.
+- **Tela única:** dentro da solicitação, o e-mail à contabilidade agora também
+  cobra, recebe o documento que chegou por fora (anexar → arquiva na pessoa →
+  o agente confere), conclui, aceita divergência e cancela. "Contabilidade e
+  agente" virou configuração: Diário (abre primeiro), rotinas, caixa,
+  sugestões, e-mail da contabilidade no alto. **A lista "Todos os e-mails à
+  contabilidade" e "A devolver pela obra" ficaram** (não pedi para tirar —
+  há CT antigo sem solicitação e o "+ Pedido" avulso vive ali).
+- **Número único:** e-mail novo de solicitação sai com `[SDP-000003]` no
+  assunto (`[SDP-000003/2]` no 2º e-mail da mesma, ex.: retificação). O CT
+  continua por dentro como chave. A caixa casa por In-Reply-To, depois
+  `[SDP-…]` (procura no assunto gravado), depois `[CT-…]` (os antigos), depois
+  CPF. A tela mostra a marca (`contabilidade.marca_do_pedido` / SQL
+  `substring(assunto …)`); CT sem solicitação continua mostrando o CT.
+
+**O que ficou de fora / não verificado:** a leitura por IA do retorno não roda
+aqui (sem chave); resposta só em texto (sem anexo) não conclui nada — o
+cancelamento confirmado por e-mail continua pedindo o clique do DP; o agente
+roda uma vez por dia, no primeiro acesso (não há horário fixo).
 
 ### 26/11/2026 (10) — Caixa de entrada: só o que o agente casou vai para a pasta "Agente"; o resto fica NÃO LIDO; o pedido mostra a resposta; aviso de "processando"; fichas antigas apagadas
 

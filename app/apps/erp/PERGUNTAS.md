@@ -3514,3 +3514,30 @@ não há orçamento de material por obra no ERP.
   assinados pelo portal? *(documento PAPEL "carta anexada pela obra" × assinado
   na tela)*
 
+
+## O agente que trabalha sozinho, o diário e o número único (26/11/2026)
+
+### ⚠️ As palavras ambíguas desta área
+
+- **"o agente fez"** — só o que ele fez SOZINHO (diário `dp_agente_acoes`).
+  Sugestão aprovada por gente (modo SUGERE) não é ação dele.
+- **"revisado"** — alguém marcou ✔ ou ✘. Sem marca, a solicitação leva "🤖 agente".
+- **"o número do pedido"** — para o e-mail novo é o da solicitação (SDP-…,
+  com /2 no segundo e-mail); o CT é só chave interna. Pedido antigo (antes de
+  26/11) e pedido sem solicitação mostram o CT.
+
+### Perguntas que o sistema responde
+
+- O que o agente fez sozinho esta semana? *(diário, por data)*
+- Tem coisa feita pelo agente que ninguém conferiu? Quantas?
+- Quais pedidos o agente concluiu sozinho? E em quais achou diferença?
+- O agente já errou? O que a gente marcou como errado, e o que era para ter feito?
+- Por que o agente não mandou sozinho o pedido do fulano? *(NAO_ENVIOU, com o motivo)*
+- Quem pediu já foi avisado que o pedido foi resolvido? *(AVISOU; e o "Entendi" no portal)*
+- A resposta da contabilidade com "[SDP-000123]" é de qual pedido?
+
+### Perguntas que o sistema AINDA NÃO responde
+
+- Quanto tempo o agente economizou? — falta medir o tempo do DP antes/depois.
+- O agente está acertando mais com o tempo? — dá para contar ✔/✘ por mês, mas
+  não há tela; e o agente não aprende sozinho (de propósito).

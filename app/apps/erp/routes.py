@@ -14969,6 +14969,17 @@ def api_dp_pedido_acao(pedido_id: int, acao: str):
             elif acao == "tirar-anexo":
                 r = svc_ct.tirar_anexo(s, pedido_id, int(d.get("documento_id") or 0),
                                        usuario)
+            elif acao == "retorno-arquivo":
+                # ⚑ 26/11/2026 — TELA ÚNICA: o documento que a contabilidade
+                # devolveu por fora (WhatsApp, pendrive, e-mail pessoal) entra
+                # pelo pedido e segue O MESMO caminho do que chega pela caixa:
+                # arquiva na pessoa e o agente confere.
+                arq = request.files.get("arquivo")
+                if arq is None:
+                    raise ErroValidacao("Escolha o arquivo que a contabilidade devolveu.")
+                r = svc_ct.receber_arquivo(s, pedido_id, conteudo=arq.read(),
+                                           nome_arquivo=arq.filename or "retorno",
+                                           usuario=usuario)
             elif acao == "cobrar":
                 r = svc_ct.cobrar(s, pedido_id, usuario)
             elif acao == "receber":
@@ -15062,6 +15073,54 @@ def api_dp_agente():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha na configuração do agente de DP")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/agente/acoes")
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_dp_agente_acoes():
+    """O DIÁRIO DO AGENTE (26/11/2026): o que ele fez sozinho, para revisar.
+
+    `?pendentes=1` só o que ninguém revisou; `?solicitacao_id=` o de um pedido.
+    """
+    from app.apps.erp.core import agente_diario
+    try:
+        with get_session() as s:
+            sol = request.args.get("solicitacao_id", type=int)
+            if sol:
+                from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
+                exigir_solicitacao_dp_no_escopo(s, _usuario_logado(s), sol)
+            return jsonify({"ok": True, "rotulos": agente_diario.ROTULOS,
+                            "acoes": agente_diario.listar(
+                                s, so_pendentes=request.args.get("pendentes") == "1",
+                                solicitacao_id=sol)})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no diário do agente")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/agente/acoes/<int:acao_id>/revisao", methods=["POST"])
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_dp_agente_acao_revisao(acao_id: int):
+    """✔ Certo / ✘ Errado (com o que era para ter feito)."""
+    from app.apps.erp.core import agente_diario
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = agente_diario.revisar(s, acao_id, str(d.get("revisao") or ""),
+                                      str(d.get("comentario") or ""), _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao revisar ação do agente")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

@@ -550,8 +550,9 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
                       + ["", "Mensagem gerada pelo ERP da BWS Construções."])
     # O NÚMERO VAI NO ASSUNTO, ENTRE COLCHETES, e isto não é enfeite: é por ele
     # que a resposta da contabilidade é casada com o pedido quando o cliente de
-    # e-mail dela não devolve o In-Reply-To. Formato fixo `[CT-00001]`, porque
-    # quem vai procurar é uma expressão regular, não uma pessoa.
+    # e-mail dela não devolve o In-Reply-To. Formato fixo `[SDP-000001]` (ou
+    # `[CT-00001]`, sem solicitação), porque quem vai procurar é uma expressão
+    # regular, não uma pessoa.
     assunto = f"[{numero}] {regra['nome']} — {c.nome} ({c.cpf})"
     return assunto, "\n".join([l for l in corpo.split("\n")]).replace("\n\n\n", "\n\n")
 
@@ -570,6 +571,36 @@ def _evento(s: Session, pedido_id: int, tipo: str, texto_: str = "",
         {"p": pedido_id, "t": tipo, "x": texto_ or None,
          "d": json.dumps(dados or {}, ensure_ascii=False, default=str),
          "u": usuario.id if usuario else None, "a": pelo_agente})
+
+
+# ⚑ UM NÚMERO SÓ (26/11/2026). Ele: *"a tela única e número único, sim (…) como
+# é que ficariam os que já saíram da outra forma (…) você tem que manter o
+# casamento."* O e-mail que nasce de uma solicitação leva no assunto o número
+# DELA — `[SDP-000003]`, e `[SDP-000003/2]` para o segundo e-mail da mesma
+# solicitação (uma retificação, um cancelamento). O CT continua existindo por
+# dentro (é a chave do pedido), e os e-mails que já saíram com `[CT-00012]`
+# continuam casando: a caixa de entrada procura as duas marcas.
+MARCA_NO_ASSUNTO = re.compile(r"\[((?:SDP|CT)-\d{4,6}(?:/\d{1,2})?)\]")
+
+
+def marca_para_o_email(s: Session, solicitacao_id: Optional[int], numero_ct: str) -> str:
+    """A marca do assunto de um e-mail NOVO: o número da solicitação (com /2, /3
+    a partir do segundo e-mail dela) ou, sem solicitação, o CT."""
+    if not solicitacao_id:
+        return numero_ct
+    sdp = s.execute(text("SELECT numero FROM dp_solicitacoes WHERE id = :i"),
+                    {"i": solicitacao_id}).scalar()
+    if not sdp:
+        return numero_ct
+    ja = int(s.execute(text("SELECT count(*) FROM dp_pedidos WHERE solicitacao_id = :i"),
+                       {"i": solicitacao_id}).scalar() or 0)
+    return sdp if ja == 0 else f"{sdp}/{ja + 1}"
+
+
+def marca_do_pedido(p: dict[str, Any]) -> str:
+    """A marca que saiu no assunto deste pedido (SDP… ou o CT dos antigos)."""
+    m = MARCA_NO_ASSUNTO.search(p.get("assunto") or "")
+    return m.group(1) if m else (p.get("numero") or "")
 
 
 def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
@@ -613,7 +644,9 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
     pedido = {k: v for k, v in (dados.get("dados") or {}).items()
               if v not in (None, "")}
     numero = proximo_numero(s)
-    assunto, corpo = montar_mensagem(s, template, c, pedido, numero=numero)
+    marca = marca_para_o_email(
+        s, int(dados["solicitacao_id"]) if dados.get("solicitacao_id") else None, numero)
+    assunto, corpo = montar_mensagem(s, template, c, pedido, numero=marca)
     linha = s.execute(text("""
         INSERT INTO dp_pedidos (numero, template, situacao, colaborador_id,
                                 solicitacao_id, empresa_id, assunto, corpo,
@@ -1000,7 +1033,7 @@ def cobrar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
     vez = p["cobrancas"] + 1
     corpo = (
         f"Prezados,\n\n"
-        f"Reiteramos o pedido {p['numero']} — {regra['nome']} — enviado "
+        f"Reiteramos o pedido {p['marca']} — {regra['nome']} — enviado "
         f"em {p['criado_em'][:10].split('-')[::-1] and ''}"
         f"{p['criado_em'][8:10]}/{p['criado_em'][5:7]}/{p['criado_em'][0:4]}, "
         f"cujo prazo era {p['prazo'] or '—'}.\n\n"
@@ -1143,6 +1176,33 @@ def receber(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
             "conferido": bool(lido)}
 
 
+def receber_arquivo(s: Session, pedido_id: int, *, conteudo: bytes, nome_arquivo: str,
+                    usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O retorno que chegou POR FORA da caixa de entrada (26/11/2026).
+
+    Mesmo caminho do anexo que a caixa lê: arquiva na pessoa com o tipo que o
+    pedido espera e passa pela conferência do agente — que lê, compara e, se
+    bate e o tipo permite, conclui. Com a conferência desligada, só registra o
+    retorno, e a tela pede a conferência à mão.
+    """
+    from app.apps.erp.core import conferencia_retorno
+    from app.apps.erp.core.arquivo import service as svc_arq
+
+    p = ler(s, pedido_id)
+    if p["situacao"] in ("CONCLUIDO", "CANCELADO", "RASCUNHO"):
+        raise ErroValidacao(f"O pedido {p['numero']} está "
+                            f"{(p.get('situacao_rotulo') or p['situacao']).lower()} — "
+                            "não espera retorno.")
+    doc = svc_arq.arquivar(
+        s, conteudo, nome_arquivo,
+        tipo_codigo=p.get("documento_esperado") or "DOC-PESSOA-OUTRO",
+        colaborador_id=p["colaborador_id"],
+        referencia=f"{p['numero']} — retorno da contabilidade",
+        origem="TELA", observacao="anexado pelo DP no pedido", usuario=usuario)
+    return conferencia_retorno.conferir_e_talvez_concluir(
+        s, pedido_id, doc.id, conteudo, nome_arquivo, usuario)
+
+
 def concluir(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
              motivo: str = "", pelo_agente: bool = False) -> dict[str, Any]:
     """Fecha o pedido e move a etapa do cadastro, quando o template manda.
@@ -1264,6 +1324,10 @@ def ler(s: Session, pedido_id: int) -> dict[str, Any]:
     d = dict(linha)
     regra = TEMPLATES.get(d["template"], {})
     d["template_nome"] = regra.get("nome", d["template"])
+    # ⚑ NÚMERO ÚNICO (26/11/2026): o número que a contabilidade vê no assunto —
+    # o da solicitação (SDP-000003) para o que nasceu depois de 26/11, o CT
+    # para os antigos. É o que a tela mostra.
+    d["marca"] = marca_do_pedido(d)
     d["documento_esperado_nome"] = _rotulo_documento(
         s, d.get("documento_esperado") or "")
     d["criado_em"] = str(d["criado_em"])
@@ -1347,6 +1411,8 @@ def listar(s: Session, *, situacao: str = "", atrasados: bool = False,
         par["obras"] = list(obra_ids)
     linhas = s.execute(text(f"""
         SELECT p.id, p.numero, p.template, p.situacao, p.prazo, p.cobrancas,
+               COALESCE(substring(p.assunto from '\\[((SDP|CT)-[0-9]{{4,6}}(/[0-9]{{1,2}})?)\\]'),
+                        p.numero) AS marca,
                p.criado_em, p.respondido_em, p.concluido_em,
                p.documento_esperado, p.divergencias,
                c.nome AS colaborador_nome, c.cpf AS colaborador_cpf,

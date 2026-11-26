@@ -6,7 +6,7 @@
    configuração e de acompanhamento. Por isso ele se esconde quando a aba muda:
    filtro que não filtra nada é pior que filtro nenhum. #}
 {% block filtros %}
-  <div id="lado-pedidos">
+  <div id="lado-pedidos" class="oculto">
     <div class="filtros-cab">
       <h2>Filtros</h2>
       <button class="link-btn" id="btn-limpar">Limpar</button>
@@ -64,24 +64,32 @@
 {% endblock %}
 
 {% block conteudo %}
-<h2>Contabilidade e agente <small>o que o DP pede para fora, e quem cobra o retorno</small></h2>
+<h2>Contabilidade e agente <small>a configuração do agente e da contabilidade — o trabalho do dia a dia é em Solicitações</small></h2>
 <div id="mensagem"></div>
+{# ⚑ TELA ÚNICA (26/11/2026). Ele: *"unificar (…) uma tela só, um número só"* e
+   esta tela *"vira basicamente configuração"*. O pedido à contabilidade se lê,
+   envia, cobra, recebe e conclui DENTRO da solicitação. Aqui ficam o diário do
+   agente (o que ele fez sozinho, para revisar), as rotinas, a caixa de
+   entrada e o endereço da contabilidade. A lista de e-mails continua, como
+   consulta, porque há pedidos sem solicitação (os antigos). #}
+<div class="cartao-dica" style="margin-bottom:10px">O dia a dia — ler, enviar,
+  cobrar, receber o retorno e concluir — fica em
+  <a href="/erp/dp/solicitacoes">Solicitações</a>, dentro de cada pedido.</div>
+{# PARA ONDE VÃO OS PEDIDOS: sem ele preenchido, nenhum pedido sai — por isso
+   fica em cima de tudo, e GRITA quando está vazio. #}
+<div id="para-quem" style="margin-bottom:12px"></div>
 
 <div class="subabas">
-  <button class="subaba ativa" data-painel="pedidos">Pedidos</button>
-  <button class="subaba" data-painel="agente">O agente</button>
-  <button class="subaba" data-painel="devolucoes">A devolver pela obra</button>
+  <button class="subaba ativa" data-painel="diario">Diário do agente</button>
+  <button class="subaba" data-painel="agente">As rotinas do agente</button>
   <button class="subaba" data-painel="caixa">Caixa de entrada</button>
   <button class="subaba" data-painel="sugestoes">O que o agente sugere</button>
+  <button class="subaba" data-painel="pedidos">Todos os e-mails à contabilidade</button>
+  <button class="subaba" data-painel="devolucoes">A devolver pela obra</button>
 </div>
 
-<div id="painel-pedidos">
-  {# PARA ONDE VÃO OS PEDIDOS, logo acima deles. O endereço da contabilidade
-     é dado de configuração, mas esconder num menu de configurações seria
-     escondê-lo de quem precisa dele: sem ele preenchido, nenhum pedido sai, e
-     a pessoa que vai descobrir isso é a que está tentando enviar. Então ele
-     mora aqui, onde o envio acontece, e GRITA quando está vazio. #}
-  <div id="para-quem" style="margin-bottom:12px"></div>
+<div id="painel-diario"></div>
+<div id="painel-pedidos" class="oculto">
   <div class="kpis" id="kpis" style="margin-bottom:12px"></div>
   <div class="tabela-wrap">
     <div class="tabela-barra">
@@ -260,7 +268,7 @@ function pintar(){
   const corpo = els("corpo");
   corpo.innerHTML = lista.map(p => `
     <tr data-p="${p.id}" style="cursor:pointer">
-      <td>${escapar(p.numero)}</td>
+      <td>${escapar(p.marca || p.numero)}</td>
       <td class="desc">${escapar(p.template_nome)}</td>
       <td>${escapar(p.colaborador_nome || "—")}</td>
       <td>${escapar(p.obra || "—")}</td>
@@ -284,6 +292,7 @@ function pintar(){
 async function abrirPedido(id){
   try {
     const {pedido: p} = await api(`/erp/api/dp/pedidos/${id}`);
+    p.numero = p.marca || p.numero;   // o número que foi no assunto (26/11/2026)
     els("dlg-titulo").textContent = `${p.numero} — ${p.template_nome}`;
     const div = p.divergencias || [];
     els("dlg-corpo").innerHTML = `
@@ -560,6 +569,32 @@ async function rodarAgora(){
 // Decisão dele: o WhatsApp AVISA e COBRA; o arquivo volta pelo PORTAL.
 // ---------------------------------------------------------------------------
 let DEVOLUCOES = [];
+
+// ---------------------------------------------------------------------------
+// O DIÁRIO DO AGENTE (26/11/2026): tudo o que ele fez sozinho, para revisar
+// ---------------------------------------------------------------------------
+async function carregarDiario(){
+  const so = els("dia-pend") ? els("dia-pend").checked : true;
+  try {
+    const d = await api(`/erp/api/dp/agente/acoes${so ? "?pendentes=1" : ""}`);
+    const a = d.acoes || [];
+    els("painel-diario").innerHTML = `
+      <div class="cartao-dica">Tudo o que o agente fez <b>sozinho</b>: e-mail enviado,
+        documento conferido, pedido concluído, aviso a quem pediu. Marque <b>✔ Certo</b> ou
+        <b>✘ Errado</b> — o errado, com o que era para ter feito, traga para o chat do DP:
+        é ele que vira o ajuste da regra. A solicitação com ação sem revisão leva a marca
+        <span class="etiqueta azul">🤖 agente</span> na lista.</div>
+      <label class="opcao" style="margin:8px 0"><input type="checkbox" id="dia-pend" ${so ? "checked" : ""}>
+        <span class="rotulo">Só o que ninguém revisou</span></label>
+      ${a.length ? desenharAcoesDoAgente(a, true)
+        : `<div class="vazio">${so ? "Nada esperando revisão." : "O agente ainda não fez nada sozinho."}</div>`}`;
+    els("dia-pend").addEventListener("change", carregarDiario);
+    els("painel-diario").querySelectorAll("[data-ag-sol]").forEach(x =>
+      x.addEventListener("click", ev => { ev.preventDefault();
+        location.href = `/erp/dp/solicitacoes?pedido=${x.dataset.agSol}`; }));
+    ligarRevisaoDoAgente(els("painel-diario"), carregarDiario);
+  } catch(e){ els("painel-diario").innerHTML = ""; aviso("mensagem", e.message, "erro"); }
+}
 
 async function carregarDevolucoes(){
   try {
@@ -851,13 +886,14 @@ document.querySelectorAll("[data-painel]").forEach(b =>
   b.addEventListener("click", () => {
     document.querySelectorAll("[data-painel]").forEach(x =>
       x.classList.toggle("ativa", x === b));
-    ["pedidos", "agente", "devolucoes", "caixa", "sugestoes"].forEach(p =>
+    ["diario", "pedidos", "agente", "devolucoes", "caixa", "sugestoes"].forEach(p =>
       els("painel-" + p).classList.toggle("oculto", p !== b.dataset.painel));
     // FILTRO QUE NÃO FILTRA NADA É PIOR QUE FILTRO NENHUM: a lateral só vale
     // para a aba de Pedidos, e se esconde nas outras quatro.
     els("lado-pedidos").classList.toggle("oculto", b.dataset.painel !== "pedidos");
     if (b.dataset.painel === "devolucoes") carregarDevolucoes();
     if (b.dataset.painel === "caixa") carregarCaixa();
+    if (b.dataset.painel === "diario") carregarDiario();
   }));
 document.querySelectorAll("input[name=sit]").forEach(i =>
   i.addEventListener("change", carregar));
@@ -880,5 +916,6 @@ document.querySelectorAll(".filtro-cab").forEach(b =>
 if (els("btn-novo")) els("btn-novo").addEventListener("click", novoPedido);
 if (els("btn-rodar")) els("btn-rodar").addEventListener("click", rodarAgora);
 carregar();
+carregarDiario();
 </script>
 {% endblock %}

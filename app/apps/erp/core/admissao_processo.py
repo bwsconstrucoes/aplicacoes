@@ -89,7 +89,7 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
 
     if vinculo == "CTPS" and p:
         ped = s.execute(text("""
-            SELECT id, numero, situacao FROM dp_pedidos
+            SELECT id, numero, situacao, COALESCE(substring(assunto from '\\[((SDP|CT)-[0-9]{4,6}(/[0-9]{1,2})?)\\]'), numero) AS marca FROM dp_pedidos
              WHERE colaborador_id = :c AND template = 'ASSINATURA_CTPS'
                AND situacao <> 'CANCELADO'
              ORDER BY (situacao = 'CONCLUIDO') DESC, id DESC LIMIT 1"""),
@@ -99,12 +99,12 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                  "DP", "PENDENTE", "monte o pedido de Assinatura de CTPS")
         elif ped["situacao"] == "RASCUNHO":
             item("CONTABILIDADE", "Registro da carteira pedido à contabilidade",
-                 "DP", "PENDENTE", f"{ped['numero']} montado e ainda não enviado",
-                 pedido={"id": ped["id"], "numero": ped["numero"]})
+                 "DP", "PENDENTE", f"{ped['marca']} montado e ainda não enviado",
+                 pedido={"id": ped["id"], "numero": ped["numero"], "marca": ped["marca"]})
         else:
             item("CONTABILIDADE", "Registro da carteira pedido à contabilidade",
-                 "DP", "FEITO", f"{ped['numero']} enviado",
-                 pedido={"id": ped["id"], "numero": ped["numero"]})
+                 "DP", "FEITO", f"{ped['marca']} enviado",
+                 pedido={"id": ped["id"], "numero": ped["numero"], "marca": ped["marca"]})
         voltou = ped is not None and ped["situacao"] == "CONCLUIDO"
         item("REGISTRO", "A contabilidade devolveu o registro", "Contabilidade",
              "FEITO" if voltou else ("AGUARDANDO" if ped is not None
