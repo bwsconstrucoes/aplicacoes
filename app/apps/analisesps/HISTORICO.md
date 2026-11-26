@@ -12308,6 +12308,8 @@ somente Solicitações de uma conta especifica"*.
   criado naquela SP.
 - Sem migração. Testes: `test_analisesps_cancelar_sp.py`; três de `test_analisesps_telas.py`
   ajustados ao botão novo.
+- **Publicado em 26/11/2026** (sem migração). Falta o primeiro card de verdade — o dono
+  vai testar com uma SP só.
 
 #### Leva 282 — Relatório completo do lote: o "Anexo Prestação de Conta" do Fundo Fixo entra (26/11/2026)
 
