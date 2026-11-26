@@ -6,6 +6,15 @@ from pathlib import Path
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _sem_cruzamento_guardado():
+    """O cruzamento fica guardado na memória (26/11/2026); entre testes, não."""
+    from app.apps.analisesps import dda
+    dda.esquecer()
+    yield
+    dda.esquecer()
+
 from tests.test_analisesps_telas import app  # noqa: F401 — a fixture
 
 EXEMPLO = (Path(__file__).parent / "dados" / "dda_bradesco_exemplo.txt").read_text(encoding="utf-8")
@@ -248,3 +257,76 @@ def test_o_PRAZO_nao_alarma_o_que_ja_foi_pago():
     assert dda.prazo({"vencimento": hoje, "pagamento": "pago"}, hoje) == ""
     assert dda.prazo({"vencimento": dt.date(2026, 11, 30)}, hoje) == "semana"
     assert dda.prazo({"vencimento": dt.date(2026, 12, 30)}, hoje) == "depois"
+
+
+def test_o_motor_compara_cada_boleto_SO_com_as_SPs_que_podem_casar(monkeypatch):
+    """26/11/2026: *"está muito lento (…) o motor (…) está pesado."* 1.000 boletos ×
+    30.000 SPs eram 30 milhões de comparações; agora cada boleto vê só as SPs do mesmo
+    código de barras, CNPJ, raiz ou valor."""
+    import time
+    from app.apps.analisesps import dda
+    chamadas = []
+    original = dda.nota
+    monkeypatch.setattr(dda, "nota", lambda b, s: (chamadas.append(1), original(b, s))[1])
+    sps = [{"id": str(1400000000 + i), "credor": f"C{i}", "doc": f"{i:08d}000199",
+            "valor": D(f"{100 + i}.00"), "vencimento": dt.date(2026, 11, 1) + dt.timedelta(days=i % 60),
+            "barras": "", "nf": "", "status_pgt": "Pagar", "forma": "", "status_agend": ""}
+           for i in range(30000)]
+    boletos = [{"id": i, "barras": f"{i:044d}", "beneficiario_doc": f"{i * 7:08d}000199",
+                "beneficiario_final_doc": "", "valor": D(f"{100 + i * 7}.00"),
+                "vencimento": dt.date(2026, 11, 1) + dt.timedelta(days=(i * 7) % 60),
+                "numero_documento": "", "sp_manual": "", "na_ultima": True}
+               for i in range(1000)]
+    t = time.monotonic()
+    dda.cruzar(boletos, sps)
+    assert len(chamadas) <= 3000, len(chamadas)
+    assert time.monotonic() - t < 5
+    assert all(b["situacao"] == dda.LANCADO for b in boletos)
+
+
+def test_a_lista_vem_em_PAGINAS_de_50(banco_dda):
+    """26/11/2026: *"à medida que eu vou colando, a página vai só encompridando."*"""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import dda
+    monkey = dda.POR_PAGINA
+    try:
+        dda.POR_PAGINA = 4
+        dda.guardar(dda.ler(EXEMPLO), "MARCELO")
+        p1 = dda.listar(dda.filtros_da_tela(MultiDict()))
+        p2 = dda.listar(dda.filtros_da_tela(MultiDict({"p": "2"})))
+        assert p1["paginas"] == 2 and len(p1["boletos"]) == 4 and len(p2["boletos"]) == 2
+        assert not {b["id"] for b in p1["boletos"]} & {b["id"] for b in p2["boletos"]}
+        assert p1["quantos"] == 6 and p1["mostrados"] == 6
+        # página além do fim volta para a última
+        assert dda.listar(dda.filtros_da_tela(MultiDict({"p": "9"})))["pagina"] == 2
+    finally:
+        dda.POR_PAGINA = monkey
+
+
+def test_o_cruzamento_fica_GUARDADO_e_colar_ou_vincular_refaz(banco_dda, monkeypatch):
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import dda
+    dda.guardar(dda.ler(EXEMPLO), "MARCELO")
+    vezes = []
+    original = dda.cruzar
+    monkeypatch.setattr(dda, "cruzar", lambda *a, **k: (vezes.append(1), original(*a, **k))[1])
+    dda.listar(dda.filtros_da_tela(MultiDict()))
+    dda.listar(dda.filtros_da_tela(MultiDict({"situacao": "lancado"})))
+    dda.listar(dda.filtros_da_tela(MultiDict({"busca": "tintas"})))
+    assert len(vezes) == 1, "filtrar não cruza de novo"
+    boleto = dda.listar(dda.filtros_da_tela(MultiDict()))["boletos"][0]
+    dda.vincular(boleto["id"], "NENHUMA", "MARCELO")
+    dda.listar(dda.filtros_da_tela(MultiDict()))
+    assert len(vezes) == 2, "o vínculo à mão refaz o cruzamento"
+
+
+def test_a_BUSCA_acha_por_nome_cnpj_e_valor(banco_dda):
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import dda
+    dda.guardar(dda.ler(EXEMPLO), "MARCELO")
+    def nomes(busca):
+        return {b["beneficiario_nome"] for b in
+                dda.listar(dda.filtros_da_tela(MultiDict({"busca": busca})))["boletos"]}
+    assert nomes("tintas") == {"TINTAS IQUINE LTDA"}
+    assert nomes("09.722.463") == {"TINTAS IQUINE LTDA"}
+    assert "STOREHOST BRASIL" in nomes("859,56")

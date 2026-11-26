@@ -144,6 +144,11 @@ def descricao_para_o_parceiro(descricao: str, anexados: set) -> str:
 
 def _tipo_do_arquivo(conteudo: bytes) -> str:
     cabeca = conteudo[:1024]
+    # ⚠️ O .ZIP ANTES DO PDF (26/11/2026): um .zip com um PDF dentro, guardado sem
+    # compressão, tem "%PDF" no primeiro kilobyte — e era aberto COMO PDF, o que dá
+    # "malformed page tree". O arquivo compactado começa com "PK".
+    if cabeca[:2] == b"PK":
+        return "zip"
     if b"%PDF" in cabeca:
         return "pdf"
     if cabeca.startswith(b"\x89PNG"):
@@ -154,8 +159,6 @@ def _tipo_do_arquivo(conteudo: bytes) -> str:
         return "gif"
     if cabeca[:4] == b"RIFF" and cabeca[8:12] == b"WEBP":
         return "webp"
-    if cabeca[:2] == b"PK":
-        return "office"                 # xlsx, docx, zip
     if cabeca.lstrip()[:1] == b"<":
         return "html"                   # em geral, a página de login do serviço
     return ""
@@ -235,6 +238,92 @@ def _otimizar_pdf(doc) -> None:
         logger.exception("Relatório completo do lote: não consegui reduzir as imagens de um PDF")
 
 
+def _conferir_paginas(doc) -> None:
+    """Ensaia a cópia de cada página (a mesma de `_paginas_do_anexo`) num documento
+    de rascunho. Levanta o erro do PDF com defeito em vez de deixá-lo para o fim."""
+    import fitz
+    rascunho = fitz.open()
+    try:
+        for i in range(min(len(doc), MAXIMO_PAGINAS_POR_ANEXO)):
+            pagina = rascunho.new_page()
+            pagina.show_pdf_page(pagina.rect, doc, i, keep_proportion=True)
+    finally:
+        rascunho.close()
+
+
+def _pdf_como_imagens(conteudo: bytes):
+    """O último recurso do PDF com defeito: cada página que ainda se deixa LER vira
+    uma imagem numa página nova. Marca o documento (`defeito`) para o relatório
+    dizer isso. Nenhuma página legível → levanta, e o anexo fica de fora com o motivo."""
+    import fitz
+    origem = fitz.open(stream=conteudo, filetype="pdf")
+    novo = fitz.open()
+    try:
+        for i in range(min(len(origem), MAXIMO_PAGINAS_POR_ANEXO)):
+            try:
+                pagina = origem.load_page(i)
+                imagem = pagina.get_pixmap(dpi=DPI_ALVO)
+                folha = novo.new_page(width=pagina.rect.width, height=pagina.rect.height)
+                folha.insert_image(folha.rect, pixmap=imagem)
+            except Exception:  # noqa: BLE001 — a página ilegível fica de fora
+                continue
+    finally:
+        origem.close()
+    if not len(novo):
+        novo.close()
+        raise RuntimeError("o PDF está com defeito e nenhuma página pôde ser lida "
+                           "— abra o documento pelo link")
+    novo.defeito = True
+    return novo
+
+
+MAXIMO_ARQUIVOS_NO_ZIP = 20
+
+
+def _preparar_zip(conteudo: bytes):
+    """O anexo .zip (26/11/2026 — o dono: *"tem um dos anexos que é um arquivo .zip
+    com duas imagens"*): as imagens e os PDFs de dentro entram, um depois do outro,
+    na ordem do .zip. Planilha e documento do Office (que também são .zip por dentro)
+    continuam de fora, dizendo por quê."""
+    import io
+    import zipfile
+
+    import fitz
+    try:
+        pacote = zipfile.ZipFile(io.BytesIO(conteudo))
+    except zipfile.BadZipFile:
+        raise RuntimeError("o arquivo compactado está corrompido") from None
+    nomes = pacote.namelist()
+    if "[Content_Types].xml" in nomes or "mimetype" in nomes:
+        raise RuntimeError("é planilha ou documento do Office, que não dá para embutir")
+    junto, de_fora = fitz.open(), []
+    arquivos = [i for i in pacote.infolist() if not i.is_dir()
+                and not i.filename.split("/")[-1].startswith(".")
+                and "__MACOSX" not in i.filename]
+    for info in arquivos[:MAXIMO_ARQUIVOS_NO_ZIP]:
+        nome = info.filename.split("/")[-1]
+        if info.file_size > MAXIMO_ANEXO:              # e o .zip que "explode" ao abrir
+            de_fora.append(f"{nome} (grande demais)")
+            continue
+        dado = pacote.read(info)
+        if _tipo_do_arquivo(dado) not in ("pdf", "png", "jpg", "gif", "webp"):
+            de_fora.append(nome)
+            continue
+        try:
+            doc = _preparar_anexo(dado)
+        except Exception:  # noqa: BLE001 — um arquivo ruim de dentro não leva os outros
+            de_fora.append(nome)
+            continue
+        junto.insert_pdf(doc)
+        doc.close()
+    if not len(junto):
+        junto.close()
+        raise RuntimeError("o .zip não tem imagem nem PDF que dê para embutir"
+                           + (f" ({', '.join(de_fora[:5])})" if de_fora else ""))
+    junto.de_fora_do_zip = de_fora
+    return junto
+
+
 def _preparar_anexo(conteudo: bytes):
     """(documento fitz pronto para embutir, número de páginas) ou levanta
     `RuntimeError` dizendo por que não dá para embutir."""
@@ -246,15 +335,36 @@ def _preparar_anexo(conteudo: bytes):
             doc.close()
             raise RuntimeError("o PDF tem senha")
         _otimizar_pdf(doc)
-        return doc
+        # ⚠️ O PDF COM DEFEITO (26/11/2026). O dono: *"Não consegui gerar: code=7:
+        # malformed page tree"*. Há PDF que ABRE (e diz quantas páginas tem) e só
+        # estoura na hora de copiar as páginas — e isso acontecia lá no fim, com o
+        # relatório inteiro montado, derrubando tudo por causa de UM anexo. Agora a
+        # cópia é ensaiada aqui; se falhar, tenta o PDF sem a otimização e, por fim,
+        # as páginas que se deixam ler viram imagem.
+        try:
+            _conferir_paginas(doc)
+            return doc
+        except Exception as e:  # noqa: BLE001
+            logger.info("Relatório completo do lote: PDF com defeito (%s); tentando de novo", e)
+            doc.close()
+        try:
+            doc = fitz.open(stream=conteudo, filetype="pdf")
+            _conferir_paginas(doc)
+            return doc
+        except Exception:  # noqa: BLE001
+            try:
+                doc.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return _pdf_como_imagens(conteudo)
     if tipo in ("png", "jpg", "gif", "webp"):
         conteudo, tipo = _otimizar_foto(conteudo, tipo)
         imagem = fitz.open(stream=conteudo, filetype=tipo)
         doc = fitz.open("pdf", imagem.convert_to_pdf())
         imagem.close()
         return doc
-    if tipo == "office":
-        raise RuntimeError("é planilha ou documento do Office, que não dá para embutir")
+    if tipo == "zip":
+        return _preparar_zip(conteudo)
     if tipo == "html":
         raise RuntimeError("o link abriu uma página da internet, e não o arquivo "
                            "(o anexo pode exigir login)")
@@ -948,6 +1058,11 @@ def montar_pdf(dados: dict, baixar=None, progresso=None, com_anexos: bool = True
             total_baixado += len(conteudo)
             doc = _preparar_anexo(conteudo)
             item["paginas"] = min(len(doc), MAXIMO_PAGINAS_POR_ANEXO)
+            if getattr(doc, "defeito", False):
+                item["rotulo"] += " (o PDF tinha defeito: as páginas entraram como imagem)"
+            if getattr(doc, "de_fora_do_zip", None) is not None:
+                item["rotulo"] += " (.zip" + (f"; ficaram de fora: {', '.join(doc.de_fora_do_zip[:5])}"
+                                              if doc.de_fora_do_zip else "") + ")"
             if len(doc) > MAXIMO_PAGINAS_POR_ANEXO:
                 item["rotulo"] += f" (primeiras {MAXIMO_PAGINAS_POR_ANEXO} de {len(doc)} páginas)"
         except Exception as e:  # noqa: BLE001 — um anexo ruim não derruba o relatório
@@ -981,8 +1096,14 @@ def montar_pdf(dados: dict, baixar=None, progresso=None, com_anexos: bool = True
             continue
         bloco = fitz.open()
         for k, (item, doc) in enumerate(docs, start=1):
-            _paginas_do_anexo(bloco, doc, l, item, k, len(docs))
+            try:
+                _paginas_do_anexo(bloco, doc, l, item, k, len(docs))
+            except Exception:  # noqa: BLE001 — já ensaiado; se ainda falhar, segue sem ele
+                logger.exception("Relatório completo do lote: anexo da SP %s falhou na cópia", sp)
             doc.close()
+        if not len(bloco):
+            bloco.close()
+            continue
         inseridas[sp] = len(bloco)
         final.insert_pdf(bloco, start_at=corpo.ultima_pagina_da_sp[sp] + 1)
         bloco.close()

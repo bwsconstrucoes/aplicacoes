@@ -12719,7 +12719,9 @@ def api_colaboradores():
                     s, request.args.get("obra_id", type=int),
                     ativos=request.args.get("todos") != "1",
                     usuario=usuario)})
-            c = salvar_colaborador(s, request.get_json(silent=True) or {}, usuario)
+            corpo = request.get_json(silent=True) or {}
+            _so_quem_ja_existe(s, corpo)            # 26/11/2026: novo é pelo portal
+            c = salvar_colaborador(s, corpo, usuario)
             s.commit()
             return jsonify({"ok": True, "colaborador_id": c.id})
     except ErroValidacao as e:
@@ -13001,6 +13003,22 @@ def api_colaborador_ficha(colaborador_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 404
 
 
+def _so_quem_ja_existe(s, corpo: dict) -> None:
+    """Cadastro NOVO de colaborador é pelo portal (26/11/2026, ver
+    `api_colaborador_salvar_completo`). Pelo ERP só se edita quem já existe."""
+    from sqlalchemy import select as _sel
+    from app.apps.erp.db.models.cadastros import Colaborador as _C
+    ident = str(corpo.get("id") or "").strip()
+    if ident.isdigit() and s.get(_C, int(ident)) is not None:
+        return
+    cpf = "".join(x for x in str(corpo.get("cpf") or "") if x.isdigit())
+    if not cpf or s.scalars(_sel(_C.id).where(_C.cpf == cpf)).first() is None:
+        raise ErroValidacao(
+            "Pessoa nova entra pelo Portal da obra (Colaboradores › Admissão de "
+            "Colaborador) — é lá que ficam as regras do cadastro. Aqui se edita "
+            "quem já está no sistema.")
+
+
 @bp.route("/erp/api/colaboradores/completo", methods=["POST"])
 @login_obrigatorio
 @permissao("editar_colaboradores")
@@ -13009,7 +13027,14 @@ def api_colaborador_salvar_completo():
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
-            c = svc.salvar(s, request.get_json(silent=True) or {}, usuario)
+            corpo = request.get_json(silent=True) or {}
+            # ⚑ CADASTRO NOVO É PELO PORTAL (26/11/2026). Ele: *"Vamos eliminar
+            # essa possibilidade de cadastro colaborador dentro do ERP e deixar
+            # apenas no portal. E a gente concentra o regramento todo lá."*
+            # Esta rota só EDITA quem já existe (o CPF é a identidade). As
+            # importações (planilha, Fortes) seguem por outro caminho.
+            _so_quem_ja_existe(s, corpo)
+            c = svc.salvar(s, corpo, usuario)
             lido = svc.ficha(s, c.id)
             s.commit()
         return jsonify({"ok": True, "colaborador": lido})
