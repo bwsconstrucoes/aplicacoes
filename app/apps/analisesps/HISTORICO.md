@@ -12275,6 +12275,34 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 280 — DDA: o motor refeito (rápido) e a lista em páginas de 50 (26/11/2026)
+
+- O dono: *"está muito lento (…) eu vou tentar fazer uma filtragem, aí ele demora demais
+  (…) o motor (…) está pesado (…) à medida que eu vou colando, a página vai só
+  encompridando e a gente não consegue visualizar."*
+- **As causas (todas minhas, da leva 277):** (1) a consulta das SPs trazia, para CADA
+  boleto, as de valor ±10% — com centenas de boletos as faixas cobriam quase a base — e a
+  expressão do CNPJ não era a do índice (`'[^0-9]'` × `'\D'` do índice da 010), então
+  lia a tabela inteira; (2) cada boleto era comparado com CADA SP trazida (1.000 × 30.000
+  = 30 milhões de comparações, ~1 min só nisso, mais as sugestões); (3) tudo refeito a
+  cada clique de filtro; (4) a tela desenhava a base inteira.
+- **Agora:** a consulta traz só as SPs da mesma raiz de CNPJ/CPF ou do mesmo valor, pelos
+  índices (sem varrer a tabela); `_Indice` agrupa as SPs por código de barras, CNPJ, raiz
+  e valor, e cada boleto é comparado só com essas (toda regra de `nota` exige uma delas —
+  o resultado é o mesmo); na simulação, 1.000 × 30.000 caiu de ~1 min para 0,07 s. As
+  **sugestões** (valor ±10%, vencimento até 15 dias) saem só para os boletos da PÁGINA,
+  numa consulta pelos índices de valor e vencimento. O **cruzamento fica guardado na
+  memória** (`_base`) e só é refeito quando muda algo — colagem, vínculo à mão,
+  sincronização das SPs — ou a cada 3 min; filtrar (busca, vencimento, valor, pagadora,
+  colagem, situação, pagamento, prazo) é só recortar a lista guardada.
+- **Páginas de 50** (`POR_PAGINA`), com a navegação no alto e embaixo; "marcar os sem
+  lançamento" vale para a página.
+- Custo de um clique de filtro: 1 consulta leve (a "versão" da base) + 1 das sugestões da
+  página. Antes: 6 consultas, uma delas varrendo a tabela de SPs, e o cruzamento inteiro.
+- O limite: SP alterada na tela (não pela sincronização) aparece no DDA em até 3 min.
+- Sem migração. Testes novos em `test_analisesps_dda.py` (o motor só compara o que pode
+  casar, páginas, cruzamento guardado, busca).
+
 #### Leva 279 — A folha do 13º salário: um tipo à parte, rateado pelo ponto do ano (25/11/2026) — MIGRAÇÃO 059
 
 - O dono: *"vou lançar a folha do 13º. Pagamos o adiantamento dele em novembro e o
@@ -12313,6 +12341,8 @@ somente Solicitações de uma conta especifica"*.
 - Não verificado: o arquivo real do 13º (só o título); o título da 2ª parcela (suposto
   "13º Salário"); quantos meses de 2026 têm ponto carregado em produção.
 - Migração 059 (troca a trava do tipo). Testes: `test_analisesps_folha_decimo.py`.
+- **Publicado em 25/11/2026**, junto com a leva 278. Falta o dono apertar "Aplicar
+  atualizações do banco" (059) e importar o arquivo real do 13º.
 
 #### Leva 278 — DDA: a base inteira na tela, o selo de pagamento, os novos e mais filtros (24/11/2026)
 
@@ -12350,6 +12380,7 @@ somente Solicitações de uma conta especifica"*.
   boletos pode pesar; se pesar, cruzar só os não pagos.
 - Sem migração. Testes: `test_a_base_CRESCE_e_a_segunda_colagem_diz_o_que_e_NOVO`,
   `test_o_selo_de_PAGAMENTO_e_os_filtros_da_lateral`, `test_o_PRAZO_nao_alarma_o_que_ja_foi_pago`.
+- **Publicado em 25/11/2026** (sem migração).
 
 #### Leva 277 — Tela DDA: colar o DDA do Bradesco e cruzar com as SPs (24/11/2026) — MIGRAÇÃO 058
 

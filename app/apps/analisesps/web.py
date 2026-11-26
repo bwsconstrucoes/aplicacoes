@@ -8805,7 +8805,10 @@ def tela_dda():
     return render_template(
         "analisesps_dda.html", aba="dda", base=base, lista=lista, filtros=filtros,
         args_sem_situacao=[(k, v) for k, v in request.args.items(multi=True)
-                           if k not in ("situacao", "f", "aviso")],
+                           if k not in ("situacao", "f", "aviso", "p")],
+        # a paginação leva todos os filtros e troca só a página
+        args_sem_pagina=[(k, v) for k, v in request.args.items(multi=True)
+                         if k not in ("p", "aviso")],
         erro=erro, aviso=request.args.get("aviso") or None,
         dda=dda, pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
