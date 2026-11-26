@@ -1241,6 +1241,74 @@ def repetir_equipamentos_de_ontem(s: Session, obra_id: int,
 # grita sempre não avisa nunca. Mas um sábado em que GENTE BATEU PONTO vira
 # pendência, porque ali houve obra.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# O ESTADO DE UM DIA, NUM LUGAR SÓ (26/11/2026)
+#
+# ⚑ NASCEU COM O "COMEÇADO", e o motivo é o pedido dele: *"por que eu não
+# adiciono a foto e automaticamente aquela foto já grava? (…) aquele diário já
+# aparece, já começa a ficar parcialmente preenchido."*
+#
+# Anexar foto passou a CRIAR o dia (ver `comecar_o_dia`). Isso abriu um buraco
+# perigoso: um dia que existe mas não tem relato contaria como preenchido no
+# quadro, e a cobrança sumiria sem o trabalho ter sido feito — exatamente o que
+# a regra "dia com expediente precisa de relato" existe para impedir.
+#
+# Por isso o estado novo: o dia aparece no quadro como **começado**, e
+# **continua contando como pendente**. A foto adianta o trabalho; ela não o
+# conclui.
+#
+# Os três lugares que desenham dia (o calendário da obra, o quadro do mês e a
+# contagem de pendências) chamam esta função. Três cópias da mesma regra
+# divergiriam no primeiro ajuste.
+# ---------------------------------------------------------------------------
+def estado_do_dia(linha: Any) -> str:
+    """"sem_expediente", "fechado", "comecado" ou "aberto"."""
+    if linha["sem_expediente"]:
+        return "sem_expediente"
+    if not (linha.get("relato") or "").strip():
+        return "comecado"
+    return "fechado" if linha["situacao"] == "FECHADO" else "aberto"
+
+
+# Começado ainda é dia devendo diário: conta na cobrança.
+ESTADOS_QUE_FALTAM = ("falta", "comecado")
+
+
+def comecar_o_dia(s: Session, obra_id: int, dia: date,
+                  usuario: Optional[Any] = None) -> dict[str, Any]:
+    """Cria o diário do dia VAZIO, para algo poder se pendurar nele.
+
+    ⚑ Pedido dele em 26/11/2026: *"se a pessoa quiser colocar uma foto na
+    hora, no dia, e alimentar imediatamente, ela vai abrir o dia, adicionar a
+    foto. E depois vai fazer o relato, concluir o diário."*
+
+    ⚠️ ESTE É O ÚNICO CAMINHO QUE CRIA DIÁRIO SEM RELATO, e ele não é um atalho
+    para o `salvar`: quem aperta **Gravar** continua tendo de escrever o relato
+    (ou marcar "não houve expediente"). A diferença é que aqui ninguém está
+    dizendo "terminei" — está dizendo "comecei". O dia nasce em `estado_do_dia`
+    como **começado** e segue cobrado no quadro.
+
+    Devolve a linha do dia. Se já existe, não mexe em nada.
+    """
+    cabecalho(s, obra_id, dia)                 # 404 se a obra não existe
+    linha = _linha(s, obra_id, dia)
+    if linha is not None:
+        return linha
+    novo = s.execute(text("""
+        INSERT INTO diarios_obra (obra_id, data, criado_por)
+        VALUES (:o, :d, :u) RETURNING id"""),
+        {"o": obra_id, "d": dia,
+         "u": usuario.id if usuario else None}).scalar()
+    # A mesma entidade e a mesma ordem de argumentos do resto do diário —
+    # "diario_obra", o id da linha, e o usuário POR ÚLTIMO.
+    registrar_evento(s, "diario_obra", novo, "COMECADO",
+                     {"obra_id": obra_id, "data": str(dia),
+                      "como": "aberto por uma foto, ainda sem relato"},
+                     usuario.id if usuario else None)
+    s.flush()
+    return _linha(s, obra_id, dia)
+
+
 def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
     """Dia a dia do mês: o que tem diário, o que falta, o que não era para ter."""
     import calendar as _cal
@@ -1284,8 +1352,10 @@ def calendario(s: Session, obra_id: int, ano: int, mes: int) -> dict[str, Any]:
         descanso = (d.weekday() >= 5 or feriado is not None) and d not in com_ponto
 
         if linha is not None:
-            estado = ("sem_expediente" if linha["sem_expediente"]
-                      else ("fechado" if linha["situacao"] == "FECHADO" else "aberto"))
+            estado = estado_do_dia(linha)
+            # Começado conta como pendente: a foto adiantou, não concluiu.
+            if estado == "comecado":
+                faltam += 1
         elif fora:
             estado = "fora"
         elif descanso:
@@ -1378,14 +1448,25 @@ def quadro_do_mes(s: Session, ano: int, mes: int, *,
 
     ids = [o["id"] for o in obras]
     escritos: dict[tuple[int, date], str] = {}
+    # ⚑ O RELATO VEM JUNTO desde 26/11/2026: é ele que separa o dia ESCRITO do
+    # dia só COMEÇADO (criado por uma foto, ainda sem relato). Sem ele, o dia
+    # começado contaria como pronto e sumiria da cobrança.
     for l in s.execute(text("""
-        SELECT obra_id, data, situacao, sem_expediente
+        SELECT obra_id, data, situacao, sem_expediente, relato
           FROM diarios_obra
          WHERE obra_id = ANY(:o) AND data BETWEEN :i AND :f"""),
         {"o": ids, "i": primeiro_dia, "f": ultimo_dia}).mappings().all():
-        escritos[(l["obra_id"], l["data"])] = (
-            "sem_expediente" if l["sem_expediente"]
-            else ("fechado" if l["situacao"] == "FECHADO" else "aberto"))
+        escritos[(l["obra_id"], l["data"])] = estado_do_dia(l)
+
+    # ⚑ O ÚLTIMO DIÁRIO DE CADA OBRA (26/11/2026), para a tela poder levar a
+    # pessoa ao mês certo quando ela clica no NOME da obra. Ele: *"a gente
+    # deveria poder clicar na obra do quadro do mês e já ir para a obra. (…)
+    # A gente já vai para o mês mais recente daquela obra."*
+    # UMA consulta para todas as obras, não uma por obra.
+    ultimo_de = {l["obra_id"]: str(l["ultimo"]) for l in s.execute(text("""
+        SELECT obra_id, max(data) AS ultimo FROM diarios_obra
+         WHERE obra_id = ANY(:o) GROUP BY obra_id"""),
+        {"o": ids}).mappings().all()}
 
     # O ponto diz quais sábados e feriados tiveram trabalho — sem isso, um
     # sábado trabalhado apareceria como descanso e a falta sumiria do quadro.
@@ -1422,12 +1503,14 @@ def quadro_do_mes(s: Session, ano: int, mes: int, *,
                     estado = "descanso"
                 else:
                     estado = "falta"
-                    faltam += 1
+            if estado in ESTADOS_QUE_FALTAM:
+                faltam += 1
             celulas.append(estado)
         faltam_total += faltam
         linhas.append({
             "obra_id": o["id"], "codigo": o["codigo"], "nome": o["nome"],
             "rotulo": rotulo_da_obra(o["codigo"], o["nome"]),
+            "ultimo_diario": ultimo_de.get(o["id"]),
             "celulas": celulas, "faltam": faltam})
 
     return {"ano": ano, "mes": mes, "dias": dias, "obras": linhas,
@@ -1471,10 +1554,15 @@ def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
             if d.weekday() >= 5:
                 continue
             cal_faltas += 1
+        # ⚑ DIA COMEÇADO NÃO CONTA COMO ESCRITO (26/11/2026): a foto cria o
+        # dia, e se ele entrasse nesta conta a obra apareceria em dia sem
+        # ninguém ter escrito o relato. Só conta quem tem relato ou está
+        # marcado como sem expediente.
         escritos = s.execute(text("""
             SELECT count(*) FROM diarios_obra
              WHERE obra_id = :o AND data BETWEEN :de AND :ate
-               AND EXTRACT(ISODOW FROM data) < 6"""),
+               AND EXTRACT(ISODOW FROM data) < 6
+               AND (sem_expediente OR btrim(coalesce(relato, '')) <> '')"""),
             {"o": l["id"], "de": de, "ate": ate}).scalar() or 0
         saida.append({
             "obra_id": l["id"], "codigo": l["codigo"], "nome": l["nome"],

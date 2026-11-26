@@ -3109,6 +3109,37 @@ memória e arriscar descrever uma tela que mudou.
 
 ---
 
+## 3z-undevicies. O DIA COMEÇADO — foto sem relato ainda (26/11/2026)
+
+Estado novo no diário: o dia existe porque alguém mandou uma foto, mas ninguém
+escreveu o relato. Ele **conta como pendente**. Entra aqui porque cria uma
+pergunta que antes não existia — e uma armadilha de contagem.
+
+### ⚠️ As palavras ambíguas desta parte
+
+| Palavra | Por que trava a resposta |
+|---|---|
+| **"dia preenchido"** | ① tem LINHA no banco (inclui o começado, que não tem relato); ② tem RELATO escrito; ③ está FECHADO. Somar os três dá um número que parece melhor do que a realidade |
+| **"faltam X diários"** | o começado **conta como faltando**. Quem responder pela contagem de linhas vai achar que falta menos |
+| **"a obra está em dia"** | só se todo dia útil tem relato ou está marcado sem expediente. Foto não põe em dia |
+
+### O que dá para perguntar
+
+- **"Quais dias têm foto mas não têm relato?"** — a fila de trabalho de quem
+  fotografou na obra e precisa terminar.
+- **"Quantos dias começados cada obra tem?"**
+- **"Há quanto tempo este dia está começado?"** — começado e esquecido é pior
+  que vazio: parece que alguém cuidou dele.
+
+### O que o sistema ainda NÃO responde, e o que falta
+
+- **"Quem começou este dia?"** — fica na trilha de auditoria (evento
+  `COMECADO`), mas nenhuma tela mostra.
+- **"Avise quem mandou a foto que o relato ainda falta."** — não existe
+  cobrança própria do dia começado; ele só aparece em âmbar no quadro.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

@@ -1054,12 +1054,59 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .quadro-mes td.q-fechado { background: var(--verde-palido, #E8F6EE);
                            border-color: var(--verde, #1C6B3C); }
 .quadro-mes td.q-aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C); }
+/* COMEÇADO: o dia existe (alguém mandou foto) mas ninguém escreveu o relato.
+   Continua devendo diário, então a cor fica do lado do vermelho — âmbar, e não
+   verde: verde diria "resolvido", e não está. */
+.quadro-mes td.q-comecado { background: var(--ambar-palido, #FFF1D6);
+                            border-color: var(--ambar, #8A5A00); }
 .quadro-mes td.q-descanso, .quadro-mes td.q-sem_expediente {
   background: var(--fundo-suave, #F4F6FA); }
 .quadro-mes td.q-fora { background: transparent; border-color: transparent;
                         cursor: default; }
 .quadro-mes td:hover { outline: 2px solid var(--azul, #31507F); }
 .quadro-mes td.q-fora:hover { outline: 0; }
+/* O nome da obra é botão: leva para a obra, no mês do último diário dela.
+   ⚠️ `padding: 0` e `line-height: 1` não são enfeite: o botão herda o padding
+   do `.link-btn`, fica mais alto que a linha de 18 px do celular e TRANSBORDA
+   por cima da linha de baixo — a obra de cima ficava impossível de clicar,
+   porque o botão da obra seguinte recebia o toque. Pego dirigindo a tela. */
+.quadro-mes .obra-col .obra-ir {
+  flex: 1; min-width: 0; text-align: left; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; font: inherit;
+  padding: 0; line-height: 1; height: 100%;
+}
+.quadro-mes .obra-col { overflow: hidden; }
+
+/* ---------------------------------------------------------------------------
+   O QUADRO NO CELULAR (26/11/2026)
+
+   ⚑ Ele, olhando no telefone: *"na hora que abre, ele abre no quadro do mês
+   (…) não é boa a visualização no mês. Aliás, no celular. A tela ficou um
+   pouquinho maior do que deveria."*
+
+   A conta explica: a coluna da obra pedia 150–190 px e cada dia, 22 px. Um mês
+   de 31 dias dava ~680 px numa tela de 368 px úteis — **apareciam 7 dias**, e o
+   resto só rolando uma faixa estreita. Quem abria no celular via a primeira
+   semana e achava que era isso.
+
+   Aqui o mês INTEIRO cabe: a coluna da obra encolhe (o nome continua inteiro
+   no toque e no `title`) e o dia vira uma barrinha de 9 px — alta o bastante
+   para marcar presença, estreita o bastante para o mês caber. O alvo de dedo
+   passa a ser o NOME DA OBRA, que abre a obra e o calendário de dias grandes.
+   --------------------------------------------------------------------------- */
+.quadro-mes .so-estreito { display: none; }
+@media (max-width: 640px) {
+  .quadro-mes { border-spacing: 1px; font-size: 10px; }
+  .quadro-mes thead th { width: 8px; min-width: 8px; font-size: 7px; }
+  .quadro-mes .obra-col { min-width: 46px; max-width: 46px; padding-right: 4px; }
+  .quadro-mes tbody td { width: 8px; min-width: 8px; height: 18px; border-radius: 2px; }
+  .quadro-mes tbody .obra-col { height: 18px; }
+  /* O número de dias em falta por obra sai da linha no celular — ele já está
+     no alto do cartão, somado, e aqui roubaria a largura de três dias. */
+  .quadro-mes .obra-col .etiqueta { display: none; }
+  .quadro-mes .so-largo { display: none; }
+  .quadro-mes .so-estreito { display: inline; font-weight: 700; }
+}
 
 /* A lista de obras achadas na busca da coluna da esquerda. */
 .busca-achados .achado {
@@ -1125,6 +1172,8 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
    vermelho, e só ele. */
 .cal-dia.fechado { background: var(--verde-palido, #E8F6EE); border-color: var(--verde, #1C6B3C);
                    color: var(--verde, #1C6B3C); font-weight: 600; }
+.cal-dia.comecado { background: var(--ambar-palido, #FFF1D6);
+                    border-color: var(--ambar, #8A5A00); font-weight: 700; }
 .cal-dia.aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C);
                   color: var(--verde, #1C6B3C); font-weight: 600; }
 .cal-dia.descanso { background: var(--fundo-suave, #F4F6FA); color: var(--tinta-suave, #5A6B85); }
@@ -1152,6 +1201,8 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .cal-amostra.aberto { background: #fff; border: 1px dashed var(--verde, #1C6B3C); }
 .cal-amostra.falta { background: var(--vermelho-palido, #FDECEC);
                      border-color: var(--vermelho, #A32020); }
+.cal-amostra.comecado { background: var(--ambar-palido, #FFF1D6);
+                        border-color: var(--ambar, #8A5A00); }
 .cal-amostra.descanso, .cal-amostra.sem_expediente {
   background: var(--fundo-suave, #F4F6FA); }
 

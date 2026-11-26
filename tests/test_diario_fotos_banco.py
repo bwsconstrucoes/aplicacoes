@@ -116,11 +116,83 @@ def test_so_entra_imagem(sessao_real, obra, dia, dono):
     assert "só foto" in str(e.value)
 
 
-def test_sem_o_dia_gravado_nao_ha_onde_prender_a_foto(sessao_real, obra, dono):
-    with pytest.raises(ErroNaoEncontrado) as e:
-        fotos.anexar(sessao_real, obra, date.today() - timedelta(days=5),
-                     _jpeg(), "solta.jpg", usuario=dono)
-    assert "Grave o diário" in str(e.value)
+# ---------------------------------------------------------------------------
+# ⚑ A REGRA VIROU AO CONTRÁRIO EM 26/11/2026, e quem a virou foi o dono.
+#
+# Antes, anexar foto num dia sem diário era RECUSADO ("Grave o diário deste dia
+# antes de anexar foto"). Havia um teste aqui garantindo a recusa. Ele olhou e
+# desmontou:
+#
+# > *"Eu não consigo adicionar uma foto (…) por que eu não adiciono a foto e
+# > automaticamente aquela foto já grava? (…) Se a pessoa quiser colocar uma
+# > foto na hora, no dia, e alimentar imediatamente, ela vai abrir o dia,
+# > adicionar a foto. E depois vai fazer o relato, concluir o diário."*
+#
+# Quem está na obra fotografa primeiro e escreve depois. Então a foto passou a
+# CRIAR o dia — e o teste antigo virou este par, que guarda as duas metades da
+# nova regra: a foto abre o dia, E o dia aberto assim continua sendo cobrado.
+# ---------------------------------------------------------------------------
+def test_a_foto_abre_o_dia_que_ainda_nao_existe(sessao_real, obra, dono):
+    quando = date.today() - timedelta(days=5)
+    assert svc.abrir_dia(sessao_real, obra, quando)["existe"] is False
+
+    r = fotos.anexar(sessao_real, obra, quando, _jpeg(), "primeira.jpg",
+                     legenda="Chegada do material", usuario=dono)
+    sessao_real.flush()
+    assert r["quantas"] == 1
+    visao = svc.abrir_dia(sessao_real, obra, quando)
+    assert visao["existe"] is True
+    assert len(visao["fotos"]) == 1
+    # E o dia nasce SEM relato — ninguém escreveu nada ainda.
+    assert not (visao["diario"].get("relato") or "").strip()
+
+
+def test_o_dia_aberto_por_uma_foto_continua_sendo_cobrado(sessao_real, obra, dono):
+    """A metade que protege o diário: foto adianta o trabalho, não o conclui.
+
+    Sem isto, mandar uma foto faria o dia sumir da cobrança — e a obra
+    apareceria em dia sem ninguém ter escrito o relato. É exatamente o buraco
+    que a regra "dia com expediente precisa de relato" existe para tapar.
+    """
+    quando = date.today() - timedelta(days=5)
+    fotos.anexar(sessao_real, obra, quando, _jpeg(), "primeira.jpg", usuario=dono)
+    sessao_real.flush()
+
+    assert svc.estado_do_dia(
+        {"sem_expediente": False, "relato": None, "situacao": "ABERTO"}) == "comecado"
+
+    quadro = svc.quadro_do_mes(sessao_real, quando.year, quando.month,
+                               obra_ids=[obra])
+    linha = [o for o in quadro["obras"] if o["obra_id"] == obra][0]
+    estado = linha["celulas"][quando.day - 1]
+    assert estado == "comecado", f"o dia saiu como {estado}"
+    # O dia de hoje pode ou não contar (fim de semana, fora do prazo); o que
+    # importa é que ESTE dia continua na conta de quem falta.
+    assert linha["faltam"] >= 1
+
+
+def test_escrever_o_relato_tira_o_dia_da_cobranca(sessao_real, obra, dono):
+    quando = date.today() - timedelta(days=5)
+    fotos.anexar(sessao_real, obra, quando, _jpeg(), "primeira.jpg", usuario=dono)
+    svc.salvar(sessao_real, obra, quando, {"relato": "Fôrma da viga V3."}, dono)
+    sessao_real.flush()
+
+    quadro = svc.quadro_do_mes(sessao_real, quando.year, quando.month,
+                               obra_ids=[obra])
+    linha = [o for o in quadro["obras"] if o["obra_id"] == obra][0]
+    assert linha["celulas"][quando.day - 1] == "aberto"
+
+
+def test_legendar_e_tirar_foto_continuam_exigindo_o_dia(sessao_real, obra, dono):
+    """A criação do dia é SÓ do anexar. Legendar ou tirar foto de um dia que
+    não existe é pedido sem sentido — e criar o dia para atendê-lo deixaria
+    diários vazios por aí."""
+    quando = date.today() - timedelta(days=6)
+    with pytest.raises(ErroNaoEncontrado):
+        fotos.legendar(sessao_real, obra, quando, 1, "nova legenda", usuario=dono)
+    with pytest.raises(ErroNaoEncontrado):
+        fotos.remover(sessao_real, obra, quando, 1, usuario=dono)
+    assert svc.abrir_dia(sessao_real, obra, quando)["existe"] is False
 
 
 def test_diario_fechado_aceita_foto_nova_mas_nao_deixa_tirar(
