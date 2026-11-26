@@ -141,6 +141,52 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (10) — Caixa de entrada: só o que o agente casou vai para a pasta "Agente"; o resto fica NÃO LIDO; o pedido mostra a resposta; aviso de "processando"; fichas antigas apagadas
+
+Ele: *"quando a gente coloca ler, ele está lendo toda a caixa de e-mail. Só que
+outros e-mails que não tem nada a ver com os assuntos, ele está deixando lido.
+(…) Olha o perigo disso. (…) criar uma pasta agente (…) tudo que ele não
+identificasse, ele mantinha na caixa de entrada como não lido."* E: *"a gente
+clica (…) não vê o que é que a contabilidade respondeu, não vê o que é que ela
+anexou."* E: *"Você clica no botão e você fica na dúvida se está havendo algum
+processamento ou não."*
+
+**O que o levantamento achou (e foi corrigido):** a leitura baixava com RFC822
+(marca lida no servidor) as 40 primeiras não lidas — TODAS, de qualquer
+assunto; o "ler sem gravar" também marcava; o texto da resposta não era
+guardado; o evento dizia "os dados batem com o cadastro" sem ler o documento;
+o "Ler agora" exigia `configurar` (o DP via o botão e levava 403); o recado do
+resultado sumia porque a tela era redesenhada em seguida.
+
+- `email_entrada.rodada`: busca por UID, só não lidas dos últimos 30 dias;
+  lê o Message-ID de todas com PEEK e descarta as já vistas (senão as que não
+  casam, que agora ficam não lidas, tomariam as 40 vagas para sempre); baixa
+  com `BODY.PEEK[]`. O que CASOU com pedido/devolução vai para
+  `INBOX.Agente` (criada e assinada na 1ª vez; nome pelo LIST — Locaweb usa
+  "INBOX."), lido, via `UID MOVE`. Servidor sem MOVE: ficam lidas onde estão
+  (não se copia-e-apaga). O resto fica intocado, NÃO lido.
+- Migração **129**: `email_entrada_mensagens.corpo` (o texto, até 20 mil
+  caracteres) e `movida_para`. Sem a migração, o código segue sem gravar o
+  texto (`_tem_coluna_corpo`).
+- `contabilidade.o_que_voltou` + `blocoDoQueVoltou` (erp_base): o pedido (na
+  tela da Contabilidade e no pedido ao DP) mostra "O que a contabilidade
+  respondeu" — o texto de cada resposta e os documentos que vieram (que já iam
+  para o Arquivo da pessoa, com a referência "CT-… — retorno").
+- `receber` sem leitura diz "o documento voltou — o conteúdo ainda não foi
+  conferido pelo sistema" (a conferência de conteúdo não existe ainda).
+- `/erp/api/dp/caixa/<acao>` passou a `pedir_contabilidade`.
+- `api()` (erp_base): todo clique que chama o servidor desativa o botão, põe
+  ⏳ e mostra "Processando…" no alto até a resposta (0,3 s de tolerância).
+- Fichas antigas apagadas (ele: *"é lixo"*): `dlg-unica` e o que a servia em
+  Colaboradores, `dlg-ponto` em Pedidos ao DP, `dlg-ficha` em Mensagens, e as
+  funções dos botões que saíram (alteração, readmissão, troca, desligamento,
+  retorno, afastar, mandar à contabilidade, + Solicitação, cancelar
+  desligamento, alterar/cancelar férias). Testes que protegiam as fichas
+  antigas foram reescritos para proteger o modal-ponte.
+
+**Não há horário 21h/0h no código do agente:** a rodada é uma por dia, puxada
+pelo primeiro acesso ao ERP. Ver a resposta a ele sobre isso.
+
 ### 26/11/2026 (9) — A Solicitação Diversa: pessoa opcional e, se o DP quiser, à contabilidade em texto
 
 Ele, sobre o reajuste só de salário (que ficou sem porta quando "Registrar

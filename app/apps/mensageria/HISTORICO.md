@@ -7,6 +7,10 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## 26/11/2026 (2) — (chat do DP) A janela antiga da ficha (`dlg-ficha`) saiu de `mensagens.html`
+
+O dono mandou apagar as fichas antigas ("é lixo"). `abrirFicha` agora só chama `abrirPessoa(id, "mensagens")`.
+
 ## 26/11/2026 — (feito pelo chat do DP) O nome da pessoa abre o modal-ponte
 
 `templates/mensagens.html`, `abrirFicha`: abre `abrirPessoa(id, "mensagens")` (erp_base.html), o modal único da

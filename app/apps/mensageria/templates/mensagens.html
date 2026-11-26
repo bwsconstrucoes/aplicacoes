@@ -365,35 +365,14 @@
   <div class="tabela-rolagem"><div id="envios"></div></div>
 </div>
 {% endif %}
-{# A FICHA DA PESSOA POR CIMA DA TELA (23/11/2026). O dono: "quando pesquiso
-   alguém e quero abrir o cadastro da pessoa, ele remete pra aba Pessoal ao invés
-   de simplesmente abrir o modal com o cadastro." É a mesma ficha única do
-   Pessoal e do ponto (/erp/ponto/pessoa/<id>), numa janela — fechar volta à
-   lista, com a busca e o filtro como estavam. #}
-<dialog id="dlg-ficha" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
-  <iframe id="ficha-quadro" title="Ficha da pessoa" style="width:100%; height:100%; border:0; display:block"></iframe>
-</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const PODE_CONFIGURAR = {{ "true" if pode.configurar_mensagens else "false" }};
 const PODE_VER_PONTO = {{ "true" if pode.ver_ponto else "false" }};
-// A ficha da pessoa numa janela por cima (ver o <dialog id="dlg-ficha">). Quem
-// não enxerga o ponto não abre a ficha única: vai à de Colaboradores, como antes.
-function abrirFicha(id){
-  // 26/11/2026: o modal-ponte da pessoa (erp_base.html), já na aba Mensagens.
-  if (typeof abrirPessoa === "function") return abrirPessoa(Number(id), "mensagens");
-  if (!PODE_VER_PONTO) { location.href = `/erp/colaboradores?pessoa=${encodeURIComponent(id)}`; return; }
-  els("ficha-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
-  els("dlg-ficha").showModal();
-}
-els("dlg-ficha").addEventListener("close", () => { els("ficha-quadro").src = "about:blank"; });
-window.addEventListener("message", ev => {
-  const d = ev.data || {};
-  if (ev.origin === location.origin && d.tipo === "bws-ficha" && d.acao === "fechar"
-      && els("dlg-ficha").open) els("dlg-ficha").close();
-});
+// A pessoa abre no modal-ponte (erp_base.html), já na aba Mensagens (26/11/2026).
+function abrirFicha(id){ return abrirPessoa(Number(id), "mensagens"); }
 document.addEventListener("click", ev => {
   const a = ev.target.closest("[data-ficha]");
   if (!a) return;

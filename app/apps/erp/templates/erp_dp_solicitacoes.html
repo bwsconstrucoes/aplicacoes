@@ -101,10 +101,6 @@
 {# A janela que mostra o documento (19/11/2026) — abre por cima do pedido. #}
 <dialog id="dlg-papel" style="width:94vw; max-width:1100px; height:90vh; padding:0; overflow:hidden"></dialog>
 <dialog id="dlg-pedido" style="width:94vw; max-width:900px"></dialog>
-{# O ponto da pessoa, por cima da janela de atender (23/11/2026). #}
-<dialog id="dlg-ponto" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh;
-  padding:0; overflow:hidden"><iframe id="ponto-quadro" title="Ponto da pessoa"
-  style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -712,24 +708,6 @@ function blocoDoProcesso(p){
           pr.total - pr.cumpridos > 1 ? " e mais " + (pr.total - pr.cumpridos - 1) : ""}.</small>`}</div>` : ""}`;
 }
 
-async function pedirCancelamentoDoDesligamento(p){
-  const r = await perguntar({titulo: `Cancelar o desligamento de ${p.pessoa_nome || p.pessoa || ""}`,
-    aviso: "Abre um pedido de cancelamento. Enquanto o DP não atende, a virada do "
-         + "dia não desliga a pessoa; ao atender, a saída é apagada e a "
-         + "contabilidade é avisada.",
-    textoOk: "Pedir o cancelamento",
-    campos: [{nome: "observacao", rotulo: "Por que cancelar", tipo: "textarea",
-              obrigatorio: true, largura: 6, linhas: 2}]});
-  if (!r) return;
-  try {
-    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
-      body: JSON.stringify({tipo: "CANCELAR_DESLIGAMENTO",
-                            colaborador_id: p.colaborador_id, ...r})});
-    els("dlg").close();
-    aviso("mensagem", `Pedido ${d.solicitacao.numero} aberto: cancelamento do desligamento.`, "ok");
-    if (typeof carregar === "function") carregar();
-  } catch(e){ alert(e.message); }
-}
 
 function ligarBotoesDoProcesso(p){
   const corpo = els("dlg-corpo");
@@ -1078,21 +1056,10 @@ async function verPedidoContabil(id){
 
 {# O ponto da pessoa numa janela POR CIMA da de atender — a de atender fica
    aberta, com o que já foi digitado (23/11/2026). #}
+// O ponto da pessoa: o modal-ponte, já na aba Ponto, no espelho do mês (26/11/2026).
 function verPontoDaPessoa(id, competencia){
-  // 26/11/2026: o modal-ponte da pessoa, já na aba Ponto, no espelho do mês.
-  if (typeof abrirPessoa === "function")
-    return abrirPessoa(id, "ponto", {aba: "mes", competencia: competencia || ""});
-  els("ponto-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}?aba=mes`
-    + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
-  els("dlg-ponto").showModal();
+  return abrirPessoa(id, "ponto", {aba: "mes", competencia: competencia || ""});
 }
-
-els("dlg-ponto").addEventListener("close", () => { els("ponto-quadro").src = "about:blank"; });
-window.addEventListener("message", ev => {
-  const d = ev.data || {};
-  if (ev.origin === location.origin && d.tipo === "bws-ficha" && d.acao === "fechar"
-      && els("dlg-ponto").open) els("dlg-ponto").close();
-});
 
 {# O papel assinado que chegou ao escritório (plano B, 23/11/2026). #}
 function anexarPapel(caminho, id){
@@ -1756,102 +1723,6 @@ function camposDoTipo(regra, o, semPessoa){
   return campos;
 }
 
-async function novaSolicitacao(){
-  const o = await api("/erp/api/colaboradores/opcoes");
-  const escolha = await perguntar({titulo: "Nova solicitação ao DP",
-    textoOk: "Continuar",
-    campos: [{nome: "tipo", rotulo: "O que você precisa?", tipo: "select",
-              obrigatorio: true, largura: 6,
-              opcoes: DADOS.tipos.map(t => ({valor: t.valor, rotulo: t.rotulo}))}]});
-  if (!escolha) return;
-  const regra = DADOS.tipos.find(t => t.valor === escolha.tipo);
-
-  {# ⚑ TRÊS TIPOS NÃO SAÍAM DESTA TELA, E ELA NÃO DIZIA ISSO (15/11/2026).
-
-     Achado respondendo a uma pergunta dele: *"o nome e CPF são preenchidos a
-     partir dos documentos anexados?"* São — e a conferência mostrou que esta
-     tela **não tem campo para anexar nada**. Resultado: Cadastro de
-     Colaborador, Admissão de Prestador e Cadastro de Dependente exigem papel,
-     e aqui a pessoa preenchia DOZE campos, confirmava, e levava "Falta
-     anexar: documento de identificação, CPF, comprovante de endereço" — sobre
-     papéis que a janela nunca ofereceu onde pôr. Beco sem saída, e estava em
-     produção.
-
-     ⚑ POR QUE NÃO CONSTRUÍ O ANEXO AQUI: o portal já tem isso pronto, com
-     foto pelo celular e leitura do documento preenchendo os campos — e é no
-     celular, na obra, que o papel está na mão. Fazer uma segunda versão disso
-     aqui seria manter dois caminhos para o mesmo trabalho; e o DP, para
-     cadastrar direto, tem a ficha completa em Colaboradores, que já lê
-     documento.
-
-     O que esta tela precisa é PARAR DE PROMETER o que não entrega — e dizer
-     para onde ir. #}
-  if ((regra.documentos || []).length) {
-    const papeis = (regra.documentos || [])
-      .map(c => ROTULO_PAPEL_DP[c] || c);
-    const r = await perguntar({
-      titulo: regra.rotulo,
-      aviso: `Este pedido só sai <b>com os papéis anexados</b>: ${
-        papeis.map(escapar).join(", ")}. Esta tela não anexa arquivo — quem
-        anexa é o <b>portal da obra</b>, pelo celular, onde a foto do
-        documento ainda <b>preenche os campos sozinha</b>.`
-        + (regra.valor === "CADASTRO"
-           ? ` <br><br>Se você mesmo vai cadastrar a pessoa agora, o caminho é
-               <b>Pessoal › Colaboradores › + Colaborador</b>: lá está a ficha
-               completa, e ela também lê documento.`
-           : ""),
-      textoOk: "Abrir o portal da obra",
-      campos: []});
-    if (r) location.href = "/erp/portal";
-    return;
-  }
-
-  const campos = camposDoTipo(regra, o, false);
-  const r = await perguntar({titulo: regra.rotulo,
-    aviso: `${regra.explicacao}. O pedido vai para o DP.`,
-    textoOk: "Abrir a solicitação", campos});
-  if (!r) return;
-  {# ⚑ O CPF QUE JÁ EXISTE: O SISTEMA OFERECE A READMISSÃO (15/11/2026).
-
-     Ele: *"na admissão, quando digitar o CPF, o sistema tem que detectar que
-     a pessoa já tem cadastro e oferecer a readmissão. Aí readmissão deixa de
-     ser um tipo de solicitação."*
-
-     Antes era RECUSA seca: "já tem cadastro, é uma readmissão" — e quem pediu
-     tinha de fechar a janela, descobrir que existia um tipo chamado
-     Readmissão, e redigitar tudo. Quem não soubesse disso tentava de novo com
-     o nome escrito diferente, e nascia a segunda ficha da mesma pessoa.
-
-     Agora o sistema pergunta e CONVERTE. O servidor faz a mesma conferência
-     ao gravar — esta aqui é para a pessoa saber antes, não para confiar. #}
-  if (escolha.tipo === "CADASTRO" && r.cpf) {
-    let ja = null;
-    try {
-      ja = await api(`/erp/api/colaboradores/conferir-cpf?cpf=${
-        encodeURIComponent(r.cpf)}`);
-    } catch(e){ /* não achou resposta: o servidor confere de novo ao gravar */ }
-    if (ja && ja.situacao === "ativo") {
-      aviso("mensagem", ja.aviso, "erro");
-      return;
-    }
-    if (ja && ja.situacao === "desligado") {
-      const segue = await perguntar({
-        titulo: "Esta pessoa já tem cadastro",
-        aviso: `${escapar(ja.aviso)} <br><br>O pedido vai como
-          <b>readmissão</b>: o cadastro dela volta, com a data de início que
-          você informou, e a passagem anterior fica no histórico.`,
-        textoOk: "Abrir como readmissão", campos: []});
-      if (!segue) return;
-    }
-  }
-  try {
-    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({tipo: escolha.tipo, ...r})});
-    aviso("mensagem", `Solicitação ${d.solicitacao.numero} aberta.`, "ok");
-    carregar();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-}
 
 // ("+ Solicitação" virou o link para o portal — 26/11/2026)
 els("btn-checklists").addEventListener("click", abrirChecklists);
