@@ -2028,7 +2028,7 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
   const rotulo = d.rotulo_validade || "Vale até";
   const valor = d.campo_validade ? (d.valor_validade || "") : (g.validade || "");
   const emissao = d.emissao || g.emissao || "";
-  const falta = g.tipo_vence && !valor;
+  const falta = g.tipo_vence && !valor && !g.tipo_validade_padrao_meses;
   const faltaComp = g.tipo_por_competencia && !g.competencia;
   const extras = (d.extras || []).map(x => `
     <div class="campo"><label>${escapar(x.rotulo)}</label>
@@ -2055,9 +2055,11 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
           <input id="${prefixo}-dt-emissao" type="date" value="${escapar(emissao)}"
             oninput="recalcularDiasDaVigencia('${prefixo}')"></div>
         ${extras}
-        ${g.tipo_vence ? `<div class="campo"><label>${escapar(rotulo)} *</label>
+        ${g.tipo_vence ? `<div class="campo"><label>${escapar(rotulo)}${g.tipo_validade_padrao_meses ? "" : " *"}</label>
           <input id="${prefixo}-dt-validade" type="date" value="${escapar(valor)}"
-            oninput="recalcularDiasDaVigencia('${prefixo}', true)"></div>` : ""}
+            oninput="recalcularDiasDaVigencia('${prefixo}', true)">
+          ${g.tipo_validade_padrao_meses ? `<div class="dica">O papel não traz vencimento: em branco, o sistema
+            conta ${g.tipo_validade_padrao_meses} meses a partir da emissão.</div>` : ""}</div>` : ""}
         ${g.tipo_vence && d.aceita_dias ? `<div class="campo">
           <label>ou prazo, em dias</label>
           <input id="${prefixo}-dt-dias" inputmode="numeric" placeholder="365"
@@ -2131,7 +2133,8 @@ function datasDoDocumento(prefixo, g, d){
   const validade = g.tipo_vence ? pegar(prefixo + "-dt-validade") : "";
   const comp = g.tipo_por_competencia ? pegar(prefixo + "-dt-comp") : "";
   const rotulo = (d.rotulo_validade || "Vale até").toLowerCase();
-  if (g.tipo_vence && !validade) {
+  // O ASO (26/11/2026): em branco, o sistema calcula — ver `datasDoDocumento`.
+  if (g.tipo_vence && !validade && !g.tipo_validade_padrao_meses) {
     return {ok: false, erro: `Informe ${rotulo} — está logo acima, em “Datas do `
             + `documento”. Dá para digitar a data ou o prazo em dias.`};
   }

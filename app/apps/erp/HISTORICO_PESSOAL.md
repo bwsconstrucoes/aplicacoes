@@ -141,6 +141,27 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (5) — O ASO travava a admissão pelo portal: a validade agora é calculada
+
+Relato da obra, trazido por ele: *"Quando a gente coloca pra concluir o
+cadastro no novo app dá essa msg pedindo o vencimento do exame médico… só que
+não tem onde colocar no app e no exame também não tem o vencimento."* A
+mensagem: *"Atestado de saúde ocupacional vence — informe até quando vale."*
+
+**Causa:** o tipo ASO está marcado como "vence" no catálogo, e
+`arquivo.service.arquivar` recusa documento que vence sem validade. O portal
+não pergunta validade (nem deveria: o papel não traz). No pedido de admissão,
+pedido e papéis gravam na mesma transação — o ASO derrubava o pedido inteiro.
+O mesmo valia para a devolução de ASO (demissional/retorno) pelo portal.
+
+**Decisão minha, a confirmar com ele:** `VALIDADE_PADRAO_MESES = {"ASO": 12}`
+— em branco, a validade é a data do exame (ou a do envio, quando não há) +
+12 meses, gravada com a observação "validade estimada… corrija se o PCMSO
+disser outro prazo". Por quê 12: NR-7, o periódico é anual para quem tem risco
+ocupacional, que é o caso da obra; o aviso de vencimento continua funcionando.
+As telas do ERP (Documentos da pessoa e Arquivo) deixaram de exigir a data
+para o ASO e dizem a regra. Os outros tipos que vencem continuam exigindo.
+
 ### 26/11/2026 (4) — O MODAL-PONTE DA PESSOA: uma janela, todas as abas, de qualquer tela
 
 **Ele, cobrando pela terceira vez o mesmo assunto (13/11, 17/11, 18/11):**

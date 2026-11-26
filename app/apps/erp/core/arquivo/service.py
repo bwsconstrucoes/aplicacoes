@@ -129,6 +129,11 @@ def _primeiro_do_mes(d: Optional[date]) -> Optional[date]:
     return d.replace(day=1) if d else None
 
 
+# Tipos que VENCEM mas cujo papel não diz quando: a validade sai da regra, em
+# meses a partir da emissão (26/11/2026 — ver o comentário em `arquivar`).
+VALIDADE_PADRAO_MESES: dict[str, int] = {"ASO": 12}
+
+
 def arquivar(s: Session, conteudo: bytes, nome_arquivo: str, *,
              tipo_codigo: str, empresa_id: Optional[int] = None,
              obra_id: Optional[int] = None, colaborador_id: Optional[int] = None,
@@ -154,6 +159,24 @@ def arquivar(s: Session, conteudo: bytes, nome_arquivo: str, *,
             "O documento pertence a UM dono: uma empresa, uma obra, uma "
             "pessoa, um fornecedor ou um lançamento — nem nenhum, nem dois. "
             "Documento pendurado em dois lugares não é achado em nenhum.")
+    if tipo.vence and validade is None and tipo.codigo in VALIDADE_PADRAO_MESES:
+        # ⚑ O ASO NÃO TRAZ VENCIMENTO IMPRESSO (26/11/2026). Relato da obra,
+        # pelo dono: *"no app (…) da essa msg pedindo o vencimento do exame
+        # médico… só que não tem onde colocar no app e no exame tbm não tem o
+        # vencimento… como a gente pode concluir o cadastro?"* A validade do ASO
+        # vem da norma (NR-7: o periódico é anual para quem tem risco — o caso
+        # da obra), não do papel. Exigir a data travava o pedido de admissão
+        # inteiro (pedido e papéis gravam juntos). Agora ela é CALCULADA a
+        # partir do exame (ou de hoje, se a data do exame não veio) e fica
+        # marcada como estimada — o aviso de vencimento continua funcionando,
+        # que é o motivo de existir a data.
+        from app.apps.erp.core.agenda.geradores import _somar_meses
+        meses = VALIDADE_PADRAO_MESES[tipo.codigo]
+        validade = _somar_meses(emissao or date.today(), meses)
+        observacao = " ".join(x for x in (observacao, (
+            f"Validade estimada: {meses} meses a partir "
+            f"{'do exame' if emissao else 'do envio'} (o documento não traz "
+            "vencimento). Corrija se o PCMSO disser outro prazo.")) if x)
     if tipo.vence and validade is None:
         raise ErroValidacao(
             f"{tipo.nome} vence — informe até quando vale. Sem isso o sistema "
