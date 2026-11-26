@@ -87,7 +87,7 @@ def test_o_tipo_do_arquivo_baixado():
     assert rc._tipo_do_arquivo(_pdf_falso()) == "pdf"
     assert rc._tipo_do_arquivo(_png_falso()) == "png"
     assert rc._tipo_do_arquivo(b"<!DOCTYPE html><html>") == "html"
-    assert rc._tipo_do_arquivo(b"PK\x03\x04resto") == "office"
+    assert rc._tipo_do_arquivo(b"PK\x03\x04resto") == "zip"
     with pytest.raises(RuntimeError, match="página da internet"):
         rc._preparar_anexo(b"<html>entre</html>")
 
@@ -264,3 +264,70 @@ def test_o_pdf_digitalizado_pesado_sai_leve_no_relatorio():
     assert len(conteudo) < len(pesado) / 4, (len(conteudo), len(pesado))
     assert sum("PAGAMENTO 1  ·  SP" in p.get_text()
                for p in fitz.open(stream=conteudo, filetype="pdf")) == 2
+
+
+def _pdf_com_defeito(como: str) -> bytes:
+    """Um PDF que ABRE e só estoura ao copiar as páginas — o "code=7" do dono."""
+    import fitz
+    d = fitz.open()
+    for i in range(3):
+        d.new_page().insert_text((72, 72), f"documento pagina {i + 1}")
+    bruto = d.tobytes(garbage=0, deflate=False, use_objstms=0)
+    if como == "ciclo":         # a árvore de páginas aponta para ela mesma
+        return bruto.replace(b"/Kids[4 0 R 8 0 R 11 0 R]", b"/Kids[4 0 R 2 0 R 11 0 R]")
+    return bruto.replace(b"/Count 3", b"/Count 9")      # diz ter 9 páginas e tem 3
+
+
+@pytest.mark.parametrize("como", ["ciclo", "contagem"])
+def test_PDF_COM_DEFEITO_nao_derruba_o_relatorio(como):
+    """26/11/2026: *"Não consegui gerar: code=7: malformed page tree"* — um anexo
+    quebrado derrubava o relatório inteiro, lá no fim."""
+    import fitz
+    from app.apps.analisesps import lote_relatorio_completo as rc
+    arquivos = {"https://x/quebrado.pdf": _pdf_com_defeito(como),
+                "https://x/bom.pdf": _pdf_falso(1)}
+    montado = _montado(("G", [_sp(1, anexo_link="https://x/quebrado.pdf"),
+                              _sp(2, anexo_link="https://x/bom.pdf")]))
+    d = rc.montar_dados(montado, data_pagamento=dt.date(2026, 11, 26), extras={},
+                        para="Parceria")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        conteudo = rc.montar_pdf(d, baixar=lambda u: arquivos[u])
+    textos = [p.get_text() for p in fitz.open(stream=conteudo, filetype="pdf")]
+    assert any("SP 1384831002" in t and "PAGAMENTO 2" in t for t in textos), "o anexo bom entrou"
+    da_sp1 = [t for t in textos if "PAGAMENTO 1  ·  SP 1384831001" in t]
+    assert da_sp1, "as páginas legíveis do PDF com defeito entraram"
+    assert any("tinha defeito" in t for t in textos) or len(da_sp1) >= 2
+
+
+def _zip(**arquivos) -> bytes:
+    import io
+    import zipfile
+    saida = io.BytesIO()
+    with zipfile.ZipFile(saida, "w", compression=zipfile.ZIP_STORED) as z:
+        for nome, dado in arquivos.items():
+            z.writestr(nome if nome.startswith("[") else nome.replace("_", "."), dado)
+    return saida.getvalue()
+
+
+def test_o_ZIP_com_imagens_entra_no_relatorio():
+    """26/11/2026: *"tem um dos anexos que é um arquivo .zip com duas imagens"*. E o
+    .zip com um PDF guardado sem compressão era lido COMO PDF ("malformed page tree")."""
+    import fitz
+    from app.apps.analisesps import lote_relatorio_completo as rc
+    duas_fotos = _zip(foto1_png=_png_falso(), foto2_png=_png_falso(), leia_txt=b"oi")
+    com_pdf = _zip(nota_pdf=_pdf_falso(2))
+    assert rc._tipo_do_arquivo(com_pdf) == "zip", "o PDF dentro do .zip não engana mais"
+    arquivos = {"https://x/fotos.zip": duas_fotos, "https://x/nota.zip": com_pdf,
+                "https://x/planilha.xlsx": _zip(**{"[Content_Types].xml": b"<x/>"})}
+    montado = _montado(("G", [_sp(1, anexo_link="https://x/fotos.zip"),
+                              _sp(2, anexo_link="https://x/nota.zip"),
+                              _sp(3, anexo_link="https://x/planilha.xlsx")]))
+    d = rc.montar_dados(montado, data_pagamento=dt.date(2026, 11, 26), extras={},
+                        para="Parceria")
+    textos = [p.get_text() for p in fitz.open(stream=rc.montar_pdf(d, baixar=lambda u: arquivos[u]),
+                                              filetype="pdf")]
+    assert len([t for t in textos if "PAGAMENTO 1  ·  SP 1384831001" in t]) == 2, "as duas fotos"
+    assert any("leia.txt" in t for t in textos), "o que ficou de fora do .zip é dito"
+    assert len([t for t in textos if "PAGAMENTO 2  ·  SP 1384831002" in t]) == 2, "o PDF de dentro"
+    assert any("Office" in t for t in textos), "planilha continua de fora, dizendo por quê"

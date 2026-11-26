@@ -12275,6 +12275,26 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 281 — Relatório completo do lote: anexo .zip entra, e PDF com defeito não derruba mais (26/11/2026)
+
+- O dono: *"Não consegui gerar: code=7: malformed page tree"*, e logo depois: *"tem um
+  dos anexos que é um arquivo .zip com duas imagens"*.
+- **Duas brechas minhas (leva de 16/11):** (1) a cópia das páginas do anexo acontecia no
+  FIM, sem proteção — um PDF que abre mas tem a árvore de páginas quebrada (reproduzido:
+  ciclo na árvore, contagem errada) derrubava o relatório inteiro; (2) `_tipo_do_arquivo`
+  procurava "%PDF" no primeiro kilobyte ANTES de ver o "PK" do .zip — um .zip com um PDF
+  guardado sem compressão era aberto como PDF, o que dá exatamente "malformed page tree".
+  Não deu para confirmar, sem o arquivo, qual das duas foi a do dono.
+- **Agora:** o .zip é conferido primeiro e **aberto**: as imagens e os PDFs de dentro
+  entram, um depois do outro (até 20 arquivos; cada um com o teto de 40 MB, contra o .zip
+  que "explode"); o que não dá para embutir é listado no rótulo ("ficaram de fora: …");
+  planilha/documento do Office (que é .zip por dentro) continua de fora dizendo por quê.
+  Cada PDF tem a cópia ENSAIADA logo ao baixar; se falhar, tenta sem a otimização e, por
+  fim, as páginas legíveis entram como imagem ("o PDF tinha defeito"); nenhuma legível →
+  o anexo fica de fora com o motivo. E a cópia final, se ainda falhar, pula aquele anexo.
+- Sem migração. Testes: `test_PDF_COM_DEFEITO_nao_derruba_o_relatorio`,
+  `test_o_ZIP_com_imagens_entra_no_relatorio`.
+
 #### Leva 280 — DDA: o motor refeito (rápido) e a lista em páginas de 50 (26/11/2026)
 
 - O dono: *"está muito lento (…) eu vou tentar fazer uma filtragem, aí ele demora demais
