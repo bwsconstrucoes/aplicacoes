@@ -99,6 +99,25 @@ CNPJ = re.compile(r"CNPJ:\s*([\d./-]+)")
 QUINZENA = "quinzena"
 FIM_DE_MES = "fim_de_mes"
 
+# O 13º SALÁRIO (25/11/2026). O dono: *"vou lançar a folha do 13º. Pagamos o
+# adiantamento dele em novembro e o restante em dezembro. Ela é igual à folha da
+# contabilidade (…) gostaria de dividir cada funcionário de acordo com o ponto do
+# ano."* Título real da 1ª parcela, confirmado por ele no mesmo dia: "Folha
+# Sintética - Adiantamento de 13º Salário". O da 2ª ainda não foi visto.
+#
+# ⚠️ É UM TIPO À PARTE, e não "quinzena": o título tem "Adiantamento", e sem esta
+# conferência ANTES da do adiantamento o 13º entraria como a quinzena de novembro e
+# SUBSTITUIRIA a quinzena de verdade (a folha é uma por competência e tipo).
+DECIMO_1 = "decimo_1"
+DECIMO_2 = "decimo_2"
+DECIMOS = (DECIMO_1, DECIMO_2)
+ROTULO_DO_DECIMO = {DECIMO_1: "13º salário — 1ª parcela (adiantamento)",
+                    DECIMO_2: "13º salário — 2ª parcela"}
+# Para nome de arquivo, sem acento (como "Fim de mes").
+ROTULO_CURTO_DO_DECIMO = {DECIMO_1: "13o salario 1a parcela",
+                          DECIMO_2: "13o salario 2a parcela"}
+PADRAO_DO_DECIMO = re.compile(r"\b13\s*[ºo°ª]?\s*sal|d[ée]cimo[\s-]*terceiro", re.I)
+
 # O que no título do relatório denuncia a quinzena.
 PALAVRAS_DE_ADIANTAMENTO = ("adiantamento", "adiant.", "quinzena")
 # E o que denuncia o fechamento.
@@ -116,11 +135,14 @@ PALAVRAS_DE_FECHAMENTO = ("folha de pagamento", "fim de m", "fechamento",
 
 
 def tipo_sugerido(titulo: str) -> str:
-    """"quinzena", "fim_de_mes" ou "" quando o título não deixa claro.
+    """"quinzena", "fim_de_mes", "decimo_1"/"decimo_2" (13º) ou "" quando o título
+    não deixa claro.
 
     Devolver "" é resposta legítima, e é a mais importante das três: é ela que
     faz a tela PERGUNTAR em vez de adivinhar."""
     t = " ".join(str(titulo or "").lower().split())
+    if PADRAO_DO_DECIMO.search(t):
+        return DECIMO_1 if any(p in t for p in PALAVRAS_DE_ADIANTAMENTO) else DECIMO_2
     if any(p in t for p in PALAVRAS_DE_ADIANTAMENTO):
         return QUINZENA
     if any(p in t for p in PALAVRAS_DE_FECHAMENTO):

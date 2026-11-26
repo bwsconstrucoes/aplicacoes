@@ -54,14 +54,16 @@ SP_JA_PAGA = "sp_ja_paga"
 PROVAVEL = "provavel"
 LANCADO = "lancado"
 SEM_SP_CONFIRMADO = "sem_sp_confirmado"
+PAGO = "pago"
 ROTULOS = {
     SEM_LANCAMENTO: "Sem lançamento",
-    SP_JA_PAGA: "SP já paga",
+    SP_JA_PAGA: "SP já paga — ainda no DDA",
     PROVAVEL: "Provável — conferir",
     LANCADO: "Lançado",
+    PAGO: "Pago",
     SEM_SP_CONFIRMADO: "Sem SP (confirmado)",
 }
-ORDEM = [SEM_LANCAMENTO, SP_JA_PAGA, PROVAVEL, LANCADO, SEM_SP_CONFIRMADO]
+ORDEM = [SEM_LANCAMENTO, SP_JA_PAGA, PROVAVEL, LANCADO, PAGO, SEM_SP_CONFIRMADO]
 
 NOTA_LANCADO = 70        # daqui para cima, o vínculo é dado como certo
 NOTA_PROVAVEL = 55       # entre as duas, aparece para conferir
@@ -316,6 +318,20 @@ def nota(boleto: dict, sp: dict) -> tuple:
     return 0, ""
 
 
+def _campos_sp() -> str:
+    from .consultas import SQL_STATUS_AGEND
+    return ("id, credor, documento, valor_num, vencimento_d, codigo_barras, nf, "
+            "trim(coalesce(status_pgt,'')), trim(coalesce(forma_pagamento,'')), "
+            "(" + SQL_STATUS_AGEND + ")")
+
+
+def _sp_da_linha(l) -> dict:
+    return {"id": str(l[0]), "credor": l[1] or "", "doc": _digitos(l[2]),
+            "valor": Decimal(str(l[3])) if l[3] is not None else None,
+            "vencimento": l[4], "barras": _barras_da_sp(l[5]), "nf": l[6] or "",
+            "status_pgt": l[7] or "", "forma": l[8] or "", "status_agend": l[9] or ""}
+
+
 def _sps_candidatas(boletos: list) -> list:
     """UMA consulta: as SPs (não canceladas) que podem casar com algum boleto — pelo
     código de barras, pela raiz do CNPJ ou pelo valor."""
@@ -350,15 +366,11 @@ def _sps_candidatas(boletos: list) -> list:
                          + ",".join("?" for _ in barras) + ")")
         params += barras
     linhas = consultar(
-        "SELECT id, credor, documento, valor_num, vencimento_d, codigo_barras, nf, "
-        "       trim(coalesce(status_pgt,'')), trim(coalesce(forma_pagamento,'')) "
+        "SELECT " + _campos_sp() + " "
         "  FROM analisesps.sps "
         " WHERE lower(trim(coalesce(status_pgt,''))) <> 'cancelado' AND ("
         + " OR ".join(condicoes) + ")", tuple(params))
-    return [{"id": str(l[0]), "credor": l[1] or "", "doc": _digitos(l[2]),
-             "valor": Decimal(str(l[3])) if l[3] is not None else None,
-             "vencimento": l[4], "barras": _barras_da_sp(l[5]), "nf": l[6] or "",
-             "status_pgt": l[7] or "", "forma": l[8] or ""} for l in linhas]
+    return [_sp_da_linha(l) for l in linhas]
 
 
 def cruzar(boletos: list) -> None:
@@ -414,7 +426,10 @@ def cruzar(boletos: list) -> None:
         if not sp:
             b["situacao"] = SEM_LANCAMENTO
         elif sp.get("status_pgt", "").lower().startswith("pago"):
-            b["situacao"] = SP_JA_PAGA
+            # A base CRESCE (24/11/2026): boleto de semanas atrás com a SP paga é o
+            # normal — "Pago". O alarme de pagar duas vezes é só para o que o banco
+            # AINDA lista em aberto: o que veio na última colagem.
+            b["situacao"] = SP_JA_PAGA if b.get("na_ultima", True) else PAGO
         elif sp["nota"] >= NOTA_LANCADO:
             b["situacao"] = LANCADO
         else:
@@ -471,34 +486,92 @@ def _sps_por_id(ids) -> list:
     if not ids:
         return []
     linhas = consultar(
-        "SELECT id, credor, documento, valor_num, vencimento_d, codigo_barras, nf, "
-        "       trim(coalesce(status_pgt,'')), trim(coalesce(forma_pagamento,'')) "
+        "SELECT " + _campos_sp() + " "
         "  FROM analisesps.sps WHERE id IN (" + ",".join("?" for _ in ids) + ")", tuple(ids))
-    return [{"id": str(l[0]), "credor": l[1] or "", "doc": _digitos(l[2]),
-             "valor": Decimal(str(l[3])) if l[3] is not None else None,
-             "vencimento": l[4], "barras": _barras_da_sp(l[5]), "nf": l[6] or "",
-             "status_pgt": l[7] or "", "forma": l[8] or ""} for l in linhas]
+    return [_sp_da_linha(l) for l in linhas]
 
 
 # ---------------------------------------------------------------------------
 # 4. O QUE A TELA MOSTRA
 # ---------------------------------------------------------------------------
+# A ETIQUETA DE PAGAMENTO (dono, 24/11/2026: *"uma etiqueta similar à parte do lote de
+# solicitações, para saber (…) se o boleto está pago ou se não está pago"*). O DDA não
+# diz se o boleto foi pago: quem diz é a SP casada com ele — o mesmo selo do Lote.
+PAGAMENTOS = {"pagar": "A pagar", "agendado": "Agendado", "parcial": "Pago parcial",
+              "pago": "Pago", "sem_sp": "Sem SP"}
+PRAZOS = {"vencido": "Vencidos", "hoje": "Vencem hoje",
+          "semana": "Próximos 7 dias", "depois": "Mais adiante"}
+
+
+def pagamento(b: dict) -> str:
+    sp = b.get("sp")
+    if not sp or not sp.get("status_pgt"):
+        return "sem_sp"
+    st = sp["status_pgt"].strip().lower()
+    if st == "pago":
+        return "pago"
+    if st == "pago parcial":
+        return "parcial"
+    if (sp.get("status_agend") or "").strip().lower() == "agendado":
+        return "agendado"
+    return "pagar"
+
+
+def prazo(b: dict, hoje: dt.date | None = None) -> str:
+    """Só o que NÃO está pago tem prazo: boleto pago é passado, não alarme."""
+    hoje = hoje or dt.date.today()
+    v = b.get("vencimento")
+    if b.get("pagamento") == "pago":
+        return ""
+    if not v:
+        return "depois"
+    if v < hoje:
+        return "vencido"
+    if v == hoje:
+        return "hoje"
+    return "semana" if (v - hoje).days <= 7 else "depois"
+
+
 def filtros_da_tela(args) -> dict:
     def data(v):
         try:
             return dt.date.fromisoformat(str(v or "")[:10])
         except ValueError:
             return None
-    situacoes = [s for s in (args.getlist("situacao") if hasattr(args, "getlist") else [])
-                 if s in ROTULOS]
+    def lista(nome, validos=None):
+        vals = args.getlist(nome) if hasattr(args, "getlist") else []
+        return [v for v in vals if v and (validos is None or v in validos)]
+
+    def valor(v):
+        try:
+            v = str(v or "").replace("R$", "").strip()
+            if "," in v:                    # 1.234,50 — o jeito brasileiro
+                v = v.replace(".", "").replace(",", ".")
+            return Decimal(v) if v else None
+        except InvalidOperation:
+            return None
+    situacoes = lista("situacao", ROTULOS)
+    colagem = args.get("colagem") or ("ultima" if args.get("so_ultima") else "") \
+        or ("novos" if args.get("recorte") == "novos" else "")
     return {"situacoes": situacoes,
             "busca": " ".join(str(args.get("busca") or "").split())[:80],
             "de": data(args.get("de")), "ate": data(args.get("ate")),
-            "todas": bool(args.get("todas")), "aplicado": bool(args.get("f"))}
+            # A BASE INTEIRA é o padrão (dono, 24/11/2026: *"essa base de boletos vai só
+            # crescendo (…) eu quero ir sempre adicionando e atualizando o cruzamento"*).
+            # Ele cola a lista em pedaços: o que não veio na última colagem NÃO saiu do
+            # DDA, só não estava naquele pedaço. "só a última" é recorte opcional.
+            "so_ultima": colagem == "ultima", "aplicado": bool(args.get("f")),
+            # "novos": os que apareceram pela primeira vez na última colagem.
+            "recorte": "novos" if colagem == "novos" else "",
+            "colagem": colagem if colagem in ("ultima", "novos") else "",
+            "pagamentos": lista("pagamento", PAGAMENTOS), "prazos": lista("prazo", PRAZOS),
+            "pagadoras": [_digitos(v) for v in lista("pagadora")][:20],
+            "valor_de": valor(args.get("valor_de")), "valor_ate": valor(args.get("valor_ate"))}
 
 
 _CAMPOS_DA_LISTA = ["id", "barras"] + _COLUNAS + ["sp_manual", "sp_manual_por",
-                                                    "ultima_colagem", "visto_em"]
+                                                    "ultima_colagem", "visto_em",
+                                                    "primeira_colagem"]
 
 
 def ultima_colagem() -> dict | None:
@@ -512,13 +585,35 @@ def ultima_colagem() -> dict | None:
                      "boletos_do_banco"], linha))
 
 
+# A base cresce a cada colagem; o teto guarda os de vencimento MAIS RECENTE (o que
+# interessa), e a tela avisa quando ele corta — aí, os filtros.
+TETO_DA_LISTA = 2000
+
+
 def listar(f: dict) -> dict:
-    """Os boletos (da última colagem, ou de todas), cruzados com as SPs, com a
-    contagem por situação. Duas consultas, mais a das SPs candidatas."""
-    from .db import consultar
+    """Os boletos da base inteira (ou só da última colagem), cruzados com as SPs, com
+    a contagem por situação. Três consultas, mais a das SPs candidatas."""
+    from .db import consultar, consultar_um
     ultima = ultima_colagem()
+    # O QUE MUDOU DESDE A COLAGEM ANTERIOR (dono, 24/11/2026: *"o que já foi importado,
+    # ignora e apenas adiciona as coisas novas. E é interessante até dar um que foi
+    # adicionado novo"*): os que entraram na base com a última colagem.
+    anterior, novos, na_base = None, 0, 0
+    if ultima:
+        linha = consultar_um("SELECT max(id) FROM analisesps.dda_colagem WHERE id < ?",
+                             (ultima["id"],))
+        anterior = linha[0] if linha else None
+        linha = consultar_um(
+            "SELECT count(*) FILTER (WHERE primeira_colagem = ?), count(*) "
+            "  FROM analisesps.dda_boleto", (ultima["id"],))
+        novos, na_base = (int(linha[0] or 0), int(linha[1] or 0)) if linha else (0, 0)
+        if not anterior:
+            novos = 0          # a primeira colagem: tudo é "novo", e dizer isso não ajuda
     partes, params = [], []
-    if not f.get("todas") and ultima:
+    if f.get("recorte") == "novos" and ultima:
+        partes.append("primeira_colagem = ?")
+        params.append(ultima["id"])
+    elif f.get("so_ultima") and ultima:
         partes.append("ultima_colagem = ?")
         params.append(ultima["id"])
     if f.get("de"):
@@ -527,6 +622,15 @@ def listar(f: dict) -> dict:
     if f.get("ate"):
         partes.append("vencimento <= ?")
         params.append(f["ate"].isoformat())
+    if f.get("valor_de") is not None:
+        partes.append("valor >= ?")
+        params.append(f["valor_de"])
+    if f.get("valor_ate") is not None:
+        partes.append("valor <= ?")
+        params.append(f["valor_ate"])
+    if f.get("pagadoras"):
+        partes.append("pagador_cnpj IN (" + ",".join("?" for _ in f["pagadoras"]) + ")")
+        params += f["pagadoras"]
     if f.get("busca"):
         termo = "%" + f["busca"].lower() + "%"
         partes.append("(lower(beneficiario_nome) LIKE ? OR lower(beneficiario_final_nome) LIKE ? "
@@ -537,28 +641,45 @@ def listar(f: dict) -> dict:
                    "%" + f["busca"].replace(".", "").replace(",", ".") + "%"]
     onde = (" WHERE " + " AND ".join(partes)) if partes else ""
     linhas = consultar("SELECT " + ", ".join(_CAMPOS_DA_LISTA) + " FROM analisesps.dda_boleto"
-                       + onde + " ORDER BY vencimento NULLS LAST, valor DESC LIMIT 1000",
-                       tuple(params))
+                       + onde + " ORDER BY vencimento DESC NULLS FIRST, valor DESC LIMIT ?",
+                       tuple(params) + (TETO_DA_LISTA,))
     boletos = [dict(zip(_CAMPOS_DA_LISTA, l)) for l in linhas]
     for b in boletos:
         for c in ("valor", "valor_documento", "descontos", "juros", "multa"):
             if b[c] is not None:
                 b[c] = Decimal(str(b[c]))
         b["na_ultima"] = bool(ultima and b["ultima_colagem"] == ultima["id"])
+        b["novo"] = bool(ultima and anterior and b["primeira_colagem"] == ultima["id"])
     cruzar(boletos)
+    hoje = dt.date.today()
     contagem = {s: 0 for s in ORDEM}
     totais = {s: Decimal("0") for s in ORDEM}
+    por_pagamento = {p: 0 for p in PAGAMENTOS}
+    por_prazo = {p: 0 for p in PRAZOS}
     for b in boletos:
+        b["pagamento"] = pagamento(b)
+        b["prazo"] = prazo(b, hoje)
         contagem[b["situacao"]] += 1
         totais[b["situacao"]] += b["valor"]
-    if f.get("situacoes"):
-        mostrar = [b for b in boletos if b["situacao"] in f["situacoes"]]
-    else:
-        mostrar = boletos
+        por_pagamento[b["pagamento"]] += 1
+        if b["prazo"]:
+            por_prazo[b["prazo"]] += 1
+    mostrar = [b for b in boletos
+               if (not f.get("situacoes") or b["situacao"] in f["situacoes"])
+               and (not f.get("pagamentos") or b["pagamento"] in f["pagamentos"])
+               and (not f.get("prazos") or b["prazo"] in f["prazos"])]
     ordem = {s: n for n, s in enumerate(ORDEM)}
     mostrar.sort(key=lambda b: (ordem[b["situacao"]], b["vencimento"] or dt.date.max,
                                 -b["valor"]))
-    return {"boletos": mostrar, "ultima": ultima,
+    pagadoras = [(l[0], filial(l[0]), int(l[1])) for l in consultar(
+        "SELECT pagador_cnpj, count(*) FROM analisesps.dda_boleto "
+        " WHERE coalesce(pagador_cnpj,'') <> '' GROUP BY pagador_cnpj ORDER BY pagador_cnpj")]
+    return {"boletos": mostrar, "ultima": ultima, "novos": novos, "na_base": na_base,
+            "por_pagamento": [(k, PAGAMENTOS[k], por_pagamento[k]) for k in PAGAMENTOS],
+            "por_prazo": [(k, PRAZOS[k], por_prazo[k]) for k in PRAZOS],
+            "pagadoras": pagadoras, "mostrados": len(mostrar),
+            "cortado": len(boletos) >= TETO_DA_LISTA,
+            "tem_anterior": bool(anterior),
             "contagem": [(s, ROTULOS[s], contagem[s], totais[s]) for s in ORDEM],
             "total": sum((b["valor"] for b in boletos), Decimal("0")),
             "quantos": len(boletos)}

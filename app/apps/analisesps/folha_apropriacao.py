@@ -101,7 +101,8 @@ def competencia_sugerida(hoje=None) -> tuple:
 
 
 def periodo_do_pagamento(ano: int, mes: int, tipo: str) -> tuple:
-    """Os dias que este pagamento enxerga. `tipo` é "quinzena" ou "fim_de_mes".
+    """Os dias que este pagamento enxerga. `tipo` é "quinzena", "fim_de_mes" ou o
+    13º ("decimo_1"/"decimo_2", o ano até novembro).
 
     ⚠️ "FIM DE MÊS" É 16 ATÉ O ÚLTIMO DIA, e não "16 a 31": fevereiro tem 28 ou
     29. Escrever 31 faria a leitura do ponto procurar dias que não existem e, pior,
@@ -111,6 +112,15 @@ def periodo_do_pagamento(ano: int, mes: int, tipo: str) -> tuple:
     if tipo == "fim_de_mes":
         ultimo = calendar.monthrange(ano, mes)[1]
         return dt.date(ano, mes, 16), dt.date(ano, mes, ultimo)
+    if tipo in ("decimo_1", "decimo_2"):
+        # O 13º SE RATEIA PELO PONTO DO ANO (dono, 25/11/2026: *"dividir cada
+        # funcionário de acordo com o ponto do ano"*): de 1º de janeiro ao fim do
+        # mês da parcela, até 30 de novembro. As DUAS parcelas leem o mesmo
+        # período — a 2ª é paga antes de dezembro fechar, e assim as duas caem nas
+        # obras na mesma proporção. Escolha minha, a confirmar com o dono.
+        fim = min(dt.date(ano, mes, calendar.monthrange(ano, mes)[1]),
+                  dt.date(ano, 11, 30))
+        return dt.date(ano, 1, 1), fim
     raise ValueError(f"tipo de pagamento desconhecido: {tipo!r}")
 
 
@@ -579,6 +589,12 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
         "fora": [p for p in pessoas if p["fora"]],
         # Quem bateu ponto e não está nesta folha — separado por tipo, para o
         # esperado não virar alerta. Ver `com_ponto_fora_da_folha`.
+        # ⚠️ NO 13º (período de um ano) só o ÚLTIMO MÊS: quem saiu em março bateu
+        # ponto no ano e não está no 13º — recebeu na rescisão —, e listar todo
+        # mundo que passou pela empresa esconderia o alerta que importa: quem está
+        # trabalhando agora e ficou de fora.
         "fora_da_folha": com_ponto_fora_da_folha(
-            linhas, dias_por_cpf, cadastro_por_id, (ini, fim)),
+            linhas, dias_por_cpf, cadastro_por_id,
+            (max(ini, fim.replace(day=1)) if ini != dt.date.min and fim != dt.date.max
+             and (fim - ini).days > 31 else ini, fim)),
     }
