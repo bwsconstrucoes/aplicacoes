@@ -1716,3 +1716,27 @@ def test_a_legenda_do_quadro_explica_o_dia_comecado():
     assert ".quadro-mes td.q-comecado" in css and ".cal-dia.comecado" in css, (
         "o dia começado perdeu a cor própria — ele viraria um quadrado branco "
         "sem significado")
+
+
+def test_no_celular_a_tela_abre_com_os_filtros_a_mostra():
+    """Ele: *"quando abrir no celular, eu acho melhor o quadro do filtro."*
+
+    Quem abre o diário no telefone quase sempre vem fazer UM dia de UMA obra.
+    Com a gaveta fechada, chegar na obra custava um toque escondido atrás de um
+    botão flutuante.
+
+    ⚠️ O que este teste protege, além da gaveta: as DUAS condições. Abrir a
+    gaveta no computador taparia a tela inteira sem motivo (lá a coluna de
+    filtros já está sempre à vista), e abri-la para quem chegou com obra
+    escolhida atrapalharia justamente quem já sabia aonde ia.
+    """
+    tela = _arquivo("app", "apps", "erp", "templates", "erp_diario.html")
+    assert "abrirFiltrosNoCelular()" in tela, (
+        "a tela do diário parou de abrir os filtros no celular")
+    corpo = tela.split("function abrirFiltrosNoCelular(){", 1)[1].split("}", 1)[0]
+    assert "max-width: 720px" in corpo, (
+        "a abertura dos filtros perdeu o limite de celular — ela passaria a "
+        "valer no computador, tapando a tela")
+    assert 'els("f-obra").value' in corpo, (
+        "a abertura dos filtros deixou de respeitar quem já chegou com uma "
+        "obra escolhida")
