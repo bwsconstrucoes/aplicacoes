@@ -570,7 +570,7 @@ def _entregar_anexos(s: Session, achado: dict[str, Any],
     """
     from app.apps.erp.core.arquivo import service as svc_arq
 
-    quantos, primeiro_id = 0, None
+    quantos, primeiro_id, primeiro = 0, None, None
     if achado.get("pedido_id"):
         p = svc_ct.ler(s, achado["pedido_id"])
         tipo = p.get("documento_esperado") or "DOC-PESSOA-OUTRO"
@@ -600,7 +600,8 @@ def _entregar_anexos(s: Session, achado: dict[str, Any],
                 observacao=f"recebido de {de} — assunto: {assunto}",
                 usuario=usuario)
             quantos += 1
-            primeiro_id = primeiro_id or d.id
+            if primeiro_id is None:
+                primeiro_id, primeiro = d.id, a
         except ErroValidacao as e:
             logger.warning("ERP/caixa: não arquivei %s — %s", a["nome"], e)
 
@@ -609,8 +610,12 @@ def _entregar_anexos(s: Session, achado: dict[str, Any],
         # e, por enquanto, isso é vazio: a leitura do CONTEÚDO é a rotina de
         # conferência do agente, e ela é a última do desenho. Sem ela, o pedido
         # fica RESPONDIDO **sem conferência**, e a tela diz isso.
-        svc_ct.receber(s, achado["pedido_id"], usuario,
-                       documento_id=primeiro_id, lido={}, pelo_agente=True)
+        # 26/11/2026: o agente LÊ o documento e, se bate, conclui — ver
+        # `conferencia_retorno` (a rotina "conferencia" decide se ele age).
+        from app.apps.erp.core import conferencia_retorno
+        conferencia_retorno.conferir_e_talvez_concluir(
+            s, achado["pedido_id"], primeiro_id, primeiro["conteudo"],
+            primeiro["nome"], usuario)
     elif achado.get("devolucao_id") and primeiro_id:
         s.execute(text("""
             UPDATE dp_devolucoes

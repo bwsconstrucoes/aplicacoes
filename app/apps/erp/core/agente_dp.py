@@ -132,11 +132,11 @@ ROTINAS: dict[str, dict[str, Any]] = {
         "padrao": {"teto_por_rodada": 40},
     },
     "conferencia": {
-        # ⚠️ AINDA NÃO CONSTRUÍDA (20/11/2026). Ela aparecia na tela como se
-        # funcionasse; o retorno fica "respondido" e o DP confere à mão. Ligar
-        # é recusado (`definir`) até ela existir.
-        "construida": False,
-        "nome": "Conferente do retorno da contabilidade (ainda não construída)",
+        # ⚑ CONSTRUÍDA EM 26/11/2026 — `conferencia_retorno.py`. Em FAZ, o
+        # retorno que bate com o cadastro é concluído pelo agente (o dono
+        # autorizou: *"A conclusão (…) pode"*), com registro no diário.
+        "construida": True,
+        "nome": "Conferente do retorno da contabilidade",
         "quando": "quando um documento é anexado a um pedido",
         "analisa": "se o documento é o esperado, e se nome, CPF, cargo, salário "
                    "e datas batem com o cadastro",

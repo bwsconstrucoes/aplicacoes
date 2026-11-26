@@ -146,14 +146,19 @@ def test_o_agente_nasce_ligado_como_ele_decidiu(sessao_real, banco):
     # automáticas"* — a cobrança e a leitura do e-mail passam a FAZER.
     for chave in ("cobranca", "caixa"):
         assert modos[chave] == "FAZ", chave
-    for chave in ("leitura", "conferencia"):
-        assert modos.get(chave, "DESLIGADA") == "DESLIGADA", chave
+    assert modos.get("leitura", "DESLIGADA") == "DESLIGADA"
+    # 26/11/2026 (migração 129), ele: *"A conclusão (…) pode. Mas é bom dar
+    # destaque tudo que for feito pelo agente."* — a conferência FAZ.
+    assert modos["conferencia"] == "FAZ"
 
 
 @banco_
-def test_a_conferencia_nao_liga_porque_nao_existe(sessao_real, dono):
-    with pytest.raises(ErroValidacao, match="ainda não existe"):
-        ag.definir(sessao_real, "conferencia", modo_novo="SUGERE", usuario=dono)
+def test_a_conferencia_existe_e_pode_ser_desligada(sessao_real, dono):
+    """Construída em 26/11/2026 (`conferencia_retorno.py`)."""
+    ag.definir(sessao_real, "conferencia", modo_novo="DESLIGADA", usuario=dono)
+    assert ag.modo(sessao_real, "conferencia") == "DESLIGADA"
+    ag.definir(sessao_real, "conferencia", modo_novo="FAZ", usuario=dono)
+    assert ag.modo(sessao_real, "conferencia") == "FAZ"
 
 
 @banco_

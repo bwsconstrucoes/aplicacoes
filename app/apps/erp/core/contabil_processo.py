@@ -384,6 +384,9 @@ def fechar_pelo_pedido(s: Session, pedido: dict[str, Any],
                 {"texto": f"{pedido.get('numero')} concluído — pedido atendido"
                           + (f"; {feito}" if feito else "")},
                 usuario)
+        # 26/11/2026: quem pediu fica sabendo (portal e celular).
+        from app.apps.erp.core.pessoal_solicitacoes import avisar_quem_pediu
+        avisar_quem_pediu(s, int(sol["id"]), pelo_agente=usuario is None)
     return len(sols)
 
 
