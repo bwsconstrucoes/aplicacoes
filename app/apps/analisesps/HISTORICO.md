@@ -12294,6 +12294,7 @@ somente Solicitações de uma conta especifica"*.
   o anexo fica de fora com o motivo. E a cópia final, se ainda falhar, pula aquele anexo.
 - Sem migração. Testes: `test_PDF_COM_DEFEITO_nao_derruba_o_relatorio`,
   `test_o_ZIP_com_imagens_entra_no_relatorio`.
+- **Publicado em 26/11/2026** (sem migração).
 
 #### Leva 280 — DDA: o motor refeito (rápido) e a lista em páginas de 50 (26/11/2026)
 
