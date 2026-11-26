@@ -249,6 +249,7 @@ def guardar(lido: dict, quem: str = "") -> dict:
                 novos += 1
             cur.close()
         conn.commit()
+    esquecer()
     logger.info("DDA: colagem %s — %d boleto(s), %d novo(s), por %s.", colagem,
                 len(lido["boletos"]), novos, quem or "?")
     return {"colagem": colagem, "novos": novos,
@@ -267,6 +268,7 @@ def vincular(boleto_id: int, sp: str, quem: str = "") -> None:
                      "  sp_manual_em = CASE WHEN ? = '' THEN NULL ELSE now() END "
                      " WHERE id = ?", (sp, str(quem or "")[:80], sp, int(boleto_id)))
         conn.commit()
+    esquecer()
 
 
 # ---------------------------------------------------------------------------
@@ -332,39 +334,39 @@ def _sp_da_linha(l) -> dict:
             "status_pgt": l[7] or "", "forma": l[8] or "", "status_agend": l[9] or ""}
 
 
+# ⚠️ O MOTOR, REESCRITO EM 26/11/2026. O dono: *"está muito lento (…) eu vou tentar
+# fazer uma filtragem, aí ele demora demais (…) o motor (…) está pesado."* Estava:
+# (1) a consulta das SPs trazia as de valor PARECIDO (±10%) de CADA boleto — com
+# centenas de boletos, as faixas cobriam quase a base inteira — e lia a tabela toda
+# (a expressão do CNPJ não era a do índice); (2) cada boleto era comparado com CADA
+# SP trazida — milhões de comparações por clique; (3) tudo isso refeito a cada filtro.
+#
+# Agora: a consulta só traz o que PODE casar (mesma raiz de CNPJ/CPF ou o mesmo
+# valor, as duas pelos índices); cada boleto é comparado só com as SPs do mesmo
+# código de barras, CNPJ, raiz ou valor (toda regra de `nota` exige uma dessas); as
+# parecidas (sugestão) saem só para as linhas da PÁGINA; e o cruzamento da base
+# fica guardado na memória até mudar algo (colagem, vínculo, sincronização das SPs)
+# ou por 3 minutos — filtrar é só filtrar.
 def _sps_candidatas(boletos: list) -> list:
-    """UMA consulta: as SPs (não canceladas) que podem casar com algum boleto — pelo
-    código de barras, pela raiz do CNPJ ou pelo valor."""
+    """UMA consulta, pelos índices: as SPs (não canceladas) da mesma raiz de
+    CNPJ/CPF de algum boleto (beneficiário ou beneficiário final) ou do mesmo valor."""
     from .db import consultar
     if not boletos:
         return []
     raizes = sorted({d[:8] for b in boletos
                      for d in (b["beneficiario_doc"], b.get("beneficiario_final_doc") or "")
-                     if len(d) == 14} | {d for b in boletos
-                                         for d in (b["beneficiario_doc"],) if len(d) == 11})
-    # O valor numa FAIXA de ±10%, e não exato: além do cruzamento, a consulta traz as
-    # SPs de valor PARECIDO, que viram sugestão para o boleto que não casou (dono,
-    # 24/11/2026: "quando o sistema não conseguir cruzar automático, é interessante
-    # ele sugerir as SPs que são próximas").
+                     if len(d) in (11, 14)})
     valores = sorted({b["valor"] for b in boletos if b["valor"]})
-    barras = sorted({b["barras"] for b in boletos if b["barras"]}
-                    | {b["linha_digitavel"] for b in boletos if b["linha_digitavel"]})
     condicoes, params = [], []
     if raizes:
-        condicoes.append("left(regexp_replace(coalesce(documento,''), '[^0-9]', '', 'g'), 8) IN ("
-                         + ",".join("?" for _ in raizes) + ")"
-                         " OR regexp_replace(coalesce(documento,''), '[^0-9]', '', 'g') IN ("
+        # A MESMA expressão do índice `ix_sps_raiz_documento` (migração 010) — com
+        # outra escrita o banco varre a tabela inteira.
+        condicoes.append("left(regexp_replace(coalesce(documento, ''), '\\D', '', 'g'), 8) IN ("
                          + ",".join("?" for _ in raizes) + ")")
-        params += [r[:8] for r in raizes] + raizes
+        params += raizes
     if valores:
-        condicoes.append("(" + " OR ".join("valor_num BETWEEN ? AND ?" for _ in valores) + ")")
-        for v in valores:
-            params += [(v * Decimal("0.9")).quantize(Decimal("0.01")),
-                       (v * Decimal("1.1")).quantize(Decimal("0.01"))]
-    if barras:
-        condicoes.append("regexp_replace(coalesce(codigo_barras,''), '[^0-9]', '', 'g') IN ("
-                         + ",".join("?" for _ in barras) + ")")
-        params += barras
+        condicoes.append("valor_num IN (" + ",".join("?" for _ in valores) + ")")
+        params += valores
     linhas = consultar(
         "SELECT " + _campos_sp() + " "
         "  FROM analisesps.sps "
@@ -373,41 +375,85 @@ def _sps_candidatas(boletos: list) -> list:
     return [_sp_da_linha(l) for l in linhas]
 
 
-def cruzar(boletos: list) -> None:
+def _centavos(v) -> int | None:
+    return None if v is None else int((Decimal(v) * 100).to_integral_value())
+
+
+class _Indice:
+    """As SPs por código de barras, documento, raiz e valor — para cada boleto
+    olhar só as que podem casar com ele."""
+
+    def __init__(self, sps: list):
+        self.por_id = {s["id"]: s for s in sps}
+        self.barras, self.doc, self.raiz, self.valor = {}, {}, {}, {}
+        for s in sps:
+            if s["barras"]:
+                self.barras.setdefault(s["barras"], []).append(s)
+            if s["doc"]:
+                self.doc.setdefault(s["doc"], []).append(s)
+                if len(s["doc"]) == 14:
+                    self.raiz.setdefault(s["doc"][:8], []).append(s)
+            c = _centavos(s["valor"])
+            if c is not None:
+                self.valor.setdefault(c, []).append(s)
+
+    def do_credor(self, b: dict) -> list:
+        saida = {}
+        for d in (b["beneficiario_doc"], b.get("beneficiario_final_doc") or ""):
+            for s in self.doc.get(d, []) + (self.raiz.get(d[:8], []) if len(d) == 14 else []):
+                saida[s["id"]] = s
+        return list(saida.values())
+
+    def para(self, b: dict) -> list:
+        """As SPs que `nota` pode pontuar: mesmo código de barras, mesmo credor
+        (CNPJ ou raiz) ou mesmo valor (±1 centavo)."""
+        saida = {s["id"]: s for s in self.do_credor(b)}
+        for s in self.barras.get(b["barras"], []) if b["barras"] else []:
+            saida[s["id"]] = s
+        c = _centavos(b["valor"])
+        if c is not None:
+            for cc in (c - 1, c, c + 1):
+                for s in self.valor.get(cc, []):
+                    saida[s["id"]] = s
+        return list(saida.values())
+
+
+def cruzar(boletos: list, sps: list | None = None) -> dict:
     """Põe em cada boleto `situacao`, `sp` (a SP casada, com o porquê) e as outras
-    candidatas. Cada SP casa com um boleto só; os pares melhores escolhem primeiro."""
-    sps = _sps_candidatas([b for b in boletos if not b.get("sp_manual")])
-    por_id = {s["id"]: s for s in sps}
+    candidatas. Cada SP casa com um boleto só; os pares melhores escolhem primeiro.
+    Devolve `{"indice", "usadas"}` — o que as sugestões da página precisam."""
+    indice = _Indice(sps if sps is not None
+                     else _sps_candidatas([b for b in boletos if not b.get("sp_manual")]))
+    por_id = indice.por_id
     pares = []
     for i, b in enumerate(boletos):
         if b.get("sp_manual"):
             continue
-        for s in sps:
+        for s in indice.para(b):
             n, porque = nota(b, s)
             if n >= NOTA_PROVAVEL:
                 dias = (abs((s["vencimento"] - b["vencimento"]).days)
                         if s["vencimento"] and b["vencimento"] else 999)
                 pares.append((-n, dias, i, s["id"], porque))
     pares.sort()
-    usadas, casados = set(), {}
     # A SP vinculada à mão também está "usada": não casa com outro boleto.
-    usadas |= {b["sp_manual"] for b in boletos if b.get("sp_manual") not in ("", NENHUMA)}
-    candidatas: dict = {}
+    usadas = {b["sp_manual"] for b in boletos if b.get("sp_manual") not in ("", None, NENHUMA)}
+    casados, candidatas = {}, {}
     for neg, _dias, i, sp_id, porque in pares:
         candidatas.setdefault(i, []).append((sp_id, -neg, porque))
         if i in casados or sp_id in usadas:
             continue
         casados[i] = (sp_id, -neg, porque)
         usadas.add(sp_id)
-    sobras = [s for s in sps if s["id"] not in usadas]
-    manuais = [b["sp_manual"] for b in boletos if b.get("sp_manual") not in ("", NENHUMA)]
+    manuais = [b["sp_manual"] for b in boletos if b.get("sp_manual") not in ("", None, NENHUMA)]
     if manuais:
-        for s in _sps_por_id(manuais):
-            por_id.setdefault(s["id"], s)
+        for s in _sps_por_id([m for m in manuais if m not in por_id]):
+            por_id[s["id"]] = s
     for i, b in enumerate(boletos):
         manual = b.get("sp_manual") or ""
+        b["sugestoes"] = []
         if manual == NENHUMA:
-            b.update(situacao=SEM_SP_CONFIRMADO, sp=None, outras=[], sugestoes=[])
+            b.update(situacao=SEM_SP_CONFIRMADO, sp=None, outras=[], pagamento="sem_sp")
             continue
         if manual:
             s = por_id.get(manual)
@@ -422,7 +468,6 @@ def cruzar(boletos: list) -> None:
         else:
             b.update(sp=None, outras=[])
         sp = b.get("sp")
-        b["sugestoes"] = [] if sp or manual else sugestoes(b, sobras)
         if not sp:
             b["situacao"] = SEM_LANCAMENTO
         elif sp.get("status_pgt", "").lower().startswith("pago"):
@@ -434,6 +479,43 @@ def cruzar(boletos: list) -> None:
             b["situacao"] = LANCADO
         else:
             b["situacao"] = PROVAVEL
+        b["pagamento"] = pagamento(b)
+    return {"indice": indice, "usadas": usadas}
+
+
+def _parecidas_pelo_valor(boletos: list, usadas: set) -> list:
+    """As SPs de valor PARECIDO (±10%) e vencimento perto (até 15 dias) dos boletos
+    da página — a parte da sugestão que não sai do índice. Uma consulta, pelos
+    índices de valor e vencimento; só para quem está na tela."""
+    from .db import consultar
+    faixas = [b for b in boletos if b["valor"] and b["vencimento"]]
+    if not faixas:
+        return []
+    condicoes, params = [], []
+    for b in faixas:
+        condicoes.append("(valor_num BETWEEN ? AND ? AND vencimento_d BETWEEN ? AND ?)")
+        params += [(b["valor"] * Decimal("0.9")).quantize(Decimal("0.01")),
+                   (b["valor"] * Decimal("1.1")).quantize(Decimal("0.01")),
+                   b["vencimento"] - dt.timedelta(days=15),
+                   b["vencimento"] + dt.timedelta(days=15)]
+    linhas = consultar(
+        "SELECT " + _campos_sp() + " FROM analisesps.sps "
+        " WHERE lower(trim(coalesce(status_pgt,''))) <> 'cancelado' AND ("
+        + " OR ".join(condicoes) + ") LIMIT 2000", tuple(params))
+    return [s for s in (_sp_da_linha(l) for l in linhas) if s["id"] not in usadas]
+
+
+def sugerir(boletos: list, cruzado: dict) -> None:
+    """As sugestões (`b["sugestoes"]`) dos boletos SEM lançamento desta página."""
+    sem = [b for b in boletos if b.get("situacao") == SEM_LANCAMENTO]
+    if not sem:
+        return
+    usadas = cruzado["usadas"]
+    perto = _parecidas_pelo_valor(sem, usadas)
+    for b in sem:
+        do_credor = [s for s in cruzado["indice"].do_credor(b) if s["id"] not in usadas]
+        vistos = {s["id"] for s in do_credor}
+        b["sugestoes"] = sugestoes(b, do_credor + [s for s in perto if s["id"] not in vistos])
 
 
 def sugestoes(boleto: dict, sps: list, quantas: int = 3) -> list:
@@ -566,7 +648,8 @@ def filtros_da_tela(args) -> dict:
             "colagem": colagem if colagem in ("ultima", "novos") else "",
             "pagamentos": lista("pagamento", PAGAMENTOS), "prazos": lista("prazo", PRAZOS),
             "pagadoras": [_digitos(v) for v in lista("pagadora")][:20],
-            "valor_de": valor(args.get("valor_de")), "valor_ate": valor(args.get("valor_ate"))}
+            "valor_de": valor(args.get("valor_de")), "valor_ate": valor(args.get("valor_ate")),
+            "pagina": max(1, int(args.get("p")) if str(args.get("p") or "").isdigit() else 1)}
 
 
 _CAMPOS_DA_LISTA = ["id", "barras"] + _COLUNAS + ["sp_manual", "sp_manual_por",
@@ -586,63 +669,53 @@ def ultima_colagem() -> dict | None:
 
 
 # A base cresce a cada colagem; o teto guarda os de vencimento MAIS RECENTE (o que
-# interessa), e a tela avisa quando ele corta — aí, os filtros.
-TETO_DA_LISTA = 2000
+# interessa), e a tela avisa quando ele corta.
+TETO_DA_LISTA = 3000
+# A PÁGINA (26/11/2026): *"à medida que eu vou colando, a página vai só encompridando
+# e a gente não consegue visualizar."* A lista mostra 50 por vez.
+POR_PAGINA = 50
+
+# O CRUZAMENTO GUARDADO (ver o aviso acima de `_sps_candidatas`): um por processo
+# (o gunicorn roda com 1 worker), trocado quando a versão muda ou depois de 3 min.
+_GUARDADO: dict = {}
+_VALIDADE = 180
 
 
-def listar(f: dict) -> dict:
-    """Os boletos da base inteira (ou só da última colagem), cruzados com as SPs, com
-    a contagem por situação. Três consultas, mais a das SPs candidatas."""
+def esquecer() -> None:
+    """Colagem e vínculo mudam a base: a próxima abertura cruza de novo."""
+    _GUARDADO.clear()
+
+
+def _versao() -> tuple:
+    """O que muda quando a base precisa ser cruzada de novo: os boletos (quantos, o
+    último visto, o último vínculo), a última colagem e a última sincronização das
+    SPs. Uma consulta leve."""
+    from .db import consultar_um
+    linha = consultar_um(
+        "SELECT count(*), max(visto_em), max(sp_manual_em), "
+        "       (SELECT max(id) FROM analisesps.dda_colagem), "
+        "       (SELECT valor FROM analisesps.meta WHERE chave = 'ultima_sincronizacao') "
+        "  FROM analisesps.dda_boleto")
+    return tuple(str(x) for x in (linha or ()))
+
+
+def _base() -> dict:
+    """A base inteira, cruzada — da memória quando nada mudou."""
+    import time
     from .db import consultar, consultar_um
+    versao = _versao()
+    guardado = _GUARDADO.get("base")
+    if guardado and guardado["versao"] == versao and time.monotonic() - guardado["em"] < _VALIDADE:
+        return guardado
     ultima = ultima_colagem()
-    # O QUE MUDOU DESDE A COLAGEM ANTERIOR (dono, 24/11/2026: *"o que já foi importado,
-    # ignora e apenas adiciona as coisas novas. E é interessante até dar um que foi
-    # adicionado novo"*): os que entraram na base com a última colagem.
-    anterior, novos, na_base = None, 0, 0
+    anterior = None
     if ultima:
         linha = consultar_um("SELECT max(id) FROM analisesps.dda_colagem WHERE id < ?",
                              (ultima["id"],))
         anterior = linha[0] if linha else None
-        linha = consultar_um(
-            "SELECT count(*) FILTER (WHERE primeira_colagem = ?), count(*) "
-            "  FROM analisesps.dda_boleto", (ultima["id"],))
-        novos, na_base = (int(linha[0] or 0), int(linha[1] or 0)) if linha else (0, 0)
-        if not anterior:
-            novos = 0          # a primeira colagem: tudo é "novo", e dizer isso não ajuda
-    partes, params = [], []
-    if f.get("recorte") == "novos" and ultima:
-        partes.append("primeira_colagem = ?")
-        params.append(ultima["id"])
-    elif f.get("so_ultima") and ultima:
-        partes.append("ultima_colagem = ?")
-        params.append(ultima["id"])
-    if f.get("de"):
-        partes.append("vencimento >= ?")
-        params.append(f["de"].isoformat())
-    if f.get("ate"):
-        partes.append("vencimento <= ?")
-        params.append(f["ate"].isoformat())
-    if f.get("valor_de") is not None:
-        partes.append("valor >= ?")
-        params.append(f["valor_de"])
-    if f.get("valor_ate") is not None:
-        partes.append("valor <= ?")
-        params.append(f["valor_ate"])
-    if f.get("pagadoras"):
-        partes.append("pagador_cnpj IN (" + ",".join("?" for _ in f["pagadoras"]) + ")")
-        params += f["pagadoras"]
-    if f.get("busca"):
-        termo = "%" + f["busca"].lower() + "%"
-        partes.append("(lower(beneficiario_nome) LIKE ? OR lower(beneficiario_final_nome) LIKE ? "
-                      " OR beneficiario_doc LIKE ? OR lower(numero_documento) LIKE ? "
-                      " OR linha_digitavel LIKE ? OR CAST(valor AS TEXT) LIKE ?)")
-        so_digitos = "%" + (_digitos(f["busca"]) or f["busca"].lower()) + "%"
-        params += [termo, termo, so_digitos, termo, so_digitos,
-                   "%" + f["busca"].replace(".", "").replace(",", ".") + "%"]
-    onde = (" WHERE " + " AND ".join(partes)) if partes else ""
     linhas = consultar("SELECT " + ", ".join(_CAMPOS_DA_LISTA) + " FROM analisesps.dda_boleto"
-                       + onde + " ORDER BY vencimento DESC NULLS FIRST, valor DESC LIMIT ?",
-                       tuple(params) + (TETO_DA_LISTA,))
+                       " ORDER BY vencimento DESC NULLS FIRST, valor DESC LIMIT ?",
+                       (TETO_DA_LISTA,))
     boletos = [dict(zip(_CAMPOS_DA_LISTA, l)) for l in linhas]
     for b in boletos:
         for c in ("valor", "valor_documento", "descontos", "juros", "multa"):
@@ -650,39 +723,96 @@ def listar(f: dict) -> dict:
                 b[c] = Decimal(str(b[c]))
         b["na_ultima"] = bool(ultima and b["ultima_colagem"] == ultima["id"])
         b["novo"] = bool(ultima and anterior and b["primeira_colagem"] == ultima["id"])
-    cruzar(boletos)
+        # O texto da busca, montado uma vez: beneficiário, final, CNPJ, nº, linha, valor.
+        b["_busca"] = " ".join(str(x or "").lower() for x in (
+            b["beneficiario_nome"], b["beneficiario_final_nome"], b["beneficiario_doc"],
+            b["beneficiario_final_doc"], b["numero_documento"], b["linha_digitavel"],
+            b["valor"], str(b["valor"] or "").replace(".", ",")))
+    cruzado = cruzar(boletos)
+    pagadoras: dict = {}
+    for b in boletos:
+        if b.get("pagador_cnpj"):
+            pagadoras[b["pagador_cnpj"]] = pagadoras.get(b["pagador_cnpj"], 0) + 1
+    guardado = {"versao": versao, "em": time.monotonic(), "boletos": boletos,
+                "cruzado": cruzado, "ultima": ultima, "anterior": anterior,
+                "novos": (sum(1 for b in boletos if b["novo"]) if anterior else 0),
+                "pagadoras": [(c, filial(c), n) for c, n in sorted(pagadoras.items())],
+                "cortado": len(boletos) >= TETO_DA_LISTA}
+    _GUARDADO["base"] = guardado
+    return guardado
+
+
+def _passa(b: dict, f: dict, ultima) -> bool:
+    """Os filtros que RECORTAM a base (antes da contagem por situação)."""
+    if f.get("recorte") == "novos" and not b["novo"]:
+        return False
+    if f.get("so_ultima") and ultima and not b["na_ultima"]:
+        return False
+    v = b["vencimento"]
+    if f.get("de") and (not v or v < f["de"]):
+        return False
+    if f.get("ate") and (not v or v > f["ate"]):
+        return False
+    if f.get("valor_de") is not None and b["valor"] < f["valor_de"]:
+        return False
+    if f.get("valor_ate") is not None and b["valor"] > f["valor_ate"]:
+        return False
+    if f.get("pagadoras") and b["pagador_cnpj"] not in f["pagadoras"]:
+        return False
+    if f.get("busca"):
+        termo = f["busca"].lower()
+        digitos = _digitos(termo)
+        if termo not in b["_busca"] and not (digitos and len(digitos) >= 3 and digitos in b["_busca"]):
+            return False
+    return True
+
+
+def listar(f: dict) -> dict:
+    """Os boletos da base (ou só da última colagem), cruzados com as SPs, com a
+    contagem por situação e a PÁGINA pedida. O cruzamento vem da memória quando nada
+    mudou (`_base`); filtrar não vai ao banco além da conferência da versão."""
+    base = _base()
+    ultima = base["ultima"]
     hoje = dt.date.today()
+    recorte = [b for b in base["boletos"] if _passa(b, f, ultima)]
     contagem = {s: 0 for s in ORDEM}
     totais = {s: Decimal("0") for s in ORDEM}
     por_pagamento = {p: 0 for p in PAGAMENTOS}
     por_prazo = {p: 0 for p in PRAZOS}
-    for b in boletos:
-        b["pagamento"] = pagamento(b)
-        b["prazo"] = prazo(b, hoje)
+    prazos = {}
+    for b in recorte:
+        prazos[b["id"]] = pz = prazo(b, hoje)
         contagem[b["situacao"]] += 1
         totais[b["situacao"]] += b["valor"]
         por_pagamento[b["pagamento"]] += 1
-        if b["prazo"]:
-            por_prazo[b["prazo"]] += 1
-    mostrar = [b for b in boletos
+        if pz:
+            por_prazo[pz] += 1
+    mostrar = [b for b in recorte
                if (not f.get("situacoes") or b["situacao"] in f["situacoes"])
                and (not f.get("pagamentos") or b["pagamento"] in f["pagamentos"])
-               and (not f.get("prazos") or b["prazo"] in f["prazos"])]
+               and (not f.get("prazos") or prazos[b["id"]] in f["prazos"])]
     ordem = {s: n for n, s in enumerate(ORDEM)}
     mostrar.sort(key=lambda b: (ordem[b["situacao"]], b["vencimento"] or dt.date.max,
                                 -b["valor"]))
-    pagadoras = [(l[0], filial(l[0]), int(l[1])) for l in consultar(
-        "SELECT pagador_cnpj, count(*) FROM analisesps.dda_boleto "
-        " WHERE coalesce(pagador_cnpj,'') <> '' GROUP BY pagador_cnpj ORDER BY pagador_cnpj")]
-    return {"boletos": mostrar, "ultima": ultima, "novos": novos, "na_base": na_base,
+    paginas = max(1, -(-len(mostrar) // POR_PAGINA))
+    pagina = min(int(f.get("pagina") or 1), paginas)
+    # A PÁGINA EM CÓPIA: a base guardada é de todos os pedidos (4 threads); o que é
+    # só desta tela (prazo de hoje, sugestões) não pode ir para ela.
+    da_pagina = [dict(b, prazo=prazos[b["id"]])
+                 for b in mostrar[(pagina - 1) * POR_PAGINA: pagina * POR_PAGINA]]
+    sugerir(da_pagina, base["cruzado"])
+    return {"boletos": da_pagina, "ultima": ultima, "novos": base["novos"],
+            "na_base": len(base["boletos"]),
             "por_pagamento": [(k, PAGAMENTOS[k], por_pagamento[k]) for k in PAGAMENTOS],
             "por_prazo": [(k, PRAZOS[k], por_prazo[k]) for k in PRAZOS],
-            "pagadoras": pagadoras, "mostrados": len(mostrar),
-            "cortado": len(boletos) >= TETO_DA_LISTA,
-            "tem_anterior": bool(anterior),
+            "pagadoras": base["pagadoras"], "mostrados": len(mostrar),
+            "pagina": pagina, "paginas": paginas, "por_pagina": POR_PAGINA,
+            "total_mostrado": sum((b["valor"] for b in mostrar), Decimal("0")),
+            "cortado": base["cortado"],
+            "tem_anterior": bool(base["anterior"]),
             "contagem": [(s, ROTULOS[s], contagem[s], totais[s]) for s in ORDEM],
-            "total": sum((b["valor"] for b in boletos), Decimal("0")),
-            "quantos": len(boletos)}
+            "total": sum((b["valor"] for b in recorte), Decimal("0")),
+            "quantos": len(recorte)}
 
 
 def filial(cnpj: str) -> str:

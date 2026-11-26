@@ -128,6 +128,21 @@
 {% endif %}
 {% endblock %}
 
+{% macro paginacao() %}
+  {% if lista.paginas > 1 %}
+    <nav class="dda-paginas" aria-label="Páginas">
+      {% set ini = (lista.pagina - 1) * lista.por_pagina + 1 %}
+      <span class="cartao-dica">{{ ini }}–{{ [ini + lista.por_pagina - 1, lista.mostrados]|min }} de {{ lista.mostrados }}</span>
+      {% if lista.pagina > 1 %}<a class="btn secundario btn-pequeno" href="{{ url_for('analisesps.tela_dda') }}?{{ (args_sem_pagina + [('p', lista.pagina - 1)])|urlencode }}">‹ anterior</a>{% endif %}
+      {% for n in range(1, lista.paginas + 1) %}
+        {% if n == lista.pagina %}<b class="dda-pag-atual">{{ n }}</b>
+        {% elif n <= 2 or n > lista.paginas - 2 or (n - lista.pagina)|abs <= 2 %}<a href="{{ url_for('analisesps.tela_dda') }}?{{ (args_sem_pagina + [('p', n)])|urlencode }}">{{ n }}</a>
+        {% elif (n - lista.pagina)|abs == 3 %}<span class="cartao-dica">…</span>{% endif %}
+      {% endfor %}
+      {% if lista.pagina < lista.paginas %}<a class="btn secundario btn-pequeno" href="{{ url_for('analisesps.tela_dda') }}?{{ (args_sem_pagina + [('p', lista.pagina + 1)])|urlencode }}">próxima ›</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endmacro %}
 {% block conteudo %}
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 {% if erro %}
@@ -145,7 +160,7 @@
 {% else %}
   {% set u = lista.ultima %}
   <div class="cartao">
-    <h2>DDA <small>{% if lista.mostrados != lista.quantos %}{{ lista.mostrados }} de {% endif %}{{ lista.quantos }} boleto(s) · {{ lista.total|moeda }}
+    <h2>DDA <small>{% if lista.mostrados != lista.quantos %}{{ lista.mostrados }} de {% endif %}{{ lista.quantos }} boleto(s) · {{ (lista.total_mostrado if lista.mostrados != lista.quantos else lista.total)|moeda }}
       {% if filtros.recorte == 'novos' %}· só os novos da última colagem
       {% elif filtros.so_ultima %}· só a última colagem{% else %}· a base inteira ({{ lista.na_base }} boletos guardados){% endif %}</small></h2>
     {# A BASE CRESCE (24/11/2026): cada colagem acrescenta o que é novo e atualiza o que
@@ -184,8 +199,11 @@
   {# A MENSAGEM DE COBRANÇA (24/11/2026): *"tem alguns registros DDA que não estão
      vinculados ainda (…) eu seleciono alguns, gerar a mensagem do WhatsApp para cobrar
      (…) normalmente a gente vai encaminhar para o pessoal do suprimento"*. #}
+  {# A PÁGINA (26/11/2026): 50 por vez — a lista inteira desenhada de uma vez
+     deixava a tela comprida e lenta. #}
+  {{ paginacao() }}
   <div class="barra-acoes-lista">
-    <label class="cartao-dica"><input type="checkbox" id="dda-marcar-sem"> marcar os sem lançamento</label>
+    <label class="cartao-dica"><input type="checkbox" id="dda-marcar-sem"> marcar os sem lançamento desta página</label>
     <button type="button" class="btn" id="dda-mensagem" disabled>Gerar mensagem do WhatsApp</button>
     <span class="cartao-dica" id="dda-marcados"></span>
   </div>
@@ -250,11 +268,17 @@
     </tbody>
   </table>
   </div></div>
+  {{ paginacao() }}
 {% endif %}
 
 <style>
   .etiqueta.novo { background:#E6F0F7; color:var(--ciano); text-decoration:none; }
   .dda-mudou { margin:2px 0 10px; }
+  .dda-paginas { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0; }
+  .dda-paginas a:not(.btn) { padding:2px 6px; }
+  #tabela-dda td:last-child { min-width:230px; }
+  #tabela-dda td:nth-child(4) .cartao-dica { white-space:nowrap; }
+  .dda-pag-atual { padding:2px 8px; border-radius:6px; background:var(--azul); color:#fff; }
   .lateral-dda { padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid var(--borda); }
   .lateral-dda textarea { width:100%; font-size:12px; }
   .kpis-dda a.kpi { text-decoration:none; color:inherit; }
