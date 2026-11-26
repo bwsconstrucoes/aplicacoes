@@ -383,7 +383,8 @@ function desenhar(){
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
     <td class="dados">${escapar(x.numero)}</td>
-    <td><b>${escapar(x.tipo_rotulo)}</b></td>
+    <td><b>${escapar(x.tipo_rotulo)}</b>${x.resumo
+      ? `<br><small class="desc">${escapar(x.resumo)}</small>` : ""}</td>
     <td>${escapar(x.pessoa || "—")}${x.cargo ? `<br><small class="desc">${escapar(x.cargo)}</small>` : ""}</td>
     <td class="dados" style="white-space:nowrap">${escapar(x.pessoa_cpf || "—")}</td>
     <td class="dados">${escapar(x.obra || "—")}</td>
@@ -451,13 +452,20 @@ function pintarPedido(){
      data dd/mm/aaaa, CPF/CNPJ/CEP/telefone pontuados. Antes era o JSON cru. #}
   const linhas = (p.dados_legiveis || []).map(x => `<tr><td>${escapar(x.rotulo)}</td>
       <td>${escapar(x.valor)}</td></tr>`).join("");
+  {# ⚑ O SUBTÍTULO (26/11/2026): vínculo e contrato na admissão, a forma no
+     desligamento — para bater o olho (`pessoal_solicitacoes.resumo`). #}
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    ${destaqueDoValor(p)}
+    ${p.resumo ? `<div style="margin:-4px 0 10px; font-size:15px; font-weight:600;
+      color:var(--azul, #0B2C5C)">${escapar(p.resumo)}</div>` : ""}
     <div class="kpis">
       <div class="kpi estatico"><div class="kpi-rotulo">Situação</div>
         <div class="kpi-valor" style="font-size:16px">${escapar(p.situacao_rotulo)}</div>
         <div class="kpi-sub">${p.atendente ? "por " + escapar(p.atendente) : ""}</div></div>
       <div class="kpi estatico"><div class="kpi-rotulo">Pessoa</div>
-        <div class="kpi-valor" style="font-size:15px">${escapar(p.pessoa || "—")}</div>
+        <div class="kpi-valor" style="font-size:15px">${p.colaborador_id
+          ? `<a href="#" class="link-btn" style="font-size:15px" data-abrir-ambiente="${p.colaborador_id}">${escapar(p.pessoa || "—")}</a>`
+          : escapar(p.pessoa || "—")}</div>
         <div class="kpi-sub">${p.pessoa_cpf ? documento(p.pessoa_cpf) : ""}</div></div>
       <div class="kpi estatico"><div class="kpi-rotulo">Quem pediu</div>
         <div class="kpi-valor" style="font-size:15px">${escapar(p.solicitante || "—")}</div>
@@ -489,8 +497,8 @@ function pintarPedido(){
     ${p.colaborador_id ? `<div class="cartao-dica" style="margin-top:10px">
       ${p.pre_cadastro ? "O <b>pré-cadastro</b> desta pessoa já existe, na etapa <b>Inicial</b>."
                        : "Esta pessoa tem cadastro."}
-      <a class="link-btn" href="/erp/colaboradores?editar=${p.colaborador_id}"
-         target="_blank">abrir o cadastro</a></div>` : ""}
+      <a class="link-btn" href="#" data-abrir-ambiente="${p.colaborador_id}"
+         data-ambiente-aba="cadastro">abrir o cadastro</a></div>` : ""}
     ${(p.papeis || []).length || ["CADASTRO", "ADMISSAO_PRESTADOR"].includes(p.tipo)
       ? `<h4>Documentos enviados (${(p.papeis || []).length})</h4>
          <table><tbody>${(p.papeis || []).map(d => `<tr>
@@ -623,8 +631,8 @@ function blocoDoProcesso(p){
             ? `ver o e-mail ${escapar(x.pedido.numero)}`
             : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
       if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
-        b.push(`<a class="btn secundario" href="/erp/colaboradores?editar=${p.colaborador_id}"
-          target="_blank">abrir o cadastro para anexar</a>`);
+        b.push(`<a class="btn secundario" href="#" data-abrir-ambiente="${p.colaborador_id}"
+          data-ambiente-aba="documentos">abrir os documentos para anexar</a>`);
       return b.join(" ");
     }
     if (x.codigo === "CONTINUIDADE" && x.estado !== "FEITO")
@@ -1068,6 +1076,9 @@ async function verPedidoContabil(id){
 {# O ponto da pessoa numa janela POR CIMA da de atender — a de atender fica
    aberta, com o que já foi digitado (23/11/2026). #}
 function verPontoDaPessoa(id, competencia){
+  // 26/11/2026: o modal-ponte da pessoa, já na aba Ponto, no espelho do mês.
+  if (typeof abrirPessoa === "function")
+    return abrirPessoa(id, "ponto", {aba: "mes", competencia: competencia || ""});
   els("ponto-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}?aba=mes`
     + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
   els("dlg-ponto").showModal();
@@ -1309,7 +1320,7 @@ async function atender(){
     }, 0);
   }
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
-    aviso: (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
+    aviso: destaqueDoValor(ABERTA) + (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
             + "no cadastro — o atendimento é o registro do que foi feito.")
            + (campos.length ? " <b>Os campos abaixo são do DP</b>: a obra não "
               + "os informa, e é aqui que eles entram." : "") + espelho,
@@ -1323,6 +1334,22 @@ async function atender(){
   doDP.forEach(c => { if (r[c]) dados[c] = r[c]; });
   acao("atender", {resposta: r.resposta,
                    ...(Object.keys(dados).length ? {dados} : {})});
+}
+
+{# ⚑ O VALOR COMBINADO EM DESTAQUE (26/11/2026). Ele: *"Exibir esse campo e
+   dar destaque à ele, pois é uma informação sensível. Dar destaque também ao
+   Valor da Diária, que também deve aparecer na tela de atendimento do
+   autônomo (RPA)."* Vale para o salário do mês (autônomo mensalista e
+   mensalista) e para a diária (RPA e CLT) — o que o pedido trouxer. #}
+function destaqueDoValor(p){
+  const v = c => ((p.dados_legiveis || []).find(x => x.campo === c) || {}).valor;
+  const itens = [["valor_mes", "Salário do mês"], ["valor_diaria", "Valor da diária"]]
+    .filter(([c]) => v(c)).map(([c, r]) => `<div><small style="display:block; opacity:.8">${r}</small>
+      <b style="font-size:20px">${escapar(v(c))}</b></div>`);
+  return itens.length ? `<div style="display:flex; gap:24px; flex-wrap:wrap; margin:0 0 12px;
+      padding:10px 14px; border-radius:10px; background:#FFF6E5; border:2px solid #F4B942">
+      ${itens.join("")}<small style="align-self:center; flex:1; min-width:180px">Valor combinado
+      pela obra — confira antes de atender.</small></div>` : "";
 }
 
 async function recusar(){
@@ -1839,7 +1866,12 @@ els("btn-limpar").addEventListener("click", () => {
 // As gavetas do filtro lateral abrem e fecham, como no resto do ERP.
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
-carregar();
+// ?pedido=ID abre o pedido direto (26/11/2026). A aba Demandas da pessoa manda
+// para cá — e a tela ignorava o número, caindo na lista.
+carregar().then(() => {
+  const n = new URLSearchParams(location.search).get("pedido");
+  if (/^\d+$/.test(n || "")) abrirPedido(Number(n));
+});
 botoesDeExportar("exportar");
 </script>
 {% endblock %}

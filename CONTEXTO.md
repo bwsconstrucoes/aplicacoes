@@ -802,6 +802,14 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 26/11/2026 — A folha de diaristas lê o ERP para quem não está na planilha (atravessa ERP e Análise de SPs)
+
+A admissão deixou de ir à planilha (o dono, 25/11/2026). `analisesps/
+colaboradores.para_a_folha` completa a cópia da planilha com
+`erp/core/cadastros/pessoas.para_folha` (novo filtro `cpfs`): quem não está na
+cópia, ou voltou pelo ERP com história mais nova, vem do ERP. A troca total da
+fonte segue como decisão do dono. Ver `analisesps/HISTORICO.md`, 26/11/2026.
+
 ### 25/11/2026 — Dependência nova: `pillow-heif` (foto de iPhone)
 
 Com o ok do dono: *"foto de iPhone no portal, sim, tem que aceitar também. É

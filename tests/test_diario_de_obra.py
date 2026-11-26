@@ -1656,3 +1656,63 @@ def test_o_quadro_respeita_o_escopo_de_quem_olha(sessao_real, obra, dono):
 def test_mes_invalido_e_recusado_em_vez_de_quebrar(sessao_real):
     with pytest.raises(ErroValidacao):
         svc.quadro_do_mes(sessao_real, 2026, 13)
+
+
+# ---------------------------------------------------------------------------
+# A TELA DO DIÁRIO NO CELULAR, E O NOME DA OBRA (26/11/2026)
+#
+# Ele, olhando no telefone: *"na hora que abre, ele abre no quadro do mês (…)
+# não é boa a visualização no mês. Aliás, no celular. A tela ficou um pouquinho
+# maior do que deveria. E outra coisa, a gente deveria poder clicar na obra do
+# quadro do mês e já ir para a obra (…) já vai para o mês mais recente daquela
+# obra."*
+#
+# Estes testes leem a TELA (o template e a folha de estilo). Não substituem
+# abrir no navegador — foi lá que apareceu o defeito de o botão de uma obra
+# cobrir o da obra de baixo —, mas travam o que some calado numa mexida.
+# ---------------------------------------------------------------------------
+def _arquivo(*partes: str) -> str:
+    from pathlib import Path
+    return (Path(__file__).resolve().parents[1].joinpath(*partes)
+            ).read_text(encoding="utf-8")
+
+
+def test_o_nome_da_obra_no_quadro_abre_a_obra():
+    tela = _arquivo("app", "apps", "erp", "templates", "erp_diario.html")
+    assert "data-ir-obra" in tela, (
+        "o nome da obra no quadro do mês deixou de ser clicável")
+    assert "data-ultimo" in tela, (
+        "o botão da obra perdeu a data do último diário — sem ela a tela não "
+        "sabe para que mês levar")
+    assert 'els("f-obra").value = b.dataset.irObra' in tela, (
+        "clicar no nome da obra parou de escolher a obra")
+
+
+def test_o_quadro_do_mes_cabe_no_celular():
+    css = _arquivo("app", "apps", "erp", "static", "erp.css")
+    assert "@media (max-width: 640px)" in css and ".quadro-mes" in css, (
+        "o quadro do mês perdeu as regras de celular — ele volta a mostrar "
+        "sete dias de trinta")
+    # O cálculo que faz o mês caber: 31 colunas finas + a coluna do código.
+    assert ".quadro-mes .so-estreito" in css, (
+        "sumiu a troca do rótulo da obra pelo CÓDIGO no celular; com o nome "
+        "inteiro, o mês não cabe")
+
+
+def test_a_foto_pode_vir_antes_do_relato_na_tela():
+    tela = _arquivo("app", "apps", "erp", "templates", "erp_diario.html")
+    assert "const podeAnexar = PODE_LANCAR;" in tela, (
+        "o campo de foto voltou a depender de o dia estar gravado — era "
+        "exatamente a reclamação dele")
+    assert "Grave o dia primeiro" not in tela, (
+        "o recado antigo (que mandava gravar o dia antes da foto) voltou")
+
+
+def test_a_legenda_do_quadro_explica_o_dia_comecado():
+    tela = _arquivo("app", "apps", "erp", "templates", "erp_diario.html")
+    assert '["comecado"' in tela, (
+        "o estado 'começado' sumiu da legenda; a cor nova fica sem explicação")
+    css = _arquivo("app", "apps", "erp", "static", "erp.css")
+    assert ".quadro-mes td.q-comecado" in css and ".cal-dia.comecado" in css, (
+        "o dia começado perdeu a cor própria — ele viraria um quadrado branco "
+        "sem significado")

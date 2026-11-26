@@ -3,6 +3,15 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 26/11/2026 — (feito pelo chat do DP, a pedido do dono) A pessoa abre no modal-ponte do ERP
+
+`gestao.html`: `abrirPessoaPainel` passa a abrir `abrirPessoa` (erp_base.html) — o mesmo modal de Pessoal, com o
+ponto como uma das abas, na sub-aba pedida (`?aba=`, `?competencia=`, e agora `?data=`). Dentro da ficha sozinha
+(`/erp/ponto/pessoa/<id>`) e com a janela já aberta, segue como era. `?area=ponto` mostra só as abas do ponto (+
+"Documentos assinados"), sem nome nem "Fechar". E os botões do ponto no alto da ficha (ajustar, compensação,
+atestado…) só aparecem na ÁREA do ponto — o dono: *"a parte superior dela acaba misturando o que é do ponto"*.
+Detalhe em `erp/HISTORICO_PESSOAL.md`, 26/11/2026 (4).
+
 ## 25/11/2026 — (feito pelo chat do DP) Recusa de assinatura: testemunhas com CPF e assinatura; onde a recusa não vale
 
 Pedido do dono: *"faz as testemunhas assinarem na tela com CPF."* A regra mora

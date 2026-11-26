@@ -1539,6 +1539,9 @@ const PODE_FECHAR = {{ 'true' if pode.fechar_competencia else 'false' }};
 const PODE_CONFIGURAR = {{ 'true' if pode.configurar_ponto else 'false' }};
 // a ficha única da pessoa (13/11/2026): o cadastro e os pagamentos do ERP, para quem pode
 const PODE_VER_PESSOAL = {{ 'true' if pode.ver_pessoal else 'false' }};
+// ?area=ponto: esta ficha é a aba "Ponto" do modal-ponte da pessoa (26/11/2026) — ver `desenharPainel`.
+const SO_PONTO = {{ 'true' if aba_ponto == "ponto_ficha" else 'false' }}
+  && new URLSearchParams(location.search).get("area") === "ponto";
 const PODE_VER_MENSAGENS = {{ 'true' if pode.ver_mensagens else 'false' }};
 const PODE_EDITAR_COLAB = {{ 'true' if pode.editar_colaboradores else 'false' }};
 
@@ -1737,7 +1740,17 @@ const mesSomado = (mes, n) => { const [a, m] = mes.split("-").map(Number); const
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
 const horasDeMin = m => m ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : "0h";
 
+// ⚑ 26/11/2026 — DE QUALQUER TELA DO PONTO, A PESSOA ABRE NO MODAL-PONTE (`abrirPessoa`, erp_base.html): o mesmo
+// de Pessoal, de Mensagens e dos pedidos ao DP, com o ponto como uma das abas. O dono: *"de qualquer tela, seja a do
+// ponto, seja a de pessoal, eu acesse as informações completas da pessoa e que elas fiquem subdivididas em áreas."*
+// Dentro da ficha sozinha (a aba Ponto do próprio modal) e com a janela já aberta, segue como sempre foi.
+const NA_FICHA_SOZINHA = {{ 'true' if aba_ponto == "ponto_ficha" else 'false' }};
 async function abrirPessoaPainel(id, data, aba, competencia) {
+  if (!NA_FICHA_SOZINHA && !els("dlg-pessoa").open && typeof abrirPessoa === "function") {
+    const doModal = {pessoa: "cadastro", pagamentos: "pagamentos", mensagens: "mensagens"}[aba];
+    return abrirPessoa(Number(id), doModal || "ponto",
+      doModal ? undefined : {aba: aba || "dia", competencia: competencia || "", data: data || ""});
+  }
   const dlg = els("dlg-pessoa");
   ESP_PAINEL = null; ROSTO_PAINEL = null;
   if (!dlg.open) { els("dp-corpo").innerHTML = "carregando…"; dlg.showModal(); }
@@ -1781,7 +1794,17 @@ function desenharPainel() {
   //
   // ⚠️ NÃO MUDOU NADA do que cada painel faz nem de permissão: a mesma aba
   // continua aparecendo para quem já a enxergava. O que muda é o agrupamento.
-  const AREAS = [
+  // ⚑ SÓ O PONTO (26/11/2026, o modal-ponte do ERP — `abrirPessoa`, erp_base.html). Dentro dele esta ficha é a aba
+  // "Ponto": cadastro, pagamentos e mensagens são abas DO MODAL, e o nome da pessoa está no alto dele. Aqui ficam só
+  // as abas do ponto — com os documentos assinados do ponto junto delas.
+  const AREAS = SO_PONTO ? [{chave: "ponto", rotulo: "🕐 Ponto", abas: [
+      ["dia", "Dia"], ["mes", "Espelho do mês"],
+      ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
+      ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`],
+      ["cadastro", "Configuração do ponto"],
+      ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`],
+      ["assinaturas", "Documentos assinados"],
+    ]}] : [
     {chave: "pessoal", rotulo: "👤 Cadastro pessoal", abas: [
       ...(PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? [["pessoa", "Cadastro"]] : []),
       ...(PODE_VER_PESSOAL ? [["pagamentos", "Pagamentos"]] : []),
@@ -1803,8 +1826,11 @@ function desenharPainel() {
   const abas = AREAS.flatMap(a => a.abas);
   if (!abas.some(([k]) => k === PAINEL_ABA)) PAINEL_ABA = (abas[0] || ["dia"])[0];
   const areaAtual = AREAS.find(a => a.abas.some(([k]) => k === PAINEL_ABA)) || AREAS[0];
+  // ⚑ OS BOTÕES DO PONTO SÓ NA ÁREA DO PONTO (26/11/2026). O dono: *"a parte superior dela acaba misturando o que
+  // é do ponto (…) quando clico em mensagens, vai pra de mensagens mas exibindo coisa do ponto."*
+  const naAreaDoPonto = !areaAtual || areaAtual.chave === "ponto";
   els("dp-corpo").innerHTML = `
-    <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
+    <div class="dp-cab">${SO_PONTO ? "" : `<h2>${escapar(p.nome)}</h2>`}
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
       ${(() => { // a obra é a do ponto (onde mais bateu nos últimos 60 dias); sem batida, a do cadastro (30/10/2026)
         const o = p.obra_do_ponto || p.obra_principal || {}, cad = (p.obra_principal || {}).codigo;
@@ -1812,9 +1838,9 @@ function desenharPainel() {
           : "a do cadastro (sem batida nos últimos 60 dias)";
         return `<span class="dados" title="${escapar(dica)}">${escapar(o.codigo || "sem obra")}${o.nome ? ` — ${escapar(o.nome)}` : ""}</span>`; })()}
       <span class="suave dados">CPF ${escapar(p.cpf || "—")}</span></div>
-    <div>${marcasHtml(p.etiquetas)}${PODE_TRATAR ? ` <button class="link-btn" type="button" data-dp-cad="codigo"
-      title="ver se o código chegou pelo WhatsApp, ou gerar um para entregar em mãos">🔑 código de acesso do aplicativo</button>` : ""}</div>
-    ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
+    ${naAreaDoPonto ? `<div>${marcasHtml(p.etiquetas)}${PODE_TRATAR ? ` <button class="link-btn" type="button" data-dp-cad="codigo"
+      title="ver se o código chegou pelo WhatsApp, ou gerar um para entregar em mãos">🔑 código de acesso do aplicativo</button>` : ""}</div>` : ""}
+    ${PODE_TRATAR && naAreaDoPonto ? `<div class="barra-acoes" style="margin-top:10px">
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
       <button class="btn secundario" type="button" id="dp-completar" title="de um dia a outro: as batidas da escala que faltam, sem mexer nas que existem">📅 Completar o período pela escala</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
@@ -3866,6 +3892,12 @@ async function bloquearAparelho(a, depois) {
 // mostra (Colaboradores), que fecha o quadro dela.
 const FICHA_ID = {{ ficha_id|int }};
 els("dlg-pessoa").addEventListener("close", () => avisarQuemMostra("fechar"));
+// No modal-ponte quem fecha é o modal de fora: sem título, sem "Fechar", e o Esc não fecha esta.
+if (SO_PONTO) {
+  document.head.insertAdjacentHTML("beforeend", "<style>#dlg-pessoa > .dlg-topo{display:none}"
+    + "#dlg-pessoa > .dlg-corpo{max-height:none;height:100vh;overflow:auto;box-sizing:border-box}</style>");
+  els("dlg-pessoa").addEventListener("cancel", ev => ev.preventDefault());
+}
 
 // O formulário do ERP, de dentro da janela, avisa quando fecha e quando grava. Gravou: o que está na tela do ponto
 // (nome, obra, situação) pode ter mudado, então se recarrega a ficha da pessoa — não a tela inteira.
@@ -3880,8 +3912,8 @@ window.addEventListener("message", ev => {
 // mês das faltas — o DP confere sem sair da janela de atender.
 (() => {
   const q = new URLSearchParams(location.search);
-  const aba = q.get("aba"), comp = q.get("competencia");
-  abrirPessoaPainel(FICHA_ID, null, aba && /^[a-z_]+$/.test(aba) ? aba
+  const aba = q.get("aba"), comp = q.get("competencia"), dia = q.get("data");
+  abrirPessoaPainel(FICHA_ID, dia && /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia : null, aba && /^[a-z_]+$/.test(aba) ? aba
     : (PODE_VER_PESSOAL || PODE_EDITAR_COLAB ? "pessoa" : "dia"),
     comp && /^\d{4}-\d{2}$/.test(comp) ? comp : null);
 })();

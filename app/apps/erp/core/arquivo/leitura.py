@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 MAX_TIPOS_NA_PERGUNTA = 120
 
 
+
+def _validade_padrao(tipo) -> int:
+    from app.apps.erp.core.arquivo.service import VALIDADE_PADRAO_MESES
+    return VALIDADE_PADRAO_MESES.get(getattr(tipo, "codigo", "") or "", 0)
+
 def _texto_simples(t: str) -> str:
     """Sem acento, sem pontuação e em minúsculas — para comparar nomes."""
     t = unicodedata.normalize("NFKD", t or "")
@@ -360,6 +365,9 @@ def sugerir(s: Session, conteudo: bytes, nome_arquivo: str, *,
         # obra por um contrato sem data no texto e ficou preso: o sistema
         # cobrava a validade e não abria campo nenhum para digitá-la).
         "tipo_vence": bool(tipo.vence) if tipo is not None else False,
+        # 26/11/2026: o ASO vence, mas o papel não diz quando — a validade é
+        # calculada se ficar em branco (`service.VALIDADE_PADRAO_MESES`).
+        "tipo_validade_padrao_meses": _validade_padrao(tipo),
         "tipo_por_competencia": (bool(tipo.por_competencia)
                                  if tipo is not None else False),
         "tipo_motivo": (bruto.get("tipo_motivo") or "").strip()[:200],

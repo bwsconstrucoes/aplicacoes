@@ -141,6 +141,198 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (5) — O ASO travava a admissão pelo portal: a validade agora é calculada
+
+Relato da obra, trazido por ele: *"Quando a gente coloca pra concluir o
+cadastro no novo app dá essa msg pedindo o vencimento do exame médico… só que
+não tem onde colocar no app e no exame também não tem o vencimento."* A
+mensagem: *"Atestado de saúde ocupacional vence — informe até quando vale."*
+
+**Causa:** o tipo ASO está marcado como "vence" no catálogo, e
+`arquivo.service.arquivar` recusa documento que vence sem validade. O portal
+não pergunta validade (nem deveria: o papel não traz). No pedido de admissão,
+pedido e papéis gravam na mesma transação — o ASO derrubava o pedido inteiro.
+O mesmo valia para a devolução de ASO (demissional/retorno) pelo portal.
+
+**Decisão minha, a confirmar com ele:** `VALIDADE_PADRAO_MESES = {"ASO": 12}`
+— em branco, a validade é a data do exame (ou a do envio, quando não há) +
+12 meses, gravada com a observação "validade estimada… corrija se o PCMSO
+disser outro prazo". Por quê 12: NR-7, o periódico é anual para quem tem risco
+ocupacional, que é o caso da obra; o aviso de vencimento continua funcionando.
+As telas do ERP (Documentos da pessoa e Arquivo) deixaram de exigir a data
+para o ASO e dizem a regra. Os outros tipos que vencem continuam exigindo.
+
+### 26/11/2026 (4) — O MODAL-PONTE DA PESSOA: uma janela, todas as abas, de qualquer tela
+
+**Ele, cobrando pela terceira vez o mesmo assunto (13/11, 17/11, 18/11):**
+
+> *"a conexão entre as telas de cadastro continua ruim (…) todas as telas que
+> têm relação com a pessoa, eu poder abrir de um único local, e esse ambiente
+> ser partilhado em todas as áreas que se relacionem com o colaborador (…)
+> Eu já havia pedido isso, mas ainda não tá bom, tá cheio de furos."*
+> E: *"Em resumo essa nova tela seria apenas uma ponte para as demais telas.
+> Abre um modal com todas as abas (…) Mas tudo abrindo dentro do mesmo modal."*
+> E: *"na parte de operadores (…) não é todo mundo quem pode visualizar. Isso
+> tem que estar atrelado ao perfil do usuário."*
+
+**POR QUE OS CONSERTOS ANTERIORES NÃO FECHARAM:** havia TRÊS fichas da mesma
+pessoa (a do ponto, em `gestao.html`, mostrada num quadro; a `ficha()` de
+Colaboradores, com Resumo/Pagamentos/Documentos/Mensagens/Operador; e o
+formulário completo `formulario()`), e CADA TELA tinha a sua própria cópia de
+"janela com quadro" + escuta de mensagens. Cada conserto acertava um caminho e
+deixava os outros. Um levantamento achou 15 furos: links com `target=_blank`
+(Pedidos ao DP, Regras, Cargos), navegação para outra página (Arquivo,
+Mensagens sem ponto), "Editar"/"Documentos" da ficha do ponto MORTOS em
+Pedidos ao DP e em Mensagens, "Ver ficha" de Títulos sem o número da pessoa,
+Operador inexistente na ficha do ponto e dependente de `configurar`, os
+botões do ponto no alto de todas as áreas, `?pedido=` ignorado.
+
+**O QUE FOI FEITO — UMA porta só:**
+- `abrirPessoa(id, aba, extra)` em `erp_base.html` (vale em TODA tela do ERP,
+  do ponto e da mensageria): um `<dialog>` com o nome e o resumo da pessoa no
+  alto e as abas **Cadastro · Documentos · Demandas · Ponto · Pagamentos ·
+  Mensagens · Operador**. Cada aba é a tela que JÁ EXISTE, embutida (sem
+  menu), num quadro que fica carregado enquanto o modal está aberto. Atalho
+  em HTML: `data-abrir-ambiente="ID"` (+ `data-ambiente-aba`).
+- `GET /erp/api/pessoa/<id>/ambiente` (ação nova `abrir_pessoa`, implicada
+  por `ver_pessoal` ou `ver_ponto`; catálogo: seção Colaboradores): o
+  cabeçalho e QUAIS abas quem olha pode abrir — a regra de cada aba é a da
+  tela dela (Operador = `gerir_usuarios`; Ponto = `ver_ponto`; Mensagens =
+  `ver_mensagens`; Cadastro editável = `editar_colaboradores`, senão o
+  resumo). Teste: o DP não vê Operador.
+- Colaboradores embutida aceita `?mostrar=` e `?ambiente=1`:
+  `/erp/colaboradores/cadastro/<id>` (cadastro | arquivos | demandas — o
+  formulário sem as abas que viraram abas do modal) e a rota nova
+  `/erp/colaboradores/pessoa/<id>` (resumo | documentos | pagamentos |
+  mensagens | operador, para quem só vê). Dentro do modal, o que levava a
+  outra tela troca de aba (`pedirAoAmbiente`): liberar acesso → Operador;
+  "abrir o cadastro completo" → Cadastro; "ver o ponto" → Ponto.
+- A ficha do ponto com `?area=ponto` vira a aba Ponto: só as abas do ponto
+  (+ "Documentos assinados"), sem nome, sem "Fechar"; e, em qualquer modo, os
+  botões do ponto (ajustar, compensação, atestado…) só aparecem na ÁREA do
+  ponto — não mais em Mensagens/Cadastro (queixa dele).
+- Entradas ligadas ao modal: lista e quadro de Colaboradores e `?editar=` /
+  `?documentos=` / `?pessoa=`; Pedidos ao DP (abrir o cadastro, abrir os
+  documentos para anexar, o nome da pessoa, "Ver o ponto" do desligamento);
+  TODAS as telas do ponto (`abrirPessoaPainel` → modal, na aba Ponto e na
+  sub-aba pedida); Mensagens; Arquivo; Regras do DP; Cargos; Títulos ("Ver
+  ficha", agora com a pessoa); Férias (as duas listas); Configurações ›
+  Operadores ("👤 ver a pessoa" — a lista de operadores passou a trazer o
+  `colaborador_id`).
+- Operador: a aba deixou de quebrar para quem gere operadores sem
+  `configurar` (as obras vêm de `/erp/api/lancamento/dados`).
+- Pedidos ao DP aceita `?pedido=ID` (a aba Demandas manda para lá).
+
+**O que ficou como estava, e por quê:** o "abrir" de um pedido dentro de
+Demandas ainda abre a tela de Pedidos numa aba nova (é outro objeto, não a
+pessoa — agora pelo menos cai no pedido). "Imprimir o espelho" e "ver tudo no
+painel das mensagens" também abrem aba nova (impressão e painel geral). O
+aplicativo do celular (`ponto/app.html`) não usa o modal — é outra tela. As
+fichas antigas (`dlg-unica`, `dlg-ponto`, `dlg-ficha`) ficaram no código como
+reserva, sem porta que leve a elas; tirar é proposta, não feito.
+
+Conferido no navegador com banco de teste: as sete abas, a entrada por
+Pedidos ao DP, pelo Ponto, por Operadores e pela lista, sem erro de
+JavaScript e sem aba nova aberta.
+### 26/11/2026 (4) — ⚠️ A fila de acesso ao portal não aparecia em Operadores
+
+**Ele:**
+
+> *"Algo errado na parte de operadores. Aparece a pendência em Pessoal, clico,
+> sou remetido pra Operadores, mas não abre a tela pra liberação e confirmação
+> do perfil. Tampouco se eu clicar em adm e operadores, não vejo quem tá
+> pendente."*
+
+**A causa, e ela é de UMA LINHA:** `carregarFilaDoPortal()` — a chamada que
+busca a fila — tinha ido parar **dentro do "Salvar" do formulário de PERFIS**,
+em `erp_config.html`. O cartão "Pedidos de acesso ao portal" só nascia se
+alguém abrisse um perfil de acesso e salvasse. Em toda abertura normal da tela
+a fila simplesmente **não era buscada**.
+
+⚠️ **E não havia erro nenhum.** O cartão nasce com a classe `oculto` e só sai
+dela quando a fila chega; sem a chamada, ele ficava invisível, em silêncio. A
+tela parecia funcionar. Foi preciso o dono tropeçar para alguém notar — e isso
+levou **um dia inteiro** desde a publicação (25/11).
+
+**O segundo sintoma era outro defeito, não o mesmo:** o link "Liberar em
+Operadores" era `/erp/configuracoes#usuarios`, **igual para todas as pessoas da
+fila**. Mesmo com o cartão aparecendo, quem clicava na pendência de alguém
+chegava numa lista e tinha de achar a pessoa de novo. Agora o link leva o
+número do pedido (`?pedido=N`) e, do outro lado, a confirmação **abre sozinha**:
+confere o e-mail, cria o acesso, manda o convite e abre o cadastro do operador
+para escolher perfil e obras — que é o que ele pediu em 24/11.
+
+#### A lição que vale mais que o conserto
+
+**Este é o terceiro defeito desta classe em três dias**, e os três têm a mesma
+cara: uma ou mais linhas coladas **dentro de uma função**, quando deveriam
+estar na abertura da tela. Começam na coluna zero, o arquivo continua válido, o
+navegador não reclama — e o código simplesmente não roda.
+
+Há um irmão ainda de pé, encontrado de passagem e **não consertado** (não foi
+pedido): em `erp_config.html`, as linhas `carregarDepara()`,
+`carregarOperadores()`, o registro do botão **"+ Novo operador"**, o do
+**"Instalar de-para"** e `carregar()` existem **duas vezes** — uma correta, na
+abertura, e outra **dentro do clique de "Aplicar atualizações do banco"**.
+Efeito: depois de aplicar as migrações, "+ Novo operador" abre **dois**
+diálogos, porque ganhou um segundo ouvinte. É pequeno, mas é real.
+
+**O teste que ficou** (`tests/test_tela_da_fila_de_acesso.py`) trava os dois
+defeitos: a fila tem de ser carregada na sequência de abertura, não pode estar
+dentro do Salvar de perfis, e o link de Pessoal tem de levar o pedido.
+
+⚠️ **O que o teste NÃO faz, e está escrito nele:** ele não entende JavaScript.
+Escrevi primeiro um contador de profundidade de chaves e **ele não funcionou**
+neste arquivo — o template mistura Jinja, crases com HTML dentro e expressões
+regulares, e a conta sai errada. **Provado: com o defeito de volta, o contador
+dizia que estava tudo bem.** Troquei pela conferência simples, e provei que
+essa pega (2 testes falham com o defeito, 3 passam sem ele). Uma conferência
+que mente é pior que nenhuma.
+
+**Arquivos compartilhados mexidos:** `templates/erp_config.html` (a tela de
+Configurações, que todas as áreas usam) e `templates/erp_colaboradores.html`.
+**Sem migração de banco.**
+
+---
+
+### 26/11/2026 (3) — Autônomo mensalista exige o salário do mês; salário e diária em destaque no atendimento
+
+Ele: *"para o colaborador Autônomo Mensalista, o campo Salário do Mês se torna
+obrigatório, pois ele recebe não é por diárias, mas sim por um valor
+pré-determinado por mês (…) Exibir esse campo e dar destaque a ele, pois é uma
+informação sensível. Dar destaque também ao Valor da Diária, que também deve
+aparecer na tela de atendimento do autônomo (RPA)."*
+- `obrigatorios_se` CADASTRO: `AUTONOMO_MENSALISTA` → `valor_mes`; a pergunta
+  "diarista ou mensalista" some para ele (`ocultos_se`) e `traduzir_do_pipe`
+  grava `pagamento = MENSALISTA`. O rótulo `valor_mes` virou "Salário do Mês".
+- Tela do DP: faixa amarela com "Salário do mês" e/ou "Valor da diária" no
+  alto do pedido e dentro da janela de Atender (`destaqueDoValor`).
+- Pedido já aberto de autônomo mensalista sem o valor: não é barrado
+  retroativamente; o DP corrige pelo "Corrigir os dados".
+
+### 26/11/2026 (2) — Os diaristas da Análise de SPs passam a ver quem foi admitido pelo ERP
+
+Fecha a lacuna de 25/11/2026 (6). Feito a pedido dele neste chat; o registro
+completo está em `analisesps/HISTORICO.md` (26/11/2026). Aqui no ERP só mudou
+`pessoas.para_folha`, que ganhou o filtro `cpfs`.
+
+### 26/11/2026 — Subtítulo nos pedidos; o desligamento de prestador diz como saiu
+
+Ele: *"quando se trata de admissão, a gente colocar o tipo de vínculo e o tipo
+de contrato como subtítulo, só para você bater o olho (…) desligamento,
+colocar o tipo de desligamento (…) eu clico e não aparece, só diz assim, data
+de saída e observações."* Na alteração de cargo: *"é um pleito pequeno, tá ok."*
+- `pessoal_solicitacoes.resumo`: admissão/readmissão/admissão de prestador →
+  vínculo · contrato; desligamento → a forma (e, no pedido de demissão, "sai de
+  imediato"/"trabalha o aviso"; "continua como prestador" quando for). Aparece
+  embaixo do título do pedido e embaixo do tipo na LISTA de solicitações (sem
+  consulta a mais: `d.dados` vem na mesma leitura).
+- **O porquê de "só data de saída e observações":** o pedido era de
+  PRESTADOR, e o ramo PRESTADOR do desligamento não perguntava a forma (as da
+  CLT não servem). Ganhou `saida_prestador` (obrigatório): "A pedido do
+  prestador", "Pela empresa", "Fim do serviço ou do contrato". Pedido antigo de
+  prestador fica sem — o subtítulo só não aparece.
+
 ### 25/11/2026 (8) — As testemunhas da recusa assinam na tela, com CPF; a trava da recusa passa a valer nas duas portas
 
 Ele: *"faz as testemunhas assinarem na tela com CPF."* Ao fazer, achei que a

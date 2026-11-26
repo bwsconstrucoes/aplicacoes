@@ -101,6 +101,37 @@ funciona.
 
 ---
 
+## 26/11/2026 — (feito pelo chat do DP, a pedido do dono) Os diaristas passam a ver quem foi admitido pelo ERP
+
+O dono confirmou em 25/11/2026 que **a admissão não é mais lançada no Pipefy
+nem na planilha "Registro de Colaboradores"** — nasce no ERP. O cálculo dos
+diaristas lia só a cópia da planilha (`analisesps.colaborador`), então quem foi
+admitido pelo ERP ficava de fora (ia para "sem cadastro") e os dias entre o
+início e a admissão não eram pagos. Ele pediu: *"Faça esta tarefa aqui:
+Diaristas: ler o cadastro do ERP, não a planilha."*
+
+**O que foi feito — o passo menor que resolve:**
+`colaboradores.para_a_folha(cpfs, ate)` = a cópia da planilha, completada pelo
+cadastro do ERP (`erp/core/cadastros/pessoas.para_folha`, que já entregava os
+campos com os mesmos nomes desta tabela desde 05/11/2026):
+- quem **não está** na cópia entra pela ficha do ERP (`origem = "ERP"`), com o
+  `valor_diaria` da ficha;
+- quem **voltou pelo ERP** (readmissão) — início/admissão no ERP mais novos que
+  os da cópia — passa a usar a ficha do ERP;
+- quem está na cópia e não tem história mais nova no ERP **continua como era**.
+Usado em `folha_diaristas.calcular` (e, por ele, no complemento de diárias) e
+em `folha_diaristas.levantar`. A regra dia a dia (`folha_vinculo`) não mudou.
+
+**Custo:** uma consulta a mais ao banco do ERP por cálculo, só com os CPFs do
+ponto do período (`para_folha` ganhou o filtro `cpfs`). Sem o ERP, segue só com
+a cópia, como antes.
+
+**O que ficou de fora, e é decisão do dono:** trocar a fonte de TODO MUNDO para
+o ERP (a cópia deixaria de valer). Isso muda a base do pagamento de quem a
+planilha já pagava certo — fazer olhando as diferenças entre as duas fontes,
+não no escuro. As outras telas da folha (auxílios, apropriação, rateio) ainda
+leem só a cópia.
+
 ## 04/09/2026 — a volta ao Streamlit
 
 O dono navegou o módulo pela primeira vez e o veredito foi: **"muita coisa foi

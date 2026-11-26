@@ -101,7 +101,7 @@ async function verPessoas(id, nome){
       <div class="tabela-rolagem" style="max-height:60vh"><table><thead><tr>
         <th>Nome</th><th>Cargo</th><th>Obra</th><th>Vínculo</th><th>Situação</th></tr></thead>
       <tbody>${pessoas.map(p => `<tr>
-        <td><a href="/erp/colaboradores?editar=${p.id}" target="_blank">${escapar(p.nome)}</a></td>
+        <td><a href="#" data-abrir-ambiente="${p.id}" data-ambiente-aba="cadastro">${escapar(p.nome)}</a></td>
         <td>${escapar(p.cargo || "—")}</td><td>${escapar(p.obra || "—")}</td>
         <td>${escapar(p.vinculo || "—")}</td><td>${escapar(p.situacao || "")}</td>
       </tr>`).join("")}</tbody></table></div>`;

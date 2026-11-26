@@ -90,7 +90,7 @@ def levantar(ano: int, mes: int) -> dict:
             if cpf in novos:
                 nome_do_ponto.setdefault(cpf, novos[cpf].get("nome") or "")
 
-    fichas = colaboradores.muitos_por_cpf(list(dias_por_cpf))
+    fichas = colaboradores.para_a_folha(list(dias_por_cpf))   # + ERP, 26/11/2026
     obras_por_nome = colaboradores.codigos_das_obras()
 
     pessoas, sem_cadastro = [], []
@@ -652,8 +652,14 @@ def calcular(ano: int, mes: int, qual: str = "quinzena", empresa: str = "") -> d
     base["carga"] = carga
 
     dias_por_cpf = ponto.dias_por_cpf(ano, mes)
-    fichas = colaboradores.muitos_por_cpf(list(dias_por_cpf), ate=fim)
+    # 26/11/2026: a cópia da planilha completada pelo ERP — quem foi admitido
+    # (ou readmitido) pelo ERP não está na planilha (`colaboradores.para_a_folha`).
+    fichas = colaboradores.para_a_folha(list(dias_por_cpf), ate=fim)
     valores = colaboradores.valores_de_diaria(list(fichas))
+    for cpf, ficha in fichas.items():
+        if ficha.get("origem") == "ERP":
+            v = ficha.get("valor_diaria")
+            valores[cpf] = Decimal(str(v)) if v is not None else None
     codigo_por_nome = colaboradores.codigos_das_obras()
     feriados = _feriados(inicio, fim)
     ajustes = folha_auxilio.ajustes_do_mes(_tipo_do_ajuste(qual), ano, mes)

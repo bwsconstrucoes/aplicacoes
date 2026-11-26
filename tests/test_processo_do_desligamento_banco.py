@@ -205,6 +205,7 @@ def test_desligamento_de_prestador_continua_fechando_no_atendimento(mundo):
     s = mundo["s"]
     p = svc.abrir(s, {"tipo": "DESLIGAMENTO",
                       "colaborador_id": mundo["prestador"].id,
+                      "saida_prestador": "Fim do serviço ou do contrato",
                       "data_saida": (HOJE + dt.timedelta(days=3)).isoformat()},
                   mundo["obra_user"])
     r = svc.atender(s, p["id"], {}, mundo["dp"])

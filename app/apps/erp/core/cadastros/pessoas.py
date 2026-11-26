@@ -1975,8 +1975,12 @@ def o_que_falta(c: Colaborador) -> list[str]:
 #     no campo — não mais a situação crua.
 # ---------------------------------------------------------------------------
 def para_folha(s: Session, *, so_ativos: bool = True,
-               obra_id: Optional[int] = None) -> list[dict[str, Any]]:
-    """O cadastro de quem recebe, na forma que a folha lê. Só leitura."""
+               obra_id: Optional[int] = None,
+               cpfs: Optional[list[str]] = None) -> list[dict[str, Any]]:
+    """O cadastro de quem recebe, na forma que a folha lê. Só leitura.
+
+    `cpfs` (26/11/2026): só estas pessoas — o cálculo dos diaristas pede as do
+    ponto do mês, e ler as ~3.500 fichas para usar 400 seria desperdício."""
     from app.apps.erp.db.models.cadastros import Obra
 
     def dinheiro(v: Any) -> Optional[float]:
@@ -1998,7 +2002,13 @@ def para_folha(s: Session, *, so_ativos: bool = True,
         "SELECT colaborador_id, obra_id FROM colaborador_obra_atual")).all()}
         if obra_atual.tem_tabela(s) else {})
     saida = []
-    for c in s.scalars(select(Colaborador)).all():
+    consulta = select(Colaborador)
+    if cpfs is not None:
+        limpos = sorted({_digitos(x) for x in cpfs if len(_digitos(x)) == 11})
+        if not limpos:
+            return []
+        consulta = consulta.where(Colaborador.cpf.in_(limpos))
+    for c in s.scalars(consulta).all():
         # ⚠️ "ATIVO" AQUI É DINHEIRO: quem cai fora desta lista não entra na
         # folha. Até 17/11/2026 bastava EXISTIR data de saída para sair — e
         # quem estava cumprindo aviso prévio, trabalhando, saía da folha.

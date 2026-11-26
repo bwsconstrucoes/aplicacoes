@@ -100,9 +100,11 @@ def test_dizer_que_continua_acrescenta_os_passos_no_checklist():
     assert "ponto" in com[-1]
 
 
-def test_desligamento_de_prestador_pede_so_a_data_de_saida():
-    """Prestador não tem aviso prévio — não há o que avisar."""
-    assert svc.obrigatorios_do_tipo("DESLIGAMENTO", "PRESTADOR") == ("data_saida",)
+def test_desligamento_de_prestador_pede_como_saiu_e_a_data_de_saida():
+    """Prestador não tem aviso prévio — não há o que avisar. Desde 26/11/2026
+    diz COMO saiu (lista própria, não as formas da CLT)."""
+    assert svc.obrigatorios_do_tipo("DESLIGAMENTO", "PRESTADOR") == (
+        "saida_prestador", "data_saida")
     campos = svc.campos_do_tipo("DESLIGAMENTO", "PRESTADOR")
     assert "aviso_previo" not in campos
     assert "forma_desligamento" not in campos
@@ -456,10 +458,16 @@ def test_desligar_prestador_sem_a_data_de_saida_e_recusado(mundo):
 def test_desligar_prestador_nao_pede_aviso_previo(mundo):
     """A prova de que o tipo único funciona: o MESMO tipo, a mesma tela, e o
     prestador passa sem a data do aviso prévio que a carteira exige."""
-    p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
+    with pytest.raises(ErroValidacao, match="Como foi o desligamento"):
+        svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["prestador"].id,
                                "data_saida": "2026-07-31"}, mundo["obra_user"])
+    p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
+                               "colaborador_id": mundo["prestador"].id,
+                               "saida_prestador": "A pedido do prestador",
+                               "data_saida": "2026-07-31"}, mundo["obra_user"])
     assert p["dados"]["data_saida"] == "2026-07-31"
+    assert svc.ler(mundo["s"], p["id"])["resumo"] == "A pedido do prestador"
     assert "aviso_previo" not in p["dados"]
     # E o checklist é o de prestador, sem rescisão.
     assert [i["descricao"] for i in p["itens"]] == ["Conferir o período prestado"]
@@ -885,3 +893,34 @@ def test_a_palavra_do_vinculo_e_a_mesma_que_a_folha_compara():
 
     assert codigo == "PRESTADOR"
     assert fv._igual(p.VINCULO_PLANILHA[codigo], fv.PRESTADOR)
+
+
+def test_o_subtitulo_do_pedido_mostra_o_que_ele_e():
+    """26/11/2026, ele: *"admissão, a gente colocar o tipo de vínculo e o tipo
+    de contrato como subtítulo (…) desligamento, colocar o tipo de
+    desligamento."*"""
+    assert svc.resumo(None, "CADASTRO", {"tipo_documentacao": "CTPS",
+                                         "tipo_contrato": "CLT_INDETERMINADO"}) \
+        == "CTPS · CLT (tempo indeterminado)"
+    assert svc.resumo(None, "DESLIGAMENTO", {"forma_desligamento": "PEDIDO_COLABORADOR",
+                                             "cumpre_aviso": "0"}) \
+        == "A pedido do colaborador · sai de imediato"
+    assert svc.resumo(None, "DESLIGAMENTO", {"saida_prestador": "Pela empresa"}) \
+        == "Pela empresa"
+    assert svc.resumo(None, "ALTERACAO_CARGO", {"cargo_pleiteado_id": "3"}) == ""
+
+
+def test_autonomo_mensalista_exige_o_salario_do_mes_e_nao_pergunta_diaria():
+    """26/11/2026, ele: *"para o colaborador Autônomo Mensalista, o campo
+    Salário do Mês se torna obrigatório, pois ele recebe não é por diárias."*"""
+    base = {"tipo_documentacao": "PRESTADOR", "tipo_contrato": "Autônomo mensalista"}
+    campos = svc.exigencias("CADASTRO", base)["campos"]
+    assert "valor_mes" in campos
+    assert "pagamento" not in campos, "o contrato já diz que é mensalista"
+    assert "valor_diaria" not in campos
+    assert svc.traduzir_do_pipe(base)["pagamento"] == "MENSALISTA"
+    assert svc.ROTULOS["valor_mes"] == "Salário do Mês"
+    # O RPA continua pela diária.
+    rpa = svc.exigencias("CADASTRO", {"tipo_documentacao": "PRESTADOR",
+                                      "tipo_contrato": "Autônomo (RPA)"})["campos"]
+    assert "valor_diaria" in rpa and "valor_mes" not in rpa
