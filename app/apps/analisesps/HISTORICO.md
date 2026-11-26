@@ -12302,6 +12302,7 @@ somente Solicitações de uma conta especifica"*.
 - O limite: SP alterada na tela (não pela sincronização) aparece no DDA em até 3 min.
 - Sem migração. Testes novos em `test_analisesps_dda.py` (o motor só compara o que pode
   casar, páginas, cruzamento guardado, busca).
+- **Publicado em 26/11/2026** (sem migração).
 
 #### Leva 279 — A folha do 13º salário: um tipo à parte, rateado pelo ponto do ano (25/11/2026) — MIGRAÇÃO 059
 
