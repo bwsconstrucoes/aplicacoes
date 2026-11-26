@@ -40,6 +40,14 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 26/11/2026 — (chat do DP) O modal-ponte da pessoa atravessa o ERP inteiro
+
+`abrirPessoa` em `erp_base.html`, ação nova `abrir_pessoa` (permissoes.py,
+secoes.py — seção Colaboradores), rota `/erp/api/pessoa/<id>/ambiente`, e as
+portas de pessoa de Arquivo, Cargos, Títulos, Férias, Regras do DP, Pedidos ao
+DP e Configurações › Operadores passam por ele. Detalhe completo em
+`HISTORICO_PESSOAL.md`, 26/11/2026 (4).
+
 ### ⚑ 25/11/2026 — ACESSO AO PORTAL: SÓ O ADMINISTRADOR LIBERA; MIGRAÇÃO 128 (registro entre áreas)
 
 `liberar_acesso_portal` virou só do ADMIN; `ver_pedidos_de_acesso` (ADMIN e

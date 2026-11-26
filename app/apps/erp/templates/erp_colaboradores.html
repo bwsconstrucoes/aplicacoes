@@ -293,6 +293,19 @@ let OPERADORES = [], PERFIS = [], PERFIS_CADASTRADOS = [],
    a janela fecha, para a tela de fora voltar a mandar. #}
 const EMBUTIDO = {{ 'true' if embutido else 'false' }};
 const ABRIR_CADASTRO = {{ abrir_cadastro|int if abrir_cadastro else 'null' }};
+{# ⚑ O MODAL-PONTE (26/11/2026) — `abrirPessoa`, em erp_base.html. Dentro
+   dele esta tela é UMA aba: o formulário (cadastro, arquivos, demandas) ou um
+   painel da ficha (resumo, documentos, pagamentos, mensagens, operador). Sem
+   título nem "Fechar" próprios — quem fecha é o modal de fora — e o que
+   levaria a outra tela pede ao modal para trocar de aba. #}
+const ABRIR_PAINEL = {{ abrir_painel|int if abrir_painel else 'null' }};
+const MOSTRAR = {{ (mostrar or '')|tojson }};
+const AMBIENTE = {{ 'true' if ambiente else 'false' }};
+function pedirAoAmbiente(aba, recarregar){
+  try { window.parent.postMessage({tipo: "bws-pessoa", acao: "aba", aba,
+                                   recarregar: !!recarregar}, location.origin); }
+  catch (e) { /* fora do modal, nada a pedir */ }
+}
 
 // Quem embute (a ficha do ponto) escuta estes avisos: "fechei" e "gravei".
 function avisarQuemEmbute(acao){
@@ -356,6 +369,8 @@ let FILA_PORTAL = [], FILA_OPCOES = {};
 // aviso aqui mesmo, e o acesso nasce com o padrão seguro — administrativo de
 // obra, preso à obra do cadastro.
 function irConfigurarOAcesso(usuarioId, convite){
+  // No modal-ponte o cadastro de operador é a aba ao lado: troca para ela.
+  if (AMBIENTE) { pedirAoAmbiente("operador", true); return; }
   const p = new URLSearchParams({operador: String(usuarioId)});
   // Só marcas conhecidas viajam na URL. O texto do aviso é montado lá,
   // porque o aviso escreve HTML na tela de quem administra o sistema.
@@ -600,7 +615,7 @@ function caixinhaDaPessoa(c){
     linhas.push(`parado há ${c.dias_parado} dia(s)`);
   const pend = CAMPOS_CAIXINHA.has("pendencias") ? pendenciasDaLinha(c) : "";
   return `<div class="cartao-kanban" draggable="true" data-id="${c.id}"
-      onclick="abrirFichaCompleta(${c.id})"
+      onclick="abrirPessoa(${c.id})"
       style="background:var(--fundo); border:1px solid var(--borda);
              border-radius:8px; padding:8px 10px; margin-bottom:8px;
              cursor:grab">
@@ -840,7 +855,7 @@ function desenhar(){
     <td><span class="selo ${c.situacao==="ATIVO"?"aprovado":"outro"}">${rotulo(c.situacao)}</span></td>
   </tr>`).join("");
   document.querySelectorAll("[data-c]").forEach(tr=>tr.addEventListener("click",
-    ()=>abrirFichaUnica(+tr.dataset.c)));
+    ()=>abrirPessoa(+tr.dataset.c)));       // o modal-ponte (26/11/2026)
 }
 
 function etiquetaDaEtapa(c){
@@ -1013,6 +1028,8 @@ els("dlg").addEventListener("close", () => {
 window.addEventListener("message", ev => {
   const d = ev.data || {};
   if (ev.origin !== location.origin || d.tipo !== "bws-ficha") return;
+  // Com o modal-ponte aberto, quem responde é ele (erp_base.html).
+  if (els("dlg-ambiente") && els("dlg-ambiente").open) return;
   // "fechar" é a janela dizendo que ELA fechou; as outras ações abrem algo em
   // cima dela e ela FICA.
   if (d.acao === "fechar") { if (els("dlg-unica").open) els("dlg-unica").close(); return; }
@@ -1028,7 +1045,7 @@ async function ficha(id, aba){
     els("dlg-titulo").textContent = `${c.nome} — ${documento(c.cpf)}`;
     const dalista = COL.find(x => x.id === id) || {};
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
-      ${cabecaDaFicha(c, dalista)}
+      ${AMBIENTE ? "" : cabecaDaFicha(c, dalista)}
       <div id="fp-afast"></div>
       <div class="subabas" id="fp-abas">
         <button class="subaba" data-fp="resumo">Resumo</button>
@@ -1140,8 +1157,12 @@ let OP_CARREGADO = false;
 
 async function carregarApoioDoOperador(){
   if (OP_CARREGADO) return true;
+  {# 26/11/2026: quem gere operadores mas não "configura" o sistema não lia
+     /erp/api/config e a aba quebrava. As obras e categorias vêm da mesma
+     fonte que esta tela já usa. #}
   const [u, cfg] = await Promise.all([
-    api("/erp/api/usuarios"), api("/erp/api/config")]);
+    api("/erp/api/usuarios"),
+    api("/erp/api/config").catch(() => api("/erp/api/lancamento/dados"))]);
   OPERADORES = u.usuarios || [];
   PERFIS = u.perfis || [];
   PERFIS_CADASTRADOS = u.perfis_cadastrados || [];
@@ -1169,7 +1190,8 @@ async function pintarOperadorDaPessoa(alvo){
       <button class="btn secundario" id="op-ir-cadastro">Abrir o cadastro completo</button>
     </div>`;
     const b = els("op-ir-cadastro");
-    if (b) b.addEventListener("click", () => abrirFichaCompleta(FICHA_ID));
+    if (b) b.addEventListener("click", () =>
+      AMBIENTE ? pedirAoAmbiente("cadastro") : abrirFichaCompleta(FICHA_ID));
     return;
   }
   alvo.innerHTML = `<div class="cartao-dica" style="margin-top:12px">Carregando…</div>`;
@@ -1222,11 +1244,13 @@ function pintarResumoDaPessoa(alvo){
      VOLTAR uma, não fechar todas. `VOLTAR_PARA_FICHA` guarda de quem a pessoa
      veio; quem fecha o formulário reabre a ficha dela. #}
   els("ir-editar").addEventListener("click", () => {
+    if (AMBIENTE) return pedirAoAmbiente("cadastro");      // a aba ao lado
     VOLTAR_PARA_FICHA = FICHA_ID;
     els("dlg").close();
     formulario(COL.find(x => x.id === FICHA_ID));
   });
   if (els("ir-ponto")) els("ir-ponto").addEventListener("click", () => {
+    if (AMBIENTE) return pedirAoAmbiente("ponto");
     els("fp-abas").querySelector('[data-fp="ponto"]').click();
   });
 }
@@ -3846,24 +3870,62 @@ document.querySelectorAll(".filtro-cab").forEach(b =>
 function abrirPeloEndereco(){
   const q = new URLSearchParams(location.search);
   const n = k => /^\d+$/.test(q.get(k) || "") ? Number(q.get(k)) : null;
-  if (n("editar")) abrirFichaCompleta(n("editar"));
-  else if (n("documentos")) ficha(n("documentos"), "documentos");
-  else if (n("pessoa")) abrirFichaUnica(n("pessoa"));
+  // 26/11/2026: os três endereços antigos abrem o MESMO modal-ponte, na aba certa.
+  if (n("editar")) abrirPessoa(n("editar"), "cadastro");
+  else if (n("documentos")) abrirPessoa(n("documentos"), "documentos");
+  else if (n("pessoa")) abrirPessoa(n("pessoa"));
 }
 // EMBUTIDA, a partida é outra: só o que o formulário precisa (obras, funções
 // e as opções do cadastro) e a janela da pessoa já aberta. A lista inteira de
 // colaboradores fica de fora de propósito — ela não aparece aqui.
 async function partirEmbutido(){
   try {
+    if (AMBIENTE) prepararAmbiente();
     OBRAS = (await api("/erp/api/lancamento/dados")).dados.obras;
     FUNCOES = (await api("/erp/api/funcoes")).funcoes;
     const o = await api("/erp/api/colaboradores/opcoes");
     ETAPAS = o.etapas || []; CARGOS = o.cargos || []; CONVENCOES = o.convencoes || [];
-    await abrirFichaCompleta(ABRIR_CADASTRO);
+    if (ABRIR_PAINEL) {
+      await ficha(ABRIR_PAINEL, MOSTRAR || "resumo");
+      // No modal-ponte a fileira de abas da ficha some: as abas são as dele.
+      if (AMBIENTE && els("fp-abas")) els("fp-abas").style.display = "none";
+    } else {
+      await abrirFichaCompleta(ABRIR_CADASTRO);
+      if (AMBIENTE) recortarFormulario(MOSTRAR || "cadastro");
+    }
     // Fechar pelo Esc também tem de avisar quem está mostrando.
     els("dlg").addEventListener("close", () => avisarQuemEmbute("fechou"));
   } catch(e){ document.body.innerHTML =
     `<div class="aviso alerta" style="margin:16px">${e.message}</div>`; }
+}
+
+// O MODAL-PONTE: a janela ocupa a tela inteira, sem título nem "Fechar", e
+// o Esc não a fecha (fecha o modal de fora, que é quem manda).
+function prepararAmbiente(){
+  document.body.classList.add("ambiente");
+  document.head.insertAdjacentHTML("beforeend", `<style>
+    body.ambiente #dlg { width:100vw; max-width:100vw; height:100vh; max-height:100vh;
+      margin:0; border:0; border-radius:0; box-shadow:none; }
+    body.ambiente #dlg::backdrop { background:#fff; }
+    body.ambiente #dlg > .dlg-topo { display:none; }
+    body.ambiente #dlg > .dlg-corpo { max-height:none; height:100vh; overflow:auto; box-sizing:border-box; }
+  </style>`);
+  els("dlg").addEventListener("cancel", ev => ev.preventDefault());
+}
+// O formulário no modal-ponte: "cadastro" são os campos (sem Arquivos e
+// Demandas, que são abas do modal); "arquivos" e "demandas" abrem direto na
+// aba deles, sem a fileira.
+function recortarFormulario(qual){
+  const abas = els("c-abas");
+  if (!abas) return;
+  if (qual === "arquivos" || qual === "demandas") {
+    const b = abas.querySelector(`[data-aba="${qual}"]`);
+    if (b) b.click();
+    abas.style.display = "none";
+  } else {
+    abas.querySelectorAll('[data-aba="arquivos"], [data-aba="demandas"]')
+      .forEach(b => b.style.display = "none");
+  }
 }
 
 if (EMBUTIDO) partirEmbutido();

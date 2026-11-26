@@ -565,7 +565,7 @@ function montarFicha(t){
           <td><b>${c.nome}</b><small>${documento(c.cpf)}</small></td>
           <td class="direita dados">${c.valor!==null&&c.valor!==undefined?numero(c.valor):"—"}</td>
           <td><small>${c.observacao||""}</small></td>
-          <td><a class="btn secundario" href="/erp/colaboradores">Ver ficha</a></td>
+          <td>${c.id ? `<a class="btn secundario" href="#" data-abrir-ambiente="${c.id}">Ver ficha</a>` : ""}</td>
         </tr>`).join("")}</tbody></table></div>`:""}
 
       ${blocoDeDocumentos(c)}

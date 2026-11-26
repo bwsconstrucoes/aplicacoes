@@ -463,7 +463,9 @@ function pintarPedido(){
         <div class="kpi-valor" style="font-size:16px">${escapar(p.situacao_rotulo)}</div>
         <div class="kpi-sub">${p.atendente ? "por " + escapar(p.atendente) : ""}</div></div>
       <div class="kpi estatico"><div class="kpi-rotulo">Pessoa</div>
-        <div class="kpi-valor" style="font-size:15px">${escapar(p.pessoa || "—")}</div>
+        <div class="kpi-valor" style="font-size:15px">${p.colaborador_id
+          ? `<a href="#" class="link-btn" style="font-size:15px" data-abrir-ambiente="${p.colaborador_id}">${escapar(p.pessoa || "—")}</a>`
+          : escapar(p.pessoa || "—")}</div>
         <div class="kpi-sub">${p.pessoa_cpf ? documento(p.pessoa_cpf) : ""}</div></div>
       <div class="kpi estatico"><div class="kpi-rotulo">Quem pediu</div>
         <div class="kpi-valor" style="font-size:15px">${escapar(p.solicitante || "—")}</div>
@@ -495,8 +497,8 @@ function pintarPedido(){
     ${p.colaborador_id ? `<div class="cartao-dica" style="margin-top:10px">
       ${p.pre_cadastro ? "O <b>pré-cadastro</b> desta pessoa já existe, na etapa <b>Inicial</b>."
                        : "Esta pessoa tem cadastro."}
-      <a class="link-btn" href="/erp/colaboradores?editar=${p.colaborador_id}"
-         target="_blank">abrir o cadastro</a></div>` : ""}
+      <a class="link-btn" href="#" data-abrir-ambiente="${p.colaborador_id}"
+         data-ambiente-aba="cadastro">abrir o cadastro</a></div>` : ""}
     ${(p.papeis || []).length || ["CADASTRO", "ADMISSAO_PRESTADOR"].includes(p.tipo)
       ? `<h4>Documentos enviados (${(p.papeis || []).length})</h4>
          <table><tbody>${(p.papeis || []).map(d => `<tr>
@@ -629,8 +631,8 @@ function blocoDoProcesso(p){
             ? `ver o e-mail ${escapar(x.pedido.numero)}`
             : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
       if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
-        b.push(`<a class="btn secundario" href="/erp/colaboradores?editar=${p.colaborador_id}"
-          target="_blank">abrir o cadastro para anexar</a>`);
+        b.push(`<a class="btn secundario" href="#" data-abrir-ambiente="${p.colaborador_id}"
+          data-ambiente-aba="documentos">abrir os documentos para anexar</a>`);
       return b.join(" ");
     }
     if (x.codigo === "CONTINUIDADE" && x.estado !== "FEITO")
@@ -1074,6 +1076,9 @@ async function verPedidoContabil(id){
 {# O ponto da pessoa numa janela POR CIMA da de atender — a de atender fica
    aberta, com o que já foi digitado (23/11/2026). #}
 function verPontoDaPessoa(id, competencia){
+  // 26/11/2026: o modal-ponte da pessoa, já na aba Ponto, no espelho do mês.
+  if (typeof abrirPessoa === "function")
+    return abrirPessoa(id, "ponto", {aba: "mes", competencia: competencia || ""});
   els("ponto-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}?aba=mes`
     + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
   els("dlg-ponto").showModal();
@@ -1861,7 +1866,12 @@ els("btn-limpar").addEventListener("click", () => {
 // As gavetas do filtro lateral abrem e fecham, como no resto do ERP.
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
-carregar();
+// ?pedido=ID abre o pedido direto (26/11/2026). A aba Demandas da pessoa manda
+// para cá — e a tela ignorava o número, caindo na lista.
+carregar().then(() => {
+  const n = new URLSearchParams(location.search).get("pedido");
+  if (/^\d+$/.test(n || "")) abrirPedido(Number(n));
+});
 botoesDeExportar("exportar");
 </script>
 {% endblock %}

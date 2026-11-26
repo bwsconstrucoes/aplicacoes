@@ -307,6 +307,10 @@ async function carregar(){
 function linkDoDono(d){
   const nome = escapar(d.dono || "");
   if (!nome) return "—";
+  // 26/11/2026: a pessoa abre no modal-ponte, sem sair do Arquivo.
+  if (d.colaborador_id)
+    return `<a href="#" data-abrir-ambiente="${d.colaborador_id}" data-ambiente-aba="documentos"
+              title="Abrir a pessoa">${nome}</a>`;
   const onde = d.colaborador_id ? `/erp/colaboradores?pessoa=${d.colaborador_id}`
              : d.empresa_id     ? `/erp/empresas?empresa=${d.empresa_id}`
              : d.obra_id        ? `/erp/obras?obra=${d.obra_id}`

@@ -152,6 +152,10 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                         P.SUPERVISOR_OBRA, P.PARCEIRO},
     # Pessoal: o DP revisa a despesa com colaborador depois do supervisor,
     # porque só ele conhece o cadastro e sabe se a verba é devida
+    # ⚑ 26/11/2026 — ABRIR A PESSOA no modal-ponte (o "ambiente da pessoa").
+    # Quem vê o pessoal OU o ponto abre; o que aparece dentro (cada aba) segue
+    # a permissão de cada tela. Ver `ACOES_IMPLICADAS`.
+    "abrir_pessoa":    {P.ADMIN},
     "ver_pessoal":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL, P.PARCEIRO},
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
@@ -419,6 +423,7 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "liberar_acesso_portal": ("gerir_usuarios",),
     # Quem libera também vê a fila.
     "ver_pedidos_de_acesso": ("liberar_acesso_portal", "gerir_usuarios"),
+    "abrir_pessoa": ("ver_pessoal", "ver_ponto"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -442,6 +447,7 @@ ACAO_ROTULOS = {
     "gerir_usuarios":       "Cadastrar e editar operadores",
     "liberar_acesso_portal": "Liberar acesso ao portal a quem pediu pelo ponto",
     "ver_pedidos_de_acesso": "Ver quem pediu acesso ao portal (sem liberar)",
+    "abrir_pessoa": "Abrir a ficha da pessoa (o que aparece segue cada área)",
     "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
     "ver_titulos":          "Ver a lista de solicitações de pagamento",

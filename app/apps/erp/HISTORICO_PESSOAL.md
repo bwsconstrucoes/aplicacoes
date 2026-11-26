@@ -141,6 +141,79 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (4) — O MODAL-PONTE DA PESSOA: uma janela, todas as abas, de qualquer tela
+
+**Ele, cobrando pela terceira vez o mesmo assunto (13/11, 17/11, 18/11):**
+
+> *"a conexão entre as telas de cadastro continua ruim (…) todas as telas que
+> têm relação com a pessoa, eu poder abrir de um único local, e esse ambiente
+> ser partilhado em todas as áreas que se relacionem com o colaborador (…)
+> Eu já havia pedido isso, mas ainda não tá bom, tá cheio de furos."*
+> E: *"Em resumo essa nova tela seria apenas uma ponte para as demais telas.
+> Abre um modal com todas as abas (…) Mas tudo abrindo dentro do mesmo modal."*
+> E: *"na parte de operadores (…) não é todo mundo quem pode visualizar. Isso
+> tem que estar atrelado ao perfil do usuário."*
+
+**POR QUE OS CONSERTOS ANTERIORES NÃO FECHARAM:** havia TRÊS fichas da mesma
+pessoa (a do ponto, em `gestao.html`, mostrada num quadro; a `ficha()` de
+Colaboradores, com Resumo/Pagamentos/Documentos/Mensagens/Operador; e o
+formulário completo `formulario()`), e CADA TELA tinha a sua própria cópia de
+"janela com quadro" + escuta de mensagens. Cada conserto acertava um caminho e
+deixava os outros. Um levantamento achou 15 furos: links com `target=_blank`
+(Pedidos ao DP, Regras, Cargos), navegação para outra página (Arquivo,
+Mensagens sem ponto), "Editar"/"Documentos" da ficha do ponto MORTOS em
+Pedidos ao DP e em Mensagens, "Ver ficha" de Títulos sem o número da pessoa,
+Operador inexistente na ficha do ponto e dependente de `configurar`, os
+botões do ponto no alto de todas as áreas, `?pedido=` ignorado.
+
+**O QUE FOI FEITO — UMA porta só:**
+- `abrirPessoa(id, aba, extra)` em `erp_base.html` (vale em TODA tela do ERP,
+  do ponto e da mensageria): um `<dialog>` com o nome e o resumo da pessoa no
+  alto e as abas **Cadastro · Documentos · Demandas · Ponto · Pagamentos ·
+  Mensagens · Operador**. Cada aba é a tela que JÁ EXISTE, embutida (sem
+  menu), num quadro que fica carregado enquanto o modal está aberto. Atalho
+  em HTML: `data-abrir-ambiente="ID"` (+ `data-ambiente-aba`).
+- `GET /erp/api/pessoa/<id>/ambiente` (ação nova `abrir_pessoa`, implicada
+  por `ver_pessoal` ou `ver_ponto`; catálogo: seção Colaboradores): o
+  cabeçalho e QUAIS abas quem olha pode abrir — a regra de cada aba é a da
+  tela dela (Operador = `gerir_usuarios`; Ponto = `ver_ponto`; Mensagens =
+  `ver_mensagens`; Cadastro editável = `editar_colaboradores`, senão o
+  resumo). Teste: o DP não vê Operador.
+- Colaboradores embutida aceita `?mostrar=` e `?ambiente=1`:
+  `/erp/colaboradores/cadastro/<id>` (cadastro | arquivos | demandas — o
+  formulário sem as abas que viraram abas do modal) e a rota nova
+  `/erp/colaboradores/pessoa/<id>` (resumo | documentos | pagamentos |
+  mensagens | operador, para quem só vê). Dentro do modal, o que levava a
+  outra tela troca de aba (`pedirAoAmbiente`): liberar acesso → Operador;
+  "abrir o cadastro completo" → Cadastro; "ver o ponto" → Ponto.
+- A ficha do ponto com `?area=ponto` vira a aba Ponto: só as abas do ponto
+  (+ "Documentos assinados"), sem nome, sem "Fechar"; e, em qualquer modo, os
+  botões do ponto (ajustar, compensação, atestado…) só aparecem na ÁREA do
+  ponto — não mais em Mensagens/Cadastro (queixa dele).
+- Entradas ligadas ao modal: lista e quadro de Colaboradores e `?editar=` /
+  `?documentos=` / `?pessoa=`; Pedidos ao DP (abrir o cadastro, abrir os
+  documentos para anexar, o nome da pessoa, "Ver o ponto" do desligamento);
+  TODAS as telas do ponto (`abrirPessoaPainel` → modal, na aba Ponto e na
+  sub-aba pedida); Mensagens; Arquivo; Regras do DP; Cargos; Títulos ("Ver
+  ficha", agora com a pessoa); Férias (as duas listas); Configurações ›
+  Operadores ("👤 ver a pessoa" — a lista de operadores passou a trazer o
+  `colaborador_id`).
+- Operador: a aba deixou de quebrar para quem gere operadores sem
+  `configurar` (as obras vêm de `/erp/api/lancamento/dados`).
+- Pedidos ao DP aceita `?pedido=ID` (a aba Demandas manda para lá).
+
+**O que ficou como estava, e por quê:** o "abrir" de um pedido dentro de
+Demandas ainda abre a tela de Pedidos numa aba nova (é outro objeto, não a
+pessoa — agora pelo menos cai no pedido). "Imprimir o espelho" e "ver tudo no
+painel das mensagens" também abrem aba nova (impressão e painel geral). O
+aplicativo do celular (`ponto/app.html`) não usa o modal — é outra tela. As
+fichas antigas (`dlg-unica`, `dlg-ponto`, `dlg-ficha`) ficaram no código como
+reserva, sem porta que leve a elas; tirar é proposta, não feito.
+
+Conferido no navegador com banco de teste: as sete abas, a entrada por
+Pedidos ao DP, pelo Ponto, por Operadores e pela lista, sem erro de
+JavaScript e sem aba nova aberta.
+
 ### 26/11/2026 (3) — Autônomo mensalista exige o salário do mês; salário e diária em destaque no atendimento
 
 Ele: *"para o colaborador Autônomo Mensalista, o campo Salário do Mês se torna

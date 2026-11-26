@@ -149,8 +149,8 @@ function bloco(titulo, lista, dica){
                  ? p.preenchidos : p.casos - p.preenchidos}
                discordante(s)</b> — ${escapar(p.o_que_sao_as_excecoes)}:
             <ul style="margin:6px 0 0 18px">
-              ${p.excecoes.map(e => `<li><a href="/erp/colaboradores?pessoa=${e.id}"
-                 target="_blank">${escapar(e.nome)}</a>
+              ${p.excecoes.map(e => `<li><a href="#" data-abrir-ambiente="${e.id}"
+                 >${escapar(e.nome)}</a>
                  <span class="dados">${documento(e.cpf)}</span></li>`).join("")}
             </ul>
           </div>` : `<div class="cartao-dica" style="margin-top:8px">
