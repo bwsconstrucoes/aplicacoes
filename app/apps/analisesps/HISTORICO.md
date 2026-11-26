@@ -12295,6 +12295,7 @@ somente Solicitações de uma conta especifica"*.
 - ⚠️ Caminho que morre com o Pipefy (o ERP vai substituí-lo): quando a prestação de
   contas do Fundo Fixo for para o ERP, o anexo passa a vir de lá.
 - Sem migração. Testes em `test_analisesps_lote_relatorio_completo.py`.
+- **Publicado em 26/11/2026** (sem migração).
 
 #### Leva 281 — Relatório completo do lote: anexo .zip entra, e PDF com defeito não derruba mais (26/11/2026)
 
