@@ -12275,6 +12275,27 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 284 — Folha: a competência achada em qualquer célula (o 13º foi recusado) (27/11/2026)
+
+- O dono, ao importar o 13º: *"Não foi possível importar: Campo "Mês/Ano" não
+  encontrado no arquivo."* O arquivo não chegou ao chat; a causa provável é a leitura
+  procurar a competência só na PRIMEIRA célula da linha (ou pular a linha do título).
+- Agora (`competencia_da_linha`): a linha inteira é lida, em qualquer linha (inclusive a
+  do título); rótulos "Mês/Ano", "Competência", "Referência", "Período"; "11/2026",
+  "13º/2026" (o 13º como mês 13 vira o mês da parcela — leva 279) e "Novembro/2026";
+  só o ano ("Ano: 2026") também serve. **No 13º sem o mês**, vale o mês da parcela
+  (11 a 1ª, 12 a 2ª) e o ano do arquivo ou o corrente, com aviso na importação. A folha
+  comum sem competência continua recusada.
+- **O arquivo real chegou no mesmo dia, e a causa era outra:** o 13º do Fortes NÃO
+  tem "Mês/Ano" nenhum — o cabeçalho é o título, a empresa e **"Data de Cálculo:
+  30/11/2026"**. A data de cálculo passou a ser lida (`data_de_calculo`) e, só no 13º,
+  dá a competência (11/2026). Na folha comum ela não manda (o fechamento de outubro
+  pode ser calculado em novembro). Lido: 353 pessoas, R$ 271.409,35, fecha.
+- A folha comum real (10/2026, 366 pessoas) lida igual a antes.
+- O arquivo do 13º tem nome e valor de cada pessoa: NÃO foi para o repositório; o
+  teste que o usa só roda onde ele está (`ARQUIVO_REAL_DO_13`).
+- Testes em `test_analisesps_folha_decimo.py` (inclui a tela da folha do 13º abrindo).
+
 #### Leva 283 — "Cancelar SP" pelo sistema: o card de pedido no Pipefy, das Solicitações, do Lote e da ficha (26/11/2026)
 
 - O dono: *"um botão tanto na parte de solicitações quanto em lote, que vai ser cancelar
@@ -12303,11 +12324,12 @@ somente Solicitações de uma conta especifica"*.
 - ⚠️ **SUBSTITUIU** o "Cancelar SP" da ficha, que abria o formulário PÚBLICO do Pipefy
   (`RCvCgX9c`) para preencher à mão (onde dava para escrever outro motivo). Mesmo lugar,
   mesmo nome; agora sem digitar nada e com motivo fixo. Dito ao dono; volta se ele pedir.
-- `colaborador_solicitante` vai como LISTA (campo de conexão). Não verificado com o pipe
-  real: se for outro tipo de campo, o Pipefy recusa e a janela mostra o erro — nada é
-  criado naquela SP.
+- `colaborador_solicitante` vai como LISTA com o id do registro. **Confirmado pelo dono
+  em 26/11/2026:** é campo de CONEXÃO com database, e 620439304 é o id do registro.
 - Sem migração. Testes: `test_analisesps_cancelar_sp.py`; três de `test_analisesps_telas.py`
   ajustados ao botão novo.
+- **Publicado em 26/11/2026** (sem migração). Falta o primeiro card de verdade — o dono
+  vai testar com uma SP só.
 
 #### Leva 282 — Relatório completo do lote: o "Anexo Prestação de Conta" do Fundo Fixo entra (26/11/2026)
 

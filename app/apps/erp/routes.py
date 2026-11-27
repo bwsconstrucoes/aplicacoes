@@ -5733,6 +5733,7 @@ def _credor_para_lancamento(s, forn) -> dict:
 def api_dados_lancamento():
     """Cadastros necessários ao formulário, já filtrados para uso."""
     from sqlalchemy import select
+    from app.apps.erp.core.titulos import pleitos
     from app.apps.erp.db.models.cadastros import (
         Categoria, Fornecedor, Obra, StatusConta,
     )
@@ -5765,6 +5766,9 @@ def api_dados_lancamento():
                     "tipos": [(t.value if hasattr(t, "value") else str(t))
                               for t in (c.tipos_permitidos or [])],
                 } for c in cats],
+                # ⚑ 27/11/2026: os subtipos, as formas e os campos de cada um —
+                # o MESMO catálogo do portal (`core/titulos/pleitos.py`).
+                "pleitos": pleitos.catalogo("erp"),
             }
         return jsonify({"ok": True, "dados": dados})
     except ErroNaoEncontrado:
@@ -5860,119 +5864,10 @@ def api_checar_duplicidade():
 def api_criar_titulo():
     """Grava o título. A crítica de duplicidade roda de novo aqui — o que
     bloqueia na tela não pode passar por chamada direta."""
-    from app.apps.erp.core.titulos import service as svc
-    from app.apps.erp.core.titulos.duplicidade import checar
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
-            critica = checar(s, {
-                "fornecedor_id": d.get("fornecedor_id"),
-                "valor": d.get("valor_bruto"), "parcelas": d.get("parcelas") or [],
-                "competencia": d.get("competencia"), "descricao": d.get("descricao"),
-                "categoria_id": d.get("categoria_id"),
-                "documento_numero": d.get("documento_numero")})
-            if critica["bloqueios"] and not d.get("forcar"):
-                return jsonify({"ok": False, "erro": "Lançamento bloqueado por duplicidade.",
-                                "critica": critica}), 409
-            usuario = _usuario_logado(s)
-            # credor lido do documento e ainda não cadastrado: cadastra agora,
-            # no salvamento — não antes, para não criar fornecedor de rascunho
-            if not d.get("fornecedor_id") and d.get("emitente_documento"):
-                from app.apps.erp.core.cadastros import fornecedores as svc_forn
-                from app.apps.erp.core.cadastros.validadores import somente_digitos
-                from app.apps.erp.db.models.cadastros import Fornecedor as _F
-                from sqlalchemy import select as _sel
-                doc = somente_digitos(d["emitente_documento"])
-                existente = s.scalars(_sel(_F).where(_F.cnpj_cpf == doc)).first()
-                if existente is not None:
-                    d["fornecedor_id"] = existente.id
-                else:
-                    try:
-                        novo = svc_forn.criar(s, {
-                            "tipo_pessoa": "PJ" if len(doc) == 14 else "PF",
-                            "cnpj_cpf": doc,
-                            "razao_social": (d.get("emitente_nome") or "").strip(),
-                            "municipio": d.get("municipio_emissao") or None,
-                        }, usuario)
-                        s.flush()
-                        d["fornecedor_id"] = novo.id
-                        logger.info("ERP: credor %s cadastrado no salvamento do título", doc)
-                    except ErroValidacao as e:
-                        return jsonify({"ok": False,
-                                        "erro": f"Não foi possível cadastrar o credor "
-                                                f"automaticamente: {e}"}), 400
-            if not d.get("tipo"):
-                from app.apps.erp.core.titulos.derivacao import derivar_por_contexto
-                from app.apps.erp.db.models.cadastros import Categoria
-                cat = s.get(Categoria, int(d.get("categoria_id") or 0))
-                if cat is None:
-                    return jsonify({"ok": False,
-                                    "erro": "Escolha a conta do plano financeiro."}), 400
-                tipo = derivar_por_contexto(cat, d)
-                d["tipo"] = tipo.value
-                if tipo.value == "T14_EXCECAO_SEM_NOTA" and not d.get("justificativa_excecao"):
-                    d["justificativa_excecao"] = (
-                        f"Lançamento sem documento fiscal vinculado — "
-                        f"registrado por {usuario.email}.")
-            # ⚑ A NOTA NÃO ENTRA SOLTA SE HÁ MATERIAL DESTE FORNECEDOR RECEBIDO
-            # E SEM CONTA (21/11/2026, noite). A pergunta do dono: "ficou o
-            # pedido recebido, pendente de lançamento de nota, e se alguém
-            # tentar lançar a nota sem o pedido, como é que a gente vai
-            # garantir que esse pedido seja vinculado depois?" Assim: a tela
-            # já oferecia o pedido; agora o servidor EXIGE a resposta — ou a
-            # pessoa escolhe o pedido, ou declara que a nota não é de nenhum
-            # deles (e a declaração fica registrada).
-            pedidos_sem_conta = []
-            if not d.get("pedido_compra_id") and d.get("fornecedor_id"):
-                try:
-                    with s.begin_nested():
-                        from app.apps.erp.core.suprimentos import lancamento as _lanc
-                        pedidos_sem_conta = [
-                            p for p in _lanc.pedidos_do_fornecedor_a_lancar(
-                                s, usuario, int(d["fornecedor_id"])) if p["chegou"]]
-                except Exception:      # suprimentos fora de uso: o lançamento segue
-                    logger.exception("ERP: não consegui procurar pedidos do credor")
-                    pedidos_sem_conta = []
-                if pedidos_sem_conta and not d.get("nao_e_de_pedido"):
-                    return jsonify({
-                        "ok": False, "escolher_pedido": True, "pedidos": pedidos_sem_conta,
-                        "erro": "Este fornecedor tem material recebido e ainda sem conta "
-                                "lançada. Diga de qual pedido é esta nota."}), 409
-            titulo = svc.criar_titulo(s, d, usuario)
-            if pedidos_sem_conta:
-                from app.apps.erp.core.comum.auditoria import registrar_evento
-                registrar_evento(s, "titulo", titulo.id, "NOTA_DECLARADA_SEM_PEDIDO",
-                                 {"pedidos_recusados": [p["numero"] for p in pedidos_sem_conta],
-                                  "declarado_por": usuario.email}, usuario.id)
-            # ⚑ LANÇADO A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA
-            # (20/11/2026): o título nasce pelo caminho de sempre, e SÓ ENTÃO
-            # é ligado ao pedido — a previsão de pagamento do pedido é baixada
-            # e o coordenador passa a ver a conta. Erro aqui desfaz o título
-            # inteiro (mesma transação): vínculo pela metade seria pior.
-            if d.get("pedido_compra_id"):
-                from app.apps.erp.core.suprimentos import lancamento as svc_lanc
-                svc_lanc.vincular(s, titulo, int(d["pedido_compra_id"]), usuario,
-                                  recebimento_id=d.get("recebimento_id") or None)
-            # ⚑ MATERIAL SEM PEDIDO DE COMPRA (21/11/2026): com a chave ligada
-            # em Suprimentos › Painel, o lançamento exige o motivo e nasce
-            # bloqueado até alguém com alçada autorizar. Desligada, não faz nada.
-            from app.apps.erp.core.suprimentos import fora_do_fluxo
-            retido = fora_do_fluxo.conferir(s, titulo, d, usuario)
-            if d.get("chave_acesso"):
-                titulo.chave_acesso_nfe = str(d["chave_acesso"])[:44] or None
-            if d.get("cno_documento"):
-                titulo.cno_documento = str(d["cno_documento"])[:30] or None
-            if critica["alertas"]:
-                from app.apps.erp.core.comum.auditoria import registrar_evento
-                registrar_evento(s, "titulo", titulo.id, "ALERTAS_DUPLICIDADE_ACEITOS",
-                                 {"alertas": critica["alertas"],
-                                  "confirmado_por": usuario.email}, usuario.id)
-            s.commit()
-            return jsonify({"ok": True, "titulo": {
-                "id": titulo.id, "numero_sp": titulo.numero_sp,
-                "status": titulo.status.value, "risco": titulo.score_risco,
-                "fora_do_fluxo": bool(retido),
-                "fora_do_fluxo_trava": bool(retido) and fora_do_fluxo.estado(s)[0] == "TRAVAR"}})
+            return _gravar_lancamento(s, d, _usuario_logado(s), porta="erp")
     except ErroValidacao as e:
         from app.apps.erp.core.suprimentos.fora_do_fluxo import PrecisaDoMotivo
         if isinstance(e, PrecisaDoMotivo):
@@ -5986,6 +5881,154 @@ def api_criar_titulo():
     except Exception as e:
         logger.exception("ERP: falha ao criar título")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+
+
+def _gravar_lancamento(s, d: dict, usuario, *, porta: str, apos_criar=None,
+                       documentos: list | None = None):
+    """Grava o título — o MESMO caminho para a tela Lançar do ERP e para o
+    portal da obra (27/11/2026). Duas portas, uma regra: a conferência do
+    subtipo (`pleitos`), a duplicidade, o credor cadastrado no salvamento, o
+    pedido de compra e o material fora do fluxo moram aqui, e só aqui.
+
+    `apos_criar(s, titulo)` roda antes do commit, na mesma transação — é por
+    onde o portal guarda os documentos junto do título que eles criaram.
+    Devolve a resposta pronta (jsonify, código). Erro de regra sobe como
+    exceção, e quem chama responde.
+    """
+    from app.apps.erp.core.titulos import pleitos
+    from app.apps.erp.core.titulos import service as svc
+    from app.apps.erp.core.titulos.duplicidade import checar
+    # ⚑ A COERÊNCIA DOS CAMPOS (27/11/2026). Com subtipo, confere tudo o que o
+    # subtipo exige e descarta o que ele não mostra; sem subtipo (quem chama a
+    # rota por fora das telas), ao menos o que a forma de pagamento não usa.
+    if d.get("subtipo"):
+        if documentos is None and isinstance(d.get("documentos_anexos"), list):
+            documentos = d["documentos_anexos"]
+        d = pleitos.conferir_pagamento(d, porta=porta, documentos=documentos)
+    else:
+        d = pleitos.limpar_pela_forma(d)
+    # O portal manda UMA obra; o título guarda o rateio. Valor inteiro nela.
+    if d.get("obra_id") and not d.get("rateios"):
+        bruto = pleitos._dec(d.get("valor_bruto")) or 0
+        d["rateios"] = [{"obra_id": int(d["obra_id"]), "valor": str(bruto)}]
+    # ⚑ QUEM É DA OBRA SÓ LANÇA NAS OBRAS DELE. O rateio não era conferido
+    # contra o alcance: o administrativo de obra lançaria na obra de outro.
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo, so_portal
+    if so_portal(usuario.perfil):
+        for r in (d.get("rateios") or []):
+            if r.get("obra_id"):
+                exigir_obra_no_escopo(s, usuario, int(r["obra_id"]))
+    critica = checar(s, {
+        "fornecedor_id": d.get("fornecedor_id"),
+        "valor": d.get("valor_bruto"), "parcelas": d.get("parcelas") or [],
+        "competencia": d.get("competencia"), "descricao": d.get("descricao"),
+        "categoria_id": d.get("categoria_id"),
+        "documento_numero": d.get("documento_numero")})
+    if critica["bloqueios"] and not d.get("forcar"):
+        return jsonify({"ok": False, "erro": "Lançamento bloqueado por duplicidade.",
+                        "critica": critica}), 409
+    # credor lido do documento e ainda não cadastrado: cadastra agora,
+    # no salvamento — não antes, para não criar fornecedor de rascunho
+    if not d.get("fornecedor_id") and d.get("emitente_documento"):
+        from app.apps.erp.core.cadastros import fornecedores as svc_forn
+        from app.apps.erp.core.cadastros.validadores import somente_digitos
+        from app.apps.erp.db.models.cadastros import Fornecedor as _F
+        from sqlalchemy import select as _sel
+        doc = somente_digitos(d["emitente_documento"])
+        existente = s.scalars(_sel(_F).where(_F.cnpj_cpf == doc)).first()
+        if existente is not None:
+            d["fornecedor_id"] = existente.id
+        else:
+            try:
+                novo = svc_forn.criar(s, {
+                    "tipo_pessoa": "PJ" if len(doc) == 14 else "PF",
+                    "cnpj_cpf": doc,
+                    "razao_social": (d.get("emitente_nome") or "").strip(),
+                    "municipio": d.get("municipio_emissao") or None,
+                }, usuario)
+                s.flush()
+                d["fornecedor_id"] = novo.id
+                logger.info("ERP: credor %s cadastrado no salvamento do título", doc)
+            except ErroValidacao as e:
+                return jsonify({"ok": False,
+                                "erro": f"Não foi possível cadastrar o credor "
+                                        f"automaticamente: {e}"}), 400
+    if not d.get("tipo"):
+        from app.apps.erp.core.titulos.derivacao import derivar_por_contexto
+        from app.apps.erp.db.models.cadastros import Categoria
+        cat = s.get(Categoria, int(d.get("categoria_id") or 0))
+        if cat is None:
+            return jsonify({"ok": False,
+                            "erro": "Escolha a conta do plano financeiro."}), 400
+        tipo = derivar_por_contexto(cat, d)
+        d["tipo"] = tipo.value
+        if tipo.value == "T14_EXCECAO_SEM_NOTA" and not d.get("justificativa_excecao"):
+            d["justificativa_excecao"] = (
+                f"Lançamento sem documento fiscal vinculado — "
+                f"registrado por {usuario.email}.")
+    # ⚑ A NOTA NÃO ENTRA SOLTA SE HÁ MATERIAL DESTE FORNECEDOR RECEBIDO
+    # E SEM CONTA (21/11/2026, noite). A pergunta do dono: "ficou o
+    # pedido recebido, pendente de lançamento de nota, e se alguém
+    # tentar lançar a nota sem o pedido, como é que a gente vai
+    # garantir que esse pedido seja vinculado depois?" Assim: a tela
+    # já oferecia o pedido; agora o servidor EXIGE a resposta — ou a
+    # pessoa escolhe o pedido, ou declara que a nota não é de nenhum
+    # deles (e a declaração fica registrada).
+    pedidos_sem_conta = []
+    if not d.get("pedido_compra_id") and d.get("fornecedor_id"):
+        try:
+            with s.begin_nested():
+                from app.apps.erp.core.suprimentos import lancamento as _lanc
+                pedidos_sem_conta = [
+                    p for p in _lanc.pedidos_do_fornecedor_a_lancar(
+                        s, usuario, int(d["fornecedor_id"])) if p["chegou"]]
+        except Exception:      # suprimentos fora de uso: o lançamento segue
+            logger.exception("ERP: não consegui procurar pedidos do credor")
+            pedidos_sem_conta = []
+        if pedidos_sem_conta and not d.get("nao_e_de_pedido"):
+            return jsonify({
+                "ok": False, "escolher_pedido": True, "pedidos": pedidos_sem_conta,
+                "erro": "Este fornecedor tem material recebido e ainda sem conta "
+                        "lançada. Diga de qual pedido é esta nota."}), 409
+    titulo = svc.criar_titulo(s, d, usuario)
+    if pedidos_sem_conta:
+        from app.apps.erp.core.comum.auditoria import registrar_evento
+        registrar_evento(s, "titulo", titulo.id, "NOTA_DECLARADA_SEM_PEDIDO",
+                         {"pedidos_recusados": [p["numero"] for p in pedidos_sem_conta],
+                          "declarado_por": usuario.email}, usuario.id)
+    # ⚑ LANÇADO A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA
+    # (20/11/2026): o título nasce pelo caminho de sempre, e SÓ ENTÃO
+    # é ligado ao pedido — a previsão de pagamento do pedido é baixada
+    # e o coordenador passa a ver a conta. Erro aqui desfaz o título
+    # inteiro (mesma transação): vínculo pela metade seria pior.
+    if d.get("pedido_compra_id"):
+        from app.apps.erp.core.suprimentos import lancamento as svc_lanc
+        svc_lanc.vincular(s, titulo, int(d["pedido_compra_id"]), usuario,
+                          recebimento_id=d.get("recebimento_id") or None)
+    # ⚑ MATERIAL SEM PEDIDO DE COMPRA (21/11/2026): com a chave ligada
+    # em Suprimentos › Painel, o lançamento exige o motivo e nasce
+    # bloqueado até alguém com alçada autorizar. Desligada, não faz nada.
+    from app.apps.erp.core.suprimentos import fora_do_fluxo
+    retido = fora_do_fluxo.conferir(s, titulo, d, usuario)
+    if d.get("chave_acesso"):
+        titulo.chave_acesso_nfe = str(d["chave_acesso"])[:44] or None
+    if d.get("cno_documento"):
+        titulo.cno_documento = str(d["cno_documento"])[:30] or None
+    if critica["alertas"]:
+        from app.apps.erp.core.comum.auditoria import registrar_evento
+        registrar_evento(s, "titulo", titulo.id, "ALERTAS_DUPLICIDADE_ACEITOS",
+                         {"alertas": critica["alertas"],
+                          "confirmado_por": usuario.email}, usuario.id)
+    if apos_criar is not None:
+        apos_criar(s, titulo)
+    s.commit()
+    return jsonify({"ok": True, "titulo": {
+        "id": titulo.id, "numero_sp": titulo.numero_sp,
+        "status": titulo.status.value, "risco": titulo.score_risco,
+        "fora_do_fluxo": bool(retido),
+        "fora_do_fluxo_trava": bool(retido) and fora_do_fluxo.estado(s)[0] == "TRAVAR"}})
 
 
 # ---------------------------------------------------------------------------
@@ -11362,6 +11405,16 @@ def api_criar_prestacao():
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
+            # ⚑ OS CAMPOS DO FUNDO FIXO (27/11/2026): a mesma conferência do
+            # portal — ver `core/titulos/pleitos.py`. E a obra de cada despesa
+            # dentro do alcance de quem presta contas.
+            from app.apps.erp.core.titulos import pleitos
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo, so_portal
+            d = pleitos.conferir_fundo_fixo(d)
+            if so_portal(usuario.perfil):
+                for item in (d.get("itens") or []):
+                    if item.get("obra_id"):
+                        exigir_obra_no_escopo(s, usuario, int(item["obra_id"]))
             titulo = criar_prestacao(s, d, usuario)
             # vincula os comprovantes ao título criado
             for item in (d.get("itens") or []):
@@ -11623,7 +11676,15 @@ def api_empreitas():
             usuario = _usuario_logado(s)
             if request.method == "GET":
                 return jsonify({"ok": True, "contratos": listar(s, usuario)})
-            contrato = criar_contrato(s, request.get_json(silent=True) or {}, usuario)
+            # ⚑ OS CAMPOS DO CONTRATO (27/11/2026), os mesmos do portal — ver
+            # `core/titulos/pleitos.py`. E a obra dentro do alcance: o cadastro
+            # do contrato não conferia, e quem é preso a obra cadastraria na
+            # obra de outro.
+            from app.apps.erp.core.titulos import pleitos
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            corpo = pleitos.conferir_contrato(request.get_json(silent=True) or {})
+            exigir_obra_no_escopo(s, usuario, int(corpo["obra_id"]))
+            contrato = criar_contrato(s, corpo, usuario)
             s.commit()
             return jsonify({"ok": True, "contrato": {
                 "id": contrato.id, "numero": contrato.numero,
@@ -11736,6 +11797,15 @@ def api_medir(contrato_id: int):
             from app.apps.erp.core.auth.permissoes import exigir_empreita_no_escopo
             exigir_empreita_no_escopo(s, _usuario_logado(s), contrato_id)
             usuario = _usuario_logado(s)
+            # ⚑ OS CAMPOS DA MEDIÇÃO (27/11/2026), os mesmos do portal: o
+            # período passou a ser obrigatório (é ele que pega medir duas vezes
+            # o mesmo serviço), e o contrato decide se mede por serviço ou por
+            # valor. Ver `core/titulos/pleitos.py`.
+            if not d.get("apenas_criticar"):
+                from app.apps.erp.core.titulos import pleitos
+                from app.apps.erp.core.titulos.empreita import jeito_de_medir
+                d = pleitos.conferir_medicao(d, jeito=jeito_de_medir(s, contrato_id),
+                                            contrato_id=contrato_id)
             if d.get("apenas_criticar"):
                 return jsonify({"ok": True,
                                 "criticas": criticar_medicao(s, contrato_id, d)})
@@ -14278,6 +14348,183 @@ def manual_portal_pdf():
     return send_from_directory(PASTA_MANUAL_PORTAL, "manual-portal-da-obra.pdf",
                                mimetype="application/pdf",
                                download_name="Manual do Portal da Obra.pdf")
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O FINANCEIRO NO PORTAL (27/11/2026) — pedir pagamento, fundo fixo, contrato
+# e medição de empreita, cancelar e acompanhar. EM TESTE: só o administrador
+# (`portal_financeiro.EM_TESTE_SO_ADMIN`).
+#
+# Gravar passa pelas MESMAS rotas e funções do ERP — a prestação, o contrato e a
+# medição chamam direto as rotas de lá; o pedido de pagamento tem rota própria
+# só porque leva os documentos na MESMA transação do título que eles criam
+# (regra "documento lido é arquivado no cadastro que ele criou"). A regra dos
+# campos é uma só: `core/titulos/pleitos.py`.
+# ---------------------------------------------------------------------------
+def _exigir_financeiro_do_portal(s):
+    from app.apps.erp.core.titulos.portal_financeiro import liberado
+    usuario = _usuario_logado(s)
+    if not liberado(usuario):
+        raise ErroNaoEncontrado("Não encontrado.")
+    return usuario
+
+
+@bp.route("/erp/portal/financeiro")
+@login_obrigatorio
+@permissao("lancar")
+def pagina_portal_financeiro():
+    from app.apps.erp.core.titulos.portal_financeiro import liberado
+    with get_session() as s:
+        if not liberado(_usuario_logado(s)):
+            return redirect(url_for("erp.pagina_portal"))
+    return render_template("erp_portal_financeiro.html")
+
+
+@bp.route("/erp/portal/api/financeiro/inicio")
+@login_obrigatorio
+@permissao("lancar")
+def api_portal_financeiro_inicio():
+    from sqlalchemy import select
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.core.titulos import pleitos, portal_financeiro as pf
+    from app.apps.erp.db.models.cadastros import Fornecedor, StatusConta
+    try:
+        with get_session() as s:
+            usuario = _exigir_financeiro_do_portal(s)
+            # O FAVORECIDO DO FUNDO FIXO é a própria pessoa, pelo CPF — a mesma
+            # regra de /erp/api/meu-cadastro.
+            doc = somente_digitos(usuario.cpf or "")
+            eu = (s.scalars(select(Fornecedor).where(Fornecedor.cnpj_cpf == doc)).first()
+                  if doc else None)
+            homologada = next((c for c in (eu.contas if eu else [])
+                               if c.status == StatusConta.HOMOLOGADA), None)
+            pendente = next((c for c in (eu.contas if eu else [])
+                             if c.status == StatusConta.PENDENTE), None)
+            return jsonify({"ok": True,
+                            "nome": usuario.nome,
+                            "catalogo": pleitos.catalogo("portal"),
+                            "obras": pf.obras(s, usuario),
+                            "categorias": pf.categorias(s, usuario),
+                            "contratos": pf.contratos_para_medir(s, usuario),
+                            "lancamentos": pf.meus_lancamentos(s, usuario),
+                            "meu_cadastro": {
+                                "tem_cpf": bool(doc),
+                                "fornecedor_id": eu.id if eu else None,
+                                "conta": (f"{homologada.pix_tipo}: {homologada.pix_chave}"
+                                          if homologada and homologada.pix_chave else None),
+                                "conta_id": homologada.id if homologada else
+                                            (pendente.id if pendente else None),
+                                "pendente": homologada is None and pendente is not None}})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao abrir o financeiro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/portal/api/financeiro/credores")
+@login_obrigatorio
+@permissao("lancar")
+def api_portal_financeiro_credores():
+    """Procura o credor pelo nome ou pelo CNPJ/CPF. Lista curta, de propósito:
+    carregar o cadastro inteiro no celular é o que a tela do ERP faz, e no
+    canteiro isso é espera."""
+    from sqlalchemy import or_, select
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.db.models.cadastros import Fornecedor
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"ok": True, "credores": []})
+    try:
+        with get_session() as s:
+            _exigir_financeiro_do_portal(s)
+            digitos = somente_digitos(q)
+            cond = [Fornecedor.razao_social.ilike(f"%{q}%"),
+                    Fornecedor.nome_fantasia.ilike(f"%{q}%")]
+            if len(digitos) >= 3:
+                cond.append(Fornecedor.cnpj_cpf.like(f"{digitos}%"))
+            achados = s.scalars(select(Fornecedor).where(
+                Fornecedor.ativo.is_(True), or_(*cond))
+                .order_by(Fornecedor.razao_social).limit(20)).all()
+            return jsonify({"ok": True,
+                            "credores": [_credor_para_lancamento(s, f) for f in achados]})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao procurar credor")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/portal/api/financeiro/pagamento", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_portal_financeiro_pagamento():
+    """O pedido de pagamento do portal: os dados (campo `dados`, JSON) e os
+    documentos (`arquivos`, com a categoria de cada um em `categorias`), numa
+    gravação só. Mesmo caminho do ERP — `_gravar_lancamento`."""
+    import json as _json
+    from app.apps.erp.core.documentos.armazenamento import salvar
+    try:
+        d = _json.loads(request.form.get("dados") or "{}")
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Dados do pedido ilegíveis."}), 400
+    arquivos = request.files.getlist("arquivos")
+    categorias = request.form.getlist("categorias")
+    if len(categorias) < len(arquivos):
+        categorias += ["OUTRO"] * (len(arquivos) - len(categorias))
+    conteudos = [(a.read(), a.filename or "documento") for a in arquivos]
+    try:
+        with get_session() as s:
+            usuario = _exigir_financeiro_do_portal(s)
+
+            def guardar_documentos(s_, titulo):
+                for (conteudo, nome), cat in zip(conteudos, categorias):
+                    if conteudo:
+                        salvar(s_, conteudo, nome, entidade_tipo="titulo",
+                               entidade_id=titulo.id, categoria=cat or "OUTRO",
+                               usuario=usuario)
+
+            # A porta fica gravada no título: "o que entrou pelo portal?" é
+            # pergunta do assistente (PERGUNTAS.md, 27/11/2026).
+            d["origem"] = "PORTAL"
+            return _gravar_lancamento(
+                s, d, usuario, porta="portal", apos_criar=guardar_documentos,
+                documentos=[c for (conteudo, _), c in zip(conteudos, categorias)
+                            if conteudo])
+    except ErroValidacao as e:
+        from app.apps.erp.core.suprimentos.fora_do_fluxo import PrecisaDoMotivo
+        if isinstance(e, PrecisaDoMotivo):
+            return jsonify({"ok": False, "erro": str(e), "precisa_motivo": True}), 409
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao pedir pagamento")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/portal/api/financeiro/lancamentos")
+@login_obrigatorio
+@permissao("lancar")
+def api_portal_financeiro_lancamentos():
+    from app.apps.erp.core.titulos import portal_financeiro as pf
+    with get_session() as s:
+        usuario = _exigir_financeiro_do_portal(s)
+        return jsonify({"ok": True, "lancamentos": pf.meus_lancamentos(s, usuario)})
+
+
+@bp.route("/erp/portal/api/financeiro/titulo/<int:titulo_id>")
+@login_obrigatorio
+@permissao("lancar")
+def api_portal_financeiro_titulo(titulo_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.titulos import portal_financeiro as pf
+    with get_session() as s:
+        usuario = _exigir_financeiro_do_portal(s)
+        exigir_titulo_no_escopo(s, usuario, titulo_id)
+        return jsonify({"ok": True, "titulo": pf.detalhe(s, usuario, titulo_id)})
 
 
 @bp.route("/erp/portal/api/inicio")

@@ -48,7 +48,10 @@ DPI_RASTER = 150
 # tela do Arquivo — que é onde se procura quando a fiscalização pede.
 CATEGORIAS = ("COMPROVANTE", "NOTA", "BOLETO", "GUIA", "CONTRATO", "ART",
               "SEGURO", "OS", "PRESTACAO_CONTAS", "MEDICAO", "PROPOSTA",
-              "FOTO", "OUTRO")
+              "FOTO", "OUTRO",
+              # 27/11/2026: as etiquetas que o pedido de pagamento confere
+              # (`titulos/pleitos.DOCUMENTOS_ROTULOS`).
+              "FATURA", "RECIBO")
 
 _MIMES = {
     ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
