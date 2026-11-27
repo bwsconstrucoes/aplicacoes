@@ -12295,6 +12295,8 @@ somente Solicitações de uma conta especifica"*.
 - O arquivo do 13º tem nome e valor de cada pessoa: NÃO foi para o repositório; o
   teste que o usa só roda onde ele está (`ARQUIVO_REAL_DO_13`).
 - Testes em `test_analisesps_folha_decimo.py` (inclui a tela da folha do 13º abrindo).
+- **Publicado em 27/11/2026** (sem migração). Falta o dono importar o 13º de novo e
+  conferir os meses de ponto do ano.
 
 #### Leva 283 — "Cancelar SP" pelo sistema: o card de pedido no Pipefy, das Solicitações, do Lote e da ficha (26/11/2026)
 
