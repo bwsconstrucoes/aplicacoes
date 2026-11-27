@@ -39,6 +39,7 @@
     color: #5A1010; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
     display: grid; gap: 4px; }
   #alerta-recusas .motivo { background: #fff; border-radius: 6px; padding: 6px 8px; }
+  #alerta-recusas .recusa.resolvido { background: #E8F6EE; border-color: #BFE3CC; color: #0F3D22; }
   .etiqueta.verde { background: #E8F6EE; color: #1C6B3C; }
   .etiqueta.ambar { background: #FFF1D6; color: #8A5A00; }
   .btn-portal { background: #F4B942; border: 0; border-radius: 10px; padding: 11px 16px;
@@ -342,10 +343,18 @@ async function carregar(){
 }
 
 function pintarRecusas(){
-  const l = (DADOS.pedidos || []).filter(p => p.recusa_nao_vista);
+  // 26/11/2026: o resolvido também aparece aqui, em verde (`resolvido_nao_visto`).
+  const l = (DADOS.pedidos || []).filter(p => p.recusa_nao_vista || p.resolvido_nao_visto);
   const caixa = els("alerta-recusas");
   caixa.classList.toggle("oculto", !l.length);
-  caixa.innerHTML = l.map(p => `
+  caixa.innerHTML = l.map(p => p.resolvido_nao_visto ? `
+    <div class="recusa resolvido">
+      <b>✅ Pedido resolvido</b>
+      <div>${esc(p.tipo)} <small>${esc(p.numero)}</small>${
+        p.pessoa ? " · " + esc(p.pessoa) : ""}</div>
+      ${p.resposta ? `<div class="motivo"><b>DP:</b> ${esc(p.resposta)}</div>` : ""}
+      <div><button class="btn-portal" type="button" data-ciente="${p.id}">Entendi</button></div>
+    </div>` : `
     <div class="recusa">
       <b>⚠️ Pedido recusado pelo DP</b>
       <div>${esc(p.tipo)} <small>${esc(p.numero)}</small>${
@@ -361,7 +370,7 @@ function pintarRecusas(){
         await chamar(`/erp/portal/api/pedidos/${b.dataset.ciente}/ciente-da-recusa`,
                      {method: "POST", body: "{}"});
         const p = (DADOS.pedidos || []).find(x => String(x.id) === b.dataset.ciente);
-        if (p) p.recusa_nao_vista = false;
+        if (p) { p.recusa_nao_vista = false; p.resolvido_nao_visto = false; }
         pintarRecusas();
       } catch(e){ b.disabled = false; recado(e.message, "erro"); }
     }));

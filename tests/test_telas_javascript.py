@@ -553,26 +553,22 @@ def test_recado_de_quem_roda_com_a_janela_aberta_vai_para_dentro_dela():
 # trás. Esta varredura recusa o `close()` voltar.
 # ---------------------------------------------------------------------------
 def test_a_janela_da_pessoa_nao_e_fechada_para_abrir_o_formulario():
+    """Ele reclamou duas vezes (17 e 18/11/2026) que abrir o cadastro fechava a
+    janela da pessoa. Desde 26/11/2026 a janela é o modal-ponte (erp_base.html):
+    pedir o cadastro ou os documentos TROCA DE ABA — nunca fecha o modal."""
     import re
     from pathlib import Path
 
-    tela = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp"
-            / "templates" / "erp_colaboradores.html").read_text(encoding="utf-8")
-
-    # o ouvinte das mensagens da janela da pessoa
-    m = re.search(r'd\.tipo !== "bws-ficha".*?\n\}\);', tela, re.S)
-    assert m, "o ouvinte de 'bws-ficha' sumiu — renomeado?"
+    base = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp"
+            / "templates" / "erp_base.html").read_text(encoding="utf-8")
+    m = re.search(r'd\.tipo === "bws-ficha".*?\n  \}', base, re.S)
+    assert m, "o modal-ponte não atende mais o 'bws-ficha' — renomeado?"
     corpo = m.group(0)
-
-    # fechar a janela de trás só é permitido quando ELA pediu ("fechar")
-    fechamentos = re.findall(r'els\("dlg-unica"\)\.close\(\)', corpo)
-    assert len(fechamentos) <= 1, (
-        "mais de um ponto fecha a janela da pessoa dentro do ouvinte")
-    if fechamentos:
-        assert 'd.acao === "fechar"' in corpo, (
-            'a janela da pessoa está sendo fechada sem ser a pedido dela. '
-            'Abrir o formulário NÃO pode fechá-la: ele reclamou disso duas '
-            'vezes, e fechada ela não volta por nada.')
+    assert "mostrarAbaDoAmbiente" in corpo
+    assert 'els("dlg-ambiente").close()' not in corpo
+    colab = (Path(__file__).resolve().parents[1] / "app" / "apps" / "erp"
+             / "templates" / "erp_colaboradores.html").read_text(encoding="utf-8")
+    assert 'id="dlg-unica"' not in colab, "a ficha antiga do ponto voltou"
 
 
 # ---------------------------------------------------------------------------

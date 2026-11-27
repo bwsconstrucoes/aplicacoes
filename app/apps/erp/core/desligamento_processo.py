@@ -196,7 +196,7 @@ def _pedido_a_contabilidade(s: Session, sol: dict[str, Any]
     if not sol.get("colaborador_id"):
         return None
     linha = s.execute(text("""
-        SELECT id, numero, situacao, prazo, respondido_em
+        SELECT id, numero, situacao, prazo, respondido_em, COALESCE(substring(assunto from '\\[((SDP|CT)-[0-9]{4,6}(/[0-9]{1,2})?)\\]'), numero) AS marca
           FROM dp_pedidos
          WHERE template = 'DESLIGAMENTO' AND situacao <> 'CANCELADO'
            AND (solicitacao_id = :sid
@@ -653,12 +653,13 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
             if pedido is None:
                 item["detalhe"] = "abrir o pedido de rescisão à contabilidade"
             elif pedido["situacao"] == "RASCUNHO":
-                item["detalhe"] = f"{pedido['numero']} montado e ainda não enviado"
+                item["detalhe"] = f"{pedido['marca']} montado e ainda não enviado"
             else:
                 item["estado"] = "FEITO"
-                item["detalhe"] = f"{pedido['numero']} enviado"
+                item["detalhe"] = f"{pedido['marca']} enviado"
             if pedido:
                 item["pedido"] = {"id": pedido["id"], "numero": pedido["numero"],
+                                  "marca": pedido["marca"],
                                   "situacao": pedido["situacao"]}
 
         elif cod == "DOCUMENTACAO":
@@ -666,9 +667,9 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
                 item["detalhe"] = "depois do pedido à contabilidade"
             elif pedido["situacao"] in ("RESPONDIDO", "CONCLUIDO"):
                 item["estado"] = "FEITO"
-                item["detalhe"] = f"voltou no {pedido['numero']}"
+                item["detalhe"] = f"voltou no {pedido['marca']}"
             elif pedido["situacao"] == "DIVERGENTE":
-                item["detalhe"] = (f"voltou no {pedido['numero']} com dado "
+                item["detalhe"] = (f"voltou no {pedido['marca']} com dado "
                                    "diferente do cadastro — resolva no pedido")
             else:
                 item["estado"] = "AGUARDANDO"

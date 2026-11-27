@@ -7,6 +7,17 @@ do Telegram e o notificador funcionam. Este aqui explica
 
 ---
 
+## 26/11/2026 (3) — (chat do DP) Tipo novo `erp.pedido_resolvido` (Telegram)
+
+Quando a solicitação ao DP fecha (pelo DP ou pelo agente), quem pediu recebe
+"✅ Pedido resolvido" pelo Telegram (`pessoal_solicitacoes.avisar_quem_pediu`).
+Nunca derruba o fechamento: falha no envio só vai para o log. Ver
+`erp/HISTORICO_PESSOAL.md`, 26/11/2026 (11).
+
+## 26/11/2026 (2) — (chat do DP) A janela antiga da ficha (`dlg-ficha`) saiu de `mensagens.html`
+
+O dono mandou apagar as fichas antigas ("é lixo"). `abrirFicha` agora só chama `abrirPessoa(id, "mensagens")`.
+
 ## 26/11/2026 — (feito pelo chat do DP) O nome da pessoa abre o modal-ponte
 
 `templates/mensagens.html`, `abrirFicha`: abre `abrirPessoa(id, "mensagens")` (erp_base.html), o modal único da

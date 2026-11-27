@@ -146,14 +146,19 @@ def test_o_agente_nasce_ligado_como_ele_decidiu(sessao_real, banco):
     # automáticas"* — a cobrança e a leitura do e-mail passam a FAZER.
     for chave in ("cobranca", "caixa"):
         assert modos[chave] == "FAZ", chave
-    for chave in ("leitura", "conferencia"):
-        assert modos.get(chave, "DESLIGADA") == "DESLIGADA", chave
+    assert modos.get("leitura", "DESLIGADA") == "DESLIGADA"
+    # 26/11/2026 (migração 129), ele: *"A conclusão (…) pode. Mas é bom dar
+    # destaque tudo que for feito pelo agente."* — a conferência FAZ.
+    assert modos["conferencia"] == "FAZ"
 
 
 @banco_
-def test_a_conferencia_nao_liga_porque_nao_existe(sessao_real, dono):
-    with pytest.raises(ErroValidacao, match="ainda não existe"):
-        ag.definir(sessao_real, "conferencia", modo_novo="SUGERE", usuario=dono)
+def test_a_conferencia_existe_e_pode_ser_desligada(sessao_real, dono):
+    """Construída em 26/11/2026 (`conferencia_retorno.py`)."""
+    ag.definir(sessao_real, "conferencia", modo_novo="DESLIGADA", usuario=dono)
+    assert ag.modo(sessao_real, "conferencia") == "DESLIGADA"
+    ag.definir(sessao_real, "conferencia", modo_novo="FAZ", usuario=dono)
+    assert ag.modo(sessao_real, "conferencia") == "FAZ"
 
 
 @banco_
@@ -691,3 +696,41 @@ def test_o_aviso_de_atraso_e_so_da_assinatura_de_ctps():
     c = _Pessoa(date.today() - timedelta(days=90))
     for outro in ("DEPENDENTE", "CONJUGE", "ALTERACAO_CARGO"):
         assert ct.avisos_do_pedido(None, outro, c) == []
+
+
+# ---------------------------------------------------------------------------
+# 26/11/2026 — o relógio do agente foge das batidas do ponto
+# ---------------------------------------------------------------------------
+def test_a_caixa_roda_de_hora_em_hora_so_em_dia_util_e_fora_das_batidas():
+    """Ele: *"de hora em hora, mas sempre protegendo o horário de batida do
+    ponto (…) 7 horas, meio-dia, 13 horas, 16 horas ou 17 horas (…) não
+    precisa no final de semana."*"""
+    from datetime import datetime
+    from app.apps.erp.core import agente_dp as ag
+    qua = lambda h, m: datetime(2026, 11, 25, h, m)          # quarta-feira
+    assert ag.vez_da_caixa(qua(8, 30)) == "2026-11-25 08:30"
+    assert ag.vez_da_caixa(qua(9, 10)) == "2026-11-25 08:30", "ainda vale a vez das 8h30"
+    assert ag.vez_da_caixa(qua(14, 45)) == "2026-11-25 14:30"
+    for h, m in ((7, 0), (7, 15), (12, 5), (13, 10), (16, 0), (16, 50), (17, 10)):
+        assert ag.em_janela_de_batida(qua(h, m)), (h, m)
+        assert ag.vez_da_caixa(qua(h, m)) is None, (h, m)
+    assert ag.vez_da_caixa(datetime(2026, 11, 28, 9, 30)) is None, "sábado não roda"
+    assert ag.vez_da_caixa(datetime(2026, 11, 29, 9, 30)) is None, "domingo não roda"
+
+
+def test_a_rodada_diaria_nao_cai_mais_na_batida_das_sete(monkeypatch):
+    from datetime import datetime
+    from app.apps.erp.core import agente_dp as ag
+    monkeypatch.setitem(ag._rodada, "dia", None)
+    assert ag.precisa_da_rodada(datetime(2026, 11, 25, 7, 5)) is False
+    assert ag.precisa_da_rodada(datetime(2026, 11, 25, 8, 10)) is False
+    assert ag.precisa_da_rodada(datetime(2026, 11, 25, 8, 30)) is True
+    assert ag.precisa_da_rodada(datetime(2026, 11, 25, 12, 10)) is False
+
+
+def test_o_relogio_da_fila_chama_o_agente():
+    from app.apps.erp.core import agente_dp
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    trabalhos.registrar_todos()
+    assert agente_dp.tique_do_relogio in tarefas._RELOGIO
+    assert "agente_dp_caixa" in tarefas._EXECUTORES

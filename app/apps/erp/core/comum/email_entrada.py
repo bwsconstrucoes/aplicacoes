@@ -72,7 +72,14 @@ TETO_ANEXO = 25 * 1024 * 1024
 # Quantas mensagens por rodada. Caixa com mil mensagens não lidas (a primeira
 # vez que isso ligar) não pode virar uma rodada de uma hora.
 TETO_MENSAGENS = 40
+# Só as mensagens dos últimos N dias são olhadas (26/11/2026): a caixa do DP
+# guarda anos de e-mail, e o que não é do agente fica não lido de propósito.
+DIAS_OLHADOS = 30
+# A pasta para onde vai, lida, a mensagem que o agente casou com um pedido.
+PASTA_DO_AGENTE = "Agente"
 MARCA_PEDIDO = re.compile(r"\[(CT-\d{4,6})\]")
+# ⚑ 26/11/2026 — número único: o e-mail novo leva o número da solicitação.
+MARCA_SOLICITACAO = re.compile(r"\[(SDP-\d{4,6}(?:/\d{1,2})?)\]")
 MARCA_DEVOLUCAO = re.compile(r"\[(DV-\d{4,6})\]")
 SO_DIGITOS = re.compile(r"\D")
 CPF_NO_TEXTO = re.compile(r"\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b")
@@ -268,6 +275,16 @@ def casar(s: Session, *, in_reply_to: str, references: str, assunto: str,
         if linha:
             return {"pedido_id": linha.id, "como": "In-Reply-To"}
 
+    m = MARCA_SOLICITACAO.search(assunto or "") or MARCA_SOLICITACAO.search(corpo or "")
+    if m:
+        # A marca fica no assunto que o ERP gravou; o mais novo com ela é o dono.
+        linha = s.execute(text("""
+            SELECT id FROM dp_pedidos WHERE assunto LIKE :m
+             ORDER BY id DESC LIMIT 1"""), {"m": f"%[{m.group(1)}]%"}).first()
+        if linha:
+            return {"pedido_id": linha.id, "como": "número da solicitação no assunto"}
+        return {"motivo": f"o assunto cita {m.group(1)}, que não tem e-mail aqui"}
+
     m = MARCA_PEDIDO.search(assunto or "") or MARCA_PEDIDO.search(corpo or "")
     if m:
         linha = s.execute(text("SELECT id FROM dp_pedidos WHERE numero = :n"),
@@ -303,6 +320,105 @@ def casar(s: Session, *, in_reply_to: str, references: str, assunto: str,
 
 
 # ---------------------------------------------------------------------------
+# AS NOVAS, A PASTA DO AGENTE E O TEXTO GUARDADO (26/11/2026)
+# ---------------------------------------------------------------------------
+_COLUNA_CORPO: dict[str, bool] = {}
+
+
+def _tem_coluna_corpo(s: Session) -> bool:
+    """A migração 129 pode não estar aplicada (o código sobe antes do botão)."""
+    if "ok" not in _COLUNA_CORPO:
+        _COLUNA_CORPO["ok"] = bool(s.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = "
+            "'email_entrada_mensagens' AND column_name = 'corpo'")).first())
+    return _COLUNA_CORPO["ok"]
+
+
+def _so_as_novas(s: Session, caixa, uids: list[bytes]) -> list[bytes]:
+    """Das não lidas, as que o sistema ainda não viu — pelo Message-ID, lido do
+    cabeçalho SEM abrir a mensagem (PEEK). Uma ida ao servidor para todas."""
+    if not uids:
+        return []
+    ok, dados = caixa.uid("FETCH", b",".join(uids),
+                          "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+    if ok != "OK":
+        return uids
+    por_uid: dict[bytes, str] = {}
+    for parte in dados or []:
+        if not isinstance(parte, tuple):
+            continue
+        m = re.search(rb"UID (\d+)", parte[0] or b"")
+        if not m:
+            continue
+        cab = email.message_from_bytes(parte[1] or b"")
+        por_uid[m.group(1)] = (cab.get("Message-ID") or "").strip()
+    ids = [x for x in por_uid.values() if x]
+    vistos: set[str] = set()
+    if ids:
+        vistos = {r[0] for r in s.execute(text(
+            "SELECT message_id FROM email_entrada_mensagens WHERE message_id = ANY(:i) "
+            "UNION SELECT message_id FROM envios_email WHERE message_id = ANY(:i)"),
+            {"i": ids}).all()}
+    return [u for u in uids if por_uid.get(u, "") not in vistos or not por_uid.get(u)]
+
+
+def _nome_da_pasta_do_agente(caixa) -> str:
+    """O nome da pasta como o servidor a escreve: na Locaweb as pastas são
+    filhas da caixa de entrada ("INBOX.enviadas"), então a do agente vira
+    "INBOX.Agente"; em servidor sem esse prefixo, "Agente"."""
+    try:
+        ok, linhas = caixa.list()
+    except Exception:                                   # noqa: BLE001
+        ok, linhas = "NO", []
+    delim, filhas_da_inbox = ".", False
+    for l in linhas or []:
+        txt = l.decode("utf-8", "replace") if isinstance(l, bytes) else str(l)
+        m = re.match(r'\(([^)]*)\)\s+"?([^"\s]+|NIL)"?\s+"?(.+?)"?$', txt)
+        if not m:
+            continue
+        if m.group(2) not in ("NIL", ""):
+            delim = m.group(2)
+        if m.group(3).upper().startswith("INBOX" + delim):
+            filhas_da_inbox = True
+    return f"INBOX{delim}{PASTA_DO_AGENTE}" if filhas_da_inbox else PASTA_DO_AGENTE
+
+
+def _mover_para_a_pasta_do_agente(s: Session, caixa, uids: list[bytes]) -> str:
+    """Leva para a pasta do agente, lidas, as mensagens que casaram. Cria a
+    pasta na primeira vez. Se o servidor não souber mover, ao menos marca como
+    lidas — e diz isso no relatório."""
+    pasta = _nome_da_pasta_do_agente(caixa)
+    conjunto = b",".join(uids)
+    try:
+        caixa.create(pasta)                     # já existir não é erro que importe
+    except Exception:                                   # noqa: BLE001
+        pass
+    try:
+        caixa.subscribe(pasta)                  # para o webmail mostrar a pasta
+    except Exception:                                   # noqa: BLE001
+        pass
+    try:
+        caixa.uid("STORE", conjunto, "+FLAGS", "(\\Seen)")
+    except Exception:                                   # noqa: BLE001
+        pass
+    movida = ""
+    try:
+        if "MOVE" in {str(x).upper() for x in (getattr(caixa, "capabilities", ()) or ())}:
+            ok, _ = caixa.uid("MOVE", conjunto, pasta)
+            movida = pasta if ok == "OK" else ""
+        # Sem MOVE não se copia-e-apaga: um "apagado" esquecido na caixa de
+        # entrada some no próximo "esvaziar" do webmail. Ficam lidas onde estão.
+    except Exception:                                   # noqa: BLE001
+        logger.warning("ERP/caixa: não consegui mover para %s; ficaram lidas na "
+                       "caixa de entrada", pasta, exc_info=True)
+    if movida and _tem_coluna_corpo(s):
+        s.execute(text("UPDATE email_entrada_mensagens SET movida_para = :p "
+                       "WHERE movida_para IS NULL AND processado_em > now() - interval '1 hour' "
+                       "AND (pedido_id IS NOT NULL OR devolucao_id IS NOT NULL)"), {"p": movida})
+    return movida or "não movidas (o servidor não aceitou) — ficaram lidas na entrada"
+
+
+# ---------------------------------------------------------------------------
 # A RODADA: ler, casar, arquivar, conferir
 # ---------------------------------------------------------------------------
 def rodada(s: Session, usuario: Optional[Usuario] = None, *,
@@ -328,18 +444,35 @@ def rodada(s: Session, usuario: Optional[Usuario] = None, *,
         "sem_dono": 0, "sem_anexo": 0, "repetidas": 0, "arquivados": 0,
         "mensagens": [], "erros": [],
     }
+    # ⚑ 26/11/2026 — LER SEM MARCAR COMO LIDA, E SÓ O QUE É NOVO. O dono:
+    # *"quando a gente coloca ler, ele está lendo toda a caixa de e-mail. Só
+    # que outros e-mails que não tem nada a ver com os assuntos, ele está
+    # deixando lido. (…) Olha o perigo disso."* Antes: a busca pegava as 40
+    # primeiras não lidas e o download (RFC822) as marcava como lidas — todas,
+    # inclusive as que não tinham nada a ver com o DP.
+    # Agora: (1) olha só os últimos 30 dias; (2) lê o cabeçalho de todas sem
+    # abrir e descarta as já vistas (senão as que não casam, que ficam não
+    # lidas, tomariam as 40 vagas para sempre); (3) baixa o resto com PEEK,
+    # que não marca nada; (4) só o que CASOU com um pedido vai para a pasta
+    # "Agente", lido. O resto fica onde estava, não lido, para o DP.
+    para_a_pasta: list[bytes] = []
     try:
-        ok, dados = caixa.search(None, "UNSEEN")
+        from datetime import date, timedelta
+        desde = (date.today() - timedelta(days=DIAS_OLHADOS)).strftime("%d-%b-%Y")
+        ok, dados = caixa.uid("SEARCH", None, "UNSEEN", "SINCE", desde)
         if ok != "OK":
             return {**rel, "erro": "o servidor não respondeu à busca"}
-        numeros = (dados[0] or b"").split()[:TETO_MENSAGENS]
-        for num in numeros:
+        uids = _so_as_novas(s, caixa, (dados[0] or b"").split())[:TETO_MENSAGENS]
+        for uid in uids:
             rel["olhou"] += 1
             try:
-                _uma_mensagem(s, caixa, num, rel, usuario, gravar, svc_ct)
+                if _uma_mensagem(s, caixa, uid, rel, usuario, gravar, svc_ct):
+                    para_a_pasta.append(uid)
             except Exception as e:                      # noqa: BLE001
                 logger.exception("ERP/caixa: falha numa mensagem")
                 rel["erros"].append(str(e))
+        if gravar and para_a_pasta:
+            rel["pasta_do_agente"] = _mover_para_a_pasta_do_agente(s, caixa, para_a_pasta)
     finally:
         _fechar(caixa)
     logger.info("ERP/caixa: %d mensagens, %d casadas, %d sem dono, %d anexos "
@@ -350,11 +483,14 @@ def rodada(s: Session, usuario: Optional[Usuario] = None, *,
 
 
 def _uma_mensagem(s: Session, caixa, num: bytes, rel: dict[str, Any],
-                  usuario: Optional[Usuario], gravar: bool, svc_ct) -> None:
-    ok, bruto = caixa.fetch(num, "(RFC822)")
-    if ok != "OK" or not bruto or not isinstance(bruto[0], tuple):
+                  usuario: Optional[Usuario], gravar: bool, svc_ct) -> bool:
+    """Devolve True quando a mensagem casou com um pedido (e vai para a pasta
+    do agente). `num` é o UID da mensagem."""
+    ok, bruto = caixa.uid("FETCH", num, "(BODY.PEEK[])")       # PEEK: não marca lida
+    bruto = [x for x in (bruto or []) if isinstance(x, tuple)]
+    if ok != "OK" or not bruto:
         rel["erros"].append("não consegui baixar uma das mensagens")
-        return
+        return False
     msg = email.message_from_bytes(bruto[0][1])
     mid = (msg.get("Message-ID") or "").strip()
     assunto = _texto_do_cabecalho(msg.get("Subject"))
@@ -366,7 +502,7 @@ def _uma_mensagem(s: Session, caixa, num: bytes, rel: dict[str, Any],
     if s.execute(text("SELECT 1 FROM email_entrada_mensagens "
                       "WHERE message_id = :m"), {"m": mid}).first():
         rel["repetidas"] += 1
-        return
+        return False
     # ⚑ A CÓPIA DO QUE O PRÓPRIO ERP MANDOU NÃO É RESPOSTA (23/11/2026). Desde
     # que o envio guarda cópia em "Enviados", uma caixa mal apontada (ou um
     # provedor que joga o enviado na entrada) traria o nosso e-mail de volta —
@@ -375,7 +511,7 @@ def _uma_mensagem(s: Session, caixa, num: bytes, rel: dict[str, Any],
     if s.execute(text("SELECT 1 FROM envios_email WHERE message_id = :m"),
                  {"m": mid}).first():
         rel["repetidas"] += 1
-        return
+        return False
 
     corpo = _corpo_em_texto(msg)
     anexos = _anexos(msg)
@@ -412,27 +548,28 @@ def _uma_mensagem(s: Session, caixa, num: bytes, rel: dict[str, Any],
                                           usuario, svc_ct)
             rel["arquivados"] += arquivados
 
+    casou = bool(achado.get("pedido_id") or achado.get("devolucao_id"))
     if gravar:
-        s.execute(text("""
+        # O TEXTO DA RESPOSTA FICA GUARDADO (26/11/2026, migração 129): é o que o
+        # pedido mostra — "não vê o que é que a contabilidade respondeu".
+        com_corpo = _tem_coluna_corpo(s)
+        s.execute(text(f"""
             INSERT INTO email_entrada_mensagens
                 (message_id, de, assunto, recebido_em, pedido_id, devolucao_id,
-                 situacao, motivo, anexos, arquivados)
-            VALUES (:m, :de, :a, :q, :p, :d, :s, :mo, :n, :ar)
+                 situacao, motivo, anexos, arquivados{", corpo" if com_corpo else ""})
+            VALUES (:m, :de, :a, :q, :p, :d, :s, :mo, :n, :ar{", :c" if com_corpo else ""})
             ON CONFLICT (message_id) DO NOTHING"""),
             {"m": mid, "de": de, "a": assunto, "q": quando,
              "p": achado.get("pedido_id"), "d": achado.get("devolucao_id"),
-             "s": situacao, "mo": motivo, "n": len(anexos), "ar": arquivados})
-        # MARCA COMO LIDA só depois de tudo dar certo. Se a rodada morrer no
-        # meio, a mensagem volta na próxima — melhor reprocessar (o Message-ID
-        # impede duplicar) que perder.
-        try:
-            caixa.store(num, "+FLAGS", "\\Seen")
-        except Exception:                               # noqa: BLE001
-            pass
+             "s": situacao, "mo": motivo, "n": len(anexos), "ar": arquivados,
+             "c": (corpo or "")[:20000]})
+        # A que NÃO casou fica como estava: não lida, na caixa de entrada — é do
+        # DP. A que casou vai, lida, para a pasta do agente (no fim da rodada).
     rel["mensagens"].append({"de": de, "assunto": assunto,
                              "situacao": situacao, "motivo": motivo,
                              "anexos": len(anexos), "arquivados": arquivados,
                              "como": achado.get("como", "")})
+    return casou
 
 
 def _entregar_anexos(s: Session, achado: dict[str, Any],
@@ -445,7 +582,7 @@ def _entregar_anexos(s: Session, achado: dict[str, Any],
     """
     from app.apps.erp.core.arquivo import service as svc_arq
 
-    quantos, primeiro_id = 0, None
+    quantos, primeiro_id, primeiro = 0, None, None
     if achado.get("pedido_id"):
         p = svc_ct.ler(s, achado["pedido_id"])
         tipo = p.get("documento_esperado") or "DOC-PESSOA-OUTRO"
@@ -475,7 +612,8 @@ def _entregar_anexos(s: Session, achado: dict[str, Any],
                 observacao=f"recebido de {de} — assunto: {assunto}",
                 usuario=usuario)
             quantos += 1
-            primeiro_id = primeiro_id or d.id
+            if primeiro_id is None:
+                primeiro_id, primeiro = d.id, a
         except ErroValidacao as e:
             logger.warning("ERP/caixa: não arquivei %s — %s", a["nome"], e)
 
@@ -484,8 +622,12 @@ def _entregar_anexos(s: Session, achado: dict[str, Any],
         # e, por enquanto, isso é vazio: a leitura do CONTEÚDO é a rotina de
         # conferência do agente, e ela é a última do desenho. Sem ela, o pedido
         # fica RESPONDIDO **sem conferência**, e a tela diz isso.
-        svc_ct.receber(s, achado["pedido_id"], usuario,
-                       documento_id=primeiro_id, lido={}, pelo_agente=True)
+        # 26/11/2026: o agente LÊ o documento e, se bate, conclui — ver
+        # `conferencia_retorno` (a rotina "conferencia" decide se ele age).
+        from app.apps.erp.core import conferencia_retorno
+        conferencia_retorno.conferir_e_talvez_concluir(
+            s, achado["pedido_id"], primeiro_id, primeiro["conteudo"],
+            primeiro["nome"], usuario)
     elif achado.get("devolucao_id") and primeiro_id:
         s.execute(text("""
             UPDATE dp_devolucoes

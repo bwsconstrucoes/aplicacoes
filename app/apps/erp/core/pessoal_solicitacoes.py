@@ -3083,9 +3083,47 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
             {"resposta": dados.get("resposta"), **efeito}, usuario)
     if efeito.get("processo"):
         depois_de_atender(s, {**p, "dados": pedido, "situacao": nova}, usuario)
+    else:
+        avisar_quem_pediu(s, solicitacao_id)            # resolvido na hora
     logger.info("ERP/DP: solicitação %s atendida por %s (%s)", p["numero"],
                 usuario.nome if usuario else "?", efeito.get("executou") or "sem efeito")
     return ler(s, solicitacao_id)
+
+
+def avisar_quem_pediu(s: Session, solicitacao_id: int, *, pelo_agente: bool = False) -> bool:
+    """⚑ QUEM PEDIU FICA SABENDO QUE FOI RESOLVIDO (26/11/2026). O dono: *"era
+    para casar, fechar a solicitação e a pessoa que pediu já ser avisada de que
+    aquilo foi resolvido. Aí ela vai receber isso como?"* Duas formas: o alerta
+    verde no alto do portal (`portal.meus_pedidos`, calculado pela situação —
+    vale para qualquer caminho que feche o pedido) e esta mensagem no celular,
+    pela mensageria (`erp.pedido_resolvido`). Nunca levanta erro: avisar não
+    pode desfazer o atendimento."""
+    try:
+        from app.apps.notificador import enviar_telegram
+        l = s.execute(text("""
+            SELECT sol.numero, sol.tipo, COALESCE(c.nome, sol.nome_informado) AS pessoa,
+                   COALESCE(u.telefone, sc.telefone) AS telefone, COALESCE(u.cpf, sc.cpf) AS cpf
+              FROM dp_solicitacoes sol
+              LEFT JOIN colaboradores c ON c.id = sol.colaborador_id
+              LEFT JOIN usuarios u ON u.id = sol.solicitante_id
+              LEFT JOIN colaboradores sc ON sc.id = sol.solicitante_colaborador_id
+             WHERE sol.id = :i"""), {"i": solicitacao_id}).mappings().first()
+        if not l or not (l["telefone"] or l["cpf"]):
+            return False
+        nome_tipo = TIPOS.get(l["tipo"], {}).get("nome", l["tipo"])
+        r = enviar_telegram(
+            telefone=l["telefone"], cpf=l["cpf"], finalidade="erp.pedido_resolvido",
+            mensagem=f"✅ Seu pedido {l['numero']} — {nome_tipo}"
+                     + (f" de {l['pessoa']}" if l["pessoa"] else "")
+                     + " — foi resolvido. Os detalhes estão no Portal da obra.")
+        if pelo_agente:
+            from app.apps.erp.core import agente_diario
+            agente_diario.registrar(s, "AVISOU", f"{l['numero']}: avisei quem pediu que foi resolvido.",
+                                    solicitacao_id=solicitacao_id)
+        return bool(r and r.get("ok"))
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("ERP/DP: não consegui avisar quem pediu %s (%s)", solicitacao_id, e)
+        return False
 
 
 def depois_de_atender(s: Session, sol: dict[str, Any],
@@ -3125,7 +3163,70 @@ def depois_de_atender(s: Session, sol: dict[str, Any],
     if (tipo in ("CADASTRO", "ADMISSAO_PRESTADOR")
             and (vinculo_da_pessoa(s, sol.get("colaborador_id")) or "CTPS") != "CTPS"):
         return
-    despachar(s, sol["id"], usuario)
+    numero = despachar(s, sol["id"], usuario)
+    if numero:
+        enviar_sozinho_se_pode(s, sol, numero)
+
+
+# ⚑ O QUE O AGENTE ENVIA À CONTABILIDADE SEM O DP CONFERIR (26/11/2026). O dono:
+# *"Questão de dependente, sim. (…) [Afastamento] a menos que o agente faça a
+# leitura, interprete, veja que está tudo ok. Se não tiver, ele deixa nas mãos
+# do DP. (…) Férias (…) não (…) A alteração de cargo também não. O DP tem que
+# analisar, a administração tem que validar."* Tudo o que não está aqui
+# continua montado em rascunho para o DP ler e enviar.
+ENVIA_SOZINHO = ("DEPENDENTE", "AFASTAMENTO")
+
+
+def _por_que_nao_envia(s: Session, sol: dict[str, Any]) -> str:
+    """"" quando está tudo certo para o agente enviar; senão, o motivo."""
+    from app.apps.erp.core import dp_analise
+    if sol["tipo"] not in ENVIA_SOZINHO:
+        return "este tipo o DP envia"
+    alertas = [a for a in dp_analise.analisar(s, sol) if a.get("ok") is not True]
+    if alertas:
+        return "a análise do pedido apontou: " + "; ".join(
+            str(a.get("texto") or a.get("titulo") or a) for a in alertas)[:400]
+    if sol["tipo"] == "AFASTAMENTO":
+        d = sol.get("dados") or {}
+        falta = [r for c, r in (("afastamento_natureza", "a natureza"),
+                                ("afast_inicio", "o início")) if not str(d.get(c) or "").strip()]
+        if falta:
+            return "falta " + " e ".join(falta) + " do afastamento"
+        if not papeis_do_pedido(s, int(sol["id"]), sol.get("numero") or "",
+                                sol.get("colaborador_id")):
+            return "o atestado não veio anexado ao pedido"
+    return ""
+
+
+def enviar_sozinho_se_pode(s: Session, sol: dict[str, Any], numero_ct: str) -> bool:
+    from app.apps.erp.core import agente_diario
+    from app.apps.erp.core import contabilidade as svc_ct
+    if sol["tipo"] not in ENVIA_SOZINHO:
+        return False
+    pid = s.execute(text("SELECT id FROM dp_pedidos WHERE numero = :n"),
+                    {"n": numero_ct}).scalar()
+    if not pid:
+        return False
+    motivo = _por_que_nao_envia(s, sol)
+    if motivo:
+        agente_diario.registrar(s, "NAO_ENVIOU", f"{sol.get('numero')}: montei o e-mail "
+                                f"{numero_ct}, mas não enviei sozinho — {motivo}. O DP lê e envia.",
+                                solicitacao_id=int(sol["id"]), pedido_id=pid)
+        return False
+    try:
+        with s.begin_nested():
+            svc_ct.enviar(s, pid, None, pelo_agente=True)
+    except Exception as e:                              # noqa: BLE001
+        agente_diario.registrar(s, "NAO_ENVIOU", f"{sol.get('numero')}: tentei enviar "
+                                f"{numero_ct} e não consegui ({e}). O DP envia.",
+                                solicitacao_id=int(sol["id"]), pedido_id=pid)
+        return False
+    agente_diario.registrar(s, "ENVIOU", f"{sol.get('numero')}: enviei à contabilidade o "
+                            f"e-mail {numero_ct} sozinho (tipo que pode ir sem conferência do DP).",
+                            solicitacao_id=int(sol["id"]), pedido_id=pid)
+    _evento(s, int(sol["id"]), "ENVIADO_PELO_AGENTE",
+            {"texto": f"{numero_ct} enviado à contabilidade pelo agente"}, None)
+    return True
 
 
 def despachar(s: Session, solicitacao_id: int, usuario: Optional[Usuario]) -> Optional[str]:
@@ -3583,9 +3684,18 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         "aberta": l["situacao"] in ABERTAS,
         "feitos": int(l["feitos"]), "total_itens": int(l["total_itens"]),
     } for l in linhas]
+    # ⚑ A MARCA "🤖 agente" (26/11/2026). Ele: *"tudo que for feito pelo agente
+    # (…) na própria listagem tem alguma tag que indique isso, porque serve de
+    # uma espécie de alerta para a gente abrir e verificar."* Some quando
+    # alguém revisa as ações no Diário do agente.
+    from app.apps.erp.core import agente_diario
+    do_agente = agente_diario.nao_revisadas_por_solicitacao(s, [x["id"] for x in fila])
+    for x in fila:
+        x["agente_a_revisar"] = do_agente.get(x["id"], 0)
     return {
         "solicitacoes": fila,
         "indicadores": {
+            "agente_a_revisar": sum(1 for x in fila if x["agente_a_revisar"]),
             "abertas": sum(1 for x in fila if x["aberta"]),
             "atendidas": sum(1 for x in fila if x["situacao"] == "ATENDIDA"),
             "recusadas": sum(1 for x in fila if x["situacao"] == "RECUSADA"),

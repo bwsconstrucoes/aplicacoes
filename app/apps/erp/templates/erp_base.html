@@ -1641,7 +1641,127 @@ function aviso(alvo, texto, tipo) {
 //
 // `FormData` fica de fora de propósito — nele o navegador monta o `boundary`
 // sozinho, e fixar o tipo à mão quebra o envio de arquivo.
+// ---------------------------------------------------------------------------
+// ⚑ O BOTÃO MOSTRA QUE ESTÁ TRABALHANDO (26/11/2026). Ele: *"Você clica no
+// botão e você fica na dúvida se está havendo algum processamento ou não (…)
+// eu clico ler agora e eu fico na dúvida se a leitura está acontecendo ou não,
+// porque a tela fica parada."* Vale para o ERP inteiro, num lugar só: toda
+// chamada ao servidor que nasce de um clique (até 1 s depois dele) desativa o
+// botão clicado, põe ⏳ nele e mostra "Processando…" no alto, até a resposta.
+// Resposta rápida (menos de 0,3 s) não pisca nada.
+// ---------------------------------------------------------------------------
+const OCUPADO = {botao: null, quando: 0, abertas: 0, timer: null};
+document.addEventListener("click", ev => {
+  const b = ev.target.closest && ev.target.closest("button, .btn, a.link-btn");
+  if (b) { OCUPADO.botao = b; OCUPADO.quando = Date.now(); }
+}, true);
+let FAIXA_OCUPADO = null;
+function _faixaOcupado(mostrar){
+  let f = FAIXA_OCUPADO;
+  if (!f && mostrar) {
+    f = FAIXA_OCUPADO = document.createElement("div");
+    f.textContent = "⏳ Processando…";
+    f.style.cssText = "position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:2147483647;"
+      + "background:#10233F; color:#fff; padding:6px 14px; border-radius:999px; font:600 13px system-ui;"
+      + "box-shadow:0 4px 14px rgba(0,0,0,.25)";
+    document.body.appendChild(f);
+  }
+  if (f) f.style.display = mostrar ? "" : "none";
+  // A faixa também por cima de janela aberta (top layer): ela é posta dentro
+  // da última janela modal aberta, se houver.
+  const aberta = [...document.querySelectorAll("dialog[open]")].pop();
+  if (f && mostrar && aberta && f.parentElement !== aberta) aberta.appendChild(f);
+  if (f && mostrar && !aberta && f.parentElement !== document.body) document.body.appendChild(f);
+}
+function _comecouTrabalho(){
+  const b = (Date.now() - OCUPADO.quando < 1000) ? OCUPADO.botao : null;
+  OCUPADO.botao = null;
+  OCUPADO.abertas++;
+  clearTimeout(OCUPADO.timer);
+  OCUPADO.timer = setTimeout(() => { if (OCUPADO.abertas > 0) _faixaOcupado(true); }, 300);
+  if (b && b.tagName === "BUTTON" && !b.disabled && !b.dataset.ocupado) {
+    b.dataset.ocupado = "1";
+    b.disabled = true;
+    b.dataset.textoAntes = b.innerHTML;
+    setTimeout(() => { if (b.dataset.ocupado) b.innerHTML = "⏳ " + b.dataset.textoAntes; }, 300);
+    return b;
+  }
+  return null;
+}
+function _terminouTrabalho(b){
+  OCUPADO.abertas = Math.max(0, OCUPADO.abertas - 1);
+  if (!OCUPADO.abertas) { clearTimeout(OCUPADO.timer); _faixaOcupado(false); }
+  if (b && b.dataset.ocupado) {
+    if (b.dataset.textoAntes !== undefined) b.innerHTML = b.dataset.textoAntes;
+    delete b.dataset.ocupado; delete b.dataset.textoAntes;
+    b.disabled = false;
+  }
+}
+
+// ⚑ O DIÁRIO DO AGENTE (26/11/2026) — a tabela das ações que ele fez sozinho,
+// com ✔ Certo / ✘ Errado. Usada dentro da solicitação e na aba "Diário do
+// agente" de Contabilidade e agente (`agente_diario`).
+function desenharAcoesDoAgente(acoes, comPedido){
+  const sel = a => a.revisao === "CERTO" ? `<span class="etiqueta verde">✔ certo</span>`
+    : a.revisao === "ERRADO" ? `<span class="etiqueta vermelho" title="${escapar(a.comentario || "")}">✘ errado</span>`
+    : `<button class="btn secundario" data-ag-certo="${a.id}">✔ Certo</button>
+       <button class="btn secundario" data-ag-errado="${a.id}">✘ Errado…</button>`;
+  return `<div class="tabela-rolagem"><table><tbody>${acoes.map(a => `<tr>
+    <td style="white-space:nowrap" class="dados">${dataBR((a.criado_em || "").slice(0, 10))}
+      ${(a.criado_em || "").slice(11, 16)}</td>
+    ${comPedido ? `<td class="dados" style="white-space:nowrap">${a.solicitacao_id
+      ? `<a href="#" class="link-btn" data-ag-sol="${a.solicitacao_id}">${escapar(a.solicitacao_numero || "")}</a>`
+      : "—"}<br><small>${escapar(a.pessoa || "")}</small></td>` : ""}
+    <td><b>${escapar(a.acao_rotulo || a.acao)}</b><br><small class="desc">${escapar(a.texto || "")}</small>
+      ${a.revisao === "ERRADO" && a.comentario ? `<br><small><i>${escapar(a.comentario)}</i>
+        — ${escapar(a.revisado_por_nome || "")}</small>` : ""}</td>
+    <td style="white-space:nowrap">${sel(a)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function ligarRevisaoDoAgente(lugar, depois){
+  const revisar = async (id, revisao, comentario) => {
+    await api(`/erp/api/dp/agente/acoes/${id}/revisao`, {method: "POST",
+      body: JSON.stringify({revisao, comentario: comentario || ""})});
+    if (depois) depois();
+  };
+  lugar.querySelectorAll("[data-ag-certo]").forEach(b => b.addEventListener("click", () =>
+    revisar(b.dataset.agCerto, "CERTO").catch(e => alert(e.message))));
+  lugar.querySelectorAll("[data-ag-errado]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "O agente errou aqui", textoOk: "Marcar como errado",
+      aviso: "Diga o que estava errado e o que era para ter feito. É isto que vira o ajuste "
+           + "do agente — traga para o chat do DP para mudar a regra.",
+      campos: [{nome: "comentario", rotulo: "O que era para ter feito", tipo: "textarea"}]});
+    if (r) revisar(b.dataset.agErrado, "ERRADO", r.comentario).catch(e => alert(e.message));
+  }));
+}
+
+// ⚑ O QUE A CONTABILIDADE RESPONDEU (26/11/2026) — o texto de cada resposta
+// lida pela caixa e os documentos que vieram nelas, dentro do pedido. Usado
+// pela tela da Contabilidade e pelo pedido ao DP (`contabilidade.o_que_voltou`).
+function blocoDoQueVoltou(p){
+  const rs = p.respostas || [], ds = p.documentos_que_voltaram || [];
+  if (!rs.length && !ds.length) return "";
+  const quando = r => (r.recebido_em || r.processado_em || "").slice(0, 16).replace("T", " ");
+  return `<div style="margin-top:12px; border-left:4px solid var(--verde, #1C6B3C); padding:8px 12px;
+      background:#E8F6EE; border-radius:8px"><b>O que a contabilidade respondeu</b>
+    ${ds.length ? `<div style="margin-top:6px"><small>Documentos que vieram (já no Arquivo da pessoa):</small>
+      ${ds.map(d => `<div>📎 <a href="/erp/anexo/${d.anexo_id}" target="_blank">${escapar(d.nome || d.tipo || "documento")}</a>
+        ${d.tipo ? `<small class="desc">· ${escapar(d.tipo)}</small>` : ""}</div>`).join("")}</div>` : ""}
+    ${rs.map(r => `<details style="margin-top:6px" ${rs.length === 1 ? "open" : ""}>
+      <summary><small>${escapar(quando(r))} · ${escapar(r.de || "")} · ${r.anexos || 0} anexo(s)</small></summary>
+      <div style="white-space:pre-wrap; font-size:13px; background:#fff; border-radius:6px; padding:8px;
+           max-height:240px; overflow:auto; margin-top:4px">${escapar(r.assunto || "")}\n\n${escapar(r.corpo || "(texto não guardado — resposta lida antes de 26/11/2026)")}</div>
+    </details>`).join("")}
+  </div>`;
+}
+
 async function api(url, opcoes) {
+  const botao = _comecouTrabalho();
+  try { return await _api(url, opcoes); }
+  finally { _terminouTrabalho(botao); }
+}
+
+async function _api(url, opcoes) {
   if (opcoes && typeof opcoes.body === "string") {
     const temTipo = Object.keys(opcoes.headers || {})
       .some(h => h.toLowerCase() === "content-type");
