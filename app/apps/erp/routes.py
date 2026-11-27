@@ -3780,6 +3780,46 @@ def api_perguntar_obras():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ===========================================================================
+# A PERGUNTA MONTADA NA HORA — Pessoal (27/11/2026)
+#
+# Ele, depois de o assistente responder bobagem a "quantos funcionários temos
+# hoje na obra de CRECHESUAPE?": *"a pergunta que a gente vai fazer é algo
+# meio que infinito. Não tem como ser previsto tudo (…) nessa lógica nunca vai
+# funcionar (…) se a gente não poderia construir algo dinâmico."*
+#
+# ⚑ A AÇÃO É `ver_pessoal`, e não `ver_erp` como os outros grupos. Aqui a
+# resposta é sobre GENTE — salário não sai nas visões, mas nome, obra, cargo
+# e vínculo saem, e isso não é informação de todo operador. O recorte por
+# obra é o MESMO das telas do Pessoal (`obras_no_pessoal`), aplicado dentro
+# das visões; ver `core/perguntas/mapa.py`.
+#
+# ⚠️ O CATÁLOGO TENTA PRIMEIRO. Pergunta conhecida é código testado, exata e
+# sem custo de IA; só o que ele não conhece desce para cá. Quem decide isso é
+# a tela, que já chama `entender` antes.
+# ===========================================================================
+@bp.route("/erp/api/perguntar/pessoal", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_perguntar_pessoal():
+    from app.apps.erp.core.perguntas import na_hora
+    d = request.get_json(silent=True) or {}
+    pergunta = (d.get("pergunta") or "").strip()
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = na_hora.responder(s, pergunta, atual)
+            s.commit()
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder pergunta montada na hora")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/perguntas/documentos")
 @login_obrigatorio
 @permissao("ver_arquivo")

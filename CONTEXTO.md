@@ -802,6 +802,40 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 27/11/2026 — O assistente passa a montar a consulta na hora, contra um MAPA
+
+Decisão do dono, e ela muda o desenho do assistente para TODAS as áreas:
+
+> *"A pergunta que a gente vai fazer é algo meio que infinito. Não tem como ser
+> previsto tudo (…) nessa lógica nunca vai funcionar (…) se a gente não poderia
+> construir algo dinâmico."*
+
+**O número que deu razão a ele:** o `PERGUNTAS.md` tinha 219 perguntas escritas
+e o catálogo respondia 20 — nove por cento, e a distância crescendo, porque
+cada funcionalidade nova nasce invisível para o assistente.
+
+**O desenho:** em vez de uma lista de PERGUNTAS, um **MAPA** de visões com as
+colunas explicadas em português de negócio e o recorte da pessoa já aplicado
+dentro; a IA monta a consulta contra o mapa; travas conferem o SQL antes de
+executar. **O catálogo escrito à mão continua** e é tentado primeiro: é exato e
+não custa IA.
+
+**Feito só para o PESSOAL** (`core/perguntas/mapa.py`, `consulta.py`,
+`na_hora.py`, rota `/erp/api/perguntar/pessoal`). Financeiro, Suprimentos e
+Obras seguem só com o catálogo — o mapa de cada uma é o mesmo trabalho, área
+por área, e **quem fizer deve seguir este desenho em vez de inventar outro**.
+
+**Entra aqui, e não só no histórico do Pessoal, por três razões:** vale para
+todas as áreas; abre um caminho em que **texto de IA vira SQL executado no
+banco da empresa** (as travas de `consulta.py` são a defesa, e são de leitura
+de texto, não um usuário só-leitura do Postgres — isso fica como o reforço
+seguinte); e cria um custo novo de IA por pergunta não catalogada.
+
+⚠️ **O caminho da IA nunca foi exercitado contra um modelo de verdade**: o
+ambiente de desenvolvimento não tem chave nem alcance de rede até a OpenAI. O
+que tem teste com banco é tudo o que acontece **depois** que ela responde — as
+travas, o recorte, a execução, o corte de linhas.
+
 ### 26/11/2026 — Tela que serve várias áreas: manda o ASSUNTO, não a tela
 
 Decisão do dono, em resposta a uma dúvida dele próprio: *"o portal normalmente

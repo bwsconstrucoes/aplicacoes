@@ -151,6 +151,113 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 27/11/2026 — O assistente deixa de ser um menu de 20 pratos (começando pelo Pessoal)
+
+**O que aconteceu:** ele perguntou *"quantos funcionários temos hoje na obra de
+CRECHESUAPE?"* e recebeu de volta duas opções sem relação nenhuma — *"o que tem
+a pagar num período?"* e *"quais obras não emitem nota hoje por falta de
+cadastro?"*. Reproduzi a frase no `entender`: as duas empataram em **0,40** de
+confiança, acima do mínimo de 0,34, cada uma por **duas palavras genéricas**
+(*hoje*, *obra*). A palavra que decidia tudo — **"funcionário"** — não existe em
+lugar nenhum do catálogo, **e nada penaliza isso**.
+
+**A causa de fundo, que é maior:** o catálogo tinha **20 perguntas**, em cinco
+assuntos (financeiro, contratos, suprimentos, obras, documentos). **Nenhuma
+sobre gente.** E o `PERGUNTAS.md` já tinha **219 perguntas escritas**. Nove por
+cento implementado, e a distância crescendo — cada coisa nova que o ERP ganha
+nasce invisível para o assistente, porque alguém precisaria escrever a consulta
+dela à mão.
+
+#### A virada, e foi ele quem a enxergou
+
+> *"A pergunta que a gente vai fazer é algo meio que infinito. Não tem como ser
+> previsto tudo (…) eu não queria perder tempo tendo que digitar alguma
+> pergunta que na verdade vai surgir no momento. Então nessa lógica nunca vai
+> funcionar. (…) Eu estava pensando se a gente não poderia construir algo
+> dinâmico."*
+
+Ele está certo, e isso derruba o caminho de "me diga as dez perguntas que você
+faria" que eu tinha proposto na véspera. **Em vez de uma lista de PERGUNTAS, um
+MAPA do que existe** — e a consulta montada na hora contra o mapa.
+
+**O catálogo escrito à mão NÃO SAIU**, e não deve sair: pergunta conhecida é
+código testado, exata, instantânea e **sem custo de IA**. Ele é tentado
+primeiro. O mapa cobre o resto, que é o infinito.
+
+#### As quatro peças
+
+| Peça | O que é |
+|---|---|
+| `core/perguntas/mapa.py` | as **visões** do Pessoal — `pessoas`, `solicitacoes`, `ferias`, `presenca_na_obra` — com as colunas explicadas em português de negócio e **o recorte da pessoa já aplicado dentro** |
+| `core/perguntas/consulta.py` | **as travas**: um SELECT só, só as visões do mapa, lista de palavras proibidas, prazo de 8 s, teto de 200 linhas |
+| `core/perguntas/na_hora.py` | pede a consulta à IA e devolve a resposta **com o caminho à mostra** |
+| `scripts/varrer_perguntas.py` | a **varredura dos papéis** — a ideia dele |
+
+⚠️ **POR QUE VISÕES E NÃO AS 144 TABELAS.** Entregar o banco inteiro para a IA
+escrever SQL seria mais rápido de fazer e errado por três motivos: a pessoa só
+pode ver as obras dela (o assistente viraria a porta dos fundos do controle de
+acesso); `situacao`, `etapa`, `vinculo` e `regime` parecem a mesma coisa e não
+são (a IA escolheria errado **em silêncio**); e com 144 tabelas não há como
+testar o que ela monta. Com quatro visões, há — e há.
+
+⚠️ **O RECORTE É O MESMO DAS TELAS** (`obras_no_pessoal`), aplicado dentro da
+visão. Não há regra nova: se o assistente tivesse recorte próprio, mudar a
+permissão numa tela o deixaria para trás. **Há teste com banco provando que
+quem alcança uma obra não conta a gente da outra** — inclusive quando a
+consulta montada tenta filtrar pela obra alheia.
+
+#### A resposta mostra o caminho, e isso não é enfeite
+
+O dono **não tem como conferir o número** — ele não lê SQL e não deve precisar.
+Então toda resposta montada na hora vem com **o que eu entendi**, **onde olhei**
+e **o que filtrei**, em português, e diz com todas as letras que **foi montada
+na hora**, ao contrário das do catálogo. É a mesma regra que a resposta sobre
+documentos segue desde 11/09/2026: *sem a citação, é a IA falando*.
+
+**E os três "não sei" passaram a ser três**, porque a saída de cada um é outra:
+*não entendi a pergunta* (reescreva), *entendi mas o sistema não guarda isso*
+(falta construir) e *entendi mas você não alcança* (falta permissão). Antes
+viravam todos a mesma sugestão aleatória.
+
+#### A varredura dos papéis — e o que ela NÃO é
+
+Ideia dele: *"se colocar no papel de um diretor (…) de um coordenador de
+suprimento ou de um supervisor de obras (…) uma IA, para poder fazer esses
+questionamentos."*
+
+⚠️ **Ela não treina nada, e dizer o contrário seria vender fumaça.** Nenhum
+modelo aprende; nada fica mais esperto sozinho. O que ela faz é **gerar a lista
+de perguntas no lugar dele** e medir quanto o sistema responde hoje: o que o
+catálogo já pega, o que o mapa monta, e **o que não dá — separando "o dado não
+existe" de "o mapa não alcança"**, que são dois trabalhos diferentes.
+
+**É ela que casa com o sistema em mudança**, que foi a última frase dele:
+cresceu uma área, mudou um campo? Roda de novo e a diferença mostra o que o
+assistente perdeu. Recusa banco sem "teste" no nome e recusa rodar sem chave de
+IA.
+
+#### O que fica em aberto, dito para não parecer pronto
+
+1. **A IA nunca foi exercitada contra este mapa.** Este ambiente não tem chave
+   da OpenAI nem alcance de rede até ela, então **o caminho da IA está
+   escrito e testado só até a porta**: as travas, o recorte e a execução têm
+   teste com banco (20 casos), mas ninguém viu o modelo montar uma consulta
+   real. É o primeiro trabalho de quem continuar.
+2. **A trava de leitura é conferência de TEXTO, não um usuário de banco
+   só-leitura.** Um usuário próprio, sem permissão de escrita, seria mais
+   forte. Enquanto não existe, o que segura são as travas de `consulta.py`.
+3. **Não há aprendizado ainda.** Pergunta respondida bem não vira pergunta
+   conhecida, e pergunta sem resposta não entra numa fila. Era a terceira
+   camada do desenho e **não foi feita** — precisa de migração e de tela.
+4. **Só Pessoal.** Financeiro, Suprimentos e Obras continuam só com o
+   catálogo. O mapa deles é o mesmo trabalho, área por área.
+
+**Arquivos compartilhados mexidos:** `routes.py` (rota nova
+`/erp/api/perguntar/pessoal`, ação `ver_pessoal`) e
+`templates/erp_perguntar.html`. **Sem migração de banco.**
+
+---
+
 ### 26/11/2026 (12) — O agente lê a caixa de hora em hora, nos dias úteis, fora das batidas do ponto
 
 Ele: *"de hora em hora, mas sempre protegendo o horário de batida do ponto

@@ -3140,6 +3140,36 @@ pergunta que antes não existia — e uma armadilha de contagem.
 
 ---
 
+## 3z-vicies. ⚑ ESTE ARQUIVO MUDOU DE PAPEL (27/11/2026)
+
+Ele tinha **219 perguntas escritas** e o assistente respondia **20**. O dono
+desmontou a lógica: *"a pergunta que a gente vai fazer é algo meio que
+infinito. Não tem como ser previsto tudo (…) nessa lógica nunca vai
+funcionar."*
+
+**O que mudou:** o assistente passou a montar a consulta na hora contra um
+**mapa** (`core/perguntas/mapa.py`), começando pelo Pessoal. A pergunta não
+precisa mais estar escrita aqui para ser respondida.
+
+**Então para que este arquivo continua servindo?** Para a parte que o mapa NÃO
+resolve, e que é a mais valiosa dele:
+
+- **as PALAVRAS AMBÍGUAS.** "A pagar" quer dizer três coisas; "custo da obra",
+  duas; "situação" e "etapa" parecem a mesma e não são. **É isto que vira o
+  campo `cuidados` de cada visão do mapa** — e é o que impede o número errado
+  com cara de certo. Ao descrever uma visão nova, as ambiguidades daqui vão
+  junto.
+- **a pergunta que o sistema AINDA NÃO responde, e o que falta.** Continua
+  valendo, e agora com uma fonte melhor: a varredura dos papéis
+  (`scripts/varrer_perguntas.py`) gera essa lista sozinha, pelo uso, em vez de
+  por adivinhação.
+
+**O que este arquivo deixou de ser:** a fila do que precisa virar código. Uma
+pergunta escrita aqui **não** precisa mais de uma função própria para ser
+respondida.
+
+---
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
