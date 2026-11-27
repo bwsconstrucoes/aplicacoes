@@ -12275,6 +12275,21 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 284 — Folha: a competência achada em qualquer célula (o 13º foi recusado) (27/11/2026)
+
+- O dono, ao importar o 13º: *"Não foi possível importar: Campo "Mês/Ano" não
+  encontrado no arquivo."* O arquivo não chegou ao chat; a causa provável é a leitura
+  procurar a competência só na PRIMEIRA célula da linha (ou pular a linha do título).
+- Agora (`competencia_da_linha`): a linha inteira é lida, em qualquer linha (inclusive a
+  do título); rótulos "Mês/Ano", "Competência", "Referência", "Período"; "11/2026",
+  "13º/2026" (o 13º como mês 13 vira o mês da parcela — leva 279) e "Novembro/2026";
+  só o ano ("Ano: 2026") também serve. **No 13º sem o mês**, vale o mês da parcela
+  (11 a 1ª, 12 a 2ª) e o ano do arquivo ou o corrente, com aviso na importação. A folha
+  comum sem competência continua recusada.
+- A folha comum real (10/2026, 366 pessoas) lida igual a antes.
+- Não verificado: o arquivo real do 13º — pedido ao dono.
+- Testes em `test_analisesps_folha_decimo.py`.
+
 #### Leva 283 — "Cancelar SP" pelo sistema: o card de pedido no Pipefy, das Solicitações, do Lote e da ficha (26/11/2026)
 
 - O dono: *"um botão tanto na parte de solicitações quanto em lote, que vai ser cancelar

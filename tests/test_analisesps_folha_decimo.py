@@ -121,3 +121,63 @@ def test_competencia_13_vira_o_mes_da_parcela(banco_analisesps, monkeypatch):
     from tests.test_analisesps_folha_arquivo import guardar
     feito = guardar(monkeypatch, titulo="Folha Sintética - 13º Salário", mes=13)
     assert feito["tipo"] == "decimo_2" and feito["mes"] == 12
+
+
+# --- 27/11/2026: "Campo Mês/Ano não encontrado no arquivo" no 13º ---------------
+def _linhas(cabeca):
+    """Uma folha mínima com o cabeçalho dado (lista de linhas) no lugar do de sempre."""
+    return cabeca + [["001 - MATRIZ"], ["Código", "Nome", "", "", "Líquido"],
+                     ["000013", "FULANO", "", "", "1.000,00"],
+                     ["", "", "", "Total:", "1000,00"]]
+
+
+TITULO = "Folha Sintética - Adiantamento de 13º Salário"
+EMPRESA = ["Empresa:", "BWS CONSTRUCOES LTDA", "CNPJ: 00.079.526/0001-09"]
+
+
+@pytest.mark.parametrize("cabeca,mes,ano", [
+    # o rótulo numa célula e a competência na seguinte
+    ([[TITULO], EMPRESA, ["Mês/Ano:", "11/2026"]], 11, 2026),
+    # a competência na MESMA linha do título
+    ([[TITULO, "", "Mês/Ano: 11/2026"], EMPRESA], 11, 2026),
+    # "13º/2026" e "13/2026" (o Fortes chama o 13º de mês 13): vira o mês da parcela
+    ([[TITULO], EMPRESA, ["Mês/Ano: 13º/2026"]], 13, 2026),
+    # outro rótulo e o mês por extenso
+    ([[TITULO], EMPRESA, ["Competência:", "Novembro/2026"]], 11, 2026),
+    # sem o mês: no 13º vale o da parcela, com o ano do arquivo
+    ([[TITULO], EMPRESA, ["Ano:", "2026"]], 11, 2026),
+])
+def test_a_competencia_do_13o_e_achada_em_QUALQUER_celula(cabeca, mes, ano):
+    lida = fs.interpretar(_linhas(cabeca))
+    if lida.mes is None and lida.tipo_sugerido in fs.DECIMOS:
+        # o mesmo caminho do `ler`
+        lida.ano = lida.ano or 2026
+        lida.mes = 11
+    assert (lida.mes, lida.ano) == (mes, ano)
+    assert lida.tipo_sugerido == "decimo_1"
+
+
+def test_sem_mes_no_13o_o_LER_usa_o_da_parcela_e_avisa(monkeypatch):
+    import xlrd
+
+    class Aba:
+        def __init__(self, linhas):
+            self.linhas = linhas
+            self.nrows = len(linhas)
+            self.ncols = max(len(l) for l in linhas)
+
+        def cell_value(self, r, c):
+            return self.linhas[r][c] if c < len(self.linhas[r]) else ""
+
+    linhas = _linhas([[TITULO], EMPRESA])
+    monkeypatch.setattr(xlrd, "open_workbook",
+                        lambda file_contents: type("L", (), {"sheet_by_index": lambda s, i: Aba(linhas)})())
+    lida = fs.ler(b"\xd0\xcf\x11\xe0" + b"x" * 100)
+    assert lida.mes == 11 and lida.ano == dt.date.today().year
+    assert any("13º" in a for a in lida.avisos)
+
+
+def test_a_folha_COMUM_sem_competencia_continua_recusada():
+    """Só o 13º ganha o mês da parcela; a folha comum sem competência é recusada."""
+    lida = fs.interpretar(_linhas([["Folha Sintética - Folha de Pagamento"], EMPRESA]))
+    assert lida.mes is None

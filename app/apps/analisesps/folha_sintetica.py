@@ -73,6 +73,36 @@ PADRAO_SETOR = re.compile(r"^(\d{1,4})\.(\d{1,3})\s*-\s*(.+)$")
 # "Mês/Ano: 08/2026"
 PADRAO_COMPETENCIA = re.compile(r"M[êe]s/Ano:\s*(\d{1,2})\s*/\s*(\d{4})")
 
+# ⚠️ A COMPETÊNCIA EM QUALQUER CÉLULA DA LINHA (27/11/2026). O arquivo do 13º foi
+# recusado com "Campo Mês/Ano não encontrado": a procura olhava só a PRIMEIRA
+# célula, e basta o relatório pôr o "Mês/Ano:" numa célula e o "11/2026" na
+# seguinte (ou a competência na mesma linha do título) para ela sumir. Agora a
+# linha inteira é lida, com as variações de rótulo e o mês por extenso.
+_MESES = {"janeiro": 1, "fevereiro": 2, "marco": 3, "março": 3, "abril": 4, "maio": 5,
+          "junho": 6, "julho": 7, "agosto": 8, "setembro": 9, "outubro": 10,
+          "novembro": 11, "dezembro": 12}
+_ROTULO_DA_COMPETENCIA = r"(?:M[êe]s\s*/\s*Ano|Compet[êe]ncia|Refer[êe]ncia|Per[íi]odo)\s*:?\s*"
+COMPETENCIA_NA_LINHA = re.compile(
+    _ROTULO_DA_COMPETENCIA + r"(\d{1,2})\s*[ºo°ª]?\s*/\s*(\d{4})", re.I)
+COMPETENCIA_POR_EXTENSO = re.compile(
+    _ROTULO_DA_COMPETENCIA + r"([A-Za-zçÇ]+)\s*(?:/|de)\s*(\d{4})", re.I)
+SO_O_ANO = re.compile(r"(?:\bAno|Exerc[íi]cio|Ano[\s-]*base)\s*:?\s*(\d{4})", re.I)
+
+
+def competencia_da_linha(texto: str) -> tuple:
+    """`(mes, ano)` escritos numa linha do cabeçalho — `(None, ano)` quando só o ano
+    aparece, `(None, None)` quando nada."""
+    achado = COMPETENCIA_NA_LINHA.search(texto)
+    if achado:
+        return int(achado.group(1)), int(achado.group(2))
+    achado = COMPETENCIA_POR_EXTENSO.search(texto)
+    if achado and achado.group(1).lower() in _MESES:
+        return _MESES[achado.group(1).lower()], int(achado.group(2))
+    achado = SO_O_ANO.search(texto)
+    if achado:
+        return None, int(achado.group(1))
+    return None, None
+
 # "Total: Geral (507 Empregado(s))"
 PADRAO_TOTAL_GERAL = re.compile(r"Total:\s*Geral\s*\((\d+)\s*Empregado", re.I)
 
@@ -296,6 +326,12 @@ def interpretar(linhas_brutas) -> FolhaLida:
         if not any(celulas):
             continue
         primeira = celulas[0]
+        if lida.mes is None:
+            mes, ano = competencia_da_linha(" ".join(c for c in celulas if c))
+            if mes is not None:
+                lida.mes, lida.ano = mes, ano
+            elif ano is not None and lida.ano is None:
+                lida.ano = ano
         # O `Líquido` é a ÚLTIMA célula com número da linha. O relatório tem
         # colunas vazias no meio (a 3ª e a 4ª), e a posição do valor mudou entre
         # versões do Fortes — pegar a última evita depender disso.
@@ -454,6 +490,15 @@ def ler(conteudo: bytes) -> FolhaLida:
         raise ErroDaFolha(
             "Nenhuma linha de empregado encontrada no arquivo. Verifique se é a "
             "Folha Sintética do Fortes.")
+    # O 13º SEM O MÊS NO ARQUIVO: vale o mês em que a parcela é paga — novembro a
+    # 1ª, dezembro a 2ª —, e o ano do arquivo (ou o corrente). Dito em aviso.
+    if lida.mes is None and lida.tipo_sugerido in DECIMOS:
+        import datetime as _dt
+        lida.ano = lida.ano or _dt.date.today().year
+        lida.mes = 11 if lida.tipo_sugerido == DECIMO_1 else 12
+        lida.avisos.append(
+            f"o arquivo não traz o mês da competência; considerada {lida.mes:02d}/{lida.ano}, "
+            f"o mês da {'1ª' if lida.mes == 11 else '2ª'} parcela do 13º.")
     if lida.mes is None or lida.ano is None:
         raise ErroDaFolha(
             'Campo "Mês/Ano" não encontrado no arquivo. Sem a competência não é '
