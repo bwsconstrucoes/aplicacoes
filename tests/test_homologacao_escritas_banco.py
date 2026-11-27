@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.apps.erp.core.auth.permissoes import decidir
 from homologacao import (  # noqa: F401  (`operadores` é fixture, usada por nome)
-    ESCRITAS, PERFIS_DO_ROTEIRO, PERMISSOES, como, identificacao,
+    ESCRITAS, PERFIS_DO_ROTEIRO, como, identificacao,
     operadores)
 
 pytestmark = pytest.mark.banco
@@ -30,7 +31,13 @@ pytestmark = pytest.mark.banco
 @pytest.mark.parametrize("caso", ESCRITAS, ids=identificacao)
 def test_escrita_sem_alcada_e_recusada(app_real, operadores, perfil, caso):
     endpoint, caminho, _metodo, acao = caso
-    if perfil in PERMISSOES[acao]:
+    # ⚑ A EXPECTATIVA VEM DE `decidir`, NÃO DA TABELA CRUA (27/11/2026).
+    # `PERMISSOES` é só um dos pedaços da decisão: há também as ações
+    # IMPLICADAS — quem tem o trabalho de uma tela abre a tela. Comparar com a
+    # tabela crua fazia este teste cobrar 403 de quem o sistema deixa entrar
+    # com razão (o supervisor de obra, que autoriza compra fora do fluxo e
+    # precisa da fila de pedidos).
+    if decidir(perfil, acao, {}, None):
         pytest.skip("perfil tem a ação; escrita real exige dados e é coberta pelos testes de domínio")
     c = como(app_real, operadores[perfil].id)
 

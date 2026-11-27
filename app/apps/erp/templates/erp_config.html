@@ -919,7 +919,57 @@ function desenharPerfis(){
       formPerfil(PERFIS_CADASTRADOS.find(x => x.id === +tr.dataset.perfil))));
 }
 
-// ---- O cadastro do perfil: uma linha por seção, três níveis, nada mais.
+// ---- Uma linha de permissão: o nome, AS TELAS QUE ELA ABRE, e os 3 níveis.
+//
+// ⚑ "as telas que ela abre" é a parte nova (27/11/2026), e é a resposta ao que
+// ele apontou: *"a divisão dessas seções tá totalmente solta, sem conexão
+// entre cada área e cada tela."* Sem esta linha azul, marcar era chute — o
+// nome da seção não dizia onde a pessoa ia entrar.
+function linhaDeSecao(s, nivel){
+  const abre = s.abre
+    ? (s.abre_o_modulo
+        ? `abre <b>as ${s.abre.length} telas</b> do módulo`
+        : `abre: <b>${s.abre.map(escapar).join(", ")}</b>`)
+    : `não abre tela — vale dentro de <b>${escapar(s.dentro_de || "várias telas")}</b>`;
+  const classeDoNivel = {NADA: "", LER: "n-ler", EDITAR: "n-editar"};
+  return `<div class="mod-linha">
+    <div><b>${escapar(s.nome)}</b>
+      <span class="abre">${abre}</span>
+      <div class="dica">${escapar(s.explicacao)}</div></div>
+    <span class="nivel3">
+      ${NIVEIS.map(n => `<label><input type="radio" name="pf-${escapar(s.chave)}"
+        class="pf-nivel ${classeDoNivel[n.chave] || ""}" value="${n.chave}"
+        data-secao="${escapar(s.chave)}" ${n.chave === nivel ? "checked" : ""}
+        ${n.chave === "EDITAR" && !s.editar.length ? "disabled" : ""}
+        ${n.chave === "LER" && !s.ler.length ? "disabled" : ""}
+        ><span>${escapar(n.rotulo)}</span></label>`).join("")}
+    </span></div>`;
+}
+
+// Quantas TELAS este perfil abre, contadas agora — para ele não precisar
+// somar as marcações de cabeça nem salvar para descobrir.
+function atualizarPlacarDoPerfil(){
+  const alvo = els("pf-placar");
+  if (!alvo) return;
+  const nivelPor = {};
+  document.querySelectorAll(".pf-nivel:checked").forEach(r => {
+    nivelPor[r.dataset.secao] = r.value;
+  });
+  const telas = new Set(); let mexe = 0; const modulos = new Set();
+  (CATALOGO || []).forEach(g => (g.telas || []).forEach(s => {
+    const nivel = nivelPor[s.chave] || "NADA";
+    if (nivel === "NADA") return;
+    (s.abre || []).forEach(nome => telas.add(`${g.modulo}›${nome}`));
+    modulos.add(g.modulo);
+    if (nivel === "EDITAR") mexe++;
+  }));
+  alvo.innerHTML = telas.size
+    ? `Como está, este perfil abre <b>${telas.size} tela(s)</b> em
+       <b>${modulos.size} módulo(s)</b>, com edição em <b>${mexe}</b> delas.`
+    : `Como está, este perfil <b>não abre nenhuma tela</b>.`;
+}
+
+// ---- O cadastro do perfil: uma linha por tela, três níveis, nada mais.
 function formPerfil(p){
   const novo = !p;
   p = p || {nome: "", descricao: "", secoes: {}, de_sistema: false, pessoas: 0};
@@ -934,32 +984,25 @@ function formPerfil(p){
         <input id="pf-desc" value="${escapar(p.descricao || "")}"
                placeholder="uma linha, para quem for escolher o perfil depois"></div>
     </div>
-    <div class="cartao-dica" style="margin:10px 0">Em cada tela, escolha
-      <b>Não acessa</b>, <b>Só olhar</b> ou <b>Olhar e mexer</b>. O que não for
-      marcado fica fechado — é o padrão. <b>As obras não se escolhem aqui</b>:
-      elas são do cadastro de cada pessoa.</div>
-    ${CATALOGO.map(area => `
-      <h4>${escapar(area.area)}</h4>
-      {# Sem rolagem própria: a caixa cresce e quem rola é o diálogo. Uma
-         rolagem dentro da outra esconde metade das telas da área, e quem está
-         montando o perfil não percebe que faltou marcar. #}
-      <div class="filtro-opcoes" style="border:1px solid var(--borda);
-           border-radius:8px; padding:6px; margin-bottom:10px;
-           max-height:none; overflow:visible">
-        ${area.secoes.map(s => `
-          <div style="display:flex; gap:10px; align-items:flex-start; padding:4px 2px">
-            <div style="flex:1">
-              <b>${escapar(s.nome)}</b>
-              <div class="dica" style="margin:0">${escapar(s.explicacao)}</div>
-            </div>
-            <select class="pf-nivel" data-secao="${escapar(s.chave)}"
-                    style="width:170px; margin:0">
-              ${NIVEIS.map(n => `<option value="${n.chave}"
-                ${n.chave === nivelDe(s.chave) ? "selected" : ""}
-                ${n.chave === "EDITAR" && !s.editar.length ? "disabled" : ""}
-                >${escapar(n.rotulo)}</option>`).join("")}
-            </select>
-          </div>`).join("")}
+    <div class="cartao-dica" style="margin:10px 0">Cada linha é uma
+      <b>tela do sistema</b>, no mesmo lugar em que ela aparece no menu — e
+      diz, em azul, <b>quais telas aquela marcação abre</b>. Escolha
+      <b>Não acessa</b>, <b>Só olhar</b> ou <b>Olhar e mexer</b>; o que não for
+      marcado fica fechado, que é o padrão. <b>As obras não se escolhem
+      aqui</b>: elas são do cadastro de cada pessoa.
+      <div id="pf-placar" style="margin-top:6px"></div></div>
+    ${CATALOGO.map(g => `
+      <div class="mod-bloco">
+        <header><b>${escapar(g.modulo)}</b><span class="espaco"></span>
+          <small style="color:var(--tinta-suave)">o módulo todo:</small>
+          ${NIVEIS.map(n => `<button type="button" class="link-btn pf-todo"
+             data-nivel="${n.chave}">${escapar(n.rotulo)}</button>`).join(" · ")}
+        </header>
+        ${g.telas.map(s => linhaDeSecao(s, nivelDe(s.chave))).join("")}
+        ${g.dentro.length ? `<div class="mod-dentro">
+          <small>não abre tela — libera o que se faz dentro dela</small>
+          ${g.dentro.map(s => linhaDeSecao(s, nivelDe(s.chave))).join("")}
+        </div>` : ""}
       </div>`).join("")}
     <div style="margin-top:14px; display:flex; gap:10px; align-items:center">
       <button class="btn" id="pf-salvar">Salvar</button>
@@ -969,10 +1012,39 @@ function formPerfil(p){
           : "ninguém está neste perfil"}</small>`}
     </div>`;
 
+  // O módulo inteiro em um clique: 39 marcações uma a uma era parte do que
+  // ele chamou de "forma de seleção ruim".
+  els("dlg-corpo").querySelectorAll(".pf-todo").forEach(btn =>
+    btn.addEventListener("click", () => {
+      // Linha que não tem o nível pedido fica no maior nível DAQUELE TAMANHO
+      // PARA BAIXO — nunca acima.
+      //
+      // ⚠️ A primeira versão disto pegava "o último nível que a linha tem", e
+      // isso era perigoso de verdade: clicar em "o módulo todo: Só olhar"
+      // marcava "olhar e mexer" nas seções que não têm leitura (o aval, a
+      // aprovação). Pedir MENOS acesso não pode, em hipótese nenhuma, dar
+      // MAIS — é o padrão NEGAR do ERP valendo também para a tela.
+      const ordem = NIVEIS.map(n => n.chave);
+      const teto = ordem.indexOf(btn.dataset.nivel);
+      const caixa = btn.closest(".mod-bloco");
+      caixa.querySelectorAll(".mod-linha").forEach(linha => {
+        for (let i = teto; i >= 0; i--) {
+          const alvo = linha.querySelector(
+            `.pf-nivel[value="${ordem[i]}"]:not(:disabled)`);
+          if (alvo) { alvo.checked = true; return; }
+        }
+      });
+      atualizarPlacarDoPerfil();
+    }));
+  els("dlg-corpo").addEventListener("change", e => {
+    if (e.target.classList.contains("pf-nivel")) atualizarPlacarDoPerfil();
+  });
+  atualizarPlacarDoPerfil();
+
   els("pf-salvar").addEventListener("click", async () => {
     const secoes = {};
-    document.querySelectorAll(".pf-nivel").forEach(sel => {
-      if (sel.value !== "NADA") secoes[sel.dataset.secao] = sel.value;
+    document.querySelectorAll(".pf-nivel:checked").forEach(r => {
+      if (r.value !== "NADA") secoes[r.dataset.secao] = r.value;
     });
     const corpo = {nome: els("pf-nome").value, descricao: els("pf-desc").value, secoes};
     try {

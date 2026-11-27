@@ -426,6 +426,45 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "abrir_pessoa": ("ver_pessoal", "ver_ponto"),
 }
 
+
+def _implicacoes_das_secoes() -> dict[str, tuple[str, ...]]:
+    """QUEM TEM O TRABALHO DA TELA ABRE A TELA — tirado do próprio catálogo.
+
+    ⚑ O DEFEITO QUE ISTO CONSERTA (27/11/2026). O dono: *"to achando que essa
+    lista do que pode fazer não condiz muito com a realidade"*, e depois
+    *"pelo que to vendo tem que revisar tudo"*. Ele estava certo, e a conta
+    mostrou onde: **8 telas não abriam para quem tinha justamente o trabalho
+    delas, por 17 marcações diferentes.** Quem podia "Cadastrar e editar
+    colaboradores" não abria Pessoal; quem podia "Fechar e reabrir o mês do
+    ponto" não abria o Ponto. A tela de cadastro prometia o verbo e fechava a
+    porta — sem erro nenhum, só uma área que não existe no menu.
+
+    O PERFIL CADASTRADO nunca teve esse furo: `secoes.acoes_do_nivel` já dá o
+    "só olhar" junto com o "olhar e mexer", de propósito (*"perfil que mexe e
+    não enxerga abriria a tela vazia"*). O furo estava nos outros DOIS caminhos
+    que concedem ação — o cargo em código e a marcação por pessoa (migração
+    032) —, que entregam ação solta, sem passar pela seção.
+
+    Por isso a lista nasce do CATÁLOGO, e não da mão: toda ação do "olhar e
+    mexer" de uma seção passa a implicar o "só olhar" da mesma seção. Seção
+    nova entra já certa, sem ninguém lembrar de acrescentar linha aqui — que é
+    exatamente como as 17 ficaram de fora.
+    """
+    from app.apps.erp.core.auth import secoes as cat
+
+    derivadas: dict[str, set[str]] = {}
+    for secao in cat.SECOES:
+        for porta in secao["ler"]:
+            for verbo in secao["editar"]:
+                derivadas.setdefault(porta, set()).add(verbo)
+    saida = {acao: set(outras) for acao, outras in ACOES_IMPLICADAS.items()}
+    for porta, verbos in derivadas.items():
+        saida.setdefault(porta, set()).update(verbos)
+    return {acao: tuple(sorted(outras)) for acao, outras in saida.items()}
+
+
+ACOES_IMPLICADAS = _implicacoes_das_secoes()
+
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
 # marca a caixinha não é programador: "pagar" precisa dizer o que libera.
 ACAO_ROTULOS = {
@@ -455,12 +494,12 @@ ACAO_ROTULOS = {
     "ver_empreitas":        "Ver as empreitas",
     "ver_obras":            "Ver o painel de obras",
     "ver_locacoes":         "Ver as locações de equipamento",
-    "ver_pessoal":          "Ver despesas de colaborador",
+    "ver_pessoal":          "Abrir as telas de Pessoal (colaboradores, despesas, contabilidade)",
     "ver_remuneracao":      "Ver salário, diária e dados de pagamento",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
     "conferir_cpf_colaborador": "Conferir se um CPF já tem cadastro",
-    "solicitar_dp":         "Abrir solicitação ao DP",
+    "solicitar_dp":         "Abrir solicitação ao DP e ver a fila e as férias",
     "atender_dp":           "Atender solicitação do DP",
     "pedir_contabilidade":  "Pedir à contabilidade e cobrar o retorno",
     "ver_suprimentos":      "Ver as telas de Suprimentos",
@@ -660,6 +699,57 @@ def _marcacoes_dos_perfis_acrescentados(s: Session,
                                if linha and linha[0]])
     except (TypeError, IndexError, ValueError):
         return {}
+
+
+def acoes_e_portal(s: Session, usuario_id: int,
+                   cargo: Any) -> tuple[Optional[set[str]], bool]:
+    """As ações do perfil E se a pessoa entra pelo portal, NUMA LEITURA SÓ.
+
+    ⚑ Existe por conta: a guarda roda antes de TODA rota, e as duas perguntas
+    saem das MESMAS duas consultas (o perfil principal e os perfis somados).
+    Perguntadas separado, seriam **duas idas ao banco a mais por página** —
+    numa tela que já faz várias, e multiplicado por todo mundo que usa o
+    sistema o dia inteiro.
+    """
+    from app.apps.erp.core.auth import secoes as cat
+
+    marcacoes = _marcacoes_do_perfil_principal(s, usuario_id)
+    extras = _marcacoes_dos_perfis_acrescentados(s, usuario_id)
+    if marcacoes is None and not extras:
+        return None, so_portal(cargo)
+    todas = _somar_niveis(marcacoes or {}, extras)
+    abertas = {secao for secao, nivel in todas.items() if nivel != cat.NADA}
+    return (cat.acoes_do_perfil(todas),
+            not (abertas - cat.SECOES_QUE_O_PORTAL_BASTA))
+
+
+def entra_pelo_portal(s: Session, usuario_id: int, cargo: Any) -> bool:
+    """Esta pessoa entra pelo PORTAL em vez das telas de dentro do ERP?
+
+    ⚑ QUEM DECIDE É O PERFIL, NÃO O CARGO (27/11/2026). Pedido dele, com todas
+    as letras: *"o cargo base não deveria influenciar em nada. quem deve mandar
+    é o perfil."*
+
+    E o prejuízo que motivou: uma pessoa do DP era levada ao portal toda vez
+    que entrava, e o motivo era o **cargo base** do cadastro dela — não o
+    perfil de acesso, que abria meio sistema. Nenhuma tela dizia isso; foi
+    preciso ler código para descobrir.
+
+    A regra agora:
+
+      · **tem perfil cadastrado** → o perfil manda, e o cargo é ignorado. Ela
+        entra pelo portal se o perfil não abrir nada além do que se faz pelo
+        portal (`secoes.SECOES_QUE_O_PORTAL_BASTA`).
+      · **não tem perfil nenhum** → aí o cargo ainda decide, porque não há
+        outra coisa para decidir. É a mesma ponte que segura o ERP de pé entre
+        publicar e apertar o botão do banco, e ela some sozinha quando todo
+        mundo tiver perfil.
+
+    ⚠️ Perfil que não abre NADA também entra pelo portal — é o certo: quem não
+    tem tela de escritório nenhuma não tem o que fazer do lado de dentro, e
+    cair numa tela vazia seria pior.
+    """
+    return acoes_e_portal(s, usuario_id, cargo)[1]
 
 
 def _somar_niveis(*conjuntos: dict[str, str]) -> dict[str, str]:
@@ -1093,8 +1183,10 @@ def exigir_titulo_no_escopo(s: Session, usuario: Usuario, titulo_id: int) -> Non
 
 
 def pode_ver_obra(s: Session, usuario: Usuario, obra_id: int) -> bool:
-    # Quem é da obra abre só as obras dele (24/11/2026, ver `PERFIS_SO_PORTAL`).
-    obras = (obras_de_registro_sem_autor(s, usuario) if so_portal(usuario.perfil)
+    # Quem é da obra abre só as obras dele (24/11/2026). Desde 27/11/2026 quem
+    # é "da obra" sai do PERFIL, e não do cargo — ver `entra_pelo_portal`.
+    obras = (obras_de_registro_sem_autor(s, usuario)
+             if entra_pelo_portal(s, usuario.id, usuario.perfil)
              else obras_do_usuario(s, usuario))
     if obras is None:
         return True                      # perfil que enxerga todas as obras

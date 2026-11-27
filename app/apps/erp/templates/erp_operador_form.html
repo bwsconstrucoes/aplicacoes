@@ -70,6 +70,24 @@ function formOperador(u, opcoes){
   if (naJanela)
     els("dlg-titulo").textContent = novo ? "Novo operador" : `Editar ${u.nome}`;
   els(CORPO).innerHTML = `<div id="dlg-msg"></div>
+    {# ⚑ QUATRO PERGUNTAS, UMA POR ABA (27/11/2026). Ele: *"essa tela precisa
+       de uma repaginação completa. a experiência de uso dela é péssima."*
+
+       O que havia: UM formulário em rolagem única com ~90 controles — nome,
+       perfil, obras, cargo, senha, fundo fixo, limite de IA, contas do plano,
+       empresas, projetos, obras de novo e 64 caixinhas de permissão. Quem
+       abria para trocar um telefone rolava a tela inteira.
+
+       A divisão não é estética: são as quatro perguntas que o cadastro
+       responde, e elas já estavam escritas na tela em pedaços soltos —
+       "o que a pessoa faz" (perfil) e "onde ela faz" (obras). #}
+    <div class="dlg-abas" id="op-abas">
+      <button type="button" data-pg="quem" class="ativa">Quem é</button>
+      <button type="button" data-pg="faz">O que faz</button>
+      <button type="button" data-pg="onde">Onde faz</button>
+      <button type="button" data-pg="limites">Limites</button>
+    </div>
+    <div class="dlg-pagina ativa" data-pg="quem">
     <div class="form-grade">
       <div class="campo" style="grid-column:span 2"><label>Nome *</label>
         <input id="op-nome" value="${u.nome||""}"></div>
@@ -77,6 +95,35 @@ function formOperador(u, opcoes){
         <input id="op-email" type="email" value="${u.email||""}" ${novo?"":"disabled"}></div>
       <div class="campo"><label>CPF</label><input id="op-cpf" value="${u.cpf||""}" placeholder="somente números"></div>
       <div class="campo"><label>Telefone</label><input id="op-tel" value="${u.telefone||""}" placeholder="85999998888"></div>
+      <div class="campo"><label>${novo?"Senha *":"Nova senha (deixe vazio para manter)"}</label>
+        <input id="op-senha" type="password" placeholder="mínimo 8 caracteres"></div>
+      <div class="campo"><label>Situação</label><select id="op-ativo">
+        <option value="1" ${u.ativo?"selected":""}>Ativo</option>
+        <option value="0" ${u.ativo?"":"selected"}>Inativo</option></select></div>
+    </div>
+    ${novo ? `
+    <div class="aviso info" style="margin-top:12px">Deixe a <b>senha em
+      branco</b>: ao salvar, a pessoa recebe um e-mail para escolher a senha
+      dela. <b>Ninguém mais vai saber qual é</b> — nem você. Se preferir
+      definir uma senha aqui, o convite não é enviado.</div>` : `
+    {# O CONVITE DE PRIMEIRO ACESSO, na ficha de quem já existe. Serve para
+       reenviar ("não chegou", "caiu no spam") e para quem foi cadastrado
+       antes de isto existir. Reenviar invalida o link anterior. #}
+    <div class="campo" style="margin-top:12px">
+      <label>Acesso da pessoa</label>
+      <div id="op-convite" class="desc">—</div>
+      <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap">
+        <button class="btn secundario" type="button" id="op-convidar">
+          Enviar convite para definir a senha</button>
+      </div>
+      <div class="dica">A pessoa recebe um link e escolhe a própria senha. O
+        link vale 7 dias, serve uma vez só, e <b>enviar de novo cancela o
+        anterior</b>.</div>
+    </div>`}
+    </div>
+
+    <div class="dlg-pagina" data-pg="faz">
+    <div class="form-grade">
       <div class="campo"><label>Perfil de acesso *</label><select id="op-perfil-cad">
         <option value="">— nenhum —</option>
         ${PERFIS_CADASTRADOS.map(p=>`<option value="${p.id}"
@@ -109,6 +156,45 @@ function formOperador(u, opcoes){
           use as caixinhas de <b>ajuste fino</b>, lá no fim deste cadastro.
           As <b>obras</b> continuam sendo as marcadas aqui embaixo, iguais
           para todos os perfis dela.</div></div>
+      <div class="campo"><label>Cargo base</label><select id="op-perfil">
+        ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
+      </select>
+        {# ⚑ NÃO SAI (24/11/2026). Ele pediu para excluir o "cargo (herança)",
+           "se não tiver outra coisa" — e tem: é ele que diz se a pessoa é do
+           ESCRITÓRIO ou da OBRA (administrativo de obra = só o portal,
+           `PERFIS_SO_PORTAL`), e ainda decide o acesso de quem não tem perfil
+           escolhido. Mudou o nome e a explicação, não a função. #}
+        {# ⚑ 27/11/2026: *"o cargo base não deveria influenciar em nada. quem
+           deve mandar é o perfil."* Passou a valer SÓ para quem não tem perfil
+           escolhido — e o texto diz isso, porque antes ele dizia o contrário e
+           prendeu uma pessoa do DP fora do ERP. #}
+        <div class="dica"><b>Só vale para quem não tem perfil de acesso
+          escolhido acima.</b> Com perfil escolhido, é o perfil que manda em
+          tudo — inclusive em entrar pelo portal ou pelas telas de dentro — e
+          este campo não influencia em nada.</div>
+        <div id="op-aviso-portal" class="aviso" style="display:none; margin-top:6px"></div></div>
+    </div>
+    ${novo ? `<div class="cartao-dica" style="margin-top:12px">Depois de salvar,
+      este cadastro passa a mostrar <b>as telas que esta pessoa abre</b> e as
+      caixinhas de ajuste fino.</div>` : `
+    {# ⚑ "O QUE ESTA PESSOA VÊ" (27/11/2026) — a parte que faltava, e custou
+       caro. Uma pessoa do DP passou dias sendo jogada para o portal e depois
+       sem as telas do DP, e para descobrir o motivo foi preciso ler código: a
+       tela mostrava 64 verbos e nenhuma resposta à pergunta óbvia, "o que ela
+       enxerga?". Agora o cadastro responde, e é a primeira coisa da aba. #}
+    <h4>O que esta pessoa vê quando entra</h4>
+    <div class="ve-caixa" id="op-ve"><small>carregando…</small></div>
+    <h4>Ajuste fino, só desta pessoa</h4>
+    <div id="op-perms"><small>carregando…</small></div>
+    <div class="dica">O <b>perfil de acesso</b> já define o essencial. Aqui você
+      acrescenta ou tira <b>desta pessoa</b> — por exemplo, deixar alguém
+      autorizando enquanto o diretor está de férias. O que estiver diferente
+      do perfil fica marcado como <b>ajuste</b>, e some quando você desmarca o
+      ajuste.</div>`}
+    </div>
+
+    <div class="dlg-pagina" data-pg="onde">
+    <div class="form-grade">
       <div class="campo"><label>Obras que esta pessoa enxerga</label>
         <select id="op-todas-obras">
           <option value="0" ${u.ve_todas_as_obras?"":"selected"}>A obra onde bate ponto + as marcadas abaixo</option>
@@ -123,18 +209,6 @@ function formOperador(u, opcoes){
           ponto entra <b>sozinha</b> (e muda quando ela muda de obra no ponto);
           as obras marcadas abaixo <b>somam</b> a ela. Não precisa marcar a obra
           do ponto.</div></div>
-      <div class="campo"><label>Cargo base</label><select id="op-perfil">
-        ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
-      </select>
-        {# ⚑ NÃO SAI (24/11/2026). Ele pediu para excluir o "cargo (herança)",
-           "se não tiver outra coisa" — e tem: é ele que diz se a pessoa é do
-           ESCRITÓRIO ou da OBRA (administrativo de obra = só o portal,
-           `PERFIS_SO_PORTAL`), e ainda decide o acesso de quem não tem perfil
-           escolhido. Mudou o nome e a explicação, não a função. #}
-        <div class="dica">Diz se a pessoa é do <b>escritório</b> ou da
-          <b>obra</b>: quem é <b>Administrativo de obra</b> usa só o portal e o
-          diário. Também vale como acesso para quem não tem perfil escolhido
-          acima.</div></div>
       <div class="campo" id="op-escopo-bloco"><label>Dentro do alcance dela, o que vê</label>
         <select id="op-escopo">
           <option value="OBRAS_DESIGNADAS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"selected":""}>Tudo das obras marcadas</option>
@@ -144,59 +218,7 @@ function formOperador(u, opcoes){
           os lançamentos dela</b> é mais apertado: nem o que o colega lançou na
           mesma obra ela vê — e aí as marcações de obra abaixo não têm efeito
           no financeiro.</div></div>
-      <div class="campo"><label>${novo?"Senha *":"Nova senha (deixe vazio para manter)"}</label>
-        <input id="op-senha" type="password" placeholder="mínimo 8 caracteres"></div>
-      <div class="campo"><label>Situação</label><select id="op-ativo">
-        <option value="1" ${u.ativo?"selected":""}>Ativo</option>
-        <option value="0" ${u.ativo?"":"selected"}>Inativo</option></select></div>
     </div>
-    <h4>Fundo fixo</h4>
-    <div class="form-grade">
-      <div class="campo"><label>Pode movimentar fundo fixo</label><select id="op-ff">
-        <option value="0" ${u.ff_autorizado?"":"selected"}>Não</option>
-        <option value="1" ${u.ff_autorizado?"selected":""}>Sim</option></select></div>
-      <div class="campo"><label>Limite por despesa</label>
-        <input id="op-ff-item" value="${u.ff_teto_item??""}" placeholder="ex.: 500,00">
-        <div class="dica">Acima disso, o gasto é apontado na conferência.</div></div>
-      <div class="campo"><label>Limite por prestação</label>
-        <input id="op-ff-total" value="${u.ff_teto_prestacao??""}" placeholder="ex.: 3.000,00">
-        <div class="dica">Acima disso, a prestação é bloqueada.</div></div>
-      <div class="campo"><label>Adiantamento em aberto</label>
-        <input value="${u.ff_saldo_adiantamento??0}" disabled>
-        <div class="dica">Atualizado pelas prestações; não se edita aqui.</div></div>
-    </div>
-
-    <h4>Inteligência artificial</h4>
-    <div class="form-grade">
-      <div class="campo"><label>Limite do mês (US$)</label>
-        <input id="op-teto-ia" value="${u.teto_ia_usd??""}" placeholder="5,00">
-        <div class="dica">
-          Padrão de US$ 5,00 por mês. <b>Deixe em branco para sem limite.</b>
-          Só a leitura de documento e a transcrição de áudio gastam — telas,
-          relatórios e as perguntas calculadas pelo sistema não consomem nada.
-        </div></div>
-      <div class="campo"><label>Já usou neste mês</label>
-        <input value="${u.ia_do_mes && u.ia_do_mes.teto!==null
-                        ? `US$ ${(u.ia_do_mes.gasto||0).toFixed(2)} de US$ ${u.ia_do_mes.teto.toFixed(2)} (${u.ia_do_mes.percentual}%)`
-                        : `US$ ${((u.ia_do_mes&&u.ia_do_mes.gasto)||0).toFixed(2)} — sem limite`}" disabled>
-        <div class="dica">Zera na virada do mês.</div></div>
-    </div>
-
-    <div class="campo" style="margin-top:12px">
-      <label>Contas do plano liberadas para lançar
-        <span id="op-cat-resumo" class="qtd" style="float:right; font-weight:700"></span></label>
-      <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
-        <input id="op-filtro-cat" placeholder="filtrar…" style="flex:1; margin:0">
-        <button type="button" class="link-btn" id="op-cat-limpar">limpar tudo</button>
-      </div>
-      <div id="op-cats" style="max-height:300px; overflow:auto;
-           border:1px solid var(--borda); border-radius:8px; padding:6px"></div>
-      <div class="dica">Nada marcado = todas liberadas. Marque só o que a pessoa
-        costuma lançar, para ela não se perder no plano inteiro. Clicar no
-        <b>grupo</b> marca o grupo inteiro — e ele fica <b>verde</b> quando está
-        todo marcado, <b>âmbar</b> quando está pela metade.</div>
-    </div>
-
     <div id="op-aviso-proprios" class="cartao-dica" style="margin-top:12px; display:none">
       Com <b>“só os lançamentos que ela fez”</b>, no <b>financeiro</b> ela vê
       só o que ela mesma lançou. As obras marcadas abaixo continuam valendo
@@ -255,37 +277,71 @@ function formOperador(u, opcoes){
         de uma pessoa por obra — todas recebem. No cadastro da obra é o bloco
         "Quem responde por esta obra" (a mesma informação).</div>
     </div>
-    ${novo ? `
-    <div class="aviso info" style="margin-top:12px">Deixe a <b>senha em
-      branco</b>: ao salvar, a pessoa recebe um e-mail para escolher a senha
-      dela. <b>Ninguém mais vai saber qual é</b> — nem você. Se preferir
-      definir uma senha aqui, o convite não é enviado.</div>` : `
-    {# O CONVITE DE PRIMEIRO ACESSO, na ficha de quem já existe. Serve para
-       reenviar ("não chegou", "caiu no spam") e para quem foi cadastrado
-       antes de isto existir. Reenviar invalida o link anterior. #}
-    <div class="campo" style="margin-top:12px">
-      <label>Acesso da pessoa</label>
-      <div id="op-convite" class="desc">—</div>
-      <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap">
-        <button class="btn secundario" type="button" id="op-convidar">
-          Enviar convite para definir a senha</button>
-      </div>
-      <div class="dica">A pessoa recebe um link e escolhe a própria senha. O
-        link vale 7 dias, serve uma vez só, e <b>enviar de novo cancela o
-        anterior</b>.</div>
     </div>
+
+    <div class="dlg-pagina" data-pg="limites">
+    <h4>Fundo fixo</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Pode movimentar fundo fixo</label><select id="op-ff">
+        <option value="0" ${u.ff_autorizado?"":"selected"}>Não</option>
+        <option value="1" ${u.ff_autorizado?"selected":""}>Sim</option></select></div>
+      <div class="campo"><label>Limite por despesa</label>
+        <input id="op-ff-item" value="${u.ff_teto_item??""}" placeholder="ex.: 500,00">
+        <div class="dica">Acima disso, o gasto é apontado na conferência.</div></div>
+      <div class="campo"><label>Limite por prestação</label>
+        <input id="op-ff-total" value="${u.ff_teto_prestacao??""}" placeholder="ex.: 3.000,00">
+        <div class="dica">Acima disso, a prestação é bloqueada.</div></div>
+      <div class="campo"><label>Adiantamento em aberto</label>
+        <input value="${u.ff_saldo_adiantamento??0}" disabled>
+        <div class="dica">Atualizado pelas prestações; não se edita aqui.</div></div>
+    </div>
+
+    <h4>Inteligência artificial</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Limite do mês (US$)</label>
+        <input id="op-teto-ia" value="${u.teto_ia_usd??""}" placeholder="5,00">
+        <div class="dica">
+          Padrão de US$ 5,00 por mês. <b>Deixe em branco para sem limite.</b>
+          Só a leitura de documento e a transcrição de áudio gastam — telas,
+          relatórios e as perguntas calculadas pelo sistema não consomem nada.
+        </div></div>
+      <div class="campo"><label>Já usou neste mês</label>
+        <input value="${u.ia_do_mes && u.ia_do_mes.teto!==null
+                        ? `US$ ${(u.ia_do_mes.gasto||0).toFixed(2)} de US$ ${u.ia_do_mes.teto.toFixed(2)} (${u.ia_do_mes.percentual}%)`
+                        : `US$ ${((u.ia_do_mes&&u.ia_do_mes.gasto)||0).toFixed(2)} — sem limite`}" disabled>
+        <div class="dica">Zera na virada do mês.</div></div>
+    </div>
+
     <div class="campo" style="margin-top:12px">
-      <label>O que esta pessoa pode fazer</label>
-      <div class="filtro-opcoes" id="op-perms"
-           style="max-height:260px; border:1px solid var(--borda); border-radius:8px; padding:6px">
-        <small>carregando…</small>
+      <label>Contas do plano liberadas para lançar
+        <span id="op-cat-resumo" class="qtd" style="float:right; font-weight:700"></span></label>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+        <input id="op-filtro-cat" placeholder="filtrar…" style="flex:1; margin:0">
+        <button type="button" class="link-btn" id="op-cat-limpar">limpar tudo</button>
       </div>
-      <div class="dica">O <b>perfil de acesso</b> já define o essencial. Aqui você
-        acrescenta ou tira <b>desta pessoa</b> — por exemplo, deixar alguém
-        autorizando enquanto o diretor está de férias. O que estiver diferente
-        do perfil fica marcado como <b>ajuste</b>.</div>
-    </div>`}
-    <div style="margin-top:14px"><button class="btn" id="op-salvar">Salvar</button></div>`;
+      <div id="op-cats" style="max-height:300px; overflow:auto;
+           border:1px solid var(--borda); border-radius:8px; padding:6px"></div>
+      <div class="dica">Nada marcado = todas liberadas. Marque só o que a pessoa
+        costuma lançar, para ela não se perder no plano inteiro. Clicar no
+        <b>grupo</b> marca o grupo inteiro — e ele fica <b>verde</b> quando está
+        todo marcado, <b>âmbar</b> quando está pela metade.</div>
+    </div>
+    </div>
+    <div style="margin-top:14px; position:sticky; bottom:0; background:var(--papel);
+         padding-top:10px"><button class="btn" id="op-salvar">Salvar</button>
+      <small style="color:var(--tinta-suave); margin-left:8px">salva as quatro
+        abas de uma vez</small></div>`;
+
+  // ⚑ AS ABAS: o botão de salvar é UM e vale para as quatro (27/11/2026). Um
+  // salvar por aba daria quatro gravações para um cadastro, e a chance de
+  // alguém sair com metade escrita.
+  els(CORPO).querySelectorAll("#op-abas button").forEach(bt =>
+    bt.addEventListener("click", () => {
+      els(CORPO).querySelectorAll("#op-abas button").forEach(o =>
+        o.classList.toggle("ativa", o === bt));
+      els(CORPO).querySelectorAll(".dlg-pagina").forEach(pg =>
+        pg.classList.toggle("ativa", pg.dataset.pg === bt.dataset.pg));
+    }));
 
   // Perfis cujo alcance é escolhido pessoa a pessoa; os demais já veem tudo
   // ou têm regra própria. Espelha ESCOPO_CONFIGURAVEL do core/auth.
@@ -311,6 +367,30 @@ function formOperador(u, opcoes){
     const aviso_ = els("op-aviso-proprios");
     if (aviso_) aviso_.style.display = (!todas && !porObra) ? "" : "none";
   }
+  // ⚑ O AVISO DO CARGO QUE PRENDE NO PORTAL (27/11/2026), e ele é o que
+  // faltava: uma pessoa do DP ficou dias sendo levada para o portal toda vez
+  // que entrava no ERP, e a tela não dava nenhuma pista — o desvio vem do
+  // CARGO BASE, não do perfil de acesso, e os dois ficavam lado a lado sem
+  // dizer qual manda nisso.
+  function avisarDoPortal(){
+    const caixa = els("op-aviso-portal");
+    if (!caixa) return;
+    // ⚑ DESDE 27/11/2026 O CARGO SÓ VALE PARA QUEM NÃO TEM PERFIL — pedido
+    // dele: *"o cargo base não deveria influenciar em nada. quem deve mandar é
+    // o perfil."* O aviso agora só aparece nesse caso, e diz exatamente isso.
+    const temPerfil = !!els("op-perfil-cad").value;
+    const cargo = (PERFIS || []).find(p => p.chave === els("op-perfil").value);
+    const preso = !temPerfil && !!(cargo && cargo.so_portal);
+    caixa.style.display = preso ? "" : "none";
+    caixa.className = "aviso erro";
+    if (preso) caixa.innerHTML = `Esta pessoa <b>não tem perfil de acesso</b>
+      escolhido, então vale o cargo base — e este cargo leva ao <b>portal</b>.
+      Escolha um perfil acima: com perfil, o cargo deixa de influenciar.`;
+  }
+  els("op-perfil").addEventListener("change", avisarDoPortal);
+  els("op-perfil-cad").addEventListener("change", avisarDoPortal);
+  avisarDoPortal();
+
   els("op-perfil").addEventListener("change", alternarObras);
   els("op-escopo").addEventListener("change", alternarObras);
   els("op-todas-obras").addEventListener("change", alternarObras);
@@ -467,15 +547,56 @@ function formOperador(u, opcoes){
   async function carregarPermissoes(){
     try {
       const d = await api(`/erp/api/usuarios/${u.id}/permissoes`);
-      els("op-perms").innerHTML = d.acoes.map(a => `
-        <label class="opcao" title="${a.do_cargo ? "o perfil já dá" : "o perfil não dá"}">
-          <input type="checkbox" class="op-perm" value="${a.acao}"
-                 ${a.efetiva ? "checked" : ""} ${a.travada ? "disabled" : ""}>
-          <span class="rotulo">${a.rotulo}${
-            a.travada ? ' <small>(o administrador não perde esta)</small>'
-            : a.marcada === null || a.marcada === undefined ? ""
-            : ` <b>· ajuste</b>`}</span></label>`).join("");
-    } catch(e){ els("op-perms").innerHTML = `<small>não foi possível carregar: ${e.message}</small>`; }
+
+      // ---- O QUE ESTA PESSOA VÊ (27/11/2026)
+      //
+      // Vale mais que as 64 caixinhas juntas: é a pergunta que quem cadastra
+      // faz de verdade. E o aviso do portal é o que faltou quando uma pessoa
+      // do DP ficou presa nele por causa do CARGO BASE, não do perfil.
+      const ve = d.ve || [];
+      els("op-ve").innerHTML = (d.usuario && d.usuario.so_portal
+          ? `<div class="aviso" style="margin:0 0 8px">Esta pessoa entra pelo
+               <b>portal</b>, e não pelas telas de dentro — é o certo para quem
+               trabalha na obra. Acontece quando o perfil de acesso dela não
+               abre nenhuma tela de escritório. Para ela trabalhar no ERP,
+               marque alguma tela no perfil dela.</div>`
+          : "")
+        + (ve.length
+            ? ve.map(m => `<div class="ve-mod"><b>${escapar(m.modulo)}</b>
+                 <span>${m.telas.map(escapar).join(" · ")}</span></div>`).join("")
+            : `<div class="aviso" style="margin:0">Esta pessoa <b>não abre
+                 nenhuma tela</b> do ERP. Escolha um perfil de acesso na aba
+                 <b>O que faz</b>.</div>`);
+
+      // ---- O ajuste fino, AGRUPADO PELO MÓDULO
+      //
+      // Antes: 64 caixinhas em ordem alfabética, em que "Fechar o mês do
+      // ponto" caía entre "Encaminhar por WhatsApp" e "Guardar documento no
+      // arquivo". Ninguém achava nada, e era isso que ele chamou de
+      // "bagunçada".
+      const porModulo = {};
+      d.acoes.forEach(a => (porModulo[a.modulo || "Em várias telas"] ||= []).push(a));
+      els("op-perms").innerHTML = Object.entries(porModulo).map(([modulo, acoes]) => {
+        const ajustes = acoes.filter(a => a.marcada !== null && a.marcada !== undefined).length;
+        return `<div class="mod-bloco"><header><b>${escapar(modulo)}</b>
+          <span class="espaco"></span>
+          <small style="color:var(--tinta-suave)">${acoes.filter(a=>a.efetiva).length}
+            de ${acoes.length}${ajustes ? ` · ${ajustes} ajuste(s)` : ""}</small></header>
+          <div class="filtro-opcoes" style="max-height:none; padding:4px 8px 6px">
+          ${acoes.map(a => `
+            <label class="opcao" title="${a.do_cargo ? "o perfil já dá" : "o perfil não dá"}">
+              <input type="checkbox" class="op-perm" value="${a.acao}"
+                     ${a.efetiva ? "checked" : ""} ${a.travada ? "disabled" : ""}>
+              <span class="rotulo" style="white-space:normal">${a.rotulo}${
+                a.travada ? ' <small>(o administrador não perde esta)</small>'
+                : a.marcada === null || a.marcada === undefined ? ""
+                : ` <b style="color:var(--ambar)">· ajuste</b>`}</span></label>`).join("")}
+          </div></div>`;
+      }).join("");
+    } catch(e){
+      els("op-perms").innerHTML = `<small>não foi possível carregar: ${e.message}</small>`;
+      if (els("op-ve")) els("op-ve").innerHTML = `<small>—</small>`;
+    }
   }
   if (!novo) carregarPermissoes();
   if (!novo) carregarConvite();

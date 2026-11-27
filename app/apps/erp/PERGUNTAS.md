@@ -255,6 +255,29 @@ contando.
 - Quais colaboradores estão com exame ocupacional vencido?
 - Quanto foi gasto com EPI na obra X?
 
+### Acesso: quem entra, e no quê (27/11/2026)
+
+Nasceram da repaginação da tela de Operadores e da mudança que tirou o **cargo
+base** da decisão. São perguntas que o dono fez de verdade nesta semana, e que
+custaram um dia de trabalho por não terem resposta na tela.
+
+- Quais telas o fulano abre quando entra no sistema? — **o cadastro responde
+  agora**, na aba "O que faz"
+- Por que o fulano cai no portal em vez das telas de dentro? — porque o perfil
+  dele não abre nenhuma tela de escritório; sem perfil, porque o cargo base é
+  de obra
+- Quem está sem perfil de acesso escolhido? ⚠️ — **o sistema ainda não
+  responde**: falta uma coluna ou um filtro na lista de operadores. Enquanto
+  isso, a lista mostra o perfil de cada um
+- Quantas telas este perfil abre? — o cadastro do perfil mostra o placar
+- Quais pessoas estão neste perfil? — a lista de perfis mostra a contagem
+- Quem tem ajuste de permissão fora do perfil, e qual? ⚠️ — **o sistema ainda
+  não responde por pessoa toda de uma vez**: hoje é preciso abrir cada
+  cadastro. O dado existe em `usuario_permissoes`
+- Quem pode aprovar título hoje? / Quem pode liberar pedido de compra? 🔒
+- Quem mexeu na permissão de fulano, e quando? — está na auditoria
+  (`PERMISSOES_AJUSTADAS`), mas **não há tela que mostre isso** ⚠️
+
 ### Ponto eletrônico (módulo `ponto`, fase 1 — 03/10/2026)
 
 O dia de uma batida é a `data_referencia`, não a hora do relógio: para o vigia

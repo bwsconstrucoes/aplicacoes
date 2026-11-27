@@ -151,6 +151,175 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 27/11/2026 (2) — O CARGO BASE DEIXOU DE MANDAR: quem manda é o perfil
+
+**Pedido dele, com todas as letras:** *"o cargo base não deveria influenciar em
+nada. quem deve mandar é o perfil."*
+
+**O que o cargo base decidia até hoje, escondido:** se a pessoa entrava pelo
+**portal** ou pelas telas de dentro (`PERFIS_SO_PORTAL`, o "administrativo de
+obra"), que telas o menu mostrava, e que obras ela alcançava num registro sem
+autor. O perfil de acesso podia abrir meio sistema que não adiantava — e foi
+isso que prendeu uma pessoa do DP fora do ERP por dias, sem aviso em tela
+nenhuma.
+
+**A regra agora** (`permissoes.entra_pelo_portal`):
+
+| A pessoa | Quem decide |
+|---|---|
+| **tem perfil de acesso** | **o perfil, e só ele.** O cargo é ignorado |
+| **não tem perfil nenhum** | o cargo, porque não há outra coisa — e a tela passa a dizer isso |
+
+E "entrar pelo portal" deixou de ser uma propriedade do cargo: é **o perfil não
+abrir nada além do que se faz pelo portal**. Hoje isso é o diário de obra
+(`secoes.SECOES_QUE_O_PORTAL_BASTA`). Perfil que não abre nada também cai no
+portal — melhor que uma tela vazia.
+
+⚠️ **POR QUE A PONTE DO CARGO FICOU, e não é preguiça:** quem tem cargo
+"administrativo de obra" e **nenhum** perfil cadastrado passaria, sem ela, a
+enxergar **40 telas** — é o que a tabela em código dá a esse cargo. A ponte
+morre sozinha quando todo mundo tiver perfil.
+
+**Mexeu em:** `core/auth/permissoes.py`, `core/auth/secoes.py`, `routes.py` (a
+guarda que roda antes de toda rota, o menu e o link do portal) e os textos do
+cadastro. Testes com banco de verdade em
+`tests/test_quem_entra_pelo_portal_banco.py`: cargo de obra + perfil de
+escritório fica no ERP; cargo de escritório + perfil só do diário vai para o
+portal; perfil vazio vai para o portal; sem perfil, o cargo ainda decide.
+Conferido também no navegador, com os dois casos.
+
+### 27/11/2026 (3) — A tela de Operadores repaginada
+
+**Pedido dele, em três mensagens seguidas:** *"essa tela de operadores é bem
+ruim. Acho ela bagunçada e desorganizada. A forma de seleção das coisas é ruim.
+A divisão dessas seções tá totalmente solta, sem conexão entre cada área e cada
+tela"* e *"essa tela precisa de uma repaginação completa. a experiência de uso
+dela é péssima."*
+
+**O que estava ruim, medido:**
+
+| Onde | O que havia |
+|---|---|
+| cadastro da pessoa | **um** formulário em rolagem única com ~90 controles — nome, perfil, obras, cargo, senha, fundo fixo, limite de IA, contas do plano, empresas, projetos, obras de novo e 64 caixinhas |
+| as 64 caixinhas | em ordem **alfabética**: "Fechar o mês do ponto" caía entre "Encaminhar por WhatsApp" e "Guardar documento no arquivo" |
+| perfil de acesso | 39 linhas com um **menu suspenso** em cada uma |
+| as áreas do perfil | digitadas à mão, e **não batiam com os módulos**: "Notas emitidas" ficava em Obras no cadastro e em Financeiro no menu; "Mensagens" é módulo no menu e era linha de Administração |
+| o que cada marcação abria | **não estava escrito em lugar nenhum** |
+
+**O que ficou:**
+
+1. **O cadastro em quatro abas** — *Quem é* (nome, login, senha, convite),
+   *O que faz* (perfil, perfis somados, cargo, o que ela vê, ajuste fino),
+   *Onde faz* (obras, empresas, projetos, alcance) e *Limites* (fundo fixo, IA,
+   contas do plano). Um botão Salvar só, para as quatro.
+2. **"O que esta pessoa vê quando entra"** — a lista dos módulos e telas que
+   aquela pessoa abre, calculada na hora pelo mesmo código do menu. É a
+   pergunta que quem cadastra faz de verdade, e o cadastro nunca respondia.
+3. **O perfil agrupado pelo MENU**, não por área digitada
+   (`secoes.para_a_tela_pelo_menu`): cada linha diz **quais telas abre**, em
+   azul. Onde uma marcação abre o módulo inteiro — o Ponto são 15 telas — a
+   linha diz isso em vez de listar quinze nomes.
+4. **Os três níveis viraram botão com cor** (cinza fecha, azul olha, verde
+   mexe), e cada módulo tem *"o módulo todo: Não acessa · Só olhar · Olhar e
+   mexer"* em um clique.
+5. **Um placar vivo**: "este perfil abre 6 telas em 1 módulo, com edição em 4".
+6. **As 8 seções que não abrem tela** (aval, aprovar, homologar conta, salário,
+   acesso ao portal, encaminhar, trabalho da equipe, operadores) saíram da
+   lista de telas e foram para um bloco próprio, dizendo **dentro de que tela**
+   cada uma vale. Tratá-las como área era parte da bagunça.
+7. **O ajuste fino agrupado por módulo**, com a conta de quantas ações a pessoa
+   tem em cada um e quantas são ajuste.
+
+**O que NÃO mudou, de propósito:** nenhuma permissão foi tirada ou dada por
+causa da repaginação; as chaves das seções continuam as mesmas (sem migração);
+e o cadastro continua sendo um só, usado pela tela de Operadores **e** pela
+ficha da pessoa em Pessoal (`erp_operador_form.html`).
+
+**Arquivos compartilhados mexidos — vale avisar outro chat:**
+`routes.py`, `core/auth/permissoes.py`, `core/auth/secoes.py`,
+`templates/erp_config.html`, `templates/erp_operador_form.html`,
+`static/erp.css`.
+
+### 27/11/2026 — A tela abre para quem tem o trabalho dela (8 telas fechadas, 17 marcações)
+
+**Como apareceu:** uma pessoa do DP era jogada para o portal toda vez que
+entrava no ERP (causa: o campo **Cargo base** do cadastro dela, que é o que
+decide o desvio — não o perfil de acesso). O dono ajustou o cargo, o desvio
+parou, e aí veio o sintoma de verdade: *"agora a pessoa só tá vendo a tela
+pessoas no ponto"*. Ele olhou a lista de permissões dela e disse o que
+importa: *"to achando que essa lista do que pode fazer não condiz muito com a
+realidade"*, e depois *"pelo que to vendo tem que revisar tudo. essas seções
+não condizem muito com o que vemos. deveria ter um método mais simples."*
+
+**A conta deu razão a ele, e o número é este: 8 telas não abriam para quem
+tinha justamente o trabalho delas, por 17 marcações diferentes.**
+
+| A pessoa podia | E não abria |
+|---|---|
+| Cadastrar e editar colaboradores · Lançar despesa de colaborador · Pedir à contabilidade | **as 4 telas de Pessoal** |
+| Fechar e reabrir o mês do ponto · Configurar o ponto · Tratar o ponto · Aprovar atestado | **as 15 telas do Ponto** |
+| Cancelar título · Reclassificar | Financeiro › Solicitações e Confirmar |
+| Pedir material · Liberar solicitação · Cadastrar insumo/fornecedor | as 7 telas de Suprimentos |
+| Lançar o diário de obra | Obras › Diário de obra |
+| Guardar documento no arquivo | Administração › Arquivo |
+| Atender solicitação do DP | Pessoal › Solicitações e Férias |
+| Autorizar compra fora do fluxo | Suprimentos › Pedidos |
+
+Sem erro nenhum na tela: a área simplesmente **não existia no menu** dela.
+
+**POR QUE ACONTECEU, e é o que impede a repetição:** há **três** caminhos que
+concedem ação, e só um deles passa pela seção.
+
+1. **perfil cadastrado** (migração 065) — `secoes.acoes_do_nivel` já dá o "só
+   olhar" junto com o "olhar e mexer", de propósito, com o motivo escrito no
+   código: *"perfil que mexe e não enxerga abriria a tela vazia"*. **Este
+   caminho nunca teve o furo.**
+2. **cargo em código** (a tabela `PERMISSOES`) — entrega ação solta.
+3. **marcação por pessoa** (migração 032) — entrega ação solta. **Foi por aqui
+   que a pessoa do DP ficou com 16 verbos e nenhuma porta.**
+
+Em 13/09/2026 cada tela ganhou ação própria (foi o que fez a área sumir do
+menu de quem não a tem). A `ACOES_IMPLICADAS` foi atualizada **à mão** naquele
+dia, e à mão ficaram 17 pares de fora. Ninguém percebeu porque o perfil
+cadastrado — o caminho que o dono usa para montar perfil novo — estava certo.
+
+**O conserto:** a `ACOES_IMPLICADAS` passou a **nascer do catálogo de seções**,
+e não da mão: toda ação do "olhar e mexer" de uma seção implica o "só olhar" da
+mesma seção. Seção nova entra já certa. Um teste parametrizado percorre os 23
+pares (`tests/test_telas_abrem_para_quem_trabalha.py`) — e ele foi conferido
+reintroduzindo o defeito, que o faz falhar em 4 lugares.
+
+**O que o conserto NÃO faz, e é de propósito:** ninguém ganha verbo novo, só a
+tela onde o verbo que já tinha se exerce. E **desmarcar à mão continua
+fechando** — a marcação explícita por pessoa vence a implicação, com teste
+próprio. Nos cargos o efeito é quase nulo: gestor e supervisor de obra passam a
+ver **Suprimentos › Pedidos** (eles autorizam compra fora do fluxo, que mora
+nessa fila); os outros nove cargos não mudam em nada.
+
+**Dois rótulos que mentiam, corrigidos no mesmo passo:**
+
+| Ação | Dizia | Diz agora |
+|---|---|---|
+| `ver_pessoal` | "Ver despesas de colaborador" | "Abrir as telas de Pessoal (colaboradores, despesas, contabilidade)" |
+| `solicitar_dp` | "Abrir solicitação ao DP" | "Abrir solicitação ao DP e ver a fila e as férias" |
+
+O primeiro é o que mais confundiu: a ação abre **quatro** telas de Pessoal, e o
+nome falava de despesa — colado ao de `lancar_dc` ("Lançar despesa de
+colaborador"), que é outra coisa.
+
+**O QUE FICOU DE FORA, e é decisão dele** (relatado na resposta, sem obra): o
+"método mais simples" que ele pediu. Os números do levantamento, para quem
+retomar: **59 telas no menu e só 28 ações de entrada** — marcar uma seção do
+Ponto abre as 15 telas do Ponto, marcar uma de Pessoal abre as 4. E **8 das 39
+seções não abrem tela nenhuma** (aval, aprovar, homologar conta, salário,
+acesso ao portal, encaminhar, trabalho da equipe, operadores): são permissões
+DENTRO da tela, mas na tela de cadastro parecem área. As três saídas propostas
+a ele: (a) a tela de perfil espelhar o MENU, uma linha por tela que ele vê, e
+dizer quais abrem juntas; (b) separar as ações para a marcação ser tela por
+tela — 31 ações novas, mexe na guarda, risco de trancar gente; (c) um botão "o
+que esta pessoa vê" no cadastro, que lista os módulos e telas daquela pessoa e
+o motivo de cada uma. Nada disso foi feito.
+
 ### 27/11/2026 — O assistente deixa de ser um menu de 20 pratos (começando pelo Pessoal)
 
 **O que aconteceu:** ele perguntou *"quantos funcionários temos hoje na obra de

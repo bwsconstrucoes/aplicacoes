@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.apps.erp.core.auth.permissoes import decidir
 from homologacao import (  # noqa: F401  (`operadores` é fixture, usada por nome)
-    LEITURAS, PERFIS_DO_ROTEIRO, PERMISSOES, como, identificacao,
+    LEITURAS, PERFIS_DO_ROTEIRO, como, identificacao,
     operadores)
 
 pytestmark = pytest.mark.banco
@@ -34,7 +35,13 @@ def test_leitura_abre_ou_recusa_conforme_o_perfil(app_real, operadores, perfil, 
 
     r = c.get(caminho)
 
-    if perfil in PERMISSOES[acao]:
+    # ⚑ A EXPECTATIVA VEM DE `decidir`, NÃO DA TABELA CRUA (27/11/2026).
+    # `PERMISSOES` é só um dos pedaços da decisão: há também as ações
+    # IMPLICADAS — quem tem o trabalho de uma tela abre a tela. Comparar com a
+    # tabela crua fazia este teste cobrar 403 de quem o sistema deixa entrar
+    # com razão (o supervisor de obra, que autoriza compra fora do fluxo e
+    # precisa da fila de pedidos).
+    if decidir(perfil, acao, {}, None):
         assert r.status_code != 403, f"{perfil.value} devia abrir {caminho}"
         assert r.status_code < 500, (
             f"{caminho} quebrou (HTTP {r.status_code}) para {perfil.value} "

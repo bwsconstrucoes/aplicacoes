@@ -802,6 +802,35 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 27/11/2026 — AUTORIZAÇÃO: quem manda é o PERFIL, e a tela abre para quem tem o trabalho dela
+
+Duas mudanças no mesmo dia, na peça que decide quem entra onde. Relato
+completo em `app/apps/erp/HISTORICO_PESSOAL.md`, 27/11/2026.
+
+**1. A tela abre para quem tem o trabalho dela.** Havia **8 telas** que não
+abriam para quem tinha justamente o trabalho delas, por **17 marcações**
+diferentes — quem podia "Cadastrar e editar colaboradores" não abria Pessoal.
+A causa: três caminhos concedem ação (perfil cadastrado, cargo em código,
+marcação por pessoa) e só o primeiro passava pela seção, que sempre deu o "só
+olhar" junto com o "olhar e mexer". A `ACOES_IMPLICADAS` era escrita à mão e
+ficou para trás em 13/09/2026. Agora ela **nasce do catálogo de seções**.
+
+**2. O cargo base deixou de mandar** (*"o cargo base não deveria influenciar em
+nada. quem deve mandar é o perfil"*). Quem tem perfil cadastrado tem tudo
+decidido por ele, inclusive entrar pelo **portal** ou pelas telas de dentro —
+que virou uma conta: o perfil não abrir nada além do diário
+(`secoes.SECOES_QUE_O_PORTAL_BASTA`). Sem perfil nenhum, o cargo ainda decide,
+senão quem é da obra e nunca recebeu perfil passaria a ver 40 telas.
+
+⚠️ **`so_portal(cargo)` não é mais a pergunta** — é
+`permissoes.entra_pelo_portal(s, usuario_id, cargo)`, e na guarda
+`permissoes.acoes_e_portal`, que responde as duas coisas numa leitura só (sem
+ela seriam **duas consultas a mais por página**).
+
+A tela de Operadores foi repaginada no mesmo dia: cadastro em quatro abas,
+"o que esta pessoa vê quando entra", e o perfil agrupado **pelo menu do ERP**,
+com o nome das telas que cada marcação abre.
+
 ### 27/11/2026 — O assistente passa a montar a consulta na hora, contra um MAPA
 
 Decisão do dono, e ela muda o desenho do assistente para TODAS as áreas:
