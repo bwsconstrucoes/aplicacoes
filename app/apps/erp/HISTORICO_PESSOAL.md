@@ -153,6 +153,8 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ### 27/11/2026 (2) — A readmissão pedida já bate ponto; a saída antiga fica no histórico
 
+**Publicado em 27/11/2026** (com o "pode" dele). Sem migração.
+
 Ele: *"Como a pessoa está desligada, ela tem uma data de saída registrada (…)
 Isso aí está impactando na batida do ponto, mesmo que a pessoa tenha
 solicitado. (…) Essa data de saída ela tem que ficar no histórico, mas na hora
