@@ -32,14 +32,14 @@
 //          contratado_telefone, contratado_email, _ia, _busca}
 const ContratoGerado = {
   MODELO: null, DISPONIVEL: true,
-  async carregar(){
+  carregar: async function(){
     if (this.MODELO) return;
     const r = await fetch("/erp/api/empreitas/contrato-modelo");
     const d = await r.json();
     if (!d.ok) throw new Error(d.erro || "Não consegui abrir o modelo do contrato.");
     this.MODELO = d.modelo; this.DISPONIVEL = d.disponivel;
   },
-  novo(){
+  novo: function(){
     const E = {gerar: true, assinante: null, opcionais: {}, campos: {}, texto_adicional: "",
                contratado_telefone: "", contratado_email: ""};
     if (this.MODELO) {
@@ -49,8 +49,10 @@ const ContratoGerado = {
     }
     return E;
   },
-  _e: t => String(t ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])),
-  html(E){
+  // Escapa pelo próprio navegador (textContent → innerHTML) e depois as aspas.
+  _e: function(t){ const d = document.createElement("div"); d.textContent = String(t ?? "");
+    return d.innerHTML.split(String.fromCharCode(34)).join("&quot;").split(String.fromCharCode(39)).join("&#39;"); },
+  html: function(E){
     const e = this._e, M = this.MODELO;
     if (!M) return `<div class="cg"><div class="cg-mini">carregando o modelo do contrato…</div></div>`;
     let h = `<div class="cg"><h4>Contrato e assinatura</h4>
@@ -93,9 +95,9 @@ const ContratoGerado = {
         em <b>Contratos</b>. Até o aval, dá para ajustar e gerar de novo.</div></div>`;
     return h;
   },
-  ligar(E, raiz, aoMudar){
+  ligar: function(E, raiz, aoMudar){
     const q = s => raiz.querySelectorAll(s);
-    q('[name="cg-gerar"]').forEach(x => x.addEventListener("change", () => { E.gerar = x.value === "1"; aoMudar(); }));
+    q("[name=cg-gerar]").forEach(x => x.addEventListener("change", () => { E.gerar = x.value === "1"; aoMudar(); }));
     q("[data-cg]").forEach(x => x.addEventListener("input", () => { E[x.dataset.cg] = x.value; }));
     q("[data-cg-op]").forEach(x => x.addEventListener("change", () => { E.opcionais[x.dataset.cgOp] = x.checked; aoMudar(); }));
     q("[data-cg-campo]").forEach(x => x.addEventListener("input", () => { E.campos[x.dataset.cgCampo] = x.value; }));
@@ -126,21 +128,21 @@ const ContratoGerado = {
     q("[data-cg-usar]").forEach(x => x.addEventListener("click", () => { E.texto_adicional = E._ia.texto; E._ia = null; aoMudar(); }));
     q("[data-cg-descartar]").forEach(x => x.addEventListener("click", () => { E._ia = null; aoMudar(); }));
   },
-  faltando(E){
+  faltando: function(E){
     if (!E.gerar) return "";
     if (!this.DISPONIVEL) return "A assinatura pelo sistema ainda não está disponível (falta a atualização do banco).";
     if (!E.assinante) return "Escolha quem assina pela empresa.";
     if (!E.assinante.tem_contato) return `${E.assinante.nome} não tem telefone nem e-mail no cadastro de colaboradores.`;
     return "";
   },
-  escolhas(E){
+  escolhas: function(E){
     const r = {assinante_colaborador_id: E.assinante ? E.assinante.id : null,
                opcionais: E.opcionais, campos: E.campos, texto_adicional: E.texto_adicional,
                contratado_telefone: E.contratado_telefone, contratado_email: E.contratado_email};
     Object.keys(this.MODELO.parametros).forEach(k => { r[k] = E[k]; });
     return r;
   },
-  async gerar(contratoId, E){
+  gerar: async function(contratoId, E){
     const r = await fetch(`/erp/api/empreitas/${contratoId}/contrato`, {method: "POST",
       headers: {"Content-Type": "application/json"}, body: JSON.stringify(this.escolhas(E))});
     const d = await r.json();

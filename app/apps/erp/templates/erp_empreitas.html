@@ -216,7 +216,7 @@ async function abrir(id){
       if (a) els("ct-assinatura").innerHTML = `<div class="aviso ${a.situacao === "ASSINADO" ? "ok" : "info"}">
         <b>Contrato gerado pelo sistema:</b> ${escapar(a.rotulo)}<br>${a.assinaturas.map(x =>
           `${x.assinou ? "✅" : "⏳"} ${x.papel === "CONTRATADO" ? "Empreiteiro" : "Pela empresa"}: ${escapar(x.nome)}${
-            x.assinou ? " — assinou em " + dataBR(x.assinado_em) : x.abriu ? " — abriu o link" : x.enviado_em ? " — link enviado" : ""}${
+            x.assinou ? " — assinou em " + momentoBR(x.assinado_em) : x.abriu ? " — abriu o link" : x.enviado_em ? " — link enviado" : ""}${
             !x.assinou && a.situacao === "EM_ASSINATURA" ? ` <button class="btn secundario" data-reenvia="${x.papel}">reenviar o link</button>` : ""}`).join("<br>")}
         ${a.anexo_id ? `<br><a href="/erp/anexo/${a.anexo_id}" target="_blank">abrir o contrato assinado</a>` : ""}</div>`;
       document.querySelectorAll("[data-reenvia]").forEach(b => b.addEventListener("click", async () => {
