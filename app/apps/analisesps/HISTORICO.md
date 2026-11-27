@@ -12275,6 +12275,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 286 — GUARDADA, NÃO PUBLICADA: o relatório anual de presenças para o 13º (27/11/2026)
+
+- Construí o uso do "Presenças por Locais - ( Anual )" do Mobponto para cobrir os meses
+  sem ponto no rateio do 13º (rateio por AVOS: cada mês trabalhado vale o mesmo; o mês sem
+  carga vai inteiro para a obra do relatório). O dono, no meio: *"só perguntando, não crie
+  nada ainda"* — e depois: *"Estou aguardando ver se o sistema Mobponto vai me
+  disponibilizar novamente as credenciais (…) fica dentro do mesmo padrão e a gente não
+  precisa mexer em nada. Se não der certo, aí a gente tenta essa alternativa."*
+- **O código ficou guardado no commit `352b3eca` e foi revertido** logo em seguida neste
+  ramo, para não ir junto numa publicação. Para trazer de volta: `git revert` do commit de
+  reversão (o seguinte a `352b3eca`), rodar `tests/test_analisesps_folha_decimo.py` e a
+  suíte. Inclui: `ponto_anual.py`, o `peso` por dia em `folha_apropriacao`, os avos em
+  `ponto.dias_do_ano`, o envio na tela do 13º e os testes (CPF/nome inventados).
+- O que se sabe do arquivo real (27/11): tabela HTML; 1.506 pessoas; UMA obra por mês,
+  sem dias; jan 892 … out 415; das 353 pessoas do 13º, 321 casam pelo nome.
+- **Pendente (dono):** a resposta do Mobponto sobre reabrir a API para ler 01–08/2026.
+
 #### Leva 285 — Tela do Ponto: a frase "credenciais recusadas" só quando a falha é a credencial (27/11/2026)
 
 - O dono, ao carregar 01/2026 para o 13º: *"não estou conseguindo baixar o ponto por falta
