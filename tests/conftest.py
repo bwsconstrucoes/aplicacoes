@@ -387,13 +387,109 @@ def banco():
     database.reiniciar_engine()
 
 
+def _secoes_equivalentes_ao_cargo(perfil) -> dict[str, str]:
+    """As seções que dão, no máximo, o que o cargo antigo dava.
+
+    Marca a seção quando TODAS as ações dela já estavam no conjunto efetivo do
+    cargo — então o perfil resultante nunca concede mais do que o cargo
+    concedia.
+    """
+    from app.apps.erp.core.auth import secoes as cat
+    from app.apps.erp.core.auth.permissoes import PERMISSOES, decidir
+
+    do_cargo = {acao for acao in PERMISSOES if decidir(perfil, acao, {}, None)}
+    marcacoes: dict[str, str] = {}
+    for secao in cat.SECOES:
+        if secao["ler"] and not set(secao["ler"]) <= do_cargo:
+            continue
+        if secao["ler"]:
+            marcacoes[secao["chave"]] = cat.LER
+        if secao["editar"] and set(secao["editar"]) <= do_cargo:
+            marcacoes[secao["chave"]] = cat.EDITAR
+    return marcacoes
+
+
+@pytest.fixture(scope="session")
+def perfis_equivalentes_aos_cargos(banco) -> dict:
+    """Um perfil cadastrado por cargo, criado uma vez e reaproveitado.
+
+    ⚑ EXISTE POR CAUSA DA REGRA DE 27/11/2026: **quem não tem perfil de acesso
+    não abre nada**. Pedido do dono, com todas as letras: *"se o cara não fez o
+    cadastramento, ponto final, ele não tem absolutamente acesso a nada."*
+
+    Antes disso, usuário de teste criado só com cargo funcionava, e é assim que
+    **109 arquivos de teste** montam gente. Pedir a cada um que crie perfil à
+    mão seria trabalho repetido em 109 lugares e uma pegadinha para todo teste
+    novo. Em vez disso, o perfil equivalente é criado aqui e **colado
+    automaticamente** em quem for gravado sem perfil (ver `sessao_real`).
+
+    ⚠️ ISTO ESCONDE A REGRA DO TESTE COMUM, e é escolha consciente: a regra em
+    si tem testes próprios, que criam gente por SQL direto justamente para
+    passar por fora deste automatismo —
+    `tests/test_quem_entra_pelo_portal_banco.py`.
+    """
+    from sqlalchemy import text
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+
+    ids = {}
+    with banco.connect() as conn:
+        for perfil in PerfilUsuario:
+            pid = conn.execute(text(
+                "INSERT INTO perfis (nome, descricao, ativo) "
+                "VALUES (:n, 'equivalente ao cargo, para os testes', true) "
+                "ON CONFLICT (nome) DO UPDATE SET ativo = true RETURNING id"),
+                {"n": f"Cargo {perfil.value}"}).scalar()
+            conn.execute(text("DELETE FROM perfil_secoes WHERE perfil_id = :p"),
+                         {"p": pid})
+            marcacoes = _secoes_equivalentes_ao_cargo(perfil)
+            if marcacoes:
+                conn.execute(
+                    text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
+                         "VALUES (:p, :s, :n)"),
+                    [{"p": pid, "s": s, "n": n} for s, n in marcacoes.items()])
+            ids[perfil] = pid
+        conn.commit()
+    return ids
+
+
+# Preenchido pela fixture de sessão; lido pelo ouvinte abaixo.
+_PERFIL_DO_CARGO: dict = {}
+
+
+def _registrar_o_perfil_automatico():
+    """Cola o perfil equivalente em todo Usuario gravado sem perfil.
+
+    ⚠️ REGISTRADO UMA VEZ SÓ, no mapeamento, e não a cada sessão de teste. A
+    primeira versão prendia o ouvinte em CADA `Session` criada — uma por
+    teste —, e o registro de eventos do SQLAlchemy guarda referência a cada
+    um: a suíte ia ficando mais lenta à medida que andava, até virar horas.
+    """
+    from sqlalchemy import event
+    from app.apps.erp.db.models.cadastros import Usuario
+
+    @event.listens_for(Usuario, "before_insert", propagate=True)
+    def _dar_perfil_a_quem_nao_tem(mapper, connection, alvo):  # noqa: ARG001
+        if alvo.perfil_id is None and _PERFIL_DO_CARGO:
+            alvo.perfil_id = _PERFIL_DO_CARGO.get(alvo.perfil)
+
+
+_registrar_o_perfil_automatico()
+
+
 @pytest.fixture
-def sessao_real(banco):
+def sessao_real(banco, perfis_equivalentes_aos_cargos):
     """Sessão de verdade dentro de UMA transação desfeita no fim do teste.
 
     `commit()` dentro do teste (ou dentro de uma rota) só libera um savepoint;
-    a transação de fora nunca é confirmada — o banco volta limpo."""
+    a transação de fora nunca é confirmada — o banco volta limpo.
+
+    ⚑ E QUEM FOR GRAVADO SEM PERFIL GANHA O PERFIL DO CARGO (27/11/2026). Ver
+    `perfis_equivalentes_aos_cargos` para o porquê. Quem quiser testar gente
+    SEM perfil grava por SQL direto, que não passa por aqui.
+    """
     from sqlalchemy.orm import Session
+
+    _PERFIL_DO_CARGO.update(perfis_equivalentes_aos_cargos)
     conn = banco.connect()
     trans = conn.begin()
     s = Session(bind=conn, join_transaction_mode="create_savepoint",

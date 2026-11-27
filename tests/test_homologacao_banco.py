@@ -18,7 +18,8 @@ from __future__ import annotations
 import pytest
 
 from homologacao import (  # noqa: F401  (`operadores` é fixture, usada por nome)
-    INVENTARIO, LEITURAS, ESCRITAS, P, PERMISSOES, como, operadores)
+    INVENTARIO, LEITURAS, ESCRITAS, P, PERMISSOES, SENHA_DE_HOMOLOGACAO,
+    Usuario, como, operadores)
 
 pytestmark = pytest.mark.banco
 
@@ -27,12 +28,16 @@ pytestmark = pytest.mark.banco
 # ---------------------------------------------------------------------------
 ROTEIRO = [
     # perfil,               caminho,               abre?
-    # ⚑ 24/11/2026: quem é da obra só tem o portal — as telas do ERP o levam
-    # para lá (decisão do dono: *"o pessoal da obra (…) têm acesso ao portal
-    # (…) Isso em tudo"*). Antes estas três abriam.
-    (P.ADMINISTRATIVO_OBRA, "/erp/titulos",        "PORTAL"),
-    (P.ADMINISTRATIVO_OBRA, "/erp/lancar",         "PORTAL"),
-    (P.ADMINISTRATIVO_OBRA, "/erp/dc",             "PORTAL"),
+    # ⚑ 27/11/2026: "QUEM É DA OBRA" DEIXOU DE SER UM CARGO. O desvio para o
+    # portal era decidido pelo cargo (`PERFIS_SO_PORTAL`, 24/11/2026); agora
+    # é o PERFIL que decide, e "ser da obra" quer dizer ter um perfil que não
+    # abre nada além do diário. Pedido dele: *"o cargo base não deveria
+    # influenciar em nada. quem deve mandar é o perfil."*
+    #
+    # Por isso estes três casos saíram daqui e viraram um teste próprio, com
+    # um operador de perfil só-diário: `test_quem_so_tem_o_diario_cai_no_portal`.
+    # Aqui o operador "administrativo de obra" tem o perfil equivalente ao
+    # cargo antigo, e com ele estas telas abrem mesmo.
     (P.ADMINISTRATIVO_OBRA, "/erp/pagamentos",     False),
     (P.ADMINISTRATIVO_OBRA, "/erp/relatorios",     False),
     (P.ADMINISTRATIVO_OBRA, "/erp/configuracoes",  False),
@@ -62,6 +67,38 @@ def test_casos_do_roteiro(app_real, operadores, perfil, caminho, abre):
         assert r.status_code == 200, f"{perfil.value} devia abrir {caminho}: {r.status_code}"
     else:
         assert r.status_code == 403, f"{perfil.value} devia ser recusado em {caminho}"
+
+
+def test_quem_so_tem_o_diario_cai_no_portal(app_real, sessao_real):
+    """O desvio para o portal, agora decidido pelo PERFIL (27/11/2026).
+
+    Perfil que não abre nada além do diário é "gente de obra": a tela de
+    entrada leva ao portal, o diário abre, e o resto do ERP é recusado — não
+    por desvio, e sim porque o perfil não dá a ação. Antes isto vinha do cargo
+    base, e era o cargo que prendia a pessoa no portal.
+    """
+    from sqlalchemy import text
+
+    pid = sessao_real.execute(text(
+        "INSERT INTO perfis (nome, descricao, ativo) "
+        "VALUES ('Gente de obra (homologação)', '', true) RETURNING id")).scalar()
+    sessao_real.execute(
+        text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
+             "VALUES (:p, 'obr_diario', 'EDITAR')"), {"p": pid})
+    u = Usuario(nome="Obra do portal", email="obra.portal@teste.bws.local",
+                senha_hash=SENHA_DE_HOMOLOGACAO, perfil=P.ADMINISTRATIVO_OBRA,
+                perfil_id=pid)
+    sessao_real.add(u)
+    sessao_real.flush()
+    sessao_real.commit()
+
+    c = como(app_real, u.id)
+    inicio = c.get("/erp/inicio")
+    assert inicio.status_code == 302, "a tela de entrada devia levar ao portal"
+    assert inicio.headers["Location"].endswith("/erp/portal")
+    assert c.get("/erp/obras/diario").status_code == 200, "o diário é dele"
+    for fechada in ("/erp/titulos", "/erp/lancar", "/erp/dc"):
+        assert c.get(fechada).status_code == 403, fechada
 
 
 def test_financeiro_nao_avaliza_e_supervisor_nao_aprova(app_real, operadores):

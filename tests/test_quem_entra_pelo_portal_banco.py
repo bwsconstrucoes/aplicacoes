@@ -56,27 +56,90 @@ def test_cargo_de_escritorio_nao_segura_quem_so_tem_o_diario(sessao_real):
     assert entra_pelo_portal(sessao_real, uid, P.FINANCEIRO)
 
 
-def test_perfil_que_nao_abre_nada_entra_pelo_portal(sessao_real):
-    """Cair numa tela vazia seria pior do que cair no portal."""
+def test_perfil_que_nao_abre_nada_nao_entra_em_lugar_nenhum(sessao_real):
+    """Perfil sem nada marcado não é "gente de obra": é cadastro pela metade.
+
+    Mandar essa pessoa para o portal seria fingir que ela tem acesso a alguma
+    coisa. Ela não tem.
+    """
+    from app.apps.erp.core.auth.permissoes import acoes_e_portal
+
     pid = _perfil(sessao_real, "Perfil vazio do teste", {})
     uid = _pessoa(sessao_real, "vazio-portal@teste.com", P.FINANCEIRO, pid)
-    assert entra_pelo_portal(sessao_real, uid, P.FINANCEIRO)
+    acoes, portal = acoes_e_portal(sessao_real, uid, P.FINANCEIRO)
+    assert acoes == set()
+    assert portal is False
 
 
-def test_sem_perfil_nenhum_o_cargo_ainda_decide(sessao_real):
-    """A ponte que segura o ERP de pé: sem perfil, não há outra coisa.
+def test_sem_perfil_nenhum_a_pessoa_nao_tem_acesso_a_nada(sessao_real):
+    """⚑ A REGRA DELE, 27/11/2026, e ela derrubou a ponte que havia aqui.
 
-    Some sozinha quando todo mundo tiver perfil — e é o que faz a mudança de
-    hoje não abrir o escritório inteiro para quem é da obra e nunca recebeu
-    perfil nenhum.
+    *"Se o cara não fez o cadastramento, ponto final, ele não tem absolutamente
+    acesso a nada, ele é apenas um colaborador cadastrado. Ele só iria ter a
+    possibilidade de ser liberado a acessar alguma coisa no momento que ele
+    solicitasse o acesso e fosse liberado e definido um perfil."*
+
+    Antes, quem não tinha perfil caía no cargo antigo — e ele chamou isso de
+    gambiarra, com razão: era o cargo mandando por uma porta dos fundos.
     """
-    uid = _pessoa(sessao_real, "semperfil-portal@teste.com", P.ADMINISTRATIVO_OBRA)
-    assert entra_pelo_portal(sessao_real, uid, P.ADMINISTRATIVO_OBRA)
-    outro = _pessoa(sessao_real, "semperfil2-portal@teste.com", P.FINANCEIRO)
-    assert not entra_pelo_portal(sessao_real, outro, P.FINANCEIRO)
+    from app.apps.erp.core.auth.permissoes import acoes_e_portal
+
+    for email, cargo in (("semperfil-obra@teste.com", P.ADMINISTRATIVO_OBRA),
+                         ("semperfil-fin@teste.com", P.FINANCEIRO)):
+        uid = _pessoa(sessao_real, email, cargo)
+        acoes, portal = acoes_e_portal(sessao_real, uid, cargo)
+        assert acoes == set(), f"{cargo.value} ganhou acesso sem perfil"
+        assert portal is False, f"{cargo.value} foi parar no portal sem perfil"
+
+
+def test_o_cargo_so_vale_quando_nao_da_para_saber(sessao_real):
+    """A única sobrevivência do cargo: quando a pessoa nem é encontrada.
+
+    Não é regra de negócio — é a rede que impede o ERP inteiro de cair na
+    janela entre publicar o código e apertar o botão do banco, que é a
+    armadilha conhecida deste repositório.
+    """
+    from app.apps.erp.core.auth.permissoes import acoes_e_portal
+
+    acoes, portal = acoes_e_portal(sessao_real, 99_999_999, P.ADMINISTRATIVO_OBRA)
+    assert acoes is None
+    assert portal is True
 
 
 def test_a_secao_do_portal_existe_no_catalogo(sessao_real):
     """Se `obr_diario` for renomeada, a regra vira 'todo mundo pelo portal'."""
     for chave in cat.SECOES_QUE_O_PORTAL_BASTA:
         assert chave in cat.POR_CHAVE, f"seção {chave} saiu do catálogo"
+
+
+def test_sem_perfil_a_tela_recusa_e_explica(app_real, sessao_real):
+    """Ponta a ponta: a pessoa sem perfil não abre nada, nem o portal.
+
+    E a recusa **diz o motivo certo**. Mandar "esta tela não é sua" para quem
+    nunca foi liberado faria a pessoa tentar tela por tela até desistir — e
+    ligar para o dono.
+    """
+    from conftest import como
+
+    uid = _pessoa(sessao_real, "bloqueado@teste.com", P.ADMINISTRATIVO_OBRA)
+    sessao_real.commit()
+    c = como(app_real, uid)
+    for rota in ("/erp/inicio", "/erp/titulos", "/erp/colaboradores", "/erp/portal"):
+        assert c.get(rota).status_code == 403, rota
+    pagina = c.get("/erp/inicio").get_data(as_text=True)
+    assert "ainda não foi liberado" in pagina
+
+
+def test_o_administrador_sem_perfil_ainda_conserta_o_sistema(app_real, sessao_real):
+    """Trancar quem destranca não é decisão, é acidente.
+
+    Com o acesso vindo só do perfil, um ADMIN sem perfil ficaria de fora do
+    sistema — e ninguém mais poderia dar perfil a ninguém. As telas que
+    consertam o sistema continuam abertas para ele.
+    """
+    from conftest import como
+
+    uid = _pessoa(sessao_real, "adminsemperfil@teste.com", P.ADMIN)
+    sessao_real.commit()
+    c = como(app_real, uid)
+    assert c.get("/erp/configuracoes").status_code == 200

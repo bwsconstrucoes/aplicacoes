@@ -98,8 +98,9 @@ def test_o_perfil_pronto_responde_igual_ao_cargo_antigo(sessao_real, cargo):
 
 
 def test_todo_operador_saiu_da_migracao_com_um_perfil(sessao_real):
-    """Ninguém pode ficar sem perfil: sem perfil, vale o cargo antigo, e a
-    tela do dono deixaria de mandar naquela pessoa sem nada avisar."""
+    """Ninguém pode ficar sem perfil — e desde 27/11/2026 o motivo é mais
+    duro: sem perfil a pessoa **não entra no sistema**. Antes ela caía no cargo
+    antigo, e a tela do dono deixava de mandar nela sem nada avisar."""
     s = sessao_real
     u = _pessoa(s, "sem-perfil-ainda", P.LANCADOR)
     s.execute(text("UPDATE usuarios u SET perfil_id = p.id FROM perfis p "
@@ -247,8 +248,10 @@ def test_secao_ou_nivel_inventado_e_recusado(sessao_real):
 
 
 def test_nao_se_arquiva_perfil_com_gente_dentro(sessao_real):
-    """Arquivar com gente dentro devolveria essas pessoas ao cargo antigo —
-    ou seja, daria de volta o acesso que o dono acabou de tirar."""
+    """Arquivar com gente dentro **tiraria o acesso dessas pessoas de uma vez**
+    — elas ficariam sem perfil, e sem perfil não se entra em lugar nenhum
+    (27/11/2026). Antes o estrago era o oposto: voltavam ao cargo antigo, com
+    o acesso que o dono acabou de tirar."""
     s = sessao_real
     perfil = svc.criar(s, {"nome": "Perfil povoado",
                            "secoes": {"fin_lancar": cat.EDITAR}}, None)

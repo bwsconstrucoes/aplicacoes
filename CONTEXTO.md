@@ -802,6 +802,27 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 27/11/2026 — AUTORIZAÇÃO: o acesso vem SÓ do perfil cadastrado
+
+⚠️ **A mudança mais larga do dia, e ela tranca gente:** o **cargo deixou de
+conceder acesso**. Regra dele: *"se o cara não fez o cadastramento, ponto
+final, ele não tem absolutamente acesso a nada, ele é apenas um colaborador
+cadastrado (…) até então, absolutamente tudo bloqueado."*
+
+O que sobrou do cargo são duas coisas, e nenhuma é regra de negócio: a rede
+para quando **a tabela de perfis não pode ser lida** (banco atrás do código, a
+armadilha conhecida deste repositório — §9, 02/09/2026) e as três telas que o
+**ADMIN** precisa para consertar o sistema (`PROTEGIDAS_DO_ADMIN`).
+
+⚠️ **Para quem escrever teste com banco:** o `conftest.py` cola um perfil
+equivalente ao cargo em quem for gravado sem perfil. Para testar gente **sem**
+perfil, grave por SQL direto.
+
+**Veio junto um aperto de escopo:** quem enxerga "só os próprios lançamentos"
+abria o detalhe de qualquer obra da empresa — obra não tem autor, e o filtro
+dessa pessoa é a autoria. Agora vale a regra que já estava escrita para
+registro sem autor: só as obras marcadas no cadastro.
+
 ### 27/11/2026 — AUTORIZAÇÃO: quem manda é o PERFIL, e a tela abre para quem tem o trabalho dela
 
 Duas mudanças no mesmo dia, na peça que decide quem entra onde. Relato

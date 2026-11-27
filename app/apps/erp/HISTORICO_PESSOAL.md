@@ -151,6 +151,87 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 27/11/2026 (4) — SEM PERFIL, SEM ACESSO A NADA: a ponte do cargo caiu
+
+**Ele leu a ressalva que eu tinha deixado e chamou pelo nome:** *"me parece uma
+gambiarra esse comentário que você fez."* E deu a regra, que é mais simples que
+a minha ressalva:
+
+> *"Era para simplesmente desconectar isso a cargos. Por exemplo, se o cara não
+> fez o cadastramento, ponto final, ele não tem absolutamente acesso a nada, ele
+> é apenas um colaborador cadastrado. Ele só iria ter a possibilidade de ser
+> liberado a acessar alguma coisa no momento que ele solicitasse o acesso e
+> fosse liberado e definido um perfil. Até então, absolutamente tudo
+> bloqueado."*
+
+**Ele estava certo, e o meu erro tinha nome:** eu tratava *"a pessoa não tem
+perfil"* e *"não consigo ler a tabela de perfis"* como a mesma resposta — as
+duas devolviam "não sei", e as duas caíam no cargo antigo. São coisas
+diferentes:
+
+| Situação | Antes | Agora |
+|---|---|---|
+| a tabela de perfis não existe, ou a pessoa nem é encontrada | cargo | **cargo** — é a rede que impede o ERP de cair entre publicar e apertar o botão do banco |
+| a pessoa existe e **não tem perfil** | cargo | **nada. Não entra em lugar nenhum** |
+| a pessoa tem perfil que não marca nada | portal | **nada** — nem o portal |
+
+**A exceção que FICA, e ela não é gambiarra:** o ADMIN continua alcançando as
+três telas que consertam o sistema (`PROTEGIDAS_DO_ADMIN`: entrar, abrir
+Configurações e mexer em operadores). Sem isso, um administrador sem perfil
+trancaria a si mesmo do lado de fora — e ninguém mais poderia dar perfil a
+ninguém. Tem teste.
+
+**O que a tela passou a dizer**, porque uma regra dura sem aviso vira chamado
+de telefone:
+
+1. **A lista de Operadores avisa em vermelho**, no alto: *"N pessoa(s) ativa(s)
+   sem perfil de acesso — elas não entram no sistema"*, com os nomes. E a
+   coluna do perfil, que mostrava o cargo em cinza, agora mostra **"sem
+   perfil · não entra no sistema"**.
+2. **O cadastro da pessoa avisa** na aba "O que faz", e o campo Cargo base
+   passou a dizer a verdade: *"não libera acesso nenhum"*.
+3. **Quem for barrado vê o motivo certo**: *"Seu acesso ainda não foi
+   liberado — você está cadastrado, mas ainda sem perfil"*, com só o botão
+   Sair (mandar essa pessoa "voltar ao início" seria mandá-la para outra
+   recusa).
+
+⚠️ **O RISCO DESTA MUDANÇA, e ele é real e imediato:** quem estiver sem perfil
+**perde o acesso no instante da publicação** — inclusive gente de obra que usa
+o portal hoje. Não dá para saber daqui quantas pessoas são; só a lista de
+Operadores da produção responde. A lista avisa, e o conserto é escolher o
+perfil de cada uma — um minuto por pessoa.
+
+**UM APERTO DE ESCOPO VEIO JUNTO, e ele vale ser lido com atenção.** Quem
+enxerga **"só os próprios lançamentos"** abria o detalhe de **qualquer obra da
+empresa**. O motivo era honesto e passava despercebido: o filtro dessa pessoa é
+a AUTORIA, e **obra não tem autor** — então a função devolvia "sem filtro".
+Desde 24/11 isso estava tapado só para o cargo "administrativo de obra"; com o
+cargo fora da decisão, a tapagem passou a valer para todo mundo: **quem não
+enxerga todas as obras abre só as obras marcadas no cadastro dela**, e quem não
+tem obra marcada não abre nenhuma. É o padrão NEGAR, e é mais apertado do que
+era ontem para quem está em "só os próprios lançamentos".
+
+**A suíte precisou mudar junto, e em dois lugares:**
+
+1. **Os 3.300 casos de homologação** montavam usuários **com cargo e sem
+   perfil** — todos passariam a não abrir nada. Agora conferem o que a pessoa
+   **realmente tem** pelo perfil, e não o que o cargo daria.
+2. **109 arquivos de teste** criam gente no banco de verdade. Pedir perfil a
+   cada um seria trabalho repetido em 109 lugares e pegadinha em todo teste
+   novo. Em vez disso, o `conftest.py` cria **um perfil equivalente por
+   cargo**, uma vez por sessão, e **cola automaticamente** em quem for gravado
+   sem perfil. ⚠️ Isso esconde a regra do teste comum, e é escolha consciente:
+   a regra tem testes próprios, que criam gente por SQL direto justamente para
+   passar por fora do automatismo.
+
+**Duas limpezas de passagem:** uma fixture `operadores` duplicada (a primeira
+nunca rodava, sombreada pela segunda) e o caso do portal no roteiro, que agora
+usa um operador de perfil só-diário em vez do cargo.
+
+**O que ele dispensou:** o buraco do perfil que só aprova. *"Esse perfil só
+confirmar ou só aprovar não vai ter não. Ele vai estar dentro de uma
+supervisão, gestão, parceria."* Não mexi.
+
 ### 27/11/2026 (2) — O CARGO BASE DEIXOU DE MANDAR: quem manda é o perfil
 
 **Pedido dele, com todas as letras:** *"o cargo base não deveria influenciar em

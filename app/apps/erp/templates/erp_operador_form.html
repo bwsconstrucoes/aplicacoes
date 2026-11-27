@@ -129,9 +129,10 @@ function formOperador(u, opcoes){
         ${PERFIS_CADASTRADOS.map(p=>`<option value="${p.id}"
           ${p.id===u.perfil_id?"selected":""}>${escapar(p.nome)}</option>`).join("")}
       </select>
-        <div class="dica">Diz <b>o que</b> esta pessoa faz. Cria-se e edita-se em
-          <b>Perfis de acesso</b>, na faixa acima. Sem perfil escolhido, vale o
-          cargo antigo — o campo de baixo.</div></div>
+        <div class="dica">Diz <b>o que</b> esta pessoa faz, e é <b>a única
+          coisa que libera acesso</b>. Cria-se e edita-se em <b>Perfis de
+          acesso</b>, na faixa acima. <b>Sem perfil escolhido, a pessoa não
+          entra no sistema.</b></div></div>
       {# MAIS DE UM PERFIL NA MESMA PESSOA (migração 095). Pedido dele em
          09/11/2026: *"pode ser que eu queira que uma pessoa utilize mais de
          um perfil de acesso. Digamos que uma pessoa é do financeiro, mas eu
@@ -159,20 +160,23 @@ function formOperador(u, opcoes){
       <div class="campo"><label>Cargo base</label><select id="op-perfil">
         ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
       </select>
-        {# ⚑ NÃO SAI (24/11/2026). Ele pediu para excluir o "cargo (herança)",
-           "se não tiver outra coisa" — e tem: é ele que diz se a pessoa é do
-           ESCRITÓRIO ou da OBRA (administrativo de obra = só o portal,
-           `PERFIS_SO_PORTAL`), e ainda decide o acesso de quem não tem perfil
-           escolhido. Mudou o nome e a explicação, não a função. #}
-        {# ⚑ 27/11/2026: *"o cargo base não deveria influenciar em nada. quem
-           deve mandar é o perfil."* Passou a valer SÓ para quem não tem perfil
-           escolhido — e o texto diz isso, porque antes ele dizia o contrário e
-           prendeu uma pessoa do DP fora do ERP. #}
-        <div class="dica"><b>Só vale para quem não tem perfil de acesso
-          escolhido acima.</b> Com perfil escolhido, é o perfil que manda em
-          tudo — inclusive em entrar pelo portal ou pelas telas de dentro — e
-          este campo não influencia em nada.</div>
-        <div id="op-aviso-portal" class="aviso" style="display:none; margin-top:6px"></div></div>
+        {# ⚑ 27/11/2026 — O CAMPO FICOU, MAS NÃO CONCEDE MAIS NADA. Ele:
+           *"o cargo base não deveria influenciar em nada. quem deve mandar é o
+           perfil."* Em 24/11 eu havia argumentado que ele precisava ficar por
+           dizer se a pessoa é do escritório ou da obra — esse papel passou
+           para o perfil, e o campo sobrou por dois motivos menores: marcar
+           quem é ADMIN (as telas que consertam o sistema) e responder quando
+           a tabela de perfis ainda não pode ser lida.
+
+           NÃO VOLTE A USÁ-LO PARA DECIDIR ACESSO. Foi assim que uma pessoa do
+           DP ficou presa no portal por dias, com o perfil cheio. #}
+        <div class="dica"><b>Não libera acesso nenhum.</b> Quem manda no que a
+          pessoa abre é o <b>perfil de acesso</b>, e só ele. Este campo é
+          descrição do cargo, e é o que o sistema usa para se defender quando
+          o banco está atrás do código.</div>
+        </div>
+      <div class="campo" style="grid-column:1/-1">
+        <div id="op-aviso-portal" class="aviso" style="display:none; margin:0"></div></div>
     </div>
     ${novo ? `<div class="cartao-dica" style="margin-top:12px">Depois de salvar,
       este cadastro passa a mostrar <b>as telas que esta pessoa abre</b> e as
@@ -375,20 +379,21 @@ function formOperador(u, opcoes){
   function avisarDoPortal(){
     const caixa = els("op-aviso-portal");
     if (!caixa) return;
-    // ⚑ DESDE 27/11/2026 O CARGO SÓ VALE PARA QUEM NÃO TEM PERFIL — pedido
-    // dele: *"o cargo base não deveria influenciar em nada. quem deve mandar é
-    // o perfil."* O aviso agora só aparece nesse caso, e diz exatamente isso.
-    const temPerfil = !!els("op-perfil-cad").value;
-    const cargo = (PERFIS || []).find(p => p.chave === els("op-perfil").value);
-    const preso = !temPerfil && !!(cargo && cargo.so_portal);
-    caixa.style.display = preso ? "" : "none";
+    // ⚑ SEM PERFIL, A PESSOA NÃO ENTRA (27/11/2026). O cargo não concede mais
+    // nada: *"se o cara não fez o cadastramento, ponto final, ele não tem
+    // absolutamente acesso a nada, ele é apenas um colaborador cadastrado."*
+    const semPerfil = !els("op-perfil-cad").value
+      && !document.querySelector(".op-perfil-extra:checked");
+    caixa.style.display = semPerfil ? "" : "none";
     caixa.className = "aviso erro";
-    if (preso) caixa.innerHTML = `Esta pessoa <b>não tem perfil de acesso</b>
-      escolhido, então vale o cargo base — e este cargo leva ao <b>portal</b>.
-      Escolha um perfil acima: com perfil, o cargo deixa de influenciar.`;
+    if (semPerfil) caixa.innerHTML = `<b>Esta pessoa não entra no sistema.</b>
+      Sem perfil de acesso escolhido, ela fica apenas como colaborador
+      cadastrado — o cargo base <b>não libera nada</b>. Escolha o perfil no
+      primeiro campo desta aba.`;
   }
-  els("op-perfil").addEventListener("change", avisarDoPortal);
   els("op-perfil-cad").addEventListener("change", avisarDoPortal);
+  document.querySelectorAll(".op-perfil-extra").forEach(c =>
+    c.addEventListener("change", avisarDoPortal));
   avisarDoPortal();
 
   els("op-perfil").addEventListener("change", alternarObras);
@@ -557,16 +562,17 @@ function formOperador(u, opcoes){
       els("op-ve").innerHTML = (d.usuario && d.usuario.so_portal
           ? `<div class="aviso" style="margin:0 0 8px">Esta pessoa entra pelo
                <b>portal</b>, e não pelas telas de dentro — é o certo para quem
-               trabalha na obra. Acontece quando o perfil de acesso dela não
-               abre nenhuma tela de escritório. Para ela trabalhar no ERP,
-               marque alguma tela no perfil dela.</div>`
+               trabalha na obra. Acontece quando o perfil de acesso dela abre
+               só o diário de obra. Para ela trabalhar no ERP, marque outras
+               telas no perfil dela.</div>`
           : "")
         + (ve.length
             ? ve.map(m => `<div class="ve-mod"><b>${escapar(m.modulo)}</b>
                  <span>${m.telas.map(escapar).join(" · ")}</span></div>`).join("")
-            : `<div class="aviso" style="margin:0">Esta pessoa <b>não abre
-                 nenhuma tela</b> do ERP. Escolha um perfil de acesso na aba
-                 <b>O que faz</b>.</div>`);
+            : `<div class="aviso erro" style="margin:0"><b>Esta pessoa não
+                 entra no sistema.</b> Ela está cadastrada, mas sem perfil de
+                 acesso — e o acesso vem só do perfil. Escolha um no primeiro
+                 campo desta aba.</div>`);
 
       // ---- O ajuste fino, AGRUPADO PELO MÓDULO
       //

@@ -561,6 +561,7 @@
 
 <div class="cartao" data-secao="usuarios">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
+  <div class="aviso erro" id="aviso-sem-perfil" hidden></div>
   <div class="tabela-barra" style="padding:0 0 10px">
     <span class="espaco"></span>
     <button class="btn secundario" id="btn-novo-op">+ Novo operador</button>
@@ -571,8 +572,8 @@
   <div class="cartao-dica">Duas perguntas diferentes, e elas ficam em lugares
     diferentes de propósito: <b>o que</b> a pessoa faz vem do <b>perfil de
     acesso</b> (na faixa acima); <b>onde</b> ela faz vem do cadastro dela —
-    todas as obras, ou só as marcadas. Quem não tem perfil escolhido ainda
-    segue pelo cargo antigo.</div>
+    todas as obras, ou só as marcadas. <b>Quem não tem perfil escolhido não
+    entra no sistema</b> — fica apenas como colaborador cadastrado.</div>
 </div>
 
 <div class="cartao" data-secao="perfis">
@@ -1300,6 +1301,23 @@ function desenhar(){
 
   desenharContas();
 
+  // ⚑ QUEM ESTÁ SEM PERFIL NÃO ENTRA (27/11/2026) — regra dele: *"se o cara
+  // não fez o cadastramento, ponto final, ele não tem absolutamente acesso a
+  // nada."* Antes, essas pessoas entravam pelo cargo antigo, calado. Agora
+  // não entram, e a lista precisa dizer QUANTAS são — senão o dono descobre
+  // uma a uma, pelo telefone de quem não conseguiu trabalhar.
+  const semPerfil = OPERADORES.filter(u => u.ativo && !u.perfil_id);
+  const avisoSemPerfil = els("aviso-sem-perfil");
+  if (avisoSemPerfil) {
+    avisoSemPerfil.hidden = !semPerfil.length;
+    if (semPerfil.length) avisoSemPerfil.innerHTML =
+      `<b>${semPerfil.length} pessoa(s) ativa(s) sem perfil de acesso — elas não
+       entram no sistema.</b> O acesso vem do <b>perfil</b>, e só dele: quem
+       não tem perfil escolhido fica apenas como colaborador cadastrado.
+       Clique em cada uma e escolha o perfil na aba <b>O que faz</b>.
+       <br><small>${semPerfil.map(u => escapar(u.nome)).join(" · ")}</small>`;
+  }
+
   els("tb-usuarios").innerHTML = OPERADORES.map(u => `
     <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
       <td>${u.nome}${u.colaborador_id ? ` <button type="button" class="link-btn" title="abrir a pessoa (cadastro, ponto, mensagens…)"
@@ -1310,7 +1328,8 @@ function desenhar(){
          quem confere a lista não veria o acesso a mais. #}
       <td>${u.perfil_id
         ? escapar((PERFIS_CADASTRADOS.find(p=>p.id===u.perfil_id)||{}).nome || u.perfil_rotulo)
-        : `<span style="color:var(--tinta-suave)">${u.perfil_rotulo} <small>(cargo)</small></span>`}
+        : `<b style="color:var(--vermelho)">sem perfil</b>
+           <br><small class="desc">não entra no sistema</small>`}
         ${(u.perfis_extras||[]).length ? `<br><small class="desc">+ ${
           u.perfis_extras.map(x=>escapar((PERFIS_CADASTRADOS.find(p=>p.id===x)||{}).nome || x))
             .join(" · ")}</small>` : ""}</td>

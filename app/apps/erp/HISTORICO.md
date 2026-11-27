@@ -40,6 +40,35 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 27/11/2026 (3) — (chat do DP) ⚠️ SEM PERFIL DE ACESSO, A PESSOA NÃO ENTRA EM NADA
+
+**Atravessa as quatro áreas e muda quem entra no sistema.** Relato completo em
+`HISTORICO_PESSOAL.md`, 27/11/2026 (4).
+
+Regra dele, sem meio-termo: *"se o cara não fez o cadastramento, ponto final,
+ele não tem absolutamente acesso a nada, ele é apenas um colaborador
+cadastrado (…) até então, absolutamente tudo bloqueado."* O cargo antigo
+**deixou de conceder acesso**.
+
+| Situação | O que vale |
+|---|---|
+| tabela de perfis ausente, ou pessoa não encontrada | o cargo — a rede entre publicar e aplicar a migração |
+| pessoa existe e **sem perfil** | **nada**, nem o portal |
+| ADMIN sem perfil | só entrar, Configurações e Operadores (`PROTEGIDAS_DO_ADMIN`) |
+
+⚠️ **AO PUBLICAR:** quem estiver sem perfil perde o acesso na hora. A lista em
+Configurações › Operadores avisa em vermelho quantos são e quem são.
+
+⚠️ **AO ESCREVER TESTE COM BANCO:** não precisa fazer nada — o `conftest.py`
+cola um **perfil equivalente ao cargo** em quem for gravado sem perfil
+(`perfis_equivalentes_aos_cargos`). Para testar gente SEM perfil, grave o
+usuário por **SQL direto**, que passa por fora disso.
+
+⚠️ **APERTO DE ESCOPO NO MESMO DIA:** quem enxerga "só os próprios
+lançamentos" abria o detalhe de **qualquer obra**; agora abre só as obras
+marcadas no cadastro dela. Obra não tem autor, então o único recorte possível
+é a própria obra (`pode_ver_obra`).
+
 ### 27/11/2026 (2) — (chat do DP) O CARGO BASE NÃO MANDA MAIS; e a tela de Operadores foi repaginada
 
 **Atravessa as quatro áreas.** Mexe na guarda que roda antes de TODA rota, no

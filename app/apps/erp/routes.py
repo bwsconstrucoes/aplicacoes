@@ -26,7 +26,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from app.apps.erp.core.auth.permissoes import (
     ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS,
     acoes_do_perfil_no_banco, acoes_e_portal, decidir, entra_pelo_portal,
-    pode, so_portal,
+    pode,
 )
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
@@ -707,6 +707,10 @@ def _guarda_permissao():
             acoes, pelo_portal = acoes_e_portal(
                 s, session["erp_usuario_id"], perfil)
             session["erp_so_portal"] = pelo_portal
+            # Quem não tem perfil nenhum não é "sem permissão para esta tela":
+            # é gente que ainda não foi liberada. A recusa precisa dizer isso,
+            # senão a pessoa fica tentando telas até desistir.
+            session["erp_sem_perfil"] = acoes is not None and not acoes
     if not perfil:
         return None          # usuário sumiu do banco: a rota responde
     try:
@@ -766,7 +770,8 @@ def _recusa_de_acesso(perfil_enum):
                         "erro": "Seu perfil não tem permissão para esta operação."}), 403
     from app.apps.erp.core.auth.permissoes import ROTULOS
     return render_template("erp_sem_acesso.html",
-                           perfil=ROTULOS.get(perfil_enum, perfil_enum.value)), 403
+                           perfil=ROTULOS.get(perfil_enum, perfil_enum.value),
+                           sem_perfil=bool(session.get("erp_sem_perfil"))), 403
 
 
 def _destino_seguro(bruto: str | None) -> str | None:
@@ -9406,7 +9411,7 @@ def api_usuarios():
     """Cadastro de operadores. Só o ADMIN mexe."""
     from sqlalchemy import select
     from app.apps.erp.core.auth.permissoes import (ROTULOS, escopo_visao,
-                                                   exigir, so_portal)
+                                                   exigir)
     from app.apps.erp.core.auth.service import criar_usuario
     from app.apps.erp.core.comum import ia_custo as _ia_custo
     from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
@@ -9473,11 +9478,7 @@ def api_usuarios():
                     # aparece no cadastro da obra
                     "obras_responsavel": responde_por.get(u.id, []),
                 } for u in usuarios], "perfis": [
-                    # `so_portal` vai junto para a tela AVISAR que este cargo
-                    # leva a pessoa para o portal (27/11/2026): foi o que
-                    # prendeu uma pessoa do DP fora do ERP sem ninguém saber.
-                    {"chave": p.value, "rotulo": ROTULOS.get(p, p.value),
-                     "so_portal": so_portal(p)}
+                    {"chave": p.value, "rotulo": ROTULOS.get(p, p.value)}
                     for p in PerfilUsuario],
                     "perfis_cadastrados": _perfis_cadastrados(s),
                     "projetos_cadastrados": _projetos_cadastrados(s),
@@ -10602,7 +10603,12 @@ def api_permissoes_do_usuario(usuario_id: int):
                 return jsonify({"ok": True, "usuario": {"id": u.id, "nome": u.nome,
                                                         "perfil": u.perfil.value,
                                                         "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
-                                                        "tem_perfil_cadastrado": base is not None,
+                                                        # 27/11/2026: "conjunto
+                                                        # vazio" deixou de
+                                                        # querer dizer "não
+                                                        # sei" — quem responde
+                                                        # agora é o cadastro.
+                                                        "tem_perfil_cadastrado": bool(u.perfil_id),
                                                         "so_portal": entra_pelo_portal(s, u.id, u.perfil)},
                                 "ve": [{"modulo": m["nome"],
                                         "telas": [rot for _, rot, _ in m["abas"]]}
