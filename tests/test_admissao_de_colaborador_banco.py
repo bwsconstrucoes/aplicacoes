@@ -1616,3 +1616,70 @@ def test_a_solicitacao_junta_a_conversa_e_o_que_a_obra_devolve(mundo, monkeypatc
     assert [m["sentido"] for m in sol["conversa"]] == ["SAIU", "CHEGOU"]
     assert sol["conversa"][0]["corpo"] == "texto do pedido"
     assert [d["numero"] for d in sol["devolucoes"]] == ["DV-09999"]
+
+
+# ---------------------------------------------------------------------------
+# 27/11/2026 — a readmissão pedida já bate ponto
+# ---------------------------------------------------------------------------
+@pytestmark_banco
+def test_a_readmissao_pedida_libera_o_ponto_e_guarda_a_saida_no_historico(mundo):
+    """Ele: *"Essa data de saída ela tem que ficar no histórico, mas na hora que
+    a pessoa solicitar a admissão, ela tem que sumir, para não atrapalhar o
+    ponto."*"""
+    import datetime as dt
+    from app.apps.erp.db.models.cadastros import ColaboradorVinculo
+    from sqlalchemy import select
+    s = mundo["s"]
+    volta = mundo["volta"]
+    p = svc.abrir(s, _admissao(mundo, cpf=CPF_VOLTA, nome="Jose Que Volta",
+                               data_inicio="2026-11-26", documentos=[]), mundo["obra_user"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, volta.id)
+    assert c.situacao == "ATIVO" and c.demissao is None and c.ultimo_dia is None
+    assert c.data_inicio == dt.date(2026, 11, 26)
+    assert c.etapa == "CADASTRO_INICIAL", "vai para a fila do DP"
+    saidas = [v.demissao for v in s.scalars(select(ColaboradorVinculo).where(
+        ColaboradorVinculo.colaborador_id == c.id))]
+    assert dt.date(2025, 1, 10) in saidas, "a saída antiga fica no histórico"
+    # o ponto passa a ver a pessoa como ativa
+    situacao = s.execute(text(
+        "SELECT CASE WHEN demissao IS NOT NULL AND demissao < CURRENT_DATE THEN 'DESLIGADO' "
+        "ELSE situacao END FROM colaboradores WHERE id = :i"), {"i": c.id}).scalar()
+    assert situacao == "ATIVO"
+    # e o atendimento readmite normalmente
+    svc.atender(s, p["id"], {}, mundo["dp"])
+    s.flush()
+    assert s.get(svc_pessoas.Colaborador, volta.id).situacao == "ATIVO"
+
+
+@pytestmark_banco
+def test_a_readmissao_recusada_devolve_a_saida(mundo):
+    import datetime as dt
+    s = mundo["s"]
+    volta = mundo["volta"]
+    p = svc.abrir(s, _admissao(mundo, cpf=CPF_VOLTA, nome="Jose Que Volta",
+                               data_inicio="2026-11-26", documentos=[]), mundo["obra_user"])
+    svc.recusar(s, p["id"], {"motivo": "não vai voltar mais"}, mundo["dp"])
+    s.flush()
+    c = s.get(svc_pessoas.Colaborador, volta.id)
+    assert c.situacao == "DESLIGADO" and c.demissao == dt.date(2025, 1, 10)
+    assert c.etapa == "DESLIGADO"
+    assert "saida_anterior" not in [x["rotulo"] for x in svc.ler(s, p["id"])["dados_legiveis"]]
+
+
+@pytestmark_banco
+def test_a_readmissao_pedida_antes_da_mudanca_tambem_e_liberada(mundo):
+    s = mundo["s"]
+    volta = mundo["volta"]
+    p = svc.abrir(s, _admissao(mundo, cpf=CPF_VOLTA, nome="Jose Que Volta",
+                               data_inicio="2026-11-26", documentos=[]), mundo["obra_user"])
+    # como ficava um pedido aberto antes de 27/11: a saída ainda no cadastro
+    guardado = svc.ler(s, p["id"])["dados"]["saida_anterior"]
+    svc_pessoas.voltar_a_saida(s, volta.id, guardado, None)
+    s.execute(text("UPDATE dp_solicitacoes SET dados = dados - 'saida_anterior' WHERE id = :i"),
+              {"i": p["id"]})
+    assert s.get(svc_pessoas.Colaborador, volta.id).situacao == "DESLIGADO"
+    assert svc.liberar_readmissoes_ja_pedidas(s) == 1
+    c = s.get(svc_pessoas.Colaborador, volta.id)
+    assert c.situacao == "ATIVO" and c.demissao is None
+    assert svc.liberar_readmissoes_ja_pedidas(s) == 0, "rodar de novo não faz nada"
