@@ -124,8 +124,9 @@ def cenario_de_titulo(sessao_real):
                  VALUES ('PJ', '11444777000161', 'FORNECEDOR TESTE')
             ON CONFLICT DO NOTHING"""))
         sessao_real.execute(text("""
-            INSERT INTO usuarios (nome, email, senha_hash, perfil)
-                 VALUES ('Teste', 't@bws.test', 'x', 'ADMIN')
+            INSERT INTO usuarios (nome, email, senha_hash, perfil, perfil_id)
+                 VALUES ('Teste', 't@bws.test', 'x', 'ADMIN',
+                         (SELECT id FROM perfis WHERE nome = 'Cargo ADMIN'))
             ON CONFLICT DO NOTHING"""))
         sessao_real.execute(text("""
             INSERT INTO titulos (numero_sp, fornecedor_id, categoria_id, descricao,

@@ -345,25 +345,6 @@ def acoes_do_perfil(marcacoes: dict[str, str]) -> set[str]:
     return acoes
 
 
-# ⚑ AS SEÇÕES QUE O PORTAL BASTA (27/11/2026)
-#
-# Pedido dele, com todas as letras: *"o cargo base não deveria influenciar em
-# nada. quem deve mandar é o perfil."*
-#
-# Até aqui, quem entrava pelo portal era decidido pelo CARGO BASE da pessoa
-# (`PERFIS_SO_PORTAL`, o "administrativo de obra"). Foi isso que prendeu uma
-# pessoa do DP fora do ERP: o perfil dela abria meio sistema e o cargo a
-# mandava para o portal, sem aviso em tela nenhuma.
-#
-# Agora quem decide é o PERFIL: a pessoa entra pelo portal quando o perfil
-# dela não abre nada além do que se faz pelo portal. Hoje isso é o diário de
-# obra — é o que o portal oferece a quem trabalha na obra.
-#
-# Seção nova que também seja "de obra" entra nesta lista; o resto do sistema
-# continua sendo escritório.
-SECOES_QUE_O_PORTAL_BASTA = frozenset({"obr_diario"})
-
-
 def para_a_tela_pelo_menu(modulos: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """O catálogo agrupado PELO MENU DO ERP, e não por uma área escrita à mão.
 

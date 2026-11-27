@@ -383,6 +383,13 @@ def banco():
         conn.commit()
     resultado = aplicar_pendentes()
     assert not resultado.get("erro"), f"migração falhou no banco de teste: {resultado}"
+    # ⚑ OS PERFIS EQUIVALENTES AOS CARGOS NASCEM COM O SCHEMA (27/11/2026).
+    # Ficam aqui, e não numa fixture à parte, porque teste que cria usuário por
+    # SQL DIRETO (o ponto, a mensageria, a concorrência) não passa por fixture
+    # nenhuma — e, desde que o acesso vem só do perfil, usuário sem perfil não
+    # abre nada. Com os perfis já no banco, esse SQL só precisa apontar para
+    # `(SELECT id FROM perfis WHERE nome = 'Cargo <CARGO>')`.
+    _criar_perfis_equivalentes_aos_cargos(eng)
     yield eng
     database.reiniciar_engine()
 
@@ -409,6 +416,31 @@ def _secoes_equivalentes_ao_cargo(perfil) -> dict[str, str]:
     return marcacoes
 
 
+def _criar_perfis_equivalentes_aos_cargos(engine) -> dict:
+    """Cria um perfil cadastrado por cargo e guarda os ids em `_PERFIL_DO_CARGO`."""
+    from sqlalchemy import text
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+
+    with engine.connect() as conn:
+        for perfil in PerfilUsuario:
+            pid = conn.execute(text(
+                "INSERT INTO perfis (nome, descricao, ativo) "
+                "VALUES (:n, 'equivalente ao cargo, para os testes', true) "
+                "ON CONFLICT (nome) DO UPDATE SET ativo = true RETURNING id"),
+                {"n": f"Cargo {perfil.value}"}).scalar()
+            conn.execute(text("DELETE FROM perfil_secoes WHERE perfil_id = :p"),
+                         {"p": pid})
+            marcacoes = _secoes_equivalentes_ao_cargo(perfil)
+            if marcacoes:
+                conn.execute(
+                    text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
+                         "VALUES (:p, :s, :n)"),
+                    [{"p": pid, "s": s, "n": n} for s, n in marcacoes.items()])
+            _PERFIL_DO_CARGO[perfil] = pid
+        conn.commit()
+    return _PERFIL_DO_CARGO
+
+
 @pytest.fixture(scope="session")
 def perfis_equivalentes_aos_cargos(banco) -> dict:
     """Um perfil cadastrado por cargo, criado uma vez e reaproveitado.
@@ -428,28 +460,7 @@ def perfis_equivalentes_aos_cargos(banco) -> dict:
     passar por fora deste automatismo —
     `tests/test_quem_entra_pelo_portal_banco.py`.
     """
-    from sqlalchemy import text
-    from app.apps.erp.db.models.cadastros import PerfilUsuario
-
-    ids = {}
-    with banco.connect() as conn:
-        for perfil in PerfilUsuario:
-            pid = conn.execute(text(
-                "INSERT INTO perfis (nome, descricao, ativo) "
-                "VALUES (:n, 'equivalente ao cargo, para os testes', true) "
-                "ON CONFLICT (nome) DO UPDATE SET ativo = true RETURNING id"),
-                {"n": f"Cargo {perfil.value}"}).scalar()
-            conn.execute(text("DELETE FROM perfil_secoes WHERE perfil_id = :p"),
-                         {"p": pid})
-            marcacoes = _secoes_equivalentes_ao_cargo(perfil)
-            if marcacoes:
-                conn.execute(
-                    text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
-                         "VALUES (:p, :s, :n)"),
-                    [{"p": pid, "s": s, "n": n} for s, n in marcacoes.items()])
-            ids[perfil] = pid
-        conn.commit()
-    return ids
+    return dict(_PERFIL_DO_CARGO)
 
 
 # Preenchido pela fixture de sessão; lido pelo ouvinte abaixo.
@@ -489,7 +500,6 @@ def sessao_real(banco, perfis_equivalentes_aos_cargos):
     """
     from sqlalchemy.orm import Session
 
-    _PERFIL_DO_CARGO.update(perfis_equivalentes_aos_cargos)
     conn = banco.connect()
     trans = conn.begin()
     s = Session(bind=conn, join_transaction_mode="create_savepoint",

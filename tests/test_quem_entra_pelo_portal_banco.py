@@ -11,19 +11,21 @@ Precisa de banco de verdade porque a decisão lê `perfis` e `perfil_secoes`.
 """
 import pytest
 
-from app.apps.erp.core.auth import secoes as cat
+
 from app.apps.erp.core.auth.permissoes import entra_pelo_portal
 from app.apps.erp.db.models.cadastros import PerfilUsuario as P
 
 pytestmark = pytest.mark.banco
 
 
-def _perfil(sessao_real, nome: str, secoes: dict[str, str]) -> int:
+def _perfil(sessao_real, nome: str, secoes: dict[str, str],
+            *, pelo_portal: bool = False) -> int:
     from sqlalchemy import text
 
     pid = sessao_real.execute(
-        text("INSERT INTO perfis (nome, descricao, ativo) "
-             "VALUES (:n, '', true) RETURNING id"), {"n": nome}).scalar()
+        text("INSERT INTO perfis (nome, descricao, ativo, entra_pelo_portal) "
+             "VALUES (:n, '', true, :p) RETURNING id"),
+        {"n": nome, "p": pelo_portal}).scalar()
     for secao, nivel in secoes.items():
         sessao_real.execute(
             text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
@@ -49,9 +51,15 @@ def test_cargo_de_obra_nao_prende_quem_tem_perfil_de_escritorio(sessao_real):
     assert not entra_pelo_portal(sessao_real, uid, P.ADMINISTRATIVO_OBRA)
 
 
-def test_cargo_de_escritorio_nao_segura_quem_so_tem_o_diario(sessao_real):
-    """E o contrário também: o cargo não manda nem para dentro."""
-    pid = _perfil(sessao_real, "Gente de obra do teste", {"obr_diario": "EDITAR"})
+def test_cargo_de_escritorio_nao_segura_quem_tem_perfil_de_obra(sessao_real):
+    """E o contrário também: o cargo não manda nem para dentro.
+
+    A marcação "entra pelo portal" é do PERFIL (migração 130); o cargo da
+    pessoa pode ser o que for.
+    """
+    pid = _perfil(sessao_real, "Gente de obra do teste",
+                  {"obr_diario": "EDITAR", "pes_solicitacoes": "EDITAR"},
+                  pelo_portal=True)
     uid = _pessoa(sessao_real, "obra-portal@teste.com", P.FINANCEIRO, pid)
     assert entra_pelo_portal(sessao_real, uid, P.FINANCEIRO)
 
@@ -106,10 +114,27 @@ def test_o_cargo_so_vale_quando_nao_da_para_saber(sessao_real):
     assert portal is True
 
 
-def test_a_secao_do_portal_existe_no_catalogo(sessao_real):
-    """Se `obr_diario` for renomeada, a regra vira 'todo mundo pelo portal'."""
-    for chave in cat.SECOES_QUE_O_PORTAL_BASTA:
-        assert chave in cat.POR_CHAVE, f"seção {chave} saiu do catálogo"
+def test_a_marcacao_do_perfil_e_quem_decide_a_porta(sessao_real):
+    """⚑ A SEGUNDA TENTATIVA, e o porquê da primeira não servir.
+
+    Eu havia DEDUZIDO quem entra pelo portal: "quem não abre nada além do
+    diário". O próprio portal derruba essa conta — ele lista colaboradores e
+    abre solicitação ao DP, então quem trabalha na obra PRECISA dessas
+    permissões para usá-lo, e pela dedução deixaria de ser "da obra"
+    justamente por ter o que precisa para trabalhar.
+
+    Portal e telas de dentro são duas PORTAS para as mesmas permissões.
+    """
+    cheio = {"obr_diario": "EDITAR", "pes_solicitacoes": "EDITAR",
+             "pes_colaboradores": "LER"}
+    obra = _perfil(sessao_real, "Obra com o que precisa", cheio, pelo_portal=True)
+    escritorio = _perfil(sessao_real, "Escritório com o mesmo", cheio)
+
+    u1 = _pessoa(sessao_real, "porta-obra@teste.com", P.FINANCEIRO, obra)
+    u2 = _pessoa(sessao_real, "porta-escritorio@teste.com", P.FINANCEIRO, escritorio)
+
+    assert entra_pelo_portal(sessao_real, u1, P.FINANCEIRO)
+    assert not entra_pelo_portal(sessao_real, u2, P.FINANCEIRO)
 
 
 def test_sem_perfil_a_tela_recusa_e_explica(app_real, sessao_real):
@@ -143,3 +168,20 @@ def test_o_administrador_sem_perfil_ainda_conserta_o_sistema(app_real, sessao_re
     sessao_real.commit()
     c = como(app_real, uid)
     assert c.get("/erp/configuracoes").status_code == 200
+
+
+def test_quem_entra_pelo_portal_e_desviado_das_telas_de_dentro(app_real, sessao_real):
+    """A marcação do perfil tem efeito de verdade na tela.
+
+    O diário continua abrindo por fora do portal — é o que a obra lança.
+    """
+    from conftest import como
+
+    pid = _perfil(sessao_real, "Obra de verdade", {"obr_diario": "EDITAR"},
+                  pelo_portal=True)
+    uid = _pessoa(sessao_real, "desviado@teste.com", P.FINANCEIRO, pid)
+    sessao_real.commit()
+    c = como(app_real, uid)
+    r = c.get("/erp/inicio")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal")
+    assert c.get("/erp/obras/diario").status_code == 200

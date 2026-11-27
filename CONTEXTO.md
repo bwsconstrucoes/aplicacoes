@@ -838,10 +838,11 @@ ficou para trás em 13/09/2026. Agora ela **nasce do catálogo de seções**.
 
 **2. O cargo base deixou de mandar** (*"o cargo base não deveria influenciar em
 nada. quem deve mandar é o perfil"*). Quem tem perfil cadastrado tem tudo
-decidido por ele, inclusive entrar pelo **portal** ou pelas telas de dentro —
-que virou uma conta: o perfil não abrir nada além do diário
-(`secoes.SECOES_QUE_O_PORTAL_BASTA`). Sem perfil nenhum, o cargo ainda decide,
-senão quem é da obra e nunca recebeu perfil passaria a ver 40 telas.
+decidido por ele, inclusive entrar pelo **portal** ou pelas telas de dentro,
+que virou uma **marcação do perfil** (migração 130). ⚠️ Deduzir isso da
+permissão não serve: o portal lista colaboradores e abre solicitação ao DP, e
+quem é da obra precisa dessas permissões para usá-lo — portal e telas de
+dentro são duas PORTAS para as mesmas permissões.
 
 ⚠️ **`so_portal(cargo)` não é mais a pergunta** — é
 `permissoes.entra_pelo_portal(s, usuario_id, cargo)`, e na guarda

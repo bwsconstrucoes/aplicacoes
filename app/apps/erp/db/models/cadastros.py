@@ -125,6 +125,13 @@ class Perfil(Base):
     # operador apontando para ele.
     de_sistema: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ⚑ A PORTA (migração 130): gente de obra entra pelo PORTAL, e não pelas
+    # telas de dentro. Decide por onde a pessoa entra, não o que ela pode —
+    # isso continua sendo as seções marcadas. Até 27/11/2026 quem decidia isso
+    # era o CARGO da pessoa, e o dono mandou tirar: *"o cargo base não deveria
+    # influenciar em nada. quem deve mandar é o perfil."*
+    entra_pelo_portal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
     criado_por: Mapped[Optional[int]] = mapped_column(

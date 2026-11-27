@@ -754,8 +754,34 @@ def acoes_e_portal(s: Session, usuario_id: int,
         # sistema (`PROTEGIDAS_DO_ADMIN`), senão a última pessoa capaz de
         # destrancar ficaria trancada do lado de fora.
         return set(), False
-    return (cat.acoes_do_perfil(todas),
-            not (abertas - cat.SECOES_QUE_O_PORTAL_BASTA))
+    return cat.acoes_do_perfil(todas), _perfil_entra_pelo_portal(s, usuario_id)
+
+
+def _perfil_entra_pelo_portal(s: Session, usuario_id: int) -> bool:
+    """A marcação "entra pelo portal" do perfil principal (migração 130).
+
+    ⚑ É UMA MARCAÇÃO, E NÃO UMA CONTA, e isso custou uma tentativa errada. A
+    primeira versão deduzia: "entra pelo portal quem não abre nada além do
+    diário". O próprio portal mostra por que não serve — ele lista
+    colaboradores e abre solicitação ao DP, então quem trabalha na obra
+    PRECISA dessas permissões para usá-lo, e pela dedução deixaria de ser "da
+    obra" justamente por ter o que precisa para trabalhar.
+
+    Portal e telas de dentro são duas PORTAS para as mesmas permissões. Qual
+    porta a pessoa usa é decisão de quem monta o perfil.
+
+    Enquanto a migração 130 não roda, a coluna não existe: responde "não", e
+    aí quem é da obra entra pelas telas de dentro até o botão ser apertado.
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        return bool(s.execute(_text(
+            "SELECT COALESCE(p.entra_pelo_portal, false) "
+            "  FROM usuarios u JOIN perfis p ON p.id = u.perfil_id AND p.ativo "
+            " WHERE u.id = :i"), {"i": usuario_id}).scalar())
+    except Exception:
+        return False
 
 
 def entra_pelo_portal(s: Session, usuario_id: int, cargo: Any) -> bool:
@@ -1030,8 +1056,8 @@ def ve_todas_as_obras(usuario: Usuario) -> bool:
 #
 # ⚑ 27/11/2026 — "SER DA OBRA" DEIXOU DE SER UM CARGO. A decisão acima vale
 # igual; o que mudou é quem responde "esta pessoa é da obra?". Era este cargo;
-# agora é o PERFIL dela não abrir nada além do diário — ver
-# `entra_pelo_portal` e `secoes.SECOES_QUE_O_PORTAL_BASTA`. Pedido dele: *"o
+# agora é uma MARCAÇÃO no perfil dela ("esta gente trabalha na obra: entra
+# pelo portal", migração 130) — ver `entra_pelo_portal`. Pedido dele: *"o
 # cargo base não deveria influenciar em nada. quem deve mandar é o perfil."*
 #
 # A lista abaixo sobrou para um caso só: quando NÃO DÁ PARA SABER qual é o

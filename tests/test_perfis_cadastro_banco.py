@@ -149,13 +149,30 @@ def test_perfil_sem_secao_nenhuma_nao_abre_nem_a_porta(sessao_real):
     assert pode_com_banco(s, u, "lancar") is False
 
 
-def test_sem_perfil_apontado_vale_o_cargo(sessao_real):
-    """A janela entre publicar e apertar o botão: quem ainda não tem perfil
-    continua funcionando pelo cargo, como antes."""
+def test_sem_perfil_apontado_a_pessoa_nao_pode_nada(sessao_real):
+    """⚑ VIROU AO CONTRÁRIO EM 27/11/2026, a pedido dele.
+
+    Antes este teste dizia que quem não tinha perfil "continuava funcionando
+    pelo cargo". Ele chamou isso de gambiarra e deu a regra: *"se o cara não
+    fez o cadastramento, ponto final, ele não tem absolutamente acesso a nada,
+    ele é apenas um colaborador cadastrado."*
+
+    ⚠️ A pessoa é criada por SQL direto de propósito: o `conftest` cola um
+    perfil equivalente ao cargo em quem for gravado pelo ORM, justamente para
+    os outros 109 arquivos de teste não precisarem saber disto.
+    """
+    from sqlalchemy import text
+
     s = sessao_real
-    u = _pessoa(s, "so-cargo", P.FINANCEIRO)
-    assert acoes_do_perfil_no_banco(s, u.id) is None
-    assert pode_com_banco(s, u, "pagar") is True
+    uid = s.execute(text(
+        "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) "
+        "VALUES ('Só cargo', 'so-cargo@teste.bws.local', 'x', 'FINANCEIRO', true) "
+        "RETURNING id")).scalar()
+    s.flush()
+    assert acoes_do_perfil_no_banco(s, uid) == set()
+    u = s.get(Usuario, uid)
+    assert pode_com_banco(s, u, "pagar") is False
+    assert pode_com_banco(s, u, "ver_erp") is False
 
 
 def test_a_marcacao_na_pessoa_ainda_vence_o_perfil(sessao_real):

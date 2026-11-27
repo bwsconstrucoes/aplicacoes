@@ -80,8 +80,14 @@ Relato completo em `HISTORICO_PESSOAL.md`, 27/11/2026 (2) e (3).
 em nada. quem deve mandar é o perfil"*): quem tem **perfil de acesso**
 cadastrado tem tudo decidido pelo perfil — inclusive entrar pelo portal ou
 pelas telas de dentro. O **cargo** só vale para quem **não tem perfil nenhum**,
-e some sozinho quando todos tiverem. "Entrar pelo portal" virou uma conta:
-**o perfil não abre nada além do diário** (`secoes.SECOES_QUE_O_PORTAL_BASTA`).
+e some sozinho quando todos tiverem. "Entrar pelo portal" virou uma **marcação no
+perfil** (migração **130**): *"Esta gente trabalha na obra: entra pelo
+portal"*. Deduzir pela permissão NÃO serve, e está registrado por quê — o
+portal lista colaboradores e abre solicitação ao DP, então quem é da obra
+precisa dessas permissões para usá-lo.
+
+⚠️ **MIGRAÇÃO 130 — apertar "Aplicar atualizações do banco" no mesmo momento
+da junção.** Enquanto ela não roda, ninguém entra pelo portal.
 
 ⚠️ **AO MEXER EM PERMISSÃO, saiba que `so_portal(cargo)` não é mais a
 pergunta.** A pergunta é `permissoes.entra_pelo_portal(s, usuario_id, cargo)`.

@@ -973,7 +973,8 @@ function atualizarPlacarDoPerfil(){
 // ---- O cadastro do perfil: uma linha por tela, três níveis, nada mais.
 function formPerfil(p){
   const novo = !p;
-  p = p || {nome: "", descricao: "", secoes: {}, de_sistema: false, pessoas: 0};
+  p = p || {nome: "", descricao: "", secoes: {}, de_sistema: false, pessoas: 0,
+            entra_pelo_portal: false};
   els("dlg-titulo").textContent = novo ? "Novo perfil de acesso" : `Perfil: ${p.nome}`;
   const nivelDe = chave => p.secoes[chave] || "NADA";
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
@@ -984,6 +985,22 @@ function formPerfil(p){
       <div class="campo" style="grid-column:span 2"><label>Para que serve</label>
         <input id="pf-desc" value="${escapar(p.descricao || "")}"
                placeholder="uma linha, para quem for escolher o perfil depois"></div>
+      {# ⚑ A PORTA (27/11/2026, migração 130). Era o CARGO da pessoa que
+         decidia isso, e o dono mandou tirar: *"o cargo base não deveria
+         influenciar em nada. quem deve mandar é o perfil."* Fica aqui no alto,
+         junto do nome, porque é a primeira coisa que separa um perfil de
+         escritório de um de obra. #}
+      <div class="campo" style="grid-column:1/-1">
+        <label class="opcao" style="padding:0">
+          <input type="checkbox" id="pf-portal" ${p.entra_pelo_portal ? "checked" : ""}>
+          <span class="rotulo"><b>Esta gente trabalha na obra: entra pelo
+            portal</b></span></label>
+        <div class="dica">Quem tem este perfil, ao entrar no ERP, cai no
+          <b>portal</b> — a tela enxuta de pedir e acompanhar — em vez das
+          telas de dentro. <b>Não muda o que a pessoa pode fazer</b>: isso
+          continua sendo o que você marcar abaixo. Muda só por onde ela entra.
+          O diário de obra continua abrindo por fora do portal.</div>
+      </div>
     </div>
     <div class="cartao-dica" style="margin:10px 0">Cada linha é uma
       <b>tela do sistema</b>, no mesmo lugar em que ela aparece no menu — e
@@ -1047,7 +1064,8 @@ function formPerfil(p){
     document.querySelectorAll(".pf-nivel:checked").forEach(r => {
       if (r.value !== "NADA") secoes[r.dataset.secao] = r.value;
     });
-    const corpo = {nome: els("pf-nome").value, descricao: els("pf-desc").value, secoes};
+    const corpo = {nome: els("pf-nome").value, descricao: els("pf-desc").value,
+                   entra_pelo_portal: els("pf-portal").checked, secoes};
     try {
       await api(novo ? "/erp/api/perfis" : `/erp/api/perfis/${p.id}`,
         {method:"POST", headers:{"Content-Type":"application/json"},

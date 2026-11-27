@@ -577,9 +577,12 @@ def test_operador_do_erp_que_nao_e_colaborador_NAO_e_barrado(conn):
     da BWS."""
     from app.apps.erp.core.auth.service import gerar_hash
     conn.execute(text("DELETE FROM usuarios WHERE email = 'parceiro.msg@teste.com'"))
-    conn.execute(text("INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, telefone) "
+    conn.execute(text("INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, "
+                      "                      telefone, perfil_id) "
                       "VALUES ('Parceiro da obra', 'parceiro.msg@teste.com', :h, 'PARCEIRO', "
-                      "        TRUE, '85988887777')"), {"h": gerar_hash("x" * 12)})
+                      "        TRUE, '85988887777', "
+                      "        (SELECT id FROM perfis WHERE nome = 'Cargo PARCEIRO'))"),
+                 {"h": gerar_hash("x" * 12)})
     _colab(conn, "Homônimo Desligado", "", "85988887777", "DESLIGADO")
 
     assert tc.motivo_do_bloqueio(conn, telefone="85988887777") is None

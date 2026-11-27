@@ -72,16 +72,21 @@ def test_casos_do_roteiro(app_real, operadores, perfil, caminho, abre):
 def test_quem_so_tem_o_diario_cai_no_portal(app_real, sessao_real):
     """O desvio para o portal, agora decidido pelo PERFIL (27/11/2026).
 
-    Perfil que não abre nada além do diário é "gente de obra": a tela de
-    entrada leva ao portal, o diário abre, e o resto do ERP é recusado — não
-    por desvio, e sim porque o perfil não dá a ação. Antes isto vinha do cargo
-    base, e era o cargo que prendia a pessoa no portal.
+    "Gente de obra" virou uma **marcação no perfil** (migração 130), e não uma
+    dedução: o portal lista colaboradores e abre solicitação ao DP, então quem
+    trabalha na obra precisa dessas permissões para usá-lo — deduzir pela
+    permissão tiraria da obra justamente quem tem o que precisa.
+
+    A tela de entrada leva ao portal; o diário abre; o resto do ERP é recusado
+    — não por desvio, e sim porque o perfil não dá a ação. Antes isto vinha do
+    cargo base, e era o cargo que prendia a pessoa no portal.
     """
     from sqlalchemy import text
 
     pid = sessao_real.execute(text(
-        "INSERT INTO perfis (nome, descricao, ativo) "
-        "VALUES ('Gente de obra (homologação)', '', true) RETURNING id")).scalar()
+        "INSERT INTO perfis (nome, descricao, ativo, entra_pelo_portal) "
+        "VALUES ('Gente de obra (homologação)', '', true, true) "
+        "RETURNING id")).scalar()
     sessao_real.execute(
         text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
              "VALUES (:p, 'obr_diario', 'EDITAR')"), {"p": pid})

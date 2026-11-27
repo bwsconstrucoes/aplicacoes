@@ -251,23 +251,37 @@ nenhuma.
 | **tem perfil de acesso** | **o perfil, e só ele.** O cargo é ignorado |
 | **não tem perfil nenhum** | o cargo, porque não há outra coisa — e a tela passa a dizer isso |
 
-E "entrar pelo portal" deixou de ser uma propriedade do cargo: é **o perfil não
-abrir nada além do que se faz pelo portal**. Hoje isso é o diário de obra
-(`secoes.SECOES_QUE_O_PORTAL_BASTA`). Perfil que não abre nada também cai no
-portal — melhor que uma tela vazia.
+E "entrar pelo portal" deixou de ser uma propriedade do cargo: virou uma
+**marcação no perfil** — *"Esta gente trabalha na obra: entra pelo portal"*
+(migração **130**).
+
+⚠️ **TENTEI DEDUZIR ANTES, E NÃO SERVE — fica registrado para ninguém repetir.**
+A primeira versão calculava: "entra pelo portal quem não abre nada além do
+diário". O próprio portal derruba a conta: ele **lista colaboradores e abre
+solicitação ao DP**, então quem trabalha na obra PRECISA dessas permissões
+para usá-lo — e pela dedução deixaria de ser "da obra" justamente por ter o
+que precisa para trabalhar. Portal e telas de dentro são **duas portas para as
+mesmas permissões**; qual porta a pessoa usa é decisão de quem monta o perfil,
+não uma conta.
 
 ⚠️ **POR QUE A PONTE DO CARGO FICOU, e não é preguiça:** quem tem cargo
 "administrativo de obra" e **nenhum** perfil cadastrado passaria, sem ela, a
 enxergar **40 telas** — é o que a tabela em código dá a esse cargo. A ponte
 morre sozinha quando todo mundo tiver perfil.
 
+⚠️ **TEM MIGRAÇÃO (130):** ao juntar na `main`, apertar **"Aplicar
+atualizações do banco"** no mesmo momento. Enquanto ela não roda, a coluna não
+existe e a marcação responde "não" — ou seja, **ninguém entra pelo portal** até
+o botão ser apertado. Depois disso, marque o perfil da gente de obra.
+
 **Mexeu em:** `core/auth/permissoes.py`, `core/auth/secoes.py`, `routes.py` (a
-guarda que roda antes de toda rota, o menu e o link do portal) e os textos do
-cadastro. Testes com banco de verdade em
-`tests/test_quem_entra_pelo_portal_banco.py`: cargo de obra + perfil de
-escritório fica no ERP; cargo de escritório + perfil só do diário vai para o
-portal; perfil vazio vai para o portal; sem perfil, o cargo ainda decide.
-Conferido também no navegador, com os dois casos.
+guarda que roda antes de toda rota, o menu e o link do portal), o modelo e o
+serviço de perfis, e os textos do cadastro. Testes com banco de verdade em
+`tests/test_quem_entra_pelo_portal_banco.py` (9 casos): cargo de obra + perfil
+de escritório fica no ERP; cargo de escritório + perfil marcado vai para o
+portal; dois perfis com AS MESMAS permissões e marcações diferentes vão para
+portas diferentes; perfil vazio não entra em lugar nenhum; sem perfil, nada; e
+o ADMIN sem perfil ainda abre Configurações. Conferido também no navegador.
 
 ### 27/11/2026 (3) — A tela de Operadores repaginada
 
