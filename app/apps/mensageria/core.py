@@ -100,6 +100,12 @@ CATALOGO: list[dict] = [
     {"chave": "erp.pedido_resolvido", "nome": "Pedido ao DP resolvido", "modulo": "ERP",
      "politica": TELEGRAM,
      "descricao": "Aviso a quem abriu o pedido no portal quando ele é resolvido (26/11/2026)."},
+    # O contrato de empreita para assinar (27/11/2026, chat do Financeiro). O
+    # dono: "vai ser o WhatsApp mesmo. WhatsApp e e-mail". Vai para gente de
+    # FORA (o empreiteiro), que não tem Telegram com o bot — por isso WhatsApp.
+    {"chave": "erp.contrato_assinatura", "nome": "Contrato para assinar (empreita)",
+     "modulo": "ERP", "politica": WHATSAPP,
+     "descricao": "Link do contrato de empreita e o código de 6 dígitos para assinar."},
     {"chave": "erp.acesso_portal", "nome": "Pedido de acesso ao portal", "modulo": "ERP",
      "politica": TELEGRAM,
      "descricao": "Aviso aos ADMIN quando alguém pede acesso ao Portal da Obra."},

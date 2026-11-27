@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Assinar contrato — BWS</title>
+{# A PÁGINA DE QUEM ASSINA O CONTRATO (27/11/2026).
+
+   Chega por um link no WhatsApp ou no e-mail. Quem abre é de fora — o
+   empreiteiro — ou quem assina pela empresa. Não há login: o que identifica é
+   o link (um token que só ele recebeu), o código de 6 dígitos que chega no
+   mesmo telefone/e-mail e o CPF/CNPJ digitado. A regra está em
+   `core/titulos/contrato_assinatura.py`. #}
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+<style>
+  body { margin: 0; background: #F4F6FA; font-family: system-ui, -apple-system,
+         "Segoe UI", Roboto, sans-serif; color: #10233F; }
+  .topo-portal { background: #0B2C5C; color: #fff; padding: 14px 16px; }
+  .topo-portal b { font-size: 16px; }
+  .topo-portal small { display: block; opacity: .8; }
+  .caixa { max-width: 760px; margin: 0 auto; padding: 12px 12px 60px; }
+  .bloco { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,35,63,.12);
+         padding: 14px; margin-bottom: 10px; }
+  .bloco h3 { margin: 0 0 6px; font-size: 15px; }
+  .contrato { white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; max-height: 55vh;
+         overflow: auto; border: 1px solid #E6EAF2; border-radius: 10px; padding: 12px;
+         background: #FBFCFE; }
+  .mini { font-size: 12.5px; color: #5A6B85; }
+  label.campo { display: block; margin-top: 12px; font-size: 13px; font-weight: 600; color: #31507F; }
+  label.campo input { width: 100%; box-sizing: border-box; padding: 12px; margin-top: 4px;
+         border: 1px solid #C9D3E4; border-radius: 10px; font-size: 18px; letter-spacing: 1px; }
+  .btn-portal { display: block; width: 100%; box-sizing: border-box; text-align: center;
+         background: #F4B942; border: 0; border-radius: 10px; padding: 13px 16px;
+         font-size: 15px; font-weight: 700; color: #10233F; cursor: pointer; margin-top: 12px;
+         text-decoration: none; }
+  .btn-portal.secundario { background: #E3E9F3; color: #31507F; }
+  .btn-portal[disabled] { opacity: .5; }
+  .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
+  .recado.erro { background: #FDECEC; color: #A32020; }
+  .recado.ok { background: #E8F6EE; color: #1C6B3C; }
+  .recado.aviso { background: #FFF6E5; color: #8A5B00; }
+  canvas { width: 100%; height: 180px; border: 1px dashed #9AA8C0; border-radius: 10px;
+         background: #fff; touch-action: none; }
+  .marcar { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; font-size: 14px; }
+  .marcar input { width: 22px; height: 22px; flex: none; margin: 0; }
+  .partes div { padding: 4px 0; font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div class="topo-portal"><b>Assinatura de contrato</b><small>BWS — assinatura eletrônica</small></div>
+<div class="caixa">
+  <div id="recado"></div>
+  <div id="conteudo"><div class="bloco">carregando…</div></div>
+</div>
+<script>
+const TOKEN = {{ token|tojson }};
+const el = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
+  ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+let D = null, CANAL = null, RISCOU = false;
+
+async function api(url, opcoes){
+  const r = await fetch(url, opcoes);
+  let d = null; try { d = await r.json(); } catch(_) {}
+  if (!r.ok || !d || d.ok === false) throw new Error((d && d.erro) || "Não foi possível concluir. Tente de novo.");
+  return d;
+}
+const json = c => ({method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(c)});
+function recado(t, tipo){ el("recado").innerHTML = t ? `<div class="recado ${tipo}">${t}</div>` : "";
+  if (t) window.scrollTo({top: 0, behavior: "smooth"}); }
+
+async function carregar(){
+  try { D = await api(`/erp/assinar/${encodeURIComponent(TOKEN)}/dados`); desenhar(); }
+  catch(e){ el("conteudo").innerHTML = `<div class="bloco">${esc(e.message)}</div>`; }
+}
+
+function desenhar(){
+  const partes = `<div class="partes">${[{papel: D.papel, nome: D.nome, assinou: D.ja_assinou, voce: true}]
+    .concat(D.outros).map(p => `<div>${p.assinou ? "✅" : "⏳"} <b>${p.papel === "CONTRATADO" ? "Contratado" : "Contratante"}:</b>
+      ${esc(p.nome)}${p.voce ? " (você)" : ""} — ${p.assinou ? "assinou" : "falta assinar"}</div>`).join("")}</div>`;
+  if (D.ja_assinou) {
+    el("conteudo").innerHTML = `<div class="bloco"><h3>Você já assinou este contrato.</h3>${partes}
+      ${D.tem_pdf ? `<a class="btn-portal" href="/erp/assinar/${encodeURIComponent(TOKEN)}/pdf" target="_blank">Baixar o contrato assinado</a>`
+        : `<p class="mini">Quando a outra parte assinar, este mesmo link passa a ter o contrato assinado para baixar.</p>`}</div>`;
+    return;
+  }
+  el("conteudo").innerHTML = `
+    <div class="bloco"><h3>Olá, ${esc(D.documento_tipo === "CPF" ? D.nome.split(" ")[0] : D.nome)}.</h3>
+      <p class="mini">Leia o contrato até o fim. Para assinar, o sistema manda um código de 6 dígitos para você
+        e pede o seu ${esc(D.documento_tipo)} — é isso que comprova que foi você quem assinou.</p>${partes}</div>
+    <div class="bloco"><h3>${esc(D.titulo)}</h3><div class="contrato" id="texto">${esc(D.texto)}</div>
+      <p class="mini">Lacre do texto: ${esc(D.lacre.slice(0, 16))}… — qualquer mudança no texto muda o lacre.</p></div>
+    <div class="bloco"><h3>1. Receber o código</h3>
+      ${D.canais.map(c => `<button type="button" class="btn-portal secundario" data-canal="${c.canal}">
+        Mandar código por ${c.canal === "email" ? "e-mail" : "WhatsApp"} (${esc(c.destino)})</button>`).join("")}
+      <div id="codigo-ok" class="mini" style="margin-top:8px"></div></div>
+    <div class="bloco"><h3>2. Confirmar e assinar</h3>
+      <label class="campo">Código de 6 dígitos <input id="codigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
+      <label class="campo">Seu ${esc(D.documento_tipo)} <input id="documento" inputmode="numeric"></label>
+      <p class="mini" style="margin-top:12px">Assine com o dedo no quadro:</p>
+      <canvas id="quadro"></canvas>
+      <button type="button" class="btn-portal secundario" id="limpar" style="width:auto;display:inline-block;padding:8px 12px">Limpar</button>
+      <label class="marcar"><input type="checkbox" id="li"> <span>Li o contrato inteiro, concordo com os termos
+        e aceito assinar eletronicamente.</span></label>
+      <button type="button" class="btn-portal" id="assinar">Assinar o contrato</button></div>`;
+  document.querySelectorAll("[data-canal]").forEach(b => b.addEventListener("click", () => pedirCodigo(b.dataset.canal, b)));
+  quadro();
+  el("limpar").addEventListener("click", () => { quadro(); RISCOU = false; });
+  el("assinar").addEventListener("click", assinar);
+}
+
+async function pedirCodigo(canal, b){
+  b.disabled = true;
+  try {
+    const r = await api(`/erp/assinar/${encodeURIComponent(TOKEN)}/codigo`, json({canal}));
+    CANAL = canal;
+    el("codigo-ok").innerHTML = `Código enviado para <b>${esc(r.enviado_para)}</b>. Vale por 15 minutos.`;
+    recado("", "");
+  } catch(e){ recado(esc(e.message), "erro"); }
+  setTimeout(() => { b.disabled = false; }, 30000);
+}
+
+function quadro(){
+  const c = el("quadro"), r = c.getBoundingClientRect(), k = window.devicePixelRatio || 1;
+  c.width = r.width * k; c.height = r.height * k;
+  const g = c.getContext("2d"); g.scale(k, k); g.lineWidth = 2.2; g.lineCap = "round"; g.strokeStyle = "#10233F";
+  let desenhando = false;
+  const ponto = e => { const b = c.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  c.onpointerdown = e => { desenhando = true; c.setPointerCapture(e.pointerId); const [x, y] = ponto(e); g.beginPath(); g.moveTo(x, y); };
+  c.onpointermove = e => { if (!desenhando) return; const [x, y] = ponto(e); g.lineTo(x, y); g.stroke(); RISCOU = true; };
+  c.onpointerup = () => { desenhando = false; };
+}
+
+async function assinar(){
+  if (!el("li").checked) return recado("Marque que leu o contrato e concorda.", "erro");
+  if (!RISCOU) return recado("Assine no quadro com o dedo.", "erro");
+  const b = el("assinar"); b.disabled = true; b.textContent = "Assinando…";
+  try {
+    const r = await api(`/erp/assinar/${encodeURIComponent(TOKEN)}`, json({
+      codigo: el("codigo").value, documento: el("documento").value,
+      assinatura: el("quadro").toDataURL("image/png"), lacre: D.lacre}));
+    recado(r.concluido ? "Contrato assinado pelas duas partes. Você pode baixar a via assinada abaixo."
+      : "Sua assinatura foi registrada. Quando a outra parte assinar, este link passa a ter o contrato assinado.", "ok");
+    await carregar(); return;
+  } catch(e){ recado(esc(e.message), "erro"); }
+  b.disabled = false; b.textContent = "Assinar o contrato";
+}
+carregar();
+</script>
+</body>
+</html>

@@ -35,6 +35,7 @@
 {% endblock %}
 
 {% block scripts %}
+{% include "_contrato_gerado.html" %}
 <script>
 let CT = [], OBRAS = [], FORN = [], CATS = [];
 const dec = paraNumero;   // conversor único: trata "30.00" e "1.234,56" corretamente
@@ -119,6 +120,7 @@ async function abrir(id){
         ${c.quantidade?` · ${c.quantidade} ${c.unidade} × ${moeda(c.preco_unitario)}`:""}
         ${c.periodo?` · ${c.periodo}`:""} · ${c.exige_foto?"<b>exige foto na medição</b>":"foto opcional"}</div>
 
+      <div id="ct-assinatura"></div>
       ${c.status==="AGUARDANDO_AVAL"?`<div class="aviso info">Contrato aguardando aval.
         Quem cadastrou não pode aprovar.
         <button class="btn" id="ct-aprovar" style="margin-left:8px">Aprovar contrato</button></div>`:""}
@@ -207,10 +209,30 @@ async function abrir(id){
       </div>
       <div id="md-criticas"></div>`:""}`;
 
+    // ⚑ A ASSINATURA DO CONTRATO (27/11/2026) — o mesmo quadro do portal.
+    try {
+      const ct = await api(`/erp/api/empreitas/${id}/contrato`);
+      const a = ct.situacao;
+      if (a) els("ct-assinatura").innerHTML = `<div class="aviso ${a.situacao === "ASSINADO" ? "ok" : "info"}">
+        <b>Contrato gerado pelo sistema:</b> ${escapar(a.rotulo)}<br>${a.assinaturas.map(x =>
+          `${x.assinou ? "✅" : "⏳"} ${x.papel === "CONTRATADO" ? "Empreiteiro" : "Pela empresa"}: ${escapar(x.nome)}${
+            x.assinou ? " — assinou em " + momentoBR(x.assinado_em) : x.abriu ? " — abriu o link" : x.enviado_em ? " — link enviado" : ""}${
+            !x.assinou && a.situacao === "EM_ASSINATURA" ? ` <button class="btn secundario" data-reenvia="${x.papel}">reenviar o link</button>` : ""}`).join("<br>")}
+        ${a.anexo_id ? `<br><a href="/erp/anexo/${a.anexo_id}" target="_blank">abrir o contrato assinado</a>` : ""}</div>`;
+      document.querySelectorAll("[data-reenvia]").forEach(b => b.addEventListener("click", async () => {
+        try { const r = await api(`/erp/api/empreitas/${id}/contrato/reenviar`, {method: "POST",
+            headers: {"Content-Type": "application/json"}, body: JSON.stringify({papel: b.dataset.reenvia})});
+          b.textContent = r.saiu && r.saiu.length ? "enviado ✓" : "não saiu: " + (r.falhou || []).join("; ");
+        } catch(e){ b.textContent = e.message; }
+      }));
+    } catch(_) { /* sem a atualização 132, só não mostra */ }
+
     const bApr = els("ct-aprovar");
     if (bApr) bApr.addEventListener("click", async () => {
-      try { await api(`/erp/api/empreitas/${id}/aprovar`, {method:"POST"});
-        aviso("mensagem","Contrato aprovado — pode medir.","ok"); els("dlg").close(); carregar();
+      try { const r = await api(`/erp/api/empreitas/${id}/aprovar`, {method:"POST"});
+        aviso("mensagem", r.assinatura && r.assinatura.assinatura
+          ? "Contrato aprovado. Os links de assinatura foram enviados — ele fica vigente quando as duas partes assinarem."
+          : "Contrato aprovado — pode medir.", "ok"); els("dlg").close(); carregar();
       } catch(e){ aviso("dlg-msg", e.message, "erro"); }
     });
 
@@ -344,8 +366,7 @@ els("btn-novo").addEventListener("click", () => {
     <div class="form-grade">
       <div class="campo"><label>Obra *</label><select id="n-obra">
         ${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}</select></div>
-      <div class="campo" style="grid-column:span 2"><label>Prestador *</label><select id="n-forn">
-        ${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select></div>
+      <div style="grid-column:1 / -1" id="n-emp"></div>
       <div class="campo" style="grid-column:span 3"><label>Serviço contratado *</label>
         <input id="n-objeto" placeholder="ex.: alvenaria de vedação do bloco A"></div>
       <div class="campo"><label>Como será pago *</label><select id="n-modo">
@@ -370,8 +391,27 @@ els("btn-novo").addEventListener("click", () => {
       unidade, quantidade e preço. A medição depois é feita por serviço.</div></div>
     <div class="cartao-dica">O contrato nasce aguardando aval. Depois de aprovado, a obra
       mede e o supervisor autoriza — só então nasce o título a pagar.</div>
+    <div id="n-cg"></div>
     <div style="margin-top:14px"><button class="btn" id="n-salvar">Cadastrar contrato</button></div>`;
   let ITS = [{}];
+  // ⚑ O CONTRATO GERADO (27/11/2026): a mesma peça do portal.
+  let CG = null;
+  // ⚑ O EMPREITEIRO PELO DOCUMENTO (27/11/2026): a mesma peça do portal.
+  const EMP = Empreiteiro.novo();
+  const desenharEmp = () => {
+    els("n-emp").innerHTML = Empreiteiro.html(EMP);
+    Empreiteiro.ligar(EMP, els("n-emp"), desenharEmp, async q => {
+      const t = q.toLowerCase(), d = q.replace(/\D/g, "");
+      return FORN.filter(f => f.nome.toLowerCase().includes(t) || (d && (f.documento || "").startsWith(d)));
+    });
+  };
+  desenharEmp();
+  const desenharCG = () => {
+    els("n-cg").innerHTML = ContratoGerado.html(CG);
+    ContratoGerado.ligar(CG, els("n-cg"), desenharCG);
+  };
+  ContratoGerado.carregar().then(() => { CG = ContratoGerado.novo(); desenharCG(); })
+    .catch(e => { els("n-cg").innerHTML = `<div class="cartao-dica">${escapar(e.message)}</div>`; });
   // ⚑ O MODO MANDA NOS CAMPOS (27/11/2026) — a mesma regra do portal
   // (`core/titulos/pleitos.py`): por medição, a planilha de serviços é
   // obrigatória e o valor é a soma dela; em parcelas, a planilha sai e o valor
@@ -413,17 +453,21 @@ els("btn-novo").addEventListener("click", () => {
   els("n-modo").addEventListener("change", aplicarModo);
   aplicarModo();
   els("n-salvar").addEventListener("click", async () => {
+    const falta = Empreiteiro.faltando(EMP) || (CG ? ContratoGerado.faltando(CG) : "");
+    if (falta) { aviso("dlg-msg", escapar(falta), "erro"); return; }
     try {
+      const credor = await Empreiteiro.salvar(EMP);
       const d = await api("/erp/api/empreitas", {method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({obra_id:+els("n-obra").value, fornecedor_id:+els("n-forn").value,
+        body: JSON.stringify({obra_id:+els("n-obra").value, fornecedor_id: credor.id,
           objeto: els("n-objeto").value, modo: els("n-modo").value,
           itens: porMedicao() ? ITS.filter(i=>i.descricao || i.unidade || i.quantidade || i.preco_unitario)
             .map(i=>({...i, quantidade: String(dec(i.quantidade)), preco_unitario: String(dec(i.preco_unitario))})) : [],
           valor_total: porMedicao() ? null : String(dec(els("n-total").value)),
           parcelas_previstas: els("n-parc").value, data_inicio: els("n-ini").value || null,
           data_fim: els("n-fim").value || null, exige_foto: els("n-foto").value === "1",
-          retencao_garantia_pct: (els("n-garantia").value || "0").replace(",", ".")})});
+          retencao_garantia_pct: (els("n-garantia").value || "0").replace(",", "."),
+          contrato_gerado: CG && CG.gerar ? ContratoGerado.escolhas(CG, EMP) : null})});
       els("dlg").close();
       aviso("mensagem", `Contrato ${d.contrato.numero} cadastrado (${moeda(d.contrato.valor)}) —
         aguardando aval.`, "ok");

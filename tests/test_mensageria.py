@@ -187,7 +187,11 @@ def test_todo_tipo_do_catalogo_tem_nome_modulo_e_politica_valida():
 # AINDA NÃO TEM ACESSO NENHUM. Se tivesse Telegram ligado ao cadastro, já
 # estaria dentro do sistema. O código só serve se chegar no WhatsApp do
 # telefone que está na ficha dela.
-DO_ERP_NO_WHATSAPP = {"erp.dp_devolucao", "erp.dp_pedido", "erp.codigo_portal"}
+DO_ERP_NO_WHATSAPP = {"erp.dp_devolucao", "erp.dp_pedido", "erp.codigo_portal",
+                      # 27/11/2026: o contrato vai para o EMPREITEIRO, que é de
+                      # fora e não tem o Telegram do bot. Decisão do dono:
+                      # "vai ser o WhatsApp mesmo".
+                      "erp.contrato_assinatura"}
 
 
 def test_ponto_nasce_liberado_no_whatsapp_e_o_resto_so_telegram():

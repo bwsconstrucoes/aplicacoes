@@ -1,0 +1,244 @@
+{# O CONTRATO GERADO PELO SISTEMA — a parte do cadastro do contrato de empreita
+   que escolhe as cláusulas, quem assina pela empresa e o contato do empreiteiro
+   (27/11/2026). UMA peça, incluída no portal da obra E na tela de Empreitas do
+   ERP: duas cópias divergiriam no primeiro mês. A regra está em
+   `core/titulos/contrato_assinatura.py`. #}
+<style>
+  .cg { margin-top: 14px; padding: 12px; border: 1px solid #D6DEEB; border-radius: 12px; background: #FAFBFD; }
+  .cg h4 { margin: 0 0 4px; font-size: 14.5px; }
+  .cg .cg-mini { font-size: 12.5px; color: #5A6B85; }
+  .cg label { display: block; margin-top: 10px; font-size: 13px; font-weight: 600; color: #31507F; }
+  .cg input[type=text], .cg input:not([type]), .cg textarea, .cg select {
+         width: 100%; box-sizing: border-box; padding: 9px; margin-top: 4px; border: 1px solid #C9D3E4;
+         border-radius: 9px; font-size: 15px; font-family: inherit; background: #fff; }
+  .cg textarea { min-height: 80px; }
+  .cg .cg-op { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; color: #10233F; }
+  .cg .cg-op input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
+  .cg .cg-op small { display: block; color: #5A6B85; }
+  .cg .cg-duas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cg .cg-achados button { display: block; width: 100%; text-align: left; border: 0; background: #fff;
+         border-bottom: 1px solid #E6EAF2; padding: 8px 6px; font: inherit; cursor: pointer; }
+  .cg .cg-escolhido { background: #EEF2FA; border-radius: 9px; padding: 8px 10px; margin-top: 4px;
+         display: flex; justify-content: space-between; gap: 8px; }
+  .cg .cg-btn { border: 0; border-radius: 9px; padding: 8px 12px; font-size: 13px; font-weight: 700;
+         background: #E3E9F3; color: #31507F; cursor: pointer; margin-top: 8px; }
+  .cg .cg-ia { margin-top: 8px; padding: 10px; border-radius: 9px; background: #F1F7FF; font-size: 13.5px;
+         white-space: pre-wrap; }
+  .cg .cg-ob { color: #A32020; }
+</style>
+<script>
+// Estado: {gerar, assinante:{id,nome,cargo,tem_contato}, opcionais:{}, campos:{},
+//          texto_adicional, prazo_pagamento_dias, aviso_rescisao_dias,
+//          contratado_telefone, contratado_email, _ia, _busca}
+const ContratoGerado = {
+  MODELO: null, DISPONIVEL: true,
+  carregar: async function(){
+    if (this.MODELO) return;
+    const r = await fetch("/erp/api/empreitas/contrato-modelo");
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || "Não consegui abrir o modelo do contrato.");
+    this.MODELO = d.modelo; this.DISPONIVEL = d.disponivel;
+  },
+  novo: function(){
+    const E = {gerar: true, assinante: null, opcionais: {}, campos: {}, texto_adicional: ""};
+    if (this.MODELO) {
+      this.MODELO.opcionais.forEach(o => { E.opcionais[o.chave] = !!o.padrao;
+        Object.entries(o.campos || {}).forEach(([k, c]) => { E.campos[k] = c.padrao; }); });
+      Object.entries(this.MODELO.parametros).forEach(([k, p]) => { E[k] = String(p.padrao); });
+    }
+    return E;
+  },
+  // Escapa pelo próprio navegador (textContent → innerHTML) e depois as aspas.
+  _e: function(t){ const d = document.createElement("div"); d.textContent = String(t ?? "");
+    return d.innerHTML.split(String.fromCharCode(34)).join("&quot;").split(String.fromCharCode(39)).join("&#39;"); },
+  html: function(E){
+    const e = this._e, M = this.MODELO;
+    if (!M) return `<div class="cg"><div class="cg-mini">carregando o modelo do contrato…</div></div>`;
+    let h = `<div class="cg"><h4>Contrato e assinatura</h4>
+      <label class="cg-op"><input type="radio" name="cg-gerar" value="1" ${E.gerar ? "checked" : ""}>
+        <span>Gerar o contrato pelo sistema e colher as assinaturas
+        <small>o empreiteiro e quem assina pela empresa recebem o link por WhatsApp e e-mail depois do aval</small></span></label>
+      <label class="cg-op"><input type="radio" name="cg-gerar" value="0" ${E.gerar ? "" : "checked"}>
+        <span>Já tenho o contrato assinado <small>anexe o contrato assinado ao cadastro</small></span></label>`;
+    if (!E.gerar) return h + `</div>`;
+    if (!this.DISPONIVEL) return h + `<div class="cg-mini cg-ob" style="margin-top:8px">A assinatura pelo sistema
+      precisa da atualização do banco (132). Peça ao administrador para aplicar em Configurações.</div></div>`;
+    const a = E.assinante;
+    h += `<label>Quem assina pela empresa <span class="cg-ob">*</span></label>` + (a
+      ? `<div class="cg-escolhido"><span><b>${e(a.nome)}</b> <small class="cg-mini">${e(a.cargo || "")}</small>
+          ${a.tem_contato ? "" : `<br><small class="cg-ob">sem telefone nem e-mail no cadastro de colaboradores</small>`}</span>
+          <button type="button" class="cg-btn" data-cg-troca style="margin:0">trocar</button></div>`
+      : `<input data-cg-busca placeholder="nome de quem assina (um colaborador)" value="${e(E._busca || "")}" autocomplete="off">
+         <div class="cg-achados" id="cg-achados"></div>
+         <div class="cg-mini">O link e o código vão para o telefone e o e-mail do cadastro de colaboradores dele.</div>`);
+    h += `      <div class="cg-duas">${Object.entries(M.parametros).map(([k, p]) =>
+        `<label>${e(p.rotulo)}<input data-cg="${k}" inputmode="numeric" value="${e(E[k])}"></label>`).join("")}</div>
+      <label>Cláusulas que entram neste contrato</label>
+      ${M.opcionais.map(o => `<label class="cg-op"><input type="checkbox" data-cg-op="${o.chave}" ${E.opcionais[o.chave] ? "checked" : ""}>
+        <span>${e(o.rotulo)}<small>${e(o.explicacao)}</small>
+        ${E.opcionais[o.chave] ? Object.entries(o.campos || {}).map(([ck, cc]) =>
+          `<input data-cg-campo="${ck}" placeholder="${e(cc.rotulo)}" value="${e(E.campos[ck] ?? "")}" style="margin-top:4px">`).join("") : ""}
+        </span></label>`).join("")}
+      <label>Alguma condição a mais? (escreva do seu jeito)
+        <textarea data-cg="texto_adicional" placeholder="ex.: o empreiteiro guarda as ferramentas dele no container da obra; a laje só é medida depois da cura">${e(E.texto_adicional)}</textarea></label>
+      <button type="button" class="cg-btn" data-cg-ia>✨ Pedir à IA para ajustar o texto</button>
+      ${E._ia ? `<div class="cg-ia"><b>Sugestão da IA:</b>\n${e(E._ia.texto)}${E._ia.observacoes.length
+          ? `\n\n<b>Atenção:</b>\n• ${E._ia.observacoes.map(e).join("\n• ")}` : ""}</div>
+        <button type="button" class="cg-btn" data-cg-usar>Usar o texto da IA</button>
+        <button type="button" class="cg-btn" data-cg-descartar>Manter o meu</button>` : ""}
+      <div class="cg-mini" style="margin-top:8px">O texto completo do contrato fica pronto logo depois de cadastrar,
+        em <b>Contratos</b>. Até o aval, dá para ajustar e gerar de novo.</div></div>`;
+    return h;
+  },
+  ligar: function(E, raiz, aoMudar){
+    const q = s => raiz.querySelectorAll(s);
+    q("[name=cg-gerar]").forEach(x => x.addEventListener("change", () => { E.gerar = x.value === "1"; aoMudar(); }));
+    q("[data-cg]").forEach(x => x.addEventListener("input", () => { E[x.dataset.cg] = x.value; }));
+    q("[data-cg-op]").forEach(x => x.addEventListener("change", () => { E.opcionais[x.dataset.cgOp] = x.checked; aoMudar(); }));
+    q("[data-cg-campo]").forEach(x => x.addEventListener("input", () => { E.campos[x.dataset.cgCampo] = x.value; }));
+    q("[data-cg-troca]").forEach(x => x.addEventListener("click", () => { E.assinante = null; aoMudar(); }));
+    let espera = null;
+    q("[data-cg-busca]").forEach(x => x.addEventListener("input", () => {
+      E._busca = x.value; clearTimeout(espera);
+      espera = setTimeout(async () => {
+        const alvo = raiz.querySelector("#cg-achados");
+        if (x.value.trim().length < 3) { alvo.innerHTML = ""; return; }
+        const d = await (await fetch("/erp/api/empreitas/assinantes?q=" + encodeURIComponent(x.value))).json();
+        alvo.innerHTML = (d.pessoas || []).map((p, i) => `<button type="button" data-i="${i}"><b>${this._e(p.nome)}</b>
+          <small class="cg-mini">${this._e(p.cargo || "")}</small></button>`).join("") || `<div class="cg-mini">Ninguém com esse nome.</div>`;
+        alvo.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => {
+          E.assinante = d.pessoas[+b.dataset.i]; E._busca = ""; aoMudar(); }));
+      }, 300);
+    }));
+    q("[data-cg-ia]").forEach(x => x.addEventListener("click", async () => {
+      x.disabled = true; x.textContent = "A IA está lendo…";
+      try {
+        const r = await fetch("/erp/api/empreitas/contrato-ia", {method: "POST",
+          headers: {"Content-Type": "application/json"}, body: JSON.stringify({texto: E.texto_adicional})});
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.erro || "A IA não respondeu.");
+        E._ia = {texto: d.texto, observacoes: d.observacoes || []}; aoMudar();
+      } catch(err){ alert(err.message); x.disabled = false; x.textContent = "✨ Pedir à IA para ajustar o texto"; }
+    }));
+    q("[data-cg-usar]").forEach(x => x.addEventListener("click", () => { E.texto_adicional = E._ia.texto; E._ia = null; aoMudar(); }));
+    q("[data-cg-descartar]").forEach(x => x.addEventListener("click", () => { E._ia = null; aoMudar(); }));
+  },
+  faltando: function(E){
+    if (!E.gerar) return "";
+    if (!this.DISPONIVEL) return "A assinatura pelo sistema ainda não está disponível (falta a atualização do banco).";
+    if (!E.assinante) return "Escolha quem assina pela empresa.";
+    if (!E.assinante.tem_contato) return `${E.assinante.nome} não tem telefone nem e-mail no cadastro de colaboradores.`;
+    return "";
+  },
+  escolhas: function(E, emp){
+    const r = {assinante_colaborador_id: E.assinante ? E.assinante.id : null,
+               opcionais: E.opcionais, campos: E.campos, texto_adicional: E.texto_adicional};
+    Object.keys(this.MODELO.parametros).forEach(k => { r[k] = E[k]; });
+    return r;
+  },
+  gerar: async function(contratoId, E, emp){
+    const r = await fetch(`/erp/api/empreitas/${contratoId}/contrato`, {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(this.escolhas(E, emp))});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || "Não consegui gerar o contrato.");
+    return d;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// ⚑ OS DADOS DO EMPREITEIRO PELO DOCUMENTO (27/11/2026). Ele: "na hora de
+// preencher os dados da empresa ou da pessoa, utilizar um cartão CNPJ, uma
+// identidade, RG. Então tem que ter esse campo aí para poder fazer a leitura."
+// Uma porta só: os campos, e o documento DENTRO, no alto. O que a leitura
+// preenche fica editável; nada é gravado sem a pessoa conferir. O documento
+// lido fica arquivado no cadastro do empreiteiro.
+//
+// `procurar(q)` é de quem inclui esta peça: devolve [{id, nome, documento}]
+// dos credores já cadastrados (o portal pergunta ao servidor; o ERP filtra a
+// lista que já tem).
+// ---------------------------------------------------------------------------
+const Empreiteiro = {
+  ROTULOS: {documento: "CPF ou CNPJ", nome: "Nome / razão social", cep: "CEP", logradouro: "Rua / avenida", numero: "Número",
+            complemento: "Complemento", bairro: "Bairro", municipio: "Cidade", uf: "UF",
+            telefone: "WhatsApp", email: "E-mail"},
+  novo: function(){ return {tipo_pessoa: "PF", campos: {}, docs: [], id: null, _busca: ""}; },
+  html: function(P){
+    const e = ContratoGerado._e, c = P.campos, pf = P.tipo_pessoa === "PF";
+    const campo = (k, extra = "") => `<label>${e(this.ROTULOS[k])}${["documento", "nome"].includes(k) ? ' <span class="cg-ob">*</span>' : ""}
+      <input data-emp="${k}" value="${e(c[k] || "")}" ${extra}></label>`;
+    return `<div class="cg"><h4>Empreiteiro</h4>
+      <label class="cg-op"><input type="radio" name="emp-tipo" value="PF" ${pf ? "checked" : ""}> <span>Pessoa física (CPF)</span></label>
+      <label class="cg-op"><input type="radio" name="emp-tipo" value="PJ" ${pf ? "" : "checked"}> <span>Empresa (CNPJ, inclusive MEI)</span></label>
+      <label>Já está no cadastro? Procure
+        <input data-emp-busca placeholder="nome ou CPF/CNPJ" value="${e(P._busca)}" autocomplete="off"></label>
+      <div class="cg-achados" id="emp-achados"></div>
+      <label>${pf ? "Jogue aqui um documento da pessoa (RG, CNH, CPF) e o comprovante de endereço, se tiver" : "Jogue aqui o Cartão CNPJ"}
+        <input type="file" data-emp-arq multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.heic"></label>
+      <div class="cg-mini">O sistema lê e preenche os campos abaixo — confira antes de cadastrar. O documento fica guardado no cadastro do empreiteiro.
+        ${P.docs.length ? `<br><b>${P.docs.length} documento(s):</b> ${P.docs.map(d => e(d.name)).join(", ")}` : ""}</div>
+      ${P.docs.length ? `<button type="button" class="cg-btn" data-emp-ler>${P._lendo ? "Lendo…" : "Ler o documento"}</button>` : ""}
+      ${P._aviso ? `<div class="cg-mini cg-ob">${e(P._aviso)}</div>` : ""}
+      ${P._ja ? `<div class="cg-mini">Já cadastrado como <b>${e(P._ja.nome)}</b> — o cadastro será completado com o que você conferir aqui.</div>` : ""}
+      <div class="cg-duas">${campo("documento", 'inputmode="numeric"')}${campo("nome")}</div>
+      <div class="cg-duas">${campo("cep", 'inputmode="numeric"')}${campo("logradouro")}</div>
+      <div class="cg-duas">${campo("numero")}${campo("complemento")}</div>
+      <div class="cg-duas">${campo("bairro")}${campo("municipio")}</div>
+      <div class="cg-duas">${campo("uf", 'maxlength="2"')}<span></span></div>
+      <div class="cg-duas">${campo("telefone", 'inputmode="tel"')}${campo("email", 'inputmode="email"')}</div>
+      <div class="cg-mini">O WhatsApp e o e-mail são por onde chega o link para assinar o contrato.</div></div>`;
+  },
+  ligar: function(P, raiz, aoMudar, procurar){
+    const q = sel => raiz.querySelectorAll(sel);
+    q("[name=emp-tipo]").forEach(x => x.addEventListener("change", () => { P.tipo_pessoa = x.value; aoMudar(); }));
+    q("[data-emp]").forEach(x => x.addEventListener("input", () => { P.campos[x.dataset.emp] = x.value; }));
+    q("[data-emp-arq]").forEach(x => x.addEventListener("change", () => {
+      [...x.files].forEach(f => { if (!P.docs.some(d => d.name === f.name && d.size === f.size)) P.docs.push(f); });
+      aoMudar(); }));
+    let espera = null;
+    q("[data-emp-busca]").forEach(x => x.addEventListener("input", () => {
+      P._busca = x.value; clearTimeout(espera);
+      espera = setTimeout(async () => {
+        const alvo = raiz.querySelector("#emp-achados");
+        if (x.value.trim().length < 2) { alvo.innerHTML = ""; return; }
+        const lista = await procurar(x.value);
+        alvo.innerHTML = lista.slice(0, 10).map((f, i) => `<button type="button" data-i="${i}"><b>${ContratoGerado._e(f.nome)}</b>
+          <small class="cg-mini">${ContratoGerado._e(f.documento || "")}</small></button>`).join("")
+          || `<div class="cg-mini">Não achei — preencha abaixo (ou jogue o documento).</div>`;
+        alvo.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", async () => {
+          const r = await (await fetch("/erp/api/empreitas/empreiteiro?documento=" +
+            encodeURIComponent(lista[+b.dataset.i].documento || ""))).json();
+          if (r.ok) { const d = r.empreiteiro; P.id = d.id; P.tipo_pessoa = d.tipo_pessoa;
+            Object.keys(this.ROTULOS).forEach(k => { if (d[k]) P.campos[k] = d[k]; }); }
+          P._busca = ""; aoMudar(); }));
+      }, 300);
+    }));
+    q("[data-emp-ler]").forEach(x => x.addEventListener("click", async () => {
+      P._lendo = true; aoMudar();
+      const fd = new FormData(); fd.append("tipo_pessoa", P.tipo_pessoa);
+      P.docs.forEach(f => fd.append("arquivos", f));
+      try {
+        const r = await (await fetch("/erp/api/empreitas/empreiteiro/ler", {method: "POST", body: fd})).json();
+        if (!r.ok) throw new Error(r.erro || "Não consegui ler.");
+        Object.entries(r.campos).forEach(([k, v]) => { if (v && k !== "tipo_pessoa") P.campos[k] = v; });
+        P._ja = r.ja_cadastrado; P._aviso = r.aviso || "";
+      } catch(err){ P._aviso = err.message + " Preencha à mão."; }
+      P._lendo = false; aoMudar();
+    }));
+  },
+  faltando: function(P){
+    const c = P.campos, doc = String(c.documento || "").replace(/\D/g, "");
+    if (![11, 14].includes(doc.length)) return "Informe o CPF ou o CNPJ do empreiteiro.";
+    if (String(c.nome || "").trim().length < 3) return "Informe o nome do empreiteiro.";
+    return "";
+  },
+  // Grava (cria ou completa) e devolve o credor, já com o documento arquivado.
+  salvar: async function(P){
+    const fd = new FormData(); fd.append("dados", JSON.stringify(P.campos));
+    P.docs.forEach(f => fd.append("arquivos", f));
+    const r = await (await fetch("/erp/api/empreitas/empreiteiro", {method: "POST", body: fd})).json();
+    if (!r.ok) throw new Error(r.erro || "Não consegui gravar o empreiteiro.");
+    P.id = r.fornecedor_id; P.docs = [];
+    return r.credor;
+  },
+};
+</script>

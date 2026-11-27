@@ -3625,3 +3625,19 @@ nota…), que é 1 para 1.
 - Quanto tempo o agente economizou? — falta medir o tempo do DP antes/depois.
 - O agente está acertando mais com o tempo? — dá para contar ✔/✘ por mês, mas
   não há tela; e o agente não aprende sozinho (de propósito).
+
+## Contratos de empreita assinados pelo sistema (27/11/2026)
+
+- Quais contratos estão **esperando assinatura**, de quem, e há quantos dias o
+  link foi enviado? *(contrato AGUARDANDO_ASSINATURA + `contrato_assinaturas`)*
+  — **muda conforme quem pergunta**: quem é da obra vê só as obras dele.
+- O empreiteiro **abriu o link** e não assinou? *(`aberto_em` preenchido,
+  `assinado_em` vazio)*
+- Quem assinou pela empresa este contrato, quando, e por qual canal veio o
+  código? *(o registro no PDF final e em `contrato_assinaturas`)*
+- Que contratos têm **multa por atraso**, ou equipamento emprestado? *(as
+  escolhas do documento, `contrato_documentos.escolhas`)*
+- Quanto falta medir de cada serviço do contrato X? *(saldo por item)*
+- Que medições têm foto de cada serviço medido, e quais não têm?
+- **Ainda não sabe:** quem PODE assinar por cada empresa — não há essa lista;
+  qualquer colaborador ativo pode ser escolhido.

@@ -412,7 +412,7 @@ CAMPOS_CONTRATO = (
 )
 
 DOCUMENTOS_CONTRATO = ({"categoria": ("CONTRATO", "PROPOSTA"), "obrigatorio": False,
-                        "rotulo": "Contrato assinado ou proposta"},)
+                        "rotulo": "Contrato assinado (quando NÃO é gerado pelo sistema)"},)
 
 CAMPOS_MEDICAO = (
     {"nome": "contrato_id", "rotulo": "Contrato", "tipo": "contrato",
@@ -829,7 +829,39 @@ def mapa_em_markdown() -> str:
     L += [""] + _tabela(CAMPOS_CONTRATO)
     L += ["", f"Documentos: {_docs_txt(DOCUMENTOS_CONTRATO)}.", "",
           "O contrato nasce **aguardando aval** — quem tem alçada pelo valor aprova "
-          "no ERP, e só então ele pode ser medido.", "",
+          "no ERP, e só então ele pode ser medido.", ""]
+    from app.apps.erp.core.titulos import contrato_assinatura as ca
+    L += ["### O empreiteiro, pelo documento", "",
+          "No alto do bloco, joga-se **um documento da pessoa (RG, CNH, CPF) e o comprovante** (pessoa física) ou o "
+          "**Cartão CNPJ** (empresa): a leitura preenche os campos, a pessoa confere, e o "
+          "documento fica arquivado no cadastro do empreiteiro. Quem já está no "
+          "cadastro é procurado pelo nome ou CPF/CNPJ e o bloco abre preenchido.", "",
+          "| Campo | Aparece | Obrigatório |", "|---|---|---|",
+          "| Pessoa física / Empresa | sempre | sim |",
+          "| CPF ou CNPJ, nome | sempre | sim |",
+          "| Endereço (CEP, rua, número, complemento, bairro, cidade, UF) | sempre | não (entra no contrato) |",
+          "| WhatsApp, e-mail | sempre | ver abaixo |", ""]
+    L += ["### Contrato gerado pelo sistema e assinado à distância", "",
+          "No cadastro, escolhe-se: **gerar o contrato pelo sistema e colher as "
+          "assinaturas**, ou **já tenho o contrato assinado** (aí o portal exige o "
+          "documento anexado).", "",
+          "| Campo | Aparece | Obrigatório |", "|---|---|---|",
+          "| Quem assina pela empresa (um colaborador) | só se gerar | sim — com telefone ou e-mail no cadastro de colaboradores |",
+          "| WhatsApp e e-mail do empreiteiro | sempre, no bloco do empreiteiro | um dos dois, se gerar (é por onde chega o link) |"]
+    L += [f"| {p['rotulo']} | só se gerar | não (padrão {p['padrao']}) |"
+          for p in ca.PARAMETROS.values()]
+    L += ["| Condição a mais, do seu jeito (a IA revisa, você aceita ou não) | só se gerar | não |",
+          "", "Cláusulas para marcar (as marcadas por padrão já vêm ligadas):", "",
+          "| Cláusula | Para que serve | Vem marcada | Pede |", "|---|---|---|---|"]
+    L += [f"| {o['rotulo']} | {o['explicacao']} | {'sim' if o['padrao'] else 'não'} | "
+          f"{', '.join(c['rotulo'] for c in (o.get('campos') or {}).values()) or '—'} |"
+          for o in ca.OPCIONAIS.values()]
+    L += ["", "**O caminho:** cadastro → aval → os dois recebem o link por WhatsApp e "
+          "e-mail → cada um abre no celular, pede um código de 6 dígitos (vale 15 "
+          "minutos), confirma o CPF/CNPJ e assina com o dedo → com as duas "
+          "assinaturas o PDF final (com o registro de cada assinatura e o lacre do "
+          "texto) vai para o arquivo do contrato, e ele fica **vigente**. Até lá, "
+          "não se mede.", "",
           "## 5. Medição de empreita", ""]
     L += _tabela(CAMPOS_MEDICAO)
     L += ["", f"Documentos: {_docs_txt(DOCUMENTOS_MEDICAO)}. A foto é cobrada na "

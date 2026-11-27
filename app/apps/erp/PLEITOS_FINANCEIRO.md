@@ -98,9 +98,47 @@ O favorecido é sempre quem presta contas, na chave Pix do cadastro dela. Não h
 | Exige foto em cada medição | sempre | sim |
 | Observações | sempre | não |
 
-Documentos: Contrato assinado ou proposta (opcional).
+Documentos: Contrato assinado (quando NÃO é gerado pelo sistema) (opcional).
 
 O contrato nasce **aguardando aval** — quem tem alçada pelo valor aprova no ERP, e só então ele pode ser medido.
+
+### O empreiteiro, pelo documento
+
+No alto do bloco, joga-se **um documento da pessoa (RG, CNH, CPF) e o comprovante** (pessoa física) ou o **Cartão CNPJ** (empresa): a leitura preenche os campos, a pessoa confere, e o documento fica arquivado no cadastro do empreiteiro. Quem já está no cadastro é procurado pelo nome ou CPF/CNPJ e o bloco abre preenchido.
+
+| Campo | Aparece | Obrigatório |
+|---|---|---|
+| Pessoa física / Empresa | sempre | sim |
+| CPF ou CNPJ, nome | sempre | sim |
+| Endereço (CEP, rua, número, complemento, bairro, cidade, UF) | sempre | não (entra no contrato) |
+| WhatsApp, e-mail | sempre | ver abaixo |
+
+### Contrato gerado pelo sistema e assinado à distância
+
+No cadastro, escolhe-se: **gerar o contrato pelo sistema e colher as assinaturas**, ou **já tenho o contrato assinado** (aí o portal exige o documento anexado).
+
+| Campo | Aparece | Obrigatório |
+|---|---|---|
+| Quem assina pela empresa (um colaborador) | só se gerar | sim — com telefone ou e-mail no cadastro de colaboradores |
+| WhatsApp e e-mail do empreiteiro | sempre, no bloco do empreiteiro | um dos dois, se gerar (é por onde chega o link) |
+| Pagar a medição em até (dias) | só se gerar | não (padrão 10) |
+| Aviso para rescindir (dias) | só se gerar | não (padrão 15) |
+| Condição a mais, do seu jeito (a IA revisa, você aceita ou não) | só se gerar | não |
+
+Cláusulas para marcar (as marcadas por padrão já vêm ligadas):
+
+| Cláusula | Para que serve | Vem marcada | Pede |
+|---|---|---|---|
+| O empreiteiro fornece o material | por padrão o material é da empresa; marque se for dele | não | — |
+| Multa por atraso | por dia de atraso que não for culpa da empresa | não | % ao dia |
+| Entregar limpo | retirar entulho e sobras ao terminar cada etapa | sim | — |
+| Não pode repassar o serviço | subcontratar só com autorização escrita | sim | — |
+| Ajudantes do empreiteiro identificados | quem ele trouxer, ele informa à obra antes de entrar | sim | — |
+| Equipamento emprestado pela obra | betoneira, andaime… devolvidos em bom estado | não | Quais equipamentos |
+| Nota fiscal a cada medição | para empreiteiro com CNPJ (inclusive MEI) | não | — |
+| Autoriza fotos do serviço | as fotos comprovam a medição | sim | — |
+
+**O caminho:** cadastro → aval → os dois recebem o link por WhatsApp e e-mail → cada um abre no celular, pede um código de 6 dígitos (vale 15 minutos), confirma o CPF/CNPJ e assina com o dedo → com as duas assinaturas o PDF final (com o registro de cada assinatura e o lacre do texto) vai para o arquivo do contrato, e ele fica **vigente**. Até lá, não se mede.
 
 ## 5. Medição de empreita
 

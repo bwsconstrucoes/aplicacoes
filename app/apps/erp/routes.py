@@ -11786,6 +11786,12 @@ def api_empreitas():
             corpo = pleitos.conferir_contrato(request.get_json(silent=True) or {})
             exigir_obra_no_escopo(s, usuario, int(corpo["obra_id"]))
             contrato = criar_contrato(s, corpo, usuario)
+            # ⚑ O CONTRATO GERADO PELO SISTEMA nasce JUNTO, na mesma gravação
+            # (27/11/2026): se o documento não puder ser gerado (obra sem
+            # empresa, assinante sem contato), o contrato também não fica.
+            if corpo.get("contrato_gerado"):
+                from app.apps.erp.core.titulos import contrato_assinatura
+                contrato_assinatura.preparar(s, contrato.id, corpo["contrato_gerado"], usuario)
             s.commit()
             return jsonify({"ok": True, "contrato": {
                 "id": contrato.id, "numero": contrato.numero,
@@ -11822,12 +11828,19 @@ def api_empreita_detalhe(contrato_id: int):
 @login_obrigatorio
 @permissao("aprovar")
 def api_aprovar_empreita(contrato_id: int):
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
     from app.apps.erp.core.titulos.empreita import aprovar_contrato
     try:
         with get_session() as s:
-            c = aprovar_contrato(s, contrato_id, _usuario_logado(s))
+            usuario = _usuario_logado(s)
+            c = aprovar_contrato(s, contrato_id, usuario)
+            # ⚑ 27/11/2026: contrato gerado pelo sistema espera as assinaturas
+            # em vez de ficar vigente — e os links saem agora, no aval.
+            r = assinatura.ao_aprovar(s, c, _url_publica(), usuario) \
+                if assinatura.disponivel(s) else {"assinatura": False}
+            status = c.status
             s.commit()
-        return jsonify({"ok": True, "status": c.status})
+        return jsonify({"ok": True, "status": status, "assinatura": r})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ErroValidacao as e:
@@ -11925,6 +11938,264 @@ def api_medir(contrato_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao medir")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# ⚑ O CONTRATO DE EMPREITA GERADO E ASSINADO À DISTÂNCIA (27/11/2026)
+# Regra em `core/titulos/contrato_assinatura.py`. As mesmas rotas servem a tela
+# de Empreitas do ERP e o portal da obra.
+# ---------------------------------------------------------------------------
+def _url_publica() -> str:
+    """O endereço que vai no link. Atrás do Render o pedido chega em http; o
+    link que sai para fora tem de ser https (menos no computador de teste)."""
+    base = request.host_url
+    if base.startswith("http://") and not any(
+            h in base for h in ("localhost", "127.0.0.1", "0.0.0.0")):
+        base = "https://" + base[len("http://"):]
+    return base
+
+
+@bp.route("/erp/api/empreitas/contrato-modelo")
+@login_obrigatorio
+@permissao("lancar")
+def api_contrato_modelo():
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    with get_session() as s:
+        return jsonify({"ok": True, "modelo": assinatura.catalogo(),
+                        "disponivel": assinatura.disponivel(s)})
+
+
+@bp.route("/erp/api/empreitas/assinantes")
+@login_obrigatorio
+@permissao("lancar")
+def api_contrato_assinantes():
+    """Quem pode assinar pela empresa: um colaborador ATIVO, procurado pelo
+    nome. Devolve só nome, cargo e se tem contato — nada da ficha."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 3:
+        return jsonify({"ok": True, "pessoas": []})
+    from sqlalchemy import text as _t
+    with get_session() as s:
+        linhas = s.execute(_t("""
+            SELECT c.id, c.nome, g.nome AS cargo,
+                   (COALESCE(c.telefone, '') <> '' OR COALESCE(c.email, '') <> '') AS tem_contato
+              FROM colaboradores c LEFT JOIN cargos g ON g.id = c.cargo_id
+             WHERE upper(c.nome) LIKE upper(:q)
+               AND upper(COALESCE(c.situacao, '')) <> 'DESLIGADO'
+             ORDER BY c.nome LIMIT 10"""), {"q": f"%{q}%"}).mappings().all()
+        return jsonify({"ok": True, "pessoas": [dict(l) for l in linhas]})
+
+
+# ⚑ OS DADOS DO EMPREITEIRO PELO DOCUMENTO (27/11/2026) — Cartão CNPJ, RG,
+# CNH, comprovante. Regra em `core/titulos/empreiteiro.py`.
+@bp.route("/erp/api/empreitas/empreiteiro")
+@login_obrigatorio
+@permissao("lancar")
+def api_empreiteiro_dados():
+    """O que o credor já tem — o formulário abre preenchido. Procura pelo
+    CPF/CNPJ (que a busca já mostrou), e não pelo número interno: número em
+    sequência no endereço deixaria varrer o cadastro de credores."""
+    from sqlalchemy import select as _sel
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.core.titulos import empreiteiro
+    from app.apps.erp.db.models.cadastros import Fornecedor
+    doc = somente_digitos(request.args.get("documento") or "")
+    if len(doc) not in (11, 14):
+        return jsonify({"ok": False, "erro": "Informe o CPF ou o CNPJ."}), 400
+    with get_session() as s:
+        f = s.scalars(_sel(Fornecedor).where(Fornecedor.cnpj_cpf == doc)).first()
+        if f is None:
+            return jsonify({"ok": False, "erro": "Empreiteiro não encontrado."}), 404
+        return jsonify({"ok": True, "empreiteiro": empreiteiro.do_cadastro(s, f.id)})
+
+
+@bp.route("/erp/api/empreitas/empreiteiro/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_empreiteiro_ler():
+    from app.apps.erp.core.comum.fotos import heic_para_jpeg
+    from app.apps.erp.core.comum.ia_custo import contexto
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    from app.apps.erp.core.titulos import empreiteiro
+    arquivos = [heic_para_jpeg(f.read(), f.filename or "documento")
+                for f in request.files.getlist("arquivos")]
+    if not arquivos:
+        return jsonify({"ok": False, "erro": "Escolha o documento."}), 400
+    _exigir_saldo_de_ia()
+    try:
+        with get_session() as s, contexto(operacao="leitura_documento_empreiteiro"):
+            return jsonify({"ok": True, **empreiteiro.ler(
+                s, arquivos, request.form.get("tipo_pessoa") or "")})
+    except (ErroLeitura, ErroValidacao) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/empreitas: falha ao ler o documento do empreiteiro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/empreitas/empreiteiro", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_empreiteiro_gravar():
+    """Cria ou completa o empreiteiro com o que foi CONFERIDO na tela, e arquiva
+    os documentos lidos nele — na mesma gravação."""
+    import json as _json
+    from app.apps.erp.core.comum.fotos import heic_para_jpeg
+    from app.apps.erp.core.titulos import empreiteiro
+    try:
+        d = _json.loads(request.form.get("dados") or "{}")
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Dados ilegíveis."}), 400
+    arquivos = [heic_para_jpeg(f.read(), f.filename or "documento")
+                for f in request.files.getlist("arquivos")]
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = empreiteiro.gravar(s, d, arquivos, usuario)
+            from app.apps.erp.db.models.cadastros import Fornecedor
+            credor = _credor_para_lancamento(s, s.get(Fornecedor, r["fornecedor_id"]))
+            s.commit()
+            return jsonify({"ok": True, **r, "credor": credor})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/empreitas/contrato-ia", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_contrato_ia():
+    """A IA revisa as cláusulas digitadas. Sugere; quem decide é a pessoa."""
+    from app.apps.erp.core.comum.ia_custo import contexto
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    d = request.get_json(silent=True) or {}
+    _exigir_saldo_de_ia()
+    try:
+        with contexto(operacao="contrato_clausulas"):
+            return jsonify({"ok": True, **assinatura.ajustar_com_ia(
+                d.get("texto") or "", d.get("contexto") or "")})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/contrato", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_contrato_documento(contrato_id: int):
+    """GET: em que pé está a assinatura (e o texto). POST: gera o contrato pelo
+    modelo — ainda rascunho; os links saem no aval."""
+    from app.apps.erp.core.auth.permissoes import exigir_empreita_no_escopo
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_empreita_no_escopo(s, usuario, contrato_id)
+            if request.method == "GET":
+                doc = assinatura.documento_vivo(s, contrato_id)
+                return jsonify({"ok": True, "situacao": assinatura.situacao(s, contrato_id),
+                                "texto": doc["texto"] if doc else None,
+                                "titulo": doc["titulo"] if doc else None})
+            from sqlalchemy import text as _t
+            st = s.execute(_t("SELECT status FROM contratos_servico WHERE id = :i"),
+                           {"i": contrato_id}).first()
+            if st and st[0] not in ("AGUARDANDO_AVAL", "RASCUNHO"):
+                return jsonify({"ok": False, "erro": "O contrato já passou do aval; o "
+                                "texto não muda mais."}), 400
+            r = assinatura.preparar(s, contrato_id, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/contrato/reenviar", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_contrato_reenviar(contrato_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_empreita_no_escopo
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_empreita_no_escopo(s, usuario, contrato_id)
+            r = assinatura.reenviar(s, contrato_id, d.get("papel") or "", _url_publica(), usuario)
+            s.commit()
+            r.pop("link", None)          # o link é de quem assina, não de quem reenvia
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+# --- a página de quem assina: pelo link, sem login --------------------------
+@bp.route("/erp/assinar/<token>")
+@permissao_publica("quem assina o contrato é de fora (o empreiteiro) e não tem "
+                   "login — o token do link e o código de 6 dígitos identificam")
+def pagina_assinar_contrato(token: str):
+    return render_template("erp_assinar_contrato.html", token=token)
+
+
+@bp.route("/erp/assinar/<token>/dados")
+@permissao_publica("os dados do contrato para quem tem o link — ver pagina_assinar_contrato")
+def api_assinar_dados(token: str):
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    if not _dentro_do_teto("assinar-abrir", 120):
+        return jsonify({"ok": False, "erro": "Muitas tentativas. Espere um pouco."}), 429
+    with get_session() as s:
+        d = assinatura.abrir(s, token)
+        s.commit()
+        return jsonify({"ok": True, **d})
+
+
+@bp.route("/erp/assinar/<token>/codigo", methods=["POST"])
+@permissao_publica("o código de confirmação de quem assina — ver pagina_assinar_contrato")
+def api_assinar_codigo(token: str):
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    if not _dentro_do_teto("assinar-codigo", 20):
+        return jsonify({"ok": False, "erro": "Muitos códigos pedidos. Espere um pouco."}), 429
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = assinatura.pedir_codigo(s, token, d.get("canal") or "whatsapp")
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/assinar/<token>", methods=["POST"])
+@permissao_publica("a assinatura de quem tem o link e o código — ver pagina_assinar_contrato")
+def api_assinar(token: str):
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    if not _dentro_do_teto("assinar", 30):
+        return jsonify({"ok": False, "erro": "Muitas tentativas. Espere um pouco."}), 429
+    d = request.get_json(silent=True) or {}
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+    try:
+        with get_session() as s:
+            r = assinatura.assinar(s, token, codigo=d.get("codigo") or "",
+                                   documento=d.get("documento") or "",
+                                   assinatura=d.get("assinatura"), lacre_visto=d.get("lacre") or "",
+                                   ip=ip, navegador=request.headers.get("User-Agent", ""))
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        # a tentativa errada de código conta: grava antes de responder
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/assinar/<token>/pdf")
+@permissao_publica("o contrato assinado, para quem assinou — ver pagina_assinar_contrato")
+def api_assinar_pdf(token: str):
+    from flask import Response
+    from app.apps.erp.core.titulos import contrato_assinatura as assinatura
+    with get_session() as s:
+        dados, nome = assinatura.pdf_assinado(s, token)
+    return Response(dados, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{nome}"'})
 
 
 @bp.route("/erp/api/medicoes/<int:medicao_id>/autorizar", methods=["POST"])
@@ -14615,6 +14886,29 @@ def api_portal_financeiro_lancamentos():
     with get_session() as s:
         usuario = _exigir_financeiro_do_portal(s)
         return jsonify({"ok": True, "lancamentos": pf.meus_lancamentos(s, usuario)})
+
+
+@bp.route("/erp/portal/api/financeiro/contratos")
+@login_obrigatorio
+@permissao("lancar")
+def api_portal_financeiro_contratos():
+    """Todos os contratos de empreita das obras da pessoa (27/11/2026)."""
+    from app.apps.erp.core.titulos import portal_financeiro as pf
+    with get_session() as s:
+        usuario = _exigir_financeiro_do_portal(s)
+        return jsonify({"ok": True, "contratos": pf.contratos_da_obra(s, usuario)})
+
+
+@bp.route("/erp/portal/api/financeiro/contratos/<int:contrato_id>")
+@login_obrigatorio
+@permissao("lancar")
+def api_portal_financeiro_contrato(contrato_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_empreita_no_escopo
+    from app.apps.erp.core.titulos import portal_financeiro as pf
+    with get_session() as s:
+        usuario = _exigir_financeiro_do_portal(s)
+        exigir_empreita_no_escopo(s, usuario, contrato_id)
+        return jsonify({"ok": True, "contrato": pf.contrato_por_dentro(s, usuario, contrato_id)})
 
 
 @bp.route("/erp/portal/api/financeiro/titulo/<int:titulo_id>")

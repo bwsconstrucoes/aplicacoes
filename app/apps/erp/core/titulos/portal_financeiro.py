@@ -254,3 +254,59 @@ def detalhe(s: Session, usuario: Usuario, titulo_id: int) -> dict[str, Any]:
         "historia": historia,
         "pode_cancelar": status in CANCELAVEIS,
     }
+
+
+# ---------------------------------------------------------------------------
+# ⚑ OS CONTRATOS DA OBRA (27/11/2026). Ele: *"Quem está fazendo o lançamento do
+# acompanhamento, ele vê todos os contratos. Da obra. É aquela mesma lógica do
+# ponto (…) vai estar vendo as obras que ele está tocando."* Não só os que ELE
+# cadastrou — todos os das obras que ele alcança (`empreita.listar`, que para
+# quem é da obra usa as obras dele).
+# ---------------------------------------------------------------------------
+SITUACAO_CONTRATO["AGUARDANDO_ASSINATURA"] = "Esperando as assinaturas"
+
+
+def contratos_da_obra(s: Session, usuario: Usuario) -> list[dict[str, Any]]:
+    from app.apps.erp.core.titulos import contrato_assinatura, empreita
+    saida = []
+    for c in empreita.listar(s, usuario):
+        ass = contrato_assinatura.situacao(s, c["id"])
+        saida.append({
+            "id": c["id"], "numero": c["numero"], "objeto": c["objeto"], "obra": c["obra"],
+            "prestador": c["prestador"], "modo": c["modo"], "status": c["status"],
+            "situacao": SITUACAO_CONTRATO.get(c["status"], c["status"]),
+            "valor_vigente": c["valor_vigente"], "medido": c["medido"], "saldo": c["saldo"],
+            "percentual_medido": c["percentual_medido"], "medicoes": c["medicoes"],
+            "assinatura": ass["rotulo"] if ass else None,
+        })
+    return saida
+
+
+def contrato_por_dentro(s: Session, usuario: Usuario, contrato_id: int) -> dict[str, Any]:
+    """O contrato aberto: o saldo de cada serviço, as medições com o que foi
+    executado, as observações e as FOTOS (ele: *"fotos dos serviços, para poder
+    demonstrar que aquele serviço está sendo executado"*), e a assinatura."""
+    from app.apps.erp.core.auth.permissoes import exigir_empreita_no_escopo
+    from app.apps.erp.core.documentos.armazenamento import listar as anexos
+    from app.apps.erp.core.titulos import contrato_assinatura, empreita
+    exigir_empreita_no_escopo(s, usuario, contrato_id)
+    d = empreita.detalhar(s, contrato_id)
+    itens_por_medicao: dict[int, list[dict[str, Any]]] = {}
+    for l in s.execute(text("""
+            SELECT mi.medicao_id, ci.descricao, ci.unidade, mi.quantidade, mi.valor, mi.observacao
+              FROM medicao_itens mi JOIN contrato_servico_itens ci ON ci.id = mi.contrato_item_id
+             WHERE mi.medicao_id = ANY(:ids) ORDER BY ci.ordem"""),
+            {"ids": [m["id"] for m in d["medicoes"]] or [0]}).mappings().all():
+        itens_por_medicao.setdefault(l["medicao_id"], []).append({
+            "servico": l["descricao"], "unidade": l["unidade"] or "",
+            "quantidade": float(l["quantidade"]), "valor": float(l["valor"]),
+            "observacao": l["observacao"] or ""})
+    for m in d["medicoes"]:
+        m["itens"] = itens_por_medicao.get(m["id"], [])
+        m["fotos"] = anexos(s, "medicao", m["id"])
+        m["situacao"] = SITUACAO_MEDICAO.get(m["status"], m["status"])
+    d["situacao"] = SITUACAO_CONTRATO.get(d["status"], d["status"])
+    d["documentos"] = anexos(s, "contrato_servico", contrato_id)
+    d["assinatura"] = contrato_assinatura.situacao(s, contrato_id)
+    d.pop("alcada", None)
+    return d
