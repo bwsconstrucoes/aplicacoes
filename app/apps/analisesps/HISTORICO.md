@@ -12300,6 +12300,7 @@ somente Solicitações de uma conta especifica"*.
   voltou fora do ERP) tira dias que deviam contar — a pessoa aparece "sem obra" ou com o
   aviso, à vista.
 - Sem migração. Testes em `test_analisesps_folha_decimo.py` e `..._folha_agrupar.py`.
+- **Publicado em 27/11/2026, com a leva 287** (agrupar) — sem migração.
 
 #### Leva 287 — Folha: agrupar a lista por obra da contabilidade, setor, obra do ponto, obra do cadastro ou conta (27/11/2026)
 
