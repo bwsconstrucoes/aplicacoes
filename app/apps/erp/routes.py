@@ -97,6 +97,19 @@ def _saude_comecou():
                 desligamentos_do_dia.aplicar_se_preciso(s)
     except Exception:                               # noqa: BLE001
         logger.warning("ERP/desligamentos: a virada do dia não rodou", exc_info=True)
+    # ⚑ AS READMISSÕES PEDIDAS ANTES DE 27/11/2026 passam a bater ponto — uma
+    # vez por processo (depois de publicar), uma consulta curta.
+    global _READMISSOES_CONFERIDAS
+    if not _READMISSOES_CONFERIDAS:
+        _READMISSOES_CONFERIDAS = True
+        try:
+            from app.apps.erp.core import pessoal_solicitacoes as _ps
+            with get_session() as s:
+                if _ps.liberar_readmissoes_ja_pedidas(s):
+                    s.commit()
+        except Exception:                           # noqa: BLE001
+            logger.warning("ERP/readmissão: a liberação dos pedidos antigos não rodou",
+                           exc_info=True)
     # ⚑ A RODADA DIÁRIA DO AGENTE DE DP (20/11/2026) — vai para a fila de
     # trabalhos, uma vez por dia. Ver `agente_dp.rodada_do_dia_se_preciso`.
     try:
@@ -109,6 +122,7 @@ def _saude_comecou():
 
 
 _FILA_ACORDADA = False
+_READMISSOES_CONFERIDAS = False
 
 
 @bp.after_request

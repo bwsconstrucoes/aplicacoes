@@ -151,6 +151,36 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 27/11/2026 (2) — A readmissão pedida já bate ponto; a saída antiga fica no histórico
+
+**Publicado em 27/11/2026** (com o "pode" dele). Sem migração.
+
+Ele: *"Como a pessoa está desligada, ela tem uma data de saída registrada (…)
+Isso aí está impactando na batida do ponto, mesmo que a pessoa tenha
+solicitado. (…) Essa data de saída ela tem que ficar no histórico, mas na hora
+que a pessoa solicitar a admissão, ela tem que sumir (…) E assim a pessoa já
+começa a poder bater ponto imediatamente."* (Vale para readmissão como
+prestador e como CLT — as duas são o pedido "Admissão de Colaborador" com CPF
+de desligado.)
+
+- **No pedido** (`pessoas.liberar_ponto_na_readmissao`, chamado no `abrir`):
+  a saída vai para o VÍNCULO (a história — se a pessoa não tinha vínculo
+  gravado, ele é criado com as datas do cadastro); o cadastro fica ATIVO, sem
+  saída/último dia/aviso, com início e admissão do pedido (provisórios — o DP
+  confirma ao atender) e na etapa Inicial. O que havia antes vai para o pedido
+  (`saida_anterior`, escondido da tela).
+- **Recusado ou cancelado** (`voltar_a_saida`): volta tudo como era — DESLIGADO,
+  a saída de antes, a etapa de antes; o ponto volta a recusar.
+- **Os pedidos abertos antes desta mudança** são liberados sozinhos, uma vez,
+  no primeiro acesso ao ERP depois de publicar
+  (`liberar_readmissoes_ja_pedidas`, gancho no `routes.py`).
+- ⚠️ **O celular pessoal** que o ponto bloqueou quando a pessoa saiu continua
+  bloqueado: ela bate no aparelho da obra na hora; para o "Meu ponto" no celular
+  dela, o aparelho precisa ser aprovado de novo (regra do ponto, não mexi).
+- ⚠️ Se o ponto estiver usando a planilha "Registro de Colaboradores" como base
+  (e não o ERP), a saída da planilha continua mandando — não verifiquei qual
+  base está ligada em produção.
+
 ### 27/11/2026 — Tudo da solicitação no mesmo canto: os e-mails, a devolução pela obra e a conversa inteira
 
 Ele: *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada SDP,
@@ -256,6 +286,11 @@ casamento"* dos e-mails que já saíram com CT.
   `[SDP-…]` (procura no assunto gravado), depois `[CT-…]` (os antigos), depois
   CPF. A tela mostra a marca (`contabilidade.marca_do_pedido` / SQL
   `substring(assunto …)`); CT sem solicitação continua mostrando o CT.
+
+**Decidido por ele (27/11/2026):** resposta só em texto, sem documento, NÃO
+conclui — *"O normal é sempre ter retorno. Mera ciência não faz nada."* Fica
+como está: o agente guarda a resposta na conversa da solicitação e o DP decide.
+Não perguntar de novo.
 
 **O que ficou de fora / não verificado:** a leitura por IA do retorno não roda
 aqui (sem chave); resposta só em texto (sem anexo) não conclui nada — o
