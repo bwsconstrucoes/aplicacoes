@@ -1638,26 +1638,53 @@ def _dia_enxuto(dia: dict) -> dict:
 
 
 def dias_do_ano(ini, fim) -> dict:
-    """`{cpf: [dias enxutos]}` de `ini` a `fim` (datas), mês a mês. Os meses sem
-    carga ficam de fora e vão em `_meses_sem_ponto` da resposta."""
+    """`{"dias": {cpf: [dias enxutos]}, "meses_sem_ponto", "meses_do_relatorio"}` de
+    `ini` a `fim` (datas), mês a mês.
+
+    ⚠️ NO 13º CADA MÊS VALE O MESMO (os avos — 27/11/2026, ver `ponto_anual`): o dia
+    do mês com carga pesa 1/(dias com obra da pessoa naquele mês); o mês SEM carga
+    vem do relatório anual de presenças do Mobponto, uma entrada com peso 1 na obra
+    do mês (`mes_inteiro`). Mês sem carga e fora do relatório: `meses_sem_ponto`."""
+    from decimal import Decimal
+
+    from . import ponto_anual
     chave = (ini, fim)
     guardado = _ANO_GUARDADO.get(chave)
     if guardado and time.monotonic() - guardado[0] < _VALIDADE_DO_ANO:
         return guardado[1]
     saida: dict = {}
-    sem_ponto = []
+    sem_carga = []
     ano, mes = ini.year, ini.month
     while (ano, mes) <= (fim.year, fim.month):
         do_mes = dias_por_cpf(ano, mes)
         if not do_mes:
-            sem_ponto.append(f"{mes:02d}/{ano}")
+            sem_carga.append((ano, mes))
         for cpf, dias in do_mes.items():
-            saida.setdefault(cpf, []).extend(
-                _dia_enxuto(d) for d in dias
-                if isinstance(d.get("data"), dt.date) and ini <= d["data"] <= fim)
+            enxutos = [_dia_enxuto(d) for d in dias
+                       if isinstance(d.get("data"), dt.date) and ini <= d["data"] <= fim]
+            com_obra = sum(1 for d in enxutos if d["marcacoes"])
+            for d in enxutos:
+                d["peso"] = Decimal(1) / Decimal(com_obra) if com_obra else Decimal(0)
+            saida.setdefault(_cpf_do_ponto(cpf) or cpf, []).extend(enxutos)
         del do_mes
         ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
-    resposta = {"dias": saida, "meses_sem_ponto": sem_ponto}
+    anual = (ponto_anual.carregar(ini.year) or {}).get("pessoas") or {}
+    do_relatorio, sem_ponto = [], []
+    for a, m in sem_carga:
+        tem = a == ini.year and any(m in meses for meses in anual.values())
+        (do_relatorio if tem else sem_ponto).append(f"{m:02d}/{a}")
+        if not tem:
+            continue
+        for cpf, meses in anual.items():
+            obra = meses.get(m)
+            if obra:
+                saida.setdefault(cpf, []).append(
+                    {"data": dt.date(a, m, 1), "marcacoes": [obra], "presenca": "",
+                     "falta": "", "peso": Decimal(1), "mes_inteiro": True})
+    for dias in saida.values():
+        dias.sort(key=lambda d: d["data"])
+    resposta = {"dias": saida, "meses_sem_ponto": sem_ponto,
+                "meses_do_relatorio": do_relatorio}
     _ANO_GUARDADO.clear()          # um ano guardado por vez: memória é o que falta
     _ANO_GUARDADO[chave] = (time.monotonic(), resposta)
     return resposta
