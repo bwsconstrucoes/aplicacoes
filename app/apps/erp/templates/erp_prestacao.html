@@ -19,9 +19,9 @@
         <option value="REEMBOLSO">Reembolso — gastei do meu bolso</option>
         <option value="ADIANTAMENTO">Adiantamento — presto contas do que recebi</option>
       </select></div>
-    <div class="campo" style="margin:0"><label>Período de</label>
+    <div class="campo" style="margin:0"><label id="rot-p-inicio">Período de</label>
       <input type="date" id="p-inicio"></div>
-    <div class="campo" style="margin:0"><label>até</label>
+    <div class="campo" style="margin:0"><label id="rot-p-fim">até</label>
       <input type="date" id="p-fim"></div>
   </div>
   <div id="historico" class="cartao-dica" style="margin-top:10px"></div>
@@ -258,6 +258,15 @@ async function conferir(){
 }
 
 ["p-inicio","p-fim"].forEach(i=>els(i).addEventListener("change", conferir));
+// ⚑ 27/11/2026: na prestação de ADIANTAMENTO o período é obrigatório — a mesma
+// regra do portal (`core/titulos/pleitos.py`); no reembolso, opcional.
+function marcarPeriodo(){
+  const exige = els("modalidade").value === "FUNDO_FIXO" && els("ff-tipo").value === "ADIANTAMENTO";
+  els("rot-p-inicio").textContent = "Período de" + (exige ? " *" : "");
+  els("rot-p-fim").textContent = "até" + (exige ? " *" : "");
+}
+["ff-tipo","modalidade"].forEach(i=>els(i).addEventListener("change", marcarPeriodo));
+marcarPeriodo();
 
 els("btn-enviar").addEventListener("click", async () => {
   const b = els("btn-enviar"); b.disabled = true; b.textContent = "Conferindo…";

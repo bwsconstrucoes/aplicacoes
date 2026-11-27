@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Financeiro — BWS</title>
+{# O FINANCEIRO DA OBRA, NO PORTAL (27/11/2026).
+
+   O dono: "Pedir Pagamento, Fundo Fixo, Medição de Empreita e o Cadastro dela,
+   Cancelar um Pedido e uma forma de listar e visualizar todos esses
+   lançamentos, devem estar disponíveis no portal. O Administrativo de Obra
+   fará esses lançamentos."
+
+   ⚑ ESTA TELA NÃO DECIDE CAMPO NENHUM. Quais campos cada subtipo mostra,
+   quando cada um é obrigatório e que documento tem de vir junto vem do
+   catálogo (`core/titulos/pleitos.py`), o MESMO que a tela Lançar do ERP lê e
+   que o servidor confere. Se a regra mudar, muda lá, e as três pontas andam
+   juntas.
+
+   Gravar usa as mesmas rotas do ERP (prestação, empreitas, medições,
+   cancelamento). O pedido de pagamento tem rota própria só para levar os
+   documentos na mesma gravação do título. #}
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+<style>
+  body { margin: 0; background: #F4F6FA; font-family: system-ui, -apple-system,
+         "Segoe UI", Roboto, sans-serif; color: #10233F; }
+  .topo-portal { background: #0B2C5C; color: #fff; padding: 14px 16px;
+         display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .topo-portal b { font-size: 16px; }
+  .topo-portal small { display: block; opacity: .8; }
+  .topo-portal a { color: #fff; font-size: 13px; }
+  .caixa { max-width: 760px; margin: 0 auto; padding: 12px 12px 60px; }
+  .teste { background: #FFF6E5; color: #8A5B00; border-radius: 10px; padding: 10px 12px;
+         font-size: 13px; margin-bottom: 10px; }
+  .abas { display: flex; gap: 6px; margin-bottom: 12px; }
+  .aba { flex: 1; border: 0; border-radius: 10px; padding: 10px 6px; font-size: 13px;
+         font-weight: 700; background: #E3E9F3; color: #31507F; cursor: pointer; }
+  .aba.ativa { background: #0B2C5C; color: #fff; }
+  .aba span { display: block; font-size: 18px; }
+  .bloco { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,35,63,.12);
+         padding: 14px; margin-bottom: 10px; }
+  .bloco h3 { margin: 0; font-size: 15px; }
+  .bloco .sub { font-size: 12.5px; color: #5A6B85; margin: 2px 0 8px; }
+  .escolha { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .escolha button { border: 1px solid #C9D3E4; background: #fff; border-radius: 12px;
+         padding: 14px 10px; text-align: left; font: inherit; cursor: pointer; }
+  .escolha button b { display: block; font-size: 14.5px; }
+  .escolha button small { color: #5A6B85; font-size: 12px; }
+  .escolha button.ativa { border-color: #0B2C5C; box-shadow: 0 0 0 2px #0B2C5C inset; }
+  label.campo { display: block; margin-top: 12px; font-size: 13px; font-weight: 600;
+         color: #31507F; }
+  label.campo .ob { color: #A32020; }
+  label.campo input, label.campo select, label.campo textarea, .linha input, .linha select {
+         width: 100%; box-sizing: border-box; padding: 10px; margin-top: 4px;
+         border: 1px solid #C9D3E4; border-radius: 10px; font-size: 16px; background: #fff;
+         font-family: inherit; }
+  label.campo textarea { min-height: 70px; resize: vertical; }
+  .dica { font-weight: 400; font-size: 12px; color: #5A6B85; margin-top: 3px; }
+  .duas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .linha { background: #F4F6FA; border-radius: 10px; padding: 10px; margin-top: 8px; }
+  .linha .cab-linha { display: flex; justify-content: space-between; align-items: center;
+         font-size: 12.5px; font-weight: 700; color: #31507F; }
+  .linha .tira { border: 0; background: none; color: #A32020; font-size: 18px; cursor: pointer; }
+  .mini { font-size: 12.5px; color: #5A6B85; }
+  .btn-portal { display: block; width: 100%; box-sizing: border-box; text-align: center;
+         background: #F4B942; border: 0; border-radius: 10px; padding: 13px 16px;
+         font-size: 15px; font-weight: 700; color: #10233F; cursor: pointer; margin-top: 14px; }
+  .btn-portal.secundario { background: #E3E9F3; color: #31507F; }
+  .btn-portal.pequeno { display: inline-block; width: auto; padding: 8px 12px; font-size: 13px;
+         margin-top: 8px; }
+  .btn-portal[disabled] { opacity: .5; }
+  .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
+  .recado.erro { background: #FDECEC; color: #A32020; }
+  .recado.ok { background: #E8F6EE; color: #1C6B3C; }
+  .recado.aviso { background: #FFF6E5; color: #8A5B00; }
+  .docs { margin-top: 6px; }
+  .arq { display: flex; gap: 6px; align-items: center; background: #F4F6FA; border-radius: 8px;
+         padding: 6px 8px; margin-top: 6px; font-size: 13px; }
+  .arq .cresce { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+         white-space: nowrap; }
+  .arq select { padding: 6px; border: 1px solid #C9D3E4; border-radius: 8px; font-size: 13px; }
+  .arq button { border: 0; background: none; cursor: pointer; font-size: 13px; color: #31507F; }
+  .arq .tira { color: #A32020; font-size: 16px; }
+  .exigidos { margin-top: 8px; font-size: 13px; }
+  .exigidos div { padding: 2px 0; }
+  .exigidos .tem { color: #1C6B3C; } .exigidos .falta { color: #A32020; }
+  .achados button { display: block; width: 100%; text-align: left; border: 0;
+         border-bottom: 1px solid #E6EAF2; background: #fff; padding: 10px 6px;
+         font: inherit; cursor: pointer; }
+  .achados small { color: #5A6B85; display: block; }
+  .escolhido { display: flex; justify-content: space-between; align-items: center;
+         background: #EEF2FA; border-radius: 10px; padding: 10px; margin-top: 4px; }
+  .escolhido small { display: block; color: #5A6B85; font-weight: 400; }
+  .escolhido button { border: 0; background: none; color: #31507F; cursor: pointer;
+         font-size: 13px; text-decoration: underline; }
+  .item-lista { display: flex; gap: 10px; align-items: center; border-top: 1px solid #E6EAF2;
+         padding: 12px 0; cursor: pointer; }
+  .item-lista:first-child { border-top: 0; }
+  .item-lista .cresce { flex: 1 1 auto; min-width: 0; }
+  .item-lista b { font-size: 14px; display: block; }
+  .item-lista small { color: #5A6B85; font-size: 12.5px; display: block; }
+  .item-lista .valor { font-weight: 700; white-space: nowrap; text-align: right; }
+  .etiqueta { display: inline-block; font-size: 11.5px; padding: 2px 8px; margin-top: 3px;
+         border-radius: 999px; background: #EEF2FA; color: #31507F; white-space: nowrap; }
+  .etiqueta.vermelha { background: #FDECEC; color: #A32020; }
+  .etiqueta.ambar { background: #FFF6E5; color: #8A5B00; }
+  .etiqueta.verde { background: #E8F6EE; color: #1C6B3C; }
+  .filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .filtros button { border: 1px solid #C9D3E4; background: #fff; border-radius: 999px;
+         padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .filtros button.ativa { background: #0B2C5C; color: #fff; border-color: #0B2C5C; }
+  dialog { border: 0; border-radius: 14px; padding: 0; width: min(560px, 94vw); }
+  dialog .dentro { padding: 16px; max-height: 80vh; overflow: auto; }
+  dialog h3 { margin: 0 0 4px; }
+  .tabela-mini { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  .tabela-mini td { padding: 6px 4px; border-top: 1px solid #E6EAF2; }
+  .vazio { text-align: center; color: #5A6B85; padding: 26px 10px; font-size: 14px; }
+  .total { text-align: right; font-weight: 700; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="topo-portal">
+  <div><b>Financeiro</b><small>pedir pagamento, fundo fixo e empreitas</small></div>
+  <a href="{{ url_for('erp.pagina_portal') }}">‹ voltar</a>
+</div>
+
+<div class="caixa">
+  <div class="teste">Em teste: por enquanto só o administrador vê esta área.
+    A obra continua pedindo pagamento como pede hoje.</div>
+  <div id="recado"></div>
+  <div class="abas">
+    <button class="aba ativa" data-aba="pedir"><span>＋</span>Pedir</button>
+    <button class="aba" data-aba="meus"><span id="n-meus">–</span>O que pedi</button>
+  </div>
+  <div id="conteudo"><div class="vazio">carregando…</div></div>
+</div>
+
+<dialog id="dlg"><div class="dentro" id="dlg-dentro"></div></dialog>
+
+<script>
+let C = null, OBRAS = [], CATS = [], CONTRATOS = [], LANC = [], MEU = {};
+let ABA = "pedir", PLEITO = null, FILTRO = "todos";
+const el = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
+  ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const dia = iso => iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "—";
+const numero = v => { const t = String(v ?? "").trim(); if (!t) return 0;
+  return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0; };
+const moeda = v => Number(v || 0).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+const hoje = () => new Date().toISOString().slice(0, 10);
+
+async function api(url, opcoes){
+  const r = await fetch(url, opcoes);
+  let d = null;
+  try { d = await r.json(); } catch(_) {}
+  if (r.status === 401) {
+    location.href = "/erp/entrar?proximo=" + encodeURIComponent(location.pathname);
+    throw new Error("Entre no sistema.");
+  }
+  if (!r.ok || !d || d.ok === false) {
+    const e = new Error((d && d.erro) || "Não foi possível concluir. Tente de novo.");
+    e.dados = d || {}; e.status = r.status; throw e;
+  }
+  return d;
+}
+const json = corpo => ({method: "POST", headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify(corpo)});
+function recado(texto, tipo){
+  el("recado").innerHTML = texto ? `<div class="recado ${tipo}">${texto}</div>` : "";
+  if (texto) window.scrollTo({top: 0, behavior: "smooth"});
+}
+
+// ---------------------------------------------------------------------------
+// A REGRA DE CONDIÇÃO — a mesma de `pleitos._casa` no servidor
+// ---------------------------------------------------------------------------
+function casa(cond, dados){
+  if (!cond) return true;
+  return Object.entries(cond).every(([campo, valores]) =>
+    valores.map(v => String(v).toUpperCase())
+      .includes(String(dados[campo] ?? "").toUpperCase()));
+}
+const visivel = (c, d) => casa(c.visivel_se, d);
+const obrig = (c, d) => visivel(c, d) &&
+  (c.obrigatorio_se ? casa(c.obrigatorio_se, d) : !!c.obrigatorio);
+const campoDe = (lista, nome) => lista.find(c => c.nome === nome && !c.dentro_de)
+                                 || lista.find(c => c.nome === nome) || {};
+function rotulo(c, d){
+  return `${esc(c.rotulo)}${obrig(c, d) ? ' <span class="ob">*</span>' : ""}`;
+}
+const dicaDe = c => c.dica ? `<div class="dica">${esc(c.dica)}</div>` : "";
+
+// ---------------------------------------------------------------------------
+async function carregar(){
+  try {
+    const d = await api("/erp/portal/api/financeiro/inicio");
+    C = d.catalogo; OBRAS = d.obras; CATS = d.categorias; CONTRATOS = d.contratos;
+    LANC = d.lancamentos; MEU = d.meu_cadastro;
+    el("n-meus").textContent = LANC.length;
+    desenhar();
+  } catch(e){ recado(esc(e.message), "erro"); }
+}
+async function recarregarLista(){
+  try { LANC = (await api("/erp/portal/api/financeiro/lancamentos")).lancamentos;
+        el("n-meus").textContent = LANC.length; } catch(_) {}
+}
+
+document.querySelectorAll(".aba").forEach(b => b.addEventListener("click", () => {
+  ABA = b.dataset.aba;
+  document.querySelectorAll(".aba").forEach(x => x.classList.toggle("ativa", x === b));
+  desenhar();
+}));
+
+function desenhar(){
+  if (!C) return;
+  if (ABA === "meus") return desenharMeus();
+  const op = [
+    ["pagamento", "Pedir pagamento", "nota, boleto, guia, conta de consumo, recibo"],
+    ["fundo", "Fundo fixo", "reembolso ou prestação de adiantamento"],
+    ["medicao", "Medir empreita", `${CONTRATOS.length} contrato(s) vigente(s)`],
+    ["contrato", "Novo contrato de empreita", "cadastrar o empreiteiro e o serviço"],
+  ];
+  el("conteudo").innerHTML = `<div class="escolha">${op.map(([k, t, s]) =>
+    `<button type="button" data-pleito="${k}" class="${PLEITO === k ? "ativa" : ""}">
+       <b>${t}</b><small>${s}</small></button>`).join("")}</div>
+    <div id="form"></div>`;
+  document.querySelectorAll("[data-pleito]").forEach(b => b.addEventListener("click", () => {
+    PLEITO = b.dataset.pleito; desenhar(); }));
+  if (PLEITO === "pagamento") formPagamento();
+  if (PLEITO === "fundo") formFundo();
+  if (PLEITO === "medicao") formMedicao();
+  if (PLEITO === "contrato") formContrato();
+}
+
+// ---------------------------------------------------------------------------
+// PEÇAS REUSADAS: obra, credor (com cadastro na hora) e documentos
+// ---------------------------------------------------------------------------
+function opcoesObra(sel){
+  if (OBRAS.length === 1 && !sel) sel = OBRAS[0].id;
+  return `<option value="">— escolher —</option>` + OBRAS.map(o =>
+    `<option value="${o.id}" ${String(o.id) === String(sel) ? "selected" : ""}>${esc(o.rotulo)}</option>`).join("");
+}
+
+// O credor: procura por nome ou CNPJ/CPF; achou, escolhe; não achou, cadastra.
+function credorHtml(estado, chave, c, dados){
+  const f = estado[chave];
+  if (f) return `<label class="campo">${rotulo(c, dados)}
+    <div class="escolhido"><div><b>${esc(f.nome)}</b><small>${esc(f.documento || "")}</small></div>
+    <button type="button" data-troca-credor="${chave}">trocar</button></div></label>`;
+  const sug = estado._emitente;
+  return `<label class="campo">${rotulo(c, dados)}
+    <input data-busca-credor="${chave}" placeholder="nome ou CNPJ/CPF" autocomplete="off"
+           value="${esc(estado._busca || "")}">${dicaDe(c)}</label>
+    <div class="achados" id="achados-${chave}"></div>
+    ${sug ? `<div class="recado aviso" style="margin-top:8px">O documento é de
+       <b>${esc(sug.nome)}</b> (${esc(sug.documento)}), que ainda não está cadastrado.</div>` : ""}
+    <button type="button" class="btn-portal secundario pequeno" data-novo-credor="${chave}">+ Cadastrar credor</button>
+    <div id="novo-${chave}"></div>`;
+}
+function ligarCredor(estado, chave, aoMudar){
+  const caixa = document.querySelector(`[data-busca-credor="${chave}"]`);
+  let espera = null;
+  if (caixa) caixa.addEventListener("input", () => {
+    estado._busca = caixa.value;
+    clearTimeout(espera);
+    espera = setTimeout(async () => {
+      const alvo = el("achados-" + chave);
+      if (caixa.value.trim().length < 2) { alvo.innerHTML = ""; return; }
+      try {
+        const r = await api("/erp/portal/api/financeiro/credores?q=" + encodeURIComponent(caixa.value));
+        alvo.innerHTML = r.credores.length ? r.credores.map((f, i) =>
+          `<button type="button" data-i="${i}"><b>${esc(f.nome)}</b><small>${esc(f.documento)}</small></button>`).join("")
+          : `<div class="mini" style="padding:8px 4px">Nenhum credor com esse nome ou documento.</div>`;
+        alvo.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => {
+          estado[chave] = r.credores[+b.dataset.i]; estado._busca = ""; aoMudar(); }));
+      } catch(e){ alvo.innerHTML = `<div class="mini">${esc(e.message)}</div>`; }
+    }, 300);
+  });
+  const troca = document.querySelector(`[data-troca-credor="${chave}"]`);
+  if (troca) troca.addEventListener("click", () => { estado[chave] = null; aoMudar(); });
+  const novo = document.querySelector(`[data-novo-credor="${chave}"]`);
+  if (novo) novo.addEventListener("click", () => {
+    const sug = estado._emitente || {};
+    el("novo-" + chave).innerHTML = `<div class="linha">
+      <label class="campo">CNPJ ou CPF <span class="ob">*</span>
+        <input id="nc-doc-${chave}" inputmode="numeric" value="${esc(sug.documento || "")}"></label>
+      <label class="campo">Nome ou razão social <span class="ob">*</span>
+        <input id="nc-nome-${chave}" value="${esc(sug.nome || "")}"></label>
+      <button type="button" class="btn-portal pequeno" id="nc-ok-${chave}">Cadastrar</button></div>`;
+    el("nc-ok-" + chave).addEventListener("click", async () => {
+      try {
+        const r = await api("/erp/api/credores", json({
+          cnpj_cpf: el("nc-doc-" + chave).value, razao_social: el("nc-nome-" + chave).value}));
+        estado[chave] = r.credor; estado._emitente = null; aoMudar();
+      } catch(e){ recado(esc(e.message), "erro"); }
+    });
+  });
+}
+
+// Os documentos: cada arquivo leva a etiqueta do que ele é; é por ela que a
+// lista de "o que precisa vir junto" fica verde.
+function docsHtml(estado, exigidos, dados, podeLer){
+  const etiquetas = Object.entries(C.documentos);
+  return `<label class="campo">Documentos
+      <input type="file" id="arq" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.xml">
+      <div class="dica">Nota, boleto, guia, fatura, recibo — PDF, XML ou foto do celular.
+        ${podeLer ? "Toque em <b>Ler</b> e o sistema preenche os campos abaixo; confira depois." : ""}</div></label>
+    <div class="docs">${(estado.docs || []).map((d, i) => `<div class="arq">
+        <span class="cresce">${esc(d.arquivo.name)}</span>
+        <select data-cat="${i}">${etiquetas.map(([k, v]) =>
+          `<option value="${k}" ${d.categoria === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
+        ${podeLer && !d.lido ? `<button type="button" data-ler="${i}">Ler</button>` : ""}
+        <button type="button" class="tira" data-tira="${i}">✕</button></div>`).join("")}</div>
+    ${exigidos && exigidos.length ? `<div class="exigidos">${exigidos.map(x => {
+        const exige = Object.keys(x.obrigatorio_se || {}).length ? casa(x.obrigatorio_se, dados) : x.obrigatorio;
+        const tem = (estado.docs || []).some(d => x.categorias.includes(d.categoria));
+        if (!exige && !tem) return `<div class="mini">○ ${esc(x.rotulo)} (opcional)</div>`;
+        return `<div class="${tem ? "tem" : "falta"}">${tem ? "✓" : "✕"} ${esc(x.rotulo)}${tem ? "" : " — anexe"}</div>`;
+      }).join("")}</div>` : ""}`;
+}
+function ligarDocs(estado, aoMudar, aoLer){
+  el("arq").addEventListener("change", () => {
+    estado.docs = estado.docs || [];
+    [...el("arq").files].forEach(f => {
+      if (!estado.docs.some(d => d.arquivo.name === f.name && d.arquivo.size === f.size))
+        estado.docs.push({arquivo: f, categoria: "OUTRO", lido: false});
+    });
+    aoMudar();
+  });
+  document.querySelectorAll("[data-cat]").forEach(s => s.addEventListener("change", () => {
+    estado.docs[+s.dataset.cat].categoria = s.value; aoMudar(); }));
+  document.querySelectorAll("[data-tira]").forEach(b => b.addEventListener("click", () => {
+    estado.docs.splice(+b.dataset.tira, 1); aoMudar(); }));
+  document.querySelectorAll("[data-ler]").forEach(b => b.addEventListener("click", () => aoLer(+b.dataset.ler)));
+}
+
+// ---------------------------------------------------------------------------
+// 1. PEDIR PAGAMENTO — desenhado inteiro pelo catálogo
+// ---------------------------------------------------------------------------
+let P = {parcelas: [{vencimento: "", valor: "", linha_digitavel: ""}], docs: []};
+const subtipo = () => C.pagamento.find(x => x.chave === P.subtipo);
+
+function formPagamento(){
+  const st = subtipo();
+  if (st && !st.formas.includes(P.forma_pagamento))
+    P.forma_pagamento = st.formas.length === 1 ? st.formas[0] : "";
+  if (!P.obra_id && OBRAS.length === 1) P.obra_id = OBRAS[0].id;
+  const campos = st ? st.campos : C.pagamento[0].campos.filter(c => c.nome === "subtipo");
+  let h = `<div class="bloco"><h3>Pedir pagamento</h3>
+    <div class="sub">Comece pelo documento, se tiver: ele preenche quase tudo.</div>
+    ${docsHtml(P, st ? st.documentos : [], P, true)}</div><div class="bloco">`;
+  for (const c of campos) {
+    if (c.dentro_de || !visivel(c, P)) continue;
+    h += campoPagamento(c, st);
+  }
+  if (st) h += `<div id="escolher-pedido"></div>
+    <button type="button" class="btn-portal" id="enviar">Enviar pedido de pagamento</button>`;
+  el("form").innerHTML = h + `</div>`;
+  ligarPagamento(st);
+}
+
+function campoPagamento(c, st){
+  const v = P[c.nome] ?? "";
+  const ent = (tipo, extra = "") => `<label class="campo">${rotulo(c, P)}
+      <input type="${tipo}" data-p="${c.nome}" value="${esc(v)}" ${extra}>${dicaDe(c)}</label>`;
+  switch (c.tipo) {
+    case "lista":
+      if (c.nome === "subtipo") return `<label class="campo">${rotulo(c, P)}
+        <select data-p="subtipo" data-redesenha="1"><option value="">— escolher —</option>
+        ${C.pagamento.map(x => `<option value="${x.chave}" ${x.chave === P.subtipo ? "selected" : ""}>${esc(x.rotulo)}</option>`).join("")}
+        </select>${st ? `<div class="dica">${esc(st.explicacao)}</div>` : ""}</label>`;
+      return `<label class="campo">${rotulo(c, P)}
+        <select data-p="${c.nome}" data-redesenha="1"><option value="">— escolher —</option>
+        ${st.formas.map(f => `<option value="${f}" ${f === P.forma_pagamento ? "selected" : ""}>${esc(C.formas[f].rotulo)}</option>`).join("")}
+        </select>${P.forma_pagamento ? `<div class="dica">${esc(C.formas[P.forma_pagamento].dica)}</div>` : dicaDe(c)}</label>`;
+    case "credor": return credorHtml(P, "fornecedor", c, P);
+    case "conta": return contaHtml(c);
+    case "texto_longo": return `<label class="campo">${rotulo(c, P)}
+        <textarea data-p="${c.nome}">${esc(v)}</textarea>${dicaDe(c)}</label>`;
+    case "data": return ent("date", `max="${hoje()}"`);
+    case "mes": return ent("month");
+    case "dinheiro": return ent("text", 'inputmode="decimal" placeholder="0,00"');
+    case "obra": return `<label class="campo">${rotulo(c, P)}
+        <select data-p="obra_id">${opcoesObra(P.obra_id)}</select></label>`;
+    case "categoria": {
+      const servem = CATS.filter(x => !x.tipos.length || x.tipos.includes(st.tipo));
+      return `<label class="campo">${rotulo(c, P)}
+        <select data-p="categoria_id"><option value="">— escolher —</option>
+        ${servem.map(x => `<option value="${x.id}" ${String(x.id) === String(P.categoria_id) ? "selected" : ""}>${esc(x.codigo)} · ${esc(x.descricao)}</option>`).join("")}
+        </select>${dicaDe(c)}</label>`;
+    }
+    case "parcelas": return parcelasHtml(c, st);
+    default: return ent("text");
+  }
+}
+
+function contaHtml(c){
+  const f = P.fornecedor, forma = P.forma_pagamento;
+  if (!f) return `<label class="campo">${rotulo(c, P)}<div class="dica">Escolha o credor primeiro.</div></label>`;
+  const contas = (f.contas || []).filter(x => x.forma === forma)
+    .map(x => ({id: x.id, txt: `${x.identificacao}`}))
+    .concat((f.contas_pendentes || []).filter(x => x.forma === forma)
+      .map(x => ({id: x.id, txt: "conta informada — esperando o financeiro homologar"})));
+  if (contas.length && !contas.some(x => String(x.id) === String(P.fornecedor_conta_id)))
+    P.fornecedor_conta_id = contas[0].id;
+  return `<label class="campo">${rotulo(c, P)}
+    ${contas.length ? `<select data-p="fornecedor_conta_id">${contas.map(x =>
+        `<option value="${x.id}" ${String(x.id) === String(P.fornecedor_conta_id) ? "selected" : ""}>${esc(x.txt)}</option>`).join("")}</select>`
+      : `<div class="dica" style="color:#A32020">Este credor não tem conta ${esc(C.formas[forma].rotulo)} cadastrada.</div>`}
+    ${dicaDe(c)}</label>
+    ${contas.length ? "" : `<div class="linha">
+      ${forma === "PIX" ? `<div class="duas">
+        <label class="campo">Tipo da chave <select id="cc-tipo">
+          <option value="CNPJ">CNPJ</option><option value="CPF">CPF</option>
+          <option value="EMAIL">E-mail</option><option value="TELEFONE">Telefone</option>
+          <option value="ALEATORIA">Aleatória</option></select></label>
+        <label class="campo">Chave Pix <input id="cc-chave"></label></div>`
+      : `<div class="duas"><label class="campo">Banco (código) <input id="cc-banco" inputmode="numeric" placeholder="ex.: 237"></label>
+        <label class="campo">Agência <input id="cc-agencia" inputmode="numeric"></label></div>
+        <div class="duas"><label class="campo">Conta <input id="cc-conta" inputmode="numeric"></label>
+        <label class="campo">Dígito <input id="cc-digito"></label></div>`}
+      <button type="button" class="btn-portal pequeno" id="cc-ok">Cadastrar a conta</button></div>`}`;
+}
+
+function parcelasHtml(c, st){
+  const forma = C.formas[P.forma_pagamento] || {};
+  const linha = campoDe(st.campos, "linha_digitavel");
+  return `<label class="campo">${rotulo(c, P)}</label>` + P.parcelas.map((p, i) => `
+    <div class="linha"><div class="cab-linha">Parcela ${i + 1}
+      ${P.parcelas.length > 1 ? `<button type="button" class="tira" data-tira-parc="${i}">✕</button>` : ""}</div>
+      <div class="duas">
+        <label class="campo">Vencimento <span class="ob">*</span>
+          <input type="date" data-parc="${i}" data-k="vencimento" value="${esc(p.vencimento)}"></label>
+        <label class="campo">Valor <span class="ob">*</span>
+          <input data-parc="${i}" data-k="valor" inputmode="decimal" value="${esc(p.valor)}"></label></div>
+      ${forma.usa_linha ? `<label class="campo">Linha digitável${obrig(linha, P) ? ' <span class="ob">*</span>' : ""}
+          <input data-parc="${i}" data-k="linha_digitavel" inputmode="numeric" value="${esc(p.linha_digitavel)}"
+                 placeholder="os números do código de barras"></label>` : ""}
+    </div>`).join("") +
+    `<button type="button" class="btn-portal secundario pequeno" id="mais-parc">+ parcela</button>
+     <div class="total" id="soma-parc"></div>`;
+}
+
+function somaParcelas(){
+  const s = P.parcelas.reduce((a, p) => a + numero(p.valor), 0), v = numero(P.valor_bruto);
+  const alvo = el("soma-parc"); if (!alvo) return;
+  alvo.innerHTML = `Soma: ${moeda(s)}` + (v && Math.abs(s - v) > 0.01
+    ? ` <span style="color:#A32020">— difere do valor do documento (${moeda(v)})</span>` : "");
+}
+
+function ligarPagamento(st){
+  ligarDocs(P, formPagamento, lerDocumento);
+  document.querySelectorAll("[data-p]").forEach(x => {
+    const ev = x.tagName === "SELECT" ? "change" : "input";
+    x.addEventListener(ev, () => {
+      P[x.dataset.p] = x.value;
+      if (x.dataset.p === "valor_bruto" && P.parcelas.length === 1 && !P._parcela_digitada)
+        { P.parcelas[0].valor = x.value; const p0 = document.querySelector('[data-parc="0"][data-k="valor"]'); if (p0) p0.value = x.value; }
+      if (x.dataset.redesenha) formPagamento(); else somaParcelas();
+    });
+  });
+  document.querySelectorAll("[data-parc]").forEach(x => x.addEventListener("input", () => {
+    P.parcelas[+x.dataset.parc][x.dataset.k] = x.value;
+    if (x.dataset.k === "valor") P._parcela_digitada = true;
+    somaParcelas();
+  }));
+  document.querySelectorAll("[data-tira-parc]").forEach(b => b.addEventListener("click", () => {
+    P.parcelas.splice(+b.dataset.tiraParc, 1); formPagamento(); }));
+  const mais = el("mais-parc");
+  if (mais) mais.addEventListener("click", () => {
+    P.parcelas.push({vencimento: "", valor: "", linha_digitavel: ""}); formPagamento(); });
+  ligarCredor(P, "fornecedor", () => { P.fornecedor_conta_id = null; formPagamento(); });
+  const cc = el("cc-ok");
+  if (cc) cc.addEventListener("click", async () => {
+    const f = P.fornecedor, corpo = {cnpj_cpf: f.documento, razao_social: f.nome,
+      conta_forma: P.forma_pagamento};
+    if (P.forma_pagamento === "PIX") Object.assign(corpo, {pix_tipo: el("cc-tipo").value, pix_chave: el("cc-chave").value});
+    else Object.assign(corpo, {banco_codigo: el("cc-banco").value, agencia: el("cc-agencia").value,
+      conta: el("cc-conta").value, conta_digito: el("cc-digito").value});
+    try {
+      const r = await api("/erp/api/credores", json(corpo));
+      P.fornecedor = r.credor; P.fornecedor_conta_id = r.conta_pendente_id;
+      recado("Conta cadastrada. O financeiro homologa antes de pagar — o pedido segue normalmente.", "ok");
+      formPagamento();
+    } catch(e){ recado(esc(e.message), "erro"); }
+  });
+  somaParcelas();
+  const b = el("enviar");
+  if (b) b.addEventListener("click", enviarPagamento);
+}
+
+async function lerDocumento(i){
+  const doc = P.docs[i], fd = new FormData();
+  fd.append("arquivo", doc.arquivo);
+  recado("Lendo o documento…", "aviso");
+  try {
+    const x = (await api("/erp/api/lancamento/ler-documento", {method: "POST", body: fd})).documento;
+    doc.lido = true;
+    doc.categoria = C.categoria_pelo_documento[x.tipo_documento] || doc.categoria;
+    const sug = C.subtipo_pelo_documento[x.tipo_documento];
+    if (!P.subtipo && sug && C.pagamento.some(s => s.chave === sug)) P.subtipo = sug;
+    const st = subtipo();
+    if (x.tipo_documento === "BOLETO" && st && st.formas.includes("BOLETO")) P.forma_pagamento = "BOLETO";
+    if (x.tipo_documento === "GUIA" && st && st.formas.includes("GUIA")) P.forma_pagamento = "GUIA";
+    const preenche = (k, v) => { if (v && !P[k]) P[k] = v; };
+    preenche("documento_numero", x.numero_documento);
+    preenche("data_emissao_doc", x.data_emissao);
+    preenche("chave_acesso", x.chave_acesso);
+    preenche("descricao", x.descricao);
+    preenche("mes_referencia", (x.competencia || "").slice(0, 7));
+    if (x.valor_total && !P.valor_bruto) P.valor_bruto = String(x.valor_total).replace(".", ",");
+    if (x.parcelas && x.parcelas.length) {
+      const atuais = P.parcelas.filter(p => p.vencimento || p.valor);
+      if (!atuais.length) P.parcelas = x.parcelas.map(p => ({vencimento: p.vencimento || "",
+        valor: String(p.valor || "").replace(".", ","), linha_digitavel: p.linha_digitavel || ""}));
+      else x.parcelas.forEach((p, k) => { if (P.parcelas[k] && p.linha_digitavel && !P.parcelas[k].linha_digitavel)
+        P.parcelas[k].linha_digitavel = p.linha_digitavel; });
+    } else if (P.parcelas.length === 1 && !P.parcelas[0].valor && P.valor_bruto) {
+      P.parcelas[0].valor = P.valor_bruto;
+    }
+    if (x.obra_id && OBRAS.some(o => o.id === x.obra_id) && !P.obra_id) P.obra_id = x.obra_id;
+    if (x.categoria_sugerida && !P.categoria_id) P.categoria_id = x.categoria_sugerida.categoria_id;
+    if (!P.fornecedor && x.emitente_documento) {
+      const r = await api("/erp/portal/api/financeiro/credores?q=" + encodeURIComponent(x.emitente_documento));
+      const achou = r.credores.find(f => f.documento === String(x.emitente_documento).replace(/\D/g, ""));
+      if (achou) P.fornecedor = achou;
+      else P._emitente = {documento: x.emitente_documento, nome: x.emitente_nome || ""};
+    }
+    recado("Documento lido. <b>Confira cada campo</b> antes de enviar.", "ok");
+  } catch(e){ recado(esc(e.message) + " Você pode preencher à mão.", "erro"); }
+  formPagamento();
+}
+
+async function enviarPagamento(extra){
+  const b = el("enviar"); b.disabled = true; b.textContent = "Enviando…";
+  const corpo = {subtipo: P.subtipo, fornecedor_id: P.fornecedor ? P.fornecedor.id : null,
+    forma_pagamento: P.forma_pagamento,
+    fornecedor_conta_id: P.fornecedor_conta_id ? +P.fornecedor_conta_id : null,
+    documento_numero: P.documento_numero || "", data_emissao_doc: P.data_emissao_doc || null,
+    chave_acesso: P.chave_acesso || "", mes_referencia: P.mes_referencia || "",
+    justificativa_excecao: P.justificativa_excecao || "",
+    descricao: (P.descricao || "").trim(), valor_bruto: String(numero(P.valor_bruto)),
+    obra_id: P.obra_id ? +P.obra_id : null, categoria_id: P.categoria_id ? +P.categoria_id : null,
+    parcelas: P.parcelas.map(p => ({vencimento: p.vencimento, valor: String(numero(p.valor)),
+      linha_digitavel: (p.linha_digitavel || "").replace(/\D/g, "")})),
+    ...(P._extra || {}), ...(extra || {})};
+  const fd = new FormData();
+  fd.append("dados", JSON.stringify(corpo));
+  P.docs.forEach(d => { fd.append("arquivos", d.arquivo); fd.append("categorias", d.categoria); });
+  try {
+    const r = await api("/erp/portal/api/financeiro/pagamento", {method: "POST", body: fd});
+    recado(`Pedido <b>${esc(r.titulo.numero_sp)}</b> enviado. Acompanhe em “O que pedi”.`, "ok");
+    P = {parcelas: [{vencimento: "", valor: "", linha_digitavel: ""}], docs: []};
+    await recarregarLista(); formPagamento(); return;
+  } catch(e){
+    const d = e.dados || {};
+    if (d.escolher_pedido) {
+      el("escolher-pedido").innerHTML = `<div class="recado aviso">${esc(e.message)}
+        ${d.pedidos.map(p => `<button type="button" class="btn-portal secundario pequeno" data-ped="${p.pedido_id}">
+          ${esc(p.numero)} — ${moeda(p.valor || 0)}</button>`).join(" ")}
+        <button type="button" class="btn-portal secundario pequeno" data-ped="0">Não é de nenhum deles</button></div>`;
+      document.querySelectorAll("[data-ped]").forEach(x => x.addEventListener("click", () => {
+        P._extra = +x.dataset.ped ? {pedido_compra_id: +x.dataset.ped} : {nao_e_de_pedido: true};
+        enviarPagamento();
+      }));
+    } else if (d.precisa_motivo) {
+      const m = prompt(e.message + "\n\nEscreva o motivo:");
+      if (m && m.trim().length >= 10) { P._extra = {...(P._extra || {}), motivo_sem_pedido: m.trim()}; return enviarPagamento(); }
+      recado("Sem o motivo o pedido não segue.", "erro");
+    } else {
+      const crit = d.critica && d.critica.bloqueios && d.critica.bloqueios.length
+        ? "<br>" + d.critica.bloqueios.map(x => esc(x.msg)).join("<br>") : "";
+      recado(esc(e.message) + crit, "erro");
+    }
+  }
+  b.disabled = false; b.textContent = "Enviar pedido de pagamento";
+}
+
+// ---------------------------------------------------------------------------
+// 2. FUNDO FIXO
+// ---------------------------------------------------------------------------
+let F = {fundo_fixo_tipo: "", itens: []};
+function formFundo(){
+  const campos = C.fundo_fixo.campos;
+  const st = C.fundo_fixo.subtipos.find(x => x.chave === F.fundo_fixo_tipo);
+  const quem = MEU.conta
+    ? `Você recebe em <b>${esc(MEU.conta)}</b>.`
+    : MEU.pendente ? `Sua chave Pix está <b>esperando o financeiro homologar</b>. Pode enviar: o pagamento espera a homologação.`
+    : `<b style="color:#A32020">Sua chave Pix não está cadastrada.</b> Informe abaixo antes de enviar.`;
+  const total = F.itens.reduce((a, i) => a + numero(i.valor), 0);
+  el("form").innerHTML = `<div class="bloco"><h3>Fundo fixo</h3>
+    <div class="sub">${quem}</div>
+    ${!MEU.conta && !MEU.pendente ? `<div class="linha"><div class="duas">
+       <label class="campo">Tipo da chave <select id="mp-tipo"><option value="CPF">CPF</option>
+         <option value="EMAIL">E-mail</option><option value="TELEFONE">Telefone</option>
+         <option value="ALEATORIA">Aleatória</option></select></label>
+       <label class="campo">Chave Pix <input id="mp-chave"></label></div>
+       <button type="button" class="btn-portal pequeno" id="mp-ok">Guardar minha chave</button></div>` : ""}
+    <label class="campo">${rotulo(campoDe(campos, "fundo_fixo_tipo"), F)}
+      <select id="ff-tipo"><option value="">— escolher —</option>${C.fundo_fixo.subtipos.map(x =>
+        `<option value="${x.chave}" ${x.chave === F.fundo_fixo_tipo ? "selected" : ""}>${esc(x.rotulo)}</option>`).join("")}</select>
+      ${st ? `<div class="dica">${esc(st.explicacao)}</div>` : ""}</label>
+    <div class="duas">
+      <label class="campo">${rotulo(campoDe(campos, "periodo_inicio"), F)}
+        <input type="date" id="ff-ini" max="${hoje()}" value="${esc(F.periodo_inicio || "")}"></label>
+      <label class="campo">${rotulo(campoDe(campos, "periodo_fim"), F)}
+        <input type="date" id="ff-fim" max="${hoje()}" value="${esc(F.periodo_fim || "")}"></label></div>
+    <label class="campo">Comprovantes
+      <input type="file" id="ff-arq" multiple accept=".pdf,.png,.jpg,.jpeg,.webp">
+      <div class="dica">Cada comprovante vira uma despesa — PDF com várias páginas vira uma linha por página.
+        O que a leitura não pegar, você completa.</div></label>
+    <div id="ff-itens">${F.itens.map((it, i) => `<div class="linha">
+      <div class="cab-linha">Despesa ${i + 1} ${it.nome_arquivo ? `<span class="mini">· ${esc(it.nome_arquivo)}</span>`
+        : `<span class="mini" style="color:#8A5B00">· sem comprovante</span>`}
+        <button type="button" class="tira" data-tira-ff="${i}">✕</button></div>
+      <div class="duas">
+        <label class="campo">Data <span class="ob">*</span><input type="date" max="${hoje()}" data-ff="${i}" data-k="data_despesa" value="${esc(it.data_despesa || "")}"></label>
+        <label class="campo">Valor <span class="ob">*</span><input inputmode="decimal" data-ff="${i}" data-k="valor" value="${esc(it.valor || "")}"></label></div>
+      <label class="campo">O que foi <span class="ob">*</span><input data-ff="${i}" data-k="descricao" value="${esc(it.descricao || "")}"></label>
+      <label class="campo">Onde (estabelecimento)<input data-ff="${i}" data-k="estabelecimento" value="${esc(it.estabelecimento || "")}"></label>
+      <label class="campo">Obra <span class="ob">*</span><select data-ff="${i}" data-k="obra_id">${opcoesObra(it.obra_id)}</select></label>
+    </div>`).join("")}</div>
+    <button type="button" class="btn-portal secundario pequeno" id="ff-linha">+ despesa sem comprovante</button>
+    <div class="total">Total: ${moeda(total)}</div>
+    <button type="button" class="btn-portal" id="ff-enviar">Enviar prestação</button></div>`;
+  el("ff-tipo").addEventListener("change", e => { F.fundo_fixo_tipo = e.target.value; formFundo(); });
+  el("ff-ini").addEventListener("change", e => F.periodo_inicio = e.target.value);
+  el("ff-fim").addEventListener("change", e => F.periodo_fim = e.target.value);
+  document.querySelectorAll("[data-ff]").forEach(x => x.addEventListener(
+    x.tagName === "SELECT" ? "change" : "input", () => { F.itens[+x.dataset.ff][x.dataset.k] = x.value; }));
+  document.querySelectorAll("[data-tira-ff]").forEach(b => b.addEventListener("click", () => {
+    F.itens.splice(+b.dataset.tiraFf, 1); formFundo(); }));
+  el("ff-linha").addEventListener("click", () => { F.itens.push({obra_id: OBRAS.length === 1 ? OBRAS[0].id : ""}); formFundo(); });
+  el("ff-arq").addEventListener("change", lerComprovantes);
+  const mp = el("mp-ok");
+  if (mp) mp.addEventListener("click", async () => {
+    try {
+      await api("/erp/api/meu-cadastro", json({pix_tipo: el("mp-tipo").value, pix_chave: el("mp-chave").value}));
+      MEU = (await api("/erp/portal/api/financeiro/inicio")).meu_cadastro;
+      recado("Chave guardada. O financeiro homologa antes do primeiro pagamento.", "ok"); formFundo();
+    } catch(e){ recado(esc(e.message), "erro"); }
+  });
+  el("ff-enviar").addEventListener("click", enviarFundo);
+}
+
+async function lerComprovantes(){
+  const arquivos = [...el("ff-arq").files];
+  for (const [k, f] of arquivos.entries()) {
+    recado(`Lendo comprovante ${k + 1} de ${arquivos.length}…`, "aviso");
+    const fd = new FormData(); fd.append("arquivo", f);
+    try {
+      const r = await api("/erp/api/prestacao/comprovante", {method: "POST", body: fd});
+      (r.linhas || []).forEach(l => F.itens.push({data_despesa: l.data_despesa || "",
+        descricao: l.descricao || "", estabelecimento: l.estabelecimento || "",
+        valor: String(l.valor || "").replace(".", ","), anexo_id: l.anexo_id,
+        nome_arquivo: f.name, obra_id: OBRAS.length === 1 ? OBRAS[0].id : ""}));
+    } catch(e){ recado(`${esc(f.name)}: ${esc(e.message)}`, "erro"); }
+  }
+  recado("Comprovantes lidos. <b>Confira cada despesa</b> e a obra.", "ok");
+  formFundo();
+}
+
+async function enviarFundo(){
+  const b = el("ff-enviar"); b.disabled = true; b.textContent = "Enviando…";
+  try {
+    const r = await api("/erp/api/prestacao", json({
+      modalidade: "FUNDO_FIXO", fundo_fixo_tipo: F.fundo_fixo_tipo,
+      periodo_inicio: F.periodo_inicio || null, periodo_fim: F.periodo_fim || null,
+      fornecedor_id: MEU.fornecedor_id, fornecedor_conta_id: MEU.conta_id,
+      forma_pagamento: "PIX",
+      itens: F.itens.map(i => ({data_despesa: i.data_despesa || null, descricao: i.descricao || "",
+        estabelecimento: i.estabelecimento || "", valor: String(numero(i.valor)),
+        obra_id: i.obra_id ? +i.obra_id : null, anexo_id: i.anexo_id || null}))}));
+    recado(`Prestação <b>${esc(r.titulo.numero_sp)}</b> enviada — ${moeda(r.titulo.total)}.`, "ok");
+    F = {fundo_fixo_tipo: "", itens: []}; await recarregarLista(); formFundo(); return;
+  } catch(e){ recado(esc(e.message), "erro"); }
+  b.disabled = false; b.textContent = "Enviar prestação";
+}
+
+// ---------------------------------------------------------------------------
+// 3. MEDIR EMPREITA
+// ---------------------------------------------------------------------------
+let M = {qtd: {}, fotos: []};
+function formMedicao(){
+  if (!CONTRATOS.length) {
+    el("form").innerHTML = `<div class="bloco"><div class="vazio">Nenhum contrato de empreita
+      vigente nas suas obras. Contrato novo entra por <b>Novo contrato de empreita</b> e
+      precisa do aval antes de ser medido.</div></div>`; return;
+  }
+  const campos = C.medicao.campos;
+  const k = CONTRATOS.find(x => String(x.id) === String(M.contrato_id));
+  const dados = {_contrato: k ? k.jeito : "", exige_foto: k && k.exige_foto ? "1" : "0"};
+  let total = 0;
+  const linhas = k && k.jeito === "PLANILHA" ? k.itens.map(it => {
+    const q = numero(M.qtd[it.id]); total += q * it.preco_unitario;
+    return `<div class="linha"><div class="cab-linha">${esc(it.descricao)}</div>
+      <div class="mini">resta ${it.saldo.toLocaleString("pt-BR")} ${esc(it.unidade)} · ${moeda(it.preco_unitario)} por ${esc(it.unidade || "un")}</div>
+      <div class="duas"><label class="campo">Executado neste período (${esc(it.unidade || "un")})
+        <input inputmode="decimal" data-mq="${it.id}" value="${esc(M.qtd[it.id] || "")}"
+          style="${q > it.saldo + 0.0001 ? "border-color:#A32020" : ""}"></label>
+        <div class="total" style="align-self:end">${moeda(q * it.preco_unitario)}</div></div></div>`;
+  }).join("") : "";
+  el("form").innerHTML = `<div class="bloco"><h3>Medir empreita</h3>
+    <div class="sub">A medição ainda não é pagamento: quem tem alçada confere e autoriza.</div>
+    <label class="campo">${rotulo(campoDe(campos, "contrato_id"), dados)}
+      <select id="md-contrato"><option value="">— escolher —</option>${CONTRATOS.map(x =>
+        `<option value="${x.id}" ${String(x.id) === String(M.contrato_id) ? "selected" : ""}>${esc(x.numero)} · ${esc(x.prestador)} · ${esc(x.obra)}</option>`).join("")}</select>
+      ${k ? `<div class="dica">${esc(k.objeto)} — saldo ${moeda(k.saldo)} de ${moeda(k.valor_vigente)}</div>` : ""}</label>
+    ${k ? `<div class="duas">
+      <label class="campo">${rotulo(campoDe(campos, "periodo_inicio"), dados)}
+        <input type="date" id="md-ini" value="${esc(M.periodo_inicio || "")}"></label>
+      <label class="campo">${rotulo(campoDe(campos, "periodo_fim"), dados)}
+        <input type="date" id="md-fim" value="${esc(M.periodo_fim || "")}"></label></div>
+      ${visivel(campoDe(campos, "itens"), dados) ? `<label class="campo">${rotulo(campoDe(campos, "itens"), dados)}</label>${linhas}
+        <div class="total">Total medido: ${moeda(total)}</div>` : ""}
+      ${visivel(campoDe(campos, "valor_medido"), dados) ? `<label class="campo">${rotulo(campoDe(campos, "valor_medido"), dados)}
+        <input id="md-valor" inputmode="decimal" value="${esc(M.valor_medido || "")}"></label>` : ""}
+      <label class="campo">${rotulo(campoDe(campos, "observacao"), dados)}
+        <textarea id="md-obs">${esc(M.observacao || "")}</textarea></label>
+      <label class="campo">Fotos do serviço${k.exige_foto ? ' <span class="ob">*</span>' : ""}
+        <input type="file" id="md-fotos" multiple accept="image/*,.pdf">
+        <div class="dica">${k.exige_foto ? "Este contrato exige foto em cada medição." : "Opcional neste contrato."}
+          ${M.fotos.length ? `<b>${M.fotos.length} arquivo(s) escolhido(s).</b>` : ""}</div></label>
+      <button type="button" class="btn-portal" id="md-enviar">Registrar medição</button>` : ""}</div>`;
+  el("md-contrato").addEventListener("change", e => { M = {contrato_id: e.target.value, qtd: {}, fotos: []}; formMedicao(); });
+  if (!k) return;
+  el("md-ini").addEventListener("change", e => M.periodo_inicio = e.target.value);
+  el("md-fim").addEventListener("change", e => M.periodo_fim = e.target.value);
+  el("md-obs").addEventListener("input", e => M.observacao = e.target.value);
+  if (el("md-valor")) el("md-valor").addEventListener("input", e => M.valor_medido = e.target.value);
+  document.querySelectorAll("[data-mq]").forEach(x => x.addEventListener("change", () => {
+    M.qtd[x.dataset.mq] = x.value; formMedicao(); }));
+  el("md-fotos").addEventListener("change", e => { M.fotos = [...e.target.files]; formMedicao(); });
+  el("md-enviar").addEventListener("click", () => enviarMedicao(k));
+}
+
+async function enviarMedicao(k){
+  if (k.exige_foto && !M.fotos.length) { recado("Este contrato exige foto do serviço. Anexe ao menos uma.", "erro"); return; }
+  const b = el("md-enviar"); b.disabled = true; b.textContent = "Registrando…";
+  try {
+    const corpo = {periodo_inicio: M.periodo_inicio || null, periodo_fim: M.periodo_fim || null,
+      observacao: M.observacao || "",
+      itens: Object.entries(M.qtd).filter(([, q]) => numero(q) > 0)
+        .map(([id, q]) => ({contrato_item_id: +id, quantidade: String(numero(q))})),
+      valor_medido: M.valor_medido ? String(numero(M.valor_medido)) : null};
+    const r = await api(`/erp/api/empreitas/${k.id}/medicoes`, json(corpo));
+    const falhas = [];
+    for (const f of M.fotos) {
+      const fd = new FormData(); fd.append("arquivo", f); fd.append("categoria", "FOTO");
+      try { await api(`/erp/api/anexos/medicao/${r.medicao.id}`, {method: "POST", body: fd}); }
+      catch(e){ falhas.push(f.name); }
+    }
+    recado(`Medição ${r.medicao.numero} registrada: ${moeda(r.medicao.valor)}` +
+      (r.medicao.abatido ? ` (adiantamento abatido ${moeda(r.medicao.abatido)} → a pagar ${moeda(r.medicao.liquido)})` : "") +
+      `. Agora ela espera a autorização.` +
+      (falhas.length ? `<br><b>Não subiram:</b> ${esc(falhas.join(", "))} — anexe de novo pelo ERP.` : ""),
+      falhas.length ? "aviso" : "ok");
+    M = {qtd: {}, fotos: []};
+    CONTRATOS = (await api("/erp/portal/api/financeiro/inicio")).contratos;
+    await recarregarLista(); formMedicao(); return;
+  } catch(e){ recado(esc(e.message), "erro"); }
+  b.disabled = false; b.textContent = "Registrar medição";
+}
+
+// ---------------------------------------------------------------------------
+// 4. NOVO CONTRATO DE EMPREITA
+// ---------------------------------------------------------------------------
+let K = {modo: "", itens: [{}], exige_foto: "1", docs: []};
+function formContrato(){
+  const campos = C.contrato.campos;
+  const st = C.contrato.subtipos.find(x => x.chave === K.modo);
+  if (!K.obra_id && OBRAS.length === 1) K.obra_id = OBRAS[0].id;
+  const r = n => rotulo(campoDe(campos, n), K);
+  const totalItens = (K.itens || []).reduce((a, i) => a + numero(i.quantidade) * numero(i.preco_unitario), 0);
+  el("form").innerHTML = `<div class="bloco"><h3>Novo contrato de empreita</h3>
+    <div class="sub">O contrato nasce esperando o aval de quem tem alçada pelo valor. Só depois dele dá para medir.</div>
+    <label class="campo">${r("modo")}
+      <select id="k-modo"><option value="">— escolher —</option>${C.contrato.subtipos.map(x =>
+        `<option value="${x.chave}" ${x.chave === K.modo ? "selected" : ""}>${esc(x.rotulo)}</option>`).join("")}</select>
+      ${st ? `<div class="dica">${esc(st.explicacao)}</div>` : ""}</label>
+    ${st ? `
+    <label class="campo">${r("obra_id")}<select id="k-obra">${opcoesObra(K.obra_id)}</select></label>
+    ${credorHtml(K, "fornecedor", campoDe(campos, "fornecedor_id"), K)}
+    <label class="campo">${r("objeto")}<textarea id="k-objeto" placeholder="ex.: alvenaria de vedação do bloco A">${esc(K.objeto || "")}</textarea></label>
+    ${visivel(campoDe(campos, "itens"), K) ? `<label class="campo">${r("itens")}</label>
+      ${K.itens.map((it, i) => `<div class="linha"><div class="cab-linha">Serviço ${i + 1}
+          ${K.itens.length > 1 ? `<button type="button" class="tira" data-tira-k="${i}">✕</button>` : ""}</div>
+        <label class="campo">Serviço <span class="ob">*</span><input data-k="${i}" data-c="descricao" value="${esc(it.descricao || "")}"></label>
+        <div class="duas"><label class="campo">Unidade <span class="ob">*</span><input data-k="${i}" data-c="unidade" placeholder="m², m, un" value="${esc(it.unidade || "")}"></label>
+          <label class="campo">Quantidade <span class="ob">*</span><input inputmode="decimal" data-k="${i}" data-c="quantidade" value="${esc(it.quantidade || "")}"></label></div>
+        <label class="campo">Preço unitário <span class="ob">*</span><input inputmode="decimal" data-k="${i}" data-c="preco_unitario" value="${esc(it.preco_unitario || "")}"></label>
+        <div class="total">${moeda(numero(it.quantidade) * numero(it.preco_unitario))}</div></div>`).join("")}
+      <button type="button" class="btn-portal secundario pequeno" id="k-mais">+ serviço</button>
+      <div class="total">Valor do contrato: ${moeda(totalItens)}</div>` : ""}
+    ${visivel(campoDe(campos, "valor_total"), K) ? `<div class="duas">
+      <label class="campo">${r("valor_total")}<input id="k-total" inputmode="decimal" value="${esc(K.valor_total || "")}"></label>
+      <label class="campo">${r("parcelas_previstas")}<input id="k-parc" inputmode="numeric" value="${esc(K.parcelas_previstas || "")}"></label></div>` : ""}
+    <div class="duas">
+      <label class="campo">${r("data_inicio")}<input type="date" id="k-ini" value="${esc(K.data_inicio || "")}"></label>
+      <label class="campo">${r("data_fim")}<input type="date" id="k-fim" value="${esc(K.data_fim || "")}"></label></div>
+    <div class="duas">
+      <label class="campo">${r("retencao_garantia_pct")}<input id="k-gar" inputmode="decimal" value="${esc(K.retencao_garantia_pct || "")}" placeholder="0"></label>
+      <label class="campo">${r("exige_foto")}<select id="k-foto">
+        <option value="1" ${K.exige_foto === "1" ? "selected" : ""}>Sim</option>
+        <option value="0" ${K.exige_foto === "0" ? "selected" : ""}>Não</option></select></label></div>
+    <label class="campo">${r("observacoes")}<textarea id="k-obs">${esc(K.observacoes || "")}</textarea></label>
+    ${docsHtml(K, C.contrato.documentos, K, false)}
+    <button type="button" class="btn-portal" id="k-enviar">Cadastrar contrato</button>` : ""}</div>`;
+  el("k-modo").addEventListener("change", e => { K.modo = e.target.value; formContrato(); });
+  if (!st) return;
+  const liga = (id, k, ev = "input") => el(id) && el(id).addEventListener(ev, e => K[k] = e.target.value);
+  liga("k-obra", "obra_id", "change"); liga("k-objeto", "objeto"); liga("k-total", "valor_total");
+  liga("k-parc", "parcelas_previstas"); liga("k-ini", "data_inicio", "change"); liga("k-fim", "data_fim", "change");
+  liga("k-gar", "retencao_garantia_pct"); liga("k-foto", "exige_foto", "change"); liga("k-obs", "observacoes");
+  document.querySelectorAll("[data-k]").forEach(x => x.addEventListener("change", () => {
+    K.itens[+x.dataset.k][x.dataset.c] = x.value; formContrato(); }));
+  document.querySelectorAll("[data-tira-k]").forEach(b => b.addEventListener("click", () => {
+    K.itens.splice(+b.dataset.tiraK, 1); formContrato(); }));
+  if (el("k-mais")) el("k-mais").addEventListener("click", () => { K.itens.push({}); formContrato(); });
+  ligarCredor(K, "fornecedor", formContrato);
+  ligarDocs(K, formContrato, () => {});
+  el("k-enviar").addEventListener("click", enviarContrato);
+}
+
+async function enviarContrato(){
+  const b = el("k-enviar"); b.disabled = true; b.textContent = "Cadastrando…";
+  try {
+    const r = await api("/erp/api/empreitas", json({
+      modo: K.modo, obra_id: K.obra_id ? +K.obra_id : null,
+      fornecedor_id: K.fornecedor ? K.fornecedor.id : null, objeto: K.objeto || "",
+      itens: K.modo === "MEDICAO" ? K.itens.map(i => ({descricao: i.descricao || "",
+        unidade: i.unidade || "", quantidade: i.quantidade ? String(numero(i.quantidade)) : "",
+        preco_unitario: i.preco_unitario ? String(numero(i.preco_unitario)) : ""})) : [],
+      valor_total: K.valor_total ? String(numero(K.valor_total)) : null,
+      parcelas_previstas: K.parcelas_previstas || null,
+      data_inicio: K.data_inicio || null, data_fim: K.data_fim || null,
+      retencao_garantia_pct: String(numero(K.retencao_garantia_pct || "0")),
+      exige_foto: K.exige_foto === "1", observacoes: K.observacoes || ""}));
+    const falhas = [];
+    for (const d of (K.docs || [])) {
+      const fd = new FormData(); fd.append("arquivo", d.arquivo);
+      fd.append("categoria", ["CONTRATO", "PROPOSTA"].includes(d.categoria) ? d.categoria : "CONTRATO");
+      try { await api(`/erp/api/anexos/contrato_servico/${r.contrato.id}`, {method: "POST", body: fd}); }
+      catch(e){ falhas.push(d.arquivo.name); }
+    }
+    recado(`Contrato <b>${esc(r.contrato.numero)}</b> cadastrado (${moeda(r.contrato.valor)}) — esperando o aval.` +
+      (falhas.length ? `<br><b>Não subiram:</b> ${esc(falhas.join(", "))}.` : ""), falhas.length ? "aviso" : "ok");
+    K = {modo: "", itens: [{}], exige_foto: "1", docs: []}; await recarregarLista(); formContrato(); return;
+  } catch(e){ recado(esc(e.message), "erro"); }
+  b.disabled = false; b.textContent = "Cadastrar contrato";
+}
+
+// ---------------------------------------------------------------------------
+// 5. O QUE PEDI — uma lista só, e o pedido por dentro
+// ---------------------------------------------------------------------------
+const GRUPOS = {
+  todos: () => true,
+  andamento: x => ["ambar"].includes(x.cor),
+  corrigir: x => x.cor === "vermelha",
+  pagos: x => x.cor === "verde",
+};
+function desenharMeus(){
+  const lista = LANC.filter(GRUPOS[FILTRO]);
+  el("conteudo").innerHTML = `<div class="filtros">${[["todos", "Todos"], ["andamento", "Em andamento"],
+      ["corrigir", "Precisa de atenção"], ["pagos", "Aprovados e pagos"]].map(([k, t]) =>
+      `<button type="button" data-f="${k}" class="${FILTRO === k ? "ativa" : ""}">${t} · ${LANC.filter(GRUPOS[k]).length}</button>`).join("")}</div>
+    <div class="bloco">${lista.length ? lista.map((x, i) => `<div class="item-lista" data-abre="${LANC.indexOf(x)}">
+      <div class="cresce"><b>${esc(x.tipo)} · ${esc(x.numero)}</b>
+        <small>${esc(x.quem)}${x.vencimento ? " · vence " + dia(x.vencimento) : ""}${x.quando ? " · pedido em " + dia(x.quando) : ""}</small>
+        <span class="etiqueta ${esc(x.cor)}">${esc(x.situacao)}</span></div>
+      <div class="valor">${moeda(x.valor)}</div></div>`).join("")
+      : `<div class="vazio">Nada aqui.</div>`}</div>`;
+  document.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { FILTRO = b.dataset.f; desenharMeus(); }));
+  document.querySelectorAll("[data-abre]").forEach(b => b.addEventListener("click", () => abrir(LANC[+b.dataset.abre])));
+}
+
+async function abrir(x){
+  if (x.especie !== "titulo") {
+    el("dlg-dentro").innerHTML = `<h3>${esc(x.tipo)} · ${esc(x.numero)}</h3>
+      <div class="mini">${esc(x.quem)}</div><p><span class="etiqueta ${esc(x.cor)}">${esc(x.situacao)}</span></p>
+      <p>${moeda(x.valor)}</p>
+      <p class="mini">${x.especie === "contrato" ? "O contrato precisa do aval no ERP antes de ser medido."
+        : "Quem tem alçada autoriza a medição no ERP — aí ela vira pagamento e aparece aqui."}</p>
+      <button type="button" class="btn-portal secundario" id="dlg-fecha">Fechar</button>`;
+    document.getElementById("dlg").showModal(); el("dlg-fecha").addEventListener("click", () => el("dlg").close()); return;
+  }
+  try {
+    const t = (await api(`/erp/portal/api/financeiro/titulo/${x.id}`)).titulo;
+    el("dlg-dentro").innerHTML = `<h3>${esc(t.tipo)} · ${esc(t.numero)}</h3>
+      <div class="mini">${esc(t.credor)} · ${esc(t.forma)}</div>
+      <p><span class="etiqueta ${esc(t.cor)}">${esc(t.situacao)}</span></p>
+      ${t.por_que_parado && t.por_que_parado.length ? `<div class="recado aviso"><b>Por que está parado:</b><br>${
+        t.por_que_parado.map(esc).join("<br>")}</div>` : ""}
+      <p style="white-space:pre-line">${esc(t.descricao)}</p>
+      <table class="tabela-mini">
+        <tr><td>Valor do documento</td><td style="text-align:right">${moeda(t.valor_bruto)}</td></tr>
+        ${t.retencoes ? `<tr><td>Retenções</td><td style="text-align:right">− ${moeda(t.retencoes)}</td></tr>` : ""}
+        <tr><td><b>A pagar</b></td><td style="text-align:right"><b>${moeda(t.valor_liquido)}</b></td></tr>
+        ${t.parcelas.map(p => `<tr><td>Parcela ${p.numero} · vence ${dia(p.vencimento)}</td>
+          <td style="text-align:right">${moeda(p.valor)}</td></tr>`).join("")}</table>
+      ${t.documentos.length ? `<p class="mini"><b>Documentos:</b><br>${t.documentos.map(d =>
+        `<a href="/erp/anexo/${d.id}" target="_blank">${esc(d.nome || d.nome_arquivo || "documento")}</a>`).join("<br>")}</p>` : ""}
+      ${t.historia.length ? `<p class="mini"><b>O que aconteceu:</b><br>${t.historia.map(h =>
+        `${dia(h.quando)} — ${esc(h.o_que)}${h.quem ? " (" + esc(h.quem) + ")" : ""}${h.motivo ? ": <i>" + esc(h.motivo) + "</i>" : ""}`).join("<br>")}</p>` : ""}
+      ${t.pode_cancelar ? `<label class="campo">Cancelar este pedido — por quê? <span class="ob">*</span>
+          <textarea id="dlg-motivo" placeholder="ex.: lancei em duplicidade"></textarea></label>
+        <button type="button" class="btn-portal secundario" id="dlg-cancela">Cancelar o pedido</button>` : ""}
+      <button type="button" class="btn-portal" id="dlg-fecha">Fechar</button>`;
+    document.getElementById("dlg").showModal();
+    el("dlg-fecha").addEventListener("click", () => el("dlg").close());
+    const c = el("dlg-cancela");
+    if (c) c.addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/titulos/${t.id}/cancelar`, json({motivo: el("dlg-motivo").value}));
+        el("dlg").close(); recado(`Pedido ${esc(t.numero)} cancelado.`, "ok");
+        await recarregarLista(); desenharMeus();
+      } catch(e){ alert(e.message); }
+    });
+  } catch(e){ recado(esc(e.message), "erro"); }
+}
+
+carregar();
+</script>
+</body>
+</html>

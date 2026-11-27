@@ -1201,6 +1201,106 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
     return c
 
 
+# ---------------------------------------------------------------------------
+# ⚑ A READMISSÃO PEDIDA JÁ LIBERA O PONTO (27/11/2026). Ele: *"Como a pessoa
+# está desligada, ela tem uma data de saída registrada (…) Isso aí está
+# impactando na batida do ponto, mesmo que a pessoa tenha solicitado. (…) Essa
+# data de saída ela tem que ficar no histórico, mas na hora que a pessoa
+# solicitar a admissão, ela tem que sumir (…) E assim a pessoa já começa a
+# poder bater ponto imediatamente."*
+#
+# É a mesma decisão de 25/11 para a admissão nova (o pré-cadastro bate ponto
+# antes de o DP atender), agora para quem volta. O ponto lê do cadastro a
+# situação e a data de saída (`ponto/core/cadastros._SITUACAO_DO_ERP`): com a
+# saída vencida, a batida é recusada. Então, na hora do pedido:
+#   · a passagem anterior fica guardada no VÍNCULO (a história: admissão e
+#     saída) — se a pessoa não tinha vínculo gravado (cadastro importado), ele
+#     é criado agora com as datas do cadastro, para a saída não se perder;
+#   · o cadastro perde a saída, volta a ATIVO, com a admissão e o início do
+#     pedido (provisórios: o DP confirma a admissão ao atender) e vai para a
+#     etapa Inicial — a fila do DP;
+#   · o que havia antes é devolvido para ser gravado no pedido: recusado ou
+#     cancelado, `voltar_a_saida` põe tudo de volta.
+# ---------------------------------------------------------------------------
+def liberar_ponto_na_readmissao(s: Session, colaborador_id: int, inicio: Optional[date],
+                                usuario: Optional[Usuario], *, motivo: str = "") -> dict[str, Any]:
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    guardado = {
+        "situacao": c.situacao, "etapa": c.etapa,
+        "demissao": c.demissao.isoformat() if c.demissao else None,
+        "ultimo_dia": c.ultimo_dia.isoformat() if c.ultimo_dia else None,
+        "aviso_previo": c.aviso_previo.isoformat() if c.aviso_previo else None,
+        "admissao": c.admissao.isoformat() if c.admissao else None,
+        "data_inicio": c.data_inicio.isoformat() if c.data_inicio else None,
+    }
+    if c.demissao is not None:
+        tem_historia = s.scalars(select(ColaboradorVinculo).where(
+            ColaboradorVinculo.colaborador_id == c.id,
+            ColaboradorVinculo.demissao.is_not(None))).first()
+        aberto = vinculo_aberto(s, c.id)
+        if aberto is not None:
+            # Vínculo aberto numa pessoa com saída: fecha com a saída do cadastro.
+            aberto.demissao = c.demissao
+            aberto.ultimo_dia = aberto.ultimo_dia or c.ultimo_dia
+            aberto.aviso_previo = aberto.aviso_previo or c.aviso_previo
+        elif tem_historia is None:
+            s.add(ColaboradorVinculo(
+                colaborador_id=c.id, vinculo=c.vinculo or "CTPS",
+                tipo_contrato=c.tipo_contrato, empresa_id=c.empresa_id,
+                cnpj_admissao=c.cnpj_admissao, cargo_id=c.cargo_id,
+                convencao_id=c.convencao_id, obra_id=c.obra_id, salario=c.salario,
+                matricula=c.matricula,
+                admissao=c.admissao or c.data_inicio or c.demissao,
+                demissao=c.demissao, ultimo_dia=c.ultimo_dia,
+                aviso_previo=c.aviso_previo,
+                motivo="passagem anterior guardada ao pedir a readmissão",
+                usuario_id=usuario.id if usuario else None))
+    c.situacao = "ATIVO"
+    c.demissao = c.ultimo_dia = c.aviso_previo = None
+    if inicio is not None:
+        c.data_inicio = inicio
+        c.admissao = inicio
+    de = (c.etapa or "").upper()
+    if de != "CADASTRO_INICIAL":
+        c.etapa = "CADASTRO_INICIAL"
+        s.add(ColaboradorEtapa(
+            colaborador_id=c.id, de=de or None, para="CADASTRO_INICIAL",
+            motivo=(motivo or "readmissão pedida: liberada para bater ponto")[:300],
+            automatico=True, usuario_id=usuario.id if usuario else None))
+    s.flush()
+    registrar_evento(s, "colaborador", c.id, "READMISSAO_PEDIDA_PONTO_LIBERADO",
+                     {"saida_anterior": guardado["demissao"],
+                      "inicio": inicio.isoformat() if inicio else None},
+                     usuario.id if usuario else None)
+    return guardado
+
+
+def voltar_a_saida(s: Session, colaborador_id: int, guardado: dict[str, Any],
+                   usuario: Optional[Usuario], *, motivo: str = "") -> None:
+    """A readmissão não foi adiante (recusada ou cancelada): o cadastro volta a
+    ser o do desligado, com a saída de antes — e o ponto volta a recusar."""
+    c = s.get(Colaborador, colaborador_id)
+    if c is None or not guardado:
+        return
+    d = lambda k: date.fromisoformat(guardado[k]) if guardado.get(k) else None  # noqa: E731
+    c.situacao = guardado.get("situacao") or "DESLIGADO"
+    c.demissao, c.ultimo_dia, c.aviso_previo = d("demissao"), d("ultimo_dia"), d("aviso_previo")
+    c.admissao, c.data_inicio = d("admissao"), d("data_inicio")
+    para = guardado.get("etapa") or "DESLIGADO"
+    if (c.etapa or "") != para:
+        s.add(ColaboradorEtapa(
+            colaborador_id=c.id, de=c.etapa or None, para=para,
+            motivo=(motivo or "readmissão não foi adiante: volta a saída anterior")[:300],
+            automatico=True, usuario_id=usuario.id if usuario else None))
+        c.etapa = para
+    s.flush()
+    registrar_evento(s, "colaborador", c.id, "READMISSAO_DESFEITA",
+                     {"saida": guardado.get("demissao"), "motivo": motivo},
+                     usuario.id if usuario else None)
+
+
 def trocar_vinculo(s: Session, colaborador_id: int, dados: dict[str, Any],
                    usuario: Usuario) -> Colaborador:
     """Prestador que passa a ter carteira (ou o contrário).

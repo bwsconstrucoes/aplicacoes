@@ -2235,6 +2235,18 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
                   {"c": novo.id, "s": solicitacao_id,
                    "d": __import__("json").dumps(pedido, ensure_ascii=False,
                                                  default=str)})
+    # ⚑ A READMISSÃO PEDIDA JÁ BATE PONTO (27/11/2026) — ver
+    # `pessoas.liberar_ponto_na_readmissao`. A saída antiga vai para o vínculo
+    # (a história) e para o pedido (para voltar, se ele não for adiante).
+    if tipo == "CADASTRO" and readmissao and colaborador_id:
+        inicio = svc_pessoas._data(pedido.get("data_inicio") or pedido.get("admissao"),
+                                   "data de início")
+        pedido["saida_anterior"] = svc_pessoas.liberar_ponto_na_readmissao(
+            s, int(colaborador_id), inicio, usuario,
+            motivo=f"readmissão pedida ({numero}): liberada para bater ponto")
+        s.execute(text("UPDATE dp_solicitacoes SET dados = CAST(:d AS jsonb) WHERE id = :s"),
+                  {"s": solicitacao_id,
+                   "d": __import__("json").dumps(pedido, ensure_ascii=False, default=str)})
     for i, item in enumerate(checklist_do_tipo(tipo, vinculo,
                                                readmissao=readmissao,
                                                pedido=pedido, s=s)):
@@ -2249,6 +2261,36 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     logger.info("ERP/DP: solicitação %s aberta (%s) por %s", numero, tipo,
                 usuario.nome if usuario else "?")
     return ler(s, solicitacao_id)
+
+
+def liberar_readmissoes_ja_pedidas(s: Session) -> int:
+    """Os pedidos de readmissão abertos ANTES de 27/11/2026 ficaram com a saída
+    antiga no cadastro — e a pessoa sem bater ponto. Aplica neles a mesma
+    liberação do pedido novo. Só mexe em quem ainda está desligado e cujo
+    pedido está esperando o DP; rodar de novo não faz nada."""
+    linhas = s.execute(text(f"""
+        SELECT d.id, d.numero, d.colaborador_id, d.dados
+          FROM dp_solicitacoes d JOIN colaboradores c ON c.id = d.colaborador_id
+         WHERE d.tipo = 'CADASTRO' AND d.situacao IN ({", ".join(f"'{x}'" for x in A_ATENDER)})
+           AND d.dados ->> 'readmissao' = '1' AND NOT (d.dados ? 'saida_anterior')
+           AND (c.situacao = 'DESLIGADO' OR c.demissao IS NOT NULL)""")).mappings().all()
+    for l in linhas:
+        dados = dict(l["dados"] or {})
+        inicio = None
+        try:
+            inicio = svc_pessoas._data(dados.get("data_inicio") or dados.get("admissao"),
+                                       "data de início")
+        except ErroValidacao:
+            pass
+        dados["saida_anterior"] = svc_pessoas.liberar_ponto_na_readmissao(
+            s, int(l["colaborador_id"]), inicio, None,
+            motivo=f"readmissão pedida ({l['numero']}): liberada para bater ponto")
+        s.execute(text("UPDATE dp_solicitacoes SET dados = CAST(:d AS jsonb) WHERE id = :s"),
+                  {"s": l["id"], "d": __import__("json").dumps(dados, ensure_ascii=False,
+                                                                default=str)})
+        _evento(s, l["id"], "PONTO_LIBERADO",
+                {"texto": "a saída antiga foi para o histórico; a pessoa já bate ponto"}, None)
+    return len(linhas)
 
 
 def _evento(s: Session, solicitacao_id: int, acao: str, detalhe: dict,
@@ -2558,7 +2600,7 @@ def guardar_papeis(s: Session, solicitacao_id: int,
 # da obra; o rótulo da opção; data dd/mm/aaaa; CPF, CNPJ, CEP e telefone com
 # a pontuação. As marcas internas (pré-cadastro, processo…) não aparecem.
 # ---------------------------------------------------------------------------
-_MARCAS_INTERNAS = {"pre_cadastro", "readmissao", "processo_desligamento",
+_MARCAS_INTERNAS = {"pre_cadastro", "readmissao", "saida_anterior", "processo_desligamento",
                     "processo_admissao", "processo_contabil",
                     "continuidade_revista", "documentos", "lidos_do_documento",
                     "ferias_id"}
@@ -3413,6 +3455,12 @@ def _cancelar_pre_cadastro(s: Session, p: dict[str, Any], motivo: str,
                            usuario: Optional[Usuario]) -> None:
     """O pré-cadastro de um pedido que não vai adiante vai para "Cancelado" —
     o cadastro que nunca virou gente na empresa (`pessoas.ETAPAS`)."""
+    guardado = (p.get("dados") or {}).get("saida_anterior")
+    if (p.get("dados") or {}).get("readmissao") and guardado and p.get("colaborador_id"):
+        # A readmissão que não foi adiante devolve a saída de antes (27/11/2026).
+        svc_pessoas.voltar_a_saida(s, int(p["colaborador_id"]), guardado, usuario,
+                                   motivo=motivo[:300])
+        return
     if not (p.get("dados") or {}).get("pre_cadastro") or not p.get("colaborador_id"):
         return
     try:
