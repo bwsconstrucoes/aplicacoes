@@ -38,6 +38,8 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**PUBLICADO em 27/11/2026 (lote 10, 11 e 12)** — ⚠️ confirmar com ele que apertou
+"Aplicar atualizações do banco" (129). Antes:
 **NO RAMO, SEM PUBLICAR (26/11/2026, lote 10 e 11)** — decisão dele: *"Não vamos
 publicar, vamos juntar aí com as novas respostas e fazer tudo de uma vez."*
 Caixa de entrada sem marcar lido + pasta Agente, aviso de "processando", fichas
