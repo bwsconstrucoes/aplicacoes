@@ -12275,6 +12275,28 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 287 — Folha: agrupar a lista por obra da contabilidade, setor, obra do ponto, obra do cadastro ou conta (27/11/2026)
+
+- O dono: *"aparece aqui a folha e aparece em ordem alfabética. Mas aí eu posso filtrar,
+  tudo bem? Mas eu queria poder agrupar pela obra da contabilidade, ou pela obra do ponto
+  (…) ou obra do cadastro, ou conta de pagamento."*
+- Na tela da folha (`analisesps_folha_aberta.html`), acima da lista: "Agrupar por" — nada
+  (ordem alfabética), Obra da contabilidade (a FILIAL do arquivo — o mesmo nome do filtro
+  da lateral), Setor da contabilidade (acrescentado: é o outro nível do mesmo arquivo),
+  Obra do ponto, Obra do cadastro, Conta de pagamento. Cada grupo tem cabeçalho com
+  quantas pessoas e o total; clicar recolhe/abre; "recolher todos".
+- `folha_gestao.agrupar`: ordem do título, o "(sem …)" por último; dentro, a ordem de
+  sempre. **Obra do ponto = a obra com mais dias**: quem trabalhou em várias aparece na
+  principal, com o valor INTEIRO dela no total do grupo (as outras obras seguem escritas
+  na linha). **Conta**: quem recebe por mais de uma conta fica num grupo "Mais de uma
+  conta (…)". Só arruma a lista: filtro, totais, seleção e pagamento não mudam; o
+  agrupamento soma-se aos filtros (`?agrupar=`).
+- Não mudou: o relatório Excel/PDF da tela continua com os agrupamentos dele.
+- De quebra: `test_a_folha_que_fecha_nao_grita` dublava a lista de folhas mas ia ao banco
+  para as pendências — com outro teste de banco antes, no mesmo processo, enxergava uma
+  folha que não era dele. Passou a dublar as pendências também.
+- Sem migração. Testes: `test_analisesps_folha_agrupar.py`.
+
 #### Leva 286 — 13º: o relatório anual de presenças do Mobponto cobre os meses sem ponto; cada mês vale o mesmo (avos) (27/11/2026)
 
 - A folha do 13º dizia *"Sem ponto carregado em 01/2026 … 08/2026"*: depois do pedido de

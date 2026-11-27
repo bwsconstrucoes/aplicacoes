@@ -567,6 +567,20 @@
   {% for o in (montado.obras + obras_c_diarios)|unique|sort %}<option value="{{ o }}"></option>{% endfor %}
 </datalist>
 
+{# AGRUPAR A LISTA (27/11/2026): por obra da contabilidade, do ponto, do cadastro
+   ou conta de pagamento. Só arruma as linhas — filtros, totais e pagamento iguais. #}
+{% set args_sem_agrupar = request.args.to_dict(flat=false) %}
+{% if 'agrupar' in args_sem_agrupar %}{% set _ = args_sem_agrupar.pop('agrupar') %}{% endif %}
+{% if folha and montado.grupos is defined %}
+<div class="folha-agrupar">
+  <span class="cartao-dica">Agrupar por:</span>
+  <a class="{{ 'ativo' if not montado.agrupar }}" href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, **args_sem_agrupar) }}">nada (ordem alfabética)</a>
+  {% for chave, rotulo in agrupamentos.items() %}
+    <a class="{{ 'ativo' if montado.agrupar == chave }}" href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, agrupar=chave, **args_sem_agrupar) }}">{{ rotulo }}</a>
+  {% endfor %}
+  {% if montado.agrupar %}<button type="button" class="btn secundario btn-pequeno" id="grupos-recolher">recolher todos</button>{% endif %}
+</div>
+{% endif %}
 {# As etiquetas "nas outras folhas" de cada pessoa (05/11/2026). #}
 {% if folha %}{% with ano=folha.ano, mes=folha.mes, tela="importar" %}{% include "_outras_folhas.html" %}{% endwith %}{% endif %}
 <div class="tabela-wrap">
@@ -602,11 +616,20 @@
         </tr>
       </thead>
       <tbody>
-      {% for p in montado.pessoas %}
+      {% for g in montado.grupos %}
+      {% set n_grupo = loop.index %}
+      {% if g.titulo %}
+        <tr class="linha-grupo" data-grupo="{{ n_grupo }}">
+          <td colspan="12"><span class="seta-grupo">▾</span> <b>{{ g.titulo }}</b>
+            <span class="cartao-dica">· {{ g.quantas }} pessoa(s) · {{ g.total|moeda }}</span></td>
+        </tr>
+      {% endif %}
+      {% for p in g.pessoas %}
         {# RISCADA quando sai do pagamento — é o que o próprio desenho dizia (§7.3:
            *"continua na prévia, riscada"*), e é o que faz a lista inteira ser lida
            de relance sem contar caixinhas. #}
         <tr class="linha-pessoa {% if not p.entra %}nao-vai{% endif %} {% if p.situacao in ('sem_cadastro','sem_obra','saiu') %}linha-alerta{% endif %}"
+            {% if g.titulo %}data-no-grupo="{{ n_grupo }}"{% endif %}
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome_na_tela }}"
             data-valor="{{ p.valor }}">
           <td>
@@ -837,11 +860,13 @@
             {% endif %}
           </td>
         </tr>
-      {% else %}
+      {% endfor %}
+      {% endfor %}
+      {% if not montado.pessoas %}
         <tr><td colspan="12" class="cartao-dica">
           Nenhum colaborador encontrado com esses filtros.
         </td></tr>
-      {% endfor %}
+      {% endif %}
       </tbody>
     </table>
   </div>
@@ -1870,4 +1895,32 @@ if (botaoFechar) botaoFechar.addEventListener("click", async () => {
 recontar();
 </script>
 {% endif %}
+
+<style>
+  .folha-agrupar { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:6px 0 8px; }
+  .folha-agrupar a { padding:2px 8px; border-radius:999px; text-decoration:none; border:1px solid var(--borda); }
+  .folha-agrupar a.ativo { background:var(--azul); color:#fff; border-color:var(--azul); }
+  #tabela-folha tr.linha-grupo td { background:#EEF3F8; cursor:pointer; }
+  #tabela-folha tr.linha-grupo.recolhido .seta-grupo { display:inline-block; transform:rotate(-90deg); }
+</style>
+<script>
+(() => {
+  // Clicar no título do grupo recolhe/abre as linhas dele (27/11/2026).
+  const tabela = document.getElementById("tabela-folha");
+  if (!tabela) return;
+  const alternar = (cab, recolher) => {
+    const n = cab.dataset.grupo;
+    const fechar = recolher === undefined ? !cab.classList.contains("recolhido") : recolher;
+    cab.classList.toggle("recolhido", fechar);
+    tabela.querySelectorAll(`tr[data-no-grupo="${n}"]`).forEach(tr => { tr.hidden = fechar; });
+  };
+  tabela.querySelectorAll("tr.linha-grupo").forEach(cab => cab.addEventListener("click", () => alternar(cab)));
+  const todos = document.getElementById("grupos-recolher");
+  if (todos) todos.addEventListener("click", () => {
+    const recolher = todos.textContent.includes("recolher");
+    tabela.querySelectorAll("tr.linha-grupo").forEach(cab => alternar(cab, recolher));
+    todos.textContent = recolher ? "abrir todos" : "recolher todos";
+  });
+})();
+</script>
 {% endblock %}
