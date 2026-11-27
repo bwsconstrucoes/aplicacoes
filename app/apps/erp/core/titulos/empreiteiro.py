@@ -18,11 +18,11 @@
 # empresas (`arquivo.leitura` + `preenchimento`), e RG/CNH/comprovante pelo
 # mesmo da admissão (`documentos_de_pessoa.ler_varios`, uma chamada por lote).
 #
-# ⚑ O RG NÃO TEM COLUNA no credor, e de propósito não ganhou uma: coluna nova
-# no modelo `Fornecedor` derruba toda consulta a credor no intervalo entre a
-# publicação e o botão da migração (a armadilha conhecida deste repositório).
-# O RG vai para o CONTRATO (a qualificação da pessoa) e o documento fica
-# arquivado no cadastro — dá para ler de novo quando precisar.
+# ⚑ O QUE IDENTIFICA O EMPREITEIRO É O CPF OU O CNPJ (27/11/2026). Ele: *"quando
+# eu falei RG, na verdade eu me referi a documento da pessoa de maneira geral
+# (…) o documento para se fazer esse tipo de coisa é o CPF e CNPJ."* O RG não
+# é pedido nem entra no contrato: o documento serve para a LEITURA (dele saem
+# CPF, nome e endereço) e fica arquivado no cadastro.
 # ============================================================================
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
 
 logger = logging.getLogger(__name__)
 
-CAMPOS = ("tipo_pessoa", "documento", "nome", "rg", "rg_orgao", "rg_uf", "cep",
+CAMPOS = ("tipo_pessoa", "documento", "nome", "cep",
           "logradouro", "numero", "complemento", "bairro", "municipio", "uf",
           "telefone", "email")
 TETO_DE_ARQUIVOS = 6
@@ -90,8 +90,7 @@ def ler(s: Session, arquivos: list[tuple[bytes, str]], tipo_pessoa: str) -> dict
         r = svc_doc.ler_varios(arquivos)
         x = r.get("campos") or {}
         campos = {"tipo_pessoa": "PF", "documento": _digitos(x.get("cpf")),
-                  "nome": x.get("nome") or "", "rg": x.get("rg") or "",
-                  "rg_orgao": x.get("rg_orgao") or "", "rg_uf": x.get("rg_uf") or "",
+                  "nome": x.get("nome") or "",
                   "numero": x.get("numero_endereco") or "",
                   **{k: str(x.get(k) or "") for k in
                      ("cep", "logradouro", "complemento", "bairro", "municipio", "uf")}}

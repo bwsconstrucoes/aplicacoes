@@ -104,13 +104,12 @@ O contrato nasce **aguardando aval** — quem tem alçada pelo valor aprova no E
 
 ### O empreiteiro, pelo documento
 
-No alto do bloco, joga-se o **RG/CNH e o comprovante** (pessoa física) ou o **Cartão CNPJ** (empresa): a leitura preenche os campos, a pessoa confere, e o documento fica arquivado no cadastro do empreiteiro. Quem já está no cadastro é procurado pelo nome ou CPF/CNPJ e o bloco abre preenchido.
+No alto do bloco, joga-se **um documento da pessoa (RG, CNH, CPF) e o comprovante** (pessoa física) ou o **Cartão CNPJ** (empresa): a leitura preenche os campos, a pessoa confere, e o documento fica arquivado no cadastro do empreiteiro. Quem já está no cadastro é procurado pelo nome ou CPF/CNPJ e o bloco abre preenchido.
 
 | Campo | Aparece | Obrigatório |
 |---|---|---|
 | Pessoa física / Empresa | sempre | sim |
 | CPF ou CNPJ, nome | sempre | sim |
-| RG, órgão e UF do RG | só pessoa física | não (entra na qualificação do contrato) |
 | Endereço (CEP, rua, número, complemento, bairro, cidade, UF) | sempre | não (entra no contrato) |
 | WhatsApp, e-mail | sempre | ver abaixo |
 

@@ -246,13 +246,15 @@ def test_documento_invalido_do_empreiteiro_e_recusado(cenario):
                            cenario["cadastra"])
 
 
-def test_o_rg_lido_entra_na_qualificacao_do_contrato(cenario):
-    t = ca.montar(cenario["s"], cenario["c"].id, _escolhas(
-        cenario, contratado_rg="1234567", contratado_rg_orgao="SDS", contratado_rg_uf="PE"))["texto"]
-    assert "RG nº 1234567 SDS/PE" in t
+def test_o_contratado_e_identificado_pelo_cpf_ou_cnpj_sem_rg(cenario):
+    """Ele: "quando eu falei RG (…) me referi a documento da pessoa de maneira
+    geral (…) o documento para se fazer esse tipo de coisa é o CPF e CNPJ." """
+    t = ca.montar(cenario["s"], cenario["c"].id, _escolhas(cenario))["texto"]
+    linha = next(l for l in t.splitlines() if l.startswith("CONTRATADO:"))
+    assert "CPF nº 529.982.247-25" in linha and "RG" not in linha
 
 
-def test_a_leitura_do_rg_preenche_os_campos(cenario, monkeypatch):
+def test_a_leitura_do_documento_preenche_os_campos(cenario, monkeypatch):
     from app.apps.erp.core import documentos_de_pessoa as svc_doc
     from app.apps.erp.core.titulos import empreiteiro
     monkeypatch.setattr(svc_doc, "ler_varios", lambda arquivos: {"campos": {
@@ -260,7 +262,7 @@ def test_a_leitura_do_rg_preenche_os_campos(cenario, monkeypatch):
         "rg_orgao": "SDS", "rg_uf": "PE", "logradouro": "Rua A", "numero_endereco": "5",
         "municipio": "Olinda", "uf": "PE"}})
     r = empreiteiro.ler(cenario["s"], [(b"x", "rg.jpg")], "PF")
-    assert r["campos"]["documento"] == "52998224725" and r["campos"]["rg"] == "7654321"
+    assert r["campos"]["documento"] == "52998224725" and "rg" not in r["campos"]
     assert r["campos"]["numero"] == "5"
     assert r["ja_cadastrado"]["id"] == cenario["prestador"].id, \
         "a tela avisa que esse CPF já está no cadastro"

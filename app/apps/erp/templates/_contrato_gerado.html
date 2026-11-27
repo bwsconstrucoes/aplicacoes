@@ -131,11 +131,8 @@ const ContratoGerado = {
     return "";
   },
   escolhas: function(E, emp){
-    const c = (emp && emp.campos) || {};
     const r = {assinante_colaborador_id: E.assinante ? E.assinante.id : null,
-               opcionais: E.opcionais, campos: E.campos, texto_adicional: E.texto_adicional,
-               contratado_rg: c.rg || "", contratado_rg_orgao: c.rg_orgao || "",
-               contratado_rg_uf: c.rg_uf || ""};
+               opcionais: E.opcionais, campos: E.campos, texto_adicional: E.texto_adicional};
     Object.keys(this.MODELO.parametros).forEach(k => { r[k] = E[k]; });
     return r;
   },
@@ -161,8 +158,7 @@ const ContratoGerado = {
 // lista que já tem).
 // ---------------------------------------------------------------------------
 const Empreiteiro = {
-  ROTULOS: {documento: "CPF ou CNPJ", nome: "Nome / razão social", rg: "RG", rg_orgao: "Órgão",
-            rg_uf: "UF do RG", cep: "CEP", logradouro: "Rua / avenida", numero: "Número",
+  ROTULOS: {documento: "CPF ou CNPJ", nome: "Nome / razão social", cep: "CEP", logradouro: "Rua / avenida", numero: "Número",
             complemento: "Complemento", bairro: "Bairro", municipio: "Cidade", uf: "UF",
             telefone: "WhatsApp", email: "E-mail"},
   novo: function(){ return {tipo_pessoa: "PF", campos: {}, docs: [], id: null, _busca: ""}; },
@@ -176,7 +172,7 @@ const Empreiteiro = {
       <label>Já está no cadastro? Procure
         <input data-emp-busca placeholder="nome ou CPF/CNPJ" value="${e(P._busca)}" autocomplete="off"></label>
       <div class="cg-achados" id="emp-achados"></div>
-      <label>${pf ? "Jogue aqui o RG ou a CNH (e o comprovante de endereço, se tiver)" : "Jogue aqui o Cartão CNPJ"}
+      <label>${pf ? "Jogue aqui um documento da pessoa (RG, CNH, CPF) e o comprovante de endereço, se tiver" : "Jogue aqui o Cartão CNPJ"}
         <input type="file" data-emp-arq multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.heic"></label>
       <div class="cg-mini">O sistema lê e preenche os campos abaixo — confira antes de cadastrar. O documento fica guardado no cadastro do empreiteiro.
         ${P.docs.length ? `<br><b>${P.docs.length} documento(s):</b> ${P.docs.map(d => e(d.name)).join(", ")}` : ""}</div>
@@ -184,11 +180,10 @@ const Empreiteiro = {
       ${P._aviso ? `<div class="cg-mini cg-ob">${e(P._aviso)}</div>` : ""}
       ${P._ja ? `<div class="cg-mini">Já cadastrado como <b>${e(P._ja.nome)}</b> — o cadastro será completado com o que você conferir aqui.</div>` : ""}
       <div class="cg-duas">${campo("documento", 'inputmode="numeric"')}${campo("nome")}</div>
-      ${pf ? `<div class="cg-duas">${campo("rg")}${campo("rg_orgao")}</div>` : ""}
       <div class="cg-duas">${campo("cep", 'inputmode="numeric"')}${campo("logradouro")}</div>
       <div class="cg-duas">${campo("numero")}${campo("complemento")}</div>
       <div class="cg-duas">${campo("bairro")}${campo("municipio")}</div>
-      <div class="cg-duas">${campo("uf", 'maxlength="2"')}${pf ? campo("rg_uf", 'maxlength="2"') : "<span></span>"}</div>
+      <div class="cg-duas">${campo("uf", 'maxlength="2"')}<span></span></div>
       <div class="cg-duas">${campo("telefone", 'inputmode="tel"')}${campo("email", 'inputmode="email"')}</div>
       <div class="cg-mini">O WhatsApp e o e-mail são por onde chega o link para assinar o contrato.</div></div>`;
   },

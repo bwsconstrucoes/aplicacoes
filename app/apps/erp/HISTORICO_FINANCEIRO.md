@@ -74,9 +74,11 @@ uma identidade, RG."*
   conferido, e os documentos lidos ficam arquivados no cadastro dele
   (`core/titulos/empreiteiro.py`). Substituiu a caixinha "Prestador" do ERP e a
   busca de credor do portal — **é a mesma porta, agora com o documento dentro.**
-- **O RG não tem coluna no credor**, de propósito (coluna nova no modelo do
-  credor derrubaria as consultas até o botão da migração): vai para a
-  qualificação do contrato, e o documento fica arquivado para nova leitura.
+- **O RG SAIU no mesmo dia.** Ele: *"quando eu falei RG, na verdade eu me
+  referi a documento da pessoa de maneira geral (…) o documento para se fazer
+  esse tipo de coisa é o CPF e CNPJ."* Quem identifica é o CPF/CNPJ; qualquer
+  documento da pessoa serve para a LEITURA (dele saem CPF, nome, endereço) e
+  fica arquivado no cadastro. Não há campo de RG nem RG no contrato.
 - O dado do credor é procurado pelo **CPF/CNPJ**, não pelo número interno — a
   vigia de escopo pegou: número em sequência no endereço permitiria varrer o
   cadastro de credores.
