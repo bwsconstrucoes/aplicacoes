@@ -33,7 +33,7 @@ grava). As correspondências marcadas "dono" foram confirmadas por ele em 27/11/
 | Cargo | Cargo (`cargo_id`) | telas da folha | Entrega |
 | Tipo | Vínculo (`vinculo`) | **diaristas** | Entrega |
 | Tipo de Contrato | Tipo de contrato (`tipo_contrato`) | diaristas, DC, avulso, gratificados | Entrega |
-| Fase Atual | Situação (`situacao`) — **a confirmar** (ou Etapa?) | folha (saiu / afastado), auxílios, gratificados | Entrega |
+| Fase Atual | **Etapa** (`etapa`) — dono; regra na seção abaixo | folha (saiu / afastado), auxílios, gratificados | O `para_folha` manda hoje a Situação como `fase` — **trocar pela Etapa** |
 | Objeto Obra | **Obra de cadastro** (`obra_id`) — dono | folha (obra do cadastro), auxílios, diaristas, gratificados, DC, avulso | Entrega como `obra_cadastro`; ⚠️ a folha hoje lê primeiro o `obra_codigo`, que no ERP é a obra do PONTO — ajustar na troca |
 | Data de Início | Data de início (`data_inicio`) | diaristas, folha | Entrega |
 | Data de Admissão | Data de admissão (`admissao`) | folha (rateio), diaristas | Entrega |
@@ -74,12 +74,22 @@ grava). As correspondências marcadas "dono" foram confirmadas por ele em 27/11/
 | Paga por BeeVale | — | — | **Sai**: desativado, não se usa mais (dono) |
 | Convenção | Convenção (`convencao_id`) | — (exibição) | Entrega |
 
-## Em aberto
+## Fase Atual → Etapa do ERP: quem recebe (decidido pelo dono, 27/11/2026)
 
-- **Fase Atual:** a planilha guardava a fase do card do Pipefy. A folha só procura
-  nela "desligado" e "afastado" (e o texto aparece na coluna "Fase Atual"). No ERP há
-  **Situação** (Ativo, Desligado, Afastado…) e **Etapa** (Inicial, Conferência,
-  Concluído…). Proposta: Situação. A confirmar com o dono.
+Hoje (planilha) o sistema não tem lista de fases que pagam: procura "desligad" e
+"afastad" no texto da fase do Pipefy (`colaboradores.situacao_no_pagamento`); o resto é
+ativo. "Cancelado" não existia. Com o ERP, pela **Etapa** do cadastro — confirmado pelo
+dono: *"Desligado e cancelado não paga, afastado não recebe alimentação nem transporte e
+as demais fases sim."*
+
+| Etapa no ERP | No pagamento |
+|---|---|
+| Desligado | não paga nada (folha, diária, auxílios, gratificação) — como hoje |
+| Cancelado | não paga nada — novo |
+| Afastado | não recebe alimentação nem transporte — como hoje |
+| Inicial, Assinar, Contabilidade, Concluído | paga normalmente |
+
+As datas (saída, aviso prévio, último dia) continuam valendo como hoje.
 
 ## Os passos da troca
 
