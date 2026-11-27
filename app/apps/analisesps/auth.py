@@ -475,8 +475,6 @@ TELA_DA_ROTA = {
     "analisesps.encaminhar_contatos": ("solicitacoes", "lote"),
     "analisesps.sem_risco": ("solicitacoes",),
     "analisesps.validar": ("solicitacoes",),
-    # 27/11/2026: o relatório anual de presenças do Mobponto, para o 13º.
-    "analisesps.folha_ponto_anual": ("folha",),
     # 26/11/2026: o pedido de cancelamento (card no Pipefy), das duas telas e da ficha.
     "analisesps.cancelar_sp_previa": ("solicitacoes", "lote"),
     "analisesps.cancelar_sp_confirmar": ("solicitacoes", "lote"),

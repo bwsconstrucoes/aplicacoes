@@ -425,39 +425,18 @@
    "precisam de olho" não dizia o que a coisa fazia. Este bloco é CURTO de
    propósito: ele aponta e a lista resolve, porque a decisão é por pessoa.
    ------------------------------------------------------------------------ #}
-{% if recado %}<div class="aviso">{{ recado }}</div>{% endif %}
 {% if montado.ponto.do_ano %}
   {# O 13º SE RATEIA PELO PONTO DO ANO (25/11/2026) — `folha_apropriacao.periodo_do_pagamento`. #}
   <div class="aviso">
-    <b>13º salário:</b> cada pessoa é dividida entre as obras pelo ponto de
-    {{ montado.ponto.periodo[0]|data_br }} a {{ montado.ponto.periodo[1]|data_br }},
-    <b>cada mês trabalhado valendo o mesmo</b> (como os avos do 13º): no mês com ponto dia a
-    dia, o mês se divide entre as obras pelos dias; no mês que só está no relatório anual de
-    presenças, vale a obra daquele mês. Férias, atestado e feriado não contam; quem não bate
-    ponto segue a regra de rateio.
-    {% if montado.ponto.meses_do_relatorio %}
-      <br><b>Pelo relatório anual de presenças:</b> {{ montado.ponto.meses_do_relatorio|join(', ') }}
-      {% if montado.ponto.relatorio_anual %}<span class="cartao-dica">(importado
-        {{ montado.ponto.relatorio_anual.importado_em[:10]|replace('-', '/') }}{% if montado.ponto.relatorio_anual.por %} por {{ montado.ponto.relatorio_anual.por }}{% endif %},
-        {{ montado.ponto.relatorio_anual.pessoas }} pessoas)</span>{% endif %}.
-    {% endif %}
+    <b>13º salário:</b> cada pessoa é dividida entre as obras pelos dias de ponto de
+    {{ montado.ponto.periodo[0]|data_br }} a {{ montado.ponto.periodo[1]|data_br }}.
+    Férias, atestado e feriado não contam; quem não bate ponto segue a regra de rateio.
   </div>
   {% if montado.ponto.meses_sem_ponto %}
     <div class="aviso erro"><b>Sem ponto carregado em {{ montado.ponto.meses_sem_ponto|join(', ') }}.</b>
       Esses meses ficam fora do rateio do 13º — a obra em que a pessoa trabalhou neles não recebe
-      a parte dela. Carregue-os em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a>,
-      ou envie abaixo o relatório anual de presenças do Mobponto.</div>
-  {% endif %}
-  {% if pode_operar %}
-    {# O RELATÓRIO ANUAL DE PRESENÇAS (27/11/2026) — `ponto_anual.py`. O Mobponto
-       parou de devolver os meses antigos pela API depois do pedido de cancelamento. #}
-    <form method="post" enctype="multipart/form-data" class="form-ponto-anual"
-          action="{{ url_for('analisesps.folha_ponto_anual', folha_id=folha.id) }}">
-      <label class="rotulo-campo">Relatório "Presenças por Locais (Anual)" do Mobponto
-        {% if montado.ponto.relatorio_anual %}— enviar de novo substitui o anterior{% endif %}</label>
-      <input type="file" name="arquivo" accept=".xls,.html,.htm" required>
-      <button class="btn secundario" type="submit">Enviar o relatório anual</button>
-    </form>
+      a parte dela. Carregue-os em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a>
+      (alguns minutos cada; fora do horário de bater ponto) antes de gerar o pagamento.</div>
   {% endif %}
 {% elif not montado.ponto.tem_carga %}
   <div class="aviso erro">

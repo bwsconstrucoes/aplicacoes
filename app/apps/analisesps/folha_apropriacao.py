@@ -220,11 +220,7 @@ def _dias_uteis_do_ponto(dias, ini, fim) -> list:
             continue
         resolvido = obra_do_dia(dia.get("marcacoes"), dia.get("presenca", ""),
                                dia.get("falta", ""))
-        # O PESO (27/11/2026, o 13º): na folha do mês todo dia vale 1. No 13º cada
-        # MÊS vale o mesmo (os avos), e o dia vale 1/dias do mês — ou o mês inteiro
-        # é uma entrada só, quando veio do relatório anual (`ponto_anual`).
-        saida.append({"data": data, **resolvido, "peso": dia.get("peso", 1),
-                      "mes_inteiro": bool(dia.get("mes_inteiro"))})
+        saida.append({"data": data, **resolvido})
     return sorted(saida, key=lambda d: d["data"])
 
 
@@ -272,26 +268,22 @@ def apropriar_pelo_ponto(valor, dias_uteis) -> dict:
             ordem.append(dia["obra"])
         dias_por_obra[dia["obra"]].append(dia)
 
-    # O peso de cada obra é a SOMA dos pesos dos seus dias — o número de dias na
-    # folha do mês (peso 1); os avos, no 13º.
-    pesos = [sum(Decimal(str(d.get("peso", 1))) for d in dias_por_obra[o]) for o in ordem]
+    pesos = [len(dias_por_obra[o]) for o in ordem]
     valores = _repartir(total, pesos)
 
     por_obra = []
     por_dia = []
-    for obra, peso, parte in zip(ordem, pesos, valores):
-        quantos = len(dias_por_obra[obra])
+    for obra, quantos, parte in zip(ordem, pesos, valores):
         por_obra.append({"obra": obra, "dias": quantos, "valor": parte,
                          "origem": DO_PONTO})
         # Dentro da obra, o valor é dividido igualmente entre os dias dela; a
         # sobra fica no primeiro dia, que é o único critério que não precisa de
         # explicação.
-        dentro = _repartir(parte, [Decimal(str(d.get("peso", 1))) for d in dias_por_obra[obra]])
+        dentro = _repartir(parte, [1] * quantos)
         for dia, valor_dia in zip(dias_por_obra[obra], dentro):
             por_dia.append({"data": dia["data"], "obra": obra,
                             "obra_ponto": dia["obra"], "valor": valor_dia,
-                            "origem": DO_PONTO, "empate": dia["empate"],
-                            "mes_inteiro": dia.get("mes_inteiro", False)})
+                            "origem": DO_PONTO, "empate": dia["empate"]})
     por_dia.sort(key=lambda d: d["data"])
     return {"por_obra": por_obra, "por_dia": por_dia, "dias": len(com_obra)}
 

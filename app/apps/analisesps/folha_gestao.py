@@ -269,16 +269,6 @@ def totais_por_conta(por_obra) -> list:
 # desenhado na tela — e aí o arquivo de pagamento não explicaria mais a tela que o
 # autorizou. Quem precisa da conta chama isto.
 # ---------------------------------------------------------------------------
-def _relatorio_anual_resumo(ano: int) -> dict | None:
-    """Quem e quando importou o relatório anual de presenças do ano — para a tela."""
-    from . import ponto_anual
-    dado = ponto_anual.carregar(ano)
-    if not dado:
-        return None
-    return {"importado_em": dado.get("importado_em", ""), "por": dado.get("por", ""),
-            "arquivo": dado.get("arquivo", ""), "pessoas": len(dado.get("pessoas") or {})}
-
-
 def apropriar_a_folha(folha) -> dict:
     """A apropriação de uma folha inteira, com o que a alimentou.
 
@@ -793,11 +783,6 @@ def montar(folha_id: int, filtros=None) -> dict:
             "do_ano": tipo in ("decimo_1", "decimo_2"),
             "meses_sem_ponto": (mod_ponto.dias_do_ano(*periodo)["meses_sem_ponto"]
                                 if tipo in ("decimo_1", "decimo_2") and periodo else []),
-            # Os meses que vieram do relatório anual de presenças (27/11/2026).
-            "meses_do_relatorio": (mod_ponto.dias_do_ano(*periodo).get("meses_do_relatorio") or []
-                                   if tipo in ("decimo_1", "decimo_2") and periodo else []),
-            "relatorio_anual": (_relatorio_anual_resumo(ano)
-                                if tipo in ("decimo_1", "decimo_2") else None),
             "periodo": periodo,
         },
         "fechamento": guardada.fechamento(ano, mes, tipo),
