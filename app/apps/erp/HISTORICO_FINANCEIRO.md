@@ -37,10 +37,13 @@ completo e em operação. Mexer aqui mexe em dinheiro que sai.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### 27/11/2026 — O FINANCEIRO NO PORTAL E A REGRA DOS CAMPOS (no ramo, NÃO publicado)
+### 27/11/2026 — O FINANCEIRO NO PORTAL E A REGRA DOS CAMPOS — ✔ PUBLICADO
 
-Ramo `claude/beautiful-cannon-l0aujd`. **Não foi para a `main`** — espera o
-"pode" dele. **Não tem migração.**
+**Publicado na `main` em 27/11/2026**, com o "pode" dele (*"não tem nada
+rodando, pode publicar"* — a pergunta da carga do painel e do Análise de SPs
+já foi respondida neste dia). **Sem migração.** Suíte inteira com banco de
+verdade verde (só `test_chave_de_segredos[lixo-no-fim]`, que falha igual sem
+esta mudança por falta da chave no ambiente de teste).
 
 **O que espera dele:**
 1. Revisar `PLEITOS_FINANCEIRO.md` (o mapa de tipos, subtipos, campos e
