@@ -343,3 +343,26 @@ def test_quem_tem_suprimentos_continua_vendo_suprimentos(sessao_real, app_real):
     assert cliente.get("/erp/suprimentos").status_code == 200
     pagina = cliente.get("/erp/suprimentos").get_data(as_text=True)
     assert "Suprimentos" in _modulos_do_menu(pagina)
+
+
+@pytest.mark.banco
+def test_a_marcacao_do_portal_vai_e_volta_no_cadastro(sessao_real):
+    """A caixa "esta gente trabalha na obra" grava, lê e muda (migração 130).
+
+    Ela decide por qual PORTA a pessoa entra — portal ou telas de dentro — e
+    não o que ela pode fazer. Até 27/11/2026 quem decidia isso era o cargo, e
+    o dono mandou tirar: *"o cargo base não deveria influenciar em nada."*
+    """
+    s = sessao_real
+    escritorio = svc.criar(s, {"nome": "Escritório do teste",
+                               "secoes": {"fin_lancar": cat.EDITAR}}, None)
+    assert escritorio["entra_pelo_portal"] is False
+
+    obra = svc.criar(s, {"nome": "Obra do teste", "entra_pelo_portal": True,
+                         "secoes": {"obr_diario": cat.EDITAR}}, None)
+    assert obra["entra_pelo_portal"] is True
+
+    virado = svc.editar(s, obra["id"], {"entra_pelo_portal": False}, None)
+    assert virado["entra_pelo_portal"] is False
+    # e as seções não se perdem ao mexer só na porta
+    assert virado["secoes"] == {"obr_diario": cat.EDITAR}

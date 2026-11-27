@@ -590,7 +590,9 @@
   <div class="cartao-dica">O perfil diz <b>o que</b> a pessoa faz; o cadastro dela
     diz <b>onde</b> — quais obras. Duas pessoas do mesmo perfil podem acompanhar
     obras diferentes. Perfil novo nasce <b>sem abrir nada</b>: marque seção por
-    seção o que ele libera.</div>
+    seção o que ele libera. Perfil marcado com <b>🏗 entra pelo portal</b> é de
+    gente que trabalha na obra: ela entra pela tela enxuta de pedidos, não
+    pelas telas de dentro.</div>
 </div>
 
 <dialog id="dlg">
@@ -910,7 +912,9 @@ function desenharPerfis(){
   corpo.innerHTML = PERFIS_CADASTRADOS.map(p => `
     <tr style="cursor:pointer" data-perfil="${p.id}" title="Clique para editar">
       <td><b>${escapar(p.nome)}</b>${p.de_sistema
-        ? ` <small style="color:var(--tinta-suave)">· veio pronto</small>` : ""}</td>
+        ? ` <small style="color:var(--tinta-suave)">· veio pronto</small>` : ""}
+        ${p.entra_pelo_portal
+          ? ` <span class="etiqueta">🏗 entra pelo portal</span>` : ""}</td>
       <td><small>${escapar(p.descricao || "—")}</small></td>
       <td class="direita">${p.quantas_secoes}</td>
       <td class="direita">${p.quantas_editam}</td>
