@@ -28,8 +28,13 @@ def test_a_migracao_083_criou_o_schema_e_as_secoes(conn):
     tabelas = {r[0] for r in conn.execute(text(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'mensageria'"))}
     assert {"tipos", "envios", "parametros"} <= tabelas
-    linhas = conn.execute(text("""SELECT p.nome, ps.nivel FROM perfil_secoes ps JOIN perfis p ON p.id = ps.perfil_id
-                                   WHERE ps.secao = 'adm_mensagens' ORDER BY p.nome""")).all()
+    # `de_sistema`: os perfis que a própria migração criou. Sem este recorte o
+    # teste enxergaria também os perfis que a suíte monta para os testes
+    # (27/11/2026, "Cargo ADMIN" e companhia) — ver `conftest`.
+    linhas = conn.execute(text("""SELECT p.nome, ps.nivel FROM perfil_secoes ps
+                                    JOIN perfis p ON p.id = ps.perfil_id
+                                   WHERE ps.secao = 'adm_mensagens' AND p.de_sistema
+                                   ORDER BY p.nome""")).all()
     assert dict(linhas) == {"Administrador": "EDITAR", "Departamento pessoal": "LER",
                             "Diretor financeiro": "LER"}
 

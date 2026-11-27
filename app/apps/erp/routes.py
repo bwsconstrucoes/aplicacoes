@@ -25,7 +25,8 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from app.apps.erp.core.auth.permissoes import (
     ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS,
-    acoes_do_perfil_no_banco, decidir, pode, so_portal,
+    acoes_do_perfil_no_banco, acoes_e_portal, decidir, entra_pelo_portal,
+    pode,
 )
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
@@ -377,6 +378,20 @@ def _acao_da_aba(rota: str) -> str:
     return (_REGISTRO_PERMISSOES.get(rota) or {}).get("GET", "ver_erp")
 
 
+def _menu_para_o_catalogo() -> list[dict]:
+    """O menu do ERP em forma de dado, para o catálogo de seções se agrupar nele.
+
+    ⚑ 27/11/2026, pedido dele: *"a divisão dessas seções tá totalmente solta,
+    sem conexão entre cada área e cada tela."* A conexão é esta — e ela mora
+    aqui, e não no `secoes.py`, porque aquele arquivo é carregado pela guarda
+    que roda antes de TODA rota: importar as rotas de lá derrubaria o ERP.
+    """
+    return [{"nome": m["nome"],
+             "telas": [{"nome": rotulo, "acao": _acao_da_aba(rota)}
+                       for _, rotulo, rota in m["abas"]]}
+            for m in MODULOS]
+
+
 def _menu_da_pessoa(pode: dict[str, bool]) -> tuple[list[dict], dict[str, list]]:
     """Os módulos e abas que esta pessoa PODE abrir.
 
@@ -423,7 +438,7 @@ def _contexto(aba: str) -> dict:
     modulos_visiveis, abas_por_modulo = _menu_da_pessoa(pode)
     # Quem é da obra só abre o diário fora do portal (24/11/2026): o menu não
     # oferece os módulos do escritório, que só o levariam de volta ao portal.
-    if so_portal(session.get("erp_usuario_perfil", "")):
+    if session.get("erp_so_portal"):
         modulos_visiveis = []
         abas_por_modulo = {chave: [a for a in modulo["abas"] if a[0] == aba]}
     return {"modulos": modulos_visiveis, "modulo": modulo,
@@ -695,8 +710,21 @@ def _guarda_permissao():
         # O PERFIL CADASTRADO (migração 065) decide, quando existe. Devolve
         # None enquanto a migração não rodou ou a pessoa não foi apontada para
         # perfil nenhum — e aí vale o cargo, como antes.
-        acoes = (acoes_do_perfil_no_banco(s, session["erp_usuario_id"])
-                 if perfil else None)
+        # ⚑ AS DUAS PERGUNTAS NUMA LEITURA SÓ (27/11/2026): o que o perfil
+        # concede, e se a pessoa entra pelo portal — ver
+        # `permissoes.acoes_e_portal`. Quem decide o portal passou a ser o
+        # PERFIL, e não o cargo base, a pedido dele. O resultado fica na
+        # sessão porque `_contexto` roda em TODA página montada e não abre
+        # banco.
+        acoes = None
+        if perfil:
+            acoes, pelo_portal = acoes_e_portal(
+                s, session["erp_usuario_id"], perfil)
+            session["erp_so_portal"] = pelo_portal
+            # Quem não tem perfil nenhum não é "sem permissão para esta tela":
+            # é gente que ainda não foi liberada. A recusa precisa dizer isso,
+            # senão a pessoa fica tentando telas até desistir.
+            session["erp_sem_perfil"] = acoes is not None and not acoes
     if not perfil:
         return None          # usuário sumiu do banco: a rota responde
     try:
@@ -713,7 +741,7 @@ def _guarda_permissao():
     # `permissoes.PERFIS_SO_PORTAL`. TELA do ERP fora das do portal leva para o
     # portal; o que o portal chama (as APIs) continua valendo pela ação de cada
     # uma, e o alcance delas é o das obras da pessoa.
-    if so_portal(perfil_enum) and request.method == "GET" \
+    if session.get("erp_so_portal") and request.method == "GET" \
             and not request.path.startswith("/erp/api/") \
             and not request.path.startswith("/erp/portal") \
             and endpoint not in TELAS_DE_QUEM_E_DA_OBRA:
@@ -756,7 +784,8 @@ def _recusa_de_acesso(perfil_enum):
                         "erro": "Seu perfil não tem permissão para esta operação."}), 403
     from app.apps.erp.core.auth.permissoes import ROTULOS
     return render_template("erp_sem_acesso.html",
-                           perfil=ROTULOS.get(perfil_enum, perfil_enum.value)), 403
+                           perfil=ROTULOS.get(perfil_enum, perfil_enum.value),
+                           sem_perfil=bool(session.get("erp_sem_perfil"))), 403
 
 
 def _destino_seguro(bruto: str | None) -> str | None:
@@ -3791,6 +3820,46 @@ def api_perguntar_obras():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# A PERGUNTA MONTADA NA HORA — Pessoal (27/11/2026)
+#
+# Ele, depois de o assistente responder bobagem a "quantos funcionários temos
+# hoje na obra de CRECHESUAPE?": *"a pergunta que a gente vai fazer é algo
+# meio que infinito. Não tem como ser previsto tudo (…) nessa lógica nunca vai
+# funcionar (…) se a gente não poderia construir algo dinâmico."*
+#
+# ⚑ A AÇÃO É `ver_pessoal`, e não `ver_erp` como os outros grupos. Aqui a
+# resposta é sobre GENTE — salário não sai nas visões, mas nome, obra, cargo
+# e vínculo saem, e isso não é informação de todo operador. O recorte por
+# obra é o MESMO das telas do Pessoal (`obras_no_pessoal`), aplicado dentro
+# das visões; ver `core/perguntas/mapa.py`.
+#
+# ⚠️ O CATÁLOGO TENTA PRIMEIRO. Pergunta conhecida é código testado, exata e
+# sem custo de IA; só o que ele não conhece desce para cá. Quem decide isso é
+# a tela, que já chama `entender` antes.
+# ===========================================================================
+@bp.route("/erp/api/perguntar/pessoal", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_perguntar_pessoal():
+    from app.apps.erp.core.perguntas import na_hora
+    d = request.get_json(silent=True) or {}
+    pergunta = (d.get("pergunta") or "").strip()
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = na_hora.responder(s, pergunta, atual)
+            s.commit()
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder pergunta montada na hora")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -9398,7 +9467,8 @@ def _gravar_perfis_extras(s, u, pedidos, autor) -> None:
 def api_usuarios():
     """Cadastro de operadores. Só o ADMIN mexe."""
     from sqlalchemy import select
-    from app.apps.erp.core.auth.permissoes import ROTULOS, escopo_visao, exigir
+    from app.apps.erp.core.auth.permissoes import (ROTULOS, escopo_visao,
+                                                   exigir)
     from app.apps.erp.core.auth.service import criar_usuario
     from app.apps.erp.core.comum import ia_custo as _ia_custo
     from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
@@ -10553,6 +10623,17 @@ def api_permissoes_do_usuario(usuario_id: int):
                 return acao in base if base is not None else u.perfil in PERMISSOES[acao]
 
             if request.method == "GET":
+                # Cada ação ganha o MÓDULO a que ela pertence, tirado do mesmo
+                # catálogo que monta a tela de perfis (27/11/2026). Sem isto o
+                # "ajuste fino" era uma lista alfabética de 64 caixinhas, em
+                # que "Fechar e reabrir o mês do ponto" caía entre "Encaminhar
+                # por WhatsApp" e "Guardar documento no arquivo".
+                from app.apps.erp.core.auth import secoes as cat
+                modulo_da_acao = {}
+                for grupo in cat.para_a_tela_pelo_menu(_menu_para_o_catalogo()):
+                    for secao in (*grupo["telas"], *grupo["dentro"]):
+                        for a_ in (*secao["ler"], *secao["editar"]):
+                            modulo_da_acao.setdefault(a_, grupo["modulo"])
                 acoes = []
                 for acao in sorted(PERMISSOES):
                     do_cargo = _da_base(acao)
@@ -10560,15 +10641,35 @@ def api_permissoes_do_usuario(usuario_id: int):
                     acoes.append({
                         "acao": acao,
                         "rotulo": ACAO_ROTULOS.get(acao, acao),
+                        "modulo": modulo_da_acao.get(acao, "Em várias telas"),
                         "do_cargo": do_cargo,
                         "marcada": marcada,
                         "efetiva": decidir(u.perfil, acao, marcadas, base),
                         "travada": u.perfil is PerfilUsuario.ADMIN and acao in PROTEGIDAS_DO_ADMIN,
                     })
+                # ⚑ "O QUE ESTA PESSOA VÊ" (27/11/2026). Nasceu de um
+                # prejuízo real: uma pessoa do DP passou dias sendo jogada
+                # para o portal e depois sem as telas do DP, e a única forma
+                # de descobrir por quê era ler código. Agora o cadastro
+                # RESPONDE: estes são os módulos e as telas que ela abre, e
+                # este é o aviso de que o cargo base a prende no portal.
+                from app.apps.erp.core.auth.permissoes import entra_pelo_portal
+                efetivas = {a: decidir(u.perfil, a, marcadas, base)
+                            for a in PERMISSOES}
+                modulos, _ = _menu_da_pessoa(efetivas)
                 return jsonify({"ok": True, "usuario": {"id": u.id, "nome": u.nome,
                                                         "perfil": u.perfil.value,
                                                         "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
-                                                        "tem_perfil_cadastrado": base is not None},
+                                                        # 27/11/2026: "conjunto
+                                                        # vazio" deixou de
+                                                        # querer dizer "não
+                                                        # sei" — quem responde
+                                                        # agora é o cadastro.
+                                                        "tem_perfil_cadastrado": bool(u.perfil_id),
+                                                        "so_portal": entra_pelo_portal(s, u.id, u.perfil)},
+                                "ve": [{"modulo": m["nome"],
+                                        "telas": [rot for _, rot, _ in m["abas"]]}
+                                       for m in modulos],
                                 "acoes": acoes})
 
             pedido = (request.get_json(silent=True) or {}).get("permissoes") or {}
@@ -10695,7 +10796,7 @@ def api_perfis():
                     "ok": True,
                     "perfis": svc_perfis.listar(
                         s, incluir_arquivados=request.args.get("todos") == "1"),
-                    "catalogo": cat.para_a_tela(),
+                    "catalogo": cat.para_a_tela_pelo_menu(_menu_para_o_catalogo()),
                     "niveis": [{"chave": n, "rotulo": cat.NIVEL_ROTULOS[n]}
                                for n in cat.NIVEIS],
                 })
@@ -14257,7 +14358,8 @@ def pagina_portal():
     with get_session() as _s:
         quem = _usuario_logado(_s)
         from app.apps.erp.core.auth.permissoes import pode as _pode
-        mais = (quem is not None and not so_portal(quem.perfil)
+        mais = (quem is not None
+                and not entra_pelo_portal(_s, quem.id, quem.perfil)
                 and any(_pode(quem, a) for a in
                         ("ver_titulos", "ver_pessoal", "ver_obras", "ver_diario",
                          "ver_suprimentos", "configurar")))

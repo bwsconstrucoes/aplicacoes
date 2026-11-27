@@ -246,10 +246,12 @@ def test_rota_da_obra_fora_do_escopo_responde_nao_encontrado(app_real, cenario):
     assert sup.get(f"/erp/api/obras/{cenario.obra_b.id}").status_code == 404
     assert sup.get(f"/erp/api/obras/{cenario.obra_b.id}/titulos").status_code == 404
 
-    # ⚑ 24/11/2026: o ADMINISTRATIVO DE OBRA, mesmo enxergando por autoria,
-    # abre só as obras dele — quem é da obra só tem o portal e a obra dele
-    # (`PERFIS_SO_PORTAL`). Antes este teste dizia o contrário: "abre qualquer
-    # uma". Era a porta pela qual ele via o diário de qualquer obra.
+    # ⚑ 24/11/2026, e revisto em 27/11/2026: quem enxerga por AUTORIA abre só
+    # as obras marcadas no cadastro dele. A obra não tem autor, então não há
+    # como recortá-la pela autoria — e sem este aperto a pessoa abria o
+    # detalhe de qualquer obra da empresa. Em 24/11 isso valia só para o
+    # cargo "administrativo de obra"; agora vale para todo mundo que não
+    # enxerga todas as obras, porque o cargo saiu da decisão.
     adm = como(app_real, cenario.usuarios["adm_proprios"].id)
     assert adm.get(f"/erp/api/obras/{cenario.obra_b.id}").status_code == 404
 

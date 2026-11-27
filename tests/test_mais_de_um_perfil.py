@@ -171,12 +171,19 @@ def test_a_marcacao_da_pessoa_continua_podendo_TIRAR(sessao_real, pessoa):
 
 
 @banco_
-def test_sem_perfil_nenhum_continua_valendo_o_cargo_antigo(sessao_real, pessoa):
-    """`None` quer dizer "não sei" e cai no cargo — é o que manteve o ERP de pé
-    nas migrações anteriores, e não pode ter mudado agora."""
+def test_sem_perfil_nenhum_a_pessoa_nao_pode_nada(sessao_real, pessoa):
+    """⚑ VIROU AO CONTRÁRIO EM 27/11/2026, a pedido dele: *"se o cara não fez o
+    cadastramento, ponto final, ele não tem absolutamente acesso a nada."*
+
+    "Sem perfil" deixou de ser "não sei" (que caía no cargo) e passou a ser
+    **conjunto vazio**. `None` continua existindo, mas só para quando a
+    pergunta não pode ser respondida — a tabela não existe, ou a pessoa não
+    foi encontrada.
+    """
     pessoa.perfil_id = None
     sessao_real.flush()
-    assert perm.acoes_do_perfil_no_banco(sessao_real, pessoa.id) is None
+    assert perm.acoes_do_perfil_no_banco(sessao_real, pessoa.id) == set()
+    assert perm.acoes_do_perfil_no_banco(sessao_real, 99_999_999) is None
 
 
 @banco_

@@ -107,8 +107,9 @@ def admin(banco):
     with banco.connect() as conn:
         conn.execute(text("DELETE FROM usuarios WHERE email = 'admin.fila@teste.com'"))
         uid = conn.execute(text(
-            "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) "
-            "VALUES ('Admin da fila', 'admin.fila@teste.com', :h, 'ADMIN', TRUE) "
+            "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, perfil_id) "
+            "VALUES ('Admin da fila', 'admin.fila@teste.com', :h, 'ADMIN', TRUE, "
+            "        (SELECT id FROM perfis WHERE nome = 'Cargo ADMIN')) "
             "RETURNING id"), {"h": gerar_hash("x" * 12)}).scalar_one()
         conn.commit()
     yield uid
@@ -211,9 +212,13 @@ def test_a_obra_do_pedido_vem_de_onde_a_pessoa_bate_ponto(app, mundo, banco):
     with banco.connect() as conn:
         conn.execute(text("DELETE FROM usuarios WHERE email = 'joao.portal@teste.com'"))
         uid = conn.execute(text(
-            "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) "
+            "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, "
+            "                      perfil_id) "
             "VALUES ('João operador', 'joao.portal@teste.com', :h, "
-            "        'ADMINISTRATIVO_OBRA', TRUE) RETURNING id"),
+            "        'ADMINISTRATIVO_OBRA', TRUE, "
+            "        (SELECT id FROM perfis "
+            "          WHERE nome = 'Cargo ADMINISTRATIVO_OBRA')) "
+            "RETURNING id"),
             {"h": gerar_hash("x" * 12)}).scalar_one()
         conn.execute(text("UPDATE colaboradores SET usuario_id = :u WHERE cpf = :c"),
                      {"u": uid, "c": CPF_JOAO})
@@ -241,9 +246,13 @@ def test_sem_batida_a_sugestao_cai_para_a_obra_do_cadastro(app, mundo, banco):
     with banco.connect() as conn:
         conn.execute(text("DELETE FROM usuarios WHERE email = 'joao.portal2@teste.com'"))
         uid = conn.execute(text(
-            "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) "
+            "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, "
+            "                      perfil_id) "
             "VALUES ('João sem batida', 'joao.portal2@teste.com', :h, "
-            "        'ADMINISTRATIVO_OBRA', TRUE) RETURNING id"),
+            "        'ADMINISTRATIVO_OBRA', TRUE, "
+            "        (SELECT id FROM perfis "
+            "          WHERE nome = 'Cargo ADMINISTRATIVO_OBRA')) "
+            "RETURNING id"),
             {"h": gerar_hash("x" * 12)}).scalar_one()
         conn.execute(text("UPDATE colaboradores SET usuario_id = :u WHERE cpf = :c"),
                      {"u": uid, "c": CPF_JOAO})

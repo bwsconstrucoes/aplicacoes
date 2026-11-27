@@ -426,6 +426,45 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "abrir_pessoa": ("ver_pessoal", "ver_ponto"),
 }
 
+
+def _implicacoes_das_secoes() -> dict[str, tuple[str, ...]]:
+    """QUEM TEM O TRABALHO DA TELA ABRE A TELA — tirado do próprio catálogo.
+
+    ⚑ O DEFEITO QUE ISTO CONSERTA (27/11/2026). O dono: *"to achando que essa
+    lista do que pode fazer não condiz muito com a realidade"*, e depois
+    *"pelo que to vendo tem que revisar tudo"*. Ele estava certo, e a conta
+    mostrou onde: **8 telas não abriam para quem tinha justamente o trabalho
+    delas, por 17 marcações diferentes.** Quem podia "Cadastrar e editar
+    colaboradores" não abria Pessoal; quem podia "Fechar e reabrir o mês do
+    ponto" não abria o Ponto. A tela de cadastro prometia o verbo e fechava a
+    porta — sem erro nenhum, só uma área que não existe no menu.
+
+    O PERFIL CADASTRADO nunca teve esse furo: `secoes.acoes_do_nivel` já dá o
+    "só olhar" junto com o "olhar e mexer", de propósito (*"perfil que mexe e
+    não enxerga abriria a tela vazia"*). O furo estava nos outros DOIS caminhos
+    que concedem ação — o cargo em código e a marcação por pessoa (migração
+    032) —, que entregam ação solta, sem passar pela seção.
+
+    Por isso a lista nasce do CATÁLOGO, e não da mão: toda ação do "olhar e
+    mexer" de uma seção passa a implicar o "só olhar" da mesma seção. Seção
+    nova entra já certa, sem ninguém lembrar de acrescentar linha aqui — que é
+    exatamente como as 17 ficaram de fora.
+    """
+    from app.apps.erp.core.auth import secoes as cat
+
+    derivadas: dict[str, set[str]] = {}
+    for secao in cat.SECOES:
+        for porta in secao["ler"]:
+            for verbo in secao["editar"]:
+                derivadas.setdefault(porta, set()).add(verbo)
+    saida = {acao: set(outras) for acao, outras in ACOES_IMPLICADAS.items()}
+    for porta, verbos in derivadas.items():
+        saida.setdefault(porta, set()).update(verbos)
+    return {acao: tuple(sorted(outras)) for acao, outras in saida.items()}
+
+
+ACOES_IMPLICADAS = _implicacoes_das_secoes()
+
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
 # marca a caixinha não é programador: "pagar" precisa dizer o que libera.
 ACAO_ROTULOS = {
@@ -455,12 +494,12 @@ ACAO_ROTULOS = {
     "ver_empreitas":        "Ver as empreitas",
     "ver_obras":            "Ver o painel de obras",
     "ver_locacoes":         "Ver as locações de equipamento",
-    "ver_pessoal":          "Ver despesas de colaborador",
+    "ver_pessoal":          "Abrir as telas de Pessoal (colaboradores, despesas, contabilidade)",
     "ver_remuneracao":      "Ver salário, diária e dados de pagamento",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
     "conferir_cpf_colaborador": "Conferir se um CPF já tem cadastro",
-    "solicitar_dp":         "Abrir solicitação ao DP",
+    "solicitar_dp":         "Abrir solicitação ao DP e ver a fila e as férias",
     "atender_dp":           "Atender solicitação do DP",
     "pedir_contabilidade":  "Pedir à contabilidade e cobrar o retorno",
     "ver_suprimentos":      "Ver as telas de Suprimentos",
@@ -580,9 +619,11 @@ def acoes_do_perfil_no_banco(s: Session, usuario_id: int) -> Optional[set[str]]:
     Perfil principal (`usuarios.perfil_id`, migração 065) **mais** os perfis
     acrescentados (`usuario_perfis`, migração 095).
 
-    Devolve `None` quando não há o que ler — a tabela ainda não existe, ou a
-    pessoa não foi apontada para perfil nenhum. `None` quer dizer "não sei", e
-    aí vale a tabela em código, que é o comportamento de antes. Isso é o que
+    Devolve `None` quando não há o que ler — a tabela ainda não existe, ou nem
+    a pessoa foi encontrada. `None` quer dizer "não sei", e aí vale a tabela em
+    código, que é o comportamento de antes. ⚑ Desde 27/11/2026 **"não tem
+    perfil" NÃO é mais "não sei"**: é conjunto vazio, e a pessoa não entra em
+    lugar nenhum — ver `_marcacoes_do_perfil_principal`. Isso é o que
     mantém o ERP de pé na janela entre a publicação e o aperto do botão que
     aplica a migração — a armadilha conhecida deste repositório.
 
@@ -609,22 +650,44 @@ def acoes_do_perfil_no_banco(s: Session, usuario_id: int) -> Optional[set[str]]:
 
 def _marcacoes_do_perfil_principal(s: Session,
                                    usuario_id: int) -> Optional[dict[str, str]]:
-    """As seções do perfil principal. `None` = não sei (vale o cargo antigo)."""
+    """As seções do perfil principal.
+
+    Três respostas diferentes, e a diferença entre elas é o coração da regra:
+
+      · `None`   — **não sei**: a consulta não rodou (a migração 065 ainda não
+        foi aplicada) ou nem a pessoa foi encontrada. Só aí vale o cargo
+        antigo, e é o que segura o ERP de pé na janela entre publicar e
+        apertar o botão do banco.
+      · `{}`     — **a pessoa não tem perfil**, ou tem um perfil que não marca
+        nada. Isso é resposta, não dúvida: ela não entra em lugar nenhum.
+      · o dicionário — as seções marcadas.
+
+    ⚑ ATÉ 27/11/2026, "sem perfil" caía no cargo, e o dono chamou isso pelo
+    nome: *"me parece uma gambiarra."* A regra dele é outra, e é simples:
+    *"se o cara não fez o cadastramento, ponto final, ele não tem absolutamente
+    acesso a nada, ele é apenas um colaborador cadastrado. Ele só iria ter a
+    possibilidade de ser liberado a acessar alguma coisa no momento que ele
+    solicitasse o acesso e fosse liberado e definido um perfil."*
+
+    Por isso a consulta traz o `perfil_id` junto: é ele que separa "não tem
+    perfil" (a pessoa existe, a linha vem, o perfil é nulo) de "não sei"
+    (nenhuma linha veio).
+    """
     from sqlalchemy import text as _text
 
     try:
         linhas = s.execute(_text(
-            "SELECT ps.secao, ps.nivel "
+            "SELECT u.perfil_id, ps.secao, ps.nivel "
             "  FROM usuarios u "
-            "  JOIN perfis p ON p.id = u.perfil_id AND p.ativo "
+            "  LEFT JOIN perfis p ON p.id = u.perfil_id AND p.ativo "
             "  LEFT JOIN perfil_secoes ps ON ps.perfil_id = p.id "
             " WHERE u.id = :i"), {"i": usuario_id}).all()
     except Exception:
         return None          # migração 065 ainda não aplicada
     if not linhas:
-        return None          # sem perfil cadastrado: vale o cargo antigo
+        return None          # nem a pessoa foi encontrada: não sei
     try:
-        return {linha[0]: linha[1] for linha in linhas if linha[0]}
+        return {linha[1]: linha[2] for linha in linhas if linha[1]}
     except (TypeError, IndexError, ValueError):
         # Resposta com formato inesperado (a sessão dublada dos testes é um
         # caso). "Não sei" é a resposta honesta, e ela cai no cargo antigo.
@@ -660,6 +723,92 @@ def _marcacoes_dos_perfis_acrescentados(s: Session,
                                if linha and linha[0]])
     except (TypeError, IndexError, ValueError):
         return {}
+
+
+def acoes_e_portal(s: Session, usuario_id: int,
+                   cargo: Any) -> tuple[Optional[set[str]], bool]:
+    """As ações do perfil E se a pessoa entra pelo portal, NUMA LEITURA SÓ.
+
+    ⚑ Existe por conta: a guarda roda antes de TODA rota, e as duas perguntas
+    saem das MESMAS duas consultas (o perfil principal e os perfis somados).
+    Perguntadas separado, seriam **duas idas ao banco a mais por página** —
+    numa tela que já faz várias, e multiplicado por todo mundo que usa o
+    sistema o dia inteiro.
+    """
+    from app.apps.erp.core.auth import secoes as cat
+
+    marcacoes = _marcacoes_do_perfil_principal(s, usuario_id)
+    extras = _marcacoes_dos_perfis_acrescentados(s, usuario_id)
+    if marcacoes is None and not extras:
+        # NÃO SEI: a tabela ainda não existe, ou a pessoa não foi encontrada.
+        # Só neste caso o cargo antigo responde — não é regra de negócio, é a
+        # rede que impede o ERP de cair enquanto o banco está atrás do código.
+        return None, so_portal(cargo)
+    todas = _somar_niveis(marcacoes or {}, extras)
+    abertas = {secao for secao, nivel in todas.items() if nivel != cat.NADA}
+    if not abertas:
+        # SEM PERFIL: não entra em lugar nenhum — nem no portal. Regra dele,
+        # 27/11/2026: *"se o cara não fez o cadastramento, ponto final, ele não
+        # tem absolutamente acesso a nada, ele é apenas um colaborador
+        # cadastrado."* O ADMIN continua alcançando as telas que consertam o
+        # sistema (`PROTEGIDAS_DO_ADMIN`), senão a última pessoa capaz de
+        # destrancar ficaria trancada do lado de fora.
+        return set(), False
+    return cat.acoes_do_perfil(todas), _perfil_entra_pelo_portal(s, usuario_id)
+
+
+def _perfil_entra_pelo_portal(s: Session, usuario_id: int) -> bool:
+    """A marcação "entra pelo portal" do perfil principal (migração 130).
+
+    ⚑ É UMA MARCAÇÃO, E NÃO UMA CONTA, e isso custou uma tentativa errada. A
+    primeira versão deduzia: "entra pelo portal quem não abre nada além do
+    diário". O próprio portal mostra por que não serve — ele lista
+    colaboradores e abre solicitação ao DP, então quem trabalha na obra
+    PRECISA dessas permissões para usá-lo, e pela dedução deixaria de ser "da
+    obra" justamente por ter o que precisa para trabalhar.
+
+    Portal e telas de dentro são duas PORTAS para as mesmas permissões. Qual
+    porta a pessoa usa é decisão de quem monta o perfil.
+
+    Enquanto a migração 130 não roda, a coluna não existe: responde "não", e
+    aí quem é da obra entra pelas telas de dentro até o botão ser apertado.
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        return bool(s.execute(_text(
+            "SELECT COALESCE(p.entra_pelo_portal, false) "
+            "  FROM usuarios u JOIN perfis p ON p.id = u.perfil_id AND p.ativo "
+            " WHERE u.id = :i"), {"i": usuario_id}).scalar())
+    except Exception:
+        return False
+
+
+def entra_pelo_portal(s: Session, usuario_id: int, cargo: Any) -> bool:
+    """Esta pessoa entra pelo PORTAL em vez das telas de dentro do ERP?
+
+    ⚑ QUEM DECIDE É O PERFIL, NÃO O CARGO (27/11/2026). Pedido dele, com todas
+    as letras: *"o cargo base não deveria influenciar em nada. quem deve mandar
+    é o perfil."*
+
+    E o prejuízo que motivou: uma pessoa do DP era levada ao portal toda vez
+    que entrava, e o motivo era o **cargo base** do cadastro dela — não o
+    perfil de acesso, que abria meio sistema. Nenhuma tela dizia isso; foi
+    preciso ler código para descobrir.
+
+    A regra, e ela tem três ramos (ver `acoes_e_portal`, que é quem decide):
+
+      · **perfil que abre só o diário** → entra pelo portal. É o que "ser da
+        obra" quer dizer agora.
+      · **perfil que abre telas de escritório** → entra pelo ERP.
+      · **sem perfil nenhum** → **não entra em lugar nenhum**, nem no portal.
+        Era aqui que o cargo respondia até 27/11/2026, e o dono chamou isso de
+        gambiarra, com razão.
+
+    O cargo só responde quando a pergunta não pode ser respondida: a tabela de
+    perfis não existe ainda, ou a pessoa não foi encontrada.
+    """
+    return acoes_e_portal(s, usuario_id, cargo)[1]
 
 
 def _somar_niveis(*conjuntos: dict[str, str]) -> dict[str, str]:
@@ -905,14 +1054,18 @@ def ve_todas_as_obras(usuario: Usuario) -> bool:
 # solicitações. Isso em tudo."* E o diário: *"é só para eles lançarem (…)
 # olhar somente a obra deles e pode visualizar no calendário."*
 #
-# Duas consequências, as duas aqui e em `routes._guarda_permissao`:
-#   1. as TELAS do ERP se fecham para esses perfis (só o portal, o diário e o
-#      que o portal abre — ver `TELAS_DE_QUEM_E_DA_OBRA` em routes.py);
-#   2. ABRIR UMA OBRA (`pode_ver_obra` — o diário, o calendário, a logo) é
-#      só das obras deles — nunca o "sem filtro" que `obras_do_usuario` dá a
-#      quem enxerga por autoria, e que deixava o administrativo de obra abrir
-#      o diário de qualquer obra. As LISTAS das outras áreas (suprimentos,
-#      títulos) continuam com a regra delas: lá a autoria recorta de verdade.
+# ⚑ 27/11/2026 — "SER DA OBRA" DEIXOU DE SER UM CARGO. A decisão acima vale
+# igual; o que mudou é quem responde "esta pessoa é da obra?". Era este cargo;
+# agora é uma MARCAÇÃO no perfil dela ("esta gente trabalha na obra: entra
+# pelo portal", migração 130) — ver `entra_pelo_portal`. Pedido dele: *"o
+# cargo base não deveria influenciar em nada. quem deve mandar é o perfil."*
+#
+# A lista abaixo sobrou para um caso só: quando NÃO DÁ PARA SABER qual é o
+# perfil (a tabela ainda não existe, ou a pessoa não foi encontrada). Não a
+# use para decidir acesso em código novo.
+#
+# E a segunda consequência de 24/11 — abrir uma obra é só das obras da pessoa —
+# virou regra de todo mundo, não só de quem é da obra: ver `pode_ver_obra`.
 # ---------------------------------------------------------------------------
 PERFIS_SO_PORTAL = (P.ADMINISTRATIVO_OBRA,)
 
@@ -1093,9 +1246,22 @@ def exigir_titulo_no_escopo(s: Session, usuario: Usuario, titulo_id: int) -> Non
 
 
 def pode_ver_obra(s: Session, usuario: Usuario, obra_id: int) -> bool:
-    # Quem é da obra abre só as obras dele (24/11/2026, ver `PERFIS_SO_PORTAL`).
-    obras = (obras_de_registro_sem_autor(s, usuario) if so_portal(usuario.perfil)
-             else obras_do_usuario(s, usuario))
+    """A OBRA NÃO TEM AUTOR, então o único recorte possível é a própria obra.
+
+    ⚑ DEIXOU DE PERGUNTAR O CARGO EM 27/11/2026. Antes: "quem é da obra abre só
+    as obras dele" — e "ser da obra" era o cargo `ADMINISTRATIVO_OBRA`
+    (24/11/2026). Com o cargo fora da decisão, a pergunta certa é outra, e é a
+    mesma que `obras_de_registro_sem_autor` já responde há meses: **registro
+    sem autor só se recorta por obra**.
+
+    O efeito disso vai além de quem é da obra, e é um aperto: quem enxerga
+    "só os próprios lançamentos" passava por aqui com `obras_do_usuario`, que
+    devolve `None` (sem filtro) justamente porque o filtro dele é a AUTORIA —
+    e obra não tem autor. Na prática, essa pessoa abria o detalhe de
+    **qualquer obra da empresa**. Agora abre só as obras marcadas no cadastro
+    dela; sem obra marcada, nenhuma — que é o padrão NEGAR do ERP.
+    """
+    obras = obras_de_registro_sem_autor(s, usuario)
     if obras is None:
         return True                      # perfil que enxerga todas as obras
     return int(obra_id) in set(obras)
