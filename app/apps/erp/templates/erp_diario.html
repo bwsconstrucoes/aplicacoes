@@ -269,6 +269,33 @@ async function iniciar(){
     return;
   }
   pintarQuadro();          // a porta da tela é o quadro do mês
+  abrirFiltrosNoCelular();
+}
+
+// ---------------------------------------------------------------------------
+// NO CELULAR, A TELA ABRE COM OS FILTROS À MOSTRA (26/11/2026)
+//
+// Ele, duas vezes. Primeiro reclamando: *"na hora que abre, ele abre no quadro
+// do mês. Aí eu tenho que clicar em filtros para poder pesquisar para o
+// específico."* Depois escolhendo: *"quando abrir no celular, eu acho melhor o
+// quadro do filtro."*
+//
+// Quem abre o diário no telefone quase sempre vem fazer UM dia de UMA obra —
+// não vem olhar o panorama. Com a gaveta fechada, chegar na obra custava um
+// toque a mais, e o toque ficava escondido atrás de um botão flutuante.
+//
+// ⚑ O QUADRO NÃO SAIU DE BAIXO: ele continua sendo a tela: a gaveta é uma
+// camada por cima. Tocar fora dela fecha e o panorama está lá. Trocar a porta
+// de entrada seria decisão maior, e ele não pediu isso.
+//
+// ⚠️ SÓ NO CELULAR e só quando NENHUMA obra está escolhida. No computador a
+// coluna de filtros já está sempre à vista (a gaveta nem existe acima de
+// 720 px), e quem chegou com obra escolhida já sabe aonde ia.
+// ---------------------------------------------------------------------------
+function abrirFiltrosNoCelular(){
+  if (!window.matchMedia("(max-width: 720px)").matches) return;
+  if (els("f-obra").value) return;
+  document.body.classList.add("filtros-abertos");
 }
 
 // ---------------------------------------------------------------------------
