@@ -63,6 +63,9 @@ function formOperador(u, opcoes){
   // (24/11/2026). Sem ele, o formulário só sabia desenhar dentro da janela
   // de Configurações. Ver o cabeçalho deste arquivo.
   opcoes = opcoes || {};
+  // Ninguém mexeu nas caixinhas do ajuste fino ainda — ver o comentário no
+  // botão Salvar. Enquanto for falso, salvar não escreve marcação nenhuma.
+  let PERMISSOES_MEXIDAS = false;
   const naJanela = !opcoes.alvo;
   const CORPO = opcoes.alvo || "dlg-corpo";
   const novo = !u;
@@ -189,6 +192,15 @@ function formOperador(u, opcoes){
     <h4>O que esta pessoa vê quando entra</h4>
     <div class="ve-caixa" id="op-ve"><small>carregando…</small></div>
     <h4>Ajuste fino, só desta pessoa</h4>
+    {# ⚑ O BOTÃO DE DESFAZER (27/11/2026). Nasceu do estrago que o dono
+       encontrou: marcações de "não" gravadas sem ninguém pedir, uma a uma na
+       tela, numa lista de 64. Desfazer tinha de ser um clique. #}
+    <div style="margin-bottom:6px">
+      <button type="button" class="btn secundario" id="op-limpar-ajustes">
+        Voltar ao que o perfil dá</button>
+      <small style="color:var(--tinta-suave); margin-left:8px">apaga todos os
+        ajustes desta pessoa e deixa valer só o perfil</small>
+    </div>
     <div id="op-perms"><small>carregando…</small></div>
     <div class="dica">O <b>perfil de acesso</b> já define o essencial. Aqui você
       acrescenta ou tira <b>desta pessoa</b> — por exemplo, deixar alguém
@@ -599,10 +611,46 @@ function formOperador(u, opcoes){
                 : ` <b style="color:var(--ambar)">· ajuste</b>`}</span></label>`).join("")}
           </div></div>`;
       }).join("");
+      els("op-perms").addEventListener("change", e => {
+        if (e.target.classList.contains("op-perm")) PERMISSOES_MEXIDAS = true;
+      });
     } catch(e){
       els("op-perms").innerHTML = `<small>não foi possível carregar: ${e.message}</small>`;
       if (els("op-ve")) els("op-ve").innerHTML = `<small>—</small>`;
     }
+  }
+
+  if (!novo) els("op-limpar-ajustes").addEventListener("click", async () => {
+    const b = els("op-limpar-ajustes");
+    b.disabled = true;
+    try {
+      // Payload vazio: o servidor apaga as marcações desta pessoa e não grava
+      // nenhuma no lugar — sobra o perfil, limpo.
+      await api(`/erp/api/usuarios/${u.id}/permissoes`,
+        {method:"POST", headers:{"Content-Type":"application/json"},
+         body: JSON.stringify({permissoes: {}})});
+      PERMISSOES_MEXIDAS = false;
+      await carregarPermissoes();
+      aviso("dlg-msg", "Ajustes apagados — agora vale só o perfil.", "ok");
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    b.disabled = false;
+  });
+
+  // ⚑ TROCOU O PERFIL: o ajuste fino abaixo é do perfil ANTIGO e não pode ser
+  // misturado com o novo numa gravação só. Ele some da tela até salvar, e
+  // volta certo quando o cadastro for reaberto.
+  function ajusteDeOutroPerfil(){
+    const bloco = els("op-perms");
+    if (!bloco || novo) return;
+    PERMISSOES_MEXIDAS = false;
+    bloco.innerHTML = `<div class="aviso info" style="margin:0">Você trocou o
+      <b>perfil de acesso</b>. Salve primeiro: o ajuste fino volta a aparecer
+      quando você reabrir este cadastro, já com o que o novo perfil dá.</div>`;
+  }
+  if (!novo) {
+    els("op-perfil-cad").addEventListener("change", ajusteDeOutroPerfil);
+    document.querySelectorAll(".op-perfil-extra").forEach(c =>
+      c.addEventListener("change", ajusteDeOutroPerfil));
   }
   if (!novo) carregarPermissoes();
   if (!novo) carregarConvite();
@@ -652,8 +700,22 @@ function formOperador(u, opcoes){
     try {
       await api(novo ? "/erp/api/usuarios" : `/erp/api/usuarios/${u.id}`,
         {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      // ⚠️ O AJUSTE FINO SÓ É GRAVADO SE ALGUÉM MEXEU NELE (27/11/2026), e
+      // isto conserta um estrago silencioso que o dono encontrou no primeiro
+      // dia: *"aparece lançar o diário de obra, aí ajuste"* — desmarcado.
+      //
+      // O que acontecia: ele abria o cadastro de alguém SEM perfil (todas as
+      // caixinhas desmarcadas, porque sem perfil a pessoa não pode nada),
+      // escolhia o perfil e salvava. O salvar grava o cadastro PRIMEIRO e as
+      // caixinhas DEPOIS — então o servidor comparava as caixinhas velhas
+      // (todas desmarcadas) com o perfil NOVO, e gravava um "não" explícito
+      // para cada permissão que o perfil acabara de conceder. O perfil ficava
+      // certo e a pessoa, trancada, sem nada na tela explicando.
+      //
+      // Enquanto ninguém toca nas caixinhas, elas não têm o que dizer — e
+      // quem cala não tira permissão de ninguém.
       const caixas = [...document.querySelectorAll(".op-perm")];
-      if (!novo && caixas.length) {
+      if (!novo && caixas.length && PERMISSOES_MEXIDAS) {
         const permissoes = {};
         caixas.forEach(i => permissoes[i.value] = i.checked);
         await api(`/erp/api/usuarios/${u.id}/permissoes`,
