@@ -366,8 +366,7 @@ els("btn-novo").addEventListener("click", () => {
     <div class="form-grade">
       <div class="campo"><label>Obra *</label><select id="n-obra">
         ${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}</select></div>
-      <div class="campo" style="grid-column:span 2"><label>Prestador *</label><select id="n-forn">
-        ${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select></div>
+      <div style="grid-column:1 / -1" id="n-emp"></div>
       <div class="campo" style="grid-column:span 3"><label>Serviço contratado *</label>
         <input id="n-objeto" placeholder="ex.: alvenaria de vedação do bloco A"></div>
       <div class="campo"><label>Como será pago *</label><select id="n-modo">
@@ -397,6 +396,16 @@ els("btn-novo").addEventListener("click", () => {
   let ITS = [{}];
   // ⚑ O CONTRATO GERADO (27/11/2026): a mesma peça do portal.
   let CG = null;
+  // ⚑ O EMPREITEIRO PELO DOCUMENTO (27/11/2026): a mesma peça do portal.
+  const EMP = Empreiteiro.novo();
+  const desenharEmp = () => {
+    els("n-emp").innerHTML = Empreiteiro.html(EMP);
+    Empreiteiro.ligar(EMP, els("n-emp"), desenharEmp, async q => {
+      const t = q.toLowerCase(), d = q.replace(/\D/g, "");
+      return FORN.filter(f => f.nome.toLowerCase().includes(t) || (d && (f.documento || "").startsWith(d)));
+    });
+  };
+  desenharEmp();
   const desenharCG = () => {
     els("n-cg").innerHTML = ContratoGerado.html(CG);
     ContratoGerado.ligar(CG, els("n-cg"), desenharCG);
@@ -444,12 +453,13 @@ els("btn-novo").addEventListener("click", () => {
   els("n-modo").addEventListener("change", aplicarModo);
   aplicarModo();
   els("n-salvar").addEventListener("click", async () => {
-    const falta = CG ? ContratoGerado.faltando(CG) : "";
+    const falta = Empreiteiro.faltando(EMP) || (CG ? ContratoGerado.faltando(CG) : "");
     if (falta) { aviso("dlg-msg", escapar(falta), "erro"); return; }
     try {
+      const credor = await Empreiteiro.salvar(EMP);
       const d = await api("/erp/api/empreitas", {method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({obra_id:+els("n-obra").value, fornecedor_id:+els("n-forn").value,
+        body: JSON.stringify({obra_id:+els("n-obra").value, fornecedor_id: credor.id,
           objeto: els("n-objeto").value, modo: els("n-modo").value,
           itens: porMedicao() ? ITS.filter(i=>i.descricao || i.unidade || i.quantidade || i.preco_unitario)
             .map(i=>({...i, quantidade: String(dec(i.quantidade)), preco_unitario: String(dec(i.preco_unitario))})) : [],
@@ -457,7 +467,7 @@ els("btn-novo").addEventListener("click", () => {
           parcelas_previstas: els("n-parc").value, data_inicio: els("n-ini").value || null,
           data_fim: els("n-fim").value || null, exige_foto: els("n-foto").value === "1",
           retencao_garantia_pct: (els("n-garantia").value || "0").replace(",", "."),
-          contrato_gerado: CG && CG.gerar ? ContratoGerado.escolhas(CG) : null})});
+          contrato_gerado: CG && CG.gerar ? ContratoGerado.escolhas(CG, EMP) : null})});
       els("dlg").close();
       aviso("mensagem", `Contrato ${d.contrato.numero} cadastrado (${moeda(d.contrato.valor)}) —
         aguardando aval.`, "ok");

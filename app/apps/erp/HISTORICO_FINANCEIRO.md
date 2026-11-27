@@ -58,6 +58,32 @@ esta mudança por falta da chave no ambiente de teste).
 
 ---
 
+## 27/11/2026 (3) — O EMPREITEIRO PELO DOCUMENTO (Cartão CNPJ, RG, CNH)
+
+Ele: *"vamos usar a mesma lógica de todo o resto do ERP, que é a importação de
+informações a partir da leitura dos documentos (…) utilizar um cartão CNPJ,
+uma identidade, RG."*
+
+- **Bloco "Empreiteiro"** no cadastro do contrato (portal e ERP, a mesma peça em
+  `_contrato_gerado.html`): pessoa física ou empresa; procura quem já está no
+  cadastro (abre preenchido); joga-se o documento no alto — RG/CNH/comprovante
+  pelo MESMO leitor da admissão (`documentos_de_pessoa.ler_varios`), Cartão
+  CNPJ pelo MESMO leitor das empresas (`arquivo.leitura`) — e ele preenche
+  CPF/CNPJ, nome, RG, endereço, telefone e e-mail, tudo editável.
+- **Ao cadastrar o contrato**, o empreiteiro é criado ou COMPLETADO com o que foi
+  conferido, e os documentos lidos ficam arquivados no cadastro dele
+  (`core/titulos/empreiteiro.py`). Substituiu a caixinha "Prestador" do ERP e a
+  busca de credor do portal — **é a mesma porta, agora com o documento dentro.**
+- **O RG não tem coluna no credor**, de propósito (coluna nova no modelo do
+  credor derrubaria as consultas até o botão da migração): vai para a
+  qualificação do contrato, e o documento fica arquivado para nova leitura.
+- O dado do credor é procurado pelo **CPF/CNPJ**, não pelo número interno — a
+  vigia de escopo pegou: número em sequência no endereço permitiria varrer o
+  cadastro de credores.
+- Testes: 5 novos em `tests/test_contrato_assinatura_banco.py`. Percorrido no
+  navegador (preencher à mão, escolher do cadastro, RG no texto). **A leitura
+  com a IA de verdade não foi exercitada aqui** (sem a chave) — dublada no teste.
+
 ## 27/11/2026 (2) — O CONTRATO DE EMPREITA GERADO E ASSINADO À DISTÂNCIA; OS CONTRATOS DA OBRA
 
 **No ramo, NÃO publicado. Tem migração: 132** (`contrato_documentos` e

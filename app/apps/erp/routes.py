@@ -11986,6 +11986,80 @@ def api_contrato_assinantes():
         return jsonify({"ok": True, "pessoas": [dict(l) for l in linhas]})
 
 
+# ⚑ OS DADOS DO EMPREITEIRO PELO DOCUMENTO (27/11/2026) — Cartão CNPJ, RG,
+# CNH, comprovante. Regra em `core/titulos/empreiteiro.py`.
+@bp.route("/erp/api/empreitas/empreiteiro")
+@login_obrigatorio
+@permissao("lancar")
+def api_empreiteiro_dados():
+    """O que o credor já tem — o formulário abre preenchido. Procura pelo
+    CPF/CNPJ (que a busca já mostrou), e não pelo número interno: número em
+    sequência no endereço deixaria varrer o cadastro de credores."""
+    from sqlalchemy import select as _sel
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.core.titulos import empreiteiro
+    from app.apps.erp.db.models.cadastros import Fornecedor
+    doc = somente_digitos(request.args.get("documento") or "")
+    if len(doc) not in (11, 14):
+        return jsonify({"ok": False, "erro": "Informe o CPF ou o CNPJ."}), 400
+    with get_session() as s:
+        f = s.scalars(_sel(Fornecedor).where(Fornecedor.cnpj_cpf == doc)).first()
+        if f is None:
+            return jsonify({"ok": False, "erro": "Empreiteiro não encontrado."}), 404
+        return jsonify({"ok": True, "empreiteiro": empreiteiro.do_cadastro(s, f.id)})
+
+
+@bp.route("/erp/api/empreitas/empreiteiro/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_empreiteiro_ler():
+    from app.apps.erp.core.comum.fotos import heic_para_jpeg
+    from app.apps.erp.core.comum.ia_custo import contexto
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    from app.apps.erp.core.titulos import empreiteiro
+    arquivos = [heic_para_jpeg(f.read(), f.filename or "documento")
+                for f in request.files.getlist("arquivos")]
+    if not arquivos:
+        return jsonify({"ok": False, "erro": "Escolha o documento."}), 400
+    _exigir_saldo_de_ia()
+    try:
+        with get_session() as s, contexto(operacao="leitura_documento_empreiteiro"):
+            return jsonify({"ok": True, **empreiteiro.ler(
+                s, arquivos, request.form.get("tipo_pessoa") or "")})
+    except (ErroLeitura, ErroValidacao) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/empreitas: falha ao ler o documento do empreiteiro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/empreitas/empreiteiro", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_empreiteiro_gravar():
+    """Cria ou completa o empreiteiro com o que foi CONFERIDO na tela, e arquiva
+    os documentos lidos nele — na mesma gravação."""
+    import json as _json
+    from app.apps.erp.core.comum.fotos import heic_para_jpeg
+    from app.apps.erp.core.titulos import empreiteiro
+    try:
+        d = _json.loads(request.form.get("dados") or "{}")
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Dados ilegíveis."}), 400
+    arquivos = [heic_para_jpeg(f.read(), f.filename or "documento")
+                for f in request.files.getlist("arquivos")]
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = empreiteiro.gravar(s, d, arquivos, usuario)
+            from app.apps.erp.db.models.cadastros import Fornecedor
+            credor = _credor_para_lancamento(s, s.get(Fornecedor, r["fornecedor_id"]))
+            s.commit()
+            return jsonify({"ok": True, **r, "credor": credor})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/empreitas/contrato-ia", methods=["POST"])
 @login_obrigatorio
 @permissao("lancar")

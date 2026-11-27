@@ -284,8 +284,16 @@ def montar(s: Session, contrato_id: int, escolhas: dict[str, Any]) -> dict[str, 
              f"{_doc(emp.cnpj)}, com sede em {_endereco(emp)}, neste ato representada "
              f"por {rep.nome if rep else '(a definir)'}, {d['representante_cargo']}, "
              f"CPF {_doc(rep.cpf) if rep else '(a definir)'}.")
+    # O RG vem da leitura do documento no cadastro do contrato (o credor não
+    # tem coluna para ele — ver `empreiteiro.py`).
+    rg = (escolhas.get("contratado_rg") or "").strip()
+    rg_txt = ""
+    if pf and rg:
+        orgao = "/".join(x for x in ((escolhas.get("contratado_rg_orgao") or "").strip(),
+                                     (escolhas.get("contratado_rg_uf") or "").strip()) if x)
+        rg_txt = f", RG nº {rg}{' ' + orgao if orgao else ''}"
     L.append(f"CONTRATADO: {f.razao_social}, {'CPF' if pf else 'CNPJ'} nº "
-             f"{_doc(f.cnpj_cpf)}, {'residente' if pf else 'com sede'} em {_endereco(f)}"
+             f"{_doc(f.cnpj_cpf)}{rg_txt}, {'residente' if pf else 'com sede'} em {_endereco(f)}"
              f"{', telefone ' + f.telefone if f.telefone else ''}"
              f"{', e-mail ' + f.email if f.email else ''}.")
     L.append("As partes contratam, por este instrumento, a execução de serviço por "

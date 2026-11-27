@@ -205,3 +205,62 @@ def test_valor_por_extenso():
     assert ca.por_extenso("1") == "um real"
     assert ca.por_extenso("1000000") == "um milhão de reais"
     assert ca.por_extenso("150.35") == "cento e cinquenta reais e trinta e cinco centavos"
+
+
+# ---------------------------------------------------------------------------
+# O EMPREITEIRO PELO DOCUMENTO (27/11/2026): "utilizar um cartão CNPJ, uma
+# identidade, RG". A leitura (IA) é dublada; o que se testa é o que a tela
+# grava depois que a pessoa CONFERIU.
+# ---------------------------------------------------------------------------
+def test_o_empreiteiro_novo_nasce_do_que_foi_conferido_e_guarda_o_documento(cenario):
+    from app.apps.erp.core.documentos.armazenamento import listar
+    from app.apps.erp.core.titulos import empreiteiro
+    s = cenario["s"]
+    r = empreiteiro.gravar(s, {
+        "documento": "390.533.447-05", "nome": "João Azulejista", "cep": "50000-000",
+        "logradouro": "Rua das Flores", "numero": "12", "bairro": "Centro",
+        "municipio": "Recife", "uf": "pe", "telefone": "(81) 97777-6666"},
+        [(b"%PDF-1.4 rg", "rg.pdf")], cenario["cadastra"])
+    assert r["novo"]
+    dados = empreiteiro.do_cadastro(s, r["fornecedor_id"])
+    assert dados["tipo_pessoa"] == "PF" and dados["uf"] == "PE"
+    assert dados["telefone"] == "81977776666", "o WhatsApp fica só com os dígitos"
+    assert len(listar(s, "fornecedor", r["fornecedor_id"])) == 1, \
+        "o documento lido fica arquivado no cadastro do empreiteiro"
+
+
+def test_o_empreiteiro_que_ja_existe_e_completado_nao_duplicado(cenario):
+    from app.apps.erp.core.titulos import empreiteiro
+    s, f = cenario["s"], cenario["prestador"]
+    r = empreiteiro.gravar(s, {"documento": f.cnpj_cpf, "nome": f.razao_social,
+                               "logradouro": "Rua Nova", "telefone": "81955554444"},
+                           [], cenario["cadastra"])
+    assert not r["novo"] and r["fornecedor_id"] == f.id
+    assert set(r["mudou"]) >= {"logradouro", "telefone"}
+
+
+def test_documento_invalido_do_empreiteiro_e_recusado(cenario):
+    from app.apps.erp.core.titulos import empreiteiro
+    with pytest.raises(ErroValidacao, match="inválido"):
+        empreiteiro.gravar(cenario["s"], {"documento": "123", "nome": "X Y Z"}, [],
+                           cenario["cadastra"])
+
+
+def test_o_rg_lido_entra_na_qualificacao_do_contrato(cenario):
+    t = ca.montar(cenario["s"], cenario["c"].id, _escolhas(
+        cenario, contratado_rg="1234567", contratado_rg_orgao="SDS", contratado_rg_uf="PE"))["texto"]
+    assert "RG nº 1234567 SDS/PE" in t
+
+
+def test_a_leitura_do_rg_preenche_os_campos(cenario, monkeypatch):
+    from app.apps.erp.core import documentos_de_pessoa as svc_doc
+    from app.apps.erp.core.titulos import empreiteiro
+    monkeypatch.setattr(svc_doc, "ler_varios", lambda arquivos: {"campos": {
+        "nome": "JOSÉ PEDREIRO", "cpf": "529.982.247-25", "rg": "7654321",
+        "rg_orgao": "SDS", "rg_uf": "PE", "logradouro": "Rua A", "numero_endereco": "5",
+        "municipio": "Olinda", "uf": "PE"}})
+    r = empreiteiro.ler(cenario["s"], [(b"x", "rg.jpg")], "PF")
+    assert r["campos"]["documento"] == "52998224725" and r["campos"]["rg"] == "7654321"
+    assert r["campos"]["numero"] == "5"
+    assert r["ja_cadastrado"]["id"] == cenario["prestador"].id, \
+        "a tela avisa que esse CPF já está no cadastro"

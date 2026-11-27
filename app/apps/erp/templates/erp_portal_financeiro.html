@@ -199,6 +199,7 @@ async function carregar(){
     LANC = d.lancamentos; MEU = d.meu_cadastro;
     try { await ContratoGerado.carregar(); } catch(_) {}
     K.cg = ContratoGerado.novo();
+    K.emp = Empreiteiro.novo();
     el("n-meus").textContent = LANC.length;
     carregarContratos();
     desenhar();
@@ -809,7 +810,7 @@ function formContrato(){
       ${st ? `<div class="dica">${esc(st.explicacao)}</div>` : ""}</label>
     ${st ? `
     <label class="campo">${r("obra_id")}<select id="k-obra">${opcoesObra(K.obra_id)}</select></label>
-    ${credorHtml(K, "fornecedor", campoDe(campos, "fornecedor_id"), K)}
+    ${Empreiteiro.html(K.emp)}
     <label class="campo">${r("objeto")}<textarea id="k-objeto" placeholder="ex.: alvenaria de vedação do bloco A">${esc(K.objeto || "")}</textarea></label>
     ${visivel(campoDe(campos, "itens"), K) ? `<label class="campo">${r("itens")}</label>
       ${K.itens.map((it, i) => `<div class="linha"><div class="cab-linha">Serviço ${i + 1}
@@ -847,22 +848,25 @@ function formContrato(){
   document.querySelectorAll("[data-tira-k]").forEach(b => b.addEventListener("click", () => {
     K.itens.splice(+b.dataset.tiraK, 1); formContrato(); }));
   if (el("k-mais")) el("k-mais").addEventListener("click", () => { K.itens.push({}); formContrato(); });
-  ligarCredor(K, "fornecedor", formContrato);
+  Empreiteiro.ligar(K.emp, el("form"), formContrato, async q =>
+    (await api("/erp/portal/api/financeiro/credores?q=" + encodeURIComponent(q))).credores);
   if (!K.cg.gerar) ligarDocs(K, formContrato, () => {});
   ContratoGerado.ligar(K.cg, el("form"), formContrato);
   el("k-enviar").addEventListener("click", enviarContrato);
 }
 
 async function enviarContrato(){
-  const falta = ContratoGerado.faltando(K.cg);
+  const falta = Empreiteiro.faltando(K.emp) || ContratoGerado.faltando(K.cg);
   if (falta) return recado(esc(falta), "erro");
   if (!K.cg.gerar && !(K.docs || []).length)
     return recado("Anexe o contrato assinado — ou marque para o sistema gerar e colher as assinaturas.", "erro");
   const b = el("k-enviar"); b.disabled = true; b.textContent = "Cadastrando…";
   try {
+    // o empreiteiro primeiro: cria ou completa o cadastro com o que foi conferido
+    const credor = await Empreiteiro.salvar(K.emp);
     const r = await api("/erp/api/empreitas", json({
       modo: K.modo, obra_id: K.obra_id ? +K.obra_id : null,
-      fornecedor_id: K.fornecedor ? K.fornecedor.id : null, objeto: K.objeto || "",
+      fornecedor_id: credor.id, objeto: K.objeto || "",
       itens: K.modo === "MEDICAO" ? K.itens.map(i => ({descricao: i.descricao || "",
         unidade: i.unidade || "", quantidade: i.quantidade ? String(numero(i.quantidade)) : "",
         preco_unitario: i.preco_unitario ? String(numero(i.preco_unitario)) : ""})) : [],
@@ -871,7 +875,7 @@ async function enviarContrato(){
       data_inicio: K.data_inicio || null, data_fim: K.data_fim || null,
       retencao_garantia_pct: String(numero(K.retencao_garantia_pct || "0")),
       exige_foto: K.exige_foto === "1", observacoes: K.observacoes || "",
-      contrato_gerado: K.cg.gerar ? ContratoGerado.escolhas(K.cg) : null}));
+      contrato_gerado: K.cg.gerar ? ContratoGerado.escolhas(K.cg, K.emp) : null}));
     const falhas = [];
     for (const d of (K.docs || [])) {
       const fd = new FormData(); fd.append("arquivo", d.arquivo);
@@ -882,7 +886,7 @@ async function enviarContrato(){
     recado(`Contrato <b>${esc(r.contrato.numero)}</b> cadastrado (${moeda(r.contrato.valor)}) — esperando o aval.` +
       (K.cg.gerar ? " O texto do contrato já está pronto em <b>Contratos</b>; os links de assinatura saem no aval." : "") +
       (falhas.length ? `<br><b>Não subiram:</b> ${esc(falhas.join(", "))}.` : ""), falhas.length ? "aviso" : "ok");
-    K = {modo: "", itens: [{}], exige_foto: "1", docs: [], cg: ContratoGerado.novo()};
+    K = {modo: "", itens: [{}], exige_foto: "1", docs: [], cg: ContratoGerado.novo(), emp: Empreiteiro.novo()};
     await recarregarLista(); carregarContratos(); formContrato(); return;
   } catch(e){ recado(esc(e.message), "erro"); }
   b.disabled = false; b.textContent = "Cadastrar contrato";
