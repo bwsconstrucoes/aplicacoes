@@ -3951,6 +3951,7 @@ def tela_folha_aberta(folha_id: int):
         "analisesps_folha_aberta.html", aba="folha", subaba="importar",
         grupos=subtelas_agrupadas(), montado=montado, erro=erro,
         recado=request.args.get("aviso") or None,
+        agrupamentos=fg.AGRUPAMENTOS,
         folha=montado.get("folha"), folhas=fa.listar(teto=24),
         criticas=fa.criticas(folha_id) if montado else None,
         filiais=fa.totais_por_filial(folha_id) if montado else [],
@@ -3982,6 +3983,8 @@ def _filtros_da_folha() -> dict:
     filtros = {"busca": request.args.get("q") or ""}
     for chave in fg.CHAVES_DE_FILTRO:
         filtros[chave] = [v for v in request.args.getlist(chave) if v]
+    # O agrupamento da lista (27/11/2026) — não é filtro: só arruma as linhas.
+    filtros["agrupar"] = request.args.get("agrupar") or ""
     return filtros
 
 

@@ -279,6 +279,33 @@ def _relatorio_anual_resumo(ano: int) -> dict | None:
             "arquivo": dado.get("arquivo", ""), "pessoas": len(dado.get("pessoas") or {})}
 
 
+def cadastro_com_admissao(linhas, ate=None) -> dict:
+    """O de/para do Fortes (`colaboradores.de_para_do_fortes`) com a DATA DE ADMISSÃO
+    de quem está nesta folha (27/11/2026 — o rateio só usa o ponto desde a admissão).
+
+    ⚠️ A ADMISSÃO VEM DA CÓPIA COMPLETADA PELO ERP (`colaboradores.para_a_folha`):
+    quem saiu e voltou pelo ERP tem lá a admissão NOVA; a cópia da planilha pode ter
+    a antiga — e era justamente o caso que o dono viu. Custo: 2 consultas (a cópia e o
+    ERP), só com os CPFs da folha."""
+    from . import colaboradores
+    de_para = colaboradores.de_para_do_fortes()
+    ids = {colaboradores.normalizar_id_fortes(getattr(l, "id_fortes", None)
+                                              or (l.get("id_fortes") if isinstance(l, dict) else ""))
+           for l in (linhas or [])}
+    cpfs = sorted({de_para[i]["cpf"] for i in ids if i in de_para and de_para[i].get("cpf")})
+    try:
+        fichas = colaboradores.para_a_folha(cpfs, ate) if cpfs else {}
+    except Exception:  # noqa: BLE001 — sem a data, nada é cortado (como antes)
+        logger.exception("Folha: não consegui ler a admissão do cadastro")
+        fichas = {}
+    saida = dict(de_para)
+    for i in ids:
+        if i in de_para:
+            ficha = fichas.get(de_para[i].get("cpf")) or {}
+            saida[i] = dict(de_para[i], admissao=ficha.get("data_admissao"))
+    return saida
+
+
 def apropriar_a_folha(folha) -> dict:
     """A apropriação de uma folha inteira, com o que a alimentou.
 
@@ -308,7 +335,7 @@ def apropriar_a_folha(folha) -> dict:
         "apropriado": folha_apropriacao.apropriar(
             folha["linhas"], dias_por_cpf=dias_por_cpf,
             regras_por_cpf=regras_por_cpf, ajustes_por_cpf=ajustes,
-            cadastro_por_id=colaboradores.de_para_do_fortes(),
+            cadastro_por_id=cadastro_com_admissao(folha["linhas"], periodo[1] if periodo else None),
             periodo=periodo),
     }
 
@@ -636,6 +663,9 @@ def montar(folha_id: int, filtros=None) -> dict:
             "nome_contabilidade": pessoa.get("nome") or "",
             "cpf_bonito": folha_rateio.cpf_bonito(pessoa.get("cpf") or ""),
             "fase": ficha.get("fase") or "",
+            # A admissão que a conta usou (cadastro completado pelo ERP); sem ela, a
+            # da ficha (27/11/2026).
+            "admissao": pessoa.get("admissao") or ficha.get("data_admissao"),
             "cargo": ficha.get("cargo") or "",
             "link_pipefy": ficha.get("link_pipefy") or "",
             "motivo_cadastral": ficha.get("motivo") or "",
@@ -746,10 +776,14 @@ def montar(folha_id: int, filtros=None) -> dict:
              if str(x.get("obra") or "").upper() in obras_filtradas),
             Decimal("0.00"))
 
+    agrupar_por = str((filtros or {}).get("agrupar") or "")
+    agrupar_por = agrupar_por if agrupar_por in AGRUPAMENTOS else ""
     return {
         "folha": folha,
         "periodo": periodo,
         "pessoas": mostradas[:TETO_DA_LISTA],
+        "agrupar": agrupar_por,
+        "grupos": agrupar(mostradas[:TETO_DA_LISTA], agrupar_por),
         "quantas_mostradas": len(mostradas),
         "passou_do_teto": len(mostradas) > TETO_DA_LISTA,
         "subtotal_do_filtro": subtotal,
@@ -813,6 +847,64 @@ def montar(folha_id: int, filtros=None) -> dict:
 # Os blocos de caixinha da lateral (a busca é à parte).
 CHAVES_DE_FILTRO = ("conta", "obra", "obra_cadastro", "situacao", "fase",
                     "filial", "setor", "origem")
+
+
+# AGRUPAR A LISTA (27/11/2026). O dono: *"aparece aqui a folha e aparece em ordem
+# alfabética. Mas aí eu posso filtrar, tudo bem? Mas eu queria poder agrupar pela
+# obra da contabilidade, ou pela obra do ponto (…) ou obra do cadastro, ou conta de
+# pagamento."* Só arruma a lista: não muda filtro, total nem pagamento.
+AGRUPAMENTOS = {
+    # Os mesmos nomes dos filtros da lateral: a "obra da contabilidade" é a FILIAL
+    # do arquivo; o setor é outro nível, dentro dela.
+    "contabilidade": "Obra da contabilidade",
+    "setor": "Setor da contabilidade",
+    "ponto": "Obra do ponto",
+    "cadastro": "Obra do cadastro",
+    "conta": "Conta de pagamento",
+}
+
+
+def _chave_do_grupo(p: dict, por: str) -> str:
+    if por == "contabilidade":
+        return (p.get("filial") or "").strip()
+    if por == "setor":
+        return (p.get("setor_curto") or p.get("setor") or "").strip()
+    if por == "ponto":
+        # A obra com mais dias; quem trabalhou em várias aparece na principal
+        # (as outras continuam escritas na linha).
+        return (p.get("obra_principal") or "").strip()
+    if por == "cadastro":
+        return (p.get("obra_do_cadastro") or "").strip()
+    if por == "conta":
+        contas = [c for c in (p.get("contas") or []) if c]
+        if len(contas) > 1:
+            return "Mais de uma conta (" + ", ".join(contas) + ")"
+        return contas[0] if contas else ""
+    return ""
+
+
+SEM_GRUPO = {"contabilidade": "(sem obra da contabilidade)",
+             "setor": "(sem setor da contabilidade)", "ponto": "(sem obra no ponto)",
+             "cadastro": "(sem obra no cadastro)", "conta": "(sem conta de pagamento)"}
+
+
+def agrupar(pessoas: list, por: str) -> list:
+    """`[{"titulo", "pessoas", "quantas", "total"}]` — por ordem do título, o "sem"
+    por último; dentro do grupo, a ordem de sempre (alfabética). Sem agrupamento:
+    um grupo só, sem título."""
+    if por not in AGRUPAMENTOS:
+        return [{"titulo": "", "pessoas": pessoas, "quantas": len(pessoas),
+                 "total": sum((_dinheiro(p.get("valor")) for p in pessoas), Decimal("0.00"))}]
+    grupos: dict = {}
+    for p in pessoas:
+        grupos.setdefault(_chave_do_grupo(p, por), []).append(p)
+    saida = []
+    for chave in sorted(grupos, key=lambda c: (c == "", c.upper())):
+        lista = grupos[chave]
+        saida.append({"titulo": chave or SEM_GRUPO[por], "pessoas": lista,
+                      "quantas": len(lista),
+                      "total": sum((_dinheiro(p.get("valor")) for p in lista), Decimal("0.00"))})
+    return saida
 
 
 # O valor do filtro de setor que junta todos os setores que pedem atenção

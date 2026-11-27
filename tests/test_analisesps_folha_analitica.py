@@ -204,22 +204,26 @@ def test_botoes_do_analitico_sem_SUBLINHADO_e_com_nome_curto(app, monkeypatch):
     assert ".analitico-acoes .btn, .analitico-acoes a.btn { text-decoration: none; }" in css
 
 
-def test_cadastro_completo_AGRUPA_e_tira_o_que_nao_e_da_pessoa(monkeypatch):
+def test_cadastro_completo_AGRUPA_e_tira_o_que_nao_e_da_pessoa(sessao_real, monkeypatch):
+    """Desde 27/11/2026 a ficha completa vem do cadastro do ERP (a planilha foi
+    desativada), com os rótulos da tela do ERP; só os campos preenchidos."""
     from app.apps.analisesps import colaboradores as col
-    monkeypatch.setattr(col, "_linha_da_pessoa", lambda cpf: (
-        ["Nome Completo", "Data de Nascimento", "Nome da Mãe", "PIS", "Celular",
-         "Cargo [ ]", "Data de Saída", "Link do Card", "Anexo RG", "Senha", "Hobby"],
-        ["FULANO", "17/05/1990", "MARIA", "123", "(85) 9", "Pedreiro", "",
-         "https://x", "https://y", "abc", "futebol"]))
-    grupos = dict(col.ficha_completa("99713349334"))
-    assert ("Data de Nascimento", "17/05/1990") in grupos["Pessoais"]
-    assert ("Nome da Mãe", "MARIA") in grupos["Pessoais"]
-    assert ("PIS", "123") in grupos["Documentos"]
-    assert ("Cargo [ ]", "Pedreiro") in grupos["Contrato"]
-    assert ("Hobby", "futebol") in grupos["Outros"]
+    from app.apps.erp.core.cadastros import pessoas
+    from tests.test_analisesps_colaboradores_banco import _dp, _erp_na_sessao
+    _erp_na_sessao(monkeypatch, sessao_real)
+    pessoas.salvar(sessao_real, {
+        "cpf": "99713349334", "nome": "Fulano Da Ficha", "vinculo": "CTPS",
+        "nome_mae": "Maria", "rg": "1234567", "data_nascimento": "1990-05-17"},
+        _dp(sessao_real, "dp-ficha"))
+    sessao_real.flush()
+    grupos = dict(col.ficha_completa("997.133.493-34"))
+    assert ("Data de nascimento", "17/05/1990") in grupos["Pessoais"]
+    assert ("Nome da mãe", "Maria") in grupos["Pessoais"]
+    assert ("Nº da identidade", "1234567") in grupos["Documentos"]
     tudo = [c for campos in grupos.values() for c, _ in campos]
-    assert "Link do Card" not in tudo and "Anexo RG" not in tudo and "Senha" not in tudo
-    assert "Data de Saída" not in tudo, "vazio não aparece"
+    assert "Data de saída" not in tudo, "vazio não aparece"
+    with pytest.raises(col.ErroDoCadastro):
+        col.ficha_completa("52998224725")
 
 
 def test_a_rota_do_cadastro_completo(app, monkeypatch):
@@ -265,14 +269,21 @@ class _AbaDeUmaPessoa:
         return ["CPF", ""] + [self.linhas[k][n - 1] for k in sorted(self.linhas)]
 
 
-def test_atualizar_uma_LE_SO_A_LINHA_da_pessoa(banco_analisesps, monkeypatch):
+def test_atualizar_uma_TRAZ_DO_ERP_so_a_pessoa(banco_analisesps, sessao_real, monkeypatch):
+    """O "atualizar o cadastro desta pessoa" da folha: desde 27/11/2026, do ERP."""
     from app.apps.analisesps import colaboradores as col
-    aba = _AbaDeUmaPessoa()
-    monkeypatch.setattr(col, "_aba", lambda planilha, nome: aba)
+    from app.apps.erp.core.cadastros import pessoas
+    from tests.test_analisesps_colaboradores_banco import _dp, _erp_na_sessao
+    _erp_na_sessao(monkeypatch, sessao_real)
+    u = _dp(sessao_real, "dp-uma")
+    for cpf, nome in (("99713349334", "Gerlanio"), ("71460238001", "Outra Pessoa")):
+        pessoas.salvar(sessao_real, {"cpf": cpf, "nome": nome, "vinculo": "CTPS",
+                                     "data_nascimento": "1990-05-17"}, u)
+    sessao_real.flush()
     r = col.atualizar_uma("99713349334")
-    assert r["nome"] == "GERLANIO" and r["cargo"] == "Pedreiro"
-    assert aba.pedidas == [1, 4], "leu mais que o cabeçalho e a linha dela"
-    assert col.por_cpf("99713349334")["cargo"] == "Pedreiro"
+    assert r["nome"] == "Gerlanio"
+    assert col.por_cpf("99713349334")["nome"] == "Gerlanio"
+    assert col.por_cpf("71460238001") is None, "só a pessoa pedida"
     import datetime as dt
     assert col.nascimento_de("99713349334") == dt.date(1990, 5, 17)
 

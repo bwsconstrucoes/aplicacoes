@@ -211,6 +211,22 @@ def obra_com_mais_dias(dias_uteis) -> dict:
     return {"obra": melhor, "dias": contagem[melhor]}
 
 
+def _como_data(valor):
+    """A data de admissão como `date` — aceita date, "AAAA-MM-DD" e "DD/MM/AAAA";
+    None quando vazia ou ilegível (e aí nada é cortado)."""
+    if isinstance(valor, dt.datetime):
+        return valor.date()
+    if isinstance(valor, dt.date):
+        return valor
+    texto = str(valor or "").strip()[:10]
+    for formato in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return dt.datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _dias_uteis_do_ponto(dias, ini, fim) -> list:
     """Os dias COM obra dentro do período, já resolvidos. Ordenados por data."""
     saida = []
@@ -549,11 +565,33 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
             sem_cadastro.append(pendente)   # o MESMO objeto, não uma cópia
             continue
         cpf = cadastro["cpf"]
+        # ⚠️ SÓ O PONTO DESDE A ADMISSÃO (dono, 27/11/2026): *"ele trabalhou 3 meses
+        # no início do ano e foi admitido em outubro (…) só vai considerar para ele o
+        # ponto de outubro em diante. Obras anteriores a isso não considera, mesmo
+        # que tenha ponto (…) só importa o período que ele estava de carteira
+        # assinada"*. Vale em toda folha: o dia antes da admissão (outro vínculo,
+        # diarista, prestador) não reparte o salário desta. O mês inteiro do
+        # relatório anual (13º) conta a partir do MÊS da admissão. Sem a data no
+        # cadastro, nada é cortado.
+        admissao = _como_data(cadastro.get("admissao"))
+        uteis = _dias_uteis_do_ponto(dias_por_cpf.get(cpf), ini, fim)
+        antes = []
+        if admissao:
+            def _depois(d):
+                if d.get("mes_inteiro"):
+                    return (d["data"].year, d["data"].month) >= (admissao.year, admissao.month)
+                return d["data"] >= admissao
+            antes = [d for d in uteis if not _depois(d)]
+            uteis = [d for d in uteis if _depois(d)]
         pessoa = apropriar_pessoa(
-            linha,
-            _dias_uteis_do_ponto(dias_por_cpf.get(cpf), ini, fim),
-            regras_por_cpf.get(cpf), ajustes_por_cpf.get(cpf))
+            linha, uteis, regras_por_cpf.get(cpf), ajustes_por_cpf.get(cpf))
         pessoa["cpf"] = cpf
+        pessoa["admissao"] = admissao
+        pessoa["dias_antes_da_admissao"] = sum(1 for d in antes if d.get("obra"))
+        if pessoa["dias_antes_da_admissao"]:
+            pessoa.setdefault("criticas", []).append(
+                f"{pessoa['dias_antes_da_admissao']} registro(s) de ponto antes da admissão "
+                f"({admissao:%d/%m/%Y}) não entram no rateio.")
         pessoa["pendente_cadastro"] = False
         # O nome do CADASTRO manda no arquivo de pagamento: é o que o banco
         # confere contra o CPF. O da contabilidade fica para a conferência.

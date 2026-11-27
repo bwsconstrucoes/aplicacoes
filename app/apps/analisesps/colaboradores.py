@@ -821,8 +821,281 @@ def _tirar_ids_sem_ficha(sem_codigo: dict) -> list:
     return sorted(sem_codigo[c] or c for c in com_codigo)
 
 
+# ---------------------------------------------------------------------------
+# ⚑ A FONTE DO CADASTRO É O ERP (27/11/2026)
+#
+# O dono: *"a planilha já está hoje desatualizada. Então, o cadastro é o ERP (…) Se eu
+# já disse que a planilha já está desatualizada e desativada."* O mapa coluna a coluna
+# (planilha → ERP), conferido nos rótulos da tela do ERP e confirmado por ele, está em
+# `CADASTRO_PLANILHA_X_ERP.md`.
+#
+# A CÓPIA (`analisesps.colaborador`) CONTINUA, MAS É O ERP QUE A ENCHE. Todas as telas
+# de pagamento leem a cópia — e o ponto e o diário do ERP também. Encher a cópia com o
+# ERP troca a fonte de todos de uma vez, sem mexer em cada leitura (e sem mexer no
+# código das outras áreas). Grava só o que MUDOU (a maioria das rodadas não grava
+# nada) e TIRA quem não está mais no ERP — com trava: se o ERP devolver menos da
+# metade do que a cópia tem, nada é apagado (é falha de leitura, não demissão em
+# massa).
+#
+# A ETAPA vai para a coluna `fase`, com o rótulo do ERP ("Concluído", "Desligado",
+# "Cancelado"…): é ela que diz quem recebe (`situacao_no_pagamento`). A OBRA DO
+# CADASTRO vai para `obra_codigo` (o código) e `obra_cadastro` (o nome) — e não a obra
+# atual do ponto, que o ERP manda como `obra_codigo` desde 20/11/2026.
+# ---------------------------------------------------------------------------
+MINIMO_PARA_APAGAR = 0.5
+
+
+def _sim_nao(valor) -> str:
+    return "Sim" if valor else ""
+
+
+def _cnpj_bonito(d: str) -> str:
+    d = "".join(c for c in str(d or "") if c.isdigit())
+    return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}" if len(d) == 14 else d
+
+
+def _do_erp(cpfs=None) -> list:
+    """O cadastro inteiro do ERP no formato da cópia: `[registro]` com os `CAMPOS`,
+    `id_fortes`, `data_nascimento`, `valor_diaria` e `documentos` (dict). Duas
+    consultas ao ERP: o `para_folha` (o que a folha já lia dele) e os campos que ele
+    não manda (etapa, empresa de registro, PJ, gratificação mensal, documentos)."""
+    import datetime as _dt
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.apps.erp.core.cadastros import pessoas as erp_pessoas
+    from app.apps.erp.db.database import get_session
+    from app.apps.erp.db.models.cadastros import Colaborador, Empresa, Obra
+
+    from .formatos import moeda
+    from .folha_rateio import so_digitos
+
+    def data(v):
+        if isinstance(v, _dt.date):
+            return v
+        try:
+            return _dt.date.fromisoformat(str(v)[:10]) if v else None
+        except ValueError:
+            return None
+
+    def numero(v):
+        if v in (None, ""):
+            return None
+        return Decimal(str(v)).quantize(Decimal("0.01"))
+
+    with get_session() as s:
+        base = erp_pessoas.para_folha(s, so_ativos=False, cpfs=cpfs)
+        empresas = {e.id: (e.cnpj, e.razao_social) for e in s.scalars(select(Empresa)).all()}
+        obras = {o.id: (o.codigo, o.nome) for o in s.scalars(select(Obra)).all()}
+        extras = {}
+        for c in s.scalars(select(Colaborador)).all():
+            extras[so_digitos(c.cpf)] = c
+        # ⚠️ TUDO DENTRO DA SESSÃO: fora dela, o objeto do ERP não responde mais.
+        registros = []
+        for x in base:
+            cpf = so_digitos(x.get("cpf"))
+            if len(cpf) != 11:
+                continue
+            c = extras.get(cpf)
+            if c is None:
+                continue
+            codigo_obra, nome_obra = obras.get(c.obra_id or 0, ("", ""))
+            if c.empresa_id and c.empresa_id in empresas:
+                cnpj, razao = empresas[c.empresa_id]
+                empresa = f"{_cnpj_bonito(cnpj)} - {razao}"
+            else:
+                empresa = c.cnpj_admissao or ""        # importação antiga: só o CNPJ
+            etapa = erp_pessoas.ETAPA_ROTULOS.get(c.etapa or "", c.etapa or "")
+            documentos = {
+                "rg": c.rg or "", "rg_emissao": c.rg_emissao.isoformat() if c.rg_emissao else "",
+                "rg_orgao": c.rg_orgao or "", "rg_uf": c.rg_uf or "",
+                "nome_mae": c.nome_mae or "", "sexo": c.sexo or "",
+                "cep": c.cep or "", "logradouro": c.logradouro or "",
+                "numero": c.numero_endereco or "", "complemento": c.complemento or "",
+                "bairro": c.bairro or "", "cidade": c.municipio or "",
+                "estado": c.uf or "", "email": c.email or "",
+                # os de pagamento (as colunas BE, BG, BI, credor, Pix e BT da planilha)
+                "recebe_gratificacao": "Sim" if c.recebe_gratificacao else "Não",
+                "valor_mensal": moeda(c.valor_mes) if c.valor_mes is not None else "",
+                "recebe_via_sp": "Sim" if c.recebe_via_sp else "Não",
+                "nome_credor": c.razao_social_pj or "",
+                "pix_cnpj": c.cnpj_pj or "",
+                "pix_tipo": c.pix_tipo or "", "pix_chave": c.pix_chave or "",
+                "cnpj_admissao": empresa,
+            }
+            registros.append({
+                "cpf": cpf, "nome": x.get("nome") or "",
+                "card_pipefy": x.get("card_pipefy") or "",
+                "matricula": x.get("matricula") or "", "celular": x.get("celular") or "",
+                "cargo": x.get("cargo") or "", "tipo": x.get("tipo") or "",
+                "tipo_contrato": x.get("tipo_contrato") or "",
+                "fase": etapa, "convencao": x.get("convencao") or "",
+                "obra_cadastro": nome_obra or "", "obra_codigo": codigo_obra or "",
+                "observacao_auxilio": x.get("observacao_auxilio") or "",
+                "valor_alimentacao": numero(x.get("valor_alimentacao")),
+                "modo_alimentacao": x.get("modo_alimentacao") or "",
+                "valor_transporte": numero(x.get("valor_transporte")),
+                "modo_transporte": x.get("modo_transporte") or "",
+                "valor_gratificacao": numero(x.get("valor_gratificacao")),
+                "parcela_unica": x.get("parcela_unica") or "",
+                "paga_por_beevale": "",          # desativado (dono, 27/11/2026)
+                "aviso_previo": data(x.get("aviso_previo")),
+                "ultimo_dia": data(x.get("ultimo_dia")),
+                "data_saida": data(x.get("data_saida")),
+                "data_inicio": data(x.get("data_inicio")),
+                "data_admissao": data(x.get("data_admissao")),
+                "id_fortes": normalizar_id_fortes(x.get("id_fortes")) if x.get("id_fortes") else "",
+                "data_nascimento": data(x.get("data_nascimento")),
+                "valor_diaria": numero(x.get("valor_diaria")),
+                "documentos": documentos,
+            })
+    return registros
+
+
+_EXTRAS_DA_COPIA = ["id_fortes", "data_nascimento", "valor_diaria", "documentos"]
+
+
+def _comparavel(valor):
+    import datetime as _dt
+    from decimal import Decimal
+    if valor in (None, ""):
+        return ""
+    if isinstance(valor, (_dt.date, _dt.datetime)):
+        return valor.isoformat()[:10]
+    if isinstance(valor, (Decimal, float, int)) and not isinstance(valor, bool):
+        return f"{Decimal(str(valor)):.2f}"
+    if isinstance(valor, dict):
+        return json.dumps({k: v for k, v in sorted(valor.items()) if v not in (None, "")},
+                          ensure_ascii=False)
+    return " ".join(str(valor).split())
+
+
+def _gravar_do_erp(conn, registros: list) -> None:
+    """Insere ou atualiza, na cópia, os registros vindos do ERP (sem commit)."""
+    colunas = CAMPOS + _EXTRAS_DA_COPIA
+    conn.executemany(
+        "INSERT INTO analisesps.colaborador (" + ", ".join(colunas) + ") VALUES ("
+        + ", ".join("?" for _ in colunas) + ") ON CONFLICT (cpf) DO UPDATE SET "
+        + ", ".join(f"{c} = EXCLUDED.{c}" for c in colunas if c != "cpf")
+        + ", atualizado_em = now()",
+        [tuple(json.dumps(r.get(c) or {}, ensure_ascii=False) if c == "documentos"
+               else ("" if r.get(c) is None and c == "id_fortes" else r.get(c))
+               for c in colunas)
+         for r in registros])
+
+
+def atualizar_do_erp(anotar=None, registros=None) -> dict:
+    """Enche a cópia com o cadastro do ERP. Devolve `{"pessoas", "novas", "mudaram",
+    "tiradas", "com_id_fortes", "avisos"}`. `registros` é para o teste (sem ERP)."""
+    from .db import conexao, consultar
+
+    anotar = anotar or (lambda *a, **k: None)
+    if not _pronto():
+        raise ErroDoCadastro(
+            "tabela do cadastro não encontrada no banco. Clique em "
+            '"Aplicar atualizações do banco" em Configurações e repita a operação.')
+    anotar("Lendo o cadastro do ERP")
+    if registros is None:
+        try:
+            registros = _do_erp()
+        except Exception as e:  # noqa: BLE001
+            raise ErroDoCadastro(f"não foi possível ler o cadastro do ERP: {e}") from e
+    avisos = []
+    colunas = CAMPOS + _EXTRAS_DA_COPIA
+    atuais = {}
+    for linha in consultar("SELECT " + ", ".join(colunas) + " FROM analisesps.colaborador"):
+        r = dict(zip(colunas, linha))
+        try:
+            r["documentos"] = json.loads(r["documentos"]) if r.get("documentos") else {}
+        except ValueError:
+            r["documentos"] = {}
+        atuais[r["cpf"]] = r
+    novos, mudaram = [], []
+    for r in registros:
+        antes = atuais.get(r["cpf"])
+        if antes is None:
+            novos.append(r)
+        elif any(_comparavel(r.get(c)) != _comparavel(antes.get(c)) for c in colunas):
+            mudaram.append(r)
+    do_erp = {r["cpf"] for r in registros}
+    sobrando = [cpf for cpf in atuais if cpf not in do_erp]
+    pode_apagar = len(registros) >= MINIMO_PARA_APAGAR * len(atuais)
+    if sobrando and not pode_apagar:
+        avisos.append(
+            f"o ERP devolveu {len(registros)} pessoa(s) e a cópia tem {len(atuais)}: "
+            "por segurança, ninguém foi retirado. Confira se o cadastro do ERP está inteiro.")
+    # O CÓDIGO DO FORTES É ÚNICO: dois colaboradores com o mesmo código fariam o
+    # salário de um ir para a obra do outro. Fica com o primeiro, e avisa.
+    vistos, repetidos = {}, []
+    for r in registros:
+        codigo = r.get("id_fortes") or ""
+        if codigo:
+            if codigo in vistos:
+                repetidos.append(codigo)
+                r["id_fortes"] = ""
+            else:
+                vistos[codigo] = r["cpf"]
+    if repetidos:
+        avisos.append(
+            f"{len(repetidos)} código(s) do Fortes aparecem em mais de um colaborador no ERP "
+            f"({', '.join(sorted(set(repetidos))[:5])}). Considerado o primeiro; corrija no ERP.")
+    gravar = novos + mudaram
+    anotar("Gravando o cadastro do ERP", f"{len(gravar)} pessoa(s) com mudança")
+    with conexao() as conn:
+        if sobrando and pode_apagar:
+            for i in range(0, len(sobrando), 500):
+                bloco = sobrando[i:i + 500]
+                conn.execute("DELETE FROM analisesps.colaborador WHERE cpf IN ("
+                             + ", ".join("?" for _ in bloco) + ")", tuple(bloco))
+        if gravar:
+            _gravar_do_erp(conn, gravar)
+        from .sincronizacao import _meta_gravar
+        from .horario import agora
+        _meta_gravar(conn, "cadastro_fonte", "ERP")
+        _meta_gravar(conn, "cadastro_do_erp_em", agora().isoformat())
+        # O que a tela Colaboradores mostra ao lado do botão (`quando_atualizou`).
+        _meta_gravar(conn, "cadastro_atualizado_em", agora().isoformat())
+        _meta_gravar(conn, "cadastro_quantidade", str(len(registros)))
+        _meta_gravar(conn, "cadastro_avisos", " | ".join(avisos))
+        conn.commit()
+    logger.info("Cadastro do ERP: %d pessoa(s); %d nova(s), %d com mudança, %d retirada(s).",
+                len(registros), len(novos), len(mudaram),
+                len(sobrando) if pode_apagar else 0)
+    return {"pessoas": len(registros), "novas": len(novos), "mudaram": len(mudaram),
+            "tiradas": len(sobrando) if pode_apagar else 0,
+            "com_id_fortes": sum(1 for r in registros if r.get("id_fortes")),
+            "ignoradas": 0, "avisos": avisos}
+
+
+INTERVALO_DO_ERP = 15 * 60       # segundos entre duas atualizações automáticas
+
+
+def erp_precisa_atualizar(agora_=None) -> bool:
+    """A última atualização do cadastro pelo ERP tem mais de `INTERVALO_DO_ERP`?"""
+    import datetime as _dt
+    from .db import consultar_um
+    from .horario import agora
+    agora_ = agora_ or agora()
+    try:
+        linha = consultar_um("SELECT valor FROM analisesps.meta WHERE chave = 'cadastro_do_erp_em'")
+        ultima = _dt.datetime.fromisoformat(linha[0]) if linha and linha[0] else None
+    except Exception:  # noqa: BLE001
+        ultima = None
+    return not (ultima and (agora_ - ultima).total_seconds() < INTERVALO_DO_ERP)
+
+
 def atualizar(anotar=None) -> dict:
-    """Traz o cadastro da planilha para a tabela. É o que o botão chama.
+    """O botão "Atualizar cadastro" e a rotina automática. DESDE 27/11/2026 a fonte
+    é o ERP — ver `atualizar_do_erp`. A planilha está desativada (dono)."""
+    return atualizar_do_erp(anotar)
+
+
+def _atualizar_da_planilha(anotar=None) -> dict:
+    """⚠️ FORA DE USO DESDE 27/11/2026 (a planilha está desativada; a fonte é o ERP —
+    `atualizar_do_erp`). Fica escrito para consulta do que a carga antiga fazia.
+
+    Traz o cadastro da planilha para a tabela. Era o que o botão chamava.
 
     ATUALIZA, NÃO SUBSTITUI (`ON CONFLICT … DO UPDATE`): a tabela nunca fica
     vazia no meio do caminho, então uma leitura interrompida deixa o cadastro
@@ -1013,28 +1286,27 @@ def _linha_da_pessoa(cpf: str) -> tuple:
 
 
 def atualizar_uma(cpf: str) -> dict:
-    """Traz de novo da planilha o cadastro de UMA pessoa. Devolve o registro."""
+    """Traz de novo do ERP o cadastro de UMA pessoa (27/11/2026; antes, da planilha).
+    Devolve o registro."""
     from .db import conexao
+    from .folha_rateio import so_digitos
     if not _pronto():
         raise ErroDoCadastro('tabela do cadastro não encontrada no banco. Clique em '
                              '"Aplicar atualizações do banco" em Configurações.')
-    cabecalho, linha = _linha_da_pessoa(cpf)
-    posicoes, _avisos = _achar_colunas(cabecalho)
-    registro = _registro({i: v for i, v in enumerate(linha)}, posicoes)
-    if registro is None:
-        raise ErroDoCadastro("a linha deste colaborador na planilha não contém CPF válido.")
+    cpf = so_digitos(cpf)
+    try:
+        registros = [r for r in _do_erp(cpfs=[cpf]) if r["cpf"] == cpf]
+    except Exception as e:  # noqa: BLE001
+        raise ErroDoCadastro(f"não foi possível ler o cadastro do ERP: {e}") from e
+    if not registros:
+        raise ErroDoCadastro("colaborador não encontrado no cadastro do ERP (busca pelo CPF).")
     with conexao() as conn:
-        _gravar(conn, [registro])
-    if registro.get("_id_fortes_ficha"):
-        _gravar_ids_da_ficha({registro["cpf"]: registro["_id_fortes_ficha"]})
-    logger.info("Análise de SPs: cadastro de %s atualizado sozinho.", registro["cpf"])
-    return registro
+        _gravar_do_erp(conn, registros)
+        conn.commit()
+    logger.info("Análise de SPs: cadastro de %s atualizado do ERP.", cpf)
+    return registros[0]
 
 
-# O que NÃO entra na janela do cadastro completo: o que não é informação da
-# pessoa (links, anexos, carimbos de sistema) e o que é segredo. Por PEDAÇO do
-# nome da coluna, sem acento e sem caixa. O resto da ficha aparece — o dono
-# pediu "o detalhamento do resto das informações".
 FORA_DO_CADASTRO_COMPLETO = ("senha", "token", "link", "url", "http", "anexo",
                              "arquivo", "foto", "assinatura", "hash", "carimbo",
                              "timestamp", "id do card", "col")
@@ -1079,28 +1351,90 @@ def _tem_palavra(chave: str, palavra: str) -> bool:
 
 
 def ficha_completa(cpf: str) -> list:
-    """A ficha inteira da pessoa, agrupada: `[(grupo, [(campo, valor)])]`.
+    """A ficha inteira da pessoa, agrupada: `[(grupo, [(campo, valor)])]` — DO ERP
+    desde 27/11/2026 (antes, a linha da planilha), com os rótulos da tela de cadastro
+    do ERP. Só os campos preenchidos; nada de senha, link ou anexo."""
+    import datetime as _dt
+    from decimal import Decimal
 
-    Lida NA HORA da planilha e não guardada: o que este módulo não guarda não
-    vaza por ele (ver o topo do arquivo). Só os campos preenchidos."""
-    cabecalho, linha = _linha_da_pessoa(cpf)
-    grupos: dict = {nome: [] for nome, _ in GRUPOS_DO_CADASTRO}
-    grupos["Outros"] = []
-    for i, titulo in enumerate(cabecalho):
-        titulo = " ".join(str(titulo or "").split())
-        valor = " ".join(str(linha[i] if i < len(linha) else "").split())
-        if not titulo or not valor:
-            continue
-        chave = _sem_acento(titulo)
-        if any(_tem_palavra(chave, p) for p in FORA_DO_CADASTRO_COMPLETO):
-            continue
-        destino = "Outros"
-        for nome, palavras in GRUPOS_DO_CADASTRO:
-            if any(_tem_palavra(chave, p) for p in palavras):
-                destino = nome
-                break
-        grupos[destino].append((titulo, valor[:500]))
-    return [(nome, campos) for nome, campos in grupos.items() if campos]
+    from sqlalchemy import select
+
+    from app.apps.erp.core.cadastros import pessoas as erp_pessoas
+    from app.apps.erp.db.database import get_session
+    from app.apps.erp.db.models.cadastros import Cargo, Colaborador, Empresa, Obra
+
+    from .folha_rateio import cpf_bonito, so_digitos
+    from .formatos import moeda
+
+    def texto(v):
+        if v is None or v == "":
+            return ""
+        if isinstance(v, bool):
+            return "Sim" if v else "Não"
+        if isinstance(v, _dt.date):
+            return v.strftime("%d/%m/%Y")
+        if isinstance(v, Decimal):
+            return moeda(v)
+        return " ".join(str(v).split())[:500]
+
+    cpf = so_digitos(cpf)
+    try:
+        with get_session() as s:
+            c = s.scalars(select(Colaborador).where(Colaborador.cpf.in_(
+                [cpf, cpf_bonito(cpf)]))).first()
+            if c is None:
+                raise ErroDoCadastro("colaborador não encontrado no cadastro do ERP.")
+            cargo = s.get(Cargo, c.cargo_id).nome if c.cargo_id else ""
+            empresa = s.get(Empresa, c.empresa_id) if c.empresa_id else None
+            obra = s.get(Obra, c.obra_id) if c.obra_id else None
+            grupos = [
+                ("Pessoais", [("Nome", c.nome), ("Data de nascimento", c.data_nascimento),
+                              ("Sexo", c.sexo), ("Estado civil", c.estado_civil),
+                              ("Escolaridade", c.escolaridade), ("Nome da mãe", c.nome_mae),
+                              ("Nome do pai", c.nome_pai),
+                              ("Naturalidade", c.naturalidade), ("UF da naturalidade", c.naturalidade_uf)]),
+                ("Documentos", [("CPF", cpf_bonito(cpf)), ("Nº da identidade", c.rg),
+                                ("Órgão emissor", c.rg_orgao), ("UF do documento", c.rg_uf),
+                                ("Emissão do documento", c.rg_emissao), ("Nº do PIS/NIS", c.pis),
+                                ("Nº da CTPS", c.ctps_numero), ("Série da CTPS", c.ctps_serie),
+                                ("UF da CTPS", c.ctps_uf), ("Emissão da CTPS", c.ctps_emissao)]),
+                ("Contato e endereço", [("Telefone", c.telefone), ("E-mail", c.email),
+                                        ("CEP", c.cep), ("Logradouro", c.logradouro),
+                                        ("Número", c.numero_endereco), ("Complemento", c.complemento),
+                                        ("Bairro", c.bairro), ("Município", c.municipio), ("UF", c.uf)]),
+                ("Contrato", [("Etapa", erp_pessoas.ETAPA_ROTULOS.get(c.etapa or "", c.etapa)),
+                              ("Situação", c.situacao), ("Cargo", cargo), ("Vínculo", c.vinculo),
+                              ("Tipo de contrato", erp_pessoas.TIPO_CONTRATO_ROTULOS.get(
+                                  c.tipo_contrato or "", c.tipo_contrato)),
+                              ("Empresa de registro", (f"{empresa.razao_social} — {empresa.cnpj}"
+                                                       if empresa else c.cnpj_admissao)),
+                              ("Obra de cadastro", (f"{obra.codigo} — {obra.nome}" if obra else "")),
+                              ("Matrícula", c.matricula), ("ID Fortes", c.id_fortes),
+                              ("Data de início", c.data_inicio), ("Data de admissão", c.admissao),
+                              ("Data do aviso prévio", c.aviso_previo),
+                              ("Último dia trabalhado", c.ultimo_dia), ("Data de saída", c.demissao),
+                              ("Salário", c.salario), ("Valor da diária", c.valor_diaria),
+                              ("Valor do mês", c.valor_mes)]),
+                ("Pagamento e auxílios", [
+                    ("Categoria do auxílio-alimentação", c.categoria_alimentacao),
+                    ("Valor do auxílio-alimentação", c.aux_alimentacao),
+                    ("Categoria do auxílio-transporte", c.categoria_transporte),
+                    ("Valor do auxílio-transporte", c.aux_transporte),
+                    ("Recebe gratificação mensal?", c.recebe_gratificacao),
+                    ("Valor da gratificação", c.valor_gratificacao),
+                    ("Recebe em parcela única?", c.parcela_unica),
+                    ("Recebe via SP?", c.recebe_via_sp),
+                    ("Razão social (PJ)", c.razao_social_pj), ("CNPJ (PJ)", c.cnpj_pj),
+                    ("Tipo da chave Pix", c.pix_tipo), ("Chave Pix", c.pix_chave),
+                    ("Banco", c.banco), ("Agência", c.agencia), ("Conta", c.conta),
+                    ("Observação da ajuda de custo", c.observacao_auxilio)]),
+            ]
+            return [(nome, [(rot, texto(v)) for rot, v in campos if texto(v)])
+                    for nome, campos in grupos if any(texto(v) for _r, v in campos)]
+    except ErroDoCadastro:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise ErroDoCadastro(f"não foi possível ler o cadastro do ERP: {e}") from e
 
 
 # ---------------------------------------------------------------------------
@@ -1374,23 +1708,20 @@ def por_que_nao_casou(id_fortes: str, nome: str) -> dict:
                        "próxima abertura.")
     elif pelo_nome and all(not p["id_fortes"] for p in pelo_nome):
         diagnostico = (
-            "o colaborador CONSTA no cadastro, mas SEM o código do Fortes gravado. Se "
-            "a ficha na planilha contém o código na coluna \"ID Fortes\", o "
-            "cadastro foi atualizado antes de o sistema passar a ler essa coluna "
-            "(30/09/2026) — clique em \"Atualizar cadastro\" em Colaboradores. Se "
-            "a pendência persistir, a coluna está vazia na planilha.")
+            "o colaborador CONSTA no cadastro, mas SEM o código do Fortes. Preencha o "
+            "campo \"ID Fortes\" no cadastro dele no ERP; o sistema traz sozinho em até "
+            "15 minutos, ou na hora pelo botão \"Atualizar cadastro\" em Colaboradores.")
     elif pelo_nome:
         outros = ", ".join(sorted({p["id_fortes"] for p in pelo_nome if p["id_fortes"]}))
         diagnostico = (
             f"o colaborador consta no cadastro com OUTRO código do Fortes ({outros}), e "
             f"a folha da contabilidade informa {codigo}. Há divergência: "
-            "verifique a ficha na planilha e o arquivo do Fortes.")
+            "confira o \"ID Fortes\" no cadastro do ERP e o arquivo do Fortes.")
     else:
         diagnostico = (
-            "nenhum colaborador com este nome no cadastro gravado. Possíveis causas: a "
-            "ficha não contém CPF válido de 11 dígitos (sem CPF a linha é ignorada na "
-            "importação), ou o cadastro não foi atualizado após a admissão — clique em "
-            "\"Atualizar cadastro\" em Colaboradores.")
+            "nenhum colaborador com este nome no cadastro. Possíveis causas: a pessoa "
+            "não está cadastrada no ERP, ou foi cadastrada há menos de 15 minutos — "
+            "clique em \"Atualizar cadastro\" em Colaboradores para trazer na hora.")
     return {"codigo": codigo, "nome": nome, "pelo_codigo": pelo_codigo,
             "pelo_nome": pelo_nome, "atualizado": atualizado,
             "diagnostico": diagnostico}
@@ -1474,6 +1805,10 @@ FASE_AFASTADO = "colaboradores afastados"
 # exige.
 PEDACO_DESLIGADO = "desligad"
 PEDACO_AFASTADO = "afastad"
+# CANCELADO (27/11/2026): a etapa "Cancelado" do cadastro do ERP. O dono: *"Desligado
+# e cancelado não paga, afastado não recebe alimentação nem transporte e as demais
+# fases sim."* Não existia no Pipefy.
+PEDACO_CANCELADO = "cancelad"
 
 
 def fase_diz_desligado(fase) -> bool:
@@ -1485,6 +1820,11 @@ def fase_diz_desligado(fase) -> bool:
     deixei o outro. Se divergirem, a tela esconde alguém que ela mesma diria estar
     ativo, ou pior, mostra como ativo quem ela esconde do pagamento."""
     return PEDACO_DESLIGADO in " ".join(str(fase or "").split()).lower()
+
+
+def fase_diz_cancelado(fase) -> bool:
+    """O cadastro foi CANCELADO no ERP (etapa "Cancelado")? Não recebe nada."""
+    return PEDACO_CANCELADO in " ".join(str(fase or "").split()).lower()
 
 
 def fase_diz_afastado(fase) -> bool:
@@ -1520,10 +1860,10 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
 
     desacordo = ""
     if fase_diz_desligado(fase) and not saida:
-        desacordo = ("a fase no Pipefy indica desligado, mas o cadastro não possui "
+        desacordo = ("a etapa do cadastro indica desligado, mas não há "
                      "data de saída — verifique antes de efetuar o pagamento.")
     elif saida and fase and not fase_diz_desligado(fase):
-        desacordo = (f"o cadastro possui data de saída, mas a fase no Pipefy "
+        desacordo = (f"o cadastro possui data de saída, mas a etapa "
                      f"ainda indica \"{ficha.get('fase')}\".")
     elif ultimo and not saida and ultimo <= ate:
         desacordo = ("o último dia trabalhado já passou e não há data de saída "
@@ -1543,8 +1883,13 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
     if fase_diz_desligado(fase):
         return resposta(
             SITUACAO_SAIU,
-            "a fase no Pipefy indica desligado. Não pague por este sistema "
+            "a etapa do cadastro indica desligado. Não pague por este sistema "
             "até a confirmação.",
+            True)
+    if fase_diz_cancelado(fase):
+        return resposta(
+            SITUACAO_SAIU,
+            "o cadastro está cancelado no ERP. Não pague por este sistema.",
             True)
 
     # 2. ESTÁ SAINDO — pode haver valor devido, mas não o período inteiro, e
@@ -1755,7 +2100,8 @@ def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200,
         condicoes.append("data_saida IS NULL")
         condicoes.append("lower(coalesce(fase, '')) NOT LIKE ?")
         condicoes.append("lower(coalesce(fase, '')) NOT LIKE ?")
-        params += [f"%{PEDACO_DESLIGADO}%", f"%{PEDACO_AFASTADO}%"]
+        condicoes.append("lower(coalesce(fase, '')) NOT LIKE ?")
+        params += [f"%{PEDACO_DESLIGADO}%", f"%{PEDACO_AFASTADO}%", f"%{PEDACO_CANCELADO}%"]
     if so_saindo:
         # Qualquer sinal de saída. A conta fina de quem está saindo × quem já
         # saiu é de `situacao_no_pagamento`; aqui só se traz quem tem sinal.

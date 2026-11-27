@@ -802,6 +802,26 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 27/11/2026 — O cadastro de colaboradores passa a vir do ERP; a planilha "Registro de Colaboradores" sai (atravessa Análise de SPs, ponto e ERP)
+
+O dono: *"a planilha já está hoje desatualizada (…) o cadastro é o ERP (…) Se eu já
+disse que a planilha já está desatualizada e desativada."*
+
+- A cópia `analisesps.colaborador` CONTINUA, mas quem a enche é o ERP
+  (`analisesps/colaboradores.py › atualizar_do_erp`), de 15 em 15 minutos pela tela
+  aberta (`tarefas.cadastro_se_preciso`, na pista "cadastro") e pelo botão "Atualizar
+  cadastro". Grava só o que mudou; tira quem saiu do ERP (com trava de 50%).
+- **Quem lê a cópia passa a ver o ERP sem mexer no código:** as telas de pagamento do
+  Análise de SPs, o **ponto** (`ponto/core/registro.py` e `fechamento.py` — nome,
+  celular e o ID Fortes) e o **ERP** (`core/diario.py` — cargo; `conferencia_folha.py`).
+  A conferência da folha do ERP (`conferencia_folha.py`), que compara ERP × "a cópia da
+  planilha", passa a comparar o ERP com ele mesmo — o chat do ERP deve olhar.
+- O mapa coluna a coluna (planilha → campo do ERP), confirmado pelo dono, e a regra da
+  etapa (Desligado e Cancelado não recebem; Afastado sem alimentação e transporte):
+  `app/apps/analisesps/CADASTRO_PLANILHA_X_ERP.md`.
+- A coluna `fase` da cópia guarda a ETAPA do ERP ("Concluído", "Desligado"…); a
+  `obra_codigo`, a OBRA DE CADASTRO (não a obra atual do ponto).
+
 ### 27/11/2026 — AUTORIZAÇÃO: o acesso vem SÓ do perfil cadastrado
 
 ⚠️ **A mudança mais larga do dia, e ela tranca gente:** o **cargo deixou de

@@ -12275,6 +12275,107 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 290 — O cadastro de colaboradores passa a vir do ERP; a planilha sai (27/11/2026)
+
+- O dono: *"a planilha já está hoje desatualizada (…) o cadastro é o ERP"* — e, quando
+  eu propus conferir planilha × ERP antes da troca: *"Eu não entendi ainda o que é que
+  você está falando de planilha. Se eu já disse que a planilha já está desatualizada e
+  desativada."* (A conferência saiu do plano; a troca é direta.)
+- **Como:** a cópia `analisesps.colaborador` continua sendo o que as telas leem, mas é o
+  ERP que a enche — `colaboradores.atualizar_do_erp` (lê o `para_folha` do ERP + os
+  campos que ele não manda, numa consulta; monta cada pessoa no formato da cópia pelo
+  mapa de `CADASTRO_PLANILHA_X_ERP.md`; grava só o que mudou; tira quem saiu do ERP,
+  com trava: se o ERP devolver menos de 50% da cópia, ninguém sai). O botão "Atualizar
+  cadastro" e a rotina automática (`tarefas.cadastro_se_preciso`, pela tela aberta, de 15
+  em 15 min, na pista "cadastro" — o "Atualizar" do topo continua só com as SPs,
+  decisão de 31/10) chamam isso. O leitor da planilha ficou como
+  `_atualizar_da_planilha`, sem uso.
+- **Os campos:** `fase` = ETAPA do ERP ("Concluído", "Desligado", "Cancelado"…);
+  `obra_codigo`/`obra_cadastro` = a OBRA DE CADASTRO (código e nome — não a obra do
+  ponto); `documentos` com RG, emissão, órgão, UF, mãe, sexo, endereço, e-mail e os de
+  pagamento (recebe gratificação mensal, valor do mês "1.234,56", recebe via SP, nome
+  credor = razão social PJ, Pix CNPJ = CNPJ PJ, Pix, e o CNPJ da EMPRESA DE REGISTRO como
+  "CNPJ - razão social"); ID Fortes único (o repetido fica com o primeiro, e avisa).
+- **Cancelado** (`fase_diz_cancelado`): não recebe nada (como desligado) e sai da lista
+  de ativos. Textos de "fase no Pipefy" viraram "etapa do cadastro".
+- **Também do ERP agora:** o Cadastro BeeVale (`beevale.buscar_por_cpf`, lia a aba
+  "Dados Documentos" inteira), a ficha completa da pessoa na folha
+  (`colaboradores.ficha_completa`, com os rótulos do ERP) e o "atualizar o cadastro
+  desta pessoa" (`atualizar_uma`). Avisos de "coluna BU"/"planilha" → "ID Fortes no
+  cadastro do ERP".
+- **Alcança outras áreas sem mexer no código delas:** o ponto (nome, celular, ID Fortes
+  no fechamento) e o ERP (diário: cargo; `conferencia_folha`) leem a mesma cópia —
+  registrado em `CONTEXTO.md` §9.
+- Não verificado: a carga real (quantas pessoas, quantas sem ID Fortes no ERP) — a tela
+  Colaboradores mostra depois da primeira rodada.
+- Teste pré-existente que falha também sem esta leva (área do ERP, fila de tarefas):
+  `test_tarefas_banco.py::test_quem_enxerga_o_sistema_inteiro_ve_a_fila_toda`.
+- Sem migração. Testes novos em `test_analisesps_colaboradores_banco.py` e
+  `test_analisesps_folha_analitica.py` (ERP de verdade no banco de teste).
+
+#### Leva 289 — O mapa do cadastro: as colunas da planilha que o pagamento usa × o ERP (27/11/2026)
+
+- O dono: *"a planilha já está hoje desatualizada. Então, o cadastro é o ERP (…) quais
+  colunas da planilha são observadas para a montagem das telas de pagamento (…) e quais
+  campos no ERP são correspondentes (…) para definitivamente deixar de usar a planilha."*
+- Escrito em `CADASTRO_PLANILHA_X_ERP.md` (lido no código): coluna a coluna, quem usa e
+  o campo do ERP. Achados: o ERP TEM quase tudo; o `para_folha` (o que ele entrega à
+  folha) não entrega `cnpj_admissao` (separa as empresas), `recebe_gratificacao`,
+  `valor_mensal` (sai como `valor_mes`), os documentos da planilha BeeVale/SomaPay e o
+  par "Nome Credor"/"Pix CNPJ" (razão social/CNPJ PJ?). O `obra_codigo` do ERP é a obra
+  do PONTO desde 20/11 — a "obra do cadastro" da folha mudaria de sentido.
+- Nada mudou no sistema. **Pendente (dono):** as confirmações da seção "O que falta" do
+  documento, e o "pode" para a conferência cópia × ERP e a troca.
+
+#### Leva 288 — Folha: o rateio só usa o ponto DESDE A ADMISSÃO; a coluna "Admissão" na lista (27/11/2026)
+
+- O dono, olhando o 13º: *"ele trabalhou na empresa no início do ano (…) saiu e depois
+  voltou. Só que ele voltou só em outubro. Aí (…) o rateio considerou esses meses que ele
+  nem estava trabalhando aqui (…) foi desconsiderado a data de admissão (…) só vai
+  considerar para ele o ponto de outubro em diante. Obras anteriores a isso não considera,
+  mesmo que tenha ponto (…) ele trabalhou um período como diarista, prestador de serviço,
+  mas só importa o período que ele estava de carteira assinada."* E: a data de admissão
+  na lista, *"para qualquer tipo de folha"*.
+- `folha_apropriacao.apropriar`: o cadastro de cada pessoa pode trazer `admissao`; o dia
+  de ponto ANTES dela sai do rateio (o mês inteiro do relatório anual conta a partir do
+  MÊS da admissão). **Vale em toda folha** (quinzena, fim de mês, 13º) — o dia de outro
+  vínculo não reparte o salário desta. Sem a data no cadastro, nada é cortado. A pessoa
+  ganha `dias_antes_da_admissao` e uma crítica ("N registro(s) de ponto antes da
+  admissão (dd/mm/aaaa) não entram no rateio").
+- `folha_gestao.cadastro_com_admissao`: a admissão vem de `colaboradores.para_a_folha` —
+  a cópia da planilha COMPLETADA PELO ERP, onde quem voltou (readmissão pelo ERP) tem a
+  admissão NOVA. Só os CPFs da folha: +2 consultas por abertura (cópia e ERP). Usado na
+  tela, no fechamento e na complementar (a mesma conta).
+- A lista da folha ganhou a coluna **Admissão** (depois de "Contabilidade"), com "N antes,
+  fora" quando há ponto anterior cortado.
+- Risco: admissão ERRADA no cadastro (data no futuro, ou só a primeira admissão de quem
+  voltou fora do ERP) tira dias que deviam contar — a pessoa aparece "sem obra" ou com o
+  aviso, à vista.
+- Sem migração. Testes em `test_analisesps_folha_decimo.py` e `..._folha_agrupar.py`.
+- **Publicado em 27/11/2026, com a leva 287** (agrupar) — sem migração.
+
+#### Leva 287 — Folha: agrupar a lista por obra da contabilidade, setor, obra do ponto, obra do cadastro ou conta (27/11/2026)
+
+- O dono: *"aparece aqui a folha e aparece em ordem alfabética. Mas aí eu posso filtrar,
+  tudo bem? Mas eu queria poder agrupar pela obra da contabilidade, ou pela obra do ponto
+  (…) ou obra do cadastro, ou conta de pagamento."*
+- Na tela da folha (`analisesps_folha_aberta.html`), acima da lista: "Agrupar por" — nada
+  (ordem alfabética), Obra da contabilidade (a FILIAL do arquivo — o mesmo nome do filtro
+  da lateral), Setor da contabilidade (acrescentado: é o outro nível do mesmo arquivo),
+  Obra do ponto, Obra do cadastro, Conta de pagamento. Cada grupo tem cabeçalho com
+  quantas pessoas e o total; clicar recolhe/abre; "recolher todos".
+- `folha_gestao.agrupar`: ordem do título, o "(sem …)" por último; dentro, a ordem de
+  sempre. **Obra do ponto = a obra com mais dias**: quem trabalhou em várias aparece na
+  principal, com o valor INTEIRO dela no total do grupo (as outras obras seguem escritas
+  na linha). **Conta**: quem recebe por mais de uma conta fica num grupo "Mais de uma
+  conta (…)". Só arruma a lista: filtro, totais, seleção e pagamento não mudam; o
+  agrupamento soma-se aos filtros (`?agrupar=`).
+- Não mudou: o relatório Excel/PDF da tela continua com os agrupamentos dele.
+- De quebra: `test_a_folha_que_fecha_nao_grita` dublava a lista de folhas mas ia ao banco
+  para as pendências — com outro teste de banco antes, no mesmo processo, enxergava uma
+  folha que não era dele. Passou a dublar as pendências também.
+- Sem migração. Testes: `test_analisesps_folha_agrupar.py`.
+
 #### Leva 286 — 13º: o relatório anual de presenças do Mobponto cobre os meses sem ponto; cada mês vale o mesmo (avos) (27/11/2026)
 
 - A folha do 13º dizia *"Sem ponto carregado em 01/2026 … 08/2026"*: depois do pedido de
@@ -12310,6 +12411,8 @@ somente Solicitações de uma conta especifica"*.
   depois: *"vamos fazer pela planilha, pode adaptar"* — a reversão foi desfeita.
 - Se o Mobponto reabrir a API depois, os meses carregados passam a valer pelo ponto dia a
   dia (mês com carga não usa o relatório) — nada a desfazer.
+- **Publicado em 27/11/2026, com a leva 285** (sem migração). Falta o dono enviar o
+  relatório anual pela tela do 13º e conferir a divisão por obra.
 
 #### Leva 285 — Tela do Ponto: a frase "credenciais recusadas" só quando a falha é a credencial (27/11/2026)
 

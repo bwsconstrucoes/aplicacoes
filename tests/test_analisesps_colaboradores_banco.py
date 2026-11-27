@@ -352,7 +352,7 @@ def test_a_carga_inteira_traz_o_cadastro_para_o_banco(banco_cadastro, monkeypatc
     )
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
 
     assert resultado["pessoas"] == 2
     assert resultado["ignoradas"] == 0
@@ -385,7 +385,7 @@ def test_a_carga_NAO_pede_a_planilha_inteira(banco_cadastro, monkeypatch):
 
     aba = _aba_com({I_CPF: "99713349334", I_NOME: "ANA"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
-    col.atualizar()
+    col._atualizar_da_planilha()
 
     faixas = aba.faixas_pedidas[0]
     assert len(faixas) > 1, "pediu tudo de uma vez em vez de pedir faixas"
@@ -409,7 +409,7 @@ def test_a_carga_começa_na_linha_3_e_nao_cria_pessoa_de_numero(
 
     aba = _aba_com({I_CPF: "99713349334", I_NOME: "ANA"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
-    col.atualizar()
+    col._atualizar_da_planilha()
 
     assert [c["nome"] for c in col.buscar()] == ["ANA"]
     for faixa in aba.faixas_pedidas[0]:
@@ -428,7 +428,7 @@ def test_linha_SEM_CPF_e_contada_e_avisada(banco_cadastro, monkeypatch):
         {I_CPF: "123", I_NOME: "CPF PELA METADE"},
     )
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
 
     assert resultado["pessoas"] == 1
     assert resultado["ignoradas"] == 2
@@ -442,13 +442,13 @@ def test_a_carga_atualiza_o_que_mudou_e_mantem_o_resto(banco_cadastro, monkeypat
 
     monkeypatch.setattr(col, "_aba", abas_falsas(_aba_com(
         {I_CPF: "99713349334", I_NOME: "ANA", I_VAL_ALI: "330,00"})))
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert col.por_cpf("99713349334")["valor_alimentacao"] == Decimal("330.00")
 
     # Ele corrige no card; a automação leva para a planilha; ele aperta o botão.
     monkeypatch.setattr(col, "_aba", abas_falsas(_aba_com(
         {I_CPF: "99713349334", I_NOME: "ANA", I_VAL_ALI: "412,50"})))
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert col.por_cpf("99713349334")["valor_alimentacao"] == Decimal("412.50")
     assert len(col.buscar()) == 1
 
@@ -466,7 +466,7 @@ def test_coluna_de_auxilio_com_OUTRO_NOME_vira_aviso_na_carga(
                                           I_VAL_ALI: "330,00"}})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
     assert resultado["pessoas"] == 1
     assert any("Valor Auxílio Alimenta" in a for a in resultado["avisos"])
     # E o valor NÃO foi gravado errado: ficou em branco, com o aviso.
@@ -483,7 +483,7 @@ def test_aba_SEM_a_coluna_do_CPF_recusa_com_o_cabecalho_de_verdade(
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
 
     with pytest.raises(col.ErroDoCadastro) as erro:
-        col.atualizar()
+        col._atualizar_da_planilha()
     assert "CPF" in str(erro.value)
     assert "Outra Coisa" in str(erro.value), "o recado tem de dizer o cabeçalho"
 
@@ -493,7 +493,7 @@ def test_a_carga_guarda_a_hora_e_a_contagem_para_a_tela(banco_cadastro, monkeypa
 
     monkeypatch.setattr(col, "_aba", abas_falsas(_aba_com(
         {I_CPF: "99713349334", I_NOME: "ANA"})))
-    col.atualizar()
+    col._atualizar_da_planilha()
 
     estado = col.quando_atualizou()
     assert estado["pessoas"] == 1
@@ -512,7 +512,7 @@ def test_planilha_de_muitas_linhas_e_lida_em_MAIS_DE_UM_bloco(
                      for n in range(8)])
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
     assert resultado["pessoas"] == 8
     assert len(aba.faixas_pedidas) >= 3, "leu tudo de uma vez"
 
@@ -665,11 +665,11 @@ def test_a_COLUNA_BU_e_a_UNICA_fonte_do_codigo(banco_cadastro, monkeypatch):
     aba = _aba_com_id({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"},
                       {I_CPF: "035.134.413-63", I_NOME: "LUELIA", I_ID: "000387"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
-    col.atualizar()
+    col._atualizar_da_planilha()
     col.atualizar_ids_fortes()          # código antigo para GERLANIO (000013)
     assert col.por_cpf("99713349334")["id_fortes"] == "000013"
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
     assert col.por_cpf("99713349334")["id_fortes"] == "", "sem BU, sem código"
     assert col.por_cpf("03513441363")["id_fortes"] == "000387"
     assert any("GERLANIO" in a and "coluna BU" in a for a in resultado["avisos"])
@@ -683,9 +683,9 @@ def test_coluna_BU_que_veio_VAZIA_para_todos_nao_apaga_ninguem(banco_cadastro,
 
     aba = _aba_com({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
-    col.atualizar()
+    col._atualizar_da_planilha()
     col.atualizar_ids_fortes()
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert col.por_cpf("99713349334")["id_fortes"] == "000013"
 
 def test_a_aba_ID_FORTES_NAO_e_mais_lida(banco_cadastro, monkeypatch):
@@ -703,7 +703,7 @@ def test_a_aba_ID_FORTES_NAO_e_mais_lida(banco_cadastro, monkeypatch):
         return falsa(planilha, nome, *a, **k)
     monkeypatch.setattr(col, "_aba", abrir)
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
     assert col.ABA_ID_FORTES not in pedidas, "a aba não é aberta"
     assert resultado["com_id_fortes"] == 0
     assert not any("discordam" in a for a in resultado["avisos"])
@@ -804,7 +804,7 @@ def test_a_aba_do_de_para_fora_do_ar_nao_derruba_a_carga(banco_cadastro, monkeyp
         return _aba_com({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"})
 
     monkeypatch.setattr(col, "_aba", explode)
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
     assert resultado["pessoas"] == 1, "o cadastro entrou"
     assert not any("ID Fortes" in a for a in resultado["avisos"])
 
@@ -893,7 +893,7 @@ def test_o_codigo_da_FICHA_casa_a_pessoa_mesmo_fora_da_aba_separada(banco_cadast
     aba = _aba_com_id({I_CPF: "127.348.894-63", I_NOME: "ABRAAO", I_ID: "004031"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
 
     assert col.de_para_do_fortes()["004031"]["cpf"] == "12734889463"
     assert resultado["com_id_fortes"] >= 1
@@ -904,7 +904,7 @@ def test_o_codigo_guardado_como_NUMERO_ganha_os_zeros_da_frente(banco_cadastro, 
     from app.apps.analisesps import colaboradores as col
     aba = _aba_com_id({I_CPF: "127.348.894-63", I_NOME: "ABRAAO", I_ID: "4031"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert "004031" in col.de_para_do_fortes()
 
 
@@ -915,7 +915,7 @@ def test_so_a_FICHA_da_o_codigo_e_a_aba_separada_e_ignorada(banco_cadastro, monk
         {I_CPF: "035.134.413-63", I_NOME: "LUELIA"})                    # sem código na ficha
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))   # a aba separada diz 13 e 387
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
 
     de_para = col.de_para_do_fortes()
     assert de_para["000099"]["cpf"] == "99713349334", "vale a ficha"
@@ -936,7 +936,7 @@ def test_o_codigo_vem_da_COLUNA_BU_mesmo_sem_o_nome_no_cabecalho(banco_cadastro,
               3: {I_CPF: "997.133.493-34", I_NOME: "GERLANIO",
                   col.POSICAO_DO_ID_FORTES: "4031"}}
     monkeypatch.setattr(col, "_aba", abas_falsas(AbaFalsa(cabecalho, linhas)))
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert col.por_cpf("99713349334")["id_fortes"] == "004031"
 
 
@@ -947,7 +947,7 @@ def test_o_MESMO_codigo_em_duas_FICHAS_vira_aviso_e_vale_a_primeira(banco_cadast
         {I_CPF: "035.134.413-63", I_NOME: "LUELIA", I_ID: "004031"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
 
-    resultado = col.atualizar()
+    resultado = col._atualizar_da_planilha()
     assert col.de_para_do_fortes()["004031"]["cpf"] == "99713349334"
     assert any("mais de uma ficha" in a for a in resultado["avisos"])
 
@@ -959,13 +959,13 @@ def test_codigo_que_MUDOU_DE_DONO_na_ficha_sai_do_antigo(banco_cadastro, monkeyp
     aba = _aba_com_id({I_CPF: "997.133.493-34", I_NOME: "GERLANIO", I_ID: "000013"},
                       {I_CPF: "035.134.413-63", I_NOME: "LUELIA"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert col.de_para_do_fortes()["000013"]["cpf"] == "99713349334"
 
     aba = _aba_com_id({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"},
                       {I_CPF: "035.134.413-63", I_NOME: "LUELIA", I_ID: "000013"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert col.de_para_do_fortes()["000013"]["cpf"] == "03513441363"
     assert col.por_cpf("99713349334")["id_fortes"] == ""
 
@@ -975,7 +975,7 @@ def test_a_MATRICULA_da_ficha_nao_e_confundida_com_o_codigo_do_fortes(banco_cada
     from app.apps.analisesps import colaboradores as col
     aba = _aba_com({I_CPF: "127.348.894-63", I_NOME: "ABRAAO", 2: "127348894A"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
-    col.atualizar()
+    col._atualizar_da_planilha()
     assert "127348894A" not in col.de_para_do_fortes()
 
 
@@ -1114,3 +1114,99 @@ def test_sem_o_erp_a_folha_segue_com_a_planilha(monkeypatch):
     monkeypatch.setattr(database, "get_session", quebrado)
     _planilha_com(monkeypatch, _ficha_da_planilha("99713349334", "SO NA PLANILHA"))
     assert list(col.para_a_folha(["99713349334"])) == ["99713349334"]
+
+
+# ---------------------------------------------------------------------------
+# ⚑ 27/11/2026 — A CÓPIA PASSA A SER CHEIA PELO ERP (a planilha foi desativada)
+# ---------------------------------------------------------------------------
+def test_o_CADASTRO_VEM_DO_ERP_com_o_mapa_coluna_a_coluna(banco_cadastro, sessao_real, monkeypatch):
+    """O dono: *"a planilha já está hoje desatualizada (…) o cadastro é o ERP."* O mapa
+    (planilha → ERP), confirmado por ele, está em `CADASTRO_PLANILHA_X_ERP.md`."""
+    from app.apps.analisesps import colaboradores as col
+    from app.apps.analisesps.db import consultar
+    from app.apps.erp.core.cadastros import pessoas
+    from app.apps.erp.db.models.cadastros import Colaborador, Empresa
+    _erp_na_sessao(monkeypatch, sessao_real)
+    u = _dp(sessao_real, "dp-mapa")
+    emp = Empresa(razao_social="BWS CONSTRUCOES LTDA", cnpj="00079526000109")
+    sessao_real.add(emp)
+    sessao_real.flush()
+    pessoas.salvar(sessao_real, {
+        "cpf": "71460238001", "nome": "Pessoa Do Erp", "vinculo": "CTPS",
+        "tipo_contrato": "CLT_INDETERMINADO", "data_inicio": "2026-11-03",
+        "admissao": "2026-11-10", "valor_diaria": "95,00", "id_fortes": "4031",
+        "rg": "1234567", "nome_mae": "Mae Do Erp", "municipio": "Recife", "uf": "PE",
+        "email": "pessoa@exemplo.com"}, u)
+    c = sessao_real.query(Colaborador).filter_by(cpf="71460238001").one()
+    c.empresa_id = emp.id
+    c.recebe_gratificacao, c.valor_mes = True, 1500
+    c.razao_social_pj, c.cnpj_pj = "PJ DA PESSOA LTDA", "11222333000144"
+    c.etapa = "CONCLUIDO"
+    sessao_real.flush()
+
+    feito = col.atualizar()
+    assert feito["pessoas"] == 1 and feito["novas"] == 1
+    r = col.muitos_por_cpf(["71460238001"])["71460238001"]
+    assert r["nome"] == "Pessoa Do Erp" and r["fase"] == "Concluído"
+    assert r["data_admissao"] == dt.date(2026, 11, 10) and r["id_fortes"] == "004031"
+    assert r["situacao"] == col.SITUACAO_ATIVO
+    assert col.de_para_do_fortes()["004031"]["cpf"] == "71460238001"
+    docs = col.documentos_de(["71460238001"])["71460238001"]["documentos"]
+    assert docs["rg"] == "1234567" and docs["cidade"] == "Recife" and docs["estado"] == "PE"
+    assert docs["recebe_gratificacao"] == "Sim" and docs["valor_mensal"] == "1.500,00"
+    assert docs["nome_credor"] == "PJ DA PESSOA LTDA" and docs["pix_cnpj"] == "11222333000144"
+    from app.apps.analisesps import empresa_da_folha
+    assert empresa_da_folha.ler_coluna(docs["cnpj_admissao"])[0] == "00079526000109"
+
+    # Rodar de novo sem mudança no ERP não grava nada
+    assert col.atualizar()["mudaram"] == 0
+
+    # CANCELADO não recebe nada (dono, 27/11/2026)
+    c.etapa = "CANCELADO"
+    sessao_real.flush()
+    assert col.atualizar()["mudaram"] == 1
+    r = col.muitos_por_cpf(["71460238001"])["71460238001"]
+    assert r["fase"] == "Cancelado" and r["situacao"] == col.SITUACAO_SAIU and r["trava"]
+    assert not col.buscar(so_ativos=True), "cancelado sai da lista de ativos"
+
+
+def test_quem_NAO_ESTA_MAIS_no_ERP_sai_da_copia_mas_com_TRAVA(banco_cadastro):
+    from app.apps.analisesps import colaboradores as col
+    from app.apps.analisesps.db import consultar
+
+    def r(cpf, nome):
+        base = {c: None for c in col.CAMPOS + col._EXTRAS_DA_COPIA}
+        base.update({c: "" for c in col.CAMPOS if c not in col.DATAS + col.NUMEROS})
+        base.update({"cpf": cpf, "nome": nome, "fase": "Concluído", "documentos": {}, "id_fortes": ""})
+        return base
+    col.atualizar_do_erp(registros=[r(f"{i:011d}", f"P{i}") for i in range(1, 11)])
+    assert len(consultar("SELECT cpf FROM analisesps.colaborador")) == 10
+    # o ERP devolveu só 3: pode ser falha de leitura — ninguém sai, e avisa
+    feito = col.atualizar_do_erp(registros=[r(f"{i:011d}", f"P{i}") for i in range(1, 4)])
+    assert feito["tiradas"] == 0 and feito["avisos"]
+    assert len(consultar("SELECT cpf FROM analisesps.colaborador")) == 10
+    # devolveu 8: os 2 que não estão mais no ERP saem
+    feito = col.atualizar_do_erp(registros=[r(f"{i:011d}", f"P{i}") for i in range(1, 9)])
+    assert feito["tiradas"] == 2
+    assert len(consultar("SELECT cpf FROM analisesps.colaborador")) == 8
+
+
+def test_a_atualizacao_AUTOMATICA_espera_15_minutos(banco_cadastro, monkeypatch):
+    """Disparada pela tela aberta (`tarefas.manter_fresco`), na pista do cadastro —
+    o botão "Atualizar" continua só com as SPs (decisão de 31/10/2026)."""
+    import datetime as _dt
+    from app.apps.analisesps import colaboradores as col, tarefas
+    agora = _dt.datetime(2026, 11, 27, 12, 0, tzinfo=_dt.timezone.utc)
+    assert col.erp_precisa_atualizar(agora_=agora)
+    from app.apps.analisesps.db import conexao
+    from app.apps.analisesps.sincronizacao import _meta_gravar
+    with conexao() as conn:
+        _meta_gravar(conn, "cadastro_do_erp_em", agora.isoformat())
+        conn.commit()
+    assert not col.erp_precisa_atualizar(agora_=agora + _dt.timedelta(minutes=5))
+    assert col.erp_precisa_atualizar(agora_=agora + _dt.timedelta(minutes=16))
+    pedidos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="": pedidos.append(modo) or {"ok": True})
+    monkeypatch.setattr(col, "erp_precisa_atualizar", lambda agora_=None: True)
+    assert tarefas.cadastro_se_preciso()["disparou"] and pedidos == ["colaboradores"]
+    assert tarefas.ETAPAS["sincronizar"] == ["fila", "delta"], "o Atualizar continua só com as SPs"
