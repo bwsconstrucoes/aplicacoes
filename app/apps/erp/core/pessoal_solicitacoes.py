@@ -3083,9 +3083,47 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
             {"resposta": dados.get("resposta"), **efeito}, usuario)
     if efeito.get("processo"):
         depois_de_atender(s, {**p, "dados": pedido, "situacao": nova}, usuario)
+    else:
+        avisar_quem_pediu(s, solicitacao_id)            # resolvido na hora
     logger.info("ERP/DP: solicitação %s atendida por %s (%s)", p["numero"],
                 usuario.nome if usuario else "?", efeito.get("executou") or "sem efeito")
     return ler(s, solicitacao_id)
+
+
+def avisar_quem_pediu(s: Session, solicitacao_id: int, *, pelo_agente: bool = False) -> bool:
+    """⚑ QUEM PEDIU FICA SABENDO QUE FOI RESOLVIDO (26/11/2026). O dono: *"era
+    para casar, fechar a solicitação e a pessoa que pediu já ser avisada de que
+    aquilo foi resolvido. Aí ela vai receber isso como?"* Duas formas: o alerta
+    verde no alto do portal (`portal.meus_pedidos`, calculado pela situação —
+    vale para qualquer caminho que feche o pedido) e esta mensagem no celular,
+    pela mensageria (`erp.pedido_resolvido`). Nunca levanta erro: avisar não
+    pode desfazer o atendimento."""
+    try:
+        from app.apps.notificador import enviar_telegram
+        l = s.execute(text("""
+            SELECT sol.numero, sol.tipo, COALESCE(c.nome, sol.nome_informado) AS pessoa,
+                   COALESCE(u.telefone, sc.telefone) AS telefone, COALESCE(u.cpf, sc.cpf) AS cpf
+              FROM dp_solicitacoes sol
+              LEFT JOIN colaboradores c ON c.id = sol.colaborador_id
+              LEFT JOIN usuarios u ON u.id = sol.solicitante_id
+              LEFT JOIN colaboradores sc ON sc.id = sol.solicitante_colaborador_id
+             WHERE sol.id = :i"""), {"i": solicitacao_id}).mappings().first()
+        if not l or not (l["telefone"] or l["cpf"]):
+            return False
+        nome_tipo = TIPOS.get(l["tipo"], {}).get("nome", l["tipo"])
+        r = enviar_telegram(
+            telefone=l["telefone"], cpf=l["cpf"], finalidade="erp.pedido_resolvido",
+            mensagem=f"✅ Seu pedido {l['numero']} — {nome_tipo}"
+                     + (f" de {l['pessoa']}" if l["pessoa"] else "")
+                     + " — foi resolvido. Os detalhes estão no Portal da obra.")
+        if pelo_agente:
+            from app.apps.erp.core import agente_diario
+            agente_diario.registrar(s, "AVISOU", f"{l['numero']}: avisei quem pediu que foi resolvido.",
+                                    solicitacao_id=solicitacao_id)
+        return bool(r and r.get("ok"))
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("ERP/DP: não consegui avisar quem pediu %s (%s)", solicitacao_id, e)
+        return False
 
 
 def depois_de_atender(s: Session, sol: dict[str, Any],
@@ -3125,7 +3163,70 @@ def depois_de_atender(s: Session, sol: dict[str, Any],
     if (tipo in ("CADASTRO", "ADMISSAO_PRESTADOR")
             and (vinculo_da_pessoa(s, sol.get("colaborador_id")) or "CTPS") != "CTPS"):
         return
-    despachar(s, sol["id"], usuario)
+    numero = despachar(s, sol["id"], usuario)
+    if numero:
+        enviar_sozinho_se_pode(s, sol, numero)
+
+
+# ⚑ O QUE O AGENTE ENVIA À CONTABILIDADE SEM O DP CONFERIR (26/11/2026). O dono:
+# *"Questão de dependente, sim. (…) [Afastamento] a menos que o agente faça a
+# leitura, interprete, veja que está tudo ok. Se não tiver, ele deixa nas mãos
+# do DP. (…) Férias (…) não (…) A alteração de cargo também não. O DP tem que
+# analisar, a administração tem que validar."* Tudo o que não está aqui
+# continua montado em rascunho para o DP ler e enviar.
+ENVIA_SOZINHO = ("DEPENDENTE", "AFASTAMENTO")
+
+
+def _por_que_nao_envia(s: Session, sol: dict[str, Any]) -> str:
+    """"" quando está tudo certo para o agente enviar; senão, o motivo."""
+    from app.apps.erp.core import dp_analise
+    if sol["tipo"] not in ENVIA_SOZINHO:
+        return "este tipo o DP envia"
+    alertas = [a for a in dp_analise.analisar(s, sol) if a.get("ok") is not True]
+    if alertas:
+        return "a análise do pedido apontou: " + "; ".join(
+            str(a.get("texto") or a.get("titulo") or a) for a in alertas)[:400]
+    if sol["tipo"] == "AFASTAMENTO":
+        d = sol.get("dados") or {}
+        falta = [r for c, r in (("afastamento_natureza", "a natureza"),
+                                ("afast_inicio", "o início")) if not str(d.get(c) or "").strip()]
+        if falta:
+            return "falta " + " e ".join(falta) + " do afastamento"
+        if not papeis_do_pedido(s, int(sol["id"]), sol.get("numero") or "",
+                                sol.get("colaborador_id")):
+            return "o atestado não veio anexado ao pedido"
+    return ""
+
+
+def enviar_sozinho_se_pode(s: Session, sol: dict[str, Any], numero_ct: str) -> bool:
+    from app.apps.erp.core import agente_diario
+    from app.apps.erp.core import contabilidade as svc_ct
+    if sol["tipo"] not in ENVIA_SOZINHO:
+        return False
+    pid = s.execute(text("SELECT id FROM dp_pedidos WHERE numero = :n"),
+                    {"n": numero_ct}).scalar()
+    if not pid:
+        return False
+    motivo = _por_que_nao_envia(s, sol)
+    if motivo:
+        agente_diario.registrar(s, "NAO_ENVIOU", f"{sol.get('numero')}: montei o e-mail "
+                                f"{numero_ct}, mas não enviei sozinho — {motivo}. O DP lê e envia.",
+                                solicitacao_id=int(sol["id"]), pedido_id=pid)
+        return False
+    try:
+        with s.begin_nested():
+            svc_ct.enviar(s, pid, None, pelo_agente=True)
+    except Exception as e:                              # noqa: BLE001
+        agente_diario.registrar(s, "NAO_ENVIOU", f"{sol.get('numero')}: tentei enviar "
+                                f"{numero_ct} e não consegui ({e}). O DP envia.",
+                                solicitacao_id=int(sol["id"]), pedido_id=pid)
+        return False
+    agente_diario.registrar(s, "ENVIOU", f"{sol.get('numero')}: enviei à contabilidade o "
+                            f"e-mail {numero_ct} sozinho (tipo que pode ir sem conferência do DP).",
+                            solicitacao_id=int(sol["id"]), pedido_id=pid)
+    _evento(s, int(sol["id"]), "ENVIADO_PELO_AGENTE",
+            {"texto": f"{numero_ct} enviado à contabilidade pelo agente"}, None)
+    return True
 
 
 def despachar(s: Session, solicitacao_id: int, usuario: Optional[Usuario]) -> Optional[str]:
@@ -3381,6 +3482,112 @@ SITUACAO_ROTULOS = {"ABERTA": "Aberta", "EM_ANALISE": "Em análise",
                     "CANCELADA": "Cancelada"}
 
 
+def emails_da_solicitacao(s: Session, solicitacao_id: int, colaborador_id: Optional[int],
+                          criado_em) -> list[dict[str, Any]]:
+    """Todo e-mail à contabilidade desta solicitação, com o histórico inteiro
+    (inclusive os cancelados), para a tela única (27/11/2026).
+
+    Ele: *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada
+    SDP, todo o histórico."* Antes, só o e-mail do PASSO do processo aparecia,
+    e só enquanto o processo estava aberto.
+
+    Os antigos, que nasceram sem o vínculo com a solicitação, entram pela mesma
+    regra que o processo já usa para achá-los (`contabil_processo._pedido_ligado`):
+    mesma pessoa, criado depois da solicitação, e SEM vínculo com outra — e vêm
+    marcados `pelo_vinculo=False`, para a tela dizer que é por aproximação.
+    """
+    from app.apps.erp.core import contabilidade as svc_ct
+    linhas = s.execute(text("""
+        SELECT p.id, p.numero, p.template, p.situacao, p.criado_em, p.concluido_em,
+               (p.solicitacao_id = :sid) AS pelo_vinculo,
+               COALESCE(substring(p.assunto from '\\[((SDP|CT)-[0-9]{4,6}(/[0-9]{1,2})?)\\]'),
+                        p.numero) AS marca
+          FROM dp_pedidos p
+         WHERE p.solicitacao_id = :sid
+            OR (p.solicitacao_id IS NULL AND CAST(:c AS integer) IS NOT NULL
+                AND p.colaborador_id = :c AND p.criado_em >= :desde
+                AND p.criado_em < CAST(:desde AS timestamptz) + interval '60 days')
+         ORDER BY p.id"""),
+        {"sid": solicitacao_id, "c": colaborador_id, "desde": criado_em}).mappings().all()
+    return [{
+        "id": l["id"], "marca": l["marca"], "numero": l["numero"],
+        "template_nome": svc_ct.TEMPLATES.get(l["template"], {}).get("nome", l["template"]),
+        "situacao": l["situacao"],
+        "situacao_rotulo": svc_ct.SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
+        "criado_em": l["criado_em"].isoformat(),
+        "pelo_vinculo": bool(l["pelo_vinculo"]),
+    } for l in linhas]
+
+
+def tudo_que_saiu_e_voltou(s: Session, solicitacao_id: int, colaborador_id: Optional[int],
+                           criado_em) -> dict[str, Any]:
+    """TUDO NO MESMO CANTO (27/11/2026). Ele: *"A devolver pela obra é melhor
+    ficar dentro da SDP também. E lá ficar o histórico de mensagens enviadas e
+    obviamente as respostas (…) pra não precisar ir em nenhum outro canto pra
+    tratar de uma mesma SDP."*
+
+    Devolve os e-mails à contabilidade, as devoluções pela obra e a conversa
+    inteira (cada e-mail que saiu — pedido, reenvio, cobrança — e cada resposta
+    que a caixa casou), em ordem de data. Quatro leituras ao banco, nenhuma
+    ida à internet.
+    """
+    emails = emails_da_solicitacao(s, solicitacao_id, colaborador_id, criado_em)
+    ids = [e["id"] for e in emails]
+    devs = [dict(l) for l in s.execute(text("""
+        SELECT d.id, d.numero, d.o_que, d.prazo, d.situacao, d.cobrancas,
+               d.criado_em, d.devolvido_em, o.codigo AS obra,
+               doc.anexo_id AS anexo_devolvido, env.anexo_id AS anexo_enviado
+          FROM dp_devolucoes d
+          LEFT JOIN obras o ON o.id = d.obra_id
+          LEFT JOIN documentos doc ON doc.id = d.documento_id
+          LEFT JOIN documentos env ON env.id = d.documento_enviado_id
+         WHERE d.pedido_id = ANY(:ids)
+            OR (CAST(:c AS integer) IS NOT NULL AND d.colaborador_id = :c
+                AND d.criado_em >= :desde
+                AND d.criado_em < CAST(:desde AS timestamptz) + interval '60 days')
+         ORDER BY d.id"""),
+        {"ids": ids, "c": colaborador_id, "desde": criado_em}).mappings().all()]
+    for d in devs:
+        for k in ("prazo", "criado_em", "devolvido_em"):
+            d[k] = d[k].isoformat() if d.get(k) else None
+    dev_ids = [d["id"] for d in devs]
+    conversa: list[dict[str, Any]] = []
+    if ids:
+        for l in s.execute(text("""
+            SELECT e.id, e.entidade_id, e.para, e.assunto, e.corpo, e.anexos,
+                   e.situacao, e.erro, e.criado_em
+              FROM envios_email e
+             WHERE e.entidade_tipo = 'dp_pedido' AND e.entidade_id = ANY(:ids)
+             ORDER BY e.id"""), {"ids": ids}).mappings().all():
+            conversa.append({
+                "sentido": "SAIU", "quando": l["criado_em"].isoformat(),
+                "pedido_id": l["entidade_id"],
+                "quem": ", ".join(l["para"] or []), "assunto": l["assunto"],
+                "corpo": l["corpo"] or "", "situacao": l["situacao"],
+                "erro": l["erro"] or "",
+                "anexos": [a.get("nome") if isinstance(a, dict) else str(a)
+                           for a in (l["anexos"] or [])]})
+    if ids or dev_ids:
+        from app.apps.erp.core.comum import email_entrada
+        com_corpo = email_entrada._tem_coluna_corpo(s)
+        for l in s.execute(text(f"""
+            SELECT m.de, m.assunto, m.recebido_em, m.processado_em, m.pedido_id,
+                   m.devolucao_id, m.anexos, m.arquivados,
+                   {"m.corpo" if com_corpo else "NULL AS corpo"}
+              FROM email_entrada_mensagens m
+             WHERE m.pedido_id = ANY(:ids) OR m.devolucao_id = ANY(:devs)
+             ORDER BY m.id"""), {"ids": ids, "devs": dev_ids}).mappings().all():
+            q = l["recebido_em"] or l["processado_em"]
+            conversa.append({
+                "sentido": "CHEGOU", "quando": q.isoformat() if q else None,
+                "pedido_id": l["pedido_id"], "devolucao_id": l["devolucao_id"],
+                "quem": l["de"] or "", "assunto": l["assunto"] or "",
+                "corpo": l["corpo"] or "", "anexos_qtd": int(l["anexos"] or 0),
+                "arquivados": int(l["arquivados"] or 0)})
+    conversa.sort(key=lambda x: x["quando"] or "")
+    return {"emails_contabilidade": emails, "devolucoes": devs, "conversa": conversa}
+
+
 def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
     """O pedido inteiro: o que foi pedido, o checklist e a trilha.
 
@@ -3474,6 +3681,9 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
                      and (d["situacao"] == svc_contabil.EM_ANDAMENTO
                           or (d["dados"] or {}).get("processo_contabil"))
                      else None),
+        # ⚑ TODOS OS E-MAILS À CONTABILIDADE DESTA SOLICITAÇÃO (27/11/2026) —
+        # ver `emails_da_solicitacao`.
+        **tudo_que_saiu_e_voltou(s, d["id"], d["colaborador_id"], d["criado_em"]),
         # ⚑ A ANÁLISE DO AGENTE (20/11/2026, noite) — `core/dp_analise.py`.
         "analise": svc_analise.analisar(s, {**d, "dados": d["dados"] or {}}),
         "mudanca_pedida": (d["dados"] or {}).get("mudanca_pedida"),
@@ -3583,9 +3793,18 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         "aberta": l["situacao"] in ABERTAS,
         "feitos": int(l["feitos"]), "total_itens": int(l["total_itens"]),
     } for l in linhas]
+    # ⚑ A MARCA "🤖 agente" (26/11/2026). Ele: *"tudo que for feito pelo agente
+    # (…) na própria listagem tem alguma tag que indique isso, porque serve de
+    # uma espécie de alerta para a gente abrir e verificar."* Some quando
+    # alguém revisa as ações no Diário do agente.
+    from app.apps.erp.core import agente_diario
+    do_agente = agente_diario.nao_revisadas_por_solicitacao(s, [x["id"] for x in fila])
+    for x in fila:
+        x["agente_a_revisar"] = do_agente.get(x["id"], 0)
     return {
         "solicitacoes": fila,
         "indicadores": {
+            "agente_a_revisar": sum(1 for x in fila if x["agente_a_revisar"]),
             "abertas": sum(1 for x in fila if x["aberta"]),
             "atendidas": sum(1 for x in fila if x["situacao"] == "ATENDIDA"),
             "recusadas": sum(1 for x in fila if x["situacao"] == "RECUSADA"),

@@ -101,18 +101,16 @@
 {# A janela que mostra o documento (19/11/2026) — abre por cima do pedido. #}
 <dialog id="dlg-papel" style="width:94vw; max-width:1100px; height:90vh; padding:0; overflow:hidden"></dialog>
 <dialog id="dlg-pedido" style="width:94vw; max-width:900px"></dialog>
-{# O ponto da pessoa, por cima da janela de atender (23/11/2026). #}
-<dialog id="dlg-ponto" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh;
-  padding:0; overflow:hidden"><iframe id="ponto-quadro" title="Ponto da pessoa"
-  style="width:100%; height:100%; border:0; display:block"></iframe></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
 {# ATENDER é do DP; ABRIR e acompanhar é de quem está na obra. A tela esconde o
    que a pessoa não pode — mas a trava de verdade é o @permissao da rota. #}
 const PODE_ATENDER = {{ 'true' if pode.atender_dp else 'false' }};
+const PODE_REVISAR_AGENTE = {{ 'true' if pode.pedir_contabilidade else 'false' }};
 let DADOS = {solicitacoes: [], tipos: [], indicadores: {}};
 let ABERTA = null;
+let SO_AGENTE = false;   // o cartão "🤖 Feito pelo agente" filtra a lista
 
 // ===========================================================================
 // OS PASSOS DE CADA TIPO (18/11/2026)
@@ -296,6 +294,7 @@ function visiveis(){
         && !(x.total_itens && x.feitos && x.feitos < x.total_itens)) return false;
     if (els("f-parada").checked
         && !(ABERTAS.includes(x.situacao) && diasAberta(x) > 3)) return false;
+    if (SO_AGENTE && !x.agente_a_revisar) return false;
     return true;
   });
 }
@@ -315,7 +314,13 @@ function desenhar(){
     <div class="kpi estatico verde"><div class="kpi-rotulo">Atendidas</div>
       <div class="kpi-valor">${i.atendidas || 0}</div></div>
     <div class="kpi estatico"><div class="kpi-rotulo">Recusadas</div>
-      <div class="kpi-valor">${i.recusadas || 0}</div></div>`;
+      <div class="kpi-valor">${i.recusadas || 0}</div></div>
+    ${i.agente_a_revisar ? `<div class="kpi ambar" id="kpi-agente" style="cursor:pointer"
+      title="Mostra só estas"><div class="kpi-rotulo">🤖 Feito pelo agente</div>
+      <div class="kpi-valor">${i.agente_a_revisar}</div>
+      <div class="kpi-sub">abra e confira</div></div>` : ""}`;
+  if (els("kpi-agente")) els("kpi-agente").addEventListener("click", () => {
+    SO_AGENTE = !SO_AGENTE; desenhar(); });
   {# ⚑ AS READMISSÕES QUE NINGUÉM FEZ, EM CIMA DE TUDO (15/11/2026).
 
      Ele: *"o colaborador que é desligado da carteira e continua como
@@ -387,7 +392,8 @@ function desenhar(){
     "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
     <td class="dados">${escapar(x.numero)}</td>
-    <td><b>${escapar(x.tipo_rotulo)}</b>${x.resumo
+    <td><b>${escapar(x.tipo_rotulo)}</b>${x.agente_a_revisar
+      ? ` <span class="etiqueta azul" title="O agente fez ${x.agente_a_revisar} coisa(s) aqui sozinho — abra e confira">🤖 agente</span>` : ""}${x.resumo
       ? `<br><small class="desc">${escapar(x.resumo)}</small>` : ""}</td>
     <td>${escapar(x.pessoa || "—")}${x.cargo ? `<br><small class="desc">${escapar(x.cargo)}</small>` : ""}</td>
     <td class="dados" style="white-space:nowrap">${escapar(x.pessoa_cpf || "—")}</td>
@@ -494,6 +500,10 @@ function pintarPedido(){
       ${escapar(p.cancelando.motivo)} — fecha quando a contabilidade confirmar.</div>` : ""}
     ${blocoDaAnalise(p)}
     ${blocoDoProcesso(p)}
+    ${blocoDosEmails(p)}
+    ${blocoDasDevolucoes(p)}
+    ${blocoDaConversa(p)}
+    <div id="dlg-agente"></div>
     {# ⚑ OS DOCUMENTOS E O CADASTRO, À VISTA (19/11/2026). Ele: *"conferir se
        a documentação veio completa, mas cadê a documentação? A gente não
        consegue visualizar ela (…) não existe um cadastro ou pré-cadastro
@@ -540,6 +550,18 @@ function pintarPedido(){
       <button class="link-btn" id="s-cancelar">Cancelar o pedido</button>
     </div>` : ""}`;
   ligarBotoesDoProcesso(p);
+  pintarOQueOAgenteFez(p);
+  els("dlg-corpo").querySelectorAll("[data-email-ct]").forEach(b =>
+    b.addEventListener("click", () => verPedidoContabil(+b.dataset.emailCt)));
+  els("dlg-corpo").querySelectorAll("[data-cobrar-dev]").forEach(b =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Mandar a cobrança para a obra pelo WhatsApp?")) return;
+      try {
+        const r = await api(`/erp/api/dp/devolucoes/${b.dataset.cobrarDev}/cobrar`, {method: "POST"});
+        await abrirPedido(p.id);
+        aviso("dlg-msg", `Cobrança enviada a ${r.avisados} de ${r.telefones} telefone(s).`, "ok");
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    }));
   els("dlg-corpo").querySelectorAll("[data-ver-papel]").forEach(b =>
     b.addEventListener("click", () => verPapel(b.dataset.verPapel, b.dataset.nome)));
   if (els("s-corrigir")) els("s-corrigir").addEventListener("click", () => corrigirPedido(p));
@@ -632,8 +654,8 @@ function blocoDoProcesso(p){
       if (x.pedido)
         b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
           data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
-            ? `ver o e-mail ${escapar(x.pedido.numero)}`
-            : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
+            ? `ver o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`
+            : `Ler e enviar o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`}</button>`);
       if (x.codigo === "CONTRATO" && x.estado !== "FEITO" && p.colaborador_id)
         b.push(`<a class="btn secundario" href="#" data-abrir-ambiente="${p.colaborador_id}"
           data-ambiente-aba="documentos">abrir os documentos para anexar</a>`);
@@ -646,8 +668,8 @@ function blocoDoProcesso(p){
     if (x.pedido)
       b.push(`<button class="${x.estado === "FEITO" ? "link-btn" : "btn"}"
         data-pr-pedido="${x.pedido.id}">${x.estado === "FEITO"
-          ? `ver o e-mail ${escapar(x.pedido.numero)}`
-          : `Ler e enviar o e-mail ${escapar(x.pedido.numero)}`}</button>`);
+          ? `ver o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`
+          : `Ler e enviar o e-mail ${escapar(x.pedido.marca || x.pedido.numero)}`}</button>`);
     if (x.codigo === "ENCAMINHADA" && x.estado === "PENDENTE")
       b.push(`<button class="btn" data-pr-assinar="1">Mandar para a obra assinar…</button>`);
     if (x.a_validar) {
@@ -712,23 +734,81 @@ function blocoDoProcesso(p){
           pr.total - pr.cumpridos > 1 ? " e mais " + (pr.total - pr.cumpridos - 1) : ""}.</small>`}</div>` : ""}`;
 }
 
-async function pedirCancelamentoDoDesligamento(p){
-  const r = await perguntar({titulo: `Cancelar o desligamento de ${p.pessoa_nome || p.pessoa || ""}`,
-    aviso: "Abre um pedido de cancelamento. Enquanto o DP não atende, a virada do "
-         + "dia não desliga a pessoa; ao atender, a saída é apagada e a "
-         + "contabilidade é avisada.",
-    textoOk: "Pedir o cancelamento",
-    campos: [{nome: "observacao", rotulo: "Por que cancelar", tipo: "textarea",
-              obrigatorio: true, largura: 6, linhas: 2}]});
-  if (!r) return;
-  try {
-    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
-      body: JSON.stringify({tipo: "CANCELAR_DESLIGAMENTO",
-                            colaborador_id: p.colaborador_id, ...r})});
-    els("dlg").close();
-    aviso("mensagem", `Pedido ${d.solicitacao.numero} aberto: cancelamento do desligamento.`, "ok");
-    if (typeof carregar === "function") carregar();
-  } catch(e){ alert(e.message); }
+
+{# ⚑ TODOS OS E-MAILS À CONTABILIDADE DESTA SOLICITAÇÃO (27/11/2026). Ele:
+   *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada SDP,
+   todo o histórico."* Clicar abre o e-mail com tudo: o texto, o que voltou,
+   cobrar, concluir. #}
+function blocoDosEmails(p){
+  const l = p.emails_contabilidade || [];
+  if (!l.length) return "";
+  return `<h4>E-mails à contabilidade (${l.length})</h4>
+    <table><tbody>${l.map(e => `<tr>
+      <td class="dados" style="white-space:nowrap"><button type="button" class="link-btn"
+        data-email-ct="${e.id}">${escapar(e.marca)}</button></td>
+      <td>${escapar(e.template_nome)}${e.pelo_vinculo ? "" : `<br><small class="desc"
+        title="Enviado antes de o e-mail ficar ligado à solicitação; aparece aqui por ser da mesma pessoa, na mesma época">da mesma pessoa, sem vínculo gravado</small>`}</td>
+      <td class="dados">${quandoBR(e.criado_em).slice(0, 10)}</td>
+      <td><span class="etiqueta ${e.situacao === "CONCLUIDO" ? "verde"
+        : e.situacao === "DIVERGENTE" ? "vermelho" : e.situacao === "CANCELADO" ? "" : "ambar"}">${
+        escapar(e.situacao_rotulo)}</span></td></tr>`).join("")}</tbody></table>`;
+}
+
+{# ⚑ A DEVOLVER PELA OBRA, DENTRO DA SOLICITAÇÃO (27/11/2026). Ele: *"Tem
+   que ficar tudo no mesmo canto."* #}
+const ROTULO_DEVOLUCAO = {ABERTA: "esperando a obra", COBRADA: "cobrada, esperando a obra",
+                          DEVOLVIDA: "devolvida", CANCELADA: "cancelada"};
+function blocoDasDevolucoes(p){
+  const l = p.devolucoes || [];
+  if (!l.length) return "";
+  return `<h4>A devolver pela obra (${l.length})</h4>
+    <table><tbody>${l.map(d => `<tr>
+      <td class="dados" style="white-space:nowrap">${escapar(d.numero)}</td>
+      <td>${escapar(d.o_que)}${d.obra ? `<br><small class="desc">obra ${escapar(d.obra)}</small>` : ""}
+        ${d.anexo_enviado ? `<br><a class="link-btn" href="/erp/anexo/${d.anexo_enviado}" target="_blank">o que foi para a obra</a>` : ""}
+        ${d.anexo_devolvido ? ` · <a class="link-btn" href="/erp/anexo/${d.anexo_devolvido}" target="_blank">o que voltou</a>` : ""}</td>
+      <td class="dados">${d.prazo ? "prazo " + dataBR(d.prazo) : ""}${d.cobrancas
+        ? `<br><small>${d.cobrancas} cobrança(s)</small>` : ""}</td>
+      <td><span class="etiqueta ${d.situacao === "DEVOLVIDA" ? "verde"
+        : d.situacao === "CANCELADA" ? "" : "ambar"}">${escapar(ROTULO_DEVOLUCAO[d.situacao] || d.situacao)}</span>
+        ${PODE_REVISAR_AGENTE && ["ABERTA", "COBRADA"].includes(d.situacao)
+          ? `<br><button class="link-btn" data-cobrar-dev="${d.id}">cobrar a obra</button>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+{# ⚑ A CONVERSA INTEIRA (27/11/2026): cada e-mail que saiu (pedido, reenvio,
+   cobrança) e cada resposta que a caixa casou, em ordem de data. Só o DP vê
+   o texto — o servidor nem manda para os outros. #}
+function blocoDaConversa(p){
+  const l = p.conversa || [];
+  if (!l.length) return "";
+  return `<h4>A conversa com a contabilidade (${l.length})</h4>
+    <div class="tabela-rolagem" style="max-height:360px"><table><tbody>${l.map(m => `<tr>
+      <td style="white-space:nowrap" class="dados">${m.sentido === "SAIU" ? "⬆ saiu" : "⬇ chegou"}<br>
+        <small>${quandoBR(m.quando)}</small></td>
+      <td><details><summary><b>${escapar(m.assunto || "(sem assunto)")}</b><br>
+        <small class="desc">${m.sentido === "SAIU" ? "para " : "de "}${escapar(m.quem || "—")}${
+          m.situacao === "FALHOU" ? ` · <span class="aviso-texto">não saiu: ${escapar(m.erro)}</span>` : ""}${
+          (m.anexos || []).length ? " · 📎 " + m.anexos.map(escapar).join(", ") : ""}${
+          m.anexos_qtd ? ` · 📎 ${m.anexos_qtd} anexo(s)${m.arquivados ? `, ${m.arquivados} guardado(s) na pessoa` : ""}` : ""}</small></summary>
+        <div class="cartao-dica" style="white-space:pre-wrap; max-height:260px; overflow:auto; margin-top:6px">${
+          escapar(m.corpo || (m.sentido === "CHEGOU" ? "(o texto desta resposta não foi guardado — chegou antes de 26/11/2026)" : ""))}</div>
+      </details></td></tr>`).join("")}</tbody></table></div>`;
+}
+
+{# ⚑ O QUE O AGENTE FEZ NESTA SOLICITAÇÃO (26/11/2026), com ✔ Certo / ✘ Errado.
+   Ele: *"ele vai fazendo, aí eu analiso (…) opa, essa aqui deu errado."* A
+   revisão tira a marca "🤖 agente" da lista; o "errado" vira ajuste no chat. #}
+async function pintarOQueOAgenteFez(p){
+  const lugar = els("dlg-agente");
+  if (!lugar || !PODE_REVISAR_AGENTE) return;
+  let acoes = [];
+  try { acoes = (await api(`/erp/api/dp/agente/acoes?solicitacao_id=${p.id}`)).acoes || []; }
+  catch(e){ return; }
+  if (!acoes.length || ABERTA !== p) return;
+  lugar.innerHTML = `<h4>🤖 O que o agente fez sozinho aqui</h4>
+    ${desenharAcoesDoAgente(acoes)}`;
+  ligarRevisaoDoAgente(lugar, () => abrirPedido(p.id));
 }
 
 function ligarBotoesDoProcesso(p){
@@ -971,6 +1051,9 @@ async function verPedidoContabil(id){
   let p;
   try { p = (await api(`/erp/api/dp/pedidos/${id}`)).pedido; }
   catch(e){ aviso("dlg-msg", e.message, "erro"); return; }
+  // NÚMERO ÚNICO (26/11/2026): o que a tela mostra é o que foi no assunto —
+  // o da solicitação; o CT é só a chave interna.
+  p.numero = p.marca || p.numero;
   const aberto = p.situacao === "RASCUNHO";
   const dlg = els("dlg-pedido");
   dlg.innerHTML = `<div class="dlg-topo"><h3>${escapar(p.numero)} — ${escapar(p.template_nome)}</h3>
@@ -994,6 +1077,7 @@ async function verPedidoContabil(id){
             data-pc-tirar="${ex.documento_id}">tirar</button>` : ""}</div>`; }).join("")}</div>
         ${aberto ? `<button class="btn secundario" id="pc-anexar" style="margin-top:6px">Anexar arquivo…</button>` : ""}
       </div>
+      ${blocoDoQueVoltou(p)}
       ${(p.eventos || []).length ? `<div style="margin-top:12px"><b>O que aconteceu com este e-mail</b>
         <small class="desc">— fica guardado no sistema, com de qual conta saiu e para quem</small>
         <div class="tabela-rolagem" style="max-height:180px"><table><tbody>
@@ -1007,8 +1091,19 @@ async function verPedidoContabil(id){
                     <button class="btn secundario" id="pc-salvar">Guardar o texto e enviar depois</button>` : ""}
         ${["ENVIADO", "COBRADO", "RESPONDIDO", "DIVERGENTE"].includes(p.situacao)
           ? `<button class="btn secundario" id="pc-reenviar">Reenviar o mesmo e-mail</button>` : ""}
-        ${!aberto ? `<a class="link-btn" href="/erp/dp/contabilidade" target="_blank">cobrar ou
-          registrar o retorno em Contabilidade</a>` : ""}
+        {# ⚑ TELA ÚNICA (26/11/2026). Ele: *"unificar as telas (…) uma tela só,
+           um número só"*. Cobrar, receber o retorno e concluir saem daqui — a
+           tela Contabilidade e agente vira configuração. #}
+        ${["ENVIADO", "COBRADO"].includes(p.situacao)
+          ? `<button class="btn secundario" id="pc-cobrar">Cobrar o retorno</button>
+             <button class="btn secundario" id="pc-retorno">Chegou o documento por fora? Anexar…</button>` : ""}
+        ${p.situacao === "RESPONDIDO"
+          ? `<button class="btn" id="pc-concluir">Concluir</button>` : ""}
+        ${p.situacao === "DIVERGENTE"
+          ? `<button class="btn secundario" id="pc-aceitar">Aceitar a divergência…</button>
+             <button class="btn secundario" id="pc-retorno">Anexar o documento corrigido…</button>` : ""}
+        ${!aberto && !["CONCLUIDO", "CANCELADO"].includes(p.situacao)
+          ? `<button class="link-btn" id="pc-cancelar">cancelar este e-mail…</button>` : ""}
       </div>
       <div id="pc-msg" style="margin-top:10px"></div></div>`;
   // "corpo" entre aspas: é o nome que o servidor lê, não opção do fetch.
@@ -1026,6 +1121,50 @@ async function verPedidoContabil(id){
       if (r.enviado === false) throw new Error("O e-mail não saiu: " + (r.erro || ""));
       await fim(`${p.numero} reenviado${r.copia_nos_enviados ? " — " + r.copia_nos_enviados : ""}.`);
     } catch(e){ aviso("pc-msg", e.message, "erro"); }
+  });
+  const liga = (qual, fn) => { if (els(qual)) els(qual).addEventListener("click", fn); };
+  const faz = async (qual, corpo, msg) => {
+    try {
+      const r = await api(`/erp/api/dp/pedidos/${id}/${qual}`, {method: "POST",
+        body: corpo instanceof FormData ? corpo : JSON.stringify(corpo || {})});
+      if (r.erro) throw new Error(r.erro);
+      await fim(typeof msg === "function" ? msg(r) : msg);
+    } catch(e){ aviso("pc-msg", e.message, "erro"); }
+  };
+  liga("pc-cobrar", () => {
+    if (confirm(`Mandar uma cobrança de ${p.numero} para ${(p.para_que_vai || []).join(", ")}?`))
+      faz("cobrar", {}, `Cobrança de ${p.numero} enviada.`);
+  });
+  liga("pc-concluir", () => {
+    if (confirm(`Concluir ${p.numero}? A solicitação fecha e quem pediu é avisado.`))
+      faz("concluir", {}, `${p.numero} concluído.`);
+  });
+  liga("pc-aceitar", async () => {
+    const r = await perguntar({titulo: "Por que a divergência está aceita?", textoOk: "Aceitar",
+      campos: [{nome: "motivo", rotulo: "Motivo", tipo: "textarea"}]});
+    if (r) faz("aceitar-divergencia", {motivo: r.motivo}, "Divergência aceita.");
+  });
+  liga("pc-cancelar", async () => {
+    const r = await perguntar({titulo: `Cancelar ${p.numero}?`, textoOk: "Cancelar o e-mail",
+      aviso: "A contabilidade não é avisada por aqui — se ela já está trabalhando nisso, avise.",
+      campos: [{nome: "motivo", rotulo: "Motivo", tipo: "textarea"}]});
+    if (r) faz("cancelar", {motivo: r.motivo}, `${p.numero} cancelado.`);
+  });
+  liga("pc-retorno", () => {
+    const ent = document.createElement("input");
+    ent.type = "file";
+    ent.addEventListener("change", () => {
+      const f = ent.files && ent.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append("arquivo", f);
+      faz("retorno-arquivo", fd, r => r.concluiu
+        ? `🤖 O agente leu o documento, bate com o cadastro e concluiu ${p.numero}.`
+        : (r.divergencias || []).length
+          ? `O documento foi guardado, mas tem ${r.divergencias.length} dado(s) diferente(s) do cadastro — veja no pedido.`
+          : `O documento foi guardado na pessoa. Confira e conclua.`);
+    });
+    ent.click();
   });
   if (aberto) {
     els("pc-enviar").addEventListener("click", async () => {
@@ -1077,21 +1216,10 @@ async function verPedidoContabil(id){
 
 {# O ponto da pessoa numa janela POR CIMA da de atender — a de atender fica
    aberta, com o que já foi digitado (23/11/2026). #}
+// O ponto da pessoa: o modal-ponte, já na aba Ponto, no espelho do mês (26/11/2026).
 function verPontoDaPessoa(id, competencia){
-  // 26/11/2026: o modal-ponte da pessoa, já na aba Ponto, no espelho do mês.
-  if (typeof abrirPessoa === "function")
-    return abrirPessoa(id, "ponto", {aba: "mes", competencia: competencia || ""});
-  els("ponto-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}?aba=mes`
-    + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
-  els("dlg-ponto").showModal();
+  return abrirPessoa(id, "ponto", {aba: "mes", competencia: competencia || ""});
 }
-
-els("dlg-ponto").addEventListener("close", () => { els("ponto-quadro").src = "about:blank"; });
-window.addEventListener("message", ev => {
-  const d = ev.data || {};
-  if (ev.origin === location.origin && d.tipo === "bws-ficha" && d.acao === "fechar"
-      && els("dlg-ponto").open) els("dlg-ponto").close();
-});
 
 {# O papel assinado que chegou ao escritório (plano B, 23/11/2026). #}
 function anexarPapel(caminho, id){
@@ -1755,102 +1883,6 @@ function camposDoTipo(regra, o, semPessoa){
   return campos;
 }
 
-async function novaSolicitacao(){
-  const o = await api("/erp/api/colaboradores/opcoes");
-  const escolha = await perguntar({titulo: "Nova solicitação ao DP",
-    textoOk: "Continuar",
-    campos: [{nome: "tipo", rotulo: "O que você precisa?", tipo: "select",
-              obrigatorio: true, largura: 6,
-              opcoes: DADOS.tipos.map(t => ({valor: t.valor, rotulo: t.rotulo}))}]});
-  if (!escolha) return;
-  const regra = DADOS.tipos.find(t => t.valor === escolha.tipo);
-
-  {# ⚑ TRÊS TIPOS NÃO SAÍAM DESTA TELA, E ELA NÃO DIZIA ISSO (15/11/2026).
-
-     Achado respondendo a uma pergunta dele: *"o nome e CPF são preenchidos a
-     partir dos documentos anexados?"* São — e a conferência mostrou que esta
-     tela **não tem campo para anexar nada**. Resultado: Cadastro de
-     Colaborador, Admissão de Prestador e Cadastro de Dependente exigem papel,
-     e aqui a pessoa preenchia DOZE campos, confirmava, e levava "Falta
-     anexar: documento de identificação, CPF, comprovante de endereço" — sobre
-     papéis que a janela nunca ofereceu onde pôr. Beco sem saída, e estava em
-     produção.
-
-     ⚑ POR QUE NÃO CONSTRUÍ O ANEXO AQUI: o portal já tem isso pronto, com
-     foto pelo celular e leitura do documento preenchendo os campos — e é no
-     celular, na obra, que o papel está na mão. Fazer uma segunda versão disso
-     aqui seria manter dois caminhos para o mesmo trabalho; e o DP, para
-     cadastrar direto, tem a ficha completa em Colaboradores, que já lê
-     documento.
-
-     O que esta tela precisa é PARAR DE PROMETER o que não entrega — e dizer
-     para onde ir. #}
-  if ((regra.documentos || []).length) {
-    const papeis = (regra.documentos || [])
-      .map(c => ROTULO_PAPEL_DP[c] || c);
-    const r = await perguntar({
-      titulo: regra.rotulo,
-      aviso: `Este pedido só sai <b>com os papéis anexados</b>: ${
-        papeis.map(escapar).join(", ")}. Esta tela não anexa arquivo — quem
-        anexa é o <b>portal da obra</b>, pelo celular, onde a foto do
-        documento ainda <b>preenche os campos sozinha</b>.`
-        + (regra.valor === "CADASTRO"
-           ? ` <br><br>Se você mesmo vai cadastrar a pessoa agora, o caminho é
-               <b>Pessoal › Colaboradores › + Colaborador</b>: lá está a ficha
-               completa, e ela também lê documento.`
-           : ""),
-      textoOk: "Abrir o portal da obra",
-      campos: []});
-    if (r) location.href = "/erp/portal";
-    return;
-  }
-
-  const campos = camposDoTipo(regra, o, false);
-  const r = await perguntar({titulo: regra.rotulo,
-    aviso: `${regra.explicacao}. O pedido vai para o DP.`,
-    textoOk: "Abrir a solicitação", campos});
-  if (!r) return;
-  {# ⚑ O CPF QUE JÁ EXISTE: O SISTEMA OFERECE A READMISSÃO (15/11/2026).
-
-     Ele: *"na admissão, quando digitar o CPF, o sistema tem que detectar que
-     a pessoa já tem cadastro e oferecer a readmissão. Aí readmissão deixa de
-     ser um tipo de solicitação."*
-
-     Antes era RECUSA seca: "já tem cadastro, é uma readmissão" — e quem pediu
-     tinha de fechar a janela, descobrir que existia um tipo chamado
-     Readmissão, e redigitar tudo. Quem não soubesse disso tentava de novo com
-     o nome escrito diferente, e nascia a segunda ficha da mesma pessoa.
-
-     Agora o sistema pergunta e CONVERTE. O servidor faz a mesma conferência
-     ao gravar — esta aqui é para a pessoa saber antes, não para confiar. #}
-  if (escolha.tipo === "CADASTRO" && r.cpf) {
-    let ja = null;
-    try {
-      ja = await api(`/erp/api/colaboradores/conferir-cpf?cpf=${
-        encodeURIComponent(r.cpf)}`);
-    } catch(e){ /* não achou resposta: o servidor confere de novo ao gravar */ }
-    if (ja && ja.situacao === "ativo") {
-      aviso("mensagem", ja.aviso, "erro");
-      return;
-    }
-    if (ja && ja.situacao === "desligado") {
-      const segue = await perguntar({
-        titulo: "Esta pessoa já tem cadastro",
-        aviso: `${escapar(ja.aviso)} <br><br>O pedido vai como
-          <b>readmissão</b>: o cadastro dela volta, com a data de início que
-          você informou, e a passagem anterior fica no histórico.`,
-        textoOk: "Abrir como readmissão", campos: []});
-      if (!segue) return;
-    }
-  }
-  try {
-    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({tipo: escolha.tipo, ...r})});
-    aviso("mensagem", `Solicitação ${d.solicitacao.numero} aberta.`, "ok");
-    carregar();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-}
 
 // ("+ Solicitação" virou o link para o portal — 26/11/2026)
 els("btn-checklists").addEventListener("click", abrirChecklists);

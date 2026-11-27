@@ -97,6 +97,9 @@ CATALOGO: list[dict] = [
      "descricao": "Aviso aos ADMIN quando o consumo de IA passa de 80% do teto, ou estoura."},
     # 25/11/2026, pedido do dono (chat do Pessoal): o administrador sabe na hora
     # que alguém pediu acesso ao portal.
+    {"chave": "erp.pedido_resolvido", "nome": "Pedido ao DP resolvido", "modulo": "ERP",
+     "politica": TELEGRAM,
+     "descricao": "Aviso a quem abriu o pedido no portal quando ele é resolvido (26/11/2026)."},
     {"chave": "erp.acesso_portal", "nome": "Pedido de acesso ao portal", "modulo": "ERP",
      "politica": TELEGRAM,
      "descricao": "Aviso aos ADMIN quando alguém pede acesso ao Portal da Obra."},

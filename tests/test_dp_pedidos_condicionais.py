@@ -807,16 +807,11 @@ def test_a_tela_do_DP_nao_promete_tipo_que_exige_papel_sem_ter_onde_anexar():
         encoding="utf-8")
     # A tela trata o caso pelo que o SERVIDOR declara (`documentos`), e não
     # por uma lista de tipos escrita aqui — tipo novo nasce tratado.
-    assert "(regra.documentos || []).length" in tela, (
-        "a tela não desvia mais o tipo que exige papel: quem escolher vai "
-        "preencher tudo para levar 'Falta anexar' no fim")
-    # E todo papel exigido por algum tipo tem nome em português nesta tela.
-    for regra in svc.TIPOS.values():
-        for papel in tuple(regra.get("documentos", ())) + tuple(
-                p for mapa in (regra.get("documentos_se") or {}).values()
-                for lista in mapa.values() for p in lista):
-            assert f'"{papel}":' in tela, (
-                f"{papel} sairia com o código cru no recado da tela do DP")
+    # ⚑ 26/11/2026: a tela do DP deixou de abrir pedido — todo pleito é pelo
+    # portal, que é onde se anexa. O beco sem saída acabou de vez: não há mais
+    # formulário de pedido aqui para prometer o que não tem onde anexar.
+    assert 'id="btn-nova"' not in tela and "/erp/portal" in tela, (
+        "a tela do DP voltou a abrir pedido por fora do portal")
 
 
 def test_todo_tipo_que_exige_papel_existe_no_PORTAL():

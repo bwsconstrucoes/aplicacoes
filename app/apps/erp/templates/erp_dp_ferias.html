@@ -127,54 +127,11 @@ function desenhar(){
         <a href="/erp/portal" target="_top">Portal da obra</a></small>` : ""}</td>
     </tr>`;
   }).join("");
-  corpo.querySelectorAll("[data-alterar]").forEach(b =>
-    b.addEventListener("click", () => alterar(FERIAS[+b.dataset.alterar])));
-  corpo.querySelectorAll("[data-cancelar]").forEach(b =>
-    b.addEventListener("click", () => cancelar(FERIAS[+b.dataset.cancelar])));
+  // (alterar e cancelar férias: pelo portal — 26/11/2026)
 }
 
-async function pedir(tipo, f, campos){
-  try {
-    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
-      body: JSON.stringify({tipo, colaborador_id: f.colaborador_id,
-                            ferias_id: f.id, ...campos})});
-    aviso("mensagem", `Pedido ${d.solicitacao.numero} aberto em Solicitações. `
-      + "A data só muda quando a contabilidade confirmar.", "ok");
-    carregar();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-}
 
-async function alterar(f){
-  const r = await perguntar({titulo: `Alterar as férias de ${f.pessoa}`,
-    aviso: `Hoje: ${br(f.inicio)} a ${br(f.fim)} (${f.dias} dias). O pedido vai ao DP, `
-         + "que pede à contabilidade; a data nova vale quando ela devolver.",
-    textoOk: "Pedir a alteração",
-    campos: [
-      {nome: "ferias_inicio", rotulo: "Novo início", tipo: "date", obrigatorio: true,
-       valor: f.inicio, largura: 3},
-      {nome: "ferias_dias", rotulo: "Quantos dias", tipo: "number", obrigatorio: true,
-       valor: String(f.dias), largura: 3},
-      {nome: "abono_pecuniario", rotulo: "Vender 1/3 das férias?", tipo: "select", largura: 3,
-       valor: f.abono_pecuniario ? "1" : "0",
-       opcoes: [{valor: "0", rotulo: "Não"}, {valor: "1", rotulo: "Sim"}]},
-      {nome: "adiantamento_13", rotulo: "Adiantar o 13º?", tipo: "select", largura: 3,
-       valor: f.adiantamento_13 ? "1" : "0",
-       opcoes: [{valor: "0", rotulo: "Não"}, {valor: "1", rotulo: "Sim"}]},
-      {nome: "observacao", rotulo: "Por que mudar", tipo: "textarea", obrigatorio: true,
-       largura: 6, linhas: 2},
-    ]});
-  if (r) pedir("ALTERACAO_FERIAS", f, r);
-}
 
-async function cancelar(f){
-  const r = await perguntar({titulo: `Cancelar as férias de ${f.pessoa}`,
-    aviso: `${br(f.inicio)} a ${br(f.fim)} (${f.dias} dias). O pedido vai ao DP, que `
-         + "avisa a contabilidade; as férias só saem da programação quando ela confirmar.",
-    textoOk: "Pedir o cancelamento",
-    campos: [{nome: "observacao", rotulo: "Por que cancelar", tipo: "textarea",
-              obrigatorio: true, largura: 6, linhas: 2}]});
-  if (r) pedir("CANCELAMENTO_FERIAS", f, r);
-}
 
 async function carregar(){
   try {

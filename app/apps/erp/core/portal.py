@@ -697,7 +697,14 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
                (sol.situacao = 'RECUSADA' AND NOT EXISTS (
                     SELECT 1 FROM dp_solicitacao_eventos e
                      WHERE e.solicitacao_id = sol.id
-                       AND e.acao = :visto)) AS recusa_nao_vista
+                       AND e.acao = :visto)) AS recusa_nao_vista,
+               -- 26/11/2026: o resolvido também avisa (só os de agora em
+               -- diante — os antigos não viram alerta de uma vez).
+               (sol.situacao = 'ATENDIDA' AND sol.atualizado_em >= DATE '2026-11-27'
+                AND NOT EXISTS (
+                    SELECT 1 FROM dp_solicitacao_eventos e
+                     WHERE e.solicitacao_id = sol.id
+                       AND e.acao = :visto_ok)) AS resolvido_nao_visto
           FROM dp_solicitacoes sol
           LEFT JOIN colaboradores c ON c.id = sol.colaborador_id
           LEFT JOIN obras o ON o.id = sol.obra_id
@@ -707,7 +714,7 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
                 OR (:u IS NOT NULL AND sol.solicitante_id = :u))
          ORDER BY sol.id DESC LIMIT 100"""),
         {"eu": eu["colaborador_id"], "u": eu["usuario_id"],
-         "visto": RECUSA_VISTA}).mappings().all()
+         "visto": RECUSA_VISTA, "visto_ok": RESULTADO_VISTO}).mappings().all()
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
     return [{
         "numero": l["numero"],
@@ -726,6 +733,7 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
         "obra": l["obra"] or "", "cargo": l["cargo"] or "",
         "quando": str(l["criado_em"]), "resposta": l["resposta"] or "",
         "recusa_nao_vista": bool(l["recusa_nao_vista"]),
+        "resolvido_nao_visto": bool(l["resolvido_nao_visto"]),
     } for l in linhas]
 
 
@@ -741,6 +749,7 @@ def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]
 # trilha do pedido (sem coluna nova): o DP enxerga quando a obra viu.
 # ---------------------------------------------------------------------------
 RECUSA_VISTA = "QUEM_PEDIU_VIU_A_RECUSA"
+RESULTADO_VISTO = "QUEM_PEDIU_VIU_O_RESULTADO"   # o "resolvido" (26/11/2026)
 
 
 # ---------------------------------------------------------------------------
@@ -773,13 +782,14 @@ def ciente_da_recusa(s: Session, solicitacao_id: int,
                             OR (:u IS NOT NULL AND solicitante_id = :u))"""),
         {"i": solicitacao_id, "eu": eu["colaborador_id"],
          "u": eu["usuario_id"]}).first()
-    if linha is None or linha[0] != "RECUSADA":
+    if linha is None or linha[0] not in ("RECUSADA", "ATENDIDA"):
         raise ErroNaoEncontrado("Pedido não encontrado.")
+    acao = RECUSA_VISTA if linha[0] == "RECUSADA" else RESULTADO_VISTO
     ja = s.execute(text("SELECT 1 FROM dp_solicitacao_eventos WHERE "
                         "solicitacao_id = :i AND acao = :a"),
-                   {"i": solicitacao_id, "a": RECUSA_VISTA}).first()
+                   {"i": solicitacao_id, "a": acao}).first()
     if ja is None:
-        svc_sp._evento(s, solicitacao_id, RECUSA_VISTA,
+        svc_sp._evento(s, solicitacao_id, acao,
                        {"nome": eu.get("nome") or ""}, usuario)
 
 
