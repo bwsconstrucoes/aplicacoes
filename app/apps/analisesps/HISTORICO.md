@@ -12275,6 +12275,32 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 288 — Folha: o rateio só usa o ponto DESDE A ADMISSÃO; a coluna "Admissão" na lista (27/11/2026)
+
+- O dono, olhando o 13º: *"ele trabalhou na empresa no início do ano (…) saiu e depois
+  voltou. Só que ele voltou só em outubro. Aí (…) o rateio considerou esses meses que ele
+  nem estava trabalhando aqui (…) foi desconsiderado a data de admissão (…) só vai
+  considerar para ele o ponto de outubro em diante. Obras anteriores a isso não considera,
+  mesmo que tenha ponto (…) ele trabalhou um período como diarista, prestador de serviço,
+  mas só importa o período que ele estava de carteira assinada."* E: a data de admissão
+  na lista, *"para qualquer tipo de folha"*.
+- `folha_apropriacao.apropriar`: o cadastro de cada pessoa pode trazer `admissao`; o dia
+  de ponto ANTES dela sai do rateio (o mês inteiro do relatório anual conta a partir do
+  MÊS da admissão). **Vale em toda folha** (quinzena, fim de mês, 13º) — o dia de outro
+  vínculo não reparte o salário desta. Sem a data no cadastro, nada é cortado. A pessoa
+  ganha `dias_antes_da_admissao` e uma crítica ("N registro(s) de ponto antes da
+  admissão (dd/mm/aaaa) não entram no rateio").
+- `folha_gestao.cadastro_com_admissao`: a admissão vem de `colaboradores.para_a_folha` —
+  a cópia da planilha COMPLETADA PELO ERP, onde quem voltou (readmissão pelo ERP) tem a
+  admissão NOVA. Só os CPFs da folha: +2 consultas por abertura (cópia e ERP). Usado na
+  tela, no fechamento e na complementar (a mesma conta).
+- A lista da folha ganhou a coluna **Admissão** (depois de "Contabilidade"), com "N antes,
+  fora" quando há ponto anterior cortado.
+- Risco: admissão ERRADA no cadastro (data no futuro, ou só a primeira admissão de quem
+  voltou fora do ERP) tira dias que deviam contar — a pessoa aparece "sem obra" ou com o
+  aviso, à vista.
+- Sem migração. Testes em `test_analisesps_folha_decimo.py` e `..._folha_agrupar.py`.
+
 #### Leva 287 — Folha: agrupar a lista por obra da contabilidade, setor, obra do ponto, obra do cadastro ou conta (27/11/2026)
 
 - O dono: *"aparece aqui a folha e aparece em ordem alfabética. Mas aí eu posso filtrar,

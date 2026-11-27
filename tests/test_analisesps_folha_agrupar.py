@@ -56,6 +56,7 @@ def test_a_TELA_da_folha_agrupada(banco_analisesps, app, monkeypatch):  # noqa: 
     cliente = _como_mestre(app)
     normal = cliente.get(f"/analisesps/folha/{feito['id']}").get_data(as_text=True)
     assert "Agrupar por:" in normal and 'class="linha-grupo"' not in normal
+    assert "<th>Admissão</th>" in normal, "a coluna da admissão (27/11/2026)"
     agrupada = cliente.get(f"/analisesps/folha/{feito['id']}?agrupar=ponto").get_data(as_text=True)
     assert 'class="linha-grupo"' in agrupada and "(sem obra no ponto)" in agrupada
     assert agrupada.count('class="linha-pessoa') == normal.count('class="linha-pessoa'), \

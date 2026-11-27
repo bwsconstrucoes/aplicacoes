@@ -241,7 +241,7 @@ def salvar_selecao(ano, mes, tipo, decisoes, quem: str = "") -> dict:
 def _apropriado_sem_fora(folha) -> tuple:
     """(apropriado, ajustes do pagamento) da folha nova — com a mesma conta da tela,
     mas ninguém "fora": a diferença de quem ficou fora também precisa de obra."""
-    from . import colaboradores, folha_apropriacao, folha_rateio
+    from . import folha_apropriacao, folha_gestao, folha_rateio
     from . import folha_apropriacao_guardada as guardada
     from . import ponto as mod_ponto
     ano, mes, tipo = folha["ano"], folha["mes"], folha["tipo"]
@@ -254,7 +254,9 @@ def _apropriado_sem_fora(folha) -> tuple:
     apropriado = folha_apropriacao.apropriar(
         folha["linhas"], dias_por_cpf=mod_ponto.dias_do_pagamento(ano, mes, tipo),
         regras_por_cpf=regras_por_cpf, ajustes_por_cpf=sem_fora,
-        cadastro_por_id=colaboradores.de_para_do_fortes(),
+        # A admissão corta o ponto anterior (27/11/2026) — a mesma conta da tela.
+        cadastro_por_id=folha_gestao.cadastro_com_admissao(
+            folha["linhas"], folha_apropriacao.periodo_do_pagamento(ano, mes, tipo)[1]),
         periodo=folha_apropriacao.periodo_do_pagamento(ano, mes, tipo))
     return apropriado, ajustes
 

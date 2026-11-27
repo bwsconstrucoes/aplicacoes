@@ -330,3 +330,59 @@ def test_ENVIAR_o_relatorio_anual_pela_tela_do_13o(banco_analisesps, app, monkey
     assert "09/2026" in falta and "01/2026" not in falta
     ponto._ANO_GUARDADO.clear()
     ponto_anual._GUARDADO.clear()
+
+
+# --- 27/11/2026: só o ponto DESDE A ADMISSÃO -------------------------------------
+def test_o_READMITIDO_em_outubro_so_conta_o_ponto_de_outubro_em_diante():
+    """O dono: *"ele trabalhou 3 meses no início do ano e foi admitido em outubro (…) só
+    vai considerar para ele o ponto de outubro em diante. Obras anteriores a isso não
+    considera, mesmo que tenha ponto."*"""
+    dias = ([{"data": dt.date(2026, m, 1), "marcacoes": ["ANTIGA"], "presenca": "",
+              "falta": "", "peso": 1, "mes_inteiro": True} for m in (1, 2, 3)]      # relatório anual
+            + [_dia(dt.date(2026, 9, d), "DIARISTA") for d in range(1, 11)]          # antes, outro vínculo
+            + [_dia(dt.date(2026, 10, d), "NOVA") for d in range(15, 31)])           # depois da admissão
+    feito = ap.apropriar([Linha("1000.00", "000013", "FULANO")], {"111": dias},
+                         cadastro_por_id={"000013": {"cpf": "111", "nome": "FULANO",
+                                                     "admissao": dt.date(2026, 10, 15)}},
+                         periodo=ap.periodo_do_pagamento(2026, 11, "decimo_1"))
+    pessoa = feito["pessoas"][0]
+    assert {o["obra"]: o["valor"] for o in feito["por_obra"]} == {"NOVA": D("1000.00")}
+    assert pessoa["dias_antes_da_admissao"] == 13
+    assert any("antes da admissão (15/10/2026)" in c for c in pessoa["criticas"])
+
+
+def test_o_mes_do_relatorio_anual_conta_a_partir_do_MES_da_admissao():
+    dias = [{"data": dt.date(2026, m, 1), "marcacoes": [o], "presenca": "", "falta": "",
+             "peso": 1, "mes_inteiro": True} for m, o in ((2, "X"), (3, "Y"), (4, "Y"))]
+    feito = ap.apropriar([Linha("300.00", "000013", "FULANO")], {"111": dias},
+                         cadastro_por_id={"000013": {"cpf": "111", "nome": "F",
+                                                     "admissao": "20/03/2026"}},
+                         periodo=ap.periodo_do_pagamento(2026, 11, "decimo_1"))
+    assert {o["obra"]: o["valor"] for o in feito["por_obra"]} == {"Y": D("300.00")}
+
+
+def test_na_QUINZENA_tambem_e_desde_a_admissao_e_SEM_data_nada_muda():
+    dias = [_dia(dt.date(2026, 11, d), "DIARIA" if d < 10 else "OBRA") for d in range(1, 16)]
+    linha = [Linha("600.00", "000013", "FULANO")]
+    periodo = ap.periodo_do_pagamento(2026, 11, "quinzena")
+    com = ap.apropriar(linha, {"111": dias}, periodo=periodo, cadastro_por_id={
+        "000013": {"cpf": "111", "nome": "F", "admissao": dt.date(2026, 11, 10)}})
+    assert {o["obra"] for o in com["por_obra"]} == {"OBRA"}
+    sem = ap.apropriar(linha, {"111": dias}, periodo=periodo, cadastro_por_id={
+        "000013": {"cpf": "111", "nome": "F"}})
+    assert {o["obra"] for o in sem["por_obra"]} == {"DIARIA", "OBRA"}
+
+
+def test_a_admissao_vem_do_cadastro_COMPLETADO_PELO_ERP(monkeypatch):
+    """Quem voltou pelo ERP tem lá a admissão NOVA; a cópia da planilha, a antiga."""
+    from app.apps.analisesps import colaboradores, folha_gestao
+    monkeypatch.setattr(colaboradores, "de_para_do_fortes", lambda: {
+        "000013": {"cpf": "11122233344", "nome": "F"}, "000999": {"cpf": "99", "nome": "OUTRO"}})
+    pedidos = []
+    monkeypatch.setattr(colaboradores, "para_a_folha", lambda cpfs, ate=None: (
+        pedidos.append(list(cpfs)),
+        {"11122233344": {"data_admissao": dt.date(2026, 10, 15)}})[1])
+    cad = folha_gestao.cadastro_com_admissao([Linha("1", "13", "F")], dt.date(2026, 11, 30))
+    assert cad["000013"]["admissao"] == dt.date(2026, 10, 15)
+    assert pedidos == [["11122233344"]], "só os CPFs DESTA folha"
+    assert "admissao" not in cad["000999"]

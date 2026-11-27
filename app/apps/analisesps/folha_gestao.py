@@ -279,6 +279,33 @@ def _relatorio_anual_resumo(ano: int) -> dict | None:
             "arquivo": dado.get("arquivo", ""), "pessoas": len(dado.get("pessoas") or {})}
 
 
+def cadastro_com_admissao(linhas, ate=None) -> dict:
+    """O de/para do Fortes (`colaboradores.de_para_do_fortes`) com a DATA DE ADMISSÃO
+    de quem está nesta folha (27/11/2026 — o rateio só usa o ponto desde a admissão).
+
+    ⚠️ A ADMISSÃO VEM DA CÓPIA COMPLETADA PELO ERP (`colaboradores.para_a_folha`):
+    quem saiu e voltou pelo ERP tem lá a admissão NOVA; a cópia da planilha pode ter
+    a antiga — e era justamente o caso que o dono viu. Custo: 2 consultas (a cópia e o
+    ERP), só com os CPFs da folha."""
+    from . import colaboradores
+    de_para = colaboradores.de_para_do_fortes()
+    ids = {colaboradores.normalizar_id_fortes(getattr(l, "id_fortes", None)
+                                              or (l.get("id_fortes") if isinstance(l, dict) else ""))
+           for l in (linhas or [])}
+    cpfs = sorted({de_para[i]["cpf"] for i in ids if i in de_para and de_para[i].get("cpf")})
+    try:
+        fichas = colaboradores.para_a_folha(cpfs, ate) if cpfs else {}
+    except Exception:  # noqa: BLE001 — sem a data, nada é cortado (como antes)
+        logger.exception("Folha: não consegui ler a admissão do cadastro")
+        fichas = {}
+    saida = dict(de_para)
+    for i in ids:
+        if i in de_para:
+            ficha = fichas.get(de_para[i].get("cpf")) or {}
+            saida[i] = dict(de_para[i], admissao=ficha.get("data_admissao"))
+    return saida
+
+
 def apropriar_a_folha(folha) -> dict:
     """A apropriação de uma folha inteira, com o que a alimentou.
 
@@ -308,7 +335,7 @@ def apropriar_a_folha(folha) -> dict:
         "apropriado": folha_apropriacao.apropriar(
             folha["linhas"], dias_por_cpf=dias_por_cpf,
             regras_por_cpf=regras_por_cpf, ajustes_por_cpf=ajustes,
-            cadastro_por_id=colaboradores.de_para_do_fortes(),
+            cadastro_por_id=cadastro_com_admissao(folha["linhas"], periodo[1] if periodo else None),
             periodo=periodo),
     }
 
@@ -636,6 +663,9 @@ def montar(folha_id: int, filtros=None) -> dict:
             "nome_contabilidade": pessoa.get("nome") or "",
             "cpf_bonito": folha_rateio.cpf_bonito(pessoa.get("cpf") or ""),
             "fase": ficha.get("fase") or "",
+            # A admissão que a conta usou (cadastro completado pelo ERP); sem ela, a
+            # da ficha (27/11/2026).
+            "admissao": pessoa.get("admissao") or ficha.get("data_admissao"),
             "cargo": ficha.get("cargo") or "",
             "link_pipefy": ficha.get("link_pipefy") or "",
             "motivo_cadastral": ficha.get("motivo") or "",

@@ -599,6 +599,9 @@
              arquivo; e na mesma linha das obras do ponto e do cadastro, para
              confrontar as três. #}
           <th>Contabilidade</th>
+          {# A ADMISSÃO (27/11/2026): o rateio só usa o ponto a partir dela, e ele
+             confere a data ao lado do valor. A do cadastro completado pelo ERP. #}
+          <th>Admissão</th>
           <th>Fase Atual</th>
           <th>Obra — do ponto</th>
           {# SEMPRE AO LADO DA DO PONTO, para confrontar (pedido dele, 30/09/2026):
@@ -620,7 +623,7 @@
       {% set n_grupo = loop.index %}
       {% if g.titulo %}
         <tr class="linha-grupo" data-grupo="{{ n_grupo }}">
-          <td colspan="12"><span class="seta-grupo">▾</span> <b>{{ g.titulo }}</b>
+          <td colspan="13"><span class="seta-grupo">▾</span> <b>{{ g.titulo }}</b>
             <span class="cartao-dica">· {{ g.quantas }} pessoa(s) · {{ g.total|moeda }}</span></td>
         </tr>
       {% endif %}
@@ -692,6 +695,8 @@
               <br><span class="cartao-dica" title="setor {{ p.setor }}">{{ p.setor_curto }}</span>
             {% endif %}
           </td>
+          <td>{% if p.admissao %}{{ p.admissao|data_br }}{% else %}<span class="cartao-dica">—</span>{% endif %}
+            {% if p.dias_antes_da_admissao %}<br><span class="cartao-dica" title="Ponto antes da admissão: não entra no rateio">{{ p.dias_antes_da_admissao }} antes, fora</span>{% endif %}</td>
           <td>{{ p.fase or '—' }}</td>
           <td>
             {% if p.obras_resumo %}
@@ -769,9 +774,9 @@
         {# A LINHA DOS DIAS, escondida até ele pedir. Fica no HTML em vez de vir
            por uma chamada nova: o dado já está montado, e uma ida ao servidor por
            pessoa faria 491 chamadas para conferir uma folha. #}
-        <tr class="dias-da-pessoa" hidden>
+        <tr class="dias-da-pessoa" hidden {% if g.titulo %}data-no-grupo-dias="{{ n_grupo }}"{% endif %}>
           <td></td>
-          <td colspan="11">
+          <td colspan="12">
             {% if p.por_dia %}
               <div class="dias-lista">
                 {% for d in p.por_dia %}
@@ -863,7 +868,7 @@
       {% endfor %}
       {% endfor %}
       {% if not montado.pessoas %}
-        <tr><td colspan="12" class="cartao-dica">
+        <tr><td colspan="13" class="cartao-dica">
           Nenhum colaborador encontrado com esses filtros.
         </td></tr>
       {% endif %}
@@ -1913,6 +1918,8 @@ recontar();
     const fechar = recolher === undefined ? !cab.classList.contains("recolhido") : recolher;
     cab.classList.toggle("recolhido", fechar);
     tabela.querySelectorAll(`tr[data-no-grupo="${n}"]`).forEach(tr => { tr.hidden = fechar; });
+    // a linha dos dias aberta de quem está no grupo fecha junto (e não reabre sozinha)
+    if (fechar) tabela.querySelectorAll(`tr[data-no-grupo-dias="${n}"]`).forEach(tr => { tr.hidden = true; });
   };
   tabela.querySelectorAll("tr.linha-grupo").forEach(cab => cab.addEventListener("click", () => alternar(cab)));
   const todos = document.getElementById("grupos-recolher");
