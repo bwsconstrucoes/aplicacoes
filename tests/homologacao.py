@@ -31,7 +31,8 @@ from conftest import como
 __all__ = [
     "INVENTARIO", "LEITURAS", "ESCRITAS", "TELAS", "PERFIS_DO_ROTEIRO",
     "TODOS_OS_PERFIS", "PERMISSOES", "ROTULOS", "P", "Usuario", "como",
-    "identificacao", "operadores",
+    "identificacao", "operadores", "ACOES_POR_PERFIL",
+    "SENHA_DE_HOMOLOGACAO",
 ]
 
 # Endpoints deixados de fora, com o motivo escrito:
@@ -73,23 +74,6 @@ def _id(caso):
     return f"{metodo} {caminho} [{acao}]"
 
 
-@pytest.fixture
-def operadores(sessao_real) -> dict[P, Usuario]:
-    """Um usuário de cada perfil, no banco de verdade."""
-    senha = gerar_hash("senha-de-homologacao-1")
-    pessoas = {}
-    for perfil in TODOS_OS_PERFIS:
-        u = Usuario(nome=f"Homologação {ROTULOS.get(perfil, perfil.value)}",
-                    email=f"homolog.{perfil.value.lower()}@teste.bws.local",
-                    senha_hash=senha, perfil=perfil)
-        sessao_real.add(u)
-        pessoas[perfil] = u
-    sessao_real.flush()
-    sessao_real.commit()
-    return pessoas
-
-
-
 TELAS = [c for c in LEITURAS if "/api/" not in c[1]]
 
 
@@ -113,9 +97,34 @@ def identificacao(caso):
 SENHA_DE_HOMOLOGACAO = gerar_hash("senha-de-homologacao-1")
 
 
+def _acoes_equivalentes(perfil: P) -> set[str]:
+    """O que o perfil cadastrado equivalente ao cargo concede.
+
+    ⚑ A MONTAGEM DO PERFIL MORA NO `conftest.py` (27/11/2026), num lugar só:
+    desde que o acesso passou a vir apenas do perfil cadastrado, TODO teste
+    com banco precisa disso, e não só a homologação.
+    """
+    from app.apps.erp.core.auth import secoes as cat
+    from conftest import _secoes_equivalentes_ao_cargo
+
+    return cat.acoes_do_perfil(_secoes_equivalentes_ao_cargo(perfil))
+
+
+# O que cada operador de homologação REALMENTE pode, já pelo perfil cadastrado.
+# É contra isto que os casos conferem — e não contra a tabela de cargos, que
+# desde 27/11/2026 não concede nada a quem tem perfil.
+ACOES_POR_PERFIL = {perfil: _acoes_equivalentes(perfil) for perfil in TODOS_OS_PERFIS}
+
+
 @pytest.fixture
 def operadores(sessao_real) -> dict[P, Usuario]:
-    """Um usuário de cada perfil, no banco de verdade."""
+    """Um usuário de cada perfil, no banco de verdade.
+
+    O PERFIL CADASTRADO vem do `conftest` (`perfis_equivalentes_aos_cargos`):
+    quem é gravado sem perfil recebe o equivalente ao cargo. Sem isso, desde
+    27/11/2026 nenhum destes operadores abriria nada — o acesso passou a vir
+    só do perfil.
+    """
     pessoas = {}
     for perfil in TODOS_OS_PERFIS:
         u = Usuario(nome=f"Homologação {ROTULOS.get(perfil, perfil.value)}",

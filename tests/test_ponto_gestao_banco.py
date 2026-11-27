@@ -154,8 +154,13 @@ def mundo(_schema_ponto2, banco, monkeypatch):
 
         def usuario(nome, perfil, todas=None):
             return conn.execute(text(
-                "INSERT INTO usuarios (nome, email, senha_hash, perfil, ve_todas_as_obras) "
-                "VALUES (:n, :e, 'x', CAST(:p AS perfil_usuario), :t) RETURNING id"),
+                # perfil_id: sem perfil cadastrado a pessoa não abre nada
+                # desde 27/11/2026 — ver conftest._criar_perfis_equivalentes.
+                "INSERT INTO usuarios (nome, email, senha_hash, perfil, "
+                "                      ve_todas_as_obras, perfil_id) "
+                "VALUES (:n, :e, 'x', CAST(:p AS perfil_usuario), :t, "
+                "        (SELECT id FROM perfis WHERE nome = 'Cargo ' || :p)) "
+                "RETURNING id"),
                 {"n": nome, "e": f"{perfil.lower()}@ponto.teste", "p": perfil, "t": todas}).scalar_one()
         sup = usuario("Supervisor A", "SUPERVISOR_OBRA")
         conn.execute(text("INSERT INTO usuario_obras (usuario_id, obra_id) VALUES (:u, :o)"),

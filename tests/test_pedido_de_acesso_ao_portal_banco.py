@@ -597,6 +597,32 @@ def test_o_alcance_acompanha_a_obra_onde_a_pessoa_bate_ponto(app_real, sessao_re
         "a obra antiga do ponto sai; a marcada à mão fica"
 
 
+def _perfil_de_obra(sessao_real, *, pelo_portal=True) -> int:
+    """O perfil que o administrador escolhe ao liberar alguém pelo portal.
+
+    ⚑ 27/11/2026: liberar não basta mais. O acesso vem só do perfil — *"ele só
+    iria ter a possibilidade de ser liberado a acessar alguma coisa no momento
+    que ele solicitasse o acesso E fosse liberado E definido um perfil"* —, e a
+    porta (portal ou telas de dentro) é uma marcação do perfil, não do cargo.
+    """
+    from sqlalchemy import text
+
+    pid = sessao_real.execute(text(
+        "INSERT INTO perfis (nome, descricao, ativo, entra_pelo_portal) "
+        "VALUES ('Gente de obra (teste)', '', true, :p) RETURNING id"),
+        {"p": pelo_portal}).scalar()
+    sessao_real.execute(
+        text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
+             "VALUES (:p, :s, :n)"),
+        [{"p": pid, "s": s, "n": n} for s, n in
+         # "só olhar" em Solicitações = ABRIR pedido ao DP. "Olhar e mexer"
+         # seria ATENDER pedido, que é trabalho do DP e enxerga a empresa
+         # inteira — não é o que a obra faz.
+         (("obr_diario", "EDITAR"), ("pes_solicitacoes", "LER"),
+          ("pes_colaboradores", "LER"))])
+    return pid
+
+
 def test_administrativo_liberado_pelo_portal_so_ve_o_pessoal_da_obra_dele(
         app_real, sessao_real, pessoa, obra, dp, pessoal):
     """24/11/2026, ele: *"estão vendo (…) as solicitações do DP (…) 2
@@ -622,6 +648,10 @@ def test_administrativo_liberado_pelo_portal_so_ve_o_pessoal_da_obra_dele(
                             nome=pessoa.nome, email="adm.obra@gmail.com", obra_id=obra.id)
     uid = como(app_real, dp.id).post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
                                      json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+    # Liberar cria o acesso; quem diz o que ele abre é o PERFIL (27/11/2026).
+    from sqlalchemy import text as _text
+    sessao_real.execute(_text("UPDATE usuarios SET perfil_id = :p WHERE id = :u"),
+                        {"p": _perfil_de_obra(sessao_real), "u": uid})
     sessao_real.commit()
     adm = como(app_real, uid)
 
@@ -647,15 +677,31 @@ def test_quem_e_da_obra_so_tem_o_portal(app_real, sessao_real, pessoa, obra, dp,
                             nome=pessoa.nome, email="so.portal@gmail.com", obra_id=obra.id)
     uid = como(app_real, dp.id).post(f"/erp/api/portal/pedidos-de-acesso/{pedido['id']}",
                                      json={"acao": "LIBERAR"}).get_json()["usuario_id"]
+
+    # ⚑ LIBERAR E DEFINIR O PERFIL SÃO DOIS PASSOS (27/11/2026): liberar cria
+    # o acesso, e é o PERFIL que diz o que ele abre e por qual porta. A tela
+    # de liberação abre o cadastro justamente para o segundo passo.
+    #
+    # (Que a pessoa fique sem nada ENTRE os dois passos é conferido em
+    # `test_quem_entra_pelo_portal_banco.py`, com usuário criado por SQL
+    # direto: aqui o `conftest` cola um perfil em todo usuário gravado pelo
+    # ORM, inclusive nos que a própria rota cria.)
+    from sqlalchemy import text as _text
+    sessao_real.execute(_text("UPDATE usuarios SET perfil_id = :p WHERE id = :u"),
+                        {"p": _perfil_de_obra(sessao_real), "u": uid})
     sessao_real.commit()
     adm = como(app_real, uid)
-    with adm.session_transaction() as sess:
-        sess["erp_usuario_perfil"] = "ADMINISTRATIVO_OBRA"
 
-    for tela in ("/erp/inicio", "/erp/colaboradores", "/erp/dp/solicitacoes",
-                 "/erp/dp/contabilidade", "/erp/titulos", "/erp/ponto/espelho"):
-        r = adm.get(tela)
-        assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal"), tela
+    # ⚑ DUAS COISAS DIFERENTES, e em 27/11/2026 elas se separaram. A tela que
+    # o perfil dela NÃO abre responde 403 — não há desvio, ela simplesmente
+    # não tem a permissão. O desvio para o portal é para a tela que ela ABRE e
+    # que é do escritório: a de entrada.
+    for desviada in ("/erp/inicio", "/erp/colaboradores", "/erp/dp/solicitacoes",
+                     "/erp/dp/contabilidade"):
+        r = adm.get(desviada)
+        assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal"), desviada
+    for fechada in ("/erp/titulos", "/erp/ponto/espelho"):
+        assert adm.get(fechada).status_code == 403, fechada
     assert adm.get("/erp/portal").status_code == 200
     assert "ERP completo" not in adm.get("/erp/portal").get_data(as_text=True)
     assert adm.get("/erp/obras/diario").status_code == 200

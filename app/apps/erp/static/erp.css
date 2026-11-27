@@ -1320,3 +1320,79 @@ body.com-mapa-cheio { overflow: hidden; }
    tabela larga: ocupam quase a tela toda. */
 dialog.largo { width: min(1500px, 97vw); }
 dialog.largo .dlg-corpo { max-height: 86vh; }
+
+/* ===========================================================================
+   OPERADORES E PERFIS — a repaginação de 27/11/2026
+
+   Pedido dele, com as palavras dele: *"essa tela de operadores é bem ruim.
+   Acho ela bagunçada e desorganizada. A forma de seleção das coisas é ruim. A
+   divisão dessas seções tá totalmente solta, sem conexão entre cada área e
+   cada tela"*, e em seguida *"essa tela precisa de uma repaginação completa. a
+   experiência de uso dela é péssima."*
+
+   O que estava ruim, sem rodeio: o cadastro era UM formulário de noventa
+   controles em rolagem única (quem é, o que faz, onde faz, limites, contas do
+   plano, obras, 64 caixinhas de ajuste), e o perfil era uma lista de 39 linhas
+   com um menu suspenso em cada uma, agrupada por áreas que não batiam com os
+   módulos do topo da tela.
+
+   Três peças resolvem isso:
+     · `.dlg-abas`  — o cadastro em quatro perguntas, uma por aba.
+     · `.nivel3`    — os três níveis como botão único, e com COR: cinza fecha,
+                      azul olha, verde mexe. Dá para ler o perfil inteiro de
+                      longe, sem abrir menu nenhum.
+     · `.mod-bloco` — cada módulo numa caixa, com o nome das TELAS que a
+                      marcação abre, que é a conexão que faltava.
+   ======================================================================== */
+.dlg-abas { display: flex; gap: 2px; flex-wrap: wrap; margin: 0 0 14px;
+  border-bottom: 2px solid var(--borda); }
+.dlg-abas button { background: none; border: 0; border-bottom: 3px solid transparent;
+  padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--tinta-suave);
+  cursor: pointer; margin-bottom: -2px; }
+.dlg-abas button:hover { color: var(--tinta); }
+.dlg-abas button.ativa { color: var(--azul); border-bottom-color: var(--azul); }
+.dlg-pagina { display: none; }
+.dlg-pagina.ativa { display: block; }
+
+.nivel3 { display: inline-flex; border: 1px solid var(--borda-forte); border-radius: 8px;
+  overflow: hidden; background: var(--branco); flex: 0 0 auto; }
+.nivel3 input { position: absolute; opacity: 0; pointer-events: none; }
+.nivel3 label { margin: 0; cursor: pointer; }
+.nivel3 label span { display: block; padding: 5px 9px; font-size: 12px; font-weight: 600;
+  color: var(--tinta-suave); border-left: 1px solid var(--borda); white-space: nowrap; }
+.nivel3 label:first-child span { border-left: 0; }
+.nivel3 label:hover span { background: #EEF2FA; }
+.nivel3 input:checked + span { color: #fff; background: var(--cinza); }
+.nivel3 input.n-ler:checked + span { background: var(--azul-claro); }
+.nivel3 input.n-editar:checked + span { background: var(--verde); }
+.nivel3 input:disabled + span { opacity: .35; cursor: not-allowed; }
+
+.mod-bloco { border: 1px solid var(--borda); border-radius: var(--raio-p);
+  margin-bottom: 10px; background: var(--branco); overflow: hidden; }
+.mod-bloco > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 10px; background: #F4F7FB; border-bottom: 1px solid var(--borda); }
+.mod-bloco > header b { font-size: 13px; }
+.mod-bloco > header .espaco { flex: 1; }
+.mod-linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 7px 10px; border-top: 1px solid #EDF1F7; }
+.mod-linha:first-of-type { border-top: 0; }
+.mod-linha > div { flex: 1 1 240px; min-width: 0; }
+.mod-linha b { font-size: 13px; }
+.mod-linha .abre { display: block; font-size: 11.5px; color: var(--azul-claro); }
+.mod-linha .abre b { font-weight: 700; font-size: 11.5px; }
+.mod-linha .dica { margin: 1px 0 0; font-size: 12px; color: var(--tinta-suave); line-height: 1.35; }
+.mod-dentro { padding: 7px 10px; background: #FBFCFE; border-top: 1px dashed var(--borda); }
+.mod-dentro > small { display: block; color: var(--tinta-suave); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-bottom: 4px; }
+
+/* "O que esta pessoa vê": o resumo que o cadastro passou a responder. */
+.ve-caixa { border: 1px solid var(--borda); border-radius: var(--raio-p);
+  background: var(--branco); padding: 10px 12px; }
+.ve-caixa .ve-mod { margin-bottom: 7px; font-size: 12.5px; }
+.ve-caixa .ve-mod:last-child { margin-bottom: 0; }
+.ve-caixa .ve-mod b { display: block; font-size: 12px; }
+.ve-caixa .ve-mod span { color: var(--tinta-suave); }
+@media (max-width: 640px) {
+  .mod-linha > div { flex: 1 1 100%; }
+  .nivel3 label span { padding: 6px 8px; }
+}

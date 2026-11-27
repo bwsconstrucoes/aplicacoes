@@ -266,9 +266,25 @@ def test_desmarcar_a_porta_de_entrada_fecha_o_erp_inteiro(app_real, sessao_real)
     from app.apps.erp.db.models.cadastros import Usuario, UsuarioPermissao
     from conftest import como
 
+    # ⚑ A PESSOA PRECISA DE PERFIL CADASTRADO (27/11/2026). Antes este teste
+    # criava alguém só com cargo, e o cargo abria as telas. Desde que o dono
+    # mandou desconectar o acesso dos cargos — *"se o cara não fez o
+    # cadastramento, ponto final, ele não tem absolutamente acesso a nada"* —,
+    # sem perfil não há o que desmarcar: já está tudo fechado.
+    from sqlalchemy import text
+
+    pid = sessao_real.execute(text(
+        "INSERT INTO perfis (nome, descricao, ativo) "
+        "VALUES ('Financeiro do teste', '', true) RETURNING id")).scalar()
+    sessao_real.execute(
+        text("INSERT INTO perfil_secoes (perfil_id, secao, nivel) "
+             "VALUES (:p, :s, :n)"),
+        [{"p": pid, "s": s, "n": n} for s, n in
+         (("fin_titulos", "LER"), ("fin_lancar", "EDITAR"),
+          ("fin_relatorios", "LER"), ("ger_arquivo", "LER"))])
     u = Usuario(nome="Desligado", email="desligado@teste.bws.local",
                 senha_hash=gerar_hash("senha-de-teste-1234"),
-                perfil=P.FINANCEIRO)
+                perfil=P.FINANCEIRO, perfil_id=pid)
     sessao_real.add(u)
     sessao_real.flush()
     sessao_real.commit()

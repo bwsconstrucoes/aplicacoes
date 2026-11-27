@@ -57,8 +57,11 @@ def cena(sessao_real):
         uid = None
         if com_login:
             uid = s.execute(text("""
-                INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo)
-                VALUES (:n, :e, :h, 'DEPARTAMENTO_PESSOAL', TRUE)
+                INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo,
+                                      perfil_id)
+                VALUES (:n, :e, :h, 'DEPARTAMENTO_PESSOAL', TRUE,
+                        (SELECT id FROM perfis
+                          WHERE nome = 'Cargo DEPARTAMENTO_PESSOAL'))
                 RETURNING id"""),
                 {"n": nome, "e": f"{cpf}@virada.teste",
                  "h": gerar_hash("senha-de-teste-123")}).scalar()
