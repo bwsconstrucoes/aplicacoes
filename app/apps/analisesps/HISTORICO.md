@@ -12310,6 +12310,8 @@ somente Solicitações de uma conta especifica"*.
   depois: *"vamos fazer pela planilha, pode adaptar"* — a reversão foi desfeita.
 - Se o Mobponto reabrir a API depois, os meses carregados passam a valer pelo ponto dia a
   dia (mês com carga não usa o relatório) — nada a desfazer.
+- **Publicado em 27/11/2026, com a leva 285** (sem migração). Falta o dono enviar o
+  relatório anual pela tela do 13º e conferir a divisão por obra.
 
 #### Leva 285 — Tela do Ponto: a frase "credenciais recusadas" só quando a falha é a credencial (27/11/2026)
 
