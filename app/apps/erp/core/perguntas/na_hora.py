@@ -157,10 +157,21 @@ def montar(s: Session, pergunta: str, visoes: list[dict[str, Any]],
     return _json_da_resposta(resp.choices[0].message.content)
 
 
-def responder(s: Session, pergunta: str,
-              usuario: Optional[Usuario]) -> dict[str, Any]:
+def responder(s: Session, pergunta: str, usuario: Optional[Usuario],
+              *, montador: Optional[Any] = None) -> dict[str, Any]:
     """A pergunta nova, do texto à resposta. Devolve sempre um dicionário com
-    `respondeu` — nunca levanta por não saber, porque "não sei" é resposta."""
+    `respondeu` — nunca levanta por não saber, porque "não sei" é resposta.
+
+    ⚑ `montador` EXISTE PARA O TESTE, e não é frescura de arquitetura
+    (27/11/2026). A ida à OpenAI é a única parte daqui que não dá para
+    exercitar sem chave e sem internet. Trocando SÓ ela por um dublê, a suíte
+    percorre o resto do caminho inteiro: o mapa, as travas, o recorte, o que
+    acontece quando o modelo diz "não dá", quando responde fora do formato e
+    quando monta uma consulta proibida.
+
+    Sem isto, o trecho mais novo do assistente iria para a produção sem um
+    único teste — e o defeito só apareceria com o dono na frente da tela.
+    """
     texto = (pergunta or "").strip()
     if not texto:
         raise ErroValidacao("Escreva a pergunta.")
@@ -172,7 +183,8 @@ def responder(s: Session, pergunta: str,
                           "eu consultar por aqui. Quem resolve isso é quem "
                           "cuida do seu acesso."}
 
-    montagem = montar(s, texto, visoes, usuario)
+    montagem = (montador(texto, visoes) if montador is not None
+                else montar(s, texto, visoes, usuario))
     if not montagem.get("da_para"):
         return {"respondeu": False, "tipo": "fora_do_mapa",
                 "recado": (montagem.get("por_que_nao")

@@ -238,11 +238,20 @@ IA.
 
 #### O que fica em aberto, dito para não parecer pronto
 
-1. **A IA nunca foi exercitada contra este mapa.** Este ambiente não tem chave
-   da OpenAI nem alcance de rede até ela, então **o caminho da IA está
-   escrito e testado só até a porta**: as travas, o recorte e a execução têm
-   teste com banco (20 casos), mas ninguém viu o modelo montar uma consulta
-   real. É o primeiro trabalho de quem continuar.
+1. **O MODELO nunca foi exercitado contra este mapa — e só ele.** O resto do
+   caminho tem teste: `na_hora.responder` ganhou um `montador` injetável, e a
+   suíte percorre tudo trocando **só a ida à OpenAI** por um dublê (31 casos
+   com banco). Prova que uma consulta boa chega à resposta, que uma proibida
+   vira recado em português em vez de estourar a tela, que "o mapa não
+   alcança" é resposta e não falha, e que seis consultas do tipo que um
+   modelo competente escreveria — com `GROUP BY`, `ILIKE`, `date_trunc` e
+   filtro pelos rótulos em português — rodam contra o mapa.
+
+   **O que continua sem prova:** que o modelo ESCOLHE a visão certa. Isso só
+   se mede com chave e internet, pela varredura dos papéis. Para medir:
+   a chave da OpenAI entra nas configurações do ambiente de nuvem (em
+   *Network secrets*, ou como variável `OPENAI_API_KEY`), e a sessão
+   seguinte já a enxerga.
 2. **A trava de leitura é conferência de TEXTO, não um usuário de banco
    só-leitura.** Um usuário próprio, sem permissão de escrita, seria mais
    forte. Enquanto não existe, o que segura são as travas de `consulta.py`.

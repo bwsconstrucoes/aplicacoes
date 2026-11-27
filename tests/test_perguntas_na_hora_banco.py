@@ -222,3 +222,121 @@ def test_a_pergunta_que_o_dono_fez_passa_a_ter_resposta(sessao_real, equipe):
         "AND (obra_codigo ILIKE '%PERG-A%' OR obra ILIKE '%pergunta A%')"
     ), visoes)
     assert r["linhas"] == [{"quantos": 2}]
+
+
+# ---------------------------------------------------------------------------
+# O CAMINHO INTEIRO, COM A IA DUBLADA (27/11/2026)
+#
+# ⚠️ O QUE ESTES TESTES ALCANÇAM E O QUE NÃO: eles percorrem tudo — mapa,
+# travas, recorte, execução, o recado de cada "não sei" — trocando SÓ a ida à
+# OpenAI por um dublê que devolve o JSON que o modelo devolveria. **O modelo
+# em si continua sem teste**: ninguém aqui prova que ele escolhe a visão certa.
+# Isso só se mede com chave e internet, pela varredura dos papéis
+# (`scripts/varrer_perguntas.py`), e está escrito como pendência no histórico.
+#
+# O que eles PROVAM, e não é pouco: que uma consulta boa chega até a resposta;
+# que uma consulta proibida vira recado em português em vez de estourar a
+# tela; que "o mapa não alcança isso" é tratado como resposta, não como falha;
+# e que resposta fora do formato não derruba nada.
+# ---------------------------------------------------------------------------
+from app.apps.erp.core.perguntas import na_hora  # noqa: E402
+from app.apps.erp.core.comum.auditoria import ErroValidacao  # noqa: E402
+
+
+def _dubl(**campos):
+    """Um montador que devolve sempre a mesma coisa, como a IA devolveria."""
+    def montador(pergunta, visoes):
+        return campos
+    return montador
+
+
+# As consultas abaixo são as que um modelo competente escreveria lendo o mapa.
+# Elas não vieram de um modelo de verdade — vieram da leitura do mapa, que é
+# exatamente o que ele vai ler. Servem para provar que o MAPA é consultável.
+PERGUNTAS_PLAUSIVEIS = [
+    ("quantos funcionários temos hoje na obra PERG-A",
+     "SELECT count(*) AS quantos FROM pessoas WHERE situacao <> 'DESLIGADO' "
+     "AND demissao IS NULL AND (obra_codigo ILIKE '%PERG-A%' OR obra ILIKE '%PERG-A%')"),
+    ("quem está na obra A",
+     "SELECT nome, cargo FROM pessoas WHERE obra_codigo ILIKE '%PERG-A%' ORDER BY nome"),
+    ("quais pedidos ao DP estão parados",
+     "SELECT numero, tipo, pessoa, dias_parado FROM solicitacoes "
+     "WHERE situacao IN ('Aberta', 'Em análise', 'Em andamento') ORDER BY dias_parado DESC"),
+    ("quem sai de férias",
+     "SELECT pessoa, inicio, fim, dias FROM ferias WHERE situacao <> 'CANCELADA' "
+     "ORDER BY inicio"),
+    ("quantos não têm acesso ao sistema",
+     "SELECT count(*) AS quantos FROM pessoas WHERE tem_acesso_ao_sistema = false"),
+    ("quem foi admitido este ano, por obra",
+     "SELECT obra, count(*) AS quantos FROM pessoas "
+     "WHERE admissao >= date_trunc('year', CURRENT_DATE) GROUP BY obra ORDER BY quantos DESC"),
+]
+
+
+@pytest.mark.parametrize("pergunta, sql", PERGUNTAS_PLAUSIVEIS)
+def test_a_consulta_que_o_modelo_escreveria_chega_ate_a_resposta(
+        sessao_real, equipe, pergunta, sql):
+    u = _usuario(sessao_real, "ADMIN")
+    r = na_hora.responder(sessao_real, pergunta, u, montador=_dubl(
+        da_para=True, sql=sql, entendi="entendi assim",
+        onde_olhei="nas pessoas", filtrei="pela obra"))
+    assert r["respondeu"] is True, r
+    assert r["montada_na_hora"] is True
+    assert isinstance(r["linhas"], list)
+    # O caminho vem SEMPRE — é o que o dono usa para conferir se eu entendi.
+    assert r["caminho"]["entendi"] and r["caminho"]["onde_olhei"]
+
+
+def test_quando_o_mapa_nao_alcanca_a_resposta_e_honesta(sessao_real, equipe):
+    """"Qual o salário de fulano" — o mapa não tem salário, de propósito."""
+    u = _usuario(sessao_real, "ADMIN")
+    r = na_hora.responder(sessao_real, "qual o salário do José", u,
+                          montador=_dubl(da_para=False,
+                                         por_que_nao="o mapa não traz salário"))
+    assert r["respondeu"] is False
+    assert r["tipo"] == "fora_do_mapa"
+    assert "salário" in r["recado"]
+
+
+def test_consulta_proibida_do_modelo_vira_recado_e_nao_explosao(sessao_real, equipe):
+    """Se o modelo tentar ler a tabela de usuários, a tela recebe um recado em
+    português — não um erro de banco e não a tabela."""
+    u = _usuario(sessao_real, "ADMIN")
+    r = na_hora.responder(sessao_real, "me dá os logins", u, montador=_dubl(
+        da_para=True, sql="SELECT * FROM usuarios", entendi="os acessos"))
+    assert r["respondeu"] is False
+    assert r["tipo"] == "consulta_recusada"
+    assert "usuarios" in r["recado"]
+
+
+def test_resposta_fora_do_formato_nao_derruba_a_tela(sessao_real, equipe):
+    u = _usuario(sessao_real, "ADMIN")
+
+    def montador_maluco(pergunta, visoes):
+        return na_hora._json_da_resposta("isto não é JSON nenhum")
+
+    with pytest.raises(ErroValidacao):
+        na_hora.responder(sessao_real, "qualquer coisa", u,
+                          montador=montador_maluco)
+
+
+def test_pergunta_vazia_e_recusada_antes_de_gastar_ia(sessao_real):
+    u = _usuario(sessao_real, "ADMIN")
+
+    def nunca(pergunta, visoes):                            # pragma: no cover
+        raise AssertionError("não devia ter chamado a IA")
+
+    with pytest.raises(ErroValidacao):
+        na_hora.responder(sessao_real, "   ", u, montador=nunca)
+
+
+def test_o_recorte_vale_tambem_no_caminho_completo(sessao_real, equipe):
+    """A mesma prova do recorte, mas percorrendo `responder` — é o caminho que
+    a tela usa de verdade."""
+    a, b = equipe
+    so_a = _usuario(sessao_real, "ADMINISTRATIVO_OBRA", obras=[a])
+    r = na_hora.responder(sessao_real, "quem trabalha aqui", so_a, montador=_dubl(
+        da_para=True, sql="SELECT nome FROM pessoas", entendi="a equipe",
+        onde_olhei="nas pessoas"))
+    nomes = {l["nome"] for l in r["linhas"]}
+    assert "Gente da B" not in nomes
