@@ -12275,6 +12275,36 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 286 — 13º: o relatório anual de presenças do Mobponto cobre os meses sem ponto; cada mês vale o mesmo (avos) (27/11/2026)
+
+- A folha do 13º dizia *"Sem ponto carregado em 01/2026 … 08/2026"*: depois do pedido de
+  cancelamento do Mobponto, a API passou a devolver a lista VAZIA para os meses antigos
+  (credencial aceita; leva 285). O dono mandou o "Presenças por Locais - ( Anual )" do
+  Mobponto: *"Nele temos pessoa, mês e obra onde ele trabalhou. Veja se com esse relatório
+  conseguiríamos contornar o problema."*
+- O arquivo: `.xls` que é TABELA HTML; uma linha por pessoa — CPF, nome, LOCAL e ETAPA de
+  JAN a DEZ; UM local por mês, sem dias. Real: 1.506 pessoas, 66 locais (os códigos de
+  obra do ponto), ETAPA vazia; jan 892 pessoas … out 415.
+- `ponto_anual.py`: `ler` (valida o título, CPF só dígitos), `guardar` em
+  `analisesps.meta` (`ponto_anual.<ano>`, sem migração; enviar de novo substitui) e
+  `carregar`. Na tela da folha do 13º: "Enviar o relatório anual" (só Operador; o ano é o
+  da folha) e o aviso diz quais meses vieram dele, quando e por quem.
+- **A conta mudou para os AVOS (decisão minha, dita ao dono):** sem os dias do relatório,
+  pesar pelos dias é impossível; o 13º se conta em avos, então **cada mês trabalhado vale
+  o mesmo**. Mês com carga (Mobponto ou ponto eletrônico): o mês se divide entre as obras
+  pelos dias (cada dia pesa 1/dias com obra no mês). Mês sem carga: a obra do relatório, o
+  mês inteiro (`mes_inteiro`). Mês com carga NÃO usa o relatório. Exemplo testado: 8 meses
+  na A pelo relatório, set na B, out metade B metade C → A 80%, B 15%, C 5%.
+- `folha_apropriacao`: o dia ganhou `peso` (padrão 1) — a folha do mês não muda (teste).
+- Conferência sem expor dado (contagens): das 353 pessoas do 13º, 321 casam com o
+  relatório pelo NOME (o sistema casa pelo CPF do cadastro); 289 têm algum mês de jan–ago.
+- Limites: a coluna "dias" da divisão por obra conta entradas (o mês do relatório conta
+  como 1); a janela do ponto da pessoa mostra o mês do relatório no dia 1º do mês.
+- O arquivo real tem dados pessoais: NÃO está no repositório; o teste que o lê só roda onde
+  ele está. Testes com CPF/nome inventados em `test_analisesps_folha_decimo.py`.
+- Sem migração. Custo: enviar = 1 gravação; a conta do 13º lê o relatório uma vez (fica
+  na memória com o ano do ponto, 10 min). Nada vai ao Mobponto nem ao Google.
+
 #### Leva 285 — Tela do Ponto: a frase "credenciais recusadas" só quando a falha é a credencial (27/11/2026)
 
 - O dono, ao carregar 01/2026 para o 13º: *"não estou conseguindo baixar o ponto por falta
