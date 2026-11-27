@@ -257,6 +257,11 @@ casamento"* dos e-mails que já saíram com CT.
   CPF. A tela mostra a marca (`contabilidade.marca_do_pedido` / SQL
   `substring(assunto …)`); CT sem solicitação continua mostrando o CT.
 
+**Decidido por ele (27/11/2026):** resposta só em texto, sem documento, NÃO
+conclui — *"O normal é sempre ter retorno. Mera ciência não faz nada."* Fica
+como está: o agente guarda a resposta na conversa da solicitação e o DP decide.
+Não perguntar de novo.
+
 **O que ficou de fora / não verificado:** a leitura por IA do retorno não roda
 aqui (sem chave); resposta só em texto (sem anexo) não conclui nada — o
 cancelamento confirmado por e-mail continua pedindo o clique do DP; o agente
