@@ -119,7 +119,7 @@ def encaminha_diversa(pedido: dict[str, Any]) -> bool:
 
 def _pedido_ligado(s: Session, sol: dict[str, Any], template: str):
     return s.execute(text("""
-        SELECT id, numero, situacao FROM dp_pedidos
+        SELECT id, numero, situacao, COALESCE(substring(assunto from '\\[((SDP|CT)-[0-9]{4,6}(/[0-9]{1,2})?)\\]'), numero) AS marca FROM dp_pedidos
          WHERE template = :t AND situacao <> 'CANCELADO'
            AND (solicitacao_id = :sid
                 OR (solicitacao_id IS NULL AND colaborador_id = :c
@@ -179,9 +179,9 @@ def passos(s: Session, sol: dict[str, Any]) -> dict[str, Any]:
         enviado = ped["situacao"] != "RASCUNHO"
         item("CONTABILIDADE", f"Pedido à contabilidade: {nome}", "DP",
              "FEITO" if enviado else "PENDENTE",
-             f"{ped['numero']} " + ("enviado" if enviado
+             f"{ped['marca']} " + ("enviado" if enviado
                                     else "montado e ainda não enviado"),
-             pedido={"id": ped["id"], "numero": ped["numero"]})
+             pedido={"id": ped["id"], "numero": ped["numero"], "marca": ped["marca"]})
     voltou = ped is not None and ped["situacao"] == "CONCLUIDO"
     item("RETORNO", "A contabilidade devolveu", "Contabilidade",
          "FEITO" if voltou else ("AGUARDANDO" if ped is not None
@@ -384,6 +384,9 @@ def fechar_pelo_pedido(s: Session, pedido: dict[str, Any],
                 {"texto": f"{pedido.get('numero')} concluído — pedido atendido"
                           + (f"; {feito}" if feito else "")},
                 usuario)
+        # 26/11/2026: quem pediu fica sabendo (portal e celular).
+        from app.apps.erp.core.pessoal_solicitacoes import avisar_quem_pediu
+        avisar_quem_pediu(s, int(sol["id"]), pelo_agente=usuario is None)
     return len(sols)
 
 
@@ -437,7 +440,7 @@ EXTRAS = ("RETIFICACAO", "CANCELAMENTO_SOLICITACAO")
 
 def _pedidos(s: Session, solicitacao_id: int) -> list[dict[str, Any]]:
     return [dict(l) for l in s.execute(text("""
-        SELECT id, numero, template, situacao, dados FROM dp_pedidos
+        SELECT id, numero, template, situacao, dados, COALESCE(substring(assunto from '\\[((SDP|CT)-[0-9]{4,6}(/[0-9]{1,2})?)\\]'), numero) AS marca FROM dp_pedidos
          WHERE solicitacao_id = :s AND situacao <> 'CANCELADO'
          ORDER BY id"""), {"s": solicitacao_id}).mappings().all()]
 
@@ -458,16 +461,17 @@ def passos_extras(s: Session, solicitacao_id: int) -> list[dict[str, Any]]:
                   if cancel else
                   "Correção comunicada à contabilidade, com a ciência dela")
         if p["situacao"] == "CONCLUIDO":
-            estado, det = "FEITO", f"{p['numero']}: a contabilidade confirmou"
+            estado, det = "FEITO", f"{p['marca']}: a contabilidade confirmou"
         elif p["situacao"] == "RASCUNHO":
-            estado, det = "PENDENTE", f"{p['numero']} montado e ainda não enviado"
+            estado, det = "PENDENTE", f"{p['marca']} montado e ainda não enviado"
         else:
-            estado, det = "AGUARDANDO", f"{p['numero']} enviado — esperando a ciência"
+            estado, det = "AGUARDANDO", f"{p['marca']} enviado — esperando a ciência"
         saida.append({"codigo": f"EXTRA_{p['id']}", "rotulo": rotulo,
                       "quem": "DP e contabilidade", "como": "lido",
                       "estado": estado, "detalhe": det, "por": "", "em": None,
                       "observacao": "", "pedido": {"id": p["id"],
-                                                   "numero": p["numero"]}})
+                                                   "numero": p["numero"],
+                                                   "marca": p["marca"]}})
     return saida
 
 
@@ -497,7 +501,7 @@ def comunicar_correcao(s: Session, sol: dict[str, Any], mudou: list[dict[str, An
                              "colaborador_id": sol["colaborador_id"],
                              "solicitacao_id": sol["id"],
                              "dados": {"pedido_original": ", ".join(
-                                 p["numero"] for p in enviados),
+                                 p["marca"] for p in enviados),
                                  "o_que_mudou": _o_que_mudou(mudou)}}, usuario)
         feito["retificacao"] = r["numero"]
         if sol.get("situacao") == "ATENDIDA":
@@ -542,7 +546,7 @@ def cancelar_em_andamento(s: Session, sol: dict[str, Any], motivo: str,
                              "colaborador_id": sol["colaborador_id"],
                              "solicitacao_id": sol["id"],
                              "dados": {"pedido_original": ", ".join(
-                                 p["numero"] for p in enviados),
+                                 p["marca"] for p in enviados),
                                  "motivo": motivo.strip()}}, usuario)
         if sol.get("situacao") == "ATENDIDA":
             s.execute(text("UPDATE dp_solicitacoes SET situacao = 'EM_ANDAMENTO', "

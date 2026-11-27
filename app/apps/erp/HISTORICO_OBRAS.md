@@ -72,6 +72,40 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 26/11/2026 (2) — No celular, o diário abre com os filtros à mostra
+
+Ele tinha deixado a dúvida em aberto de manhã (*"na hora que abre, ele abre no
+quadro do mês. Aí eu tenho que clicar em filtros para poder pesquisar para o
+específico (…) eu não sei se essa seria a melhor tela"*) e decidiu à tarde:
+
+> *"Quando abrir no celular, eu acho melhor o quadro do filtro."*
+
+**O que mudou:** no telefone (até 720 px), a tela abre com a **gaveta de
+filtros aberta** — e a primeira coisa à mão é *"Qual obra"*. Quem abre o diário
+no celular quase sempre vem fazer **um dia de uma obra**, não olhar o panorama;
+com a gaveta fechada, chegar na obra custava um toque escondido atrás de um
+botão flutuante.
+
+**O quadro do mês NÃO saiu de baixo.** Ele continua sendo a tela; a gaveta é uma
+camada por cima, e tocar fora dela fecha e revela o panorama. **Trocar a porta
+de entrada seria decisão maior, e ele não pediu isso** — ele pediu o filtro à
+mão, não o quadro fora do caminho.
+
+**Duas condições, e as duas têm teste:** só no celular (no computador a coluna
+de filtros já está sempre à vista — a gaveta nem existe acima de 720 px) e só
+quando **nenhuma obra está escolhida** (quem chegou com obra já sabia aonde ia).
+
+**Decisão minha, dita para ele poder derrubar:** o campo *"Qual obra"* **não
+recebe o cursor sozinho**. Receber abriria o teclado do celular por cima de
+tudo, toda vez que a tela abre — inclusive para quem só queria olhar o quadro.
+Se ele preferir o teclado já aberto, é uma linha.
+
+**Arquivo mexido:** `templates/erp_diario.html`. A gaveta em si é do
+`erp_base.html` e **não foi tocada** — a tela só liga a classe que já existe.
+Sem migração.
+
+---
+
 ### 26/11/2026 — A foto abre o dia; o quadro cabe no celular; a obra se clica
 
 **Três coisas que ele viu usando, no telefone**, e as três viraram conserto:

@@ -19,9 +19,11 @@ def test_a_ficha_unica_abre_sozinha_e_a_tela_de_colaboradores_a_usa(app, mundo):
     assert "painelPessoaErp" in html and "Configuração do ponto" in html
     # os dados que as abas novas leem são os do ERP, com a trava dele
     assert dp.get(f"/erp/api/colaboradores/{mundo['joao']}/historico").status_code == 200
-    # a tela de Colaboradores abre a ficha única (quem enxerga o ponto) e atende os pedidos dela
+    # 26/11/2026: a tela de Colaboradores abre a pessoa no modal-ponte
+    # (`abrirPessoa`, erp_base.html), que mostra esta ficha como a aba Ponto.
     col = dp.get("/erp/colaboradores").get_data(as_text=True)
-    assert 'id="dlg-unica"' in col and "/erp/ponto/pessoa/" in col and '"bws-ficha"' in col
+    assert "abrirPessoa(" in col and 'id="dlg-ambiente"' in col and '"bws-ficha"' in col
+    assert 'id="dlg-unica"' not in col
     # o menu: o Ponto de volta, logo depois de Pessoal
     from app.apps.erp import routes as R
     chaves = [m["chave"] for m in R.MODULOS]

@@ -38,6 +38,16 @@ contabilidade, o agente de DP, o portal da obra, cargos e convenções.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+**PUBLICADO em 27/11/2026 (lote 10, 11 e 12)** — ⚠️ confirmar com ele que apertou
+"Aplicar atualizações do banco" (129). Antes:
+**NO RAMO, SEM PUBLICAR (26/11/2026, lote 10 e 11)** — decisão dele: *"Não vamos
+publicar, vamos juntar aí com as novas respostas e fazer tudo de uma vez."*
+Caixa de entrada sem marcar lido + pasta Agente, aviso de "processando", fichas
+antigas apagadas, o agente autônomo (confere, conclui, envia dependente e
+afastamento, avisa quem pediu), o diário com ✔/✘, a marca "🤖 agente", a tela
+única e o número único. **Migração 129** — apertar "Aplicar atualizações do
+banco" no momento da junção. Ver "Decisões", 26/11 (10) e (11).
+
 **⚠️ EM OBRA NO CHAT DO PONTO (aviso dele em 23/11/2026):** a central única de
 assinaturas do colaborador vai para o aplicativo do ponto, usando
 `core/termos.py` como base. **Não mexer em `termos.py`** até ele avisar que
@@ -140,6 +150,163 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 ---
 
 ## Decisões desta área
+
+### 27/11/2026 — Tudo da solicitação no mesmo canto: os e-mails, a devolução pela obra e a conversa inteira
+
+Ele: *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada SDP,
+todo o histórico"* e *"A devolver pela obra é melhor ficar dentro da SDP
+também. E lá ficar o histórico de mensagens enviadas e obviamente as respostas
+(…) pra não precisar ir em nenhum outro canto pra tratar de uma mesma SDP."*
+
+O defeito que ele viu: o e-mail à contabilidade só aparecia na solicitação
+como PASSO do processo, e só enquanto o processo estava aberto — solicitação
+atendida ou antiga não mostrava nada.
+
+- `pessoal_solicitacoes.tudo_que_saiu_e_voltou` (no `ler` da solicitação):
+  **E-mails à contabilidade** (todos, inclusive cancelados; clicar abre o
+  e-mail com cobrar/concluir), **A devolver pela obra** (com "cobrar a obra" e
+  os links do que foi e do que voltou) e **A conversa com a contabilidade**
+  (cada e-mail que saiu — pedido, reenvio, cobrança — e cada resposta casada,
+  em ordem, com o texto). 4 leituras ao banco, nenhuma ida à internet.
+- E-mail/devolução ANTIGO sem vínculo gravado entra pela mesma regra que o
+  processo já usava: mesma pessoa, até 60 dias depois da solicitação; a tela
+  marca "da mesma pessoa, sem vínculo gravado".
+- A conversa (texto dos e-mails) só vai para quem tem `pedir_contabilidade`
+  — a obra vê o pedido, não a correspondência.
+- Resposta que chegou antes de 26/11 aparece sem o texto (ele não era guardado).
+- Horas na tela no horário de Fortaleza (`quandoBR`, erp_base) — antes o
+  diário mostrava UTC, 3 h adiantado.
+
+**Tirados no mesmo dia, com o "pode tirar e publicar" dele:** as abas "Todos
+os e-mails à contabilidade" e "A devolver pela obra" e o botão "+ Pedido" de
+"Contabilidade e agente". Ficaram Diário, rotinas, caixa e sugestões. O que se
+perdeu, e ele sabia: o e-mail avulso antigo (feito pelo "+ Pedido", sem
+solicitação) não tem mais lista própria — continua no banco e no caixa. As
+rotas da API continuam (a criação de pedido ainda é usada pelo processo).
+
+### 26/11/2026 (12) — O agente lê a caixa de hora em hora, nos dias úteis, fora das batidas do ponto
+
+Ele: *"de hora em hora, mas sempre protegendo o horário de batida do ponto
+(…) 7 horas, meio-dia, 13 horas, 16 horas ou 17 horas. (…) qualquer rotina que
+exija processamento (…) se abstenha desses horários (…) não precisa no final
+de semana."*
+
+- **Caixa** (ler → casar → conferir → concluir): seg a sex, 8h30, 9h30,
+  10h30, 11h30, 14h30, 15h30 e 18h30 (hora de Fortaleza). 12h30 e 16h30
+  ficaram de fora por estarem entre duas batidas. Cada horário vale 50 min
+  (se o serviço reiniciava na hora, pega a vez); a marca fica em `parametros`
+  (`agente_dp.caixa_em`), então reiniciar não repete.
+- **Rodada diária** (obra atual, ponte do ponto, cobrança, vigia): deixou de
+  rodar "no primeiro acesso do dia" — que caía na batida das 7h — e roda a
+  partir das 8h30, nunca a menos de 20 min de uma batida.
+- **Quem dispara:** um relógio na linha de trabalho em segundo plano
+  (`tarefas.registrar_relogio`, uma checagem por minuto), não a tela de
+  ninguém. Só enfileira; a fila tem uma linha só, então a caixa nunca roda ao
+  mesmo tempo que outro trabalho pesado. ⚠️ A linha liga no primeiro acesso ao
+  ERP depois de o serviço reiniciar — se ninguém abrir o ERP depois de um
+  reinício, o relógio fica parado até alguém abrir.
+- **Custo de uma leitura:** 1 conexão ao e-mail + 1 busca + 1 leitura de
+  cabeçalhos; por e-mail NOVO, 1 download; por anexo de retorno, 1 envio ao
+  Drive + 1 leitura por IA. Sem e-mail novo, são 3 idas ao servidor de e-mail
+  e nada mais. 7 por dia.
+
+### 26/11/2026 (11) — O agente trabalha sozinho, com diário revisável; uma tela e um número só
+
+Ele: *"eu quero um agente que trabalhe como um humano (…) as ações que o agente
+fez de forma autônoma ficasse todo o histórico (…) opa, essa aqui deu errado."*
+Decisões dele (*"concordando com o ABC"*): **envia sozinho** dependente (sim),
+afastamento (só se o agente ler e estiver tudo certo), férias (não), alteração
+de cargo (não); **conclui sozinho** quando o documento que volta bate — *"mas é
+bom dar destaque tudo que for feito pelo agente (…) na própria listagem tem
+alguma tag"*; **tela única e número único, sim** — *"você tem que manter o
+casamento"* dos e-mails que já saíram com CT.
+
+- **Conferência do retorno** (`conferencia_retorno.py`): o anexo que volta pela
+  caixa (ou que o DP anexa no pedido) é lido por IA (nome, CPF, cargo,
+  salário, admissão, saída) e comparado com o cadastro. Bate → conclui o
+  pedido e fecha a solicitação; diverge → DIVERGENTE, para o DP; não deu para
+  ler → fica para o DP. **Desligamento e Diversos nunca concluem sozinhos.** A
+  rotina "conferencia" nasce em FAZ pela migração 129 (só se estava
+  DESLIGADA).
+- **Envio sozinho** (`pessoal_solicitacoes.enviar_sozinho_se_pode`):
+  DEPENDENTE e AFASTAMENTO, depois do atendimento do DP, se a análise do
+  agente não acusou nada (afastamento exige natureza, início e o atestado).
+- **Aviso a quem pediu** (`avisar_quem_pediu`): ao fechar a solicitação, cartão
+  verde "✅ Pedido resolvido" na entrada do portal (some no "Entendi") e
+  mensagem pelo Telegram/celular (tipo `erp.pedido_resolvido` na mensageria).
+  ⚠️ **Ele não respondeu como quer o aviso**; escolhi portal + Telegram.
+- **Diário do agente** (`agente_diario.py`, tabela `dp_agente_acoes`, 129):
+  cada coisa que ele fez sozinho, com ✔ Certo / ✘ Errado (o errado exige dizer
+  o que era para ter feito). **O agente não aprende sozinho com a revisão, de
+  propósito** — o "errado" vira conversa no chat e ajuste de regra. Aparece
+  dentro da solicitação e na aba "Diário do agente".
+- **Marca "🤖 agente"** na lista de Solicitações e cartão "Feito pelo agente"
+  (clicável, filtra) — some quando todas as ações daquela solicitação são
+  revisadas.
+- **Tela única:** dentro da solicitação, o e-mail à contabilidade agora também
+  cobra, recebe o documento que chegou por fora (anexar → arquiva na pessoa →
+  o agente confere), conclui, aceita divergência e cancela. "Contabilidade e
+  agente" virou configuração: Diário (abre primeiro), rotinas, caixa,
+  sugestões, e-mail da contabilidade no alto. **A lista "Todos os e-mails à
+  contabilidade" e "A devolver pela obra" ficaram** (não pedi para tirar —
+  há CT antigo sem solicitação e o "+ Pedido" avulso vive ali).
+- **Número único:** e-mail novo de solicitação sai com `[SDP-000003]` no
+  assunto (`[SDP-000003/2]` no 2º e-mail da mesma, ex.: retificação). O CT
+  continua por dentro como chave. A caixa casa por In-Reply-To, depois
+  `[SDP-…]` (procura no assunto gravado), depois `[CT-…]` (os antigos), depois
+  CPF. A tela mostra a marca (`contabilidade.marca_do_pedido` / SQL
+  `substring(assunto …)`); CT sem solicitação continua mostrando o CT.
+
+**O que ficou de fora / não verificado:** a leitura por IA do retorno não roda
+aqui (sem chave); resposta só em texto (sem anexo) não conclui nada — o
+cancelamento confirmado por e-mail continua pedindo o clique do DP; o agente
+roda uma vez por dia, no primeiro acesso (não há horário fixo).
+
+### 26/11/2026 (10) — Caixa de entrada: só o que o agente casou vai para a pasta "Agente"; o resto fica NÃO LIDO; o pedido mostra a resposta; aviso de "processando"; fichas antigas apagadas
+
+Ele: *"quando a gente coloca ler, ele está lendo toda a caixa de e-mail. Só que
+outros e-mails que não tem nada a ver com os assuntos, ele está deixando lido.
+(…) Olha o perigo disso. (…) criar uma pasta agente (…) tudo que ele não
+identificasse, ele mantinha na caixa de entrada como não lido."* E: *"a gente
+clica (…) não vê o que é que a contabilidade respondeu, não vê o que é que ela
+anexou."* E: *"Você clica no botão e você fica na dúvida se está havendo algum
+processamento ou não."*
+
+**O que o levantamento achou (e foi corrigido):** a leitura baixava com RFC822
+(marca lida no servidor) as 40 primeiras não lidas — TODAS, de qualquer
+assunto; o "ler sem gravar" também marcava; o texto da resposta não era
+guardado; o evento dizia "os dados batem com o cadastro" sem ler o documento;
+o "Ler agora" exigia `configurar` (o DP via o botão e levava 403); o recado do
+resultado sumia porque a tela era redesenhada em seguida.
+
+- `email_entrada.rodada`: busca por UID, só não lidas dos últimos 30 dias;
+  lê o Message-ID de todas com PEEK e descarta as já vistas (senão as que não
+  casam, que agora ficam não lidas, tomariam as 40 vagas para sempre); baixa
+  com `BODY.PEEK[]`. O que CASOU com pedido/devolução vai para
+  `INBOX.Agente` (criada e assinada na 1ª vez; nome pelo LIST — Locaweb usa
+  "INBOX."), lido, via `UID MOVE`. Servidor sem MOVE: ficam lidas onde estão
+  (não se copia-e-apaga). O resto fica intocado, NÃO lido.
+- Migração **129**: `email_entrada_mensagens.corpo` (o texto, até 20 mil
+  caracteres) e `movida_para`. Sem a migração, o código segue sem gravar o
+  texto (`_tem_coluna_corpo`).
+- `contabilidade.o_que_voltou` + `blocoDoQueVoltou` (erp_base): o pedido (na
+  tela da Contabilidade e no pedido ao DP) mostra "O que a contabilidade
+  respondeu" — o texto de cada resposta e os documentos que vieram (que já iam
+  para o Arquivo da pessoa, com a referência "CT-… — retorno").
+- `receber` sem leitura diz "o documento voltou — o conteúdo ainda não foi
+  conferido pelo sistema" (a conferência de conteúdo não existe ainda).
+- `/erp/api/dp/caixa/<acao>` passou a `pedir_contabilidade`.
+- `api()` (erp_base): todo clique que chama o servidor desativa o botão, põe
+  ⏳ e mostra "Processando…" no alto até a resposta (0,3 s de tolerância).
+- Fichas antigas apagadas (ele: *"é lixo"*): `dlg-unica` e o que a servia em
+  Colaboradores, `dlg-ponto` em Pedidos ao DP, `dlg-ficha` em Mensagens, e as
+  funções dos botões que saíram (alteração, readmissão, troca, desligamento,
+  retorno, afastar, mandar à contabilidade, + Solicitação, cancelar
+  desligamento, alterar/cancelar férias). Testes que protegiam as fichas
+  antigas foram reescritos para proteger o modal-ponte.
+
+**Não há horário 21h/0h no código do agente:** a rodada é uma por dia, puxada
+pelo primeiro acesso ao ERP. Ver a resposta a ele sobre isso.
 
 ### 26/11/2026 (9) — A Solicitação Diversa: pessoa opcional e, se o DP quiser, à contabilidade em texto
 

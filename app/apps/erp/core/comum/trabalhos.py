@@ -396,9 +396,22 @@ def agente_dp_dia(s: Session, parametros: dict[str, Any], andamento) -> dict[str
             "ligadas": feito.get("rotinas_ligadas")}
 
 
+def agente_dp_caixa(s: Session, parametros: dict[str, Any], andamento) -> dict[str, Any]:
+    """A leitura da caixa do DP, de hora em hora nos dias úteis, fora das
+    batidas do ponto (26/11/2026). Lê só o que é novo, casa com o pedido e,
+    no anexo que volta, o agente confere e conclui (`conferencia_retorno`)."""
+    from app.apps.erp.core import agente_dp
+    r = agente_dp.rodar_caixa(s, None)
+    s.commit()
+    return {k: v for k, v in r.items() if k != "mensagens"}
+
+
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
     tarefas.registrar("agente_dp_dia", agente_dp_dia)
+    tarefas.registrar("agente_dp_caixa", agente_dp_caixa)
+    from app.apps.erp.core import agente_dp
+    tarefas.registrar_relogio(agente_dp.tique_do_relogio)
     tarefas.registrar("importar_pipefy", importar_pipefy)
     tarefas.registrar("importar_cadastro_pipefy", importar_cadastro_pipefy)
     tarefas.registrar("importar_cadastro_planilha", importar_cadastro_planilha)

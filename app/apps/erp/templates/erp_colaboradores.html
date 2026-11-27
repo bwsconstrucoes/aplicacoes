@@ -231,22 +231,14 @@
     <th>Situação</th></tr></thead>
     <tbody id="corpo"></tbody></table>
 </div><div class="vazio oculto" id="vazio"></div></div>
+{# 26/11/2026: a ficha do ponto embutida (dlg-unica) saiu — a pessoa abre no
+   modal-ponte (`abrirPessoa`, erp_base.html). #}
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
   {# "Fechar" volta UMA tela quando veio da ficha da pessoa — ver
      `VOLTAR_PARA_FICHA`. #}
   <button class="topo-btn" style="margin-left:auto"
           onclick="fecharFormulario()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
-{# A FICHA ÚNICA DA PESSOA (13/11/2026): a mesma janela que abre clicando no nome em qualquer tela do ponto — o
-   cadastro, os pagamentos, o ponto, os aparelhos, a configuração do ponto e o rosto. Ela mora no módulo do ponto
-   (/erp/ponto/pessoa/<id>) e aparece aqui inteira; editar o cadastro e os documentos voltam para o formulário daqui. #}
-<dialog id="dlg-unica" style="width:96vw; max-width:1400px; height:92vh; max-height:92vh; padding:0; overflow:hidden">
-  <div style="display:flex; flex-direction:column; height:100%">
-    {# A FAIXA DO AFASTAMENTO (19/11/2026) fica FORA do quadro do ponto, aqui no
-       ERP: a janela da pessoa é do ponto, e o afastamento é do cadastro. #}
-    <div id="unica-afast"></div>
-    <iframe id="unica-quadro" title="Ficha da pessoa" style="width:100%; flex:1; border:0; display:block"></iframe>
-  </div></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -915,22 +907,6 @@ function pendenciasDaLinha(c){
 // ---------------------------------------------------------------------------
 let ABA_FICHA_PESSOA = "resumo", FICHA_ID = null, FICHA_H = null;
 
-// A FICHA ÚNICA (13/11/2026, o dono: "eu cliquei no cadastro da pessoa, a partir daquele nome, tudo que envolve a
-// pessoa eu tenho acesso — seja ponto, configurações, liberação de aparelhos, tudo"). Quem enxerga o ponto abre a
-// janela do ponto, que agora traz o cadastro e os pagamentos daqui; quem não enxerga, a ficha de sempre (abaixo).
-function abrirFichaUnica(id){
-  if (!PODE_VER_PONTO) return ficha(id);
-  FAIXA_DE = id;
-  els("unica-afast").innerHTML = "";
-  els("unica-quadro").src = `/erp/ponto/pessoa/${encodeURIComponent(id)}`;
-  els("dlg-unica").showModal();
-  pintarFaixaDoAfastamento(els("unica-afast"), id);
-}
-els("dlg-unica").addEventListener("close", () => {
-  els("unica-quadro").src = "about:blank";
-  els("unica-afast").innerHTML = "";
-  FAIXA_DE = null;
-});
 
 // ===========================================================================
 // ⚑ A FAIXA DO AFASTAMENTO NA JANELA DA PESSOA (19/11/2026)
@@ -947,7 +923,6 @@ els("dlg-unica").addEventListener("close", () => {
 // ⚠️ CUSTO: uma ida ao servidor, e só quando a lista já diz que a pessoa está
 // afastada. Para os outros, nenhuma.
 // ===========================================================================
-let FAIXA_DE = null;
 
 async function pintarFaixaDoAfastamento(alvo, id){
   if (!alvo || !PODE_EDITAR) return;
@@ -980,73 +955,7 @@ async function pintarFaixaDoAfastamento(alvo, id){
 // Abre o cadastro completo já na aba Demandas e, carregado o afastamento,
 // a janela do retorno. A janela da pessoa fica ATRÁS (ver "A TELA DE TRÁS NÃO
 // FECHA MAIS").
-async function irParaORetorno(id){
-  try {
-    const r = await api(`/erp/api/colaboradores/${id}/ficha`);
-    await formulario(r.colaborador);
-    els("c-abas").querySelectorAll(".subaba").forEach(x =>
-      x.classList.toggle("ativa", x.dataset.aba === "demandas"));
-    ABA_FICHA = "demandas";
-    await pintarDemandasDaPessoa(els("c-painel"), FICHA);
-    if (AFASTAMENTO && AFASTAMENTO.aberto) registrarRetorno(FICHA);
-  } catch(e){ recado(e.message, "erro"); }
-}
 
-// ===========================================================================
-// ⚑ A TELA DE TRÁS NÃO FECHA MAIS PARA ABRIR A DA FRENTE (18/11/2026)
-//
-// Ele, pela segunda vez:
-//
-//   *"Já havia combinado que eu não estou conseguindo navegar no cadastro do
-//    colaborador. Se eu entro na tela principal do cadastro e clico no botão
-//    Editar o cadastro completo, a tela principal fecha e não consigo voltar
-//    pra ela. Só eu clicar novamente na lista dos colaboradores. Não pode
-//    fechar a tela principal pra abrir o modal seguinte."*
-//
-// ⚠️ EU HAVIA CONSERTADO O CAMINHO ERRADO. Em 17/11 ele disse a mesma coisa, e
-// eu resolvi só o caminho da ficha do ERP (`VOLTAR_PARA_FICHA`, que reabre a
-// ficha ao fechar o formulário). Mas o caminho que ele usa é OUTRO: a janela
-// da pessoa que vem do ponto (`dlg-unica`), e esta linha a FECHAVA de
-// propósito antes de abrir o formulário. Fechada, ela não volta por nada — o
-// `VOLTAR_PARA_FICHA` não a conhece.
-//
-// Agora ela fica aberta ATRÁS. Duas janelas modais empilham: a do formulário
-// nasce por cima, e fechá-la revela a de trás, com a pessoa ainda aberta.
-//
-// ⚠️ E SE ALGO FOI GRAVADO, a janela de trás é recarregada ao fechar o
-// formulário — senão ela mostraria o cadastro velho, que é pior que fechar:
-// ninguém desconfia de uma tela que está ali.
-// ===========================================================================
-let GRAVOU_NO_FORMULARIO = false;
-
-els("dlg").addEventListener("close", () => {
-  if (!els("dlg-unica").open) return;
-  if (GRAVOU_NO_FORMULARIO) {
-    GRAVOU_NO_FORMULARIO = false;
-    const q = els("unica-quadro");
-    if (q && q.src && q.src !== "about:blank") q.src = q.src;   // recarrega
-    // A faixa do afastamento também: quem acabou de registrar a volta não
-    // pode continuar vendo "Afastado desde…".
-    if (FAIXA_DE) {
-      const x = COL.find(y => y.id === FAIXA_DE);
-      if (x && FICHA && FICHA.id === FAIXA_DE) { x.etapa = FICHA.etapa; x.situacao = FICHA.situacao; }
-      pintarFaixaDoAfastamento(els("unica-afast"), FAIXA_DE);
-    }
-  }
-});
-
-// o que a janela pede: fechar, ou abrir aqui o formulário (editar) ou os documentos (ler e arquivar)
-window.addEventListener("message", ev => {
-  const d = ev.data || {};
-  if (ev.origin !== location.origin || d.tipo !== "bws-ficha") return;
-  // Com o modal-ponte aberto, quem responde é ele (erp_base.html).
-  if (els("dlg-ambiente") && els("dlg-ambiente").open) return;
-  // "fechar" é a janela dizendo que ELA fechou; as outras ações abrem algo em
-  // cima dela e ela FICA.
-  if (d.acao === "fechar") { if (els("dlg-unica").open) els("dlg-unica").close(); return; }
-  if (d.acao === "editar" && d.id) abrirFichaCompleta(Number(d.id));
-  else if (d.acao === "documentos" && d.id) ficha(Number(d.id), "documentos");
-});
 
 async function ficha(id, aba){
   try {
@@ -1745,108 +1654,7 @@ function blocoDoAfastamento(c){
   </div>`;
 }
 
-async function afastar(c){
-  const tipos = AFASTAMENTO.tipos || [];
-  const r = await perguntar({
-    titulo: `Afastar — ${c.nome}`,
-    textoOk: "Afastar",
-    aviso: "A pessoa sai da ativa e <b>deixa de bater ponto</b> enquanto estiver "
-         + "afastada. O tipo decide o que a volta vai exigir — escolha com "
-         + "cuidado, e ele pode ser corrigido na hora do retorno.",
-    campos: [
-      {nome: "tipo", rotulo: "Tipo do afastamento", tipo: "select",
-       obrigatorio: true, largura: 6,
-       opcoes: tipos.map(x => ({valor: x.valor, rotulo: x.rotulo})),
-       dica_de: v => {
-         const x = tipos.find(y => y.valor === v.tipo);
-         if (!x) return "";
-         {# A explicação do tipo JÁ DIZ quanto é a estabilidade — repetir
-            "Gera 12 meses de estabilidade" logo depois foi o que a tela
-            mostrou no primeiro teste no navegador, e ficou bobo. #}
-         return escapar(x.explicacao)
-           + (x.base_legal ? ` <small>(${escapar(x.base_legal)})</small>` : "");
-       }},
-      {nome: "data_inicio", rotulo: "Começou em", tipo: "date",
-       obrigatorio: true, largura: 3, valor: hoje()},
-      {nome: "previsao_retorno", rotulo: "Volta prevista (opcional)",
-       tipo: "date", largura: 3,
-       dica: "serve para o exame de retorno ser marcado antes de ela aparecer"},
-      {nome: "motivo", rotulo: "Motivo / observação (opcional)", largura: 6},
-    ]});
-  if (!r) return;
-  try {
-    await api(`/erp/api/colaboradores/${c.id}/afastamento`,
-              {method: "POST", body: JSON.stringify(r)});
-    c.etapa = "AFASTADO"; c.situacao = "AFASTADO";
-    await pintarDemandasDaPessoa(els("c-painel"), c);
-    aviso("dem-msg", `${escapar(c.nome)} afastada. Ela deixa de bater ponto `
-          + `a partir de agora.`, "ok");
-    GRAVOU_NO_FORMULARIO = true;
-  } catch(e){ aviso("dem-msg", e.message, "erro"); }
-}
 
-async function registrarRetorno(c){
-  const a = AFASTAMENTO.aberto || {}, r0 = AFASTAMENTO.retorno || {};
-  const tipos = AFASTAMENTO.tipos || [];
-  // ⚑ O QUE FALTA VAI NO DIÁLOGO, não só no cartão atrás dele: quem clica em
-  // "registrar o retorno" está decidido a registrar, e descobrir a pendência
-  // só na recusa é o atrito que ele cobrou mais de uma vez.
-  const pendencia = (r0.impede || []).length
-    ? `<div class="aviso erro" style="margin:0 0 8px"><b>O sistema vai recusar
-         enquanto faltar:</b><ul style="margin:6px 0 0 18px">`
-      + r0.impede.map(x => `<li>${escapar(x)}</li>`).join("") + `</ul></div>`
-    : "";
-  const r = await perguntar({
-    titulo: `Retorno do afastamento — ${c.nome}`,
-    textoOk: "Registrar o retorno",
-    aviso: pendencia
-         + `Afastada desde <b>${dataBR(a.data_inicio)}</b> por `
-         + `<b>${escapar(a.tipo_rotulo || "")}</b>.`
-         + (a.tipo_desconhecido
-             ? " ⚠️ Este afastamento é antigo: a natureza dele não foi"
-               + " registrada na época e a data de início foi ESTIMADA pelo"
-               + " sistema. Diga o tipo e confira a data abaixo — o que falta"
-               + " é recalculado com a data que você informar."
-             : ""),
-    campos: [
-      ...(a.tipo_desconhecido || (r0.impede || []).some(x => x.indexOf("tipo") >= 0)
-          ? [{nome: "tipo", rotulo: "Qual era o tipo?", tipo: "select",
-              obrigatorio: true, largura: 6,
-              opcoes: tipos.map(x => ({valor: x.valor, rotulo: x.rotulo}))}]
-          : []),
-      {# ⚑ A DATA DE INÍCIO DO AFASTAMENTO ANTIGO É ESTIMADA (migração 111: a
-         última ida para "Afastado" ou, sem isso, a admissão). Corrigir aqui é
-         o que impede o sistema de cobrar ASO de quem ficou uma semana fora. #}
-      ...(a.tipo_desconhecido
-          ? [{nome: "data_inicio", rotulo: "Afastado desde (confira)", tipo: "date",
-              obrigatorio: true, largura: 3, valor: a.data_inicio,
-              dica: "a data veio estimada — corrija para o dia em que ele parou "
-                  + "de trabalhar; é ela que decide se o ASO é obrigatório"}]
-          : []),
-      {nome: "data_retorno", rotulo: "Voltou em", tipo: "date",
-       obrigatorio: true, largura: 3, valor: hoje(),
-       dica: "é esta data que define onde o ponto para de abonar"},
-      {nome: "observacao", rotulo: "Observação (opcional)", largura: 6,
-       dica: "ex.: ASO veio apto COM RESTRIÇÃO — não pode carregar peso"},
-    ]});
-  if (!r) return;
-  try {
-    const d = await api(`/erp/api/colaboradores/${c.id}/afastamento/retorno`,
-                        {method: "POST", body: JSON.stringify(r)});
-    c.etapa = d.etapa || "CONCLUIDO"; c.situacao = "ATIVO";
-    await pintarDemandasDaPessoa(els("c-painel"), c);
-    aviso("dem-msg",
-      `${escapar(c.nome)} voltou em ${dataBR(d.data_retorno)} `
-      + `(${d.dias} dia(s) afastada). Ela volta a bater ponto.`
-      + (d.estabilidade_ate ? `<br><b>⚖️ Estabilidade até `
-          + `${dataBR(d.estabilidade_ate)}</b> — não cabe demissão sem justa `
-          + `causa neste prazo.` : "")
-      + ((d.avisos || []).length ? `<br><br><b>Atenção:</b><br>`
-          + d.avisos.map(escapar).join("<br>") : ""),
-      d.estabilidade_ate || (d.avisos || []).length ? "alerta" : "ok");
-    GRAVOU_NO_FORMULARIO = true;
-  } catch(e){ aviso("dem-msg", e.message, "erro"); }
-}
 
 let TEMPLATES_CT = [];
 
@@ -1858,55 +1666,6 @@ let TEMPLATES_CT = [];
 // sai), e o servidor recusa. Então aqui se mostra o que falta **antes** de
 // alguém montar o pedido — recusa depois de preencher é o que o Pipefy fazia.
 // ---------------------------------------------------------------------------
-async function mandarParaAContabilidade(c){
-  // Os modelos JÁ VÊM com o que falta no cadastro DESTA pessoa (a resposta de
-  // `/erp/api/dp/pedidos?colaborador_id=`), então a lista diz de cara qual dá
-  // para pedir agora. Recusar depois de escolher é o que o Pipefy fazia.
-  if (!TEMPLATES_CT.length) {
-    try { TEMPLATES_CT = (await api(`/erp/api/dp/pedidos?colaborador_id=${c.id}`)).templates || []; }
-    catch(e){ return aviso("dem-msg", e.message, "erro"); }
-  }
-  const prontos = TEMPLATES_CT.filter(t => !(t.falta || []).length);
-  const travados = TEMPLATES_CT.filter(t => (t.falta || []).length);
-  if (!prontos.length) {
-    return aviso("dem-msg",
-      "Nenhum pedido pode sair com este cadastro como está. "
-      + travados.map(t => `<br><b>${escapar(t.nome)}</b>: falta ${escapar((t.falta || []).join(", "))}`).join("")
-      + "<br><br>Preencha nas abas do cadastro e volte aqui.", "alerta");
-  }
-  const r = await perguntar({
-    titulo: `Pedido à contabilidade — ${c.nome}`,
-    textoOk: "Montar o pedido",
-    aviso: "O sistema monta o texto, confere o que o cadastro precisa ter e "
-         + "guarda o que foi pedido. Enviar é o passo seguinte, e você lê o "
-         + "texto antes."
-         + (travados.length ? `<br><br><b>Fora da lista por falta de dado:</b>`
-             + travados.map(t => `<br>${escapar(t.nome)} — falta ${escapar((t.falta || []).join(", "))}`).join("") : ""),
-    campos: [
-      {nome: "template", rotulo: "O que está sendo pedido", tipo: "select",
-       obrigatorio: true, largura: 6,
-       opcoes: prontos.map(t => ({valor: t.chave,
-         rotulo: `${t.nome} — espera ${t.espera}, prazo ${t.prazo} dia(s) útil(eis)`})),
-       dica_de: v => {
-         const t = prontos.find(x => x.chave === v.template);
-         return t && (t.avisos || []).length
-           ? `⚠️ ${t.avisos.map(escapar).join(" ")}` : (t ? escapar(t.explicacao) : "");
-       }},
-      {nome: "observacao", rotulo: "Observação para a contabilidade (opcional)",
-       largura: 6},
-    ]});
-  if (!r) return;
-  try {
-    const d = await api("/erp/api/dp/pedidos", {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({colaborador_id: c.id, template: r.template,
-                            observacao: r.observacao})});
-    await pintarDemandasDaPessoa(els("c-painel"), c);
-    aviso("dem-msg", `Pedido ${escapar(d.numero || "")} montado. `
-          + `Leia o texto e envie à contabilidade.`, "ok");
-    if (d.id) abrirPedidoDaContabilidade(d.id, c);
-  } catch(e){ aviso("dem-msg", e.message, "erro"); }
-}
 
 // ---------------------------------------------------------------------------
 // O PEDIDO ABERTO: o texto que vai (ou foi), a trilha, e o que dá para fazer
@@ -3243,7 +3002,6 @@ async function salvarCadastro(){
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(corpoDoCadastro())});
     FICHA = r.colaborador;
-    GRAVOU_NO_FORMULARIO = true;      // a janela de trás precisa recarregar
     aviso("dlg-msg", "Cadastro salvo.", "ok");
     pintarOQueFalta();
     // Embutida não há lista para atualizar: avisa a tela de fora, que tem.
@@ -3304,81 +3062,8 @@ async function excluirDependente(id){
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
-async function acaoDoVinculo(caminho, corpo){
-  try {
-    const d = await api(`/erp/api/colaboradores/${FICHA.id}/${caminho}`, {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
-    FICHA = d.colaborador;
-    painelDaFicha();
-    pintarOQueFalta();
-    carregar();
-    aviso("dlg-msg", "Pronto.", "ok");
-  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
-}
 
-async function abrirDesligamento(){
-  const o = OPCOES || {};
-  // ⚑ A ESTABILIDADE APARECE AQUI (18/11/2026), e é aqui que ela importa.
-  //
-  // Quem voltou de acidente de trabalho tem 12 meses em que não cabe demissão
-  // sem justa causa; quem voltou de licença-maternidade, até 5 meses depois do
-  // parto. Antes disso o sistema não guardava a informação em lugar nenhum, e
-  // quem fosse desligar não tinha como saber.
-  //
-  // ⚠️ É AVISO, NÃO TRAVA, e é decisão dele: *"a contabilidade conta, mas é
-  // interessante termos a informação também."* Há desligamento que cabe mesmo
-  // na estabilidade (pedido da própria pessoa, justa causa) — travar prenderia
-  // gente num limbo. O que não pode é ninguém SABER.
-  let estabilidade = null;
-  try {
-    estabilidade = (await api(`/erp/api/colaboradores/${FICHA.id}/afastamento`)).estabilidade;
-  } catch(e){ /* a consulta falhar não pode impedir um desligamento */ }
-  const r = await perguntar({titulo: `Desligar ${FICHA.nome}`,
-    aviso: (estabilidade ? `<div class="aviso erro" style="margin:0 0 8px">
-        <b>⚖️ Esta pessoa está com ESTABILIDADE no emprego até
-        ${dataBR(estabilidade.ate)}</b> (${estabilidade.dias} dia(s)).
-        ${escapar(estabilidade.motivo)}<br>
-        Neste prazo não cabe demissão sem justa causa. Confirme com a
-        contabilidade antes de seguir — o sistema não vai impedir, só avisar.
-        </div>` : "")
-         + "O vínculo é FECHADO, não apagado: a passagem dela pela empresa continua "
-         + "no histórico, com tudo que foi pago.",
-    textoOk: "Desligar",
-    campos: [
-      {nome: "data_saida", rotulo: "Data de saída", tipo: "date", obrigatorio: true},
-      {nome: "aviso_previo", rotulo: "Data do aviso prévio", tipo: "date"},
-      {nome: "ultimo_dia", rotulo: "Último dia trabalhado", tipo: "date"},
-      {nome: "forma_desligamento", rotulo: "Forma de desligamento", tipo: "select",
-       largura: 6, opcoes: (o.formas_desligamento || [])},
-      {nome: "motivo", rotulo: "Observação", largura: 6},
-    ]});
-  if (r) acaoDoVinculo("desligar", r);
-}
 
-async function abrirReadmissao(){
-  const o = OPCOES || {};
-  const r = await perguntar({titulo: `Readmitir ${FICHA.nome}`,
-    aviso: "O cadastro volta a ativo e nasce um vínculo NOVO. O anterior fica no "
-         + "histórico, com a data de saída — é o que a rescisão e o INSS perguntam.",
-    textoOk: "Readmitir",
-    campos: [
-      {nome: "admissao", rotulo: "Data de admissão", tipo: "date", obrigatorio: true},
-      {nome: "vinculo", rotulo: "Vínculo", tipo: "select", opcoes: (o.vinculos || [])},
-      // ⚑ A LISTA SEGUE O VÍNCULO (17/11/2026): carteira tem as duas CLT e o
-      // aprendiz; prestador tem PJ, RPA, mensalista, estágio e pró-labore.
-      // São dois campos com o MESMO nome, cada um visível para um vínculo —
-      // o coletor do `perguntar()` só lê o que está na tela.
-      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato_ctps || []),
-       mostrar_se: v => v.vinculo === "CTPS"},
-      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato_prestador || []),
-       mostrar_se: v => v.vinculo === "PRESTADOR"},
-      {nome: "salario", rotulo: "Salário", exemplo: "2.230,00"},
-      {nome: "matricula", rotulo: "Matrícula nova"},
-    ]});
-  if (r) acaoDoVinculo("readmitir", r);
-}
 
 {# ---------------------------------------------------------------------------
    MOVER O CADASTRO DE ETAPA — o que o DP fazia arrastando o card no Pipefy
@@ -3490,48 +3175,7 @@ async function abrirMudancaDeEtapa(){
   } catch(e){ recado(e.message, "erro"); }
 }
 
-async function abrirTrocaDeVinculo(){
-  const o = OPCOES || {};
-  const atual = FICHA.vinculo === "CTPS" ? "CTPS" : "PRESTADOR";
-  const destino = atual === "CTPS" ? "PRESTADOR" : "CTPS";
-  const r = await perguntar({titulo: `Trocar o vínculo de ${FICHA.nome}`,
-    aviso: `Hoje ela é ${atual === "CTPS" ? "carteira assinada" : "prestador de serviço"}. `
-         + "O vínculo atual é FECHADO no dia anterior e o novo começa na data informada — "
-         + "sem buraco e sem sobreposição, porque o período antigo continua valendo para "
-         + "o INSS.",
-    textoOk: "Trocar",
-    campos: [
-      {nome: "vinculo", rotulo: "Passa a ser", tipo: "select", valor: destino,
-       opcoes: (o.vinculos || [])},
-      {nome: "admissao", rotulo: "A partir de", tipo: "date", obrigatorio: true},
-      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato_ctps || []),
-       mostrar_se: v => v.vinculo === "CTPS"},
-      {nome: "tipo_contrato", rotulo: "Tipo de contrato", tipo: "select",
-       largura: 4, opcoes: (o.tipos_contrato_prestador || []),
-       mostrar_se: v => v.vinculo === "PRESTADOR"},
-      {nome: "salario", rotulo: "Salário", exemplo: "2.230,00"},
-    ]});
-  if (r) acaoDoVinculo("trocar-vinculo", r);
-}
 
-async function abrirAlteracao(){
-  const o = OPCOES || {};
-  const r = await perguntar({titulo: `Alteração de ${FICHA.nome}`,
-    aviso: "Fica gravado o de→para, com o motivo. É o que responde “por que ela ganha "
-         + "mais que o piso” — a pergunta da auditoria e do sindicato.",
-    textoOk: "Registrar",
-    campos: [
-      {nome: "vigencia", rotulo: "A partir de", tipo: "date", obrigatorio: true},
-      {nome: "motivo", rotulo: "Motivo", tipo: "select", opcoes: (o.motivos_alteracao || [])},
-      {nome: "salario", rotulo: "Salário novo", exemplo: "2.230,00"},
-      {nome: "cargo_id", rotulo: "Cargo novo", tipo: "select", largura: 3,
-       opcoes: [{valor: "", rotulo: "— mantém —"}].concat(
-         (o.cargos || []).map(x => ({valor: x.id, rotulo: x.nome})))},
-      {nome: "justificativa", rotulo: "Justificativa", tipo: "textarea", largura: 6, linhas: 2},
-    ]});
-  if (r) acaoDoVinculo("alteracao", r);
-}
 
 // ---------------------------------------------------------------------------
 // IMPORTAR AS FICHAS DE REGISTRO DO FORTES (16/11/2026)

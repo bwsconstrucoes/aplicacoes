@@ -56,6 +56,22 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 - `core/documentos/armazenamento.CATEGORIAS`: + FATURA e RECIBO.
 Detalhe em `HISTORICO_FINANCEIRO.md`, 27/11/2026.
 
+### 26/11/2026 (3) — (chat do DP) Relógio na fila de trabalhos (`core/comum/tarefas.py`)
+
+`tarefas.registrar_relogio(f)`: a linha de fundo chama `f` uma vez por minuto,
+para rotinas com hora marcada — elas só enfileiram. Primeiro uso: a caixa do
+DP de hora em hora fora das batidas do ponto. Regra do dono para TODAS as
+áreas: rotina pesada se abstém das batidas (7h, 12h, 13h, 16h, 17h) — ver
+`agente_dp.em_janela_de_batida`. Detalhe em `HISTORICO_PESSOAL.md` (12).
+
+### 26/11/2026 (2) — (chat do DP) `erp_base.html`: "Processando…" em todo botão, e o diário do agente
+
+Todo clique que chama o servidor (`api()`) desativa o botão, põe ⏳ e mostra
+"Processando…" no alto até a resposta — vale para as quatro áreas. E três
+funções novas compartilhadas: `blocoDoQueVoltou`, `desenharAcoesDoAgente` e
+`ligarRevisaoDoAgente` (usadas pelo DP). Sem migração de outra área; a 129 é
+do DP. Detalhe em `HISTORICO_PESSOAL.md`, 26/11/2026 (10) e (11).
+
 ### 26/11/2026 — (chat do DP) O modal-ponte da pessoa atravessa o ERP inteiro
 
 `abrirPessoa` em `erp_base.html`, ação nova `abrir_pessoa` (permissoes.py,
