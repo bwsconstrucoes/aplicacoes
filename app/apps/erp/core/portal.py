@@ -136,9 +136,22 @@ AREAS: tuple[dict[str, Any], ...] = (
     },
     {
         "chave": "financeiro",
-        "nome": "Pagamentos",
-        "explicacao": "pedir pagamento de nota, boleto, reembolso",
-        "pronta": False,
+        # ⚑ "FINANCEIRO", E EM TESTE SÓ COM O ADMINISTRADOR (27/11/2026). Ele:
+        # *"Pedir Pagamento, Fundo Fixo, Medição de Empreita e o Cadastro dela,
+        # Cancelar um Pedido e uma forma de listar e visualizar todos esses
+        # lançamentos, devem estar disponíveis no portal"* — e, na véspera:
+        # *"vamos deixar ele ativo somente para o administrador."*
+        #
+        # Para quem não é administrador a área continua aparecendo FECHADA,
+        # como antes. Abrir para a obra: `EM_TESTE_SO_ADMIN = False` em
+        # `core/titulos/portal_financeiro.py`. Quem decide é `liberado()`, lá.
+        "nome": "Financeiro",
+        "explicacao": "pedir pagamento, fundo fixo, contrato e medição de "
+                      "empreita, e acompanhar o que você pediu",
+        "pronta": True,
+        "so_tela": True,
+        "tela": "/erp/portal/financeiro",
+        "liberacao": "financeiro",
         "enquanto_isso": "Continue pedindo pagamento como você pede hoje.",
     },
     {
@@ -256,6 +269,13 @@ def areas(s: Session, eu: dict[str, Any]) -> list[dict[str, Any]]:
     quem = eu.get("usuario") if isinstance(eu, dict) else None
     saida = []
     for a in AREAS:
+        # A área EM TESTE: aberta só para quem `liberado()` deixa; para os
+        # demais, fechada com o aviso de sempre — "vai vir".
+        if a.get("liberacao") == "financeiro":
+            from app.apps.erp.core.titulos.portal_financeiro import liberado
+            saida.append({**a, "tipos": 0,
+                          "pronta": bool(quem is not None and liberado(quem))})
+            continue
         acao = a.get("acao")
         if acao and quem is not None and not pode(quem, acao):
             continue

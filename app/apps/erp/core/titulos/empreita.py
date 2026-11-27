@@ -743,14 +743,32 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
     }
 
 
+def jeito_de_medir(s: Session, contrato_id: int) -> str:
+    """PLANILHA, SEM_PLANILHA ou PARCELAS — ver `pleitos.jeito_do_contrato`."""
+    from app.apps.erp.core.titulos.pleitos import jeito_do_contrato
+    c = s.get(ContratoServico, contrato_id)
+    if c is None:
+        raise ErroValidacao("Contrato não encontrado.")
+    tem = s.scalar(select(func.count(ContratoServicoItem.id)).where(
+        ContratoServicoItem.contrato_id == contrato_id)) or 0
+    return jeito_do_contrato(c.modo, tem > 0)
+
+
 def listar(s: Session, usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import (
+        obras_de_registro_sem_autor, obras_do_usuario, so_portal,
+    )
     stmt = (select(ContratoServico)
             .options(selectinload(ContratoServico.obra),
                      selectinload(ContratoServico.fornecedor))
             .order_by(ContratoServico.id.desc()).limit(300))
     if usuario is not None:
-        permitidas = obras_do_usuario(s, usuario)
+        # ⚑ 27/11/2026: contrato de empreita não tem "quem lançou" que recorte
+        # a lista, e `obras_do_usuario` devolve "todas" para quem enxerga por
+        # autoria — o administrativo de obra via os contratos da empresa
+        # inteira. Para quem é da obra, as obras dele.
+        permitidas = (obras_de_registro_sem_autor(s, usuario)
+                      if so_portal(usuario.perfil) else obras_do_usuario(s, usuario))
         if permitidas is not None:
             stmt = stmt.where(ContratoServico.obra_id.in_(permitidas or [0]))
     saida = []
